@@ -1,0 +1,91 @@
+home: /tmp/fm-linked-home-lab.WnvL2X/orca/workspaces/firstmate/toadfish
+git-dir: /private/tmp/fm-linked-home-lab.WnvL2X/firstmate/.git/worktrees/toadfish
+git-common-dir: /private/tmp/fm-linked-home-lab.WnvL2X/firstmate/.git
+branch: Pibomeister/toadfish
+
+================ 1. UNMARKED linked home on Pibomeister/toadfish (the reported bug) ================
+--- SessionStart tangle check: bin/fm-guard.sh
+●  WORKTREE TANGLE - PRIMARY CHECKOUT IS ON A FEATURE BRANCH
+●  /tmp/fm-linked-home-lab.WnvL2X/orca/workspaces/firstmate/toadfish is on 'Pibomeister/toadfish', not its default branch 'main'.
+●      git -C /tmp/fm-linked-home-lab.WnvL2X/orca/workspaces/firstmate/toadfish checkout main
+rc=0
+--- SessionStart tangle check: bin/fm-bootstrap.sh (detect-only) TANGLE line
+TANGLE: primary checkout on feature branch 'Pibomeister/toadfish' (expected 'main'); the work is safe on that ref - read-only session must leave restore work to the session holding the fleet lock
+--- Claude Stop hook: fm-turnend-guard.sh --claude (exact settings.json command)
+
+rc=0
+--- Claude Stop hook: fm-claude-stop-autoarm.sh (asyncRewake, exact settings.json command)
+
+rc=0 watcher-arm-invoked=no
+
+marker written: Pibomeister/toadfish   git status --short: []
+
+================ 2. MARKED linked home on its marked branch ================
+--- SessionStart tangle check: bin/fm-guard.sh
+(no tangle banner)
+rc=0
+--- SessionStart tangle check: bin/fm-bootstrap.sh (detect-only) TANGLE line
+(no TANGLE line)
+--- Claude Stop hook: fm-turnend-guard.sh --claude (exact settings.json command)
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  TURN WOULD END BLIND - SUPERVISION IS OFF
+●  1 task(s) in flight, but no live watcher holds this home lock (last beat: never).
+●  The Stop-owned auto-arm did not claim this home either, so recovery is NOT already under way.
+rc=2
+--- Claude Stop hook: fm-claude-stop-autoarm.sh (asyncRewake, exact settings.json command)
+firstmate watcher wake - one supervision event needs a handling turn now.
+stale: lab-win actionable
+Run bin/fm-wake-drain.sh first, handle the wake, then run its exact WAKE_ACK_REQUIRED --ack-through command. Until that post-handling acknowledgement, interruption leaves the wake durable for idempotent re-handling. This Stop hook owns watcher continuity: when the handling turn ends, the next needed cycle arms automatically - do NOT run bin/fm-watch-arm.sh after an ordinary wake.
+rc=2 watcher-arm-invoked=yes
+
+================ 3. MARKED home switched to another branch (tangle must still alarm) ================
+--- SessionStart tangle check: bin/fm-guard.sh
+●  WORKTREE TANGLE - PRIMARY CHECKOUT IS ON A FEATURE BRANCH
+●  /tmp/fm-linked-home-lab.WnvL2X/orca/workspaces/firstmate/toadfish is on 'feature/stray', not its default branch 'Pibomeister/toadfish'.
+●      git -C /tmp/fm-linked-home-lab.WnvL2X/orca/workspaces/firstmate/toadfish checkout Pibomeister/toadfish
+rc=0
+--- SessionStart tangle check: bin/fm-bootstrap.sh (detect-only) TANGLE line
+TANGLE: primary checkout on feature branch 'feature/stray' (expected 'Pibomeister/toadfish'); the work is safe on that ref - read-only session must leave restore work to the session holding the fleet lock
+--- Claude Stop hook: fm-turnend-guard.sh --claude (exact settings.json command)
+
+rc=0
+--- Claude Stop hook: fm-claude-stop-autoarm.sh (asyncRewake, exact settings.json command)
+firstmate watcher wake - one supervision event needs a handling turn now.
+stale: lab-win actionable
+Run bin/fm-wake-drain.sh first, handle the wake, then run its exact WAKE_ACK_REQUIRED --ack-through command. Until that post-handling acknowledgement, interruption leaves the wake durable for idempotent re-handling. This Stop hook owns watcher continuity: when the handling turn ends, the next needed cycle arms automatically - do NOT run bin/fm-watch-arm.sh after an ordinary wake.
+rc=2 watcher-arm-invoked=yes
+
+================ 4. ADVERSARIAL: symlinked marker (must be ignored) ================
+--- SessionStart tangle check: bin/fm-guard.sh
+●  WORKTREE TANGLE - PRIMARY CHECKOUT IS ON A FEATURE BRANCH
+●  /tmp/fm-linked-home-lab.WnvL2X/orca/workspaces/firstmate/toadfish is on 'Pibomeister/toadfish', not its default branch 'main'.
+●      git -C /tmp/fm-linked-home-lab.WnvL2X/orca/workspaces/firstmate/toadfish checkout main
+rc=0
+--- SessionStart tangle check: bin/fm-bootstrap.sh (detect-only) TANGLE line
+TANGLE: primary checkout on feature branch 'Pibomeister/toadfish' (expected 'main'); the work is safe on that ref - read-only session must leave restore work to the session holding the fleet lock
+--- Claude Stop hook: fm-turnend-guard.sh --claude (exact settings.json command)
+
+rc=0
+--- Claude Stop hook: fm-claude-stop-autoarm.sh (asyncRewake, exact settings.json command)
+
+rc=0 watcher-arm-invoked=no
+
+================ 5. ADVERSARIAL: malformed marker (must be ignored) ================
+--- SessionStart tangle check: bin/fm-guard.sh
+●  WORKTREE TANGLE - PRIMARY CHECKOUT IS ON A FEATURE BRANCH
+●  /tmp/fm-linked-home-lab.WnvL2X/orca/workspaces/firstmate/toadfish is on 'Pibomeister/toadfish', not its default branch 'main'.
+●      git -C /tmp/fm-linked-home-lab.WnvL2X/orca/workspaces/firstmate/toadfish checkout main
+rc=0
+--- SessionStart tangle check: bin/fm-bootstrap.sh (detect-only) TANGLE line
+TANGLE: primary checkout on feature branch 'Pibomeister/toadfish' (expected 'main'); the work is safe on that ref - read-only session must leave restore work to the session holding the fleet lock
+--- Claude Stop hook: fm-turnend-guard.sh --claude (exact settings.json command)
+
+rc=0
+--- Claude Stop hook: fm-claude-stop-autoarm.sh (asyncRewake, exact settings.json command)
+
+rc=0 watcher-arm-invoked=no
+
+================ 6. Crewmate task worktree (sibling, never marked) ================
+turnend rc=0 out=[]
+
+lab removed: /tmp/fm-linked-home-lab.WnvL2X
