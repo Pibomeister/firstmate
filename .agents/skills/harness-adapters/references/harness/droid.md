@@ -13,7 +13,7 @@ Droid is a verified crewmate and scout harness on the TUI path; it has no Firstm
 | Autonomy | `--auto high` plus `sessionDefaultSettings.autonomyLevel=high` in the per-task settings file keeps the interactive TUI at Auto (High), with commands allowed. |
 | Status line | The per-task settings replace any user `statusLine` with the command `printf firstmate`. Runtime settings merge over user settings, so `null` or `{}` cannot unset it, and empty output draws a failure row. Below the tmux composer box, only Droid's own timer footer row, which starts with `[⏱ ` and ends in `TMUX ⧉`, and the `firstmate` row count as idle; any other row reads `unknown`. |
 | Turn state | `UserPromptSubmit` opens a busy record; `Stop`, `Notification` with `idle_prompt`, and `SessionEnd` close it; `Stop` also touches the task's turn-ended marker. |
-| Trust | A fresh worktree displays `Trust this folder?` with `Trust this folder` selected. Spawn reads the live viewport, answers the complete dialog with Enter, and waits for the prompt hook to prove brief receipt. |
+| Trust | A fresh worktree displays `Trust this folder?` with `Trust this folder` selected. Spawn reads the live viewport, answers the complete dialog once with Enter, and waits for the prompt hook to prove brief receipt. |
 | Interrupt | One Escape cancels a running turn; Ctrl+U clears a prompt Droid restores from its steering queue. |
 | Exit | `/exit` terminates the interactive TUI. |
 | Resume | `droid --resume <sessionId>` resumes a native session, while Firstmate's deterministic `relaunch` starts from the brief and progress note. |

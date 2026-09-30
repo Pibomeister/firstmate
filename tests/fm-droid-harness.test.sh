@@ -86,7 +86,16 @@ make_droid_case() {  # <name> <id>
   mv "$fakebin/tmux" "$fakebin/tmux-base"
   cat >"$fakebin/tmux" <<'SH'
 #!/usr/bin/env bash
+if [ "${1:-}" = send-keys ] && [ "${*: -1}" = Enter ] && [ -n "${FM_FAKE_DROID_SETTINGS:-}" ]; then
+  printf 'Enter\n' >>"${FM_FAKE_DROID_SETTINGS}.enters"
+fi
 if [ "${1:-}" = capture-pane ] && [ -f "${FM_FAKE_DROID_SETTINGS:-/nonexistent}" ]; then
+  shown=$(cat "${FM_FAKE_DROID_SETTINGS}.trust" 2>/dev/null || printf 0)
+  if [ "$shown" -lt "${FM_FAKE_DROID_TRUST_POLLS:-0}" ]; then
+    printf '%s\n' "$((shown + 1))" >"${FM_FAKE_DROID_SETTINGS}.trust"
+    printf 'Trust this folder?\n> 1. Trust this folder\n  2. Exit without trusting\nEnter to confirm · Esc to exit\n'
+    exit 0
+  fi
   if [ ! -e "${FM_FAKE_DROID_SETTINGS}.submitted" ]; then
     command=$(jq -r '.hooks.UserPromptSubmit[0].hooks[0].command' "$FM_FAKE_DROID_SETTINGS")
     sh -c "$command"
@@ -100,6 +109,9 @@ SH
   chmod +x "$fakebin/tmux"
   cat >"$fakebin/droid" <<'SH'
 #!/usr/bin/env bash
+if [ "${1:-}" = exec ] && IFS= read -r -t 1 _; then
+  touch "$(dirname "$0")/probe-read-stdin"
+fi
 if [ "${1:-}" = exec ] && [ -n "${FM_FAKE_DROID_REJECT_MODEL:-}" ]; then
   printf 'Invalid model: %s\n' "$FM_FAKE_DROID_REJECT_MODEL" >&2
   exit 1
@@ -151,6 +163,32 @@ test_droid_launch_and_hooks() {
   pass "Droid spawn passes the brief and model settings; hooks open and close turns"
 }
 
+test_droid_trust_dialog_is_answered_once() {
+  local out rc base trusted
+  make_droid_case trust-base droid-trust-base
+  out=$(run_droid_spawn droid-trust-base)
+  expect_code 0 $? "Droid baseline spawn failed: $out"
+  base=$(wc -l <"$HOME_DIR/state/droid-trust-base.droid-settings.json.enters")
+  make_droid_case trust-held droid-trust-held
+  out=$(FM_FAKE_DROID_TRUST_POLLS=3 run_droid_spawn droid-trust-held)
+  rc=$?
+  expect_code 0 "$rc" "Droid spawn behind a lingering trust dialog failed: $out"
+  trusted=$(wc -l <"$HOME_DIR/state/droid-trust-held.droid-settings.json.enters")
+  [ "$trusted" -eq $((base + 1)) ] \
+    || fail "a trust dialog drawn for three polls must get one Enter, got $((trusted - base))"
+  pass "Droid answers a lingering trust dialog once"
+}
+
+test_droid_model_probe_detaches_stdin() {
+  local id=droid-probe-stdin out rc
+  make_droid_case probe-stdin "$id"
+  out=$(printf 'stdin-leak\n' | run_droid_spawn "$id" --model gpt-5.6-luna)
+  rc=$?
+  expect_code 0 "$rc" "Droid spawn with piped stdin failed: $out"
+  [ ! -e "$FAKEBIN_DIR/probe-read-stdin" ] || fail "Droid model probe read the caller's stdin"
+  pass "Droid model probe cannot read the caller's stdin"
+}
+
 test_droid_bad_model_refuses_before_launch() {
   local id=droid-bad-model out rc
   make_droid_case bad-model "$id"
@@ -177,6 +215,8 @@ test_raw_droid_command_does_not_arm_unused_hooks() {
 test_droid_identity_and_control
 test_droid_composer_envelope
 test_droid_launch_and_hooks
+test_droid_trust_dialog_is_answered_once
+test_droid_model_probe_detaches_stdin
 test_droid_bad_model_refuses_before_launch
 test_raw_droid_command_does_not_arm_unused_hooks
 fm_test_cleanup "$TMP_ROOT"
