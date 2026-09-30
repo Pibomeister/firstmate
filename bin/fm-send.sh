@@ -1126,10 +1126,12 @@ else
   # endpoint was reported exit-1 non-delivery for a message that landed and
   # ran, inviting a duplicate resend. agy typed targets get a longer default
   # budget (~8s at the default cadence, twice the worst measured render); an
-  # explicit FM_SEND_RETRIES still wins, and every other harness keeps the
-  # shared 3-retry default untouched.
+  # Droid also needed the longer budget: its first live typed send returned
+  # pending-unproven after three polls despite the TUI later showing the
+  # completed reply; twenty polls confirmed a second send without duplicate
+  # typing. An explicit FM_SEND_RETRIES still wins.
   case "$TARGET_HARNESS" in
-    agy) retries=${FM_SEND_RETRIES:-20} ;;
+    agy|droid) retries=${FM_SEND_RETRIES:-20} ;;
     *) retries=${FM_SEND_RETRIES:-3} ;;
   esac
   sleep_s=${FM_SEND_SLEEP:-0.4}

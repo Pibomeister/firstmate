@@ -412,6 +412,14 @@ TYPESAFE_API_KEY=$KEY run code out err "$BRIEF"
 assert_contains "$out" 'candidate: gemini:gemini-3.8-flash-high  provider=google  scope=all_models  remaining=72%  spendPriority=0.3  runway=through_reset  -> eligible' "Gemini resolves through its explicit provider"
 assert_contains "$out" "  profile: --harness 'gemini' --model 'gemini-3.8-flash-high'" "Gemini is a typed verified dispatch harness"
 
+DROID_RULE="$TMP_ROOT/droid-rule.json"
+printf '%s\n' '{"rules":[{"when":"Droid work.","use":{"harness":"droid","model":"gpt-5.6-luna","effort":"low","provider":"codex"}}]}' > "$DROID_RULE"
+cp "$DROID_RULE" "$RULES"
+reset_log
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF"
+assert_contains "$out" 'candidate: droid:gpt-5.6-luna  provider=codex  scope=all_models  remaining=31%  spendPriority=-0.1649  runway=projected_exhaustion  -> eligible' "Droid resolves through its explicit model provider"
+assert_contains "$out" "  profile: --harness 'droid' --model 'gpt-5.6-luna' --effort 'low'" "Droid model and effort survive typed dispatch"
+
 cp "$ROOT/docs/examples/crew-dispatch.json" "$RULES"
 cat > "$RESPONSE" <<'JSON'
 {"model":"jev-1.13.0","answers":{"rule":{"type":"choice","choice":"default","confidence":0.9,"probabilities":{"rule_1":0.02,"rule_2":0.02,"rule_3":0.02,"default":0.94}}},"usage":{"input_tokens":812,"output_tokens":60}}

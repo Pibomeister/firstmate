@@ -2491,3 +2491,35 @@ Without Firstmate's hooks, Herdr reported the question panel as `blocked`, which
 This live proof covers the watcher and queue boundary; it does not establish live daemon-consumer delivery.
 `bin/fm-test-run.sh tests/fm-daemon.test.sh` exercises that consumer routing separately with portable regressions for busy escalation and busy-bookkeeping failures in away and quiet mode.
 Repeat the hooked-worker check above before publication if watcher or task-inbox busy code changes; `bin/fm-test-run.sh tests/fm-task-inbox.test.sh` refreshes the portable ladder regressions.
+
+## Factory Droid CLI
+
+Verified on 2026-09-30 with Droid 0.230.0 on macOS arm64 through the tmux backend.
+The installed CLI was 0.227.0 at intake and auto-updated during the first interactive probe; Firstmate's worker launch now sets `FACTORY_DROID_AUTO_UPDATE_ENABLED=false` to keep a running worker on one release.
+`droid --help` accepts an interactive positional prompt and `--auto high`, while `droid exec --help` lists models, `--model`, and `--reasoning-effort`; the interactive CLI receives model and effort through `--settings` per Factory's [CLI](https://docs.factory.com/droid-cli/cli-reference.md), [settings](https://docs.factory.com/droid-cli/settings.md), and [hooks](https://docs.factory.com/harness/hooks.md) references.
+The runtime settings file is private to one task, sets Auto (High), and registers `UserPromptSubmit`, `Stop`, `Notification`, and `SessionEnd` hooks.
+
+The portable and live checks were:
+
+```sh
+bash tests/fm-droid-harness.test.sh
+FM_LIVE=1 bash tests/fm-harness-liveness-drift-live-e2e.test.sh
+FM_DROID_SIGNALS=1 bash tests/fm-droid-signals-live-e2e.test.sh
+```
+
+The live liveness guard printed `droid 0.230.0: title='droid'`, `ancestry verdicts=[comm droid]`, and `checked 6 installed harness(es)`.
+The opt-in scout guard printed the following result after launching with an explicit `gpt-5.6-luna` model and `low` effort:
+
+```text
+ok - Droid received its brief and signalled turn end
+ok - Droid processed and acknowledged an fm-send inbox steer
+ok - Droid interrupt settled its busy hook
+stopped droid-live harness=droid backend=tmux
+teardown droid-live complete
+ok - Droid exit and teardown retired the task and settings
+```
+
+A separate attended scout smoke verified `fm-control.sh droid-smoke relaunch` preserved `model=gpt-5.6-luna` and `effort=low`, minted a new busy generation, and reached `busy source=droid-hook event=user-prompt-submit` in the replacement pane.
+Its explicit typed `fm-send` on an idle pane returned success with the Droid-specific twenty-poll confirmation budget.
+An Escape interrupt displayed `Interrupted`; Droid restored queued text in its composer, and Ctrl+U cleared it before the next lifecycle action.
+The same smoke completed `fm-captain-hold.sh complete droid-smoke --none` before teardown, which then removed the task metadata and per-task settings file.

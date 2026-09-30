@@ -167,7 +167,37 @@ fm_tmux_composer_state() {  # <target> -> empty|pending|pending-unproven|unknown
   if [ "$verdict" = unknown ] && fm_tmux_pane_is_cursor "$target"; then
     verdict=$(fm_composer_classify_screen "$(fm_tmux_composer_caps)" "$pane" '')
   fi
+  if [ "$verdict" = unknown ] && fm_tmux_pane_is_droid "$target"; then
+    verdict=$(fm_tmux_droid_composer_state "$pane")
+  fi
   printf '%s' "$verdict"
+}
+
+# Droid parks tmux's cursor below its bordered composer, so a cursor-anchored
+# read cannot identify it. Limit the cursorless fallback to a foreground Droid
+# process and its live status/box/footer envelope. Unrecognized rows below the
+# box, including a modal, leave the composer unknown instead of allowing input.
+fm_tmux_pane_is_droid() {  # <target>
+  local comm
+  comm=$(tmux display-message -p -t "$1" '#{pane_current_command}' 2>/dev/null) || return 1
+  [ "$comm" = droid ]
+}
+
+fm_tmux_droid_composer_state() {  # <styled viewport>
+  local plain region
+  plain=$(printf '%s\n' "$1" | fm_composer_strip_ansi)
+  region=$(printf '%s\n' "$plain" | awk '
+    /^[[:space:]]*Auto \((Off|Low|Medium|High)\)/ { active=1; box=$0 "\n"; closed=0; valid=0; next }
+    active && !closed {
+      box=box $0 "\n"
+      if ($0 ~ /^[[:space:]]*╰.*╯[[:space:]]*$/) { closed=1; valid=1 }
+      next
+    }
+    active && closed && NF && $0 !~ /^\[.*context:.*\]/ && $0 !~ /^\[OMD\]/ { valid=0 }
+    END { if (valid) printf "%s", box }
+  ')
+  [ -n "$region" ] || { printf 'unknown'; return 0; }
+  fm_composer_classify_screen 'styled=0' "$region" ''
 }
 
 # fm_tmux_pane_is_cursor: true when the pane's FOREGROUND process group contains
