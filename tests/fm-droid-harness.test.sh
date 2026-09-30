@@ -48,25 +48,25 @@ SH
   pass "Droid is a crewmate/scout agent with verified control mechanics"
 }
 
+# Captured from a live tmux Droid 0.230.0 scout at idle after its first turn.
+DROID_IDLE_SCREEN=' Auto (High) · allow all commands                            GPT-5.6 Luna (Low)
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ >                                                                            │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[⏱ 16s, context: 3%] 3 config issues — /diagnostics               MCP ✓ | TMUX ⧉
+firstmate'
+
 test_droid_composer_envelope() {
-  local screen out
-  screen=' Auto (High) · allow all commands
-╭──────────────╮
-│ >            │
-╰──────────────╯'
+  local screen=$DROID_IDLE_SCREEN out
   out=$(fm_tmux_droid_composer_state "$screen")
   [ "$out" = empty ] || fail "Droid idle composer must be proven empty, got '$out'"
-  out=$(fm_tmux_droid_composer_state "${screen/│ >            │/│ > /exit      │}")
+  out=$(fm_tmux_droid_composer_state "${screen/│ >           /│ > /exit     }")
   [ "$out" = pending ] || fail "Droid typed composer must stay pending, got '$out'"
   out=$(fm_tmux_droid_composer_state "$screen
 unexpected modal")
   [ "$out" = unknown ] || fail "an overlay below Droid's composer must refuse input, got '$out'"
-  out=$(fm_tmux_droid_composer_state "$screen
-[OMD] session:0m")
-  [ "$out" = unknown ] || fail "a custom statusLine below Droid's composer must refuse input, got '$out'"
-  out=$(fm_tmux_droid_composer_state "$screen
-[⏱ 2s, context: 1%] MCP ✓ | TMUX ⧉")
-  [ "$out" = unknown ] || fail "an unproven footer below Droid's composer must refuse input, got '$out'"
+  out=$(fm_tmux_droid_composer_state "${screen%firstmate}[OMD] session:0m")
+  [ "$out" = unknown ] || fail "a user statusLine below Droid's composer must refuse input, got '$out'"
   pass "Droid composer is readable only under a complete live TUI envelope"
 }
 
@@ -126,6 +126,9 @@ test_droid_launch_and_hooks() {
   state="$HOME_DIR/state"
   jq -e '.model == "gpt-5.6-luna" and .reasoningEffort == "low" and .sessionDefaultSettings.autonomyLevel == "high" and .hooksDisabled == false' "$settings" >/dev/null \
     || fail "Droid settings lost model, effort, autonomy, or hooks"
+  out=$(sh -c "$(jq -r '.statusLine.command' "$settings")" 2>/dev/null)
+  [ -n "$out" ] && [ "$(fm_tmux_droid_composer_state "${DROID_IDLE_SCREEN%firstmate}$out")" = empty ] \
+    || fail "Droid worker statusLine must draw the row the composer read accepts, got '$out'"
   grep -Fq -- '--settings' "$CASE_DIR/launch.log" || fail "Droid launch did not use its runtime settings"
   grep -Fq -- '--model' "$CASE_DIR/launch.log" && fail "interactive Droid does not accept --model" || true
   grep -Fq -- '--auto high' "$CASE_DIR/launch.log" || fail "Droid launch did not request unattended autonomy"
