@@ -2498,6 +2498,9 @@ Verified on 2026-09-30 with Droid 0.230.0 on macOS arm64 through the tmux backen
 The installed CLI was 0.227.0 at intake and auto-updated during the first interactive probe; Firstmate's worker launch now sets `FACTORY_DROID_AUTO_UPDATE_ENABLED=false` to keep a running worker on one release.
 `droid --help` accepts an interactive positional prompt and `--auto high`, while `droid exec --help` lists models, `--model`, and `--reasoning-effort`; the interactive CLI receives model and effort through `--settings` per Factory's [CLI](https://docs.factory.com/droid-cli/cli-reference.md), [settings](https://docs.factory.com/droid-cli/settings.md), and [hooks](https://docs.factory.com/harness/hooks.md) references.
 The runtime settings file is private to one task, sets Auto (High), and registers `UserPromptSubmit`, `Stop`, `Notification`, and `SessionEnd` hooks.
+It also replaces the user's `statusLine` with `printf firstmate` for that task only.
+A runtime `statusLine` of `null`, `{}`, or `false` left this machine's custom oh-my-droid status line drawn, because Droid merges runtime settings over user settings. An empty command drew `status line produced no output`, so a task-owned row is the only way to keep a user status line out of the pane.
+An idle tmux scout captured the composer box, then Droid's own footer row `[⏱ 16s, context: 3%] 3 config issues — /diagnostics … MCP ✓ | TMUX ⧉`, then `firstmate`. `tests/fm-droid-harness.test.sh` carries that capture as its idle fixture.
 
 The portable and live checks were:
 
@@ -2521,5 +2524,6 @@ ok - Droid exit and teardown retired the task and settings
 
 A separate attended scout smoke verified `fm-control.sh droid-smoke relaunch` preserved `model=gpt-5.6-luna` and `effort=low`, minted a new busy generation, and reached `busy source=droid-hook event=user-prompt-submit` in the replacement pane.
 Its explicit typed `fm-send` on an idle pane returned success with the Droid-specific twenty-poll confirmation budget.
+After the status line override, a live tmux scout read `empty` before and after a typed `fm-send` to its window, which exited 0, and `fm-control.sh exit` then exited 0. Before the override, the same pane read `unknown` because of the user's status row, and `exit` refused to type `/exit`.
 An Escape interrupt displayed `Interrupted`; Droid restored queued text in its composer, and Ctrl+U cleared it before the next lifecycle action.
 The same smoke completed `fm-captain-hold.sh complete droid-smoke --none` before teardown, which then removed the task metadata and per-task settings file.
