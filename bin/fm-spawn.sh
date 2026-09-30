@@ -2346,8 +2346,14 @@ droid)
       exit 1
     }
     if [ -n "$MODEL" ] && [ "$MODEL" != default ]; then
-      if ! FACTORY_DROID_AUTO_UPDATE_ENABLED=false fm_run_timed 20 "$DROID_BIN" exec --model "$MODEL" --list-tools >/dev/null; then
-        echo "error: Droid rejected model '$MODEL'; choose an id from 'droid exec --help' or omit --model" >&2
+      droid_probe_rc=0
+      FACTORY_DROID_AUTO_UPDATE_ENABLED=false fm_run_timed 20 "$DROID_BIN" exec --model "$MODEL" --list-tools >/dev/null </dev/null \
+        || droid_probe_rc=$?
+      if fm_timed_out "$droid_probe_rc"; then
+        echo "error: Droid did not answer the model check for '$MODEL' within 20s; check its network and sign-in, then retry or omit --model" >&2
+        exit 1
+      elif [ "$droid_probe_rc" -ne 0 ]; then
+        echo "error: Droid's model check for '$MODEL' failed (exit $droid_probe_rc); if its message above is not a model rejection, check its network and sign-in, otherwise choose an id from 'droid exec --help' or omit --model" >&2
         exit 1
       fi
     fi
@@ -4298,13 +4304,15 @@ agy_spawn_fail() {  # <detail>
 # Only a complete live viewport authorizes Enter; the initial prompt is proved
 # delivered by Droid's own UserPromptSubmit hook replacing the fm-spawn seed.
 droid_wait_for_delivery() {
-  local pane record i=0 max=${FM_DROID_READY_POLLS:-120} interval=${FM_DROID_POLL_INTERVAL:-0.5}
+  local pane record answered=0 i=0 max=${FM_DROID_READY_POLLS:-120} interval=${FM_DROID_POLL_INTERVAL:-0.5}
   while [ "$i" -lt "$max" ]; do
     pane=$(fm_backend_visible_capture "$BACKEND" "$T" "$W") || return 1
     if printf '%s\n' "$pane" | grep -Fq 'Trust this folder?'; then
-      if printf '%s\n' "$pane" | grep -Fq 'Exit without trusting' \
+      if [ "$answered" -eq 0 ] \
+        && printf '%s\n' "$pane" | grep -Fq 'Exit without trusting' \
         && printf '%s\n' "$pane" | grep -Fq 'Enter to confirm'; then
         spawn_send_key "$T" Enter || return 1
+        answered=1
       fi
     else
       record=$(fm_busy_record_read "$STATE_REAL" "$ID" 2>/dev/null || true)
