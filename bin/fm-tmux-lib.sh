@@ -176,7 +176,7 @@ fm_tmux_composer_state() {  # <target> -> empty|pending|pending-unproven|unknown
 # Droid parks tmux's cursor below its bordered composer, so a cursor-anchored
 # read cannot identify it. Limit the cursorless fallback to a foreground Droid
 # process and its live status/box envelope. Below the box only Droid's own
-# footer row (ending in its tmux indicator) and the worker's `firstmate` status
+# timer footer row (from `[⏱ ` to its tmux indicator) and the worker's `firstmate` status
 # row may appear; any other row, including a user statusLine or a modal, leaves
 # the composer unknown instead of allowing input.
 fm_tmux_pane_is_droid() {  # <target>
@@ -195,7 +195,7 @@ fm_tmux_droid_composer_state() {  # <styled viewport>
       if ($0 ~ /^[[:space:]]*╰.*╯[[:space:]]*$/) { closed=1; valid=1 }
       next
     }
-    active && closed && NF && $0 !~ /TMUX ⧉[[:space:]]*$/ && $0 !~ /^firstmate[[:space:]]*$/ { valid=0 }
+    active && closed && NF && $0 !~ /^\[⏱ .*TMUX ⧉[[:space:]]*$/ && $0 !~ /^firstmate[[:space:]]*$/ { valid=0 }
     END { if (valid) printf "%s", box }
   ')
   [ -n "$region" ] || { printf 'unknown'; return 0; }
