@@ -193,7 +193,7 @@ fm_tmux_droid_composer_state() {  # <styled viewport>
       if ($0 ~ /^[[:space:]]*╰.*╯[[:space:]]*$/) { closed=1; valid=1 }
       next
     }
-    active && closed && NF && $0 !~ /^\[.*context:.*\]/ && $0 !~ /^\[OMD\]/ { valid=0 }
+    active && closed && NF && $0 !~ /^\[.*context:.*\]/ { valid=0 }
     END { if (valid) printf "%s", box }
   ')
   [ -n "$region" ] || { printf 'unknown'; return 0; }
