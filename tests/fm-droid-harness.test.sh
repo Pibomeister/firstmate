@@ -67,6 +67,8 @@ unexpected modal")
   [ "$out" = unknown ] || fail "an overlay below Droid's composer must refuse input, got '$out'"
   out=$(fm_tmux_droid_composer_state "${screen%firstmate}[OMD] session:0m")
   [ "$out" = unknown ] || fail "a user statusLine below Droid's composer must refuse input, got '$out'"
+  out=$(fm_tmux_droid_composer_state "${screen/\[⏱ 16s, context: 3%\] /}")
+  [ "$out" = unknown ] || fail "a row ending in Droid's tmux indicator without its timer must refuse input, got '$out'"
   pass "Droid composer is readable only under a complete live TUI envelope"
 }
 
