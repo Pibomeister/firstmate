@@ -4586,6 +4586,7 @@ EOF
       jq -n --arg model "$MODEL" --arg effort "$EFFORT" \
         --arg submit "$d_submit" --arg stop "$d_stop" --arg idle "$d_idle" --arg end "$d_end" '
         {hooksDisabled:false,
+         statusLine:{type:"command",command:"printf firstmate"},
          sessionDefaultSettings:{interactionMode:"auto",autonomyLevel:"high"},
          hooks:{
            UserPromptSubmit:[{hooks:[{type:"command",command:$submit}]}],
