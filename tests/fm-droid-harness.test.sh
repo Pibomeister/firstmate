@@ -53,8 +53,7 @@ test_droid_composer_envelope() {
   screen=' Auto (High) · allow all commands
 ╭──────────────╮
 │ >            │
-╰──────────────╯
-[⏱ 2s, context: 1%] MCP ✓ | TMUX ⧉'
+╰──────────────╯'
   out=$(fm_tmux_droid_composer_state "$screen")
   [ "$out" = empty ] || fail "Droid idle composer must be proven empty, got '$out'"
   out=$(fm_tmux_droid_composer_state "${screen/│ >            │/│ > /exit      │}")
@@ -65,6 +64,9 @@ unexpected modal")
   out=$(fm_tmux_droid_composer_state "$screen
 [OMD] session:0m")
   [ "$out" = unknown ] || fail "a custom statusLine below Droid's composer must refuse input, got '$out'"
+  out=$(fm_tmux_droid_composer_state "$screen
+[⏱ 2s, context: 1%] MCP ✓ | TMUX ⧉")
+  [ "$out" = unknown ] || fail "an unproven footer below Droid's composer must refuse input, got '$out'"
   pass "Droid composer is readable only under a complete live TUI envelope"
 }
 
