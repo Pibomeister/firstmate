@@ -734,6 +734,7 @@ Cursor typed-submit confirmation is verified on tmux and Herdr only.
 On Zellij, cmux, and Orca a typed-plane Cursor send (a harness-native invocation or an explicit backend target; ordinary text steers ride the durable inbox and exit 0 at enqueue) lands, but `fm-send` reports delivery unconfirmed and exits non-zero because their shared submit core does not consult the busy footer; [runtime backend verification](verification/runtime-backends.md#cursor-agent-cli) owns the evidence and transcript-state boundary.
 
 muse is verified for crewmate and scout launches ONLY, and `fm-spawn.sh` refuses it for a secondmate, because muse ships no usable hook surface for a primary session's turn-end supervision; [`docs/verification/muse.md`](verification/muse.md) owns that evidence.
+Droid is verified for crewmate and scout launches only; [`runtime-backends.md`](verification/runtime-backends.md#factory-droid-cli) owns its live worker evidence and model selection mechanics.
 muse also needs a worker-reachable credential before spawning, and the portable fleet path is the `<config>/muse/auth.json` credential stored by `muse login`, because a caller-only `META_API_KEY` does not cross a long-lived backend daemon.
 
 gemini is likewise refused for secondmates because it has no primary supervision protocol; [its adapter reference](../.agents/skills/harness-adapters/references/harness/gemini.md) owns the credential precondition, canonical-launch wiring, and raw-launch limitations.
@@ -1070,7 +1071,7 @@ Typed resolution additively recognizes `gemini` because AGENTS.md section 4 veri
 | Harness | Provider declaration on the opted-in resolver path |
 | --- | --- |
 | `claude`, `codex`, `grok`, `kimi`, `cursor`, `agy`, `muse` | The resolver has an authoritative single-provider mapping. |
-| Every other verified harness | Must declare `provider` explicitly; this includes multi-provider `pi`, `pi-signed`, `omp`, and `opencode`, and unmapped `gemini`, `rovo`, and `devin`; omission is an actionable configuration error before any request. |
+| Every other verified harness | Must declare `provider` explicitly; this includes multi-provider `pi`, `pi-signed`, `omp`, `opencode`, and `droid`, plus unmapped `gemini`, `rovo`, and `devin`; omission is an actionable configuration error before any request. |
 
 This single-provider table is separate from the frozen legacy mapping used by `fm-quota-choose.sh`, so additions cannot alter no-key routing.
 
