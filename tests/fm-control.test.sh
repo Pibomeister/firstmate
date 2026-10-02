@@ -494,17 +494,19 @@ test_unverified_harness_is_refused() {
 test_backend_key_capability_matrix() {
   local backend key
   for backend in tmux herdr zellij cmux; do
-    # C-u is the composer clear muse's interrupt needs; every session provider
-    # but Orca normalizes it (bin/backends/*.sh).
+    # C-u is the composer clear muse's interrupt needs; these backends
+    # normalize it (bin/backends/*.sh).
     for key in Escape Enter C-c C-u; do
       fm_control_backend_supports_key "$backend" "$key" \
         || fail "$backend should be able to deliver $key"
     done
   done
   fm_control_backend_supports_key orca Escape \
-    && fail "orca's terminal API has no Escape and must not claim it"
+    && fail "Orca must not claim Escape without a verified harness identity"
   fm_control_backend_supports_key orca C-u \
-    && fail "orca's terminal API has no composer clear and must not claim one"
+    && fail "Orca must not claim composer clear without a verified harness identity"
+  fm_control_backend_supports_key orca Escape droid || fail "Orca Droid must deliver Escape"
+  fm_control_backend_supports_key orca C-u droid || fail "Orca Droid must clear its composer"
   fm_control_backend_supports_key orca C-c || fail "orca should deliver C-c"
   fm_control_backend_supports_key orca Enter || fail "orca should deliver Enter"
   pass "fm-control-lib: the backend key matrix matches each adapter's real send-key surface"

@@ -1792,6 +1792,37 @@ EOF
 # stays a loud refusal rather than a blind retry into an unreadable pane.
 # tmux and herdr keep richer cores that consume this same shared verdict plus
 # fm_composer_queued_enter_verdict; no shape knowledge lives in any loop.
+# Droid parks the terminal cursor below its boxed composer. A caller first
+# proves this is its task's live agent; this shared shape reader then accepts
+# only the stock timer footer observed on that backend plus Firstmate's
+# task-scoped status row. A shell prompt or any other row below the box is
+# unknown, even when an old Droid frame remains visible above it.
+fm_composer_droid_state() {  # <styled viewport> <tmux|orca>
+  local plain region footer_re
+  case "$2" in
+    tmux) footer_re='TMUX ⧉[[:space:]]*$' ;;
+    orca) footer_re='IDE ◌[[:space:]]*$' ;;
+    *) printf 'unknown'; return 0 ;;
+  esac
+  plain=$(printf '%s\n' "$1" | fm_composer_strip_ansi)
+  region=$(printf '%s\n' "$plain" | awk -v footer_re="$footer_re" '
+    /^[[:space:]]*Auto \((Off|Low|Medium|High)\)/ { active=1; box=$0 "\n"; closed=0; valid=0; footer=0; status=0; next }
+    active && !closed {
+      box=box $0 "\n"
+      if ($0 ~ /^[[:space:]]*╰.*╯[[:space:]]*$/) { closed=1; valid=1 }
+      next
+    }
+    active && closed && NF {
+      if (!footer && $0 ~ /^\[⏱ / && $0 ~ footer_re) { footer=1; next }
+      if (footer && !status && $0 ~ /^firstmate[[:space:]]*$/) { status=1; next }
+      valid=0
+    }
+    END { if (valid && footer && status) printf "%s", box }
+  ')
+  [ -n "$region" ] || { printf 'unknown'; return 0; }
+  fm_composer_classify_screen 'styled=0' "$region" ''
+}
+
 fm_composer_submit_retry_core() {  # <send-key-fn> <state-fn> <target> <retries> <enter-sleep> [expected-label]
   local send_key_fn=$1 state_fn=$2 target=$3 retries=$4 sleep_s=$5 expected_label=${6:-} i=0 state
   while :; do
