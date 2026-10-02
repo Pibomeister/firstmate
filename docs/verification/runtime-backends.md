@@ -2503,8 +2503,10 @@ The settings replace the task's `statusLine` with `printf firstmate`, leave the 
 Spawn answers the fresh-worktree trust dialog only when `Trust this folder` is visibly selected and requires the launch prompt hook to acknowledge the brief.
 Droid dispatch is limited to tmux and Orca until the composer and lifecycle are verified live on other backends.
 
-The tmux composer proof uses the live `droid` process identity, the bounded box, Droid's `TMUX ⧉` timer footer, and the task-owned status row.
-The Orca proof requires `terminal read --screen` to return `source=screen`, then applies the same box check with Droid's `IDE ◌` footer and the recorded task terminal identity.
+The tmux composer proof uses the live `droid` process identity, the bounded box, a `[⏱ …]` timer row with a nonempty trailing integration indicator after `|`, and the task-owned status row.
+The Orca proof requires `terminal read --screen` to return `source=screen` and the exact recorded task terminal, then applies the same box, timer, and status-row check.
+The live captures showed `TMUX ⧉` on tmux and `IDE ◌` on Orca, while the production parser accepts other trailing integration indicators.
+The opt-in Orca guard still asserts the observed `IDE ◌` indicator as a version drift check.
 An unrelated process, stale frame, extra row, or unknown terminal reads `unknown` and cannot authorize typed input.
 Orca 1.4.218 delivered Droid's raw Escape and Ctrl+U keys, while its current-generation `SessionEnd` hook proved exit before relaunch or teardown.
 The live interrupt checks observed a busy running tool, then an idle hook and missing completion marker before the tool's 45-second duration; control conservatively reports `cancel=unconfirmed` because the vendor offers no separate cancellation acknowledgement.
