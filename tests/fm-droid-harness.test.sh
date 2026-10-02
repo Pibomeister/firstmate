@@ -331,6 +331,20 @@ test_droid_omits_unsupported_model_effort() {
   pass "Droid records and omits a model-specific unsupported effort"
 }
 
+test_droid_omits_effort_without_explicit_model() {
+  local id=droid-effort-no-model out rc settings
+  make_droid_case effort-no-model "$id"
+  out=$(run_droid_spawn "$id" --effort low)
+  rc=$?
+  expect_code 0 "$rc" "effort without a model should use the recorded-and-omitted contract: $out"
+  settings="$HOME_DIR/state/$id.droid-settings.json"
+  jq -e '(has("model") | not) and (has("reasoningEffort") | not)' "$settings" >/dev/null \
+    || fail "effort without --model reached Droid runtime settings for the operator's default model"
+  grep -Fqx 'effort=low' "$HOME_DIR/state/$id.meta" || fail "requested effort was not recorded"
+  printf '%s' "$out" | grep -Fq 'omitting it from runtime settings' || fail "effort omission was not disclosed: $out"
+  pass "Droid omits effort when the operator's default model runs"
+}
+
 test_droid_model_probe_detaches_stdin() {
   local id=droid-probe-stdin out rc
   make_droid_case probe-stdin "$id"
@@ -375,6 +389,7 @@ test_droid_retries_one_transient_viewport_failure
 test_droid_bounds_a_hung_viewport_read
 test_droid_respects_disabled_hooks_policy
 test_droid_omits_unsupported_model_effort
+test_droid_omits_effort_without_explicit_model
 test_droid_model_probe_detaches_stdin
 test_droid_bad_model_refuses_before_launch
 test_raw_droid_command_does_not_arm_unused_hooks
