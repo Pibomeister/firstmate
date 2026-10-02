@@ -2498,7 +2498,7 @@ Verified on 2026-10-01 with Droid 0.230.0, tmux 3.6a, and Orca 1.4.218 on Darwin
 `droid --help` accepts an interactive positional prompt, `--settings`, and `--auto high`.
 `droid exec --help` lists model IDs and each model's supported reasoning levels, while interactive Droid receives model and effort through its per-task settings file.
 The [Factory CLI](https://docs.factory.com/droid-cli/cli-reference.md), [settings](https://docs.factory.com/droid-cli/settings.md), and [hooks](https://docs.factory.com/harness/hooks.md) references own those vendor contracts.
-Firstmate probes an explicit model before creating an endpoint, records a requested unsupported effort in task metadata, and omits that effort from runtime settings.
+Firstmate probes an explicit model before creating an endpoint, records a requested effort in task metadata, and omits it from runtime settings when no explicit model is given or that model does not support it.
 The settings replace the task's `statusLine` with `printf firstmate`, leave the operator's `hooksDisabled` policy intact, select Auto (High), and register `UserPromptSubmit`, `Stop`, `Notification`, and `SessionEnd` hooks.
 Spawn answers the fresh-worktree trust dialog only when `Trust this folder` is visibly selected and requires the launch prompt hook to acknowledge the brief.
 Droid dispatch is limited to tmux and Orca until the composer and lifecycle are verified live on other backends.
