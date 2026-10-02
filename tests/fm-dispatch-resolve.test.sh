@@ -413,11 +413,15 @@ assert_contains "$out" 'candidate: gemini:gemini-3.8-flash-high  provider=google
 assert_contains "$out" "  profile: --harness 'gemini' --model 'gemini-3.8-flash-high'" "Gemini is a typed verified dispatch harness"
 
 DROID_RULE="$TMP_ROOT/droid-rule.json"
-printf '%s\n' '{"rules":[{"when":"Droid work.","use":{"harness":"droid","model":"gpt-5.6-luna","effort":"low","provider":"codex"}}]}' > "$DROID_RULE"
+DROID_QUOTA="$TMP_ROOT/droid-quota.json"
+# A synthetic declared provider proves dispatch without implying a real
+# Factory account draws down another harness's quota.
+jq '.providers += [{"provider":"test-provider","state":{"status":"fresh"},"quotaSemantics":{"status":"known","effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":57,"runway":{"status":"through_reset"},"selection":{"spendPriority":0.15}}]}}]' "$QUOTA" > "$DROID_QUOTA"
+printf '%s\n' '{"rules":[{"when":"Droid work.","use":{"harness":"droid","model":"gpt-5.6-luna","effort":"low","provider":"test-provider"}}]}' > "$DROID_RULE"
 cp "$DROID_RULE" "$RULES"
 reset_log
-TYPESAFE_API_KEY=$KEY run code out err "$BRIEF"
-assert_contains "$out" 'candidate: droid:gpt-5.6-luna  provider=codex  scope=all_models  remaining=31%  spendPriority=-0.1649  runway=projected_exhaustion  -> eligible' "Droid resolves through its explicit model provider"
+QUOTA_AXI_FIXTURE="$DROID_QUOTA" TYPESAFE_API_KEY=$KEY run code out err "$BRIEF"
+assert_contains "$out" 'candidate: droid:gpt-5.6-luna  provider=test-provider  scope=all_models  remaining=57%  spendPriority=0.15  runway=through_reset  -> eligible' "Droid resolves through its explicitly declared test provider"
 assert_contains "$out" "  profile: --harness 'droid' --model 'gpt-5.6-luna' --effort 'low'" "Droid model and effort survive typed dispatch"
 
 cp "$ROOT/docs/examples/crew-dispatch.json" "$RULES"

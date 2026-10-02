@@ -167,15 +167,43 @@ test_visible_capture_requires_a_real_screen() {
 }
 
 test_orca_droid_keys_are_raw_controls() {
-  local out
+  local home state out
   orca_case droid-keys
+  home="$CASE_DIR/home"; state="$home/state"
+  mkdir -p "$state"
+  fm_write_meta "$state/droid1.meta" 'harness=droid' 'terminal=term-123'
   printf '{"ok":true,"result":{"send":{"accepted":true}}}\n' >"$RESP/1.out"
   cp "$RESP/1.out" "$RESP/2.out"
   out=$(PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" \
-    bash -c '. "$0/bin/backends/orca.sh"; fm_backend_orca_send_key term-123 Escape; fm_backend_orca_send_key term-123 C-u' "$ROOT")
+    FM_HOME="$home" FM_STATE_OVERRIDE="$state" \
+    bash -c '. "$0/bin/fm-backend.sh"; fm_backend_source orca; fm_backend_orca_send_key term-123 Escape fm-droid1; fm_backend_orca_send_key term-123 C-u fm-droid1' "$ROOT")
   assert_contains "$(cat "$LOG")" $'--text\x1f\033' "Orca Escape did not send the verified control byte"
   assert_contains "$(cat "$LOG")" $'--text\x1f\025' "Orca Ctrl+U did not send the verified control byte"
-  pass "Orca sends Droid Escape and Ctrl+U as exact PTY bytes"
+  pass "Orca sends a recorded Droid task Escape and Ctrl+U as exact PTY bytes"
+}
+
+test_orca_non_droid_keys_still_refuse() {
+  local home state key out rc
+  orca_case non-droid-keys
+  home="$CASE_DIR/home"; state="$home/state"
+  mkdir -p "$state"
+  fm_write_meta "$state/claude1.meta" 'harness=claude' 'terminal=term-123'
+  fm_write_meta "$state/droid1.meta" 'harness=droid' 'terminal=term-other'
+  for key in Escape C-u; do
+    rc=0
+    out=$(PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" \
+      FM_HOME="$home" FM_STATE_OVERRIDE="$state" \
+      bash -c '. "$0/bin/fm-backend.sh"; fm_backend_source orca; fm_backend_orca_send_key term-123 "$1" fm-claude1' "$ROOT" "$key" 2>&1) || rc=$?
+    [ "$rc" -ne 0 ] || fail "Orca $key must refuse a recorded non-Droid task"
+    assert_contains "$out" "requires this terminal's recorded Droid task" "Orca $key refusal lost its task boundary"
+    rc=0
+    out=$(PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" \
+      FM_HOME="$home" FM_STATE_OVERRIDE="$state" \
+      bash -c '. "$0/bin/fm-backend.sh"; fm_backend_source orca; fm_backend_orca_send_key term-123 "$1" fm-droid1' "$ROOT" "$key" 2>&1) || rc=$?
+    [ "$rc" -ne 0 ] || fail "Orca $key must refuse a Droid record bound to another terminal"
+  done
+  [ ! -s "$LOG" ] || fail "refused Orca keys must not reach the terminal API"
+  pass "Orca Escape and Ctrl+U stay unavailable to non-Droid or mismatched tasks"
 }
 
 test_orca_droid_composer_requires_exact_task_binding() {
@@ -861,7 +889,7 @@ test_spawn_releases_orca_resources_when_metadata_write_fails() {
 }
 
 test_peek_send_and_crew_state_route_through_orca_meta() {
-  local wt state id out neutral record body
+  local wt state id out neutral record body key rc
   id="orcaiopathz2"
   wt="$TMP_ROOT/io-wt"
   fm_git_init_commit "$wt"
@@ -882,6 +910,17 @@ test_peek_send_and_crew_state_route_through_orca_meta() {
   PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" \
     FM_ROOT_OVERRIDE="$neutral" FM_HOME="$neutral" FM_STATE_OVERRIDE="$state" FM_SEND_SETTLE=0 \
     "$ROOT/bin/fm-send.sh" "fm-$id" "hello orca"
+  for key in Escape C-u; do
+    rc=0
+    out=$(PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" \
+      FM_ROOT_OVERRIDE="$neutral" FM_HOME="$neutral" FM_STATE_OVERRIDE="$state" \
+      "$ROOT/bin/fm-send.sh" "fm-$id" --key "$key" 2>&1) || rc=$?
+    [ "$rc" -ne 0 ] || fail "fm-send --key $key must refuse a non-Droid Orca task"
+    assert_contains "$out" "requires this terminal's recorded Droid task" \
+      "fm-send --key $key lost Orca's non-Droid refusal"
+  done
+  assert_not_contains "$(cat "$LOG")" $'--text\x1f\033' "refused fm-send Escape reached Orca"
+  assert_not_contains "$(cat "$LOG")" $'--text\x1f\025' "refused fm-send C-u reached Orca"
   printf '{"ok":true,"result":{"terminal":{"tail":["idle prompt"]}}}\n' > "$RESP/5.out"
   out=$( PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" \
     FM_ROOT_OVERRIDE="$ROOT" FM_STATE_OVERRIDE="$state" "$ROOT/bin/fm-crew-state.sh" "$id" )
@@ -1455,6 +1494,7 @@ test_capture_falls_back_to_text_fields
 test_capture_fails_on_orca_error_json
 test_visible_capture_requires_a_real_screen
 test_orca_droid_keys_are_raw_controls
+test_orca_non_droid_keys_still_refuse
 test_orca_droid_composer_requires_exact_task_binding
 test_orca_droid_typed_send_uses_new_hook_sequence
 test_orca_droid_typed_send_ignores_a_late_stop
