@@ -273,7 +273,7 @@ fm_control_relaunch_resume_flag() {  # <harness> <registered-agent>
   return 0
 }
 
-# Which named keys a backend adapter can deliver. Orca 1.4.217 accepts raw
+# Which named keys a backend adapter can deliver. Orca accepts raw
 # Escape and Ctrl+U bytes, verified against Droid; keep that capability scoped
 # to Droid until another harness's response is proven live.
 fm_control_backend_supports_key() {  # <backend> <key> [harness]

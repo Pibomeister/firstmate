@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # bin/backends/orca.sh - the Orca terminal session-provider adapter.
 #
-# Orca owns both the task worktree and the terminal endpoint. The Droid path
-# uses the verified raw Escape and Ctrl+U bytes of Orca 1.4.217.
+# Orca owns both the task worktree and the terminal endpoint. The recorded
+# Droid task alone uses its verified raw Escape and Ctrl+U bytes.
 #
 # Target string shape: the Orca terminal id accepted by `orca terminal ...`.
 
@@ -205,7 +205,7 @@ fm_backend_orca_capture() {  # <terminal-id> <lines>
   fm_backend_orca_json_text "$out"
 }
 
-# Orca 1.4.217 exposes a rendered current frame with no history through
+# Orca exposes a rendered current frame with no history through
 # --screen. Never accept its documented screen-unavailable stream fallback for
 # trust or other viewport decisions.
 fm_backend_orca_visible_capture() {  # <terminal-id> [expected-label]
@@ -270,7 +270,7 @@ fm_backend_orca_composer_capture() {  # <terminal-id> [expected-label]
 }
 
 # fm_backend_orca_composer_caps: static capability facts, not logic (see the
-# capability model in bin/fm-composer-lib.sh). Orca 1.4.218's live terminal
+# capability model in bin/fm-composer-lib.sh). Orca's live terminal
 # read returned plain text, so styled stays 0 - the conservative degradation.
 fm_backend_orca_composer_caps() {
   printf 'styled=0\ncursor=0\nidentity=0\nrows=%s\n' "$FM_COMPOSER_CAPTURE_LINES"
@@ -293,8 +293,8 @@ fm_backend_orca_composer_state() {  # <terminal-id> [expected-label] -> empty|pe
   printf '%s' "$verdict"
 }
 
-fm_backend_orca_send_key() {  # <terminal-id> <key>
-  local terminal=$1 key=$2
+fm_backend_orca_send_key() {  # <terminal-id> <key> [expected-label]
+  local terminal=$1 key=$2 label=${3:-} byte
   fm_backend_orca_tool_check || return 1
   case "$key" in
     C-c|ctrl+c|Ctrl-c|Ctrl-C)
@@ -303,11 +303,13 @@ fm_backend_orca_send_key() {  # <terminal-id> <key>
     Enter|enter)
       fm_backend_orca_run_json orca terminal send --terminal "$terminal" --text "" --enter --json
       ;;
-    Escape)
-      fm_backend_orca_run_json orca terminal send --terminal "$terminal" --text $'\033' --json
-      ;;
-    C-u)
-      fm_backend_orca_run_json orca terminal send --terminal "$terminal" --text $'\025' --json
+    Escape|C-u)
+      fm_backend_orca_recorded_droid "$terminal" "$label" || {
+        echo "error: Orca key '$key' requires this terminal's recorded Droid task" >&2
+        return 1
+      }
+      case "$key" in Escape) byte=$'\033' ;; C-u) byte=$'\025' ;; esac
+      fm_backend_orca_run_json orca terminal send --terminal "$terminal" --text "$byte" --json
       ;;
     *)
       echo "error: unsupported Orca key '$key'" >&2

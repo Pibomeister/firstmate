@@ -768,7 +768,7 @@ fm_backend_capture() {  # <backend> <target> <lines> [expected-label]
 # capability question and the dispatch, so they cannot disagree. cmux is absent
 # pending live verification: its `read-screen` without `--scrollback` plausibly
 # reads only the viewport, but that has not been observed on a real cmux, and
-# the adapter's own capture opts into history with `--scrollback`. Orca 1.4.217
+# the adapter's own capture opts into history with `--scrollback`. Orca
 # supplies a current frame through `terminal read --screen`; its adapter rejects
 # the CLI's documented screen-unavailable history fallback.
 FM_BACKEND_VISIBLE_CAPTURE="tmux herdr zellij orca"
