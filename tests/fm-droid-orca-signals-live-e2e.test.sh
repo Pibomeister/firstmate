@@ -8,10 +8,12 @@ set -u
 
 fm_live_gate opt-in FM_DROID_ORCA_SIGNALS droid orca jq node
 
-mkdir -p "$ROOT/data/fm-droid"
 ID="droid-orca-live-$$"
-PROJECT="$ROOT/data/fm-droid/orca-test-project"
-LAB=$(mktemp -d "$ROOT/data/fm-droid/orca-live-run.XXXXXX")
+LAB=$(mktemp -d "${TMPDIR:-/tmp}/fm-droid-orca-signals.XXXXXX")
+LAB=$(cd "$LAB" && pwd -P)
+# Orca's CLI can add but not remove a registered repository, so reuse one
+# neutral scratch repository in the temp root across live guard runs.
+PROJECT="${TMPDIR:-/tmp}/fm-droid-orca-scratch-repo-$(id -u)"
 HOME_DIR="$LAB/home"
 REPORT="$HOME_DIR/data/$ID/report.md"
 export FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE="$ROOT"
@@ -28,6 +30,7 @@ cleanup() {
 trap cleanup EXIT
 
 mkdir -p "$PROJECT" "$HOME_DIR/data/$ID" "$HOME_DIR/state" "$HOME_DIR/config"
+PROJECT=$(cd "$PROJECT" && pwd -P)
 if [ ! -e "$PROJECT/.git" ]; then
   git -C "$PROJECT" init -qb main || fail "could not initialize private Orca smoke repository"
   git -C "$PROJECT" -c user.name='Droid Smoke' -c user.email='smoke@example.invalid' \

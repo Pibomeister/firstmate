@@ -1865,18 +1865,17 @@ EOF
 # fm_composer_queued_enter_verdict; no shape knowledge lives in any loop.
 # Droid parks the terminal cursor below its boxed composer. A caller first
 # proves this is its task's live agent; this shared shape reader then accepts
-# only the stock timer footer observed on that backend plus Firstmate's
-# task-scoped status row. A shell prompt or any other row below the box is
+# only Droid's timer footer with a trailing integration indicator plus
+# Firstmate's task-scoped status row. A shell prompt or any other row below the box is
 # unknown, even when an old Droid frame remains visible above it.
 fm_composer_droid_state() {  # <styled viewport> <tmux|orca>
-  local plain region footer_re
+  local plain region
   case "$2" in
-    tmux) footer_re='TMUX ⧉[[:space:]]*$' ;;
-    orca) footer_re='IDE ◌[[:space:]]*$' ;;
+    tmux|orca) ;;
     *) printf 'unknown'; return 0 ;;
   esac
   plain=$(printf '%s\n' "$1" | fm_composer_strip_ansi)
-  region=$(printf '%s\n' "$plain" | awk -v footer_re="$footer_re" '
+  region=$(printf '%s\n' "$plain" | awk '
     /^[[:space:]]*Auto \((Off|Low|Medium|High)\)/ { active=1; box=$0 "\n"; closed=0; valid=0; footer=0; status=0; next }
     active && !closed {
       box=box $0 "\n"
@@ -1884,7 +1883,7 @@ fm_composer_droid_state() {  # <styled viewport> <tmux|orca>
       next
     }
     active && closed && NF {
-      if (!footer && $0 ~ /^\[⏱ / && $0 ~ footer_re) { footer=1; next }
+      if (!footer && $0 ~ /^\[⏱ [^]]+\].*[|][[:space:]]*[^[:space:]][^|]*$/) { footer=1; next }
       if (footer && !status && $0 ~ /^firstmate[[:space:]]*$/) { status=1; next }
       valid=0
     }

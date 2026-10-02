@@ -70,8 +70,10 @@ unexpected modal")
   [ "$out" = unknown ] || fail "an overlay below Droid's composer must refuse input, got '$out'"
   out=$(fm_tmux_droid_composer_state "${screen%firstmate}[OMD] session:0m")
   [ "$out" = unknown ] || fail "a user statusLine below Droid's composer must refuse input, got '$out'"
+  out=$(fm_tmux_droid_composer_state "${screen/TMUX ⧉/TMUX ●}")
+  [ "$out" = empty ] || fail "a changed Droid integration indicator must not hide an empty composer"
   out=$(fm_tmux_droid_composer_state "${screen/\[⏱ 16s, context: 3%\] /}")
-  [ "$out" = unknown ] || fail "a row ending in Droid's tmux indicator without its timer must refuse input, got '$out'"
+  [ "$out" = unknown ] || fail "a footer without Droid's timer must refuse input, got '$out'"
   pass "Droid composer is readable only under a complete live TUI envelope"
 }
 
@@ -107,8 +109,10 @@ test_droid_orca_composer_uses_the_live_screen() {
   out=$(fm_composer_droid_state "$screen
 shell prompt" orca)
   [ "$out" = unknown ] || fail "a shell prompt below a stale Orca Droid frame must stay unknown"
-  out=$(fm_composer_droid_state "${screen/IDE ◌/TMUX ⧉}" orca)
-  [ "$out" = unknown ] || fail "Orca must not borrow tmux's footer identity"
+  out=$(fm_composer_droid_state "${screen/IDE ◌/IDE ●}" orca)
+  [ "$out" = empty ] || fail "an Orca integration status change must preserve the empty verdict"
+  out=$(fm_composer_droid_state "${screen/\[⏱ 17s, context: 3%\] /}" orca)
+  [ "$out" = unknown ] || fail "an Orca footer without Droid's timer must refuse input"
   pass "captured Orca Droid screen has strict idle, pending, and stale-frame verdicts"
 }
 
