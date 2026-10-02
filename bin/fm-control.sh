@@ -1101,6 +1101,11 @@ do_relaunch() {
 
   require_state_verified_backend relaunch
   resolve_relaunch_profile
+  # Orca's only lifecycle proof is Droid's own hooks, so the replacement must
+  # be Droid too or its start could not be confirmed after the old one stops.
+  if ! fm_control_backend_state_verified "$BACKEND" && [ "$TARGET_HARNESS" != droid ]; then
+    die "task $ID runs on the $BACKEND backend, where only Droid's start and stop can be verified; relaunching onto '$TARGET_HARNESS' would stop the running agent for a replacement that cannot be confirmed"
+  fi
 
   case "$KIND" in
     ship|scout)

@@ -325,38 +325,11 @@ fm_backend_orca_send_key() {  # <terminal-id> <key> [expected-label]
 # duplicating text.
 fm_backend_orca_send_text_submit() {  # <terminal-id> <text> <retries> <enter-sleep> <settle> [expected-label]
   local terminal=$1 text=$2 retries=$3 sleep_s=$4 settle=$5 expected_label=${6:-}
-  local state_dir id baseline='' baseline_seq=0 record seq event source verdict i=0
   fm_backend_orca_tool_check || { printf 'send-failed'; return 0; }
-  if fm_backend_orca_recorded_droid "$terminal" "$expected_label" \
-    && command -v fm_busy_record_read >/dev/null 2>&1; then
-    id=${expected_label#fm-}
-    state_dir=${FM_STATE_OVERRIDE:-$FM_HOME/state}
-    baseline=$(fm_busy_record_read "$state_dir" "$id" 2>/dev/null) || baseline=
-    baseline_seq=${baseline##* }
-    case "$baseline_seq" in ''|*[!0-9]*) baseline_seq=0 ;; esac
-  fi
   fm_backend_orca_send_literal "$terminal" "$text" || { printf 'send-failed'; return 0; }
   sleep "$settle"
-  verdict=$(fm_composer_submit_retry_core fm_backend_orca_send_key fm_backend_orca_composer_state \
-    "$terminal" "$retries" "$sleep_s" "$expected_label")
-  case "$verdict" in
-    pending|pending-unproven|unknown) ;;
-    *) printf '%s' "$verdict"; return 0 ;;
-  esac
-  [ -n "$baseline" ] || { printf '%s' "$verdict"; return 0; }
-  while [ "$i" -lt "$retries" ]; do
-    record=$(fm_busy_record_read "$state_dir" "$id" 2>/dev/null) || record=
-    seq=${record##* }
-    case "$seq" in ''|*[!0-9]*) seq=0 ;; esac
-    source=${record#* }; source=${source%% *}
-    event=${record#* }; event=${event#* }; event=${event%% *}
-    if [ "$seq" -gt "$baseline_seq" ] && [ "$source" = droid-hook ]; then
-      [ "$event" = user-prompt-submit ] && { printf 'empty'; return 0; }
-    fi
-    i=$((i + 1))
-    [ "$i" -ge "$retries" ] || sleep "$sleep_s"
-  done
-  printf '%s' "$verdict"
+  fm_composer_submit_retry_core fm_backend_orca_send_key fm_backend_orca_composer_state \
+    "$terminal" "$retries" "$sleep_s" "$expected_label"
 }
 
 # fm_backend_orca_kill: close one recorded task terminal. A missing CLI is a
