@@ -137,6 +137,7 @@ fi
   || fail "Droid SessionEnd did not prove the current Orca incarnation stopped"
 "$ROOT/bin/fm-captain-hold.sh" complete "$ID" --none >/dev/null \
   || fail "Orca scout captain-call inventory failed"
+# Preserve files from an optional operator plugin before guarded scout teardown.
 if [ -d "$WORKTREE/.omd" ]; then
   mv "$WORKTREE/.omd" "$LAB/omd-preserved"
 fi
