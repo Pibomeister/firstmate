@@ -165,7 +165,7 @@ The worktree and the task's records are unaffected either way.
   Muse is a crewmate and scout adapter only, so relaunching a secondmate onto it refuses while its agent is still up rather than leaving that secondmate with no agent when the launch owner refuses.
 - A backend that cannot deliver the harness's interrupt key, or the composer clear that key needs, is refused rather than sent a different key.
   Orca 1.4.217 and 1.4.218 delivered raw Escape and Ctrl+U to Droid in live verification, while other harnesses retain their existing key-verification boundary.
-- `exit` and `relaunch` require a backend with a recovery-grade agent-state classifier - tmux and herdr - or Droid's current-generation `SessionEnd` proof on Orca.
+- `exit` and `relaunch` require a backend with a recovery-grade agent-state classifier - tmux and herdr - or Droid's current-generation `SessionEnd` proof on Orca, where a relaunch must also replace Droid with Droid.
   Other zellij, Orca, and cmux combinations are refused rather than reported as successful blind.
 - An ambiguous or unreadable endpoint state refuses.
   Only a positively classified state acts.

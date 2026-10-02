@@ -226,26 +226,32 @@ test_orca_droid_composer_requires_exact_task_binding() {
   pass "Orca Droid composer proof requires an exact task and terminal binding"
 }
 
-test_orca_droid_typed_send_uses_new_hook_sequence() {
-  local home state gen out
-  orca_case droid-typed-hook
+test_orca_droid_typed_send_ignores_a_concurrent_doorbell() {
+  local home state gen out n
+  orca_case droid-typed-doorbell
   home="$CASE_DIR/home"; state="$home/state"
   mkdir -p "$state"
   fm_write_meta "$state/droid1.meta" 'harness=droid' 'terminal=term-123'
   gen=$("$ROOT/bin/fm-busy-event.sh" arm "$state" droid1)
   "$ROOT/bin/fm-busy-event.sh" apply "$state" droid1 idle --gen "$gen" --source droid-hook --event stop >/dev/null
-  printf '{"ok":true,"result":{"send":{"accepted":true}}}\n' >"$RESP/1.out"
-  cp "$RESP/1.out" "$RESP/2.out"
-  printf '{"ok":true,"result":{"terminal":{"source":"screen","tail":["transient repaint"]}}}\n' >"$RESP/3.out"
+  # Every Orca response reads accepted and shows the typed text still in the
+  # composer, while each Enter also lands an unrelated task-wide
+  # UserPromptSubmit, as a concurrent inbox doorbell would.
+  sed 's/│ >      /│ > hello/' "$ROOT/tests/fixtures/droid/idle-orca-0.230.0.txt" \
+    | jq -Rn '{ok:true,result:{send:{accepted:true},terminal:{source:"screen",tail:[inputs]}}}' >"$RESP/1.out"
+  for n in $(seq 2 20); do cp "$RESP/1.out" "$RESP/$n.out"; done
   out=$(PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" \
     FM_HOME="$home" FM_STATE_OVERRIDE="$state" \
     FM_ORCA_DROID_EVENT_STATE="$state" FM_ORCA_DROID_EVENT_ID=droid1 \
     FM_ORCA_DROID_EVENT_GEN="$gen" FM_ORCA_DROID_EVENT_BIN="$ROOT/bin/fm-busy-event.sh" \
     bash -c '. "$0/bin/fm-backend.sh"; fm_backend_source orca; fm_backend_orca_send_text_submit term-123 hello 3 0.1 0 fm-droid1' "$ROOT")
-  [ "$out" = empty ] || fail "Orca Droid typed send did not confirm its new hook event, got '$out'"
-  [ "$(fm_busy_record_read "$state" droid1)" = 'busy droid-hook user-prompt-submit 3' ] \
-    || fail "fake Droid submit hook did not advance the busy sequence"
-  pass "Orca Droid typed send confirms the generation-bound UserPromptSubmit event"
+  case "$(fm_busy_record_read "$state" droid1)" in
+    'busy droid-hook user-prompt-submit '*) ;;
+    *) fail "fake doorbell did not land a task-wide UserPromptSubmit" ;;
+  esac
+  [ "$out" != empty ] || fail "an unrelated UserPromptSubmit confirmed a typed send whose text is still pending"
+  [ "$out" = pending ] || fail "a still-pending Droid composer must stay unconfirmed, got '$out'"
+  pass "Orca Droid typed send is never confirmed by a concurrent doorbell's UserPromptSubmit"
 }
 
 test_orca_droid_typed_send_ignores_a_late_stop() {
@@ -1496,7 +1502,7 @@ test_visible_capture_requires_a_real_screen
 test_orca_droid_keys_are_raw_controls
 test_orca_non_droid_keys_still_refuse
 test_orca_droid_composer_requires_exact_task_binding
-test_orca_droid_typed_send_uses_new_hook_sequence
+test_orca_droid_typed_send_ignores_a_concurrent_doorbell
 test_orca_droid_typed_send_ignores_a_late_stop
 test_runtime_check_accepts_ready_orca_status
 test_runtime_check_refuses_unready_orca_status
