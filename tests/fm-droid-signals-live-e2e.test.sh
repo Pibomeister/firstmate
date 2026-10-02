@@ -11,7 +11,8 @@ fail() { printf 'not ok - %s\n' "$1" >&2; exit 1; }
 
 REAL_TMUX=$(command -v tmux)
 SOCKET="fm-droid-signals-$$"
-LAB=$(mktemp -d "$ROOT/.droid-live-signals.XXXXXX")
+LAB=$(mktemp -d "${TMPDIR:-/tmp}/fm-droid-signals.XXXXXX")
+LAB=$(cd "$LAB" && pwd -P)
 ID=droid-live
 HOME_DIR="$LAB/home"
 PROJECT="$HOME_DIR/projects/scratch"
