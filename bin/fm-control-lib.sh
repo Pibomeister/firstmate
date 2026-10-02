@@ -273,18 +273,20 @@ fm_control_relaunch_resume_flag() {  # <harness> <registered-agent>
   return 0
 }
 
-# Which named keys a backend adapter can deliver. Every session provider
-# normalizes Enter, Ctrl+C, and the Ctrl+U composer clear; Orca's terminal API
-# exposes only an interrupt and an Enter, so it can deliver neither Escape nor
-# Ctrl+U (bin/backends/orca.sh's fm_backend_orca_send_key).
-fm_control_backend_supports_key() {  # <backend> <key>
+# Which named keys a backend adapter can deliver. Orca 1.4.217 accepts raw
+# Escape and Ctrl+U bytes, verified against Droid; keep that capability scoped
+# to Droid until another harness's response is proven live.
+fm_control_backend_supports_key() {  # <backend> <key> [harness]
   local backend=${1-} key=${2-}
   case "$backend" in
     tmux|herdr|zellij|cmux)
       case "$key" in Escape|Enter|C-c|C-u) return 0 ;; esac
       ;;
     orca)
-      case "$key" in Enter|C-c) return 0 ;; esac
+      case "$key" in
+        Enter|C-c) return 0 ;;
+        Escape|C-u) [ "${3:-}" = droid ] && return 0 ;;
+      esac
       ;;
   esac
   return 1
@@ -405,8 +407,21 @@ fm_control_harness_wiring_paths() {  # <harness> <worktree> <state-dir> <id>
     # the project, and nothing global is installed.
     gemini) printf '%s\n' "$state/$id.gemini-settings.json" ;;
     devin) printf '%s\n' "$state/$id.devin-config.json" ;;
-    droid) printf '%s\n' "$state/$id.droid-settings.json" ;;
+    droid) printf '%s\n' "$state/$id.droid-settings.json" "$state/$id.droid-session-end" ;;
   esac
+}
+
+# Droid's SessionEnd hook writes the armed busy generation only after its
+# generation-bound event is accepted. This is the shared stop proof used by
+# Orca control and replacement spawn; a marker from a prior incarnation fails.
+fm_control_droid_session_ended() {  # <state-dir> <id> <meta-file>
+  local state=$1 id=$2 meta=$3 gen ended path
+  gen=$(fm_meta_get "$meta" busy_gen)
+  [ -n "$gen" ] || return 1
+  path="$state/$id.droid-session-end"
+  [ -f "$path" ] && [ ! -L "$path" ] || return 1
+  IFS= read -r ended <"$path" 2>/dev/null || ended=
+  [ "$ended" = "$gen" ]
 }
 
 # The firstmate-owned global turn-end registry entry a harness mints per task.

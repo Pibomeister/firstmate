@@ -13,7 +13,8 @@
 # parent waiting on a reply to nothing.
 # Special keys instead of text: fm-send.sh <target> --key Enter
 # Key support is backend-specific: tmux/herdr support Escape, Enter, and C-c;
-# Orca currently supports Enter and C-c only, and rejects Escape.
+# Orca delivers Enter and C-c, plus raw Escape and C-u bytes verified for Droid;
+# lifecycle control scopes those latter keys to the Droid adapter.
 #
 # Two data planes:
 #
@@ -411,6 +412,13 @@ fm_send_resolve_target() { # <raw-target>
     TARGET_BACKEND=$(fm_backend_of_meta "$meta")
     TARGET_META=$meta
     TARGET_HARNESS=$(fm_meta_get "$meta" harness)
+    # A matched Orca Droid terminal still needs this task's exact label for
+    # its viewport and generation-bound typed-submit proof. The selector stays
+    # explicit, so this does not turn the text into an inbox steer.
+    if [ "$TARGET_BACKEND" = orca ] && [ "$TARGET_HARNESS" = droid ]; then
+      id=$(fm_send_id_from_meta "$meta")
+      EXPECTED_LABEL="fm-$id"
+    fi
     RESOLUTION_TRIED="explicit target '$raw' matched $meta; backend=$TARGET_BACKEND"
     return 0
   fi

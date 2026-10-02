@@ -186,20 +186,7 @@ fm_tmux_pane_is_droid() {  # <target>
 }
 
 fm_tmux_droid_composer_state() {  # <styled viewport>
-  local plain region
-  plain=$(printf '%s\n' "$1" | fm_composer_strip_ansi)
-  region=$(printf '%s\n' "$plain" | awk '
-    /^[[:space:]]*Auto \((Off|Low|Medium|High)\)/ { active=1; box=$0 "\n"; closed=0; valid=0; next }
-    active && !closed {
-      box=box $0 "\n"
-      if ($0 ~ /^[[:space:]]*╰.*╯[[:space:]]*$/) { closed=1; valid=1 }
-      next
-    }
-    active && closed && NF && $0 !~ /^\[⏱ .*TMUX ⧉[[:space:]]*$/ && $0 !~ /^firstmate[[:space:]]*$/ { valid=0 }
-    END { if (valid) printf "%s", box }
-  ')
-  [ -n "$region" ] || { printf 'unknown'; return 0; }
-  fm_composer_classify_screen 'styled=0' "$region" ''
+  fm_composer_droid_state "$1" tmux
 }
 
 # fm_tmux_pane_is_cursor: true when the pane's FOREGROUND process group contains
