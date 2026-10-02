@@ -62,14 +62,14 @@ FM_SPAWN_NO_GUARD=1 "$ROOT/bin/fm-spawn.sh" "$ID" "$PROJECT" --scout \
   --harness droid --model "${FM_DROID_LIVE_MODEL:-gpt-5.6-luna}" --effort low --backend tmux \
   || fail "Droid scout spawn failed"
 
-wait_for() {  # <description> <shell command>
-  local label=$1 command=$2 count=0
-  while [ "$count" -lt 120 ]; do
+wait_for() {  # <description> <shell command> [polls]
+  local label=$1 command=$2 max=${3:-120} count=0
+  while [ "$count" -lt "$max" ]; do
     bash -c "$command" && return 0
     count=$((count + 1))
     sleep 0.5
   done
-  fail "$label did not appear within 60 seconds"
+  fail "$label did not appear within $((max / 2)) seconds"
 }
 
 wait_for 'brief report' "test -f '$REPORT' && grep -Fq BRIEF_RECEIVED '$REPORT'"
@@ -81,15 +81,42 @@ pass "Droid received its brief and signalled turn end"
 wait_for 'handled steer' "test -f '$HOME_DIR/state/$ID.inbox/handled/001.msg'"
 wait_for 'steer report' "grep -Fq live-steer '$REPORT'"
 wait_for 'settled steer' "grep -q 'state=idle source=droid-hook' '$HOME_DIR/state/$ID.busy-state'"
-pass "Droid processed and acknowledged an fm-send inbox steer"
+TARGET=$(sed -n 's/^window=//p' "$HOME_DIR/state/$ID.meta")
+"$ROOT/bin/fm-send.sh" "$TARGET" "Append TYPED_RECEIVED to '$REPORT' and reply TMUX_TYPED_OK." \
+  || fail "Droid typed steer could not be confirmed"
+wait_for 'typed steer effect' "grep -Fq TYPED_RECEIVED '$REPORT'"
+pass "Droid acknowledged inbox and typed fm-send steers"
 
 "$ROOT/bin/fm-send.sh" "$ID" \
-  'Execute the shell command sleep 45 now and wait for it to finish before replying.' \
+  "Execute the shell command sleep 45; printf finished > '$HOME_DIR/state/$ID.sleep-finished' now and wait for it to finish before replying." \
   || fail "Droid interrupt-test steer could not be recorded"
 wait_for 'busy hook' "grep -q 'state=busy source=droid-hook' '$HOME_DIR/state/$ID.busy-state'"
+wait_for 'running sleep tool' "tmux capture-pane -p -t '$TARGET' -S -0 | grep -Fq 'Executing...  (Press ESC to stop)'"
+started=$(date +%s)
 "$ROOT/bin/fm-control.sh" "$ID" interrupt || fail "Droid interrupt failed"
-wait_for 'settled interrupt' "grep -q 'state=idle source=droid-hook' '$HOME_DIR/state/$ID.busy-state'"
-pass "Droid interrupt settled its busy hook"
+wait_for 'settled interrupt' "grep -q 'state=idle source=droid-hook' '$HOME_DIR/state/$ID.busy-state'" 20
+elapsed=$(( $(date +%s) - started ))
+[ "$elapsed" -lt 30 ] || fail "Droid interruption took ${elapsed}s, indistinguishable from a normal sleep completion"
+[ ! -e "$HOME_DIR/state/$ID.sleep-finished" ] || fail "Droid interrupted sleep reached its completion marker"
+pass "Droid settled its interrupted turn before the 45-second command completed"
+
+old_gen=$(sed -n 's/^busy_gen=//p' "$HOME_DIR/state/$ID.meta")
+"$ROOT/bin/fm-control.sh" "$ID" relaunch --note 'Continue from the existing report; do not reprocess handled messages or rerun the earlier sleep. Wait for a new steer.' \
+  || fail "Droid relaunch failed"
+new_gen=$(sed -n 's/^busy_gen=//p' "$HOME_DIR/state/$ID.meta")
+[ -n "$new_gen" ] && [ "$new_gen" != "$old_gen" ] || fail "Droid relaunch did not mint a fresh busy generation"
+grep -Fqx "model=${FM_DROID_LIVE_MODEL:-gpt-5.6-luna}" "$HOME_DIR/state/$ID.meta" || fail "Droid relaunch lost the model"
+grep -Fqx 'effort=low' "$HOME_DIR/state/$ID.meta" || fail "Droid relaunch lost the effort"
+wait_for 'relaunch turn end' "grep -q 'state=idle source=droid-hook' '$HOME_DIR/state/$ID.busy-state'" 360
+pass "Droid relaunch preserved its profile and replaced its busy generation"
+
+if [ -n "${FM_DROID_TMUX_EVIDENCE_DIR:-}" ]; then
+  mkdir -p "$FM_DROID_TMUX_EVIDENCE_DIR"
+  tmux capture-pane -p -t "$TARGET" -S -2000 >"$FM_DROID_TMUX_EVIDENCE_DIR/terminal.txt" \
+    || fail "Droid terminal transcript could not be captured"
+  cp "$REPORT" "$FM_DROID_TMUX_EVIDENCE_DIR/report.md" \
+    || fail "Droid scout report could not be captured"
+fi
 
 "$ROOT/bin/fm-control.sh" "$ID" exit || fail "Droid exit failed"
 "$ROOT/bin/fm-captain-hold.sh" complete "$ID" --none \

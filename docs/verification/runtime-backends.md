@@ -2496,36 +2496,32 @@ This live proof covers the watcher and queue boundary; it does not establish liv
 Repeat the hooked-worker check above before publication if watcher or task-inbox busy code changes; `bin/fm-test-run.sh tests/fm-task-inbox.test.sh` refreshes the portable ladder regressions.
 ## Factory Droid CLI
 
-Verified on 2026-09-30 with Droid 0.230.0 on macOS arm64 through the tmux backend.
-The installed CLI was 0.227.0 at intake and auto-updated during the first interactive probe; Firstmate's worker launch now sets `FACTORY_DROID_AUTO_UPDATE_ENABLED=false` to keep a running worker on one release.
-`droid --help` accepts an interactive positional prompt and `--auto high`, while `droid exec --help` lists models, `--model`, and `--reasoning-effort`; the interactive CLI receives model and effort through `--settings` per Factory's [CLI](https://docs.factory.com/droid-cli/cli-reference.md), [settings](https://docs.factory.com/droid-cli/settings.md), and [hooks](https://docs.factory.com/harness/hooks.md) references.
-The runtime settings file is private to one task, sets Auto (High), and registers `UserPromptSubmit`, `Stop`, `Notification`, and `SessionEnd` hooks.
-It also replaces the user's `statusLine` with `printf firstmate` for that task only.
-A runtime `statusLine` of `null`, `{}`, or `false` left this machine's custom oh-my-droid status line drawn, because Droid merges runtime settings over user settings. An empty command drew `status line produced no output`, so a task-owned row is the only way to keep a user status line out of the pane.
-An idle tmux scout captured the composer box, then Droid's own footer row `[⏱ 16s, context: 3%] 3 config issues — /diagnostics … MCP ✓ | TMUX ⧉`, then `firstmate`. `tests/fm-droid-harness.test.sh` carries that capture as its idle fixture.
+Verified on 2026-10-01 with Droid 0.230.0, tmux 3.6a, and Orca 1.4.218 on Darwin 25.5.0 arm64.
+`droid --help` accepts an interactive positional prompt, `--settings`, and `--auto high`.
+`droid exec --help` lists model IDs and each model's supported reasoning levels, while interactive Droid receives model and effort through its per-task settings file.
+The [Factory CLI](https://docs.factory.com/droid-cli/cli-reference.md), [settings](https://docs.factory.com/droid-cli/settings.md), and [hooks](https://docs.factory.com/harness/hooks.md) references own those vendor contracts.
+Firstmate probes an explicit model before creating an endpoint, records a requested unsupported effort in task metadata, and omits that effort from runtime settings.
+The settings replace the task's `statusLine` with `printf firstmate`, leave the operator's `hooksDisabled` policy intact, select Auto (High), and register `UserPromptSubmit`, `Stop`, `Notification`, and `SessionEnd` hooks.
+Spawn answers the fresh-worktree trust dialog only when `Trust this folder` is visibly selected and requires the launch prompt hook to acknowledge the brief.
+Droid dispatch is limited to tmux and Orca until the composer and lifecycle are verified live on other backends.
 
-The portable and live checks were:
+The tmux composer proof uses the live `droid` process identity, the bounded box, Droid's `TMUX ⧉` timer footer, and the task-owned status row.
+The Orca proof requires `terminal read --screen` to return `source=screen`, then applies the same box check with Droid's `IDE ◌` footer and the recorded task terminal identity.
+An unrelated process, stale frame, extra row, or unknown terminal reads `unknown` and cannot authorize typed input.
+Orca 1.4.218 delivered Droid's raw Escape and Ctrl+U keys, while its current-generation `SessionEnd` hook proved exit before relaunch or teardown.
+The live interrupt checks observed a busy running tool, then an idle hook and missing completion marker before the tool's 45-second duration; control conservatively reports `cancel=unconfirmed` because the vendor offers no separate cancellation acknowledgement.
+
+Refresh commands:
 
 ```sh
 bash tests/fm-droid-harness.test.sh
+bash tests/fm-backend-orca.test.sh
 FM_LIVE=1 bash tests/fm-harness-liveness-drift-live-e2e.test.sh
 FM_DROID_SIGNALS=1 bash tests/fm-droid-signals-live-e2e.test.sh
+FM_DROID_ORCA_SIGNALS=1 bash tests/fm-droid-orca-signals-live-e2e.test.sh
 ```
 
-The live liveness guard printed `droid 0.230.0: title='droid'`, `ancestry verdicts=[comm droid]`, and `checked 6 installed harness(es)`.
-The opt-in scout guard printed the following result after launching with an explicit `gpt-5.6-luna` model and `low` effort:
-
-```text
-ok - Droid received its brief and signalled turn end
-ok - Droid processed and acknowledged an fm-send inbox steer
-ok - Droid interrupt settled its busy hook
-stopped droid-live harness=droid backend=tmux
-teardown droid-live complete
-ok - Droid exit and teardown retired the task and settings
-```
-
-A separate attended scout smoke verified `fm-control.sh droid-smoke relaunch` preserved `model=gpt-5.6-luna` and `effort=low`, minted a new busy generation, and reached `busy source=droid-hook event=user-prompt-submit` in the replacement pane.
-Its explicit typed `fm-send` on an idle pane returned success with the Droid-specific twenty-poll confirmation budget.
-After the status line override, a live tmux scout read `empty` before and after a typed `fm-send` to its window, which exited 0, and `fm-control.sh exit` then exited 0. Before the override, the same pane read `unknown` because of the user's status row, and `exit` refused to type `/exit`.
-An Escape interrupt displayed `Interrupted`; Droid restored queued text in its composer, and Ctrl+U cleared it before the next lifecycle action.
-The same smoke completed `fm-captain-hold.sh complete droid-smoke --none` before teardown, which then removed the task metadata and per-task settings file.
+The real tmux and Orca scouts each received an explicit `gpt-5.6-luna` model and `low` effort, wrote their report, acknowledged an inbox steer, settled a turn-end hook, accepted a typed steer, interrupted a busy turn, relaunched with the same model and effort under a fresh generation, exited, and tore down their task wiring.
+The Orca scout also preserved its exact terminal handle and worktree ID across relaunch and removed the isolated worktree at teardown.
+The live liveness guard reported `droid 0.230.0: title='droid'`, `ancestry verdicts=[comm droid]`, and `checked 6 installed harness(es)` on tmux.
+The opt-in guards print five `ok` checks each, and the private task evidence contains their full stdout, report, viewport, and terminal transcript.
