@@ -1953,16 +1953,17 @@ agy_model_validate() {  # <agy-bin> <model>
 # accepts neither --model nor --reasoning-effort, so the selected values are
 # carried by per-task settings below. Keep an unsupported effort recorded in
 # metadata but omit it from those settings, matching the common adapter policy.
-droid_catalog_efforts() {  # <model-id|default>, help text on stdin
+# Without an explicit model Droid runs the operator's own default, whose
+# catalog entry is unknown here, so the effort is omitted too.
+droid_catalog_efforts() {  # <model-id>, help text on stdin
   awk -v wanted="$1" '
     /^Available Models:/ { section="models"; next }
     /^Model details:/ { section="details"; next }
     section=="models" && /^  [^[:space:]]+[[:space:]]+/ {
       id=$1; label=$0
       sub(/^  [^[:space:]]+[[:space:]]+/, "", label)
-      is_default=(label ~ / [(]default[)]$/)
       sub(/ [(]default[)]$/, "", label)
-      if (id==wanted || (wanted=="default" && is_default)) selected=label
+      if (id==wanted) selected=label
     }
     section=="details" && selected!="" && index($0, "  - " selected ": supports reasoning:")==1 {
       supported=$0
@@ -2360,8 +2361,11 @@ droid)
     fi
     DROID_EFFORT_APPLY=$EFFORT
     if [ -n "$EFFORT" ] && [ "$EFFORT" != default ]; then
-      droid_help=$(FACTORY_DROID_AUTO_UPDATE_ENABLED=false fm_run_timed 10 "$DROID_BIN" exec --help </dev/null 2>/dev/null) || droid_help=
-      supported=$(printf '%s\n' "$droid_help" | droid_catalog_efforts "${MODEL:-default}") || supported=
+      supported=
+      if [ -n "$MODEL" ] && [ "$MODEL" != default ]; then
+        droid_help=$(FACTORY_DROID_AUTO_UPDATE_ENABLED=false fm_run_timed 10 "$DROID_BIN" exec --help </dev/null 2>/dev/null) || droid_help=
+        supported=$(printf '%s\n' "$droid_help" | droid_catalog_efforts "$MODEL") || supported=
+      fi
       case " $supported " in
         *" $EFFORT "*) ;;
         *)
