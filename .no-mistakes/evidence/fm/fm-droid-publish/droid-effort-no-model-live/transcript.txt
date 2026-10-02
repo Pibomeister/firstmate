@@ -1,0 +1,88 @@
+== droid version: 0.230.0
+== fm-spawn.sh droid-eff <repo> --scout --harness droid --effort xhigh --backend tmux   (no --model)
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.8ABRIm
+notice: Droid model 'default' does not establish support for effort 'xhigh' (catalog supports: unknown); recording effort but omitting it from runtime settings
+spawned droid-eff harness=droid kind=scout window=firstmate:fm-droid-eff worktree=/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.8ABRIm/pool/.treehouse/scratch-7b750a/1/scratch
+spawn exit=0
+== Droid runtime settings: state/droid-eff.droid-settings.json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "printf firstmate"
+  },
+  "sessionDefaultSettings": {
+    "interactionMode": "auto",
+    "autonomyLevel": "high"
+  },
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'/Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M3YJWZM8B93VDNC3C0576BCQ/bin/fm-busy-event.sh' apply '/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.8ABRIm/state' 'droid-eff' busy --gen 'g1790955469.35472.24943' --source droid-hook --event user-prompt-submit >/dev/null 2>&1 || true"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'/Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M3YJWZM8B93VDNC3C0576BCQ/bin/fm-busy-event.sh' apply '/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.8ABRIm/state' 'droid-eff' idle --gen 'g1790955469.35472.24943' --source droid-hook --event stop >/dev/null 2>&1 && touch '/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.8ABRIm/state/droid-eff.turn-ended' || true"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -e '.notification_type == \"idle_prompt\"' >/dev/null 2>&1 && '/Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M3YJWZM8B93VDNC3C0576BCQ/bin/fm-busy-event.sh' apply '/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.8ABRIm/state' 'droid-eff' idle --gen 'g1790955469.35472.24943' --source droid-hook --event idle-prompt >/dev/null 2>&1 || true"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'/Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M3YJWZM8B93VDNC3C0576BCQ/bin/fm-busy-event.sh' apply '/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.8ABRIm/state' 'droid-eff' idle --gen 'g1790955469.35472.24943' --source droid-hook --event session-end >/dev/null 2>&1 && printf '%s\\n' 'g1790955469.35472.24943' > '/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.8ABRIm/state/droid-eff.droid-session-end' || true"
+          }
+        ]
+      }
+    ]
+  }
+}
+== keys
+{
+  "has_model": false,
+  "has_reasoningEffort": false
+}
+== task metadata
+harness=droid
+model=default
+effort=xhigh
+== Droid pane (live TUI)
+    this worker identity, including `CONTRIBUTING.md` and
+   `firstmate-coding-guidelines` for Firstmate changes.
+   # Task
+   Reply DONE and stop. Do not edit files.
+   Skill autopilot
+    ↳ Skill activated
+   Read 1 file
+    ↳ .../fm-lab.8ABRIm/state/droid-eff.inbox (error)
+    1 file failed
+⛬  DONE
+ Auto (High) · allow all commands                              GPT-6 Sol (High)
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ >                                                                            │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[⏱ 10s, context: 3%] 3 config issues — /diagnostics               MCP ✓ | TMUX ⧉
+firstmate
+stopped droid-eff harness=droid backend=tmux endpoint=firstmate:fm-droid-eff worktree=/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.8ABRIm/pool/.treehouse/scratch-7b750a/1/scratch
+teardown exit=1
+lab removed: yes
