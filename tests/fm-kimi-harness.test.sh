@@ -347,6 +347,8 @@ test_kimi_launch_then_send_is_verified() {
     "kimi spawn did not install its guarded global hook region"
   assert_grep 'token=' "$WT_DIR/.fm-kimi-turnend" "kimi spawn did not write its token pointer"
   assert_present "$HOME_DIR/state/$id.kimi-turnend-token" "kimi spawn did not record its token"
+  assert_no_grep 'kill-window' "$CASE_DIR/tmux-calls.log" \
+    "a confirmed kimi spawn closed the worker it just verified"
   pass "fm-spawn: kimi launches, delivers its brief, and registers a guarded turn-end token"
 }
 
@@ -718,6 +720,8 @@ test_kimi_unconfirmed_delivery_fails_loudly() {
     "unconfirmed kimi delivery lacked a loud diagnostic"
   assert_grep 'failed: kimi brief pointer delivery was not confirmed' <(sed -E 's/ \[at=[0-9]+\]//' "$HOME_DIR/state/$id.status") \
     "unconfirmed kimi delivery did not leave a supervisor-visible failure"
+  assert_grep "kill-window -t =firstmate:=fm-$id" "$CASE_DIR/tmux-calls.log" \
+    "unconfirmed kimi delivery left the launched worker running without a task record"
   pass "fm-spawn: kimi treats a silent pointer drop as a failed spawn"
 }
 
@@ -733,6 +737,8 @@ test_kimi_readiness_gate_precedes_pointer() {
   assert_contains "$out" "kimi did not show a verified ready signal" \
     "kimi readiness failure lacked a loud diagnostic"
   [ ! -s "$CASE_DIR/pointer.log" ] || fail "kimi pointer was sent before readiness"
+  assert_grep "kill-window -t =firstmate:=fm-$id" "$CASE_DIR/tmux-calls.log" \
+    "a kimi readiness failure left the launched worker running without a task record"
   jq -e --arg id "$id" 'any(.endpoints[]; .id == $id)' \
     "$HOME_DIR/state/home-summary.json" >/dev/null \
     || fail "kimi readiness failure omitted its durable endpoint from the home summary"
