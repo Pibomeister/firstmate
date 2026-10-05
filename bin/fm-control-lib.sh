@@ -430,7 +430,7 @@ fm_control_droid_session_ended() {  # <state-dir> <id> <meta-file>
   wt=$(fm_meta_get "$meta" worktree)
   [ -n "$wt" ] && wt=$(cd "$wt" 2>/dev/null && pwd -P) || return 1
   command -v lsof >/dev/null 2>&1 || return 1
-  out=$(lsof -a -c droid -d cwd -Fn 2>&1) && status=0 || status=$?
+  out=$(lsof -w -a -c droid -d cwd -Fn 2>&1) && status=0 || status=$?
   case "$status" in
     0) ;;
     1) [ -z "$out" ]; return ;;
