@@ -768,13 +768,17 @@ test_kimi_gate_failure_keeps_the_record_when_the_close_is_unproven() {
 # each arm can report (fm-backend.sh), fm_backend_herdr_endpoint_confirmed_gone
 # stands in for herdr's structural proof, and spawn_commit_backlog_transition
 # records the backlog In-flight move (its own behavior is pinned by the
-# backlog-transition and success-commit coverage).
-make_gate_cleanup_case() {  # <name> -> echoes the case dir holding the extracted function
+# backlog-transition and success-commit coverage, and FAKE_REAL_DISPATCH=yes
+# runs the real one against a stubbed fm_backlog_atomic_transition instead).
+make_gate_cleanup_case() {  # <name> -> echoes the case dir holding the extracted functions
   local dir="$TMP_ROOT/$1"
   mkdir -p "$dir"
   sed -n '/^spawn_gate_endpoint_cleanup() {/,/^}/p' "$SPAWN" > "$dir/cleanup.sh"
+  sed -n '/^spawn_commit_backlog_transition() {/,/^}/p' "$SPAWN" >> "$dir/cleanup.sh"
   grep -q '^spawn_gate_endpoint_cleanup() {' "$dir/cleanup.sh" \
     || fail "could not extract spawn_gate_endpoint_cleanup from $SPAWN"
+  grep -q '^spawn_commit_backlog_transition() {' "$dir/cleanup.sh" \
+    || fail "could not extract spawn_commit_backlog_transition from $SPAWN"
   printf '%s\n' "$dir"
 }
 
@@ -782,24 +786,40 @@ run_gate_cleanup() {  # <dir> <backend> -> "closed=N pending=N dispatch=N"; warn
   local dir=$1 backend=$2
   (
     set -u
-    # Exported because the extracted function sourced below consumes them.
+    # Exported because the extracted functions sourced below consume them.
     export BACKEND=$backend T='fakeses:1' ID=gateunit ZELLIJ_TAB_ID=7
     export RELAUNCH="${FAKE_RELAUNCH:-0}" BACKLOG_TRANSITION="${FAKE_BACKLOG_TRANSITION:-1}"
     export FM_BACKLOG_TRANSITION_ERROR='fake dispatch refusal'
+    export STATE=$dir DATA=$dir
+    if [ -n "${FAKE_TASKS_AXI_TIMEOUT:-}" ]; then
+      export FM_TASKS_AXI_TIMEOUT=$FAKE_TASKS_AXI_TIMEOUT
+    else
+      unset FM_TASKS_AXI_TIMEOUT
+    fi
     SPAWN_ENDPOINT_CLOSED=0
     SPAWN_FRESH_COMMIT_PENDING=1
     dispatch=0
-    # shellcheck disable=SC2329 # invoked by the extracted function sourced below.
+    # shellcheck disable=SC1091 # extracted from the current bin/fm-spawn.sh by make_gate_cleanup_case.
+    . "$dir/cleanup.sh"
+    # Stubs override after the source so the real spawn_commit_backlog_transition
+    # stays available to FAKE_REAL_DISPATCH=yes runs.
+    # shellcheck disable=SC2329 # invoked by the extracted function sourced above.
     fm_backend_kill() {
       printf '%s\n' "$*" >> "$dir/kill.calls"
       return "${FAKE_KILL_STATUS:-0}"
     }
-    # shellcheck disable=SC2329 # invoked by the extracted function sourced below.
+    # shellcheck disable=SC2329 # invoked by the extracted function sourced above.
     fm_backend_herdr_endpoint_confirmed_gone() { return "${FAKE_GONE_STATUS:-1}"; }
-    # shellcheck disable=SC2329 # invoked by the extracted function sourced below.
-    spawn_commit_backlog_transition() { dispatch=$((dispatch + 1)); return "${FAKE_DISPATCH_STATUS:-0}"; }
-    # shellcheck disable=SC1091 # extracted from the current bin/fm-spawn.sh by make_gate_cleanup_case.
-    . "$dir/cleanup.sh"
+    if [ "${FAKE_REAL_DISPATCH:-no}" = yes ]; then
+      # shellcheck disable=SC2329 # invoked by the extracted function sourced above.
+      fm_backlog_atomic_transition() {
+        printf '%s\n' "$1 timeout=${FM_TASKS_AXI_TIMEOUT:-unset}" >> "$dir/transition.calls"
+        return "${FAKE_DISPATCH_STATUS:-0}"
+      }
+    else
+      # shellcheck disable=SC2329 # invoked by the extracted function sourced above.
+      spawn_commit_backlog_transition() { dispatch=$((dispatch + 1)); return "${FAKE_DISPATCH_STATUS:-0}"; }
+    fi
     spawn_gate_endpoint_cleanup 2> "$dir/warnings"
     printf 'closed=%s pending=%s dispatch=%s\n' "$SPAWN_ENDPOINT_CLOSED" "$SPAWN_FRESH_COMMIT_PENDING" "$dispatch"
   )
@@ -881,6 +901,24 @@ test_gate_cleanup_kept_record_moves_the_backlog_row() {
   assert_not_contains "$(cat "$dir/warnings")" "could not be moved to In flight" \
     "a manual-backend home was warned about a row it does not have"
   pass "fm-spawn: a kept record's backlog item moves to In flight, or the mismatch is named"
+}
+
+test_gate_cleanup_bounds_the_row_move_like_the_commit_point() {
+  local dir result
+  dir=$(make_gate_cleanup_case gatetimeout)
+  # The kept-record path holds the same meta lock as the success commit
+  # point, so its tasks-axi call carries the same bound by construction: the
+  # default lives in the shared commit helper, not at one call site.
+  : > "$dir/transition.calls"
+  result=$(FAKE_KILL_STATUS=1 FAKE_REAL_DISPATCH=yes run_gate_cleanup "$dir" tmux)
+  assert_grep 'dispatch timeout=30' "$dir/transition.calls" \
+    "the kept-record path's backlog move ran without the commit point's tasks-axi bound"
+  assert_contains "$result" "pending=0" "a bounded backlog move let the rollback erase the kept record"
+  : > "$dir/transition.calls"
+  result=$(FAKE_KILL_STATUS=1 FAKE_REAL_DISPATCH=yes FAKE_TASKS_AXI_TIMEOUT=99 run_gate_cleanup "$dir" tmux)
+  assert_grep 'dispatch timeout=99' "$dir/transition.calls" \
+    "an operator's own tasks-axi bound was overridden"
+  pass "fm-spawn: the kept-record path's backlog move carries the commit point's tasks-axi bound"
 }
 
 test_kimi_readiness_gate_precedes_pointer() {
@@ -1307,6 +1345,7 @@ test_kimi_gate_failure_keeps_the_record_when_the_close_is_unproven
 test_gate_cleanup_unprovable_close_status_keeps_the_record
 test_gate_cleanup_proven_close_reports_still_trusted
 test_gate_cleanup_kept_record_moves_the_backlog_row
+test_gate_cleanup_bounds_the_row_move_like_the_commit_point
 test_kimi_readiness_gate_precedes_pointer
 test_kimi_fresh_worktree_trust_is_answered_and_verified
 test_kimi_swallowed_trust_enter_is_retried_until_the_dialog_clears

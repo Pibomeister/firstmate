@@ -5008,6 +5008,12 @@ fi
 # point below so every earlier launch-delivery failure remains unwindable.
 spawn_commit_backlog_transition() {
   [ "$BACKLOG_TRANSITION" = 1 ] || return 0
+  # Every caller - the success commit point and the gate-failure kept-record
+  # path alike - holds the task's meta lock across this call, so the bound
+  # lives here rather than at one call site: a hung tasks-axi fails through
+  # the ordinary error plumbing (bin/fm-backlog-transition-lib.sh's
+  # fm_tasks_axi) instead of holding that lock open ended.
+  FM_TASKS_AXI_TIMEOUT=${FM_TASKS_AXI_TIMEOUT:-30}
   fm_backlog_atomic_transition dispatch "$STATE/$ID.meta" "$DATA" "$ID" "$STATE"
 }
 
