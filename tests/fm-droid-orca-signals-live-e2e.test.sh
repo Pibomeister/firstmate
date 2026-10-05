@@ -5,6 +5,8 @@ set -u
 
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+# shellcheck source=bin/fm-busy-lib.sh
+. "$ROOT/bin/fm-busy-lib.sh"
 
 fm_live_gate opt-in FM_DROID_ORCA_SIGNALS droid orca jq node
 
@@ -92,8 +94,14 @@ pass "Orca Droid received its brief and settled its turn"
 wait_for 'handled steer' "test -f '$HOME_DIR/state/$ID.inbox/handled/001.msg'"
 wait_for 'steer report' "grep -Fq live-orca-steer '$REPORT'"
 wait_for 'settled steer' "grep -q 'state=idle source=droid-hook' '$HOME_DIR/state/$ID.busy-state'"
-"$ROOT/bin/fm-send.sh" "$TERMINAL" "Append TYPED_RECEIVED to '$REPORT' and reply ORCA_TYPED_OK." >"$LAB/typed-send.out" 2>&1 \
+typed_prompt="Append TYPED_RECEIVED to '$REPORT' and reply ORCA_TYPED_OK."
+baseline=$(fm_busy_record_read "$HOME_DIR/state" "$ID") || fail "Droid busy record was unavailable before typed send"
+baseline=${baseline##* }
+typed_hash=$(printf '%s' "$typed_prompt" | fm_busy_prompt_sha256) || fail "could not hash Droid typed prompt"
+"$ROOT/bin/fm-send.sh" "$TERMINAL" "$typed_prompt" >"$LAB/typed-send.out" 2>&1 \
   || fail "Orca Droid typed steer was not confirmed: $(tail -2 "$LAB/typed-send.out")"
+fm_busy_prompt_receipt_after "$HOME_DIR/state" "$ID" "$(sed -n 's/^busy_gen=//p' "$META")" "$baseline" "$typed_hash" \
+  || fail "Orca Droid typed steer lacks its matching post-Enter UserPromptSubmit receipt"
 wait_for 'typed steer effect' "grep -Fq TYPED_RECEIVED '$REPORT'"
 wait_for 'typed reply' "orca terminal read --terminal '$TERMINAL' --screen --json | jq -r '.result.terminal.tail[]?' | grep -Fq ORCA_TYPED_OK"
 pass "Orca Droid acknowledged inbox and typed fm-send steers"

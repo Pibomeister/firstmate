@@ -47,11 +47,21 @@ next=$(( $(cat "$COUNT_FILE" 2>/dev/null || echo 0) + 1 ))
 if [ -n "${FM_ORCA_DROID_EVENT_STATE:-}" ] && [ "${1:-}" = terminal ] && [ "${2:-}" = send ]; then
   for arg in "$@"; do
     if [ "$arg" = --enter ]; then
-      event=${FM_ORCA_DROID_EVENT_NAME:-user-prompt-submit}
-      state=busy
-      [ "$event" != stop ] || state=idle
-      "$FM_ORCA_DROID_EVENT_BIN" apply "$FM_ORCA_DROID_EVENT_STATE" "$FM_ORCA_DROID_EVENT_ID" "$state" \
-        --gen "$FM_ORCA_DROID_EVENT_GEN" --source droid-hook --event "$event" >/dev/null
+      if [ "${FM_ORCA_DROID_EVENT_ONCE:-0}" != 1 ] || [ ! -e "$RESP/.event-fired" ]; then
+        if [ -n "${FM_ORCA_DROID_PROMPT_HOOK_BIN:-}" ]; then
+          jq -cn --arg prompt "${FM_ORCA_DROID_HOOK_PROMPT:-}" \
+            '{hook_event_name:"UserPromptSubmit",prompt:$prompt}' \
+            | "$FM_ORCA_DROID_PROMPT_HOOK_BIN" "$FM_ORCA_DROID_EVENT_STATE" \
+                "$FM_ORCA_DROID_EVENT_ID" "$FM_ORCA_DROID_EVENT_GEN" >/dev/null
+        else
+          event=${FM_ORCA_DROID_EVENT_NAME:-user-prompt-submit}
+          state=busy
+          [ "$event" != stop ] || state=idle
+          "$FM_ORCA_DROID_EVENT_BIN" apply "$FM_ORCA_DROID_EVENT_STATE" "$FM_ORCA_DROID_EVENT_ID" "$state" \
+            --gen "$FM_ORCA_DROID_EVENT_GEN" --source droid-hook --event "$event" >/dev/null
+        fi
+        touch "$RESP/.event-fired"
+      fi
       break
     fi
   done
@@ -234,6 +244,11 @@ test_orca_droid_typed_send_ignores_a_concurrent_doorbell() {
   fm_write_meta "$state/droid1.meta" 'harness=droid' 'terminal=term-123'
   gen=$("$ROOT/bin/fm-busy-event.sh" arm "$state" droid1)
   "$ROOT/bin/fm-busy-event.sh" apply "$state" droid1 idle --gen "$gen" --source droid-hook --event stop >/dev/null
+  # A matching receipt from before this send is stale; the new hook carries
+  # only the unrelated inbox doorbell payload.
+  printf '{"hook_event_name":"UserPromptSubmit","prompt":"hello"}\n' \
+    | "$ROOT/bin/fm-droid-prompt-hook.sh" "$state" droid1 "$gen" >/dev/null
+  "$ROOT/bin/fm-busy-event.sh" apply "$state" droid1 idle --gen "$gen" --source droid-hook --event stop >/dev/null
   # Every Orca response reads accepted and shows the typed text still in the
   # composer, while each Enter also lands an unrelated task-wide
   # UserPromptSubmit, as a concurrent inbox doorbell would.
@@ -243,7 +258,9 @@ test_orca_droid_typed_send_ignores_a_concurrent_doorbell() {
   out=$(PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" \
     FM_HOME="$home" FM_STATE_OVERRIDE="$state" \
     FM_ORCA_DROID_EVENT_STATE="$state" FM_ORCA_DROID_EVENT_ID=droid1 \
-    FM_ORCA_DROID_EVENT_GEN="$gen" FM_ORCA_DROID_EVENT_BIN="$ROOT/bin/fm-busy-event.sh" \
+    FM_ORCA_DROID_EVENT_GEN="$gen" FM_ORCA_DROID_EVENT_ONCE=1 \
+    FM_ORCA_DROID_PROMPT_HOOK_BIN="$ROOT/bin/fm-droid-prompt-hook.sh" \
+    FM_ORCA_DROID_HOOK_PROMPT='Firstmate instruction waiting: read the inbox' \
     bash -c '. "$0/bin/fm-backend.sh"; fm_backend_source orca; fm_backend_orca_send_text_submit term-123 hello 3 0.1 0 fm-droid1' "$ROOT")
   case "$(fm_busy_record_read "$state" droid1)" in
     'busy droid-hook user-prompt-submit '*) ;;
@@ -252,6 +269,30 @@ test_orca_droid_typed_send_ignores_a_concurrent_doorbell() {
   [ "$out" != empty ] || fail "an unrelated UserPromptSubmit confirmed a typed send whose text is still pending"
   [ "$out" = pending ] || fail "a still-pending Droid composer must stay unconfirmed, got '$out'"
   pass "Orca Droid typed send is never confirmed by a concurrent doorbell's UserPromptSubmit"
+}
+
+test_orca_droid_typed_send_confirms_its_own_prompt_receipt() {
+  local home state gen out n
+  orca_case droid-typed-matching-prompt
+  home="$CASE_DIR/home"; state="$home/state"
+  mkdir -p "$state"
+  fm_write_meta "$state/droid1.meta" 'harness=droid' 'terminal=term-123'
+  gen=$("$ROOT/bin/fm-busy-event.sh" arm "$state" droid1)
+  "$ROOT/bin/fm-busy-event.sh" apply "$state" droid1 idle --gen "$gen" --source droid-hook --event stop >/dev/null
+  # The viewport still shows the old typed text during the worker's turn.
+  # Only Droid's new hook payload can prove that this exact text submitted.
+  sed 's/│ >      /│ > hello/' "$ROOT/tests/fixtures/droid/idle-orca-0.230.0.txt" \
+    | jq -Rn '{ok:true,result:{send:{accepted:true},terminal:{source:"screen",tail:[inputs]}}}' >"$RESP/1.out"
+  for n in $(seq 2 20); do cp "$RESP/1.out" "$RESP/$n.out"; done
+  out=$(PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" \
+    FM_HOME="$home" FM_STATE_OVERRIDE="$state" \
+    FM_ORCA_DROID_EVENT_STATE="$state" FM_ORCA_DROID_EVENT_ID=droid1 \
+    FM_ORCA_DROID_EVENT_GEN="$gen" FM_ORCA_DROID_EVENT_ONCE=1 \
+    FM_ORCA_DROID_PROMPT_HOOK_BIN="$ROOT/bin/fm-droid-prompt-hook.sh" \
+    FM_ORCA_DROID_HOOK_PROMPT=hello \
+    bash -c '. "$0/bin/fm-backend.sh"; fm_backend_source orca; fm_backend_orca_send_text_submit term-123 hello 3 0.1 0 fm-droid1' "$ROOT")
+  [ "$out" = empty ] || fail "the matching post-Enter prompt was not confirmed, got '$out'"
+  pass "Orca Droid confirms a typed send only when its own prompt hook matches"
 }
 
 test_orca_droid_typed_send_ignores_a_late_stop() {
@@ -1503,6 +1544,7 @@ test_orca_droid_keys_are_raw_controls
 test_orca_non_droid_keys_still_refuse
 test_orca_droid_composer_requires_exact_task_binding
 test_orca_droid_typed_send_ignores_a_concurrent_doorbell
+test_orca_droid_typed_send_confirms_its_own_prompt_receipt
 test_orca_droid_typed_send_ignores_a_late_stop
 test_runtime_check_accepts_ready_orca_status
 test_runtime_check_refuses_unready_orca_status

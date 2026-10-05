@@ -2527,3 +2527,5 @@ The real tmux and Orca scouts each received an explicit `gpt-5.6-luna` model and
 The Orca scout also preserved its exact terminal handle and worktree ID across relaunch and removed the isolated worktree at teardown.
 The live liveness guard reported `droid 0.230.0: title='droid'`, `ancestry verdicts=[comm droid]`, and `checked 6 installed harness(es)` on tmux.
 The opt-in guards print five `ok` checks each, and the private task evidence contains their full stdout, report, viewport, and terminal transcript.
+Rechecked on 2026-10-05 with Droid 0.230.0, tmux 3.6a, and Orca 1.4.218 after merging current upstream main.
+Both live guards again printed five `ok` lifecycle checks; the Orca guard also verified that the typed prompt's `UserPromptSubmit` receipt matched its payload hash, current generation, and pre-Enter sequence.
