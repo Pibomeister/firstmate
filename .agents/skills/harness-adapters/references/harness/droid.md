@@ -12,7 +12,7 @@ Droid is a verified crewmate and scout harness on the tmux and Orca TUI paths; i
 | Effort | Interactive `droid --help` offers no reasoning flag, so the runtime settings key `reasoningEffort` carries a shared effort only with an explicit `--model` whose Factory catalog entry lists support for it. |
 | Autonomy | `--auto high` plus `sessionDefaultSettings.autonomyLevel=high` in the per-task settings file keeps the interactive TUI at Auto (High), with commands allowed. |
 | Status line | The per-task settings replace any user `statusLine` with the command `printf firstmate` so the composer parser can prove an empty pane beneath Droid's tmux or Orca footer. |
-| Turn state | `UserPromptSubmit` opens a busy record; `Stop`, `Notification` with `idle_prompt`, and `SessionEnd` close it; `Stop` also touches the task's turn-ended marker. |
+| Turn state | `UserPromptSubmit` opens a busy record and receipts its prompt digest; `Stop`, `Notification` with `idle_prompt`, and `SessionEnd` close it; `Stop` also touches the task's turn-ended marker. |
 | Trust | Spawn confirms that `Trust this folder` is selected in the live viewport before sending Enter, then waits for the prompt hook to prove brief receipt. |
 | Interrupt | One Escape cancels a running turn; Ctrl+U clears a prompt Droid restores from its steering queue. |
 | Exit | `/exit` terminates the interactive TUI. |

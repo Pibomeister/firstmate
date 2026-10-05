@@ -325,11 +325,28 @@ fm_backend_orca_send_key() {  # <terminal-id> <key> [expected-label]
 # duplicating text.
 fm_backend_orca_send_text_submit() {  # <terminal-id> <text> <retries> <enter-sleep> <settle> [expected-label]
   local terminal=$1 text=$2 retries=$3 sleep_s=$4 settle=$5 expected_label=${6:-}
+  local state_dir='' id='' gen='' baseline='' baseline_seq='' prompt_hash='' verdict
   fm_backend_orca_tool_check || { printf 'send-failed'; return 0; }
   fm_backend_orca_send_literal "$terminal" "$text" || { printf 'send-failed'; return 0; }
   sleep "$settle"
-  fm_composer_submit_retry_core fm_backend_orca_send_key fm_backend_orca_composer_state \
-    "$terminal" "$retries" "$sleep_s" "$expected_label"
+  if [ -n "$expected_label" ] && fm_backend_orca_recorded_droid "$terminal" "$expected_label"; then
+    id=${expected_label#fm-}
+    state_dir=${FM_STATE_OVERRIDE:-$FM_HOME/state}
+    baseline=$(fm_busy_record_read "$state_dir" "$id" 2>/dev/null) || baseline=
+    if [ -n "$baseline" ]; then
+      baseline_seq=${baseline##* }
+      gen=$(fm_busy_current_gen "$state_dir" "$id" 2>/dev/null) || gen=
+      prompt_hash=$(printf '%s' "$text" | fm_busy_prompt_sha256) || prompt_hash=
+    fi
+  fi
+  verdict=$(fm_composer_submit_retry_core fm_backend_orca_send_key fm_backend_orca_composer_state \
+    "$terminal" "$retries" "$sleep_s" "$expected_label")
+  if [ "$verdict" != empty ] && [ -n "$gen" ] && [ -n "$prompt_hash" ] \
+    && fm_busy_prompt_receipt_after "$state_dir" "$id" "$gen" "$baseline_seq" "$prompt_hash"; then
+    printf 'empty'
+  else
+    printf '%s' "$verdict"
+  fi
 }
 
 # fm_backend_orca_kill: close one recorded task terminal. A missing CLI is a
