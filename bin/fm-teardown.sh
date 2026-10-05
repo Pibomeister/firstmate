@@ -3339,6 +3339,7 @@ cleanup_firstmate_home_children() {
       "$sub_state/$child_id.cursor-session" "$sub_state/$child_id.reconcile-nudged" \
       "$sub_state/$child_id.devin-config.json" "$sub_state/$child_id.droid-settings.json" \
       "$sub_state/$child_id.droid-session-end" "$sub_state/$child_id.droid-submit-receipts" \
+      "$sub_state/$child_id.droid-cleared-sessions" \
       "$sub_state/.$child_id.branch-outcome-index"
     chmod u+w "$sub_state/$child_id.git-hooks" 2>/dev/null || true
     rm -rf "$sub_state/$child_id.git-hooks"
@@ -3818,6 +3819,7 @@ rm -f "$STATE/$ID.turn-ended" "$STATE/$ID.progress" \
   "$STATE/$ID.control-relaunch.brief-prior" "$STATE/$ID.control-relaunch.note" \
   "$STATE/$ID.reconcile-nudged" "$STATE/$ID.gemini-settings.json" "$STATE/$ID.devin-config.json" \
   "$STATE/$ID.droid-settings.json" "$STATE/$ID.droid-session-end" \
+  "$STATE/$ID.droid-cleared-sessions" \
   "$STATE/$ID.droid-submit-receipts" \
   "$STATE/.$ID.branch-outcome-index" \
   "$STATE/.secondmate-relaunch-$ID" "$STATE/.secondmate-relaunch-bound-$ID"
