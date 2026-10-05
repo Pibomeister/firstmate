@@ -1,0 +1,15 @@
+ok - Droid is a crewmate/scout agent with verified control mechanics
+ok - Droid composer is readable only under a complete live TUI envelope
+ok - Droid composer proof is gated on the foreground process identity
+ok - captured Orca Droid screen has strict idle, pending, and stale-frame verdicts
+ok - Droid spawn passes the brief and model settings; hooks open and close turns
+ok - Droid answers a lingering trust dialog once
+ok - Droid never confirms a selected negative trust choice
+ok - Droid retries a transient viewport capture failure
+ok - Droid bounds hung viewport reads and reports capture failure
+ok - Droid leaves operator hook policy intact and refuses unacknowledged launches
+ok - Droid records and omits a model-specific unsupported effort
+ok - Droid omits effort when the operator's default model runs
+ok - Droid model probe cannot read the caller's stdin
+ok - Droid rejects a model before creating a worker endpoint
+ok - raw Droid commands remain outside canonical hook arming

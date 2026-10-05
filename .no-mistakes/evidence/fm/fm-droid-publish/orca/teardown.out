@@ -1,0 +1,5 @@
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+teardown: reaping leaked worktree process(es) for droid-orca-live-40436: 45463 45722
+teardown: force-killing leaked worktree process(es) for droid-orca-live-40436: 45463 45722
+teardown droid-orca-live-40436 complete (window term_071275b9-e079-40de-977b-03a795c2e0be, worktree /Users/eduardopicazo/orca/workspaces/fm-droid-orca-scratch-repo-501/fm-droid-orca-live-40436)
+Backlog: droid-orca-live-40436 just finished (this home keeps no markdown backlog at /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-droid-orca-signals.0KtQxm/home/data/backlog.md). Update /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-droid-orca-signals.0KtQxm/home/data/backlog.md - move droid-orca-live-40436 to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
