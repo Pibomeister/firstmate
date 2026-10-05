@@ -749,20 +749,21 @@ same captures, after the fix:                                empty   pending  em
 ```
 
 The typed stage reading `pending` is the counterweight that keeps a genuinely unsubmitted pointer a failed delivery.
-The fix is the Kimi footer pair rule (`FM_COMPOSER_KIMI_CONTEXT_RE_DEFAULT` in `bin/fm-composer-lib.sh`): the anchored context cell is the proof, the status row directly above it is furniture with it, and the box/left-bar staleness probe skips only that declared run before its rejection resumes - the status row's own content is never load-bearing, which the observed `ctrl+o expand` cell variation already justifies.
-A readiness, submit, or delivery gate failure now also closes the launched endpoint (`spawn_gate_endpoint_cleanup` in `bin/fm-spawn.sh`, shared with rovo and agy), so a failed spawn cannot leave an unsupervised worker behind.
+The fix is the Kimi footer pair rule (`FM_COMPOSER_KIMI_CONTEXT_RE_DEFAULT` in `bin/fm-composer-lib.sh`): the anchored context cell is the proof, the status row directly above it is furniture with it, and the box/left-bar staleness probe skips only that whole declared pair before its rejection resumes - the status row's own content is never load-bearing, which the observed `ctrl+o expand` cell variation already justifies, and either row alone below the box stays unclaimed so the exception cannot read another harness's lower activity as Kimi's footer.
+A readiness, submit, or delivery gate failure now also closes the launched endpoint (`spawn_gate_endpoint_cleanup` in `bin/fm-spawn.sh`, shared with rovo and agy), so a failed spawn cannot leave an unsupervised worker behind; when the close itself cannot be proven (herdr's best-effort kill verified through `fm_backend_herdr_endpoint_confirmed_gone`), the spawn keeps the provisional task record instead of rolling it back, so a possibly surviving worker stays named for recovery.
 
 The end-to-end proof ran one real spawn against this same install: `bin/fm-spawn.sh <id> <scratch-git-project> --harness kimi --backend herdr --mode local-only --yolo off` with a scratch `FM_HOME` inside the isolated lab session reported `spawned <id> harness=kimi` after the trust dialog was answered and the pointer delivery confirmed, and `bin/fm-teardown.sh <id>` removed the task and its pane.
-The live composer-matrix guard's kimi arm passes both reads on this install (`FM_COMPOSER_MATRIX_LIVE=1 tests/fm-composer-matrix-live-e2e.test.sh`):
+A second live run forced the readiness gate to fail after launch (`FM_KIMI_READY_POLLS=1 FM_KIMI_POLL_INTERVAL=0`): the spawn failed with `kimi did not show a verified ready signal before brief delivery`, the cleanup closed the launched lab pane (proven through `fm_backend_herdr_endpoint_confirmed_gone`), and the provisional record rolled back - no surviving worker and no surviving record.
+The live composer-matrix guard's kimi arm passes both reads on this install (`FM_COMPOSER_MATRIX_LIVE=1 tests/fm-composer-matrix-live-e2e.test.sh`), before and after the pair rule was confined to the whole pair:
 
 ```text
 ok - kimi (2.1.1): real idle composer classifies empty
 ok - kimi (2.1.1): the same idle pane read cursorless is not pending (verdict: empty)
 ```
 
-The same guard run's claude, codex, opencode, and grok arms failed on machine-local launch states unrelated to this change (a broken SessionStart hook dyld, boot frames that never rendered, and a folder-trust dialog the guard correctly refuses); every pinned shape for those harnesses still passes in the portable suite.
-`test_matrix_kimi_status_bar_below_box` in `tests/fm-composer-lib.test.sh` carries the captured 2.1.1 frames verbatim (plain and ANSI bytes) and pins the divergences: the status row without its context anchor stays `unknown`, the lone anchored cell reads `empty`, the swapped pair stays `unknown`, a dead shell below the footer stays `unknown`, and unclaimed activity without the anchor stays refused.
-`tests/fm-kimi-harness.test.sh` pins the failure-path cleanup: the unconfirmed-delivery and readiness failures close the launched window, and the verified spawn does not.
+Those guard runs' claude, codex, opencode, and grok arms failed on machine-local launch states unrelated to this change (a broken SessionStart hook dyld and claude's own statusLine, boot frames that never rendered, and a folder-trust dialog the guard correctly refuses; codex's arm passed both reads once its pane booted); every pinned shape for those harnesses still passes in the portable suite.
+`test_matrix_kimi_status_bar_below_box` in `tests/fm-composer-lib.test.sh` carries the captured 2.1.1 frames verbatim (plain and ANSI bytes) and pins the divergences: a varying status row (including 2.0.0's own shape) completes the pair, while the status row or the context cell alone below the box, the swapped pair, a dead shell below the footer, and unclaimed activity without the anchor all stay refused.
+`tests/fm-kimi-harness.test.sh` pins the failure-path cleanup: the unconfirmed-delivery and readiness failures close the launched window and roll the provisional record back, an unproven close keeps that record so the surviving worker stays named, and the verified spawn closes nothing.
 
 ### 2026-09-20 claude 2.1.236 statusLine footer through Herdr
 

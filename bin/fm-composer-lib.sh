@@ -520,7 +520,9 @@ FM_COMPOSER_OMP_STATUS_RE_DEFAULT='^[[:space:]]*(π|󰵗)[[:space:]]+·[[:space:
 # launch-then-confirm gates take their composer half from this owner).
 # The anchored context cell is the proof; the status row is whatever Kimi
 # draws directly above it (tier, model, effort, path, branch - all
-# version-variable), so the pair is the shape, never the status row alone.
+# version-variable), so the PAIR is the shape, never either row alone: a
+# context cell directly below the box, and a status row with nothing Kimi
+# above it, both stay unclaimed and keep the probe's refusal.
 # Consulted only as the boundary BELOW a selected bordered or left-bar
 # envelope, exactly as the mode hint above: typed text lives inside the box,
 # so rows pinned below it are the harness's own footer or the envelope is
@@ -1264,20 +1266,22 @@ _fm_composer_row_is_kimi_context() {  # <trimmed-row>
   fm_composer_idle_matches "$1" "${FM_COMPOSER_KIMI_CONTEXT_RE:-$FM_COMPOSER_KIMI_CONTEXT_RE_DEFAULT}" sensitive
 }
 
-# _fm_composer_kimi_footer_row_at: 0 when row <n> of <plain-screen> belongs to
-# Kimi 2.1.1's pinned footer below its bordered composer: the anchored context
-# cell itself, or the status row directly above it (the pair proof at
-# FM_COMPOSER_KIMI_CONTEXT_RE_DEFAULT). A blank row, a structural row, or a
-# row leading with any prompt glyph is never furniture. Consulted only by the
-# cursorless staleness probe below a selected envelope, where it can only move
-# the probe PAST rows the harness itself pins there; the first unclaimed row
-# keeps the probe's rejection.
-_fm_composer_kimi_footer_row_at() {  # <plain-screen> <row>
+# _fm_composer_kimi_footer_pair_at: 0 when rows <n> and <n>+1 of
+# <plain-screen> are Kimi 2.1.1's pinned footer pair below its bordered
+# composer: the status row directly above the anchored context cell (the
+# proof at FM_COMPOSER_KIMI_CONTEXT_RE_DEFAULT). The status row's own content
+# is never matched - tier, model, effort, path, branch, and hints are all
+# version-variable - but it must be non-blank, carry no structural edge, and
+# lead with no prompt glyph. Requiring the whole pair is what confines the
+# rule to verified Kimi frames: either row alone below an envelope stays
+# unclaimed activity. Consulted only by the cursorless staleness probe below
+# a selected envelope, where it can only move the probe PAST rows the harness
+# itself pins there; the first unclaimed row keeps the probe's rejection.
+_fm_composer_kimi_footer_pair_at() {  # <plain-screen> <row>
   local plain=$1 row=$2 trimmed below glyph
   trimmed=$(_fm_composer_screen_row "$row" "$plain")
   fm_composer_normalize_trim_var trimmed
   [ -n "$trimmed" ] || return 1
-  if _fm_composer_row_is_kimi_context "$trimmed"; then return 0; fi
   if fm_composer_row_has_edge "$trimmed"; then return 1; fi
   if fm_composer_leading_prompt_glyph_var glyph "$trimmed"; then return 1; fi
   below=$(_fm_composer_screen_row "$((row + 1))" "$plain")
@@ -1639,10 +1643,10 @@ _fm_composer_select_cursorless() {
     # Kimi 2.1.1 pins its status bar and context cell DIRECTLY below its
     # bordered composer - the same harness-owned footer the zone above owns
     # for glyph-proven envelopes, under a box whose shell-glyph content never
-    # locates one. The walk skips only rows the pair proof declares Kimi's;
-    # the first unclaimed row keeps the rejection below.
-    while _fm_composer_kimi_footer_row_at "$plain" "$next"; do
-      next=$((next + 1))
+    # locates one. The walk skips only the whole declared pair; the first
+    # unclaimed row keeps the rejection below.
+    while _fm_composer_kimi_footer_pair_at "$plain" "$next"; do
+      next=$((next + 2))
     done
     raw=$(_fm_composer_screen_row "$next" "$plain")
     trimmed=$raw

@@ -831,13 +831,15 @@ test_matrix_kimi_status_bar_below_box() {
   assert_screen "kimi 2.1.1 delivered spinner frame on cmux/orca" empty "$CAPS_PLAIN" "$delivered"
   # Divergence pins: the anchored context cell is the pair's proof, so losing
   # it, swapping the pair, or anything below the pair keeps the refusal -
-  # while the lone anchored cell still proves Kimi's footer on its own.
+  # while a varying status row (2.0.0's own shape) still completes the pair.
   box=$' ╭──────────────────────────────────────────────────────────────────────────────────────────╮\n │ >                                                                                        │\n ╰──────────────────────────────────────────────────────────────────────────────────────────╯'
   status=' Never Ask  K3 thinking: max  …/scratchpad/kimi-repro/kimi-cwd  fm/firstmate-kimi-launcher'
   ctx='                                                                           context: 0% (0/1M)'
+  assert_screen "kimi 2.0.0 status row completes the pair" empty "$CAPS_STYLED" "$box"$'\n''auto  K2.7 Coding thinking  /some/path'$'\n'"$ctx"
   assert_screen "kimi status row without its context anchor" unknown "$CAPS_STYLED" "$box"$'\n'"$status"
   assert_screen "kimi status row without its context anchor on plain backends" unknown "$CAPS_PLAIN" "$box"$'\n'"$status"
-  assert_screen "kimi context cell alone below the box" empty "$CAPS_STYLED" "$box"$'\n'"$ctx"
+  assert_screen "kimi context cell alone below the box" unknown "$CAPS_STYLED" "$box"$'\n'"$ctx"
+  assert_screen "kimi context cell alone below the box on plain backends" unknown "$CAPS_PLAIN" "$box"$'\n'"$ctx"
   assert_screen "kimi footer rows swapped" unknown "$CAPS_STYLED" "$box"$'\n'"$ctx"$'\n'"$status"
   assert_screen "kimi footer above a dead shell" unknown "$CAPS_STYLED" "$box"$'\n'"$status"$'\n'"$ctx"$'\n''$ '
   assert_screen "kimi footer above a dead shell on plain backends" unknown "$CAPS_PLAIN" "$box"$'\n'"$status"$'\n'"$ctx"$'\n''$ '

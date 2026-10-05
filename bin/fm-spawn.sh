@@ -4150,14 +4150,31 @@ rovo_spawn_fail() { # <detail>
 # fm-teardown.sh's own generic kill call. On orca only the exact terminal is
 # closed: that stops the CLI while its worktree stays for the record's own
 # teardown, which owns worktree deletion.
+# What a backend can prove about the close differs (fm-backend.sh's
+# fm_backend_kill contract): herdr's kill is best-effort by design, so its
+# outcome is proven structurally through fm_backend_herdr_endpoint_confirmed_gone,
+# while tmux's own status already means it. When the close stays unproven the
+# rollback must NOT run: keeping the provisional task record keeps the
+# possibly surviving worker named for recovery, the same accountability the
+# orca abort path keeps through its retained cleanup_recovery record.
 spawn_gate_endpoint_cleanup() {
-  if [ "$BACKEND" = orca ]; then
-    fm_backend_kill orca "$T" 2>/dev/null && SPAWN_ENDPOINT_CLOSED=1 || true
-    return 0
-  fi
-  local tab_id=
+  local tab_id='' kill_unproven=0
   [ "$BACKEND" = zellij ] && tab_id=$ZELLIJ_TAB_ID
-  fm_backend_kill "$BACKEND" "$T" "$tab_id" "fm-$ID" 2>/dev/null && SPAWN_ENDPOINT_CLOSED=1 || true
+  if [ "$BACKEND" = orca ]; then
+    fm_backend_kill orca "$T" 2>/dev/null && SPAWN_ENDPOINT_CLOSED=1 || kill_unproven=1
+  elif [ "$BACKEND" = herdr ]; then
+    fm_backend_kill herdr "$T" 2>/dev/null || true
+    if fm_backend_herdr_endpoint_confirmed_gone "$T" 2>/dev/null; then
+      SPAWN_ENDPOINT_CLOSED=1
+    else
+      kill_unproven=1
+    fi
+  else
+    fm_backend_kill "$BACKEND" "$T" "$tab_id" "fm-$ID" 2>/dev/null && SPAWN_ENDPOINT_CLOSED=1 || kill_unproven=1
+  fi
+  [ "$kill_unproven" -eq 0 ] && return 0
+  SPAWN_FRESH_COMMIT_PENDING=0
+  echo "warning: the endpoint $T of this failed spawn could not be proven closed; keeping its provisional task record so a possibly surviving worker stays named for recovery" >&2
 }
 
 # agy carries its brief on the launch command, so it needs no delivery gate,

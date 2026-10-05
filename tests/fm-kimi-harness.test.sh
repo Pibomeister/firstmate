@@ -105,8 +105,20 @@ case "$*" in
 esac
 case "${1:-}" in
   display-message) printf 'firstmate\n'; exit 0 ;;
-  list-windows) exit 0 ;;
-  has-session|new-session|new-window|kill-window) exit 0 ;;
+  list-windows)
+    if [ "${FM_FAKE_KILL_SURVIVES:-no}" = yes ] && [ -f "$FM_FAKE_KILL_ATTEMPTED" ]; then
+      printf '%s\n' "$FM_FAKE_WINDOW_NAME"
+    fi
+    exit 0
+    ;;
+  has-session|new-session|new-window) exit 0 ;;
+  kill-window)
+    if [ "${FM_FAKE_KILL_SURVIVES:-no}" = yes ]; then
+      : > "$FM_FAKE_KILL_ATTEMPTED"
+      exit 1
+    fi
+    exit 0
+    ;;
   send-keys)
     prev=
     literal=
@@ -274,6 +286,9 @@ run_spawn() {
     FM_FAKE_TMUX_VISIBLE_FAILS="${FM_FAKE_TMUX_VISIBLE_FAILS:-no}" \
     FM_FAKE_KIMI_SWALLOWED="$case_dir/kimi.swallowed" \
     FM_FAKE_KIMI_SWALLOW_FIRST="${FM_FAKE_KIMI_SWALLOW_FIRST:-no}" \
+    FM_FAKE_KILL_SURVIVES="${FM_FAKE_KILL_SURVIVES:-no}" \
+    FM_FAKE_KILL_ATTEMPTED="$case_dir/kill.attempted" \
+    FM_FAKE_WINDOW_NAME="fm-$id" \
     FM_FAKE_TMUX_CALL_LOG="$case_dir/tmux-calls.log" \
     FM_FAKE_BRIEF_REAL="$(cd "$home/data/$id" && pwd -P)/launch-brief.md" \
     FM_KIMI_READY_POLLS="${FM_KIMI_READY_POLLS:-2}" FM_KIMI_DELIVERY_POLLS=2 FM_KIMI_POLL_INTERVAL=0 \
@@ -722,7 +737,29 @@ test_kimi_unconfirmed_delivery_fails_loudly() {
     "unconfirmed kimi delivery did not leave a supervisor-visible failure"
   assert_grep "kill-window -t =firstmate:=fm-$id" "$CASE_DIR/tmux-calls.log" \
     "unconfirmed kimi delivery left the launched worker running without a task record"
+  assert_absent "$HOME_DIR/state/$id.meta" \
+    "a proven close kept the failed spawn's provisional record, blocking redispatch"
   pass "fm-spawn: kimi treats a silent pointer drop as a failed spawn"
+}
+
+test_kimi_gate_failure_keeps_the_record_when_the_close_is_unproven() {
+  local id rec out rc
+  id=kimi-kill-survives-z9
+  rec=$(make_spawn_case killsurvive "$id")
+  read_spawn_record "$rec"
+  rc=0
+  out=$(FM_FAKE_KIMI_DELIVERY=no FM_FAKE_KILL_SURVIVES=yes run_spawn \
+    "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id") || rc=$?
+  [ "$rc" -ne 0 ] || fail "an unconfirmed kimi delivery should fail even when its close is unproven"
+  assert_contains "$out" "kimi brief pointer delivery was not confirmed" \
+    "the unproven-close failure lost the gate's own diagnostic"
+  assert_contains "$out" "could not be proven closed" \
+    "the unproven close did not surface its own warning"
+  assert_present "$HOME_DIR/state/$id.meta" \
+    "an unproven close let the rollback erase the surviving worker's task record"
+  assert_grep 'failed: kimi brief pointer delivery was not confirmed' <(sed -E 's/ \[at=[0-9]+\]//' "$HOME_DIR/state/$id.status") \
+    "the kept record lost the supervisor-visible failure"
+  pass "fm-spawn: a gate failure whose close is unproven keeps the surviving worker's record"
 }
 
 test_kimi_readiness_gate_precedes_pointer() {
@@ -1145,6 +1182,7 @@ test_kimi_teardown_removes_pointer_and_registry_token
 test_kimi_falls_back_to_expanded_home_binary
 test_kimi_missing_binary_refuses_before_pane_creation
 test_kimi_unconfirmed_delivery_fails_loudly
+test_kimi_gate_failure_keeps_the_record_when_the_close_is_unproven
 test_kimi_readiness_gate_precedes_pointer
 test_kimi_fresh_worktree_trust_is_answered_and_verified
 test_kimi_swallowed_trust_enter_is_retried_until_the_dialog_clears
