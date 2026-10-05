@@ -407,21 +407,40 @@ fm_control_harness_wiring_paths() {  # <harness> <worktree> <state-dir> <id>
     # the project, and nothing global is installed.
     gemini) printf '%s\n' "$state/$id.gemini-settings.json" ;;
     devin) printf '%s\n' "$state/$id.devin-config.json" ;;
-    droid) printf '%s\n' "$state/$id.droid-settings.json" "$state/$id.droid-session-end" "$state/$id.droid-cleared-sessions" ;;
+    droid) printf '%s\n' "$state/$id.droid-settings.json" "$state/$id.droid-session-end" ;;
   esac
 }
 
-# Droid's SessionEnd hook writes the armed busy generation only after its
-# generation-bound event is accepted. This is the shared stop proof used by
-# Orca control and replacement spawn; a marker from a prior incarnation fails.
+# Droid's SessionEnd hook writes the armed busy generation when the current
+# generation closes a session with reason "other". Droid also closes sessions
+# that way without exiting (after /clear, on a session reload, or for a Task
+# subagent), so the marker is only a session-close signal. It is the shared
+# stop proof used by Orca control and replacement spawn only together with an
+# lsof scan showing no droid process whose working directory is inside the
+# task worktree. A marker from a prior incarnation, a missing worktree, a
+# missing lsof, or an lsof error all fail closed.
 fm_control_droid_session_ended() {  # <state-dir> <id> <meta-file>
-  local state=$1 id=$2 meta=$3 gen ended path
+  local state=$1 id=$2 meta=$3 gen ended path wt out status line
   gen=$(fm_meta_get "$meta" busy_gen)
   [ -n "$gen" ] || return 1
   path="$state/$id.droid-session-end"
   [ -f "$path" ] && [ ! -L "$path" ] || return 1
   IFS= read -r ended <"$path" 2>/dev/null || ended=
-  [ "$ended" = "$gen" ]
+  [ "$ended" = "$gen" ] || return 1
+  wt=$(fm_meta_get "$meta" worktree)
+  [ -n "$wt" ] && wt=$(cd "$wt" 2>/dev/null && pwd -P) || return 1
+  command -v lsof >/dev/null 2>&1 || return 1
+  out=$(lsof -a -c droid -d cwd -Fn 2>&1) && status=0 || status=$?
+  case "$status" in
+    0) ;;
+    1) [ -z "$out" ]; return ;;
+    *) return 1 ;;
+  esac
+  while IFS= read -r line; do
+    case "$line" in "n$wt"|"n$wt"/*) return 1 ;; esac
+  done <<EOF
+$out
+EOF
 }
 
 # The firstmate-owned global turn-end registry entry a harness mints per task.

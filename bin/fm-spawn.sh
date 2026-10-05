@@ -1753,7 +1753,7 @@ if [ "$RELAUNCH" -eq 1 ]; then
   RELAUNCH_PRIOR_HARNESS=$(fm_meta_get "$RELAUNCH_META" harness)
   if [ "$BACKEND" = orca ] && [ "$RELAUNCH_PRIOR_HARNESS" = droid ]; then
     fm_control_droid_session_ended "$STATE" "$ID" "$RELAUNCH_META" || {
-      echo "error: Orca Droid relaunch has no current-generation SessionEnd proof; refusing a duplicate agent" >&2
+      echo "error: Orca Droid relaunch has no current-generation SessionEnd proof with its process gone; refusing a duplicate agent" >&2
       exit 1
     }
     fm_backend_target_exists orca "$RELAUNCH_TARGET" "fm-$ID" || {
@@ -4800,8 +4800,8 @@ EOF
       d_submit="$(shell_quote "$FM_ROOT/bin/fm-droid-prompt-hook.sh") $(shell_quote "$STATE_REAL") $(shell_quote "$ID") $(shell_quote "$BUSY_GEN") >/dev/null 2>&1 || true"
       d_stop="$busy_cmd_prefix idle $busy_suffix --event stop >/dev/null 2>&1 && touch $(shell_quote "$TURNEND") || true"
       d_idle="jq -e '.notification_type == \"idle_prompt\"' >/dev/null 2>&1 && $busy_cmd_prefix idle $busy_suffix --event idle-prompt >/dev/null 2>&1 || true"
-      # SessionEnd proves an Orca Droid process left its TUI only for an exit
-      # reason; /clear keeps the process. An old session cannot stop its
+      # SessionEnd records a session close for Orca stop detection, which also
+      # requires the Droid process to be gone. An old session cannot mark its
       # replacement because the busy writer checks the gen.
       d_end="$(shell_quote "$FM_ROOT/bin/fm-droid-session-end-hook.sh") $(shell_quote "$STATE_REAL") $(shell_quote "$ID") $(shell_quote "$BUSY_GEN") >/dev/null 2>&1 || true"
       jq -n --arg model "$MODEL" --arg effort "$DROID_EFFORT_APPLY" \
