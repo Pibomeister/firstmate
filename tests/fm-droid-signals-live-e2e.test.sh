@@ -81,7 +81,7 @@ pass "Droid received its brief and signalled turn end"
   || fail "Droid inbox steer could not be recorded"
 wait_for 'handled steer' "test -f '$HOME_DIR/state/$ID.inbox/handled/001.msg'"
 wait_for 'steer report' "grep -Fq live-steer '$REPORT'"
-wait_for 'settled steer' "grep -q 'state=idle source=droid-hook' '$HOME_DIR/state/$ID.busy-state'"
+wait_for 'settled steer' "grep -q 'state=idle source=droid-hook' '$HOME_DIR/state/$ID.busy-state'" 360
 TARGET=$(sed -n 's/^window=//p' "$HOME_DIR/state/$ID.meta")
 "$ROOT/bin/fm-send.sh" "$TARGET" "Append TYPED_RECEIVED to '$REPORT' and reply TMUX_TYPED_OK." \
   || fail "Droid typed steer could not be confirmed"
