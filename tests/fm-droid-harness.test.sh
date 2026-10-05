@@ -198,7 +198,7 @@ run_droid_spawn() {  # <id> [extra args]
 }
 
 test_droid_launch_and_hooks() {
-  local id=droid-launch-1 out rc settings cmd state
+  local id=droid-launch-1 out rc settings cmd state baseline digest gen
   make_droid_case launch "$id"
   out=$(run_droid_spawn "$id" --model gpt-5.6-luna --effort low)
   rc=$?
@@ -216,6 +216,14 @@ test_droid_launch_and_hooks() {
   grep -Fq -- 'encode launch-brief' "$CASE_DIR/launch.log" || fail "Droid launch did not carry the encoded brief"
   [ "$(fm_busy_classify tmux fake:win droid "$id" "$state")" = 'busy droid-hook' ] \
     || fail "UserPromptSubmit hook did not replace the spawn seed"
+  baseline=$(fm_busy_record_read "$state" "$id")
+  baseline=${baseline##* }
+  gen=$(cat "$state/$id.busy-gen")
+  cmd=$(jq -r '.hooks.UserPromptSubmit[0].hooks[0].command' "$settings")
+  printf '{"hook_event_name":"UserPromptSubmit","prompt":"typed Droid prompt"}\n' | sh -c "$cmd"
+  digest=$(printf '%s' 'typed Droid prompt' | fm_busy_prompt_sha256)
+  fm_busy_prompt_receipt_after "$state" "$id" "$gen" "$baseline" "$digest" \
+    || fail "spawned Droid hook did not receipt its exact submitted prompt"
   cmd=$(jq -r '.hooks.Stop[0].hooks[0].command' "$settings")
   sh -c "$cmd"
   [ -e "$state/$id.turn-ended" ] || fail "Stop hook did not signal turn end"

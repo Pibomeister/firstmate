@@ -4905,7 +4905,9 @@ EOF
       # completion, cancellation, and exit hooks are a closed busy-state pair.
       busy_cmd_prefix="$(shell_quote "$FM_ROOT/bin/fm-busy-event.sh") apply $(shell_quote "$STATE_REAL") $(shell_quote "$ID")"
       busy_suffix="--gen $(shell_quote "$BUSY_GEN") --source droid-hook"
-      d_submit="$busy_cmd_prefix busy $busy_suffix --event user-prompt-submit >/dev/null 2>&1 || true"
+      # Keep the exact submitted prompt digest beside its busy-event sequence
+      # so an Orca typed send cannot borrow a concurrent inbox doorbell hook.
+      d_submit="$(shell_quote "$FM_ROOT/bin/fm-droid-prompt-hook.sh") $(shell_quote "$STATE_REAL") $(shell_quote "$ID") $(shell_quote "$BUSY_GEN") >/dev/null 2>&1 || true"
       d_stop="$busy_cmd_prefix idle $busy_suffix --event stop >/dev/null 2>&1 && touch $(shell_quote "$TURNEND") || true"
       d_idle="jq -e '.notification_type == \"idle_prompt\"' >/dev/null 2>&1 && $busy_cmd_prefix idle $busy_suffix --event idle-prompt >/dev/null 2>&1 || true"
       # SessionEnd proves an Orca Droid process left its TUI. An old session
