@@ -2510,8 +2510,8 @@ The Orca proof requires `terminal read --screen` to return `source=screen` and t
 The live captures showed `TMUX ⧉` on tmux and `IDE ◌` on Orca, while the production parser accepts other trailing integration indicators.
 The opt-in Orca guard still asserts the observed `IDE ◌` indicator as a version drift check.
 An unrelated process, stale frame, extra row, or unknown terminal reads `unknown` and cannot authorize typed input.
-Orca 1.4.218 delivered Droid's raw Escape and Ctrl+U keys, while its current-generation `SessionEnd` hook proved exit before relaunch or teardown.
-A disposable Droid 0.230.0 TUI with a payload-recording `SessionEnd` hook showed `/clear` emitting `reason=clear` and then `reason=other` for the same old `session_id` while the process kept running, and `/exit` and Ctrl+C each emitting one `reason=other` for the current session, so only an uncleared session's `other` writes the stop proof.
+Orca 1.4.218 delivered Droid's raw Escape and Ctrl+U keys, while its current-generation `SessionEnd` marker, together with no `droid` process left in the task worktree, proved exit before relaunch or teardown.
+A disposable Droid 0.230.0 TUI with a payload-recording `SessionEnd` hook showed `/clear` emitting `reason=clear` and then `reason=other` for the same old `session_id` while the process kept running, and `/exit` and Ctrl+C each emitting one `reason=other` for the current session. `reason=other` is therefore a session-close signal, not proof of process exit: the installed binary also sends it when it reloads a session or closes a Task subagent's session. Stop proof additionally requires an `lsof` scan finding no `droid` process whose working directory is inside the task worktree.
 The live interrupt checks observed a busy running tool, then an idle hook and missing completion marker before the tool's 45-second duration; control conservatively reports `cancel=unconfirmed` because the vendor offers no separate cancellation acknowledgement.
 
 Refresh commands:

@@ -15,7 +15,7 @@ Droid is a verified crewmate and scout harness on the tmux and Orca TUI paths; i
 | Turn state | `UserPromptSubmit` opens a busy record and receipts its prompt digest; `Stop`, `Notification` with `idle_prompt`, and `SessionEnd` close it; `Stop` also touches the task's turn-ended marker. |
 | Trust | Spawn confirms that `Trust this folder` is selected in the live viewport before sending Enter, then waits for the prompt hook to prove brief receipt. |
 | Interrupt | One Escape cancels a running turn; Ctrl+U clears a prompt Droid restores from its steering queue. |
-| Exit | `/exit` terminates the interactive TUI. Only a `SessionEnd` with reason `other` for a session that was not cleared is stop proof; `/clear` ends the old session with `clear` then `other` while the process keeps running, and every other reason fails closed. |
+| Exit | `/exit` terminates the interactive TUI. A `SessionEnd` with reason `other` is only a session-close signal: Droid also sends it after `/clear`, on a session reload, and for a Task subagent while the process keeps running. On Orca, stop proof is that current-generation marker plus an `lsof` scan finding no `droid` process with its working directory in the task worktree; every other reason, a scan error, or a missing `lsof` fails closed. |
 | Resume | `droid --resume <sessionId>` resumes a native session, while Firstmate's deterministic `relaunch` starts from the brief and progress note. |
 | Identity | The live process name is exactly `droid`, with no verified child environment marker; process ancestry identifies it. |
 | Skill invocation | Use the TUI's slash command, such as `/no-mistakes`, when that skill is installed. |
