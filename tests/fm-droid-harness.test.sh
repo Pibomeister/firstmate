@@ -236,14 +236,25 @@ test_droid_launch_and_hooks() {
   [ "$(fm_busy_classify tmux fake:win droid "$id" "$state")" = 'idle droid-hook' ] \
     || fail "idle notification did not settle a cancelled turn"
   cmd=$(jq -r '.hooks.SessionEnd[0].hooks[0].command' "$settings")
-  sh -c "$cmd"
+  "$ROOT/bin/fm-busy-event.sh" apply "$state" "$id" busy --gen "$gen" \
+    --source droid-hook --event user-prompt-submit >/dev/null
+  printf '%s\n' '{"session_id":"s-old","reason":"clear"}' | sh -c "$cmd"
+  printf '%s\n' '{"session_id":"s-old","reason":"other"}' | sh -c "$cmd"
+  [ "$(fm_busy_classify tmux fake:win droid "$id" "$state")" = 'idle droid-hook' ] \
+    || fail "a cleared Droid session did not close the busy record"
+  [ ! -e "$state/$id.droid-session-end" ] || fail "/clear was recorded as proof Droid stopped"
+  for reason in prompt_input_exit logout unverified; do
+    printf '{"session_id":"s-new","reason":"%s"}\n' "$reason" | sh -c "$cmd"
+    [ ! -e "$state/$id.droid-session-end" ] || fail "unverified SessionEnd reason $reason proved a stop"
+  done
+  printf '%s\n' '{"session_id":"s-new","reason":"other"}' | sh -c "$cmd"
   [ "$(cat "$state/$id.droid-session-end")" = "$(cat "$state/$id.busy-gen")" ] \
     || fail "SessionEnd did not record the current busy generation"
   fm_control_droid_session_ended "$state" "$id" "$state/$id.meta" \
     || fail "Orca control must accept the generation-bound SessionEnd marker"
   rm -f "$state/$id.droid-session-end"
   "$ROOT/bin/fm-busy-event.sh" arm "$state" "$id" >/dev/null
-  sh -c "$cmd"
+  printf '%s\n' '{"session_id":"s-new","reason":"other"}' | sh -c "$cmd"
   [ ! -e "$state/$id.droid-session-end" ] || fail "an old Droid session marked a replacement stopped"
   rm -f "$state/$id.turn-ended"
   cmd=$(jq -r '.hooks.Stop[0].hooks[0].command' "$settings")

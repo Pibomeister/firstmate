@@ -407,7 +407,7 @@ fm_control_harness_wiring_paths() {  # <harness> <worktree> <state-dir> <id>
     # the project, and nothing global is installed.
     gemini) printf '%s\n' "$state/$id.gemini-settings.json" ;;
     devin) printf '%s\n' "$state/$id.devin-config.json" ;;
-    droid) printf '%s\n' "$state/$id.droid-settings.json" "$state/$id.droid-session-end" ;;
+    droid) printf '%s\n' "$state/$id.droid-settings.json" "$state/$id.droid-session-end" "$state/$id.droid-cleared-sessions" ;;
   esac
 }
 

@@ -4910,9 +4910,10 @@ EOF
       d_submit="$(shell_quote "$FM_ROOT/bin/fm-droid-prompt-hook.sh") $(shell_quote "$STATE_REAL") $(shell_quote "$ID") $(shell_quote "$BUSY_GEN") >/dev/null 2>&1 || true"
       d_stop="$busy_cmd_prefix idle $busy_suffix --event stop >/dev/null 2>&1 && touch $(shell_quote "$TURNEND") || true"
       d_idle="jq -e '.notification_type == \"idle_prompt\"' >/dev/null 2>&1 && $busy_cmd_prefix idle $busy_suffix --event idle-prompt >/dev/null 2>&1 || true"
-      # SessionEnd proves an Orca Droid process left its TUI. An old session
-      # cannot stop its replacement because the busy writer checks the gen.
-      d_end="$busy_cmd_prefix idle $busy_suffix --event session-end >/dev/null 2>&1 && printf '%s\\n' $(shell_quote "$BUSY_GEN") > $(shell_quote "$STATE_REAL/$ID.droid-session-end") || true"
+      # SessionEnd proves an Orca Droid process left its TUI only for an exit
+      # reason; /clear keeps the process. An old session cannot stop its
+      # replacement because the busy writer checks the gen.
+      d_end="$(shell_quote "$FM_ROOT/bin/fm-droid-session-end-hook.sh") $(shell_quote "$STATE_REAL") $(shell_quote "$ID") $(shell_quote "$BUSY_GEN") >/dev/null 2>&1 || true"
       jq -n --arg model "$MODEL" --arg effort "$DROID_EFFORT_APPLY" \
         --arg submit "$d_submit" --arg stop "$d_stop" --arg idle "$d_idle" --arg end "$d_end" '
         {statusLine:{type:"command",command:"printf firstmate"},
