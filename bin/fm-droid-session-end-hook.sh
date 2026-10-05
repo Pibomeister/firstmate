@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# Record Droid's SessionEnd as idle, and as process-stop proof only when the
-# payload proves the TUI exited. Droid 0.230.0 was observed live: /exit and
-# Ctrl-C end the current session with reason "other", while /clear ends the
-# old session with "clear" and then again with "other" from its worker, and
-# the process keeps running. Every other reason fails closed.
+# Record Droid's SessionEnd as idle, and as a session-close marker for reason
+# "other". Droid 0.230.0 sends "other" on /exit and Ctrl-C, but also when it
+# closes a session and keeps running (after /clear, on a session reload, or for
+# a Task subagent), so the marker is not proof of process exit by itself;
+# fm_control_droid_session_ended also requires the process to be gone. Every
+# other reason, including "clear", writes nothing.
 set -u
 set -o pipefail
 
@@ -14,15 +15,5 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 payload=$(cat)
 "$SCRIPT_DIR/fm-busy-event.sh" apply "$STATE" "$ID" idle \
   --gen "$GEN" --source droid-hook --event session-end >/dev/null 2>&1 || exit 0
-reason=$(jq -r '.reason // empty' <<<"$payload" 2>/dev/null) || exit 0
-session=$(jq -r '.session_id // empty' <<<"$payload" 2>/dev/null) || exit 0
-[ -n "$session" ] || exit 0
-cleared="$STATE/$ID.droid-cleared-sessions"
-case "$reason" in
-  clear) printf '%s\n' "$session" >>"$cleared" ;;
-  other)
-    grep -Fxq -- "$session" "$cleared" 2>/dev/null && exit 0
-    printf '%s\n' "$GEN" >"$STATE/$ID.droid-session-end"
-    ;;
-esac
-exit 0
+jq -e '.reason == "other"' >/dev/null 2>&1 <<<"$payload" || exit 0
+printf '%s\n' "$GEN" >"$STATE/$ID.droid-session-end"

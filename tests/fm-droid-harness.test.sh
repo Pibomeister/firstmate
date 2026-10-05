@@ -198,7 +198,7 @@ run_droid_spawn() {  # <id> [extra args]
 }
 
 test_droid_launch_and_hooks() {
-  local id=droid-launch-1 out rc settings cmd state baseline digest gen
+  local id=droid-launch-1 out rc settings cmd state baseline digest gen live_bin live_pid
   make_droid_case launch "$id"
   out=$(run_droid_spawn "$id" --model gpt-5.6-luna --effort low)
   rc=$?
@@ -239,19 +239,35 @@ test_droid_launch_and_hooks() {
   "$ROOT/bin/fm-busy-event.sh" apply "$state" "$id" busy --gen "$gen" \
     --source droid-hook --event user-prompt-submit >/dev/null
   printf '%s\n' '{"session_id":"s-old","reason":"clear"}' | sh -c "$cmd"
-  printf '%s\n' '{"session_id":"s-old","reason":"other"}' | sh -c "$cmd"
   [ "$(fm_busy_classify tmux fake:win droid "$id" "$state")" = 'idle droid-hook' ] \
     || fail "a cleared Droid session did not close the busy record"
-  [ ! -e "$state/$id.droid-session-end" ] || fail "/clear was recorded as proof Droid stopped"
+  [ ! -e "$state/$id.droid-session-end" ] || fail "/clear was recorded as a Droid session close"
   for reason in prompt_input_exit logout unverified; do
     printf '{"session_id":"s-new","reason":"%s"}\n' "$reason" | sh -c "$cmd"
-    [ ! -e "$state/$id.droid-session-end" ] || fail "unverified SessionEnd reason $reason proved a stop"
+    [ ! -e "$state/$id.droid-session-end" ] || fail "unverified SessionEnd reason $reason recorded a close"
   done
   printf '%s\n' '{"session_id":"s-new","reason":"other"}' | sh -c "$cmd"
   [ "$(cat "$state/$id.droid-session-end")" = "$(cat "$state/$id.busy-gen")" ] \
     || fail "SessionEnd did not record the current busy generation"
+  live_bin="$CASE_DIR/live-droid"
+  mkdir -p "$live_bin"
+  cp "$(command -v sleep)" "$live_bin/droid"
+  if command -v codesign >/dev/null 2>&1; then
+    codesign -s - -f "$live_bin/droid" >/dev/null 2>&1 || fail "could not sign the live droid stand-in"
+  fi
+  (cd "$WT_DIR" && exec "$live_bin/droid" 60) &
+  live_pid=$!
+  for _ in $(seq 1 50); do
+    lsof -a -p "$live_pid" -d cwd -Fn 2>/dev/null | grep -q '^n' && break
+    sleep 0.1
+  done
+  if fm_control_droid_session_ended "$state" "$id" "$state/$id.meta"; then
+    kill "$live_pid" 2>/dev/null; wait "$live_pid" 2>/dev/null
+    fail "a session-close marker counted as a stop while Droid still ran in the worktree"
+  fi
+  kill "$live_pid" 2>/dev/null; wait "$live_pid" 2>/dev/null
   fm_control_droid_session_ended "$state" "$id" "$state/$id.meta" \
-    || fail "Orca control must accept the generation-bound SessionEnd marker"
+    || fail "Orca control must accept the generation-bound SessionEnd marker once Droid is gone"
   rm -f "$state/$id.droid-session-end"
   "$ROOT/bin/fm-busy-event.sh" arm "$state" "$id" >/dev/null
   printf '%s\n' '{"session_id":"s-new","reason":"other"}' | sh -c "$cmd"
