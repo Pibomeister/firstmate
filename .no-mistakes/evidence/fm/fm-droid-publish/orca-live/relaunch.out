@@ -1,0 +1,2 @@
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+relaunched droid-orca-live-13988 harness=droid from=droid model=gpt-5.6-luna effort=low backend=orca endpoint=term_a2ac7c87-319d-41ce-b768-21952dba956b worktree=/Users/eduardopicazo/orca/workspaces/fm-droid-orca-scratch-repo-501/fm-droid-orca-live-13988

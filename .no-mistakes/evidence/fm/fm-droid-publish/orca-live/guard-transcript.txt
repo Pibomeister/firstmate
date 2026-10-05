@@ -1,0 +1,6 @@
+ok - Orca Droid received its brief and settled its turn
+ok - Orca Droid acknowledged inbox and typed fm-send steers
+ok - Orca Droid interrupted a running tool before normal completion
+ok - Orca Droid relaunch preserved endpoint and profile with a fresh generation
+ok - Orca Droid exit and teardown retired the terminal, worktree, and task wiring
+exit=0

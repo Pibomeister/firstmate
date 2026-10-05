@@ -1,0 +1,5 @@
+droid processes with cwd in worktree:
+fcwd	n/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-droid-stopproof.Ao1aRM/worktree
+RESULT live-droid: not-stopped (correct, marker alone rejected)
+RESULT stale-marker+gone: not-stopped (correct, prior generation rejected)
+RESULT current-marker+gone: stopped (correct)

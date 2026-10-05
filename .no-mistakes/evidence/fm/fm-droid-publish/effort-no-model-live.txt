@@ -1,0 +1,18 @@
+$ fm-spawn.sh droid-effort <project> --scout --harness droid --effort high --backend tmux
+notice: Droid model 'default' does not establish support for effort 'high' (catalog supports: unknown); recording effort but omitting it from runtime settings
+spawned droid-effort harness=droid kind=scout window=firstmate:fm-droid-effort worktree=/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-droid-effort.cfXxtg/pool/.treehouse/scratch-6fc09d/1/scratch
+--- task metadata (model/effort lines)
+harness=droid
+model=default
+effort=high
+--- Droid runtime settings keys
+["hooks","sessionDefaultSettings","statusLine"]
+--- reasoningEffort / model in settings:
+{"reasoningEffort":null,"model":null}
+--- Droid header
+│ > Enter to steer · Ctrl+Enter to queue                                       │
+stopped droid-effort harness=droid backend=tmux endpoint=firstmate:fm-droid-effort worktree=/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-droid-effort.cfXxtg/pool/.treehouse/scratch-6fc09d/1/scratch
+complete: droid-effort captain-call inventory reviewed
+REFUSED: scout task droid-effort has no report at /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-droid-effort.cfXxtg/home/data/droid-effort/report.md.
+The report is the work product. Have the crewmate write it, or use --force after explicit discard approval.
+teardown exit=1
