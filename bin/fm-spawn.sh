@@ -1212,6 +1212,7 @@ spawn_remote_secondmate() {
 BACKEND=
 ORCA_ABORT_CLEANUP=0
 ORCA_WORKTREE_ID=
+ORCA_CREATED_BRANCH=
 ORCA_TERMINAL=
 HERDR_PROJECTION_ABORT_CLEANUP=0
 HERDR_PROJECTION_ABORT_SESSION=
@@ -3998,6 +3999,7 @@ EOF
       exit 1
     fi
     validate_spawn_worktree "orca worktree create" "$W"
+    ORCA_CREATED_BRANCH=$(git -C "$WT" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
     if [ -z "$ORCA_TERMINAL" ]; then
       ORCA_TERMINAL=$(fm_backend_orca_terminal_create "$ORCA_WORKTREE_ID" "$W") || exit 1
     fi
@@ -5207,6 +5209,7 @@ preserve_relaunch_meta() {
   if [ "$BACKEND" = orca ]; then
     echo "orca_worktree_id=$ORCA_WORKTREE_ID"
     echo "terminal=$ORCA_TERMINAL"
+    [ -z "$ORCA_CREATED_BRANCH" ] || echo "orca_created_branch=$ORCA_CREATED_BRANCH"
   fi
   if [ "$BACKEND" = cmux ]; then
     echo "cmux_workspace_id=$CMUX_WORKSPACE_ID"

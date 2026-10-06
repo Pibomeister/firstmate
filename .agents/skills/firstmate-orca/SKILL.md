@@ -17,6 +17,7 @@ The harness is the agent process launched inside that endpoint, such as `claude`
 Load `harness-adapters` for harness-specific launch, interrupt, resume, trust-dialog, and skill-invocation facts.
 
 Implementation details, metadata fields, teardown guarantees, and limitations live in `docs/orca-backend.md`.
+For board transitions and initial-branch cleanup, see [Current lifecycle and safety](../../../docs/orca-backend.md#current-lifecycle-and-safety).
 `docs/verification/runtime-backends.md` "Orca" owns active smoke evidence.
 Prefer the `bin/fm-*` helpers over raw `orca` commands.
 Use raw `orca` only when the helper surface cannot answer the inspection question, and keep the recorded firstmate metadata as the task identity.
