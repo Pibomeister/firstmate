@@ -1,0 +1,21 @@
+## before teardown: branches in project
+fm-cardlive
+fm/cardlive
+main
+worktree dir exists: yes
+$ FM_HOME=$LAB bin/fm-teardown.sh cardlive
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.4AKD0n
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
+teardown: reaping leaked worktree process(es) for cardlive: 20478 31650
+teardown: force-killing leaked worktree process(es) for cardlive: 20478 31650
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
+cardproj: already current
+teardown cardlive complete (window term_02e3d60c-7540-4a2e-962e-233c44d780f0, worktree /Users/eduardopicazo/orca/workspaces/cardproj/fm-cardlive)
+Backlog: cardlive just finished (this home keeps no markdown backlog at /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.4AKD0n/data/backlog.md). Update /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.4AKD0n/data/backlog.md - move cardlive to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+## after teardown: branches in project
+main
+worktree dir exists: no
+meta present: no
+orca worktree list mentions fm-cardlive: 0

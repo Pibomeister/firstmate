@@ -1,0 +1,14 @@
+## crewmate committed directly on Orca branch fm-cardcur (upstream origin/main); PR squash-merged, so the tip is NOT an ancestor of origin/main:
+not-ancestor
+origin/main
+$ FM_HOME=$LAB bin/fm-teardown.sh cardcur
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.4AKD0n
+teardown: reaping leaked worktree process(es) for cardcur: 91729 92333
+teardown: force-killing leaked worktree process(es) for cardcur: 91729 92333
+cardproj: already current
+teardown cardcur complete (window term_2ae423fe-2e5b-4ba1-92fc-c83b7a8453c6, worktree /Users/eduardopicazo/orca/workspaces/cardproj/fm-cardcur)
+## after teardown: local branches
+fm-cardkeep
+main
+worktree dir exists: no
+note: the push of fm-cardcur to origin failed in the driver because zsh read $OCB:r as a modifier. That is a fixture-only artifact: the landing proof came from the squash commit on origin/main plus merge recording.

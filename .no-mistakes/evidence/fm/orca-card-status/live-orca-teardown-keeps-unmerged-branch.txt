@@ -1,0 +1,13 @@
+## Orca-created branch fm-cardkeep carries unmerged commit 51d47b4362e36337cf7ca210d8da03c61695fc7c (not reachable from task HEAD)
+$ FM_HOME=$LAB bin/fm-teardown.sh cardkeep
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.4AKD0n
+teardown: reaping leaked worktree process(es) for cardkeep: 73059 73561
+teardown: force-killing leaked worktree process(es) for cardkeep: 73059 73561
+warning: kept Orca-created branch fm-cardkeep (safe deletion refused)
+teardown cardkeep complete (window term_389096b5-3032-4433-843c-87ed24a7bf39, worktree /Users/eduardopicazo/orca/workspaces/cardproj/fm-cardkeep)
+Backlog: cardkeep just finished (this home keeps no markdown backlog at /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.4AKD0n/data/backlog.md). Update /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.4AKD0n/data/backlog.md - move cardkeep to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+## after teardown
+fm-cardkeep 51d47b4362e36337cf7ca210d8da03c61695fc7c
+main 713a544e00fca94e855838531da1312625be0b86
+worktree dir exists: no
+meta present: no

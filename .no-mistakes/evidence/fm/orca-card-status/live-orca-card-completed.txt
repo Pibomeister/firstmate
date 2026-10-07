@@ -1,0 +1,4 @@
+## squash-merged fm/cardlive into origin/main; before merge recording: workspaceStatus=in-review
+$ fm_merge_outcome_report $LAB $LAB/state cardlive <pr-url> poll
+exit=0
+## after merge recording: workspaceStatus=completed

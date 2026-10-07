@@ -1,0 +1,3 @@
+$ FM_HOME=$LAB bin/fm-orca-card.sh cardgone in-review   # Orca worktree no longer exists
+warning: orca card status not updated for cardgone
+exit=0 elapsed=0.2s

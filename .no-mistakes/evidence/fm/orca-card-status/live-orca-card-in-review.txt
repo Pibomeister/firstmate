@@ -1,0 +1,20 @@
+## before PR registration: workspaceStatus=in-progress
+$ FM_HOME=$LAB bin/fm-pr-check.sh cardlive https://github.com/Pibomeister/cardproj/pull/1
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+error: named head 6e9031754a6500e0d937e62ce60763c85bc85020 is unreachable outside the worker copy
+exit=1
+## after PR registration: workspaceStatus=in-progress
+## refused attempt above (head unpushed) left card at: in-progress
+## before PR registration: workspaceStatus=in-progress
+$ FM_HOME=$LAB bin/fm-pr-check.sh cardlive https://github.com/Pibomeister/cardproj/pull/1
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+armed: state/cardlive.check.sh
+exit=
+## after PR registration: workspaceStatus=in-review
+pr=https://github.com/Pibomeister/cardproj/pull/1
