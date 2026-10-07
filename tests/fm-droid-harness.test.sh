@@ -230,7 +230,7 @@ test_droid_launch_and_hooks() {
   [ "$(fm_busy_classify tmux fake:win droid "$id" "$state")" = 'idle droid-hook' ] \
     || fail "Stop hook did not close the busy record"
   cmd=$(jq -r '.hooks.UserPromptSubmit[0].hooks[0].command' "$settings")
-  sh -c "$cmd"
+  sh -c "$cmd" </dev/null
   cmd=$(jq -r '.hooks.Notification[0].hooks[0].command' "$settings")
   printf '%s\n' '{"notification_type":"idle_prompt"}' | sh -c "$cmd"
   [ "$(fm_busy_classify tmux fake:win droid "$id" "$state")" = 'idle droid-hook' ] \
