@@ -537,6 +537,10 @@ codex_models_cache_path() {
 # advertisement refuses, so a spawn cannot drop max and launch at the default.
 codex_catalog_advertises_max() { # <model>
   local model=${1:-} catalog verdict levels
+  if [ -z "$model" ]; then
+    echo "error: codex effort max requires an explicit --model whose installed catalog entry advertises max" >&2
+    return 1
+  fi
   catalog=$(codex_models_cache_path)
   if ! command -v jq >/dev/null 2>&1; then
     echo "error: jq is required to read the codex model catalog ($catalog) before passing effort max" >&2

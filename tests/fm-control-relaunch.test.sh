@@ -762,6 +762,28 @@ test_native_ultra_relaunch_preserves_profile_and_rejects_before_stop() {
   pass "native Ultra relaunch preserves its profile and rejects an unsupported model before stopping"
 }
 
+test_codex_max_relaunch_rejects_unadvertised_model_before_stop() {
+  local dir out rc id=rl-codex-max catalog
+  dir=$(new_case codex-max "$id")
+  add_ship_task "$dir" "$id" codex
+  printf codex > "$dir/fake/command"
+  catalog="$dir/codex-models.json"
+  printf '%s\n' '{"models":[{"slug":"gpt-5","supported_reasoning_levels":[{"effort":"low"},{"effort":"medium"},{"effort":"high"},{"effort":"xhigh"}]}]}' > "$catalog"
+  sed 's/^model=default$/model=gpt-5/; s/^effort=default$/effort=max/' \
+    "$dir/home/state/$id.meta" > "$dir/home/state/$id.meta.tmp"
+  mv "$dir/home/state/$id.meta.tmp" "$dir/home/state/$id.meta"
+  out=$(FM_CODEX_MODELS_CACHE="$catalog" run_control "$dir" "$id" relaunch --note "unadvertised max"); rc=$?
+  expect_code 1 "$rc" "codex max relaunch on a model without max"
+  assert_contains "$out" "catalog does not advertise max" "codex max relaunch refusal missing"
+  [ "$(cat "$dir/fake/command")" = codex ] || fail "unadvertised codex max relaunch stopped the running agent"
+  [ ! -s "$dir/fake/literal" ] || fail "unadvertised codex max relaunch sent lifecycle input"
+  out=$(FM_CODEX_MODELS_CACHE="$catalog" run_control "$dir" "$id" relaunch --model default --note "no model"); rc=$?
+  expect_code 1 "$rc" "codex max relaunch with no model"
+  assert_contains "$out" "codex effort max requires an explicit --model" "codex max relaunch without a model refusal missing"
+  [ "$(cat "$dir/fake/command")" = codex ] || fail "codex max relaunch without a model stopped the running agent"
+  pass "codex max relaunch rejects a model the catalog does not advertise max for before stopping"
+}
+
 # A fake claude that answers `claude auth status` the way the real runner
 # does: signed in only when the selected config root holds a stored login.
 make_claude_auth_stub() {  # <case-dir>
@@ -2455,6 +2477,7 @@ test_harness_switch_resolves_a_prefixed_recorded_harness
 test_prefixed_recorded_harness_requires_explicit_replacement
 test_same_harness_relaunch_keeps_the_profile_axes
 test_native_ultra_relaunch_preserves_profile_and_rejects_before_stop
+test_codex_max_relaunch_rejects_unadvertised_model_before_stop
 test_signed_out_worker_account_pin_refuses_before_stop
 test_worker_account_pin_follows_the_relaunch
 test_explicit_model_wins_over_the_recorded_one
