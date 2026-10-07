@@ -2525,6 +2525,7 @@ FM_DROID_ORCA_SIGNALS=1 bash tests/fm-droid-orca-signals-live-e2e.test.sh
 
 The real tmux and Orca scouts each received an explicit `gpt-5.6-luna` model and `low` effort, wrote their report, acknowledged an inbox steer, settled a turn-end hook, accepted a typed steer, interrupted a busy turn, relaunched with the same model and effort under a fresh generation, exited, and tore down their task wiring.
 The Orca scout also preserved its exact terminal handle and worktree ID across relaunch and removed the isolated worktree at teardown.
+The tmux guard has since defaulted to `gpt-5.6-terra`; the comment above its spawn in `tests/fm-droid-signals-live-e2e.test.sh` records why, and `FM_DROID_LIVE_MODEL` overrides either guard's model.
 The live liveness guard reported `droid 0.230.0: title='droid'`, `ancestry verdicts=[comm droid]`, and `checked 6 installed harness(es)` on tmux.
 The opt-in guards print five `ok` checks each, and the private task evidence contains their full stdout, report, viewport, and terminal transcript.
 Rechecked on 2026-10-05 with Droid 0.230.0, tmux 3.6a, and Orca 1.4.218 after merging current upstream main.
