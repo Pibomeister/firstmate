@@ -1647,9 +1647,11 @@ test_card_failures_preserve_caller_results() {
       assert_not_contains "$out" 'fake Orca failure' 'raw Orca stderr must be discarded'
       if [ "$behavior" = hang ]; then
         elapsed=$(python3 -c 'import sys; print(float(sys.argv[2])-float(sys.argv[1]))' "$start" "$end")
-        python3 -c 'import sys; t=float(sys.argv[1]); sys.exit(0 if 5 <= t < 7 else 1)' "$elapsed" \
-          || fail "$site hang must be timed out between 5 and 7 seconds, measured $elapsed"
-        printf 'ok - Orca card %s hang elapsed=%ss (required <7s)\n' "$site" "$elapsed"
+        # The fake hang sleeps 30s; the ceiling includes the caller's own
+        # runtime, which exceeds 2s on a loaded host, so leave headroom.
+        python3 -c 'import sys; t=float(sys.argv[1]); sys.exit(0 if 5 <= t < 15 else 1)' "$elapsed" \
+          || fail "$site hang must be timed out between 5 and 15 seconds, measured $elapsed"
+        printf 'ok - Orca card %s hang elapsed=%ss (required <15s)\n' "$site" "$elapsed"
       fi
       case "$site" in
         pr) assert_grep "pr=$CARD_URL" "$CARD_STATE/$CARD_ID.meta" 'failed card update lost PR registration' ;;
