@@ -2490,9 +2490,16 @@ status_span_has_actionable() {  # <status-file> <start-offset>
 # The read and the decision are separate functions so a caller that needs more
 # than the token from the same sighting (crew_line_parked_gate below) pays for
 # one read: crew_state_line is the read, crew_line_absorb_class the pure decision.
-crew_state_line() {  # <id> -> the fm-crew-state.sh line, empty when unreadable
+# A <bound> in seconds hard-limits the read through fm_run_timed, for a caller
+# that must not wait on a no-mistakes that stops answering; a read past it is
+# killed and reads as empty, exactly like an unreadable one.
+crew_state_line() {  # <id> [<bound>] -> the fm-crew-state.sh line, empty when unreadable
   [ -n "${1:-}" ] || return 0
-  "$FM_CREW_STATE_BIN" "$1" 2>/dev/null || true
+  if [ -n "${2:-}" ]; then
+    fm_run_timed "$2" "$FM_CREW_STATE_BIN" "$1" 2>/dev/null || true
+  else
+    "$FM_CREW_STATE_BIN" "$1" 2>/dev/null || true
+  fi
 }
 
 crew_line_absorb_class() {  # <crew-state-line>

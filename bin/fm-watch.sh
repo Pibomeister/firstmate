@@ -330,8 +330,12 @@ TURNEND_CHURN_ABSORB_SECS=${FM_TURNEND_CHURN_ABSORB_SECS:-900}  # longest a task
 # (fm-classify-lib.sh) backs the away-mode daemon; while state/.afk exists the
 # daemon owns triage, so this watcher reverts to one-shot (enqueue + exit on every
 # wake) and never double-triages - and never runs the costly provably-working read,
-# except the one read parked_gate_notice spends on an idle `paused:` pane.
+# except the bounded one parked_gate_away_read spends on an idle `paused:` pane.
 STALE_ESCALATE_SECS=${FM_STALE_ESCALATE_SECS:-240}  # idle secs before a provably-working stale escalates as a possible wedge
+# Hard wall-clock bound on that away-posture parked-gate read, so a no-mistakes
+# that stops answering costs a poll at most this long (parked_gate_away_read).
+PARKED_GATE_READ_TIMEOUT=${FM_PARKED_GATE_READ_TIMEOUT:-}
+case "$PARKED_GATE_READ_TIMEOUT" in ''|*[!0-9]*|0) PARKED_GATE_READ_TIMEOUT=10 ;; esac
 # A busy pane is unconditional proof of liveness with no built-in duration bound,
 # so a hung foreground call can remain hidden even while its rendered busy
 # footer changes every poll. BUSY_TURN_MAX_SECS bounds how long any busy pane
@@ -2061,6 +2065,33 @@ pause_gate_class() {  # <window> <task>
   [ -z "$PARKED_GATE_REASON" ] || PAUSE_CLASS=gate
 }
 
+# The away posture's parked-gate read. The daemon owns triage there, so nothing
+# else reads a `paused:` pane's current state, and a slow or unanswering
+# no-mistakes must not hold the fleet scan behind that read. So it is bounded
+# three ways: each pane is read at most once per STALE_ESCALATE_SECS, the cadence
+# on which the attended path re-reads such a pane (pause_state_class); a poll
+# starts at most one such read (PARKED_GATE_READ_SPENT, reset as each scan
+# begins); and that read is killed past PARKED_GATE_READ_TIMEOUT and counts as no
+# verdict. A pane passed over stays due for the next poll, while the pane just
+# read waits out its cadence whatever the read returned, so a pane whose read
+# always hangs cannot starve the panes behind it.
+PARKED_GATE_READ_SPENT=0
+parked_gate_away_read() {  # <window> <task>
+  local marker line
+  PARKED_GATE_REASON=
+  marker="$STATE/.paused-gate-read-$(window_key "$1")"
+  [ "$(age_of "$marker")" -ge "$STALE_ESCALATE_SECS" ] || return 0
+  if [ "$PARKED_GATE_READ_SPENT" -ne 0 ]; then
+    triage_log "parked-gate read deferred to the next poll (this poll already spent its read): $1"
+    return 0
+  fi
+  PARKED_GATE_READ_SPENT=1
+  date +%s > "$marker"
+  line=$(crew_state_line "$2" "$PARKED_GATE_READ_TIMEOUT")
+  [ -n "$line" ] || triage_log "parked-gate read gave no verdict (unreadable, or past its ${PARKED_GATE_READ_TIMEOUT}s bound): $1"
+  parked_gate_notice "$1" "$2" "$line"
+}
+
 # Check and heartbeat cadence must survive actionable exits and restarts: the
 # watcher may be relaunched before in-memory counters reach their threshold on a
 # busy fleet. Persist the schedule as file mtimes instead.
@@ -3094,6 +3125,7 @@ EOF
   # stale hash is surfaced, absorbed, or timed toward escalation once (.stale-*
   # remembers the hash already classified, or the declaration a busy pane's
   # crossed turn bound already handed to the away-mode daemon).
+  PARKED_GATE_READ_SPENT=0
   while IFS= read -r w; do
     kind=$(window_kind "$w")
     task=$(window_to_task "$w" "$STATE")
@@ -3146,20 +3178,21 @@ EOF
           # Daemon owns triage: one-shot per distinct stale hash, as before,
           # except that a captain-held pane is never handed over while the
           # away-posture record exists (captain_held_silenced).
-          # A `paused:` pane also takes the parked-gate notice, on every poll
-          # rather than once per hash: the daemon classifies a declared pause
-          # from the status log alone and so cannot see a run park behind it,
-          # and the pane of a worker that already ended its turn never changes
-          # hash again to earn a second handoff. It is the one current-state
-          # read this posture spends, the same one the attended path spends on
-          # such a pane, and a wake it queued is handed over as it stands.
+          # A `paused:` pane also takes the parked-gate notice, on its own
+          # cadence rather than once per hash: the daemon classifies a declared
+          # pause from the status log alone and so cannot see a run park behind
+          # it, and the pane of a worker that already ended its turn never
+          # changes hash again to earn a second handoff. It is the one
+          # current-state read this posture spends, bounded by
+          # parked_gate_away_read, and a wake it queued is handed over as it
+          # stands.
           if captain_held_silenced "$last"; then
             printf '%s' "$h" > "$sf"
             triage_log "absorbed stale (captain-held, never rechecked while the away-posture record exists): $w"
           else
             PARKED_GATE_REASON=
             if status_is_paused "$last"; then
-              parked_gate_notice "$w" "$task" "$(crew_state_line "$task")"
+              parked_gate_away_read "$w" "$task"
             fi
             if [ -n "$PARKED_GATE_REASON" ]; then
               printf '%s' "$h" > "$sf"
