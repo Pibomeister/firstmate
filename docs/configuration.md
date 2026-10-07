@@ -755,7 +755,7 @@ claude, codex, opencode, pi, pi-signed, grok, kimi, cursor, and omp are empirica
 
 ### Harness restrictions and credentials
 
-`fm-spawn.sh` refuses Kimi on cmux because its folder-trust dialog needs a verified viewport capture, and refuses Kimi on Orca because its readiness and typed submission remain unverified there; [its adapter reference](../.agents/skills/harness-adapters/references/harness/kimi.md#readiness-gated-start) owns the trust-dialog handling.
+`fm-spawn.sh` refuses Kimi on cmux and Orca through the shared missing-viewport check; Orca's screen read is reserved for recorded Droid tasks, and [Kimi's adapter reference](../.agents/skills/harness-adapters/references/harness/kimi.md#readiness-gated-start) owns its trust-dialog handling.
 A cursor secondmate or primary runs the tracked project-scope `.cursor/hooks.json` in its own home and must be launched with `--trust`, or no project hook loads; [`docs/supervision-protocols/cursor.md`](supervision-protocols/cursor.md) owns its supervision protocol.
 
 Cursor typed-submit confirmation is verified on tmux and Herdr only.

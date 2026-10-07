@@ -153,27 +153,60 @@ test_capture_fails_on_orca_error_json() {
 }
 
 test_visible_capture_requires_a_real_screen() {
-  local out rc
+  local home state out rc
+  home="$TMP_ROOT/droid-viewport-home"; state="$home/state"
+  mkdir -p "$state"
+  fm_write_meta "$state/droid1.meta" 'harness=droid' 'terminal=term-123'
   orca_case viewport
   printf '{"ok":true,"result":{"terminal":{"source":"screen","tail":["Droid TUI","firstmate"]}}}\n' >"$RESP/1.out"
-  out=$(PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" \
-    bash -c '. "$0/bin/backends/orca.sh"; fm_backend_orca_visible_capture term-123' "$ROOT")
+  out=$(PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" FM_HOME="$home" FM_STATE_OVERRIDE="$state" \
+    bash -c '. "$0/bin/fm-backend.sh"; fm_backend_source orca; fm_backend_orca_visible_capture term-123 fm-droid1' "$ROOT")
   [ "$out" = $'Droid TUI\nfirstmate' ] || fail "Orca viewport read lost the rendered rows: $out"
   assert_contains "$(cat "$LOG")" $'orca\x1f''terminal'$'\x1f''read'$'\x1f''--terminal'$'\x1f''term-123'$'\x1f''--screen'$'\x1f''--json' \
     "viewport read did not request Orca's rendered screen"
   orca_case viewport-unavailable
   printf '{"ok":true,"result":{"terminal":{"source":"screen-unavailable","tail":["stale trust dialog"]}}}\n' >"$RESP/1.out"
-  out=$(PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" \
-    bash -c '. "$0/bin/backends/orca.sh"; fm_backend_orca_visible_capture term-123' "$ROOT" 2>&1) && rc=0 || rc=$?
+  out=$(PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" FM_HOME="$home" FM_STATE_OVERRIDE="$state" \
+    bash -c '. "$0/bin/fm-backend.sh"; fm_backend_source orca; fm_backend_orca_visible_capture term-123 fm-droid1' "$ROOT" 2>&1) && rc=0 || rc=$?
   [ "$rc" -ne 0 ] || fail "Orca must not return history when a screen is unavailable"
   assert_contains "$out" 'screen-unavailable' "Orca viewport refusal lacked its source"
   orca_case viewport-missing-tail
   printf '{"ok":true,"result":{"terminal":{"source":"screen","text":"stale trust dialog"}}}\n' >"$RESP/1.out"
-  out=$(PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" \
-    bash -c '. "$0/bin/backends/orca.sh"; fm_backend_orca_visible_capture term-123' "$ROOT" 2>&1) && rc=0 || rc=$?
+  out=$(PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" FM_HOME="$home" FM_STATE_OVERRIDE="$state" \
+    bash -c '. "$0/bin/fm-backend.sh"; fm_backend_source orca; fm_backend_orca_visible_capture term-123 fm-droid1' "$ROOT" 2>&1) && rc=0 || rc=$?
   [ "$rc" -ne 0 ] || fail "Orca must not accept screen metadata without rendered rows"
   assert_contains "$out" 'no rendered tail' "Orca malformed screen refusal lacked its cause"
   pass "Orca trusts only source=screen for viewport decisions"
+}
+
+test_visible_capture_is_scoped_to_the_recorded_droid_terminal() {
+  local home state out rc
+  orca_case viewport-scope
+  home="$CASE_DIR/home"; state="$home/state"
+  mkdir -p "$state"
+  fm_write_meta "$state/droid1.meta" 'harness=droid' 'terminal=term-123'
+  fm_write_meta "$state/kimi1.meta" 'harness=kimi' 'terminal=term-123'
+  printf '{"ok":true,"result":{"terminal":{"source":"screen","tail":["Droid TUI"]}}}\n' >"$RESP/1.out"
+  out=$(PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" FM_HOME="$home" FM_STATE_OVERRIDE="$state" \
+    bash -c '. "$0/bin/fm-backend.sh"; fm_backend_visible_capture_supported orca' "$ROOT" 2>&1) && rc=0 || rc=$?
+  [ "$rc" -ne 0 ] || fail "Orca must not become a shared viewport capability"
+  for label in '' fm-kimi1 fm-droid2; do
+    out=$(PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" FM_HOME="$home" FM_STATE_OVERRIDE="$state" \
+      bash -c '. "$0/bin/fm-backend.sh"; fm_backend_visible_capture orca term-123 "$1"' "$ROOT" "$label" 2>&1) && rc=0 || rc=$?
+    [ "$rc" -ne 0 ] || fail "Orca viewport accepted an unrecorded or non-Droid task label '$label'"
+  done
+  out=$(PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" FM_HOME="$home" FM_STATE_OVERRIDE="$state" \
+    bash -c '. "$0/bin/fm-backend.sh"; fm_backend_visible_capture orca term-other fm-droid1' "$ROOT" 2>&1) && rc=0 || rc=$?
+  [ "$rc" -ne 0 ] || fail "Orca viewport accepted a terminal outside the recorded Droid task"
+  out=$(PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" FM_HOME="$home" FM_STATE_OVERRIDE="$state" \
+    bash -c '. "$0/bin/fm-backend.sh"; fm_backend_source orca; fm_backend_orca_visible_capture term-123' "$ROOT" 2>&1) && rc=0 || rc=$?
+  [ "$rc" -ne 0 ] || fail "direct Orca viewport capture bypassed the recorded Droid task check"
+  [ ! -s "$LOG" ] || fail "a refused Orca viewport read reached the CLI"
+  out=$(PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" FM_HOME="$home" FM_STATE_OVERRIDE="$state" \
+    bash -c '. "$0/bin/fm-backend.sh"; fm_backend_visible_capture orca term-123 fm-droid1' "$ROOT")
+  [ "$out" = 'Droid TUI' ] || fail "recorded Droid task lost its Orca viewport: $out"
+  assert_contains "$(cat "$LOG")" $'--screen\x1f--json' "Droid viewport read did not use Orca's current screen"
+  pass "Orca viewport reads only the exact recorded Droid terminal"
 }
 
 test_orca_droid_keys_are_raw_controls() {
@@ -205,7 +238,7 @@ test_orca_non_droid_keys_still_refuse() {
       FM_HOME="$home" FM_STATE_OVERRIDE="$state" \
       bash -c '. "$0/bin/fm-backend.sh"; fm_backend_source orca; fm_backend_orca_send_key term-123 "$1" fm-claude1' "$ROOT" "$key" 2>&1) || rc=$?
     [ "$rc" -ne 0 ] || fail "Orca $key must refuse a recorded non-Droid task"
-    assert_contains "$out" "requires this terminal's recorded Droid task" "Orca $key refusal lost its task boundary"
+    assert_contains "$out" "unsupported Orca key '$key'" "Orca $key refusal changed for non-Droid tasks"
     rc=0
     out=$(PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" \
       FM_HOME="$home" FM_STATE_OVERRIDE="$state" \
@@ -963,8 +996,8 @@ test_peek_send_and_crew_state_route_through_orca_meta() {
       FM_ROOT_OVERRIDE="$neutral" FM_HOME="$neutral" FM_STATE_OVERRIDE="$state" \
       "$ROOT/bin/fm-send.sh" "fm-$id" --key "$key" 2>&1) || rc=$?
     [ "$rc" -ne 0 ] || fail "fm-send --key $key must refuse a non-Droid Orca task"
-    assert_contains "$out" "requires this terminal's recorded Droid task" \
-      "fm-send --key $key lost Orca's non-Droid refusal"
+    assert_contains "$out" "unsupported Orca key '$key'" \
+      "fm-send --key $key changed Orca's non-Droid refusal"
   done
   assert_not_contains "$(cat "$LOG")" $'--text\x1f\033' "refused fm-send Escape reached Orca"
   assert_not_contains "$(cat "$LOG")" $'--text\x1f\025' "refused fm-send C-u reached Orca"
@@ -1540,6 +1573,7 @@ test_capture_reads_terminal_tail_json
 test_capture_falls_back_to_text_fields
 test_capture_fails_on_orca_error_json
 test_visible_capture_requires_a_real_screen
+test_visible_capture_is_scoped_to_the_recorded_droid_terminal
 test_orca_droid_keys_are_raw_controls
 test_orca_non_droid_keys_still_refuse
 test_orca_droid_composer_requires_exact_task_binding

@@ -25,8 +25,8 @@ Verified on 2026-09-17 with Kimi Code CLI 2.0.0.
 `../../../bin/fm-spawn.sh` launches Kimi bare, handles the complete 2.0.0 trust dialog when it appears, waits for the composer box or `Welcome to Kimi Code!`, sends only `Read the brief at <absolute-path> and follow it exactly.`, and requires a cleared composer plus either the echoed `✨` submission or nonzero context before accepting delivery.
 Every trust predicate reads `fm_backend_visible_capture`, the viewport without scrollback, because a history read could replay a cleared dialog and send Enter to a live composer.
 The verified viewport implementations for Kimi are tmux, Herdr, and Zellij, as recorded in `bin/fm-backend.sh` and `docs/verification/runtime-backends.md`.
-Orca now exposes a viewport, but Kimi readiness and typed submission have not been live-verified there; cmux lacks a verified viewport.
-Spawn refuses Kimi on Orca and cmux before creating a worktree or pane.
+Orca's screen read is limited to recorded Droid tasks, and cmux lacks a verified viewport.
+Spawn refuses Kimi on Orca and cmux through the shared missing-viewport check before creating a worktree or pane.
 A failed viewport read ends readiness with the backend named, and a blank successful read restarts the two-capture ready count without claiming a cleared dialog.
 Kimi's trust answer can be retried only while the complete dialog remains on the live viewport, since the CLI can swallow an Enter during startup.
 Trust is accepted only after a later viewport capture proves that the dialog cleared; a stuck dialog reports the observed signals and answer count.

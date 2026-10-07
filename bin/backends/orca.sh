@@ -209,7 +209,11 @@ fm_backend_orca_capture() {  # <terminal-id> <lines>
 # --screen. Never accept its documented screen-unavailable stream fallback for
 # trust or other viewport decisions.
 fm_backend_orca_visible_capture() {  # <terminal-id> [expected-label]
-  local terminal=$1 out
+  local terminal=$1 label=${2:-} out
+  fm_backend_orca_recorded_droid "$terminal" "$label" || {
+    echo "error: Orca screen capture requires this terminal's recorded Droid task" >&2
+    return 1
+  }
   fm_backend_orca_tool_check || return 1
   out=$(orca terminal read --terminal "$terminal" --screen --json) || return 1
   fm_backend_orca_json_text "$out" screen
@@ -283,7 +287,7 @@ fm_backend_orca_composer_caps() {
 fm_backend_orca_composer_state() {  # <terminal-id> [expected-label] -> empty|pending|pending-unproven|unknown
   local cap verdict
   if fm_backend_orca_recorded_droid "$1" "${2:-}"; then
-    cap=$(fm_backend_orca_visible_capture "$1") || { printf 'unknown'; return 0; }
+    cap=$(fm_backend_orca_visible_capture "$1" "${2:-}") || { printf 'unknown'; return 0; }
     fm_composer_droid_state "$cap" orca
     return 0
   fi
@@ -305,7 +309,7 @@ fm_backend_orca_send_key() {  # <terminal-id> <key> [expected-label]
       ;;
     Escape|C-u)
       fm_backend_orca_recorded_droid "$terminal" "$label" || {
-        echo "error: Orca key '$key' requires this terminal's recorded Droid task" >&2
+        echo "error: unsupported Orca key '$key'" >&2
         return 1
       }
       case "$key" in Escape) byte=$'\033' ;; C-u) byte=$'\025' ;; esac
