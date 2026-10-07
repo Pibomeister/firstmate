@@ -1,0 +1,6 @@
+### config/crew-dispatch.json = {"rules":[{"when":"astra review","use":{"harness":"codex","model":"gpt-6-astra","effort":"max"}}]} (typed dispatch on, real ~/.codex catalog)
+(no CREW_DISPATCH line: accepted)
+### config/crew-dispatch.json = {"rules":[{"when":"old model review","use":{"harness":"codex","model":"gpt-5.5","effort":"max"}}]} (typed dispatch on, real ~/.codex catalog)
+CREW_DISPATCH: invalid config/crew-dispatch.json - codex effort max refused for model 'gpt-5.5': catalog does not advertise max (supported: low medium high xhigh) (/Users/eduardopicazo/.codex/models_cache.json)
+### config/crew-dispatch.json = {"rules":[{"when":"unknown","use":{"harness":"codex","model":"gpt-9","effort":"max"}}]} (typed dispatch on, real ~/.codex catalog)
+CREW_DISPATCH: invalid config/crew-dispatch.json - codex effort max refused for model 'gpt-9': model is not in the catalog (/Users/eduardopicazo/.codex/models_cache.json)

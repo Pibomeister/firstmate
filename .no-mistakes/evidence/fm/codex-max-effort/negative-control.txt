@@ -1,0 +1,23 @@
+### NEGATIVE CONTROL: bin/fm-spawn.sh effort_flag_for_harness reverted to the old 'model = gpt-5.6-luna' gate
+diff --git a/bin/fm-spawn.sh b/bin/fm-spawn.sh
+index 9174e848..ed09a784 100755
+--- a/bin/fm-spawn.sh
++++ b/bin/fm-spawn.sh
+@@ -2735,7 +2735,11 @@ effort_flag_for_harness() {
+     # max reaches here only after the pre-launch codex max check refused any
+     # model whose installed catalog entry does not advertise it.
+     case "$effort" in
+-    low | medium | high | xhigh | max) printf -- '-c %s ' "$(shell_quote "model_reasoning_effort=\"$effort\"")" ;;
++    low | medium | high | xhigh) printf -- '-c %s ' "$(shell_quote "model_reasoning_effort=\"$effort\"")" ;;
++    max)
++      [ "$model" = gpt-5.6-luna ] || return 0
++      printf -- '-c %s ' "$(shell_quote 'model_reasoning_effort="max"')"
++      ;;
+     esac
+     ;;
+   grok)
+ok - unresolvable relative spawn overrides fail with named diagnostics
+ok - codex Luna receives --model and model_reasoning_effort max profile flags
+not ok - codex launch did not thread Astra's max reasoning effort config (missing: 'codex --model 'gpt-6-astra' -c 'model_reasoning_effort="max"' --dangerously-bypass-approvals-and-sandbox')
+export COMPACT_ADVISER_DISABLE=1; export FM_TASK_INBOX='/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-spawn-dispatch-profile.Fz6Prb/profile-codex-astra-max/home/state/profile-codex-astra-max-z4a.inbox'; export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0='/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-spawn-dispatch-profile.Fz6Prb/profile-codex-astra-max/home/state/profile-codex-astra-max-z4a.git-hooks'; env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI codex --model 'gpt-6-astra' --dangerously-bypass-approvals-and-sandbox --disable hooks -c "notify=[\"bash\",\"-c\",\"touch '/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-spawn-dispatch-profile.Fz6Prb/profile-codex-astra-max/home/state/profile-codex-astra-max-z4a.turn-ended'\"]" "$('/Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M4C5EQQKQ4EPYAEBAHXPR4TF/bin/fm-operational-input.sh' encode launch-brief < '/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-spawn-dispatch-profile.Fz6Prb/profile-codex-astra-max/home/data/profile-codex-astra-max-z4a/launch-brief.md')"
+suite exit=

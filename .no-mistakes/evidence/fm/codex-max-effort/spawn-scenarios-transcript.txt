@@ -1,0 +1,43 @@
+### astra-max: fm-spawn.sh astra-max /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.HVNyD3/projects/demo --scout --model gpt-6-astra --effort max
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.HVNyD3
+spawned astra-max harness=codex kind=scout window=primary:fm-astra-max worktree=/Users/eduardopicazo/.treehouse/demo-3e1bbb/1/demo
+### exit=0
+### task record present: yes
+harness=codex
+model=gpt-6-astra
+effort=max
+### luna-max: fm-spawn.sh luna-max /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.HVNyD3/projects/demo --scout --model gpt-5.6-luna --effort max
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.HVNyD3
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+spawned luna-max harness=codex kind=scout window=primary:fm-luna-max worktree=/Users/eduardopicazo/.treehouse/demo-3e1bbb/2/demo
+### exit=0
+### task record present: yes
+harness=codex
+model=gpt-5.6-luna
+effort=max
+### gpt55-max: fm-spawn.sh gpt55-max /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.HVNyD3/projects/demo --scout --model gpt-5.5 --effort max
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.HVNyD3
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: codex effort max refused for model 'gpt-5.5': catalog does not advertise max (supported: low medium high xhigh) (/Users/eduardopicazo/.codex/models_cache.json)
+### exit=1
+### task record present: no
+### nomodel-max: fm-spawn.sh nomodel-max /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.HVNyD3/projects/demo --scout --effort max
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.HVNyD3
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: codex effort max requires an explicit --model whose installed catalog entry advertises max
+### exit=1
+### task record present: no
+### nocat-max: fm-spawn.sh nocat-max /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.HVNyD3/projects/demo --scout --model gpt-6-astra --effort max
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.HVNyD3
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: codex effort max refused for model 'gpt-6-astra': catalog not readable (/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.HVNyD3/no-codex/models_cache.json)
+### exit=1
+### task record present: no
+71065 node /opt/homebrew/bin/codex --model gpt-6-astra -c model_reasoning_effort="max" --dangerously-bypass-approvals-and-sandbox --disable hooks -c notify=["bash","-c","touch '/private/var/folders/pp
+33193 node /opt/homebrew/bin/codex --model gpt-5.6-luna -c model_reasoning_effort="max" --dangerously-bypass-approvals-and-sandbox --disable hooks -c notify=["bash","-c","touch '/private/var/folders/p

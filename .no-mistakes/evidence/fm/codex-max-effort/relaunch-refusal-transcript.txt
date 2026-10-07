@@ -1,0 +1,8 @@
+### fm-control.sh astra-max relaunch --model gpt-5.5 (effort max kept)
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.HVNyD3
+error: codex effort max refused for model 'gpt-5.5': catalog does not advertise max (supported: low medium high xhigh) (/Users/eduardopicazo/.codex/models_cache.json)
+### exit=1
+### fm-control.sh astra-max relaunch --model default
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.HVNyD3
+error: codex effort max requires an explicit --model whose installed catalog entry advertises max
+### exit=1

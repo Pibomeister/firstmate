@@ -1,0 +1,2 @@
+  PID COMMAND
+71065 node /opt/homebrew/bin/codex --model gpt-6-astra -c model_reasoning_effort="max" --dangerously-bypass-approvals-and-sandbox --disable hooks -c notify=["bash","-c","touch '/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.HVNyD3/state/astra-
