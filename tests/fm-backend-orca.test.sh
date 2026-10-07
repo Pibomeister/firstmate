@@ -1632,6 +1632,31 @@ test_card_lifecycle_sites_and_guards() {
   pass 'Orca card hooks: exact argv, caller state override, and each event/backend/id guard'
 }
 
+test_card_requests_five_second_timeout() {
+  local out bound_log
+  card_case card-timeout-bound
+  bound_log="$CASE_DIR/timeout-bound"
+  cat > "$FB/timeout" <<'SH'
+#!/usr/bin/env bash
+# Record the external timeout's requested deadline, then run its command.
+set -eu
+[ "$#" -ge 4 ] && [ "$1" = -k ] || exit 2
+printf '%s\n' "$3" > "${FM_TIMEOUT_BOUND_LOG:?}"
+shift 3
+exec "$@"
+SH
+  chmod +x "$FB/timeout"
+  printf '{"ok":true,"result":{}}\n' > "$RESP/1.out"
+  out=$(card_env env FM_TIMEOUT_MECHANISM_OVERRIDE='' FM_TIMEOUT_BOUND_LOG="$bound_log" \
+    "$ROOT/bin/fm-orca-card.sh" "$CARD_ID" in-review 2>&1) \
+    || fail "card helper should run through the timeout probe: $out"
+  assert_equals '' "$out" 'successful card helper should remain silent'
+  assert_present "$bound_log" 'Orca status call must pass through the bounded runner'
+  assert_equals 5 "$(cat "$bound_log")" 'Orca status command must request a five-second bound'
+  assert_equals "$(card_argv in-review)" "$(cat "$LOG")" 'bounded command must execute the Orca status call'
+  pass 'Orca card helper: requests exactly five seconds independently of caller wall-clock latency'
+}
+
 test_card_failures_preserve_caller_results() {
   local site behavior out rc start end elapsed
   for site in pr merge local; do
@@ -1727,6 +1752,7 @@ test_teardown_deletes_only_safe_recorded_orca_branch() {
 }
 
 test_card_lifecycle_sites_and_guards
+test_card_requests_five_second_timeout
 test_card_failures_preserve_caller_results
 test_teardown_deletes_only_safe_recorded_orca_branch
 test_capture_reads_terminal_tail_json
