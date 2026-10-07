@@ -1017,4 +1017,39 @@ expect_code 0 "$code" "--help exits 0"
 assert_contains "$out" 'Usage:' "--help prints usage"
 pass "configuration errors exit 2 before any network call"
 
+# --- Codex max follows the installed catalog ---------------------------------
+catalog="$TMP_ROOT/codex-models.json"
+cat > "$catalog" <<'JSON'
+{"models":[
+  {"slug":"gpt-6-astra","supported_reasoning_levels":[{"effort":"low"},{"effort":"medium"},{"effort":"high"},{"effort":"xhigh"},{"effort":"max"},{"effort":"ultra"}]},
+  {"slug":"gpt-5.6-luna","supported_reasoning_levels":[{"effort":"low"},{"effort":"medium"},{"effort":"high"},{"effort":"xhigh"},{"effort":"max"}]},
+  {"slug":"gpt-5","supported_reasoning_levels":[{"effort":"low"},{"effort":"medium"},{"effort":"high"},{"effort":"xhigh"}]}
+]}
+JSON
+printf '%s\n' '{"rules":[{"when":"Astra max review.","use":{"harness":"codex","model":"gpt-6-astra","effort":"max"}}]}' > "$RULES"
+cat > "$RESPONSE" <<'JSON'
+{ "model": "jev-1.13.0",
+  "answers": { "rule": { "type": "choice", "choice": "rule_1", "confidence": 0.9,
+    "probabilities": { "rule_1": 0.96, "default": 0.04 } } },
+  "usage": { "input_tokens": 100, "output_tokens": 20 } }
+JSON
+reset_log
+TYPESAFE_API_KEY=$KEY FM_CODEX_MODELS_CACHE="$catalog" run code out err "$BRIEF" --project review
+expect_code 0 "$code" "astra max profile exits 0: $err"
+assert_contains "$out" '  status: clear' "astra max profile resolves"
+assert_contains "$out" "  profile: --harness 'codex' --model 'gpt-6-astra' --effort 'max'" "astra max effort survives typed dispatch"
+printf '%s\n' '{"rules":[{"when":"No max.","use":{"harness":"codex","model":"gpt-5","effort":"max"}}]}' > "$RULES"
+reset_log
+TYPESAFE_API_KEY=$KEY FM_CODEX_MODELS_CACHE="$catalog" run code out err "$BRIEF"
+expect_code 2 "$code" "catalog without max exits 2: $err"
+assert_contains "$err" "malformed rules file: $RULES - each use profile effort must be supported by its harness and model" "a model the catalog does not advertise max for is rejected"
+assert_absent "$LOG/argv" "rejected codex max never reaches the network"
+printf '%s\n' '{"default":{"harness":"codex","model":"gpt-5","effort":"max"}}' > "$RULES"
+reset_log
+TYPESAFE_API_KEY=$KEY FM_CODEX_MODELS_CACHE="$catalog" run code out err "$BRIEF"
+expect_code 2 "$code" "default profile without advertised max exits 2: $err"
+assert_contains "$err" "malformed rules file: $RULES - each default profile effort must be supported by its harness and model" "a default profile the catalog does not advertise max for is rejected"
+cp "$BASE_RULES" "$RULES"
+pass "codex max profiles follow the installed catalog"
+
 printf '# all fm-dispatch-resolve tests passed\n'
