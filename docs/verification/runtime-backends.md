@@ -2533,3 +2533,12 @@ The live liveness guard reported `droid 0.230.0: title='droid'`, `ancestry verdi
 The opt-in guards print five `ok` checks each, and the private task evidence contains their full stdout, report, viewport, and terminal transcript.
 Rechecked on 2026-10-05 with Droid 0.230.0, tmux 3.6a, and Orca 1.4.218 after merging current upstream main.
 Both live guards again printed five `ok` lifecycle checks; the Orca guard also verified that the typed prompt's `UserPromptSubmit` receipt matched its payload hash, current generation, and pre-Enter sequence.
+Rechecked `FM_DROID_ORCA_SIGNALS=1 bash tests/fm-droid-orca-signals-live-e2e.test.sh` on 2026-10-07 with Droid 0.233.0 and Orca 1.4.222 after limiting `--screen` to recorded Droid tasks and retaining the old `busy_gen` until replacement admission; exit `0` with these five checks:
+
+```text
+ok - Orca Droid received its brief and settled its turn
+ok - Orca Droid acknowledged inbox and typed fm-send steers
+ok - Orca Droid interrupted a running tool before normal completion
+ok - Orca Droid relaunch preserved endpoint and profile with a fresh generation
+ok - Orca Droid exit and teardown retired the terminal, worktree, and task wiring
+```
