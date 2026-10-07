@@ -2732,20 +2732,10 @@ effort_flag_for_harness() {
   codex)
     # The installed codex config schema uses model_reasoning_effort.
     # low|medium|high|xhigh keep their previous unconditional mapping.
-    # max is passed only when validate-native-effort sees it in the installed
-    # catalog for this model; otherwise the spawn refuses.
+    # max reaches here only after the pre-launch codex max check refused any
+    # model whose installed catalog entry does not advertise it.
     case "$effort" in
-    low | medium | high | xhigh) printf -- '-c %s ' "$(shell_quote "model_reasoning_effort=\"$effort\"")" ;;
-    max)
-      # A raw launch command does not consume this flag. Canonical launches
-      # already refused above; this second check keeps the flag itself from
-      # emitting max for a model the catalog does not advertise.
-      if [ "${RAW_LAUNCH:-0}" != 0 ]; then
-        return 0
-      fi
-      "$SCRIPT_DIR/fm-harness.sh" validate-native-effort "$harness" "$model" "$effort" || return 1
-      printf -- '-c %s ' "$(shell_quote 'model_reasoning_effort="max"')"
-      ;;
+    low | medium | high | xhigh | max) printf -- '-c %s ' "$(shell_quote "model_reasoning_effort=\"$effort\"")" ;;
     esac
     ;;
   grok)
