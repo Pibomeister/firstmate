@@ -2070,22 +2070,55 @@ pause_gate_class() {  # <window> <task>
 # no-mistakes must not hold the fleet scan behind that read. So it is bounded
 # three ways: each pane is read at most once per STALE_ESCALATE_SECS, the cadence
 # on which the attended path re-reads such a pane (pause_state_class); a poll
-# starts at most one such read (PARKED_GATE_READ_SPENT, reset as each scan
-# begins); and that read is killed past PARKED_GATE_READ_TIMEOUT and counts as no
-# verdict. A pane passed over stays due for the next poll, while the pane just
-# read waits out its cadence whatever the read returned, so a pane whose read
-# always hangs cannot starve the panes behind it.
-PARKED_GATE_READ_SPENT=0
+# starts at most one such read; and that read is killed past
+# PARKED_GATE_READ_TIMEOUT and counts as no verdict. The one read goes to the due
+# pane read least recently, never to the first in scan order: each completed scan
+# reserves the next poll's read for the pane it passed over whose last read is
+# oldest (a pane never read counts as oldest), and the read clears the
+# reservation. The pane just read waits out its cadence whatever the read
+# returned, so however many panes are paused, a pane passed over is read within
+# one read per pane ahead of it, and one whose read always hangs or a reserved
+# pane that is no longer due holds up the rest for at most a poll.
+PARKED_GATE_NEXT_FILE="$STATE/.parked-gate-read-next"
+parked_gate_scan_begin() {
+  PARKED_GATE_READ_SPENT=0
+  PARKED_GATE_RESERVED=
+  [ ! -s "$PARKED_GATE_NEXT_FILE" ] || IFS= read -r PARKED_GATE_RESERVED < "$PARKED_GATE_NEXT_FILE" || true
+  PARKED_GATE_NEXT=
+  PARKED_GATE_NEXT_AGE=-1
+}
+parked_gate_scan_end() {
+  if [ -n "$PARKED_GATE_NEXT" ]; then
+    printf '%s\n' "$PARKED_GATE_NEXT" > "$PARKED_GATE_NEXT_FILE"
+  elif [ -e "$PARKED_GATE_NEXT_FILE" ]; then
+    rm -f "$PARKED_GATE_NEXT_FILE"
+  fi
+}
 parked_gate_away_read() {  # <window> <task>
-  local marker line
+  local key marker age line
   PARKED_GATE_REASON=
-  marker="$STATE/.paused-gate-read-$(window_key "$1")"
-  [ "$(age_of "$marker")" -ge "$STALE_ESCALATE_SECS" ] || return 0
-  if [ "$PARKED_GATE_READ_SPENT" -ne 0 ]; then
-    triage_log "parked-gate read deferred to the next poll (this poll already spent its read): $1"
+  key=$(window_key "$1")
+  marker="$STATE/.paused-gate-read-$key"
+  age=$(age_of "$marker")
+  [ "$age" -ge "$STALE_ESCALATE_SECS" ] || return 0
+  if [ "$PARKED_GATE_READ_SPENT" -ne 0 ] \
+    || { [ -n "$PARKED_GATE_RESERVED" ] && [ "$PARKED_GATE_RESERVED" != "$key" ]; }; then
+    if [ "$PARKED_GATE_READ_SPENT" -ne 0 ]; then
+      triage_log "parked-gate read deferred to the next poll (this poll already spent its read): $1"
+    else
+      triage_log "parked-gate read deferred to the next poll (this poll's read is reserved for a pane read less recently): $1"
+    fi
+    if [ "$age" -gt "$PARKED_GATE_NEXT_AGE" ]; then
+      PARKED_GATE_NEXT=$key
+      PARKED_GATE_NEXT_AGE=$age
+    fi
     return 0
   fi
   PARKED_GATE_READ_SPENT=1
+  if [ -n "$PARKED_GATE_RESERVED" ]; then
+    PARKED_GATE_RESERVED=
+    rm -f "$PARKED_GATE_NEXT_FILE"
+  fi
   date +%s > "$marker"
   line=$(crew_state_line "$2" "$PARKED_GATE_READ_TIMEOUT")
   [ -n "$line" ] || triage_log "parked-gate read gave no verdict (unreadable, or past its ${PARKED_GATE_READ_TIMEOUT}s bound): $1"
@@ -3125,7 +3158,7 @@ EOF
   # stale hash is surfaced, absorbed, or timed toward escalation once (.stale-*
   # remembers the hash already classified, or the declaration a busy pane's
   # crossed turn bound already handed to the away-mode daemon).
-  PARKED_GATE_READ_SPENT=0
+  parked_gate_scan_begin
   while IFS= read -r w; do
     kind=$(window_kind "$w")
     task=$(window_to_task "$w" "$STATE")
@@ -3371,6 +3404,7 @@ EOF
       fi
     fi
   done < <(recorded_windows)
+  parked_gate_scan_end
 
   # Heartbeat: the watcher runs a cheap fleet-scan at a regular cadence no matter
   # what. Time-based via .last-heartbeat mtime; interval doubles per consecutive
