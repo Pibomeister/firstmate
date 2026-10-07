@@ -2452,10 +2452,12 @@ droid)
       echo "error: droid executable not found on PATH" >&2
       exit 1
     }
-    fm_backend_visible_capture_supported "$BACKEND" || {
-      echo "error: refusing Droid spawn because backend '$BACKEND' has no verified viewport capture for its folder-trust dialog" >&2
-      exit 1
-    }
+    if [ "$BACKEND" != orca ]; then
+      fm_backend_visible_capture_supported "$BACKEND" || {
+        echo "error: refusing Droid spawn because backend '$BACKEND' has no verified viewport capture for its folder-trust dialog" >&2
+        exit 1
+      }
+    fi
     if [ "$BACKEND" = orca ] && ! orca terminal read --help 2>/dev/null | grep -Fq -- '--screen'; then
       echo "error: Droid on Orca requires 'orca terminal read --screen' for its folder-trust viewport; update Orca before spawning" >&2
       exit 1
@@ -2910,10 +2912,6 @@ esac
 
 case "$LAUNCH" in
 *__KIMIBIN__*)
-  if [ "$BACKEND" = orca ]; then
-    echo "error: Kimi on Orca remains unverified for readiness and typed submission; use tmux, Herdr, or Zellij until its Orca lifecycle is live-proven" >&2
-    exit 1
-  fi
   KIMI_BIN=$(resolve_kimi_binary) || exit 1
   LAUNCH=${LAUNCH//__KIMIBIN__/$(shell_quote "$KIMI_BIN")}
   fm_backend_visible_capture_supported "$BACKEND" || {

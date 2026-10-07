@@ -2507,6 +2507,7 @@ Droid dispatch is limited to tmux and Orca until the composer and lifecycle are 
 
 The tmux composer proof uses the live `droid` process identity, the bounded box, a `[⏱ …]` timer row with a nonempty trailing integration indicator after `|`, and the task-owned status row.
 The Orca proof requires `terminal read --screen` to return `source=screen` and the exact recorded task terminal, then applies the same box, timer, and status-row check.
+That screen read is scoped to recorded Droid tasks; Orca is not in the shared `FM_BACKEND_VISIBLE_CAPTURE` capability list used by other harnesses.
 The live captures showed `TMUX ⧉` on tmux and `IDE ◌` on Orca, while the production parser accepts other trailing integration indicators.
 The opt-in Orca guard still asserts the observed `IDE ◌` indicator as a version drift check.
 An unrelated process, stale frame, extra row, or unknown terminal reads `unknown` and cannot authorize typed input.

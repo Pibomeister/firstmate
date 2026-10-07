@@ -426,7 +426,7 @@ wait_agent_state() {  # <timeout> <wanted>...
 require_state_verified_backend() {  # <verb>
   fm_control_backend_state_verified "$BACKEND" && return 0
   if [ "$BACKEND" = orca ] && [ "$HARNESS" = droid ]; then
-    fm_backend_visible_capture_supported orca && return 0
+    return 0
   fi
   die "task $ID runs on the $BACKEND backend, which has no recovery-grade agent-state classifier, so '$1' cannot prove the agent actually stopped; refusing rather than reporting an unproven transition as done"
 }

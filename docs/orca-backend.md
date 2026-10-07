@@ -26,6 +26,7 @@ Open the Orca app to watch a task's terminal.
 Routine supervision uses the recorded endpoint through `bin/fm-peek.sh <id>` and `FM_HOME=<home> bin/fm-send.sh <id> '<text>'`.
 Enter and Ctrl-C are supported for every harness.
 Escape and Ctrl+U are verified for Droid on Orca 1.4.217 and 1.4.218 through raw terminal bytes; other harnesses do not inherit that lifecycle control capability.
+The `--screen` viewport read is limited to the exact terminal recorded for a Droid task; other harnesses retain the shared backend's existing capture capability boundary.
 
 ## Task shape and metadata
 
