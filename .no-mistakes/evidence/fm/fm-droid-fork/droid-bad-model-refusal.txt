@@ -1,0 +1,21 @@
+$ fm-spawn.sh bad-model <scratch> --scout --harness droid --model not-a-real-droid-model --backend tmux
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.xUfg9S
+Invalid model: not-a-real-droid-model
+
+Available built-in models:
+  auto, claude-fable-5.1, claude-fable-5, claude-opus-5-5, claude-opus-5-5-fast, claude-opus-5, claude-opus-5-fast, claude-opus-4-8, claude-opus-4-8-fast, claude-opus-4-7, claude-opus-4-6, claude-opus-4-5-20251101, claude-sonnet-5-5, claude-sonnet-5, claude-sonnet-4-6, claude-sonnet-4-5-20250929, claude-haiku-4-5-20251001, gpt-6.1-sol, gpt-6-astra, gpt-6-sol, gpt-6-luna, gpt-5.6-sol, gpt-5.6-sol-fast, gpt-5.6-terra, gpt-5.6-luna, gpt-5.5, gpt-5.5-fast, gpt-5.5-pro, gpt-5.4, gpt-5.4-fast, gpt-5.4-mini, gpt-5.4-mini-fast, gpt-5.3-codex, gpt-5.3-codex-fast, gpt-5.2, gemini-3.1-pro-preview, gemini-3.8-flash, gemini-3.7-flash, gemini-3.6-flash, gemini-3.5-flash, gemini-3-flash-preview, inkling, mistral-medium-3.5, glm-5.3-flash, glm-5.3, glm-5.2, glm-5.2-fast, kimi-k3, qwen3.8-max, nemotron-3-ultra, deepseek-v4.1-flash, deepseek-v4-flash-0731, deepseek-v4-pro, minimax-m3, grok-4.7, grok-4.6, grok-4.5, minimax-m2.7
+
+No custom models configured. Add them to ~/.factory/settings.json
+Invalid model: not-a-real-droid-model
+
+Available built-in models:
+  auto, claude-fable-5.1, claude-fable-5, claude-opus-5-5, claude-opus-5-5-fast, claude-opus-5, claude-opus-5-fast, claude-opus-4-8, claude-opus-4-8-fast, claude-opus-4-7, claude-opus-4-6, claude-opus-4-5-20251101, claude-sonnet-5-5, claude-sonnet-5, claude-sonnet-4-6, claude-sonnet-4-5-20250929, claude-haiku-4-5-20251001, gpt-6.1-sol, gpt-6-astra, gpt-6-sol, gpt-6-luna, gpt-5.6-sol, gpt-5.6-sol-fast, gpt-5.6-terra, gpt-5.6-luna, gpt-5.5, gpt-5.5-fast, gpt-5.5-pro, gpt-5.4, gpt-5.4-fast, gpt-5.4-mini, gpt-5.4-mini-fast, gpt-5.3-codex, gpt-5.3-codex-fast, gpt-5.2, gemini-3.1-pro-preview, gemini-3.8-flash, gemini-3.7-flash, gemini-3.6-flash, gemini-3.5-flash, gemini-3-flash-preview, inkling, mistral-medium-3.5, glm-5.3-flash, glm-5.3, glm-5.2, glm-5.2-fast, kimi-k3, qwen3.8-max, nemotron-3-ultra, deepseek-v4.1-flash, deepseek-v4-flash-0731, deepseek-v4-pro, minimax-m3, grok-4.7, grok-4.6, grok-4.5, minimax-m2.7
+
+No custom models configured. Add them to ~/.factory/settings.json
+error: Droid's model check for 'not-a-real-droid-model' failed (exit 1); if its message above is not a model rejection, check its network and sign-in, otherwise choose an id from 'droid exec --help' or omit --model
+exit=1
+$ ls state/ (worker artifacts)
+.fm-lab-tmux-dir
+$ tmux sessions on lab socket
+error connecting to /private/tmp/fml.kdZctx/tmux-501/fm-lab (No such file or directory)
+error connecting to /private/tmp/fml.kdZctx/tmux-501/default (No such file or directory)

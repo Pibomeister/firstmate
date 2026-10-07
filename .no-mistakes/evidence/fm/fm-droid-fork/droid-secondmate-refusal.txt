@@ -1,0 +1,6 @@
+$ fm-spawn.sh sm <scratch> --secondmate --harness droid --backend tmux
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.lRKNkd
+error: droid is a verified crewmate/scout adapter only and cannot run a secondmate; it has no primary supervision protocol. Select a harness verified for secondmates.
+exit=1
+$ ls state/
+.fm-lab-tmux-dir
