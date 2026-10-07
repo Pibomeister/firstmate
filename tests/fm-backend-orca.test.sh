@@ -1668,7 +1668,7 @@ test_card_failures_preserve_caller_results() {
 
 test_teardown_deletes_only_safe_recorded_orca_branch() {
   local variant out branch initial rc
-  for variant in merged unmerged current missing-path invalid absent; do
+  for variant in merged unmerged current current-upstream missing-path invalid absent; do
     card_case "card-branch-$variant"
     branch="Pibomeister/fm-$CARD_ID"
     git -C "$CARD_WT" branch "$branch"
@@ -1686,6 +1686,12 @@ test_teardown_deletes_only_safe_recorded_orca_branch() {
         git -C "$CARD_WT" merge-base --is-ancestor "$initial" HEAD && fail 'refusal fixture branch must be unreachable from deletion-time HEAD'
         ;;
       current) git -C "$CARD_WT" checkout -q "$branch" ;;
+      current-upstream)
+        git -C "$CARD_PROJ" update-ref refs/remotes/origin/main main
+        git -C "$CARD_WT" checkout -q "$branch"
+        git -C "$CARD_WT" branch -q --set-upstream-to=origin/main "$branch"
+        git -C "$CARD_WT" -c user.name=Tests -c user.email=tests@example.invalid commit --allow-empty -qm squash-merged
+        ;;
       missing-path) git -C "$CARD_PROJ" worktree remove "$CARD_WT" ;;
       invalid) branch='--delete' ;;
       absent) branch='' ;;
@@ -1703,19 +1709,19 @@ test_teardown_deletes_only_safe_recorded_orca_branch() {
         assert_equals "$initial" "$(git -C "$CARD_PROJ" rev-parse "$branch")" 'unmerged branch tip changed'
         assert_contains "$out" "warning: kept Orca-created branch $branch" 'safe-delete refusal must report preserved branch'
         ;;
-      merged|current|missing-path)
+      merged|current|current-upstream|missing-path)
         git -C "$CARD_PROJ" show-ref --verify --quiet "refs/heads/$branch" && fail "$variant initial branch leaked"
         ;;
       invalid|absent)
         git -C "$CARD_PROJ" show-ref --verify --quiet "refs/heads/Pibomeister/fm-$CARD_ID" || fail "$variant meta should not guess or delete initial branch"
         ;;
     esac
-    if [ "$variant" != current ] && [ "$variant" != missing-path ]; then
+    if [ "$variant" != current ] && [ "$variant" != current-upstream ] && [ "$variant" != missing-path ]; then
       git -C "$CARD_PROJ" show-ref --verify --quiet "refs/heads/fm/$CARD_ID" && fail 'scout current branch cleanup regressed'
     fi
     assert_absent "$CARD_STATE/$CARD_ID.meta" 'branch retention should not block task metadata retirement'
   done
-  pass 'Orca branch teardown: safe delete, genuinely unmerged branch retained, current scout branch removed, missing-path fallback and legacy guards'
+  pass 'Orca branch teardown: safe delete, genuinely unmerged branch retained, checked-out Orca branch force-deleted even when its upstream lacks the squash-merged tip, missing-path fallback and legacy guards'
 }
 
 test_card_lifecycle_sites_and_guards

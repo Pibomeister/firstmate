@@ -1323,7 +1323,14 @@ spawn_abort_cleanup() {
       fm_backend_kill orca "$ORCA_TERMINAL" 2>/dev/null && SPAWN_ENDPOINT_CLOSED=1 || true
     fi
     if [ -n "${ORCA_WORKTREE_ID:-}" ]; then
-      if ! fm_backend_remove_worktree orca "$ORCA_WORKTREE_ID" 2>/dev/null; then
+      if fm_backend_remove_worktree orca "$ORCA_WORKTREE_ID" 2>/dev/null; then
+        if [ -n "$ORCA_CREATED_BRANCH" ] &&
+          git check-ref-format --branch "$ORCA_CREATED_BRANCH" >/dev/null 2>&1 &&
+          git -C "$PROJ_ABS" show-ref --verify --quiet "refs/heads/$ORCA_CREATED_BRANCH"; then
+          git -C "$PROJ_ABS" branch -d "$ORCA_CREATED_BRANCH" >/dev/null 2>&1 \
+            || printf 'warning: kept Orca-created branch %s (safe deletion refused)\n' "$ORCA_CREATED_BRANCH" >&2
+        fi
+      else
         if [ "$SPAWN_FRESH_COMMIT_PENDING" = 1 ]; then
           if ! spawn_fresh_commit_rollback; then
             status=1
@@ -1350,6 +1357,7 @@ spawn_abort_cleanup() {
             echo "backend=orca"
             echo "orca_worktree_id=$ORCA_WORKTREE_ID"
             [ -z "${ORCA_TERMINAL:-}" ] || echo "terminal=$ORCA_TERMINAL"
+            [ -z "$ORCA_CREATED_BRANCH" ] || echo "orca_created_branch=$ORCA_CREATED_BRANCH"
           } >"$SPAWN_META_TMP" 2>/dev/null &&
             fm_backlog_atomic_transition publish "$SPAWN_META_TMP" "$STATE/$ID.meta" "task record" "$STATE" ||
             true

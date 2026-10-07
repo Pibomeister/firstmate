@@ -3613,9 +3613,7 @@ if [ "$BACKEND" = orca ] && [ "$KIND" != secondmate ]; then
     branch=$(git -C "$WT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)
     if [ "$branch" != "HEAD" ]; then
       if git -C "$WT" checkout --detach -q 2>/dev/null; then
-        if [ "$branch" != "$orca_created_branch" ]; then
-          git -C "$WT" branch -D "$branch" >/dev/null 2>&1 || true
-        fi
+        git -C "$WT" branch -D "$branch" >/dev/null 2>&1 || true
       fi
     fi
     rm -f "$WT/.claude/settings.local.json" "$WT/.opencode/plugins/fm-turn-end.js" \
@@ -3623,7 +3621,8 @@ if [ "$BACKEND" = orca ] && [ "$KIND" != secondmate ]; then
       "$WT/.fm-grok-turnend" "$WT/.fm-kimi-turnend"
   fi
   # Git compares against this detached task HEAD, or the project HEAD only
-  # when the worktree is already gone. Never force-delete the initial branch.
+  # when the worktree is already gone. Never force-delete an Orca-created
+  # branch that teardown did not find checked out.
   orca_branch_repo=$WT
   [ -d "$WT" ] || orca_branch_repo=$PROJ
   if [ -n "$orca_created_branch" ]; then

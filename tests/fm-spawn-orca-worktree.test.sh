@@ -67,7 +67,15 @@ case "$1 $2" in
     exit 0
     ;;
   "terminal create")
+    [ -z "${FM_TEST_ORCA_TERMINAL_FAIL:-}" ] || exit 1
     printf '{"ok":true,"result":{"terminal":{"handle":"term-1"}}}\n'
+    exit 0
+    ;;
+  "worktree rm")
+    [ -z "${FM_TEST_ORCA_RM_FAIL:-}" ] || exit 1
+    id=${4#id:wt-}
+    git -C "$DIR/project" worktree remove --force "$DIR/orca-worktrees/$id" >&2 || exit 1
+    printf '{"ok":true}\n'
     exit 0
     ;;
   "terminal send")
@@ -118,6 +126,53 @@ EOF
   pass "an Orca-backed fresh spawn enters the worktree Orca created for it, instead of hard-refusing on the post-launch proof"
 }
 
+test_orca_aborted_spawn_safe_deletes_or_records_its_created_branch() {
+  local variant case_dir home id fb out status rm_fail
+  for variant in removed rm-fails; do
+    id="orca-abort-$variant"
+    case_dir="$TMP_ROOT/abort-$variant"
+    home="$case_dir/home"
+    rm_fail=
+    [ "$variant" = removed ] || rm_fail=1
+    mkdir -p "$home/data/$id" "$home/projects" "$home/state" "$home/config"
+    touch "$home/state/.last-watcher-beat"
+    printf 'codex\n' > "$home/config/crew-harness"
+    printf 'manual\n' > "$home/config/backlog-backend"
+    fm_git_init_commit "$case_dir/project"
+    cat > "$home/data/$id/brief.md" <<EOF
+# Task
+## Captain's intent
+Exercise an aborted Orca-backed spawn for $id.
+
+## Firstmate spec
+Confirm the abort does not leak the branch Orca created.
+EOF
+    fb=$(make_orca_fakebin "$case_dir")
+    out=$(FM_ROOT_OVERRIDE='' FM_HOME="$home" HOME="$case_dir/user-home" \
+      FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+      FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
+      FM_SPAWN_NO_GUARD=1 FM_TEST_ORCA_DIR="$case_dir" PATH="$fb:$PATH" \
+      FM_TEST_ORCA_TERMINAL_FAIL=1 FM_TEST_ORCA_RM_FAIL="$rm_fail" \
+      "$SPAWN" "$id" "$case_dir/project" --mode no-mistakes --yolo off --backend orca 2>&1)
+    status=$?
+    [ "$status" -ne 0 ] || fail "$variant: spawn should fail when Orca terminal creation fails"$'\n'"$out"
+    case "$variant" in
+      removed)
+        git -C "$case_dir/project" show-ref --verify --quiet "refs/heads/orca-fm-$id" \
+          && fail "aborted spawn leaked the Orca-created branch"$'\n'"$out"
+        assert_absent "$home/state/$id.meta" "a cleaned-up abort should not record metadata"
+        ;;
+      rm-fails)
+        git -C "$case_dir/project" show-ref --verify --quiet "refs/heads/orca-fm-$id" \
+          || fail "a branch still checked out in an unremoved worktree must be kept"
+        assert_grep "orca_created_branch=orca-fm-$id" "$home/state/$id.meta" \
+          "recovery metadata must record the Orca-created branch for teardown"
+        ;;
+    esac
+  done
+  pass "an aborted Orca spawn safe-deletes the branch Orca created, or records it in recovery metadata when the worktree survives"
+}
+
 test_orca_relaunch_is_refused_before_the_worktree_carveout_could_run() {
   local case_dir home proj wt id=orca-relaunch-a2 out status
   case_dir="$TMP_ROOT/relaunch"
@@ -165,6 +220,7 @@ EOF
 }
 
 test_orca_fresh_spawn_enters_the_worktree_it_created
+test_orca_aborted_spawn_safe_deletes_or_records_its_created_branch
 test_orca_relaunch_is_refused_before_the_worktree_carveout_could_run
 
 echo "# all fm-spawn-orca-worktree tests passed"
