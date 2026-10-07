@@ -544,13 +544,28 @@ test_codex_threads_model_and_effort() {
   pass "codex receives --model and model_reasoning_effort profile flags"
 }
 
+# Fixture shaped like the installed Codex models_cache.json. Tests point
+# FM_CODEX_MODELS_CACHE at this file and never read ~/.codex.
+write_codex_models_cache() { # <path>
+  mkdir -p "$(dirname "$1")"
+  cat > "$1" <<'JSON'
+{"models":[
+  {"slug":"gpt-6-astra","supported_reasoning_levels":[{"effort":"low"},{"effort":"medium"},{"effort":"high"},{"effort":"xhigh"},{"effort":"max"},{"effort":"ultra"}]},
+  {"slug":"gpt-5.6-luna","supported_reasoning_levels":[{"effort":"low"},{"effort":"medium"},{"effort":"high"},{"effort":"xhigh"},{"effort":"max"}]},
+  {"slug":"gpt-5","supported_reasoning_levels":[{"effort":"low"},{"effort":"medium"},{"effort":"high"},{"effort":"xhigh"}]}
+]}
+JSON
+}
+
 test_codex_threads_model_and_max_effort() {
-  local rec id out status launch
+  local rec id out status launch catalog
   id=profile-codex-max-z4
   rec=$(make_spawn_case profile-codex-max codex "$id")
   read_case_record "$rec"
+  catalog="$CASE_DIR/codex-models.json"
+  write_codex_models_cache "$catalog"
 
-  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --model gpt-5.6-luna --effort max)
+  out=$(FM_CODEX_MODELS_CACHE="$catalog" run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --model gpt-5.6-luna --effort max)
   status=$?
   expect_code 0 "$status" "codex Luna spawn with max effort should succeed"
   assert_meta_profile "$HOME_DIR/state/$id.meta" codex gpt-5.6-luna max
@@ -560,21 +575,50 @@ test_codex_threads_model_and_max_effort() {
   pass "codex Luna receives --model and model_reasoning_effort max profile flags"
 }
 
-test_codex_omits_max_effort_for_unsupported_model() {
-  local rec id out status launch
+test_codex_threads_astra_max_effort() {
+  local rec id out status launch catalog
+  id=profile-codex-astra-max-z4a
+  rec=$(make_spawn_case profile-codex-astra-max codex "$id")
+  read_case_record "$rec"
+  catalog="$CASE_DIR/codex-models.json"
+  write_codex_models_cache "$catalog"
+
+  out=$(FM_CODEX_MODELS_CACHE="$catalog" run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --model gpt-6-astra --effort max)
+  status=$?
+  expect_code 0 "$status" "codex Astra spawn with max effort should succeed: $out"
+  assert_meta_profile "$HOME_DIR/state/$id.meta" codex gpt-6-astra max
+  launch=$(cat "$LAUNCH_LOG")
+  assert_contains "$launch" "codex --model 'gpt-6-astra' -c 'model_reasoning_effort=\"max\"' --dangerously-bypass-approvals-and-sandbox" \
+    "codex launch did not thread Astra's max reasoning effort config"
+  pass "codex Astra receives --model and model_reasoning_effort max when the catalog advertises it"
+}
+
+test_codex_refuses_max_effort_when_catalog_does_not_advertise_it() {
+  local rec id out status catalog
   id=profile-codex-max-unsupported-z4b
   rec=$(make_spawn_case profile-codex-max-unsupported codex "$id")
   read_case_record "$rec"
+  catalog="$CASE_DIR/codex-models.json"
+  write_codex_models_cache "$catalog"
 
-  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --model gpt-5 --effort max)
+  out=$(FM_CODEX_MODELS_CACHE="$catalog" run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --model gpt-5 --effort max 2>&1)
   status=$?
-  expect_code 0 "$status" "codex spawn with an unsupported model max effort should omit the effort flag"
-  assert_meta_profile "$HOME_DIR/state/$id.meta" codex gpt-5 max
-  launch=$(cat "$LAUNCH_LOG")
-  assert_contains "$launch" "codex --model 'gpt-5' --dangerously-bypass-approvals-and-sandbox" \
-    "codex launch did not preserve the model flag when max effort was omitted"
-  assert_not_contains "$launch" "model_reasoning_effort" "codex launch must omit unsupported model max reasoning effort"
-  pass "codex omits max for models without the catalog capability"
+  expect_code 1 "$status" "codex spawn must refuse max when the catalog does not advertise it: $out"
+  assert_contains "$out" "does not advertise max" "refusal did not say the catalog omits max"
+  assert_contains "$out" "gpt-5" "refusal did not name the model"
+  assert_absent "$HOME_DIR/state/$id.meta" "refused max published a task record"
+  [ ! -s "$LAUNCH_LOG" ] || fail "refused max launched an agent"
+
+  id=profile-codex-max-missing-catalog-z4c
+  rec=$(make_spawn_case profile-codex-max-missing-catalog codex "$id")
+  read_case_record "$rec"
+  out=$(FM_CODEX_MODELS_CACHE="$CASE_DIR/no-such-catalog.json" run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --model gpt-6-astra --effort max 2>&1)
+  status=$?
+  expect_code 1 "$status" "codex spawn must refuse max when the catalog cannot be read: $out"
+  assert_contains "$out" "catalog not readable" "missing-catalog refusal did not name the catalog"
+  assert_absent "$HOME_DIR/state/$id.meta" "unreadable catalog published a task record"
+  [ ! -s "$LAUNCH_LOG" ] || fail "unreadable catalog launched an agent"
+  pass "codex refuses max when the catalog does not advertise it"
 }
 
 # Codex parks a crewmate launch forever on its unanswerable hook-trust modal
@@ -1906,7 +1950,8 @@ test_chained_raw_launch_strips_ai_trailer_in_every_step
 test_claude_threads_model_and_effort
 test_codex_threads_model_and_effort
 test_codex_threads_model_and_max_effort
-test_codex_omits_max_effort_for_unsupported_model
+test_codex_threads_astra_max_effort
+test_codex_refuses_max_effort_when_catalog_does_not_advertise_it
 test_codex_crewmate_launch_disables_the_hook_layer
 test_codex_secondmate_launch_keeps_the_hook_layer
 test_grok_threads_model_and_reasoning_effort

@@ -16,9 +16,15 @@
 #        fm-harness.sh validate-native-effort <harness> <model> <effort>
 #                                        Refuse ultra unless the harness is pi or
 #                                        pi-signed and the model explicitly names
-#                                        codex-native/<id>. Other efforts retain
-#                                        their adapter's existing policy. Native
-#                                        Codex validates model support at startup.
+#                                        codex-native/<id>. Refuse codex max unless
+#                                        the requested model's entry in the installed
+#                                        Codex catalog lists max in
+#                                        supported_reasoning_levels. That catalog is
+#                                        ${FM_CODEX_MODELS_CACHE:-${CODEX_HOME:-~/.codex}/models_cache.json}.
+#                                        A missing, unreadable, or malformed catalog,
+#                                        or a model it does not list, does not
+#                                        advertise max and is refused. Other efforts
+#                                        retain their adapter's existing policy.
 #        fm-harness.sh ancestry [<pid>] print "<strength> <harness>" for the nearest
 #                                        harness process at or above <pid> (default this
 #                                        process), or nothing when the walk finds none.
@@ -517,16 +523,84 @@ resolve_secondmate_effort() {
   secondmate_field 3
 }
 
-validate_native_effort() {
-  local harness=${1:-} model=${2:-} effort=${3:-}
-  [ "$effort" = ultra ] || return 0
-  case "$harness" in
-    pi|pi-signed)
-      case "$model" in codex-native/?*) return 0 ;; esac
+# Installed Codex catalog. FM_CODEX_MODELS_CACHE selects a fixture file.
+# Otherwise Codex's own home wins, then ~/.codex.
+codex_models_cache_path() {
+  if [ -n "${FM_CODEX_MODELS_CACHE:-}" ]; then
+    printf '%s\n' "$FM_CODEX_MODELS_CACHE"
+    return 0
+  fi
+  printf '%s/models_cache.json\n' "${CODEX_HOME:-${HOME:-}/.codex}"
+}
+
+# Succeed only when <model> lists max. Any catalog that cannot show that
+# advertisement refuses, so a spawn cannot drop max and launch at the default.
+codex_catalog_advertises_max() { # <model>
+  local model=${1:-} catalog verdict levels
+  catalog=$(codex_models_cache_path)
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "error: jq is required to read the codex model catalog ($catalog) before passing effort max" >&2
+    return 1
+  fi
+  if [ ! -f "$catalog" ] || [ ! -r "$catalog" ]; then
+    echo "error: codex effort max refused for model '${model:-}': catalog not readable ($catalog)" >&2
+    return 1
+  fi
+  verdict=$(jq -r --arg m "$model" '
+    def level:
+      if type == "string" then .
+      elif type == "object" and (.effort | type) == "string" then .effort
+      else empty end;
+    if type != "object" or (.models | type) != "array" then
+      error("no models array")
+    else
+      ([.models[] | select(type == "object" and (.slug | type) == "string" and .slug == $m)] | first) as $e
+      | if $e == null then
+          "missing"
+        else
+          ([$e.supported_reasoning_levels[]? | level]) as $levels
+          | if ($levels | index("max")) != null then "yes"
+            else "no " + ($levels | join(" "))
+            end
+        end
+    end
+  ' "$catalog" 2>/dev/null) || {
+    echo "error: codex effort max refused: model catalog is malformed ($catalog)" >&2
+    return 1
+  }
+  case "$verdict" in
+    yes) return 0 ;;
+    missing)
+      echo "error: codex effort max refused for model '${model:-}': model is not in the catalog ($catalog)" >&2
+      return 1
+      ;;
+    no*)
+      levels=${verdict#no }
+      echo "error: codex effort max refused for model '${model:-}': catalog does not advertise max (supported: ${levels:-none}) ($catalog)" >&2
+      return 1
+      ;;
+    *)
+      echo "error: codex effort max refused: model catalog is malformed ($catalog)" >&2
+      return 1
       ;;
   esac
-  echo "error: ultra effort requires pi or pi-signed with an explicit codex-native/<model> model" >&2
-  return 1
+}
+
+validate_native_effort() {
+  local harness=${1:-} model=${2:-} effort=${3:-}
+  if [ "$effort" = ultra ]; then
+    case "$harness" in
+      pi|pi-signed)
+        case "$model" in codex-native/?*) return 0 ;; esac
+        ;;
+    esac
+    echo "error: ultra effort requires pi or pi-signed with an explicit codex-native/<model> model" >&2
+    return 1
+  fi
+  if [ "$harness" = codex ] && [ "$effort" = max ]; then
+    codex_catalog_advertises_max "$model" || return 1
+  fi
+  return 0
 }
 
 case "${1:-}" in
