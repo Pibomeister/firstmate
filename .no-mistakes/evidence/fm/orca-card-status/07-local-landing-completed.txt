@@ -1,0 +1,12 @@
+$ orca worktree set ... in-progress   (fixture reset so local landing's transition is observable)
+orca card: fm-cardlive1 workspaceStatus= in-progress
+$ (crewmate) git checkout -b fm/cardlive1 && git commit --allow-empty -m 'local work'
+6ccfc79 local work for cardlive1
+7298387 Initialize private Orca smoke repository
+project main before: 7298387
+$ bin/fm-merge-local.sh cardlive1
+WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
+merged fm/cardlive1 into local main (7298387 -> 6ccfc79) in /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-droid-orca-scratch-repo-501
+exit=0
+project main after: 6ccfc79
+orca card: fm-cardlive1 workspaceStatus= completed

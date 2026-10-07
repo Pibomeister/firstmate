@@ -1,0 +1,22 @@
+(setup: first attempt refused on harness-created untracked .omc/ from the operator's OMC Claude plugin; removing it from the lab task worktree)
+meta: orca_created_branch=fm-cardlive1
+$ git branch -a (project, before teardown)
+  fm-cardlive1
++ fm/cardlive1
+* main
+$ bin/fm-teardown.sh cardlive1
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.6fZsn4
+WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
+teardown: reaping leaked worktree process(es) for cardlive1: 79211 79277 82340 82628 82629
+teardown: force-killing leaked worktree process(es) for cardlive1: 79211 79277
+teardown cardlive1 complete (window term_c12705f6-ee11-4a76-8e1f-c0494ba4cf24, worktree /Users/eduardopicazo/orca/workspaces/fm-droid-orca-scratch-repo-501/fm-cardlive1)
+Backlog: cardlive1 just finished (config/backlog-backend selects manual editing). Update /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.6fZsn4/data/backlog.md - move cardlive1 to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+exit=0
+$ git branch -a (project, after teardown)
+* main
+$ git worktree list
+/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-droid-orca-scratch-repo-501  6ccfc79 [main]
+$ orca worktree show (removed card expected)
+ok= False selector_not_found
+$ ls state/cardlive1.meta
+ls: /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.6fZsn4/state/cardlive1.meta: No such file or directory

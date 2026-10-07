@@ -1,0 +1,16 @@
+$ git branch -a (before)
+* main
+$ PATH=<shim failing only 'orca terminal create'>:$PATH bin/fm-spawn.sh cardabort1 <scratch> --mode local-only --yolo off --backend orca
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.6fZsn4
+WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
+warning: /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.6fZsn4/data/cardabort1/launch-brief.md records no ship branch; defaulting to legacy branch fm/cardabort1
+injected: terminal create failed
+exit=1
+$ git branch -a (after abort: Orca-created fm-cardabort1 must be gone)
+* main
+$ git worktree list
+/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-droid-orca-scratch-repo-501  6ccfc79 [main]
+$ orca worktree list | grep cardabort1
+0
+$ ls state/cardabort1.meta
+ls: /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.6fZsn4/state/cardabort1.meta: No such file or directory

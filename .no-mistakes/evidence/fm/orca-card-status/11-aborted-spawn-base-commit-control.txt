@@ -1,0 +1,10 @@
+NEGATIVE CONTROL: same injected fault, base commit 99da16d9 fm-spawn.sh
+$ git branch -a (before)
+* main
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.6fZsn4
+WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
+warning: /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.6fZsn4/data/cardabort2/launch-brief.md records no ship branch; defaulting to legacy branch fm/cardabort2
+injected: terminal create failed
+exit=1
+$ git branch -a (after abort on base commit)
+* main

@@ -1,0 +1,15 @@
+$ raw: orca worktree set --worktree id:<removed> --workspace-status completed --json
+ok= False {'code': 'selector_not_found', 'message': 'selector_not_found', 'data': {'selector': 'id:5199ec35-e632-4340-bca1-2aa612e3158b::/Users/eduardopicazo/orca/workspaces/fm-droid-orca-scratch-repo-501/fm-cardlive1', 'validSelectorForms': ['id:<repo-id>::<absolute-path>', 'path:<absolute-path>', 'name:<display-name>', 'branch:<branch>', 'identity:<identity-key>', 'issue:<number>', 'current', 'active'], 'suggestions': [], 'nextSteps': ['No Orca workspace matched the worktree selector "id:5199ec35-e632-4340-bca1-2aa612e3158b::/Users/eduardopicazo/orca/workspaces/fm-droid-orca-scratch-repo-501/fm-cardlive1".', 'Valid selector forms: id:<repo-id>::<absolute-path>, path:<absolute-path>, name:<display-name>, branch:<branch>, identity:<identity-key>, issue:<number>, current, active.', 'List the exact values with `orca worktree list --json`; a bare repository id is not a worktree id.']}}
+$ bin/fm-orca-card.sh cardgone completed   (Orca rejects the removed worktree)
+warning: orca card status not updated for cardgone
+
+real	0m0.181s
+user	0m0.117s
+sys	0m0.059s
+exit=0
+$ bin/fm-orca-card.sh nometa completed   (no task meta: silent no-op)
+exit=0 (no output expected)
+$ bin/fm-orca-card.sh cardtmux completed   (non-Orca backend: silent no-op)
+exit=0 (no output expected)
+$ bin/fm-orca-card.sh '../evil' completed   (invalid id: silent no-op)
+exit=0

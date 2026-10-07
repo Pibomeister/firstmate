@@ -1,0 +1,9 @@
+NEGATIVE CONTROL: identical lifecycle driven by base commit 99da16d9 scripts
+spawned cardbase1 harness=claude kind=ship mode=local-only yolo=off window=fm-cardbase1 worktree=/Users/eduardopicazo/orca/workspaces/fm-droid-orca-scratch-repo-501/fm-cardbase1
+meta orca_created_branch on base: ''
+card after base PR registration: in-progress
+merged fm/cardbase1 into local main (6ccfc79 -> 4d7a9ae) in /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-droid-orca-scratch-repo-501
+card after base local landing: in-progress
+branches before base teardown: fm-cardbase1 fm/cardbase1 main 
+teardown cardbase1 complete (window term_16d9c454-a935-401e-b728-703236dabf9c, worktree /Users/eduardopicazo/orca/workspaces/fm-droid-orca-scratch-repo-501/fm-cardbase1)
+branches after base teardown (+5s): fm-cardbase1 main 

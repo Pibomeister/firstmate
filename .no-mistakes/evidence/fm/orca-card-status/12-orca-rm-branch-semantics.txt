@@ -1,0 +1,6 @@
+[on-orca-branch] before rm: fm-rmprobe-on-orca-branch main 
+rm ok= True
+[on-orca-branch] after orca worktree rm: fm-rmprobe-on-orca-branch main 
+[switched-away] before rm: fm-rmprobe-switched-away fm/fm-rmprobe-switched-away main 
+rm ok= True
+[switched-away] after orca worktree rm: fm-rmprobe-switched-away fm/fm-rmprobe-switched-away main 

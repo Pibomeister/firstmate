@@ -1,0 +1,16 @@
+$ fm_merge_outcome_report $FM_HOME $FM_HOME/state cardlive1 https://github.com/Pibomeister/firstmate/pull/2 poll   (the watcher's merge-observed call, bin/fm-watch.sh:2827)
+exit=0
+cardlive1.pr-poll-merge-notified
+orca card: fm-cardlive1 workspaceStatus= completed
+
+$ FM_PR_CHECK_MERGE=1 bin/fm-pr-check.sh cardlive1 https://github.com/Pibomeister/firstmate/pull/2   (merge-time re-record must NOT reset card to in-review)
+WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
+armed: state/cardlive1.check.sh
+exit=0
+orca card: fm-cardlive1 workspaceStatus= completed
+
+$ orca worktree set ... in-review   (fixture: put card back to prove a repeated merge record does not update again)
+orca card: fm-cardlive1 workspaceStatus= in-review
+$ repeat fm_merge_outcome_report (already recorded)
+exit=0
+orca card: fm-cardlive1 workspaceStatus= in-review

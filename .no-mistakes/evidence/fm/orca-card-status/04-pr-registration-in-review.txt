@@ -1,0 +1,9 @@
+$ orca worktree show (before)
+orca card: fm-cardlive1 workspaceStatus= in-progress
+$ bin/fm-pr-check.sh cardlive1 https://github.com/Pibomeister/firstmate/pull/2
+armed: state/cardlive1.check.sh
+exit=0
+$ grep ^pr= meta
+pr=https://github.com/Pibomeister/firstmate/pull/2
+$ orca worktree show (after)
+orca card: fm-cardlive1 workspaceStatus= in-review
