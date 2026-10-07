@@ -1,0 +1,30 @@
+spawned droid-live harness=droid kind=scout window=firstmate:fm-droid-live worktree=/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-droid-signals.fZUMlP/pool/.treehouse/scratch-67b9eb/1/scratch
+ok - Droid received its brief and signalled turn end
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the requested message WILL still be sent.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+ok - Droid acknowledged inbox and typed fm-send steers
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+interrupt-delivered droid-live harness=droid backend=tmux verified=agent-alive cancel=unconfirmed
+ok - Droid settled its interrupted turn before the 45-second command completed
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+relaunched droid-live harness=droid from=droid model=gpt-5.6-luna effort=low backend=tmux endpoint=firstmate:fm-droid-live worktree=/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-droid-signals.fZUMlP/pool/.treehouse/scratch-67b9eb/1/scratch
+ok - Droid relaunch preserved its profile and replaced its busy generation
+stopped droid-live harness=droid backend=tmux endpoint=firstmate:fm-droid-live worktree=/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-droid-signals.fZUMlP/pool/.treehouse/scratch-67b9eb/1/scratch
+complete: droid-live captain-call inventory reviewed
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+teardown: reaping leaked worktree process(es) for droid-live: 33433
+teardown: force-killing leaked worktree process(es) for droid-live: 33433
+A new version of treehouse is available: v2.3.0 → v3.1.2
+Run "treehouse update" to update
+
+🌳 Worktree returned to pool.
+teardown droid-live complete (window firstmate:fm-droid-live, worktree /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-droid-signals.fZUMlP/pool/.treehouse/scratch-67b9eb/1/scratch)
+Backlog: droid-live just finished (this home keeps no markdown backlog at /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-droid-signals.fZUMlP/home/data/backlog.md). Update /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-droid-signals.fZUMlP/home/data/backlog.md - move droid-live to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+ok - Droid exit and teardown retired the task and settings
+exit=0

@@ -1,0 +1,23 @@
+$ fm-spawn.sh adv-badmodel $LAB/proj --scout --harness droid --model not-a-real-model-xyz --backend tmux
+No custom models configured. Add them to ~/.factory/settings.json
+error: Droid's model check for 'not-a-real-model-xyz' failed (exit 1); if its message above is not a model rejection, check its network and sign-in, otherwise choose an id from 'droid exec --help' or omit --model
+exit=1
+leftover meta: 0
+
+$ fm-spawn.sh adv-zellij $LAB/proj --scout --harness droid --backend zellij
+error: Droid on backend 'zellij' has no verified composer and lifecycle control; use tmux or Orca
+exit=1
+leftover meta: 0
+
+$ fm-spawn.sh adv-herdr $LAB/proj --scout --harness droid --backend herdr
+error: Droid on backend 'herdr' has no verified composer and lifecycle control; use tmux or Orca
+exit=1
+leftover meta: 0
+
+$ fm-spawn.sh adv-secondmate $LAB/proj --secondmate --harness droid --backend tmux
+error: droid is a verified crewmate/scout adapter only and cannot run a secondmate; it has no primary supervision protocol. Select a harness verified for secondmates.
+exit=1
+leftover meta: 0
+
+tmux server on lab socket after refusals:
+error connecting to /private/tmp/tmux-501/fm-lab-adv (No such file or directory)

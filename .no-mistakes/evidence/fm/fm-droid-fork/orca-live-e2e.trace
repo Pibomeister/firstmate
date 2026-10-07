@@ -1,0 +1,144 @@
++ set -u
+++ dirname tests/fm-droid-orca-signals-live-e2e.test.sh
++ . tests/lib.sh
+++ '[' -n '' ']'
+++ FM_TEST_LIB_SOURCED=1
+++ umask 022
++++ dirname tests/lib.sh
+++ . tests/git-config-helpers.sh
++++ export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
++++ GIT_CONFIG_GLOBAL=/dev/null
++++ GIT_CONFIG_NOSYSTEM=1
+++ export FM_GATE_REFUSE_BYPASS=1
+++ FM_GATE_REFUSE_BYPASS=1
+++ export FM_TEST_SEAM=1
+++ FM_TEST_SEAM=1
+++ unset FM_TASK_ID
+++ unset TASKS_AXI_FILE TASKS_AXI_BACKEND
+++++ dirname tests/lib.sh
++++ cd tests/..
++++ pwd
+++ ROOT=/Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M49TCZCPRAZTX3992T6JA4Z8
++++ fm_test_tmpdir
++++ local base=/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/ physical
++++ base=/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T
++++ '[' -n /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T ']'
++++ case "$base" in
+++++ CDPATH=
+++++ cd -- /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T
+++++ pwd -P
++++ physical=/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T
++++ base=/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T
++++ '[' -e /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/.git ']'
++++ printf '%s\n' /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T
+++ FM_TEST_TMPDIR=/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T
+++ FM_TEST_CLEANUP_DIRS=()
++++ mktemp /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/.fm-test-cleanup.50254.XXXXXX
+++ FM_TEST_CLEANUP_REGISTRY=/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/.fm-test-cleanup.50254.1lJ8A5
++++ fm_test_pid_identity 50254
++++ local pid=50254
++++ FM_STATE_OVERRIDE=/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T
++++ bash -c '. "$1"; fm_pid_identity "$2"' _ /Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M49TCZCPRAZTX3992T6JA4Z8/bin/fm-wake-lib.sh 50254
+++ FM_TEST_OWNER_IDENTITY='Tue Oct  6 18:07:25 2026     bash -x tests/fm-droid-orca-signals-live-e2e.test.sh'
++++ mktemp /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/.fm-test-procevent.50254.XXXXXX
+++ FM_TEST_PROCEVENT_REGISTRY=/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/.fm-test-procevent.50254.GdSjgw
++++ mktemp /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/.fm-test-watcher.50254.XXXXXX
+++ FM_TEST_WATCHER_REGISTRY=/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/.fm-test-watcher.50254.NpJd95
+++ FM_TEST_STUB_MAX_BLOCK_SECONDS=120
+++ export FM_TEST_STUB_MAX_BLOCK_SECONDS
+++ trap fm_test_cleanup EXIT
+++ trap 'fm_test_cleanup; exit 130' INT
+++ trap 'fm_test_cleanup; exit 143' TERM
+++ trap 'fm_test_cleanup; exit 129' HUP
+++ trap 'fm_test_cleanup; exit 131' QUIT
+++ FM_TEST_ORPHAN_MAX_AGE_SECONDS=3600
+++ '[' 0 '!=' 1 ']'
+++ fm_test_reap_orphans
+++ local marker dir mtime now owner_pid owner_identity current_identity
++++ date +%s
+++ now=1791331646
+++ for marker in "$FM_TEST_TMPDIR"/fm-*/.fm-test-fixture
+++ '[' -e /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-backend-orca-tests.sixIwJ/.fm-test-fixture ']'
++++ sed -n 1p /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-backend-orca-tests.sixIwJ/.fm-test-fixture
+++ owner_pid=34276
++++ sed -n '2,$p' /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-backend-orca-tests.sixIwJ/.fm-test-fixture
+++ owner_identity='Tue Oct  6 18:02:32 2026     bash tests/fm-backend-orca.test.sh'
+++ case "$owner_pid" in
++++ fm_test_pid_identity 34276
+++ current_identity='Tue Oct  6 18:02:32 2026     bash tests/fm-backend-orca.test.sh'
+++ '[' -n 'Tue Oct  6 18:02:32 2026     bash tests/fm-backend-orca.test.sh' ']'
+++ '[' 'Tue Oct  6 18:02:32 2026     bash tests/fm-backend-orca.test.sh' = 'Tue Oct  6 18:02:32 2026     bash tests/fm-backend-orca.test.sh' ']'
+++ continue
++ . /Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M49TCZCPRAZTX3992T6JA4Z8/bin/fm-busy-lib.sh
+++ FM_BUSY_LIB_VERSION=v1
+++ FM_BUSY_KIMI_VERIFIED_VERSIONS=
++ fm_live_gate opt-in FM_DROID_ORCA_SIGNALS droid orca jq node
++ local policy=opt-in vars=FM_DROID_ORCA_SIGNALS
++ shift 2
++ local var value rest primary requested=0 disabled_by= tool
++ var_list=()
++ local -a var_list
++ case "$policy" in
++ rest=FM_DROID_ORCA_SIGNALS
++ '[' -n FM_DROID_ORCA_SIGNALS ']'
++ var=FM_DROID_ORCA_SIGNALS
++ '[' FM_DROID_ORCA_SIGNALS = FM_DROID_ORCA_SIGNALS ']'
++ rest=
++ '[' -n FM_DROID_ORCA_SIGNALS ']'
++ var_list+=("$var")
++ '[' -n '' ']'
++ '[' 1 -gt 0 ']'
++ primary=FM_DROID_ORCA_SIGNALS
++ for var in "${var_list[@]}"
++ value=1
++ case "$value" in
++ requested=1
++ '[' 1 -eq 0 ']'
++ for tool in "$@"
++ command -v droid
++ continue
++ for tool in "$@"
++ command -v orca
++ continue
++ for tool in "$@"
++ command -v jq
++ continue
++ for tool in "$@"
++ command -v node
++ continue
++ export DISABLE_AUTOUPDATER=1
++ DISABLE_AUTOUPDATER=1
++ return 0
++ ID=droid-orca-live-50254
+++ mktemp -d /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-droid-orca-signals.XXXXXX
++ LAB=/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-droid-orca-signals.OOTwXN
+++ cd /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-droid-orca-signals.OOTwXN
+++ pwd -P
++ LAB=/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-droid-orca-signals.OOTwXN
+++ id -u
++ PROJECT=/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-droid-orca-scratch-repo-501
++ HOME_DIR=/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-droid-orca-signals.OOTwXN/home
++ REPORT=/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-droid-orca-signals.OOTwXN/home/data/droid-orca-live-50254/report.md
++ export FM_HOME=/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-droid-orca-signals.OOTwXN/home FM_ROOT_OVERRIDE=/Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M49TCZCPRAZTX3992T6JA4Z8
++ FM_HOME=/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-droid-orca-signals.OOTwXN/home
++ FM_ROOT_OVERRIDE=/Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M49TCZCPRAZTX3992T6JA4Z8
++ trap cleanup EXIT
++ mkdir -p /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-droid-orca-scratch-repo-501 /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-droid-orca-signals.OOTwXN/home/data/droid-orca-live-50254 /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-droid-orca-signals.OOTwXN/home/state /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-droid-orca-signals.OOTwXN/home/config
+++ cd /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-droid-orca-scratch-repo-501
+++ pwd -P
++ PROJECT=/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-droid-orca-scratch-repo-501
++ '[' '!' -e /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-droid-orca-scratch-repo-501/.git ']'
++ cat
++ FM_SPAWN_NO_GUARD=1
++ /Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M49TCZCPRAZTX3992T6JA4Z8/bin/fm-spawn.sh droid-orca-live-50254 /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-droid-orca-scratch-repo-501 --scout --harness droid --model gpt-5.6-luna --effort low --backend orca
+++ tail -4 /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-droid-orca-signals.OOTwXN/spawn.out
++ fail 'Orca Droid scout spawn failed: '
++ printf 'not ok - %s\n' 'Orca Droid scout spawn failed: '
+not ok - Orca Droid scout spawn failed: 
++ exit 1
++ cleanup
++ '[' 0 = 1 ']'
++ '[' 0 '!=' 1 ']'
++ printf '# preserved Orca lab %s task %s for evidence or guarded recovery\n' /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-droid-orca-signals.OOTwXN droid-orca-live-50254
+# preserved Orca lab /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-droid-orca-signals.OOTwXN task droid-orca-live-50254 for evidence or guarded recovery
++ return
