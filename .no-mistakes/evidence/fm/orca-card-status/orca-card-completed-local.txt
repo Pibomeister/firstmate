@@ -1,0 +1,11 @@
+## $ FM_PR_CHECK_MERGE=1 fm-pr-check.sh (merge-time re-record must not touch card)
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+armed: state/orcacard78215.check.sh
+exit=0
+{"workspaceStatus":"in-review"}
+## $ fm-merge-local.sh orcacard78215
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+merged fm/orcacard78215 into local main (7298387 -> dd16be4) in /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-droid-orca-scratch-repo-501
+exit=
+## after: orca worktree show
+{"branch":"refs/heads/fm/orcacard78215","workspaceStatus":"completed"}

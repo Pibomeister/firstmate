@@ -1,0 +1,18 @@
+## before: orca worktree show
+{"branch":"refs/heads/fm-orcacard78215","workspaceStatus":"in-progress"}
+## $ fm-pr-check.sh orcacard78215 https://github.com/Pibomeister/firstmate/pull/2
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/orcacard78215.check.sh
+exit=0
+## meta pr line
+project=/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-droid-orca-scratch-repo-501
+pr=https://github.com/Pibomeister/firstmate/pull/2
+pr_head=a311b5fa161ed03175e79fad44ec68829d1a5546
+## after: orca worktree show
+{"branch":"refs/heads/fm-orcacard78215","workspaceStatus":"in-review"}

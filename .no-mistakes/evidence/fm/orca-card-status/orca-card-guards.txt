@@ -1,0 +1,10 @@
+## $ fm-orca-card.sh ghost in-review   (real Orca, worktree id that does not exist)
+warning: orca card status not updated for ghost
+exit=0
+( FM_HOME=$LAB bin/fm-orca-card.sh ghost in-review; echo "exit=$?"; )  0.11s user 0.05s system 99% cpu 0.165 total
+## $ fm-orca-card.sh tmuxtask in-review  (non-Orca task: silent no-op)
+exit=0
+## $ fm-orca-card.sh '../x' completed    (unsafe id: silent no-op)
+exit=0
+## $ fm-orca-card.sh missing completed   (no meta: silent no-op)
+exit=0

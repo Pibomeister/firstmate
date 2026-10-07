@@ -1,0 +1,23 @@
+## (removed harness-plugin untracked .omc/ from lab worktree after first teardown refused on it)
+## before teardown: project branches
+  fm-orcacard78215
++ fm/orcacard78215
+* main
+branch=fm/orcacard78215
+orca_created_branch=fm-orcacard78215
+## $ fm-teardown.sh orcacard78215
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.OctGYe
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+teardown: reaping leaked worktree process(es) for orcacard78215: 87415 87572 93310 93918 93921
+teardown: force-killing leaked worktree process(es) for orcacard78215: 87415 87572
+teardown orcacard78215 complete (window term_170eed45-8903-48a5-b206-7828ce6d70e0, worktree /Users/eduardopicazo/orca/workspaces/fm-droid-orca-scratch-repo-501/fm-orcacard78215)
+Backlog: orcacard78215 just finished (this home keeps no markdown backlog at /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.OctGYe/data/backlog.md). Update /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.OctGYe/data/backlog.md - move orcacard78215 to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+exit=0
+## after teardown: project branches
+* main
+## git worktree list
+/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-droid-orca-scratch-repo-501  dd16be4 [main]
+## orca worktrees matching fm-orcacard
+[]
+## lab meta present?
+ls: /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.OctGYe/state/orcacard78215.meta: No such file or directory
