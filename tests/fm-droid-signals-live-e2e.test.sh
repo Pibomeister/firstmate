@@ -59,8 +59,11 @@ For each message, append STEER_RECEIVED and the message body to $REPORT, move it
 Do not commit, push, or publish anything.
 EOF
 
+# Default to gpt-5.6-terra; FM_DROID_LIVE_MODEL overrides it. The prior gpt-5.6-luna
+# default skipped a steered instruction even though Firstmate delivered the steer;
+# gpt-5.6-terra passed every step.
 FM_SPAWN_NO_GUARD=1 "$ROOT/bin/fm-spawn.sh" "$ID" "$PROJECT" --scout \
-  --harness droid --model "${FM_DROID_LIVE_MODEL:-gpt-5.6-luna}" --effort low --backend tmux \
+  --harness droid --model "${FM_DROID_LIVE_MODEL:-gpt-5.6-terra}" --effort low --backend tmux \
   || fail "Droid scout spawn failed"
 
 wait_for() {  # <description> <shell command> [polls]
@@ -106,13 +109,13 @@ old_gen=$(sed -n 's/^busy_gen=//p' "$HOME_DIR/state/$ID.meta")
   || fail "Droid relaunch failed"
 new_gen=$(sed -n 's/^busy_gen=//p' "$HOME_DIR/state/$ID.meta")
 [ -n "$new_gen" ] && [ "$new_gen" != "$old_gen" ] || fail "Droid relaunch did not mint a fresh busy generation"
-grep -Fqx "model=${FM_DROID_LIVE_MODEL:-gpt-5.6-luna}" "$HOME_DIR/state/$ID.meta" || fail "Droid relaunch lost the model"
+grep -Fqx "model=${FM_DROID_LIVE_MODEL:-gpt-5.6-terra}" "$HOME_DIR/state/$ID.meta" || fail "Droid relaunch lost the model"
 grep -Fqx 'effort=low' "$HOME_DIR/state/$ID.meta" || fail "Droid relaunch lost the effort"
 wait_for 'relaunch turn end' "grep -q 'state=idle source=droid-hook' '$HOME_DIR/state/$ID.busy-state'" 360
-DROID_LABEL=$(FACTORY_DROID_AUTO_UPDATE_ENABLED=false droid exec --help </dev/null 2>/dev/null | awk -v id="${FM_DROID_LIVE_MODEL:-gpt-5.6-luna}" '
+DROID_LABEL=$(FACTORY_DROID_AUTO_UPDATE_ENABLED=false droid exec --help </dev/null 2>/dev/null | awk -v id="${FM_DROID_LIVE_MODEL:-gpt-5.6-terra}" '
   /^Available Models:/ { on=1; next } /^$/ { on=0 }
   on && $1 == id { sub(/^  [^ ]+ +/, ""); sub(/ [(]default[)]$/, ""); print; exit }')
-[ -n "$DROID_LABEL" ] || fail "Droid's catalog does not name model ${FM_DROID_LIVE_MODEL:-gpt-5.6-luna}"
+[ -n "$DROID_LABEL" ] || fail "Droid's catalog does not name model ${FM_DROID_LIVE_MODEL:-gpt-5.6-terra}"
 tmux capture-pane -p -t "$TARGET" | grep -Fq "$DROID_LABEL (Low)" \
   || fail "Droid's own header does not show '$DROID_LABEL (Low)' after relaunch"
 pass "Droid relaunch preserved its profile and replaced its busy generation"
