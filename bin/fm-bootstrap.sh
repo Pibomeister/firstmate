@@ -1180,8 +1180,8 @@ crew_dispatch_validate() {
   fi
   while IFS=$'\t' read -r tag model; do
     [ "$tag" = max ] || continue
-    if ! "$SCRIPT_DIR/fm-harness.sh" validate-native-effort codex "$model" max >/dev/null 2>&1; then
-      echo "CREW_DISPATCH: invalid config/crew-dispatch.json - invalid effort: codex:max"
+    if ! err=$("$SCRIPT_DIR/fm-harness.sh" validate-native-effort codex "$model" max 2>&1 >/dev/null); then
+      echo "CREW_DISPATCH: invalid config/crew-dispatch.json - ${err#error: }"
       return 0
     fi
   done <<< "$codex_max_models"

@@ -143,9 +143,6 @@ VERIFIED_HARNESSES=$(fm_control_harnesses | jq -Rsc 'split("\n") | map(select(le
 
 # The fields this tool consumes must be well formed; bootstrap owns the wider
 # schema diagnostic, but an intake never selects around a malformed file.
-# Codex max is well formed for any model in that schema check.
-# validate-native-effort then refuses a model whose installed catalog does not
-# advertise max.
 rules_err=$(jq -r --argjson verified_harnesses "$VERIFIED_HARNESSES" --arg provider_re "$FM_QUOTA_PROVIDER_ID_RE" '
   def verified($h): $verified_harnesses | index($h);
   def provider_id($p): ($p | type) == "string" and ($p | test($provider_re));
@@ -203,30 +200,6 @@ rules_err=$(jq -r --argjson verified_harnesses "$VERIFIED_HARNESSES" --arg provi
   else empty end
 ' "$RULES" 2>/dev/null) || die "malformed rules file: $RULES_PATH (not JSON)"
 [ -z "$rules_err" ] || die "malformed rules file: $RULES_PATH - $rules_err"
-
-# Same catalog decision as spawn. The schema check above only accepts the
-# effort token; validate-native-effort reads the installed catalog.
-codex_max_rows=$(jq -r '
-  def profiles($v): if ($v | type) == "array" then $v elif ($v | type) == "object" then [$v] else [] end;
-  (
-    [(.rules // [])[] | profiles(.use)[] | select(.harness == "codex" and .effort == "max") | "use\t" + (.model // "")]
-    + (if has("default") then [profiles(.default)[] | select(.harness == "codex" and .effort == "max") | "default\t" + (.model // "")] else [] end)
-  )
-  | .[]
-' "$RULES" 2>/dev/null) || die "malformed rules file: $RULES_PATH (not JSON)"
-while IFS=$'\t' read -r codex_max_location codex_max_model; do
-  [ -n "$codex_max_location" ] || continue
-  if ! "$SCRIPT_DIR/fm-harness.sh" validate-native-effort codex "$codex_max_model" max >/dev/null 2>&1; then
-    case "$codex_max_location" in
-      default)
-        die "malformed rules file: $RULES_PATH - each default profile effort must be supported by its harness and model"
-        ;;
-      *)
-        die "malformed rules file: $RULES_PATH - each use profile effort must be supported by its harness and model"
-        ;;
-    esac
-  fi
-done <<< "$codex_max_rows"
 
 missing_provider=$(jq -r '
   def profiles($v): if ($v | type) == "array" then $v elif ($v | type) == "object" then [$v] else [] end;
