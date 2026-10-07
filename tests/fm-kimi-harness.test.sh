@@ -21,7 +21,11 @@ KIMI_RUNTIME_LAUNCH_DIR=
 PYTHON_BIN=$(command -v python3) || fail "test needs python3"
 PYTHON_BIN_DIR=$(dirname "$PYTHON_BIN")
 JQ_BIN=$(command -v jq) || fail "test needs jq"
-BASE_PATH=${FM_TEST_BASE_PATH:-$PYTHON_BIN_DIR:/usr/bin:/bin:/usr/sbin:/sbin}
+# The Orca runtime check reads `orca status --json` with node, which runners
+# do not keep in the system bin dirs.
+NODE_BIN=$(command -v node) || fail "test needs node"
+NODE_BIN_DIR=$(dirname "$NODE_BIN")
+BASE_PATH=${FM_TEST_BASE_PATH:-$PYTHON_BIN_DIR:$NODE_BIN_DIR:/usr/bin:/bin:/usr/sbin:/sbin}
 
 task_inbox_export() {  # <home> <id>
   local state
