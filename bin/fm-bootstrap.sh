@@ -1048,6 +1048,7 @@ EOF
 
 crew_dispatch_validate() {
   local file err verified_harnesses typed_key typed_active=false
+  local codex_max_models tag model
   file="$CONFIG/crew-dispatch.json"
   [ -f "$file" ] || return 0
   if ! command -v jq >/dev/null 2>&1; then
@@ -1074,7 +1075,7 @@ crew_dispatch_validate() {
       elif ($e | type) != "string" then false
       elif $e == "ultra" then (($h == "pi" or $h == "pi-signed") and (($m | type) == "string") and ($m | startswith("codex-native/")) and ($m | length) > 13)
       elif $h == "claude" then (["low","medium","high","xhigh","max"] | index($e))
-      elif $h == "codex" then ((["low","medium","high","xhigh"] | index($e)) != null or ($e == "max" and $m == "gpt-5.6-luna"))
+      elif $h == "codex" then ((["low","medium","high","xhigh"] | index($e)) != null or $e == "max")
       elif $h == "grok" then (["low","medium","high"] | index($e))
       elif $h == "agy" then (["low","medium","high"] | index($e))
       elif $h == "droid" then (["low","medium","high","xhigh","max"] | index($e))
@@ -1161,6 +1162,29 @@ crew_dispatch_validate() {
     echo "CREW_DISPATCH: invalid config/crew-dispatch.json - $err"
     return 0
   fi
+  # Codex max is structurally legal above. validate-native-effort owns whether
+  # the installed catalog advertises it for the profile's model.
+  if ! codex_max_models=$(jq -r '
+    def profiles($value):
+      if ($value | type) == "array" then $value
+      elif ($value | type) == "object" then [$value]
+      else [] end;
+    (
+      [(.rules // [])[]? | profiles(.use?)[]? | select(type == "object" and .harness == "codex" and .effort == "max") | "max\t" + (.model // "")]
+      + (if has("default") then [profiles(.default)[]? | select(type == "object" and .harness == "codex" and .effort == "max") | "max\t" + (.model // "")] else [] end)
+    )
+    | .[]
+  ' "$file" 2>/dev/null); then
+    echo "CREW_DISPATCH: invalid config/crew-dispatch.json - malformed JSON"
+    return 0
+  fi
+  while IFS=$'\t' read -r tag model; do
+    [ "$tag" = max ] || continue
+    if ! err=$("$SCRIPT_DIR/fm-harness.sh" validate-native-effort codex "$model" max 2>&1 >/dev/null); then
+      echo "CREW_DISPATCH: invalid config/crew-dispatch.json - ${err#error: }"
+      return 0
+    fi
+  done <<< "$codex_max_models"
   if [ "${FM_BOOTSTRAP_VERBOSE_FACTS:-0}" = 1 ]; then
     jq -r '
     def profile($p):

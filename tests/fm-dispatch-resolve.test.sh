@@ -1017,4 +1017,32 @@ expect_code 0 "$code" "--help exits 0"
 assert_contains "$out" 'Usage:' "--help prints usage"
 pass "configuration errors exit 2 before any network call"
 
+# --- Codex max is structural; spawn owns the catalog --------------------------
+catalog="$TMP_ROOT/no-codex-catalog/models_cache.json"
+printf '%s\n' '{"rules":[{"when":"Max review.","use":{"harness":"codex","model":"gpt-5","effort":"max"}}]}' > "$RULES"
+cat > "$RESPONSE" <<'JSON'
+{ "model": "jev-1.13.0",
+  "answers": { "rule": { "type": "choice", "choice": "rule_1", "confidence": 0.9,
+    "probabilities": { "rule_1": 0.96, "default": 0.04 } } },
+  "usage": { "input_tokens": 100, "output_tokens": 20 } }
+JSON
+reset_log
+TYPESAFE_API_KEY=$KEY FM_CODEX_MODELS_CACHE="$catalog" run code out err "$BRIEF" --project review
+expect_code 0 "$code" "codex non-luna max profile exits 0 with no catalog: $err"
+assert_contains "$out" '  status: clear' "codex non-luna max profile resolves"
+assert_contains "$out" "  profile: --harness 'codex' --model 'gpt-5' --effort 'max'" "codex max effort survives typed dispatch"
+printf '%s\n' '{"rules":[{"when":"Normal work.","use":{"harness":"claude","model":"opus","effort":"high"}},{"when":"Max review.","use":{"harness":"codex","model":"gpt-5","effort":"max"}}]}' > "$RULES"
+cat > "$RESPONSE" <<'JSON'
+{ "model": "jev-1.13.0",
+  "answers": { "rule": { "type": "choice", "choice": "rule_1", "confidence": 0.9,
+    "probabilities": { "rule_1": 0.94, "rule_2": 0.04, "default": 0.02 } } },
+  "usage": { "input_tokens": 100, "output_tokens": 20 } }
+JSON
+reset_log
+TYPESAFE_API_KEY=$KEY FM_CODEX_MODELS_CACHE="$catalog" run code out err "$BRIEF" --project review
+expect_code 0 "$code" "claude-routed intake exits 0 with no catalog: $err"
+assert_contains "$out" "  profile: --harness 'claude' --model 'opus' --effort 'high'" "a missing catalog never blocks a claude-routed intake"
+cp "$BASE_RULES" "$RULES"
+pass "codex max profiles never read the installed catalog"
+
 printf '# all fm-dispatch-resolve tests passed\n'

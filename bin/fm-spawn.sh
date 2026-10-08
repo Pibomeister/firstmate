@@ -93,6 +93,9 @@
 #   from that harness's launch rather than guessed. Ultra is the explicit
 #   exception: bin/fm-harness.sh validate-native-effort owns its model scope;
 #   supported Pi launches receive --codex-effort ultra, never --thinking ultra.
+#   Codex max is the other refusal: that same check passes it only when the
+#   installed catalog advertises max for the requested model, and the spawn
+#   refuses otherwise instead of dropping the flag.
 #   OpenCode has no interactive effort flag, so its effort is written as the
 #   build agent's variant, keyed to the resolved model, inside the
 #   OPENCODE_CONFIG_CONTENT JSON its launch already carries (config schema
@@ -2518,6 +2521,11 @@ if [ "$EFFORT" = ultra ]; then
     exit 1
   }
 fi
+# Codex max follows the catalog. Refuse before any endpoint or task record so
+# an unadvertised max cannot launch at the default effort.
+if [ "$HARNESS" = codex ] && [ "$EFFORT" = max ] && [ "$RAW_LAUNCH" = 0 ]; then
+  "$SCRIPT_DIR/fm-harness.sh" validate-native-effort "$HARNESS" "$MODEL" "$EFFORT" || exit 1
+fi
 if [ "$HARNESS" = omp ]; then
   omp_model_validate "$OMP_BIN" "$MODEL" || exit 1
 fi
@@ -2722,15 +2730,12 @@ effort_flag_for_harness() {
     esac
     ;;
   codex)
-    # The installed codex config schema uses model_reasoning_effort. The
-    # installed model catalog supports max for gpt-5.6-luna; keep that level
-    # scoped to the model whose catalog entry advertises it.
+    # The installed codex config schema uses model_reasoning_effort.
+    # low|medium|high|xhigh keep their previous unconditional mapping.
+    # max reaches here only after the pre-launch codex max check refused any
+    # model whose installed catalog entry does not advertise it.
     case "$effort" in
-    low | medium | high | xhigh) printf -- '-c %s ' "$(shell_quote "model_reasoning_effort=\"$effort\"")" ;;
-    max)
-      [ "$model" = gpt-5.6-luna ] || return 0
-      printf -- '-c %s ' "$(shell_quote 'model_reasoning_effort="max"')"
-      ;;
+    low | medium | high | xhigh | max) printf -- '-c %s ' "$(shell_quote "model_reasoning_effort=\"$effort\"")" ;;
     esac
     ;;
   grok)
