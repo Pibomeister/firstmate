@@ -38,6 +38,7 @@ backend=orca
 window=fm-<id>
 terminal=<orca terminal handle>
 orca_worktree_id=<orca repo id>::<absolute worktree path>
+orca_created_branch=<initial Orca-created git branch>
 worktree=<absolute Orca worktree path>
 ```
 
@@ -49,6 +50,12 @@ Orca returns `orca_worktree_id=` as that composite of the Orca repo id and the w
 
 Spawn registers the repository, creates an independent worktree, reuses only the verified `result.terminal.handle` returned by Orca or creates a terminal explicitly, installs harness hooks, records metadata, and launches the selected harness.
 Exact command flags and response parsing are owned by `bin/backends/orca.sh` and script help.
+
+PR registration moves Orca cards to `in-review`; successful PR merge recording or local-only landing moves them to `completed` until teardown removes the card.
+`bin/fm-orca-card.sh` bounds each best-effort update to five seconds plus termination grace and warns on failure without changing the caller's outcome; a hung merge-time update can stall the watcher for that bounded interval.
+Spawn records the initial Orca-created branch, including in abort-recovery metadata, and an aborted spawn safe-deletes it after removing the Orca worktree.
+Teardown force-deletes whichever branch is checked out in the task worktree, which may be that initial branch; an initial branch that is not checked out gets only safe deletion after detaching in the task worktree, using the project checkout only when the worktree is already gone; a refused deletion keeps the branch and prints a warning.
+Tasks waiting without a PR and existing leaked branches are not reconciled by these event hooks.
 
 `fm-peek.sh` reads with `orca terminal read`.
 An ordinary metadata-routed `fm-send.sh` text steer becomes a durable steering-inbox record, and only its best-effort constant doorbell passes through Orca's submit machinery.

@@ -66,6 +66,13 @@ if [ -n "${FM_ORCA_DROID_EVENT_STATE:-}" ] && [ "${1:-}" = terminal ] && [ "${2:
     fi
   done
 fi
+if [ "${1:-} ${2:-}" = 'worktree set' ]; then
+  case "${FM_ORCA_CARD_BEHAVIOR:-ok}" in
+    fail) echo 'fake Orca failure' >&2; exit 1 ;;
+    hang) sleep 30 ;;
+    error-json) printf '{"ok":false,"error":{"message":"card missing"}}\n'; exit 0 ;;
+  esac
+fi
 if [ "${1:-}" = status ] && [ "${FM_ORCA_STATUS_RESPONSE:-ready}" != sequence ]; then
   printf '{"ok":true,"result":{"runtime":{"reachable":true,"state":"ready"}}}\n'
   exit 0
@@ -731,6 +738,7 @@ test_spawn_writes_orca_metadata_and_launches_harness() {
   assert_grep "window=fm-$id" "$state/$id.meta" "meta missing stable Orca window alias"
   assert_grep "terminal=term-spawn" "$state/$id.meta" "meta missing terminal handle"
   assert_grep "orca_worktree_id=wt-spawn::/orca/wt-spawn" "$state/$id.meta" "meta missing Orca worktree id"
+  assert_grep "orca_created_branch=fm/$id" "$state/$id.meta" "meta missing actual Orca-created branch"
   assert_grep "worktree=$wt" "$state/$id.meta" "meta missing Orca worktree path"
   assert_not_contains "$(cat "$log")" $'orca\x1f''terminal'$'\x1f''create' \
     "spawn should reuse the implicit terminal returned by Orca worktree creation"
@@ -1536,6 +1544,217 @@ test_dispatcher_sources_orca_and_routes_primitives() {
   pass "fm-backend dispatcher: accepts orca and routes capture through bin/backends/orca.sh"
 }
 
+card_case() {  # <name>: isolated caller state, Git worktree, fake Orca
+  orca_case "$1"
+  CARD_HOME="$CASE_DIR/home"
+  CARD_STATE="$CASE_DIR/caller-state"
+  CARD_PROJ="$CASE_DIR/project"
+  CARD_WT="$CASE_DIR/worktree"
+  CARD_ID=card
+  CARD_URL=https://github.com/acme/sample/pull/9
+  mkdir -p "$CARD_HOME/config" "$CARD_HOME/data/$CARD_ID" "$CARD_STATE"
+  fm_git_worktree "$CARD_PROJ" "$CARD_WT" "fm/$CARD_ID"
+  fm_write_meta "$CARD_STATE/$CARD_ID.meta" "project=$CARD_PROJ" "worktree=$CARD_WT" \
+    "branch=fm/$CARD_ID" "kind=ship" "mode=local-only" "backend=orca" "orca_worktree_id=card-id"
+  CARD_ROOT=$(neutral_fm_root "$CASE_DIR/neutral")
+  fm_fake_exit0 "$FB" no-mistakes
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$FB/gh"
+  chmod +x "$FB/gh"
+}
+
+card_env() {
+  env FM_HOME="$CARD_HOME" FM_ROOT_OVERRIDE="$CARD_ROOT" FM_STATE_OVERRIDE="$CARD_STATE" \
+    FM_DATA_OVERRIDE="$CARD_HOME/data" FM_CONFIG_OVERRIDE="$CARD_HOME/config" \
+    PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" "$@"
+}
+
+card_site() {  # <pr|merge|local> [extra environment assignments]
+  local site=$1
+  shift
+  # shellcheck disable=SC2016 # Positional parameters belong to the child Bash.
+  case "$site" in
+    pr) card_env env "$@" "$ROOT/bin/fm-pr-check.sh" "$CARD_ID" "$CARD_URL" ;;
+    merge) card_env env "$@" bash -c '
+      . "$1/bin/fm-merge-outcome-lib.sh"
+      fm_merge_outcome_report "$2" "$3" "$4" "$5" self
+    ' _ "$ROOT" "$CARD_HOME" "$CARD_STATE" "$CARD_ID" "$CARD_URL" ;;
+    local)
+      git -C "$CARD_WT" -c user.name=Tests -c user.email=tests@example.invalid commit --allow-empty -qm local-landing
+      card_env env "$@" "$ROOT/bin/fm-merge-local.sh" "$CARD_ID" ;;
+  esac
+}
+
+card_argv() {  # <status>
+  printf 'orca\037worktree\037set\037--worktree\037id:card-id\037--workspace-status\037%s\037--json' "$1"
+}
+
+test_card_lifecycle_sites_and_guards() {
+  local site status out rc
+  for site in pr merge local; do
+    card_case "card-$site"
+    status=completed
+    [ "$site" != pr ] || status=in-review
+    out=$(card_site "$site" 2>&1) || fail "$site positive caller failed: $out"
+    assert_equals "$(card_argv "$status")" "$(cat "$LOG")" "$site card update argv"
+    if [ "$site" = pr ]; then
+      assert_grep "pr=$CARD_URL" "$CARD_STATE/$CARD_ID.meta" "PR should remain recorded"
+      : > "$LOG"
+      out=$(card_site pr FM_PR_CHECK_MERGE=1 2>&1) || fail "merge-time re-record failed: $out"
+      assert_equals '' "$(cat "$LOG")" 'merge-time re-record must not reset card to in-review'
+    elif [ "$site" = merge ]; then
+      : > "$LOG"
+      out=$(card_site merge 2>&1) || fail "repeated merge recording failed: $out"
+      assert_equals '' "$(cat "$LOG")" 'already-recorded PR merge should not update again'
+    fi
+    card_case "card-$site-non-orca"
+    printf 'backend=tmux\n' >> "$CARD_STATE/$CARD_ID.meta"
+    out=$(card_site "$site" 2>&1) || fail "$site non-Orca caller failed: $out"
+    assert_equals '' "$(cat "$LOG")" "$site should not update non-Orca card"
+    card_case "card-$site-no-id"
+    printf 'orca_worktree_id=\n' >> "$CARD_STATE/$CARD_ID.meta"
+    out=$(card_site "$site" 2>&1) || fail "$site missing-id caller failed: $out"
+    assert_equals '' "$(cat "$LOG")" "$site should not update without a worktree id"
+  done
+  card_case card-rejected-pr
+  printf '#!/usr/bin/env bash\nprintf '\''{"isDraft":true}\\n'\''\n' > "$FB/gh"
+  out=$(card_site pr 2>&1) && fail 'draft PR registration should refuse'
+  assert_equals '' "$(cat "$LOG")" 'refused PR registration must not move card'
+  card_case card-failed-merge
+  mv "$CARD_STATE" "$CARD_STATE.saved"
+  out=$(card_site merge 2>&1)
+  rc=$?
+  expect_code 1 "$rc" 'missing state should fail merge outcome recording'
+  assert_equals '' "$(cat "$LOG")" 'failed merge recording must not move card'
+  card_case card-refused-local
+  printf 'mode=direct-PR\n' >> "$CARD_STATE/$CARD_ID.meta"
+  out=$(card_site local 2>&1) && fail 'non-local task landing should refuse'
+  assert_equals '' "$(cat "$LOG")" 'refused local landing must not move card'
+  pass 'Orca card hooks: exact argv, caller state override, and each event/backend/id guard'
+}
+
+test_card_requests_five_second_timeout() {
+  local out bound_log
+  card_case card-timeout-bound
+  bound_log="$CASE_DIR/timeout-bound"
+  cat > "$FB/timeout" <<'SH'
+#!/usr/bin/env bash
+# Record the external timeout's requested deadline, then run its command.
+set -eu
+[ "$#" -ge 4 ] && [ "$1" = -k ] || exit 2
+printf '%s\n' "$3" > "${FM_TIMEOUT_BOUND_LOG:?}"
+shift 3
+exec "$@"
+SH
+  chmod +x "$FB/timeout"
+  printf '{"ok":true,"result":{}}\n' > "$RESP/1.out"
+  out=$(card_env env FM_TIMEOUT_MECHANISM_OVERRIDE='' FM_TIMEOUT_BOUND_LOG="$bound_log" \
+    "$ROOT/bin/fm-orca-card.sh" "$CARD_ID" in-review 2>&1) \
+    || fail "card helper should run through the timeout probe: $out"
+  assert_equals '' "$out" 'successful card helper should remain silent'
+  assert_present "$bound_log" 'Orca status call must pass through the bounded runner'
+  assert_equals 5 "$(cat "$bound_log")" 'Orca status command must request a five-second bound'
+  assert_equals "$(card_argv in-review)" "$(cat "$LOG")" 'bounded command must execute the Orca status call'
+  pass 'Orca card helper: requests exactly five seconds independently of caller wall-clock latency'
+}
+
+test_card_failures_preserve_caller_results() {
+  local site behavior out rc start end elapsed
+  for site in pr merge local; do
+    for behavior in fail hang error-json; do
+      card_case "card-$site-$behavior"
+      start=$(python3 -c 'import time; print(time.monotonic())')
+      out=$(card_site "$site" "FM_ORCA_CARD_BEHAVIOR=$behavior" 2>&1)
+      rc=$?
+      end=$(python3 -c 'import time; print(time.monotonic())')
+      expect_code 0 "$rc" "$site caller must survive $behavior: $out"
+      assert_contains "$out" "warning: orca card status not updated for $CARD_ID" "$site $behavior warning missing"
+      assert_equals 1 "$(printf '%s\n' "$out" | grep -c 'warning: orca card status')" "$site $behavior warning count"
+      assert_not_contains "$out" 'fake Orca failure' 'raw Orca stderr must be discarded'
+      if [ "$behavior" = hang ]; then
+        elapsed=$(python3 -c 'import sys; print(float(sys.argv[2])-float(sys.argv[1]))' "$start" "$end")
+        # The fake hang sleeps 30s; the ceiling includes the caller's own
+        # runtime, which exceeds 2s on a loaded host, so leave headroom.
+        python3 -c 'import sys; t=float(sys.argv[1]); sys.exit(0 if 5 <= t < 15 else 1)' "$elapsed" \
+          || fail "$site hang must be timed out between 5 and 15 seconds, measured $elapsed"
+        printf 'ok - Orca card %s hang elapsed=%ss (required <15s)\n' "$site" "$elapsed"
+      fi
+      case "$site" in
+        pr) assert_grep "pr=$CARD_URL" "$CARD_STATE/$CARD_ID.meta" 'failed card update lost PR registration' ;;
+        merge) assert_present "$CARD_STATE/$CARD_ID.pr-poll-merge-notified" 'failed card update lost merge receipt' ;;
+        local) assert_equals "$(git -C "$CARD_WT" rev-parse HEAD)" "$(git -C "$CARD_PROJ" rev-parse main)" 'failed card update changed landing' ;;
+      esac
+    done
+  done
+  card_case card-absent-meta
+  rm "$CARD_STATE/$CARD_ID.meta"
+  out=$(card_env "$ROOT/bin/fm-orca-card.sh" "$CARD_ID" in-review 2>&1) || fail "missing meta should be a no-op: $out"
+  assert_equals '' "$out" 'missing meta should be silent'
+  assert_equals '' "$(cat "$LOG")" 'missing meta should not call Orca'
+  pass 'Orca card failures: caller results persist, JSON error and command failure warn once, hangs return under 7s'
+}
+
+test_teardown_deletes_only_safe_recorded_orca_branch() {
+  local variant out branch initial rc
+  for variant in merged unmerged current current-upstream missing-path invalid absent; do
+    card_case "card-branch-$variant"
+    branch="Pibomeister/fm-$CARD_ID"
+    git -C "$CARD_WT" branch "$branch"
+    fm_write_meta "$CARD_STATE/$CARD_ID.meta" "project=$CARD_PROJ" "worktree=$CARD_WT" \
+      "branch=fm/$CARD_ID" "kind=scout" "mode=no-mistakes" "harness=claude" "yolo=off" \
+      "window=fm-$CARD_ID" "endpoint_task_id=$CARD_ID" "terminal=card-term" \
+      "backend=orca" "orca_worktree_id=card-repo::$CARD_WT" "decisions_reviewed=1" "decision_keys="
+    printf 'report\n' > "$CARD_HOME/data/$CARD_ID/report.md"
+    case "$variant" in
+      unmerged)
+        git -C "$CARD_WT" checkout -q "$branch"
+        git -C "$CARD_WT" -c user.name=Tests -c user.email=tests@example.invalid commit --allow-empty -qm unmerged
+        initial=$(git -C "$CARD_WT" rev-parse HEAD)
+        git -C "$CARD_WT" checkout -q "fm/$CARD_ID"
+        git -C "$CARD_WT" merge-base --is-ancestor "$initial" HEAD && fail 'refusal fixture branch must be unreachable from deletion-time HEAD'
+        ;;
+      current) git -C "$CARD_WT" checkout -q "$branch" ;;
+      current-upstream)
+        git -C "$CARD_PROJ" update-ref refs/remotes/origin/main main
+        git -C "$CARD_WT" checkout -q "$branch"
+        git -C "$CARD_WT" branch -q --set-upstream-to=origin/main "$branch"
+        git -C "$CARD_WT" -c user.name=Tests -c user.email=tests@example.invalid commit --allow-empty -qm squash-merged
+        ;;
+      missing-path) git -C "$CARD_PROJ" worktree remove "$CARD_WT" ;;
+      invalid) branch='--delete' ;;
+      absent) branch='' ;;
+    esac
+    [ -z "$branch" ] || printf 'orca_created_branch=%s\n' "$branch" >> "$CARD_STATE/$CARD_ID.meta"
+    if [ -d "$CARD_WT" ]; then
+      printf '{"ok":true,"result":{"worktree":{"path":"%s"}}}\n' "$CARD_WT" > "$RESP/1.out"
+    fi
+    out=$(card_env "$ROOT/bin/fm-teardown.sh" "$CARD_ID" 2>&1)
+    rc=$?
+    expect_code 0 "$rc" "scout branch $variant teardown failed: $out"
+    case "$variant" in
+      unmerged)
+        git -C "$CARD_PROJ" show-ref --verify --quiet "refs/heads/$branch" || fail 'unmerged initial branch must survive'
+        assert_equals "$initial" "$(git -C "$CARD_PROJ" rev-parse "$branch")" 'unmerged branch tip changed'
+        assert_contains "$out" "warning: kept Orca-created branch $branch" 'safe-delete refusal must report preserved branch'
+        ;;
+      merged|current|current-upstream|missing-path)
+        git -C "$CARD_PROJ" show-ref --verify --quiet "refs/heads/$branch" && fail "$variant initial branch leaked"
+        ;;
+      invalid|absent)
+        git -C "$CARD_PROJ" show-ref --verify --quiet "refs/heads/Pibomeister/fm-$CARD_ID" || fail "$variant meta should not guess or delete initial branch"
+        ;;
+    esac
+    if [ "$variant" != current ] && [ "$variant" != current-upstream ] && [ "$variant" != missing-path ]; then
+      git -C "$CARD_PROJ" show-ref --verify --quiet "refs/heads/fm/$CARD_ID" && fail 'scout current branch cleanup regressed'
+    fi
+    assert_absent "$CARD_STATE/$CARD_ID.meta" 'branch retention should not block task metadata retirement'
+  done
+  pass 'Orca branch teardown: safe delete, genuinely unmerged branch retained, checked-out Orca branch force-deleted even when its upstream lacks the squash-merged tip, missing-path fallback and legacy guards'
+}
+
+test_card_lifecycle_sites_and_guards
+test_card_requests_five_second_timeout
+test_card_failures_preserve_caller_results
+test_teardown_deletes_only_safe_recorded_orca_branch
 test_capture_reads_terminal_tail_json
 test_capture_falls_back_to_text_fields
 test_capture_fails_on_orca_error_json
