@@ -654,9 +654,10 @@ retire_busy_incarnation() {
     gen=$(fm_busy_current_gen "$STATE" "$ID" 2>/dev/null || true)
     if [ -n "$gen" ] \
       && "$SCRIPT_DIR/fm-busy-event.sh" retire "$STATE" "$ID" --gen "$gen" >/dev/null 2>&1; then
-      # The Orca replacement must compare SessionEnd to this old generation
-      # after exit. Its new record replaces the generation on successful spawn.
-      if [ "$RELAUNCH_ACTIVE" != 1 ] || [ "$BACKEND" != orca ] || [ "$HARNESS" != droid ]; then
+      # Orca Droid's stop proof compares SessionEnd to this old generation, so
+      # a later exit or relaunch still needs it. A replacement spawn publishes
+      # a fresh generation over it.
+      if [ "$BACKEND" != orca ] || [ "$HARNESS" != droid ]; then
         clear_retired_meta_busy_gen "$gen" || true
       fi
     fi

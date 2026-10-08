@@ -598,6 +598,89 @@ SH
   pass "fm-control relaunch: Orca Droid refuses a non-Droid replacement before stopping the worker"
 }
 
+# An Orca Droid task with a fake orca and lsof modelling one live Droid: the
+# screen is the captured idle frame, `/exit` writes the current-generation
+# SessionEnd marker, and lsof stops listing a droid process in the worktree.
+add_orca_droid_task() {  # <case-dir>
+  local dir=$1 state="$1/home/state" gen wt
+  add_task "$dir" t1 droid ship orca "term-1"
+  gen=$("$ROOT/bin/fm-busy-event.sh" arm "$state" t1 --state idle --source droid-hook --event stop) \
+    || fail "could not arm the Orca Droid busy generation"
+  {
+    sed 's|^window=.*|window=fm-t1|' "$state/t1.meta"
+    echo "terminal=term-1"
+    echo "orca_worktree_id=wt-1::/orca/wt-1"
+    echo "busy_gen=$gen"
+  } > "$state/t1.meta.new"
+  mv "$state/t1.meta.new" "$state/t1.meta"
+  wt=$(cd "$dir/wt-t1" && pwd -P)
+  printf '%s\n' "$gen" > "$dir/fake/gen"
+  printf '%s\n' "$state/t1.droid-session-end" > "$dir/fake/marker"
+  printf '%s\n' "$wt" > "$dir/fake/droid-cwd"
+  node -e 'const fs = require("fs");
+process.stdout.write(JSON.stringify({ ok: true, result: { terminal: {
+  source: "screen", tail: fs.readFileSync(process.argv[1], "utf8").replace(/\n$/, "").split("\n") } } }));' \
+    "$ROOT/tests/fixtures/droid/idle-orca-0.230.0.txt" > "$dir/fake/screen.json"
+  cat > "$dir/fakebin/orca" <<'SH'
+#!/usr/bin/env bash
+D=$FM_FAKE_DIR
+printf '%s\n' "$*" >> "$D/orca.log"
+case "$*" in
+  "terminal read --terminal term-1 --screen --json") cat "$D/screen.json" ;;
+  "terminal read --terminal term-1 --limit "*) printf '{"ok":true,"result":{"terminal":{"tail":[]}}}' ;;
+  "terminal send --terminal term-1 --text /exit --json")
+    cat "$D/gen" > "$(cat "$D/marker")"
+    : > "$D/exited"
+    printf '{"ok":true}'
+    ;;
+  "terminal send --terminal term-1 "*) printf '{"ok":true}' ;;
+  *) exit 1 ;;
+esac
+SH
+  cat > "$dir/fakebin/lsof" <<'SH'
+#!/usr/bin/env bash
+[ ! -e "$FM_FAKE_DIR/exited" ] || exit 1
+printf 'p4242\nn%s\n' "$(cat "$FM_FAKE_DIR/droid-cwd")"
+SH
+  chmod +x "$dir/fakebin/orca" "$dir/fakebin/lsof"
+  printf '%s\n' "$gen"
+}
+
+test_orca_droid_second_exit_is_idempotent() {
+  local dir out rc gen
+  dir=$(new_case orca-droid-exit)
+  gen=$(add_orca_droid_task "$dir")
+  out=$(run_control "$dir" t1 exit); rc=$?
+  expect_code 0 "$rc" "exit on Orca Droid should succeed"$'\n'"$out"
+  assert_contains "$out" "stopped t1 harness=droid" "the first exit should report the stop"
+  grep -qx "busy_gen=$gen" "$dir/home/state/t1.meta" \
+    || fail "Orca Droid exit must keep the retired busy_gen its stop proof binds to"
+  [ ! -e "$dir/home/state/t1.busy-gen" ] || fail "exit must still retire the busy sidecar"
+  out=$(run_control "$dir" t1 exit); rc=$?
+  expect_code 0 "$rc" "a second exit on Orca Droid should succeed"$'\n'"$out"
+  assert_contains "$out" "already-stopped" "the second exit should be idempotent"
+  [ "$(grep -c -- '--text /exit' "$dir/fake/orca.log")" = 1 ] \
+    || fail "the second exit must not type another exit command: $(cat "$dir/fake/orca.log")"
+  pass "fm-control exit: a second exit on a stopped Orca Droid is idempotent success"
+}
+
+test_orca_droid_exit_then_relaunch_is_admitted() {
+  local dir out
+  dir=$(new_case orca-droid-relaunch)
+  add_orca_droid_task "$dir" >/dev/null
+  out=$(run_control "$dir" t1 exit) \
+    || fail "exit on Orca Droid should succeed"$'\n'"$out"
+  : > "$dir/fake/orca.log"
+  out=$(run_control "$dir" t1 relaunch --harness droid --note x)
+  assert_not_contains "$out" "SessionEnd proof" \
+    "an exited Orca Droid must pass relaunch's stop proof"
+  assert_not_contains "$out" "rather than a positively classified state" \
+    "relaunch's exit step must see the stopped Orca Droid as stopped"
+  grep -qx 'terminal read --terminal term-1 --limit 1 --json' "$dir/fake/orca.log" \
+    || fail "fm-spawn --relaunch never reached the Orca terminal re-read after admission"$'\n'"$out"
+  pass "fm-control relaunch: an exited Orca Droid is admitted for a Droid replacement"
+}
+
 test_unverified_state_backends_refuse_stop_verbs() {
   local dir out rc backend
   for backend in zellij cmux; do
@@ -1223,6 +1306,8 @@ test_backend_key_capability_matrix
 test_harness_kind_capability
 test_orca_refuses_an_escape_harness_interrupt
 test_orca_droid_relaunch_refuses_a_non_droid_replacement_before_stopping
+test_orca_droid_second_exit_is_idempotent
+test_orca_droid_exit_then_relaunch_is_admitted
 test_unverified_state_backends_refuse_stop_verbs
 test_state_verified_backends_are_exactly_tmux_and_herdr
 test_window_label_is_refused_with_the_exact_id
