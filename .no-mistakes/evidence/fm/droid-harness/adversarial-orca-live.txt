@@ -1,0 +1,46 @@
+
+### spawn real Droid scout on Orca
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-adv-orca.72NNND/home
+spawned droid-adv-12116 harness=droid kind=scout window=fm-droid-adv-12116 worktree=/Users/eduardopicazo/orca/workspaces/fm-droid-orca-scratch-repo-501/fm-droid-adv-12116
+PASS: droid settled first turn
+
+### spawn real Claude scout on Orca
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-adv-orca.72NNND/home
+spawned claude-adv-12116 harness=claude kind=scout window=fm-claude-adv-12116 worktree=/Users/eduardopicazo/orca/workspaces/fm-droid-orca-scratch-repo-501/fm-claude-adv-12116
+droid terminal=term_88f09f8e-ea32-4a29-8549-659f9907b50d claude terminal=term_555ca485-c710-4a12-9aaf-28ef49ce54d0
+PASS: claude received brief
+
+### Scenario: --screen viewport read is scoped to the exact recorded Droid task
+PASS: droid task viewport read returned 28 lines
+│ >                                                                                                                    │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+[⏱ 19s, context: 3%] 3 config issues — /diagnostics                                                        MCP ✓ | IDE ◌
+firstmate
+PASS: claude-on-Orca viewport refused: error: backend 'orca' has no verified viewport-bounded capture primitive
+PASS: droid label + foreign terminal refused: error: backend 'orca' has no verified viewport-bounded capture primitive
+PASS: orca not in shared FM_BACKEND_VISIBLE_CAPTURE (tmux herdr zellij)
+
+### Scenario: non-Droid Orca relaunch stays refused
+PASS: claude-on-Orca relaunch refused: fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-adv-orca.72NNND/home
+error: task claude-adv-12116 runs on the orca backend, which has no recovery-grade agent-state classifier, so 'relaunch' cannot prove the agent actually stopped; refusing rather than reporting an unproven transition as done
+PASS: claude task record intact after refusal
+
+### Scenario: Orca Droid exit, second exit, then relaunch
+first exit rc=0: fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-adv-orca.72NNND/home
+stopped droid-adv-12116 harness=droid backend=orca endpoint=term_88f09f8e-ea32-4a29-8549-659f9907b50d worktree=/Users/eduardopicazo/orca/workspaces/fm-droid-orca-scratch-repo-501/fm-droid-adv-12116
+PASS: first exit proved SessionEnd for gen g1791483831.29468.2058
+PASS: busy_gen retained after exit
+second exit rc=0: fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-adv-orca.72NNND/home
+already-stopped droid-adv-12116 harness=droid backend=orca endpoint=term_88f09f8e-ea32-4a29-8549-659f9907b50d worktree=/Users/eduardopicazo/orca/workspaces/fm-droid-orca-scratch-repo-501/fm-droid-adv-12116
+PASS: second exit is idempotent success
+relaunch rc=0: ●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+relaunched droid-adv-12116 harness=droid from=droid model=gpt-5.6-luna effort=low backend=orca endpoint=term_88f09f8e-ea32-4a29-8549-659f9907b50d worktree=/Users/eduardopicazo/orca/workspaces/fm-droid-orca-scratch-repo-501/fm-droid-adv-12116
+PASS: relaunch after exit admitted: gen g1791483831.29468.2058 -> g1791483888.87470.32065, terminal kept
+PASS: relaunched droid settled
+
+### teardown
+stopped droid-adv-12116 harness=droid backend=orca endpoint=term_88f09f8e-ea32-4a29-8549-659f9907b50d worktree=/Users/eduardopicazo/orca/workspaces/fm-droid-orca-scratch-repo-501/fm-droid-adv-12116
+teardown droid-adv-12116 ok
+teardown claude-adv-12116 ok
+RESULT rc=0

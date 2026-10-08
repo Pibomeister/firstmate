@@ -1,0 +1,48 @@
+head=8ee15720b99279d9ef61e679ebad3bfdbd1df670 date=2026-10-08T19:11:26Z
+
+### spawn real Droid scout on Orca
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-adv-orca.nXXuDP/home
+spawned droid-adv-62810 harness=droid kind=scout window=fm-droid-adv-62810 worktree=/Users/eduardopicazo/orca/workspaces/fm-droid-orca-scratch-repo-501/fm-droid-adv-62810
+PASS: droid settled first turn
+
+### spawn real Claude scout on Orca
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-adv-orca.nXXuDP/home
+spawned claude-adv-62810 harness=claude kind=scout window=fm-claude-adv-62810 worktree=/Users/eduardopicazo/orca/workspaces/fm-droid-orca-scratch-repo-501/fm-claude-adv-62810
+droid terminal=term_2cd28fe3-a976-4038-a6a0-44a45f9088c1 claude terminal=term_bdcbc5a1-e226-478c-b97e-6dd42166efc8
+PASS: claude received brief
+
+### Scenario: --screen viewport read is scoped to the exact recorded Droid task
+PASS: droid task viewport read returned 29 lines
+│ >                                                                                                                    │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+[⏱ 21s, context: 3%] 3 config issues — /diagnostics                                                        MCP ✓ | IDE ◌
+firstmate
+PASS: claude-on-Orca viewport refused: error: backend 'orca' has no verified viewport-bounded capture primitive
+PASS: droid label + foreign terminal refused: error: backend 'orca' has no verified viewport-bounded capture primitive
+PASS: orca not in shared FM_BACKEND_VISIBLE_CAPTURE (tmux herdr zellij)
+
+### Scenario: non-Droid Orca relaunch stays refused
+PASS: claude-on-Orca relaunch refused: fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-adv-orca.nXXuDP/home
+error: task claude-adv-62810 runs on the orca backend, which has no recovery-grade agent-state classifier, so 'relaunch' cannot prove the agent actually stopped; refusing rather than reporting an unproven transition as done
+PASS: claude task record intact after refusal
+
+### Scenario: Orca Droid exit, second exit, then relaunch
+first exit rc=0: fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-adv-orca.nXXuDP/home
+stopped droid-adv-62810 harness=droid backend=orca endpoint=term_2cd28fe3-a976-4038-a6a0-44a45f9088c1 worktree=/Users/eduardopicazo/orca/workspaces/fm-droid-orca-scratch-repo-501/fm-droid-adv-62810
+PASS: first exit proved SessionEnd for gen g1791486694.72551.18116
+PASS: busy_gen retained after exit
+second exit rc=0: fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-adv-orca.nXXuDP/home
+already-stopped droid-adv-62810 harness=droid backend=orca endpoint=term_2cd28fe3-a976-4038-a6a0-44a45f9088c1 worktree=/Users/eduardopicazo/orca/workspaces/fm-droid-orca-scratch-repo-501/fm-droid-adv-62810
+PASS: second exit is idempotent success
+relaunch rc=0: ●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+relaunched droid-adv-62810 harness=droid from=droid model=gpt-5.6-luna effort=low backend=orca endpoint=term_2cd28fe3-a976-4038-a6a0-44a45f9088c1 worktree=/Users/eduardopicazo/orca/workspaces/fm-droid-orca-scratch-repo-501/fm-droid-adv-62810
+PASS: relaunch after exit admitted: gen g1791486694.72551.18116 -> g1791486769.94773.7774, terminal kept
+PASS: relaunched droid settled
+
+### teardown
+stopped droid-adv-62810 harness=droid backend=orca endpoint=term_2cd28fe3-a976-4038-a6a0-44a45f9088c1 worktree=/Users/eduardopicazo/orca/workspaces/fm-droid-orca-scratch-repo-501/fm-droid-adv-62810
+teardown droid-adv-62810 ok
+teardown claude-adv-62810 ok
+RESULT rc=0
+EXIT=0

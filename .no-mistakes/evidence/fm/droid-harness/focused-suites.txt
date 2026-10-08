@@ -1,0 +1,37 @@
+== fm-droid-harness
+ok - Droid records and omits a model-specific unsupported effort
+ok - Droid omits effort when the operator's default model runs
+ok - Droid model probe cannot read the caller's stdin
+ok - Droid rejects a model before creating a worker endpoint
+ok - raw Droid commands remain outside canonical hook arming
+rc=
+== fm-backend-orca
+ok - fm-teardown.sh --force: removes Orca secondmate children through Orca
+ok - fm-teardown.sh --force: refuses Orca child id/path mismatches
+ok - fm-teardown.sh --force: refuses partial Orca secondmate children before runtime dispatch
+rc=
+== fm-kimi-harness
+ok - busy detection: real Kimi moon-plus-middot captures require its harness while idle labels stay idle
+ok - fm-watch classifies Kimi as unknown rather than from its spinner, and Grok's fallback stays isolated
+ok - composer classifier: kimi's existing bordered > shape is already safe without an override
+rc=
+== fm-control
+ok - fm-control interrupt: grok's idle footer does not confirm cancellation
+ok - fm-control: a lifecycle command to a secondmate is unmarked and opens no reply expectation
+ok - fm-control's arrival leaves fm-send's from-firstmate marking untouched
+rc=
+== fm-control-relaunch
+rm: /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-control-relaunch.a8jF3w/smpin-4726/home: Directory not empty
+rm: /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-control-relaunch.a8jF3w/smpin-4726: Directory not empty
+rm: /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-control-relaunch.a8jF3w: Directory not empty
+rc=
+== fm-busy-state
+ok - record parsing never clobbers the caller's positional parameters, glob setting, or fields
+ok - the boolean view reports busy only on an exact busy verdict
+all fm-busy-state tests passed
+rc=
+== fm-dispatch-resolve
+ok - API, transport, and response failures are error outcomes with exit 0
+ok - configuration errors exit 2 before any network call
+# all fm-dispatch-resolve tests passed
+rc=
