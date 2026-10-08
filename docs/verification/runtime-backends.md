@@ -2542,3 +2542,7 @@ ok - Orca Droid interrupted a running tool before normal completion
 ok - Orca Droid relaunch preserved endpoint and profile with a fresh generation
 ok - Orca Droid exit and teardown retired the terminal, worktree, and task wiring
 ```
+
+That run was taken at commit `bd34cff`, before standalone Orca Droid exits also kept the retired `busy_gen`.
+Rechecked on 2026-10-08 with Droid 0.233.0 and Orca 1.4.222 at commit `a90dca3`, which made that change; exit `0` with the same five `ok` checks.
+`tests/fm-control.test.sh` also covers that change with a fake Orca terminal and `lsof`.
