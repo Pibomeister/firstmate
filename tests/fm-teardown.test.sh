@@ -44,7 +44,7 @@
 #   (q5) gh down + squash-merged stale local, content not in default -> REFUSE
 #
 # Also covers backlog teardown-lock-race: a git index.lock left in the worktree by a
-# killed crew process (bin/fm-teardown.sh's teardown_treehouse_return).
+# killed crew process (bin/fm-lifecycle-lib.sh's fm_lifecycle_treehouse_return).
 #   (r) provably-stale index.lock (old mtime, no live holder) -> lock removed, ALLOW
 #   (s) index.lock with a live holder, any age                -> lock kept, REFUSE
 #   (t) lsof error while checking index.lock                  -> lock kept, REFUSE
@@ -419,8 +419,8 @@ SH
 # Override fakebin/treehouse so `treehouse return --force <wt>` fails with a
 # git "file exists" lock error whenever the worktree's real index.lock is
 # present, and succeeds once it is gone. This drives the lock through
-# fm-teardown.sh's own retry-then-stale-cleanup logic (teardown_treehouse_return
-# in bin/fm-teardown.sh) rather than hand-simulating that logic in the test.
+# fm-teardown.sh's own retry-then-stale-cleanup logic (fm_lifecycle_treehouse_return
+# in bin/fm-lifecycle-lib.sh) rather than hand-simulating that logic in the test.
 add_lock_aware_treehouse() {
   local case_dir=$1
   cat > "$case_dir/fakebin/treehouse" <<'SH'
