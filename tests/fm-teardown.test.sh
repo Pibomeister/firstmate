@@ -637,6 +637,119 @@ run_teardown() {
     "$TEARDOWN" task-x1 "$@"
 }
 
+configure_orca_teardown_case() {  # <case-dir>
+  local case_dir=$1
+  fm_write_meta "$case_dir/state/task-x1.meta" \
+    'window=fm-task-x1' \
+    'endpoint_task_id=task-x1' \
+    "worktree=$case_dir/wt" \
+    "project=$case_dir/project" \
+    'harness=claude' \
+    'kind=ship' \
+    'mode=local-only' \
+    'yolo=off' \
+    'spawn_gen=teardown-test-task-x1' \
+    'backend=orca' \
+    'terminal=term-task-x1' \
+    'orca_worktree_id=wt-task-x1::/orca/wt-task-x1'
+  printf '%s\n' 'working [at=1]: fixture record' > "$case_dir/state/task-x1.status"
+  cat > "$case_dir/fakebin/orca" <<'SH'
+#!/usr/bin/env bash
+case "${1:-} ${2:-}" in
+  "worktree show")
+    printf '{"ok":true,"result":{"worktree":{"id":"wt-task-x1::/orca/wt-task-x1","path":"%s"}}}\n' "${FM_ORCA_RECORDED_PATH:?}"
+    ;;
+  "terminal close")
+    printf '{"ok":true,"result":{}}\n'
+    ;;
+  "worktree rm")
+    case "${FM_ORCA_REMOVE_RESULT:?}" in
+      selector-not-found)
+        printf '{"ok":false,"error":{"code":"selector_not_found","message":"selector not found"}}\n'
+        ;;
+      backend-error)
+        printf '{"ok":false,"error":{"code":"runtime_unavailable","message":"Orca runtime unavailable"}}\n'
+        ;;
+      *)
+        printf 'unexpected remove result: %s\n' "$FM_ORCA_REMOVE_RESULT" >&2
+        exit 2
+        ;;
+    esac
+    ;;
+  *)
+    printf 'unexpected Orca command: %s\n' "$*" >&2
+    exit 2
+    ;;
+esac
+SH
+  chmod +x "$case_dir/fakebin/orca"
+}
+
+test_orca_selector_not_found_with_absent_path_completes_cleanup() {
+  local case_dir rc=0
+  case_dir=$(make_case orca-selector-absent)
+  write_meta "$case_dir" local-only ship
+  configure_orca_teardown_case "$case_dir"
+  rm -rf "$case_dir/wt"
+
+  FM_ORCA_RECORDED_PATH="$case_dir/wt" FM_ORCA_REMOVE_RESULT=selector-not-found \
+    run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  expect_code 0 "$rc" "orca-selector-absent: teardown should accept an already-removed Orca worktree"$'\n'"$(cat "$case_dir/stderr")"
+  assert_grep "treating it as already removed" "$case_dir/stderr" \
+    "orca-selector-absent: teardown did not report the already-removed worktree"
+  assert_absent "$case_dir/state/task-x1.meta" \
+    "orca-selector-absent: successful teardown retained task metadata"
+  assert_absent "$case_dir/state/task-x1.status" \
+    "orca-selector-absent: successful teardown retained task status"
+  pass "Orca selector_not_found with an absent recorded path completes teardown record cleanup"
+}
+
+test_orca_selector_not_found_with_present_path_refuses_and_retains_records() {
+  local case_dir rc=0 meta_before status_before
+  case_dir=$(make_case orca-selector-present)
+  write_meta "$case_dir" local-only ship
+  configure_orca_teardown_case "$case_dir"
+  meta_before=$(cat "$case_dir/state/task-x1.meta")
+  status_before=$(cat "$case_dir/state/task-x1.status")
+
+  FM_ORCA_RECORDED_PATH="$case_dir/wt" FM_ORCA_REMOVE_RESULT=selector-not-found \
+    run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  [ "$rc" -ne 0 ] || fail "orca-selector-present: teardown accepted selector_not_found for a present path"
+  assert_grep "REFUSED: Orca worktree removal failed for task task-x1" "$case_dir/stderr" \
+    "orca-selector-present: backend failure did not become a visible teardown refusal"
+  assert_grep "recorded path still exists at $case_dir/wt" "$case_dir/stderr" \
+    "orca-selector-present: refusal did not name the retained directory"
+  [ "$(cat "$case_dir/state/task-x1.meta")" = "$meta_before" ] \
+    || fail "orca-selector-present: refusal changed task metadata"
+  [ "$(cat "$case_dir/state/task-x1.status")" = "$status_before" ] \
+    || fail "orca-selector-present: refusal changed task status"
+  pass "Orca selector_not_found with a present recorded path refuses and retains records"
+}
+
+test_orca_other_remove_error_is_visible_and_retains_records() {
+  local case_dir rc=0 meta_before status_before refusal
+  case_dir=$(make_case orca-remove-error-visible)
+  write_meta "$case_dir" local-only ship
+  configure_orca_teardown_case "$case_dir"
+  meta_before=$(cat "$case_dir/state/task-x1.meta")
+  status_before=$(cat "$case_dir/state/task-x1.status")
+
+  FM_ORCA_RECORDED_PATH="$case_dir/wt" FM_ORCA_REMOVE_RESULT=backend-error \
+    run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  [ "$rc" -ne 0 ] || fail "orca-remove-error-visible: teardown accepted another Orca removal error"
+  refusal=$(grep -F "REFUSED: Orca worktree removal failed for task task-x1" "$case_dir/stderr" || true)
+  assert_contains "$refusal" "Orca runtime unavailable" \
+    "orca-remove-error-visible: refusal did not include Orca's error text: $(cat "$case_dir/stderr")"
+  [ "$(cat "$case_dir/state/task-x1.meta")" = "$meta_before" ] \
+    || fail "orca-remove-error-visible: refusal changed task metadata"
+  [ "$(cat "$case_dir/state/task-x1.status")" = "$status_before" ] \
+    || fail "orca-remove-error-visible: refusal changed task status"
+  pass "other Orca removal errors produce a visible refusal and retain records"
+}
+
 # Seed a real backlog carrying task-x1 as In flight, so a teardown in this case
 # has a row to close. Uses the real tasks-axi (the fixture's default fakebin has
 # no tasks-axi stub, so PATH resolves the installed one).
@@ -2559,6 +2672,146 @@ test_herdr_flat_teardown_preflight_refuses_before_changes() {
   assert_herdr_teardown_preflight_refuses_before_changes missing-parser
   assert_herdr_teardown_preflight_refuses_before_changes missing-explicit-close-helper
   pass "herdr flat teardown preflight refuses before every destructive change"
+}
+
+# The Herdr presentation-lock namespace is named per OS account. These cases
+# act as a fixture account uid (via an `id -u` shim) so they never touch the
+# real account's namespace or the old shared /tmp/firstmate-herdr-presentation,
+# and every directory the fixture account resolves is really owned by the
+# running account, i.e. by another uid from the fixture account's view.
+# FM_FAKE_NS_STAT names one path whose owner and mode the `stat` shim reports
+# instead; the adapter reads ownership through a PATH `stat` only on its non-
+# Darwin branch, so the arms that need it run only there.
+herdr_lock_ns_fake_uid() {
+  printf '%s' "$((3000000000 + $$ % 1000000))"
+}
+
+configure_herdr_lock_ns_shims() {  # <case-dir>
+  local case_dir=$1 real_id real_stat
+  real_id=$(command -v id); real_stat=$(command -v stat)
+  cat > "$case_dir/fakebin/id" <<SH
+#!/usr/bin/env bash
+if [ "\${1:-}" = -u ] && [ "\$#" -eq 1 ] && [ -n "\${FM_FAKE_ACCOUNT_UID:-}" ]; then
+  printf '%s\n' "\$FM_FAKE_ACCOUNT_UID"
+  exit 0
+fi
+exec "$real_id" "\$@"
+SH
+  cat > "$case_dir/fakebin/stat" <<SH
+#!/usr/bin/env bash
+if [ "\$#" -eq 3 ] && [ "\$1" = -c ] && [ -n "\${FM_FAKE_NS_STAT:-}" ] \\
+  && [ "\$3" = "\${FM_FAKE_NS_STAT%%:*}" ]; then
+  rest=\${FM_FAKE_NS_STAT#*:}
+  case "\$2" in
+    %u) printf '%s\n' "\${rest%%:*}"; exit 0 ;;
+    %a) printf '%s\n' "\${rest#*:}"; exit 0 ;;
+  esac
+fi
+exec "$real_stat" "\$@"
+SH
+  chmod +x "$case_dir/fakebin/id" "$case_dir/fakebin/stat"
+}
+
+herdr_lock_ns_path_state() {  # <path>
+  if [ -e "$1" ] || [ -L "$1" ]; then
+    # A fixed, known path: ls is the portable way to read mode and numeric owner.
+    # shellcheck disable=SC2012
+    ls -ldn "$1" 2>/dev/null | awk '{print $1, $3, $4}'
+  else
+    printf 'absent'
+  fi
+}
+
+run_herdr_lock_ns_teardown() {  # <case-dir> <fake-uid> [stat-spec]
+  local case_dir=$1 fake_uid=$2 stat_spec=${3:-} rc=0
+  FM_FAKE_ACCOUNT_UID="$fake_uid" FM_FAKE_NS_STAT="$stat_spec" \
+    FM_FAKE_HERDR_LOG="$case_dir/herdr.log" FM_FAKE_HERDR_CLOSED="$case_dir/closed" \
+    FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 \
+    run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  return "$rc"
+}
+
+new_herdr_lock_ns_case() {  # <name>
+  local case_dir
+  case_dir=$(make_case "$1")
+  write_meta "$case_dir" local-only ship
+  configure_flat_herdr_teardown_case "$case_dir"
+  configure_herdr_lock_ns_shims "$case_dir"
+  : > "$case_dir/herdr.log"
+  : > "$case_dir/state/task-x1.status"
+  printf '%s' "$case_dir"
+}
+
+assert_herdr_lock_ns_refused() {  # <case-dir> <label>
+  local case_dir=$1 label=$2
+  assert_grep "presentation lock could not be resolved" "$case_dir/stderr" \
+    "$label: the namespace refusal was not explained visibly"
+  [ -e "$case_dir/state/task-x1.meta" ] || fail "$label: refusal erased the durable endpoint metadata"
+  [ -d "$case_dir/wt" ] || fail "$label: refusal removed the isolated copy"
+  [ ! -e "$case_dir/closed" ] || fail "$label: refusal attempted a pane close without the lock"
+}
+
+test_herdr_teardown_presentation_lock_namespace_is_per_account() {
+  local fake_uid own_ns legacy legacy_before legacy_after own_before case_dir rc lock linux_arms=0
+  fake_uid=$(herdr_lock_ns_fake_uid)
+  [ "$fake_uid" != "$(id -u)" ] || fail "herdr-lock-ns: fixture account uid collides with the running account"
+  own_ns="/tmp/firstmate-herdr-presentation-$fake_uid"
+  legacy=/tmp/firstmate-herdr-presentation
+  [ ! -e "$own_ns" ] && [ ! -L "$own_ns" ] \
+    || fail "herdr-lock-ns: fixture namespace $own_ns already exists; refusing to reuse it"
+  printf '%s\n' "$own_ns" >> "$FM_TEST_CLEANUP_REGISTRY"
+  mkdir -m 700 "$own_ns" || fail "herdr-lock-ns: could not stage $own_ns"
+  legacy_before=$(herdr_lock_ns_path_state "$legacy")
+
+  # This account's own name, really owned by another uid, is still refused and
+  # is left exactly as it was.
+  own_before=$(herdr_lock_ns_path_state "$own_ns")
+  case_dir=$(new_herdr_lock_ns_case herdr-lock-ns-foreign-owner)
+  rc=0; run_herdr_lock_ns_teardown "$case_dir" "$fake_uid" || rc=$?
+  [ "$rc" -ne 0 ] || fail "herdr-lock-ns-foreign-owner: teardown adopted a namespace another uid owns"
+  assert_herdr_lock_ns_refused "$case_dir" herdr-lock-ns-foreign-owner
+  [ "$(herdr_lock_ns_path_state "$own_ns")" = "$own_before" ] \
+    || fail "herdr-lock-ns-foreign-owner: refusal changed the foreign-owned namespace: $(herdr_lock_ns_path_state "$own_ns")"
+
+  if [ "$(uname -s)" != Darwin ]; then
+    linux_arms=1
+    # The old shared name is owned by another uid whenever it exists here, as
+    # on a host where a second account created it first; this account's
+    # teardown no longer consults it and completes in its own namespace.
+    case_dir=$(new_herdr_lock_ns_case herdr-lock-ns-other-account)
+    run_herdr_lock_ns_teardown "$case_dir" "$fake_uid" "$own_ns:$fake_uid:700" \
+      || fail "herdr-lock-ns-other-account: teardown was blocked: $(cat "$case_dir/stderr")"
+    [ -e "$case_dir/closed" ] || fail "herdr-lock-ns-other-account: the pane was not closed under the lock"
+    [ ! -e "$case_dir/state/task-x1.meta" ] || fail "herdr-lock-ns-other-account: teardown left the metadata behind"
+    grep -q "teardown task-x1 complete" "$case_dir/stdout" \
+      || fail "herdr-lock-ns-other-account: teardown did not report completion"
+    lock=$(FM_FAKE_ACCOUNT_UID="$fake_uid" FM_FAKE_NS_STAT="$own_ns:$fake_uid:700" \
+      FM_FAKE_HERDR_LOG="$case_dir/herdr.log" FM_FAKE_HERDR_CLOSED="$case_dir/closed" \
+      PATH="$case_dir/fakebin:$PATH" \
+      bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_presentation_session_lock_path default' "$ROOT") \
+      || fail "herdr-lock-ns-other-account: could not resolve the fixture account's lock path"
+    case "$lock" in
+      "$own_ns"/order-*.lock) ;;
+      *) fail "herdr-lock-ns-other-account: the lock is not in this account's namespace: $lock" ;;
+    esac
+
+    # This account's own name with the right owner but the wrong mode is refused.
+    case_dir=$(new_herdr_lock_ns_case herdr-lock-ns-wrong-mode)
+    rc=0; run_herdr_lock_ns_teardown "$case_dir" "$fake_uid" "$own_ns:$fake_uid:755" || rc=$?
+    [ "$rc" -ne 0 ] || fail "herdr-lock-ns-wrong-mode: teardown adopted a namespace that is not mode 700"
+    assert_herdr_lock_ns_refused "$case_dir" herdr-lock-ns-wrong-mode
+    [ -d "$own_ns" ] || fail "herdr-lock-ns-wrong-mode: refusal removed the namespace"
+  fi
+
+  legacy_after=$(herdr_lock_ns_path_state "$legacy")
+  [ "$legacy_after" = "$legacy_before" ] \
+    || fail "herdr-lock-ns: teardown changed the old shared namespace: $legacy_before -> $legacy_after"
+  rm -rf "$own_ns"
+  if [ "$linux_arms" = 1 ]; then
+    pass "herdr teardown takes its lock in a per-account namespace another account cannot block, and still refuses a foreign-owned or wrong-mode one"
+  else
+    pass "herdr teardown refuses a foreign-owned per-account namespace (owner-shim arms need the non-Darwin stat branch; skipped on Darwin)"
+  fi
 }
 
 configure_secondmate_with_herdr_child() {  # <case-dir>
@@ -4503,6 +4756,9 @@ test_missing_adapter_sibling_refuses_before_cleanup
 test_forced_child_missing_adapter_sibling_refuses_before_cleanup
 test_forced_secondmate_own_missing_adapter_sibling_refuses_before_child_cleanup
 test_retained_sources_still_reach_the_ordinary_refusal
+test_orca_selector_not_found_with_absent_path_completes_cleanup
+test_orca_selector_not_found_with_present_path_refuses_and_retains_records
+test_orca_other_remove_error_is_visible_and_retains_records
 test_local_only_fork_remote_allows
 test_teardown_closes_the_backlog_item_itself
 test_teardown_closes_a_gerrit_task_with_its_change_url_as_a_note
@@ -4519,6 +4775,7 @@ test_herdr_teardown_clears_escalation_marker
 test_herdr_flat_teardown_refuses_orphaning_records_then_retry_completes
 test_herdr_flat_teardown_refuses_records_on_unparseable_presence
 test_herdr_flat_teardown_preflight_refuses_before_changes
+test_herdr_teardown_presentation_lock_namespace_is_per_account
 test_forced_secondmate_herdr_child_preflight_refuses_before_changes
 test_forced_secondmate_teardown_holds_descendant_lifecycle_locks
 test_forced_secondmate_herdr_child_retains_records_when_close_unconfirmed

@@ -1,6 +1,7 @@
 # Kimi Code
 
 Verified on 2026-09-17 with Kimi Code CLI 2.0.0.
+Launch readiness, trust handling, brief delivery, and the empty-composer read were re-verified live on 2026-10-04 with Kimi Code CLI 2.1.1 through Herdr 0.8.2, including one full spawn through `../../../bin/fm-spawn.sh` (see `../../../docs/verification/runtime-backends.md`).
 
 ## Operating facts
 
@@ -17,12 +18,14 @@ Verified on 2026-09-17 with Kimi Code CLI 2.0.0.
 | Trust dialog | A fresh worktree shows `Trust this folder?` with `Trust this folder` pre-selected; spawn reads the visible pane, recognizes the complete dialog (its title, both navigation-hint tokens `↑↓ navigate` and `Enter select` - matched separately so a hint wrapped in a narrow pane still counts - the selected `❯ Trust this folder`, and `Don't trust`), sends Enter on every poll the complete dialog is still there, verifies that a later visible-pane capture no longer contains it, and then continues the ordinary readiness gate. Trust is never pre-registered in `config.toml`; the dialog is answered live. |
 | Slash submission | One Enter submits, with no popup swallow or settle hazard. |
 | Environment marker | None; identity comes from process ancestry command name `kimi`, which `../../../bin/fm-harness.sh` keeps a retained foreign marker from overriding. |
-| Composer | Bordered box with a bare `>` prompt glyph and no observed ghost or placeholder text. |
+| Composer | Bordered box with a bare `>` prompt glyph and no observed ghost or placeholder text. Since 2.1.1 a two-row status bar is pinned directly below the box - a status row (` Never Ask  K3 thinking: max  …/path  fm/branch`) and a right-aligned `context: N% (used/total)` row - which the shared composer owner classifies through its Kimi footer pair rule, never as composer content. |
 | Effort | `kimi provider list --json` exposes per-model `supportEfforts` values `low`, `high`, and `max` plus a `defaultEffort`; the launch flag and mapping remain unverified, so spawn records and omits requested effort per `references/common/model-and-effort.md`. |
 
 ## Readiness-gated start
 
-`../../../bin/fm-spawn.sh` launches Kimi bare, handles the complete 2.0.0 trust dialog when it appears, waits for the composer box or `Welcome to Kimi Code!`, sends only `Read the brief at <absolute-path> and follow it exactly.`, and requires a cleared composer plus either the echoed `✨` submission or nonzero context before accepting delivery.
+`../../../bin/fm-spawn.sh` launches Kimi bare, handles the complete trust dialog when it appears (the 2.0.0 dialog shape, unchanged through 2.1.1), waits for the composer box or `Welcome to Kimi Code!`, sends only `Read the brief at <absolute-path> and follow it exactly.`, and requires a cleared composer plus either the echoed `✨` submission or nonzero context before accepting delivery.
+The cleared-composer half reads the shared composer owner, which proves the box empty past the 2.1.1 status bar pinned below it (the pair rule at `FM_COMPOSER_KIMI_CONTEXT_RE_DEFAULT` in `../../../bin/fm-composer-lib.sh`); a typed-but-unsubmitted pointer still reads `pending`, so a genuinely undelivered brief still fails.
+A readiness, submit, or delivery gate failure closes the launched endpoint before the spawn exits, so a failed Kimi spawn never leaves a running worker without its task record; when the close itself cannot be proven, the spawn keeps the provisional record instead of rolling it back, so a possibly surviving worker stays named for recovery.
 Every trust predicate reads `fm_backend_visible_capture`, the viewport without scrollback, because a history read could replay a cleared dialog and send Enter to a live composer.
 The verified viewport implementations for Kimi are tmux, Herdr, and Zellij, as recorded in `bin/fm-backend.sh` and `docs/verification/runtime-backends.md`.
 Orca now exposes a viewport, but Kimi readiness and typed submission have not been live-verified there; cmux lacks a verified viewport.
