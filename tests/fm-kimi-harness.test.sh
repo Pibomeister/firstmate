@@ -860,7 +860,7 @@ test_kimi_refuses_a_backend_without_a_viewport_capture() {
 }
 
 test_kimi_on_orca_uses_existing_missing_viewport_refusal() {
-  local id rec out rc
+  local id rec out rc node_bin
   id=kimi-orca-unverified-y9
   rec=$(make_spawn_case orca-unverified "$id")
   read_spawn_record "$rec"
@@ -873,8 +873,9 @@ fi
 exit 1
 SH
   chmod +x "$FAKEBIN_DIR/orca"
+  node_bin=$(command -v node) || fail "Orca test needs node"
   rc=0
-  out=$(FM_BACKEND=orca run_spawn \
+  out=$(BASE_PATH="$(dirname "$node_bin"):$BASE_PATH" FM_BACKEND=orca run_spawn \
     "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id") || rc=$?
   [ "$rc" -ne 0 ] || fail "Kimi on Orca must still refuse without a shared viewport capability"
   assert_contains "$out" "backend 'orca' has no verified viewport-bounded capture" \
