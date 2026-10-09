@@ -4431,7 +4431,7 @@ rovo_spawn_fail() { # <detail>
   spawn_gate_endpoint_cleanup
 }
 
-# kimi, rovo, and agy's launch-then-confirm gates run after the task record
+# kimi, rovo, agy, and Droid's launch-then-confirm gates run after the task record
 # is published, when ORCA_ABORT_CLEANUP is already cleared and neither the
 # abort trap nor a teardown owns this endpoint yet, so a gate failure must
 # close the launched process here or it keeps running as an orphaned
@@ -4615,7 +4615,7 @@ droid_wait_for_delivery() {
 droid_spawn_fail() {  # <detail>
   printf '%s\n' "$(status_stamp_line "failed: $1")" >>"$STATE/$ID.status"
   echo "error: $1; inspect window $T" >&2
-  rovo_endpoint_cleanup
+  spawn_gate_endpoint_cleanup
 }
 
 if [ "$RELAUNCH" -eq 1 ] && [ "$BACKEND" = orca ]; then
