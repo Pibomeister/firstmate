@@ -189,11 +189,13 @@ life() {
     -u FM_PROC_ROOT_OVERRIDE \
     -u HERDR_SESSION -u HERDR_PANE_ID -u HERDR_TAB_ID -u HERDR_WORKSPACE_ID \
     -u HERDR_SOCKET_PATH -u HERDR_ENV \
-    PATH="$HERDR_ORIGINAL_PATH" \
+    BASH_ENV="$TMP_ROOT/trace-env.sh" PATH="$HERDR_ORIGINAL_PATH" \
     "$ROOT/bin/fm-lifecycle.sh" "$@" 2>"$errfile") || LIFE_RC=$?
 }
 
 json_get() { printf '%s\n' "$LIFE_OUT" | jq -r "$1"; }
+
+printf '%s\n' "PS4='+FM_LIFECYCLE_TRACE '" 'set -x' > "$TMP_ROOT/trace-env.sh"
 
 life "$TMP_ROOT/inspect.err" inspect --request "$TMP_ROOT/request.json" --out "$TMP_ROOT/inspect.json"
 assert_equals 0 "$LIFE_RC" "inspect exited 0: $(cat "$TMP_ROOT/inspect.err")"
@@ -235,6 +237,21 @@ assert_present "$inst/.fm-secondmate-home" "replay leaves the installed home"
 final=$(default_object) || fail "could not read the default session after replay"
 [ "$final" = "$after" ] || fail "default session changed during retirement: before=$after after=$final"
 pass "result and replay kept the named lab absent"
+cat "$TMP_ROOT/inspect.err" "$TMP_ROOT/retire.err" "$TMP_ROOT/result.err" "$TMP_ROOT/replay.err" \
+  > "$TMP_ROOT/runtime-trace.log"
+helper_calls=$(grep -F "$HERDR_LAB_HELPER run $HERDR_LAB_SESSION session list --json" \
+  "$TMP_ROOT/runtime-trace.log" | wc -l | tr -d ' ')
+assert_equals 3 "$helper_calls" "inspect and retirement used three guarded inventory calls"
+raw_calls=$(grep -E "FM_LIFECYCLE_TRACE herdr session list --json --session $HERDR_LAB_SESSION" \
+  "$TMP_ROOT/runtime-trace.log" | wc -l | tr -d ' ')
+assert_equals 3 "$raw_calls" "the guarded helper appended the explicit session selector"
+if grep -E 'FM_LIFECYCLE_TRACE (herdr (server|pane|workspace)|.*fm-herdr-lab\.sh run [^ ]+ (server|pane|workspace))' \
+  "$TMP_ROOT/runtime-trace.log" >/dev/null; then
+  fail "session-absent retirement issued a forbidden runtime command"
+fi
+printf 'RUNTIME_TRACE_BEGIN\n'
+grep -E 'FM_LIFECYCLE_TRACE (herdr session list|.*fm-herdr-lab\.sh run [^ ]+ session list)' \
+  "$TMP_ROOT/runtime-trace.log"
+printf 'RUNTIME_TRACE_END\n'
 printf 'default-session %s\n' "$final"
 printf 'ok - lifecycle retirement live suite\n'
-save_argv

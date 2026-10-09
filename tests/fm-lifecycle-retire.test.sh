@@ -618,6 +618,26 @@ assert_equals "$ship_before" "$(file_sum "$other/state/ship1.meta")" "a foreign 
 assert_absent "$parent/state/lifecycle-retire" "a foreign child writes no journal"
 pass "negative control: fm-lifecycle.sh retire foreign-descendant exited $LIFE_RC; both records unchanged"
 
+parent=$(mk_parent root-owner-home)
+other=$(mk_parent root-foreign-home)
+write_ship_meta "$other" ship1
+ship_ep "$other" ship1 | jq -s '.' > "$TMP_ROOT/root-foreign-eps.json"
+write_request "$TMP_ROOT/root-foreign-req.json" op-root-foreign "$parent" session-absent "$TMP_ROOT/root-foreign-eps.json"
+absent_body > "$BODY"
+before=$(file_sum "$other/state/ship1.meta")
+life "$TMP_ROOT/root-foreign-inspect.err" FM_RETIRE_INV_BODY="$BODY" \
+  FM_RETIRE_INV_LOG="$TMP_ROOT/root-foreign-inspect.log" FM_RETIRE_EP_LOG="$TMP_ROOT/root-foreign-inspect-ep.log" \
+  inspect --request "$TMP_ROOT/root-foreign-req.json" --out "$TMP_ROOT/root-foreign-inspect.json"
+assert_equals 0 "$LIFE_RC" "inspect reports a foreign root refusal"
+assert_equals refused "$(json_get .status)" "inspect refuses a root owned by another home"
+life "$TMP_ROOT/root-foreign-retire.err" FM_RETIRE_INV_BODY="$BODY" \
+  FM_RETIRE_INV_LOG="$TMP_ROOT/root-foreign-retire.log" FM_RETIRE_EP_LOG="$TMP_ROOT/root-foreign-retire-ep.log" \
+  retire --request "$TMP_ROOT/root-foreign-req.json" --out "$TMP_ROOT/root-foreign-retire.json"
+assert_equals 1 "$LIFE_RC" "retirement refuses a root owned by another home"
+assert_equals identity-mismatch "$(json_get '.reasons[0].code')" "the refusal names root ownership"
+assert_equals "$before" "$(file_sum "$other/state/ship1.meta")" "a foreign root task record stays unchanged"
+assert_absent "$parent/state/lifecycle-retire" "a foreign root request writes no journal"
+
 # --- obligation refusals -----------------------------------------------------
 parent=$(mk_parent dirty-home)
 write_ship_meta "$parent" ship1
@@ -693,13 +713,13 @@ assert_absent "$parent/data/scout1/report.md" "the missing report was not invent
 pass "negative control: fm-lifecycle.sh retire missing-scout-report exited $LIFE_RC; meta unchanged"
 
 parent=$(mk_parent badparent-home)
-inst=$(abs_dir "$TMP_ROOT/badparent-inst")
-mkdir -p "$inst/state" "$inst/config"
+inst=$(mk_installed "$parent" mate1 badparent-inst)
 printf 'manual\n' > "$inst/config/backlog-backend"
-printf 'mate1\n' > "$inst/.fm-secondmate-home"
 printf 'bogus\n' > "$inst/.fm-secondmate-parent"
 write_ship_meta "$inst" ship1
-ship_ep "$inst" ship1 | jq -s '.' > "$TMP_ROOT/badparent-eps.json"
+ship_ep "$inst" ship1 "$GEN" mate1 > "$TMP_ROOT/badparent-ship.json"
+mate_ep "$parent" mate1 > "$TMP_ROOT/badparent-mate.json"
+jq -s '.' "$TMP_ROOT/badparent-mate.json" "$TMP_ROOT/badparent-ship.json" > "$TMP_ROOT/badparent-eps.json"
 write_request "$TMP_ROOT/badparent-req.json" op-badparent "$parent" session-absent "$TMP_ROOT/badparent-eps.json"
 absent_body > "$BODY"
 before=$(file_sum "$inst/state/ship1.meta")
@@ -722,7 +742,9 @@ printf '%s\n' fm-pr-poll-merge-notified-v1 github github.com Pibomeister/firstma
   > "$inst/state/ship1.pr-poll-merge-notified"
 chmod 600 "$inst/state/ship1.pr-poll-merge-notified"
 mkdir -p "$parent/state/mate1.status"
-ship_ep "$inst" ship1 | jq -s '.' > "$TMP_ROOT/deliver-eps.json"
+ship_ep "$inst" ship1 "$GEN" mate1 > "$TMP_ROOT/deliver-ship.json"
+mate_ep "$parent" mate1 > "$TMP_ROOT/deliver-mate.json"
+jq -s '.' "$TMP_ROOT/deliver-mate.json" "$TMP_ROOT/deliver-ship.json" > "$TMP_ROOT/deliver-eps.json"
 write_request "$TMP_ROOT/deliver-req.json" op-deliver "$parent" session-absent "$TMP_ROOT/deliver-eps.json"
 absent_body > "$BODY"
 before=$(file_sum "$inst/state/ship1.meta")
@@ -900,6 +922,38 @@ assert_equals complete "$(json_get .status)" "retry reports complete"
 assert_absent "$parent/state/ship1.meta" "retry removes the remaining ship record"
 assert_equals "$retired_sum" "$(file_sum "$parent/state/mate1.endpoint-retired")" "retry does not rewrite the completed record"
 pass "fm-lifecycle.sh retire fault outcome-handoff exited 86; retry exited $LIFE_RC"
+
+parent=$(mk_parent receipt-fault-home)
+inst=$(mk_installed "$parent" mate1 receipt-fault-inst)
+printf 'manual\n' > "$inst/config/backlog-backend"
+write_ship_meta "$inst" ship1 "$GEN" direct-PR
+receipt_url=https://github.com/Pibomeister/firstmate/pull/1
+printf 'pr=%s\n' "$receipt_url" >> "$inst/state/ship1.meta"
+printf 'done: PR %s\n' "$receipt_url" > "$inst/state/ship1.status"
+printf '%s\n' fm-pr-poll-merge-notified-v1 github github.com Pibomeister/firstmate 1 \
+  > "$inst/state/ship1.pr-poll-merge-notified"
+chmod 600 "$inst/state/ship1.pr-poll-merge-notified"
+ship_ep "$inst" ship1 "$GEN" mate1 > "$TMP_ROOT/receipt-fault-ship.json"
+mate_ep "$parent" mate1 > "$TMP_ROOT/receipt-fault-mate.json"
+jq -s '.' "$TMP_ROOT/receipt-fault-mate.json" "$TMP_ROOT/receipt-fault-ship.json" > "$TMP_ROOT/receipt-fault-eps.json"
+write_request "$TMP_ROOT/receipt-fault-req.json" op-receipt-fault "$parent" session-absent "$TMP_ROOT/receipt-fault-eps.json"
+absent_body > "$BODY"
+life "$TMP_ROOT/receipt-fault.err" FM_LIFECYCLE_FAULT_AT=outcome-receipt \
+  FM_RETIRE_INV_BODY="$BODY" FM_RETIRE_INV_LOG="$TMP_ROOT/receipt-fault.log" \
+  FM_RETIRE_EP_LOG="$TMP_ROOT/receipt-fault-ep.log" \
+  retire --request "$TMP_ROOT/receipt-fault-req.json" --out "$TMP_ROOT/receipt-fault-out.json"
+assert_equals 86 "$LIFE_RC" "a fault after outcome delivery returns 86"
+assert_present "$inst/state/ship1.meta" "the child task remains after receipt failure"
+assert_equals 1 "$(grep -c 'child-outcome-ship1-done' "$parent/state/mate1.status")" "the first delivery reached the parent once"
+life "$TMP_ROOT/receipt-fault-retry.err" FM_LIFECYCLE_FAULT_AT=parent-retirement FM_RETIRE_INV_BODY="$BODY" \
+  FM_RETIRE_INV_LOG="$TMP_ROOT/receipt-fault-retry.log" FM_RETIRE_EP_LOG="$TMP_ROOT/receipt-fault-retry-ep.log" \
+  retire --request "$TMP_ROOT/receipt-fault-req.json" --out "$TMP_ROOT/receipt-fault-retry.json"
+assert_equals 86 "$LIFE_RC" "retry reaches the parent after recording the child"
+assert_equals 1 "$(grep -c 'child-outcome-ship1-done' "$parent/state/mate1.status")" "retry does not redeliver the child outcome"
+life "$TMP_ROOT/receipt-fault-final.err" FM_RETIRE_INV_BODY="$BODY" \
+  FM_RETIRE_INV_LOG="$TMP_ROOT/receipt-fault-final.log" FM_RETIRE_EP_LOG="$TMP_ROOT/receipt-fault-final-ep.log" \
+  retire --request "$TMP_ROOT/receipt-fault-req.json" --out "$TMP_ROOT/receipt-fault-final.json"
+assert_equals 0 "$LIFE_RC" "final retry after receipt failure completes"
 
 parent=$(mk_parent childfault-home)
 inst=$(mk_installed "$parent" mate1 childfault-inst)

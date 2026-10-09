@@ -519,37 +519,38 @@ fm_lifecycle_retire_load() {
 }
 
 fm_lifecycle_retire_child_homes() {
-  local count=$1 tmp=$FM_LIFECYCLE_RETIRE_TMP index=0 parent_id pindex pkind phome pmeta installed child_home
+  local count=$1 index=0
   while [ "$index" -lt "$count" ]; do
     index=$((index + 1))
-    parent_id=$(cat "$tmp/parent.$index")
-    [ -n "$parent_id" ] || continue
-    pindex=0
-    while [ "$pindex" -lt "$count" ]; do
-      pindex=$((pindex + 1))
-      [ "$(cat "$tmp/id.$pindex")" = "$parent_id" ] || continue
-      pkind=$(jq -r '.kind' "$tmp/ep.$pindex")
-      [ "$pkind" = secondmate ] || break
-      phome=$(jq -r '.home' "$tmp/ep.$pindex")
-      pmeta=$phome/state/$parent_id.meta
-      [ -f "$pmeta" ] && [ ! -L "$pmeta" ] || break
-      installed=$(fm_meta_get "$pmeta" home)
-      [ -n "$installed" ] || {
-        fm_lifecycle_retire_reason identity-mismatch "$(cat "$tmp/id.$index")" "parent secondmate home is empty"
-        return 1
-      }
-      installed=$(fm_lifecycle_retire_canonical_dir "$installed") || {
-        fm_lifecycle_retire_reason identity-mismatch "$(cat "$tmp/id.$index")" "parent secondmate home is not a physical directory"
-        return 1
-      }
-      child_home=$(jq -r '.home' "$tmp/ep.$index")
-      [ "$child_home" = "$installed" ] || {
-        fm_lifecycle_retire_reason foreign-descendant "$(cat "$tmp/id.$index")" "child home is not the parent secondmate home"
-        return 1
-      }
-      break
-    done
+    fm_lifecycle_retire_home_binding "$index" || return 1
   done
+}
+
+fm_lifecycle_retire_home_binding() {
+  local index=$1 tmp=$FM_LIFECYCLE_RETIRE_TMP id home parent_id pindex=0 pmeta installed
+  id=$(cat "$tmp/id.$index")
+  home=$(jq -r '.home' "$tmp/ep.$index")
+  parent_id=$(cat "$tmp/parent.$index")
+  if [ -z "$parent_id" ]; then
+    [ "$home" = "$FM_LIFECYCLE_RETIRE_PARENT" ] || {
+      fm_lifecycle_retire_reason identity-mismatch "$id" "root endpoint belongs to another home"
+      return 1
+    }
+    return 0
+  fi
+  while [ "$pindex" -lt "$FM_LIFECYCLE_RETIRE_COUNT" ]; do
+    pindex=$((pindex + 1))
+    [ "$(cat "$tmp/id.$pindex")" = "$parent_id" ] || continue
+    [ "$(jq -r '.kind' "$tmp/ep.$pindex")" = secondmate ] || break
+    pmeta=$(jq -r '.home' "$tmp/ep.$pindex")/state/$parent_id.meta
+    [ -f "$pmeta" ] && [ ! -L "$pmeta" ] || break
+    installed=$(fm_meta_get "$pmeta" home)
+    installed=$(fm_lifecycle_retire_canonical_dir "$installed") || break
+    [ "$home" = "$installed" ] && return 0
+    break
+  done
+  fm_lifecycle_retire_reason foreign-descendant "$id" "child home is not bound to its declared secondmate parent"
+  return 1
 }
 
 fm_lifecycle_retire_order() {
@@ -1141,6 +1142,10 @@ fm_lifecycle_retire_one() {
   if ! fm_lifecycle_retire_lock_endpoint "$index"; then
     fm_lifecycle_retire_endpoint_unlock
     fm_lifecycle_retire_reason lock-held "$id" "an endpoint lock is held"
+    return 1
+  fi
+  if ! fm_lifecycle_retire_home_binding "$index"; then
+    fm_lifecycle_retire_endpoint_unlock
     return 1
   fi
   identity=$(fm_lifecycle_retire_meta_identity "$index") || {
