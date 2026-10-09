@@ -5189,7 +5189,10 @@ META_WINDOW=$T
 SPAWN_GEN="s$(date +%s).${BASHPID:-$$}.$RANDOM"
 LIFECYCLE_HERDR_IDENTITY=
 if [ "$BACKEND" = herdr ]; then
-  LIFECYCLE_HERDR_IDENTITY=$(fm_lifecycle_retire_capture_herdr_identity "$HERDR_SES" "$HERDR_PANE_ID" 2>/dev/null) || LIFECYCLE_HERDR_IDENTITY=
+  LIFECYCLE_HERDR_IDENTITY=$(fm_lifecycle_retire_capture_herdr_identity "$HERDR_SES" "$HERDR_PANE_ID") || {
+    echo "error: Herdr runtime identity could not be recorded for $ID" >&2
+    exit 1
+  }
 fi
 SPAWN_META_PATH="$STATE/$ID.meta"
 if [ "$SPAWN_META_LOCK_HELD" != 1 ]; then

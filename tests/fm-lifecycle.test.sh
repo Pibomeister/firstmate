@@ -109,3 +109,37 @@ assert_equals "$before" "$(state_fingerprint "$home")" "the control changes no t
 assert_contains "$out" "invalid teardown request" "the real library passes the compatibility gate"
 assert_not_contains "$out" "fm-lifecycle-lib.sh" "the real library raises no compatibility refusal"
 pass "teardown with the real lifecycle library passes the compatibility gate despite an inherited version"
+
+home=$(make_lifecycle_fixture source-later real)
+before=$(state_fingerprint "$home")
+ready=$TMP_ROOT/source-later.ready
+go=$TMP_ROOT/source-later.go
+out_file=$TMP_ROOT/source-later.out
+rm "$home/bin/fm-nm-run-lib.sh"
+cat > "$home/bin/fm-nm-run-lib.sh" <<'SH'
+printf 'ready\n' > "$FM_TEST_SOURCE_READY"
+while [ ! -e "$FM_TEST_SOURCE_GO" ]; do sleep 0.05; done
+. "$FM_TEST_REAL_NM_LIB"
+SH
+env FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
+  FM_TEST_SOURCE_READY="$ready" FM_TEST_SOURCE_GO="$go" \
+  FM_TEST_REAL_NM_LIB="$ROOT/bin/fm-nm-run-lib.sh" \
+  "$home/bin/fm-teardown.sh" t1 >"$out_file" 2>&1 &
+old_pid=$!
+n=0
+while [ "$n" -lt 80 ] && [ ! -e "$ready" ]; do
+  sleep 0.05
+  n=$((n + 1))
+done
+[ -e "$ready" ] || fail "the source-later process did not start"
+rm -f "$home/bin/fm-lifecycle-lib.sh"
+printf '%s\n' '# stub: a library from another release' 'FM_LIFECYCLE_API_VERSION=2' \
+  > "$home/bin/fm-lifecycle-lib.sh"
+: > "$go"
+old_rc=0
+wait "$old_pid" || old_rc=$?
+assert_equals 1 "$old_rc" "an old process sourcing later refuses an incompatible library"
+assert_equals "$before" "$(state_fingerprint "$home")" "an old source-later process changes no task state"
+assert_contains "$(cat "$out_file")" "fm-lifecycle-lib.sh has API version 2, not 1; nothing was changed" \
+  "the source-later refusal names the incompatible library"
+pass "old teardown process sourcing later refuses incompatible lifecycle library before side effects"

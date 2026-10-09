@@ -164,7 +164,7 @@ fm_lifecycle_retire_capture_herdr_identity() {
   socket=$(printf '%s' "$inventory" | jq -er --arg session "$session" '
     [.sessions[] | select(.name == $session and .running == true and (.socket_path | type) == "string")]
     | if length == 1 then .[0].socket_path | select(length > 0) else empty end') || return 1
-  info=$("$FM_LIFECYCLE_LIB_DIR/fm-herdr-lab.sh" run "$session" pane process-info --pane "$pane") || return 1
+  info=$(/Users/eduardopicazo/Documents/Workspace/firstmate/bin/fm-herdr-lab.sh run "$session" pane process-info --pane "$pane") || return 1
   process_pid=$(printf '%s' "$info" | jq -er --arg pane "$pane" '
     .result | select(.type == "pane_process_info") | .process_info
     | select(.pane_id == $pane) | .shell_pid
@@ -420,7 +420,7 @@ fm_lifecycle_retire_load() {
       and (.kind == "ship" or .kind == "scout" or .kind == "secondmate")
       and (.spawn_gen | type == "string" and test("^s[0-9]+\\.[0-9]+\\.[0-9]+$"))
       and (.backend == "herdr")
-      and (.session | type == "string" and test("^[A-Za-z0-9][A-Za-z0-9_-]*$") and . != "default")
+      and (.session | type == "string" and test("^fm-lab-[A-Za-z0-9][A-Za-z0-9_-]*$"))
       and (.window | type == "string") and (.pane_id | type == "string")
       and (.workspace_id | type == "string") and (.tab_id | type == "string")
       and (.parent_task_id | type == "string")

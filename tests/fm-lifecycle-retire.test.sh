@@ -308,6 +308,16 @@ assert_equals "$before" "$(file_sum "$parent/state/ship1.meta")" "a default sess
 assert_absent "$parent/state/lifecycle-retire" "a schema refusal writes no journal"
 pass "negative control: fm-lifecycle.sh retire default-session exited $LIFE_RC; meta unchanged"
 
+jq '.session = "crew-alpha" | .window = "crew-alpha:p1"' "$TMP_ROOT/schema-ep.json" | jq -s '.' > "$TMP_ROOT/crewalpha-eps.json"
+write_request "$TMP_ROOT/crewalpha-req.json" op-crewalpha "$parent" session-absent "$TMP_ROOT/crewalpha-eps.json"
+life "$TMP_ROOT/crewalpha.err" FM_RETIRE_INV_BODY="$BODY" \
+  FM_RETIRE_INV_LOG="$TMP_ROOT/crewalpha.log" FM_RETIRE_EP_LOG="$TMP_ROOT/crewalpha-ep.log" \
+  retire --request "$TMP_ROOT/crewalpha-req.json" --out "$TMP_ROOT/crewalpha-out.json"
+assert_equals 1 "$LIFE_RC" "a helper-unselectable non-lab session is refused"
+assert_equals "$before" "$(file_sum "$parent/state/ship1.meta")" "a non-lab session leaves the task record unchanged"
+assert_absent "$parent/state/lifecycle-retire" "a non-lab session writes no journal"
+pass "negative control: fm-lifecycle.sh retire helper-unselectable-session exited $LIFE_RC; meta unchanged"
+
 jq '.kind = "secondmate" | .retain_home = false' "$TMP_ROOT/schema-ep.json" | jq -s '.' > "$TMP_ROOT/retainfalse-eps.json"
 write_request "$TMP_ROOT/retainfalse-req.json" op-retainfalse "$parent" session-absent "$TMP_ROOT/retainfalse-eps.json"
 life "$TMP_ROOT/retainfalse.err" FM_RETIRE_INV_BODY="$BODY" \
@@ -338,6 +348,20 @@ assert_equals session-present "$(json_get '.reasons[0].code')" "the refusal name
 assert_equals same-request "$(json_get .retry)" "a present session can be retried"
 assert_equals "$before" "$(file_sum "$parent/state/ship1.meta")" "a present session leaves the task record unchanged"
 pass "negative control: fm-lifecycle.sh retire session-present exited $LIFE_RC; meta unchanged"
+
+override=$TMP_ROOT/override-inventory.sh
+cat > "$override" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' '{"sessions":[]}'
+SH
+chmod +x "$override"
+life "$TMP_ROOT/override.err" FM_LIFECYCLE_INVENTORY_COMMAND="$override" \
+  FM_RETIRE_INV_BODY="$BODY" FM_RETIRE_INV_LOG="$TMP_ROOT/override.log" FM_RETIRE_EP_LOG="$TMP_ROOT/override-ep.log" \
+  retire --request "$TMP_ROOT/abs-req.json" --out "$TMP_ROOT/override-out.json"
+assert_equals 1 "$LIFE_RC" "an inventory override cannot replace the trusted read"
+assert_equals session-present "$(json_get '.reasons[0].code')" "the trusted read still sees the present session"
+assert_equals "$before" "$(file_sum "$parent/state/ship1.meta")" "an ignored inventory override leaves the task record unchanged"
+pass "negative control: fm-lifecycle.sh retire ignored-inventory-override exited $LIFE_RC; meta unchanged"
 
 rm -rf -- "$parent/state/lifecycle-retire"
 life "$TMP_ROOT/inspect-present.err" FM_RETIRE_INV_BODY="$BODY" \
@@ -498,6 +522,34 @@ life "$TMP_ROOT/keep-result.err" result --home "$parent" --operation-id op-keep 
 assert_equals 0 "$LIFE_RC" "reading the stored result exits 0"
 assert_equals complete "$(json_get .status)" "the stored result reads back as complete"
 pass "fm-lifecycle.sh retire retained-home exited 0; replay exited 0 without a new inventory"
+
+parent=$(mk_parent twohomes-home)
+inst1=$(mk_installed "$parent" mate1 twohomes-inst1)
+inst2=$(mk_installed "$parent" mate2 twohomes-inst2)
+printf '%s\n' \
+  "- mate1 - Lab mate (home: $inst1; scope: local work; projects: alpha; added 2026-01-01)" \
+  "- mate2 - Lab mate (home: $inst2; scope: local work; projects: alpha; added 2026-01-01)" \
+  > "$parent/data/secondmates.md"
+set_meta_runtime "$parent/state/mate2.meta" "$DEAD_PID" "$GONE_IDENT" "$BOOT" \
+  "$DEAD_PID" "$GONE_IDENT" "$BOOT" pane-2
+mate_ep "$parent" mate1 > "$TMP_ROOT/twohomes-mate1.json"
+mate_ep "$parent" mate2 | jq '.pane_id = "pane-2"' > "$TMP_ROOT/twohomes-mate2.json"
+jq -s '.' "$TMP_ROOT/twohomes-mate1.json" "$TMP_ROOT/twohomes-mate2.json" > "$TMP_ROOT/twohomes-eps.json"
+write_request "$TMP_ROOT/twohomes-req.json" op-twohomes "$parent" session-absent "$TMP_ROOT/twohomes-eps.json"
+absent_body > "$BODY"
+sum1=$(file_sum "$inst1/config/agent-kit/herdr-panes")
+sum2=$(file_sum "$inst2/config/agent-kit/herdr-panes")
+life "$TMP_ROOT/twohomes.err" FM_RETIRE_INV_BODY="$BODY" \
+  FM_RETIRE_INV_LOG="$TMP_ROOT/twohomes.log" FM_RETIRE_EP_LOG="$TMP_ROOT/twohomes-ep.log" \
+  retire --request "$TMP_ROOT/twohomes-req.json" --out "$TMP_ROOT/twohomes-out.json"
+assert_equals 0 "$LIFE_RC" "two retained homes retire together: $(cat "$TMP_ROOT/twohomes.err")"
+assert_present "$inst1/.fm-secondmate-home" "the first retained home marker stays"
+assert_present "$inst2/.fm-secondmate-home" "the second retained home marker stays"
+assert_equals "$sum1" "$(file_sum "$inst1/config/agent-kit/herdr-panes")" "the first retained home bytes stay"
+assert_equals "$sum2" "$(file_sum "$inst2/config/agent-kit/herdr-panes")" "the second retained home bytes stay"
+assert_grep "$inst1" "$parent/data/secondmates.md" "the first registry binding stays"
+assert_grep "$inst2" "$parent/data/secondmates.md" "the second registry binding stays"
+pass "fm-lifecycle.sh retire two retained homes exited $LIFE_RC; both homes and registry bindings stayed"
 
 # --- child before parent, and a child that blocks the parent -----------------
 parent=$(mk_parent order-home)
@@ -767,6 +819,46 @@ assert_absent "$parent/state/lifecycle-retire" "a fault before the journal creat
 assert_present "$parent/state/mate1.meta" "a fault before the journal leaves the task record"
 pass "negative control: fm-lifecycle.sh retire fault journal-request exited $LIFE_RC; no journal"
 
+fault_parent_case() {
+  local boundary=$1 name=$2
+  FAULT_PARENT=$(mk_parent "$name-home")
+  FAULT_INST=$(mk_installed "$FAULT_PARENT" mate1 "$name-inst")
+  mate_ep "$FAULT_PARENT" mate1 | jq -s '.' > "$TMP_ROOT/$name-eps.json"
+  write_request "$TMP_ROOT/$name-req.json" "op-$name" "$FAULT_PARENT" session-absent "$TMP_ROOT/$name-eps.json"
+  absent_body > "$BODY"
+  life "$TMP_ROOT/$name.err" FM_LIFECYCLE_FAULT_AT="$boundary" \
+    FM_RETIRE_INV_BODY="$BODY" \
+    FM_RETIRE_INV_LOG="$TMP_ROOT/$name.log" FM_RETIRE_EP_LOG="$TMP_ROOT/$name-ep.log" \
+    retire --request "$TMP_ROOT/$name-req.json" --out "$TMP_ROOT/$name-out.json"
+  assert_equals 86 "$LIFE_RC" "a fault at $boundary returns 86"
+  assert_absent "$FAULT_PARENT/state/lifecycle-retire/op-$name/result.json" "a fault at $boundary writes no final result"
+  assert_present "$FAULT_INST" "a fault at $boundary leaves the installed home"
+}
+
+fault_parent_case journal-proof fault-proof
+assert_present "$FAULT_PARENT/state/mate1.meta" "the journal-proof fault leaves the task record"
+pass "negative control: fm-lifecycle.sh retire fault journal-proof exited $LIFE_RC; meta remains"
+
+fault_parent_case parent-retirement fault-parent
+assert_present "$FAULT_PARENT/state/mate1.meta" "the parent-retirement fault leaves the task record"
+assert_absent "$FAULT_PARENT/state/mate1.endpoint-retired" "the parent-retirement fault writes no retirement record"
+pass "negative control: fm-lifecycle.sh retire fault parent-retirement exited $LIFE_RC; meta remains"
+
+fault_parent_case backlog-transition fault-backlog
+assert_present "$FAULT_PARENT/state/mate1.meta" "the backlog-transition fault leaves the task record"
+assert_present "$FAULT_PARENT/state/mate1.endpoint-retired" "the backlog-transition fault records the retired endpoint"
+pass "negative control: fm-lifecycle.sh retire fault backlog-transition exited $LIFE_RC; endpoint record recoverable"
+
+fault_parent_case final-receipt fault-final
+assert_absent "$FAULT_PARENT/state/mate1.meta" "the final-receipt fault has completed the task mutation"
+assert_present "$FAULT_PARENT/state/mate1.endpoint-retired" "the final-receipt fault keeps the endpoint record"
+life "$TMP_ROOT/fault-final-retry.err" FM_RETIRE_INV_BODY="$BODY" \
+  FM_RETIRE_INV_LOG="$TMP_ROOT/fault-final-retry.log" FM_RETIRE_EP_LOG="$TMP_ROOT/fault-final-retry-ep.log" \
+  retire --request "$TMP_ROOT/fault-final-req.json" --out "$TMP_ROOT/fault-final-retry-out.json"
+assert_equals 0 "$LIFE_RC" "retry after final receipt fault completes"
+assert_equals complete "$(json_get .status)" "retry after final receipt fault returns complete"
+pass "fm-lifecycle.sh retire fault final-receipt exited 86; retry exited $LIFE_RC"
+
 parent=$(mk_parent meta-fault-home)
 inst=$(mk_installed "$parent" mate1 meta-fault-inst)
 mate_ep "$parent" mate1 | jq -s '.' > "$TMP_ROOT/metafault-eps.json"
@@ -809,6 +901,26 @@ assert_absent "$parent/state/ship1.meta" "retry removes the remaining ship recor
 assert_equals "$retired_sum" "$(file_sum "$parent/state/mate1.endpoint-retired")" "retry does not rewrite the completed record"
 pass "fm-lifecycle.sh retire fault outcome-handoff exited 86; retry exited $LIFE_RC"
 
+parent=$(mk_parent childfault-home)
+inst=$(mk_installed "$parent" mate1 childfault-inst)
+printf 'manual\n' > "$inst/config/backlog-backend"
+write_ship_meta "$inst" ship1 "$GEN" direct-PR
+printf 'done\n' > "$inst/state/ship1.status"
+ship_ep "$inst" ship1 "$GEN" mate1 > "$TMP_ROOT/childfault-ship.json"
+mate_ep "$parent" mate1 > "$TMP_ROOT/childfault-mate.json"
+jq -s '.' "$TMP_ROOT/childfault-mate.json" "$TMP_ROOT/childfault-ship.json" > "$TMP_ROOT/childfault-eps.json"
+write_request "$TMP_ROOT/childfault-req.json" op-childfault "$parent" session-absent "$TMP_ROOT/childfault-eps.json"
+absent_body > "$BODY"
+life "$TMP_ROOT/childfault.err" FM_LIFECYCLE_FAULT_AT=child-cleanup \
+  FM_RETIRE_INV_BODY="$BODY" \
+  FM_RETIRE_INV_LOG="$TMP_ROOT/childfault.log" FM_RETIRE_EP_LOG="$TMP_ROOT/childfault-ep.log" \
+  retire --request "$TMP_ROOT/childfault-req.json" --out "$TMP_ROOT/childfault-out.json"
+assert_equals 86 "$LIFE_RC" "a fault at child cleanup returns 86"
+assert_present "$inst/state/ship1.meta" "the child-cleanup fault leaves the child record"
+assert_present "$parent/state/mate1.meta" "the child-cleanup fault leaves the parent record"
+assert_absent "$parent/state/lifecycle-retire/op-childfault/result.json" "the child-cleanup fault writes no result"
+pass "negative control: fm-lifecycle.sh retire fault child-cleanup exited $LIFE_RC; both records remain"
+
 # --- endpoint-absent proof, without killing the server -----------------------
 parent=$(mk_parent pane-home)
 inst=$(mk_installed "$parent" mate1 pane-inst)
@@ -849,7 +961,23 @@ assert_equals 1 "$LIFE_RC" "a different spawn generation is refused"
 assert_equals generation-mismatch "$(json_get '.reasons[0].code')" "the refusal names the generation"
 assert_equals "$before" "$(file_sum "$parent/state/ship1.meta")" "a generation mismatch leaves the task record unchanged"
 pass "negative control: fm-lifecycle.sh retire generation-mismatch exited $LIFE_RC; meta unchanged"
+ident_parent=$parent
 
+parent=$(mk_parent paneid-home)
+write_ship_meta "$parent" ship1
+ship_ep "$parent" ship1 | jq '.pane_id = "fabricated-pane"' | jq -s '.' > "$TMP_ROOT/paneid-eps.json"
+write_request "$TMP_ROOT/paneid-req.json" op-paneid "$parent" session-absent "$TMP_ROOT/paneid-eps.json"
+absent_body > "$BODY"
+before=$(file_sum "$parent/state/ship1.meta")
+life "$TMP_ROOT/paneid.err" FM_RETIRE_INV_BODY="$BODY" \
+  FM_RETIRE_INV_LOG="$TMP_ROOT/paneid.log" FM_RETIRE_EP_LOG="$TMP_ROOT/paneid-ep.log" \
+  retire --request "$TMP_ROOT/paneid-req.json" --out "$TMP_ROOT/paneid-out.json"
+assert_equals 1 "$LIFE_RC" "a fabricated pane identity is refused"
+assert_equals identity-mismatch "$(json_get '.reasons[0].code')" "the refusal names identity mismatch"
+assert_equals "$before" "$(file_sum "$parent/state/ship1.meta")" "a fabricated pane leaves the task record unchanged"
+pass "negative control: fm-lifecycle.sh retire fabricated-pane exited $LIFE_RC; meta unchanged"
+
+parent=$ident_parent
 ln "$parent/state/ship1.meta" "$parent/state/ship1.meta.link"
 life "$TMP_ROOT/hardlink.err" FM_RETIRE_INV_BODY="$BODY" \
   FM_RETIRE_INV_LOG="$TMP_ROOT/hardlink.log" FM_RETIRE_EP_LOG="$TMP_ROOT/hardlink-ep.log" \
@@ -993,6 +1121,85 @@ done
 assert_grep 'status: rejected' "$trust_result" "a forged trust record is rejected"
 assert_absent "$TMP_ROOT/trust-act.log" "a forged trust record did not run the action"
 pass "negative control: fm-procevent.sh reconcile forged-trust rejected the action; action log absent"
+
+trust_home=$(abs_dir "$TMP_ROOT/trust-rebind-home")
+trust_root=$(abs_dir "$TMP_ROOT/trust-rebind-root")
+mkdir -p "$trust_home/state" "$trust_root/bin"
+fm_test_track_procevent_home "$trust_home"
+cond=$trust_root/bin/trust-cond.sh
+act=$trust_root/bin/trust-act.sh
+cat > "$cond" <<'SH'
+#!/usr/bin/env bash
+[ -e "$1" ]
+SH
+cat > "$act" <<'SH'
+#!/usr/bin/env bash
+printf 'before\n' >> "$1"
+SH
+chmod +x "$cond" "$act"
+env HOME="$USER_HOME" FM_HOME="$trust_home" FM_ROOT_OVERRIDE="$trust_root" \
+  "$ROOT/bin/fm-procevent-when.sh" arm stale \
+  --interval 0.1 --stable 1 --condition "$cond" "$TMP_ROOT/trust-rebind-trigger" \
+  --action "$act" "$TMP_ROOT/trust-rebind-act.log" >/dev/null
+cat > "$act" <<'SH'
+#!/usr/bin/env bash
+printf 'after\n' >> "$1"
+SH
+chmod +x "$act"
+: > "$TMP_ROOT/trust-rebind-trigger"
+stale_out=$(env HOME="$USER_HOME" FM_HOME="$trust_home" FM_ROOT_OVERRIDE="$trust_root" \
+  "$ROOT/bin/fm-procevent-when.sh" run when-stale 2>&1)
+assert_contains "$stale_out" "status: rejected" "stale action bytes are rejected before rebind"
+assert_absent "$TMP_ROOT/trust-rebind-act.log" "stale action bytes do not run"
+rebind_out=$(env HOME="$USER_HOME" FM_HOME="$trust_home" FM_ROOT_OVERRIDE="$trust_root" \
+  "$ROOT/bin/fm-procevent-when.sh" rebind-all 2>&1) || fail "rebind-all failed: $rebind_out"
+assert_contains "$rebind_out" "rebound" "rebind-all reports a rebound watch"
+env HOME="$USER_HOME" FM_HOME="$trust_home" FM_ROOT_OVERRIDE="$trust_root" "$ROOT/bin/fm-procevent.sh" reconcile >/dev/null
+n=0
+trust_result=
+while [ "$n" -lt 80 ]; do
+  for trust_result in "$trust_home/state/procevent-inbox/when-stale".*.result; do
+    [ -e "$trust_result" ] || continue
+    break 2
+  done
+  trust_result=
+  sleep 0.1
+  n=$((n + 1))
+done
+[ -n "$trust_result" ] || fail "the rebound trust watch produced no result"
+assert_grep 'status: fired' "$trust_result" "a rebound trust record fires"
+assert_grep 'after' "$TMP_ROOT/trust-rebind-act.log" "a rebound trust record runs the changed action"
+
+trust_home=$(abs_dir "$TMP_ROOT/trust-tamper-home")
+trust_root=$(abs_dir "$TMP_ROOT/trust-tamper-root")
+mkdir -p "$trust_home/state" "$trust_root/bin"
+fm_test_track_procevent_home "$trust_home"
+cond=$trust_root/bin/tamper-cond.sh
+act=$trust_root/bin/tamper-act.sh
+cat > "$cond" <<'SH'
+#!/usr/bin/env bash
+[ -e "$1" ]
+SH
+cat > "$act" <<'SH'
+#!/usr/bin/env bash
+printf 'safe\n' >> "$1"
+SH
+chmod +x "$cond" "$act"
+env HOME="$USER_HOME" FM_HOME="$trust_home" FM_ROOT_OVERRIDE="$trust_root" \
+  "$ROOT/bin/fm-procevent-when.sh" arm tamper \
+  --interval 0.1 --stable 1 --condition "$cond" "$TMP_ROOT/trust-tamper-trigger" \
+  --action "$act" "$TMP_ROOT/trust-tamper-act.log" >/dev/null
+cat > "$act" <<'SH'
+#!/usr/bin/env bash
+printf 'tampered\n' >> "$1"
+SH
+chmod +x "$act"
+: > "$TMP_ROOT/trust-tamper-trigger"
+tamper_out=$(env HOME="$USER_HOME" FM_HOME="$trust_home" FM_ROOT_OVERRIDE="$trust_root" \
+  "$ROOT/bin/fm-procevent-when.sh" run when-tamper 2>&1)
+assert_contains "$tamper_out" "status: rejected" "tampered action bytes are rejected"
+assert_absent "$TMP_ROOT/trust-tamper-act.log" "tampered action bytes do not run"
+pass "fm-procevent-when action trust rejects stale bytes, rebinds normally, fires, and rejects tampering"
 
 # --- a captain-held row is retained ------------------------------------------
 parent=$(mk_parent hold-home)

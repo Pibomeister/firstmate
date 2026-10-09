@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Live session-absent retirement against one generated Herdr lab.
 # The lab helper owns provision, runtime reads, and teardown.
-# This file must not embed a machine-specific home or call Herdr directly.
 set -u
 
 # shellcheck source=tests/lib.sh
