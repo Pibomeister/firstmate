@@ -134,8 +134,23 @@ fm_secondmate_liveness_probe() {  # <meta> <id> <full|poll>
   FM_SM_LIVE_STATUS=skipped FM_SM_LIVE_STATE=unknown FM_SM_LIVE_KILL=0
   FM_SM_LIVE_CAUSE='' FM_SM_LIVE_WHERE='' FM_SM_LIVE_REASON='' FM_SM_LIVE_LINE=''
   local window harness remote_host remote_rc out agent_state readiness_reason route_out remote_backend
+  local retired retired_gen meta_gen
   window=$(fm_meta_get "$meta" window)
   [ -n "$window" ] || { FM_SM_LIVE_STATUS=silent; return 0; }
+  # Matching-generation skip contract: bin/fm-lifecycle-retire-lib.sh.
+  retired=${meta%/*}/$id.endpoint-retired
+  if [ -L "$retired" ] || { [ -e "$retired" ] && [ ! -f "$retired" ]; }; then
+    FM_SM_LIVE_REASON="endpoint retirement record is not a regular file"
+    return 0
+  fi
+  if [ -f "$retired" ]; then
+    retired_gen=$(fm_meta_get "$retired" spawn_gen)
+    meta_gen=$(fm_meta_get "$meta" spawn_gen)
+    if [ -n "$meta_gen" ] && [ "$retired_gen" = "$meta_gen" ]; then
+      FM_SM_LIVE_REASON="endpoint generation $meta_gen is retired"
+      return 0
+    fi
+  fi
   harness=$(fm_meta_get "$meta" harness)
   remote_host=$(fm_meta_get "$meta" remote_host)
   if [ -n "$remote_host" ]; then

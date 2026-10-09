@@ -22,6 +22,10 @@
 #
 # None of these functions has a force, discard, or legacy-record mode: those
 # are bin/fm-teardown.sh's own paths and stay there.
+#
+# Endpoint retirement (inspect, retire, and result) is owned by bin/fm-lifecycle-retire-lib.sh, which this file sources.
+# That header is the contract for the request, the proof, the journal, the lock order, and the return codes.
+# Sourcing this file still creates no state.
 
 FM_LIFECYCLE_API_VERSION=1
 FM_LIFECYCLE_LIB_DIR="$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd "${d:-/}" && pwd)"
@@ -1456,3 +1460,6 @@ fm_lifecycle_retire_task_artifacts() {
   chmod u+w "$state/$id.git-hooks" 2>/dev/null || true
   rm -rf "$state/$id.inbox" "$state/$id.git-hooks" || return 1
 }
+
+# shellcheck source=bin/fm-lifecycle-retire-lib.sh
+. "$FM_LIFECYCLE_LIB_DIR/fm-lifecycle-retire-lib.sh"

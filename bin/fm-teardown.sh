@@ -175,11 +175,16 @@
 # leftovers included) and its delivery confirmation is removed so retired mates
 # cannot leave durable reply expectations behind. Non-forced retirement refuses
 # while any of those records is still unresolved. Teardown then discards child
-# work, kills child runtime endpoints, and removes the retired home. Removing a
-# leased home releases its durable treehouse lease so the pool slot is freed,
+# work, kills child runtime endpoints, and removes the retired home.
+# --retain-home is the exception: it keeps that home and the registry binding.
+# Removing a leased home releases its durable treehouse lease so the pool slot is freed,
 # never left leased forever. If the treehouse return fails, teardown leaves the
 # leased home and state in place instead of hiding a still-held lease.
-# Usage: fm-teardown.sh <task-id> [--force] [--legacy-record]
+# Usage: fm-teardown.sh <task-id> [--force] [--legacy-record] [--retain-home]
+#   --retain-home keeps a secondmate home directory and its registry binding,
+#   and publishes the endpoint-retired record owned by bin/fm-lifecycle-retire-lib.sh.
+#   Without the flag, secondmate teardown still deletes that home. The flag
+#   refuses with --force or --legacy-record, and refuses for any other kind.
 #   --force skips ordinary-task dirty and landed-work checks, skips scout report
 #   checks, and discards secondmate child work for kind=secondmate. Only use it
 #   when the captain has explicitly said to discard the work.
@@ -349,6 +354,7 @@ for _teardown_source in \
   fm-composer-lib.sh \
   fm-cursor-lib.sh \
   fm-nm-run-lib.sh \
+  fm-lifecycle-retire-lib.sh \
   fm-lifecycle-lib.sh \
   fm-wake-lib.sh \
   fm-path-lib.sh \
@@ -400,11 +406,13 @@ fi
 ID=$1
 FORCE=
 LEGACY_RECORD_GIVEN=0
+RETAIN_HOME=0
 shift
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --force) FORCE=--force ;;
     --legacy-record) LEGACY_RECORD_GIVEN=1 ;;
+    --retain-home) RETAIN_HOME=1 ;;
     *)
       echo "error: invalid teardown request" >&2
       exit 2
@@ -412,6 +420,10 @@ while [ "$#" -gt 0 ]; do
   esac
   shift
 done
+if [ "$RETAIN_HOME" = 1 ] && { [ "$FORCE" = --force ] || [ "$LEGACY_RECORD_GIVEN" = 1 ]; }; then
+  echo "error: invalid teardown request" >&2
+  exit 2
+fi
 fm_backlog_directory_present "$STATE" "state directory" || {
   echo "error: teardown refused: $FM_BACKLOG_TRANSITION_ERROR" >&2
   exit 1
@@ -537,6 +549,10 @@ TEARDOWN_META_KIND=$(fm_meta_get "$META" kind)
 # Retiring a persistent secondmate is main's alone in both postures; the kind
 # is read under the metadata lock (role partition: bin/fm-lease-lib.sh).
 [ "$TEARDOWN_META_KIND" != secondmate ] || fm_lease_forbid_branch "secondmate retirement (fm-teardown)"
+if [ "$RETAIN_HOME" = 1 ] && [ "$TEARDOWN_META_KIND" != secondmate ]; then
+  echo "error: --retain-home applies only to a secondmate; nothing was changed" >&2
+  exit 1
+fi
 # A secondmate's endpoint-liveness episodes (bin/fm-secondmate-liveness-lib.sh)
 # serialize on this lock; retirement holds it to the end so no probe or relaunch
 # can act on the route mid-teardown, and its relaunch ledger and park marker are
@@ -2275,7 +2291,9 @@ if [ "$KIND" = secondmate ]; then
   handoff_wake_retire_stage_recover "$HOME_PATH" || exit 1
   handoff_wake_retire_validate || exit 1
   pending_replies_recovery_validate initial || exit 1
-  validate_firstmate_home_for_removal "$HOME_PATH" "secondmate home" "$ID" >/dev/null || exit 1
+  if [ "$RETAIN_HOME" != 1 ]; then
+    validate_firstmate_home_for_removal "$HOME_PATH" "secondmate home" "$ID" >/dev/null || exit 1
+  fi
   if [ "$FORCE" = "--force" ]; then
     validate_firstmate_home_children_removal "$HOME_PATH" || exit 1
     preflight_descendant_task_locks "$HOME_PATH" || exit 1
@@ -2609,7 +2627,30 @@ if [ "$KIND" = secondmate ]; then
     || { echo "error: receiver wake cleanup could not be staged; preserving the secondmate home and route" >&2; exit 1; }
   pending_replies_recovery_validate recheck \
     || { echo "error: local pending-reply recovery paths changed; preserving the secondmate home and route" >&2; exit 1; }
-  if remove_firstmate_home "$HOME_PATH" "secondmate home" "$ID"; then
+  if [ "$RETAIN_HOME" = 1 ]; then
+    if ! printf '%s\n' "$TEARDOWN_META_SPAWN_GEN" | grep -Eq '^s[0-9]+\.[0-9]+\.[0-9]+$'; then
+      echo "error: --retain-home refused: task $ID has no published spawn_gen; nothing further was removed" >&2
+      handoff_wake_retire_stage_restore \
+        || echo "error: receiver wake restoration failed; recovery state remains at $HANDOFF_WAKE_RETIRE_STAGE" >&2
+      exit 1
+    fi
+    retain_session=$(fm_meta_get "$META" session)
+    [ -n "$retain_session" ] || retain_session=${T%%:*}
+    retain_digest=$(fm_lifecycle_retire_sha256_text "teardown-retain $ID $TEARDOWN_META_SPAWN_GEN") || {
+      echo "error: --retain-home refused: the retirement digest could not be computed" >&2
+      handoff_wake_retire_stage_restore \
+        || echo "error: receiver wake restoration failed; recovery state remains at $HANDOFF_WAKE_RETIRE_STAGE" >&2
+      exit 1
+    }
+    if ! fm_lifecycle_publish_endpoint_retired "$STATE" "$ID" "$TEARDOWN_META_SPAWN_GEN" \
+      "teardown-$ID-$TEARDOWN_META_SPAWN_GEN" "$retain_digest" teardown-retain "$retain_session" true \
+      "$HOME_PATH"; then
+      echo "error: --retain-home refused: the retirement record could not be published" >&2
+      handoff_wake_retire_stage_restore \
+        || echo "error: receiver wake restoration failed; recovery state remains at $HANDOFF_WAKE_RETIRE_STAGE" >&2
+      exit 1
+    fi
+  elif remove_firstmate_home "$HOME_PATH" "secondmate home" "$ID"; then
     :
   else
     rc=$?
@@ -2623,7 +2664,9 @@ if [ "$KIND" = secondmate ]; then
     pending_replies_cleanup_for_task "$STATE/pending-replies" "$PENDING_REPLIES_DIR_REAL" \
       || { echo "error: local pending-reply cleanup failed; preserving the secondmate route for retry" >&2; exit 1; }
   fi
-  remove_secondmate_registry_entry "$ID"
+  if [ "$RETAIN_HOME" != 1 ]; then
+    remove_secondmate_registry_entry "$ID"
+  fi
 fi
 # Endpoint-bound runtime state of this incarnation; the library owns the list
 # and its order (fm_lifecycle_retire_task_artifacts).
