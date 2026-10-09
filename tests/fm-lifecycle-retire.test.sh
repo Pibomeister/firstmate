@@ -12,13 +12,12 @@ USER_HOME=$TMP_ROOT/user-home
 mkdir -p "$USER_HOME"
 export HOME=$USER_HOME
 PIDS=""
-INV=$TMP_ROOT/inventory.sh
-EP=$TMP_ROOT/endpoint.sh
 BODY=$TMP_ROOT/inv-body.json
 SOCK=/tmp/fm-lifecycle-retire-sock
-SESSION=labretire1
+SESSION=fm-lab-retire1
 GEN=s1.2.3
 GONE_IDENT='lstart=gone-for-test'
+FAKEBIN=$TMP_ROOT/fakebin
 
 track() { PIDS="$PIDS $1"; }
 
@@ -35,39 +34,47 @@ trap 'cleanup_all; exit 143' TERM
 trap 'cleanup_all; exit 129' HUP
 trap 'cleanup_all; exit 131' QUIT
 
-cat > "$INV" <<'SH'
+mkdir -p "$FAKEBIN"
+cat > "$FAKEBIN/herdr" <<'SH'
 #!/usr/bin/env bash
-printf '%s\n' "$1" >> "${FM_RETIRE_INV_LOG:?}"
-case "${FM_RETIRE_INV_MODE:-body}" in
-  sleep)
-    printf '%s\n' "$$" > "${FM_RETIRE_SLEEP_MARK:?}"
-    sleep 60
+case "$1 $2 $3" in
+  "session list --json")
+    printf '%s\n' "$*" >> "${FM_RETIRE_INV_LOG:?}"
+    case "${FM_RETIRE_INV_MODE:-body}" in
+      sleep)
+        printf '%s\n' "$$" > "${FM_RETIRE_SLEEP_MARK:?}"
+        sleep 60
+        ;;
+      counter)
+        n=0
+        [ -f "${FM_RETIRE_INV_COUNT:?}" ] && n=$(cat "$FM_RETIRE_INV_COUNT")
+        n=$((n + 1))
+        printf '%s\n' "$n" > "$FM_RETIRE_INV_COUNT"
+        if [ "$n" -eq 1 ]; then
+          printf '%s\n' '{"sessions":[]}'
+        else
+          printf '%s\n' '{"sessions":[{"name":"fm-lab-retire1","running":true,"socket_path":"/tmp/fm-lifecycle-retire-sock"}]}'
+        fi
+        exit 0
+        ;;
+    esac
+    cat "${FM_RETIRE_INV_BODY:?}"
     ;;
-  counter)
-    n=0
-    [ -f "${FM_RETIRE_INV_COUNT:?}" ] && n=$(cat "$FM_RETIRE_INV_COUNT")
-    n=$((n + 1))
-    printf '%s\n' "$n" > "$FM_RETIRE_INV_COUNT"
-    if [ "$n" -eq 1 ]; then
-      printf '%s\n' '{"sessions":[]}'
+  "pane get "*)
+    printf '%s\n' "$*" >> "${FM_RETIRE_EP_LOG:?}"
+    if [ -n "${FM_RETIRE_EP_BODY:-}" ]; then
+      printf '%s\n' "$FM_RETIRE_EP_BODY"
     else
-      printf '%s\n' '{"sessions":[{"name":"labretire1","running":true,"socket_path":"/tmp/fm-lifecycle-retire-sock"}]}'
+      printf '%s\n' '{"error":{"code":"pane_not_found"}}'
     fi
-    exit 0
+    ;;
+  *)
+    printf 'unexpected herdr argv: %s\n' "$*" >&2
+    exit 64
     ;;
 esac
-cat "${FM_RETIRE_INV_BODY:?}"
 SH
-cat > "$EP" <<'SH'
-#!/usr/bin/env bash
-printf '%s\n' "$*" >> "${FM_RETIRE_EP_LOG:?}"
-if [ -n "${FM_RETIRE_EP_BODY:-}" ]; then
-  printf '%s\n' "$FM_RETIRE_EP_BODY"
-else
-  printf '%s\n' '{"error":{"code":"pane_not_found"}}'
-fi
-SH
-chmod +x "$INV" "$EP"
+chmod +x "$FAKEBIN/herdr"
 
 dead_pid() {
   local pid=4194301 i=0
@@ -104,11 +111,13 @@ life() {
   LIFE_RC=0
   if [ "$#" -eq 0 ]; then
     LIFE_OUT=$(env -u FM_HOME -u STATE -u FM_STATE_OVERRIDE -u FM_ROOT -u FM_ROOT_OVERRIDE \
-      -u FM_PROC_ROOT_OVERRIDE HOME="$USER_HOME" ${prefix[@]+"${prefix[@]}"} \
+      -u FM_PROC_ROOT_OVERRIDE -u FM_LIFECYCLE_INVENTORY_COMMAND -u FM_LIFECYCLE_ENDPOINT_COMMAND \
+      HOME="$USER_HOME" PATH="$FAKEBIN:$PATH" ${prefix[@]+"${prefix[@]}"} \
       "$ROOT/bin/fm-lifecycle.sh" 2>"$errfile") || LIFE_RC=$?
   else
     LIFE_OUT=$(env -u FM_HOME -u STATE -u FM_STATE_OVERRIDE -u FM_ROOT -u FM_ROOT_OVERRIDE \
-      -u FM_PROC_ROOT_OVERRIDE HOME="$USER_HOME" ${prefix[@]+"${prefix[@]}"} \
+      -u FM_PROC_ROOT_OVERRIDE -u FM_LIFECYCLE_INVENTORY_COMMAND -u FM_LIFECYCLE_ENDPOINT_COMMAND \
+      HOME="$USER_HOME" PATH="$FAKEBIN:$PATH" ${prefix[@]+"${prefix[@]}"} \
       "$ROOT/bin/fm-lifecycle.sh" "$@" 2>"$errfile") || LIFE_RC=$?
   fi
 }
@@ -150,6 +159,16 @@ session=$SESSION
 window=$SESSION:p1
 home=$inst
 harness=claude
+herdr_pane_id=pane-1
+herdr_workspace_id=w
+herdr_tab_id=t
+lifecycle_process_pid=$DEAD_PID
+lifecycle_process_identity=$GONE_IDENT
+lifecycle_process_boot_id=$BOOT
+lifecycle_server_socket_path=$SOCK
+lifecycle_server_pid=$DEAD_PID
+lifecycle_server_identity=$GONE_IDENT
+lifecycle_server_boot_id=$BOOT
 EOF
 }
 
@@ -193,7 +212,43 @@ session=$SESSION
 window=$SESSION:p1
 mode=$mode
 harness=claude
+herdr_pane_id=pane-1
+herdr_workspace_id=w
+herdr_tab_id=t
+lifecycle_process_pid=$DEAD_PID
+lifecycle_process_identity=$GONE_IDENT
+lifecycle_process_boot_id=$BOOT
+lifecycle_server_socket_path=$SOCK
+lifecycle_server_pid=$DEAD_PID
+lifecycle_server_identity=$GONE_IDENT
+lifecycle_server_boot_id=$BOOT
 EOF
+}
+
+set_meta_runtime() {
+  local meta=$1 pid=$2 ident=$3 boot=$4 spid=$5 sident=$6 sboot=$7 pane=${8:-pane-1}
+  awk -F= '
+    $1!="herdr_pane_id" && $1!="herdr_workspace_id" && $1!="herdr_tab_id" &&
+    $1!="lifecycle_process_pid" && $1!="lifecycle_process_identity" &&
+    $1!="lifecycle_process_boot_id" && $1!="lifecycle_server_socket_path" &&
+    $1!="lifecycle_server_pid" && $1!="lifecycle_server_identity" &&
+    $1!="lifecycle_server_boot_id"
+  ' "$meta" > "$meta.runtime"
+  {
+    cat "$meta.runtime"
+    printf 'herdr_pane_id=%s\n' "$pane"
+    printf 'herdr_workspace_id=w\n'
+    printf 'herdr_tab_id=t\n'
+    printf 'lifecycle_process_pid=%s\n' "$pid"
+    printf 'lifecycle_process_identity=%s\n' "$ident"
+    printf 'lifecycle_process_boot_id=%s\n' "$boot"
+    printf 'lifecycle_server_socket_path=%s\n' "$SOCK"
+    printf 'lifecycle_server_pid=%s\n' "$spid"
+    printf 'lifecycle_server_identity=%s\n' "$sident"
+    printf 'lifecycle_server_boot_id=%s\n' "$sboot"
+  } > "$meta.runtime.new"
+  mv "$meta.runtime.new" "$meta"
+  rm -f "$meta.runtime"
 }
 
 write_request() {
@@ -205,16 +260,14 @@ write_request() {
 
 absent_body() { printf '%s\n' '{"sessions":[]}'; }
 present_body() {
-  printf '%s\n' '{"sessions":[{"name":"labretire1","running":true,"socket_path":"/tmp/fm-lifecycle-retire-sock"}]}'
+  printf '%s\n' '{"sessions":[{"name":"fm-lab-retire1","running":true,"socket_path":"/tmp/fm-lifecycle-retire-sock"}]}'
 }
 stopped_body() {
-  printf '%s\n' '{"sessions":[{"name":"labretire1","running":false,"socket_path":"/tmp/fm-lifecycle-retire-sock"}]}'
+  printf '%s\n' '{"sessions":[{"name":"fm-lab-retire1","running":false,"socket_path":"/tmp/fm-lifecycle-retire-sock"}]}'
 }
 
 base_env() {
   printf '%s\n' \
-    "FM_LIFECYCLE_INVENTORY_COMMAND=$INV" \
-    "FM_LIFECYCLE_ENDPOINT_COMMAND=$EP" \
     "FM_RETIRE_INV_BODY=$BODY" \
     "FM_RETIRE_INV_LOG=$1" \
     "FM_RETIRE_EP_LOG=$2"
@@ -247,7 +300,7 @@ ship_ep "$parent" ship1 > "$TMP_ROOT/schema-ep.json"
 jq '.session = "default" | .window = "default:p1"' "$TMP_ROOT/schema-ep.json" | jq -s '.' > "$TMP_ROOT/schema-eps.json"
 write_request "$TMP_ROOT/schema-req.json" op-default "$parent" session-absent "$TMP_ROOT/schema-eps.json"
 absent_body > "$BODY"
-life "$TMP_ROOT/schema.err" FM_LIFECYCLE_INVENTORY_COMMAND="$INV" FM_RETIRE_INV_BODY="$BODY" \
+life "$TMP_ROOT/schema.err" FM_RETIRE_INV_BODY="$BODY" \
   FM_RETIRE_INV_LOG="$TMP_ROOT/schema.log" FM_RETIRE_EP_LOG="$TMP_ROOT/schema-ep.log" \
   retire --request "$TMP_ROOT/schema-req.json" --out "$TMP_ROOT/schema-out.json"
 assert_equals 1 "$LIFE_RC" "the default session is refused"
@@ -257,7 +310,7 @@ pass "negative control: fm-lifecycle.sh retire default-session exited $LIFE_RC; 
 
 jq '.kind = "secondmate" | .retain_home = false' "$TMP_ROOT/schema-ep.json" | jq -s '.' > "$TMP_ROOT/retainfalse-eps.json"
 write_request "$TMP_ROOT/retainfalse-req.json" op-retainfalse "$parent" session-absent "$TMP_ROOT/retainfalse-eps.json"
-life "$TMP_ROOT/retainfalse.err" FM_LIFECYCLE_INVENTORY_COMMAND="$INV" FM_RETIRE_INV_BODY="$BODY" \
+life "$TMP_ROOT/retainfalse.err" FM_RETIRE_INV_BODY="$BODY" \
   FM_RETIRE_INV_LOG="$TMP_ROOT/retainfalse.log" FM_RETIRE_EP_LOG="$TMP_ROOT/schema-ep.log" \
   retire --request "$TMP_ROOT/retainfalse-req.json" --out "$TMP_ROOT/retainfalse-out.json"
 assert_equals 1 "$LIFE_RC" "retain_home false on a secondmate is refused"
@@ -277,7 +330,7 @@ ship_ep "$parent" ship1 | jq -s '.' > "$TMP_ROOT/abs-eps.json"
 write_request "$TMP_ROOT/abs-req.json" op-absent "$parent" session-absent "$TMP_ROOT/abs-eps.json"
 present_body > "$BODY"
 before=$(file_sum "$parent/state/ship1.meta")
-life "$TMP_ROOT/present.err" FM_LIFECYCLE_INVENTORY_COMMAND="$INV" FM_RETIRE_INV_BODY="$BODY" \
+life "$TMP_ROOT/present.err" FM_RETIRE_INV_BODY="$BODY" \
   FM_RETIRE_INV_LOG="$TMP_ROOT/present.log" FM_RETIRE_EP_LOG="$TMP_ROOT/present-ep.log" \
   retire --request "$TMP_ROOT/abs-req.json" --out "$TMP_ROOT/present-out.json"
 assert_equals 1 "$LIFE_RC" "a present session is refused"
@@ -287,7 +340,7 @@ assert_equals "$before" "$(file_sum "$parent/state/ship1.meta")" "a present sess
 pass "negative control: fm-lifecycle.sh retire session-present exited $LIFE_RC; meta unchanged"
 
 rm -rf -- "$parent/state/lifecycle-retire"
-life "$TMP_ROOT/inspect-present.err" FM_LIFECYCLE_INVENTORY_COMMAND="$INV" FM_RETIRE_INV_BODY="$BODY" \
+life "$TMP_ROOT/inspect-present.err" FM_RETIRE_INV_BODY="$BODY" \
   FM_RETIRE_INV_LOG="$TMP_ROOT/inspect-present.log" FM_RETIRE_EP_LOG="$TMP_ROOT/present-ep.log" \
   inspect --request "$TMP_ROOT/abs-req.json" --out "$TMP_ROOT/inspect-present-out.json"
 assert_equals 0 "$LIFE_RC" "inspect exits 0 when it reports a refusal"
@@ -297,7 +350,7 @@ assert_absent "$parent/state/lifecycle-retire" "inspect writes no journal"
 pass "negative control: fm-lifecycle.sh inspect session-present exited $LIFE_RC; no journal"
 
 stopped_body > "$BODY"
-life "$TMP_ROOT/stopped.err" FM_LIFECYCLE_INVENTORY_COMMAND="$INV" FM_RETIRE_INV_BODY="$BODY" \
+life "$TMP_ROOT/stopped.err" FM_RETIRE_INV_BODY="$BODY" \
   FM_RETIRE_INV_LOG="$TMP_ROOT/stopped.log" FM_RETIRE_EP_LOG="$TMP_ROOT/stopped-ep.log" \
   retire --request "$TMP_ROOT/abs-req.json" --out "$TMP_ROOT/stopped-out.json"
 assert_equals 1 "$LIFE_RC" "a stopped session is refused"
@@ -306,7 +359,7 @@ assert_equals "$before" "$(file_sum "$parent/state/ship1.meta")" "a stopped sess
 pass "negative control: fm-lifecycle.sh retire session-stopped exited $LIFE_RC; meta unchanged"
 
 printf '%s\n' 'not-json' > "$BODY"
-life "$TMP_ROOT/badinv.err" FM_LIFECYCLE_INVENTORY_COMMAND="$INV" FM_RETIRE_INV_BODY="$BODY" \
+life "$TMP_ROOT/badinv.err" FM_RETIRE_INV_BODY="$BODY" \
   FM_RETIRE_INV_LOG="$TMP_ROOT/badinv.log" FM_RETIRE_EP_LOG="$TMP_ROOT/badinv-ep.log" \
   retire --request "$TMP_ROOT/abs-req.json" --out "$TMP_ROOT/badinv-out.json"
 assert_equals 2 "$LIFE_RC" "an unreadable inventory is incomplete"
@@ -333,7 +386,7 @@ one_ep "$parent" ship1 ship "$GEN" false "$live_pid" "$live_ident" "$BOOT" \
 write_request "$TMP_ROOT/live-req.json" op-live "$parent" session-absent "$TMP_ROOT/live-eps.json"
 absent_body > "$BODY"
 before=$(file_sum "$parent/state/ship1.meta")
-life "$TMP_ROOT/live.err" FM_LIFECYCLE_INVENTORY_COMMAND="$INV" FM_RETIRE_INV_BODY="$BODY" \
+life "$TMP_ROOT/live.err" FM_RETIRE_INV_BODY="$BODY" \
   FM_RETIRE_INV_LOG="$TMP_ROOT/live.log" FM_RETIRE_EP_LOG="$TMP_ROOT/live-ep.log" \
   retire --request "$TMP_ROOT/live-req.json" --out "$TMP_ROOT/live-out.json"
 assert_equals 1 "$LIFE_RC" "a live process is refused"
@@ -355,10 +408,12 @@ boot_pid=$!
 track "$boot_pid"
 jq '.[0].process.pid = '"$boot_pid"' | .[0].server.pid = '"$boot_pid" \
   "$TMP_ROOT/boot-eps2.json" > "$TMP_ROOT/boot-eps3.json"
+set_meta_runtime "$parent/state/mate1.meta" "$boot_pid" "$GONE_IDENT" wrong-boot \
+  "$boot_pid" "$GONE_IDENT" wrong-boot
 write_request "$TMP_ROOT/boot-req.json" op-boot "$parent" session-absent "$TMP_ROOT/boot-eps3.json"
 absent_body > "$BODY"
 panes_before=$(file_sum "$inst/config/agent-kit/herdr-panes")
-life "$TMP_ROOT/boot.err" FM_LIFECYCLE_INVENTORY_COMMAND="$INV" FM_RETIRE_INV_BODY="$BODY" \
+life "$TMP_ROOT/boot.err" FM_RETIRE_INV_BODY="$BODY" \
   FM_RETIRE_INV_LOG="$TMP_ROOT/boot.log" FM_RETIRE_EP_LOG="$TMP_ROOT/boot-ep.log" \
   retire --request "$TMP_ROOT/boot-req.json" --out "$TMP_ROOT/boot-out.json"
 assert_equals 0 "$LIFE_RC" "a changed boot id retires the recorded actor: $(cat "$TMP_ROOT/boot.err")"
@@ -381,9 +436,11 @@ mkdir -p "$proc/$reuse_pid"
 printf '%s\n' "1 (sleep) S 1 1 1 1 0 0 0 0 0 0 0 0 0 0 20 0 1 0 4242" > "$proc/$reuse_pid/stat"
 one_ep "$parent" mate1 secondmate "$GEN" true "$reuse_pid" "$reuse_ident" "$BOOT" \
   "$DEAD_PID" "$GONE_IDENT" "$BOOT" "$SOCK" pane-1 "" "$SESSION" | jq -s '.' > "$TMP_ROOT/reuse-eps.json"
+set_meta_runtime "$parent/state/mate1.meta" "$reuse_pid" "$reuse_ident" "$BOOT" \
+  "$DEAD_PID" "$GONE_IDENT" "$BOOT"
 write_request "$TMP_ROOT/reuse-req.json" op-reuse "$parent" session-absent "$TMP_ROOT/reuse-eps.json"
 absent_body > "$BODY"
-life "$TMP_ROOT/reuse.err" FM_PROC_ROOT_OVERRIDE="$proc" FM_LIFECYCLE_INVENTORY_COMMAND="$INV" \
+life "$TMP_ROOT/reuse.err" FM_PROC_ROOT_OVERRIDE="$proc" \
   FM_RETIRE_INV_BODY="$BODY" FM_RETIRE_INV_LOG="$TMP_ROOT/reuse.log" FM_RETIRE_EP_LOG="$TMP_ROOT/reuse-ep.log" \
   retire --request "$TMP_ROOT/reuse-req.json" --out "$TMP_ROOT/reuse-out.json"
 assert_equals 0 "$LIFE_RC" "a reused pid retires: $(cat "$TMP_ROOT/reuse.err")"
@@ -404,7 +461,7 @@ absent_body > "$BODY"
 : > "$TMP_ROOT/keep.log"
 head_before=$(git -C "$inst" rev-parse HEAD)
 reg_before=$(file_sum "$parent/data/secondmates.md")
-life "$TMP_ROOT/keep-inspect.err" FM_LIFECYCLE_INVENTORY_COMMAND="$INV" FM_RETIRE_INV_BODY="$BODY" \
+life "$TMP_ROOT/keep-inspect.err" FM_RETIRE_INV_BODY="$BODY" \
   FM_RETIRE_INV_LOG="$TMP_ROOT/keep.log" FM_RETIRE_EP_LOG="$TMP_ROOT/keep-ep.log" \
   inspect --request "$TMP_ROOT/keep-req.json" --out "$TMP_ROOT/keep-inspect.json"
 assert_equals 0 "$LIFE_RC" "inspect of an absent session is ready: $(cat "$TMP_ROOT/keep-inspect.err")"
@@ -413,7 +470,7 @@ assert_equals false "$(json_get .authority)" "ready is not authority to mutate"
 assert_absent "$parent/state/lifecycle-retire" "inspect writes no retirement journal"
 pass "fm-lifecycle.sh inspect ready exited $LIFE_RC; authority false; no journal"
 
-life "$TMP_ROOT/keep.err" FM_LIFECYCLE_INVENTORY_COMMAND="$INV" FM_RETIRE_INV_BODY="$BODY" \
+life "$TMP_ROOT/keep.err" FM_RETIRE_INV_BODY="$BODY" \
   FM_RETIRE_INV_LOG="$TMP_ROOT/keep.log" FM_RETIRE_EP_LOG="$TMP_ROOT/keep-ep.log" \
   retire --request "$TMP_ROOT/keep-req.json" --out "$TMP_ROOT/keep-out.json"
 assert_equals 0 "$LIFE_RC" "session-absent retirement completed: $(cat "$TMP_ROOT/keep.err")"
@@ -430,7 +487,7 @@ assert_equals "$reg_before" "$(file_sum "$parent/data/secondmates.md")" "the reg
 assert_present "$inst/.fm-secondmate-parent" "the parent binding remains"
 retired_sum=$(file_sum "$parent/state/mate1.endpoint-retired")
 lines_before=$(wc -l < "$TMP_ROOT/keep.log" | tr -d ' ')
-life "$TMP_ROOT/keep-replay.err" FM_LIFECYCLE_INVENTORY_COMMAND="$INV" FM_RETIRE_INV_BODY="$BODY" \
+life "$TMP_ROOT/keep-replay.err" FM_RETIRE_INV_BODY="$BODY" \
   FM_RETIRE_INV_LOG="$TMP_ROOT/keep.log" FM_RETIRE_EP_LOG="$TMP_ROOT/keep-ep.log" \
   retire --request "$TMP_ROOT/keep-req.json" --out "$TMP_ROOT/keep-replay.json"
 assert_equals 0 "$LIFE_RC" "replaying a completed request exits 0: $(cat "$TMP_ROOT/keep-replay.err")"
@@ -455,7 +512,7 @@ mate_ep "$parent" mate1 > "$TMP_ROOT/order-mate.json"
 jq -s '.' "$TMP_ROOT/order-mate.json" "$TMP_ROOT/order-ship.json" > "$TMP_ROOT/order-eps.json"
 write_request "$TMP_ROOT/order-req.json" op-order "$parent" session-absent "$TMP_ROOT/order-eps.json"
 absent_body > "$BODY"
-life "$TMP_ROOT/order.err" FM_LIFECYCLE_INVENTORY_COMMAND="$INV" FM_RETIRE_INV_BODY="$BODY" \
+life "$TMP_ROOT/order.err" FM_RETIRE_INV_BODY="$BODY" \
   FM_RETIRE_INV_LOG="$TMP_ROOT/order.log" FM_RETIRE_EP_LOG="$TMP_ROOT/order-ep.log" \
   retire --request "$TMP_ROOT/order-req.json" --out "$TMP_ROOT/order-out.json"
 assert_equals 0 "$LIFE_RC" "child and parent retirement completed: $(cat "$TMP_ROOT/order.err")"
@@ -472,13 +529,13 @@ pass "fm-lifecycle.sh retire child-before-parent exited $LIFE_RC; decoy status u
 
 parent=$(mk_parent blocked-home)
 inst=$(mk_installed "$parent" mate1 blocked-inst)
-printf '%s\n' 'kind=ship' 'spawn_gen=s1.2.3' 'backend=herdr' 'session=labretire1' 'home='"$inst" \
+printf '%s\n' 'kind=ship' 'spawn_gen=s1.2.3' 'backend=herdr' 'session=fm-lab-retire1' 'home='"$inst" \
   > "$inst/state/extra.meta"
 mate_ep "$parent" mate1 | jq -s '.' > "$TMP_ROOT/blocked-eps.json"
 write_request "$TMP_ROOT/blocked-req.json" op-blocked "$parent" session-absent "$TMP_ROOT/blocked-eps.json"
 absent_body > "$BODY"
 before=$(file_sum "$parent/state/mate1.meta")
-life "$TMP_ROOT/blocked.err" FM_LIFECYCLE_INVENTORY_COMMAND="$INV" FM_RETIRE_INV_BODY="$BODY" \
+life "$TMP_ROOT/blocked.err" FM_RETIRE_INV_BODY="$BODY" \
   FM_RETIRE_INV_LOG="$TMP_ROOT/blocked.log" FM_RETIRE_EP_LOG="$TMP_ROOT/blocked-ep.log" \
   retire --request "$TMP_ROOT/blocked-req.json" --out "$TMP_ROOT/blocked-out.json"
 assert_equals 1 "$LIFE_RC" "an undeclared child blocks the parent"
@@ -499,7 +556,7 @@ jq -s '.' "$TMP_ROOT/foreign-mate.json" "$TMP_ROOT/foreign-ship.json" > "$TMP_RO
 write_request "$TMP_ROOT/foreign-req.json" op-foreign "$parent" session-absent "$TMP_ROOT/foreign-eps.json"
 before=$(file_sum "$parent/state/mate1.meta")
 ship_before=$(file_sum "$other/state/ship1.meta")
-life "$TMP_ROOT/foreign.err" FM_LIFECYCLE_INVENTORY_COMMAND="$INV" FM_RETIRE_INV_BODY="$BODY" \
+life "$TMP_ROOT/foreign.err" FM_RETIRE_INV_BODY="$BODY" \
   FM_RETIRE_INV_LOG="$TMP_ROOT/foreign.log" FM_RETIRE_EP_LOG="$TMP_ROOT/foreign-ep.log" \
   retire --request "$TMP_ROOT/foreign-req.json" --out "$TMP_ROOT/foreign-out.json"
 assert_equals 1 "$LIFE_RC" "a child outside the installed home is refused"
@@ -523,7 +580,7 @@ ship_ep "$parent" ship1 | jq -s '.' > "$TMP_ROOT/dirty-eps.json"
 write_request "$TMP_ROOT/dirty-req.json" op-dirty "$parent" session-absent "$TMP_ROOT/dirty-eps.json"
 absent_body > "$BODY"
 before=$(file_sum "$parent/state/ship1.meta")
-life "$TMP_ROOT/dirty.err" FM_LIFECYCLE_INVENTORY_COMMAND="$INV" FM_RETIRE_INV_BODY="$BODY" \
+life "$TMP_ROOT/dirty.err" FM_RETIRE_INV_BODY="$BODY" \
   FM_RETIRE_INV_LOG="$TMP_ROOT/dirty.log" FM_RETIRE_EP_LOG="$TMP_ROOT/dirty-ep.log" \
   retire --request "$TMP_ROOT/dirty-req.json" --out "$TMP_ROOT/dirty-out.json"
 assert_equals 1 "$LIFE_RC" "a dirty worktree is refused"
@@ -540,7 +597,7 @@ mate_ep "$parent" mate1 | jq -s '.' > "$TMP_ROOT/reply-eps.json"
 write_request "$TMP_ROOT/reply-req.json" op-reply "$parent" session-absent "$TMP_ROOT/reply-eps.json"
 absent_body > "$BODY"
 before=$(file_sum "$parent/state/mate1.meta")
-life "$TMP_ROOT/reply.err" FM_LIFECYCLE_INVENTORY_COMMAND="$INV" FM_RETIRE_INV_BODY="$BODY" \
+life "$TMP_ROOT/reply.err" FM_RETIRE_INV_BODY="$BODY" \
   FM_RETIRE_INV_LOG="$TMP_ROOT/reply.log" FM_RETIRE_EP_LOG="$TMP_ROOT/reply-ep.log" \
   retire --request "$TMP_ROOT/reply-req.json" --out "$TMP_ROOT/reply-out.json"
 assert_equals 1 "$LIFE_RC" "an unresolved pending reply is refused"
@@ -558,13 +615,23 @@ session=$SESSION
 window=$SESSION:p1
 mode=no-mistakes
 harness=claude
+herdr_pane_id=pane-1
+herdr_workspace_id=w
+herdr_tab_id=t
+lifecycle_process_pid=$DEAD_PID
+lifecycle_process_identity=$GONE_IDENT
+lifecycle_process_boot_id=$BOOT
+lifecycle_server_socket_path=$SOCK
+lifecycle_server_pid=$DEAD_PID
+lifecycle_server_identity=$GONE_IDENT
+lifecycle_server_boot_id=$BOOT
 EOF
 one_ep "$parent" scout1 scout "$GEN" false "$DEAD_PID" "$GONE_IDENT" "$BOOT" \
   "$DEAD_PID" "$GONE_IDENT" "$BOOT" "$SOCK" pane-1 "" "$SESSION" | jq -s '.' > "$TMP_ROOT/scout-eps.json"
 write_request "$TMP_ROOT/scout-req.json" op-scout "$parent" session-absent "$TMP_ROOT/scout-eps.json"
 absent_body > "$BODY"
 before=$(file_sum "$parent/state/scout1.meta")
-life "$TMP_ROOT/scout.err" FM_LIFECYCLE_INVENTORY_COMMAND="$INV" FM_RETIRE_INV_BODY="$BODY" \
+life "$TMP_ROOT/scout.err" FM_RETIRE_INV_BODY="$BODY" \
   FM_RETIRE_INV_LOG="$TMP_ROOT/scout.log" FM_RETIRE_EP_LOG="$TMP_ROOT/scout-ep.log" \
   retire --request "$TMP_ROOT/scout-req.json" --out "$TMP_ROOT/scout-out.json"
 assert_equals 1 "$LIFE_RC" "a scout with no report is refused"
@@ -584,7 +651,7 @@ ship_ep "$inst" ship1 | jq -s '.' > "$TMP_ROOT/badparent-eps.json"
 write_request "$TMP_ROOT/badparent-req.json" op-badparent "$parent" session-absent "$TMP_ROOT/badparent-eps.json"
 absent_body > "$BODY"
 before=$(file_sum "$inst/state/ship1.meta")
-life "$TMP_ROOT/badparent.err" FM_LIFECYCLE_INVENTORY_COMMAND="$INV" FM_RETIRE_INV_BODY="$BODY" \
+life "$TMP_ROOT/badparent.err" FM_RETIRE_INV_BODY="$BODY" \
   FM_RETIRE_INV_LOG="$TMP_ROOT/badparent.log" FM_RETIRE_EP_LOG="$TMP_ROOT/badparent-ep.log" \
   retire --request "$TMP_ROOT/badparent-req.json" --out "$TMP_ROOT/badparent-out.json"
 assert_equals 1 "$LIFE_RC" "an unreadable parent binding is refused"
@@ -607,7 +674,7 @@ ship_ep "$inst" ship1 | jq -s '.' > "$TMP_ROOT/deliver-eps.json"
 write_request "$TMP_ROOT/deliver-req.json" op-deliver "$parent" session-absent "$TMP_ROOT/deliver-eps.json"
 absent_body > "$BODY"
 before=$(file_sum "$inst/state/ship1.meta")
-life "$TMP_ROOT/deliver.err" FM_LIFECYCLE_INVENTORY_COMMAND="$INV" FM_RETIRE_INV_BODY="$BODY" \
+life "$TMP_ROOT/deliver.err" FM_RETIRE_INV_BODY="$BODY" \
   FM_RETIRE_INV_LOG="$TMP_ROOT/deliver.log" FM_RETIRE_EP_LOG="$TMP_ROOT/deliver-ep.log" \
   retire --request "$TMP_ROOT/deliver-req.json" --out "$TMP_ROOT/deliver-out.json"
 assert_equals 2 "$LIFE_RC" "a failed parent delivery is incomplete: $(cat "$TMP_ROOT/deliver.err")"
@@ -624,8 +691,9 @@ write_request "$TMP_ROOT/lock-req.json" op-lock "$parent" session-absent "$TMP_R
 absent_body > "$BODY"
 : > "$TMP_ROOT/lock.log"
 before=$(file_sum "$parent/state/mate1.meta")
-env -u FM_HOME -u STATE -u FM_STATE_OVERRIDE HOME="$USER_HOME" \
-  FM_LIFECYCLE_INVENTORY_COMMAND="$INV" FM_RETIRE_INV_BODY="$BODY" \
+env -u FM_HOME -u STATE -u FM_STATE_OVERRIDE -u FM_LIFECYCLE_INVENTORY_COMMAND -u FM_LIFECYCLE_ENDPOINT_COMMAND \
+  HOME="$USER_HOME" PATH="$FAKEBIN:$PATH" \
+  FM_RETIRE_INV_BODY="$BODY" \
   FM_RETIRE_INV_LOG="$TMP_ROOT/lock.log" FM_RETIRE_EP_LOG="$TMP_ROOT/lock-ep.log" \
   FM_RETIRE_INV_MODE=sleep FM_RETIRE_SLEEP_MARK="$TMP_ROOT/lock-mark" \
   "$ROOT/bin/fm-lifecycle.sh" retire --request "$TMP_ROOT/lock-req.json" --out "$TMP_ROOT/lock-out.json" \
@@ -638,7 +706,7 @@ while [ "$i" -lt 50 ] && [ ! -s "$TMP_ROOT/lock-mark" ]; do
   i=$((i + 1))
 done
 [ -s "$TMP_ROOT/lock-mark" ] || fail "the retirement holding the lock did not reach its inventory"
-life "$TMP_ROOT/lock2.err" FM_LIFECYCLE_INVENTORY_COMMAND="$INV" FM_RETIRE_INV_BODY="$BODY" \
+life "$TMP_ROOT/lock2.err" FM_RETIRE_INV_BODY="$BODY" \
   FM_RETIRE_INV_LOG="$TMP_ROOT/lock2.log" FM_RETIRE_EP_LOG="$TMP_ROOT/lock2-ep.log" \
   retire --request "$TMP_ROOT/lock-req.json" --out "$TMP_ROOT/lock2-out.json"
 assert_equals 1 "$LIFE_RC" "a second retirement is refused while the lock is held"
@@ -654,14 +722,14 @@ mate_ep "$parent" mate1 | jq -s '.' > "$TMP_ROOT/swap-eps.json"
 write_request "$TMP_ROOT/swap-req.json" op-swap "$parent" session-absent "$TMP_ROOT/swap-eps.json"
 absent_body > "$BODY"
 life "$TMP_ROOT/swap-fault.err" FM_LIFECYCLE_FAULT_AT=journal-proof \
-  FM_LIFECYCLE_INVENTORY_COMMAND="$INV" FM_RETIRE_INV_BODY="$BODY" \
+  FM_RETIRE_INV_BODY="$BODY" \
   FM_RETIRE_INV_LOG="$TMP_ROOT/swap.log" FM_RETIRE_EP_LOG="$TMP_ROOT/swap-ep.log" \
   retire --request "$TMP_ROOT/swap-req.json" --out "$TMP_ROOT/swap-fault-out.json"
 assert_equals 86 "$LIFE_RC" "a fault before the proof returns 86"
 assert_absent "$parent/state/lifecycle-retire/op-swap/result.json" "the fault writes no result"
 assert_present "$parent/state/lifecycle-retire/op-swap/request.json" "the request was recorded before the fault"
 perl -pi -e 's/^spawn_gen=s1\.2\.3$/spawn_gen=s9.9.9/' "$parent/state/mate1.meta"
-life "$TMP_ROOT/swap.err" FM_LIFECYCLE_INVENTORY_COMMAND="$INV" FM_RETIRE_INV_BODY="$BODY" \
+life "$TMP_ROOT/swap.err" FM_RETIRE_INV_BODY="$BODY" \
   FM_RETIRE_INV_LOG="$TMP_ROOT/swap2.log" FM_RETIRE_EP_LOG="$TMP_ROOT/swap2-ep.log" \
   retire --request "$TMP_ROOT/swap-req.json" --out "$TMP_ROOT/swap-out.json"
 assert_equals 1 "$LIFE_RC" "a generation changed after the request is refused"
@@ -676,7 +744,7 @@ write_request "$TMP_ROOT/recreate-req.json" op-recreate "$parent" session-absent
 : > "$TMP_ROOT/recreate.count"
 before=$(file_sum "$parent/state/mate1.meta")
 life "$TMP_ROOT/recreate.err" FM_RETIRE_INV_MODE=counter FM_RETIRE_INV_COUNT="$TMP_ROOT/recreate.count" \
-  FM_LIFECYCLE_INVENTORY_COMMAND="$INV" FM_RETIRE_INV_BODY="$BODY" \
+  FM_RETIRE_INV_BODY="$BODY" \
   FM_RETIRE_INV_LOG="$TMP_ROOT/recreate.log" FM_RETIRE_EP_LOG="$TMP_ROOT/recreate-ep.log" \
   retire --request "$TMP_ROOT/recreate-req.json" --out "$TMP_ROOT/recreate-out.json"
 assert_equals 1 "$LIFE_RC" "a session that reappears before the member is refused: $(cat "$TMP_ROOT/recreate.err")"
@@ -691,7 +759,7 @@ mate_ep "$parent" mate1 | jq -s '.' > "$TMP_ROOT/fault-eps.json"
 write_request "$TMP_ROOT/fault-req.json" op-fault "$parent" session-absent "$TMP_ROOT/fault-eps.json"
 absent_body > "$BODY"
 life "$TMP_ROOT/fault-req.err" FM_LIFECYCLE_FAULT_AT=journal-request \
-  FM_LIFECYCLE_INVENTORY_COMMAND="$INV" FM_RETIRE_INV_BODY="$BODY" \
+  FM_RETIRE_INV_BODY="$BODY" \
   FM_RETIRE_INV_LOG="$TMP_ROOT/fault.log" FM_RETIRE_EP_LOG="$TMP_ROOT/fault-ep.log" \
   retire --request "$TMP_ROOT/fault-req.json" --out "$TMP_ROOT/fault-out.json"
 assert_equals 86 "$LIFE_RC" "a fault before the journal returns 86"
@@ -705,7 +773,7 @@ mate_ep "$parent" mate1 | jq -s '.' > "$TMP_ROOT/metafault-eps.json"
 write_request "$TMP_ROOT/metafault-req.json" op-meta "$parent" session-absent "$TMP_ROOT/metafault-eps.json"
 absent_body > "$BODY"
 life "$TMP_ROOT/metafault.err" FM_LIFECYCLE_FAULT_AT=metadata-transition \
-  FM_LIFECYCLE_INVENTORY_COMMAND="$INV" FM_RETIRE_INV_BODY="$BODY" \
+  FM_RETIRE_INV_BODY="$BODY" \
   FM_RETIRE_INV_LOG="$TMP_ROOT/metafault.log" FM_RETIRE_EP_LOG="$TMP_ROOT/metafault-ep.log" \
   retire --request "$TMP_ROOT/metafault-req.json" --out "$TMP_ROOT/metafault-out.json"
 assert_equals 86 "$LIFE_RC" "a fault at metadata transition returns 86"
@@ -723,7 +791,7 @@ jq -s '.' "$TMP_ROOT/partial-mate.json" "$TMP_ROOT/partial-ship.json" > "$TMP_RO
 write_request "$TMP_ROOT/partial-req.json" op-partial "$parent" session-absent "$TMP_ROOT/partial-eps.json"
 absent_body > "$BODY"
 life "$TMP_ROOT/partial-fault.err" FM_LIFECYCLE_FAULT_AT=outcome-handoff \
-  FM_LIFECYCLE_INVENTORY_COMMAND="$INV" FM_RETIRE_INV_BODY="$BODY" \
+  FM_RETIRE_INV_BODY="$BODY" \
   FM_RETIRE_INV_LOG="$TMP_ROOT/partial.log" FM_RETIRE_EP_LOG="$TMP_ROOT/partial-ep.log" \
   retire --request "$TMP_ROOT/partial-req.json" --out "$TMP_ROOT/partial-fault-out.json"
 assert_equals 86 "$LIFE_RC" "a fault after one member returns 86: $(cat "$TMP_ROOT/partial-fault.err")"
@@ -732,7 +800,7 @@ assert_present "$parent/state/ship1.meta" "the ship record remains for retry"
 assert_present "$inst" "the completed secondmate home stays"
 assert_absent "$parent/state/lifecycle-retire/op-partial/result.json" "the partial fault writes no final result"
 retired_sum=$(file_sum "$parent/state/mate1.endpoint-retired")
-life "$TMP_ROOT/partial.err" FM_LIFECYCLE_INVENTORY_COMMAND="$INV" FM_RETIRE_INV_BODY="$BODY" \
+life "$TMP_ROOT/partial.err" FM_RETIRE_INV_BODY="$BODY" \
   FM_RETIRE_INV_LOG="$TMP_ROOT/partial2.log" FM_RETIRE_EP_LOG="$TMP_ROOT/partial2-ep.log" \
   retire --request "$TMP_ROOT/partial-req.json" --out "$TMP_ROOT/partial-out.json"
 assert_equals 0 "$LIFE_RC" "retry after the partial fault completes: $(cat "$TMP_ROOT/partial.err")"
@@ -751,11 +819,13 @@ server_ident=$(bash -c '. "$1/bin/fm-nm-run-lib.sh"; . "$1/bin/fm-lifecycle-lib.
   || fail "could not read the server identity"
 one_ep "$parent" mate1 secondmate "$GEN" true "$DEAD_PID_2" "$GONE_IDENT" "$BOOT" \
   "$server_pid" "$server_ident" "$BOOT" "$SOCK" pane-missing "" "$SESSION" | jq -s '.' > "$TMP_ROOT/pane-eps.json"
+set_meta_runtime "$parent/state/mate1.meta" "$DEAD_PID_2" "$GONE_IDENT" "$BOOT" \
+  "$server_pid" "$server_ident" "$BOOT" pane-missing
 write_request "$TMP_ROOT/pane-req.json" op-pane "$parent" endpoint-absent "$TMP_ROOT/pane-eps.json"
 present_body > "$BODY"
 : > "$TMP_ROOT/pane-ep.log"
-life "$TMP_ROOT/pane.err" FM_LIFECYCLE_INVENTORY_COMMAND="$INV" \
-  FM_LIFECYCLE_ENDPOINT_COMMAND="$EP" FM_RETIRE_INV_BODY="$BODY" \
+life "$TMP_ROOT/pane.err" \
+  FM_RETIRE_INV_BODY="$BODY" \
   FM_RETIRE_INV_LOG="$TMP_ROOT/pane.log" FM_RETIRE_EP_LOG="$TMP_ROOT/pane-ep.log" \
   retire --request "$TMP_ROOT/pane-req.json" --out "$TMP_ROOT/pane-out.json"
 assert_equals 0 "$LIFE_RC" "endpoint-absent retirement completed: $(cat "$TMP_ROOT/pane.err")"
@@ -772,7 +842,7 @@ ship_ep "$parent" ship1 | jq -s '.' > "$TMP_ROOT/ident-eps.json"
 write_request "$TMP_ROOT/ident-req.json" op-ident "$parent" session-absent "$TMP_ROOT/ident-eps.json"
 absent_body > "$BODY"
 before=$(file_sum "$parent/state/ship1.meta")
-life "$TMP_ROOT/ident.err" FM_LIFECYCLE_INVENTORY_COMMAND="$INV" FM_RETIRE_INV_BODY="$BODY" \
+life "$TMP_ROOT/ident.err" FM_RETIRE_INV_BODY="$BODY" \
   FM_RETIRE_INV_LOG="$TMP_ROOT/ident.log" FM_RETIRE_EP_LOG="$TMP_ROOT/ident-ep.log" \
   retire --request "$TMP_ROOT/ident-req.json" --out "$TMP_ROOT/ident-out.json"
 assert_equals 1 "$LIFE_RC" "a different spawn generation is refused"
@@ -781,7 +851,7 @@ assert_equals "$before" "$(file_sum "$parent/state/ship1.meta")" "a generation m
 pass "negative control: fm-lifecycle.sh retire generation-mismatch exited $LIFE_RC; meta unchanged"
 
 ln "$parent/state/ship1.meta" "$parent/state/ship1.meta.link"
-life "$TMP_ROOT/hardlink.err" FM_LIFECYCLE_INVENTORY_COMMAND="$INV" FM_RETIRE_INV_BODY="$BODY" \
+life "$TMP_ROOT/hardlink.err" FM_RETIRE_INV_BODY="$BODY" \
   FM_RETIRE_INV_LOG="$TMP_ROOT/hardlink.log" FM_RETIRE_EP_LOG="$TMP_ROOT/hardlink-ep.log" \
   retire --request "$TMP_ROOT/ident-req.json" --out "$TMP_ROOT/hardlink-out.json"
 assert_equals 1 "$LIFE_RC" "a hardlinked task record is refused"
@@ -798,7 +868,7 @@ mv "$parent/state/ship1.meta" "$parent/state/ship1.meta.real"
 ln -s ship1.meta.real "$parent/state/ship1.meta"
 ship_ep "$parent" ship1 | jq -s '.' > "$TMP_ROOT/link-eps.json"
 write_request "$TMP_ROOT/link-req.json" op-link "$parent" session-absent "$TMP_ROOT/link-eps.json"
-life "$TMP_ROOT/link.err" FM_LIFECYCLE_INVENTORY_COMMAND="$INV" FM_RETIRE_INV_BODY="$BODY" \
+life "$TMP_ROOT/link.err" FM_RETIRE_INV_BODY="$BODY" \
   FM_RETIRE_INV_LOG="$TMP_ROOT/link.log" FM_RETIRE_EP_LOG="$TMP_ROOT/link-ep.log" \
   retire --request "$TMP_ROOT/link-req.json" --out "$TMP_ROOT/link-out.json"
 assert_equals 1 "$LIFE_RC" "a symlinked task record is refused"
@@ -938,7 +1008,7 @@ env HOME="$USER_HOME" FM_HOME="$parent" FM_DATA_OVERRIDE="$parent/data" \
 ship_ep "$parent" shiphold | jq -s '.' > "$TMP_ROOT/hold-eps.json"
 write_request "$TMP_ROOT/hold-req.json" op-hold "$parent" session-absent "$TMP_ROOT/hold-eps.json"
 absent_body > "$BODY"
-life "$TMP_ROOT/hold.err" FM_LIFECYCLE_INVENTORY_COMMAND="$INV" FM_RETIRE_INV_BODY="$BODY" \
+life "$TMP_ROOT/hold.err" FM_RETIRE_INV_BODY="$BODY" \
   FM_RETIRE_INV_LOG="$TMP_ROOT/hold.log" FM_RETIRE_EP_LOG="$TMP_ROOT/hold-ep.log" \
   retire --request "$TMP_ROOT/hold-req.json" --out "$TMP_ROOT/hold-out.json"
 assert_equals 0 "$LIFE_RC" "a captain-held ship retires its endpoint: $(cat "$TMP_ROOT/hold.err")"
@@ -957,7 +1027,7 @@ ship_ep "$parent" ship1 | jq -s '.' > "$TMP_ROOT/gitblind-eps.json"
 write_request "$TMP_ROOT/gitblind-req.json" op-gitblind "$parent" session-absent "$TMP_ROOT/gitblind-eps.json"
 absent_body > "$BODY"
 before=$(file_sum "$parent/state/ship1.meta")
-life "$TMP_ROOT/gitblind.err" FM_LIFECYCLE_INVENTORY_COMMAND="$INV" FM_RETIRE_INV_BODY="$BODY" \
+life "$TMP_ROOT/gitblind.err" FM_RETIRE_INV_BODY="$BODY" \
   FM_RETIRE_INV_LOG="$TMP_ROOT/gitblind.log" FM_RETIRE_EP_LOG="$TMP_ROOT/gitblind-ep.log" \
   retire --request "$TMP_ROOT/gitblind-req.json" --out "$TMP_ROOT/gitblind-out.json"
 assert_equals 1 "$LIFE_RC" "an unreadable git worktree is refused: $(cat "$TMP_ROOT/gitblind.err")"
@@ -980,7 +1050,7 @@ write_request "$TMP_ROOT/unknown-req.json" op-unknown "$parent" session-absent "
 absent_body > "$BODY"
 before=$(file_sum "$parent/state/mate1.meta")
 life "$TMP_ROOT/unknown.err" FM_PROC_ROOT_OVERRIDE="$unknown_proc" \
-  FM_LIFECYCLE_INVENTORY_COMMAND="$INV" FM_RETIRE_INV_BODY="$BODY" \
+  FM_RETIRE_INV_BODY="$BODY" \
   FM_RETIRE_INV_LOG="$TMP_ROOT/unknown.log" FM_RETIRE_EP_LOG="$TMP_ROOT/unknown-ep.log" \
   retire --request "$TMP_ROOT/unknown-req.json" --out "$TMP_ROOT/unknown-out.json"
 assert_equals 1 "$LIFE_RC" "an unreadable process identity is refused: $(cat "$TMP_ROOT/unknown.err")"
@@ -999,7 +1069,7 @@ mkdir -p "$parent/state/lifecycle-retire/op-forged"
 printf '%s\n' '{"forged":true,"sessions":[]}' > "$parent/state/lifecycle-retire/op-forged/proof.json"
 before=$(file_sum "$parent/state/mate1.meta")
 : > "$TMP_ROOT/forged.log"
-life "$TMP_ROOT/forged.err" FM_LIFECYCLE_INVENTORY_COMMAND="$INV" FM_RETIRE_INV_BODY="$BODY" \
+life "$TMP_ROOT/forged.err" FM_RETIRE_INV_BODY="$BODY" \
   FM_RETIRE_INV_LOG="$TMP_ROOT/forged.log" FM_RETIRE_EP_LOG="$TMP_ROOT/forged-ep.log" \
   retire --request "$TMP_ROOT/forged-req.json" --out "$TMP_ROOT/forged-out.json"
 assert_equals 1 "$LIFE_RC" "a forged proof does not retire a present session: $(cat "$TMP_ROOT/forged.err")"
@@ -1017,7 +1087,7 @@ absent_body > "$BODY"
 mkdir -p "$parent/state/lifecycle-retire"
 printf 'x\n' > "$parent/state/lifecycle-retire/op-corrupt"
 before=$(file_sum "$parent/state/mate1.meta")
-life "$TMP_ROOT/corrupt.err" FM_LIFECYCLE_INVENTORY_COMMAND="$INV" FM_RETIRE_INV_BODY="$BODY" \
+life "$TMP_ROOT/corrupt.err" FM_RETIRE_INV_BODY="$BODY" \
   FM_RETIRE_INV_LOG="$TMP_ROOT/corrupt.log" FM_RETIRE_EP_LOG="$TMP_ROOT/corrupt-ep.log" \
   retire --request "$TMP_ROOT/corrupt-req.json" --out "$TMP_ROOT/corrupt-out.json"
 assert_equals 1 "$LIFE_RC" "a corrupt journal is refused: $(cat "$TMP_ROOT/corrupt.err")"
@@ -1034,7 +1104,7 @@ absent_body > "$BODY"
 mkdir -p "$parent/state/lifecycle-retire/op-foreignj"
 printf 'extra\n' > "$parent/state/lifecycle-retire/op-foreignj/extra.txt"
 before=$(file_sum "$parent/state/mate1.meta")
-life "$TMP_ROOT/foreignj.err" FM_LIFECYCLE_INVENTORY_COMMAND="$INV" FM_RETIRE_INV_BODY="$BODY" \
+life "$TMP_ROOT/foreignj.err" FM_RETIRE_INV_BODY="$BODY" \
   FM_RETIRE_INV_LOG="$TMP_ROOT/foreignj.log" FM_RETIRE_EP_LOG="$TMP_ROOT/foreignj-ep.log" \
   retire --request "$TMP_ROOT/foreignj-req.json" --out "$TMP_ROOT/foreignj-out.json"
 assert_equals 1 "$LIFE_RC" "a foreign journal file is refused: $(cat "$TMP_ROOT/foreignj.err")"
@@ -1048,7 +1118,7 @@ inst=$(mk_installed "$parent" mate1 nextgen-inst)
 mate_ep "$parent" mate1 | jq -s '.' > "$TMP_ROOT/nextgen-eps.json"
 write_request "$TMP_ROOT/nextgen-req.json" op-nextgen "$parent" session-absent "$TMP_ROOT/nextgen-eps.json"
 absent_body > "$BODY"
-life "$TMP_ROOT/nextgen.err" FM_LIFECYCLE_INVENTORY_COMMAND="$INV" FM_RETIRE_INV_BODY="$BODY" \
+life "$TMP_ROOT/nextgen.err" FM_RETIRE_INV_BODY="$BODY" \
   FM_RETIRE_INV_LOG="$TMP_ROOT/nextgen.log" FM_RETIRE_EP_LOG="$TMP_ROOT/nextgen-ep.log" \
   retire --request "$TMP_ROOT/nextgen-req.json" --out "$TMP_ROOT/nextgen-out.json"
 assert_equals 0 "$LIFE_RC" "the first generation retires: $(cat "$TMP_ROOT/nextgen.err")"
@@ -1061,7 +1131,7 @@ window=$SESSION:p1
 home=$inst
 harness=claude
 EOF
-life "$TMP_ROOT/nextgen2.err" FM_LIFECYCLE_INVENTORY_COMMAND="$INV" FM_RETIRE_INV_BODY="$BODY" \
+life "$TMP_ROOT/nextgen2.err" FM_RETIRE_INV_BODY="$BODY" \
   FM_RETIRE_INV_LOG="$TMP_ROOT/nextgen2.log" FM_RETIRE_EP_LOG="$TMP_ROOT/nextgen2-ep.log" \
   retire --request "$TMP_ROOT/nextgen-req.json" --out "$TMP_ROOT/nextgen2-out.json"
 assert_equals 0 "$LIFE_RC" "the old request does not fail closed on the new generation: $(cat "$TMP_ROOT/nextgen2.err")"

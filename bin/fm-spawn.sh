@@ -1713,6 +1713,19 @@ if [ "$RELAUNCH" -eq 0 ]; then
     fm_backend_orca_runtime_check || exit 1
   fi
 fi
+if [ "$BACKEND" = herdr ]; then
+  [ -r "$SCRIPT_DIR/fm-lifecycle-lib.sh" ] || {
+    echo "error: Herdr spawn requires fm-lifecycle-lib.sh" >&2
+    exit 1
+  }
+  unset FM_LIFECYCLE_API_VERSION
+  . "$SCRIPT_DIR/fm-nm-run-lib.sh"
+  . "$SCRIPT_DIR/fm-lifecycle-lib.sh"
+  [ "${FM_LIFECYCLE_API_VERSION:-}" = 1 ] || {
+    echo "error: Herdr spawn requires lifecycle API version 1" >&2
+    exit 1
+  }
+fi
 SPAWN_TASK_LOCK="$STATE/.spawn-$ID.lock"
 if ! fm_lock_try_acquire "$SPAWN_TASK_LOCK"; then
   echo "error: another spawn is already creating task $ID" >&2
@@ -1759,6 +1772,19 @@ if [ "$RELAUNCH" -eq 1 ]; then
   RELAUNCH_TARGET=$FM_BACKEND_VALIDATED_TARGET
   fm_backend_validate_spawn "$BACKEND" || exit 1
   fm_backend_source "$BACKEND" || exit 1
+  if [ "$BACKEND" = herdr ]; then
+    [ -r "$SCRIPT_DIR/fm-lifecycle-lib.sh" ] || {
+      echo "error: Herdr spawn requires fm-lifecycle-lib.sh" >&2
+      exit 1
+    }
+    unset FM_LIFECYCLE_API_VERSION
+    . "$SCRIPT_DIR/fm-nm-run-lib.sh"
+    . "$SCRIPT_DIR/fm-lifecycle-lib.sh"
+    [ "${FM_LIFECYCLE_API_VERSION:-}" = 1 ] || {
+      echo "error: Herdr spawn requires lifecycle API version 1" >&2
+      exit 1
+    }
+  fi
   # A relaunch must prove the previous agent is gone before it launches
   # another into the same endpoint. Orca Droid has a generation-bound
   # SessionEnd hook; other Orca harnesses retain the generic refusal.
@@ -5161,6 +5187,10 @@ fi
 META_WINDOW=$T
 [ "$BACKEND" = orca ] && META_WINDOW=$W
 SPAWN_GEN="s$(date +%s).${BASHPID:-$$}.$RANDOM"
+LIFECYCLE_HERDR_IDENTITY=
+if [ "$BACKEND" = herdr ]; then
+  LIFECYCLE_HERDR_IDENTITY=$(fm_lifecycle_retire_capture_herdr_identity "$HERDR_SES" "$HERDR_PANE_ID" 2>/dev/null) || LIFECYCLE_HERDR_IDENTITY=
+fi
 SPAWN_META_PATH="$STATE/$ID.meta"
 if [ "$SPAWN_META_LOCK_HELD" != 1 ]; then
   SPAWN_META_LOCK=$(fm_meta_lock_path "$STATE/$ID.meta") || exit 1
@@ -5177,7 +5207,7 @@ SPAWN_META_PATH=$SPAWN_META_TMP
 preserve_relaunch_meta() {
   awk -F= '
     BEGIN {
-      split("window endpoint_task_id worktree project harness kind mode yolo branch tasktmp base_branch model effort account account_provider busy_gen spawn_gen traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id home projects control_relaunch_tx", keys, " ")
+      split("window endpoint_task_id worktree project harness kind mode yolo branch tasktmp base_branch model effort account account_provider busy_gen spawn_gen traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id lifecycle_process_pid lifecycle_process_identity lifecycle_process_boot_id lifecycle_server_socket_path lifecycle_server_pid lifecycle_server_identity lifecycle_server_boot_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id home projects control_relaunch_tx", keys, " ")
       for (i in keys) owned[keys[i]] = 1
     }
     !($1 in owned)
@@ -5213,6 +5243,7 @@ preserve_relaunch_meta() {
     echo "herdr_workspace_id=$HERDR_WORKSPACE_ID"
     echo "herdr_tab_id=$HERDR_TAB_ID"
     echo "herdr_pane_id=$HERDR_PANE_ID"
+    [ -z "$LIFECYCLE_HERDR_IDENTITY" ] || printf '%s\n' "$LIFECYCLE_HERDR_IDENTITY"
   fi
   if [ "$BACKEND" = zellij ]; then
     echo "zellij_session=$ZELLIJ_SES"

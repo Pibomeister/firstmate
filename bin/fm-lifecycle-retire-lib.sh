@@ -41,15 +41,14 @@
 # task record, a remote parent route, or an undeclared child refuses. Ambient
 # FM_HOME, FM_ROOT, and the working directory do not identify a home.
 #
-# Proof. The inspector command is FM_LIFECYCLE_INVENTORY_COMMAND, or
-# bin/fm-lifecycle-herdr-inventory.sh. It is executed as that program plus the
+# Proof. The inspector command is bin/fm-lifecycle-herdr-inventory.sh. It is executed as that program plus the
 # session name. session-absent accepts only exit 0 and a JSON object whose
 # sessions array omits that name, plus every recorded process gone. It never
 # calls the endpoint command, server-ensure, pane get, pane close, or workspace
 # close. endpoint-absent additionally requires the named session running with
 # the recorded socket path and the recorded server pid, start identity, and
-# boot id still alive, then FM_LIFECYCLE_ENDPOINT_COMMAND (or
-# bin/fm-lifecycle-herdr-endpoint.sh) reporting error.code pane_not_found, and
+# boot id still alive, then bin/fm-lifecycle-herdr-endpoint.sh
+# reporting error.code pane_not_found, and
 # the endpoint process gone. A stopped session, a recreated name, a live
 # matching process, an unreadable process, or an unreadable boot id refuses.
 # A different boot id means the original process is gone. A live pid whose
@@ -157,6 +156,32 @@ fm_lifecycle_retire_boot_id() {
   raw=$(printf '%s\n' "$raw" | sed -n 's/.*sec = \([0-9][0-9]*\).*/\1/p')
   [ -n "$raw" ] || return 1
   printf '%s\n' "$raw"
+}
+
+fm_lifecycle_retire_capture_herdr_identity() {
+  local session=$1 pane=$2 inventory info socket process_pid server_pid boot process_identity server_identity
+  inventory=$($FM_LIFECYCLE_LIB_DIR/fm-lifecycle-herdr-inventory.sh "$session") || return 1
+  socket=$(printf '%s' "$inventory" | jq -er --arg session "$session" '
+    [.sessions[] | select(.name == $session and .running == true and (.socket_path | type) == "string")]
+    | if length == 1 then .[0].socket_path | select(length > 0) else empty end') || return 1
+  info=$("$FM_LIFECYCLE_LIB_DIR/fm-herdr-lab.sh" run "$session" pane process-info --pane "$pane") || return 1
+  process_pid=$(printf '%s' "$info" | jq -er --arg pane "$pane" '
+    .result | select(.type == "pane_process_info") | .process_info
+    | select(.pane_id == $pane) | .shell_pid
+    | select(type == "number" and . > 1 and floor == .)') || return 1
+  command -v lsof >/dev/null 2>&1 || return 1
+  server_pid=$(lsof -nP -t -U "$socket") || return 1
+  case "$server_pid" in ''|*[!0-9]*) return 1 ;; esac
+  boot=$(fm_lifecycle_retire_boot_id) || return 1
+  process_identity=$(fm_lifecycle_process_identity "$process_pid") || return 1
+  server_identity=$(fm_lifecycle_process_identity "$server_pid") || return 1
+  printf 'lifecycle_process_pid=%s\n' "$process_pid"
+  printf 'lifecycle_process_identity=%s\n' "$process_identity"
+  printf 'lifecycle_process_boot_id=%s\n' "$boot"
+  printf 'lifecycle_server_socket_path=%s\n' "$socket"
+  printf 'lifecycle_server_pid=%s\n' "$server_pid"
+  printf 'lifecycle_server_identity=%s\n' "$server_identity"
+  printf 'lifecycle_server_boot_id=%s\n' "$boot"
 }
 
 fm_lifecycle_retire_nlink() {
@@ -633,7 +658,7 @@ fm_lifecycle_retire_require_gone() {
 fm_lifecycle_retire_prove() {
   local tmp=$FM_LIFECYCLE_RETIRE_TMP cmd session=$FM_LIFECYCLE_RETIRE_SESSION rc=0 now digest
   local count running socket want_socket line index pid identity boot state reason pane_out epcmd
-  cmd=${FM_LIFECYCLE_INVENTORY_COMMAND:-$FM_LIFECYCLE_LIB_DIR/fm-lifecycle-herdr-inventory.sh}
+  cmd=$FM_LIFECYCLE_LIB_DIR/fm-lifecycle-herdr-inventory.sh
   fm_lifecycle_retire_command_ok "$cmd" || {
     fm_lifecycle_retire_reason bad-request "" "inventory command is not one executable path"
     return 1
@@ -702,7 +727,7 @@ fm_lifecycle_retire_prove() {
       fm_lifecycle_retire_require_gone "$pid" "$identity" "$boot" "$(cat "$tmp/id.$index")" || return 1
       continue
     fi
-    epcmd=${FM_LIFECYCLE_ENDPOINT_COMMAND:-$FM_LIFECYCLE_LIB_DIR/fm-lifecycle-herdr-endpoint.sh}
+    epcmd=$FM_LIFECYCLE_LIB_DIR/fm-lifecycle-herdr-endpoint.sh
     fm_lifecycle_retire_command_ok "$epcmd" || {
       fm_lifecycle_retire_reason bad-request "" "endpoint command is not one executable path"
       return 1
@@ -719,6 +744,13 @@ fm_lifecycle_retire_prove() {
     fi
   done
   return 0
+}
+
+fm_lifecycle_retire_meta_match() {
+  local meta=$1 endpoint=$2 field=$3 key=$4 expected actual
+  expected=$(jq -r "$field" "$endpoint") || return 1
+  actual=$(fm_meta_get "$meta" "$key")
+  [ -n "$actual" ] && [ "$actual" = "$expected" ]
 }
 
 fm_lifecycle_retire_meta_identity() {
@@ -768,6 +800,26 @@ fm_lifecycle_retire_meta_identity() {
     fm_lifecycle_retire_reason identity-mismatch "$id" "session does not match the task record"
     return 1
   }
+  local field key
+  while IFS=' ' read -r field key; do
+    [ -n "$field" ] || continue
+    if ! fm_lifecycle_retire_meta_match "$meta" "$tmp/ep.$index" "$field" "$key"; then
+      fm_lifecycle_retire_reason identity-mismatch "$id" "$key is unavailable or does not match the task record"
+      return 1
+    fi
+  done <<'FIELDS'
+.window window
+.pane_id herdr_pane_id
+.workspace_id herdr_workspace_id
+.tab_id herdr_tab_id
+.process.pid lifecycle_process_pid
+.process.identity lifecycle_process_identity
+.process.boot_id lifecycle_process_boot_id
+.server.socket_path lifecycle_server_socket_path
+.server.pid lifecycle_server_pid
+.server.identity lifecycle_server_identity
+.server.boot_id lifecycle_server_boot_id
+FIELDS
   if [ -n "$(fm_meta_get "$meta" endpoint_task_id)" ] && [ "$(fm_meta_get "$meta" endpoint_task_id)" != "$id" ]; then
     fm_lifecycle_retire_reason identity-mismatch "$id" "endpoint_task_id does not match"
     return 1
