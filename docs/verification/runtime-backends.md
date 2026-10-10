@@ -2761,7 +2761,7 @@ The probe uses `bin/fm-timeout-lib.sh` (60 seconds by default, `FM_DROID_MODEL_P
 Timeout and a non-zero tool-list exit both refuse the spawn; the requested id is never replaced.
 Droid is the worker tool, while model and effort are distinct axes, and Factory-managed or custom/BYOK billing is not inferred from the model family or from unrelated native CLI quotas.
 The settings replace the task's `statusLine` with `printf firstmate`, leave the operator's `hooksDisabled` policy intact, select Auto (High), and register `UserPromptSubmit`, `Stop`, `Notification`, and `SessionEnd` hooks.
-Spawn answers the fresh-worktree trust dialog only when `Trust this folder` is visibly selected and requires the launch prompt hook to acknowledge the brief.
+Spawn answers the fresh-worktree trust dialog only when `Trust this folder` is visibly selected, resends Enter while that complete selected dialog remains, and requires the launch prompt hook to acknowledge the brief.
 Droid dispatch is limited to tmux and Orca until the composer and lifecycle are verified live on other backends.
 
 The tmux composer proof uses the live `droid` process identity, the bounded box, a `[⏱ …]` timer row with a nonempty trailing integration indicator after `|`, and the task-owned status row.
