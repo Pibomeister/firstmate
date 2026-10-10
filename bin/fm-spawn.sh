@@ -5025,10 +5025,12 @@ agy_spawn_fail() {  # <detail>
 # Only a complete live viewport with Trust selected authorizes Enter; a
 # swallowed startup key is retried while that complete selected dialog remains.
 # FM_DROID_TRUST_ENTER_MAX, when a positive integer, caps those wait-loop
-# Enters (unset keeps the retry-while-visible contract).
-# FM_DROID_TRUST_PROBE_DIR writes the visible pane before the Enter that
-# spends that budget and at +0.3s and +2s after it; FM_DROID_TRUST_PROBE_STOP=1
-# then returns without claiming brief delivery.
+# keys (unset keeps the retry-while-visible contract).
+# FM_DROID_TRUST_KEY selects the wait-loop key: Enter (default) or 1.
+# FM_DROID_TRUST_PROBE_DIR writes the visible pane before the key that
+# spends that budget and at +0.3s and +2s after it, plus capture-route.txt
+# from the viewport reader and send-route.txt from the key sender;
+# FM_DROID_TRUST_PROBE_STOP=1 then returns without claiming brief delivery.
 # The initial prompt is proved delivered by Droid's own UserPromptSubmit hook
 # replacing the fm-spawn seed.
 droid_trust_dialog_is_negative() { # <plain-pane-capture>
@@ -5048,9 +5050,24 @@ droid_capture_visible() {
   case "$bound" in ''|*[!0-9]*|0*) bound=5 ;; esac
   (
     export FM_ROOT_OVERRIDE="$FM_ROOT" FM_HOME FM_STATE_OVERRIDE="$STATE_REAL" FM_CONFIG_OVERRIDE="$CONFIG"
+    export FM_DROID_TRUST_PROBE_DIR
     # shellcheck disable=SC2016 # The child shell expands these positional arguments.
     fm_run_timed "$bound" bash -c '
       . "$1/bin/fm-backend.sh"
+      dir=${FM_DROID_TRUST_PROBE_DIR:-}
+      if [ -n "$dir" ]; then
+        mkdir -p "$dir" 2>/dev/null || true
+        fm_backend_visible_capture "$2" "$3" "$4" | tee "$dir/last-pane.txt"
+        st=${PIPESTATUS[0]}
+        if [ "$st" -eq 0 ]; then
+          {
+            printf "tmux_bin=%s\n" "$(command -v tmux)"
+            printf "target=%s\n" "$3"
+            tmux display-message -p -t "$3" "socket=#{socket_path} pane_id=#{pane_id} pane_pid=#{pane_pid} pane_tty=#{pane_tty} cmd=#{pane_current_command}"
+          } >"$dir/capture-route.txt" 2>/dev/null || true
+        fi
+        exit "$st"
+      fi
       fm_backend_visible_capture "$2" "$3" "$4"
     ' bash "$FM_ROOT" "$BACKEND" "$T" "$W" </dev/null
   )
@@ -5071,12 +5088,36 @@ droid_trust_probe_write() { # <name> <pane>
   printf '%s\n' "$2" >"$dir/$1"
 }
 
+droid_trust_key() {
+  local key=${FM_DROID_TRUST_KEY:-Enter}
+  case "$key" in
+    Enter | 1) printf '%s\n' "$key" ;;
+    *) return 1 ;;
+  esac
+}
+
+droid_trust_probe_write_send_route() { # <key>
+  local dir=${FM_DROID_TRUST_PROBE_DIR:-} key=$1
+  [ -n "$dir" ] || return 0
+  mkdir -p "$dir" || return 1
+  {
+    printf 'tmux_bin=%s\n' "$(command -v tmux)"
+    printf 'target=%s\n' "$T"
+    printf 'key=%s\n' "$key"
+    tmux display-message -p -t "$T" 'socket=#{socket_path} pane_id=#{pane_id} pane_pid=#{pane_pid} pane_tty=#{pane_tty} cmd=#{pane_current_command}'
+  } >"$dir/send-route.txt"
+}
+
 droid_wait_for_delivery() {
   local pane record trust_seen=0 trust_enters=0 captures_ok=0 capture_rc=0
   local i=0 max=${FM_DROID_READY_POLLS:-120} interval=${FM_DROID_POLL_INTERVAL:-0.5}
-  local seconds=${FM_DROID_READY_SECONDS:-60} deadline enter_max after
+  local seconds=${FM_DROID_READY_SECONDS:-60} deadline enter_max after trust_key
   case "$seconds" in ''|*[!0-9]*|0*) seconds=60 ;; esac
   enter_max=$(droid_trust_enter_max)
+  trust_key=$(droid_trust_key) || {
+    DROID_READY_FAILURE_DETAIL='Droid trust key is not a supported laboratory value'
+    return 1
+  }
   deadline=$(($(date +%s) + seconds))
   DROID_READY_FAILURE_DETAIL=
   while [ "$i" -lt "$max" ] && [ "$(date +%s)" -le "$deadline" ]; do
@@ -5104,7 +5145,11 @@ droid_wait_for_delivery() {
           DROID_READY_FAILURE_DETAIL='Droid trust probe could not write the before-enter capture'
           return 1
         }
-        spawn_send_key "$T" Enter || {
+        droid_trust_probe_write_send_route "$trust_key" || {
+          DROID_READY_FAILURE_DETAIL='Droid trust probe could not write the send-route identity'
+          return 1
+        }
+        spawn_send_key "$T" "$trust_key" || {
           DROID_READY_FAILURE_DETAIL='Droid affirmative folder-trust answer could not be delivered'
           return 1
         }
@@ -5123,7 +5168,7 @@ droid_wait_for_delivery() {
             return 1
           }
           if [ "${FM_DROID_TRUST_PROBE_STOP:-}" = 1 ]; then
-            DROID_READY_FAILURE_DETAIL='Droid trust probe captured one Enter delta and stopped'
+            DROID_READY_FAILURE_DETAIL="Droid trust probe captured one $trust_key delta and stopped"
             return 1
           fi
         fi

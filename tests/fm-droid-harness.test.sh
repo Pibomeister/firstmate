@@ -130,23 +130,43 @@ make_droid_case() {  # <name> <id>
   mv "$fakebin/tmux" "$fakebin/tmux-base"
   cat >"$fakebin/tmux" <<'SH'
 #!/usr/bin/env bash
-# Count only a bare named Enter (`send-keys -t <target> Enter`). A text-line
-# payload (`send-keys -t <target> <text> Enter`) and a -l literal both end
-# with Enter but are not the trust-dialog key.
+# Identity queries for the trust-route probe. Keep these ahead of send-keys
+# so a called send-key is not the only recorded proof of the target.
+if [ "${1:-}" = display-message ]; then
+  case "$*" in
+    *'#{socket_path}'*|*'#{pane_id}'*|*'#{pane_pid}'*|*'#{pane_tty}'*|*'#{pane_current_command}'*)
+      printf 'socket=/tmp/tmux-501/fm-droid-signals-fake pane_id=%%0 pane_pid=4242 pane_tty=/dev/ttys001 cmd=droid\n'
+      exit 0
+      ;;
+  esac
+fi
+# Count only a bare named Enter or 1 (`send-keys -t <target> Enter|1`). A
+# text-line payload and a -l literal both end with a key but are not the
+# trust-dialog key.
 if [ "${1:-}" = send-keys ] && [ -n "${FM_FAKE_DROID_SETTINGS:-}" ]; then
   skip_next=
   extra=
   saw_enter=
+  saw_one=
+  send_target=
   first=1
   for a in "$@"; do
     if [ -n "$first" ]; then first=; continue; fi
-    if [ -n "$skip_next" ]; then skip_next=; continue; fi
+    if [ -n "$skip_next" ]; then
+      [ -n "$send_target" ] || send_target=$a
+      skip_next=
+      continue
+    fi
     case "$a" in
       -t) skip_next=1; continue ;;
       -l) extra=1; continue ;;
       Enter)
         [ -z "$saw_enter" ] || extra=1
         saw_enter=1
+        ;;
+      1)
+        [ -z "$saw_one" ] || extra=1
+        saw_one=1
         ;;
       *) extra=1 ;;
     esac
@@ -155,10 +175,29 @@ if [ "${1:-}" = send-keys ] && [ -n "${FM_FAKE_DROID_SETTINGS:-}" ]; then
     printf 'Enter\n' >>"${FM_FAKE_DROID_SETTINGS}.enters"
     if [ -f "${FM_FAKE_DROID_SETTINGS}.trust" ]; then
       printf 'Enter\n' >>"${FM_FAKE_DROID_SETTINGS}.trust-enters"
+      printf '%s\n' "$send_target" >>"${FM_FAKE_DROID_SETTINGS}.trust-send-target"
+    fi
+  fi
+  if [ -n "$saw_one" ] && [ -z "$extra" ]; then
+    printf '1\n' >>"${FM_FAKE_DROID_SETTINGS}.ones"
+    if [ -f "${FM_FAKE_DROID_SETTINGS}.trust" ]; then
+      printf '1\n' >>"${FM_FAKE_DROID_SETTINGS}.trust-ones"
+      printf '%s\n' "$send_target" >>"${FM_FAKE_DROID_SETTINGS}.trust-send-target"
     fi
   fi
 fi
 if [ "${1:-}" = capture-pane ] && [ -f "${FM_FAKE_DROID_SETTINGS:-/nonexistent}" ]; then
+  cap_skip=
+  cap_target=
+  for a in "$@"; do
+    if [ -n "$cap_skip" ]; then
+      cap_target=$a
+      cap_skip=
+      continue
+    fi
+    [ "$a" = -t ] && cap_skip=1
+  done
+  [ -z "$cap_target" ] || printf '%s\n' "$cap_target" >>"${FM_FAKE_DROID_SETTINGS}.capture-target"
   launched=$(wc -l <"${FM_FAKE_DROID_SETTINGS}.enters" 2>/dev/null | tr -d ' ')
   case "$launched" in ''|*[!0-9]*) launched=0 ;; esac
   # Pre-launch cwd probes are not the TUI. Trust and wait-loop poll counts
@@ -351,7 +390,12 @@ test_droid_launch_and_hooks() {
 }
 
 droid_enter_lines() {  # <id> [suffix]
-  wc -l <"$HOME_DIR/state/$1.droid-settings.json${2:-.enters}" 2>/dev/null | tr -d ' '
+  local f="$HOME_DIR/state/$1.droid-settings.json${2:-.enters}"
+  if [ -f "$f" ]; then
+    wc -l <"$f" | tr -d ' '
+  else
+    printf '0'
+  fi
 }
 
 test_droid_swallowed_trust_enter_is_retried_until_the_dialog_clears() {
@@ -413,6 +457,51 @@ test_droid_trust_probe_stop_captures_one_enter_delta() {
   printf '%s' "$out" | grep -Fq 'trust probe captured one Enter delta and stopped' \
     || fail "probe stop must name the laboratory stop: $out"
   pass "Droid trust probe captures one Enter delta and stops"
+}
+
+test_droid_trust_key_one_sends_digit_once_while_the_dialog_stays() {
+  local out rc ones enters
+  make_droid_case trust-key-one droid-trust-key-one
+  out=$(FM_FAKE_DROID_TRUST_POLLS=5 \
+    FM_DROID_TRUST_ENTER_MAX=1 \
+    FM_DROID_TRUST_KEY=1 \
+    FM_DROID_READY_POLLS=5 FM_DROID_POLL_INTERVAL=0 FM_DROID_READY_SECONDS=5 \
+    run_droid_spawn droid-trust-key-one)
+  rc=$?
+  expect_code 1 "$rc" "a staying trust dialog with KEY=1 should not claim delivery: $out"
+  ones=$(droid_enter_lines droid-trust-key-one .trust-ones)
+  enters=$(droid_enter_lines droid-trust-key-one .trust-enters)
+  case "$ones" in ''|*[!0-9]*) ones=0 ;; esac
+  case "$enters" in ''|*[!0-9]*) enters=0 ;; esac
+  [ "$ones" -eq 1 ] || fail "Droid trust-time key 1 count should be 1, got $ones"
+  [ "$enters" -eq 0 ] || fail "KEY=1 must not send a wait-loop Enter, got $enters"
+  pass "Droid sends exactly one trust key 1 when KEY=1 and the dialog stays"
+}
+
+test_droid_trust_probe_records_matching_send_and_capture_routes() {
+  local out rc probe send_target capture_cmd send_cmd
+  probe="$TMP_ROOT/trust-probe-route"
+  make_droid_case trust-probe-route droid-trust-probe-route
+  out=$(FM_FAKE_DROID_TRUST_POLLS=5 \
+    FM_DROID_TRUST_ENTER_MAX=1 \
+    FM_DROID_TRUST_PROBE_DIR="$probe" \
+    FM_DROID_TRUST_PROBE_STOP=1 \
+    FM_DROID_READY_POLLS=8 FM_DROID_POLL_INTERVAL=0 FM_DROID_READY_SECONDS=8 \
+    run_droid_spawn droid-trust-probe-route)
+  rc=$?
+  expect_code 1 "$rc" "route probe stop should not claim delivery: $out"
+  [ -s "$probe/capture-route.txt" ] || fail "missing capture-route identity"
+  [ -s "$probe/send-route.txt" ] || fail "missing send-route identity"
+  [ -s "$probe/last-pane.txt" ] || fail "missing last viewport pane"
+  capture_cmd=$(grep -E 'cmd=' "$probe/capture-route.txt" | tail -1)
+  send_cmd=$(grep -E 'cmd=' "$probe/send-route.txt" | tail -1)
+  [ -n "$capture_cmd" ] && [ "$capture_cmd" = "$send_cmd" ] \
+    || fail "capture and send routes diverged: capture='$capture_cmd' send='$send_cmd'"
+  printf '%s' "$capture_cmd" | grep -Fq 'cmd=droid' \
+    || fail "route identity must name the live Droid command: $capture_cmd"
+  send_target=$(droid_enter_lines droid-trust-probe-route .trust-send-target)
+  [ "$send_target" -eq 1 ] || fail "trust send should record one target line, got $send_target"
+  pass "Droid trust probe records matching send and capture routes"
 }
 
 test_droid_sends_no_trust_enter_after_the_dialog_clears() {
@@ -627,6 +716,8 @@ test_droid_launch_and_hooks
 test_droid_swallowed_trust_enter_is_retried_until_the_dialog_clears
 test_droid_trust_enter_max_sends_one_enter_while_the_dialog_stays
 test_droid_trust_probe_stop_captures_one_enter_delta
+test_droid_trust_key_one_sends_digit_once_while_the_dialog_stays
+test_droid_trust_probe_records_matching_send_and_capture_routes
 test_droid_sends_no_trust_enter_after_the_dialog_clears
 test_droid_sends_no_trust_enter_on_a_blank_or_failed_viewport
 test_droid_sends_no_trust_enter_on_an_ambiguous_dialog
