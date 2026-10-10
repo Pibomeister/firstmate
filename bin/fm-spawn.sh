@@ -2425,6 +2425,23 @@ agy_model_validate() {  # <agy-bin> <model>
 # metadata but omit it from those settings, matching the common adapter policy.
 # Without an explicit model Droid runs the operator's own default, whose
 # catalog entry is unknown here, so the effort is omitted too.
+#
+# An explicit model is proven with `droid exec --model <id> --list-tools`, not
+# `droid --model <id> --help`: an unsupported id also exits 0 from --help.
+# The probe is a live Factory call and can take longer than a local --help
+# listing, so it runs under the shared hard bound (bin/fm-timeout-lib.sh) with
+# stdin detached. Timeout and a non-zero exit both refuse the spawn; the
+# requested id is never replaced. FM_DROID_MODEL_PROBE_TIMEOUT defaults to 60
+# seconds; a non-positive or non-numeric value clamps back to that default,
+# because a non-positive bound is not a bound.
+droid_model_probe_timeout() {
+  local bound=${FM_DROID_MODEL_PROBE_TIMEOUT:-60}
+  case "$bound" in
+    '' | *[!0-9]* | 0*) bound=60 ;;
+  esac
+  printf '%s\n' "$bound"
+}
+
 droid_catalog_efforts() {  # <model-id>, help text on stdin
   awk -v wanted="$1" '
     /^Available Models:/ { section="models"; next }
@@ -2884,11 +2901,12 @@ droid)
       exit 1
     fi
     if [ -n "$MODEL" ] && [ "$MODEL" != default ]; then
+      droid_probe_bound=$(droid_model_probe_timeout)
       droid_probe_rc=0
-      FACTORY_DROID_AUTO_UPDATE_ENABLED=false fm_run_timed 20 "$DROID_BIN" exec --model "$MODEL" --list-tools >/dev/null </dev/null \
+      FACTORY_DROID_AUTO_UPDATE_ENABLED=false fm_run_timed "$droid_probe_bound" "$DROID_BIN" exec --model "$MODEL" --list-tools >/dev/null </dev/null \
         || droid_probe_rc=$?
       if fm_timed_out "$droid_probe_rc"; then
-        echo "error: Droid did not answer the model check for '$MODEL' within 20s; check its network and sign-in, then retry or omit --model" >&2
+        echo "error: Droid did not answer the model check for '$MODEL' within ${droid_probe_bound}s; check its network and sign-in, then retry or omit --model" >&2
         exit 1
       elif [ "$droid_probe_rc" -ne 0 ]; then
         echo "error: Droid's model check for '$MODEL' failed (exit $droid_probe_rc); if its message above is not a model rejection, check its network and sign-in, otherwise choose an id from 'droid exec --help' or omit --model" >&2

@@ -179,6 +179,17 @@ Model details:
 HELP
   exit 0
 fi
+if [ "${1:-}" = exec ]; then
+  case " $* " in
+    *" --list-tools "*)
+      if [ -n "${FM_FAKE_DROID_PROBE_HANG:-}" ]; then
+        sleep "$FM_FAKE_DROID_PROBE_HANG"
+      elif [ -n "${FM_FAKE_DROID_PROBE_SLEEP:-}" ]; then
+        sleep "$FM_FAKE_DROID_PROBE_SLEEP"
+      fi
+      ;;
+  esac
+fi
 if [ "${1:-}" = exec ] && [ -n "${FM_FAKE_DROID_REJECT_MODEL:-}" ]; then
   printf 'Invalid model: %s\n' "$FM_FAKE_DROID_REJECT_MODEL" >&2
   exit 1
@@ -392,6 +403,36 @@ test_droid_model_probe_detaches_stdin() {
   pass "Droid model probe cannot read the caller's stdin"
 }
 
+test_droid_model_probe_accepts_a_slow_valid_answer() {
+  local id=droid-probe-slow out rc settings
+  make_droid_case probe-slow "$id"
+  out=$(FM_FAKE_DROID_PROBE_SLEEP=1 FM_DROID_MODEL_PROBE_TIMEOUT=3 \
+    run_droid_spawn "$id" --model gpt-5.6-luna)
+  rc=$?
+  expect_code 0 "$rc" "a valid model probe that answers inside its bound must spawn: $out"
+  settings="$HOME_DIR/state/$id.droid-settings.json"
+  jq -e '.model == "gpt-5.6-luna"' "$settings" >/dev/null \
+    || fail "a slow valid probe lost the requested model"
+  [ -e "$CASE_DIR/launch.log" ] || fail "a slow valid probe never launched"
+  pass "Droid accepts a valid model whose tool-list probe answers inside its bound"
+}
+
+test_droid_model_probe_refuses_when_the_bound_expires() {
+  local id=droid-probe-hang out rc started elapsed
+  make_droid_case probe-hang "$id"
+  started=$(date +%s)
+  out=$(FM_FAKE_DROID_PROBE_HANG=30 FM_DROID_MODEL_PROBE_TIMEOUT=1 \
+    run_droid_spawn "$id" --model gpt-5.6-luna)
+  rc=$?
+  elapsed=$(( $(date +%s) - started ))
+  expect_code 1 "$rc" "a hung model probe must refuse: $out"
+  [ "$elapsed" -lt 15 ] || fail "hung Droid model probe exceeded its bound (${elapsed}s)"
+  printf '%s' "$out" | grep -Fq "within 1s" || fail "hung model probe did not name its bound: $out"
+  [ ! -e "$CASE_DIR/launch.log" ] || fail "Droid launched after a hung model probe"
+  [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "Droid created a task record after a hung model probe"
+  pass "Droid refuses a model probe that does not answer within its bound"
+}
+
 test_droid_bad_model_refuses_before_launch() {
   local id=droid-bad-model out rc
   make_droid_case bad-model "$id"
@@ -428,6 +469,8 @@ test_droid_respects_disabled_hooks_policy
 test_droid_omits_unsupported_model_effort
 test_droid_omits_effort_without_explicit_model
 test_droid_model_probe_detaches_stdin
+test_droid_model_probe_accepts_a_slow_valid_answer
+test_droid_model_probe_refuses_when_the_bound_expires
 test_droid_bad_model_refuses_before_launch
 test_raw_droid_command_does_not_arm_unused_hooks
 fm_test_cleanup "$TMP_ROOT"
