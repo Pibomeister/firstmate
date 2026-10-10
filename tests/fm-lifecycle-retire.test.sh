@@ -68,6 +68,11 @@ case "$1 $2 $3" in
       printf '%s\n' '{"error":{"code":"pane_not_found"}}'
     fi
     ;;
+  "pane process-info --pane")
+    printf '%s\n' "$*" >> "${FM_RETIRE_EP_LOG:?}"
+    printf '{"result":{"type":"pane_process_info","process_info":{"pane_id":"%s","shell_pid":%s}}}\n' \
+      "$4" "${FM_RETIRE_CAPTURE_SHELL_PID:?}"
+    ;;
   *)
     printf 'unexpected herdr argv: %s\n' "$*" >&2
     exit 64
@@ -266,6 +271,36 @@ stopped_body() {
   printf '%s\n' '{"sessions":[{"name":"fm-lab-retire1","running":false,"socket_path":"/tmp/fm-lifecycle-retire-sock"}]}'
 }
 
+capture_bin=$(abs_dir "$TMP_ROOT/capture-bin")
+ln -s "$FAKEBIN/herdr" "$capture_bin/herdr"
+cat > "$capture_bin/lsof" <<'SH'
+#!/usr/bin/env bash
+[ "$*" = "-nP -t -U ${FM_RETIRE_CAPTURE_SOCKET:?}" ] || exit 1
+printf '%s\n' "${FM_RETIRE_CAPTURE_SERVER_PID:?}"
+SH
+chmod +x "$capture_bin/lsof"
+sleep 300 &
+capture_shell_pid=$!
+track "$capture_shell_pid"
+sleep 300 &
+capture_server_pid=$!
+track "$capture_server_pid"
+capture_shell_identity=$(bash -c '. "$1/bin/fm-nm-run-lib.sh"; . "$1/bin/fm-lifecycle-lib.sh"; fm_lifecycle_process_identity "$2"' \
+  _ "$ROOT" "$capture_shell_pid") || fail "could not read capture shell identity"
+capture_server_identity=$(bash -c '. "$1/bin/fm-nm-run-lib.sh"; . "$1/bin/fm-lifecycle-lib.sh"; fm_lifecycle_process_identity "$2"' \
+  _ "$ROOT" "$capture_server_pid") || fail "could not read capture server identity"
+present_body > "$BODY"
+capture_record=$(env PATH="$capture_bin:$PATH" FM_RETIRE_INV_BODY="$BODY" \
+  FM_RETIRE_INV_LOG="$TMP_ROOT/capture-inv.log" FM_RETIRE_EP_LOG="$TMP_ROOT/capture-ep.log" \
+  FM_RETIRE_CAPTURE_SHELL_PID="$capture_shell_pid" FM_RETIRE_CAPTURE_SERVER_PID="$capture_server_pid" \
+  FM_RETIRE_CAPTURE_SOCKET="$SOCK" \
+  bash -c '. "$1/bin/fm-nm-run-lib.sh"; . "$1/bin/fm-lifecycle-lib.sh"; fm_lifecycle_retire_capture_herdr_identity "$2" pane-1' \
+  _ "$ROOT" "$SESSION") || fail "could not capture recorded Herdr identity"
+assert_contains "$capture_record" "lifecycle_process_pid=$capture_shell_pid" "capture records the pane shell pid"
+assert_contains "$capture_record" "lifecycle_process_identity=$capture_shell_identity" "capture binds the pane shell start identity"
+assert_contains "$capture_record" "lifecycle_server_pid=$capture_server_pid" "capture records the server pid"
+assert_contains "$capture_record" "lifecycle_server_identity=$capture_server_identity" "capture binds the server start identity"
+
 base_env() {
   printf '%s\n' \
     "FM_RETIRE_INV_BODY=$BODY" \
@@ -313,10 +348,11 @@ write_request "$TMP_ROOT/crewalpha-req.json" op-crewalpha "$parent" session-abse
 life "$TMP_ROOT/crewalpha.err" FM_RETIRE_INV_BODY="$BODY" \
   FM_RETIRE_INV_LOG="$TMP_ROOT/crewalpha.log" FM_RETIRE_EP_LOG="$TMP_ROOT/crewalpha-ep.log" \
   retire --request "$TMP_ROOT/crewalpha-req.json" --out "$TMP_ROOT/crewalpha-out.json"
-assert_equals 1 "$LIFE_RC" "a helper-unselectable non-lab session is refused"
+assert_equals 2 "$LIFE_RC" "a helper-unselectable named session is incomplete"
+assert_equals inventory-unavailable "$(json_get '.reasons[0].code')" "the result reports the helper capability gap"
 assert_equals "$before" "$(file_sum "$parent/state/ship1.meta")" "a non-lab session leaves the task record unchanged"
-assert_absent "$parent/state/lifecycle-retire" "a non-lab session writes no journal"
-pass "negative control: fm-lifecycle.sh retire helper-unselectable-session exited $LIFE_RC; meta unchanged"
+assert_present "$parent/state/lifecycle-retire/op-crewalpha/request.json" "the incomplete request remains recoverable"
+pass "negative control: fm-lifecycle.sh retire helper-unselectable-session exited $LIFE_RC; capability gap reported"
 
 jq '.kind = "secondmate" | .retain_home = false' "$TMP_ROOT/schema-ep.json" | jq -s '.' > "$TMP_ROOT/retainfalse-eps.json"
 write_request "$TMP_ROOT/retainfalse-req.json" op-retainfalse "$parent" session-absent "$TMP_ROOT/retainfalse-eps.json"

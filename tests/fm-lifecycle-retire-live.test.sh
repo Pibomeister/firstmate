@@ -12,6 +12,7 @@ herdr_forget_inherited_pane
 fm_live_gate default-on FM_LIFECYCLE_RETIRE_LIVE herdr jq
 
 HERDR_LAB_HELPER=/Users/eduardopicazo/Documents/Workspace/firstmate/bin/fm-herdr-lab.sh
+HERDR_RUNTIME_HELPER=$ROOT/bin/fm-herdr-lab.sh
 [ -x "$HERDR_LAB_HELPER" ] || { echo "skip: live: Herdr lab helper not executable at $HERDR_LAB_HELPER"; exit 0; }
 
 HERDR_ORIGINAL_PATH=$PATH
@@ -239,7 +240,7 @@ final=$(default_object) || fail "could not read the default session after replay
 pass "result and replay kept the named lab absent"
 cat "$TMP_ROOT/inspect.err" "$TMP_ROOT/retire.err" "$TMP_ROOT/result.err" "$TMP_ROOT/replay.err" \
   > "$TMP_ROOT/runtime-trace.log"
-helper_calls=$(grep -F "$HERDR_LAB_HELPER run $HERDR_LAB_SESSION session list --json" \
+helper_calls=$(grep -F "$HERDR_RUNTIME_HELPER run $HERDR_LAB_SESSION session list --json" \
   "$TMP_ROOT/runtime-trace.log" | wc -l | tr -d ' ')
 assert_equals 3 "$helper_calls" "inspect and retirement used three guarded inventory calls"
 raw_calls=$(grep -E "FM_LIFECYCLE_TRACE herdr session list --json --session $HERDR_LAB_SESSION" \

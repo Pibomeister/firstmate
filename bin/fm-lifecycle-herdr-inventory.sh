@@ -6,4 +6,5 @@ if [ "$#" -ne 1 ] || [ -z "$1" ]; then
   echo "usage: fm-lifecycle-herdr-inventory.sh <session>" >&2
   exit 2
 fi
-exec /Users/eduardopicazo/Documents/Workspace/firstmate/bin/fm-herdr-lab.sh run "$1" session list --json
+SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname "$0")" && pwd)
+exec "$SCRIPT_DIR/fm-herdr-lab.sh" run "$1" session list --json

@@ -160,11 +160,14 @@ fm_lifecycle_retire_boot_id() {
 
 fm_lifecycle_retire_capture_herdr_identity() {
   local session=$1 pane=$2 inventory info socket process_pid server_pid boot process_identity server_identity
-  inventory=$($FM_LIFECYCLE_LIB_DIR/fm-lifecycle-herdr-inventory.sh "$session") || return 1
+  inventory=$("$FM_LIFECYCLE_LIB_DIR/fm-lifecycle-herdr-inventory.sh" "$session") || {
+    printf 'error: approved helper cannot inventory session %s\n' "$session" >&2
+    return 2
+  }
   socket=$(printf '%s' "$inventory" | jq -er --arg session "$session" '
     [.sessions[] | select(.name == $session and .running == true and (.socket_path | type) == "string")]
     | if length == 1 then .[0].socket_path | select(length > 0) else empty end') || return 1
-  info=$(/Users/eduardopicazo/Documents/Workspace/firstmate/bin/fm-herdr-lab.sh run "$session" pane process-info --pane "$pane") || return 1
+  info=$("$FM_LIFECYCLE_LIB_DIR/fm-herdr-lab.sh" run "$session" pane process-info --pane "$pane") || return 1
   process_pid=$(printf '%s' "$info" | jq -er --arg pane "$pane" '
     .result | select(.type == "pane_process_info") | .process_info
     | select(.pane_id == $pane) | .shell_pid
@@ -334,7 +337,7 @@ fm_lifecycle_retire_retry_for() {
   code=$(jq -r '.[-1].code // empty' "$FM_LIFECYCLE_RETIRE_TMP/reasons.json" 2>/dev/null) || code=
   case "$code" in
     obligation-*|outcome-undelivered|foreign-descendant) printf 'obligation\n' ;;
-    lock-held|inventory-unreadable|incomplete|pane-unreadable|process-unknown|process-alive|session-present|session-stopped|pane-present|server-identity) printf 'same-request\n' ;;
+    lock-held|inventory-unavailable|inventory-unreadable|incomplete|pane-unreadable|process-unknown|process-alive|session-present|session-stopped|pane-present|server-identity) printf 'same-request\n' ;;
     *) printf 'none\n' ;;
   esac
 }
@@ -420,7 +423,7 @@ fm_lifecycle_retire_load() {
       and (.kind == "ship" or .kind == "scout" or .kind == "secondmate")
       and (.spawn_gen | type == "string" and test("^s[0-9]+\\.[0-9]+\\.[0-9]+$"))
       and (.backend == "herdr")
-      and (.session | type == "string" and test("^fm-lab-[A-Za-z0-9][A-Za-z0-9_-]*$"))
+      and (.session | type == "string" and test("^[A-Za-z0-9][A-Za-z0-9_-]*$") and . != "default")
       and (.window | type == "string") and (.pane_id | type == "string")
       and (.workspace_id | type == "string") and (.tab_id | type == "string")
       and (.parent_task_id | type == "string")
@@ -671,7 +674,11 @@ fm_lifecycle_retire_prove() {
   jq -n --arg cmd "$cmd" --arg session "$session" --arg now "$now" --arg digest "$digest" --argjson rc "$rc" \
     '{command:$cmd, argv:[$cmd, $session], time:($now|tonumber), exit_status:$rc, stdout_sha256:$digest, session:$session}' \
     > "$tmp/proof.json" || return 1
-  if [ "$rc" -ne 0 ] || ! jq -e '.sessions | type == "array"' "$tmp/inv.out" >/dev/null 2>&1; then
+  if [ "$rc" -ne 0 ]; then
+    fm_lifecycle_retire_reason inventory-unavailable "" "approved helper cannot inventory session $session"
+    return 2
+  fi
+  if ! jq -e '.sessions | type == "array"' "$tmp/inv.out" >/dev/null 2>&1; then
     fm_lifecycle_retire_reason inventory-unreadable "" "session inventory was not a complete sessions array"
     return 2
   fi
