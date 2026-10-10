@@ -374,6 +374,47 @@ test_droid_swallowed_trust_enter_is_retried_until_the_dialog_clears() {
   pass "Droid retries a swallowed trust Enter until the dialog clears"
 }
 
+test_droid_trust_enter_max_sends_one_enter_while_the_dialog_stays() {
+  local out rc trust_enters
+  make_droid_case trust-max-one droid-trust-max-one
+  out=$(FM_FAKE_DROID_TRUST_POLLS=5 \
+    FM_DROID_TRUST_ENTER_MAX=1 \
+    FM_DROID_READY_POLLS=5 FM_DROID_POLL_INTERVAL=0 FM_DROID_READY_SECONDS=5 \
+    run_droid_spawn droid-trust-max-one)
+  rc=$?
+  expect_code 1 "$rc" "a staying trust dialog with ENTER_MAX=1 should not claim delivery: $out"
+  trust_enters=$(droid_enter_lines droid-trust-max-one .trust-enters)
+  [ "$trust_enters" -eq 1 ] \
+    || fail "Droid trust-time Enter count should be 1 under ENTER_MAX=1, got $trust_enters"
+  printf '%s' "$out" | grep -Fq 'answered but the launch prompt hook did not acknowledge' \
+    || fail "capped trust Enter must still report unanswered brief: $out"
+  pass "Droid sends exactly one trust Enter when ENTER_MAX=1 and the dialog stays"
+}
+
+test_droid_trust_probe_stop_captures_one_enter_delta() {
+  local out rc probe trust_enters
+  probe="$TMP_ROOT/trust-probe-a"
+  make_droid_case trust-probe-stop droid-trust-probe-stop
+  out=$(FM_FAKE_DROID_TRUST_POLLS=5 \
+    FM_DROID_TRUST_ENTER_MAX=1 \
+    FM_DROID_TRUST_PROBE_DIR="$probe" \
+    FM_DROID_TRUST_PROBE_STOP=1 \
+    FM_DROID_READY_POLLS=8 FM_DROID_POLL_INTERVAL=0 FM_DROID_READY_SECONDS=8 \
+    run_droid_spawn droid-trust-probe-stop)
+  rc=$?
+  expect_code 1 "$rc" "trust probe stop should not claim delivery: $out"
+  trust_enters=$(droid_enter_lines droid-trust-probe-stop .trust-enters)
+  [ "$trust_enters" -eq 1 ] || fail "probe stop sent $trust_enters trust Enters"
+  [ -s "$probe/before-enter.txt" ] || fail "missing before-enter capture"
+  [ -f "$probe/after-0.3s.txt" ] || fail "missing +0.3s capture"
+  [ -f "$probe/after-2s.txt" ] || fail "missing +2s capture"
+  grep -Fq 'Trust this folder?' "$probe/before-enter.txt" \
+    || fail "before-enter must be the affirmative dialog"
+  printf '%s' "$out" | grep -Fq 'trust probe captured one Enter delta and stopped' \
+    || fail "probe stop must name the laboratory stop: $out"
+  pass "Droid trust probe captures one Enter delta and stops"
+}
+
 test_droid_sends_no_trust_enter_after_the_dialog_clears() {
   local out rc base
   make_droid_case trust-clear-base droid-trust-clear-base
@@ -584,6 +625,8 @@ test_droid_composer_requires_a_droid_process
 test_droid_orca_composer_uses_the_live_screen
 test_droid_launch_and_hooks
 test_droid_swallowed_trust_enter_is_retried_until_the_dialog_clears
+test_droid_trust_enter_max_sends_one_enter_while_the_dialog_stays
+test_droid_trust_probe_stop_captures_one_enter_delta
 test_droid_sends_no_trust_enter_after_the_dialog_clears
 test_droid_sends_no_trust_enter_on_a_blank_or_failed_viewport
 test_droid_sends_no_trust_enter_on_an_ambiguous_dialog

@@ -5125,6 +5125,11 @@ agy_spawn_fail() {  # <detail>
 # A fresh worktree presents Droid's folder-trust dialog even with --auto high.
 # Only a complete live viewport with Trust selected authorizes Enter; a
 # swallowed startup key is retried while that complete selected dialog remains.
+# FM_DROID_TRUST_ENTER_MAX, when a positive integer, caps those wait-loop
+# Enters (unset keeps the retry-while-visible contract).
+# FM_DROID_TRUST_PROBE_DIR writes the visible pane before the Enter that
+# spends that budget and at +0.3s and +2s after it; FM_DROID_TRUST_PROBE_STOP=1
+# then returns without claiming brief delivery.
 # The initial prompt is proved delivered by Droid's own UserPromptSubmit hook
 # replacing the fm-spawn seed.
 droid_trust_dialog_is_negative() { # <plain-pane-capture>
@@ -5152,11 +5157,27 @@ droid_capture_visible() {
   )
 }
 
+droid_trust_enter_max() {
+  local bound=${FM_DROID_TRUST_ENTER_MAX:-}
+  case "$bound" in
+    '' | *[!0-9]*) printf '\n' ;;
+    *) printf '%s\n' "$bound" ;;
+  esac
+}
+
+droid_trust_probe_write() { # <name> <pane>
+  local dir=${FM_DROID_TRUST_PROBE_DIR:-}
+  [ -n "$dir" ] || return 0
+  mkdir -p "$dir" || return 1
+  printf '%s\n' "$2" >"$dir/$1"
+}
+
 droid_wait_for_delivery() {
   local pane record trust_seen=0 trust_enters=0 captures_ok=0 capture_rc=0
   local i=0 max=${FM_DROID_READY_POLLS:-120} interval=${FM_DROID_POLL_INTERVAL:-0.5}
-  local seconds=${FM_DROID_READY_SECONDS:-60} deadline
+  local seconds=${FM_DROID_READY_SECONDS:-60} deadline enter_max after
   case "$seconds" in ''|*[!0-9]*|0*) seconds=60 ;; esac
+  enter_max=$(droid_trust_enter_max)
   deadline=$(($(date +%s) + seconds))
   DROID_READY_FAILURE_DETAIL=
   while [ "$i" -lt "$max" ] && [ "$(date +%s)" -le "$deadline" ]; do
@@ -5179,11 +5200,35 @@ droid_wait_for_delivery() {
     fi
     if droid_trust_dialog_is_affirmative "$pane"; then
       trust_seen=1
-      spawn_send_key "$T" Enter || {
-        DROID_READY_FAILURE_DETAIL='Droid affirmative folder-trust answer could not be delivered'
-        return 1
-      }
-      trust_enters=$((trust_enters + 1))
+      if [ -z "$enter_max" ] || [ "$trust_enters" -lt "$enter_max" ]; then
+        droid_trust_probe_write before-enter.txt "$pane" || {
+          DROID_READY_FAILURE_DETAIL='Droid trust probe could not write the before-enter capture'
+          return 1
+        }
+        spawn_send_key "$T" Enter || {
+          DROID_READY_FAILURE_DETAIL='Droid affirmative folder-trust answer could not be delivered'
+          return 1
+        }
+        trust_enters=$((trust_enters + 1))
+        if [ -n "${FM_DROID_TRUST_PROBE_DIR:-}" ]; then
+          sleep 0.3
+          after=$(droid_capture_visible 2>/dev/null || true)
+          droid_trust_probe_write after-0.3s.txt "$after" || {
+            DROID_READY_FAILURE_DETAIL='Droid trust probe could not write the +0.3s capture'
+            return 1
+          }
+          sleep 1.7
+          after=$(droid_capture_visible 2>/dev/null || true)
+          droid_trust_probe_write after-2s.txt "$after" || {
+            DROID_READY_FAILURE_DETAIL='Droid trust probe could not write the +2s capture'
+            return 1
+          }
+          if [ "${FM_DROID_TRUST_PROBE_STOP:-}" = 1 ]; then
+            DROID_READY_FAILURE_DETAIL='Droid trust probe captured one Enter delta and stopped'
+            return 1
+          fi
+        fi
+      fi
     elif printf '%s\n' "$pane" | grep -Fq 'Trust this folder?'; then
       trust_seen=1
     else
