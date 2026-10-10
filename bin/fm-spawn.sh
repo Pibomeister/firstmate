@@ -5123,8 +5123,22 @@ agy_spawn_fail() {  # <detail>
 }
 
 # A fresh worktree presents Droid's folder-trust dialog even with --auto high.
-# Only a complete live viewport authorizes Enter; the initial prompt is proved
-# delivered by Droid's own UserPromptSubmit hook replacing the fm-spawn seed.
+# Only a complete live viewport with Trust selected authorizes Enter; a
+# swallowed startup key is retried while that complete selected dialog remains.
+# The initial prompt is proved delivered by Droid's own UserPromptSubmit hook
+# replacing the fm-spawn seed.
+droid_trust_dialog_is_negative() { # <plain-pane-capture>
+  printf '%s\n' "$1" | grep -Fq 'Trust this folder?' || return 1
+  printf '%s\n' "$1" | grep -Eq '^[[:space:]]*>[[:space:]]*2[.] Exit without trusting[[:space:]]*$'
+}
+
+droid_trust_dialog_is_affirmative() { # <plain-pane-capture>
+  printf '%s\n' "$1" | grep -Fq 'Trust this folder?' || return 1
+  printf '%s\n' "$1" | grep -Fq 'Exit without trusting' || return 1
+  printf '%s\n' "$1" | grep -Fq 'Enter to confirm' || return 1
+  printf '%s\n' "$1" | grep -Eq '^[[:space:]]*>[[:space:]]*1[.] Trust this folder[[:space:]]*$'
+}
+
 droid_capture_visible() {
   local bound=${FM_DROID_CAPTURE_TIMEOUT:-5}
   case "$bound" in ''|*[!0-9]*|0*) bound=5 ;; esac
@@ -5139,7 +5153,7 @@ droid_capture_visible() {
 }
 
 droid_wait_for_delivery() {
-  local pane record answered=0 trust_seen=0 captures_ok=0 capture_rc=0
+  local pane record trust_seen=0 trust_enters=0 captures_ok=0 capture_rc=0
   local i=0 max=${FM_DROID_READY_POLLS:-120} interval=${FM_DROID_POLL_INTERVAL:-0.5}
   local seconds=${FM_DROID_READY_SECONDS:-60} deadline
   case "$seconds" in ''|*[!0-9]*|0*) seconds=60 ;; esac
@@ -5154,22 +5168,24 @@ droid_wait_for_delivery() {
       [ "$i" -ge "$max" ] || sleep "$interval"
       continue
     fi
-    if printf '%s\n' "$pane" | grep -Fq 'Trust this folder?'; then
+    if [ -z "$pane" ]; then
+      i=$((i + 1))
+      [ "$i" -ge "$max" ] || sleep "$interval"
+      continue
+    fi
+    if droid_trust_dialog_is_negative "$pane"; then
+      DROID_READY_FAILURE_DETAIL='Droid folder-trust dialog has Exit without trusting selected; refusing Enter'
+      return 1
+    fi
+    if droid_trust_dialog_is_affirmative "$pane"; then
       trust_seen=1
-      if printf '%s\n' "$pane" | grep -Eq '^[[:space:]]*>[[:space:]]*2[.] Exit without trusting[[:space:]]*$'; then
-        DROID_READY_FAILURE_DETAIL='Droid folder-trust dialog has Exit without trusting selected; refusing Enter'
+      spawn_send_key "$T" Enter || {
+        DROID_READY_FAILURE_DETAIL='Droid affirmative folder-trust answer could not be delivered'
         return 1
-      fi
-      if [ "$answered" -eq 0 ] \
-        && printf '%s\n' "$pane" | grep -Fq 'Exit without trusting' \
-        && printf '%s\n' "$pane" | grep -Fq 'Enter to confirm' \
-        && printf '%s\n' "$pane" | grep -Eq '^[[:space:]]*>[[:space:]]*1[.] Trust this folder[[:space:]]*$'; then
-        spawn_send_key "$T" Enter || {
-          DROID_READY_FAILURE_DETAIL='Droid affirmative folder-trust answer could not be delivered'
-          return 1
-        }
-        answered=1
-      fi
+      }
+      trust_enters=$((trust_enters + 1))
+    elif printf '%s\n' "$pane" | grep -Fq 'Trust this folder?'; then
+      trust_seen=1
     else
       record=$(fm_busy_record_read "$STATE_REAL" "$ID" 2>/dev/null || true)
       case "$record" in
@@ -5181,9 +5197,9 @@ droid_wait_for_delivery() {
   done
   if [ "$captures_ok" -eq 0 ]; then
     DROID_READY_FAILURE_DETAIL="Droid viewport capture never succeeded (last exit $capture_rc); check backend readiness"
-  elif [ "$trust_seen" -eq 1 ] && [ "$answered" -eq 0 ]; then
+  elif [ "$trust_seen" -eq 1 ] && [ "$trust_enters" -eq 0 ]; then
     DROID_READY_FAILURE_DETAIL='Droid folder-trust dialog never showed a selected Trust this folder choice; no key was sent'
-  elif [ "$trust_seen" -eq 1 ] && [ "$answered" -eq 1 ]; then
+  elif [ "$trust_seen" -eq 1 ]; then
     DROID_READY_FAILURE_DETAIL='Droid folder-trust dialog was answered but the launch prompt hook did not acknowledge the brief; check sign-in and hook policy'
   else
     DROID_READY_FAILURE_DETAIL='Droid launch prompt hook did not acknowledge the brief; check sign-in and whether hooks are disabled'
