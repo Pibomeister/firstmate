@@ -2797,3 +2797,18 @@ Rechecked the explicit-model probe on 2026-10-10 with Droid 0.233.0 on Darwin ar
 The same invalid id with `droid exec --model definitely-not-a-model --list-tools` printed `Invalid model:` on stderr and did not exit within 30s (status 124).
 `droid exec --model glm-5.3-flash --list-tools` and `droid exec --model gpt-6-sol --list-tools` each returned 124 at 20.24s with empty output under the previous 20-second spawn bound, then exited 0 at 27.02s and 25.63s under a 90-second bound and printed `Available tools for GLM-5.3-Flash` and `Available tools for GPT-6 Sol`.
 Those successful probes emitted no stdout until exit, so the old 20-second kill happened before any tool list appeared.
+Rechecked live explicit-model delivery on 2026-10-10 with Droid 0.238.0, tmux 3.6a, on Darwin arm64.
+The historical 0.230.0 tmux and Orca scouts above remain the last successful full lifecycle proof.
+They are not a current guarantee on 0.238.0.
+The opt-in tmux guard ran once as `FM_DROID_SIGNALS=1 FM_DROID_LIVE_MODEL=gpt-5.6-terra FM_DROID_MODEL_PROBE_TIMEOUT=180 FM_DROID_TRUST_ENTER_MAX=1 bash tests/fm-droid-signals-live-e2e.test.sh` with `FM_DROID_TRUST_KEY` unset (Enter).
+It exited 1 in 75s with `Droid folder-trust dialog was answered but the launch prompt hook did not acknowledge the brief; check sign-in and hook policy; inspect window firstmate:fm-droid-live`.
+The wait-loop Enter reached the same private tmux socket, pane, pid, tty, and `cmd=droid` as the viewport capture.
+Captures before the key, at +0.3s, and at +2s were byte-identical complete selected Trust dialogs.
+A later pane still showed the Trust title with `Saving...` and no numbered Trust row.
+No native `GPT-5.6 Terra (Low)` header appeared.
+The launch prompt hook never receipted the brief.
+Interactive explicit-model delivery on Droid 0.238.0 is therefore unproven.
+The adapter still refuses rather than substituting another model.
+Laboratory-only `FM_DROID_TRUST_ENTER_MAX`, `FM_DROID_TRUST_KEY`, `FM_DROID_TRUST_PROBE_DIR`, and `FM_DROID_TRUST_PROBE_STOP` cap or instrument that wait loop.
+Unset values keep production Enter retry-while-visible.
+`bin/fm-spawn.sh` owns those flags.
