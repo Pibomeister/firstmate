@@ -40,15 +40,21 @@ cleanup() {
   fi
   fm_test_cleanup || rc=1
   if [ "$rc" -eq 0 ]; then
-    rm -rf -- "$LAB_ROOT"
-  else
+    [ ! -d "$FM_HOME/state/labmate.git-hooks" ] \
+      || chmod -R u+w "$FM_HOME/state/labmate.git-hooks" || rc=1
+    rm -rf -- "$LAB_ROOT" || rc=1
+  fi
+  if [ "$rc" -ne 0 ]; then
     printf 'lab retained for diagnosis: %s\n' "$LAB_ROOT" >&2
+  else
+    printf 'ok - named Herdr lab %s: disposable files removed\n' "$HERDR_LAB_SESSION"
   fi
   exit "$rc"
 }
 trap cleanup EXIT
 
 "$LAB_HOME_HELPER" create "$FM_HOME" >/dev/null || fail "could not mark the primary lab home"
+ln -s "$ROOT/bin" "$FM_HOME/bin" || fail "could not expose the test scripts to the primary lab home"
 LAB_TMUX_DIR=$("$LAB_HOME_HELPER" tmux-dir "$FM_HOME") || fail "could not create the private tmux socket directory"
 HERDR_ATTEMPTED=1
 "$HERDR_LAB_HELPER" provision "$HERDR_LAB_SESSION" || fail "could not provision named Herdr lab"
@@ -155,13 +161,15 @@ after_interrupt=$("$HERDR_LAB_HELPER" run "$HERDR_LAB_SESSION" pane read "$pane"
   || fail "could not inspect the dismissed dialog"
 [ "$(fm_composer_classify_screen "$caps" "$after_interrupt")" = empty ] \
   || fail "Grok's post-interrupt composer was not proven empty"
+printf 'ok - named Herdr lab %s: exhausted quota dialog classified and dismissed; token meter stayed zero\n' \
+  "$HERDR_LAB_SESSION"
 
 stopped=$(control exit 2>&1) || fail "the guarded Grok exit failed: $stopped"
 printf '%s' "$stopped" | grep -Fq 'endpoint-gone labmate' \
   || fail "the exit did not prove the Grok endpoint gone: $stopped"
 # A secondmate with a gone endpoint uses its one recovery owner, not the
 # relaunch rebind path reserved for ordinary tasks.
-spawned=$(FM_HOME="$FM_HOME" HERDR_SESSION="$HERDR_LAB_SESSION" FM_SPAWN_NO_GUARD=1 \
+spawned=$(FM_HOME="$FM_HOME" FM_ROOT_OVERRIDE="$FM_HOME" HERDR_SESSION="$HERDR_LAB_SESSION" FM_SPAWN_NO_GUARD=1 \
   FM_SKIP_SECONDMATE_SYNC=1 FM_SKIP_SECONDMATE_INHERIT=1 \
   "$ROOT/bin/fm-spawn.sh" labmate --secondmate --backend herdr 2>&1) \
   || fail "the guarded Codex secondmate respawn failed: $spawned"
@@ -183,8 +191,82 @@ inbox="$FM_HOME/state/labmate.inbox/001.msg"
 [ -f "$inbox" ] || inbox="$FM_HOME/state/labmate.inbox/handled/001.msg"
 [ -f "$inbox" ] && [ "$(git hash-object "$inbox")" = "$inbox_before" ] \
   || fail "respawn lost or changed the queued inbox message"
-agents=$("$HERDR_LAB_HELPER" run "$HERDR_LAB_SESSION" agent list) || fail "could not read the replacement agent"
-printf '%s' "$agents" | jq -e '.result.agents[]? | select(.agent == "codex")' >/dev/null \
-  || fail "Herdr did not report a live Codex agent"
+agents=
+for _ in $(seq 1 40); do
+  agents=$("$HERDR_LAB_HELPER" run "$HERDR_LAB_SESSION" agent list) || fail "could not read the replacement agent"
+  printf '%s' "$agents" | jq -e '.result.agents[]? | select(.agent == "codex")' >/dev/null && break
+  sleep 0.5
+done
+if ! printf '%s' "$agents" | jq -e '.result.agents[]? | select(.agent == "codex")' >/dev/null; then
+  replacement_pane=$(sed -n 's/^herdr_pane_id=//p' "$meta" | tail -1)
+  replacement_screen=$("$HERDR_LAB_HELPER" run "$HERDR_LAB_SESSION" pane read "$replacement_pane" --source visible --format ansi 2>&1 || true)
+  printf '%s' "$replacement_screen" > "$LAB_ROOT/failed-codex-screen.ansi"
+  fail "Herdr did not report a live Codex agent: $agents; replacement pane captured in the retained lab"
+fi
+replacement_pane=$(sed -n 's/^herdr_pane_id=//p' "$meta" | tail -1)
+for _ in $(seq 1 40); do
+  replacement_screen=$("$HERDR_LAB_HELPER" run "$HERDR_LAB_SESSION" pane read "$replacement_pane" --source visible --format ansi) \
+    || fail "could not read the Codex replacement pane"
+  printf '%s' "$replacement_screen" | grep -Fq 'Trust this folder?' && break
+  sleep 0.5
+done
+if printf '%s' "$replacement_screen" | grep -Fq 'Trust this folder?'; then
+  case "${CODEX_HOME:-}" in
+    "$ROOT"/*) ;;
+    *) fail "Codex trust requires CODEX_HOME inside the disposable worktree" ;;
+  esac
+  printf '%s' "$replacement_screen" | grep -Fq '1. Trust and continue' \
+    || fail "Codex did not visibly select the lab-only trust choice"
+  "$HERDR_LAB_HELPER" run "$HERDR_LAB_SESSION" pane send-keys "$replacement_pane" Enter >/dev/null \
+    || fail "could not answer the disposable Codex trust prompt"
+fi
 printf 'ok - named Herdr lab %s: Codex replaced Grok through guarded respawn; checkout, charter, child record, and inbox survived\n' \
   "$HERDR_LAB_SESSION"
+
+# Drop only this lab's server immediately after the exit key lands, then make
+# its restart fail. This keeps the recorded pane unreachable for the proof read.
+HERDR_REAL=$(command -v herdr)
+cat > "$LAB_ROOT/herdr" <<'EOF'
+#!/usr/bin/env bash
+set -u
+case "${1:-}" in
+  server)
+    [ ! -f "$HERDR_TEST_EXIT_SENT" ] || exit 1
+    ;;
+esac
+"$HERDR_REAL" "$@"
+rc=$?
+[ "$rc" -eq 0 ] || exit "$rc"
+if [ "${1:-} ${2:-}" = 'pane send-text' ] && [ "${4:-}" = /quit ]; then
+  : > "$HERDR_TEST_EXIT_TYPED"
+elif [ "${1:-} ${2:-}" = 'pane send-keys' ] && [ "${4:-}" = enter ] && [ -f "$HERDR_TEST_EXIT_TYPED" ]; then
+  "$HERDR_REAL" session stop "$HERDR_TEST_SESSION" --json --session "$HERDR_TEST_SESSION" >/dev/null || exit 1
+  : > "$HERDR_TEST_EXIT_SENT"
+fi
+EOF
+chmod 700 "$LAB_ROOT/herdr"
+meta_before_unreachable=$(git hash-object "$meta")
+unreachable=
+for _ in $(seq 1 40); do
+  unreachable=$(PATH="$LAB_ROOT:$PATH" HERDR_REAL="$HERDR_REAL" \
+    HERDR_TEST_SESSION="$HERDR_LAB_SESSION" HERDR_TEST_EXIT_TYPED="$LAB_ROOT/exit-typed" \
+    HERDR_TEST_EXIT_SENT="$LAB_ROOT/exit-sent" control exit 2>&1) \
+    && fail "an unreachable recorded Herdr endpoint was reported stopped: $unreachable"
+  [ -f "$LAB_ROOT/exit-sent" ] && break
+  printf '%s' "$unreachable" | grep -Fq 'composer visibly holds pending text' \
+    || fail "the guarded Codex exit refused before the lab server became unreachable: $unreachable"
+  sleep 0.5
+done
+if [ ! -f "$LAB_ROOT/exit-sent" ]; then
+  replacement_pane=$(sed -n 's/^herdr_pane_id=//p' "$meta" | tail -1)
+  "$HERDR_LAB_HELPER" run "$HERDR_LAB_SESSION" pane read "$replacement_pane" --source visible --format ansi \
+    > "$LAB_ROOT/pending-codex-screen.ansi" 2>&1 || true
+  fail "the exit key did not reach the real Herdr endpoint: $unreachable; Codex pane captured in the retained lab"
+fi
+printf '%s' "$unreachable" | grep -Fq 'exit=unconfirmed' \
+  || fail "the unreachable endpoint was not marked unconfirmed: $unreachable"
+printf '%s' "$unreachable" | grep -Fq "the recorded herdr session's server could not be started" \
+  || fail "the refusal did not identify the unreachable recorded session: $unreachable"
+[ "$(git hash-object "$meta")" = "$meta_before_unreachable" ] \
+  || fail "the unconfirmed exit changed the secondmate task record"
+printf 'ok - named Herdr lab %s: unreachable post-exit pane refused a stopped claim\n' "$HERDR_LAB_SESSION"
