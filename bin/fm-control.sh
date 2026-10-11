@@ -707,6 +707,24 @@ do_exit() {
     fi
   fi
   state=$(wait_agent_state "$EXIT_WAIT" dead) || {
+    if [ "$state" = missing ]; then
+      # Grok can close its Herdr pane with /exit rather than leave an idle
+      # shell behind. Prove that the exact recorded endpoint is gone before
+      # reporting a stop or letting relaunch re-create it.
+      absence=$(fm_control_endpoint_absence_verdict "$BACKEND" "$T")
+      case "${absence%%$'\t'*}" in
+        gone)
+          retire_busy_incarnation
+          printf 'endpoint-gone'
+          return 0
+          ;;
+        dead)
+          retire_busy_incarnation
+          printf 'stopped'
+          return 0
+          ;;
+      esac
+    fi
     # A submit can return before any read sees the picker: a native busy
     # verdict needs no composer read, and a cleared composer can be read
     # before the picker renders. Read the screen once more here.
@@ -715,7 +733,7 @@ do_exit() {
     if [ -s "$FM_COMPOSER_DIALOG_SINK" ]; then
       refuse_blocking_prompt "$(cat "$FM_COMPOSER_DIALOG_SINK")"
     fi
-    die "exit-delivered $ID interrupt=$interrupt_result exit-command=delivered agent-state=$state exit=unconfirmed; the agent did not stop within ${EXIT_WAIT}s"
+    die "exit-delivered $ID interrupt=$interrupt_result exit-command=delivered agent-state=$state exit=unconfirmed${absence:+ absence=${absence#*$'\t'}}; the agent did not stop within ${EXIT_WAIT}s"
   }
   # The incarnation is over: retire its busy wiring so no stale record or
   # orphaned generation survives the agent that produced it.

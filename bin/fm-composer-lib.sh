@@ -1081,6 +1081,8 @@ _fm_composer_titled_bottom_ok() {  # <family> <bottom-inner> <top-spaces>
     *) return 1 ;;
   esac
   spaces=${inner//"$dash"/ }
+  # Grok 1.0.50 includes middle dots in its aligned status/title rule.
+  spaces=${spaces//·/ }
   spaces=$(printf '%s' "$spaces" | LC_ALL=C sed 's/[!-~]/ /g')
   case "$spaces" in
     *[![:space:]]*) return 1 ;;

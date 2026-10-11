@@ -1984,6 +1984,7 @@ if [ "${1:-}" = status ] && [ "${2:-}" = --json ]; then
   exit 0
 fi
 if [ "${1:-}" = server ]; then
+  [ ! -f "$D/herdr-server-start-fails" ] || exit 1
   rm -f "$D/herdr-stopped"
   exit 0
 fi
@@ -2003,6 +2004,9 @@ case "${1:-} ${2:-}" in
       # id is structurally gone, which is herdr's `pane_not_found`.
       printf '{"error":{"code":"pane_not_found"}}\n'
     fi
+    exit 0 ;;
+  'pane read')
+    printf '╭────╮\n│    │\n╰────╯\n'
     exit 0 ;;
   'agent get')
     if [ -f "$D/herdr-agent-registration" ]; then
@@ -2038,10 +2042,20 @@ case "${1:-} ${2:-}" in
       ". '"*"'") staged=${payload#". '"}; staged=${staged%"'"}; [ ! -f "$staged" ] || payload=$(cat "$staged") ;;
     esac
     case "$payload" in
+      /exit) : > "$D/herdr-exit-staged" ;;
       *'encode launch-brief'* | *'Firstmate operational input waiting: read'*)
         printf '%s\n' "$payload" > "$D/launched-command"
         : > "$D/herdr-agent-live" ;;
     esac
+    exit 0 ;;
+  'pane send-keys')
+    if [ "${4:-}" = enter ] && [ -f "$D/herdr-exit-staged" ]; then
+      if [ -f "$D/herdr-exit-closes-pane" ]; then
+        printf '%%none' > "$D/herdr-pane"
+      elif [ -f "$D/herdr-exit-stops-server" ]; then
+        : > "$D/herdr-stopped"
+      fi
+    fi
     exit 0 ;;
   'workspace list')
     printf '{"result":{"workspaces":[]}}\n'
@@ -2224,6 +2238,49 @@ test_herdr_exit_reports_already_stopped_when_the_pane_outlived_its_server() {
   [ "$(meta_field "$dir" rl72 window)" = 'fmlab:%7' ] \
     || fail "exit must leave the recorded endpoint exactly as it found it"
   pass "fm-control exit: a herdr pane that outlived its stopped server is already-stopped, not gone"
+}
+
+test_herdr_exit_proves_a_pane_closed_by_the_exit_command() {
+  local dir out rc=0
+  herdr_case_or_skip exit-closed-pane rl78 || {
+    echo "skip - Herdr post-exit absence proof needs jq"
+    return 0
+  }
+  dir=$HERDR_CASE_DIR
+  rm -f "$dir/fake/herdr-stopped"
+  : > "$dir/fake/herdr-agent-live"
+  : > "$dir/fake/herdr-exit-closes-pane"
+
+  out=$(run_control "$dir" rl78 exit) || rc=$?
+  expect_code 0 "$rc" "an exit that closes its exact Herdr pane must prove absence before reporting success"$'\n'"$out"$'\n'"$(cat "$dir/fake/herdr-log")"
+  assert_contains "$out" "endpoint-gone rl78" "the result should name the proven endpoint loss"
+  assert_contains "$(cat "$dir/fake/herdr-log")" "pane get %7 --session fmlab" \
+    "the absence proof must re-read the recorded pane in its recorded session"
+  [ "$(meta_field "$dir" rl78 worktree)" = "$dir/wt" ] \
+    || fail "exit must preserve the recorded worktree"
+  pass "fm-control exit: a closed Herdr pane is confirmed only by exact absence proof"
+}
+
+test_herdr_exit_refuses_unreachable_post_exit_pane() {
+  local dir out rc=0
+  herdr_case_or_skip exit-unreachable-pane rl79 || {
+    echo "skip - Herdr post-exit reachability proof needs jq"
+    return 0
+  }
+  dir=$HERDR_CASE_DIR
+  rm -f "$dir/fake/herdr-stopped"
+  : > "$dir/fake/herdr-agent-live"
+  : > "$dir/fake/herdr-exit-stops-server"
+  : > "$dir/fake/herdr-server-start-fails"
+
+  out=$(run_control "$dir" rl79 exit) || rc=$?
+  expect_code 1 "$rc" "a server that cannot be restarted must not prove the agent gone"$'\n'"$out"
+  assert_contains "$out" "exit=unconfirmed" "the postcondition must remain unconfirmed"
+  assert_contains "$out" "the recorded herdr session's server could not be started" \
+    "the refusal should explain why endpoint absence was not proven"
+  [ "$(meta_field "$dir" rl79 worktree)" = "$dir/wt" ] \
+    || fail "an unconfirmed exit must preserve the recorded worktree"
+  pass "fm-control exit: an unreachable Herdr pane remains unconfirmed"
 }
 
 test_herdr_rebind_stays_in_the_recorded_session() {
@@ -2528,6 +2585,8 @@ test_reclaim_refuses_an_unreadable_endpoint
 test_herdr_relaunch_resumes_only_the_registered_pi_session
 test_herdr_reclaim_adopts_a_pane_that_outlived_its_server
 test_herdr_exit_reports_already_stopped_when_the_pane_outlived_its_server
+test_herdr_exit_proves_a_pane_closed_by_the_exit_command
+test_herdr_exit_refuses_unreachable_post_exit_pane
 test_herdr_rebind_stays_in_the_recorded_session
 test_herdr_reclaim_refuses_an_agent_that_came_back
 test_herdr_reclaim_keeps_the_task_whole

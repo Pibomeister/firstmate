@@ -731,6 +731,21 @@ test_matrix_grok_titled_bottom_border() {
   pass "matrix: grok's real oversized titled bottom is empty while typed and unproved panes stay safe"
 }
 
+test_grok_weekly_limit_footer_and_dialog() {
+  local idle draft malformed paywall
+  # Grok 1.0.50 draws middle dots into the otherwise aligned bottom rule.
+  # The idle box came from a real Herdr 0.7.3 viewport at 120 columns.
+  idle=$'  ╭─────────────────────────────────────────────────────────────────────────────────────╮\n  │ ❯                                                                                   │\n  ╰─────────────────────────── Weekly limit left: 0% · Grok 4.7 (low) · always-approve ─╯\n\n  Shift+Tab:mode  │  Ctrl+.:shortcuts'
+  assert_screen "grok 1.0.50 weekly-limit idle footer" empty "$CAPS_STYLED" "$idle"
+  draft=${idle/❯      /❯ draft}
+  assert_screen "grok 1.0.50 real draft remains pending" pending "$CAPS_STYLED" "$draft"
+  malformed=${idle/─╯/╯}
+  assert_screen "grok 1.0.50 mismatched title width" unknown "$CAPS_STYLED" "$malformed"
+  paywall=$'  ❯ Reply with one word: OK.\n\n  ┃\n  ┃  You hit your weekly limit.\n  ┃\n  ┃  1 (○) Buy more credits\n  ┃  2 (○) Try Again\n  ┃  ↑/↓ navigate · y copy    Enter:submit'
+  assert_screen "grok purchase dialog cannot be typed into" pending "$CAPS_STYLED" "$paywall"
+  pass "grok quota footer is idle only without a dialog or draft and with proven geometry"
+}
+
 test_matrix_claude_titled_top_rule() {
   # A named Claude Code session draws its title into the composer's TOP rule
   # (issues #5601 and #5558; observed on herdr as
@@ -1035,6 +1050,7 @@ test_matrix_pi_separated_needs_identity
 test_matrix_pi_dollar_status_footer_is_empty
 test_matrix_opencode_leftbar_signals
 test_matrix_grok_titled_bottom_border
+test_grok_weekly_limit_footer_and_dialog
 test_matrix_claude_titled_top_rule
 test_matrix_kimi_bordered_shell_glyph_box
 test_matrix_claude_inside_zellij_ansi_dump
