@@ -268,6 +268,82 @@ test_marked_send_preserves_trailing_newlines() {
   pass "fm-send: marked secondmate payload preserves trailing newline bytes in its record"
 }
 
+test_secondmate_handoff_reply_and_followup() {
+  local dir fb log parent_home mate payload corr rec followup next_corr
+  dir="$TMP_ROOT/handshake"; mkdir -p "$dir"
+  fb=$(make_stubs "$dir"); log="$dir/send.log"
+  parent_home=$(setup_home handshake)
+  mate="$dir/mate"
+  mkdir -p "$mate/state"
+  printf 'domain\n' > "$mate/.fm-secondmate-home"
+  printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$parent_home" \
+    > "$mate/.fm-secondmate-parent"
+  fm_write_secondmate_meta "$parent_home/state/domain.meta" "$mate" "sess:fm-domain"
+  . "$ROOT/bin/fm-pending-reply-lib.sh"
+  payload=$'Check the report at data/build/report.md.\nKeep "$HOME", `literal`, and owner words unchanged.\n\n'
+  run_send "$fb" "$parent_home" "$log" domain "$payload" \
+    || fail "handoff send should succeed"
+  corr=$(fm_pending_reply_extract_corr "$(record_body "$parent_home/state/domain.inbox/001.msg")")
+  [ -n "$corr" ] || fail "handoff must have a correlation"
+  printf '%s%s %s' "$FM_FROMFIRST_MARK" "corr=$corr" "$payload" > "$dir/expected"
+  record_body "$parent_home/state/domain.inbox/001.msg" > "$dir/actual"
+  cmp -s "$dir/expected" "$dir/actual" || fail "handoff must preserve exact payload bytes and pointer"
+  rec=$(fm_pending_reply_path "$parent_home/state" "$corr")
+  [ "$(fm_pending_reply_get "$rec" phase)" = awaiting_report ] \
+    || fail "accepted input must still await a routed reply"
+  [ -z "$(fm_pending_reply_get "$rec" request_turn_completed_epoch)" ] \
+    || fail "send must not invent a completed turn"
+  if fm_pending_reply_try_resolve "$parent_home/state" "$corr"; then
+    fail "send alone must not prove a reply"
+  fi
+  mkdir -p "$parent_home/state/domain.inbox/handled"
+  mv "$parent_home/state/domain.inbox/001.msg" "$parent_home/state/domain.inbox/handled/"
+  if fm_pending_reply_try_resolve "$parent_home/state" "$corr"; then
+    fail "inbox acknowledgement must not prove a routed reply"
+  fi
+  FM_HOME="$mate" "$ROOT/bin/fm-secondmate-report.sh" done "$corr" "see data/build/report.md" \
+    || fail "secondmate must report through its bound parent channel"
+  [ -s "$parent_home/state/domain.status" ] || fail "reply must reach the parent channel"
+  [ ! -e "$mate/state/domain.status" ] || fail "reply must not land in the mate's own status file"
+  fm_pending_reply_try_resolve "$parent_home/state" "$corr" || fail "routed reply must resolve the handoff"
+  [ "$(fm_pending_reply_get "$rec" phase)" = resolved ] || fail "handoff must be resolved"
+  followup=$'Use data/build/report.md for the next step.\n\n'
+  run_send "$fb" "$parent_home" "$log" domain "$followup" || fail "follow-up send should succeed"
+  next_corr=$(fm_pending_reply_extract_corr "$(record_body "$parent_home/state/domain.inbox/002.msg")")
+  [ -n "$next_corr" ] && [ "$next_corr" != "$corr" ] \
+    || fail "follow-up must create a distinct reply expectation"
+  printf '%s%s %s' "$FM_FROMFIRST_MARK" "corr=$next_corr" "$followup" > "$dir/expected"
+  record_body "$parent_home/state/domain.inbox/002.msg" > "$dir/actual"
+  cmp -s "$dir/expected" "$dir/actual" || fail "follow-up must preserve its exact payload"
+  if fm_pending_reply_try_resolve "$parent_home/state" "$next_corr"; then
+    fail "the earlier reply must not resolve the follow-up"
+  fi
+  FM_HOME="$mate" "$ROOT/bin/fm-secondmate-report.sh" done "$next_corr" "follow-up complete" \
+    || fail "follow-up reply should route"
+  fm_pending_reply_try_resolve "$parent_home/state" "$next_corr" || fail "follow-up reply must resolve"
+  pass "fm-send: exact handoff, acknowledgement, routed reply, and follow-up stay distinct"
+}
+
+test_handoff_refuses_missing_home_and_unknown_target() {
+  local dir fb log parent_home rc
+  dir="$TMP_ROOT/handshake-refusals"; mkdir -p "$dir"
+  fb=$(make_stubs "$dir"); log="$dir/send.log"
+  parent_home=$(setup_home handshake-refusals)
+  : > "$log"
+  rc=0
+  env -u FM_HOME PATH="$fb:$PATH" FM_ROOT_OVERRIDE="$parent_home" FM_SEND_LOG="$log" \
+    "$SEND" domain "exact payload" > "$dir/out" 2> "$dir/err" || rc=$?
+  [ "$rc" -ne 0 ] || fail "handoff without explicit FM_HOME must refuse"
+  [ -s "$dir/err" ] || fail "missing-home refusal must give a diagnostic"
+  [ ! -s "$log" ] || fail "missing home must not type into an endpoint"
+  rc=0
+  run_send "$fb" "$parent_home" "$log" domain "exact payload" > "$dir/out" || rc=$?
+  [ "$rc" -ne 0 ] || fail "unknown handoff target must refuse"
+  [ ! -s "$log" ] || fail "unknown target must not type into an endpoint"
+  [ ! -d "$parent_home/state/domain.inbox" ] || fail "refused handoff must not enqueue a payload"
+  pass "fm-send: handoffs fail closed on missing home and unknown target"
+}
+
 test_secondmate_target_is_marked
 test_exact_secondmate_task_id_is_marked
 test_crewmate_target_is_not_marked
@@ -276,3 +352,5 @@ test_key_path_is_not_marked
 test_marker_is_label_plus_invisible_separator
 test_marker_transformation_is_idempotent
 test_marked_send_preserves_trailing_newlines
+test_secondmate_handoff_reply_and_followup
+test_handoff_refuses_missing_home_and_unknown_target
