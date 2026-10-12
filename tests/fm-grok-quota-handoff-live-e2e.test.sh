@@ -169,7 +169,7 @@ printf '%s' "$stopped" | grep -Fq 'endpoint-gone labmate' \
   || fail "the exit did not prove the Grok endpoint gone: $stopped"
 # A secondmate with a gone endpoint uses its one recovery owner, not the
 # relaunch rebind path reserved for ordinary tasks.
-spawned=$(FM_HOME="$FM_HOME" FM_ROOT_OVERRIDE="$FM_HOME" HERDR_SESSION="$HERDR_LAB_SESSION" FM_SPAWN_NO_GUARD=1 \
+spawned=$(env FM_HOME="$FM_HOME" FM_ROOT_OVERRIDE="$FM_HOME" HERDR_SESSION="$HERDR_LAB_SESSION" FM_SPAWN_NO_GUARD=1 \
   FM_SKIP_SECONDMATE_SYNC=1 FM_SKIP_SECONDMATE_INHERIT=1 \
   "$ROOT/bin/fm-spawn.sh" labmate --secondmate --backend herdr 2>&1) \
   || fail "the guarded Codex secondmate respawn failed: $spawned"
