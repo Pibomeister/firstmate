@@ -301,7 +301,7 @@ test_secondmate_handoff_reply_and_followup() {
   if fm_pending_reply_try_resolve "$parent_home/state" "$corr"; then
     fail "inbox acknowledgement must not prove a routed reply"
   fi
-  FM_HOME="$mate" "$ROOT/bin/fm-secondmate-report.sh" done "$corr" "see data/build/report.md" \
+  FM_HOME="$mate" "$ROOT/bin/fm-secondmate-report.sh" 'done' "$corr" "see data/build/report.md" \
     || fail "secondmate must report through its bound parent channel"
   [ -s "$parent_home/state/domain.status" ] || fail "reply must reach the parent channel"
   [ ! -e "$mate/state/domain.status" ] || fail "reply must not land in the mate's own status file"
@@ -318,7 +318,7 @@ test_secondmate_handoff_reply_and_followup() {
   if fm_pending_reply_try_resolve "$parent_home/state" "$next_corr"; then
     fail "the earlier reply must not resolve the follow-up"
   fi
-  FM_HOME="$mate" "$ROOT/bin/fm-secondmate-report.sh" done "$next_corr" "follow-up complete" \
+  FM_HOME="$mate" "$ROOT/bin/fm-secondmate-report.sh" 'done' "$next_corr" "follow-up complete" \
     || fail "follow-up reply should route"
   fm_pending_reply_try_resolve "$parent_home/state" "$next_corr" || fail "follow-up reply must resolve"
   pass "fm-send: exact handoff, acknowledgement, routed reply, and follow-up stay distinct"
