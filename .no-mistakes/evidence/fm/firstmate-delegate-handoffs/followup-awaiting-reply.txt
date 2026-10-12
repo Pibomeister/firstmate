@@ -1,0 +1,36 @@
+Fresh follow-up received body:
+[fm-from-firstmate]⁣corr=cd044e0e925cb6ad Use /Users/eduardopicazo/.no-mistakes/worktrees/e29a312fd124/01M4RGCZETSK3GGMF9CMP6WV0J/.test-delegate/report.md for the next step.
+Keep "$HOME", `literal`, and owner words unchanged.
+
+
+Parent channel before follow-up reply:
+done [corr=12760b370bbf55cf] [at=1791826322]: sandbox report reviewed (via-helper)
+
+Attempting to resolve with only previous reply: exit=1
+schema=fm-pending-reply.v1
+corr_id=cd044e0e925cb6ad
+task_id=domain
+parent_home=/Users/eduardopicazo/.no-mistakes/worktrees/e29a312fd124/01M4RGCZETSK3GGMF9CMP6WV0J/.test-delegate/home
+parent_status=/Users/eduardopicazo/.no-mistakes/worktrees/e29a312fd124/01M4RGCZETSK3GGMF9CMP6WV0J/.test-delegate/home/state/domain.status
+request_summary=Use /Users/eduardopicazo/.no-mistakes/worktrees/e29a312fd124/01M4RGCZETSK3GGMF9CMP6WV0J/.test-delegate/report.md for ...
+created_epoch=1791826425
+phase=awaiting_report
+turn_seen_busy=0
+request_turn_completed_epoch=
+recovery_attempted_epoch=
+recovery_sender_pid=
+recovery_sender_identity=
+recovery_sent_epoch=
+recovery_delivery_outcome=
+recovery_turn_seen_busy=0
+recovery_turn_completed_epoch=
+escalated_epoch=
+resolved_epoch=
+resolved_via=
+wrong_home_hits=0
+wrong_home_first_sighting=
+wrong_home_sightings=
+wrong_home_scan_signature=
+grace_secs=120
+delivered_epoch=1791826425
+parent_status_scan_signature=16777233:406412589:83:1791826322:1791826322

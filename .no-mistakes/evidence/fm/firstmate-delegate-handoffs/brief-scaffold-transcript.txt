@@ -1,0 +1,3 @@
+$ FM_HOME=<marked lab> bin/fm-brief.sh verbatim-lab sandbox --scout
+exit=0
+scaffolded: /Users/eduardopicazo/.no-mistakes/worktrees/e29a312fd124/01M4RGCZETSK3GGMF9CMP6WV0J/.test-delegate/home/data/verbatim-lab/brief.md (scout; replace {TASK} and {FIRSTMATE_SPEC})

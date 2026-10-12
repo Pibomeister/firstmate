@@ -1,0 +1,57 @@
+{
+  "revision": "06883b8dcce07406019015143d500b3778be80ef",
+  "records": [
+    {
+      "record": "001",
+      "corr": "12760b370bbf55cf",
+      "payload": "Review the authoritative build check report at /Users/eduardopicazo/.no-mistakes/worktrees/e29a312fd124/01M4RGCZETSK3GGMF9CMP6WV0J/.test-delegate/report.md and report through your bound parent channel. Keep \"$HOME\", `literal`, and owner words unchanged.",
+      "payload_byte_exact": true,
+      "recipient_body_byte_exact": true,
+      "acknowledged": true,
+      "routed_parent_report": true,
+      "reconciliation_exit": 0,
+      "pending_record": "schema=fm-pending-reply.v1\ncorr_id=12760b370bbf55cf\ntask_id=domain\nparent_home=/Users/eduardopicazo/.no-mistakes/worktrees/e29a312fd124/01M4RGCZETSK3GGMF9CMP6WV0J/.test-delegate/home\nparent_status=/Users/eduardopicazo/.no-mistakes/worktrees/e29a312fd124/01M4RGCZETSK3GGMF9CMP6WV0J/.test-delegate/home/state/domain.status\nparent_status_scan_signature=\nrequest_summary=Review the authoritative build check report at /Users/eduardopicazo/.no-mistakes/worktrees/e29a312fd124/01M4RGCZETSK3...\ncreated_epoch=1791826308\nturn_seen_busy=0\nrequest_turn_completed_epoch=\nrecovery_attempted_epoch=\nrecovery_sender_pid=\nrecovery_sender_identity=\nrecovery_sent_epoch=\nrecovery_delivery_outcome=\nrecovery_turn_seen_busy=0\nrecovery_turn_completed_epoch=\nescalated_epoch=\nwrong_home_hits=0\nwrong_home_first_sighting=\nwrong_home_sightings=\nwrong_home_scan_signature=\ngrace_secs=120\ndelivered_epoch=1791826308\nphase=resolved\nresolved_epoch=1791826390\nresolved_via=helper\n",
+      "sha256": "72455363a88532375e6a4fb5fdd9565de228281320121f49d9e0ef5a1b4aa0ed"
+    },
+    {
+      "record": "002",
+      "corr": "cd044e0e925cb6ad",
+      "payload": "Use /Users/eduardopicazo/.no-mistakes/worktrees/e29a312fd124/01M4RGCZETSK3GGMF9CMP6WV0J/.test-delegate/report.md for the next step.\nKeep \"$HOME\", `literal`, and owner words unchanged.\n\n",
+      "payload_byte_exact": true,
+      "recipient_body_byte_exact": true,
+      "acknowledged": true,
+      "routed_parent_report": true,
+      "reconciliation_exit": 0,
+      "pending_record": "schema=fm-pending-reply.v1\ncorr_id=cd044e0e925cb6ad\ntask_id=domain\nparent_home=/Users/eduardopicazo/.no-mistakes/worktrees/e29a312fd124/01M4RGCZETSK3GGMF9CMP6WV0J/.test-delegate/home\nparent_status=/Users/eduardopicazo/.no-mistakes/worktrees/e29a312fd124/01M4RGCZETSK3GGMF9CMP6WV0J/.test-delegate/home/state/domain.status\nrequest_summary=Use /Users/eduardopicazo/.no-mistakes/worktrees/e29a312fd124/01M4RGCZETSK3GGMF9CMP6WV0J/.test-delegate/report.md for ...\ncreated_epoch=1791826425\nturn_seen_busy=0\nrequest_turn_completed_epoch=\nrecovery_attempted_epoch=\nrecovery_sender_pid=\nrecovery_sender_identity=\nrecovery_sent_epoch=\nrecovery_delivery_outcome=\nrecovery_turn_seen_busy=0\nrecovery_turn_completed_epoch=\nescalated_epoch=\nwrong_home_hits=0\nwrong_home_first_sighting=\nwrong_home_sightings=\nwrong_home_scan_signature=\ngrace_secs=120\ndelivered_epoch=1791826425\nparent_status_scan_signature=16777233:406412589:83:1791826322:1791826322\nphase=resolved\nresolved_epoch=1791826792\nresolved_via=helper\n",
+      "sha256": "398ed8385754a7b266b52a12731f984b59d2ff9f329a1855c4e5c179e7a96326"
+    },
+    {
+      "record": "003",
+      "corr": "c095b8c811c7af89",
+      "payload": "Review the authoritative build check report at /Users/eduardopicazo/.no-mistakes/worktrees/e29a312fd124/01M4RGCZETSK3GGMF9CMP6WV0J/.test-delegate/report.md and report through your bound parent channel. Keep \"$HOME\", `literal`, and owner words unchanged.",
+      "payload_byte_exact": true,
+      "recipient_body_byte_exact": true,
+      "acknowledged": true,
+      "routed_parent_report": true,
+      "reconciliation_exit": 0,
+      "pending_record": "schema=fm-pending-reply.v1\ncorr_id=c095b8c811c7af89\ntask_id=domain\nparent_home=/Users/eduardopicazo/.no-mistakes/worktrees/e29a312fd124/01M4RGCZETSK3GGMF9CMP6WV0J/.test-delegate/home\nparent_status=/Users/eduardopicazo/.no-mistakes/worktrees/e29a312fd124/01M4RGCZETSK3GGMF9CMP6WV0J/.test-delegate/home/state/domain.status\nparent_status_scan_signature=\nrequest_summary=Review the authoritative build check report at /Users/eduardopicazo/.no-mistakes/worktrees/e29a312fd124/01M4RGCZETSK3...\ncreated_epoch=1791826601\nturn_seen_busy=0\nrequest_turn_completed_epoch=\nrecovery_attempted_epoch=\nrecovery_sender_pid=\nrecovery_sender_identity=\nrecovery_sent_epoch=\nrecovery_delivery_outcome=\nrecovery_turn_seen_busy=0\nrecovery_turn_completed_epoch=\nescalated_epoch=\nwrong_home_hits=0\nwrong_home_first_sighting=\nwrong_home_sightings=\nwrong_home_scan_signature=\ngrace_secs=120\ndelivered_epoch=1791826602\nphase=resolved\nresolved_epoch=1791826792\nresolved_via=helper\n",
+      "sha256": "72455363a88532375e6a4fb5fdd9565de228281320121f49d9e0ef5a1b4aa0ed"
+    }
+  ],
+  "source_changes": "none",
+  "no_unavailable_or_unauthorized_payload_delivered": true,
+  "brief": {
+    "only_approved_placeholders_changed": true,
+    "captain_intent_consumed": "Keep \"$HOME\", `literal`, and owner words unchanged.",
+    "firstmate_spec_consumed": "Read /Users/eduardopicazo/.no-mistakes/worktrees/e29a312fd124/01M4RGCZETSK3GGMF9CMP6WV0J/.test-delegate/report.md and report its build result. No project edits or external actions.",
+    "consumer_diagnostics": "content_valid_exit=0\naddress_violation_exit=1\n",
+    "sha256": "25efc2114b2b1c78d8ce7ce578071ab183bd2524fbcb15467e0c3867d88737d3"
+  },
+  "parent_channel": "done [corr=12760b370bbf55cf] [at=1791826322]: sandbox report reviewed (via-helper)\ndone [corr=cd044e0e925cb6ad] [at=1791826436]: follow-up complete (via-helper)\ndone [corr=c095b8c811c7af89] [at=1791826625]: recheck with exact live endpoint (via-helper)\n",
+  "limitations": [
+    "Initial stale lab endpoint corrected and live delivery rerun.",
+    "Interactive trust dialog left untouched; real Claude print mode used with existing login.",
+    "Two test agents made /tmp comparison copies despite boundary instructions, then removed them.",
+    "Supervision intentionally inactive; diagnostics retained and delivery separated from receipt/reply."
+  ]
+}

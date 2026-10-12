@@ -1,0 +1,4 @@
+Private lab server stop exit=1
+no server running on /private/tmp/fml.EmmbDq/tmux-501/fm-lab
+
+fm-lab-home.sh teardown exit=0

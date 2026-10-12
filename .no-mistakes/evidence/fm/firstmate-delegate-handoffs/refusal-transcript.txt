@@ -1,0 +1,11 @@
+$ missing-home: bin/fm-send.sh domain REFUSED-MISSING-HOME
+exit=3
+stdout=
+stderr=error: refusing fleet lifecycle from inside a no-mistakes gate worktree (/Users/eduardopicazo/.no-mistakes/repos/e29a312fd124.git)
+
+$ unknown-target: bin/fm-send.sh unregistered-target REFUSED-UNKNOWN-TARGET
+exit=1
+stdout=
+stderr=fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/e29a312fd124/01M4RGCZETSK3GGMF9CMP6WV0J/.test-delegate/home
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: target 'unregistered-target' is not resolvable (tried meta=/Users/eduardopicazo/.no-mistakes/worktrees/e29a312fd124/01M4RGCZETSK3GGMF9CMP6WV0J/.test-delegate/home/state/unregistered-target.meta; metadata window/terminal lookup; backend=none). Use fm-unregistered-target for a recorded task/lane, or pass a well-formed explicit backend target such as session:window.

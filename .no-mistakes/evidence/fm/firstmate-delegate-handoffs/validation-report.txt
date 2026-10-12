@@ -1,0 +1,11 @@
+Revision: 06883b8dcce07406019015143d500b3778be80ef
+
+Live evaluation passed: delegated unsent draft with provenance; exact approved native Haiku-helper send; real Claude recipient byte preservation, acknowledgement and correlated parent reports; fresh approved follow-up with two trailing newlines and independent correlation; unavailable native facility BLOCKED without inline fallback; unauthorized spend/merge/target change NEEDS_CONTEXT without side effects; exact approved scaffold fill consumed by production brief readers; actual fm-send refusals for missing home and unknown target.
+
+Targeted baselines: bash tests/fm-send-secondmate-marker.test.sh; bash tests/fm-subagent-pretool-check.test.sh (both exited 0). No full suite, lint, static analysis, push or other gate phase ran.
+
+Setup correction: original print-mode recipient was polling a real inbox but the metadata named a missing window. Native sends durably recorded the requests and returned transport concerns. Corrected private endpoint primary:mate and repeated live send/report successfully with no dead-pane warning. Interactive Claude trust dialog was not accepted; print mode used the existing normal login.
+
+Test-process boundary violation: the primary copied the generated brief to /tmp/brief-before-003.md and the recipient copied a status snapshot to /tmp/ds.before despite confinement instructions. Both processes removed those temporary copies and disclosed them in retained transcripts. The private socket was created and removed by the production lab-home helper. No source, user configuration, production credential, or fleet changes were made.
+
+Cleanup: private tmux server already exited; fm-lab-home.sh teardown exited 0; .test-delegate fixtures removed; git status --short empty. Evidence preserved only in this evidence directory.
