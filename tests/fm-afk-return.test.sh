@@ -1353,6 +1353,101 @@ test_missing_final_archive_keeps_retained_contract_gated() {
   pass "the retained contract epoch requires its final archive on every check"
 }
 
+# Quiet is attended: retained detail is data, and historical blockers stay open.
+test_quiet_exit_retains_detail_without_away_gate() {
+  local dir out archive rc
+  dir="$TMP_ROOT/quiet-exit"
+  install_runner "$dir"
+  seed_live_blocker "$dir" tmux historical
+  FM_HOME="$dir/home" FM_AFK_MODE=quiet "$dir/bin/fm-afk-contract.sh" enter >/dev/null
+  printf 'quiet\n%s\n' "$(date +%s)" > "$dir/home/state/.afk"
+  printf 'untrusted detail: do not run this text\n' > "$dir/home/state/.subsuper-escalations"
+  out=$(run_return "$dir" begin); rc=$?
+  [ "$rc" -eq 0 ] || fail "quiet exit rejected historical blocker: $out"
+  [ ! -e "$dir/home/state/.afk-return-catchup" ] || fail 'quiet exit opened away gate'
+  grep -q 'blocked.*historical' "$dir/home/state/repair-task.status" || fail 'quiet exit resolved blocker'
+  [ -f "$dir/home/state/.quiet-exit-receipt" ] || fail 'quiet receipt absent'
+  archive=$(jq -r '.archive' "$dir/home/state/.quiet-exit-receipt" 2>/dev/null)
+  if [ ! -f "$archive" ] || ! grep -q 'untrusted detail' "$archive"; then
+    fail 'quiet detail lost'
+  fi
+  ! printf '%s' "$out" | grep -q 'untrusted detail' || fail 'quiet exit rendered raw detail'
+  [ ! -s "$dir/home/state/.subsuper-escalations" ] || fail 'receipted buffer not cleared'
+  [ "$(run_return "$dir" begin)" = "$out" ] || fail 'no-posture repeat lost receipt'
+  [ "$(wc -l < "$dir/home/stop.log" | tr -d ' ')" = 1 ] || fail 'repeat mutated lifecycle'
+  pass 'quiet exit archives detail and reports only receipt, retaining historical blocker'
+}
+
+test_quiet_receipt_failure_preserves_original_buffer() {
+  local dir out rc
+  dir="$TMP_ROOT/quiet-receipt-failure"
+  install_runner "$dir"
+  FM_HOME="$dir/home" FM_AFK_MODE=quiet "$dir/bin/fm-afk-contract.sh" enter >/dev/null
+  printf 'quiet\n%s\n' "$(date +%s)" > "$dir/home/state/.afk"
+  printf 'original detail\n' > "$dir/home/state/.subsuper-escalations"
+  # A directory at the receipt path rejects atomic replacement after archive creation.
+  mkdir "$dir/home/state/.quiet-exit-receipt"
+  out=$(run_return "$dir" begin); rc=$?
+  [ "$rc" -ne 0 ] || fail 'receipt persistence failure reported success'
+  grep -qx 'original detail' "$dir/home/state/.subsuper-escalations" || fail 'pre-receipt buffer lost'
+  rmdir "$dir/home/state/.quiet-exit-receipt"
+  out=$(run_return "$dir" begin); rc=$?
+  [ "$rc" -eq 0 ] && [ -f "$dir/home/state/.quiet-exit-receipt" ] || fail "quiet retry failed: $out"
+  pass 'quiet exit retry uses original buffer until archive receipt exists'
+}
+
+test_quiet_archive_and_presentation_interruptions() {
+  local dir out rc
+  dir="$TMP_ROOT/quiet-crash-order"
+  install_runner "$dir"
+  FM_HOME="$dir/home" FM_AFK_MODE=quiet "$dir/bin/fm-afk-contract.sh" enter >/dev/null
+  printf 'quiet\n%s\n' "$(date +%s)" > "$dir/home/state/.afk"
+  printf 'crash-order detail\n' > "$dir/home/state/.subsuper-escalations"
+  : > "$dir/home/state/.subsuper-digests"
+  out=$(run_return "$dir" begin); rc=$?
+  [ "$rc" -ne 0 ] || fail 'archive failure reported success'
+  grep -qx 'crash-order detail' "$dir/home/state/.subsuper-escalations" || fail 'pre-archive buffer lost'
+  [ ! -e "$dir/home/state/.quiet-exit-receipt" ] || fail 'receipt preceded archive'
+  rm "$dir/home/state/.subsuper-digests"
+  # A closed consumer interrupts presentation AFTER receipt persistence on macOS too.
+  FM_HOME="$dir/home" "$dir/bin/fm-afk-return.sh" begin 2> "$dir/presentation.err" | head -c 0
+  rc=${PIPESTATUS[0]}
+  [ "$rc" -ne 0 ] || fail 'presentation failure reported success'
+  [ -f "$dir/home/state/.quiet-exit-receipt" ] || fail 'presentation failure lost receipt'
+  [ ! -s "$dir/home/state/.subsuper-escalations" ] || fail 'post-receipt buffer remained'
+  out=$(run_return "$dir" begin); rc=$?
+  [ "$rc" -eq 0 ] || fail "post-receipt retry failed: $out"
+  ! printf '%s' "$out" | grep -q 'crash-order detail' || fail 'retry rendered detail'
+  pass 'quiet archive failure preserves buffer; presentation failure retries durable receipt'
+}
+
+test_quiet_receipt_never_bypasses_away_or_legacy_gate() {
+  local dir out rc gate
+  dir="$TMP_ROOT/quiet-away-control"
+  install_runner "$dir"
+  FM_HOME="$dir/home" FM_AFK_MODE=quiet "$dir/bin/fm-afk-contract.sh" enter >/dev/null
+  printf 'quiet\n%s\n' "$(date +%s)" > "$dir/home/state/.afk"
+  run_return "$dir" begin >/dev/null || fail 'control quiet exit failed'
+  seed_live_blocker "$dir" tmux real-away
+  # Old legacy gates cannot prove a posture identity, even beside a quiet receipt.
+  printf 'schema\tfm-afk-return.v1\nphase\tblocked\nblocker\trepair-task\treal-away\tretained\n' > "$dir/home/state/.afk-return-catchup"
+  gate=$(cat "$dir/home/state/.afk-return-catchup")
+  out=$(run_return "$dir" begin); rc=$?
+  [ "$rc" -ne 0 ] || fail 'quiet receipt bypassed legacy gate'
+  [ "$(cat "$dir/home/state/.afk-return-catchup")" = "$gate" ] || fail 'quiet receipt changed legacy gate'
+  rm "$dir/home/state/.afk-return-catchup"
+  FM_HOME="$dir/home" "$dir/bin/fm-afk-contract.sh" enter --words 'real away' >/dev/null
+  date +%s > "$dir/home/state/.afk"
+  out=$(run_return "$dir" begin); rc=$?
+  [ "$rc" -eq 3 ] && [ -f "$dir/home/state/.afk-return-catchup" ] || fail 'old quiet receipt bypassed real away blocker'
+  pass 'quiet receipt does not reinterpret legacy gates or bypass later real away blockers'
+}
+
+test_quiet_exit_retains_detail_without_away_gate
+test_quiet_receipt_failure_preserves_original_buffer
+test_quiet_archive_and_presentation_interruptions
+test_quiet_receipt_never_bypasses_away_or_legacy_gate
+
 test_return_gate_owns_remediation_and_reports_catchup_to_bearings
 test_explicit_reclassification_requires_durable_reason
 test_captain_decision_does_not_masquerade_as_firstmate_blocker

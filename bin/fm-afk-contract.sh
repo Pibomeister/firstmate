@@ -162,6 +162,22 @@ fm_afk_contract_present() {  # [state-dir]
   [ -f "$(fm_afk_contract_path "${1:-$FM_AFK_CONTRACT_STATE}")" ]
 }
 
+# Either quiet signal suppresses composer delivery, including inconsistent records.
+fm_afk_contract_quiet_possible() {  # <state-dir>
+  [ "$(head -1 "$1/.afk" 2>/dev/null)" = quiet ] \
+    || [ "$(fm_afk_contract_mode "$1")" = quiet ]
+}
+
+# Exit uses a validated quiet record and refuses a contradictory legacy flag.
+fm_afk_contract_quiet_active() {  # <state-dir>
+  local state=$1 record flag
+  record=$(fm_afk_contract_path "$state")
+  fm_afk_contract_validate "$record" || return 1
+  [ "$(fm_afk_contract_record_mode "$record")" = quiet ] || return 1
+  flag=$(head -1 "$state/.afk" 2>/dev/null) || flag=quiet
+  [ "$flag" = quiet ]
+}
+
 # The posture a record at <path> is (the header's AWAY OR QUIET): quiet only
 # for an exact `mode: quiet`, away otherwise.
 fm_afk_contract_record_mode() {  # <path>
