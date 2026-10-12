@@ -382,9 +382,7 @@ An unreadable backend configuration can refuse lifecycle work before the no-back
 
 ### Handoffs between homes
 
-Instruction delivery follows the agent-only [`delegate-handoffs`](../.agents/skills/delegate-handoffs/SKILL.md) procedure: a permitted native helper drafts for Firstmate approval, then executes the exact approved handoff through existing guarded scripts.
-An exact previously-approved payload and handshake can go directly to helper execution.
-Unavailable or denied delegation blocks that handoff without inline delivery or guard changes; existing authorized fleet work continues.
+The agent-only [`delegate-handoffs`](../.agents/skills/delegate-handoffs/SKILL.md) skill owns instruction delivery, helper approval, delegation refusal, and handshake procedures.
 
 Secondmate handoffs bypass that routine-backend choice: `fm-backlog-handoff.sh` keeps only its own fleet-level validation and delegates the item move to `tasks-axi mv`; its [script header](../bin/fm-backlog-handoff.sh) owns route-specific wake outcomes and remote outbox release.
 It moves in-scope `## Queued` items only and refuses `## In flight` and historical `## Done` records, which stay with their home for pruning or archiving.
