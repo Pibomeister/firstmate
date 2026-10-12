@@ -1,0 +1,5 @@
+viewer attached to fm-lab-fm-grok-quota-re-15654-16841 (pid 15814)
+ok - named Herdr lab fm-lab-fm-grok-quota-re-15654-16841: paywall relaunch refused without changing the home or inbox
+ok - named Herdr lab fm-lab-fm-grok-quota-re-15654-16841: exhausted quota dialog classified and dismissed; token meter stayed zero
+not ok - Codex trust requires CODEX_HOME inside the disposable worktree
+lab retained for diagnosis: /Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M4MRQAR6GKGVC04V56X383WT/.test-lab-tmp/fm-grok-handoff.T1NvDb
