@@ -2016,10 +2016,7 @@ surface_nonterminal_stale() {  # <window> <hash> [<queued-reason>]
 # bookkeeping of its own arm: wake-before-marker favors a rare duplicate over a
 # swallowed alarm, the same ordering the inbox ladder uses.
 #
-# One notice per park. state/.paused-gate-<key> holds the parked verdict line
-# already noticed, so the identical verdict is absorbed on every later read and
-# any other parked verdict - another run, another gate, another finding count -
-# is a new park; a read that is not parked clears it. It deliberately outlives
+# One notice per park. It deliberately outlives
 # the .paused-* tracking a busy pane resets: the ring itself makes the pane busy,
 # and a marker cleared there would ring a worker that acknowledged the notice
 # and did nothing once per turn, forever.
@@ -2030,7 +2027,7 @@ surface_nonterminal_stale() {  # <window> <hash> [<queued-reason>]
 PARKED_GATE_STEER="Your no-mistakes run is parked at a gate that is waiting on you while your status still declares a pause: run \`no-mistakes axi status\` now, then answer the gate or escalate its ask-user findings as your brief directs, instead of waiting."
 PARKED_GATE_REASON=
 parked_gate_notice() {  # <window> <task> <crew-state-line>
-  local win=$1 task=$2 line=$3 key marker gate run rec ring_rc=0
+  local win=$1 task=$2 line=$3 key marker gate run rec pause notice ring_rc=0
   PARKED_GATE_REASON=
   [ -n "$line" ] || return 0
   key=$(window_key "$win")
@@ -2039,12 +2036,17 @@ parked_gate_notice() {  # <window> <task> <crew-state-line>
     rm -f "$marker"
     return 0
   fi
-  status_is_paused "$(status_declared_wait_line "$STATE/$task.status")" || return 0
-  [ "$(cat "$marker" 2>/dev/null || true)" != "$line" ] || return 0
+  pause=$(status_declared_wait_line "$STATE/$task.status")
+  status_is_paused "$pause" || return 0
+  pause=$(grep -nFx -- "$pause" "$STATE/$task.status") || return 0
+  pause=${pause##*$'\n'}
+  notice=$(_fm_open_decisions_file_ident "$STATE/$task.status") || return 0
+  notice="$notice"$'\n'"$pause"$'\n'"$line"
+  [ "$(cat "$marker" 2>/dev/null || true)" != "$notice" ] || return 0
   [ "$(window_kind "$win")" != secondmate ] || return 0
   run=${gate#*$'\t'}
   if [ -n "$run" ] && status_has_open_needs_decision "$STATE/$task.status" "$run"; then
-    printf '%s' "$line" > "$marker"
+    printf '%s' "$notice" > "$marker"
     return 0
   fi
   if ! rec=$(fm_task_inbox_write "$STATE" "$task" "$PARKED_GATE_STEER"); then
@@ -2057,7 +2059,7 @@ parked_gate_notice() {  # <window> <task> <crew-state-line>
     PARKED_GATE_REASON="stale: $win (declared pause on a parked run - its no-mistakes run is parked on an ask-user finding and waits on a decision, not on anything external; the worker was pointed at the gate through its steering inbox, so expect its escalation or inspect the gate)"
     fm_wake_append stale "$win" "$PARKED_GATE_REASON" || exit 1
   fi
-  printf '%s' "$line" > "$marker"
+  printf '%s' "$notice" > "$marker"
 }
 
 # pause_state_class, then the parked-gate notice on the line that same read
