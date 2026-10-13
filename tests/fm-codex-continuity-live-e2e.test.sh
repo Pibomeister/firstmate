@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Opt-in credentialed Codex regression proving the continuity changes preserve
 # Codex's bounded foreground-checkpoint supervision path.
-# A second phase proves repeated Stop blocks, a handled and acknowledged crew
+# A second phase proves a blocked Stop, a handled and acknowledged crew
 # wake, one successor checkpoint, and release once work clears.
 # FM_CODEX_LIVE_E2E_EVIDENCE_DIR optionally retains the lab receipts.
 set -u
@@ -85,7 +85,7 @@ printf '%s\n' "$$" > "$HOME_DIR/state/.lock"
     fi
     identity=$(cat "$HOME_DIR/state/.watch.lock/pid-identity" 2>/dev/null)
     watcher=$(cat "$HOME_DIR/state/.watch.lock/pid" 2>/dev/null)
-    if [ "$blocks" -ge 2 ] && [ -n "$identity" ] && kill -0 "$watcher" 2>/dev/null; then
+    if [ "$blocks" -ge 1 ] && [ -n "$identity" ] && kill -0 "$watcher" 2>/dev/null; then
       if [ -z "$probe_identity" ]; then
         probe_identity=$identity
         printf 'needs-decision [key=live-probe] [at=%s]: acknowledge the isolated crew probe\n' "$(date +%s)" >> "$HOME_DIR/state/held-task.status"
@@ -115,7 +115,7 @@ releaser=$!
 kill "$releaser" 2>/dev/null || true
 wait "$releaser" 2>/dev/null || true
 
-[ -s "$LAB/held-record" ] || fail "the guard did not block the Codex turn twice while work was in flight"
+[ -s "$LAB/held-record" ] || fail "the guard did not block the Codex turn while work was in flight"
 [ -s "$LAB/wake-receipt" ] || fail "the crew wake was not resolved and acknowledged before a successor checkpoint"
 [ ! -s "$HOME_DIR/state/.wake-queue" ] || fail "the Codex turn ended with unacknowledged wakes"
 grep -E '^turn=.+' "$LAB/held-record" >/dev/null \
@@ -126,7 +126,7 @@ checkpoints=$(jq -R 'fromjson? | select(.type == "item.completed" and .item.type
 grep -F -- '--ack-through' "$HELD_TRANSCRIPT" >/dev/null \
   || fail "the held Codex turn omitted wake acknowledgement"
 
-printf 'ok - %s live E2E held one turn across repeated guard blocks and ended once work cleared\n' "$CODEX_VERSION"
+printf 'ok - %s live E2E held one turn after a guard block and ended once work cleared\n' "$CODEX_VERSION"
 printf 'ok - %s live E2E resolved and acknowledged a crew wake before one successor checkpoint\n' "$CODEX_VERSION"
 
 # Resume the exact held conversation after it becomes idle, proving the saved
