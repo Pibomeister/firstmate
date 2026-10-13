@@ -278,6 +278,22 @@ The checkpoint's exec process ran as a child of the `codex` process, the ancestr
 Sub-second beacon precision: macOS `/usr/bin/stat -f %Fm` and GNU coreutils 8.30, 8.32, and 9.4 `stat -c %.9Y` printed distinct values for two touches within one second (`1767225600.100000000` and `1767225600.600000000`); BusyBox `stat` ignores the precision and prints whole seconds.
 `tests/fm-turnend-guard.test.sh` pins the Codex rules on both platforms with real processes and a codex-named ancestor.
 
+### Codex owned-fork verification, 2026-10-13
+
+Fork base `abb56eb2` and upstream guard at `7df545bf` still lacked the Codex correction. The fork reuses `917ed86` / `5a53f9e` and the running-home repair `0323a133` as evidence, without synchronizing or editing that running home. Two additional regressions distinguish the corrected fork:
+
+| Probe | Before | Corrected fork |
+| --- | --- | --- |
+| Own foreground checkpoint at turn end | Stop returned 0 while it remained live | Stop returns 2 |
+| Live own checkpoint after beacon grace expires | First Stop 2, repeated Stop 0 | Both Stops 2, with home/path/PID identity and ancestry still proven |
+| Queued wake after the last task clears | Stop returned 0 | Both Stops 2 until the queue clears, then Stop 0 |
+
+Affected guard, checkpoint, and rendered-instruction suites passed (3/3, 219.5 seconds); ShellCheck 0.11.0, actionlint 1.7.12, Bash syntax, and documentation-audience checks passed. Independent verification of runtime commit `32e1bc16` reproduced the stale-beacon failure on previous candidate `50d438e3`, then passed stale-beacon, queue-only, foreign-owner, singleton, repeated Stop, multiple-wake/acknowledgement/successor, quiet exit-124, and sub-second-progress probes. Its real Codex 0.160.0 receipt showed Stop 2/2/0, a decision resolved in 11 seconds, generation-bound acknowledgement, a successor checkpoint, and a clean idle exit.
+
+The credentialed live test passed on `dc062d99` (the same runtime, with the live fixture adapted to continuous supervision), using Codex 0.160.0 in an isolated lab: the held turn ran two foreground checkpoints, resolved its injected decision in 26 seconds, executed the printed acknowledgements successfully, and started a live successor before task release. The same conversation then resumed and completed a one-second quiet foreground checkpoint. Two earlier fixture-calibration runs were interrupted with exit 130 and are not counted as passing evidence. These are bounded lab receipts, not proof of indefinite uptime or an external wake for idle Codex.
+
+Adoption requires the normal approved update of tracked fork code; existing hook registration, configuration, task records, locks, and runtime state need no migration. Keep current running-home work intact and use its guarded update path rather than resetting or synchronizing it from a task branch. An already-idle Codex conversation still needs an ordinary prompt or resume before it can start a foreground supervision checkpoint; no daemon restart or replacement supervision framework is part of this change.
+
 ### Cursor primary park, 2026-08-13
 
 Cursor was validated as a primary on 2026-08-13 against the installed CLI on macOS 26.5.2 arm64 with tmux 3.6a, in a throwaway firstmate home on a private tmux socket, never against a live home and never with a user-scope hook.
