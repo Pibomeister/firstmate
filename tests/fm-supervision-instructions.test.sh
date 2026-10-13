@@ -14,6 +14,10 @@ test_selected_harness_block_only() {
   assert_contains "$out" "SUPERVISION OPERATING INSTRUCTIONS - primary harness: codex" "codex heading missing"
   assert_contains "$out" "Mode: Codex foreground checkpoint." "codex snippet missing"
   assert_contains "$out" "bin/fm-watch-checkpoint.sh" "codex checkpoint helper missing"
+  # shellcheck disable=SC2016 # Backticks are literal protocol markup.
+  assert_contains "$out" 'poll it with `write_stdin` (empty input) until it exits' "codex must read a yielded checkpoint to completion"
+  assert_contains "$out" "start exactly one successor checkpoint after the previous command exits" "codex must finish the current cycle before replacing it"
+  assert_contains "$out" "Keep the turn open while supervision is needed or wakes still need handling and acknowledgement" "codex must not end a turn with supervision work unresolved"
   assert_not_contains "$out" "Mode: Claude Stop-hook-owned supervision." "renderer printed the claude snippet too"
   assert_not_contains "$out" "Mode: Pi extension background wake." "renderer printed the pi snippet too"
   pass "renderer prints exactly the selected harness block"

@@ -262,12 +262,21 @@ The blocking and bounded-follow-up mechanisms were validated across seven harnes
 | Harness | Version verified | Mechanism | Observed result |
 | --- | --- | --- | --- |
 | Claude | 2.1.278 | Cooperative blocking `Stop` guard plus `asyncRewake` auto-arm | A fresh unsupervised session received the full session-start digest through the tracked `SessionStart` hook, reclaimed a stale dead-owner lock, completed two tokenless rewake cycles with no model arm command or guard continuation, and left a competing live owner unchanged. |
-| Codex | 0.142.1 | Blocking `Stop` hook | Hook process root stayed anchored to the trusted checkout and one continuation ran. |
+| Codex | 0.160.0 | Blocking `Stop` hook in Codex mode | With work in flight, one `codex exec` turn was blocked repeatedly, ran a foreground checkpoint in every continuation, and ended once the work cleared; see [Codex held checkpoint turn](#codex-held-checkpoint-turn-2026-10-09). Hook process root anchoring was verified on 0.142.1. |
 | OpenCode | 1.17.6 | Passive `session.idle` callback | Throwing could not block, while `promptAsync` scheduled one TUI follow-up; headless remained fail-open. |
 | Pi | 0.80.5 | Passive `agent_settled` callback | Exactly one guard follow-up ran for an unhealthy cycle, with no recursion across tool turns. |
 | omp | 18.1.11 | Blocking `session_stop` hook returning `{ continue: true, additionalContext }` | In the isolated rpc lab (2026-09-05), the successor watcher was frozen with `SIGSTOP` until its beacon passed the lab `FM_GUARD_GRACE` of 20s while its arm child stayed attached (a killed watcher closes its arm child and the extension re-arms before the guard can fire); the next turn end raised the guard, the guard spy recorded `rc=2` followed by a stop carrying `stop_hook_active: true`, omp compelled a continuation carrying the `turn-end-guard` operational text, the `fm_watch_arm_omp` invocation count then rose to at least two, and a live watcher held the home lock after the thaw; the flagged stop was allowed, so exactly one continuation ran. `session_stop` never fired for an interrupted turn. |
 | Grok | 0.2.112 native and 0.2.73 pre-native | Running-payload adaptive `Stop` | Native false-to-true continuation stayed in one process with two model turns and zero resume launches; the field-absent pre-native process launched exactly one guarded resume. |
 | Cursor | 2026.08.11-e8db854 | Awaited `stop` hook park returning one `followup_message` | Exit 2 ended the turn normally, proving it cannot block; a returned follow-up ran a genuine second turn; a sleeping hook held the boundary open and the wake landed after it; `loop_limit` stopped the hook being invoked at its ceiling. |
+
+### Codex held checkpoint turn, 2026-10-09
+
+Verified with codex-cli 0.160.0 on macOS through `FM_CODEX_LIVE_E2E=1 tests/fm-codex-continuity-live-e2e.test.sh`, which runs `codex exec --dangerously-bypass-hook-trust` in an isolated lab clone.
+Observed result: `ok - codex-cli 0.160.0 live E2E held one turn across repeated guard blocks and ended once work cleared`.
+The Stop payload carried `session_id` and `turn_id`, and the turn survived more than one blocked stop; `codex-rs/core/src/session/turn.rs` at tag `rust-v0.160.0` sets `stop_hook_active` true for every stop after the first block and applies no continuation cap.
+The checkpoint's exec process ran as a child of the `codex` process, the ancestry the guard's own-checkpoint rule reads.
+Sub-second beacon precision: macOS `/usr/bin/stat -f %Fm` and GNU coreutils 8.30, 8.32, and 9.4 `stat -c %.9Y` printed distinct values for two touches within one second (`1767225600.100000000` and `1767225600.600000000`); BusyBox `stat` ignores the precision and prints whole seconds.
+`tests/fm-turnend-guard.test.sh` pins the Codex rules on both platforms with real processes and a codex-named ancestor.
 
 ### Cursor primary park, 2026-08-13
 

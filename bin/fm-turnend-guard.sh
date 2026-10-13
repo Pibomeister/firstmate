@@ -47,8 +47,8 @@
 # are unchanged everywhere else, including for a dead daemon pid or a beacon
 # older than AFK_GRACE, which still block.
 #
-# Loop-guard, codex/Grok (default) mode: never block twice in the same turn.
-# Codex uses stop_hook_active and Grok uses stopHookActive; typed camel-case
+# Loop-guard, Grok/omp/other default mode: never block twice in the same turn.
+# Grok uses stopHookActive and the rest stop_hook_active; typed camel-case
 # takes precedence when both spellings are present. A true value means the
 # current stop attempt already follows a block, so this guard always allows it.
 # Passive harness adapters provide their own one-follow-up guard before calling
@@ -56,6 +56,29 @@
 # That bounds those harnesses to at most one forced continuation per turn -
 # never a wedged, un-endable session - while still nagging again on a later turn
 # if the problem persists.
+#
+# Codex mode (bin/fm-harness.sh resolves this hook's harness to codex): Codex has
+# no asynchronous wake and its foreground checkpoint is an exec session the model
+# must poll, so a turn that ends while that checkpoint runs leaves nobody to read
+# its wake or start the next one. Two rules replace the one-shot allow:
+#   1. A healthy watcher running under an fm-watch-checkpoint.sh started by this
+#      session's own harness ancestry is not supervision across the turn end, so
+#      the stop blocks while it runs.
+#   2. A stop following this guard's own block in the same session and turn is
+#      allowed only when rule 1 no longer applies and nothing advanced since
+#      that block - the watcher beacon at full mtime precision and the
+#      watch-lock identity both unchanged. While this session's checkpoint is
+#      alive the turn stays held for at most that checkpoint's bound (180s by
+#      default via FM_CODEX_WATCH_CHECKPOINT, or the larger away-mode and
+#      supervision-host bounds bin/fm-watch-checkpoint.sh documents); once it
+#      has ended, a session that ignores the repair can end, while one that
+#      keeps supervising is held to it. The per-session record lives in
+#      state/.turnend-codex-block.<session>.
+# A home whose session lock is held by another live session gets the read-only
+# diagnostic exit, exactly like --claude mode below.
+# Pending wakes also hold Codex until acknowledged, even after the last task
+# clears; the no-progress escape cannot abandon queued work. Away daemon
+# ownership retains its existing allow path.
 #
 # Loop-guard, --claude mode (Stop-owned auto-arm cooperation): Claude Code
 # marks EVERY stop after ANY stop-hook-driven continuation stop_hook_active=true,
@@ -150,7 +173,12 @@ STOP_HOOK_ACTIVE=$(printf '%s' "$PAYLOAD" | jq -r '
   else false
   end
 ' 2>/dev/null) || exit 0
-if [ "$CLAUDE_MODE" -eq 0 ] && [ "$STOP_HOOK_ACTIVE" = "true" ]; then
+CODEX_MODE=0
+if [ "$CLAUDE_MODE" -eq 0 ] && [ "$CURSOR_MODE" -eq 0 ] \
+  && [ "$("$SCRIPT_DIR/fm-harness.sh" 2>/dev/null)" = codex ]; then
+  CODEX_MODE=1
+fi
+if [ "$CLAUDE_MODE" -eq 0 ] && [ "$CODEX_MODE" -eq 0 ] && [ "$STOP_HOOK_ACTIVE" = "true" ]; then
   exit 0
 fi
 
@@ -171,7 +199,7 @@ fm_primary_scope_matches "$FM_ROOT" "$STATE" || exit 0
 # --- the actual predicate ----------------------------------------------------
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"
-if [ "$CLAUDE_MODE" -eq 1 ]; then
+if [ "$CLAUDE_MODE" -eq 1 ] || [ "$CODEX_MODE" -eq 1 ]; then
   # shellcheck source=bin/fm-session-lock-lib.sh
   . "$SCRIPT_DIR/fm-session-lock-lib.sh"
 fi
@@ -182,6 +210,20 @@ OWNER_LOCK="$STATE/.claude-autoarm.lock"
 FAILURE_NOTICE="$STATE/.claude-autoarm-failure-notified"
 FAILURE_ALARM="$STATE/.claude-autoarm-failure-alarmed"
 SESSION_ID=$(printf '%s' "$PAYLOAD" | jq -r '.session_id // "unknown"' 2>/dev/null || printf 'unknown')
+TURN_ID=$(printf '%s' "$PAYLOAD" | jq -r '.turn_id // ""' 2>/dev/null || true)
+CODEX_BLOCK="$STATE/.turnend-codex-block.$(printf '%s' "$SESSION_ID" | tr -c 'A-Za-z0-9_-' '_')"
+# Watcher progress since a block: the beacon mtime at full precision, so beats
+# within one second still differ, plus the watch-lock identity, so a new cycle
+# shows even before its first beat.
+codex_progress() {
+  local mtime
+  if [ "$(uname)" = Darwin ]; then
+    mtime=$(/usr/bin/stat -f %Fm "$STATE/.last-watcher-beat" 2>/dev/null)
+  else
+    mtime=$(stat -c %.9Y "$STATE/.last-watcher-beat" 2>/dev/null)
+  fi
+  printf '%s|%s' "${mtime:-none}" "$(cat "$STATE/.watch.lock/pid-identity" 2>/dev/null)"
+}
 budget_reset() {
   [ "$CLAUDE_MODE" -eq 1 ] || return 0
   fm_lock_try_acquire "$BUDGET_LOCK" || return 0
@@ -190,7 +232,8 @@ budget_reset() {
 }
 
 fm_supervision_status "$STATE" "$GRACE"
-if [ "$FM_SUP_NEEDED" = false ]; then
+if [ "$FM_SUP_NEEDED" = false ] \
+  && { [ "$CODEX_MODE" -eq 0 ] || [ "$FM_SUP_QUEUE_PENDING" = false ]; }; then
   [ -e "$FAILURE_NOTICE" ] || budget_reset
   exit 0
 fi
@@ -202,8 +245,39 @@ allow_supervised_stop() {
   exit 2
 }
 
+# True when watcher pid $1 runs under an fm-watch-checkpoint.sh that descends from
+# this hook's own harness ancestry, i.e. a checkpoint this Codex session started.
+own_checkpoint_holds_watcher() {  # <watcher-pid>
+  local pid=$1 checkpoint='' own owner
+  own=$(fm_harness_ancestry_pids) || return 1
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do
+    if [ -z "$checkpoint" ]; then
+      case "$(ps -o args= -p "$pid" 2>/dev/null)" in
+        *fm-watch-checkpoint.sh*) checkpoint=$pid ;;
+      esac
+    else
+      while IFS= read -r owner; do
+        [ "$pid" = "$owner" ] && return 0
+      done <<EOF
+$own
+EOF
+    fi
+    pid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
+    case "$pid" in ''|*[!0-9]*) return 1 ;; esac
+    [ "$pid" -gt 1 ] || return 1
+  done
+  return 1
+}
+
+CHECKPOINT_OPEN=0
 if fm_watcher_healthy "$STATE" "$WATCH" "$GRACE" "$FM_HOME"; then
-  allow_supervised_stop
+  if [ "$CODEX_MODE" -eq 1 ] && own_checkpoint_holds_watcher "$FM_WATCHER_HEALTHY_PID"; then
+    CHECKPOINT_OPEN=1
+  else
+    if [ "$CODEX_MODE" -eq 0 ] || [ "$FM_SUP_QUEUE_PENDING" = false ]; then
+      allow_supervised_stop
+    fi
+  fi
 fi
 
 # Away mode transfers supervision ownership from the watcher to the away-mode
@@ -236,13 +310,19 @@ block_stop() {
   {
     printf '●%s\n' "$rule"
     printf '●  TURN WOULD END BLIND - SUPERVISION IS OFF\n'
-    if [ "$FM_SUP_IN_FLIGHT" -gt 0 ]; then
+    if [ "$CODEX_MODE" -eq 1 ] && [ "$FM_SUP_QUEUE_PENDING" = true ]; then
+      printf '●  Queued wakes still need handling: drain, handle, and acknowledge them before ending the turn.\n'
+    fi
+    if [ "$CHECKPOINT_OPEN" -eq 1 ]; then
+      printf '●  Your foreground checkpoint is still running; once this turn ends nothing reads its wake or starts the next one.\n'
+      printf '●  Poll its exec session with write_stdin until it exits, handle any wake, then start the next checkpoint.\n'
+    elif [ "$FM_SUP_IN_FLIGHT" -gt 0 ]; then
       printf '●  %s task(s) in flight, but no live watcher holds this home lock (last beat: %s).\n' "$FM_SUP_IN_FLIGHT" "$FM_SUP_BEACON_DESC"
     elif [ "$FM_SUP_SOURCES" -gt 0 ]; then
       printf '●  %s process-event source(s) registered, but no live watcher holds this home lock (last beat: %s).\n' "$FM_SUP_SOURCES" "$FM_SUP_BEACON_DESC"
     elif [ "$FM_SUP_CHECKS" -gt 0 ]; then
       printf '●  %s registered custom check(s), but no live watcher holds this home lock (last beat: %s).\n' "$FM_SUP_CHECKS" "$FM_SUP_BEACON_DESC"
-    else
+    elif [ "$FM_SUP_NEEDED" = true ]; then
       printf '●  X-mode relay polling needs supervision, but no live watcher holds this home lock (last beat: %s).\n' "$FM_SUP_BEACON_DESC"
     fi
     if [ "$CLAUDE_MODE" -eq 1 ]; then
@@ -251,6 +331,9 @@ block_stop() {
     printf '●  %s\n' "$reason"
     printf '●%s\n' "$rule"
   } >&2
+  if [ "$CODEX_MODE" -eq 1 ]; then
+    printf 'turn=%s\nprogress=%s\n' "$TURN_ID" "$(codex_progress)" > "$CODEX_BLOCK" 2>/dev/null || true
+  fi
   exit 2
 }
 
@@ -260,9 +343,19 @@ block_stop() {
 # stealing ownership, so blocking its Stop would create an impossible loop.
 # Report the ownership conflict as a diagnostic and let this turn end safely;
 # the owning session remains responsible for restoring the watcher.
-if [ "$CLAUDE_MODE" -eq 1 ] && fm_session_lock_foreign_owner_live "$STATE"; then
+if { [ "$CLAUDE_MODE" -eq 1 ] || [ "$CODEX_MODE" -eq 1 ]; } && fm_session_lock_foreign_owner_live "$STATE"; then
   printf '{"systemMessage":"FIRSTMATE SUPERVISION IS OWNED BY ANOTHER LIVE SESSION: this read-only session cannot and should not arm or repair the watcher (lock owner pid %s). Allowing this turn to end safely; the owning session must restore supervision."}\n' \
     "$FM_SESSION_LOCK_FOREIGN_OWNER_PID"
+  exit 0
+fi
+
+# Codex rule 2 (header): allow a stop that follows this guard's own block in this
+# session and turn only when nothing advanced since that block. A record from an
+# earlier turn, or a stop continued by some other hook's block, is judged fresh.
+if [ "$CODEX_MODE" -eq 1 ] && [ "$STOP_HOOK_ACTIVE" = "true" ] && [ "$CHECKPOINT_OPEN" -eq 0 ] \
+  && [ "$FM_SUP_QUEUE_PENDING" = false ] \
+  && [ "$(sed -n 's/^turn=//p' "$CODEX_BLOCK" 2>/dev/null)" = "$TURN_ID" ] \
+  && [ "$(sed -n 's/^progress=//p' "$CODEX_BLOCK" 2>/dev/null)" = "$(codex_progress)" ]; then
   exit 0
 fi
 

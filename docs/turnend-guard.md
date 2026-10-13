@@ -93,10 +93,11 @@ Under that check:
 The turn-end guard needs that strict check because it fires at the turn boundary.
 At that boundary the auto-arm is bringing a fresh watcher up for the upcoming idle period.
 The guard cooperates with that arm rather than trusting a beacon left by the cycle that just ended.
+In [Codex mode](#codex-mode), a healthy watcher held by this session's own foreground checkpoint still blocks.
 
 ### Foreign session-lock owner
 
-When an active home instead has a live session lock held by a verified harness that the current session does not own, the Claude guard emits a read-only ownership diagnostic and allows the turn to end safely.
+When an active home instead has a live session lock held by a verified harness that the current session does not own, the Claude and Codex guards emit a read-only ownership diagnostic and allow the turn to end safely.
 
 Ownership is the shared `fm_session_lock_owned_by_self` verdict in `bin/fm-session-lock-lib.sh`.
 The current session owns the lock when either of these holds:
@@ -108,12 +109,12 @@ That second signal keeps a background Claude session owning its own lock after t
 The library's header owns the trust gate (`CLAUDE_PID` must be a Claude-shaped member of the current run).
 `bin/fm-lock.sh` owns the sidecar and the line-1 anchor it records for such a session.
 
-A Claude session that does not own the lock cannot arm or repair the home without stealing the live owner's lock, so blocking it would create an unbounded loop.
+A Claude or Codex session that does not own the lock cannot arm or repair the home without stealing the live owner's lock, so blocking it would create an unbounded loop.
 The lock-owning session remains responsible for restoring supervision.
 
 The exception has these limits:
 
-- Malformed, absent, dead, or ancestry-uncertain lock records do not satisfy this Claude-specific exception and retain the ordinary guard behavior.
+- Malformed, absent, dead, or ancestry-uncertain lock records do not satisfy this exception and retain the ordinary guard behavior.
 - A missing or mismatched sidecar or an untrusted id adds nothing to the verdict, so a live owner outside the ancestry still takes this exit exactly as before.
 
 ### Pull-warning verdict by supervision model
@@ -301,8 +302,23 @@ The registrations in detail:
 ### Claude and Codex blocking
 
 Claude and Codex can block a Stop directly with exit status 2 and stderr.
-Both payloads carry `stop_hook_active`.
-In the default Codex mode, a true value lets the second stop finish after one forced continuation.
+Both payloads carry `stop_hook_active`, and Codex sets it on every stop after the first block in a turn with no cap on continuations.
+
+### Codex mode
+
+The guard enters Codex mode when `bin/fm-harness.sh` resolves the hook's own harness to `codex`.
+Codex has no asynchronous wake: its foreground checkpoint is an exec session the model must poll, and a turn that ends while it runs leaves nobody to read its wake or start the next one.
+Codex mode therefore replaces the one-shot `stop_hook_active` allow with two rules, owned by the header of `bin/fm-turnend-guard.sh`:
+
+- A healthy watcher running under an `fm-watch-checkpoint.sh` that descends from this hook's own harness ancestry does not count as supervision, so the stop blocks and names the poll repair.
+  A watcher another session started still allows the stop.
+- A stop that follows the guard's own block in the same session and turn is allowed only when this session's checkpoint is no longer running and neither the watcher beacon mtime, read at sub-second precision, nor the watch-lock identity advanced since that block.
+  While this session's own checkpoint is alive the first rule still blocks every stop, so the turn stays held for at most that checkpoint's bound: 180 seconds by default (`FM_CODEX_WATCH_CHECKPOINT`), or the larger explicit bounds `bin/fm-watch-checkpoint.sh` documents for away mode and the supervision-host path.
+  Once the checkpoint has ended, a session that ignores the repair can end, while one that keeps running checkpoints stays held in its turn for as long as work is in flight.
+
+A home whose session lock another live session owns takes the [foreign session-lock owner](#foreign-session-lock-owner) exit.
+Queued wakes keep Codex's turn open until handling and acknowledgement finish, including after the last task clears; the no-progress escape cannot abandon that queue.
+Away daemon ownership retains its existing allow path.
 
 ### Claude cooperative mode
 
@@ -559,6 +575,7 @@ That warning uses `bin/fm-supervision-instructions.sh --repair-line`, so it alwa
 - All five primary registrations.
 - Grok native and legacy selection.
 - Typed field precedence.
+- Codex mode's own-checkpoint block, unchanged-progress follow-up allow, and foreign-owner exit.
 - Malformed input.
 - Exactly-one-path safety.
 
