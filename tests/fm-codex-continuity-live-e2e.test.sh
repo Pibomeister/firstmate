@@ -90,7 +90,7 @@ printf '%s\n' "$$" > "$HOME_DIR/state/.lock"
         probe_identity=$identity
         printf 'needs-decision [key=live-probe] [at=%s]: acknowledge the isolated crew probe\n' "$(date +%s)" >> "$HOME_DIR/state/held-task.status"
       elif [ "$identity" != "$probe_identity" ] \
-        && grep -q '^resolved .*\[key=live-probe\]' "$HOME_DIR/state/held-task.status" \
+        && [ "$(tail -1 "$HOME_DIR/state/held-task.status" | grep -Ec '^resolved[ :].*\[key=live-probe\]')" -eq 1 ] \
         && [ ! -s "$HOME_DIR/state/.wake-queue" ]; then
         cp "$HOME_DIR"/state/.turnend-codex-block.* "$LAB/held-record" 2>/dev/null
         cp "$HOME_DIR/state/held-task.status" "$LAB/wake-receipt"
@@ -110,7 +110,7 @@ releaser=$!
     --skip-git-repo-check \
     -c 'model_reasoning_effort="low"' \
     --json \
-    'Reply with the single word ok. If a Stop hook blocks you, follow its instruction literally. For the isolated held-task live-probe decision, append a resolved line with [key=live-probe] and the current numeric [at=epoch] to that task status. Drain and handle wakes, execute the exact printed acknowledgement command, and run one successor foreground checkpoint while the task remains in flight.'
+    'Reply with the single word ok immediately. If a Stop hook blocks you, follow its instruction literally. Only after receiving the isolated held-task live-probe decision, resolve it by appending "resolved [key=live-probe] [at=EPOCH]: approved isolated probe" using the current numeric epoch. Drain and handle wakes, execute the exact printed acknowledgement command, and run one successor foreground checkpoint while the task remains in flight.'
 ) > "$HELD_TRANSCRIPT" 2>&1 || fail "Codex held-turn run failed: $(tail -20 "$HELD_TRANSCRIPT")"
 kill "$releaser" 2>/dev/null || true
 wait "$releaser" 2>/dev/null || true

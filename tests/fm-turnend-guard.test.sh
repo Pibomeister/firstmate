@@ -2287,8 +2287,8 @@ test_codex_reblocks_open_checkpoint_after_its_own_block() {
 }
 
 test_codex_holds_own_checkpoint_then_ignored_repair_can_end() {
-  local dir checkpoint home io
-  dir=$(make_primary_dir "$TMP_ROOT/codex-own-checkpoint-ends")
+  local dir checkpoint home io grace=${1:-300} age=${2:-0}
+  dir=$(make_primary_dir "$TMP_ROOT/codex-own-checkpoint-ends-$grace")
   : > "$dir/state/task1.meta"
   checkpoint=$(make_codex_checkpoint "$dir")
   home=$(cd "$dir" && pwd)
@@ -2299,11 +2299,12 @@ test_codex_holds_own_checkpoint_then_ignored_repair_can_end() {
   # shellcheck disable=SC2016 # the codex-named shell expands its own FM_T_* environment.
   env -u CLAUDECODE -u PI_CODING_AGENT -u FM_PI_HARNESS -u GROK_AGENT -u CURSOR_AGENT -u CURSOR_INVOKED_AS \
     FM_T_HOME="$home" FM_T_DIR="$io" FM_T_CHECKPOINT="$checkpoint" \
-    FM_T_FIRST="$(codex_payload s1 t1 false)" FM_T_NEXT="$(codex_payload s1 t1 true)" \
+    FM_T_FIRST="$(codex_payload s1 t1 false)" FM_T_NEXT="$(codex_payload s1 t1 true)" FM_GUARD_GRACE="$grace" FM_T_AGE="$age" \
     "$CODEX_BIN" -c '
 "$FM_T_CHECKPOINT" "$FM_T_DIR/watcher.pid" &
 ckpt=$!
 while [ ! -s "$FM_T_DIR/watcher.pid" ]; do sleep 0.05; done
+      sleep "$FM_T_AGE"
 printf "%s" "$FM_T_FIRST" | FM_HOME="$FM_T_HOME" bash "$FM_T_HOME/bin/fm-turnend-guard.sh" > "$FM_T_DIR/out1" 2>&1
 printf "%s\n" "$?" > "$FM_T_DIR/rc1"
 printf "%s" "$FM_T_NEXT" | FM_HOME="$FM_T_HOME" bash "$FM_T_HOME/bin/fm-turnend-guard.sh" > "$FM_T_DIR/out2" 2>&1
@@ -2529,6 +2530,7 @@ test_hook_no_afk_ignores_poll_derived_grace
 test_codex_blocks_turn_end_while_own_checkpoint_runs
 test_codex_reblocks_open_checkpoint_after_its_own_block
 test_codex_holds_own_checkpoint_then_ignored_repair_can_end
+test_codex_holds_own_checkpoint_then_ignored_repair_can_end 1 2
 test_codex_allows_watcher_owned_by_another_session
 test_codex_ignored_repair_can_end_and_progress_keeps_holding
 test_codex_new_watch_lock_identity_counts_as_progress

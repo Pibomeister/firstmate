@@ -93,7 +93,7 @@ Under that check:
 The turn-end guard needs that strict check because it fires at the turn boundary.
 At that boundary the auto-arm is bringing a fresh watcher up for the upcoming idle period.
 The guard cooperates with that arm rather than trusting a beacon left by the cycle that just ended.
-In [Codex mode](#codex-mode), a healthy watcher held by this session's own foreground checkpoint still blocks.
+In [Codex mode](#codex-mode), an identity-matched live watcher held by this session's own foreground checkpoint still blocks, even with a stale beacon.
 
 ### Foreign session-lock owner
 
@@ -310,7 +310,7 @@ The guard enters Codex mode when `bin/fm-harness.sh` resolves the hook's own har
 Codex has no asynchronous wake: its foreground checkpoint is an exec session the model must poll, and a turn that ends while it runs leaves nobody to read its wake or start the next one.
 Codex mode therefore replaces the one-shot `stop_hook_active` allow with two rules, owned by the header of `bin/fm-turnend-guard.sh`:
 
-- A healthy watcher running under an `fm-watch-checkpoint.sh` that descends from this hook's own harness ancestry does not count as supervision, so the stop blocks and names the poll repair.
+- An identity-matched live watcher running under an `fm-watch-checkpoint.sh` that descends from this hook's own harness ancestry cannot justify ending the turn, even with a stale beacon, so the stop blocks and names the poll repair.
   A watcher another session started still allows the stop.
 - A stop that follows the guard's own block in the same session and turn is allowed only when this session's checkpoint is no longer running and neither the watcher beacon mtime, read at sub-second precision, nor the watch-lock identity advanced since that block.
   While this session's own checkpoint is alive the first rule still blocks every stop, so the turn stays held for at most that checkpoint's bound: 180 seconds by default (`FM_CODEX_WATCH_CHECKPOINT`), or the larger explicit bounds `bin/fm-watch-checkpoint.sh` documents for away mode and the supervision-host path.
@@ -318,6 +318,7 @@ Codex mode therefore replaces the one-shot `stop_hook_active` allow with two rul
 
 A home whose session lock another live session owns takes the [foreign session-lock owner](#foreign-session-lock-owner) exit.
 Queued wakes keep Codex's turn open until handling and acknowledgement finish, including after the last task clears; the no-progress escape cannot abandon that queue.
+An identity-matched own checkpoint also holds the turn when its beacon has gone stale; beacon freshness cannot prove that the foreground command ended.
 Away daemon ownership retains its existing allow path.
 
 ### Claude cooperative mode

@@ -249,6 +249,8 @@ allow_supervised_stop() {
 # this hook's own harness ancestry, i.e. a checkpoint this Codex session started.
 own_checkpoint_holds_watcher() {  # <watcher-pid>
   local pid=$1 checkpoint='' own owner
+  kill -0 "$pid" 2>/dev/null || return 1
+  fm_watcher_lock_matches_pid "$STATE" "$WATCH" "$pid" "$FM_HOME" || return 1
   own=$(fm_harness_ancestry_pids) || return 1
   for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do
     if [ -z "$checkpoint" ]; then
@@ -270,10 +272,12 @@ EOF
 }
 
 CHECKPOINT_OPEN=0
+if [ "$CODEX_MODE" -eq 1 ] \
+  && own_checkpoint_holds_watcher "$(cat "$STATE/.watch.lock/pid" 2>/dev/null)"; then
+  CHECKPOINT_OPEN=1
+fi
 if fm_watcher_healthy "$STATE" "$WATCH" "$GRACE" "$FM_HOME"; then
-  if [ "$CODEX_MODE" -eq 1 ] && own_checkpoint_holds_watcher "$FM_WATCHER_HEALTHY_PID"; then
-    CHECKPOINT_OPEN=1
-  else
+  if [ "$CHECKPOINT_OPEN" -eq 0 ]; then
     if [ "$CODEX_MODE" -eq 0 ] || [ "$FM_SUP_QUEUE_PENDING" = false ]; then
       allow_supervised_stop
     fi
