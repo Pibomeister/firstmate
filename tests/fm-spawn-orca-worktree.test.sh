@@ -13,14 +13,13 @@
 # the worktree Orca actually created, proving the skip does not just avoid an
 # error but lets a genuine Orca launch complete.
 #
-# The matching relaunch-side carve-out at the `[ "$RELAUNCH" -eq 1 ] &&
-# [ "$BACKEND" = orca ]` branch is guarded by an earlier, unconditional gate:
-# fm_control_backend_state_verified (bin/fm-control-lib.sh) only recognizes
-# tmux and herdr as having a recovery-grade agent-state classifier, so any
-# `--relaunch` on backend=orca is refused before that branch can ever run.
-# The second test below pins that refusal so a future change that starts
-# routing orca through the classifier does not silently reach the untested
-# branch without also covering it.
+# The relaunch side runs only after the Orca agent-state classifier
+# (bin/backends/orca.sh, read through fm_control_agent_state) proves the
+# recorded terminal agent-free. The relaunch cases below drive that proof with
+# Orca's reads faked and every other fact real: a closed terminal with no agent
+# left rebinds a new terminal in the recorded worktree, a dead terminal is
+# adopted in place, and a live agent or any unprovable read refuses before a
+# terminal is created.
 set -u
 
 # shellcheck source=tests/fixtures.sh
@@ -68,7 +67,24 @@ case "$1 $2" in
     ;;
   "terminal create")
     [ -z "${FM_TEST_ORCA_TERMINAL_FAIL:-}" ] || exit 1
-    printf '{"ok":true,"result":{"terminal":{"handle":"term-1"}}}\n'
+    printf '%s\n' "$*" >> "$DIR/terminal-create.log"
+    printf '{\"ok\":true,\"result\":{\"terminal\":{\"handle\":\"%s\"}}}\n' "${FM_TEST_ORCA_NEW_TERMINAL:-term-1}"
+    exit 0
+    ;;
+  "terminal show")
+    # show-<handle>.json is the case's answer for that terminal; none is a CLI failure.
+    prev=
+    for a in "$@"; do
+      [ "$prev" != --terminal ] || handle=$a
+      prev=$a
+    done
+    [ -f "$DIR/show-${handle:-}.json" ] || exit 1
+    cat "$DIR/show-$handle.json"
+    exit 0
+    ;;
+  "diagnostics memory")
+    [ -f "$DIR/memory.json" ] || exit 1
+    cat "$DIR/memory.json"
     exit 0
     ;;
   "worktree rm")
@@ -151,6 +167,13 @@ esac
 exit 0
 SH
   chmod +x "$fb/orca"
+  # The working-directory scan answers from lsof.out, or fails when it is absent.
+  cat > "$fb/lsof" <<'SH'
+#!/usr/bin/env bash
+[ -f "${FM_TEST_ORCA_DIR:?}/lsof.out" ] || exit 1
+cat "$FM_TEST_ORCA_DIR/lsof.out"
+SH
+  chmod +x "$fb/lsof"
   printf '%s\n' "$fb"
 }
 
@@ -237,7 +260,6 @@ EOF
   done
   pass "an aborted Orca spawn safe-deletes the branch Orca created, or records it in recovery metadata when the worktree survives"
 }
-
 test_orca_relaunch_is_refused_before_the_worktree_carveout_could_run() {
   local case_dir home proj wt id=orca-relaunch-a2 out status
   case_dir="$TMP_ROOT/relaunch"
@@ -279,9 +301,201 @@ EOF
   status=$?
 
   expect_code 1 "$status" "a relaunch against a recorded Orca task should refuse"$'\n'"$out"
-  assert_contains "$out" "no recovery-grade agent-state classifier" \
-    "the refusal should name the missing classifier, proving relaunch never reaches the worktree carve-out"
-  pass "a relaunch against an Orca-backed task is refused before the RELAUNCH+orca worktree carve-out could run"
+  assert_contains "$out" "a relaunch requires a positively agent-free endpoint" \
+    "the refusal should name the unproven endpoint, proving relaunch never reaches the worktree carve-out"
+  pass "a relaunch against an Orca-backed task whose agent is not proven stopped is refused before the RELAUNCH+orca worktree carve-out could run"
+}
+# orca_relaunch_case <name>: a recorded Orca ship task whose terminal term-old
+# belonged to its real worktree, with Orca's reads left for the case to write.
+# Sets CASE_DIR, HOME_DIR, WT, TASK and FB.
+orca_relaunch_case() {
+  local proj
+  CASE_DIR="$TMP_ROOT/relaunch-$1"
+  HOME_DIR="$CASE_DIR/home"
+  proj="$CASE_DIR/proj"
+  WT="$CASE_DIR/wt"
+  TASK="orca-relaunch-$1"
+  mkdir -p "$HOME_DIR/data/$TASK" "$HOME_DIR/projects" "$HOME_DIR/state" "$HOME_DIR/config" "$CASE_DIR/user-home"
+  touch "$HOME_DIR/state/.last-watcher-beat"
+  printf 'manual\n' > "$HOME_DIR/config/backlog-backend"
+  fm_git_worktree "$proj" "$WT" "task-$TASK"
+  WT=$(cd -P "$WT" && pwd -P)
+  cat > "$HOME_DIR/data/$TASK/brief.md" <<EOF
+# Task
+## Captain's intent
+Exercise a relaunch against a recorded Orca task.
+
+## Firstmate spec
+Confirm the relaunch proves the old terminal agent-free before it launches.
+EOF
+  {
+    echo "window=fm-$TASK"
+    echo "endpoint_task_id=$TASK"
+    echo "worktree=$WT"
+    echo "project=$proj"
+    echo "harness=codex"
+    echo "kind=ship"
+    echo "mode=no-mistakes"
+    echo "yolo=off"
+    echo "backend=orca"
+    echo "orca_worktree_id=wt-1::$WT"
+    echo "terminal=term-old"
+  } > "$HOME_DIR/state/$TASK.meta"
+  FB=$(make_orca_fakebin "$CASE_DIR")
+  printf 'p%s\nn%s\n' "$$" "$CASE_DIR" > "$CASE_DIR/lsof.out"
+  printf '{"ok":true,"result":{"worktrees":[{"sessions":[]}]}}\n' > "$CASE_DIR/memory.json"
+}
+
+orca_relaunch_show() {  # <connected> <exit-kind|''> [worktree-path]
+  local cause=null writable=$1
+  [ -z "$2" ] || cause="{\"kind\":\"$2\"}"
+  printf '{"ok":true,"result":{"terminal":{"handle":"term-old","ptyId":"pty-old","connected":%s,"writable":%s,"exitCause":%s,"executionHostId":"local","worktreePath":"%s"}}}\n' \
+    "$1" "$writable" "$cause" "${3:-$WT}" > "$CASE_DIR/show-term-old.json"
+}
+
+orca_relaunch() {  # [spawn args...] -> sets OUT and STATUS
+  OUT=$(FM_ROOT_OVERRIDE='' FM_HOME="$HOME_DIR" HOME="$CASE_DIR/user-home" CLAUDE_CONFIG_DIR='' \
+    FM_STATE_OVERRIDE="$HOME_DIR/state" FM_DATA_OVERRIDE="$HOME_DIR/data" \
+    FM_PROJECTS_OVERRIDE="$HOME_DIR/projects" FM_CONFIG_OVERRIDE="$HOME_DIR/config" \
+    FM_SPAWN_NO_GUARD=1 FM_TEST_ORCA_DIR="$CASE_DIR" FM_TEST_ORCA_NEW_TERMINAL=term-new PATH="$FB:$PATH" \
+    "$SPAWN" "$TASK" --relaunch "$@" 2>&1)
+  STATUS=$?
+}
+
+orca_meta_field() {  # <key>
+  grep "^$1=" "$HOME_DIR/state/$TASK.meta" | tail -1 | cut -d= -f2-
+}
+
+test_orca_relaunch_rebinds_a_closed_terminal_in_the_recorded_worktree() {
+  orca_relaunch_case closed
+  orca_relaunch_show false operator_close
+  orca_relaunch --harness claude
+  expect_code 0 "$STATUS" "a relaunch of a closed, agent-free Orca terminal should succeed"$'\n'"$OUT"
+  [ -f "$CASE_DIR/terminal-create.log" ] || fail "the relaunch should create a new terminal"$'\n'"$OUT"
+  assert_contains "$(cat "$CASE_DIR/terminal-create.log")" "--worktree id:wt-1::$WT" \
+    "the new terminal must be created in the recorded worktree"
+  [ "$(orca_meta_field terminal)" = term-new ] || fail "the task record should name the new terminal, got '$(orca_meta_field terminal)'"
+  [ "$(orca_meta_field harness)" = claude ] || fail "the task record should name the new harness, got '$(orca_meta_field harness)'"
+  [ "$(orca_meta_field worktree)" = "$WT" ] || fail "the task record must keep its worktree, got '$(orca_meta_field worktree)'"
+  [ -d "$WT" ] || fail "the relaunch must keep the recorded worktree"
+  [ ! -e "$CASE_DIR/terminal-closed" ] || fail "a successful relaunch must not close the terminal it created"
+  pass "an Orca relaunch of a closed, agent-free terminal creates a new terminal in the recorded worktree"
+}
+
+test_orca_relaunch_adopts_a_dead_connected_terminal() {
+  local shell_pid fifo
+  orca_relaunch_case dead
+  fifo="$CASE_DIR/hold"
+  mkfifo "$fifo"
+  bash -c 'exec 3<>"$0"; read -r _ <&3' "$fifo" >/dev/null 2>&1 &
+  shell_pid=$!
+  orca_relaunch_show true ''
+  printf '{"ok":true,"result":{"worktrees":[{"sessions":[{"sessionId":"pty-old","pid":%s}]}]}}\n' "$shell_pid" > "$CASE_DIR/memory.json"
+  orca_relaunch --harness claude
+  kill "$shell_pid" 2>/dev/null || true
+  expect_code 0 "$STATUS" "a relaunch into a dead Orca terminal should succeed"$'\n'"$OUT"
+  [ ! -e "$CASE_DIR/terminal-create.log" ] || fail "a dead terminal must be adopted, not replaced"$'\n'"$OUT"
+  [ "$(orca_meta_field terminal)" = term-old ] || fail "an adopted terminal keeps its handle, got '$(orca_meta_field terminal)'"
+  pass "an Orca relaunch adopts a connected terminal whose agent is proven stopped"
+}
+
+test_orca_relaunch_refuses_without_proof_of_a_stopped_agent() {
+  local name agent='' standin
+  standin=$(fm_agent_standin "$TMP_ROOT/relaunch-standin") || standin=
+  for name in live-agent agent-in-worktree unreadable ambiguous scan-fails; do
+    orca_relaunch_case "$name"
+    case "$name" in
+      live-agent|agent-in-worktree|ambiguous)
+        [ -n "$standin" ] || continue
+        if [ "$name" = ambiguous ]; then
+          ln -sf "$standin" "$CASE_DIR/notaharness"
+        else
+          ln -sf "$standin" "$CASE_DIR/claude"
+        fi
+        ;;
+    esac
+    case "$name" in
+      live-agent|ambiguous)
+        bash -c '"$0" 600 & wait' "$CASE_DIR/$( [ "$name" = ambiguous ] && echo notaharness || echo claude )" >/dev/null 2>&1 &
+        agent=$!
+        for _ in 1 2 3 4 5 6 7 8 9 10; do [ -n "$(pgrep -P "$agent" 2>/dev/null)" ] && break; sleep 0.1; done
+        orca_relaunch_show true ''
+        printf '{"ok":true,"result":{"worktrees":[{"sessions":[{"sessionId":"pty-old","pid":%s}]}]}}\n' "$agent" > "$CASE_DIR/memory.json"
+        ;;
+      agent-in-worktree)
+        "$CASE_DIR/claude" 600 >/dev/null 2>&1 &
+        agent=$!
+        orca_relaunch_show false operator_close
+        printf 'p%s\nn%s\n' "$agent" "$WT" >> "$CASE_DIR/lsof.out"
+        ;;
+      unreadable) ;;
+      scan-fails)
+        orca_relaunch_show false operator_close
+        rm -f "$CASE_DIR/lsof.out"
+        ;;
+    esac
+    orca_relaunch --harness claude
+    if [ -n "$agent" ]; then
+      pkill -P "$agent" 2>/dev/null || true
+      kill "$agent" 2>/dev/null || true
+      agent=
+    fi
+    expect_code 1 "$STATUS" "the '$name' relaunch has no proof of a stopped agent and must refuse"$'\n'"$OUT"
+    [ ! -e "$CASE_DIR/terminal-create.log" ] || fail "the '$name' refusal must come before any terminal is created"$'\n'"$OUT"
+    [ "$(orca_meta_field terminal)" = term-old ] || fail "the '$name' refusal must leave the task record unchanged"
+    [ "$(orca_meta_field harness)" = codex ] || fail "the '$name' refusal must keep the recorded harness"
+    case "$name" in
+      live-agent) assert_contains "$OUT" "reads 'alive'" "a live agent must be named as the reason" ;;
+      ambiguous) assert_contains "$OUT" "reads 'ambiguous'" "an unrecognized process must be named as the reason" ;;
+      unreadable) assert_contains "$OUT" "reads 'unreadable'" "an unreadable terminal must be named as the reason" ;;
+      agent-in-worktree) assert_contains "$OUT" "an agent process still runs in" "a surviving agent must be named as the reason" ;;
+      scan-fails) assert_contains "$OUT" "could not be read" "a failed scan must be named as the reason" ;;
+    esac
+  done
+  [ -n "$standin" ] || pass "SKIP: Orca relaunch live-agent cases (no agent stand-in survives here)"
+  pass "an Orca relaunch refuses a live agent, an agent left in the worktree, and any unprovable read"
+}
+
+test_orca_relaunch_takes_values_from_the_scoped_source() {
+  local setting staged
+  for setting in available unavailable; do
+    orca_relaunch_case "env-$setting"
+    orca_relaunch_show false operator_close
+    printf 'scoped-source\n' > "$HOME_DIR/config/launch-env-tmux-session"
+    printf 'GH_TOKEN\n' > "$HOME_DIR/config/launch-env-allowlist"
+    cat > "$FB/tmux" <<'EOF'
+#!/usr/bin/env bash
+[ "${FM_TEST_SOURCE_UNAVAILABLE:-0}" != 1 ] || exit 1
+case "$*" in
+  "-u show-environment -t =scoped-source"|"-u show-environment -t =scoped-source GH_TOKEN") ;;
+  *) exit 2 ;;
+esac
+printf 'GH_TOKEN=scoped-relaunch-token\n'
+EOF
+    chmod +x "$FB/tmux"
+    OUT=$(FM_ROOT_OVERRIDE='' FM_HOME="$HOME_DIR" HOME="$CASE_DIR/user-home" CLAUDE_CONFIG_DIR='' \
+      FM_STATE_OVERRIDE="$HOME_DIR/state" FM_DATA_OVERRIDE="$HOME_DIR/data" \
+      FM_PROJECTS_OVERRIDE="$HOME_DIR/projects" FM_CONFIG_OVERRIDE="$HOME_DIR/config" \
+      FM_SPAWN_NO_GUARD=1 FM_TEST_ORCA_DIR="$CASE_DIR" FM_TEST_ORCA_NEW_TERMINAL=term-new \
+      FM_TEST_ORCA_LOG="$CASE_DIR/terminal.log" FM_TEST_ORCA_CONSUME=1 \
+      FM_TEST_SOURCE_UNAVAILABLE="$([ "$setting" = unavailable ] && echo 1 || echo 0)" \
+      PATH="$FB:$PATH" "$SPAWN" "$TASK" --relaunch --harness claude 2>&1)
+    STATUS=$?
+    if [ "$setting" = unavailable ]; then
+      expect_code 1 "$STATUS" "a relaunch whose scoped source cannot be read must refuse"$'\n'"$OUT"
+      [ ! -e "$CASE_DIR/terminal-create.log" ] || fail "an unreadable source must refuse before a terminal is created"
+      [ "$(orca_meta_field terminal)" = term-old ] || fail "an unreadable source must leave the task record unchanged"
+      continue
+    fi
+    expect_code 0 "$STATUS" "a relaunch with a scoped source should succeed"$'\n'"$OUT"
+    assert_not_contains "$OUT" "warning: backend=orca" "a relaunch with a scoped source must not fall back to the Orca terminal's values"
+    staged=$(sed -n "s/^[^']*'\([^']*\/launch\.[^'\/]*\.sh\)'.*$/\1/p" "$CASE_DIR/terminal.log" | tail -1)
+    [ -f "$staged.copy" ] || fail "the relaunch did not stage its launch through a private file"$'\n'"$OUT"
+    assert_contains "$(cat "$staged.copy")" scoped-relaunch-token "the replacement must take the allowlisted value from the scoped source"
+    assert_contains "$(cat "$staged.copy")" GIT_CONFIG_NOSYSTEM=1 "the replacement must keep the system credential helper off"
+    assert_not_contains "$(cat "$CASE_DIR/terminal.log")" scoped-relaunch-token "source values must stay off terminal input"
+  done
+  pass "an Orca relaunch takes allowlisted values from the scoped source, and refuses when it cannot be read"
 }
 
 # Source values are synthetic and deliberately include shell syntax and trailing
@@ -936,5 +1150,9 @@ test_orca_snapshot_keeps_raw_bytes_tmux_reports
 test_orca_fresh_spawn_enters_the_worktree_it_created
 test_orca_aborted_spawn_safe_deletes_or_records_its_created_branch
 test_orca_relaunch_is_refused_before_the_worktree_carveout_could_run
+test_orca_relaunch_rebinds_a_closed_terminal_in_the_recorded_worktree
+test_orca_relaunch_adopts_a_dead_connected_terminal
+test_orca_relaunch_refuses_without_proof_of_a_stopped_agent
+test_orca_relaunch_takes_values_from_the_scoped_source
 
 echo "# all fm-spawn-orca-worktree tests passed"

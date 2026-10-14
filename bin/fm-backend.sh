@@ -670,7 +670,7 @@ fm_backend_source() {  # <name>
       set -- fm-backend-hometag-lib.sh fm-composer-lib.sh
       ;;
     orca)
-      set -- fm-composer-lib.sh
+      set -- fm-composer-lib.sh fm-agent-process-lib.sh fm-session-lock-lib.sh fm-cursor-lib.sh fm-gemini-lib.sh
       ;;
     cmux|paseo)
       set -- fm-backend-hometag-lib.sh fm-composer-lib.sh
@@ -1073,6 +1073,8 @@ fm_backend_target_exists() {  # <backend> <target> [expected-label]
 # `missing` only in this recovery-grade view. Zellij remains unverified because
 # its secondmate ghost-tab and agent-process recovery path has not been
 # empirically validated. Orca, cmux, and paseo do not support secondmate spawns.
+# Orca stays `unverified` here: its classifier is read only by the control
+# plane, through bin/fm-control-lib.sh's fm_control_agent_state.
 fm_backend_agent_state() {  # <backend> <target>
   local backend=$1 target=$2
   fm_backend_source "$backend" || { printf 'unverified'; return 0; }

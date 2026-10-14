@@ -552,17 +552,23 @@ test_harness_kind_capability() {
 }
 
 test_orca_refuses_an_escape_harness_interrupt() {
-  local dir out rc
+  local dir out rc standin agent
+  standin=$(fm_agent_standin "$TMP_ROOT/standin-bin") \
+    || { pass "SKIP: Orca Escape interrupt (no agent stand-in survives here)"; return 0; }
   dir=$(new_case orca-escape)
-  add_task "$dir" t1 claude ship orca "term-1"
-  # Orca records its endpoint as terminal=, which endpoint validation requires.
-  {
-    cat "$dir/home/state/t1.meta"
-    echo "terminal=term-1"
-    echo "orca_worktree_id=wt-1::/orca/wt-1"
-  } > "$dir/home/state/t1.meta.new"
-  sed 's|^window=.*|window=fm-t1|' "$dir/home/state/t1.meta.new" > "$dir/home/state/t1.meta"
+  add_orca_closed_task "$dir" t1 claude
+  # The terminal is connected and its session runs a live claude, so the
+  # interrupt reaches the key check rather than stopping at the state check.
+  ln -sf "$standin" "$dir/fake/claude"
+  bash -c '"$0" 600 & wait' "$dir/fake/claude" >/dev/null 2>&1 &
+  agent=$!
+  for _ in 1 2 3 4 5 6 7 8 9 10; do [ -n "$(pgrep -P "$agent" 2>/dev/null)" ] && break; sleep 0.1; done
+  sed 's/"connected":false,"writable":false,"exitCause":{"kind":"operator_close"}/"connected":true,"writable":true,"exitCause":null/' \
+    "$dir/fake/orca-show" > "$dir/fake/orca-show.new" && mv "$dir/fake/orca-show.new" "$dir/fake/orca-show"
+  printf '{"ok":true,"result":{"worktrees":[{"sessions":[{"sessionId":"pty-1","pid":%s}]}]}}\n' "$agent" > "$dir/fake/orca-memory"
   out=$(run_control "$dir" t1 interrupt); rc=$?
+  pkill -P "$agent" 2>/dev/null || true
+  kill "$agent" 2>/dev/null || true
   expect_code 1 "$rc" "an Escape harness on orca should refuse"
   assert_contains "$out" "cannot deliver" "refusal should name the undeliverable key"
   pass "fm-control interrupt: a backend that cannot deliver the harness's key refuses instead of sending another"
@@ -751,11 +757,12 @@ test_commandcode_relaunch_off_tmux_and_herdr_refuses_before_stopping() {
   pass "fm-control relaunch: commandcode off tmux and herdr is refused before the running agent is stopped"
 }
 
-test_state_verified_backends_are_exactly_tmux_and_herdr() {
+test_state_verified_backends_are_exactly_tmux_herdr_and_orca() {
   fm_control_backend_state_verified tmux || fail "tmux has a recovery-grade classifier"
   fm_control_backend_state_verified herdr || fail "herdr has a recovery-grade classifier"
+  fm_control_backend_state_verified orca || fail "orca has a recovery-grade classifier"
   local backend
-  for backend in zellij orca cmux paseo; do
+  for backend in zellij cmux paseo; do
     fm_control_backend_state_verified "$backend" \
       && fail "$backend has no recovery-grade classifier and must not claim one"
   done
@@ -958,12 +965,82 @@ test_missing_tmux_endpoint_refuses_rather_than_claiming_a_stop() {
   # this process addresses, so a window that is merely on a server this seat
   # cannot reach is indistinguishable from one that was destroyed. exit refuses
   # rather than claim a stop it cannot see, and sends nothing to an address it
-  # cannot trust. Reclaim of a destroyed endpoint is Herdr-only
+  # cannot trust. Reclaim of a destroyed endpoint is Herdr and Orca only
   # (docs/agent-control.md "Reclaiming a task whose endpoint is gone").
   expect_code 1 "$rc" "a tmux endpoint whose absence cannot be proven must refuse"
   assert_not_contains "$out" "endpoint-gone" "exit must not report a stop it could not prove"
   [ -z "$(literals "$dir")" ] || fail "nothing may be sent into an endpoint exit cannot trust"
   pass "fm-control exit: an unprovable tmux endpoint refuses instead of claiming the agent stopped"
+}
+
+# add_orca_closed_task <case-dir> <id> [harness]: an Orca task whose recorded terminal
+# Orca reports closed in the task's own worktree, whose session Orca no longer
+# sweeps, and whose worktree holds no process. An orca stub on the case's
+# fakebin answers those reads and records any send as a literal, and an lsof
+# stub answers the working-directory scan from fake/lsof, failing without it.
+add_orca_closed_task() {
+  local dir=$1 id=$2 harness=${3:-claude} wt
+  add_task "$dir" "$id" "$harness" ship orca term-1
+  wt=$(grep '^worktree=' "$dir/home/state/$id.meta" | cut -d= -f2-)
+  wt=$(cd -P "$wt" && pwd -P)
+  # Orca records its endpoint as terminal=, beside a window label.
+  {
+    sed "s|^window=.*|window=fm-$id|" "$dir/home/state/$id.meta"
+    echo "terminal=term-1"
+    echo "orca_worktree_id=wt-1::$wt"
+  } > "$dir/home/state/$id.meta.new"
+  mv "$dir/home/state/$id.meta.new" "$dir/home/state/$id.meta"
+  printf '{"ok":true,"result":{"terminal":{"handle":"term-1","ptyId":"pty-1","connected":false,"writable":false,"exitCause":{"kind":"operator_close"},"executionHostId":"local","worktreePath":"%s"}}}\n' \
+    "$wt" > "$dir/fake/orca-show"
+  printf '{"ok":true,"result":{"worktrees":[{"sessions":[]}]}}\n' > "$dir/fake/orca-memory"
+  printf 'p%s\nn%s\n' "$$" "$dir" > "$dir/fake/lsof"
+  cat > "$dir/fakebin/orca" <<'SH'
+#!/usr/bin/env bash
+D=$FM_FAKE_DIR
+case "$1 $2" in
+  "terminal show") cat "$D/orca-show" ;;
+  "diagnostics memory") cat "$D/orca-memory" ;;
+  "terminal send")
+    prev=
+    for a in "$@"; do
+      [ "$prev" != --text ] || printf '%s\n' "$a" >> "$D/literal"
+      prev=$a
+    done
+    printf '{"ok":true}\n'
+    ;;
+  *) printf '{"ok":true}\n' ;;
+esac
+SH
+  cat > "$dir/fakebin/lsof" <<'SH'
+#!/usr/bin/env bash
+[ -f "$FM_FAKE_DIR/lsof" ] || exit 1
+cat "$FM_FAKE_DIR/lsof"
+SH
+  chmod +x "$dir/fakebin/orca" "$dir/fakebin/lsof"
+}
+
+test_closed_orca_terminal_exit_reports_endpoint_gone() {
+  local dir out rc
+  dir=$(new_case orca-gone)
+  add_orca_closed_task "$dir" t1
+  out=$(run_control "$dir" t1 exit); rc=$?
+  expect_code 0 "$rc" "exit on a closed, agent-free Orca terminal should succeed"$'\n'"$out"
+  assert_contains "$out" "endpoint-gone" "the outcome should say the endpoint is gone"
+  [ -z "$(literals "$dir")" ] || fail "a closed Orca terminal must not be sent an exit command"
+  pass "fm-control exit: a closed Orca terminal with no agent left reports endpoint-gone and sends nothing"
+}
+
+test_closed_orca_terminal_exit_refuses_without_the_worktree_scan() {
+  local dir out rc
+  dir=$(new_case orca-noscan)
+  add_orca_closed_task "$dir" t1
+  rm -f "$dir/fake/lsof"
+  out=$(run_control "$dir" t1 exit); rc=$?
+  expect_code 1 "$rc" "exit must refuse when a surviving agent in the worktree cannot be ruled out"$'\n'"$out"
+  assert_not_contains "$out" "endpoint-gone" "exit must not report a stop it could not prove"
+  assert_contains "$out" "could not be read" "the refusal should name the scan that failed"
+  [ -z "$(literals "$dir")" ] || fail "nothing may be sent into an endpoint exit cannot trust"
+  pass "fm-control exit: a closed Orca terminal refuses when the worktree scan cannot be read"
 }
 
 test_interrupt_refuses_when_no_agent_runs() {
@@ -1349,7 +1426,7 @@ test_orca_droid_second_exit_is_idempotent
 test_orca_droid_exit_then_relaunch_is_admitted
 test_unverified_state_backends_refuse_stop_verbs
 test_commandcode_relaunch_off_tmux_and_herdr_refuses_before_stopping
-test_state_verified_backends_are_exactly_tmux_and_herdr
+test_state_verified_backends_are_exactly_tmux_herdr_and_orca
 test_window_label_is_refused_with_the_exact_id
 test_explicit_endpoint_is_refused
 test_unknown_task_is_refused
@@ -1361,6 +1438,8 @@ test_resume_is_refused_with_its_reason
 test_relaunch_only_flags_are_rejected_on_other_verbs
 test_already_stopped_exit_is_idempotent
 test_missing_tmux_endpoint_refuses_rather_than_claiming_a_stop
+test_closed_orca_terminal_exit_reports_endpoint_gone
+test_closed_orca_terminal_exit_refuses_without_the_worktree_scan
 test_interrupt_refuses_when_no_agent_runs
 test_ambiguous_endpoint_refuses
 test_busy_agent_is_interrupted_before_the_exit_command

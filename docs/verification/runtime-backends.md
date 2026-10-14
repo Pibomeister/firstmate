@@ -2133,6 +2133,45 @@ tests/fm-bootstrap.test.sh
 
 The fake-Orca suite covers readiness, registration, create response parsing, metadata routing, popup-safe submit, and path-matched release refusal.
 
+### Orca agent stop proof
+
+The agent stop proof was verified on 2026-10-14 on macOS against `/Applications/Orca.app` and the `orca` CLI, both reporting version 1.4.223.
+
+A probe terminal created in this repository's worktree and then closed with `orca terminal close` read back through `orca terminal show --terminal <handle> --json` as:
+
+```text
+result.terminal.connected=false
+result.terminal.writable=false
+result.terminal.exitCause.kind=operator_close
+result.terminal.executionHostId=local
+result.terminal.worktreePath=<the worktree it was created in>
+```
+
+A second probe terminal whose shell exited on its own read the same, except `exitCause={"kind":"unknown","reason":"stop_unverified"}`.
+A connected terminal read `connected=true`, `writable=true`, and no `exitCause`.
+An unknown handle returned `ok:false` with `error.code=terminal_handle_stale`.
+`orca diagnostics memory --json` listed each live session under `result.worktrees[].sessions[]` with `sessionId` equal to the terminal's `ptyId` and a `pid`.
+
+The adapter's verdicts were then read against those real terminals with `bin/backends/orca.sh` sourced under Bash, with this repository's worktree as the recorded worktree and a Claude worker running in it:
+
+```sh
+fm_backend_orca_agent_state <handle>
+fm_backend_orca_endpoint_absence_proof <handle> <worktree>
+fm_backend_orca_process_tree <session pid>
+```
+
+```text
+closed terminal (operator_close):  state=missing  proof=unproven|an agent process still runs in <worktree> (80018 claude)
+closed terminal (shell exit):      state=missing  proof=unproven|an agent process still runs in <worktree> (80018 claude)
+unknown handle:                    state=unreadable  proof=unproven|Orca could not describe terminal term_bogus
+idle connected terminal:           state=dead   proof=dead   tree: /usr/bin/login -> -/bin/zsh
+Claude connected terminal:         state=alive  proof=alive  tree: /usr/bin/login -> -/bin/zsh -> claude -> ...
+```
+
+The two closed terminals refused because the working-directory scan found the running Claude worker in the same worktree, which is the survivor check working as intended.
+A live `gone` needs a closed terminal in a worktree with no agent, which this probe did not create; `tests/fm-backend-orca.test.sh`, `tests/fm-spawn-orca-worktree.test.sh`, and `tests/fm-control.test.sh` cover it with Orca's reads faked and real processes.
+The `lsof -nP -a -u <uid> -d cwd -Fpn` scan took 0.63 seconds on this host.
+
 ### Orca environment source
 
 The environment source was verified on 2026-10-14 on macOS 15.6.1 with tmux 3.6a, Bash 5.3.20, Bash 3.2.57, and zsh 5.9.
