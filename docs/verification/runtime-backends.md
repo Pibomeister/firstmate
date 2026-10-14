@@ -2530,3 +2530,4 @@ The live liveness guard reported `droid 0.230.0: title='droid'`, `ancestry verdi
 The opt-in guards print five `ok` checks each, and the private task evidence contains their full stdout, report, viewport, and terminal transcript.
 Rechecked on 2026-10-05 with Droid 0.230.0, tmux 3.6a, and Orca 1.4.218 after merging current upstream main.
 Both live guards again printed five `ok` lifecycle checks; the Orca guard also verified that the typed prompt's `UserPromptSubmit` receipt matched its payload hash, current generation, and pre-Enter sequence.
+Rechecked on 2026-10-14 with Droid 0.223.0 and tmux 3.6a: the tmux guard run with `FM_DROID_LIVE_MODEL=glm-5.3-flash` printed its five `ok` lifecycle checks on `glm-5.3-flash` (GLM-5.3-Flash, reasoning low/high/max) at effort `low`.

@@ -251,7 +251,9 @@ test_droid_launch_and_hooks() {
     || fail "SessionEnd did not record the current busy generation"
   live_bin="$CASE_DIR/live-droid"
   mkdir -p "$live_bin"
-  cp "$(command -v sleep)" "$live_bin/droid"
+  # A re-signed copy of macOS's universal arm64e sleep is SIGKILLed on launch, so take its x86_64 slice.
+  lipo "$(command -v sleep)" -thin x86_64 -output "$live_bin/droid" 2>/dev/null \
+    || cp "$(command -v sleep)" "$live_bin/droid"
   if command -v codesign >/dev/null 2>&1; then
     codesign -s - -f "$live_bin/droid" >/dev/null 2>&1 || fail "could not sign the live droid stand-in"
   fi
