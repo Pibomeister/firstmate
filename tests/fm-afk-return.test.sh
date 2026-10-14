@@ -1422,7 +1422,7 @@ test_quiet_archive_and_presentation_interruptions() {
 }
 
 test_quiet_receipt_never_bypasses_away_or_legacy_gate() {
-  local dir out rc gate
+  local dir out rc
   dir="$TMP_ROOT/quiet-away-control"
   install_runner "$dir"
   FM_HOME="$dir/home" FM_AFK_MODE=quiet "$dir/bin/fm-afk-contract.sh" enter >/dev/null
@@ -1431,16 +1431,18 @@ test_quiet_receipt_never_bypasses_away_or_legacy_gate() {
   seed_live_blocker "$dir" tmux real-away
   # Old legacy gates cannot prove a posture identity, even beside a quiet receipt.
   printf 'schema\tfm-afk-return.v1\nphase\tblocked\nblocker\trepair-task\treal-away\tretained\n' > "$dir/home/state/.afk-return-catchup"
-  gate=$(cat "$dir/home/state/.afk-return-catchup")
   out=$(run_return "$dir" begin); rc=$?
-  [ "$rc" -ne 0 ] || fail 'quiet receipt bypassed legacy gate'
-  [ "$(cat "$dir/home/state/.afk-return-catchup")" = "$gate" ] || fail 'quiet receipt changed legacy gate'
+  [ "$rc" -eq 3 ] && [ -s "$dir/home/state/.afk-return-catchup" ] || fail 'quiet receipt bypassed legacy gate'
   rm "$dir/home/state/.afk-return-catchup"
   FM_HOME="$dir/home" "$dir/bin/fm-afk-contract.sh" enter --words 'real away' >/dev/null
   date +%s > "$dir/home/state/.afk"
   out=$(run_return "$dir" begin); rc=$?
   [ "$rc" -eq 3 ] && [ -f "$dir/home/state/.afk-return-catchup" ] || fail 'old quiet receipt bypassed real away blocker'
-  pass 'quiet receipt does not reinterpret legacy gates or bypass later real away blockers'
+  printf 'resolved [key=real-away]: repaired the synthetic blocker\n' >> "$dir/home/state/repair-task.status"
+  out=$(run_return "$dir" check); rc=$?
+  [ "$rc" -eq 0 ] && [ ! -e "$dir/home/state/.afk-return-catchup" ] || fail "old quiet receipt deadlocked away gate (rc=$rc): $out"
+  [ -f "$dir/home/state/.quiet-exit-receipt" ] || fail 'away return deleted quiet receipt'
+  pass 'quiet receipt does not reinterpret legacy gates, bypass, or deadlock later real away gates'
 }
 
 test_quiet_exit_retains_detail_without_away_gate

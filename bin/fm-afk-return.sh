@@ -992,7 +992,7 @@ main() {
   fm_lock_acquire_wait "$LOCK"
   trap 'fm_lock_release "$LOCK"' EXIT
   if fm_afk_contract_quiet_active "$STATE" \
-     || { [ ! -e "$STATE/.afk" ] && ! fm_afk_contract_present "$STATE" \
+     || { [ ! -e "$GATE" ] && [ ! -e "$STATE/.afk" ] && ! fm_afk_contract_present "$STATE" \
           && { [ -f "$STATE/.quiet-exit-pending" ] || quiet_receipt_present; }; }; then
     quiet_exit
     rc=$?

@@ -34,7 +34,13 @@ cat > "$TMP_ROOT/bin/fm-watch.sh" <<'SH'
 #!/usr/bin/env bash
 exec sleep 600
 SH
-chmod +x "$TMP_ROOT/bin/fm-watch.sh" "$TMP_ROOT/fakebin/tmux"
+# Existing notifier seam records the non-composer alert instead of posting it.
+cat > "$TMP_ROOT/fakebin/alarm" <<'SH'
+#!/usr/bin/env bash
+printf '%s|%s\n' "$1" "$2" >> "$FM_HOME/alarms"
+SH
+export FM_WEDGE_ALARM_EXEC="$TMP_ROOT/fakebin/alarm"
+chmod +x "$TMP_ROOT/bin/fm-watch.sh" "$TMP_ROOT/fakebin/tmux" "$TMP_ROOT/fakebin/alarm"
 export PATH="$TMP_ROOT/fakebin:$PATH"
 pid=
 stop_daemon() {
@@ -68,6 +74,11 @@ stop_daemon
 [ ! -e "$FM_HOME/composer" ] && [ ! -e "$FM_HOME/keys" ] || fail 'quiet daemon wrote composer'
 grep -qx 'blocked nonce: private full detail' "$FM_STATE_OVERRIDE/.subsuper-escalations" || fail 'quiet daemon lost detail'
 [ ! -e "$FM_STATE_OVERRIDE/.subsuper-inject-wedged" ] || fail 'quiet produced transport wedge alarm'
+grep -q '|quiet supervision retained escalations' "$FM_HOME/alarms" 2>/dev/null || fail 'quiet backlog raised no non-composer alert'
+log_file="$FM_STATE_OVERRIDE/.supervise-daemon.log"
+grep -q 'daemon starting' "$log_file" || fail 'quiet suppressed startup diagnostics'
+grep -q 'daemon shutting down' "$log_file" || fail 'quiet suppressed lifecycle diagnostics'
+! grep -q 'private full detail' "$FM_HOME/alarms" "$log_file" || fail 'quiet alert or log exposed raw detail'
 rm -f "$FM_STATE_OVERRIDE/.subsuper-last-housekeep"
 start_daemon
 stop_daemon
