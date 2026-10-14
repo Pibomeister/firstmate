@@ -1,0 +1,45 @@
+     #S860 Code review of branch fm/fm-quiet-recovery (commits edfdc461..d6540dd1) implementing quiet-mode isolation and durable buffer recovery to stop
+     Firstmate from typing watcher notices into the captain prompt. (Oct 14 at 4:50 PM)
+
+     #S861 Review phase for fm/fm-quiet-recovery branch implementing quiet-mode isolation and durable buffer recovery to prevent watcher notices from typing
+     into the captain prompt. (Oct 14 at 4:51 PM)
+
+
+     Investigated: Full source code review of 6 changed files tracing quiet-exit flow from main() routing through quiet_active validation, daemon stop, buffer
+     archival, receipt atomicity, and error recovery paths. Examined supervisor escalation suppression gates, launcher artifact cleanup logic, return guard and
+     catch-up gate semantics, and test fixtures validating durable behavior. Reviewed concrete execution sequences including quiet-to-away transitions and
+     blocker resolution scenarios.
+
+     Learned: Implementation adds layered quiet recovery: (1) supervisor skips escalation flush/injection when quiet is possible, (2) escalation buffer
+     preserved as durable state, (3) atomic receipts created before buffer clearing with retry semantics across interruptions, (4) launcher skips stale-artifact
+     cleanup when quiet possible, (5) new contract predicates distinguish validated quiet from legacy flags. However, a critical reachable deadlock exists:
+     quiet receipts persist forever and cause main() to loop back to quiet_exit instead of return_reconcile whenever a gate exists, permanently blocking gate
+     closure and future launches. Additionally, intent requires "no-prompt-write notification" but implementation is completely silent; log redaction removes
+     diagnostics and is unrequired.
+
+     Completed: Reviewed 337-line changeset across 6 files. Identified concrete deadlock scenario (quiet exit → real away with blocker → blocker resolved →
+     check loops forever). Traced all quiet checks, buffer preservation, receipt handling, and supervisor isolation points. Confirmed 4 key mechanisms work
+     correctly: FM_AFK_STATE_PREPARED flag ordering, artifact cleanup guarding, guard-path allowance, and retry buffer ordering. Reviewed test coverage (4 new
+     quiet-exit tests, 1 supervise-quiet test with private tmux validation). Submitted structured findings: 1 error (auto-fix), 2 warnings (ask-user), 6 files
+     reviewed, high risk.
+
+     Next Steps: Reviewer findings are submitted to pipeline. Awaiting author response on three items: (1) deadlock fix requiring main() route guard `[ ! -e
+     "$GATE" ] &&` before quiet-exit branch, plus test validating gate closure post-blocker-resolution; (2) authorization for notification approach (silence vs.
+     banner-based alert); (3) decision on log redaction removal. Pipeline test phase will execute test suites next if author addresses findings.
+
+     Notes: One blocking defect (deadlock) prevents merge without fix. Two warning-level items reflect product-behavior decisions: missing notification
+     contradicts stated intent, and log redaction removes future diagnostics without requirement. Test coverage exists for primary quiet paths but does not yet
+     cover the deadlock scenario (quiet exit followed by away gate with blocker resolution). Risk level high due to reachable deadlock in core return lifecycle.
+     Reviewer did not execute tests per pipeline protocol (test phase owns that).
+
+
+     Access 77k tokens of past research & decisions for just 6,450t. Use the claude-mem skill to access memories by ID.
+
+     View Observations Live @ http://localhost:37701
+     ✨ 30 Day Free Trial — memory runs off-plan. Get up to 100% more usage from your plan https://cmem.ai/pro?from=session-start
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── ↯ ─
+❯ Try "fix typecheck errors"
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  [OMC#4.15.0] -> 5.7.3 omc update | Model: Opus 5.5 | 5h:6%*(~4h32m) wk:6%*(~6d11h) | session:0m | ctx:0%
+  ⏵⏵ auto mode on (shift+tab to cycle) · ← 1 agent
