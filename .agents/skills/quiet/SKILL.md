@@ -3,7 +3,7 @@ name: quiet
 description: >-
   Enter quiet supervision mode when the captain invokes /quiet or asks for quiet mode, quiet-while-present, or fewer routine wake turns while they stay in the session.
   Where Pi's supervision branch or an attended supervision host already keeps routine wakes off the conversation, it enters nothing and says so.
-  Elsewhere it sets the same durable away/quiet-mode flag as /afk, in `quiet` mode, so the sub-supervisor daemon self-handles routine wakes and escalates captain-relevant events exactly as away mode does, but ordinary captain chat does NOT exit it - only an explicit `/quiet off` does.
+  Elsewhere it sets the same durable away/quiet-mode flag as /afk, in `quiet` mode, so the sub-supervisor daemon self-handles routine wakes and retains captain-relevant escalations durably instead of typing them into the prompt, and ordinary captain chat does NOT exit it - only an explicit `/quiet off` does.
 user-invocable: true
 metadata:
   internal: true
@@ -16,7 +16,8 @@ daemon tradeoff as `/afk`, made explicit for a captain who is staying,
 watching the session, and does not want to exit the mode just by chatting.
 
 Where a daemon runs, this skill is a thin wrapper.
-The `afk` skill owns the daemon's injection, busy/composer guards, and reliability properties; quiet mode uses that machinery while the captain remains present.
+The `afk` skill owns the daemon and its reliability properties; quiet mode uses that machinery while the captain remains present, except that a quiet daemon never writes to the captain's composer.
+Escalations stay in the durable buffer, and once they outlive `FM_MAX_DEFER_SECS` the daemon raises only the non-composer [wedge alarm](../../../docs/wedge-alarm.md); `bin/fm-supervise-daemon.sh` (`escalate_flush`, `inject_msg`, `housekeeping`) owns that boundary.
 For captain-held rechecks under quiet, see [architecture](../../../docs/architecture.md).
 
 ## What it does
@@ -54,13 +55,13 @@ Unlike `/afk`, ordinary chat is never the exit signal - that is the entire
 point of this mode (AGENTS.md section 8's away-mode stub, quiet branch).
 
 - Only an explicit `/quiet off` (or the captain plainly asking to leave quiet
-  mode / resume normal supervision) exits it: run `bin/fm-afk-return.sh`
-  unchanged, exactly the procedure `/afk`'s "How to exit afk" section
-  documents for its own return path (correct-ordered daemon shutdown,
-  durable wake presentation and acknowledgement, escalation/wedge evidence,
-  and the return-catch-up gate).
-  That script does not read or care about the flag's mode, so it needs no
-  quiet-specific variant.
+  mode / resume normal supervision) exits it: run `bin/fm-afk-return.sh`.
+  For a validated quiet record it takes its quiet exit instead of the away
+  return: it stops the daemon, archives retained escalations under
+  `state/.subsuper-digests/`, prints only the archive path and event count,
+  and opens no return-catch-up gate, because the captain never left.
+  Read that archive to surface the retained detail; the script's header owns
+  the receipt and retry contract.
 - A marked daemon escalation, or a message beginning `/quiet` while already
   in quiet mode (refresh, not exit) -> stay in quiet mode and process it, the
   same two carve-outs `/afk` documents for away mode.
@@ -81,6 +82,7 @@ Every action the captain asks for or standing authority covers - landing local-o
 Per the issue's own author triage: quiet mode is presentation only.
 Progress, retries, and internal mechanics stay below deck exactly as in away
 mode, but review-ready work, findings, decisions, failures, and credentials
-escalate every time, through the same classification policy `/afk` owns.
+escalate every time, through the same classification policy `/afk` owns,
+into the durable buffer and the non-composer alert described above.
 Quiet mode is opt-in and never the unconsented default; only an explicit
 `/quiet` invocation enters it.
