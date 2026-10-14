@@ -240,11 +240,11 @@ final=$(default_object) || fail "could not read the default session after replay
 pass "result and replay kept the named lab absent"
 cat "$TMP_ROOT/inspect.err" "$TMP_ROOT/retire.err" "$TMP_ROOT/result.err" "$TMP_ROOT/replay.err" \
   > "$TMP_ROOT/runtime-trace.log"
-helper_calls=$(grep -F "$HERDR_RUNTIME_HELPER run $HERDR_LAB_SESSION session list --json" \
-  "$TMP_ROOT/runtime-trace.log" | wc -l | tr -d ' ')
+helper_calls=$(grep -Fc "$HERDR_RUNTIME_HELPER run $HERDR_LAB_SESSION session list --json" \
+  "$TMP_ROOT/runtime-trace.log" || true)
 assert_equals 3 "$helper_calls" "inspect and retirement used three guarded inventory calls"
-raw_calls=$(grep -E "FM_LIFECYCLE_TRACE herdr session list --json --session $HERDR_LAB_SESSION" \
-  "$TMP_ROOT/runtime-trace.log" | wc -l | tr -d ' ')
+raw_calls=$(grep -Ec "FM_LIFECYCLE_TRACE herdr session list --json --session $HERDR_LAB_SESSION" \
+  "$TMP_ROOT/runtime-trace.log" || true)
 assert_equals 3 "$raw_calls" "the guarded helper appended the explicit session selector"
 if grep -E 'FM_LIFECYCLE_TRACE (herdr (server|pane|workspace)|.*fm-herdr-lab\.sh run [^ ]+ (server|pane|workspace))' \
   "$TMP_ROOT/runtime-trace.log" >/dev/null; then

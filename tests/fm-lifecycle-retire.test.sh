@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016 # Expressions in bash -c belong to the child shell.
 # Behavior tests for endpoint retirement (bin/fm-lifecycle.sh).
 # Each refusal is a command plus its exit status, and the assertion is the
 # protected record or process, not the source text.
@@ -368,6 +369,31 @@ life "$TMP_ROOT/dup.err" retire --request "$TMP_ROOT/dup.json" --out "$TMP_ROOT/
 assert_equals 1 "$LIFE_RC" "a duplicate key is refused"
 assert_equals bad-request "$(json_get '.reasons[0].code')" "a duplicate key is a bad request"
 pass "negative control: fm-lifecycle.sh retire duplicate-key exited $LIFE_RC"
+
+# Inspection must still work when temporary-file allocation is forbidden.
+parent=$(mk_parent inspect-memory-home)
+write_ship_meta "$parent" ship1
+ship_ep "$parent" ship1 | jq -s '.' > "$TMP_ROOT/inspect-memory-eps.json"
+write_request "$TMP_ROOT/inspect-memory-req.json" op-inspect-memory "$parent" session-absent "$TMP_ROOT/inspect-memory-eps.json"
+absent_body > "$BODY"
+no_scratch_bin=$TMP_ROOT/no-scratch-bin
+mkdir -p "$no_scratch_bin"
+cat > "$no_scratch_bin/mktemp" <<'SH'
+#!/usr/bin/env bash
+printf 'inspection attempted temporary allocation\n' >&2
+exit 97
+SH
+chmod +x "$no_scratch_bin/mktemp"
+before=$(file_sum "$parent/state/ship1.meta")
+life "$TMP_ROOT/inspect-memory.err" PATH="$no_scratch_bin:$PATH" \
+  FM_RETIRE_INV_BODY="$BODY" FM_RETIRE_INV_LOG="$TMP_ROOT/inspect-memory.log" \
+  FM_RETIRE_EP_LOG="$TMP_ROOT/inspect-memory-ep.log" \
+  inspect --request "$TMP_ROOT/inspect-memory-req.json" --out "$TMP_ROOT/inspect-memory-out.json"
+assert_equals 0 "$LIFE_RC" "inspection succeeds without allocating temporary files"
+assert_equals ready "$(json_get .status)" "in-memory inspection runs the shared validators"
+assert_equals "$before" "$(file_sum "$parent/state/ship1.meta")" "inspection preserves authoritative metadata"
+assert_absent "$parent/state/lifecycle-retire" "inspection creates no journal"
+pass "inspection reports readiness with temporary allocation forbidden"
 
 # --- absence discrimination --------------------------------------------------
 parent=$(mk_parent absent-home)

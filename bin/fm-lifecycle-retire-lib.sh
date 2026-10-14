@@ -231,12 +231,64 @@ except Exception:
 PY
 }
 
+fm_lifecycle_retire_scratch_read() {
+  local key=${1##*/} index=0
+  if [ "${FM_LIFECYCLE_RETIRE_MEMORY:-0}" != 1 ]; then
+    cat -- "$1"
+    return
+  fi
+  while [ "$index" -lt "${#FM_LIFECYCLE_RETIRE_KEYS[@]}" ]; do
+    if [ "${FM_LIFECYCLE_RETIRE_KEYS[$index]}" = "$key" ]; then
+      printf '%s' "${FM_LIFECYCLE_RETIRE_VALUES[$index]}"
+      return 0
+    fi
+    index=$((index + 1))
+  done
+  return 1
+}
+
+fm_lifecycle_retire_scratch_write() {
+  local key=${1##*/} value=$2 index=0
+  if [ "${FM_LIFECYCLE_RETIRE_MEMORY:-0}" != 1 ]; then
+    printf '%s' "$value" > "$1"
+    return
+  fi
+  while [ "$index" -lt "${#FM_LIFECYCLE_RETIRE_KEYS[@]}" ]; do
+    [ "${FM_LIFECYCLE_RETIRE_KEYS[$index]}" != "$key" ] || break
+    index=$((index + 1))
+  done
+  FM_LIFECYCLE_RETIRE_KEYS[index]=$key
+  FM_LIFECYCLE_RETIRE_VALUES[index]=$value
+}
+
+fm_lifecycle_retire_scratch_append() {
+  local previous
+  previous=$(fm_lifecycle_retire_scratch_read "$1") || return 1
+  [ -z "$previous" ] || previous=$previous$'\n'
+  fm_lifecycle_retire_scratch_write "$1" "$previous$2"$'\n'
+}
+
+fm_lifecycle_retire_scratch_has() {
+  if [ "${FM_LIFECYCLE_RETIRE_MEMORY:-0}" = 1 ]; then
+    [ -n "$(fm_lifecycle_retire_scratch_read "$1")" ]
+  else
+    [ -s "$1" ]
+  fi
+}
+
 fm_lifecycle_retire_tmp_begin() {
-  FM_LIFECYCLE_RETIRE_TMP=$(mktemp -d "${TMPDIR:-/tmp}/fm-lifecycle-retire.XXXXXX") || return 1
-  : > "$FM_LIFECYCLE_RETIRE_TMP/endpoint-notes"
-  printf '%s\n' '[]' > "$FM_LIFECYCLE_RETIRE_TMP/reasons.json"
-  printf '%s\n' '[]' > "$FM_LIFECYCLE_RETIRE_TMP/endpoints.json"
-  printf '%s\n' '[]' > "$FM_LIFECYCLE_RETIRE_TMP/retained.json"
+  FM_LIFECYCLE_RETIRE_MEMORY=${1:-0}
+  FM_LIFECYCLE_RETIRE_KEYS=()
+  FM_LIFECYCLE_RETIRE_VALUES=()
+  if [ "$FM_LIFECYCLE_RETIRE_MEMORY" = 1 ]; then
+    FM_LIFECYCLE_RETIRE_TMP=memory
+  else
+    FM_LIFECYCLE_RETIRE_TMP=$(mktemp -d "${TMPDIR:-/tmp}/fm-lifecycle-retire.XXXXXX") || return 1
+  fi
+  fm_lifecycle_retire_scratch_write "$FM_LIFECYCLE_RETIRE_TMP/endpoint-notes" ""
+  fm_lifecycle_retire_scratch_write "$FM_LIFECYCLE_RETIRE_TMP/reasons.json" '[]'
+  fm_lifecycle_retire_scratch_write "$FM_LIFECYCLE_RETIRE_TMP/endpoints.json" '[]'
+  fm_lifecycle_retire_scratch_write "$FM_LIFECYCLE_RETIRE_TMP/retained.json" '[]'
   FM_LIFECYCLE_RETIRE_OP=
   FM_LIFECYCLE_RETIRE_DIGEST=
   FM_LIFECYCLE_RETIRE_PARENT=
@@ -248,7 +300,12 @@ fm_lifecycle_retire_tmp_begin() {
 
 fm_lifecycle_retire_tmp_end() {
   [ -n "${FM_LIFECYCLE_RETIRE_TMP:-}" ] || return 0
-  rm -rf -- "$FM_LIFECYCLE_RETIRE_TMP"
+  if [ "${FM_LIFECYCLE_RETIRE_MEMORY:-0}" != 1 ]; then
+    rm -rf -- "$FM_LIFECYCLE_RETIRE_TMP"
+  fi
+  FM_LIFECYCLE_RETIRE_KEYS=()
+  FM_LIFECYCLE_RETIRE_VALUES=()
+  FM_LIFECYCLE_RETIRE_MEMORY=0
   FM_LIFECYCLE_RETIRE_TMP=
 }
 
@@ -279,7 +336,10 @@ fm_lifecycle_retire_publish_file() {
 
 fm_lifecycle_retire_emit_json() {
   local json=$1 out=${FM_LIFECYCLE_RETIRE_OUT:-} tmp
-  if [ -n "$out" ]; then
+  if [ -n "$out" ] && [ "${FM_LIFECYCLE_RETIRE_MEMORY:-0}" = 1 ]; then
+    [ ! -L "$out" ] && { [ ! -e "$out" ] || [ -f "$out" ]; } || return 1
+    printf '%s\n' "$json" > "$out" || return 1
+  elif [ -n "$out" ]; then
     tmp=${FM_LIFECYCLE_RETIRE_TMP:-}
     [ -n "$tmp" ] || return 1
     printf '%s\n' "$json" > "$tmp/emit.json" || return 1
@@ -296,25 +356,24 @@ fm_lifecycle_retire_build_json() {
     --arg op "${FM_LIFECYCLE_RETIRE_OP:-}" \
     --arg digest "${FM_LIFECYCLE_RETIRE_DIGEST:-}" \
     --arg mode "${FM_LIFECYCLE_RETIRE_MODE:-}" \
-    --slurpfile endpoints "$tmp/endpoints.json" \
-    --slurpfile reasons "$tmp/reasons.json" \
-    --slurpfile retained "$tmp/retained.json" \
+    --slurpfile endpoints <(fm_lifecycle_retire_scratch_read "$tmp/endpoints.json") \
+    --slurpfile reasons <(fm_lifecycle_retire_scratch_read "$tmp/reasons.json") \
+    --slurpfile retained <(fm_lifecycle_retire_scratch_read "$tmp/retained.json") \
     '{schema_version:1, operation_id:$op, request_digest:$digest, status:$status,
       authority:false, absence_mode:$mode, retry:$retry, reasons:$reasons[0],
       endpoints:$endpoints[0], retained_homes:$retained[0]}'
 }
 
 fm_lifecycle_retire_refresh_arrays() {
-  local tmp=$FM_LIFECYCLE_RETIRE_TMP
-  if [ -s "$tmp/endpoint-notes" ]; then
-    jq -Rn '[inputs | select(length>0) | split("\t") | {task_id:.[0], spawn_gen:.[1], home:.[2], disposition:.[3], retain_home:(.[4]=="true"), outcome:.[5]}]' \
-      < "$tmp/endpoint-notes" > "$tmp/endpoints.json" || return 1
-    jq -Rn '[inputs | select(length>0) | split("\t") | select(.[4]=="true") | .[2]] | unique' \
-      < "$tmp/endpoint-notes" > "$tmp/retained.json" || return 1
-  else
-    printf '%s\n' '[]' > "$tmp/endpoints.json"
-    printf '%s\n' '[]' > "$tmp/retained.json"
+  local tmp=$FM_LIFECYCLE_RETIRE_TMP endpoints='[]' retained='[]'
+  if fm_lifecycle_retire_scratch_has "$tmp/endpoint-notes"; then
+    endpoints=$(fm_lifecycle_retire_scratch_read "$tmp/endpoint-notes" | \
+      jq -Rn '[inputs | select(length>0) | split("\t") | {task_id:.[0], spawn_gen:.[1], home:.[2], disposition:.[3], retain_home:(.[4]=="true"), outcome:.[5]}]') || return 1
+    retained=$(fm_lifecycle_retire_scratch_read "$tmp/endpoint-notes" | \
+      jq -Rn '[inputs | select(length>0) | split("\t") | select(.[4]=="true") | .[2]] | unique') || return 1
   fi
+  fm_lifecycle_retire_scratch_write "$tmp/endpoints.json" "$endpoints" || return 1
+  fm_lifecycle_retire_scratch_write "$tmp/retained.json" "$retained"
 }
 
 fm_lifecycle_retire_note() {
@@ -324,17 +383,17 @@ fm_lifecycle_retire_note() {
 }
 
 fm_lifecycle_retire_reason() {
-  local code=$1 task=$2 detail=$3
-  local tmp=$FM_LIFECYCLE_RETIRE_TMP
+  local code=$1 task=$2 detail=$3 json
   detail=$(printf '%s' "$detail" | tr '\n\t' '  ')
-  jq -n --arg code "$code" --arg task "$task" --arg detail "$detail" \
-    '[{code:$code, task_id:$task, detail:$detail}]' > "$tmp/reasons.json"
+  json=$(jq -n --arg code "$code" --arg task "$task" --arg detail "$detail" \
+    '[{code:$code, task_id:$task, detail:$detail}]') || return 1
+  fm_lifecycle_retire_scratch_write "$FM_LIFECYCLE_RETIRE_TMP/reasons.json" "$json"
   printf '%s\n' "$detail" >&2
 }
 
 fm_lifecycle_retire_retry_for() {
   local code
-  code=$(jq -r '.[-1].code // empty' "$FM_LIFECYCLE_RETIRE_TMP/reasons.json" 2>/dev/null) || code=
+  code=$(jq -r '.[-1].code // empty' <(fm_lifecycle_retire_scratch_read "$FM_LIFECYCLE_RETIRE_TMP/reasons.json") 2>/dev/null) || code=
   case "$code" in
     obligation-*|outcome-undelivered|foreign-descendant) printf 'obligation\n' ;;
     lock-held|inventory-unavailable|inventory-unreadable|incomplete|pane-unreadable|process-unknown|process-alive|session-present|session-stopped|pane-present|server-identity) printf 'same-request\n' ;;
@@ -344,12 +403,12 @@ fm_lifecycle_retire_retry_for() {
 
 fm_lifecycle_retire_note_home() {
   local index=$1 home=$2 retain=$3 recorded id
-  if [ "$retain" = true ] && [ -f "$FM_LIFECYCLE_RETIRE_TMP/installed.$index" ]; then
-    cat "$FM_LIFECYCLE_RETIRE_TMP/installed.$index"
+  if [ "$retain" = true ] && fm_lifecycle_retire_scratch_has "$FM_LIFECYCLE_RETIRE_TMP/installed.$index"; then
+    fm_lifecycle_retire_scratch_read "$FM_LIFECYCLE_RETIRE_TMP/installed.$index"
     return 0
   fi
   if [ "$retain" = true ]; then
-    id=$(cat "$FM_LIFECYCLE_RETIRE_TMP/id.$index")
+    id=$(fm_lifecycle_retire_scratch_read "$FM_LIFECYCLE_RETIRE_TMP/id.$index")
     recorded=$(fm_meta_get "$home/state/$id.endpoint-retired" installed_home)
     if [ -n "$recorded" ]; then
       printf '%s\n' "$recorded"
@@ -364,7 +423,7 @@ fm_lifecycle_retire_report() {
   local tmp=$FM_LIFECYCLE_RETIRE_TMP
   fm_lifecycle_retire_refresh_arrays || return 1
   json=$(fm_lifecycle_retire_build_json "$status" "$retry") || return 1
-  printf '%s\n' "$json" > "$tmp/result.body" || return 1
+  fm_lifecycle_retire_scratch_write "$tmp/result.body" "$json" || return 1
   if [ "$write_journal" = 1 ] && [ -n "${FM_LIFECYCLE_RETIRE_JOURNAL:-}" ]; then
     journal=$FM_LIFECYCLE_RETIRE_JOURNAL
     if [ -d "$journal" ] && [ ! -L "$journal" ]; then
@@ -451,7 +510,7 @@ fm_lifecycle_retire_load() {
     fm_lifecycle_retire_reason parser-unavailable "" "sha256 is required"
     return 1
   }
-  printf '%s\n' "$canonical" > "$tmp/canonical.json" || return 1
+  fm_lifecycle_retire_scratch_write "$tmp/canonical.json" "$canonical"$'\n'  || return 1
   parent=$(jq -r '.parent_home' "$file")
   mode=$(jq -r '.absence_mode' "$file")
   parent=$(fm_lifecycle_retire_canonical_dir "$parent") || {
@@ -467,12 +526,12 @@ fm_lifecycle_retire_load() {
   FM_LIFECYCLE_RETIRE_PARENT=$parent
   FM_LIFECYCLE_RETIRE_MODE=$mode
   FM_LIFECYCLE_RETIRE_SESSION=$(jq -r '.endpoints[0].session' "$file")
-  : > "$tmp/all-ids"
+  fm_lifecycle_retire_scratch_write "$tmp/all-ids" ""
   while IFS= read -r line; do
     index=$((index + 1))
-    printf '%s\n' "$line" > "$tmp/ep.$index"
-    id=$(jq -r '.task_id' "$tmp/ep.$index")
-    parent_id=$(jq -r '.parent_task_id' "$tmp/ep.$index")
+    fm_lifecycle_retire_scratch_write "$tmp/ep.$index" "$line"$'\n'
+    id=$(jq -r '.task_id' <(fm_lifecycle_retire_scratch_read "$tmp/ep.$index"))
+    parent_id=$(jq -r '.parent_task_id' <(fm_lifecycle_retire_scratch_read "$tmp/ep.$index"))
     command -v fm_task_id_path_safe >/dev/null 2>&1 || {
       fm_lifecycle_retire_reason parser-unavailable "" "task id check is unavailable"
       return 1
@@ -489,25 +548,25 @@ fm_lifecycle_retire_load() {
       fm_lifecycle_retire_reason bad-request "$id" "an endpoint cannot parent itself"
       return 1
     fi
-    home=$(jq -r '.home' "$tmp/ep.$index")
+    home=$(jq -r '.home' <(fm_lifecycle_retire_scratch_read "$tmp/ep.$index"))
     home=$(fm_lifecycle_retire_canonical_dir "$home") || {
       fm_lifecycle_retire_reason bad-request "$id" "endpoint home is not a physical directory"
       return 1
     }
-    jq --arg home "$home" '.home = $home' "$tmp/ep.$index" > "$tmp/ep.$index.body" || return 1
-    mv -f -- "$tmp/ep.$index.body" "$tmp/ep.$index"
-    printf '%s\n' "$id" > "$tmp/id.$index"
-    printf '%s\n' "$parent_id" > "$tmp/parent.$index"
-    printf '%s\n' "$id" >> "$tmp/all-ids"
+    line=$(jq --arg home "$home" '.home = $home' <(fm_lifecycle_retire_scratch_read "$tmp/ep.$index")) || return 1
+    fm_lifecycle_retire_scratch_write "$tmp/ep.$index" "$line"
+    fm_lifecycle_retire_scratch_write "$tmp/id.$index" "$id"$'\n'
+    fm_lifecycle_retire_scratch_write "$tmp/parent.$index" "$parent_id"$'\n'
+    fm_lifecycle_retire_scratch_append "$tmp/all-ids" "$id"
     count=$index
   done < <(jq -c '.endpoints[]' "$file")
   FM_LIFECYCLE_RETIRE_COUNT=$count
   index=0
   while [ "$index" -lt "$count" ]; do
     index=$((index + 1))
-    parent_id=$(cat "$tmp/parent.$index")
-    if [ -n "$parent_id" ] && ! grep -Fxq -- "$parent_id" "$tmp/all-ids"; then
-      fm_lifecycle_retire_reason bad-request "$(cat "$tmp/id.$index")" "parent task is not in the request"
+    parent_id=$(fm_lifecycle_retire_scratch_read "$tmp/parent.$index")
+    if [ -n "$parent_id" ] && ! grep -Fxq -- "$parent_id" <(fm_lifecycle_retire_scratch_read "$tmp/all-ids"); then
+      fm_lifecycle_retire_reason bad-request "$(fm_lifecycle_retire_scratch_read "$tmp/id.$index")" "parent task is not in the request"
       return 1
     fi
   done
@@ -531,9 +590,9 @@ fm_lifecycle_retire_child_homes() {
 
 fm_lifecycle_retire_home_binding() {
   local index=$1 tmp=$FM_LIFECYCLE_RETIRE_TMP id home parent_id pindex=0 pmeta installed
-  id=$(cat "$tmp/id.$index")
-  home=$(jq -r '.home' "$tmp/ep.$index")
-  parent_id=$(cat "$tmp/parent.$index")
+  id=$(fm_lifecycle_retire_scratch_read "$tmp/id.$index")
+  home=$(jq -r '.home' <(fm_lifecycle_retire_scratch_read "$tmp/ep.$index"))
+  parent_id=$(fm_lifecycle_retire_scratch_read "$tmp/parent.$index")
   if [ -z "$parent_id" ]; then
     [ "$home" = "$FM_LIFECYCLE_RETIRE_PARENT" ] || {
       fm_lifecycle_retire_reason identity-mismatch "$id" "root endpoint belongs to another home"
@@ -543,9 +602,9 @@ fm_lifecycle_retire_home_binding() {
   fi
   while [ "$pindex" -lt "$FM_LIFECYCLE_RETIRE_COUNT" ]; do
     pindex=$((pindex + 1))
-    [ "$(cat "$tmp/id.$pindex")" = "$parent_id" ] || continue
-    [ "$(jq -r '.kind' "$tmp/ep.$pindex")" = secondmate ] || break
-    pmeta=$(jq -r '.home' "$tmp/ep.$pindex")/state/$parent_id.meta
+    [ "$(fm_lifecycle_retire_scratch_read "$tmp/id.$pindex")" = "$parent_id" ] || continue
+    [ "$(jq -r '.kind' <(fm_lifecycle_retire_scratch_read "$tmp/ep.$pindex"))" = secondmate ] || break
+    pmeta=$(jq -r '.home' <(fm_lifecycle_retire_scratch_read "$tmp/ep.$pindex"))/state/$parent_id.meta
     [ -f "$pmeta" ] && [ ! -L "$pmeta" ] || break
     installed=$(fm_meta_get "$pmeta" home)
     installed=$(fm_lifecycle_retire_canonical_dir "$installed") || break
@@ -557,38 +616,35 @@ fm_lifecycle_retire_home_binding() {
 }
 
 fm_lifecycle_retire_order() {
-  local count=$1 tmp=$FM_LIFECYCLE_RETIRE_TMP index=0 progress ready child_id node_id parent_line
-  : > "$tmp/remaining"
-  : > "$tmp/ordered"
+  local count=$1 tmp=$FM_LIFECYCLE_RETIRE_TMP index=0 progress ready child_id node_id child_line
+  local remaining='' next='' ordered=''
   while [ "$index" -lt "$count" ]; do
     index=$((index + 1))
-    printf '%s\n' "$index" >> "$tmp/remaining"
+    remaining=$remaining$index$'\n'
   done
-  while [ -s "$tmp/remaining" ]; do
+  while [ -n "$remaining" ]; do
     progress=0
-    : > "$tmp/next-remaining"
+    next=
     while IFS= read -r index; do
       [ -n "$index" ] || continue
-      node_id=$(cat "$tmp/id.$index")
+      node_id=$(fm_lifecycle_retire_scratch_read "$tmp/id.$index")
       ready=1
       while IFS= read -r child_line; do
         [ -n "$child_line" ] || continue
-        child_id=$(cat "$tmp/parent.$child_line")
-        if [ "$child_id" = "$node_id" ]; then
-          ready=0
-          break
-        fi
-      done < "$tmp/remaining"
+        child_id=$(fm_lifecycle_retire_scratch_read "$tmp/parent.$child_line")
+        if [ "$child_id" = "$node_id" ]; then ready=0; break; fi
+      done < <(printf '%s' "$remaining")
       if [ "$ready" = 1 ]; then
-        printf '%s\n' "$index" >> "$tmp/ordered"
+        ordered=$ordered$index$'\n'
         progress=1
       else
-        printf '%s\n' "$index" >> "$tmp/next-remaining"
+        next=$next$index$'\n'
       fi
-    done < "$tmp/remaining"
+    done < <(printf '%s' "$remaining")
     [ "$progress" = 1 ] || return 1
-    mv -f -- "$tmp/next-remaining" "$tmp/remaining"
+    remaining=$next
   done
+  fm_lifecycle_retire_scratch_write "$tmp/ordered" "$ordered"
 }
 
 fm_lifecycle_retire_completed_same() {
@@ -668,24 +724,28 @@ fm_lifecycle_retire_prove() {
     return 1
   }
   rc=0
-  "$cmd" "$session" > "$tmp/inv.out" 2> "$tmp/inv.err" || rc=$?
+  local inventory proof pane_json
+  inventory=$("$cmd" "$session"; rc=$?; printf '.'; exit "$rc") || rc=$?
+  inventory=${inventory%.}
+  fm_lifecycle_retire_scratch_write "$tmp/inv.out" "$inventory"
   now=$(date +%s)
-  digest=$(fm_lifecycle_retire_sha256_file "$tmp/inv.out") || digest=
-  jq -n --arg cmd "$cmd" --arg session "$session" --arg now "$now" --arg digest "$digest" --argjson rc "$rc" \
+  digest=$(fm_lifecycle_retire_sha256_text "$inventory") || digest=
+  proof=$(jq -n --arg cmd "$cmd" --arg session "$session" --arg now "$now" --arg digest "$digest" --argjson rc "$rc" \
     '{command:$cmd, argv:[$cmd, $session], time:($now|tonumber), exit_status:$rc, stdout_sha256:$digest, session:$session}' \
-    > "$tmp/proof.json" || return 1
+    ) || return 1
+  fm_lifecycle_retire_scratch_write "$tmp/proof.json" "$proof"
   if [ "$rc" -ne 0 ]; then
     fm_lifecycle_retire_reason inventory-unavailable "" "approved helper cannot inventory session $session"
     return 2
   fi
-  if ! jq -e '.sessions | type == "array"' "$tmp/inv.out" >/dev/null 2>&1; then
+  if ! jq -e '.sessions | type == "array"' <(fm_lifecycle_retire_scratch_read "$tmp/inv.out") >/dev/null 2>&1; then
     fm_lifecycle_retire_reason inventory-unreadable "" "session inventory was not a complete sessions array"
     return 2
   fi
-  count=$(jq -r --arg name "$session" '[.sessions[]? | select(.name == $name)] | length' "$tmp/inv.out")
+  count=$(jq -r --arg name "$session" '[.sessions[]? | select(.name == $name)] | length' <(fm_lifecycle_retire_scratch_read "$tmp/inv.out"))
   if [ "$FM_LIFECYCLE_RETIRE_MODE" = session-absent ]; then
     if [ "$count" -ne 0 ]; then
-      running=$(jq -r --arg name "$session" '[.sessions[]? | select(.name == $name)][0].running' "$tmp/inv.out")
+      running=$(jq -r --arg name "$session" '[.sessions[]? | select(.name == $name)][0].running' <(fm_lifecycle_retire_scratch_read "$tmp/inv.out"))
       if [ "$running" = false ]; then
         fm_lifecycle_retire_reason session-stopped "" "session $session is still present and stopped"
       else
@@ -694,13 +754,13 @@ fm_lifecycle_retire_prove() {
       return 1
     fi
   else
-    want_socket=$(jq -r '.server.socket_path' "$tmp/ep.1")
+    want_socket=$(jq -r '.server.socket_path' <(fm_lifecycle_retire_scratch_read "$tmp/ep.1"))
     if [ "$count" -ne 1 ]; then
       fm_lifecycle_retire_reason session-present "" "endpoint-absent requires the recorded session to be present once"
       return 1
     fi
-    running=$(jq -r --arg name "$session" '.sessions[] | select(.name == $name) | .running' "$tmp/inv.out")
-    socket=$(jq -r --arg name "$session" '.sessions[] | select(.name == $name) | .socket_path' "$tmp/inv.out")
+    running=$(jq -r --arg name "$session" '.sessions[] | select(.name == $name) | .running' <(fm_lifecycle_retire_scratch_read "$tmp/inv.out"))
+    socket=$(jq -r --arg name "$session" '.sessions[] | select(.name == $name) | .socket_path' <(fm_lifecycle_retire_scratch_read "$tmp/inv.out"))
     if [ "$running" != true ]; then
       fm_lifecycle_retire_reason session-stopped "" "session $session is not running"
       return 1
@@ -709,9 +769,9 @@ fm_lifecycle_retire_prove() {
       fm_lifecycle_retire_reason server-identity "" "session socket does not match the recorded server"
       return 1
     fi
-    pid=$(jq -r '.server.pid' "$tmp/ep.1")
-    identity=$(jq -r '.server.identity' "$tmp/ep.1")
-    boot=$(jq -r '.server.boot_id' "$tmp/ep.1")
+    pid=$(jq -r '.server.pid' <(fm_lifecycle_retire_scratch_read "$tmp/ep.1"))
+    identity=$(jq -r '.server.identity' <(fm_lifecycle_retire_scratch_read "$tmp/ep.1"))
+    boot=$(jq -r '.server.boot_id' <(fm_lifecycle_retire_scratch_read "$tmp/ep.1"))
     state=$(fm_lifecycle_retire_actor_state "$pid" "$identity" "$boot") || return 1
     case "$state" in
       "alive identity-match") ;;
@@ -724,15 +784,15 @@ fm_lifecycle_retire_prove() {
   index=0
   while [ "$index" -lt "$FM_LIFECYCLE_RETIRE_COUNT" ]; do
     index=$((index + 1))
-    pid=$(jq -r '.process.pid' "$tmp/ep.$index")
-    identity=$(jq -r '.process.identity' "$tmp/ep.$index")
-    boot=$(jq -r '.process.boot_id' "$tmp/ep.$index")
-    fm_lifecycle_retire_require_gone "$pid" "$identity" "$boot" "$(cat "$tmp/id.$index")" || return 1
+    pid=$(jq -r '.process.pid' <(fm_lifecycle_retire_scratch_read "$tmp/ep.$index"))
+    identity=$(jq -r '.process.identity' <(fm_lifecycle_retire_scratch_read "$tmp/ep.$index"))
+    boot=$(jq -r '.process.boot_id' <(fm_lifecycle_retire_scratch_read "$tmp/ep.$index"))
+    fm_lifecycle_retire_require_gone "$pid" "$identity" "$boot" "$(fm_lifecycle_retire_scratch_read "$tmp/id.$index")" || return 1
     if [ "$FM_LIFECYCLE_RETIRE_MODE" = session-absent ]; then
-      pid=$(jq -r '.server.pid' "$tmp/ep.$index")
-      identity=$(jq -r '.server.identity' "$tmp/ep.$index")
-      boot=$(jq -r '.server.boot_id' "$tmp/ep.$index")
-      fm_lifecycle_retire_require_gone "$pid" "$identity" "$boot" "$(cat "$tmp/id.$index")" || return 1
+      pid=$(jq -r '.server.pid' <(fm_lifecycle_retire_scratch_read "$tmp/ep.$index"))
+      identity=$(jq -r '.server.identity' <(fm_lifecycle_retire_scratch_read "$tmp/ep.$index"))
+      boot=$(jq -r '.server.boot_id' <(fm_lifecycle_retire_scratch_read "$tmp/ep.$index"))
+      fm_lifecycle_retire_require_gone "$pid" "$identity" "$boot" "$(fm_lifecycle_retire_scratch_read "$tmp/id.$index")" || return 1
       continue
     fi
     epcmd=$FM_LIFECYCLE_LIB_DIR/fm-lifecycle-herdr-endpoint.sh
@@ -741,12 +801,12 @@ fm_lifecycle_retire_prove() {
       return 1
     }
     pane_out=$tmp/pane.$index.out
-    "$epcmd" "$session" "$(jq -r '.pane_id' "$tmp/ep.$index")" > "$pane_out" 2> "$tmp/pane.$index.err" || true
-    if ! jq -e '.error.code == "pane_not_found"' "$pane_out" >/dev/null 2>&1; then
-      if jq -e '.error.code' "$pane_out" >/dev/null 2>&1; then
-        fm_lifecycle_retire_reason pane-present "$(cat "$tmp/id.$index")" "pane is not pane_not_found"
+    "$epcmd" "$session" "$(jq -r '.pane_id' <(fm_lifecycle_retire_scratch_read "$tmp/ep.$index"))" > "$pane_out" 2> "$tmp/pane.$index.err" || true
+    if ! jq -e '.error.code == "pane_not_found"' <(fm_lifecycle_retire_scratch_read "$pane_out") >/dev/null 2>&1; then
+      if jq -e '.error.code' <(fm_lifecycle_retire_scratch_read "$pane_out") >/dev/null 2>&1; then
+        fm_lifecycle_retire_reason pane-present "$(fm_lifecycle_retire_scratch_read "$tmp/id.$index")" "pane is not pane_not_found"
       else
-        fm_lifecycle_retire_reason pane-unreadable "$(cat "$tmp/id.$index")" "pane probe was not structured"
+        fm_lifecycle_retire_reason pane-unreadable "$(fm_lifecycle_retire_scratch_read "$tmp/id.$index")" "pane probe was not structured"
       fi
       return 1
     fi
@@ -756,18 +816,18 @@ fm_lifecycle_retire_prove() {
 
 fm_lifecycle_retire_meta_match() {
   local meta=$1 endpoint=$2 field=$3 key=$4 expected actual
-  expected=$(jq -r "$field" "$endpoint") || return 1
+  expected=$(jq -r "$field" <(fm_lifecycle_retire_scratch_read "$endpoint")) || return 1
   actual=$(fm_meta_get "$meta" "$key")
   [ -n "$actual" ] && [ "$actual" = "$expected" ]
 }
 
 fm_lifecycle_retire_meta_identity() {
   local index=$1 tmp=$FM_LIFECYCLE_RETIRE_TMP meta home id gen kind session window meta_session nlink installed
-  id=$(cat "$tmp/id.$index")
-  home=$(jq -r '.home' "$tmp/ep.$index")
-  gen=$(jq -r '.spawn_gen' "$tmp/ep.$index")
-  kind=$(jq -r '.kind' "$tmp/ep.$index")
-  session=$(jq -r '.session' "$tmp/ep.$index")
+  id=$(fm_lifecycle_retire_scratch_read "$tmp/id.$index")
+  home=$(jq -r '.home' <(fm_lifecycle_retire_scratch_read "$tmp/ep.$index"))
+  gen=$(jq -r '.spawn_gen' <(fm_lifecycle_retire_scratch_read "$tmp/ep.$index"))
+  kind=$(jq -r '.kind' <(fm_lifecycle_retire_scratch_read "$tmp/ep.$index"))
+  session=$(jq -r '.session' <(fm_lifecycle_retire_scratch_read "$tmp/ep.$index"))
   meta=$home/state/$id.meta
   if [ -L "$meta" ] || { [ -e "$meta" ] && [ ! -f "$meta" ]; }; then
     fm_lifecycle_retire_reason identity-mismatch "$id" "task record is not a regular file"
@@ -868,7 +928,7 @@ FIELDS
         return 1
       fi
     fi
-    printf '%s\n' "$installed" > "$tmp/installed.$index"
+    fm_lifecycle_retire_scratch_write "$tmp/installed.$index" "$installed"
   fi
   if [ -f "$home/state/$id.endpoint-retired" ] && [ ! -L "$home/state/$id.endpoint-retired" ] \
     && [ "$(fm_meta_get "$home/state/$id.endpoint-retired" spawn_gen)" = "$gen" ]; then
@@ -906,9 +966,9 @@ fm_lifecycle_retire_foreign_child() {
 
 fm_lifecycle_retire_obligations() {
   local index=$1 tmp=$FM_LIFECYCLE_RETIRE_TMP home id kind meta state config data wt project mode pr base installed rc=0
-  id=$(cat "$tmp/id.$index")
-  home=$(jq -r '.home' "$tmp/ep.$index")
-  kind=$(jq -r '.kind' "$tmp/ep.$index")
+  id=$(fm_lifecycle_retire_scratch_read "$tmp/id.$index")
+  home=$(jq -r '.home' <(fm_lifecycle_retire_scratch_read "$tmp/ep.$index"))
+  kind=$(jq -r '.kind' <(fm_lifecycle_retire_scratch_read "$tmp/ep.$index"))
   meta=$home/state/$id.meta
   state=$home/state
   config=$home/config
@@ -931,7 +991,7 @@ fm_lifecycle_retire_obligations() {
       fm_lifecycle_retire_reason obligation-pending-reply "$id" "an unresolved pending reply remains"
       return 1
     }
-    installed=$(cat "$tmp/installed.$index")
+    installed=$(fm_lifecycle_retire_scratch_read "$tmp/installed.$index")
     fm_lifecycle_retire_foreign_child "$installed" "$id" || return 1
     fm_lifecycle_secondmate_children_refuse "$installed" "$id" || {
       fm_lifecycle_retire_reason obligation-children "$id" "the secondmate home still has a task record"
@@ -961,9 +1021,9 @@ fm_lifecycle_retire_obligations() {
         fm_lifecycle_retire_reason obligation-hold "$id" "the captain-hold state could not be read"
         return 1
       }
-      printf '%s\n' "$FM_LIFECYCLE_BACKLOG_TRANSITION" > "$tmp/transition.$index"
+      fm_lifecycle_retire_scratch_write "$tmp/transition.$index" "$FM_LIFECYCLE_BACKLOG_TRANSITION"
       ;;
-    1) printf '%s\n' remove > "$tmp/transition.$index" ;;
+    1) fm_lifecycle_retire_scratch_write "$tmp/transition.$index" remove ;;
     *)
       fm_lifecycle_retire_reason obligation-backlog "$id" "the backlog could not be read"
       return 1
@@ -1401,7 +1461,7 @@ fm_lifecycle_retire_execute() {
 fm_lifecycle_retire_inspect() {
   local rc=0
   FM_LIFECYCLE_RETIRE_OUT=${2:-}
-  fm_lifecycle_retire_tmp_begin || return "$FM_LIFECYCLE_RETIRE_USAGE_RC"
+  fm_lifecycle_retire_tmp_begin 1 || return "$FM_LIFECYCLE_RETIRE_USAGE_RC"
   if ! fm_lifecycle_retire_load "$1"; then
     fm_lifecycle_retire_report refused none 0 || rc=1
     fm_lifecycle_retire_tmp_end
@@ -1413,8 +1473,8 @@ fm_lifecycle_retire_inspect() {
     fm_lifecycle_retire_tmp_end
     return "$rc"
   fi
-  if ! fm_lifecycle_retire_prove; then
-    rc=$?
+  fm_lifecycle_retire_prove || rc=$?
+  if [ "$rc" -ne 0 ]; then
     if [ "$rc" -eq 2 ]; then
       fm_lifecycle_retire_report incomplete "$(fm_lifecycle_retire_retry_for)" 0 || rc=1
     else
@@ -1437,7 +1497,7 @@ fm_lifecycle_retire_inspect() {
       fm_lifecycle_retire_tmp_end
       return 0
     fi
-  done < "$FM_LIFECYCLE_RETIRE_TMP/ordered"
+  done < <(fm_lifecycle_retire_scratch_read "$FM_LIFECYCLE_RETIRE_TMP/ordered")
   fm_lifecycle_retire_report ready none 0 || rc=1
   fm_lifecycle_retire_tmp_end
   return "$rc"
