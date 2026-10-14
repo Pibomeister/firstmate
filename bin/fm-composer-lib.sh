@@ -543,6 +543,29 @@ FM_COMPOSER_MODE_HINT_RE_DEFAULT='^[[:space:]]*(⏵|⏸)'
 # a middle dot. It is consulted only as the boundary BELOW a bare composer,
 # never on the composer row itself.
 FM_COMPOSER_OMP_STATUS_RE_DEFAULT='^[[:space:]]*(π|󰵗)[[:space:]]+·[[:space:]]|^[[:space:]]*'"$FM_OMP_SPINNER_FRAMES_RE"'[[:space:]]+[0-9]+[smh]([[:space:]]|$)|[[:space:]]·[[:space:]].*[0-9]+(\.[0-9]+)?%/[0-9]+K'
+# codex-cli 0.162.1 draws its footer DIRECTLY below the bare `›` row, with no
+# blank row between them (verified live through Orca):
+# `  GPT-6.1-Sol medium · fm/branch · Context 77% left · 33.8M in · ...` and
+# `  ? for shortcuts            ⚠ 3 warnings · f2 to view`.
+# Earlier codex releases left a blank row there, which already bounded the
+# wrap region. A row is codex footer furniture when it carries the
+# `Context N% left` cell or the `? for shortcuts` hint, each either first on
+# the row or after a middle dot (`← for agents · ? for shortcuts`). It is consulted only as the boundary BELOW a bare
+# composer, never on the composer row itself, so the same words typed after
+# the glyph stay composer input.
+FM_COMPOSER_CODEX_FOOTER_RE_DEFAULT='(^[[:space:]]*|[[:space:]]·[[:space:]]+)Context [0-9]+% left([[:space:]]|$)|(^[[:space:]]*|[[:space:]]·[[:space:]]+)\? for shortcuts([[:space:]]|$)'
+# The per-glyph placeholder table: the exact text a harness renders after its
+# OWN agent glyph in an EMPTY bare composer, one `<glyph><TAB><placeholder>`
+# line per entry. Unlike the fleet-wide idle set above, an entry is bound to
+# its harness's glyph and matched exactly and case-sensitively against the
+# whole row, so an UNSTYLED capture (cmux, orca), which cannot see the dim
+# styling that marks it as ghost text, may read that one row `empty`.
+# Any other text after the glyph, including a prefix or extension of the
+# placeholder, keeps the plain-capture `unknown` degradation.
+# codex-cli 0.162.1 renders `Ask Codex to do anything` (verified live through
+# Orca). Claude's empty bare row is `❯` plus U+00A0 and needs no entry; its
+# rotating suggestion is not a fixed string and stays `unknown` unstyled.
+FM_COMPOSER_BARE_PLACEHOLDERS_DEFAULT=$(printf '%s\t%s\n' '›' 'Ask Codex to do anything')
 # Pi's footer stats row opens at column 0 with the session cost when every
 # token counter is zero (`$0.000 (sub) 5.4%/272k (auto)` on pi 0.85.1).
 # That leading `$` is a cost cell, not a dead-shell prompt, only when a digit
@@ -1287,6 +1310,11 @@ _fm_composer_classify_bare_row() {  # <screen> <styled> <row>
   _fm_composer_bare_row_strip_furniture_var plain
   state=$(fm_composer_classify_content 0 "$content" \
     "${FM_COMPOSER_IDLE_RE:-$FM_COMPOSER_IDLE_RE_DEFAULT}" insensitive "$plain" 0 "$styled")
+  if [ "$styled" != 1 ] && [ "$state" != empty ] \
+     && _fm_composer_bare_row_is_placeholder "$plain"; then
+    printf 'empty'
+    return 0
+  fi
   if [ "$styled" != 1 ] && [ "$state" = pending ]; then
     printf 'unknown'
     return 0
@@ -1299,6 +1327,30 @@ _fm_composer_classify_bare_row() {  # <screen> <styled> <row>
 # below a bare composer and must bound its wrap region exactly as an edge does.
 _fm_composer_row_is_omp_status() {  # <trimmed-row>
   fm_composer_idle_matches "$1" "${FM_COMPOSER_OMP_STATUS_RE:-$FM_COMPOSER_OMP_STATUS_RE_DEFAULT}" sensitive
+}
+
+# _fm_composer_row_is_codex_footer: 0 when the trimmed row is codex's footer
+# (FM_COMPOSER_CODEX_FOOTER_RE_DEFAULT above), which bounds a bare composer's
+# wrap region exactly as omp's status row does.
+_fm_composer_row_is_codex_footer() {  # <trimmed-row>
+  fm_composer_idle_matches "$1" "$FM_COMPOSER_CODEX_FOOTER_RE_DEFAULT" sensitive
+}
+
+# _fm_composer_bare_row_is_placeholder: 0 when the plain bare <row> is exactly
+# an agent glyph followed by that glyph's own entry in
+# FM_COMPOSER_BARE_PLACEHOLDERS_DEFAULT, and nothing else.
+_fm_composer_bare_row_is_placeholder() {  # <plain-row>
+  local row=$1 glyph='' body entry_glyph entry_text
+  fm_composer_leading_agent_glyph_var glyph "$row" || return 1
+  body=${row#*"$glyph"}
+  fm_composer_normalize_trim_var body
+  [ -n "$body" ] || return 1
+  while IFS=$'\t' read -r entry_glyph entry_text; do
+    [ "$entry_glyph" = "$glyph" ] && [ "$entry_text" = "$body" ] && return 0
+  done <<EOF
+$FM_COMPOSER_BARE_PLACEHOLDERS_DEFAULT
+EOF
+  return 1
 }
 
 # _fm_composer_row_is_pi_status: 0 when the trimmed row is Pi's dollar-first
@@ -1351,6 +1403,7 @@ _fm_composer_wrap_region_ok() {  # <plain-screen> <glyph-row> <cursor-row>
     [ -n "$trimmed" ] || return 1
     if fm_composer_row_has_edge "$trimmed"; then return 1; fi
     if _fm_composer_row_is_omp_status "$trimmed"; then return 1; fi
+    if _fm_composer_row_is_codex_footer "$trimmed"; then return 1; fi
     if _fm_composer_row_is_braille_furniture "$trimmed"; then return 1; fi
     if fm_composer_leading_shell_glyph_var glyph "$trimmed"; then return 1; fi
     row=$((row + 1))
@@ -1643,6 +1696,7 @@ _fm_composer_row_is_composer_furniture() {  # <trimmed-row> <proof-glyph>
   local row=$1 proof=$2 glyph=''
   [ -n "$row" ] || return 1
   _fm_composer_row_is_omp_status "$row" && return 0
+  _fm_composer_row_is_codex_footer "$row" && return 0
   _fm_composer_row_is_braille_furniture "$row" && return 0
   fm_composer_idle_matches "$row" \
     "${FM_COMPOSER_MODE_HINT_RE:-$FM_COMPOSER_MODE_HINT_RE_DEFAULT}" sensitive && return 0
@@ -1813,6 +1867,7 @@ _fm_composer_select_cursorless() {
       [ -n "$trimmed" ] || break
       fm_composer_row_has_edge "$trimmed" && break
       _fm_composer_row_is_omp_status "$trimmed" && break
+      _fm_composer_row_is_codex_footer "$trimmed" && break
       _fm_composer_row_is_braille_furniture "$trimmed" && break
       FM_COMPOSER_SELECTED_LAST=$next
       next=$((next + 1))

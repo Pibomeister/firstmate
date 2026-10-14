@@ -12,9 +12,10 @@
 # byte fixture in tests/fm-composer-lib.test.sh is not enough on its own: this
 # guard launches the INSTALLED codex idle in an isolated tmux server, captures
 # its screen with styling preserved, and requires the classifier to reach
-# `empty` through BOTH capability profiles that read it in production - the
-# cursor-anchored tmux read (fm_tmux_composer_state) and the cursorless styled
-# read that Herdr and Zellij use, which is the profile that failed live. It
+# `empty` through EVERY capability profile that reads it in production - the
+# cursor-anchored tmux read (fm_tmux_composer_state), the cursorless styled
+# read that Herdr and Zellij use, which is the profile that failed live, and
+# the plain read that Orca and cmux use. It
 # fails naming codex and `codex --version`.
 #
 # Reading an idle screen submits no prompt, so no model tokens are spent and
@@ -89,18 +90,26 @@ classify_cursorless() {  # <styled-screen>
   fi
   printf '%s' "$verdict"
 }
+# The plain read exactly as bin/backends/orca.sh and cmux describe theirs: no
+# styling, so only the exact per-glyph placeholder entry and codex's footer
+# boundary can carry an idle pane to `empty`.
+CAPS_PLAIN=$(printf 'styled=0\ncursor=0\nidentity=0\nrows=%s' "$FM_COMPOSER_CAPTURE_LINES")
 
 budget=${FM_COMPOSER_CODEX_IDLE_LIVE_POLLS:-45}
 i=0
 tmux_verdict=''
 cursorless_verdict=''
+plain_verdict=''
 styled=''
 dismissed=0
 while [ "$i" -lt "$budget" ]; do
   tmux_verdict=$(fm_tmux_composer_state "$SESSION:$WIN")
   styled=$(tmux capture-pane -e -p -t "$SESSION:$WIN" 2>/dev/null | tail -n "$FM_COMPOSER_CAPTURE_LINES")
   cursorless_verdict=$(classify_cursorless "$styled")
-  if [ "$tmux_verdict" = empty ] && [ "$cursorless_verdict" = empty ]; then
+  plain_verdict=$(fm_composer_classify_screen "$CAPS_PLAIN" \
+    "$(printf '%s\n' "$styled" | fm_composer_strip_ansi)")
+  if [ "$tmux_verdict" = empty ] && [ "$cursorless_verdict" = empty ] \
+     && [ "$plain_verdict" = empty ]; then
     break
   fi
   i=$((i + 1))
@@ -132,13 +141,14 @@ placeholder=no
 case "$plain" in *'Ask Codex to do anything'*) placeholder=yes ;; esac
 note "codex ($VERSION): starfield furniture observed=$starfield placeholder observed=$placeholder"
 
-if [ "$tmux_verdict" = empty ] && [ "$cursorless_verdict" = empty ]; then
+if [ "$tmux_verdict" = empty ] && [ "$cursorless_verdict" = empty ] \
+   && [ "$plain_verdict" = empty ]; then
   CHECKED=$((CHECKED + 1))
-  pass "codex ($VERSION): real idle screen classifies empty on the cursor-anchored tmux read and the cursorless styled read"
+  pass "codex ($VERSION): real idle screen classifies empty on the cursor-anchored tmux read, the cursorless styled read, and the plain read"
 else
   printf '# codex pane tail at failure:\n' >&2
   printf '%s\n' "$plain" | grep '[^[:space:]]' | tail -8 | sed 's/^/#   /' >&2
-  fail "codex ($VERSION): idle screen never classified empty (tmux read: ${tmux_verdict:-unreadable}, cursorless styled read: ${cursorless_verdict:-unreadable})"
+  fail "codex ($VERSION): idle screen never classified empty (tmux read: ${tmux_verdict:-unreadable}, cursorless styled read: ${cursorless_verdict:-unreadable}, plain read: ${plain_verdict:-unreadable})"
 fi
 
 [ "$CHECKED" -gt 0 ] || fail "live codex idle-screen guard verified nothing; refusing a vacuous pass"

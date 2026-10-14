@@ -580,6 +580,72 @@ test_matrix_codex_idle_starfield_furniture() {
   pass "matrix: codex 0.154's starfield rows are furniture; typed, mixed, and unanchored rows keep their verdicts"
 }
 
+test_matrix_codex_0162_placeholder_on_plain_capture() {
+  # Real idle codex-cli 0.162.1 read through Orca (`orca terminal read`, plain
+  # text): the bare `›` row holds only codex's `Ask Codex to do anything`
+  # placeholder, and the model/context footer plus the `? for shortcuts` hint
+  # sit DIRECTLY below it with no blank row. Without the footer boundary the
+  # wrap region swallowed both footer rows, and without the per-glyph
+  # placeholder entry the plain row was indistinguishable from typed text, so
+  # every Orca-backed codex pane read `unknown` and relaunch refused.
+  local status hint footer idle typed out
+  status='  GPT-6.1-Sol medium · fm/ak-kimi-toml-bun142 · Context 77% left · 33.8M in · 37.8K out · weekly 0% left'
+  hint='  ? for shortcuts                                    ⚠ 3 warnings · f2 to view'
+  footer="$status"$'\n'"$hint"
+  idle=$'• Worked for 14m 25s • 2:11 PM\n› Ask Codex to do anything\n'"$footer"
+
+  # NON-VACUOUSNESS: both footer rows are non-blank, edge-free content the
+  # wrap region would otherwise take as typed input.
+  fm_composer_row_has_edge "$status" \
+    && fail "fixture drift: the codex status row must carry no structural edge"
+  _fm_composer_row_is_codex_footer "$status" \
+    || fail "the codex model/context status row must be recognized as furniture"
+  _fm_composer_row_is_codex_footer "$hint" \
+    || fail "the codex '? for shortcuts' row must be recognized as furniture"
+  _fm_composer_row_is_codex_footer '  ← for agents · ? for shortcuts      ⚠ 3 warnings · f2 to view' \
+    || fail "the codex hint row after its agents cell must be recognized as furniture"
+  _fm_composer_row_is_codex_footer '  gpt-5.5 xhigh · Context 100% left' \
+    || fail "the older codex status row must be recognized as furniture"
+  _fm_composer_row_is_codex_footer 'please check the Context window size' \
+    && fail "ordinary prose mentioning Context must not be codex furniture"
+
+  assert_screen "codex 0.162 idle on cmux/orca" empty "$CAPS_PLAIN" "$idle"
+  assert_screen "codex 0.162 idle under its status row only" empty "$CAPS_PLAIN" \
+    $'transcript\n› Ask Codex to do anything\n'"$status"
+  assert_screen "codex 0.162 idle under its hint row only" empty "$CAPS_PLAIN" \
+    $'transcript\n› Ask Codex to do anything\n'"$hint"
+  assert_screen "codex 0.162 idle under its agents hint row only" empty "$CAPS_PLAIN" \
+    $'transcript\n› Ask Codex to do anything\n  ← for agents · ? for shortcuts'
+
+  # The dangerous direction: any other text after the glyph is never empty on
+  # a plain capture - typed text, an extension or prefix of the placeholder,
+  # a case change, or the placeholder after a different harness's glyph.
+  for typed in 'fix the login bug' 'Ask Codex to do anything now' 'Ask Codex' \
+               'ask codex to do anything'; do
+    assert_screen "codex 0.162 typed '$typed' on cmux/orca" unknown "$CAPS_PLAIN" \
+      $'transcript\n› '"$typed"$'\n'"$footer"
+  done
+  assert_screen "codex placeholder after claude's glyph" unknown "$CAPS_PLAIN" \
+    $'transcript\n❯ Ask Codex to do anything\n'"$footer"
+  # A wrapped continuation row is typed input, never part of the placeholder.
+  assert_screen "codex placeholder with a wrapped typed row" unknown "$CAPS_PLAIN" \
+    $'transcript\n› Ask Codex to do anything\nand also this\n'"$footer"
+
+  # DIVERGENCE: the same screen with its footer rows replaced by prose keeps
+  # those rows as wrapped input, so the empty verdict above cannot come from
+  # anything but the footer boundary.
+  assert_screen "codex placeholder above unclaimed prose" unknown "$CAPS_PLAIN" \
+    $'transcript\n› Ask Codex to do anything\nGPT medium on branch with plenty left'
+
+  # Styled backends are unchanged: the dim placeholder strips to empty, and
+  # the same words typed bright stay pending.
+  out=$'transcript\n'"${ESC}[1m›${ESC}[0m ${ESC}[2mAsk Codex to do anything${ESC}[0m"$'\n'"$footer"
+  assert_screen "codex 0.162 dim placeholder on herdr" empty "$CAPS_STYLED_NOID" "$out"
+  out=$'transcript\n'"${ESC}[1m›${ESC}[0m Ask Codex to do anything"$'\n'"$footer"
+  assert_screen "codex 0.162 placeholder typed bright on herdr" pending "$CAPS_STYLED_NOID" "$out"
+  pass "matrix: codex 0.162's footer bounds its bare composer; only its exact placeholder reads empty unstyled"
+}
+
 test_matrix_pi_separated_needs_identity() {
   # Real idle pi: a blank row between two solid rules. The blank row alone is
   # exactly what the strict rule refuses; only structure PLUS a live
@@ -1407,6 +1473,7 @@ test_matrix_cursor_reverse_video_placeholder_remnant
 test_matrix_herdr_halfblock_rule_bounds_bare_wrap
 test_matrix_omp_status_row_bounds_bare_composer
 test_matrix_codex_idle_starfield_furniture
+test_matrix_codex_0162_placeholder_on_plain_capture
 test_matrix_pi_separated_needs_identity
 test_matrix_pi_dollar_status_footer_is_empty
 test_matrix_opencode_leftbar_signals

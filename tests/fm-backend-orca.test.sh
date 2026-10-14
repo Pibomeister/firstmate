@@ -478,6 +478,41 @@ test_composer_state_grok_middle_dot_title() {
   pass "fm_backend_orca_composer_state: Grok 1.0.62's middle-dot title reads empty when idle and pending when typed"
 }
 
+# Idle codex-cli 0.162.1 read live through `orca terminal read`: the bare `›`
+# row holds only codex's placeholder and its footer sits directly beneath it.
+# That exact row is the empty composer; anything else typed there still defers.
+test_composer_state_idle_codex_placeholder_is_empty() {
+  local out row want
+  local footer='"  GPT-6.1-Sol medium · fm/branch · Context 77% left · 33.8M in · 37.8K out · weekly 0% left","  ? for shortcuts                                    ⚠ 3 warnings · f2 to view"'
+  for row in 'Ask Codex to do anything' 'fix the login bug' 'Ask Codex to do anything now'; do
+    want=unknown
+    [ "$row" != 'Ask Codex to do anything' ] || want=empty
+    orca_case "composer-codex-idle-${want}-${#row}"
+    printf '{"ok":true,"result":{"terminal":{"tail":["• Worked for 14m 25s","› %s",%s]}}}\n' "$row" "$footer" > "$RESP/1.out"
+    out=$( PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" \
+      bash -c '. "$0/bin/backends/orca.sh"; fm_backend_orca_composer_state term-123' "$ROOT" )
+    [ "$out" = "$want" ] || fail "codex composer '› $row' on Orca should read $want, got '$out'"
+  done
+  pass "fm_backend_orca_composer_state: idle codex's placeholder reads empty; other text after the glyph stays unknown"
+}
+
+# Idle claude's bare composer is `❯` plus U+00A0, which a plain capture already
+# distinguishes from typed text; its rotating suggestion still defers.
+test_composer_state_idle_claude_is_empty() {
+  local out
+  orca_case composer-claude-idle
+  printf '{"ok":true,"result":{"terminal":{"tail":["transcript line","────────────","❯\xc2\xa0","────────────","  ⏵⏵ bypass permissions on (shift+tab to cycle)"]}}}\n' > "$RESP/1.out"
+  out=$( PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" \
+    bash -c '. "$0/bin/backends/orca.sh"; fm_backend_orca_composer_state term-123' "$ROOT" )
+  [ "$out" = empty ] || fail "idle claude's bare composer on Orca should read empty, got '$out'"
+  orca_case composer-claude-suggestion
+  printf '{"ok":true,"result":{"terminal":{"tail":["transcript line","────────────","❯ Try \\"fix lint errors\\"","────────────"]}}}\n' > "$RESP/1.out"
+  out=$( PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" \
+    bash -c '. "$0/bin/backends/orca.sh"; fm_backend_orca_composer_state term-123' "$ROOT" )
+  [ "$out" = unknown ] || fail "claude's rotating suggestion on Orca must stay unknown, got '$out'"
+  pass "fm_backend_orca_composer_state: idle claude reads empty; its unstyled suggestion stays unknown"
+}
+
 # Dead-shell injection safety (task fm-composer-shellglyph-safety): a pane whose
 # agent has exited to a bare login shell has no bordered composer row, so the
 # classifier finds nothing and reports `unknown` - NOT a safe (empty) injection
@@ -2065,6 +2100,8 @@ test_composer_state_stale_banner_never_wins
 test_send_text_submit_retries_when_composer_stays_pending
 test_composer_state_popup_placeholder_fill_is_pending
 test_composer_state_grok_middle_dot_title
+test_composer_state_idle_codex_placeholder_is_empty
+test_composer_state_idle_claude_is_empty
 test_composer_state_bare_shell_prompt_is_unknown
 test_send_text_submit_popup_autocomplete_requires_second_enter
 test_send_literal_constructs_non_enter_send

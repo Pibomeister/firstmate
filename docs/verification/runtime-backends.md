@@ -976,7 +976,7 @@ After the fix, braille-only rows bound the wrap region (the status footer sits b
 A second read-only capture of the same pane, taken during the fix with a bright starfield cell drawn between the `›` and the placeholder, read `pending` before and `empty` after as well.
 `test_matrix_codex_idle_starfield_furniture` in `tests/fm-composer-lib.test.sh` carries both samples byte-for-byte, the divergence (the same screen with letters in place of the starfield reads `pending`), and the over-stripping negatives (wrapped typed input, braille mixed with text, a typed row with a middle dot, and the footer or a starfield row alone).
 
-The live guard that refreshes this entry launches the installed codex idle in an isolated tmux server and asserts `empty` through both the cursor-anchored tmux read and the cursorless styled read Herdr and Zellij use, naming codex and `codex --version` on failure; it is default-on wherever codex and tmux are installed and spends no tokens:
+The live guard that refreshes this entry launches the installed codex idle in an isolated tmux server and asserts `empty` through the cursor-anchored tmux read, the cursorless styled read Herdr and Zellij use, and the plain read Orca and cmux use, naming codex and `codex --version` on failure; it is default-on wherever codex and tmux are installed and spends no tokens:
 
 ```sh
 tests/fm-composer-codex-idle-live-e2e.test.sh
@@ -1036,6 +1036,39 @@ not ok - mid-turn absolute cwd rail read 'pending', want empty
 ```
 
 The cursorless backends still defer: on a cursorless read (Herdr and Zellij) a full-pane capture of this version answers `unknown` because the status rail below the composer floor row is contiguous non-blank content the selector refuses to outrank, which is the strict posture and not this defect; and very narrow panes where the cwd rail starts in the left half of the row defer the same way.
+### 2026-10-14 codex-cli 0.162.1 placeholder and footer through Orca
+
+Verified on 2026-10-14 on macOS arm64 (Darwin 25.6.0) against codex-cli 0.162.1 (model GPT-6.1-Sol) running as an idle Firstmate worker in an Orca terminal, read through Orca's plain capture with its exact capability descriptor (`styled=0`, `cursor=0`, `identity=0`).
+Idle, codex 0.162.1 draws its bare `›` row holding only `Ask Codex to do anything`, with no starfield behind it, and draws its footer directly beneath that row with no blank row between them:
+
+```text
+› Ask Codex to do anything
+  GPT-6.1-Sol medium · fm/ak-kimi-toml-bun142 · Context 77% left · 33.8M in · 37.8K out · weekly 0% left
+  ? for shortcuts                                                                             ⚠ 3 warnings · f2 to view
+```
+
+The live verdict is read through the real adapter, read-only:
+
+```sh
+bash -c '. bin/fm-composer-lib.sh; . bin/backends/orca.sh
+  fm_backend_orca_composer_state <terminal-handle>'
+```
+
+Observed output before the fix (`bin/fm-composer-lib.sh` at 4a7802f8) and then after it, the same under `LC_ALL=C`:
+
+```text
+unknown
+empty
+```
+
+Before the fix the bare `›` row's wrap region ran over both footer rows, and the plain row could not be told from typed text, so `fm-control.sh relaunch` refused every Orca-backed codex worker as not proven empty.
+After the fix the `Context N% left` status cell and the `? for shortcuts` hint (`FM_COMPOSER_CODEX_FOOTER_RE_DEFAULT`) bound the wrap region, and an unstyled bare row that is exactly a glyph's own entry in `FM_COMPOSER_BARE_PLACEHOLDERS_DEFAULT` reads `empty`.
+Any other text after the glyph, including an extension, prefix, or case change of the placeholder, and the placeholder after a different harness's glyph, still reads `unknown` on a plain capture.
+A fresh codex 0.162.1 launched in an isolated tmux server drew the same composer under a `← for agents · ? for shortcuts` hint row and read `empty` through the plain, styled, and `LC_ALL=C` plain profiles.
+`test_matrix_codex_0162_placeholder_on_plain_capture` in `tests/fm-composer-lib.test.sh` and `test_composer_state_idle_codex_placeholder_is_empty` in `tests/fm-backend-orca.test.sh` pin those verdicts and the divergence where prose in place of the footer keeps the row `unknown`.
+
+`tests/fm-composer-codex-idle-live-e2e.test.sh` now also requires the plain read to reach `empty`.
+On 2026-10-14 it could not reach any of its reads on the verification machine, because codex-cli 0.162.1 parks on its `Hooks need review` modal, which the guard correctly refuses to dismiss; the same failure reproduces on the unmodified library, and the Orca capture above is this entry's live evidence.
 
 ## Steering-inbox doorbell
 
