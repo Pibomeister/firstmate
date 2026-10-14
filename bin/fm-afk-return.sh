@@ -9,6 +9,11 @@
 #   fm-afk-return.sh guard    Read-only consult: exit 3 while away mode is still
 #                            active, exit 4 while return catch-up is pending.
 #   fm-afk-return.sh catchup-summary  Read-only catch-up projection for a reporting surface.
+# Quiet exit retains detail in .subsuper-digests and atomically records its path
+# and count in .quiet-exit-receipt before clearing the original buffer.
+# .quiet-exit-pending carries a unique transaction across lifecycle shutdown;
+# retries before receipt persistence read the original buffer, afterward the receipt.
+# Quiet output contains only receipt data, never raw event text.
 #
 # THE RETURN BRIEF (stdout, on begin and on every check) is rendered from durable
 # records, never from conversation memory: the archived away-posture record
@@ -295,7 +300,8 @@ catchup_summary() {
 
 return_guard() {
   local reasons
-  if [ -e "$STATE/.afk" ] || fm_afk_contract_present "$STATE"; then
+  if { [ -e "$STATE/.afk" ] || fm_afk_contract_present "$STATE"; } \
+     && ! fm_afk_contract_quiet_active "$STATE"; then
     printf 'fm-afk-return: away mode is still active; run bin/fm-afk-return.sh before ordinary captain work\n' >&2
     return 3
   fi
@@ -320,6 +326,78 @@ return_guard() {
     return 4
   fi
   return 0
+}
+
+quiet_receipt_present() {
+  [ -f "$STATE/.quiet-exit-receipt" ] \
+    && jq -e '.schema == "fm-quiet-exit.v1" and (.archive | type == "string") and (.count | type == "number") and (.id | type == "string")' \
+      "$STATE/.quiet-exit-receipt" >/dev/null 2>&1
+}
+
+quiet_receipt_print() {
+  local archive count
+  quiet_receipt_present || return 1
+  archive=$(jq -r '.archive' "$STATE/.quiet-exit-receipt") || return 1
+  count=$(jq -r '.count' "$STATE/.quiet-exit-receipt") || return 1
+  [ -f "$archive" ] && [ -r "$archive" ] || return 1
+  printf 'Quiet exit detail: archive=%s events=%s\n' "$archive" "$count"
+}
+
+quiet_exit() {
+  local pending="$STATE/.quiet-exit-pending" receipt="$STATE/.quiet-exit-receipt"
+  local buf="$STATE/.subsuper-escalations" id archived count tmp receipt_id
+  # An old away gate has no unique posture identity: never clear or reinterpret it.
+  [ ! -e "$GATE" ] || { return_guard; return 3; }
+  if [ ! -f "$pending" ]; then
+    if ! fm_afk_contract_quiet_active "$STATE"; then
+      quiet_receipt_print
+      return
+    fi
+    # Persist intent before stopping so an interruption cannot lose quiet identity.
+    # The nonce is independent of the second-resolution posture entry timestamp.
+    tmp=$(umask 077; mktemp "$STATE/.quiet-exit-intent.XXXXXX") || return 1
+    id=${tmp##*/}
+    printf '%s\n' "$id" > "$tmp" || { rm -f "$tmp"; return 1; }
+    mv -f "$tmp" "$pending" || { rm -f "$tmp"; return 1; }
+  fi
+  id=$(cat "$pending") || return 1
+  # A later real away entry must go through its own gate, never this transaction.
+  if { [ -e "$STATE/.afk" ] || fm_afk_contract_present "$STATE"; } \
+     && ! fm_afk_contract_quiet_active "$STATE"; then
+    return 1
+  fi
+  if [ -e "$STATE/.afk" ] || fm_afk_contract_present "$STATE" \
+     || [ -e "$STATE/.afk-daemon-terminal" ]; then
+    "$SCRIPT_DIR/fm-afk-launch.sh" stop >/dev/null 2>&1 || return 1
+  fi
+  receipt_id=
+  if quiet_receipt_present; then
+    receipt_id=$(jq -r '.id' "$receipt") || return 1
+  fi
+  if [ "$receipt_id" != "$id" ]; then
+    [ ! -e "$buf" ] || { [ -f "$buf" ] && [ -r "$buf" ]; } || return 1
+    # Original buffer remains authoritative through archive AND receipt failures.
+    (umask 077; mkdir -p "$STATE/.subsuper-digests") || return 1
+    archived=$(umask 077; mktemp "$STATE/.subsuper-digests/quiet-exit.XXXXXX") || return 1
+    if [ -f "$buf" ]; then
+      cat "$buf" > "$archived" || return 1
+    fi
+    count=$(awk 'END { print NR + 0 }' "$archived") || return 1
+    tmp=$(umask 077; mktemp "$STATE/.quiet-exit-receipt.XXXXXX") || return 1
+    jq -n --arg id "$id" --arg archive "$archived" --argjson count "$count" \
+      '{schema:"fm-quiet-exit.v1", id:$id, archive:$archive, count:$count}' > "$tmp" \
+      || { rm -f "$tmp"; return 1; }
+    [ ! -d "$receipt" ] || { rm -f "$tmp"; return 1; }
+    mv -f "$tmp" "$receipt" || { rm -f "$tmp"; return 1; }
+  fi
+  # A durable matching receipt now owns retry; ensure its archive still exists.
+  archived=$(jq -r '.archive' "$receipt") || return 1
+  [ -f "$archived" ] && [ -r "$archived" ] || return 1
+  # A restarted producer may have appended new detail; an older receipt cannot clear it.
+  [ ! -e "$buf" ] || cmp -s "$buf" "$archived" || return 1
+  rm -f "$buf" "${buf}.since" || return 1
+  quiet_receipt_print || return 1
+  rm -f "$pending"
 }
 
 # --- supervisor health, snapshotted before anything is shut down ------------
@@ -913,6 +991,15 @@ main() {
   mkdir -p "$STATE" || return 1
   fm_lock_acquire_wait "$LOCK"
   trap 'fm_lock_release "$LOCK"' EXIT
+  if fm_afk_contract_quiet_active "$STATE" \
+     || { [ ! -e "$GATE" ] && [ ! -e "$STATE/.afk" ] && ! fm_afk_contract_present "$STATE" \
+          && { [ -f "$STATE/.quiet-exit-pending" ] || quiet_receipt_present; }; }; then
+    quiet_exit
+    rc=$?
+    fm_lock_release "$LOCK"
+    trap - EXIT
+    return "$rc"
+  fi
   window_epoch=$(window_start_epoch)
   contract_epoch=$(gate_contract_epoch)
   if [ -z "$contract_epoch" ] && fm_afk_contract_present "$STATE"; then
