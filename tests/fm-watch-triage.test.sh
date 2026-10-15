@@ -620,6 +620,49 @@ test_crew_absorb_class_classifier() {
   pass "crew_absorb_class: working/paused/none from one read; crew_is_paused and crew_is_provably_working agree"
 }
 
+# crew_line_parked_gate: the pure reading of one current-state line as a run
+# parked at a gate, and who owes the gate its answer. Only the minted ask-user
+# component, compared as a whole component, makes the owner a human: a gate
+# name or a finding detail that merely contains those words must not, because a
+# human-owned verdict wakes firstmate and a worker-owned one does not.
+test_crew_line_parked_gate_classifier() {
+  local tab gate
+  tab=$(printf '\t')
+  gate=$(crew_line_parked_gate 'state: parked · source: run-step · parked at fix_review: 1 finding(s) · run: 01RUNGATE') \
+    || fail "a parked run-step line was not read as a parked gate"
+  [ "$gate" = "worker${tab}01RUNGATE" ] || fail "a gate with no ask-user finding is the worker's to answer, got: $gate"
+  gate=$(crew_line_parked_gate 'state: parked · source: run-step · parked at awaiting_approval: 2 finding(s) · ask-user: authority decision · run: 01RUNGATE') \
+    || fail "a parked ask-user line was not read as a parked gate"
+  [ "$gate" = "human${tab}01RUNGATE" ] || fail "an ask-user gate is owed by a human, got: $gate"
+  gate=$(crew_line_parked_gate 'state: parked · source: run-step · parked at awaiting_agent · run: 01RUNGATE · ask-user: authority decision') \
+    || fail "component order changed whether a line is a parked gate"
+  [ "$gate" = "human${tab}01RUNGATE" ] || fail "the owner depended on component order, got: $gate"
+  gate=$(crew_line_parked_gate 'state: parked · source: run-step · parked at review: note says ask-user: authority decision pending · run: 01RUNGATE') \
+    || fail "a parked line with a wordy detail was not read as a parked gate"
+  [ "$gate" = "worker${tab}01RUNGATE" ] || fail "words inside another component minted a human owner, got: $gate"
+  gate=$(crew_line_parked_gate 'state: parked · source: run-step · parked at fix_review: 1 finding(s)') \
+    || fail "a parked line with no run id was not read as a parked gate"
+  [ "$gate" = "worker${tab}" ] || fail "a line with no run id should carry an empty one, got: $gate"
+  gate=$(crew_line_parked_gate 'state: parked · source: run-step · parked at fix_review · run: 01RUN GATE') \
+    || fail "a parked line with a spaced run id was not read as a parked gate"
+  [ "$gate" = "worker${tab}" ] || fail "a run id holding whitespace was passed on, got: $gate"
+  crew_line_parked_gate 'state: working · source: run-step · validating (running) · run: 01RUNGATE' >/dev/null \
+    && fail "an executing run was read as parked"
+  crew_line_parked_gate 'state: parked · source: status-log · parked: waiting · ask-user: authority decision' >/dev/null \
+    && fail "a parked verdict that is not a run step was read as a parked gate"
+  crew_line_parked_gate 'state: paused · source: status-log · awaiting upstream' >/dev/null \
+    && fail "a declared pause was read as a parked gate"
+  crew_line_parked_gate 'state: unknown · source: none · worktree gone' >/dev/null \
+    && fail "an unknown verdict was read as a parked gate"
+  crew_line_parked_gate '' >/dev/null && fail "an empty line was read as a parked gate"
+  [ "$(crew_line_absorb_class 'state: parked · source: run-step · parked at fix_review: 1 finding(s) · run: 01RUNGATE')" = none ] \
+    || fail "a parked gate must never be absorbable as working or paused"
+  [ "$(crew_line_absorb_class 'state: working · source: run-step · validating (running)')" = working ] \
+    || fail "the line classifier disagrees with crew_absorb_class about an executing run"
+  [ "$(crew_line_absorb_class '')" = none ] || fail "an empty line was classed absorbable"
+  pass "crew_line_parked_gate: only a parked run step is a gate, and only the minted ask-user component makes a human its owner"
+}
+
 # The wedge detector's third liveness input: writes inside the crew's own recorded
 # worktree. Every negative outcome must report "no evidence" so the caller keeps
 # its existing escalation schedule, and a supervisor-side git read (which touches
@@ -3254,6 +3297,101 @@ test_wedge_threshold_recheck_names_the_captain_for_a_held_lane() {
   pass "a captain-held lane is rechecked as a hold on the captain, never as an external wait, and never at all while the captain is away"
 }
 
+# The backlog record of the same hold. Once firstmate hands a decision to the
+# captain through bin/fm-captain-hold.sh, the worker's own line stays whatever it
+# was, so a stuck worker on a stable pane reaches the wedge timer with nothing in
+# its status log that reads as a wait. The open captain call must bound the wedge
+# ladder exactly as a `captain-held:` line does.
+backlog_hold_wedge_fixture() {  # <name> <status-age-secs> [<wedge-timer-age-secs>] [<status-log>]
+  local dir
+  dir=$(wedge_threshold_fixture "$1" "${4:-working: answering the dialog}" "$2" "${3-}") || return 1
+  mkdir -p "$dir/data"
+  fm_test_tasks_toml "$dir/.tasks.toml" || return 1
+  printf '## In flight\n\n## Queued\n\n## Done\n' > "$dir/data/backlog.md"
+  (cd "$dir" && tasks-axi add wedge 'stuck at a captain-only dialog' --file data/backlog.md) >/dev/null 2>&1 \
+    || return 1
+  run_hold "$dir" hold wedge --reason 'awaiting the captain on the dialog' || return 1
+  printf '%s\n' "$dir"
+}
+
+test_wedge_threshold_defers_to_a_backlog_captain_hold() {
+  local dir state fakebin out capture window key n queued armed_timer past
+  local working='state: working · source: run-step · ci running'
+  command -v tasks-axi >/dev/null 2>&1 \
+    || { echo "skip: tasks-axi not found (backlog captain hold wedge bound)"; return 0; }
+  window="test:fm-wedge"; key=$(printf '%s' "$window" | tr ':/.' '___')
+
+  # A fresh status line is no record of when the hold began, so the first
+  # threshold rechecks it once, as a wait on the captain with no wait age.
+  dir=$(backlog_hold_wedge_fixture backlog-hold-quiet 0) \
+    || fail "could not build a backlog captain-hold wedge fixture"
+  state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
+  FM_HOME="$dir" FM_DATA_OVERRIDE="$dir/data" \
+    wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$working" exit \
+    || fail "a backlog-held lane was never rechecked at the threshold: $(cat "$out")"
+  grep -F 'awaiting the captain' "$out" >/dev/null \
+    || fail "the backlog-hold recheck did not name the captain: $(cat "$out")"
+  grep -F 'possible wedge' "$out" >/dev/null \
+    && fail "a backlog-held lane was reported as a possible wedge: $(cat "$out")"
+  grep -E ', waiting [0-9]+s' "$out" >/dev/null \
+    && fail "the backlog-hold recheck published the status line's age as the hold's: $(cat "$out")"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the backlog-hold recheck"
+
+  # Inside the recheck cadence the hold is absorbed whole, threshold after threshold.
+  queued=$(wedge_stale_wakes "$state" "$window")
+  n=1
+  while [ "$n" -le 3 ]; do
+    FM_HOME="$dir" FM_DATA_OVERRIDE="$dir/data" \
+      wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$working" absorb \
+      || fail "a backlog-held lane wedge-escalated at threshold $n: $(cat "$out")"
+    n=$((n + 1))
+  done
+  [ "$(wedge_stale_wakes "$state" "$window")" -eq "$queued" ] \
+    || fail "a backlog-held lane queued a further wake inside its recheck cadence: $(cat "$state/.wake-queue")"
+  [ ! -e "$state/.wedge-escalations-$key" ] \
+    || fail "a backlog-held lane counted $(cat "$state/.wedge-escalations-$key") wedge escalation(s)"
+
+  # A paused line whose own clearing time has passed explains nothing, so the
+  # hold the worker's line never shows still bounds the ladder.
+  past=$(iso_utc_at "$(( $(date +%s) - 7200 ))")
+  dir=$(backlog_hold_wedge_fixture backlog-hold-elapsed-pause 0 '' \
+    "paused: waiting on the build queue until $past") \
+    || fail "could not build a backlog captain-hold wedge fixture"
+  state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
+  FM_HOME="$dir" FM_DATA_OVERRIDE="$dir/data" \
+    wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$working" exit \
+    || fail "a backlog-held lane behind an elapsed pause was never rechecked: $(cat "$out")"
+  grep -F 'awaiting the captain' "$out" >/dev/null \
+    || fail "a backlog-held lane behind an elapsed pause was not rechecked as a wait on the captain: $(cat "$out")"
+  grep -F 'possible wedge' "$out" >/dev/null \
+    && fail "a backlog-held lane behind an elapsed pause was reported as a possible wedge: $(cat "$out")"
+  [ ! -e "$state/.wedge-escalations-$key" ] \
+    || fail "a backlog-held lane behind an elapsed pause counted a wedge escalation"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the elapsed-pause backlog-hold recheck"
+
+  # While the away-posture record exists it is never rechecked, and the backlog
+  # read that proves the hold is paced by the idle timer rather than every poll.
+  dir=$(backlog_hold_wedge_fixture backlog-hold-away 2000 2000) \
+    || fail "could not build a backlog captain-hold wedge fixture"
+  state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
+  armed_timer=$(cat "$state/.stale-since-$key")
+  write_away_record "$state"
+  n=1
+  while [ "$n" -le 3 ]; do
+    FM_HOME="$dir" FM_DATA_OVERRIDE="$dir/data" FM_TEST_PAUSE_RESURFACE=240 \
+      wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$working" absorb \
+      || fail "a backlog-held lane was rechecked at threshold $n while the away-posture record existed: $(cat "$out")"
+    n=$((n + 1))
+  done
+  [ "$(wedge_stale_wakes "$state" "$window")" -eq 0 ] \
+    || fail "a backlog-held lane woke the away captain: $(cat "$state/.wake-queue")"
+  [ ! -s "$out" ] \
+    || fail "a backlog-held lane printed a recheck while the away-posture record existed: $(cat "$out")"
+  [ "$(cat "$state/.stale-since-$key")" != "$armed_timer" ] \
+    || fail "an away-silenced backlog hold left the idle timer expired, so its backlog read repeats on every poll"
+  pass "a backlog captain hold bounds the wedge ladder like a captain-held line, and stays silent while the captain is away"
+}
+
 # --- the wedge threshold reads the crew's own parked-gate state --------------
 # Upstream kunchenguid/firstmate#3055: a lane parked at a validation gate that is
 # waiting on a HUMAN is correctly quiet, but nothing in the status LINE says so -
@@ -3970,7 +4108,7 @@ make_hold_home() {  # <name> <status-line> <hold|nohold>
   local name=$1 line=$2 hold=$3 dir state
   dir=$(make_case "$name"); state="$dir/state"
   mkdir -p "$dir/data" "$dir/config"
-  cp "$ROOT/.tasks.toml" "$dir/.tasks.toml" || return 1
+  fm_test_tasks_toml "$dir/.tasks.toml" || return 1
   printf '## In flight\n\n## Queued\n\n## Done\n' > "$dir/data/backlog.md"
   (cd "$dir" && tasks-axi add held-merge 'delivered work' --file data/backlog.md) >/dev/null 2>&1 \
     || return 1
@@ -6316,6 +6454,222 @@ test_afk_paused_changed_pane_hands_off_plain_stale() {
   pass "AFK changed paused panes hand off plain stale identities for daemon-owned pause triage"
 }
 
+# --- away mode: a declared pause on a parked run is not handed off as a pause --
+# The daemon classifies a stale `paused:` pane from the status log alone, so it
+# cannot see a run park behind that declaration, and a worker that already ended
+# its turn never changes its pane again to earn a second handoff. The watcher
+# therefore keeps reading a `paused:` pane's current state in this posture too:
+# the worker is pointed at its gate through its steering inbox either way, and
+# only an ask-user gate is handed to the daemon, under a reason the daemon does
+# not classify as a pause.
+PARKED_GATE_WORKER='state: parked · source: run-step · parked at fix_review: 1 finding(s) · run: 01RUNAFK'
+PARKED_GATE_HUMAN='state: parked · source: run-step · parked at fix_review: 1 finding(s) · ask-user: authority decision · run: 01RUNAFK'
+
+# A pane this posture already handed off once: same hash, stale suppressor set,
+# so nothing but the parked-gate read can produce a wake.
+afk_parked_fixture() {  # <name> -> echoes case dir
+  local dir state window key statusf
+  dir=$(make_case "$1"); state="$dir/state"
+  window="test:fm-afk-parked"
+  statusf="$state/afk-parked.status"
+  printf 'idle after declaring the wait\n' > "$dir/pane.txt"
+  printf 'window=%s\nkind=ship\nharness=grok\nbackend=tmux\n' "$window" > "$state/afk-parked.meta"
+  printf 'paused: waiting for no-mistakes run 01RUNAFK; next status check no sooner than 10 minutes\n' > "$statusf"
+  printf '%s' "$(seen_sig "$statusf")" > "$state/.seen-afk-parked_status"
+  key=$(printf '%s' "$window" | tr '.:/' '___')
+  printf '%s' "$(hash_text 'idle after declaring the wait')" > "$state/.hash-$key"
+  printf '1\n' > "$state/.count-$key"
+  printf '%s' "$(hash_text 'idle after declaring the wait')" > "$state/.stale-$key"
+  date '+%s' > "$state/.afk"
+  printf '%s\n' "$dir"
+}
+
+afk_parked_watch() {  # <case-dir> <crew-state-line>
+  PATH="$1/fakebin:$PATH" FM_FAKE_TMUX_WINDOW="test:fm-afk-parked" FM_FAKE_TMUX_CAPTURE="$1/pane.txt" \
+    FM_FAKE_CREW_STATE="$2" FM_STATE_OVERRIDE="$1/state" FM_CREW_STATE_BIN="$1/fakebin/fm-crew-state.sh" \
+    FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    FM_TASK_INBOX_GRACE_SECS=999999 "$WATCH" > "$1/watch.out" 2>/dev/null &
+}
+
+afk_parked_records() {  # <case-dir> -> count of steering records written
+  find "$1/state/afk-parked.inbox" -maxdepth 1 -name '*.msg' 2>/dev/null | wc -l | tr -d ' '
+}
+
+test_afk_declared_pause_on_an_ask_user_gate_is_handed_off_as_a_gate() {
+  local dir state out drain_out pid window="test:fm-afk-parked"
+  dir=$(afk_parked_fixture afk-parked-ask-user); state="$dir/state"
+  out="$dir/watch.out"; drain_out="$dir/drain.out"
+  afk_parked_watch "$dir" "$PARKED_GATE_HUMAN"
+  pid=$!
+  wait_for_exit "$pid" 300 \
+    || fail "an already handed-off paused pane whose run parked on an ask-user finding was never handed off again"
+  grep -F "stale: $window (declared pause on a parked run - " "$out" >/dev/null \
+    || fail "the handoff did not say the pause sits on a parked run: $(cat "$out")"
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" 2>/dev/null || fail "drain after the parked-run handoff failed"
+  [ "$(grep -c "$(printf '\tstale\t')" "$drain_out")" = 1 ] \
+    || fail "the parked run should be queued as exactly one stale wake: $(cat "$drain_out")"
+  grep "$(printf '\tstale\t')" "$drain_out" | grep -F 'declared pause on a parked run' >/dev/null \
+    || fail "the queued wake lost the parked-run reason: $(cat "$drain_out")"
+  [ "$(afk_parked_records "$dir")" = 1 ] || fail "the worker was not pointed at its gate exactly once"
+  grep -F 'no-mistakes axi status' "$state/afk-parked.inbox/001.msg" >/dev/null \
+    || fail "the steering record does not point at the run's status"
+  pass "away mode hands a declared pause on an ask-user gate to the daemon as a parked run, not as a pause"
+}
+
+test_afk_declared_pause_on_a_worker_gate_rings_only_the_worker() {
+  local dir state out pid
+  dir=$(afk_parked_fixture afk-parked-worker); state="$dir/state"; out="$dir/watch.out"
+  afk_parked_watch "$dir" "$PARKED_GATE_WORKER"
+  pid=$!
+  if ! wait_poll_cycle "$state" "$pid" || ! wait_poll_cycle "$state" "$pid" || ! wait_poll_cycle "$state" "$pid"; then
+    reap "$pid"; fail "a gate the worker can answer itself was handed to the daemon: $(cat "$out")"
+  fi
+  [ ! -s "$state/.wake-queue" ] || { reap "$pid"; fail "a worker-owned gate queued a wake: $(cat "$state/.wake-queue")"; }
+  [ "$(afk_parked_records "$dir")" = 1 ] \
+    || { reap "$pid"; fail "expected exactly one steering record across several polls, got $(afk_parked_records "$dir")"; }
+  reap "$pid"
+  grep -F 'no-mistakes axi status' "$state/afk-parked.inbox/001.msg" >/dev/null \
+    || fail "the steering record does not point at the run's status"
+  pass "away mode points a paused worker at a gate it can answer without waking anyone else"
+}
+
+test_afk_declared_pause_on_an_executing_run_stays_handed_off_once() {
+  local dir state out pid
+  dir=$(afk_parked_fixture afk-parked-still-running); state="$dir/state"; out="$dir/watch.out"
+  afk_parked_watch "$dir" 'state: working · source: run-step · validating (running) · run: 01RUNAFK'
+  pid=$!
+  if ! wait_poll_cycle "$state" "$pid" || ! wait_poll_cycle "$state" "$pid" || ! wait_poll_cycle "$state" "$pid"; then
+    reap "$pid"; fail "a paused pane whose run is still executing was handed off twice: $(cat "$out")"
+  fi
+  [ ! -s "$state/.wake-queue" ] || { reap "$pid"; fail "an executing run queued a wake: $(cat "$state/.wake-queue")"; }
+  [ "$(afk_parked_records "$dir")" = 0 ] || { reap "$pid"; fail "a worker whose run is still executing was rung"; }
+  reap "$pid"
+  pass "away mode leaves a declared pause alone while its run is still executing"
+}
+
+# A no-mistakes that stops answering must not hold the fleet scan behind this
+# read. Two handed-off paused panes: the first in scan order reads a current
+# state that hangs far past the bound, the second's run is parked on an ask-user
+# finding. The hung read is killed at its bound, before it can finish, the second
+# pane is read on the next poll instead of being starved behind it, and the hung
+# pane is not read again inside its cadence. The proof is the order of the reads
+# rather than elapsed time, so a loaded machine cannot make it pass or fail: an
+# unbounded read finishes before the scan reaches the second pane.
+test_afk_parked_gate_read_is_bounded_when_no_mistakes_hangs() {
+  local dir state fakebin out drain_out reads stub pid t w key hang=300
+  local hung_window="test:fm-afk-hung" parked_window="test:fm-afk-parked2"
+  dir=$(make_case afk-parked-hung); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; drain_out="$dir/drain.out"; reads="$dir/reads.log"
+  stub="$fakebin/fm-crew-state-hung.sh"
+  cat > "$stub" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$1" >> "$FM_TEST_READS_LOG"
+case "$1" in
+  a-hung)
+    sleep "$FM_TEST_HANG_SECS"
+    printf 'a-hung finished\n' >> "$FM_TEST_READS_LOG"
+    printf 'state: working · source: run-step · validating (running) · run: 01RUNHUNG\n' ;;
+  *) printf '%s\n' "$FM_TEST_PARKED_LINE" ;;
+esac
+SH
+  chmod +x "$stub"
+  printf 'idle after declaring the wait\n' > "$dir/pane.txt"
+  for t in a-hung b-parked; do
+    case "$t" in a-hung) w=$hung_window ;; *) w=$parked_window ;; esac
+    printf 'window=%s\nkind=ship\nharness=grok\nbackend=tmux\n' "$w" > "$state/$t.meta"
+    printf 'paused: waiting for no-mistakes run; next status check no sooner than 10 minutes\n' > "$state/$t.status"
+    printf '%s' "$(seen_sig "$state/$t.status")" > "$state/.seen-${t}_status"
+    key=$(printf '%s' "$w" | tr '.:/' '___')
+    printf '%s' "$(hash_text 'idle after declaring the wait')" > "$state/.hash-$key"
+    printf '1\n' > "$state/.count-$key"
+    printf '%s' "$(hash_text 'idle after declaring the wait')" > "$state/.stale-$key"
+  done
+  date '+%s' > "$state/.afk"
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOWS="$(printf 'fm-afk-hung\nfm-afk-parked2')" \
+    FM_FAKE_TMUX_CAPTURE="$dir/pane.txt" FM_TEST_READS_LOG="$reads" FM_TEST_HANG_SECS="$hang" \
+    FM_TEST_PARKED_LINE="$PARKED_GATE_HUMAN" FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$stub" \
+    FM_PARKED_GATE_READ_TIMEOUT=5 FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    FM_TASK_INBOX_GRACE_SECS=999999 "$WATCH" > "$out" 2>/dev/null &
+  pid=$!
+  wait_for_exit "$pid" 1800 \
+    || { reap "$pid"; fail "the paused pane behind a hung read was never handed off: $(cat "$out")"; }
+  grep -F "stale: $parked_window (declared pause on a parked run - " "$out" >/dev/null \
+    || fail "the parked pane behind the hung read was not handed off as a parked run: $(cat "$out")"
+  [ "$(cat "$reads")" = "$(printf 'a-hung\nb-parked')" ] \
+    || fail "expected the hung read killed before it finished, then one read of the parked pane, got: $(tr '\n' ' ' < "$reads")"
+  grep -F "parked-gate read deferred to the next poll (this poll already spent its read): $parked_window" \
+    "$state/.watch-triage.log" >/dev/null \
+    || fail "the parked pane was not deferred behind the hung read: $(cat "$state/.watch-triage.log")"
+  grep -F "parked-gate read gave no verdict (unreadable, or past its 5s bound): $hung_window" \
+    "$state/.watch-triage.log" >/dev/null || fail "the cut read was not recorded as no verdict"
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" 2>/dev/null || fail "drain after the bounded reads failed"
+  [ "$(grep -c "$(printf '\tstale\t')" "$drain_out")" = 1 ] \
+    || fail "expected exactly the parked pane's stale wake: $(cat "$drain_out")"
+  [ "$(find "$state/b-parked.inbox" -maxdepth 1 -name '*.msg' 2>/dev/null | wc -l | tr -d ' ')" = 1 ] \
+    || fail "the parked pane's worker was not pointed at its gate exactly once"
+  [ ! -d "$state/a-hung.inbox" ] || fail "the hung pane's worker was rung on no verdict"
+  pass "away mode bounds the parked-gate read, so a hung no-mistakes neither holds the scan nor starves the next paused pane"
+}
+
+# The one read a poll starts must not always go to the first due pane in scan
+# order: with enough paused panes ahead of it, those panes come due again before
+# a later pane ever gets a turn, and the later pane's parked run is never read.
+# A one-second cadence makes the first pane due again on every poll, the compressed
+# form of that fleet. The second pane, passed over on the first poll, must take the
+# second poll's read even though the first pane is due again ahead of it in scan
+# order. The proof is the order of the reads plus the logged reservation, which
+# also shows the first pane really was due when it was passed over.
+test_afk_parked_gate_read_goes_to_the_pane_read_least_recently() {
+  local dir state fakebin out drain_out reads stub pid t w key
+  local busy_window="test:fm-afk-first" parked_window="test:fm-afk-parked3"
+  dir=$(make_case afk-parked-rotation); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; drain_out="$dir/drain.out"; reads="$dir/reads.log"
+  stub="$fakebin/fm-crew-state-rotation.sh"
+  cat > "$stub" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$1" >> "$FM_TEST_READS_LOG"
+case "$1" in
+  a-first) printf 'state: working · source: run-step · validating (running) · run: 01RUNFIRST\n' ;;
+  *) printf '%s\n' "$FM_TEST_PARKED_LINE" ;;
+esac
+SH
+  chmod +x "$stub"
+  printf 'idle after declaring the wait\n' > "$dir/pane.txt"
+  for t in a-first b-parked; do
+    case "$t" in a-first) w=$busy_window ;; *) w=$parked_window ;; esac
+    printf 'window=%s\nkind=ship\nharness=grok\nbackend=tmux\n' "$w" > "$state/$t.meta"
+    printf 'paused: waiting for no-mistakes run; next status check no sooner than 10 minutes\n' > "$state/$t.status"
+    printf '%s' "$(seen_sig "$state/$t.status")" > "$state/.seen-${t}_status"
+    key=$(printf '%s' "$w" | tr '.:/' '___')
+    printf '%s' "$(hash_text 'idle after declaring the wait')" > "$state/.hash-$key"
+    printf '1\n' > "$state/.count-$key"
+    printf '%s' "$(hash_text 'idle after declaring the wait')" > "$state/.stale-$key"
+  done
+  date '+%s' > "$state/.afk"
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOWS="$(printf 'fm-afk-first\nfm-afk-parked3')" \
+    FM_FAKE_TMUX_CAPTURE="$dir/pane.txt" FM_TEST_READS_LOG="$reads" \
+    FM_TEST_PARKED_LINE="$PARKED_GATE_HUMAN" FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$stub" \
+    FM_STALE_ESCALATE_SECS=1 FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    FM_TASK_INBOX_GRACE_SECS=999999 "$WATCH" > "$out" 2>/dev/null &
+  pid=$!
+  wait_for_exit "$pid" 1800 \
+    || { reap "$pid"; fail "the paused pane behind an always-due pane was never read: reads $(tr '\n' ' ' < "$reads" 2>/dev/null)"; }
+  grep -F "stale: $parked_window (declared pause on a parked run - " "$out" >/dev/null \
+    || fail "the paused pane behind an always-due pane was not handed off as a parked run: $(cat "$out")"
+  [ "$(cat "$reads")" = "$(printf 'a-first\nb-parked')" ] \
+    || fail "expected one read of the first pane, then the passed-over pane's read on the next poll, got: $(tr '\n' ' ' < "$reads")"
+  grep -F "parked-gate read deferred to the next poll (this poll's read is reserved for a pane read less recently): $busy_window" \
+    "$state/.watch-triage.log" >/dev/null \
+    || fail "the first pane was not due again and passed over for the reserved pane: $(cat "$state/.watch-triage.log")"
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" 2>/dev/null || fail "drain after the rotated reads failed"
+  [ "$(grep -c "$(printf '\tstale\t')" "$drain_out")" = 1 ] \
+    || fail "expected exactly the parked pane's stale wake: $(cat "$drain_out")"
+  [ "$(find "$state/b-parked.inbox" -maxdepth 1 -name '*.msg' 2>/dev/null | wc -l | tr -d ' ')" = 1 ] \
+    || fail "the parked pane's worker was not pointed at its gate exactly once"
+  [ ! -d "$state/a-first.inbox" ] || fail "the working pane's worker was rung"
+  pass "away mode gives the parked-gate read to the pane read least recently, so a later paused pane is not starved"
+}
+
 # --- the away-posture record: captain-held items are never rechecked ----------
 # While state/.afk-contract exists (bin/fm-afk-contract.sh) nobody is there to
 # answer a captain-held item and the return brief lists it, so every stale path
@@ -6603,6 +6957,78 @@ test_paused_until_that_passed_is_rechecked_before_the_cadence() {
   pass "a declared wait whose until time has passed is rechecked at once, then held to the cadence"
 }
 
+# --- a live worker paused on its own background job --------------------------
+# A worker declared `paused:` on its own background job and the job then ended
+# without a new status line, so only the passage of time can tell the watcher
+# the wait should be over. Without `until`, the first-sight alert spends the
+# declaration's re-surface throttle and every later sight - including the one
+# after the job ended - is held for PAUSE_RESURFACE_SECS. Naming the job's
+# start plus its timeout as `until` gives that same declaration one recheck once
+# the job can no longer be running.
+bg_job_paused_case() {  # <name> <status-line> -> dir
+  local dir state window key
+  dir=$(make_case "$1"); state="$dir/state"; window="test:fm-parked"
+  printf 'window=%s\nkind=scout\nharness=grok\nbackend=tmux\n' "$window" > "$state/parked.meta"
+  printf '%s\n' "$2" > "$state/parked.status"
+  printf '%s' "$(seen_sig "$state/parked.status")" > "$state/.seen-parked_status"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  printf 'nightly build running' > "$dir/pane.txt"
+  printf '%s' "$(hash_text 'nightly build running')" > "$state/.hash-$key"
+  printf '1\n' > "$state/.count-$key"
+  printf '%s\n' "$dir"
+}
+
+bg_job_stale_wakes() {  # <state> -> count of stale wakes queued for the parked window
+  awk -F '\t' '$3 == "stale" && $4 == "test:fm-parked" { n++ } END { print n + 0 }' \
+    "$1/.wake-queue" 2>/dev/null || echo 0
+}
+
+test_paused_bg_job_without_until_stays_silent_after_the_job_ends() {
+  local dir state
+  dir=$(bg_job_paused_case bg-job-no-until \
+    "paused [key=nightly-build] [at=$(date +%s)]: nightly build; resume when the job finishes")
+  state="$dir/state"
+  parked_watch_round "$state" "$dir/fakebin" "$dir/watch.out" "$dir/pane.txt" test:fm-parked exit \
+    || fail "first sight of a worker paused on its background job did not surface"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the first-sight alert"
+  printf '[bg failed] nightly build - Exited with code 1' > "$dir/pane.txt"
+  parked_watch_round "$state" "$dir/fakebin" "$dir/watch.out" "$dir/pane.txt" test:fm-parked absorb \
+    || fail "the ended job surfaced although the declaration names no time"
+  [ "$(bg_job_stale_wakes "$state")" -eq 0 ] \
+    || fail "the ended job surfaced inside the cadence although the declaration names no time"
+  pass "without until, a worker paused on its own ended background job is not rechecked inside the cadence"
+}
+
+test_paused_bg_job_until_timeout_rechecks_after_the_job_ends() {
+  local dir state started
+  started=$(date +%s)
+  dir=$(bg_job_paused_case bg-job-until-running \
+    "paused [key=nightly-build] [at=$started]: nightly build (background job, 600s timeout); resume when it ends, until $(iso_utc_at "$(( started + 600 ))")")
+  state="$dir/state"
+  parked_watch_round "$state" "$dir/fakebin" "$dir/watch.out" "$dir/pane.txt" test:fm-parked absorb \
+    || fail "a worker paused on its running background job woke before the job's timeout"
+  [ "$(bg_job_stale_wakes "$state")" -eq 0 ] || fail "the running job surfaced before its timeout"
+  started=$(( $(date +%s) - 180 ))
+  dir=$(bg_job_paused_case bg-job-until \
+    "paused [key=nightly-build] [at=$started]: nightly build (background job, 120s timeout); resume when it ends, until $(iso_utc_at "$(( started + 120 ))")")
+  state="$dir/state"
+  printf '[bg failed] nightly build - Exited with code 1' > "$dir/pane.txt"
+  parked_watch_round "$state" "$dir/fakebin" "$dir/watch.out" "$dir/pane.txt" test:fm-parked exit \
+    || fail "the job's timeout passed without a recheck of the worker paused on it"
+  [ "$(bg_job_stale_wakes "$state")" -eq 1 ] || fail "the passed timeout queued the wrong number of rechecks"
+  awk -F '\t' '$3 == "stale" && $5 == "stale: test:fm-parked" { found = 1 } END { exit !found }' \
+    "$state/.wake-queue" || fail "the recheck carried an unexpected reason: $(cat "$state/.wake-queue")"
+  case "$(cat "$state/.paused-resurfaced-test_fm-parked" 2>/dev/null)" in
+    *:due) ;;
+    *) fail "the recheck was not recorded as the passed declared time" ;;
+  esac
+  ack_stopped_cycle "$state" || fail "could not acknowledge the due recheck"
+  printf '[bg failed] nightly build - Exited with code 1 (idle)' > "$dir/pane.txt"
+  parked_watch_round "$state" "$dir/fakebin" "$dir/watch.out" "$dir/pane.txt" test:fm-parked absorb \
+    || fail "the due recheck repeated instead of returning to the cadence"
+  pass "until set to a background job's timeout rechecks the worker paused on it once the job must have ended"
+}
+
 # CI's stock macOS Bash lane sets FM_TEST_ONLY to run just the bash-3.2
 # churn-deferral regression. The rest of this file is not a 3.2 snapshot suite.
 if [ -n "${FM_TEST_ONLY:-}" ]; then
@@ -6621,6 +7047,7 @@ test_unrecognized_status_prefix_is_visible
 test_crew_is_provably_working_classifier
 test_status_is_paused_classifier
 test_crew_absorb_class_classifier
+test_crew_line_parked_gate_classifier
 test_crew_worktree_written_since_classifier
 test_empty_write_prune_widens_the_probe
 test_empty_write_prune_from_the_environment_widens_the_probe
@@ -6706,6 +7133,7 @@ test_live_paused_until_controls_recheck_time
 test_wedge_threshold_defers_to_a_declared_wait_under_a_working_verdict
 test_wedge_threshold_keeps_a_wait_past_a_default_key_answer
 test_wedge_threshold_recheck_names_the_captain_for_a_held_lane
+test_wedge_threshold_defers_to_a_backlog_captain_hold
 test_wedge_threshold_defers_to_a_parked_gate_awaiting_a_human
 test_wedge_threshold_parked_gate_needs_an_unanswered_decision
 test_wedge_threshold_parked_gate_is_off_until_armed
@@ -6743,6 +7171,11 @@ test_beacon_stays_fresh_while_absorbing
 test_afk_signal_records_heartbeat_endpoint
 test_afk_present_reverts_watcher_to_one_shot
 test_afk_paused_changed_pane_hands_off_plain_stale
+test_afk_declared_pause_on_an_ask_user_gate_is_handed_off_as_a_gate
+test_afk_declared_pause_on_a_worker_gate_rings_only_the_worker
+test_afk_declared_pause_on_an_executing_run_stays_handed_off_once
+test_afk_parked_gate_read_is_bounded_when_no_mistakes_hangs
+test_afk_parked_gate_read_goes_to_the_pane_read_least_recently
 test_captain_held_never_rechecked_while_away_record_exists
 test_live_captain_held_first_sight_silenced_by_away_record
 test_backlog_hold_never_rechecked_while_away_record_exists
@@ -6751,3 +7184,191 @@ test_captain_held_rechecked_under_a_quiet_record
 test_paused_until_near_future_is_quiet_before_the_cadence
 test_paused_until_wrong_year_is_bounded_by_the_cadence
 test_paused_until_that_passed_is_rechecked_before_the_cadence
+test_paused_bg_job_without_until_stays_silent_after_the_job_ends
+test_paused_bg_job_until_timeout_rechecks_after_the_job_ends
+
+# The recorded Claude background-task exit picker. The footer is the last
+# non-blank row, which is what fm_composer_blocking_dialog requires.
+write_exit_picker() {  # <file>
+  printf '%s\n' \
+    'Background work is running' \
+    'The following will stop when you exit:' \
+    'shell · sleep 300' \
+    '❯ 1. Exit and stop tasks' \
+    '  2. Move to background and exit' \
+    '  3. Stay' \
+    'Enter to confirm · Esc to cancel' > "$1"
+}
+
+# The same words quoted above a normal composer. That is not a live picker.
+write_quoted_exit_picker() {  # <file>
+  printf '%s\n' \
+    'Background work is running' \
+    '❯ 1. Exit and stop tasks' \
+    'Enter to confirm · Esc to cancel' \
+    '╭──────────────╮' \
+    '│ > next steer │' \
+    '╰──────────────╯' > "$1"
+}
+
+prime_picker_window() {  # <state> <id> <window> <kind> <capture> <status-line>
+  local state=$1 id=$2 window=$3 kind=$4 capture=$5 status_line=$6 key statusf
+  statusf="$state/$id.status"
+  printf 'window=%s\nkind=%s\nbackend=tmux\n' "$window" "$kind" > "$state/$id.meta"
+  printf '%s\n' "$status_line" > "$statusf"
+  printf '%s' "$(seen_sig "$statusf")" > "$state/.seen-${id}_status"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  printf '%s' "$(hash_text "$(cat "$capture")")" > "$state/.hash-$key"
+  printf '1\n' > "$state/.count-$key"
+  printf '%s' "$key"
+}
+
+test_exit_picker_stale_names_the_dialog() {
+  local dir state fakebin out capture_file window key pid count_file
+  dir=$(make_case exit-picker-stale); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"; count_file="$dir/captures"
+  window="test:fm-picker"
+  write_exit_picker "$capture_file"
+  key=$(prime_picker_window "$state" picker "$window" ship "$capture_file" 'working: parked between turns')
+  printf '0\n' > "$count_file"
+  export FM_FAKE_CREW_STATE='state: unknown · source: none · no current-state source available'
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_FAKE_TMUX_CAPTURE_COUNT_FILE="$count_file" \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_STALE_ESCALATE_SECS=999 \
+    FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  wait_for_exit "$pid" 100 || fail "watcher did not surface a pane parked on the exit picker: $(cat "$out")"
+  grep -F "stale: $window" "$out" >/dev/null || fail "the picker wake was not a stale wake: $(cat "$out")"
+  grep -F 'blocked-on-prompt: Claude background-task exit picker' "$out" >/dev/null \
+    || fail "the picker wake did not name the dialog: $(cat "$out")"
+  grep -F 'possible wedge' "$out" >/dev/null && fail "the first picker stale was labeled a wedge: $(cat "$out")"
+  [ "$(cat "$count_file")" -eq 1 ] || fail "the picker poll captured the pane $(cat "$count_file") times"
+  [ "$(cat "$state/.stale-$key" 2>/dev/null || true)" = "$(hash_text "$(cat "$capture_file")")" ] \
+    || fail "the picker stale did not record the pane hash"
+  unset FM_FAKE_CREW_STATE
+  pass "a pane on the exit picker is a named stale, from the one capture the poll already takes"
+}
+
+test_exit_picker_wedge_keeps_climbing() {
+  local dir state fakebin out capture_file window key pid n
+  dir=$(make_case exit-picker-wedge); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"
+  window="test:fm-picker-wedge"
+  write_exit_picker "$capture_file"
+  key=$(prime_picker_window "$state" picker "$window" ship "$capture_file" 'working: parked between turns')
+  export FM_FAKE_CREW_STATE='state: working · source: run-step · validating (running)'
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_STALE_ESCALATE_SECS=999 \
+    FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  if ! wait_poll_cycle "$state" "$pid"; then
+    reap "$pid"; fail "a working pane on the picker exited instead of keeping the wedge timer: $(cat "$out")"
+  fi
+  [ ! -s "$out" ] || fail "a working pane on the picker woke before the wedge timer: $(cat "$out")"
+  [ -s "$state/.stale-since-$key" ] || fail "the picker did not start the wedge timer"
+  reap "$pid"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the picker absorb"
+  echo $(( $(date +%s) - 500 )) > "$state/.stale-since-$key"
+  : > "$out"
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_STALE_ESCALATE_SECS=240 \
+    FM_WEDGE_DEMAND_INSPECT_COUNT=3 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  wait_for_exit "$pid" 100 || fail "the first picker wedge did not escalate: $(cat "$out")"
+  grep -F 'possible wedge, escalation 1' "$out" >/dev/null || fail "the first picker wedge lost its count: $(cat "$out")"
+  grep -F 'blocked-on-prompt: Claude background-task exit picker' "$out" >/dev/null \
+    || fail "the first picker wedge dropped the dialog name: $(cat "$out")"
+  grep -F 'demand-deep-inspection' "$out" >/dev/null && fail "escalation 1 demanded inspection: $(cat "$out")"
+  ack_stopped_cycle "$state" || fail "could not acknowledge picker escalation 1"
+  echo $(( $(date +%s) - 500 )) > "$state/.stale-since-$key"
+  printf '2\n' > "$state/.wedge-escalations-$key"
+  : > "$out"
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_STALE_ESCALATE_SECS=240 \
+    FM_WEDGE_DEMAND_INSPECT_COUNT=3 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  wait_for_exit "$pid" 100 || fail "the third picker wedge did not escalate: $(cat "$out")"
+  grep -F 'possible wedge, escalation 3' "$out" >/dev/null || fail "the ladder did not reach escalation 3: $(cat "$out")"
+  grep -F 'demand-deep-inspection: same pane has wedge-escalated 3 times in a row - do not re-absorb on the run-step/pane state alone, blocked-on-prompt: Claude background-task exit picker' \
+    "$out" >/dev/null || fail "the dialog name was not after demand-deep-inspection: $(cat "$out")"
+  n=$(cat "$state/.wedge-escalations-$key" 2>/dev/null || echo 0)
+  [ "$n" -eq 3 ] || fail "the escalation count was $n, not 3"
+  unset FM_FAKE_CREW_STATE
+  pass "a pane on the exit picker keeps the wedge ladder, and the name follows demand-deep-inspection"
+}
+
+test_quoted_exit_picker_stays_ordinary_stale() {
+  local dir state fakebin out capture_file window pid
+  dir=$(make_case quoted-exit-picker); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"
+  window="test:fm-quoted"
+  write_quoted_exit_picker "$capture_file"
+  prime_picker_window "$state" quoted "$window" ship "$capture_file" 'working: parked between turns' >/dev/null
+  export FM_FAKE_CREW_STATE='state: unknown · source: none · no current-state source available'
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_STALE_ESCALATE_SECS=999 \
+    FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  wait_for_exit "$pid" 100 || fail "a quoted picker did not take the ordinary stale path: $(cat "$out")"
+  grep -Fx "stale: $window" "$out" >/dev/null || fail "a quoted picker was not an ordinary stale: $(cat "$out")"
+  grep -F 'blocked-on-prompt' "$out" >/dev/null && fail "a quoted picker was named as a dialog: $(cat "$out")"
+  unset FM_FAKE_CREW_STATE
+  pass "picker text quoted above a composer stays an ordinary stale"
+}
+
+test_secondmate_exit_picker_stays_quiet() {
+  local dir state fakebin out capture_file window pid count_file
+  dir=$(make_case secondmate-exit-picker); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"; count_file="$dir/captures"
+  window="test:fm-picker-mate"
+  write_exit_picker "$capture_file"
+  prime_picker_window "$state" mate "$window" secondmate "$capture_file" 'working: the parent supervises this secondmate' >/dev/null
+  printf '0\n' > "$count_file"
+  export FM_FAKE_CREW_STATE='state: unknown · source: none · no current-state source available'
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_FAKE_TMUX_CAPTURE_COUNT_FILE="$count_file" \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_STALE_ESCALATE_SECS=999 \
+    FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  if ! wait_poll_cycle "$state" "$pid"; then
+    reap "$pid"; fail "a second mate on the exit picker woke: $(cat "$out")"
+  fi
+  [ ! -s "$out" ] || { reap "$pid"; fail "a second mate on the exit picker printed a wake: $(cat "$out")"; }
+  [ "$(cat "$count_file")" -eq 0 ] \
+    || { reap "$pid"; fail "a second mate on the exit picker was captured $(cat "$count_file") times"; }
+  reap "$pid"
+  unset FM_FAKE_CREW_STATE
+  pass "a second mate on the exit picker stays quiet, and the poll does not capture the pane"
+}
+
+# The away daemon saved this name while the picker was up. Once the pane leaves
+# it, the same capture the stale path already takes has to drop the name, or
+# the persistence line would still say the dialog is open.
+test_closed_exit_picker_drops_saved_dialog_name() {
+  local dir state fakebin out capture_file window pid
+  dir=$(make_case exit-picker-closed); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"
+  window="test:fm-picker-closed"
+  printf 'idle at the prompt\n' > "$capture_file"
+  prime_picker_window "$state" closer "$window" ship "$capture_file" 'working: parked between turns' >/dev/null
+  printf '%s' 'Claude background-task exit picker' > "$state/.subsuper-dialog-closer"
+  export FM_FAKE_CREW_STATE='state: unknown · source: none · no current-state source available'
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_STALE_ESCALATE_SECS=999 \
+    FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  wait_for_exit "$pid" 100 || fail "a closed picker did not take the ordinary stale path: $(cat "$out")"
+  grep -Fx "stale: $window" "$out" >/dev/null || fail "a closed picker was not an ordinary stale: $(cat "$out")"
+  grep -F 'blocked-on-prompt' "$out" >/dev/null && fail "a closed picker was still named as a dialog: $(cat "$out")"
+  [ ! -e "$state/.subsuper-dialog-closer" ] || fail "a closed picker left the saved dialog name"
+  unset FM_FAKE_CREW_STATE
+  pass "a closed picker drops the saved dialog name, and the stale stays ordinary"
+}
+
+test_exit_picker_stale_names_the_dialog
+test_exit_picker_wedge_keeps_climbing
+test_quoted_exit_picker_stays_ordinary_stale
+test_secondmate_exit_picker_stays_quiet
+test_closed_exit_picker_drops_saved_dialog_name

@@ -1065,7 +1065,7 @@ crew_dispatch_validate() {
   if $typed_active; then
     verified_harnesses=$(fm_control_harnesses | jq -Rsc 'split("\n") | map(select(length > 0))')
   else
-    verified_harnesses='["claude","codex","opencode","pi","pi-signed","grok","kimi","cursor","agy","muse","rovo","omp","devin","droid"]'
+    verified_harnesses='["claude","codex","opencode","pi","pi-signed","grok","kimi","cursor","agy","muse","rovo","omp","devin","commandcode","droid"]'
   fi
   err=$(jq -r --argjson typed "$typed_active" --argjson verified_harnesses "$verified_harnesses" --arg provider_re "$FM_QUOTA_PROVIDER_ID_RE" '
     def verified($h): $verified_harnesses | index($h);
@@ -1471,7 +1471,7 @@ detect_local_config() {
   # primary only; detached-HEAD worktrees and secondmate homes never trip it.
   tangle_branch=$(fm_primary_tangle_branch "$FM_ROOT" 2>/dev/null || true)
   if [ -n "$tangle_branch" ]; then
-    tangle_default=$(fm_default_branch "$FM_ROOT" 2>/dev/null || echo main)
+    tangle_default=$(fm_primary_expected_branch "$FM_ROOT" 2>/dev/null || echo main)
     if [ "${FM_BOOTSTRAP_DETECT_ONLY:-0}" = 1 ] && [ "${FM_BOOTSTRAP_LOCKED:-0}" != 1 ]; then
       echo "TANGLE: primary checkout on feature branch '$tangle_branch' (expected '$tangle_default'); the work is safe on that ref - read-only session must leave restore work to the session holding the fleet lock"
     else
