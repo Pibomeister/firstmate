@@ -87,6 +87,26 @@ test_droid_prompt_receipt_matches_payload_and_submission_sequence() {
   pass "Droid prompt receipts require exact payload, later sequence, and current generation"
 }
 
+test_failed_droid_prompt_receipt_releases_lock() {
+  local state gen receipts digest
+  state=$(new_state_dir droid-receipt-write-failure)
+  gen=$("$EV" arm "$state" t1) || fail "Droid arm failed"
+  receipts=$(fm_busy_prompt_receipts_path "$state" t1)
+  mkdir "$receipts"
+  digest=0000000000000000000000000000000000000000000000000000000000000000
+  if "$EV" apply "$state" t1 busy --gen "$gen" --source droid-hook \
+      --event user-prompt-submit --prompt-sha256 "$digest" 2>/dev/null; then
+    fail "Droid receipt write to a directory must fail"
+  fi
+  [ ! -e "$state/t1.busy-state.lock" ] || fail "failed receipt write retained the writer lock"
+  rmdir "$receipts"
+  "$EV" apply "$state" t1 idle --gen "$gen" --source droid-hook --event stop \
+    || fail "a failed receipt write blocked the next apply"
+  [ "$(fm_busy_classify tmux w1 droid t1 "$state")" = 'idle droid-hook' ] \
+    || fail "the next apply did not settle the Droid state"
+  pass "failed Droid receipt write releases its lock for the next event"
+}
+
 test_apply_current_gen_reset() {
   local state out
   state=$(new_state_dir apply-current)
@@ -650,6 +670,7 @@ test_turn_ended_notification_is_generation_bound
 test_arm_seeds_busy_spawn
 test_apply_advances_seq_and_source
 test_droid_prompt_receipt_matches_payload_and_submission_sequence
+test_failed_droid_prompt_receipt_releases_lock
 test_apply_current_gen_reset
 test_apply_unarmed_refused
 test_retire_serializes_and_rejects_stale_gen

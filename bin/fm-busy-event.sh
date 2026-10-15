@@ -266,7 +266,8 @@ write_record "$GEN" "$NEXT_SEQ" || {
 if [ -n "$PROMPT_SHA256" ]; then
   printf 'v1 gen=%s seq=%s sha256=%s\n' "$GEN" "$NEXT_SEQ" "$PROMPT_SHA256" \
     >> "$(fm_busy_prompt_receipts_path "$STATE" "$ID")" || {
-            umask "$old_umask"
+      lock_release
+      umask "$old_umask"
       echo "error: prompt receipt write failed for $ID" >&2
       exit 1
     }

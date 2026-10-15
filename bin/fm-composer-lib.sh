@@ -361,7 +361,6 @@ fm_composer_strip_ghost() {
 # interrupt"; opencode: "esc interrupt"; pi: "Working..."; omp: "Working…"; grok: "Ctrl+c:cancel"; agy: "esc to cancel";
 # devin: "esc twice to interrupt" and its "❭ Guide Devin while it works" working composer;
 # droid: "Thinking...", "Executing...", or "Streaming..." with "(Press ESC to stop)".
-# devin: "esc twice to interrupt" and its "❭ Guide Devin while it works" working composer.
 # commandcode: "esc to interrupt" beside a bullet-framed elapsed cell.
 # Claude's current spinner has a rotating glyph and word, but every active-turn
 # line has an ellipsis followed by a parenthesized elapsed duration. Keep this
