@@ -27,6 +27,9 @@ Routine supervision uses the recorded endpoint through `bin/fm-peek.sh <id>` and
 Enter and Ctrl-C are supported for every harness.
 Escape and Ctrl+U are verified for Droid on Orca 1.4.217 and 1.4.218 through raw terminal bytes; other harnesses do not inherit that lifecycle control capability.
 
+`config/launch-env-allowlist` alone cannot scope worker credentials on Orca, because allowlisted values resolve from the Orca terminal's own environment.
+When scoped worker credentials live in a tmux session, configure the [Orca environment source](configuration.md#orca-environment-source-configlaunch-env-tmux-session).
+
 ## Task shape and metadata
 
 Each task has one Orca-managed git worktree and one Orca terminal.
@@ -90,6 +93,7 @@ Reinstall the CLI and rerun; [`verification/runtime-backends.md`](verification/r
 
 ```sh
 tests/fm-backend-orca.test.sh
+tests/fm-spawn-orca-worktree.test.sh
 tests/fm-backend.test.sh
 tests/fm-bootstrap.test.sh
 tests/fm-teardown-endpoint-safety.test.sh
