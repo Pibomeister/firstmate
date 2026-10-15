@@ -2194,6 +2194,250 @@ test_hook_no_afk_ignores_poll_derived_grace() {
   pass "fm-turnend-guard: with away mode off, the poll-derived grace never applies"
 }
 
+# --- HOOK, Codex mode: the foreground checkpoint must not end a turn blind ---
+# A real process named codex is the harness ancestor, so bin/fm-harness.sh and
+# the session ancestry resolve Codex structurally, as under a live Codex hook.
+# The driver forks the hook straight from that process (no command
+# substitution, whose fork would keep the codex name and shadow the session).
+CODEX_BIN=$(mkdir -p "$TMP_ROOT/codex-harness" && cp "$(command -v bash)" "$TMP_ROOT/codex-harness/codex" && printf '%s\n' "$TMP_ROOT/codex-harness/codex")
+CODEX_DRIVER="$TMP_ROOT/codex-driver.sh"
+cat > "$CODEX_DRIVER" <<'SH'
+# Runs under the codex-named process. Optionally starts a stand-in checkpoint
+# (a script named fm-watch-checkpoint.sh whose `sleep` child holds the watch
+# lock), then runs the guard once and records its exit and output.
+set -u
+if [ -n "${FM_T_CHECKPOINT:-}" ]; then
+  "$FM_T_CHECKPOINT" "$FM_T_DIR/watcher.pid" &
+  while [ ! -s "$FM_T_DIR/watcher.pid" ]; do sleep 0.05; done
+fi
+printf '%s' "$FM_T_PAYLOAD" | FM_HOME="$FM_T_HOME" bash "$FM_T_HOME/bin/fm-turnend-guard.sh" > "$FM_T_DIR/out" 2>&1
+printf '%s\n' "$?" > "$FM_T_DIR/rc"
+SH
+
+codex_payload() {  # <session> <turn> <stop_hook_active>
+  printf '{"session_id":"%s","turn_id":"%s","hook_event_name":"Stop","stop_hook_active":%s}' "$1" "$2" "$3"
+}
+
+# Run the guard under a codex-named harness process. Sets OUT and STATUS.
+run_codex_hook() {  # <dir> <payload> [checkpoint-script]
+  local dir=$1 payload=$2 checkpoint=${3:-} home io
+  home=$(cd "$dir" && pwd)
+  io="$dir/codex-io"
+  rm -rf "$io"
+  mkdir -p "$io"
+  env -u CLAUDECODE -u PI_CODING_AGENT -u FM_PI_HARNESS -u GROK_AGENT -u CURSOR_AGENT -u CURSOR_INVOKED_AS \
+    FM_T_HOME="$home" FM_T_DIR="$io" FM_T_PAYLOAD="$payload" FM_T_CHECKPOINT="$checkpoint" \
+    "$CODEX_BIN" "$CODEX_DRIVER"
+  OUT=$(cat "$io/out" 2>/dev/null)
+  STATUS=$(cat "$io/rc" 2>/dev/null)
+}
+
+# A stand-in checkpoint whose watcher child is recorded as this home's live,
+# identity-matched watch lock with a fresh beacon.
+make_codex_checkpoint() {  # <dir>
+  local dir=$1 script
+  script="$dir/ckpt/fm-watch-checkpoint.sh"
+  mkdir -p "$dir/ckpt"
+  cat > "$script" <<SH
+#!/usr/bin/env bash
+sleep 30 &
+pid=\$!
+identity=\$(FM_STATE_OVERRIDE="$dir/state" bash -c '. "\$1"; fm_pid_identity "\$2"' _ "$dir/bin/fm-wake-lib.sh" "\$pid")
+mkdir -p "$dir/state/.watch.lock"
+printf '%s\n' "\$pid" > "$dir/state/.watch.lock/pid"
+printf '%s\n' "$(cd "$dir" && pwd)" > "$dir/state/.watch.lock/fm-home"
+printf '%s\n' "$(cd "$dir/bin" && pwd)/fm-watch.sh" > "$dir/state/.watch.lock/watcher-path"
+printf '%s\n' "\$identity" > "$dir/state/.watch.lock/pid-identity"
+touch "$dir/state/.last-watcher-beat"
+printf '%s\n' "\$pid" > "\$1"
+wait "\$pid"
+SH
+  chmod +x "$script"
+  printf '%s\n' "$script"
+}
+
+stop_codex_checkpoint() {  # <dir>
+  local pid
+  pid=$(cat "$1/codex-io/watcher.pid" 2>/dev/null || true)
+  [ -z "$pid" ] || kill "$pid" 2>/dev/null || true
+}
+
+test_codex_blocks_turn_end_while_own_checkpoint_runs() {
+  local dir checkpoint
+  dir=$(make_primary_dir "$TMP_ROOT/codex-own-checkpoint")
+  : > "$dir/state/task1.meta"
+  checkpoint=$(make_codex_checkpoint "$dir")
+  run_codex_hook "$dir" "$(codex_payload s1 t1 false)" "$checkpoint"
+  stop_codex_checkpoint "$dir"
+  expect_code 2 "$STATUS" "a Codex stop while this session's own checkpoint runs must block; nothing reads it after the turn ends: $OUT"
+  assert_contains "$OUT" "foreground checkpoint is still running" "the block must name the running checkpoint"
+  assert_contains "$OUT" "Poll its exec session with write_stdin" "the block must name the repair"
+  pass "fm-turnend-guard codex: blocks a turn end while its own checkpoint is still running"
+}
+
+test_codex_reblocks_open_checkpoint_after_its_own_block() {
+  local dir checkpoint
+  dir=$(make_primary_dir "$TMP_ROOT/codex-own-checkpoint-reblock")
+  : > "$dir/state/task1.meta"
+  checkpoint=$(make_codex_checkpoint "$dir")
+  run_codex_hook "$dir" "$(codex_payload s1 t1 true)" "$checkpoint"
+  stop_codex_checkpoint "$dir"
+  expect_code 2 "$STATUS" "stop_hook_active=true must not end a Codex turn over a checkpoint that is still running: $OUT"
+  pass "fm-turnend-guard codex: stop_hook_active is no longer a one-shot allow over a running checkpoint"
+}
+
+test_codex_holds_own_checkpoint_then_ignored_repair_can_end() {
+  local dir checkpoint home io grace=${1:-300} age=${2:-0}
+  dir=$(make_primary_dir "$TMP_ROOT/codex-own-checkpoint-ends-$grace")
+  : > "$dir/state/task1.meta"
+  checkpoint=$(make_codex_checkpoint "$dir")
+  home=$(cd "$dir" && pwd)
+  io="$dir/codex-io"
+  mkdir -p "$io"
+  # One codex session: block, continue while its checkpoint runs, then continue
+  # again once that checkpoint has ended with nothing advanced.
+  # shellcheck disable=SC2016 # the codex-named shell expands its own FM_T_* environment.
+  env -u CLAUDECODE -u PI_CODING_AGENT -u FM_PI_HARNESS -u GROK_AGENT -u CURSOR_AGENT -u CURSOR_INVOKED_AS \
+    FM_T_HOME="$home" FM_T_DIR="$io" FM_T_CHECKPOINT="$checkpoint" \
+    FM_T_FIRST="$(codex_payload s1 t1 false)" FM_T_NEXT="$(codex_payload s1 t1 true)" FM_GUARD_GRACE="$grace" FM_T_AGE="$age" \
+    "$CODEX_BIN" -c '
+"$FM_T_CHECKPOINT" "$FM_T_DIR/watcher.pid" &
+ckpt=$!
+while [ ! -s "$FM_T_DIR/watcher.pid" ]; do sleep 0.05; done
+      sleep "$FM_T_AGE"
+printf "%s" "$FM_T_FIRST" | FM_HOME="$FM_T_HOME" bash "$FM_T_HOME/bin/fm-turnend-guard.sh" > "$FM_T_DIR/out1" 2>&1
+printf "%s\n" "$?" > "$FM_T_DIR/rc1"
+printf "%s" "$FM_T_NEXT" | FM_HOME="$FM_T_HOME" bash "$FM_T_HOME/bin/fm-turnend-guard.sh" > "$FM_T_DIR/out2" 2>&1
+printf "%s\n" "$?" > "$FM_T_DIR/rc2"
+kill "$(cat "$FM_T_DIR/watcher.pid")" 2>/dev/null
+wait "$ckpt" 2>/dev/null
+printf "%s" "$FM_T_NEXT" | FM_HOME="$FM_T_HOME" bash "$FM_T_HOME/bin/fm-turnend-guard.sh" > "$FM_T_DIR/out3" 2>&1
+printf "%s\n" "$?" > "$FM_T_DIR/rc3"
+:'
+  expect_code 2 "$(cat "$io/rc1")" "a Codex stop while this session's own checkpoint runs must block: $(cat "$io/out1")"
+  expect_code 2 "$(cat "$io/rc2")" "a continuation while the own checkpoint is still alive must stay held: $(cat "$io/out2")"
+  expect_code 0 "$(cat "$io/rc3")" "once the own checkpoint has ended and nothing advanced, the continuation may end: $(cat "$io/out3")"
+  pass "fm-turnend-guard codex: holds the turn while its own checkpoint runs, then the no-progress escape applies"
+}
+
+test_codex_allows_watcher_owned_by_another_session() {
+  local dir checkpoint io pid
+  dir=$(make_primary_dir "$TMP_ROOT/codex-foreign-checkpoint")
+  : > "$dir/state/task1.meta"
+  checkpoint=$(make_codex_checkpoint "$dir")
+  io="$dir/foreign-io"
+  mkdir -p "$io"
+  # A different codex process starts the checkpoint; this hook's session did not.
+  env -u CLAUDECODE "$CODEX_BIN" -c "\"$checkpoint\" \"$io/watcher.pid\"; :" &
+  pid=$!
+  while [ ! -s "$io/watcher.pid" ]; do sleep 0.05; done
+  run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
+  kill "$(cat "$io/watcher.pid")" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  expect_code 0 "$STATUS" "a healthy watcher outside this session's checkpoint is still supervision: $OUT"
+  pass "fm-turnend-guard codex: a live watcher another session owns still allows the stop"
+}
+
+test_codex_ignored_repair_can_end_and_progress_keeps_holding() {
+  local dir
+  dir=$(make_primary_dir "$TMP_ROOT/codex-progress")
+  : > "$dir/state/task1.meta"
+  touch "$dir/state/.last-watcher-beat"
+  run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
+  expect_code 2 "$STATUS" "a Codex stop with no watcher must block"
+  run_codex_hook "$dir" "$(codex_payload s1 t1 true)"
+  expect_code 0 "$STATUS" "a continuation that advanced nothing since the block must be allowed to end"
+  # The next beat lands in the same whole second as the beat the block recorded:
+  # full mtime precision must still see it as progress.
+  touch -d 2026-01-01T00:00:00.1 "$dir/state/.last-watcher-beat"
+  run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
+  expect_code 2 "$STATUS" "re-arming block"
+  touch -d 2026-01-01T00:00:00.6 "$dir/state/.last-watcher-beat"
+  run_codex_hook "$dir" "$(codex_payload s1 t1 true)"
+  expect_code 2 "$STATUS" "a continuation that ran a watcher since the block must stay held: $OUT"
+  run_codex_hook "$dir" "$(codex_payload s1 t1 true)"
+  expect_code 0 "$STATUS" "after the progress re-block, an idle continuation may end"
+  pass "fm-turnend-guard codex: an ignored repair can end, while watcher progress keeps the turn held"
+}
+
+test_codex_new_watch_lock_identity_counts_as_progress() {
+  local dir
+  dir=$(make_primary_dir "$TMP_ROOT/codex-identity-progress")
+  : > "$dir/state/task1.meta"
+  run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
+  expect_code 2 "$STATUS" "a Codex stop with no watcher must block"
+  record_watcher_lock "$dir" "$(nonexistent_pid)" "new cycle identity"
+  run_codex_hook "$dir" "$(codex_payload s1 t1 true)"
+  expect_code 2 "$STATUS" "a new watch-lock identity since the block is progress even before a beat: $OUT"
+  pass "fm-turnend-guard codex: a new watch-lock identity counts as progress"
+}
+
+test_codex_stale_or_foreign_block_record_is_judged_fresh() {
+  local dir
+  dir=$(make_primary_dir "$TMP_ROOT/codex-stale-record")
+  : > "$dir/state/task1.meta"
+  run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
+  expect_code 2 "$STATUS" "a Codex stop with no watcher must block"
+  run_codex_hook "$dir" "$(codex_payload s1 t2 true)"
+  expect_code 2 "$STATUS" "a record from an earlier turn must not allow a later turn's continued stop: $OUT"
+  run_codex_hook "$dir" "$(codex_payload s2 t2 true)"
+  expect_code 2 "$STATUS" "another session's record must not allow this session's continued stop: $OUT"
+  run_codex_hook "$dir" "$(codex_payload s1 t2 true)"
+  expect_code 0 "$STATUS" "each session keeps its own record: s1 t2 is now an idle continuation"
+  pass "fm-turnend-guard codex: block records are scoped to their own session and turn"
+}
+
+test_codex_foreign_lock_owner_gets_read_only_exit() {
+  local dir owner
+  dir=$(make_primary_dir "$TMP_ROOT/codex-foreign-owner")
+  : > "$dir/state/task1.meta"
+  env -u CLAUDECODE "$CODEX_BIN" -c 'sleep 30; :' &
+  owner=$!
+  printf '%s\n' "$owner" > "$dir/state/.lock"
+  run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
+  kill "$owner" 2>/dev/null || true
+  wait "$owner" 2>/dev/null || true
+  expect_code 0 "$STATUS" "a read-only Codex session must not be held by a home another live session owns: $OUT"
+  assert_contains "$OUT" "OWNED BY ANOTHER LIVE SESSION" "the read-only exit must explain the ownership conflict"
+  pass "fm-turnend-guard codex: a home owned by another live session gets the read-only diagnostic exit"
+}
+
+test_codex_no_work_stays_silent() {
+  local dir
+  dir=$(make_primary_dir "$TMP_ROOT/codex-idle")
+  run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
+  expect_code 0 "$STATUS" "Codex with nothing in flight must allow the stop"
+  [ -z "$OUT" ] || fail "Codex with nothing in flight produced output: $OUT"
+  pass "fm-turnend-guard codex: silent with nothing in flight"
+}
+
+test_codex_queued_wake_keeps_turn_open_after_last_task_clears() {
+  local dir
+  dir=$(make_primary_dir "$TMP_ROOT/codex-queued-wake")
+  printf '1790000000 1 signal task1.status done\n' > "$dir/state/.wake-queue"
+  run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
+  expect_code 2 "$STATUS" "a queued wake still needs handling after the last task clears: $OUT"
+  assert_contains "$OUT" "acknowledge" "the block must name the pending wake repair"
+  run_codex_hook "$dir" "$(codex_payload s1 t1 true)"
+  expect_code 2 "$STATUS" "the no-progress escape must not discard an unacknowledged wake: $OUT"
+  rm -f "$dir/state/.wake-queue"
+  run_codex_hook "$dir" "$(codex_payload s1 t1 true)"
+  expect_code 0 "$STATUS" "after the queued wake clears, an idle Codex turn may end: $OUT"
+  pass "fm-turnend-guard codex: a queued wake holds the turn after the last task clears"
+}
+
+test_non_codex_default_mode_keeps_one_shot_allow() {
+  local dir out status
+  dir=$(make_primary_dir "$TMP_ROOT/non-codex-one-shot")
+  : > "$dir/state/task1.meta"
+  out=$(run_hook "$dir" true); status=$?
+  expect_code 0 "$status" "the default (non-Codex) mode keeps its one-shot stop_hook_active allow: $out"
+  out=$(run_hook "$dir" false); status=$?
+  expect_code 2 "$status" "the default (non-Codex) mode still blocks a first unsupervised stop"
+  [ -z "$(ls "$dir/state"/.turnend-codex-block.* 2>/dev/null)" ] || fail "a non-Codex block wrote a Codex record"
+  pass "fm-turnend-guard: non-Codex default mode keeps its one-shot allow and writes no Codex record"
+}
+
 test_predicate_healthy_no_inflight
 test_predicate_unhealthy_no_beacon
 test_predicate_unhealthy_stale_beacon
@@ -2283,3 +2527,15 @@ test_hook_away_daemon_allows_beacon_within_poll_derived_grace
 test_hook_away_daemon_blocks_dead_daemon_despite_poll_derived_grace
 test_hook_away_daemon_blocks_beacon_older_than_poll_derived_grace
 test_hook_no_afk_ignores_poll_derived_grace
+test_codex_blocks_turn_end_while_own_checkpoint_runs
+test_codex_reblocks_open_checkpoint_after_its_own_block
+test_codex_holds_own_checkpoint_then_ignored_repair_can_end
+test_codex_holds_own_checkpoint_then_ignored_repair_can_end 1 2
+test_codex_allows_watcher_owned_by_another_session
+test_codex_ignored_repair_can_end_and_progress_keeps_holding
+test_codex_new_watch_lock_identity_counts_as_progress
+test_codex_stale_or_foreign_block_record_is_judged_fresh
+test_codex_foreign_lock_owner_gets_read_only_exit
+test_codex_no_work_stays_silent
+test_codex_queued_wake_keeps_turn_open_after_last_task_clears
+test_non_codex_default_mode_keeps_one_shot_allow
