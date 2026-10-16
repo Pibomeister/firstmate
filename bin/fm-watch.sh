@@ -2893,6 +2893,11 @@ resurface_after_downtime() {
   wake "check: rearm-resurface"
 }
 
+# A startup wake above may already have marked this hold noisy. Do not reset that here.
+if [ "${FM_WATCH_GROK_HOLD:-}" = 1 ]; then
+  FM_WATCH_GROK_HOLD_QUIET=${FM_WATCH_GROK_HOLD_QUIET:-1}
+fi
+
 while :; do
   # Home-gone exit: a deleted home, state directory, or code root means this
   # watcher's world is gone (a torn-down temporary home or a discarded
@@ -3113,6 +3118,7 @@ EOF
             continue
           fi
           wake "$reason"
+          continue
         fi
         pr_poll_control_release || exit 1
         fm_wake_append check "$c" "$reason" || exit 1
@@ -3253,8 +3259,9 @@ EOF
 $pending
 EOF
         wake "$reason"
+      else
+        triage_log "absorbed benign $reason"
       fi
-      triage_log "absorbed benign $reason"
     fi
   fi
 
@@ -3559,5 +3566,13 @@ EOF
 
   # Terminal wait: a bounded native-event wait for push-capable homes (herdr),
   # else the blind poll sleep. See event_wait_or_sleep.
+  # One quiet poll ends a Grok hold. A heartbeat does not keep the hold alive.
+  if [ "${FM_WATCH_GROK_HOLD:-}" = 1 ]; then
+    if ! fm_watch_grok_hold_active || [ "${FM_WATCH_GROK_HOLD_QUIET:-1}" = 1 ]; then
+      unset FM_WATCH_GROK_HOLD
+    else
+      FM_WATCH_GROK_HOLD_QUIET=1
+    fi
+  fi
   event_wait_or_sleep
 done
