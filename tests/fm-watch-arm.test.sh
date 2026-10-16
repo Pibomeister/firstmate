@@ -1713,6 +1713,139 @@ EOF
   pass "watch-arm: the OpenCode arm plugin decides with the shared supervision predicate"
 }
 
+# Two idle in-flight windows, pre-seeded so the next poll is already stale.
+# The first notice exits the watcher; the second is still unreported.
+seed_two_stale_windows() {  # <state> <capture-file>
+  local state=$1 capture=$2 hash key window
+  printf 'idle finished worker\n' > "$capture"
+  if command -v md5 >/dev/null 2>&1; then
+    hash=$(md5 -q "$capture")
+  else
+    hash=$(md5sum "$capture" | awk '{print $1}')
+  fi
+  for window in test:fm-a-first test:fm-b-second; do
+    key=${window//[:\/.]/_}
+    printf 'window=%s\nkind=ship\nharness=grok\nbackend=tmux\n' "$window" > "$state/${window#test:fm-}.meta"
+    printf 'working [at=1]: in flight\n' > "$state/${window#test:fm-}.status"
+    prime_status_seen "$state" "$state/${window#test:fm-}.status"
+    printf '%s' "$hash" > "$state/.hash-$key"
+    printf '1\n' > "$state/.count-$key"
+  done
+  touch "$state/.last-check" "$state/.last-heartbeat"
+}
+
+# A plain git primary whose bin is the copy under test, so the turn-end guard
+# and the watcher lock name the same fm-watch.sh. This worktree is exempt.
+make_grok_guard_primary() {  # <name>
+  local dir=$1 primary
+  primary="$dir/primary"
+  stop_primary_watcher "$primary"
+  rm -rf "$primary"
+  mkdir -p "$primary/state" "$primary/docs"
+  git init -q "$primary"
+  git -C "$primary" commit -q --allow-empty -m init
+  : > "$primary/AGENTS.md"
+  cp -R "$ROOT/bin" "$primary/bin"
+  cp -R "$ROOT/docs/supervision-protocols" "$primary/docs/supervision-protocols"
+  fm_test_track_watcher_state "$primary/state"
+  cd "$primary" && pwd
+}
+
+stop_primary_watcher() {  # <primary>
+  FM_HOME="$1" FM_STATE_OVERRIDE="$1/state" FM_ROOT_OVERRIDE="$1" \
+    "$1/bin/fm-watch-arm.sh" --stop >/dev/null 2>&1 || true
+}
+
+primary_watcher_healthy() {  # <primary>
+  local primary=$1
+  FM_STATE_OVERRIDE="$primary/state" bash -c '
+    . "$1"
+    fm_watcher_healthy "$2" "$3" 300 "$4"
+  ' _ "$primary/bin/fm-wake-lib.sh" "$primary/state" "$primary/bin/fm-watch.sh" "$primary"
+}
+
+run_grok_turnend_guard() {  # <primary>
+  local primary=$1
+  printf '%s' '{"sessionId":"grok-stale","stopHookActive":false}' \
+    | env -u GROK_TURNEND_GUARD_ACTIVE \
+      GROK_WORKSPACE_ROOT="$primary" \
+      FM_HOME="$primary" \
+      FM_ROOT_OVERRIDE="$primary" \
+      FM_STATE_OVERRIDE="$primary/state" \
+      bash "$primary/bin/fm-turnend-guard-grok.sh" 2>&1
+}
+
+# Run one arm against two already-stale windows. Echoes "pid status" after exit.
+run_grok_arm_case() {  # <primary> <fakebin> <capture> <arm-out> <continuity 0|1> <afk 0|1>
+  local primary=$1 fakebin=$2 capture=$3 armout=$4 continuity=$5 afk=$6 pid
+  seed_two_stale_windows "$primary/state" "$capture"
+  [ "$afk" = 1 ] && : > "$primary/state/.afk"
+  PATH="$fakebin:$PATH" \
+    FM_HOME="$primary" FM_STATE_OVERRIDE="$primary/state" FM_ROOT_OVERRIDE="$primary" \
+    FM_FAKE_TMUX_CAPTURE="$capture" \
+    FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" \
+    FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    FM_ARM_CONFIRM_TIMEOUT=20 \
+    FM_WATCH_GROK_CONTINUITY="$continuity" \
+    "$primary/bin/fm-watch-arm.sh" > "$armout" &
+  pid=$!
+  wait_for_exit "$pid" 400
+  printf '%s\n' "$?"
+}
+
+test_grok_one_stale_notice_leaves_the_watcher_holding_the_lock() {
+  local dir fakebin capture primary armout guard_out status
+  dir=$(make_case grok-one-stale-notice)
+  fakebin="$dir/fakebin"
+  capture="$dir/pane.txt"
+  primary=$(make_grok_guard_primary "$dir")
+  armout="$dir/continuity.out"
+  status=$(run_grok_arm_case "$primary" "$fakebin" "$capture" "$armout" 1 0)
+  expect_code 0 "$status" "grok continuity arm must return the notice: $(cat "$armout" 2>/dev/null)"
+  grep -Eq '^(signal:|stale:|check:|heartbeat($|:))' "$armout" \
+    || fail "grok continuity arm did not return an actionable notice: $(cat "$armout")"
+  # A successor that is itself a one-shot watcher dies on the second window
+  # inside one poll. Waiting past that poll is the turn-end gap.
+  sleep 4
+  primary_watcher_healthy "$primary" \
+    || fail "one actionable notice left no live watcher holding the lock: $(cat "$armout")"
+  grep -F 'stale: test:fm-b-second' "$primary/state/.wake-queue" >/dev/null \
+    || fail "the successor did not queue the second stale window: $(cat "$primary/state/.wake-queue" 2>/dev/null)"
+  guard_out=$(run_grok_turnend_guard "$primary"); status=$?
+  expect_code 0 "$status" "grok turn-end guard must allow a stop while the successor holds the lock: $guard_out"
+  assert_not_contains "$guard_out" "no live watcher holds this home lock" \
+    "grok turn-end guard reported supervision down while the successor held the lock: $guard_out"
+  stop_primary_watcher "$primary"
+
+  primary=$(make_grok_guard_primary "$dir")
+  armout="$dir/plain.out"
+  status=$(run_grok_arm_case "$primary" "$fakebin" "$capture" "$armout" 0 0)
+  expect_code 0 "$status" "plain arm must still return the notice: $(cat "$armout" 2>/dev/null)"
+  sleep 2
+  if primary_watcher_healthy "$primary"; then
+    stop_primary_watcher "$primary"
+    fail "plain arm left a watcher holding the lock after one notice"
+  fi
+  guard_out=$(run_grok_turnend_guard "$primary"); status=$?
+  expect_code 2 "$status" "plain arm must still make the grok turn-end guard block: $guard_out"
+  assert_contains "$guard_out" "no live watcher holds this home lock" \
+    "plain arm's turn-end block lost the unsupervised-lock line: $guard_out"
+  stop_primary_watcher "$primary"
+
+  primary=$(make_grok_guard_primary "$dir")
+  armout="$dir/afk.out"
+  status=$(run_grok_arm_case "$primary" "$fakebin" "$capture" "$armout" 1 1)
+  expect_code 0 "$status" "away-mode grok arm must still return the notice: $(cat "$armout" 2>/dev/null)"
+  sleep 2
+  if primary_watcher_healthy "$primary"; then
+    stop_primary_watcher "$primary"
+    fail "away mode started a grok successor after one notice"
+  fi
+  stop_primary_watcher "$primary"
+  pass "grok: one stale notice leaves a successor holding the lock, and plain and away arms stay one-shot"
+}
+
+test_grok_one_stale_notice_leaves_the_watcher_holding_the_lock
 test_attached_arm_reports_the_delivered_wake
 test_attached_arm_reports_the_delivered_wake_after_drain
 test_arm_refuses_an_unusable_launch_confirm_window

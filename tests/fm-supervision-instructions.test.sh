@@ -269,6 +269,7 @@ test_grok_is_background_notify() {
   assert_contains "$out" "background: true" "grok snippet missing tracked background tool instruction"
   assert_contains "$out" "synthetic_reason: task_completed" "grok snippet missing auto-wake synthetic prompt detail"
   assert_contains "$out" "bin/fm-watch-arm.sh" "grok snippet missing watcher arm"
+  assert_contains "$out" "export FM_WATCH_GROK_CONTINUITY=1; exec bin/fm-watch-arm.sh" "grok snippet missing the continuity opt-in"
   assert_not_contains "$out" "__FM_X_MODE_ENV" "renderer leaked an x-mode path placeholder"
   assert_not_contains "$out" "foreground checkpoint" "grok snippet must not be Codex-style foreground checkpoint"
   out=$("$RENDER" --harness grok --repair-line)
@@ -282,7 +283,7 @@ test_grok_command_sources_effective_config() {
   config="$TMP_ROOT/grok-config"
   mkdir -p "$home/state" "$config"
   out=$(FM_HOME="$home" FM_CONFIG_OVERRIDE="$config" "$RENDER" --harness grok --x-mode 1)
-  assert_contains "$out" "[ -f '$config/x-mode.env' ] && . '$config/x-mode.env'; exec bin/fm-watch-arm.sh" "grok arm command did not use the effective x-mode config path"
+  assert_contains "$out" "[ -f '$config/x-mode.env' ] && . '$config/x-mode.env'; export FM_WATCH_GROK_CONTINUITY=1; exec bin/fm-watch-arm.sh" "grok arm command did not use the effective x-mode config path"
   pass "grok rendered command sources the effective x-mode config"
 }
 

@@ -88,9 +88,22 @@ triage_log() {
   fi
 }
 
+# True only for the Grok hold opt-in, and never while away or quiet mode owns triage.
+# docs/watcher-continuity.md owns that continuity; this predicate is the flag check.
+fm_watch_grok_hold_active() {
+  [ "${FM_WATCH_GROK_HOLD:-}" = 1 ] || return 1
+  if declare -F afk_present >/dev/null 2>&1; then
+    afk_present && return 1
+    return 0
+  fi
+  [ -n "${STATE:-}" ] && [ -e "$STATE/.afk" ] && return 1
+  return 0
+}
+
 # Exit after reporting one actionable wake. Tests override this callback.
+# FM_WATCH_GROK_HOLD=1 returns after the report so that watcher can keep the lock.
 wake() {
-  local output_status=0
+  local output_status=0 hold_quiet
   case "$1" in
     heartbeat*) echo $(( $(cat "$STATE/.heartbeat-streak" 2>/dev/null || echo 0) + 1 )) > "$STATE/.heartbeat-streak" ;;
     *) echo 0 > "$STATE/.heartbeat-streak" ;;
@@ -107,8 +120,26 @@ wake() {
   fi
   if [ -n "$FM_WAKE_POST_OUTPUT_ACTION" ]; then
     "$FM_WAKE_POST_OUTPUT_ACTION" "$output_status" || true
+    unset FM_WAKE_POST_OUTPUT_ACTION
   fi
   [ "$output_status" -eq 0 ] || exit "$output_status"
+  if fm_watch_grok_hold_active; then
+    hold_quiet=1
+    case "$1" in
+      heartbeat*) ;;
+      *) hold_quiet=0 ;;
+    esac
+    # Read by bin/fm-watch.sh before the next poll wait.
+    # shellcheck disable=SC2034
+    FM_WATCH_GROK_HOLD_QUIET=$hold_quiet
+    if declare -F watcher_stop_signals >/dev/null 2>&1; then
+      watcher_stop_signals
+    else
+      trap - HUP INT TERM
+    fi
+    trap - PIPE
+    return 0
+  fi
   exit 0
 }
 
