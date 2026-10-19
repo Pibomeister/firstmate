@@ -1845,7 +1845,28 @@ test_grok_one_stale_notice_leaves_the_watcher_holding_the_lock() {
   pass "grok: one stale notice leaves a successor holding the lock, and plain and away arms stay one-shot"
 }
 
+# The process-event wake consumes its post-output callback, and the holding
+# watcher's next wake must still read that variable under set -u.
+test_grok_hold_survives_a_wake_after_a_process_event_wake() {
+  local dir out status
+  dir=$(make_case grok-procevent-then-stale)
+  out=$(FM_HOME="$dir" FM_STATE_OVERRIDE="$dir/state" FM_WATCH_GROK_HOLD=1 bash -uc '
+    . "$1"
+    fm_wake_append check procevent:probe:1 "check: process-event result captured:procevent:probe:1"
+    procevent_surface_queued
+    wake "stale: second actionable event"
+  ' _ "$WATCH" 2>&1)
+  status=$?
+  expect_code 0 "$status" "grok hold watcher must survive a wake after a process-event wake: $out"
+  assert_not_contains "$out" "unbound variable" \
+    "grok hold watcher read a consumed post-output callback as unbound: $out"
+  assert_contains "$out" "stale: second actionable event" \
+    "grok hold watcher did not report the wake after the process-event wake: $out"
+  pass "grok: a holding watcher reports a second wake after a process-event wake"
+}
+
 test_grok_one_stale_notice_leaves_the_watcher_holding_the_lock
+test_grok_hold_survives_a_wake_after_a_process_event_wake
 test_attached_arm_reports_the_delivered_wake
 test_attached_arm_reports_the_delivered_wake_after_drain
 test_arm_refuses_an_unusable_launch_confirm_window

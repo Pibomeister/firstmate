@@ -120,7 +120,7 @@ wake() {
   fi
   if [ -n "$FM_WAKE_POST_OUTPUT_ACTION" ]; then
     "$FM_WAKE_POST_OUTPUT_ACTION" "$output_status" || true
-    unset FM_WAKE_POST_OUTPUT_ACTION
+    FM_WAKE_POST_OUTPUT_ACTION=
   fi
   [ "$output_status" -eq 0 ] || exit "$output_status"
   if fm_watch_grok_hold_active; then
