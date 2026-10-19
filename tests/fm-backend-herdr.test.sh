@@ -3925,6 +3925,32 @@ test_composer_state_grok_oversized_title_preserves_safe_verdicts() {
   pass "fm_backend_herdr_composer_state: Grok's exact title overhang is empty while pending and unproved panes remain safe"
 }
 
+# Grok 1.0.62 joins its bottom-border title with a middle dot (here behind
+# the weekly-limit segment); the idle box read unknown, so fm-control refused
+# to relaunch or exit every Grok worker.
+test_composer_state_grok_middle_dot_title() {
+  local dir log resp fb out
+  dir="$TMP_ROOT/composer-grok-middle-dot"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+  printf '%s\n' \
+    '  ╭──────────────────────────────────────────────────────────────────╮' \
+    '  │ ❯                                                                │' \
+    '  ╰─────── Weekly limit left: 0% · Grok 4.7 (high) · always-approve ─╯' \
+    '' \
+    '  Shift+Tab:mode  │  Ctrl+.:shortcuts' > "$resp/1.out"
+  printf '%s\n' \
+    '  ╭──────────────────────────────────────────────────────────────────╮' \
+    '  │ ❯ fix the bug                                                    │' \
+    '  ╰─────── Weekly limit left: 0% · Grok 4.7 (high) · always-approve ─╯' > "$resp/2.out"
+  fb=$(make_herdr_fakebin "$dir")
+  out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_composer_state default:w1:p2' "$ROOT" )
+  [ "$out" = empty ] || fail "an idle Grok 1.0.62 composer should read empty, got '$out'"
+  out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_composer_state default:w1:p2' "$ROOT" )
+  [ "$out" = pending ] || fail "typed text in a Grok 1.0.62 composer should read pending, got '$out'"
+  pass "fm_backend_herdr_composer_state: Grok 1.0.62's middle-dot title reads empty when idle and pending when typed"
+}
+
 # Live-verified incident (2026-07-03, real grok 0.2.82 on herdr, isolated
 # session): typing "/compact" opens the completion popup; the FIRST Enter
 # closes the popup and EXPANDS the composer into an argument-hint placeholder
@@ -6024,6 +6050,7 @@ test_composer_state_bare_prompt_is_empty
 test_composer_state_styled_placeholder_draft_is_pending
 test_composer_state_real_text_is_pending
 test_composer_state_grok_oversized_title_preserves_safe_verdicts
+test_composer_state_grok_middle_dot_title
 test_composer_state_popup_placeholder_fill_is_pending
 test_composer_state_unknown_on_capture_failure
 test_composer_state_inactive_session_fails_fast_without_server_autostart
