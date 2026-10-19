@@ -1100,6 +1100,10 @@ _fm_composer_titled_bottom_ok() {  # <family> <bottom-inner> <top-spaces>
     *) return 1 ;;
   esac
   spaces=${inner//"$dash"/ }
+  # Grok 1.0.62 separates its title segments with a middle dot
+  # (`Weekly limit left: 0% · Grok 4.7 (high) · always-approve`), one column
+  # of title text like the printable ASCII around it.
+  spaces=${spaces//·/ }
   spaces=$(printf '%s' "$spaces" | LC_ALL=C sed 's/[!-~]/ /g')
   case "$spaces" in
     *[![:space:]]*) return 1 ;;
