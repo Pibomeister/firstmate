@@ -1,0 +1,12 @@
+window=primary:fm-grok
+endpoint_task_id=grok
+worktree=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5ANWPANR7DV27YPXEKK8Q4R/.nm-live/fixture-worktree
+project=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5ANWPANR7DV27YPXEKK8Q4R/.nm-live/fixture-project
+harness=claude
+kind=scout
+tasktmp=/tmp/fm-grok
+model=default
+effort=default
+busy_gen=g1792434227.1263.10853
+spawn_gen=s1792434227.377.7952
+control_relaunch_tx=96182.20261019T182345Z.21402

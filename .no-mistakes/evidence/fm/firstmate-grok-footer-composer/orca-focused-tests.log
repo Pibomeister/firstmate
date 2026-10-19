@@ -1,0 +1,8 @@
+ok - fm_backend_orca_composer_state: Grok 1.0.62's middle-dot title reads empty when idle and pending when typed
+ok - fm_backend_orca_composer_state: a stale startup banner cannot outrank the live composer row
+ok - fm_backend_orca_composer_state: a slash-command popup's argument-hint placeholder still reads pending
+ok - fm_backend_orca_composer_state: a bare dead-shell prompt reads unknown (unsafe-for-injection), never empty
+ok - Orca card pr hang elapsed=6.603800999931991s (required <15s)
+ok - Orca card merge hang elapsed=5.619827000424266s (required <15s)
+ok - Orca card local hang elapsed=5.976941999979317s (required <15s)
+ok - Orca card failures: caller results persist, JSON error and command failure warn once, hangs return under 7s

@@ -1,0 +1,40 @@
+
+  [2m lab-migration[0m [2mworktree [0m~/.n/w/0/0/.nm-live/fixture-worktree
+
+
+
+
+   ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+   │                                                                                                                │
+   │  ⠀⠀⠀⠀⠀⠀⣀⣀⡀⠀⠀⠀⢀⠄   [1mGrok Build  [0m1.0.62                                                                           │
+   │  ⠀⠀⠀⣠⣾⠿⠛⠛⠛⠛⢀⡴⠁⠀                                                                                                │
+   │  ⠀⠀⣼⡟⠁⠀⠀⠀⢀⡴⠻⣿⡀⠀   [1mGrok 4.7 is here![0m                                                                            │
+   │  ⠀⠀⣿⡇⠀⠀⠀⠔⠁⠀⠀⣿⡇⠀   Select 'Grok 4.7' under /model.                                                              │
+   │  ⠀⠀⢹⣷⠀⠀⠀⠀⠀⢀⣴⡿⠀⠀                                                                                                │
+   │  ⠀⢀⠞⠁⠠⢶⣶⣶⣶⠿⠋⠀⠀⠀   [1mNew worktree[0m                                                                         ctrl+w  │
+   │  ⠐⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀   [1mResume session[0m                                                                       ctrl+r  │
+   │                   [1mChangelog[0m                                                                                    │
+   │                   [1mQuit[0m                                                                                 ctrl+q  │
+   │                                                                                                                │
+   ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+
+
+
+
+
+
+
+
+
+  Help improve Grok                                                                                 [Opt out] [Opt in]
+  Off by default. Opt-in to allow SpaceXAI to retain coding data, e.g., prompts, traces, & metrics,
+  for training and debugging purposes. Change anytime via settings.
+  Read [4mTerms[0m and [4mPrivacy Policy[0m.
+
+  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ ❯                                                                                                                │
+  ╰──────────────────────────────────────────────────────────────────────── Weekly limit left: 0% · [2mGrok 4.7 (high)[0m ─╯
+
+
+

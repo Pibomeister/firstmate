@@ -1,16 +1,5 @@
 
-  lab-task worktree /U/e/.n/w/0/0/.nm-live/… 1.9K / 256K │ [Dashboard]
-
-
-
-
-
-
-
-
-
-
-
+  detached worktree ~/.n/w/07… ⠴ MCP (2/3) │ 1.9K / 256K │ [Dashboard]
 
 
 
@@ -28,8 +17,8 @@
   Read Terms and Privacy Policy.
 
   ╭──────────────────────────────────────────────────────────────────╮
-  │ ❯ FM_DRAFT_KEEP                                                  │
-  ╰─────── Weekly limit left: 0% · Grok 4.7 (high) · always-approve ─╯
+  │ ❯ draft must survive                                             │
+  ╰──────────────────────── Weekly limit left: 0% · Grok 4.7 (high) ─╯
 
   Enter:send  │  Opt+Enter:newline  │  Shift+Tab:mode  │  Ctrl+x:
 

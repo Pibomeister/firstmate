@@ -1,0 +1,40 @@
+Finishing session…
+
+Resume this session with:
+  grok --resume 01a1556a-d4a4-71e0-98ae-d6ac0215a61d
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+bash-3.2$ cd -- '/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5ANWPANR7DV27YPXEKK8Q4R/.nm-live/fixture-wo
+rktree'
+bash-3.2$ export GOTMPDIR=/tmp/fm-grok/gotmp
+bash-3.2$ export COMPACT_ADVISER_DISABLE=1
+bash-3.2$ export FM_TASK_ID=grok
+bash-3.2$ . '/tmp/fm-grok+80bf7d87315d0da57f4b35698b57e1058976fb0c201d11b8ea7fff3639515493/launch.s1792434440.38316.2232
+9.sh'
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

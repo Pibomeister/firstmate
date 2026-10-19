@@ -1,0 +1,81 @@
+<!doctype html><meta charset="utf-8"><title>Grok migration evidence</title><style>body{margin:40px auto;max-width:1240px;padding:0 24px;font:16px system-ui;background:#faf9f5;color:#141413}h1{font-size:26px}h2{font-size:18px;margin-top:40px}p{max-width:70ch;line-height:1.5}pre{background:#161819;color:#eee;padding:24px;line-height:1.45;font:12px/1.45 Menlo,monospace;border-radius:8px;overflow:auto}</style><h1>Real Grok worker replacements</h1><p>Both fm-control relaunch commands returned success and kept the task endpoint and an uncommitted file. These are unedited captures from the replacement clients. Claude used the existing login with disposable configuration and replied READY. Codex started but its fresh-folder trust prompt remained unanswered, because saving trust would write outside the worktree. This page renders captured terminal text, not a native-window screenshot.</p><h2>Claude replacement — READY</h2><pre>
+ ▐▛███▛█   Claude Code v2.1.303
+▝▜██████▀  Sonnet 5.5 · Claude API
+ ▝▝   ▝▝   ~/.no-mistakes/worktrees/075d7f40c28a/01M5ANWPANR7DV27YPXEKK8Q4R/.nm-live/fixture-worktree
+
+  Get to finished work sooner with Opus 5.5. Switch anytime with /model.
+
+❯ : Firstmate operational input waiting: read &#x27;/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5ANWPANR7DV2
+  7YPXEKK8Q4R/.nm-live/home/state/operational-inbox/1792434229-337867acdafa3df1.msg&#x27; and handle its contents as
+  Firstmate operational input.
+
+  Read 1 file
+  ⎿  4 skills available
+
+⏺ READY
+
+✻ Churned for 12s · done 12:24 PM
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle)
+</pre><h2>Codex replacement — fresh-folder trust prompt</h2><pre>
+  Folder access
+  /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5ANWPANR7DV27YPXEKK8Q4R/.nm-live/fixture-worktree
+
+  Note: You’re in a subdirectory of a Git project. Trusting will apply to the repository root:
+  /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5ANWPANR7DV27YPXEKK8Q4R/.nm-live/fixture-project
+
+  Trust this folder? Codex can read, edit, and run files here, subject to your permission settings. Folder settings
+  can run code automatically, even without a model request. Continue only if you trust these files. Your trust
+  decision will be saved.
+
+› 1. Trust and continue
+  2. Quit
+
+  enter continue · esc quit
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</pre>
