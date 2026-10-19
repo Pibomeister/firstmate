@@ -1,0 +1,35 @@
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+bash-3.2$ cd /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01
+M5AFK2TPKC9RPH7650Q60P7C/.nm-live/wt && grok --always-approve --leader-s
+ocket leader.sock
+
+Resume this session with:
+  grok --resume 01a15553-5ed6-7760-a12b-bf0f3f53663a
+bash-3.2$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,22 @@
+[
+  {
+    "name": "Pending Grok draft refuses both exit and relaunch without losing text",
+    "result": "pass",
+    "live": true
+  },
+  {
+    "name": "Empty Grok composer permits verified exit and preserves uncommitted work",
+    "result": "pass",
+    "live": true
+  },
+  {
+    "name": "Relaunch an empty Grok worker onto Codex in the same endpoint and worktree",
+    "result": "pass",
+    "live": true
+  },
+  {
+    "name": "Relaunch an empty Grok worker onto Claude in the same endpoint and worktree",
+    "result": "pass",
+    "live": true
+  }
+]

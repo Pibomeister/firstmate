@@ -1,0 +1,35 @@
+
+  This is isolated migration validation. Reply MIGRATION_READY and
+  wait. Do not use tools or modify files.
+
+  # Current no-mistakes intent contract
+  This section supersedes every earlier brief instruction about
+  constructing `--intent`, but not later clarifications actually
+  supplied by the captain.
+  Use everything under `## Captain intent authorized for --intent`
+  through the end of this brief, including any nested subheadings but
+  excluding that heading, plus any later words the captain actually
+  supplied as `--intent`; never include Firstmate specification or
+  other mixed Task content.
+  Preserve those words without adding speaker labels or direct address.
+  Firstmate-authored constraints, acceptance criteria, implementation
+  details, decisions, and tradeoffs are specification, not captain
+  intent.
+  The Definition of done's rule that `--intent` must be self-sufficient
+  still governs the string you pass: resolve any report, decision, or
+  PR the intent below refers to into its substance rather than passing
+  the pointer.
+
+  ## Captain intent authorized for --intent
+  Validate a disposable runtime migration. Reply exactly
+  MIGRATION_READY. Do not use tools, change files, send messages, or
+  run commands. Then wait.
+
+
+◦ Starting MCP servers (1/2): codex_apps (0s • esc to interrupt)
+
+
+› Ask Codex to do anything
+
+  GPT-6.1-Sol default · /Users/eduardopicazo/.no-mistakes/worktrees/075…
+  ? for shortcuts                              ⚠ 1 warning · f2 to view

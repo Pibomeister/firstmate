@@ -1,0 +1,35 @@
+bash-3.2$ cd /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01
+M5AFK2TPKC9RPH7650Q60P7C/.nm-live/wt && grok --always-approve --leader-s
+ocket leader.sock
+
+Resume this session with:
+  grok --resume 01a15554-5907-7022-86bf-f0e24e7d100b
+bash-3.2$ cd -- '/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28
+a/01M5AFK2TPKC9RPH7650Q60P7C/.nm-live/wt'
+bash-3.2$ export GOTMPDIR=/tmp/fm-grok-live/gotmp
+bash-3.2$ export COMPACT_ADVISER_DISABLE=1
+bash-3.2$ export FM_TASK_ID=grok-live
+bash-3.2$ . '/tmp/fm-grok-live+00dcbd81ab5fb0f537b9d3577e23c7307822c8b84
+9c84013459ad964df4c1680/launch.s1792432959.58296.30559.sh'
+
+────────────────────────────────────────────────────────────────────────
+  Allow external CLAUDE.md file imports?
+
+  This project's CLAUDE.md or .claude/rules imports files outside the
+  current working directory. Never allow this for third-party
+  repositories.
+
+  External imports:
+    /Users/eduardopicazo/.claude/RTK.md
+    /Users/eduardopicazo/.claude/rules/common/performance.md
+    /Users/eduardopicazo/.no-mistake…5AFK2TPKC9RPH7650Q60P7C/AGENTS.md
+
+  Important: Only use Claude Code with files you trust. Accessing
+  untrusted files may pose security risks
+  https://code.claude.com/docs/en/security
+
+  ❯ No, disable external imports
+    Yes, allow external imports
+
+  Enter to confirm · Esc to cancel
+
