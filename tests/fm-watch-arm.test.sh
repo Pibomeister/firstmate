@@ -1765,9 +1765,13 @@ primary_watcher_healthy() {  # <primary>
 }
 
 run_grok_turnend_guard() {  # <primary>
-  local primary=$1
+  local primary=$1 fakebin
+  fakebin=$(fm_fakebin "$primary/guard-ancestry")
+  fm_fake_blind_ancestry "$fakebin"
+  # Model a Grok hook independently of the test runner's harness.
   printf '%s' '{"sessionId":"grok-stale","stopHookActive":false}' \
     | env -u GROK_TURNEND_GUARD_ACTIVE \
+      PATH="$fakebin:$PATH" GROK_AGENT=1 \
       GROK_WORKSPACE_ROOT="$primary" \
       FM_HOME="$primary" \
       FM_ROOT_OVERRIDE="$primary" \
@@ -1869,7 +1873,7 @@ test_grok_hold_survives_a_wake_after_a_process_event_wake() {
 }
 
 test_grok_successor_holds_across_quiet_polls_after_a_process_event() {
-  local dir primary status guard_out i
+  local dir primary status guard_out i arm_pid DRAIN
   dir=$(make_case grok-arm-procevent-quiet-stale)
   primary=$(make_grok_guard_primary "$dir")
   FM_STATE_OVERRIDE="$primary/state" bash -c '
@@ -1895,11 +1899,43 @@ test_grok_successor_holds_across_quiet_polls_after_a_process_event() {
     || fail "Grok successor did not queue the second stale pane after quiet polls"
   guard_out=$(run_grok_turnend_guard "$primary"); status=$?
   expect_code 0 "$status" "Grok turn-end guard must allow the holding successor: $guard_out"
+  DRAIN="$primary/bin/fm-wake-drain.sh"
+  FM_HOME="$primary" FM_ROOT_OVERRIDE="$primary" ack_wakes "$primary/state" \
+    || fail "could not acknowledge the first Grok handling turn"
+  PATH="$dir/fakebin:$PATH" \
+    FM_HOME="$primary" FM_STATE_OVERRIDE="$primary/state" FM_ROOT_OVERRIDE="$primary" \
+    FM_FAKE_TMUX_CAPTURE="$dir/capture" FM_CREW_STATE_BIN="$dir/fakebin/fm-crew-state.sh" \
+    FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    FM_ARM_CONFIRM_TIMEOUT=20 FM_WATCH_GROK_CONTINUITY=1 \
+    "$primary/bin/fm-watch-arm.sh" > "$dir/handoff.out" 2>&1 &
+  arm_pid=$!
+  for ((i=0; i<200; i++)); do
+    grep -Eq '^watcher: (started|attached) pid=' "$dir/handoff.out" && break
+    is_live_non_zombie "$arm_pid" || break
+    sleep 0.1
+  done
+  for ((i=0; i<10; i++)); do
+    if ! is_live_non_zombie "$arm_pid" || [ -s "$primary/state/.wake-queue" ]; then
+      kill -TERM "$arm_pid" 2>/dev/null || true
+      wait "$arm_pid" 2>/dev/null || true
+      stop_primary_watcher "$primary"
+      fail "Grok re-arm completed or queued a wake before new work arrived: $(cat "$dir/handoff.out")"
+    fi
+    sleep 0.1
+  done
+  printf 'done [at=2]: fresh tracked-arm wake\n' >> "$primary/state/a-first.status"
+  wait_for_exit "$arm_pid" "$REARM_EXIT_POLLS"; status=$?
+  expect_code 0 "$status" "the next tracked Grok arm did not complete for fresh work: $(cat "$dir/handoff.out")"
+  grep -Eq '^(signal:|check:)' "$dir/handoff.out" \
+    || fail "the next tracked Grok arm returned without an actionable notice"
+  grep -F "signal: $primary/state/a-first.status" "$primary/state/.wake-queue" >/dev/null \
+    || fail "the fresh Grok wake was not durable"
+  primary_watcher_healthy "$primary" || fail "the next Grok notice left no healthy holding watcher"
   stop_primary_watcher "$primary"
   if primary_watcher_healthy "$primary"; then
     fail "explicit stop left the Grok successor holding the home lock"
   fi
-  pass "grok: the actual arm's successor holds across process-event, quiet polls, and stale notices until stopped"
+  pass "grok: the real arm holds across quiet polls and the next tracked arm delivers fresh work"
 }
 
 test_grok_one_stale_notice_leaves_the_watcher_holding_the_lock

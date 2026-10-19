@@ -384,6 +384,20 @@ attached_holder_live() {
   [ "$FM_WATCHER_MATCHED_IDENTITY" = "$cycle_watcher_identity" ]
 }
 
+# Bind queued-wake delivery to a persistent holder, not an ordinary one-shot watcher.
+grok_holding_watcher() {  # <pid>
+  local pid=$1 proc_root=${FM_PROC_ROOT_OVERRIDE:-/proc} args
+  if [ -r "$proc_root/$pid/cmdline" ]; then
+    [ "$(tr '\000' '\n' < "$proc_root/$pid/cmdline" | tail -n 1)" = --grok-hold ]
+  else
+    args=$(ps -ww -o args= -p "$pid" 2>/dev/null) || return 1
+    case "$args" in *' --grok-hold') return 0 ;; esac
+    return 1
+  fi
+}
+
+
+# Grok arms can report queued work while their tagged holding watcher stays live.
 # Stay alive across identity-matched healthy holders. If one cycle ends, attach
 # to a verified successor. With no successor, report the wake that cycle durably
 # delivered, or fail loudly - never a clean empty completion that an adapter could
@@ -393,8 +407,14 @@ attached_holder_live() {
 # a started arm tolerates by waiting on its child, so this arm keeps following it.
 # Only at the stall bound, where the watcher's own re-arm evicts a live holder,
 # does it fail with the typed stalled-holder line so its owner's retry replaces it.
+# A Grok arm can report queued work without ending its tagged holding watcher.
 attach_and_wait() {
-  local attached_pid=$1 age successor
+  local attached_pid=$1 age successor actor=main
+  if [ "${FM_WATCH_GROK_CONTINUITY:-}" = 1 ]; then
+    # shellcheck source=bin/fm-lease-lib.sh
+    . "$SCRIPT_DIR/fm-lease-lib.sh"
+    actor=$(fm_lease_actor 2>/dev/null) || actor=main
+  fi
   while :; do
     if healthy_watcher; then
       if [ "$HEALTHY_PID" != "$attached_pid" ] || [ "$HEALTHY_IDENTITY" != "$cycle_watcher_identity" ]; then
@@ -402,6 +422,13 @@ attach_and_wait() {
         attached_pid=$HEALTHY_PID
         cycle_begin "$attached_pid" attached "$HEALTHY_IDENTITY"
         report_attached
+      fi
+      if [ "${FM_WATCH_GROK_CONTINUITY:-}" = 1 ] && [ ! -e "$STATE/.afk" ] \
+        && grok_holding_watcher "$attached_pid" \
+        && [ "$(fm_wake_actor_pending_count "$actor")" -gt 0 ]; then
+        cycle_log_append 0 none attached-delivered-wake "attached:$attached_pid"
+        printf '%s\n' 'check: rearm-resurface'
+        return 0
       fi
       sleep "$ATTACH_POLL"
       continue
@@ -454,6 +481,7 @@ watch_output_has_wake() {
 }
 
 # Detach a handling watcher that holds the lock before this arm returns a wake.
+# Its internal argument lets attached Grok arms recognize the persistent holder.
 # Grok notifies only when this arm exits, so the successor is not this arm's
 # tracked child and must survive this process exiting. Sets GROK_SUCCESSOR_PID.
 GROK_SUCCESSOR_PID=
@@ -465,7 +493,7 @@ start_grok_continuity_successor() {
   case $- in *m*) monitor_was_on=1 ;; esac
   set -m 2>/dev/null || true
   FM_WATCH_HANDLING_SUCCESSOR=1 FM_WATCH_GROK_HOLD=1 \
-    nohup "$WATCH" >/dev/null 2>&1 </dev/null &
+    nohup "$WATCH" --grok-hold >/dev/null 2>&1 </dev/null &
   pid=$!
   disown "$pid" 2>/dev/null || true
   [ "$monitor_was_on" -eq 1 ] || set +m 2>/dev/null || true

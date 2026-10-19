@@ -204,6 +204,7 @@ It enters its poll loop immediately and keeps scanning signals, stale panes, and
 - Grok retains its tracked background-task notification protocol.
 - Its plain arm exports FM_WATCH_GROK_CONTINUITY=1 and detaches a handling successor that holds the lock before the arm returns an actionable wake, unless state/.afk is present.
 - That successor retains the lock across quiet polls and later notices until the owner stops or restarts it; away and quiet mode keep wakes one-shot.
+- An attached Grok arm reports pending work from its actor's durable queue while that healthy holding successor stays alive, so the next tracked background task can notify the model without interrupting the singleton.
 
 No adapter starts a replacement with a fire-and-forget shell `&` from a model command.
 The Claude hook's detached handling successor is launched by the hook itself, which waits for the successor's status line before it exits.
