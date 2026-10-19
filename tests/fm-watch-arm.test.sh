@@ -1776,10 +1776,11 @@ run_grok_turnend_guard() {  # <primary>
 }
 
 # Run one arm against two already-stale windows. Echoes "pid status" after exit.
-run_grok_arm_case() {  # <primary> <fakebin> <capture> <arm-out> <continuity 0|1> <afk 0|1>
+run_grok_arm_case() {  # <primary> <fakebin> <capture> <arm-out> <continuity 0|1> <afk 0|1|quiet>
   local primary=$1 fakebin=$2 capture=$3 armout=$4 continuity=$5 afk=$6 pid
   seed_two_stale_windows "$primary/state" "$capture"
   [ "$afk" = 1 ] && : > "$primary/state/.afk"
+  [ "$afk" = quiet ] && printf 'quiet\n' > "$primary/state/.afk"
   PATH="$fakebin:$PATH" \
     FM_HOME="$primary" FM_STATE_OVERRIDE="$primary/state" FM_ROOT_OVERRIDE="$primary" \
     FM_FAKE_TMUX_CAPTURE="$capture" \
@@ -1794,7 +1795,7 @@ run_grok_arm_case() {  # <primary> <fakebin> <capture> <arm-out> <continuity 0|1
 }
 
 test_grok_one_stale_notice_leaves_the_watcher_holding_the_lock() {
-  local dir fakebin capture primary armout guard_out status
+  local dir fakebin capture primary armout guard_out status posture
   dir=$(make_case grok-one-stale-notice)
   fakebin="$dir/fakebin"
   capture="$dir/pane.txt"
@@ -1832,17 +1833,19 @@ test_grok_one_stale_notice_leaves_the_watcher_holding_the_lock() {
     "plain arm's turn-end block lost the unsupervised-lock line: $guard_out"
   stop_primary_watcher "$primary"
 
-  primary=$(make_grok_guard_primary "$dir")
-  armout="$dir/afk.out"
-  status=$(run_grok_arm_case "$primary" "$fakebin" "$capture" "$armout" 1 1)
-  expect_code 0 "$status" "away-mode grok arm must still return the notice: $(cat "$armout" 2>/dev/null)"
-  sleep 2
-  if primary_watcher_healthy "$primary"; then
+  for posture in 1 quiet; do
+    primary=$(make_grok_guard_primary "$dir")
+    armout="$dir/afk-$posture.out"
+    status=$(run_grok_arm_case "$primary" "$fakebin" "$capture" "$armout" 1 "$posture")
+    expect_code 0 "$status" "away/quiet-mode grok arm must still return the notice: $(cat "$armout" 2>/dev/null)"
+    sleep 2
+    if primary_watcher_healthy "$primary"; then
+      stop_primary_watcher "$primary"
+      fail "away/quiet mode ($posture) started a grok successor after one notice"
+    fi
     stop_primary_watcher "$primary"
-    fail "away mode started a grok successor after one notice"
-  fi
-  stop_primary_watcher "$primary"
-  pass "grok: one stale notice leaves a successor holding the lock, and plain and away arms stay one-shot"
+  done
+  pass "grok: one stale notice leaves a successor holding the lock, and plain, away, and quiet arms stay one-shot"
 }
 
 # The process-event wake consumes its post-output callback, and the holding
@@ -1865,8 +1868,43 @@ test_grok_hold_survives_a_wake_after_a_process_event_wake() {
   pass "grok: a holding watcher reports a second wake after a process-event wake"
 }
 
+test_grok_successor_holds_across_quiet_polls_after_a_process_event() {
+  local dir primary status guard_out i
+  dir=$(make_case grok-arm-procevent-quiet-stale)
+  primary=$(make_grok_guard_primary "$dir")
+  FM_STATE_OVERRIDE="$primary/state" bash -c '
+    . "$1"
+    fm_wake_append check procevent:probe:1 "check: process-event result captured:procevent:probe:1"
+  ' _ "$primary/bin/fm-wake-lib.sh"
+  # The seeded file hash includes a trailing newline; pane capture strips it.
+  # The successor must reset the hash, poll quietly, then surface stale panes.
+  status=$(run_grok_arm_case "$primary" "$dir/fakebin" "$dir/capture" "$dir/arm.out" 1 0)
+  expect_code 0 "$status" "Grok arm must return the process-event wake: $(cat "$dir/arm.out")"
+  assert_contains "$(cat "$dir/arm.out")" "check: process-event result captured:" \
+    "Grok arm did not return the queued process-event wake"
+  for ((i=0; i<200; i++)); do
+    grep -F 'stale: test:fm-b-second' "$primary/state/.wake-queue" >/dev/null 2>&1 && break
+    primary_watcher_healthy "$primary" || break
+    sleep 0.1
+  done
+  primary_watcher_healthy "$primary" \
+    || fail "actual Grok successor stopped holding the lock after a quiet poll"
+  grep -F 'stale: test:fm-a-first' "$primary/state/.wake-queue" >/dev/null \
+    || fail "Grok successor did not queue the first stale pane after quiet polls"
+  grep -F 'stale: test:fm-b-second' "$primary/state/.wake-queue" >/dev/null \
+    || fail "Grok successor did not queue the second stale pane after quiet polls"
+  guard_out=$(run_grok_turnend_guard "$primary"); status=$?
+  expect_code 0 "$status" "Grok turn-end guard must allow the holding successor: $guard_out"
+  stop_primary_watcher "$primary"
+  if primary_watcher_healthy "$primary"; then
+    fail "explicit stop left the Grok successor holding the home lock"
+  fi
+  pass "grok: the actual arm's successor holds across process-event, quiet polls, and stale notices until stopped"
+}
+
 test_grok_one_stale_notice_leaves_the_watcher_holding_the_lock
 test_grok_hold_survives_a_wake_after_a_process_event_wake
+test_grok_successor_holds_across_quiet_polls_after_a_process_event
 test_attached_arm_reports_the_delivered_wake
 test_attached_arm_reports_the_delivered_wake_after_drain
 test_arm_refuses_an_unusable_launch_confirm_window

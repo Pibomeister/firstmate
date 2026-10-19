@@ -103,7 +103,7 @@ fm_watch_grok_hold_active() {
 # Exit after reporting one actionable wake. Tests override this callback.
 # FM_WATCH_GROK_HOLD=1 returns after the report so that watcher can keep the lock.
 wake() {
-  local output_status=0 hold_quiet
+  local output_status=0
   case "$1" in
     heartbeat*) echo $(( $(cat "$STATE/.heartbeat-streak" 2>/dev/null || echo 0) + 1 )) > "$STATE/.heartbeat-streak" ;;
     *) echo 0 > "$STATE/.heartbeat-streak" ;;
@@ -124,14 +124,6 @@ wake() {
   fi
   [ "$output_status" -eq 0 ] || exit "$output_status"
   if fm_watch_grok_hold_active; then
-    hold_quiet=1
-    case "$1" in
-      heartbeat*) ;;
-      *) hold_quiet=0 ;;
-    esac
-    # Read by bin/fm-watch.sh before the next poll wait.
-    # shellcheck disable=SC2034
-    FM_WATCH_GROK_HOLD_QUIET=$hold_quiet
     if declare -F watcher_stop_signals >/dev/null 2>&1; then
       watcher_stop_signals
     else

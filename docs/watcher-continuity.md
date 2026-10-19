@@ -3,7 +3,7 @@
 This document explains how Firstmate keeps the watcher re-armed after a wake, how wakes are ordered and acknowledged, and which tests and live evidence cover that contract.
 Read it when debugging a supervision gap or changing a harness's re-arm path.
 
-The watcher remains intentionally one-shot: one actionable reason closes one watcher cycle.
+Except for Grok's handling successor below, the watcher remains intentionally one-shot: one actionable reason closes one watcher cycle.
 Must-work continuity now lives above that process boundary instead of depending on the model remembering a re-arm step.
 In this document, an arm is one run of `bin/fm-watch-arm.sh`, which starts a watcher cycle or attaches to one and returns the cycle's reason.
 
@@ -203,6 +203,7 @@ It enters its poll loop immediately and keeps scanning signals, stale panes, and
 - Codex retains its bounded foreground checkpoint protocol.
 - Grok retains its tracked background-task notification protocol.
 - Its plain arm exports FM_WATCH_GROK_CONTINUITY=1 and detaches a handling successor that holds the lock before the arm returns an actionable wake, unless state/.afk is present.
+- That successor retains the lock across quiet polls and later notices until the owner stops or restarts it; away and quiet mode keep wakes one-shot.
 
 No adapter starts a replacement with a fire-and-forget shell `&` from a model command.
 The Claude hook's detached handling successor is launched by the hook itself, which waits for the successor's status line before it exits.
