@@ -462,6 +462,22 @@ test_composer_state_popup_placeholder_fill_is_pending() {
   pass "fm_backend_orca_composer_state: a slash-command popup's argument-hint placeholder still reads pending"
 }
 
+# Grok 1.0.62 joins its bottom-border title with a middle dot; the idle box
+# read unknown, so fm-control refused to relaunch or exit every Grok worker.
+test_composer_state_grok_middle_dot_title() {
+  local out
+  orca_case composer-grok-middle-dot
+  printf '{"ok":true,"result":{"terminal":{"tail":["  ╭──────────────────────────────────────────────────────────────────╮","  │ ❯                                                                │","  ╰─────────────────────────────── Grok 4.7 (high) · always-approve ─╯","","  Shift+Tab:mode  │  Ctrl+x:shortcuts"]}}}\n' > "$RESP/1.out"
+  printf '{"ok":true,"result":{"terminal":{"tail":["  ╭──────────────────────────────────────────────────────────────────╮","  │ ❯ fix the bug                                                    │","  ╰─────────────────────────────── Grok 4.7 (high) · always-approve ─╯","","  Enter:send  │  Opt+Enter:newline  │  Shift+Tab:mode  │  Ctrl+x:"]}}}\n' > "$RESP/2.out"
+  out=$( PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" \
+    bash -c '. "$0/bin/backends/orca.sh"; fm_backend_orca_composer_state term-123' "$ROOT" )
+  [ "$out" = empty ] || fail "an idle Grok 1.0.62 composer should read empty, got '$out'"
+  out=$( PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" \
+    bash -c '. "$0/bin/backends/orca.sh"; fm_backend_orca_composer_state term-123' "$ROOT" )
+  [ "$out" = pending ] || fail "typed text in a Grok 1.0.62 composer should read pending, got '$out'"
+  pass "fm_backend_orca_composer_state: Grok 1.0.62's middle-dot title reads empty when idle and pending when typed"
+}
+
 # Dead-shell injection safety (task fm-composer-shellglyph-safety): a pane whose
 # agent has exited to a bare login shell has no bordered composer row, so the
 # classifier finds nothing and reports `unknown` - NOT a safe (empty) injection
@@ -1695,10 +1711,12 @@ test_card_failures_preserve_caller_results() {
   for site in pr merge local; do
     for behavior in fail hang error-json; do
       card_case "card-$site-$behavior"
-      start=$(python3 -c 'import time; print(time.monotonic())')
+      # Python 3.9 on macOS gives separate processes different monotonic epochs.
+      # Read the system clock directly so these two samples are comparable.
+      start=$(perl -MTime::HiRes=clock_gettime,CLOCK_MONOTONIC -e 'print clock_gettime(CLOCK_MONOTONIC)')
       out=$(card_site "$site" "FM_ORCA_CARD_BEHAVIOR=$behavior" 2>&1)
       rc=$?
-      end=$(python3 -c 'import time; print(time.monotonic())')
+      end=$(perl -MTime::HiRes=clock_gettime,CLOCK_MONOTONIC -e 'print clock_gettime(CLOCK_MONOTONIC)')
       expect_code 0 "$rc" "$site caller must survive $behavior: $out"
       assert_contains "$out" "warning: orca card status not updated for $CARD_ID" "$site $behavior warning missing"
       assert_equals 1 "$(printf '%s\n' "$out" | grep -c 'warning: orca card status')" "$site $behavior warning count"
@@ -1806,6 +1824,7 @@ test_send_text_submit_borderless_claude_confirms
 test_composer_state_stale_banner_never_wins
 test_send_text_submit_retries_when_composer_stays_pending
 test_composer_state_popup_placeholder_fill_is_pending
+test_composer_state_grok_middle_dot_title
 test_composer_state_bare_shell_prompt_is_unknown
 test_send_text_submit_popup_autocomplete_requires_second_enter
 test_send_literal_constructs_non_enter_send

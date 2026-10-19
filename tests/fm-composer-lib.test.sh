@@ -937,6 +937,27 @@ test_matrix_grok_titled_bottom_border() {
   pass "matrix: grok's real oversized titled bottom is empty while typed and unproved panes stay safe"
 }
 
+test_matrix_grok_middle_dot_title() {
+  # Grok 1.0.62 joins its bottom-border title segments with a middle dot and
+  # aligns the border with the top row. These are real 72-column captures; the
+  # dot used to make the proven box ambiguous, so an idle composer read unknown
+  # and fm-control refused every relaunch and exit.
+  local weekly orca typed wide
+  weekly=$'  ╭──────────────────────────────────────────────────────────────────╮\n  │ ❯                                                                │\n  ╰─────── Weekly limit left: 0% · Grok 4.7 (high) · always-approve ─╯\n\n  Shift+Tab:mode  │  Ctrl+.:shortcuts'
+  orca=$'  ╭──────────────────────────────────────────────────────────────────╮\n  │ ❯                                                                │\n  ╰─────────────────────────────── Grok 4.7 (high) · always-approve ─╯\n\n  Shift+Tab:mode  │  Ctrl+x:shortcuts'
+  typed=$'  ╭──────────────────────────────────────────────────────────────────╮\n  │ ❯ fix the bug                                                    │\n  ╰─────── Weekly limit left: 0% · Grok 4.7 (high) · always-approve ─╯\n\n  Enter:send  │  Opt+Enter:newline  │  Shift+Tab:mode  │  Ctrl+x:'
+  wide=$'  ╭──────────────────────────────────────────────────────────────────╮\n  │ ❯                                                                │\n  ╰──────────────────────────────── Grok 4.7 (high) · always-approve ─╯'
+  assert_screen "grok 1.0.62 idle on orca" empty "$CAPS_PLAIN" "$orca"
+  assert_screen "grok 1.0.62 idle with weekly limit on herdr" empty "$CAPS_STYLED" "$weekly"
+  assert_screen "grok 1.0.62 idle on tmux" empty "$CAPS_TMUX" "$weekly" 1
+  assert_screen "grok 1.0.62 typed on orca" pending "$CAPS_PLAIN" "$typed"
+  assert_screen "grok 1.0.62 typed on herdr" pending "$CAPS_STYLED" "$typed"
+  assert_screen "grok 1.0.62 typed on tmux" pending "$CAPS_TMUX" "$typed" 1
+  # The dot is title text, not a width exemption: a misaligned border stays unproved.
+  assert_screen "grok middle-dot title one column wide" unknown "$CAPS_PLAIN" "$wide"
+  pass "matrix: grok 1.0.62's middle-dot title reads empty when idle and pending when typed"
+}
+
 test_matrix_claude_titled_top_rule() {
   # A named Claude Code session draws its title into the composer's TOP rule
   # (issues #5601 and #5558; observed on herdr as
@@ -1243,6 +1264,7 @@ test_matrix_opencode_leftbar_signals
 test_matrix_opencode_leftbar_cwd_furniture
 test_matrix_opencode_leftbar_abs_cwd_furniture
 test_matrix_grok_titled_bottom_border
+test_matrix_grok_middle_dot_title
 test_matrix_claude_titled_top_rule
 test_matrix_kimi_bordered_shell_glyph_box
 test_matrix_claude_inside_zellij_ansi_dump
