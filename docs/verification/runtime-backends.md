@@ -790,8 +790,9 @@ The 2026-08-23 steering-inbox doorbell run observed grok 1.0.5's idle composer c
 Issue #3436's recorded idle capture reproduced the cause on 2026-09-14: Grok 1.0.5 renders the titled bottom border three columns wider than its aligned top and content rows, so the cursorless Herdr profile rejected the otherwise complete box as ambiguous.
 The classifier now accepts only that exact three-column overhang (`FM_COMPOSER_GROK_TITLE_OVERHANG` in `bin/fm-composer-lib.sh`) carrying a typed `Grok <model> (<effort>)` title; the portable regressions feed the real capture through both the shared Herdr capability profile and `fm_backend_herdr_composer_state`, and prove idle is `empty`, typed content is `pending`, and an unrecognized oversized title remains `unknown`.
 Grok was not installed on the verification machine for this 2026-09-14 change; the three-column width is not live-verified and may need adjustment if Grok's title rendering changes or scales with title length.
-Grok 1.0.62 instead aligns its titled bottom border with the top row and joins title segments with a middle dot (`Weekly limit left: 0% · Grok 4.7 (high) · always-approve`), which the classifier read as ambiguous geometry, so every idle Grok composer was `unknown` on Orca and Herdr and `fm-control.sh` refused relaunch and exit.
-The classifier now counts the middle dot as one column of title text; `tests/fm-composer-lib.test.sh`, `tests/fm-backend-orca.test.sh`, and `tests/fm-backend-herdr.test.sh` carry real 72-column captures proving idle is `empty`, typed content is `pending`, and a one-column-wide dotted title stays `unknown`.
+The recorded Grok 1.0.62 captures instead align the titled bottom border with the top row and join title segments with a middle dot (`Weekly limit left: 0% · Grok 4.7 (high) · always-approve`).
+`tests/fm-composer-lib.test.sh`, `tests/fm-backend-orca.test.sh`, and `tests/fm-backend-herdr.test.sh` carry real 72-column captures covering the corrected idle `empty` and typed `pending` verdicts.
+The shared-classifier regression also checks that a dotted bottom border one column too wide remains `unknown`, preserving the geometry boundary.
 On 2026-10-19 on macOS arm64, `FM_COMPOSER_MATRIX_LIVE=1 tests/fm-composer-matrix-live-e2e.test.sh` printed, for Grok:
 
 ```text

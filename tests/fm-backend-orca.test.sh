@@ -1711,10 +1711,12 @@ test_card_failures_preserve_caller_results() {
   for site in pr merge local; do
     for behavior in fail hang error-json; do
       card_case "card-$site-$behavior"
-      start=$(python3 -c 'import time; print(time.monotonic())')
+      # Python 3.9 on macOS gives separate processes different monotonic epochs.
+      # Read the system clock directly so these two samples are comparable.
+      start=$(perl -MTime::HiRes=clock_gettime,CLOCK_MONOTONIC -e 'print clock_gettime(CLOCK_MONOTONIC)')
       out=$(card_site "$site" "FM_ORCA_CARD_BEHAVIOR=$behavior" 2>&1)
       rc=$?
-      end=$(python3 -c 'import time; print(time.monotonic())')
+      end=$(perl -MTime::HiRes=clock_gettime,CLOCK_MONOTONIC -e 'print clock_gettime(CLOCK_MONOTONIC)')
       expect_code 0 "$rc" "$site caller must survive $behavior: $out"
       assert_contains "$out" "warning: orca card status not updated for $CARD_ID" "$site $behavior warning missing"
       assert_equals 1 "$(printf '%s\n' "$out" | grep -c 'warning: orca card status')" "$site $behavior warning count"
