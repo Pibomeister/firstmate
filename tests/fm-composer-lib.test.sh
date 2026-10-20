@@ -1588,6 +1588,47 @@ test_background_exit_picker_stays_pending_and_blocks_retry() {
   pass "the Claude background-task exit picker stays pending and receives no confirming Enter"
 }
 
+# Grok's weekly-limit choice, live-captured 2026-10-19 on Grok 4.7 over Herdr.
+grok_weekly_limit_screen() {
+  printf '%s\n' \
+    '                                                                                             █' \
+    '' \
+    '  ┃' \
+    '  ┃  You hit your weekly limit.' \
+    '  ┃' \
+    '  ┃' \
+    '  ┃  1 (○) Buy more credits  Purchase credits to keep using Grok Build' \
+    '  ┃  2 (○) Try Again         Resubmit the last prompt once you have usage again' \
+    '  ┃' \
+    '  ┃  ↑/↓ navigate · y copy                                                  Enter:submit' \
+    '  ┃' \
+    '' \
+    '  Tab:next answer  │  Esc:scrollback  │  Shift+x:dismiss'
+}
+
+test_grok_weekly_limit_choice_is_named_only_in_its_recorded_structure() {
+  local screen out rc sink
+  screen=$(grok_weekly_limit_screen)
+  out=$(fm_composer_blocking_dialog "$screen"); rc=$?
+  [ "$rc" -eq 0 ] || fail "the recorded Grok weekly-limit choice should match"
+  [ "$out" = 'Grok weekly-limit choice' ] || fail "dialog name was '$out'"
+  sink=$(mktemp)
+  FM_COMPOSER_DIALOG_SINK=$sink
+  out=$(fm_composer_classify_screen 'styled=1' "$screen")
+  [ "$out" != empty ] || fail "the weekly-limit choice must never read empty"
+  [ "$(cat "$sink")" = 'Grok weekly-limit choice' ] || fail "classify should note the choice, got '$(cat "$sink")'"
+  unset FM_COMPOSER_DIALOG_SINK
+  rm -f "$sink"
+  out=$(fm_composer_blocking_dialog "$(printf '%s\n' "$screen" \
+    '  ╭──────────────╮' '  │ ❯            │' '  ╰──────────────╯')"); rc=$?
+  [ "$rc" -eq 1 ] || fail "the choice's text quoted above a normal composer must not match"
+  out=$(fm_composer_blocking_dialog "$(printf '%s\n' "$screen" | grep -v 'Buy more credits')"); rc=$?
+  [ "$rc" -eq 1 ] || fail "the heading and footer without the first choice row must not match"
+  out=$(fm_composer_blocking_dialog "$(printf '%s\n' "$screen" | sed 's/You hit your weekly limit\./Note: You hit your weekly limit. Retry later/')"); rc=$?
+  [ "$rc" -eq 1 ] || fail "a heading buried in a sentence must not match"
+  pass "the Grok weekly-limit choice is named only in its recorded structure and never reads empty"
+}
+
 # The picker's own text, shown the way a worker pane shows it when it prints
 # this repository's diff, verification note, or a test fixture: quoted above a
 # normal composer. No picker is open, so the next Enter confirms nothing.
@@ -1682,3 +1723,4 @@ test_background_exit_picker_stays_pending_and_blocks_retry
 test_dialog_heading_and_footer_must_be_the_recorded_lines
 test_dialog_note_skips_the_match_when_no_sink_is_set
 test_quoted_exit_picker_text_is_not_a_dialog
+test_grok_weekly_limit_choice_is_named_only_in_its_recorded_structure

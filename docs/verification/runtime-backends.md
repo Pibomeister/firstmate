@@ -845,6 +845,11 @@ On 2026-10-19 on macOS arm64, `FM_COMPOSER_MATRIX_LIVE=1 tests/fm-composer-matri
 ok - grok (grok 1.0.62 (1474f9cbdd91) [stable]): real idle composer classifies empty
 ok - grok (grok 1.0.62 (1474f9cbdd91) [stable]): the same idle pane read cursorless is not pending (verdict: empty)
 ```
+
+On 2026-10-19 on macOS arm64, a read-only `fm_backend_composer_state herdr <pane> <label>` with `FM_COMPOSER_DIALOG_SINK` set, against five live Grok 4.7 panes at 0% weekly quota, read the idle 90-column quota-border composer as `empty` with no dialog.
+The other four panes showed the `You hit your weekly limit.` choice, read `pending`, and the sink named `Grok weekly-limit choice`, so `fm-control` exit and relaunch refuse to type into that choice.
+`tests/fm-composer-lib.test.sh` and `tests/fm-backend-herdr.test.sh` pin both live captures.
+
 This closes only #3436's idle-composer-misclassification symptom (Grok/Herdr composer read `unknown` instead of `empty`, blocking away-mode injection). The issue's second symptom - a leftover watcher never yielding and never being taken over or refused at AFK start - is unrelated to composer classification and is tracked separately in #2270, where #3436's reproduction serves as corroborating evidence.
 Grok has since changed that title again, and the newer accepted shape - the same title at the ALIGNED width carrying an approval mode - is recorded in [Grok approval-titled bottom border](#grok-approval-titled-bottom-border) so the two widths are never conflated.
 Cursor is deliberately outside this cursor-anchored empty-composer matrix because its terminal cursor is parked outside the composer; tmux's Cursor-specific, process-identity-gated cursorless fallback is covered by the [Cursor Agent CLI](#cursor-agent-cli) section's separate live evidence and drift guard.

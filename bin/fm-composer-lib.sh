@@ -1992,7 +1992,7 @@ EOF
 }
 
 # fm_composer_blocking_dialog: name a screen whose next Enter would answer it.
-# Prints the name and returns 0 only for the recorded structure of one dialog:
+# Prints the name and returns 0 only for the recorded structure of a known dialog:
 # the heading on its own line, then its selected row alone on a row, with the
 # recorded footer as the last non-blank row. A heading buried in a sentence,
 # or a last line that only starts with the same words, is not that dialog.
@@ -2011,6 +2011,17 @@ fm_composer_blocking_dialog() {  # <screen> -> dialog name
     END { exit !(selected && last ~ /^[ \t]*Enter to confirm · Esc to cancel[ \t\r]*$/) }
   '; then
     printf '%s' 'Claude background-task exit picker'
+    return 0
+  fi
+  # Recorded 2026-10-19 on Grok 4.7 over Herdr: a prompt sent at 0% weekly
+  # quota opens this left-barred choice, whose first row is Buy more credits.
+  if printf '%s\n' "$screen" | fm_composer_strip_ansi | LC_ALL=C awk '
+    /^[ \t]*┃[ \t]+You hit your weekly limit\.[ \t\r]*$/ { heading = 1 }
+    heading && /^[ \t]*┃[ \t]+1 \(○\) Buy more credits([ \t]|$)/ { selected = 1 }
+    /[^ \t\r]/ { last = $0 }
+    END { exit !(selected && last ~ /^[ \t]*Tab:next answer[ \t]+│[ \t]+Esc:scrollback[ \t]+│[ \t]+Shift\+x:dismiss[ \t\r]*$/) }
+  '; then
+    printf '%s' 'Grok weekly-limit choice'
     return 0
   fi
   return 1
