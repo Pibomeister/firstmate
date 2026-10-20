@@ -15,6 +15,7 @@
 # child is reaped when the call returns, leaving NO watcher running and a false
 # "already running" off the dying process. That exact mistake silently took
 # supervision down for ~30 minutes.
+# FM_WATCH_GROK_CONTINUITY=1 opts this arm into the Grok continuity in docs/watcher-continuity.md.
 # On a harness with a PreToolUse-equivalent hook, bin/fm-arm-pretool-check.sh
 # applies the command-position policy before the command runs; see
 # docs/arm-pretool-check.md for the blessed tree and deny reason codes. It is a
@@ -383,6 +384,20 @@ attached_holder_live() {
   [ "$FM_WATCHER_MATCHED_IDENTITY" = "$cycle_watcher_identity" ]
 }
 
+# Bind queued-wake delivery to a persistent holder, not an ordinary one-shot watcher.
+grok_holding_watcher() {  # <pid>
+  local pid=$1 proc_root=${FM_PROC_ROOT_OVERRIDE:-/proc} args
+  if [ -r "$proc_root/$pid/cmdline" ]; then
+    [ "$(tr '\000' '\n' < "$proc_root/$pid/cmdline" | tail -n 1)" = --grok-hold ]
+  else
+    args=$(ps -ww -o args= -p "$pid" 2>/dev/null) || return 1
+    case "$args" in *' --grok-hold') return 0 ;; esac
+    return 1
+  fi
+}
+
+
+# Grok arms can report queued work while their tagged holding watcher stays live.
 # Stay alive across identity-matched healthy holders. If one cycle ends, attach
 # to a verified successor. With no successor, report the wake that cycle durably
 # delivered, or fail loudly - never a clean empty completion that an adapter could
@@ -392,8 +407,14 @@ attached_holder_live() {
 # a started arm tolerates by waiting on its child, so this arm keeps following it.
 # Only at the stall bound, where the watcher's own re-arm evicts a live holder,
 # does it fail with the typed stalled-holder line so its owner's retry replaces it.
+# A Grok arm can report queued work without ending its tagged holding watcher.
 attach_and_wait() {
-  local attached_pid=$1 age
+  local attached_pid=$1 age successor actor=main
+  if [ "${FM_WATCH_GROK_CONTINUITY:-}" = 1 ]; then
+    # shellcheck source=bin/fm-lease-lib.sh
+    . "$SCRIPT_DIR/fm-lease-lib.sh"
+    actor=$(fm_lease_actor 2>/dev/null) || actor=main
+  fi
   while :; do
     if healthy_watcher; then
       if [ "$HEALTHY_PID" != "$attached_pid" ] || [ "$HEALTHY_IDENTITY" != "$cycle_watcher_identity" ]; then
@@ -401,6 +422,13 @@ attach_and_wait() {
         attached_pid=$HEALTHY_PID
         cycle_begin "$attached_pid" attached "$HEALTHY_IDENTITY"
         report_attached
+      fi
+      if [ "${FM_WATCH_GROK_CONTINUITY:-}" = 1 ] && [ ! -e "$STATE/.afk" ] \
+        && grok_holding_watcher "$attached_pid" \
+        && [ "$(fm_wake_actor_pending_count "$actor")" -gt 0 ]; then
+        cycle_log_append 0 none attached-delivered-wake "attached:$attached_pid"
+        printf '%s\n' 'check: rearm-resurface'
+        return 0
       fi
       sleep "$ATTACH_POLL"
       continue
@@ -423,7 +451,11 @@ attach_and_wait() {
       continue
     fi
     if close_unobserved_cycle; then
-      cycle_log_append unknown unknown attached-delivered-wake none
+      successor=none
+      if start_grok_continuity_successor; then
+        successor="started:$GROK_SUCCESSOR_PID"
+      fi
+      cycle_log_append unknown unknown attached-delivered-wake "$successor"
       return 0
     fi
     cycle_log_append unknown unknown attached-cycle-ended none
@@ -446,6 +478,40 @@ trap 'handle_attached_signal INT 130' INT
 watch_output_has_wake() {
   local out=$1
   grep -Eq '^(signal:|stale:|check:|heartbeat($|:))' "$out" 2>/dev/null
+}
+
+# Detach a handling watcher that holds the lock before this arm returns a wake.
+# Its internal argument lets attached Grok arms recognize the persistent holder.
+# Grok notifies only when this arm exits, so the successor is not this arm's
+# tracked child and must survive this process exiting. Sets GROK_SUCCESSOR_PID.
+GROK_SUCCESSOR_PID=
+start_grok_continuity_successor() {
+  local pid deadline monitor_was_on=0
+  GROK_SUCCESSOR_PID=
+  [ "${FM_WATCH_GROK_CONTINUITY:-}" = 1 ] || return 1
+  [ -e "$STATE/.afk" ] && return 1
+  case $- in *m*) monitor_was_on=1 ;; esac
+  set -m 2>/dev/null || true
+  FM_WATCH_HANDLING_SUCCESSOR=1 FM_WATCH_GROK_HOLD=1 \
+    nohup "$WATCH" --grok-hold >/dev/null 2>&1 </dev/null &
+  pid=$!
+  disown "$pid" 2>/dev/null || true
+  [ "$monitor_was_on" -eq 1 ] || set +m 2>/dev/null || true
+  deadline=$(( $(date +%s) + CONFIRM_TIMEOUT + 1 ))
+  while :; do
+    if healthy_watcher; then
+      if [ "$HEALTHY_PID" != "$pid" ]; then
+        kill -TERM "$pid" 2>/dev/null || true
+      fi
+      GROK_SUCCESSOR_PID=$HEALTHY_PID
+      return 0
+    fi
+    fm_pid_alive "$pid" || return 1
+    [ "$(date +%s)" -ge "$deadline" ] && break
+    sleep 0.2
+  done
+  kill -TERM "$pid" 2>/dev/null || true
+  return 1
 }
 
 watch_output_reason_type() {
@@ -682,11 +748,15 @@ cycle_begin "$child" started "$(fm_pid_identity "$child" 2>/dev/null || true)"
 child_done=0
 
 owned_child_finished() {
-  local rc=$1 signal reason_type status
+  local rc=$1 signal reason_type status successor
   signal=$(cycle_signal_name "$rc")
   if [ "$rc" -eq 0 ] && watch_output_has_wake "$child_out"; then
     reason_type=$(watch_output_reason_type "$child_out")
-    cycle_log_append "$rc" "$signal" "$reason_type" none
+    successor=none
+    if start_grok_continuity_successor; then
+      successor="started:$GROK_SUCCESSOR_PID"
+    fi
+    cycle_log_append "$rc" "$signal" "$reason_type" "$successor"
     print_watch_output "$child_out"
     rm -f "$child_out" 2>/dev/null || true
     child=

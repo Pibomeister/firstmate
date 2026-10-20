@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Firstmate watcher.
+# The internal --grok-hold tag requires FM_WATCH_GROK_HOLD=1.
 # Classifies supervision wakes in bash. In normal mode it absorbs benign wakes
 # and keeps blocking; it queues and exits only for actionable wakes.
 # The no-verb signal and stale path is absorb-only-on-positive-evidence: a wake
@@ -177,6 +178,10 @@
 # deleted stops itself instead of running on as an orphan. That check is scoped
 # to this process alone and never signals another watcher.
 set -u
+if [ "${BASH_SOURCE[0]}" = "$0" ] && [ "$#" -gt 0 ]; then
+  [ "$#" -eq 1 ] && [ "$1" = --grok-hold ] && [ "${FM_WATCH_GROK_HOLD:-}" = 1 ] || exit 2
+  shift
+fi
 
 SCRIPT_DIR="$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd "${d:-/}" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
@@ -3113,6 +3118,7 @@ EOF
             continue
           fi
           wake "$reason"
+          continue
         fi
         pr_poll_control_release || exit 1
         fm_wake_append check "$c" "$reason" || exit 1
@@ -3253,8 +3259,9 @@ EOF
 $pending
 EOF
         wake "$reason"
+      else
+        triage_log "absorbed benign $reason"
       fi
-      triage_log "absorbed benign $reason"
     fi
   fi
 
