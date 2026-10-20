@@ -7,6 +7,9 @@
 # Name verification belongs inside the worker's loaded-tool registry, never
 # in an out-of-band server connection from these launch-time checks.
 
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
+
 # fm_exclude_tools_names <config-dir>: print the comma-joined names, empty when
 # the file is absent or lists nothing. Non-zero with the reason on stderr when
 # the file or an entry is invalid.

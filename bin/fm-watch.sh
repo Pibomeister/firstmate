@@ -177,6 +177,10 @@
 # and exits 1, so a watcher whose temporary home or disposable checkout was
 # deleted stops itself instead of running on as an orphan. That check is scoped
 # to this process alone and never signals another watcher.
+
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
+
 set -u
 if [ "${BASH_SOURCE[0]}" = "$0" ] && [ "$#" -gt 0 ]; then
   [ "$#" -eq 1 ] && [ "$1" = --grok-hold ] && [ "${FM_WATCH_GROK_HOLD:-}" = 1 ] || exit 2

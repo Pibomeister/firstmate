@@ -6,6 +6,9 @@
 #
 # Target string shape: the Orca terminal id accepted by `orca terminal ...`.
 
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
+
 # Shared composer-content classifier (empty|pending|unknown, and the fleet-wide
 # dead-shell-vs-agent-composer rule). Owned by bin/fm-composer-lib.sh, reused by
 # every backend so the decision cannot drift.

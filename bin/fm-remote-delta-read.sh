@@ -25,6 +25,10 @@
 # unblock any queued command other than another reply long-poll, then publishes
 # that preemption as distinct exit 76. The bin/fm-remote-job-lib.sh header owns
 # that contract.
+
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
+
 set -eu
 
 FM_HOME=${FM_HOME:?FM_HOME is required}

@@ -86,6 +86,10 @@
 # Ownership, durable capture, publication, restart recovery, and the handled
 # acknowledgement all belong to bin/fm-procevent.sh; this adapter owns only the
 # condition->action semantics above.
+
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
+
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

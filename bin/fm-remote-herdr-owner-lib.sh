@@ -2,7 +2,8 @@
 # Who owns a Herdr session socket, and was that process born in the Aqua
 # login session?
 #
-# Source this file; it defines functions only. It is the single owner of the
+# Source this file; it defines functions only, beyond the Bash compatibility
+# level below. It is the single owner of the
 # socket-owner discovery and birth classification shared by
 # bin/fm-remote-herdr-guard.sh (the launch agent's exec target) and
 # bin/fm-remote-doctor.sh (the readiness check for that session).
@@ -49,6 +50,9 @@
 #     Succeeds only for launchd and worker. `unknown` is deliberately not
 #     Aqua: a server that cannot prove its birth is treated like a foreign one,
 #     because leaving it in place silently reproduces the keychain failure.
+
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
 
 fm_remote_herdr_socket_owner() { # <socket-path>
   local socket=$1 real pid='' line candidates='' candidate cmd

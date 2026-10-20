@@ -53,7 +53,10 @@
 # A caller that has already recorded the outcome locally must surface a
 # non-zero return rather than treat it as delivered.
 #
-# Sourced by the publishers above and by tests. No side effects on source.
+# Sourced by the publishers above and by tests. No side effects on source beyond its Bash compatibility level.
+
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
 
 _FM_PARENT_CHANNEL_LIB_DIR="$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd "${d:-/}" && pwd)"
 # shellcheck source=bin/fm-secondmate-parent-lib.sh

@@ -66,6 +66,10 @@
 # while a new finding that lands past the one-line cut is still news. A sweep
 # killed part way through leaves no record and is retried, instead of
 # suppressing its finding.
+
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
+
 set -u
 export LC_ALL=C
 # A watched git remote must never stop to ask for credentials; an unauthenticated

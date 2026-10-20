@@ -17,6 +17,9 @@
 #   fm-kimi-turnend-hook.sh remove
 set -u
 
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
+
 case "${1:-}" in
   install|remove) ACTION=$1 ;;
   -h|--help)
@@ -71,6 +74,9 @@ IDENTIFIER = b"FIRSTMATE KIMI TURN-END HOOK"
 HOOK_NAME = b"fm-turn-end.sh"
 TOKEN_NAME = re.compile(r"fm\.[A-Za-z0-9]{12}\Z")
 
+# An earlier release's hook body starts with the same managed header, so install
+# and remove both own it.
+HOOK_HEADER = b"#!/usr/bin/env bash\n# Firstmate Kimi turn-end hook."
 HOOK_BYTES = b'''#!/usr/bin/env bash
 # Firstmate Kimi turn-end hook. Managed by fm-kimi-turnend-hook.sh.
 # This hook is deliberately passive: every path is silent and exits zero.
@@ -79,7 +85,7 @@ exec >/dev/null 2>&1
 payload=
 IFS= read -r payload || [ -n "$payload" ] || exit 0
 command -v jq >/dev/null 2>&1 || exit 0
-workspace=$(jq -er 'select(.hook_event_name == "Stop") | .cwd | strings | select(length > 0)' <<< "$payload" 2>/dev/null) || exit 0
+workspace=$(printf '%s\\n' "$payload" | jq -er 'select(.hook_event_name == "Stop") | .cwd | strings | select(length > 0)' 2>/dev/null) || exit 0
 pointer="$workspace/.fm-kimi-turnend"
 [ -f "$pointer" ] || exit 0
 first=
@@ -202,8 +208,9 @@ def validate_firstmate_files_for_remove() -> None:
     if os.path.lexists(HOOK):
         info = regular_not_symlink(HOOK, "Firstmate hook script")
         with open(HOOK, "rb") as stream:
-            if stream.read() != HOOK_BYTES:
-                refuse(f"Firstmate hook script has unexpected content at {HOOK}.")
+            existing_hook = stream.read()
+        if existing_hook != HOOK_BYTES and not existing_hook.startswith(HOOK_HEADER):
+            refuse(f"Firstmate hook script has unexpected content at {HOOK}.")
         if stat.S_IMODE(info.st_mode) & 0o077:
             refuse(f"Firstmate hook script has unexpectedly broad permissions at {HOOK}.")
     if os.path.lexists(REGISTRY):
@@ -238,9 +245,7 @@ try:
             regular_not_symlink(HOOK, "Firstmate hook script")
             with open(HOOK, "rb") as stream:
                 existing_hook = stream.read()
-            if existing_hook != HOOK_BYTES and not existing_hook.startswith(
-                b"#!/usr/bin/env bash\n# Firstmate Kimi turn-end hook."
-            ):
+            if existing_hook != HOOK_BYTES and not existing_hook.startswith(HOOK_HEADER):
                 refuse(f"Firstmate hook path has unexpected content at {HOOK}.")
         if region is None:
             marker = BEGIN if original.endswith(b"\n") else BEGIN_OWNS_NEWLINE

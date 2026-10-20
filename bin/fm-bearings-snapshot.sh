@@ -91,6 +91,10 @@
 #
 # Output contract: `fm-bearings.v1`. No locks or reports; the underlying snapshot's
 # parent-side remote-ledger cache refresh is the only default fleet-state mutation.
+
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
+
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

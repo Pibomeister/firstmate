@@ -13,6 +13,10 @@
 # with a bounded max size, verifies SHA-256 before install, then refuses to
 # finish unless the binary reports the exact pin version and a client protocol
 # at or above the required floor (16 for the real-Herdr family).
+
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
+
 set -eu
 
 # Exact pin - change only with a re-verified real-Herdr matrix.

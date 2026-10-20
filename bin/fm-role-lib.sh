@@ -62,6 +62,9 @@
 # malformed-input reason), FM_ROLE_PUB_TARGET, FM_ROLE_PUB_AUTHORITY,
 # FM_ROLE_PUB_DENIAL.
 
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
+
 # fm_role_file <config-dir>
 fm_role_file() {
   printf '%s/firstmate-role\n' "${1%/}"

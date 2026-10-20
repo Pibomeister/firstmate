@@ -32,6 +32,10 @@
 # non-zero exit, never a warning and never a silent skip. Only the launching
 # user's own store is written, it must be a regular file this uid owns, every
 # unrelated key and entry is preserved, and the replacement is atomic.
+
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
+
 set -u
 unset CDPATH \
   GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_OBJECT_DIRECTORY GIT_INDEX_FILE \

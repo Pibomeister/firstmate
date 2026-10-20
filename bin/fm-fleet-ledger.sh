@@ -51,6 +51,10 @@
 #
 # Exit status: 0 on success or when off, 2 on a usage error, 1 when a record
 # could not be written. Producers ignore a failure so it never changes theirs.
+
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
+
 set -u
 # Byte semantics for offsets and lengths; jq still reads the text as UTF-8.
 export LC_ALL=C

@@ -35,7 +35,10 @@
 # remaining record.
 #
 # Sourced by those scripts and by tests. No side effects on source beyond its
-# sourced libraries.
+# sourced libraries and its Bash compatibility level.
+
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
 
 _FM_MERGE_AUTHORITY_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=bin/fm-pr-lib.sh

@@ -8,6 +8,9 @@
 # and the task text bin/fm-dispatch-resolve.sh sends to the router, so every
 # consumer sees the same section bodies.
 
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
+
 # Parse an exact ATX heading outside fenced blocks. Body mode prints through
 # the next unfenced heading at the same or a higher level; present mode reports
 # whether the heading exists.

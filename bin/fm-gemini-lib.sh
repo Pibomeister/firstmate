@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Gemini process identity.
 # Sourced by bin/backends/tmux.sh. This file is sourced by scripts and has no
-# side effects on source.
+# side effects on source beyond its Bash compatibility level.
 #
 # Why one owner: the Gemini CLI ships as a node bundle, so a live gemini pane
 # presents as an interpreter and nothing about its command NAME says gemini.
@@ -23,6 +23,9 @@
 # Detection of firstmate's OWN harness uses these structural rules for the
 # ancestry fallback. The GEMINI_CLI=1 environment marker in bin/fm-harness.sh
 # remains the load-bearing path for the installed bundle shape on modern Node.
+
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
 
 # True when path $1 carries Gemini's own structural evidence: the file is named
 # gemini, or it sits inside the published @google/gemini-cli package tree. A

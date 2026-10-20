@@ -42,6 +42,10 @@
 # extra tab-separated records. Enforcing this here rather than at each call site
 # is what makes "this file cannot carry a credential or an argv" checkable in one
 # place.
+
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
+
 set -u
 
 FM_TIMING_DETAIL_MAX=${FM_TIMING_DETAIL_MAX:-80}

@@ -28,6 +28,10 @@
 # sshd exiting and reparenting this process - also cancels the job. The worker
 # then skips or stops the cancelled job instead of running it to completion for
 # nobody.
+
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
+
 set -eu
 
 PROTOCOL=1

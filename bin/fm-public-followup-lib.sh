@@ -10,8 +10,9 @@
 # helpers, follow-up window classification, and deterministic terminal-event
 # identity.
 #
-# Sourced, never executed. No side effects on source (it creates nothing), which
-# is what keeps a relay-disabled home free of public-followup artifacts.
+# Sourced, never executed. No side effects on source beyond its Bash
+# compatibility level (it creates nothing), which is what keeps a
+# relay-disabled home free of public-followup artifacts.
 # set -u / set -e safe.
 #
 # GATE ORDER - the acceptance criterion for relay-disabled homes:
@@ -82,6 +83,9 @@
 # Depends on bin/fm-x-lib.sh for .env reading and the private-artifact
 # publication primitives (atomic, single-link, mode-validated, non-executable);
 # those remain that file's contract and are not restated here.
+
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
 
 _FM_PF_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd 2>/dev/null)" || _FM_PF_LIB_DIR="."
 # shellcheck source=bin/fm-x-lib.sh

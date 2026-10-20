@@ -8,6 +8,10 @@
 # capture (fm-remote-secondmate-control.sh), clamped to that command's
 # 100-line cap. An unreachable host or unreadable endpoint fails loudly naming
 # the host; the local backend adapters are never asked to read a remote target.
+
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
+
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

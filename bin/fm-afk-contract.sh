@@ -146,6 +146,10 @@
 # fm_afk_contract_present, fm_afk_contract_mode, fm_afk_contract_away_present,
 # fm_afk_contract_archive_dir, fm_afk_contract_live_ordinary_workers,
 # fm_afk_contract_lock_hold, fm_afk_contract_lock_release) without running main.
+
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
+
 set -u
 
 FM_AFK_CONTRACT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

@@ -94,6 +94,9 @@
 #              persistent supervisor's environment cannot chain its unrelated
 #              routed tasks into one trace.
 
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
+
 # Strict W3C traceparent validator: version 00, 32-hex trace id, 16-hex span id,
 # 2-hex flags, with neither id all-zero. The regex lives in a variable because
 # bash 3.2 only honors an unquoted right-hand side for =~.

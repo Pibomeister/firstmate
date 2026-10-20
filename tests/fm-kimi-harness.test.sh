@@ -482,6 +482,29 @@ EOF
   pass "Kimi hook install is idempotent and removal restores every foreign config byte"
 }
 
+# A hook installed by an earlier release carries the same managed header with
+# an older body; removal must own it rather than refuse until a reinstall.
+test_kimi_hook_remove_owns_an_earlier_release_hook() {
+  local home config hook
+  home="$TMP_ROOT/config-earlier-hook"
+  config="$home/.kimi-code/config.toml"
+  hook="$home/.kimi-code/fm-turn-end.sh"
+  mkdir -p "$home/.kimi-code"
+  printf 'default_model = "test"\n' > "$config"
+  HOME="$home" "$KIMI_HOOK" install || fail "Kimi hook install failed before the upgrade case"
+  printf '#!/usr/bin/env bash\n# Firstmate Kimi turn-end hook. Managed by an earlier release.\nexit 0\n' > "$hook"
+  chmod 700 "$hook"
+  HOME="$home" "$KIMI_HOOK" remove || fail "Kimi hook removal refused a hook from an earlier release"
+  assert_absent "$hook" "removal left the earlier release's hook script"
+  printf '#!/usr/bin/env bash\necho foreign\n' > "$hook"
+  chmod 700 "$hook"
+  HOME="$home" "$KIMI_HOOK" install && fail "Kimi hook install overwrote a foreign hook script"
+  HOME="$home" "$KIMI_HOOK" remove && fail "Kimi hook removal deleted a foreign hook script"
+  [ "$(cat "$hook")" = "$(printf '#!/usr/bin/env bash\necho foreign')" ] \
+    || fail "a refused Kimi hook command changed the foreign hook script"
+  pass "Kimi hook removal owns an earlier release's hook, and install and remove both refuse a foreign one"
+}
+
 test_kimi_hook_remove_preserves_owned_newline_boundary() {
   local appended config expected home original
   home="$TMP_ROOT/config-owned-newline"
@@ -1152,6 +1175,7 @@ test_kimi_bordered_prompt_needs_no_override() {
 
 test_kimi_hook_install_is_surgical_idempotent_and_removable
 test_kimi_hook_remove_preserves_owned_newline_boundary
+test_kimi_hook_remove_owns_an_earlier_release_hook
 test_kimi_hook_fails_closed_on_missing_malformed_or_partial_config
 test_kimi_hook_install_refuses_without_jq
 test_kimi_launch_then_send_is_verified

@@ -68,6 +68,7 @@ Coordinate any workflow rollback with its required-check names so a retired chec
   It does not make `data/` tracked.
 - Helper scripts in `bin/` are plain bash.
   Each starts with a usage header comment; keep it accurate when you change behavior.
+  Every bash script in `bin/` and `bin/backends/` sets `[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50` right after its header, file-wide shellcheck directives, and any `set` line its usage text is printed up to, because Bash 5.1+ otherwise writes here-documents into a pipe before the reader starts and hangs when the host hands out small pipe buffers; level 50 restores temp files from Bash 5.2, and `tests/fm-heredoc-transport.test.sh` owns the regression.
   Test scripts and helpers in `tests/` are plain bash too.
   `bin/fm-lint.sh` must pass: it is the single owner of the lint definition (the shellcheck file set, config, pinned shellcheck version, pinned actionlint workflow lint, and the backend-purity check rejecting direct Beads CLI calls in core `bin/` scripts).
   CI uses its full canonical partitions; the no-mistakes pre-push gate uses its context-selected default.

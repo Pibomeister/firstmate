@@ -69,12 +69,16 @@
 #
 # Requires bin/fm-wake-lib.sh (root home, local homes, project lock path),
 # bin/fm-secondmate-registry-lib.sh (which the local-homes walk reads), and
-# bin/fm-backend.sh (fm_meta_get) to be sourced first. No side effects on source.
+# bin/fm-backend.sh (fm_meta_get) to be sourced first. No side effects on source beyond its Bash compatibility level.
+
+# shellcheck disable=SC2034 # read by bin/fm-spawn.sh after sourcing.
+
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
 
 # Exit status of a spawn deferred because the project is at capacity: the
 # sysexits "temporary failure" code, so a caller can tell a deferral that leaves
 # the task queued from an ordinary failure.
-# shellcheck disable=SC2034 # read by bin/fm-spawn.sh after sourcing.
 FM_PROJECT_CAPACITY_DEFER_EXIT=75
 
 # The config directory holding this machine's declaration: the spawning home's

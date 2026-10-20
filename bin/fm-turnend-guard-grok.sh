@@ -6,6 +6,10 @@
 # that Grok process. Field absence preserves the pre-native one-resume fallback.
 # Invalid or unreadable input starts neither path. Camel case has typed
 # precedence over the legacy snake-case spelling when both are present.
+
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
+
 set -u
 
 PAYLOAD=$(cat 2>/dev/null || true)

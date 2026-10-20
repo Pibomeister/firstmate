@@ -20,6 +20,10 @@
 # HTTPS remote carries neither fact, which is why the captain is asked rather
 # than told.
 # Usage: fm-forge-detect.sh <clone-dir>
+
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
+
 set -eu
 
 DIR=${1:?usage: fm-forge-detect.sh <clone-dir>}

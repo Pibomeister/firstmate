@@ -5,6 +5,10 @@
 # a Task subagent), so the marker is not proof of process exit by itself;
 # fm_control_droid_session_ended also requires the process to be gone. Every
 # other reason, including "clear", writes nothing.
+
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
+
 set -u
 set -o pipefail
 

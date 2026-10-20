@@ -14,6 +14,10 @@
 # for its own backlog or delivered lock whose pid is dead and whose mtime is at
 # least 30 seconds old. No live or uncertain lock is touched. On confirmed
 # receipt the delivered scratch file is removed; no other path is deletable.
+
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
+
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

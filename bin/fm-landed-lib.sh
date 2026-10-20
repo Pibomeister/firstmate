@@ -38,6 +38,9 @@
 # display compatibility does not admit kindless reports from raw backlog rows.
 # tests/fm-bearings-snapshot.test.sh covers both fresh and cached v1 summaries.
 
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
+
 # shellcheck disable=SC2034 # Output global, read by the sourcing caller.
 FM_LANDED_JQ_DEFS='
   def scout_report:

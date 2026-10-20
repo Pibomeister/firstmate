@@ -22,6 +22,9 @@
 # task's full status log path, while every OPEN DECISIONS entry begins with the
 # task id that identifies its durable state/<id>.status source.
 
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
+
 FM_LINE_CAP_DEFAULT=220
 FM_LINE_CAP_SUFFIX=' [truncated]'
 
