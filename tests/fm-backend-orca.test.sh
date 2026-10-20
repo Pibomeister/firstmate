@@ -513,6 +513,23 @@ test_composer_state_idle_claude_is_empty() {
   pass "fm_backend_orca_composer_state: idle claude reads empty; its unstyled suggestion stays unknown"
 }
 
+# A 120-column Orca capture of Grok 1.0.62 (2026-10-20) drew the key-hint row
+# directly under the box; the idle box read unknown and fm-control refused to
+# type /exit into it.
+test_composer_state_grok_flush_hint_row() {
+  local out
+  orca_case composer-grok-flush-hint
+  printf '{"ok":true,"result":{"terminal":{"tail":["     Worked for 50s                                                                                                    █","                                                                                                                       █","  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮","  │ ❯                                                                                                                │","  ╰─────────────────────────────────────────────────────────────────────────────── Grok 4.7 (high) · always-approve ─╯","  Shift+Tab:mode  │  Ctrl+x:shortcuts"]}}}\n' > "$RESP/1.out"
+  printf '{"ok":true,"result":{"terminal":{"tail":["     Worked for 50s                                                                                                    █","                                                                                                                       █","  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮","  │ ❯ fix the bug                                                                                                    │","  ╰─────────────────────────────────────────────────────────────────────────────── Grok 4.7 (high) · always-approve ─╯","  Enter:send  │  Opt+Enter:newline  │  Shift+Tab:mode  │  Ctrl+x:"]}}}\n' > "$RESP/2.out"
+  out=$( PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" \
+    bash -c '. "$0/bin/backends/orca.sh"; fm_backend_orca_composer_state term-123' "$ROOT" )
+  [ "$out" = empty ] || fail "an idle Grok composer with its hint row flush under the box should read empty, got '$out'"
+  out=$( PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" \
+    bash -c '. "$0/bin/backends/orca.sh"; fm_backend_orca_composer_state term-123' "$ROOT" )
+  [ "$out" = pending ] || fail "typed text in that Grok composer should read pending, got '$out'"
+  pass "fm_backend_orca_composer_state: Grok's flush key-hint row reads empty when idle and pending when typed"
+}
+
 # Dead-shell injection safety (task fm-composer-shellglyph-safety): a pane whose
 # agent has exited to a bare login shell has no bordered composer row, so the
 # classifier finds nothing and reports `unknown` - NOT a safe (empty) injection
@@ -2102,6 +2119,7 @@ test_composer_state_popup_placeholder_fill_is_pending
 test_composer_state_grok_middle_dot_title
 test_composer_state_idle_codex_placeholder_is_empty
 test_composer_state_idle_claude_is_empty
+test_composer_state_grok_flush_hint_row
 test_composer_state_bare_shell_prompt_is_unknown
 test_send_text_submit_popup_autocomplete_requires_second_enter
 test_send_literal_constructs_non_enter_send

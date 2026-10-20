@@ -1092,6 +1092,48 @@ test_matrix_grok_middle_dot_title() {
   pass "matrix: grok 1.0.62's middle-dot title reads empty when idle and pending when typed"
 }
 
+# Grok 1.0.62 on Orca, captured 2026-10-20 at 120 columns: transcript rows end
+# in a scrollbar cell and the key-hint row sits directly under the bottom
+# border with no blank row. With `typed`, the same box holds text and the hint
+# row shows Grok's typed-composer keys.
+grok_flush_hint_screen() {  # [typed]
+  local content='  │ ❯                                                                                                                │'
+  local hint='  Shift+Tab:mode  │  Ctrl+x:shortcuts'
+  if [ "${1:-}" = typed ]; then
+    content='  │ ❯ fix the bug                                                                                                    │'
+    hint='  Enter:send  │  Opt+Enter:newline  │  Shift+Tab:mode  │  Ctrl+x:'
+  fi
+  printf '%s\n' \
+    '                                                                                                                       █' \
+    '     Worked for 50s                                                                                                    █' \
+    '                                                                                                                       █' \
+    '  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮' \
+    "$content" \
+    '  ╰─────────────────────────────────────────────────────────────────────────────── Grok 4.7 (high) · always-approve ─╯' \
+    "$hint"
+}
+
+test_matrix_grok_hint_row_flush_under_box() {
+  # The hint row directly under the box used to read as a lower live shape,
+  # so an idle Grok composer read unknown and fm-control refused to exit it.
+  local idle typed below
+  idle=$(grok_flush_hint_screen)
+  typed=$(grok_flush_hint_screen typed)
+  assert_screen "grok flush hint idle on orca" empty "$CAPS_PLAIN" "$idle"
+  assert_screen "grok flush hint idle on herdr" empty "$CAPS_STYLED" "$idle"
+  assert_screen "grok flush hint idle on tmux" empty "$CAPS_TMUX" "$idle" 4
+  assert_screen "grok flush hint typed on orca" pending "$CAPS_PLAIN" "$typed"
+  assert_screen "grok flush hint typed on herdr" pending "$CAPS_STYLED" "$typed"
+  assert_screen "grok flush hint typed on tmux" pending "$CAPS_TMUX" "$typed" 4
+  # Only the hint row is furniture: activity below it, or in its place, still
+  # makes the box stale.
+  below=$(printf '%s\n%s' "$idle" '  Working on request...')
+  assert_screen "activity below the grok hint row" unknown "$CAPS_PLAIN" "$below"
+  below=$(printf '%s\n' "$idle" | sed 's/^  Shift+Tab:mode  │  Ctrl+x:shortcuts$/  Working on request.../')
+  assert_screen "activity in place of the grok hint row" unknown "$CAPS_PLAIN" "$below"
+  pass "matrix: grok's key-hint row flush under its box reads empty when idle and pending when typed"
+}
+
 test_matrix_claude_titled_top_rule() {
   # A named Claude Code session draws its title into the composer's TOP rule
   # (issues #5601 and #5558; observed on herdr as
@@ -1481,6 +1523,7 @@ test_matrix_opencode_leftbar_cwd_furniture
 test_matrix_opencode_leftbar_abs_cwd_furniture
 test_matrix_grok_titled_bottom_border
 test_matrix_grok_middle_dot_title
+test_matrix_grok_hint_row_flush_under_box
 test_matrix_claude_titled_top_rule
 test_matrix_grok_144_approval_titled_bottom_border
 test_matrix_kimi_bordered_shell_glyph_box

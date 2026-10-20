@@ -850,6 +850,12 @@ On 2026-10-19 on macOS arm64, a read-only `fm_backend_composer_state herdr <pane
 The other four panes showed the `You hit your weekly limit.` choice, read `pending`, and the sink named `Grok weekly-limit choice`, so `fm-control` exit and relaunch refuse to type into that choice.
 `tests/fm-composer-lib.test.sh` and `tests/fm-backend-herdr.test.sh` pin both live captures.
 
+On 2026-10-20 a 120-column Orca capture of an idle Grok 1.0.62 (Grok 4.7, high effort) composer drew its `Shift+Tab:mode  │  Ctrl+x:shortcuts` key-hint row directly under the bottom border, with no blank row between them.
+The cursorless staleness probe read that row as a lower live shape, so the visibly empty box read `unknown` and `fm-control` refused to type `/exit`.
+The classifier now treats only that key-hint shape (`FM_COMPOSER_GROK_HINT_RE_DEFAULT` in `bin/fm-composer-lib.sh`), as the single row directly under a selected box, as box furniture; any other row there, or activity below the hint row, still makes the box stale.
+`tests/fm-composer-lib.test.sh` and `tests/fm-backend-orca.test.sh` pin the capture as idle `empty` and its typed variant as `pending`.
+This change was proven against the recorded capture only; no live Grok pane was rerun for it.
+
 This closes only #3436's idle-composer-misclassification symptom (Grok/Herdr composer read `unknown` instead of `empty`, blocking away-mode injection). The issue's second symptom - a leftover watcher never yielding and never being taken over or refused at AFK start - is unrelated to composer classification and is tracked separately in #2270, where #3436's reproduction serves as corroborating evidence.
 Grok has since changed that title again, and the newer accepted shape - the same title at the ALIGNED width carrying an approval mode - is recorded in [Grok approval-titled bottom border](#grok-approval-titled-bottom-border) so the two widths are never conflated.
 Cursor is deliberately outside this cursor-anchored empty-composer matrix because its terminal cursor is parked outside the composer; tmux's Cursor-specific, process-identity-gated cursorless fallback is covered by the [Cursor Agent CLI](#cursor-agent-cli) section's separate live evidence and drift guard.

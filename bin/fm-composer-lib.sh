@@ -524,6 +524,14 @@ FM_COMPOSER_LEFTBAR_FOOTER_RE_DEFAULT='^(Build|Plan)[[:space:]]+·[[:space:]]+'
 # is deliberately not matched - and the marker is quantifier-free so the same
 # bytes match under LC_ALL=C as under a UTF-8 locale.
 FM_COMPOSER_MODE_HINT_RE_DEFAULT='^[[:space:]]*(⏵|⏸)'
+# Grok 1.0.62 draws its key-hint row below its bordered composer: two or more
+# `Key:action` cells joined by a box-drawing bar (`Shift+Tab:mode  │  Ctrl+x:shortcuts`
+# idle, `Enter:send  │  Opt+Enter:newline  │  Shift+Tab:mode  │  Ctrl+x:`
+# typed). Usually a blank row separates it from the box, but a 116-column Orca
+# capture of Grok 1.0.62 (2026-10-20) drew it directly under the bottom border,
+# where the cursorless staleness probe read it as a lower live shape. It is
+# consulted only as the single row directly below a selected box.
+FM_COMPOSER_GROK_HINT_RE_DEFAULT='^[A-Z][A-Za-z]*(\+[A-Za-z.]+)*:[a-z]*([[:space:]]+│[[:space:]]+[A-Z][A-Za-z]*(\+[A-Za-z.]+)*:[a-z]*)+$'
 # omp (Oh My Pi) draws a one-row status line directly BELOW its borderless
 # composer: an identity or spinner cell, then middle-dot separated model, path,
 # git, and context cells. Verified live through Herdr on omp 18.1.11:
@@ -1897,6 +1905,15 @@ _fm_composer_select_cursorless() {
     raw=$(_fm_composer_screen_row "$next" "$plain")
     trimmed=$raw
     fm_composer_normalize_trim_var trimmed
+    # Grok's key-hint row directly under its box is that box's furniture; the
+    # probe resumes on the row after it.
+    if [ "$FM_COMPOSER_SELECTED_KIND" = box ] && [ "$next" = "$((boundary + 1))" ] \
+       && fm_composer_idle_matches "$trimmed" "$FM_COMPOSER_GROK_HINT_RE_DEFAULT" sensitive; then
+      next=$((next + 1))
+      raw=$(_fm_composer_screen_row "$next" "$plain")
+      trimmed=$raw
+      fm_composer_normalize_trim_var trimmed
+    fi
     if [ -n "$trimmed" ] && ! fm_composer_row_has_edge "$trimmed"; then
       FM_COMPOSER_SELECTED_KIND=
       return 1
