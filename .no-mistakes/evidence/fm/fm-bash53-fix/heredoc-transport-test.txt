@@ -1,0 +1,11 @@
+ok - help printed by 56 scripts from their own headers never shows the compatibility guard
+ok - drain under /opt/homebrew/bin/bash surfaces long status through temp-file here-documents
+ok - send under /opt/homebrew/bin/bash records a long steer through temp-file here-documents
+ok - a watcher cycle under /opt/homebrew/bin/bash surfaces a long signal list through temp-file here-documents
+ok - crew-state under /opt/homebrew/bin/bash reads a long status log through temp-file here-documents
+ok - drain under /bin/bash surfaces long status through temp-file here-documents
+ok - send under /bin/bash records a long steer through temp-file here-documents
+ok - a watcher cycle under /bin/bash surfaces a long signal list through temp-file here-documents
+ok - crew-state under /bin/bash reads a long status log through temp-file here-documents
+bash tests/fm-heredoc-transport.test.sh  4.59s user 6.84s system 63% cpu 18.098 total
+exit=0

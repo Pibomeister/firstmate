@@ -1,0 +1,21 @@
+=== interpreter: /bin/bash (3.2.57(1)-release)
+--- fm-send.sh t32 <560 bytes>
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.N0aqjJ
+WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
+exit=0 secs=2
+inbox records: 1
+inbox body carries the full 560-byte steer: yes
+pane after doorbell:
+: Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your 't32.inbox' steering inbox, read and act on each in numeric order, then mv each into its ha
+: Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your 't32.inbox' steering inbox, read and act on each in numeric order, then mv each into its ha
+--- fm-wake-drain.sh
+exit=0 secs=0 bytes-out=25359
+wake annotation: latest wake-EVENT observed at drain, not current state: t53.status: note: second steer-53-0001 steer-53-0002 steer-53-0003 
+--- fm-watch.sh (one cycle)
+exit=0 secs=5 bytes-out=1271
+signal: /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.N0aqjJ/state/t32.status /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.N0aqjJ/state/task32-1-with-a-deliberatel
+--- fm-crew-state.sh t32
+state: unknown · source: none · worktree gone (torn down?)
+exit=0 secs=0
+--- here-string transport inside firstmate scripts (probe):
+ 611 file

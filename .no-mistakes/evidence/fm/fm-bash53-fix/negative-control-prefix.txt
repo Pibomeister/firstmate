@@ -1,0 +1,3 @@
+ok - help printed by 56 scripts from their own headers never shows the compatibility guard
+not ok - drain under /opt/homebrew/bin/bash: 45 of 45 here-strings reached their reader through a pipe, in: pipe /tmp/fm-negctl.jKPT/bin/fm-captain-hold.sh pipe /tmp/fm-negctl.jKPT/bin/fm-guard.sh pipe /tmp/fm-negctl.jKPT/bin/fm-harness.sh pipe /tmp/fm-negctl.jKPT/bin/fm-wake-drain.sh 
+exit=1

@@ -1,0 +1,5 @@
+Bash 5.3.9, lab home, fm-wake-drain.sh / fm-crew-state.sh:
+post-fix drain, caller exports BASH_COMPAT=53: exit=0  here-strings in firstmate scripts -> file=62 pipe=0
+post-fix drain, caller exports BASH_COMPAT=52: exit=0  here-strings in firstmate scripts -> file=61 pipe=0
+post-fix drain, clean env                   : exit=0  here-strings in firstmate scripts -> file=61 pipe=0
+PRE-FIX drain (base c462bbe9), clean env     : exit=0  here-strings in firstmate scripts -> file=0 pipe=61
