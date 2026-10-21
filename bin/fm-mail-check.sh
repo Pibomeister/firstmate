@@ -42,6 +42,10 @@
 # inside that bound before the poll starts. A poll that does not finish is a
 # real condition, so the budget is enforced rather than assumed: a timed-out
 # poll reports one line naming the budget instead of leaving the check silent.
+
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
+
 set -u
 export LC_ALL=C
 

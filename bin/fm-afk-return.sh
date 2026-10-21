@@ -54,6 +54,10 @@
 # refusal branches by exit status so a reporting surface can keep refusing
 # during an active away window while still rendering the catch-up posture as
 # content; this file owns the gate format both branches read.
+
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
+
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -66,12 +70,13 @@ LOCK="$STATE/.afk-return-catchup.lock"
 RETURN_GRACE=${FM_GUARD_GRACE:-300}
 
 # The posture-record owner: path helpers only; every read goes through its
-# subcommands. It sources fm-classify-lib.sh, which has no side effects, so the
-# advertised read-only guard stays literal.
+# subcommands. It sources fm-classify-lib.sh, which has no side effects beyond
+# its Bash compatibility level, so the advertised read-only guard stays literal.
 # shellcheck source=bin/fm-afk-contract.sh
 . "$SCRIPT_DIR/fm-afk-contract.sh"
 CONTRACT="$SCRIPT_DIR/fm-afk-contract.sh"
-# Functions only: decodes the stored hold reasons the catch-up listing shows.
+# Functions only, beyond its Bash compatibility level: decodes the stored hold
+# reasons the catch-up listing shows.
 # shellcheck source=bin/fm-hold-reason-lib.sh
 . "$SCRIPT_DIR/fm-hold-reason-lib.sh"
 

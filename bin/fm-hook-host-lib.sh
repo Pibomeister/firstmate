@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Shared "which harness delivered this hook payload?" predicate for the tracked
 # Claude-shaped hook entries.
-# This file is sourced by hook entrypoints and has no side effects on source.
+# This file is sourced by hook entrypoints and has no side effects on source beyond its Bash compatibility level.
 #
 # Why it exists: Cursor Agent CLI loads `<project>/.claude/settings.json` in
 # addition to its own `<project>/.cursor/hooks.json` (verified live, cursor-agent
@@ -23,6 +23,9 @@
 # Fail direction: when the host cannot be determined (no payload, no jq), the
 # caller RUNS. A redundant run under Cursor wastes work; a skipped run under
 # Claude breaks the primary's supervision, which is the worse failure.
+
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
 
 # Return 0 when payload $1 was delivered by a foreign host whose own tracked
 # Firstmate registration already covers this event.

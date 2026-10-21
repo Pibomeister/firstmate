@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Backend-neutral harness-process identity.
 # Sourced by bin/backends/tmux.sh and bin/backends/herdr.sh. This file is
-# sourced by scripts and has no side effects on source.
+# sourced by scripts and has no side effects on source beyond its Bash compatibility level.
 #
 # Why one owner: every runtime backend that proves an agent is alive does it by
 # attributing operating-system processes - the pane's foreground process group
@@ -12,6 +12,9 @@
 # docs/tmux-backend.md "Agent liveness probe" owns the empirical basis for the
 # names below, and tests/fm-tmux-agent-liveness.test.sh plus
 # tests/fm-harness-liveness-drift-live-e2e.test.sh keep them honest.
+
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
 
 _FM_AGENT_PROCESS_LIB_DIR=${BASH_SOURCE[0]%/*}
 [ "$_FM_AGENT_PROCESS_LIB_DIR" != "${BASH_SOURCE[0]}" ] || _FM_AGENT_PROCESS_LIB_DIR=.

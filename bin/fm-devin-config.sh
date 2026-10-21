@@ -20,6 +20,10 @@
 # Turn-end touches follow a successful generation-bound apply; events
 # rejected as stale emit no notification.
 set -eu
+
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
+
 case "${1:-}" in
   -h|--help)
     sed -n '2,/^set -eu/{ /^#/s/^# \{0,1\}//p; }' "$0"

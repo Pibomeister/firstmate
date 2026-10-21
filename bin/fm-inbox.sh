@@ -101,6 +101,10 @@
 # bin/fm_voice_records.py owns the scope-controlled machine view the voice agent
 # reads, because the voice agent must be able to answer without record free text
 # ever reaching a model.
+
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
+
 set -euo pipefail
 
 # A non-interactive `ssh host fm-inbox.sh ...` does NOT get a login shell, so it

@@ -52,6 +52,10 @@
 # and missing prerequisite and cannot admit concurrency. A script that fails
 # only under concurrency must be removed from the candidate set and investigated;
 # this harness never retries a failure into green.
+
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
+
 set -eu
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

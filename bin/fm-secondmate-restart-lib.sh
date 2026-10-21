@@ -22,6 +22,9 @@
 # <id> relaunch either way, run here for a local mate and run on the host over
 # bin/fm-on.sh for a remote one.
 
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
+
 _FM_SECONDMATE_RESTART_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=bin/fm-backend.sh disable=SC1091
 . "$_FM_SECONDMATE_RESTART_LIB_DIR/fm-backend.sh"

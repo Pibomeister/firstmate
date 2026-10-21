@@ -134,6 +134,10 @@
 #     row and byte budget and write the copy from them; otherwise read and
 #     change nothing. fm-session-start.sh runs it at every locked session
 #     start, on every harness and away posture, before the drain.
+
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
+
 set -eu
 
 SCRIPT_DIR="$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd "${d:-/}" && pwd)"

@@ -32,6 +32,9 @@
 # (fm_backend_herdr_wait_transition) for the herdr producer and bin/fm-watch.sh
 # (the watcher's event-wait splice) for the consumer.
 
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
+
 # Field separator for the normalized record. A literal TAB; every field is
 # scrubbed of TAB/newline by the producer so the record is exactly five fields.
 FM_TRANSITION_FIELD_SEP=$'\t'

@@ -41,6 +41,9 @@
 # probe, and the capability descriptor - plus the busy detection and submit
 # cores that consume the shared verdict.
 
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
+
 # The sibling directory is derived without forking dirname, because a backend
 # probe can re-source this adapter inside a subshell on every watcher cycle.
 _FM_TMUX_LIB_DIR=${BASH_SOURCE[0]%/*}

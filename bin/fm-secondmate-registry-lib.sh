@@ -10,6 +10,9 @@
 # and semicolons, so field boundaries are anchored to the suffix markers rather
 # than to the first incidental punctuation.
 
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
+
 SECONDMATE_REGISTRY_ID=
 SECONDMATE_REGISTRY_SUMMARY=
 SECONDMATE_REGISTRY_HOST=

@@ -19,6 +19,9 @@
 # sits on a named branch by design, so its .fm-primary-home marker (owned by
 # bin/fm-primary-scope-lib.sh) names the expected branch in place of the default.
 
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
+
 # shellcheck source=bin/fm-primary-scope-lib.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-primary-scope-lib.sh"
 

@@ -10,6 +10,10 @@
 #   fm-install-treehouse.sh <destination-directory>
 #
 # Pins Treehouse v2.0.1, the version exercised by the local real-Herdr suite.
+
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
+
 set -eu
 
 FM_TREEHOUSE_CI_VERSION=2.0.1

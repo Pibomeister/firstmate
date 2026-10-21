@@ -99,6 +99,10 @@
 # every path that reads the forge binding (default, --forge, and spawn's
 # forge-agreement check) still refuses.
 # Usage: fm-project-mode.sh [--raw|--branch-prefix|--forge] <project-name>
+
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
+
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

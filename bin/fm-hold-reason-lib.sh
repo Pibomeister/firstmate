@@ -9,7 +9,10 @@
 # base64-encoded UTF-8 text. Unmarked reasons are plain text. Readers decode only
 # the hold-reason field, once, and keep line breaks in quoted output strings.
 #
-# Source this file; it defines functions only.
+# Source this file; it defines functions only, beyond the Bash compatibility level below.
+
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
 
 # fm_hold_reason_encode <reason>: print the storable form, no trailing newline.
 fm_hold_reason_encode() {

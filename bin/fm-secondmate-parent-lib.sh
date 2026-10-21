@@ -13,6 +13,9 @@
 # Writers publish this record before .fm-secondmate-home so that the identity
 # marker remains the seed-completion point.
 
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
+
 fm_secondmate_parent_record_parse() {
   local file=$1 line schema='' route='' parent_home='' parent_host=''
   local schema_count=0 route_count=0 parent_home_count=0 parent_host_count=0

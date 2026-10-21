@@ -51,6 +51,9 @@
 # per outcome) is both the durable relaunch record and the input to the
 # watcher's relaunch bound; teardown removes it.
 
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
+
 set -u
 
 FM_SM_LIVE_LIB_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
@@ -67,7 +70,8 @@ FM_SM_LIVE_LIB_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 # callers skip and let that episode finish rather than probe a moving target.
 # The lock helpers live in bin/fm-wake-lib.sh, which creates the state
 # directory when sourced; load it only when a lock is actually taken so that
-# sourcing this library stays side-effect free for read-only bootstrap runs.
+# sourcing this library stays side-effect free, beyond its Bash compatibility
+# level, for read-only bootstrap runs.
 fm_sm_live_require_locks() {
   command -v fm_lock_try_acquire >/dev/null 2>&1 && return 0
   # shellcheck source=bin/fm-wake-lib.sh

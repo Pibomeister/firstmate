@@ -45,6 +45,10 @@
 # is that host's normal gap), while the repair line names the primary's own arm
 # command, which under a supervision host's primary pin is the host itself or
 # the plain arm. Always exits 0: the guard warns, it never blocks.
+
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
+
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

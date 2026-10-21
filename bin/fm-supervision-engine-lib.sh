@@ -47,6 +47,9 @@
 # known harness token; otherwise detection remains real (tests/lib.sh arms
 # the marker for isolated suites).
 
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
+
 FM_SUPERVISION_ENGINES_VERIFIED='claude'
 
 # fm_supervision_host_primary: print the primary harness the home gate judges

@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # Shared marker-or-plain-checkout predicate for tracked hooks that must act only
 # in a genuine firstmate primary home.
-# This file is sourced by hook entrypoints and has no side effects on source.
+# This file is sourced by hook entrypoints and has no side effects on source beyond its Bash compatibility level.
 # fm_primary_root_matches is split out so a caller can confirm primary-home
 # identity before its gitignored state dir exists, such as to create it.
+
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
 
 # Return 0 when $1 carries a genuine secondmate-home marker.
 fm_root_is_secondmate_home() {

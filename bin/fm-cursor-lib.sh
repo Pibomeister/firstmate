@@ -2,7 +2,7 @@
 # Cursor executable resolution and Cursor process identity.
 # Sourced by bin/fm-spawn.sh, bin/fm-harness.sh, bin/fm-busy-lib.sh, and
 # bin/backends/tmux.sh. This file is sourced by scripts and has no side effects
-# on source.
+# on source beyond its Bash compatibility level.
 #
 # Why one owner: cursor ships TWO executable names - `cursor-agent`, plus the
 # legacy alias `agent` it installs on every platform. `agent` is far too
@@ -38,6 +38,9 @@
 # bin/fm-composer-lib.sh, which every backend already delegates to; an
 # adapter-local composer normalizer would be the second copy that owner exists
 # to prevent.
+
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
 
 # Bounded probe budget in seconds. Cursor's --help is local and returns
 # immediately; the bound exists so a hung or interactive impostor cannot wedge

@@ -12,20 +12,6 @@ set -u
 
 TMP_ROOT=$(fm_test_tmproot fm-fork-free-helpers)
 
-# Every distinct Bash this host offers: the running one, stock /bin/bash, and
-# whatever `bash` resolves to on PATH.
-test_interpreters() {
-  local seen='' candidate version
-  for candidate in "${BASH:-bash}" /bin/bash "$(command -v bash 2>/dev/null || true)"; do
-    [ -n "$candidate" ] && [ -x "$candidate" ] || continue
-    # shellcheck disable=SC2016 # Expanded by the candidate interpreter.
-    version=$("$candidate" -c 'printf "%s" "$BASH_VERSION"' 2>/dev/null) || continue
-    case " $seen " in *" $version "*) continue ;; esac
-    seen="$seen $version"
-    printf '%s\n' "$candidate"
-  done
-}
-
 test_locales() {
   printf '%s\n' C
   if locale -a 2>/dev/null | grep -qx 'C.UTF-8'; then
@@ -46,7 +32,7 @@ run_everywhere() {  # <label> <script> [args...]
         || fail "$label failed under $interpreter ($loc): $out"
       [ -z "$out" ] || fail "$label differs under $interpreter ($loc):"$'\n'"$out"
     done < <(test_locales)
-  done < <(test_interpreters)
+  done < <(fm_test_bash_interpreters)
 }
 
 test_path_helpers_match_dirname_and_basename() {

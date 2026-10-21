@@ -859,6 +859,20 @@ assert_present() {
   [ -e "$1" ] || fail "$2"
 }
 
+# Every distinct Bash this host offers: the running one, stock /bin/bash, and
+# whatever `bash` resolves to on PATH.
+fm_test_bash_interpreters() {
+  local seen='' candidate version
+  for candidate in "${BASH:-bash}" /bin/bash "$(command -v bash 2>/dev/null || true)"; do
+    [ -n "$candidate" ] && [ -x "$candidate" ] || continue
+    # shellcheck disable=SC2016 # Expanded by the candidate interpreter.
+    version=$("$candidate" -c 'printf "%s" "$BASH_VERSION"' 2>/dev/null) || continue
+    case " $seen " in *" $version "*) continue ;; esac
+    seen="$seen $version"
+    printf '%s\n' "$candidate"
+  done
+}
+
 # fm_test_base_path_sans <base_path> <tool...>: returns the path to a single
 # curated directory that resolves every tool <base_path> would have resolved,
 # except the named ones. Some hosts have real system binaries (node, orca,

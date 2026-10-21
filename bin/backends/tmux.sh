@@ -18,6 +18,10 @@
 # (bin/fm-supervise-daemon.sh); this adapter sources that file and re-exports
 # its submit core under the backend's naming convention rather than
 # duplicating it, so the two consumers cannot drift apart.
+
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
+
 # shellcheck source=bin/fm-tmux-lib.sh
 . "$FM_BACKEND_LIB_DIR/fm-tmux-lib.sh"
 # shellcheck source=bin/fm-session-lock-lib.sh

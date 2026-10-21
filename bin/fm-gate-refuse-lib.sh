@@ -71,8 +71,12 @@
 #
 # Sourced by the fleet lifecycle entrypoints, session-start hooks,
 # bin/fm-lab-home.sh, and the tests.
-# No side effects on source. set -u / set -e safe. The refusal is a hard exit,
-# not a return, because an unpermitted gate call cannot safely mutate the fleet.
+# No side effects on source beyond its Bash compatibility level. set -u / set -e
+# safe. The refusal is a hard exit, not a return, because an unpermitted gate
+# call cannot safely mutate the fleet.
+
+# Bash 5.1+ pipes here-documents, which hang when the host shrinks pipe buffers; from 5.2, level 50 keeps temp files.
+[ "${BASH_VERSINFO[0]}" -lt 5 ] || BASH_COMPAT=50
 
 # The exit code every refusal uses, distinct enough to recognize in a caller or
 # test as "the gate refusal fired" rather than an ordinary usage error.
