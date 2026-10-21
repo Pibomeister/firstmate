@@ -3,10 +3,10 @@
 # login session?
 #
 # Source this file; it defines functions only, beyond the Bash compatibility
-# level below. It is the single owner of the
-# socket-owner discovery and birth classification shared by
-# bin/fm-remote-herdr-guard.sh (the launch agent's exec target) and
-# bin/fm-remote-doctor.sh (the readiness check for that session).
+# level below. It is the single owner of the socket-owner discovery and birth
+# classification shared by bin/fm-remote-herdr-guard.sh (the launch agent's
+# exec target) and bin/fm-remote-doctor.sh (the readiness check for that
+# session).
 #
 # Why birth matters: a herdr server, and every pane and agent it later spawns,
 # keeps the macOS audit session of whatever started it. Only the Aqua login

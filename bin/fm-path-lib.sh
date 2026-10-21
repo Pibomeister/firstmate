@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # fm-path-lib.sh - fork-free pathname helpers with no source-time side effects
-# beyond the Bash compatibility level below,
-# so read-only callers can load them without any library's state setup.
+# beyond the Bash compatibility level below, so read-only callers can load them
+# without any library's state setup.
 #
 # Each assigns <output-variable> exactly what `$(dirname -- <path>)` or
 # `$(basename -- <path>)` would: POSIX component rules, and the command
