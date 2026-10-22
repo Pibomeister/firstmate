@@ -205,7 +205,7 @@ test_droid_launch_and_hooks() {
   expect_code 0 "$rc" "Droid spawn failed: $out"
   settings="$HOME_DIR/state/$id.droid-settings.json"
   state="$HOME_DIR/state"
-  jq -e '.model == "gpt-5.6-luna" and .reasoningEffort == "low" and .sessionDefaultSettings.autonomyLevel == "high" and (has("hooksDisabled") | not)' "$settings" >/dev/null \
+  jq -e '.sessionDefaultSettings.model == "gpt-5.6-luna" and .reasoningEffort == "low" and .sessionDefaultSettings.autonomyLevel == "high" and (has("hooksDisabled") | not)' "$settings" >/dev/null \
     || fail "Droid settings lost model/effort/autonomy or overrode the operator's hooks policy"
   out=$(sh -c "$(jq -r '.statusLine.command' "$settings")" 2>/dev/null)
   [ -n "$out" ] && [ "$(fm_tmux_droid_composer_state "${DROID_IDLE_SCREEN%firstmate}$out")" = empty ] \
@@ -361,7 +361,7 @@ test_droid_omits_unsupported_model_effort() {
   rc=$?
   expect_code 0 "$rc" "unsupported effort should use the recorded-and-omitted contract: $out"
   settings="$HOME_DIR/state/$id.droid-settings.json"
-  jq -e '.model == "claude-haiku-4-5-20251001" and (has("reasoningEffort") | not)' "$settings" >/dev/null \
+  jq -e '.sessionDefaultSettings.model == "claude-haiku-4-5-20251001" and (has("reasoningEffort") | not)' "$settings" >/dev/null \
     || fail "unsupported Haiku xhigh effort reached Droid runtime settings"
   grep -Fqx 'effort=xhigh' "$HOME_DIR/state/$id.meta" || fail "requested effort was not recorded"
   printf '%s' "$out" | grep -Fq 'unsupported' || fail "effort omission was not disclosed"
@@ -375,7 +375,7 @@ test_droid_omits_effort_without_explicit_model() {
   rc=$?
   expect_code 0 "$rc" "effort without a model should use the recorded-and-omitted contract: $out"
   settings="$HOME_DIR/state/$id.droid-settings.json"
-  jq -e '(has("model") | not) and (has("reasoningEffort") | not)' "$settings" >/dev/null \
+  jq -e '(.sessionDefaultSettings | has("model") | not) and (has("reasoningEffort") | not)' "$settings" >/dev/null \
     || fail "effort without --model reached Droid runtime settings for the operator's default model"
   grep -Fqx 'effort=low' "$HOME_DIR/state/$id.meta" || fail "requested effort was not recorded"
   printf '%s' "$out" | grep -Fq 'omitting it from runtime settings' || fail "effort omission was not disclosed: $out"
