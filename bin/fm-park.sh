@@ -99,10 +99,16 @@ reason=$(printf '%s' "$reason" | tr '\n\r\t' '   ' | LC_ALL=C tr -d '\000-\037\1
 reason=$(printf '%s' "$reason" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
 [ -n "$reason" ] || fail "--reason is required: say what the task is waiting for"
 
-line="paused [key=$PARK_KEY]: $reason (parked by firstmate) until $until_ts"
+until_canonical=$(date -u -r "$until_epoch" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null \
+  || date -u -d "@$until_epoch" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null) \
+  || fail "could not format --until: $until_ts"
+line="paused [key=$PARK_KEY]: $reason (parked by firstmate) until $until_canonical"
 max=$((FM_LINE_CAP_DEFAULT - $(status_stamp_width)))
 [ "${#line}" -le "$max" ] \
   || fail "the park line is ${#line} characters, over the $max-character limit; shorten --reason"
+if ! line_until=$(status_paused_until "$line") || [ "$line_until" != "$until_epoch" ]; then
+  fail "the park line does not declare the requested --until; nothing was recorded"
+fi
 
 statusf="$STATE/$task.status"
 rc=0

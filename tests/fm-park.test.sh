@@ -44,6 +44,30 @@ printf 'working: quota reset, resuming\n' >> "$STATE/t1.status"
   || fail "a later worker event did not end the firstmate park"
 pass "fm-park's wait ends as soon as the worker's next event lands"
 
+future_seconds="${future%Z}:30Z"
+for deadline in "$future" "$future_seconds"; do
+  expected_epoch=$(fm_utc_iso_to_epoch "$deadline")
+  for timestamped_reason in \
+    'quota exhausted until 2020-01-01T12:00Z' \
+    'quota exhausted until 2020-01-01T12:00:30Z' \
+    'quota exhausted until 2020-01-01T12:00Z; review until 2020-01-02T12:00:30Z'; do
+    [ "$(status_paused_until "paused: $timestamped_reason until $deadline")" = "$expected_epoch" ] \
+      || fail "the shared wait parser preferred a reason timestamp over $deadline"
+    park t1 --until "$deadline" --reason "$timestamped_reason" >/dev/null \
+      || fail "fm-park refused $deadline with a timestamp in --reason"
+    last=$(tail -n 1 "$STATE/t1.status")
+    [ "$(status_declared_wait_line "$STATE/t1.status")" = "$last" ] \
+      || fail "the timestamped-reason park is not the current wait"
+    [ "$(status_paused_until "$last")" = "$expected_epoch" ] \
+      || fail "a timestamp in --reason overrode --until $deadline: $last"
+  done
+done
+park t1 --until="$future_seconds" --reason='quota exhausted until 2020-01-01T12:00Z' >/dev/null \
+  || fail "fm-park refused equals-form flags with a timestamp in --reason"
+[ "$(status_paused_until "$(status_declared_wait_line "$STATE/t1.status")")" = "$(fm_utc_iso_to_epoch "$future_seconds")" ] \
+  || fail "a timestamp in equals-form --reason overrode --until"
+pass "fm-park preserves minute and seconds deadlines despite timestamps in either reason flag form"
+
 before=$(cat "$STATE/t1.status")
 refuse() {  # <description> <args...>
   local what=$1
@@ -64,6 +88,8 @@ refuse 'a missing reason' t1 --until "$future"
 refuse 'an unknown flag' t1 --until "$future" --reason waiting --key other
 refuse 'a reason that would push the until time past the line cap' \
   t1 --until "$future" --reason "$(printf 'x%.0s' $(seq 1 240))"
+FM_CLASSIFY_PAUSED_VERB=waiting refuse 'a line the shared parser cannot recognize as a wait' \
+  t1 --until "$future" --reason waiting
 [ ! -e "$STATE/t2.status" ] || fail "fm-park created a status log for an unrecorded task"
 pass "fm-park refuses malformed requests and writes nothing"
 
