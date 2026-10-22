@@ -92,7 +92,7 @@ unset _fm_classify_nounset
 # classification below.
 FM_CLASSIFY_CAPTAIN_RE_DEFAULT='done:|needs-decision:|blocked:|failed:|PR ready|checks green|ready in branch|merged'
 
-# The declared-wait verb. A crew (or firstmate steering it) appends
+# The declared-wait verb. A crew (or firstmate, through bin/fm-park.sh) appends
 #   paused: <reason>
 # to declare a known wait expected to clear on its own. The legacy "external
 # wait" name and "awaiting external" reason also cover the worker's own work;

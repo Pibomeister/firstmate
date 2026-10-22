@@ -6957,6 +6957,29 @@ test_paused_until_that_passed_is_rechecked_before_the_cadence() {
   pass "a declared wait whose until time has passed is rechecked at once, then held to the cadence"
 }
 
+# A worker that cannot declare its own wait is parked by firstmate with
+# bin/fm-park.sh, and that declaration absorbs the quiet pane exactly like the
+# worker's own `paused: ... until` line: no stale wake before the time.
+test_firstmate_park_absorbs_a_quiet_pane_until_its_time() {
+  local dir state until_iso
+  dir=$(paused_until_fixture fm-park "$(( $(date +%s) + 120 ))" 60); state="$dir/state"
+  printf 'working: delivered the PR, waiting on review\n' > "$state/until.status"
+  printf '%s' "$(seen_sig "$state/until.status")" > "$state/.seen-until_status"
+  until_iso=$(iso_utc_at "$(( $(date +%s) + 120 ))")
+  FM_STATE_OVERRIDE="$state" bash "$ROOT/bin/fm-park.sh" until --until "$until_iso" \
+    --reason 'agent quota exhausted; PR awaiting upstream review' >/dev/null \
+    || fail "fm-park refused a recorded task with a future until time"
+  until_watch "$dir" 240
+  if ! wait_poll_cycle "$state" "$UNTIL_PID" || ! wait_poll_cycle "$state" "$UNTIL_PID"; then
+    reap "$UNTIL_PID"; fail "a firstmate-parked quiet pane was rechecked before its until time: $(cat "$dir/watch.out")"
+  fi
+  [ ! -s "$state/.wake-queue" ] || fail "a firstmate-parked quiet pane was queued as stale: $(cat "$state/.wake-queue")"
+  grep -F 'declared time not reached' "$state/.watch-triage.log" >/dev/null \
+    || fail "the parked pane was not absorbed as a declared wait"
+  reap "$UNTIL_PID"
+  pass "a firstmate park absorbs a quiet pane until its declared time, like a worker's own pause"
+}
+
 # --- a live worker paused on its own background job --------------------------
 # A worker declared `paused:` on its own background job and the job then ended
 # without a new status line, so only the passage of time can tell the watcher
@@ -7184,6 +7207,7 @@ test_captain_held_rechecked_under_a_quiet_record
 test_paused_until_near_future_is_quiet_before_the_cadence
 test_paused_until_wrong_year_is_bounded_by_the_cadence
 test_paused_until_that_passed_is_rechecked_before_the_cadence
+test_firstmate_park_absorbs_a_quiet_pane_until_its_time
 test_paused_bg_job_without_until_stays_silent_after_the_job_ends
 test_paused_bg_job_until_timeout_rechecks_after_the_job_ends
 
