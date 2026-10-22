@@ -1963,6 +1963,29 @@ SH
   done
 }
 
+# A raw launch used to be sourced by the interactive pane shell, so it could
+# name a function from that shell's rc file. The environment boundary must keep
+# that working rather than run the command in a shell that skipped the rc file.
+test_raw_launch_keeps_interactive_shell_functions() {
+  local id rec out status launch result
+  id=rc-function-launch
+  rec=$(make_spawn_case "$id" codex "$id")
+  read_case_record "$rec"
+  mkdir -p "$HOME_DIR/user-home"
+  printf '%s\n' 'rc_probe() { printf "rc=%s fm=%s\n" ok "${FM_TEST_FOREIGN-unset}"; }' \
+    > "$HOME_DIR/user-home/.bashrc"
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --harness "rc_probe now")
+  status=$?
+  expect_code 0 "$status" "raw rc-function spawn should succeed: $out"
+  launch=$(cat "$LAUNCH_LOG")
+  result=$(env -i HOME="$HOME_DIR/user-home" PATH=/usr/bin:/bin SHELL=/bin/bash \
+    FM_TEST_FOREIGN=leak /bin/sh -c "$launch" 2>/dev/null) \
+    || fail "raw launch could not call a function from the pane shell's rc file: $result"
+  [ "$result" = 'rc=ok fm=unset' ] \
+    || fail "raw launch lost the rc function or kept foreign FM values: $result"
+  pass "raw launch keeps the pane shell's rc functions while dropping foreign FM values"
+}
+
 test_launch_environment_invalid_config_refuses() {
   local rec id bad out status
   id=env-invalid
@@ -2132,6 +2155,7 @@ SH
 
 test_launch_environment_allowlist
 test_task_environment_isolated_from_foreign_home
+test_raw_launch_keeps_interactive_shell_functions
 test_launch_environment_invalid_config_refuses
 test_launch_environment_inaccessible_config_refuses
 test_launch_environment_inherited_by_secondmate

@@ -6418,9 +6418,9 @@ LAUNCH_DIR="/tmp/fm-$ID+$LAUNCH_HOME_TOKEN"
 # inherits (after any launch environment filtering), so credential.helper and
 # other inherited entries survive, and writes a plain export statement into the
 # private launch directory. The pane shell, fish included, only parses a simple
-# command, &&, || and that export list. A bad inherited count returns from the
-# sourced launch file before the worker runs, preserving the interactive pane
-# and its visible error for inspection.
+# command, &&, || and that export list. A bad inherited count stops the launch
+# before the worker runs, preserving the interactive pane and its visible error
+# for inspection.
 if [ "$GIT_HOOKS_INSTALLED" = 1 ]; then
   GIT_CONFIG_ENV_FILE=$(shell_quote "$LAUNCH_DIR/git-config.$SPAWN_GEN.sh")
   LAUNCH="$(shell_quote "$FM_ROOT/bin/fm-git-strip-ai-trailers.sh") env-file $(shell_quote "$GIT_HOOKS_DIR") $GIT_CONFIG_ENV_FILE && . $GIT_CONFIG_ENV_FILE || return 1 2>/dev/null || exit 1; $LAUNCH"

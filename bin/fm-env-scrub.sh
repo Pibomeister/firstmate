@@ -5,8 +5,10 @@
 #
 # Source `fm_env_scrub` in a subshell before creating a tmux server, or run:
 #   fm-env-scrub.sh [--keep-zellij-session] shell <command-string>
-# `shell` uses the destination pane's SHELL so generated and raw launch syntax
-# keeps the same interpreter it had when sourced directly in that pane.
+#   fm-env-scrub.sh exec <command> [args...]
+# `shell` uses the destination pane's SHELL as an interactive shell so generated
+# and raw launch syntax keeps the interpreter, rc functions and aliases it had
+# when sourced directly in that pane. `exec` runs a fixed argv with no shell.
 fm_env_scrub() {  # [keep-zellij-session: 0|1]
   local keep_zellij=${1:-0} name
   while IFS= read -r name; do
@@ -26,10 +28,16 @@ if [ "${1:-}" = --keep-zellij-session ]; then
   keep_zellij=1
   shift
 fi
-[ "${1:-}" = shell ] && [ "$#" -eq 2 ] || {
-  echo 'error: fm-env-scrub needs shell and one command string' >&2
+case "${1:-}" in
+  shell) [ "$#" -eq 2 ] ;;
+  exec) [ "$#" -ge 2 ] ;;
+  *) false ;;
+esac || {
+  echo 'error: fm-env-scrub needs shell and one command string, or exec and a command' >&2
   exit 2
 }
+mode=$1
 shift
 fm_env_scrub "$keep_zellij"
-exec "${SHELL:-/bin/sh}" -c "$1"
+[ "$mode" = exec ] || set -- "${SHELL:-/bin/sh}" -ic "$1"
+exec "$@"

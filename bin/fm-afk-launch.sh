@@ -394,10 +394,11 @@ fm_afk_launch_entry_cmd() {
 # The shell command a created daemon terminal runs. The terminal is not in the
 # captain's process tree, so the daemon cannot detect the captain's harness
 # itself; the launcher names it here (bin/fm-supervise-daemon.sh
-# fm_daemon_primary_harness).
+# fm_daemon_primary_harness). The terminal may inherit another home's FM_*
+# values from its server, so they are dropped before this home's are set.
 fm_afk_launch_daemon_cmd() {  # <captain-target> <captain-backend>
-  printf 'exec env FM_HOME=%q FM_SUPERVISOR_TARGET=%q FM_SUPERVISOR_BACKEND=%q FM_DAEMON_PRIMARY_HARNESS=%q %q' \
-    "$FM_HOME" "$1" "$2" "$(fm_afk_launch_primary_harness)" "$(fm_afk_launch_entry_cmd)"
+  printf 'exec %q exec env FM_HOME=%q FM_SUPERVISOR_TARGET=%q FM_SUPERVISOR_BACKEND=%q FM_DAEMON_PRIMARY_HARNESS=%q %q' \
+    "$FM_ROOT/bin/fm-env-scrub.sh" "$FM_HOME" "$1" "$2" "$(fm_afk_launch_primary_harness)" "$(fm_afk_launch_entry_cmd)"
 }
 
 fm_afk_launch_record_write() {  # <backend> <target> <extra>
