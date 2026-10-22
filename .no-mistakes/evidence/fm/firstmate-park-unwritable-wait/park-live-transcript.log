@@ -1,0 +1,159 @@
+$ bin/fm-lab-home.sh create /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J69ZR1KR6Z67YZ17HJFWEY/.l/home
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J69ZR1KR6Z67YZ17HJFWEY/.l/home
+[exit 0]
+$ tmux -f /dev/null -S /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J69ZR1KR6Z67YZ17HJFWEY/.l/s new-session -d -s fm-lab-park -n fm-inert -x 100 -y 30 -c /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J69ZR1KR6Z67YZ17HJFWEY "/bin/bash --noprofile --norc"
+[exit 0]
+$ tmux -S /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J69ZR1KR6Z67YZ17HJFWEY/.l/s display-message -p -t fm-lab-park #{socket_path},#{pid},#{session_id}
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J69ZR1KR6Z67YZ17HJFWEY/.l/s,63390,$0
+[exit 0]
+$ tmux -S /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J69ZR1KR6Z67YZ17HJFWEY/.l/s capture-pane -p -t fm-lab-park:fm-inert
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+[exit 0]
+$ bin/fm-park.sh inert --until 2026-10-22T16:50:54Z --reason "agent quota exhausted; delivered PR awaits upstream review"
+parked inert until 2026-10-22T16:50:54Z: agent quota exhausted; delivered PR awaits upstream review
+[exit 0]
+Persisted public status log:
+paused [key=fm-park] [at=1792687794]: agent quota exhausted; delivered PR awaits upstream review (parked by firstmate) until 2026-10-22T16:50:54Z
+
+$ FM_HOME=<disposable lab> bin/fm-watch.sh -> watch-before-deadline.log; pid=65113
+Actual watcher decisions:
+[2026-10-22T10:50:03-0600] absorbed stale (paused until 53s from now, declared time not reached): fm-lab-park:fm-inert
+[2026-10-22T10:50:16-0600] absorbed stale (paused until 38s from now, declared time not reached): fm-lab-park:fm-inert
+
+Durable wake queue is empty after repeated stale scans; watcher remains running.
+SCENARIO PASS: Supervisor parks an inert pane; repeated stale scans stay silent before its deadline
+Watcher deadline output:
+stale: fm-lab-park:fm-inert (paused 62s, awaiting external - the declared clearing time has passed, rechecked on a long cadence not a wedge; confirm the wait cleared)
+Durable wake queue:
+1792687856	1	stale	fm-lab-park:fm-inert	stale: fm-lab-park:fm-inert (paused 62s, awaiting external - the declared clearing time has passed, rechecked on a long cadence not a wedge; confirm the wait cleared)
+
+$ bin/fm-wake-drain.sh
+1792687856	1	stale	fm-lab-park:fm-inert	stale: fm-lab-park:fm-inert (paused 62s, awaiting external - the declared clearing time has passed, rechecked on a long cadence not a wedge; confirm the wait cleared)
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 65113.1792687857.wqXHPY
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no live watcher process holds this home lock (last beat: 11s ago).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  After draining queued wakes, repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds 180.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
+[exit 0]
+$ bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 65113.1792687857.wqXHPY
+[exit 0]
+$ FM_HOME=<disposable lab> bin/fm-watch.sh -> watch-after-deadline.log; pid=31229
+After acknowledging and rearming, repeated scans emit no further wake:
+[2026-10-22T10:50:03-0600] absorbed stale (paused until 53s from now, declared time not reached): fm-lab-park:fm-inert
+[2026-10-22T10:50:16-0600] absorbed stale (paused until 38s from now, declared time not reached): fm-lab-park:fm-inert
+[2026-10-22T10:50:22-0600] absorbed stale (paused until 32s from now, declared time not reached): fm-lab-park:fm-inert
+[2026-10-22T10:50:25-0600] absorbed stale (paused until 29s from now, declared time not reached): fm-lab-park:fm-inert
+[2026-10-22T10:50:27-0600] absorbed stale (paused until 27s from now, declared time not reached): fm-lab-park:fm-inert
+[2026-10-22T10:50:31-0600] absorbed stale (paused until 24s from now, declared time not reached): fm-lab-park:fm-inert
+[2026-10-22T10:50:34-0600] absorbed stale (paused until 20s from now, declared time not reached): fm-lab-park:fm-inert
+[2026-10-22T10:50:39-0600] absorbed stale (paused until 15s from now, declared time not reached): fm-lab-park:fm-inert
+[2026-10-22T10:50:41-0600] absorbed stale (paused until 13s from now, declared time not reached): fm-lab-park:fm-inert
+[2026-10-22T10:50:43-0600] absorbed stale (paused until 11s from now, declared time not reached): fm-lab-park:fm-inert
+[2026-10-22T10:50:49-0600] absorbed stale (paused until 7s from now, declared time not reached): fm-lab-park:fm-inert
+[2026-10-22T10:50:53-0600] absorbed stale (paused until 1s from now, declared time not reached): fm-lab-park:fm-inert
+[2026-10-22T10:51:12-0600] absorbed stale (paused, declared time reached, age 77s): fm-lab-park:fm-inert
+[2026-10-22T10:51:16-0600] absorbed stale (paused, declared time reached, age 82s): fm-lab-park:fm-inert
+
+SCENARIO PASS: Deadline expiry produces one recheck and rearming does not repeat the stale wake
+$ tmux -S /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J69ZR1KR6Z67YZ17HJFWEY/.l/s send-keys -t fm-lab-park:fm-inert "printf 'working: quota reset, resuming\n' >> /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J69ZR1KR6Z67YZ17HJFWEY/.l/home/state/inert.status" Enter
+[exit 0]
+Resumption watcher output:
+signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J69ZR1KR6Z67YZ17HJFWEY/.l/home/state/inert.status
+Current status:
+paused [key=fm-park] [at=1792687794]: agent quota exhausted; delivered PR awaits upstream review (parked by firstmate) until 2026-10-22T16:50:54Z
+working: quota reset, resuming
+
+$ bin/fm-crew-state.sh inert
+state: unknown · source: none · worktree gone (torn down?)
+[exit 0]
+SCENARIO PASS: A worker appends a new event; supervision surfaces it instead of retaining the park
+$ bin/fm-park.sh inert --until=2026-10-23T16:51Z "--reason=quota exhausted until 2020-01-01T12:00Z; review until 2020-01-02T12:00:30Z"
+parked inert until 2026-10-23T16:51Z: quota exhausted until 2020-01-01T12:00Z; review until 2020-01-02T12:00:30Z
+[exit 0]
+$ bash -c ". bin/fm-classify-lib.sh; line=$(status_declared_wait_line \"$FM_HOME/state/inert.status\"); printf \"%s
+\" \"$line\"; status_paused_until \"$line\""
+paused [key=fm-park] [at=1792687887]: quota exhausted until 2020-01-01T12:00Z; review until 2020-01-02T12:00:30Z (parked by firstmate) until 2026-10-23T16:51:00Z
+1792774260
+[exit 0]
+$ bin/fm-park.sh inert --until=2026-10-23T16:51:28Z "--reason=quota exhausted until 2020-01-01T12:00Z; review until 2020-01-02T12:00:30Z"
+parked inert until 2026-10-23T16:51:28Z: quota exhausted until 2020-01-01T12:00Z; review until 2020-01-02T12:00:30Z
+[exit 0]
+$ bash -c ". bin/fm-classify-lib.sh; line=$(status_declared_wait_line \"$FM_HOME/state/inert.status\"); printf \"%s
+\" \"$line\"; status_paused_until \"$line\""
+paused [key=fm-park] [at=1792687888]: quota exhausted until 2020-01-01T12:00Z; review until 2020-01-02T12:00:30Z (parked by firstmate) until 2026-10-23T16:51:28Z
+1792774288
+[exit 0]
+$ bin/fm-park.sh inert --until 2026-10-23T16:51:30Z --reason waiting
+parked inert until 2026-10-23T16:51:30Z: waiting
+[exit 0]
+Persisted minute, seconds and configured-verb declarations:
+paused [key=fm-park] [at=1792687794]: agent quota exhausted; delivered PR awaits upstream review (parked by firstmate) until 2026-10-22T16:50:54Z
+working: quota reset, resuming
+paused [key=fm-park] [at=1792687887]: quota exhausted until 2020-01-01T12:00Z; review until 2020-01-02T12:00:30Z (parked by firstmate) until 2026-10-23T16:51:00Z
+paused [key=fm-park] [at=1792687888]: quota exhausted until 2020-01-01T12:00Z; review until 2020-01-02T12:00:30Z (parked by firstmate) until 2026-10-23T16:51:28Z
+holding [key=fm-park] [at=1792687891]: waiting (parked by firstmate) until 2026-10-23T16:51:30Z
+
+SCENARIO PASS: Timestamped reasons preserve the requested deadline and the configured pause verb works
+$ bin/fm-park.sh inert --until 2099-02-30T12:00Z --reason waiting
+fm-park: --until must be a valid UTC calendar time: 2099-02-30T12:00Z
+[exit 1]
+$ bin/fm-park.sh inert --until 2099-02-30T12:00:30Z --reason waiting
+fm-park: --until must be a valid UTC calendar time: 2099-02-30T12:00:30Z
+[exit 1]
+$ bin/fm-park.sh missing --until 2026-10-23T16:51:31Z --reason waiting
+fm-park: no recorded task 'missing' in this home (missing /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J69ZR1KR6Z67YZ17HJFWEY/.l/home/state/missing.meta)
+[exit 1]
+$ bin/fm-park.sh ../inert --until 2026-10-23T16:51:31Z --reason waiting
+fm-park: task id must be a plain task id: ../inert
+[exit 1]
+$ bin/fm-park.sh inert --reason waiting
+fm-park: --until <YYYY-MM-DDTHH:MM[:SS]Z> is required, so the park ends and supervision rechecks the task
+[exit 1]
+$ bin/fm-park.sh inert --until 2099-01-01T00:00 --reason waiting
+fm-park: --until must be a UTC time shaped YYYY-MM-DDTHH:MM[:SS]Z: 2099-01-01T00:00
+[exit 1]
+$ bin/fm-park.sh inert --until 2020-01-01T00:00Z --reason waiting
+fm-park: --until must be in the future: 2020-01-01T00:00Z
+[exit 1]
+$ bin/fm-park.sh inert --until 2026-10-23T16:51:31Z --reason "  "
+fm-park: --reason is required: say what the task is waiting for
+[exit 1]
+$ bin/fm-park.sh inert --until 2026-10-23T16:51:31Z --reason xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+fm-park: the park line is 311 characters, over the 204-character limit; shorten --reason
+[exit 1]
+All refused requests left the status log byte-identical; no unrecorded task log was created.
+SCENARIO PASS: Invalid dates and unsafe or incomplete requests fail without changing task status
+Cleanup: private tmux server stopped; disposable home and socket removed.

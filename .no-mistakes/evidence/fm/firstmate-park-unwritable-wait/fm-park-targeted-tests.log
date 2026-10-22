@@ -1,0 +1,6 @@
+ok - fm-park appends a keyed paused declaration that reads back as the current wait with its until time
+ok - fm-park's wait ends as soon as the worker's next event lands
+ok - fm-park preserves minute and seconds deadlines despite timestamps in either reason flag form
+ok - fm-park refuses malformed requests and writes nothing
+ok - fm-park flattens a multi-line reason onto one status line
+ok - fm-park honors the shared paused verb through declaration, deadline readback, and resumption

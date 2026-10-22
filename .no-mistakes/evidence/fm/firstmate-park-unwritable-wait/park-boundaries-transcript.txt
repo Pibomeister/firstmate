@@ -1,0 +1,71 @@
+$ bin/fm-park.sh ['missing', '--until', '2026-10-23T16:42Z', '--reason', 'waiting']
+exit=1
+fm-park: no recorded task 'missing' in this home (missing /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J69ZR1KR6Z67YZ17HJFWEY/.test-park-boundaries/state/missing.meta)
+
+PASS unknown task: refused; persisted task status byte-for-byte unchanged
+$ bin/fm-park.sh ['../task', '--until', '2026-10-23T16:42Z', '--reason', 'waiting']
+exit=1
+fm-park: task id must be a plain task id: ../task
+
+PASS traversal: refused; persisted task status byte-for-byte unchanged
+$ bin/fm-park.sh ['task', '--reason', 'waiting']
+exit=1
+fm-park: --until <YYYY-MM-DDTHH:MM[:SS]Z> is required, so the park ends and supervision rechecks the task
+
+PASS no deadline: refused; persisted task status byte-for-byte unchanged
+$ bin/fm-park.sh ['task', '--until', '2099-01-01T12:00+01:00', '--reason', 'waiting']
+exit=1
+fm-park: --until must be a UTC time shaped YYYY-MM-DDTHH:MM[:SS]Z: 2099-01-01T12:00+01:00
+
+PASS non-UTC: refused; persisted task status byte-for-byte unchanged
+$ bin/fm-park.sh ['task', '--until', '2020-01-01T12:00Z', '--reason', 'waiting']
+exit=1
+fm-park: --until must be in the future: 2020-01-01T12:00Z
+
+PASS past: refused; persisted task status byte-for-byte unchanged
+$ bin/fm-park.sh ['task', '--until', '2026-10-23T16:42Z', '--reason', ' \n\t ']
+exit=1
+fm-park: --reason is required: say what the task is waiting for
+
+PASS blank reason: refused; persisted task status byte-for-byte unchanged
+$ bin/fm-park.sh ['task', '--until', '2026-10-23T16:42Z']
+exit=1
+fm-park: --reason is required: say what the task is waiting for
+
+PASS no reason: refused; persisted task status byte-for-byte unchanged
+$ bin/fm-park.sh ['task', '--until', '2026-10-23T16:42Z', '--reason', 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx']
+exit=1
+fm-park: the park line is 311 characters, over the 204-character limit; shorten --reason
+
+PASS over limit: refused; persisted task status byte-for-byte unchanged
+$ bin/fm-park.sh ['task', '--until', '2026-10-23T16:42Z', '--reason', 'waiting', '--key', 'other']
+exit=1
+fm-park: unknown argument: --key
+
+PASS unknown flag: refused; persisted task status byte-for-byte unchanged
+$ bin/fm-park.sh ['task', '--until', '2026-10-23T16:42:30Z', '--reason', 'quota exhausted until 2020-01-01T12:00Z']
+exit=0
+parked task until 2026-10-23T16:42:30Z: quota exhausted until 2020-01-01T12:00Z
+
+Public persisted wait and shared consumer:
+paused [key=fm-park] [at=1792687339]: quota exhausted until 2020-01-01T12:00Z (parked by firstmate) until 2026-10-23T16:42:30Z
+1792773750
+
+$ bin/fm-park.sh ['task', '--until=2026-10-23T16:42Z', '--reason=review until 2020-01-01T12:00:30Z\nquota reset later']
+exit=0
+parked task until 2026-10-23T16:42Z: review until 2020-01-01T12:00:30Z quota reset later
+
+Re-parked persisted wait and shared consumer:
+paused [key=fm-park] [at=1792687339]: review until 2020-01-01T12:00:30Z quota reset later (parked by firstmate) until 2026-10-23T16:42:00Z
+1792773720
+
+PASS unavailable Orca endpoint: supervisor-side park and re-park succeeded without worker cooperation; requested seconds/minute deadlines won over reason timestamps; multiline reason stayed one event
+$ bin/fm-park.sh ['task', '--until', '2099-02-30T12:00Z', '--reason', 'waiting']
+exit=0
+parked task until 2099-02-30T12:00Z: waiting
+
+FAIL invalid calendar date accepted and persisted as a different date:
+paused [key=fm-park] [at=1792687339]: waiting (parked by firstmate) until 2099-03-02T12:00:00Z
+4076136000
+
+teardown: disposable lab home removed

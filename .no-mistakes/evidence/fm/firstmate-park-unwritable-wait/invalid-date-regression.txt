@@ -1,0 +1,10 @@
+$ bash bin/fm-park.sh task --until 2099-02-30T12:00Z --reason quota exhausted; PR awaiting review
+exit=0
+parked task until 2099-02-30T12:00Z: quota exhausted; PR awaiting review
+
+
+persisted state after request:
+working: delivered PR waiting on review
+paused [key=fm-park] [at=1792687386]: quota exhausted; PR awaiting review (parked by firstmate) until 2099-03-02T12:00:00Z
+
+teardown: disposable lab home removed

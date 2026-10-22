@@ -1,0 +1,14 @@
+[
+  {
+    "scenario": "unparked inert pane control",
+    "result": "pass"
+  },
+  {
+    "scenario": "park suppresses stale wakes, expiry rechecks once then holds cadence",
+    "result": "pass"
+  },
+  {
+    "scenario": "configured wait verb absorbs until a worker event resumes supervision",
+    "result": "pass"
+  }
+]

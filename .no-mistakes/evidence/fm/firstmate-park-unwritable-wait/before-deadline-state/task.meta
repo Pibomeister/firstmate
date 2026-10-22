@@ -1,0 +1,4 @@
+window=fm-lab-park:fm-inert
+kind=ship
+harness=claude
+backend=tmux

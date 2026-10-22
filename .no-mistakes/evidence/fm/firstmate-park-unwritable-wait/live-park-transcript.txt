@@ -1,0 +1,64 @@
+$ tmux -S /Users/eduardopicazo/.no-mistakes/evidence/01M5J69ZR1KR6Z67YZ17HJFWEY/fm-lab-park.sock -f /dev/null new-session -d -s fm-lab-park -n fm-inert -x 120 -y 30 -c /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J69ZR1KR6Z67YZ17HJFWEY printf 'Delivered PR; quota exhausted; awaiting external review.\n'; exec sleep 600
+exit=0
+$ tmux -S /Users/eduardopicazo/.no-mistakes/evidence/01M5J69ZR1KR6Z67YZ17HJFWEY/fm-lab-park.sock set-window-option -t fm-lab-park:fm-inert automatic-rename off
+exit=0
+$ tmux -S /Users/eduardopicazo/.no-mistakes/evidence/01M5J69ZR1KR6Z67YZ17HJFWEY/fm-lab-park.sock display-message -p -t fm-lab-park:fm-inert #{socket_path},#{pid},0
+exit=0
+/Users/eduardopicazo/.no-mistakes/evidence/01M5J69ZR1KR6Z67YZ17HJFWEY/fm-lab-park.sock,87061,0
+$ tmux -S /Users/eduardopicazo/.no-mistakes/evidence/01M5J69ZR1KR6Z67YZ17HJFWEY/fm-lab-park.sock capture-pane -p -t fm-lab-park:fm-inert
+exit=0
+Delivered PR; quota exhausted; awaiting external review.
+$ bash bin/fm-lab-home.sh create /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J69ZR1KR6Z67YZ17HJFWEY/.test-park-live/control
+exit=0
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J69ZR1KR6Z67YZ17HJFWEY/.test-park-live/control
+$ bash -c . bin/fm-wake-lib.sh; fm_wake_status_mark_current "$FM_HOME/state" "$FM_HOME/state/task.status"
+exit=0
+persisted product state -> /Users/eduardopicazo/.no-mistakes/evidence/01M5J69ZR1KR6Z67YZ17HJFWEY/control-state
+PASS control: inert pane produces a stale wake without parking
+$ bash bin/fm-lab-home.sh create /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J69ZR1KR6Z67YZ17HJFWEY/.test-park-live/deadline
+exit=0
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J69ZR1KR6Z67YZ17HJFWEY/.test-park-live/deadline
+$ bash -c . bin/fm-wake-lib.sh; fm_wake_status_mark_current "$FM_HOME/state" "$FM_HOME/state/task.status"
+exit=0
+$ bash bin/fm-park.sh task --until 2026-10-22T16:42:59Z --reason quota exhausted until 2020-01-01T12:00Z; delivered PR awaiting review
+exit=0
+parked task until 2026-10-22T16:42:59Z: quota exhausted until 2020-01-01T12:00Z; delivered PR awaiting review
+parked status: working: delivered PR; quota exhausted; waiting on review
+paused [key=fm-park] [at=1792687351]: quota exhausted until 2020-01-01T12:00Z; delivered PR awaiting review (parked by firstmate) until 2026-10-22T16:42:59Z
+
+PASS active wait: three real stale checks absorbed, watcher alive, wake queue empty
+persisted product state -> /Users/eduardopicazo/.no-mistakes/evidence/01M5J69ZR1KR6Z67YZ17HJFWEY/before-deadline-state
+PASS expiry: watcher emitted stale: fm-lab-park:fm-inert (paused 28s, awaiting external - the declared clearing time has passed, rechecked on a long cadence not a wedge; confirm the wait cleared)
+persisted product state -> /Users/eduardopicazo/.no-mistakes/evidence/01M5J69ZR1KR6Z67YZ17HJFWEY/expired-state
+$ bash bin/fm-wake-drain.sh
+exit=0
+1792687379	1	stale	fm-lab-park:fm-inert	stale: fm-lab-park:fm-inert (paused 28s, awaiting external - the declared clearing time has passed, rechecked on a long cadence not a wedge; confirm the wait cleared)
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 93209.1792687379.prrahb
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no live watcher process holds this home lock (last beat: 2s ago).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  After draining queued wakes, repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds 180.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
+$ bash bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 93209.1792687379.prrahb
+exit=0
+PASS cadence: after consuming the expiry wake, repeated stale checks stay silent
+persisted product state -> /Users/eduardopicazo/.no-mistakes/evidence/01M5J69ZR1KR6Z67YZ17HJFWEY/after-ack-state
+$ bash bin/fm-lab-home.sh create /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J69ZR1KR6Z67YZ17HJFWEY/.test-park-live/override
+exit=0
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J69ZR1KR6Z67YZ17HJFWEY/.test-park-live/override
+$ bash -c . bin/fm-wake-lib.sh; fm_wake_status_mark_current "$FM_HOME/state" "$FM_HOME/state/task.status"
+exit=0
+$ bash bin/fm-park.sh task --until 2026-10-22T16:45:07Z --reason quota exhausted until 2020-01-01T12:00:30Z
+exit=0
+parked task until 2026-10-22T16:45:07Z: quota exhausted until 2020-01-01T12:00:30Z
+PASS configured holding verb: repeated stale checks absorbed
+worker appended working: quota reset, resuming
+persisted product state -> /Users/eduardopicazo/.no-mistakes/evidence/01M5J69ZR1KR6Z67YZ17HJFWEY/resumed-state
+PASS resumption: worker event ended the park and supervision surfaced it: signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J69ZR1KR6Z67YZ17HJFWEY/.test-park-live/override/state/task.status
+persisted product state -> /Users/eduardopicazo/.no-mistakes/evidence/01M5J69ZR1KR6Z67YZ17HJFWEY/final-override
+persisted product state -> /Users/eduardopicazo/.no-mistakes/evidence/01M5J69ZR1KR6Z67YZ17HJFWEY/final-deadline
+persisted product state -> /Users/eduardopicazo/.no-mistakes/evidence/01M5J69ZR1KR6Z67YZ17HJFWEY/final-control
+teardown: all owned watchers stopped, private tmux server killed, disposable lab homes removed

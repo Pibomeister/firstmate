@@ -1,0 +1,37 @@
+[
+  {
+    "name": "Supervisor parks an inert pane; repeated stale scans stay silent before its deadline",
+    "result": "pass",
+    "live": true,
+    "evidence": "park-live-transcript.log",
+    "reason": ""
+  },
+  {
+    "name": "Deadline expiry produces one recheck and rearming does not repeat the stale wake",
+    "result": "pass",
+    "live": true,
+    "evidence": "park-live-transcript.log",
+    "reason": ""
+  },
+  {
+    "name": "A worker appends a new event; supervision surfaces it instead of retaining the park",
+    "result": "pass",
+    "live": true,
+    "evidence": "park-live-transcript.log",
+    "reason": ""
+  },
+  {
+    "name": "Timestamped reasons preserve the requested deadline and the configured pause verb works",
+    "result": "pass",
+    "live": true,
+    "evidence": "park-live-transcript.log",
+    "reason": ""
+  },
+  {
+    "name": "Invalid dates and unsafe or incomplete requests fail without changing task status",
+    "result": "pass",
+    "live": true,
+    "evidence": "park-live-transcript.log",
+    "reason": ""
+  }
+]
