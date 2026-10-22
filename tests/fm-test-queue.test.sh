@@ -94,12 +94,17 @@ test_help_and_usage() {
 test_run_passes_status_and_output_through() {
   local out rc
   new_case passthrough
-  out=$(q run -- sh -c 'echo from-command; exit 7' 2>/dev/null); rc=$?
+  echo earlier-error > "$CASE/stderr"
+  out=$(q run -- sh -c 'echo from-command; echo command-error >&2; exit 7' 2>>"$CASE/stderr"); rc=$?
   expect_code 7 "$rc" "run must return the command's exit status"
   assert_equals "from-command" "$out" "run must pass the command's stdout through"
+  assert_grep earlier-error "$CASE/stderr" "queue truncated the caller's stderr file"
+  assert_grep command-error "$CASE/stderr" "run must pass the command's stderr through"
   out=$(echo piped | q run -- cat 2>/dev/null); rc=$?
   expect_code 0 "$rc" "a successful command"
   assert_equals "piped" "$out" "run must give the command the caller's stdin"
+  q run -- sh -c 'exit 148' 2>/dev/null; rc=$?
+  expect_code 148 "$rc" "a normal exit resembling a stopped wait status"
   line_is_empty || fail "a finished run left its ticket in the line"
   pass "fm-test-queue.sh: run returns the command's status, keeps its stdio, and leaves"
 }
@@ -207,53 +212,8 @@ process_state_has() {
   ps -p "$1" -o stat= 2>/dev/null | grep -Eq -- "$2"
 }
 
-test_stopped_workloads_suspend_and_resume_the_wrapper() {
-  local wrapper child follower sig rc out
-  new_case stop-resume
-  echo slots=1 > "$FM_TEST_QUEUE_DIR/config"
-  CASE_RELEASES+=("$CASE/release-workload")
-  qbg run --label stoppable -- sh -c 'echo $$ > "$1/child"; while [ ! -e "$1/release-workload" ]; do sleep 0.05; done; exit 23' _ "$CASE" 2>"$CASE/stderr" &
-  wrapper=$!
-  CASE_PIDS+=("$wrapper")
-  wait_until "stoppable workload started" file_exists "$CASE/child"
-  child=$(cat "$CASE/child")
-  CASE_PIDS+=("-$child")
-  for sig in TSTP STOP; do
-    kill -"$sig" -- "-$child"
-    wait_until "wrapper suspended after $sig" process_state_has "$wrapper" '^[[:space:]]*T'
-    process_state_has "$child" '^[[:space:]]*T' || fail "the workload did not remain stopped"
-    status_has '^serving .*label=stoppable$' || fail "a stopped workload lost its slot"
-    if [ "$sig" = TSTP ]; then
-      start_held follower; follower=$HELD_PID
-      wait_until "follower waits behind stopped workload" status_has '^waiting .*label=follower$'
-    fi
-    if [ "$sig" = STOP ]; then kill -CONT -- "-$child"; fi
-    kill -CONT "$wrapper"
-    wait_until "workload resumed after $sig" process_state_has "$child" '^[[:space:]]*[RS]'
-    sleep 0.2
-    process_state_has "$wrapper" '^[[:space:]]*[RS]' || fail "the wrapper returned before workload termination"
-    status_has '^waiting .*label=follower$' || fail "continuation released the workload's slot"
-  done
-  : > "$CASE/release-workload"
-  wait "$wrapper"; rc=$?
-  expect_code 23 "$rc" "a workload after repeated stop and continue"
-  wait_until "follower served after workload termination" status_has '^serving .*label=follower$'
-  release follower
-  wait "$follower"
-  line_is_empty || fail "a stopped and resumed workload left a ticket behind"
-  q run -- sh -c 'exit 148' 2>/dev/null; rc=$?
-  expect_code 148 "$rc" "a normal exit resembling a stopped wait status"
-  line_is_empty || fail "a normal exit resembling a stop left a ticket behind"
-  out=$(HISTFILE="$CASE/disabled-history" q run -- sh -c 'printf "%s" "$HISTFILE"' 2>/dev/null)
-  assert_equals "$CASE/disabled-history" "$out" "job-control initialization changed the command's history environment"
-  assert_absent "$CASE/disabled-history" "job-control initialization wrote shell history"
-  out=$(unset HISTFILE; q run -- sh -c 'printf "%s" "${HISTFILE-unset}"' 2>/dev/null)
-  assert_equals unset "$out" "job-control initialization added HISTFILE to the command's environment"
-  pass "fm-test-queue.sh: stopped workloads suspend their wrapper and resume until real termination"
-}
-
 test_dead_owners_are_reclaimed() {
-  local p rc child holder
+  local p rc child holder group
   new_case dead
   echo slots=1 > "$FM_TEST_QUEUE_DIR/config"
   qbg run --label crashed -- sh -c 'echo $$ > "$1/child"; while [ ! -e "$1/release-crashed" ]; do sleep 0.05; done' _ "$CASE" 2>/dev/null &
@@ -262,20 +222,16 @@ test_dead_owners_are_reclaimed() {
   wait_until "crashed command started" file_exists "$CASE/child"
   child=$(cat "$CASE/child")
   CASE_PIDS+=("$child")
-  assert_equals "$child" "$(ps -p "$child" -o pgid= | tr -d ' ')" "command did not get its own process group"
-  assert_grep "pgid=$child" "$FM_TEST_QUEUE_DIR/tickets/0000000001" "ticket did not persist its command group"
+  group=$(ps -p "$p" -o pgid= | tr -d ' ')
+  assert_equals "$group" "$(ps -p "$child" -o pgid= | tr -d ' ')" "command left its wrapper's job"
+  assert_grep "child_pid=$child" "$FM_TEST_QUEUE_DIR/tickets/0000000001" "ticket did not persist its workload child"
+  assert_grep "child_start=$(LC_ALL=C ps -p "$child" -o lstart= | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')" \
+    "$FM_TEST_QUEUE_DIR/tickets/0000000001" "ticket did not persist its child's start time"
+  [ "$group" = "$p" ] || group=""
+  assert_equals "$group" "$(awk -F= '$1 == "pgid" { print $2 }' "$FM_TEST_QUEUE_DIR/tickets/0000000001")" \
+    "ticket recorded a group the wrapper did not lead"
   kill -KILL "$p"; wait "$p" 2>/dev/null
   status_has ' serving=1 waiting=0 stale=0 ' || fail "a surviving workload lost its slot"
-  mkdir -p "$CASE/fakebin"
-  export REAL_PS
-  REAL_PS=$(command -v ps)
-  cat > "$CASE/fakebin/ps" <<'SH'
-#!/bin/bash
-[ "$*" != '-axo pgid=,stat=' ] || exit 1
-exec "$REAL_PS" "$@"
-SH
-  chmod +x "$CASE/fakebin/ps"
-  PATH="$CASE/fakebin:$PATH" status_has ' serving=1 waiting=0 stale=0 ' || fail "a failed ps probe discarded a live group"
   start_held holder; holder=$HELD_PID
   wait_until "holder waits for survivor" status_has '^waiting position=1 .*label=holder$'
   sleep 0.3
@@ -293,10 +249,10 @@ SH
   expect_code 0 "$rc" "a run behind dead tickets"
   assert_present "$CASE/after" "a dead owner blocked the line"
   status_has ' stale=0 ' || fail "dead tickets were not reclaimed"
-  pass "fm-test-queue.sh: surviving groups keep slots and abandoned tickets are reclaimed"
+  pass "fm-test-queue.sh: surviving workload children keep slots and abandoned tickets are reclaimed"
 }
 
-test_descendants_keep_the_slot_after_the_command_exits() {
+test_unled_group_grandchildren_do_not_keep_the_slot() {
   local follower child
   new_case descendants
   echo slots=1 > "$FM_TEST_QUEUE_DIR/config"
@@ -305,18 +261,34 @@ echo $$ > "$1/descendant"
 while [ ! -e "$1/release-child" ]; do sleep 0.05; done
 SH
   CASE_RELEASES+=("$CASE/release-child")
-  q run --label parent -- sh -c 'sh "$1/child.sh" "$1" & while [ ! -s "$1/descendant" ]; do sleep 0.05; done' _ "$CASE" 2>/dev/null
+  q run --label parent -- sh -c 'cp "$FM_TEST_QUEUE_HELD" "$1/record"; sh "$1/child.sh" "$1" & while [ ! -s "$1/descendant" ]; do sleep 0.05; done' _ "$CASE" 2>/dev/null
   wait_until "descendant started" file_exists "$CASE/descendant"
   child=$(cat "$CASE/descendant")
   CASE_PIDS+=("$child")
-  status_has '^serving .*label=parent$' || fail "a command's surviving descendant lost its slot"
+  kill -0 "$child" || fail "the grandchild did not survive its direct parent"
+  assert_equals "" "$(awk -F= '$1 == "pgid" { print $2 }' "$CASE/record")" "nonleader wrapper recorded a shared group"
+  line_is_empty || fail "an unrelated shared group kept the slot after wrapper and child exited"
   start_held follower; follower=$HELD_PID
-  wait_until "follower waiting for descendant" status_has '^waiting .*label=follower$'
+  wait_until "follower served despite untracked grandchild" status_has '^serving .*label=follower$'
   release child
-  wait_until "follower served" status_has '^serving .*label=follower$'
   release follower
   wait "$follower"
-  pass "fm-test-queue.sh: group descendants keep the slot after their leader exits"
+  pass "fm-test-queue.sh: nonleader grandchildren follow the documented lifetime limit"
+}
+
+test_reused_child_pid_is_not_live() {
+  local dead now
+  new_case child-identity
+  mkdir -p "$FM_TEST_QUEUE_DIR/tickets"
+  sh -c 'exit 0' & dead=$!
+  wait "$dead"
+  now=$(date +%s)
+  printf 'pid=%s\nstart=dead\nchild_pid=%s\nchild_start=wrong-start\npgid=\nenqueued=%s\nserved=%s\ntask=\nlabel=reused-child\n' \
+    "$dead" "$$" "$now" "$now" > "$FM_TEST_QUEUE_DIR/tickets/0000000001"
+  status_has ' serving=0 waiting=0 stale=1 ' || fail "a reused child pid kept the ticket alive"
+  q run -- true 2>/dev/null || fail "a reused child pid blocked reclamation"
+  status_has ' serving=0 waiting=0 stale=0 ' || fail "a reused child ticket was not reclaimed"
+  pass "fm-test-queue.sh: child liveness requires the recorded start time"
 }
 
 test_stale_lock_is_broken() {
@@ -460,36 +432,6 @@ SH
   pass "fm-test-queue.sh: a delayed reclaimer cannot remove a replacement live lock"
 }
 
-test_fast_command_keeps_its_exit_status() {
-  local original_path out rc
-  new_case fast-exit
-  original_path=$PATH
-  export REAL_MV
-  REAL_MV=$(command -v mv)
-  mkdir -p "$CASE/fakebin"
-  cat > "$CASE/fakebin/mv" <<'SH'
-#!/bin/bash
-"$REAL_MV" "$@"
-rc=$?
-if [ "$rc" = 0 ] && [ "$1" = -f ] && [ -f "$3" ] &&
-  awk -F= '$1 == "pgid" && $2 != "" { found=1 } END { exit !found }' "$3"; then
-  sleep 0.5
-fi
-exit "$rc"
-SH
-  chmod +x "$CASE/fakebin/mv"
-  export PATH="$CASE/fakebin:$PATH"
-  echo earlier-error > "$CASE/err"
-  out=$(q run -- sh -c 'echo fast; echo command-error >&2; exit 7' 2>>"$CASE/err"); rc=$?
-  export PATH="$original_path"
-  expect_code 7 "$rc" "command that exits before its wrapper foregrounds it"
-  assert_equals fast "$out" "fast command stdout changed"
-  assert_grep earlier-error "$CASE/err" "queue truncated the caller's stderr file"
-  assert_grep command-error "$CASE/err" "fast command stderr changed"
-  line_is_empty || fail "a fast command left its slot taken"
-  pass "fm-test-queue.sh: commands that finish before foregrounding keep their exit status"
-}
-
 test_locale_and_umask_are_preserved() {
   local value out rc
   new_case locale
@@ -552,15 +494,14 @@ test_line_is_first_in_first_out
 test_slots_bound_concurrency
 test_load_ceiling_holds_the_head
 test_signals_release_the_ticket
-test_stopped_workloads_suspend_and_resume_the_wrapper
 test_dead_owners_are_reclaimed
-test_descendants_keep_the_slot_after_the_command_exits
+test_unled_group_grandchildren_do_not_keep_the_slot
+test_reused_child_pid_is_not_live
 test_stale_lock_is_broken
 test_competing_reclaimers_preserve_the_replacement_lock
 test_shared_configuration_and_validation
 test_nested_run_does_not_wait_on_itself
 test_lost_counter_cannot_jump_the_line
-test_fast_command_keeps_its_exit_status
 test_locale_and_umask_are_preserved
 test_private_metadata_and_failed_probe_warning
 test_terminal_execution_modes

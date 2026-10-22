@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 import select
 import shlex
+import shutil
 import signal
 import subprocess
 import sys
@@ -49,8 +50,8 @@ def send(value):
     os.write(terminal, value.encode())
 
 
-def status():
-    return subprocess.check_output([bash, queue, "status"], env=env, text=True)
+def status(environment=None):
+    return subprocess.check_output([bash, queue, "status"], env=environment or env, text=True)
 
 
 def tickets():
@@ -112,6 +113,80 @@ try:
     assert (case / "queued.ran").exists()
     assert "serving=0 waiting=0 stale=0 " in status()
 
+    promoted = background("promoted", '\n'.join([
+        'echo $$ > "$1/promoted.child"', 'counter=0', 'while :; do',
+        'counter=$((counter + 1))', 'echo "$counter" > "$1/heartbeat"', 'sleep 0.05', 'done', '',
+    ]))
+    until("promoted workload started", (case / "heartbeat").exists)
+    promoted_child = int((case / "promoted.child").read_text())
+    send("fg\n")
+    until("background job promoted", lambda: os.tcgetpgrp(terminal) == promoted)
+    os.write(terminal, b"\x1a")
+    receive(prompt)
+    child_state = subprocess.check_output(["ps", "-p", str(promoted_child), "-o", "stat="], text=True).strip()
+    assert child_state.startswith("T"), "promoted workload continued after Ctrl-Z stopped its wrapper"
+    owner = record("promoted")
+    assert int(owner["child_pid"]) == promoted_child
+    assert int(owner["pgid"]) == promoted
+    assert os.getpgid(promoted_child) == os.getpgid(promoted)
+    stopped_heartbeat = (case / "heartbeat").read_text()
+    until("promoted job still holds its slot", lambda: "serving=1 waiting=0 stale=0 " in status())
+    assert (case / "heartbeat").read_text() == stopped_heartbeat
+    send("bg\n")
+    receive(prompt)
+    until("background continuation", lambda: (case / "heartbeat").read_text() not in ("", stopped_heartbeat))
+    assert os.tcgetpgrp(terminal) == caller, "bg took the caller's terminal"
+    send('fg; printf "PROMOTED-RC=%s\\n" "$?"\n')
+    until("continued background job promoted again", lambda: os.tcgetpgrp(terminal) == promoted)
+    os.write(terminal, b"\x03")
+    receive(b"PROMOTED-RC=130\r\n")
+    receive(prompt)
+    wrappers.remove(promoted)
+    assert "serving=0 waiting=0 stale=0 " in status()
+
+    (case / "grandchild.sh").write_text(
+        ': > "$1/grandchild.ran"\nwhile [ ! -e "$1/release-grandchild" ]; do sleep 0.05; done\n'
+    )
+    leader = background("leader", '\n'.join([
+        'echo $$ > "$1/leader.child"',
+        shlex.quote(bash) + ' "$1/grandchild.sh" "$1" &',
+        'while [ ! -e "$1/release-parent" ]; do sleep 0.05; done', '',
+    ]))
+    until("leader grandchild started", (case / "grandchild.ran").exists)
+    owner = record("leader")
+    direct_child = int((case / "leader.child").read_text())
+    assert int(owner["child_pid"]) == direct_child
+    child_start = subprocess.check_output(
+        ["ps", "-p", str(direct_child), "-o", "lstart="], env=dict(env, LC_ALL="C"), text=True
+    ).strip()
+    assert owner["child_start"] == child_start
+    assert int(owner["pgid"]) == leader
+    os.kill(leader, signal.SIGKILL)
+    send(f'wait {leader}; printf "KILLED-RC=%s\\n" "$?"\n')
+    receive(b"KILLED-RC=137\r\n")
+    receive(prompt)
+    wrappers.remove(leader)
+    assert "serving=1 waiting=0 stale=0 " in status()
+    os.kill(direct_child, signal.SIGKILL)
+    assert "serving=1 waiting=0 stale=0 " in status(), "live leader group lost its slot"
+    fakebin = case / "fakebin"
+    fakebin.mkdir()
+    probe = fakebin / "ps"
+    probe.write_text('#!/bin/sh\n[ "$1" != -axo ] || exit 1\nexec "$REAL_PS" "$@"\n')
+    probe.chmod(0o700)
+    failed_probe_env = dict(env, PATH=str(fakebin) + os.pathsep + env["PATH"], REAL_PS=shutil.which("ps"))
+    assert "serving=1 waiting=0 stale=0 " in status(failed_probe_env)
+    follower = background("group-follower", ': > "$1/group-follower.ran"\n')
+    until("follower waits for surviving leader group", lambda: "serving=1 waiting=1 stale=0 " in status())
+    assert not (case / "group-follower.ran").exists()
+    (case / "release-grandchild").touch()
+    send(f'wait {follower}; printf "GROUP-FOLLOWER-RC=%s\\n" "$?"\n')
+    receive(b"GROUP-FOLLOWER-RC=0\r\n")
+    receive(prompt)
+    wrappers.remove(follower)
+    assert (case / "group-follower.ran").exists()
+    assert "serving=0 waiting=0 stale=0 " in status()
+
     send(command("foreground", '\n'.join([
         "echo READY-1", "IFS= read -r line", 'echo "RECEIVED=$line"',
         "echo READY-2", "IFS= read -r line", 'echo "RECEIVED=$line"',
@@ -170,6 +245,8 @@ try:
     until("caller exit", caller_exited)
 finally:
     (case / "release-background").touch()
+    (case / "release-grandchild").touch()
+    (case / "release-parent").touch()
     for item in tickets():
         if item.get("pgid"):
             try:
