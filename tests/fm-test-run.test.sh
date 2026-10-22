@@ -1190,36 +1190,59 @@ test_portable_serial_hint_coverage_is_reported_and_bounded() {
   pass "coverage guard bounds the unmeasured share and serial packing within twenty minutes"
 }
 
-test_portable_serial_packing_budget_boundary() {
-  local tmp repo script weight out rc
-  tmp=$(fm_test_tmproot fm-test-run-packing-boundary)
-  repo="$tmp/repo"
-  mkdir -p "$repo/bin" "$repo/tests"
-  # Preserve the real inventory and packing policy without executing suites.
-  # Only the fixture's measured timing input changes at the boundary.
-  while IFS= read -r script; do
-    printf '#!/usr/bin/env bash\nexit 0\n' >"$repo/$script"
-  done < <("$RUNNER" --list --all)
-
-  for weight in 1200000 1200001; do
-    cp "$RUNNER" "$repo/bin/fm-test-run.sh"
-    python3 - "$repo/bin/fm-test-run.sh" "$weight" <<'PY' \
-      || fail "could not seed the fixture's measured timing input"
+# Fixture runner whose serial hints are all zero except the "<path> <ms>"
+# pairs given, packed into <shards> shards. Every other packing input stays real.
+seed_serial_packing_fixture() {  # <repo> <shards> <path> <ms> [<path> <ms>...]
+  local repo=$1 shards=$2
+  shift 2
+  cp "$RUNNER" "$repo/bin/fm-test-run.sh"
+  python3 - "$repo/bin/fm-test-run.sh" "$shards" "$@" <<'PY' \
+    || fail "could not seed the fixture's measured timing input"
 from pathlib import Path
 import re, sys
 runner = Path(sys.argv[1])
-runner.write_text(re.sub(
-    r"(?m)^tests/fm-watch-triage\.test\.sh [0-9]+$",
-    f"tests/fm-watch-triage.test.sh {sys.argv[2]}",
-    runner.read_text(),
-))
+shards = sys.argv[2]
+weights = dict(zip(sys.argv[3::2], sys.argv[4::2]))
+text = runner.read_text()
+text = re.sub(r"(?m)^PORTABLE_SERIAL_SHARDS=[0-9]+$", f"PORTABLE_SERIAL_SHARDS={shards}", text)
+def table(m):
+    rows = [line.split()[0] for line in m.group(2).splitlines() if line]
+    body = "".join(f"{row} {weights.get(row, 0)}\n" for row in rows)
+    return m.group(1) + body + m.group(3)
+text, n = re.subn(r"(portable_serial_weight_hints\(\) \{\n  cat <<'EOF'\n)(.*?)(^EOF\n)",
+                  table, text, count=1, flags=re.S | re.M)
+assert n == 1
+runner.write_text(text)
 PY
+}
+
+seed_serial_packing_inventory() {  # <repo>
+  local script
+  mkdir -p "$1/bin" "$1/tests"
+  # Preserve the real inventory and packing policy without executing suites.
+  while IFS= read -r script; do
+    printf '#!/usr/bin/env bash\nexit 0\n' >"$1/$script"
+  done < <("$RUNNER" --list --all)
+}
+
+test_portable_serial_packing_budget_boundary() {
+  local tmp repo second out rc
+  tmp=$(fm_test_tmproot fm-test-run-packing-boundary)
+  repo="$tmp/repo"
+  seed_serial_packing_inventory "$repo"
+
+  # One shard holds every serial script, so two weighted scripts share it and
+  # their sum is exactly the packed shard weight.
+  for second in 600000 600001; do
+    seed_serial_packing_fixture "$repo" 1 \
+      tests/fm-watch-triage.test.sh 600000 tests/fm-supervision-host.test.sh "$second"
     out=$(bash "$repo/bin/fm-test-run.sh" --check-coverage 2>&1) && rc=0 || rc=$?
-    if [ "$weight" -eq 1200000 ]; then
+    if [ "$second" -eq 600000 ]; then
       expect_code 0 "$rc" "packing exactly at the budget must be accepted"
       assert_contains "$out" "FM_TEST_COVERAGE ok" "boundary coverage did not pass"
       assert_contains "$out" "serial_max_ms=1200000" "fixture did not pack exactly at the budget"
       assert_contains "$out" "serial_budget_ms=1200000" "fixture changed the packing budget"
+      assert_contains "$out" "serial_oversized=0" "a multi-script shard was reported as indivisible"
     else
       expect_code 1 "$rc" "packing one millisecond above the budget must be refused"
       assert_contains "$out" "largest portable serial shard packs 1200001ms above the 1200000ms target" \
@@ -1228,6 +1251,32 @@ PY
     fi
   done
   pass "serial packing accepts the exact budget and refuses one millisecond above it"
+}
+
+test_portable_serial_lone_script_over_budget_is_reported() {
+  local tmp repo out rc
+  tmp=$(fm_test_tmproot fm-test-run-packing-lone)
+  repo="$tmp/repo"
+  seed_serial_packing_inventory "$repo"
+
+  # Longest-first packing gives the one over-budget script a shard of its own,
+  # which no packing can shrink, so it is named rather than refused.
+  seed_serial_packing_fixture "$repo" 2 tests/fm-watch-triage.test.sh 1200001
+  out=$(bash "$repo/bin/fm-test-run.sh" --check-coverage 2>&1) && rc=0 || rc=$?
+  expect_code 0 "$rc" "a lone indivisible script over the budget must be accepted"
+  assert_contains "$out" "FM_TEST_COVERAGE ok" "lone over-budget script failed coverage"
+  assert_contains "$out" "shard 1 holds only tests/fm-watch-triage.test.sh at 1200001ms" \
+    "lone over-budget script was not named"
+  assert_contains "$out" "serial_oversized=1" "lone over-budget script was not counted"
+  assert_contains "$out" "serial_max_ms=0" "the indivisible shard leaked into the packed maximum"
+
+  # The same weight shared with a second script is still a packing failure.
+  seed_serial_packing_fixture "$repo" 1 \
+    tests/fm-watch-triage.test.sh 1200001 tests/fm-supervision-host.test.sh 1
+  out=$(bash "$repo/bin/fm-test-run.sh" --check-coverage 2>&1) && rc=0 || rc=$?
+  expect_code 1 "$rc" "an over-budget shard with two scripts must be refused"
+  assert_not_contains "$out" "FM_TEST_COVERAGE ok" "over-budget shared shard reported success"
+  pass "a lone indivisible script over the packing budget is reported, not refused"
 }
 
 test_portable_serial_shard_lane_refusals() {
@@ -1855,6 +1904,7 @@ test_portable_parallel_lanes_stay_duration_balanced
 test_portable_serial_shards_partition_the_serial_lane
 test_portable_serial_hint_coverage_is_reported_and_bounded
 test_portable_serial_packing_budget_boundary
+test_portable_serial_lone_script_over_budget_is_reported
 test_portable_serial_shard_lane_refusals
 test_jobs_requires_proven_isolated
 test_jobs_admits_a_concurrent_safe_family
