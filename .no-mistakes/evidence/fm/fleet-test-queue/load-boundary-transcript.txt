@@ -1,0 +1,8 @@
+test-queue: slots=2 load_ceiling=16 load1=16 serving=0 waiting=1 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-validation/load-boundary/spool
+waiting position=1 ticket=1 pid=89521 age=1s task=- label=exact-ceiling
+Workload marker absent at load exactly 16.
+threshold-workload-ran
+fm-test-queue: ticket 1, position 1: load 16 is not below 16
+fm-test-queue: ticket 1 served
+exit=0
+test-queue: slots=2 load_ceiling=16 load1=15.99 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-validation/load-boundary/spool

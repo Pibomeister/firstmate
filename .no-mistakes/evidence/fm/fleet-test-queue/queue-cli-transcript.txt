@@ -1,0 +1,70 @@
+$ fm-test-queue.sh status
+test-queue: slots=1 load_ceiling=16 load1=20.5 serving=0 waiting=3 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-validation/live-cli/spool
+waiting position=1 ticket=1 pid=85453 age=2s task=- label=A
+waiting position=2 ticket=2 pid=86969 age=1s task=- label=B
+waiting position=3 ticket=3 pid=90812 age=0s task=- label=C
+[exit 0]
+
+Workload side effect: no order file exists while load=20.5.
+
+$ fm-test-queue.sh status
+test-queue: slots=1 load_ceiling=16 load1=15.9 serving=1 waiting=2 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-validation/live-cli/spool
+serving ticket=1 pid=85453 age=0s task=- label=A
+waiting position=1 ticket=2 pid=86969 age=2s task=- label=B
+waiting position=2 ticket=3 pid=90812 age=1s task=- label=C
+[exit 0]
+
+Workload A:
+START-A
+END-A
+fm-test-queue: ticket 1, position 1: load 20.5 is not below 16
+fm-test-queue: ticket 1 served
+[exit 0]
+
+Workload B:
+START-B
+END-B
+fm-test-queue: ticket 2, position 2: waiting behind 1 earlier ticket(s)
+fm-test-queue: ticket 2, position 1: all 1 slot(s) busy
+fm-test-queue: ticket 2 served
+[exit 0]
+
+Workload C:
+START-C
+END-C
+fm-test-queue: ticket 3, position 3: waiting behind 2 earlier ticket(s)
+fm-test-queue: ticket 3, position 2: waiting behind 1 earlier ticket(s)
+fm-test-queue: ticket 3 served
+[exit 0]
+
+Actual persisted workload order:
+A
+B
+C
+
+$ fm-test-queue.sh status
+test-queue: slots=1 load_ceiling=16 load1=15.9 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-validation/live-cli/spool
+[exit 0]
+
+$ fm-test-queue.sh run -- /bin/sh -c printf "real stdout\n"; printf "real stderr\n" >&2; exit 37
+real stdout
+real stderr
+[exit 37]
+
+$ fm-test-queue.sh run
+usage: fm-test-queue.sh run [--label <text>] -- <command> [args...] | status | --help
+[exit 2]
+
+$ fm-test-queue.sh run -- /usr/bin/true
+fm-test-queue: slots must be a positive integer, got '0'
+[exit 125]
+
+Host load probe with a disposable high ceiling (no synthetic load):
+
+$ fm-test-queue.sh status
+test-queue: slots=1 load_ceiling=100000 load1=84.14 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-validation/live-cli/spool
+[exit 0]
+
+$ fm-test-queue.sh run -- /bin/echo actual host load probe admitted this workload
+actual host load probe admitted this workload
+[exit 0]

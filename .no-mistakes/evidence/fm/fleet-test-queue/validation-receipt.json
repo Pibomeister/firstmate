@@ -1,0 +1,28 @@
+{
+  "target_revision": "ad3d3cd82e9ca361ba75c567db8d5daad82bc213",
+  "interpreter": "GNU bash, version 3.2.57(1)-release (arm64-apple-darwin25)",
+  "targeted_checks": [
+    {
+      "command": "env TMPDIR=\"$PWD/.test-validation/tmp\" FM_TEST_BASH=/bin/bash /bin/bash tests/fm-test-queue.test.sh",
+      "exit": 0
+    },
+    {
+      "command": "env TMPDIR=\"$PWD/.test-validation/tmp\" FM_TEST_BASH=/bin/bash /bin/bash tests/fm-brief.test.sh",
+      "initial_exit": 1,
+      "initial_cause": "Absolute temporary marker inserted a hidden directory component into a Git ref.",
+      "final_exit": 0
+    }
+  ],
+  "test_changes": {
+    "tests/fm-test-queue-pty.py": "Set a 40x120 terminal grid in the child before starting interactive Bash.",
+    "tests/fm-brief.test.sh": "Use a relative shell-injection marker inside the disposable Git fixture, independent of temporary parent path."
+  },
+  "manual_checks": [
+    "Real queue run/status FIFO and concurrency with disposable spools",
+    "Exact load boundary 16 blocks, 15.99 admits",
+    "Host sysctl load probe and actual workload execution with isolated ceiling",
+    "Real PTY background admission, fg/bg, Ctrl-Z/fg, Ctrl-C, terminal input and surviving leader group",
+    "Generate ship briefs for three modes, a scout brief and a secondmate charter"
+  ],
+  "limitations": "Deterministic load checks use the provided load-file seam; a separate check exercised the actual host load probe. The documented unled-grandchild lifetime limit remains intentional."
+}

@@ -1,0 +1,7 @@
+absolute marker under hidden parent:
+error: --branch-prefix and task id must form a valid git branch (got '$(touch${IFS}/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-validation/path-diagnosis/marker)diagnose-absolute')
+[exit 1]
+
+relative marker:
+scaffolded: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-validation/path-diagnosis/home/data/diagnose-relative/brief.md (ship, mode=local-only; replace {TASK} and {FIRSTMATE_SPEC})
+[exit 0]
