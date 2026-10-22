@@ -2579,6 +2579,71 @@ test_forgejo_merge_method_and_extra_args() {
   pass "fm-pr-merge maps --squash/--rebase to Forgejo's Do field, defaults to the repository's default merge style, and refuses any other extra argument"
 }
 
+# A method option with no style must fail before tea is asked to merge.
+# Omission and the shortcut flags stay covered by the test above.
+test_forgejo_method_value_is_required() {
+  local case_dir rc name style
+  for name in bare empty-equals empty-separated before-flag before-equals \
+    valid-then-bare bare-then-valid equals-then-style shortcut-then-bare; do
+    case_dir=$(make_forgejo_case "forgejo-method-$name")
+    set +e
+    case "$name" in
+      bare)
+        run_pr_merge "$case_dir" task-x1 "$FJ_URL" -- --method \
+          > "$case_dir/stdout" 2> "$case_dir/stderr" ;;
+      empty-equals)
+        run_pr_merge "$case_dir" task-x1 "$FJ_URL" -- --method= \
+          > "$case_dir/stdout" 2> "$case_dir/stderr" ;;
+      empty-separated)
+        run_pr_merge "$case_dir" task-x1 "$FJ_URL" -- --method '' \
+          > "$case_dir/stdout" 2> "$case_dir/stderr" ;;
+      before-flag)
+        run_pr_merge "$case_dir" task-x1 "$FJ_URL" -- --method --squash \
+          > "$case_dir/stdout" 2> "$case_dir/stderr" ;;
+      before-equals)
+        run_pr_merge "$case_dir" task-x1 "$FJ_URL" -- --method --method=merge \
+          > "$case_dir/stdout" 2> "$case_dir/stderr" ;;
+      valid-then-bare)
+        run_pr_merge "$case_dir" task-x1 "$FJ_URL" -- --method=merge --method \
+          > "$case_dir/stdout" 2> "$case_dir/stderr" ;;
+      bare-then-valid)
+        run_pr_merge "$case_dir" task-x1 "$FJ_URL" -- --method --method=squash \
+          > "$case_dir/stdout" 2> "$case_dir/stderr" ;;
+      equals-then-style)
+        run_pr_merge "$case_dir" task-x1 "$FJ_URL" -- --method= --method=squash \
+          > "$case_dir/stdout" 2> "$case_dir/stderr" ;;
+      shortcut-then-bare)
+        run_pr_merge "$case_dir" task-x1 "$FJ_URL" -- --squash --method \
+          > "$case_dir/stdout" 2> "$case_dir/stderr" ;;
+    esac
+    rc=$?
+    set -e
+    expect_code 1 "$rc" "forgejo-method-$name: a missing method value must be refused"
+    assert_grep 'error: --method needs a merge style' "$case_dir/stderr" \
+      "forgejo-method-$name: refusal did not name the missing method value"
+    [ -z "$(tea_merge_line "$case_dir/tea.log")" ] \
+      || fail "forgejo-method-$name: a merge was requested without a method value"
+  done
+
+  for style in merge rebase rebase-merge squash fast-forward-only; do
+    case_dir=$(make_forgejo_case "forgejo-method-separated-$style")
+    run_pr_merge "$case_dir" task-x1 "$FJ_URL" -- --method "$style" \
+      > "$case_dir/stdout" 2> "$case_dir/stderr" \
+      || fail "forgejo-method-separated-$style: --method $style should succeed: $(cat "$case_dir/stderr")"
+    [ "$(cat "$case_dir/tea-merge-do" 2>/dev/null)" = "$style" ] \
+      || fail "forgejo-method-separated-$style: did not select Do=$style"
+
+    case_dir=$(make_forgejo_case "forgejo-method-equals-$style")
+    run_pr_merge "$case_dir" task-x1 "$FJ_URL" -- --method="$style" \
+      > "$case_dir/stdout" 2> "$case_dir/stderr" \
+      || fail "forgejo-method-equals-$style: --method=$style should succeed: $(cat "$case_dir/stderr")"
+    [ "$(cat "$case_dir/tea-merge-do" 2>/dev/null)" = "$style" ] \
+      || fail "forgejo-method-equals-$style: did not select Do=$style"
+  done
+
+  pass "fm-pr-merge refuses a Forgejo --method with no style and still honors an explicit style"
+}
+
 test_gitlab_head_override_args_refuse_before_recording() {
   local case_dir rc
   case_dir=$(make_gitlab_case gitlab-head-override)
@@ -2988,6 +3053,7 @@ test_forgejo_missing_tool_refuses_before_recording
 test_forgejo_rejected_merge_is_never_trusted_by_exit_status
 test_forgejo_transient_confirm_read_failure_still_persists_authority
 test_forgejo_merge_method_and_extra_args
+test_forgejo_method_value_is_required
 
 # The merge gate asks whether the task is still held for the captain. A home
 # that carries no backlog records no captain calls at all, so nothing can be
