@@ -676,7 +676,7 @@ SHARED_NO_CD_RULE=${SHARED_NO_CD_RULE%$'\n'}
 
 # One shared string keeps the ship and scout test-queue rule identical;
 # bin/fm-test-queue.sh owns the queue contract.
-TEST_QUEUE_RULE="9. Run heavy test suites only through the machine-wide test line, \`$FM_ROOT/bin/fm-test-queue.sh run -- <command>\`, which waits for your turn, a free slot, and a low load; run targeted tests directly."
+TEST_QUEUE_RULE="9. Run heavy test suites only through the machine-wide test line, \`$(shell_quote "$FM_ROOT/bin/fm-test-queue.sh") run -- <command>\`, which waits for your turn, a free slot, and a low load; run targeted tests directly."
 
 if [ -n "$BASE_BRANCH" ]; then
   SETUP_BASE="You are in a disposable git worktree of $REPO, at a detached HEAD on a clean copy of its base branch.

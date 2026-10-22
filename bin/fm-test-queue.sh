@@ -153,7 +153,7 @@ load1() {  # prints the 1-minute load average, or fails
 # The start time disambiguates a reused pid. An empty start time (ps missing)
 # degrades to a plain liveness check.
 pid_start() {  # <pid>
-  ps -p "$1" -o lstart= 2>/dev/null | sed 's/^[[:space:]]*//; s/[[:space:]]*$//'
+  TZ=UTC LC_ALL=C ps -p "$1" -o lstart= 2>/dev/null | sed 's/^[[:space:]]*//; s/[[:space:]]*$//'
 }
 
 owner_alive() {  # <pid> <recorded-start>

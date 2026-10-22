@@ -225,7 +225,7 @@ test_dead_owners_are_reclaimed() {
   group=$(ps -p "$p" -o pgid= | tr -d ' ')
   assert_equals "$group" "$(ps -p "$child" -o pgid= | tr -d ' ')" "command left its wrapper's job"
   assert_grep "child_pid=$child" "$FM_TEST_QUEUE_DIR/tickets/0000000001" "ticket did not persist its workload child"
-  assert_grep "child_start=$(LC_ALL=C ps -p "$child" -o lstart= | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')" \
+  assert_grep "child_start=$(TZ=UTC LC_ALL=C ps -p "$child" -o lstart= | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')" \
     "$FM_TEST_QUEUE_DIR/tickets/0000000001" "ticket did not persist its child's start time"
   [ "$group" = "$p" ] || group=""
   assert_equals "$group" "$(awk -F= '$1 == "pgid" { print $2 }' "$FM_TEST_QUEUE_DIR/tickets/0000000001")" \
@@ -416,10 +416,10 @@ SH
   chmod +x "$CASE/fakebin/ps" "$CASE/fakebin/mv"
   export RACE_CASE="$CASE" OBSERVED_PID=$$ REAL_PS="$real_ps" REAL_MV="$real_mv"
   export PATH="$CASE/fakebin:$PATH"
-  RECLAIMER=B qbg run --label B -- true 2>"$CASE/B.err" & b=$!
+  TZ=America/Mexico_City RECLAIMER=B qbg run --label B -- true 2>"$CASE/B.err" & b=$!
   CASE_PIDS+=("$b")
   wait_until "B observed the stale owner" file_exists "$CASE/observed-B"
-  RECLAIMER=A qbg run --label A -- true 2>"$CASE/A.err" & a=$!
+  TZ=UTC RECLAIMER=A qbg run --label A -- true 2>"$CASE/A.err" & a=$!
   CASE_PIDS+=("$a")
   wait_until "A holds the replacement lock" file_exists "$CASE/holding-A"
   : > "$CASE/allow-B"
@@ -430,6 +430,33 @@ SH
   wait "$a" "$b" || fail "reclaimers failed after the replacement lock was released"
   export PATH="$original_path"
   pass "fm-test-queue.sh: a delayed reclaimer cannot remove a replacement live lock"
+}
+
+test_contenders_in_different_timezones_share_ownership() {
+  local holder follower child
+  new_case timezones
+  echo slots=1 > "$FM_TEST_QUEUE_DIR/config"
+  CASE_RELEASES+=("$CASE/release-utc")
+  TZ=UTC qbg run --label utc -- sh -c 'echo "$TZ" > "$1/utc-tz"; echo $$ > "$1/child"; while [ ! -e "$1/release-utc" ]; do sleep 0.05; done' _ "$CASE" 2>/dev/null &
+  holder=$!
+  CASE_PIDS+=("$holder")
+  wait_until "UTC command started" file_exists "$CASE/child"
+  child=$(cat "$CASE/child")
+  CASE_PIDS+=("$child")
+  TZ=America/Mexico_City qbg run --label mexico -- sh -c 'echo "$TZ" > "$1/mexico-tz"' _ "$CASE" 2>/dev/null &
+  follower=$!
+  CASE_PIDS+=("$follower")
+  TZ=America/Mexico_City wait_until "other timezone waits for wrapper" status_has '^waiting position=1 .*label=mexico$'
+  assert_absent "$CASE/mexico-tz" "a timezone difference freed an occupied slot"
+  kill -KILL "$holder"; wait "$holder" 2>/dev/null
+  TZ=America/Mexico_City status_has ' serving=1 waiting=1 stale=0 ' || fail "a timezone difference reclaimed the surviving child"
+  assert_absent "$CASE/mexico-tz" "a contender bypassed a surviving child in another timezone"
+  release utc
+  wait "$follower" || fail "contender did not run after the surviving child exited"
+  assert_equals UTC "$(cat "$CASE/utc-tz")" "queue changed the first command's timezone"
+  assert_equals America/Mexico_City "$(cat "$CASE/mexico-tz")" "queue changed the second command's timezone"
+  line_is_empty || fail "cross-timezone contenders left tickets behind"
+  pass "fm-test-queue.sh: timezones preserve live wrappers, surviving children, and command environments"
 }
 
 test_locale_and_umask_are_preserved() {
@@ -499,6 +526,7 @@ test_unled_group_grandchildren_do_not_keep_the_slot
 test_reused_child_pid_is_not_live
 test_stale_lock_is_broken
 test_competing_reclaimers_preserve_the_replacement_lock
+test_contenders_in_different_timezones_share_ownership
 test_shared_configuration_and_validation
 test_nested_run_does_not_wait_on_itself
 test_lost_counter_cannot_jump_the_line
