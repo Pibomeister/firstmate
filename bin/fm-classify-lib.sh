@@ -417,7 +417,8 @@ _fm_status_declared_wait_scan() {  # <resolve-verb> <legacy-captain-re>
 
 # A condition-aware declared wait: a `paused:` line may say WHEN it expects to
 # clear with `until <YYYY-MM-DDTHH:MM[:SS]Z>` anywhere in its text (UTC only, so
-# no local-zone guess is ever recorded). Prints that time as epoch seconds so a
+# no local-zone guess is ever recorded). The last matching token wins, whether
+# it uses minute or seconds precision. Prints that time as epoch seconds so a
 # supervisor rechecks the wait when the worker said it would clear instead of on
 # the flat cadence; returns 1 when the line is not a pause or declares no time,
 # or the time is malformed, so a bad token falls back to the cadence rather than

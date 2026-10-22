@@ -12,28 +12,30 @@
 # firstmate write that same declaration for it, so supervision absorbs the
 # pane exactly as it absorbs a worker-declared pause.
 #
-# It appends one line to this home's state/<task-id>.status:
+# With the default paused verb, it appends one line to this home's
+# state/<task-id>.status:
 #   paused [key=fm-park] [at=<epoch>]: <reason> (parked by firstmate) until <t>
 # The verb, the `until` grammar, and the keyed phase semantics are owned by
 # bin/fm-classify-lib.sh (status_is_paused, status_paused_until,
 # status_declared_wait_line), and bin/fm-watch.sh owns what a declared wait
-# does to stale detection: the pane stays absorbed until <t>, then is rechecked
-# once and held to the long recheck cadence. The wait ends as soon as any later
-# event lands, such as the worker's own next status line; parking again appends
-# a newer declaration that supersedes this one.
+# does to stale detection. The park follows those owners' existing wait
+# lifetime and bounded recheck policy, including rechecks before the deadline.
+# Parking again appends a newer declaration that supersedes this one.
 #
 # The append is self-announced (fm_wake_status_append_self_announced in
 # bin/fm-wake-lib.sh), so recording the park does not wake this same session.
 #
 # Refuses, and writes nothing, when: the task id is not a recorded task in this
 # home (no state/<task-id>.meta); --until is missing, malformed, not UTC, or not
-# in the future; --reason is empty; or the finished line would exceed the
+# in the future; --reason is empty; the composed line does not parse as a wait
+# with the requested deadline; or the finished line would exceed the
 # status-line cap (bin/fm-line-cap-lib.sh), since truncation would cut off the
 # `until` time. After appending it re-reads the log and fails if the line is not
 # the task's current declared wait with the requested time.
 #
 # Environment: FM_HOME selects the home; FM_STATE_OVERRIDE overrides its state
-# directory.
+# directory. FM_CLASSIFY_PAUSED_VERB selects the shared declared-wait verb;
+# its default is owned by bin/fm-classify-lib.sh.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
