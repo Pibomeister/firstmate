@@ -17,7 +17,7 @@
 #   - the 1-minute load average is below <load ceiling>.
 # It then runs the command in the foreground, with the caller's stdin, stdout,
 # stderr, and terminal, and exits with the command's exit status. The ticket
-# and its slot are released after both the wrapper and workload group leave,
+# and its slot are released after the recorded wrapper, child, and leader group leave,
 # including after an error or signal (INT, TERM, HUP, QUIT). While it waits
 # it prints a line to stderr whenever its
 # position or the reason it waits changes.
@@ -35,8 +35,8 @@
 #   serving ticket=<N> pid=<pid> age=<duration> task=<id|-> label=<text>
 #   waiting position=<N> ticket=<N> pid=<pid> age=<duration> task=<id|-> label=<text>
 # A served ticket's age counts from the moment it was served, a waiting
-# ticket's from the moment it took its ticket. stale counts tickets whose wrapper
-# and workload group are both dead; status reports them and the next run reclaims them.
+# ticket's from the moment it took its ticket. stale counts tickets with no live
+# recorded wrapper, child, or leader group; the next run reclaims them.
 #
 # Spool: one per user, shared by every firstmate home on the machine:
 #   ${XDG_STATE_HOME:-$HOME/.local/state}/firstmate/test-queue
@@ -54,10 +54,14 @@
 # FM_TEST_QUEUE_POLL sets the wait between admission checks in seconds
 # (default 5).
 #
-# Dead owners: every ticket records its wrapper's pid and process start time,
-# and its command's process group. A ticket is reclaimed only when both the
-# wrapper and every process in that group are gone. A surviving command keeps
-# its slot after a wrapper is killed, including by SIGKILL.
+# Dead owners: every ticket records its wrapper's and direct child's pids and
+# process start times. It also records the wrapper's pgid when the wrapper
+# leads that group (pgid equals pid). A ticket stays live while any recorded
+# identity or leader group remains alive, including after wrapper SIGKILL.
+# Commands inherit the wrapper's job; the queue creates no process group and
+# does not manage the terminal. If the wrapper and its direct child both die
+# while grandchildren survive in a group the wrapper did not lead, the slot
+# can be freed early.
 # Dead lock owners and old locks without a usable owner record are recovered
 # only from the observed directory generation, after a 10-second grace period
 # for an uninitialized owner record.
@@ -68,7 +72,7 @@
 # FM_TEST_QUEUE_LOAD_FILE names a file whose
 # first word stands in for the 1-minute load, read at every check.
 #
-# Portable to macOS Bash 3.2 with core Perl POSIX: no flock(1), no associative arrays.
+# Portable to macOS Bash 3.2: no flock(1), no associative arrays.
 #
 # Exit status: run exits with the command's status, 128+N when a signal N ends
 # the wait or the run, 2 on a usage error, and 125 when the queue itself cannot
@@ -76,6 +80,7 @@
 # cannot be taken). status exits 0, 2 on a usage error, or 125 on invalid
 # configuration.
 set -u
+set +m
 CALLER_LC_ALL_SET=${LC_ALL+x}
 CALLER_LC_ALL=${LC_ALL-}
 export LC_ALL=C
@@ -187,8 +192,8 @@ path_identity() {
 }
 
 lock_acquire() {
-  local tries=0 pid start age m generation owner
-  LOCK_TOKEN="$$ $(pid_start "$$")"
+  local tries=0 pid start age m generation owner lock_pid=${1:-$$}
+  LOCK_TOKEN="$lock_pid $(pid_start "$lock_pid")"
   LOCK_CANDIDATE=$(mktemp -d "$SPOOL/.lock.XXXXXXXX") || die "cannot prepare $LOCK"
   mkdir "$LOCK_CANDIDATE/lock" || die "cannot prepare $LOCK"
   (umask 077; printf '%s\n' "$LOCK_TOKEN" > "$LOCK_CANDIDATE/lock/owner") || die "cannot prepare $LOCK/owner"
@@ -242,12 +247,12 @@ lock_release() {
 
 # --- tickets ----------------------------------------------------------------
 # Each ticket is tickets/<10-digit number>, so lexical order is line order.
-# Fields: pid, start, pgid, enqueued, served (empty while waiting), task, label.
-T_PID="" T_START="" T_PGID="" T_ENQUEUED="" T_SERVED="" T_TASK="" T_LABEL=""
+# Fields: pid, start, child_pid, child_start, pgid, enqueued, served, task, label.
+T_PID="" T_START="" T_CHILD_PID="" T_CHILD_START="" T_PGID="" T_ENQUEUED="" T_SERVED="" T_TASK="" T_LABEL=""
 
 ticket_read() {  # <file>
   local line k v
-  T_PID="" T_START="" T_PGID="" T_ENQUEUED="" T_SERVED="" T_TASK="" T_LABEL=""
+  T_PID="" T_START="" T_CHILD_PID="" T_CHILD_START="" T_PGID="" T_ENQUEUED="" T_SERVED="" T_TASK="" T_LABEL=""
   [ -f "$1" ] || return 1
   while IFS= read -r line; do
     k=${line%%=*}
@@ -255,6 +260,8 @@ ticket_read() {  # <file>
     case "$k" in
       pid) T_PID=$v ;;
       start) T_START=$v ;;
+      child_pid) T_CHILD_PID=$v ;;
+      child_start) T_CHILD_START=$v ;;
       pgid) T_PGID=$v ;;
       enqueued) T_ENQUEUED=$v ;;
       served) T_SERVED=$v ;;
@@ -266,8 +273,8 @@ ticket_read() {  # <file>
 
 ticket_write() {  # <file> ; writes the T_* fields atomically
   local tmp="$1.tmp.$$"
-  (umask 077; printf 'pid=%s\nstart=%s\npgid=%s\nenqueued=%s\nserved=%s\ntask=%s\nlabel=%s\n' \
-    "$T_PID" "$T_START" "$T_PGID" "$T_ENQUEUED" "$T_SERVED" "$T_TASK" "$T_LABEL" > "$tmp") &&
+  (umask 077; printf 'pid=%s\nstart=%s\nchild_pid=%s\nchild_start=%s\npgid=%s\nenqueued=%s\nserved=%s\ntask=%s\nlabel=%s\n' \
+    "$T_PID" "$T_START" "$T_CHILD_PID" "$T_CHILD_START" "$T_PGID" "$T_ENQUEUED" "$T_SERVED" "$T_TASK" "$T_LABEL" > "$tmp") &&
     mv -f "$tmp" "$1"
 }
 
@@ -283,12 +290,19 @@ group_alive() {
   local members
   is_uint "$1" && [ "$1" -gt 0 ] 2>/dev/null || return 1
   kill -0 -- "-$1" 2>/dev/null || return 1
-  members=$(ps -axo pgid=,stat=) || return 0
-  awk -v g="$1" '$1 == g && $2 !~ /^Z/ { live=1 } END { exit !live }' <<< "$members"
+  members=$(
+    printf '%s\n' "${BASHPID:-$(exec sh -c 'printf "%s" "$PPID"')}"
+    exec ps -axo pgid=,pid=,stat=
+  ) || return 0
+  awk -v g="$1" -v owner="${2:-0}" 'NR == 1 { probe=$1; next } $1 == g && $2 != owner && $2 != probe && $3 !~ /^Z/ { live=1 } END { exit !live }' <<< "$members"
+}
+
+workload_alive() {
+  owner_alive "$T_CHILD_PID" "$T_CHILD_START" || group_alive "$T_PGID" "${1:-0}"
 }
 
 ticket_alive() {
-  owner_alive "$T_PID" "$T_START" || group_alive "$T_PGID"
+  owner_alive "$T_PID" "$T_START" || workload_alive
 }
 
 reclaim_dead() {
@@ -304,7 +318,7 @@ MY_TICKET=""
 
 cleanup() {
   if [ -n "$MY_TICKET" ]; then
-    if ticket_read "$MY_TICKET" && ! group_alive "$T_PGID"; then
+    if ticket_read "$MY_TICKET" && ! workload_alive "$$"; then
       rm -f "$MY_TICKET"
     fi
     MY_TICKET=""
@@ -334,7 +348,10 @@ take_ticket() {  # <label>
   fi
   T_PID=$$
   T_START=$(pid_start "$$")
-  T_PGID=""
+  T_CHILD_PID=""
+  T_CHILD_START=""
+  T_PGID=$(ps -p "$$" -o pgid= 2>/dev/null | tr -d '[:space:]')
+  [ "$T_PGID" = "$$" ] || T_PGID=""
   T_ENQUEUED=$(date +%s)
   T_SERVED=""
   T_TASK=${FM_TASK_ID:-}
@@ -390,17 +407,8 @@ command_exec() {
   exec "$@"
 }
 
-terminal_handoff() {
-  perl -MPOSIX=tcgetpgrp,tcsetpgrp -e '
-    open my $tty, "+<", "/dev/tty" or exit 0;
-    exit 0 unless tcgetpgrp(fileno $tty) == $ARGV[0];
-    local $SIG{TTOU} = "IGNORE";
-    tcsetpgrp(fileno $tty, $ARGV[1]) == 0 or exit 125;
-  ' "$1" "$2"
-}
-
 cmd_run() {
-  local label="" n last="" command_pid rc wrapper_pgid state signal_status=0
+  local label="" n last=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --label) [ $# -ge 2 ] || usage; label=$2; shift 2 ;;
@@ -450,46 +458,18 @@ cmd_run() {
   done
 
   [ -z "$last" ] || echo "fm-test-queue: ticket $n served" >&2
-  wrapper_pgid=$(perl -e 'print getpgrp') || die "cannot identify wrapper process group"
-  trap 'signal_status=130' INT
-  trap 'signal_status=143' TERM
-  trap 'signal_status=129' HUP
-  trap 'signal_status=131' QUIT
-  set -m
   (
-    set +m
-    while :; do
-      ticket_read "$MY_TICKET" || exit 125
-      [ -n "$T_PGID" ] && break
-      owner_alive "$T_PID" "$T_START" || exit 125
-      sleep 0.05
-    done
+    local child_pid
+    child_pid=${BASHPID:-$(exec sh -c 'printf "%s" "$PPID"')} || exit 125
+    lock_acquire "$child_pid"
+    ticket_read "$MY_TICKET" || die "cannot read ticket $n"
+    T_CHILD_PID=$child_pid
+    T_CHILD_START=$(pid_start "$child_pid")
+    ticket_write "$MY_TICKET" || die "cannot record child for ticket $n"
+    lock_release
     export FM_TEST_QUEUE_HELD=$MY_TICKET
     command_exec "$@"
-  ) <&0 &
-  command_pid=$!
-  set +m
-  terminal_handoff "$wrapper_pgid" "$command_pid" || die "cannot hand the terminal to ticket $n"
-  ticket_read "$MY_TICKET" || die "cannot read ticket $n"
-  T_PGID=$command_pid
-  ticket_write "$MY_TICKET" || die "cannot record process group for ticket $n"
-  while [ "$(jobs -rp)" = "$command_pid" ]; do
-    state=$(ps -p "$command_pid" -o stat= 2>/dev/null) || state=""
-    case "$state" in
-      *T*)
-        terminal_handoff "$command_pid" "$wrapper_pgid" || die "cannot restore the terminal for ticket $n"
-        kill -STOP "$$"
-        terminal_handoff "$wrapper_pgid" "$command_pid" || die "cannot resume the terminal for ticket $n"
-        kill -CONT -- "-$command_pid" 2>/dev/null || true
-        ;;
-    esac
-    sleep 0.05
-  done
-  wait "$command_pid"
-  rc=$?
-  terminal_handoff "$command_pid" "$wrapper_pgid" || die "cannot restore the terminal for ticket $n"
-  [ "$signal_status" -eq 0 ] || rc=$signal_status
-  return "$rc"
+  )
 }
 
 # --- status -----------------------------------------------------------------
