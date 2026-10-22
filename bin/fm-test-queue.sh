@@ -15,8 +15,8 @@
 #   - its ticket is the oldest live waiting ticket (the head of the line);
 #   - fewer than <slots> tickets are being served;
 #   - the 1-minute load average is below <load ceiling>.
-# It then runs the command in the foreground, with the caller's stdin, stdout,
-# stderr, and terminal, and exits with the command's exit status. The ticket
+# It then runs the command as an ordinary child in the wrapper's job, with the
+# caller's stdin, stdout, and stderr, and exits with the command's exit status. The ticket
 # and its slot are released after the recorded wrapper, child, and leader group leave,
 # including after an error or signal (INT, TERM, HUP, QUIT). While it waits
 # it prints a line to stderr whenever its

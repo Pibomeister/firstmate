@@ -1,11 +1,14 @@
+import fcntl
 import os
 from pathlib import Path
 import select
 import shlex
 import shutil
 import signal
+import struct
 import subprocess
 import sys
+import termios
 import time
 
 queue, bash, directory = sys.argv[1:]
@@ -15,6 +18,7 @@ env = dict(os.environ, HISTFILE="", PS1="QUEUE-CALLER> ", BASH_SILENCE_DEPRECATI
 prompt = b"QUEUE-CALLER> "
 caller, terminal = os.forkpty()
 if caller == 0:
+    fcntl.ioctl(0, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 120, 0, 0))
     for sig in (signal.SIGTSTP, signal.SIGTTIN, signal.SIGTTOU, signal.SIGCHLD):
         signal.signal(sig, signal.SIG_DFL)
     os.execvpe(bash, [bash, "--noprofile", "--norc", "-i"], env)
