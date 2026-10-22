@@ -143,6 +143,8 @@ FM_AFK_LAUNCH_WS_LABEL="firstmate-afk-daemon"
 
 # shellcheck source=bin/fm-backend.sh
 . "$FM_AFK_LAUNCH_DIR/fm-backend.sh"
+# shellcheck source=bin/fm-env-scrub.sh
+. "$FM_AFK_LAUNCH_DIR/fm-env-scrub.sh"
 # shellcheck source=bin/fm-supervisor-target-lib.sh
 . "$FM_AFK_LAUNCH_DIR/fm-supervisor-target-lib.sh"
 # fm-afk-start.sh provides the daemon-lock liveness helpers and
@@ -689,7 +691,7 @@ fm_afk_launch_create_tmux() {  # <captain-target> <captain-backend>
     fm_afk_launch_log "failed to persist planned tmux daemon session '$session'"
     return 1
   fi
-  if ! tmux new-session -d -s "$session" "$cmd" 2>/dev/null; then
+  if ! ( fm_env_scrub; tmux new-session -d -s "$session" "$cmd" ) 2>/dev/null; then
     fm_afk_launch_log "failed to create detached tmux daemon session '$session'"
     if ! rm -f "$FM_AFK_LAUNCH_RECORD"; then
       fm_afk_launch_log "failed to remove planned tmux daemon record after creation failure"

@@ -61,14 +61,30 @@ PREFIX_SESSION="smoke-prefix-live"
 
 # --- create session ----------------------------------------------------------
 
+# The first session starts the private server. A task-scoped environment must
+# never become that server's global environment for every later window.
+created=$(FM_HOME=/synthetic/foreign-home \
+  FM_CREW_STATE_META_OVERRIDE=/synthetic/foreign.meta \
+  FM_TEST_FOREIGN=leak TEST_CREDENTIAL=keep TMUX='' \
+  fm_backend_tmux_container_ensure) \
+  || fail "real tmux: container_ensure failed"
+[ "$created" = firstmate ] || fail "real tmux: container_ensure returned '$created'"
+global_env=$(tmux show-environment -g) || fail "real tmux: global environment unreadable"
+if printf '%s\n' "$global_env" | grep -q '^FM_'; then
+  fail "real tmux: task-scoped FM variables leaked into the server global environment"
+fi
+printf '%s\n' "$global_env" | grep -qx 'TEST_CREDENTIAL=keep' \
+  || fail "real tmux: non-FM environment was lost while creating the server"
+FM_HOME=/synthetic/other-home TMUX='' fm_backend_tmux_container_ensure >/dev/null \
+  || fail "real tmux: reusing the private server failed"
+pass "real tmux: server creation drops task-scoped FM variables and retains non-FM values"
+
 tmux new-session -d -s "$SESSION" -x 200 -y 50 \
   || fail "real tmux: new-session failed"
 tmux new-session -d -s "$OTHER_SESSION" -x 200 -y 50 \
   || fail "real tmux: second new-session failed"
 tmux new-session -d -s "$PREFIX_SESSION" -n "$WINDOW" -x 200 -y 50 \
   || fail "real tmux: prefix-sharing session failed"
-tmux new-session -d -s firstmate -n supervisor -x 200 -y 50 \
-  || fail "real tmux: default supervisor session failed"
 fm_backend_tmux_create_task "$SESSION" "$WINDOW" "$HOME" \
   || fail "fm_backend_tmux_create_task failed to create the task window"
 tmux list-windows -t "$SESSION" -F '#{window_name}' | grep -qx "$WINDOW" \

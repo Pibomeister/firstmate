@@ -342,8 +342,9 @@
 #   Spawn refuses an unsafe pre-existing task temp root or launch namespace, and
 #   task teardown removes only the current home's launch namespace.
 # Launch environment (config/launch-env-allowlist):
-#   Absent means unchanged ambient inheritance. A present readable regular file
-#   opts every launch (ship, scout, secondmate, raw command, and relaunch) into
+#   Absent keeps non-FM ambient inheritance but strips inherited FM_* values
+#   before re-establishing this launch's own values. A present readable regular
+#   file opts every launch (ship, scout, secondmate, raw command, and relaunch) into
 #   /usr/bin/env -i followed by /bin/sh -c of the existing launch command.
 #   Each line is one POSIX environment name, never a value or shell expression;
 #   blank lines and lines beginning with # are ignored. Invalid input refuses
@@ -6566,6 +6567,17 @@ if [ "$LAUNCH_ENV_ENABLED" = 1 ]; then
     LAUNCH_ENV_PREFIX="$LAUNCH_ENV_PREFIX "'${TRACEPARENT+"TRACEPARENT=$TRACEPARENT"}'
   fi
   LAUNCH="$LAUNCH_ENV_PREFIX /bin/sh -c $(shell_quote "$LAUNCH")"
+else
+  # A pane may inherit FM_* variables from a tmux server started by another
+  # home before the server-creation guard existed. Filter them at the worker
+  # boundary too, preserving non-FM credentials and the pane's shell syntax.
+  # These task values are re-established after the scrub, inside the command.
+  if [ "$KIND" = ship ] || [ "$KIND" = scout ]; then
+    LAUNCH="export FM_TASK_ID=$ID; $LAUNCH"
+  fi
+  scrub_option=
+  [ "$BACKEND" != zellij ] || scrub_option='--keep-zellij-session '
+  LAUNCH="$(shell_quote "$FM_ROOT/bin/fm-env-scrub.sh") ${scrub_option}shell $(shell_quote "$LAUNCH")"
 fi
 if ! (umask 077 && mkdir "$LAUNCH_DIR") 2>/dev/null; then
   if [ -L "$LAUNCH_DIR" ] || [ ! -d "$LAUNCH_DIR" ] || [ ! -O "$LAUNCH_DIR" ] ||

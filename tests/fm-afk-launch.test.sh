@@ -1390,15 +1390,16 @@ unit_tmux_planned_record_and_collision() {
   local st first second
   st=$(mktemp -d "${TMPDIR:-/tmp}/fm-afk-tmux-plan.XXXXXX")
   mkdir -p "$st/state"
-  if FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" bash -c '
+  if TEST_HOME="$st" TEST_RECORD="$st/state/.afk-daemon-terminal" \
+    FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" bash -c '
     . "$1"
     tmux() {
       if [ "$1" = new-session ]; then
-        [ -s "$FM_AFK_LAUNCH_RECORD" ] || return 9
-        printf "%s" "$4" > "$FM_HOME/created-name"
+        [ -s "$TEST_RECORD" ] || return 9
+        printf "%s" "$4" > "$TEST_HOME/created-name"
         return 1
       fi
-      [ "$1" != kill-session ] || : > "$FM_HOME/killed"
+      [ "$1" != kill-session ] || : > "$TEST_HOME/killed"
       return 1
     }
     ! fm_afk_launch_create_tmux captain:0 tmux
@@ -1412,11 +1413,11 @@ unit_tmux_planned_record_and_collision() {
 
   st=$(mktemp -d "${TMPDIR:-/tmp}/fm-afk-tmux-unique.XXXXXX")
   mkdir -p "$st/state"
-  if FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" bash -c '
+  if TEST_HOME="$st" FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" bash -c '
     . "$1"
     tmux() {
-      [ "$1" != new-session ] || { printf "%s" "$4" > "$FM_HOME/created-name"; return 1; }
-      [ "$1" != kill-session ] || : > "$FM_HOME/killed"
+      [ "$1" != new-session ] || { printf "%s" "$4" > "$TEST_HOME/created-name"; return 1; }
+      [ "$1" != kill-session ] || : > "$TEST_HOME/killed"
       return 1
     }
     ! fm_afk_launch_create_tmux captain:0 tmux
