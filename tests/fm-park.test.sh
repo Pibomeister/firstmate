@@ -82,6 +82,8 @@ refuse 'a path-shaped task id' ../t1 --until "$future" --reason waiting
 refuse 'a missing until time' t1 --reason waiting
 refuse 'a non-UTC until time' t1 --until 2099-01-01T00:00 --reason waiting
 refuse 'a date without a time' t1 --until 2099-01-01 --reason waiting
+refuse 'February 30 at minute precision' t1 --until 2099-02-30T12:00Z --reason waiting
+refuse 'February 30 at seconds precision' t1 --until 2099-02-30T12:00:30Z --reason waiting
 refuse 'a past until time' t1 --until 2020-01-01T00:00Z --reason waiting
 refuse 'a blank reason' t1 --until "$future" --reason '   '
 refuse 'a missing reason' t1 --until "$future"
