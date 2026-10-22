@@ -1205,6 +1205,7 @@ shards = sys.argv[2]
 weights = dict(zip(sys.argv[3::2], sys.argv[4::2]))
 text = runner.read_text()
 text = re.sub(r"(?m)^PORTABLE_SERIAL_SHARDS=[0-9]+$", f"PORTABLE_SERIAL_SHARDS={shards}", text)
+text = re.sub(r"(?m)^PORTABLE_SERIAL_DEFAULT_WEIGHT_MS=[0-9]+$", "PORTABLE_SERIAL_DEFAULT_WEIGHT_MS=0", text)
 def table(m):
     rows = [line.split()[0] for line in m.group(2).splitlines() if line]
     body = "".join(f"{row} {weights.get(row, 0)}\n" for row in rows)
