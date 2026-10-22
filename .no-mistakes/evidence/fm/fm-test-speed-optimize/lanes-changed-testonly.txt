@@ -1,0 +1,29 @@
+## where each split part lands (18 serial shards)
+shard 1: tests/fm-watch-triage-f.test.sh
+shard 6: tests/fm-watch-triage-c.test.sh
+shard 8: tests/fm-watch-triage-d.test.sh
+shard 10: tests/fm-supervision-host.test.sh
+shard 11: tests/fm-watch-triage-e.test.sh
+shard 14: tests/fm-watch-triage-b.test.sh
+shard 15: tests/fm-watch-triage.test.sh
+shard 17: tests/fm-watch-triage-g.test.sh
+shard 18: tests/fm-supervision-host-b.test.sh
+## adversarial: stale 9-shard lane name is refused
+fm-test-run: lane 'portable-serial-2of9' asks for 9 portable serial shards but this runner is configured for 18 (see --list-lanes)
+exit=2
+## --list --changed --base bc22b6ad
+exit=0
+selected scripts: 101
+tests/fm-supervision-host-b.test.sh
+tests/fm-supervision-host.test.sh
+tests/fm-watch-triage-b.test.sh
+tests/fm-watch-triage-c.test.sh
+tests/fm-watch-triage-d.test.sh
+tests/fm-watch-triage-e.test.sh
+tests/fm-watch-triage-f.test.sh
+tests/fm-watch-triage-g.test.sh
+tests/fm-watch-triage.test.sh
+## CI bash-3.2 FM_TEST_ONLY path on the dispatcher file
+ok - a churning turn-end inside an already-open deferral window is absorbed without re-marking
+exit=0
+GNU bash, version 3.2.57(1)-release (arm64-apple-darwin25)

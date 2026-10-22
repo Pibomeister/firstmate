@@ -1,0 +1,6 @@
+ok - in an armed home a worker's own open newest blocker or decision is deferred to the bounded recheck, and a newer line, a resolved line, a reserved key, or a newer acknowledged inbox record keeps the ladder
+ok - with config/wedge-defer-worker-wait absent a worker blocker keeps the byte-identical wedge reason
+ok - a wait record missing a field the recheck must print, or carrying one it must not, is refused and the lane escalates exactly as it would have
+wait_for_exit: owned pid 23334 exceeded 100 polls; sending TERM
+23334 48102 RN   bash /Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M5JJ71Z7AA6PWZ5S1QJCDGHH/bin/fm-watch.sh
+not ok - [held-delivery] held work did not re-surface once its re-surface window elapsed

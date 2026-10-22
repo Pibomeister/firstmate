@@ -1,0 +1,80 @@
+watch-triage: base invocations=163 split invocations=163 duplicates=0 common-file bare invocations=0
+90,115d89
+< test_busy_pane_default_turn_age_bound_is_3600s
+< test_busy_declared_pause_is_rechecked_not_wedge_escalated
+< test_afk_busy_declared_pause_hands_off_plain_stale
+< test_afk_busy_declared_pause_ticking_pane_hands_off_once
+< test_nonterminal_stale_not_working_surfaced
+< test_nonterminal_stale_paused_absorbed_then_resurfaced
+< test_exited_declared_pause_is_bounded_but_live_gate_surfaces
+< test_own_work_wait_keeps_first_alert_then_long_cadence
+< test_absorbed_replacement_wait_does_not_inherit_the_old_throttle
+< test_live_declared_wait_churn_honors_the_resurface_throttle
+< test_live_paused_until_controls_recheck_time
+< test_wedge_threshold_defers_to_a_declared_wait_under_a_working_verdict
+< test_wedge_threshold_keeps_a_wait_past_a_default_key_answer
+< test_wedge_threshold_recheck_names_the_captain_for_a_held_lane
+< test_wedge_threshold_defers_to_a_backlog_captain_hold
+< test_wedge_threshold_defers_to_a_parked_gate_awaiting_a_human
+< test_wedge_threshold_parked_gate_needs_an_unanswered_decision
+< test_wedge_threshold_parked_gate_is_off_until_armed
+< test_wedge_threshold_defers_to_a_worker_blocker
+< test_wedge_threshold_worker_wait_is_off_until_armed
+< test_wedge_defer_refuses_a_half_filled_wait_record
+< test_open_captain_call_bounds_stale_churn
+< test_stale_churn_without_a_captain_call_still_alarms
+< test_failed_wake_append_does_not_arm_the_captain_hold_throttle
+< test_reheld_captain_call_starts_its_own_resurface_window
+< test_secondmate_paused_resurfaces_in_normal_mode
+163a138,163
+> test_busy_pane_default_turn_age_bound_is_3600s
+> test_busy_declared_pause_is_rechecked_not_wedge_escalated
+> test_afk_busy_declared_pause_hands_off_plain_stale
+> test_afk_busy_declared_pause_ticking_pane_hands_off_once
+> test_nonterminal_stale_not_working_surfaced
+> test_nonterminal_stale_paused_absorbed_then_resurfaced
+> test_exited_declared_pause_is_bounded_but_live_gate_surfaces
+> test_own_work_wait_keeps_first_alert_then_long_cadence
+> test_absorbed_replacement_wait_does_not_inherit_the_old_throttle
+> test_live_declared_wait_churn_honors_the_resurface_throttle
+> test_live_paused_until_controls_recheck_time
+> test_wedge_threshold_defers_to_a_declared_wait_under_a_working_verdict
+> test_wedge_threshold_keeps_a_wait_past_a_default_key_answer
+> test_wedge_threshold_recheck_names_the_captain_for_a_held_lane
+> test_wedge_threshold_defers_to_a_backlog_captain_hold
+> test_wedge_threshold_defers_to_a_parked_gate_awaiting_a_human
+> test_wedge_threshold_parked_gate_needs_an_unanswered_decision
+> test_wedge_threshold_parked_gate_is_off_until_armed
+> test_wedge_threshold_defers_to_a_worker_blocker
+> test_wedge_threshold_worker_wait_is_off_until_armed
+> test_wedge_defer_refuses_a_half_filled_wait_record
+> test_open_captain_call_bounds_stale_churn
+> test_stale_churn_without_a_captain_call_still_alarms
+> test_failed_wake_append_does_not_arm_the_captain_hold_throttle
+> test_reheld_captain_call_starts_its_own_resurface_window
+> test_secondmate_paused_resurfaces_in_normal_mode
+watch-triage: body diff lines (base minus invocations vs common):
+7424,7429c7424
+< # CI's stock macOS Bash lane sets FM_TEST_ONLY to run just the bash-3.2
+< # churn-deferral regression. The rest of this file is not a 3.2 snapshot suite.
+< if [ -n "${FM_TEST_ONLY:-}" ]; then
+<   "$FM_TEST_ONLY"
+<   exit 0
+< fi
+---
+> 
+7611a7607,7613
+> # CI's stock macOS Bash lane sets FM_TEST_ONLY to run just the bash-3.2
+> # churn-deferral regression. The rest of this file is not a 3.2 snapshot suite.
+> if [ -n "${FM_TEST_ONLY:-}" ]; then
+>   "$FM_TEST_ONLY"
+>   exit 0
+> fi
+> 
+supervision-host: base invocations=75 split invocations=75 duplicates=0 common-file bare invocations=0
+supervision-host: ordered invocation sequence identical to base monolith
+supervision-host: body diff lines (base minus invocations vs common):
+1a2
+> # The case calls live in the part files. Sourcing this file only sets up.
+watch-triage: same 163-case set; only a contiguous 26-case block is listed in a different part order
+tests/fm-watch-triage-e.test.sh

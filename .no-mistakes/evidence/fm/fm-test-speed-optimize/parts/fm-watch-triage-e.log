@@ -1,0 +1,9 @@
+ok - the production default busy-turn-age bound is 3600s (5min under does not wedge, 66min over does)
+ok - a busy pane under a declared pause is rechecked on the long cadence, and lifting the pause restores the wedge escalation
+ok - away mode hands a busy declared pause to the daemon as a plain stale, and lifting the declaration restores the wedge escalation
+ok - away mode wakes the daemon once per declaration for a busy pane whose footer ticks on every capture
+ok - a not-provably-working non-terminal stale is surfaced immediately (never left to wait out the timer)
+ok - a declared pause is absorbed on first sight, then re-surfaced as a recheck past the threshold, never wedge-escalated
+ok - exited declared-pause and captain-held panes use bounded pause cadence while a live decision gate still surfaces once
+ok - own-work waits keep one first alert, then bounded rechecks without wedges; undeclared idle still alarms
+ok - absorbed paused and captain-held replacements each start their own re-surface cadence
