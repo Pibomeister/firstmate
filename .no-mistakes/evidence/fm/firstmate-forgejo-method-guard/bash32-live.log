@@ -1,0 +1,14 @@
+$ ['/bin/bash', 'bin/fm-pr-merge.sh', 'bash32', 'https://localhost/labuser/method-guard/pulls/24', '--', '--method']
+armed: state/bash32.check.sh
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
+error: --method needs a merge style; an empty value or another option is not one
+
+{"exit": 1, "state": "open", "merged": false, "merge_requests": []}
+$ ['/bin/bash', 'bin/fm-pr-merge.sh', 'bash32', 'https://localhost/labuser/method-guard/pulls/24', '--', '--method', 'squash']
+armed: state/bash32.check.sh
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
+verified: https://localhost/labuser/method-guard/pulls/24 is open and mergeable, with a successful combined status at head 2c3ead9bf8853a20a8ee59a6ebd25f2e6e54d62f
+
+{"exit": 0, "state": "closed", "merged": true, "merge_requests": [{"method": "POST", "path": "/api/v1/repos/labuser/method-guard/pulls/24/merge", "body": "{\"Do\":\"squash\",\"head_commit_id\":\"2c3ead9bf8853a20a8ee59a6ebd25f2e6e54d62f\"}", "status": 200, "response": ""}]}

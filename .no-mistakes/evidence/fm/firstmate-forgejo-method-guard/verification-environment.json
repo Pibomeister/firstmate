@@ -1,0 +1,31 @@
+{
+  "target_revision": "13d847eddbb6bcd563d0fe0c63439a073e3d7e0f",
+  "platform": "macOS-26.6.2-arm64-arm-64bit",
+  "test_only_repair": {
+    "file": "tests/fm-pr-merge.test.sh",
+    "sha256": "898e1cbeb132bbac50460f697f78fd21c79146da774e8fbb9932220d119b5532"
+  },
+  "targeted_checks": [
+    {
+      "selectors": [
+        "test_forgejo_merge_method_and_extra_args",
+        "test_forgejo_method_value_is_required"
+      ],
+      "shell": "/bin/bash 3.2.57",
+      "exit_code": 0,
+      "log": "/Users/eduardopicazo/.no-mistakes/evidence/01M5HAF7TDVKBZ5N7GQ6CTZNYJ/focused-bash32.log"
+    },
+    {
+      "selectors": [
+        "test_forgejo_merge_method_and_extra_args",
+        "test_forgejo_method_value_is_required"
+      ],
+      "shell": "/opt/homebrew/bin/bash 5.3.15",
+      "exit_code": 0,
+      "log": "/Users/eduardopicazo/.no-mistakes/evidence/01M5HAF7TDVKBZ5N7GQ6CTZNYJ/focused-bash53.log"
+    }
+  ],
+  "live_backend": "Gitea 1.24.6",
+  "tea_version": "0.16.0",
+  "isolation": "Workspace-local application data, Git repositories, Firstmate home, tea configuration and disposable credentials"
+}

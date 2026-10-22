@@ -1,0 +1,746 @@
+[
+  {
+    "name": "bare",
+    "argv": [
+      "bash",
+      "bin/fm-pr-merge.sh",
+      "lab-1",
+      "https://localhost/labuser/method-guard/pulls/1",
+      "--",
+      "--method"
+    ],
+    "exit_code": 1,
+    "expected_style": null,
+    "before": {
+      "state": "open",
+      "merged": false,
+      "mergeable": true,
+      "head": "cdfad77cca3825179b582c81b33894cf5decf980"
+    },
+    "after": {
+      "state": "open",
+      "merged": false
+    },
+    "merge_requests": [],
+    "result": "pass",
+    "stdout": "armed: state/lab-1.check.sh\n",
+    "stderr": "\u25cf\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\u25cf  WATCHER DOWN - SUPERVISION IS OFF\n\u25cf  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).\n\u25cf  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.\n\u25cf  This is a supervision warning only; the guarded operation WILL still run.\n\u25cf  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.\n\u25cf\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\nerror: --method needs a merge style; an empty value or another option is not one\n"
+  },
+  {
+    "name": "empty-equals",
+    "argv": [
+      "bash",
+      "bin/fm-pr-merge.sh",
+      "lab-2",
+      "https://localhost/labuser/method-guard/pulls/2",
+      "--",
+      "--method="
+    ],
+    "exit_code": 1,
+    "expected_style": null,
+    "before": {
+      "state": "open",
+      "merged": false,
+      "mergeable": true,
+      "head": "f232644be57d4a06a146f1e2b0c89f1eacab9321"
+    },
+    "after": {
+      "state": "open",
+      "merged": false
+    },
+    "merge_requests": [],
+    "result": "pass",
+    "stdout": "armed: state/lab-2.check.sh\n",
+    "stderr": "WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.\nerror: --method needs a merge style; an empty value or another option is not one\n"
+  },
+  {
+    "name": "empty-separated",
+    "argv": [
+      "bash",
+      "bin/fm-pr-merge.sh",
+      "lab-3",
+      "https://localhost/labuser/method-guard/pulls/3",
+      "--",
+      "--method",
+      ""
+    ],
+    "exit_code": 1,
+    "expected_style": null,
+    "before": {
+      "state": "open",
+      "merged": false,
+      "mergeable": true,
+      "head": "a5ea95188d03b1f457fc3cac60a4853c54d7ce23"
+    },
+    "after": {
+      "state": "open",
+      "merged": false
+    },
+    "merge_requests": [],
+    "result": "pass",
+    "stdout": "armed: state/lab-3.check.sh\n",
+    "stderr": "WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.\nerror: --method needs a merge style; an empty value or another option is not one\n"
+  },
+  {
+    "name": "before-flag",
+    "argv": [
+      "bash",
+      "bin/fm-pr-merge.sh",
+      "lab-4",
+      "https://localhost/labuser/method-guard/pulls/4",
+      "--",
+      "--method",
+      "--squash"
+    ],
+    "exit_code": 1,
+    "expected_style": null,
+    "before": {
+      "state": "open",
+      "merged": false,
+      "mergeable": true,
+      "head": "e688bd6477078f4e389746b7a8b8db6c4271d49e"
+    },
+    "after": {
+      "state": "open",
+      "merged": false
+    },
+    "merge_requests": [],
+    "result": "pass",
+    "stdout": "armed: state/lab-4.check.sh\n",
+    "stderr": "WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.\nerror: --method needs a merge style; an empty value or another option is not one\n"
+  },
+  {
+    "name": "before-equals",
+    "argv": [
+      "bash",
+      "bin/fm-pr-merge.sh",
+      "lab-5",
+      "https://localhost/labuser/method-guard/pulls/5",
+      "--",
+      "--method",
+      "--method=merge"
+    ],
+    "exit_code": 1,
+    "expected_style": null,
+    "before": {
+      "state": "open",
+      "merged": false,
+      "mergeable": true,
+      "head": "790cc7f61002312b21a719138a24147003bc034b"
+    },
+    "after": {
+      "state": "open",
+      "merged": false
+    },
+    "merge_requests": [],
+    "result": "pass",
+    "stdout": "armed: state/lab-5.check.sh\n",
+    "stderr": "WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.\nerror: --method needs a merge style; an empty value or another option is not one\n"
+  },
+  {
+    "name": "valid-then-bare",
+    "argv": [
+      "bash",
+      "bin/fm-pr-merge.sh",
+      "lab-6",
+      "https://localhost/labuser/method-guard/pulls/6",
+      "--",
+      "--method=merge",
+      "--method"
+    ],
+    "exit_code": 1,
+    "expected_style": null,
+    "before": {
+      "state": "open",
+      "merged": false,
+      "mergeable": true,
+      "head": "cf72fff656d50d5e9a2b59da8ba61321b2609be3"
+    },
+    "after": {
+      "state": "open",
+      "merged": false
+    },
+    "merge_requests": [],
+    "result": "pass",
+    "stdout": "armed: state/lab-6.check.sh\n",
+    "stderr": "WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.\nerror: --method needs a merge style; an empty value or another option is not one\n"
+  },
+  {
+    "name": "bare-then-valid",
+    "argv": [
+      "bash",
+      "bin/fm-pr-merge.sh",
+      "lab-7",
+      "https://localhost/labuser/method-guard/pulls/7",
+      "--",
+      "--method",
+      "--method=squash"
+    ],
+    "exit_code": 1,
+    "expected_style": null,
+    "before": {
+      "state": "open",
+      "merged": false,
+      "mergeable": true,
+      "head": "fa88ee7cb36a06833006026b66cbc48a3c60fcfe"
+    },
+    "after": {
+      "state": "open",
+      "merged": false
+    },
+    "merge_requests": [],
+    "result": "pass",
+    "stdout": "armed: state/lab-7.check.sh\n",
+    "stderr": "WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.\nerror: --method needs a merge style; an empty value or another option is not one\n"
+  },
+  {
+    "name": "equals-then-style",
+    "argv": [
+      "bash",
+      "bin/fm-pr-merge.sh",
+      "lab-8",
+      "https://localhost/labuser/method-guard/pulls/8",
+      "--",
+      "--method=",
+      "--method=squash"
+    ],
+    "exit_code": 1,
+    "expected_style": null,
+    "before": {
+      "state": "open",
+      "merged": false,
+      "mergeable": true,
+      "head": "4a2b4e66bde48a8508703a6b155f774ea969f7d7"
+    },
+    "after": {
+      "state": "open",
+      "merged": false
+    },
+    "merge_requests": [],
+    "result": "pass",
+    "stdout": "armed: state/lab-8.check.sh\n",
+    "stderr": "WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.\nerror: --method needs a merge style; an empty value or another option is not one\n"
+  },
+  {
+    "name": "shortcut-then-bare",
+    "argv": [
+      "bash",
+      "bin/fm-pr-merge.sh",
+      "lab-9",
+      "https://localhost/labuser/method-guard/pulls/9",
+      "--",
+      "--squash",
+      "--method"
+    ],
+    "exit_code": 1,
+    "expected_style": null,
+    "before": {
+      "state": "open",
+      "merged": false,
+      "mergeable": true,
+      "head": "4109c3694dd7615857857d603a6ac26c209826b1"
+    },
+    "after": {
+      "state": "open",
+      "merged": false
+    },
+    "merge_requests": [],
+    "result": "pass",
+    "stdout": "armed: state/lab-9.check.sh\n",
+    "stderr": "WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.\nerror: --method needs a merge style; an empty value or another option is not one\n"
+  },
+  {
+    "name": "separated-merge",
+    "argv": [
+      "bash",
+      "bin/fm-pr-merge.sh",
+      "lab-10",
+      "https://localhost/labuser/method-guard/pulls/10",
+      "--",
+      "--method",
+      "merge"
+    ],
+    "exit_code": 0,
+    "expected_style": "merge",
+    "before": {
+      "state": "open",
+      "merged": false,
+      "mergeable": true,
+      "head": "33e9962e30289d0995f66e2c1cded51fcfa287d8"
+    },
+    "after": {
+      "state": "closed",
+      "merged": true
+    },
+    "merge_requests": [
+      {
+        "method": "POST",
+        "path": "/api/v1/repos/labuser/method-guard/pulls/10/merge",
+        "body": "{\"Do\":\"merge\",\"head_commit_id\":\"33e9962e30289d0995f66e2c1cded51fcfa287d8\"}",
+        "status": 200,
+        "response": ""
+      }
+    ],
+    "result": "pass",
+    "stdout": "armed: state/lab-10.check.sh\n",
+    "stderr": "WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.\nverified: https://localhost/labuser/method-guard/pulls/10 is open and mergeable, with a successful combined status at head 33e9962e30289d0995f66e2c1cded51fcfa287d8\n"
+  },
+  {
+    "name": "equals-merge",
+    "argv": [
+      "bash",
+      "bin/fm-pr-merge.sh",
+      "lab-11",
+      "https://localhost/labuser/method-guard/pulls/11",
+      "--",
+      "--method=merge"
+    ],
+    "exit_code": 0,
+    "expected_style": "merge",
+    "before": {
+      "state": "open",
+      "merged": false,
+      "mergeable": true,
+      "head": "9bd4718d4239f33833bcbbabe3ae29360dbb536c"
+    },
+    "after": {
+      "state": "closed",
+      "merged": true
+    },
+    "merge_requests": [
+      {
+        "method": "POST",
+        "path": "/api/v1/repos/labuser/method-guard/pulls/11/merge",
+        "body": "{\"Do\":\"merge\",\"head_commit_id\":\"9bd4718d4239f33833bcbbabe3ae29360dbb536c\"}",
+        "status": 200,
+        "response": ""
+      }
+    ],
+    "result": "pass",
+    "stdout": "armed: state/lab-11.check.sh\n",
+    "stderr": "WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.\nWARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.\nverified: https://localhost/labuser/method-guard/pulls/11 is open and mergeable, with a successful combined status at head 9bd4718d4239f33833bcbbabe3ae29360dbb536c\n"
+  },
+  {
+    "name": "separated-rebase",
+    "argv": [
+      "bash",
+      "bin/fm-pr-merge.sh",
+      "lab-12",
+      "https://localhost/labuser/method-guard/pulls/12",
+      "--",
+      "--method",
+      "rebase"
+    ],
+    "exit_code": 0,
+    "expected_style": "rebase",
+    "before": {
+      "state": "open",
+      "merged": false,
+      "mergeable": true,
+      "head": "526262d4006e29c34451dc3204e5df5ab96e1d57"
+    },
+    "after": {
+      "state": "closed",
+      "merged": true
+    },
+    "merge_requests": [
+      {
+        "method": "POST",
+        "path": "/api/v1/repos/labuser/method-guard/pulls/12/merge",
+        "body": "{\"Do\":\"rebase\",\"head_commit_id\":\"526262d4006e29c34451dc3204e5df5ab96e1d57\"}",
+        "status": 200,
+        "response": ""
+      }
+    ],
+    "result": "pass",
+    "stdout": "armed: state/lab-12.check.sh\n",
+    "stderr": "WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.\nWARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.\nverified: https://localhost/labuser/method-guard/pulls/12 is open and mergeable, with a successful combined status at head 526262d4006e29c34451dc3204e5df5ab96e1d57\n"
+  },
+  {
+    "name": "equals-rebase",
+    "argv": [
+      "bash",
+      "bin/fm-pr-merge.sh",
+      "lab-13",
+      "https://localhost/labuser/method-guard/pulls/13",
+      "--",
+      "--method=rebase"
+    ],
+    "exit_code": 0,
+    "expected_style": "rebase",
+    "before": {
+      "state": "open",
+      "merged": false,
+      "mergeable": true,
+      "head": "561c750227bc25ba33e64c0ec04adf9a407c42a8"
+    },
+    "after": {
+      "state": "closed",
+      "merged": true
+    },
+    "merge_requests": [
+      {
+        "method": "POST",
+        "path": "/api/v1/repos/labuser/method-guard/pulls/13/merge",
+        "body": "{\"Do\":\"rebase\",\"head_commit_id\":\"561c750227bc25ba33e64c0ec04adf9a407c42a8\"}",
+        "status": 200,
+        "response": ""
+      }
+    ],
+    "result": "pass",
+    "stdout": "armed: state/lab-13.check.sh\n",
+    "stderr": "WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.\nWARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.\nverified: https://localhost/labuser/method-guard/pulls/13 is open and mergeable, with a successful combined status at head 561c750227bc25ba33e64c0ec04adf9a407c42a8\n"
+  },
+  {
+    "name": "separated-rebase-merge",
+    "argv": [
+      "bash",
+      "bin/fm-pr-merge.sh",
+      "lab-14",
+      "https://localhost/labuser/method-guard/pulls/14",
+      "--",
+      "--method",
+      "rebase-merge"
+    ],
+    "exit_code": 0,
+    "expected_style": "rebase-merge",
+    "before": {
+      "state": "open",
+      "merged": false,
+      "mergeable": true,
+      "head": "8fda76bcc3b5bc533db5ce5553a12e27056848fe"
+    },
+    "after": {
+      "state": "closed",
+      "merged": true
+    },
+    "merge_requests": [
+      {
+        "method": "POST",
+        "path": "/api/v1/repos/labuser/method-guard/pulls/14/merge",
+        "body": "{\"Do\":\"rebase-merge\",\"head_commit_id\":\"8fda76bcc3b5bc533db5ce5553a12e27056848fe\"}",
+        "status": 200,
+        "response": ""
+      }
+    ],
+    "result": "pass",
+    "stdout": "armed: state/lab-14.check.sh\n",
+    "stderr": "WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.\nWARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.\nverified: https://localhost/labuser/method-guard/pulls/14 is open and mergeable, with a successful combined status at head 8fda76bcc3b5bc533db5ce5553a12e27056848fe\n"
+  },
+  {
+    "name": "equals-rebase-merge",
+    "argv": [
+      "bash",
+      "bin/fm-pr-merge.sh",
+      "lab-15",
+      "https://localhost/labuser/method-guard/pulls/15",
+      "--",
+      "--method=rebase-merge"
+    ],
+    "exit_code": 0,
+    "expected_style": "rebase-merge",
+    "before": {
+      "state": "open",
+      "merged": false,
+      "mergeable": true,
+      "head": "4cd538ffc1113b276c5d15a46766b236a811962a"
+    },
+    "after": {
+      "state": "closed",
+      "merged": true
+    },
+    "merge_requests": [
+      {
+        "method": "POST",
+        "path": "/api/v1/repos/labuser/method-guard/pulls/15/merge",
+        "body": "{\"Do\":\"rebase-merge\",\"head_commit_id\":\"4cd538ffc1113b276c5d15a46766b236a811962a\"}",
+        "status": 200,
+        "response": ""
+      }
+    ],
+    "result": "pass",
+    "stdout": "armed: state/lab-15.check.sh\n",
+    "stderr": "WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.\nWARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.\nverified: https://localhost/labuser/method-guard/pulls/15 is open and mergeable, with a successful combined status at head 4cd538ffc1113b276c5d15a46766b236a811962a\n"
+  },
+  {
+    "name": "separated-squash",
+    "argv": [
+      "bash",
+      "bin/fm-pr-merge.sh",
+      "lab-16",
+      "https://localhost/labuser/method-guard/pulls/16",
+      "--",
+      "--method",
+      "squash"
+    ],
+    "exit_code": 0,
+    "expected_style": "squash",
+    "before": {
+      "state": "open",
+      "merged": false,
+      "mergeable": true,
+      "head": "492edf6d39fbf765fdfe081df8cd7dc0b4a99d55"
+    },
+    "after": {
+      "state": "closed",
+      "merged": true
+    },
+    "merge_requests": [
+      {
+        "method": "POST",
+        "path": "/api/v1/repos/labuser/method-guard/pulls/16/merge",
+        "body": "{\"Do\":\"squash\",\"head_commit_id\":\"492edf6d39fbf765fdfe081df8cd7dc0b4a99d55\"}",
+        "status": 200,
+        "response": ""
+      }
+    ],
+    "result": "pass",
+    "stdout": "armed: state/lab-16.check.sh\n",
+    "stderr": "WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.\nWARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.\nverified: https://localhost/labuser/method-guard/pulls/16 is open and mergeable, with a successful combined status at head 492edf6d39fbf765fdfe081df8cd7dc0b4a99d55\n"
+  },
+  {
+    "name": "equals-squash",
+    "argv": [
+      "bash",
+      "bin/fm-pr-merge.sh",
+      "lab-17",
+      "https://localhost/labuser/method-guard/pulls/17",
+      "--",
+      "--method=squash"
+    ],
+    "exit_code": 0,
+    "expected_style": "squash",
+    "before": {
+      "state": "open",
+      "merged": false,
+      "mergeable": true,
+      "head": "d323887b6b1183d8b9abda21c53ea7327b99ad1c"
+    },
+    "after": {
+      "state": "closed",
+      "merged": true
+    },
+    "merge_requests": [
+      {
+        "method": "POST",
+        "path": "/api/v1/repos/labuser/method-guard/pulls/17/merge",
+        "body": "{\"Do\":\"squash\",\"head_commit_id\":\"d323887b6b1183d8b9abda21c53ea7327b99ad1c\"}",
+        "status": 200,
+        "response": ""
+      }
+    ],
+    "result": "pass",
+    "stdout": "armed: state/lab-17.check.sh\n",
+    "stderr": "WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.\nWARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.\nverified: https://localhost/labuser/method-guard/pulls/17 is open and mergeable, with a successful combined status at head d323887b6b1183d8b9abda21c53ea7327b99ad1c\n"
+  },
+  {
+    "name": "separated-fast-forward-only",
+    "argv": [
+      "bash",
+      "bin/fm-pr-merge.sh",
+      "lab-18",
+      "https://localhost/labuser/method-guard/pulls/18",
+      "--",
+      "--method",
+      "fast-forward-only"
+    ],
+    "exit_code": 0,
+    "expected_style": "fast-forward-only",
+    "before": {
+      "state": "open",
+      "merged": false,
+      "mergeable": true,
+      "head": "25a841a704f46ab7874015a0e63f83c8f1d93c01"
+    },
+    "after": {
+      "state": "closed",
+      "merged": true
+    },
+    "merge_requests": [
+      {
+        "method": "POST",
+        "path": "/api/v1/repos/labuser/method-guard/pulls/18/merge",
+        "body": "{\"Do\":\"fast-forward-only\",\"head_commit_id\":\"25a841a704f46ab7874015a0e63f83c8f1d93c01\"}",
+        "status": 200,
+        "response": ""
+      }
+    ],
+    "result": "pass",
+    "stdout": "armed: state/lab-18.check.sh\n",
+    "stderr": "WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.\nWARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.\nverified: https://localhost/labuser/method-guard/pulls/18 is open and mergeable, with a successful combined status at head 25a841a704f46ab7874015a0e63f83c8f1d93c01\n"
+  },
+  {
+    "name": "equals-fast-forward-only",
+    "argv": [
+      "bash",
+      "bin/fm-pr-merge.sh",
+      "lab-19",
+      "https://localhost/labuser/method-guard/pulls/19",
+      "--",
+      "--method=fast-forward-only"
+    ],
+    "exit_code": 0,
+    "expected_style": "fast-forward-only",
+    "before": {
+      "state": "open",
+      "merged": false,
+      "mergeable": true,
+      "head": "c204b9222a2a9f5907d7cc123e00f85d07625e78"
+    },
+    "after": {
+      "state": "closed",
+      "merged": true
+    },
+    "merge_requests": [
+      {
+        "method": "POST",
+        "path": "/api/v1/repos/labuser/method-guard/pulls/19/merge",
+        "body": "{\"Do\":\"fast-forward-only\",\"head_commit_id\":\"c204b9222a2a9f5907d7cc123e00f85d07625e78\"}",
+        "status": 200,
+        "response": ""
+      }
+    ],
+    "result": "pass",
+    "stdout": "armed: state/lab-19.check.sh\n",
+    "stderr": "WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.\nWARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.\nverified: https://localhost/labuser/method-guard/pulls/19 is open and mergeable, with a successful combined status at head c204b9222a2a9f5907d7cc123e00f85d07625e78\n"
+  },
+  {
+    "name": "default",
+    "argv": [
+      "bash",
+      "bin/fm-pr-merge.sh",
+      "lab-20",
+      "https://localhost/labuser/method-guard/pulls/20",
+      "--"
+    ],
+    "exit_code": 0,
+    "expected_style": "squash",
+    "before": {
+      "state": "open",
+      "merged": false,
+      "mergeable": true,
+      "head": "ba706838d025efb30164de07d2d19e0c142126ac"
+    },
+    "after": {
+      "state": "closed",
+      "merged": true
+    },
+    "merge_requests": [
+      {
+        "method": "POST",
+        "path": "/api/v1/repos/labuser/method-guard/pulls/20/merge",
+        "body": "{\"Do\":\"squash\",\"head_commit_id\":\"ba706838d025efb30164de07d2d19e0c142126ac\"}",
+        "status": 200,
+        "response": ""
+      }
+    ],
+    "result": "pass",
+    "stdout": "armed: state/lab-20.check.sh\n",
+    "stderr": "WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.\nWARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.\nverified: https://localhost/labuser/method-guard/pulls/20 is open and mergeable, with a successful combined status at head ba706838d025efb30164de07d2d19e0c142126ac\n"
+  },
+  {
+    "name": "shortcut-merge",
+    "argv": [
+      "bash",
+      "bin/fm-pr-merge.sh",
+      "lab-21",
+      "https://localhost/labuser/method-guard/pulls/21",
+      "--",
+      "--merge"
+    ],
+    "exit_code": 0,
+    "expected_style": "merge",
+    "before": {
+      "state": "open",
+      "merged": false,
+      "mergeable": true,
+      "head": "3218ef42abfb890c9b3287684839b87544dd3078"
+    },
+    "after": {
+      "state": "closed",
+      "merged": true
+    },
+    "merge_requests": [
+      {
+        "method": "POST",
+        "path": "/api/v1/repos/labuser/method-guard/pulls/21/merge",
+        "body": "{\"Do\":\"merge\",\"head_commit_id\":\"3218ef42abfb890c9b3287684839b87544dd3078\"}",
+        "status": 200,
+        "response": ""
+      }
+    ],
+    "result": "pass",
+    "stdout": "armed: state/lab-21.check.sh\n",
+    "stderr": "WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.\nWARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.\nverified: https://localhost/labuser/method-guard/pulls/21 is open and mergeable, with a successful combined status at head 3218ef42abfb890c9b3287684839b87544dd3078\n"
+  },
+  {
+    "name": "shortcut-rebase",
+    "argv": [
+      "bash",
+      "bin/fm-pr-merge.sh",
+      "lab-22",
+      "https://localhost/labuser/method-guard/pulls/22",
+      "--",
+      "--rebase"
+    ],
+    "exit_code": 0,
+    "expected_style": "rebase",
+    "before": {
+      "state": "open",
+      "merged": false,
+      "mergeable": true,
+      "head": "14a7875827147605fbe18fdfb986f3635e05c672"
+    },
+    "after": {
+      "state": "closed",
+      "merged": true
+    },
+    "merge_requests": [
+      {
+        "method": "POST",
+        "path": "/api/v1/repos/labuser/method-guard/pulls/22/merge",
+        "body": "{\"Do\":\"rebase\",\"head_commit_id\":\"14a7875827147605fbe18fdfb986f3635e05c672\"}",
+        "status": 200,
+        "response": ""
+      }
+    ],
+    "result": "pass",
+    "stdout": "armed: state/lab-22.check.sh\n",
+    "stderr": "WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.\nWARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.\nverified: https://localhost/labuser/method-guard/pulls/22 is open and mergeable, with a successful combined status at head 14a7875827147605fbe18fdfb986f3635e05c672\n"
+  },
+  {
+    "name": "shortcut-squash",
+    "argv": [
+      "bash",
+      "bin/fm-pr-merge.sh",
+      "lab-23",
+      "https://localhost/labuser/method-guard/pulls/23",
+      "--",
+      "--squash"
+    ],
+    "exit_code": 0,
+    "expected_style": "squash",
+    "before": {
+      "state": "open",
+      "merged": false,
+      "mergeable": true,
+      "head": "686ef92dbfd044e33ceec02f8c35df5e1f174afa"
+    },
+    "after": {
+      "state": "closed",
+      "merged": true
+    },
+    "merge_requests": [
+      {
+        "method": "POST",
+        "path": "/api/v1/repos/labuser/method-guard/pulls/23/merge",
+        "body": "{\"Do\":\"squash\",\"head_commit_id\":\"686ef92dbfd044e33ceec02f8c35df5e1f174afa\"}",
+        "status": 200,
+        "response": ""
+      }
+    ],
+    "result": "pass",
+    "stdout": "armed: state/lab-23.check.sh\n",
+    "stderr": "WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.\nWARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.\nverified: https://localhost/labuser/method-guard/pulls/23 is open and mergeable, with a successful combined status at head 686ef92dbfd044e33ceec02f8c35df5e1f174afa\n"
+  }
+]

@@ -1,0 +1,16 @@
+Initial focused check: /bin/bash tests/.nm-method-targeted.sh (Bash 3.2.57) exited 1.
+The default-style check received unreadable combined-status JSON.
+Generated fixture bytes before repair:
+{"state":"success","total_count":1,"statuses":["context":"ci-1"]}
+{"state":""status":"success"","total_count":,"statuses":[]}
+
+Root cause reproduced independently: nested quoted command substitution with escaped JSON quotes changes brace expansion on Bash 3.2; Bash 5.3 emits valid JSON.
+Test-only repair: compute statuses before passing it to printf.
+
+After repair: focused check on Bash 3.2 exited 0.
+ok - fm-pr-merge maps --squash/--rebase to Forgejo's Do field, defaults to the repository's default merge style, and refuses any other extra argument
+ok - fm-pr-merge refuses a Forgejo --method with no style and still honors an explicit style
+
+After repair: focused check on Bash 5.3 exited 0.
+ok - fm-pr-merge maps --squash/--rebase to Forgejo's Do field, defaults to the repository's default merge style, and refuses any other extra argument
+ok - fm-pr-merge refuses a Forgejo --method with no style and still honors an explicit style

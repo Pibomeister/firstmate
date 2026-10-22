@@ -1,0 +1,10 @@
+Base commit a45e08b095291a41c3bf45592fab673be91e3ad4, merge CLI with unchanged supporting libraries.
+$ ['/bin/bash', 'bin/.nm-base-pr-merge.sh', 'baseline', 'https://localhost/labuser/method-guard/pulls/1', '--', '--method']
+armed: state/baseline.check.sh
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
+verified: https://localhost/labuser/method-guard/pulls/1 is open and mergeable, with a successful combined status at head cdfad77cca3825179b582c81b33894cf5decf980
+
+Merge requests: [{"method": "POST", "path": "/api/v1/repos/labuser/method-guard/pulls/1/merge", "body": "{\"Do\":\"squash\",\"head_commit_id\":\"cdfad77cca3825179b582c81b33894cf5decf980\"}", "status": 200, "response": ""}]
+Persisted PR state: {"state": "closed", "merged": true}
+Bare --method incorrectly merged using repository default. Target rejected the same case with zero merge requests.

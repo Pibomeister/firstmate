@@ -1,0 +1,1 @@
+Disposable Gitea stopped cleanly (exit 0); ports 39731 and 39732 closed. Workspace-local binaries, forge data, tea configuration, credentials, fixture repositories, Firstmate lab home, and temporary scripts removed. Only intentional test fixture quoting repair remains in tests/fm-pr-merge.test.sh. No fleet or global configuration changes.

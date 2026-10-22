@@ -1,0 +1,2 @@
+ok - fm-pr-merge maps --squash/--rebase to Forgejo's Do field, defaults to the repository's default merge style, and refuses any other extra argument
+ok - fm-pr-merge refuses a Forgejo --method with no style and still honors an explicit style
