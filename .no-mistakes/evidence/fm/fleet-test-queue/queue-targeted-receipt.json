@@ -1,0 +1,12 @@
+{
+  "command": [
+    "/bin/bash",
+    "tests/fm-test-queue.test.sh"
+  ],
+  "revision": "9dd06246a0258c80cc8805aef9035242d75f414d",
+  "start": "2026-10-22T22:49:18.398126+00:00",
+  "exit_status": 0,
+  "environment": "Darwin 25.6.0 arm64",
+  "bash": "GNU bash, version 3.2.57(1)-release (arm64-apple-darwin25)",
+  "output_sha256": "098d4239a09ee96c001038e8d741e64ece99734a641275a5b301db5ca6dc4818"
+}

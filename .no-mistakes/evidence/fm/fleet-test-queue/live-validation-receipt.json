@@ -1,0 +1,48 @@
+{
+  "revision": "9dd06246a0258c80cc8805aef9035242d75f414d",
+  "completed_at": "2026-10-22T22:53:36.104983+00:00",
+  "manual_checks": [
+    {
+      "command": "TMPDIR=\"$PWD/.test-phase-scratch\" PYTHONDONTWRITEBYTECODE=1 python3 .test-phase-scratch/live-queue.py",
+      "exit_status": 0,
+      "artifact": "live-queue-transcript.log"
+    },
+    {
+      "command": "TMPDIR=\"$PWD/.test-phase-scratch\" PYTHONDONTWRITEBYTECODE=1 python3 .test-phase-scratch/live-brief.py",
+      "exit_status": 0,
+      "artifact": "live-brief-transcript.log"
+    },
+    {
+      "command": "FM_TEST_QUEUE_DIR=\"$PWD/.test-phase-scratch/terminal-evidence/spool\" QUEUE_PTY_TRANSCRIPT=<evidence>/terminal-transcript.log TMPDIR=\"$PWD/.test-phase-scratch\" PYTHONDONTWRITEBYTECODE=1 python3 .test-phase-scratch/queue-pty-evidence.py \"$PWD/bin/fm-test-queue.sh\" /bin/bash \"$PWD/.test-phase-scratch/terminal-evidence\"",
+      "exit_status": 0,
+      "pty_grid": "40x120",
+      "artifact": "terminal-transcript.log"
+    }
+  ],
+  "resolved_setup_attempts": [
+    "First changed-test listing refused temporary untracked test fixtures; repeated after removing all fixtures.",
+    "First manual driver used load as both a probe file and workload directory; corrected fixture naming and reran successfully. No product failure."
+  ],
+  "sha256": {
+    "live-queue-transcript.log": "18acadb3b70090c2c5d5459a5e729eb45539f200a9b378f295ac1609630a1cc1",
+    "live-brief-transcript.log": "77ef4d8adf08f850c2220dd173c9835e4f2dd8ecfe3ca61f5745619492cbb676",
+    "terminal-transcript.log": "2606fd496ed25b8f1f48752299dcd45250fd55ce2164be7082697d5a369f1adf",
+    "changed-test-selection.log": "3917e6ecebb39e2f269782cfd95f52576571bc830898d24e92fadf58db459228"
+  },
+  "changed_selection": {
+    "command": [
+      "/bin/bash",
+      "bin/fm-test-run.sh",
+      "--list",
+      "--changed",
+      "--base",
+      "7dc56f87b52fdc8cfb215f854b76102c7b7c39dc"
+    ],
+    "exit_status": 0,
+    "selected_queue_test": true,
+    "selected_brief_test": true,
+    "executed_selected_suites": false,
+    "artifact": "changed-test-selection.log"
+  },
+  "cleanup": "All disposable worktree fixtures removed; git status --porcelain empty; no source or test edits."
+}

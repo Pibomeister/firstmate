@@ -1,78 +1,119 @@
-Initial queue (real host load probe, private XDG state; one configured slot)
-$ bin/fm-test-queue.sh status
-test-queue: slots=1 load_ceiling=1000000 load1=103.98 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/manual/xdg/firstmate/test-queue
+Revision: 9dd06246a0258c80cc8805aef9035242d75f414d
 
-$ FM_HOME=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/manual/A TZ=UTC bin/fm-test-queue.sh run --label A -- <release-controlled workload> &
-$ FM_HOME=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/manual/B TZ=America/Mexico_City bin/fm-test-queue.sh run --label B -- <release-controlled workload> &
-$ FM_HOME=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/manual/C TZ=UTC bin/fm-test-queue.sh run --label C -- <release-controlled workload> &
+SCENARIO: independent homes share one FIFO line using the default XDG spool; actual host load probe
+
+$ FM_HOME=<isolated-A> fm-test-queue.sh run --label A -- <held workload>; wrapper pid=73161
+
+$ FM_HOME=<isolated-B> fm-test-queue.sh run --label B -- <held workload>; wrapper pid=73887
+
+$ FM_HOME=<isolated-C> fm-test-queue.sh run --label C -- <held workload>; wrapper pid=74534
+
+A runs; B then C wait across independent FM_HOME values
+$ fm-test-queue.sh status
+test-queue: slots=1 load_ceiling=100000 load1=58.59 serving=1 waiting=2 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5JW8KCSACJJWWF0BM98FFES/.test-phase-scratch/live-product2/shared-state/firstmate/test-queue
+serving ticket=1 pid=73161 age=1s task=- label=A
+waiting position=1 ticket=2 pid=73887 age=1s task=- label=B
+waiting position=2 ticket=3 pid=74534 age=0s task=- label=C
+
+
+A: exit=0
+stdout:
+START A TZ=unset
+END A
+stderr:
+
+
+B: exit=0
+stdout:
+START B TZ=unset
+END B
+stderr:
 fm-test-queue: ticket 2, position 1: all 1 slot(s) busy
-Independent homes share one serving slot and an ordered waiting line
-$ bin/fm-test-queue.sh status
-test-queue: slots=1 load_ceiling=1000000 load1=101.42 serving=1 waiting=2 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/manual/xdg/firstmate/test-queue
-serving ticket=1 pid=86089 age=4s task=- label=A
-waiting position=1 ticket=2 pid=89128 age=2s task=- label=B
-waiting position=2 ticket=3 pid=91620 age=1s task=- label=C
-
-$ kill -KILL 86089 # kill wrapper A; its workload remains alive
-Wrapper SIGKILL does not free the surviving child slot
-$ bin/fm-test-queue.sh status
-test-queue: slots=1 load_ceiling=1000000 load1=101.42 serving=1 waiting=2 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/manual/xdg/firstmate/test-queue
-serving ticket=1 pid=86089 age=4s task=- label=A
-waiting position=1 ticket=2 pid=89128 age=2s task=- label=B
-waiting position=2 ticket=3 pid=91620 age=1s task=- label=C
-
-fm-test-queue: ticket 3, position 2: waiting behind 1 earlier ticket(s)
 fm-test-queue: ticket 2 served
+
+
+C: exit=0
+stdout:
+START C TZ=unset
+END C
+stderr:
+fm-test-queue: ticket 3, position 2: waiting behind 1 earlier ticket(s)
 fm-test-queue: ticket 3, position 1: all 1 slot(s) busy
-After child A exits, B is served before C
-$ bin/fm-test-queue.sh status
-test-queue: slots=1 load_ceiling=1000000 load1=102.91 serving=1 waiting=1 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/manual/xdg/firstmate/test-queue
-serving ticket=2 pid=89128 age=1s task=- label=B
-waiting position=1 ticket=3 pid=91620 age=4s task=- label=C
-
 fm-test-queue: ticket 3 served
-After all workloads leave
-$ bin/fm-test-queue.sh status
-test-queue: slots=1 load_ceiling=1000000 load1=102.91 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/manual/xdg/firstmate/test-queue
 
-$ cat workload-events
-start:A TZ=UTC
-end:A
-start:B TZ=America/Mexico_City
-end:B
-start:C TZ=UTC
-end:C
 
-$ fm-brief.sh live-no-mistakes disposable-project --mode no-mistakes
-scaffolded: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/manual/brief-home/data/live-no-mistakes/brief.md (ship, mode=no-mistakes; replace {TASK} and {FIRSTMATE_SPEC})
+All workloads have left
+$ fm-test-queue.sh status
+test-queue: slots=1 load_ceiling=100000 load1=61.75 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5JW8KCSACJJWWF0BM98FFES/.test-phase-scratch/live-product2/shared-state/firstmate/test-queue
 
-Emitted rule: 9. Run heavy test suites only through the machine-wide test line, `'/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/manual/firstmate helper'\''s root/bin/fm-test-queue.sh' run -- <command>`, which waits for your turn, a free slot, and a low load; run targeted tests directly.
-$ '/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/manual/firstmate helper'\''s root/bin/fm-test-queue.sh' run -- printf 'BRIEF-no-mistakes-WORKLOAD\n'
-BRIEF-no-mistakes-WORKLOAD
-exit=0
-$ fm-brief.sh live-direct-PR disposable-project --mode direct-PR
-scaffolded: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/manual/brief-home/data/live-direct-PR/brief.md (ship, mode=direct-PR; replace {TASK} and {FIRSTMATE_SPEC})
 
-Emitted rule: 9. Run heavy test suites only through the machine-wide test line, `'/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/manual/firstmate helper'\''s root/bin/fm-test-queue.sh' run -- <command>`, which waits for your turn, a free slot, and a low load; run targeted tests directly.
-$ '/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/manual/firstmate helper'\''s root/bin/fm-test-queue.sh' run -- printf 'BRIEF-direct-PR-WORKLOAD\n'
-BRIEF-direct-PR-WORKLOAD
-exit=0
-$ fm-brief.sh live-local-only disposable-project --mode local-only
-scaffolded: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/manual/brief-home/data/live-local-only/brief.md (ship, mode=local-only; replace {TASK} and {FIRSTMATE_SPEC})
+SCENARIO: high load holds the head; falling load serves it (documented disposable load seam)
 
-Emitted rule: 9. Run heavy test suites only through the machine-wide test line, `'/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/manual/firstmate helper'\''s root/bin/fm-test-queue.sh' run -- <command>`, which waits for your turn, a free slot, and a low load; run targeted tests directly.
-$ '/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/manual/firstmate helper'\''s root/bin/fm-test-queue.sh' run -- printf 'BRIEF-local-only-WORKLOAD\n'
-BRIEF-local-only-WORKLOAD
-exit=0
-$ fm-brief.sh live-scout disposable-project  --scout
-scaffolded: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/manual/brief-home/data/live-scout/brief.md (scout; replace {TASK} and {FIRSTMATE_SPEC})
+$ FM_HOME=<isolated-load> fm-test-queue.sh run --label load -- <held workload>; wrapper pid=79319
 
-Emitted rule: 9. Run heavy test suites only through the machine-wide test line, `'/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/manual/firstmate helper'\''s root/bin/fm-test-queue.sh' run -- <command>`, which waits for your turn, a free slot, and a low load; run targeted tests directly.
-$ '/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/manual/firstmate helper'\''s root/bin/fm-test-queue.sh' run -- printf 'BRIEF-scout-WORKLOAD\n'
-BRIEF-scout-WORKLOAD
-exit=0
-Generated commands used the real queue and left it empty
-$ bin/fm-test-queue.sh status
-test-queue: slots=1 load_ceiling=1000000 load1=93.34 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/manual/xdg/firstmate/test-queue
+Load above ceiling: command has not started
+$ fm-test-queue.sh status
+test-queue: slots=1 load_ceiling=16 load1=20.5 serving=0 waiting=1 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5JW8KCSACJJWWF0BM98FFES/.test-phase-scratch/live-product2/shared-state/firstmate/test-queue
+waiting position=1 ticket=4 pid=79319 age=1s task=- label=load
 
-All live CLI observations and assertions passed.
+
+load: exit=0
+stdout:
+START load TZ=unset
+END load
+stderr:
+fm-test-queue: ticket 4, position 1: load 20.5 is not below 16
+fm-test-queue: ticket 4 served
+
+
+Load fell below ceiling: command completed
+$ fm-test-queue.sh status
+test-queue: slots=1 load_ceiling=16 load1=15.9 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5JW8KCSACJJWWF0BM98FFES/.test-phase-scratch/live-product2/shared-state/firstmate/test-queue
+
+
+SCENARIO: a killed wrapper keeps its slot through a surviving child, seen by another timezone
+
+$ FM_HOME=<isolated-survivor> fm-test-queue.sh run --label survivor -- <held workload>; wrapper pid=81433
+
+Killed only wrapper 81433; direct workload 82412 remains alive
+
+$ FM_HOME=<isolated-follower> fm-test-queue.sh run --label follower -- <held workload>; wrapper pid=83038
+
+Mexico-timezone follower waits for UTC survivor after SIGKILL
+$ fm-test-queue.sh status
+test-queue: slots=1 load_ceiling=16 load1=15.9 serving=1 waiting=1 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5JW8KCSACJJWWF0BM98FFES/.test-phase-scratch/live-product2/shared-state/firstmate/test-queue
+serving ticket=5 pid=81433 age=1s task=- label=survivor
+waiting position=1 ticket=6 pid=83038 age=1s task=- label=follower
+
+
+follower: exit=0
+stdout:
+START follower TZ=America/Mexico_City
+END follower
+stderr:
+fm-test-queue: ticket 6, position 1: all 1 slot(s) busy
+fm-test-queue: ticket 6 served
+
+
+Survivor output:
+START survivor TZ=UTC
+END survivor
+
+
+Survivor exited; follower ran; queue empty
+$ fm-test-queue.sh status
+test-queue: slots=1 load_ceiling=16 load1=15.9 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5JW8KCSACJJWWF0BM98FFES/.test-phase-scratch/live-product2/shared-state/firstmate/test-queue
+
+
+SCENARIO: command stdio and exit status survive wrapping; malformed config fails before workload
+
+$ printf input-value | fm-test-queue.sh run -- <stdio workload>
+stdout:input-value
+stderr
+[exit 7]
+
+$ fm-test-queue.sh run -- /bin/sh -c touch "$1" _ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5JW8KCSACJJWWF0BM98FFES/.test-phase-scratch/live-product2/forbidden-workload
+fm-test-queue: slots must be a positive integer, got '0'
+[exit 125]
+
+All live CLI assertions passed.

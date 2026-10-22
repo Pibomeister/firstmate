@@ -1,0 +1,51 @@
+Revision: 9dd06246a0258c80cc8805aef9035242d75f414d
+
+$ /bin/bash bin/fm-brief.sh queue-evidence-no-mistakes alpha --mode no-mistakes
+scaffolded: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5JW8KCSACJJWWF0BM98FFES/.test-phase-scratch/brief-product/isolated-home/data/queue-evidence-no-mistakes/brief.md (ship, mode=no-mistakes; replace {TASK} and {FIRSTMATE_SPEC})
+[exit 0]
+
+Generated public brief rule:
+9. Run heavy test suites only through the machine-wide test line, `'/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5JW8KCSACJJWWF0BM98FFES/.test-phase-scratch/brief-product/firstmate helper'\''s root/bin/fm-test-queue.sh' run -- <command>`, which waits for your turn, a free slot, and a low load; run targeted tests directly.
+
+$ '/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5JW8KCSACJJWWF0BM98FFES/.test-phase-scratch/brief-product/firstmate helper'\''s root/bin/fm-test-queue.sh' run -- printf '%s\n' 'actual queued workload'
+actual queued workload
+[exit 0]
+
+$ /bin/bash bin/fm-brief.sh queue-evidence-direct-PR alpha --mode direct-PR
+scaffolded: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5JW8KCSACJJWWF0BM98FFES/.test-phase-scratch/brief-product/isolated-home/data/queue-evidence-direct-PR/brief.md (ship, mode=direct-PR; replace {TASK} and {FIRSTMATE_SPEC})
+[exit 0]
+
+Generated public brief rule:
+9. Run heavy test suites only through the machine-wide test line, `'/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5JW8KCSACJJWWF0BM98FFES/.test-phase-scratch/brief-product/firstmate helper'\''s root/bin/fm-test-queue.sh' run -- <command>`, which waits for your turn, a free slot, and a low load; run targeted tests directly.
+
+$ '/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5JW8KCSACJJWWF0BM98FFES/.test-phase-scratch/brief-product/firstmate helper'\''s root/bin/fm-test-queue.sh' run -- printf '%s\n' 'actual queued workload'
+actual queued workload
+[exit 0]
+
+$ /bin/bash bin/fm-brief.sh queue-evidence-local-only alpha --mode local-only
+scaffolded: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5JW8KCSACJJWWF0BM98FFES/.test-phase-scratch/brief-product/isolated-home/data/queue-evidence-local-only/brief.md (ship, mode=local-only; replace {TASK} and {FIRSTMATE_SPEC})
+[exit 0]
+
+Generated public brief rule:
+9. Run heavy test suites only through the machine-wide test line, `'/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5JW8KCSACJJWWF0BM98FFES/.test-phase-scratch/brief-product/firstmate helper'\''s root/bin/fm-test-queue.sh' run -- <command>`, which waits for your turn, a free slot, and a low load; run targeted tests directly.
+
+$ '/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5JW8KCSACJJWWF0BM98FFES/.test-phase-scratch/brief-product/firstmate helper'\''s root/bin/fm-test-queue.sh' run -- printf '%s\n' 'actual queued workload'
+actual queued workload
+[exit 0]
+
+$ /bin/bash bin/fm-brief.sh queue-evidence-scout alpha --scout
+scaffolded: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5JW8KCSACJJWWF0BM98FFES/.test-phase-scratch/brief-product/isolated-home/data/queue-evidence-scout/brief.md (scout; replace {TASK} and {FIRSTMATE_SPEC})
+[exit 0]
+
+Generated public brief rule:
+9. Run heavy test suites only through the machine-wide test line, `'/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5JW8KCSACJJWWF0BM98FFES/.test-phase-scratch/brief-product/firstmate helper'\''s root/bin/fm-test-queue.sh' run -- <command>`, which waits for your turn, a free slot, and a low load; run targeted tests directly.
+
+$ '/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5JW8KCSACJJWWF0BM98FFES/.test-phase-scratch/brief-product/firstmate helper'\''s root/bin/fm-test-queue.sh' run -- printf '%s\n' 'actual queued workload'
+actual queued workload
+[exit 0]
+
+$ fm-test-queue.sh status
+test-queue: slots=1 load_ceiling=100000 load1=68.93 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5JW8KCSACJJWWF0BM98FFES/.test-phase-scratch/brief-product/spool
+
+
+All ship/scout rules are identical; each emitted command executed the real queue from a path containing spaces and an apostrophe.

@@ -1,0 +1,13 @@
+{
+  "command": [
+    "/bin/bash",
+    ".test-phase-scratch/brief-focused.sh"
+  ],
+  "selectors": [
+    "test_crewmate_scaffolds_route_heavy_tests_through_the_queue",
+    "test_queue_command_quotes_foreign_firstmate_path"
+  ],
+  "revision": "9dd06246a0258c80cc8805aef9035242d75f414d",
+  "exit_status": 0,
+  "output_sha256": "26c9464d373a8801c2259e985e0aebea1174169ebd474b15f9b3680ad7252761"
+}

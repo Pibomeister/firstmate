@@ -1,0 +1,50 @@
+Revision: 9dd06246a0258c80cc8805aef9035242d75f414d
+
+SCENARIO: independent homes share one FIFO line using the default XDG spool; actual host load probe
+
+$ FM_HOME=<isolated-A> fm-test-queue.sh run --label A -- <held workload>; wrapper pid=11612
+
+$ FM_HOME=<isolated-B> fm-test-queue.sh run --label B -- <held workload>; wrapper pid=12807
+
+$ FM_HOME=<isolated-C> fm-test-queue.sh run --label C -- <held workload>; wrapper pid=13269
+
+A runs; B then C wait across independent FM_HOME values
+$ fm-test-queue.sh status
+test-queue: slots=1 load_ceiling=100000 load1=77.04 serving=1 waiting=2 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5JW8KCSACJJWWF0BM98FFES/.test-phase-scratch/live-product/shared-state/firstmate/test-queue
+serving ticket=1 pid=11612 age=1s task=- label=A
+waiting position=1 ticket=2 pid=12807 age=0s task=- label=B
+waiting position=2 ticket=3 pid=13269 age=0s task=- label=C
+
+
+A: exit=0
+stdout:
+START A TZ=unset
+END A
+stderr:
+
+
+B: exit=0
+stdout:
+START B TZ=unset
+END B
+stderr:
+fm-test-queue: ticket 2, position 1: all 1 slot(s) busy
+fm-test-queue: ticket 2 served
+
+
+C: exit=0
+stdout:
+START C TZ=unset
+END C
+stderr:
+fm-test-queue: ticket 3, position 2: waiting behind 1 earlier ticket(s)
+fm-test-queue: ticket 3, position 1: all 1 slot(s) busy
+fm-test-queue: ticket 3 served
+
+
+All workloads have left
+$ fm-test-queue.sh status
+test-queue: slots=1 load_ceiling=100000 load1=76.71 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5JW8KCSACJJWWF0BM98FFES/.test-phase-scratch/live-product/shared-state/firstmate/test-queue
+
+
+SCENARIO: high load holds the head; falling load serves it (documented disposable load seam)
