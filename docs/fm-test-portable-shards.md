@@ -78,7 +78,7 @@ Refresh the hints whenever a serial member grows materially or the lane gains sc
 `bin/fm-test-run.sh` owns the per-shard packing, so its `--check-coverage` output is the current account of lane size and coverage rather than a copied inventory.
 Its header and `--help` own the modeled-budget check and output fields; read the current estimates from `--check-coverage` instead of retaining copied lane sums here.
 [`tests/fm-test-run.test.sh`](../tests/fm-test-run.test.sh), in `test_portable_serial_packing_budget_boundary`, verifies acceptance exactly at the budget and refusal one millisecond above it through the executable runner, and `test_portable_serial_lone_script_over_budget_is_reported` verifies the one-script exception.
-Only `tests/fm-watch-triage.test.sh` exceeds the packing target alone, so it is the indivisible floor for this layout.
+The watch-triage cases are split across `tests/fm-watch-triage.test.sh`, `tests/fm-watch-triage-b.test.sh`, `tests/fm-watch-triage-c.test.sh`, `tests/fm-watch-triage-d.test.sh`, `tests/fm-watch-triage-e.test.sh`, `tests/fm-watch-triage-f.test.sh`, and `tests/fm-watch-triage-g.test.sh`, so no part is the indivisible floor on its own.
 The estimates use per-file maxima from different runs, not measured rebalanced jobs or an end-to-end latency guarantee.
 The baseline watch-triage samples range from 1126065 to 1429680 ms.
 Even so, maxima from eight runs do not establish a P95 or guarantee future headroom.
@@ -122,9 +122,10 @@ Its `--list-files` interface exposes partition membership; `tests/fm-lint.test.s
 The workflow uploads each partition's quiet telemetry plus its per-root lifecycle sidecar to distinguish analysis cost, memory use, and host contention.
 No fast mode, path skips, or paid runner provisioning is part of this layout.
 
-The longer-term performance objective remains a complete green run under fifteen minutes including start delay, but the current watch-triage floor alone exceeds that objective.
+The longer-term performance objective remains a complete green run under fifteen minutes including start delay.
+The watch-triage cases are split across seven scripts, so that suite is no longer the floor by itself.
 The immediate packing target is the runner's modeled script budget, not a claim that more shards alone can make an indivisible script faster.
-The layout uses sixteen long-lived Linux jobs (eleven serial, two parallel, Herdr, two lint), plus short checks and macOS; insufficient shared account capacity can erase the packing gain.
+The layout uses twenty-three long-lived Linux jobs (eighteen serial, two parallel, Herdr, two lint), plus short checks and macOS; insufficient shared account capacity can erase the packing gain.
 Compare complete before/after runs, preserve cancelled and partial-run evidence, and measure a representative normal-run sample before claiming a P95 improvement.
 The workflow retains per-PR supersession without cancelling main pushes or changing the compliance workflow's event semantics.
 
