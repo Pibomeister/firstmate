@@ -391,7 +391,7 @@ command_exec() {
 }
 
 cmd_run() {
-  local label="" n last="" command_pid rc terminal=/dev/fd/2
+  local label="" n last="" command_pid rc terminal=/dev/fd/2 startup_stderr=/dev/null
   while [ $# -gt 0 ]; do
     case "$1" in
       --label) [ $# -ge 2 ] || usage; label=$2; shift 2 ;;
@@ -407,6 +407,29 @@ cmd_run() {
     [ -n "$T_SERVED" ] && ticket_alive; then
     command_exec "$@"
   fi
+
+  if { : </dev/tty; } 2>/dev/null; then
+    terminal=/dev/tty
+    startup_stderr=/dev/tty
+  fi
+  case "$-" in
+    *i*) ;;
+    *)
+      # shellcheck disable=SC2016
+      command_exec env HISTFILE= BASH_SILENCE_DEPRECATION_WARNING=1 "$BASH" --noprofile --norc -i -c '
+        set +o history
+        exec 2>&9 9>&-
+        for name in HISTFILE BASH_SILENCE_DEPRECATION_WARNING; do
+          if [ "$1" = x ]; then export "$name=$2"; else unset "$name"; fi
+          shift 2
+        done
+        unset name
+        . "$0" "$@"
+      ' "$0" "${HISTFILE+x}" "${HISTFILE-}" \
+        "${BASH_SILENCE_DEPRECATION_WARNING+x}" "${BASH_SILENCE_DEPRECATION_WARNING-}" \
+        run --label "$label" -- "$@" 9>&2 2>>"$startup_stderr"
+      ;;
+  esac
 
   [ -n "$label" ] || label="$*"
   label=$(printf '%s' "$label" | tr '\n\r' '  ')
@@ -441,7 +464,6 @@ cmd_run() {
   done
 
   [ -z "$last" ] || echo "fm-test-queue: ticket $n served" >&2
-  if { : </dev/tty; } 2>/dev/null; then terminal=/dev/tty; fi
   set -m 2>>"$terminal"
   (
     set +m
@@ -458,9 +480,15 @@ cmd_run() {
   ticket_read "$MY_TICKET" || die "cannot read ticket $n"
   T_PGID=$command_pid
   ticket_write "$MY_TICKET" || die "cannot record process group for ticket $n"
-  fg %+ >/dev/null 2>>"$terminal"
-  wait "$command_pid"
-  rc=$?
+  while :; do
+    fg %+ >/dev/null 2>>"$terminal"
+    wait "$command_pid"
+    rc=$?
+    [ "$(jobs -p)" = "$command_pid" ] || break
+    if [ "$(jobs -sp)" = "$command_pid" ]; then
+      kill -STOP "$$"
+    fi
+  done
   set +m 2>>"$terminal"
   return "$rc"
 }
