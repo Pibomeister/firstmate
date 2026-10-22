@@ -397,8 +397,12 @@ fm_afk_launch_entry_cmd() {
 # fm_daemon_primary_harness). The terminal may inherit another home's FM_*
 # values from its server, so they are dropped before this home's are set.
 fm_afk_launch_daemon_cmd() {  # <captain-target> <captain-backend>
-  printf 'exec %q exec env FM_HOME=%q FM_SUPERVISOR_TARGET=%q FM_SUPERVISOR_BACKEND=%q FM_DAEMON_PRIMARY_HARNESS=%q %q' \
-    "$FM_ROOT/bin/fm-env-scrub.sh" "$FM_HOME" "$1" "$2" "$(fm_afk_launch_primary_harness)" "$(fm_afk_launch_entry_cmd)"
+  local name overrides=
+  while IFS= read -r name; do
+    case "$name" in FM_*_OVERRIDE) overrides="$overrides $name=$(printf '%q' "${!name}")" ;; esac
+  done < <(fm_env_scrub_names)
+  printf 'exec %q exec env FM_HOME=%q%s FM_SUPERVISOR_TARGET=%q FM_SUPERVISOR_BACKEND=%q FM_DAEMON_PRIMARY_HARNESS=%q %q' \
+    "$FM_ROOT/bin/fm-env-scrub.sh" "$FM_HOME" "$overrides" "$1" "$2" "$(fm_afk_launch_primary_harness)" "$(fm_afk_launch_entry_cmd)"
 }
 
 fm_afk_launch_record_write() {  # <backend> <target> <extra>

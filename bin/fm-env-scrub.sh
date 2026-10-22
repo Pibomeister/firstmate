@@ -55,7 +55,6 @@ shell=$(ps -o comm= -p "$PPID" 2>/dev/null || true)
 shell=${shell##*/}
 case "${shell#-}" in
   fish) unset_cmd='set -e' ;;
-  csh | tcsh) unset_cmd=unsetenv ;;
   *) unset_cmd='unset' ;;
 esac
 tmp=$(mktemp "$2.XXXXXX")

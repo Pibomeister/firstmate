@@ -803,12 +803,12 @@ unit_daemon_terminal_receives_the_primary_harness() {
   st=$(mktemp -d "${TMPDIR:-/tmp}/fm-afk-daemon-harness.XXXXXX")
   entry="$st/entry"
   # shellcheck disable=SC2016 # expands in the entry script.
-  printf '#!/usr/bin/env bash\nprintf "%%s" "${FM_DAEMON_PRIMARY_HARNESS-unset}" > "$FM_HOME/daemon-harness"\nprintf "%%s" "${FM_CONFIG_OVERRIDE-unset}" > "$FM_HOME/daemon-config"\n' > "$entry"
+  printf '#!/usr/bin/env bash\nprintf "%%s" "${FM_DAEMON_PRIMARY_HARNESS-unset}" > "$FM_HOME/daemon-harness"\nprintf "%%s" "${FM_DATA_OVERRIDE-unset}" > "$FM_HOME/daemon-config"\nprintf "%%s" "${FM_STATE_OVERRIDE-unset}" > "$FM_HOME/daemon-state"\n' > "$entry"
   chmod +x "$entry"
   # shellcheck disable=SC2016 # positional params expand in the child shell.
   for backend in herdr tmux; do
-    rm -f "$st/daemon-harness" "$st/daemon-config"
-    env -u FM_DAEMON_PRIMARY_HARNESS FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" FM_AFK_LAUNCH_ENTRY="$entry" \
+    rm -f "$st/daemon-harness" "$st/daemon-config" "$st/daemon-state"
+    env -u FM_DAEMON_PRIMARY_HARNESS -u FM_DATA_OVERRIDE FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" FM_AFK_LAUNCH_ENTRY="$entry" \
       FM_TEST_HARNESS=claude bash -c '
       . "$1"
       fm_backend_source() { return 0; }
@@ -817,10 +817,10 @@ unit_daemon_terminal_receives_the_primary_harness() {
         if [ "$2 $3" = "workspace create" ]; then
           printf %s '\''{"result":{"workspace":{"workspace_id":"ws-exact"},"root_pane":{"pane_id":"pane-exact"}}}'\''
         elif [ "$2 $3" = "pane run" ]; then
-          FM_CONFIG_OVERRIDE=/synthetic/foreign bash -c "$5"
+          FM_DATA_OVERRIDE=/synthetic/foreign bash -c "$5"
         fi
       }
-      tmux() { [ "$1" = new-session ] && FM_CONFIG_OVERRIDE=/synthetic/foreign bash -c "$5"; }
+      tmux() { [ "$1" = new-session ] && FM_DATA_OVERRIDE=/synthetic/foreign bash -c "$5"; }
       fm_afk_launch_record_write() { return 0; }
       fm_afk_launch_commit_terminal() { return 0; }
       fm_afk_launch_create_"$2" lab:captain "$2"
@@ -836,6 +836,12 @@ unit_daemon_terminal_receives_the_primary_harness() {
       pass "$backend daemon terminal: drops FM values inherited from its server"
     else
       fail "$backend daemon terminal: kept an inherited foreign FM value (got '${got:-nothing}')"
+    fi
+    got=$(cat "$st/daemon-state" 2>/dev/null || true)
+    if [ "$got" = "$st/state" ]; then
+      pass "$backend daemon terminal: keeps this home's own state override"
+    else
+      fail "$backend daemon terminal: lost this home's state override (got '${got:-nothing}')"
     fi
   done
   rm -rf "$st"
