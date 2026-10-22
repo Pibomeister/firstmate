@@ -5624,7 +5624,8 @@ EOF
            Notification:[{hooks:[{type:"command",command:$idle}]}],
            SessionEnd:[{hooks:[{type:"command",command:$end}]}]
          }}
-        + (if $model != "" and $model != "default" then {model:$model} else {} end)
+        # Droid reads a session model only from sessionDefaultSettings.model.
+        * (if $model != "" and $model != "default" then {sessionDefaultSettings:{model:$model}} else {} end)
         + (if (["low","medium","high","xhigh","max"] | index($effort)) != null
            then {reasoningEffort:$effort} else {} end)
       ' >"$STATE_REAL/$ID.droid-settings.json" || exit 1
