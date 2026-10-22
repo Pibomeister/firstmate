@@ -194,6 +194,7 @@ test_signals_release_the_ticket() {
   wait_until "running workload started" file_exists "$CASE/started-running"
   kill -TERM "$p"
   sleep 0.3
+  process_state_has "$p" '^[[:space:]]*[RS]' || fail "TERM returned before the workload terminated"
   status_has '^serving .*label=running$' || fail "the slot was released while its command still ran"
   release running
   wait "$p"; rc=$?
@@ -538,6 +539,13 @@ test_private_metadata_and_failed_probe_warning() {
   pass "fm-test-queue.sh: metadata is private and failed probes warn without bypassing slots"
 }
 
+test_terminal_execution_modes() {
+  new_case terminal
+  echo slots=1 > "$FM_TEST_QUEUE_DIR/config"
+  python3 "$ROOT/tests/fm-test-queue-pty.py" "$QUEUE" "$QBASH" "$CASE" || fail "terminal execution modes"
+  pass "fm-test-queue.sh: terminal foreground, background, input, interrupt, and stop/resume work"
+}
+
 test_help_and_usage
 test_run_passes_status_and_output_through
 test_line_is_first_in_first_out
@@ -555,3 +563,4 @@ test_lost_counter_cannot_jump_the_line
 test_fast_command_keeps_its_exit_status
 test_locale_and_umask_are_preserved
 test_private_metadata_and_failed_probe_warning
+test_terminal_execution_modes
