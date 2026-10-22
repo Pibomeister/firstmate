@@ -763,9 +763,9 @@ FIELDS
 # flag such as --auto, --admin, or --delete-branch into a Forgejo API field
 # yet (reject_protected_forge_args above already forbids those exact spellings
 # outright), so anything else is refused rather than silently dropped.
-# --method and --method= must carry a nonempty style that is not another
-# option. A missing style is refused here, before the repository default
-# can be selected.
+# --method must be followed by a nonempty value that does not start with --;
+# --method= must have a nonempty value after the equals sign. A missing style
+# is refused here, before the repository default can be selected.
 forgejo_reject_unsupported_args() {
   local arg pending=false
   for arg in "$@"; do
