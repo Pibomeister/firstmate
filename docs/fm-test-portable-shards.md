@@ -26,7 +26,9 @@ A failed script's duration is excluded even when its lane uploaded an artifact.
 In particular, run 36664663190's serial 5 finished in 22m15s with an assertion failure, not a timeout; treating that as a healthy whole-lane sample would hide the failure.
 Collect successful per-script measurements for every member before calculating a split.
 
-`tests/fm-supervision-host.test.sh` measured 1326332 to 1411613 ms across its four successful samples in the serial baseline, far above its earlier single-sample 789123 ms hint.
+`tests/fm-supervision-host.test.sh` measured 1326332 to 1411613 ms across its four successful samples in the serial baseline, then 1776435 ms in run [39840053139](https://github.com/Pibomeister/firstmate/actions/runs/39840053139).
+It is now split into the report, routing, and handoff cases in that script and the engine, latch, and park-boundary cases in `tests/fm-supervision-host-engine.test.sh`.
+The serial-2 log's per-case timestamps give about 853000 ms and 951000 ms for those groups; their packing hints round up to 860000 ms and 960000 ms respectively.
 The native-Windows-only `tests/fm-pi-windows-shell-invocation.test.sh` retains its separate 5121 ms measurement from 2026-09-06T21:02Z instead of a portable capability skip.
 The 2026-10-07 polytoken adapter tests retain provisional local measurements from the upstream sync - 21090 ms for `tests/fm-polytoken-harness.test.sh` and the 103 ms live-guard skip for `tests/fm-polytoken-signals-live-e2e.test.sh`, both measured on the adapter-verification macOS host - until Ubuntu measurements replace them.
 The wedge-cap suite carries the Ubuntu measurements from CI run [39597689178](https://github.com/kunchenguid/firstmate/actions/runs/39597689178) - 374225 ms for `tests/fm-watch-wedge-cap.test.sh` and the 74 ms live-guard skip for `tests/fm-watch-wedge-cap-live.test.sh` - in place of the provisional local measurements the suite first carried (1003000 ms and the 155 ms skip), which overstated the CI cost of both.
@@ -76,7 +78,7 @@ Refresh the hints whenever a serial member grows materially or the lane gains sc
 `bin/fm-test-run.sh` owns the per-shard packing, so its `--check-coverage` output is the current account of lane size and coverage rather than a copied inventory.
 Its header and `--help` own the modeled-budget check and output fields; read the current estimates from `--check-coverage` instead of retaining copied lane sums here.
 [`tests/fm-test-run.test.sh`](../tests/fm-test-run.test.sh), in `test_portable_serial_packing_budget_boundary`, verifies acceptance exactly at the budget and refusal one millisecond above it through the executable runner, and `test_portable_serial_lone_script_over_budget_is_reported` verifies the one-script exception.
-The two longest scripts, `tests/fm-watch-triage.test.sh` and `tests/fm-supervision-host.test.sh`, each exceed the packing target alone, so they are the indivisible floor for this layout.
+Only `tests/fm-watch-triage.test.sh` exceeds the packing target alone, so it is the indivisible floor for this layout.
 The estimates use per-file maxima from different runs, not measured rebalanced jobs or an end-to-end latency guarantee.
 The baseline watch-triage samples range from 1126065 to 1429680 ms.
 Even so, maxima from eight runs do not establish a P95 or guarantee future headroom.

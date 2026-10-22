@@ -409,7 +409,7 @@ family_for_basename() {
       printf '%s\n' pr-forge
       ;;
     fm-afk-contract.test.sh|fm-afk-inject-e2e.test.sh|fm-afk-return.test.sh|\
-    fm-supervision-host.test.sh|fm-host-mirror.test.sh)
+    fm-supervision-host.test.sh|fm-supervision-host-engine.test.sh|fm-host-mirror.test.sh)
       printf '%s\n' afk
       ;;
     fm-bearings-board-render.test.sh|fm-bearings-snapshot.test.sh|fm-contributions.test.sh|\
@@ -692,6 +692,7 @@ list_portable_serial() {
 # artifacts recorded in docs/fm-test-portable-shards.md. Each value is the
 # slowest successful sample in the referenced complete/partial CI runs, with
 # the inherited upstream and native-Windows measurements documented there.
+# The supervision-host halves use rounded-up per-case totals from run 39840053139.
 # These are balance hints only: the shard
 # partition stays complete and disjoint whatever they say, so a stale hint costs
 # balance rather than coverage. That doc owns the refresh procedure.
@@ -887,8 +888,9 @@ tests/fm-stow-cascade.test.sh 3733
 tests/fm-subagent-pretool-check.test.sh 1540
 tests/fm-supervision-events.test.sh 833
 tests/fm-supervision-host-attended-live-e2e.test.sh 187
+tests/fm-supervision-host-engine.test.sh 960000
 tests/fm-supervision-host-live-e2e.test.sh 80
-tests/fm-supervision-host.test.sh 1411613
+tests/fm-supervision-host.test.sh 860000
 tests/fm-tangle-guard.test.sh 11866
 tests/fm-task-delivery.test.sh 49704
 tests/fm-task-inbox.test.sh 112339
@@ -1528,7 +1530,7 @@ families_for_changed_path() {
       ;;
     bin/fm-supervision-host.sh|bin/fm-supervision-engine-lib.sh|\
     bin/fm-branch-report.sh|bin/fm-branch-dispatch.mjs)
-      # The supervision host and its parts: its own suite and live guard, plus
+      # The supervision host and its parts: both portable suites and live guards, plus
       # the Claude Stop hook that runs it.
       printf '%s\n' afk
       printf '%s\n' "__script__:fm-claude-stop-autoarm.test.sh"
@@ -1594,6 +1596,7 @@ families_for_changed_path() {
       printf '%s\n' __script__:fm-wake-queue.test.sh
       printf '%s\n' __script__:fm-pi-primary-types.test.sh
       printf '%s\n' __script__:fm-supervision-host.test.sh
+      printf '%s\n' __script__:fm-supervision-host-engine.test.sh
       # Whether an arriving outcome still lets the captain type is a fact only
       # a real Pi TUI can answer, so the live guards are selected too.
       printf '%s\n' live-harness-optin
@@ -1733,6 +1736,11 @@ families_for_changed_path() {
       # The reference scan is not transitive, so match the two helpers that
       # source this one as well: most suites inherit it only through them.
       families_for_test_reference git-config-helpers.sh lib.sh herdr-test-safety.sh \
+        || printf '%s\n' "__unmapped__:$path"
+      ;;
+    tests/wake-helpers.sh)
+      # Both supervision suites inherit wake fixtures through their helper.
+      families_for_test_reference wake-helpers.sh supervision-host-helpers.sh \
         || printf '%s\n' "__unmapped__:$path"
       ;;
     tests/fixtures/*/*)

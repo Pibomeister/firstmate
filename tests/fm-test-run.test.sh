@@ -1437,7 +1437,7 @@ test_unmapped_new_test_never_inherits_family_concurrency() {
 }
 
 test_changed_shared_fixture_selects_its_readers() {
-  local tmp repo listed rc
+  local tmp repo listed rc script fixture
   tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-fixture.XXXXXX")
   repo="$tmp/repo"
   init_changed_fixture_repo "$repo"
@@ -1471,6 +1471,26 @@ test_changed_shared_fixture_selects_its_readers() {
   listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
   assert_contains "$listed" "tests/fm-backend-orca.test.sh" \
     "a nested fixture selects the suite that reads its directory"
+
+  git -C "$repo" add tests/fixtures/demo/demo-fixture.sh
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm nested-fixture-change
+  for script in fm-supervision-host.test.sh fm-supervision-host-engine.test.sh; do
+    printf '#!/usr/bin/env bash\n. "%s/tests/supervision-host-helpers.sh"\n' "$repo" >"$repo/tests/$script"
+  done
+  printf '. "%s/tests/wake-helpers.sh"\n' "$repo" >"$repo/tests/supervision-host-helpers.sh"
+  : >"$repo/tests/wake-helpers.sh"
+  git -C "$repo" add tests
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm supervision-fixtures
+  for fixture in wake-helpers.sh supervision-host-helpers.sh; do
+    printf '\n' >>"$repo/tests/$fixture"
+    listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
+    for script in fm-supervision-host.test.sh fm-supervision-host-engine.test.sh; do
+      assert_contains "$listed" "tests/$script" \
+        "a changed $fixture selects the supervision suite that inherits it"
+    done
+    git -C "$repo" add "tests/$fixture"
+    git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm supervision-fixture-change
+  done
 
   rm -rf "$tmp"
   pass "a changed shared test fixture selects its readers while an unread tests/ path still refuses"
