@@ -88,8 +88,6 @@ refuse 'a missing reason' t1 --until "$future"
 refuse 'an unknown flag' t1 --until "$future" --reason waiting --key other
 refuse 'a reason that would push the until time past the line cap' \
   t1 --until "$future" --reason "$(printf 'x%.0s' $(seq 1 240))"
-FM_CLASSIFY_PAUSED_VERB=waiting refuse 'a line the shared parser cannot recognize as a wait' \
-  t1 --until "$future" --reason waiting
 [ ! -e "$STATE/t2.status" ] || fail "fm-park created a status log for an unrecorded task"
 pass "fm-park refuses malformed requests and writes nothing"
 
@@ -97,3 +95,19 @@ park t1 --until "$future" --reason $'quota\nexhausted' >/dev/null || fail "fm-pa
 [ "$(tail -n 1 "$STATE/t1.status" | grep -c 'quota exhausted (parked by firstmate)')" = 1 ] \
   || fail "a multi-line reason was not flattened onto one status line: $(tail -n 2 "$STATE/t1.status")"
 pass "fm-park flattens a multi-line reason onto one status line"
+
+(
+  export FM_CLASSIFY_PAUSED_VERB=holding
+  park t1 --until "$future" --reason waiting >/dev/null \
+    || fail "fm-park refused the configured paused verb"
+  last=$(tail -n 1 "$STATE/t1.status")
+  status_is_paused "$last" || fail "the park line does not use the configured paused verb: $last"
+  [ "$(status_declared_wait_line "$STATE/t1.status")" = "$last" ] \
+    || fail "the configured-verb park is not the current wait"
+  [ "$(status_paused_until "$last")" = "$future_min_epoch" ] \
+    || fail "the configured-verb park lost the requested deadline"
+  printf 'working: quota reset, resuming\n' >> "$STATE/t1.status"
+  [ -z "$(status_declared_wait_line "$STATE/t1.status")" ] \
+    || fail "a later worker event did not end the configured-verb park"
+) || fail "fm-park did not honor the configured paused verb"
+pass "fm-park honors the shared paused verb through declaration, deadline readback, and resumption"
