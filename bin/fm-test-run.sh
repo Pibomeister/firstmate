@@ -1458,6 +1458,9 @@ families_for_unmapped_bin() {
 families_for_changed_path() {
   local path=$1 fixture_ref
   case "$path" in
+    tests/fm-test-queue-pty.py)
+      printf '%s\n' '__script__:fm-test-queue.test.sh'
+      ;;
     tests/fm-backend-herdr-eventwait.test.py)
       printf '%s\n' real-herdr-gated
       printf '%s\n' backend-dispatch
