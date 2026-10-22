@@ -1691,16 +1691,16 @@ test_crewmate_scaffolds_route_heavy_tests_through_the_queue() {
   for mode in no-mistakes direct-PR local-only; do
     FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "brief-queue-$mode" alpha --mode "$mode" >/dev/null 2>&1 \
       || fail "fm-brief.sh --mode $mode exited non-zero"
-    assert_grep "$ROOT/bin/fm-test-queue.sh run -- <command>" "$home/data/brief-queue-$mode/brief.md" \
+    assert_grep "'$ROOT/bin/fm-test-queue.sh' run -- <command>" "$home/data/brief-queue-$mode/brief.md" \
       "$mode ship brief did not route heavy test suites through the test queue"
   done
   FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-queue-scout alpha --scout >/dev/null 2>&1 \
     || fail "fm-brief.sh --scout exited non-zero"
   brief="$home/data/brief-queue-scout/brief.md"
-  assert_grep "$ROOT/bin/fm-test-queue.sh run -- <command>" "$brief" \
+  assert_grep "'$ROOT/bin/fm-test-queue.sh' run -- <command>" "$brief" \
     "scout brief did not route heavy test suites through the test queue"
-  ship_rule=$(grep -F 'fm-test-queue.sh run' "$home/data/brief-queue-no-mistakes/brief.md")
-  scout_rule=$(grep -F 'fm-test-queue.sh run' "$brief")
+  ship_rule=$(grep -F 'Run heavy test suites only through' "$home/data/brief-queue-no-mistakes/brief.md")
+  scout_rule=$(grep -F 'Run heavy test suites only through' "$brief")
   [ "$ship_rule" = "$scout_rule" ] || fail "ship and scout test-queue rules have drifted apart"
   FM_SECONDMATE_CHARTER='Supervise the alpha domain.' \
     FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-queue-mate --secondmate alpha >/dev/null 2>&1 \
@@ -1708,6 +1708,41 @@ test_crewmate_scaffolds_route_heavy_tests_through_the_queue() {
   assert_no_grep "fm-test-queue.sh" "$home/data/brief-queue-mate/brief.md" \
     "secondmate charter must not carry the crewmate test-queue rule"
   pass "fm-brief.sh: every crewmate scaffold routes heavy test suites through the test queue"
+}
+
+test_queue_command_quotes_foreign_firstmate_path() {
+  local home foreign_root mode brief rule ship_rule command out rc
+  home="$TMP_ROOT/test-queue-foreign-home"
+  foreign_root="$TMP_ROOT/firstmate helper's root"
+  mkdir -p "$home/data" "$foreign_root/bin"
+  cat > "$foreign_root/bin/fm-test-queue.sh" <<'SH'
+#!/bin/sh
+[ "$1" = run ] && [ "$2" = -- ] || exit 99
+shift 2
+exec "$@"
+SH
+  chmod +x "$foreign_root/bin/fm-test-queue.sh"
+  ship_rule=""
+  for mode in no-mistakes direct-PR local-only scout; do
+    if [ "$mode" = scout ]; then
+      FM_HOME="$home" FM_ROOT_OVERRIDE="$foreign_root" "$ROOT/bin/fm-brief.sh" "queue-foreign-$mode" alpha --scout >/dev/null 2>&1 \
+        || fail "foreign-root scout brief failed"
+    else
+      FM_HOME="$home" FM_ROOT_OVERRIDE="$foreign_root" "$ROOT/bin/fm-brief.sh" "queue-foreign-$mode" alpha --mode "$mode" >/dev/null 2>&1 \
+        || fail "foreign-root $mode ship brief failed"
+    fi
+    brief="$home/data/queue-foreign-$mode/brief.md"
+    rule=$(grep -F 'Run heavy test suites only through' "$brief")
+    [ -n "$rule" ] || fail "$mode omitted the generated queue rule"
+    [ -n "$ship_rule" ] || ship_rule=$rule
+    assert_equals "$ship_rule" "$rule" "foreign-root ship and scout queue rules differ"
+    command=$(printf '%s\n' "$rule" | cut -d '`' -f 2)
+    assert_contains "$command" '<command>' "$mode omitted the queue command placeholder"
+    out=$(/bin/bash -c "${command%'<command>'} printf '%s' 'queued command'"); rc=$?
+    expect_code 0 "$rc" "$mode generated queue command with space and quote in root"
+    assert_equals 'queued command' "$out" "$mode generated queue command did not execute the workload"
+  done
+  pass "fm-brief.sh: emitted ship and scout queue commands execute from roots with spaces and quotes"
 }
 
 test_script_parses
@@ -1752,3 +1787,4 @@ test_branch_prefix_value_is_validated
 test_branch_prefix_command_is_shell_safe
 test_crewmate_scaffolds_forbid_pool_administration
 test_crewmate_scaffolds_route_heavy_tests_through_the_queue
+test_queue_command_quotes_foreign_firstmate_path

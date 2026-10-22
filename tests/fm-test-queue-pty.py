@@ -161,7 +161,7 @@ try:
     direct_child = int((case / "leader.child").read_text())
     assert int(owner["child_pid"]) == direct_child
     child_start = subprocess.check_output(
-        ["ps", "-p", str(direct_child), "-o", "lstart="], env=dict(env, LC_ALL="C"), text=True
+        ["ps", "-p", str(direct_child), "-o", "lstart="], env=dict(env, TZ="UTC", LC_ALL="C"), text=True
     ).strip()
     assert owner["child_start"] == child_start
     assert int(owner["pgid"]) == leader
