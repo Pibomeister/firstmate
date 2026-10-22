@@ -16,15 +16,18 @@
 #   - fewer than <slots> tickets are being served;
 #   - the 1-minute load average is below <load ceiling>.
 # It then runs the command as an ordinary child in the wrapper's job, with the
-# caller's stdin, stdout, and stderr, and exits with the command's exit status. The ticket
-# and its slot are released after the recorded wrapper, child, and leader group leave,
-# including after an error or signal (INT, TERM, HUP, QUIT). While it waits
-# it prints a line to stderr whenever its
-# position or the reason it waits changes.
+# caller's stdin, stdout, and stderr, and exits with the command's exit status.
+# A signal (INT, TERM, HUP, QUIT) sent only to the wrapper takes effect after
+# the command exits; signals sent to the job reach its members normally.
+# The slot stays occupied while the recorded wrapper, child, or leader group
+# is live. Cleanup removes the ticket when no workload remains; tickets left
+# after a crash or signal become stale and are reclaimed by the next run.
+# While it waits, it prints a line to stderr whenever its position or the
+# reason it waits changes.
 # --label names the run in status output; it defaults to the command line.
 #
-# A run nested inside a served run (FM_TEST_QUEUE_HELD names a ticket that is
-# still being served by a live owner) runs its command at once without a second
+# A run nested inside a served run (FM_TEST_QUEUE_HELD names a served ticket
+# that is still live under the lifetime rules below) runs at once without a second
 # ticket, so a wrapped suite that wraps its own children cannot wait on itself.
 #
 # status prints the line. The first line is machine-readable, space-separated
