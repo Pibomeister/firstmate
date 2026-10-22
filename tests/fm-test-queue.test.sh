@@ -23,7 +23,7 @@ reap_case_pids() {
     [ -n "$p" ] && : > "$p"
   done
   for p in "${CASE_PIDS[@]:-}"; do
-    [ -n "$p" ] && kill -KILL "$p" 2>/dev/null
+    [ -n "$p" ] && kill -KILL -- "$p" 2>/dev/null
   done
   CASE_PIDS=()
 }
@@ -200,6 +200,55 @@ test_signals_release_the_ticket() {
   expect_code 143 "$rc" "a served run whose queue process got TERM"
   line_is_empty || fail "a served run ended by TERM left its slot taken"
   pass "fm-test-queue.sh: a signal releases the ticket and the slot"
+}
+
+process_state_has() {
+  ps -p "$1" -o stat= 2>/dev/null | grep -Eq -- "$2"
+}
+
+test_stopped_workloads_suspend_and_resume_the_wrapper() {
+  local wrapper child follower sig rc out
+  new_case stop-resume
+  echo slots=1 > "$FM_TEST_QUEUE_DIR/config"
+  CASE_RELEASES+=("$CASE/release-workload")
+  qbg run --label stoppable -- sh -c 'echo $$ > "$1/child"; while [ ! -e "$1/release-workload" ]; do sleep 0.05; done; exit 23' _ "$CASE" 2>"$CASE/stderr" &
+  wrapper=$!
+  CASE_PIDS+=("$wrapper")
+  wait_until "stoppable workload started" file_exists "$CASE/child"
+  child=$(cat "$CASE/child")
+  CASE_PIDS+=("-$child")
+  for sig in TSTP STOP; do
+    kill -"$sig" -- "-$child"
+    wait_until "wrapper suspended after $sig" process_state_has "$wrapper" '^[[:space:]]*T'
+    process_state_has "$child" '^[[:space:]]*T' || fail "the workload did not remain stopped"
+    status_has '^serving .*label=stoppable$' || fail "a stopped workload lost its slot"
+    if [ "$sig" = TSTP ]; then
+      start_held follower; follower=$HELD_PID
+      wait_until "follower waits behind stopped workload" status_has '^waiting .*label=follower$'
+    fi
+    if [ "$sig" = STOP ]; then kill -CONT -- "-$child"; fi
+    kill -CONT "$wrapper"
+    wait_until "workload resumed after $sig" process_state_has "$child" '^[[:space:]]*[RS]'
+    sleep 0.2
+    process_state_has "$wrapper" '^[[:space:]]*[RS]' || fail "the wrapper returned before workload termination"
+    status_has '^waiting .*label=follower$' || fail "continuation released the workload's slot"
+  done
+  : > "$CASE/release-workload"
+  wait "$wrapper"; rc=$?
+  expect_code 23 "$rc" "a workload after repeated stop and continue"
+  wait_until "follower served after workload termination" status_has '^serving .*label=follower$'
+  release follower
+  wait "$follower"
+  line_is_empty || fail "a stopped and resumed workload left a ticket behind"
+  q run -- sh -c 'exit 148' 2>/dev/null; rc=$?
+  expect_code 148 "$rc" "a normal exit resembling a stopped wait status"
+  line_is_empty || fail "a normal exit resembling a stop left a ticket behind"
+  out=$(HISTFILE="$CASE/disabled-history" q run -- sh -c 'printf "%s" "$HISTFILE"' 2>/dev/null)
+  assert_equals "$CASE/disabled-history" "$out" "job-control initialization changed the command's history environment"
+  assert_absent "$CASE/disabled-history" "job-control initialization wrote shell history"
+  out=$(unset HISTFILE; q run -- sh -c 'printf "%s" "${HISTFILE-unset}"' 2>/dev/null)
+  assert_equals unset "$out" "job-control initialization added HISTFILE to the command's environment"
+  pass "fm-test-queue.sh: stopped workloads suspend their wrapper and resume until real termination"
 }
 
 test_dead_owners_are_reclaimed() {
@@ -495,6 +544,7 @@ test_line_is_first_in_first_out
 test_slots_bound_concurrency
 test_load_ceiling_holds_the_head
 test_signals_release_the_ticket
+test_stopped_workloads_suspend_and_resume_the_wrapper
 test_dead_owners_are_reclaimed
 test_descendants_keep_the_slot_after_the_command_exits
 test_stale_lock_is_broken
