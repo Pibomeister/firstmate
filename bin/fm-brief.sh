@@ -686,6 +686,10 @@ IFS= read -r -d '' SHARED_NO_CD_RULE <<'EOF' || true
 EOF
 SHARED_NO_CD_RULE=${SHARED_NO_CD_RULE%$'\n'}
 
+# One shared string keeps the ship and scout test-queue rule identical;
+# bin/fm-test-queue.sh owns the queue contract.
+TEST_QUEUE_RULE="9. Run heavy test suites only through the machine-wide test line, \`$FM_ROOT/bin/fm-test-queue.sh run -- <command>\`, which waits for your turn, a free slot, and a low load; run targeted tests directly."
+
 if [ -n "$BASE_BRANCH" ]; then
   SETUP_BASE="You are in a disposable git worktree of $REPO, at a detached HEAD on a clean copy of its base branch.
 Base branch: $BASE_BRANCH"
@@ -734,6 +738,7 @@ $CREWMATE_PAUSE_INSTRUCTIONS
    Firstmate's reply normally writes that closing line at answer time; when a blocker or wait clears WITHOUT a firstmate reply, append \`resolved [at=<epoch>]: {how it cleared}\` yourself (same \`[key=<slug>]\` if you opened it with one) as you resume.
 $SHARED_INFRA_RULE
 $SHARED_NO_CD_RULE
+$TEST_QUEUE_RULE
 
 $WAIT_BLOCK$INBOX_SECTION
 
@@ -815,6 +820,7 @@ $ASK_USER_BLOCK
    Firstmate's reply normally writes that closing line at answer time; when a blocker or wait clears WITHOUT a firstmate reply, append \`resolved [at=<epoch>]: {how it cleared}\` yourself (same \`[key=<slug>]\` if you opened it with one) as you resume.
 $SHARED_INFRA_RULE
 $SHARED_NO_CD_RULE
+$TEST_QUEUE_RULE
 
 $WAIT_BLOCK$INBOX_SECTION
 

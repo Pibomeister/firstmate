@@ -1679,6 +1679,34 @@ test_crewmate_scaffolds_forbid_pool_administration() {
   pass "fm-brief.sh: every crewmate scaffold forbids administering the shared worktree pool"
 }
 
+# Heavy test suites share one machine, so every crewmate scaffold sends them
+# through the machine-wide line, from one shared string in both scaffolds.
+test_crewmate_scaffolds_route_heavy_tests_through_the_queue() {
+  local home brief mode ship_rule scout_rule
+  home="$TMP_ROOT/test-queue-home"
+  mkdir -p "$home/data"
+  for mode in no-mistakes direct-PR local-only; do
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "brief-queue-$mode" alpha --mode "$mode" >/dev/null 2>&1 \
+      || fail "fm-brief.sh --mode $mode exited non-zero"
+    assert_grep "$ROOT/bin/fm-test-queue.sh run -- <command>" "$home/data/brief-queue-$mode/brief.md" \
+      "$mode ship brief did not route heavy test suites through the test queue"
+  done
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-queue-scout alpha --scout >/dev/null 2>&1 \
+    || fail "fm-brief.sh --scout exited non-zero"
+  brief="$home/data/brief-queue-scout/brief.md"
+  assert_grep "$ROOT/bin/fm-test-queue.sh run -- <command>" "$brief" \
+    "scout brief did not route heavy test suites through the test queue"
+  ship_rule=$(grep -F 'fm-test-queue.sh run' "$home/data/brief-queue-no-mistakes/brief.md")
+  scout_rule=$(grep -F 'fm-test-queue.sh run' "$brief")
+  [ "$ship_rule" = "$scout_rule" ] || fail "ship and scout test-queue rules have drifted apart"
+  FM_SECONDMATE_CHARTER='Supervise the alpha domain.' \
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-queue-mate --secondmate alpha >/dev/null 2>&1 \
+    || fail "fm-brief.sh --secondmate exited non-zero"
+  assert_no_grep "fm-test-queue.sh" "$home/data/brief-queue-mate/brief.md" \
+    "secondmate charter must not carry the crewmate test-queue rule"
+  pass "fm-brief.sh: every crewmate scaffold routes heavy test suites through the test queue"
+}
+
 test_script_parses
 test_no_heredoc_in_command_substitution
 test_help_includes_entire_header
@@ -1720,3 +1748,4 @@ test_branch_prefix_is_refused_where_it_does_not_apply
 test_branch_prefix_value_is_validated
 test_branch_prefix_command_is_shell_safe
 test_crewmate_scaffolds_forbid_pool_administration
+test_crewmate_scaffolds_route_heavy_tests_through_the_queue
