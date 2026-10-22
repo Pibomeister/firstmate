@@ -17,8 +17,9 @@
 #   - the 1-minute load average is below <load ceiling>.
 # It then runs the command in the foreground, with the caller's stdin, stdout,
 # stderr, and terminal, and exits with the command's exit status. The ticket
-# and its slot are released on every exit: normal, error, or a signal (INT,
-# TERM, HUP, QUIT). While it waits it prints a line to stderr whenever its
+# and its slot are released after both the wrapper and workload group leave,
+# including after an error or signal (INT, TERM, HUP, QUIT). While it waits
+# it prints a line to stderr whenever its
 # position or the reason it waits changes.
 # --label names the run in status output; it defaults to the command line.
 #
@@ -34,38 +35,37 @@
 #   serving ticket=<N> pid=<pid> age=<duration> task=<id|-> label=<text>
 #   waiting position=<N> ticket=<N> pid=<pid> age=<duration> task=<id|-> label=<text>
 # A served ticket's age counts from the moment it was served, a waiting
-# ticket's from the moment it took its ticket. stale counts tickets whose owner
-# process is dead; status only reports them and the next run reclaims them.
+# ticket's from the moment it took its ticket. stale counts tickets whose wrapper
+# and workload group are both dead; status reports them and the next run reclaims them.
 #
 # Spool: one per user, shared by every firstmate home on the machine:
 #   ${XDG_STATE_HOME:-$HOME/.local/state}/firstmate/test-queue
 # FM_TEST_QUEUE_DIR overrides it. The spool holds tickets/<N> (one key=value
-# file per ticket), next (the ticket counter), and lock (a mkdir lock that
-# serializes every change to the line).
+# file per ticket), next (the ticket counter), and lock (an atomically published
+# owner directory that serializes every change to the line).
 #
-# Configuration, highest precedence first:
-#   FM_TEST_QUEUE_SLOTS / FM_TEST_QUEUE_LOAD_CEILING environment variables;
-#   slots=<N> / load_ceiling=<X> lines in the config file
-#     ${XDG_CONFIG_HOME:-$HOME/.config}/firstmate/test-queue.conf
-#     (FM_TEST_QUEUE_CONFIG overrides the path; blank lines and # comments
-#     are ignored);
-#   defaults: slots=2, load_ceiling=16.
+# Configuration: slots=<N> / load_ceiling=<X> lines in $SPOOL/config.
+# Blank lines and # comments are ignored. All callers use this shared file;
+# per-process slots, ceiling, and config-path overrides are not supported.
+# Defaults: slots=2, load_ceiling=16.
 # slots is a positive integer and load_ceiling a positive number. An invalid
 # value or an unknown config key is reported on stderr and stops the script
 # before any ticket is taken.
 # FM_TEST_QUEUE_POLL sets the wait between admission checks in seconds
 # (default 5).
 #
-# Dead owners: every ticket records its owner's pid and process start time.
-# A ticket whose owner is gone, or whose pid now belongs to another process, is
-# reclaimed by the next run that changes the line, so a crashed or killed
-# worker never blocks it. A lock left behind by a dead process is broken the
-# same way. The command of a run whose owner was killed with SIGKILL is not
-# stopped; only its place in the line is reclaimed.
+# Dead owners: every ticket records its wrapper's pid and process start time,
+# and its command's process group. A ticket is reclaimed only when both the
+# wrapper and every process in that group are gone. A surviving command keeps
+# its slot after a wrapper is killed, including by SIGKILL.
+# Dead lock owners and old locks without a usable owner record are recovered
+# only from the observed directory generation, after a 10-second grace period
+# for an uninitialized owner record.
 #
 # Load probe: Darwin reads sysctl vm.loadavg, other systems /proc/loadavg. When
 # no probe works, the load condition is skipped and only the line and the slots
-# are enforced. Under FM_TEST_SEAM=1, FM_TEST_QUEUE_LOAD_FILE names a file whose
+# are enforced, with a one-line warning on stderr. Under FM_TEST_SEAM=1,
+# FM_TEST_QUEUE_LOAD_FILE names a file whose
 # first word stands in for the 1-minute load, read at every check.
 #
 # Portable to macOS Bash 3.2: no flock(1), no associative arrays.
@@ -76,6 +76,8 @@
 # cannot be taken). status exits 0, 2 on a usage error, or 125 on invalid
 # configuration.
 set -u
+CALLER_LC_ALL_SET=${LC_ALL+x}
+CALLER_LC_ALL=${LC_ALL-}
 export LC_ALL=C
 
 usage() {
@@ -98,7 +100,8 @@ is_positive_number() {
 }
 
 SPOOL="${FM_TEST_QUEUE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/firstmate/test-queue}"
-CONFIG_FILE="${FM_TEST_QUEUE_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/firstmate/test-queue.conf}"
+case "$SPOOL" in /*) ;; *) SPOOL="$PWD/$SPOOL" ;; esac
+CONFIG_FILE="$SPOOL/config"
 TICKETS="$SPOOL/tickets"
 LOCK="$SPOOL/lock"
 
@@ -122,8 +125,6 @@ load_config() {
       esac
     done < "$CONFIG_FILE"
   fi
-  SLOTS=${FM_TEST_QUEUE_SLOTS:-$SLOTS}
-  LOAD_CEILING=${FM_TEST_QUEUE_LOAD_CEILING:-$LOAD_CEILING}
   POLL=${FM_TEST_QUEUE_POLL:-5}
   { is_uint "$SLOTS" && [ "$SLOTS" -gt 0 ]; } || die "slots must be a positive integer, got '$SLOTS'"
   is_positive_number "$LOAD_CEILING" || die "load_ceiling must be a positive number, got '$LOAD_CEILING'"
@@ -176,37 +177,43 @@ human_age() {  # <seconds>
 }
 
 # --- the lock ---------------------------------------------------------------
-# mkdir is atomic on every local filesystem, so it serves as the lock without
-# flock(1). The holder writes its pid and start time into the lock so a dead
-# holder's lock can be recognized and broken.
 LOCK_TOKEN=""
+LOCK_GENERATION=""
+LOCK_CANDIDATE=""
 HAVE_LOCK=0
 
+path_identity() {
+  stat -c '%d:%i' "$1" 2>/dev/null || stat -f '%d:%i' "$1" 2>/dev/null
+}
+
 lock_acquire() {
-  local tries=0 pid start age m
+  local tries=0 pid start age m generation owner
   LOCK_TOKEN="$$ $(pid_start "$$")"
+  LOCK_CANDIDATE=$(mktemp -d "$SPOOL/.lock.XXXXXXXX") || die "cannot prepare $LOCK"
+  mkdir "$LOCK_CANDIDATE/lock" || die "cannot prepare $LOCK"
+  (umask 077; printf '%s\n' "$LOCK_TOKEN" > "$LOCK_CANDIDATE/lock/owner") || die "cannot prepare $LOCK/owner"
   while :; do
-    if mkdir "$LOCK" 2>/dev/null; then
-      printf '%s\n' "$LOCK_TOKEN" > "$LOCK/owner" || { rmdir "$LOCK" 2>/dev/null; die "cannot write $LOCK/owner"; }
+    if [ ! -d "$LOCK" ] && mv "$LOCK_CANDIDATE/lock" "$SPOOL/" 2>/dev/null; then
+      LOCK_GENERATION=$(path_identity "$LOCK") || die "cannot identify $LOCK"
       HAVE_LOCK=1
+      rmdir "$LOCK_CANDIDATE"
+      LOCK_CANDIDATE=""
       return 0
     fi
+    generation=$(path_identity "$LOCK") || generation=""
+    owner=$(cat "$LOCK/owner" 2>/dev/null) || owner=""
     pid="" start=""
-    if [ -f "$LOCK/owner" ]; then
-      read -r pid start 2>/dev/null < "$LOCK/owner" || true
-      if [ -n "$pid" ] && ! owner_alive "$pid" "$start"; then
-        lock_break
-        continue
+    read -r pid start <<< "$owner"
+    if is_uint "$pid" && [ "$pid" -gt 0 ] 2>/dev/null; then
+      if ! owner_alive "$pid" "$start"; then
+        lock_break "$generation" "$owner"
       fi
     elif [ -d "$LOCK" ]; then
-      # A holder that died between mkdir and writing its owner leaves an empty
-      # lock. A live holder writes the owner at once, so a few seconds is ample.
       m=$(path_mtime "$LOCK") || m=""
       if [ -n "$m" ]; then
         age=$(( $(date +%s) - m ))
         if [ "$age" -gt 10 ]; then
-          lock_break
-          continue
+          lock_break "$generation" "$owner"
         fi
       fi
     fi
@@ -216,30 +223,31 @@ lock_acquire() {
   done
 }
 
-lock_break() {
-  local aside="$LOCK.broken.$$"
-  mv "$LOCK" "$aside" 2>/dev/null && rm -rf "$aside"
-}
+lock_break() (
+  local owner=""
+  [ -n "$1" ] || return 0
+  cd "$LOCK" 2>/dev/null || return 0
+  [ "$(path_identity .)" = "$1" ] || return 0
+  owner=$(cat owner 2>/dev/null) || owner=""
+  [ "$owner" = "$2" ] || return 0
+  rm -f owner
+  rmdir "$LOCK" 2>/dev/null || true
+)
 
 lock_release() {
-  local owner=""
   [ "$HAVE_LOCK" = 1 ] || return 0
   HAVE_LOCK=0
-  read -r owner 2>/dev/null < "$LOCK/owner" || true
-  # Release only our own lock, never one taken after ours was broken.
-  [ "$owner" = "$LOCK_TOKEN" ] || return 0
-  rm -f "$LOCK/owner"
-  rmdir "$LOCK" 2>/dev/null || true
+  lock_break "$LOCK_GENERATION" "$LOCK_TOKEN"
 }
 
 # --- tickets ----------------------------------------------------------------
 # Each ticket is tickets/<10-digit number>, so lexical order is line order.
-# Fields: pid, start, enqueued, served (empty while waiting), task, label.
-T_PID="" T_START="" T_ENQUEUED="" T_SERVED="" T_TASK="" T_LABEL=""
+# Fields: pid, start, pgid, enqueued, served (empty while waiting), task, label.
+T_PID="" T_START="" T_PGID="" T_ENQUEUED="" T_SERVED="" T_TASK="" T_LABEL=""
 
 ticket_read() {  # <file>
   local line k v
-  T_PID="" T_START="" T_ENQUEUED="" T_SERVED="" T_TASK="" T_LABEL=""
+  T_PID="" T_START="" T_PGID="" T_ENQUEUED="" T_SERVED="" T_TASK="" T_LABEL=""
   [ -f "$1" ] || return 1
   while IFS= read -r line; do
     k=${line%%=*}
@@ -247,6 +255,7 @@ ticket_read() {  # <file>
     case "$k" in
       pid) T_PID=$v ;;
       start) T_START=$v ;;
+      pgid) T_PGID=$v ;;
       enqueued) T_ENQUEUED=$v ;;
       served) T_SERVED=$v ;;
       task) T_TASK=$v ;;
@@ -257,8 +266,8 @@ ticket_read() {  # <file>
 
 ticket_write() {  # <file> ; writes the T_* fields atomically
   local tmp="$1.tmp.$$"
-  printf 'pid=%s\nstart=%s\nenqueued=%s\nserved=%s\ntask=%s\nlabel=%s\n' \
-    "$T_PID" "$T_START" "$T_ENQUEUED" "$T_SERVED" "$T_TASK" "$T_LABEL" > "$tmp" &&
+  (umask 077; printf 'pid=%s\nstart=%s\npgid=%s\nenqueued=%s\nserved=%s\ntask=%s\nlabel=%s\n' \
+    "$T_PID" "$T_START" "$T_PGID" "$T_ENQUEUED" "$T_SERVED" "$T_TASK" "$T_LABEL" > "$tmp") &&
     mv -f "$tmp" "$1"
 }
 
@@ -270,12 +279,23 @@ ticket_files() {
   done
 }
 
-# Under the lock: drop every ticket whose owner is dead.
+group_alive() {
+  local members
+  is_uint "$1" && [ "$1" -gt 0 ] 2>/dev/null || return 1
+  kill -0 -- "-$1" 2>/dev/null || return 1
+  members=$(ps -axo pgid=,stat=) || return 0
+  awk -v g="$1" '$1 == g && $2 !~ /^Z/ { live=1 } END { exit !live }' <<< "$members"
+}
+
+ticket_alive() {
+  owner_alive "$T_PID" "$T_START" || group_alive "$T_PGID"
+}
+
 reclaim_dead() {
   local f
   while IFS= read -r f; do
     ticket_read "$f" || continue
-    owner_alive "$T_PID" "$T_START" || rm -f "$f"
+    ticket_alive || rm -f "$f"
   done < <(ticket_files)
 }
 
@@ -284,12 +304,13 @@ MY_TICKET=""
 
 cleanup() {
   if [ -n "$MY_TICKET" ]; then
-    # Removing our own ticket needs no lock: nobody else writes it, and a
-    # reader that misses it only sees one fewer ticket.
-    rm -f "$MY_TICKET"
+    if ticket_read "$MY_TICKET" && ! group_alive "$T_PGID"; then
+      rm -f "$MY_TICKET"
+    fi
     MY_TICKET=""
   fi
   lock_release
+  [ -z "$LOCK_CANDIDATE" ] || rm -rf "$LOCK_CANDIDATE"
 }
 
 # Sets MY_NUMBER and MY_TICKET. The number is never below an existing
@@ -298,7 +319,8 @@ cleanup() {
 MY_NUMBER=""
 take_ticket() {  # <label>
   local n f last=""
-  mkdir -p "$TICKETS" 2>/dev/null || die "cannot create $TICKETS"
+  (umask 077; mkdir -p "$SPOOL" "$TICKETS") 2>/dev/null || die "cannot create $TICKETS"
+  chmod 700 "$SPOOL" "$TICKETS" || die "cannot protect $SPOOL"
   { [ -w "$SPOOL" ] && [ -w "$TICKETS" ]; } || die "cannot write to $SPOOL"
   lock_acquire
   reclaim_dead
@@ -312,6 +334,7 @@ take_ticket() {  # <label>
   fi
   T_PID=$$
   T_START=$(pid_start "$$")
+  T_PGID=""
   T_ENQUEUED=$(date +%s)
   T_SERVED=""
   T_TASK=${FM_TASK_ID:-}
@@ -324,7 +347,7 @@ take_ticket() {  # <label>
   ticket_write "$f" || die "cannot write ticket $f"
   MY_TICKET=$f
   MY_NUMBER=$n
-  printf '%s\n' $((n + 1)) > "$SPOOL/next" || die "cannot write $SPOOL/next"
+  (umask 077; printf '%s\n' $((n + 1)) > "$SPOOL/next") || die "cannot write $SPOOL/next"
   lock_release
 }
 
@@ -351,12 +374,24 @@ admission_check() {
   elif load=$(load1) && ! awk -v l="$load" -v c="$LOAD_CEILING" 'BEGIN { exit !(l + 0 < c + 0) }'; then
     WAIT_REASON="load $load is not below $LOAD_CEILING"
   else
+    if [ -z "$load" ]; then
+      echo "fm-test-queue: warning: load probe failed; enforcing slot limit only" >&2
+    fi
     WAIT_REASON=""
   fi
 }
 
+command_exec() {
+  if [ "$CALLER_LC_ALL_SET" = x ]; then
+    export LC_ALL="$CALLER_LC_ALL"
+  else
+    unset LC_ALL
+  fi
+  exec "$@"
+}
+
 cmd_run() {
-  local label="" n last=""
+  local label="" n last="" command_pid rc terminal=/dev/fd/2
   while [ $# -gt 0 ]; do
     case "$1" in
       --label) [ $# -ge 2 ] || usage; label=$2; shift 2 ;;
@@ -369,9 +404,8 @@ cmd_run() {
 
   # Already inside a served run: run at once rather than waiting on ourselves.
   if [ -n "${FM_TEST_QUEUE_HELD:-}" ] && ticket_read "$FM_TEST_QUEUE_HELD" &&
-    [ -n "$T_SERVED" ] && owner_alive "$T_PID" "$T_START"; then
-    "$@"
-    exit $?
+    [ -n "$T_SERVED" ] && ticket_alive; then
+    command_exec "$@"
   fi
 
   [ -n "$label" ] || label="$*"
@@ -407,7 +441,28 @@ cmd_run() {
   done
 
   [ -z "$last" ] || echo "fm-test-queue: ticket $n served" >&2
-  FM_TEST_QUEUE_HELD=$MY_TICKET "$@"
+  if { : </dev/tty; } 2>/dev/null; then terminal=/dev/tty; fi
+  set -m 2>>"$terminal"
+  (
+    set +m
+    while :; do
+      ticket_read "$MY_TICKET" || exit 125
+      [ -n "$T_PGID" ] && break
+      owner_alive "$T_PID" "$T_START" || exit 125
+      sleep 0.05
+    done
+    export FM_TEST_QUEUE_HELD=$MY_TICKET
+    command_exec "$@"
+  ) <&0 &
+  command_pid=$!
+  ticket_read "$MY_TICKET" || die "cannot read ticket $n"
+  T_PGID=$command_pid
+  ticket_write "$MY_TICKET" || die "cannot record process group for ticket $n"
+  fg %+ >/dev/null 2>>"$terminal"
+  wait "$command_pid"
+  rc=$?
+  set +m 2>>"$terminal"
+  return "$rc"
 }
 
 # --- status -----------------------------------------------------------------
@@ -420,7 +475,7 @@ cmd_status() {
   if [ -d "$TICKETS" ]; then
     while IFS= read -r f; do
       ticket_read "$f" || continue
-      if ! owner_alive "$T_PID" "$T_START"; then
+      if ! ticket_alive; then
         stale=$((stale + 1))
         continue
       fi
