@@ -127,7 +127,7 @@ No fast mode, path skips, or paid runner provisioning is part of this layout.
 The longer-term performance objective remains a complete green run under fifteen minutes including start delay.
 The watch-triage cases are split across seven scripts, so that suite is no longer the floor by itself.
 The immediate packing target is the runner's modeled script budget, not a claim that more shards alone can make an indivisible script faster.
-The layout uses twenty-three long-lived Linux jobs (eighteen serial, two parallel, Herdr, two lint), plus short checks and macOS; insufficient shared account capacity can erase the packing gain.
+The layout uses twenty long-lived Linux jobs (fifteen serial, two parallel, Herdr, two lint), plus short checks and macOS; insufficient shared account capacity can erase the packing gain.
 Compare complete before/after runs, preserve cancelled and partial-run evidence, and measure a representative normal-run sample before claiming a P95 improvement.
 The workflow retains per-PR supersession without cancelling main pushes or changing the compliance workflow's event semantics.
 
