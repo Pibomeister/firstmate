@@ -102,6 +102,9 @@ reason=$(printf '%s' "$reason" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
 until_canonical=$(date -u -r "$until_epoch" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null \
   || date -u -d "@$until_epoch" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null) \
   || fail "could not format --until: $until_ts"
+if [ "$until_ts" != "$until_canonical" ] && [ "${until_ts%Z}:00Z" != "$until_canonical" ]; then
+  fail "--until must be a valid UTC calendar time: $until_ts"
+fi
 line="${FM_CLASSIFY_PAUSED_VERB:-$FM_CLASSIFY_PAUSED_VERB_DEFAULT} [key=$PARK_KEY]: $reason (parked by firstmate) until $until_canonical"
 max=$((FM_LINE_CAP_DEFAULT - $(status_stamp_width)))
 [ "${#line}" -le "$max" ] \
