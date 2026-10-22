@@ -127,9 +127,9 @@ bash tests/fm-spawn-dispatch-profile.test.sh
 bash tests/fm-afk-launch.test.sh
 ```
 
-Observed output includes `ok - real tmux: server creation drops task-scoped FM variables and retains non-FM values`, `ok - ship launch rejects foreign FM environment while retaining task values and credentials`, `ok - scout launch rejects foreign FM environment while retaining task values and credentials`, `ok - secondmate launch rejects foreign FM environment while retaining task values and credentials`, and `# all fm-spawn-dispatch-profile tests passed` (88 passing cases).
+Observed output includes `ok - real tmux: server creation drops task-scoped FM variables and retains tuning and non-FM values`, `ok - ship launch rejects foreign FM identity while retaining task values, tuning and credentials`, `ok - scout launch rejects foreign FM identity while retaining task values, tuning and credentials`, `ok - secondmate launch rejects foreign FM identity while retaining task values, tuning and credentials`, and `# all fm-spawn-dispatch-profile tests passed` (89 passing cases).
 The away-daemon suite passed its tmux case, including `ok - tmux e2e: daemon launched in a separate detached session` and exact-session stop.
-The first case in `tests/fm-control-relaunch.test.sh` executes a replacement launch with foreign home and crew-state overrides and observes only its own task ID and inbox plus the non-`FM_*` credential.
+The first case in `tests/fm-control-relaunch.test.sh` executes a replacement launch with foreign home and crew-state overrides and observes its own task ID and inbox, the `FM_*` tuning value and the non-`FM_*` credential.
 The full local relaunch suite stopped later at a fixture that uses GNU-style `sed -i` and requires Pi; this macOS run does not establish suite-wide coverage.
 This verifies process-environment isolation at launch; it does not prove the cause of a long Codex Working turn or verify a live secondmate on every runtime backend.
 

@@ -342,8 +342,9 @@
 #   Spawn refuses an unsafe pre-existing task temp root or launch namespace, and
 #   task teardown removes only the current home's launch namespace.
 # Launch environment (config/launch-env-allowlist):
-#   Absent keeps non-FM ambient inheritance but strips inherited FM_* values
-#   before re-establishing this launch's own values. A present readable regular
+#   Absent keeps ambient inheritance but unsets inherited home- and task-scoped
+#   FM_* values (bin/fm-env-scrub.sh) in the pane shell before re-establishing
+#   this launch's own values. A present readable regular
 #   file opts every launch (ship, scout, secondmate, raw command, and relaunch) into
 #   /usr/bin/env -i followed by /bin/sh -c of the existing launch command.
 #   Each line is one POSIX environment name, never a value or shell expression;
@@ -6418,9 +6419,9 @@ LAUNCH_DIR="/tmp/fm-$ID+$LAUNCH_HOME_TOKEN"
 # inherits (after any launch environment filtering), so credential.helper and
 # other inherited entries survive, and writes a plain export statement into the
 # private launch directory. The pane shell, fish included, only parses a simple
-# command, &&, || and that export list. A bad inherited count stops the launch
-# before the worker runs, preserving the interactive pane and its visible error
-# for inspection.
+# command, &&, || and that export list. A bad inherited count returns from the
+# sourced launch file before the worker runs, preserving the interactive pane
+# and its visible error for inspection.
 if [ "$GIT_HOOKS_INSTALLED" = 1 ]; then
   GIT_CONFIG_ENV_FILE=$(shell_quote "$LAUNCH_DIR/git-config.$SPAWN_GEN.sh")
   LAUNCH="$(shell_quote "$FM_ROOT/bin/fm-git-strip-ai-trailers.sh") env-file $(shell_quote "$GIT_HOOKS_DIR") $GIT_CONFIG_ENV_FILE && . $GIT_CONFIG_ENV_FILE || return 1 2>/dev/null || exit 1; $LAUNCH"
@@ -6568,16 +6569,17 @@ if [ "$LAUNCH_ENV_ENABLED" = 1 ]; then
   fi
   LAUNCH="$LAUNCH_ENV_PREFIX /bin/sh -c $(shell_quote "$LAUNCH")"
 else
-  # A pane may inherit FM_* variables from a tmux server started by another
-  # home before the server-creation guard existed. Filter them at the worker
-  # boundary too, preserving non-FM credentials and the pane's shell syntax.
-  # These task values are re-established after the scrub, inside the command.
+  # A pane may inherit another home's identity from a tmux server started
+  # before the server-creation guard existed. The pane shell unsets those names
+  # itself, like the Git configuration prefix above, and the task values are
+  # re-established after it.
   if [ "$KIND" = ship ] || [ "$KIND" = scout ]; then
     LAUNCH="export FM_TASK_ID=$ID; $LAUNCH"
   fi
   scrub_option=
   [ "$BACKEND" != zellij ] || scrub_option='--keep-zellij-session '
-  LAUNCH="$(shell_quote "$FM_ROOT/bin/fm-env-scrub.sh") ${scrub_option}shell $(shell_quote "$LAUNCH")"
+  ENV_SCRUB_FILE=$(shell_quote "$LAUNCH_DIR/env-scrub.$SPAWN_GEN.sh")
+  LAUNCH="$(shell_quote "$FM_ROOT/bin/fm-env-scrub.sh") ${scrub_option}unset-file $ENV_SCRUB_FILE && . $ENV_SCRUB_FILE || return 1 2>/dev/null || exit 1; $LAUNCH"
 fi
 if ! (umask 077 && mkdir "$LAUNCH_DIR") 2>/dev/null; then
   if [ -L "$LAUNCH_DIR" ] || [ ! -d "$LAUNCH_DIR" ] || [ ! -O "$LAUNCH_DIR" ] ||

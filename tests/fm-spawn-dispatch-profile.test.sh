@@ -109,15 +109,7 @@ task_inbox_export() {  # <home> <id>
 }
 
 launch_inner() {  # <delivered command> -> worker command after the env boundary
-  local launch=$1
-  case "$launch" in
-    "'$ROOT/bin/fm-env-scrub.sh' shell "*) ;;
-    *) printf '%s' "$launch"; return 0 ;;
-  esac
-  eval "set -- $launch"
-  [ "$#" -eq 3 ] && [ "$1" = "$ROOT/bin/fm-env-scrub.sh" ] && [ "$2" = shell ] \
-    || fail "worker launch has a malformed environment scrub boundary"
-  printf '%s' "$3"
+  fm_test_launch_without_env_scrub "$1"
 }
 
 
@@ -1875,11 +1867,11 @@ test_launch_environment_allowlist() {
     probe="$CASE_DIR/probe.sh"
     cat > "$probe" <<'SH'
 #!/bin/sh
-printf '%s\n' "${TEST_AMBIENT_SENTINEL-unset}" "${FM_TEST_ALLOWED-unset}" \
+printf '%s\n' "${FM_TEST_AMBIENT_SENTINEL-unset}" "${FM_TEST_ALLOWED-unset}" \
   "${FM_TEST_EMPTY-unset}" "${FM_TEST_UNSET-unset}" "$HOME" "$PATH" "$TERM" "$TMUX" "$GOTMPDIR"
 printf 'hooksPath=%s\n' "$(git config --get core.hooksPath || :)"
 SH
-    out=$(TEST_AMBIENT_SENTINEL=synthetic-unrelated \
+    out=$(FM_TEST_AMBIENT_SENTINEL=synthetic-unrelated \
       run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
       "$id" "$PROJ_DIR" --harness "/bin/sh '$probe'")
     status=$?
@@ -1893,10 +1885,10 @@ SH
         || fail "could not read $pane_shell startup PATH"
       result=$(env -i HOME="$HOME_DIR/user-home" PATH=/usr/bin:/bin TERM=xterm \
       TMUX=synthetic-pane GOTMPDIR=/synthetic/gotmp \
-      TEST_AMBIENT_SENTINEL=synthetic-unrelated FM_TEST_ALLOWED="$value" FM_TEST_EMPTY='' \
+      FM_TEST_AMBIENT_SENTINEL=synthetic-unrelated FM_TEST_ALLOWED="$value" FM_TEST_EMPTY='' \
       "$pane_shell" -c "$launch") || fail "allowlist=$setting emitted launch failed in $pane_shell"
       case "$setting" in
-        absent|missing-config) expected=$(printf '%s\n' synthetic-unrelated unset unset unset) ;;
+        absent|missing-config) expected=$(printf '%s\n' synthetic-unrelated "$value" '' unset) ;;
         enabled) expected=$(printf '%s\n' unset "$value" '' unset) ;;
         empty) expected=$(printf '%s\n' unset unset unset unset) ;;
       esac
@@ -1905,7 +1897,7 @@ SH
       expected="$expected"$'\n'"hooksPath=$(cd "$HOME_DIR/state" && pwd -P)/$id.git-hooks"
       [ "$result" = "$expected" ] || fail "allowlist=$setting worker environment mismatch: $result"
     done
-    pass "allowlist=$setting preserves the operational floor and isolates FM variables"
+    pass "allowlist=$setting preserves the operational floor and filters only when opted in"
   done
 }
 
@@ -1941,7 +1933,7 @@ SH
       FM_HOME=/synthetic/foreign FM_PUBLIC_FOLLOWUP_PRIMARY_HOME=/synthetic/foreign-primary \
       FM_CREW_STATE_META_OVERRIDE=/synthetic/foreign.meta \
       FM_CREW_STATE_STATUS_OVERRIDE=/synthetic/foreign.status \
-      FM_TEST_FOREIGN=leak FM_TASK_ID="$id" FM_TASK_INBOX=/synthetic/foreign.inbox \
+      FM_SEND_RETRIES=7 FM_TASK_ID="$id" FM_TASK_INBOX=/synthetic/foreign.inbox \
       TEST_CREDENTIAL=keep /bin/sh -c "$launch") \
       || fail "$kind emitted launch did not execute"
     state=$(CDPATH='' cd -- "$HOME_DIR/state" && pwd -P) || fail "state path missing"
@@ -1950,40 +1942,39 @@ SH
         "FM_HOME=$target" "FM_PUBLIC_FOLLOWUP_PRIMARY_HOME=$HOME_DIR" \
         'FM_ROOT_OVERRIDE=' 'FM_STATE_OVERRIDE=' 'FM_DATA_OVERRIDE=' \
         'FM_PROJECTS_OVERRIDE=' 'FM_CONFIG_OVERRIDE=' \
-        'FM_TRACE_CONTEXT=off' 'FM_SUPERVISION_MODEL=persistent' \
+        'FM_TRACE_CONTEXT=off' 'FM_SUPERVISION_MODEL=persistent' 'FM_SEND_RETRIES=7' \
         "FM_TASK_INBOX=$state/$id.inbox" 'TEST_CREDENTIAL=keep' | sort)
     else
       expected=$(printf '%s\n' \
-        "FM_TASK_ID=$id" "FM_TASK_INBOX=$state/$id.inbox" \
+        "FM_TASK_ID=$id" "FM_TASK_INBOX=$state/$id.inbox" 'FM_SEND_RETRIES=7' \
         'TEST_CREDENTIAL=keep' | sort)
     fi
     [ "$result" = "$expected" ] \
       || fail "$kind inherited foreign FM variables or lost its own values: $result"
-    pass "$kind launch rejects foreign FM environment while retaining task values and credentials"
+    pass "$kind launch rejects foreign FM identity while retaining task values, tuning and credentials"
   done
 }
 
-# A raw launch used to be sourced by the interactive pane shell, so it could
-# name a function from that shell's rc file. The environment boundary must keep
-# that working rather than run the command in a shell that skipped the rc file.
-test_raw_launch_keeps_interactive_shell_functions() {
+# The launch is sourced by the interactive pane shell, so a raw launch can name
+# a function that shell defined, and the user's rc file is not run again.
+test_raw_launch_runs_in_the_pane_shell() {
   local id rec out status launch result
   id=rc-function-launch
   rec=$(make_spawn_case "$id" codex "$id")
   read_case_record "$rec"
   mkdir -p "$HOME_DIR/user-home"
-  printf '%s\n' 'rc_probe() { printf "rc=%s fm=%s\n" ok "${FM_TEST_FOREIGN-unset}"; }' \
-    > "$HOME_DIR/user-home/.bashrc"
+  printf '%s\n' 'echo rc-reloaded' > "$HOME_DIR/user-home/.bashrc"
   out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --harness "rc_probe now")
   status=$?
   expect_code 0 "$status" "raw rc-function spawn should succeed: $out"
   launch=$(cat "$LAUNCH_LOG")
   result=$(env -i HOME="$HOME_DIR/user-home" PATH=/usr/bin:/bin SHELL=/bin/bash \
-    FM_TEST_FOREIGN=leak /bin/sh -c "$launch" 2>/dev/null) \
-    || fail "raw launch could not call a function from the pane shell's rc file: $result"
+    FM_HOME=/synthetic/foreign /bin/bash -c \
+    'rc_probe() { printf "rc=%s fm=%s\n" ok "${FM_HOME-unset}"; }; '"$launch" 2>/dev/null </dev/null) \
+    || fail "raw launch could not call the pane shell's function: $result"
   [ "$result" = 'rc=ok fm=unset' ] \
-    || fail "raw launch lost the rc function or kept foreign FM values: $result"
-  pass "raw launch keeps the pane shell's rc functions while dropping foreign FM values"
+    || fail "raw launch left the pane shell, reloaded rc or kept a foreign home: $result"
+  pass "raw launch runs in the pane shell without reloading rc and drops a foreign home"
 }
 
 test_launch_environment_invalid_config_refuses() {
@@ -2155,7 +2146,7 @@ SH
 
 test_launch_environment_allowlist
 test_task_environment_isolated_from_foreign_home
-test_raw_launch_keeps_interactive_shell_functions
+test_raw_launch_runs_in_the_pane_shell
 test_launch_environment_invalid_config_refuses
 test_launch_environment_inaccessible_config_refuses
 test_launch_environment_inherited_by_secondmate

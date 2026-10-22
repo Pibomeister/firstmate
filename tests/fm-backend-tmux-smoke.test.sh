@@ -65,19 +65,21 @@ PREFIX_SESSION="smoke-prefix-live"
 # never become that server's global environment for every later window.
 created=$(FM_HOME=/synthetic/foreign-home \
   FM_CREW_STATE_META_OVERRIDE=/synthetic/foreign.meta \
-  FM_TEST_FOREIGN=leak TEST_CREDENTIAL=keep TMUX='' \
+  FM_SEND_RETRIES=7 TEST_CREDENTIAL=keep TMUX='' \
   fm_backend_tmux_container_ensure) \
   || fail "real tmux: container_ensure failed"
 [ "$created" = firstmate ] || fail "real tmux: container_ensure returned '$created'"
 global_env=$(tmux show-environment -g) || fail "real tmux: global environment unreadable"
-if printf '%s\n' "$global_env" | grep -q '^FM_'; then
+if printf '%s\n' "$global_env" | grep -qE '^(FM_HOME|FM_CREW_STATE_META_OVERRIDE)='; then
   fail "real tmux: task-scoped FM variables leaked into the server global environment"
 fi
 printf '%s\n' "$global_env" | grep -qx 'TEST_CREDENTIAL=keep' \
   || fail "real tmux: non-FM environment was lost while creating the server"
+printf '%s\n' "$global_env" | grep -qx 'FM_SEND_RETRIES=7' \
+  || fail "real tmux: FM tuning environment was lost while creating the server"
 FM_HOME=/synthetic/other-home TMUX='' fm_backend_tmux_container_ensure >/dev/null \
   || fail "real tmux: reusing the private server failed"
-pass "real tmux: server creation drops task-scoped FM variables and retains non-FM values"
+pass "real tmux: server creation drops task-scoped FM variables and retains tuning and non-FM values"
 
 tmux new-session -d -s "$SESSION" -x 200 -y 50 \
   || fail "real tmux: new-session failed"

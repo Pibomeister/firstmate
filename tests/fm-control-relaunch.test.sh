@@ -76,14 +76,6 @@ case "${1:-}" in
         ". '"*"'") staged=${payload#". '"}; staged=${staged%"'"}; [ ! -f "$staged" ] || payload=$(cat "$staged") ;;
       esac
       printf '%s\n' "$payload" >> "$D/literal-raw"
-      case "$payload" in
-        *'/bin/fm-env-scrub.sh'"' shell "*)
-          eval "set -- $payload"
-          if [ "$#" -eq 3 ] && [ "$2" = shell ]; then
-            payload=$3
-          fi
-          ;;
-      esac
       printf '%s\n' "$payload" >> "$D/literal"
       case "$payload" in
         /exit|/quit)
@@ -406,11 +398,11 @@ SH
   launch=$(tail -n 1 "$dir/fake/literal-raw")
   worker_env=$(env -i HOME="$dir/user-home" PATH="$dir/fakebin:$PATH" SHELL=/bin/sh \
     FM_HOME=/synthetic/foreign FM_CREW_STATE_META_OVERRIDE=/synthetic/foreign.meta \
-    FM_CREW_STATE_STATUS_OVERRIDE=/synthetic/foreign.status FM_TEST_FOREIGN=leak \
+    FM_CREW_STATE_STATUS_OVERRIDE=/synthetic/foreign.status FM_SEND_RETRIES=7 \
     FM_TASK_ID=foreign FM_TASK_INBOX=/synthetic/foreign.inbox TEST_CREDENTIAL=keep \
     /bin/sh -c "$launch") || fail "relaunch command did not execute its replacement worker"
   [ "$worker_env" = "$(printf '%s\n' \
-    'FM_TASK_ID=rl1' "FM_TASK_INBOX=$dir/home/state/rl1.inbox" \
+    'FM_SEND_RETRIES=7' 'FM_TASK_ID=rl1' "FM_TASK_INBOX=$dir/home/state/rl1.inbox" \
     'TEST_CREDENTIAL=keep')" ] \
     || fail "relaunch inherited foreign FM variables or lost task values: $worker_env"
   pass "fm-control relaunch: a same-harness relaunch replaces the agent in the same endpoint and worktree"
