@@ -1,0 +1,66 @@
+RUN 3
+test-queue: slots=1 load_ceiling=100000 load1=69.37 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/diagnose-3/spool
+serving ticket=1 pid=76424 age=1s task=- label=background
+
+test-queue: slots=1 load_ceiling=100000 load1=69.37 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/diagnose-3/spool
+serving ticket=1 pid=76424 age=1s task=- label=background
+
+test-queue: slots=1 load_ceiling=100000 load1=69.37 serving=1 waiting=1 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/diagnose-3/spool
+serving ticket=1 pid=76424 age=2s task=- label=background
+waiting position=1 ticket=2 pid=82908 age=0s task=- label=queued
+
+test-queue: slots=1 load_ceiling=100000 load1=68.86 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/diagnose-3/spool
+
+test-queue: slots=1 load_ceiling=100000 load1=68.86 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/diagnose-3/spool
+serving ticket=3 pid=90799 age=1s task=- label=promoted
+
+test-queue: slots=1 load_ceiling=100000 load1=69.99 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/diagnose-3/spool
+
+test-queue: slots=1 load_ceiling=100000 load1=69.99 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/diagnose-3/spool
+serving ticket=4 pid=98522 age=1s task=- label=leader
+
+test-queue: slots=1 load_ceiling=100000 load1=69.99 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/diagnose-3/spool
+serving ticket=4 pid=98522 age=1s task=- label=leader
+
+test-queue: slots=1 load_ceiling=100000 load1=73.91 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/diagnose-3/spool
+serving ticket=4 pid=98522 age=2s task=- label=leader
+
+test-queue: slots=1 load_ceiling=100000 load1=73.91 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/diagnose-3/spool
+serving ticket=4 pid=98522 age=3s task=- label=leader
+
+test-queue: slots=1 load_ceiling=100000 load1=73.91 serving=1 waiting=1 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/diagnose-3/spool
+serving ticket=4 pid=98522 age=5s task=- label=leader
+waiting position=1 ticket=5 pid=7321 age=0s task=- label=group-follower
+
+test-queue: slots=1 load_ceiling=100000 load1=75.52 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/diagnose-3/spool
+
+test-queue: slots=1 load_ceiling=100000 load1=75.52 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/diagnose-3/spool
+serving ticket=6 pid=16173 age=1s task=- label=foreground
+
+test-queue: slots=1 load_ceiling=100000 load1=75.52 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/diagnose-3/spool
+serving ticket=6 pid=16173 age=1s task=- label=foreground
+
+test-queue: slots=1 load_ceiling=100000 load1=75.52 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/diagnose-3/spool
+
+test-queue: slots=1 load_ceiling=100000 load1=74.92 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/diagnose-3/spool
+
+RUN 4
+test-queue: slots=1 load_ceiling=100000 load1=73.32 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/diagnose-4/spool
+serving ticket=1 pid=25267 age=2s task=- label=background
+
+test-queue: slots=1 load_ceiling=100000 load1=73.32 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/diagnose-4/spool
+serving ticket=1 pid=25267 age=3s task=- label=background
+
+test-queue: slots=1 load_ceiling=100000 load1=73.32 serving=1 waiting=1 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/diagnose-4/spool
+serving ticket=1 pid=25267 age=3s task=- label=background
+waiting position=1 ticket=2 pid=29952 age=0s task=- label=queued
+
+test-queue: slots=1 load_ceiling=100000 load1=75.38 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/diagnose-4/spool
+
+test-queue: slots=1 load_ceiling=100000 load1=83.36 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/diagnose-4/spool
+serving ticket=3 pid=39414 age=1s task=- label=promoted
+
+test-queue: slots=1 load_ceiling=100000 load1=93.12 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/diagnose-4/spool
+serving ticket=3 pid=39414 age=17s task=- label=promoted
+
+Original assertion failed: terminal output b'PROMOTED-RC=130\r\n': bytearray(b'              \x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x084/promoted.sh /Users/eduardopicazo/.no-\r\r<E0C2Q/.queue-validation-tmp/diagnose-4/promoted.sh /Users/eduardopicazo/.no-m                                       \x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08istakes/worktrees/075d7f40c28a/01M5J6K3\r\r<romoted.sh /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3Y                                       \x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08B8DGYS48RTDZE0C2Q/.queue-validation-tmp\r\r<akes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/                                       \x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08diagnose-4 & jobs -p %+ > /Users/eduard\r\r<GYS48RTDZE0C2Q/.queue-validation-tmp/diagnose-4 & jobs -p %+ > /Users/eduardo                                       \x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08picazo/.no-mistakes/worktrees/075d7f40c\r\r<gnose-4 & jobs -p %+ > /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c2                                       \x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x088a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-va\r\r<azo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-val                                       \x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08\x08idation-tmp/diagnose-4/promoted.wrapper\r\n[1] 39414\r\nQUEUE-CALLER> fg\r\n/bin/bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/bin/fm-test-queue.sh run --label promoted -- /bin/bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/diagnose-4/promoted.sh /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/diagnose-4\r\n^Z\r\n[1]+  Stopped                 /bin/bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/bin/fm-test-queue.sh run --label promoted -- /bin/bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/diagnose-4/promoted.sh /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/diagnose-4\r\nQUEUE-CALLER> bg\r\n[1]+ /bin/bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/bin/fm-test-queue.sh run --label promoted -- /bin/bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/diagnose-4/promoted.sh /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/diagnose-4 &\r\nQUEUE-CALLER> fg; printf "PROMOTED-RC=%s\\n" "$?"\r\n/bin/bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/bin/fm-test-queue.sh run --label promoted -- /bin/bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/diagnose-4/promoted.sh /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/diagnose-4\r\n^C')

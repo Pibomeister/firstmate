@@ -1,0 +1,10 @@
+Native Bash loop, trial 0: interrupt completed=True
+Native Bash loop, trial 1: interrupt completed=True
+Native Bash loop, trial 2: interrupt completed=True
+Native Bash loop, trial 3: interrupt completed=True
+Native Bash loop, trial 4: interrupt completed=True
+Native Bash loop, trial 5: interrupt completed=True
+Native Bash loop, trial 6: interrupt completed=True
+Native Bash loop, trial 7: interrupt completed=True
+Native Bash loop, trial 8: interrupt completed=True
+Native Bash loop, trial 9: interrupt completed=True

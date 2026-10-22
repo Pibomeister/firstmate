@@ -1,0 +1,55 @@
+Controlled load is product-supported FM_TEST_QUEUE_LOAD_FILE input; both workloads and the queue are real processes.
+fm-test-queue: ticket 1, position 1: load 16 is not below 16
+$ fm-test-queue.sh status
+stdout:
+test-queue: slots=1 load_ceiling=16 load1=16 serving=0 waiting=2 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/contracts/spool
+waiting position=1 ticket=1 pid=72166 age=2s task=- label=head
+waiting position=2 ticket=2 pid=73865 age=1s task=- label=follower
+stderr:
+exit=0
+$ load input changes from 16 to 1
+fm-test-queue: ticket 2, position 2: waiting behind 1 earlier ticket(s)
+fm-test-queue: ticket 1 served
+fm-test-queue: ticket 2, position 1: all 1 slot(s) busy
+fm-test-queue: ticket 2 served
+$ cat workload-order
+head
+follower
+
+$ fm-test-queue.sh status
+stdout:
+test-queue: slots=1 load_ceiling=16 load1=1 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/contracts/spool
+stderr:
+exit=0
+$ fm-test-queue.sh run -- /bin/sh -c IFS= read -r line; printf "INPUT=%s TZ=%s LC_ALL=%s\n" "$line" "$TZ" "$LC_ALL"; echo diagnostic >&2; exit 7
+stdout:
+INPUT=stdin-through-no-tty TZ=America/Mexico_City LC_ALL=C
+stderr:
+diagnostic
+exit=7
+$ fm-test-queue.sh run -- /bin/bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/bin/fm-test-queue.sh run -- /bin/sh -c echo nested-workload; exit 3
+stdout:
+nested-workload
+stderr:
+exit=3
+$ fm-test-queue.sh run -- /bin/sh -c kill -TERM $$
+stdout:
+stderr:
+Terminated: 15
+exit=143
+$ fm-test-queue.sh run
+stdout:
+stderr:
+usage: fm-test-queue.sh run [--label <text>] -- <command> [args...] | status | --help
+exit=2
+$ fm-test-queue.sh run -- /bin/sh -c : > "$1/should-not-run" _ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/contracts
+stdout:
+stderr:
+fm-test-queue: slots must be a positive integer, got '0'
+exit=125
+$ fm-test-queue.sh status
+stdout:
+test-queue: slots=1 load_ceiling=16 load1=1 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/contracts/spool
+stderr:
+exit=0
+Live load boundary, no-tty I/O, environment, nesting, and exit contracts passed.

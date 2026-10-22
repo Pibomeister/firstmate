@@ -1,0 +1,28 @@
+Actual fm-brief.sh output; emitted commands execute the real fm-test-queue.sh copied into a root with spaces and an apostrophe.
+
+no-mistakes:
+9. Run heavy test suites only through the machine-wide test line, `'/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/firstmate helper'\''s root/bin/fm-test-queue.sh' run -- <command>`, which waits for your turn, a free slot, and a low load; run targeted tests directly.
+$ '/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/firstmate helper'\''s root/bin/fm-test-queue.sh' run -- printf '%s\n' 'real queue workload completed'
+real queue workload completed
+[exit 0]
+
+direct-PR:
+9. Run heavy test suites only through the machine-wide test line, `'/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/firstmate helper'\''s root/bin/fm-test-queue.sh' run -- <command>`, which waits for your turn, a free slot, and a low load; run targeted tests directly.
+$ '/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/firstmate helper'\''s root/bin/fm-test-queue.sh' run -- printf '%s\n' 'real queue workload completed'
+real queue workload completed
+[exit 0]
+
+local-only:
+9. Run heavy test suites only through the machine-wide test line, `'/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/firstmate helper'\''s root/bin/fm-test-queue.sh' run -- <command>`, which waits for your turn, a free slot, and a low load; run targeted tests directly.
+$ '/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/firstmate helper'\''s root/bin/fm-test-queue.sh' run -- printf '%s\n' 'real queue workload completed'
+real queue workload completed
+[exit 0]
+
+scout:
+9. Run heavy test suites only through the machine-wide test line, `'/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/firstmate helper'\''s root/bin/fm-test-queue.sh' run -- <command>`, which waits for your turn, a free slot, and a low load; run targeted tests directly.
+$ '/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/firstmate helper'\''s root/bin/fm-test-queue.sh' run -- printf '%s\n' 'real queue workload completed'
+real queue workload completed
+[exit 0]
+
+All four emitted rules are identical.
+test-queue: slots=1 load_ceiling=100000 load1=114.21 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/brief-spool

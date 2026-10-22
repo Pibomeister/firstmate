@@ -1,0 +1,106 @@
+{
+  "revision": "16d08ae140a4e24a443adc11473e7635b70fb401",
+  "environment": {
+    "os": "Darwin arm64",
+    "bash": "macOS /bin/bash 3.2.57",
+    "python": "3.9.6"
+  },
+  "checks": [
+    {
+      "command": "TMPDIR=\"$PWD/.test-phase-tmp\" FM_TEST_BASH=/bin/bash /bin/bash tests/fm-test-queue.test.sh",
+      "exit_status": 0,
+      "log": "queue-targeted.log",
+      "sha256": "098d4239a09ee96c001038e8d741e64ece99734a641275a5b301db5ca6dc4818"
+    },
+    {
+      "command": "TMPDIR=\"$PWD/.test-phase-tmp\" /bin/bash tests/fm-brief.test.sh",
+      "exit_status": 0,
+      "log": "brief-targeted.log",
+      "sha256": "750aa864ef15b686953c0048fbb34c53dfec18b53147251c2639cb4bc83bfd6a"
+    },
+    {
+      "command": "python3 /Users/eduardopicazo/.no-mistakes/evidence/01M5J6K3YB8DGYS48RTDZE0C2Q/live-queue.py",
+      "exit_status": 0,
+      "log": "live-queue-transcript.log",
+      "sha256": "81ee5b7d1a67c31796ed43a3d6444ee82c7ac4ad2ac349a9a2c2a730021cd2d1"
+    },
+    {
+      "command": "python3 /Users/eduardopicazo/.no-mistakes/evidence/01M5J6K3YB8DGYS48RTDZE0C2Q/live-contracts.py",
+      "exit_status": 0,
+      "log": "live-contracts-transcript.log",
+      "sha256": "4889a81c516bf8950e88681d8d579fecaebd885d40f230ccb390287fabf8efd8"
+    }
+  ],
+  "terminal_trials": [
+    {
+      "trial": 1,
+      "command": "python3 /Users/eduardopicazo/.no-mistakes/evidence/01M5J6K3YB8DGYS48RTDZE0C2Q/record-terminal.py 01",
+      "exit_status": 0,
+      "log": "terminal-01.log",
+      "sha256": "c9cc66855d02b1bb67afe7003b1ff1227dab97264ee02f92d4504de2b29ed91d"
+    },
+    {
+      "trial": 2,
+      "command": "python3 /Users/eduardopicazo/.no-mistakes/evidence/01M5J6K3YB8DGYS48RTDZE0C2Q/record-terminal.py 02",
+      "exit_status": 0,
+      "log": "terminal-02.log",
+      "sha256": "05bbf3d23aa9c6eaa21caadc8d3c185e3574a1f704d5147a82256c3c31956349"
+    },
+    {
+      "trial": 3,
+      "command": "python3 /Users/eduardopicazo/.no-mistakes/evidence/01M5J6K3YB8DGYS48RTDZE0C2Q/record-terminal.py 03",
+      "exit_status": 0,
+      "log": "terminal-03.log",
+      "sha256": "4d8e99f657373b9fb13207edb5d54afa9fb8e4f97f52de9ba8edc585f6c81b6b"
+    },
+    {
+      "trial": 4,
+      "command": "python3 /Users/eduardopicazo/.no-mistakes/evidence/01M5J6K3YB8DGYS48RTDZE0C2Q/record-terminal.py 04",
+      "exit_status": 0,
+      "log": "terminal-04.log",
+      "sha256": "d2f450f21645a97d5a490ba7595bf4b53e981043ced40efb19f41b6e8ed4c300"
+    },
+    {
+      "trial": 5,
+      "command": "python3 /Users/eduardopicazo/.no-mistakes/evidence/01M5J6K3YB8DGYS48RTDZE0C2Q/record-terminal.py 05",
+      "exit_status": 0,
+      "log": "terminal-05.log",
+      "sha256": "8a110195bb104382b43216543a538a8d5d1caa5c89b05d8936f0d5322a1a228e"
+    },
+    {
+      "trial": 6,
+      "command": "python3 /Users/eduardopicazo/.no-mistakes/evidence/01M5J6K3YB8DGYS48RTDZE0C2Q/record-terminal.py 06",
+      "exit_status": 0,
+      "log": "terminal-06.log",
+      "sha256": "d1c255467766ffe08417576fce27eeea267fc5a92f8386dc21b0470b6f8320f6"
+    },
+    {
+      "trial": 7,
+      "command": "python3 /Users/eduardopicazo/.no-mistakes/evidence/01M5J6K3YB8DGYS48RTDZE0C2Q/record-terminal.py 07",
+      "exit_status": 0,
+      "log": "terminal-07.log",
+      "sha256": "647e0197af0241fb7f795456a8e54f25322c45c0a4808c2a92a1762b3ca641bc"
+    },
+    {
+      "trial": 8,
+      "command": "python3 /Users/eduardopicazo/.no-mistakes/evidence/01M5J6K3YB8DGYS48RTDZE0C2Q/record-terminal.py 08",
+      "exit_status": 0,
+      "log": "terminal-08.log",
+      "sha256": "faeabef951e4e4ca6d925e8ee9422e47357191891d051db5bf5864876f6ffc2d"
+    },
+    {
+      "trial": 9,
+      "command": "python3 /Users/eduardopicazo/.no-mistakes/evidence/01M5J6K3YB8DGYS48RTDZE0C2Q/record-terminal.py 09",
+      "exit_status": 0,
+      "log": "terminal-09.log",
+      "sha256": "a91582b6773af391f968664ba6b589ea207b9f23cbf89911d269f0de5f3be032"
+    },
+    {
+      "trial": 10,
+      "command": "python3 /Users/eduardopicazo/.no-mistakes/evidence/01M5J6K3YB8DGYS48RTDZE0C2Q/record-terminal.py 10",
+      "exit_status": 0,
+      "log": "terminal-10.log",
+      "sha256": "578e084dee410405632f2461152fce6c915ac0f6906542de21d8a185077b8f8a"
+    }
+  ]
+}

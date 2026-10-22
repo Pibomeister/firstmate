@@ -1,0 +1,9 @@
+TRIAL 0: wait for workload heartbeat after fg before Ctrl-C
+test-queue: slots=1 load_ceiling=100000 load1=134.99 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/promoted-0/spool
+
+TRIAL 1: wait for workload heartbeat after fg before Ctrl-C
+test-queue: slots=1 load_ceiling=100000 load1=142.59 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/promoted-1/spool
+
+TRIAL 2: wait for workload heartbeat after fg before Ctrl-C
+test-queue: slots=1 load_ceiling=100000 load1=155.20 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/promoted-2/spool
+

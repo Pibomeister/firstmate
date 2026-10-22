@@ -1,0 +1,143 @@
+QUEUE-CALLER> /bin/bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/bin/fm-te<azo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/bin/fm-tes                                       t-queue.sh run --label background -- /b<01M5J6K3YB8DGYS48RTDZE0C2Q/bin/fm-test-queue.sh run --label background -- /bi                                       n/bash /Users/eduardopicazo/.no-mistake<ueue.sh run --label background -- /bin/bash /Users/eduardopicazo/.no-mistakes                                       /worktrees/075d7f40c28a/01M5J6K3YB8DGYS<ash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS4                                       8RTDZE0C2Q/.test-phase-tmp/terminal-02/<rktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02/b                                       ackground.sh /Users/eduardopicazo/.no-m<DZE0C2Q/.test-phase-tmp/terminal-02/background.sh /Users/eduardopicazo/.no-mi                                       stakes/worktrees/075d7f40c28a/01M5J6K3Y<ground.sh /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB                                       8DGYS48RTDZE0C2Q/.test-phase-tmp/termin<kes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/termina                                       l-02 & jobs -p %+ > /Users/eduardopicaz<YS48RTDZE0C2Q/.test-phase-tmp/terminal-02 & jobs -p %+ > /Users/eduardopicazo                                       /.no-mistakes/worktrees/075d7f40c28a/01<2 & jobs -p %+ > /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M                                       5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp<o-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/                                       terminal-02/background.wrapper
+[1] 73913
+QUEUE-CALLER> 
+[observed subprocess response]
+test-queue: slots=1 load_ceiling=1000000 load1=99.54 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02/spool
+serving ticket=1 pid=73913 age=1s task=- label=background
+
+/bin/bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/bin/fm-te<azo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/bin/fm-tes                                       t-queue.sh run --label queued -- /bin/b<01M5J6K3YB8DGYS48RTDZE0C2Q/bin/fm-test-queue.sh run --label queued -- /bin/ba                                       sh /Users/eduardopicazo/.no-mistakes/wo<ueue.sh run --label queued -- /bin/bash /Users/eduardopicazo/.no-mistakes/wor                                       ktrees/075d7f40c28a/01M5J6K3YB8DGYS48RT</Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTD                                       ZE0C2Q/.test-phase-tmp/terminal-02/queu<ees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02/queue                                       d.sh /Users/eduardopicazo/.no-mistakes/<C2Q/.test-phase-tmp/terminal-02/queued.sh /Users/eduardopicazo/.no-mistakes/w                                       orktrees/075d7f40c28a/01M5J6K3YB8DGYS48<h /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48R                                       TDZE0C2Q/.test-phase-tmp/terminal-02 & <trees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02 & j                                       obs -p %+ > /Users/eduardopicazo/.no-mi<E0C2Q/.test-phase-tmp/terminal-02 & jobs -p %+ > /Users/eduardopicazo/.no-mis                                       takes/worktrees/075d7f40c28a/01M5J6K3YB< -p %+ > /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8                                       DGYS48RTDZE0C2Q/.test-phase-tmp/termina<es/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal                                       -02/queued.wrapper
+[2] 76786
+QUEUE-CALLER> 
+[observed subprocess response]
+test-queue: slots=1 load_ceiling=1000000 load1=99.54 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02/spool
+serving ticket=1 pid=73913 age=2s task=- label=background
+
+
+[observed subprocess response]
+test-queue: slots=1 load_ceiling=1000000 load1=99.82 serving=1 waiting=1 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02/spool
+serving ticket=1 pid=73913 age=2s task=- label=background
+waiting position=1 ticket=2 pid=76786 age=0s task=- label=queued
+
+wait 73913; printf "BACKGROUND-RC=%s\n" "$?"
+fm-test-queue: ticket 2, position 1: all 1 slot(s) busy
+[1]-  Exit 11                 /bin/bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/bin/fm-test-queue.sh run --label background -- /bin/bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02/background.sh /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02
+BACKGROUND-RC=11
+QUEUE-CALLER> wait 76786; printf "FOLLOWER-RC=%s\n" "$?"
+fm-test-queue: ticket 2 served
+[2]+  Done                    /bin/bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/bin/fm-test-queue.sh run --label queued -- /bin/bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02/queued.sh /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02
+FOLLOWER-RC=0
+QUEUE-CALLER> 
+[observed subprocess response]
+test-queue: slots=1 load_ceiling=1000000 load1=99.82 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02/spool
+
+/bin/bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/bin/fm-te<azo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/bin/fm-tes                                       t-queue.sh run --label promoted -- /bin<01M5J6K3YB8DGYS48RTDZE0C2Q/bin/fm-test-queue.sh run --label promoted -- /bin/                                       bash /Users/eduardopicazo/.no-mistakes/<ueue.sh run --label promoted -- /bin/bash /Users/eduardopicazo/.no-mistakes/w                                       orktrees/075d7f40c28a/01M5J6K3YB8DGYS48<h /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48R                                       TDZE0C2Q/.test-phase-tmp/terminal-02/pr<trees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02/pro                                       moted.sh /Users/eduardopicazo/.no-mista<E0C2Q/.test-phase-tmp/terminal-02/promoted.sh /Users/eduardopicazo/.no-mistak                                       es/worktrees/075d7f40c28a/01M5J6K3YB8DG<ed.sh /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGY                                       S48RTDZE0C2Q/.test-phase-tmp/terminal-0<worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02                                        & jobs -p %+ > /Users/eduardopicazo/.n<RTDZE0C2Q/.test-phase-tmp/terminal-02 & jobs -p %+ > /Users/eduardopicazo/.no                                       -mistakes/worktrees/075d7f40c28a/01M5J6<jobs -p %+ > /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K                                       3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/ter<stakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/term                                       inal-02/promoted.wrapper
+[1] 83964
+QUEUE-CALLER> fg
+/bin/bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/bin/fm-test-queue.sh run --label promoted -- /bin/bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02/promoted.sh /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02
+^Z
+[1]+  Stopped                 /bin/bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/bin/fm-test-queue.sh run --label promoted -- /bin/bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02/promoted.sh /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02
+QUEUE-CALLER> 
+[observed subprocess response]
+T   
+
+
+[observed subprocess response]
+test-queue: slots=1 load_ceiling=1000000 load1=101.91 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02/spool
+serving ticket=3 pid=83964 age=0s task=- label=promoted
+
+bg
+[1]+ /bin/bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/bin/fm-test-queue.sh run --label promoted -- /bin/bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02/promoted.sh /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02 &
+QUEUE-CALLER> fg; printf "PROMOTED-RC=%s\n" "$?"
+/bin/bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/bin/fm-test-queue.sh run --label promoted -- /bin/bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02/promoted.sh /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02
+^CPROMOTED-RC=130
+QUEUE-CALLER> 
+[observed subprocess response]
+test-queue: slots=1 load_ceiling=1000000 load1=101.91 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02/spool
+
+/bin/bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/bin/fm-te<azo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/bin/fm-tes                                       t-queue.sh run --label leader -- /bin/b<01M5J6K3YB8DGYS48RTDZE0C2Q/bin/fm-test-queue.sh run --label leader -- /bin/ba                                       sh /Users/eduardopicazo/.no-mistakes/wo<ueue.sh run --label leader -- /bin/bash /Users/eduardopicazo/.no-mistakes/wor                                       ktrees/075d7f40c28a/01M5J6K3YB8DGYS48RT</Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTD                                       ZE0C2Q/.test-phase-tmp/terminal-02/lead<ees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02/leade                                       r.sh /Users/eduardopicazo/.no-mistakes/<C2Q/.test-phase-tmp/terminal-02/leader.sh /Users/eduardopicazo/.no-mistakes/w                                       orktrees/075d7f40c28a/01M5J6K3YB8DGYS48<h /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48R                                       TDZE0C2Q/.test-phase-tmp/terminal-02 & <trees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02 & j                                       obs -p %+ > /Users/eduardopicazo/.no-mi<E0C2Q/.test-phase-tmp/terminal-02 & jobs -p %+ > /Users/eduardopicazo/.no-mis                                       takes/worktrees/075d7f40c28a/01M5J6K3YB< -p %+ > /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8                                       DGYS48RTDZE0C2Q/.test-phase-tmp/termina<es/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal                                       -02/leader.wrapper
+[1] 89340
+QUEUE-CALLER> 
+[observed subprocess response]
+Thu Oct 22 20:44:26 2026    
+
+wait 89340; printf "KILLED-RC=%s\n" "$?"
+[1]+  Killed: 9               /bin/bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/bin/fm-test-queue.sh run --label leader -- /bin/bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02/leader.sh /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02
+KILLED-RC=137
+QUEUE-CALLER> 
+[observed subprocess response]
+test-queue: slots=1 load_ceiling=1000000 load1=101.91 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02/spool
+serving ticket=4 pid=89340 age=1s task=- label=leader
+
+
+[observed subprocess response]
+test-queue: slots=1 load_ceiling=1000000 load1=113.21 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02/spool
+serving ticket=4 pid=89340 age=2s task=- label=leader
+
+/bin/bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/bin/fm-te<azo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/bin/fm-tes                                       t-queue.sh run --label group-follower -<01M5J6K3YB8DGYS48RTDZE0C2Q/bin/fm-test-queue.sh run --label group-follower --                                        /bin/bash /Users/eduardopicazo/.no-mis<ueue.sh run --label group-follower -- /bin/bash /Users/eduardopicazo/.no-mist                                       akes/worktrees/075d7f40c28a/01M5J6K3YB8<in/bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8D                                       GYS48RTDZE0C2Q/.test-phase-tmp/terminal<s/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-                                       02/group-follower.sh /Users/eduardopica<48RTDZE0C2Q/.test-phase-tmp/terminal-02/group-follower.sh /Users/eduardopicaz                                       o/.no-mistakes/worktrees/075d7f40c28a/0<group-follower.sh /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01                                       M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tm<no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp                                       /terminal-02 & jobs -p %+ > /Users/edua<6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02 & jobs -p %+ > /Users/eduar                                       dopicazo/.no-mistakes/worktrees/075d7f4<rminal-02 & jobs -p %+ > /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40                                       c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-p<icazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-ph                                       ase-tmp/terminal-02/group-follower.wrap<a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02/group-follower.wrapp                                       er
+[1] 97384
+QUEUE-CALLER> 
+[observed subprocess response]
+test-queue: slots=1 load_ceiling=1000000 load1=113.21 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02/spool
+serving ticket=4 pid=89340 age=3s task=- label=leader
+
+
+[observed subprocess response]
+test-queue: slots=1 load_ceiling=1000000 load1=113.21 serving=1 waiting=1 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02/spool
+serving ticket=4 pid=89340 age=4s task=- label=leader
+waiting position=1 ticket=5 pid=97384 age=0s task=- label=group-follower
+
+wait 97384; printf "GROUP-FOLLOWER-RC=%s\n" "$?"
+fm-test-queue: ticket 5, position 1: all 1 slot(s) busy
+fm-test-queue: ticket 5 served
+[1]+  Done                    /bin/bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/bin/fm-test-queue.sh run --label group-follower -- /bin/bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02/group-follower.sh /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02
+GROUP-FOLLOWER-RC=0
+QUEUE-CALLER> 
+[observed subprocess response]
+test-queue: slots=1 load_ceiling=1000000 load1=114.47 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02/spool
+
+/bin/bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/bin/fm-te<azo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/bin/fm-tes                                       t-queue.sh run --label foreground -- /b<01M5J6K3YB8DGYS48RTDZE0C2Q/bin/fm-test-queue.sh run --label foreground -- /bi                                       n/bash /Users/eduardopicazo/.no-mistake<ueue.sh run --label foreground -- /bin/bash /Users/eduardopicazo/.no-mistakes                                       /worktrees/075d7f40c28a/01M5J6K3YB8DGYS<ash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS4                                       8RTDZE0C2Q/.test-phase-tmp/terminal-02/<rktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02/f                                       oreground.sh /Users/eduardopicazo/.no-m<DZE0C2Q/.test-phase-tmp/terminal-02/foreground.sh /Users/eduardopicazo/.no-mi                                       stakes/worktrees/075d7f40c28a/01M5J6K3Y<ground.sh /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB                                       8DGYS48RTDZE0C2Q/.test-phase-tmp/termin<kes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/termina                                       l-02
+READY-1
+alpha
+RECEIVED=alpha
+READY-2
+^Z
+[1]+  Stopped                 /bin/bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/bin/fm-test-queue.sh run --label foreground -- /bin/bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02/foreground.sh /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02
+QUEUE-CALLER> jobs -sp > /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-ph<cazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-pha                                       se-tmp/terminal-02/stopped-jobs-1
+QUEUE-CALLER> 
+[observed subprocess response]
+test-queue: slots=1 load_ceiling=1000000 load1=114.47 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02/spool
+serving ticket=6 pid=7864 age=1s task=- label=foreground
+
+fg
+/bin/bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/bin/fm-test-queue.sh run --label foreground -- /bin/bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02/foreground.sh /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02
+beta
+RECEIVED=beta
+READY-3
+^Z
+[1]+  Stopped                 /bin/bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/bin/fm-test-queue.sh run --label foreground -- /bin/bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02/foreground.sh /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02
+QUEUE-CALLER> jobs -sp > /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-ph<cazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-pha                                       se-tmp/terminal-02/stopped-jobs-2
+QUEUE-CALLER> 
+[observed subprocess response]
+test-queue: slots=1 load_ceiling=1000000 load1=114.47 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02/spool
+serving ticket=6 pid=7864 age=2s task=- label=foreground
+
+fg; printf "FOREGROUND-RC=%s\n" "$?"
+/bin/bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/bin/fm-test-queue.sh run --label foreground -- /bin/bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02/foreground.sh /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02
+gamma
+RECEIVED=gamma
+FOREGROUND-RC=23
+QUEUE-CALLER> 
+[observed subprocess response]
+test-queue: slots=1 load_ceiling=1000000 load1=114.47 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02/spool
+
+/bin/bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/bin/fm-te<azo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/bin/fm-tes                                       t-queue.sh run --label interrupt -- /bi<01M5J6K3YB8DGYS48RTDZE0C2Q/bin/fm-test-queue.sh run --label interrupt -- /bin                                       /bash /Users/eduardopicazo/.no-mistakes<ueue.sh run --label interrupt -- /bin/bash /Users/eduardopicazo/.no-mistakes/                                       worktrees/075d7f40c28a/01M5J6K3YB8DGYS4<sh /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48                                       RTDZE0C2Q/.test-phase-tmp/terminal-02/i<ktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02/in                                       terrupt.sh /Users/eduardopicazo/.no-mis<ZE0C2Q/.test-phase-tmp/terminal-02/interrupt.sh /Users/eduardopicazo/.no-mist                                       akes/worktrees/075d7f40c28a/01M5J6K3YB8<rupt.sh /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8D                                       GYS48RTDZE0C2Q/.test-phase-tmp/terminal<s/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-                                       02; printf "INTERRUPT-RC=%s\n" "$?"
+INTERRUPT-READY
+^CINTERRUPT-RC=130
+QUEUE-CALLER> 
+[observed subprocess response]
+test-queue: slots=1 load_ceiling=1000000 load1=110.43 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02/spool
+
+exit
+exit
+
+PTY driver completed all assertions.

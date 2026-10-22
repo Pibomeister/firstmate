@@ -1,0 +1,18 @@
+ok - fm-test-queue.sh: help prints the header and malformed calls are usage errors
+ok - fm-test-queue.sh: run returns the command's status, keeps its stdio, and leaves
+ok - fm-test-queue.sh: runs are served one at a time in ticket order
+ok - fm-test-queue.sh: no more runs are served at once than there are slots
+ok - fm-test-queue.sh: the head of the line waits until the load is below the ceiling
+ok - fm-test-queue.sh: a signal releases the ticket and the slot
+ok - fm-test-queue.sh: surviving workload children keep slots and abandoned tickets are reclaimed
+ok - fm-test-queue.sh: nonleader grandchildren follow the documented lifetime limit
+ok - fm-test-queue.sh: child liveness requires the recorded start time
+ok - fm-test-queue.sh: a lock left by a dead process is broken
+ok - fm-test-queue.sh: a delayed reclaimer cannot remove a replacement live lock
+ok - fm-test-queue.sh: timezones preserve live wrappers, surviving children, and command environments
+ok - fm-test-queue.sh: all callers use shared configuration and reject bad shared values
+ok - fm-test-queue.sh: a run nested inside a served run does not take a second ticket
+ok - fm-test-queue.sh: a lost ticket counter never lets a new run jump the line
+ok - fm-test-queue.sh: commands keep set, empty, and unset locales and the caller's umask
+ok - fm-test-queue.sh: metadata is private and failed probes warn without bypassing slots
+ok - fm-test-queue.sh: terminal foreground, background, input, interrupt, and stop/resume work

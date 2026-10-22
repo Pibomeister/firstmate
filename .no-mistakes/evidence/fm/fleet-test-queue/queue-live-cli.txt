@@ -1,0 +1,126 @@
+Revision: 7326bef65be8ed34a2d0165d6dbc78336a73b119; macOS /bin/bash 3.2.57
+SCENARIO: FIFO and load guard, private spool with deterministic load input
+$ bin/fm-test-queue.sh run --label A -- /bin/bash -c 'echo "$0" >/dev/null; echo START-A >> "$1/order"; while [ ! -e "$1/release-A" ]; do sleep .05; done; echo END-A >> "$1/order"' _ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/manual &
+$ bin/fm-test-queue.sh run --label B -- /bin/bash -c 'echo "$0" >/dev/null; echo START-B >> "$1/order"; while [ ! -e "$1/release-B" ]; do sleep .05; done; echo END-B >> "$1/order"' _ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/manual &
+$ bin/fm-test-queue.sh run --label C -- /bin/bash -c 'echo "$0" >/dev/null; echo START-C >> "$1/order"; while [ ! -e "$1/release-C" ]; do sleep .05; done; echo END-C >> "$1/order"' _ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/manual &
+$ bin/fm-test-queue.sh status
+test-queue: slots=1 load_ceiling=16 load1=20.5 serving=0 waiting=3 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/manual/spool
+waiting position=1 ticket=1 pid=51812 age=6s task=- label=A
+waiting position=2 ticket=2 pid=54735 age=5s task=- label=B
+waiting position=3 ticket=3 pid=57910 age=2s task=- label=C
+[exit 0]
+$ bin/fm-test-queue.sh status
+test-queue: slots=1 load_ceiling=16 load1=15.9 serving=1 waiting=2 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/manual/spool
+serving ticket=1 pid=51812 age=6s task=- label=A
+waiting position=1 ticket=2 pid=54735 age=15s task=- label=B
+waiting position=2 ticket=3 pid=57910 age=12s task=- label=C
+[exit 0]
+A: exit 0
+fm-test-queue: ticket 1, position 1: load 20.5 is not below 16
+fm-test-queue: ticket 1 served
+
+$ bin/fm-test-queue.sh status
+test-queue: slots=1 load_ceiling=16 load1=15.9 serving=1 waiting=1 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/manual/spool
+serving ticket=2 pid=54735 age=3s task=- label=B
+waiting position=1 ticket=3 pid=57910 age=16s task=- label=C
+[exit 0]
+B: exit 0
+fm-test-queue: ticket 2, position 2: waiting behind 1 earlier ticket(s)
+fm-test-queue: ticket 2 served
+
+$ bin/fm-test-queue.sh status
+test-queue: slots=1 load_ceiling=16 load1=15.9 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/manual/spool
+serving ticket=3 pid=57910 age=0s task=- label=C
+[exit 0]
+C: exit 0
+fm-test-queue: ticket 3, position 3: waiting behind 2 earlier ticket(s)
+fm-test-queue: ticket 3, position 2: waiting behind 1 earlier ticket(s)
+fm-test-queue: ticket 3, position 1: all 1 slot(s) busy
+fm-test-queue: ticket 3 served
+
+Workload output:
+START-A
+END-A
+START-B
+END-B
+START-C
+END-C
+
+$ bin/fm-test-queue.sh status
+test-queue: slots=1 load_ceiling=16 load1=15.9 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/manual/spool
+[exit 0]
+SCENARIO: two shared slots, real OS load probe, independent caller homes
+$ bin/fm-test-queue.sh run --label one -- /bin/bash -c ': > "$1/started-one"; while [ ! -e "$1/release-one" ]; do sleep .05; done' _ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/manual &
+$ bin/fm-test-queue.sh run --label two -- /bin/bash -c ': > "$1/started-two"; while [ ! -e "$1/release-two" ]; do sleep .05; done' _ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/manual &
+$ bin/fm-test-queue.sh run --label three -- /bin/bash -c ': > "$1/started-three"; while [ ! -e "$1/release-three" ]; do sleep .05; done' _ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/manual &
+$ bin/fm-test-queue.sh status
+test-queue: slots=2 load_ceiling=100000 load1=97.43 serving=2 waiting=1 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/manual/spool
+serving ticket=4 pid=1556 age=4s task=- label=one
+serving ticket=5 pid=3172 age=3s task=- label=two
+waiting position=1 ticket=6 pid=5084 age=2s task=- label=three
+[exit 0]
+one: exit 0
+
+$ bin/fm-test-queue.sh status
+test-queue: slots=2 load_ceiling=100000 load1=97.43 serving=2 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/manual/spool
+serving ticket=5 pid=3172 age=4s task=- label=two
+serving ticket=6 pid=5084 age=0s task=- label=three
+[exit 0]
+two: exit 0
+
+three: exit 0
+fm-test-queue: ticket 6, position 1: all 2 slot(s) busy
+fm-test-queue: ticket 6 served
+
+$ bin/fm-test-queue.sh status
+test-queue: slots=2 load_ceiling=100000 load1=97.43 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/manual/spool
+[exit 0]
+SCENARIO: cross-timezone ownership survives wrapper SIGKILL until child exits
+$ bin/fm-test-queue.sh run --label UTC-owner -- /bin/bash -c 'echo $$ > "$1/child-pid"; echo "$TZ" > "$1/child-tz"; while [ ! -e "$1/release-survivor" ]; do sleep .05; done' _ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/manual &
+$ bin/fm-test-queue.sh run --label Mexico-follower -- /bin/bash -c 'echo "$TZ" > "$1/follower-tz"' _ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/manual &
+$ bin/fm-test-queue.sh status
+test-queue: slots=1 load_ceiling=100000 load1=139.59 serving=1 waiting=1 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/manual/spool
+serving ticket=7 pid=19676 age=13s task=- label=UTC-owner
+waiting position=1 ticket=8 pid=41193 age=3s task=- label=Mexico-follower
+[exit 0]
+UTC-owner: exit -9
+
+$ bin/fm-test-queue.sh status
+test-queue: slots=1 load_ceiling=100000 load1=139.59 serving=1 waiting=1 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/manual/spool
+serving ticket=7 pid=19676 age=14s task=- label=UTC-owner
+waiting position=1 ticket=8 pid=41193 age=4s task=- label=Mexico-follower
+[exit 0]
+Follower output absent while orphaned workload is alive.
+Mexico-follower: exit 0
+fm-test-queue: ticket 8, position 1: all 1 slot(s) busy
+fm-test-queue: ticket 8 served
+
+Caller environments: UTC, America/Mexico_City
+$ bin/fm-test-queue.sh status
+test-queue: slots=1 load_ceiling=100000 load1=147.71 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/manual/spool
+[exit 0]
+SCENARIO: stdin/stdout/stderr and exit contracts; invalid config prevents execution
+$ bin/fm-test-queue.sh run -- /bin/bash -c 'read line; echo "OUT:$line"; echo ERR:preserved >&2; exit 23'
+OUT:from-stdin
+ERR:preserved
+[exit 23]
+$ bin/fm-test-queue.sh run -- /bin/sh -c 'kill -INT $$'
+[exit 130]
+$ bin/fm-test-queue.sh run -- /bin/sh -c 'kill -TERM $$'
+Terminated: 15
+[exit 143]
+$ bin/fm-test-queue.sh run --
+usage: fm-test-queue.sh run [--label <text>] -- <command> [args...] | status | --help
+[exit 2]
+$ bin/fm-test-queue.sh run -- touch /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/manual/must-not-run
+fm-test-queue: slots must be a positive integer, got '0'
+[exit 125]
+SCENARIO: nested wrapper runs within occupied single slot
+$ bin/fm-test-queue.sh run -- /bin/bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/bin/fm-test-queue.sh run -- printf 'nested workload completed
+'
+nested workload completed
+[exit 0]
+$ bin/fm-test-queue.sh status
+test-queue: slots=1 load_ceiling=100000 load1=153.28 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.queue-validation-tmp/manual/spool
+[exit 0]
+All manual CLI scenarios passed.

@@ -1,0 +1,450 @@
+Excerpts from ten real Bash 3.2 PTY sessions (40 rows x 120 columns). Full terminal-NN.log files retain the raw input/output.
+
+=== Terminal trial 01 ===
+test-queue: slots=1 load_ceiling=1000000 load1=95.11 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-01/spool
+serving ticket=1 pid=22084 age=1s task=- label=background
+test-queue: slots=1 load_ceiling=1000000 load1=95.11 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-01/spool
+serving ticket=1 pid=22084 age=2s task=- label=background
+test-queue: slots=1 load_ceiling=1000000 load1=95.11 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-01/spool
+serving ticket=1 pid=22084 age=3s task=- label=background
+test-queue: slots=1 load_ceiling=1000000 load1=93.34 serving=1 waiting=1 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-01/spool
+serving ticket=1 pid=22084 age=4s task=- label=background
+waiting position=1 ticket=2 pid=26407 age=1s task=- label=queued
+BACKGROUND-RC=11
+FOLLOWER-RC=0
+test-queue: slots=1 load_ceiling=1000000 load1=93.34 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-01/spool
+^Z
+test-queue: slots=1 load_ceiling=1000000 load1=90.91 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-01/spool
+serving ticket=3 pid=35167 age=1s task=- label=promoted
+^CPROMOTED-RC=130
+test-queue: slots=1 load_ceiling=1000000 load1=90.91 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-01/spool
+KILLED-RC=137
+test-queue: slots=1 load_ceiling=1000000 load1=96.76 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-01/spool
+serving ticket=4 pid=42744 age=1s task=- label=leader
+test-queue: slots=1 load_ceiling=1000000 load1=96.76 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-01/spool
+serving ticket=4 pid=42744 age=2s task=- label=leader
+test-queue: slots=1 load_ceiling=1000000 load1=96.76 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-01/spool
+serving ticket=4 pid=42744 age=3s task=- label=leader
+test-queue: slots=1 load_ceiling=1000000 load1=96.76 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-01/spool
+serving ticket=4 pid=42744 age=4s task=- label=leader
+test-queue: slots=1 load_ceiling=1000000 load1=95.26 serving=1 waiting=1 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-01/spool
+serving ticket=4 pid=42744 age=5s task=- label=leader
+waiting position=1 ticket=5 pid=49701 age=1s task=- label=group-follower
+GROUP-FOLLOWER-RC=0
+test-queue: slots=1 load_ceiling=1000000 load1=95.26 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-01/spool
+READY-1
+RECEIVED=alpha
+READY-2
+^Z
+test-queue: slots=1 load_ceiling=1000000 load1=95.32 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-01/spool
+serving ticket=6 pid=61747 age=1s task=- label=foreground
+RECEIVED=beta
+READY-3
+^Z
+RECEIVED=gamma
+FOREGROUND-RC=23
+test-queue: slots=1 load_ceiling=1000000 load1=95.32 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-01/spool
+^CINTERRUPT-RC=130
+test-queue: slots=1 load_ceiling=1000000 load1=99.54 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-01/spool
+PTY driver completed all assertions.
+
+=== Terminal trial 02 ===
+test-queue: slots=1 load_ceiling=1000000 load1=99.54 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02/spool
+serving ticket=1 pid=73913 age=1s task=- label=background
+test-queue: slots=1 load_ceiling=1000000 load1=99.54 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02/spool
+serving ticket=1 pid=73913 age=2s task=- label=background
+test-queue: slots=1 load_ceiling=1000000 load1=99.82 serving=1 waiting=1 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02/spool
+serving ticket=1 pid=73913 age=2s task=- label=background
+waiting position=1 ticket=2 pid=76786 age=0s task=- label=queued
+BACKGROUND-RC=11
+FOLLOWER-RC=0
+test-queue: slots=1 load_ceiling=1000000 load1=99.82 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02/spool
+^Z
+test-queue: slots=1 load_ceiling=1000000 load1=101.91 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02/spool
+serving ticket=3 pid=83964 age=0s task=- label=promoted
+^CPROMOTED-RC=130
+test-queue: slots=1 load_ceiling=1000000 load1=101.91 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02/spool
+KILLED-RC=137
+test-queue: slots=1 load_ceiling=1000000 load1=101.91 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02/spool
+serving ticket=4 pid=89340 age=1s task=- label=leader
+test-queue: slots=1 load_ceiling=1000000 load1=113.21 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02/spool
+serving ticket=4 pid=89340 age=2s task=- label=leader
+test-queue: slots=1 load_ceiling=1000000 load1=113.21 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02/spool
+serving ticket=4 pid=89340 age=3s task=- label=leader
+test-queue: slots=1 load_ceiling=1000000 load1=113.21 serving=1 waiting=1 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02/spool
+serving ticket=4 pid=89340 age=4s task=- label=leader
+waiting position=1 ticket=5 pid=97384 age=0s task=- label=group-follower
+GROUP-FOLLOWER-RC=0
+test-queue: slots=1 load_ceiling=1000000 load1=114.47 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02/spool
+READY-1
+RECEIVED=alpha
+READY-2
+^Z
+test-queue: slots=1 load_ceiling=1000000 load1=114.47 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02/spool
+serving ticket=6 pid=7864 age=1s task=- label=foreground
+RECEIVED=beta
+READY-3
+^Z
+test-queue: slots=1 load_ceiling=1000000 load1=114.47 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02/spool
+serving ticket=6 pid=7864 age=2s task=- label=foreground
+RECEIVED=gamma
+FOREGROUND-RC=23
+test-queue: slots=1 load_ceiling=1000000 load1=114.47 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02/spool
+^CINTERRUPT-RC=130
+test-queue: slots=1 load_ceiling=1000000 load1=110.43 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-02/spool
+PTY driver completed all assertions.
+
+=== Terminal trial 03 ===
+test-queue: slots=1 load_ceiling=1000000 load1=107.11 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-03/spool
+serving ticket=1 pid=20739 age=1s task=- label=background
+test-queue: slots=1 load_ceiling=1000000 load1=107.11 serving=1 waiting=1 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-03/spool
+serving ticket=1 pid=20739 age=2s task=- label=background
+waiting position=1 ticket=2 pid=25291 age=0s task=- label=queued
+BACKGROUND-RC=11
+FOLLOWER-RC=0
+test-queue: slots=1 load_ceiling=1000000 load1=107.35 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-03/spool
+^Z
+test-queue: slots=1 load_ceiling=1000000 load1=107.35 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-03/spool
+serving ticket=3 pid=32861 age=1s task=- label=promoted
+^CPROMOTED-RC=130
+test-queue: slots=1 load_ceiling=1000000 load1=106.20 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-03/spool
+KILLED-RC=137
+test-queue: slots=1 load_ceiling=1000000 load1=106.20 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-03/spool
+serving ticket=4 pid=39820 age=1s task=- label=leader
+test-queue: slots=1 load_ceiling=1000000 load1=106.20 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-03/spool
+serving ticket=4 pid=39820 age=2s task=- label=leader
+test-queue: slots=1 load_ceiling=1000000 load1=106.20 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-03/spool
+serving ticket=4 pid=39820 age=3s task=- label=leader
+test-queue: slots=1 load_ceiling=1000000 load1=104.90 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-03/spool
+serving ticket=4 pid=39820 age=4s task=- label=leader
+test-queue: slots=1 load_ceiling=1000000 load1=104.90 serving=1 waiting=1 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-03/spool
+serving ticket=4 pid=39820 age=5s task=- label=leader
+waiting position=1 ticket=5 pid=49141 age=0s task=- label=group-follower
+GROUP-FOLLOWER-RC=0
+test-queue: slots=1 load_ceiling=1000000 load1=108.35 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-03/spool
+READY-1
+RECEIVED=alpha
+READY-2
+^Z
+test-queue: slots=1 load_ceiling=1000000 load1=108.35 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-03/spool
+serving ticket=6 pid=58592 age=1s task=- label=foreground
+RECEIVED=beta
+READY-3
+^Z
+RECEIVED=gamma
+FOREGROUND-RC=23
+test-queue: slots=1 load_ceiling=1000000 load1=108.35 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-03/spool
+^CINTERRUPT-RC=130
+test-queue: slots=1 load_ceiling=1000000 load1=110.00 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-03/spool
+PTY driver completed all assertions.
+
+=== Terminal trial 04 ===
+test-queue: slots=1 load_ceiling=1000000 load1=110.00 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-04/spool
+serving ticket=1 pid=70777 age=1s task=- label=background
+test-queue: slots=1 load_ceiling=1000000 load1=113.05 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-04/spool
+serving ticket=1 pid=70777 age=2s task=- label=background
+test-queue: slots=1 load_ceiling=1000000 load1=113.05 serving=1 waiting=1 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-04/spool
+serving ticket=1 pid=70777 age=2s task=- label=background
+waiting position=1 ticket=2 pid=74830 age=0s task=- label=queued
+BACKGROUND-RC=11
+FOLLOWER-RC=0
+test-queue: slots=1 load_ceiling=1000000 load1=113.05 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-04/spool
+^Z
+test-queue: slots=1 load_ceiling=1000000 load1=110.48 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-04/spool
+serving ticket=3 pid=80201 age=2s task=- label=promoted
+^CPROMOTED-RC=130
+test-queue: slots=1 load_ceiling=1000000 load1=110.48 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-04/spool
+KILLED-RC=137
+test-queue: slots=1 load_ceiling=1000000 load1=111.16 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-04/spool
+serving ticket=4 pid=86229 age=1s task=- label=leader
+test-queue: slots=1 load_ceiling=1000000 load1=111.16 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-04/spool
+serving ticket=4 pid=86229 age=2s task=- label=leader
+test-queue: slots=1 load_ceiling=1000000 load1=111.16 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-04/spool
+serving ticket=4 pid=86229 age=3s task=- label=leader
+test-queue: slots=1 load_ceiling=1000000 load1=111.16 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-04/spool
+serving ticket=4 pid=86229 age=4s task=- label=leader
+test-queue: slots=1 load_ceiling=1000000 load1=111.16 serving=1 waiting=1 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-04/spool
+serving ticket=4 pid=86229 age=5s task=- label=leader
+waiting position=1 ticket=5 pid=94543 age=0s task=- label=group-follower
+GROUP-FOLLOWER-RC=0
+test-queue: slots=1 load_ceiling=1000000 load1=109.15 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-04/spool
+READY-1
+RECEIVED=alpha
+READY-2
+^Z
+test-queue: slots=1 load_ceiling=1000000 load1=109.15 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-04/spool
+serving ticket=6 pid=4229 age=1s task=- label=foreground
+RECEIVED=beta
+READY-3
+^Z
+RECEIVED=gamma
+FOREGROUND-RC=23
+test-queue: slots=1 load_ceiling=1000000 load1=109.21 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-04/spool
+^CINTERRUPT-RC=130
+PTY driver completed all assertions.
+
+=== Terminal trial 05 ===
+test-queue: slots=1 load_ceiling=1000000 load1=110.32 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-05/spool
+serving ticket=1 pid=15167 age=1s task=- label=background
+test-queue: slots=1 load_ceiling=1000000 load1=110.32 serving=1 waiting=1 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-05/spool
+serving ticket=1 pid=15167 age=1s task=- label=background
+waiting position=1 ticket=2 pid=18658 age=0s task=- label=queued
+BACKGROUND-RC=11
+FOLLOWER-RC=0
+test-queue: slots=1 load_ceiling=1000000 load1=110.32 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-05/spool
+^Z
+test-queue: slots=1 load_ceiling=1000000 load1=106.05 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-05/spool
+serving ticket=3 pid=24608 age=0s task=- label=promoted
+^CPROMOTED-RC=130
+test-queue: slots=1 load_ceiling=1000000 load1=106.05 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-05/spool
+KILLED-RC=137
+test-queue: slots=1 load_ceiling=1000000 load1=106.05 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-05/spool
+serving ticket=4 pid=30279 age=1s task=- label=leader
+test-queue: slots=1 load_ceiling=1000000 load1=101.72 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-05/spool
+serving ticket=4 pid=30279 age=1s task=- label=leader
+test-queue: slots=1 load_ceiling=1000000 load1=101.72 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-05/spool
+serving ticket=4 pid=30279 age=2s task=- label=leader
+test-queue: slots=1 load_ceiling=1000000 load1=101.72 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-05/spool
+serving ticket=4 pid=30279 age=3s task=- label=leader
+test-queue: slots=1 load_ceiling=1000000 load1=101.72 serving=1 waiting=1 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-05/spool
+serving ticket=4 pid=30279 age=5s task=- label=leader
+waiting position=1 ticket=5 pid=36486 age=0s task=- label=group-follower
+GROUP-FOLLOWER-RC=0
+test-queue: slots=1 load_ceiling=1000000 load1=105.43 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-05/spool
+READY-1
+RECEIVED=alpha
+READY-2
+^Z
+test-queue: slots=1 load_ceiling=1000000 load1=105.43 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-05/spool
+serving ticket=6 pid=49837 age=1s task=- label=foreground
+RECEIVED=beta
+READY-3
+^Z
+test-queue: slots=1 load_ceiling=1000000 load1=105.43 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-05/spool
+serving ticket=6 pid=49837 age=2s task=- label=foreground
+RECEIVED=gamma
+FOREGROUND-RC=23
+test-queue: slots=1 load_ceiling=1000000 load1=113.24 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-05/spool
+^CINTERRUPT-RC=130
+PTY driver completed all assertions.
+
+=== Terminal trial 06 ===
+test-queue: slots=1 load_ceiling=1000000 load1=120.59 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-06/spool
+serving ticket=1 pid=63132 age=1s task=- label=background
+test-queue: slots=1 load_ceiling=1000000 load1=120.59 serving=1 waiting=1 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-06/spool
+serving ticket=1 pid=63132 age=2s task=- label=background
+waiting position=1 ticket=2 pid=67816 age=1s task=- label=queued
+BACKGROUND-RC=11
+FOLLOWER-RC=0
+test-queue: slots=1 load_ceiling=1000000 load1=131.67 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-06/spool
+^Z
+test-queue: slots=1 load_ceiling=1000000 load1=131.67 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-06/spool
+serving ticket=3 pid=74434 age=1s task=- label=promoted
+^CPROMOTED-RC=130
+test-queue: slots=1 load_ceiling=1000000 load1=131.67 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-06/spool
+KILLED-RC=137
+test-queue: slots=1 load_ceiling=1000000 load1=132.18 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-06/spool
+serving ticket=4 pid=81122 age=2s task=- label=leader
+test-queue: slots=1 load_ceiling=1000000 load1=132.18 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-06/spool
+serving ticket=4 pid=81122 age=3s task=- label=leader
+test-queue: slots=1 load_ceiling=1000000 load1=132.18 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-06/spool
+serving ticket=4 pid=81122 age=4s task=- label=leader
+test-queue: slots=1 load_ceiling=1000000 load1=135.53 serving=1 waiting=1 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-06/spool
+serving ticket=4 pid=81122 age=5s task=- label=leader
+waiting position=1 ticket=5 pid=87375 age=0s task=- label=group-follower
+GROUP-FOLLOWER-RC=0
+test-queue: slots=1 load_ceiling=1000000 load1=135.53 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-06/spool
+READY-1
+RECEIVED=alpha
+READY-2
+^Z
+test-queue: slots=1 load_ceiling=1000000 load1=140.21 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-06/spool
+serving ticket=6 pid=95643 age=1s task=- label=foreground
+RECEIVED=beta
+READY-3
+^Z
+RECEIVED=gamma
+FOREGROUND-RC=23
+test-queue: slots=1 load_ceiling=1000000 load1=140.21 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-06/spool
+^CINTERRUPT-RC=130
+test-queue: slots=1 load_ceiling=1000000 load1=135.71 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-06/spool
+PTY driver completed all assertions.
+
+=== Terminal trial 07 ===
+test-queue: slots=1 load_ceiling=1000000 load1=135.71 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-07/spool
+serving ticket=1 pid=10502 age=1s task=- label=background
+test-queue: slots=1 load_ceiling=1000000 load1=135.71 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-07/spool
+serving ticket=1 pid=10502 age=2s task=- label=background
+test-queue: slots=1 load_ceiling=1000000 load1=135.71 serving=1 waiting=1 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-07/spool
+serving ticket=1 pid=10502 age=2s task=- label=background
+waiting position=1 ticket=2 pid=14774 age=0s task=- label=queued
+BACKGROUND-RC=11
+FOLLOWER-RC=0
+test-queue: slots=1 load_ceiling=1000000 load1=132.29 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-07/spool
+^Z
+test-queue: slots=1 load_ceiling=1000000 load1=128.02 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-07/spool
+serving ticket=3 pid=22144 age=0s task=- label=promoted
+^CPROMOTED-RC=130
+test-queue: slots=1 load_ceiling=1000000 load1=128.02 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-07/spool
+KILLED-RC=137
+test-queue: slots=1 load_ceiling=1000000 load1=128.02 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-07/spool
+serving ticket=4 pid=27734 age=1s task=- label=leader
+test-queue: slots=1 load_ceiling=1000000 load1=128.02 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-07/spool
+serving ticket=4 pid=27734 age=2s task=- label=leader
+test-queue: slots=1 load_ceiling=1000000 load1=129.86 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-07/spool
+serving ticket=4 pid=27734 age=2s task=- label=leader
+test-queue: slots=1 load_ceiling=1000000 load1=129.86 serving=1 waiting=1 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-07/spool
+serving ticket=4 pid=27734 age=3s task=- label=leader
+waiting position=1 ticket=5 pid=33099 age=0s task=- label=group-follower
+GROUP-FOLLOWER-RC=0
+test-queue: slots=1 load_ceiling=1000000 load1=129.86 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-07/spool
+READY-1
+RECEIVED=alpha
+READY-2
+^Z
+test-queue: slots=1 load_ceiling=1000000 load1=125.07 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-07/spool
+serving ticket=6 pid=39040 age=1s task=- label=foreground
+RECEIVED=beta
+READY-3
+^Z
+RECEIVED=gamma
+FOREGROUND-RC=23
+test-queue: slots=1 load_ceiling=1000000 load1=125.07 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-07/spool
+^CINTERRUPT-RC=130
+PTY driver completed all assertions.
+
+=== Terminal trial 08 ===
+test-queue: slots=1 load_ceiling=1000000 load1=125.70 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-08/spool
+serving ticket=1 pid=52474 age=1s task=- label=background
+test-queue: slots=1 load_ceiling=1000000 load1=125.70 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-08/spool
+serving ticket=1 pid=52474 age=2s task=- label=background
+test-queue: slots=1 load_ceiling=1000000 load1=125.70 serving=1 waiting=1 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-08/spool
+serving ticket=1 pid=52474 age=2s task=- label=background
+waiting position=1 ticket=2 pid=56794 age=0s task=- label=queued
+BACKGROUND-RC=11
+FOLLOWER-RC=0
+test-queue: slots=1 load_ceiling=1000000 load1=127.09 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-08/spool
+^Z
+test-queue: slots=1 load_ceiling=1000000 load1=127.09 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-08/spool
+serving ticket=3 pid=64713 age=1s task=- label=promoted
+^CPROMOTED-RC=130
+test-queue: slots=1 load_ceiling=1000000 load1=124.36 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-08/spool
+KILLED-RC=137
+test-queue: slots=1 load_ceiling=1000000 load1=124.36 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-08/spool
+serving ticket=4 pid=71780 age=1s task=- label=leader
+test-queue: slots=1 load_ceiling=1000000 load1=124.36 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-08/spool
+serving ticket=4 pid=71780 age=2s task=- label=leader
+test-queue: slots=1 load_ceiling=1000000 load1=124.36 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-08/spool
+serving ticket=4 pid=71780 age=3s task=- label=leader
+test-queue: slots=1 load_ceiling=1000000 load1=133.70 serving=1 waiting=1 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-08/spool
+serving ticket=4 pid=71780 age=4s task=- label=leader
+waiting position=1 ticket=5 pid=78839 age=0s task=- label=group-follower
+GROUP-FOLLOWER-RC=0
+test-queue: slots=1 load_ceiling=1000000 load1=133.70 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-08/spool
+READY-1
+RECEIVED=alpha
+READY-2
+^Z
+test-queue: slots=1 load_ceiling=1000000 load1=133.64 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-08/spool
+serving ticket=6 pid=87227 age=1s task=- label=foreground
+RECEIVED=beta
+READY-3
+^Z
+RECEIVED=gamma
+FOREGROUND-RC=23
+test-queue: slots=1 load_ceiling=1000000 load1=133.64 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-08/spool
+^CINTERRUPT-RC=130
+test-queue: slots=1 load_ceiling=1000000 load1=135.91 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-08/spool
+PTY driver completed all assertions.
+
+=== Terminal trial 09 ===
+test-queue: slots=1 load_ceiling=1000000 load1=135.91 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-09/spool
+serving ticket=1 pid=99539 age=1s task=- label=background
+test-queue: slots=1 load_ceiling=1000000 load1=135.91 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-09/spool
+serving ticket=1 pid=99539 age=2s task=- label=background
+test-queue: slots=1 load_ceiling=1000000 load1=135.91 serving=1 waiting=1 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-09/spool
+serving ticket=1 pid=99539 age=2s task=- label=background
+waiting position=1 ticket=2 pid=3998 age=0s task=- label=queued
+BACKGROUND-RC=11
+FOLLOWER-RC=0
+test-queue: slots=1 load_ceiling=1000000 load1=138.80 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-09/spool
+^Z
+test-queue: slots=1 load_ceiling=1000000 load1=138.80 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-09/spool
+serving ticket=3 pid=10785 age=1s task=- label=promoted
+^CPROMOTED-RC=130
+test-queue: slots=1 load_ceiling=1000000 load1=134.25 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-09/spool
+KILLED-RC=137
+test-queue: slots=1 load_ceiling=1000000 load1=134.25 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-09/spool
+serving ticket=4 pid=17530 age=1s task=- label=leader
+test-queue: slots=1 load_ceiling=1000000 load1=136.47 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-09/spool
+serving ticket=4 pid=17530 age=2s task=- label=leader
+test-queue: slots=1 load_ceiling=1000000 load1=136.47 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-09/spool
+serving ticket=4 pid=17530 age=3s task=- label=leader
+test-queue: slots=1 load_ceiling=1000000 load1=136.47 serving=1 waiting=1 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-09/spool
+serving ticket=4 pid=17530 age=5s task=- label=leader
+waiting position=1 ticket=5 pid=25634 age=0s task=- label=group-follower
+GROUP-FOLLOWER-RC=0
+test-queue: slots=1 load_ceiling=1000000 load1=137.64 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-09/spool
+READY-1
+RECEIVED=alpha
+READY-2
+^Z
+test-queue: slots=1 load_ceiling=1000000 load1=134.30 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-09/spool
+serving ticket=6 pid=35882 age=1s task=- label=foreground
+RECEIVED=beta
+READY-3
+^Z
+test-queue: slots=1 load_ceiling=1000000 load1=134.30 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-09/spool
+serving ticket=6 pid=35882 age=2s task=- label=foreground
+RECEIVED=gamma
+FOREGROUND-RC=23
+test-queue: slots=1 load_ceiling=1000000 load1=134.30 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-09/spool
+^CINTERRUPT-RC=130
+test-queue: slots=1 load_ceiling=1000000 load1=132.52 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-09/spool
+PTY driver completed all assertions.
+
+=== Terminal trial 10 ===
+test-queue: slots=1 load_ceiling=1000000 load1=135.76 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-10/spool
+serving ticket=1 pid=56258 age=1s task=- label=background
+test-queue: slots=1 load_ceiling=1000000 load1=135.76 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-10/spool
+serving ticket=1 pid=56258 age=2s task=- label=background
+test-queue: slots=1 load_ceiling=1000000 load1=135.76 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-10/spool
+serving ticket=1 pid=56258 age=3s task=- label=background
+test-queue: slots=1 load_ceiling=1000000 load1=135.76 serving=1 waiting=1 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-10/spool
+serving ticket=1 pid=56258 age=3s task=- label=background
+waiting position=1 ticket=2 pid=65463 age=0s task=- label=queued
+BACKGROUND-RC=11
+FOLLOWER-RC=0
+test-queue: slots=1 load_ceiling=1000000 load1=133.53 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-10/spool
+^Z
+test-queue: slots=1 load_ceiling=1000000 load1=135.25 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-10/spool
+serving ticket=3 pid=76818 age=1s task=- label=promoted
+^CPROMOTED-RC=130
+test-queue: slots=1 load_ceiling=1000000 load1=135.25 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-10/spool
+KILLED-RC=137
+test-queue: slots=1 load_ceiling=1000000 load1=146.92 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-10/spool
+serving ticket=4 pid=82787 age=1s task=- label=leader
+test-queue: slots=1 load_ceiling=1000000 load1=146.92 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-10/spool
+serving ticket=4 pid=82787 age=3s task=- label=leader
+test-queue: slots=1 load_ceiling=1000000 load1=157.58 serving=1 waiting=1 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-10/spool
+serving ticket=4 pid=82787 age=5s task=- label=leader
+waiting position=1 ticket=5 pid=90104 age=0s task=- label=group-follower
+GROUP-FOLLOWER-RC=0
+test-queue: slots=1 load_ceiling=1000000 load1=157.58 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-10/spool
+READY-1
+RECEIVED=alpha
+READY-2
+^Z
+test-queue: slots=1 load_ceiling=1000000 load1=168.90 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-10/spool
+serving ticket=6 pid=98334 age=2s task=- label=foreground
+RECEIVED=beta
+READY-3
+^Z
+test-queue: slots=1 load_ceiling=1000000 load1=168.90 serving=1 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-10/spool
+serving ticket=6 pid=98334 age=3s task=- label=foreground
+RECEIVED=gamma
+FOREGROUND-RC=23
+test-queue: slots=1 load_ceiling=1000000 load1=175.56 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-10/spool
+^CINTERRUPT-RC=130
+test-queue: slots=1 load_ceiling=1000000 load1=179.12 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J6K3YB8DGYS48RTDZE0C2Q/.test-phase-tmp/terminal-10/spool
+PTY driver completed all assertions.
