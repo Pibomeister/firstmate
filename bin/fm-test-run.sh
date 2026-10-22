@@ -135,8 +135,8 @@
 # split it across separate runners, so two of its stateful scripts still never
 # share a machine. This script owns <n>: a lane whose <n> disagrees with the
 # configured shard count is refused, so a CI matrix cannot silently drop a shard.
-# --check-coverage also reports serial_max_ms (largest packed hint sum of a
-# shard holding more than one script, including default weights) and
+# --check-coverage also reports serial_max_ms (largest packed hint sum excluding
+# over-budget single-script shards, including default weights) and
 # serial_budget_ms (the 20-minute packing target), refusing a split above that
 # target. A shard whose one script alone exceeds the target cannot be packed
 # smaller, so it is accepted, named on stderr, and counted as serial_oversized;
@@ -204,13 +204,13 @@ CHANGED_DEFAULT_TIMEOUT_SECS=1500
 # One owner: CI lane names carry this count and are refused when they disagree.
 PORTABLE_SERIAL_SHARDS=11
 
-# Conservative balance hint for a portable-serial script with no measurement.
-# Rounded above the current CI mean, including the capability-skipped scripts.
+# Fixed balance estimate for a portable-serial script with no measurement.
+# Replace it with a measured hint when CI timing becomes available.
 PORTABLE_SERIAL_DEFAULT_WEIGHT_MS=45000
 
 # Packing target, not an execution timeout: leave at least ten minutes of the
 # normal CI tier for setup and runtime variance. --check-coverage refuses a
-# modeled serial shard above this target; refresh hints or rebalance instead.
+# multi-script serial shard above this target; refresh hints or rebalance instead.
 PORTABLE_SERIAL_MAX_WEIGHT_MS=1200000
 
 # Largest share of the serial lane allowed to run on the default weight above.
@@ -691,7 +691,7 @@ list_portable_serial() {
 # Measured portable-serial script durations in milliseconds, from the CI timing
 # artifacts recorded in docs/fm-test-portable-shards.md. Each value is the
 # slowest successful sample in the referenced complete/partial CI runs, with
-# the version-specific host and native-Windows exceptions documented there.
+# the inherited upstream and native-Windows measurements documented there.
 # These are balance hints only: the shard
 # partition stays complete and disjoint whatever they say, so a stale hint costs
 # balance rather than coverage. That doc owns the refresh procedure.

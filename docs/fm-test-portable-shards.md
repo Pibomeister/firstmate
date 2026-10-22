@@ -10,7 +10,7 @@ The concurrent isolation proof in [fm-test-isolation-proof.md](fm-test-isolation
 Local timings are not interchangeable with CI timings: platform and machine load can affect each script differently and change their relative weights.
 
 The parallel hint table was refreshed on 2026-09-30 from five Ubuntu CI runs: [36583881812](https://github.com/kunchenguid/firstmate/actions/runs/36583881812), [36658498535](https://github.com/kunchenguid/firstmate/actions/runs/36658498535), [36663947738](https://github.com/kunchenguid/firstmate/actions/runs/36663947738), [36664663190](https://github.com/kunchenguid/firstmate/actions/runs/36664663190), and [36669175457](https://github.com/kunchenguid/firstmate/actions/runs/36669175457).
-Use the slowest successful `duration_ms` per script across their uploaded portable timing artifacts and completed `FM_TEST_END` log markers, with the platform exception below.
+Use the slowest successful `duration_ms` per script across their uploaded portable timing artifacts and completed `FM_TEST_END` log markers.
 All artifact records were cross-checked against the corresponding job's markers.
 That covers all 24 parallel members; an existing live-capability skip is a portable-runner measurement, not a timing claim for the unavailable live integration.
 
@@ -20,7 +20,7 @@ Scripts added later by the upstream sync retain their upstream hints; four scrip
 Three of those runs uploaded only eight serial artifacts, because one serial job was cancelled, failed before upload, or had not finished, so that shard contributes no samples from that run.
 Observed maxima provide conservative packing weights, not an upper bound on future durations.
 
-Two serial-5 jobs were cancelled at their 30-minute cap and uploaded no artifact.
+In the September baseline, two serial-5 jobs were cancelled at their 30-minute cap and uploaded no artifact.
 Their completed log markers supplement the complete runs, but a cancelled job's wall time is only a lower bound and its unfinished or never-started scripts have no completed sample.
 A failed script's duration is excluded even when its lane uploaded an artifact.
 In particular, run 36664663190's serial 5 finished in 22m15s with an assertion failure, not a timeout; treating that as a healthy whole-lane sample would hide the failure.
@@ -28,11 +28,10 @@ Collect successful per-script measurements for every member before calculating a
 
 `tests/fm-supervision-host.test.sh` measured 1326332 to 1411613 ms across its four successful samples in the serial baseline, far above its earlier single-sample 789123 ms hint.
 The native-Windows-only `tests/fm-pi-windows-shell-invocation.test.sh` retains its separate 5121 ms measurement from 2026-09-06T21:02Z instead of a portable capability skip.
-The 2026-10-07 polytoken adapter tests carry provisional local measurements instead - 21090 ms for `tests/fm-polytoken-harness.test.sh` and the 103 ms live-guard skip for `tests/fm-polytoken-signals-live-e2e.test.sh`, both measured on the adapter-verification macOS host - until the next CI refresh replaces them with Ubuntu measurements, because they postdate the 2026-09-30 baseline.
+The 2026-10-07 polytoken adapter tests retain provisional local measurements from the upstream sync - 21090 ms for `tests/fm-polytoken-harness.test.sh` and the 103 ms live-guard skip for `tests/fm-polytoken-signals-live-e2e.test.sh`, both measured on the adapter-verification macOS host - until Ubuntu measurements replace them.
 The wedge-cap suite carries the Ubuntu measurements from CI run [39597689178](https://github.com/kunchenguid/firstmate/actions/runs/39597689178) - 374225 ms for `tests/fm-watch-wedge-cap.test.sh` and the 74 ms live-guard skip for `tests/fm-watch-wedge-cap-live.test.sh` - in place of the provisional local measurements the suite first carried (1003000 ms and the 155 ms skip), which overstated the CI cost of both.
-They are not a formality: without a hint the suite is packed on the 45000 ms default, which puts it beside a shard already holding about 17 minutes of measured work, so that shard would really have run for about 23 minutes - past the 20-minute target the guard reserves - while the coverage guard still passed.
+Without a measured hint, the guard would underestimate that suite using the default weight, so passing the guard would not establish that its shard meets the packing target.
 The same run measured the wedge-cap parity suite at 27763 ms, which `bin/fm-test-run.sh` packs at in place of the provisional 209000 ms local measurement.
-The local measurements had left the serial lane less aggregate headroom under the nine shards' 1200000 ms budget than the packing-boundary check needs to place one script exactly at the budget, so that check failed; the CI measurements restore it.
 The session-start hint retains its pre-optimization maximum until CI measures the shorter fixture-only home-summary bound; do not discount a local speedup from CI packing weights.
 
 ## Parallel lanes
@@ -67,7 +66,7 @@ Each shard is still strictly serial in itself, and separate runners mean no two 
 
 Assignment is longest-processing-time bin packing over per-script duration hints embedded in `bin/fm-test-run.sh`.
 [Verification inputs](#verification-inputs) owns the measurement provenance and exceptions.
-A script with no hint gets the conservative `PORTABLE_SERIAL_DEFAULT_WEIGHT_MS` default.
+A script with no hint gets the `PORTABLE_SERIAL_DEFAULT_WEIGHT_MS` default.
 Hints only affect balance: the coverage guard keeps the partition complete and disjoint whatever they say, so a stale hint costs a slower shard rather than lost coverage.
 Balance is still worth keeping current, because enough unmeasured scripts let one shard carry more than twice another shard's real work and reach the job cap while another runner sits idle.
 `bin/fm-test-run.sh --check-coverage` reports the unmeasured share as `serial_unhinted=` and refuses past `PORTABLE_SERIAL_MAX_UNHINTED_PERCENT`.
@@ -78,11 +77,9 @@ Refresh the hints whenever a serial member grows materially or the lane gains sc
 Its header and `--help` own the modeled-budget check and output fields; read the current estimates from `--check-coverage` instead of retaining copied lane sums here.
 [`tests/fm-test-run.test.sh`](../tests/fm-test-run.test.sh), in `test_portable_serial_packing_budget_boundary`, verifies acceptance exactly at the budget and refusal one millisecond above it through the executable runner, and `test_portable_serial_lone_script_over_budget_is_reported` verifies the one-script exception.
 The two longest scripts, `tests/fm-watch-triage.test.sh` and `tests/fm-supervision-host.test.sh`, each exceed the packing target alone, so they are the indivisible floor for this layout.
-Longest-first packing gives each of them a shard of its own, and the coverage guard accepts such a one-script shard above the target while naming it on stderr and counting it as `serial_oversized`; only splitting that script shrinks it.
-A shard holding more than one script must still pack within the target.
 The estimates use per-file maxima from different runs, not measured rebalanced jobs or an end-to-end latency guarantee.
 The baseline watch-triage samples range from 1126065 to 1429680 ms.
-Even so, maxima from five runs do not establish a P95 or guarantee future headroom.
+Even so, maxima from eight runs do not establish a P95 or guarantee future headroom.
 Job timeouts remain hang tripwires under the policy in [Timeouts](#timeouts) below; they are not the desired healthy duration.
 `tests/fm-ci-workflow.test.sh` compares the parsed CI matrix to the executable runner lanes, and the runner rejects parallel `--jobs` on a serial lane even when that shard has only one member.
 
