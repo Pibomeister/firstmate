@@ -1,0 +1,12 @@
+fatal: repository '/Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M5J2992A8H9TV94CRCTG3X4G/.nm-base' does not exist
+cp: /Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M5J2992A8H9TV94CRCTG3X4G/.nm-base/.claude-autoarm-live-e2e.62839/project/bin: No such file or directory
+cp: /Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M5J2992A8H9TV94CRCTG3X4G/.nm-base/.claude-autoarm-live-e2e.62839/project/.claude/settings.json: No such file or directory
+tests/fm-claude-stop-autoarm-live-e2e.test.sh: line 50: /Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M5J2992A8H9TV94CRCTG3X4G/.nm-base/.claude-autoarm-live-e2e.62839/project/.claude/settings.local.json: No such file or directory
+tests/fm-claude-stop-autoarm-live-e2e.test.sh: line 65: /Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M5J2992A8H9TV94CRCTG3X4G/.nm-base/.claude-autoarm-live-e2e.62839/project/bin/tool-logger.sh: No such file or directory
+chmod: /Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M5J2992A8H9TV94CRCTG3X4G/.nm-base/.claude-autoarm-live-e2e.62839/project/bin/tool-logger.sh: No such file or directory
+tests/fm-claude-stop-autoarm-live-e2e.test.sh: line 82: /Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M5J2992A8H9TV94CRCTG3X4G/.nm-base/.claude-autoarm-live-e2e.62839/project/bin/fm-watch-arm.sh: No such file or directory
+tests/fm-claude-stop-autoarm-live-e2e.test.sh: line 100: /Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M5J2992A8H9TV94CRCTG3X4G/.nm-base/.claude-autoarm-live-e2e.62839/project/bin/fm-wake-drain.sh: No such file or directory
+chmod: /Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M5J2992A8H9TV94CRCTG3X4G/.nm-base/.claude-autoarm-live-e2e.62839/project/bin/fm-watch-arm.sh: No such file or directory
+chmod: /Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M5J2992A8H9TV94CRCTG3X4G/.nm-base/.claude-autoarm-live-e2e.62839/project/bin/fm-wake-drain.sh: No such file or directory
+not ok - Claude credentialed auto-arm session failed: tests/fm-claude-stop-autoarm-live-e2e.test.sh: line 114: cd: /Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M5J2992A8H9TV94CRCTG3X4G/.nm-base/.claude-autoarm-live-e2e.62839/project: No such file or directory
+exit=1

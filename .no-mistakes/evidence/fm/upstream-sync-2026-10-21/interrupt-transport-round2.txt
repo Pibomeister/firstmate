@@ -1,0 +1,8 @@
+claude       key rc=0
+codex        key rc=0
+droid        key rc=0
+commandcode  key rc=0
+polytoken    rest rc=0
+pi           key rc=0
+omp          key rc=0
+cursor       key rc=0

@@ -1,0 +1,31 @@
+# claude 2.1.306 (Claude Code): title='2.1.306' foreground=[/Users/eduardopicazo/.local/bin/claude ]
+ok - harness liveness: claude 2.1.306 (Claude Code) classifies alive
+# claude 2.1.306 (Claude Code): ancestry verdicts=[comm claude]
+ok - harness detection: claude 2.1.306 (Claude Code) is identified by the ancestry walk at comm strength
+# codex codex-cli 0.162.1: title='node' foreground=[/opt/homebrew/bin/node /opt/homebrew/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex <defunct> ]
+ok - harness liveness: codex codex-cli 0.162.1 classifies alive
+# codex codex-cli 0.162.1: ancestry verdicts=[comm codex;args codex]
+ok - harness detection: codex codex-cli 0.162.1 is identified by the ancestry walk at comm strength
+# opencode 1.14.28: title='opencode' foreground=[/opt/homebrew/bin/opencode ]
+ok - harness liveness: opencode 1.14.28 classifies alive
+# opencode 1.14.28: ancestry verdicts=[comm opencode]
+ok - harness detection: opencode 1.14.28 is identified by the ancestry walk at comm strength
+# skip: pi is not installed on this machine, so its classification is unverified here
+# skip: pi-signed is not installed on this machine, so its classification is unverified here
+# grok grok 1.0.60 (01a8e1c591c0) [stable]: title='grok-1.0.60-mac' foreground=[/Users/eduardopicazo/.grok/bin/grok ]
+ok - harness liveness: grok grok 1.0.60 (01a8e1c591c0) [stable] classifies alive
+# grok grok 1.0.60 (01a8e1c591c0) [stable]: ancestry verdicts=[comm grok]
+ok - harness detection: grok grok 1.0.60 (01a8e1c591c0) [stable] is identified by the ancestry walk at comm strength
+# kimi 2.1.1: title='kimi' foreground=[/Users/eduardopicazo/.kimi-code/bin/kimi ]
+ok - harness liveness: kimi 2.1.1 classifies alive
+# kimi 2.1.1: ancestry verdicts=[comm kimi]
+ok - harness detection: kimi 2.1.1 is identified by the ancestry walk at comm strength
+# skip: cursor is not installed on this machine, so its classification is unverified here
+# skip: muse is not installed on this machine, so its classification is unverified here
+# droid 0.240.1: title='droid' foreground=[/Users/eduardopicazo/.local/bin/droid ]
+ok - harness liveness: droid 0.240.1 classifies alive
+# droid 0.240.1: ancestry verdicts=[comm droid]
+ok - harness detection: droid 0.240.1 is identified by the ancestry walk at comm strength
+# unverified on this machine (not installed): pi pi-signed cursor muse
+# checked 6 installed harness(es)
+exit=0

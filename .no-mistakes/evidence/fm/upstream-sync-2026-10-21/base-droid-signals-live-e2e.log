@@ -1,0 +1,19 @@
+spawned droid-live harness=droid kind=scout window=firstmate:fm-droid-live worktree=/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-droid-signals.lPfMgh/pool/.treehouse/scratch-af67c7/1/scratch
+ok - Droid received its brief and signalled turn end
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the requested message WILL still be sent.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+ok - Droid acknowledged inbox and typed fm-send steers
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+interrupt-delivered droid-live harness=droid backend=tmux verified=agent-alive cancel=unconfirmed
+ok - Droid settled its interrupted turn before the 45-second command completed
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+relaunched droid-live harness=droid from=droid model=gpt-5.6-terra effort=low backend=tmux endpoint=firstmate:fm-droid-live worktree=/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-droid-signals.lPfMgh/pool/.treehouse/scratch-af67c7/1/scratch
+not ok - Droid's own header does not show 'GPT-5.6 Terra (Low)' after relaunch
+# kept live lab at /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-droid-signals.lPfMgh
+exit=1

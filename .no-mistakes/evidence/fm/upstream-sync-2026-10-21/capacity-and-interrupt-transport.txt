@@ -1,0 +1,33 @@
+$ fm-capacity.sh (no target, 1 ship lane + 1 secondmate)
+capacity: free_lanes=unknown reason=no-target lanes=1 target=none secondmates=1 load1=16.15 cores=14 mem_free_pct=44 disk_free_mb=212719
+Lanes: 1 running, no target set (config/lane-capacity absent).
+Secondmates: 1 (hold no lane).
+Host: load 16.15 on 14 cores, memory free 44%, disk free 212719 MB.
+exit=0
+
+$ fm-capacity.sh (lane-capacity=3)
+capacity: free_lanes=0 reason=cpu lanes=1 target=3 secondmates=1 load1=16.15 cores=14 mem_free_pct=43 disk_free_mb=212718
+Lanes: 1 running of 3 target, 0 open.
+Secondmates: 1 (hold no lane).
+Host: load 16.15 on 14 cores, memory free 43%, disk free 212718 MB.
+Constrained: cpu - hold new dispatch until it clears.
+exit=0
+
+$ fm-capacity.sh (malformed lane-capacity)
+capacity: free_lanes=unknown reason=invalid-target lanes=1 target=invalid secondmates=1 load1=16.15 cores=14 mem_free_pct=43 disk_free_mb=212718
+Lanes: 1 running, target unreadable (config/lane-capacity must hold one non-negative integer).
+Secondmates: 1 (hold no lane).
+Host: load 16.15 on 14 cores, memory free 43%, disk free 212718 MB.
+Constrained: cpu - hold new dispatch until it clears.
+fm-capacity: config/lane-capacity must hold one non-negative integer
+exit=1
+
+$ fm_control_interrupt_transport <harness>
+claude       key rc=0
+codex        key rc=0
+droid        key rc=0
+commandcode  key rc=0
+polytoken    rest rc=0
+pi           key rc=0
+omp          key rc=0
+cursor       key rc=0
