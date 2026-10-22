@@ -118,6 +118,8 @@ try:
     assert "serving=0 waiting=0 stale=0 " in status()
 
     promoted = background("promoted", '\n'.join([
+        # Bash may continue an untrapped loop if its sleep misses SIGINT.
+        "trap 'exit 130' INT",
         'echo $$ > "$1/promoted.child"', 'counter=0', 'while :; do',
         'counter=$((counter + 1))', 'echo "$counter" > "$1/heartbeat"', 'sleep 0.05', 'done', '',
     ]))
@@ -146,7 +148,8 @@ try:
     receive(b"PROMOTED-RC=130\r\n")
     receive(prompt)
     wrappers.remove(promoted)
-    assert "serving=0 waiting=0 stale=0 " in status()
+    # Signal cleanup may leave a stale record for the next admission to reclaim.
+    until("interrupted workload releases its slot", lambda: "serving=0 waiting=0 " in status())
 
     (case / "grandchild.sh").write_text(
         ': > "$1/grandchild.ran"\nwhile [ ! -e "$1/release-grandchild" ]; do sleep 0.05; done\n'
@@ -262,7 +265,7 @@ finally:
             os.kill(wrapper, signal.SIGKILL)
         except ProcessLookupError:
             pass
+    os.close(terminal)
     if not reaped:
         os.kill(caller, signal.SIGKILL)
         os.waitpid(caller, 0)
-    os.close(terminal)
