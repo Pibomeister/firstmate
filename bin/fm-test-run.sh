@@ -189,12 +189,11 @@ JOBS_MAX=8
 MAX_WALL_MS=
 PER_SCRIPT_TIMEOUT_SECS=0
 # Bound applied automatically on the automatic --changed path, derived from
-# measured healthy runtimes with margin rather than picked: the former
-# tests/fm-watch-triage.test.sh hint of 1429680 ms is split across that file
-# and tests/fm-watch-triage-b.test.sh, tests/fm-watch-triage-c.test.sh,
-# tests/fm-watch-triage-d.test.sh, tests/fm-watch-triage-e.test.sh,
-# tests/fm-watch-triage-f.test.sh, and tests/fm-watch-triage-g.test.sh.
-# 1500s still keeps every measured script under the bound,
+# measured runtimes with margin rather than picked. The unsplit
+# tests/fm-watch-triage.test.sh last took about 1430s under CI load, only about
+# 1.05x under the bound. The watch-triage parts (that file plus -b through -g)
+# carry local per-part wall times in the hint table below, not CI
+# measurements. 1500s keeps every measured script under the bound,
 # and it stays under the 30-minute normal CI tier so a wedged script fails here,
 # with its output, before the job cap
 # cancels the lane. It is a guard, not a speed control: a HUNG script becomes a
@@ -921,13 +920,13 @@ tests/fm-wake-queue.test.sh 222103
 tests/fm-watch-arm.test.sh 180070
 tests/fm-watch-checkpoint.test.sh 24989
 tests/fm-watch-recovery-loop.test.sh 60400
-tests/fm-watch-triage.test.sh 268713
-tests/fm-watch-triage-b.test.sh 268710
-tests/fm-watch-triage-c.test.sh 134355
-tests/fm-watch-triage-e.test.sh 44785
-tests/fm-watch-triage-f.test.sh 44785
-tests/fm-watch-triage-g.test.sh 44785
-tests/fm-watch-triage-d.test.sh 268710
+tests/fm-watch-triage.test.sh 123760
+tests/fm-watch-triage-b.test.sh 197440
+tests/fm-watch-triage-c.test.sh 305700
+tests/fm-watch-triage-e.test.sh 100760
+tests/fm-watch-triage-f.test.sh 471050
+tests/fm-watch-triage-g.test.sh 173710
+tests/fm-watch-triage-d.test.sh 295480
 tests/fm-watch-wedge-cap-live.test.sh 74
 tests/fm-watch-wedge-cap-unconfigured-parity.test.sh 27763
 tests/fm-watch-wedge-cap.test.sh 374225
