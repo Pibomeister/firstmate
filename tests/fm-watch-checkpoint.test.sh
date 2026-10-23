@@ -28,17 +28,19 @@ wait_for_checkpoint_lock() {
   return 1
 }
 
-test_quiet_checkpoint_exits_124_cleanly() {
+test_quiet_checkpoint_exits_0_cleanly() {
   local home out err status
   home=$(make_home quiet)
   out="$home/out.txt"
   err="$home/err.txt"
   status=0
   FM_HOME="$home" FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 "$CHECKPOINT" --seconds 1 >"$out" 2>"$err" || status=$?
-  expect_code 124 "$status" "quiet checkpoint exit"
+  expect_code 0 "$status" "quiet checkpoint exit"
   assert_contains "$(cat "$out")" "checkpoint: no actionable wake within 1s" "quiet checkpoint line missing"
+  ! grep -E '^(signal:|stale:|check:|heartbeat)' "$out" >/dev/null \
+    || fail "a quiet checkpoint printed a wake line: $(cat "$out")"
   assert_absent "$home/state/.watch.lock/pid" "watch lock pid survived quiet checkpoint timeout"
-  pass "quiet checkpoint exits 124 with a clean checkpoint line and no live lock"
+  pass "quiet checkpoint exits 0 with a clean checkpoint line, no wake, and no live lock"
 }
 
 test_perl_timeout_fallback_honors_cleanup_bound_before_escalating() {
@@ -78,7 +80,7 @@ PL
   PATH="$fallback_bin" FM_HOME="$home" FM_POLL=1 FM_SIGNAL_GRACE=1 FM_WATCHER_CLEANUP_LOCK_BOUND=8 \
     "$home/root/bin/fm-watch-checkpoint.sh" --seconds 1 >"$home/out.txt" 2>"$home/err.txt" || status=$?
 
-  expect_code 124 "$status" "Perl fallback checkpoint exit"
+  expect_code 0 "$status" "Perl fallback checkpoint exit"
   assert_contains "$(cat "$home/out.txt")" "checkpoint: no actionable wake within 1s" \
     "Perl fallback did not return a quiet checkpoint"
   [ -e "$home/cleanup-reached" ] || fail "the Perl fallback killed the watcher before its 8-second cleanup bound"
@@ -115,10 +117,10 @@ test_announced_recovery_is_not_reannounced_by_next_checkpoint() {
 
   status=0
   FM_HOME="$home" FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 \
-    "$CHECKPOINT" --seconds 1 >"$out" 2>"$err" || status=$?
+    "$CHECKPOINT" --seconds 5 >"$out" 2>"$err" || status=$?
 
-  expect_code 124 "$status" "announced recovery checkpoint exit"
-  assert_contains "$(cat "$out")" "checkpoint: no actionable wake within 1s" \
+  expect_code 0 "$status" "announced recovery checkpoint exit"
+  assert_contains "$(cat "$out")" "checkpoint: no actionable wake within 5s" \
     "announced recovery checkpoint did not supervise for its bound"
   assert_not_contains "$(cat "$out")" "check: rearm-resurface" \
     "announced recovery was reannounced by the next checkpoint"
@@ -136,6 +138,8 @@ test_never_announced_recovery_is_announced_once() {
   out="$home/out.txt"
   err="$home/err.txt"
   printf 'pending:downtime:unreported.1.aaa\n' > "$home/state/.watcher-down"
+  append_wake "$home/state" check buried 'check: durable row buried by the downtime' \
+    || fail "could not append the buried durable wake"
 
   status=0
   FM_HOME="$home" FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 \
@@ -146,7 +150,38 @@ test_never_announced_recovery_is_announced_once() {
     || fail "never-announced recovery did not surface exactly once: $(cat "$out")"
   [ "$(cat "$home/state/.watcher-down")" = 'announced:downtime:unreported.1.aaa' ] \
     || fail "never-announced recovery did not retain its announced generation"
-  pass "a never-announced recovery still surfaces once from a foreground checkpoint"
+
+  home=$(make_home pending-recovery-empty)
+  out="$home/out.txt"
+  err="$home/err.txt"
+  printf 'pending:downtime:unreported.2.bbb\n' > "$home/state/.watcher-down"
+  status=0
+  # This assertion needs the first poll to finish, not a one-second startup
+  # deadline on a shared machine.
+  FM_HOME="$home" FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 \
+    "$CHECKPOINT" --seconds 5 >"$out" 2>"$err" || status=$?
+
+  expect_code 0 "$status" "empty-queue pending recovery checkpoint exit"
+  assert_contains "$(cat "$out")" "checkpoint: no actionable wake within 5s" \
+    "an empty-queue pending recovery did not stay a quiet checkpoint"
+  assert_not_contains "$(cat "$out")" "check: rearm-resurface" \
+    "an empty-queue pending recovery woke for bookkeeping"
+  # The checkpoint's own exit opens the next downtime episode, so the retired
+  # generation must be gone rather than left pending or announced.
+  case "$(cat "$home/state/.watcher-down")" in
+    acked:downtime:unreported.2.bbb|pending:downtime:*) ;;
+    *) fail "an empty-queue pending recovery was not retired silently: $(cat "$home/state/.watcher-down")" ;;
+  esac
+  [ "$(cat "$home/state/.watcher-down")" != 'pending:downtime:unreported.2.bbb' ] \
+    || fail "an empty-queue pending recovery was not retired on its own generation"
+
+  status=0
+  FM_HOME="$home" FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 \
+    "$CHECKPOINT" --seconds 1 >"$out" 2>"$err" || status=$?
+  expect_code 0 "$status" "second empty-queue checkpoint exit"
+  assert_not_contains "$(cat "$out")" "check: rearm-resurface" \
+    "the episode opened by a quiet checkpoint exit woke the next checkpoint"
+  pass "a never-announced recovery surfaces once while a row is buried and retires silently with an empty queue"
 }
 
 test_queue_append_during_checkpoint_still_resurfaces() {
@@ -270,13 +305,13 @@ test_host_checkpoint_bounds_the_park_by_posture() {
   local home f
   home=$(make_host_home host-bound)
   run_host_checkpoint "$home" boundary --seconds 5
-  expect_code 124 "$STATUS" "a host park that reached its bound is a quiet checkpoint"
+  expect_code 0 "$STATUS" "a host park that reached its bound is a quiet checkpoint"
   assert_contains "$(cat "$home/out.txt")" "checkpoint: no actionable wake within 5s" "the boundary must read as the ordinary quiet line"
   assert_contains "$(cat "$home/host-env")" $'args=park\nprimary=codex\npark=5\nlimit=1235' \
     "attended, the host must park for the checkpoint's own bound with the codex pin and a turn limit past it"
   : > "$home/state/.afk-contract"
   run_host_checkpoint "$home" boundary --seconds 5
-  expect_code 124 "$STATUS" "an away park that reached its bound is a quiet checkpoint"
+  expect_code 0 "$STATUS" "an away park that reached its bound is a quiet checkpoint"
   assert_contains "$(cat "$home/out.txt")" "checkpoint: no actionable wake within 3600s" "away, the bound must be raised"
   assert_contains "$(cat "$home/host-env")" 'park=3600' "away, the host must park for the away bound"
   FM_CODEX_WATCH_CHECKPOINT_AWAY=900 run_host_checkpoint "$home" boundary --seconds 5
@@ -290,7 +325,7 @@ test_host_checkpoint_bounds_the_park_by_posture() {
   FM_HOME="$home" FM_AFK_MODE=quiet "$ROOT/bin/fm-afk-contract.sh" enter --words 'keep routine wakes off my main' >/dev/null 2>&1 \
     || fail "fixture: could not record quiet mode"
   run_host_checkpoint "$home" boundary --seconds 5
-  expect_code 124 "$STATUS" "a park beside a quiet record that reached its bound is a quiet checkpoint"
+  expect_code 0 "$STATUS" "a park beside a quiet record that reached its bound is a quiet checkpoint"
   assert_contains "$(cat "$home/host-env")" 'park=5' "beside a quiet record the host must park for the attended bound"
   pass "checkpoint: an opted-in home runs the host for the checkpoint's bound, raised only while away"
 }
@@ -337,7 +372,7 @@ test_real_host_checkpoint_ends_quietly_at_its_bound() {
     printf "%s\n" "$$" > "$FM_HOME/state/.lock"
     "$0" --seconds 4
   ' "$CHECKPOINT" >"$home/out.txt" 2>"$home/err.txt" || status=$?
-  expect_code 124 "$status" "a quiet host checkpoint: $(cat "$home/out.txt" "$home/err.txt")"
+  expect_code 0 "$status" "a quiet host checkpoint: $(cat "$home/out.txt" "$home/err.txt")"
   assert_contains "$(cat "$home/out.txt")" "checkpoint: no actionable wake within 4s" "the real host's boundary must read as the quiet line"
   assert_grep '	boundary	' "$home/state/.supervision-host.log" "the host must have ended its own park"
   if [ -e "$home/state/.watch.lock/pid" ] && kill -0 "$(cat "$home/state/.watch.lock/pid")" 2>/dev/null; then
@@ -346,7 +381,7 @@ test_real_host_checkpoint_ends_quietly_at_its_bound() {
   pass "checkpoint: the real host ends its park at the checkpoint bound as a quiet checkpoint"
 }
 
-test_quiet_checkpoint_exits_124_cleanly
+test_quiet_checkpoint_exits_0_cleanly
 test_perl_timeout_fallback_honors_cleanup_bound_before_escalating
 test_announced_recovery_is_not_reannounced_by_next_checkpoint
 test_never_announced_recovery_is_announced_once
