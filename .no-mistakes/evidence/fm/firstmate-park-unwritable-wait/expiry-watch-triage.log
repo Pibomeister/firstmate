@@ -1,0 +1,8 @@
+[2026-10-22T19:00:41-0600] absorbed non-terminal stale (declared wait or open captain call already re-surfaced this window): fm-lab-park:fm-worker
+[2026-10-22T19:00:43-0600] absorbed stale (paused until 13s from now, declared time not reached): fm-lab-park:fm-worker
+[2026-10-22T19:00:45-0600] absorbed stale (paused until 11s from now, declared time not reached): fm-lab-park:fm-worker
+[2026-10-22T19:00:47-0600] absorbed stale (paused until 9s from now, declared time not reached): fm-lab-park:fm-worker
+[2026-10-22T19:00:49-0600] absorbed stale (paused until 7s from now, declared time not reached): fm-lab-park:fm-worker
+[2026-10-22T19:00:50-0600] absorbed stale (paused until 6s from now, declared time not reached): fm-lab-park:fm-worker
+[2026-10-22T19:00:52-0600] absorbed stale (paused until 4s from now, declared time not reached): fm-lab-park:fm-worker
+[2026-10-22T19:00:54-0600] absorbed stale (paused until 2s from now, declared time not reached): fm-lab-park:fm-worker

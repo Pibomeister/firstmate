@@ -1,14 +1,32 @@
 [
   {
-    "scenario": "unparked inert pane control",
-    "result": "pass"
+    "name": "Unparked inert worker produces a stale wake (control)",
+    "result": "pass",
+    "live": true
   },
   {
-    "scenario": "park suppresses stale wakes, expiry rechecks once then holds cadence",
-    "result": "pass"
+    "name": "Parking an inert worker suppresses repeated stale wakes; a later worker event cancels the park",
+    "result": "pass",
+    "live": true
   },
   {
-    "scenario": "configured wait verb absorbs until a worker event resumes supervision",
-    "result": "pass"
+    "name": "Park expires at its deadline and surfaces a recheck",
+    "result": "pass",
+    "live": true
+  },
+  {
+    "name": "Distant deadline remains bounded by the normal recheck cadence",
+    "result": "pass",
+    "live": true
+  },
+  {
+    "name": "Invalid requests, including impossible calendar dates, refuse without status changes",
+    "result": "pass",
+    "live": true
+  },
+  {
+    "name": "Replacement parks honor explicit deadline despite reason timestamps, custom verb, and multiline reason",
+    "result": "pass",
+    "live": true
   }
 ]

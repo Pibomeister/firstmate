@@ -1,0 +1,309 @@
+$ git rev-parse HEAD
+543ba9b36e7ca3d3d3415fa4dfe089ad0060b43e
+[exit 0]
+REVISION 543ba9b36e7ca3d3d3415fa4dfe089ad0060b43e
+
+SCENARIO: Unparked inert worker produces a stale wake (control)
+$ bash bin/fm-lab-home.sh create /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J69ZR1KR6Z67YZ17HJFWEY/l
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J69ZR1KR6Z67YZ17HJFWEY/l
+[exit 0]
+$ tmux -L fm-lab -f /dev/null new-session -d -x 100 -y 30 -s fm-lab-park -n fm-worker -c /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J69ZR1KR6Z67YZ17HJFWEY/l 'printf '"'"'Inert worker: delivered PR; unable to declare a wait.\n'"'"'; exec sleep 240'
+
+[exit 0]
+$ tmux -L fm-lab display-message -p '#{socket_path}'
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J69ZR1KR6Z67YZ17HJFWEY/l/t/tmux-501/fm-lab
+[exit 0]
+$ bash -c '. bin/fm-wake-lib.sh; fm_wake_status_mark_current "$FM_HOME/state" "$FM_HOME/state/worker.status"'
+
+[exit 0]
+$ FM_HOME=<disposable lab> FM_POLL=1 FM_PAUSE_RESURFACE_SECS=240 bash bin/fm-watch.sh
+stale: fm-lab-park:fm-worker
+STATE worker.status:
+working: delivered PR; quota exhausted
+STATE .wake-queue:
+1792717223	1	stale	fm-lab-park:fm-worker	stale: fm-lab-park:fm-worker
+$ tmux -L fm-lab kill-server
+
+[exit 0]
+CLEANUP: private tmux server stopped; disposable lab removed.
+RESULT: PASS
+
+SCENARIO: Parking an inert worker suppresses repeated stale wakes; a later worker event cancels the park
+$ bash bin/fm-lab-home.sh create /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J69ZR1KR6Z67YZ17HJFWEY/l
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J69ZR1KR6Z67YZ17HJFWEY/l
+[exit 0]
+$ tmux -L fm-lab -f /dev/null new-session -d -x 100 -y 30 -s fm-lab-park -n fm-worker -c /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J69ZR1KR6Z67YZ17HJFWEY/l 'printf '"'"'Inert worker: delivered PR; unable to declare a wait.\n'"'"'; exec sleep 240'
+
+[exit 0]
+$ tmux -L fm-lab display-message -p '#{socket_path}'
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J69ZR1KR6Z67YZ17HJFWEY/l/t/tmux-501/fm-lab
+[exit 0]
+$ bash -c '. bin/fm-wake-lib.sh; fm_wake_status_mark_current "$FM_HOME/state" "$FM_HOME/state/worker.status"'
+
+[exit 0]
+$ bash bin/fm-park.sh worker --until 2026-10-23T01:02:24Z --reason 'quota exhausted; delivered PR awaiting upstream review'
+parked worker until 2026-10-23T01:02:24Z: quota exhausted; delivered PR awaiting upstream review
+[exit 0]
+$ FM_HOME=<disposable lab> FM_POLL=1 FM_PAUSE_RESURFACE_SECS=240 bash bin/fm-watch.sh
+OBSERVED: 4 stable-pane polls; no queued wake.
+[2026-10-22T19:00:29-0600] absorbed non-terminal stale (declared wait or open captain call already re-surfaced this window): fm-lab-park:fm-worker
+[2026-10-22T19:00:30-0600] absorbed stale (paused until 114s from now, declared time not reached): fm-lab-park:fm-worker
+STATE worker.status:
+working: delivered PR; quota exhausted
+paused [key=fm-park] [at=1792717224]: quota exhausted; delivered PR awaiting upstream review (parked by firstmate) until 2026-10-23T01:02:24Z
+STATE .watch-triage.log:
+[2026-10-22T19:00:29-0600] absorbed non-terminal stale (declared wait or open captain call already re-surfaced this window): fm-lab-park:fm-worker
+[2026-10-22T19:00:30-0600] absorbed stale (paused until 114s from now, declared time not reached): fm-lab-park:fm-worker
+WORKER EVENT: working: quota reset; resuming
+signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J69ZR1KR6Z67YZ17HJFWEY/l/state/worker.status
+$ bash -c '. bin/fm-classify-lib.sh; status_declared_wait_line "$FM_HOME/state/worker.status"'
+
+[exit 0]
+STATE worker.status:
+working: delivered PR; quota exhausted
+paused [key=fm-park] [at=1792717224]: quota exhausted; delivered PR awaiting upstream review (parked by firstmate) until 2026-10-23T01:02:24Z
+working: quota reset; resuming
+STATE .watch-triage.log:
+[2026-10-22T19:00:29-0600] absorbed non-terminal stale (declared wait or open captain call already re-surfaced this window): fm-lab-park:fm-worker
+[2026-10-22T19:00:30-0600] absorbed stale (paused until 114s from now, declared time not reached): fm-lab-park:fm-worker
+[2026-10-22T19:00:32-0600] absorbed stale (paused, awaiting external, age 0s): fm-lab-park:fm-worker
+STATE .wake-queue:
+1792717235	1	signal	worker.status	signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J69ZR1KR6Z67YZ17HJFWEY/l/state/worker.status
+1792717235	2	signal	worker.status	signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J69ZR1KR6Z67YZ17HJFWEY/l/state/worker.status
+$ tmux -L fm-lab kill-server
+
+[exit 0]
+CLEANUP: private tmux server stopped; disposable lab removed.
+RESULT: PASS
+
+SCENARIO: Park expires at its deadline and surfaces a recheck
+$ bash bin/fm-lab-home.sh create /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J69ZR1KR6Z67YZ17HJFWEY/l
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J69ZR1KR6Z67YZ17HJFWEY/l
+[exit 0]
+$ tmux -L fm-lab -f /dev/null new-session -d -x 100 -y 30 -s fm-lab-park -n fm-worker -c /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J69ZR1KR6Z67YZ17HJFWEY/l 'printf '"'"'Inert worker: delivered PR; unable to declare a wait.\n'"'"'; exec sleep 240'
+
+[exit 0]
+$ tmux -L fm-lab display-message -p '#{socket_path}'
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J69ZR1KR6Z67YZ17HJFWEY/l/t/tmux-501/fm-lab
+[exit 0]
+$ bash -c '. bin/fm-wake-lib.sh; fm_wake_status_mark_current "$FM_HOME/state" "$FM_HOME/state/worker.status"'
+
+[exit 0]
+$ bash bin/fm-park.sh worker --until 2026-10-23T01:00:56Z --reason 'quota exhausted; delivered PR awaiting upstream review'
+parked worker until 2026-10-23T01:00:56Z: quota exhausted; delivered PR awaiting upstream review
+[exit 0]
+$ FM_HOME=<disposable lab> FM_POLL=1 FM_PAUSE_RESURFACE_SECS=240 bash bin/fm-watch.sh
+OBSERVED: 3 stable-pane polls; no queued wake.
+[2026-10-22T19:00:41-0600] absorbed non-terminal stale (declared wait or open captain call already re-surfaced this window): fm-lab-park:fm-worker
+[2026-10-22T19:00:43-0600] absorbed stale (paused until 13s from now, declared time not reached): fm-lab-park:fm-worker
+stale: fm-lab-park:fm-worker (paused 20s, awaiting external - the declared clearing time has passed, rechecked on a long cadence not a wedge; confirm the wait cleared)
+STATE worker.status:
+working: delivered PR; quota exhausted
+paused [key=fm-park] [at=1792717236]: quota exhausted; delivered PR awaiting upstream review (parked by firstmate) until 2026-10-23T01:00:56Z
+STATE .watch-triage.log:
+[2026-10-22T19:00:41-0600] absorbed non-terminal stale (declared wait or open captain call already re-surfaced this window): fm-lab-park:fm-worker
+[2026-10-22T19:00:43-0600] absorbed stale (paused until 13s from now, declared time not reached): fm-lab-park:fm-worker
+[2026-10-22T19:00:45-0600] absorbed stale (paused until 11s from now, declared time not reached): fm-lab-park:fm-worker
+[2026-10-22T19:00:47-0600] absorbed stale (paused until 9s from now, declared time not reached): fm-lab-park:fm-worker
+[2026-10-22T19:00:49-0600] absorbed stale (paused until 7s from now, declared time not reached): fm-lab-park:fm-worker
+[2026-10-22T19:00:50-0600] absorbed stale (paused until 6s from now, declared time not reached): fm-lab-park:fm-worker
+[2026-10-22T19:00:52-0600] absorbed stale (paused until 4s from now, declared time not reached): fm-lab-park:fm-worker
+[2026-10-22T19:00:54-0600] absorbed stale (paused until 2s from now, declared time not reached): fm-lab-park:fm-worker
+STATE .wake-queue:
+1792717256	1	stale	fm-lab-park:fm-worker	stale: fm-lab-park:fm-worker (paused 20s, awaiting external - the declared clearing time has passed, rechecked on a long cadence not a wedge; confirm the wait cleared)
+$ tmux -L fm-lab kill-server
+
+[exit 0]
+CLEANUP: private tmux server stopped; disposable lab removed.
+RESULT: PASS
+
+SCENARIO: Distant deadline remains bounded by the normal recheck cadence
+$ bash bin/fm-lab-home.sh create /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J69ZR1KR6Z67YZ17HJFWEY/l
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J69ZR1KR6Z67YZ17HJFWEY/l
+[exit 0]
+$ tmux -L fm-lab -f /dev/null new-session -d -x 100 -y 30 -s fm-lab-park -n fm-worker -c /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J69ZR1KR6Z67YZ17HJFWEY/l 'printf '"'"'Inert worker: delivered PR; unable to declare a wait.\n'"'"'; exec sleep 240'
+
+[exit 0]
+$ tmux -L fm-lab display-message -p '#{socket_path}'
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J69ZR1KR6Z67YZ17HJFWEY/l/t/tmux-501/fm-lab
+[exit 0]
+$ bash -c '. bin/fm-wake-lib.sh; fm_wake_status_mark_current "$FM_HOME/state" "$FM_HOME/state/worker.status"'
+
+[exit 0]
+$ bash bin/fm-park.sh worker --until 2026-10-24T01:00:57Z --reason 'quota exhausted; delivered PR awaiting upstream review'
+parked worker until 2026-10-24T01:00:57Z: quota exhausted; delivered PR awaiting upstream review
+[exit 0]
+$ FM_HOME=<disposable lab> FM_POLL=1 FM_PAUSE_RESURFACE_SECS=7 bash bin/fm-watch.sh
+stale: fm-lab-park:fm-worker (paused 7s, awaiting external - the declared time is beyond the recheck cadence; confirm the wait still holds)
+STATE worker.status:
+working: delivered PR; quota exhausted
+paused [key=fm-park] [at=1792717257]: quota exhausted; delivered PR awaiting upstream review (parked by firstmate) until 2026-10-24T01:00:57Z
+STATE .watch-triage.log:
+[2026-10-22T19:01:02-0600] absorbed non-terminal stale (declared wait or open captain call already re-surfaced this window): fm-lab-park:fm-worker
+STATE .wake-queue:
+1792717264	1	stale	fm-lab-park:fm-worker	stale: fm-lab-park:fm-worker (paused 7s, awaiting external - the declared time is beyond the recheck cadence; confirm the wait still holds)
+$ tmux -L fm-lab kill-server
+
+[exit 0]
+CLEANUP: private tmux server stopped; disposable lab removed.
+RESULT: PASS
+
+SCENARIO: Invalid requests, including impossible calendar dates, refuse without status changes
+$ bash bin/fm-lab-home.sh create /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J69ZR1KR6Z67YZ17HJFWEY/l
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J69ZR1KR6Z67YZ17HJFWEY/l
+[exit 0]
+$ tmux -L fm-lab -f /dev/null new-session -d -x 100 -y 30 -s fm-lab-park -n fm-worker -c /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J69ZR1KR6Z67YZ17HJFWEY/l 'printf '"'"'Inert worker: delivered PR; unable to declare a wait.\n'"'"'; exec sleep 240'
+
+[exit 0]
+$ tmux -L fm-lab display-message -p '#{socket_path}'
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J69ZR1KR6Z67YZ17HJFWEY/l/t/tmux-501/fm-lab
+[exit 0]
+$ bash -c '. bin/fm-wake-lib.sh; fm_wake_status_mark_current "$FM_HOME/state" "$FM_HOME/state/worker.status"'
+
+[exit 0]
+$ bash bin/fm-park.sh worker --until 2099-10-24T12:00:30Z --reason 'quota exhausted; delivered PR awaiting upstream review'
+parked worker until 2099-10-24T12:00:30Z: quota exhausted; delivered PR awaiting upstream review
+[exit 0]
+INVALID REQUEST: February 30, minutes
+$ bash bin/fm-park.sh worker --until 2099-02-30T12:00Z --reason waiting
+fm-park: --until must be a valid UTC calendar time: 2099-02-30T12:00Z
+[exit 1]
+OBSERVED: refusal; status bytes unchanged.
+INVALID REQUEST: February 30, seconds
+$ bash bin/fm-park.sh worker --until 2099-02-30T12:00:30Z --reason waiting
+fm-park: --until must be a valid UTC calendar time: 2099-02-30T12:00:30Z
+[exit 1]
+OBSERVED: refusal; status bytes unchanged.
+INVALID REQUEST: non-leap February 29
+$ bash bin/fm-park.sh worker --until 2099-02-29T12:00Z --reason waiting
+fm-park: --until must be a valid UTC calendar time: 2099-02-29T12:00Z
+[exit 1]
+OBSERVED: refusal; status bytes unchanged.
+INVALID REQUEST: unknown task
+$ bash bin/fm-park.sh unknown --until 2099-10-24T12:00Z --reason waiting
+fm-park: no recorded task 'unknown' in this home (missing /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J69ZR1KR6Z67YZ17HJFWEY/l/state/unknown.meta)
+[exit 1]
+OBSERVED: refusal; status bytes unchanged.
+INVALID REQUEST: path traversal
+$ bash bin/fm-park.sh ../worker --until 2099-10-24T12:00Z --reason waiting
+fm-park: task id must be a plain task id: ../worker
+[exit 1]
+OBSERVED: refusal; status bytes unchanged.
+INVALID REQUEST: non-UTC
+$ bash bin/fm-park.sh worker --until 2099-10-24T12:00+01:00 --reason waiting
+fm-park: --until must be a UTC time shaped YYYY-MM-DDTHH:MM[:SS]Z: 2099-10-24T12:00+01:00
+[exit 1]
+OBSERVED: refusal; status bytes unchanged.
+INVALID REQUEST: past deadline
+$ bash bin/fm-park.sh worker --until 2020-10-24T12:00Z --reason waiting
+fm-park: --until must be in the future: 2020-10-24T12:00Z
+[exit 1]
+OBSERVED: refusal; status bytes unchanged.
+INVALID REQUEST: missing deadline
+$ bash bin/fm-park.sh worker --reason waiting
+fm-park: --until <YYYY-MM-DDTHH:MM[:SS]Z> is required, so the park ends and supervision rechecks the task
+[exit 1]
+OBSERVED: refusal; status bytes unchanged.
+INVALID REQUEST: blank reason
+$ bash bin/fm-park.sh worker --until 2099-10-24T12:00Z --reason '  '
+fm-park: --reason is required: say what the task is waiting for
+[exit 1]
+OBSERVED: refusal; status bytes unchanged.
+INVALID REQUEST: oversized reason
+$ bash bin/fm-park.sh worker --until 2099-10-24T12:00Z --reason xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+fm-park: the park line is 311 characters, over the 204-character limit; shorten --reason
+[exit 1]
+OBSERVED: refusal; status bytes unchanged.
+STATE worker.status:
+working: delivered PR; quota exhausted
+paused [key=fm-park] [at=1792717264]: quota exhausted; delivered PR awaiting upstream review (parked by firstmate) until 2099-10-24T12:00:30Z
+$ tmux -L fm-lab kill-server
+
+[exit 0]
+CLEANUP: private tmux server stopped; disposable lab removed.
+RESULT: PASS
+
+SCENARIO: Replacement parks honor explicit deadline despite reason timestamps, custom verb, and multiline reason
+$ bash bin/fm-lab-home.sh create /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J69ZR1KR6Z67YZ17HJFWEY/l
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J69ZR1KR6Z67YZ17HJFWEY/l
+[exit 0]
+$ tmux -L fm-lab -f /dev/null new-session -d -x 100 -y 30 -s fm-lab-park -n fm-worker -c /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J69ZR1KR6Z67YZ17HJFWEY/l 'printf '"'"'Inert worker: delivered PR; unable to declare a wait.\n'"'"'; exec sleep 240'
+
+[exit 0]
+$ tmux -L fm-lab display-message -p '#{socket_path}'
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5J69ZR1KR6Z67YZ17HJFWEY/l/t/tmux-501/fm-lab
+[exit 0]
+$ bash -c '. bin/fm-wake-lib.sh; fm_wake_status_mark_current "$FM_HOME/state" "$FM_HOME/state/worker.status"'
+
+[exit 0]
+$ bash bin/fm-park.sh worker --until 2099-10-24T12:00Z --reason 'quota exhausted until 2020-01-01T12:00Z; upstream review until 2020-01-02T12:00:30Z'
+parked worker until 2099-10-24T12:00Z: quota exhausted until 2020-01-01T12:00Z; upstream review until 2020-01-02T12:00:30Z
+[exit 0]
+$ bash -c '. bin/fm-classify-lib.sh; line=$(status_declared_wait_line "$FM_HOME/state/worker.status"); printf "%s\n" "$line"; status_paused_until "$line"'
+paused [key=fm-park] [at=1792717265]: quota exhausted until 2020-01-01T12:00Z; upstream review until 2020-01-02T12:00:30Z (parked by firstmate) until 2099-10-24T12:00:00Z
+4096526400
+[exit 0]
+$ bash bin/fm-park.sh worker --until 2099-10-24T12:00:30Z --reason 'quota exhausted until 2020-01-01T12:00Z; upstream review until 2020-01-02T12:00:30Z'
+parked worker until 2099-10-24T12:00:30Z: quota exhausted until 2020-01-01T12:00Z; upstream review until 2020-01-02T12:00:30Z
+[exit 0]
+$ bash -c '. bin/fm-classify-lib.sh; line=$(status_declared_wait_line "$FM_HOME/state/worker.status"); printf "%s\n" "$line"; status_paused_until "$line"'
+paused [key=fm-park] [at=1792717265]: quota exhausted until 2020-01-01T12:00Z; upstream review until 2020-01-02T12:00:30Z (parked by firstmate) until 2099-10-24T12:00:30Z
+4096526430
+[exit 0]
+$ bash bin/fm-park.sh worker --until 2099-10-24T12:00:30Z --reason 'quota
+exhausted	upstream review'
+parked worker until 2099-10-24T12:00:30Z: quota exhausted upstream review
+[exit 0]
+$ bash -c '. bin/fm-classify-lib.sh; line=$(status_declared_wait_line "$FM_HOME/state/worker.status"); printf "%s\n" "$line"; status_paused_until "$line"'
+holding [key=fm-park] [at=1792717265]: quota exhausted upstream review (parked by firstmate) until 2099-10-24T12:00:30Z
+4096526430
+[exit 0]
+$ FM_HOME=<disposable lab> FM_POLL=1 FM_PAUSE_RESURFACE_SECS=240 bash bin/fm-watch.sh
+OBSERVED: 3 stable-pane polls; no queued wake.
+[2026-10-22T19:01:11-0600] absorbed non-terminal stale (declared wait or open captain call already re-surfaced this window): fm-lab-park:fm-worker
+[2026-10-22T19:01:13-0600] absorbed stale (paused until 2303809158s from now, declared time not reached): fm-lab-park:fm-worker
+STATE worker.status:
+working: delivered PR; quota exhausted
+paused [key=fm-park] [at=1792717265]: quota exhausted until 2020-01-01T12:00Z; upstream review until 2020-01-02T12:00:30Z (parked by firstmate) until 2099-10-24T12:00:00Z
+paused [key=fm-park] [at=1792717265]: quota exhausted until 2020-01-01T12:00Z; upstream review until 2020-01-02T12:00:30Z (parked by firstmate) until 2099-10-24T12:00:30Z
+holding [key=fm-park] [at=1792717265]: quota exhausted upstream review (parked by firstmate) until 2099-10-24T12:00:30Z
+STATE .watch-triage.log:
+[2026-10-22T19:01:11-0600] absorbed non-terminal stale (declared wait or open captain call already re-surfaced this window): fm-lab-park:fm-worker
+[2026-10-22T19:01:13-0600] absorbed stale (paused until 2303809158s from now, declared time not reached): fm-lab-park:fm-worker
+$ tmux -L fm-lab kill-server
+
+[exit 0]
+CLEANUP: private tmux server stopped; disposable lab removed.
+RESULT: PASS
+[
+  {
+    "name": "Unparked inert worker produces a stale wake (control)",
+    "result": "pass",
+    "live": true
+  },
+  {
+    "name": "Parking an inert worker suppresses repeated stale wakes; a later worker event cancels the park",
+    "result": "pass",
+    "live": true
+  },
+  {
+    "name": "Park expires at its deadline and surfaces a recheck",
+    "result": "pass",
+    "live": true
+  },
+  {
+    "name": "Distant deadline remains bounded by the normal recheck cadence",
+    "result": "pass",
+    "live": true
+  },
+  {
+    "name": "Invalid requests, including impossible calendar dates, refuse without status changes",
+    "result": "pass",
+    "live": true
+  },
+  {
+    "name": "Replacement parks honor explicit deadline despite reason timestamps, custom verb, and multiline reason",
+    "result": "pass",
+    "live": true
+  }
+]
