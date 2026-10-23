@@ -10,38 +10,6 @@ command -v perl >/dev/null 2>&1 || { printf 'skip: perl absent\n'; exit 0; }
 # shellcheck source=tests/supervision-host-helpers.sh
 . "$(dirname "${BASH_SOURCE[0]}")/supervision-host-helpers.sh"
 
-# Stop whatever a case left running, by the exact pids its home recorded.
-stop_home_processes() {  # <home>
-  local home=$1 pid arms='' i=0
-  if [ -f "$home/state/.supervision-host" ]; then
-    arms=$(awk -F '\t' '$1 == "arm" { print $2 }' "$home/state/.supervision-host")
-    pid=$(awk -F '\t' '$1 == "host" { print $2; exit }' "$home/state/.supervision-host")
-    [ -z "$pid" ] || kill -TERM "$pid" 2>/dev/null || true
-    while [ "$i" -lt 50 ] && [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; do
-      sleep 0.1
-      i=$((i + 1))
-    done
-  fi
-  for pid in $arms; do
-    kill -TERM "$pid" 2>/dev/null || true
-  done
-  pid=$(cat "$home/state/.watch.lock/pid" 2>/dev/null || true)
-  [ -z "$pid" ] || kill -TERM "$pid" 2>/dev/null || true
-  while IFS= read -r pid; do
-    if [ -e "$home/session.stop" ]; then
-      # A Stop hook may re-arm between the host snapshot above and its TERM.
-      # Bound the fixture harness reap rather than waiting forever for a hook
-      # that has already started another park.
-      wait_for_exit "$pid" 100 >/dev/null 2>&1 || true
-    else
-      kill -TERM "$pid" 2>/dev/null || true
-    fi
-  done < <(cat "$home/claude-pids" 2>/dev/null)
-  while IFS= read -r pid; do
-    kill -TERM "$pid" 2>/dev/null || true
-  done < <(cat "$home/orphan-pid" 2>/dev/null)
-}
-
 test_report_surface_enforces_actor_turn_and_scope() {
   local home state out rc
   home="$TMP_ROOT/report"
@@ -1336,26 +1304,6 @@ SH
   [ "$(mode_of "$home/state/.supervision-host-wake")" = 600 ] || fail "the wake file must be owner-only, got $(mode_of "$home/state/.supervision-host-wake")"
   [ "$(cat "$home/feed-modes" 2>/dev/null)" = 600 ] || fail "the mirror feed must be owner-only, got $(cat "$home/feed-modes" 2>/dev/null)"
   pass "host: the dialog mirror, its feed, and the wake file are owner-only"
-}
-
-# Park again after a host was stopped mid-park: an empty queue stays quiet,
-# while queued work resurfaces and main drains it before the next park.
-# That close can end the park before its cycle is ever seen live, so this
-# waits for the exit itself.
-park_after_stop() {  # <home>
-  if [ ! -s "$1/state/.wake-queue" ]; then
-    park_again "$1"
-    [ ! -s "$1/host.rc" ] || fail "an empty-queue restart ended the park"
-    assert_no_re '^check: rearm-resurface' "$1/host.out" "an empty-queue restart woke for bookkeeping"
-    return
-  fi
-  rm -f "$1/host.rc"
-  : > "$1/park.go"
-  wait_until 150 host_exited "$1" || fail "the watcher's downtime resurface did not reach main: $(cat "$1/host.out")"
-  assert_re '^check: rearm-resurface' "$1/host.out" "fixture: the first close after the watcher stopped was not its resurface"
-  main_drain_and_ack "$1"
-  quiet_pass_through_successor "$1"
-  park_again "$1"
 }
 
 # Dialog counts as delivered only once the turn that carried it is accepted
