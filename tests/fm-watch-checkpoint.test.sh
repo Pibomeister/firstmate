@@ -428,18 +428,25 @@ test_host_checkpoint_needs_the_file_and_honors_off() {
 }
 
 # The real host under a fake Codex harness that holds the home's session lock.
-# shellcheck disable=SC2016 # the fake harness's script expands in its own shell
-run_real_host_cleanup_failure() {
-  local kind=$1 home fakebin checkpoint_pid holder watcher first i status holder_status
-  home=$(make_home "host-retirement-$kind")
+make_real_host_home() {
+  local home
+  home=$(make_home "$1")
   echo claude > "$home/config/supervision-host"
   printf 'project=fixture\nwindow=fm-demo\nharness=codex\n' > "$home/state/demo.meta"
   FM_HOME="$home" "$ROOT/bin/fm-afk-contract.sh" enter --words 'fixture; merge nothing' >/dev/null \
     || fail "could not record the fixture away posture"
+  mkdir -p "$home/fakebin"
+  ln -s /bin/bash "$home/fakebin/codex"
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$home/fakebin/tmux"
+  chmod +x "$home/fakebin/tmux"
+  printf '%s\n' "$home"
+}
+
+# shellcheck disable=SC2016
+run_real_host_cleanup_failure() {
+  local kind=$1 cleanup_bound=${2:-2} home fakebin checkpoint_pid holder watcher first i status holder_status pending=0 capture arm
+  home=$(make_real_host_home "host-retirement-$kind-$cleanup_bound")
   fakebin="$home/fakebin"
-  mkdir -p "$fakebin"
-  ln -s /bin/bash "$fakebin/codex"
-  printf '#!/usr/bin/env bash\nexit 1\n' > "$fakebin/tmux"
   cat > "$fakebin/engine" <<'SH'
 #!/usr/bin/env bash
 : > "$FM_HOME/engine-ready"
@@ -461,7 +468,7 @@ SH
   FM_HOME="$home" PATH="$fakebin:$PATH" FM_POLL=1 FM_CHECK_INTERVAL=0 FM_CHECK_TIMEOUT=120 FM_HEARTBEAT=999999 \
     FM_CODEX_WATCH_CHECKPOINT_AWAY=120 FM_TEST_SUPERVISION_HOST_CLOCK="$home/park-clock" \
     FM_SUPERVISION_HOST_TURN_TIMEOUT=60 FM_SUPERVISION_ENGINE_GRACE=1 \
-    FM_SUPERVISION_ENGINE_CLAUDE_BIN="$fakebin/engine" FM_WATCHER_CLEANUP_LOCK_BOUND=2 \
+    FM_SUPERVISION_ENGINE_CLAUDE_BIN="$fakebin/engine" FM_WATCHER_CLEANUP_LOCK_BOUND="$cleanup_bound" \
     "$fakebin/codex" -c '
       printf "%s\n" "$$" > "$FM_HOME/state/.lock"
       "$0" --seconds 120
@@ -512,8 +519,23 @@ SH
   esac
   status=0
   wait "$checkpoint_pid" || status=$?
+  expect_code 1 "$status" "real host $kind cleanup failure checkpoint exit"
+  if kill -0 "$watcher" 2>/dev/null; then
+    pending=1
+    capture=
+    for capture in "$home/state"/.supervision-host-arm.*; do [ -f "$capture" ] && break; done
+    [ -f "$capture" ] || fail "unfinished retirement discarded its capture"
+    awk -F '\t' '$1 == "arm" { found = 1 } END { exit !found }' "$home/state/.supervision-host" \
+      || fail "unfinished retirement discarded its process record"
+    arm=$(awk -F '\t' '$1 == "arm" { print $2; exit }' "$home/state/.supervision-host")
+    kill -TERM "$arm" || fail "unfinished retirement lost its owned arm"
+    sleep 0.2
+    is_live_non_zombie "$arm" || fail "a repeated stop killed the retiring arm"
+    assert_contains "$(cat "$home/out.txt")" 'did not finish retirement; retaining its capture and process record' \
+      "unfinished retirement did not explain its retained evidence"
+  fi
   holder_status=0
-  wait_for_exit "$holder" 100 >/dev/null 2>&1 || holder_status=$?
+  wait_for_exit "$holder" $((cleanup_bound * 20 + 100)) >/dev/null 2>&1 || holder_status=$?
   expect_code 0 "$holder_status" "retirement lock holder exit"
   [ "$(cat "$home/state/.watch.lock/pid")" = "$watcher" ] || fail "retirement discarded stale recovery evidence"
   ! kill -0 "$watcher" 2>/dev/null || fail "retirement left the owned watcher alive"
@@ -526,10 +548,14 @@ SH
       assert_contains "$(cat "$home/out.txt")" 'the engine turn failed (exit 3); this wake is yours' "fixture did not reach the failed-engine hand-back"
     fi
   fi
-  expect_code 1 "$status" "real host $kind cleanup failure checkpoint exit"
-  assert_contains "$(cat "$home/out.txt")" \
-    'supervision-host: watcher: recovery state could not be persisted; retaining stale lock evidence' \
-    "real host $kind discarded its retirement diagnostic"
+  if [ "$pending" -eq 1 ]; then
+    assert_contains "$(cat "$capture")" 'watcher: recovery state could not be persisted; retaining stale lock evidence' \
+      "unfinished retirement did not retain the late cleanup diagnostic"
+  else
+    assert_contains "$(cat "$home/out.txt")" \
+      'supervision-host: watcher: recovery state could not be persisted; retaining stale lock evidence' \
+      "real host $kind discarded its retirement diagnostic"
+  fi
   assert_not_contains "$(cat "$home/out.txt")" 'checkpoint: no actionable wake' "failed retirement was reported as quiet"
   pass "real host $kind preserves watcher retirement failures and stale recovery evidence"
 }
@@ -538,6 +564,89 @@ test_real_host_retirement_preserves_cleanup_failures() {
   run_real_host_cleanup_failure boundary
   run_real_host_cleanup_failure handback
   run_real_host_cleanup_failure interrupted
+  run_real_host_cleanup_failure boundary 30
+  run_real_host_cleanup_failure handback 30
+}
+
+# shellcheck disable=SC2016
+test_real_host_completed_close_preserves_cleanup_failure() {
+  local home checkpoint_pid holder watcher i status real_mv
+  home=$(make_real_host_home host-completed-cleanup)
+  real_mv=$(command -v mv) || fail "could not locate mv for delivery synchronization"
+  cat > "$home/fakebin/mv" <<'SH'
+#!/usr/bin/env bash
+last=
+for last in "$@"; do :; done
+if [ "$last" = "$FM_HOME/state/.watch-deliveries.log" ]; then
+  : > "$FM_HOME/completed-output-ready"
+  while [ ! -e "$FM_HOME/completed-output-go" ] && [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do sleep 0.1; done
+fi
+exec "$FM_TEST_REAL_MV" "$@"
+SH
+  chmod +x "$home/fakebin/mv"
+  cat > "$home/fakebin/engine" <<'SH'
+#!/usr/bin/env bash
+set -eu
+: > "$FM_HOME/engine-called"
+drain=$("$FM_REPO/bin/fm-wake-drain.sh" 2>&1)
+ack=$(printf '%s\n' "$drain" | sed -n 's/^WAKE_ACK_REQUIRED: after handling completes run bin\/fm-wake-drain.sh //p' | tail -1)
+"$FM_REPO/bin/fm-lease.sh" claim demo >/dev/null
+"$FM_REPO/bin/fm-branch-report.sh" --task demo --verdict routine --summary handled >/dev/null
+[ -z "$ack" ] || "$FM_REPO/bin/fm-wake-drain.sh" $ack >/dev/null
+"$FM_REPO/bin/fm-lease.sh" release demo >/dev/null
+echo 120 > "$FM_HOME/park-clock"
+printf '{"type":"result","subtype":"success","is_error":false,"num_turns":1,"total_cost_usd":0,"usage":{"input_tokens":1,"cache_read_input_tokens":0,"cache_creation_input_tokens":0,"output_tokens":1},"session_id":"stub"}\n'
+SH
+  chmod +x "$home/fakebin/engine"
+  echo 0 > "$home/park-clock"
+  FM_HOME="$home" FM_REPO="$ROOT" FM_TEST_REAL_MV="$real_mv" FM_WATCH_DELIVERY_MAX_BYTES=1 \
+    PATH="$home/fakebin:$PATH" FM_POLL=1 FM_CHECK_INTERVAL=999999 \
+    FM_SIGNAL_GRACE=0 FM_HEARTBEAT=999999 FM_CODEX_WATCH_CHECKPOINT_AWAY=120 \
+    FM_TEST_SUPERVISION_HOST_CLOCK="$home/park-clock" FM_SUPERVISION_HOST_TURN_TIMEOUT=60 FM_SUPERVISION_ENGINE_GRACE=1 \
+    FM_SUPERVISION_ENGINE_CLAUDE_BIN="$home/fakebin/engine" FM_WATCHER_CLEANUP_LOCK_BOUND=2 \
+    "$home/fakebin/codex" -c '
+      printf "%s\n" "$$" > "$FM_HOME/state/.lock"
+      "$0" --seconds 120
+    ' "$CHECKPOINT" >"$home/out.txt" 2>"$home/err.txt" &
+  checkpoint_pid=$!
+  i=0
+  while [ "$i" -lt 1000 ]; do
+    if grep -Eq '^watcher: started pid=[0-9]+ \(beacon fresh\)' "$home/state"/.supervision-host-arm.* 2>/dev/null; then break; fi
+    sleep 0.1
+    i=$((i + 1))
+  done
+  [ "$i" -lt 1000 ] || fail "completed-close fixture never reached a ready watcher"
+  watcher=$(cat "$home/state/.watch.lock/pid")
+  printf 'working: completed close fixture\n' > "$home/state/demo.status"
+  i=0
+  while [ ! -e "$home/completed-output-ready" ] && [ "$i" -lt 1000 ]; do sleep 0.1; i=$((i + 1)); done
+  [ -e "$home/completed-output-ready" ] || fail "watcher did not reach its delivery publication"
+  grep -Eq '^signal: .*demo.status' "$home/state"/.watch-arm-output.* \
+    || fail "watcher had not emitted its real signal before lock contention"
+  assert_grep 'demo.status' "$home/state/.wake-queue" "watcher had not durably queued its real signal"
+  FM_HOME="$home" bash -c '
+    . "$1"
+    fm_lock_acquire_wait "$FM_HOME/state/.watcher-down.lock" || exit 1
+    : > "$FM_HOME/completed-lock-held"
+    while kill -0 "$2" 2>/dev/null && [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do sleep 0.1; done
+    fm_lock_release "$FM_HOME/state/.watcher-down.lock"
+  ' _ "$ROOT/bin/fm-wake-lib.sh" "$watcher" &
+  holder=$!
+  i=0
+  while [ ! -e "$home/completed-lock-held" ] && [ "$i" -lt 300 ]; do sleep 0.1; i=$((i + 1)); done
+  [ -e "$home/completed-lock-held" ] || fail "completed-close fixture did not acquire its marker lock"
+  : > "$home/completed-output-go"
+  status=0
+  wait "$checkpoint_pid" || status=$?
+  wait_for_exit "$holder" 100 >/dev/null 2>&1 || fail "completed-close lock holder did not exit"
+  expect_code 1 "$status" "completed cleanup failure checkpoint exit"
+  [ ! -e "$home/engine-called" ] || fail "a completed cleanup failure reached dispatch"
+  [ "$(grep -c '^signal: .*demo.status' "$home/out.txt")" -eq 1 ] || fail "completed cleanup failure lost or repeated its wake"
+  assert_grep 'demo.status' "$home/state/.wake-queue" "completed cleanup failure lost its durable wake"
+  assert_contains "$(cat "$home/out.txt")" 'supervision-host: watcher: recovery state could not be persisted; retaining stale lock evidence' \
+    "completed cleanup failure lost its diagnostic"
+  assert_not_contains "$(cat "$home/out.txt")" 'checkpoint: no actionable wake' "completed cleanup failure became quiet success"
+  pass "completed real signal cleanup failure reaches main before dispatch and retains its durable wake"
 }
 
 test_real_host_checkpoint_ends_quietly_at_its_bound() {
@@ -574,5 +683,6 @@ test_host_checkpoint_bounds_the_park_by_posture
 test_host_checkpoint_does_not_mask_cleanup_failure
 test_host_checkpoint_passes_a_handback_and_reports_a_stand_down
 test_host_checkpoint_needs_the_file_and_honors_off
+test_real_host_completed_close_preserves_cleanup_failure
 test_real_host_retirement_preserves_cleanup_failures
 test_real_host_checkpoint_ends_quietly_at_its_bound
