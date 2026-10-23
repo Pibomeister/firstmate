@@ -43,6 +43,46 @@ test_quiet_checkpoint_exits_0_cleanly() {
   pass "quiet checkpoint exits 0 with a clean checkpoint line, no wake, and no live lock"
 }
 
+test_cleanup_persistence_failure_is_not_a_quiet_checkpoint() {
+  local home holder status
+  home=$(make_home cleanup-persistence-failure)
+  cat > "$home/state/blocked.check.sh" <<'SH'
+#!/usr/bin/env bash
+: > "$FM_HOME/check-started"
+sleep "$FM_TEST_STUB_MAX_BLOCK_SECONDS"
+SH
+  chmod 0700 "$home/state/blocked.check.sh"
+  FM_HOME="$home" "$ROOT/bin/fm-check-register.sh" blocked >/dev/null \
+    || fail "could not register the blocked check"
+  FM_HOME="$home" bash -c '
+    . "$1"
+    i=0
+    while [ ! -e "$FM_HOME/check-started" ] && [ "$i" -lt 300 ]; do
+      sleep 0.1
+      i=$((i + 1))
+    done
+    [ -e "$FM_HOME/check-started" ] || exit 1
+    fm_lock_acquire_wait "$FM_HOME/state/.watcher-down.lock" || exit 1
+    : > "$FM_HOME/cleanup-lock-held"
+    while [ ! -e "$FM_HOME/release-cleanup-lock" ] && [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do sleep 0.1; done
+    fm_lock_release "$FM_HOME/state/.watcher-down.lock"
+  ' _ "$ROOT/bin/fm-wake-lib.sh" &
+  holder=$!
+  status=0
+  FM_HOME="$home" FM_POLL=1 FM_CHECK_INTERVAL=0 FM_CHECK_TIMEOUT=120 FM_HEARTBEAT=999999 \
+    FM_WATCHER_CLEANUP_LOCK_BOUND=2 "$CHECKPOINT" --seconds 30 >"$home/out.txt" 2>"$home/err.txt" || status=$?
+  : > "$home/release-cleanup-lock"
+  wait_for_exit "$holder" 100 >/dev/null 2>&1 || true
+  [ -e "$home/cleanup-lock-held" ] || fail "fixture did not hold the cleanup lock"
+  expect_code 1 "$status" "cleanup persistence failure checkpoint exit"
+  assert_contains "$(cat "$home/err.txt")" 'watcher: recovery state could not be persisted; retaining stale lock evidence' \
+    "checkpoint hid the cleanup persistence failure"
+  assert_not_contains "$(cat "$home/out.txt")" 'checkpoint: no actionable wake' \
+    "cleanup persistence failure was reported as quiet success"
+  [ -s "$home/state/.watch.lock/pid" ] || fail "cleanup failure discarded the stale watcher lock evidence"
+  pass "checkpoint reports recovery persistence failure instead of quiet success"
+}
+
 test_perl_timeout_fallback_honors_cleanup_bound_before_escalating() {
   local home fallback_bin tool tool_path status watcher_pid
   home=$(make_home perl-fallback)
@@ -279,6 +319,13 @@ make_host_home() {  # <name>
 #!/usr/bin/env bash
 printf 'args=%s\nprimary=%s\npark=%s\nlimit=%s\n' "$*" "${FM_SUPERVISION_HOST_PRIMARY:-}" \
   "${FM_SUPERVISION_HOST_PARK_SECONDS:-}" "${FM_SUPERVISION_HOST_PARK_LIMIT:-}" > "$FM_HOME/host-env"
+if [ -e "$FM_HOME/cleanup-error" ]; then
+  if [ "$(cat "$FM_HOME/cleanup-error")" = stdout ]; then
+    printf 'watcher: recovery state could not be persisted; retaining stale lock evidence\n'
+  else
+    printf 'watcher: recovery state could not be persisted; retaining stale lock evidence\n' >&2
+  fi
+fi
 case "$(cat "$FM_HOME/host-kind")" in
   boundary) printf 'supervision-host: cycle boundary - fixture\n' ;;
   handback)
@@ -328,6 +375,28 @@ test_host_checkpoint_bounds_the_park_by_posture() {
   expect_code 0 "$STATUS" "a park beside a quiet record that reached its bound is a quiet checkpoint"
   assert_contains "$(cat "$home/host-env")" 'park=5' "beside a quiet record the host must park for the attended bound"
   pass "checkpoint: an opted-in home runs the host for the checkpoint's bound, raised only while away"
+}
+
+test_host_checkpoint_does_not_mask_cleanup_failure() {
+  local home kind channel
+  home=$(make_host_home host-cleanup-failure)
+  for kind in boundary handback; do
+    for channel in stdout stderr; do
+      printf '%s\n' "$channel" > "$home/cleanup-error"
+      run_host_checkpoint "$home" "$kind" --seconds 5
+      expect_code 1 "$STATUS" "host $kind with cleanup failure on $channel"
+      assert_contains "$(cat "$home/out.txt" "$home/err.txt")" \
+        'watcher: recovery state could not be persisted; retaining stale lock evidence' \
+        "host checkpoint hid the cleanup failure"
+      assert_not_contains "$(cat "$home/out.txt")" 'checkpoint: no actionable wake' \
+        "host cleanup failure was reported as quiet success"
+      if [ "$kind" = handback ]; then
+        [ "$(grep -c '^signal: demo.status$' "$home/out.txt")" -eq 1 ] \
+          || fail "cleanup failure lost or duplicated the actionable wake"
+      fi
+    done
+  done
+  pass "checkpoint preserves host cleanup failures and their actionable wakes on either output stream"
 }
 
 test_host_checkpoint_passes_a_handback_and_reports_a_stand_down() {
@@ -382,6 +451,7 @@ test_real_host_checkpoint_ends_quietly_at_its_bound() {
 }
 
 test_quiet_checkpoint_exits_0_cleanly
+test_cleanup_persistence_failure_is_not_a_quiet_checkpoint
 test_perl_timeout_fallback_honors_cleanup_bound_before_escalating
 test_announced_recovery_is_not_reannounced_by_next_checkpoint
 test_never_announced_recovery_is_announced_once
@@ -390,6 +460,7 @@ test_signal_passes_through_and_exits_zero
 test_registered_check_uses_preserved_watcher_environment
 test_existing_singleton_watcher_is_not_success
 test_host_checkpoint_bounds_the_park_by_posture
+test_host_checkpoint_does_not_mask_cleanup_failure
 test_host_checkpoint_passes_a_handback_and_reports_a_stand_down
 test_host_checkpoint_needs_the_file_and_honors_off
 test_real_host_checkpoint_ends_quietly_at_its_bound
