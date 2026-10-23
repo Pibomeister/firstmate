@@ -1,0 +1,20 @@
+# Scenario: away daemon created by real fm_afk_launch_create_tmux in a server whose global env carries a foreign home
+captain env: FM_HOME=/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.Io3vg7 FM_STATE_OVERRIDE=/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.Io3vg7/state (own override)
+## server global env
+FM_HOME=/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/tmp.miDMgL4SmZ
+FM_PROCEVENT_CLAIM_X=1
+FM_SEND_RETRIES=7
+FM_STATE_OVERRIDE=/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/tmp.miDMgL4SmZ/state
+FM_TASK_ID=foreign-task
+FM_TASK_INBOX=/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/tmp.miDMgL4SmZ/inbox
+LAB_CRED=keepme
+## launcher output
+fm-afk-launch: daemon launched in detached tmux session 'fm-afk-daemon-4076271770-94379-13726-1792714052', supervising primary:zsh
+create_rc=0
+DAEMON_EXIT=0
+## daemon entry process env
+FM_DAEMON_PRIMARY_HARNESS=claude
+FM_HOME=/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.Io3vg7
+FM_SEND_RETRIES=7
+FM_STATE_OVERRIDE=/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.Io3vg7/state
+LAB_CRED=keepme

@@ -1,0 +1,33 @@
+# Scenario: secondmate relaunch (bin/fm-spawn.sh sm-lab --relaunch) in the same contaminated server
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.Io3vg7
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+warning: secondmate sm-lab sync skipped before launch: primary default-branch commit cannot be resolved
+spawned sm-lab harness=dump.sh kind=secondmate mode=secondmate yolo=off window=primary:fm-sm-lab worktree=/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab-sm-01M5
+RELAUNCH_EXIT=0
+## relaunched secondmate harness env
+FM_HOME=/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab-sm-01M5
+FM_SEND_RETRIES=7
+FM_STATE_OVERRIDE=
+FM_TASK_INBOX=/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.Io3vg7/state/sm-lab.inbox
+LAB_CRED=keepme
+## process tree: harness is a child of the original pane shell (in-pane sourcing, no new interpreter)
+pane_pid=90069 cmd=sleep
+  PID  PPID COMM
+44748 90069 sleep
+90069 64511 -zsh
+## pane capture
+eduardopicazo@Eduardos-MacBook-Pro fm-lab-sm-01M5 % export GOTMPDIR=/tmp/fm-sm-l
+ab/gotmp
+export COMPACT_ADVISER_DISABLE=1
+eduardopicazo@Eduardos-MacBook-Pro fm-lab-sm-01M5 % export COMPACT_ADVISER_DISAB
+LE=1
+eduardopicazo@Eduardos-MacBook-Pro fm-lab-sm-01M5 % . '/tmp/fm-sm-lab+11ba35ca39
+d3350b538dd6993f8bc13d3510925987cf0384a230523bf50fe7aa/launch.s1792714000.43498.
+11073.sh'
+## pane-shell unset file written by fm-env-scrub.sh unset-file (pane shell = zsh)
+unset FM_HOME
+unset FM_PROCEVENT_CLAIM_X
+unset FM_STATE_OVERRIDE
+unset FM_TASK_ID
+unset FM_TASK_INBOX
+unset FM_TASK_INBOX

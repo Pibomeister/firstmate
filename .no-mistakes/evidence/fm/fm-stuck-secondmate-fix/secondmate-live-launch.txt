@@ -1,0 +1,23 @@
+# Scenario: secondmate spawned (real bin/fm-spawn.sh --secondmate) into a tmux server whose GLOBAL env was created from a foreign home
+foreign home=/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/tmp.miDMgL4SmZ
+lab primary home=/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.Io3vg7
+secondmate home=/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab-sm-01M5
+## tmux server global env (contamination source)
+FM_HOME=/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/tmp.miDMgL4SmZ
+FM_PROCEVENT_CLAIM_X=1
+FM_SEND_RETRIES=7
+FM_STATE_OVERRIDE=/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/tmp.miDMgL4SmZ/state
+FM_TASK_ID=foreign-task
+FM_TASK_INBOX=/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/tmp.miDMgL4SmZ/inbox
+LAB_CRED=keepme
+## secondmate pane process env as observed by its launched harness
+FM_HOME=/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab-sm-01M5
+FM_SEND_RETRIES=7
+FM_STATE_OVERRIDE=
+FM_TASK_INBOX=/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.Io3vg7/state/sm-lab.inbox
+LAB_CRED=keepme
+## spawn output
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.Io3vg7
+warning: secondmate sm-lab sync skipped before launch: primary default-branch commit cannot be resolved
+spawned sm-lab harness=dump.sh kind=secondmate mode=secondmate yolo=off window=primary:fm-sm-lab worktree=/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab-sm-01M5
+SPAWN_EXIT=0
