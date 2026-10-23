@@ -95,7 +95,7 @@ run_with_perl_timeout() {  # <seconds> <signal> <kill-after-seconds> <command...
       if ($timed_out) {
         kill "KILL", -$pid;
         waitpid $pid, 0;
-        exit 124;
+        exit 137;
       }
       $timed_out = 1;
       kill $signal, -$pid;
@@ -148,6 +148,12 @@ positive_or() {  # <value> <default>
 }
 
 require_clean_shutdown() {
+  if [ "$RC" -eq 137 ]; then
+    [ ! -s "$OUT" ] || cat "$OUT"
+    [ ! -s "$ERR" ] || cat "$ERR" >&2
+    echo "checkpoint: forced KILL ended the checkpoint before clean shutdown" >&2
+    exit "$RC"
+  fi
   if grep -E '^(supervision-host: )?watcher: recovery state could not be persisted;' "$OUT" "$ERR" >/dev/null 2>&1; then
     [ ! -s "$OUT" ] || cat "$OUT"
     [ ! -s "$ERR" ] || cat "$ERR" >&2

@@ -120,9 +120,10 @@ PL
   PATH="$fallback_bin" FM_HOME="$home" FM_POLL=1 FM_SIGNAL_GRACE=1 FM_WATCHER_CLEANUP_LOCK_BOUND=8 \
     "$home/root/bin/fm-watch-checkpoint.sh" --seconds 1 >"$home/out.txt" 2>"$home/err.txt" || status=$?
 
-  expect_code 0 "$status" "Perl fallback checkpoint exit"
-  assert_contains "$(cat "$home/out.txt")" "checkpoint: no actionable wake within 1s" \
-    "Perl fallback did not return a quiet checkpoint"
+  expect_code 137 "$status" "Perl fallback checkpoint exit"
+  assert_not_contains "$(cat "$home/out.txt")" "checkpoint: no actionable wake" \
+    "Perl fallback reported a forced shutdown as quiet success"
+  assert_contains "$(cat "$home/err.txt")" "forced KILL" "Perl fallback hid its forced shutdown"
   [ -e "$home/cleanup-reached" ] || fail "the Perl fallback killed the watcher before its 8-second cleanup bound"
   [ ! -e "$home/natural-exit" ] || fail "the INT-ignoring watcher exited naturally instead of being killed"
   [ -s "$home/watcher.pid" ] || fail "the INT-ignoring watcher did not start"
@@ -131,6 +132,132 @@ PL
     fail "the INT-ignoring watcher survived the Perl fallback escalation"
   fi
   pass "Perl fallback honors the cleanup bound before escalating an INT-ignoring direct watcher"
+}
+
+run_real_perl_shutdown() {
+  local kind=$1 home fallback_bin tool tool_path source holder= watcher status expected=137 hash_tool
+  home=$(make_home "real-perl-$kind")
+  fallback_bin="$home/fallback-bin"
+  mkdir -p "$fallback_bin" "$home/root/bin"
+  for source in "$ROOT/bin/"*; do ln -s "$source" "$home/root/bin/${source##*/}"; done
+  rm "$home/root/bin/fm-watch-checkpoint.sh"
+  cp "$CHECKPOINT" "$home/root/bin/fm-watch-checkpoint.sh"
+  for tool in bash sh dirname mktemp rm perl grep cat date mkdir rmdir readlink ln chmod mv ps awk sed stat tr tail head wc sleep sort cmp cut touch od env node uname git jq basename cp id; do
+    tool_path=$(command -v "$tool") || fail "could not locate $tool for the real Perl fixture"
+    ln -s "$tool_path" "$fallback_bin/$tool"
+  done
+  hash_tool=shasum
+  tool_path=$(command -v "$hash_tool") || { hash_tool=sha256sum; tool_path=$(command -v "$hash_tool"); } \
+    || fail "could not locate a supported custom-check hashing tool"
+  ln -s "$tool_path" "$fallback_bin/$hash_tool"
+  cat > "$fallback_bin/tmux" <<'SH'
+#!/usr/bin/env bash
+exit 1
+SH
+  rm "$fallback_bin/cat" "$fallback_bin/mv"
+  cat > "$fallback_bin/cat" <<'SH'
+#!/usr/bin/env bash
+"$FM_TEST_REAL_CAT" "$@"
+result=$?
+last=
+for last in "$@"; do :; done
+if [ "$last" = "$FM_HOME/state/.watcher-down.lock/pid" ] && [ -e "$FM_HOME/force-cleanup-contention" ]; then
+  : > "$FM_HOME/cleanup-contended"
+  while [ ! -e "$FM_HOME/release-cleanup-contention" ] && [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do sleep 0.1; done
+fi
+exit "$result"
+SH
+  cat > "$fallback_bin/mv" <<'SH'
+#!/usr/bin/env bash
+last=
+for last in "$@"; do :; done
+if [ "$last" = "$FM_HOME/state/.watch-deliveries.log" ]; then
+  : > "$FM_HOME/perl-output-ready"
+  while [ ! -e "$FM_HOME/perl-output-go" ] && [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do sleep 0.1; done
+fi
+exec "$FM_TEST_REAL_MV" "$@"
+SH
+  chmod +x "$fallback_bin/tmux" "$fallback_bin/cat" "$fallback_bin/mv"
+  if [ "$kind" = quiet ]; then
+    expected=0
+  else
+    if [ "$kind" = signal ]; then
+      printf 'project=fixture\nwindow=fm-demo\nharness=codex\n' > "$home/state/demo.meta"
+    else
+      cat > "$home/state/blocked.check.sh" <<'SH'
+#!/usr/bin/env bash
+: > "$FM_HOME/check-started"
+sleep "$FM_TEST_STUB_MAX_BLOCK_SECONDS"
+SH
+      chmod 0700 "$home/state/blocked.check.sh"
+      FM_HOME="$home" "$ROOT/bin/fm-check-register.sh" blocked >/dev/null || fail "could not register the real Perl blocked check"
+    fi
+  fi
+  if [ "$kind" != quiet ]; then
+    FM_HOME="$home" bash -c '
+      . "$1"
+      kind=$2
+      i=0
+      while [ "$i" -lt 1000 ]; do
+        if [ "$kind" = signal ]; then
+          [ -s "$FM_HOME/state/.watch.lock/pid" ] && [ -e "$FM_HOME/state/.last-watcher-beat" ] && break
+        else
+          [ -e "$FM_HOME/check-started" ] && break
+        fi
+        sleep 0.1
+        i=$((i + 1))
+      done
+      [ "$i" -lt 1000 ] || exit 1
+      cat "$FM_HOME/state/.watch.lock/pid" > "$FM_HOME/watcher-before-kill"
+      if [ "$kind" = signal ]; then
+        printf "working: real Perl shutdown\n" > "$FM_HOME/state/demo.status"
+        i=0
+        while [ ! -e "$FM_HOME/perl-output-ready" ] && [ "$i" -lt 1000 ]; do sleep 0.1; i=$((i + 1)); done
+        [ -e "$FM_HOME/perl-output-ready" ] || exit 1
+        cp "$FM_HOME/state/.wake-queue" "$FM_HOME/queued-before-kill"
+      fi
+      fm_lock_acquire_wait "$FM_HOME/state/.watcher-down.lock" || exit 1
+      : > "$FM_HOME/cleanup-lock-held"
+      : > "$FM_HOME/force-cleanup-contention"
+      : > "$FM_HOME/perl-output-go"
+      while [ ! -e "$FM_HOME/release-cleanup-lock" ] && [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do sleep 0.1; done
+      fm_lock_release "$FM_HOME/state/.watcher-down.lock"
+    ' _ "$ROOT/bin/fm-wake-lib.sh" "$kind" &
+    holder=$!
+  fi
+  status=0
+  FM_HOME="$home" FM_TEST_REAL_CAT="$(command -v cat)" FM_TEST_REAL_MV="$(command -v mv)" PATH="$fallback_bin" \
+    FM_WATCH_DELIVERY_MAX_BYTES=1 FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=0 FM_CHECK_TIMEOUT=120 \
+    FM_HEARTBEAT=999999 FM_WATCHER_CLEANUP_LOCK_BOUND=8 \
+    "$home/root/bin/fm-watch-checkpoint.sh" --seconds 15 >"$home/out.txt" 2>"$home/err.txt" || status=$?
+  : > "$home/release-cleanup-lock"
+  : > "$home/release-cleanup-contention"
+  [ -z "$holder" ] || wait_for_exit "$holder" 100 || fail "real Perl contention controller did not complete: $(cat "$home/out.txt" "$home/err.txt")"
+  if [ "$kind" != quiet ]; then
+    [ -e "$home/cleanup-lock-held" ] || fail "real Perl fixture did not hold its cleanup lock"
+    [ -e "$home/cleanup-contended" ] || fail "real Perl watcher never attempted contended cleanup: $(cat "$home/err.txt")"
+    watcher=$(cat "$home/watcher-before-kill")
+  fi
+  expect_code "$expected" "$status" "real Perl $kind exit: $(cat "$home/out.txt" "$home/err.txt")"
+  if [ "$kind" = quiet ]; then
+    assert_contains "$(cat "$home/out.txt")" 'checkpoint: no actionable wake within 15s' "ordinary Perl quiet completion failed"
+  else
+    assert_contains "$(cat "$home/err.txt")" 'forced KILL' "real Perl escalation diagnostic was hidden"
+    assert_not_contains "$(cat "$home/out.txt")" 'checkpoint: no actionable wake' "real Perl escalation became quiet success"
+    [ "$(cat "$home/state/.watch.lock/pid")" = "$watcher" ] || fail "real Perl escalation discarded process evidence"
+    ! is_live_non_zombie "$watcher" || fail "real Perl escalation left the watcher alive"
+    if [ "$kind" = signal ]; then
+      [ "$(grep -c '^signal: .*demo.status' "$home/out.txt")" -eq 1 ] || fail "real Perl escalation lost or repeated its wake"
+      cmp -s "$home/queued-before-kill" "$home/state/.wake-queue" || fail "real Perl escalation changed queued work"
+    fi
+  fi
+  pass "real Perl $kind preserves the shutdown result and any real wake"
+}
+
+test_real_perl_shutdown_classification() {
+  run_real_perl_shutdown blocked
+  run_real_perl_shutdown signal
+  run_real_perl_shutdown quiet
 }
 
 test_announced_recovery_is_not_reannounced_by_next_checkpoint() {
@@ -442,6 +569,52 @@ make_real_host_home() {
   printf '%s\n' "$home"
 }
 
+run_real_arm_forwarding() {
+  local mode=$1 home arm i status expected=0 real_cat
+  home=$(make_real_host_home "arm-forwarding-$mode")
+  real_cat=$(command -v cat) || fail "could not locate cat for forwarding synchronization"
+  cat > "$home/fakebin/cat" <<'SH'
+#!/usr/bin/env bash
+"$FM_TEST_REAL_CAT" "$@" || exit $?
+case "$*" in
+  *'/.watch-arm-output.'*)
+    : > "$FM_HOME/forwarding-ready"
+    while [ ! -e "$FM_HOME/forwarding-go" ] && [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do sleep 0.1; done
+    ;;
+esac
+SH
+  chmod +x "$home/fakebin/cat"
+  FM_HOME="$home" PATH="$home/fakebin:$PATH" FM_TEST_REAL_CAT="$real_cat" \
+    FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    "${CHECKPOINT%/*}/fm-watch-arm.sh" >"$home/out.txt" 2>"$home/err.txt" &
+  arm=$!
+  i=0
+  while ! grep -q '^watcher: started pid=' "$home/out.txt" && [ "$i" -lt 1000 ]; do sleep 0.1; i=$((i + 1)); done
+  grep -q '^watcher: started pid=' "$home/out.txt" || fail "forwarding fixture never confirmed its watcher"
+  printf 'working: forwarding fixture\n' > "$home/state/demo.status"
+  i=0
+  while [ ! -e "$home/forwarding-ready" ] && [ "$i" -lt 1000 ]; do sleep 0.1; i=$((i + 1)); done
+  [ -e "$home/forwarding-ready" ] || fail "the real arm never forwarded its completed capture"
+  cp "$home/state/.wake-queue" "$home/queued-before-term"
+  if [ "$mode" = TERM ]; then
+    expected=143
+    kill -TERM "$arm" || fail "could not signal the forwarding arm"
+  fi
+  : > "$home/forwarding-go"
+  status=0
+  wait_for_exit "$arm" 200 || status=$?
+  expect_code "$expected" "$status" "$mode forwarding exit: $(cat "$home/out.txt" "$home/err.txt")"
+  [ "$(grep -c '^signal: .*demo.status' "$home/out.txt")" -eq 1 ] || fail "$mode forwarding emitted the real wake more than once: $(cat "$home/out.txt")"
+  cmp -s "$home/queued-before-term" "$home/state/.wake-queue" || fail "$mode forwarding changed the queued work"
+  for i in "$home/state"/.watch-arm-output.*; do [ ! -e "$i" ] || fail "$mode forwarding retained a consumed capture"; done
+  pass "$mode during real arm forwarding preserves exactly one wake and its queue"
+}
+
+test_real_arm_forwarding_is_signal_safe() {
+  run_real_arm_forwarding normal
+  run_real_arm_forwarding TERM
+}
+
 # shellcheck disable=SC2016
 run_real_host_cleanup_failure() {
   local kind=$1 cleanup_bound=${2:-2} home fakebin checkpoint_pid holder watcher first i status holder_status pending=0 capture arm
@@ -637,12 +810,35 @@ SH
   i=0
   while [ ! -e "$home/completed-lock-held" ] && [ "$i" -lt 300 ]; do sleep 0.1; i=$((i + 1)); done
   [ -e "$home/completed-lock-held" ] || fail "completed-close fixture did not acquire its marker lock"
+  case "$kind" in
+    predecessor-*)
+      arm=$(awk -F '\t' '$1 == "arm" { print $2; exit }' "$home/state/.supervision-host")
+      kill -KILL "$(awk -F '\t' '$1 == "host" { print $2; exit }' "$home/state/.supervision-host")" \
+        || fail "could not interrupt the predecessor host"
+      status=0
+      wait_for_exit "$checkpoint_pid" 200 || status=$?
+      [ "$status" -ne 0 ] || fail "killed predecessor checkpoint claimed success"
+      is_live_non_zombie "$arm" || fail "predecessor did not leave its arm for replacement activation"
+      mv "$home/out.txt" "$home/predecessor-out.txt"
+      mv "$home/err.txt" "$home/predecessor-err.txt"
+      FM_HOME="$home" FM_REPO="$ROOT" FM_TEST_REAL_MV="$real_mv" FM_WATCH_DELIVERY_MAX_BYTES=1 \
+        PATH="$home/fakebin:$PATH" FM_POLL=1 FM_CHECK_INTERVAL=999999 \
+        FM_SIGNAL_GRACE=0 FM_HEARTBEAT=999999 FM_CODEX_WATCH_CHECKPOINT_AWAY=120 \
+        FM_TEST_SUPERVISION_HOST_CLOCK="$home/park-clock" FM_SUPERVISION_HOST_TURN_TIMEOUT=60 FM_SUPERVISION_ENGINE_GRACE=1 \
+        FM_SUPERVISION_ENGINE_CLAUDE_BIN="$home/fakebin/engine" FM_WATCHER_CLEANUP_LOCK_BOUND=2 \
+        "$home/fakebin/codex" -c '
+          printf "%s\n" "$$" > "$FM_HOME/state/.lock"
+          "$0" --seconds 120
+        ' "$CHECKPOINT" >"$home/out.txt" 2>"$home/err.txt" &
+      checkpoint_pid=$!
+      ;;
+  esac
   if [ "$kind" != completed-failure ]; then
     echo 120 > "$home/park-clock"
     arm=$(awk -F '\t' '$1 == "arm" { print $2; exit }' "$home/state/.supervision-host")
     kill -TERM "$arm" || fail "could not retire the arm with a real signal pending"
     is_live_non_zombie "$watcher" || fail "watcher finished before controlled retirement"
-    if [ "$kind" = retired-clean ]; then
+    if [ "$kind" = retired-clean ] || [ "$kind" = predecessor-clean ]; then
       expected_status=0
       : > "$home/release-cleanup-lock"
       wait_for_exit "$holder" 100 >/dev/null 2>&1 || fail "clean retirement lock holder did not release"
@@ -656,7 +852,7 @@ SH
   [ ! -e "$home/engine-called" ] || fail "$kind reached dispatch"
   [ "$(grep -c '^signal: .*demo.status' "$home/out.txt")" -eq 1 ] || fail "$kind lost or repeated its wake: $(cat "$home/out.txt")"
   cmp -s "$home/queued-before-retirement" "$home/state/.wake-queue" || fail "$kind changed its durable wake rows"
-  if [ "$kind" = retired-clean ]; then
+  if [ "$kind" = retired-clean ] || [ "$kind" = predecessor-clean ]; then
     assert_absent "$home/state/.watch.lock/pid" "clean retirement retained a watcher lock"
     assert_not_contains "$(cat "$home/out.txt" "$home/err.txt")" 'recovery state could not be persisted' "clean retirement reported cleanup failure"
   else
@@ -667,7 +863,13 @@ SH
   ! is_live_non_zombie "$watcher" || fail "$kind left its watcher alive"
   assert_not_contains "$(cat "$home/out.txt")" 'checkpoint: no actionable wake' "$kind became quiet success"
   if [ "$kind" != completed-failure ]; then
-    assert_grep 'boundary' "$home/state/.supervision-host.log" "$kind did not reach the park boundary"
+    case "$kind" in
+      predecessor-clean)
+        assert_contains "$(cat "$home/out.txt")" 'a predecessor watcher already delivered this wake' "$kind did not hand the original wake back"
+        ;;
+      predecessor-failure) ;;
+      *) assert_grep 'boundary' "$home/state/.supervision-host.log" "$kind did not reach the park boundary" ;;
+    esac
     assert_grep $'\tsignal=TERM\treason=arm-interrupted\t' "$home/state/.watch-cycle-exits.log" "$kind did not reach the arm signal-close boundary"
   fi
   pass "$kind preserves one real signal and durable wake with its cleanup result"
@@ -680,6 +882,11 @@ test_real_host_completed_close_preserves_cleanup_failure() {
 test_real_host_retired_signal_preserves_wake() {
   run_real_host_signal_close retired-clean
   run_real_host_signal_close retired-failure
+}
+
+test_real_host_predecessor_capture_preserves_wake() {
+  run_real_host_signal_close predecessor-clean
+  run_real_host_signal_close predecessor-failure
 }
 
 test_real_host_checkpoint_ends_quietly_at_its_bound() {
@@ -706,6 +913,7 @@ test_real_host_checkpoint_ends_quietly_at_its_bound() {
 test_quiet_checkpoint_exits_0_cleanly
 test_cleanup_persistence_failure_is_not_a_quiet_checkpoint
 test_perl_timeout_fallback_honors_cleanup_bound_before_escalating
+test_real_perl_shutdown_classification
 test_announced_recovery_is_not_reannounced_by_next_checkpoint
 test_never_announced_recovery_is_announced_once
 test_queue_append_during_checkpoint_still_resurfaces
@@ -718,5 +926,7 @@ test_host_checkpoint_passes_a_handback_and_reports_a_stand_down
 test_host_checkpoint_needs_the_file_and_honors_off
 test_real_host_completed_close_preserves_cleanup_failure
 test_real_host_retired_signal_preserves_wake
+test_real_host_predecessor_capture_preserves_wake
+test_real_arm_forwarding_is_signal_safe
 test_real_host_retirement_preserves_cleanup_failures
 test_real_host_checkpoint_ends_quietly_at_its_bound
