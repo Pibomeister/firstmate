@@ -1,0 +1,79 @@
+$ FM_TEST_ONLY=test_turn_ended_churn_existing_marker_absorbed /bin/bash tests/fm-watch-triage.test.sh   (CI stock macOS bash 3.2 lane command)
+ok - a churning turn-end inside an already-open deferral window is absorbed without re-marking
+exit=0
+
+$ bin/fm-test-run.sh --check-coverage
+FM_TEST_COVERAGE ok total=278 parallel=24 parallel_max_ms=665545 parallel_imbalance_ms=2 parallel_unhinted=0 serial=238 serial_shards=15 serial_unhinted=4 serial_max_ms=960000 serial_budget_ms=1200000 serial_oversized=0 herdr=16
+exit=0
+
+$ bin/fm-test-run.sh --list-lanes
+portable-parallel-1
+portable-parallel-2
+portable-serial
+portable-serial-1of15
+portable-serial-2of15
+portable-serial-3of15
+portable-serial-4of15
+portable-serial-5of15
+portable-serial-6of15
+portable-serial-7of15
+portable-serial-8of15
+portable-serial-9of15
+portable-serial-10of15
+portable-serial-11of15
+portable-serial-12of15
+portable-serial-13of15
+portable-serial-14of15
+portable-serial-15of15
+real-herdr-gated
+exit=0
+
+$ bin/fm-test-run.sh --list-scheduled --family watcher-wake-lock
+tests/fm-watch-triage-f.test.sh
+tests/fm-watch-wedge-cap.test.sh
+tests/fm-watch-triage-c.test.sh
+tests/fm-watch-triage-d.test.sh
+tests/fm-wake-queue.test.sh
+tests/fm-watch-triage-b.test.sh
+tests/fm-watch-arm.test.sh
+tests/fm-watch-triage-g.test.sh
+tests/fm-watch-triage.test.sh
+tests/fm-task-inbox.test.sh
+tests/fm-watch-triage-e.test.sh
+tests/fm-turnend-guard.test.sh
+tests/fm-inactive-reconcile.test.sh
+tests/fm-cursor-primary.test.sh
+tests/fm-pi-watch-extension.test.sh
+tests/fm-watcher-lock.test.sh
+tests/fm-watch-recovery-loop.test.sh
+tests/fm-daemon.test.sh
+tests/fm-wake-drain-unread-status.test.sh
+tests/fm-watch-wedge-cap-unconfigured-parity.test.sh
+tests/fm-watch-checkpoint.test.sh
+tests/fm-session-lock-ancestry.test.sh
+tests/fm-guard-stale-banner.test.sh
+tests/fm-tool-update-check.test.sh
+tests/fm-mail.test.sh
+tests/fm-wake-daemon-lifecycle-e2e.test.sh
+tests/fm-mail-check.test.sh
+tests/fm-turnend-foreign-owner-arm-fix.test.sh
+tests/fm-parent-channel-scan-exclusion.test.sh
+tests/fm-supervision-events.test.sh
+exit=0
+
+$ bin/fm-test-run.sh --list --changed --base 7dc56f87 | grep watch-triage   (adversarial: changed -common.sh must map, not die)
+exit=0
+tests/fm-watch-triage-b.test.sh
+tests/fm-watch-triage-c.test.sh
+tests/fm-watch-triage-d.test.sh
+tests/fm-watch-triage-e.test.sh
+tests/fm-watch-triage-f.test.sh
+tests/fm-watch-triage-g.test.sh
+tests/fm-watch-triage.test.sh
+
+$ bin/fm-test-run.sh --lane portable-serial-16of15 --list   (adversarial: out-of-range shard must be refused)
+fm-test-run: lane 'portable-serial-16of15' shard index is outside 1..15 (see --list-lanes)
+exit=2
+$ bin/fm-test-run.sh --list --lane portable-serial-2of18   (adversarial: stale shard total must be refused)
+fm-test-run: lane 'portable-serial-2of18' asks for 18 portable serial shards but this runner is configured for 15 (see --list-lanes)
+exit=2

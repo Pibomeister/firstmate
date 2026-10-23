@@ -1,0 +1,28 @@
+FM_TEST_BEGIN 2026-10-22T23:59:23Z tests/fm-watch-triage-g.test.sh family=watcher-wake-lock expected_gate_skip=none
+FM_TEST_BEGIN 2026-10-22T23:59:23Z tests/fm-watch-triage-e.test.sh family=watcher-wake-lock expected_gate_skip=none
+ok - the production default busy-turn-age bound is 3600s (5min under does not wedge, 66min over does)
+ok - a busy pane under a declared pause is rechecked on the long cadence, and lifting the pause restores the wedge escalation
+ok - away mode hands a busy declared pause to the daemon as a plain stale, and lifting the declaration restores the wedge escalation
+ok - away mode wakes the daemon once per declaration for a busy pane whose footer ticks on every capture
+ok - a not-provably-working non-terminal stale is surfaced immediately (never left to wait out the timer)
+ok - a declared pause is absorbed on first sight, then re-surfaced as a recheck past the threshold, never wedge-escalated
+ok - exited declared-pause and captain-held panes use bounded pause cadence while a live decision gate still surfaces once
+ok - own-work waits keep one first alert, then bounded rechecks without wedges; undeclared idle still alarms
+ok - absorbed paused and captain-held replacements each start their own re-surface cadence
+FM_TEST_END 2026-10-23T00:02:01Z tests/fm-watch-triage-e.test.sh exit=0 duration_ms=157823 gate_skip=false
+ok - in an armed home a worker's own open newest blocker or decision is deferred to the bounded recheck, and a newer line, a resolved line, a reserved key, or a newer acknowledged inbox record keeps the ladder
+ok - with config/wedge-defer-worker-wait absent a worker blocker keeps the byte-identical wedge reason
+ok - a wait record missing a field the recheck must print, or carrying one it must not, is refused and the lane escalates exactly as it would have
+ok - work under an open captain call surfaces once, absorbs pane churn, then re-surfaces when the window elapses
+ok - a stale window with no open captain call keeps alarming on every new hash
+ok - a wake that never reached the durable queue arms no re-surface throttle
+ok - a released-then-re-held task is a distinct captain call whose first sight still alarms
+ok - a declared paused secondmate re-surfaces on the bounded normal-mode cadence
+FM_TEST_END 2026-10-23T00:03:20Z tests/fm-watch-triage-g.test.sh exit=0 duration_ms=236219 gate_skip=false
+FM_TEST_SUMMARY total=2 failed=0 skipped_gate=0 duration_ms=236519
+FM_TEST_SUMMARY_FAMILY family=watcher-wake-lock count=2 duration_ms=394042 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-watch-triage-g.test.sh duration_ms=236219
+FM_TEST_SLOWEST rank=2 script=tests/fm-watch-triage-e.test.sh duration_ms=157823
+fm-test-run: wrote timing artifact: /Users/eduardopicazo/.no-mistakes/evidence/01M5JJ71Z7AA6PWZ5S1QJCDGHH/parts-e-g-timing.json
+bin/fm-test-run.sh --json $E/parts-e-g-timing.json    87.08s user 129.42s system 91% cpu 3:56.60 total
+exit=0
