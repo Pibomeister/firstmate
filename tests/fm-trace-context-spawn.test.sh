@@ -379,7 +379,7 @@ test_unsafe_delivery_refuses_to_append_launch() {
 }
 
 test_failed_metadata_append_unsets_carrier_and_still_launches() {
-  local rec out status meta
+  local rec out status meta launch
   rec=$(make_spawn_case tc-metadata-failure)
   read_case_record "$rec"
   : > "$HOME_DIR/config/trace-context"
@@ -394,7 +394,8 @@ test_failed_metadata_append_unsets_carrier_and_still_launches() {
 
   ! grep -q '^traceparent=' "$meta" \
     || fail "failed metadata append must not leave a traceparent= claim in meta"
-  grep -q '^unset TRACEPARENT; .*claude' "$LAUNCH_LOG" \
+  launch=$(grep 'claude' "$LAUNCH_LOG" | tail -1)
+  [[ "$(fm_test_launch_without_env_scrub "$launch")" == "export FM_TASK_ID=$CASE_ID; unset TRACEPARENT; "*claude* ]] \
     || fail "failed metadata append must unset TRACEPARENT in the launch command"
   pass "failed traceparent metadata append removes the carrier from the launched task"
 }
