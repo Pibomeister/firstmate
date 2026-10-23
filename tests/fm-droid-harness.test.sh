@@ -663,7 +663,7 @@ test_droid_model_probe_accepts_a_slow_valid_answer() {
   rc=$?
   expect_code 0 "$rc" "a valid model probe that answers inside its bound must spawn: $out"
   settings="$HOME_DIR/state/$id.droid-settings.json"
-  jq -e '.model == "gpt-5.6-luna"' "$settings" >/dev/null \
+  jq -e '.sessionDefaultSettings.model == "gpt-5.6-luna"' "$settings" >/dev/null \
     || fail "a slow valid probe lost the requested model"
   [ -e "$CASE_DIR/launch.log" ] || fail "a slow valid probe never launched"
   pass "Droid accepts a valid model whose tool-list probe answers inside its bound"
