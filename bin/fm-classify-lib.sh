@@ -92,7 +92,7 @@ unset _fm_classify_nounset
 # classification below.
 FM_CLASSIFY_CAPTAIN_RE_DEFAULT='done:|needs-decision:|blocked:|failed:|PR ready|checks green|ready in branch|merged'
 
-# The declared-wait verb. A crew (or firstmate steering it) appends
+# The declared-wait verb. A crew (or firstmate, through bin/fm-park.sh) appends
 #   paused: <reason>
 # to declare a known wait expected to clear on its own. The legacy "external
 # wait" name and "awaiting external" reason also cover the worker's own work;
@@ -417,7 +417,8 @@ _fm_status_declared_wait_scan() {  # <resolve-verb> <legacy-captain-re>
 
 # A condition-aware declared wait: a `paused:` line may say WHEN it expects to
 # clear with `until <YYYY-MM-DDTHH:MM[:SS]Z>` anywhere in its text (UTC only, so
-# no local-zone guess is ever recorded). Prints that time as epoch seconds so a
+# no local-zone guess is ever recorded). The last matching token wins, whether
+# it uses minute or seconds precision. Prints that time as epoch seconds so a
 # supervisor rechecks the wait when the worker said it would clear instead of on
 # the flat cadence; returns 1 when the line is not a pause or declares no time,
 # or the time is malformed, so a bad token falls back to the cadence rather than
@@ -426,8 +427,7 @@ status_paused_until() {  # <status-line> -> epoch on stdout
   local line=$1 token
   status_is_paused "$line" || return 1
   token=$(printf '%s' "$line" \
-    | sed -n 's/.*[[:space:]][Uu][Nn][Tt][Ii][Ll][[:space:]]\{1,\}\([0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]Z\).*/\1/p; s/.*[[:space:]][Uu][Nn][Tt][Ii][Ll][[:space:]]\{1,\}\([0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z\).*/\1/p' \
-    | head -1)
+    | sed -n 's/.*[[:space:]][Uu][Nn][Tt][Ii][Ll][[:space:]]\{1,\}\([0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]\(:[0-9][0-9]\)\{0,1\}Z\).*/\1/p')
   [ -n "$token" ] || return 1
   fm_utc_iso_to_epoch "$token"
 }

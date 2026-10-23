@@ -401,8 +401,8 @@ case "$PARKED_GATE_READ_TIMEOUT" in ''|*[!0-9]*|0) PARKED_GATE_READ_TIMEOUT=10 ;
 # STALE_ESCALATE_SECS-paced wedge_timer_check used for a provably-working
 # non-busy stale - so it escalates via the existing stale reason, escalation
 # counter, and demand-deep-inspection marker for human inspection only, never an
-# automatic interrupt, signal, or restart - unless the crew declared the wait
-# itself, which takes the long pause cadence instead. Set generously above
+# automatic interrupt, signal, or restart - unless the task has a declared
+# wait, which takes the long pause cadence instead. Set generously above
 # any legitimate interval without observable progress, including silent long
 # tool calls, builds, or test runs.
 BUSY_TURN_MAX_SECS=${FM_BUSY_TURN_MAX_SECS:-3600}
@@ -432,7 +432,7 @@ SECONDMATE_LIVENESS_MAX_ATTEMPTS=${FM_SECONDMATE_LIVENESS_MAX_ATTEMPTS:-}
 case "$SECONDMATE_LIVENESS_MAX_ATTEMPTS" in ''|*[!0-9]*|0) SECONDMATE_LIVENESS_MAX_ATTEMPTS=3 ;; esac
 SECONDMATE_LIVENESS_WINDOW_SECS=${FM_SECONDMATE_LIVENESS_WINDOW_SECS:-}
 case "$SECONDMATE_LIVENESS_WINDOW_SECS" in ''|*[!0-9]*|0) SECONDMATE_LIVENESS_WINDOW_SECS=3600 ;; esac
-# A crew that declared a pause is idling on a known external wait, so its stale
+# A crew with a declared pause is idling on a known external wait, so its stale
 # pane is absorbed rather than wedge-escalated.
 # A captain-held or paused crew whose agent has confidently exited uses the same
 # bounded cadence, while a live or ambiguously read agent surfaces on first sight
@@ -2259,7 +2259,7 @@ handle_paused_stale() {  # <window> <task> <hash>
 }
 
 # Apply the busy-pane completed-turn bound to a window whose bound has already
-# crossed, honoring the worker's OWN declared external wait. Prints/queues
+# crossed, honoring the task's declared external wait. Prints/queues
 # nothing itself; it only chooses which absorber owns the crossed bound.
 # 0 when the declared-pause cadence took the pane, 1 when the wedge timer did.
 #
@@ -4134,7 +4134,7 @@ EOF
         # Pane busy or not yet stably stale: reset pending escalation bookkeeping,
         # unless a genuinely busy pane has gone too long with no completed turn -
         # then route it through busy_turn_bound_check, which hands the crossed
-        # bound to the same wedge timer unless the crew declared the wait itself.
+        # bound to the same wedge timer unless the task has a declared wait.
         # A pane that leaves the stale path ends the wedge episode it was in, so
         # the cap that episode fired goes with the rest of its bookkeeping.
         paused_bound=1
