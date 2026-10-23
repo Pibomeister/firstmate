@@ -418,8 +418,8 @@ cleanup() {
   if [ "$ENGINE_RUNNING" -eq 1 ]; then
     stop_engine_turn
   fi
-  retire_arm "$SUCCESSOR_PID" "$SUCCESSOR_OUT"
-  retire_arm "$ARM_PID" "$ARM_OUT"
+  retire_arm "$SUCCESSOR_PID" "$SUCCESSOR_OUT" || rc=1
+  retire_arm "$ARM_PID" "$ARM_OUT" || rc=1
   if [ "$GRANT_ACTIVE" -eq 1 ]; then
     "$SCRIPT_DIR/fm-wake-grant.sh" release "$GEN" >/dev/null 2>&1 || true
     "$SCRIPT_DIR/fm-wake-grant.sh" deactivate "$HOST_PID" "$GEN" >/dev/null 2>&1 || true
@@ -437,7 +437,7 @@ cleanup() {
 # Stop one arm this host started (its TERM handler stops the watcher it owns)
 # and drop its output file.
 retire_arm() {  # <pid> <output-file>
-  local pid=${1:-} out=${2:-} i
+  local pid=${1:-} out=${2:-} i diagnostic rc=0
   if [ -n "$pid" ] && fm_pid_alive "$pid"; then
     kill -TERM "$pid" 2>/dev/null || true
     i=0
@@ -449,7 +449,15 @@ retire_arm() {  # <pid> <output-file>
     wait "$pid" 2>/dev/null || true
   fi
   [ -z "$pid" ] || forget_process "$pid"
-  [ -z "$out" ] || rm -f "$out" 2>/dev/null || true
+  if [ -n "$out" ]; then
+    diagnostic=$(grep -E '^watcher: recovery state could not be persisted;' "$out" 2>/dev/null || true)
+    if [ -n "$diagnostic" ]; then
+      printf 'supervision-host: %s\n' "$diagnostic"
+      rc=1
+    fi
+    rm -f "$out" 2>/dev/null || true
+  fi
+  return "$rc"
 }
 
 host_still_owner() {
@@ -504,8 +512,9 @@ turn_crosses_boundary() {
 # home's watcher, print any close already read so main drains it, then the
 # boundary line.
 boundary_exit() {
-  retire_arm "$ARM_PID" "$ARM_OUT"
-  retire_arm "$SUCCESSOR_PID" "$SUCCESSOR_OUT"
+  local rc=0
+  retire_arm "$ARM_PID" "$ARM_OUT" || rc=1
+  retire_arm "$SUCCESSOR_PID" "$SUCCESSOR_OUT" || rc=1
   ARM_PID=
   ARM_OUT=
   SUCCESSOR_PID=
@@ -514,7 +523,7 @@ boundary_exit() {
   park_elapsed
   log_line "boundary	after ${PARK_ELAPSED}s"
   emit 'supervision-host: cycle boundary - the host ended its park at its bound; drain, acknowledge, and end the turn, and the next park starts on its own'
-  exit 0
+  exit "$rc"
 }
 
 # Print the first cycle's status line once the arm has written it in full.
@@ -575,18 +584,20 @@ emit() {  # [line...]
 # Stop the successor cycle: the state main's own turn end starts from without
 # the host.
 retire_successor() {
+  local rc=0
   [ -n "$SUCCESSOR_PID" ] || return 0
-  retire_arm "$SUCCESSOR_PID" "$SUCCESSOR_OUT"
+  retire_arm "$SUCCESSOR_PID" "$SUCCESSOR_OUT" || rc=1
   SUCCESSOR_PID=
   SUCCESSOR_OUT=
   "$SCRIPT_DIR/fm-watch-arm.sh" --stop >/dev/null 2>&1 || true
+  return "$rc"
 }
 
 # Hand the close to main: stop the successor cycle, print the close, why, and
 # any further "supervision-host:" lines, and exit.
 exit_to_main() {  # <why> [further lines]
   local lines=${2:-} rc=0
-  retire_successor
+  retire_successor || rc=1
   if [ -n "$SUCCESSOR_GENERATION" ] \
     && ! fm_recovery_marker_publish "$STATE/.watcher-down" downtime >/dev/null 2>&1; then
     log_line "to-main	downtime-unrestored	$1"
