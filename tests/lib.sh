@@ -103,8 +103,18 @@ pass() {
 # Harness argument assertions reuse the emitted prefix rather than duplicating
 # its per-spawn env-file path. The dispatch suite executes it separately to prove
 # credential preservation, hooks-path selection and invalid-count refusal.
+# The launch after its home/task environment scrub prefix, when it has one.
+fm_test_launch_without_env_scrub() {  # <launch>
+  local launch=$1 end=' || return 1 2>/dev/null || exit 1; '
+  case "$launch" in
+    *"/bin/fm-env-scrub.sh' "*'unset-file '*"$end"*) launch=${launch#*"$end"} ;;
+  esac
+  printf '%s' "$launch"
+}
+
 fm_test_launch_git_prefix() {  # <launch>
-  local launch=$1 helper tail end=' || return 1 2>/dev/null || exit 1; '
+  local launch helper tail end=' || return 1 2>/dev/null || exit 1; '
+  launch=$(fm_test_launch_without_env_scrub "$1")
   case "$launch" in
     *' env-file '*"$end"*) ;;
     *) fail "launch has no complete Git configuration prefix" ;;
@@ -119,7 +129,8 @@ fm_test_launch_git_prefix() {  # <launch>
 # The command a pane runs after the launch's Git configuration prefix and its
 # leading export statements, for suites that split it into arguments.
 fm_test_launch_command() {  # <launch>
-  local command=$1 end=' || return 1 2>/dev/null || exit 1; '
+  local command end=' || return 1 2>/dev/null || exit 1; '
+  command=$(fm_test_launch_without_env_scrub "$1")
   case "$command" in *"$end"*) command=${command#*"$end"} ;; esac
   while [[ "$command" == export\ *\;* ]]; do
     command=${command#*; }

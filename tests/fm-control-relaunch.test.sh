@@ -75,6 +75,7 @@ case "${1:-}" in
       case "$payload" in
         ". '"*"'") staged=${payload#". '"}; staged=${staged%"'"}; [ ! -f "$staged" ] || payload=$(cat "$staged") ;;
       esac
+      printf '%s\n' "$payload" >> "$D/literal-raw"
       printf '%s\n' "$payload" >> "$D/literal"
       case "$payload" in
         /exit|/quit)
@@ -187,6 +188,7 @@ new_case() {
   local id=${2:-t1} dir="$TMP_ROOT/$1-$RANDOM"
   mkdir -p "$dir/home/state" "$dir/home/data" "$dir/fake"
   : > "$dir/fake/literal"
+  : > "$dir/fake/literal-raw"
   : > "$dir/fake/keys"
   printf 'claude' > "$dir/fake/command"
   printf 'claude' > "$dir/fake/becomes"
@@ -365,7 +367,7 @@ SH
 # --- 1. same-harness relaunch -----------------------------------------------
 
 test_same_harness_relaunch_keeps_identity_and_reuses_the_endpoint() {
-  local dir out rc gen_before gen_after
+  local dir out rc gen_before gen_after launch worker_env
   dir=$(new_case same rl1)
   add_ship_task "$dir" rl1 claude
   gen_before=$("$ROOT/bin/fm-busy-event.sh" arm "$dir/home/state" rl1)
@@ -387,6 +389,22 @@ test_same_harness_relaunch_keeps_identity_and_reuses_the_endpoint() {
   assert_grep "/exit" "$dir/fake/literal" "the previous agent should have been exited"
   assert_grep "cd -- '$dir/wt'" "$dir/fake/keys" "the replacement launch must enter the recorded worktree"
   assert_grep "Firstmate operational input waiting: read" "$dir/fake/literal" "the replacement should have been launched"
+  cat > "$dir/fakebin/claude" <<'SH'
+#!/bin/sh
+env | grep '^FM_' | sort
+printf 'TEST_CREDENTIAL=%s\n' "${TEST_CREDENTIAL-unset}"
+SH
+  chmod +x "$dir/fakebin/claude"
+  launch=$(tail -n 1 "$dir/fake/literal-raw")
+  worker_env=$(env -i HOME="$dir/user-home" PATH="$dir/fakebin:$PATH" SHELL=/bin/sh \
+    FM_HOME=/synthetic/foreign FM_CREW_STATE_META_OVERRIDE=/synthetic/foreign.meta \
+    FM_CREW_STATE_STATUS_OVERRIDE=/synthetic/foreign.status FM_SEND_RETRIES=7 \
+    FM_TASK_ID=foreign FM_TASK_INBOX=/synthetic/foreign.inbox TEST_CREDENTIAL=keep \
+    /bin/sh -c "$launch") || fail "relaunch command did not execute its replacement worker"
+  [ "$worker_env" = "$(printf '%s\n' \
+    'FM_SEND_RETRIES=7' 'FM_TASK_ID=rl1' "FM_TASK_INBOX=$dir/home/state/rl1.inbox" \
+    'TEST_CREDENTIAL=keep')" ] \
+    || fail "relaunch inherited foreign FM variables or lost task values: $worker_env"
   pass "fm-control relaunch: a same-harness relaunch replaces the agent in the same endpoint and worktree"
 }
 
@@ -577,9 +595,9 @@ test_disabled_relaunch_clears_prior_trace_context() {
   expect_code 0 "$rc" "disabled relaunch should succeed"$'\n'"$out"
   [ -z "$(meta_field "$dir" rl33 traceparent)" ] \
     || fail "disabled relaunch must remove the prior trace carrier from metadata"
-  grep -q '^unset TRACEPARENT; .*claude' "$dir/fake/literal" \
+  grep -q 'unset TRACEPARENT; .*claude' "$dir/fake/literal" \
     || fail "disabled relaunch must clear the pane carrier before replacement launch"
-  ! grep -q '^export TRACEPARENT=' "$dir/fake/literal" \
+  ! grep -q 'export TRACEPARENT=' "$dir/fake/literal" \
     || fail "disabled relaunch must not export a replacement trace carrier"
   pass "fm-control relaunch: disabling tracing clears metadata and pane context"
 }

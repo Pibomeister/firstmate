@@ -803,12 +803,12 @@ unit_daemon_terminal_receives_the_primary_harness() {
   st=$(mktemp -d "${TMPDIR:-/tmp}/fm-afk-daemon-harness.XXXXXX")
   entry="$st/entry"
   # shellcheck disable=SC2016 # expands in the entry script.
-  printf '#!/usr/bin/env bash\nprintf "%%s" "${FM_DAEMON_PRIMARY_HARNESS-unset}" > "$FM_HOME/daemon-harness"\n' > "$entry"
+  printf '#!/usr/bin/env bash\nprintf "%%s" "${FM_DAEMON_PRIMARY_HARNESS-unset}" > "$FM_HOME/daemon-harness"\nprintf "%%s" "${FM_DATA_OVERRIDE-unset}" > "$FM_HOME/daemon-config"\nprintf "%%s" "${FM_STATE_OVERRIDE-unset}" > "$FM_HOME/daemon-state"\n' > "$entry"
   chmod +x "$entry"
   # shellcheck disable=SC2016 # positional params expand in the child shell.
   for backend in herdr tmux; do
-    rm -f "$st/daemon-harness"
-    env -u FM_DAEMON_PRIMARY_HARNESS FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" FM_AFK_LAUNCH_ENTRY="$entry" \
+    rm -f "$st/daemon-harness" "$st/daemon-config" "$st/daemon-state"
+    env -u FM_DAEMON_PRIMARY_HARNESS -u FM_DATA_OVERRIDE FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" FM_AFK_LAUNCH_ENTRY="$entry" \
       FM_TEST_HARNESS=claude bash -c '
       . "$1"
       fm_backend_source() { return 0; }
@@ -817,10 +817,10 @@ unit_daemon_terminal_receives_the_primary_harness() {
         if [ "$2 $3" = "workspace create" ]; then
           printf %s '\''{"result":{"workspace":{"workspace_id":"ws-exact"},"root_pane":{"pane_id":"pane-exact"}}}'\''
         elif [ "$2 $3" = "pane run" ]; then
-          bash -c "$5"
+          FM_DATA_OVERRIDE=/synthetic/foreign bash -c "$5"
         fi
       }
-      tmux() { [ "$1" = new-session ] && bash -c "$5"; }
+      tmux() { [ "$1" = new-session ] && FM_DATA_OVERRIDE=/synthetic/foreign bash -c "$5"; }
       fm_afk_launch_record_write() { return 0; }
       fm_afk_launch_commit_terminal() { return 0; }
       fm_afk_launch_create_"$2" lab:captain "$2"
@@ -830,6 +830,18 @@ unit_daemon_terminal_receives_the_primary_harness() {
       pass "$backend daemon terminal: runs with the captain's primary harness"
     else
       fail "$backend daemon terminal: primary harness not handed over (got '${got:-nothing}')"
+    fi
+    got=$(cat "$st/daemon-config" 2>/dev/null || true)
+    if [ "$got" = unset ]; then
+      pass "$backend daemon terminal: drops FM values inherited from its server"
+    else
+      fail "$backend daemon terminal: kept an inherited foreign FM value (got '${got:-nothing}')"
+    fi
+    got=$(cat "$st/daemon-state" 2>/dev/null || true)
+    if [ "$got" = "$st/state" ]; then
+      pass "$backend daemon terminal: keeps this home's own state override"
+    else
+      fail "$backend daemon terminal: lost this home's state override (got '${got:-nothing}')"
     fi
   done
   rm -rf "$st"
@@ -1390,15 +1402,16 @@ unit_tmux_planned_record_and_collision() {
   local st first second
   st=$(mktemp -d "${TMPDIR:-/tmp}/fm-afk-tmux-plan.XXXXXX")
   mkdir -p "$st/state"
-  if FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" bash -c '
+  if TEST_HOME="$st" TEST_RECORD="$st/state/.afk-daemon-terminal" \
+    FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" bash -c '
     . "$1"
     tmux() {
       if [ "$1" = new-session ]; then
-        [ -s "$FM_AFK_LAUNCH_RECORD" ] || return 9
-        printf "%s" "$4" > "$FM_HOME/created-name"
+        [ -s "$TEST_RECORD" ] || return 9
+        printf "%s" "$4" > "$TEST_HOME/created-name"
         return 1
       fi
-      [ "$1" != kill-session ] || : > "$FM_HOME/killed"
+      [ "$1" != kill-session ] || : > "$TEST_HOME/killed"
       return 1
     }
     ! fm_afk_launch_create_tmux captain:0 tmux
@@ -1412,11 +1425,11 @@ unit_tmux_planned_record_and_collision() {
 
   st=$(mktemp -d "${TMPDIR:-/tmp}/fm-afk-tmux-unique.XXXXXX")
   mkdir -p "$st/state"
-  if FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" bash -c '
+  if TEST_HOME="$st" FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" bash -c '
     . "$1"
     tmux() {
-      [ "$1" != new-session ] || { printf "%s" "$4" > "$FM_HOME/created-name"; return 1; }
-      [ "$1" != kill-session ] || : > "$FM_HOME/killed"
+      [ "$1" != new-session ] || { printf "%s" "$4" > "$TEST_HOME/created-name"; return 1; }
+      [ "$1" != kill-session ] || : > "$TEST_HOME/killed"
       return 1
     }
     ! fm_afk_launch_create_tmux captain:0 tmux
