@@ -134,7 +134,7 @@ PL
 }
 
 run_real_perl_shutdown() {
-  local kind=$1 home fallback_bin tool tool_path source holder= watcher status expected=137 hash_tool
+  local kind=$1 home fallback_bin tool tool_path source holder='' watcher status expected=137 hash_tool
   home=$(make_home "real-perl-$kind")
   fallback_bin="$home/fallback-bin"
   mkdir -p "$fallback_bin" "$home/root/bin"
@@ -224,11 +224,13 @@ SH
     ' _ "$ROOT/bin/fm-wake-lib.sh" "$kind" &
     holder=$!
   fi
+  # The runner can inherit ignored SIGINT; reset it before Bash starts.
   status=0
   FM_HOME="$home" FM_TEST_REAL_CAT="$(command -v cat)" FM_TEST_REAL_MV="$(command -v mv)" PATH="$fallback_bin" \
     FM_WATCH_DELIVERY_MAX_BYTES=1 FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=0 FM_CHECK_TIMEOUT=120 \
     FM_HEARTBEAT=999999 FM_WATCHER_CLEANUP_LOCK_BOUND=8 \
-    "$home/root/bin/fm-watch-checkpoint.sh" --seconds 15 >"$home/out.txt" 2>"$home/err.txt" || status=$?
+    perl -e '$SIG{INT}="DEFAULT"; exec @ARGV or die "exec failed: $!\n"' \
+      "$home/root/bin/fm-watch-checkpoint.sh" --seconds 15 >"$home/out.txt" 2>"$home/err.txt" || status=$?
   : > "$home/release-cleanup-lock"
   : > "$home/release-cleanup-contention"
   [ -z "$holder" ] || wait_for_exit "$holder" 100 || fail "real Perl contention controller did not complete: $(cat "$home/out.txt" "$home/err.txt")"
@@ -887,6 +889,225 @@ test_real_host_predecessor_capture_preserves_wake() {
   run_real_host_signal_close predecessor-failure
 }
 
+start_orphaned_test_watcher() {
+  local home=$1 tag=$2 predecessor=${3:-} arm i real_mv real_mktemp
+  real_mv=$(command -v mv)
+  real_mktemp=$(command -v mktemp)
+  FM_HOME="$home" FM_TEST_REAL_MV="$real_mv" FM_TEST_REAL_MKTEMP="$real_mktemp" PATH="$home/fakebin:$PATH" \
+    FM_WATCH_PREDECESSOR_ARM_PID="$predecessor" FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 \
+    FM_HEARTBEAT=999999 FM_WATCHER_CLEANUP_LOCK_BOUND=2 FM_WATCH_DELIVERY_MAX_BYTES=4096 FM_ARM_CONFIRM_TIMEOUT=30 \
+    "${CHECKPOINT%/*}/fm-watch-arm.sh" >"$home/$tag.out" 2>"$home/$tag.err" &
+  arm=$!
+  i=0
+  while ! grep -q '^watcher: started pid=' "$home/$tag.out" && [ "$i" -lt 1000 ]; do sleep 0.1; i=$((i + 1)); done
+  grep -q '^watcher: started pid=' "$home/$tag.out" || fail "original arm did not confirm a healthy watcher: $(cat "$home/$tag.out" "$home/$tag.err")"
+  cp "$home/state/.watch.lock/pid" "$home/$tag.pid"
+  cp "$home/state/.watch.lock/pid-identity" "$home/$tag.identity"
+  kill -KILL "$arm" || fail "could not terminate the original watcher arm"
+  wait "$arm" 2>/dev/null || true
+  FM_HOME="$home" bash -c '. "$1"; fm_watcher_healthy "$FM_HOME/state" "$2" 300 "$FM_HOME"' \
+    _ "$ROOT/bin/fm-wake-lib.sh" "${CHECKPOINT%/*}/fm-watch.sh" || fail "the watcher did not remain healthy after its original arm died"
+  ORPHANED_WATCHER=$(cat "$home/$tag.pid")
+}
+
+# shellcheck disable=SC2016
+run_real_attached_host_cleanup() {
+  local kind=$1 home checkpoint_pid watcher first_arm holder i status expected=1 source_tag=original real_mv real_mktemp wake_count=0
+  home=$(make_real_host_home "host-attached-$kind")
+  fm_test_track_watcher_state "$home/state"
+  real_mv=$(command -v mv)
+  real_mktemp=$(command -v mktemp)
+  printf '%s\tunrelated-fixture\t%04096d\n' "$$" 0 > "$home/state/.watch-deliveries.log"
+  cat > "$home/fakebin/mv" <<'SH'
+#!/usr/bin/env bash
+last=
+for last in "$@"; do :; done
+if [ "$last" = "$FM_HOME/state/.watch-deliveries.log" ] && [ -e "$FM_HOME/block-delivery" ]; then
+  : > "$FM_HOME/external-output-ready"
+  while [ ! -e "$FM_HOME/external-output-go" ] && [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do sleep 0.1; done
+fi
+exec "$FM_TEST_REAL_MV" "$@"
+SH
+  cat > "$home/fakebin/mktemp" <<'SH'
+#!/usr/bin/env bash
+case "$*" in
+  *'/.supervision-host-arm.XXXXXX'*)
+    if [ -e "$FM_HOME/pause-successor" ] && [ -e "$FM_HOME/first-arm-allocated" ]; then
+      : > "$FM_HOME/successor-allocation-ready"
+      while [ ! -e "$FM_HOME/successor-allocation-go" ] && [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do sleep 0.1; done
+    fi
+    : > "$FM_HOME/first-arm-allocated"
+    ;;
+esac
+exec "$FM_TEST_REAL_MKTEMP" "$@"
+SH
+  cat > "$home/fakebin/engine" <<'SH'
+#!/usr/bin/env bash
+: > "$FM_HOME/engine-ready"
+while [ ! -e "$FM_HOME/engine-go" ] && [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do sleep 0.1; done
+exit 3
+SH
+  chmod +x "$home/fakebin/mv" "$home/fakebin/mktemp" "$home/fakebin/engine"
+  case "$kind" in
+    *clean|completed-mismatch|completed-home-mismatch|completed-path-mismatch) expected=0 ;;
+  esac
+  case "$kind" in successor-*) : > "$home/pause-successor" ;; esac
+  echo 0 > "$home/park-clock"
+  start_orphaned_test_watcher "$home" original
+  watcher=$ORPHANED_WATCHER
+  FM_HOME="$home" FM_TEST_REAL_MV="$real_mv" FM_TEST_REAL_MKTEMP="$real_mktemp" PATH="$home/fakebin:$PATH" \
+    FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    FM_ARM_CONFIRM_TIMEOUT=5 FM_CODEX_WATCH_CHECKPOINT_AWAY=120 FM_TEST_SUPERVISION_HOST_CLOCK="$home/park-clock" \
+    FM_SUPERVISION_HOST_TURN_TIMEOUT=60 FM_SUPERVISION_ENGINE_GRACE=1 FM_SUPERVISION_ENGINE_CLAUDE_BIN="$home/fakebin/engine" \
+    FM_WATCHER_CLEANUP_LOCK_BOUND=2 "$home/fakebin/codex" -c '
+      printf "%s\n" "$$" > "$FM_HOME/state/.lock"
+      "$0" --seconds 120
+    ' "$CHECKPOINT" >"$home/out.txt" 2>"$home/err.txt" &
+  checkpoint_pid=$!
+  i=0
+  while ! grep -q "^watcher: attached pid=$watcher " "$home/state"/.supervision-host-arm.* 2>/dev/null && [ "$i" -lt 1000 ]; do sleep 0.1; i=$((i + 1)); done
+  grep -q "^watcher: attached pid=$watcher " "$home/state"/.supervision-host-arm.* \
+    || fail "the real host never attached to the orphaned healthy watcher"
+  first_arm=$(awk -F '\t' '$1 == "arm" { print $2; exit }' "$home/state/.supervision-host")
+  case "$kind" in
+    successor-*)
+      printf 'working: attached successor fixture\n' > "$home/state/demo.status"
+      i=0
+      while [ ! -e "$home/successor-allocation-ready" ] && [ "$i" -lt 1000 ]; do sleep 0.1; i=$((i + 1)); done
+      [ -e "$home/successor-allocation-ready" ] || fail "the host did not reach successor allocation"
+      start_orphaned_test_watcher "$home" successor "$first_arm"
+      source_tag=successor
+      watcher=$ORPHANED_WATCHER
+      : > "$home/successor-allocation-go"
+      i=0
+      while [ ! -e "$home/engine-ready" ] && [ "$i" -lt 1000 ]; do sleep 0.1; i=$((i + 1)); done
+      [ -e "$home/engine-ready" ] || fail "host did not reach its engine after verifying the successor"
+      grep -q "^watcher: attached pid=$watcher " "$home/state"/.supervision-host-arm.* \
+        || fail "the host successor did not attach to the second orphaned watcher"
+      wake_count=1
+      ;;
+    completed-*|boundary-signal-*)
+      : > "$home/block-delivery"
+      case "$kind" in completed-*) : > "$home/state/.afk" ;; esac
+      printf 'working: attached completion fixture\n' > "$home/state/demo.status"
+      i=0
+      while [ ! -e "$home/external-output-ready" ] && [ "$i" -lt 1000 ]; do sleep 0.1; i=$((i + 1)); done
+      [ -e "$home/external-output-ready" ] || fail "the attached watcher did not print its real signal"
+      grep -q '^signal: .*demo.status' "$home/state"/.watch-arm-output.* || fail "the original capture contains no real watcher signal"
+      wake_count=1
+      ;;
+  esac
+  : > "$home/queued-before-stop"
+  [ ! -f "$home/state/.wake-queue" ] || cp "$home/state/.wake-queue" "$home/queued-before-stop"
+  FM_HOME="$home" bash -c '
+    . "$1"
+    fm_lock_acquire_wait "$FM_HOME/state/.watcher-down.lock" || exit 1
+    : > "$FM_HOME/attached-lock-held"
+    while kill -0 "$2" 2>/dev/null && [ ! -e "$FM_HOME/release-attached-lock" ] && [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do sleep 0.1; done
+    fm_lock_release "$FM_HOME/state/.watcher-down.lock"
+  ' _ "$ROOT/bin/fm-wake-lib.sh" "$watcher" &
+  holder=$!
+  i=0
+  while [ ! -e "$home/attached-lock-held" ] && [ "$i" -lt 300 ]; do sleep 0.1; i=$((i + 1)); done
+  [ -e "$home/attached-lock-held" ] || fail "attached cleanup fixture did not hold the recovery lock"
+  case "$kind" in
+    completed-mismatch) printf 'replacement-identity\n' > "$home/state/.watch.lock/pid-identity" ;;
+    completed-home-mismatch) printf 'foreign-home\n' > "$home/state/.watch.lock/fm-home" ;;
+    completed-path-mismatch) printf 'foreign-watcher\n' > "$home/state/.watch.lock/watcher-path" ;;
+  esac
+  case "$kind" in
+    *clean)
+      : > "$home/release-attached-lock"
+      wait_for_exit "$holder" 100 || fail "the clean attached fixture did not release its lock"
+      ;;
+  esac
+  case "$kind" in
+    successor-*) : > "$home/engine-go" ;;
+    completed-*) : > "$home/external-output-go" ;;
+    boundary-signal-*)
+      echo 120 > "$home/park-clock"
+      i=0
+      while ! grep -q "arm_pid=$first_arm.*reason=arm-interrupted" "$home/state/.watch-cycle-exits.log" 2>/dev/null && [ "$i" -lt 300 ]; do sleep 0.1; i=$((i + 1)); done
+      grep -q "arm_pid=$first_arm.*reason=arm-interrupted" "$home/state/.watch-cycle-exits.log" \
+        || fail "the host did not retire its attached arm before watcher completion"
+      : > "$home/external-output-go"
+      ;;
+    *) echo 120 > "$home/park-clock" ;;
+  esac
+  status=0
+  wait_for_exit "$checkpoint_pid" 600 || status=$?
+  wait_for_exit "$holder" 100 || fail "the attached recovery lock holder did not finish"
+  if [ "$expected" -ne 0 ] || [[ "$kind" = *mismatch ]]; then
+    assert_contains "$(cat "$home/$source_tag.err")" 'watcher: recovery state could not be persisted; retaining stale lock evidence' \
+      "the real watcher did not report failed cleanup through its original owner's stderr"
+    [ "$(cat "$home/state/.watch.lock/pid")" = "$watcher" ] || fail "attached cleanup lost its original process evidence"
+  else
+    assert_absent "$home/state/.watch.lock/pid" "successful attached cleanup retained the watcher lock"
+  fi
+  expect_code "$expected" "$status" "attached $kind, original stderr=$(cat "$home/$source_tag.err"), host=$(cat "$home/out.txt" "$home/err.txt")"
+  [ "$(grep -c '^signal: .*demo.status' "$home/out.txt")" -eq "$wake_count" ] || fail "attached $kind lost or repeated a real wake: $(cat "$home/out.txt")"
+  if [ -f "$home/state/.wake-queue" ]; then
+    cmp -s "$home/queued-before-stop" "$home/state/.wake-queue" || fail "attached $kind changed its queued work"
+  else
+    [ ! -s "$home/queued-before-stop" ] || fail "attached $kind removed its queued work"
+  fi
+  if [ "$expected" -ne 0 ]; then
+    assert_contains "$(cat "$home/out.txt" "$home/err.txt")" 'watcher: recovery state could not be persisted; retaining stale lock evidence' \
+      "attached $kind hid matching failed cleanup evidence"
+    assert_not_contains "$(cat "$home/out.txt")" 'checkpoint: no actionable wake' "attached cleanup failure became quiet success"
+  elif [ "$kind" = boundary-clean ]; then
+    assert_contains "$(cat "$home/out.txt")" 'checkpoint: no actionable wake within 120s' "successful attached cleanup was not a quiet success"
+  else
+    assert_not_contains "$(cat "$home/out.txt" "$home/err.txt")" 'recovery state could not be persisted' "nonmatching or released lock was classified as this watcher's cleanup failure"
+  fi
+  ! is_live_non_zombie "$watcher" || fail "attached cleanup left its watcher alive"
+  case "$kind" in
+    successor-*) assert_contains "$(cat "$home/out.txt")" 'the engine turn failed (exit 3)' "fixture did not exercise successor retirement" ;;
+    *) [ ! -e "$home/engine-ready" ] || fail "attached completion reached engine dispatch" ;;
+  esac
+  if [ "$kind" = completed-failure ]; then
+    status=0
+    FM_HOME="$home" "${CHECKPOINT%/*}/fm-watch-arm.sh" --stop >"$home/dead-stop.txt" 2>&1 || status=$?
+    expect_code 1 "$status" "explicit stop must retain an already-dead watcher's cleanup failure"
+    assert_contains "$(cat "$home/dead-stop.txt")" 'recovery state could not be persisted' "explicit stop lost retained failed-cleanup evidence"
+    [ "$(grep -c '^signal: .*demo.status' "$home/dead-stop.txt")" -eq 1 ] || fail "explicit stop lost or repeated the retained real wake"
+  fi
+  pass "real attached $kind preserves the cleanup result, original wake and queue"
+}
+
+test_stop_preserves_foreign_process_identity_guards() {
+  local field home foreign identity status
+  for field in fm-home watcher-path pid-identity; do
+    home=$(make_home "stop-identity-$field")
+    mkdir "$home/state/.watch.lock"
+    sleep "$FM_TEST_STUB_MAX_BLOCK_SECONDS" &
+    foreign=$!
+    identity=$(FM_HOME="$home" bash -c '. "$1"; fm_pid_identity "$2"' _ "$ROOT/bin/fm-wake-lib.sh" "$foreign") \
+      || fail "could not identify the fixture process"
+    printf '%s\n' "$foreign" > "$home/state/.watch.lock/pid"
+    printf '%s\n' "$home" > "$home/state/.watch.lock/fm-home"
+    printf '%s\n' "${CHECKPOINT%/*}/fm-watch.sh" > "$home/state/.watch.lock/watcher-path"
+    printf '%s\n' "$identity" > "$home/state/.watch.lock/pid-identity"
+    printf 'foreign-value\n' > "$home/state/.watch.lock/$field"
+    status=0
+    FM_HOME="$home" "${CHECKPOINT%/*}/fm-watch-arm.sh" --stop >"$home/out.txt" 2>"$home/err.txt" || status=$?
+    expect_code 0 "$status" "$field refusal: $(cat "$home/out.txt" "$home/err.txt")"
+    is_live_non_zombie "$foreign" || fail "stop signalled a process despite a mismatched $field"
+    assert_not_contains "$(cat "$home/out.txt" "$home/err.txt")" 'recovery state could not be persisted' "a foreign process was labelled as this watcher's failed cleanup"
+    kill -TERM "$foreign"
+    wait "$foreign" 2>/dev/null || true
+  done
+  pass "explicit stop preserves home, watcher-path and process-identity refusals"
+}
+
+test_real_attached_host_cleanup() {
+  local kind
+  for kind in boundary-failure boundary-clean boundary-signal-failure boundary-signal-clean completed-failure completed-clean completed-mismatch completed-home-mismatch completed-path-mismatch successor-failure successor-clean; do
+    run_real_attached_host_cleanup "$kind"
+  done
+}
+
+# shellcheck disable=SC2016
 test_real_host_checkpoint_ends_quietly_at_its_bound() {
   local home fakebin status
   home=$(make_home host-real)
@@ -926,5 +1147,7 @@ test_real_host_completed_close_preserves_cleanup_failure
 test_real_host_retired_signal_preserves_wake
 test_real_host_predecessor_capture_preserves_wake
 test_real_arm_forwarding_is_signal_safe
+test_real_attached_host_cleanup
+test_stop_preserves_foreign_process_identity_guards
 test_real_host_retirement_preserves_cleanup_failures
 test_real_host_checkpoint_ends_quietly_at_its_bound

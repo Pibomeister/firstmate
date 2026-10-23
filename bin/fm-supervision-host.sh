@@ -547,9 +547,13 @@ boundary_exit() {
   ARM_OUT=
   SUCCESSOR_PID=
   SUCCESSOR_OUT=
-  if [ "$rc" -eq 0 ] && ! stop_output=$("$SCRIPT_DIR/fm-watch-arm.sh" --stop 2>&1); then
-    printf '%s\nsupervision-host: watcher stop failed after arm retirement\n' "$stop_output"
-    rc=1
+  if [ "$rc" -eq 0 ]; then
+    if ! stop_output=$("$SCRIPT_DIR/fm-watch-arm.sh" --stop 2>&1); then
+      printf '%s\nsupervision-host: watcher stop failed after arm retirement\n' "$stop_output"
+      rc=1
+    elif printf '%s\n' "$stop_output" | grep -Eq '^(signal:|stale:|check:|heartbeat($|:))'; then
+      printf '%s\n' "$stop_output" | grep -E '^(signal:|stale:|check:|heartbeat($|:))'
+    fi
   fi
   park_elapsed
   log_line "boundary	after ${PARK_ELAPSED}s"
@@ -624,9 +628,13 @@ retire_successor() {
   retire_arm "$SUCCESSOR_PID" "$SUCCESSOR_OUT" || rc=1
   SUCCESSOR_PID=
   SUCCESSOR_OUT=
-  if [ "$rc" -eq 0 ] && ! stop_output=$("$SCRIPT_DIR/fm-watch-arm.sh" --stop 2>&1); then
-    printf '%s\nsupervision-host: watcher stop failed after arm retirement\n' "$stop_output"
-    rc=1
+  if [ "$rc" -eq 0 ]; then
+    if ! stop_output=$("$SCRIPT_DIR/fm-watch-arm.sh" --stop 2>&1); then
+      printf '%s\nsupervision-host: watcher stop failed after arm retirement\n' "$stop_output"
+      rc=1
+    elif printf '%s\n' "$stop_output" | grep -Eq '^(signal:|stale:|check:|heartbeat($|:))'; then
+      printf '%s\n' "$stop_output" | grep -E '^(signal:|stale:|check:|heartbeat($|:))'
+    fi
   fi
   return "$rc"
 }
