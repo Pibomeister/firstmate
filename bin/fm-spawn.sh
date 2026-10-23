@@ -2379,8 +2379,8 @@ agy_model_validate() {  # <agy-bin> <model>
 # listing, so it runs under the shared hard bound (bin/fm-timeout-lib.sh) with
 # stdin detached. Timeout and a non-zero exit both refuse the spawn; the
 # requested id is never replaced. FM_DROID_MODEL_PROBE_TIMEOUT defaults to 60
-# seconds; a non-positive or non-numeric value clamps back to that default,
-# because a non-positive bound is not a bound.
+# seconds; an empty value, a non-digit, or a leading zero restores that default,
+# so malformed input cannot remove the bound.
 droid_model_probe_timeout() {
   local bound=${FM_DROID_MODEL_PROBE_TIMEOUT:-60}
   case "$bound" in
@@ -5021,11 +5021,11 @@ agy_spawn_fail() {  # <detail>
   rovo_endpoint_cleanup
 }
 
-# A fresh worktree presents Droid's folder-trust dialog even with --auto high.
+# A fresh worktree can present Droid's folder-trust dialog even with --auto high.
 # Only a complete live viewport with Trust selected authorizes Enter; a
 # swallowed startup key is retried while that complete selected dialog remains.
-# FM_DROID_TRUST_ENTER_MAX, when a positive integer, caps those wait-loop
-# keys (unset keeps the retry-while-visible contract).
+# FM_DROID_TRUST_ENTER_MAX, when a non-negative integer, caps those wait-loop
+# keys; zero sends none, while unset or non-digit input keeps retries enabled.
 # FM_DROID_TRUST_KEY selects the wait-loop key: Enter (default) or 1.
 # FM_DROID_TRUST_PROBE_DIR writes the visible pane before the key that
 # spends that budget and at +0.3s and +2s after it, plus capture-route.txt

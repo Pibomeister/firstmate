@@ -2755,11 +2755,7 @@ Verified on 2026-10-01 with Droid 0.230.0, tmux 3.6a, and Orca 1.4.218 on Darwin
 `droid --help` accepts an interactive positional prompt, `--settings`, and `--auto high`.
 `droid exec --help` lists model IDs and each model's supported reasoning levels, while interactive Droid receives model and effort through its per-task settings file.
 The [Factory CLI](https://docs.factory.com/droid-cli/cli-reference.md), [settings](https://docs.factory.com/droid-cli/settings.md), and [hooks](https://docs.factory.com/harness/hooks.md) references own those vendor contracts.
-Firstmate probes an explicit model with bounded `droid exec --model <id> --list-tools` before creating an endpoint, records a requested effort in task metadata, and omits it from runtime settings when no explicit model is given or that model does not support it.
-[`bin/fm-spawn.sh`](../../bin/fm-spawn.sh) owns the model-probe timeout and refusal contract; the [Droid adapter reference](../../.agents/skills/harness-adapters/references/harness/droid.md) owns model and billing distinctions.
-The settings replace the task's `statusLine` with `printf firstmate`, leave the operator's `hooksDisabled` policy intact, select Auto (High), and register `UserPromptSubmit`, `Stop`, `Notification`, and `SessionEnd` hooks.
-Spawn answers the fresh-worktree trust dialog only when `Trust this folder` is visibly selected, resends Enter while that complete selected dialog remains, and requires the launch prompt hook to acknowledge the brief.
-Droid dispatch is limited to tmux and Orca until the composer and lifecycle are verified live on other backends.
+The [Droid adapter reference](../../.agents/skills/harness-adapters/references/harness/droid.md) owns model selection, billing distinctions, task settings, trust handling, and supported worker backends.
 
 The tmux composer proof uses the live `droid` process identity, the bounded box, a `[⏱ …]` timer row with a nonempty trailing integration indicator after `|`, and the task-owned status row.
 The Orca proof requires `terminal read --screen` to return `source=screen` and the exact recorded task terminal, then applies the same box, timer, and status-row check.
@@ -2801,11 +2797,5 @@ The opt-in tmux guard ran once as `FM_DROID_SIGNALS=1 FM_DROID_LIVE_MODEL=gpt-5.
 It exited 1 in 75s with `Droid folder-trust dialog was answered but the launch prompt hook did not acknowledge the brief; check sign-in and hook policy; inspect window firstmate:fm-droid-live`.
 The wait-loop Enter reached the same private tmux socket, pane, pid, tty, and `cmd=droid` as the viewport capture.
 Captures before the key, at +0.3s, and at +2s were byte-identical complete selected Trust dialogs.
-A later pane still showed the Trust title with `Saving...` and no numbered Trust row.
-No native `GPT-5.6 Terra (Low)` header appeared.
-The launch prompt hook never receipted the brief.
-Interactive explicit-model delivery on Droid 0.238.0 is therefore unproven.
-The adapter still refuses rather than substituting another model.
-Laboratory-only `FM_DROID_TRUST_ENTER_MAX`, `FM_DROID_TRUST_KEY`, `FM_DROID_TRUST_PROBE_DIR`, and `FM_DROID_TRUST_PROBE_STOP` cap or instrument that wait loop.
-Unset values keep production Enter retry-while-visible.
-`bin/fm-spawn.sh` owns those flags.
+That run did not establish native trust-key retry because it capped the wait loop at one key, and no launch prompt hook receipted the brief.
+The portable [Droid regression](../../tests/fm-droid-harness.test.sh) covers swallowed-key retries, negative and ambiguous trust selections, blank or failed viewport reads, and bounded model probes; those fixtures do not prove the conditional trust branches against a native dialog.
