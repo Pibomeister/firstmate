@@ -147,6 +147,14 @@ positive_or() {  # <value> <default>
   case "$1" in ''|0*|*[!0-9]*) printf '%s\n' "$2" ;; *) printf '%s\n' "$1" ;; esac
 }
 
+require_clean_shutdown() {
+  if grep -E '^(supervision-host: )?watcher: recovery state could not be persisted;' "$OUT" "$ERR" >/dev/null 2>&1; then
+    [ ! -s "$OUT" ] || cat "$OUT"
+    [ ! -s "$ERR" ] || cat "$ERR" >&2
+    exit 1
+  fi
+}
+
 # shellcheck source=bin/fm-supervision-engine-lib.sh
 . "$SCRIPT_DIR/fm-supervision-engine-lib.sh"
 if fm_supervision_host_enabled "$CONFIG" codex; then
@@ -166,6 +174,7 @@ if fm_supervision_host_enabled "$CONFIG" codex; then
     run_bounded $((LIMIT + 120)) TERM 0 "$SCRIPT_DIR/fm-supervision-host.sh" park >"$OUT" 2>"$ERR"
   RC=$?
   set -e
+  require_clean_shutdown
   if grep -E '^(signal:|stale:|check:|heartbeat($|:)|supervision-host:)' "$OUT" 2>/dev/null \
     | grep -Ev '^supervision-host: cycle boundary' >/dev/null; then
     grep -Ev '^watcher: (started|attached) ' "$OUT"
@@ -191,6 +200,7 @@ set +e
 run_bounded "$SECONDS_ARG" INT 5 "$SCRIPT_DIR/fm-watch.sh" >"$OUT" 2>"$ERR"
 RC=$?
 set -e
+require_clean_shutdown
 
 if grep -E '^(signal:|stale:|check:|heartbeat($|:))' "$OUT" >/dev/null 2>&1; then
   cat "$OUT"

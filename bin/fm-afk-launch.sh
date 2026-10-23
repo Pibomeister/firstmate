@@ -143,6 +143,8 @@ FM_AFK_LAUNCH_WS_LABEL="firstmate-afk-daemon"
 
 # shellcheck source=bin/fm-backend.sh
 . "$FM_AFK_LAUNCH_DIR/fm-backend.sh"
+# shellcheck source=bin/fm-env-scrub.sh
+. "$FM_AFK_LAUNCH_DIR/fm-env-scrub.sh"
 # shellcheck source=bin/fm-supervisor-target-lib.sh
 . "$FM_AFK_LAUNCH_DIR/fm-supervisor-target-lib.sh"
 # fm-afk-start.sh provides the daemon-lock liveness helpers and
@@ -407,10 +409,15 @@ fm_afk_launch_entry_cmd() {
 # The shell command a created daemon terminal runs. The terminal is not in the
 # captain's process tree, so the daemon cannot detect the captain's harness
 # itself; the launcher names it here (bin/fm-supervise-daemon.sh
-# fm_daemon_primary_harness).
+# fm_daemon_primary_harness). The terminal may inherit another home's FM_*
+# values from its server, so they are dropped before this home's are set.
 fm_afk_launch_daemon_cmd() {  # <captain-target> <captain-backend>
-  printf 'exec env FM_HOME=%q FM_SUPERVISOR_TARGET=%q FM_SUPERVISOR_BACKEND=%q FM_DAEMON_PRIMARY_HARNESS=%q %q' \
-    "$FM_HOME" "$1" "$2" "$(fm_afk_launch_primary_harness)" "$(fm_afk_launch_entry_cmd)"
+  local name overrides=
+  while IFS= read -r name; do
+    case "$name" in FM_*_OVERRIDE) overrides="$overrides $name=$(printf '%q' "${!name}")" ;; esac
+  done < <(fm_env_scrub_names)
+  printf 'exec %q exec env FM_HOME=%q%s FM_SUPERVISOR_TARGET=%q FM_SUPERVISOR_BACKEND=%q FM_DAEMON_PRIMARY_HARNESS=%q %q' \
+    "$FM_ROOT/bin/fm-env-scrub.sh" "$FM_HOME" "$overrides" "$1" "$2" "$(fm_afk_launch_primary_harness)" "$(fm_afk_launch_entry_cmd)"
 }
 
 fm_afk_launch_record_write() {  # <backend> <target> <extra>
@@ -704,7 +711,7 @@ fm_afk_launch_create_tmux() {  # <captain-target> <captain-backend>
     fm_afk_launch_log "failed to persist planned tmux daemon session '$session'"
     return 1
   fi
-  if ! tmux new-session -d -s "$session" "$cmd" 2>/dev/null; then
+  if ! ( fm_env_scrub; tmux new-session -d -s "$session" "$cmd" ) 2>/dev/null; then
     fm_afk_launch_log "failed to create detached tmux daemon session '$session'"
     if ! rm -f "$FM_AFK_LAUNCH_RECORD"; then
       fm_afk_launch_log "failed to remove planned tmux daemon record after creation failure"
