@@ -714,7 +714,7 @@ cleanup_child() {
 # shellcheck disable=SC2329 # Invoked indirectly by the signal traps below.
 handle_arm_signal() {
   local signal=$1 rc=$2
-  trap - HUP TERM INT
+  trap '' HUP TERM INT
   if [ -n "$child" ] && fm_pid_alive "$child"; then
     # The watcher installs its own cleanup traps only after acquiring and
     # publishing the home-bound lock identity. Do not TERM it in the middle of

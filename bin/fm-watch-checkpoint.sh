@@ -179,9 +179,9 @@ if fm_supervision_host_enabled "$CONFIG" codex; then
     | grep -Ev '^supervision-host: cycle boundary' >/dev/null; then
     grep -Ev '^watcher: (started|attached) ' "$OUT"
     [ ! -s "$ERR" ] || cat "$ERR" >&2
-    exit 0
+    exit "$RC"
   fi
-  if grep -E '^supervision-host: cycle boundary' "$OUT" >/dev/null 2>&1; then
+  if [ "$RC" -eq 0 ] && grep -E '^supervision-host: cycle boundary' "$OUT" >/dev/null 2>&1; then
     printf 'checkpoint: no actionable wake within %ss\n' "$BOUND"
     exit 0
   fi
