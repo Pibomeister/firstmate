@@ -148,7 +148,7 @@ positive_or() {  # <value> <default>
 }
 
 require_clean_shutdown() {
-  if grep -E '^watcher: recovery state could not be persisted;' "$OUT" "$ERR" >/dev/null 2>&1; then
+  if grep -E '^(supervision-host: )?watcher: recovery state could not be persisted;' "$OUT" "$ERR" >/dev/null 2>&1; then
     [ ! -s "$OUT" ] || cat "$OUT"
     [ ! -s "$ERR" ] || cat "$ERR" >&2
     exit 1

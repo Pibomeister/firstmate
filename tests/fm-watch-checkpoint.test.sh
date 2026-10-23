@@ -429,6 +429,117 @@ test_host_checkpoint_needs_the_file_and_honors_off() {
 
 # The real host under a fake Codex harness that holds the home's session lock.
 # shellcheck disable=SC2016 # the fake harness's script expands in its own shell
+run_real_host_cleanup_failure() {
+  local kind=$1 home fakebin checkpoint_pid holder watcher first i status holder_status
+  home=$(make_home "host-retirement-$kind")
+  echo claude > "$home/config/supervision-host"
+  printf 'project=fixture\nwindow=fm-demo\nharness=codex\n' > "$home/state/demo.meta"
+  FM_HOME="$home" "$ROOT/bin/fm-afk-contract.sh" enter --words 'fixture; merge nothing' >/dev/null \
+    || fail "could not record the fixture away posture"
+  fakebin="$home/fakebin"
+  mkdir -p "$fakebin"
+  ln -s /bin/bash "$fakebin/codex"
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$fakebin/tmux"
+  cat > "$fakebin/engine" <<'SH'
+#!/usr/bin/env bash
+: > "$FM_HOME/engine-ready"
+while [ ! -e "$FM_HOME/engine-go" ] && [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do sleep 0.1; done
+exit 3
+SH
+  chmod +x "$fakebin/tmux" "$fakebin/engine"
+  if [ "$kind" = boundary ]; then
+    cat > "$home/state/retirement.check.sh" <<'SH'
+#!/usr/bin/env bash
+: > "$FM_HOME/retirement-check-ready"
+sleep "$FM_TEST_STUB_MAX_BLOCK_SECONDS"
+SH
+    chmod 0700 "$home/state/retirement.check.sh"
+    FM_HOME="$home" "$ROOT/bin/fm-check-register.sh" retirement >/dev/null \
+      || fail "could not register the retirement check"
+  fi
+  echo 0 > "$home/park-clock"
+  FM_HOME="$home" PATH="$fakebin:$PATH" FM_POLL=1 FM_CHECK_INTERVAL=0 FM_CHECK_TIMEOUT=120 FM_HEARTBEAT=999999 \
+    FM_CODEX_WATCH_CHECKPOINT_AWAY=120 FM_TEST_SUPERVISION_HOST_CLOCK="$home/park-clock" \
+    FM_SUPERVISION_HOST_TURN_TIMEOUT=60 FM_SUPERVISION_ENGINE_GRACE=1 \
+    FM_SUPERVISION_ENGINE_CLAUDE_BIN="$fakebin/engine" FM_WATCHER_CLEANUP_LOCK_BOUND=2 \
+    "$fakebin/codex" -c '
+      printf "%s\n" "$$" > "$FM_HOME/state/.lock"
+      "$0" --seconds 120
+    ' "$CHECKPOINT" >"$home/out.txt" 2>"$home/err.txt" &
+  checkpoint_pid=$!
+  i=0
+  while [ "$i" -lt 1000 ]; do
+    if grep -Eq '^watcher: started pid=[0-9]+ \(beacon fresh\)' "$home/state"/.supervision-host-arm.* 2>/dev/null \
+      && [ -s "$home/state/.watch.lock/pid" ]; then break; fi
+    sleep 0.1
+    i=$((i + 1))
+  done
+  if [ "$i" -eq 1000 ]; then
+    kill -TERM "$checkpoint_pid" 2>/dev/null || true
+    wait_for_exit "$checkpoint_pid" 100 >/dev/null 2>&1 || true
+    fail "real host did not confirm its watcher: $(cat "$home/out.txt" "$home/err.txt")"
+  fi
+  first=$(cat "$home/state/.watch.lock/pid")
+  watcher=$first
+  if [ "$kind" = boundary ]; then
+    i=0
+    while [ ! -e "$home/retirement-check-ready" ] && [ "$i" -lt 1000 ]; do sleep 0.1; i=$((i + 1)); done
+    [ -e "$home/retirement-check-ready" ] || fail "watcher did not reach its active check before retirement"
+  else
+    printf 'working: retirement fixture\n' > "$home/state/demo.status"
+    i=0
+    while [ ! -e "$home/engine-ready" ] && [ "$i" -lt 1000 ]; do sleep 0.1; i=$((i + 1)); done
+    [ -e "$home/engine-ready" ] || fail "real host did not reach its engine with a confirmed successor"
+    watcher=$(cat "$home/state/.watch.lock/pid")
+    [ "$watcher" != "$first" ] || fail "the hand-back fixture did not start a successor"
+  fi
+  kill -0 "$watcher" 2>/dev/null || fail "confirmed watcher exited before lock contention"
+  FM_HOME="$home" bash -c '
+    . "$1"
+    fm_lock_acquire_wait "$FM_HOME/state/.watcher-down.lock" || exit 1
+    : > "$FM_HOME/retirement-lock-held"
+    while kill -0 "$2" 2>/dev/null && [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do sleep 0.1; done
+    fm_lock_release "$FM_HOME/state/.watcher-down.lock"
+  ' _ "$ROOT/bin/fm-wake-lib.sh" "$watcher" &
+  holder=$!
+  i=0
+  while [ ! -e "$home/retirement-lock-held" ] && [ "$i" -lt 300 ]; do sleep 0.1; i=$((i + 1)); done
+  [ -e "$home/retirement-lock-held" ] || fail "fixture did not acquire the retirement lock"
+  case "$kind" in
+    boundary) echo 120 > "$home/park-clock" ;;
+    handback) : > "$home/engine-go" ;;
+    interrupted) kill -TERM "$(awk -F '\t' '$1 == "host" {print $2}' "$home/state/.supervision-host")" ;;
+  esac
+  status=0
+  wait "$checkpoint_pid" || status=$?
+  holder_status=0
+  wait_for_exit "$holder" 100 >/dev/null 2>&1 || holder_status=$?
+  expect_code 0 "$holder_status" "retirement lock holder exit"
+  [ "$(cat "$home/state/.watch.lock/pid")" = "$watcher" ] || fail "retirement discarded stale recovery evidence"
+  ! kill -0 "$watcher" 2>/dev/null || fail "retirement left the owned watcher alive"
+  if [ "$kind" = boundary ]; then
+    assert_grep 'boundary' "$home/state/.supervision-host.log" "fixture did not reach the park boundary"
+  else
+    assert_grep 'demo.status' "$home/state/.wake-queue" "retirement lost the durable wake"
+    if [ "$kind" = handback ]; then
+      [ "$(grep -c '^signal: .*demo.status' "$home/out.txt")" -eq 1 ] || fail "hand-back lost or repeated its wake reason"
+      assert_contains "$(cat "$home/out.txt")" 'the engine turn failed (exit 3); this wake is yours' "fixture did not reach the failed-engine hand-back"
+    fi
+  fi
+  expect_code 1 "$status" "real host $kind cleanup failure checkpoint exit"
+  assert_contains "$(cat "$home/out.txt")" \
+    'supervision-host: watcher: recovery state could not be persisted; retaining stale lock evidence' \
+    "real host $kind discarded its retirement diagnostic"
+  assert_not_contains "$(cat "$home/out.txt")" 'checkpoint: no actionable wake' "failed retirement was reported as quiet"
+  pass "real host $kind preserves watcher retirement failures and stale recovery evidence"
+}
+
+test_real_host_retirement_preserves_cleanup_failures() {
+  run_real_host_cleanup_failure boundary
+  run_real_host_cleanup_failure handback
+  run_real_host_cleanup_failure interrupted
+}
+
 test_real_host_checkpoint_ends_quietly_at_its_bound() {
   local home fakebin status
   home=$(make_home host-real)
@@ -463,4 +574,5 @@ test_host_checkpoint_bounds_the_park_by_posture
 test_host_checkpoint_does_not_mask_cleanup_failure
 test_host_checkpoint_passes_a_handback_and_reports_a_stand_down
 test_host_checkpoint_needs_the_file_and_honors_off
+test_real_host_retirement_preserves_cleanup_failures
 test_real_host_checkpoint_ends_quietly_at_its_bound
