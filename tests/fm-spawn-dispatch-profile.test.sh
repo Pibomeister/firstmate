@@ -1968,6 +1968,7 @@ test_raw_launch_runs_in_the_pane_shell() {
   status=$?
   expect_code 0 "$status" "raw rc-function spawn should succeed: $out"
   launch=$(cat "$LAUNCH_LOG")
+  # shellcheck disable=SC2016 # The pane shell defines and expands the probe itself.
   result=$(env -i HOME="$HOME_DIR/user-home" PATH=/usr/bin:/bin SHELL=/bin/bash \
     FM_HOME=/synthetic/foreign /bin/bash -c \
     'rc_probe() { printf "rc=%s fm=%s\n" ok "${FM_HOME-unset}"; }; '"$launch" 2>/dev/null </dev/null) \
