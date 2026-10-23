@@ -1,0 +1,4 @@
+old +2 lead, no lag (FM_WATCH_NOW=real+2): rc=0 out='stale: test:fm-writing (idle 502s, writing its worktree for 999999s, rechecked on a long cadence not a wedge; confirm the writes are real progress)' writing-since content=1792730601 mtime=1792730603
+old +2 lead, 3s cycle lag (FM_WATCH_NOW=real-1): rc=1 out='stale: test:fm-writing (idle 499s, writing its worktree for 999999s, rechecked on a long cadence not a wedge; confirm the writes are real progress)' writing-since content=1792730604 mtime=1792730609
+new +30 lead, 3s cycle lag (FM_WATCH_NOW=real+27): rc=0 out='' writing-since content=1792730638 mtime=1792730615
+new +30 lead, 20s cycle lag (FM_WATCH_NOW=real+10): rc=0 out='' writing-since content=1792730626 mtime=1792730620

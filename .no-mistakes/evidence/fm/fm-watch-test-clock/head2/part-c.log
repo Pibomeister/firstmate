@@ -1,0 +1,26 @@
+ok - unreadable status reports are bounded without advancing classification
+ok - permission recovery surfaces content from the unadvanced position
+ok - a stale pane sitting on a terminal status is surfaced (queue + exit)
+ok - a stale terminal-looking status is overridden and absorbed while a run is actively working, then wedge-escalated
+ok - provably-working non-terminal stale is absorbed on first sight, then wedge-escalated past the threshold
+ok - consecutive wedge escalations on the same pane accumulate and demand deep inspection at the threshold
+ok - a pane becoming active again resets the consecutive wedge-escalation counter
+ok - a record whose endpoint is dead or missing reports itself once and is never re-escalated
+ok - a live wedged agent, an unattributable one, and an unreadable endpoint escalate unchanged
+ok - with config/wedge-evidence-guards absent no guard runs and the ladder, timing and wording are unchanged
+ok - a CRITICAL guard defers one window at a time, the cap escalates naming the guard, and the run survives a restart
+ok - a guard that times out, fails, answers malformed, UNKNOWN or WARNING, or is untrusted leaves the ladder unchanged
+ok - a gone endpoint is reported before any guard is asked, so a guard never defers it
+ok - the once-only gone report re-arms when the endpoint comes back, and reports a later death again
+ok - a second death after a same-window relaunch reports in full without a live probe, and an unchanged dead pane stays silent
+ok - a successor's byte-identical dead display reports in full, and the same incarnation still absorbs
+ok - TERM stops a watcher blocked inside a poll and still runs its cleanup
+watcher: recovery state could not be persisted; retaining stale lock evidence
+ok - TERM stops a watcher whose downtime-marker lock is held, retaining stale evidence
+ok - the cleanup marker-lock bound is decimal and zero falls back to the default
+ok - a busy worker below the turn-age bound remains working with no escalation
+ok - a busy worker with a stable pane hash still escalates once its completed-turn age reaches the bound
+ok - a busy worker whose pane hash changes every poll still escalates once its completed-turn age reaches the bound
+ok - touching a busy worker's completed-turn marker resets the age and prevents an old-age escalation
+ok - native progress resets busy age without a completed turn or notification
+ok - repeated busy turn-age escalations reuse the existing escalation counter and demand deep inspection at the threshold

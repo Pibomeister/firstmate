@@ -1,0 +1,8 @@
+ok - a captain-held secondmate re-surfaces on the bounded normal-mode cadence
+ok - a non-paused secondmate retains normal stale suppression
+ok - a resumed secondmate clears pause and stale tracking before stale exemption
+ok - unchanged stale hashes reclassify when a crew enters or leaves pause
+ok - a declared pause is periodically rechecked against authoritative active-run state
+ok - a paused status overridden by authoritative working preserves its wedge timer, is rechecked rather than wedge-escalated while the declaration stands, and escalates once it is lifted
+ok - matching non-terminal stale suppressors repair missing or corrupt stale-since timers
+not ok - a written-worktree deferral printed a wake reason: stale: test:fm-writing (idle 502s, writing its worktree for 999999s, rechecked on a long cadence not a wedge; confirm the writes are real progress)

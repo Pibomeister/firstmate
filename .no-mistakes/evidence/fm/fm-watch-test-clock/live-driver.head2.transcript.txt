@@ -1,0 +1,25 @@
+== S1 default mode (no FM_WATCH_NOW/FM_WATCH_ONCE): continuous loop on the real clock
+  alive after 5s; beacon mtime 1792730633 -> 1792730636 (real now 1792730637)
+PASS - default watcher keeps cycling (beacon advanced on real clock)
+  stopped with TERM rc=143
+== S2 FM_WATCH_ONCE=1: one cycle then exits cleanly, lock released
+  rc=0 elapsed=4s beacon=present stderr=''
+  second once-run rc=0 stderr=''
+PASS - once mode exits 0 and releases the watcher lock
+== S3 adversarial: malformed FM_WATCH_NOW is refused before any work
+  FM_WATCH_NOW='abc' -> rc=2 'watcher: FM_WATCH_NOW must be non-negative epoch seconds' lock=untouched
+  FM_WATCH_NOW='-5' -> rc=2 'watcher: FM_WATCH_NOW must be non-negative epoch seconds' lock=untouched
+  FM_WATCH_NOW='01' -> rc=2 'watcher: FM_WATCH_NOW must be non-negative epoch seconds' lock=untouched
+  FM_WATCH_NOW='' -> rc=2 'watcher: FM_WATCH_NOW must be non-negative epoch seconds' lock=untouched
+  FM_WATCH_NOW='1.5' -> rc=2 'watcher: FM_WATCH_NOW must be non-negative epoch seconds' lock=untouched
+  FM_WATCH_NOW=' 12' -> rc=2 'watcher: FM_WATCH_NOW must be non-negative epoch seconds' lock=untouched
+PASS - all malformed values exit 2
+== S4 synthetic clock drives the wedge threshold (boundary 239s vs 241s past a 240s bound)
+  cycle@now: rc=0 out='' stale-since=1792730646
+  cycle@now+239: rc=0 out='' queue=0B
+  cycle@now+241: rc=0 out='stale: test:fm-quiet (idle 241s, possible wedge, escalation 1)'
+  real seconds for all three cycles: 12
+PASS - absorbed just under the bound, escalated just past it, in seconds of real time
+== S5 default real clock still escalates a wedge end-to-end (no synthetic clock, continuous daemon)
+  wait rc=0 elapsed=12s out='stale: test:fm-quiet (idle 3s, possible wedge, escalation 1)'
+PASS - real-clock daemon escalates after the real threshold elapses

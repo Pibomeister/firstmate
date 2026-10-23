@@ -1,0 +1,2 @@
+no lag (FM_WATCH_NOW=real+2): rc=0 out='' writing-since content=1792729492 mtime=1792729492
+3s lag (FM_WATCH_NOW=real-1): rc=1 out='stale: test:fm-writing (idle 499s, writing its worktree for 999999s, rechecked on a long cadence not a wedge; confirm the writes are real progress)' writing-since content=1792729492 mtime=1792729495

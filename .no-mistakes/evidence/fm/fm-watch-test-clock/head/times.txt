@@ -1,0 +1,7 @@
+part-d rc=1 secs=74
+part rc=0 secs=172
+part-e rc=0 secs=238
+part-b rc=0 secs=243
+part-g rc=0 secs=301
+part-c rc=0 secs=388
+part-f rc=0 secs=414
