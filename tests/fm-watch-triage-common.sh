@@ -2916,7 +2916,7 @@ test_absorbed_replacement_wait_does_not_inherit_the_old_throttle() {
 # path. Each cycle uses the watcher's real lock and cleanup without a poll wait.
 parked_watch_round() {  # <state> <fakebin> <out> <capture> <window> <exit|absorb>
   local state=$1 fakebin=$2 out=$3 capture=$4 window=$5 mode=$6 pid cycles=0
-  local before after now limit=4
+  local before after now real limit=4
   now=${FM_TEST_WATCH_NOW:-$(( $(date +%s) + 2 ))}
   before=$(wake_queue_bytes "$state")
   while [ "$cycles" -lt "$limit" ]; do
@@ -2937,6 +2937,8 @@ parked_watch_round() {  # <state> <fakebin> <out> <capture> <window> <exit|absor
     fi
     cycles=$((cycles + 1))
     now=$((now + 2))
+    real=$(( $(date +%s) + 2 ))
+    [ "$now" -ge "$real" ] || now=$real
   done
   [ "$mode" = absorb ]
 }
@@ -3109,7 +3111,7 @@ test_live_paused_until_controls_recheck_time() {
 # in), which is how the dead-endpoint cases below reach `dead` and `missing`.
 wedge_threshold_round() {  # <state> <fakebin> <out> <capture> <window> <verdict> <exit|absorb>
   local state=$1 fakebin=$2 out=$3 capture=$4 window=$5 verdict=$6 mode=$7 pid cycles=0
-  local before after now limit=3
+  local before after now real limit=3
   [ "$mode" = exit ] && limit=8
   now=${FM_TEST_WATCH_NOW:-$(( $(date +%s) + 2 ))}
   before=$(wake_queue_bytes "$state")
@@ -3133,6 +3135,8 @@ wedge_threshold_round() {  # <state> <fakebin> <out> <capture> <window> <verdict
     fi
     cycles=$((cycles + 1))
     now=$((now + 2))
+    real=$(( $(date +%s) + 2 ))
+    [ "$now" -ge "$real" ] || now=$real
   done
   [ "$mode" = absorb ]
 }
