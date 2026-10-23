@@ -304,9 +304,9 @@ fi
 # turn-ended signature, annotation staleness checks, and guarded bookkeeping writes.
 
 POLL=${FM_POLL:-15}                   # seconds between cycles
-# Keep the clock choice in one place. The existing portable epoch helper uses a
-# Bash builtin where available and falls back to date on stock macOS Bash 3.2.
-# An output variable avoids a subprocess at the call sites already using one.
+# Keep the clock choice in one place. Unset, each form keeps the clock its call
+# sites read before: the output-variable form uses the portable epoch helper,
+# and the stdout form runs date +%s, which PATH-faked clocks in tests rely on.
 fm_watch_now() {  # [output-variable]
   if [ "${FM_WATCH_NOW+x}" ]; then
     if [ "$#" -gt 0 ]; then printf -v "$1" '%s' "$FM_WATCH_NOW"
@@ -314,9 +314,7 @@ fm_watch_now() {  # [output-variable]
   elif [ "$#" -gt 0 ]; then
     fm_epoch_seconds_to "$1"
   else
-    local watch_now
-    fm_epoch_seconds_to watch_now
-    printf '%s\n' "$watch_now"
+    date +%s
   fi
 }
 
