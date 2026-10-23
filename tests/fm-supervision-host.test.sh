@@ -1355,26 +1355,6 @@ SH
   pass "host: the dialog mirror, its feed, and the wake file are owner-only"
 }
 
-# Park again after a host was stopped mid-park: an empty queue stays quiet,
-# while queued work resurfaces and main drains it before the next park.
-# That close can end the park before its cycle is ever seen live, so this
-# waits for the exit itself.
-park_after_stop() {  # <home>
-  if [ ! -s "$1/state/.wake-queue" ]; then
-    park_again "$1"
-    [ ! -s "$1/host.rc" ] || fail "an empty-queue restart ended the park"
-    assert_no_re '^check: rearm-resurface' "$1/host.out" "an empty-queue restart woke for bookkeeping"
-    return
-  fi
-  rm -f "$1/host.rc"
-  : > "$1/park.go"
-  wait_until 150 host_exited "$1" || fail "the watcher's downtime resurface did not reach main: $(cat "$1/host.out")"
-  assert_re '^check: rearm-resurface' "$1/host.out" "fixture: the first close after the watcher stopped was not its resurface"
-  main_drain_and_ack "$1"
-  quiet_pass_through_successor "$1"
-  park_again "$1"
-}
-
 # Dialog counts as delivered only once the turn that carried it is accepted
 # with its report. A host that reaches its park boundary after feeding the
 # mirror but before the turn, or is stopped mid-turn, leaves the conversation
