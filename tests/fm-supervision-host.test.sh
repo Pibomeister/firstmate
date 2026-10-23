@@ -10,6 +10,38 @@ command -v perl >/dev/null 2>&1 || { printf 'skip: perl absent\n'; exit 0; }
 # shellcheck source=tests/supervision-host-helpers.sh
 . "$(dirname "${BASH_SOURCE[0]}")/supervision-host-helpers.sh"
 
+# Stop whatever a case left running, by the exact pids its home recorded.
+stop_home_processes() {  # <home>
+  local home=$1 pid arms='' i=0
+  if [ -f "$home/state/.supervision-host" ]; then
+    arms=$(awk -F '\t' '$1 == "arm" { print $2 }' "$home/state/.supervision-host")
+    pid=$(awk -F '\t' '$1 == "host" { print $2; exit }' "$home/state/.supervision-host")
+    [ -z "$pid" ] || kill -TERM "$pid" 2>/dev/null || true
+    while [ "$i" -lt 50 ] && [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; do
+      sleep 0.1
+      i=$((i + 1))
+    done
+  fi
+  for pid in $arms; do
+    kill -TERM "$pid" 2>/dev/null || true
+  done
+  pid=$(cat "$home/state/.watch.lock/pid" 2>/dev/null || true)
+  [ -z "$pid" ] || kill -TERM "$pid" 2>/dev/null || true
+  while IFS= read -r pid; do
+    if [ -e "$home/session.stop" ]; then
+      # A Stop hook may re-arm between the host snapshot above and its TERM.
+      # Bound the fixture harness reap rather than waiting forever for a hook
+      # that has already started another park.
+      wait_for_exit "$pid" 100 >/dev/null 2>&1 || true
+    else
+      kill -TERM "$pid" 2>/dev/null || true
+    fi
+  done < <(cat "$home/claude-pids" 2>/dev/null)
+  while IFS= read -r pid; do
+    kill -TERM "$pid" 2>/dev/null || true
+  done < <(cat "$home/orphan-pid" 2>/dev/null)
+}
+
 test_report_surface_enforces_actor_turn_and_scope() {
   local home state out rc
   home="$TMP_ROOT/report"
@@ -147,6 +179,31 @@ test_dispatch_entry_scopes_rows_and_renders_the_away_tail() {
   assert_contains "$out" "POSTURE: AWAY." "an away wake prompt must carry the posture tail"
   assert_contains "$out" "    merge nothing" "the away tail must carry the record's read-back verbatim"
   pass "dispatch entry: the host reads branch eligibility, the offer rule, and the wake prompt from the Pi branch's own owner"
+}
+
+# bin/fm-watch.sh keys an Orca task's stale row by the terminal its metadata
+# records, so an away scan must resolve that key to the task rather than read
+# the queue as unresolvable and hand every away wake back to main.
+test_dispatch_entry_resolves_an_orca_terminal_stale_row() {
+  local home state out
+  home="$TMP_ROOT/dispatch-orca"
+  state="$home/state"
+  mkdir -p "$state"
+  printf 'window=fm-orca-task\nendpoint_task_id=orca-task\nproject=demo\nkind=ship\nbackend=orca\nterminal=term_0f0e0d0c-aaaa-bbbb-cccc-000000000001\n' \
+    > "$state/orca-task.meta"
+  append_wake "$state" stale term_0f0e0d0c-aaaa-bbbb-cccc-000000000001 \
+    "stale: term_0f0e0d0c-aaaa-bbbb-cccc-000000000001 (paused 600s, awaiting external)"
+
+  out=$(FM_HOME="$home" node "$DISPATCH" scope --afk)
+  assert_contains "$out" "corrupted=0" "an Orca terminal-keyed stale row must not make the away scan unresolvable"
+  assert_contains "$out" "status=safe" "an Orca terminal-keyed stale row must be claimable away"
+  assert_contains "$out" "rows=1" "the away scan must claim the terminal-keyed stale row"
+  assert_contains "$out" "tasks=orca-task" "the terminal key must resolve to the task that records it"
+
+  append_wake "$state" stale term_0f0e0d0c-aaaa-bbbb-cccc-00000000ffff "stale: term_0f0e0d0c-aaaa-bbbb-cccc-00000000ffff"
+  out=$(FM_HOME="$home" node "$DISPATCH" scope --afk)
+  assert_contains "$out" "corrupted=1" "a terminal no task records must still read as unresolvable"
+  pass "dispatch entry: an away scan resolves an Orca terminal-keyed stale row to its task and still refuses an unknown terminal"
 }
 
 # --- host loop ----------------------------------------------------------------
@@ -1281,6 +1338,26 @@ SH
   pass "host: the dialog mirror, its feed, and the wake file are owner-only"
 }
 
+# Park again after a host was stopped mid-park: an empty queue stays quiet,
+# while queued work resurfaces and main drains it before the next park.
+# That close can end the park before its cycle is ever seen live, so this
+# waits for the exit itself.
+park_after_stop() {  # <home>
+  if [ ! -s "$1/state/.wake-queue" ]; then
+    park_again "$1"
+    [ ! -s "$1/host.rc" ] || fail "an empty-queue restart ended the park"
+    assert_no_re '^check: rearm-resurface' "$1/host.out" "an empty-queue restart woke for bookkeeping"
+    return
+  fi
+  rm -f "$1/host.rc"
+  : > "$1/park.go"
+  wait_until 150 host_exited "$1" || fail "the watcher's downtime resurface did not reach main: $(cat "$1/host.out")"
+  assert_re '^check: rearm-resurface' "$1/host.out" "fixture: the first close after the watcher stopped was not its resurface"
+  main_drain_and_ack "$1"
+  quiet_pass_through_successor "$1"
+  park_again "$1"
+}
+
 # Dialog counts as delivered only once the turn that carried it is accepted
 # with its report. A host that reaches its park boundary after feeding the
 # mirror but before the turn, or is stopped mid-turn, leaves the conversation
@@ -1664,6 +1741,7 @@ test_park_exit_probe_uses_half_second_child_sleeps
 test_report_surface_enforces_actor_turn_and_scope
 test_report_after_the_return_is_queued_for_main
 test_dispatch_entry_scopes_rows_and_renders_the_away_tail
+test_dispatch_entry_resolves_an_orca_terminal_stale_row
 test_branch_outcomes_only_on_a_host_home_off_pi
 test_branch_outcomes_put_captain_first_and_collapse_routine_overflow
 test_branch_outcomes_collapse_repeated_captain_outcomes_per_task
