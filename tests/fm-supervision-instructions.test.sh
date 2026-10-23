@@ -23,6 +23,16 @@ test_selected_harness_block_only() {
   pass "renderer prints exactly the selected harness block"
 }
 
+test_secondmate_turn_boundary_remains_responsive() {
+  local harness out
+  for harness in claude codex opencode pi pi-signed grok cursor omp unknown; do
+    out=$("$RENDER" --harness "$harness")
+    assert_contains "$out" 'In a secondmate home, handle routed inbox messages and relay finished crew deliverables before the next supervision wait.' \
+      "$harness supervision omitted the secondmate turn-boundary obligation"
+  done
+  pass "every rendered supervision protocol keeps secondmate inbox and finishes ahead of waits"
+}
+
 # A Claude home runs the host by default, so its block carries the host
 # protocol with no file, exactly as with an opting-in file; an off file
 # renders the plain block.
@@ -340,6 +350,7 @@ test_pi_snippet_uses_effective_extension_path() {
 test_supervision_host_protocol_on_a_claude_home_unless_off
 test_supervision_host_protocol_on_every_arm_owner
 test_selected_harness_block_only
+test_secondmate_turn_boundary_remains_responsive
 test_unknown_fallback
 test_conditional_stanzas
 test_quiet_mode_stanzas

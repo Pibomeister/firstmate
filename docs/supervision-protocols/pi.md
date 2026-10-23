@@ -1,5 +1,7 @@
 Mode: Pi extension background wake.
 
+In a secondmate home, handle routed inbox messages and relay finished crew deliverables before the next supervision wait.
+
 When this session owns supervision, in either posture:
 1. Drain first with `bin/fm-wake-drain.sh`.
    After handling all emitted wakes and reconciling open decisions and unread status lines, run the exact `--ack-through` command printed as `WAKE_ACK_REQUIRED`; until then the work remains durable for idempotent re-handling after interruption.

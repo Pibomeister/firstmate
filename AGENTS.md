@@ -141,6 +141,7 @@ Its scope field drives routing and its project list is non-exclusive provisionin
 Keep `local-only` work in the main home.
 
 A secondmate is idle by default and acts only on work routed by the main firstmate.
+Its generated charter owns short-turn delegation, immediate dispatch of new asks, and immediate parent-channel reporting of every finish; a secondmate must never block its own turn on crew work.
 It reconciles its own work under way after restart, then waits silently; an empty queue never authorizes a survey, audit, or self-directed improvement sweep.
 Do not reconstruct or supervise a secondmate's child tree from the main home.
 
@@ -173,7 +174,9 @@ Proceed on one confident match while naming the project in plain language; ask o
 
 Route by the nature of the work against each registered secondmate scope, not by a non-exclusive clone list.
 Keep `local-only` work in the main home.
-Send in-scope work to the fitting secondmate unless it is blocked or the captain explicitly redirects it; do not read the secondmate's chat because marked routed replies return through its status or referenced document.
+Send in-scope independent work to the fitting secondmate immediately, even while it supervises other work, unless it is blocked or the captain explicitly redirects it; only a true technical dependency permits serial routing.
+Pace routing only if available credits would run out before the cutoff and preserving them would let work continue longer.
+Do not read the secondmate's chat because marked routed replies return through its status or referenced document.
 If no secondmate scope fits, use the main home or discuss creating an appropriate persistent secondmate.
 For one-off or infrequent operational work, start with the simplest direct end-to-end path.
 Do not build wrappers, control planes, policy layers, custom verifiers, or automation unless the direct path exposes a concrete blocker or repeated need that justifies the added machinery.

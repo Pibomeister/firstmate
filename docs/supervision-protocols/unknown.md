@@ -1,5 +1,7 @@
 Mode: Unknown harness fallback.
 
+In a secondmate home, handle routed inbox messages and relay finished crew deliverables before the next supervision wait.
+
 This primary harness does not have a verified watcher wake adapter.
 Follow the generic supervision contract in `AGENTS.md`.
 First cycle: drain queued wakes, then choose a supervision wait that the harness can actually wake from.
