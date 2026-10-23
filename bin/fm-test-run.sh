@@ -148,10 +148,10 @@
 # that names it is selected as that SCRIPT, because the reference is per-script
 # evidence. Consumer bin/ scripts still resolve through the curated map, so
 # recorded family-level coupling still expands to the whole family.
-# tests/lib.sh, tests/fixtures.sh, tests/*-helpers.sh and tests/*-fixture.sh are
-# shared files that map to the suites naming them; a fixture under
-# tests/fixtures/<dir>/ is mapped by that directory instead. Curated family arms
-# above those also name individual tests/ files explicitly.
+# tests/lib.sh, tests/fixtures.sh, tests/*-helpers.sh, tests/*-common.sh and
+# tests/*-fixture.sh are shared files that map to the suites naming them; a
+# fixture under tests/fixtures/<dir>/ is mapped by that directory instead.
+# Curated family arms above those also name individual tests/ files explicitly.
 set -eu
 
 now_ms() {
@@ -189,11 +189,12 @@ JOBS_MAX=8
 MAX_WALL_MS=
 PER_SCRIPT_TIMEOUT_SECS=0
 # Bound applied automatically on the automatic --changed path, derived from
-# measured healthy runtimes with margin rather than picked: the slowest measured
-# script is tests/fm-watch-triage.test.sh at about 1430s under CI load (the hint
-# table below records that loaded figure). 1500s still keeps every measured
-# script under the bound, though with only about 1.05x headroom over the slowest
-# loaded measurement, and it stays under the 30-minute normal CI tier so a wedged script fails here,
+# measured runtimes with margin rather than picked. The unsplit
+# tests/fm-watch-triage.test.sh last took about 1430s under CI load, only about
+# 1.05x under the bound. The watch-triage parts (that file plus -b through -g)
+# carry local per-part wall times in the hint table below, not CI
+# measurements. 1500s keeps every measured script under the bound,
+# and it stays under the 30-minute normal CI tier so a wedged script fails here,
 # with its output, before the job cap
 # cancels the lane. It is a guard, not a speed control: a HUNG script becomes a
 # bounded failure instead of an unbounded suite, which is the shape that
@@ -202,7 +203,7 @@ CHANGED_DEFAULT_TIMEOUT_SECS=1500
 
 # How many separate-runner shards the portable serial remainder splits into.
 # One owner: CI lane names carry this count and are refused when they disagree.
-PORTABLE_SERIAL_SHARDS=11
+PORTABLE_SERIAL_SHARDS=15
 
 # Fixed balance estimate for a portable-serial script with no measurement.
 # Replace it with a measured hint when CI timing becomes available.
@@ -319,7 +320,7 @@ family_for_basename() {
     fm-mail.test.sh|fm-mail-check.test.sh|\
     fm-turnend-foreign-owner-arm-fix.test.sh|\
     fm-wake-queue.test.sh|fm-watch-arm.test.sh|fm-watch-checkpoint.test.sh|fm-watch-recovery-loop.test.sh|\
-    fm-watch-triage.test.sh|fm-task-inbox.test.sh|\
+    fm-watch-triage.test.sh|fm-watch-triage-b.test.sh|fm-watch-triage-c.test.sh|fm-watch-triage-d.test.sh|fm-watch-triage-e.test.sh|fm-watch-triage-f.test.sh|fm-watch-triage-g.test.sh|fm-task-inbox.test.sh|\
     fm-watcher-lock.test.sh|fm-inactive-reconcile.test.sh|fm-watch-wedge-cap.test.sh|\
     fm-watch-wedge-cap-unconfigured-parity.test.sh)
       printf '%s\n' watcher-wake-lock
@@ -919,7 +920,13 @@ tests/fm-wake-queue.test.sh 222103
 tests/fm-watch-arm.test.sh 180070
 tests/fm-watch-checkpoint.test.sh 24989
 tests/fm-watch-recovery-loop.test.sh 60400
-tests/fm-watch-triage.test.sh 1429680
+tests/fm-watch-triage.test.sh 123760
+tests/fm-watch-triage-b.test.sh 197440
+tests/fm-watch-triage-c.test.sh 305700
+tests/fm-watch-triage-e.test.sh 100760
+tests/fm-watch-triage-f.test.sh 471050
+tests/fm-watch-triage-g.test.sh 173710
+tests/fm-watch-triage-d.test.sh 295480
 tests/fm-watch-wedge-cap-live.test.sh 74
 tests/fm-watch-wedge-cap-unconfigured-parity.test.sh 27763
 tests/fm-watch-wedge-cap.test.sh 374225
@@ -1755,7 +1762,7 @@ families_for_changed_path() {
           || printf '%s\n' "__unmapped__:$path"
       fi
       ;;
-    tests/lib.sh|tests/*-helpers.sh|tests/fixtures.sh|tests/*-fixture.sh)
+    tests/lib.sh|tests/*-helpers.sh|tests/*-common.sh|tests/fixtures.sh|tests/*-fixture.sh)
       # Shared top-level test files, selected by the suites that name them.
       # Must stay below the tests/fixtures/*/* arm: a case glob's * spans /, so
       # tests/*-fixture.sh would otherwise swallow a nested
