@@ -929,6 +929,19 @@ _fm_recovery_marker_arm_check() {
       return 0
       ;;
     pending:downtime:*)
+      # Nothing is buried when every row was acknowledged: retire the episode
+      # on its own generation instead of waking for bookkeeping, so an
+      # acknowledgement already printed for it stays valid.
+      if [ ! -s "$FM_WAKE_QUEUE" ]; then
+        if ! _fm_recovery_marker_write_locked "$marker" downtime "${line##*:}" acked; then
+          fm_lock_release "$lock"
+          fm_lock_release "$FM_WAKE_QUEUE_LOCK"
+          return 1
+        fi
+        fm_lock_release "$lock"
+        fm_lock_release "$FM_WAKE_QUEUE_LOCK"
+        return 0
+      fi
       if ! _fm_recovery_marker_write_locked "$marker" downtime "${line##*:}" announced; then
         fm_lock_release "$lock"
         fm_lock_release "$FM_WAKE_QUEUE_LOCK"

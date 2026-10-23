@@ -31,7 +31,9 @@ Usage: fm-watch-checkpoint.sh [--seconds <n>]
 
 Run bin/fm-watch.sh in the foreground for a bounded checkpoint.
 On an actionable watcher wake, pass through the watcher output and exit 0.
-On a quiet checkpoint, print "checkpoint: no actionable wake within <n>s" and exit 124.
+On a quiet checkpoint, print "checkpoint: no actionable wake within <n>s" and exit 0,
+so a harness never presents an ordinary quiet bound as a failed command.
+A nonzero exit always means the checkpoint itself failed.
 EOF
 }
 
@@ -172,7 +174,7 @@ if fm_supervision_host_enabled "$CONFIG" codex; then
   fi
   if grep -E '^supervision-host: cycle boundary' "$OUT" >/dev/null 2>&1; then
     printf 'checkpoint: no actionable wake within %ss\n' "$BOUND"
-    exit 124
+    exit 0
   fi
   [ ! -s "$OUT" ] || cat "$OUT"
   [ ! -s "$ERR" ] || cat "$ERR" >&2
@@ -205,7 +207,7 @@ fi
 
 if [ "$RC" -eq 124 ]; then
   printf 'checkpoint: no actionable wake within %ss\n' "$SECONDS_ARG"
-  exit 124
+  exit 0
 fi
 
 [ ! -s "$OUT" ] || cat "$OUT"
