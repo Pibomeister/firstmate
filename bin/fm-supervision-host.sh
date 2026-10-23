@@ -373,13 +373,10 @@ activate() {
   fi
   for capture in "$STATE"/.supervision-host-arm.*; do
     [ -f "$capture" ] || continue
-    if ! text=$(read_arm_capture "$capture"); then
-      printf '%s\n' "$text"
-      rc=1
-    fi
-    rm -f "$capture"
+    text=$(retire_arm "" "$capture") || rc=1
+    [ -z "$text" ] || ARM_TEXT=${ARM_TEXT:+$ARM_TEXT$'\n'}$text
   done
-  [ "$rc" -eq 0 ] || return 1
+  [ "$rc" -eq 0 ] || { emit; return 1; }
   # A predecessor killed outright ran no cleanup: reap the engine descendants
   # its turn recorded, then drop that turn's files.
   local ledger
@@ -1110,6 +1107,7 @@ trap 'exit 143' TERM
 trap 'exit 130' INT
 activate || { echo "supervision-host: the host could not finish predecessor cleanup or write its record"; exit 1; }
 log_line "start	gen=$GEN	primary=$PRIMARY"
+[ -z "$ARM_TEXT" ] || exit_to_main "a predecessor watcher already delivered this wake; this wake is yours"
 
 # The first cycle.
 if [ "$FIRST_ARM_RESTART" -eq 1 ]; then
