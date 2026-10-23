@@ -816,11 +816,14 @@ test_secondmate_marked_request_reporting_contract() {
     "$ROOT/bin/fm-brief.sh" marked-request-reporting --secondmate --no-projects >/dev/null 2>&1
   brief="$home/data/marked-request-reporting/brief.md"
 
-  assert_grep 'A marked request for new work requires an immediate dispatch report and a correlated outcome' "$brief" \
+  assert_grep 'A marked request for new work requires one correlated dispatch answer in the same handling turn' "$brief" \
     "secondmate charter did not require prompt correlated dispatch"
-  # shellcheck disable=SC2016 # Backticks are literal charter markup.
-  assert_grep 'Name the crew task in the immediate dispatch report without the `corr=<id>` token.' "$brief" \
-    "secondmate dispatch could consume the final-outcome correlation"
+  assert_grep 'include that exact token in your same-turn parent status answer' "$brief" \
+    "secondmate answer did not identify the marked request"
+  assert_grep 'For new work, make that answer a dispatch report naming the crew task.' "$brief" \
+    "secondmate dispatch did not identify its crew task"
+  assert_grep "The pending-reply guard closes on that dispatch answer; report the crew's finished deliverable separately when it lands." "$brief" \
+    "secondmate charter confused intake correlation with outcome delivery"
   assert_grep 'The dispatch report is the acknowledgement; do not add a separate generic receipt' "$brief" \
     "secondmate charter did not make dispatch the acknowledgement"
   assert_grep 'Never do investigation, coding, review, or long waits in your own turn' "$brief" \
@@ -840,8 +843,6 @@ test_secondmate_marked_request_reporting_contract() {
   assert_grep 'resolved [key=<work-slug>]' "$brief" \
     "secondmate charter lost resolved closure for a keyed material phase"
 
-  assert_grep 'reserve that exact token for the final parent status reply' "$brief" \
-    "secondmate charter lost final-outcome correlation"
   assert_grep 'bin/fm-secondmate-report.sh <verb> <corr_id> <note>' "$brief" \
     "secondmate charter lost the mechanical helper invocation"
   assert_grep 'do not pass a status path' "$brief" \

@@ -160,24 +160,18 @@ test_normal_correlated_reply_resolves_once() {
   pass "normal correlated reply resolves once (idempotent)"
 }
 
-test_dispatch_notice_leaves_final_reply_pending() {
+test_correlated_dispatch_resolves_intake_request() {
   local home state corr status
   home=$(setup_parent dispatch-pending)
   state="$home/state"
   corr=$(fm_pending_reply_create "$home" "$state" "hibit" "audit the ledger")
   fm_pending_reply_mark_delivered "$state" "$corr"
   status="$state/hibit.status"
-  printf 'working [key=ledger]: dispatched audit to scout ledger-audit\n' > "$status"
-  if fm_pending_reply_try_resolve "$state" "$corr"; then
-    fail "an uncorrelated dispatch notice must leave the final reply pending"
-  fi
-  [ "$(phase_of "$state" "$corr")" = awaiting_report ] \
-    || fail "dispatch notice closed the final-reply guard"
-  printf 'done [corr=%s]: report in data/ledger-audit/report.md\n' "$corr" >> "$status"
-  fm_pending_reply_try_resolve "$state" "$corr" || fail "final correlated report did not resolve"
+  printf 'working [corr=%s] [key=ledger]: dispatched audit to scout ledger-audit\n' "$corr" > "$status"
+  fm_pending_reply_try_resolve "$state" "$corr" || fail "correlated dispatch did not answer the intake request"
   [ "$(phase_of "$state" "$corr")" = resolved ] \
-    || fail "final report left the request pending"
-  pass "an immediate dispatch notice preserves final-outcome correlation"
+    || fail "correlated dispatch left the intake request pending"
+  pass "a correlated dispatch answers the marked intake request"
 }
 
 test_completed_turn_no_report_triggers_one_recovery() {
@@ -2124,7 +2118,7 @@ test_same_kind_escalation_reopens_after_operator_close() {
 # --- run --------------------------------------------------------------------
 
 test_normal_correlated_reply_resolves_once
-test_dispatch_notice_leaves_final_reply_pending
+test_correlated_dispatch_resolves_intake_request
 test_completed_turn_no_report_triggers_one_recovery
 test_recovery_waits_while_the_mate_has_an_open_decision
 test_recovery_sends_during_an_open_decision_without_the_flag
