@@ -551,7 +551,7 @@ When a message carries that marker, respond through the STATUS/ESCALATION path, 
 If it brings new substantive work, dispatch that work to your crew and report the dispatch in the same handling turn.
 If it asks for a brief supervision action or established answer, handle and report that in the same turn instead of spawning unnecessary work.
 Marked requests also carry a privacy-safe \`corr=<id>\` token after the marker; include that exact token in your same-turn parent status answer so the parent can correlate the intake answer.
-For new work, make that answer a dispatch report naming the crew task.
+For new work, make that answer a dispatch report naming the crew task: \`working [corr=<id>] [key=<work-slug>] [at=<epoch>]: dispatched <crew task>\`.
 The pending-reply guard closes on that dispatch answer; report the crew's finished deliverable separately when it lands.
 Optional helper: \`bin/fm-secondmate-report.sh <verb> <corr_id> <note>\` appends that correlated line to the parent channel itself - do not pass a status path, and do not write a hand path under this home.
 A plain \`echo\` that includes the same \`corr=<id>\` on this parent channel is equally valid; do not depend on the helper being present.
@@ -570,12 +570,12 @@ Report only true captain-relevant outcomes or a declared external wait by append
 States: working, needs-decision, blocked, $PAUSED_VERB, done, failed.
 Substitute \`<epoch>\` with the current Unix time in seconds - run \`date +%s\` and write the number it printed; a stamp that is not plain digits records no time at all.
 Use \`$PAUSED_VERB: {why}\` (distinct from \`blocked:\`) only when your domain is deliberately idling on a known external wait you expect to clear on its own, naming when it clears with \`until <YYYY-MM-DDTHH:MMZ>\` (UTC) when you know; use \`blocked:\` when you are stuck and need firstmate to act.
-Use this only for material phase changes, a captain decision, a real blocker, a failure, work ready for review, or work you landed.
+Use this only for the dispatch answer to a marked request, material phase changes, a captain decision, a real blocker, a failure, work ready for review, or work you landed.
 Work you landed includes a merge you performed yourself under standing merge authority and one the captain merged on the forge: under that authority nothing is ever \"ready for review\", so a landed merge that goes unreported reaches the captain as silence.
 This is also how you return the answer to a marked from-firstmate request above.
 A marked request for new work requires one correlated dispatch answer in the same handling turn; its finished deliverable is a separate parent-channel outcome.
 The dispatch report is the acknowledgement; do not add a separate generic receipt.
-Never append \`working:\` merely to acknowledge receipt or announce that a marked request has started.
+Never append a generic \`working:\` line merely to acknowledge receipt or announce that a marked request has started; the correlated dispatch answer naming its crew task is the only intake \`working\` line.
 When a routed-work phase has a supervisor-actionable material change worth reporting under the rule above, give that reported phase a stable key.
 If its first reportable event is \`working [key=<work-slug>]: {material phase}\`, use the same key on its later \`$PAUSED_VERB\`, \`done\`, \`failed\`, \`needs-decision\`, or \`blocked\` event so the earlier working phase is superseded.
 When a keyed phase ends without another reportable state, append \`resolved [key=<work-slug>] [at=<epoch>]: {why it is no longer active}\`.

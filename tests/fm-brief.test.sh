@@ -820,7 +820,7 @@ test_secondmate_marked_request_reporting_contract() {
     "secondmate charter did not require prompt correlated dispatch"
   assert_grep 'include that exact token in your same-turn parent status answer' "$brief" \
     "secondmate answer did not identify the marked request"
-  assert_grep 'For new work, make that answer a dispatch report naming the crew task.' "$brief" \
+  assert_grep 'For new work, make that answer a dispatch report naming the crew task: `working [corr=<id>] [key=<work-slug>] [at=<epoch>]: dispatched <crew task>`.' "$brief" \
     "secondmate dispatch did not identify its crew task"
   assert_grep "The pending-reply guard closes on that dispatch answer; report the crew's finished deliverable separately when it lands." "$brief" \
     "secondmate charter confused intake correlation with outcome delivery"
@@ -830,7 +830,7 @@ test_secondmate_marked_request_reporting_contract() {
     "secondmate charter still permits substantive work to block its own turn"
   assert_grep 'Report every finished report, review, ready PR, and merge to the parent channel immediately' "$brief" \
     "secondmate charter did not require every finished deliverable to reach the parent"
-  assert_grep "Never append \`working:\` merely to acknowledge receipt or announce that a marked request has started." "$brief" \
+  assert_grep "Never append a generic \`working:\` line merely to acknowledge receipt or announce that a marked request has started; the correlated dispatch answer naming its crew task is the only intake \`working\` line." "$brief" \
     "secondmate charter did not forbid a generic working acknowledgement"
   assert_no_grep "Give every routed-work phase a stable key: open it with \`working" "$brief" \
     "secondmate charter retained the unconditional working opener"
