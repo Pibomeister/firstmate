@@ -14,6 +14,7 @@
 # --squash, --merge, --rebase, or --method after the optional -- separator.
 # On Forgejo the merge style defaults to the repository's own
 # default_merge_style, read live, and a merge is refused when it cannot be read.
+# A --method option with no style is also refused before any merge request.
 # A GitHub merge is refused unless every pre-merge condition holds, each read
 # live at merge time rather than taken from recorded metadata: the pull request
 # is open, not a draft, mergeable, free of conflicts, every unwaived check
@@ -799,16 +800,29 @@ FIELDS
 # flag such as --auto, --admin, or --delete-branch into a Forgejo API field
 # yet (reject_protected_forge_args above already forbids those exact spellings
 # outright), so anything else is refused rather than silently dropped.
+# --method must be followed by a nonempty value that does not start with --;
+# --method= must have a nonempty value after the equals sign. A missing style
+# is refused here, before the repository default can be selected.
 forgejo_reject_unsupported_args() {
   local arg pending=false
   for arg in "$@"; do
     if [ "$pending" = true ]; then
       pending=false
+      case "$arg" in
+        ''|--*)
+          echo "error: --method needs a merge style; an empty value or another option is not one" >&2
+          return 1
+          ;;
+      esac
       continue
     fi
     case "$arg" in
       --squash|--merge|--rebase) ;;
       --method) pending=true ;;
+      --method=)
+        echo "error: --method needs a merge style; an empty value or another option is not one" >&2
+        return 1
+        ;;
       --method=*) ;;
       *)
         echo "error: extra merge arguments are not yet supported for Forgejo merges" >&2
@@ -816,6 +830,10 @@ forgejo_reject_unsupported_args() {
         ;;
     esac
   done
+  if [ "$pending" = true ]; then
+    echo "error: --method needs a merge style; an empty value or another option is not one" >&2
+    return 1
+  fi
 }
 
 # The merge style a Forgejo merge uses when the caller names none: the
