@@ -1,6 +1,6 @@
 Mode: Pi extension background wake.
 
-In a secondmate home, handle routed inbox messages and relay finished crew deliverables before the next supervision wait.
+In a secondmate home, apply the routed-work and return-channel rules in `data/charter.md` before the next supervision wait.
 
 When this session owns supervision, in either posture:
 1. Drain first with `bin/fm-wake-drain.sh`.

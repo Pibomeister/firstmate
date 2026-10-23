@@ -550,7 +550,8 @@ A request relayed to you by the main firstmate is tagged with a leading \`$FM_FR
 When a message carries that marker, respond through the STATUS/ESCALATION path, never only in this chat: the main firstmate does not read your chat, so a chat-only reply is lost.
 If it brings new substantive work, dispatch that work to your crew and report the dispatch in the same handling turn.
 If it asks for a brief supervision action or established answer, handle and report that in the same turn instead of spawning unnecessary work.
-Marked requests also carry a privacy-safe \`corr=<id>\` token after the marker; include that exact token in your parent status reply (or in the status pointer to a detailed doc) so the parent can correlate the answer.
+Marked requests also carry a privacy-safe \`corr=<id>\` token after the marker; reserve that exact token for the final parent status reply (or its pointer to a detailed doc) so the parent's pending-reply guard remains open until the work finishes.
+Name the crew task in the immediate dispatch report without the \`corr=<id>\` token.
 Optional helper: \`bin/fm-secondmate-report.sh <verb> <corr_id> <note>\` appends that correlated line to the parent channel itself - do not pass a status path, and do not write a hand path under this home.
 A plain \`echo\` that includes the same \`corr=<id>\` on this parent channel is equally valid; do not depend on the helper being present.
 For a terse result, a status line is the whole answer.
@@ -571,7 +572,7 @@ Use \`$PAUSED_VERB: {why}\` (distinct from \`blocked:\`) only when your domain i
 Use this only for material phase changes, a captain decision, a real blocker, a failure, work ready for review, or work you landed.
 Work you landed includes a merge you performed yourself under standing merge authority and one the captain merged on the forge: under that authority nothing is ever \"ready for review\", so a landed merge that goes unreported reaches the captain as silence.
 This is also how you return the answer to a marked from-firstmate request above.
-A marked request for new work requires a correlated dispatch report in the same handling turn and a correlated outcome when the work finishes.
+A marked request for new work requires an immediate dispatch report and a correlated outcome when the work finishes.
 The dispatch report is the acknowledgement; do not add a separate generic receipt.
 Never append \`working:\` merely to acknowledge receipt or announce that a marked request has started.
 When a routed-work phase has a supervisor-actionable material change worth reporting under the rule above, give that reported phase a stable key.

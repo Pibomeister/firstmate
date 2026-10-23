@@ -27,7 +27,8 @@ test_secondmate_turn_boundary_remains_responsive() {
   local harness out
   for harness in claude codex opencode pi pi-signed grok cursor omp unknown; do
     out=$("$RENDER" --harness "$harness")
-    assert_contains "$out" 'In a secondmate home, handle routed inbox messages and relay finished crew deliverables before the next supervision wait.' \
+    # shellcheck disable=SC2016 # Backticks are literal charter markup.
+    assert_contains "$out" 'In a secondmate home, apply the routed-work and return-channel rules in `data/charter.md` before the next supervision wait.' \
       "$harness supervision omitted the secondmate turn-boundary obligation"
   done
   pass "every rendered supervision protocol keeps secondmate inbox and finishes ahead of waits"

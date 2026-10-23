@@ -816,8 +816,11 @@ test_secondmate_marked_request_reporting_contract() {
     "$ROOT/bin/fm-brief.sh" marked-request-reporting --secondmate --no-projects >/dev/null 2>&1
   brief="$home/data/marked-request-reporting/brief.md"
 
-  assert_grep 'A marked request for new work requires a correlated dispatch report in the same handling turn' "$brief" \
+  assert_grep 'A marked request for new work requires an immediate dispatch report and a correlated outcome' "$brief" \
     "secondmate charter did not require prompt correlated dispatch"
+  # shellcheck disable=SC2016 # Backticks are literal charter markup.
+  assert_grep 'Name the crew task in the immediate dispatch report without the `corr=<id>` token.' "$brief" \
+    "secondmate dispatch could consume the final-outcome correlation"
   assert_grep 'The dispatch report is the acknowledgement; do not add a separate generic receipt' "$brief" \
     "secondmate charter did not make dispatch the acknowledgement"
   assert_grep 'Never do investigation, coding, review, or long waits in your own turn' "$brief" \
@@ -837,8 +840,8 @@ test_secondmate_marked_request_reporting_contract() {
   assert_grep 'resolved [key=<work-slug>]' "$brief" \
     "secondmate charter lost resolved closure for a keyed material phase"
 
-  assert_grep 'include that exact token in your parent status reply' "$brief" \
-    "secondmate charter lost correlated parent results"
+  assert_grep 'reserve that exact token for the final parent status reply' "$brief" \
+    "secondmate charter lost final-outcome correlation"
   assert_grep 'bin/fm-secondmate-report.sh <verb> <corr_id> <note>' "$brief" \
     "secondmate charter lost the mechanical helper invocation"
   assert_grep 'do not pass a status path' "$brief" \
