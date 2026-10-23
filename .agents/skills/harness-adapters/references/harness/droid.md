@@ -27,8 +27,7 @@ Only tmux and Orca can launch Droid because their viewport capture, composer, an
 A history capture could replay a stale trust dialog and send Enter to a live composer.
 The per-task settings leave the operator's `hooksDisabled` policy intact, and spawn refuses when hooks cannot acknowledge the launch brief.
 Requested effort stays in task metadata but is omitted from Droid settings when no explicit `--model` is given, since the operator's own default model then runs, or when that model's CLI catalog does not establish support for it.
-The model probe uses the shared hard bound in `../../../bin/fm-timeout-lib.sh` (60 seconds by default, `FM_DROID_MODEL_PROBE_TIMEOUT`; a non-positive or non-numeric value clamps back to that default).
-A timeout or a non-zero tool-list exit refuses the spawn without substituting another model.
+[`bin/fm-spawn.sh`](../../../../../bin/fm-spawn.sh) owns the model-probe timeout configuration and refusal contract.
 
 The CLI and hook contracts come from `droid --help`, `droid exec --help`, and Factory's [CLI reference](https://docs.factory.com/droid-cli/cli-reference.md), [settings reference](https://docs.factory.com/droid-cli/settings.md), and [hooks reference](https://docs.factory.com/harness/hooks.md).
 [`docs/verification/runtime-backends.md`](../../../../../docs/verification/runtime-backends.md#factory-droid-cli) records the current live evidence.

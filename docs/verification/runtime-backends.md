@@ -2862,10 +2862,7 @@ Verified on 2026-10-01 with Droid 0.230.0, tmux 3.6a, and Orca 1.4.218 on Darwin
 `droid exec --help` lists model IDs and each model's supported reasoning levels, while interactive Droid receives model and effort through its per-task settings file.
 The [Factory CLI](https://docs.factory.com/droid-cli/cli-reference.md), [settings](https://docs.factory.com/droid-cli/settings.md), and [hooks](https://docs.factory.com/harness/hooks.md) references own those vendor contracts.
 Firstmate probes an explicit model with bounded `droid exec --model <id> --list-tools` before creating an endpoint, records a requested effort in task metadata, and omits it from runtime settings when no explicit model is given or that model does not support it.
-The probe uses `bin/fm-timeout-lib.sh` (60 seconds by default, `FM_DROID_MODEL_PROBE_TIMEOUT`; a non-positive or non-numeric value clamps to 60).
-`droid --model <id> --help` is not the probe: an unsupported id also exits 0 there.
-Timeout and a non-zero tool-list exit both refuse the spawn; the requested id is never replaced.
-Droid is the worker tool, while model and effort are distinct axes, and Factory-managed or custom/BYOK billing is not inferred from the model family or from unrelated native CLI quotas.
+[`bin/fm-spawn.sh`](../../bin/fm-spawn.sh) owns the model-probe timeout and refusal contract; the [Droid adapter reference](../../.agents/skills/harness-adapters/references/harness/droid.md) owns model and billing distinctions.
 The settings replace the task's `statusLine` with `printf firstmate`, leave the operator's `hooksDisabled` policy intact, select Auto (High), and register `UserPromptSubmit`, `Stop`, `Notification`, and `SessionEnd` hooks.
 Spawn answers the fresh-worktree trust dialog only when `Trust this folder` is visibly selected, resends Enter while that complete selected dialog remains, and requires the launch prompt hook to acknowledge the brief.
 Droid dispatch is limited to tmux and Orca until the composer and lifecycle are verified live on other backends.
@@ -2904,7 +2901,7 @@ The same invalid id with `droid exec --model definitely-not-a-model --list-tools
 `droid exec --model glm-5.3-flash --list-tools` and `droid exec --model gpt-6-sol --list-tools` each returned 124 at 20.24s with empty output under the previous 20-second spawn bound, then exited 0 at 27.02s and 25.63s under a 90-second bound and printed `Available tools for GLM-5.3-Flash` and `Available tools for GPT-6 Sol`.
 Those successful probes emitted no stdout until exit, so the old 20-second kill happened before any tool list appeared.
 Rechecked live explicit-model delivery on 2026-10-10 with Droid 0.238.0, tmux 3.6a, on Darwin arm64.
-The historical 0.230.0 tmux and Orca scouts above remain the last successful full lifecycle proof.
+The 0.230.0 tmux and Orca scouts above provide historical full lifecycle evidence.
 They are not a current guarantee on 0.238.0.
 The opt-in tmux guard ran once as `FM_DROID_SIGNALS=1 FM_DROID_LIVE_MODEL=gpt-5.6-terra FM_DROID_MODEL_PROBE_TIMEOUT=180 FM_DROID_TRUST_ENTER_MAX=1 bash tests/fm-droid-signals-live-e2e.test.sh` with `FM_DROID_TRUST_KEY` unset (Enter).
 It exited 1 in 75s with `Droid folder-trust dialog was answered but the launch prompt hook did not acknowledge the brief; check sign-in and hook policy; inspect window firstmate:fm-droid-live`.
