@@ -727,6 +727,7 @@ handle_arm_signal() {
     done
     wait "$child" 2>/dev/null || true
   fi
+  print_watch_output "$child_out"
   cycle_log_append "$rc" "$signal" arm-interrupted none
   cleanup_child
   exit "$rc"

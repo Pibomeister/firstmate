@@ -569,9 +569,9 @@ test_real_host_retirement_preserves_cleanup_failures() {
 }
 
 # shellcheck disable=SC2016
-test_real_host_completed_close_preserves_cleanup_failure() {
-  local home checkpoint_pid holder watcher i status real_mv
-  home=$(make_real_host_home host-completed-cleanup)
+run_real_host_signal_close() {
+  local kind=$1 home checkpoint_pid holder watcher arm i status real_mv expected_status=1
+  home=$(make_real_host_home "host-signal-$kind")
   real_mv=$(command -v mv) || fail "could not locate mv for delivery synchronization"
   cat > "$home/fakebin/mv" <<'SH'
 #!/usr/bin/env bash
@@ -624,29 +624,62 @@ SH
   grep -Eq '^signal: .*demo.status' "$home/state"/.watch-arm-output.* \
     || fail "watcher had not emitted its real signal before lock contention"
   assert_grep 'demo.status' "$home/state/.wake-queue" "watcher had not durably queued its real signal"
+  cp "$home/state/.wake-queue" "$home/queued-before-retirement"
   FM_HOME="$home" bash -c '
     . "$1"
     fm_lock_acquire_wait "$FM_HOME/state/.watcher-down.lock" || exit 1
     : > "$FM_HOME/completed-lock-held"
-    while kill -0 "$2" 2>/dev/null && [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do sleep 0.1; done
+    while kill -0 "$2" 2>/dev/null && [ ! -e "$FM_HOME/release-cleanup-lock" ] \
+      && [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do sleep 0.1; done
     fm_lock_release "$FM_HOME/state/.watcher-down.lock"
   ' _ "$ROOT/bin/fm-wake-lib.sh" "$watcher" &
   holder=$!
   i=0
   while [ ! -e "$home/completed-lock-held" ] && [ "$i" -lt 300 ]; do sleep 0.1; i=$((i + 1)); done
   [ -e "$home/completed-lock-held" ] || fail "completed-close fixture did not acquire its marker lock"
+  if [ "$kind" != completed-failure ]; then
+    echo 120 > "$home/park-clock"
+    arm=$(awk -F '\t' '$1 == "arm" { print $2; exit }' "$home/state/.supervision-host")
+    kill -TERM "$arm" || fail "could not retire the arm with a real signal pending"
+    is_live_non_zombie "$watcher" || fail "watcher finished before controlled retirement"
+    if [ "$kind" = retired-clean ]; then
+      expected_status=0
+      : > "$home/release-cleanup-lock"
+      wait_for_exit "$holder" 100 >/dev/null 2>&1 || fail "clean retirement lock holder did not release"
+    fi
+  fi
   : > "$home/completed-output-go"
   status=0
   wait "$checkpoint_pid" || status=$?
   wait_for_exit "$holder" 100 >/dev/null 2>&1 || fail "completed-close lock holder did not exit"
-  expect_code 1 "$status" "completed cleanup failure checkpoint exit"
-  [ ! -e "$home/engine-called" ] || fail "a completed cleanup failure reached dispatch"
-  [ "$(grep -c '^signal: .*demo.status' "$home/out.txt")" -eq 1 ] || fail "completed cleanup failure lost or repeated its wake"
-  assert_grep 'demo.status' "$home/state/.wake-queue" "completed cleanup failure lost its durable wake"
-  assert_contains "$(cat "$home/out.txt")" 'supervision-host: watcher: recovery state could not be persisted; retaining stale lock evidence' \
-    "completed cleanup failure lost its diagnostic"
-  assert_not_contains "$(cat "$home/out.txt")" 'checkpoint: no actionable wake' "completed cleanup failure became quiet success"
-  pass "completed real signal cleanup failure reaches main before dispatch and retains its durable wake"
+  expect_code "$expected_status" "$status" "$kind checkpoint exit: $(cat "$home/out.txt" "$home/err.txt")"
+  [ ! -e "$home/engine-called" ] || fail "$kind reached dispatch"
+  [ "$(grep -c '^signal: .*demo.status' "$home/out.txt")" -eq 1 ] || fail "$kind lost or repeated its wake: $(cat "$home/out.txt")"
+  cmp -s "$home/queued-before-retirement" "$home/state/.wake-queue" || fail "$kind changed its durable wake rows"
+  if [ "$kind" = retired-clean ]; then
+    assert_absent "$home/state/.watch.lock/pid" "clean retirement retained a watcher lock"
+    assert_not_contains "$(cat "$home/out.txt" "$home/err.txt")" 'recovery state could not be persisted' "clean retirement reported cleanup failure"
+  else
+    assert_contains "$(cat "$home/out.txt")" 'supervision-host: watcher: recovery state could not be persisted; retaining stale lock evidence' \
+      "$kind lost its diagnostic"
+    [ "$(cat "$home/state/.watch.lock/pid")" = "$watcher" ] || fail "$kind discarded stale recovery evidence"
+  fi
+  ! is_live_non_zombie "$watcher" || fail "$kind left its watcher alive"
+  assert_not_contains "$(cat "$home/out.txt")" 'checkpoint: no actionable wake' "$kind became quiet success"
+  if [ "$kind" != completed-failure ]; then
+    assert_grep 'boundary' "$home/state/.supervision-host.log" "$kind did not reach the park boundary"
+    assert_grep $'\tsignal=TERM\treason=arm-interrupted\t' "$home/state/.watch-cycle-exits.log" "$kind did not reach the arm signal-close boundary"
+  fi
+  pass "$kind preserves one real signal and durable wake with its cleanup result"
+}
+
+test_real_host_completed_close_preserves_cleanup_failure() {
+  run_real_host_signal_close completed-failure
+}
+
+test_real_host_retired_signal_preserves_wake() {
+  run_real_host_signal_close retired-clean
+  run_real_host_signal_close retired-failure
 }
 
 test_real_host_checkpoint_ends_quietly_at_its_bound() {
@@ -684,5 +717,6 @@ test_host_checkpoint_does_not_mask_cleanup_failure
 test_host_checkpoint_passes_a_handback_and_reports_a_stand_down
 test_host_checkpoint_needs_the_file_and_honors_off
 test_real_host_completed_close_preserves_cleanup_failure
+test_real_host_retired_signal_preserves_wake
 test_real_host_retirement_preserves_cleanup_failures
 test_real_host_checkpoint_ends_quietly_at_its_bound
