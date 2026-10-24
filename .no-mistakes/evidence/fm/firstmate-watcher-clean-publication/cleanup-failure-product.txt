@@ -1,0 +1,21 @@
+SCENARIO interrupted-startup
+out.txt:
+err.txt:
+watcher: recovery state could not be persisted; retaining stale lock evidence
+state/.watch.lock/pid:
+10500
+state/.watch.lock/pid-identity:
+Sat Oct 24 01:07:00 2026     bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5P9MH9YHZ7098T3VRGQQMR0/bin/fm-watch.sh
+state/.watcher-down:
+(absent)
+SCENARIO cleanup-persistence-failure
+out.txt:
+err.txt:
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5P9MH9YHZ7098T3VRGQQMR0/bin/fm-watch.sh: line 2980: 13318 Terminated: 15          ( FM_CHECK_OWNED_GROUP=1 run_check_process "$@" ) > "$FM_CHECK_OUTPUT" 2> /dev/null
+watcher: recovery state could not be persisted; retaining stale lock evidence
+state/.watch.lock/pid:
+12433
+state/.watch.lock/pid-identity:
+Sat Oct 24 01:07:04 2026     bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5P9MH9YHZ7098T3VRGQQMR0/bin/fm-watch.sh
+state/.watcher-down:
+(absent)

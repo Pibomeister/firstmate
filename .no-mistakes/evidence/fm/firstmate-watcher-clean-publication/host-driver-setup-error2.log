@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5P9MH9YHZ7098T3VRGQQMR0/.test-tmp/live-host-driver.py", line 43, in <module>
+    host=int(record('host')[0]);arm=int(record('arm')[0]);log(f'interrupting takeover host={host}, arm={arm}')
+IndexError: list index out of range

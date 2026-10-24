@@ -1,0 +1,19 @@
+Real session-lock writer: 52491; caller is the live Codex gate harness, confined to a marked disposable home. No CLI or engine stub.
+$ bin/fm-afk-contract.sh archive
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5P9MH9YHZ7098T3VRGQQMR0/.test-tmp/live-host/state/afk-contracts/1792826389.afk-contract
+exit=0
+$ bash -c . bin/fm-wake-lib.sh; fm_wake_append check lab "check: lab actionable handback"
+exit=0
+first handback:
+check: rearm-resurface
+
+successor preserved: arm=9486, watcher=9683
+$ bin/fm-wake-drain.sh
+1792826406	1	check	lab	check: lab actionable handback
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 88451.1792826406.Tg9tEk
+exit=0
+$ bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 88451.1792826406.Tg9tEk
+exit=0
+$ bin/fm-watch-arm.sh --stop
+watcher: stopped pid=9683
+exit=0

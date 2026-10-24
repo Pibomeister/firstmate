@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5P9MH9YHZ7098T3VRGQQMR0/.test-tmp/live-host-driver.py", line 37, in <module>
+    ack=[x for x in drain.stdout.splitlines() if x.startswith('WAKE_ACK_REQUIRED:')][0].split('run bin/fm-wake-drain.sh ',1)[1]
+IndexError: list index out of range

@@ -1,0 +1,2 @@
+bin/fm-watch-arm.sh: line 945: 15594 Killed: 9               "$WATCH" > "$child_out"
+watcher: recovery state could not be persisted; retaining stale lock evidence

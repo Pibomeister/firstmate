@@ -1,0 +1,9 @@
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5P9MH9YHZ7098T3VRGQQMR0/bin/fm-watch-arm.sh: line 925: 23271 Killed: 9               "$WATCH" > "$child_out"
+watcher: recovery state could not be persisted; retaining stale lock evidence
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 25267.1792824571.aBrwkz
+ok - watch-arm: re-arm surfaces every queued wake and an open remote decision after downtime
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5P9MH9YHZ7098T3VRGQQMR0/bin/fm-watch-arm.sh: line 925: 36304 Killed: 9               "$WATCH" > "$child_out"
+watcher: recovery state could not be persisted; retaining stale lock evidence
+ok - watch-arm: an empty-queue re-arm stays silent while a later durable row still wakes
+ok - watch-arm: a watcher close during handling keeps the printed acknowledgement valid
+ok - watch-arm: --stop ends only this home's watcher, publishes downtime, and reports when none runs

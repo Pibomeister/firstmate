@@ -1,0 +1,124 @@
+
+SCENARIO: Repeated empty checkpoints finish cleanly without bookkeeping wakes
+$ FM_HOME=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5P9MH9YHZ7098T3VRGQQMR0/.test-live-tmp/live/quiet bin/fm-watch-checkpoint.sh --seconds 5
+stdout:
+checkpoint: no actionable wake within 5s
+stderr:
+exit=0
+durable marker: pending:downtime:86886.1792823842.gLHxf9
+
+$ FM_HOME=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5P9MH9YHZ7098T3VRGQQMR0/.test-live-tmp/live/quiet bin/fm-watch-checkpoint.sh --seconds 5
+stdout:
+checkpoint: no actionable wake within 5s
+stderr:
+exit=0
+durable marker: pending:downtime:95487.1792823847.dd1UFO
+
+$ FM_HOME=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5P9MH9YHZ7098T3VRGQQMR0/.test-live-tmp/live/quiet bin/fm-watch-checkpoint.sh --seconds 5
+stdout:
+checkpoint: no actionable wake within 5s
+stderr:
+exit=0
+durable marker: pending:downtime:539.1792823853.SiTcla
+
+
+SCENARIO: Graceful and abrupt empty-queue rearm stay silent; a later durable row wakes once
+$ bin/fm-watch-arm.sh [pid=8906]
+arm output: watcher: started pid=9277 (beacon fresh)
+
+marker while armed: <absent>
+send TERM to lab watcher 9277
+closed arm output:
+watcher: started pid=9277 (beacon fresh)
+watcher: FAILED - watcher cycle exited 143 without an actionable reason
+
+$ bin/fm-watch-arm.sh [pid=14256]
+arm output: watcher: started pid=14342 (beacon fresh)
+
+marker while armed: acked:downtime:9277.1792823858.N019l0
+
+send KILL to lab watcher 14342
+closed arm output:
+watcher: started pid=14342 (beacon fresh)
+
+$ bin/fm-watch-arm.sh [pid=18728]
+arm output: watcher: started pid=18825 (beacon fresh)
+
+marker while armed: acked:downtime:18825.1792823864.BEtsFg
+
+$ FM_HOME=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5P9MH9YHZ7098T3VRGQQMR0/.test-live-tmp/live/rearm bash -c . bin/fm-wake-lib.sh; fm_wake_append check late "check: actionable row appended after silent rearm"
+stdout:
+stderr:
+exit=0
+delivered output: watcher: started pid=18825 (beacon fresh)
+check: rearm-resurface
+
+durable queue:
+1792823868	1	check	late	check: actionable row appended after silent rearm
+
+
+SCENARIO: Buried work surfaces once, survives drain, and stops replaying after acknowledgement
+$ FM_HOME=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5P9MH9YHZ7098T3VRGQQMR0/.test-live-tmp/live/durable bash -c . bin/fm-wake-lib.sh; fm_wake_append check buried "check: original durable work"
+stdout:
+stderr:
+exit=0
+$ FM_HOME=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5P9MH9YHZ7098T3VRGQQMR0/.test-live-tmp/live/durable bin/fm-watch-checkpoint.sh --seconds 8
+stdout:
+check: rearm-resurface
+stderr:
+exit=0
+$ FM_HOME=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5P9MH9YHZ7098T3VRGQQMR0/.test-live-tmp/live/durable bin/fm-watch-checkpoint.sh --seconds 5
+stdout:
+checkpoint: no actionable wake within 5s
+stderr:
+exit=0
+$ FM_HOME=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5P9MH9YHZ7098T3VRGQQMR0/.test-live-tmp/live/durable bin/fm-wake-drain.sh
+stdout:
+1792823870	1	check	buried	check: original durable work
+stderr:
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 24951.1792823870.oOgS8o
+exit=0
+$ FM_HOME=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5P9MH9YHZ7098T3VRGQQMR0/.test-live-tmp/live/durable bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 24951.1792823870.oOgS8o
+stdout:
+stderr:
+exit=0
+$ FM_HOME=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5P9MH9YHZ7098T3VRGQQMR0/.test-live-tmp/live/durable bin/fm-watch-checkpoint.sh --seconds 5
+stdout:
+checkpoint: no actionable wake within 5s
+stderr:
+exit=0
+
+SCENARIO: Registered work checks execute with caller environment and deliver durable work
+$ FM_HOME=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5P9MH9YHZ7098T3VRGQQMR0/.test-live-tmp/live/custom-check bin/fm-check-register.sh orchestration
+stdout:
+registered: state/orchestration.check.sh
+stderr:
+exit=0
+$ FM_HOME=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5P9MH9YHZ7098T3VRGQQMR0/.test-live-tmp/live/custom-check bin/fm-watch-checkpoint.sh --seconds 15
+stdout:
+check: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5P9MH9YHZ7098T3VRGQQMR0/.test-live-tmp/live/custom-check/state/orchestration.check.sh: work ready; interval=1
+stderr:
+exit=0
+$ FM_HOME=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5P9MH9YHZ7098T3VRGQQMR0/.test-live-tmp/live/custom-check bin/fm-wake-drain.sh
+stdout:
+1792823888	1	check	/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5P9MH9YHZ7098T3VRGQQMR0/.test-live-tmp/live/custom-check/state/orchestration.check.sh	check: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5P9MH9YHZ7098T3VRGQQMR0/.test-live-tmp/live/custom-check/state/orchestration.check.sh: work ready; interval=1
+stderr:
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 52054.1792823888.Go6aPz
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 registered custom check(s), but no live watcher process holds this home lock (last beat: 3s ago).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  After draining queued wakes, repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds 180.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
+exit=0
+
+SCENARIO: Interrupted startup with blocked recovery persistence reports a real failure
+$ FM_HOME=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5P9MH9YHZ7098T3VRGQQMR0/.test-live-tmp/live/failed-cleanup bin/fm-watch-checkpoint.sh --seconds 1
+stdout:
+stderr:
+watcher: recovery state could not be persisted; retaining stale lock evidence
+exit=1
+retained failed watcher pid: 61555
+

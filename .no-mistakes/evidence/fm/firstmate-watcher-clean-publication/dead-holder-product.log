@@ -1,0 +1,7 @@
+SCENARIO dead holder with empty queue recovers silently
+killed watcher=15594
+
+$ bin/fm-watch-checkpoint.sh --seconds 5
+checkpoint: no actionable wake within 5s
+exit=0
+dead lock recovered; empty queue stayed quiet

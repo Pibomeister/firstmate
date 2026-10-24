@@ -1,0 +1,12 @@
+{
+  "revision": "148c7dd2e426b22c0f5fe67f1e19c2d7c77e6af3",
+  "checkpoint_suite_exit": 0,
+  "initial_watch_arm_suite_exit": 1,
+  "fixed_arm_targeted_exit": 0,
+  "initial_host_targeted_exit": 1,
+  "isolated_interrupted_takeover_exit": 0,
+  "sequential_host_targeted_exit": 0,
+  "remaining_issue": "Interrupted host takeover failed to regain a singleton watcher once under concurrent targeted execution; two isolated reruns passed; cause remains unresolved.",
+  "test_fix": "Wait for durable recovery-marker retirement before asserting silent arm readiness.",
+  "cleanup": "Disposable lab homes, private tmux servers and generated worktree runners removed."
+}

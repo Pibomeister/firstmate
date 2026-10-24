@@ -1,0 +1,2 @@
+no server running on /Users/eduardopicazo/.no-mistakes/evidence/01M5P9MH9YHZ7098T3VRGQQMR0/t/tmux-501/fm-lab
+exit=1

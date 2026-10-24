@@ -1,0 +1,4 @@
+$ bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 47756.1792825793.PFNrFt
+exit=0
+queue after acknowledgement=''
+recovery after acknowledgement=acked:handling:47756.1792825793.PFNrFt

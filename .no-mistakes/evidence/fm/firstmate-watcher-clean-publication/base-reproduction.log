@@ -1,0 +1,10 @@
+BASE c88dc478 checkpoint 1
+stdout:
+checkpoint: no actionable wake within 5s
+stderr:
+exit=124
+BASE c88dc478 checkpoint 2
+stdout:
+check: rearm-resurface
+stderr:
+exit=0

@@ -1,0 +1,22 @@
+Revision: 0969170d542392f75bf8a6ff6d52aac6e25e49fe
+Scope: assigned local Test phase only. No linter, formatter, full repository suite, pipeline control, push or PR operation was run. Product source was not changed.
+
+Live product probes use real bin/ entrypoints and marked disposable homes beneath the gate worktree. The recorded driver sources show each command and assertion. Initial quiet, queue, concurrent publication and status-delivery probes are in live-product-transcript.log. Abrupt-death recovery is in dead-holder-product.log. Persisted recovery evidence from real checkpoint lock contention is in cleanup-failure-product.txt. live-recovery-drain.txt and live-recovery-ack.txt show delivery and exact acknowledgement.
+
+Codex TUI: 120x40 private fm-lab tmux socket. The CLI's shared command runner did not inherit FM_HOME and could not locate its own harness ancestor. The initial quiet commands used the isolated gate worktree's default home, not operator data. Generated worktree runtime data is removed during cleanup. The check was repeated with explicit FM_HOME per command; codex-explicit-lab.txt records both successful quiet completions. Hook trust was not accepted; hooks were disabled only by that CLI invocation's flag. No user-level tool configuration was deliberately changed.
+
+The separate Claude TUI stopped at folder trust without accepting it. Print-mode Claude used the existing normal login and returned the real weekly usage-limit error (claude-primary.log). No isolated empty authentication directory, fake CLI, credential edit or login operation was used. A real Claude asyncRewake replay is therefore not claimed.
+
+The live host probe uses the actual Codex gate session's genuine process ancestry and the public session-lock writer, confined to its own marked lab home. This avoids the separate Codex CLI's detached shell limitation. It does not impersonate a harness or use an engine stub. This proves the public host/checkpoint processes, not Claude's vendor hook delivery.
+
+Corrected test-client setup issues:
+- The initial stress selector repeated a fixed-name fixture in one process. Reused files and a following symlink invalidated that repetition. Its temporary bin/bin symlink was removed. host-targeted-fresh.log uses unique cases with fixture cleanup and passed.
+- First live-host client attempt parsed acknowledgement instructions only from stdout, although they are emitted on stderr. The client was corrected to consume both streams.
+- Second live-host client attempt read the host arm record immediately after the takeover log entry, before arm publication. The client was corrected to wait for publication. Neither IndexError was a product failure. Earlier attempts are retained separately.
+
+Evidence is CLI text and persisted product state. No graphical UI, HTML or CSS is changed by this patch, so no graphical screenshot is provided.
+
+Final live host probe: passed. It delivered the queued check, preserved a successor through the handback, drained and acknowledged the exact recovery generation, interrupted the takeover arm with STOP/TERM/CONT after releasing the held marker lock, observed exit 143 for the intentional interruption, and drove the next checkpoint. The next host owned one fresh arm/watcher, both predecessor processes were gone, and its 30-second quiet bound exited 0. live-host-recovery.txt retains the actual host and cycle ledgers.
+
+Targeted commands completed with exit 0: tests/fm-watch-checkpoint.test.sh; tests/fm-watch-arm.test.sh; fresh host selector; selected away-entry warning case. Both manual product drivers completed with exit 0 after correcting the test-client setup issues listed above. All manual lab watcher stop commands reported none running.
+Cleanup completed: manual homes, temporary selectors/drivers, runtime data from the initial Codex checks, and the private stopped tmux socket were removed.

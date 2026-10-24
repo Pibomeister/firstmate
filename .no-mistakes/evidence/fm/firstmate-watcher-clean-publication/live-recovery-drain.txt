@@ -1,0 +1,2 @@
+1792825793	1	check	lab	check: lab actionable work
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 47756.1792825793.PFNrFt

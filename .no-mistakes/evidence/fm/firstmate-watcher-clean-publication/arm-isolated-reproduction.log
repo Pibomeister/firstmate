@@ -1,0 +1,4 @@
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5P9MH9YHZ7098T3VRGQQMR0/bin/fm-watch-arm.sh: line 925: 27800 Killed: 9               "$WATCH" > "$child_out"
+watcher: recovery state could not be persisted; retaining stale lock evidence
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 29960.1792824286.2O7P7u
+not ok - the empty-queue downtime episode was not retired on its own generation: pending:downtime:46302.1792824300.EFQYEx

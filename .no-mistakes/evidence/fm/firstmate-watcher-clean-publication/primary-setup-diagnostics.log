@@ -1,0 +1,38 @@
+REAL CODEX PRIMARY
+lock acquired: harness pid 5749
+
+ENTER AWAY WITHOUT RUNNING CHECKPOINT
+Away posture recorded at 2026-10-24T06:39:44Z: hold-for-return only. No phone channel is configured; anything that needs you waits for your return. Your away instructions are recorded verbatim; the away session will carry them out where it can, and anything it is unsure of, or that needs you, waits for your return. Destructive, irreversible, and security-sensitive actions are never pre-authorizable, whatever the words say. Expected return: not given. Spend cap: 4 concurrent workers.
+Away posture (recorded):
+  entered: 2026-10-24T06:39:44Z
+  expected return: not given
+  spend cap: 4 concurrent workers
+  reach: hold-for-return only. No phone channel is configured; anything that needs you waits for your return.
+  your words (verbatim):
+    disposable live supervision proof
+Supervision host: no engine runs the away session on this home (the primary harness 'codex' has no verified supervision engine), so every away wake reaches this conversation; name a verified engine in config/supervision-host (for example "claude").
+Away supervision is not running yet: on this home it runs only inside a foreground checkpoint, so start bin/fm-watch-checkpoint.sh now and announce away mode only once it is running; a turn interrupted before then leaves the fleet unsupervised until the next message arrives.
+
+QUIET AWAY HOST CHECKPOINT
+supervision-host: watcher: FAILED - refusing to arm from a disposable validation checkout: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5P9MH9YHZ7098T3VRGQQMR0/bin
+checkpoint exit=1
+/tmp/fm-lab.XEd4F4/state/afk-contracts/1792823984.afk-contract
+
+QUIET ATTENDED HOST CHECKPOINT
+supervision-host: watcher: FAILED - refusing to arm from a disposable validation checkout: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5P9MH9YHZ7098T3VRGQQMR0/bin
+checkpoint exit=1
+
+ATTENDED ACTIONABLE HANDOFF
+supervision-host: watcher: FAILED - refusing to arm from a disposable validation checkout: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5P9MH9YHZ7098T3VRGQQMR0/bin
+checkpoint exit=1
+
+HANDOFF QUEUE
+STATUS OUTCOME BACKSTOP (newest captain-facing task event has no covering branch outcome):
+proof done: disposable lab work needs main
+
+HOST LOG
+1792823984	start	gen=host-15834-1792823984	primary=codex
+1792823985	start	gen=host-17058-1792823985	primary=codex
+1792823985	start	gen=host-17996-1792823985	primary=codex
+
+PROOF COMPLETE

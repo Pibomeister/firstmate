@@ -1,0 +1,4 @@
+ok - host+hook: a park stopped mid take-over leaves the take-over to the next park
+ok - host+hook: a park stopped mid take-over leaves the take-over to the next park
+ln: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5P9MH9YHZ7098T3VRGQQMR0/.test-tmp/fm-supervision-host.ceEMxB/hook-takeover-interrupted/bin/bin: File exists
+not ok - fixture: the take-over stopped the left watcher before the park was stopped

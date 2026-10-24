@@ -1,0 +1,138 @@
+
+live-product-transcript.log
+SCENARIO quiet checkpoint and empty rearm, cycle 1
+$ bin/fm-watch-checkpoint.sh --seconds 5
+checkpoint: no actionable wake within 5s
+exit=0
+queue=''
+SCENARIO quiet checkpoint and empty rearm, cycle 2
+$ bin/fm-watch-checkpoint.sh --seconds 5
+checkpoint: no actionable wake within 5s
+exit=0
+queue=''
+$ bash -c . bin/fm-wake-lib.sh; fm_wake_append check lab "check: lab actionable work"
+exit=0
+SCENARIO durable work resurfaces once and survives quiet checkpoint
+$ bin/fm-watch-checkpoint.sh --seconds 5
+check: rearm-resurface
+exit=0
+recovery=announced:downtime:47756.1792825793.PFNrFt
+durable queue=1792825793	1	check	lab	check: lab actionable work
+
+$ bin/fm-watch-checkpoint.sh --seconds 5
+checkpoint: no actionable wake within 5s
+exit=0
+same recovery generation and queued row retained
+SCENARIO new work arriving during a quiet checkpoint is delivered
+$ bash -c . bin/fm-wake-lib.sh; fm_wake_append check lab "check: lab actionable work"
+exit=0
+check: rearm-resurface
+exit=0
+durable queue=1792825802	1	check	lab	check: lab actionable work
+
+SCENARIO real status completion reaches the waiting primary
+$ bin/fm-home-summary-refresh.sh
+exit=0
+signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5P9MH9YHZ7098T3VRGQQMR0/.test-tmp/live-signal/state/demo.status
+exit=0
+durable queue=1792825810	1	signal	demo.status	signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5P9MH9YHZ7098T3VRGQQMR0/.test-tmp/live-signal/state/demo.status
+1792825811	2	signal	demo.status	signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5P9MH9YHZ7098T3VRGQQMR0/.test-tmp/live-signal/state/demo.status
+
+ALL MANUAL PRODUCT ASSERTIONS PASSED
+
+dead-holder-product.log
+SCENARIO dead holder with empty queue recovers silently
+killed watcher=15594
+
+$ bin/fm-watch-checkpoint.sh --seconds 5
+checkpoint: no actionable wake within 5s
+exit=0
+dead lock recovered; empty queue stayed quiet
+
+live-recovery-drain.txt
+1792825793	1	check	lab	check: lab actionable work
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 47756.1792825793.PFNrFt
+
+live-recovery-ack.txt
+$ bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 47756.1792825793.PFNrFt
+exit=0
+queue after acknowledgement=''
+recovery after acknowledgement=acked:handling:47756.1792825793.PFNrFt
+
+cleanup-failure-product.txt
+SCENARIO interrupted-startup
+out.txt:
+err.txt:
+watcher: recovery state could not be persisted; retaining stale lock evidence
+state/.watch.lock/pid:
+10500
+state/.watch.lock/pid-identity:
+Sat Oct 24 01:07:00 2026     bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5P9MH9YHZ7098T3VRGQQMR0/bin/fm-watch.sh
+state/.watcher-down:
+(absent)
+SCENARIO cleanup-persistence-failure
+out.txt:
+err.txt:
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5P9MH9YHZ7098T3VRGQQMR0/bin/fm-watch.sh: line 2980: 13318 Terminated: 15          ( FM_CHECK_OWNED_GROUP=1 run_check_process "$@" ) > "$FM_CHECK_OUTPUT" 2> /dev/null
+watcher: recovery state could not be persisted; retaining stale lock evidence
+state/.watch.lock/pid:
+12433
+state/.watch.lock/pid-identity:
+Sat Oct 24 01:07:04 2026     bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5P9MH9YHZ7098T3VRGQQMR0/bin/fm-watch.sh
+state/.watcher-down:
+(absent)
+
+away-entry-product.txt
+Away posture recorded at 2026-10-24T07:17:05Z: hold-for-return only. No phone channel is configured; anything that needs you waits for your return. Your away instructions are recorded verbatim; the away session will carry them out where it can, and anything it is unsure of, or that needs you, waits for your return. Destructive, irreversible, and security-sensitive actions are never pre-authorizable, whatever the words say. Expected return: not given. Spend cap: 4 concurrent workers.
+Away posture (recorded):
+  entered: 2026-10-24T07:17:05Z
+  expected return: not given
+  spend cap: 4 concurrent workers
+  reach: hold-for-return only. No phone channel is configured; anything that needs you waits for your return.
+  your words (verbatim):
+    bounded lab verification
+Supervision host: no engine runs the away session on this home (the primary harness 'codex' has no verified supervision engine), so every away wake reaches this conversation; name a verified engine in config/supervision-host (for example "claude").
+Away supervision is not running yet: on this home it runs only inside a foreground checkpoint, so start bin/fm-watch-checkpoint.sh now and announce away mode only once it is running; a turn interrupted before then leaves the fleet unsupervised until the next message arrives.
+
+live-host-recovery.txt
+Real session-lock writer: 52491; caller is the live Codex gate harness, confined to a marked disposable home. No CLI or engine stub.
+$ bin/fm-afk-contract.sh archive
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5P9MH9YHZ7098T3VRGQQMR0/.test-tmp/live-host-final/state/afk-contracts/1792826471.afk-contract
+exit=0
+$ bash -c . bin/fm-wake-lib.sh; fm_wake_append check lab "check: lab actionable handback"
+exit=0
+first handback:
+check: rearm-resurface
+
+successor preserved: arm=74871, watcher=76985
+$ bin/fm-wake-drain.sh
+1792826486	1	check	lab	check: lab actionable handback
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 61167.1792826486.FEaRbd
+exit=0
+$ bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 61167.1792826486.FEaRbd
+exit=0
+interrupting takeover host=13361, arm=15012
+interrupted checkpoint exit=143
+
+next park owns a single fresh arm/watcher; predecessor arm and watcher are gone
+next checkpoint:
+checkpoint: no actionable wake within 30s
+
+host event ledger:
+1792826479	start	gen=host-55490-1792826477	primary=codex
+1792826493	pass-through	attended	no supervision engine	check: rearm-resurface
+1792826515	start	gen=host-13361-1792826515	primary=codex
+1792826515	take-over	arm=74871
+1792826522	start	gen=host-20751-1792826519	primary=codex
+1792826550	boundary	after 31s
+
+cycle exit ledger:
+arm_pid=57411	watcher_pid=57667	origin=started	started_at=1792826479	ended_at=1792826492	exit_code=0	signal=none	reason=actionable-check	beacon_age=4	lock_before=pid:57667|identity:Sat Oct 24 01:21:19 2026     bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5P9MH9YHZ7098T3VRGQQMR0/bin/fm-watch.sh	lock_after=pid:none|identity:none	successor=started:76985
+arm_pid=15012	watcher_pid=76985	origin=attached	started_at=1792826516	ended_at=1792826516	exit_code=143	signal=TERM	reason=arm-interrupted	beacon_age=1	lock_before=pid:76985|identity:Sat Oct 24 01:21:35 2026     bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5P9MH9YHZ7098T3VRGQQMR0/bin/fm-watch.sh	lock_after=pid:76985|identity:Sat Oct 24 01:21:35 2026     bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5P9MH9YHZ7098T3VRGQQMR0/bin/fm-watch.sh	successor=none
+arm_pid=74871	watcher_pid=76985	origin=started	started_at=1792826495	ended_at=1792826518	exit_code=143	signal=TERM	reason=signal-exit	beacon_age=2	lock_before=pid:76985|identity:Sat Oct 24 01:21:35 2026     bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5P9MH9YHZ7098T3VRGQQMR0/bin/fm-watch.sh	lock_after=pid:none|identity:none	successor=none
+arm_pid=28316	watcher_pid=29428	origin=started	started_at=1792826522	ended_at=1792826549	exit_code=143	signal=TERM	reason=arm-interrupted	beacon_age=1	lock_before=pid:29428|identity:Sat Oct 24 01:22:02 2026     bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5P9MH9YHZ7098T3VRGQQMR0/bin/fm-watch.sh	lock_after=pid:none|identity:none	successor=none
+
+PASS: interruption recovered with singleton supervision and no bookkeeping notification
+$ bin/fm-watch-arm.sh --stop
+watcher: none running
+exit=0

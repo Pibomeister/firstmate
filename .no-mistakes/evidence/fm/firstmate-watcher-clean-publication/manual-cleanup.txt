@@ -1,0 +1,16 @@
+live-away: watcher: none running
+exit=0
+live-concurrent: watcher: none running
+exit=0
+live-dead-holder: watcher: none running
+exit=0
+live-host: watcher: none running
+exit=0
+live-host-final: watcher: none running
+exit=0
+live-quiet: watcher: none running
+exit=0
+live-recovery: watcher: none running
+exit=0
+live-signal: watcher: none running
+exit=0

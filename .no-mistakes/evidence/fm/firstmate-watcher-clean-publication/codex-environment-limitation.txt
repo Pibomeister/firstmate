@@ -1,0 +1,40 @@
+› Run only this bounded live verification in the disposable FM_HOME already in your environment. Do not run session st…
+  Worked for 53s • 1:11 AM
+
+
+› Next bounded live check: use only the same disposable FM_HOME. Run bin/fm-lock.sh, then touch "$FM_HOME/config/
+  supervision-host", then bin/fm-afk-launch.sh enter --words "bounded lab verification", then bin/fm-afk-contract.sh
+  archive, then bin/fm-watch-checkpoint.sh --seconds 8. Keep the commands foreground. Do not run session start,
+  delegate, or control any pipeline. Report all outputs and exit statuses. These intentional lab-home changes are
+  authorized for this test.
+
+
+• Captain, I’ll run the five authorized commands in order in the same disposable FM_HOME, all in the foreground, and
+  report every output and exit status.
+
+• Failed (exit 1) bin/fm-lock.sh
+  └ error: cannot locate harness process in ancestry
+
+• Failed (exit 1) touch "$FM_HOME/config/supervision-host"
+  └ touch: /config/supervision-host: No such file or directory
+
+• Captain, results:
+
+  1. bin/fm-lock.sh — exit 1
+
+     error: cannot locate harness process in ancestry
+
+  2. touch "$FM_HOME/config/supervision-host" — exit 1
+
+     touch: /config/supervision-host: No such file or directory
+
+  FM_HOME expanded to an empty value. I stopped to avoid accessing another home through script defaults. The AFK launch,
+  archive, and 8-second checkpoint commands were not run.
+
+  Worked for 16s • 1:11 AM
+
+
+› Ask Codex to do anything
+
+  GPT-6.1-Sol high · Context 96% left · 325K in · 657 out · weekly 0% left
+  ? for shortcuts                                                                             ⚠ 3 warnings · f2 to view

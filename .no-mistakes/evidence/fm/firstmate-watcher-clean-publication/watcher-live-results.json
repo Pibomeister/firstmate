@@ -1,0 +1,27 @@
+[
+  {
+    "name": "Repeated empty checkpoints finish cleanly without bookkeeping wakes",
+    "result": "pass",
+    "live": true
+  },
+  {
+    "name": "Graceful and abrupt empty-queue rearm stay silent; a later durable row wakes once",
+    "result": "pass",
+    "live": true
+  },
+  {
+    "name": "Buried work surfaces once, survives drain, and stops replaying after acknowledgement",
+    "result": "pass",
+    "live": true
+  },
+  {
+    "name": "Registered work checks execute with caller environment and deliver durable work",
+    "result": "pass",
+    "live": true
+  },
+  {
+    "name": "Interrupted startup with blocked recovery persistence reports a real failure",
+    "result": "pass",
+    "live": true
+  }
+]

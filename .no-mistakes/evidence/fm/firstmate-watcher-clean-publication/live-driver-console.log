@@ -1,0 +1,39 @@
+SCENARIO quiet checkpoint and empty rearm, cycle 1
+$ bin/fm-watch-checkpoint.sh --seconds 5
+checkpoint: no actionable wake within 5s
+exit=0
+queue=''
+SCENARIO quiet checkpoint and empty rearm, cycle 2
+$ bin/fm-watch-checkpoint.sh --seconds 5
+checkpoint: no actionable wake within 5s
+exit=0
+queue=''
+$ bash -c . bin/fm-wake-lib.sh; fm_wake_append check lab "check: lab actionable work"
+exit=0
+SCENARIO durable work resurfaces once and survives quiet checkpoint
+$ bin/fm-watch-checkpoint.sh --seconds 5
+check: rearm-resurface
+exit=0
+recovery=announced:downtime:47756.1792825793.PFNrFt
+durable queue=1792825793	1	check	lab	check: lab actionable work
+
+$ bin/fm-watch-checkpoint.sh --seconds 5
+checkpoint: no actionable wake within 5s
+exit=0
+same recovery generation and queued row retained
+SCENARIO new work arriving during a quiet checkpoint is delivered
+$ bash -c . bin/fm-wake-lib.sh; fm_wake_append check lab "check: lab actionable work"
+exit=0
+check: rearm-resurface
+exit=0
+durable queue=1792825802	1	check	lab	check: lab actionable work
+
+SCENARIO real status completion reaches the waiting primary
+$ bin/fm-home-summary-refresh.sh
+exit=0
+signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5P9MH9YHZ7098T3VRGQQMR0/.test-tmp/live-signal/state/demo.status
+exit=0
+durable queue=1792825810	1	signal	demo.status	signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5P9MH9YHZ7098T3VRGQQMR0/.test-tmp/live-signal/state/demo.status
+1792825811	2	signal	demo.status	signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5P9MH9YHZ7098T3VRGQQMR0/.test-tmp/live-signal/state/demo.status
+
+ALL MANUAL PRODUCT ASSERTIONS PASSED
