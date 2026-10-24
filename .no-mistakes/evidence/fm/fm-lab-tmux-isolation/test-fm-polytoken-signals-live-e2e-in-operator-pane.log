@@ -1,0 +1,3 @@
+TMUX=/tmp/fmw.ekxUkI/op2.sock,61000,0
+not ok - FM_POLYTOKEN_SIGNALS_LIVE was requested but polytoken is not installed
+EXIT=1

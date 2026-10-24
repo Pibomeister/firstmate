@@ -1,0 +1,4 @@
+[pane env] TMUX=/tmp/fmw.ekxUkI/op.sock,21982,0
+[retired] TMUX_TMPDIR=/tmp/fml.57bGHZ tmux resolves to: /tmp/fmw.ekxUkI/op.sock
+[retired] running: TMUX_TMPDIR="$LAB_TMUX_DIR" tmux kill-server
+no server running on /tmp/fmw.ekxUkI/op.sock

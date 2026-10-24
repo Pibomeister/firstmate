@@ -1,0 +1,12 @@
+$ bin/fm-lint.sh tests/probe.test.sh
+fm-lint.sh: ShellCheck 0.11.0 (pinned 0.11.0)
+fm-lint.sh: full ShellCheck extended analysis enabled
+tests/probe.test.sh:4: tmux command without -S or -L can reach the operator's tmux server
+tests/probe.test.sh:5: tmux command without -S or -L can reach the operator's tmux server
+exit=1
+
+$ bin/fm-lint.sh tests/fixed.test.sh
+fm-lint.sh: ShellCheck 0.11.0 (pinned 0.11.0)
+fm-lint.sh: full ShellCheck extended analysis enabled
+exit=0
+

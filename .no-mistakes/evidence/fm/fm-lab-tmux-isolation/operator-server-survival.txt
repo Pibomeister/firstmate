@@ -1,0 +1,4 @@
+operator server (started pid 61000) after afk-launch, wedge-cap-live, polytoken, backend-smoke ran in its panes:
+pid 61000
+operator: 1 windows (created Sat Oct 24 15:53:11 2026)
+operator:bash

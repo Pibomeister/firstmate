@@ -1,0 +1,29 @@
+[pane env] TMUX=/tmp/fmw.ekxUkI/op.sock,21982,0 TMUX_PANE=%1
+[pane] tmux resolves ambiently to: /tmp/fmw.ekxUkI/op.sock
+[brief tmux-lab lines]
+15:For tmux-based lab primaries, `bin/fm-lab-home.sh` owns the short private socket directory; do not place `TMUX_TMPDIR` under the lab home or worktree.
+16:Use `LAB_HOME_HELPER='/Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M5QSTTBGYD8Y93JB8DSZBZYZ/bin/fm-lab-home.sh'` and run every lab tmux command through `"$LAB_HOME_HELPER" tmux "$FM_HOME" <arguments...>`, which addresses only the lab server by its `-S` socket with `TMUX` and `TMUX_PANE` unset.
+17:Never run a bare `tmux` or one addressed only by `TMUX_TMPDIR` for the lab: inside any tmux pane, `TMUX` outranks `TMUX_TMPDIR` and that command reaches the operator's own tmux server.
+18:A lab process that must run firstmate scripts outside a lab pane gets `TMUX_TMPDIR="$("$LAB_HOME_HELPER" tmux-dir "$FM_HOME")"` with `TMUX` and `TMUX_PANE` unset.
+19:Your single EXIT cleanup trap must run `"$LAB_HOME_HELPER" tmux "$FM_HOME" kill-server`, call `"$LAB_HOME_HELPER" teardown "$FM_HOME"`, and call the Herdr teardown below; do not install a second trap that replaces either cleanup.
+[step] runner new-session (from operator pane)
+rc=0
+[step] runner display socket_path: /tmp/fml.nrydrF/tmux-501/default
+[step] lab sessions: primary
+[adversarial] caller -S at operator socket:
+fm-lab-home: refusing a caller -S/-L: the runner owns the lab socket
+rc=2
+[adversarial] clustered -uS:
+fm-lab-home: refusing a caller -S/-L: the runner owns the lab socket
+rc=2
+[adversarial] caller -L default:
+fm-lab-home: refusing a caller -S/-L: the runner owns the lab socket
+rc=2
+[adversarial] -f value then -S:
+fm-lab-home: refusing a caller -S/-L: the runner owns the lab socket
+rc=2
+[step] EXIT-trap cleanup: runner kill-server
+rc=0
+[step] teardown
+rc=0
+DONE
