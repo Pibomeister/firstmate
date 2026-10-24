@@ -2,7 +2,7 @@ Mode: Codex foreground checkpoint.
 
 In a secondmate home, apply the routed-work and return-channel rules in `data/charter.md` before the next supervision wait.
 
-When this session owns supervision and away mode is not active:
+When this session owns supervision and no away daemon is active:
 1. Drain first with `bin/fm-wake-drain.sh`.
    After handling all emitted wakes and reconciling open decisions and unread status lines, run the exact `--ack-through` command printed as `WAKE_ACK_REQUIRED`; until then the work remains durable for idempotent re-handling after interruption.
 2. Source `__FM_X_MODE_ENV__` first when Relay is active.

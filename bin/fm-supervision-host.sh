@@ -23,10 +23,11 @@
 # OUTPUT, the contract every owner reads. The first cycle's status line
 # ("watcher: started ..." or "watcher: attached ...") is printed as soon as the
 # arm prints it, so an owner that waits for arm readiness sees it at once;
-# everything else is printed in one write when the host exits: the close as
-# the arm printed it (without that status line), then any "supervision-host:"
-# lines. A "supervision-host:" line is a wake in its own right (the park
-# boundary prints nothing else); "supervision-host stood down: ..." means this
+# other output carries the close as the arm printed it (without that status
+# line), then any "supervision-host:" lines. Retirement can also surface a
+# delivered reason or cleanup failure before exit. A "supervision-host:" line
+# is a wake in its own right (a quiet park boundary prints nothing else);
+# "supervision-host stood down: ..." means this
 # session or generation no longer owns supervision and the owner stands down
 # silently; an exit status above 128, or no output at all, means the host
 # itself died and the owner retries it. Any other close is judged exactly as
@@ -51,8 +52,9 @@
 #     so main-only classes (check triggers, decision-owned triggers, a scan
 #     that is unsafe or holds nothing for the branch) stay main's. That
 #     pass-through starts the successor watcher cycle and leaves it running
-#     before the close is printed, so supervision continues when the session
-#     drops the handoff. It confirms no handling handoff, so the recovery
+#     before the close is printed when the home still runs the host, this host
+#     still owns supervision, the main session is identified, and the park
+#     boundary has not arrived. It confirms no handling handoff, so the recovery
 #     marker still reads downtime and the re-arm owner delivers the close to
 #     main. The host records that successor's arm before relinquishing it
 #     (detach_successor owns the persistence check and failure path). The
@@ -133,7 +135,12 @@
 # script applies the same partition, leases, and away relocation it applies to
 # the Pi branch. At activation the host stops anything a crashed predecessor
 # left running (recorded with identities, never by name), including the
-# engine descendants its turn recorded, removes that turn's files, and
+# engine descendants its turn recorded, reads retained arm captures before
+# removing them, and hands any delivered wake or arm failure to main before
+# starting another cycle. An arm that outlives retirement or a capture that
+# cannot be read keeps its process record and capture for retry; activation
+# or park shutdown then fails rather than reporting a clean boundary.
+# The host removes the other turn files and
 # releases the branch actor's leases; it releases them again after every
 # engine turn. It also reads the record of a successor a pass-through left for
 # main: while that arm still runs under its recorded identity, the first cycle
@@ -169,7 +176,7 @@
 # monotonic-clock guarantee. Arm exit probes use ordinary 0.5-second child
 # sleeps within the unchanged POLL-cadence maintenance and boundary checks;
 # close observation and a shell-only caught signal may wait that interval plus
-# work/scheduling time. No stop-signal disposition or cleanup bound changes.
+# work/scheduling time.
 # FM_TEST_SUPERVISION_HOST_CLOCK names a file holding the park's elapsed
 # seconds, which the park and turn boundary checks read in place of SECONDS
 # only when FM_TEST_SEAM=1; tests/lib.sh arms the marker for isolated suites.
