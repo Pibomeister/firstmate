@@ -524,6 +524,11 @@ FM_COMPOSER_LEFTBAR_FOOTER_RE_DEFAULT='^(Build|Plan)[[:space:]]+·[[:space:]]+'
 # is deliberately not matched - and the marker is quantifier-free so the same
 # bytes match under LC_ALL=C as under a UTF-8 locale.
 FM_COMPOSER_MODE_HINT_RE_DEFAULT='^[[:space:]]*(⏵|⏸)'
+# Grok draws two or more Key:action hints separated by bars directly below
+# its box. Accept only the observed multiword action and punctuation key as
+# exceptions to the old single-word cells. Consulted only at that boundary,
+# never on a composer content row; every row after this one still needs proof.
+FM_COMPOSER_GROK_HINT_RE_DEFAULT='^(Enter:send now|Ctrl\+;:queue|[A-Z][A-Za-z]*(\+[A-Za-z.]+)*:[a-z]*)([[:space:]]+│[[:space:]]+(Enter:send now|Ctrl\+;:queue|[A-Z][A-Za-z]*(\+[A-Za-z.]+)*:[a-z]*))+$'
 # omp (Oh My Pi) draws a one-row status line directly BELOW its borderless
 # composer: an identity or spinner cell, then middle-dot separated model, path,
 # git, and context cells. Verified live through Herdr on omp 18.1.11:
@@ -1842,6 +1847,14 @@ _fm_composer_select_cursorless() {
     raw=$(_fm_composer_screen_row "$next" "$plain")
     trimmed=$raw
     fm_composer_normalize_trim_var trimmed
+    # Only the single hint row immediately below the selected box is furniture.
+    if [ "$FM_COMPOSER_SELECTED_KIND" = box ] && [ "$next" = "$((boundary + 1))" ] \
+       && fm_composer_idle_matches "$trimmed" "$FM_COMPOSER_GROK_HINT_RE_DEFAULT" sensitive; then
+      next=$((next + 1))
+      raw=$(_fm_composer_screen_row "$next" "$plain")
+      trimmed=$raw
+      fm_composer_normalize_trim_var trimmed
+    fi
     if [ -n "$trimmed" ] && ! fm_composer_row_has_edge "$trimmed"; then
       FM_COMPOSER_SELECTED_KIND=
       return 1

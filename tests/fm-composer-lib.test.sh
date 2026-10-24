@@ -1079,6 +1079,51 @@ test_matrix_claude_titled_top_rule() {
   pass "matrix: claude's titled top rule proves an idle composer empty and a draft pending (#5601, #5558)"
 }
 
+test_matrix_grok_send_now_queue_footer() {
+  # Exact composer rows from the 2026-10-23 read-only Orca capture.
+  # Missing either new token used to make the entire box unknown.
+  local screen typed variant caps footer bad
+  screen=$(cat "$ROOT/tests/fixtures/grok-composer-footer.screen.txt")
+  typed=${screen/'│ ❯                '/'│ ❯ preserve draft '}
+  footer=${screen##*$'\n'}
+  for caps in "$CAPS_TMUX" "$CAPS_STYLED" "$CAPS_STYLED_NOID" "$CAPS_PLAIN"; do
+    assert_screen "actual Grok send-now/semicolon footer" empty "$caps" "$screen" 1
+    assert_screen "actual Grok footer with draft" pending "$caps" "$typed" 1
+    # Drive the two tokens apart so neither fix can mask the other.
+    variant=${screen/'Ctrl+;:queue'/'Ctrl+q:queue'}
+    assert_screen "Grok send now independently" empty "$caps" "$variant" 1
+    variant=${screen/'Enter:send now'/'Enter:send'}
+    assert_screen "Grok semicolon queue independently" empty "$caps" "$variant" 1
+    variant=${variant/'Ctrl+;:queue'/'Ctrl+q:queue'}
+    assert_screen "Grok old key hints remain supported" empty "$caps" "$variant" 1
+    # Furniture recognition never consumes content inside the box.
+    variant=${screen/'│ ❯                '/'│ ❯ Enter:send now '}
+    assert_screen "Grok footer token typed in composer" pending "$caps" "$variant" 1
+  done
+  # Cursorless captures must prove complete geometry and explain every row.
+  for caps in "$CAPS_STYLED" "$CAPS_STYLED_NOID" "$CAPS_PLAIN"; do
+    assert_screen "Grok footer alone proves no composer" unknown "$caps" "$footer"
+    variant=${screen#*$'\n'}
+    assert_screen "Grok missing top border" unknown "$caps" "$variant"
+    variant=${screen/╯/─}
+    assert_screen "Grok incomplete bottom border" unknown "$caps" "$variant"
+    variant=${screen/─/}
+    assert_screen "Grok mismatched border widths" unknown "$caps" "$variant"
+    variant=${screen/'Grok 4.7 (high)'/'Other 4.7 (high)'}
+    assert_screen "Grok ambiguous title with valid footer" unknown "$caps" "$variant"
+    assert_screen "unexplained activity after Grok hints" unknown "$caps" "$screen"$'\nWorking on request...'
+    assert_screen "a second hint row is not absorbed" unknown "$caps" "$screen"$'\n'"$footer"
+    for bad in 'Enter:send later' 'Enter:send now extra' 'Ctrl+;:queueing'; do
+      case "$bad" in
+        Enter:*) variant=${screen/'Enter:send now'/$bad} ;;
+        *) variant=${screen/'Ctrl+;:queue'/$bad} ;;
+      esac
+      assert_screen "unobserved Grok hint $bad" unknown "$caps" "$variant"
+    done
+  done
+  pass "matrix: actual Grok send-now and semicolon hints preserve drafts and fail-closed geometry"
+}
+
 test_matrix_grok_144_approval_titled_bottom_border() {
   # Grok 1.0.44 draws the title inside a bottom border exactly as wide as the
   # top border and appends its approval mode (` · always-approve`). The mid-dot
@@ -1414,6 +1459,7 @@ test_matrix_opencode_leftbar_cwd_furniture
 test_matrix_opencode_leftbar_abs_cwd_furniture
 test_matrix_grok_titled_bottom_border
 test_matrix_grok_middle_dot_title
+test_matrix_grok_send_now_queue_footer
 test_matrix_claude_titled_top_rule
 test_matrix_grok_144_approval_titled_bottom_border
 test_matrix_kimi_bordered_shell_glyph_box
