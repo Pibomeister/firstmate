@@ -536,9 +536,9 @@ EOF
     fi
   fi
   # The scan runs from / so its own processes are never holders.
-  # shellcheck disable=SC2016 # expanded by the child shell
   scan_budget=${FM_CONTROL_CWD_SCAN_BUDGET:-20}
   case "$scan_budget" in '' | *[!0-9]* | 0) scan_budget=20 ;; esac
+  # shellcheck disable=SC2016 # expanded by the child shell
   holders=$(cd / && fm_run_timed "$scan_budget" bash -c '. "${1%/*}/fm-bash-compat-lib.sh"; . "$1"; fm_control_pids_with_cwd_under "$2"' _ \
     "$lib" "$wt" 2>/dev/null) \
     || { printf 'unproven\tthe working-directory scan of the task'"'"'s copy could not finish'; return 0; }
