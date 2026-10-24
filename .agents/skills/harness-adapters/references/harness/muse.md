@@ -43,9 +43,10 @@ The pane control is `MUSE_EXPERIMENTAL_FOREIGN_PERSONAL_CONTEXT_KILL=on`, set on
 ## Session event log
 
 Logs live at `${XDG_DATA_HOME:-$HOME/.local/share}/muse/sessions/YYYY/MM/DD/<session-uuid>/session.jsonl`.
-On 1.4.13 the first line is a `retained_frame` permission transaction and the `runtime.session.metadata` workspace record follows it, so binding scans the early lines rather than only the first line.
+Binding scans early flat records for workspace metadata; [the verification record](../../../../../docs/verification/muse.md#turn-lifecycle) owns the observed log shape.
 The spawn writes `state/<id>.muse-session` with root, worktree, binding incarnation, and pre-existing matching main logs, then unique resolution pins `state/<id>.muse-session-current`.
-It folds that path while the bounded current-day main namespace is unchanged and resolves again if the namespace changes, path disappears, or a newer binding wins.
+It folds that path while the set of workspace-matching main logs across every date directory is unchanged and resolves again if that set changes, the path disappears, or a newer binding wins.
+The namespace signature tracks metadata readiness rather than run or tool content, so a competing log becomes visible when its workspace metadata becomes readable, including after a date rollover.
 
 Turns are bracketed by `{"payload":{"kind":"run","run_id":"<uuid>","event":{"kind":"started"` and matching `"event":{"kind":"terminal"`, observed as `completed` or `cancelled`.
 Interrupt therefore has a real terminal, unlike Claude Stop.
