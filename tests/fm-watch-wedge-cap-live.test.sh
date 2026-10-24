@@ -135,6 +135,9 @@ say "tmux $(tmux -V), watcher $(basename "$ROOT")/bin/fm-watch.sh at $(cd "$ROOT
 say "lab home: $LAB_HOME"
 LAB_TMUX_DIR=$("$ROOT/bin/fm-lab-home.sh" tmux-dir "$LAB_HOME") \
   || fail "bin/fm-lab-home.sh could not mint a private tmux socket directory"
+# Run inside a tmux pane, TMUX outranks TMUX_TMPDIR for the watcher's bare
+# tmux calls; drop it so they reach only the lab server.
+unset TMUX TMUX_PANE
 export TMUX_TMPDIR="$LAB_TMUX_DIR"
 LAB_SOCKET="$TMUX_TMPDIR/tmux-$(id -u)/default"
 # tmux creates only the socket file, not the per-user directory under

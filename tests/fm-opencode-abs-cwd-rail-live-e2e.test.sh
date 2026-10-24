@@ -54,7 +54,7 @@ tmux() { "$REAL_TMUX" -L "$SOCKET" "$@"; }
 # shellcheck source=/dev/null
 . "$ROOT/bin/fm-tmux-lib.sh"
 
-tmux new-session -d -s "$SESSION" -n oc -x 300 -y 60 -c "$WORK" \
+"$REAL_TMUX" -L "$SOCKET" new-session -d -s "$SESSION" -n oc -x 300 -y 60 -c "$WORK" \
   || fail "could not start the isolated tmux server"
 tmux set-option -t "$SESSION" window-size manual >/dev/null 2>&1 || true
 tmux resize-window -t "$TARGET" -x 300 -y 60 >/dev/null 2>&1 || true

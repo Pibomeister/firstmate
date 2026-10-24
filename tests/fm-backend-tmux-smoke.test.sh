@@ -81,11 +81,11 @@ FM_HOME=/synthetic/other-home TMUX='' fm_backend_tmux_container_ensure >/dev/nul
   || fail "real tmux: reusing the private server failed"
 pass "real tmux: server creation drops task-scoped FM variables and retains tuning and non-FM values"
 
-tmux new-session -d -s "$SESSION" -x 200 -y 50 \
+"$REAL_TMUX" -f /dev/null -L "$SOCKET" new-session -d -s "$SESSION" -x 200 -y 50 \
   || fail "real tmux: new-session failed"
-tmux new-session -d -s "$OTHER_SESSION" -x 200 -y 50 \
+"$REAL_TMUX" -f /dev/null -L "$SOCKET" new-session -d -s "$OTHER_SESSION" -x 200 -y 50 \
   || fail "real tmux: second new-session failed"
-tmux new-session -d -s "$PREFIX_SESSION" -n "$WINDOW" -x 200 -y 50 \
+"$REAL_TMUX" -f /dev/null -L "$SOCKET" new-session -d -s "$PREFIX_SESSION" -n "$WINDOW" -x 200 -y 50 \
   || fail "real tmux: prefix-sharing session failed"
 fm_backend_tmux_create_task "$SESSION" "$WINDOW" "$HOME" \
   || fail "fm_backend_tmux_create_task failed to create the task window"

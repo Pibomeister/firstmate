@@ -60,8 +60,8 @@ cleanup_exact_cell() {
     echo "blocked: exact target survived cleanup; preserving $lab" >&2
     return 1
   }
-  FM_E2E_TMUX_SOCKET_ID="$lab/dedicated.sock" PATH="$lab/bin:$PATH" \
-    env -u TMUX -u TMUX_PANE "$lab/bin/tmux" kill-server || return 1
+  # The shim refuses -S, so the final kill names the dedicated socket directly.
+  ( cd "$lab" && env -u TMUX -u TMUX_PANE "$REAL_TMUX" -S dedicated.sock kill-server ) || return 1
   rm -rf -- "$lab"
   ACTIVE_LAB=
 }
