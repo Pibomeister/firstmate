@@ -65,6 +65,7 @@ An ordinary metadata-routed `fm-send.sh` text steer becomes a durable steering-i
 On the typed plane, `fm-send.sh` verifies composer clearance through the fleet-wide classifier in `bin/fm-composer-lib.sh`, retrying Enter without retyping when a slash popup first fills an argument placeholder.
 For a recorded Droid task, a matching post-Enter `UserPromptSubmit` receipt also confirms a typed send when the composer is temporarily unreadable during Droid's turn; the receipt binds the prompt digest and event sequence to the current task generation.
 The composer read is one bounded tail of the live terminal and never pages backward into scrollback, so a stale startup banner cannot compete with the bottom-anchored composer.
+Supported Grok send and queue footer evidence and its read-only refresh procedure are in [runtime backend verification](verification/runtime-backends.md#grok-send-and-queue-footer).
 A bare shell row is `unknown`, not an empty agent composer, and plain-text captures degrade a glyph row carrying trailing text to `unknown` rather than a false `pending`.
 The watcher has no native Orca busy signal, so each harness adapter's semantic lifecycle supplies worker state.
 Grok alone retains its isolated rendered-tail fallback.
