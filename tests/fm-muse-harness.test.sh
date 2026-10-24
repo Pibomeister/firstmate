@@ -674,8 +674,15 @@ EOF
   pass "the session binding folds only the log matching this task's worktree"
 }
 
-test_binding_finds_metadata_after_retained_frame() {
-  local dir state id verdict root logdir competing_log metadata
+test_binding_finds_metadata_after_retained_frame() (
+  local dir state id verdict root logdir competing_log metadata today=2026/12/31
+  date() {
+    if [ "${1:-}" = '+%Y/%m/%d' ]; then
+      printf '%s\n' "$today"
+    else
+      command date "$@"
+    fi
+  }
   dir="$TMP_ROOT/bind-retained"
   state="$dir/state"
   root="$dir/sessions"
@@ -703,6 +710,11 @@ test_binding_finds_metadata_after_retained_frame() {
   [ "$verdict" = "idle muse-session-log" ] \
     || fail "a retained prefix without metadata changed the cached verdict to '$verdict'"
 
+  today=2027/01/01
+  verdict=$(classify_muse "$state" "$id")
+  [ "$verdict" = "idle muse-session-log" ] \
+    || fail "a date rollover changed the unique session's verdict to '$verdict'"
+
   metadata=$(muse_log_metadata "$dir/my-ws")
   printf '%s' "${metadata%?}" >> "$competing_log"
   verdict=$(classify_muse "$state" "$id")
@@ -725,8 +737,8 @@ test_binding_finds_metadata_after_retained_frame() {
   verdict=$(classify_muse "$state" "$id")
   [ "$verdict" = "busy muse-session-log" ] \
     || fail "the uniquely bound session's next turn classified '$verdict', expected busy"
-  pass "retained-frame bindings refresh as competing workspace metadata becomes ready"
-}
+  pass "retained-frame bindings refresh across midnight as workspace metadata becomes ready"
+)
 
 test_workspace_binding_treats_glob_characters_literally() {
   local dir state id root verdict
@@ -784,7 +796,7 @@ EOF
 }
 
 test_session_log_cache_reuses_and_refreshes_binding() {
-  local dir state id root old fresh verdict fakebin
+  local dir state id root old fresh verdict
   dir="$TMP_ROOT/cache"
   state="$dir/state"
   root="$dir/sessions"
@@ -802,15 +814,13 @@ EOF
   [ "$verdict" = "busy muse-session-log" ] \
     || fail "the initial session did not resolve before caching: got '$verdict'"
 
-  fakebin=$(fm_fakebin "$dir/fake")
-  cat > "$fakebin/node" <<'SH'
-#!/usr/bin/env bash
-exit 97
-SH
-  chmod +x "$fakebin/node"
-  verdict=$(PATH="$fakebin:$PATH" classify_muse "$state" "$id")
+  verdict=$(
+    . "$ROOT/bin/fm-busy-lib.sh"
+    fm_busy_muse_cache_session_log() { return 97; }
+    fm_busy_classify tmux fake:0 muse "$id" "$state"
+  )
   [ "$verdict" = "busy muse-session-log" ] \
-    || fail "a cached session triggered another tree resolution: got '$verdict'"
+    || fail "a valid cached session required rewriting its binding: got '$verdict'"
 
   muse_log_run_terminal old-run completed >> "$old"
   fresh=$(write_session_log "$root" 2026 08 05 fresh "$dir/ws" <<EOF
@@ -837,7 +847,56 @@ EOF
   verdict=$(classify_muse "$state" "$id")
   [ "$verdict" = "unknown muse-session-log" ] \
     || fail "ambiguous replacement sessions produced '$verdict' instead of unknown"
-  pass "the Muse session cache avoids rescans and refreshes safely across incarnations"
+  pass "the Muse session cache reuses bindings and refreshes safely across incarnations"
+}
+
+test_run_appends_preserve_workspace_binding() {
+  local dir state id root log verdict fakebin record active resolved
+  dir="$TMP_ROOT/cache-appends"
+  state="$dir/state"
+  root="$dir/sessions"
+  id=appendtask
+  mkdir -p "$state"
+  log="$root/$(date '+%Y/%m/%d')/active/session.jsonl"
+  mkdir -p "${log%/*}"
+  {
+    muse_log_metadata "$dir/ws"
+    muse_log_run_started active-run
+  } > "$log"
+  printf 'sessions_root=%s\nworkspace_root=%s\nbinding_id=append-incarnation\n' \
+    "$root" "$dir/ws" > "$state/$id.muse-session"
+  record="$dir/append.jsonl"
+  muse_log_noise active-run > "$record"
+  fakebin=$(fm_fakebin "$dir/fake")
+  cat > "$fakebin/node" <<'SH'
+#!/usr/bin/env bash
+"$FM_TEST_REAL_NODE" "$@"
+status=$?
+cat "$FM_TEST_MUSE_APPEND_RECORD" >> "$FM_TEST_MUSE_APPEND_LOG"
+exit "$status"
+SH
+  chmod +x "$fakebin/node"
+  local FM_TEST_REAL_NODE FM_TEST_MUSE_APPEND_RECORD=$record FM_TEST_MUSE_APPEND_LOG=$log
+  FM_TEST_REAL_NODE=$(command -v node)
+  export FM_TEST_REAL_NODE FM_TEST_MUSE_APPEND_RECORD FM_TEST_MUSE_APPEND_LOG
+  verdict=$(PATH="$fakebin:$PATH" classify_muse "$state" "$id")
+  [ "$verdict" = "busy muse-session-log" ] \
+    || fail "run content appended during initial binding changed the verdict to '$verdict'"
+  [ "$(wc -l < "$log")" -gt 2 ] || fail "the log did not grow during resolution"
+  verdict=$(PATH="$fakebin:$PATH" classify_muse "$state" "$id")
+  [ "$verdict" = "busy muse-session-log" ] \
+    || fail "run content appended during cached binding changed the verdict to '$verdict'"
+  resolved=$(
+    . "$ROOT/bin/fm-busy-lib.sh"
+    PATH="$fakebin:$PATH" fm_busy_muse_session_log "$state" "$id"
+  )
+  [ "$resolved" = "$log" ] || fail "run appends prevented interrupt log resolution"
+  active=$(
+    . "$ROOT/bin/fm-busy-lib.sh"
+    fm_busy_muse_active_run_id "$resolved"
+  )
+  [ "$active" = active-run ] || fail "run appends hid the interrupt's active run: '$active'"
+  pass "run appends preserve cold and cached bindings and interrupt run selection"
 }
 
 test_cached_session_revalidates_after_namespace_change() {
@@ -1046,6 +1105,7 @@ test_binding_finds_metadata_after_retained_frame
 test_workspace_binding_treats_glob_characters_literally
 test_binding_excludes_preexisting_log_when_mtimes_tie
 test_session_log_cache_reuses_and_refreshes_binding
+test_run_appends_preserve_workspace_binding
 test_cached_session_revalidates_after_namespace_change
 test_subagent_logs_are_excluded
 test_missing_and_unreadable_bindings_are_unknown_never_idle
