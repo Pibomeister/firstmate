@@ -1142,12 +1142,16 @@ test_a_park_stopped_mid_take_over_leaves_the_take_over_to_the_next_park() {
   kill -0 "$LEFT_WATCHER" 2>/dev/null || fail "fixture: the take-over stopped the left watcher before the park was stopped"
   arm=$(awk -F '\t' '$1 == "arm" { print $2; exit }' "$home/state/.supervision-host")
   [ -n "$arm" ] || fail "fixture: the park has no arm to interrupt"
-  kill -TERM "$host" 2>/dev/null || fail "fixture: the park host $host was not running"
-  # Retirement must acquire this lock during bounded watcher cleanup. Keeping
-  # it held until host exit forces a real cleanup failure instead of a takeover.
+  # Freeze the take-over before releasing the snapshot barrier. Its interrupted
+  # cleanup must acquire this lock within the watcher's ordinary bound; racing
+  # the holder's release against TERM can instead force a persistence failure.
+  kill -STOP "$arm" 2>/dev/null || fail "fixture: could not pause the take-over arm"
   : > "$home/marker-lock-release"
-  wait_until 150 sh -c '! kill -0 "$1" 2>/dev/null' _ "$host" || fail "fixture: the park host did not stop"
   wait "$holder" 2>/dev/null || true
+  kill -TERM "$host" 2>/dev/null || fail "fixture: the park host $host was not running"
+  kill -TERM "$arm" 2>/dev/null || fail "fixture: could not interrupt the paused arm"
+  kill -CONT "$arm" 2>/dev/null || fail "fixture: could not resume the interrupted arm"
+  wait_until 150 sh -c '! kill -0 "$1" 2>/dev/null' _ "$host" || fail "fixture: the park host did not stop"
   assert_re "^arm_pid=$arm.*origin=attached.*signal=TERM.*reason=arm-interrupted" \
     "$home/state/.watch-cycle-exits.log" "fixture: the take-over arm was not interrupted"
   # The Stop hook runs the next park in place of the one stopped by a signal.

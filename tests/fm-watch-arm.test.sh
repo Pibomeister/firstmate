@@ -123,9 +123,9 @@ status_signature() {  # <status-path>
   ' _ "$ROOT/bin/fm-classify-lib.sh" "$1"
 }
 
-wait_for_file_text() {  # <file> <fixed-text>
-  local file=$1 expected=$2 i=0
-  while [ "$i" -lt 100 ]; do
+wait_for_file_text() {  # <file> <fixed-text> [poll-limit]
+  local file=$1 expected=$2 i=0 limit=${3:-100}
+  while [ "$i" -lt "$limit" ]; do
     grep -F "$expected" "$file" >/dev/null 2>&1 && return 0
     sleep 0.05
     i=$((i + 1))
@@ -489,12 +489,15 @@ test_rearm_resurfaces_durable_queue_and_remote_open_decision() {
   generation=$(cat "$state/.watcher-down")
   generation=${generation##*:}
   start_rearm_arm "$home" "$state" "$fakebin" "$dir/decision-only-arm.out"
+  # A fresh previous-cycle beacon can confirm the new holder before startup
+  # retires its recovery marker. Wait for the persisted transition itself.
+  wait_for_file_text "$state/.watcher-down" "acked:downtime:$generation" "$REARM_REPORT_POLLS" \
+    && [ "$(cat "$state/.watcher-down")" = "acked:downtime:$generation" ] \
+    || fail "the empty-queue downtime episode was not retired on its own generation: $(cat "$state/.watcher-down")"
   is_live_non_zombie "$ARM_PID" \
     || fail "an empty-queue re-arm woke for bookkeeping: $(cat "$dir/decision-only-arm.out")"
   ! grep -F 'check: rearm-resurface' "$dir/decision-only-arm.out" >/dev/null \
     || fail "an empty-queue re-arm emitted a recovery wake"
-  [ "$(cat "$state/.watcher-down")" = "acked:downtime:$generation" ] \
-    || fail "the empty-queue downtime episode was not retired on its own generation: $(cat "$state/.watcher-down")"
   FM_HOME="$home" FM_STATE_OVERRIDE="$state" "$DRAIN" > "$dir/decision-only-drain.out" \
     2> "$dir/decision-only-drain.err" || fail "drain after a silent re-arm failed"
   grep -F 'ios [key=remote-signoff] needs-decision: remote secondmate is held for captain sign-off' \
@@ -535,12 +538,13 @@ test_empty_queue_rearm_stays_silent() {
   esac
   generation=${marker##*:}
   start_rearm_arm "$home" "$state" "$fakebin" "$dir/close-arm.out"
+  wait_for_file_text "$state/.watcher-down" "acked:downtime:$generation" "$REARM_REPORT_POLLS" \
+    && [ "$(cat "$state/.watcher-down")" = "acked:downtime:$generation" ] \
+    || fail "the empty-queue episode was not retired on its own generation: $(cat "$state/.watcher-down")"
   is_live_non_zombie "$ARM_PID" \
     || fail "an empty-queue re-arm after an ordinary close woke: $(cat "$dir/close-arm.out")"
   ! grep -F 'check: rearm-resurface' "$dir/close-arm.out" >/dev/null \
     || fail "an empty-queue re-arm after an ordinary close emitted a recovery wake"
-  [ "$(cat "$state/.watcher-down")" = "acked:downtime:$generation" ] \
-    || fail "the empty-queue episode was not retired on its own generation: $(cat "$state/.watcher-down")"
 
   watcher_pid=$(cat "$state/.watch.lock/pid" 2>/dev/null || true)
   kill -KILL "$watcher_pid" 2>/dev/null || fail "could not abruptly stop the re-armed watcher"
@@ -548,6 +552,8 @@ test_empty_queue_rearm_stays_silent() {
   [ "$(cat "$state/.watch.lock/pid" 2>/dev/null)" = "$watcher_pid" ] \
     || fail "fixture: the dead holder's lock must survive for the next arm to recover"
   start_rearm_arm "$home" "$state" "$fakebin" "$dir/dead-holder-arm.out"
+  wait_for_file_text "$state/.watcher-down" 'acked:downtime:' "$REARM_REPORT_POLLS" \
+    || fail "the dead holder's empty-queue episode was not retired: $(cat "$state/.watcher-down")"
   is_live_non_zombie "$ARM_PID" \
     || fail "an empty-queue re-arm over a dead holder woke: $(cat "$dir/dead-holder-arm.out")"
   ! grep -F 'check: rearm-resurface' "$dir/dead-holder-arm.out" >/dev/null \
