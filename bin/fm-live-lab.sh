@@ -159,9 +159,11 @@ load_lab() {  # <root>: refuse anything up did not build, then load its record
   TREEHOUSE_DIR=$(rec_get "$ROOT" treehouse_dir)
 }
 
+# The recorded directory came from bin/fm-lab-home.sh tmux-dir; anything else
+# could name another server, so refuse it rather than reach it.
 lab_tmux() {
-  [ -n "${LAB:-}" ] && [ -n "${TMUX_DIR:-}" ] || return 1
-  "$LAB_HOME_HELPER" tmux "$LAB" "$@"
+  case "${TMUX_DIR:-}" in /tmp/fml.?*) ;; *) return 1 ;; esac
+  env -u TMUX -u TMUX_PANE tmux -S "$TMUX_DIR/tmux-$(id -u)/default" "$@"
 }
 
 # The empty-environment base every lab process starts from.

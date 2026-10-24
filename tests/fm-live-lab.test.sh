@@ -118,11 +118,11 @@ record_pid() {  # <root> <pid>
 }
 
 lab_tmux() {  # <root> <tmux args...>
-  local dir
-  dir=$(sed -n 's/^tmux_dir=//p' "$1/.fm-live-lab")
-  [ -n "$dir" ] || return 1
+  local home
+  home=$(sed -n 's/^home=//p' "$1/.fm-live-lab")
+  [ -n "$home" ] || return 1
   shift
-  env -u TMUX -u TMUX_PANE tmux -S "$dir/tmux-$(id -u)/default" "$@"
+  "$ROOT/bin/fm-lab-home.sh" tmux "$home" "$@"
 }
 
 start_sleeper() {

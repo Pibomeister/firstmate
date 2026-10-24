@@ -98,8 +98,9 @@ case "${1:-}" in
     args=("$@") i=0
     while [ "$i" -lt "${#args[@]}" ]; do
       case "${args[$i]}" in
-        -S*|-L*) fm_lab_home_error "refusing a caller -S/-L: the runner owns the lab socket"; exit 2 ;;
-        -c|-f|-T) i=$((i + 2)); continue ;;
+        --) break ;;
+        -*S*|-*L*) fm_lab_home_error "refusing a caller -S/-L: the runner owns the lab socket"; exit 2 ;;
+        -*c|-*f|-*T) i=$((i + 2)); continue ;;
         -*) ;;
         *) break ;;
       esac
@@ -116,13 +117,19 @@ case "${1:-}" in
     [ -n "$socket_dir" ] || exit 0
     # -L names its own socket (not "default"); inspect every socket this
     # private TMUX_TMPDIR could have hosted before removing the directory.
+    # A server told to stop a moment ago may still be exiting; allow it ~1s.
     for socket in "$socket_dir/tmux-$(id -u)"/*; do
       [ -e "$socket" ] || [ -L "$socket" ] || continue
-      if probe=$(tmux -S "$socket" list-sessions 2>&1 >/dev/null) \
-        || [ "${probe#*no server running}" = "$probe" ]; then
-        fm_lab_home_error "refusing teardown: cannot confirm the lab tmux server has stopped"
-        exit 1
-      fi
+      attempts=0
+      while probe=$(tmux -S "$socket" list-sessions 2>&1 >/dev/null) \
+        || [ "${probe#*no server running}" = "$probe" ]; do
+        attempts=$((attempts + 1))
+        [ "$attempts" -lt 20 ] || {
+          fm_lab_home_error "refusing teardown: cannot confirm the lab tmux server has stopped"
+          exit 1
+        }
+        sleep 0.05
+      done
     done
     rm -rf "$socket_dir" && rm -f "$(fm_lab_home_tmux_record "$2")"
     ;;
