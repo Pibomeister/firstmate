@@ -876,6 +876,29 @@ The portable owner of the shape is `test_matrix_grok_144_approval_titled_bottom_
 It also pins idle `empty` for `Grok 4.6` at all four efforts (`low`, `medium`, `high`, `xhigh`) on tmux only, `unknown` for the tested malformed titles on tmux, rejection of light, heavy, double, and ASCII approval-title boxes on tmux, herdr, and cmux/orca profiles, and Grok 1.0.5's three-column overhang still proving `empty` for a title without the suffix on tmux.
 After a Grok upgrade, rerun that live guard and refresh both this record and the 1.0.5 note above: each accepted width is pinned to an observed release, the 1.0.5 overhang has never been live-verified, and neither the approval wording nor either width carries a guarantee across a release.
 
+### Grok send and queue footer
+
+Verified read-only on 2026-10-23 on macOS through Orca 1.4.237.
+The installed CLI reported `grok 1.0.67 (2fe064390d07) [stable]`; the version of the already-running Grok pane was not independently established.
+Its complete empty rounded composer ended with `Grok 4.7 (high) · always-approve` and the immediately following row was `Enter:send now  │  Shift+Tab:mode  │  Ctrl+c:cancel  │  Ctrl+;:queue  │  Ctrl+x:shortcuts`.
+The frozen screen returned `unknown` before the correction and `empty` after it.
+A fresh screen and the real Orca adapter also returned `empty` after the correction, without sending text, keys, or lifecycle actions.
+
+Refresh against an explicitly authorized running terminal with these commands, replacing `GROK_TERMINAL` with its recorded handle:
+
+```bash
+orca --version
+grok --version
+orca terminal read --terminal "$GROK_TERMINAL" --screen --limit 20 --json
+bash -c 'source bin/backends/orca.sh; fm_backend_orca_composer_state "$1"; printf "\n"' _ "$GROK_TERMINAL"
+```
+
+The adapter command printed exactly `empty`.
+The portable regression `test_matrix_grok_send_now_queue_footer` in `tests/fm-composer-lib.test.sh` preserves the four captured composer rows and checks both tokens independently across tmux, Herdr, Zellij, and plain cmux/Orca/Paseo capability profiles in UTF-8 and C locales.
+It checks draft text as `pending` and incomplete or ambiguous geometry, a second hint row, unknown actions, and unexplained lower activity as `unknown` on cursorless profiles.
+Refresh it with `bash bin/fm-test-run.sh tests/fm-composer-lib.test.sh tests/fm-composer-ghost.test.sh`.
+This evidence establishes composer classification only; it does not establish background-process survival when the harness exits.
+
 ### 2026-09-20 claude 2.1.236 statusLine footer through Herdr
 
 Verified on 2026-09-20 on macOS arm64 (Darwin 25.6.0) against Claude Code 2.1.236 running as Firstmate workers in Herdr 0.8.0 panes, read through Herdr's ANSI capture with its exact capability descriptor (`styled=1`, `cursor=0`, `identity=1`, `rows=20`).
