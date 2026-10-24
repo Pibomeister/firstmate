@@ -325,24 +325,31 @@ test_guard_warnings() {
 }
 
 test_lock_single_winner_under_concurrency() {
-  local dir state lockdir marker i pids pid wins
+  local dir state lockdir marker attempted i pids pid wins
   dir=$(make_case lock-concurrency)
   state="$dir/state"
   lockdir="$state/.contend.lock"
   marker="$dir/wins"
+  attempted="$dir/attempted"
   : > "$marker"
+  : > "$attempted"
   pids=
   i=1
   while [ "$i" -le 40 ]; do
     FM_STATE_OVERRIDE="$state" bash -c '
       . "$1"
+      won=0
       if fm_lock_try_acquire "$2"; then
         printf "%s\n" "$$" >> "$3"
-        # Stay alive so the held lock names a live pid for the whole window;
-        # otherwise a late contender could legitimately reclaim a dead-pid lock.
-        sleep 1
+        won=1
       fi
-    ' _ "$LIB" "$lockdir" "$marker" &
+      printf "%s\n" "$$" >> "$4"
+      # Keep the winner alive until every contender has attempted acquisition;
+      # a fixed sleep permits legitimate dead-owner recovery on a slow host.
+      if [ "$won" -eq 1 ]; then
+        while [ "$(wc -l < "$4")" -lt 40 ]; do sleep 0.05; done
+      fi
+    ' _ "$LIB" "$lockdir" "$marker" "$attempted" &
     pids="$pids $!"
     i=$((i + 1))
   done
@@ -576,16 +583,15 @@ test_lock_stale_steal_single_winner_under_concurrency() {
   mkdir "$lockdir"
   printf '%s\n' "$dead" > "$lockdir/pid"
   : > "$marker"
-  mkfifo "$gate" "$hold"
   # try_acquire is nonblocking: all one-shot candidates may lose to a transient
   # steal mutex. A waiting contender guarantees eventual acquisition, and the
-  # FIFO keeps the winner alive until every other contender has finished.
+  # release file keeps the winner alive until every other contender has finished.
   FM_STATE_OVERRIDE="$state" bash -c '
     . "$1"
     fm_lock_acquire_wait "$2" || exit 1
     printf "%s\n" "${BASHPID:-$$}" >> "$3"
     printf "%s\n" "${BASHPID:-$$}" > "$4"
-    IFS= read -r _ < "$5"
+    while [ ! -e "$5" ]; do sleep 0.05; done
   ' _ "$LIB" "$lockdir" "$marker" "$gate" "$hold" &
   waiter=$!
   pids=
@@ -596,19 +602,20 @@ test_lock_stale_steal_single_winner_under_concurrency() {
       if fm_lock_try_acquire "$2"; then
         printf "%s\n" "${BASHPID:-$$}" >> "$3"
         printf "%s\n" "${BASHPID:-$$}" > "$4"
-        IFS= read -r _ < "$5"
+        while [ ! -e "$5" ]; do sleep 0.05; done
       fi
     ' _ "$LIB" "$lockdir" "$marker" "$gate" "$hold" &
     pids="$pids $!"
     i=$((i + 1))
   done
+  while [ ! -s "$gate" ]; do sleep 0.05; done
   IFS= read -r winner < "$gate"
   [ "$winner" = "$waiter" ] || { kill "$waiter" 2>/dev/null || true; wait "$waiter" 2>/dev/null || true; }
   for pid in $pids; do
     [ "$pid" = "$winner" ] || wait "$pid" 2>/dev/null || true
   done
   wins=$(awk 'NF { c++ } END { print c + 0 }' "$marker")
-  printf 'release\n' > "$hold"
+  : > "$hold"
   wait "$winner" 2>/dev/null || true
   [ "$wins" -eq 1 ] || fail "expected exactly one stale-lock stealer, got $wins"
   pass "concurrent stale-lock steal yields exactly one winner"
@@ -777,6 +784,8 @@ test_watch_restart_rejects_reused_pid() {
   printf '%s\n' "$dir" > "$state/.watch.lock/fm-home"
   printf '%s\n' "$WATCH" > "$state/.watch.lock/watcher-path"
   printf '%s\n' "stale watcher identity" > "$state/.watch.lock/pid-identity"
+  append_wake "$state" check reused-holder 'check: queued work behind a reused-pid lock' \
+    || fail "could not queue work behind the reused-pid lock"
   PATH="$fakebin:$PATH" FM_HOME="$dir" FM_POLL=5 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH_ARM" --restart > "$out" &
   pid=$!
   i=0
@@ -821,7 +830,7 @@ test_watch_restart_attaches_to_healthy_peer() {
   printf '%s\n' "$WATCH" > "$state/.watch.lock/watcher-path"
   printf '%s\n' "$identity" > "$state/.watch.lock/pid-identity"
   touch "$state/.last-watcher-beat"
-  PATH="$fakebin:$PATH" FM_HOME="$dir" FM_POLL=5 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 FM_ARM_ATTACH_POLL=0.1 FM_ARM_CONFIRM_TIMEOUT=1 "$WATCH_ARM" --restart > "$out" &
+  PATH="$fakebin:$PATH" FM_HOME="$dir" FM_POLL=5 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 FM_ARM_ATTACH_POLL=0.1 FM_ARM_CONFIRM_TIMEOUT=1 "$WATCH_ARM" --restart > "$out" 2> "$dir/arm.err" &
   armpid=$!
   i=0
   while [ "$i" -lt 80 ]; do
@@ -837,8 +846,15 @@ test_watch_restart_attaches_to_healthy_peer() {
   wait_for_exit "$armpid" 80
   status=$?
   [ "$status" -ne 0 ] && [ "$status" -ne 124 ] || fail "restart arm did not fail after its attached peer ended without a successor (status $status)"
-  grep -qF 'watcher: FAILED - cycle ended without an actionable reason' "$out" || fail "restart arm did not surface the attached cycle end"
-  pass "watch restart attaches to a verified healthy peer and later surfaces a successor gap"
+  # The synthetic peer cannot run watcher cleanup after SIGKILL. Its matching
+  # lock must remain evidence of failed cleanup, rather than a clean cycle end.
+  assert_contains "$(cat "$dir/arm.err")" 'watcher: recovery state could not be persisted; retaining stale lock evidence' \
+    "restart arm did not surface the attached cleanup failure"
+  [ "$(cat "$state/.watch.lock/pid")" = "$peer" ] \
+    && [ "$(cat "$state/.watch.lock/pid-identity")" = "$identity" ] \
+    || fail "restart arm discarded the attached peer's stale lock evidence"
+  assert_grep 'reason=attached-cleanup-failed' "$state/.watch-cycle-exits.log" "restart cleanup failure was not classified"
+  pass "watch restart attaches to a verified healthy peer and preserves failed-cleanup evidence after SIGKILL"
 }
 
 test_watcher_self_evicts_on_lock_takeover() {
@@ -979,9 +995,11 @@ test_attached_arm_signal_is_recorded_in_cycle_ledger() {
   [ "$status" -eq 143 ] || fail "attached arm did not exit with TERM status (got $status)"
   grep -q "arm_pid=$armpid.*watcher_pid=$wpid.*origin=attached.*exit_code=143.*signal=TERM.*reason=arm-interrupted" "$state/.watch-cycle-exits.log" \
     || fail "attached arm signal was not recorded in the lifecycle ledger"
-  is_live_non_zombie "$wpid" || fail "signaling an attached arm terminated the peer watcher"
+  ! is_live_non_zombie "$wpid" || fail "signaling an attached arm left the peer watcher running"
   stop_seed_watcher "$wpid" "$out"
-  pass "attached arm signals record a classified lifecycle entry"
+  assert_absent "$state/.watch.lock/pid" "attached arm signal left the watcher's lock behind"
+  assert_grep 'pending:downtime:' "$state/.watcher-down" "attached arm signal lost recovery state"
+  pass "attached arm signals record a classified lifecycle entry and finish peer cleanup"
 }
 
 test_arm_term_during_steal_waits_for_watcher_cleanup_trap() {
@@ -1098,6 +1116,8 @@ test_arm_starts_and_self_heals() {
       printf '%s\n' "$WATCH" > "$state/.watch.lock/watcher-path"
       printf '%s\n' "dead watcher identity" > "$state/.watch.lock/pid-identity"
       touch "$state/.last-watcher-beat"
+      append_wake "$state" check dead-holder 'check: queued work behind a dead-pid lock' \
+        || fail "could not queue work behind the dead-pid lock"
     fi
     PATH="$fakebin:$PATH" FM_HOME="$dir" FM_POLL=5 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH_ARM" > "$armout" &
     armpid=$!
@@ -1210,7 +1230,7 @@ test_arm_waits_for_peer_beacon_after_child_stands_down() {
   # Same budget contract as the self-eviction case: the owned child's real
   # startup and stand-down happen inside the arm's confirmation window, so the
   # window stays production-sized (issue #2844).
-  PATH="$fakebin:$PATH" FM_HOME="$dir" FM_POLL=5 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 FM_ARM_ATTACH_POLL=0.1 "$WATCH_ARM" > "$armout" &
+  PATH="$fakebin:$PATH" FM_HOME="$dir" FM_POLL=5 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 FM_ARM_ATTACH_POLL=0.1 "$WATCH_ARM" > "$armout" 2> "$dir/arm.err" &
   armpid=$!
   # Synchronize on the owned child declining the live peer lock before making
   # the peer healthy. Sleeping for the same budget the arm spends made this
@@ -1234,14 +1254,20 @@ test_arm_waits_for_peer_beacon_after_child_stands_down() {
   grep -qF "watcher: attached pid=$peer" "$armout" || fail "arm did not wait for and attach to the peer watcher: $(cat "$armout")"
   ! grep -qF 'watcher: FAILED' "$armout" || fail "arm falsely reported FAILED during peer startup race"
   is_live_non_zombie "$armpid" || fail "arm exited while the peer was still healthy"
-  # After the peer dies without a successor, the attached arm must fail loudly.
+  # This synthetic peer cannot release the watcher lock on TERM, so the arm
+  # must report failed cleanup and preserve the matching lock as evidence.
   kill "$peer" 2>/dev/null || true
   wait "$peer" 2>/dev/null || true
   wait_for_exit "$armpid" "$ARM_FAIL_EXIT_POLLS"
   status=$?
   [ "$status" -ne 0 ] && [ "$status" -ne 124 ] || fail "attached arm did not fail after peer died (status $status): $(cat "$armout")"
-  grep -qF 'watcher: FAILED - cycle ended without an actionable reason' "$armout" || fail "peer-attached arm did not emit the typed cycle-end failure"
-  pass "arm attaches to a peer watcher after child stands down and surfaces a missing successor"
+  assert_contains "$(cat "$dir/arm.err")" 'watcher: recovery state could not be persisted; retaining stale lock evidence' \
+    "peer-attached arm did not report failed cleanup"
+  [ "$(cat "$state/.watch.lock/pid")" = "$peer" ] \
+    && [ "$(cat "$state/.watch.lock/pid-identity")" = "$identity" ] \
+    || fail "peer-attached arm discarded the stale lock evidence"
+  assert_grep 'reason=attached-cleanup-failed' "$state/.watch-cycle-exits.log" "peer cleanup failure was not classified"
+  pass "arm attaches after child stands down and preserves the peer's failed-cleanup evidence"
 }
 
 test_arm_fails_loud_when_no_fresh_watcher_confirmable() {

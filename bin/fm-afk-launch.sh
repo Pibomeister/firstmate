@@ -347,6 +347,20 @@ fm_afk_launch_host_engine_note() {
     "$FM_SUPERVISION_ENGINE_PROBLEM"
 }
 
+# One line for the entry on a Codex home that runs the supervision host, where
+# away supervision exists only while a foreground checkpoint holds the watcher
+# (docs/supervision-protocols/codex.md): unless a healthy watcher already runs,
+# the record alone supervises nothing, and an interrupted turn leaves no cycle.
+fm_afk_launch_checkpoint_note() {
+  local config
+  [ "${FM_AFK_MODE:-}" != quiet ] || return 0
+  [ "$(fm_afk_launch_primary_harness)" = codex ] || return 0
+  config=${FM_CONFIG_OVERRIDE:-$FM_HOME/config}
+  fm_supervision_host_config "$config" codex || return 0
+  fm_watcher_healthy "$FM_AFK_LAUNCH_STATE" "$FM_AFK_LAUNCH_DIR/fm-watch.sh" "${FM_GUARD_GRACE:-300}" "$FM_HOME" && return 0
+  printf 'Away supervision is not running yet: on this home it runs only inside a foreground checkpoint, so start bin/fm-watch-checkpoint.sh now and announce away mode only once it is running; a turn interrupted before then leaves the fleet unsupervised until the next message arrives.\n'
+}
+
 fm_afk_launch_catchup_pending() {
   if [ -e "$FM_AFK_LAUNCH_STATE/.afk-return-catchup" ]; then
     fm_afk_launch_log "return catch-up is still pending; run bin/fm-afk-return.sh check before re-entering away mode"
@@ -383,6 +397,7 @@ fm_afk_launch_enter() {
   fi
   "$FM_AFK_CONTRACT_CMD" enter "$@" || return
   fm_afk_launch_host_engine_note
+  fm_afk_launch_checkpoint_note
 }
 
 # The command run inside the created terminal. Real launch runs the shared

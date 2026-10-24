@@ -619,8 +619,10 @@ test_watcher_surfaces_new_contribution_once() {
   local home out rc rows
   home=$(new_home watcher-contribution)
   forge_home "$home"
-  with_home "$home" "$ROOT/bin/fm-pr-check.sh" delivery https://github.com/o/r/pull/8 >/dev/null \
-    || fail 'could not register delivery for watcher wake'
+  # Only observe contributions here. An unrelated merge poll can consume the
+  # checkpoint's bound after the observer has already queued its notice.
+  with_home "$home" "$ROOT/bin/fm-contributions.sh" arm >/dev/null \
+    || fail 'could not register contribution observation for watcher wake'
   registered_checks "$home" >/dev/null
   jq -n --arg head "$HEAD_A" '[{id:12,user:{login:"maintainer"},author_association:"OWNER",
     body:"Please clarify the contract",html_url:"https://github.com/o/r/pull/8#issuecomment-12",
@@ -628,7 +630,7 @@ test_watcher_surfaces_new_contribution_once() {
   out="$home/watcher.out"
   rc=0
   with_home "$home" env FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=0 FM_HEARTBEAT=999999 \
-    "$ROOT/bin/fm-watch-checkpoint.sh" --seconds 5 > "$out" 2> "$home/watcher.err" || rc=$?
+    "$ROOT/bin/fm-watch-checkpoint.sh" --seconds 15 > "$out" 2> "$home/watcher.err" || rc=$?
   [ "$rc" -eq 0 ] || fail "watcher did not surface the new contribution signal: $(cat "$home/watcher.err")"
   grep -E '^check: contributions delivery [0-9a-f]{64}$' "$out" >/dev/null \
     || fail "watcher did not surface the durable contribution wake: $(cat "$out")"
@@ -637,7 +639,11 @@ test_watcher_surfaces_new_contribution_once() {
   rc=0
   with_home "$home" env FM_WATCH_HANDLING_SUCCESSOR=1 FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=0 FM_HEARTBEAT=999999 \
     "$ROOT/bin/fm-watch-checkpoint.sh" --seconds 2 > "$home/watcher-repeat.out" 2> "$home/watcher-repeat.err" || rc=$?
-  [ "$rc" -eq 124 ] || fail "an already durable contribution signal re-rang the watcher: $(cat "$home/watcher-repeat.out")"
+  [ "$rc" -eq 0 ] || fail "quiet contribution checkpoint failed: $(cat "$home/watcher-repeat.err")"
+  assert_contains "$(cat "$home/watcher-repeat.out")" 'checkpoint: no actionable wake within 2s' \
+    'an already durable contribution signal did not leave a quiet checkpoint'
+  ! grep -E '^(signal:|stale:|check:|heartbeat($|:))' "$home/watcher-repeat.out" >/dev/null \
+    || fail "an already durable contribution signal re-rang the watcher: $(cat "$home/watcher-repeat.out")"
   rows=$(awk -F '\t' 'NF >= 5 && $3 == "check" { count++ } END { print count + 0 }' "$home/state/.wake-queue")
   [ "$rows" = 1 ] || fail "repeat contribution observation created $rows durable check wakes"
   pass 'watcher surfaces one newly durable contribution signal without re-ringing it'
