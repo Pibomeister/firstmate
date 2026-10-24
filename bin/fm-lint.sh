@@ -827,6 +827,14 @@ fm_lint_run_tmux_socket() {
           letter=opt; sub(/^-[2CDhlNquUvV]*/, "", letter); value=substr(letter, 2); letter=substr(letter, 1, 1)
           if (value == "") {
             i++; value=w[i]
+            # A value that opens a substitution is judged conservatively, by
+            # every word after it.
+            if (value ~ /\$\(/) {
+              if (letter == "S" || letter == "L") addressed=1
+              rest=""
+              for (i++; i <= n; i++) { opt=w[i]; gsub(/["\047()]/, "", opt); rest=rest " " opt }
+              return "?" rest
+            }
             # A quoted value split on its spaces runs to the word closing it.
             q=substr(value, 1, 1)
             if ((q == "\"" || q == "\047") && gsub(q, q, value) % 2 == 1)
@@ -847,6 +855,8 @@ fm_lint_run_tmux_socket() {
           depth+=gsub(/\(/, "(", opt) - gsub(/\)/, ")", opt)
           if (depth < 0) sub(/\).*$/, "", opt)
           gsub(/["\047]/, "", opt)
+          # The value of a bare -c, -f or -T is not the command word.
+          if (options && opt ~ /^-[2CDhlNquUvV]*[cfT]$/ && i < n) { rest=rest " " opt; i++; continue }
           if (options && opt ~ /^[a-z][a-z-]*$/) options=0
           if (options && opt ~ /^-[2CDhlNquUvV]*S/) addressed=1
           else if (options && opt ~ /^-[2CDhlNquUvV]*L/) {
