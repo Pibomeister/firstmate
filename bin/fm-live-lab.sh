@@ -162,7 +162,8 @@ load_lab() {  # <root>: refuse anything up did not build, then load its record
 # The recorded directory came from bin/fm-lab-home.sh tmux-dir; anything else
 # could name another server, so refuse it rather than reach it.
 lab_tmux() {
-  case "${TMUX_DIR:-}" in /tmp/fml.?*) ;; *) return 1 ;; esac
+  case "${TMUX_DIR:-}" in /tmp/fml.[A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9]) ;; *) return 1 ;; esac
+  [ -d "$TMUX_DIR" ] && [ ! -L "$TMUX_DIR" ] && [ -O "$TMUX_DIR" ] || return 1
   env -u TMUX -u TMUX_PANE tmux -S "$TMUX_DIR/tmux-$(id -u)/default" "$@"
 }
 

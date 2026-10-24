@@ -95,16 +95,20 @@ case "${1:-}" in
     shift 2
     # Global options precede the tmux command; a caller -S or -L would
     # override the lab socket, so refuse rather than address another server.
+    # tmux's [-2CDhlNquUvV] flags may precede one value letter in a cluster;
+    # the value is the rest of the word, or the next word when none is left.
     args=("$@") i=0
-    while [ "$i" -lt "${#args[@]}" ]; do
-      case "${args[$i]}" in
-        --) break ;;
-        -*S*|-*L*) fm_lab_home_error "refusing a caller -S/-L: the runner owns the lab socket"; exit 2 ;;
-        -*c|-*f|-*T) i=$((i + 2)); continue ;;
-        -*) ;;
-        *) break ;;
-      esac
-      i=$((i + 1))
+    while [ "$i" -lt "${#args[@]}" ] && [ "${args[$i]}" != -- ]; do
+      if [[ ${args[$i]} =~ ^-[2CDhlNquUvV]*[SL] ]]; then
+        fm_lab_home_error "refusing a caller -S/-L: the runner owns the lab socket"
+        exit 2
+      elif [[ ${args[$i]} =~ ^-[2CDhlNquUvV]*[cfT]$ ]]; then
+        i=$((i + 2))
+      elif [[ ${args[$i]} =~ ^- ]]; then
+        i=$((i + 1))
+      else
+        break
+      fi
     done
     # The per-user socket tmux itself picks under TMUX_TMPDIR=<dir> with TMUX
     # unset, so teardown and TMUX_TMPDIR-only children reach the same server;

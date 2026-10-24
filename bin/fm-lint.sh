@@ -808,24 +808,39 @@ fm_lint_run_tmux_socket() {
       }
       return text
     }
-    # Walk tmux global options to the command word; addressed=1 when -S or a
-    # non-default -L names the server.
-    function tmux_command_word(args,    n, w, i, opt, value) {
+    # Walk tmux global options ([-2CDhlNquUvV] flags, then one of -c -f -L -S
+    # -T taking the rest of the word or the next one) to the command word;
+    # addressed=1 when -S or a non-default -L names the server. A word that
+    # is no option and no plain command (an expansion, a quoted value) leaves
+    # the command unknown: "?" plus the remaining words, judged conservatively.
+    function tmux_command_word(args,    n, w, i, opt, letter, value, rest, q) {
       n=split(args, w, /[[:space:]]+/)
       addressed=0
       for (i=1; i <= n; i++) {
         if (w[i] == "") continue
-        gsub(/["\047]/, "", w[i])
         if (w[i] == "--") return w[i + 1]
-        if (w[i] !~ /^-/) return w[i]
-        opt=w[i]
-        if (opt ~ /^-[A-Za-z0-9]*[SLcfT]/) {
-          # The first value-taking letter consumes the rest of the cluster or the next word.
-          value=opt; sub(/^-[A-Za-z0-9]*[SLcfT]/, "", value)
-          if (value == "") { value=w[i + 1]; gsub(/["\047]/, "", value); i++ }
-          if (opt ~ /^-[A-Za-z0-9]*S/) addressed=1
-          else if (opt ~ /^-[A-Za-z0-9]*L/ && value != "default") addressed=1
+        # A command word may close the quoted string it sits in.
+        if (w[i] ~ /^[a-z][a-z-]*["\047]*$/) { sub(/["\047]+$/, "", w[i]); return w[i] }
+        opt=w[i]; gsub(/["\047]/, "", opt)
+        if (opt ~ /^-[2CDhlNquUvV]*$/) continue
+        if (opt ~ /^-[2CDhlNquUvV]*[cfLST]/) {
+          letter=opt; sub(/^-[2CDhlNquUvV]*/, "", letter); value=substr(letter, 2); letter=substr(letter, 1, 1)
+          if (value == "") {
+            i++; value=w[i]
+            # A quoted value split on its spaces runs to the word closing it.
+            q=substr(value, 1, 1)
+            if ((q == "\"" || q == "\047") && gsub(q, q, value) % 2 == 1)
+              while (i < n && index(w[i + 1], q) == 0) i++
+            if ((q == "\"" || q == "\047") && gsub(q, q, value) % 2 == 1 && i < n) i++
+            gsub(/["\047]/, "", value)
+          }
+          if (letter == "S") addressed=1
+          else if (letter == "L" && value != "default") addressed=1
+          continue
         }
+        rest=""
+        for (; i <= n; i++) rest=rest " " w[i]
+        return "?" rest
       }
       return ""
     }
@@ -841,11 +856,13 @@ fm_lint_run_tmux_socket() {
         if ((lead == "\047" || lead == "\"") && gsub(lead, lead, word) % 2 == 1) cut++
         if (literal_tmux(word) && command_position(substr(text, 1, cut))) {
           args=substr(rest, word_start + word_len)
-          sub(/[;|&`)].*$/, "", args)
+          sub(/[;|&`].*$/, "", args)
           # A tmux() stub definition is not an invocation.
           if (args !~ /^[[:space:]]*\(/) {
             command=tmux_command_word(args)
-            if (command ~ pattern && !addressed) {
+            if (command ~ /^\?/) command=(command ~ ("[[:space:]]" substr(pattern, 2, length(pattern) - 2) "([[:space:]]|\\)|$)")) ? "unknown-kill" : ""
+            else sub(/\).*$/, "", command)
+            if ((command == "unknown-kill" || command ~ pattern) && !addressed) {
               print file ":" line_no ": tmux command without -S or -L can reach the operator'\''s tmux server"
               return
             }

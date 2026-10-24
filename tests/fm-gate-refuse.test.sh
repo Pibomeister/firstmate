@@ -341,7 +341,8 @@ test_lab_tmux_cleanup_spares_the_operator_server() {
     fail "the lab runner accepted a caller -S that overrides the lab socket"
   fi
   if env "${operator_env[@]}" "$LABHOME" tmux "$lab" -2S "$op_sock" kill-server 2>/dev/null \
-    || env "${operator_env[@]}" "$LABHOME" tmux "$lab" -uf /dev/null -S "$op_sock" kill-server 2>/dev/null; then
+    || env "${operator_env[@]}" "$LABHOME" tmux "$lab" -uf /dev/null -S "$op_sock" kill-server 2>/dev/null \
+    || env "${operator_env[@]}" "$LABHOME" tmux "$lab" -ff -S "$op_sock" kill-server 2>/dev/null; then
     fail "the lab runner accepted a clustered caller -S that overrides the lab socket"
   fi
   env -u TMUX -u TMUX_PANE "$real_tmux" -S "$op_sock" has-session -t operator 2>/dev/null \
