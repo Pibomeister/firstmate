@@ -507,6 +507,48 @@ test_escalation_grace_measures_from_recovery_turn_completion() {
   pass "missed-report escalation grace is measured from the recovery turn's completion"
 }
 
+# fm-send exits 6 from its lease guard before enqueueing anything (a busy
+# lease-command lock or the other actor's lease), so the watcher's recovery send
+# withdraws that attempt and retries on its next cycle instead of recording a
+# failed delivery that escalates.
+test_lease_refusal_recovery_retries_next_cycle() {
+  local home state corr rec hook_log lines
+  home=$(setup_parent recovery-lease-busy)
+  state="$home/state"
+  hook_log="$TMP_ROOT/recovery-lease-busy.log"
+  : > "$hook_log"
+  export FM_PENDING_REPLY_NOW=2500
+  recovery_busy_hook() {
+    printf 'attempted\n' >> "$hook_log"
+    [ "$(wc -l < "$hook_log" | tr -d ' ')" -ge 2 ] || return 6
+  }
+  export -f recovery_busy_hook
+  export FM_PENDING_REPLY_SEND_HOOK=recovery_busy_hook
+  corr=$(fm_pending_reply_create "$home" "$state" hibit "lease busy")
+  rec=$(fm_pending_reply_path "$state" "$corr")
+  fm_pending_reply_mark_delivered "$state" "$corr"
+  fm_pending_reply_mark_turn_completed "$state" "$corr" request
+  if fm_pending_reply_send_recovery "$state" "$corr"; then
+    fail "a lease-refused recovery send should report that nothing was sent"
+  fi
+  [ "$(phase_of "$state" "$corr")" = awaiting_report ] \
+    || fail "a lease-refused recovery send must stay retryable, got phase $(phase_of "$state" "$corr")"
+  [ -z "$(fm_pending_reply_get "$rec" recovery_attempted_epoch)" ] \
+    || fail "a lease-refused recovery send must withdraw its attempt"
+  if fm_pending_reply_maybe_escalate "$state" "$corr" 2>/dev/null; then
+    fail "a lease-refused recovery send must not escalate"
+  fi
+  fm_pending_reply_send_recovery "$state" "$corr" \
+    || fail "the next cycle should retry the recovery send and deliver it"
+  [ "$(phase_of "$state" "$corr")" = recovery_sent ] \
+    || fail "the retried recovery should be recorded sent, got $(phase_of "$state" "$corr")"
+  lines=$(wc -l < "$hook_log" | tr -d ' ')
+  [ "$lines" = 2 ] || fail "recovery transport should be attempted twice, got $lines"
+  unset -f recovery_busy_hook
+  unset FM_PENDING_REPLY_SEND_HOOK FM_PENDING_REPLY_NOW
+  pass "a lease-refused recovery send is retried on the next cycle, never recorded failed"
+}
+
 test_recovery_attempt_is_never_reinjected() {
   local home state corr rec hook_log lines live_corr live_rec live_pid live_identity
   home=$(setup_parent recovery-at-most-once)
@@ -2127,6 +2169,7 @@ test_recovery_fresh_status_read_resolves_before_firing
 test_partial_resolve_write_blocks_firing
 test_escalation_grace_measures_from_recovery_turn_completion
 test_recovery_attempt_is_never_reinjected
+test_lease_refusal_recovery_retries_next_cycle
 test_recovery_reply_resolves_original
 test_second_missed_turn_escalates_once_and_stays_durable
 test_escalation_wakes_and_its_close_stays_quiet

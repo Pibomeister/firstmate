@@ -1039,6 +1039,13 @@ fm_pending_reply_send_recovery() {  # <state-dir> <corr_id>
     fm_pending_reply_finish_recovery "$state" "$corr" unknown || return 1
     return 1
   fi
+  # fm-send exits 6 (FM_LEASE_REFUSE_EXIT) only from its lease guard, before it
+  # enqueues anything: a busy lease-command lock or the other actor's live
+  # lease. Both pass, so the attempt is withdrawn and the next cycle retries.
+  if [ "$send_status" = 6 ]; then
+    fm_pending_reply_finish_recovery "$state" "$corr" busy || return 1
+    return 1
+  fi
   fm_pending_reply_finish_recovery "$state" "$corr" failed || return 1
   return 1
 }
@@ -1060,12 +1067,20 @@ fm_pending_reply_sender_alive() {  # <record-path>
   [ "$actual" = "$expected" ]
 }
 
-fm_pending_reply_finish_recovery() {  # <state-dir> <corr_id> <confirmed|failed|unknown>
+fm_pending_reply_finish_recovery() {  # <state-dir> <corr_id> <confirmed|failed|unknown|busy>
   local state=$1 corr=$2 outcome=$3 rec phase now sent
   rec=$(fm_pending_reply_path "$state" "$corr")
   [ -f "$rec" ] || return 1
   phase=$(fm_pending_reply_get "$rec" phase)
   [ "$phase" = recovery_sending ] || return 1
+  if [ "$outcome" = busy ]; then
+    # Nothing was sent: back to awaiting_report as if never attempted.
+    fm_pending_reply_set "$rec" recovery_attempted_epoch "" || return 1
+    fm_pending_reply_set "$rec" recovery_sender_pid "" || return 1
+    fm_pending_reply_set "$rec" recovery_sender_identity "" || return 1
+    fm_pending_reply_set "$rec" phase awaiting_report || return 1
+    return 0
+  fi
   fm_pending_reply_set "$rec" recovery_delivery_outcome "$outcome" || return 1
   if [ "$outcome" = confirmed ]; then
     sent=$(fm_pending_reply_get "$rec" recovery_sent_epoch)

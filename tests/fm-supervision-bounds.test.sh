@@ -234,36 +234,52 @@ test_stopped_perl_bound_stops_its_command() {
   pass "a perl bound stopped by an outer bound stops its TERM-ignoring command; shell functions can be bounded"
 }
 
-test_herdr_server_start_leaves_the_callers_process_group() {
-  local fb out caller_pgid server_pgid i
+# The server is started from inside whatever process group its caller runs in
+# (an arm, a doorbell bound). Killing that whole group, as an arm's own bound
+# does, must leave the fleet's herdr server and its panes running.
+test_herdr_server_survives_its_spawning_group_kill() {
+  local fb caller_pgid server_pid server_pgid i
   fb="$TMP_ROOT/herdr-fakebin"
   mkdir -p "$fb"
-  # A stand-in herdr: `server` records its process group and stays up.
+  # A stand-in herdr: `server` records its pid and process group and stays up.
   cat > "$fb/herdr" <<SH
 #!/usr/bin/env bash
 case "\$*" in
-  *server*) ps -o pgid= -p \$\$ | tr -d ' ' > "$TMP_ROOT/herdr-server.pgid"; exec /bin/sleep 30 ;;
+  *server*) printf '%s %s\n' \$\$ "\$(ps -o pgid= -p \$\$ | tr -d ' ')" > "$TMP_ROOT/herdr-server.ids"; exec /bin/sleep 30 ;;
   *status*) printf '{"server":{"running":false}}\n' ;;
 esac
 exit 0
 SH
   chmod +x "$fb/herdr"
-  rm -f "$TMP_ROOT/herdr-server.pgid"
+  rm -f "$TMP_ROOT/herdr-server.ids" "$TMP_ROOT/herdr-caller.pgid"
+  # The caller leads its own group, like an arm, and stays alive after the
+  # start so the group kill below has a live group to hit; the subshell keeps it
+  # out of this shell's job table.
   # shellcheck disable=SC2016 # expanded by the nested shell
-  out=$(PATH="$fb:$PATH" fm_run_timed 20 bash -c '
+  ( PATH="$fb:$PATH" perl -e 'setpgrp(0, 0); exec @ARGV' bash -c '
     . "$1/bin/fm-backend.sh"
     fm_backend_source herdr >/dev/null 2>&1 || exit 9
-    ps -o pgid= -p $$ | tr -d " "
-    fm_backend_herdr_server_ensure fm-test-session >/dev/null 2>&1 || true' _ "$ROOT" 2>/dev/null)
-  caller_pgid=$(printf '%s\n' "$out" | head -1)
-  for i in $(seq 1 30); do [ -s "$TMP_ROOT/herdr-server.pgid" ] && break; sleep 0.1; done
-  server_pgid=$(cat "$TMP_ROOT/herdr-server.pgid" 2>/dev/null)
-  [ -z "$server_pgid" ] || [ "$server_pgid" = "$(ps -o pgid= -p $$ | tr -d ' ')" ] \
+    ps -o pgid= -p $$ | tr -d " " > "$2"
+    fm_backend_herdr_server_ensure fm-test-session >/dev/null 2>&1 || true
+    exec sleep 30' _ "$ROOT" "$TMP_ROOT/herdr-caller.pgid" </dev/null >/dev/null 2>&1 & )
+  for i in $(seq 1 150); do
+    [ -s "$TMP_ROOT/herdr-server.ids" ] && [ -s "$TMP_ROOT/herdr-caller.pgid" ] && break
+    sleep 0.1
+  done
+  caller_pgid=$(cat "$TMP_ROOT/herdr-caller.pgid" 2>/dev/null)
+  read -r server_pid server_pgid < "$TMP_ROOT/herdr-server.ids" 2>/dev/null || true
+  [ -n "$server_pid" ] || fail "the stand-in herdr server never started (caller pgid $caller_pgid)"
+  [ -n "$caller_pgid" ] && [ "$caller_pgid" != "$(ps -o pgid= -p $$ | tr -d ' ')" ] \
+    || fail "the fixture caller did not lead a process group of its own: $caller_pgid"
+  kill -KILL -- "-$caller_pgid" 2>/dev/null
+  sleep 0.5
+  if kill -0 "$server_pid" 2>/dev/null; then i=alive; else i=gone; fi
+  [ "$server_pgid" = "$(ps -o pgid= -p $$ | tr -d ' ')" ] \
     || kill -TERM -- "-$server_pgid" 2>/dev/null || true
-  [ -n "$server_pgid" ] || fail "the stand-in herdr server never started (caller pgid $caller_pgid)"
   [ "$server_pgid" != "$caller_pgid" ] \
-    || fail "the herdr server started inside its caller's process group $caller_pgid, so a bounded caller's group kill would stop it"
-  pass "a herdr server started by the backend runs in its own process group, outside its caller's"
+    || fail "the herdr server started inside its caller's process group $caller_pgid"
+  [ "$i" = alive ] || fail "killing the spawning process group $caller_pgid also stopped the herdr server (pid $server_pid)"
+  pass "a herdr server started by the backend survives a kill of its spawning process group"
 }
 
 # FM_SUPERVISION_BOUNDS_ONLY=<test function> runs that one case, so each can be
@@ -277,4 +293,4 @@ test_hung_doorbell_returns_delivered_and_frees_the_lock
 test_recovery_send_bound_records_unknown_never_failed
 test_watcher_defers_work_behind_a_held_wake_queue_lock
 test_stopped_perl_bound_stops_its_command
-test_herdr_server_start_leaves_the_callers_process_group
+test_herdr_server_survives_its_spawning_group_kill

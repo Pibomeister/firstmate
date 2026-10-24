@@ -746,6 +746,8 @@ test_lease_command_lock_wait_is_bounded_and_names_the_holder() {
   [ "$rc" -eq 6 ] || fail "the lease guard behind a live lock holder should refuse with exit 6, got $rc after ${elapsed}s: $out"
   [ "$elapsed" -le 8 ] || fail "the lease guard took ${elapsed}s to refuse with a 3s lock bound"
   assert_contains "$out" "$holder_pid" "the guard refusal must name the holder pid"
+  assert_contains "$out" "is busy" "the guard refusal must say the lock is busy"
+  assert_contains "$out" "retry the command" "the guard refusal must tell the operator to retry"
   kill "$holder_pid" 2>/dev/null
   wait "$holder_pid" 2>/dev/null
 

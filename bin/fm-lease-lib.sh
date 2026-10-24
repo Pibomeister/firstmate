@@ -141,7 +141,7 @@ fm_lease_command_lock_acquire() {
     rc=$?
   fi
   holder=$(fm_lock_holder_name "${FM_LOCK_HELD_PID:-}")
-  echo "error: $action refused - this home's lease-command lock ($lockdir) is still held${holder:+ by $holder} after ${wait}s (wait status $rc); that process is stuck or slow, so inspect it and never remove the lock by hand" >&2
+  echo "error: $action refused - this home's lease-command lock ($lockdir) is busy, still held${holder:+ by $holder} after ${wait}s (wait status $rc); retry the command once that holder finishes, and if it stays held, inspect that process and never remove the lock by hand" >&2
   exit "$FM_LEASE_REFUSE_EXIT"
 }
 
