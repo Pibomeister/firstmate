@@ -540,6 +540,7 @@ test_lease_refusal_recovery_retries_next_cycle() {
   if fm_pending_reply_maybe_escalate "$state" "$corr" 2>/dev/null; then
     fail "a lease-refused recovery send must not escalate"
   fi
+  FM_PENDING_REPLY_TICK_LEASE_BUSY=0
   fm_pending_reply_send_recovery "$state" "$corr" \
     || fail "the next cycle should retry the recovery send and deliver it"
   [ "$(phase_of "$state" "$corr")" = recovery_sent ] \
@@ -549,6 +550,60 @@ test_lease_refusal_recovery_retries_next_cycle() {
   unset -f recovery_busy_hook
   unset FM_PENDING_REPLY_SEND_HOOK FM_PENDING_REPLY_NOW
   pass "a lease-refused recovery send is retried on the next cycle, never recorded failed"
+}
+
+# A lease refusal that lasts past the stall bound raises one escalation naming
+# the lock holder, while the record stays retryable; within one tick a second
+# record is not sent behind the same busy lock; an invalid supervision actor
+# is a failure, never a busy retry.
+test_lease_refusal_escalates_once_past_the_stall_bound() {
+  local home state corr corr2 rec rec2 hook_log
+  home=$(setup_parent recovery-busy-escalate)
+  state="$home/state"
+  hook_log="$TMP_ROOT/recovery-busy-escalate.log"
+  : > "$hook_log"
+  # Invoked indirectly through FM_PENDING_REPLY_SEND_HOOK.
+  # shellcheck disable=SC2329
+  recovery_busy_named_hook() {
+    printf 'attempted\n' >> "$hook_log"
+    echo "error: steer (fm-send) refused - this home's lease-command lock (x) is busy, still held by pid 4242 (fm-stuck-send.sh) after 60s (wait status 1); retry the command once that holder finishes" >&2
+    return 6
+  }
+  export -f recovery_busy_named_hook
+  export FM_PENDING_REPLY_SEND_HOOK=recovery_busy_named_hook FM_WATCHER_STALL_BOUND=100
+  export FM_PENDING_REPLY_NOW=2500
+  corr=$(fm_pending_reply_create "$home" "$state" hibit "busy escalate")
+  corr2=$(fm_pending_reply_create "$home" "$state" hibit "busy second")
+  rec=$(fm_pending_reply_path "$state" "$corr")
+  rec2=$(fm_pending_reply_path "$state" "$corr2")
+  for c in "$corr" "$corr2"; do
+    fm_pending_reply_mark_delivered "$state" "$c"
+    fm_pending_reply_mark_turn_completed "$state" "$c" request
+  done
+  FM_PENDING_REPLY_TICK_LEASE_BUSY=0
+  fm_pending_reply_send_recovery "$state" "$corr" 2>/dev/null || true
+  fm_pending_reply_send_recovery "$state" "$corr2" 2>/dev/null || true
+  [ "$(wc -l < "$hook_log" | tr -d ' ')" = 1 ] \
+    || fail "a second recovery send in the same tick must not wait behind the same busy lock"
+  [ -z "$(fm_pending_reply_get "$rec2" recovery_attempted_epoch)" ] || fail "the skipped record must stay unattempted"
+  ! grep -Fq "pending-reply-recovery-busy:" "$state/hibit.status" \
+    || fail "a busy refusal inside the stall bound must not escalate"
+  FM_PENDING_REPLY_TICK_LEASE_BUSY=0
+  FM_PENDING_REPLY_NOW=2650 fm_pending_reply_send_recovery "$state" "$corr" 2>/dev/null || true
+  [ "$(phase_of "$state" "$corr")" = awaiting_report ] || fail "a busy record must stay retryable after escalating"
+  [ "$(grep -c "pending-reply-recovery-busy:" "$state/hibit.status")" = 1 ] \
+    || fail "a busy run past the stall bound must escalate exactly once: $(cat "$state/hibit.status")"
+  grep -Fq "held by pid 4242 (fm-stuck-send.sh)" "$state/hibit.status" || fail "the busy escalation must name the lock holder"
+  FM_PENDING_REPLY_TICK_LEASE_BUSY=0
+  FM_PENDING_REPLY_NOW=2800 fm_pending_reply_send_recovery "$state" "$corr" 2>/dev/null || true
+  [ "$(grep -c "pending-reply-recovery-busy:" "$state/hibit.status")" = 1 ] || fail "the busy escalation must not repeat"
+  FM_PENDING_REPLY_TICK_LEASE_BUSY=0
+  FM_SUPERVISION_ACTOR=bogus fm_pending_reply_send_recovery "$state" "$corr2" 2>/dev/null || true
+  [ "$(phase_of "$state" "$corr2")" = recovery_failed ] \
+    || fail "exit 6 from an invalid supervision actor must be a failure, got $(phase_of "$state" "$corr2")"
+  unset -f recovery_busy_named_hook
+  unset FM_PENDING_REPLY_SEND_HOOK FM_PENDING_REPLY_NOW FM_WATCHER_STALL_BOUND
+  pass "a lease refusal escalates once past the stall bound naming the holder, skips the rest of its tick, and an invalid actor fails"
 }
 
 test_recovery_attempt_is_never_reinjected() {
@@ -2172,6 +2227,7 @@ test_partial_resolve_write_blocks_firing
 test_escalation_grace_measures_from_recovery_turn_completion
 test_recovery_attempt_is_never_reinjected
 test_lease_refusal_recovery_retries_next_cycle
+test_lease_refusal_escalates_once_past_the_stall_bound
 test_recovery_reply_resolves_original
 test_second_missed_turn_escalates_once_and_stays_durable
 test_escalation_wakes_and_its_close_stays_quiet

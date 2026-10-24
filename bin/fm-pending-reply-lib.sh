@@ -46,7 +46,12 @@
 #                           its owner may still resend the same correlation, and
 #                           fm_pending_reply_reset_known_undelivered returns it to
 #                           awaiting_report for that resend (see the retryable
-#                           undelivered escalation note below)
+#                           undelivered escalation note below).
+#                           A recovery send fm-send refuses with exit 6 (busy
+#                           lease-command lock or the other actor's lease) goes
+#                           recovery_sending -> awaiting_report and is retried
+#                           next cycle; past fm_watcher_stall_bound it raises one
+#                           pending-reply-recovery-busy escalation naming the holder
 #   turn_seen_busy=         0|1 after delivery for the original request turn
 #   request_turn_completed_epoch=
 #   recovery_attempted_epoch=
@@ -56,6 +61,10 @@
 #   recovery_delivery_outcome=
 #   recovery_turn_seen_busy=
 #   recovery_turn_completed_epoch=
+#   recovery_busy_since_epoch=  first fm-send lease refusal (exit 6) of the current
+#                           busy run; cleared once a send gets past the guard
+#   recovery_busy_holder=   who held the lease-command lock, from that refusal
+#   recovery_busy_escalated_epoch=  when the one busy escalation was raised
 #   escalated_epoch=
 #   escalation_closed_epoch=
 #                           when the durable status decision opened by that
@@ -949,7 +958,7 @@ fm_pending_reply_recovery_message() {  # <record-path>
 fm_pending_reply_send_recovery() {  # <state-dir> <corr_id>
   local state=$1 corr=$2
   local rec phase completed delivered attempted grace now age task_id msg parent_home send_status=0
-  local sender_pid sender_identity status_file lock budget
+  local sender_pid sender_identity status_file lock budget send_err
   local STATE FM_WAKE_QUEUE FM_WAKE_QUEUE_LOCK
   rec=$(fm_pending_reply_path "$state" "$corr")
   [ -f "$rec" ] || return 1
@@ -982,6 +991,9 @@ fm_pending_reply_send_recovery() {  # <state-dir> <corr_id>
   fi
   status_file=$(fm_pending_reply_get "$rec" parent_status)
   parent_home=$(fm_pending_reply_get "$rec" parent_home)
+  # One lease refusal per tick is enough evidence: every other send this tick
+  # would wait out the same lock bound, so they keep for the next cycle.
+  [ "${FM_PENDING_REPLY_TICK_LEASE_BUSY:-0}" != 1 ] || return 1
   msg=$(fm_pending_reply_recovery_message "$rec")
   sender_pid=${BASHPID:-$$}
   sender_identity=$(fm_pending_reply_pid_identity "$sender_pid") || return 1
@@ -1018,36 +1030,123 @@ fm_pending_reply_send_recovery() {  # <state-dir> <corr_id>
   budget=${FM_PENDING_REPLY_SEND_BUDGET:-120}
   case "$budget" in '' | *[!0-9]* | 0) budget=120 ;; esac
   command -v fm_run_timed >/dev/null 2>&1 || . "$_FM_PENDING_REPLY_LIB_DIR/fm-timeout-lib.sh"
+  # The send's stderr is kept: a lease refusal names the lock holder there.
+  send_err=$(mktemp "${TMPDIR:-/tmp}/fm-pending-reply-send.XXXXXX") || send_err=/dev/null
   if [ -n "${FM_PENDING_REPLY_SEND_HOOK:-}" ]; then
     # Hook receives: task_id message
     # shellcheck disable=SC2086
     fm_run_timed_fn "$budget" eval "$FM_PENDING_REPLY_SEND_HOOK" "$(printf '%q' "$task_id")" "$(printf '%q' "$msg")" \
-      || send_status=$?
+      2>"$send_err" || send_status=$?
   else
     if [ -z "$parent_home" ] || [ ! -d "$parent_home" ]; then
       send_status=1
     else
       fm_run_timed "$budget" env FM_HOME="$parent_home" FM_PENDING_REPLY_EXISTING_CORR="$corr" \
-        "$_FM_PENDING_REPLY_LIB_DIR/fm-send.sh" "$task_id" "$msg" || send_status=$?
+        "$_FM_PENDING_REPLY_LIB_DIR/fm-send.sh" "$task_id" "$msg" 2>"$send_err" || send_status=$?
     fi
   fi
+  [ "$send_err" = /dev/null ] || { cat "$send_err" >&2; }
+  if [ "$send_status" != 6 ] || ! fm_pending_reply_lease_actor_valid; then
+    # The send got past the lease guard, so any busy run is over.
+    fm_pending_reply_set "$rec" recovery_busy_since_epoch "" || true
+    fm_pending_reply_set "$rec" recovery_busy_holder "" || true
+  fi
   if [ "$send_status" = 0 ]; then
+    [ "$send_err" = /dev/null ] || rm -f "$send_err"
     fm_pending_reply_finish_recovery "$state" "$corr" confirmed
     return $?
   fi
   if fm_timed_out "$send_status"; then
+    [ "$send_err" = /dev/null ] || rm -f "$send_err"
     fm_pending_reply_finish_recovery "$state" "$corr" unknown || return 1
     return 1
   fi
   # fm-send exits 6 (FM_LEASE_REFUSE_EXIT) only from its lease guard, before it
   # enqueues anything: a busy lease-command lock or the other actor's live
-  # lease. Both pass, so the attempt is withdrawn and the next cycle retries.
-  if [ "$send_status" = 6 ]; then
-    fm_pending_reply_finish_recovery "$state" "$corr" busy || return 1
+  # lease. Both pass, so the attempt is withdrawn and the next cycle retries;
+  # a busy run past the stall bound raises one escalation naming the holder.
+  # An invalid FM_SUPERVISION_ACTOR also exits 6 but never passes, so it is a
+  # failure like any other.
+  if [ "$send_status" = 6 ] && fm_pending_reply_lease_actor_valid; then
+    FM_PENDING_REPLY_TICK_LEASE_BUSY=1
+    if ! fm_pending_reply_finish_recovery "$state" "$corr" busy; then
+      [ "$send_err" = /dev/null ] || rm -f "$send_err"
+      return 1
+    fi
+    fm_pending_reply_note_busy "$state" "$corr" "$send_err" || true
+    [ "$send_err" = /dev/null ] || rm -f "$send_err"
     return 1
   fi
+  [ "$send_err" = /dev/null ] || rm -f "$send_err"
   fm_pending_reply_finish_recovery "$state" "$corr" failed || return 1
   return 1
+}
+
+# 0 when the supervision actor fm-send would run as is valid, so its exit 6 can
+# only mean a busy lease-command lock or the other actor's live lease.
+fm_pending_reply_lease_actor_valid() {
+  case "${FM_SUPERVISION_ACTOR:-main}" in main | branch) return 0 ;; *) return 1 ;; esac
+}
+
+# Record one lease refusal for <corr_id> (its stderr in <err-file>), and once the
+# busy run reaches fm_watcher_stall_bound raise its one escalation. The record
+# stays awaiting_report either way, so the next cycle still retries.
+fm_pending_reply_note_busy() {  # <state-dir> <corr_id> <err-file>
+  local state=$1 corr=$2 err=$3 rec since holder now
+  rec=$(fm_pending_reply_path "$state" "$corr")
+  [ -f "$rec" ] || return 1
+  now=$(fm_pending_reply_now)
+  since=$(fm_pending_reply_get "$rec" recovery_busy_since_epoch)
+  if [ -z "$since" ]; then
+    since=$now
+    fm_pending_reply_set "$rec" recovery_busy_since_epoch "$since" || return 1
+  fi
+  holder=$(sed -n 's/.*held by \(pid [0-9][0-9]* ([^)]*)\).*/\1/p' "$err" 2>/dev/null | head -n 1)
+  [ -n "$holder" ] || holder=$(head -n 1 "$err" 2>/dev/null | tr '\t' ' ' | cut -c1-160)
+  [ -n "$holder" ] || holder='an unidentified process'
+  fm_pending_reply_set "$rec" recovery_busy_holder "$holder" || return 1
+  [ -z "$(fm_pending_reply_get "$rec" recovery_busy_escalated_epoch)" ] || return 0
+  [ $((now - since)) -ge "$(fm_watcher_stall_bound)" ] || return 0
+  fm_pending_reply_escalate_busy "$state" "$corr"
+}
+
+# The one escalation for a recovery send refused as busy past the stall bound.
+# Opened under this request's own key like the others, so a correlated report
+# closes it; the phase is left alone, so the send keeps retrying.
+fm_pending_reply_escalate_busy() {  # <state-dir> <corr_id>
+  local state=$1 corr=$2 lock rc=0
+  local STATE FM_WAKE_QUEUE FM_WAKE_QUEUE_LOCK
+  STATE=$state
+  lock="$state/.pending-reply-$corr.lock"
+  . "$_FM_PENDING_REPLY_LIB_DIR/fm-wake-lib.sh"
+  fm_state_lock_acquire "$lock" || return 1
+  _fm_pending_reply_escalate_busy_locked "$state" "$corr" || rc=$?
+  fm_lock_release "$lock"
+  return "$rc"
+}
+
+_fm_pending_reply_escalate_busy_locked() {  # <state-dir> <corr_id>
+  local state=$1 corr=$2 rec parent_status payload key line now
+  rec=$(fm_pending_reply_path "$state" "$corr")
+  [ -f "$rec" ] || return 1
+  [ "$(fm_pending_reply_get "$rec" phase)" = awaiting_report ] || return 0
+  [ -z "$(fm_pending_reply_get "$rec" recovery_busy_escalated_epoch)" ] || return 0
+  parent_status=$(fm_pending_reply_get "$rec" parent_status)
+  if _fm_pending_reply_try_resolve_locked "$state" "$corr" "$parent_status"; then
+    return 0
+  fi
+  [ "$(fm_pending_reply_get "$rec" phase)" = awaiting_report ] || return 0
+  payload=$(fm_pending_reply_escalation_payload "$rec" recovery-busy) || return 1
+  [ -n "$parent_status" ] || return 1
+  mkdir -p "$(dirname "$parent_status")" 2>/dev/null || return 1
+  key=$(fm_pending_reply_escalation_key "$corr")
+  line="blocked [key=$key]: $payload"
+  status_event_recorded "$parent_status" "$line" \
+    || printf '%s\n' "$(status_stamp_line "$line")" >> "$parent_status" 2>/dev/null || return 1
+  now=$(fm_pending_reply_now)
+  fm_pending_reply_set "$rec" recovery_busy_escalated_epoch "$now" || return 1
+  fm_pending_reply_set "$rec" escalation_closed_epoch "" || return 1
+  fm_pending_reply_set "$rec" escalated_epoch "$now" || return 1
 }
 
 fm_pending_reply_pid_identity() {  # <pid>
@@ -1174,6 +1273,13 @@ fm_pending_reply_escalation_payload() {  # <record-path> <kind>
       case "$outcome" in failed|unknown) ;; *) return 1 ;; esac
       token="pending-reply-recovery-delivery-$outcome"
       ;;
+    recovery-busy)
+      [ -n "$(fm_pending_reply_get "$rec" recovery_busy_since_epoch)" ] || return 1
+      printf 'pending-reply-recovery-busy: task=%s pending-reply-id=%s request=%s lease-command lock busy since %s, held by %s' \
+        "$task_id" "$corr" "$summary" "$(fm_pending_reply_get "$rec" recovery_busy_since_epoch)" \
+        "$(fm_pending_reply_get "$rec" recovery_busy_holder)"
+      return 0
+      ;;
     *) return 1 ;;
   esac
   printf '%s: task=%s pending-reply-id=%s request=%s' "$token" "$task_id" "$corr" "$summary"
@@ -1191,7 +1297,7 @@ fm_pending_reply_escalation_line() {  # <status-file> <record-path> <corr_id>
   while IFS= read -r line || [ -n "$line" ]; do
     [ "$(status_line_verb "$line")" = blocked ] || continue
     _fm_status_untimed "$line" untimed
-    for kind in missed delivery-unknown recovery-delivery; do
+    for kind in missed delivery-unknown recovery-delivery recovery-busy; do
       payload=$(fm_pending_reply_escalation_payload "$rec" "$kind") || continue
       case "$untimed" in
         "blocked [key=$own_key]: $payload"|"blocked: $payload") found=$line; break ;;
@@ -1581,6 +1687,7 @@ fm_pending_reply_tick() {  # <state-dir>
   local state=$1 dir rec corr task_id phase delivered meta backend target label busy sm_home harness remote_host
   local observation observation_task found i
   local -a observation_tasks=() observation_values=() records=() selected=()
+  FM_PENDING_REPLY_TICK_LEASE_BUSY=0
   dir=$(fm_pending_reply_dir "$state")
   [ -d "$dir" ] || return 0
   for rec in "$dir"/*; do

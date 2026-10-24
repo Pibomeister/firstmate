@@ -194,18 +194,21 @@ fm_guard_episode_detail() {
 # bound (its state/.watcher-deferral.<name> record); sets GUARD_BLOCKED_KEY and
 # GUARD_BLOCKED_DETAIL. Such a watcher beats, so only this read can see it.
 fm_guard_blocked_watcher() {
-  local f lock_pid owner first name holder now bound
+  local f lock_pid owner first name holder now bound fresh
   lock_pid=$(cat "$STATE/.watch.lock/pid" 2>/dev/null || true)
   [ -n "$lock_pid" ] || return 1
   now=$(date +%s)
   bound=$(fm_watcher_stall_bound)
+  # The watcher repeats a deferral at least once per its stale grace, the same
+  # grace fm_watcher_stall_bound derives from.
+  fresh=${FM_WATCHER_STALE_GRACE:-${FM_GUARD_GRACE:-$(fm_poll_derived_grace "${FM_POLL:-15}")}}
   for f in "$STATE"/.watcher-deferral.*; do
     [ -f "$f" ] || continue
     IFS=$'\t' read -r owner first name holder < "$f" 2>/dev/null || continue
     [ "$owner" = "$lock_pid" ] || continue
     # Only a deferral the watcher repeated recently, behind a holder that is
     # still alive, is current: a site that stopped running leaves a stale record.
-    [ "$(fm_path_age "$f")" -lt 300 ] || continue
+    [ "$(fm_path_age "$f")" -lt "$fresh" ] || continue
     fm_pid_alive "$holder" || continue
     case "$first" in '' | *[!0-9]*) continue ;; esac
     [ $((now - first)) -ge "$bound" ] || continue

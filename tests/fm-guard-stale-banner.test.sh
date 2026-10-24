@@ -344,6 +344,20 @@ test_blocked_watcher_is_reported_past_the_stall_bound() {
   assert_contains "$out" "pid $holder" "the report must name the lock holder"
   out=$(FM_WATCHER_STALL_BOUND=60 run_guard_case "$dir")
   assert_contains "$out" "watcher still blocked" "a repeated call inside the episode prints the reminder"
+  # Freshness follows the watcher's grace: a record the watcher last repeated
+  # 400 s ago is current under a 600 s grace, stale under a 300 s one.
+  perl -e 'utime time - 400, time - 400, $ARGV[0]' "$home/state/.watcher-deferral.wake-queue"
+  out=$(FM_WATCHER_STALE_GRACE=600 FM_WATCHER_STALL_BOUND=60 run_guard_case "$dir")
+  assert_contains "$out" "blocked" "a deferral repeated within a long poll's grace must still be reported: $out"
+  rm -f "$home/state/.guard-watcher-stale-banner"
+  out=$(FM_WATCHER_STALE_GRACE=300 FM_WATCHER_STALL_BOUND=60 run_guard_case "$dir")
+  assert_not_contains "$out" "WATCHER BLOCKED" "a deferral not repeated within the watcher's grace is stale"
+  touch "$home/state/.watcher-deferral.wake-queue"
+  kill "$holder" 2>/dev/null || true
+  wait "$holder" 2>/dev/null || true
+  rm -f "$home/state/.guard-watcher-stale-banner"
+  out=$(FM_WATCHER_STALL_BOUND=60 run_guard_case "$dir")
+  assert_not_contains "$out" "WATCHER BLOCKED" "a deferral whose holder is gone is not current"
   kill "$pid" "$holder" 2>/dev/null || true
   wait "$pid" "$holder" 2>/dev/null || true
   pass "fm-guard: a beating watcher that keeps deferring behind a held lock is reported past the stall bound"

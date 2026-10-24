@@ -2710,6 +2710,7 @@ FM_PENDING_REPLY_OBSERVE_BUDGET=20   # seconds the watcher's busy-or-idle read o
 FM_DAEMON_PROBE_BUDGET=20   # seconds one away-daemon supervisor-pane probe may run (bin/fm-supervise-daemon.sh header); zero or invalid values use 20
 FM_CONTROL_CWD_SCAN_BUDGET=20   # seconds the tmux absence proof's scan for processes working inside the task's copy may run; a scan that does not finish leaves absence unproven; zero or invalid values use 20
 FM_WATCH_LOCK_WAIT=10   # seconds the watcher waits for a PR-poll control or publish lock before deferring that work to its next sweep; zero or invalid values use 10
+FM_SEND_BACKEND_BUDGET=45   # seconds one local backend key or typed-text call fm-send makes while it may hold the lease-command lock may run; a key stopped at the bound exits 1 with its completion unknown, typed text exits 3 as delivered-unconfirmed; zero or invalid values use 45
 FM_SEND_RING_BUDGET=20   # seconds one steering-inbox doorbell ring may take before it is reported unconfirmed; zero or invalid values use 20
 FM_GUARD_BANNER_RESURFACE_SECS=1800   # seconds between full watcher-down banners while one down episode lasts (bin/fm-guard.sh); zero or invalid values use 1800
 FM_TURNEND_CHURN_ABSORB_SECS=900   # longest one endpoint's bare turn-ends may be deferred on pane-churn evidence alone; only consulted when config/turnend-churn-absorb is present
