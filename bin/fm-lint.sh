@@ -823,13 +823,13 @@ fm_lint_run_tmux_socket() {
         if (w[i] ~ /^["\047]*[a-z][a-z-]*["\047)]*$/) { gsub(/["\047)]/, "", w[i]); return w[i] }
         opt=w[i]; gsub(/["\047]/, "", opt)
         if (opt ~ /^-[2CDhlNquUvV]*$/) continue
-        if (opt !~ /^-[2CDhlNquUvV]*[cfLST]/ || opt ~ /\$\(/) return unknown_tmux_kill(w, i, n, unknown)
+        if (opt !~ /^-[2CDhlNquUvV]*[cfLST]/) return unknown_tmux_kill(w, i, n, unknown, 0)
         letter=opt; sub(/^-[2CDhlNquUvV]*/, "", letter); value=substr(letter, 2); letter=substr(letter, 1, 1)
+        if (value ~ /\$\(/ || (value == "" && w[i + 1] ~ /\$\(/)) {
+          if (letter == "S" || letter == "L") addressed=1
+          return value == "" ? unknown_tmux_kill(w, i + 1, n, unknown, 1) : unknown_tmux_kill(w, i, n, unknown, 1)
+        }
         if (value == "") {
-          if (w[i + 1] ~ /\$\(/) {
-            if (letter == "S" || letter == "L") addressed=1
-            return unknown_tmux_kill(w, i + 1, n, unknown)
-          }
           i++; value=w[i]
           # A quoted value split on its spaces runs to the word closing it.
           q=substr(value, 1, 1)
@@ -844,21 +844,34 @@ fm_lint_run_tmux_socket() {
       return ""
     }
     # Unknown command: the first kill word (unknown is its pattern) is
-    # unaddressed unless -S or a non-default -L came before it; words past the
-    # ) closing an enclosing substitution are not this call.
-    function unknown_tmux_kill(w, i, n, unknown,    depth, word, value) {
-      depth=0
+    # unaddressed unless -S or a non-default -L came before it as a global
+    # option - outside any substitution, before the command word, and not an
+    # option value. Words past the ) closing an enclosing substitution are not
+    # this call. invalue says the first word is an option value.
+    function unknown_tmux_kill(w, i, n, unknown, invalue,    depth, before, word, value, options, q, quote) {
+      depth=0; options=1; quote=""
       for (; i <= n; i++) {
-        word=w[i]
+        word=w[i]; before=depth
         depth+=gsub(/\(/, "(", word) - gsub(/\)/, ")", word)
         if (depth < 0) sub(/\).*$/, "", word)
+        # A quoted option value split on its spaces runs to the word closing it.
+        if (quote != "") { if (index(word, quote)) quote=""; if (depth < 0) break; continue }
+        if (invalue) {
+          q=substr(word, 1, 1)
+          if ((q == "\"" || q == "\047") && gsub(q, q, word) % 2 == 1) quote=q
+        }
         gsub(/["\047()]/, "", word)
         if (word ~ ("^(" unknown ")$")) return addressed ? "" : "unknown-kill"
-        if (word ~ /^-[2CDhlNquUvV]*S/) addressed=1
-        else if (word ~ /^-[2CDhlNquUvV]*L/) {
-          value=word; sub(/^-[2CDhlNquUvV]*L/, "", value)
-          if (value == "") { value=w[i + 1]; gsub(/["\047()]/, "", value) }
-          if (value != "" && value != "default") addressed=1
+        if (invalue) invalue=0
+        else if (options && before == 0) {
+          if (word ~ /^[a-z][a-z-]*$/) options=0
+          else if (word ~ /^-[2CDhlNquUvV]*S/) addressed=1
+          else if (word ~ /^-[2CDhlNquUvV]*L/) {
+            value=word; sub(/^-[2CDhlNquUvV]*L/, "", value)
+            if (value == "") { value=w[i + 1]; gsub(/["\047()]/, "", value) }
+            if (value != "" && value != "default") addressed=1
+          }
+          if (word ~ /^-[2CDhlNquUvV]*[cfLST]$/) invalue=1
         }
         if (depth < 0) break
       }
