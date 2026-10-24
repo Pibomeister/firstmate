@@ -819,8 +819,8 @@ fm_lint_run_tmux_socket() {
       for (i=1; i <= n; i++) {
         if (w[i] == "") continue
         if (w[i] == "--") return w[i + 1]
-        # A command word may close the quoted string it sits in.
-        if (w[i] ~ /^[a-z][a-z-]*["\047]*$/) { sub(/["\047]+$/, "", w[i]); return w[i] }
+        # A command word may be quoted or close the quoted string it sits in.
+        if (w[i] ~ /^["\047]*[a-z][a-z-]*["\047]*$/) { gsub(/["\047]/, "", w[i]); return w[i] }
         opt=w[i]; gsub(/["\047]/, "", opt)
         if (opt ~ /^-[2CDhlNquUvV]*$/) continue
         if (opt ~ /^-[2CDhlNquUvV]*[cfLST]/) {
@@ -838,14 +838,28 @@ fm_lint_run_tmux_socket() {
           else if (letter == "L" && value != "default") addressed=1
           continue
         }
+        # Unknown command: collect the remaining words up to an unbalanced ),
+        # still noting any -S or non-default -L among them.
         rest=""
-        for (; i <= n; i++) rest=rest " " w[i]
+        for (; i <= n; i++) {
+          opt=w[i]
+          if (gsub(/\)/, ")", opt) > gsub(/\(/, "(", opt)) break
+          gsub(/["\047]/, "", opt)
+          if (opt ~ /^-[2CDhlNquUvV]*S/) addressed=1
+          else if (opt ~ /^-[2CDhlNquUvV]*L/) {
+            value=opt; sub(/^-[2CDhlNquUvV]*L/, "", value)
+            if (value == "") { value=w[i + 1]; gsub(/["\047]/, "", value) }
+            if (value != "default") addressed=1
+          }
+          rest=rest " " opt
+        }
         return "?" rest
       }
       return ""
     }
-    function report_unaddressed_tmux(text, line_no, file,    rest, offset, word_start, word_len, word, cut, args, pattern, lead, command) {
+    function report_unaddressed_tmux(text, line_no, file,    rest, offset, word_start, word_len, word, cut, args, pattern, unknown, lead, command) {
       pattern = (file ~ /^bin\//) ? "^kill-ser[a-z]*$" : "^(kill-ser[a-z]*|kill-ses[a-z]*|new|new-s[a-z]*)$"
+      unknown = (file ~ /^bin\//) ? "kill-ser[a-z]*" : "kill-ser[a-z]*|kill-ses[a-z]*|new-s[a-z]*"
       rest=text; offset=0
       while (match(rest, /[^[:space:];|&()`]+/)) {
         word_start=RSTART; word_len=RLENGTH
@@ -857,10 +871,12 @@ fm_lint_run_tmux_socket() {
         if (literal_tmux(word) && command_position(substr(text, 1, cut))) {
           args=substr(rest, word_start + word_len)
           sub(/[;|&`].*$/, "", args)
-          # A tmux() stub definition is not an invocation.
-          if (args !~ /^[[:space:]]*\(/) {
+          # A tmux() stub definition or a tmux) case arm is not an invocation.
+          if (args !~ /^[[:space:]]*[()]/) {
             command=tmux_command_word(args)
-            if (command ~ /^\?/) command=(command ~ ("[[:space:]]" substr(pattern, 2, length(pattern) - 2) "([[:space:]]|\\)|$)")) ? "unknown-kill" : ""
+            # An unknown command is judged by any kill (or, in tests/, new-s*)
+            # word after it; a bare `new` there is too often a plain argument.
+            if (command ~ /^\?/) command=(command ~ ("[[:space:]](" unknown ")([[:space:]]|$)")) ? "unknown-kill" : ""
             else sub(/\).*$/, "", command)
             if ((command == "unknown-kill" || command ~ pattern) && !addressed) {
               print file ":" line_no ": tmux command without -S or -L can reach the operator'\''s tmux server"
