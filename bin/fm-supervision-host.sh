@@ -555,7 +555,7 @@ host_watcher_stalled() {
   local pid
   pid=$(cat "$STATE/.watch.lock/pid" 2>/dev/null) || return 1
   fm_watcher_stalled "$STATE" "$SCRIPT_DIR/fm-watch.sh" "$pid" "$FM_HOME" 30 || return 1
-  HOST_STALL_DETAIL="watcher pid $pid beacon ${FM_WATCHER_STALL_AGE}s past the stall bound plus 30s"
+  HOST_STALL_DETAIL="watcher pid $pid beacon age ${FM_WATCHER_STALL_AGE}s, bound $(( $(fm_watcher_stall_bound) + 30 ))s"
 }
 
 # Wait for the current arm to close. Returns 0 with ARM_TEXT set,
@@ -565,8 +565,9 @@ await_close() {
   while fm_pid_alive "$ARM_PID"; do
     refresh_process "$ARM_PID"
     # Backstop for an arm that is alive but did not replace its stalled
-    # watcher: retire it (its signal path stops the watcher's tree), and the
-    # close reads as one without a wake, so the owner re-arms.
+    # watcher: retire it (an arm that still runs its signal path stops the
+    # watcher's tree; otherwise the next arm evicts the stalled holder), and
+    # the close reads as one without a wake, so the owner re-arms.
     if host_watcher_stalled; then
       log_line "arm-retired	$HOST_STALL_DETAIL; its arm $ARM_PID had not replaced it"
       retire_arm "$ARM_PID" "$ARM_OUT"

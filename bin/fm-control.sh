@@ -356,6 +356,14 @@ fi
 fm_backend_validate_task_endpoint "$META" "$ID" || exit 1
 BACKEND=$FM_BACKEND_VALIDATED_BACKEND
 T=$FM_BACKEND_VALIDATED_TARGET
+# A tmux task is acted on only through the tmux server its record names: a
+# same-named window on another server holds a different agent.
+if [ "$BACKEND" = tmux ] && CONTROL_REC_SOCKET=$(fm_meta_get "$META" tmux_socket) && [ -n "$CONTROL_REC_SOCKET" ]; then
+  fm_backend_source tmux >/dev/null 2>&1 || die "the tmux backend could not be loaded to check task $ID's recorded server"
+  CONTROL_ADDR_SOCKET=$(fm_backend_tmux_addressed_socket)
+  [ "$CONTROL_ADDR_SOCKET" = "$CONTROL_REC_SOCKET" ] \
+    || die "task $ID's tmux endpoint was recorded on $CONTROL_REC_SOCKET, but this process addresses $CONTROL_ADDR_SOCKET; fm-control never acts on another tmux server's same-named window, so run it from a seat on the recorded one"
+fi
 LABEL="fm-$ID"
 RECORDED_HARNESS=$(fm_meta_get "$META" harness)
 KIND=$(fm_meta_get "$META" kind)

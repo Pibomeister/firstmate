@@ -38,12 +38,17 @@ t() { env -u TMUX -u TMUX_PANE tmux -S "$SOCK" "$@"; }
 # Kill with tmux, then wait for every pane process the kill ended to exit, so a
 # pane still holding the copy for a moment cannot turn a verdict into a refusal.
 t_kill() {  # <tmux kill command and args...>
-  local before after p i
+  local before after p i spid=
   before=$(t list-panes -a -F '#{pane_pid}' 2>/dev/null)
+  [ "$1" != kill-server ] || spid=$(t display-message -p '#{pid}' 2>/dev/null)
   t "$@"
   after=$(t list-panes -a -F '#{pane_pid}' 2>/dev/null)
   for p in $before; do
     ! printf '%s\n' "$after" | grep -qx "$p" || continue
+    i=0
+    while [ "$i" -lt 50 ] && kill -0 "$p" 2>/dev/null; do sleep 0.1; i=$((i + 1)); done
+  done
+  for p in $spid; do
     i=0
     while [ "$i" -lt 50 ] && kill -0 "$p" 2>/dev/null; do sleep 0.1; i=$((i + 1)); done
   done

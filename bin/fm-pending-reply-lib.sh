@@ -1074,11 +1074,13 @@ fm_pending_reply_finish_recovery() {  # <state-dir> <corr_id> <confirmed|failed|
   phase=$(fm_pending_reply_get "$rec" phase)
   [ "$phase" = recovery_sending ] || return 1
   if [ "$outcome" = busy ]; then
-    # Nothing was sent: back to awaiting_report as if never attempted.
-    fm_pending_reply_set "$rec" recovery_attempted_epoch "" || return 1
-    fm_pending_reply_set "$rec" recovery_sender_pid "" || return 1
-    fm_pending_reply_set "$rec" recovery_sender_identity "" || return 1
+    # Nothing was sent: back to awaiting_report as if never attempted. The
+    # phase moves first, so a withdrawal cut short still carries its attempt
+    # and reconciles as an unknown delivery rather than sitting inert.
     fm_pending_reply_set "$rec" phase awaiting_report || return 1
+    fm_pending_reply_set "$rec" recovery_sender_identity "" || return 1
+    fm_pending_reply_set "$rec" recovery_sender_pid "" || return 1
+    fm_pending_reply_set "$rec" recovery_attempted_epoch "" || return 1
     return 0
   fi
   fm_pending_reply_set "$rec" recovery_delivery_outcome "$outcome" || return 1
@@ -1686,7 +1688,13 @@ fm_pending_reply_tick() {  # <state-dir>
               fm-remote-secondmate-control.sh observe "$task_id" < /dev/null 2>/dev/null || printf 'unknown')
             case "$observation" in busy|idle|fallback-idle|unknown) ;; *) observation=unknown ;; esac
           else
-            observation=$(fm_pending_reply_backend_observation "$backend" "$target" "$label" "$harness")
+            # Bounded: a pane server that stopped answering reads as unknown
+            # for this cycle instead of holding the watcher here.
+            command -v fm_run_timed_fn >/dev/null 2>&1 || . "$_FM_PENDING_REPLY_LIB_DIR/fm-timeout-lib.sh"
+            observation=$(fm_run_timed_fn "${FM_PENDING_REPLY_OBSERVE_BUDGET:-20}" \
+              fm_pending_reply_backend_observation "$backend" "$target" "$label" "$harness") \
+              || observation=unknown
+            case "$observation" in busy|idle|fallback-idle|unknown) ;; *) observation=unknown ;; esac
           fi
           observation_tasks+=("$task_id")
           observation_values+=("$observation")

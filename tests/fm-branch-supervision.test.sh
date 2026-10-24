@@ -714,7 +714,7 @@ test_lease_command_lock_wait_is_bounded_and_names_the_holder() {
   lock="$home/state/.fm-lease-command.lock"
   holder_script="$TMP_ROOT/fm-fake-lock-holder.sh"
   # shellcheck disable=SC2016 # expanded by the holder script
-  printf '%s\n' '#!/usr/bin/env bash' 'STATE=$2 . "$1"' 'fm_lock_try_acquire "$3" || exit 1' 'sleep 60' > "$holder_script"
+  printf '%s\n' '#!/usr/bin/env bash' 'STATE=$2 . "$1"' 'fm_lock_try_acquire "$3" || exit 1' 'sleep 60 >/dev/null 2>&1 &' 'trap "kill $! 2>/dev/null; exit 0" TERM' 'wait $!' > "$holder_script"
   chmod +x "$holder_script"
   "$holder_script" "$ROOT/bin/fm-wake-lib.sh" "$home/state" "$lock" &
   holder_pid=$!

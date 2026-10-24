@@ -3386,6 +3386,7 @@ while ! fm_lock_try_acquire "$WATCH_LOCK"; do
         # holder that exited leaves a dead-pid lock the normal reclaim takes,
         # and a rival arm that won first reads as a fresh running watcher.
         if [ -z "$EVICTED_PID" ] && [ "$beat_age" -ge "$WATCHER_STALL_BOUND" ] \
+          && [ "$(watch_lock_age "$WATCH_LOCK/pid")" -ge "$WATCHER_STALL_BOUND" ] \
           && evict_stalled_holder "$FM_LOCK_HELD_PID"; then
           EVICTED_PID=$FM_LOCK_HELD_PID
           EVICTED_BEAT_AGE=$beat_age

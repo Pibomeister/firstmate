@@ -1666,7 +1666,7 @@ test_outcome_after_the_return_survives_a_host_killed_at_the_turn_end() {
 test_host_retires_an_arm_that_left_its_watcher_stalled() {
   local home arm watcher
   home=$(make_home arm-stall attended)
-  FM_WATCHER_STALL_BOUND=5 start_host "$home"
+  FM_WATCHER_STALL_BOUND=12 start_host "$home"
   wait_until 300 watcher_live "$home" || fail "arm-stall: no watcher started"
   # Past startup: the watcher has published its identity and beaten once.
   wait_until 300 test -s "$home/state/.watch.lock/pid-identity" || fail "arm-stall: the watcher never published its identity"

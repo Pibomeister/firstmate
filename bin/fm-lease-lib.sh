@@ -102,7 +102,9 @@
 
 # Distinct from usage errors (2), the gate refusal (3), and fm-send's
 # unconfirmed submit (3): recognizable as "the other supervision actor holds
-# this task right now - retry after the lease clears".
+# this task right now, or this home's lease-command lock stayed busy past its
+# bound - retry later"; nothing was mutated either way, which the watcher's
+# pending-reply recovery send relies on to retry instead of failing.
 FM_LEASE_REFUSE_EXIT=6
 FM_LEASE_LIB_DIR="$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; CDPATH='' cd -- "${d:-/}" && pwd)"
 # shellcheck source=bin/fm-bash-compat-lib.sh

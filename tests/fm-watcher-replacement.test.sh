@@ -302,10 +302,11 @@ test_away_daemon_replaces_a_watcher_wedged_in_startup() {
   sleep 1
   [ ! -s "$dir/state/.watch.lock/pid-identity" ] || fail "fixture: the watcher published its identity, so it did not wedge in startup"
   for i in $(seq 1 600); do grep -q "watcher pid $watcher stalled" "$log" 2>/dev/null && break; sleep 0.1; done
-  kill -TERM "$dpid" "$holder_pid" 2>/dev/null
   grep -q "watcher pid $watcher stalled" "$log" 2>/dev/null \
-    || fail "the daemon never replaced its watcher wedged in startup past a 12s bound: $(cat "$log" 2>/dev/null)"
-  gone_within "$watcher" 100 || fail "the daemon left its watcher $watcher wedged in startup"
+    || { kill -TERM "$dpid" "$holder_pid" 2>/dev/null; fail "the daemon never replaced its watcher wedged in startup past a 12s bound: $(cat "$log" 2>/dev/null)"; }
+  gone_within "$watcher" 100 || { kill -TERM "$dpid" "$holder_pid" 2>/dev/null; fail "the daemon left its watcher $watcher wedged in startup"; }
+  kill -0 "$dpid" 2>/dev/null || fail "the daemon must still be running when its stalled watcher is gone"
+  kill -TERM "$dpid" "$holder_pid" 2>/dev/null
   for i in $(seq 1 100); do kill -0 "$dpid" 2>/dev/null || break; sleep 0.1; done
   pass "the away daemon replaces its own watcher wedged in startup before it published an identity"
 }

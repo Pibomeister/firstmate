@@ -463,7 +463,7 @@ _fm_control_tmux_read() {  # <socket> <out-file> <tmux-args...>
 #   - Either way, no other same-user process may have its working directory in
 #     the copy (the scanner and the firstmate control scripts above it aside).
 fm_control_tmux_absence_verdict() {  # <target> <meta>
-  local meta=$2 lib sock spid sident wid wt out rc recorded_alive=0 wtc path pathc p holders anc self_chain comm rf
+  local meta=$2 lib sock spid sident wid wt out rc recorded_alive=0 wtc path pathc p holders anc self_chain comm rf scan_budget
   lib=${BASH_SOURCE[0]}
   # shellcheck source=bin/fm-timeout-lib.sh
   command -v fm_run_timed >/dev/null 2>&1 || . "${lib%/*}/fm-timeout-lib.sh"
@@ -537,7 +537,9 @@ EOF
   fi
   # The scan runs from / so its own processes are never holders.
   # shellcheck disable=SC2016 # expanded by the child shell
-  holders=$(cd / && fm_run_timed "${FM_CONTROL_CWD_SCAN_BUDGET:-20}" bash -c '. "${1%/*}/fm-bash-compat-lib.sh"; . "$1"; fm_control_pids_with_cwd_under "$2"' _ \
+  scan_budget=${FM_CONTROL_CWD_SCAN_BUDGET:-20}
+  case "$scan_budget" in '' | *[!0-9]* | 0) scan_budget=20 ;; esac
+  holders=$(cd / && fm_run_timed "$scan_budget" bash -c '. "${1%/*}/fm-bash-compat-lib.sh"; . "$1"; fm_control_pids_with_cwd_under "$2"' _ \
     "$lib" "$wt" 2>/dev/null) \
     || { printf 'unproven\tthe working-directory scan of the task'"'"'s copy could not finish'; return 0; }
   # The firstmate control scripts running this proof may sit in the copy.

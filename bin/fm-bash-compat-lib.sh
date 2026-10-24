@@ -11,8 +11,8 @@
 #
 # Sourcing this file applies the gate once to the sourcing shell: on an
 # affected runtime it sets BASH_COMPAT=50 in that shell only and never exports
-# it, so worker panes, projects and child shells are untouched (the supervision,
-# steering and control entry points source this themselves, directly or through
+# it, so worker panes, projects and child shells are untouched (the supervision
+# and steering entry points source this themselves, directly or through
 # a library, and tests/fm-bash-compat.test.sh pins them; lab, install and CI
 # tools may not); on every other runtime it changes nothing, including an
 # inherited BASH_COMPAT.

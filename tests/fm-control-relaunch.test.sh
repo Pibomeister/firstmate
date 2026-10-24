@@ -190,6 +190,7 @@ case "${1:-}" in
     done
     printf '%s\n' "$name" >> "$D/windows"
     printf '%s\n' "$name" >> "$D/created-windows"
+    printf '%s\n' "$SOCK" >> "$D/created-sockets"
     printf '@9\n'
     exit 0 ;;
 esac
@@ -2498,7 +2499,8 @@ test_tmux_reclaims_a_lost_server_from_its_record() {
   out=$(FM_FAKE_TMUX_SOCKET="$sock" FM_FAKE_TMUX_SERVER_PID=$$ run_spawn "$dir" rl64 --relaunch --harness claude); rc=$?
   expect_code 0 "$rc" "relaunch must reclaim a task whose recorded tmux server is gone"$'\n'"$out"
   assert_contains "$(cat "$dir/fake/created-sessions" 2>/dev/null)" "fmses" "the recorded session must be re-created"
-  assert_contains "$(cat "$dir/fake/created-windows" 2>/dev/null)" "fm-rl64" "exactly the task's window must be re-created"
+  [ "$(grep -c '^fm-rl64$' "$dir/fake/created-windows" 2>/dev/null)" = 1 ] \
+    || fail "exactly the task's window must be re-created once, got: $(cat "$dir/fake/created-windows" 2>/dev/null)"
   [ "$(sort -u "$dir/fake/created-sockets" 2>/dev/null)" = "$sock" ] \
     || fail "the reclaim must create its session on the recorded socket, got: $(cat "$dir/fake/created-sockets" 2>/dev/null)"
   [ "$(meta_field "$dir" rl64 window)" = "fmses:fm-rl64" ] || fail "the record must rebind to the new window"
@@ -2511,6 +2513,10 @@ test_tmux_reclaims_a_lost_server_from_its_record() {
     /nonexistent/tmux-other/default "$dead" "a server that has exited" @3 >> "$dir/home/state/rl65.meta"
   strand_endpoint "$dir" rl65
   : > "$dir/fake/server-dead"
+  out=$(run_control "$dir" rl65 exit); rc=$?
+  expect_code 1 "$rc" "exit from a seat on another tmux server must refuse"$'\n'"$out"
+  assert_contains "$out" "never acts on another tmux server" "the exit refusal must say why"
+  [ ! -s "$dir/fake/literal" ] || fail "a refused exit must send nothing to the other server"
   out=$(run_spawn "$dir" rl65 --relaunch --harness claude); rc=$?
   expect_code 1 "$rc" "a reclaim from a seat on another tmux server must refuse"$'\n'"$out"
   assert_contains "$out" "never moves a task to another tmux server" "the refusal must say why"
