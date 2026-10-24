@@ -820,6 +820,7 @@ test_secondmate_marked_request_reporting_contract() {
     "secondmate charter did not require prompt correlated dispatch"
   assert_grep 'include that exact token in your same-turn parent status answer' "$brief" \
     "secondmate answer did not identify the marked request"
+  # shellcheck disable=SC2016 # Backticks are literal generated brief text.
   assert_grep 'For new work, make that answer a dispatch report naming the crew task: `working [corr=<id>] [key=<work-slug>] [at=<epoch>]: dispatched <crew task>`.' "$brief" \
     "secondmate dispatch did not identify its crew task"
   assert_grep "The pending-reply guard closes on that dispatch answer; report the crew's finished deliverable separately when it lands." "$brief" \
