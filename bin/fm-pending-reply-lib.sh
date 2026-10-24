@@ -949,7 +949,7 @@ fm_pending_reply_recovery_message() {  # <record-path>
 fm_pending_reply_send_recovery() {  # <state-dir> <corr_id>
   local state=$1 corr=$2
   local rec phase completed delivered attempted grace now age task_id msg parent_home send_status=0
-  local sender_pid sender_identity status_file lock
+  local sender_pid sender_identity status_file lock budget
   local STATE FM_WAKE_QUEUE FM_WAKE_QUEUE_LOCK
   rec=$(fm_pending_reply_path "$state" "$corr")
   [ -f "$rec" ] || return 1
@@ -997,7 +997,9 @@ fm_pending_reply_send_recovery() {  # <state-dir> <corr_id>
   . "$_FM_PENDING_REPLY_LIB_DIR/fm-wake-lib.sh"
   # The phase is re-read after the resolve attempt, whatever it returned: a
   # resolve that failed on a later field write has still committed resolved.
-  fm_lock_acquire_wait "$lock" || return 1
+  # Bounded: a live process wedged on this correlation's lock skips the attempt
+  # for this cycle instead of stalling the watcher that runs it.
+  fm_lock_acquire_wait_bounded "$lock" 10 || return 1
   if _fm_pending_reply_try_resolve_locked "$state" "$corr" "$status_file" \
     || [ "$(fm_pending_reply_get "$rec" phase)" != awaiting_report ] \
     || ! fm_pending_reply_set "$rec" recovery_sender_pid "$sender_pid" \
@@ -1008,23 +1010,34 @@ fm_pending_reply_send_recovery() {  # <state-dir> <corr_id>
     return 1
   fi
   fm_lock_release "$lock"
+  # The send is bounded by FM_PENDING_REPLY_SEND_BUDGET seconds (default 120,
+  # above the send's own lock wait and doorbell bounds) so a hung send can never
+  # stall the watcher that runs this. A send stopped at the bound may already
+  # have enqueued, so its outcome is unknown and reconciled as such, never
+  # recorded as failed (which would invite a duplicate repost).
+  budget=${FM_PENDING_REPLY_SEND_BUDGET:-120}
+  case "$budget" in '' | *[!0-9]* | 0) budget=120 ;; esac
+  command -v fm_run_timed >/dev/null 2>&1 || . "$_FM_PENDING_REPLY_LIB_DIR/fm-timeout-lib.sh"
   if [ -n "${FM_PENDING_REPLY_SEND_HOOK:-}" ]; then
     # Hook receives: task_id message
     # shellcheck disable=SC2086
-    if ! eval "$FM_PENDING_REPLY_SEND_HOOK" "$(printf '%q' "$task_id")" "$(printf '%q' "$msg")"; then
-      send_status=1
-    fi
+    fm_run_timed_fn "$budget" eval "$FM_PENDING_REPLY_SEND_HOOK" "$(printf '%q' "$task_id")" "$(printf '%q' "$msg")" \
+      || send_status=$?
   else
     if [ -z "$parent_home" ] || [ ! -d "$parent_home" ]; then
       send_status=1
-    elif ! env FM_HOME="$parent_home" FM_PENDING_REPLY_EXISTING_CORR="$corr" \
-      "$_FM_PENDING_REPLY_LIB_DIR/fm-send.sh" "$task_id" "$msg"; then
-      send_status=1
+    else
+      fm_run_timed "$budget" env FM_HOME="$parent_home" FM_PENDING_REPLY_EXISTING_CORR="$corr" \
+        "$_FM_PENDING_REPLY_LIB_DIR/fm-send.sh" "$task_id" "$msg" || send_status=$?
     fi
   fi
   if [ "$send_status" = 0 ]; then
     fm_pending_reply_finish_recovery "$state" "$corr" confirmed
     return $?
+  fi
+  if fm_timed_out "$send_status"; then
+    fm_pending_reply_finish_recovery "$state" "$corr" unknown || return 1
+    return 1
   fi
   fm_pending_reply_finish_recovery "$state" "$corr" failed || return 1
   return 1
@@ -1047,7 +1060,7 @@ fm_pending_reply_sender_alive() {  # <record-path>
   [ "$actual" = "$expected" ]
 }
 
-fm_pending_reply_finish_recovery() {  # <state-dir> <corr_id> <confirmed|failed>
+fm_pending_reply_finish_recovery() {  # <state-dir> <corr_id> <confirmed|failed|unknown>
   local state=$1 corr=$2 outcome=$3 rec phase now sent
   rec=$(fm_pending_reply_path "$state" "$corr")
   [ -f "$rec" ] || return 1
@@ -1063,6 +1076,8 @@ fm_pending_reply_finish_recovery() {  # <state-dir> <corr_id> <confirmed|failed>
     fm_pending_reply_set "$rec" recovery_turn_seen_busy 0 || return 1
     fm_pending_reply_set "$rec" recovery_turn_completed_epoch "" || return 1
     fm_pending_reply_set "$rec" phase recovery_sent || return 1
+  elif [ "$outcome" = unknown ]; then
+    fm_pending_reply_set "$rec" phase recovery_unknown || return 1
   else
     [ "$outcome" = failed ] || return 1
     fm_pending_reply_set "$rec" phase recovery_failed || return 1

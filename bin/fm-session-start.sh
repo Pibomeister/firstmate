@@ -687,6 +687,10 @@ if [ "$REEMIT" -eq 1 ]; then
 else
   section "SESSION START - $FM_HOME"
 fi
+# Before any lock or role work, and once: bootstrap below skips its copy of
+# this check (bin/fm-bash-compat-lib.sh owns it).
+fm_bash_heredoc_startup_warnings
+export FM_BASH_HEREDOC_WARNED=1
 # --- 1. lock -----------------------------------------------------------
 stage lock
 subsection "LOCK"

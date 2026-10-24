@@ -44,6 +44,8 @@
 # The sibling directory is derived without forking dirname, because a backend
 # probe can re-source this adapter inside a subshell on every watcher cycle.
 _FM_TMUX_LIB_DIR=${BASH_SOURCE[0]%/*}
+# shellcheck source=bin/fm-bash-compat-lib.sh
+. "$_FM_TMUX_LIB_DIR/fm-bash-compat-lib.sh"
 [ "$_FM_TMUX_LIB_DIR" != "${BASH_SOURCE[0]}" ] || _FM_TMUX_LIB_DIR=.
 # shellcheck source=bin/fm-composer-lib.sh
 . "${_FM_TMUX_LIB_DIR:-/}/fm-composer-lib.sh"

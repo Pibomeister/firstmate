@@ -93,6 +93,7 @@ build_remote_root() {
   local root=$1
   mkdir -p "$root/bin"
   cp "$ROOT/bin/fm-remote-job-lib.sh" "$ROOT/bin/fm-remote-job-worker.sh" "$root/bin/"
+  cp "$ROOT/bin/fm-bash-compat-lib.sh" "$ROOT/bin/fm-remote-job-worker.sh" "$root/bin/"
   chmod +x "$root/bin"/*.sh
   printf 'fixture\n' > "$root/AGENTS.md"
   git -C "$root" init -q -b main

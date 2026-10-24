@@ -265,6 +265,7 @@ kill "$host_pid" 2>/dev/null
 wait "$host_pid" 2>/dev/null
 mkdir -p "$C/mate/config" "$C/mate/bin"
 cp "$ROOT/bin/fm-supervision-engine-lib.sh" "$C/mate/bin/"
+cp "$ROOT/bin/fm-bash-compat-lib.sh" "$C/mate/bin/"
 run_check "$C"
 expect_code 1 "$CHECK_RC" "off readiness refuses a mate without its inherited flag"
 assert_contains "$CHECK_OUT" "fail mate: the inherited supervision-host-off flag is missing" "mate names the missing opt-out"

@@ -118,6 +118,8 @@ unset _extra
 export PATH
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=bin/fm-bash-compat-lib.sh
+. "$SELF_DIR/fm-bash-compat-lib.sh"
 FM_ROOT="$(cd "$SELF_DIR/.." && pwd)"
 FM_HOME="${FM_HOME:-$FM_ROOT}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
@@ -344,7 +346,7 @@ announce_note() {  # <id> <summary>
     return 1
   fi
   load_wake_lib || return 1
-  fm_lock_acquire_wait "$FM_WAKE_QUEUE_LOCK" || return 1
+  fm_wake_queue_lock_acquire || return 1
   if note_announced "$id"; then
     fm_lock_release "$FM_WAKE_QUEUE_LOCK"
     return 0

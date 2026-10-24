@@ -228,13 +228,13 @@ That refusal has a ceiling.
 Once the live holder's beacon is stale past `FM_WATCHER_STALL_BOUND` (default three times the grace), the re-arm takes these steps:
 
 1. It re-verifies the holder against the lock's recorded identity.
-2. It retires the holder with TERM.
+2. It stops the holder and everything the holder started: TERM, then KILL after 5 s.
 3. It starts in the holder's place.
 
 A watcher wedged mid-cycle can therefore no longer refuse every replacement indefinitely.
-`bin/fm-watch.sh`'s header owns the exact wording and the survives-TERM fallback.
+`bin/fm-watch.sh`'s header owns the exact wording and what happens to a holder still alive after that.
 Below that bound a stale beacon alone does not end an attached arm's watch of a live, identity-matched holder; a changed lock can end it sooner.
-At the bound the arm reports a typed stalled-holder failure so its owner's retry can replace the holder.
+At the bound the arm, whether it attached to the holder or started it, reports a typed stalled-holder failure so its owner's retry can replace the holder; an arm that started it stops it first.
 `fm_watcher_stall_bound` in `bin/fm-wake-lib.sh` owns the shared derivation; `bin/fm-watch-arm.sh`'s header owns the exact attached-arm close behavior.
 
 The auto-arm hook additionally exports its resolved `FM_GUARD_GRACE` when it forks `bin/fm-watch-arm.sh`.

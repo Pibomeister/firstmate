@@ -287,6 +287,65 @@ test_healthy_recovery_rearms_next_stale_episode() {
   pass "fm-guard stale banner: healthy recovery rearms the next stale episode"
 }
 
+# A long episode keeps resurfacing: the full banner prints again once its last
+# full print is older than the re-surface bound, and both banner and reminder
+# state the episode's age and the stage the lock-holding watcher last recorded.
+test_long_episode_resurfaces_with_age_and_stage() {
+  local dir home out1 out2 out3 pid
+  dir=$(make_guard_case resurface)
+  home=$(case_home "$dir")
+  sleep 60 &
+  pid=$!
+  record_live_watcher "$dir" "$pid" || fail "could not record the live watcher"
+  printf '%s\t%s\t%s\n' "$pid" "$(( $(date +%s) - 40 ))" pending-reply > "$home/state/.watcher-stage"
+  out1=$(FM_GUARD_BANNER_RESURFACE_SECS=3 run_guard_case "$dir")
+  out2=$(FM_GUARD_BANNER_RESURFACE_SECS=3 run_guard_case "$dir")
+  sleep 4
+  out3=$(FM_GUARD_BANNER_RESURFACE_SECS=3 run_guard_case "$dir")
+  kill "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  [ "$(count_text "$out1" "WATCHER DOWN - SUPERVISION IS OFF")" -eq 1 ] || fail "the first call must print the full banner: $out1"
+  assert_contains "$out1" "last recorded stage pending-reply" "the banner must name the stalled watcher's last stage"
+  assert_contains "$out1" "down " "the banner must state the episode age"
+  [ "$(count_text "$out2" "WATCHER DOWN - SUPERVISION IS OFF")" -eq 0 ] || fail "inside the re-surface bound only the reminder prints: $out2"
+  assert_contains "$out2" "last recorded stage pending-reply" "the reminder must name the stalled watcher's last stage"
+  [ "$(count_text "$out3" "WATCHER DOWN - SUPERVISION IS OFF")" -eq 1 ] \
+    || fail "past the re-surface bound the full banner must print again: $out3"
+  [ "$(awk 'END { print NR + 0 }' "$home/state/.guard-watcher-stale-banner")" -le 1 ] \
+    || fail "the episode marker must stay one line"
+  pass "fm-guard stale banner: a long episode resurfaces in full, with its age and the watcher's last stage"
+}
+
+# A watcher that beats but keeps skipping work behind one held lock is an outage
+# the beacon cannot show: past the stall bound the guard reports it, naming the
+# lock and its holder; a younger deferral stays silent.
+test_blocked_watcher_is_reported_past_the_stall_bound() {
+  local dir home pid holder out first
+  dir=$(make_guard_case blocked)
+  home=$(case_home "$dir")
+  sleep 60 &
+  pid=$!
+  sleep 60 &
+  holder=$!
+  record_live_watcher "$dir" "$pid" || fail "could not record the live watcher"
+  touch "$home/state/.last-watcher-beat"
+  first=$(( $(date +%s) - 20 ))
+  printf '%s\t%s\t%s\t%s\n' "$pid" "$first" wake-queue "$holder" > "$home/state/.watcher-deferral.wake-queue"
+  out=$(FM_WATCHER_STALL_BOUND=60 run_guard_case "$dir")
+  [ -z "$out" ] || fail "a deferral younger than the stall bound must stay silent: $out"
+  first=$(( $(date +%s) - 120 ))
+  printf '%s\t%s\t%s\t%s\n' "$pid" "$first" wake-queue "$holder" > "$home/state/.watcher-deferral.wake-queue"
+  out=$(FM_WATCHER_STALL_BOUND=60 run_guard_case "$dir")
+  assert_contains "$out" "WATCHER BLOCKED" "a watcher deferring past the stall bound must be reported"
+  assert_contains "$out" "wake-queue work" "the report must name the skipped work"
+  assert_contains "$out" "pid $holder" "the report must name the lock holder"
+  out=$(FM_WATCHER_STALL_BOUND=60 run_guard_case "$dir")
+  assert_contains "$out" "watcher still blocked" "a repeated call inside the episode prints the reminder"
+  kill "$pid" "$holder" 2>/dev/null || true
+  wait "$pid" "$holder" 2>/dev/null || true
+  pass "fm-guard: a beating watcher that keeps deferring behind a held lock is reported past the stall bound"
+}
+
 test_concurrent_same_episode_prints_one_full_banner() {
   local dir out_dir i pids pid all full reminders
   dir=$(make_guard_case concurrent-stale)
@@ -945,6 +1004,8 @@ test_pi_harness_routes_itself_to_the_extension_model() {
 test_first_stale_call_prints_full_banner
 test_full_banner_names_quiet_mode_when_active
 test_repeated_same_episode_prints_reminder_only
+test_long_episode_resurfaces_with_age_and_stage
+test_blocked_watcher_is_reported_past_the_stall_bound
 test_pi_harness_routes_itself_to_the_extension_model
 test_extension_handoff_with_live_session_is_healthy
 test_extension_handoff_with_empty_lock_is_healthy

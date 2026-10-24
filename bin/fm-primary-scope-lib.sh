@@ -6,6 +6,8 @@
 # identity before its gitignored state dir exists, such as to create it.
 
 # Return 0 when $1 carries a genuine secondmate-home marker.
+# shellcheck source=bin/fm-bash-compat-lib.sh
+. "$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd "${d:-/}" && pwd)/fm-bash-compat-lib.sh"
 fm_root_is_secondmate_home() {
   local marker="$1/.fm-secondmate-home" id LC_ALL=C
   [ -L "$marker" ] && return 1

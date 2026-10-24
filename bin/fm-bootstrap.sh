@@ -1482,6 +1482,7 @@ fi
 # Local detection: presence, version floors, and configuration. Nothing here
 # leaves this machine, so it stays on the session-start critical path.
 detect_local_tools() {
+  [ "${FM_BASH_HEREDOC_WARNED:-}" = 1 ] || fm_bash_heredoc_startup_warnings
   if [ "$BACKEND_VALID" -eq 0 ]; then
     echo "BACKEND_INVALID: $BACKEND (known: $FM_BACKEND_KNOWN)"
   fi

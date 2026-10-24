@@ -28,6 +28,8 @@
 # and the pointer it creates are additions, and AGENTS.md section 6 bounds
 # crewmate edits of project memory files to correcting the wrong text only.
 # Usage: fm-ensure-agents-md.sh [repo-or-worktree-dir]
+# shellcheck source=bin/fm-bash-compat-lib.sh
+. "$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd "${d:-/}" && pwd)/fm-bash-compat-lib.sh"
 set -eu
 
 usage() {

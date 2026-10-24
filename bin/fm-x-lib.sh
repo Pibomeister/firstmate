@@ -50,6 +50,8 @@
 # Callers must have FM_HOME set before calling fmx_load_config.
 
 _FM_X_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=bin/fm-bash-compat-lib.sh
+. "$_FM_X_LIB_DIR/fm-bash-compat-lib.sh"
 if ! command -v fm_backlog_atomic_transition >/dev/null 2>&1; then
   # shellcheck source=bin/fm-tasks-axi-lib.sh
   . "$_FM_X_LIB_DIR/fm-tasks-axi-lib.sh"

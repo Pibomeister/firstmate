@@ -718,6 +718,37 @@ busy_case() {
   printf '%s' "$dir"
 }
 
+# The escalation names the pane state it actually read: a harness whose busy
+# state is unverified (Codex reads `unknown codex-unverified`) is never reported
+# as an idle pane, a confirmed idle pane still is, and a busy one is deferred.
+test_escalation_names_the_pane_state_it_read() {
+  local dir rec q harness
+  for harness in codex grok; do
+    dir=$(setup_watch_case "verdict-$harness")
+    fm_write_meta "$dir/state/t1.meta" "window=sess:fm-t1" "kind=ship" "harness=$harness"
+    rec=$(inbox_lib "$dir/state" fm_task_inbox_write "$dir/state" t1 "please rebase")
+    age_path "$rec"
+    PATH="$dir/fakebin:$PATH" FM_STATE_OVERRIDE="$dir/state" FM_SEND_LOG="$dir/send.log" \
+      FM_FAKE_TMUX_CAPTURE="$(idle_capture "$dir")" FM_TASK_INBOX_GRACE_SECS=0 FM_TASK_INBOX_RING_MAX=0 \
+      bash -c '. "$1" && inbox_steer_check sess:fm-t1 t1' _ "$WATCH" > "$dir/check.out" 2>&1
+    q=$(cat "$dir/state/.wake-queue" 2>/dev/null)
+    case "$harness" in
+      codex)
+        assert_contains "$q" "while its pane state is unknown (codex-unverified)" \
+          "an unverified Codex pane must escalate as unknown with its source"
+        case "$q" in *"idle pane"*) fail "an unverified Codex pane was reported idle: $q" ;; esac
+        ;;
+      grok)
+        assert_contains "$q" "with an idle pane" "a confirmed idle pane must still escalate as idle"
+        ;;
+    esac
+  done
+  dir=$(busy_case verdict-busy)
+  busy_steer_check "$dir"
+  [ ! -s "$dir/state/.wake-queue" ] || fail "a confirmed busy pane must be deferred, not escalated: $(cat "$dir/state/.wake-queue") $(cat "$dir/check.out")"
+  pass "watcher: an unread-steer escalation says unknown for an unverified pane, idle only when idle, and waits on busy"
+}
+
 test_watcher_waits_on_busy_pane() {
   local dir wakes
   dir=$(busy_case busywait)
@@ -1498,6 +1529,7 @@ test_fire_and_forget_retry_is_owed_once
 test_fire_and_forget_retry_is_quiet_without_the_flag
 test_ring_ladder_policy
 test_watcher_rerings_idle_pane_quietly
+test_escalation_names_the_pane_state_it_read
 test_watcher_waits_on_busy_pane
 test_watcher_busy_secondmate_unread_inbox_names_immediate_recovery
 test_watcher_busy_budget_resets_on_ring_and_ack

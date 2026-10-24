@@ -182,9 +182,10 @@
 # past the grace (FM_WATCHER_STALE_GRACE, default max(300, FM_POLL+60)) is
 # refused with "lock held by live pid ... but heartbeat is stale"; one stale past
 # the hard bound FM_WATCHER_STALL_BOUND (default 3x that grace) is instead
-# evicted with TERM after its recorded identity is re-verified, and this arm
-# starts in its place, printing "watcher: replaced stalled pid <N> (...)". A
-# holder that survives TERM keeps the refusal and the nonzero exit.
+# stopped with everything it started (TERM, then KILL after 5 s) after its
+# recorded identity is re-verified, and this arm starts in its place, printing
+# "watcher: replaced stalled pid <N> (...)". A holder that is still alive after
+# that keeps the refusal and the nonzero exit.
 # Once per poll the watcher also checks that its home (when it existed at
 # start), its state directory, and its own bin directory still exist; when one
 # is gone it logs "watcher: exiting - <what> no longer exists: <path>" to stderr
@@ -391,6 +392,10 @@ STALE_ESCALATE_SECS=${FM_STALE_ESCALATE_SECS:-240}  # idle secs before a provabl
 # that stops answering costs a poll at most this long (parked_gate_away_read).
 PARKED_GATE_READ_TIMEOUT=${FM_PARKED_GATE_READ_TIMEOUT:-}
 case "$PARKED_GATE_READ_TIMEOUT" in ''|*[!0-9]*|0) PARKED_GATE_READ_TIMEOUT=10 ;; esac
+# Bound for a poll-loop lock wait other than the wake queue, whose own owner
+# (fm_wake_queue_lock_acquire) carries its bound; a timeout defers that work.
+WATCH_LOCK_WAIT=${FM_WATCH_LOCK_WAIT:-}
+case "$WATCH_LOCK_WAIT" in ''|*[!0-9]*|0) WATCH_LOCK_WAIT=10 ;; esac
 # A busy pane is unconditional proof of liveness with no built-in duration bound,
 # so a hung foreground call can remain hidden even while its rendered busy
 # footer changes every poll. BUSY_TURN_MAX_SECS bounds how long any busy pane
@@ -497,6 +502,9 @@ hash_pane() {
 # into the contract's harness-scoped rendered-text checks: the Grok/Rovo/AGY
 # busy fallbacks and the launch-prompt backstop that keeps a launch pinned at
 # its fm-spawn seed from reading as provably working.
+# WINDOW_BUSY_VERDICT keeps the full verdict the last call read (for example
+# `idle`, or `unknown codex-unverified`), so a caller can say what it saw.
+WINDOW_BUSY_VERDICT=
 window_is_busy() {  # <window> <tail40>
   local w=$1 tail40=$2 task meta verdict
   task=$(window_to_task "$w" "$STATE")
@@ -507,6 +515,7 @@ window_is_busy() {  # <window> <tail40>
     verdict=$(fm_busy_classify "$(window_backend "$w")" "$w" "$(window_harness "$w")" \
       "${task:-unknown}" "$STATE" "$tail40")
   fi
+  WINDOW_BUSY_VERDICT=$verdict
   [ "${verdict%% *}" = busy ]
 }
 
@@ -672,7 +681,12 @@ inbox_steer_check() {  # <window> <task>
       triage_log "steer-inbox retry ring: $task ${rec##*/} result=$ring_rc"
       ;;
     escalate)
-      reason=${reason:-"stale: $w (unread firstmate instruction: $rec still unhandled after $count doorbell delivery attempts with an idle pane; $(inbox_steer_recovery_action "$w" "$task"))"}
+      # Name the pane state actually read: "idle" only for an idle verdict, so
+      # a harness whose busy state cannot be read is never reported idle.
+      case "$WINDOW_BUSY_VERDICT" in
+        unknown*) reason=${reason:-"stale: $w (unread firstmate instruction: $rec still unhandled after $count doorbell delivery attempts while its pane state is unknown (${WINDOW_BUSY_VERDICT#unknown }); $(inbox_steer_recovery_action "$w" "$task"))"} ;;
+        *) reason=${reason:-"stale: $w (unread firstmate instruction: $rec still unhandled after $count doorbell delivery attempts with an idle pane; $(inbox_steer_recovery_action "$w" "$task"))"} ;;
+      esac
       if [ ! -d "${rec%/*}" ] || [ ! -f "$rec" ]; then
         fm_task_inbox_due_action "$STATE" "$task" >/dev/null || true
         return 0
@@ -1415,7 +1429,7 @@ _wedge_cap_marker_stands() {
 _wedge_cap_terminal_append() {
   local _win=$1 _wkey=$2 _reason=$3 _status=0 _queued _degraded=0 _had=0 _now
   _queued="$STATE/.wedge-terminal-queued-$_wkey"
-  fm_lock_acquire_wait "$FM_WAKE_QUEUE_LOCK" || return 4
+  fm_wake_queue_lock_acquire || return 4
   if [ -e "$_queued" ]; then
     _had=1
   elif ! { fm_watch_now _now; printf '%s\n' "$_now" > "$_queued"; } 2>/dev/null; then
@@ -2408,7 +2422,7 @@ pause_state_class() {  # <window> <task>
   recheck_file="$STATE/.paused-rechecked-$key"
   if ! status_is_paused_or_captain_held "$last"; then
     rm -f "$recheck_file"
-    PAUSE_CREW_LINE=$(crew_state_line "$task")
+    PAUSE_CREW_LINE=$(crew_state_line "$task" "$PARKED_GATE_READ_TIMEOUT")
     PAUSE_CLASS=$(crew_line_absorb_class "$PAUSE_CREW_LINE")
     return 0
   fi
@@ -2427,7 +2441,7 @@ pause_state_class() {  # <window> <task>
     PAUSE_CLASS=paused
     return 0
   fi
-  PAUSE_CREW_LINE=$(crew_state_line "$task")
+  PAUSE_CREW_LINE=$(crew_state_line "$task" "$PARKED_GATE_READ_TIMEOUT")
   PAUSE_CLASS=$(crew_line_absorb_class "$PAUSE_CREW_LINE")
   if [ "$PAUSE_CLASS" = working ]; then
     rm -f "$recheck_file"
@@ -2911,11 +2925,46 @@ procevent_surface_after_output() {
   return "$status"
 }
 
+# watch_stage <name>: record which part of its poll this watcher is in, as one
+# line "<pid>\t<epoch>\t<stage>" in state/.watcher-stage, so the guard's
+# watcher-down banner can name where a stalled watcher stopped (bin/fm-guard.sh).
+watch_stage() {  # <name>
+  local now
+  fm_watch_now now
+  printf '%s\t%s\t%s\n' "$$" "$now" "$1" > "$STATE/.watcher-stage" 2>/dev/null || true
+}
+
+# watch_lock_deferred <name> <holder-pid>: this cycle skipped work behind a
+# lock a live process held past its bound. That work advances its durable state
+# only after it holds the lock, so a later cycle simply redoes it. The record
+# state/.watcher-deferral.<name> keeps the first consecutive deferral's epoch
+# for this watcher, which bin/fm-guard.sh reports as an outage once it outlives
+# the stall bound; watch_lock_acquired clears it.
+watch_lock_deferred() {  # <name> <holder-pid>
+  local name=$1 holder=${2:-} file now owner first=
+  file="$STATE/.watcher-deferral.$name"
+  fm_watch_now now
+  if [ -f "$file" ]; then
+    IFS=$'\t' read -r owner first _ < "$file" 2>/dev/null || first=
+    [ "${owner:-}" = "$$" ] || first=
+  fi
+  printf '%s\t%s\t%s\t%s\n' "$$" "${first:-$now}" "$name" "$holder" > "$file" 2>/dev/null || true
+  triage_log "deferred $name work this cycle: its lock is held by $(fm_lock_holder_name "$holder") past its bound"
+}
+
+watch_lock_acquired() {  # <name>
+  rm -f "$STATE/.watcher-deferral.$1" 2>/dev/null || true
+}
+
 procevent_surface_queued() {
   local key reason captured="" stranded="" unstarted=""
   PROCEVENT_SURFACED=
   [ -s "$FM_WAKE_QUEUE" ] || return 0
-  fm_lock_acquire_wait "$FM_WAKE_QUEUE_LOCK"
+  if ! fm_wake_queue_lock_acquire; then
+    watch_lock_deferred wake-queue "${FM_LOCK_HELD_PID:-}"
+    return 0
+  fi
+  watch_lock_acquired wake-queue
   while IFS= read -r key; do
     case "$key" in procevent:*) ;; *) continue ;; esac
     [ -e "$(procevent_surfaced_marker "$key")" ] && continue
@@ -3308,16 +3357,15 @@ fi
 # WATCHER_STALL_BOUND. The pid is signalled only while it still proves the
 # lock's own recorded identity (fm_watcher_lock_matches_pid: this home, this
 # script, and the starttime+cmdline proof the lock carries), so a recycled pid
-# is never touched; TERM only, never KILL, and never a name or pattern match.
-# Succeeds only once the holder has exited within the bounded wait.
+# is never touched, and never through a name or pattern match. The holder and
+# everything it started are stopped together (fm_watcher_stop_tree): TERM, then
+# KILL after 5 s, because a holder wedged in a blocking write never runs its
+# TERM trap, and a helper it leaves behind can keep a home-wide lock.
+# Succeeds only once the holder has exited.
 evict_stalled_holder() {
-  local pid=$1 i=0
+  local pid=$1
   fm_watcher_lock_matches_pid "$STATE" "$WATCH_PATH" "$pid" "$FM_HOME" || return 1
-  kill -TERM "$pid" 2>/dev/null || return 1
-  while [ "$i" -lt 50 ] && fm_pid_alive "$pid"; do
-    sleep 0.1
-    i=$((i + 1))
-  done
+  fm_watcher_stop_tree "$pid" "$(fm_pid_identity "$pid" 2>/dev/null)" 5 || true
   ! fm_pid_alive "$pid"
 }
 
@@ -3514,9 +3562,22 @@ rerecord_device_shifted_pr_poll() {  # <id>
   local id=$1
   fm_pr_poll_registration_device_shifted "$STATE" "$id" "$SCRIPT_DIR/fm-pr-poll.sh" || return 1
   PR_POLL_CONTROL_LOCK="$STATE/.control-$id.lock"
-  fm_lock_acquire_wait "$PR_POLL_CONTROL_LOCK" || exit 1
+  if ! fm_lock_acquire_wait_bounded "$PR_POLL_CONTROL_LOCK" "$WATCH_LOCK_WAIT"; then
+    PR_POLL_CONTROL_LOCK=
+    watch_lock_deferred "pr-poll-control-$id" "${FM_LOCK_HELD_PID:-}"
+    PR_POLL_LOCK_DEFERRED=1
+    return 1
+  fi
   PR_POLL_PUBLISH_LOCK="$STATE/.pr-poll-publish-$id.lock"
-  fm_lock_acquire_wait "$PR_POLL_PUBLISH_LOCK" || exit 1
+  if ! fm_lock_acquire_wait_bounded "$PR_POLL_PUBLISH_LOCK" "$WATCH_LOCK_WAIT"; then
+    PR_POLL_PUBLISH_LOCK=
+    pr_poll_control_release || exit 1
+    watch_lock_deferred "pr-poll-publish-$id" "${FM_LOCK_HELD_PID:-}"
+    PR_POLL_LOCK_DEFERRED=1
+    return 1
+  fi
+  watch_lock_acquired "pr-poll-control-$id"
+  watch_lock_acquired "pr-poll-publish-$id"
   if fm_pr_poll_registration_rerecord_device "$STATE" "$id" "$SCRIPT_DIR/fm-pr-poll.sh"; then
     triage_log "re-recorded PR poll identity for $id after its state volume device number changed"
   else
@@ -3535,10 +3596,17 @@ resurface_after_downtime() {
     return 0
   fi
   if [ "$WATCHER_RECOVERY_PENDING" -ne 1 ]; then
-    if ! fm_recovery_marker_arm_check "$WATCHER_DOWNTIME_MARKER"; then
+    local arm_rc=0
+    fm_recovery_marker_arm_check "$WATCHER_DOWNTIME_MARKER" || arm_rc=$?
+    if [ "$arm_rc" -eq 124 ]; then
+      # Only reads the marker: a wake-queue lock held past its bound defers it.
+      watch_lock_deferred wake-queue "${FM_LOCK_HELD_PID:-}"
+      return 0
+    elif [ "$arm_rc" -ne 0 ]; then
       echo "watcher: recovery state could not be consumed safely" >&2
       exit 1
     fi
+    watch_lock_acquired wake-queue
     [ "$FM_RECOVERY_MARKER_ACTION" = recover ] || return 0
   fi
   wake "check: rearm-resurface"
@@ -3604,6 +3672,7 @@ while :; do
   # parent reports, observe backend busy/idle turn completion, send one recovery
   # repost after grace, and escalate once if the recovery turn is also missed.
   # No conversation scraping; unresolved records are never silently expired.
+  watch_stage pending-reply
   fm_pending_reply_tick "$STATE" || true
 
   # Endpoint liveness runs before queue observation: a positively dead or
@@ -3611,6 +3680,7 @@ while :; do
   # is also what unsticks that mate's foreign wake queue. The tick's single
   # wake exits the cycle like every other wake, so its marker is stamped before
   # any relaunch and the restarted watcher will not re-probe early.
+  watch_stage secondmate-liveness
   secondmate_liveness_tick || {
     echo "watcher: secondmate liveness check failed" >&2
     exit 1
@@ -3619,6 +3689,7 @@ while :; do
   # A live secondmate endpoint does not prove that its own wake loop is alive.
   # Observe the foreign queue before the rest of this cycle so an aged row wakes
   # the parent without consuming or rewriting the receiving home's record.
+  watch_stage secondmate-wake-loop
   secondmate_wake_stall_tick || {
     echo "watcher: secondmate wake-loop observation failed" >&2
     exit 1
@@ -3628,6 +3699,7 @@ while :; do
   # each registered source has its own child blocking on that source, and this
   # only republishes results already captured durably and restarts a source
   # whose owner is gone. It is a no-op with nothing registered.
+  watch_stage process-events
   if [ -d "$STATE/procevent" ]; then
     FM_HOME="$FM_HOME" "$SCRIPT_DIR/fm-procevent.sh" reconcile >/dev/null 2>&1 || true
   fi
@@ -3637,11 +3709,13 @@ while :; do
 
   # A process-event result carries richer adapter-owned wake context than the
   # generic recovery reason, so give that owner first refusal.
+  watch_stage recovery-marker
   resurface_after_downtime
 
   # The existing poll loop also owns the bounded inactive-outcome cadence.
   # This is mechanical and silent unless a durable terminal-outcome obligation
   # was created, so quiet cycles never wake firstmate or consume model tokens.
+  watch_stage inactive-outcomes
   inactive_out=
   if inactive_out=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
     "$SCRIPT_DIR/fm-inactive-reconcile.sh" scan 2>/dev/null); then
@@ -3659,6 +3733,7 @@ while :; do
   # keeps producing signals - the slow poll (e.g. merge detection) would then
   # never run until the fleet went quiet. Checks are due only every
   # CHECK_INTERVAL, so most cycles skip this block and fall straight through.
+  watch_stage checks
   if [ "$(age_of "$STATE/.last-check")" -ge "$CHECK_INTERVAL" ]; then
     rejected_checks=
     contribution_check_output=
@@ -3686,7 +3761,12 @@ while :; do
           path=$FM_PR_POLL_SNAPSHOT_PATH
           number=$FM_PR_POLL_SNAPSHOT_NUMBER
           PR_POLL_CONTROL_LOCK="$STATE/.control-$id.lock"
-          fm_lock_acquire_wait "$PR_POLL_CONTROL_LOCK" || exit 1
+          if ! fm_lock_acquire_wait_bounded "$PR_POLL_CONTROL_LOCK" "$WATCH_LOCK_WAIT"; then
+            PR_POLL_CONTROL_LOCK=
+            watch_lock_deferred "pr-poll-control-$id" "${FM_LOCK_HELD_PID:-}"
+            continue
+          fi
+          watch_lock_acquired "pr-poll-control-$id"
           if ! fm_pr_poll_snapshot_matches "$STATE" "$id" "$SCRIPT_DIR/fm-pr-poll.sh"; then
             pr_poll_control_release || exit 1
             triage_log "PR poll for $id changed before its validated check; skipping the stale snapshot"
@@ -3695,6 +3775,9 @@ while :; do
           run_check_capture "$SCRIPT_DIR/fm-pr-poll.sh" --validated \
             "$provider" "$url" "$host" "$path" "$number" || exit 1
           out=$FM_CHECK_RESULT
+        elif [ "${PR_POLL_LOCK_DEFERRED:-}" = 1 ]; then
+          PR_POLL_LOCK_DEFERRED=
+          continue
         elif fm_custom_check_snapshot_prepare "$STATE" "$id"; then
           custom_snapshot=$FM_CUSTOM_CHECK_SNAPSHOT
           run_check_capture "$custom_snapshot" || exit 1
@@ -3793,6 +3876,7 @@ EOF
   # hook land seconds apart, and reporting them as separate actionable wakes
   # costs a full firstmate turn each. The re-scan also picks up a newer
   # signature for an already-pending file (last write wins below).
+  watch_stage status-signals
   pending=$(scan_signals)
   if [ -n "$pending" ]; then
     sleep "$SIGNAL_GRACE"
@@ -3919,6 +4003,7 @@ EOF
   # stale hash is surfaced, absorbed, or timed toward escalation once (.stale-*
   # remembers the hash already classified, or the declaration a busy pane's
   # crossed turn bound already handed to the away-mode daemon).
+  watch_stage pane-staleness
   parked_gate_scan_begin
   while IFS= read -r w; do
     kind=$(window_kind "$w")

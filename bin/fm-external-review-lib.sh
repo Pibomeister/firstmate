@@ -19,6 +19,8 @@
 # because a worker with no upload instructions, or a spawn without the backup
 # protection the captain configured, would otherwise improvise a push.
 
+# shellcheck source=bin/fm-bash-compat-lib.sh
+. "$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd "${d:-/}" && pwd)/fm-bash-compat-lib.sh"
 FM_REVIEW_URL=
 FM_REVIEW_BACKUP_REMOTE=
 FM_REVIEW_BACKUP_PREFIX=

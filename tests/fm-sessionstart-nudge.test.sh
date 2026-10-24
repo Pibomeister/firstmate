@@ -169,6 +169,7 @@ test_opencode_plugin_delivers_exact_nudge_once() {
   local root="$TMP_ROOT/opencode-primary" out status=0
   make_primary "$root"
   cp "$ROOT/bin/fm-sessionstart-nudge.sh" "$ROOT/bin/fm-primary-scope-lib.sh" \
+  cp "$ROOT/bin/fm-sessionstart-nudge.sh" "$ROOT/bin/fm-bash-compat-lib.sh" \
     "$ROOT/bin/fm-gate-refuse-lib.sh" "$ROOT/bin/fm-operational-input.sh" "$root/bin/"
   chmod +x "$root/bin/fm-sessionstart-nudge.sh"
   out=$(PLUGIN="$ROOT/.opencode/plugins/fm-primary-sessionstart-nudge.js" \
@@ -465,6 +466,7 @@ test_pi_sessionstart_generation_prerequisite() {
   cp "$ROOT/.pi/extensions/lib/fm-operational-input.ts" \
     "$ROOT/.pi/extensions/lib/fm-sessionstart-supervisor.mjs" "$fixture/.pi/extensions/lib/"
   cp "$ROOT/bin/fm-operational-input.sh" "$fixture/bin/"
+  cp "$ROOT/bin/fm-bash-compat-lib.sh" "$fixture/bin/"
   cat > "$fixture/bin/fm-turnend-guard.sh" <<'SH'
 #!/usr/bin/env bash
 exit 0
@@ -791,6 +793,7 @@ test_pi_reload_releases_sessionstart_exit_listener() {
   cp "$ROOT/.pi/extensions/lib/fm-operational-input.ts" \
     "$ROOT/.pi/extensions/lib/fm-sessionstart-supervisor.mjs" "$fixture/.pi/extensions/lib/"
   cp "$ROOT/bin/fm-operational-input.sh" "$fixture/bin/"
+  cp "$ROOT/bin/fm-bash-compat-lib.sh" "$fixture/bin/"
   cat > "$fixture/bin/fm-turnend-guard.sh" <<'SH'
 #!/usr/bin/env bash
 exit 0

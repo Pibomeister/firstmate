@@ -593,12 +593,7 @@ stop_home_watcher() {
   lock_pid=$(cat "$WATCH_LOCK/pid" 2>/dev/null || true)
   fm_pid_alive "$lock_pid" || return 0
   if fm_watcher_lock_matches_pid "$STATE" "$WATCH" "$lock_pid" "$FM_HOME"; then
-    kill -TERM "$lock_pid" 2>/dev/null || true
-    i=0
-    while [ "$i" -lt 50 ] && fm_pid_alive "$lock_pid"; do
-      sleep 0.1
-      i=$((i + 1))
-    done
+    fm_watcher_stop_tree "$lock_pid" "$(fm_pid_identity "$lock_pid" 2>/dev/null)" 5 || true
     STOPPED_PID=$lock_pid
   elif ! clear_stale_recorded_watcher_lock; then
     echo "watcher: FAILED - stale watcher recovery state could not be persisted" >&2
@@ -633,13 +628,8 @@ take_over_cycle() {  # <watcher-pid> <identity>
   cycle_begin "$pid" attached "$2"
   fm_recovery_marker_handover_snapshot "$STATE/.watcher-down" || return 1
   if attached_holder_live "$pid"; then
-    kill -TERM "$pid" 2>/dev/null || true
+    fm_watcher_stop_tree "$pid" "$2" 5 || true
   fi
-  i=0
-  while [ "$i" -lt 50 ] && fm_pid_alive "$pid"; do
-    sleep 0.1
-    i=$((i + 1))
-  done
   if fm_pid_alive "$pid"; then
     return 1
   fi
@@ -704,7 +694,7 @@ child=
 child_out=
 cleanup_child() {
   if [ -n "$child" ] && fm_pid_alive "$child"; then
-    kill -TERM "$child" 2>/dev/null || true
+    fm_watcher_stop_tree "$child" "" 5 || true
   fi
   if [ -n "$child_out" ]; then
     rm -f "$child_out" 2>/dev/null || true
@@ -724,7 +714,9 @@ handle_arm_signal() {
     while fm_pid_alive "$child"; do
       if fm_watcher_lock_matches_pid "$STATE" "$WATCH" "$child" "$FM_HOME" \
         || [ "$(date +%s)" -ge "$deadline" ]; then
-        kill -TERM "$child" 2>/dev/null || true
+        # The tree stop is bounded (TERM, then KILL after its grace), so a
+        # watcher wedged in a blocking write cannot hold this handler forever.
+        fm_watcher_stop_tree "$child" "" 5 || true
         break
       fi
       sleep 0.02
@@ -813,6 +805,39 @@ owned_child_finished() {
   return "$status"
 }
 
+# owned_child_running: 0 while the started watcher has not exited. `kill -0`
+# also succeeds on an exited child this shell has not reaped yet, so read its
+# process state instead.
+owned_child_running() {
+  case "$(ps -o stat= -p "$child" 2>/dev/null)" in
+    '' | Z*) return 1 ;;
+  esac
+  return 0
+}
+
+# wait_owned_child: wait for the started watcher, but stop it (and everything
+# under it) once its beacon reaches the stall bound while it still holds this
+# home's lock, exactly as the attached path gives up on a stalled holder.
+# Returns the watcher's exit status, or exits the arm with a typed FAILED line.
+wait_owned_child() {
+  local age
+  while owned_child_running; do
+    age=$(fm_path_age "$BEAT")
+    if [ "$age" -ge "$STALL_BOUND" ] \
+      && fm_watcher_lock_matches_pid "$STATE" "$WATCH" "$child" "$FM_HOME"; then
+      trap - HUP TERM INT
+      cycle_log_append unknown unknown started-holder-stalled none
+      fm_watcher_stop_tree "$child" "" 5 || true
+      wait "$child" 2>/dev/null || true
+      echo "watcher: FAILED - started watcher pid=$child stalled (beacon ${age}s at or past hard bound ${STALL_BOUND}s)"
+      cleanup_child
+      exit 1
+    fi
+    sleep "$ATTACH_POLL"
+  done
+  wait "$child"
+}
+
 # Verify the outcome: poll until this child is the confirmed healthy watcher, or
 # until some other watcher legitimately holds the singleton (a startup race), or
 # until the child gives up. Only then print the honest line.
@@ -842,7 +867,7 @@ while :; do
       else
         echo "watcher: started pid=$child (beacon fresh)"
       fi
-      wait "$child"
+      wait_owned_child
       rc=$?
       owned_child_finished "$rc"
       exit $?

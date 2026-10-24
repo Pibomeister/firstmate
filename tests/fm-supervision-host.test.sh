@@ -10,6 +10,35 @@ command -v perl >/dev/null 2>&1 || { printf 'skip: perl absent\n'; exit 0; }
 # shellcheck source=tests/supervision-host-helpers.sh
 . "$(dirname "${BASH_SOURCE[0]}")/supervision-host-helpers.sh"
 
+# A live process holding the home-wide lease-command lock must not keep a new
+# host from starting: activation's lease release gives up within its bound,
+# leaves an init-blocked row naming the stage, and the host logs start and
+# arms a watcher, while the foreign holder is left alone.
+test_host_starts_despite_a_held_lease_command_lock() {
+  local home holder holder_pid start elapsed i
+  home=$(make_home lease-lock-held attended)
+  holder="$home/fm-fake-lease-holder.sh"
+  # shellcheck disable=SC2016 # expanded by the holder script
+  printf '%s\n' '#!/usr/bin/env bash' 'export STATE="$2"' '. "$1"' 'fm_lock_try_acquire "$2/.fm-lease-command.lock" || exit 1' 'sleep 90' > "$holder"
+  chmod +x "$holder"
+  "$holder" "$ROOT/bin/fm-wake-lib.sh" "$home/state" &
+  holder_pid=$!
+  for i in $(seq 1 50); do [ "$(cat "$home/state/.fm-lease-command.lock/pid" 2>/dev/null)" = "$holder_pid" ] && break; sleep 0.1; done
+  [ "$(cat "$home/state/.fm-lease-command.lock/pid" 2>/dev/null)" = "$holder_pid" ] || fail "fixture: the lease-command lock was not taken"
+  start=$(date +%s)
+  FM_SUPERVISION_HOST_RELEASE_BUDGET=6 start_host "$home"
+  wait_until 300 grep -q '	start	' "$home/state/.supervision-host.log" \
+    || { kill "$holder_pid" 2>/dev/null; fail "a host never logged start while a live process held the lease-command lock"$'\n'"$(cat "$home/state/.supervision-host.log" 2>/dev/null)"; }
+  elapsed=$(( $(date +%s) - start ))
+  [ "$elapsed" -le 20 ] || { kill "$holder_pid" 2>/dev/null; fail "the host took ${elapsed}s to start with a 6s release budget"; }
+  assert_re '	init-blocked	release-leases	' "$home/state/.supervision-host.log" "the blocked release stage must be named in the host log"
+  wait_until 200 watcher_live "$home" || { kill "$holder_pid" 2>/dev/null; fail "the host did not arm a watcher after starting"; }
+  kill -0 "$holder_pid" 2>/dev/null || fail "the host must leave the foreign lock holder alive"
+  [ "$(cat "$home/state/.fm-lease-command.lock/pid" 2>/dev/null)" = "$holder_pid" ] || fail "the host must leave the holder's lock untouched"
+  kill "$holder_pid" 2>/dev/null
+  pass "a host starts within its release bound beside a live lease-command lock holder and names the blocked stage"
+}
+
 test_report_surface_enforces_actor_turn_and_scope() {
   local home state out rc
   home="$TMP_ROOT/report"
@@ -1711,3 +1740,4 @@ test_silent_outcomes_are_not_relayed_when_the_captain_returns
 test_large_turn_relays_an_early_visible_outcome
 test_outcome_lookup_failure_is_not_treated_as_silence
 test_outcome_after_the_return_survives_a_host_killed_at_the_turn_end
+test_host_starts_despite_a_held_lease_command_lock

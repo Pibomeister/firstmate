@@ -154,7 +154,9 @@
 # .supervision-host-health (the latch: errors, cooldown, and probe time, keyed
 # to the main session, engine, and model), and .supervision-host.log (a bounded
 # ledger of where every close went, with each engine turn's usage and
-# outcome).
+# outcome, plus an `init <stage>` row before each activation stage and an
+# `init-blocked <stage> <status> <bound>` row when a bounded stage gave up, so
+# a host that has not logged `start` names the stage it is in).
 #
 # Tunables (environment): FM_SUPERVISION_HOST_PARK_SECONDS (27000; a positive
 # integer below the 28800-second registration, any other value is the default),
@@ -163,7 +165,9 @@
 # the boundary), FM_SUPERVISION_HOST_TURN_TIMEOUT (1200), FM_SUPERVISION_HOST_ROTATE_TURNS (20:
 # a new engine conversation after this many turns; every main session start
 # also opens a new one), FM_SUPERVISION_HOST_READY_TIMEOUT (25: how long a
-# successor cycle may take to verify), FM_SUPERVISION_HOST_POLL (1).
+# successor cycle may take to verify), FM_SUPERVISION_HOST_POLL (1),
+# FM_SUPERVISION_HOST_RELEASE_BUDGET (45: the bound on releasing the branch
+# actor's leases at activation, after each turn, and at cleanup).
 # Park duration uses Bash's process-relative SECONDS counter (including Bash
 # 3.2), while durable timestamps still use epoch time. This is not a portable
 # monotonic-clock guarantee. Arm exit probes use ordinary 0.5-second child
@@ -287,7 +291,7 @@ log_line() {  # <text>
 }
 
 identity_of() {  # <pid>
-  _fm_engine_identity "$1" || true
+  fm_pid_identity_line "$1" || true
 }
 
 # Record one process this host runs, so a successor host can stop exactly it.
@@ -339,8 +343,21 @@ branch_env() {  # <command...>: run with the branch actor identity
   FM_SUPERVISION_ACTOR=branch "$@"
 }
 
+# Release the branch actor's leases within FM_SUPERVISION_HOST_RELEASE_BUDGET
+# seconds (default 45). The lease command waits up to two thirds of that for the
+# home's lease-command lock, so its own refusal (naming the holder) normally
+# answers first and the outer bound is the backstop; either way a live holder
+# leaves an init-blocked row and the host carries on rather than waiting.
 release_branch_leases() {
-  branch_env "$SCRIPT_DIR/fm-lease.sh" release-actor --actor branch >/dev/null 2>&1 || true
+  local budget=${FM_SUPERVISION_HOST_RELEASE_BUDGET:-45} rc=0
+  case "$budget" in '' | *[!0-9]* | 0) budget=45 ;; esac
+  fm_run_timed "$budget" env FM_SUPERVISION_ACTOR=branch FM_LEASE_COMMAND_LOCK_WAIT=$((budget * 2 / 3 > 0 ? budget * 2 / 3 : 1)) \
+    "$SCRIPT_DIR/fm-lease.sh" release-actor --actor branch >/dev/null 2>&1 || rc=$?
+  case "$rc" in
+    0) ;;
+    6 | 124 | 137) log_line "init-blocked	release-leases	$rc	${budget}s" ;;
+  esac
+  return 0
 }
 
 # Stop whatever a predecessor host left running, then take the record. The
@@ -349,6 +366,7 @@ release_branch_leases() {
 activate() {
   local role pid identity
   mkdir -p "$STATE" || return 1
+  log_line "init	stop-predecessor"
   if [ -f "$HOST_RECORD" ]; then
     # The predecessor host first, with room for its own cleanup (which stops
     # its engine and arms), before anything it left is stopped individually.
@@ -358,11 +376,13 @@ activate() {
       stop_recorded "$pid" "$identity" $((ENGINE_GRACE + 20))
     done < "$HOST_RECORD"
   fi
+  log_line "init	stop-engine"
   if [ -f "$ENGINE_PID_FILE" ]; then
     IFS="$(printf '\t')" read -r pid identity < "$ENGINE_PID_FILE" || true
     stop_recorded "${pid:-}" "${identity:-}" $((ENGINE_GRACE + 5))
     rm -f "$ENGINE_PID_FILE"
   fi
+  log_line "init	stop-arms"
   if [ -f "$HOST_RECORD" ]; then
     while IFS="$(printf '\t')" read -r role pid identity; do
       [ "$role" = arm ] && stop_recorded "$pid" "$identity" 10
@@ -373,7 +393,7 @@ activate() {
   local ledger
   for ledger in "$STATE"/.supervision-host-descendants.*; do
     case "$ledger" in *.pids|*.next) continue ;; esac
-    [ -f "$ledger" ] && _fm_engine_reap "$ledger"
+    [ -f "$ledger" ] && fm_reap_ledger "$ledger"
   done
   rm -f "$STATE"/.supervision-host-arm.* "$STATE"/.supervision-host-descendants.* "$STATE"/.supervision-host-result.* \
     "$STATE"/.supervision-host-errors.* "$STATE"/.supervision-host-readback.* "$TURN_FILE" "$MIRROR_FEED" 2>/dev/null || true
@@ -390,6 +410,7 @@ activate() {
     fi
   fi
   printf 'host\t%s\t%s\n' "$HOST_PID" "$(identity_of "$HOST_PID")" > "$HOST_RECORD" || return 1
+  log_line "init	release-leases"
   release_branch_leases
 }
 
@@ -531,10 +552,32 @@ stream_ready_line() {
 
 # Wait for the current arm to close. Returns 0 with ARM_TEXT set,
 # or 1 when the park boundary arrives first.
+# host_watcher_stalled: 0 when this home's watcher is alive but its beacon is
+# past the stall bound plus the arm's confirm window, which means the arm that
+# should have replaced it has not; HOST_STALL_DETAIL says what was read.
+HOST_STALL_DETAIL=
+host_watcher_stalled() {
+  local pid age bound
+  pid=$(cat "$STATE/.watch.lock/pid" 2>/dev/null) || return 1
+  fm_pid_alive "$pid" || return 1
+  bound=$(( $(fm_watcher_stall_bound) + ${FM_ARM_CONFIRM_TIMEOUT:-30} ))
+  age=$(fm_path_age "$STATE/.last-watcher-beat")
+  [ "$age" -ge "$bound" ] || return 1
+  HOST_STALL_DETAIL="watcher pid $pid beacon ${age}s at or past ${bound}s"
+}
+
 await_close() {
   local i
   while fm_pid_alive "$ARM_PID"; do
     refresh_process "$ARM_PID"
+    # Backstop for an arm that is alive but did not replace its stalled
+    # watcher: retire it (its signal path stops the watcher's tree), and the
+    # close reads as one without a wake, so the owner re-arms.
+    if host_watcher_stalled; then
+      log_line "arm-retired	$HOST_STALL_DETAIL; its arm $ARM_PID had not replaced it"
+      retire_arm "$ARM_PID" "$ARM_OUT"
+      break
+    fi
     [ "$READY_PENDING" -eq 0 ] || stream_ready_line
     boundary_reached && return 1
     # Probe the arm's exit twice a second between POLL-cadence checks, without

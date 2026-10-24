@@ -11,6 +11,8 @@ set -o pipefail
 [ "$#" -eq 3 ] || { echo 'usage: fm-droid-session-end-hook.sh <state-dir> <id> <gen>' >&2; exit 2; }
 STATE=$1 ID=$2 GEN=$3
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=bin/fm-bash-compat-lib.sh
+. "$SCRIPT_DIR/fm-bash-compat-lib.sh"
 
 payload=$(cat)
 "$SCRIPT_DIR/fm-busy-event.sh" apply "$STATE" "$ID" idle \

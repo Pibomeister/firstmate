@@ -1933,7 +1933,7 @@ fm_super_main() {
     wedge_alarm_stop_active_notifier
     escalate_flush "$STATE" 2>/dev/null || true
     if [ -n "${WATCHER_PID:-}" ]; then
-      kill "$WATCHER_PID" 2>/dev/null || true
+      fm_watcher_stop_tree "$WATCHER_PID" "" 5 || true
       wait "$WATCHER_PID" 2>/dev/null || true
     fi
     if [ -n "${CUR_TMP:-}" ]; then
@@ -2025,6 +2025,18 @@ fm_super_main() {
         trim_log
       fi
       start_watcher || continue
+    fi
+
+    # --- a watcher alive but not beating is replaced like a crash -----------
+    # Its exit above is the only other restart path, and a watcher wedged in a
+    # blocking call never exits; the beacon at or past the stall bound while it
+    # still holds this home's lock is the same proof the arm acts on.
+    if [ -n "${WATCHER_PID:-}" ] && kill -0 "$WATCHER_PID" 2>/dev/null \
+      && [ "$(fm_path_age "$STATE/.last-watcher-beat")" -ge "$(fm_watcher_stall_bound)" ] \
+      && fm_watcher_lock_matches_pid "$STATE" "$WATCH" "$WATCHER_PID" "$FM_HOME"; then
+      log "watcher pid $WATCHER_PID stalled (beacon $(fm_path_age "$STATE/.last-watcher-beat")s at or past hard bound $(fm_watcher_stall_bound)s); stopping it and everything it started, then restarting"
+      fm_watcher_stop_tree "$WATCHER_PID" "" 5 || true
+      continue
     fi
 
     # --- one housekeeping tick (gated to HOUSEKEEPING_TICK), then poll -------

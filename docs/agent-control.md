@@ -98,7 +98,7 @@ Switching harness is therefore one ordinary relaunch rather than a separate mech
 A Herdr pane or workspace can be destroyed out from under a live task by churn or a session restart.
 The task's worktree, branch, commits, and uncommitted changes all survive that; only its terminal does not.
 
-**Reclaim is Herdr-only.** On tmux, both verbs refuse a `missing` endpoint, leaving it exactly as deadlocked as it was before this mechanism existed - deliberately, and with the reason stated rather than guessed past.
+**Reclaim covers Herdr and tmux.** A tmux task can be reclaimed only when its record carries the server identity a tmux spawn now records; an older record still refuses, with the reason stated rather than guessed past.
 
 Two endpoint verdicts are agent-free, and both license a relaunch:
 
@@ -113,9 +113,11 @@ An unreachable endpoint can still hold the live agent a rebind would duplicate, 
   `dead` means the pane survived the restart and is adopted after all, with no second tab; `alive` means the agent came back and refuses; only a second `missing` proves the pane itself did not survive ([`docs/herdr-backend.md`](herdr-backend.md) "Restart and liveness behavior").
   That server start is a real side effect, and the parenthetical above does not cover it: when the recorded session's server no longer exists at all, the probe stands a fresh empty one up in order to ask, and nothing afterwards uses it.
   So in that state `exit` - which otherwise reads as a read-only inspection - leaves an idle herdr server behind.
-- **tmux cannot.** `list-windows -a` describes only the tmux server the *current process* addresses (its `TMUX_TMPDIR`/socket), and a task record carries no socket identity for its endpoint.
-  A different but running server would answer "not anywhere" about a window it was never able to see, so a server-wide read cannot tell a destroyed window from one on a server this process cannot address.
-  There is no read available that closes that gap, so tmux always refuses - for a renamed session, a moved window, a foreign socket, and a dead server alike.
+- **tmux can, from the record.** A tmux spawn records the socket and identity (pid and start identity) of the server its window was created on, and the window id.
+  The proof reads that exact socket with the ambient pane identity removed, bounded, and never starts or touches a server.
+  The endpoint is gone only when that server process is gone or replaced and the socket answers with no server (or another server's pid), or when it is the same live server and the window id is gone from it with no pane of it inside the copy; and in every case no other process may have its working directory inside the copy.
+  A server still alive while its socket does not answer, a window that survives under another name, a holder of the copy, and a record without those fields all refuse.
+  A relaunch then re-creates the window in the recorded session on the recorded socket, and refuses when the seat addresses a different tmux server.
 
 Every transient or self-contradicting read stays `unreadable` or `ambiguous` and still refuses, so a momentary backend failure can never be mistaken for absence.
 
