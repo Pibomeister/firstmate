@@ -47,19 +47,25 @@ pass() { printf 'ok - %s\n' "$1"; }
 SLEEPER=$(mktemp "${TMPDIR:-/tmp}/fm-afk-sleeper.XXXXXX")
 printf '#!/usr/bin/env bash\nexec sleep 600\n' > "$SLEEPER"
 chmod +x "$SLEEPER"
-# tmux resolves its server from -S, then -L, then $TMUX, and only then from
-# TMUX_TMPDIR. Drop the ambient pane identity and pin every bare tmux call,
-# including the launch script's, to a private socket through a PATH shim; -f
-# /dev/null keeps the operator's tmux config and plugins out of that server.
+# Keep every tmux call off the server of the pane this suite runs in (see
+# bin/fm-lab-home.sh's header for why TMUX must go): a PATH shim pins bare
+# calls, including the launch script's, to a private socket, the suite's own
+# create and kill calls name that socket so fm-lint can see it, and a private
+# TMUX_TMPDIR catches any call that bypasses the shim. -f /dev/null keeps the
+# operator's tmux config and plugins out of that server.
 unset TMUX TMUX_PANE
 REAL_TMUX=$(command -v tmux 2>/dev/null || true)
-AFK_TMUX_DIR=$(mktemp -d /tmp/fmafk.XXXXXX)
+AFK_TMUX_DIR=$(mktemp -d /tmp/fmafk.XXXXXX) || { echo "cannot create the private tmux directory" >&2; exit 1; }
 AFK_TMUX_SOCKET="$AFK_TMUX_DIR/tmux.sock"
+export TMUX_TMPDIR="$AFK_TMUX_DIR"
 if [ -n "$REAL_TMUX" ]; then
-  mkdir "$AFK_TMUX_DIR/bin"
   # shellcheck disable=SC2016 # the shim expands its own arguments.
-  printf '#!/bin/sh\nexec "%s" -f /dev/null -S "%s" "$@"\n' "$REAL_TMUX" "$AFK_TMUX_SOCKET" > "$AFK_TMUX_DIR/bin/tmux"
-  chmod +x "$AFK_TMUX_DIR/bin/tmux"
+  if ! { mkdir "$AFK_TMUX_DIR/bin" \
+    && printf '#!/bin/sh\nexec "%s" -f /dev/null -S "%s" "$@"\n' "$REAL_TMUX" "$AFK_TMUX_SOCKET" > "$AFK_TMUX_DIR/bin/tmux" \
+    && chmod +x "$AFK_TMUX_DIR/bin/tmux"; }; then
+    echo "cannot install the private tmux shim" >&2
+    exit 1
+  fi
   PATH="$AFK_TMUX_DIR/bin:$PATH"
 fi
 GLOBAL_CLEANUP() {

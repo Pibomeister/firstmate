@@ -611,7 +611,7 @@ HERDR_SECTION=$(printf '%s\n' \
 '' \
 'For tmux-based lab primaries, `bin/fm-lab-home.sh` owns the short private socket directory; do not place `TMUX_TMPDIR` under the lab home or worktree.' \
 'Use `LAB_HOME_HELPER='"$(shell_quote "$FM_ROOT/bin/fm-lab-home.sh")"'` and run every lab tmux command through `"$LAB_HOME_HELPER" tmux "$FM_HOME" <arguments...>`, which addresses only the lab server by its `-S` socket with `TMUX` and `TMUX_PANE` unset.' \
-'Never run a bare `tmux` or one addressed only by `TMUX_TMPDIR` for the lab: inside any tmux pane, `TMUX` outranks `TMUX_TMPDIR` and that command reaches the captain fleet'"'"'s server.' \
+'Never run a bare `tmux` or one addressed only by `TMUX_TMPDIR` for the lab: inside any tmux pane, `TMUX` outranks `TMUX_TMPDIR` and that command reaches the operator'"'"'s own tmux server.' \
 'A lab process that must run firstmate scripts outside a lab pane gets `TMUX_TMPDIR="$("$LAB_HOME_HELPER" tmux-dir "$FM_HOME")"` with `TMUX` and `TMUX_PANE` unset.' \
 'Your single EXIT cleanup trap must run `"$LAB_HOME_HELPER" tmux "$FM_HOME" kill-server`, call `"$LAB_HOME_HELPER" teardown "$FM_HOME"`, and call the Herdr teardown below; do not install a second trap that replaces either cleanup.' \
 '' \

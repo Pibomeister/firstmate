@@ -18,9 +18,10 @@
 # FM_HOME=<dir>; bin/fm-gate-refuse-lib.sh owns permitted supervision overrides.
 # tmux-dir is the single owner of the short private socket directory, and the
 # tmux runner addresses that directory's server with -S and TMUX/TMUX_PANE
-# unset. tmux resolves its server from -S, then -L, then $TMUX, and only then
-# from TMUX_TMPDIR, so TMUX_TMPDIR alone run inside any tmux pane addresses
-# that pane's server. Run every lab tmux command, including the cleanup trap's
+# unset, refuses a caller -S or -L, and starts the server without the
+# operator's tmux config. tmux resolves its server from -S, then -L, then
+# $TMUX, and only then from TMUX_TMPDIR, so TMUX_TMPDIR alone run inside any
+# tmux pane addresses that pane's server. Run every lab tmux command, including the cleanup trap's
 # kill-server, through the runner, then call teardown. A process that must run
 # firstmate's bare tmux calls outside a lab pane needs TMUX_TMPDIR=<printed-dir>
 # with TMUX and TMUX_PANE unset.
@@ -42,10 +43,12 @@ fm_lab_home_owner() {
   case "$(uname -s)" in Darwin) stat -f '%u' "$1" ;; *) stat -c '%u' "$1" ;; esac
 }
 
-# Resolve (creating on first use) the marked lab home's private socket
-# directory into socket_dir.
-fm_lab_home_socket_dir() {  # <lab-home> <subcommand>
+# Validate the marked lab home and its recorded private socket directory into
+# socket_dir; with "create", mint one when none is recorded, otherwise leave
+# socket_dir empty.
+fm_lab_home_socket_dir() {  # <lab-home> <subcommand> [create]
   local dir=$1 record
+  socket_dir=
   [ -n "$dir" ] || { fm_lab_home_error "$2 requires a marked lab home"; return 2; }
   [ -f "$dir/.fm-lab-home" ] && [ -d "$dir/state" ] \
     || { fm_lab_home_error "refusing '$dir': not a marked lab home"; return 1; }
@@ -57,7 +60,7 @@ fm_lab_home_socket_dir() {  # <lab-home> <subcommand>
       || { fm_lab_home_error "recorded tmux directory is missing or unsafe"; return 1; }
     [ "$(fm_lab_home_mode "$socket_dir")" = 700 ] && [ "$(fm_lab_home_owner "$socket_dir")" = "$(id -u)" ] \
       || { fm_lab_home_error "recorded tmux directory is not private and user-owned"; return 1; }
-  else
+  elif [ "${3:-}" = create ]; then
     socket_dir=$(mktemp -d /tmp/fml.XXXXXX) || return 1
     chmod 700 "$socket_dir" || { rmdir "$socket_dir" 2>/dev/null || true; return 1; }
     [ "$(fm_lab_home_mode "$socket_dir")" = 700 ] && [ "$(fm_lab_home_owner "$socket_dir")" = "$(id -u)" ] \
@@ -84,30 +87,33 @@ case "${1:-}" in
     printf '%s\n' "$dir"
     ;;
   tmux-dir)
-    fm_lab_home_socket_dir "${2:-}" tmux-dir || exit
+    fm_lab_home_socket_dir "${2:-}" tmux-dir create || exit
     printf '%s\n' "$socket_dir"
     ;;
   tmux)
-    fm_lab_home_socket_dir "${2:-}" tmux || exit
+    fm_lab_home_socket_dir "${2:-}" tmux create || exit
     shift 2
-    # Use the per-user socket tmux itself picks under TMUX_TMPDIR=<dir> when
-    # TMUX is unset, so teardown and TMUX_TMPDIR-only children see the same server.
-    [ -d "$socket_dir/tmux-$(id -u)" ] || mkdir -m 700 "$socket_dir/tmux-$(id -u)" || exit 1
-    exec env -u TMUX -u TMUX_PANE tmux -S "$socket_dir/tmux-$(id -u)/default" "$@"
+    # Global options precede the tmux command; a caller -S or -L would
+    # override the lab socket, so refuse rather than address another server.
+    args=("$@") i=0
+    while [ "$i" -lt "${#args[@]}" ]; do
+      case "${args[$i]}" in
+        -S*|-L*) fm_lab_home_error "refusing a caller -S/-L: the runner owns the lab socket"; exit 2 ;;
+        -c|-f|-T) i=$((i + 2)); continue ;;
+        -*) ;;
+        *) break ;;
+      esac
+      i=$((i + 1))
+    done
+    # The per-user socket tmux itself picks under TMUX_TMPDIR=<dir> with TMUX
+    # unset, so teardown and TMUX_TMPDIR-only children reach the same server;
+    # the server inherits that TMUX_TMPDIR and skips the operator's config.
+    mkdir -m 700 "$socket_dir/tmux-$(id -u)" 2>/dev/null || [ -d "$socket_dir/tmux-$(id -u)" ] || exit 1
+    exec env -u TMUX -u TMUX_PANE TMUX_TMPDIR="$socket_dir" tmux -f /dev/null -S "$socket_dir/tmux-$(id -u)/default" "$@"
     ;;
   teardown)
-    dir=${2:-}
-    [ -n "$dir" ] || { fm_lab_home_error "teardown requires a marked lab home"; exit 2; }
-    [ -f "$dir/.fm-lab-home" ] && [ -d "$dir/state" ] \
-      || { fm_lab_home_error "refusing '$dir': not a marked lab home"; exit 1; }
-    record=$(fm_lab_home_tmux_record "$dir")
-    [ -f "$record" ] || exit 0
-    socket_dir=$(cat "$record")
-    case "$socket_dir" in /tmp/fml.[A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9]) ;; *) fm_lab_home_error "invalid recorded tmux directory"; exit 1 ;; esac
-    [ -d "$socket_dir" ] && [ ! -L "$socket_dir" ] \
-      || { fm_lab_home_error "recorded tmux directory is missing or unsafe"; exit 1; }
-    [ "$(fm_lab_home_mode "$socket_dir")" = 700 ] && [ "$(fm_lab_home_owner "$socket_dir")" = "$(id -u)" ] \
-      || { fm_lab_home_error "refusing to remove a non-private or non-user-owned tmux directory"; exit 1; }
+    fm_lab_home_socket_dir "${2:-}" teardown || exit
+    [ -n "$socket_dir" ] || exit 0
     # -L names its own socket (not "default"); inspect every socket this
     # private TMUX_TMPDIR could have hosted before removing the directory.
     for socket in "$socket_dir/tmux-$(id -u)"/*; do
@@ -118,7 +124,7 @@ case "${1:-}" in
         exit 1
       fi
     done
-    rm -rf "$socket_dir" && rm -f "$record"
+    rm -rf "$socket_dir" && rm -f "$(fm_lab_home_tmux_record "$2")"
     ;;
   *)
     fm_lab_home_error "usage: fm-lab-home.sh create <dir> | tmux-dir <dir> | tmux <dir> <args...> | teardown <dir>"

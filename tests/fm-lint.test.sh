@@ -1241,7 +1241,22 @@ test_tmux_commands_must_name_their_server() {
   kill-server' \
     'tests/lab.test.sh|tmux kill-session -t lab' \
     'tests/lab.test.sh|tmux -f /dev/null new-session -d -s lab' \
-    'tests/lab.test.sh|if tmux new-session -d -s lab; then :; fi'
+    'tests/lab.test.sh|if tmux new-session -d -s lab; then :; fi' \
+    'tests/lab.test.sh|trap '\''TMUX_TMPDIR="$LAB_TMUX_DIR" tmux kill-server'\'' EXIT' \
+    'tests/lab.test.sh|"$real_tmux" kill-server' \
+    'tests/lab.test.sh|"$TMUX" kill-server' \
+    'tests/lab.test.sh|bash -lc '\''tmux kill-server'\''' \
+    'tests/lab.test.sh|sh -c "tmux kill-server"' \
+    'tests/lab.test.sh|eval "tmux kill-server"' \
+    'tests/lab.test.sh|elif tmux kill-server; then :; fi' \
+    'tests/lab.test.sh|timeout 5 tmux kill-server' \
+    'tests/lab.test.sh|nohup tmux new -d -s lab &' \
+    'tests/lab.test.sh|env "${lab_env[@]}" tmux kill-ses -t lab' \
+    'tests/lab.test.sh|pane="$(tmux new-session -d -P)"' \
+    'tests/lab.test.sh|tmux -L default kill-server' \
+    'tests/lab.test.sh|tmux list-panes -F '\'' #{pane_id}'\''; tmux kill-server' \
+    'tests/lab.test.sh|tmux kill-server  # fm-lint: tmux-socket-ok' \
+    'bin/lab.sh|tmux kill-server  # fm-lint: tmux-socket-ok bin may not opt out'
   do
     target=${entry%%|*}
     line=${entry#*|}
@@ -1264,7 +1279,10 @@ test_tmux_commands_must_name_their_server() {
     'tests/lab.test.sh|tmux() { [ "$1" = new-session ] && return 0; }' \
     'tests/lab.test.sh|  has-session|new-session) exit 0 ;;' \
     'tests/lab.test.sh|record_write tmux new-session owned' \
-    'tests/lab.test.sh|lab_tmux kill-server'
+    'tests/lab.test.sh|lab_tmux kill-server' \
+    'tests/lab.test.sh|tmux new-window -d -t lab' \
+    'tests/lab.test.sh|echo "tmux kill-server"' \
+    'tests/lab.test.sh|tmux kill-server  # fm-lint: tmux-socket-ok guarded negative control'
   do
     target=${entry%%|*}
     line=${entry#*|}
@@ -1274,6 +1292,21 @@ test_tmux_commands_must_name_their_server() {
     [ "$rc" -eq 0 ] || fail "lint rejected a server-addressed or non-invoking tmux line in $target: $line"$'\n'"$out"
     rm -f "$tmp/repo/$target"
   done
+
+  # The default (no-path) run covers tests/ as well as bin/.
+  cat > "$tmp/repo/bin/fm-lint-workflows.sh" <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
+  chmod +x "$tmp/repo/bin/fm-lint-workflows.sh"
+  mkdir -p "$tmp/repo/bin/backends"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$tmp/repo/bin/backends/noop.sh"
+  printf '#!/usr/bin/env bash\ntmux kill-session -t lab\n' > "$tmp/repo/tests/lab.test.sh"
+  rc=0
+  out=$(cd "$tmp/repo" && CI=true PATH="$fakebin:$PATH" "$lint_copy" 2>&1) || rc=$?
+  [ "$rc" -ne 0 ] || fail "the default lint run accepted an unaddressed tmux kill-session under tests/"
+  assert_contains "$out" "tests/lab.test.sh:2: tmux command without -S or -L can reach the operator's tmux server" \
+    "the default lint run did not name the unaddressed tmux command under tests/"
   pass "fm-lint.sh rejects tmux kill-server, and test kill-session/new-session, that name no -S/-L server"
 }
 

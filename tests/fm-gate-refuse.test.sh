@@ -277,12 +277,13 @@ test_lab_home_private_tmux_socket_survives_deep_paths() {
   pass "fm-lab-home: a primary starts on a private short tmux socket from a long lab path and teardown removes it"
 }
 
-# tmux resolves its server from -S, then -L, then $TMUX, and only then from
-# TMUX_TMPDIR, so a lab cleanup run inside an operator pane must name its own
-# socket. A throwaway "operator" server on its own socket stands in for the
+# The lab tmux commands a --herdr-lab brief generates, run from inside an
+# operator pane, must reach only the lab server (bin/fm-lab-home.sh header owns
+# why). A throwaway "operator" server on its own socket stands in for the
 # operator's, with TMUX pointing at it as it does inside any of its panes.
 test_lab_tmux_cleanup_spares_the_operator_server() {
-  local real_tmux op_dir op_sock op_pid lab socket_dir resolved
+  local real_tmux op_dir op_sock op_pid lab socket_dir resolved brief_home brief
+  local helper_assign runner trap_kill trap_teardown attempts
   local -a operator_env
   real_tmux=$(command -v tmux) || fail "tmux is required for the operator-server behavioral test"
   # A short /tmp path keeps the socket under the platform's sun_path limit.
@@ -304,14 +305,45 @@ test_lab_tmux_cleanup_spares_the_operator_server() {
     || fail "could not read the operator server pid"
   operator_env=(TMUX="$op_sock,$op_pid,0" TMUX_PANE=%0 TMUX_TMPDIR="$op_dir")
 
-  env "${operator_env[@]}" "$LABHOME" tmux "$lab" -f /dev/null new-session -d -s primary 'exec sleep 600' \
-    || fail "the lab tmux runner could not start the lab server from an operator pane"
+  # Take the runner and the EXIT-trap cleanup from a freshly generated brief.
+  brief_home="$TMP/operator-brief-home"
+  mkdir -p "$brief_home/state" "$brief_home/data" "$brief_home/config"
+  FM_HOME="$brief_home" "$ROOT/bin/fm-brief.sh" lab-operator firstmate --mode no-mistakes --herdr-lab >/dev/null 2>&1 \
+    || fail "could not generate a --herdr-lab brief"
+  brief="$brief_home/data/lab-operator/brief.md"
+  # shellcheck disable=SC2016 # sed patterns match literal brief text.
+  helper_assign=$(sed -n 's/^Use `\(LAB_HOME_HELPER=[^`]*\)`.*/\1/p' "$brief")
+  # shellcheck disable=SC2016
+  runner=$(sed -n 's/.*run every lab tmux command through `\([^`<]*\) <arguments...>`.*/\1/p' "$brief")
+  # shellcheck disable=SC2016
+  trap_kill=$(sed -n 's/^Your single EXIT cleanup trap must run `\([^`]*\)`, call `\([^`]*\)`.*/\1/p' "$brief")
+  # shellcheck disable=SC2016
+  trap_teardown=$(sed -n 's/^Your single EXIT cleanup trap must run `\([^`]*\)`, call `\([^`]*\)`.*/\2/p' "$brief")
+  [ -n "$helper_assign" ] && [ -n "$runner" ] && [ -n "$trap_kill" ] && [ -n "$trap_teardown" ] \
+    || fail "the generated brief no longer names the lab tmux runner and its EXIT-trap cleanup"
+  run_as_lab_worker() {  # <shell command from the brief>
+    (
+      export "${operator_env[@]}" FM_HOME="$lab"
+      eval "$helper_assign"
+      eval "$1"
+    )
+  }
+
+  run_as_lab_worker "$runner -f /dev/null new-session -d -s primary 'exec sleep 600'" \
+    || fail "the generated lab runner could not start the lab server from an operator pane"
   socket_dir=$("$LABHOME" tmux-dir "$lab") || fail "could not read the lab's private tmux directory"
   [ -S "$socket_dir/tmux-$(id -u)/default" ] || fail "the lab server is not on the lab's private socket"
-  env "${operator_env[@]}" "$LABHOME" tmux "$lab" kill-server \
-    || fail "the generated lab cleanup could not stop the lab server"
-  env "${operator_env[@]}" "$LABHOME" teardown "$lab" \
-    || fail "lab teardown refused after the generated cleanup"
+  env -u TMUX -u TMUX_PANE TMUX_TMPDIR="$socket_dir" "$real_tmux" has-session -t primary 2>/dev/null \
+    || fail "a TMUX_TMPDIR-only lab client does not reach the server the runner started"
+  # A caller -S would override the lab socket; it is aimed at the throwaway
+  # operator server, so a regressed refusal can reach nothing else.
+  if env "${operator_env[@]}" "$LABHOME" tmux "$lab" -f /dev/null -S "$op_sock" kill-server 2>/dev/null; then
+    fail "the lab runner accepted a caller -S that overrides the lab socket"
+  fi
+  env -u TMUX -u TMUX_PANE "$real_tmux" -S "$op_sock" has-session -t operator 2>/dev/null \
+    || fail "a caller -S through the lab runner killed the operator server"
+  run_as_lab_worker "$trap_kill" || fail "the generated lab cleanup could not stop the lab server"
+  run_as_lab_worker "$trap_teardown" || fail "lab teardown refused after the generated cleanup"
   env -u TMUX -u TMUX_PANE "$real_tmux" -S "$op_sock" has-session -t operator 2>/dev/null \
     || fail "the generated lab cleanup killed the operator server"
   [ ! -e "$socket_dir" ] || fail "lab teardown left the private tmux directory behind"
@@ -323,7 +355,10 @@ test_lab_tmux_cleanup_spares_the_operator_server() {
   resolved=$(env "${operator_env[@]}" TMUX_TMPDIR="$socket_dir" "$real_tmux" display -p '#{socket_path}' 2>/dev/null)
   [ "$resolved" = "$op_sock" ] \
     || fail "aborting the negative control: TMUX resolves to '${resolved:-nothing}', not the throwaway operator socket"
-  env "${operator_env[@]}" TMUX_TMPDIR="$socket_dir" "$real_tmux" kill-server >/dev/null 2>&1 || true
+  env "${operator_env[@]}" TMUX_TMPDIR="$socket_dir" "$real_tmux" kill-server >/dev/null 2>&1 || true  # fm-lint: tmux-socket-ok the guarded negative control reproduces the retired instruction
+  attempts=0
+  while env -u TMUX -u TMUX_PANE "$real_tmux" -S "$op_sock" has-session -t operator 2>/dev/null \
+    && [ "$attempts" -lt 20 ]; do sleep 0.05; attempts=$((attempts + 1)); done
   if env -u TMUX -u TMUX_PANE "$real_tmux" -S "$op_sock" has-session -t operator 2>/dev/null; then
     fail "negative control: the TMUX_TMPDIR-only cleanup did not reach the operator server, so the test proves nothing"
   fi

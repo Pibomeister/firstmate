@@ -160,8 +160,8 @@ load_lab() {  # <root>: refuse anything up did not build, then load its record
 }
 
 lab_tmux() {
-  [ -n "${TMUX_DIR:-}" ] || return 1
-  env -u TMUX TMUX_TMPDIR="$TMUX_DIR" tmux "$@"
+  [ -n "${LAB:-}" ] && [ -n "${TMUX_DIR:-}" ] || return 1
+  "$LAB_HOME_HELPER" tmux "$LAB" "$@"
 }
 
 # The empty-environment base every lab process starts from.

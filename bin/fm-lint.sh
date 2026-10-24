@@ -716,14 +716,17 @@ fm_lint_run_backend_purity() {
   }
 }
 
-# tmux resolves its server from -S, then -L, then $TMUX, and only then from
-# TMUX_TMPDIR, so a tmux command that names no socket reaches whatever server
-# the caller's pane belongs to - in a firstmate pane, the fleet's own server.
-# Reject a literal tmux kill-server without -S/-L anywhere in bin/ and tests/,
-# and kill-session/new-session without them in tests/; production bin/ creates
-# and kills sessions on the operator's own server by design. A literal tmux is
-# the command word tmux, a path ending in /tmux, or a variable whose name ends
-# in TMUX, in command position. Calls through a wrapper function are not seen.
+# A tmux command that names no socket reaches the server of the caller's own
+# pane - in a firstmate pane, the fleet's (bin/fm-lab-home.sh's header owns
+# why). Reject a literal tmux kill-server (or a prefix of it) without -S or a
+# non-default -L anywhere in bin/ and tests/, and kill-session/new-session
+# likewise in tests/; production bin/ creates and kills sessions on the
+# operator's own server by design. A literal tmux is the command word tmux, a
+# path ending in /tmux, or a variable whose name contains tmux, in command
+# position, including after env, wrappers such as timeout or sudo, and inside
+# trap, eval, -c and $( strings. A tests/ line may opt out with a trailing
+# `# fm-lint: tmux-socket-ok <reason>`. Not seen: calls through a wrapper
+# function or PATH shim, and command text assembled at run time.
 fm_lint_run_tmux_socket() {
   local findings path canonical
   local -a tmux_roots
@@ -743,63 +746,100 @@ fm_lint_run_tmux_socket() {
   fi
   [ "${#tmux_roots[@]}" -gt 0 ] || return 0
   findings=$(LC_ALL=C awk -v root="$ROOT/" '
-    # Inside a quoted string only a trap or -c command string is code.
-    function command_position(prefix,    i, c, quote, open) {
-      quote=""
-      for (i=1; i <= length(prefix); i++) {
-        c=substr(prefix, i, 1)
-        if (quote == "\047") { if (c == "\047") quote=""; continue }
+    # Walk prefix to its end, leaving the open quote (if any) in q and its
+    # position in q_open.
+    function quote_state(text,    i, c) {
+      q=""; q_open=0
+      for (i=1; i <= length(text); i++) {
+        c=substr(text, i, 1)
+        if (q == "\047") { if (c == "\047") q=""; continue }
         if (c == "\\") { i++; continue }
-        if (quote == "\"") { if (c == "\"") quote=""; continue }
-        if (c == "\047" || c == "\"") { quote=c; open=i }
+        if (q == "\"") { if (c == "\"") q=""; continue }
+        if (c == "\047" || c == "\"") { q=c; q_open=i }
       }
-      if (quote == "") return unquoted_command_position(prefix)
-      return substr(prefix, 1, open - 1) ~ /(^|[[:space:]])(trap|-c)[[:space:]]*$/ \
-        && unquoted_command_position(substr(prefix, open + 1))
     }
+    # Inside a quoted string only a trap, eval or -c command string, or a $(
+    # or backtick inside double quotes, is code.
+    function command_position(prefix,    inner) {
+      quote_state(prefix)
+      if (q == "") return unquoted_command_position(prefix)
+      inner=substr(prefix, q_open + 1)
+      if (q == "\"" && inner ~ /(\$\(|`)/) {
+        sub(/^.*(\$\(|`)/, "", inner)
+        return unquoted_command_position(inner)
+      }
+      return substr(prefix, 1, q_open - 1) ~ /(^|[[:space:]])(trap|eval|-[A-Za-z]*c)[[:space:]]*$/ \
+        && unquoted_command_position(inner)
+    }
+    # Strip trailing assignments, env options and array expansions, and
+    # command wrappers, then ask whether a command starts here.
     function unquoted_command_position(prefix,    changed) {
       do {
         changed=0
         sub(/[[:space:]]+$/, "", prefix)
         if (sub(/(^|[[:space:]])[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*$/, "", prefix)) changed=1
         else if (sub(/(^|[[:space:]])-u[[:space:]]+[A-Za-z_][A-Za-z0-9_]*$/, "", prefix)) changed=1
-        else if (sub(/(^|[[:space:]])(env|exec|command|-i|--)$/, "", prefix)) changed=1
+        else if (sub(/(^|[[:space:]])"?\$\{[A-Za-z_][A-Za-z0-9_]*\[[@*]\]\}"?$/, "", prefix)) changed=1
+        else if (sub(/(^|[[:space:]])(env|exec|command|builtin|eval|nohup|sudo|time|nice|xargs|timeout|-[A-Za-z]+|--[A-Za-z-]*(=[^[:space:]]*)?|[0-9.]+[smhd]?)$/, "", prefix)) changed=1
       } while (changed)
-      return prefix == "" || prefix ~ /([;&|({!]|\$\()$/ || prefix ~ /(^|[[:space:]])(then|do|else|if|while|until|trap)$/
+      return prefix == "" || prefix ~ /([;&|({!`]|\$\()$/ || prefix ~ /(^|[[:space:]])(then|do|else|if|elif|while|until|trap)$/
     }
     function literal_tmux(word) {
-      gsub(/["\047{}]/, "", word)
-      return word == "tmux" || word ~ /\/tmux$/ || word ~ /^\$[A-Za-z_][A-Za-z0-9_]*TMUX$/
+      gsub(/[\\"\047{}]/, "", word)
+      return word == "tmux" || word ~ /\/tmux$/ || tolower(word) ~ /^\$[a-z0-9_]*tmux[a-z0-9_]*$/
     }
-    function check(text, line_no, file,    rest, offset, start, len, word, args, pattern) {
-      pattern = (file ~ /^bin\//) ? "kill-server" : "kill-server|kill-session|new-session"
+    # A comment starts at an unquoted # that opens a word.
+    function strip_comment(text,    i, c, quote) {
+      quote=""
+      for (i=1; i <= length(text); i++) {
+        c=substr(text, i, 1)
+        if (quote == "\047") { if (c == "\047") quote=""; continue }
+        if (c == "\\") { i++; continue }
+        if (quote == "\"") { if (c == "\"") quote=""; continue }
+        if (c == "\047" || c == "\"") quote=c
+        else if (c == "#" && (i == 1 || substr(text, i - 1, 1) ~ /[[:space:]]/)) return substr(text, 1, i - 1)
+      }
+      return text
+    }
+    function report_unaddressed_tmux(text, line_no, file,    rest, offset, word_start, word_len, word, cut, args, pattern, pre, lead) {
+      pattern = (file ~ /^bin\//) ? "kill-ser[a-z]*" : "kill-ser[a-z]*|kill-ses[a-z]*|new|new-s[a-z]*"
       rest=text; offset=0
       while (match(rest, /[^[:space:];|&()]+/)) {
-        start=RSTART; len=RLENGTH
-        word=substr(rest, start, len)
-        if (literal_tmux(word) && command_position(substr(text, 1, offset + start - 1))) {
-          args=substr(rest, start + len)
+        word_start=RSTART; word_len=RLENGTH
+        word=substr(rest, word_start, word_len)
+        # A word opening a string it does not close starts that string.
+        cut=offset + word_start - 1
+        lead=substr(word, 1, 1)
+        if ((lead == "\047" || lead == "\"") && gsub(lead, lead, word) % 2 == 1) cut++
+        if (literal_tmux(word) && command_position(substr(text, 1, cut))) {
+          args=substr(rest, word_start + word_len)
           sub(/[;|&].*$/, "", args)
           # A tmux() stub definition is not an invocation.
-          if (args !~ /^[[:space:]]*\(/ && match(args, "(^|[[:space:]])(" pattern ")([^A-Za-z0-9_-]|$)") && substr(args, 1, RSTART) !~ /(^|[[:space:]])-[SL]/) {
-            print file ":" line_no ": tmux command without -S or -L can reach the operator'\''s tmux server"
-            return
+          if (args !~ /^[[:space:]]*\(/ && match(args, "(^|[[:space:]])(" pattern ")([^A-Za-z0-9_-]|$)")) {
+            pre=substr(args, 1, RSTART)
+            if (!(pre ~ /(^|[[:space:]])-S/ || (pre ~ /(^|[[:space:]])-L/ && pre !~ /(^|[[:space:]])-L[[:space:]]*["\047]?default["\047]?([[:space:]]|$)/))) {
+              print file ":" line_no ": tmux command without -S or -L can reach the operator'\''s tmux server"
+              return
+            }
           }
         }
-        offset += start + len - 1
-        rest=substr(rest, start + len)
+        offset += word_start + word_len - 1
+        rest=substr(rest, word_start + word_len)
       }
     }
-    FNR == 1 { pending=""; start=0; file=FILENAME; if (index(file, root) == 1) file=substr(file, length(root) + 1) }
+    FNR == 1 { pending=""; first_line=0; file=FILENAME; if (index(file, root) == 1) file=substr(file, length(root) + 1) }
     {
       line=$0
-      if (pending == "") start=FNR
+      if (pending == "") {
+        if (line ~ /^[[:space:]]*#/) next
+        first_line=FNR
+      }
       if (line ~ /\\$/) { pending = pending substr(line, 1, length(line) - 1) " "; next }
       line = pending line
       pending=""
-      if (line ~ /^[[:space:]]*#/) next
-      sub(/[[:space:]]#.*$/, "", line)
-      check(line, start, file)
+      # A test line may opt out, naming why, for a deliberate unaddressed call.
+      if (file ~ /^tests\// && line ~ /#[[:space:]]*fm-lint:[[:space:]]*tmux-socket-ok[[:space:]]+[^[:space:]]/) next
+      report_unaddressed_tmux(strip_comment(line), first_line, file)
     }
   ' "${tmux_roots[@]}") || {
     printf 'fm-lint.sh: the tmux socket check could not run\n' >&2
@@ -1369,11 +1409,11 @@ EOF
   } >> "$ROOTS_LOG"
 fi
 
-purity_rc=0
-fm_lint_run_backend_purity || purity_rc=$?
-fm_lint_run_tmux_socket || purity_rc=$?
-if [ "$overall_rc" -eq 0 ] && [ "$purity_rc" -ne 0 ]; then
-  overall_rc=$purity_rc
+static_rc=0
+fm_lint_run_backend_purity || static_rc=$?
+fm_lint_run_tmux_socket || static_rc=$?
+if [ "$overall_rc" -eq 0 ] && [ "$static_rc" -ne 0 ]; then
+  overall_rc=$static_rc
 fi
 
 if [ "$overall_rc" -eq 0 ]; then
