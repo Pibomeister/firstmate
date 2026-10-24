@@ -1,0 +1,29 @@
+pre-state: queue=0 rows, deferral records=0
+real watcher pid=86412 alive=y; task pane is a busy loop on the lab's private tmux server
+queue-lock holder pid=98974 (lock pid=98974); it queued procevent:lab:src:2 under the lock
+1:up 2:up 3:up 4:up 5:up 6:up 7:up 8:up 9:up 10:up 11:up 12:up 13:up 14:up 15:up 16:up 
+--- beacon age=2s
+--- deferral record (owner first-epoch work holder):
+86412	1792884858	wake-queue	98974
+--- stage:
+86412	1792884869	process-events
+--- fm-guard.sh output (primary's view):
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER BLOCKED - PART OF SUPERVISION IS OFF
+●  the watcher (pid 86412) is alive but has skipped its wake-queue work for 14s because pid 98974 (hold-queue.sh) holds that lock past its bound.
+●  The watcher resumes that work by itself once the lock is free; inspect that process (never remove the lock by hand).
+●  down 1s; watcher pid 86412 last recorded stage pane-staleness 0s ago.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
+--- release holder
+watcher alive after release? no (one-shot exit after emitting its wake)
+deliveries of procevent:lab:src:2 on watcher stdout: 1
+deferral records remaining: 0
+--- watcher stdout:
+check: process-event result captured: procevent:lab:src:2
+--- triage:
+[2026-10-24T17:34:18-0600] deferred wake-queue work this cycle: its lock is held by pid 98974 (hold-queue.sh) past its bound
+[2026-10-24T17:34:26-0600] deferred wake-queue work this cycle: its lock is held by pid 98974 (hold-queue.sh) past its bound
+[2026-10-24T17:34:33-0600] deferred wake-queue work this cycle: its lock is held by pid 98974 (hold-queue.sh) past its bound
+post-release lock dir: 
+queue rows: 1792884851	11	check	procevent:lab:src:2	check: process-event lab src 2

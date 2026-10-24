@@ -1,0 +1,22 @@
+pane command: sleep
+== steer the codex task through the real fm-send (it rings; the pane never reads it)
+aged unread steer: state/mate-b.inbox/001.msg
+== run the real watcher (grace 0, no re-rings) until it escalates
+watcher exit=0
+--- watcher stdout:
+stale: sess:fm-mate-b (unread firstmate instruction: /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.GE3sMy/state/mate-b.inbox/001.msg still unhandled after 0 doorbell delivery attempts while its pane state is unknown (codex-unverified); inspect the worker)
+--- wake queue rows:
+stale	sess:fm-mate-b	stale: sess:fm-mate-b (unread firstmate instruction: /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.GE3sMy/state/mate-b.inbox/001.msg still unhandled after 0 doorbell delivery attempts while its pane state is unknown (codex-unverified); inspect the worker)
+--- triage (steer):
+
+===== CONTRAST: same scenario with harness=grok =====
+pane command: sleep
+== steer the codex task through the real fm-send (it rings; the pane never reads it)
+aged unread steer: state/mate-b.inbox/001.msg
+== run the real watcher (grace 0, no re-rings) until it escalates
+watcher exit=0
+--- watcher stdout:
+stale: sess:fm-mate-b (unread firstmate instruction: /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.GE3sMy/state/mate-b.inbox/001.msg still unhandled after 0 doorbell delivery attempts with an idle pane; inspect the worker)
+--- wake queue rows:
+stale	sess:fm-mate-b	stale: sess:fm-mate-b (unread firstmate instruction: /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.GE3sMy/state/mate-b.inbox/001.msg still unhandled after 0 doorbell delivery attempts with an idle pane; inspect the worker)
+--- triage (steer):

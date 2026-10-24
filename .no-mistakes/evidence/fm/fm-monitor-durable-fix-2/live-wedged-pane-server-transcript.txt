@@ -1,0 +1,12 @@
+lab tmux server pid=49224; freezing it with SIGSTOP
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.GE3sMy
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s; down 35s) - full banner already printed this episode.
+fm-send: doorbell did not reach sess:fm-lane-a; the steer is durably recorded at /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.GE3sMy/state/lane-a.inbox/003.msg and the watcher will re-ring
+rc=0 elapsed=24s
+lease-command lock after send: released
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.GE3sMy
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s; down 60s) - full banner already printed this episode.
+error: key 'Escape' to sess:fm-lane-a did not finish within 3s and was stopped; its completion is unknown (tried meta=/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.GE3sMy/state/lane-a.meta; backend=from-meta)
+key rc=1 elapsed=5s
+lease-command lock after key: released
+server resumed

@@ -1,0 +1,7 @@
+ok - affected Darwin bash 5.1, 5.2 and 5.3.0-5.3.15 force BASH_COMPAT=50 in that shell only
+ok - bash 3.2, 5.0, Darwin 5.3.16+, Linux and malformed profiles leave BASH_COMPAT untouched
+ok - an affected profile turns /opt/homebrew/bin/bash's here-documents into regular files; unaffected keeps pipes
+ok - supervision entry points apply the gate when they start
+ok - the startup warning names exactly the affected running or PATH-selected bash, and is silent otherwise
+ok - bootstrap warns once on its own and defers to a session start that already warned
+ok - SKIP: real affected-binary lane not run (needs Darwin, clang and FM_BASH_COMPAT_AFFECTED_BASH)

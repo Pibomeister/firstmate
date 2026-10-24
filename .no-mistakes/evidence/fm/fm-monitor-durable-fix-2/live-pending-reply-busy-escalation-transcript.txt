@@ -1,0 +1,36 @@
+== seed two delivered secondmate requests whose turns completed with no report (grace 0)
+records: 82f461bace47b444 9b86d373309d7c88
+== a live 'hung send' holds this home's lease-command lock: pid 35631 (held)
+== run the real watcher: its pending-reply stage reposts through the real fm-send (lock wait 3s, stall bound 10s)
+after 32s: watcher alive=y
+--- lease refusals seen by the watcher's sends: 0
+--- record 1: phase=awaiting_report busy_since=1792885180 holder=lease-command lock busy, held by pid 35631 (sleep)
+--- record 2: phase=awaiting_report busy_since=
+--- parent status for mate-b:
+blocked [key=pending-reply-82f461bace47b444] [at=1792885201]: pending-reply-recovery-busy: task=mate-b pending-reply-id=82f461bace47b444 request=rebase and report busy since 1792885180, lease-command lock busy, held by pid 35631 (sleep)
+--- watcher stdout:
+== release the holder; run the watcher again: the repost should now go through
+--- record 1: phase=awaiting_report busy_since='1792885180'; record 2: phase=awaiting_report
+--- reposts in mate-b inbox:
+tail: /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.GE3sMy/state/mate-b.inbox/*.msg: No such file or directory
+..
+== the mate reports for request 1; resolve through the real watcher
+--- record 1 phase=resolved
+--- parent status for mate-b (final):
+blocked [key=pending-reply-82f461bace47b444] [at=1792885201]: pending-reply-recovery-busy: task=mate-b pending-reply-id=82f461bace47b444 request=rebase and report busy since 1792885180, lease-command lock busy, held by pid 35631 (sleep)
+done [corr=82f461bace47b444]: rebased and reported
+resolved [key=pending-reply-82f461bace47b444] [at=1792885255]: pending-reply-resolved: task=mate-b pending-reply-id=82f461bace47b444 via=status
+== lock free now (lease-command lock present: no); watcher lock: none
+before: record1=resolved record2=recovery_sent record2 busy_since=''
+after 1s: record2 phase=recovery_sent
+--- repost delivered into mate-b's steering inbox:
+[001.msg]
+[fm-from-firstmate]⁣corr=9b86d373309d7c88 REPOST REQUIRED: previous marked request had no correlated parent report. Reply on the parent status channel including corr=9b86d373309d7c88. Original request
+--- watcher stdout:
+
+NOTE (tester): in the first run's "release" step, `kill $WP` hit the test script's env subshell, not the watcher,
+so the first watcher (alarm-bounded at 90s) kept the watcher lock and the second watcher printed
+"watcher: already running". That first watcher is the one that, once the lease holder was killed, reposted
+record 2 through the real fm-send (one inbox message, corr=9b86d373309d7c88). The follow-up run above confirms
+record 2 = recovery_sent with its busy run cleared, and record 1 resolved from the mate's correlated report with its
+recovery-busy escalation closed by a `resolved [key=pending-reply-<corr>]` line.

@@ -1,0 +1,12 @@
+ok - the shared stalled-watcher predicate needs the bound, its extra window, and this home's lock under the recorded identity, or its own child's unpublished lock
+ok - the away daemon replaces a watcher stalled past the bound with a fresh one
+ok - the away daemon replaces its own watcher wedged in startup before it published an identity
+ok - the tree stop reaches own-group children, spares a reparented server, and refuses a mismatched identity
+ok - a started arm replaces a watcher stalled at the bound and leaves nothing it started behind
+ok - a cycle slower than a poll but under the stall bound is never stopped
+ok - the arm's signal path stops a watcher (and its read) that cannot run its own TERM trap
+ok - --stop stops a wedged watcher and everything it started
+ok - a replacement evicts a stalled holder together with everything the holder started
+ok - a harness kill of the arm's process group still ends the arm and its watcher together
+tests/fm-watcher-replacement.test.sh: line 375: 37855 Killed: 9                  env PATH="$dir/fakebin:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$dir/state" FM_CREW_STATE_BIN="$dir/fakebin/hang-crew-state.sh" FM_PARKED_GATE_READ_TIMEOUT=600 FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 FM_SECONDMATE_LIVENESS_SECS=99999999 FM_ARM_CONFIRM_TIMEOUT=10 FM_GUARD_GRACE=5 FM_WATCHER_STALL_BOUND=12 "$@" "$ARM" > "$dir/arm.out" 2>&1
+tests/lib.sh: line 279: 44159 Killed: 9                  sleep 300 > /dev/null 2>&1

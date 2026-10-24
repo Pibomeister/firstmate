@@ -1,0 +1,14 @@
+== task rc1 recorded against the real lab tmux server:
+   window=sess:fm-rc1
+   kind=ship
+   harness=claude
+   backend=tmux
+   worktree=/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.GE3sMy/projects/wt-rc1
+   project=/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.GE3sMy/projects/proj
+   endpoint_task_id=rc1
+   mode=no-mistakes
+   tmux_socket=/private/tmp/fml.nlrUFP/tmux-501/default
+   tmux_server_pid=43664
+   tmux_server_identity=Sat Oct 24 17:44:44 2026     tmux -f /dev/null -S /tmp/fml.nlrUFP/tmux-501/default new-session -d -s sess -n fm-rc1 -x 160 -y 40 -c /tmp exec /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.GE3sMy/fakeagent/codex 3600
+   tmux_window_id=@0
+== ADVERSARIAL: server merely stopped (SIGSTOP) - exit must NOT prove the endpoint gone

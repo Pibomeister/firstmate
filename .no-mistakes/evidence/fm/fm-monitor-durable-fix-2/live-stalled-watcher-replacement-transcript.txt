@@ -1,0 +1,30 @@
+== start the real fm-watch-arm.sh in the lab; the watcher's crew-state read hangs 600s; stall bound 12s
+arm=28491 watcher=28600 blocked-reader=32624 reader-child=33193
+  PID  PGID ELAPSED ARGS
+28491 28472   00:03 bash bin/fm-watch-arm.sh
+28600 28472   00:03 bash /Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M5R2GFGZR1X8FHR8BKRF1HRV/bin/fm-watch.sh
+32624 28472   00:01 bash /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.GE3sMy/hang/hang-crew-state.sh lane-a
+33193 28472   00:01 sleep 600
+arm exited rc=1 after 12s
+--- arm output:
+watcher: started pid=28600 (beacon fresh)
+watcher: FAILED - started watcher pid=28600 stalled (beacon 12s at or past hard bound 12s)
+pid 28600 gone
+pid 32624 gone
+pid 33193 gone
+--- watcher stage/deferral records:
+-rw-r--r--@  1 eduardopicazo  staff    35 Oct 24 17:22 .guard-watcher-stale-banner
+-rw-r--r--@  1 eduardopicazo  staff     0 Oct 24 17:24 .last-watcher-beat
+-rw-r--r--@  1 eduardopicazo  staff   510 Oct 24 17:24 .watch-cycle-exits.log
+-rw-------@  1 eduardopicazo  staff    41 Oct 24 17:24 .watcher-down
+-rw-r--r--@  1 eduardopicazo  staff    32 Oct 24 17:24 .watcher-stage
+--- .watcher-stage:
+28600	1792884261	status-signals
+
+--- .watch-cycle-exits.log:
+arm_pid=28491	watcher_pid=28600	origin=started	started_at=1792884260	ended_at=1792884272	exit_code=unknown	signal=unknown	reason=started-holder-stalled	beacon_age=12	lock_before=pid:28600|identity:Sat Oct 24 17:24:20 2026     bash /Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M5R2GFGZR1X8FHR8BKRF1HRV/bin/fm-watch.sh	lock_after=pid:28600|identity:Sat Oct 24 17:24:20 2026     bash /Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M5R2GFGZR1X8FHR8BKRF1HRV/bin/fm-watch.sh	successor=none
+--- .watcher-down:
+pending:downtime:28600.1792884272.zBhsTm
+
+--- bin/fm-guard.sh (what the primary sees after replacement):
+guard rc=0

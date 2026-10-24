@@ -1,0 +1,7 @@
+ok - tmux proof: the recorded window id on the live recorded server is never gone, under any name
+ok - tmux proof: a window gone from its live server is gone only when no pane of it is in the copy
+ok - tmux proof: the recorded server killed, or replaced on its socket, proves the endpoint gone without starting, stopping or attaching to a server
+ok - tmux proof: a live recorded server that cannot answer is never read as gone
+ok - tmux proof: a process holding the copy (reached through a symlinked path) blocks it; a sibling path does not
+ok - tmux proof: a record without the server identity keeps refusing
+ok - tmux proof: a live recorded server whose identity cannot be read is never gone

@@ -1,0 +1,46 @@
+LAB=/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.GE3sMy
+== baseline: fm-send to a real tmux pane in lab home (lock free)
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.GE3sMy
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  down 0s.
+●  This is a supervision warning only; the requested message WILL still be sent.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+rc=0 elapsed=2s
+== hold the home lease-command lock with a live 'hung-send.sh' process
+held
+holder pid=99344 lockpid=99344
+== fm-send while the lock is held (FM_LEASE_COMMAND_LOCK_WAIT=5)
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.GE3sMy
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s; down 5s) - full banner already printed this episode.
+fm-lease: steer (fm-send) is waiting up to 5s for this home's lease-command lock, held by pid 99344 (sleep)
+error: steer (fm-send) refused - this home's lease-command lock (/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.GE3sMy/state/.fm-lease-command.lock) is busy, still held by pid 99344 (sleep) after 5s (wait status 124); retry the command once that holder finishes, and if it stays held, inspect that process and never remove the lock by hand
+rc=6 elapsed=6s
+== lock still owned by holder? pid=99344
+== release holder, resend
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.GE3sMy
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s; down 13s) - full banner already printed this episode.
+rc=0 elapsed=3s
+== pane contents (real tmux capture-pane):
+: Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your 'lane-a.inbox' steering inbox, read and act on each in numeric order, then mv each into its
+ handled/.
+: Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your 'lane-a.inbox' steering inbox, read and act on each in numeric order, then mv each into its
+ handled/.
+: Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your 'lane-a.inbox' steering inbox, read and act on each in numeric order, then mv each into its
+ handled/.
+: Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your 'lane-a.inbox' steering inbox, read and act on each in numeric order, then mv each into its
+ handled/.
+== inbox contents after the three sends
+--- state/lane-a.inbox/002.msg
+schema=fm-task-inbox.v1
+at=2026-10-24T23:22:57Z
+--
+after release hello
+--- state/lane-a.inbox/001.msg
+schema=fm-task-inbox.v1
+at=2026-10-24T23:22:44Z
+--
+baseline hello
