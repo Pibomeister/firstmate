@@ -810,64 +810,57 @@ fm_lint_run_tmux_socket() {
     }
     # Walk tmux global options ([-2CDhlNquUvV] flags, then one of -c -f -L -S
     # -T taking the rest of the word or the next one) to the command word;
-    # addressed=1 when -S or a non-default -L names the server. A word that
-    # is no option and no plain command (an expansion, a quoted value) leaves
-    # the command unknown: "?" plus the remaining words, judged conservatively.
-    function tmux_command_word(args,    n, w, i, opt, letter, value, rest, q, depth, options) {
+    # addressed=1 when -S or a non-default -L names the server. Once a word is
+    # neither (an expansion, a substituted value), the command is unknown and
+    # unknown_tmux_kill judges the rest.
+    function tmux_command_word(args, unknown,    n, w, i, opt, letter, value, q) {
       n=split(args, w, /[[:space:]]+/)
       addressed=0
       for (i=1; i <= n; i++) {
         if (w[i] == "") continue
-        if (w[i] == "--") return w[i + 1]
+        if (w[i] == "--") { opt=w[i + 1]; gsub(/["\047)]/, "", opt); return opt }
         # A command word may be quoted or close the quoted string it sits in.
         if (w[i] ~ /^["\047]*[a-z][a-z-]*["\047)]*$/) { gsub(/["\047)]/, "", w[i]); return w[i] }
         opt=w[i]; gsub(/["\047]/, "", opt)
         if (opt ~ /^-[2CDhlNquUvV]*$/) continue
-        if (opt ~ /^-[2CDhlNquUvV]*[cfLST]/) {
-          letter=opt; sub(/^-[2CDhlNquUvV]*/, "", letter); value=substr(letter, 2); letter=substr(letter, 1, 1)
-          if (value == "") {
-            i++; value=w[i]
-            # A value that opens a substitution is judged conservatively, by
-            # every word after it.
-            if (value ~ /\$\(/) {
-              if (letter == "S" || letter == "L") addressed=1
-              rest=""
-              for (i++; i <= n; i++) { opt=w[i]; gsub(/["\047()]/, "", opt); rest=rest " " opt }
-              return "?" rest
-            }
-            # A quoted value split on its spaces runs to the word closing it.
-            q=substr(value, 1, 1)
-            if ((q == "\"" || q == "\047") && gsub(q, q, value) % 2 == 1)
-              while (i < n && index(w[i + 1], q) == 0) i++
-            if ((q == "\"" || q == "\047") && gsub(q, q, value) % 2 == 1 && i < n) i++
-            gsub(/["\047]/, "", value)
+        if (opt !~ /^-[2CDhlNquUvV]*[cfLST]/ || opt ~ /\$\(/) return unknown_tmux_kill(w, i, n, unknown)
+        letter=opt; sub(/^-[2CDhlNquUvV]*/, "", letter); value=substr(letter, 2); letter=substr(letter, 1, 1)
+        if (value == "") {
+          if (w[i + 1] ~ /\$\(/) {
+            if (letter == "S" || letter == "L") addressed=1
+            return unknown_tmux_kill(w, i + 1, n, unknown)
           }
-          if (letter == "S") addressed=1
-          else if (letter == "L" && value != "default") addressed=1
-          continue
+          i++; value=w[i]
+          # A quoted value split on its spaces runs to the word closing it.
+          q=substr(value, 1, 1)
+          if ((q == "\"" || q == "\047") && gsub(q, q, value) % 2 == 1)
+            while (i < n && index(w[i + 1], q) == 0) i++
+          if ((q == "\"" || q == "\047") && gsub(q, q, value) % 2 == 1 && i < n) i++
+          gsub(/["\047]/, "", value)
         }
-        # Unknown command: collect the remaining words up to the ) that closes
-        # an enclosing substitution, noting -S or a non-default -L only until
-        # a plain command word starts the arguments of the command.
-        rest=""; depth=0; options=1
-        for (; i <= n; i++) {
-          opt=w[i]
-          depth+=gsub(/\(/, "(", opt) - gsub(/\)/, ")", opt)
-          if (depth < 0) sub(/\).*$/, "", opt)
-          gsub(/["\047]/, "", opt)
-          # The value of a bare -c, -f or -T is not the command word.
-          if (options && opt ~ /^-[2CDhlNquUvV]*[cfT]$/ && i < n) { rest=rest " " opt; i++; continue }
-          if (options && opt ~ /^[a-z][a-z-]*$/) options=0
-          if (options && opt ~ /^-[2CDhlNquUvV]*S/) addressed=1
-          else if (options && opt ~ /^-[2CDhlNquUvV]*L/) {
-            value=opt; sub(/^-[2CDhlNquUvV]*L/, "", value)
-            if (value == "") { value=w[i + 1]; gsub(/["\047)]/, "", value) }
-            if (value != "" && value != "default") addressed=1
-          }
-          rest=rest " " opt
-          if (depth < 0) break
+        if (letter == "S") addressed=1
+        else if (letter == "L" && value != "default") addressed=1
+      }
+      return ""
+    }
+    # Unknown command: the first kill word (unknown is its pattern) is
+    # unaddressed unless -S or a non-default -L came before it; words past the
+    # ) closing an enclosing substitution are not this call.
+    function unknown_tmux_kill(w, i, n, unknown,    depth, word, value) {
+      depth=0
+      for (; i <= n; i++) {
+        word=w[i]
+        depth+=gsub(/\(/, "(", word) - gsub(/\)/, ")", word)
+        if (depth < 0) sub(/\).*$/, "", word)
+        gsub(/["\047()]/, "", word)
+        if (word ~ ("^(" unknown ")$")) return addressed ? "" : "unknown-kill"
+        if (word ~ /^-[2CDhlNquUvV]*S/) addressed=1
+        else if (word ~ /^-[2CDhlNquUvV]*L/) {
+          value=word; sub(/^-[2CDhlNquUvV]*L/, "", value)
+          if (value == "") { value=w[i + 1]; gsub(/["\047()]/, "", value) }
+          if (value != "" && value != "default") addressed=1
         }
-        return "?" rest
+        if (depth < 0) break
       }
       return ""
     }
@@ -887,12 +880,9 @@ fm_lint_run_tmux_socket() {
           sub(/[;|&`].*$/, "", args)
           # A tmux() stub definition or a tmux) case arm is not an invocation.
           if (args !~ /^[[:space:]]*[()]/) {
-            command=tmux_command_word(args)
-            # An unknown command is judged by any kill (or, in tests/, new-s*)
-            # word after it; a bare `new` there is too often a plain argument.
-            if (command ~ /^\?/) command=(command ~ ("[[:space:]](" unknown ")([[:space:]]|$)")) ? "unknown-kill" : ""
-            else sub(/\).*$/, "", command)
-            if ((command == "unknown-kill" || command ~ pattern) && !addressed) {
+            # After an unknown word a bare `new` is too often a plain argument.
+            command=tmux_command_word(args, unknown)
+            if (command == "unknown-kill" || (command ~ pattern && !addressed)) {
               print file ":" line_no ": tmux command without -S or -L can reach the operator'\''s tmux server"
               return
             }

@@ -1270,6 +1270,8 @@ test_tmux_commands_must_name_their_server() {
     'tests/lab.test.sh|(tmux kill-server) || true' \
     'tests/lab.test.sh|tmux $(lab_flags lab) kill-server' \
     'tests/lab.test.sh|tmux -f "$(cfg "a b")" kill-server' \
+    'tests/lab.test.sh|tmux "$o" -f "$(cfg a b)" kill-server' \
+    'tests/lab.test.sh|x=$(tmux -- kill-server)' \
     'tests/lab.test.sh|tmux "${opts[@]}" new-session -d "curl -L $url"' \
     'tests/lab.test.sh|echo "`tmux new-session -d`"' \
     'tests/lab.test.sh|"${TMUX_CMD[@]}" kill-server' \
@@ -1310,6 +1312,8 @@ test_tmux_commands_must_name_their_server() {
     'tests/lab.test.sh|tmux "${opts[@]}" -S "$sock" kill-server' \
     'tests/lab.test.sh|tmux "${opts[@]}" new-window -d -n new -t lab' \
     'tests/lab.test.sh|tmux "$o" -f cfg -S "$sock" kill-server' \
+    'tests/lab.test.sh|tmux -f "$(cfg)" -S "$sock" kill-server' \
+    'tests/lab.test.sh|[ "$(tmux "$o" -f cfg)" = kill-server ]' \
     'tests/lab.test.sh|tmux -S "$dir/tmux-$(id -u)/default" kill-server' \
     'tests/lab.test.sh|tmux kill-server  # fm-lint: tmux-socket-ok guarded negative control'
   do
