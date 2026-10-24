@@ -3042,7 +3042,7 @@ run_check_capture() {
     fm_check_output_cleanup
     return 1
   fi
-  wait "$FM_ACTIVE_CHECK_PID" 2>/dev/null || true
+  wait "$FM_ACTIVE_CHECK_PID" || true
   FM_ACTIVE_CHECK_PID=
   fm_active_check_stop || return 1
   FM_CHECK_RESULT=$(cat "$FM_CHECK_OUTPUT" 2>/dev/null || true)
@@ -3355,7 +3355,9 @@ if [ -n "$EVICTED_PID" ]; then
   echo "watcher: replaced stalled pid $EVICTED_PID (beacon ${EVICTED_BEAT_AGE}s past hard bound ${WATCHER_STALL_BOUND}s)"
 fi
 WATCHER_RECOVERY_PENDING=0
-if [ -n "${FM_LOCK_RECOVERED_PID:-}" ]; then
+# A dead holder buried nothing when the durable queue is empty; the poll loop's
+# arm check still recovers any row appended after this read.
+if [ -n "${FM_LOCK_RECOVERED_PID:-}" ] && [ -s "$FM_WAKE_QUEUE" ]; then
   WATCHER_RECOVERY_PENDING=1
 fi
 if [ "${FM_WATCH_HANDLING_SUCCESSOR:-0}" != 1 ] \
@@ -3396,7 +3398,7 @@ home_summary_refresh_detached() {
     if kill -0 "$HOME_SUMMARY_PID" 2>/dev/null; then
       return 0
     fi
-    wait "$HOME_SUMMARY_PID" 2>/dev/null || true
+    wait "$HOME_SUMMARY_PID" || true
     HOME_SUMMARY_PID=
   fi
   FM_HOME_SUMMARY_IF_IDLE=1 \
@@ -3421,7 +3423,7 @@ reconcile_requests_detached() {
     if kill -0 "$RECONCILE_REQUEST_PID" 2>/dev/null; then
       return 0
     fi
-    if ! wait "$RECONCILE_REQUEST_PID" 2>/dev/null; then
+    if ! wait "$RECONCILE_REQUEST_PID"; then
       triage_log "secondmate reconcile notify request deferred"
     fi
     RECONCILE_REQUEST_PID=

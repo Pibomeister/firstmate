@@ -227,6 +227,8 @@ The first recovery marks that generation announced, and later empty-queue arms l
 A non-successor watcher start checks the durable queue and recovery marker under their locks.
 If an announced-but-unacknowledged episode has an empty queue, the arm leaves that generation announced, making repeated empty-queue arms idempotent while a long-poll source is merely alive.
 If a durable row arrived after the announcement, the arm opens a fresh pending downtime generation so buried work still resurfaces once.
+A pending downtime generation that an arm finds with an empty queue is retired on its own generation without a wake, because every row was already handled and acknowledged and the watcher's persisted seen markers re-detect any status written during downtime.
+Recovering a dead holder's lock alone does not create a wake when the queue is empty.
 A Codex foreground checkpoint skips the announced-episode reopen transition, so an already-announced generation stays announced while the checkpoint continues its bounded supervision.
 Its ordinary arm check still announces a never-announced generation, including one made pending by a durable queue append during the checkpoint.
 
@@ -238,7 +240,7 @@ If EXIT cleanup cannot acquire the downtime-marker lock within its bound, it ret
 A downtime republication of a pending episode reuses its generation.
 A watcher close leaves an announced downtime episode announced, while a successful durable append opens a fresh pending generation so a live watcher can recover the new work.
 An announced handling episode becomes pending downtime on the same generation because its handling turn may have been interrupted.
-That handling republication gives a successor exactly one recovery presentation without orphaning the acknowledgement already printed for that generation.
+That handling republication gives a successor exactly one recovery presentation while queue rows remain, without orphaning the acknowledgement already printed for that generation.
 A watcher stopped so an arm can take its cycle over (`bin/fm-watch-arm.sh --take-over`) publishes downtime like any close, but the taking arm restores an acknowledged episode that stop reopened only when the taken-over arm's cycle-ledger row for that exact arm and watcher records the watcher ending by the take-over's TERM and no wake was appended in between.
 The taking arm waits within a short bound for that row; a missing row or any other signal leaves downtime for the fresh cycle's ordinary recovery wake, while take-over still proceeds.
 Any other episode is left for the next cycle's arm check.
@@ -255,7 +257,7 @@ It is a non-fatal result that names its own remedy: re-drain, then acknowledge t
 
 The acknowledgement retires the marker only when no rows remain after sequence-bound consumption.
 A concurrently appended wake has a higher sequence, remains queued, and keeps the episode pending for presentation.
-Consequently, a watcher close during handling republishes the same generation as pending and forces one recovery turn even when no queue row remains, while the outstanding generation-bound acknowledgement stays valid.
+Consequently, a watcher close during handling republishes the same generation as pending, which forces one recovery turn only while a queue row remains and is otherwise retired by the next arm, while the outstanding generation-bound acknowledgement stays valid.
 An acknowledged episode does not freeze the generation, because the next downtime after it opens an episode of its own.
 
 ## Per-actor acknowledgement
@@ -451,7 +453,8 @@ They also prove that a legacy or handoff-phase watcher marker from an absent rep
 
 - Durable queue replay.
 - Real remote parent-replies ingestion into the authoritative status log.
-- Decision-only OPEN DECISIONS recovery.
+- An unchanged open decision folded by the next drain after an empty-queue down interval, without a bookkeeping wake.
+- An empty-queue re-arm after an ordinary close or over a dead holder that stays silent while a later durable row still wakes.
 - Interrupted handling replay.
 - Generation-bound acknowledgement.
 - A persistent live successor after recovery.

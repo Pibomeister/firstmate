@@ -347,6 +347,18 @@ fail_unexplained_cycle() {
   return 1
 }
 
+watcher_cleanup_complete() {
+  local pid=$1 identity=$2
+  fm_pid_alive "$pid" && return 0
+  [ -n "$identity" ] && [ "$identity" != none ] || return 0
+  [ "$(cat "$WATCH_LOCK/pid" 2>/dev/null)" = "$pid" ] || return 0
+  [ "$(cat "$WATCH_LOCK/pid-identity" 2>/dev/null)" = "$identity" ] || return 0
+  [ "$(cat "$WATCH_LOCK/fm-home" 2>/dev/null)" = "$FM_HOME" ] || return 0
+  [ "$(cat "$WATCH_LOCK/watcher-path" 2>/dev/null)" = "$WATCH" ] || return 0
+  echo "watcher: recovery state could not be persisted; retaining stale lock evidence" >&2
+  return 1
+}
+
 # Read the reason the current cycle's watcher recorded in the bounded
 # terminal-delivery ledger it publishes before releasing its lock. Sets
 # DELIVERED_REASON; fails when no record matches the cycle's pid and identity.
@@ -374,10 +386,13 @@ cycle_delivered_reason() {
 
 # Close a cycle whose reason line this arm could not read against that ledger.
 close_unobserved_cycle() {
+  local rc=0
+  watcher_cleanup_complete "$cycle_watcher_pid" "$cycle_watcher_identity" || rc=1
   if cycle_delivered_reason; then
     printf '%s\n' "$DELIVERED_REASON"
-    return 0
+    return "$rc"
   fi
+  [ "$rc" -eq 0 ] || return 1
   fail_unexplained_cycle
   return 1
 }
@@ -450,6 +465,11 @@ attach_and_wait() {
       fi
       cycle_log_append unknown unknown attached-holder-stalled none
       echo "watcher: FAILED - attached watcher pid=$attached_pid stalled (beacon ${age}s at or past hard bound ${STALL_BOUND}s)"
+      return 1
+    fi
+    if ! watcher_cleanup_complete "$cycle_watcher_pid" "$cycle_watcher_identity"; then
+      if cycle_delivered_reason; then printf '%s\n' "$DELIVERED_REASON"; fi
+      cycle_log_append 1 none attached-cleanup-failed none
       return 1
     fi
     if wait_for_healthy_successor; then
@@ -535,9 +555,18 @@ watch_output_reason_type() {
   esac
 }
 
-print_watch_output() {
-  local out=$1
+consume_child_output() {
+  local out=$child_out pending_signal='' saved_traps
+  saved_traps=$(trap -p HUP TERM INT)
+  trap 'pending_signal=HUP' HUP
+  trap 'pending_signal=TERM' TERM
+  trap 'pending_signal=INT' INT
   [ -s "$out" ] && cat "$out"
+  [ -z "$out" ] || rm -f "$out" 2>/dev/null || true
+  child_out=
+  eval "$saved_traps"
+  [ -z "$pending_signal" ] || kill -s "$pending_signal" "$ARM_PID"
+  return 0
 }
 
 handling_successor_generation() {
@@ -589,10 +618,21 @@ fi
 # holder and no-opping. Sets STOPPED_PID to the pid it stopped.
 STOPPED_PID=
 stop_home_watcher() {
-  local lock_pid i
+  local lock_pid identity i rc=0
   lock_pid=$(cat "$WATCH_LOCK/pid" 2>/dev/null || true)
-  fm_pid_alive "$lock_pid" || return 0
+  if ! fm_pid_alive "$lock_pid"; then
+    if [ "$mode" = stop ] && [ -n "$lock_pid" ]; then
+      identity=$(cat "$WATCH_LOCK/pid-identity" 2>/dev/null || true)
+      if ! watcher_cleanup_complete "$lock_pid" "$identity"; then
+        cycle_begin "$lock_pid" attached "$identity"
+        if cycle_delivered_reason; then printf '%s\n' "$DELIVERED_REASON"; fi
+        return 1
+      fi
+    fi
+    return 0
+  fi
   if fm_watcher_lock_matches_pid "$STATE" "$WATCH" "$lock_pid" "$FM_HOME"; then
+    identity=$FM_WATCHER_MATCHED_IDENTITY
     kill -TERM "$lock_pid" 2>/dev/null || true
     i=0
     while [ "$i" -lt 50 ] && fm_pid_alive "$lock_pid"; do
@@ -600,6 +640,14 @@ stop_home_watcher() {
       i=$((i + 1))
     done
     STOPPED_PID=$lock_pid
+    if ! fm_pid_alive "$lock_pid"; then
+      watcher_cleanup_complete "$lock_pid" "$identity" || rc=1
+      if [ "$mode" = stop ] || [ "$rc" -ne 0 ]; then
+        cycle_begin "$lock_pid" attached "$identity"
+        if cycle_delivered_reason; then printf '%s\n' "$DELIVERED_REASON"; fi
+      fi
+      return "$rc"
+    fi
   elif ! clear_stale_recorded_watcher_lock; then
     echo "watcher: FAILED - stale watcher recovery state could not be persisted" >&2
     return 1
@@ -642,6 +690,11 @@ take_over_cycle() {  # <watcher-pid> <identity>
   done
   if fm_pid_alive "$pid"; then
     return 1
+  fi
+  if ! watcher_cleanup_complete "$pid" "$cycle_watcher_identity"; then
+    if cycle_delivered_reason; then printf '%s\n' "$DELIVERED_REASON"; fi
+    cycle_log_append 1 none taken-over-cleanup-failed none
+    exit 1
   fi
   if cycle_delivered_reason; then
     cycle_log_append unknown unknown taken-over-delivered-wake none
@@ -706,15 +759,12 @@ cleanup_child() {
   if [ -n "$child" ] && fm_pid_alive "$child"; then
     kill -TERM "$child" 2>/dev/null || true
   fi
-  if [ -n "$child_out" ]; then
-    rm -f "$child_out" 2>/dev/null || true
-  fi
 }
 
 # shellcheck disable=SC2329 # Invoked indirectly by the signal traps below.
 handle_arm_signal() {
   local signal=$1 rc=$2
-  trap - HUP TERM INT
+  trap '' HUP TERM INT
   if [ -n "$child" ] && fm_pid_alive "$child"; then
     # The watcher installs its own cleanup traps only after acquiring and
     # publishing the home-bound lock identity. Do not TERM it in the middle of
@@ -731,6 +781,7 @@ handle_arm_signal() {
     done
     wait "$child" 2>/dev/null || true
   fi
+  consume_child_output
   cycle_log_append "$rc" "$signal" arm-interrupted none
   cleanup_child
   exit "$rc"
@@ -757,8 +808,12 @@ cycle_begin "$child" started "$(fm_pid_identity "$child" 2>/dev/null || true)"
 child_done=0
 
 owned_child_finished() {
-  local rc=$1 signal reason_type status successor
+  local rc=$1 signal reason_type status successor failure_reported=0
   signal=$(cycle_signal_name "$rc")
+  if ! watcher_cleanup_complete "$cycle_watcher_pid" "$cycle_watcher_identity"; then
+    [ "$rc" -ne 0 ] || rc=1
+    failure_reported=1
+  fi
   if [ "$rc" -eq 0 ] && watch_output_has_wake "$child_out"; then
     reason_type=$(watch_output_reason_type "$child_out")
     successor=none
@@ -766,30 +821,24 @@ owned_child_finished() {
       successor="started:$GROK_SUCCESSOR_PID"
     fi
     cycle_log_append "$rc" "$signal" "$reason_type" "$successor"
-    print_watch_output "$child_out"
-    rm -f "$child_out" 2>/dev/null || true
+    consume_child_output
     child=
-    child_out=
     return 0
   fi
 
   if [ "$rc" -eq 0 ]; then
     if wait_for_healthy_successor; then
       cycle_log_append "$rc" "$signal" unexpected-clean-exit "attached:$HEALTHY_PID"
-      print_watch_output "$child_out"
-      rm -f "$child_out" 2>/dev/null || true
+      consume_child_output
       child=
-      child_out=
       cycle_mark_predecessor_successor "attached:$HEALTHY_PID"
       report_attached
       cycle_begin "$HEALTHY_PID" attached "$HEALTHY_IDENTITY"
       attach_and_wait "$HEALTHY_PID"
       return $?
     fi
-    print_watch_output "$child_out"
-    rm -f "$child_out" 2>/dev/null || true
+    consume_child_output
     child=
-    child_out=
     if close_unobserved_cycle; then
       cycle_log_append "$rc" "$signal" clean-exit-delivered-wake none
       return 0
@@ -801,13 +850,12 @@ owned_child_finished() {
   reason_type="nonzero-exit"
   [ "$signal" = none ] || reason_type="signal-exit"
   cycle_log_append "$rc" "$signal" "$reason_type" none
-  print_watch_output "$child_out"
-  if ! grep -q '^watcher: FAILED' "$child_out" 2>/dev/null; then
+  grep -q '^watcher: FAILED' "$child_out" 2>/dev/null && failure_reported=1
+  consume_child_output
+  if [ "$failure_reported" -eq 0 ]; then
     echo "watcher: FAILED - watcher cycle exited $rc without an actionable reason"
   fi
-  rm -f "$child_out" 2>/dev/null || true
   child=
-  child_out=
   status=$rc
   [ "$status" -gt 0 ] || status=1
   return "$status"
@@ -831,6 +879,7 @@ while :; do
       if ! handling_generation=$(handling_successor_generation); then
         cleanup_child
         wait "$child" 2>/dev/null || true
+        consume_child_output
         cycle_log_append 1 none handling-handoff-failed none
         echo "watcher: FAILED - established successor could not inspect handling state"
         exit 1
@@ -864,11 +913,10 @@ while :; do
   sleep 0.2
 done
 
-trap - HUP TERM INT
-print_watch_output "$child_out"
 cleanup_child
 wait "$child" 2>/dev/null
 rc=$?
+consume_child_output
 cycle_log_append "$rc" "$(cycle_signal_name "$rc")" confirmation-timeout none
 echo "watcher: FAILED - no live watcher with a fresh beacon"
 exit 1
