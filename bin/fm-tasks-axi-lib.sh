@@ -43,7 +43,7 @@
 # is picked up by the next process rather than being cached to disk.
 
 # shellcheck source=bin/fm-bash-compat-lib.sh
-. "$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd "${d:-/}" && pwd)/fm-bash-compat-lib.sh"
+. "$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; CDPATH='' cd -- "${d:-/}" && pwd)/fm-bash-compat-lib.sh"
 FM_TASKS_AXI_MIN=0.2.6
 
 FM_TASKS_AXI_COMPATIBLE_MEMO=${FM_TASKS_AXI_COMPATIBLE:-}

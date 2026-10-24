@@ -52,7 +52,7 @@
 # immediately; the bound exists so a hung or interactive impostor cannot wedge
 # a spawn or a readiness check.
 # shellcheck source=bin/fm-bash-compat-lib.sh
-. "$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd "${d:-/}" && pwd)/fm-bash-compat-lib.sh"
+. "$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; CDPATH='' cd -- "${d:-/}" && pwd)/fm-bash-compat-lib.sh"
 FM_CURSOR_PROBE_TIMEOUT=${FM_CURSOR_PROBE_TIMEOUT:-10}
 
 # bin/fm-timeout-lib.sh is the single owner of bounded execution. It is loaded

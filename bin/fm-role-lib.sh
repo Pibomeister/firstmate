@@ -64,7 +64,7 @@
 
 # fm_role_file <config-dir>
 # shellcheck source=bin/fm-bash-compat-lib.sh
-. "$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd "${d:-/}" && pwd)/fm-bash-compat-lib.sh"
+. "$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; CDPATH='' cd -- "${d:-/}" && pwd)/fm-bash-compat-lib.sh"
 fm_role_file() {
   printf '%s/firstmate-role\n' "${1%/}"
 }

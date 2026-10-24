@@ -18,7 +18,7 @@
 # bind a candidate to its row under either schema.
 
 # shellcheck source=bin/fm-bash-compat-lib.sh
-. "$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd "${d:-/}" && pwd)/fm-bash-compat-lib.sh"
+. "$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; CDPATH='' cd -- "${d:-/}" && pwd)/fm-bash-compat-lib.sh"
 FM_QUOTA_AXI_MIN=0.1.51
 FM_QUOTA_PROVIDER_ID_RE='^[a-z0-9]+(-[a-z0-9]+)*\z'
 

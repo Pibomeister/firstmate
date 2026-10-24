@@ -2,7 +2,7 @@
 # Shared durable wake queue and portable lock helpers.
 # docs/watcher-continuity.md owns the recovery-episode state contract.
 
-FM_WAKE_LIB_DIR="$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd "${d:-/}" && pwd)"
+FM_WAKE_LIB_DIR="$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; CDPATH='' cd -- "${d:-/}" && pwd)"
 # shellcheck source=bin/fm-bash-compat-lib.sh
 . "$FM_WAKE_LIB_DIR/fm-bash-compat-lib.sh"
 FM_WAKE_DEFAULT_ROOT="$(cd "$FM_WAKE_LIB_DIR/.." && pwd)"
@@ -734,7 +734,7 @@ _fm_recovery_marker_publish() {
   if [ -n "$bound" ]; then
     fm_lock_acquire_wait_max "$lock" "$bound" || return 1
   else
-    fm_lock_acquire_wait "$lock" || return 1
+    fm_state_lock_acquire "$lock" || return $?
   fi
   if [ -d "$marker" ] && [ ! -L "$marker" ]; then
     fm_lock_release "$lock"
@@ -793,7 +793,7 @@ _fm_wake_append_recovery_restore_locked() {
   local marker="$STATE/.watcher-down" lock previous=$FM_WAKE_APPEND_RECOVERY_PREVIOUS_TOKEN
   [ -n "$previous" ] || return 0
   lock="${marker}.lock"
-  fm_lock_acquire_wait "$lock" || return 1
+  fm_state_lock_acquire "$lock" || return $?
   if ! fm_recovery_marker_read "$marker" \
     || [ "$FM_RECOVERY_MARKER_TOKEN" != "$FM_WAKE_APPEND_RECOVERY_PUBLISHED_TOKEN" ]; then
     fm_lock_release "$lock"
@@ -811,7 +811,7 @@ _fm_wake_append_recovery_restore_locked() {
 _fm_recovery_marker_begin_handling() {
   local marker=$1 expected_generation=${2:-} lock line generation
   lock="${marker}.lock"
-  fm_lock_acquire_wait "$lock" || return 1
+  fm_state_lock_acquire "$lock" || return $?
   if ! fm_recovery_marker_read "$marker"; then
     fm_lock_release "$lock"
     return 1
@@ -858,7 +858,7 @@ fm_recovery_marker_snapshot() {
   local marker=$1 lock
   FM_RECOVERY_MARKER_TOKEN=
   lock="${marker}.lock"
-  fm_lock_acquire_wait "$lock" || return 1
+  fm_state_lock_acquire "$lock" || return $?
   fm_recovery_marker_read "$marker" || true
   fm_lock_release "$lock"
 }
@@ -867,7 +867,7 @@ _fm_recovery_marker_ack() {
   local marker=$1 expected_generation=$2 lock tmp line
   [ -n "$expected_generation" ] || return 2
   lock="${marker}.lock"
-  fm_lock_acquire_wait "$lock" || return 1
+  fm_state_lock_acquire "$lock" || return $?
   if ! fm_recovery_marker_read "$marker" \
     || [ "${FM_RECOVERY_MARKER_TOKEN##*:}" != "$expected_generation" ]; then
     fm_lock_release "$lock"
@@ -895,10 +895,11 @@ _fm_recovery_marker_arm_check() {
   FM_RECOVERY_MARKER_ACTION='none'
   lock="${marker}.lock"
   fm_wake_queue_lock_acquire || return $?
-  if ! fm_lock_acquire_wait "$lock"; then
+  fm_state_lock_acquire "$lock" || {
+    set -- "$?"
     fm_lock_release "$FM_WAKE_QUEUE_LOCK"
-    return 1
-  fi
+    return "$1"
+  }
   if [ ! -e "$marker" ] && [ ! -L "$marker" ]; then
     if [ -s "$FM_WAKE_QUEUE" ]; then
       if ! _fm_recovery_marker_write_locked "$marker" downtime "" announced; then
@@ -971,10 +972,11 @@ _fm_recovery_marker_reopen_announced() {
   local marker=$1 lock
   lock="${marker}.lock"
   fm_wake_queue_lock_acquire || return $?
-  if ! fm_lock_acquire_wait "$lock"; then
+  fm_state_lock_acquire "$lock" || {
+    set -- "$?"
     fm_lock_release "$FM_WAKE_QUEUE_LOCK"
-    return 1
-  fi
+    return "$1"
+  }
   if ! fm_recovery_marker_read "$marker"; then
     fm_lock_release "$lock"
     fm_lock_release "$FM_WAKE_QUEUE_LOCK"
@@ -1008,10 +1010,11 @@ fm_recovery_marker_handover_snapshot() {  # <marker>
   FM_RECOVERY_HANDOVER_SEQ=
   lock="${marker}.lock"
   fm_wake_queue_lock_acquire || return $?
-  if ! fm_lock_acquire_wait "$lock"; then
+  fm_state_lock_acquire "$lock" || {
+    set -- "$?"
     fm_lock_release "$FM_WAKE_QUEUE_LOCK"
-    return 1
-  fi
+    return "$1"
+  }
   if fm_recovery_marker_read "$marker"; then
     # shellcheck disable=SC2034 # Read by callers after this function returns.
     FM_RECOVERY_HANDOVER_TOKEN=$FM_RECOVERY_MARKER_TOKEN
@@ -1027,10 +1030,11 @@ _fm_recovery_marker_handover_restore() {
   case "$token" in acked:*) ;; *) return 0 ;; esac
   lock="${marker}.lock"
   fm_wake_queue_lock_acquire || return $?
-  if ! fm_lock_acquire_wait "$lock"; then
+  fm_state_lock_acquire "$lock" || {
+    set -- "$?"
     fm_lock_release "$FM_WAKE_QUEUE_LOCK"
-    return 1
-  fi
+    return "$1"
+  }
   if [ "$(cat "$STATE/.wake-queue.seq" 2>/dev/null || true)" = "$seq" ] \
     && fm_recovery_marker_read "$marker"; then
     case "$FM_RECOVERY_MARKER_TOKEN" in
@@ -1075,7 +1079,7 @@ fm_recovery_transition() {
       if [ -n "$bound" ]; then
         fm_lock_acquire_wait_max "$lock" "$bound" || return 1
       else
-        fm_lock_acquire_wait "$lock" || return 1
+        fm_state_lock_acquire "$lock" || return $?
       fi
       if ! fm_recovery_marker_read "$marker"; then
         fm_lock_release "$lock"
@@ -1453,8 +1457,33 @@ fm_reap_ledger() {  # <ledger-file> [grace-seconds]
     while [ "$i" -lt $((grace * 10)) ]; do
       sleep 0.1
       i=$((i + 1))
+      _fm_ledger_any_alive "$ledger" || return 0
     done
   done
+}
+
+_fm_ledger_any_alive() {  # <ledger-file>
+  local pid _rest
+  while IFS="$(printf '\t')" read -r pid _rest; do
+    fm_pid_alive "$pid" && return 0
+  done < "$1"
+  return 1
+}
+
+# fm_watcher_stalled <state> <watch-path> <pid> <home> [extra-seconds]: 0 when
+# <pid> holds this home's watcher lock under its recorded identity and the
+# beacon - and the lock itself, so a successor still starting under its
+# predecessor's stale beacon is never taken for it - is at or past
+# fm_watcher_stall_bound plus [extra-seconds]; the beacon age read is left in
+# FM_WATCHER_STALL_AGE. The one predicate every watcher owner (arm, away
+# daemon, supervision host) replaces a watcher on.
+fm_watcher_stalled() {
+  local state=$1 watch=$2 pid=$3 home=$4 extra=${5:-0} bound
+  bound=$(( $(fm_watcher_stall_bound) + extra ))
+  FM_WATCHER_STALL_AGE=$(fm_path_age "$state/.last-watcher-beat")
+  [ "$FM_WATCHER_STALL_AGE" -ge "$bound" ] || return 1
+  [ "$(fm_path_age "$state/.watch.lock/pid")" -ge "$bound" ] || return 1
+  fm_watcher_lock_matches_pid "$state" "$watch" "$pid" "$home"
 }
 
 # fm_watcher_stop_tree <pid> <identity> <grace-seconds>: stop a watcher and every
@@ -1501,15 +1530,15 @@ fm_lock_holder_name() {
   printf 'pid %s (%s)' "$pid" "${name##*/}"
 }
 
-# fm_wake_queue_lock_acquire [<lockdir>]: the one owner of wake-queue lock
-# acquisition (default $FM_WAKE_QUEUE_LOCK; a caller working on an explicit
-# state directory passes that directory's queue lock).
-# The queue's critical sections take milliseconds, so a wait past
-# FM_WAKE_QUEUE_LOCK_WAIT seconds (default 30) means a live holder is wedged:
-# the caller gets a nonzero status (124 for a live holder) with the holder named
-# on stderr, and must not touch the queue. A dead holder is reclaimed as before.
-fm_wake_queue_lock_acquire() {
-  local lockdir=${1:-$FM_WAKE_QUEUE_LOCK} wait=${FM_WAKE_QUEUE_LOCK_WAIT:-30} rc holder
+# fm_state_lock_acquire <lockdir>: the one owner of bounded acquisition for the
+# short critical-section state locks - the wake queue, a recovery marker, a
+# pending-reply record. Their critical sections take milliseconds, so a wait
+# past FM_WAKE_QUEUE_LOCK_WAIT seconds (default 30) means a live holder is
+# wedged: the caller gets a nonzero status (124 for a live holder) with the
+# holder named on stderr, and must not touch the guarded state. A dead holder is
+# reclaimed as before.
+fm_state_lock_acquire() {  # <lockdir>
+  local lockdir=$1 wait=${FM_WAKE_QUEUE_LOCK_WAIT:-30} rc holder
   case "$wait" in '' | *[!0-9]* | 0) wait=30 ;; esac
   fm_lock_try_acquire "$lockdir" && return 0
   if fm_lock_acquire_wait_bounded "$lockdir" "$wait"; then
@@ -1518,8 +1547,15 @@ fm_wake_queue_lock_acquire() {
     rc=$?
   fi
   holder=$(fm_lock_holder_name "${FM_LOCK_HELD_PID:-}")
-  echo "fm-wake: the wake queue lock ($lockdir) is still held${holder:+ by $holder} after ${wait}s; the queue was left untouched" >&2
+  echo "fm-wake: the lock $lockdir is still held${holder:+ by $holder} after ${wait}s; the state it guards was left untouched" >&2
   return "$rc"
+}
+
+# fm_wake_queue_lock_acquire [<lockdir>]: fm_state_lock_acquire for the wake
+# queue's lock (bin/fm-wake-drain.sh's presentation keeps its own shorter bound) (default $FM_WAKE_QUEUE_LOCK; a caller working on an explicit
+# state directory passes that directory's queue lock).
+fm_wake_queue_lock_acquire() {
+  fm_state_lock_acquire "${1:-$FM_WAKE_QUEUE_LOCK}"
 }
 
 fm_lock_release() {

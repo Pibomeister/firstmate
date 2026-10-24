@@ -23,7 +23,9 @@ modern_bash() {
   local b v
   for b in "${FM_TEST_BASH:-}" /opt/homebrew/bin/bash /usr/local/bin/bash /usr/bin/bash /bin/bash bash; do
     [ -n "$b" ] || continue
+    # shellcheck disable=SC2016 # expanded by the child shell
     v=$("$b" -c 'printf "%s %s" "${BASH_VERSINFO[0]}" "${BASH_VERSINFO[1]}"' 2>/dev/null) || continue
+    # shellcheck disable=SC2086 # split into major and minor
     set -- $v
     if [ "${1:-0}" -gt 5 ] || { [ "${1:-0}" -eq 5 ] && [ "${2:-0}" -ge 1 ]; }; then
       command -v "$b"
@@ -37,11 +39,13 @@ modern_bash() {
 compat_after() {
   local profile=$1 inherited=$2
   if [ "$inherited" = unset ]; then
+    # shellcheck disable=SC2016 # expanded by the child shell
     env -u BASH_COMPAT FM_TEST_SEAM=1 FM_TEST_BASH_RUNTIME="$profile" bash -c '
       . "$1"
       printf "%s|" "${BASH_COMPAT-unset}"
       case "$(export -p)" in *" BASH_COMPAT="*) printf exported ;; *) printf local ;; esac' _ "$LIB"
   else
+    # shellcheck disable=SC2016 # expanded by the child shell
     env BASH_COMPAT="$inherited" FM_TEST_SEAM=1 FM_TEST_BASH_RUNTIME="$profile" bash -c '
       . "$1"
       printf "%s|" "${BASH_COMPAT-unset}"
@@ -112,7 +116,7 @@ test_entry_points_apply_the_gate() {
   for script in fm-send.sh fm-lease.sh fm-crew-state.sh fm-watch.sh fm-watch-arm.sh fm-watch-checkpoint.sh \
     fm-supervision-host.sh fm-supervise-daemon.sh fm-fleet-ledger.sh fm-busy-event.sh fm-inbox.sh fm-pr-state.sh \
     fm-supervision-instructions.sh fm-session-start.sh fm-wake-drain.sh fm-guard.sh; do
-    env -u BASH_COMPAT FM_HOME="$home" FM_TEST_SEAM=1 FM_TEST_BASH_RUNTIME='darwin25 5 3 9' \
+    perl -e 'alarm 10; exec @ARGV' env -u BASH_COMPAT FM_HOME="$home" FM_TEST_SEAM=1 FM_TEST_BASH_RUNTIME='darwin25 5 3 9' \
       FM_BASH_COMPAT_PROBE="$trace" "$ROOT/bin/$script" </dev/null >/dev/null 2>&1 || true
     grep -qx "$script	applied" "$trace" \
       || fail "$script did not apply the here-document gate under an affected profile (trace: $(tr '\n' ' ' < "$trace"))"

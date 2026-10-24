@@ -197,6 +197,10 @@ fm_guard_blocked_watcher() {
     [ -f "$f" ] || continue
     IFS=$'\t' read -r owner first name holder < "$f" 2>/dev/null || continue
     [ "$owner" = "$lock_pid" ] || continue
+    # Only a deferral the watcher repeated recently, behind a holder that is
+    # still alive, is current: a site that stopped running leaves a stale record.
+    [ "$(fm_path_age "$f")" -lt 300 ] || continue
+    fm_pid_alive "$holder" || continue
     case "$first" in '' | *[!0-9]*) continue ;; esac
     [ $((now - first)) -ge "$bound" ] || continue
     GUARD_BLOCKED_KEY="blocked:$name"
@@ -307,8 +311,8 @@ elif [ "$watcher_healthy" = false ]; then
       --repair-line 2>/dev/null || printf '%s\n' 'Repair missing watcher supervision according to the session-start operating block.')
     rule='━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
     {
-      printf '●%s\n' "$rule"
       if [ -n "$GUARD_BLOCKED_KEY" ]; then
+        printf '●%s\n' "$rule"
         printf '●  WATCHER BLOCKED - PART OF SUPERVISION IS OFF\n'
         printf '●  %s.\n' "$GUARD_BLOCKED_DETAIL"
         printf '●  The watcher resumes that work by itself once the lock is free; inspect that process (never remove the lock by hand).\n'

@@ -142,6 +142,7 @@ test_recovery_send_bound_records_unknown_never_failed() {
   export -f hang_hook fail_hook
   corr=$(recovery_record "$home")
   start=$(date +%s)
+  # shellcheck disable=SC2016 # expanded by the child shell
   FM_PENDING_REPLY_SEND_HOOK=hang_hook FM_PENDING_REPLY_SEND_BUDGET=3 \
     fm_run_timed 30 bash -c '. "$1"; fm_pending_reply_send_recovery "$2" "$3"' _ \
       "$ROOT/bin/fm-pending-reply-lib.sh" "$home/state" "$corr" >/dev/null 2>&1
@@ -153,6 +154,7 @@ test_recovery_send_bound_records_unknown_never_failed() {
   [ "$(fm_pending_reply_get "$rec" recovery_delivery_outcome)" = unknown ] \
     || fail "a recovery send stopped at its bound must record an unknown outcome"
   corr=$(recovery_record "$home")
+  # shellcheck disable=SC2016 # expanded by the child shell
   FM_PENDING_REPLY_SEND_HOOK=fail_hook FM_PENDING_REPLY_SEND_BUDGET=3 \
     fm_run_timed 30 bash -c '. "$1"; fm_pending_reply_send_recovery "$2" "$3"' _ \
       "$ROOT/bin/fm-pending-reply-lib.sh" "$home/state" "$corr" >/dev/null 2>&1
@@ -175,7 +177,7 @@ test_watcher_defers_work_behind_a_held_wake_queue_lock() {
   # shellcheck disable=SC2016 # expanded by the holder script
   printf '%s\n' '#!/usr/bin/env bash' 'export STATE="$2" FM_WAKE_QUEUE="$2/.wake-queue" FM_WAKE_QUEUE_LOCK="$3"' \
     '. "$1"' 'fm_lock_try_acquire "$3" || exit 1' \
-    'fm_wake_append_locked check "procevent:fake:src:1" "check: process-event fake src 1" || exit 1' 'sleep 120' > "$holder"
+    'fm_wake_append_locked check "procevent:fake:src:1" "check: process-event fake src 1" || exit 1' 'sleep 120 >/dev/null 2>&1 &' 'trap "kill $! 2>/dev/null; exit 0" TERM' 'wait $!' > "$holder"
   chmod +x "$holder"
   watch_start "$state" "$fakebin" "$out" FM_WATCH_HANDLING_SUCCESSOR=1 FM_WAKE_QUEUE_LOCK_WAIT=2 FM_WATCHER_STALL_BOUND=600
   watcher=$!
@@ -240,7 +242,7 @@ test_herdr_server_start_leaves_the_callers_process_group() {
   cat > "$fb/herdr" <<SH
 #!/usr/bin/env bash
 case "\$*" in
-  *server*) ps -o pgid= -p \$\$ | tr -d ' ' > "$TMP_ROOT/herdr-server.pgid"; exec command -p sleep 30 ;;
+  *server*) ps -o pgid= -p \$\$ | tr -d ' ' > "$TMP_ROOT/herdr-server.pgid"; exec /bin/sleep 30 ;;
   *status*) printf '{"server":{"running":false}}\n' ;;
 esac
 exit 0

@@ -104,7 +104,7 @@
 # unconfirmed submit (3): recognizable as "the other supervision actor holds
 # this task right now - retry after the lease clears".
 FM_LEASE_REFUSE_EXIT=6
-FM_LEASE_LIB_DIR="$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd "${d:-/}" && pwd)"
+FM_LEASE_LIB_DIR="$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; CDPATH='' cd -- "${d:-/}" && pwd)"
 # shellcheck source=bin/fm-bash-compat-lib.sh
 . "$FM_LEASE_LIB_DIR/fm-bash-compat-lib.sh"
 FM_LEASE_GUARD_LOCK=

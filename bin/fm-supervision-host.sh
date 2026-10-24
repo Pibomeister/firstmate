@@ -339,10 +339,6 @@ stop_recorded() {  # <pid> <identity> <seconds>
   fi
 }
 
-branch_env() {  # <command...>: run with the branch actor identity
-  FM_SUPERVISION_ACTOR=branch "$@"
-}
-
 # Release the branch actor's leases within FM_SUPERVISION_HOST_RELEASE_BUDGET
 # seconds (default 45). The lease command waits up to two thirds of that for the
 # home's lease-command lock, so its own refusal (naming the holder) normally
@@ -355,7 +351,7 @@ release_branch_leases() {
     "$SCRIPT_DIR/fm-lease.sh" release-actor --actor branch >/dev/null 2>&1 || rc=$?
   case "$rc" in
     0) ;;
-    6 | 124 | 137) log_line "init-blocked	release-leases	$rc	${budget}s" ;;
+    6 | 124 | 137) log_line "init-blocked	release-leases	$budget" ;;
   esac
   return 0
 }
@@ -550,22 +546,19 @@ stream_ready_line() {
   READY_PENDING=0
 }
 
-# Wait for the current arm to close. Returns 0 with ARM_TEXT set,
-# or 1 when the park boundary arrives first.
-# host_watcher_stalled: 0 when this home's watcher is alive but its beacon is
-# past the stall bound plus the arm's confirm window, which means the arm that
+# host_watcher_stalled: 0 when this home's watcher is stalled past the stall
+# bound plus the longest arm confirm window (30 s), which means the arm that
 # should have replaced it has not; HOST_STALL_DETAIL says what was read.
 HOST_STALL_DETAIL=
 host_watcher_stalled() {
-  local pid age bound
+  local pid
   pid=$(cat "$STATE/.watch.lock/pid" 2>/dev/null) || return 1
-  fm_pid_alive "$pid" || return 1
-  bound=$(( $(fm_watcher_stall_bound) + ${FM_ARM_CONFIRM_TIMEOUT:-30} ))
-  age=$(fm_path_age "$STATE/.last-watcher-beat")
-  [ "$age" -ge "$bound" ] || return 1
-  HOST_STALL_DETAIL="watcher pid $pid beacon ${age}s at or past ${bound}s"
+  fm_watcher_stalled "$STATE" "$SCRIPT_DIR/fm-watch.sh" "$pid" "$FM_HOME" 30 || return 1
+  HOST_STALL_DETAIL="watcher pid $pid beacon ${FM_WATCHER_STALL_AGE}s past the stall bound plus 30s"
 }
 
+# Wait for the current arm to close. Returns 0 with ARM_TEXT set,
+# or 1 when the park boundary arrives first.
 await_close() {
   local i
   while fm_pid_alive "$ARM_PID"; do

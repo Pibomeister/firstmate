@@ -98,7 +98,7 @@
 # orphaned that way.
 
 # shellcheck source=bin/fm-bash-compat-lib.sh
-. "$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd "${d:-/}" && pwd)/fm-bash-compat-lib.sh"
+. "$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; CDPATH='' cd -- "${d:-/}" && pwd)/fm-bash-compat-lib.sh"
 FM_REMOTE_JOB_LABEL=dev.firstmate.remote-job
 FM_REMOTE_JOB_MAX_BYTES=${FM_REMOTE_JOB_MAX_BYTES:-1048576}
 FM_REMOTE_JOB_QUEUE_TIMEOUT=${FM_REMOTE_JOB_QUEUE_TIMEOUT:-360}

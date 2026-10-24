@@ -84,7 +84,7 @@
 # plus a negative pid, and the bash fallback uses monitor mode to give the
 # bounded child its own process group before signaling its negative pid.
 # shellcheck source=bin/fm-bash-compat-lib.sh
-. "$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd "${d:-/}" && pwd)/fm-bash-compat-lib.sh"
+. "$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; CDPATH='' cd -- "${d:-/}" && pwd)/fm-bash-compat-lib.sh"
 set -u
 
 fm_timeout_mechanism() {
@@ -102,8 +102,9 @@ fm_timeout_mechanism() {
 }
 
 fm_run_bash_timeout() {
-  local seconds=$1 command_status deadline_status child_pid watchdog_pid command_rc recorded_rc monitor_was_on=0
+  local seconds=$1 command_status deadline_status child_pid watchdog_pid command_rc recorded_rc monitor_was_on=0 caller
   shift
+  caller=$(exec sh -c 'echo "$PPID"')
   command_status=$(mktemp "${TMPDIR:-/tmp}/fm-bash-timeout-command.XXXXXX" 2>/dev/null) || return 124
   deadline_status="${command_status}.deadline"
   case $- in *m*) monitor_was_on=1 ;; esac
@@ -118,9 +119,19 @@ fm_run_bash_timeout() {
   child_pid=$!
   # The watchdog's sleeps come from the default PATH (command -p): a bound is
   # wall-clock time even where a caller's PATH puts a stub or wrapper first.
+  # Its own group outlives a caller stopped from outside, so it also ends the
+  # command within a second of that caller's exit.
   (
     set +m
-    command -p sleep "$seconds"
+    case "$seconds" in
+      *[!0-9]*) command -p sleep "$seconds" ;;
+      *)
+        i=0
+        while [ "$i" -lt "$seconds" ] && kill -0 "$caller" 2>/dev/null; do
+          command -p sleep 1
+          i=$((i + 1))
+        done ;;
+    esac
     printf 'expired\n' > "$deadline_status"
     kill -TERM -- "-$child_pid" 2>/dev/null || true
     command -p sleep 1

@@ -88,7 +88,7 @@
 set -u
 export LC_ALL=C
 
-SCRIPT_DIR="$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd "${d:-/}" && pwd)"
+SCRIPT_DIR="$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; CDPATH='' cd -- "${d:-/}" && pwd)"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 OUTCOME_DIR="$STATE/terminal-outcomes"

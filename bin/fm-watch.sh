@@ -205,7 +205,7 @@ if [ "${BASH_SOURCE[0]}" = "$0" ] && [ "$#" -gt 0 ]; then
   shift
 fi
 
-SCRIPT_DIR="$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd "${d:-/}" && pwd)"
+SCRIPT_DIR="$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; CDPATH='' cd -- "${d:-/}" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
@@ -396,6 +396,11 @@ case "$PARKED_GATE_READ_TIMEOUT" in ''|*[!0-9]*|0) PARKED_GATE_READ_TIMEOUT=10 ;
 # (fm_wake_queue_lock_acquire) carries its bound; a timeout defers that work.
 WATCH_LOCK_WAIT=${FM_WATCH_LOCK_WAIT:-}
 case "$WATCH_LOCK_WAIT" in ''|*[!0-9]*|0) WATCH_LOCK_WAIT=10 ;; esac
+# Bound for a helper script the poll loop runs synchronously (fleet ledger,
+# Herdr groups, process-event reconcile, inactive-outcome scan); each already
+# tolerates failure, so a helper stopped at the bound is skipped for the cycle.
+WATCH_HELPER_BUDGET=${FM_WATCH_HELPER_BUDGET:-}
+case "$WATCH_HELPER_BUDGET" in ''|*[!0-9]*|0) WATCH_HELPER_BUDGET=120 ;; esac
 # A busy pane is unconditional proof of liveness with no built-in duration bound,
 # so a hung foreground call can remain hidden even while its rendered busy
 # footer changes every poll. BUSY_TURN_MAX_SECS bounds how long any busy pane
@@ -3652,10 +3657,10 @@ while :; do
 
   # Opt-in fleet activity ledger (docs/fleet-ledger.md): pick up newly appended
   # status lines before this cycle can exit on a wake. Off costs one file test.
-  [ ! -e "$CONFIG/fleet-ledger" ] || FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$CONFIG "$SCRIPT_DIR/fm-fleet-ledger.sh" capture || true
+  [ ! -e "$CONFIG/fleet-ledger" ] || fm_run_timed "$WATCH_HELPER_BUDGET" env FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG" "$SCRIPT_DIR/fm-fleet-ledger.sh" capture || true
   # Opt-in Herdr project groups (docs/herdr-backend.md "Project groups"):
   # display-only tags and agents view, never a wake. Off costs one file test.
-  [ ! -e "$CONFIG/herdr-project-groups" ] || FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$CONFIG "$SCRIPT_DIR/fm-herdr-groups.sh" sync || true
+  [ ! -e "$CONFIG/herdr-project-groups" ] || fm_run_timed "$WATCH_HELPER_BUDGET" env FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG" "$SCRIPT_DIR/fm-herdr-groups.sh" sync || true
 
   if [ "$(age_of "$STATE/home-summary.json")" -ge "$HOME_SUMMARY_INTERVAL" ]; then
     home_summary_refresh_detached
@@ -3701,7 +3706,7 @@ while :; do
   # whose owner is gone. It is a no-op with nothing registered.
   watch_stage process-events
   if [ -d "$STATE/procevent" ]; then
-    FM_HOME="$FM_HOME" "$SCRIPT_DIR/fm-procevent.sh" reconcile >/dev/null 2>&1 || true
+    fm_run_timed "$WATCH_HELPER_BUDGET" env FM_HOME="$FM_HOME" "$SCRIPT_DIR/fm-procevent.sh" reconcile >/dev/null 2>&1 || true
   fi
   # Then deliver any queued-but-unsurfaced result, including one a runner
   # published while this watcher was between cycles.
@@ -3717,7 +3722,7 @@ while :; do
   # was created, so quiet cycles never wake firstmate or consume model tokens.
   watch_stage inactive-outcomes
   inactive_out=
-  if inactive_out=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
+  if inactive_out=$(fm_run_timed "$WATCH_HELPER_BUDGET" env FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
     "$SCRIPT_DIR/fm-inactive-reconcile.sh" scan 2>/dev/null); then
     if [ -n "$inactive_out" ]; then
       wake "check: inactive-outcome"

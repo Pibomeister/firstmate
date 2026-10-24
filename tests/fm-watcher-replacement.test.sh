@@ -14,6 +14,8 @@ set -u
 . "$(dirname "${BASH_SOURCE[0]}")/wake-helpers.sh"
 # shellcheck source=bin/fm-timeout-lib.sh
 . "$ROOT/bin/fm-timeout-lib.sh"
+# shellcheck source=bin/fm-wake-lib.sh
+. "$ROOT/bin/fm-wake-lib.sh"
 
 TMP_ROOT=$(fm_test_tmproot fm-watcher-replacement)
 TMP_ROOT=$(cd "$TMP_ROOT" && pwd)
@@ -33,7 +35,7 @@ wedge_case() {  # <name> <sleep-seconds> -> case dir
   local dir fakebin
   dir=$(make_case "$1")
   fakebin="$dir/fakebin"
-  printf '#!/usr/bin/env bash\necho $$ > "%s/crew-state.pid"\nsleep %s\necho "state: working source: run-step"\n' "$dir" "$2" > "$fakebin/hang-crew-state.sh"
+  printf '#!/usr/bin/env bash\necho $$ > "%s/crew-state.pid"\nsleep %s &\necho $! > "%s/crew-sleep.pid"\nwait\necho "state: working source: run-step"\n' "$dir" "$2" "$dir" > "$fakebin/hang-crew-state.sh"
   chmod +x "$fakebin/hang-crew-state.sh"
   printf 'working: compiling step 2\n' > "$dir/state/task.status"
   printf '%s\n' "$dir"
@@ -61,29 +63,31 @@ wait_for_file() {  # <path> <ticks>
 
 gone_within() {  # <pid> <ticks>
   local i=0
+  [ -n "$1" ] || fail "gone_within needs a pid"
   while kill -0 "$1" 2>/dev/null && [ "$i" -lt "$2" ]; do sleep 0.1; i=$((i + 1)); done
   ! kill -0 "$1" 2>/dev/null
 }
 
 test_started_arm_replaces_a_stalled_watcher_and_its_tree() {
-  local dir watcher reader start elapsed i
+  local dir watcher reader rsleep start elapsed i
   dir=$(wedge_case started-stall 600)
   start=$(date +%s)
   start_arm "$dir"
   wait_for_file "$dir/crew-state.pid" 200 || fail "the watcher never reached its state read: $(cat "$dir/arm.out")"
   reader=$(cat "$dir/crew-state.pid")
   watcher=$(watcher_pid_of "$dir")
-  FIXTURE_PIDS="$FIXTURE_PIDS $reader $watcher"
+  rsleep=$(cat "$dir/crew-sleep.pid" 2>/dev/null)
+  FIXTURE_PIDS="$FIXTURE_PIDS $reader $rsleep $watcher"
   for i in $(seq 1 600); do kill -0 "$ARM_PID" 2>/dev/null || break; sleep 0.1; done
   elapsed=$(( $(date +%s) - start ))
   kill -0 "$ARM_PID" 2>/dev/null && fail "the arm still waits on a watcher whose beacon is ${elapsed}s old past a 12s stall bound"
-  wait "$ARM_PID"
-  [ "$?" -ne 0 ] || fail "a stalled started watcher must close its arm nonzero"
+  if wait "$ARM_PID"; then fail "a stalled started watcher must close its arm nonzero"; fi
   assert_contains "$(cat "$dir/arm.out")" "watcher: FAILED - started watcher pid=$watcher stalled" \
     "the arm must report the typed stalled-holder failure"
   [ "$elapsed" -le 45 ] || fail "the arm took ${elapsed}s to replace a watcher stalled past a 12s bound"
   gone_within "$watcher" 20 || fail "the stalled watcher $watcher survived its arm"
   gone_within "$reader" 20 || fail "the watcher's blocked state read $reader (its own process group) survived"
+  gone_within "$rsleep" 20 || fail "the state read's own child $rsleep survived"
   pass "a started arm replaces a watcher stalled at the bound and leaves nothing it started behind"
 }
 
@@ -103,18 +107,20 @@ test_slow_cycle_below_the_bound_is_left_alone() {
 }
 
 test_arm_signal_stops_a_watcher_that_cannot_run_its_trap() {
-  local dir watcher reader
+  local dir watcher reader rsleep
   dir=$(wedge_case signal-stop 600)
   start_arm "$dir" FM_WATCHER_STALL_BOUND=900
   wait_for_file "$dir/crew-state.pid" 200 || fail "the watcher never reached its state read"
   sleep 2
   reader=$(cat "$dir/crew-state.pid")
   watcher=$(watcher_pid_of "$dir")
-  FIXTURE_PIDS="$FIXTURE_PIDS $reader $watcher"
+  rsleep=$(cat "$dir/crew-sleep.pid" 2>/dev/null)
+  FIXTURE_PIDS="$FIXTURE_PIDS $reader $rsleep $watcher"
   kill -TERM "$ARM_PID"
   gone_within "$ARM_PID" 200 || fail "the arm's TERM handler waited on a watcher blocked in a foreground read"
   gone_within "$watcher" 50 || fail "the watcher survived its arm's TERM"
   gone_within "$reader" 50 || fail "the watcher's blocked read survived its arm's TERM"
+  gone_within "$rsleep" 50 || fail "the state read's own child $rsleep survived"
   pass "the arm's signal path stops a watcher (and its read) that cannot run its own TERM trap"
 }
 
@@ -127,7 +133,7 @@ test_tree_stop_spares_servers_strangers_and_recycled_identities() {
     # A watcher stand-in that starts a long-lived "server" the way the herdr
     # backend does (backgrounded from a subshell that exits at once), a child
     # in a process group of its own, and an ordinary child.
-    bash -c "( sleep 300 & echo \$! > $d/server.pid ); set -m; sleep 300 & echo \$! > $d/own-group.pid; set +m; sleep 300 & echo \$! > $d/child.pid; wait" &
+    bash -c "( sleep 300 & echo \$! > $d/server.pid ); set -m; sleep 300 & echo \$! > $d/own-group.pid; set +m; sleep 300 & echo \$! > $d/child.pid; wait" >/dev/null 2>&1 &
     root=$!
     for i in $(seq 1 50); do [ -s "$d/child.pid" ] && break; sleep 0.1; done
     identity=$(fm_pid_identity "$root")
@@ -161,26 +167,29 @@ start_bare_watcher() {  # <case-dir> [NAME=value...] -> sets BARE_PID
 }
 
 test_stop_takes_a_wedged_watchers_whole_tree() {
-  local dir reader out
+  local dir reader rsleep out
   dir=$(wedge_case stop-tree 600)
   start_bare_watcher "$dir"
   wait_for_file "$dir/crew-state.pid" 200 || fail "the watcher never reached its state read"
   reader=$(cat "$dir/crew-state.pid")
-  FIXTURE_PIDS="$FIXTURE_PIDS $reader"
+  rsleep=$(cat "$dir/crew-sleep.pid" 2>/dev/null)
+  FIXTURE_PIDS="$FIXTURE_PIDS $reader $rsleep"
   out=$(fm_run_timed 60 env PATH="$dir/fakebin:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$dir/state" "$ARM" --stop 2>&1)
   assert_contains "$out" "watcher: stopped pid=$BARE_PID" "--stop must stop this home's wedged watcher"
   gone_within "$BARE_PID" 50 || fail "--stop left the wedged watcher alive"
   gone_within "$reader" 50 || fail "--stop left the watcher's blocked read (its own process group) alive"
+  gone_within "$rsleep" 50 || fail "the state read's own child $rsleep survived"
   pass "--stop stops a wedged watcher and everything it started"
 }
 
 test_new_arm_evicts_a_stalled_holder_and_its_tree() {
-  local dir reader i
+  local dir reader rsleep i
   dir=$(wedge_case evict-tree 600)
   start_bare_watcher "$dir"
   wait_for_file "$dir/crew-state.pid" 200 || fail "the watcher never reached its state read"
   reader=$(cat "$dir/crew-state.pid")
-  FIXTURE_PIDS="$FIXTURE_PIDS $reader"
+  rsleep=$(cat "$dir/crew-sleep.pid" 2>/dev/null)
+  FIXTURE_PIDS="$FIXTURE_PIDS $reader $rsleep"
   # Let the holder's beacon pass the 12 s stall bound, then arm a replacement
   # whose own reads return at once.
   for i in $(seq 1 200); do
@@ -193,6 +202,7 @@ test_new_arm_evicts_a_stalled_holder_and_its_tree() {
   assert_contains "$(cat "$dir/arm.out")" "replaced stalled pid $BARE_PID" "a new arm must evict the stalled holder"
   gone_within "$BARE_PID" 50 || fail "the evicted holder survived"
   gone_within "$reader" 50 || fail "the evicted holder's blocked read (its own process group) survived the eviction"
+  gone_within "$rsleep" 50 || fail "the state read's own child $rsleep survived"
   kill -TERM "$ARM_PID" 2>/dev/null
   pass "a replacement evicts a stalled holder together with everything the holder started"
 }
@@ -214,11 +224,52 @@ test_harness_group_kill_still_ends_arm_and_watcher() {
   pass "a harness kill of the arm's process group still ends the arm and its watcher together"
 }
 
+# The one predicate the arm, the away daemon and the supervision host replace
+# a watcher on: stalled only at or past the bound (plus the caller's extra
+# window), and only while the pid still holds this home's watcher lock.
+test_stalled_predicate_needs_the_bound_and_this_homes_lock() {
+  local state pid identity
+  state="$TMP_ROOT/stalled-predicate/state"
+  mkdir -p "$state/.watch.lock"
+  sleep 300 >/dev/null 2>&1 &
+  pid=$!
+  FIXTURE_PIDS="$FIXTURE_PIDS $pid"
+  # The identity is the exec'd sleep's, not the fork's before it.
+  for _ in $(seq 1 50); do
+    case "$(ps -o comm= -p "$pid" 2>/dev/null)" in *sleep*) break ;; esac
+    sleep 0.1
+  done
+  identity=$(fm_pid_identity "$pid")
+  printf '%s\n' "$TMP_ROOT/stalled-predicate" > "$state/.watch.lock/fm-home"
+  printf '%s\n' "$ROOT/bin/fm-watch.sh" > "$state/.watch.lock/watcher-path"
+  printf '%s\n' "$identity" > "$state/.watch.lock/pid-identity"
+  printf '%s\n' "$pid" > "$state/.watch.lock/pid"
+  : > "$state/.last-watcher-beat"
+  perl -e 'utime time - 20, time - 20, $ARGV[0]' "$state/.last-watcher-beat"
+  ! FM_WATCHER_STALL_BOUND=12 fm_watcher_stalled "$state" "$ROOT/bin/fm-watch.sh" "$pid" "$TMP_ROOT/stalled-predicate" \
+    || fail "a successor that took the lock just now must never be taken for its predecessor's stale beacon"
+  perl -e 'utime time - 20, time - 20, $ARGV[0]' "$state/.watch.lock/pid"
+  FM_WATCHER_STALL_BOUND=12 fm_watcher_stalled "$state" "$ROOT/bin/fm-watch.sh" "$pid" "$TMP_ROOT/stalled-predicate" \
+    || fail "a 20s-old beacon past a 12s bound under this home's lock must be stalled"
+  [ "$FM_WATCHER_STALL_AGE" -ge 20 ] || fail "the predicate must leave the beacon age it read, got: $FM_WATCHER_STALL_AGE"
+  ! FM_WATCHER_STALL_BOUND=12 fm_watcher_stalled "$state" "$ROOT/bin/fm-watch.sh" "$pid" "$TMP_ROOT/stalled-predicate" 30 \
+    || fail "an extra 30s window must keep a 20s-old beacon from counting as stalled"
+  ! FM_WATCHER_STALL_BOUND=12 fm_watcher_stalled "$state" "$ROOT/bin/fm-watch.sh" "$pid" "$TMP_ROOT/another-home" \
+    || fail "a lock recorded for another home must never count as this home's stalled watcher"
+  ! FM_WATCHER_STALL_BOUND=12 fm_watcher_stalled "$state" "$ROOT/bin/fm-watch.sh" "$$" "$TMP_ROOT/stalled-predicate" \
+    || fail "a pid that does not answer to the lock's recorded identity must never count as stalled"
+  : > "$state/.last-watcher-beat"
+  ! FM_WATCHER_STALL_BOUND=12 fm_watcher_stalled "$state" "$ROOT/bin/fm-watch.sh" "$pid" "$TMP_ROOT/stalled-predicate" \
+    || fail "a fresh beacon must never count as stalled"
+  pass "the shared stalled-watcher predicate needs the bound, its extra window, and this home's lock under the recorded identity"
+}
+
 if [ -n "${FM_WATCHER_REPLACEMENT_ONLY:-}" ]; then
   "$FM_WATCHER_REPLACEMENT_ONLY"
   exit $?
 fi
 
+test_stalled_predicate_needs_the_bound_and_this_homes_lock
 test_tree_stop_spares_servers_strangers_and_recycled_identities
 test_started_arm_replaces_a_stalled_watcher_and_its_tree
 test_slow_cycle_below_the_bound_is_left_alone

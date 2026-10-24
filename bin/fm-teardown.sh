@@ -2195,7 +2195,7 @@ task_pids_under_roots() {  # <dir>...
   local dir dir_pids pids=""
   for dir in "$@"; do
     [ -n "$dir" ] || continue
-    if ! dir_pids=$(pids_with_cwd_under "$dir"); then
+    if ! dir_pids=$(fm_control_pids_with_cwd_under "$dir"); then
       TASK_PIDS_FAILED_DIR=$dir
       return 1
     fi

@@ -61,8 +61,11 @@ set -u
 D=$FM_FAKE_DIR
 # An explicit socket (the tmux absence proof and reclaim address the recorded
 # one) is recorded and otherwise answered like the ambient server.
+SOCK=${TMUX:-}
+SOCK=${SOCK%%,*}
 if [ "${1:-}" = -S ]; then
   printf '%s\n' "${2:-}" >> "$D/socket-args"
+  SOCK=${2:-}
   shift 2
 fi
 case "${1:-}" in
@@ -169,6 +172,7 @@ case "${1:-}" in
       esac
     done
     printf '%s\n' "$ses" >> "$D/created-sessions"
+    printf '%s\n' "$SOCK" >> "$D/created-sockets"
     rm -f "$D/server-dead"
     exit 0 ;;
   new-window)
@@ -2490,7 +2494,8 @@ test_tmux_reclaims_a_lost_server_from_its_record() {
   expect_code 0 "$rc" "relaunch must reclaim a task whose recorded tmux server is gone"$'\n'"$out"
   assert_contains "$(cat "$dir/fake/created-sessions" 2>/dev/null)" "fmses" "the recorded session must be re-created"
   assert_contains "$(cat "$dir/fake/created-windows" 2>/dev/null)" "fm-rl64" "exactly the task's window must be re-created"
-  assert_contains "$(cat "$dir/fake/socket-args" 2>/dev/null)" "$sock" "the reclaim must address the recorded socket"
+  [ "$(sort -u "$dir/fake/created-sockets" 2>/dev/null)" = "$sock" ] \
+    || fail "the reclaim must create its session on the recorded socket, got: $(cat "$dir/fake/created-sockets" 2>/dev/null)"
   [ "$(meta_field "$dir" rl64 window)" = "fmses:fm-rl64" ] || fail "the record must rebind to the new window"
   [ "$(meta_field "$dir" rl64 tmux_server_pid)" = "$$" ] || fail "the record must carry the new server's identity"
   [ "$(meta_field "$dir" rl64 tmux_window_id)" = "@9" ] || fail "the record must carry the new window id"

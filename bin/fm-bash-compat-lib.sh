@@ -98,12 +98,15 @@ fm_bash_heredoc_startup_warnings() {
   set -- $profile
   if [ "$#" -eq 4 ] && fm_bash_heredoc_affected "$@"; then
     _fm_bash_heredoc_message "$running" "$2" "$3" "$4"
+    return 0
   fi
   if [ "${FM_TEST_SEAM:-}" = 1 ] && [ -n "${FM_BASH_HEREDOC_PROBE_PATH:-}" ]; then
     path_bash=$FM_BASH_HEREDOC_PROBE_PATH
   else
     path_bash=$(command -v bash 2>/dev/null) || path_bash=
   fi
+  # One line in total: the running shell when it is affected, else the bash
+  # PATH selects for `#!/usr/bin/env bash` children.
   [ -n "$path_bash" ] && [ "$path_bash" != "$running" ] || return 0
   fm_bash_heredoc_warning "$path_bash"
 }

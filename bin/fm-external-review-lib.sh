@@ -20,13 +20,13 @@
 # protection the captain configured, would otherwise improvise a push.
 
 # shellcheck source=bin/fm-bash-compat-lib.sh
-. "$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd "${d:-/}" && pwd)/fm-bash-compat-lib.sh"
+. "$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; CDPATH='' cd -- "${d:-/}" && pwd)/fm-bash-compat-lib.sh"
 FM_REVIEW_URL=
 FM_REVIEW_BACKUP_REMOTE=
 FM_REVIEW_BACKUP_PREFIX=
 
 # shellcheck source=bin/fm-pr-lib.sh
-. "$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd "${d:-/}" && pwd)/fm-pr-lib.sh"
+. "$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; CDPATH='' cd -- "${d:-/}" && pwd)/fm-pr-lib.sh"
 
 # The config directory the renderers and spawn read, resolved the same way
 # bin/fm-dod-lib.sh resolves config/wait-no-turns.

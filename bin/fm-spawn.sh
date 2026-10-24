@@ -2132,6 +2132,15 @@ if [ "$RELAUNCH" -eq 1 ]; then
       echo "error: backend '$BACKEND' has no recovery-grade agent-state classifier, so a relaunch cannot prove the previous agent exited; refusing rather than risking two agents in one endpoint" >&2
       exit 1
     }
+    # Classify only on the tmux server the record names: a same-named window
+    # on another server says nothing about the recorded agent.
+    if [ "$BACKEND" = tmux ] && TMUX_REBIND_SOCKET=$(fm_meta_get "$RELAUNCH_META" tmux_socket) && [ -n "$TMUX_REBIND_SOCKET" ]; then
+      TMUX_REBIND_ADDRESSED=$(fm_backend_tmux_addressed_socket)
+      if [ "$TMUX_REBIND_ADDRESSED" != "$TMUX_REBIND_SOCKET" ]; then
+        echo "error: task $ID's tmux endpoint was recorded on $TMUX_REBIND_SOCKET, but this process addresses $TMUX_REBIND_ADDRESSED; a relaunch never moves a task to another tmux server, so run it from a seat on the recorded one" >&2
+        exit 1
+      fi
+    fi
     RELAUNCH_STATE=$(fm_backend_agent_state "$BACKEND" "$RELAUNCH_TARGET")
   fi
   # Two states are agent-free, and both license a relaunch:

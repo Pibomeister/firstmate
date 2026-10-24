@@ -11,7 +11,7 @@
 # than to the first incidental punctuation.
 
 # shellcheck source=bin/fm-bash-compat-lib.sh
-. "$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd "${d:-/}" && pwd)/fm-bash-compat-lib.sh"
+. "$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; CDPATH='' cd -- "${d:-/}" && pwd)/fm-bash-compat-lib.sh"
 SECONDMATE_REGISTRY_ID=
 SECONDMATE_REGISTRY_SUMMARY=
 SECONDMATE_REGISTRY_HOST=

@@ -136,8 +136,24 @@ test_record_without_server_identity_still_refuses() {
   t kill-server
   grep -v '^tmux_' "$meta" > "$meta.legacy"
   expect_verdict "$meta.legacy" unproven "a record without the tmux server identity"
-  assert_contains "$(verdict "$meta.legacy")" "carries no tmux server identity" "the legacy refusal must say why"
+  assert_contains "$(verdict "$meta.legacy")" "does not carry the endpoint's socket identity" "the legacy refusal must say why"
   pass "tmux proof: a record without the server identity keeps refusing"
+}
+
+# A live recorded server whose identity cannot be read is not evidence it is
+# gone: the proof stops there rather than trusting the working-directory scan.
+test_unreadable_identity_of_a_live_server_is_unproven() {
+  local meta dir got
+  meta=$(start_task noident)
+  dir=$TMP_ROOT/noident
+  t kill-window -t fmses:fm-t1
+  mkdir -p "$dir/fakeps" "$dir/noproc"
+  printf '#!/bin/sh\nexit 1\n' > "$dir/fakeps/ps"
+  chmod +x "$dir/fakeps/ps"
+  got=$(PATH="$dir/fakeps:$PATH" FM_PROC_ROOT_OVERRIDE="$dir/noproc" verdict "$meta")
+  [ "${got%%	*}" = unproven ] || fail "a live server with an unreadable identity must stay unproven, got '$got'"
+  assert_contains "$got" "identity could not be read" "the refusal must say the identity could not be read"
+  pass "tmux proof: a live recorded server whose identity cannot be read is never gone"
 }
 
 test_window_still_present_or_renamed_is_unproven
@@ -146,3 +162,4 @@ test_killed_or_replaced_server_is_gone
 test_stopped_server_or_unlinked_socket_is_unproven
 test_working_directory_holder_blocks_the_proof
 test_record_without_server_identity_still_refuses
+test_unreadable_identity_of_a_live_server_is_unproven

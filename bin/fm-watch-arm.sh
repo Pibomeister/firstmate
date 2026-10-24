@@ -822,9 +822,8 @@ owned_child_running() {
 wait_owned_child() {
   local age
   while owned_child_running; do
-    age=$(fm_path_age "$BEAT")
-    if [ "$age" -ge "$STALL_BOUND" ] \
-      && fm_watcher_lock_matches_pid "$STATE" "$WATCH" "$child" "$FM_HOME"; then
+    if fm_watcher_stalled "$STATE" "$WATCH" "$child" "$FM_HOME"; then
+      age=$FM_WATCHER_STALL_AGE
       trap - HUP TERM INT
       cycle_log_append unknown unknown started-holder-stalled none
       fm_watcher_stop_tree "$child" "" 5 || true

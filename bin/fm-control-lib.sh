@@ -404,12 +404,12 @@ fm_control_endpoint_absence_verdict() {  # <backend> <target> [<meta>]
   esac
 }
 
-# pids_with_cwd_under <dir>: pids of every process whose CURRENT WORKING
+# fm_control_pids_with_cwd_under <dir>: pids of every process whose CURRENT WORKING
 # DIRECTORY is exactly $1 or under it, from one bounded system-wide `lsof -a
 # -d cwd` scan (never the recursive +D file-tree walk, which lsof itself
 # documents as slow). Never $$ (this script's own pid). Empty output when
 # nothing matches; failure means the scan could not establish a safe result.
-pids_with_cwd_under() {  # <dir>
+fm_control_pids_with_cwd_under() {  # <dir>
   local dir=$1 out pid path line
   [ -n "$dir" ] && [ -d "$dir" ] || return 0
   dir=$(cd "$dir" && pwd -P) || return 1
@@ -440,6 +440,15 @@ $out
 EOF
 }
 
+# Each read writes to a file, never a pipe: a tmux client hands its output
+# descriptor to the server, so a stopped server would hold a captured pipe open
+# long after the bound stopped the client.
+_fm_control_tmux_read() {  # <socket> <out-file> <tmux-args...>
+  local sock=$1 file=$2
+  shift 2
+  fm_run_timed 5 env -u TMUX -u TMUX_PANE tmux -S "$sock" "$@" > "$file" 2>&1
+}
+
 # fm_control_tmux_absence_verdict <target> <meta>: the tmux half of the absence
 # proof, from the server identity a tmux spawn records (tmux_socket,
 # tmux_server_pid, tmux_server_identity, tmux_window_id). Read-only: every read
@@ -453,15 +462,6 @@ EOF
 #     name) and no pane of that server may sit in the copy.
 #   - Either way, no other same-user process may have its working directory in
 #     the copy (the scanner and the firstmate control scripts above it aside).
-# Each read writes to a file, never a pipe: a tmux client hands its output
-# descriptor to the server, so a stopped server would hold a captured pipe open
-# long after the bound stopped the client.
-_fm_control_tmux_read() {  # <socket> <out-file> <tmux-args...>
-  local sock=$1 file=$2
-  shift 2
-  fm_run_timed 5 env -u TMUX -u TMUX_PANE tmux -S "$sock" "$@" > "$file" 2>&1
-}
-
 fm_control_tmux_absence_verdict() {  # <target> <meta>
   local meta=$2 lib sock spid sident wid wt out rc recorded_alive=0 wtc path pathc p holders anc self_chain comm rf
   lib=${BASH_SOURCE[0]}
@@ -473,12 +473,16 @@ fm_control_tmux_absence_verdict() {  # <target> <meta>
   wid=$(fm_meta_get "$meta" tmux_window_id)
   wt=$(fm_meta_get "$meta" worktree)
   if [ -z "$sock" ] || [ -z "$spid" ] || [ -z "$sident" ] || [ -z "$wid" ] || [ -z "$wt" ]; then
-    printf 'unproven\ttmux absence cannot be proven from this task record: it carries no tmux server identity (it predates that record), and a server-wide window inventory only describes the tmux server this process addresses, so a window absent from it may still be alive on another'
+    printf 'unproven\ttmux absence cannot be proven from a task record: the record does not carry the endpoint'"'"'s socket identity, and a server-wide window inventory only describes the tmux server this process addresses, so a window absent from it may still be alive on another'
     return 0
   fi
-  out=$(fm_pid_identity "$spid" 2>/dev/null) || out=
-  if fm_pid_alive "$spid" && [ -n "$out" ] && [ "$(printf '%s' "$out" | tr '\t\n' '  ')" = "$sident" ]; then
-    recorded_alive=1
+  if fm_pid_alive "$spid"; then
+    out=$(fm_pid_identity "$spid" 2>/dev/null) || out=
+    if [ -z "$out" ]; then
+      printf 'unproven\tthe recorded tmux server pid %s is alive but its identity could not be read' "$spid"
+      return 0
+    fi
+    [ "$(printf '%s' "$out" | tr '\t\n' '  ')" != "$sident" ] || recorded_alive=1
   fi
   rf=$(mktemp "${TMPDIR:-/tmp}/fm-tmux-proof.XXXXXX") || { printf 'unproven\ta scratch file for the tmux reads could not be made'; return 0; }
   _fm_control_tmux_read "$sock" "$rf" display-message -p '#{pid}'
@@ -519,7 +523,7 @@ EOF
     return 0
   else
     case "$out" in
-      *"no server running"* | *"error connecting"* | *"No such file or directory"* | *"Connection refused"*) ;;
+      *"no server running"* | *"No such file or directory"* | *"Connection refused"*) ;;
       *) printf 'unproven\tthe tmux server on %s could not be read: %s' "$sock" "$out"; return 0 ;;
     esac
     if [ "$recorded_alive" -eq 1 ]; then
@@ -528,12 +532,13 @@ EOF
     fi
   fi
   # The scan runs from / so its own processes are never holders.
-  holders=$(cd / && fm_run_timed "${FM_CONTROL_CWD_SCAN_BUDGET:-20}" bash -c '. "$1"; pids_with_cwd_under "$2"' _ \
+  # shellcheck disable=SC2016 # expanded by the child shell
+  holders=$(cd / && fm_run_timed "${FM_CONTROL_CWD_SCAN_BUDGET:-20}" bash -c '. "${1%/*}/fm-bash-compat-lib.sh"; . "$1"; fm_control_pids_with_cwd_under "$2"' _ \
     "$lib" "$wt" 2>/dev/null) \
     || { printf 'unproven\tthe working-directory scan of the task'"'"'s copy could not finish'; return 0; }
   # The firstmate control scripts running this proof may sit in the copy.
   self_chain=
-  anc=${BASHPID:-$$}
+  anc=$(exec sh -c 'echo "$PPID"')
   while [ -n "$anc" ] && [ "$anc" -gt 1 ] 2>/dev/null; do
     case " $(ps -o args= -p "$anc" 2>/dev/null | awk '{ for (i = 1; i <= 2 && i <= NF; i++) { n = $i; sub(/.*\//, "", n); printf "%s ", n } }')" in
       *" fm-control.sh "* | *" fm-spawn.sh "*) self_chain="$self_chain $anc " ;;

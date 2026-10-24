@@ -19,7 +19,7 @@ test_host_starts_despite_a_held_lease_command_lock() {
   home=$(make_home lease-lock-held attended)
   holder="$home/fm-fake-lease-holder.sh"
   # shellcheck disable=SC2016 # expanded by the holder script
-  printf '%s\n' '#!/usr/bin/env bash' 'export STATE="$2"' '. "$1"' 'fm_lock_try_acquire "$2/.fm-lease-command.lock" || exit 1' 'sleep 90' > "$holder"
+  printf '%s\n' '#!/usr/bin/env bash' 'export STATE="$2"' '. "$1"' 'fm_lock_try_acquire "$2/.fm-lease-command.lock" || exit 1' 'sleep 90 >/dev/null 2>&1 &' 'trap "kill $! 2>/dev/null; exit 0" TERM' 'wait $!' > "$holder"
   chmod +x "$holder"
   "$holder" "$ROOT/bin/fm-wake-lib.sh" "$home/state" &
   holder_pid=$!

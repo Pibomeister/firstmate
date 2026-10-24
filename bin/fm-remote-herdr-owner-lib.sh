@@ -51,7 +51,7 @@
 #     because leaving it in place silently reproduces the keychain failure.
 
 # shellcheck source=bin/fm-bash-compat-lib.sh
-. "$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd "${d:-/}" && pwd)/fm-bash-compat-lib.sh"
+. "$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; CDPATH='' cd -- "${d:-/}" && pwd)/fm-bash-compat-lib.sh"
 fm_remote_herdr_socket_owner() { # <socket-path>
   local socket=$1 real pid='' line candidates='' candidate cmd
   [ -n "$socket" ] || return 1
