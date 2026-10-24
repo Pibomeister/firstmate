@@ -179,6 +179,7 @@ WATCH_DELIVERY_LOCK="$STATE/.watch-deliveries.lock"
 cycle_active=0
 cycle_watcher_pid=none
 cycle_watcher_identity=none
+cycle_reason_emitted=0
 cycle_origin=unknown
 cycle_started_at=0
 cycle_lock_before='pid:none|identity:none'
@@ -187,6 +188,7 @@ cycle_begin() {
   cycle_watcher_pid=$1
   cycle_origin=$2
   cycle_watcher_identity=$3
+  cycle_reason_emitted=0
   cycle_started_at=$(date +%s)
   cycle_lock_before=$(lock_snapshot)
   cycle_active=1
@@ -384,12 +386,28 @@ cycle_delivered_reason() {
   [ -n "$DELIVERED_REASON" ]
 }
 
+consume_cycle_delivery() {
+  local pending_signal='' saved_traps rc=1
+  [ "$cycle_reason_emitted" -eq 0 ] || return 0
+  saved_traps=$(trap -p HUP TERM INT)
+  trap 'pending_signal=HUP' HUP
+  trap 'pending_signal=TERM' TERM
+  trap 'pending_signal=INT' INT
+  if cycle_delivered_reason; then
+    cycle_reason_emitted=1
+    printf '%s\n' "$DELIVERED_REASON"
+    rc=0
+  fi
+  eval "$saved_traps"
+  [ -z "$pending_signal" ] || kill -s "$pending_signal" "$ARM_PID"
+  return "$rc"
+}
+
 # Close a cycle whose reason line this arm could not read against that ledger.
 close_unobserved_cycle() {
   local rc=0
   watcher_cleanup_complete "$cycle_watcher_pid" "$cycle_watcher_identity" || rc=1
-  if cycle_delivered_reason; then
-    printf '%s\n' "$DELIVERED_REASON"
+  if consume_cycle_delivery; then
     return "$rc"
   fi
   [ "$rc" -eq 0 ] || return 1
@@ -434,6 +452,9 @@ grok_holding_watcher() {  # <pid>
 # A Grok arm can report queued work without ending its tagged holding watcher.
 attach_and_wait() {
   local attached_pid=$1 age successor actor=main
+  trap 'handle_attached_signal HUP 129' HUP
+  trap 'handle_attached_signal TERM 143' TERM
+  trap 'handle_attached_signal INT 130' INT
   if [ "${FM_WATCH_GROK_CONTINUITY:-}" = 1 ]; then
     # shellcheck source=bin/fm-lease-lib.sh
     . "$SCRIPT_DIR/fm-lease-lib.sh"
@@ -468,7 +489,7 @@ attach_and_wait() {
       return 1
     fi
     if ! watcher_cleanup_complete "$cycle_watcher_pid" "$cycle_watcher_identity"; then
-      if cycle_delivered_reason; then printf '%s\n' "$DELIVERED_REASON"; fi
+      consume_cycle_delivery || true
       cycle_log_append 1 none attached-cleanup-failed none
       return 1
     fi
@@ -495,8 +516,19 @@ attach_and_wait() {
 # shellcheck disable=SC2329 # Invoked indirectly by the signal traps below.
 handle_attached_signal() {
   local signal=$1 rc=$2
-  trap - HUP TERM INT
+  trap '' HUP TERM INT
   cycle_log_append "$rc" "$signal" arm-interrupted none
+  if [ "$cycle_origin" = attached ]; then
+    if attached_holder_live "$cycle_watcher_pid"; then
+      kill -TERM "$cycle_watcher_pid" 2>/dev/null || true
+    fi
+    while fm_pid_alive "$cycle_watcher_pid" \
+      && [ "$(fm_pid_identity "$cycle_watcher_pid" 2>/dev/null)" = "$cycle_watcher_identity" ]; do
+      sleep 0.1
+    done
+    watcher_cleanup_complete "$cycle_watcher_pid" "$cycle_watcher_identity" || true
+    consume_cycle_delivery || true
+  fi
   exit "$rc"
 }
 
@@ -625,7 +657,7 @@ stop_home_watcher() {
       identity=$(cat "$WATCH_LOCK/pid-identity" 2>/dev/null || true)
       if ! watcher_cleanup_complete "$lock_pid" "$identity"; then
         cycle_begin "$lock_pid" attached "$identity"
-        if cycle_delivered_reason; then printf '%s\n' "$DELIVERED_REASON"; fi
+        consume_cycle_delivery || true
         return 1
       fi
     fi
@@ -644,7 +676,7 @@ stop_home_watcher() {
       watcher_cleanup_complete "$lock_pid" "$identity" || rc=1
       if [ "$mode" = stop ] || [ "$rc" -ne 0 ]; then
         cycle_begin "$lock_pid" attached "$identity"
-        if cycle_delivered_reason; then printf '%s\n' "$DELIVERED_REASON"; fi
+        consume_cycle_delivery || true
       fi
       return "$rc"
     fi
@@ -692,13 +724,12 @@ take_over_cycle() {  # <watcher-pid> <identity>
     return 1
   fi
   if ! watcher_cleanup_complete "$pid" "$cycle_watcher_identity"; then
-    if cycle_delivered_reason; then printf '%s\n' "$DELIVERED_REASON"; fi
+    consume_cycle_delivery || true
     cycle_log_append 1 none taken-over-cleanup-failed none
     exit 1
   fi
-  if cycle_delivered_reason; then
+  if consume_cycle_delivery; then
     cycle_log_append unknown unknown taken-over-delivered-wake none
-    printf '%s\n' "$DELIVERED_REASON"
     return 3
   fi
   # Only the owner can wait on this watcher and distinguish our TERM from a
