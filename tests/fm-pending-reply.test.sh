@@ -160,6 +160,20 @@ test_normal_correlated_reply_resolves_once() {
   pass "normal correlated reply resolves once (idempotent)"
 }
 
+test_correlated_dispatch_resolves_intake_request() {
+  local home state corr status
+  home=$(setup_parent dispatch-pending)
+  state="$home/state"
+  corr=$(fm_pending_reply_create "$home" "$state" "hibit" "audit the ledger")
+  fm_pending_reply_mark_delivered "$state" "$corr"
+  status="$state/hibit.status"
+  printf 'working [corr=%s] [key=ledger]: dispatched audit to scout ledger-audit\n' "$corr" > "$status"
+  fm_pending_reply_try_resolve "$state" "$corr" || fail "correlated dispatch did not answer the intake request"
+  [ "$(phase_of "$state" "$corr")" = resolved ] \
+    || fail "correlated dispatch left the intake request pending"
+  pass "a correlated dispatch answers the marked intake request"
+}
+
 test_completed_turn_no_report_triggers_one_recovery() {
   local home state corr hook_log rec
   home=$(setup_parent one-recovery)
@@ -2104,6 +2118,7 @@ test_same_kind_escalation_reopens_after_operator_close() {
 # --- run --------------------------------------------------------------------
 
 test_normal_correlated_reply_resolves_once
+test_correlated_dispatch_resolves_intake_request
 test_completed_turn_no_report_triggers_one_recovery
 test_recovery_waits_while_the_mate_has_an_open_decision
 test_recovery_sends_during_an_open_decision_without_the_flag

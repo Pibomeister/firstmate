@@ -734,6 +734,21 @@ test_watcher_waits_on_busy_pane() {
   pass "watcher: busy deferrals survive restart, escalate once at the bound, and never type"
 }
 
+test_watcher_busy_secondmate_unread_inbox_names_immediate_recovery() {
+  local dir state
+  dir=$(busy_case busy-secondmate)
+  state="$dir/state"
+  fm_write_meta "$state/t1.meta" "window=sess:fm-t1" "kind=secondmate" "harness=grok"
+  busy_steer_check "$dir"
+  [ ! -s "$state/.wake-queue" ] || fail "first busy secondmate deferral must wait"
+  busy_steer_check "$dir"
+  grep -qF 'fm-control.sh t1 interrupt' "$state/.wake-queue" \
+    || fail "busy secondmate wake omitted immediate interruption"
+  grep -qF 'fm-send.sh t1' "$state/.wake-queue" \
+    || fail "busy secondmate wake omitted redirection"
+  pass "watcher: a busy secondmate's unread ask names immediate interrupt and redirect"
+}
+
 test_watcher_busy_budget_resets_on_ring_and_ack() {
   local dir rec
   dir=$(busy_case busy-reset)
@@ -1130,7 +1145,31 @@ test_watcher_escalates_once_after_budget() {
   [ "$(grep -cF 'unread firstmate instruction' "$state/.wake-queue")" = 1 ] \
     || fail "the escalation must fire exactly once:"$'\n'"$(cat "$state/.wake-queue")"
   grep -qF 'stale:' "$out" || fail "the watcher should exit through the ordinary stale wake:"$'\n'"$(cat "$out")"
+  ! grep -qF 'fm-control.sh t1 interrupt' "$state/.wake-queue" \
+    || fail "ordinary worker escalation gained secondmate recovery guidance"
   pass "watcher: a spent ring budget emits exactly one ordinary stale wake for recovery"
+}
+
+test_watcher_secondmate_unread_inbox_names_immediate_recovery() {
+  local dir state out log pid rec
+  dir=$(setup_watch_case secondmate-escalate)
+  state="$dir/state"; out="$dir/watch.out"; log="$dir/send.log"; : > "$log"
+  fm_write_meta "$state/t1.meta" "window=sess:fm-t1" "kind=secondmate" "harness=grok"
+  rec=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "independent routed ask")
+  age_path "$rec"
+  watch_bg "$state" "$dir/fakebin" "$out" \
+    FM_SEND_LOG="$log" FM_FAKE_TMUX_CAPTURE="$(idle_capture "$dir")" \
+    FM_TASK_INBOX_RING_MAX=1
+  pid=$!
+  wait_watcher_gone "$pid" \
+    || { kill "$pid" 2>/dev/null; fail "the watcher never escalated the secondmate's unread ask"; }
+  grep -qF 'fm-control.sh t1 interrupt' "$state/.wake-queue" \
+    || fail "the wake omitted immediate secondmate interruption"
+  grep -qF 'fm-send.sh t1' "$state/.wake-queue" \
+    || fail "the wake omitted the follow-up steer"
+  grep -qF "$rec" "$state/.wake-queue" \
+    || fail "the wake omitted the durable inbox record"
+  pass "watcher: an unread secondmate ask names immediate interrupt and redirect"
 }
 
 test_watcher_dead_pane_escalates_once_without_ringing() {
@@ -1460,6 +1499,7 @@ test_fire_and_forget_retry_is_quiet_without_the_flag
 test_ring_ladder_policy
 test_watcher_rerings_idle_pane_quietly
 test_watcher_waits_on_busy_pane
+test_watcher_busy_secondmate_unread_inbox_names_immediate_recovery
 test_watcher_busy_budget_resets_on_ring_and_ack
 test_watcher_busy_bookkeeping_failure_surfaces
 test_watcher_successor_busy_reset_failure_surfaces idle
@@ -1488,6 +1528,7 @@ test_watcher_pays_fire_and_forget_retry_once
 test_watcher_holds_retry_while_the_worker_decides
 test_watcher_retry_keeps_a_newer_mark
 test_watcher_escalates_once_after_budget
+test_watcher_secondmate_unread_inbox_names_immediate_recovery
 test_watcher_dead_pane_escalates_once_without_ringing
 test_watcher_dead_pane_ignores_stale_busy_state
 test_parked_gate_notice_rings_once_per_park

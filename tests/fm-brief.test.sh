@@ -816,11 +816,22 @@ test_secondmate_marked_request_reporting_contract() {
     "$ROOT/bin/fm-brief.sh" marked-request-reporting --secondmate --no-projects >/dev/null 2>&1
   brief="$home/data/marked-request-reporting/brief.md"
 
-  assert_grep 'A marked request requires one correlated answer after the work' "$brief" \
-    "secondmate charter did not require the correlated answer after the work"
-  assert_grep 'does not require a separate receipt or start acknowledgement' "$brief" \
-    "secondmate charter did not reject a separate receipt/start acknowledgement"
-  assert_grep "Never append \`working:\` merely to acknowledge receipt or announce that a marked request has started." "$brief" \
+  assert_grep 'A marked request for new work requires one correlated dispatch answer in the same handling turn' "$brief" \
+    "secondmate charter did not require prompt correlated dispatch"
+  assert_grep 'include that exact token in your same-turn parent status answer' "$brief" \
+    "secondmate answer did not identify the marked request"
+  # shellcheck disable=SC2016 # Backticks are literal generated brief text.
+  assert_grep 'For new work, make that answer a dispatch report naming the crew task: `working [corr=<id>] [key=<work-slug>] [at=<epoch>]: dispatched <crew task>`.' "$brief" \
+    "secondmate dispatch did not identify its crew task"
+  assert_grep "The pending-reply guard closes on that dispatch answer; report the crew's finished deliverable separately when it lands." "$brief" \
+    "secondmate charter confused intake correlation with outcome delivery"
+  assert_grep 'The dispatch report is the acknowledgement; do not add a separate generic receipt' "$brief" \
+    "secondmate charter did not make dispatch the acknowledgement"
+  assert_grep 'Never do investigation, coding, review, or long waits in your own turn' "$brief" \
+    "secondmate charter still permits substantive work to block its own turn"
+  assert_grep 'Report every finished report, review, ready PR, and merge to the parent channel immediately' "$brief" \
+    "secondmate charter did not require every finished deliverable to reach the parent"
+  assert_grep "Never append a generic \`working:\` line merely to acknowledge receipt or announce that a marked request has started; the correlated dispatch answer naming its crew task is the only intake \`working\` line." "$brief" \
     "secondmate charter did not forbid a generic working acknowledgement"
   assert_no_grep "Give every routed-work phase a stable key: open it with \`working" "$brief" \
     "secondmate charter retained the unconditional working opener"
@@ -833,8 +844,6 @@ test_secondmate_marked_request_reporting_contract() {
   assert_grep 'resolved [key=<work-slug>]' "$brief" \
     "secondmate charter lost resolved closure for a keyed material phase"
 
-  assert_grep 'include that exact token in your parent status reply' "$brief" \
-    "secondmate charter lost correlated parent results"
   assert_grep 'bin/fm-secondmate-report.sh <verb> <corr_id> <note>' "$brief" \
     "secondmate charter lost the mechanical helper invocation"
   assert_grep 'do not pass a status path' "$brief" \
@@ -853,7 +862,7 @@ test_secondmate_marked_request_reporting_contract() {
     "secondmate charter did not name a landed merge as a reporting trigger"
   assert_grep 'States: working, needs-decision, blocked, paused, done, failed.' "$brief" \
     "secondmate charter changed the preserved status vocabulary"
-  pass "fm-brief.sh: marked requests avoid generic acknowledgements and preserve material reporting"
+  pass "fm-brief.sh: marked requests report dispatch and finishes without generic acknowledgements"
 }
 
 test_secondmate_directory_paths_are_absolute_and_output_is_stable() {

@@ -35,7 +35,8 @@ For a remote route, `host:` is an OpenSSH config alias and `root:` is that host'
 A remote second-mate agent always runs on the Herdr backend and every seed, launch, and liveness relaunch first gates its host on `bin/fm-remote-doctor.sh` readiness, so an unready host refuses with that doctor's own gap text rather than half-creating a route; the workers that second mate supervises keep the home's ordinary backend selection.
 This release places whole secondmate homes remotely and never individual workers.
 [`docs/remote-secondmates.md`](../../../docs/remote-secondmates.md) owns current operator setup and transport behavior.
-The home-seeded `data/charter.md` is the sole owner of boilerplate idle-by-default behavior, the normal delegation lifecycle, and standard escalation contracts, so point to that charter rather than restating those contracts in the registry entry.
+The home-seeded `data/charter.md` is the sole owner of boilerplate idle-by-default behavior, short-turn delegation, parallel dispatch of independent asks, immediate parent-channel reporting of finishes, and standard escalation contracts, so point to that charter rather than restating those contracts in the registry entry.
+When routing to a live secondmate, treat its existing crews as parallel work, not as a busy queue; follow `AGENTS.md` section 7 for the sole credit-cutoff pacing exception.
 The `scope:` field is used during intake.
 The `projects:` field is a non-exclusive clone list, not ownership.
 
