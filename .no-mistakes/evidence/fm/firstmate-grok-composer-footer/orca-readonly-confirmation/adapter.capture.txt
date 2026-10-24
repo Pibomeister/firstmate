@@ -1,0 +1,20 @@
+    n/Users/eduardopicazo/.local/share/fm-operator/verifier-v2-canonical-prepared/svc/runner.sock
+    + 48 lines (⌃t to expand)
+• Ran mv /Users/eduardopicazo/orca/projects/firstmate/state/ak-vfix-protected-15946eec.inbox/048.msg /Users/eduardopicazo/orca/projects/firstmate/state…
+  └ 1150:## Relaunch and inbox 048 — exact next attempt, not executed
+    abcb89cd09f797a520f2b21bf91243c0bb3691686bc3485687257ef194ee0f10  /Users/eduardopicazo/orca/projects/firstmate/data/ak-vfix-protected-15946eec/repo…
+    1792801827
+    + 1 line (⌃t to expand)
+• Ran echo 'paused [at=1792801827]: inbox 048 handled; report.md:1150 has exact one-mutants-replay and gates producer-finalization plan; awaiting Main …
+  └ (no output)
+    + Show details
+• Paused for Main’s eligible producer identities and scoped authorization. Prepared attempt and intake commands (/Users/eduardopicazo/orca/projects/
+  firstmate/data/ak-vfix-protected-15946eec/report.md:1150) cover:
+  • One mutants replay after session eligibility is observed.
+  • Gates receipt finalization without test replay.
+  PID 33366, socket, packet, config and export match prior measurements. Both refusals and all raw receipts remain preserved. No replay, new intake or
+  pass claimed. Inbox 048 acknowledged.
+  Worked for 3m 46s • 6:30 PM
+› Ask Codex to do anything
+  GPT-6.1-Sol high · Pibomeister/fm-ak-vfix-protected-15946eec · Context 87% left · 1.74M in · 9.81K out · weekly 50% left
+  ? for shortcuts                                                                                                             ⚠ 3 warnings · f2 to view

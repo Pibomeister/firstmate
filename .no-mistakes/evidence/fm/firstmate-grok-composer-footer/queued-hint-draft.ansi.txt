@@ -1,0 +1,39 @@
+
+  [2mdetached[0m [2mworktree [0m/U/e/.n/w/075d7f40c28a/01M5NKPNRRG36VA9QBW5RC1KWQ                                                                                    1.9K / 256K[2m │ [0m[Dashboard]
+
+
+     ❯ Disposable local-endpoint turn. Do not use tools.                                                                                                                 6:14 PM   █
+                                                                                                                                                                                   █
+                                                                                                                                                                                   █
+                                                                                                                                                                                   █
+                                                                                                                                                                                   █
+                                                                                                                                                                                   █
+                                                                                                                                                                                   █
+                                                                                                                                                                                   █
+                                                                                                                                                                                   █
+                                                                                                                                                                                   █
+                                                                                                                                                                                   █
+                                                                                                                                                                                   █
+                                                                                                                                                                                   █
+                                                                                                                                                                                   █
+                                                                                                                                                                                   █
+                                                                                                                                                                                   █
+                                                                                                                                                                                   █
+                                                                                                                                                                                   █
+                                                                                                                                                                                   █
+
+   ⠋ Waiting for response… 13s                                                                                                                                   13s ⇣1.87k [stop]
+
+  Help improve Grok                                                                                                                                             [Opt out] [Opt in]
+  Off by default. Opt-in to allow SpaceXAI to retain coding data, e.g., prompts, traces, & metrics, for training and debugging purposes. Change anytime via
+  settings.
+  Read [4mTerms[0m and [4mPrivacy Policy[0m.
+
+   ▾ [1mQueued[0m 1
+     #1 Queued disposable follow-up. Do not use tools.
+
+  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ ❯ Enter:send now  │  Ctrl+;:queue                                                                                                                                            │
+  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── [2mGrok 4.7 (high)[0m ─╯
+
+  [1mEnter[0;2m:queue  │  [0;1mOpt+Enter[0;2m:newline  │  [0;1mShift+Tab[0;2m:mode  │  [0;1mCtrl+c[0;2m:cancel  │  [0;1mCtrl+Enter[0;2m:send now  │  [0;1mCtrl+x[0;2m:shortcuts[0m

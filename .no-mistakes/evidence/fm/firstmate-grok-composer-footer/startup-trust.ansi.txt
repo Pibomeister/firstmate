@@ -1,0 +1,39 @@
+
+  [2m detached[0m [2mworktree [0m/U/e/.n/w/075d7f40c28a/01M5NKPNRRG36VA9QBW5RC1KWQ
+
+
+
+
+                                                                                   ⠀⠀⠀⠀⠀⠀⣀⣀⡀⠀⠀⠀⢀⠄
+                                                                                   ⠀⠀⠀⣠⣾⠿⠛⠛⠛⠛⢀⡴⠁⠀
+                                                                                   ⠀⠀⣼⡟⠁⠀⠀⠀⢀⡴⠻⣿⡀⠀
+                                                                                   ⠀⠀⣿⡇⠀⠀⠀⠔⠁⠀⠀⣿⡇⠀
+                                                                                   ⠀⠀⢹⣷⠀⠀⠀⠀⠀⢀⣴⡿⠀⠀
+                                                                                   ⠀⢀⠞⠁⠠⢶⣶⣶⣶⠿⠋⠀⠀⠀
+                                                                                   ⠐⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+
+
+                                                                    Do you trust the contents of this directory?
+                                                 /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5NKPNRRG36VA9QBW5RC1KWQ
+
+                                                              Grok Build may run or modify contents in this directory,
+                                                                               posing security risks.
+
+                                                                           [1mYes, proceed[0m                 y
+                                                                           [1mNo, quit[0m                     n
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                                                                                                                                                [1mGrok Build  [0m1.0.67

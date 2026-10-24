@@ -1,0 +1,220 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Grok composer live evidence</title><style>:root{color-scheme:light dark;--page:#FAF9F5;--surface:#F0EEE6;--border:#E8E6DC;--text:#141413;--muted:#5E5D59;--accent:#D97757}@media(prefers-color-scheme:dark){:root{--page:#1F1E1D;--surface:#262624;--border:#3D3D3A;--text:#FAF9F5;--muted:#B7B5A9}}*{box-sizing:border-box}body{margin:0;padding:40px 24px;background:var(--page);color:var(--text);font:16px/1.6 Inter,system-ui,sans-serif}main{max-width:1500px;margin:auto}h1,h2{font-family:"Source Serif 4",Georgia,serif;line-height:1.2}h1{font-size:36px}h2{font-size:26px;margin:0 0 16px}p{max-width:78ch}section{margin-top:48px;min-width:0}pre{background:#171716;color:#efeee8;border:1px solid var(--border);padding:16px;overflow:auto;font:11px/1.45 "JetBrains Mono",Menlo,monospace;tab-size:4}code{font-family:monospace}strong{color:var(--accent)}.note{color:var(--muted)}</style><main><h1>Grok composer: live evidence</h1><p><b>TL;DR.</b> An isolated Grok 1.0.67 session rendered the send-now and queue footer. The classifier accepted its empty composer and refused drafts, a trust gate, a clipped viewport, and a shell. No decision is required.</p><p class="note">These are exported text viewports from the real TUI, rendered for review; they are not native screen photographs. Grok ran at 180 × 40 through a private tmux socket with isolated HOME, GROK_HOME, and FM_HOME. A local delayed HTTP 503 endpoint supplied the active-turn condition; it did not replace Grok or the classifier. No paid model response or protected-terminal operation was used.</p><p class="note">Limit: the live tmux capture retains a blank line above the footer and also passes on the baseline. The saved contiguous four-row capture independently reproduces baseline unknown → candidate empty. Handoff lifecycle and background-runner survival are outside this correction.</p><section><h2>Queued follow-up; composer empty · <strong>empty</strong></h2><pre aria-label="Captured real terminal viewport">
+  detached worktree /U/e/.n/w/075d7f40c28a/01M5NKPNRRG36VA9QBW5RC1KWQ                                                                                    1.9K / 256K │ [Dashboard]
+
+
+     ❯ Disposable local-endpoint turn. Do not use tools.                                                                                                                 6:14 PM   █
+                                                                                                                                                                                   █
+                                                                                                                                                                                   █
+                                                                                                                                                                                   █
+                                                                                                                                                                                   █
+                                                                                                                                                                                   █
+                                                                                                                                                                                   █
+                                                                                                                                                                                   █
+                                                                                                                                                                                   █
+                                                                                                                                                                                   █
+                                                                                                                                                                                   █
+                                                                                                                                                                                   █
+                                                                                                                                                                                   █
+                                                                                                                                                                                   █
+                                                                                                                                                                                   █
+                                                                                                                                                                                   █
+                                                                                                                                                                                   █
+                                                                                                                                                                                   █
+                                                                                                                                                                                   █
+
+   ⠦ Waiting for response… 3.7s                                                                                                                                 3.7s ⇣1.87k [stop]
+
+  Help improve Grok                                                                                                                                             [Opt out] [Opt in]
+  Off by default. Opt-in to allow SpaceXAI to retain coding data, e.g., prompts, traces, &amp; metrics, for training and debugging purposes. Change anytime via
+  settings.
+  Read Terms and Privacy Policy.
+
+   ▾ Queued 1
+     #1 Queued disposable follow-up. Do not use tools.
+
+  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ ❯                                                                                                                                                                            │
+  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── Grok 4.7 (high) ─╯
+
+  Enter:send now  │  Shift+Tab:mode  │  Ctrl+c:cancel  │  Ctrl+;:queue  │  Ctrl+x:shortcuts
+
+</pre></section><section><h2>Footer token typed as draft · <strong>pending</strong></h2><pre aria-label="Captured real terminal viewport">
+  detached worktree /U/e/.n/w/075d7f40c28a/01M5NKPNRRG36VA9QBW5RC1KWQ                                                                                    1.9K / 256K │ [Dashboard]
+
+
+     ❯ Disposable local-endpoint turn. Do not use tools.                                                                                                                 6:14 PM   █
+                                                                                                                                                                                   █
+                                                                                                                                                                                   █
+                                                                                                                                                                                   █
+                                                                                                                                                                                   █
+                                                                                                                                                                                   █
+                                                                                                                                                                                   █
+                                                                                                                                                                                   █
+                                                                                                                                                                                   █
+                                                                                                                                                                                   █
+                                                                                                                                                                                   █
+                                                                                                                                                                                   █
+                                                                                                                                                                                   █
+                                                                                                                                                                                   █
+                                                                                                                                                                                   █
+                                                                                                                                                                                   █
+                                                                                                                                                                                   █
+                                                                                                                                                                                   █
+                                                                                                                                                                                   █
+
+   ⠧ Service unavailable (503) | Retrying (attempt 1)... 14s                                                                                                    1m0s ⇣1.87k [stop]
+
+  Help improve Grok                                                                                                                                             [Opt out] [Opt in]
+  Off by default. Opt-in to allow SpaceXAI to retain coding data, e.g., prompts, traces, &amp; metrics, for training and debugging purposes. Change anytime via
+  settings.
+  Read Terms and Privacy Policy.
+
+   ▾ Queued 1
+     #1 Queued disposable follow-up. Do not use tools.
+
+  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ ❯ Enter:send now                                                                                                                                                             │
+  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── Grok 4.7 (high) ─╯
+
+  Enter:queue  │  Opt+Enter:newline  │  Shift+Tab:mode  │  Ctrl+c:cancel  │  Ctrl+Enter:send now  │  Ctrl+x:shortcuts
+
+</pre></section><section><h2>Folder trust gate · <strong>unknown</strong></h2><pre aria-label="Captured real terminal viewport">
+   detached worktree /U/e/.n/w/075d7f40c28a/01M5NKPNRRG36VA9QBW5RC1KWQ
+
+
+
+
+                                                                                   ⠀⠀⠀⠀⠀⠀⣀⣀⡀⠀⠀⠀⢀⠄
+                                                                                   ⠀⠀⠀⣠⣾⠿⠛⠛⠛⠛⢀⡴⠁⠀
+                                                                                   ⠀⠀⣼⡟⠁⠀⠀⠀⢀⡴⠻⣿⡀⠀
+                                                                                   ⠀⠀⣿⡇⠀⠀⠀⠔⠁⠀⠀⣿⡇⠀
+                                                                                   ⠀⠀⢹⣷⠀⠀⠀⠀⠀⢀⣴⡿⠀⠀
+                                                                                   ⠀⢀⠞⠁⠠⢶⣶⣶⣶⠿⠋⠀⠀⠀
+                                                                                   ⠐⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+
+
+                                                                    Do you trust the contents of this directory?
+                                                 /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5NKPNRRG36VA9QBW5RC1KWQ
+
+                                                              Grok Build may run or modify contents in this directory,
+                                                                               posing security risks.
+
+                                                                           Yes, proceed                 y
+                                                                           No, quit                     n
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                                                                                                                                                Grok Build  1.0.67
+
+</pre></section><section><h2>Terminal reduced to 180 × 3 · <strong>unknown</strong></h2><pre aria-label="Captured real terminal viewport">  etDisposable local-endpoint turn. Do not use tools.36VA9QBW5RC1KWQ                                                                                                      6:14 PM
+                                                                                                                                                                                   █
+                                                                                                                                                                                   █
+</pre></section><section><h2>Grok replaced by an ordinary shell · <strong>unknown</strong></h2><pre aria-label="Captured real terminal viewport">Eduardos-MacBook-Pro-2%
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</pre></section><section><h2>Saved-capture counterfactual</h2><pre>Saved-capture replay, not a live session. Baseline d3e208cc; candidate a761a455.
+Case | baseline | candidate | expected candidate
+both | unknown | empty | empty
+send-now-only | unknown | empty | empty
+queue-only | unknown | empty | empty
+draft | unknown | pending | pending
+extra-row | unknown | unknown | unknown
+incomplete | unknown | unknown | unknown
+</pre></section><section><h2>Live classifier receipts</h2><pre>[startup-trust]
+tmux=unknown
+cursorless styled=0 locale=en_US.UTF-8: unknown
+cursorless styled=0 locale=C: unknown
+cursorless styled=1 locale=en_US.UTF-8: unknown
+cursorless styled=1 locale=C: unknown
+[drafted-text]
+tmux=pending
+cursorless styled=0 locale=en_US.UTF-8: pending
+cursorless styled=0 locale=C: pending
+cursorless styled=1 locale=en_US.UTF-8: pending
+cursorless styled=1 locale=C: pending
+[empty-idle]
+tmux=empty
+cursorless styled=0 locale=en_US.UTF-8: empty
+cursorless styled=0 locale=C: empty
+cursorless styled=1 locale=en_US.UTF-8: empty
+cursorless styled=1 locale=C: empty
+[queued-empty]
+tmux=empty
+cursorless styled=0 locale=en_US.UTF-8: empty
+cursorless styled=0 locale=C: empty
+cursorless styled=1 locale=en_US.UTF-8: empty
+cursorless styled=1 locale=C: empty
+[queued-hint-draft]
+tmux=pending-unproven
+cursorless styled=0 locale=en_US.UTF-8: pending-unproven
+cursorless styled=0 locale=C: pending-unproven
+cursorless styled=1 locale=en_US.UTF-8: pending-unproven
+cursorless styled=1 locale=C: pending-unproven
+[hint-token-draft]
+tmux=pending
+cursorless styled=0 locale=en_US.UTF-8: pending
+cursorless styled=0 locale=C: pending
+cursorless styled=1 locale=en_US.UTF-8: pending
+cursorless styled=1 locale=C: pending
+[clipped-viewport]
+tmux=unknown
+cursorless styled=0 locale=en_US.UTF-8: unknown
+cursorless styled=0 locale=C: unknown
+cursorless styled=1 locale=en_US.UTF-8: unknown
+cursorless styled=1 locale=C: unknown
+[dead-shell]
+tmux=unknown
+cursorless styled=0 locale=en_US.UTF-8: unknown
+cursorless styled=0 locale=C: unknown
+cursorless styled=1 locale=en_US.UTF-8: unknown
+cursorless styled=1 locale=C: unknown
+</pre></section></main></html>

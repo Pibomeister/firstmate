@@ -1,0 +1,10 @@
+case | baseline | candidate | expected candidate
+adapter | unknown | empty | empty
+viewport | unknown | empty | empty
+saved-both | unknown | empty | empty
+saved-send-now | unknown | empty | empty
+saved-queue | unknown | empty | empty
+saved-draft | unknown | pending | pending
+saved-hint-draft | unknown | pending | pending
+saved-extra-row | unknown | unknown | unknown
+saved-incomplete | unknown | unknown | unknown

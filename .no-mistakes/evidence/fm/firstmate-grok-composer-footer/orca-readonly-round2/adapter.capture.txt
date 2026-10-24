@@ -1,0 +1,20 @@
+     stays ineligible.
+     Runner pid 33366 is alive. The export is still mode 0o500. The config is still eb237f66. There is no issuance. Status is paused at
+     epoch 1792801262. The fleet ledger is absent.
+     ◆ stop hook (plugin/oh-my-claudecode/hooks) failed, ignored: not run: its plugin folder /Users/eduardopicazo/.claude/plugins/cache/omc/oh-my-
+     claudecode/5.5.0 is gone
+     ◆ stop hook (plugin/oh-my-claudecode/hooks) failed, ignored: not run: its plugin folder /Users/eduardopicazo/.claude/plugins/cache/omc/oh-my-
+     claudecode/5.5.0 is gone
+     ◆ stop hook (plugin/oh-my-claudecode/hooks) failed, ignored: not run: its plugin folder /Users/eduardopicazo/.claude/plugins/cache/omc/oh-my-
+     claudecode/5.5.0 is gone
+     ◆ stop hook (plugin/oh-my-claudecode/hooks) failed, ignored: not run: its plugin folder /Users/eduardopicazo/.claude/plugins/cache/omc/oh-my-
+     claudecode/5.5.0 is gone
+     Context compacted: 205.9k → 53.3k tokens (96.3s)
+     Worked for 7m35s
+                                                                                                                                                       █
+   ▾ Watchers 1
+   ⋅ Monitor Watch v2 runner pid 33366                                                                                                           3h10m
+  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ ❯                                                                                                                                                │
+  ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────── Grok 4.7 (high) · always-approve ─╯
+  Shift+Tab:mode  │  Ctrl+x:shortcuts

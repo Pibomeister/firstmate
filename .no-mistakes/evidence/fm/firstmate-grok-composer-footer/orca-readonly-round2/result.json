@@ -1,0 +1,34 @@
+{
+  "finding_id": "test-1",
+  "tested_head_sha": "a761a455249e6dfc3ebcea6fd6a971b00af87c2c",
+  "outcome": "Authorized read-only real Orca adapter scenario completed; no source fix required.",
+  "actual_adapter": {
+    "command": ". ./bin/backends/orca.sh; fm_backend_orca_composer_state term_da54e1ca-45ea-477d-8f2f-b4a86cfd2f81",
+    "exit": 0,
+    "verdict": "empty",
+    "capture_source": "screen"
+  },
+  "baseline_counterfactual": {
+    "baseline": "unknown",
+    "candidate": "empty",
+    "input": "Exact contiguous real adapter and explicit viewport captures"
+  },
+  "draft_and_refusal_proof": "Controlled saved captures and focused portable suites only; no protected-terminal typing.",
+  "token_limit": "Current native footer is Shift+Tab:mode / Ctrl+x:shortcuts; Enter:send now and Ctrl+;:queue are independently covered by retained saved-capture cases, not newly observed native emissions.",
+  "focused_tests": {
+    "command": "bash bin/fm-test-run.sh tests/fm-composer-lib.test.sh tests/fm-composer-ghost.test.sh",
+    "exit": 0,
+    "total": 2,
+    "failed": 0,
+    "skipped_gate": 0
+  },
+  "prior_five_live_passes": "Retained unchanged with prior-evidence.sha256.json",
+  "retained_failures": [
+    "extraction-attempt1.txt",
+    "compare.attempt1.log",
+    "compare.attempt1.exit.txt"
+  ],
+  "source_changes": false,
+  "working_tree_clean": true,
+  "protected_worker_input_or_lifecycle": false
+}

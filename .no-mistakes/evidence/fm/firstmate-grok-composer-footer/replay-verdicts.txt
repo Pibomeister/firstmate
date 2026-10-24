@@ -1,0 +1,8 @@
+Saved-capture replay, not a live session. Baseline d3e208cc; candidate a761a455.
+Case | baseline | candidate | expected candidate
+both | unknown | empty | empty
+send-now-only | unknown | empty | empty
+queue-only | unknown | empty | empty
+draft | unknown | pending | pending
+extra-row | unknown | unknown | unknown
+incomplete | unknown | unknown | unknown

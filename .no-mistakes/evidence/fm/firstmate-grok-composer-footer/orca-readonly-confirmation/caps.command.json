@@ -1,0 +1,8 @@
+{
+  "cwd": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5NKPNRRG36VA9QBW5RC1KWQ",
+  "argv": [
+    "bash",
+    "-c",
+    ". ./bin/backends/orca.sh; fm_backend_orca_composer_caps"
+  ]
+}

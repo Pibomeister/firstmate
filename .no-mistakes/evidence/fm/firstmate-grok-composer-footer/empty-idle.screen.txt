@@ -1,0 +1,40 @@
+
+  detached worktree /U/e/.n/w/075d7f40c28a/01M5NKPNRRG36VA9QBW5RC1KWQ                                                                                    1.9K / 256K │ [Dashboard]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  Help improve Grok                                                                                                                                             [Opt out] [Opt in]
+  Off by default. Opt-in to allow SpaceXAI to retain coding data, e.g., prompts, traces, & metrics, for training and debugging purposes. Change anytime via
+  settings.
+  Read Terms and Privacy Policy.
+
+  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ ❯                                                                                                                                                                            │
+  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── Grok 4.7 (high) ─╯
+
+  Shift+Tab:mode  │  Ctrl+x:shortcuts
+

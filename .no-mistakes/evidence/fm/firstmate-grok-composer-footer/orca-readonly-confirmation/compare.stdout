@@ -1,0 +1,4 @@
+case | baseline | candidate | expected candidate
+retained-real-orca-adapter | unknown | empty | empty
+retained-real-viewport | unknown | empty | empty
+fresh-target-now-codex | unknown | unknown | unknown

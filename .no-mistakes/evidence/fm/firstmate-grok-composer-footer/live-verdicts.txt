@@ -1,0 +1,48 @@
+[startup-trust]
+tmux=unknown
+cursorless styled=0 locale=en_US.UTF-8: unknown
+cursorless styled=0 locale=C: unknown
+cursorless styled=1 locale=en_US.UTF-8: unknown
+cursorless styled=1 locale=C: unknown
+[drafted-text]
+tmux=pending
+cursorless styled=0 locale=en_US.UTF-8: pending
+cursorless styled=0 locale=C: pending
+cursorless styled=1 locale=en_US.UTF-8: pending
+cursorless styled=1 locale=C: pending
+[empty-idle]
+tmux=empty
+cursorless styled=0 locale=en_US.UTF-8: empty
+cursorless styled=0 locale=C: empty
+cursorless styled=1 locale=en_US.UTF-8: empty
+cursorless styled=1 locale=C: empty
+[queued-empty]
+tmux=empty
+cursorless styled=0 locale=en_US.UTF-8: empty
+cursorless styled=0 locale=C: empty
+cursorless styled=1 locale=en_US.UTF-8: empty
+cursorless styled=1 locale=C: empty
+[queued-hint-draft]
+tmux=pending-unproven
+cursorless styled=0 locale=en_US.UTF-8: pending-unproven
+cursorless styled=0 locale=C: pending-unproven
+cursorless styled=1 locale=en_US.UTF-8: pending-unproven
+cursorless styled=1 locale=C: pending-unproven
+[hint-token-draft]
+tmux=pending
+cursorless styled=0 locale=en_US.UTF-8: pending
+cursorless styled=0 locale=C: pending
+cursorless styled=1 locale=en_US.UTF-8: pending
+cursorless styled=1 locale=C: pending
+[clipped-viewport]
+tmux=unknown
+cursorless styled=0 locale=en_US.UTF-8: unknown
+cursorless styled=0 locale=C: unknown
+cursorless styled=1 locale=en_US.UTF-8: unknown
+cursorless styled=1 locale=C: unknown
+[dead-shell]
+tmux=unknown
+cursorless styled=0 locale=en_US.UTF-8: unknown
+cursorless styled=0 locale=C: unknown
+cursorless styled=1 locale=en_US.UTF-8: unknown
+cursorless styled=1 locale=C: unknown

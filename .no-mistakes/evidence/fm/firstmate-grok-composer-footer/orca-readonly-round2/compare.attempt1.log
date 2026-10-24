@@ -1,0 +1,2 @@
+case | baseline | candidate | expected candidate
+cat: /Users/eduardopicazo/.no-mistakes/evidence/01M5NKPNRRG36VA9QBW5RC1KWQ/orca-readonly-round2/adapter.capture.txt: No such file or directory
