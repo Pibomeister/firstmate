@@ -1,0 +1,40 @@
+
+  Muse Code 1.4.13
+
+  Skills: 89 loaded · 1 warning (ctrl+o to expand)
+
+❯ This is an isolated integration test. Do not read user files, do not start subagents, do not read parent instructions.
+  Create part01.txt through part20.txt in this workspace one at a time. For EACH file use a separate shell command to
+  write its index, run sleep 3, then a separate tool call to read it. Continue through all twenty. Reply DONE-LONG.
+
+◆ Ran command · Write part01 and sleep · ✓ · 3.3s · ctrl+o
+
+  Read part01.txt
+
+◆ Ran command · Write part02 and sleep · ⊘ · cancelled · 1s · ctrl+o
+
+◆ Interrupted · Report issues with /feedback
+
+── Voice input (alt(option)+v to start) ────────────────────────────────────────────────────────────────────────────────
+❯
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  muse-wonder-1.0 · high · ~/.no-mistakes/worktrees/075d7f40c28a/01M5QN6B0CPGQ68QX3AK7G69KK/.nm-muse-lab/ws-long · YOLO
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

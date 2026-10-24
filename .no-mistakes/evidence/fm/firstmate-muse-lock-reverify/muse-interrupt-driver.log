@@ -1,0 +1,5 @@
+long: unknown muse-session-log
+long: busy muse-session-log
+Sent Escape during multi-step tool loop
+long: idle muse-session-log one matched bracket, terminal cancelled, tool batches 3
+Cleared restored composer with Ctrl+U

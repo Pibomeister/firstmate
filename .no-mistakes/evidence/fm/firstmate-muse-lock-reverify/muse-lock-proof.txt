@@ -1,0 +1,12 @@
+Real Muse shell tool: harness detection and lock acquisition
+muse
+lock acquired: harness pid 46137
+lock: held by live harness pid 46137
+Recorded lock PID: 46137
+46137 46127 /Users/eduardopicazo/.local/bin/muse-bin-1.4.13-R6996.1
+Ownership verified inside the real tool shell
+50732 /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5QN6B0CPGQ68QX3AK7G69KK/.nm-muse-lab/bin/amuse
+Rejected live lookalike: amuse
+50777 /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5QN6B0CPGQ68QX3AK7G69KK/.nm-muse-lab/bin/musescore
+Rejected live lookalike: musescore
+LOCK_PROBE_OK

@@ -1,0 +1,31 @@
+{
+  "session": "01a16f70-885c-7e70-aff9-fcf9984c41ba",
+  "tool_batches": 7,
+  "lifecycle": [
+    {
+      "kind": "run",
+      "run_id": "01a16f70-942c-7a01-b673-e34d03ed48dd",
+      "event": {
+        "kind": "started",
+        "prompt": "This is an authorized disposable integration test. Do not read user files or run firstmate session-start. Use shell tools to execute bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5QN6B0CPGQ68QX3AK7G69KK/.nm-muse-lab/lock-probe.sh exactly once, then read lock-proof.txt at /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5QN6B0CPGQ68QX3AK7G69KK/.nm-muse-lab/lock-proof.txt. Next create smoke.txt containing line one, read it, append line two, read it again, and list the workspace files, using separate tool steps. Do not start subagents. Reply DONE-SMOKE."
+      },
+      "source_run_record_id": "8d1453b0-a3c6-49d1-bfad-79dfc20e50c2",
+      "source_run_record_sequence": 1
+    },
+    {
+      "kind": "run",
+      "run_id": "01a16f70-942c-7a01-b673-e34d03ed48dd",
+      "event": {
+        "kind": "terminal",
+        "terminal": "completed",
+        "reason": null,
+        "turn_duration_ms": 23399,
+        "time_to_first_token_ms": 20047,
+        "eot_gate_ms": 3300
+      },
+      "source_run_record_id": "4709b72d-9aab-482f-93ff-cac3b7cd8020",
+      "source_run_record_sequence": 145
+    }
+  ],
+  "smoke_file": "line one\nline two"
+}

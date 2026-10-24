@@ -1,0 +1,7 @@
+tool shell pid=53341 parent=47682
+detected harness=muse
+lock acquired: harness pid 47682
+recorded lock pid=47682
+47682 47676 /Users/eduardopicazo/.local/bin/muse-bin-1.4.13-R6996.1
+lock: held by live harness pid 47682
+LOCK-PROOF-PASS

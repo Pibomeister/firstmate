@@ -1,0 +1,41 @@
+
+  [1mMuse Code[0m 1.4.13
+
+  Skills: 89 loaded · 1 warning (ctrl+o to expand)
+
+  Found personal rules for Claude Code and Codex — import into Muse Code with /rules import.
+
+❯ This is an authorized disposable integration test. Do not read user files or run firstmate session-start. Use shell
+  tools to execute bash
+  /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5QN6B0CPGQ68QX3AK7G69KK/.nm-muse-lab/lock-probe.sh exactly
+  once, then read lock-proof.txt at
+  /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5QN6B0CPGQ68QX3AK7G69KK/.nm-muse-lab/lock-proof.txt. Next
+  create smoke.txt containing line one, read it, append line two, read it again, and list the workspace files, using
+  separate tool steps. Do not start subagents. Reply DONE-SMOKE.
+
+◆ [1mRan command[0m · Run lock probe script once · ✓ · 0.4s[2m · ctrl+o[0m
+
+  Read /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5QN6B0CPGQ68QX3AK7G69KK/.nm-muse-lab/lock-proof.txt
+
+[1m◆[0m [1mWrote[0m smoke.txt (+1)
+  1 +line one
+
+  Read smoke.txt
+
+[1m◆[0m [1mEdited[0m smoke.txt (+1 −0)
+  1  line one
+  2 +line two
+
+  Read smoke.txt
+
+◆ [1mRan command[0m · List workspace files · ✓ · 0.1s[2m · ctrl+o[0m
+
+[1m◆ [0mDONE-SMOKE
+
+  Contributor mode is on, so your content may be used for product improvement. Turn it off in /settings. See [4mTerms of[0m
+  [4mService[0m (https://dev.meta.ai/legal/terms-of-service) for more information.
+
+[2m── [0mVoice input (alt(option)+v to start)[2m ────────────────────────────────────────────────────────────────────────────────
+[0m❯
+[2m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[0m  muse-wonder-1.0 · high · ~/.no-mistakes/worktrees/075d7f40c28a/01M5QN6B0CPGQ68QX3AK7G69KK/.nm-muse-lab/ws-lock · YOLO

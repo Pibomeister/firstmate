@@ -1,0 +1,1 @@
+missing meta credentials: run `muse login` or set META_API_KEY, or save credentials at /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5QN6B0CPGQ68QX3AK7G69KK/.test-temp/live-muse-g3ameu3m/config/muse/auth.json

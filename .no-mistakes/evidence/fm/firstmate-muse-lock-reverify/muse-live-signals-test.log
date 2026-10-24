@@ -1,0 +1,4 @@
+ok - Muse's real session protocol classifies busy in flight
+ok - Muse's real session protocol emits one matched run bracket
+the final Muse prompt glyph has no effective truecolor foreground
+not ok - Muse's real prompt glyph is missing a bright effective truecolor foreground

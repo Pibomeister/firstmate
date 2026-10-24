@@ -1,0 +1,34 @@
+{
+  "session": "01a16f71-63f8-7052-ba53-90974820471a",
+  "observed_states": [
+    "unknown muse-session-log",
+    "busy muse-session-log",
+    "idle muse-session-log"
+  ],
+  "tool_batches_before_escape": 3,
+  "partial_files": 2,
+  "lifecycle": [
+    {
+      "kind": "run",
+      "run_id": "01a16f71-71e1-70e1-a125-456da0e6ce2d",
+      "event": {
+        "kind": "started",
+        "prompt": "This is an isolated integration test. Do not read user files, do not start subagents, do not read parent instructions. Create part01.txt through part20.txt in this workspace one at a time. For EACH file use a separate shell command to write its index, run sleep 3, then a separate tool call to read it. Continue through all twenty. Reply DONE-LONG."
+      },
+      "source_run_record_id": "397425b1-7c32-4a90-a516-6b0273401316",
+      "source_run_record_sequence": 1
+    },
+    {
+      "kind": "run",
+      "run_id": "01a16f71-71e1-70e1-a125-456da0e6ce2d",
+      "event": {
+        "kind": "terminal",
+        "terminal": "cancelled",
+        "reason": "cancelled after tool result reconciliation",
+        "turn_duration_ms": 13092
+      },
+      "source_run_record_id": "41592be5-87a6-4e39-a2b5-1f752b62343d",
+      "source_run_record_sequence": 61
+    }
+  ]
+}

@@ -1,0 +1,40 @@
+
+  Muse Code 1.4.13
+
+  Skills: 89 loaded · 1 warning (ctrl+o to expand)
+
+  Found personal rules for Claude Code and Codex — import into Muse Code with /rules import.
+
+❯ live firstmate metadata and cache verification
+
+◆ echo: live firstmate metadata and cache verification
+
+❯ a second turn to cancel while busy
+
+◈ Thinking (0s · esc to interrupt)
+
+── Voice input (alt(option)+v to start) ────────────────────────────────────────────────────────────────────────────────
+❯
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  echo · ~/.no-mistakes/worktrees/075d7f40c28a/01M5QN6B0CPGQ68QX3AK7G69KK/.test-temp/live-muse-g3ameu3m/workspace · YOLO
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

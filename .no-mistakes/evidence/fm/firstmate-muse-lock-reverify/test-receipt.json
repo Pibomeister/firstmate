@@ -1,0 +1,18 @@
+{
+  "revision": "540365c54bc5e2ed200aee45e2f92bc4e76e6720",
+  "baseline_tests": [
+    "bash tests/fm-muse-harness.test.sh: exit 0",
+    "bash tests/fm-session-lock-ancestry.test.sh: exit 0",
+    "bash tests/fm-muse-signals-live-e2e.test.sh --ansi-self-test: exit 0"
+  ],
+  "live_color_guard": "Initial truecolor assertion failed under inherited NO_COLOR=1. Re-run with env -u NO_COLOR COLORTERM=truecolor passed all live checks.",
+  "live_checks": [
+    "Muse shell lock ownership and live lookalike rejections",
+    "Authenticated seven-batch completed turn, one run bracket",
+    "Authenticated three-batch interrupted turn: busy to idle, cancelled terminal, two of twenty files",
+    "Delayed older-date metadata changed idle to unknown; run appends preserved cache",
+    "Completed and cancelled composers empty; both model catalogs resolved"
+  ],
+  "cleanup": "Private named tmux server stopped; disposable lab removed; source unchanged",
+  "visual_evidence": "muse-live-evidence.html renders actual terminal and classifier captures; ANSI and text retained"
+}

@@ -1,0 +1,1 @@
+lock: stale (pid 46137 dead or not a harness)

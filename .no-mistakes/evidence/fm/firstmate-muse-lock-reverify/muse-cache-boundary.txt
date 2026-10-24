@@ -1,0 +1,9 @@
+Real Firstmate classifier, staged native Muse output records as disposable session data.
+Native retained-frame metadata binds a completed turn: idle muse-session-log
+Yesterday competing session has only retained prefix: idle muse-session-log
+Yesterday competing session has incomplete metadata: idle muse-session-log
+Yesterday metadata becomes ready and its run opens: unknown muse-session-log
+Competing session removed: idle muse-session-log
+Unique session receives next run append: busy muse-session-log
+Run append preserved namespace signature and cached binding bytes
+Next run closes: idle muse-session-log

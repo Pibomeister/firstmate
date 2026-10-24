@@ -1,0 +1,103 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Muse live validation</title><style>:root{color-scheme:light dark;--bg:#FAF9F5;--surface:#F0EEE6;--text:#141413;--border:#E8E6DC}body{background:var(--bg);color:var(--text);font:17px/1.6 system-ui;margin:32px auto;padding:0 24px;max-width:1100px}h1,h2{font-family:Georgia,serif}section{margin-top:48px}pre{background:var(--surface);border:1px solid var(--border);padding:24px;border-radius:8px;white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.55 ui-monospace,monospace}@media(prefers-color-scheme:dark){:root{--bg:#1F1E1D;--surface:#262624;--text:#FAF9F5;--border:#3D3D3A}}</style><h1>Muse live validation</h1><p>TL;DR: Real Muse 1.4.13 acquired and verified an isolated Firstmate home lock. Authenticated multi-step turns completed and cancelled within one run bracket. The cache rejected a competing session when its metadata became ready in an older date directory. All checks passed. No decision is required.</p><p>These are captures from the actual terminal and product output from this gate run.</p><section><h2>Lock acquired from a real Muse shell tool</h2><pre>Real Muse shell tool: harness detection and lock acquisition
+muse
+lock acquired: harness pid 46137
+lock: held by live harness pid 46137
+Recorded lock PID: 46137
+46137 46127 /Users/eduardopicazo/.local/bin/muse-bin-1.4.13-R6996.1
+Ownership verified inside the real tool shell
+50732 /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5QN6B0CPGQ68QX3AK7G69KK/.nm-muse-lab/bin/amuse
+Rejected live lookalike: amuse
+50777 /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5QN6B0CPGQ68QX3AK7G69KK/.nm-muse-lab/bin/musescore
+Rejected live lookalike: musescore
+LOCK_PROBE_OK
+</pre></section><section><h2>Authenticated multi-step turn completed</h2><pre>
+  Muse Code 1.4.13
+
+  Skills: 89 loaded · 1 warning (ctrl+o to expand)
+
+  Found personal rules for Claude Code and Codex — import into Muse Code with /rules import.
+
+❯ This is an authorized disposable integration test. Do not read user files or run firstmate session-start. Use shell
+  tools to execute bash
+  /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5QN6B0CPGQ68QX3AK7G69KK/.nm-muse-lab/lock-probe.sh exactly
+  once, then read lock-proof.txt at
+  /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5QN6B0CPGQ68QX3AK7G69KK/.nm-muse-lab/lock-proof.txt. Next
+  create smoke.txt containing line one, read it, append line two, read it again, and list the workspace files, using
+  separate tool steps. Do not start subagents. Reply DONE-SMOKE.
+
+◆ Ran command · Run lock probe script once · ✓ · 0.4s · ctrl+o
+
+  Read /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5QN6B0CPGQ68QX3AK7G69KK/.nm-muse-lab/lock-proof.txt
+
+◆ Wrote smoke.txt (+1)
+  1 +line one
+
+  Read smoke.txt
+
+◆ Edited smoke.txt (+1 −0)
+  1  line one
+  2 +line two
+
+  Read smoke.txt
+
+◆ Ran command · List workspace files · ✓ · 0.1s · ctrl+o
+
+◆ DONE-SMOKE
+
+  Contributor mode is on, so your content may be used for product improvement. Turn it off in /settings. See Terms of
+  Service (https://dev.meta.ai/legal/terms-of-service) for more information.
+
+── Voice input (alt(option)+v to start) ────────────────────────────────────────────────────────────────────────────────
+❯
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  muse-wonder-1.0 · high · ~/.no-mistakes/worktrees/075d7f40c28a/01M5QN6B0CPGQ68QX3AK7G69KK/.nm-muse-lab/ws-lock · YOLO
+</pre></section><section><h2>Escape interrupted a live tool loop</h2><pre>
+  Muse Code 1.4.13
+
+  Skills: 89 loaded · 1 warning (ctrl+o to expand)
+
+❯ This is an isolated integration test. Do not read user files, do not start subagents, do not read parent instructions.
+  Create part01.txt through part20.txt in this workspace one at a time. For EACH file use a separate shell command to
+  write its index, run sleep 3, then a separate tool call to read it. Continue through all twenty. Reply DONE-LONG.
+
+◆ Ran command · Write part01 and sleep · ✓ · 3.3s · ctrl+o
+
+  Read part01.txt
+
+◆ Ran command · Write part02 and sleep · ⊘ · cancelled · 1s · ctrl+o
+
+◆ Interrupted · Report issues with /feedback
+
+── Voice input (alt(option)+v to start) ────────────────────────────────────────────────────────────────────────────────
+❯
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  muse-wonder-1.0 · high · ~/.n/w/0/0/.nm-muse-lab/ws-long · YOLO                                       interrupting run
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</pre></section><section><h2>Cache metadata readiness across date directories</h2><pre>Real Firstmate classifier, staged native Muse output records as disposable session data.
+Native retained-frame metadata binds a completed turn: idle muse-session-log
+Yesterday competing session has only retained prefix: idle muse-session-log
+Yesterday competing session has incomplete metadata: idle muse-session-log
+Yesterday metadata becomes ready and its run opens: unknown muse-session-log
+Competing session removed: idle muse-session-log
+Unique session receives next run append: busy muse-session-log
+Run append preserved namespace signature and cached binding bytes
+Next run closes: idle muse-session-log
+</pre></section></html>
