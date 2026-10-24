@@ -562,18 +562,17 @@ EOF
 
 # --- busy source ------------------------------------------------------------
 
+# shellcheck source=bin/fm-busy-lib.sh
+. "$ROOT/bin/fm-busy-lib.sh"
+
 classify_muse() {  # <state-dir> <id>
   (
-    # shellcheck source=bin/fm-busy-lib.sh
-    . "$ROOT/bin/fm-busy-lib.sh"
     fm_busy_classify tmux fake:0 muse "$2" "$1"
   )
 }
 
 run_state() {  # <log>
   (
-    # shellcheck source=bin/fm-busy-lib.sh
-    . "$ROOT/bin/fm-busy-lib.sh"
     fm_busy_muse_run_state "$1"
   )
 }
@@ -816,7 +815,6 @@ EOF
     || fail "the initial session did not resolve before caching: got '$verdict'"
 
   verdict=$(
-    . "$ROOT/bin/fm-busy-lib.sh"
     fm_busy_muse_cache_session_log() { return 97; }
     fm_busy_classify tmux fake:0 muse "$id" "$state"
   )
@@ -888,12 +886,10 @@ SH
   [ "$verdict" = "busy muse-session-log" ] \
     || fail "run content appended during cached binding changed the verdict to '$verdict'"
   resolved=$(
-    . "$ROOT/bin/fm-busy-lib.sh"
     PATH="$fakebin:$PATH" fm_busy_muse_session_log "$state" "$id"
   )
   [ "$resolved" = "$log" ] || fail "run appends prevented interrupt log resolution"
   active=$(
-    . "$ROOT/bin/fm-busy-lib.sh"
     fm_busy_muse_active_run_id "$resolved"
   )
   [ "$active" = active-run ] || fail "run appends hid the interrupt's active run: '$active'"
@@ -1048,8 +1044,6 @@ EOF
 test_muse_trusts_no_record_sources() {
   local out
   out=$(
-    # shellcheck source=bin/fm-busy-lib.sh
-    . "$ROOT/bin/fm-busy-lib.sh"
     fm_busy_sources_for_harness muse
   )
   [ -z "$out" ] || fail "muse trusts record sources it has no writer for: '$out'"
