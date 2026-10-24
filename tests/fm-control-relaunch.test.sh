@@ -2481,6 +2481,7 @@ test_tmux_reclaims_a_lost_server_from_its_record() {
   add_ship_task "$dir" rl64 claude
   sock=$(bash -c '. "$1/bin/fm-backend.sh"; fm_backend_source tmux; fm_backend_tmux_addressed_socket' _ "$ROOT")
   sleep 0 &
+  # shellcheck disable=SC2031 # $! names the job this shell just started
   dead=$!
   wait "$dead"
   printf 'tmux_socket=%s\ntmux_server_pid=%s\ntmux_server_identity=%s\ntmux_window_id=%s\n' \

@@ -465,7 +465,11 @@ _fm_control_tmux_read() {  # <socket> <out-file> <tmux-args...>
 fm_control_tmux_absence_verdict() {  # <target> <meta>
   local meta=$2 lib sock spid sident wid wt out rc recorded_alive=0 wtc path pathc p holders anc self_chain comm rf
   lib=${BASH_SOURCE[0]}
+  # shellcheck source=bin/fm-timeout-lib.sh
   command -v fm_run_timed >/dev/null 2>&1 || . "${lib%/*}/fm-timeout-lib.sh"
+  # Undirected, like fm-task-inbox-lib.sh's: directing it would re-expand the
+  # wake library's whole graph at this site under external-source traversal.
+  # shellcheck source=/dev/null
   command -v fm_pid_identity >/dev/null 2>&1 || . "${lib%/*}/fm-wake-lib.sh"
   sock=$(fm_meta_get "$meta" tmux_socket)
   spid=$(fm_meta_get "$meta" tmux_server_pid)

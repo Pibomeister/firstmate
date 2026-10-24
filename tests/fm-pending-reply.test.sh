@@ -518,6 +518,8 @@ test_lease_refusal_recovery_retries_next_cycle() {
   hook_log="$TMP_ROOT/recovery-lease-busy.log"
   : > "$hook_log"
   export FM_PENDING_REPLY_NOW=2500
+  # Invoked indirectly through FM_PENDING_REPLY_SEND_HOOK.
+  # shellcheck disable=SC2329
   recovery_busy_hook() {
     printf 'attempted\n' >> "$hook_log"
     [ "$(wc -l < "$hook_log" | tr -d ' ')" -ge 2 ] || return 6

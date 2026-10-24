@@ -1659,6 +1659,34 @@ test_outcome_after_the_return_survives_a_host_killed_at_the_turn_end() {
   pass "host: an outcome recorded after the return reaches main even when its host dies at the turn's end"
 }
 
+# An arm that is alive but never replaces its stalled watcher (here, stopped
+# outright, with its watcher) must not hold the host forever: past the stall
+# bound plus the arm's confirm window the host retires that arm, names the
+# watcher in an arm-retired row, and closes the cycle for its owner to re-arm.
+test_host_retires_an_arm_that_left_its_watcher_stalled() {
+  local home arm watcher
+  home=$(make_home arm-stall attended)
+  FM_WATCHER_STALL_BOUND=5 start_host "$home"
+  wait_until 300 watcher_live "$home" || fail "arm-stall: no watcher started"
+  # Past startup: the watcher has published its identity and beaten once.
+  wait_until 300 test -s "$home/state/.watch.lock/pid-identity" || fail "arm-stall: the watcher never published its identity"
+  wait_until 300 test -e "$home/state/.last-watcher-beat" || fail "arm-stall: the watcher never beat"
+  arm=$(awk -F '\t' '$1 == "arm" { print $2; exit }' "$home/state/.supervision-host")
+  watcher=$(cat "$home/state/.watch.lock/pid")
+  [ -n "$arm" ] && [ -n "$watcher" ] || fail "arm-stall: no recorded arm ($arm) or watcher ($watcher)"
+  kill -STOP "$arm" "$watcher"
+  if ! wait_until 900 grep -q "	arm-retired	watcher pid $watcher " "$home/state/.supervision-host.log"; then
+    kill -KILL "$arm" "$watcher" 2>/dev/null
+    fail "the host never retired an arm that left its watcher stalled past the bound"$'\n'"$(cat "$home/state/.supervision-host.log" 2>/dev/null)"
+  fi
+  wait_until 200 host_exited "$home" || { kill -KILL "$arm" "$watcher" 2>/dev/null; fail "the host did not close the cycle after retiring the arm"; }
+  kill -0 "$arm" 2>/dev/null && { kill -KILL "$arm" "$watcher" 2>/dev/null; fail "the host left the retired arm $arm running"; }
+  assert_re '	pass-through	a close without a wake' "$home/state/.supervision-host.log" "the retired arm's cycle must close without a wake for its owner to re-arm"
+  kill -KILL "$watcher" 2>/dev/null
+  stop_home_processes "$home"
+  pass "host: an arm that leaves its watcher stalled past the bound is retired and the cycle closes"
+}
+
 test_park_exit_probe_uses_half_second_child_sleeps() {
   local home host_pid
   home=$(make_home park-cadence attended)
@@ -1741,3 +1769,4 @@ test_large_turn_relays_an_early_visible_outcome
 test_outcome_lookup_failure_is_not_treated_as_silence
 test_outcome_after_the_return_survives_a_host_killed_at_the_turn_end
 test_host_starts_despite_a_held_lease_command_lock
+test_host_retires_an_arm_that_left_its_watcher_stalled

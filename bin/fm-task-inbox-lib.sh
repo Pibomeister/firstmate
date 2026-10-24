@@ -361,6 +361,7 @@ fm_task_inbox_doorbell_line() {  # <record-path>
 fm_task_inbox_ring() {  # <backend> <target> <record-path> [expected-label]
   local budget=${FM_SEND_RING_BUDGET:-20} rc=0
   case "$budget" in '' | *[!0-9]* | 0) budget=20 ;; esac
+  # shellcheck source=bin/fm-timeout-lib.sh
   command -v fm_run_timed_fn >/dev/null 2>&1 \
     || . "$_FM_TASK_INBOX_LIB_DIR/fm-timeout-lib.sh"
   fm_run_timed_fn "$budget" _fm_task_inbox_ring_once "$@" || rc=$?

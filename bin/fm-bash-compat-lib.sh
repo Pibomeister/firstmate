@@ -77,15 +77,15 @@ _fm_bash_heredoc_message() {  # <path> <major> <minor> <patch>
 }
 
 fm_bash_heredoc_warning() {  # <bash-path>
-  local path=${1:-} profile
-  [ -n "$path" ] || return 0
+  local bash_path=${1:-} profile
+  [ -n "$bash_path" ] || return 0
   # shellcheck disable=SC2016 # expanded by the probed bash, not this one
-  profile=$("$path" -c 'printf "%s %s %s %s" "${OSTYPE:-}" "${BASH_VERSINFO[0]:-}" "${BASH_VERSINFO[1]:-}" "${BASH_VERSINFO[2]:-}"' 2>/dev/null) || return 0
+  profile=$("$bash_path" -c 'printf "%s %s %s %s" "${OSTYPE:-}" "${BASH_VERSINFO[0]:-}" "${BASH_VERSINFO[1]:-}" "${BASH_VERSINFO[2]:-}"' 2>/dev/null) || return 0
   # shellcheck disable=SC2086 # the probed profile is four whitespace-separated words
   set -- $profile
   [ "$#" -eq 4 ] || return 0
   fm_bash_heredoc_affected "$@" || return 0
-  _fm_bash_heredoc_message "$path" "$2" "$3" "$4"
+  _fm_bash_heredoc_message "$bash_path" "$2" "$3" "$4"
 }
 
 fm_bash_heredoc_startup_warnings() {

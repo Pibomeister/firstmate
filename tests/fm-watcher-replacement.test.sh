@@ -227,6 +227,89 @@ test_harness_group_kill_still_ends_arm_and_watcher() {
 # The one predicate the arm, the away daemon and the supervision host replace
 # a watcher on: stalled only at or past the bound (plus the caller's extra
 # window), and only while the pid still holds this home's watcher lock.
+# The away daemon runs its watcher directly, with no arm: a watcher that stops
+# making progress without exiting (here, stopped outright) is never reaped, so
+# the daemon itself must stop it and run a replacement once the beacon reaches
+# the stall bound.
+test_away_daemon_replaces_a_stalled_watcher() {
+  local dir log watcher dpid next i
+  dir=$(make_case daemon-stall)
+  printf 'away\n' > "$dir/state/.afk"
+  log="$dir/state/.supervise-daemon.log"
+  env PATH="$dir/fakebin:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$dir/state" \
+    FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    FM_SECONDMATE_LIVENESS_SECS=99999999 FM_GUARD_GRACE=5 FM_WATCHER_STALL_BOUND=12 \
+    FM_SUPERVISOR_BACKEND=tmux FM_SUPERVISOR_TARGET=@9 FM_FAKE_TMUX_WINDOWS=@9 \
+    FM_WEDGE_ALARM_EXEC=discard FM_CRASH_NORMAL_SLEEP=1 \
+    "$ROOT/bin/fm-supervise-daemon.sh" > "$dir/daemon.out" 2>&1 &
+  dpid=$!
+  FIXTURE_PIDS="$FIXTURE_PIDS $dpid"
+  for i in $(seq 1 300); do
+    watcher=$(watcher_pid_of "$dir")
+    [ -n "$watcher" ] && [ -e "$dir/state/.last-watcher-beat" ] && break
+    sleep 0.1
+  done
+  [ -n "$watcher" ] || fail "the daemon never started a watcher: $(cat "$dir/daemon.out" "$log" 2>/dev/null)"
+  FIXTURE_PIDS="$FIXTURE_PIDS $watcher"
+  kill -STOP "$watcher"
+  for i in $(seq 1 600); do grep -q "watcher pid $watcher stalled" "$log" 2>/dev/null && break; sleep 0.1; done
+  grep -q "watcher pid $watcher stalled" "$log" 2>/dev/null \
+    || fail "the daemon never replaced its watcher stalled past a 12s bound: $(cat "$log" 2>/dev/null)"
+  gone_within "$watcher" 100 || fail "the daemon left its stalled watcher $watcher in place"
+  next=
+  for i in $(seq 1 300); do
+    next=$(watcher_pid_of "$dir")
+    [ -n "$next" ] && [ "$next" != "$watcher" ] && kill -0 "$next" 2>/dev/null && break
+    next=
+    sleep 0.1
+  done
+  FIXTURE_PIDS="$FIXTURE_PIDS $next"
+  kill -TERM "$dpid" 2>/dev/null
+  for i in $(seq 1 100); do kill -0 "$dpid" 2>/dev/null || break; sleep 0.1; done
+  [ -n "$next" ] || fail "the daemon never started a replacement watcher: $(cat "$log" 2>/dev/null)"
+  pass "the away daemon replaces a watcher stalled past the bound with a fresh one"
+}
+
+# A watcher that took the lock but wedged before publishing its identity (here,
+# waiting on a recovery-marker lock a live stranger holds) is still the away
+# daemon's own child, so the daemon replaces it at the bound like any other.
+test_away_daemon_replaces_a_watcher_wedged_in_startup() {
+  local dir log holder holder_pid watcher dpid i
+  dir=$(make_case daemon-startup-wedge)
+  printf 'away\n' > "$dir/state/.afk"
+  log="$dir/state/.supervise-daemon.log"
+  holder="$dir/marker-holder.sh"
+  # shellcheck disable=SC2016 # expanded by the holder script
+  printf '%s\n' '#!/usr/bin/env bash' 'export STATE="$2"' '. "$1"' 'fm_lock_try_acquire "$2/.watcher-down.lock" || exit 1' \
+    'sleep 300 >/dev/null 2>&1 &' 'trap "kill $! 2>/dev/null; exit 0" TERM' 'wait $!' > "$holder"
+  chmod +x "$holder"
+  "$holder" "$ROOT/bin/fm-wake-lib.sh" "$dir/state" &
+  holder_pid=$!
+  FIXTURE_PIDS="$FIXTURE_PIDS $holder_pid"
+  for i in $(seq 1 50); do [ "$(cat "$dir/state/.watcher-down.lock/pid" 2>/dev/null)" = "$holder_pid" ] && break; sleep 0.1; done
+  [ "$(cat "$dir/state/.watcher-down.lock/pid" 2>/dev/null)" = "$holder_pid" ] || fail "fixture: the marker lock was not taken"
+  env PATH="$dir/fakebin:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$dir/state" \
+    FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    FM_SECONDMATE_LIVENESS_SECS=99999999 FM_GUARD_GRACE=5 FM_WATCHER_STALL_BOUND=12 \
+    FM_WAKE_QUEUE_LOCK_WAIT=600 FM_SUPERVISOR_BACKEND=tmux FM_SUPERVISOR_TARGET=@9 FM_FAKE_TMUX_WINDOWS=@9 \
+    FM_WEDGE_ALARM_EXEC=discard FM_CRASH_NORMAL_SLEEP=1 \
+    "$ROOT/bin/fm-supervise-daemon.sh" > "$dir/daemon.out" 2>&1 &
+  dpid=$!
+  FIXTURE_PIDS="$FIXTURE_PIDS $dpid"
+  for i in $(seq 1 300); do watcher=$(watcher_pid_of "$dir"); [ -n "$watcher" ] && break; sleep 0.1; done
+  [ -n "$watcher" ] || fail "the daemon's watcher never took its lock: $(cat "$dir/daemon.out" "$log" 2>/dev/null)"
+  FIXTURE_PIDS="$FIXTURE_PIDS $watcher"
+  sleep 1
+  [ ! -s "$dir/state/.watch.lock/pid-identity" ] || fail "fixture: the watcher published its identity, so it did not wedge in startup"
+  for i in $(seq 1 600); do grep -q "watcher pid $watcher stalled" "$log" 2>/dev/null && break; sleep 0.1; done
+  kill -TERM "$dpid" "$holder_pid" 2>/dev/null
+  grep -q "watcher pid $watcher stalled" "$log" 2>/dev/null \
+    || fail "the daemon never replaced its watcher wedged in startup past a 12s bound: $(cat "$log" 2>/dev/null)"
+  gone_within "$watcher" 100 || fail "the daemon left its watcher $watcher wedged in startup"
+  for i in $(seq 1 100); do kill -0 "$dpid" 2>/dev/null || break; sleep 0.1; done
+  pass "the away daemon replaces its own watcher wedged in startup before it published an identity"
+}
+
 test_stalled_predicate_needs_the_bound_and_this_homes_lock() {
   local state pid identity
   state="$TMP_ROOT/stalled-predicate/state"
@@ -258,10 +341,19 @@ test_stalled_predicate_needs_the_bound_and_this_homes_lock() {
     || fail "a lock recorded for another home must never count as this home's stalled watcher"
   ! FM_WATCHER_STALL_BOUND=12 fm_watcher_stalled "$state" "$ROOT/bin/fm-watch.sh" "$$" "$TMP_ROOT/stalled-predicate" \
     || fail "a pid that does not answer to the lock's recorded identity must never count as stalled"
-  : > "$state/.last-watcher-beat"
+  # A lock its holder never got to publish an identity for: only the holder's
+  # own parent may take it for stalled, since only there the pid is certain.
+  rm -f "$state/.watch.lock/pid-identity" "$state/.watch.lock/fm-home" "$state/.watch.lock/watcher-path"
   ! FM_WATCHER_STALL_BOUND=12 fm_watcher_stalled "$state" "$ROOT/bin/fm-watch.sh" "$pid" "$TMP_ROOT/stalled-predicate" \
+    || fail "a lock without a published identity must never count as stalled for an outside owner"
+  FM_WATCHER_STALL_BOUND=12 fm_watcher_stalled "$state" "$ROOT/bin/fm-watch.sh" "$pid" "$TMP_ROOT/stalled-predicate" 0 own \
+    || fail "an own child wedged before publishing its identity must count as stalled past the bound"
+  ! FM_WATCHER_STALL_BOUND=12 fm_watcher_stalled "$state" "$ROOT/bin/fm-watch.sh" "$$" "$TMP_ROOT/stalled-predicate" 0 own \
+    || fail "an unpublished lock that names another pid must never count as the caller's stalled child"
+  : > "$state/.last-watcher-beat"
+  ! FM_WATCHER_STALL_BOUND=12 fm_watcher_stalled "$state" "$ROOT/bin/fm-watch.sh" "$pid" "$TMP_ROOT/stalled-predicate" 0 own \
     || fail "a fresh beacon must never count as stalled"
-  pass "the shared stalled-watcher predicate needs the bound, its extra window, and this home's lock under the recorded identity"
+  pass "the shared stalled-watcher predicate needs the bound, its extra window, and this home's lock under the recorded identity, or its own child's unpublished lock"
 }
 
 if [ -n "${FM_WATCHER_REPLACEMENT_ONLY:-}" ]; then
@@ -270,6 +362,8 @@ if [ -n "${FM_WATCHER_REPLACEMENT_ONLY:-}" ]; then
 fi
 
 test_stalled_predicate_needs_the_bound_and_this_homes_lock
+test_away_daemon_replaces_a_stalled_watcher
+test_away_daemon_replaces_a_watcher_wedged_in_startup
 test_tree_stop_spares_servers_strangers_and_recycled_identities
 test_started_arm_replaces_a_stalled_watcher_and_its_tree
 test_slow_cycle_below_the_bound_is_left_alone

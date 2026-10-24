@@ -1470,20 +1470,24 @@ _fm_ledger_any_alive() {  # <ledger-file>
   return 1
 }
 
-# fm_watcher_stalled <state> <watch-path> <pid> <home> [extra-seconds]: 0 when
-# <pid> holds this home's watcher lock under its recorded identity and the
-# beacon - and the lock itself, so a successor still starting under its
+# fm_watcher_stalled <state> <watch-path> <pid> <home> [extra-seconds] [own]:
+# 0 when <pid> holds this home's watcher lock under its recorded identity and
+# the beacon - and the lock itself, so a successor still starting under its
 # predecessor's stale beacon is never taken for it - is at or past
 # fm_watcher_stall_bound plus [extra-seconds]; the beacon age read is left in
-# FM_WATCHER_STALL_AGE. The one predicate every watcher owner (arm, away
-# daemon, supervision host) replaces a watcher on.
+# FM_WATCHER_STALL_AGE. With [own], <pid> is the caller's own unreaped child,
+# which no other process can be, so a lock naming it that never got its
+# identity (a watcher wedged in startup) counts too. The one predicate every
+# watcher owner (arm, away daemon, supervision host) replaces a watcher on.
 fm_watcher_stalled() {
-  local state=$1 watch=$2 pid=$3 home=$4 extra=${5:-0} bound
+  local state=$1 watch=$2 pid=$3 home=$4 extra=${5:-0} own=${6:-} bound
   bound=$(( $(fm_watcher_stall_bound) + extra ))
   FM_WATCHER_STALL_AGE=$(fm_path_age "$state/.last-watcher-beat")
   [ "$FM_WATCHER_STALL_AGE" -ge "$bound" ] || return 1
   [ "$(fm_path_age "$state/.watch.lock/pid")" -ge "$bound" ] || return 1
-  fm_watcher_lock_matches_pid "$state" "$watch" "$pid" "$home"
+  fm_watcher_lock_matches_pid "$state" "$watch" "$pid" "$home" && return 0
+  [ "$own" = own ] && [ "$(cat "$state/.watch.lock/pid" 2>/dev/null)" = "$pid" ] \
+    && [ ! -s "$state/.watch.lock/pid-identity" ]
 }
 
 # fm_watcher_stop_tree <pid> <identity> <grace-seconds>: stop a watcher and every

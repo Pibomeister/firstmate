@@ -15,7 +15,8 @@ set -u
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 if ! command -v tmux >/dev/null 2>&1 || ! command -v lsof >/dev/null 2>&1; then
-  pass "SKIP: tmux and lsof are needed for the real-server tmux proof cases"
+  # A gate skip the test runner names in its log, never a silent pass.
+  echo "skip: tmux and lsof are needed for the real-server tmux proof cases"
   exit 0
 fi
 
@@ -34,6 +35,19 @@ trap suite_cleanup EXIT
 
 t() { env -u TMUX -u TMUX_PANE tmux -S "$SOCK" "$@"; }
 
+# Kill with tmux, then wait for every pane process the kill ended to exit, so a
+# pane still holding the copy for a moment cannot turn a verdict into a refusal.
+t_kill() {  # <tmux kill command and args...>
+  local before after p i
+  before=$(t list-panes -a -F '#{pane_pid}' 2>/dev/null)
+  t "$@"
+  after=$(t list-panes -a -F '#{pane_pid}' 2>/dev/null)
+  for p in $before; do
+    ! printf '%s\n' "$after" | grep -qx "$p" || continue
+    i=0
+    while [ "$i" -lt 50 ] && kill -0 "$p" 2>/dev/null; do sleep 0.1; i=$((i + 1)); done
+  done
+}
 # A fresh private server holding the task's window (cwd in the copy) and an
 # unrelated session, and a record of it; prints the record path.
 start_task() {  # <name> -> meta path
@@ -77,9 +91,9 @@ test_window_gone_from_the_same_server_is_gone_unless_a_pane_is_in_the_copy() {
   meta=$(start_task window-gone)
   wt=$(dirname "$(dirname "$meta")")/wt
   t new-window -d -t fmses -n stray -c "$wt" 'sleep 600'
-  t kill-window -t fmses:fm-t1
+  t_kill kill-window -t fmses:fm-t1
   expect_verdict "$meta" unproven "another pane of the recorded server sits in the copy"
-  t kill-window -t fmses:stray
+  t_kill kill-window -t fmses:stray
   expect_verdict "$meta" gone "the window id gone from the same live server"
   pass "tmux proof: a window gone from its live server is gone only when no pane of it is in the copy"
 }
@@ -87,7 +101,7 @@ test_window_gone_from_the_same_server_is_gone_unless_a_pane_is_in_the_copy() {
 test_killed_or_replaced_server_is_gone() {
   local meta pid sessions
   meta=$(start_task killed)
-  t kill-server
+  t_kill kill-server
   expect_verdict "$meta" gone "the recorded server killed"
   if t list-sessions >/dev/null 2>&1; then fail "the proof started a server on the recorded socket"; fi
   t -f /dev/null new-session -d -s other -c / 'sleep 600'
@@ -118,7 +132,7 @@ test_working_directory_holder_blocks_the_proof() {
   local meta wt got sibling holder
   meta=$(start_task holder)
   wt=$(dirname "$(dirname "$meta")")/wt
-  t kill-server
+  t_kill kill-server
   sibling="${wt}-sibling"
   mkdir -p "$sibling"
   ( cd "$sibling" && exec sleep 300 ) &
@@ -133,13 +147,25 @@ test_working_directory_holder_blocks_the_proof() {
   assert_contains "$got" "process $holder (sleep)" "the refusal must name the holder by pid and command name"
   kill "$holder" 2>/dev/null
   wait "$holder" 2>/dev/null
+  # The record names the copy through a symlink; a holder there still blocks.
+  ln -s "$wt" "$wt-link"
+  sed "s|^worktree=.*|worktree=$wt-link|" "$meta" > "$meta.tmp" && mv "$meta.tmp" "$meta"
+  expect_verdict "$meta" gone "a copy recorded through a symlink with no holder"
+  ( cd "$wt-link" && exec sleep 300 ) &
+  holder=$!
+  HOLDERS="$HOLDERS $holder"
+  sleep 0.5
+  got=$(verdict "$meta")
+  [ "${got%%	*}" = unproven ] || fail "a holder of a copy recorded through a symlink must block the proof, got '$got'"
+  kill "$holder" 2>/dev/null
+  wait "$holder" 2>/dev/null
   pass "tmux proof: a process holding the copy (reached through a symlinked path) blocks it; a sibling path does not"
 }
 
 test_record_without_server_identity_still_refuses() {
   local meta
   meta=$(start_task legacy)
-  t kill-server
+  t_kill kill-server
   grep -v '^tmux_' "$meta" > "$meta.legacy"
   expect_verdict "$meta.legacy" unproven "a record without the tmux server identity"
   assert_contains "$(verdict "$meta.legacy")" "does not carry the endpoint's socket identity" "the legacy refusal must say why"
@@ -152,7 +178,7 @@ test_unreadable_identity_of_a_live_server_is_unproven() {
   local meta dir got
   meta=$(start_task noident)
   dir=$TMP_ROOT/noident
-  t kill-window -t fmses:fm-t1
+  t_kill kill-window -t fmses:fm-t1
   mkdir -p "$dir/fakeps" "$dir/noproc"
   printf '#!/bin/sh\nexit 1\n' > "$dir/fakeps/ps"
   chmod +x "$dir/fakeps/ps"

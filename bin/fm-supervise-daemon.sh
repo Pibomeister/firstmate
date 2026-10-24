@@ -2047,7 +2047,7 @@ fm_super_main() {
     # blocking call never exits; the beacon at or past the stall bound while it
     # still holds this home's lock is the same proof the arm acts on.
     if [ -n "${WATCHER_PID:-}" ] && kill -0 "$WATCHER_PID" 2>/dev/null \
-      && fm_watcher_stalled "$STATE" "$WATCH" "$WATCHER_PID" "$FM_HOME"; then
+      && fm_watcher_stalled "$STATE" "$WATCH" "$WATCHER_PID" "$FM_HOME" 0 own; then
       log "watcher pid $WATCHER_PID stalled (beacon ${FM_WATCHER_STALL_AGE}s at or past hard bound $(fm_watcher_stall_bound)s); stopping it and everything it started, then restarting"
       fm_watcher_stop_tree "$WATCHER_PID" "" 5 || true
       continue

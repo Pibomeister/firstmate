@@ -826,7 +826,7 @@ owned_child_running() {
 wait_owned_child() {
   local age
   while owned_child_running; do
-    if fm_watcher_stalled "$STATE" "$WATCH" "$child" "$FM_HOME"; then
+    if fm_watcher_stalled "$STATE" "$WATCH" "$child" "$FM_HOME" 0 own; then
       age=$FM_WATCHER_STALL_AGE
       trap - HUP TERM INT
       cycle_log_append unknown unknown started-holder-stalled none
