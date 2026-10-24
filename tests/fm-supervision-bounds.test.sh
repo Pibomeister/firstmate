@@ -192,12 +192,14 @@ test_watcher_defers_work_behind_a_held_wake_queue_lock() {
     || fail "the watcher did not record deferring its wake-queue work; triage: $(tail -5 "$state/.watch-triage.log" 2>/dev/null); queue: $(cat "$state/.wake-queue" 2>/dev/null); lock pid: $(cat "$state/.wake-queue.lock/pid" 2>/dev/null) holder $holder_pid; out: $(cat "$out")"
   [ -f "$state/.watcher-deferral.wake-queue" ] || fail "the watcher left no deferral record for the guard to report"
   IFS=$'\t' read -r d_owner d_first d_name d_holder < "$state/.watcher-deferral.wake-queue"
-  [ "$d_owner" = "$watcher" ] && [ "$d_name" = wake-queue ] && [ "$d_holder" = "$holder_pid" ] \
-    && case "$d_first" in '' | *[!0-9]*) false ;; *) true ;; esac \
-    || fail "the deferral record must name the watcher, the work and the holder, got: $(cat "$state/.watcher-deferral.wake-queue")"
+  if [ "$d_owner" != "$watcher" ] || [ "$d_name" != wake-queue ] || [ "$d_holder" != "$holder_pid" ] \
+    || ! [ "$d_first" -gt 0 ] 2>/dev/null; then
+    fail "the deferral record must name the watcher, the work and the holder, got: $(cat "$state/.watcher-deferral.wake-queue")"
+  fi
   IFS=$'\t' read -r s_pid s_epoch s_stage < "$state/.watcher-stage"
-  [ "$s_pid" = "$watcher" ] && [ -n "$s_stage" ] && case "$s_epoch" in '' | *[!0-9]*) false ;; *) true ;; esac \
-    || fail "the watcher must record its own stage for the guard, got: $(cat "$state/.watcher-stage" 2>/dev/null)"
+  if [ "$s_pid" != "$watcher" ] || [ -z "$s_stage" ] || ! [ "$s_epoch" -gt 0 ] 2>/dev/null; then
+    fail "the watcher must record its own stage for the guard, got: $(cat "$state/.watcher-stage" 2>/dev/null)"
+  fi
   kill "$holder_pid" 2>/dev/null
   wait "$holder_pid" 2>/dev/null
   for i in $(seq 1 300); do kill -0 "$watcher" 2>/dev/null || break; sleep 0.1; done
