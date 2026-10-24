@@ -598,6 +598,35 @@ test_lease_refusal_escalates_once_past_the_stall_bound() {
   FM_PENDING_REPLY_NOW=2800 fm_pending_reply_send_recovery "$state" "$corr" 2>/dev/null || true
   [ "$(grep -c "pending-reply-recovery-busy:" "$state/hibit.status")" = 1 ] || fail "the busy escalation must not repeat"
   FM_PENDING_REPLY_TICK_LEASE_BUSY=0
+  FM_PENDING_REPLY_SEND_HOOK=true FM_PENDING_REPLY_NOW=2900 fm_pending_reply_send_recovery "$state" "$corr" \
+    || fail "the recovery send must go through once the lock is free"
+  [ -z "$(fm_pending_reply_get "$rec" recovery_busy_since_epoch)" ] || fail "a send past the guard must clear the busy run"
+  printf 'done [corr=%s]: busy escalate answered\n' "$corr" >> "$state/hibit.status"
+  fm_pending_reply_try_resolve "$state" "$corr" || fail "the correlated report must resolve the record"
+  grep -Fq "resolved [key=pending-reply-$corr]" "$state/hibit.status" \
+    || fail "resolving after the busy run cleared must close the busy escalation: $(cat "$state/hibit.status")"
+  # Invoked indirectly through FM_PENDING_REPLY_SEND_HOOK.
+  # shellcheck disable=SC2329
+  recovery_leased_hook() {
+    echo "error: steer (fm-send) refused - task 'hibit' is leased to the branch supervision actor (state/.lease-hibit), which is handling that task right now" >&2
+    return 6
+  }
+  export -f recovery_leased_hook
+  FM_PENDING_REPLY_TICK_LEASE_BUSY=0
+  FM_PENDING_REPLY_SEND_HOOK=recovery_leased_hook FM_PENDING_REPLY_NOW=2500 \
+    fm_pending_reply_send_recovery "$state" "$corr2" 2>/dev/null || true
+  FM_PENDING_REPLY_TICK_LEASE_BUSY=0
+  FM_PENDING_REPLY_SEND_HOOK=recovery_leased_hook FM_PENDING_REPLY_NOW=2700 \
+    fm_pending_reply_send_recovery "$state" "$corr2" 2>/dev/null || true
+  grep -F "pending-reply-id=$corr2" "$state/hibit.status" | grep -Fq "task lease held by the branch supervision actor" \
+    || fail "a lease refusal must name the other actor's lease: $(cat "$state/hibit.status")"
+  ! grep -F "pending-reply-id=$corr2" "$state/hibit.status" | grep -Fq "lock busy" \
+    || fail "a lease refusal must not be reported as a busy lock"
+  unset -f recovery_leased_hook
+  corr2=$(fm_pending_reply_create "$home" "$state" hibit "busy invalid actor")
+  fm_pending_reply_mark_delivered "$state" "$corr2"
+  fm_pending_reply_mark_turn_completed "$state" "$corr2" request
+  FM_PENDING_REPLY_TICK_LEASE_BUSY=0
   FM_SUPERVISION_ACTOR=bogus fm_pending_reply_send_recovery "$state" "$corr2" 2>/dev/null || true
   [ "$(phase_of "$state" "$corr2")" = recovery_failed ] \
     || fail "exit 6 from an invalid supervision actor must be a failure, got $(phase_of "$state" "$corr2")"

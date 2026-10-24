@@ -63,8 +63,11 @@
 #   recovery_turn_completed_epoch=
 #   recovery_busy_since_epoch=  first fm-send lease refusal (exit 6) of the current
 #                           busy run; cleared once a send gets past the guard
-#   recovery_busy_holder=   who held the lease-command lock, from that refusal
+#   recovery_busy_holder=   what refused the send, from that refusal: the
+#                           lease-command lock holder or the other actor's lease
 #   recovery_busy_escalated_epoch=  when the one busy escalation was raised
+#   recovery_busy_escalation_payload=  the exact payload that escalation published,
+#                           kept so its close still matches after the run clears
 #   escalated_epoch=
 #   escalation_closed_epoch=
 #                           when the durable status decision opened by that
@@ -1101,9 +1104,9 @@ fm_pending_reply_note_busy() {  # <state-dir> <corr_id> <err-file>
     since=$now
     fm_pending_reply_set "$rec" recovery_busy_since_epoch "$since" || return 1
   fi
-  holder=$(sed -n 's/.*held by \(pid [0-9][0-9]* ([^)]*)\).*/\1/p' "$err" 2>/dev/null | head -n 1)
-  [ -n "$holder" ] || holder=$(head -n 1 "$err" 2>/dev/null | tr '\t' ' ' | cut -c1-160)
-  [ -n "$holder" ] || holder='an unidentified process'
+  holder=$(sed -n 's/.*held by \(pid [0-9][0-9]* ([^)]*)\).*/lease-command lock busy, held by \1/p' "$err" 2>/dev/null | head -n 1)
+  [ -n "$holder" ] || holder=$(sed -n 's/.*is leased to the \([a-z]*\) supervision actor.*/task lease held by the \1 supervision actor/p' "$err" 2>/dev/null | head -n 1)
+  [ -n "$holder" ] || holder="refused: $(head -n 1 "$err" 2>/dev/null | tr '\t' ' ' | cut -c1-160)"
   fm_pending_reply_set "$rec" recovery_busy_holder "$holder" || return 1
   [ -z "$(fm_pending_reply_get "$rec" recovery_busy_escalated_epoch)" ] || return 0
   [ $((now - since)) -ge "$(fm_watcher_stall_bound)" ] || return 0
@@ -1136,7 +1139,13 @@ _fm_pending_reply_escalate_busy_locked() {  # <state-dir> <corr_id>
     return 0
   fi
   [ "$(fm_pending_reply_get "$rec" phase)" = awaiting_report ] || return 0
-  payload=$(fm_pending_reply_escalation_payload "$rec" recovery-busy) || return 1
+  payload=$(fm_pending_reply_get "$rec" recovery_busy_escalation_payload)
+  if [ -z "$payload" ]; then
+    payload=$(printf 'pending-reply-recovery-busy: task=%s pending-reply-id=%s request=%s busy since %s, %s' \
+      "$(fm_pending_reply_get "$rec" task_id)" "$corr" "$(fm_pending_reply_get "$rec" request_summary)" \
+      "$(fm_pending_reply_get "$rec" recovery_busy_since_epoch)" "$(fm_pending_reply_get "$rec" recovery_busy_holder)")
+    fm_pending_reply_set "$rec" recovery_busy_escalation_payload "$payload" || return 1
+  fi
   [ -n "$parent_status" ] || return 1
   mkdir -p "$(dirname "$parent_status")" 2>/dev/null || return 1
   key=$(fm_pending_reply_escalation_key "$corr")
@@ -1274,10 +1283,9 @@ fm_pending_reply_escalation_payload() {  # <record-path> <kind>
       token="pending-reply-recovery-delivery-$outcome"
       ;;
     recovery-busy)
-      [ -n "$(fm_pending_reply_get "$rec" recovery_busy_since_epoch)" ] || return 1
-      printf 'pending-reply-recovery-busy: task=%s pending-reply-id=%s request=%s lease-command lock busy since %s, held by %s' \
-        "$task_id" "$corr" "$summary" "$(fm_pending_reply_get "$rec" recovery_busy_since_epoch)" \
-        "$(fm_pending_reply_get "$rec" recovery_busy_holder)"
+      token=$(fm_pending_reply_get "$rec" recovery_busy_escalation_payload)
+      [ -n "$token" ] || return 1
+      printf '%s' "$token"
       return 0
       ;;
     *) return 1 ;;
