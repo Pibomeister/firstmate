@@ -1,0 +1,21 @@
+fm-test-queue: ticket 2, position 1: all 1 slot(s) busy
+Real load probe and default XDG spool resolution; two independent FM_HOME values and two timezones. No FM_TEST_QUEUE_DIR or test seams.
+
+Different homes share the same default spool: home B waits behind home A.
+$ bin/fm-test-queue.sh status
+test-queue: slots=1 load_ceiling=16 load1=11.09 serving=1 waiting=1 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5JW8KCSACJJWWF0BM98FFES/.nm-test-tmp/cross-home/xdg-state/firstmate/test-queue
+serving ticket=1 pid=9752 age=1s task=- label=home-a-UTC
+waiting position=1 ticket=2 pid=9958 age=1s task=- label=home-b-Mexico
+Killed wrapper pid 9752 with SIGKILL; direct workload child pid 9892 remains.
+
+After SIGKILL: surviving workload keeps the slot despite the contender timezone difference.
+$ bin/fm-test-queue.sh status
+test-queue: slots=1 load_ceiling=16 load1=11.09 serving=1 waiting=1 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5JW8KCSACJJWWF0BM98FFES/.nm-test-tmp/cross-home/xdg-state/firstmate/test-queue
+serving ticket=1 pid=9752 age=1s task=- label=home-a-UTC
+waiting position=1 ticket=2 pid=9958 age=1s task=- label=home-b-Mexico
+fm-test-queue: ticket 2 served
+
+Child exits: home B runs, then leaves an empty queue.
+$ bin/fm-test-queue.sh status
+test-queue: slots=1 load_ceiling=16 load1=11.09 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5JW8KCSACJJWWF0BM98FFES/.nm-test-tmp/cross-home/xdg-state/firstmate/test-queue
+Workload timezones preserved: UTC and America/Mexico_City.

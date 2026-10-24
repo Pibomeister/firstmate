@@ -1,0 +1,23 @@
+{
+  "revision": "91d1b72f06c10c1268fd85677a70ba36622eb751",
+  "platform": "macOS arm64; /bin/bash 3.2.57",
+  "checks": [
+    {
+      "command": "TMPDIR=\"$PWD/.nm-test-tmp\" FM_TEST_BASH=/bin/bash /bin/bash tests/fm-test-queue.test.sh",
+      "exit": 0
+    },
+    {
+      "command": "TMPDIR=\"$PWD/.nm-test-tmp\" bin/fm-test-run.sh --list --changed --base 7dc56f87",
+      "exit": 0,
+      "note": "Inspection only; selected tests were not executed."
+    },
+    {
+      "command": "python3 .nm-test-tmp/live_evidence.py",
+      "exit": 0
+    },
+    {
+      "command": "python3 .nm-test-tmp/cross_home_evidence.py",
+      "exit": 0
+    }
+  ]
+}

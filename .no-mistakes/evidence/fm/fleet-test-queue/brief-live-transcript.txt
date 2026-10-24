@@ -1,0 +1,32 @@
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5JW8KCSACJJWWF0BM98FFES/bin/fm-brief.sh live-no-mistakes alpha --mode no-mistakes
+scaffolded: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5JW8KCSACJJWWF0BM98FFES/.nm-test-tmp/live/home/data/live-no-mistakes/brief.md (ship, mode=no-mistakes; replace {TASK} and {FIRSTMATE_SPEC})
+Generated rule: 9. Run heavy test suites only through the machine-wide test line, `'/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5JW8KCSACJJWWF0BM98FFES/.nm-test-tmp/live/firstmate helper'\''s root/bin/fm-test-queue.sh' run -- <command>`, which waits for your turn, a free slot, and a low load; run targeted tests directly.
+$ '/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5JW8KCSACJJWWF0BM98FFES/.nm-test-tmp/live/firstmate helper'\''s root/bin/fm-test-queue.sh' run -- printf '%s\n' 'real queued workload from quoted root'
+real queued workload from quoted root
+exit=0
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5JW8KCSACJJWWF0BM98FFES/bin/fm-brief.sh live-direct-PR alpha --mode direct-PR
+scaffolded: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5JW8KCSACJJWWF0BM98FFES/.nm-test-tmp/live/home/data/live-direct-PR/brief.md (ship, mode=direct-PR; replace {TASK} and {FIRSTMATE_SPEC})
+Generated rule: 9. Run heavy test suites only through the machine-wide test line, `'/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5JW8KCSACJJWWF0BM98FFES/.nm-test-tmp/live/firstmate helper'\''s root/bin/fm-test-queue.sh' run -- <command>`, which waits for your turn, a free slot, and a low load; run targeted tests directly.
+$ '/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5JW8KCSACJJWWF0BM98FFES/.nm-test-tmp/live/firstmate helper'\''s root/bin/fm-test-queue.sh' run -- printf '%s\n' 'real queued workload from quoted root'
+real queued workload from quoted root
+exit=0
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5JW8KCSACJJWWF0BM98FFES/bin/fm-brief.sh live-local-only alpha --mode local-only
+scaffolded: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5JW8KCSACJJWWF0BM98FFES/.nm-test-tmp/live/home/data/live-local-only/brief.md (ship, mode=local-only; replace {TASK} and {FIRSTMATE_SPEC})
+Generated rule: 9. Run heavy test suites only through the machine-wide test line, `'/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5JW8KCSACJJWWF0BM98FFES/.nm-test-tmp/live/firstmate helper'\''s root/bin/fm-test-queue.sh' run -- <command>`, which waits for your turn, a free slot, and a low load; run targeted tests directly.
+$ '/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5JW8KCSACJJWWF0BM98FFES/.nm-test-tmp/live/firstmate helper'\''s root/bin/fm-test-queue.sh' run -- printf '%s\n' 'real queued workload from quoted root'
+real queued workload from quoted root
+exit=0
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5JW8KCSACJJWWF0BM98FFES/bin/fm-brief.sh live-scout alpha --scout
+scaffolded: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5JW8KCSACJJWWF0BM98FFES/.nm-test-tmp/live/home/data/live-scout/brief.md (scout; replace {TASK} and {FIRSTMATE_SPEC})
+Generated rule: 9. Run heavy test suites only through the machine-wide test line, `'/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5JW8KCSACJJWWF0BM98FFES/.nm-test-tmp/live/firstmate helper'\''s root/bin/fm-test-queue.sh' run -- <command>`, which waits for your turn, a free slot, and a low load; run targeted tests directly.
+$ '/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5JW8KCSACJJWWF0BM98FFES/.nm-test-tmp/live/firstmate helper'\''s root/bin/fm-test-queue.sh' run -- printf '%s\n' 'real queued workload from quoted root'
+real queued workload from quoted root
+exit=0
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5JW8KCSACJJWWF0BM98FFES/bin/fm-brief.sh live-secondmate alpha --secondmate
+scaffolded: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5JW8KCSACJJWWF0BM98FFES/.nm-test-tmp/live/home/data/live-secondmate/brief.md (secondmate charter)
+Generated secondmate charter has no crewmate queue rule.
+

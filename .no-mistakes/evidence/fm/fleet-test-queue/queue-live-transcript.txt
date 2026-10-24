@@ -1,0 +1,36 @@
+Real fm-test-queue.sh public CLI; isolated spool; load file drives threshold transitions. Interpreter: macOS /bin/bash 3.2.
+fm-test-queue: ticket 1, position 1: load 20.5 is not below 16
+fm-test-queue: ticket 2, position 2: waiting behind 1 earlier ticket(s)
+fm-test-queue: ticket 3, position 3: waiting behind 2 earlier ticket(s)
+
+High load: all three wait in ticket order; no workload has started.
+$ bin/fm-test-queue.sh status
+test-queue: slots=1 load_ceiling=16 load1=20.5 serving=0 waiting=3 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5JW8KCSACJJWWF0BM98FFES/.nm-test-tmp/live/spool
+waiting position=1 ticket=1 pid=52293 age=0s task=- label=A
+waiting position=2 ticket=2 pid=52549 age=0s task=- label=B
+waiting position=3 ticket=3 pid=52871 age=0s task=- label=C
+fm-test-queue: ticket 1 served
+fm-test-queue: ticket 3, position 2: waiting behind 1 earlier ticket(s)
+fm-test-queue: ticket 2, position 1: all 1 slot(s) busy
+
+Low load: A runs; B and C still wait for the single shared slot.
+$ bin/fm-test-queue.sh status
+test-queue: slots=1 load_ceiling=16 load1=1 serving=1 waiting=2 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5JW8KCSACJJWWF0BM98FFES/.nm-test-tmp/live/spool
+serving ticket=1 pid=52293 age=0s task=- label=A
+waiting position=1 ticket=2 pid=52549 age=1s task=- label=B
+waiting position=2 ticket=3 pid=52871 age=1s task=- label=C
+fm-test-queue: ticket 2 served
+fm-test-queue: ticket 3, position 1: all 1 slot(s) busy
+fm-test-queue: ticket 3 served
+
+Workload completion order:
+A
+B
+C
+
+All runs completed: the line is empty.
+$ bin/fm-test-queue.sh status
+test-queue: slots=1 load_ceiling=16 load1=1 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5JW8KCSACJJWWF0BM98FFES/.nm-test-tmp/live/spool
+
+Real host load probe (no test seam):
+test-queue: slots=1 load_ceiling=16 load1=10.95 serving=0 waiting=0 stale=0 spool=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5JW8KCSACJJWWF0BM98FFES/.nm-test-tmp/live/spool
