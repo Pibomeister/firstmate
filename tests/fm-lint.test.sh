@@ -1266,6 +1266,10 @@ test_tmux_commands_must_name_their_server() {
     'tests/lab.test.sh|tmux -f "my cfg" kill-server' \
     'tests/lab.test.sh|trap '\''tmux "${o[@]}" kill-server'\'' EXIT' \
     'tests/lab.test.sh|tmux "kill-server"' \
+    'tests/lab.test.sh|x=$(tmux kill-server)' \
+    'tests/lab.test.sh|(tmux kill-server) || true' \
+    'tests/lab.test.sh|tmux $(lab_flags lab) kill-server' \
+    'tests/lab.test.sh|tmux "${opts[@]}" new-session -d "curl -L $url"' \
     'tests/lab.test.sh|echo "`tmux new-session -d`"' \
     'tests/lab.test.sh|"${TMUX_CMD[@]}" kill-server' \
     'tests/lab.test.sh|echo '\''# fm-lint: tmux-socket-ok x'\''; tmux kill-server' \

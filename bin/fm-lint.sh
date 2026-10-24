@@ -813,14 +813,14 @@ fm_lint_run_tmux_socket() {
     # addressed=1 when -S or a non-default -L names the server. A word that
     # is no option and no plain command (an expansion, a quoted value) leaves
     # the command unknown: "?" plus the remaining words, judged conservatively.
-    function tmux_command_word(args,    n, w, i, opt, letter, value, rest, q) {
+    function tmux_command_word(args,    n, w, i, opt, letter, value, rest, q, depth, options) {
       n=split(args, w, /[[:space:]]+/)
       addressed=0
       for (i=1; i <= n; i++) {
         if (w[i] == "") continue
         if (w[i] == "--") return w[i + 1]
         # A command word may be quoted or close the quoted string it sits in.
-        if (w[i] ~ /^["\047]*[a-z][a-z-]*["\047]*$/) { gsub(/["\047]/, "", w[i]); return w[i] }
+        if (w[i] ~ /^["\047]*[a-z][a-z-]*["\047)]*$/) { gsub(/["\047)]/, "", w[i]); return w[i] }
         opt=w[i]; gsub(/["\047]/, "", opt)
         if (opt ~ /^-[2CDhlNquUvV]*$/) continue
         if (opt ~ /^-[2CDhlNquUvV]*[cfLST]/) {
@@ -838,20 +838,24 @@ fm_lint_run_tmux_socket() {
           else if (letter == "L" && value != "default") addressed=1
           continue
         }
-        # Unknown command: collect the remaining words up to an unbalanced ),
-        # still noting any -S or non-default -L among them.
-        rest=""
+        # Unknown command: collect the remaining words up to the ) that closes
+        # an enclosing substitution, noting -S or a non-default -L only until
+        # a plain command word starts the arguments of the command.
+        rest=""; depth=0; options=1
         for (; i <= n; i++) {
           opt=w[i]
-          if (gsub(/\)/, ")", opt) > gsub(/\(/, "(", opt)) break
+          depth+=gsub(/\(/, "(", opt) - gsub(/\)/, ")", opt)
+          if (depth < 0) sub(/\).*$/, "", opt)
           gsub(/["\047]/, "", opt)
-          if (opt ~ /^-[2CDhlNquUvV]*S/) addressed=1
-          else if (opt ~ /^-[2CDhlNquUvV]*L/) {
+          if (options && opt ~ /^[a-z][a-z-]*$/) options=0
+          if (options && opt ~ /^-[2CDhlNquUvV]*S/) addressed=1
+          else if (options && opt ~ /^-[2CDhlNquUvV]*L/) {
             value=opt; sub(/^-[2CDhlNquUvV]*L/, "", value)
-            if (value == "") { value=w[i + 1]; gsub(/["\047]/, "", value) }
-            if (value != "default") addressed=1
+            if (value == "") { value=w[i + 1]; gsub(/["\047)]/, "", value) }
+            if (value != "" && value != "default") addressed=1
           }
           rest=rest " " opt
+          if (depth < 0) break
         }
         return "?" rest
       }
