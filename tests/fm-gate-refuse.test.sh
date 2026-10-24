@@ -277,6 +277,61 @@ test_lab_home_private_tmux_socket_survives_deep_paths() {
   pass "fm-lab-home: a primary starts on a private short tmux socket from a long lab path and teardown removes it"
 }
 
+# tmux resolves its server from -S, then -L, then $TMUX, and only then from
+# TMUX_TMPDIR, so a lab cleanup run inside an operator pane must name its own
+# socket. A throwaway "operator" server on its own socket stands in for the
+# operator's, with TMUX pointing at it as it does inside any of its panes.
+test_lab_tmux_cleanup_spares_the_operator_server() {
+  local real_tmux op_dir op_sock op_pid lab socket_dir resolved
+  local -a operator_env
+  real_tmux=$(command -v tmux) || fail "tmux is required for the operator-server behavioral test"
+  # A short /tmp path keeps the socket under the platform's sun_path limit.
+  op_dir=$(mktemp -d /tmp/fmop.XXXXXX) || fail "could not create the operator socket directory"
+  op_dir=$(cd -P -- "$op_dir" && pwd -P) || fail "could not resolve the operator socket directory"
+  FM_TEST_CLEANUP_DIRS+=("$op_dir")
+  op_sock="$op_dir/operator"
+  lab=$("$LABHOME" create "$TMP/operator-lab") || fail "could not create the operator-test lab home"
+  cleanup_operator_lab() {
+    env -u TMUX -u TMUX_PANE "$real_tmux" -S "$op_sock" kill-server >/dev/null 2>&1 || true
+    "$LABHOME" tmux "$lab" kill-server >/dev/null 2>&1 || true
+    "$LABHOME" teardown "$lab" >/dev/null 2>&1 || true
+    fm_test_cleanup
+  }
+  trap cleanup_operator_lab EXIT
+  env -u TMUX -u TMUX_PANE "$real_tmux" -S "$op_sock" -f /dev/null new-session -d -s operator 'exec sleep 600' \
+    || fail "could not start the throwaway operator server"
+  op_pid=$(env -u TMUX -u TMUX_PANE "$real_tmux" -S "$op_sock" display -p '#{pid}') \
+    || fail "could not read the operator server pid"
+  operator_env=(TMUX="$op_sock,$op_pid,0" TMUX_PANE=%0 TMUX_TMPDIR="$op_dir")
+
+  env "${operator_env[@]}" "$LABHOME" tmux "$lab" -f /dev/null new-session -d -s primary 'exec sleep 600' \
+    || fail "the lab tmux runner could not start the lab server from an operator pane"
+  socket_dir=$("$LABHOME" tmux-dir "$lab") || fail "could not read the lab's private tmux directory"
+  [ -S "$socket_dir/tmux-$(id -u)/default" ] || fail "the lab server is not on the lab's private socket"
+  env "${operator_env[@]}" "$LABHOME" tmux "$lab" kill-server \
+    || fail "the generated lab cleanup could not stop the lab server"
+  env "${operator_env[@]}" "$LABHOME" teardown "$lab" \
+    || fail "lab teardown refused after the generated cleanup"
+  env -u TMUX -u TMUX_PANE "$real_tmux" -S "$op_sock" has-session -t operator 2>/dev/null \
+    || fail "the generated lab cleanup killed the operator server"
+  [ ! -e "$socket_dir" ] || fail "lab teardown left the private tmux directory behind"
+
+  # Negative control: the retired instruction, addressed only by TMUX_TMPDIR,
+  # kills the operator server. Abort first unless TMUX provably resolves to
+  # the throwaway operator socket, so the control can never reach another server.
+  socket_dir=$("$LABHOME" tmux-dir "$lab") || fail "could not recreate the lab's private tmux directory"
+  resolved=$(env "${operator_env[@]}" TMUX_TMPDIR="$socket_dir" "$real_tmux" display -p '#{socket_path}' 2>/dev/null)
+  [ "$resolved" = "$op_sock" ] \
+    || fail "aborting the negative control: TMUX resolves to '${resolved:-nothing}', not the throwaway operator socket"
+  env "${operator_env[@]}" TMUX_TMPDIR="$socket_dir" "$real_tmux" kill-server >/dev/null 2>&1 || true
+  if env -u TMUX -u TMUX_PANE "$real_tmux" -S "$op_sock" has-session -t operator 2>/dev/null; then
+    fail "negative control: the TMUX_TMPDIR-only cleanup did not reach the operator server, so the test proves nothing"
+  fi
+  "$LABHOME" teardown "$lab" || fail "lab teardown failed after the negative control"
+  trap fm_test_cleanup EXIT
+  pass "fm-lab-home: the generated lab cleanup run from an operator pane stops only the lab server"
+}
+
 test_lab_home_helper() {
   local lab populated unlistable newline out rc
   # create on an absent path mints the marker and the stock layout.
@@ -565,6 +620,7 @@ test_helper_normal_is_noop
 test_helper_lab_home_admits
 test_lab_home_helper
 test_lab_home_private_tmux_socket_survives_deep_paths
+test_lab_tmux_cleanup_spares_the_operator_server
 test_spawn_refuses_and_admits
 test_send_refuses_and_admits
 test_teardown_refuses_and_admits

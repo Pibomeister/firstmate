@@ -33,13 +33,16 @@
 #     `gh`). That local pass drops --external-sources and excludes SC1091,
 #     SC2034, SC2153, and SC2329. A branch with zero matching changed files
 #     skips ShellCheck and prints a "no changed lint targets" note, then
-#     still runs the backend-purity check and validates workflows.
+#     still runs the backend-purity and tmux-socket checks and validates
+#     workflows.
 # Explicit paths always bypass this file-set selection and lint exactly the
 # given paths, matching the same config, without the workflow YAML check.
 # Explicit core bin/ and bin/backends/ scripts still receive the
 # backend-purity check. The backend-purity check rejects direct Beads CLI
 # invocations in the core bin/ and bin/backends/ scripts so every configured
-# backlog backend follows the same tasks-axi lifecycle path.
+# backlog backend follows the same tasks-axi lifecycle path. The tmux-socket
+# check (fm_lint_run_tmux_socket owns its rule) covers bin/ and tests/ the
+# same way, explicit paths included.
 #
 # Lint defaults to two concurrency-limited workers over two stable logical
 # shards, and each worker runs ONE canonical root per ShellCheck process, so a
@@ -52,7 +55,7 @@
 # exposes their actual roots.
 # Partition mode starts with full source-aware analysis, never changed-only
 # or --fast, and does not accept explicit paths. Each partition also runs
-# workflow lint and backend-purity checks, keeping either invocation
+# workflow lint, backend-purity, and tmux-socket checks, keeping either invocation
 # independently useful.
 #
 # With FM_LINT_REQUIRE_BOUNDS=1, which CI sets, every per-root ShellCheck
@@ -476,6 +479,15 @@ fm_lint_run_workflows() {
   "$SELF_DIR/fm-lint-workflows.sh"
 }
 
+fm_lint_canonical_path() {
+  # shellcheck disable=SC2016 # Perl, not the shell, expands $ARGV.
+  "$PERL_BIN" -MCwd=realpath -e '
+    my $resolved = realpath($ARGV[0]);
+    exit 1 unless defined $resolved;
+    print $resolved;
+  ' "$1" 2>/dev/null
+}
+
 # Backend adapters belong behind tasks-axi. Keep direct Beads CLI invocations
 # out of firstmate's core scripts so every configured backend follows the same
 # lifecycle path.
@@ -488,12 +500,7 @@ fm_lint_run_backend_purity() {
   else
     for path in "${ROOTS[@]}"; do
       [ -f "$path" ] || continue
-      # shellcheck disable=SC2016 # Perl, not the shell, expands $ARGV.
-      canonical=$("$PERL_BIN" -MCwd=realpath -e '
-        my $resolved = realpath($ARGV[0]);
-        exit 1 unless defined $resolved;
-        print $resolved;
-      ' "$path" 2>/dev/null) || continue
+      canonical=$(fm_lint_canonical_path "$path") || continue
       case "$canonical" in
         "$ROOT"/bin/*.sh|"$ROOT"/bin/backends/*.sh)
           purity_roots+=("$canonical")
@@ -703,6 +710,101 @@ fm_lint_run_backend_purity() {
       }
     }
   ' "${purity_roots[@]}")
+  [ -z "$findings" ] || {
+    printf '%s\n' "$findings" >&2
+    return 1
+  }
+}
+
+# tmux resolves its server from -S, then -L, then $TMUX, and only then from
+# TMUX_TMPDIR, so a tmux command that names no socket reaches whatever server
+# the caller's pane belongs to - in a firstmate pane, the fleet's own server.
+# Reject a literal tmux kill-server without -S/-L anywhere in bin/ and tests/,
+# and kill-session/new-session without them in tests/; production bin/ creates
+# and kills sessions on the operator's own server by design. A literal tmux is
+# the command word tmux, a path ending in /tmux, or a variable whose name ends
+# in TMUX, in command position. Calls through a wrapper function are not seen.
+fm_lint_run_tmux_socket() {
+  local findings path canonical
+  local -a tmux_roots
+  tmux_roots=()
+  if [ "$EXPLICIT_PATHS" -eq 0 ]; then
+    tmux_roots=(bin/*.sh bin/backends/*.sh tests/*.sh)
+  else
+    for path in "${ROOTS[@]}"; do
+      [ -f "$path" ] || continue
+      canonical=$(fm_lint_canonical_path "$path") || continue
+      case "$canonical" in
+        "$ROOT"/bin/*.sh|"$ROOT"/bin/backends/*.sh|"$ROOT"/tests/*.sh)
+          tmux_roots+=("$canonical")
+          ;;
+      esac
+    done
+  fi
+  [ "${#tmux_roots[@]}" -gt 0 ] || return 0
+  findings=$(LC_ALL=C awk -v root="$ROOT/" '
+    # Inside a quoted string only a trap or -c command string is code.
+    function command_position(prefix,    i, c, quote, open) {
+      quote=""
+      for (i=1; i <= length(prefix); i++) {
+        c=substr(prefix, i, 1)
+        if (quote == "\047") { if (c == "\047") quote=""; continue }
+        if (c == "\\") { i++; continue }
+        if (quote == "\"") { if (c == "\"") quote=""; continue }
+        if (c == "\047" || c == "\"") { quote=c; open=i }
+      }
+      if (quote == "") return unquoted_command_position(prefix)
+      return substr(prefix, 1, open - 1) ~ /(^|[[:space:]])(trap|-c)[[:space:]]*$/ \
+        && unquoted_command_position(substr(prefix, open + 1))
+    }
+    function unquoted_command_position(prefix,    changed) {
+      do {
+        changed=0
+        sub(/[[:space:]]+$/, "", prefix)
+        if (sub(/(^|[[:space:]])[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*$/, "", prefix)) changed=1
+        else if (sub(/(^|[[:space:]])-u[[:space:]]+[A-Za-z_][A-Za-z0-9_]*$/, "", prefix)) changed=1
+        else if (sub(/(^|[[:space:]])(env|exec|command|-i|--)$/, "", prefix)) changed=1
+      } while (changed)
+      return prefix == "" || prefix ~ /([;&|({!]|\$\()$/ || prefix ~ /(^|[[:space:]])(then|do|else|if|while|until|trap)$/
+    }
+    function literal_tmux(word) {
+      gsub(/["\047{}]/, "", word)
+      return word == "tmux" || word ~ /\/tmux$/ || word ~ /^\$[A-Za-z_][A-Za-z0-9_]*TMUX$/
+    }
+    function check(text, line_no, file,    rest, offset, start, len, word, args, pattern) {
+      pattern = (file ~ /^bin\//) ? "kill-server" : "kill-server|kill-session|new-session"
+      rest=text; offset=0
+      while (match(rest, /[^[:space:];|&()]+/)) {
+        start=RSTART; len=RLENGTH
+        word=substr(rest, start, len)
+        if (literal_tmux(word) && command_position(substr(text, 1, offset + start - 1))) {
+          args=substr(rest, start + len)
+          sub(/[;|&].*$/, "", args)
+          # A tmux() stub definition is not an invocation.
+          if (args !~ /^[[:space:]]*\(/ && match(args, "(^|[[:space:]])(" pattern ")([^A-Za-z0-9_-]|$)") && substr(args, 1, RSTART) !~ /(^|[[:space:]])-[SL]/) {
+            print file ":" line_no ": tmux command without -S or -L can reach the operator'\''s tmux server"
+            return
+          }
+        }
+        offset += start + len - 1
+        rest=substr(rest, start + len)
+      }
+    }
+    FNR == 1 { pending=""; start=0; file=FILENAME; if (index(file, root) == 1) file=substr(file, length(root) + 1) }
+    {
+      line=$0
+      if (pending == "") start=FNR
+      if (line ~ /\\$/) { pending = pending substr(line, 1, length(line) - 1) " "; next }
+      line = pending line
+      pending=""
+      if (line ~ /^[[:space:]]*#/) next
+      sub(/[[:space:]]#.*$/, "", line)
+      check(line, start, file)
+    }
+  ' "${tmux_roots[@]}") || {
+    printf 'fm-lint.sh: the tmux socket check could not run\n' >&2
+    return 1
+  }
   [ -z "$findings" ] || {
     printf '%s\n' "$findings" >&2
     return 1
@@ -938,6 +1040,7 @@ if [ "$CHANGED_MODE" -eq 1 ] && [ "$ROOT_COUNT" -eq 0 ]; then
   printf 'fm-lint.sh: no changed lint targets\n'
   overall_rc=0
   fm_lint_run_backend_purity || overall_rc=$?
+  fm_lint_run_tmux_socket || overall_rc=$?
   fm_lint_run_workflows || overall_rc=$?
   exit "$overall_rc"
 fi
@@ -1268,6 +1371,7 @@ fi
 
 purity_rc=0
 fm_lint_run_backend_purity || purity_rc=$?
+fm_lint_run_tmux_socket || purity_rc=$?
 if [ "$overall_rc" -eq 0 ] && [ "$purity_rc" -ne 0 ]; then
   overall_rc=$purity_rc
 fi

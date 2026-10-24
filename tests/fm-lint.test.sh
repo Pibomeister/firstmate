@@ -1220,6 +1220,63 @@ test_rejects_direct_beads_cli_in_explicit_core_path() {
   pass "fm-lint.sh enforces backend purity for explicit core paths"
 }
 
+test_tmux_commands_must_name_their_server() {
+  local tmp fakebin log lint_copy entry target line out rc
+  tmp=$(fm_test_tmproot fm-lint-tmux-socket)
+  fakebin=$(fm_fakebin "$tmp")
+  log="$tmp/shellcheck.log"
+  mkdir -p "$tmp/repo/bin" "$tmp/repo/tests"
+  lint_copy="$tmp/repo/bin/fm-lint.sh"
+  cp "$LINT" "$lint_copy"
+  chmod +x "$lint_copy"
+  fm_lint_stub_shellcheck "$fakebin" "$log"
+
+  # shellcheck disable=SC2016 # the fixture lines are literal script text.
+  for entry in \
+    'bin/lab.sh|tmux kill-server' \
+    'bin/lab.sh|TMUX_TMPDIR="$dir" tmux kill-server' \
+    'bin/lab.sh|env -u TMUX TMUX_TMPDIR="$dir" /usr/bin/tmux kill-server' \
+    'bin/lab.sh|trap '\''"$REAL_TMUX" kill-server'\'' EXIT; true' \
+    'bin/lab.sh|true && "${REAL_TMUX}" \
+  kill-server' \
+    'tests/lab.test.sh|tmux kill-session -t lab' \
+    'tests/lab.test.sh|tmux -f /dev/null new-session -d -s lab' \
+    'tests/lab.test.sh|if tmux new-session -d -s lab; then :; fi'
+  do
+    target=${entry%%|*}
+    line=${entry#*|}
+    printf '#!/usr/bin/env bash\n%s\n' "$line" > "$tmp/repo/$target"
+    rc=0
+    out=$(cd "$tmp/repo" && PATH="$fakebin:$PATH" "$lint_copy" "$target" 2>&1) || rc=$?
+    [ "$rc" -ne 0 ] || fail "lint accepted a tmux command that names no server in $target: $line"
+    assert_contains "$out" "tmux command without -S or -L can reach the operator's tmux server" \
+      "lint did not name the unaddressed tmux command in $target: $line"
+    rm -f "$tmp/repo/$target"
+  done
+
+  # shellcheck disable=SC2016 # the fixture lines are literal script text.
+  for entry in \
+    'bin/lab.sh|tmux -S "$sock" kill-server' \
+    'bin/lab.sh|env -u TMUX "$REAL_TMUX" -L lab kill-server' \
+    'bin/lab.sh|tmux kill-session -t "$target"' \
+    'bin/lab.sh|tmux new-session -d -s firstmate' \
+    'tests/lab.test.sh|"$REAL_TMUX" -f /dev/null -S "$sock" new-session -d -s lab' \
+    'tests/lab.test.sh|tmux() { [ "$1" = new-session ] && return 0; }' \
+    'tests/lab.test.sh|  has-session|new-session) exit 0 ;;' \
+    'tests/lab.test.sh|record_write tmux new-session owned' \
+    'tests/lab.test.sh|lab_tmux kill-server'
+  do
+    target=${entry%%|*}
+    line=${entry#*|}
+    printf '#!/usr/bin/env bash\n%s\n' "$line" > "$tmp/repo/$target"
+    rc=0
+    out=$(cd "$tmp/repo" && PATH="$fakebin:$PATH" "$lint_copy" "$target" 2>&1) || rc=$?
+    [ "$rc" -eq 0 ] || fail "lint rejected a server-addressed or non-invoking tmux line in $target: $line"$'\n'"$out"
+    rm -f "$tmp/repo/$target"
+  done
+  pass "fm-lint.sh rejects tmux kill-server, and test kill-session/new-session, that name no -S/-L server"
+}
+
 test_ignores_ambient_shellcheck_opts() {
   if ! pinned_ready; then
     pass "SKIP (ShellCheck $REQUIRED not resolved): ambient options regression check"
@@ -2045,6 +2102,7 @@ test_rejects_wrong_shellcheck_version
 test_catches_a_real_lint_defect
 test_rejects_direct_beads_cli_invocations
 test_rejects_direct_beads_cli_in_explicit_core_path
+test_tmux_commands_must_name_their_server
 test_ignores_ambient_shellcheck_opts
 test_clean_fixture_passes
 test_jobs_are_deterministic_and_complete

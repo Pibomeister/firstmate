@@ -30,6 +30,9 @@ POLYTOKEN_BIN=$(fm_polytoken_binary 2>/dev/null) || POLYTOKEN_BIN=
 VERSION=$("$POLYTOKEN_BIN" --version 2>/dev/null || echo unknown)
 REAL_TMUX=$(command -v tmux)
 LAB_HOME_HELPER="$ROOT/bin/fm-lab-home.sh"
+# Run inside a tmux pane, TMUX outranks TMUX_TMPDIR; drop it before anything,
+# including the cleanup trap, can call tmux.
+unset TMUX TMUX_PANE
 LAB_TMUX_DIR=
 ID=ptguard
 LAB=
@@ -45,7 +48,7 @@ cleanup() {
     fi
   fi
   if [ -n "$LAB_TMUX_DIR" ]; then
-    TMUX_TMPDIR="$LAB_TMUX_DIR" "$REAL_TMUX" kill-server >/dev/null 2>&1 || true
+    "$LAB_HOME_HELPER" tmux "$LAB/fm" kill-server >/dev/null 2>&1 || true
     "$LAB_HOME_HELPER" teardown "$LAB/fm" || exit 1
   fi
   [ -z "$LAB" ] || { chmod -R u+w "$LAB" 2>/dev/null; rm -rf -- "$LAB"; }
@@ -111,7 +114,7 @@ printf '#!/bin/sh\n[ "${1:-}" = get ] || exit 0\ncd "%s" && exec /bin/bash --nop
 chmod +x "$LAB/bin/tmux" "$LAB/bin/treehouse"
 export PATH="$LAB/bin:$PATH" FM_HOME="$H" HOME="$U" XDG_CONFIG_HOME="$U/.config" XDG_DATA_HOME="$U/.local/share" XDG_STATE_HOME="$U/.local/state" XDG_CACHE_HOME="$U/.cache"
 unset TMUX FM_ROOT_OVERRIDE FM_STATE_OVERRIDE FM_DATA_OVERRIDE FM_CONFIG_OVERRIDE FM_PROJECTS_OVERRIDE
-tmux -f /dev/null new-session -d -s firstmate -n lab -x 160 -y 50 "/bin/bash --noprofile --norc" \
+"$LAB_HOME_HELPER" tmux "$H" -f /dev/null new-session -d -s firstmate -n lab -x 160 -y 50 "/bin/bash --noprofile --norc" \
   || fail "could not start the isolated tmux server"
 tmux set-option -g default-command "/bin/bash --noprofile --norc" >/dev/null \
   || fail "could not pin the lab shell"
