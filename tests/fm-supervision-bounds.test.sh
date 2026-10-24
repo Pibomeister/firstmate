@@ -166,7 +166,7 @@ test_recovery_send_bound_records_unknown_never_failed() {
 }
 
 test_watcher_defers_work_behind_a_held_wake_queue_lock() {
-  local dir state fakebin out holder holder_pid watcher i
+  local dir state fakebin out holder holder_pid watcher i d_owner d_first d_name d_holder s_pid s_epoch s_stage
   dir=$(make_case wake-lock-held)
   state="$dir/state"
   fakebin="$dir/fakebin"
@@ -191,11 +191,19 @@ test_watcher_defers_work_behind_a_held_wake_queue_lock() {
   grep -q 'deferred wake-queue' "$state/.watch-triage.log" 2>/dev/null \
     || fail "the watcher did not record deferring its wake-queue work; triage: $(tail -5 "$state/.watch-triage.log" 2>/dev/null); queue: $(cat "$state/.wake-queue" 2>/dev/null); lock pid: $(cat "$state/.wake-queue.lock/pid" 2>/dev/null) holder $holder_pid; out: $(cat "$out")"
   [ -f "$state/.watcher-deferral.wake-queue" ] || fail "the watcher left no deferral record for the guard to report"
+  IFS=$'\t' read -r d_owner d_first d_name d_holder < "$state/.watcher-deferral.wake-queue"
+  [ "$d_owner" = "$watcher" ] && [ "$d_name" = wake-queue ] && [ "$d_holder" = "$holder_pid" ] \
+    && case "$d_first" in '' | *[!0-9]*) false ;; *) true ;; esac \
+    || fail "the deferral record must name the watcher, the work and the holder, got: $(cat "$state/.watcher-deferral.wake-queue")"
+  IFS=$'\t' read -r s_pid s_epoch s_stage < "$state/.watcher-stage"
+  [ "$s_pid" = "$watcher" ] && [ -n "$s_stage" ] && case "$s_epoch" in '' | *[!0-9]*) false ;; *) true ;; esac \
+    || fail "the watcher must record its own stage for the guard, got: $(cat "$state/.watcher-stage" 2>/dev/null)"
   kill "$holder_pid" 2>/dev/null
   wait "$holder_pid" 2>/dev/null
   for i in $(seq 1 300); do kill -0 "$watcher" 2>/dev/null || break; sleep 0.1; done
   kill -0 "$watcher" 2>/dev/null && { kill "$watcher" 2>/dev/null; fail "the watcher never delivered the deferred work after the holder went"; }
-  assert_contains "$(cat "$out")" "procevent:fake:src:1" "the deferred process-event result must be delivered once the lock is free"
+  [ "$(grep -c 'procevent:fake:src:1' "$out")" -eq 1 ] \
+    || fail "the deferred process-event result must be delivered exactly once after the lock is free: $(cat "$out")"
   [ ! -f "$state/.watcher-deferral.wake-queue" ] || fail "the deferral record outlived the deferral"
   pass "a held wake-queue lock defers the watcher's queue work while it keeps beating; the work is delivered after release"
 }
