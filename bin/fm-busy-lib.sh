@@ -465,19 +465,6 @@ function metadataWorkspace(file) {
       }
       const workspace = record?.payload?.record?.workspace_root;
       if (typeof workspace === "string" && workspace) return workspace;
-      // muse 1.4.13 prepends a retained_frame transaction whose children
-      // carry record_json strings; metadata may live there or on a later line.
-      if (Array.isArray(record?.children)) {
-        for (const child of record.children) {
-          try {
-            const inner = JSON.parse(child?.record_json ?? "");
-            const innerWorkspace = inner?.payload?.record?.workspace_root;
-            if (typeof innerWorkspace === "string" && innerWorkspace) return innerWorkspace;
-          } catch {
-            continue;
-          }
-        }
-      }
     }
     return null;
   } catch {
@@ -558,7 +545,7 @@ fm_busy_muse_namespace_day() {  # <sessions-root>
 }
 
 fm_busy_muse_namespace_signature() {  # <day-directory>
-  local first first_signature manifest='' path paths signature
+  local prefix prefix_signature manifest='' path paths signature
   if [ ! -d "$1" ]; then
     printf '%s' missing
     return 0
@@ -568,9 +555,9 @@ fm_busy_muse_namespace_signature() {  # <day-directory>
   paths=$(printf '%s\n' "$paths" | LC_ALL=C sort) || return 1
   while IFS= read -r path; do
     [ -n "$path" ] || continue
-    first=$(sed -n '1p' "$path") || return 1
-    first_signature=$(printf '%s' "$first" | cksum | awk '{ print $1 ":" $2 }') || return 1
-    manifest="${manifest}${path}:${first_signature}
+    prefix=$(head -c 65536 "$path") || return 1
+    prefix_signature=$(printf '%s' "$prefix" | cksum | awk '{ print $1 ":" $2 }') || return 1
+    manifest="${manifest}${path}:${prefix_signature}
 "
   done <<EOF
 $paths

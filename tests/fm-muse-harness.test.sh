@@ -675,13 +675,13 @@ EOF
 }
 
 test_binding_finds_metadata_after_retained_frame() {
-  local dir state id verdict root logdir
+  local dir state id verdict root logdir competing_log metadata
   dir="$TMP_ROOT/bind-retained"
   state="$dir/state"
   root="$dir/sessions"
   id=retainedtask
   mkdir -p "$state"
-  logdir="$root/2026/10/24/muse1413"
+  logdir="$root/$(date '+%Y/%m/%d')/muse1413"
   mkdir -p "$logdir"
   {
     muse_log_retained_frame_prefix
@@ -689,11 +689,43 @@ test_binding_finds_metadata_after_retained_frame() {
     muse_log_run_started my-run
     muse_log_run_terminal my-run completed
   } > "$logdir/session.jsonl"
-  printf 'sessions_root=%s\nworkspace_root=%s\n' "$root" "$dir/my-ws" > "$state/$id.muse-session"
+  printf 'sessions_root=%s\nworkspace_root=%s\nbinding_id=retained-incarnation\n' \
+    "$root" "$dir/my-ws" > "$state/$id.muse-session"
   verdict=$(classify_muse "$state" "$id")
   [ "$verdict" = "idle muse-session-log" ] \
     || fail "a 1.4.13 log with metadata after a retained frame classified '$verdict', expected idle"
-  pass "the session binding finds metadata after a retained_frame prefix"
+  [ -s "$state/$id.muse-session-current" ] || fail "the retained-frame session was not cached"
+
+  competing_log="${logdir%/*}/competing/session.jsonl"
+  mkdir -p "${competing_log%/*}"
+  muse_log_retained_frame_prefix > "$competing_log"
+  verdict=$(classify_muse "$state" "$id")
+  [ "$verdict" = "idle muse-session-log" ] \
+    || fail "a retained prefix without metadata changed the cached verdict to '$verdict'"
+
+  metadata=$(muse_log_metadata "$dir/my-ws")
+  printf '%s' "${metadata%?}" >> "$competing_log"
+  verdict=$(classify_muse "$state" "$id")
+  [ "$verdict" = "idle muse-session-log" ] \
+    || fail "incomplete workspace metadata changed the cached verdict to '$verdict'"
+
+  {
+    printf '}\n'
+    muse_log_run_started competing-run
+  } >> "$competing_log"
+  verdict=$(classify_muse "$state" "$id")
+  [ "$verdict" = "unknown muse-session-log" ] \
+    || fail "a competing session appending metadata left the cached verdict at '$verdict'"
+
+  rm -f "$competing_log"
+  verdict=$(classify_muse "$state" "$id")
+  [ "$verdict" = "idle muse-session-log" ] \
+    || fail "removing the competing session did not restore the unique binding: got '$verdict'"
+  muse_log_run_started next-run >> "$logdir/session.jsonl"
+  verdict=$(classify_muse "$state" "$id")
+  [ "$verdict" = "busy muse-session-log" ] \
+    || fail "the uniquely bound session's next turn classified '$verdict', expected busy"
+  pass "retained-frame bindings refresh as competing workspace metadata becomes ready"
 }
 
 test_workspace_binding_treats_glob_characters_literally() {

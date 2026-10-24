@@ -98,7 +98,7 @@ In 1.4.13 the first line is a `retained_frame` permission transaction and the me
 ```
 
 That prefix broke workspace binding on 1.4.13 because the classifier read only the first line.
-`bin/fm-busy-lib.sh` now scans the early lines and any `retained_frame` children for the metadata record, and `tests/fm-muse-harness.test.sh` pins that shape.
+`bin/fm-busy-lib.sh` now scans the early flat lines for the metadata record, and `tests/fm-muse-harness.test.sh` pins that shape.
 The run lifecycle records themselves remain flat `runtime.session` records, so the run fold is unchanged.
 
 The fold transitions live, sampled during a 25-second in-flight turn:
