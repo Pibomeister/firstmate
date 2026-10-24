@@ -83,6 +83,41 @@ SH
   pass "checkpoint reports recovery persistence failure instead of quiet success"
 }
 
+# Hold the recovery lock before the watcher starts. The checkpoint must
+# interrupt startup while its queue lock is held, before the first beacon.
+test_interrupted_startup_reports_failed_cleanup() {
+  local home holder status i
+  home=$(make_home interrupted-startup)
+  FM_HOME="$home" bash -c '
+    . "$1"
+    fm_lock_acquire_wait "$FM_HOME/state/.watcher-down.lock" || exit 1
+    : > "$FM_HOME/recovery-held"
+    i=0
+    while [ ! -e "$FM_HOME/release-recovery" ] && [ "$i" -lt 300 ]; do
+      sleep 0.1
+      i=$((i + 1))
+    done
+    fm_lock_release "$FM_HOME/state/.watcher-down.lock"
+  ' _ "$ROOT/bin/fm-wake-lib.sh" &
+  holder=$!
+  i=0
+  while [ ! -e "$home/recovery-held" ] && [ "$i" -lt 100 ]; do sleep 0.05; i=$((i + 1)); done
+  [ -e "$home/recovery-held" ] || fail "startup: recovery lock was not held"
+  status=0
+  FM_HOME="$home" FM_POLL=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    FM_WATCHER_CLEANUP_LOCK_BOUND=2 "$CHECKPOINT" --seconds 1 >"$home/out.txt" 2>"$home/err.txt" || status=$?
+  : > "$home/release-recovery"
+  wait "$holder" || fail "startup: recovery holder did not release its lock"
+  expect_code 1 "$status" "interrupted startup must report failed cleanup"
+  assert_contains "$(cat "$home/err.txt")" 'watcher: recovery state could not be persisted; retaining stale lock evidence' \
+    "startup interruption hid the failed cleanup"
+  assert_not_contains "$(cat "$home/out.txt")" 'checkpoint: no actionable wake' \
+    "startup interruption became quiet success"
+  [ -s "$home/state/.watch.lock/pid" ] || fail "startup: failed cleanup discarded watcher evidence"
+  assert_absent "$home/state/.last-watcher-beat" "startup fixture reached the poll loop"
+  pass "checkpoint: interrupted startup retains failed-cleanup evidence and returns nonzero"
+}
+
 test_perl_timeout_fallback_honors_cleanup_bound_before_escalating() {
   local home fallback_bin tool tool_path status watcher_pid
   home=$(make_home perl-fallback)
@@ -154,8 +189,10 @@ run_real_perl_shutdown() {
 #!/usr/bin/env bash
 exit 1
 SH
-  rm "$fallback_bin/cat" "$fallback_bin/mv"
-  cat > "$fallback_bin/cat" <<'SH'
+  # Leave ordinary quiet shutdown free of the contention/forwarding shims.
+  if [ "$kind" != quiet ]; then
+    rm "$fallback_bin/cat" "$fallback_bin/mv"
+    cat > "$fallback_bin/cat" <<'SH'
 #!/usr/bin/env bash
 "$FM_TEST_REAL_CAT" "$@"
 result=$?
@@ -167,7 +204,7 @@ if [ "$last" = "$FM_HOME/state/.watcher-down.lock/pid" ] && [ -e "$FM_HOME/force
 fi
 exit "$result"
 SH
-  cat > "$fallback_bin/mv" <<'SH'
+    cat > "$fallback_bin/mv" <<'SH'
 #!/usr/bin/env bash
 last=
 for last in "$@"; do :; done
@@ -177,7 +214,9 @@ if [ "$last" = "$FM_HOME/state/.watch-deliveries.log" ]; then
 fi
 exec "$FM_TEST_REAL_MV" "$@"
 SH
-  chmod +x "$fallback_bin/tmux" "$fallback_bin/cat" "$fallback_bin/mv"
+    chmod +x "$fallback_bin/cat" "$fallback_bin/mv"
+  fi
+  chmod +x "$fallback_bin/tmux"
   if [ "$kind" = quiet ]; then
     expected=0
   else
@@ -210,7 +249,8 @@ SH
       [ "$i" -lt 1000 ] || exit 1
       cat "$FM_HOME/state/.watch.lock/pid" > "$FM_HOME/watcher-before-kill"
       if [ "$kind" = signal ]; then
-        printf "working: real Perl shutdown\n" > "$FM_HOME/state/demo.status"
+        # This case measures shutdown after delivery, not busy-pane triage.
+        printf "done: real Perl shutdown\n" > "$FM_HOME/state/demo.status"
         i=0
         while [ ! -e "$FM_HOME/perl-output-ready" ] && [ "$i" -lt 1000 ]; do sleep 0.1; i=$((i + 1)); done
         [ -e "$FM_HOME/perl-output-ready" ] || exit 1
@@ -382,16 +422,21 @@ test_queue_append_during_checkpoint_still_resurfaces() {
 }
 
 test_signal_passes_through_and_exits_zero() {
-  local home out err status drained
+  local home out err status drained producer
   home=$(make_home signal)
   out="$home/out.txt"
   err="$home/err.txt"
+  # Establish the ordinary home ledger before measuring checkpoint delivery.
+  FM_HOME="$home" "$ROOT/bin/fm-home-summary-refresh.sh" >/dev/null \
+    || fail "could not publish the signal fixture's initial home summary"
   (
-    sleep 1
+    wait_for_checkpoint_lock "$home" || exit 1
     printf 'done: synthetic wake\n' > "$home/state/demo.status"
   ) &
+  producer=$!
   status=0
   FM_HOME="$home" FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 "$CHECKPOINT" --seconds 8 >"$out" 2>"$err" || status=$?
+  wait "$producer" || fail "signal producer did not observe a ready checkpoint"
   expect_code 0 "$status" "signal checkpoint exit"
   assert_contains "$(cat "$out")" "signal:" "signal wake was not passed through"
   drained=$(FM_HOME="$home" "$ROOT/bin/fm-wake-drain.sh")
@@ -695,17 +740,21 @@ SH
   status=0
   wait "$checkpoint_pid" || status=$?
   expect_code 1 "$status" "real host $kind cleanup failure checkpoint exit"
-  if kill -0 "$watcher" 2>/dev/null; then
+  # The watcher can finish after the host retains an unfinished retirement.
+  # Its retained arm record, not later watcher liveness, owns that result.
+  arm=$(awk -F '\t' '$1 == "arm" { print $2; exit }' "$home/state/.supervision-host" 2>/dev/null || true)
+  if [ -n "$arm" ]; then
     pending=1
     capture=
     for capture in "$home/state"/.supervision-host-arm.*; do [ -f "$capture" ] && break; done
     [ -f "$capture" ] || fail "unfinished retirement discarded its capture"
-    awk -F '\t' '$1 == "arm" { found = 1 } END { exit !found }' "$home/state/.supervision-host" \
-      || fail "unfinished retirement discarded its process record"
-    arm=$(awk -F '\t' '$1 == "arm" { print $2; exit }' "$home/state/.supervision-host")
-    kill -TERM "$arm" || fail "unfinished retirement lost its owned arm"
-    sleep 0.2
-    is_live_non_zombie "$arm" || fail "a repeated stop killed the retiring arm"
+    if kill -0 "$watcher" 2>/dev/null; then
+      kill -TERM "$arm" || fail "unfinished retirement lost its owned arm"
+      sleep 0.2
+      if kill -0 "$watcher" 2>/dev/null; then
+        is_live_non_zombie "$arm" || fail "a repeated stop killed the retiring arm"
+      fi
+    fi
     assert_contains "$(cat "$home/out.txt")" 'did not finish retirement; retaining its capture and process record' \
       "unfinished retirement did not explain its retained evidence"
   fi
@@ -724,6 +773,9 @@ SH
     fi
   fi
   if [ "$pending" -eq 1 ]; then
+    i=0
+    while is_live_non_zombie "$arm" && [ "$i" -lt 100 ]; do sleep 0.1; i=$((i + 1)); done
+    ! is_live_non_zombie "$arm" || fail "retained arm did not finish after watcher cleanup"
     assert_contains "$(cat "$capture")" 'watcher: recovery state could not be persisted; retaining stale lock evidence' \
       "unfinished retirement did not retain the late cleanup diagnostic"
   else
@@ -844,12 +896,13 @@ SH
       expected_status=0
       : > "$home/release-cleanup-lock"
       wait_for_exit "$holder" 100 >/dev/null 2>&1 || fail "clean retirement lock holder did not release"
+      holder=
     fi
   fi
   : > "$home/completed-output-go"
   status=0
   wait "$checkpoint_pid" || status=$?
-  wait_for_exit "$holder" 100 >/dev/null 2>&1 || fail "completed-close lock holder did not exit"
+  [ -z "$holder" ] || wait_for_exit "$holder" 100 >/dev/null 2>&1 || fail "completed-close lock holder did not exit"
   expect_code "$expected_status" "$status" "$kind checkpoint exit: $(cat "$home/out.txt" "$home/err.txt")"
   [ ! -e "$home/engine-called" ] || fail "$kind reached dispatch"
   [ "$(grep -c '^signal: .*demo.status' "$home/out.txt")" -eq 1 ] || fail "$kind lost or repeated its wake: $(cat "$home/out.txt")"
@@ -914,11 +967,39 @@ start_orphaned_test_watcher() {
 
 # shellcheck disable=SC2016
 run_real_attached_host_cleanup() {
-  local kind=$1 home checkpoint_pid watcher first_arm holder i status expected=1 source_tag=original real_mv real_mktemp wake_count=0
-  home=$(make_real_host_home "host-attached-$kind")
+  local kind=$1 order=${2:-} home checkpoint_pid watcher first_arm holder i status expected=1 source_tag=original real_mv real_mktemp real_cat wake_count=0
+  home=$(make_real_host_home "host-attached-$kind${order:+-$order}")
   fm_test_track_watcher_state "$home/state"
   real_mv=$(command -v mv)
   real_mktemp=$(command -v mktemp)
+  real_cat=$(command -v cat)
+  cat > "$home/fakebin/cat" <<'SH'
+#!/usr/bin/env bash
+case "$*" in
+  *'/.watch.lock/pid')
+    if [ -e "$FM_HOME/stop-order" ] && [ -e "$FM_HOME/retiring-arm.pid" ] \
+      && grep -q "arm_pid=$("$FM_TEST_REAL_CAT" "$FM_HOME/retiring-arm.pid").*reason=arm-interrupted" "$FM_HOME/state/.watch-cycle-exits.log" 2>/dev/null; then
+      case "$(ps -o args= -p "$PPID" 2>/dev/null)" in
+        *fm-watch-arm.sh*)
+          if mkdir "$FM_HOME/ordered-read-claimed" 2>/dev/null; then
+            if [ "$("$FM_TEST_REAL_CAT" "$FM_HOME/stop-order")" = stop-first ]; then
+              "$FM_TEST_REAL_CAT" "$@" > "$FM_HOME/ordered-pid"
+            fi
+            : > "$FM_HOME/ordered-read-ready"
+            while [ ! -e "$FM_HOME/ordered-read-go" ] && [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do sleep 0.05; done
+            if [ -e "$FM_HOME/ordered-pid" ]; then
+              exec "$FM_TEST_REAL_CAT" "$FM_HOME/ordered-pid"
+            fi
+            [ ! -e "$FM_HOME/state/.watch.lock/pid" ] || exit 1
+            : > "$FM_HOME/ordered-read-after-cleanup"
+          fi
+          ;;
+      esac
+    fi
+    ;;
+esac
+exec "$FM_TEST_REAL_CAT" "$@"
+SH
   printf '%s\tunrelated-fixture\t%04096d\n' "$$" 0 > "$home/state/.watch-deliveries.log"
   cat > "$home/fakebin/mv" <<'SH'
 #!/usr/bin/env bash
@@ -949,10 +1030,11 @@ SH
 while [ ! -e "$FM_HOME/engine-go" ] && [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do sleep 0.1; done
 exit 3
 SH
-  chmod +x "$home/fakebin/mv" "$home/fakebin/mktemp" "$home/fakebin/engine"
+  chmod +x "$home/fakebin/cat" "$home/fakebin/mv" "$home/fakebin/mktemp" "$home/fakebin/engine"
   case "$kind" in
     *clean|completed-mismatch|completed-home-mismatch|completed-path-mismatch) expected=0 ;;
   esac
+  export FM_TEST_REAL_CAT="$real_cat"
   case "$kind" in successor-*) : > "$home/pause-successor" ;; esac
   echo 0 > "$home/park-clock"
   start_orphaned_test_watcher "$home" original
@@ -977,6 +1059,12 @@ SH
       i=0
       while [ ! -e "$home/successor-allocation-ready" ] && [ "$i" -lt 1000 ]; do sleep 0.1; i=$((i + 1)); done
       [ -e "$home/successor-allocation-ready" ] || fail "the host did not reach successor allocation"
+      case "$kind" in
+        successor-signal-*)
+          printf '%s\tunrelated-successor-fixture\t%04096d\n' "$$" 0 >> "$home/state/.watch-deliveries.log"
+          : > "$home/block-delivery"
+          ;;
+      esac
       start_orphaned_test_watcher "$home" successor "$first_arm"
       source_tag=successor
       watcher=$ORPHANED_WATCHER
@@ -987,8 +1075,13 @@ SH
       grep -q "^watcher: attached pid=$watcher " "$home/state"/.supervision-host-arm.* \
         || fail "the host successor did not attach to the second orphaned watcher"
       wake_count=1
+      if [ -n "$order" ]; then
+        first_arm=$(awk -F '\t' '$1 == "arm" { print $2; exit }' "$home/state/.supervision-host")
+      fi
       ;;
-    completed-*|boundary-signal-*)
+  esac
+  case "$kind" in
+    completed-*|boundary-signal-*|successor-signal-*)
       : > "$home/block-delivery"
       case "$kind" in completed-*) : > "$home/state/.afk" ;; esac
       printf 'working: attached completion fixture\n' > "$home/state/demo.status"
@@ -996,9 +1089,13 @@ SH
       while [ ! -e "$home/external-output-ready" ] && [ "$i" -lt 1000 ]; do sleep 0.1; i=$((i + 1)); done
       [ -e "$home/external-output-ready" ] || fail "the attached watcher did not print its real signal"
       grep -q '^signal: .*demo.status' "$home/state"/.watch-arm-output.* || fail "the original capture contains no real watcher signal"
-      wake_count=1
+      wake_count=$((wake_count + 1))
       ;;
   esac
+  if [ -n "$order" ]; then
+    printf '%s\n' "$first_arm" > "$home/retiring-arm.pid"
+    printf '%s\n' "$order" > "$home/stop-order"
+  fi
   : > "$home/queued-before-stop"
   [ ! -f "$home/state/.wake-queue" ] || cp "$home/state/.wake-queue" "$home/queued-before-stop"
   FM_HOME="$home" bash -c '
@@ -1021,6 +1118,7 @@ SH
     *clean)
       : > "$home/release-attached-lock"
       wait_for_exit "$holder" 100 || fail "the clean attached fixture did not release its lock"
+      holder=
       ;;
   esac
   case "$kind" in
@@ -1032,13 +1130,30 @@ SH
       while ! grep -q "arm_pid=$first_arm.*reason=arm-interrupted" "$home/state/.watch-cycle-exits.log" 2>/dev/null && [ "$i" -lt 300 ]; do sleep 0.1; i=$((i + 1)); done
       grep -q "arm_pid=$first_arm.*reason=arm-interrupted" "$home/state/.watch-cycle-exits.log" \
         || fail "the host did not retire its attached arm before watcher completion"
-      : > "$home/external-output-go"
+      [ -n "$order" ] || : > "$home/external-output-go"
       ;;
     *) echo 120 > "$home/park-clock" ;;
   esac
+  if [ -n "$order" ]; then
+    i=0
+    while [ ! -e "$home/ordered-read-ready" ] && [ "$i" -lt 300 ]; do sleep 0.05; i=$((i + 1)); done
+    [ -e "$home/ordered-read-ready" ] || fail "$kind $order never reached the ordered PID read"
+    if [ "$order" = stop-first ]; then
+      [ "$(cat "$home/ordered-pid")" = "$watcher" ] || fail "stop did not read the observed watcher before cleanup"
+      [ -s "$home/state/.watch.lock/pid" ] || fail "stop-first cleanup ran before the PID read"
+      : > "$home/ordered-read-go"
+    fi
+    : > "$home/external-output-go"
+    if [ "$order" = cleanup-first ]; then
+      i=0
+      while [ -e "$home/state/.watch.lock/pid" ] && [ "$i" -lt 300 ]; do sleep 0.05; i=$((i + 1)); done
+      assert_absent "$home/state/.watch.lock/pid" "cleanup-first did not remove the lock before the PID read"
+      : > "$home/ordered-read-go"
+    fi
+  fi
   status=0
   wait_for_exit "$checkpoint_pid" 600 || status=$?
-  wait_for_exit "$holder" 100 || fail "the attached recovery lock holder did not finish"
+  [ -z "$holder" ] || wait_for_exit "$holder" 100 || fail "the attached recovery lock holder did not finish"
   if [ "$expected" -ne 0 ] || [[ "$kind" = *mismatch ]]; then
     assert_contains "$(cat "$home/$source_tag.err")" 'watcher: recovery state could not be persisted; retaining stale lock evidence' \
       "the real watcher did not report failed cleanup through its original owner's stderr"
@@ -1047,6 +1162,9 @@ SH
     assert_absent "$home/state/.watch.lock/pid" "successful attached cleanup retained the watcher lock"
   fi
   expect_code "$expected" "$status" "attached $kind, original stderr=$(cat "$home/$source_tag.err"), host=$(cat "$home/out.txt" "$home/err.txt")"
+  if [ "$order" = cleanup-first ]; then
+    [ -e "$home/ordered-read-after-cleanup" ] || fail "the ordered PID read did not follow clean lock removal"
+  fi
   [ "$(grep -c '^signal: .*demo.status' "$home/out.txt")" -eq "$wake_count" ] || fail "attached $kind lost or repeated a real wake: $(cat "$home/out.txt")"
   if [ -f "$home/state/.wake-queue" ]; then
     cmp -s "$home/queued-before-stop" "$home/state/.wake-queue" || fail "attached $kind changed its queued work"
@@ -1104,9 +1222,80 @@ test_stop_preserves_foreign_process_identity_guards() {
 
 test_real_attached_host_cleanup() {
   local kind
-  for kind in boundary-failure boundary-clean boundary-signal-failure boundary-signal-clean completed-failure completed-clean completed-mismatch completed-home-mismatch completed-path-mismatch successor-failure successor-clean; do
+  for kind in boundary-failure boundary-clean boundary-signal-failure completed-failure completed-clean completed-mismatch completed-home-mismatch completed-path-mismatch successor-failure successor-clean; do
     run_real_attached_host_cleanup "$kind"
   done
+  for kind in boundary-signal-clean successor-signal-clean; do
+    run_real_attached_host_cleanup "$kind" cleanup-first
+    run_real_attached_host_cleanup "$kind" stop-first
+  done
+}
+
+# shellcheck disable=SC2016
+run_real_host_startup_failure() {
+  local close=$1 home checkpoint_pid i status real_cat failure='watcher: FAILED - FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS must be whole seconds'
+  home=$(make_home "host-startup-failure-$close")
+  append_wake "$home/state" signal existing 'signal: existing queued work'
+  cp "$home/state/.wake-queue" "$home/queued-before-start"
+  : > "$home/config/supervision-host"
+  mkdir -p "$home/fakebin"
+  ln -s /bin/bash "$home/fakebin/codex"
+  real_cat=$(command -v cat) || fail "could not locate cat for close synchronization"
+  cat > "$home/fakebin/cat" <<'SH'
+#!/usr/bin/env bash
+if [ "$*" = "$FM_HOME/park-clock" ]; then
+  : > "$FM_HOME/boundary-probe-ready"
+  while [ ! -e "$FM_HOME/boundary-probe-go" ] && [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do sleep 0.05; done
+fi
+exec "$FM_TEST_REAL_CAT" "$@"
+SH
+  chmod +x "$home/fakebin/cat"
+  echo 0 > "$home/park-clock"
+  FM_HOME="$home" PATH="$home/fakebin:$PATH" FM_TEST_REAL_CAT="$real_cat" \
+    FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=invalid FM_TEST_SUPERVISION_HOST_CLOCK="$home/park-clock" \
+    FM_SUPERVISION_HOST_PRIMARY=codex FM_SUPERVISION_HOST_PARK_SECONDS=120 FM_CLOSE_FIXTURE="$close" \
+    "$home/fakebin/codex" -c '
+      printf "%s\n" "$$" > "$FM_HOME/state/.lock"
+      if [ "$FM_CLOSE_FIXTURE" = boundary ]; then
+        "$0" --seconds 120
+      else
+        "$1" park
+      fi
+    ' "$CHECKPOINT" "${CHECKPOINT%/*}/fm-supervision-host.sh" >"$home/out.txt" 2>"$home/err.txt" &
+  checkpoint_pid=$!
+  i=0
+  while [ ! -e "$home/boundary-probe-ready" ] && [ "$i" -lt 1000 ]; do sleep 0.05; i=$((i + 1)); done
+  [ -e "$home/boundary-probe-ready" ] || fail "startup failure never reached the close-ordering probe"
+  i=0
+  while ! grep -q "$failure" "$home/state"/.supervision-host-arm.* 2>/dev/null && [ "$i" -lt 1000 ]; do sleep 0.05; i=$((i + 1)); done
+  grep -q "$failure" "$home/state"/.supervision-host-arm.* \
+    || fail "the real watcher did not publish its startup failure before close consumption"
+  assert_absent "$home/state/.watch.lock/pid" "startup refusal acquired the watcher lock"
+  case "$close" in boundary) echo 120 > "$home/park-clock" ;; esac
+  : > "$home/boundary-probe-go"
+  status=0
+  wait_for_exit "$checkpoint_pid" 600 || status=$?
+  expect_code 1 "$status" "$close startup failure must stay nonzero: $(cat "$home/out.txt" "$home/err.txt")"
+  assert_contains "$(cat "$home/out.txt" "$home/err.txt")" "supervision-host: $failure" \
+    "$close discarded the typed startup diagnostic"
+  [ "$(grep -c "$failure" "$home/out.txt" "$home/err.txt" | awk -F : '{ n += $NF } END { print n }')" -eq 1 ] \
+    || fail "$close lost or repeated the startup diagnostic"
+  assert_not_contains "$(cat "$home/out.txt")" 'checkpoint: no actionable wake' "$close startup failure became quiet success"
+  ! grep -Eq '^(signal:|stale:|check:|heartbeat($|:))' "$home/out.txt" \
+    || fail "$close startup refusal invented an actionable wake"
+  cmp -s "$home/queued-before-start" "$home/state/.wake-queue" || fail "$close startup refusal changed queued work"
+  if [ "$close" = boundary ]; then
+    assert_contains "$(cat "$home/out.txt")" 'supervision-host: cycle boundary -' "fixture did not retire the failed capture at the park boundary"
+  else
+    ! grep -q 'pass-through' "$home/state/.supervision-host.log" \
+      || fail "completed startup failure bypassed failure classification"
+  fi
+  pass "real host $close preserves a pre-lock startup failure as nonzero"
+}
+
+test_real_host_startup_failures_stay_nonzero() {
+  run_real_host_startup_failure boundary
+  run_real_host_startup_failure completed
 }
 
 # shellcheck disable=SC2016
@@ -1131,6 +1320,7 @@ test_real_host_checkpoint_ends_quietly_at_its_bound() {
   pass "checkpoint: the real host ends its park at the checkpoint bound as a quiet checkpoint"
 }
 
+test_interrupted_startup_reports_failed_cleanup
 test_quiet_checkpoint_exits_0_cleanly
 test_cleanup_persistence_failure_is_not_a_quiet_checkpoint
 test_perl_timeout_fallback_honors_cleanup_bound_before_escalating
@@ -1152,4 +1342,5 @@ test_real_arm_forwarding_is_signal_safe
 test_real_attached_host_cleanup
 test_stop_preserves_foreign_process_identity_guards
 test_real_host_retirement_preserves_cleanup_failures
+test_real_host_startup_failures_stay_nonzero
 test_real_host_checkpoint_ends_quietly_at_its_bound

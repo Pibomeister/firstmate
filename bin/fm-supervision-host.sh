@@ -464,7 +464,7 @@ cleanup() {
 }
 read_arm_capture() {
   awk '
-    /^watcher: recovery state could not be persisted;/ {
+    /^watcher: FAILED/ || /^watcher: recovery state could not be persisted;/ {
       print "supervision-host: " $0
       failed = 1
       next
@@ -1191,7 +1191,10 @@ while :; do
   if ! fm_afk_contract_away_present "$STATE"; then
     if ! attended_acceptor "$(printf '%s\n' "$REASON" | head -n 1)"; then
       log_line "pass-through	attended	$ATTENDED_WHY	$(printf '%s\n' "$REASON" | head -n 1)"
-      if [ "$ATTENDED_WHY" = main-only ]; then
+      if fm_supervision_host_enabled "$CONFIG" "$PRIMARY" \
+        && host_still_owner \
+        && fm_supervision_host_main_key "$STATE" >/dev/null \
+        && ! boundary_reached; then
         leave_successor_for_main || true
       fi
       emit

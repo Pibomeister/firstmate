@@ -619,8 +619,10 @@ test_watcher_surfaces_new_contribution_once() {
   local home out rc rows
   home=$(new_home watcher-contribution)
   forge_home "$home"
-  with_home "$home" "$ROOT/bin/fm-pr-check.sh" delivery https://github.com/o/r/pull/8 >/dev/null \
-    || fail 'could not register delivery for watcher wake'
+  # Only observe contributions here. An unrelated merge poll can consume the
+  # checkpoint's bound after the observer has already queued its notice.
+  with_home "$home" "$ROOT/bin/fm-contributions.sh" arm >/dev/null \
+    || fail 'could not register contribution observation for watcher wake'
   registered_checks "$home" >/dev/null
   jq -n --arg head "$HEAD_A" '[{id:12,user:{login:"maintainer"},author_association:"OWNER",
     body:"Please clarify the contract",html_url:"https://github.com/o/r/pull/8#issuecomment-12",
