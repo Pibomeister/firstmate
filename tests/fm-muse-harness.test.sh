@@ -3,7 +3,7 @@
 # spawn launch shape and credential preflight, the secondmate refusal, the
 # session-log busy source, and teardown cleanup of the busy binding.
 #
-# The session-log fixtures below reproduce muse 0.1.0-R708.1's real record
+# The session-log fixtures below reproduce muse's real record
 # shapes, including the nested "record":{"kind":"terminal"} cleanup payload that
 # is NOT a run terminal. That decoy is the whole reason the fold matches an
 # anchored structural prefix instead of searching for "kind":"terminal", so a
@@ -31,6 +31,12 @@ TMP_ROOT=$(fm_test_tmproot fm-muse-harness)
 # which is what binds a log to a task worktree.
 muse_log_metadata() {
   printf '{"schema_version":1,"id":"d77de583","stream":{"kind":"session","id":"52f21aea"},"sequence":1,"record_type":"event","durability":"durable","payload_type":"runtime.session.metadata","payload":{"kind":"metadata","record":{"workspace_root":"%s","provider_id":"meta","build":{"sha":"427a430436","semver":"0.1.0"}}}}\n' "$1"
+}
+
+# muse 1.4.13 prepends a retained_frame transaction before the metadata
+# record, so the metadata record is no longer the first line of the log.
+muse_log_retained_frame_prefix() {
+  printf '%s\n' '{"retained_frame":"session_permission_transaction","frame_schema_version":1,"outer_log_ordinal":1,"children":[{"child_index":0,"record_json":"{\"payload_type\":\"runtime.session.permission_format_declared\",\"payload\":{\"schema_version\":1,\"format\":\"profile_v1\"}}"}]}'
 }
 
 muse_log_run_started() {  # <run-id>
@@ -668,6 +674,28 @@ EOF
   pass "the session binding folds only the log matching this task's worktree"
 }
 
+test_binding_finds_metadata_after_retained_frame() {
+  local dir state id verdict root logdir
+  dir="$TMP_ROOT/bind-retained"
+  state="$dir/state"
+  root="$dir/sessions"
+  id=retainedtask
+  mkdir -p "$state"
+  logdir="$root/2026/10/24/muse1413"
+  mkdir -p "$logdir"
+  {
+    muse_log_retained_frame_prefix
+    muse_log_metadata "$dir/my-ws"
+    muse_log_run_started my-run
+    muse_log_run_terminal my-run completed
+  } > "$logdir/session.jsonl"
+  printf 'sessions_root=%s\nworkspace_root=%s\n' "$root" "$dir/my-ws" > "$state/$id.muse-session"
+  verdict=$(classify_muse "$state" "$id")
+  [ "$verdict" = "idle muse-session-log" ] \
+    || fail "a 1.4.13 log with metadata after a retained frame classified '$verdict', expected idle"
+  pass "the session binding finds metadata after a retained_frame prefix"
+}
+
 test_workspace_binding_treats_glob_characters_literally() {
   local dir state id root verdict
   dir="$TMP_ROOT/workspace-literal"
@@ -982,6 +1010,7 @@ test_failed_clear_is_reported
 test_run_fold_tracks_open_and_settled_turns
 test_nested_terminal_record_does_not_settle_a_run
 test_binding_selects_the_matching_main_log
+test_binding_finds_metadata_after_retained_frame
 test_workspace_binding_treats_glob_characters_literally
 test_binding_excludes_preexisting_log_when_mtimes_tie
 test_session_log_cache_reuses_and_refreshes_binding

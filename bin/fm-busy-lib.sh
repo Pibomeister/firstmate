@@ -454,10 +454,32 @@ function metadataWorkspace(file) {
     descriptor = fs.openSync(file, "r");
     const buffer = Buffer.alloc(65536);
     const length = fs.readSync(descriptor, buffer, 0, buffer.length, 0);
-    const newline = buffer.indexOf(10, 0);
-    if (newline < 0 || newline >= length) return null;
-    const record = JSON.parse(buffer.subarray(0, newline).toString("utf8"));
-    return record?.payload?.record?.workspace_root ?? null;
+    const text = buffer.subarray(0, length).toString("utf8");
+    for (const line of text.split("\n")) {
+      if (!line) continue;
+      let record;
+      try {
+        record = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      const workspace = record?.payload?.record?.workspace_root;
+      if (typeof workspace === "string" && workspace) return workspace;
+      // muse 1.4.13 prepends a retained_frame transaction whose children
+      // carry record_json strings; metadata may live there or on a later line.
+      if (Array.isArray(record?.children)) {
+        for (const child of record.children) {
+          try {
+            const inner = JSON.parse(child?.record_json ?? "");
+            const innerWorkspace = inner?.payload?.record?.workspace_root;
+            if (typeof innerWorkspace === "string" && innerWorkspace) return innerWorkspace;
+          } catch {
+            continue;
+          }
+        }
+      }
+    }
+    return null;
   } catch {
     return null;
   } finally {
