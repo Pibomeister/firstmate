@@ -26,6 +26,10 @@
 # ORDERING, and why LOCK now runs before BOOTSTRAP (the old AGENTS.md order
 # was bootstrap-then-lock):
 #
+#   0. bash check    - one warning when this bash, or the bash PATH selects,
+#                       has the Darwin here-document hang; it runs before the
+#                       lock and bootstrap skips its own copy
+#                       (bin/fm-bash-compat-lib.sh owns the check).
 #   1. lock          - acquire the per-home session lock FIRST, before any
 #                       mutating step runs.
 #   1b. home role    - the resolved firstmate-repository role line

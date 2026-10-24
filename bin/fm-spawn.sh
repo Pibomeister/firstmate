@@ -76,11 +76,13 @@
 #   ADOPTED as-is, while an endpoint PROVEN gone is RE-CREATED in the recorded
 #   worktree and the republished record rebinds the task to it. That proof is
 #   its own step, because a backend's `missing` also covers an endpoint that is
-#   merely unreachable from here - and it is only available on HERDR, which must
-#   still read the recorded pane as gone once that session's server is running
-#   again. A tmux `missing` always refuses: a task record carries no socket
-#   identity for its endpoint, so no read here can tell a destroyed window from
-#   one on a tmux server this process cannot address. An endpoint that turns out
+#   merely unreachable from here. HERDR proves it by still reading the recorded
+#   pane as gone once that session's server is running again; tmux proves it
+#   only from the server identity a tmux spawn records (socket, server pid and
+#   identity, window id), so an older tmux record refuses: no read here can tell
+#   a destroyed window from one on a tmux server this process cannot address.
+#   A tmux rebind re-creates the window on the recorded socket and refuses when
+#   this process addresses another tmux server. An endpoint that turns out
 #   to have survived refuses too. The worktree is reused untouched either way; a
 #   rebind is a recovery, never a teardown. Only a crewmate or scout rebinds: a
 #   secondmate whose endpoint is gone is respawned by its own owner
@@ -2155,7 +2157,7 @@ if [ "$RELAUNCH" -eq 1 ]; then
   # endpoint was DESTROYED" with "the endpoint is UNREACHABLE from here right
   # now", and an unreachable endpoint can still hold the live agent this
   # relaunch would duplicate. So absence is PROVEN before it may rebind, never
-  # inferred from a failed read - and only HERDR can prove it:
+  # inferred from a failed read - and only these backends can prove it:
   #   herdr - the recorded session's server is started, and the recorded pane is
   #           RE-READ through that session's own socket. `dead` means the pane
   #           survived the restart and is adopted after all; `alive` means the

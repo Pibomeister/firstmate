@@ -15,7 +15,9 @@
 # found while taking that lock was left by a drain that died mid-write; each
 # locked drain rotates such leftovers away before doing anything else.
 # FM_STATUS_PRESENTATION_LOCK_TIMEOUT sets the positive whole-second wait for
-# presentation-path locks (default 10); queue mutation locks remain blocking.
+# presentation-path locks (default 10); queue mutation locks, acknowledgement
+# included, wait at most fm_wake_queue_lock_acquire's bound (bin/fm-wake-lib.sh)
+# and exit 1 with the state untouched past it.
 set -u
 
 SCRIPT_DIR="$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; CDPATH='' cd -- "${d:-/}" && pwd)"

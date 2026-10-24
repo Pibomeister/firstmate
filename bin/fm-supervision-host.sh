@@ -155,8 +155,9 @@
 # to the main session, engine, and model), and .supervision-host.log (a bounded
 # ledger of where every close went, with each engine turn's usage and
 # outcome, plus an `init <stage>` row before each activation stage and an
-# `init-blocked <stage> <status> <bound>` row when a bounded stage gave up, so
-# a host that has not logged `start` names the stage it is in).
+# `init-blocked <stage> <bound-seconds>` row when a bounded stage gave up, so
+# a host that has not logged `start` names the stage it is in, and an
+# `arm-retired <detail>` row when it replaced a stalled watcher its arm had not).
 #
 # Tunables (environment): FM_SUPERVISION_HOST_PARK_SECONDS (27000; a positive
 # integer below the 28800-second registration, any other value is the default),

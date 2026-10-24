@@ -133,6 +133,28 @@ The first case in `tests/fm-control-relaunch.test.sh` executes a replacement lau
 The full local relaunch suite stopped later at a fixture that uses GNU-style `sed -i` and requires Pi; this macOS run does not establish suite-wide coverage.
 This verifies process-environment isolation at launch; it does not prove the cause of a long Codex Working turn or verify a live secondmate on every runtime backend.
 
+### Endpoint absence proof
+
+Verified on 2026-10-24 with tmux 3.6a on macOS 26.5.2 arm64, against private real tmux servers on private sockets.
+
+```sh
+bash tests/fm-tmux-reclaim.test.sh
+```
+
+Observed output, all seven cases passing:
+
+```text
+ok - tmux proof: the recorded window id on the live recorded server is never gone, under any name
+ok - tmux proof: a window gone from its live server is gone only when no pane of it is in the copy
+ok - tmux proof: the recorded server killed, or replaced on its socket, proves the endpoint gone without starting, stopping or attaching to a server
+ok - tmux proof: a live recorded server that cannot answer is never read as gone
+ok - tmux proof: a process holding the copy (reached through a symlinked path) blocks it; a sibling path does not
+ok - tmux proof: a record without the server identity keeps refusing
+ok - tmux proof: a live recorded server whose identity cannot be read is never gone
+```
+
+This verifies the absence verdict on real servers; the full relaunch that re-creates the window on the recorded socket is covered by a fake tmux in `tests/fm-control-relaunch.test.sh`.
+
 Foreground-process behavior was verified on 2026-07-07 with tmux 3.6a on macOS.
 
 ```sh

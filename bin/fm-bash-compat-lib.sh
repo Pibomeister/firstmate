@@ -11,9 +11,11 @@
 #
 # Sourcing this file applies the gate once to the sourcing shell: on an
 # affected runtime it sets BASH_COMPAT=50 in that shell only and never exports
-# it, so worker panes, projects and child shells are untouched (each firstmate
-# entry point sources this itself, directly or through a library); on every
-# other runtime it changes nothing, including an inherited BASH_COMPAT.
+# it, so worker panes, projects and child shells are untouched (the supervision,
+# steering and control entry points source this themselves, directly or through
+# a library, and tests/fm-bash-compat.test.sh pins them; lab, install and CI
+# tools may not); on every other runtime it changes nothing, including an
+# inherited BASH_COMPAT.
 # This file must never contain a here-document: it runs before the gate does.
 #
 #   fm_bash_heredoc_affected [<ostype> <major> <minor> <patch>]

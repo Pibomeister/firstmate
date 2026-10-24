@@ -298,10 +298,13 @@ test_long_episode_resurfaces_with_age_and_stage() {
   pid=$!
   record_live_watcher "$dir" "$pid" || fail "could not record the live watcher"
   printf '%s\t%s\t%s\n' "$pid" "$(( $(date +%s) - 40 ))" pending-reply > "$home/state/.watcher-stage"
-  out1=$(FM_GUARD_BANNER_RESURFACE_SECS=3 run_guard_case "$dir")
-  out2=$(FM_GUARD_BANNER_RESURFACE_SECS=3 run_guard_case "$dir")
-  sleep 4
-  out3=$(FM_GUARD_BANNER_RESURFACE_SECS=3 run_guard_case "$dir")
+  out1=$(FM_GUARD_BANNER_RESURFACE_SECS=60 run_guard_case "$dir")
+  out2=$(FM_GUARD_BANNER_RESURFACE_SECS=60 run_guard_case "$dir")
+  # Age the last full print past the bound instead of sleeping through it.
+  awk -v t="$(( $(date +%s) - 61 ))" 'BEGIN { FS = OFS = "\t" } { $3 = t; print }' \
+    "$home/state/.guard-watcher-stale-banner" > "$home/state/.guard-marker.tmp" \
+    && mv "$home/state/.guard-marker.tmp" "$home/state/.guard-watcher-stale-banner"
+  out3=$(FM_GUARD_BANNER_RESURFACE_SECS=60 run_guard_case "$dir")
   kill "$pid" 2>/dev/null || true
   wait "$pid" 2>/dev/null || true
   [ "$(count_text "$out1" "WATCHER DOWN - SUPERVISION IS OFF")" -eq 1 ] || fail "the first call must print the full banner: $out1"

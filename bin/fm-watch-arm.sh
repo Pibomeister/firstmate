@@ -36,11 +36,15 @@
 #   watcher: FAILED - attached watcher pid=<N> stalled (beacon <age>s at or past hard bound <bound>s)
 #                                                        - the followed holder is alive but its beacon
 #                                                          reached the stall bound
+#   watcher: FAILED - started watcher pid=<N> stalled (beacon <age>s at or past hard bound <bound>s)
+#                                                        - this arm's own child stalled; the arm stopped
+#                                                          it and everything it started
 # It NEVER reports started/attached/healthy off a stale beacon or a dead/reused pid: a
 # stale-beacon or dead-pid holder either self-heals (the fresh child steals the
 # dead lock per the singleton self-eviction/steal path and is confirmed) or this
-# returns the FAILED line. On started it waits the child and propagates the wake
-# reason; on attached it stays live across identity-matched successors. Once
+# returns the FAILED line. On started it waits the child while its beacon stays
+# under fm_watcher_stall_bound and propagates the wake reason; on attached it
+# stays live across identity-matched successors. Once
 # attached, a stale beacon alone does not end the followed cycle: while that
 # holder is alive and the lock still names it under the same identity, the arm
 # keeps following it, as a started arm waits out a slow child, until the lock

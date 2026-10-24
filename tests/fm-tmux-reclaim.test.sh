@@ -85,13 +85,19 @@ test_window_gone_from_the_same_server_is_gone_unless_a_pane_is_in_the_copy() {
 }
 
 test_killed_or_replaced_server_is_gone() {
-  local meta
+  local meta pid sessions
   meta=$(start_task killed)
   t kill-server
   expect_verdict "$meta" gone "the recorded server killed"
+  if t list-sessions >/dev/null 2>&1; then fail "the proof started a server on the recorded socket"; fi
   t -f /dev/null new-session -d -s other -c / 'sleep 600'
+  pid=$(t display-message -p '#{pid}')
+  sessions=$(t list-sessions -F '#{session_name}')
   expect_verdict "$meta" gone "the recorded server replaced by a new one on the same socket"
-  pass "tmux proof: the recorded server killed, or replaced on its socket, proves the endpoint gone"
+  [ "$(t display-message -p '#{pid}' 2>/dev/null)" = "$pid" ] || fail "the proof stopped the replacement server"
+  [ "$(t list-sessions -F '#{session_name}' 2>/dev/null)" = "$sessions" ] || fail "the proof changed the replacement server's sessions"
+  [ -z "$(t list-clients 2>/dev/null)" ] || fail "the proof attached a client to the replacement server"
+  pass "tmux proof: the recorded server killed, or replaced on its socket, proves the endpoint gone without starting, stopping or attaching to a server"
 }
 
 test_stopped_server_or_unlinked_socket_is_unproven() {

@@ -155,11 +155,17 @@
 #                                   (default 0.5)
 #          FM_LOG_MAX_BYTES / FM_LOG_KEEP_LINES / FM_CRASH_*  log + crash guards
 #          FM_STATE_OVERRIDE        alternate state dir (testing)
+#          FM_DAEMON_PROBE_BUDGET   seconds one supervisor-pane probe may take
+#                                   (default 20); a pane server that does not
+#                                   answer fails startup, and in the loop the
+#                                   tick goes on to its watcher check
 #          Logs each wake to state/.supervise-daemon.log (size-capped). Single
 #          instance via portable lock on state/.supervise-daemon.lock. Trapped
 #          SIGTERM/SIGINT shut down within ~1s, flush escalations, release the
 #          lock. A crashing fm-watch.sh is logged and restarted, never killing
 #          the daemon; a tight crash-restart spin is detected and backed off.
+#          A live watcher that fm_watcher_stalled (bin/fm-wake-lib.sh) reports
+#          stalled is stopped with everything it started, then restarted.
 set -u
 
 FM_DAEMON_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

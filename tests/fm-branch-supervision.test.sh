@@ -729,6 +729,7 @@ test_lease_command_lock_wait_is_bounded_and_names_the_holder() {
   [ "$elapsed" -le 8 ] || fail "fm-lease.sh took ${elapsed}s to refuse with a 3s lock bound"
   assert_contains "$out" "$holder_pid" "the refusal must name the holder pid"
   assert_contains "$out" "fm-fake-lock-holder.sh" "the refusal must name the holder's script"
+  assert_not_contains "$out" "fm-wake-lib.sh" "the refusal must never print the holder's argument list"
   assert_contains "$out" "waiting" "the waiter must name the holder as soon as it starts waiting"
   if ! { [ "$(cat "$lock/pid" 2>/dev/null)" = "$holder_pid" ] && kill -0 "$holder_pid" 2>/dev/null; }; then
     fail "a refused lease command must leave the holder and its lock untouched"

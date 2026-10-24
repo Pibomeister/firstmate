@@ -21,10 +21,15 @@
 # lock is down; under every
 # persistent-watcher harness a live identity-matched watcher with a fresh beacon
 # is required. The banner names the true failing condition (a missing live
-# watcher process vs a genuinely stale beacon). The full banner is emitted once
-# per distinct down-episode in this FM_HOME (keyed to the failing condition, not
-# the beacon mtime, which a healthy between-turns watcher advances every poll);
-# later guarded commands in the same episode print a one-line reminder instead.
+# watcher process vs a genuinely stale beacon). A watcher that still beats but
+# has skipped a piece of its work behind a held lock past that lock's bound (its
+# state/.watcher-deferral.<name> record, current only while recent and its
+# holder alive) is reported as WATCHER BLOCKED, naming the work and the holder.
+# The full banner is emitted at the start of each distinct down-episode in this
+# FM_HOME (keyed to the failing condition, not the beacon mtime, which a healthy
+# between-turns watcher advances every poll) and again each
+# FM_GUARD_BANNER_RESURFACE_SECS while it lasts; other guarded commands in the
+# episode print a one-line reminder instead.
 # Episode state lives only under state/.guard-watcher-stale-banner (volatile,
 # bounded). Independent alarms (queued wakes, worktree tangle) are never
 # suppressed by that dedup. Normal wake handling (watcher briefly down between a
@@ -60,7 +65,8 @@ READ_ONLY=${FM_GUARD_READ_ONLY:-0}
 case "$READ_ONLY" in 1|true|TRUE|yes|YES) READ_ONLY=1 ;; *) READ_ONLY=0 ;; esac
 CONTINUE_LINE=${FM_GUARD_CONTINUE_LINE:-This is a supervision warning only; the guarded operation WILL still run.}
 
-# Volatile, home-scoped episode marker: one line = the current stale-episode key.
+# Volatile, home-scoped episode marker; its one-line format is described at
+# fm_guard_read_marker below.
 # Cleared when the home leaves the unhealthy state so a later episode re-arms.
 STALE_BANNER_MARKER="$STATE/.guard-watcher-stale-banner"
 

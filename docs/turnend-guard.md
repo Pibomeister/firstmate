@@ -168,7 +168,8 @@ A cycle the extension never restores is loud once the beacon passes grace.
 
 Under every persistent-watcher harness a live identity-matched watcher with a fresh beacon is still required, so the pull guard keeps the same strict semantics there.
 Its banner names the true failing condition, either a missing live watcher process or a genuinely stale beacon with its real age.
-It keys the once-per-episode dedup on that condition rather than the beacon mtime.
+It keys the per-episode dedup on that condition rather than the beacon mtime, and re-prints the full banner every `FM_GUARD_BANNER_RESURFACE_SECS` while the episode lasts.
+A watcher that still beats but has skipped part of its work behind a held lock past that lock's bound is reported as WATCHER BLOCKED, naming the work and the holder (the `bin/fm-guard.sh` header owns the detail).
 
 ### Away and quiet mode daemon ownership
 
