@@ -53,8 +53,8 @@
 # stalled-holder line so its owner's retry replaces the holder. A cycle
 # that ends with no reason line and no healthy successor is resolved against the
 # watcher's identity-bound delivery record: a matching record reports that wake
-# and exits 0, and only a cycle that delivered nothing is the typed nonzero
-# failure. Neither is ever a clean empty completion. On FAILED it exits non-zero
+# and exits 0 when cleanup succeeded; failed cleanup remains nonzero even
+# when a reason was delivered. Neither is ever a clean empty completion. On FAILED it exits non-zero
 # so the failure is loud. A live cycle already present means re-arm attaches - do
 # not start a second watcher.
 #
@@ -88,8 +88,9 @@
 # its own supervision cycle on purpose (the supervision host's park boundary,
 # bin/fm-supervision-host.sh). The stopped watcher publishes downtime exactly
 # as any watcher close does; prints "watcher: stopped pid=<N>" or
-# "watcher: none running" and exits 0, or exits 1 when the watcher outlived
-# the stop.
+# "watcher: none running" and exits 0. A reason already delivered by that
+# watcher is also printed. It exits 1 when the watcher outlived the stop or
+# its matching stale lock shows that recovery cleanup failed.
 #
 # A copy of this script living under a disposable no-mistakes validation
 # checkout (a path containing /.no-mistakes/worktrees/) refuses every mode
@@ -792,11 +793,9 @@ handle_arm_signal() {
   local signal=$1 rc=$2
   trap '' HUP TERM INT
   if [ -n "$child" ] && fm_pid_alive "$child"; then
-    # The watcher installs its own cleanup traps only after acquiring and
-    # publishing the home-bound lock identity. Do not TERM it in the middle of
-    # stale-lock acquisition: that can abandon the steal mutex. Let startup
-    # reach that cleanup-ready point (or exit naturally) before forwarding TERM,
-    # but never past the startup confirmation deadline.
+    # Wait for startup to publish its home-bound lock identity before
+    # forwarding TERM, so stale-lock acquisition can finish without abandoning
+    # the steal mutex. Never wait past the startup confirmation deadline.
     while fm_pid_alive "$child"; do
       if fm_watcher_lock_matches_pid "$STATE" "$WATCH" "$child" "$FM_HOME" \
         || [ "$(date +%s)" -ge "$deadline" ]; then
