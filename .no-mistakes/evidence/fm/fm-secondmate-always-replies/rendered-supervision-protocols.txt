@@ -1,0 +1,18 @@
+== claude
+In a secondmate home, apply the routed-work and return-channel rules in `data/charter.md` before the next supervision wait.
+== codex
+In a secondmate home, apply the routed-work and return-channel rules in `data/charter.md` before the next supervision wait.
+== opencode
+In a secondmate home, apply the routed-work and return-channel rules in `data/charter.md` before the next supervision wait.
+== pi
+In a secondmate home, apply the routed-work and return-channel rules in `data/charter.md` before the next supervision wait.
+== pi-signed
+In a secondmate home, apply the routed-work and return-channel rules in `data/charter.md` before the next supervision wait.
+== grok
+In a secondmate home, apply the routed-work and return-channel rules in `data/charter.md` before the next supervision wait.
+== cursor
+In a secondmate home, apply the routed-work and return-channel rules in `data/charter.md` before the next supervision wait.
+== omp
+In a secondmate home, apply the routed-work and return-channel rules in `data/charter.md` before the next supervision wait.
+== unknown
+In a secondmate home, apply the routed-work and return-channel rules in `data/charter.md` before the next supervision wait.

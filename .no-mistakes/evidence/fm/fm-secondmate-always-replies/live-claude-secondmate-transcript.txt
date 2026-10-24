@@ -1,0 +1,45 @@
+# Live Claude secondmate (lab) - parent channel state/sm1.status
+request A sent at 1792799693; request B sent at 1792799799 while scout demo-calc-audit was still running
+
+working [corr=385cb1c01a6b312c] [key=demo-calc-audit] [at=1792799783]: dispatched scout demo-calc-audit (calc.py correctness audit, report at data/demo-calc-audit/report.md, no code changes)
+done [key=child-outcome-demo-calc-audit-done-beb6989a] [at=1792799854]: child demo-calc-audit done: calc.py:2 add() returns a-b (high); one-char fix, report at data/demo-calc-audit/report.md report=data/demo-calc-audit/report.md
+working [corr=cd4dcda99b2029f9] [key=demo-mathx-review] [at=1792799887]: dispatched scout demo-mathx-review (mathx.py correctness review, report at data/demo-mathx-review/report.md, no code changes; runs alongside demo-calc-audit)
+done [key=child-outcome-demo-mathx-review-done-f27d1d32] [at=1792799923]: child demo-mathx-review done: mathx.py:2 mul returns a+b instead of a*b (mul(2,3)=5); no tests; fix is one line - report.md report=data/demo-mathx-review/report.md
+
+# pending-reply records
+== 385cb1c01a6b312c
+request_summary=New work for demo: audit calc.py for correctness bugs and write a short findings report under your data/ dir. Do not ...
+phase=resolved
+resolved_epoch=1792799797
+resolved_via=document
+== cd4dcda99b2029f9
+request_summary=New independent work for demo: review mathx.py for correctness bugs and report findings under your data/ dir. Do not ...
+phase=awaiting_report
+resolved_epoch=
+resolved_via=
+
+# lab tmux windows
+primary:0: sleep* (1 panes) [80x24] 
+primary:1: fm-sm1 (1 panes) [80x24] 
+primary:3: fm-demo-mathx-review (1 panes) [80x24] 
+
+# secondmate pane (last 60 lines)
+    writes a short report and doesn't change any code. The report goes to
+    data/demo-mathx-review/report.md.
+  - Runs alongside the calc.py audit: the two requests are unrelated, so neither
+    waits on the other.
+  - What I told the main firstmate: I posted the dispatch answer with the
+    matching corr=cd4dcda99b2029f9, and moved the instruction (002.msg) to
+    handled/.
+  Each report goes back to the main firstmate as its own update when it's
+  finished.
+✻ Crunched for 1m 45s · done 5:58 PM
+⏺ Stop hook feedback
+✻ Flibbertigibbeting…
+────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────
+  [OMC#4.15.0] -> 5.7.11 omc update | Model: Opus 5.5
+  5h:18%*(~1h1m) wk:21%*(~4d11h) | session:4m | skill:harness-adapters | ctx:…
+  🔧21 ⚡1
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← 1 agent
