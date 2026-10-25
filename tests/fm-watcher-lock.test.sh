@@ -208,8 +208,8 @@ test_live_stalled_watch_lock_is_replaced_past_hard_bound() {
   printf '%s\n' "$dir" > "$state/.watch.lock/fm-home"
   printf '%s\n' "$WATCH" > "$state/.watch.lock/watcher-path"
   printf '%s\n' "$identity" > "$state/.watch.lock/pid-identity"
-  # Beacon decades old: past the grace, but a bound beyond it -> still refused.
-  touch -t 200001010000 "$state/.last-watcher-beat"
+  # Beacon and lock decades old: past the grace, but a bound beyond it -> still refused.
+  touch -t 200001010000 "$state/.last-watcher-beat" "$state/.watch.lock/pid"
   status=0
   PATH="$fakebin:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$state" FM_GUARD_GRACE=1 FM_WATCHER_STALL_BOUND=9999999999 FM_POLL=5 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" 2> "$err" || status=$?
   [ "$status" -ne 0 ] || fail "watcher replaced a holder whose beacon was under the hard bound"
@@ -795,8 +795,8 @@ test_watch_restart_rejects_reused_pid() {
   pass "watch restart preserves recovery without signaling a reused pid"
 }
 
-test_watch_restart_attaches_to_healthy_peer() {
-  local dir state fakebin out peer_ready peer identity armpid status i
+test_watch_restart_replaces_term_resistant_peer() {
+  local dir state fakebin out peer_ready peer identity armpid i
   dir=$(make_case restart-healthy-peer)
   state="$dir/state"
   fakebin="$dir/fakebin"
@@ -824,21 +824,24 @@ test_watch_restart_attaches_to_healthy_peer() {
   PATH="$fakebin:$PATH" FM_HOME="$dir" FM_POLL=5 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 FM_ARM_ATTACH_POLL=0.1 FM_ARM_CONFIRM_TIMEOUT=1 "$WATCH_ARM" --restart > "$out" &
   armpid=$!
   i=0
-  while [ "$i" -lt 80 ]; do
-    grep -qF "watcher: attached pid=$peer" "$out" 2>/dev/null && break
+  while [ "$i" -lt 150 ] && is_live_non_zombie "$armpid"; do
     sleep 0.1
     i=$((i + 1))
   done
-  grep -qF "watcher: attached pid=$peer" "$out" || fail "restart did not attach to the verified healthy peer: $(cat "$out")"
-  is_live_non_zombie "$armpid" || fail "restart arm exited instead of following the healthy peer"
-  is_live_non_zombie "$peer" || fail "restart killed a TERM-resistant peer unexpectedly"
-  kill -KILL "$peer" 2>/dev/null || true
+  # The restart's stop is bounded: TERM, then KILL after its grace, so a watcher
+  # that never runs its TERM trap (wedged in a blocking write) is still replaced
+  # and the fresh cycle resurfaces the downtime instead of attaching to it.
+  if is_live_non_zombie "$armpid"; then
+    kill -TERM "$armpid" 2>/dev/null || true
+    wait "$armpid" 2>/dev/null || true
+    fail "restart did not resurface after stopping a TERM-resistant peer: $(cat "$out")"
+  fi
+  wait "$armpid" 2>/dev/null || true
+  ! is_live_non_zombie "$peer" || fail "restart left a TERM-resistant peer running"
   wait "$peer" 2>/dev/null || true
-  wait_for_exit "$armpid" 80
-  status=$?
-  [ "$status" -ne 0 ] && [ "$status" -ne 124 ] || fail "restart arm did not fail after its attached peer ended without a successor (status $status)"
-  grep -qF 'watcher: FAILED - cycle ended without an actionable reason' "$out" || fail "restart arm did not surface the attached cycle end"
-  pass "watch restart attaches to a verified healthy peer and later surfaces a successor gap"
+  ! grep -qF "watcher: attached pid=$peer" "$out" || fail "restart attached to the peer it stopped: $(cat "$out")"
+  grep -qF 'check: rearm-resurface' "$out" || fail "restart replaced a TERM-resistant peer without surfacing recovery: $(cat "$out")"
+  pass "watch restart stops a TERM-resistant peer past its grace and resurfaces from a fresh watcher"
 }
 
 test_watcher_self_evicts_on_lock_takeover() {
@@ -1593,7 +1596,7 @@ test_lock_empty_pid_uses_minimum_grace
 test_lock_late_claim_loses_after_recreate
 test_lock_paused_mid_acquire_claim_fails_during_steal
 test_watch_restart_rejects_reused_pid
-test_watch_restart_attaches_to_healthy_peer
+test_watch_restart_replaces_term_resistant_peer
 test_watcher_self_evicts_on_lock_takeover
 test_arm_self_eviction_is_loud_without_successor
 test_arm_attaches_and_waits_for_live_fresh_watcher

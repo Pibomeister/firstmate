@@ -188,7 +188,7 @@ test_affected_binary_with_small_pipes_completes_only_with_the_gate() {
     > "$TMP_ROOT/smallpipe/smallpipe.c"
   dylib="$TMP_ROOT/smallpipe/smallpipe.dylib"
   clang -dynamiclib -O1 -o "$dylib" "$TMP_ROOT/smallpipe/smallpipe.c" 2>/dev/null \
-    || { fail "could not build the 512-byte pipe interposer"; return 0; }
+    || fail "could not build the 512-byte pipe interposer"
   home="$TMP_ROOT/smallpipe-home"
   mkdir -p "$home/state"
   bounded() {  # perl group-kill bound; prints output, returns 124 on the bound
@@ -198,7 +198,7 @@ test_affected_binary_with_small_pipes_completes_only_with_the_gate() {
   # shellcheck disable=SC2016
   bounded env -u BASH_COMPAT DYLD_INSERT_LIBRARIES="$dylib" "$affected" -c 'x=$(printf "%02000d" 0); cat <<< "$x" | wc -c' >/dev/null 2>&1
   rc=$?
-  [ "$rc" = 124 ] || { fail "control: $affected with the 512-byte model should hang without the gate (rc=$rc), so the lane proves nothing"; return 0; }
+  [ "$rc" = 124 ] || fail "control: $affected with the 512-byte model should hang without the gate (rc=$rc), so the lane proves nothing"
   # The real writer, through the real library chain, with the gate in place.
   # shellcheck disable=SC2016
   out=$(bounded env -u BASH_COMPAT DYLD_INSERT_LIBRARIES="$dylib" FM_HOME="$home" "$affected" -c '
@@ -206,7 +206,7 @@ test_affected_binary_with_small_pipes_completes_only_with_the_gate() {
     req=$(printf "%01500d" 0)
     fm_pending_reply_create "$2" "$2/state" mate "$req"' _ "$ROOT" "$home" 2>&1)
   rc=$?
-  [ "$rc" = 0 ] || { fail "the pending-reply writer under $affected with the 512-byte model did not complete with the gate (rc=$rc): $out"; return 0; }
+  [ "$rc" = 0 ] || fail "the pending-reply writer under $affected with the 512-byte model did not complete with the gate (rc=$rc): $out"
   [ -n "$(find "$home/state" -type f -size +512c ! -name '.*' 2>/dev/null)" ] \
     || fail "the pending-reply record was not written under the 512-byte model"
   pass "under $affected with 512-byte pipes, the real pending-reply writer completes with the gate (and a bare here-string hangs without it)"
