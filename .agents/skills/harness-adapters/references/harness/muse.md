@@ -64,9 +64,14 @@ Native children use per-child worktrees only with opt-in `--subagent-worktree-is
 It excludes `.claude/settings.local.json` because Firstmate writes it, but Muse scratch is worker output and must refuse cleanup when uncommitted.
 Inspect, never force past, that refusal.
 
-## Maturity and primary limit
+## Maturity and primary boundary
 
 Muse 1.4.13 still auto-updates through its hourly channel poll, which can replace the binary and process name.
 The captain accepted this, so Firstmate does not set `MUSE_NO_AUTO_UPDATE=1`; a fleet may set it without adapter change.
 Plugins report unavailable unless `MUSE_EXPERIMENTAL_PLUGINS=on`, so busy state uses logs.
-The compatibility dialect explicitly lacks `asyncRewake` and model reawakening; the router owns the resulting primary boundary.
+The compatibility dialect explicitly lacks `asyncRewake` as a hook, and Muse exposes no Stop, turn-end, or PreToolUse hook in the default build.
+Primary supervision therefore uses Muse's tracked background-task completion as the model wake, verified live on 1.4.13 in [`docs/verification/muse.md`](../../../../../docs/verification/muse.md).
+[`docs/supervision-protocols/muse.md`](../../../../../docs/supervision-protocols/muse.md) owns that one wait shape.
+Session start is nudge-tier: Muse loads project `AGENTS.md` natively and has no tracked SessionStart hook, so section 3's instruction itself is the transport.
+No turn-end hook can block a blind turn end on Muse; the tracked background cycle is the mechanism and [`docs/turnend-guard.md`](../../../../../docs/turnend-guard.md) owns the tradeoff.
+Secondmate on Muse remains refused in `bin/fm-spawn.sh` until the primary protocol is proven in a secondmate home.

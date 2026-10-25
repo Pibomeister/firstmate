@@ -2770,11 +2770,11 @@ esac
 # gemini has none: docs/supervision-protocols/ carries no gemini wake protocol
 # and this task verified only crewmate-side launch, busy state, interrupt, and
 # exit, so a gemini secondmate is refused rather than stood up on an unverified
-# supervision path. muse has none either, and its
-# Claude-compatible hook dialect explicitly rejects the model-reawakening and
-# asyncRewake handlers that firstmate's primary turn-end supervision is built on
-# (muse 0.1.0-R708.1). Refusing here keeps that gap loud instead of standing up a
-# secondmate whose supervision cycle could never be armed.
+# supervision path. muse is now a verified primary (tracked-background
+# protocol, Muse 1.4.13) but has not been proven as a secondmate, which
+# additionally needs the charter, routed-work, and return-channel contract
+# exercised in a secondmate home. Refusing here keeps that boundary explicit
+# until a lab proves it.
 # agy has none either: it exposes no hook surface for primary supervision and
 # docs/supervision-protocols/ carries no agy wake protocol (agy 1.2.0).
 # devin has none either: only its worker lifecycle hooks are verified, and

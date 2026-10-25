@@ -250,3 +250,38 @@ Repeat that smoke after a protocol-affecting upgrade: run one real multi-step to
 A build that ever split one turn across several runs would make a settled log ambiguous, which is a classifier change rather than a note in this file.
 
 The portable counterparts that run in ordinary CI are `tests/fm-muse-harness.test.sh`, `tests/fm-tmux-agent-liveness.test.sh`, `tests/fm-composer-lib.test.sh`, and `tests/fm-composer-ghost.test.sh`.
+
+## Muse as a verified primary, 2026-10-25
+
+Muse 1.4.13 was live-verified as a Firstmate primary in a throwaway clone of this repository on 2026-10-25.
+The lab primary ran `muse --yolo` in its own tmux session, loaded the tracked `AGENTS.md`, ran `bin/fm-session-start.sh` once, wrote one in-flight lab task record, and followed [`docs/supervision-protocols/muse.md`](../supervision-protocols/muse.md).
+
+Observed, in order:
+
+```text
+Backgrounded - Arm tracked background watcher
+Captain, watcher started. Waiting.
+CAPTAIN_MSG_OK (captain message accepted while the background watcher was still running)
+Finished - Arm tracked background watcher
+Ran command - Drain wake queue
+Ran command - Acknowledge handled wake
+Backgrounded - Re-arm tracked background watcher (watcher: started pid=47267)
+Captain, the lab worker finished. Monitoring is restored and waiting for the next event.
+```
+
+That sequence proves the five primary behaviors this verification exists for.
+It arms one watcher cycle as its own tracked background call.
+It ends its turn while that cycle runs.
+A worker status signal exits the watcher, and the background completion wakes the model with no foreground wait.
+The woken turn drains, acknowledges, and re-arms exactly one successor.
+A captain message sent while supervised work runs is answered promptly instead of waiting behind a foreground wait.
+
+The lab primary's session lock named pid 19642, whose process was `muse-bin-1.4.13-R6996.1 --yolo`, proving Muse session-lock ownership for the primary.
+The busy fold on that primary's bound session log, resolved past the retained-frame prefix by `fm_busy_muse_matching_logs`, returned `busy` while its re-arm turn was in flight.
+One lab Muse crewmate's busy behavior is covered by the credentialed multi-step smoke above and by `tests/fm-muse-harness.test.sh`, which passed in full (`done-0`) when run under a clean tmux ancestry on the same day.
+Run inside a live Muse session that same suite reports `musescore` as Muse, because the eight-hop ancestry walk reaches the host session's own `muse-bin` process; that is an execution-environment masking condition, not an anchored-match defect, and the clean-ancestry run is the refresh command for that case.
+
+Session start for a Muse primary is nudge-tier.
+Muse loads project `AGENTS.md` natively and exposes no tracked SessionStart hook in the default build, so section 3's instruction is the transport, as [`sessionstart-nudge.md`](../sessionstart-nudge.md#muse) records.
+Muse exposes no Stop, turn-end, or PreToolUse hook in the default build, so no turn-end guard or arm seatbelt is wired for it; [`turnend-guard.md`](../turnend-guard.md) and [`arm-pretool-check.md`](../arm-pretool-check.md) own those limits.
+Secondmate on Muse was not proven by this lab and remains refused.

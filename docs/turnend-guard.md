@@ -265,6 +265,7 @@ Each enabled primary harness adapts its own turn-end mechanism to the shared gua
 | omp | `session_stop` in `.omp/extensions/fm-primary-turnend-guard.ts` | Blocking hook that compels one continuation |
 | Cursor | `stop` hook in `.cursor/hooks.json` | Cannot block, so it parks and returns at most one follow-up |
 | Grok | `Stop` hook in `.grok/hooks/fm-primary-turnend-guard.json` | Native blocking, or one legacy `grok --resume` fallback |
+| Muse | None in the default build | Cannot block; the tracked background watcher cycle in [`supervision-protocols/muse.md`](supervision-protocols/muse.md) is the mechanism, verified live on 1.4.13 |
 
 The registrations in detail:
 
@@ -566,6 +567,9 @@ That warning uses `bin/fm-supervision-instructions.sh --repair-line`, so it alwa
 - If `jq` is removed after installation, the hook remains silent and exits 0, turn-end wakes stop, and Kimi crews fall back to idle detection.
 - Unreadable hook input remains fail-open.
 - No harness adapter uses a shell ampersand to manufacture supervision.
+- Muse 1.4.13 exposes no Stop or turn-end hook in the default build, so no Muse turn-end guard registration exists and a blind turn end cannot be blocked at the boundary.
+  The accepted tradeoff is that the Muse primary protocol itself arms one tracked background watcher cycle before ending its turn, and that cycle's completion is the wake.
+  A Muse session that ends its turn with no cycle armed has no backstop until the next captain message or background completion, which is why the protocol forbids foreground waits that delay that turn end.
 
 ## Regression coverage
 

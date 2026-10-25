@@ -924,3 +924,12 @@ Observed output:
 ```
 
 The safe command-channel contract is covered without a notification by `tests/fm-daemon.test.sh`: the summary reaches both `$1` and stdin, every channel is process-group bounded, and a failed channel falls through.
+
+## Muse primary tracked-background wake, 2026-10-25
+
+A Muse 1.4.13 primary was live-verified in a throwaway clone on 2026-10-25 following [`supervision-protocols/muse.md`](../supervision-protocols/muse.md).
+It ran `bin/fm-session-start.sh` once, armed `bin/fm-watch-arm.sh` as its own tracked background call, and ended its turn with that cycle running.
+A captain message was accepted and answered while the cycle ran.
+A worker status signal then exited the watcher, the background completion woke the model between turns with no foreground wait, and the woken turn drained with `bin/fm-wake-drain.sh`, ran the printed `--ack-through` acknowledgement, and re-armed exactly one successor that reported `watcher: started`.
+[`verification/muse.md`](muse.md#muse-as-a-verified-primary-2026-10-25) owns the full observed sequence, the session-lock ownership reading, and the busy-fold reading.
+No turn-end hook backstop is claimed for Muse, because the default build exposes none.

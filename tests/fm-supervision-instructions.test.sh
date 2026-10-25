@@ -8,6 +8,22 @@ set -u
 TMP_ROOT=$(fm_test_tmproot fm-supervision-instructions)
 RENDER="$ROOT/bin/fm-supervision-instructions.sh"
 
+test_muse_primary_block() {
+  local out ordinary
+  out=$("$RENDER" --harness muse)
+  assert_contains "$out" "SUPERVISION OPERATING INSTRUCTIONS - primary harness: muse" "muse heading missing"
+  assert_contains "$out" "Mode: Muse tracked-background supervision." "muse snippet missing"
+  assert_contains "$out" "bin/fm-watch-arm.sh" "muse snippet missing watcher arm"
+  assert_contains "$out" "tracked background" "muse snippet missing tracked background shape"
+  assert_not_contains "$out" "Mode: Unknown harness fallback." "muse fell back to unknown"
+  ordinary=$(printf '%s\n' "$out" | grep -F -- '- Ordinary wake:')
+  assert_contains "$ordinary" "re-arm exactly one" "muse ordinary-wake line missing"
+  out=$("$RENDER" --harness muse --repair-line)
+  assert_contains "$out" "Muse tracked background task" "muse repair line missing"
+  assert_contains "$out" "never shell &" "muse repair line missing anti-pattern guard"
+  pass "renderer prints the muse primary block with tracked-background repair"
+}
+
 test_selected_harness_block_only() {
   local out
   out=$("$RENDER" --harness codex)
@@ -25,7 +41,7 @@ test_selected_harness_block_only() {
 
 test_secondmate_turn_boundary_remains_responsive() {
   local harness out
-  for harness in claude codex opencode pi pi-signed grok cursor omp unknown; do
+  for harness in claude codex opencode pi pi-signed grok cursor omp muse unknown; do
     out=$("$RENDER" --harness "$harness")
     # shellcheck disable=SC2016 # Backticks are literal charter markup.
     assert_contains "$out" 'In a secondmate home, apply the routed-work and return-channel rules in `data/charter.md` before the next supervision wait.' \
@@ -350,6 +366,7 @@ test_pi_snippet_uses_effective_extension_path() {
 
 test_supervision_host_protocol_on_a_claude_home_unless_off
 test_supervision_host_protocol_on_every_arm_owner
+test_muse_primary_block
 test_selected_harness_block_only
 test_secondmate_turn_boundary_remains_responsive
 test_unknown_fallback
