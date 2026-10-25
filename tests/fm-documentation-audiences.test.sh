@@ -38,11 +38,6 @@ elif mode.name == "bad-setup-audience":
         if entry["path"] == "docs/tmux-backend.md":
             entry["audience"] = "maintainer-verification"
             break
-elif mode.name == "missing-owner-pointer":
-    data["requiredOwnerPointers"][0] = {
-        "source": "README.md",
-        "target": "docs/sessionstart-nudge.md",
-    }
 elif mode.name == "shrink-scope":
     data["scope"]["trackedPatterns"] = ["README.md"]
 else:
@@ -75,14 +70,6 @@ test_duplicate_and_setup_classification_fail() {
   run_expect_failure "scope.trackedPatterns must match the fixed maintained-prose scope" \
     "$CHECK" --inventory "$shrink_scope"
   pass "classification, setup routing, and maintained-prose scope fail safely"
-}
-
-test_required_pointer_fails() {
-  local missing_pointer="$TMP_ROOT/missing-pointer.json"
-  mutate_inventory "$INVENTORY" "$missing_pointer" missing-owner-pointer
-  run_expect_failure "required owner pointer missing" \
-    "$CHECK" --inventory "$missing_pointer"
-  pass "required documentation owner pointers cannot silently disappear"
 }
 
 write_fixture_inventory() {
@@ -128,6 +115,10 @@ MD
   "$CHECK" --root "$repo" >/dev/null \
     || fail "structural checker rejected legitimate maintainer evidence prose"
 
+  printf '%s\n' '[Setup](docs/setup.md)' > "$repo/README.md"
+  run_expect_failure "required owner pointer missing" "$CHECK" --root "$repo"
+  pass "required documentation owner pointers cannot silently disappear"
+
   printf '%s\n' '[Setup](docs/setup.md) [Policy](docs/policy.md) [Broken](docs/missing.bin)' \
     > "$repo/README.md"
   git -C "$repo" add README.md
@@ -137,5 +128,4 @@ MD
 
 test_repository_inventory_passes
 test_duplicate_and_setup_classification_fail
-test_required_pointer_fails
 test_local_links_and_no_keyword_heuristic

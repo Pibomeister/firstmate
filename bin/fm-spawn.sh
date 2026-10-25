@@ -2784,7 +2784,11 @@ esac
 # polytoken has none either: only the crewmate/scout lifecycle is verified;
 # docs/supervision-protocols/ carries no polytoken primary wake protocol.
 if [ "$KIND" = secondmate ] && { [ "$HARNESS" = muse ] || [ "$HARNESS" = gemini ] || [ "$HARNESS" = agy ] || [ "$HARNESS" = devin ] || [ "$HARNESS" = commandcode ] || [ "$HARNESS" = droid ] || [ "$HARNESS" = polytoken ]; }; then
-  echo "error: $HARNESS cannot run a secondmate; its secondmate integration remains unverified. Select a harness verified for secondmates." >&2
+  if [ "$HARNESS" = muse ]; then
+    echo "error: $HARNESS cannot run a secondmate; its secondmate integration remains unverified. Select a harness verified for secondmates." >&2
+  else
+    echo "error: $HARNESS is a verified crewmate/scout adapter only and cannot run a secondmate; it has no primary supervision protocol. Select a harness verified for secondmates." >&2
+  fi
   exit 1
 fi
 
