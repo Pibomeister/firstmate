@@ -1,0 +1,2 @@
+Private fm-lab server stopped. Disposable lab removed.
+Confirmed primary and watcher processes exited; no lab directory remains.

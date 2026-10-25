@@ -1,0 +1,26 @@
+{
+  ".lock": {
+    "content": "95703\n",
+    "mtime": 1792939776.8922331
+  },
+  ".wake-queue": {
+    "content": "",
+    "mtime": 1792940114.7944138
+  },
+  ".last-watcher-beat": {
+    "content": "",
+    "mtime": 1792940329.483175
+  },
+  ".session-start-complete": {
+    "content": "95703\n",
+    "mtime": 1792939778.6610782
+  },
+  ".watch.lock/pid": {
+    "content": "83755\n",
+    "mtime": 1792940118.8197691
+  },
+  ".watch.lock/fm-home": {
+    "content": "/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.NXIQgr\n",
+    "mtime": 1792940118.9750738
+  }
+}

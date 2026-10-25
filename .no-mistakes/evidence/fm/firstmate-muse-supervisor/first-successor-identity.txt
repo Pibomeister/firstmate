@@ -1,0 +1,2 @@
+  PID  PPID COMMAND
+81322 81277 bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5SR4CY3DAZS9MTQQYD0FDZG/bin/fm-watch.sh

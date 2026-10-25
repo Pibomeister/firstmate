@@ -1,0 +1,1 @@
+registered: state/lab-event.check.sh
