@@ -1,4 +1,4 @@
-# Verification: the muse (Muse Code) crewmate adapter
+# Verification: the muse (Muse Code) adapter
 
 Active empirical evidence for firstmate's muse adapter.
 The skill tree rooted at [`.agents/skills/harness-adapters/SKILL.md`](../../.agents/skills/harness-adapters/SKILL.md) owns the operating facts; this record owns how they were established and what is still unproven.
@@ -8,7 +8,7 @@ The skill tree rooted at [`.agents/skills/harness-adapters/SKILL.md`](../../.age
 | Field | Value |
 |---|---|
 | Version | `Muse Code 1.4.13 (1.4.13-R6996.1)`, build sha `39490bd065` |
-| Verified | 2026-10-24, refreshing the 2026-08-05 and 2026-08-06 evidence for 0.1.0 |
+| Verified | Crewmate: 2026-10-24, refreshing the 2026-08-05 and 2026-08-06 evidence for 0.1.0; primary: 2026-10-25, below |
 | Artifact | Installed `muse-bin-1.4.13-R6996.1`, sha256 `9fd40ae9c6dfb847e3ef58b61405c004d0ebbf19ceb0297be966f750b3b84aa0` |
 | Platform | macOS arm64 (Darwin 25.5.0) |
 
@@ -281,7 +281,5 @@ The busy fold on that primary's bound session log, resolved past the retained-fr
 One lab Muse crewmate's busy behavior is covered by the credentialed multi-step smoke above and by `tests/fm-muse-harness.test.sh`, which passed in full (`done-0`) when run under a clean tmux ancestry on the same day.
 Run inside a live Muse session that same suite reports `musescore` as Muse, because the eight-hop ancestry walk reaches the host session's own `muse-bin` process; that is an execution-environment masking condition, not an anchored-match defect, and the clean-ancestry run is the refresh command for that case.
 
-Session start for a Muse primary is nudge-tier.
-Muse loads project `AGENTS.md` natively and exposes no tracked SessionStart hook in the default build, so section 3's instruction is the transport, as [`sessionstart-nudge.md`](../sessionstart-nudge.md#muse) records.
-Muse exposes no Stop, turn-end, or PreToolUse hook in the default build, so no turn-end guard or arm seatbelt is wired for it; [`turnend-guard.md`](../turnend-guard.md) and [`arm-pretool-check.md`](../arm-pretool-check.md) own those limits.
+[`sessionstart-nudge.md`](../sessionstart-nudge.md#muse) owns startup transport; [`turnend-guard.md`](../turnend-guard.md#compatibility-limits) and [`arm-pretool-check.md`](../arm-pretool-check.md#harness-wiring) own the hook limits.
 Secondmate on Muse was not proven by this lab and remains refused.

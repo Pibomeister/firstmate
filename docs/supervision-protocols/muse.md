@@ -25,7 +25,5 @@ When a background-task completion wake arrives for the arm:
    Re-arm attaches to an existing healthy cycle when one is already present and follows its verified successor chain.
    See [`watcher-continuity.md`](../watcher-continuity.md) for the arm-layer successor and clean-close failure contract.
 
-Muse exposes no Stop, turn-end, or PreToolUse hook in the default build, so no hook blocks a blind turn end or denies a watcher-arm anti-pattern before execution.
-The tracked background cycle above is therefore the primary mechanism, not a backstop shape.
-[`turnend-guard.md`](../turnend-guard.md) owns that honest limit.
+[`turnend-guard.md`](../turnend-guard.md#compatibility-limits) owns the turn-end limits; [`arm-pretool-check.md`](../arm-pretool-check.md#harness-wiring) owns pre-tool coverage.
 Interactive TUI sessions are the supported Muse primary surface.

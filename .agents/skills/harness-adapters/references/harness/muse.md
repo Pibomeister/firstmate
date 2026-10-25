@@ -72,6 +72,5 @@ Plugins report unavailable unless `MUSE_EXPERIMENTAL_PLUGINS=on`, so busy state 
 The compatibility dialect explicitly lacks `asyncRewake` as a hook, and Muse exposes no Stop, turn-end, or PreToolUse hook in the default build.
 Primary supervision therefore uses Muse's tracked background-task completion as the model wake, verified live on 1.4.13 in [`docs/verification/muse.md`](../../../../../docs/verification/muse.md).
 [`docs/supervision-protocols/muse.md`](../../../../../docs/supervision-protocols/muse.md) owns that one wait shape.
-Session start is nudge-tier: Muse loads project `AGENTS.md` natively and has no tracked SessionStart hook, so section 3's instruction itself is the transport.
-No turn-end hook can block a blind turn end on Muse; the tracked background cycle is the mechanism and [`docs/turnend-guard.md`](../../../../../docs/turnend-guard.md) owns the tradeoff.
-Secondmate on Muse remains refused in `bin/fm-spawn.sh` until the primary protocol is proven in a secondmate home.
+[`docs/sessionstart-nudge.md`](../../../../../docs/sessionstart-nudge.md#muse) owns startup transport, and [`docs/turnend-guard.md`](../../../../../docs/turnend-guard.md#compatibility-limits) owns the turn-end tradeoff.
+The [harness router](../../SKILL.md#non-negotiable-safety) owns the secondmate restriction.
