@@ -284,7 +284,7 @@ An ordinary presentation drain bounds both its initial queue-lock acquire and it
 | Initial queue lock | One PID-naming advisory, and the whole drain is skipped before any claim or mutation. |
 | Status-presentation lock | One such advisory after raw wake presentation, and status annotations, sections, and cursors are left retriable on the next drain. |
 
-Acknowledgement invocations and every other mutation-critical queue-lock acquire retain blocking semantics, so acknowledgement atomicity is unchanged.
+Acknowledgement invocations and every other mutation-critical queue-lock acquire wait up to the queue lock's own bound (`fm_wake_queue_lock_acquire` in `bin/fm-wake-lib.sh`) and then exit nonzero with the queue untouched, so acknowledgement stays atomic and a stuck holder is reported rather than waited on forever.
 
 ### Guard counts for branch-held rows
 

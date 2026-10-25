@@ -424,7 +424,7 @@ publish_pending() { # task canonical-url record-file
     key=$(printf '%s\n%s\n' "$url" "$token" | shasum -a 256 | awk '{print $1}')
     emitted=0
     status=0
-    fm_lock_acquire_wait "$FM_WAKE_QUEUE_LOCK" || return 1
+    fm_wake_queue_lock_acquire || return 1
     if ! fm_wake_queued_keys_locked check | grep -Fx "contribution-$key" >/dev/null; then
       fm_wake_append_locked check "contribution-$key" "check: contributions $task $key" || status=1
       [ "$status" -ne 0 ] || emitted=1

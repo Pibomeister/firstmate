@@ -774,6 +774,24 @@ write_omp_loaded_markers() {
 
 # --- context digest: absent vs empty vs present -----------------------------
 
+test_affected_bash_warning_comes_first_and_once() {
+  local rec root home fakebin out before_lock
+  rec=$(new_world affected-bash-warning)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  out=$(FM_TEST_SEAM=1 FM_TEST_BASH_RUNTIME='darwin25 5 3 9' run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  [ "$(printf '%s\n' "$out" | grep -c 'brew upgrade bash')" = 1 ] \
+    || fail "an affected running bash should produce exactly one warning line in the whole session start, got $(printf '%s\n' "$out" | grep -c 'brew upgrade bash')"
+  before_lock=${out%%LOCK*}
+  assert_contains "$before_lock" "brew upgrade bash" "the affected-bash warning must come before the lock stage"
+  out=$(FM_TEST_SEAM=1 FM_TEST_BASH_RUNTIME='darwin25 5 3 20' run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  case "$out" in *"brew upgrade bash"*) fail "an unaffected running bash must not be warned about" ;; esac
+  pass "session start warns once, before its lock stage, about an affected running bash"
+}
+
 test_context_digest_absent_empty_present() {
   local rec root home fakebin out
   rec=$(new_world context-digest)
@@ -3145,5 +3163,6 @@ test_read_only_pi_compact_refreshes_against_its_own_session_identity
 test_codex_unreachable_reset_sources_do_not_claim_instruction_refresh
 test_agents_baseline_requires_sha256_and_successful_completion
 test_reemit_keeps_repair_ownership_with_the_lock_holder
+test_affected_bash_warning_comes_first_and_once
 
 echo "# fm-session-start.test.sh: all assertions passed"

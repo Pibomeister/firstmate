@@ -15,10 +15,12 @@
 # found while taking that lock was left by a drain that died mid-write; each
 # locked drain rotates such leftovers away before doing anything else.
 # FM_STATUS_PRESENTATION_LOCK_TIMEOUT sets the positive whole-second wait for
-# presentation-path locks (default 10); queue mutation locks remain blocking.
+# presentation-path locks (default 10); queue mutation locks, acknowledgement
+# included, wait at most fm_wake_queue_lock_acquire's bound (bin/fm-wake-lib.sh)
+# and exit 1 with the state untouched past it.
 set -u
 
-SCRIPT_DIR="$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd "${d:-/}" && pwd)"
+SCRIPT_DIR="$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; CDPATH='' cd -- "${d:-/}" && pwd)"
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"
 # shellcheck source=bin/fm-classify-lib.sh
@@ -825,7 +827,7 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 if [ -n "$ACK_THROUGH" ]; then
-  fm_lock_acquire_wait "$FM_WAKE_QUEUE_LOCK"
+  fm_wake_queue_lock_acquire || exit 1
 elif fm_lock_acquire_wait_bounded "$FM_WAKE_QUEUE_LOCK" "$PRESENTATION_LOCK_TIMEOUT"; then
   :
 else
@@ -887,7 +889,7 @@ if [ -n "$ACK_THROUGH" ]; then
     echo "wake drain: inactive outcome receipt could not be recorded safely" >&2
     exit 1
   fi
-  fm_lock_acquire_wait "$FM_WAKE_QUEUE_LOCK"
+  fm_wake_queue_lock_acquire || exit 1
   DRAIN_LOCK_HELD=true
   DRAIN_TMP=$(mktemp "$STATE/.wake-queue.ack.XXXXXX") || exit 1
   chmod 0600 "$DRAIN_TMP" || exit 1

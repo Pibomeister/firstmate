@@ -102,9 +102,13 @@
 
 # Distinct from usage errors (2), the gate refusal (3), and fm-send's
 # unconfirmed submit (3): recognizable as "the other supervision actor holds
-# this task right now - retry after the lease clears".
+# this task right now, or this home's lease-command lock stayed busy past its
+# bound - retry later"; nothing was mutated either way, which the watcher's
+# pending-reply recovery send relies on to retry instead of failing.
 FM_LEASE_REFUSE_EXIT=6
-FM_LEASE_LIB_DIR="$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd "${d:-/}" && pwd)"
+FM_LEASE_LIB_DIR="$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; CDPATH='' cd -- "${d:-/}" && pwd)"
+# shellcheck source=bin/fm-bash-compat-lib.sh
+. "$FM_LEASE_LIB_DIR/fm-bash-compat-lib.sh"
 FM_LEASE_GUARD_LOCK=
 
 fm_lease_lock_helpers() {
@@ -115,6 +119,32 @@ fm_lease_lock_helpers() {
   # recursively duplicate that large graph for every lease-lib consumer.
   # shellcheck source=/dev/null
   . "$FM_LEASE_LIB_DIR/fm-wake-lib.sh"
+}
+
+# fm_lease_command_lock_acquire <lockdir> <action-label>: take the home-wide
+# lease-command lock within FM_LEASE_COMMAND_LOCK_WAIT seconds (default 60,
+# below the roughly 120 s a harness tool call allows, so a refusal is seen
+# rather than completing later as an orphan). A live holder is named on stderr
+# when the wait starts and again in the refusal, which exits
+# FM_LEASE_REFUSE_EXIT and never touches the holder's lock; a dead holder is
+# reclaimed as before. The holder is named by pid and script basename only,
+# never its argument list, which can carry message text.
+fm_lease_command_lock_acquire() {
+  local lockdir=$1 action=$2 wait holder rc
+  wait=${FM_LEASE_COMMAND_LOCK_WAIT:-60}
+  case "$wait" in '' | *[!0-9]* | 0) wait=60 ;; esac
+  fm_lock_try_acquire "$lockdir" && return 0
+  holder=$(fm_lock_holder_name "${FM_LOCK_HELD_PID:-}")
+  [ -z "$holder" ] \
+    || echo "fm-lease: $action is waiting up to ${wait}s for this home's lease-command lock, held by $holder" >&2
+  if fm_lock_acquire_wait_bounded "$lockdir" "$wait"; then
+    return 0
+  else
+    rc=$?
+  fi
+  holder=$(fm_lock_holder_name "${FM_LOCK_HELD_PID:-}")
+  echo "error: $action refused - this home's lease-command lock ($lockdir) is busy, still held${holder:+ by $holder} after ${wait}s (wait status $rc); retry the command once that holder finishes, and if it stays held, inspect that process and never remove the lock by hand" >&2
+  exit "$FM_LEASE_REFUSE_EXIT"
 }
 
 # fm_lease_home_runs_host: 0 iff this home runs the supervision host
@@ -245,7 +275,7 @@ fm_lease_guard() {
   # A caller with more than one guarded phase already excludes claims until
   # its shared cleanup; do not recursively acquire the non-reentrant lock.
   if [ "$FM_LEASE_GUARD_LOCK" != "$lock" ]; then
-    fm_lock_acquire_wait "$lock"
+    fm_lease_command_lock_acquire "$lock" "$action"
     FM_LEASE_GUARD_LOCK=$lock
   fi
   if ! fm_lease_live "$task"; then

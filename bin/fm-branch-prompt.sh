@@ -26,6 +26,8 @@
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=bin/fm-bash-compat-lib.sh
+. "$SCRIPT_DIR/fm-bash-compat-lib.sh"
 FM_TRACKED_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 cat <<'PROMPT'

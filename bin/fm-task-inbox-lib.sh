@@ -353,7 +353,23 @@ fm_task_inbox_doorbell_line() {  # <record-path>
 # whose Enter never landed, so on an agent not reported busy it is submitted
 # rather than skipped; skipping it would block every later ring. On both paths
 # a lost first Enter gets one confirmed retry.
+# The whole ring is bounded: it runs under fm_run_timed_fn for
+# FM_SEND_RING_BUDGET seconds (default 20), and a ring still running then is
+# stopped and returns 2, so a hung backend read can never hold its caller - or
+# the lease-command lock that caller may hold - and the steer stays durably
+# recorded for the watcher's re-ring ladder.
 fm_task_inbox_ring() {  # <backend> <target> <record-path> [expected-label]
+  local budget=${FM_SEND_RING_BUDGET:-20} rc=0
+  case "$budget" in '' | *[!0-9]* | 0) budget=20 ;; esac
+  # shellcheck source=bin/fm-timeout-lib.sh
+  command -v fm_run_timed_fn >/dev/null 2>&1 \
+    || . "$_FM_TASK_INBOX_LIB_DIR/fm-timeout-lib.sh"
+  fm_run_timed_fn "$budget" _fm_task_inbox_ring_once "$@" || rc=$?
+  [ "$rc" -ne 124 ] || rc=2
+  return "$rc"
+}
+
+_fm_task_inbox_ring_once() {  # <backend> <target> <record-path> [expected-label]
   local backend=$1 target=$2 rec=$3 label=${4:-} line cstate verdict
   case "$(fm_backend_agent_state "$backend" "$target" 2>/dev/null || true)" in
     dead|missing) return 3 ;;

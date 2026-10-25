@@ -136,6 +136,8 @@
 #
 # Sourcing: set -u and set -e safe; no subshell-unfriendly globals.
 
+# shellcheck source=bin/fm-bash-compat-lib.sh
+. "$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; CDPATH='' cd -- "${d:-/}" && pwd)/fm-bash-compat-lib.sh"
 FM_BUSY_LIB_VERSION=v1
 
 # Standalone-Kimi verification gate. Empty means no installed Kimi version

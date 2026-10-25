@@ -16,6 +16,8 @@
 # Diagnostics print to stderr prefixed by ${FM_LOCK_LOG_PREFIX:-fm-lock} so each
 # caller's output stays recognizable.
 
+# shellcheck source=bin/fm-bash-compat-lib.sh
+. "$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; CDPATH='' cd -- "${d:-/}" && pwd)/fm-bash-compat-lib.sh"
 fm_lock_log() {
   echo "${FM_LOCK_LOG_PREFIX:-fm-lock}: $*" >&2
 }

@@ -186,6 +186,7 @@ install_guard_scripts() {
   cp "$ROOT/bin/fm-turnend-guard.sh" "$dir/bin/fm-turnend-guard.sh"
   cp "$ROOT/bin/fm-turnend-guard-grok.sh" "$dir/bin/fm-turnend-guard-grok.sh"
   cp "$ROOT/bin/fm-operational-input.sh" "$dir/bin/fm-operational-input.sh"
+  cp "$ROOT/bin/fm-bash-compat-lib.sh" "$dir/bin/fm-bash-compat-lib.sh"
   cp "$ROOT/bin/fm-supervision-instructions.sh" "$dir/bin/fm-supervision-instructions.sh"
   cp "$ROOT/bin/fm-harness.sh" "$dir/bin/fm-harness.sh"
   cp "$ROOT/bin/fm-primary-scope-lib.sh" "$dir/bin/fm-primary-scope-lib.sh"
@@ -1073,6 +1074,7 @@ test_pi_extension_injects_once_per_logical_agent_run() {
   cp "$ROOT/.pi/extensions/fm-primary-turnend-guard.ts" "$ext"
   cp "$ROOT/.pi/extensions/lib/fm-operational-input.ts" "$repo/.pi/extensions/lib/fm-operational-input.ts"
   cp "$ROOT/bin/fm-operational-input.sh" "$repo/bin/fm-operational-input.sh"
+  cp "$ROOT/bin/fm-bash-compat-lib.sh" "$repo/bin/fm-bash-compat-lib.sh"
   cat > "$repo/bin/fm-turnend-guard.sh" <<'SH'
 #!/usr/bin/env bash
 cat >/dev/null
@@ -1139,6 +1141,7 @@ test_pi_extension_retries_after_followup_delivery_failure() {
   cp "$ROOT/.pi/extensions/fm-primary-turnend-guard.ts" "$ext"
   cp "$ROOT/.pi/extensions/lib/fm-operational-input.ts" "$repo/.pi/extensions/lib/fm-operational-input.ts"
   cp "$ROOT/bin/fm-operational-input.sh" "$repo/bin/fm-operational-input.sh"
+  cp "$ROOT/bin/fm-bash-compat-lib.sh" "$repo/bin/fm-bash-compat-lib.sh"
   cat > "$repo/bin/fm-turnend-guard.sh" <<'SH'
 #!/usr/bin/env bash
 cat >/dev/null
@@ -1192,6 +1195,7 @@ test_pi_extension_keeps_marker_of_live_ancestor_session() {
   cp "$ROOT/.pi/extensions/fm-primary-turnend-guard.ts" "$ext"
   cp "$ROOT/.pi/extensions/lib/fm-operational-input.ts" "$repo/.pi/extensions/lib/fm-operational-input.ts"
   cp "$ROOT/bin/fm-operational-input.sh" "$repo/bin/fm-operational-input.sh"
+  cp "$ROOT/bin/fm-bash-compat-lib.sh" "$repo/bin/fm-bash-compat-lib.sh"
   for marker_case in nested dead foreign fresh; do
     rm -f "$home/state/.pi-turnend-extension-loaded"
     out=$(PLUGIN="$ext" FM_HOME="$home" MARKER_CASE="$marker_case" node --input-type=module 2>&1 <<'EOF'
@@ -1315,6 +1319,7 @@ install_integrated_autoarm() {
   local dir=$1
   cp "$ROOT/bin/fm-claude-stop-autoarm.sh" "$dir/bin/fm-claude-stop-autoarm.sh"
   cp "$ROOT/bin/fm-primary-scope-lib.sh" "$dir/bin/fm-primary-scope-lib.sh"
+  cp "$ROOT/bin/fm-bash-compat-lib.sh" "$dir/bin/fm-bash-compat-lib.sh"
   cp "$ROOT/bin/fm-supervision-lib.sh" "$dir/bin/fm-supervision-lib.sh"
   cp "$ROOT/bin/fm-wake-lib.sh" "$dir/bin/fm-wake-lib.sh"
   cp "$ROOT/bin/fm-path-lib.sh" "$dir/bin/fm-path-lib.sh"

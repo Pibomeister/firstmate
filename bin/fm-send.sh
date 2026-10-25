@@ -284,7 +284,7 @@ fm_send_clear_after_interrupt() { # <key>
   clear=$(fm_control_interrupt_clear_key "$family") || return 0
   [ -n "$clear" ] || return 0
   [ "$TARGET_BACKEND" != remote ] || return 0
-  if ! fm_backend_send_key "$TARGET_BACKEND" "$T" "$clear" "$EXPECTED_LABEL"; then
+  if ! fm_run_timed_fn "$FM_SEND_BACKEND_BUDGET" fm_backend_send_key "$TARGET_BACKEND" "$T" "$clear" "$EXPECTED_LABEL"; then
     echo "error: Escape reached $T, but the $TARGET_HARNESS composer could not be cleared; it still holds the restored prompt. Clear it before sending the next message." >&2
     return 1
   fi
@@ -464,6 +464,11 @@ if [ -n "$TARGET_META" ]; then
     trap 'fm_lease_guard_release' EXIT
   fi
 fi
+# While this send may hold the lease-command lock, each local backend key or
+# typed-text call is bounded, below the 60 s another send waits for that lock,
+# so a wedged pane server cannot keep the lock held.
+FM_SEND_BACKEND_BUDGET=${FM_SEND_BACKEND_BUDGET:-45}
+case "$FM_SEND_BACKEND_BUDGET" in '' | *[!0-9]* | 0) FM_SEND_BACKEND_BUDGET=45 ;; esac
 
 # Collect --resolve-key flags (answerer-closes; see the header contract). They
 # must precede --key or the message text; everything after the last flag is the
@@ -790,9 +795,16 @@ if [ "${1:-}" = "--key" ]; then
       echo "error: key '$key' not sent to remote secondmate $TARGET_REMOTE_ID; completion may be unknown" >&2
       exit 1
     fi
-  elif ! fm_backend_send_key "$TARGET_BACKEND" "$T" "$key" "$EXPECTED_LABEL"; then
-    echo "error: key '$key' not sent to $T ($TARGET_BACKEND send failed; tried $RESOLUTION_TRIED)" >&2
-    exit 1
+  else
+    key_rc=0
+    fm_run_timed_fn "$FM_SEND_BACKEND_BUDGET" fm_backend_send_key "$TARGET_BACKEND" "$T" "$key" "$EXPECTED_LABEL" || key_rc=$?
+    if fm_timed_out "$key_rc"; then
+      echo "error: key '$key' to $T did not finish within ${FM_SEND_BACKEND_BUDGET}s and was stopped; its completion is unknown (tried $RESOLUTION_TRIED)" >&2
+      exit 1
+    elif [ "$key_rc" -ne 0 ]; then
+      echo "error: key '$key' not sent to $T ($TARGET_BACKEND send failed; tried $RESOLUTION_TRIED)" >&2
+      exit 1
+    fi
   fi
   fm_send_clear_after_interrupt "$semantic_key" || exit 1
   fm_send_record_interrupt "$semantic_key" || exit 1
@@ -1148,10 +1160,16 @@ else
   # block: remote text rides the inbox leg above, and remote --key exits
   # earlier.
   send_rc=0
-  if verdict=$(fm_backend_send_text_submit "$TARGET_BACKEND" "$T" "$MESSAGE" "$retries" "$sleep_s" "$settle" "$EXPECTED_LABEL"); then
-    :
-  else
-    send_rc=$?
+  verdict_file=$(mktemp "${TMPDIR:-/tmp}/fm-send-verdict.XXXXXX") || exit 1
+  fm_run_timed_fn "$FM_SEND_BACKEND_BUDGET" fm_backend_send_text_submit "$TARGET_BACKEND" "$T" "$MESSAGE" \
+    "$retries" "$sleep_s" "$settle" "$EXPECTED_LABEL" > "$verdict_file" || send_rc=$?
+  verdict=$(cat "$verdict_file" 2>/dev/null)
+  rm -f "$verdict_file"
+  if fm_timed_out "$send_rc"; then
+    # Stopped mid-type or mid-submit: the text may have landed, so this is the
+    # delivered-unconfirmed status, never a retype.
+    echo "fm-send: text to $T did not finish within ${FM_SEND_BACKEND_BUDGET}s and was stopped; submission is unconfirmed (tried $RESOLUTION_TRIED); do not retype or blindly resend - verify with fm-peek.sh" >&2
+    exit 3
   fi
   if [ "$send_rc" -ne 0 ]; then
     fm_send_known_undelivered_cleanup ||

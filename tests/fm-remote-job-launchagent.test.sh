@@ -19,6 +19,7 @@ LAUNCH_LOG="$TMP_ROOT/launchctl.log"
 SWEEP_GATE="$TMP_ROOT/sweep-gate"
 mkdir -p "$REMOTE_ROOT/bin" "$ACCOUNT_HOME" "$STUB_BIN"
 cp "$ROOT/bin/fm-remote-job-lib.sh" "$ROOT/bin/fm-remote-job-worker.sh" "$REMOTE_ROOT/bin/"
+cp "$ROOT/bin/fm-bash-compat-lib.sh" "$ROOT/bin/fm-remote-job-worker.sh" "$REMOTE_ROOT/bin/"
 printf 'fixture\n' > "$REMOTE_ROOT/AGENTS.md"
 chmod +x "$REMOTE_ROOT/bin/fm-remote-job-worker.sh"
 git -C "$REMOTE_ROOT" init -q -b main

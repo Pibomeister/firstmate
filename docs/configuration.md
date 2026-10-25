@@ -475,6 +475,8 @@ Task meta records `backend=` only for a non-default backend; an absent `backend=
 
 - Every new task records `endpoint_task_id=` as the cleanup binding between the metadata filename and its opaque runtime endpoint.
 
+- A tmux task additionally records `tmux_socket=`, `tmux_server_pid=`, `tmux_server_identity=`, and `tmux_window_id=` when the spawn can read them, the server identity the endpoint-absence proof reads ([`docs/agent-control.md`](agent-control.md) "Reclaiming a task whose endpoint is gone").
+
 - A herdr task additionally records `herdr_session=`, `herdr_workspace_id=`, `herdr_tab_id=`, and `herdr_pane_id=`.
 
 - A zellij task additionally records `zellij_session=`, `zellij_tab_id=`, and `zellij_pane_id=`.
@@ -2700,6 +2702,17 @@ FM_WATCHER_STALE_GRACE=300   # defaults to FM_GUARD_GRACE if set, else the poll-
 FM_WATCHER_STALL_BOUND=       # live-holder stall bound; default and arm/re-arm behavior: docs/turnend-guard.md "Guard grace and the poll cadence"
 FM_SIGNAL_GRACE=30      # seconds to coalesce nearby status and turn-end signals into one wake
 FM_WATCHER_CLEANUP_LOCK_BOUND=   # optional watcher EXIT marker-lock wait; default and validation: docs/watcher-continuity.md
+FM_WAKE_QUEUE_LOCK_WAIT=30   # seconds a short state lock (the wake queue, a recovery marker, a pending-reply record) is waited for before the caller gives up with the state untouched; zero or invalid values use 30
+FM_LEASE_COMMAND_LOCK_WAIT=60   # seconds a lease command or a guarded mutation (fm-send, fm-control, fm-teardown) waits for this home's lease-command lock before refusing with exit 6 and naming the holder; zero or invalid values use 60
+FM_WATCH_HELPER_BUDGET=120   # seconds each watcher helper (fleet-ledger capture, herdr group sync, process-event reconcile, inactive reconcile scan) may run before the watcher skips it for that cycle; zero or invalid values use 120
+FM_PENDING_REPLY_SEND_BUDGET=120   # seconds the watcher's pending-reply recovery send may run; a send stopped at the bound is reconciled as delivery unknown, never failed; zero or invalid values use 120
+FM_PENDING_REPLY_OBSERVE_BUDGET=20   # seconds the watcher's busy-or-idle read of a pending-reply target pane may run; a read that does not finish counts as unknown for that cycle
+FM_DAEMON_PROBE_BUDGET=20   # seconds one away-daemon supervisor-pane probe may run (bin/fm-supervise-daemon.sh header); zero or invalid values use 20
+FM_CONTROL_CWD_SCAN_BUDGET=20   # seconds the tmux absence proof's scan for processes working inside the task's copy may run; a scan that does not finish leaves absence unproven; zero or invalid values use 20
+FM_WATCH_LOCK_WAIT=10   # seconds the watcher waits for a PR-poll control or publish lock before deferring that work to its next sweep; zero or invalid values use 10
+FM_SEND_BACKEND_BUDGET=45   # seconds one local backend key or typed-text call fm-send makes while it may hold the lease-command lock may run; a key stopped at the bound exits 1 with its completion unknown, typed text exits 3 as delivered-unconfirmed; zero or invalid values use 45
+FM_SEND_RING_BUDGET=20   # seconds one steering-inbox doorbell ring may take before it is reported unconfirmed; zero or invalid values use 20
+FM_GUARD_BANNER_RESURFACE_SECS=1800   # seconds between full watcher-down banners while one down episode lasts (bin/fm-guard.sh); zero or invalid values use 1800
 FM_TURNEND_CHURN_ABSORB_SECS=900   # longest one endpoint's bare turn-ends may be deferred on pane-churn evidence alone; only consulted when config/turnend-churn-absorb is present
 FM_CAPTAIN_RE='done:|needs-decision:|blocked:|failed:|PR ready|checks green|ready in branch|merged'   # captain-relevant status regex; nonterminal progress verbs remain excluded even when their prose matches
 FM_CLASSIFY_PAUSED_VERB=paused     # leading declared-wait status verb; bin/fm-classify-lib.sh owns its meaning and legacy external-wait label; excluded from FM_CAPTAIN_RE and distinct from blocked

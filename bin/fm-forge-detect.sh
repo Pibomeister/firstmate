@@ -20,6 +20,8 @@
 # HTTPS remote carries neither fact, which is why the captain is asked rather
 # than told.
 # Usage: fm-forge-detect.sh <clone-dir>
+# shellcheck source=bin/fm-bash-compat-lib.sh
+. "$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; CDPATH='' cd -- "${d:-/}" && pwd)/fm-bash-compat-lib.sh"
 set -eu
 
 DIR=${1:?usage: fm-forge-detect.sh <clone-dir>}

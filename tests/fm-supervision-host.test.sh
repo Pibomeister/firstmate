@@ -10,6 +10,35 @@ command -v perl >/dev/null 2>&1 || { printf 'skip: perl absent\n'; exit 0; }
 # shellcheck source=tests/supervision-host-helpers.sh
 . "$(dirname "${BASH_SOURCE[0]}")/supervision-host-helpers.sh"
 
+# A live process holding the home-wide lease-command lock must not keep a new
+# host from starting: activation's lease release gives up within its bound,
+# leaves an init-blocked row naming the stage, and the host logs start and
+# arms a watcher, while the foreign holder is left alone.
+test_host_starts_despite_a_held_lease_command_lock() {
+  local home holder holder_pid start elapsed i
+  home=$(make_home lease-lock-held attended)
+  holder="$home/fm-fake-lease-holder.sh"
+  # shellcheck disable=SC2016 # expanded by the holder script
+  printf '%s\n' '#!/usr/bin/env bash' 'export STATE="$2"' '. "$1"' 'fm_lock_try_acquire "$2/.fm-lease-command.lock" || exit 1' 'sleep 90 >/dev/null 2>&1 &' 'trap "kill $! 2>/dev/null; exit 0" TERM' 'wait $!' > "$holder"
+  chmod +x "$holder"
+  "$holder" "$ROOT/bin/fm-wake-lib.sh" "$home/state" &
+  holder_pid=$!
+  for i in $(seq 1 50); do [ "$(cat "$home/state/.fm-lease-command.lock/pid" 2>/dev/null)" = "$holder_pid" ] && break; sleep 0.1; done
+  [ "$(cat "$home/state/.fm-lease-command.lock/pid" 2>/dev/null)" = "$holder_pid" ] || fail "fixture: the lease-command lock was not taken"
+  start=$(date +%s)
+  FM_SUPERVISION_HOST_RELEASE_BUDGET=6 start_host "$home"
+  wait_until 300 grep -q '	start	' "$home/state/.supervision-host.log" \
+    || { kill "$holder_pid" 2>/dev/null; fail "a host never logged start while a live process held the lease-command lock"$'\n'"$(cat "$home/state/.supervision-host.log" 2>/dev/null)"; }
+  elapsed=$(( $(date +%s) - start ))
+  [ "$elapsed" -le 20 ] || { kill "$holder_pid" 2>/dev/null; fail "the host took ${elapsed}s to start with a 6s release budget"; }
+  assert_re '	init-blocked	release-leases	' "$home/state/.supervision-host.log" "the blocked release stage must be named in the host log"
+  wait_until 200 watcher_live "$home" || { kill "$holder_pid" 2>/dev/null; fail "the host did not arm a watcher after starting"; }
+  kill -0 "$holder_pid" 2>/dev/null || fail "the host must leave the foreign lock holder alive"
+  [ "$(cat "$home/state/.fm-lease-command.lock/pid" 2>/dev/null)" = "$holder_pid" ] || fail "the host must leave the holder's lock untouched"
+  kill "$holder_pid" 2>/dev/null
+  pass "a host starts within its release bound beside a live lease-command lock holder and names the blocked stage"
+}
+
 test_report_surface_enforces_actor_turn_and_scope() {
   local home state out rc
   home="$TMP_ROOT/report"
@@ -1630,6 +1659,34 @@ test_outcome_after_the_return_survives_a_host_killed_at_the_turn_end() {
   pass "host: an outcome recorded after the return reaches main even when its host dies at the turn's end"
 }
 
+# An arm that is alive but never replaces its stalled watcher (here, stopped
+# outright, with its watcher) must not hold the host forever: past the stall
+# bound plus the arm's confirm window the host retires that arm, names the
+# watcher in an arm-retired row, and closes the cycle for its owner to re-arm.
+test_host_retires_an_arm_that_left_its_watcher_stalled() {
+  local home arm watcher
+  home=$(make_home arm-stall attended)
+  FM_WATCHER_STALL_BOUND=12 start_host "$home"
+  wait_until 300 watcher_live "$home" || fail "arm-stall: no watcher started"
+  # Past startup: the watcher has published its identity and beaten once.
+  wait_until 300 test -s "$home/state/.watch.lock/pid-identity" || fail "arm-stall: the watcher never published its identity"
+  wait_until 300 test -e "$home/state/.last-watcher-beat" || fail "arm-stall: the watcher never beat"
+  arm=$(awk -F '\t' '$1 == "arm" { print $2; exit }' "$home/state/.supervision-host")
+  watcher=$(cat "$home/state/.watch.lock/pid")
+  [ -n "$arm" ] && [ -n "$watcher" ] || fail "arm-stall: no recorded arm ($arm) or watcher ($watcher)"
+  kill -STOP "$arm" "$watcher"
+  if ! wait_until 900 grep -q "	arm-retired	watcher pid $watcher " "$home/state/.supervision-host.log"; then
+    kill -KILL "$arm" "$watcher" 2>/dev/null
+    fail "the host never retired an arm that left its watcher stalled past the bound"$'\n'"$(cat "$home/state/.supervision-host.log" 2>/dev/null)"
+  fi
+  wait_until 200 host_exited "$home" || { kill -KILL "$arm" "$watcher" 2>/dev/null; fail "the host did not close the cycle after retiring the arm"; }
+  kill -0 "$arm" 2>/dev/null && { kill -KILL "$arm" "$watcher" 2>/dev/null; fail "the host left the retired arm $arm running"; }
+  assert_re '	pass-through	a close without a wake' "$home/state/.supervision-host.log" "the retired arm's cycle must close without a wake for its owner to re-arm"
+  kill -KILL "$watcher" 2>/dev/null
+  stop_home_processes "$home"
+  pass "host: an arm that leaves its watcher stalled past the bound is retired and the cycle closes"
+}
+
 test_park_exit_probe_uses_half_second_child_sleeps() {
   local home host_pid
   home=$(make_home park-cadence attended)
@@ -1711,3 +1768,5 @@ test_silent_outcomes_are_not_relayed_when_the_captain_returns
 test_large_turn_relays_an_early_visible_outcome
 test_outcome_lookup_failure_is_not_treated_as_silence
 test_outcome_after_the_return_survives_a_host_killed_at_the_turn_end
+test_host_starts_despite_a_held_lease_command_lock
+test_host_retires_an_arm_that_left_its_watcher_stalled

@@ -11,6 +11,8 @@ set -u
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
+# shellcheck source=bin/fm-timeout-lib.sh
+. "$ROOT/bin/fm-timeout-lib.sh"
 TMP_ROOT=$(fm_test_tmproot fm-branch-supervision)
 fm_git_identity fmtest fmtest@example.invalid
 
@@ -700,6 +702,62 @@ test_outcome_processed_marker_is_sequence_bound() {
 }
 
 # --- lease contract -----------------------------------------------------------
+
+# A live holder of the home-wide lease-command lock must never make a lease
+# command wait forever: the waiter names the holder when it starts waiting and
+# refuses with the lease exit once the bound passes, leaving the holder's lock
+# alone. A dead holder is still reclaimed at once.
+test_lease_command_lock_wait_is_bounded_and_names_the_holder() {
+  local home lock holder_script holder_pid out rc start elapsed i
+  home="$TMP_ROOT/lease-lock-bound"
+  mkdir -p "$home/state"
+  lock="$home/state/.fm-lease-command.lock"
+  holder_script="$TMP_ROOT/fm-fake-lock-holder.sh"
+  # shellcheck disable=SC2016 # expanded by the holder script
+  printf '%s\n' '#!/usr/bin/env bash' 'STATE=$2 . "$1"' 'fm_lock_try_acquire "$3" || exit 1' 'sleep 60 >/dev/null 2>&1 &' 'trap "kill $! 2>/dev/null; exit 0" TERM' 'wait $!' > "$holder_script"
+  chmod +x "$holder_script"
+  "$holder_script" "$ROOT/bin/fm-wake-lib.sh" "$home/state" "$lock" &
+  holder_pid=$!
+  for i in $(seq 1 50); do [ "$(cat "$lock/pid" 2>/dev/null)" = "$holder_pid" ] && break; sleep 0.1; done
+  [ "$(cat "$lock/pid" 2>/dev/null)" = "$holder_pid" ] || fail "the fixture could not take the lease-command lock"
+
+  start=$(date +%s)
+  out=$(FM_HOME="$home" FM_LEASE_COMMAND_LOCK_WAIT=3 fm_run_timed 30 "$ROOT/bin/fm-lease.sh" release-actor --actor branch 2>&1)
+  rc=$?
+  elapsed=$(( $(date +%s) - start ))
+  [ "$rc" -eq 6 ] || fail "fm-lease.sh behind a live lease-command lock holder should refuse with exit 6, got $rc after ${elapsed}s: $out"
+  [ "$elapsed" -le 8 ] || fail "fm-lease.sh took ${elapsed}s to refuse with a 3s lock bound"
+  assert_contains "$out" "$holder_pid" "the refusal must name the holder pid"
+  assert_contains "$out" "fm-fake-lock-holder.sh" "the refusal must name the holder's script"
+  assert_not_contains "$out" "fm-wake-lib.sh" "the refusal must never print the holder's argument list"
+  assert_contains "$out" "waiting" "the waiter must name the holder as soon as it starts waiting"
+  if ! { [ "$(cat "$lock/pid" 2>/dev/null)" = "$holder_pid" ] && kill -0 "$holder_pid" 2>/dev/null; }; then
+    fail "a refused lease command must leave the holder and its lock untouched"
+  fi
+
+  # The same bound through the guard every mutating script takes (fm-send,
+  # fm-control, fm-teardown) in a home that runs the supervision host.
+  mkdir -p "$home/config" && : > "$home/config/supervision-host"
+  start=$(date +%s)
+  # shellcheck disable=SC2016 # expanded by the nested shell
+  out=$(fm_run_timed 30 env -u PI_CODING_AGENT FM_SUPERVISION_ACTOR=main FM_HOME="$home" STATE="$home/state" \
+    FM_LEASE_COMMAND_LOCK_WAIT=3 bash -c '. "$1"; fm_lease_guard task-x "steer (fm-send)"; echo passed' _ "$ROOT/bin/fm-lease-lib.sh" 2>&1)
+  rc=$?
+  elapsed=$(( $(date +%s) - start ))
+  [ "$rc" -eq 6 ] || fail "the lease guard behind a live lock holder should refuse with exit 6, got $rc after ${elapsed}s: $out"
+  [ "$elapsed" -le 8 ] || fail "the lease guard took ${elapsed}s to refuse with a 3s lock bound"
+  assert_contains "$out" "$holder_pid" "the guard refusal must name the holder pid"
+  assert_contains "$out" "is busy" "the guard refusal must say the lock is busy"
+  assert_contains "$out" "retry the command" "the guard refusal must tell the operator to retry"
+  kill "$holder_pid" 2>/dev/null
+  wait "$holder_pid" 2>/dev/null
+
+  # Control: a dead holder is reclaimed at once, exactly as before.
+  out=$(FM_HOME="$home" FM_LEASE_COMMAND_LOCK_WAIT=3 fm_run_timed 30 "$ROOT/bin/fm-lease.sh" sweep 2>&1)
+  rc=$?
+  [ "$rc" -eq 0 ] || fail "a dead lock holder must be reclaimed as before, got $rc: $out"
+  pass "a live lease-command lock holder is named and refused within the bound; a dead one is reclaimed"
+}
 
 test_lease_exclusivity_release_stale_and_sweep() {
   local home out status
@@ -1628,6 +1686,7 @@ test_outcome_non_jsonl_layout_fails_closed
 test_outcome_processed_marker_is_sequence_bound
 test_outcome_present_reads_without_advancing
 test_outcome_rows_carry_their_recorded_age
+test_lease_command_lock_wait_is_bounded_and_names_the_holder
 test_lease_exclusivity_release_stale_and_sweep
 test_mutating_scripts_refuse_the_other_actors_lease
 test_main_owned_actions_refuse_the_branch_actor

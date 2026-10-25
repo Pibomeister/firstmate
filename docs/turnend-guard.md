@@ -168,7 +168,8 @@ A cycle the extension never restores is loud once the beacon passes grace.
 
 Under every persistent-watcher harness a live identity-matched watcher with a fresh beacon is still required, so the pull guard keeps the same strict semantics there.
 Its banner names the true failing condition, either a missing live watcher process or a genuinely stale beacon with its real age.
-It keys the once-per-episode dedup on that condition rather than the beacon mtime.
+It keys the per-episode dedup on that condition rather than the beacon mtime, and re-prints the full banner every `FM_GUARD_BANNER_RESURFACE_SECS` while the episode lasts.
+A watcher that still beats but has skipped part of its work behind a held lock past that lock's bound is reported as WATCHER BLOCKED, naming the work and the holder (the `bin/fm-guard.sh` header owns the detail).
 
 ### Away and quiet mode daemon ownership
 
@@ -228,13 +229,13 @@ That refusal has a ceiling.
 Once the live holder's beacon is stale past `FM_WATCHER_STALL_BOUND` (default three times the grace), the re-arm takes these steps:
 
 1. It re-verifies the holder against the lock's recorded identity.
-2. It retires the holder with TERM.
+2. It stops the holder and everything the holder started: TERM, then KILL after 5 s.
 3. It starts in the holder's place.
 
 A watcher wedged mid-cycle can therefore no longer refuse every replacement indefinitely.
-`bin/fm-watch.sh`'s header owns the exact wording and the survives-TERM fallback.
+`bin/fm-watch.sh`'s header owns the exact wording and what happens to a holder still alive after that.
 Below that bound a stale beacon alone does not end an attached arm's watch of a live, identity-matched holder; a changed lock can end it sooner.
-At the bound the arm reports a typed stalled-holder failure so its owner's retry can replace the holder.
+At the bound the arm, whether it attached to the holder or started it, reports a typed stalled-holder failure so its owner's retry can replace the holder; an arm that started it stops it first.
 `fm_watcher_stall_bound` in `bin/fm-wake-lib.sh` owns the shared derivation; `bin/fm-watch-arm.sh`'s header owns the exact attached-arm close behavior.
 
 The auto-arm hook additionally exports its resolved `FM_GUARD_GRACE` when it forks `bin/fm-watch-arm.sh`.

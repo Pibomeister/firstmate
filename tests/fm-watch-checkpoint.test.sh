@@ -48,6 +48,7 @@ test_perl_timeout_fallback_honors_cleanup_bound_before_escalating() {
   mkdir -p "$home/root/bin" "$fallback_bin"
   cp "$CHECKPOINT" "$home/root/bin/fm-watch-checkpoint.sh"
   cp "$ROOT/bin/fm-supervision-engine-lib.sh" "$home/root/bin/fm-supervision-engine-lib.sh"
+  cp "$ROOT/bin/fm-bash-compat-lib.sh" "$home/root/bin/fm-bash-compat-lib.sh"
   for tool in bash dirname mktemp rm perl grep cat; do
     tool_path=$(command -v "$tool") || fail "could not locate $tool for the Perl fallback fixture"
     ln -s "$tool_path" "$fallback_bin/$tool"
@@ -238,6 +239,7 @@ make_host_home() {  # <name>
   mkdir -p "$home/root/bin"
   cp "$CHECKPOINT" "$home/root/bin/fm-watch-checkpoint.sh"
   cp "$ROOT/bin/fm-supervision-engine-lib.sh" "$home/root/bin/fm-supervision-engine-lib.sh"
+  cp "$ROOT/bin/fm-bash-compat-lib.sh" "$home/root/bin/fm-bash-compat-lib.sh"
   cat > "$home/root/bin/fm-supervision-host.sh" <<'SH'
 #!/usr/bin/env bash
 printf 'args=%s\nprimary=%s\npark=%s\nlimit=%s\n' "$*" "${FM_SUPERVISION_HOST_PRIMARY:-}" \
@@ -283,7 +285,7 @@ test_host_checkpoint_bounds_the_park_by_posture() {
   assert_contains "$(cat "$home/host-env")" 'park=1000' "the away bound must never shorten a longer checkpoint"
   # Quiet mode's record is a present captain (bin/fm-afk-contract.sh AWAY OR
   # QUIET), so the checkpoint keeps its attended bound beside it.
-  for f in fm-afk-contract.sh fm-classify-lib.sh fm-timeout-lib.sh; do cp "$ROOT/bin/$f" "$home/root/bin/$f"; done
+  for f in fm-bash-compat-lib.sh fm-afk-contract.sh fm-classify-lib.sh fm-timeout-lib.sh; do cp "$ROOT/bin/$f" "$home/root/bin/$f"; done
   rm -f "$home/state/.afk-contract"
   FM_HOME="$home" FM_AFK_MODE=quiet "$ROOT/bin/fm-afk-contract.sh" enter --words 'keep routine wakes off my main' >/dev/null 2>&1 \
     || fail "fixture: could not record quiet mode"

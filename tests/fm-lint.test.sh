@@ -2017,6 +2017,7 @@ test_sidecar_result_exit_reflects_final_status() {
   mkdir -p "$tmp/repo/bin/backends" "$tmp/repo/tests" "$tmp/repo/.github/workflows"
   cp "$LINT" "$tmp/repo/bin/fm-lint.sh"
   cp "$ROOT/bin/fm-timeout-lib.sh" "$tmp/repo/bin/fm-timeout-lib.sh"
+  cp "$ROOT/bin/fm-bash-compat-lib.sh" "$tmp/repo/bin/fm-bash-compat-lib.sh"
   cat > "$tmp/repo/bin/fm-lint-workflows.sh" <<'SH'
 #!/usr/bin/env bash
 exit 0

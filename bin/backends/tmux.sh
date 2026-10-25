@@ -83,6 +83,48 @@ fm_backend_tmux_container_ensure() {
   fi
 }
 
+# fm_backend_tmux_canonical_socket <path>: <path> with its directory resolved
+# through `pwd -P` (its parent when the directory does not exist yet), so one
+# server's socket compares equal however it was reached (/tmp vs /private/tmp).
+fm_backend_tmux_canonical_socket() {  # <socket-path>
+  local sock=$1 dir parent
+  dir=${sock%/*}
+  if parent=$(cd "$dir" 2>/dev/null && pwd -P); then
+    printf '%s/%s\n' "$parent" "${sock##*/}"
+  elif parent=$(cd "${dir%/*}" 2>/dev/null && pwd -P); then
+    printf '%s/%s/%s\n' "$parent" "${dir##*/}" "${sock##*/}"
+  else
+    printf '%s\n' "$sock"
+  fi
+}
+
+# fm_backend_tmux_addressed_socket: the socket a bare `tmux` in this process
+# resolves to - the first field of $TMUX when set, else
+# ${TMUX_TMPDIR:-/tmp}/tmux-<uid>/default (tmux's own order; -S and -L are
+# never implicit) - canonicalized.
+fm_backend_tmux_addressed_socket() {
+  if [ -n "${TMUX:-}" ]; then
+    fm_backend_tmux_canonical_socket "${TMUX%%,*}"
+  else
+    fm_backend_tmux_canonical_socket "${TMUX_TMPDIR:-/tmp}/tmux-$(id -u)/default"
+  fi
+}
+
+# fm_backend_tmux_server_identity: "<socket>\t<server-pid>\t<server-identity>"
+# for the server this process addresses, as the server itself reports its
+# socket; fails when no server answers or the answer is not a server's.
+fm_backend_tmux_server_identity() {
+  local out sock pid identity
+  out=$(tmux display-message -p '#{socket_path}	#{pid}' 2>/dev/null) || return 1
+  sock=${out%%	*}
+  pid=${out#*	}
+  case "$sock" in /*) ;; *) return 1 ;; esac
+  case "$pid" in '' | *[!0-9]*) return 1 ;; esac
+  identity=$(fm_pid_identity "$pid" 2>/dev/null) || return 1
+  [ -n "$identity" ] || return 1
+  printf '%s\t%s\t%s\n' "$(fm_backend_tmux_canonical_socket "$sock")" "$pid" "$(printf '%s' "$identity" | tr '\t\n' '  ')"
+}
+
 # fm_backend_tmux_create_task: create the task's window in <proj-abs>,
 # refusing an existing <window-name> in <session>. Mirrors fm-spawn.sh's
 # duplicate-check-then-new-window sequence, including the exact error text

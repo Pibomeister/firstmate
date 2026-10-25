@@ -32,7 +32,8 @@
 #
 # The default actor is $FM_SUPERVISION_ACTOR (else main); when --actor is
 # supplied for a mutation, it must name that calling actor. Exit codes: 0 ok,
-# 1 check-miss, 2 usage, 6 refused (other actor holds or actor mismatch).
+# 1 check-miss, 2 usage, 6 refused (other actor holds, actor mismatch, or the
+# lease-command lock stayed held past FM_LEASE_COMMAND_LOCK_WAIT; see fm-lease-lib.sh).
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -46,7 +47,7 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 
 mkdir -p "$STATE"
 LEASE_COMMAND_LOCK="$STATE/.fm-lease-command.lock"
-fm_lock_acquire_wait "$LEASE_COMMAND_LOCK"
+fm_lease_command_lock_acquire "$LEASE_COMMAND_LOCK" "lease command (fm-lease)"
 trap 'fm_lock_release "$LEASE_COMMAND_LOCK"' EXIT
 
 usage() {

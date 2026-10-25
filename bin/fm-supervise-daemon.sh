@@ -155,11 +155,17 @@
 #                                   (default 0.5)
 #          FM_LOG_MAX_BYTES / FM_LOG_KEEP_LINES / FM_CRASH_*  log + crash guards
 #          FM_STATE_OVERRIDE        alternate state dir (testing)
+#          FM_DAEMON_PROBE_BUDGET   seconds one supervisor-pane probe may take
+#                                   (default 20); a pane server that does not
+#                                   answer fails startup, and in the loop the
+#                                   tick goes on to its watcher check
 #          Logs each wake to state/.supervise-daemon.log (size-capped). Single
 #          instance via portable lock on state/.supervise-daemon.lock. Trapped
 #          SIGTERM/SIGINT shut down within ~1s, flush escalations, release the
 #          lock. A crashing fm-watch.sh is logged and restarted, never killing
 #          the daemon; a tight crash-restart spin is detected and backed off.
+#          A live watcher that fm_watcher_stalled (bin/fm-wake-lib.sh) reports
+#          stalled is stopped with everything it started, then restarted.
 set -u
 
 FM_DAEMON_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -249,6 +255,10 @@ LOG_KEEP_LINES_DEFAULT=2000
 # away-supervisor construction. The away-exit predicate intentionally retains
 # its landed leading-U+2063 compatibility behavior.
 AFK_FLAG_NAME=".afk"
+# Bound for one supervisor-pane probe; a pane server that stops answering is
+# treated like a missing pane at startup and skipped for the tick afterwards.
+DAEMON_PROBE_BUDGET=${FM_DAEMON_PROBE_BUDGET:-}
+case "$DAEMON_PROBE_BUDGET" in ''|*[!0-9]*|0) DAEMON_PROBE_BUDGET=20 ;; esac
 
 # Resolve the effective state dir. FM_STATE_OVERRIDE wins (testing); otherwise
 # $FM_HOME/state. Kept as a function so the pure
@@ -1913,8 +1923,8 @@ fm_super_main() {
   # --- validate supervisor target at startup (a missing target is a typo) ---
   # Dispatch through bin/fm-backend.sh so each supervisor pane is checked by
   # its backend.
-  if ! fm_backend_target_exists "$BACKEND" "$TARGET"; then
-    echo "error: supervisor target '$TARGET' does not resolve to a $BACKEND pane; set FM_SUPERVISOR_TARGET" >&2
+  if ! fm_run_timed_fn "$DAEMON_PROBE_BUDGET" fm_backend_target_exists "$BACKEND" "$TARGET"; then
+    echo "error: supervisor target '$TARGET' does not resolve to a $BACKEND pane within ${DAEMON_PROBE_BUDGET}s; set FM_SUPERVISOR_TARGET" >&2
     log "startup failed: target '$TARGET' not found (backend=$BACKEND)"
     fm_lock_release "$LOCK" 2>/dev/null || true
     rm -f "$PIDFILE" 2>/dev/null || true
@@ -1933,7 +1943,7 @@ fm_super_main() {
     wedge_alarm_stop_active_notifier
     escalate_flush "$STATE" 2>/dev/null || true
     if [ -n "${WATCHER_PID:-}" ]; then
-      kill "$WATCHER_PID" 2>/dev/null || true
+      fm_watcher_stop_tree "$WATCHER_PID" "" 5 || true
       wait "$WATCHER_PID" 2>/dev/null || true
     fi
     if [ -n "${CUR_TMP:-}" ]; then
@@ -1981,7 +1991,11 @@ fm_super_main() {
     # has nowhere to go, and firstmate itself is the consumer of escalations.
     # Catch-up signals persist in state/*.status and flow on the next run, so
     # this delays rather than loses work.
-    if ! fm_backend_target_exists "$BACKEND" "$TARGET"; then
+    fm_run_timed_fn "$DAEMON_PROBE_BUDGET" fm_backend_target_exists "$BACKEND" "$TARGET"
+    probe_rc=$?
+    if fm_timed_out "$probe_rc"; then
+      log "warn: supervisor target '$TARGET' did not answer within ${DAEMON_PROBE_BUDGET}s; checking the watcher anyway"
+    elif [ "$probe_rc" -ne 0 ]; then
       log "warn: supervisor target '$TARGET' gone; backing off ${INJECT_FAIL_SLEEP}s, will retry"
       # Flush is pointless with no pane; preserve any buffered escalations.
       sleep "$INJECT_FAIL_SLEEP"
@@ -1993,6 +2007,7 @@ fm_super_main() {
       if [ -n "${WATCHER_PID:-}" ]; then
         # child exited: reap + classify its wake reason
         if wait "${WATCHER_PID}"; then rc=0; else rc=$?; fi
+        WATCHER_PID=""
         reason=""
         if [ -n "${CUR_TMP:-}" ] && [ -e "${CUR_TMP:-}" ]; then
           reason=$(<"${CUR_TMP}")
@@ -2025,6 +2040,17 @@ fm_super_main() {
         trim_log
       fi
       start_watcher || continue
+    fi
+
+    # --- a watcher alive but not beating is replaced like a crash -----------
+    # Its exit above is the only other restart path, and a watcher wedged in a
+    # blocking call never exits; the beacon at or past the stall bound while it
+    # still holds this home's lock is the same proof the arm acts on.
+    if [ -n "${WATCHER_PID:-}" ] && kill -0 "$WATCHER_PID" 2>/dev/null \
+      && fm_watcher_stalled "$STATE" "$WATCH" "$WATCHER_PID" "$FM_HOME" 0 own; then
+      log "watcher pid $WATCHER_PID stalled (beacon ${FM_WATCHER_STALL_AGE}s at or past hard bound $(fm_watcher_stall_bound)s); stopping it and everything it started, then restarting"
+      fm_watcher_stop_tree "$WATCHER_PID" "" 5 || true
+      continue
     fi
 
     # --- one housekeeping tick (gated to HOUSEKEEPING_TICK), then poll -------

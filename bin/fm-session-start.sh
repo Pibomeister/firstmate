@@ -26,6 +26,10 @@
 # ORDERING, and why LOCK now runs before BOOTSTRAP (the old AGENTS.md order
 # was bootstrap-then-lock):
 #
+#   0. bash check    - one warning when this bash, or the bash PATH selects,
+#                       has the Darwin here-document hang; it runs before the
+#                       lock and bootstrap skips its own copy
+#                       (bin/fm-bash-compat-lib.sh owns the check).
 #   1. lock          - acquire the per-home session lock FIRST, before any
 #                       mutating step runs.
 #   1b. home role    - the resolved firstmate-repository role line
@@ -687,6 +691,10 @@ if [ "$REEMIT" -eq 1 ]; then
 else
   section "SESSION START - $FM_HOME"
 fi
+# Before any lock or role work, and once: bootstrap below skips its copy of
+# this check (bin/fm-bash-compat-lib.sh owns it).
+fm_bash_heredoc_startup_warnings
+export FM_BASH_HEREDOC_WARNED=1
 # --- 1. lock -----------------------------------------------------------
 stage lock
 subsection "LOCK"
