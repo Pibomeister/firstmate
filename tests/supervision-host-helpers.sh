@@ -178,11 +178,15 @@ stop_home_processes() {  # <home>
     kill -TERM "$pid" 2>/dev/null || true
   done < <(cat "$home/orphan-pid" 2>/dev/null)
 }
-suite_cleanup() {
+stop_registered_homes() {
   local home
   while IFS= read -r home; do
     [ -n "$home" ] && stop_home_processes "$home"
   done < <(cat "$HOMES_FILE" 2>/dev/null)
+  : > "$HOMES_FILE"
+}
+suite_cleanup() {
+  stop_registered_homes
   fm_test_cleanup
 }
 trap suite_cleanup EXIT

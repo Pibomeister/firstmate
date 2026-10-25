@@ -10,6 +10,26 @@ command -v perl >/dev/null 2>&1 || { printf 'skip: perl absent\n'; exit 0; }
 # shellcheck source=tests/supervision-host-helpers.sh
 . "$(dirname "${BASH_SOURCE[0]}")/supervision-host-helpers.sh"
 
+test_completed_case_stops_its_registered_processes() {
+  local home pids pid
+  home=$(make_home case-lifetime attended)
+  start_session "$home"
+  park_again "$home"
+  pids=$(awk -F '\t' '$1 == "host" || $1 == "arm" { print $2 }' "$home/state/.supervision-host")
+  pids="$pids $(cat "$home/state/.watch.lock/pid") $(cat "$home/claude-pids")"
+  for pid in $pids; do
+    kill -0 "$pid" 2>/dev/null || fail "fixture: process $pid was not running before cleanup"
+  done
+  stop_registered_homes
+  for pid in $pids; do
+    wait_until 100 sh -c '! kill -0 "$1" 2>/dev/null' _ "$pid" \
+      || fail "a completed case retained fixture process $pid"
+  done
+  [ ! -s "$HOMES_FILE" ] || fail "the completed case left homes registered for later cases"
+  [ -d "$home/state" ] || fail "case cleanup removed fixture evidence"
+  pass "case cleanup stops its host, arm, watcher, and primary while retaining fixture evidence"
+}
+
 # A live process holding the home-wide lease-command lock must not keep a new
 # host from starting: activation's lease release gives up within its bound,
 # leaves an init-blocked row naming the stage, and the host logs start and
@@ -1713,60 +1733,67 @@ SH
   pass "host: parked child-exit sampling uses ordinary half-second sleeps"
 }
 
-test_claude_stop_hook_restores_handoff_when_successor_closed_before_exit_to_main
-test_claude_stop_hook_restores_handoff_when_successor_closed_mid_engine_turn
-test_claude_stop_hook_notifies_when_closed_successor_downtime_restore_fails
-test_claude_stop_hook_notifies_when_closed_announced_successor_downtime_restore_fails
-test_park_exit_probe_uses_half_second_child_sleeps
-test_report_surface_enforces_actor_turn_and_scope
-test_report_after_the_return_is_queued_for_main
-test_dispatch_entry_scopes_rows_and_renders_the_away_tail
-test_branch_outcomes_only_on_a_host_home_off_pi
-test_branch_outcomes_put_captain_first_and_collapse_routine_overflow
-test_branch_outcomes_collapse_repeated_captain_outcomes_per_task
-test_branch_outcomes_present_a_long_away_window_once
-test_branch_outcomes_budgets_count_bytes
-test_branch_outcomes_stay_unread_when_a_projection_fails
-test_branch_outcomes_stay_unread_without_jq
-test_branch_outcomes_stay_unread_when_the_drain_cannot_print
-test_branch_outcomes_date_a_legacy_backlog_without_adopting_it
-test_branch_ack_keeps_older_keyed_decision_open
-test_branch_outcomes_date_an_outcome_carried_across_a_switch_off_pi
-test_branch_outcomes_keep_an_unshown_outcome_until_acknowledged
-test_branch_outcomes_keep_a_drain_presented_outcome_across_a_switch_to_pi
-test_branch_outcomes_keep_a_drain_presented_outcome_across_an_index_repair
-test_attended_routine_wake_is_handled_on_the_engine_and_stays_off_main
-test_attended_captain_outcome_reaches_main_through_branch_outcomes
-test_captain_leaving_mid_turn_keeps_its_captain_outcome_for_the_return
-test_quiet_record_without_its_daemon_is_a_present_captain
-test_attended_main_only_close_passes_straight_to_main
-test_off_written_while_parked_passes_the_next_attended_close_to_main
-test_main_only_pass_through_leaves_the_successor_watcher_running
-test_attended_close_with_unidentified_main_session_passes_to_main
-test_close_accepted_away_that_turns_attended_passes_to_main
-test_attended_close_that_turns_main_only_before_its_turn_passes_to_main
-test_claude_stop_hook_delivers_a_main_only_pass_through
-test_claude_stop_hook_rewakes_a_present_captain_beside_a_quiet_record
-test_claude_stop_hook_runs_the_host_without_the_file_and_off_opts_out
-test_claude_stop_hook_delivers_a_close_that_turns_main_only_at_its_turn
-test_successor_left_at_the_turn_survives_the_hook_process_group_teardown
-test_claude_stop_hook_notifies_when_at_turn_downtime_write_fails
-test_successor_close_during_main_turn_is_delivered_at_the_next_turn_end
-test_pass_through_successor_survives_the_hook_process_group_teardown
-test_next_park_takes_over_the_cycle_a_pass_through_left_for_main
-test_a_park_stopped_mid_take_over_leaves_the_take_over_to_the_next_park
-test_unrecorded_successor_is_stopped_rather_than_left_for_main
-test_primary_without_a_verified_mirror_runs_away_only
-test_attended_wake_carries_the_dialog_mirror
-test_dialog_bearing_files_are_owner_only
-test_undelivered_dialog_is_fed_again_on_the_next_turn
-test_attended_wake_with_an_unreadable_mirror_reaches_main
-test_away_wake_is_handled_on_the_engine_and_never_reaches_main
-test_away_turn_without_a_report_hands_the_wake_to_main
-test_return_during_an_engine_turn_hands_its_outcomes_to_main
-test_silent_outcomes_are_not_relayed_when_the_captain_returns
-test_large_turn_relays_an_early_visible_outcome
-test_outcome_lookup_failure_is_not_treated_as_silence
-test_outcome_after_the_return_survives_a_host_killed_at_the_turn_end
-test_host_starts_despite_a_held_lease_command_lock
-test_host_retires_an_arm_that_left_its_watcher_stalled
+# A completed case must not leave polling fixtures competing with later cases.
+for host_test in \
+  test_completed_case_stops_its_registered_processes \
+  test_claude_stop_hook_restores_handoff_when_successor_closed_before_exit_to_main \
+  test_claude_stop_hook_restores_handoff_when_successor_closed_mid_engine_turn \
+  test_claude_stop_hook_notifies_when_closed_successor_downtime_restore_fails \
+  test_claude_stop_hook_notifies_when_closed_announced_successor_downtime_restore_fails \
+  test_park_exit_probe_uses_half_second_child_sleeps \
+  test_report_surface_enforces_actor_turn_and_scope \
+  test_report_after_the_return_is_queued_for_main \
+  test_dispatch_entry_scopes_rows_and_renders_the_away_tail \
+  test_branch_outcomes_only_on_a_host_home_off_pi \
+  test_branch_outcomes_put_captain_first_and_collapse_routine_overflow \
+  test_branch_outcomes_collapse_repeated_captain_outcomes_per_task \
+  test_branch_outcomes_present_a_long_away_window_once \
+  test_branch_outcomes_budgets_count_bytes \
+  test_branch_outcomes_stay_unread_when_a_projection_fails \
+  test_branch_outcomes_stay_unread_without_jq \
+  test_branch_outcomes_stay_unread_when_the_drain_cannot_print \
+  test_branch_outcomes_date_a_legacy_backlog_without_adopting_it \
+  test_branch_ack_keeps_older_keyed_decision_open \
+  test_branch_outcomes_date_an_outcome_carried_across_a_switch_off_pi \
+  test_branch_outcomes_keep_an_unshown_outcome_until_acknowledged \
+  test_branch_outcomes_keep_a_drain_presented_outcome_across_a_switch_to_pi \
+  test_branch_outcomes_keep_a_drain_presented_outcome_across_an_index_repair \
+  test_attended_routine_wake_is_handled_on_the_engine_and_stays_off_main \
+  test_attended_captain_outcome_reaches_main_through_branch_outcomes \
+  test_captain_leaving_mid_turn_keeps_its_captain_outcome_for_the_return \
+  test_quiet_record_without_its_daemon_is_a_present_captain \
+  test_attended_main_only_close_passes_straight_to_main \
+  test_off_written_while_parked_passes_the_next_attended_close_to_main \
+  test_main_only_pass_through_leaves_the_successor_watcher_running \
+  test_attended_close_with_unidentified_main_session_passes_to_main \
+  test_close_accepted_away_that_turns_attended_passes_to_main \
+  test_attended_close_that_turns_main_only_before_its_turn_passes_to_main \
+  test_claude_stop_hook_delivers_a_main_only_pass_through \
+  test_claude_stop_hook_rewakes_a_present_captain_beside_a_quiet_record \
+  test_claude_stop_hook_runs_the_host_without_the_file_and_off_opts_out \
+  test_claude_stop_hook_delivers_a_close_that_turns_main_only_at_its_turn \
+  test_successor_left_at_the_turn_survives_the_hook_process_group_teardown \
+  test_claude_stop_hook_notifies_when_at_turn_downtime_write_fails \
+  test_successor_close_during_main_turn_is_delivered_at_the_next_turn_end \
+  test_pass_through_successor_survives_the_hook_process_group_teardown \
+  test_next_park_takes_over_the_cycle_a_pass_through_left_for_main \
+  test_a_park_stopped_mid_take_over_leaves_the_take_over_to_the_next_park \
+  test_unrecorded_successor_is_stopped_rather_than_left_for_main \
+  test_primary_without_a_verified_mirror_runs_away_only \
+  test_attended_wake_carries_the_dialog_mirror \
+  test_dialog_bearing_files_are_owner_only \
+  test_undelivered_dialog_is_fed_again_on_the_next_turn \
+  test_attended_wake_with_an_unreadable_mirror_reaches_main \
+  test_away_wake_is_handled_on_the_engine_and_never_reaches_main \
+  test_away_turn_without_a_report_hands_the_wake_to_main \
+  test_return_during_an_engine_turn_hands_its_outcomes_to_main \
+  test_silent_outcomes_are_not_relayed_when_the_captain_returns \
+  test_large_turn_relays_an_early_visible_outcome \
+  test_outcome_lookup_failure_is_not_treated_as_silence \
+  test_outcome_after_the_return_survives_a_host_killed_at_the_turn_end \
+  test_host_starts_despite_a_held_lease_command_lock \
+  test_host_retires_an_arm_that_left_its_watcher_stalled
+do
+  "$host_test"
+  stop_registered_homes
+done
