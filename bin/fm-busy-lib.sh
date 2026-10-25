@@ -456,10 +456,19 @@ function metadataWorkspace(file) {
     descriptor = fs.openSync(file, "r");
     const buffer = Buffer.alloc(65536);
     const length = fs.readSync(descriptor, buffer, 0, buffer.length, 0);
-    const newline = buffer.indexOf(10, 0);
-    if (newline < 0 || newline >= length) return null;
-    const record = JSON.parse(buffer.subarray(0, newline).toString("utf8"));
-    return record?.payload?.record?.workspace_root ?? null;
+    const text = buffer.subarray(0, length).toString("utf8");
+    for (const line of text.split("\n")) {
+      if (!line) continue;
+      let record;
+      try {
+        record = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      const workspace = record?.payload?.record?.workspace_root;
+      if (typeof workspace === "string" && workspace) return workspace;
+    }
+    return null;
   } catch {
     return null;
   } finally {
@@ -533,51 +542,30 @@ fm_busy_muse_main_log_path_valid() {  # <sessions-root> <session-log>
     && [ "$leaf" = session.jsonl ]
 }
 
-fm_busy_muse_namespace_day() {  # <sessions-root>
-  printf '%s/%s' "${1%/}" "$(date '+%Y/%m/%d')"
-}
-
-fm_busy_muse_namespace_signature() {  # <day-directory>
-  local first first_signature manifest='' path paths signature
-  if [ ! -d "$1" ]; then
-    printf '%s' missing
-    return 0
-  fi
-  paths=$(find "$1" -mindepth 2 -maxdepth 2 -type f -name session.jsonl -print 2>/dev/null) \
-    || return 1
+fm_busy_muse_namespace_signature() {  # <sessions-root> <workspace-root>
+  local paths signature
+  paths=$(fm_busy_muse_matching_logs "$1" "$2") || return 1
   paths=$(printf '%s\n' "$paths" | LC_ALL=C sort) || return 1
-  while IFS= read -r path; do
-    [ -n "$path" ] || continue
-    first=$(sed -n '1p' "$path") || return 1
-    first_signature=$(printf '%s' "$first" | cksum | awk '{ print $1 ":" $2 }') || return 1
-    manifest="${manifest}${path}:${first_signature}
-"
-  done <<EOF
-$paths
-EOF
-  signature=$(printf '%s' "$manifest" | cksum | awk '{ print $1 ":" $2 }') || return 1
+  signature=$(printf '%s' "$paths" | cksum | awk '{ print $1 ":" $2 }') || return 1
   [ -n "$signature" ] || return 1
   printf '%s' "$signature"
 }
 
-fm_busy_muse_cached_session_log() {  # <state-dir> <id> <root> <binding-id>
-  local cache_binding log cache_day cache_signature day signature
-  [ -n "$4" ] || return 1
+fm_busy_muse_cached_session_log() {  # <state-dir> <id> <root> <workspace-root> <binding-id>
+  local cache_binding log cache_signature signature
+  [ -n "$5" ] || return 1
   cache_binding=$(fm_busy_muse_cache_field "$1" "$2" binding_id) || return 1
-  [ "$cache_binding" = "$4" ] || return 1
+  [ "$cache_binding" = "$5" ] || return 1
   log=$(fm_busy_muse_cache_field "$1" "$2" session_log) || return 1
   fm_busy_muse_main_log_path_valid "$3" "$log" || return 1
   fm_busy_muse_binding_has_prior_log "$1" "$2" "$log" && return 1
-  cache_day=$(fm_busy_muse_cache_field "$1" "$2" namespace_day) || return 1
   cache_signature=$(fm_busy_muse_cache_field "$1" "$2" namespace_signature) || return 1
-  day=$(fm_busy_muse_namespace_day "$3") || return 1
-  [ "$cache_day" = "$day" ] || return 1
-  signature=$(fm_busy_muse_namespace_signature "$day") || return 1
+  signature=$(fm_busy_muse_namespace_signature "$3" "$4") || return 1
   [ "$cache_signature" = "$signature" ] || return 1
   printf '%s' "$log"
 }
 
-fm_busy_muse_cache_session_log() {  # <state-dir> <id> <binding-id> <session-log> <namespace-day> <namespace-signature>
+fm_busy_muse_cache_session_log() {  # <state-dir> <id> <binding-id> <session-log> <namespace-signature>
   local cache tmp current
   [ -n "$3" ] || return 0
   current=$(fm_busy_muse_binding_field "$1" "$2" binding_id) || return 1
@@ -587,8 +575,7 @@ fm_busy_muse_cache_session_log() {  # <state-dir> <id> <binding-id> <session-log
   {
     printf 'binding_id=%s\n' "$3"
     printf 'session_log=%s\n' "$4"
-    printf 'namespace_day=%s\n' "$5"
-    printf 'namespace_signature=%s\n' "$6"
+    printf 'namespace_signature=%s\n' "$5"
   } > "$tmp" || { rm -f "$tmp"; return 1; }
   mv -f -- "$tmp" "$cache"
 }
@@ -597,17 +584,16 @@ fm_busy_muse_cache_session_log() {  # <state-dir> <id> <binding-id> <session-log
 # exist when fm-spawn created this pane's binding. Multiple candidates are
 # ambiguous and fail closed rather than guessing which pane owns either log.
 fm_busy_muse_session_log() {  # <state-dir> <id>
-  local root ws binding_id='' candidate selected='' cache namespace_day namespace_before namespace_after
+  local root ws binding_id='' candidate selected='' cache namespace_before namespace_after
   root=$(fm_busy_muse_binding_field "$1" "$2" sessions_root) || return 1
   ws=$(fm_busy_muse_binding_field "$1" "$2" workspace_root) || return 1
   binding_id=$(fm_busy_muse_binding_field "$1" "$2" binding_id 2>/dev/null || true)
-  if cache=$(fm_busy_muse_cached_session_log "$1" "$2" "$root" "$binding_id"); then
+  if cache=$(fm_busy_muse_cached_session_log "$1" "$2" "$root" "$ws" "$binding_id"); then
     printf '%s' "$cache"
     return 0
   fi
   rm -f "$(fm_busy_muse_cache_path "$1" "$2")"
-  namespace_day=$(fm_busy_muse_namespace_day "$root") || return 1
-  namespace_before=$(fm_busy_muse_namespace_signature "$namespace_day") || return 1
+  namespace_before=$(fm_busy_muse_namespace_signature "$root" "$ws") || return 1
   while IFS= read -r candidate; do
     [ -n "$candidate" ] || continue
     fm_busy_muse_binding_has_prior_log "$1" "$2" "$candidate" && continue
@@ -617,10 +603,10 @@ fm_busy_muse_session_log() {  # <state-dir> <id>
 $(fm_busy_muse_matching_logs "$root" "$ws")
 EOF
   [ -n "$selected" ] || return 1
-  namespace_after=$(fm_busy_muse_namespace_signature "$namespace_day") || return 1
+  namespace_after=$(fm_busy_muse_namespace_signature "$root" "$ws") || return 1
   [ "$namespace_before" = "$namespace_after" ] || return 1
   fm_busy_muse_cache_session_log "$1" "$2" "$binding_id" "$selected" \
-    "$namespace_day" "$namespace_after" || return 1
+    "$namespace_after" || return 1
   printf '%s' "$selected"
 }
 
