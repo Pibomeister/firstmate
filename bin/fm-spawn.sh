@@ -70,8 +70,8 @@
 #   positional, and batch pairs are all refused alongside it; only harness,
 #   model, and effort may change, which is what makes a harness switch one
 #   ordinary relaunch. It refuses unless the recorded endpoint is positively
-#   agent-free on a backend with a recovery-grade agent-state classifier (tmux
-#   or herdr), and clears the previous harness's per-task wiring before arming
+#   agent-free on a backend with a recovery-grade agent-state classifier (tmux,
+#   herdr, or orca), and clears the previous harness's per-task wiring before arming
 #   the new incarnation. Two verdicts are agent-free: a `dead` endpoint is
 #   ADOPTED as-is, while an endpoint PROVEN gone is RE-CREATED in the recorded
 #   worktree and the republished record rebinds the task to it. That proof is
@@ -81,6 +81,9 @@
 #   only from the server identity a tmux spawn records (socket, server pid and
 #   identity, window id), so an older tmux record refuses: no read here can tell
 #   a destroyed window from one on a tmux server this process cannot address.
+#   ORCA proves it by still describing the recorded terminal as closed with no
+#   agent left working in the recorded worktree (a rebound Orca terminal is
+#   created inside the task's recorded Orca worktree).
 #   A tmux rebind re-creates the window on the recorded socket and refuses when
 #   this process addresses another tmux server. An endpoint that turns out
 #   to have survived refuses too. The worktree is reused untouched either way; a
@@ -379,8 +382,8 @@
 #   without the source below prints a stderr warning and launches unchanged.
 # Orca environment source (config/launch-env-tmux-session):
 #   Optional local file containing one exact tmux session name (letters, digits,
-#   underscores or hyphens). Only fresh Orca spawns use it; other backends are
-#   unchanged. It requires config/launch-env-allowlist and refuses without one,
+#   underscores or hyphens). Fresh Orca spawns and Orca relaunches use it;
+#   other backends are unchanged. It requires config/launch-env-allowlist and refuses without one,
 #   so tmux's automatic update-environment names (SSH_AUTH_SOCK) never ride
 #   along. Before allocation, each allowlisted name is read from that session's
 #   local environment (tmux -u show-environment -t =<session> <name>), never
@@ -1409,6 +1412,7 @@ spawn_remote_secondmate() {
 
 BACKEND=
 ORCA_ABORT_CLEANUP=0
+ORCA_REBIND_ABORT_CLOSE=0
 ORCA_WORKTREE_ID=
 ORCA_CREATED_BRANCH=
 ORCA_TERMINAL=
@@ -1532,6 +1536,12 @@ spawn_abort_cleanup() {
   if [ "$HERDR_PRESENTATION_ORDER_LOCK_HELD" = 1 ]; then
     HERDR_PRESENTATION_ORDER_LOCK_HELD=0
     fm_lock_release "$HERDR_PRESENTATION_ORDER_LOCK" || true
+  fi
+  if [ "$ORCA_REBIND_ABORT_CLOSE" = 1 ]; then
+    ORCA_REBIND_ABORT_CLOSE=0
+    if [ -n "${ORCA_TERMINAL:-}" ]; then
+      fm_backend_kill orca "$ORCA_TERMINAL" 2>/dev/null && SPAWN_ENDPOINT_CLOSED=1 || true
+    fi
   fi
   if [ "$ORCA_ABORT_CLEANUP" = 1 ]; then
     ORCA_ABORT_CLEANUP=0
@@ -2023,6 +2033,35 @@ fi
 # recorded in meta only when it is NOT tmux (fm-teardown.sh and fm-watch.sh's
 # window_backend/fm_backend_of_meta already treat an absent backend= as tmux),
 # so the default path's meta stays byte-identical.
+# resolve_orca_launch_env_source: resolve config/launch-env-tmux-session (see
+# the header) into ORCA_LAUNCH_ENV_ENABLED and ORCA_LAUNCH_ENV_ARGS before any
+# Orca terminal is created. A fresh spawn and a relaunch both call it, so a
+# replacement worker takes its allowlisted values from the same scoped source.
+resolve_orca_launch_env_source() {
+  ORCA_LAUNCH_ENV_ENABLED=$(fm_config_source_present "$CONFIG/launch-env-tmux-session") || exit 1
+  if [ "$ORCA_LAUNCH_ENV_ENABLED" = 1 ]; then
+    if [ "$LAUNCH_ENV_ENABLED" != 1 ]; then
+      echo "error: config/launch-env-tmux-session requires config/launch-env-allowlist; refusing Orca launch" >&2
+      exit 1
+    fi
+    if [ ! -f "$CONFIG/launch-env-tmux-session" ] || [ ! -r "$CONFIG/launch-env-tmux-session" ]; then
+      echo "error: config/launch-env-tmux-session must be a readable regular file" >&2
+      exit 1
+    fi
+    ORCA_LAUNCH_ENV_SESSION=$(cat "$CONFIG/launch-env-tmux-session") || exit 1
+    case "$ORCA_LAUNCH_ENV_SESSION" in
+      ''|*[!A-Za-z0-9_-]*)
+        echo "error: config/launch-env-tmux-session must contain one session name (letters, digits, underscores or hyphens)" >&2
+        exit 1
+        ;;
+    esac
+    ORCA_LAUNCH_ENV_ARGS=$(fm_backend_orca_launch_env_args \
+      "$ORCA_LAUNCH_ENV_SESSION" "$LAUNCH_ENV_NAMES") || exit 1
+  elif [ -n "$LAUNCH_ENV_NAMES" ]; then
+    echo "warning: backend=orca resolves config/launch-env-allowlist names from the Orca terminal's own environment, not this home's; set config/launch-env-tmux-session to take them from a scoped tmux session" >&2
+  fi
+}
+
 if [ "$RELAUNCH" -eq 0 ]; then
   if [ "$BACKEND_SET" -eq 1 ]; then
     BACKEND=$BACKEND_ARG
@@ -2045,28 +2084,7 @@ if [ "$RELAUNCH" -eq 0 ]; then
   fi
   if [ "$BACKEND" = orca ]; then
     fm_backend_orca_runtime_check || exit 1
-    ORCA_LAUNCH_ENV_ENABLED=$(fm_config_source_present "$CONFIG/launch-env-tmux-session") || exit 1
-    if [ "$ORCA_LAUNCH_ENV_ENABLED" = 1 ]; then
-      if [ "$LAUNCH_ENV_ENABLED" != 1 ]; then
-        echo "error: config/launch-env-tmux-session requires config/launch-env-allowlist; refusing Orca launch" >&2
-        exit 1
-      fi
-      if [ ! -f "$CONFIG/launch-env-tmux-session" ] || [ ! -r "$CONFIG/launch-env-tmux-session" ]; then
-        echo "error: config/launch-env-tmux-session must be a readable regular file" >&2
-        exit 1
-      fi
-      ORCA_LAUNCH_ENV_SESSION=$(cat "$CONFIG/launch-env-tmux-session") || exit 1
-      case "$ORCA_LAUNCH_ENV_SESSION" in
-        ''|*[!A-Za-z0-9_-]*)
-          echo "error: config/launch-env-tmux-session must contain one session name (letters, digits, underscores or hyphens)" >&2
-          exit 1
-          ;;
-      esac
-      ORCA_LAUNCH_ENV_ARGS=$(fm_backend_orca_launch_env_args \
-        "$ORCA_LAUNCH_ENV_SESSION" "$LAUNCH_ENV_NAMES") || exit 1
-    elif [ -n "$LAUNCH_ENV_NAMES" ]; then
-      echo "warning: backend=orca resolves config/launch-env-allowlist names from the Orca terminal's own environment, not this home's; set config/launch-env-tmux-session to take them from a scoped tmux session" >&2
-    fi
+    resolve_orca_launch_env_source
   fi
 fi
 SPAWN_TASK_LOCK="$STATE/.spawn-$ID.lock"
@@ -2117,7 +2135,9 @@ if [ "$RELAUNCH" -eq 1 ]; then
   fm_backend_source "$BACKEND" || exit 1
   # A relaunch must prove the previous agent is gone before it launches
   # another into the same endpoint. Orca Droid has a generation-bound
-  # SessionEnd hook; other Orca harnesses retain the generic refusal.
+  # SessionEnd hook; every other case goes through the control plane's
+  # recovery-grade classifier (bin/fm-control-lib.sh owns that capability
+  # table and the fm_control_agent_state read below).
   RELAUNCH_PRIOR_HARNESS=$(fm_meta_get "$RELAUNCH_META" harness)
   if [ "$BACKEND" = orca ] && [ "$RELAUNCH_PRIOR_HARNESS" = droid ]; then
     fm_control_droid_session_ended "$STATE" "$ID" "$RELAUNCH_META" || {
@@ -2143,7 +2163,7 @@ if [ "$RELAUNCH" -eq 1 ]; then
         exit 1
       fi
     fi
-    RELAUNCH_STATE=$(fm_backend_agent_state "$BACKEND" "$RELAUNCH_TARGET")
+    RELAUNCH_STATE=$(fm_control_agent_state "$BACKEND" "$RELAUNCH_TARGET")
   fi
   # Two states are agent-free, and both license a relaunch:
   #   dead    - the endpoint exists and confidently holds no agent. The
@@ -2168,13 +2188,22 @@ if [ "$RELAUNCH" -eq 1 ]; then
   #           gone or replaced, or the window id gone from it, and no process
   #           holding the copy as its working directory. A record without
   #           those fields still refuses, with the reason stated.
+  #   orca  - Orca still describes a closed terminal and records why it exited,
+  #           so a closed terminal is told apart from an unreachable one; the
+  #           proof then requires Orca's process sweep to have dropped the
+  #           session and no agent to be working in the recorded worktree.
   # Every transient or self-contradicting read stays `unreadable`/`ambiguous`
   # and refuses as it always did (bin/fm-backend.sh's fm_backend_agent_state
   # owns that vocabulary). The proof itself lives in one place for the whole
   # control plane - fm_control_endpoint_absence_verdict - so `exit` and
   # `relaunch` cannot reach two different answers about one endpoint.
   if [ "$RELAUNCH_STATE" = missing ]; then
-    RELAUNCH_ABSENCE=$(fm_control_endpoint_absence_verdict "$BACKEND" "$RELAUNCH_TARGET" "$RELAUNCH_META")
+    if [ "$BACKEND" = orca ]; then
+      RELAUNCH_ABSENCE=$(fm_control_endpoint_absence_verdict "$BACKEND" "$RELAUNCH_TARGET" \
+        "$(fm_meta_get "$RELAUNCH_META" worktree)")
+    else
+      RELAUNCH_ABSENCE=$(fm_control_endpoint_absence_verdict "$BACKEND" "$RELAUNCH_TARGET" "$RELAUNCH_META")
+    fi
     case "${RELAUNCH_ABSENCE%%$'\t'*}" in
       gone) RELAUNCH_STATE=missing ;;
       dead) RELAUNCH_STATE=dead ;;
@@ -2242,6 +2271,20 @@ if [ "$RELAUNCH" -eq 1 ]; then
     HERDR_WORKSPACE_ID=$(fm_meta_get "$RELAUNCH_META" herdr_workspace_id)
     HERDR_TAB_ID=$(fm_meta_get "$RELAUNCH_META" herdr_tab_id)
     HERDR_PANE_ID=$(fm_meta_get "$RELAUNCH_META" herdr_pane_id)
+  fi
+  if [ "$BACKEND" = orca ]; then
+    # Orca owns the task's worktree, so a relaunch keeps the recorded Orca
+    # worktree id and, when the terminal is adopted, its terminal. A rebind
+    # creates its terminal inside that same worktree, so the id must name the
+    # recorded local copy rather than merely be well formed.
+    ORCA_WORKTREE_ID=$(fm_meta_get "$RELAUNCH_META" orca_worktree_id)
+    ORCA_TERMINAL=$RELAUNCH_TARGET
+    if [ "$RELAUNCH_REBIND" -eq 1 ] \
+      && [ "$(fm_backend_orca_physical_dir "${ORCA_WORKTREE_ID#*::}")" != "$(fm_backend_orca_physical_dir "$RELAUNCH_WT")" ]; then
+      echo "error: task $ID's recorded Orca worktree id '$ORCA_WORKTREE_ID' does not name its recorded worktree '$RELAUNCH_WT'; refusing to create a terminal in a different local copy" >&2
+      exit 1
+    fi
+    resolve_orca_launch_env_source
   fi
   # With no explicit harness, a relaunch reuses the harness already recorded
   # for this task. It must NOT fall through to the fresh-spawn config
@@ -4300,6 +4343,23 @@ if [ "$RELAUNCH" -eq 1 ]; then
     T=$RELAUNCH_TARGET
     WT_TARGET=$T
     SES=${T%%:*}
+  elif [ "$BACKEND" = orca ]; then
+    # The recorded terminal is proven closed with no agent left in the
+    # worktree, so create ONE fresh terminal inside the task's own Orca
+    # worktree - the id the relaunch gate above already matched to the recorded
+    # local copy. The record published below rebinds terminal= to it; the
+    # worktree, brief, and status log are untouched. Should this spawn abort
+    # before that record is published, only the new terminal is closed:
+    # ORCA_ABORT_CLEANUP, which also removes the worktree, belongs to a fresh
+    # spawn and is never set on a relaunch.
+    ORCA_TERMINAL=$(fm_backend_orca_terminal_create "$ORCA_WORKTREE_ID" "$W") || exit 1
+    [ -n "$ORCA_TERMINAL" ] || {
+      echo "error: orca did not return a terminal handle for $W" >&2
+      exit 1
+    }
+    ORCA_REBIND_ABORT_CLOSE=1
+    T=$ORCA_TERMINAL
+    WT_TARGET=$T
   else
     # The recorded endpoint is authoritatively gone, so there is nothing to
     # adopt: create ONE fresh endpoint for the same task, opened directly in the
@@ -4309,7 +4369,8 @@ if [ "$RELAUNCH" -eq 1 ]; then
     #
     # Only herdr and tmux reach here: the gate above rebinds only on a
     # PROVEN-gone endpoint (fm_control_endpoint_absence_verdict owns that
-    # argument), and every secondmate was already refused.
+    # argument), orca took the branch above, and every secondmate was
+    # already refused.
     #
     # This deliberately uses the FLAT container shape rather than Herdr's
     # presentation projection: projection is a presentation-only layout that is
@@ -6268,7 +6329,7 @@ if [ "$SPAWN_TASK_SET_LOCK_HELD" = 1 ]; then
   fm_lock_release "$SPAWN_TASK_SET_LOCK"
 fi
 "$SCRIPT_DIR/fm-home-summary-refresh.sh" --best-effort || true
-[ "$BACKEND" = orca ] && ORCA_ABORT_CLEANUP=0
+[ "$BACKEND" = orca ] && ORCA_ABORT_CLEANUP=0 && ORCA_REBIND_ABORT_CLOSE=0
 
 sq_brief=$(shell_quote "$BRIEF")
 sq_turnend=$(shell_quote "$TURNEND")

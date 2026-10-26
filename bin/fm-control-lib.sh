@@ -13,11 +13,12 @@
 # here rather than improvised per harness in agent prose.
 #
 # This file owns three capability tables plus their pure artifact-path tables,
-# and ONE named exception to that purity - fm_control_endpoint_absence_verdict,
-# the single owner of the per-backend endpoint-absence proof, which does run
-# backend reads. Everything else has no side effects, runs no backend command,
-# and reads no state, so sourcing this file is still free and the tables can be
-# read by a test as a pure contract:
+# and TWO named exceptions to that purity, both of which run backend reads:
+# fm_control_agent_state, the control plane's one agent-state read, and
+# fm_control_endpoint_absence_verdict, the single owner of the per-backend
+# endpoint-absence proof. Everything else has no side effects, runs no backend
+# command, and reads no state, so sourcing this file is still free and the
+# tables can be read by a test as a pure contract:
 #
 #   1. Verb allowlist. There is no arbitrary-text and no generic raw-key entry
 #      point on the control plane; a caller either names an allowlisted verb or
@@ -33,8 +34,7 @@
 #      copy of it.
 #   3. Per-backend capability: which named keys a runtime backend can deliver,
 #      and whether the backend has a recovery-grade agent-state classifier
-#      (bin/fm-backend.sh's fm_backend_agent_state) able to PROVE that an agent
-#      stopped. A verb whose postcondition cannot be proven on the recorded
+#      (fm_control_agent_state below) able to PROVE that an agent stopped. A verb whose postcondition cannot be proven on the recorded
 #      backend is refused rather than performed blind.
 #
 # `resume` is deliberately NOT a verb: it is not deterministic across the
@@ -326,16 +326,36 @@ fm_control_backend_supports_key() {  # <backend> <key> [harness]
   return 1
 }
 
-# Whether <backend> has a recovery-grade agent-state classifier. Only tmux and
-# herdr implement fm_backend_agent_state; zellij, orca, cmux, and paseo report
-# `unverified`, so no reading of theirs can prove an agent stopped. The control
-# plane refuses a stop-proving verb there instead of reporting an unprovable
-# transition as success.
+# Whether <backend> has a recovery-grade agent-state classifier that
+# fm_control_agent_state can read. tmux, herdr, and orca do; zellij, cmux, and
+# paseo report `unverified`, so no reading of theirs can prove an agent
+# stopped. The control plane refuses a stop-proving verb there instead of
+# reporting an unprovable transition as success.
 fm_control_backend_state_verified() {  # <backend>
   case "${1-}" in
-    tmux|herdr) return 0 ;;
+    tmux|herdr|orca) return 0 ;;
   esac
   return 1
+}
+
+# fm_control_agent_state: the control plane's agent-state read for <target>, in
+# bin/fm-backend.sh's fm_backend_agent_state vocabulary. Every backend but orca
+# is exactly fm_backend_agent_state. Orca's classifier
+# (bin/backends/orca.sh's fm_backend_orca_agent_state) is read only here, so
+# fm-control and fm-spawn --relaunch can prove an Orca agent stopped while every
+# other fm_backend_agent_state caller - monitoring, cleanup, the fleet view -
+# keeps reading Orca as `unverified` exactly as before.
+fm_control_agent_state() {  # <backend> <target>
+  local backend=${1-} target=${2-}
+  case "$backend" in
+    orca)
+      fm_backend_source orca || { printf 'unreadable'; return 0; }
+      fm_backend_orca_agent_state "$target"
+      ;;
+    *)
+      fm_backend_agent_state "$backend" "$target"
+      ;;
+  esac
 }
 
 # fm_control_endpoint_absence_verdict: the ONE owner of the per-backend proof
@@ -375,10 +395,21 @@ fm_control_backend_state_verified() {  # <backend>
 #     server pid and identity, window id), and fm_control_tmux_absence_verdict
 #     reads exactly that server; a record without those fields stays
 #     `unproven` and both verbs refuse.
+#   orca CAN prove it, but only with the task's recorded worktree passed as
+#     the third argument. Orca keeps describing a closed terminal and records
+#     why it exited, so a closed terminal is told apart from one this seat
+#     cannot reach. Closing the terminal is still not proof that its agent
+#     died with it, so the proof also requires Orca's process sweep to have
+#     dropped the session and no agent process to be working in the recorded
+#     worktree (bin/backends/orca.sh's
+#     fm_backend_orca_endpoint_absence_proof owns the reads;
+#     docs/orca-backend.md "Agent stop proof" owns the evidence).
 #
 # Both control-plane callers share this one implementation so the proof cannot
-# drift into two answers for the same endpoint.
-fm_control_endpoint_absence_verdict() {  # <backend> <target> [<meta>]
+# drift into two answers for the same endpoint. The third argument is the
+# backend's own record: tmux task meta for tmux, the recorded worktree for
+# orca; each caller passes the value its backend needs.
+fm_control_endpoint_absence_verdict() {  # <backend> <target> [<meta-or-worktree>]
   local backend=${1-} target=${2-} meta=${3-}
   fm_backend_source "$backend" \
     || { printf 'unproven\tbackend %s could not be loaded to prove anything about that endpoint' "'$backend'"; return 0; }
@@ -396,6 +427,9 @@ fm_control_endpoint_absence_verdict() {  # <backend> <target> [<meta>]
         missing) printf 'gone\t' ;;
         *) printf 'unproven\tthe recorded herdr session'"'"'s server could not be started, or its pane could not be classified once it was running' ;;
       esac
+      ;;
+    orca)
+      fm_backend_orca_endpoint_absence_proof "$target" "$meta"
       ;;
     *)
       printf 'unproven\tbackend %s has no recovery-grade classifier, so absence cannot be proven on it at all' "'$backend'"

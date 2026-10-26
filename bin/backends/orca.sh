@@ -13,6 +13,10 @@
 . "$(dirname -- "${BASH_SOURCE[0]}")/../fm-composer-lib.sh"
 # shellcheck source=bin/fm-busy-lib.sh
 . "$(dirname -- "${BASH_SOURCE[0]}")/../fm-busy-lib.sh"
+# Backend-neutral harness-process identity, shared with tmux and Herdr so the
+# Orca stop proof below means the same thing by "agent" that they do.
+# shellcheck source=bin/fm-agent-process-lib.sh
+. "$(dirname -- "${BASH_SOURCE[0]}")/../fm-agent-process-lib.sh"
 
 fm_backend_orca_tool_check() {
   command -v orca >/dev/null 2>&1 || { echo "error: backend=orca selected but the 'orca' CLI is not installed" >&2; return 1; }
@@ -412,4 +416,271 @@ fm_backend_orca_send_text_submit() {  # <terminal-id> <text> <retries> <enter-sl
 fm_backend_orca_kill() {  # <terminal-id>
   fm_backend_orca_tool_check || return 1
   orca terminal close --terminal "$1" --json >/dev/null 2>&1 || true
+}
+
+# --- Recovery-grade agent state and endpoint absence ------------------------
+#
+# Orca's terminal API never names the processes behind a terminal, so the
+# verdicts below join three reads, each owned by a function of its own:
+# `orca terminal show` (is the terminal connected, and if not, did Orca record
+# why it exited), `orca diagnostics memory` (which local process roots a live
+# pty session), and the operating system's process table under that root.
+# docs/orca-backend.md "Agent stop proof" owns the empirical basis. Only
+# fm-control and fm-spawn --relaunch read these verdicts, through
+# fm_control_agent_state in bin/fm-control-lib.sh. Every read that fails or
+# returns a shape the proof does not recognize is `unreadable`, never absence.
+
+# fm_backend_orca_terminal_facts: one `orca terminal show` read of <terminal>,
+# printed as \x1f-separated fields so an empty field survives `read`:
+#   ok|stale  connected(true|false)  exit-cause-kind  execution-host  pty-id  worktree-path
+# `stale` is Orca's own terminal_handle_stale answer: it no longer recognizes
+# the handle at all. `false` needs both connected and writable false, the pair
+# Orca reports after the pty is gone. Any CLI failure, unparsable output, other
+# error, a result describing a different handle, or a mixed connection pair
+# returns 1.
+fm_backend_orca_terminal_facts() {  # <terminal-id>
+  local terminal=$1 out
+  fm_backend_orca_tool_check 2>/dev/null || return 1
+  out=$(orca terminal show --terminal "$terminal" --json 2>/dev/null) || return 1
+  printf '%s' "$out" | node -e '
+const fs = require("fs");
+const handle = process.argv[1];
+let data;
+try { data = JSON.parse(fs.readFileSync(0, "utf8")); } catch (err) { process.exit(1); }
+if (!data || typeof data !== "object") process.exit(1);
+function str(v) { return typeof v === "string" ? v : ""; }
+function emit(fields) {
+  if (fields.some((f) => /[\x1f\n\r]/.test(f))) process.exit(1);
+  process.stdout.write(fields.join("\x1f"));
+}
+if (data.ok === false) {
+  if (data.error && data.error.code === "terminal_handle_stale") {
+    emit(["stale", "", "", "", "", ""]);
+    process.exit(0);
+  }
+  process.exit(1);
+}
+const t = data.result && data.result.terminal;
+if (!t || typeof t !== "object" || t.handle !== handle) process.exit(1);
+let connected;
+if (t.connected === true) connected = "true";
+else if (t.connected === false && t.writable === false) connected = "false";
+else process.exit(1);
+const kind = t.exitCause && typeof t.exitCause === "object" ? str(t.exitCause.kind) : "";
+emit(["ok", connected, kind, str(t.executionHostId), str(t.ptyId), str(t.worktreePath)]);
+' "$terminal"
+}
+
+# fm_backend_orca_session_pid: the local process that roots pty session
+# <pty-id>, from Orca's own process sweep. Exit 0 prints the pid; exit 1 means
+# the sweep was read and lists no such session; exit 2 means the sweep could
+# not be read or names the session ambiguously.
+fm_backend_orca_session_pid() {  # <pty-id>
+  local pty=$1 out
+  [ -n "$pty" ] || return 2
+  fm_backend_orca_tool_check 2>/dev/null || return 2
+  out=$(orca diagnostics memory --json 2>/dev/null) || return 2
+  printf '%s' "$out" | node -e '
+const fs = require("fs");
+const pty = process.argv[1];
+let data;
+try { data = JSON.parse(fs.readFileSync(0, "utf8")); } catch (err) { process.exit(2); }
+if (!data || data.ok === false || !data.result || !Array.isArray(data.result.worktrees)) process.exit(2);
+const pids = [];
+for (const wt of data.result.worktrees) {
+  if (!wt || !Array.isArray(wt.sessions)) continue;
+  for (const s of wt.sessions) if (s && s.sessionId === pty) pids.push(s.pid);
+}
+if (pids.length === 0) process.exit(1);
+if (pids.length !== 1 || !Number.isInteger(pids[0]) || pids[0] <= 1) process.exit(2);
+process.stdout.write(String(pids[0]));
+' "$pty"
+}
+
+# fm_backend_orca_process_tree: <root-pid> and every descendant, one
+# `pid<TAB>comm` line each, root first. Returns 1 when the process table
+# cannot be read or no longer holds the root.
+fm_backend_orca_process_tree() {  # <root-pid>
+  local root=$1 table
+  table=$(LC_ALL=C ps -axo pid=,ppid=,comm= 2>/dev/null) || return 1
+  printf '%s\n' "$table" | awk -v root="$root" '
+    {
+      line = $0
+      pid = $1; ppid = $2
+      if (pid !~ /^[0-9]+$/ || ppid !~ /^[0-9]+$/) next
+      sub(/^[ \t]*[0-9]+[ \t]+[0-9]+[ \t]?/, "", line)
+      comm[pid] = line
+      kids[ppid] = kids[ppid] " " pid
+    }
+    END {
+      if (!(root in comm)) exit 1
+      queue[1] = root; head = 1; tail = 1; seen[root] = 1
+      while (head <= tail) {
+        p = queue[head++]
+        printf "%s\t%s\n", p, comm[p]
+        n = split(kids[p], list, " ")
+        for (i = 1; i <= n; i++) {
+          c = list[i]
+          if (c != "" && !(c in seen)) { seen[c] = 1; queue[++tail] = c }
+        }
+      }
+    }'
+}
+
+# fm_backend_orca_classify_pid: one live process as agent|shell|other through
+# the shared classifier, or nothing when the process exited meanwhile.
+fm_backend_orca_classify_pid() {  # <pid> <comm>
+  local pid=$1 comm=$2 args argv0
+  args=$(LC_ALL=C ps -p "$pid" -o args= 2>/dev/null) || return 0
+  args=${args#"${args%%[![:space:]]*}"}
+  argv0=${args%%[[:space:]]*}
+  fm_agent_process_classify "$comm" "$argv0" "$args" "$pid"
+}
+
+# fm_backend_orca_tree_state: the session tree under <root-pid> as
+# alive|dead|ambiguous|unreadable. Any verified harness anywhere in the tree is
+# `alive`. `dead` needs at least one shell and nothing but shells, apart from
+# the `login` process Orca roots a macOS session with. Anything else - a
+# background job, an unrecognized program - is `ambiguous`, because it could be
+# an agent this classifier does not know.
+fm_backend_orca_tree_state() {  # <root-pid>
+  local root=$1 tree pid comm class shells=0 other=0
+  tree=$(fm_backend_orca_process_tree "$root") || { printf 'unreadable'; return 0; }
+  while IFS=$'\t' read -r pid comm; do
+    [ -n "$pid" ] || continue
+    class=$(fm_backend_orca_classify_pid "$pid" "$comm")
+    case "$class" in
+      agent) printf 'alive'; return 0 ;;
+      shell) shells=1 ;;
+      '') ;;
+      *)
+        if [ "$pid" != "$root" ] || [ "${comm##*/}" != login ]; then
+          other=1
+        fi
+        ;;
+    esac
+  done <<TREE
+$tree
+TREE
+  if [ "$other" = 0 ] && [ "$shells" = 1 ]; then
+    printf 'dead'
+  else
+    printf 'ambiguous'
+  fi
+}
+
+# fm_backend_orca_agent_state: recovery-grade agent state for one recorded
+# terminal, in fm_backend_agent_state's vocabulary. A connected terminal is
+# classified from its session's process tree. A disconnected terminal for which
+# Orca recorded an exit cause is `missing`: its pty is gone, which is evidence
+# about the terminal and not yet proof that no agent survived it - only
+# fm_backend_orca_endpoint_absence_proof below can establish that. A stale
+# handle, a terminal on another execution host, or any unreadable fact is
+# `unreadable`.
+fm_backend_orca_agent_state() {  # <terminal-id>
+  local terminal=${1:-} facts read connected kind host pty wtpath pid
+  [ -n "$terminal" ] || { printf 'unreadable'; return 0; }
+  facts=$(fm_backend_orca_terminal_facts "$terminal") || { printf 'unreadable'; return 0; }
+  IFS=$'\x1f' read -r read connected kind host pty wtpath <<FACTS
+$facts
+FACTS
+  [ "$read" = ok ] && [ "$host" = local ] || { printf 'unreadable'; return 0; }
+  case "$connected" in
+    false)
+      if [ -n "$kind" ]; then printf 'missing'; else printf 'unreadable'; fi
+      return 0
+      ;;
+    true) ;;
+    *) printf 'unreadable'; return 0 ;;
+  esac
+  pid=$(fm_backend_orca_session_pid "$pty") || { printf 'unreadable'; return 0; }
+  fm_backend_orca_tree_state "$pid"
+}
+
+# fm_backend_orca_physical_dir: <dir> with every symlink resolved, or 1.
+fm_backend_orca_physical_dir() {  # <dir>
+  (cd -P -- "$1" 2>/dev/null && pwd -P)
+}
+
+# fm_backend_orca_worktree_agent_pids: every process this user owns whose
+# working directory is <worktree> or below it and that classifies as an agent,
+# one `pid<TAB>comm` line each. This catches an agent that outlived the pty it
+# started in. Returns 1 when the working-directory scan cannot be read, which
+# the caller must treat as missing proof, never as an empty scan.
+fm_backend_orca_worktree_agent_pids() {  # <worktree>
+  local worktree=$1 root scan pids pid comm
+  root=$(fm_backend_orca_physical_dir "$worktree") || return 1
+  [ -n "$root" ] || return 1
+  command -v lsof >/dev/null 2>&1 || return 1
+  scan=$(LC_ALL=C lsof -nP -a -u "$(id -u)" -d cwd -Fpn 2>/dev/null) || return 1
+  [ -n "$scan" ] || return 1
+  pids=$(printf '%s\n' "$scan" | awk -v root="$root" '
+    /^p/ { pid = substr($0, 2); next }
+    /^n/ { path = substr($0, 2); if (pid != "" && (path == root || index(path, root "/") == 1)) print pid }')
+  while IFS= read -r pid; do
+    [ -n "$pid" ] || continue
+    comm=$(LC_ALL=C ps -p "$pid" -o comm= 2>/dev/null) || continue
+    [ "$(fm_backend_orca_classify_pid "$pid" "$comm")" = agent ] || continue
+    printf '%s\t%s\n' "$pid" "$comm"
+  done <<PIDS
+$pids
+PIDS
+  return 0
+}
+
+# fm_backend_orca_endpoint_absence_proof: prints `<verdict>\t<reason>` in
+# fm_control_endpoint_absence_verdict's vocabulary for recorded terminal
+# <terminal> of the task whose recorded worktree is <worktree>. `gone` needs
+# every one of these, each read independently:
+#   - Orca still recognizes the handle and reports it disconnected, unwritable,
+#     with a recorded exit cause, on the local host;
+#   - the terminal belonged to the recorded worktree;
+#   - Orca's process sweep was read and no longer lists the terminal's pty;
+#   - no process of this user that classifies as an agent has its working
+#     directory in the recorded worktree.
+# A terminal that turns out to be connected is re-classified, so a stopped
+# agent in a live terminal reads `dead` and a live one `alive`. Everything else
+# is `unproven`, with the fact that could not be established as the reason. An
+# agent found in the worktree is deliberately `unproven` rather than `alive`:
+# it is not in the recorded terminal, so no lifecycle command could reach it.
+fm_backend_orca_endpoint_absence_proof() {  # <terminal-id> <worktree>
+  local terminal=${1:-} worktree=${2:-} facts read connected kind host pty wtpath state pids rc
+  [ -n "$terminal" ] || { printf 'unproven\tthe task record names no Orca terminal'; return 0; }
+  [ -n "$worktree" ] \
+    || { printf 'unproven\tthe task record names no worktree, so a surviving agent in it cannot be ruled out'; return 0; }
+  facts=$(fm_backend_orca_terminal_facts "$terminal") \
+    || { printf 'unproven\tOrca could not describe terminal %s' "$terminal"; return 0; }
+  IFS=$'\x1f' read -r read connected kind host pty wtpath <<FACTS
+$facts
+FACTS
+  [ "$read" = ok ] \
+    || { printf 'unproven\tOrca no longer recognizes terminal %s, so it cannot say whether that terminal exited' "$terminal"; return 0; }
+  [ "$host" = local ] \
+    || { printf 'unproven\tterminal %s runs on Orca execution host %s, whose processes cannot be read from here' "$terminal" "${host:-unknown}"; return 0; }
+  if [ "$connected" = true ]; then
+    state=$(fm_backend_orca_agent_state "$terminal")
+    case "$state" in
+      dead|alive) printf '%s\t' "$state" ;;
+      *) printf 'unproven\tterminal %s is still connected and its agent state reads %s' "$terminal" "$state" ;;
+    esac
+    return 0
+  fi
+  [ -n "$kind" ] \
+    || { printf 'unproven\tterminal %s is disconnected but Orca recorded no exit cause for it' "$terminal"; return 0; }
+  [ -n "$wtpath" ] && [ "$(fm_backend_orca_physical_dir "$wtpath")" = "$(fm_backend_orca_physical_dir "$worktree")" ] \
+    || { printf 'unproven\tterminal %s belonged to worktree %s, not the recorded %s' "$terminal" "${wtpath:-unknown}" "$worktree"; return 0; }
+  rc=0
+  fm_backend_orca_session_pid "$pty" >/dev/null || rc=$?
+  case "$rc" in
+    1) ;;
+    0) printf 'unproven\tOrca still lists a live process for the session of terminal %s' "$terminal"; return 0 ;;
+    *) printf 'unproven\tOrca process sweep could not be read'; return 0 ;;
+  esac
+  pids=$(fm_backend_orca_worktree_agent_pids "$worktree") \
+    || { printf 'unproven\tthe working directories of local processes could not be read, so a surviving agent in %s cannot be ruled out' "$worktree"; return 0; }
+  if [ -n "$pids" ]; then
+    printf 'unproven\tan agent process still runs in %s (%s)' "$worktree" "$(printf '%s' "$pids" | tr '\t\n' ' ,')"
+    return 0
+  fi
+  printf 'gone\t'
 }

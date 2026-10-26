@@ -4013,6 +4013,50 @@ test_composer_state_grok_middle_dot_title() {
   pass "fm_backend_herdr_composer_state: Grok 1.0.62's middle-dot title reads empty when idle and pending when typed"
 }
 
+# Live-captured 2026-10-19 on Grok 4.7 over Herdr at 0% weekly quota: the idle
+# 90-column composer reads empty, while the weekly-limit choice that a prompt
+# opens is named as a dialog and never reads empty, so fm-control refuses to
+# type its exit command into the choice.
+test_composer_state_grok_weekly_limit_live_shapes() {
+  local dir log resp fb out
+  dir="$TMP_ROOT/composer-grok-weekly-limit"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+  printf '%s\n' \
+    '                                                                                             █' \
+    '' \
+    '  ╭────────────────────────────────────────────────────────────────────────────────────────╮' \
+    '  │ ❯                                                                                      │' \
+    '  ╰───────────────────────────── Weekly limit left: 0% · Grok 4.7 (high) · always-approve ─╯' \
+    '' \
+    '  Shift+Tab:mode  │  Ctrl+.:shortcuts' > "$resp/1.out"
+  printf '%s\n' \
+    '                                                                                             █' \
+    '' \
+    '  ┃' \
+    '  ┃  You hit your weekly limit.' \
+    '  ┃' \
+    '  ┃' \
+    '  ┃  1 (○) Buy more credits  Purchase credits to keep using Grok Build' \
+    '  ┃  2 (○) Try Again         Resubmit the last prompt once you have usage again' \
+    '  ┃' \
+    '  ┃  ↑/↓ navigate · y copy                                                  Enter:submit' \
+    '  ┃' \
+    '' \
+    '  Tab:next answer  │  Esc:scrollback  │  Shift+x:dismiss' > "$resp/2.out"
+  fb=$(make_herdr_fakebin "$dir")
+  out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" FM_COMPOSER_DIALOG_SINK="$dir/sink" \
+    bash -c '. "$0/bin/fm-backend.sh"
+      printf "%s|%s|" "$(fm_backend_composer_state herdr default:w1:p2)" "$(cat "$FM_COMPOSER_DIALOG_SINK")"
+      printf "%s|%s" "$(fm_backend_composer_state herdr default:w1:p2)" "$(cat "$FM_COMPOSER_DIALOG_SINK")"' "$ROOT" )
+  case "$out" in
+    'empty||'*'|Grok weekly-limit choice') ;;
+    *) fail "the idle quota-border composer should read empty and the weekly-limit choice should be named, got '$out'" ;;
+  esac
+  case "$out" in
+    *'|empty|Grok weekly-limit choice') fail "the weekly-limit choice must not read empty, got '$out'" ;;
+  esac
+  pass "fm_backend_composer_state (herdr): Grok's idle quota-border composer reads empty and its weekly-limit choice is named, never empty"
+}
+
 # Live-verified incident (2026-07-03, real grok 0.2.82 on herdr, isolated
 # session): typing "/compact" opens the completion popup; the FIRST Enter
 # closes the popup and EXPANDS the composer into an argument-hint placeholder
@@ -6114,6 +6158,7 @@ test_composer_state_styled_placeholder_draft_is_pending
 test_composer_state_real_text_is_pending
 test_composer_state_grok_oversized_title_preserves_safe_verdicts
 test_composer_state_grok_middle_dot_title
+test_composer_state_grok_weekly_limit_live_shapes
 test_composer_state_popup_placeholder_fill_is_pending
 test_composer_state_unknown_on_capture_failure
 test_composer_state_inactive_session_fails_fast_without_server_autostart

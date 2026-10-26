@@ -23,7 +23,7 @@ The failure repeated across harnesses and homes, and the workaround (remember to
   `bin/fm-send.sh`'s `--key` path reads the composer-clear table from this owner too, rather than keeping a second copy of it.
 - **Per-backend capability**: which named keys a runtime backend can deliver, and whether it has a recovery-grade agent-state classifier able to prove an agent stopped.
 
-The [endpoint-absence proof](#reclaiming-a-task-whose-endpoint-is-gone) below is the only function here that runs backend reads; sourcing the file is still free.
+`fm_control_agent_state` and the [endpoint-absence proof](#reclaiming-a-task-whose-endpoint-is-gone) run backend reads; sourcing the file is still free.
 
 A recorded `harness=` is not always an exact adapter name: a task launched from a raw command records that command's basename instead.
 `fm_control_harness_family` is the one place that prefix rule is stated, and an unrecognized value resolves to no adapter rather than being guessed into one.
@@ -33,7 +33,7 @@ A recorded `harness=` is not always an exact adapter name: a task launched from 
 | Verb | Effect | Postcondition |
 | --- | --- | --- |
 | `interrupt` | Deliver the harness's verified interrupt sequence while leaving the agent running. | Delivery succeeds while the endpoint still exists and the agent is still alive where the backend can classify that; cancellation is confirmed only from an adapter-owned acknowledgement and otherwise reports `cancel=unconfirmed`. |
-| `exit` | Stop the agent, preserving the endpoint, the worktree, and every uncommitted change. | The backend's recovery-grade classifier reports the agent gone. Already-stopped is idempotent success. An endpoint reading `missing` goes through the same [absence proof](#reclaiming-a-task-whose-endpoint-is-gone) the reclaim uses before anything is claimed about it, which Herdr can supply and tmux can from a record carrying its server identity: proven gone reports `endpoint-gone` (the agent went with it, and the endpoint this verb normally preserves did not survive), a pane that turns out to be there and idle is the ordinary `already-stopped`, one whose agent is back takes the ordinary interrupt-then-exit path. A `missing` that cannot be proven absent refuses rather than claim a stop it cannot see. |
+| `exit` | Stop the agent, preserving the endpoint, the worktree, and every uncommitted change. | The backend's recovery-grade classifier reports the agent gone. Already-stopped is idempotent success. An endpoint reading `missing` goes through the same [absence proof](#reclaiming-a-task-whose-endpoint-is-gone) the reclaim uses before anything is claimed about it, which Herdr can supply, tmux can from a record carrying its server identity, and Orca can against the recorded worktree: proven gone reports `endpoint-gone` (the agent went with it, and the endpoint this verb normally preserves did not survive), a pane that turns out to be there and idle is the ordinary `already-stopped`, one whose agent is back takes the ordinary interrupt-then-exit path. A `missing` that cannot be proven absent refuses rather than claim a stop it cannot see. |
 | `relaunch` | Replace the running agent with a new one in the same worktree - and the same endpoint whenever that endpoint still exists - on the exact recorded adapter or an explicitly chosen harness, model, and effort. | The new agent is alive on the endpoint the task's record now names, and that record names the harness that is actually running. |
 
 An exit that delivers lifecycle input but cannot prove the agent stopped fails with `exit=unconfirmed`, reports the observed agent state and any interrupt cancellation claim, and never claims that nothing changed.
@@ -53,7 +53,7 @@ The clear is refused before anything is sent when the recorded backend cannot de
 `exit` reads the composer's state before typing the exit command and requires the exact `empty` verdict; a `pending` verdict refuses by naming the pending text, and any other verdict (`unknown`, `pending-unproven`, or an unreadable read) refuses as not proven empty, matching the fail-safe contract every other consumer that can overwrite composer input follows.
 `exit` also refuses, naming the dialog as `blocked on a prompt`, when the screen shows a recognised dialog that a further Enter would answer, whether the dialog was open before the exit command was typed or the submitting Enter opened it; it sends no Escape and chooses no option, so closing the dialog is left to the operator.
 A stopped agent whose pane still shows the dialog text is not refused.
-[`fm_composer_blocking_dialog`](../bin/fm-composer-lib.sh) owns the recognised set, which today is only Claude's background-task exit picker; [its verification record](verification/runtime-backends.md#claude-background-task-exit-picker) lists the dialogs that are not covered.
+[`fm_composer_blocking_dialog`](../bin/fm-composer-lib.sh) owns the recognised set; the [Claude picker](verification/runtime-backends.md#claude-background-task-exit-picker) and [composer matrix](verification/runtime-backends.md#composer-classification-matrix) verification records cover its recorded screens and limits.
 
 **Teardown and discard are not verbs and will not become verbs.**
 `exit` stops an agent and preserves everything else.
@@ -85,7 +85,7 @@ A relaunch does take one session reference when the endpoint's own runtime recor
    A secondmate relaunch does not require one and never rewrites its standing charter.
 4. **Stop the old agent** through the `exit` verb, with its postcondition.
 5. **Launch the replacement** through its single owner, `bin/fm-spawn.sh --relaunch`, which reuses the recorded worktree instead of creating one, adopts the recorded endpoint when it still exists, clears the previous harness's per-task wiring, and arms a fresh busy generation.
-   When the recorded endpoint is proven gone rather than merely idle or unreachable - which Herdr can establish, and tmux from a record carrying its server identity - the launch owner creates one fresh endpoint in that same worktree and the republished record rebinds the task to it - see [Reclaiming a task whose endpoint is gone](#reclaiming-a-task-whose-endpoint-is-gone).
+   When the recorded endpoint is proven gone rather than merely idle or unreachable - which Herdr can establish, tmux from a record carrying its server identity, and Orca against the recorded worktree - the launch owner creates one fresh endpoint in that same worktree and the republished record rebinds the task to it - see [Reclaiming a task whose endpoint is gone](#reclaiming-a-task-whose-endpoint-is-gone).
 6. **Preserve runtime-bound status authority where supported.**
    The endpoint's runtime may bind pane status to one session identity; the launch owner preserves it only when that runtime records a reference the replacement adapter can consume, and otherwise launches the ordinary fresh session.
    This reference is a launch input, never authority to send, close, or act on the pane.
@@ -95,10 +95,12 @@ Switching harness is therefore one ordinary relaunch rather than a separate mech
 
 ### Reclaiming a task whose endpoint is gone
 
-A Herdr pane or workspace can be destroyed out from under a live task by churn or a session restart.
+A Herdr pane or workspace can be destroyed out from under a live task by churn or a session restart, and an Orca terminal can be closed under one.
 The task's worktree, branch, commits, and uncommitted changes all survive that; only its terminal does not.
 
-**Reclaim covers Herdr and tmux.** A tmux task can be reclaimed only when its record carries the server identity a tmux spawn now records; an older record still refuses, with the reason stated rather than guessed past.
+**Reclaim covers Herdr, tmux, and Orca.**
+A tmux task can be reclaimed only when its record carries the server identity a tmux spawn now records; an older record still refuses, with the reason stated rather than guessed past.
+An Orca task is reclaimed only when its closed terminal passes the [Orca agent stop proof](orca-backend.md#agent-stop-proof).
 
 Two endpoint verdicts are agent-free, and both license a relaunch:
 
@@ -118,6 +120,7 @@ An unreachable endpoint can still hold the live agent a rebind would duplicate, 
   The endpoint is gone only when that server process is gone or replaced and the socket answers with no server (or another server's pid), or when it is the same live server and the window id is gone from it with no pane of it inside the copy; and in every case no other process may have its working directory inside the copy.
   A server still alive while its socket does not answer, a live server whose identity cannot be read, a window that survives under another name, a holder of the copy, and a record without those fields all refuse.
   A relaunch then re-creates the window in the recorded session on the recorded socket, and refuses when the seat addresses a different tmux server.
+- **Orca can prove it, against the task's recorded worktree:** [Orca agent stop proof](orca-backend.md#agent-stop-proof) owns the required reads and refusal conditions.
 
 Every transient or self-contradicting read stays `unreadable` or `ambiguous` and still refuses, so a momentary backend failure can never be mistaken for absence.
 
@@ -169,13 +172,14 @@ The worktree and the task's records are unaffected either way.
   Muse's [secondmate restriction](../.agents/skills/harness-adapters/SKILL.md#non-negotiable-safety) therefore causes relaunch to refuse while the current agent is still up.
 - A backend that cannot deliver the harness's interrupt key, or the composer clear that key needs, is refused rather than sent a different key.
   Orca 1.4.217 and 1.4.218 delivered raw Escape and Ctrl+U to Droid in live verification, while other harnesses retain their existing key-verification boundary.
-- `exit` and `relaunch` require a backend with a recovery-grade agent-state classifier - tmux and herdr - or, on Orca, Droid's stop proof (a current-generation `SessionEnd` marker with no `droid` process left in the task worktree), where a relaunch must also replace Droid with Droid.
-  Other zellij, Orca, cmux, and paseo combinations are refused rather than reported as successful blind.
+- `exit` and `relaunch` require a backend with a recovery-grade agent-state classifier - tmux, herdr, and orca - or, on Orca, Droid's stop proof (a current-generation `SessionEnd` marker with no `droid` process left in the task worktree), where a relaunch must also replace Droid with Droid, because without one the "the agent stopped" postcondition cannot be proven.
+  Other zellij, cmux, and paseo combinations are refused rather than reported as successful blind.
+  On the classifier backends `interrupt` also requires a positively `alive` agent before it sends a key, and confirms the agent is still alive afterwards.
 - An ambiguous or unreadable endpoint state refuses.
   Only a positively classified state acts.
 - `exit`'s composer-empty check, above, is itself a fail-closed boundary that `relaunch` inherits by stopping the old agent through `exit`.
-- `fm-spawn --relaunch` independently refuses unless the endpoint is positively agent-free - either a `dead` endpoint that survives, or a Herdr endpoint proven gone by the absence proof above - so a replacement can never join a live agent.
-  An `alive`, `ambiguous`, or `unreadable` verdict all refuse, and so does any endpoint whose absence is not provable, which on tmux is every `missing`; absence is claimed only from positive evidence of it.
+- `fm-spawn --relaunch` independently refuses unless the endpoint is positively agent-free - either a `dead` endpoint that survives, or a Herdr, tmux, or Orca endpoint proven gone by the absence proof above - so a replacement can never join a live agent.
+  An `alive`, `ambiguous`, or `unreadable` verdict all refuse, and so does any endpoint whose absence is not provable, which on tmux is a `missing` its record cannot prove absent; absence is claimed only from positive evidence of it.
   It also requires the shell to be in the recorded worktree: every backend but Orca (which owns its own task worktree with no current-path probe) gets one explicit `cd` to the recorded path, then a pre-launch path read that refuses before any harness starts unless it confirms the endpoint is sitting in the recorded copy.
 
 ## Capability matrix
@@ -188,8 +192,10 @@ Backend capability comes from each adapter's real surface, not from a policy cho
 | herdr | yes | yes | yes | yes | yes |
 | zellij | yes | yes | yes | yes | no |
 | cmux | yes | yes | yes | yes | no |
-| orca | no | yes | yes | no | no |
+| orca | no | yes | yes | no | yes (control plane only) |
 | paseo | yes | yes | yes | yes | no |
+
+The [Orca agent stop proof](orca-backend.md#agent-stop-proof) owns the classifier's scope and safety conditions.
 
 Per-harness interrupt keys, repeat counts, composer clears, exit commands, and supported task kinds live in `bin/fm-control-lib.sh` and are exercised for every verified harness by `tests/fm-control.test.sh`, with adapters outside its lane pinning their control mechanics in their own harness suites.
 The empirical basis for each adapter's value is the `harness-adapters` skill's verification record for that adapter.

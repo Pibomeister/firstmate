@@ -524,6 +524,13 @@ FM_COMPOSER_LEFTBAR_FOOTER_RE_DEFAULT='^(Build|Plan)[[:space:]]+·[[:space:]]+'
 # is deliberately not matched - and the marker is quantifier-free so the same
 # bytes match under LC_ALL=C as under a UTF-8 locale.
 FM_COMPOSER_MODE_HINT_RE_DEFAULT='^[[:space:]]*(⏵|⏸)'
+# Grok 1.0.62 draws its key-hint row below its bordered composer: two or more
+# `Key:action` cells joined by a box-drawing bar (`Shift+Tab:mode  │  Ctrl+x:shortcuts`
+# idle, `Enter:send  │  Opt+Enter:newline  │  Shift+Tab:mode  │  Ctrl+x:`
+# typed). It may sit directly under the bottom border, where the cursorless
+# staleness probe would otherwise read it as a lower live shape. It is
+# consulted only as the single row directly below a selected box.
+FM_COMPOSER_GROK_HINT_RE_DEFAULT='^[A-Z][A-Za-z]*(\+[A-Za-z.]+)*:[a-z]*([[:space:]]+│[[:space:]]+[A-Z][A-Za-z]*(\+[A-Za-z.]+)*:[a-z]*)+$'
 # omp (Oh My Pi) draws a one-row status line directly BELOW its borderless
 # composer: an identity or spinner cell, then middle-dot separated model, path,
 # git, and context cells. Verified live through Herdr on omp 18.1.11:
@@ -543,6 +550,32 @@ FM_COMPOSER_MODE_HINT_RE_DEFAULT='^[[:space:]]*(⏵|⏸)'
 # a middle dot. It is consulted only as the boundary BELOW a bare composer,
 # never on the composer row itself.
 FM_COMPOSER_OMP_STATUS_RE_DEFAULT='^[[:space:]]*(π|󰵗)[[:space:]]+·[[:space:]]|^[[:space:]]*'"$FM_OMP_SPINNER_FRAMES_RE"'[[:space:]]+[0-9]+[smh]([[:space:]]|$)|[[:space:]]·[[:space:]].*[0-9]+(\.[0-9]+)?%/[0-9]+K'
+# codex-cli 0.162.1 draws its footer DIRECTLY below the bare `›` row, with no
+# blank row between them (verified live through Orca):
+# `  GPT-6.1-Sol medium · fm/branch · Context 77% left · 33.8M in · ...` and
+# `  ? for shortcuts            ⚠ 3 warnings · f2 to view`.
+# Earlier codex releases left a blank row there, which already bounded the
+# wrap region. The model/effort/context status row, shortcut hint (optionally
+# after `← for agents ·`), and warnings row must each match completely.
+# A bare `Context N% left` continuation is input, not a status row: a hint-only
+# layout cannot distinguish it from a draft. The trailing-run validation in
+# _fm_composer_codex_footer_run below owns when matching rows form a boundary.
+FM_COMPOSER_CODEX_WARNINGS_RE_DEFAULT='⚠[[:space:]]+[0-9]+ warnings?[[:space:]]+·[[:space:]]+f2 to view'
+FM_COMPOSER_CODEX_FOOTER_RE_DEFAULT='^[[:space:]]*(([^[:space:]·]+[[:space:]]+(none|minimal|low|medium|high|xhigh|max)[[:space:]]+·[[:space:]]+([^[:space:]·]+[[:space:]]+·[[:space:]]+)?)Context [0-9]+% left([[:space:]]+·[[:space:]]+[0-9]+(\.[0-9]+)?[KMB]?[[:space:]]+(in|out))*([[:space:]]+·[[:space:]]+weekly [0-9]+% left)?|(← for agents[[:space:]]+·[[:space:]]+)?\? for shortcuts([[:space:]]+'"$FM_COMPOSER_CODEX_WARNINGS_RE_DEFAULT"')?|'"$FM_COMPOSER_CODEX_WARNINGS_RE_DEFAULT"')[[:space:]]*$'
+# The per-glyph placeholder table: the exact text a harness renders after its
+# OWN agent glyph in an EMPTY bare composer, one `<glyph><TAB><placeholder>`
+# line per entry. Unlike the fleet-wide idle set above, an entry is bound to
+# its harness's glyph and matched exactly and case-sensitively against the
+# whole row, so an UNSTYLED capture (cmux, orca), which cannot see the dim
+# styling that marks it as ghost text, may read that one row `empty`.
+# A real plain draft containing those exact bytes also reads `empty`; this
+# accepted ambiguity is limited to the exact per-glyph entry.
+# Any other text after the glyph, including a prefix or extension of the
+# placeholder, keeps the plain-capture `unknown` degradation.
+# codex-cli 0.162.1 renders `Ask Codex to do anything` (verified live through
+# Orca). Claude's empty bare row is `❯` plus U+00A0 and needs no entry; its
+# rotating suggestion is not a fixed string and stays `unknown` unstyled.
+FM_COMPOSER_BARE_PLACEHOLDERS_DEFAULT=$(printf '%s\t%s\n' '›' 'Ask Codex to do anything')
 # Pi's footer stats row opens at column 0 with the session cost when every
 # token counter is zero (`$0.000 (sub) 5.4%/272k (auto)` on pi 0.85.1).
 # That leading `$` is a cost cell, not a dead-shell prompt, only when a digit
@@ -1287,6 +1320,11 @@ _fm_composer_classify_bare_row() {  # <screen> <styled> <row>
   _fm_composer_bare_row_strip_furniture_var plain
   state=$(fm_composer_classify_content 0 "$content" \
     "${FM_COMPOSER_IDLE_RE:-$FM_COMPOSER_IDLE_RE_DEFAULT}" insensitive "$plain" 0 "$styled")
+  if [ "$styled" != 1 ] && [ "$state" != empty ] \
+     && _fm_composer_bare_row_is_placeholder "$plain"; then
+    printf 'empty'
+    return 0
+  fi
   if [ "$styled" != 1 ] && [ "$state" = pending ]; then
     printf 'unknown'
     return 0
@@ -1299,6 +1337,58 @@ _fm_composer_classify_bare_row() {  # <screen> <styled> <row>
 # below a bare composer and must bound its wrap region exactly as an edge does.
 _fm_composer_row_is_omp_status() {  # <trimmed-row>
   fm_composer_idle_matches "$1" "${FM_COMPOSER_OMP_STATUS_RE:-$FM_COMPOSER_OMP_STATUS_RE_DEFAULT}" sensitive
+}
+
+# _fm_composer_row_is_codex_footer: match one complete candidate row; only
+# _fm_composer_codex_footer_run may establish a bare composer's boundary.
+_fm_composer_row_is_codex_footer() {  # <trimmed-row>
+  fm_composer_idle_matches "$1" "$FM_COMPOSER_CODEX_FOOTER_RE_DEFAULT" sensitive
+}
+
+# A boundary needs a trailing run through the capture's bottom: at most one
+# model/status row, then at most one hint, then optional warnings (inline on
+# the hint or on their own row). Omitted rows are allowed, but warnings alone
+# are not. Only blank rows may follow the run. Ordinary content, reversed
+# order, or duplicate rows keep the candidate inside composer input.
+_fm_composer_codex_footer_run() {
+  local plain=$1 first=$2 line order=0 next
+  while IFS= read -r line; do
+    fm_composer_normalize_trim_var line
+    if [ -z "$line" ]; then
+      [ "$order" -gt 0 ] || return 1
+      order=4
+      continue
+    fi
+    _fm_composer_row_is_codex_footer "$line" || return 1
+    case "$line" in
+      *'? for shortcuts'*'⚠'*) next=3 ;;
+      *'? for shortcuts'*) next=2 ;;
+      '⚠'*) [ "$order" -gt 0 ] || return 1; next=3 ;;
+      *) next=1 ;;
+    esac
+    [ "$next" -gt "$order" ] || return 1
+    order=$next
+  done <<EOF
+$(printf '%s\n' "$plain" | sed -n "$((first + 1)),\$p")
+EOF
+  [ "$order" -gt 0 ]
+}
+
+# _fm_composer_bare_row_is_placeholder: 0 when the plain bare <row> is exactly
+# an agent glyph followed by that glyph's own entry in
+# FM_COMPOSER_BARE_PLACEHOLDERS_DEFAULT, and nothing else.
+_fm_composer_bare_row_is_placeholder() {  # <plain-row>
+  local row=$1 glyph='' body entry_glyph entry_text
+  fm_composer_leading_agent_glyph_var glyph "$row" || return 1
+  body=${row#*"$glyph"}
+  fm_composer_normalize_trim_var body
+  [ -n "$body" ] || return 1
+  while IFS=$'\t' read -r entry_glyph entry_text; do
+    [ "$entry_glyph" = "$glyph" ] && [ "$entry_text" = "$body" ] && return 0
+  done <<EOF
+$FM_COMPOSER_BARE_PLACEHOLDERS_DEFAULT
+EOF
+  return 1
 }
 
 # _fm_composer_row_is_pi_status: 0 when the trimmed row is Pi's dollar-first
@@ -1351,6 +1441,7 @@ _fm_composer_wrap_region_ok() {  # <plain-screen> <glyph-row> <cursor-row>
     [ -n "$trimmed" ] || return 1
     if fm_composer_row_has_edge "$trimmed"; then return 1; fi
     if _fm_composer_row_is_omp_status "$trimmed"; then return 1; fi
+    if _fm_composer_codex_footer_run "$plain" "$row"; then return 1; fi
     if _fm_composer_row_is_braille_furniture "$trimmed"; then return 1; fi
     if fm_composer_leading_shell_glyph_var glyph "$trimmed"; then return 1; fi
     row=$((row + 1))
@@ -1813,6 +1904,7 @@ _fm_composer_select_cursorless() {
       [ -n "$trimmed" ] || break
       fm_composer_row_has_edge "$trimmed" && break
       _fm_composer_row_is_omp_status "$trimmed" && break
+      _fm_composer_codex_footer_run "$plain" "$next" && break
       _fm_composer_row_is_braille_furniture "$trimmed" && break
       FM_COMPOSER_SELECTED_LAST=$next
       next=$((next + 1))
@@ -1842,6 +1934,15 @@ _fm_composer_select_cursorless() {
     raw=$(_fm_composer_screen_row "$next" "$plain")
     trimmed=$raw
     fm_composer_normalize_trim_var trimmed
+    # Grok's key-hint row directly under its box is that box's furniture; the
+    # probe resumes on the row after it.
+    if [ "$FM_COMPOSER_SELECTED_KIND" = box ] && [ "$next" = "$((boundary + 1))" ] \
+       && fm_composer_idle_matches "$trimmed" "$FM_COMPOSER_GROK_HINT_RE_DEFAULT" sensitive; then
+      next=$((next + 1))
+      raw=$(_fm_composer_screen_row "$next" "$plain")
+      trimmed=$raw
+      fm_composer_normalize_trim_var trimmed
+    fi
     if [ -n "$trimmed" ] && ! fm_composer_row_has_edge "$trimmed"; then
       FM_COMPOSER_SELECTED_KIND=
       return 1
@@ -1937,7 +2038,7 @@ EOF
 }
 
 # fm_composer_blocking_dialog: name a screen whose next Enter would answer it.
-# Prints the name and returns 0 only for the recorded structure of one dialog:
+# Prints the name and returns 0 only for the recorded structure of a known dialog:
 # the heading on its own line, then its selected row alone on a row, with the
 # recorded footer as the last non-blank row. A heading buried in a sentence,
 # or a last line that only starts with the same words, is not that dialog.
@@ -1956,6 +2057,17 @@ fm_composer_blocking_dialog() {  # <screen> -> dialog name
     END { exit !(selected && last ~ /^[ \t]*Enter to confirm · Esc to cancel[ \t\r]*$/) }
   '; then
     printf '%s' 'Claude background-task exit picker'
+    return 0
+  fi
+  # Recorded 2026-10-19 on Grok 4.7 over Herdr: a prompt sent at 0% weekly
+  # quota opens this left-barred choice, whose first row is Buy more credits.
+  if printf '%s\n' "$screen" | fm_composer_strip_ansi | LC_ALL=C awk '
+    /^[ \t]*┃[ \t]+You hit your weekly limit\.[ \t\r]*$/ { heading = 1 }
+    heading && /^[ \t]*┃[ \t]+1 \(○\) Buy more credits([ \t]|$)/ { selected = 1 }
+    /[^ \t\r]/ { last = $0 }
+    END { exit !(selected && last ~ /^[ \t]*Tab:next answer[ \t]+│[ \t]+Esc:scrollback[ \t]+│[ \t]+Shift\+x:dismiss[ \t\r]*$/) }
+  '; then
+    printf '%s' 'Grok weekly-limit choice'
     return 0
   fi
   return 1

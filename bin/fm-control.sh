@@ -41,8 +41,10 @@
 #              proof (fm_control_endpoint_absence_verdict) before anything is
 #              claimed about it, because `missing` also covers an endpoint that
 #              is merely unreachable from this seat. On HERDR, whose reads are
-#              scoped to the session the record names, and on tmux from the
-#              server identity a tmux spawn records:
+#              scoped to the session the record names, on tmux from the
+#              server identity a tmux spawn records, and on ORCA, which still
+#              describes a closed terminal and is checked against the recorded
+#              worktree for a surviving agent:
 #              proven gone reports `endpoint-gone` rather than
 #              `already-stopped`, because the endpoint this verb normally
 #              preserves did not survive; a pane that turns out to be there and
@@ -56,13 +58,16 @@
 #              still exists - on the same or a newly chosen
 #              harness/model/effort - so switching harness is one ordinary use
 #              of this verb. When the recorded endpoint is instead proven gone -
-#              a Herdr pane or workspace destroyed in churn - the launch owner
-#              re-creates one in that worktree, in the herdr session the record
-#              names, and the task's record rebinds to it; that is how a task
+#              a Herdr pane or workspace destroyed in churn, or a closed Orca
+#              terminal - the launch owner re-creates one in that worktree (in
+#              the herdr session, or the Orca worktree, the record names), and
+#              the task's record rebinds to it; that is how a task
 #              whose terminal was destroyed is reclaimed by the home that owns
 #              it, rather than being stranded with a parked approval nobody can
 #              answer. A tmux reclaim re-creates the window on the recorded
-#              server only, under the proof `exit` describes above.
+#              server only, under the proof `exit` describes above; an Orca
+#              reclaim re-creates the terminal inside the recorded Orca
+#              worktree under that same proof.
 #              An explicit `default` model or effort clears that
 #              axis for the replacement. With no explicit axis, a secondmate
 #              re-resolves its durable config/secondmate-harness pin (harness
@@ -115,8 +120,10 @@
 #   - A backend that cannot deliver the harness's interrupt key is refused;
 #     Orca's raw Escape and Ctrl+U control is verified for Droid only.
 #   - `exit` and `relaunch` require a recovery-grade agent-state classifier
-#     (tmux, herdr) or Droid's current-generation SessionEnd proof on Orca.
-#     Other zellij, orca, cmux, and paseo combinations refuse unproven stops.
+#     (tmux, herdr, orca) or Droid's current-generation SessionEnd proof on
+#     Orca, because without one the "the agent stopped" postcondition cannot
+#     be proven. zellij, cmux, and paseo combinations refuse unproven stops
+#     rather than reporting them as successful blind.
 #   - An ambiguous or unreadable endpoint state refuses; only a positively
 #     classified state acts.
 #   - A composer that visibly holds pending text refuses before an exit command
@@ -403,7 +410,7 @@ agent_state() {
   if [ "$BACKEND" = orca ] && [ "$HARNESS" = droid ]; then
     droid_orca_agent_state
   else
-    fm_backend_agent_state "$BACKEND" "$T"
+    fm_control_agent_state "$BACKEND" "$T"
   fi
 }
 
@@ -714,7 +721,11 @@ do_exit() {
       # "destroyed" with "unreachable from this seat". Route it through the
       # control plane's one absence proof - the same one the relaunch gate uses
       # - and report what that proof actually established, never more.
-      absence=$(fm_control_endpoint_absence_verdict "$BACKEND" "$T" "$META")
+      if [ "$BACKEND" = orca ]; then
+        absence=$(fm_control_endpoint_absence_verdict "$BACKEND" "$T" "$WT")
+      else
+        absence=$(fm_control_endpoint_absence_verdict "$BACKEND" "$T" "$META")
+      fi
       case "${absence%%$'\t'*}" in
         gone)
           # Proven gone, so the agent that lived in it went with it: exit's
@@ -1161,10 +1172,18 @@ do_relaunch() {
 
   require_state_verified_backend relaunch
   resolve_relaunch_profile
-  # Orca's only lifecycle proof is Droid's own hooks, so the replacement must
-  # be Droid too or its start could not be confirmed after the old one stops.
-  if ! fm_control_backend_state_verified "$BACKEND" && [ "$TARGET_HARNESS" != droid ]; then
+  # An Orca Droid task's stop proof is Droid's own hooks, so its replacement
+  # must be Droid too or its start could not be confirmed after the old one
+  # stops. Other Orca tasks stop through the backend's recovery-grade
+  # classifier and may swap harness.
+  if [ "$BACKEND" = orca ] && [ "$HARNESS" = droid ] && [ "$TARGET_HARNESS" != droid ]; then
     die "task $ID runs on the $BACKEND backend, where only Droid's start and stop can be verified; relaunching onto '$TARGET_HARNESS' would stop the running agent for a replacement that cannot be confirmed"
+  fi
+  # Command Code is verified on tmux and herdr only; fm-spawn would refuse it
+  # on any other backend only after the old agent stopped, so refuse here
+  # while the running agent is untouched.
+  if [ "$TARGET_HARNESS" = commandcode ] && [ "$BACKEND" != tmux ] && [ "$BACKEND" != herdr ]; then
+    die "task $ID runs on the $BACKEND backend, where commandcode is verified on the tmux and herdr backends only; relaunching onto 'commandcode' would stop the running agent for a launch that must be refused"
   fi
 
   case "$KIND" in

@@ -478,6 +478,58 @@ test_composer_state_grok_middle_dot_title() {
   pass "fm_backend_orca_composer_state: Grok 1.0.62's middle-dot title reads empty when idle and pending when typed"
 }
 
+# Idle codex-cli 0.162.1 read live through `orca terminal read`: the bare `›`
+# row holds only codex's placeholder and its footer sits directly beneath it.
+# That exact row is the empty composer; anything else typed there still defers.
+test_composer_state_idle_codex_placeholder_is_empty() {
+  local out row want
+  local footer='"  GPT-6.1-Sol medium · fm/branch · Context 77% left · 33.8M in · 37.8K out · weekly 0% left","  ? for shortcuts                                    ⚠ 3 warnings · f2 to view"'
+  for row in 'Ask Codex to do anything' 'fix the login bug' 'Ask Codex to do anything now'; do
+    want=unknown
+    [ "$row" != 'Ask Codex to do anything' ] || want=empty
+    orca_case "composer-codex-idle-${want}-${#row}"
+    printf '{"ok":true,"result":{"terminal":{"tail":["• Worked for 14m 25s","› %s",%s]}}}\n' "$row" "$footer" > "$RESP/1.out"
+    out=$( PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" \
+      bash -c '. "$0/bin/backends/orca.sh"; fm_backend_orca_composer_state term-123' "$ROOT" )
+    [ "$out" = "$want" ] || fail "codex composer '› $row' on Orca should read $want, got '$out'"
+  done
+  pass "fm_backend_orca_composer_state: idle codex's placeholder reads empty; other text after the glyph stays unknown"
+}
+
+# Idle claude's bare composer is `❯` plus U+00A0, which a plain capture already
+# distinguishes from typed text; its rotating suggestion still defers.
+test_composer_state_idle_claude_is_empty() {
+  local out
+  orca_case composer-claude-idle
+  printf '{"ok":true,"result":{"terminal":{"tail":["transcript line","────────────","❯\xc2\xa0","────────────","  ⏵⏵ bypass permissions on (shift+tab to cycle)"]}}}\n' > "$RESP/1.out"
+  out=$( PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" \
+    bash -c '. "$0/bin/backends/orca.sh"; fm_backend_orca_composer_state term-123' "$ROOT" )
+  [ "$out" = empty ] || fail "idle claude's bare composer on Orca should read empty, got '$out'"
+  orca_case composer-claude-suggestion
+  printf '{"ok":true,"result":{"terminal":{"tail":["transcript line","────────────","❯ Try \\"fix lint errors\\"","────────────"]}}}\n' > "$RESP/1.out"
+  out=$( PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" \
+    bash -c '. "$0/bin/backends/orca.sh"; fm_backend_orca_composer_state term-123' "$ROOT" )
+  [ "$out" = unknown ] || fail "claude's rotating suggestion on Orca must stay unknown, got '$out'"
+  pass "fm_backend_orca_composer_state: idle claude reads empty; its unstyled suggestion stays unknown"
+}
+
+# A 120-column Orca capture of Grok 1.0.62 (2026-10-20) drew the key-hint row
+# directly under the box; the idle box read unknown and fm-control refused to
+# type /exit into it.
+test_composer_state_grok_flush_hint_row() {
+  local out
+  orca_case composer-grok-flush-hint
+  printf '{"ok":true,"result":{"terminal":{"tail":["     Worked for 50s                                                                                                    █","                                                                                                                       █","  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮","  │ ❯                                                                                                                │","  ╰─────────────────────────────────────────────────────────────────────────────── Grok 4.7 (high) · always-approve ─╯","  Shift+Tab:mode  │  Ctrl+x:shortcuts"]}}}\n' > "$RESP/1.out"
+  printf '{"ok":true,"result":{"terminal":{"tail":["     Worked for 50s                                                                                                    █","                                                                                                                       █","  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮","  │ ❯ fix the bug                                                                                                    │","  ╰─────────────────────────────────────────────────────────────────────────────── Grok 4.7 (high) · always-approve ─╯","  Enter:send  │  Opt+Enter:newline  │  Shift+Tab:mode  │  Ctrl+x:"]}}}\n' > "$RESP/2.out"
+  out=$( PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" \
+    bash -c '. "$0/bin/backends/orca.sh"; fm_backend_orca_composer_state term-123' "$ROOT" )
+  [ "$out" = empty ] || fail "an idle Grok composer with its hint row flush under the box should read empty, got '$out'"
+  out=$( PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" \
+    bash -c '. "$0/bin/backends/orca.sh"; fm_backend_orca_composer_state term-123' "$ROOT" )
+  [ "$out" = pending ] || fail "typed text in that Grok composer should read pending, got '$out'"
+  pass "fm_backend_orca_composer_state: Grok's flush key-hint row reads empty when idle and pending when typed"
+}
+
 # Dead-shell injection safety (task fm-composer-shellglyph-safety): a pane whose
 # agent has exited to a bare login shell has no bordered composer row, so the
 # classifier finds nothing and reports `unknown` - NOT a safe (empty) injection
@@ -1806,6 +1858,246 @@ test_card_lifecycle_sites_and_guards
 test_card_requests_five_second_timeout
 test_card_failures_preserve_caller_results
 test_teardown_deletes_only_safe_recorded_orca_branch
+# --- Recovery-grade agent state and endpoint absence --------------------------
+#
+# These cases pin the classifier's logic with real processes standing in for an
+# Orca session tree: Orca's own reads are faked, but every process the verdict
+# walks is a live process the kernel names. docs/orca-backend.md "Agent stop
+# proof" owns the empirical basis these fixtures mirror.
+
+ORCA_STANDIN=$(fm_agent_standin "$TMP_ROOT/standin-bin") || ORCA_STANDIN=
+ORCA_TREE_PIDS=()
+
+orca_show_json() {  # <handle> <connected> <writable> <exit-kind|''> <host> <pty> <worktree>
+  local cause=null
+  [ -z "$4" ] || cause="{\"kind\":\"$4\"}"
+  printf '{"ok":true,"result":{"terminal":{"handle":"%s","ptyId":"%s","connected":%s,"writable":%s,"exitCause":%s,"executionHostId":"%s","worktreePath":"%s"}}}\n' \
+    "$1" "$6" "$2" "$3" "$cause" "$5" "$7"
+}
+
+orca_memory_json() {  # [<pty> <pid>]...
+  local sessions='' sep=''
+  while [ "$#" -ge 2 ]; do
+    sessions="$sessions$sep{\"sessionId\":\"$1\",\"pid\":$2}"
+    sep=,
+    shift 2
+  done
+  printf '{"ok":true,"result":{"worktrees":[{"sessions":[%s]}]}}\n' "$sessions"
+}
+
+# add_lsof_fake: an lsof that prints $FM_FAKE_LSOF (cwd records in -Fpn form)
+# or exits with $FM_FAKE_LSOF_EXIT, so a case chooses what the scan sees.
+add_lsof_fake() {  # <fakebin>
+  cat > "$1/lsof" <<'SH'
+#!/usr/bin/env bash
+[ -z "${FM_FAKE_LSOF_EXIT:-}" ] || exit "$FM_FAKE_LSOF_EXIT"
+cat "${FM_FAKE_LSOF:-/dev/null}"
+SH
+  chmod +x "$1/lsof"
+}
+
+# orca_tree <kind>: start a session tree whose root is a bash shell and set
+# ORCA_TREE_ROOT to the root pid (a global, so the pid also reaches cleanup). `shell` is the shell alone, `agent` adds a child named like a
+# verified harness, `stranger` adds a child named like nothing it knows.
+orca_tree() {  # <shell|agent|stranger>
+  local kind=$1 dir="$TMP_ROOT/tree-bin" pid _ fifo
+  mkdir -p "$dir"
+  case "$kind" in
+    shell)
+      fifo="$dir/hold-${#ORCA_TREE_PIDS[@]}-$RANDOM"
+      mkfifo "$fifo"
+      bash -c 'exec 3<>"$0"; read -r _ <&3' "$fifo" >/dev/null 2>&1 &
+      ;;
+    agent|stranger)
+      local name=claude
+      [ "$kind" = agent ] || name=notaharness
+      ln -sf "$ORCA_STANDIN" "$dir/$name"
+      bash -c '"$0" 600 & wait' "$dir/$name" >/dev/null 2>&1 &
+      ;;
+  esac
+  pid=$!
+  ORCA_TREE_PIDS+=("$pid")
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+    case "$kind" in
+      shell) [ -n "$(ps -p "$pid" -o comm= 2>/dev/null)" ] && break ;;
+      *) [ -n "$(pgrep -P "$pid" 2>/dev/null)" ] && break ;;
+    esac
+    sleep 0.1
+  done
+  ORCA_TREE_ROOT=$pid
+}
+
+orca_tree_cleanup() {
+  local pid
+  for pid in ${ORCA_TREE_PIDS[@]+"${ORCA_TREE_PIDS[@]}"}; do
+    pkill -P "$pid" 2>/dev/null || true
+    kill "$pid" 2>/dev/null || true
+  done
+  ORCA_TREE_PIDS=()
+}
+trap 'orca_tree_cleanup; fm_test_cleanup' EXIT
+
+orca_run() {  # <snippet> -> output of the snippet, run with orca.sh sourced
+  PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" \
+    bash -c '. "$0/bin/backends/orca.sh"; eval "$1"' "$ROOT" "$1"
+}
+
+test_orca_agent_state_reads_the_session_tree() {
+  local kind want root out
+  [ -n "$ORCA_STANDIN" ] || { pass "SKIP: Orca agent state tree cases (no agent stand-in survives here)"; return 0; }
+  for kind in shell agent stranger; do
+    case "$kind" in shell) want=dead ;; agent) want=alive ;; stranger) want=ambiguous ;; esac
+    orca_case "state-$kind"
+    orca_tree "$kind"
+    root=$ORCA_TREE_ROOT
+    orca_show_json term-1 true true '' local pty-1 /orca/wt-1 > "$RESP/1.out"
+    orca_memory_json pty-0 1234 pty-1 "$root" > "$RESP/2.out"
+    out=$(orca_run 'fm_backend_orca_agent_state term-1')
+    orca_tree_cleanup
+    [ "$out" = "$want" ] || fail "a connected terminal whose session tree is '$kind' must read $want, got '$out'"
+  done
+  assert_contains "$(cat "$LOG")" $'orca\x1fdiagnostics\x1fmemory\x1f--json' \
+    "a connected terminal must be classified from Orca's own process sweep"
+  pass "fm_backend_orca_agent_state: a connected terminal reads alive, dead, or ambiguous from its session tree"
+}
+
+test_orca_agent_state_reads_a_closed_terminal_as_missing() {
+  local out
+  orca_case state-closed
+  orca_show_json term-1 false false operator_close local pty-1 /orca/wt-1 > "$RESP/1.out"
+  out=$(orca_run 'fm_backend_orca_agent_state term-1')
+  [ "$out" = missing ] || fail "a closed terminal with a recorded exit cause must read missing, got '$out'"
+  pass "fm_backend_orca_agent_state: a closed terminal with a recorded exit cause reads missing"
+}
+
+test_orca_agent_state_unprovable_reads_are_unreadable() {
+  local name out
+  for name in no-exit-cause stale remote error-json mismatch mixed-pair cli-fails not-swept; do
+    orca_case "state-$name"
+    case "$name" in
+      no-exit-cause) orca_show_json term-1 false false '' local pty-1 /orca/wt-1 > "$RESP/1.out" ;;
+      stale) printf '{"ok":false,"error":{"code":"terminal_handle_stale"}}\n' > "$RESP/1.out" ;;
+      remote) orca_show_json term-1 false false operator_close ssh-box pty-1 /orca/wt-1 > "$RESP/1.out" ;;
+      error-json) printf '{"ok":false,"error":{"code":"runtime_unavailable"}}\n' > "$RESP/1.out" ;;
+      mismatch) orca_show_json term-2 false false operator_close local pty-1 /orca/wt-1 > "$RESP/1.out" ;;
+      mixed-pair) orca_show_json term-1 false true operator_close local pty-1 /orca/wt-1 > "$RESP/1.out" ;;
+      cli-fails) echo 1 > "$RESP/1.exit" ;;
+      not-swept)
+        orca_show_json term-1 true true '' local pty-1 /orca/wt-1 > "$RESP/1.out"
+        orca_memory_json pty-0 1234 > "$RESP/2.out"
+        ;;
+    esac
+    out=$(orca_run 'fm_backend_orca_agent_state term-1')
+    [ "$out" = unreadable ] || fail "the '$name' read cannot prove a state and must read unreadable, got '$out'"
+  done
+  pass "fm_backend_orca_agent_state: every read that cannot prove a state reads unreadable"
+}
+
+# orca_proof_case: a closed terminal of worktree $CASE_DIR/wt whose session
+# Orca no longer sweeps, with a working-directory scan holding only a shell.
+orca_proof_case() {  # <name>
+  orca_case "$1"
+  mkdir -p "$CASE_DIR/wt"
+  add_lsof_fake "$FB"
+  orca_show_json term-1 false false operator_close local pty-1 "$CASE_DIR/wt" > "$RESP/1.out"
+  orca_memory_json pty-0 1234 > "$RESP/2.out"
+  printf 'p%s\nn%s\n' "$$" "$CASE_DIR/wt" > "$CASE_DIR/lsof.out"
+}
+
+orca_proof() {  # [env...] -> the absence proof for term-1 and $CASE_DIR/wt
+  # shellcheck disable=SC2016 # positional params expand in the child shell.
+  env "$@" FM_FAKE_LSOF="$CASE_DIR/lsof.out" PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" \
+    bash -c '. "$0/bin/backends/orca.sh"; fm_backend_orca_endpoint_absence_proof term-1 "$1"' "$ROOT" "$CASE_DIR/wt"
+}
+
+test_orca_absence_proof_is_gone_for_a_closed_clean_terminal() {
+  local out
+  orca_proof_case proof-gone
+  out=$(orca_proof)
+  [ "$out" = $'gone\t' ] || fail "a closed, unswept terminal with no agent in its worktree must prove gone, got '$out'"
+  pass "fm_backend_orca_endpoint_absence_proof: a closed terminal with no agent left proves gone"
+}
+
+test_orca_absence_proof_refuses_without_every_fact() {
+  local name out reason agent=''
+  if [ -n "$ORCA_STANDIN" ]; then
+    mkdir -p "$TMP_ROOT/tree-bin"
+    ln -sf "$ORCA_STANDIN" "$TMP_ROOT/tree-bin/claude"
+    "$TMP_ROOT/tree-bin/claude" 600 >/dev/null 2>&1 &
+    agent=$!
+    ORCA_TREE_PIDS+=("$agent")
+  fi
+  for name in agent-in-worktree scan-fails session-listed sweep-unreadable other-worktree stale remote no-exit-cause no-worktree; do
+    orca_proof_case "proof-$name"
+    case "$name" in
+      agent-in-worktree)
+        [ -n "$agent" ] || continue
+        printf 'p%s\nn%s/sub\n' "$agent" "$CASE_DIR/wt" >> "$CASE_DIR/lsof.out"
+        reason="an agent process still runs in"
+        ;;
+      scan-fails) reason="working directories of local processes could not be read" ;;
+      session-listed) orca_memory_json pty-1 4242 > "$RESP/2.out"; reason="still lists a live process" ;;
+      sweep-unreadable) echo 1 > "$RESP/2.exit"; reason="process sweep could not be read" ;;
+      other-worktree)
+        mkdir -p "$CASE_DIR/elsewhere"
+        orca_show_json term-1 false false operator_close local pty-1 "$CASE_DIR/elsewhere" > "$RESP/1.out"
+        reason="not the recorded"
+        ;;
+      stale) printf '{"ok":false,"error":{"code":"terminal_handle_stale"}}\n' > "$RESP/1.out"; reason="no longer recognizes" ;;
+      remote) orca_show_json term-1 false false operator_close ssh-box pty-1 "$CASE_DIR/wt" > "$RESP/1.out"; reason="execution host ssh-box" ;;
+      no-exit-cause) orca_show_json term-1 false false '' local pty-1 "$CASE_DIR/wt" > "$RESP/1.out"; reason="no exit cause" ;;
+      no-worktree) reason="names no worktree" ;;
+    esac
+    case "$name" in
+      scan-fails) out=$(orca_proof FM_FAKE_LSOF_EXIT=1) ;;
+      no-worktree)
+        out=$(PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" \
+          bash -c '. "$0/bin/backends/orca.sh"; fm_backend_orca_endpoint_absence_proof term-1 ""' "$ROOT")
+        ;;
+      *) out=$(orca_proof) ;;
+    esac
+    case "$out" in
+      unproven$'\t'*) ;;
+      *) orca_tree_cleanup; fail "the '$name' case lacks a fact the proof needs and must be unproven, got '$out'" ;;
+    esac
+    assert_contains "$out" "$reason" "the '$name' refusal must name the fact it could not establish"
+  done
+  orca_tree_cleanup
+  [ -n "$agent" ] || pass "SKIP: Orca absence proof agent-in-worktree case (no agent stand-in survives here)"
+  pass "fm_backend_orca_endpoint_absence_proof: any missing fact is unproven, naming that fact"
+}
+
+test_orca_absence_proof_reclassifies_a_connected_terminal() {
+  local kind want root out
+  [ -n "$ORCA_STANDIN" ] || { pass "SKIP: Orca connected re-classification (no agent stand-in survives here)"; return 0; }
+  for kind in shell agent; do
+    case "$kind" in shell) want=dead ;; agent) want=alive ;; esac
+    orca_proof_case "proof-connected-$kind"
+    orca_tree "$kind"
+    root=$ORCA_TREE_ROOT
+    orca_show_json term-1 true true '' local pty-1 "$CASE_DIR/wt" > "$RESP/1.out"
+    cp "$RESP/1.out" "$RESP/2.out"
+    orca_memory_json pty-1 "$root" > "$RESP/3.out"
+    out=$(orca_proof)
+    orca_tree_cleanup
+    [ "$out" = "$want"$'\t' ] || fail "a connected terminal whose session tree is '$kind' must re-classify as $want, got '$out'"
+  done
+  pass "fm_backend_orca_endpoint_absence_proof: a still-connected terminal re-classifies as dead or alive"
+}
+
+test_orca_state_is_read_only_by_the_control_plane() {
+  local fleet control
+  orca_case state-scope
+  orca_show_json term-1 false false operator_close local pty-1 /orca/wt-1 > "$RESP/1.out"
+  fleet=$(PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" \
+    bash -c '. "$0/bin/fm-backend.sh"; fm_backend_agent_state orca term-1' "$ROOT")
+  [ "$fleet" = unverified ] || fail "the fleet-wide agent state must stay unverified for orca, got '$fleet'"
+  control=$(PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" \
+    bash -c '. "$0/bin/fm-backend.sh"; . "$0/bin/fm-control-lib.sh"; fm_control_agent_state orca term-1' "$ROOT")
+  [ "$control" = missing ] || fail "the control plane must read orca through its classifier, got '$control'"
+  pass "orca agent state: the control plane reads the classifier while fleet callers still see unverified"
+}
+
 test_capture_reads_terminal_tail_json
 test_capture_falls_back_to_text_fields
 test_capture_fails_on_orca_error_json
@@ -1825,6 +2117,9 @@ test_composer_state_stale_banner_never_wins
 test_send_text_submit_retries_when_composer_stays_pending
 test_composer_state_popup_placeholder_fill_is_pending
 test_composer_state_grok_middle_dot_title
+test_composer_state_idle_codex_placeholder_is_empty
+test_composer_state_idle_claude_is_empty
+test_composer_state_grok_flush_hint_row
 test_composer_state_bare_shell_prompt_is_unknown
 test_send_text_submit_popup_autocomplete_requires_second_enter
 test_send_literal_constructs_non_enter_send
@@ -1866,3 +2161,10 @@ test_teardown_refuses_orca_worktree_without_terminal_handle
 test_secondmate_force_teardown_removes_orca_child_via_orca
 test_secondmate_force_teardown_refuses_orca_child_id_path_mismatch
 test_secondmate_force_teardown_refuses_partial_orca_child
+test_orca_agent_state_reads_the_session_tree
+test_orca_agent_state_reads_a_closed_terminal_as_missing
+test_orca_agent_state_unprovable_reads_are_unreadable
+test_orca_absence_proof_is_gone_for_a_closed_clean_terminal
+test_orca_absence_proof_refuses_without_every_fact
+test_orca_absence_proof_reclassifies_a_connected_terminal
+test_orca_state_is_read_only_by_the_control_plane

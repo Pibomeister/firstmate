@@ -580,6 +580,222 @@ test_matrix_codex_idle_starfield_furniture() {
   pass "matrix: codex 0.154's starfield rows are furniture; typed, mixed, and unanchored rows keep their verdicts"
 }
 
+test_matrix_codex_0162_placeholder_on_plain_capture() {
+  # Real idle codex-cli 0.162.1 read through Orca (`orca terminal read`, plain
+  # text): the bare `›` row holds only codex's `Ask Codex to do anything`
+  # placeholder, and the model/context footer plus the `? for shortcuts` hint
+  # sit DIRECTLY below it with no blank row. Without the footer boundary the
+  # wrap region swallowed both footer rows, and without the per-glyph
+  # placeholder entry the plain row was indistinguishable from typed text, so
+  # every Orca-backed codex pane read `unknown` and relaunch refused.
+  local status hint footer idle typed out caps want context hint_row
+  status='  GPT-6.1-Sol medium · fm/ak-kimi-toml-bun142 · Context 77% left · 33.8M in · 37.8K out · weekly 0% left'
+  hint='  ? for shortcuts                                    ⚠ 3 warnings · f2 to view'
+  footer="$status"$'\n'"$hint"
+  idle=$'• Worked for 14m 25s • 2:11 PM\n› Ask Codex to do anything\n'"$footer"
+
+  # NON-VACUOUSNESS: both footer rows are non-blank, edge-free content the
+  # wrap region would otherwise take as typed input.
+  fm_composer_row_has_edge "$status" \
+    && fail "fixture drift: the codex status row must carry no structural edge"
+  _fm_composer_row_is_codex_footer "$status" \
+    || fail "the codex model/context status row must be recognized as furniture"
+  _fm_composer_row_is_codex_footer "$hint" \
+    || fail "the codex '? for shortcuts' row must be recognized as furniture"
+  _fm_composer_row_is_codex_footer '  ← for agents · ? for shortcuts      ⚠ 3 warnings · f2 to view' \
+    || fail "the codex hint row after its agents cell must be recognized as furniture"
+  _fm_composer_row_is_codex_footer '  gpt-5.5 xhigh · Context 100% left' \
+    || fail "the older codex status row must be recognized as furniture"
+  _fm_composer_row_is_codex_footer 'please check the Context window size' \
+    && fail "ordinary prose mentioning Context must not be codex furniture"
+
+  assert_screen "codex 0.162 idle on cmux/orca" empty "$CAPS_PLAIN" "$idle"
+  assert_screen "codex 0.162 idle under its status row only" empty "$CAPS_PLAIN" \
+    $'transcript\n› Ask Codex to do anything\n'"$status"
+  assert_screen "codex 0.162 idle under its hint row only" empty "$CAPS_PLAIN" \
+    $'transcript\n› Ask Codex to do anything\n'"$hint"
+  assert_screen "codex 0.162 idle under its agents hint row only" empty "$CAPS_PLAIN" \
+    $'transcript\n› Ask Codex to do anything\n  ← for agents · ? for shortcuts'
+
+  typed=$'›\n Context 77% left\n ← for agents · ? for shortcuts'
+  for caps in "$CAPS_PLAIN" "$CAPS_STYLED" "$CAPS_STYLED_NOID"; do
+    want=pending
+    [ "$caps" != "$CAPS_PLAIN" ] || want=unknown
+    assert_screen "context draft above hint-only Codex footer" "$want" "$caps" "$typed"
+    out=$(fm_composer_extract_selected_content "$caps" "$typed")
+    [ "$out" = 'Context 77% left' ] || fail "hint-only Codex footer discarded context draft: '$out'"
+    out=$(LC_ALL=C fm_composer_extract_selected_content "$caps" "$typed")
+    [ "$out" = 'Context 77% left' ] || fail "C-locale hint-only Codex footer discarded context draft: '$out'"
+  done
+  assert_screen "cursor on context draft above hint-only Codex footer" pending "$CAPS_TMUX" "$typed" 1
+  for context in 'Context 0% left' 'Context 100% left'; do
+    for hint_row in '? for shortcuts' '← for agents · ? for shortcuts' "$hint"; do
+      typed=$'›\n '"$context"$'\n '"$hint_row"
+      assert_screen "context draft '$context' above '$hint_row' on plain capture" unknown "$CAPS_PLAIN" "$typed"
+      assert_screen "context draft '$context' above '$hint_row' on styled capture" pending "$CAPS_STYLED" "$typed"
+      out=$(fm_composer_extract_selected_content "$CAPS_PLAIN" "$typed")
+      [ "$out" = "$context" ] || fail "hint-only footer discarded context variant: '$out'"
+    done
+  done
+
+  # The dangerous direction: any other text after the glyph is never empty on
+  # a plain capture - typed text, an extension or prefix of the placeholder,
+  # a case change, or the placeholder after a different harness's glyph.
+  for typed in 'fix the login bug' 'Ask Codex to do anything now' 'Ask Codex' \
+               'ask codex to do anything'; do
+    assert_screen "codex 0.162 typed '$typed' on cmux/orca" unknown "$CAPS_PLAIN" \
+      $'transcript\n› '"$typed"$'\n'"$footer"
+  done
+  assert_screen "codex placeholder after claude's glyph" unknown "$CAPS_PLAIN" \
+    $'transcript\n❯ Ask Codex to do anything\n'"$footer"
+  # A wrapped continuation row is typed input, never part of the placeholder.
+  assert_screen "codex placeholder with a wrapped typed row" unknown "$CAPS_PLAIN" \
+    $'transcript\n› Ask Codex to do anything\nand also this\n'"$footer"
+
+  # DIVERGENCE: the same screen with its footer rows replaced by prose keeps
+  # those rows as wrapped input, so the empty verdict above cannot come from
+  # anything but the footer boundary.
+  assert_screen "codex placeholder above unclaimed prose" unknown "$CAPS_PLAIN" \
+    $'transcript\n› Ask Codex to do anything\nGPT medium on branch with plenty left'
+
+  # Styled backends are unchanged: the dim placeholder strips to empty, and
+  # the same words typed bright stay pending.
+  out=$'transcript\n'"${ESC}[1m›${ESC}[0m ${ESC}[2mAsk Codex to do anything${ESC}[0m"$'\n'"$footer"
+  assert_screen "codex 0.162 dim placeholder on herdr" empty "$CAPS_STYLED_NOID" "$out"
+  out=$'transcript\n'"${ESC}[1m›${ESC}[0m Ask Codex to do anything"$'\n'"$footer"
+  assert_screen "codex 0.162 placeholder typed bright on herdr" pending "$CAPS_STYLED_NOID" "$out"
+  pass "matrix: codex 0.162's footer bounds its bare composer; only its exact placeholder reads empty unstyled"
+}
+
+test_codex_footer_requires_complete_rows() {
+  local row screen caps out want envelope
+  envelope=$'╭────────────────────────╮\n│ ›                      │\n╰────────────────────────╯'
+  for row in '? for shortcuts' \
+             '← for agents · ? for shortcuts' \
+             '? for shortcuts      ⚠ 1 warning · f2 to view' \
+             '← for agents · ? for shortcuts      ⚠ 3 warnings · f2 to view' \
+             'gpt-5.5 xhigh · Context 100% left' \
+             'GPT-6.1-Sol medium · fm/branch · Context 77% left · 33.8M in · 37.8K out · weekly 0% left'; do
+    screen=$'›\n  '"$row"
+    for caps in "$CAPS_PLAIN" "$CAPS_STYLED" "$CAPS_STYLED_NOID"; do
+      assert_screen "complete Codex footer '$row'" empty "$caps" "$screen"
+      out=$(fm_composer_extract_selected_content "$caps" "$screen")
+      [ -z "$out" ] || fail "complete Codex footer leaked into extracted content: '$out'"
+      want=pending
+      [ "$caps" != "$CAPS_PLAIN" ] || want=unknown
+      assert_screen "Codex footer before a lower live composer '$row'" "$want" "$caps" \
+        "$envelope"$'\n  '"$row"$'\n→ status'
+    done
+    assert_screen "cursor on complete Codex footer '$row'" unknown "$CAPS_TMUX" "$screen" 1
+  done
+  for row in '? for shortcuts is my first question' \
+             '← for agents · ? for shortcuts is my first question' \
+             '? for shortcuts ⚠ 3 warnings · f2 to view then explain' \
+             'notes · ? for shortcuts' \
+             'Context 77% left is my first question' \
+             'gpt-5.5 xhigh · Context 100% left then explain' \
+             'GPT-6.1-Sol medium · fm/branch · Context 77% left · arbitrary prose' \
+             'notes · Context 77% left'; do
+    screen=$'›\n  '"$row"$'\n explain them'
+    for caps in "$CAPS_PLAIN" "$CAPS_STYLED" "$CAPS_STYLED_NOID"; do
+      want=pending
+      [ "$caps" != "$CAPS_PLAIN" ] || want=unknown
+      assert_screen "footer-like draft '$row'" "$want" "$caps" "$screen"
+      out=$(fm_composer_extract_selected_content "$caps" "$screen")
+      [ "$out" = "$row explain them" ] || fail "footer-like draft lost during extraction: '$out'"
+      out=$(LC_ALL=C fm_composer_extract_selected_content "$caps" "$screen")
+      [ "$out" = "$row explain them" ] || fail "footer-like draft lost during C-locale extraction: '$out'"
+      assert_screen "footer-like activity below envelope '$row'" "$want" "$caps" \
+        "$envelope"$'\n  '"$row"$'\n→ keep draft'
+    done
+    assert_screen "cursor on footer-like draft '$row'" pending "$CAPS_TMUX" "$screen" 1
+    assert_screen "cursor below footer-like draft '$row'" pending "$CAPS_TMUX" "$screen" 2
+  done
+  pass "Codex footer matching requires complete rows across wrapping, envelopes, and extraction"
+}
+
+test_codex_footer_run_preserves_following_draft() {
+  local row screen caps want out footer envelope
+  footer=$'gpt-5.5 xhigh · Context 100% left\n ? for shortcuts'
+  envelope=$'╭────────────────────────╮\n│ ›                      │\n╰────────────────────────╯'
+  for row in '? for shortcuts' \
+             '← for agents · ? for shortcuts' \
+             'Context 77% left' \
+             'gpt-5.5 xhigh · Context 100% left'; do
+    for caps in "$CAPS_PLAIN" "$CAPS_STYLED" "$CAPS_STYLED_NOID"; do
+      want=pending
+      [ "$caps" != "$CAPS_PLAIN" ] || want=unknown
+      screen=$'›\n '"$row"$'\n explain them\n '"$footer"
+      assert_screen "draft continues after complete-looking footer '$row'" "$want" "$caps" "$screen"
+      out=$(fm_composer_extract_selected_content "$caps" "$screen")
+      [ "$out" = "$row explain them" ] || fail "draft after footer-looking row was lost: '$out'"
+      out=$(LC_ALL=C fm_composer_extract_selected_content "$caps" "$screen")
+      [ "$out" = "$row explain them" ] || fail "C-locale draft after footer-looking row was lost: '$out'"
+      screen=$'›\n '"$row"$'\n\n explain them\n '"$footer"
+      assert_screen "draft after a footer-looking row and blank line '$row'" "$want" "$caps" "$screen"
+      screen=$'›\n '"$row"$'\n explain them'
+      assert_screen "draft after a footer-looking row without real footer '$row'" "$want" "$caps" "$screen"
+      screen="$envelope"$'\n '"$row"$'\n explain them\n→ keep draft'
+      assert_screen "ordinary activity invalidates envelope footer run '$row'" "$want" "$caps" "$screen"
+      screen=$'›\n '"$footer"$'\n\n'
+      assert_screen "real footer with trailing blank rows '$row'" empty "$caps" "$screen"
+    done
+    screen=$'›\n '"$row"$'\n explain them\n '"$footer"
+    assert_screen "cursor on draft footer-looking row '$row'" pending "$CAPS_TMUX" "$screen" 1
+    assert_screen "cursor after draft footer-looking row '$row'" pending "$CAPS_TMUX" "$screen" 2
+    assert_screen "cursor on real footer below draft '$row'" unknown "$CAPS_TMUX" "$screen" 3
+  done
+  pass "Codex footer boundaries require a complete remaining footer run"
+}
+
+test_codex_footer_order_and_multiplicity() {
+  local status='gpt-5.5 xhigh · Context 100% left' hint='? for shortcuts'
+  local warning='⚠ 3 warnings · f2 to view' footer draft screen caps want out expected cy envelope
+  envelope=$'╭────────────────────────╮\n│ ›                      │\n╰────────────────────────╯'
+  footer="$status"$'\n'"$hint"
+  for draft in "$hint" 'Context 77% left' "$status" "$warning" \
+               "$hint $warning" "$hint"$'\n'"$hint" \
+               "$status"$'\n'"$status" "$hint"$'\n'"$status" \
+               "$status"$'\n'"$hint" "$hint"$'\n'"$warning" \
+               "$hint"$'\n'"$warning"$'\n'"$warning"; do
+    screen=$'›\n'"$draft"$'\n'"$footer"
+    expected=${draft//$'\n'/ }
+    for caps in "$CAPS_PLAIN" "$CAPS_STYLED" "$CAPS_STYLED_NOID"; do
+      want=pending
+      [ "$caps" != "$CAPS_PLAIN" ] || want=unknown
+      assert_screen "footer-like draft before real footer '$draft'" "$want" "$caps" "$screen"
+      out=$(fm_composer_extract_selected_content "$caps" "$screen")
+      [ "$out" = "$expected" ] || fail "footer order discarded draft: expected '$expected', got '$out'"
+      out=$(LC_ALL=C fm_composer_extract_selected_content "$caps" "$screen")
+      [ "$out" = "$expected" ] || fail "C-locale footer order discarded draft: '$out'"
+      assert_screen "duplicate footer cannot demote a lower composer '$draft'" "$want" "$caps" \
+        "$envelope"$'\n'"$draft"$'\n'"$footer"$'\n→ keep draft'
+    done
+    cy=1
+    while IFS= read -r out; do
+      assert_screen "cursor on draft row $cy before real footer '$draft'" pending "$CAPS_TMUX" "$screen" "$cy"
+      cy=$((cy + 1))
+    done <<EOF
+$draft
+EOF
+    assert_screen "cursor on real status below draft '$draft'" unknown "$CAPS_TMUX" "$screen" "$cy"
+  done
+  for footer in "$status"$'\n'"$hint" "$status"$'\n'"$hint $warning" \
+                "$status"$'\n'"$hint"$'\n'"$warning" "$hint"$'\n'"$warning"; do
+    for caps in "$CAPS_PLAIN" "$CAPS_STYLED" "$CAPS_STYLED_NOID"; do
+      screen=$'›\n'"$footer"$'\n\n'
+      assert_screen "ordered bottom footer '$footer'" empty "$caps" "$screen"
+      out=$(fm_composer_extract_selected_content "$caps" "$screen")
+      [ -z "$out" ] || fail "ordered footer leaked into draft: '$out'"
+      screen=$'›\n'"$footer"$'\nordinary content'
+      want=pending
+      [ "$caps" != "$CAPS_PLAIN" ] || want=unknown
+      assert_screen "ordinary content after real footer '$footer'" "$want" "$caps" "$screen"
+    done
+  done
+  pass "only one ordered Codex footer suffix is excluded from draft content"
+}
+
 test_matrix_pi_separated_needs_identity() {
   # Real idle pi: a blank row between two solid rules. The blank row alone is
   # exactly what the strict rule refuses; only structure PLUS a live
@@ -1026,6 +1242,48 @@ test_matrix_grok_middle_dot_title() {
   pass "matrix: grok 1.0.62's middle-dot title reads empty when idle and pending when typed"
 }
 
+# Grok 1.0.62 on Orca, captured 2026-10-20 at 120 columns: transcript rows end
+# in a scrollbar cell and the key-hint row sits directly under the bottom
+# border with no blank row. With `typed`, the same box holds text and the hint
+# row shows Grok's typed-composer keys.
+grok_flush_hint_screen() {  # [typed]
+  local content='  │ ❯                                                                                                                │'
+  local hint='  Shift+Tab:mode  │  Ctrl+x:shortcuts'
+  if [ "${1:-}" = typed ]; then
+    content='  │ ❯ fix the bug                                                                                                    │'
+    hint='  Enter:send  │  Opt+Enter:newline  │  Shift+Tab:mode  │  Ctrl+x:'
+  fi
+  printf '%s\n' \
+    '                                                                                                                       █' \
+    '     Worked for 50s                                                                                                    █' \
+    '                                                                                                                       █' \
+    '  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮' \
+    "$content" \
+    '  ╰─────────────────────────────────────────────────────────────────────────────── Grok 4.7 (high) · always-approve ─╯' \
+    "$hint"
+}
+
+test_matrix_grok_hint_row_flush_under_box() {
+  # The hint row directly under the box used to read as a lower live shape,
+  # so an idle Grok composer read unknown and fm-control refused to exit it.
+  local idle typed below
+  idle=$(grok_flush_hint_screen)
+  typed=$(grok_flush_hint_screen typed)
+  assert_screen "grok flush hint idle on orca" empty "$CAPS_PLAIN" "$idle"
+  assert_screen "grok flush hint idle on herdr" empty "$CAPS_STYLED" "$idle"
+  assert_screen "grok flush hint idle on tmux" empty "$CAPS_TMUX" "$idle" 4
+  assert_screen "grok flush hint typed on orca" pending "$CAPS_PLAIN" "$typed"
+  assert_screen "grok flush hint typed on herdr" pending "$CAPS_STYLED" "$typed"
+  assert_screen "grok flush hint typed on tmux" pending "$CAPS_TMUX" "$typed" 4
+  # Only the hint row is furniture: activity below it, or in its place, still
+  # makes the box stale.
+  below=$(printf '%s\n%s' "$idle" '  Working on request...')
+  assert_screen "activity below the grok hint row" unknown "$CAPS_PLAIN" "$below"
+  below=$(printf '%s\n' "$idle" | sed 's/^  Shift+Tab:mode  │  Ctrl+x:shortcuts$/  Working on request.../')
+  assert_screen "activity in place of the grok hint row" unknown "$CAPS_PLAIN" "$below"
+  pass "matrix: grok's key-hint row flush under its box reads empty when idle and pending when typed"
+}
+
 test_matrix_claude_titled_top_rule() {
   # A named Claude Code session draws its title into the composer's TOP rule
   # (issues #5601 and #5558; observed on herdr as
@@ -1407,6 +1665,10 @@ test_matrix_cursor_reverse_video_placeholder_remnant
 test_matrix_herdr_halfblock_rule_bounds_bare_wrap
 test_matrix_omp_status_row_bounds_bare_composer
 test_matrix_codex_idle_starfield_furniture
+test_matrix_codex_0162_placeholder_on_plain_capture
+test_codex_footer_requires_complete_rows
+test_codex_footer_run_preserves_following_draft
+test_codex_footer_order_and_multiplicity
 test_matrix_pi_separated_needs_identity
 test_matrix_pi_dollar_status_footer_is_empty
 test_matrix_opencode_leftbar_signals
@@ -1414,6 +1676,7 @@ test_matrix_opencode_leftbar_cwd_furniture
 test_matrix_opencode_leftbar_abs_cwd_furniture
 test_matrix_grok_titled_bottom_border
 test_matrix_grok_middle_dot_title
+test_matrix_grok_hint_row_flush_under_box
 test_matrix_claude_titled_top_rule
 test_matrix_grok_144_approval_titled_bottom_border
 test_matrix_kimi_bordered_shell_glyph_box
@@ -1521,6 +1784,47 @@ test_background_exit_picker_stays_pending_and_blocks_retry() {
   pass "the Claude background-task exit picker stays pending and receives no confirming Enter"
 }
 
+# Grok's weekly-limit choice, live-captured 2026-10-19 on Grok 4.7 over Herdr.
+grok_weekly_limit_screen() {
+  printf '%s\n' \
+    '                                                                                             █' \
+    '' \
+    '  ┃' \
+    '  ┃  You hit your weekly limit.' \
+    '  ┃' \
+    '  ┃' \
+    '  ┃  1 (○) Buy more credits  Purchase credits to keep using Grok Build' \
+    '  ┃  2 (○) Try Again         Resubmit the last prompt once you have usage again' \
+    '  ┃' \
+    '  ┃  ↑/↓ navigate · y copy                                                  Enter:submit' \
+    '  ┃' \
+    '' \
+    '  Tab:next answer  │  Esc:scrollback  │  Shift+x:dismiss'
+}
+
+test_grok_weekly_limit_choice_is_named_only_in_its_recorded_structure() {
+  local screen out rc sink
+  screen=$(grok_weekly_limit_screen)
+  out=$(fm_composer_blocking_dialog "$screen"); rc=$?
+  [ "$rc" -eq 0 ] || fail "the recorded Grok weekly-limit choice should match"
+  [ "$out" = 'Grok weekly-limit choice' ] || fail "dialog name was '$out'"
+  sink=$(mktemp)
+  FM_COMPOSER_DIALOG_SINK=$sink
+  out=$(fm_composer_classify_screen 'styled=1' "$screen")
+  [ "$out" != empty ] || fail "the weekly-limit choice must never read empty"
+  [ "$(cat "$sink")" = 'Grok weekly-limit choice' ] || fail "classify should note the choice, got '$(cat "$sink")'"
+  unset FM_COMPOSER_DIALOG_SINK
+  rm -f "$sink"
+  out=$(fm_composer_blocking_dialog "$(printf '%s\n' "$screen" \
+    '  ╭──────────────╮' '  │ ❯            │' '  ╰──────────────╯')"); rc=$?
+  [ "$rc" -eq 1 ] || fail "the choice's text quoted above a normal composer must not match"
+  out=$(fm_composer_blocking_dialog "$(printf '%s\n' "$screen" | grep -v 'Buy more credits')"); rc=$?
+  [ "$rc" -eq 1 ] || fail "the heading and footer without the first choice row must not match"
+  out=$(fm_composer_blocking_dialog "$(printf '%s\n' "$screen" | sed 's/You hit your weekly limit\./Note: You hit your weekly limit. Retry later/')"); rc=$?
+  [ "$rc" -eq 1 ] || fail "a heading buried in a sentence must not match"
+  pass "the Grok weekly-limit choice is named only in its recorded structure and never reads empty"
+}
+
 # The picker's own text, shown the way a worker pane shows it when it prints
 # this repository's diff, verification note, or a test fixture: quoted above a
 # normal composer. No picker is open, so the next Enter confirms nothing.
@@ -1615,3 +1919,4 @@ test_background_exit_picker_stays_pending_and_blocks_retry
 test_dialog_heading_and_footer_must_be_the_recorded_lines
 test_dialog_note_skips_the_match_when_no_sink_is_set
 test_quoted_exit_picker_text_is_not_a_dialog
+test_grok_weekly_limit_choice_is_named_only_in_its_recorded_structure

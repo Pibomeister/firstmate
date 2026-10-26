@@ -845,6 +845,17 @@ On 2026-10-19 on macOS arm64, `FM_COMPOSER_MATRIX_LIVE=1 tests/fm-composer-matri
 ok - grok (grok 1.0.62 (1474f9cbdd91) [stable]): real idle composer classifies empty
 ok - grok (grok 1.0.62 (1474f9cbdd91) [stable]): the same idle pane read cursorless is not pending (verdict: empty)
 ```
+
+On 2026-10-19 on macOS arm64, a read-only `fm_backend_composer_state herdr <pane> <label>` with `FM_COMPOSER_DIALOG_SINK` set, against five live Grok 4.7 panes at 0% weekly quota, read the idle 90-column quota-border composer as `empty` with no dialog.
+The other four panes showed the `You hit your weekly limit.` choice, read `pending`, and the sink named `Grok weekly-limit choice`, so `fm-control` exit and relaunch refuse to type into that choice.
+`tests/fm-composer-lib.test.sh` and `tests/fm-backend-herdr.test.sh` pin both live captures.
+
+On 2026-10-20 a 120-column Orca capture of an idle Grok 1.0.62 (Grok 4.7, high effort) composer drew its `Shift+Tab:mode  │  Ctrl+x:shortcuts` key-hint row directly under the bottom border, with no blank row between them.
+The cursorless staleness probe read that row as a lower live shape, so the visibly empty box read `unknown` and `fm-control` refused to type `/exit`.
+The classifier now treats only that key-hint shape (`FM_COMPOSER_GROK_HINT_RE_DEFAULT` in `bin/fm-composer-lib.sh`), as the single row directly under a selected box, as box furniture; any other row there, or activity below the hint row, still makes the box stale.
+`tests/fm-composer-lib.test.sh` and `tests/fm-backend-orca.test.sh` pin the capture as idle `empty` and its typed variant as `pending`.
+This change was proven against the recorded capture only; no live Grok pane was rerun for it.
+
 This closes only #3436's idle-composer-misclassification symptom (Grok/Herdr composer read `unknown` instead of `empty`, blocking away-mode injection). The issue's second symptom - a leftover watcher never yielding and never being taken over or refused at AFK start - is unrelated to composer classification and is tracked separately in #2270, where #3436's reproduction serves as corroborating evidence.
 Grok has since changed that title again, and the newer accepted shape - the same title at the ALIGNED width carrying an approval mode - is recorded in [Grok approval-titled bottom border](#grok-approval-titled-bottom-border) so the two widths are never conflated.
 Cursor is deliberately outside this cursor-anchored empty-composer matrix because its terminal cursor is parked outside the composer; tmux's Cursor-specific, process-identity-gated cursorless fallback is covered by the [Cursor Agent CLI](#cursor-agent-cli) section's separate live evidence and drift guard.
@@ -976,7 +987,7 @@ After the fix, braille-only rows bound the wrap region (the status footer sits b
 A second read-only capture of the same pane, taken during the fix with a bright starfield cell drawn between the `›` and the placeholder, read `pending` before and `empty` after as well.
 `test_matrix_codex_idle_starfield_furniture` in `tests/fm-composer-lib.test.sh` carries both samples byte-for-byte, the divergence (the same screen with letters in place of the starfield reads `pending`), and the over-stripping negatives (wrapped typed input, braille mixed with text, a typed row with a middle dot, and the footer or a starfield row alone).
 
-The live guard that refreshes this entry launches the installed codex idle in an isolated tmux server and asserts `empty` through both the cursor-anchored tmux read and the cursorless styled read Herdr and Zellij use, naming codex and `codex --version` on failure; it is default-on wherever codex and tmux are installed and spends no tokens:
+The live guard that refreshes this entry launches the installed codex idle in an isolated tmux server and asserts `empty` through the cursor-anchored tmux read, the cursorless styled read Herdr and Zellij use, and the plain read Orca and cmux use, naming codex and `codex --version` on failure; it is default-on wherever codex and tmux are installed and spends no tokens:
 
 ```sh
 tests/fm-composer-codex-idle-live-e2e.test.sh
@@ -1036,6 +1047,40 @@ not ok - mid-turn absolute cwd rail read 'pending', want empty
 ```
 
 The cursorless backends still defer: on a cursorless read (Herdr and Zellij) a full-pane capture of this version answers `unknown` because the status rail below the composer floor row is contiguous non-blank content the selector refuses to outrank, which is the strict posture and not this defect; and very narrow panes where the cwd rail starts in the left half of the row defer the same way.
+### 2026-10-14 codex-cli 0.162.1 placeholder and footer through Orca
+
+Verified on 2026-10-14 on macOS arm64 (Darwin 25.6.0) against codex-cli 0.162.1 (model GPT-6.1-Sol) running as an idle Firstmate worker in an Orca terminal, read through Orca's plain capture with its exact capability descriptor (`styled=0`, `cursor=0`, `identity=0`).
+Idle, codex 0.162.1 draws its bare `›` row holding only `Ask Codex to do anything`, with no starfield behind it, and draws its footer directly beneath that row with no blank row between them:
+
+```text
+› Ask Codex to do anything
+  GPT-6.1-Sol medium · fm/ak-kimi-toml-bun142 · Context 77% left · 33.8M in · 37.8K out · weekly 0% left
+  ? for shortcuts                                                                             ⚠ 3 warnings · f2 to view
+```
+
+The live verdict is read through the real adapter, read-only:
+
+```sh
+bash -c '. bin/fm-composer-lib.sh; . bin/backends/orca.sh
+  fm_backend_orca_composer_state <terminal-handle>'
+```
+
+Observed output before the fix (`bin/fm-composer-lib.sh` at 4a7802f8) and then after it, the same under `LC_ALL=C`:
+
+```text
+unknown
+empty
+```
+
+Before the fix the bare `›` row's wrap region ran over both footer rows, and the plain row could not be told from typed text, so `fm-control.sh relaunch` refused every Orca-backed codex worker as not proven empty.
+The current footer-boundary and exact plain-placeholder contracts are owned by `FM_COMPOSER_CODEX_FOOTER_RE_DEFAULT`, `_fm_composer_codex_footer_run`, and `FM_COMPOSER_BARE_PLACEHOLDERS_DEFAULT` in `bin/fm-composer-lib.sh`.
+A fresh codex 0.162.1 launched in an isolated tmux server drew the same composer under a `← for agents · ? for shortcuts` hint row and read `empty` through the plain, styled, and `LC_ALL=C` plain profiles.
+`test_matrix_codex_0162_placeholder_on_plain_capture` in `tests/fm-composer-lib.test.sh` and `test_composer_state_idle_codex_placeholder_is_empty` in `tests/fm-backend-orca.test.sh` pin those verdicts and the divergence where prose in place of the footer keeps the row `unknown`.
+The matrix also pins `›`, then `Context 77% left`, then `← for agents · ? for shortcuts` as draft input: plain captures read `unknown`, styled captures read `pending`, and extraction preserves `Context 77% left`.
+`test_codex_footer_requires_complete_rows`, `test_codex_footer_run_preserves_following_draft`, and `test_codex_footer_order_and_multiplicity` cover footer-like draft rows, footer order, and duplicate sequences.
+
+`tests/fm-composer-codex-idle-live-e2e.test.sh` now also requires the plain read to reach `empty`.
+On 2026-10-14 it could not reach any of its reads on the verification machine, because codex-cli 0.162.1 parks on its `Hooks need review` modal, which the guard correctly refuses to dismiss; the same failure reproduces on the unmodified library, and the Orca capture above is this entry's live evidence.
 
 ## Steering-inbox doorbell
 
@@ -2132,6 +2177,45 @@ tests/fm-bootstrap.test.sh
 ```
 
 The fake-Orca suite covers readiness, registration, create response parsing, metadata routing, popup-safe submit, and path-matched release refusal.
+
+### Orca agent stop proof
+
+The agent stop proof was verified on 2026-10-14 on macOS against `/Applications/Orca.app` and the `orca` CLI, both reporting version 1.4.223.
+
+A probe terminal created in this repository's worktree and then closed with `orca terminal close` read back through `orca terminal show --terminal <handle> --json` as:
+
+```text
+result.terminal.connected=false
+result.terminal.writable=false
+result.terminal.exitCause.kind=operator_close
+result.terminal.executionHostId=local
+result.terminal.worktreePath=<the worktree it was created in>
+```
+
+A second probe terminal whose shell exited on its own read the same, except `exitCause={"kind":"unknown","reason":"stop_unverified"}`.
+A connected terminal read `connected=true`, `writable=true`, and no `exitCause`.
+An unknown handle returned `ok:false` with `error.code=terminal_handle_stale`.
+`orca diagnostics memory --json` listed each live session under `result.worktrees[].sessions[]` with `sessionId` equal to the terminal's `ptyId` and a `pid`.
+
+The adapter's verdicts were then read against those real terminals with `bin/backends/orca.sh` sourced under Bash, with this repository's worktree as the recorded worktree and a Claude worker running in it:
+
+```sh
+fm_backend_orca_agent_state <handle>
+fm_backend_orca_endpoint_absence_proof <handle> <worktree>
+fm_backend_orca_process_tree <session pid>
+```
+
+```text
+closed terminal (operator_close):  state=missing  proof=unproven|an agent process still runs in <worktree> (80018 claude)
+closed terminal (shell exit):      state=missing  proof=unproven|an agent process still runs in <worktree> (80018 claude)
+unknown handle:                    state=unreadable  proof=unproven|Orca could not describe terminal term_bogus
+idle connected terminal:           state=dead   proof=dead   tree: /usr/bin/login -> -/bin/zsh
+Claude connected terminal:         state=alive  proof=alive  tree: /usr/bin/login -> -/bin/zsh -> claude -> ...
+```
+
+The two closed terminals refused because the working-directory scan found the running Claude worker in the same worktree, which is the survivor check working as intended.
+A live `gone` needs a closed terminal in a worktree with no agent, which this probe did not create; `tests/fm-backend-orca.test.sh`, `tests/fm-spawn-orca-worktree.test.sh`, and `tests/fm-control.test.sh` cover it with Orca's reads faked and real processes.
+The `lsof -nP -a -u <uid> -d cwd -Fpn` scan took 0.63 seconds on this host.
 
 ### Orca environment source
 
