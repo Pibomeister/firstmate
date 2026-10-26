@@ -2609,7 +2609,9 @@ captain_call_stale_bound() {  # <window-key> <task>
 # because either is news. Bound to the status-log signature, so any append
 # starts a fresh window; a busy pane drops the throttle
 # (clear_worker_blocker_throttle), so a worker that works - including reading a
-# steer - and goes idle again alarms afresh.
+# steer - and goes idle again alarms afresh. Two quiets wait for the recheck
+# instead: a prompt fm_composer_blocking_dialog does not recognise, and a gone
+# agent on a backend whose liveness read answers only unknown.
 worker_blocker_stale_bound() {  # <window> <window-key> <task>
   local win=$1 key=$2 task=$3 verb
   STALE_WAIT_DECLARATION=
