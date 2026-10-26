@@ -785,6 +785,9 @@ child=
 child_out=
 cleanup_child() {
   if [ -n "$child" ] && fm_pid_alive "$child"; then
+    if fm_watcher_lock_matches_pid "$STATE" "$WATCH" "$child" "$FM_HOME"; then
+      cycle_watcher_identity=$FM_WATCHER_MATCHED_IDENTITY
+    fi
     fm_watcher_stop_tree "$child" "" 5 || true
   fi
 }
@@ -800,9 +803,10 @@ handle_arm_signal() {
     while fm_pid_alive "$child"; do
       if fm_watcher_lock_matches_pid "$STATE" "$WATCH" "$child" "$FM_HOME" \
         || [ "$(date +%s)" -ge "$deadline" ]; then
+        [ -z "$FM_WATCHER_MATCHED_IDENTITY" ] || cycle_watcher_identity=$FM_WATCHER_MATCHED_IDENTITY
         # The tree stop is bounded (TERM, then KILL after its grace), so a
         # watcher wedged in a blocking write cannot hold this handler forever.
-        fm_watcher_stop_tree "$child" "" 5 || true
+        cleanup_child
         break
       fi
       sleep 0.02
@@ -911,11 +915,10 @@ wait_owned_child() {
       age=$FM_WATCHER_STALL_AGE
       trap - HUP TERM INT
       cycle_log_append unknown unknown started-holder-stalled none
-      fm_watcher_stop_tree "$child" "" 5 || true
-      wait "$child" 2>/dev/null || true
       consume_child_output
-      echo "watcher: FAILED - started watcher pid=$child stalled (beacon ${age}s at or past hard bound ${STALL_BOUND}s)"
       cleanup_child
+      wait "$child" 2>/dev/null || true
+      echo "watcher: FAILED - started watcher pid=$child stalled (beacon ${age}s at or past hard bound ${STALL_BOUND}s)"
       exit 1
     fi
     sleep "$ATTACH_POLL"

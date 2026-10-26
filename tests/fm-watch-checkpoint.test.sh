@@ -118,6 +118,106 @@ test_interrupted_startup_reports_failed_cleanup() {
   pass "checkpoint: interrupted startup retains failed-cleanup evidence and returns nonzero"
 }
 
+test_preconfirmation_predecessor_retirement_uses_verified_identity() {
+  local home holder predecessor replacement watcher initial identity i status=0 real_date real_mktemp
+  home=$(make_real_host_home preconfirmation-predecessor)
+  fm_test_track_watcher_state "$home/state"
+  real_date=$(command -v date) || fail "date is required for startup synchronization"
+  real_mktemp=$(command -v mktemp) || fail "mktemp is required for startup synchronization"
+  cat > "$home/pre-exec.env" <<'SH'
+case "$(ps -ww -o args= -p "$$" 2>/dev/null)" in
+  *"$FM_TEST_WATCH_PATH")
+    if [ "${FM_PRECONFIRM_EXECED:-0}" != 1 ]; then
+      printf '%s\n' "$$" > "$FM_HOME/pre-exec.pid"
+      : > "$FM_HOME/pre-exec-ready"
+      while [ ! -e "$FM_HOME/pre-exec-go" ] && [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do sleep 0.05; done
+      export FM_PRECONFIRM_EXECED=1
+      exec bash --noprofile "$FM_TEST_WATCH_PATH"
+    fi
+    ;;
+esac
+SH
+  cat > "$home/fakebin/date" <<'SH'
+#!/usr/bin/env bash
+if [ -e "$FM_HOME/pre-exec-ready" ] && [ ! -e "$FM_HOME/pre-exec-go" ]; then
+  case "$(ps -ww -o args= -p "$PPID" 2>/dev/null)" in
+    *fm-watch-arm*) : > "$FM_HOME/initial-identity-captured" ;;
+  esac
+fi
+exec "$FM_TEST_REAL_DATE" "$@"
+SH
+  cat > "$home/fakebin/mktemp" <<'SH'
+#!/usr/bin/env bash
+case "$*" in
+  *'/.supervision-host-arm.XXXXXX'*)
+    if [ -e "$FM_HOME/predecessor-killed" ]; then
+      : > "$FM_HOME/unexpected-successor"
+      exit 1
+    fi
+    ;;
+esac
+exec "$FM_TEST_REAL_MKTEMP" "$@"
+SH
+  chmod +x "$home/fakebin/date" "$home/fakebin/mktemp"
+  FM_HOME="$home" bash -c '
+    . "$1"
+    fm_lock_acquire_wait "$STATE/.watcher-down.lock" || exit 1
+    : > "$FM_HOME/recovery-held"
+    while [ ! -e "$FM_HOME/recovery-release" ] && [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do sleep 0.05; done
+    fm_lock_release "$STATE/.watcher-down.lock"
+  ' _ "$ROOT/bin/fm-wake-lib.sh" &
+  holder=$!
+  i=0
+  while [ ! -e "$home/recovery-held" ] && [ "$i" -lt 100 ]; do sleep 0.05; i=$((i + 1)); done
+  [ -e "$home/recovery-held" ] || fail "preconfirmation fixture never held the recovery lock"
+  FM_HOME="$home" BASH_ENV="$home/pre-exec.env" PATH="$home/fakebin:$PATH" FM_TEST_REAL_DATE="$real_date" FM_TEST_REAL_MKTEMP="$real_mktemp" \
+    FM_TEST_WATCH_PATH="${CHECKPOINT%/*}/fm-watch.sh" \
+    FM_SUPERVISION_HOST_PRIMARY=codex FM_SUPERVISION_HOST_PARK_SECONDS=120 \
+    FM_WATCHER_CLEANUP_LOCK_BOUND=8 FM_POLL=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    "$home/fakebin/codex" -c '
+      printf "%s\n" "$$" > "$FM_HOME/state/.lock"
+      "$0" park
+    ' "${CHECKPOINT%/*}/fm-supervision-host.sh" > "$home/predecessor.out" 2> "$home/predecessor.err" &
+  predecessor=$!
+  i=0
+  while [ ! -e "$home/initial-identity-captured" ] && [ "$i" -lt 200 ]; do sleep 0.05; i=$((i + 1)); done
+  [ -e "$home/initial-identity-captured" ] || fail "arm did not capture the pre-exec watcher identity"
+  watcher=$(cat "$home/pre-exec.pid")
+  initial=$(FM_HOME="$home" bash -c '. "$1"; fm_pid_identity "$2"' _ "$ROOT/bin/fm-wake-lib.sh" "$watcher") \
+    || fail "could not read the pre-exec watcher identity"
+  : > "$home/pre-exec-go"
+  i=0
+  while [ ! -s "$home/state/.watch.lock/pid-identity" ] && [ "$i" -lt 200 ]; do sleep 0.05; i=$((i + 1)); done
+  identity=$(cat "$home/state/.watch.lock/pid-identity")
+  [ -n "$identity" ] && [ "$identity" != "$initial" ] || fail "watcher exec did not change its process identity"
+  [ "$(cat "$home/state/.watch.lock/pid")" = "$watcher" ] || fail "watcher exec changed its pid"
+  assert_absent "$home/state/.last-watcher-beat" "preconfirmation watcher reached its first beacon"
+  kill -KILL "$(awk -F '\t' '$1 == "host" { print $2; exit }' "$home/state/.supervision-host")"
+  wait_for_exit "$predecessor" 200 >/dev/null 2>&1 || true
+  : > "$home/predecessor-killed"
+  FM_HOME="$home" BASH_ENV="$home/pre-exec.env" PATH="$home/fakebin:$PATH" FM_TEST_REAL_DATE="$real_date" FM_TEST_REAL_MKTEMP="$real_mktemp" \
+    FM_TEST_WATCH_PATH="${CHECKPOINT%/*}/fm-watch.sh" \
+    FM_SUPERVISION_HOST_PRIMARY=codex FM_SUPERVISION_HOST_PARK_SECONDS=120 \
+    FM_WATCHER_CLEANUP_LOCK_BOUND=8 FM_POLL=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    "$home/fakebin/codex" -c '
+      printf "%s\n" "$$" > "$FM_HOME/state/.lock"
+      "$0" park
+    ' "${CHECKPOINT%/*}/fm-supervision-host.sh" > "$home/out.txt" 2> "$home/err.txt" &
+  replacement=$!
+  wait_for_exit "$replacement" 300 || status=$?
+  : > "$home/recovery-release"
+  wait_for_exit "$holder" 100 >/dev/null 2>&1 || fail "preconfirmation recovery holder did not release"
+  expect_code 1 "$status" "preconfirmation predecessor retirement must fail"
+  assert_contains "$(cat "$home/out.txt" "$home/err.txt")" \
+    'supervision-host: watcher: recovery state could not be persisted; retaining stale lock evidence' \
+    "preconfirmation retirement discarded its failed-cleanup diagnostic"
+  assert_absent "$home/unexpected-successor" "failed predecessor cleanup started another watcher arm"
+  [ "$(cat "$home/state/.watch.lock/pid")" = "$watcher" ] || fail "preconfirmation retirement discarded the watcher lock"
+  [ "$(cat "$home/state/.watch.lock/pid-identity")" = "$identity" ] || fail "preconfirmation retirement changed the retained identity"
+  assert_absent "$home/state/.last-watcher-beat" "replacement retired startup as a healthy cycle"
+  pass "preconfirmation predecessor retirement reports cleanup failure using the verified post-exec identity"
+}
+
 test_perl_timeout_fallback_honors_cleanup_bound_before_escalating() {
   local home fallback_bin tool tool_path status watcher_pid
   home=$(make_home perl-fallback)
@@ -1349,6 +1449,7 @@ test_real_host_checkpoint_ends_quietly_at_its_bound() {
 }
 
 test_interrupted_startup_reports_failed_cleanup
+test_preconfirmation_predecessor_retirement_uses_verified_identity
 test_quiet_checkpoint_exits_0_cleanly
 test_cleanup_persistence_failure_is_not_a_quiet_checkpoint
 test_perl_timeout_fallback_honors_cleanup_bound_before_escalating
