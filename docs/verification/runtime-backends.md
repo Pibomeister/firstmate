@@ -1073,10 +1073,11 @@ empty
 ```
 
 Before the fix the bare `›` row's wrap region ran over both footer rows, and the plain row could not be told from typed text, so `fm-control.sh relaunch` refused every Orca-backed codex worker as not proven empty.
-After the fix the `Context N% left` status cell and the `? for shortcuts` hint (`FM_COMPOSER_CODEX_FOOTER_RE_DEFAULT`) bound the wrap region, and an unstyled bare row that is exactly a glyph's own entry in `FM_COMPOSER_BARE_PLACEHOLDERS_DEFAULT` reads `empty`.
-Any other text after the glyph, including an extension, prefix, or case change of the placeholder, and the placeholder after a different harness's glyph, still reads `unknown` on a plain capture.
+The current footer-boundary and exact plain-placeholder contracts are owned by `FM_COMPOSER_CODEX_FOOTER_RE_DEFAULT`, `_fm_composer_codex_footer_run`, and `FM_COMPOSER_BARE_PLACEHOLDERS_DEFAULT` in `bin/fm-composer-lib.sh`.
 A fresh codex 0.162.1 launched in an isolated tmux server drew the same composer under a `← for agents · ? for shortcuts` hint row and read `empty` through the plain, styled, and `LC_ALL=C` plain profiles.
 `test_matrix_codex_0162_placeholder_on_plain_capture` in `tests/fm-composer-lib.test.sh` and `test_composer_state_idle_codex_placeholder_is_empty` in `tests/fm-backend-orca.test.sh` pin those verdicts and the divergence where prose in place of the footer keeps the row `unknown`.
+The matrix also pins `›`, then `Context 77% left`, then `← for agents · ? for shortcuts` as draft input: plain captures read `unknown`, styled captures read `pending`, and extraction preserves `Context 77% left`.
+`test_codex_footer_requires_complete_rows`, `test_codex_footer_run_preserves_following_draft`, and `test_codex_footer_order_and_multiplicity` cover footer-like draft rows, footer order, and duplicate sequences.
 
 `tests/fm-composer-codex-idle-live-e2e.test.sh` now also requires the plain read to reach `empty`.
 On 2026-10-14 it could not reach any of its reads on the verification machine, because codex-cli 0.162.1 parks on its `Hooks need review` modal, which the guard correctly refuses to dismiss; the same failure reproduces on the unmodified library, and the Orca capture above is this entry's live evidence.

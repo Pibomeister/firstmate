@@ -527,9 +527,8 @@ FM_COMPOSER_MODE_HINT_RE_DEFAULT='^[[:space:]]*(⏵|⏸)'
 # Grok 1.0.62 draws its key-hint row below its bordered composer: two or more
 # `Key:action` cells joined by a box-drawing bar (`Shift+Tab:mode  │  Ctrl+x:shortcuts`
 # idle, `Enter:send  │  Opt+Enter:newline  │  Shift+Tab:mode  │  Ctrl+x:`
-# typed). Usually a blank row separates it from the box, but a 116-column Orca
-# capture of Grok 1.0.62 (2026-10-20) drew it directly under the bottom border,
-# where the cursorless staleness probe read it as a lower live shape. It is
+# typed). It may sit directly under the bottom border, where the cursorless
+# staleness probe would otherwise read it as a lower live shape. It is
 # consulted only as the single row directly below a selected box.
 FM_COMPOSER_GROK_HINT_RE_DEFAULT='^[A-Z][A-Za-z]*(\+[A-Za-z.]+)*:[a-z]*([[:space:]]+│[[:space:]]+[A-Z][A-Za-z]*(\+[A-Za-z.]+)*:[a-z]*)+$'
 # omp (Oh My Pi) draws a one-row status line directly BELOW its borderless
@@ -556,11 +555,11 @@ FM_COMPOSER_OMP_STATUS_RE_DEFAULT='^[[:space:]]*(π|󰵗)[[:space:]]+·[[:space:
 # `  GPT-6.1-Sol medium · fm/branch · Context 77% left · 33.8M in · ...` and
 # `  ? for shortcuts            ⚠ 3 warnings · f2 to view`.
 # Earlier codex releases left a blank row there, which already bounded the
-# wrap region. A row is codex footer furniture when it carries the
-# `Context N% left` cell or the `? for shortcuts` hint, each either first on
-# the row or after a middle dot (`← for agents · ? for shortcuts`). It is consulted only as the boundary BELOW a bare
-# composer, never on the composer row itself, so the same words typed after
-# the glyph stay composer input.
+# wrap region. The model/effort/context status row, shortcut hint (optionally
+# after `← for agents ·`), and warnings row must each match completely.
+# A bare `Context N% left` continuation is input, not a status row: a hint-only
+# layout cannot distinguish it from a draft. The trailing-run validation in
+# _fm_composer_codex_footer_run below owns when matching rows form a boundary.
 FM_COMPOSER_CODEX_WARNINGS_RE_DEFAULT='⚠[[:space:]]+[0-9]+ warnings?[[:space:]]+·[[:space:]]+f2 to view'
 FM_COMPOSER_CODEX_FOOTER_RE_DEFAULT='^[[:space:]]*(([^[:space:]·]+[[:space:]]+(none|minimal|low|medium|high|xhigh|max)[[:space:]]+·[[:space:]]+([^[:space:]·]+[[:space:]]+·[[:space:]]+)?)Context [0-9]+% left([[:space:]]+·[[:space:]]+[0-9]+(\.[0-9]+)?[KMB]?[[:space:]]+(in|out))*([[:space:]]+·[[:space:]]+weekly [0-9]+% left)?|(← for agents[[:space:]]+·[[:space:]]+)?\? for shortcuts([[:space:]]+'"$FM_COMPOSER_CODEX_WARNINGS_RE_DEFAULT"')?|'"$FM_COMPOSER_CODEX_WARNINGS_RE_DEFAULT"')[[:space:]]*$'
 # The per-glyph placeholder table: the exact text a harness renders after its
@@ -569,6 +568,8 @@ FM_COMPOSER_CODEX_FOOTER_RE_DEFAULT='^[[:space:]]*(([^[:space:]·]+[[:space:]]+(
 # its harness's glyph and matched exactly and case-sensitively against the
 # whole row, so an UNSTYLED capture (cmux, orca), which cannot see the dim
 # styling that marks it as ghost text, may read that one row `empty`.
+# A real plain draft containing those exact bytes also reads `empty`; this
+# accepted ambiguity is limited to the exact per-glyph entry.
 # Any other text after the glyph, including a prefix or extension of the
 # placeholder, keeps the plain-capture `unknown` degradation.
 # codex-cli 0.162.1 renders `Ask Codex to do anything` (verified live through
@@ -1338,13 +1339,17 @@ _fm_composer_row_is_omp_status() {  # <trimmed-row>
   fm_composer_idle_matches "$1" "${FM_COMPOSER_OMP_STATUS_RE:-$FM_COMPOSER_OMP_STATUS_RE_DEFAULT}" sensitive
 }
 
-# _fm_composer_row_is_codex_footer: 0 when the trimmed row is codex's footer
-# (FM_COMPOSER_CODEX_FOOTER_RE_DEFAULT above), which bounds a bare composer's
-# wrap region exactly as omp's status row does.
+# _fm_composer_row_is_codex_footer: match one complete candidate row; only
+# _fm_composer_codex_footer_run may establish a bare composer's boundary.
 _fm_composer_row_is_codex_footer() {  # <trimmed-row>
   fm_composer_idle_matches "$1" "$FM_COMPOSER_CODEX_FOOTER_RE_DEFAULT" sensitive
 }
 
+# A boundary needs a trailing run through the capture's bottom: at most one
+# model/status row, then at most one hint, then optional warnings (inline on
+# the hint or on their own row). Omitted rows are allowed, but warnings alone
+# are not. Only blank rows may follow the run. Ordinary content, reversed
+# order, or duplicate rows keep the candidate inside composer input.
 _fm_composer_codex_footer_run() {
   local plain=$1 first=$2 line order=0 next
   while IFS= read -r line; do
