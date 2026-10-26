@@ -1930,7 +1930,7 @@ confirm_launched_runners() {  # <source-id><TAB><registration-identity><TAB><lau
 # 0 when this registration generation holds a live claim, 3 when another
 # generation does, 1 otherwise.
 generation_is_listening() {  # <source-id> <registration-identity>
-  local id=$1 identity=$2 state result=1 owner adapter pending
+  local id=$1 identity=$2 state result=1
   fm_procevent_source_lock_try_acquire "$id" || return 1
   fm_procevent_claim_state_locked "$id"
   state=$?
@@ -1938,10 +1938,18 @@ generation_is_listening() {  # <source-id> <registration-identity>
     result=3
     [ "$FM_PROCEVENT_CLAIM_REG_IDENTITY" != "$identity" ] || result=0
   fi
-  # Registration can finish its whole round before ensure-listening starts.
-  # Accept that durable task result under the same lock, never launch it again.
-  if [ "$result" -ne 0 ] \
-    && [ "$(fm_pr_file_identity "$(source_file "$id")" 2>/dev/null)" = "$identity" ] \
+  fm_procevent_source_lock_release "$id"
+  return "$result"
+}
+
+# 0 when this registration generation's task already captured an unhandled
+# round, so its listener ran to completion before readiness was asked. Kept
+# out of the per-tick readiness probe: holding the source lock for this scan on
+# every tick starves the runner that needs the same lock to claim.
+generation_has_task_capture() {  # <source-id> <registration-identity>
+  local id=$1 identity=$2 result=1 owner adapter pending
+  fm_procevent_source_lock_acquire "$id" || return 1
+  if [ "$(fm_pr_file_identity "$(source_file "$id")" 2>/dev/null)" = "$identity" ] \
     && [ "$(source_kind "$id" 2>/dev/null)" = task-owned ]; then
     owner=$(source_owner_task "$id")
     adapter=$(read_adapter "$id")
@@ -1989,6 +1997,9 @@ cmd_ensure_listening() {
   if stamp=$(fm_procevent_launch_floor_stamp_path "$STATE" "$id" "$identity"); then
     before=$(cat -- "$stamp" 2>/dev/null || true)
   fi
+  # Registration can finish its whole round before ensure-listening starts;
+  # accept that durable task result, never launch it again.
+  ! generation_has_task_capture "$id" "$identity" || return 0
   deadline=$((SECONDS + 10#$window + 1))
   while :; do
     listening=0
@@ -2009,6 +2020,7 @@ cmd_ensure_listening() {
     sleep 0.05
   done
   [ "$listening" -ne 3 ] || return 3
+  ! generation_has_task_capture "$id" "$identity" || return 0
   printf 'error: listener is not running: %s\n' "$id" >&2
   return 1
 }

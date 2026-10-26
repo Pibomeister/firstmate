@@ -65,7 +65,8 @@ await_result
 adapter read "$RESULT" | grep 'r1,ask-user,decision required' >/dev/null || fail 'finding changed in capture'
 SOURCE=${RESULT##*/}; SOURCE=${SOURCE%.*.result}
 SEQ=${RESULT%.result}; SEQ=${SEQ##*.}
-for ignored in 1 2; do runner reconcile >/dev/null 2>&1; done
+runner reconcile >/dev/null 2>&1
+runner reconcile >/dev/null 2>&1
 [ "$(wc -l < "$HOME_FIXTURE/calls" | tr -d ' ')" = 1 ] || fail 'reconcile repeated an attachment with an open result'
 set -- "$HOME_FIXTURE/state/ship.inbox/"*.msg
 [ "$#" = 1 ] && [ -f "$1" ] || fail 'result did not reach exactly one task inbox record'
