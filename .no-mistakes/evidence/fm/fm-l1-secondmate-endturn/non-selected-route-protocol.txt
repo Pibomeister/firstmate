@@ -1,0 +1,6 @@
+## remote-route secondmate: emitted protocol (codex)
+8:- Ordinary wake: take the next foreground bin/fm-watch-checkpoint.sh checkpoint as directed below.
+18:3. First cycle: run one foreground watcher checkpoint with `bin/fm-watch-checkpoint.sh --seconds "${FM_CODEX_WATCH_CHECKPOINT:-180}"`.
+--secondmate-selected exit: 1
+(eval):1: no matches found: $LAB/parent/state/*.status
+parent status files:        0

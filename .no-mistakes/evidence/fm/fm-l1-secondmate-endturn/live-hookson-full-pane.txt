@@ -1,0 +1,34 @@
+› Run exactly this one command alone and report its output: bin/fm-watch.sh --secondmate-status
+  └ secondmate watcher: ready
+• Captain, output: secondmate watcher: ready
+  Worked for 15s • 4:18 PM
+› Reply with the single word ok and end your turn.
+• ok
+  Worked for 5s • 4:18 PM
+› Reply with the single word ok and end your turn.
+• ok
+  Worked for 6s • 4:19 PM
+› Reply with the single word ok and end your turn.
+• ok
+• Blocked by hook
+  └ ●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    ●  TURN WOULD END BLIND - SUPERVISION IS OFF
+    ●  1 task(s) in flight, but no live watcher holds this home lock (last beat: 80s ago).
+    ●  Drain and acknowledge pending wakes and run bin/fm-watch.sh --secondmate, then end this turn; if it reports a failure, repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh
+--seconds 180.
+    ●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Captain, the turn-end guard found supervision inactive while one task is in flight. I’ll drain and acknowledge any pending wakes, then restart the secondmate watcher.
+• Ran bin/fm-wake-drain.sh
+  └ ●  This is a supervision warning only; the guarded operation WILL still run.
+    ●  Drain and acknowledge pending wakes and run bin/fm-watch.sh --secondmate, then end this turn; if it reports a failure, repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh -…
+    ●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    + 7 lines (⌃t to expand)
+• Ran bin/fm-wake-drain.sh --ack-through 0 --recovery-generation 69400.1793053116.EJ9W4u
+  └ (no output)
+• Ran bin/fm-watch.sh --secondmate
+  └ (no output)
+• Captain, I acknowledged the pending wake marker and ran bin/fm-watch.sh --secondmate successfully.
+  Worked for 33s • 4:20 PM
+› Ask Codex to do anything
+  GPT-6-Sol medium · Context 92% left · 5.59M in · 12.1K out · weekly 84% left
+  ? for shortcuts                                                                                                                                                                                 ⚠ 4 warnings · f2 to view

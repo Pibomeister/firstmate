@@ -1,0 +1,8 @@
+## lab state at teardown
+001.msg
+002.msg
+003.msg
+004.msg
+005.msg
+006.msg
+sm-lab-1.inbox

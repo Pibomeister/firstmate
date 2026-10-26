@@ -1,0 +1,34 @@
+## bin/fm-watch.sh --secondmate
+ exit=0
+## bin/fm-watch.sh --secondmate-status
+ exit=0
+## bash -lc 'bin/fm-watch.sh --secondmate'
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":"[watcher-nested] a protected watcher command must not run through a wrapper, substitution, or compound command"}
+{"decision":"deny","reason":"[watcher-nested] a protected watcher command must not run through a wrapper, substitution, or compound command"}
+ exit=2
+## /Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M5X1576D4NE0QESF11HQ037M/bin/fm-watch.sh --secondmate-status
+ exit=0
+## bin/fm-watch.sh
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":"[watcher-direct] bin/fm-watch.sh must not be run directly; arm the watcher with bin/fm-watch-arm.sh or run bin/fm-watch-checkpoint.sh instead"}
+{"decision":"deny","reason":"[watcher-direct] bin/fm-watch.sh must not be run directly; arm the watcher with bin/fm-watch-arm.sh or run bin/fm-watch-checkpoint.sh instead"}
+ exit=2
+## bin/fm-watch.sh --secondmate-hold
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":"[watcher-direct] bin/fm-watch.sh must not be run directly; arm the watcher with bin/fm-watch-arm.sh or run bin/fm-watch-checkpoint.sh instead"}
+{"decision":"deny","reason":"[watcher-direct] bin/fm-watch.sh must not be run directly; arm the watcher with bin/fm-watch-arm.sh or run bin/fm-watch-checkpoint.sh instead"}
+ exit=2
+## bin/fm-watch.sh --secondmate &
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":"[watcher-background] a protected watcher command cannot run in an asynchronous shell list or through nohup/disown"}
+{"decision":"deny","reason":"[watcher-background] a protected watcher command cannot run in an asynchronous shell list or through nohup/disown"}
+ exit=2
+## nohup bin/fm-watch.sh --secondmate-hold &
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":"[watcher-direct] bin/fm-watch.sh must not be run directly; arm the watcher with bin/fm-watch-arm.sh or run bin/fm-watch-checkpoint.sh instead"}
+{"decision":"deny","reason":"[watcher-direct] bin/fm-watch.sh must not be run directly; arm the watcher with bin/fm-watch-arm.sh or run bin/fm-watch-checkpoint.sh instead"}
+ exit=2
+## bin/fm-watch.sh --secondmate --restart
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":"[watcher-direct] bin/fm-watch.sh must not be run directly; arm the watcher with bin/fm-watch-arm.sh or run bin/fm-watch-checkpoint.sh instead"}
+{"decision":"deny","reason":"[watcher-direct] bin/fm-watch.sh must not be run directly; arm the watcher with bin/fm-watch-arm.sh or run bin/fm-watch-checkpoint.sh instead"}
+ exit=2
+## bin/fm-watch.sh --secondmate-selected
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":"[watcher-direct] bin/fm-watch.sh must not be run directly; arm the watcher with bin/fm-watch-arm.sh or run bin/fm-watch-checkpoint.sh instead"}
+{"decision":"deny","reason":"[watcher-direct] bin/fm-watch.sh must not be run directly; arm the watcher with bin/fm-watch-arm.sh or run bin/fm-watch-checkpoint.sh instead"}
+ exit=2

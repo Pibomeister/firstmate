@@ -1,0 +1,50 @@
+› This is a disposable test lab. Do exactly these steps and nothing else: 1) run `bin/fm-lock.sh --force 2>&1 || bin/fm-lock.sh` 2) run `bin/fm-watch.sh --secondmate; echo rc=$?` 3) run `bin/fm-watc…
+• Captain, I’ll run the three commands in order and stop after a one-line summary.                                                                                                                     
+                                                                                                                                                                                                       
+• Ran bin/fm-lock.sh --force 2>&1 || bin/fm-lock.sh                               
+  └ lock acquired: harness pid 75829               
+                                                                                  
+• Ran bin/fm-watch.sh --secondmate; echo rc=$?                                                                                                                                                    
+  └ rc=0                                                                                                                                                                                               
+                                                   
+• Ran bin/fm-watch.sh --secondmate-status
+  └ secondmate watcher: ready                 
+                                                                                  
+• Captain, the lock was acquired, the secondmate watch command returned 0, and the watcher reports ready.
+                                                                                                         
+  Worked for 35s • 3:51 PM                                                                                                                                                                              
+                                                                                                                                                                                                        
+                                                                                                                                                                                                        
+› : Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your 'sm-lab-1.inbox' steering inbox, read and act on each in numeric order, then mv each into its handled/.
+                                                                                                                                                                                                        
+                                                                                                                                                                                                        
+• Captain, I’ll read the inbox messages in numeric order, act on each instruction, and move each handled message into handled/.
+                                                                                                                                                                              
+• Ran printf '%s\n' "$FM_TASK_INBOX"; rg --files "$FM_TASK_INBOX" -g '*.msg' | sort -V                                                                                        
+  └ $LAB/parent/state/sm-lab-1.inbox                     
+    $LAB/parent/state/sm-lab-1.inbox/001.msg                                                                                                 
+                                                                                                                               
+• Ran cat "$FM_TASK_INBOX/001.msg"                                                                                  
+  └ at=2026-10-26T21:51:53Z                                                                                                                                                   
+    --                                                                                                             
+    FIRSTMATE_OP: v1 watcher: Run bin/fm-wake-drain.sh, handle and acknowledge the durable watcher events, send any resulting actions and parent replies, then end this turn.
+    + 1 line (⌃t to expand)                                                                                                                                                                             
+                                                                                                                                                                                                        
+• Ran bin/fm-wake-drain.sh                                                                                                                                                                              
+  └ 1793051512    1    check    $LAB/state/probe.check.sh    check: $LAB/state/pr…
+    WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 87604.1793051512.WLdwqX                                                                  
+    WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.                                                                                                          
+    + 1 line (⌃t to expand)                                                                                                                                                                             
+                                                                                                                                                                                                        
+• Ran mkdir -p "$FM_TASK_INBOX/handled" && mv "$FM_TASK_INBOX/001.msg" "$FM_TASK_INBOX/handled/001.msg"                                                                                                 
+  └ (no output)                                                                                                                                                              
+                                                                                                                                                                                                        
+• Captain, the wake drain reported one actionable lab probe event. It requires acknowledgment through event 1 and warns that wakes remain queued; I moved the inbox message to handled/.                
+                                  
+  Worked for 40s • 3:52 PM                                                                                                                                                                              
+                                                                                                                                                                                                  
+                                                                                                                                                                                                       
+› Ask Codex to do anything                                                                                                                                                    
+
+  GPT-6-Sol low · Context 96% left · 397K in · 908 out · weekly 84% left 
+  ? for shortcuts                                                                                                                                                             ⚠ 3 warnings · f2 to view

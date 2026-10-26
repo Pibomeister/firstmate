@@ -1,0 +1,12 @@
+== /bin/bash GNU bash, version 3.2.57(1)-release (arm64-apple-darwin25)
+ok - secondmate instructions end the handling turn without model polling
+ok - secondmate readiness fails closed without its watcher notification owner
+ok - secondmate watcher survives wakes, deduplicates inbox notifications and stops on identity loss
+ok - secondmate selection excludes unsupported scopes and the test clock proves heartbeat absorption
+exit=0
+== /opt/homebrew/bin/bash GNU bash, version 5.3.20(1)-release (aarch64-apple-darwin25.6.0)
+ok - secondmate instructions end the handling turn without model polling
+ok - secondmate readiness fails closed without its watcher notification owner
+ok - secondmate watcher survives wakes, deduplicates inbox notifications and stops on identity loss
+ok - secondmate selection excludes unsupported scopes and the test clock proves heartbeat absorption
+exit=0

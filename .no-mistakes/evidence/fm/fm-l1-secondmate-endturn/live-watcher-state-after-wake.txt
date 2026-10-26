@@ -1,0 +1,6 @@
+watcher pid/args after wake:
+  PID  PPID ARGS
+87604     1 bash <worktree>/bin/fm-watch.sh --secondmate-hold
+
+inbox:
+$LAB/parent/state/sm-lab-1.inbox/handled/001.msg
