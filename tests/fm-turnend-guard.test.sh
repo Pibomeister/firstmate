@@ -2560,8 +2560,10 @@ test_secondmate_event_instructions_finish_turn() {
   out=$(FM_HOME="$dir" FM_TASK_INBOX="$dir/parent/state/sm-test-1.inbox" TMUX=fixture,1,0 TMUX_PANE=%27 "$dir/bin/fm-supervision-instructions.sh" --harness codex)
   assert_contains "$out" 'Mode: Secondmate event-driven turns.' "secondmate must receive the outside-turn protocol"
   assert_contains "$out" 'end this turn' "secondmate must finish its handling turn"
-  assert_not_contains "$out" 'write_stdin' "secondmate must not poll a checkpoint"
-  assert_not_contains "$out" 'fm-watch-checkpoint.sh' "secondmate must not receive the primary checkpoint loop"
+  assert_contains "$out" 'If bin/fm-watch.sh --secondmate reports a failure, follow the default checkpoint protocol below instead.' "secondmate must keep the explicit checkpoint fallback"
+  assert_contains "$out" 'fm-watch-checkpoint.sh' "secondmate fallback must name the checkpoint loop"
+  out=$(FM_HOME="$dir" FM_TASK_INBOX="$dir/parent/state/sm-test-1.inbox" TMUX=fixture,1,0 TMUX_PANE=%27 "$dir/bin/fm-supervision-instructions.sh" --harness codex --repair-line)
+  assert_contains "$out" 'if it reports a failure, repair missing watcher supervision with a foreground checkpoint' "secondmate repair must fall back to the checkpoint loop"
   pass "secondmate instructions end the handling turn without model polling"
 }
 
@@ -2623,10 +2625,8 @@ try:
     require(r.returncode==0, 'check registration: '+r.stderr)
     require(run(str(root/'bin/fm-harness.sh')).stdout.strip()=='codex', 'portable fixture did not establish a Codex-shaped ancestor')
     require(guard().returncode==2, 'selected secondmate ended blind without a watcher')
-    require(run(watch,'--secondmate-unavailable').returncode==0, 'parent diagnostic failed')
-    require(run(watch,'--secondmate-unavailable').returncode==0, 'repeated parent diagnostic failed')
-    parent_status=root/'parent/state/sm-test-1.status'
-    require(parent_status.read_text().count('blocked [')==1, 'unsupported route diagnostic repeated')
+    require(guard(True).returncode==0, 'unproven watcher lost the bounded no-progress escape')
+    require(not (root/'parent/state/sm-test-1.status').exists(), 'secondmate guard wrote a parent blocker')
     r=run(watch, '--secondmate')
     require(r.returncode==0, 'outside-turn start: '+r.stdout+r.stderr)
     until(lambda:run(watch,'--secondmate-status').returncode==0,'outside-turn watcher readiness')
@@ -2646,7 +2646,7 @@ try:
     try:
         lines=binding.splitlines();lines[3]='/tmp/wrong-secondmate-socket'
         (root/'state/.secondmate-watch').write_text('\n'.join(lines)+'\n')
-        require(guard().returncode==2 and guard(True).returncode==2, 'mismatched route escaped the selected guard')
+        require(guard().returncode==2 and guard(True).returncode==0, 'mismatched route allowed a fresh stop or lost the no-progress escape')
     finally:
         (root/'state/.secondmate-watch').write_text(binding)
         os.kill(int(pid),signal.SIGCONT)
@@ -2671,6 +2671,17 @@ try:
     until(lambda: bool(list(inbox.glob('*.msg'))), 'notification after acknowledgement')
     (root/'trigger').unlink()
     require(len(list((inbox/'handled').glob('*.msg')))==1, 'delivery consumed an acknowledgement')
+    for pending in inbox.glob('*.msg'): pending.rename(inbox/'handled'/pending.name)
+    queued=(root/'state/.wake-queue').stat().st_size
+    inbox.chmod(0o500)
+    try:
+        (root/'trigger').touch()
+        until(lambda:(root/'state/.wake-queue').stat().st_size>queued,'wake during failing notification')
+        (root/'trigger').unlink()
+        time.sleep(2)
+        require(not list(inbox.glob('*.msg')) and run(watch,'--secondmate-status').returncode==0, 'failed notification stopped the idle watcher')
+    finally: inbox.chmod(0o700)
+    until(lambda: bool(list(inbox.glob('*.msg'))), 'retried notification')
     lines=(root/'state/.secondmate-watch').read_text().splitlines()
     lines[1]='mismatched-process-identity'
     (root/'state/.secondmate-watch').write_text('\n'.join(lines)+'\n')

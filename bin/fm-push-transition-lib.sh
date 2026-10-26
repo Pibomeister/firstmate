@@ -111,6 +111,7 @@ fm_secondmate_watch_selected() {
   # shellcheck source=bin/fm-supervision-engine-lib.sh
   . "$FM_PUSH_TRANSITION_LIB_DIR/fm-supervision-engine-lib.sh"
   fm_root_is_secondmate_home "$FM_HOME" && [ -n "${TMUX_PANE:-}" ] && [ -n "${TMUX:-}" ] || return 1
+  # shellcheck disable=SC2153 # CONFIG is set by bin/fm-watch.sh.
   [ ! -e "$STATE/.afk" ] && ! fm_supervision_host_enabled "$CONFIG" codex || return 1
   fm_secondmate_parent_record_parse "$FM_HOME/.fm-secondmate-parent" || return 1
   [ "$FM_SECONDMATE_PARENT_ROUTE" = local ] || return 1
@@ -121,18 +122,6 @@ fm_secondmate_watch_selected() {
     watcher_pid=$(cat "$STATE/.watch.lock/pid")
     case "$(ps -o args= -p "$watcher_pid" 2>/dev/null)" in *'/fm-watch.sh --secondmate-hold'*) ;; *) return 1 ;; esac
   fi
-}
-
-fm_secondmate_watch_report() { # blocked|resolved, once per unavailable episode
-  local marker="$STATE/.secondmate-watch-unavailable"
-  # shellcheck source=bin/fm-session-lock-lib.sh
-  . "$FM_PUSH_TRANSITION_LIB_DIR/fm-session-lock-lib.sh"
-  # shellcheck source=bin/fm-parent-channel-lib.sh
-  . "$FM_PUSH_TRANSITION_LIB_DIR/fm-parent-channel-lib.sh"
-  fm_session_lock_owned_by_self "$STATE" || return 1
-  if [ "$1" = blocked ]; then [ ! -e "$marker" ] || return 0; else [ -e "$marker" ] || return 0; fi
-  fm_parent_channel_report "$FM_HOME" "$STATE" "$1 [at=$(date +%s)] [key=secondmate-short-turn]: short-turn route $1; retain the existing supervision protocol when its harness, backend, parent binding or watcher owner is unsupported" || return 1
-  if [ "$1" = blocked ]; then touch "$marker"; else rm -f "$marker"; fi
 }
 
 fm_secondmate_watch_binding_valid() {
@@ -161,8 +150,8 @@ fm_secondmate_watch_status() {
 
 fm_secondmate_watch_start() {
   local pid identity tmp deadline monitor=0
-  fm_secondmate_watch_selected || { echo 'secondmate watcher: unsupported home, route or ownership mode' >&2; fm_secondmate_watch_report blocked || true; return 1; }
-  fm_secondmate_watch_status && { fm_secondmate_watch_report resolved || true; return 0; }
+  fm_secondmate_watch_selected || { echo 'secondmate watcher: unsupported home, route or ownership mode' >&2; return 1; }
+  fm_secondmate_watch_status && return 0
   [ "$("$FM_PUSH_TRANSITION_LIB_DIR/fm-harness.sh")" = codex ] || { echo 'secondmate watcher: caller is not Codex' >&2; return 1; }
   # shellcheck source=bin/fm-session-lock-lib.sh
   . "$FM_PUSH_TRANSITION_LIB_DIR/fm-session-lock-lib.sh"
@@ -180,7 +169,7 @@ fm_secondmate_watch_start() {
   [ "$monitor" -eq 1 ] || set +m
   deadline=$(( $(date +%s) + 10 ))
   while [ "$(date +%s)" -lt "$deadline" ]; do
-    fm_secondmate_watch_status && { fm_secondmate_watch_report resolved || true; return 0; }
+    fm_secondmate_watch_status && return 0
     sleep 0.2
   done
   return 1
@@ -232,7 +221,8 @@ wake() {
   fi
   [ "$output_status" -eq 0 ] || exit "$output_status"
   if [ "${FM_WATCH_SECONDMATE_HOLD:-}" = 1 ]; then
-    fm_secondmate_watch_notify || exit 1
+    # shellcheck disable=SC2034 # Read by bin/fm-watch.sh's secondmate hold loop.
+    fm_secondmate_watch_notify || FM_SM_NOTIFY_RETRY=1
   fi
   if fm_watch_grok_hold_active; then
     if declare -F watcher_stop_signals >/dev/null 2>&1; then

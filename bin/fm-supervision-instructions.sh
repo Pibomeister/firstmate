@@ -129,10 +129,6 @@ if [ "$HARNESS" = codex ] && [ "$AFK" -eq 0 ] && [ -x "$SCRIPT_DIR/fm-watch.sh" 
   && "$SCRIPT_DIR/fm-watch.sh" --secondmate-selected >/dev/null 2>&1; then
   SECONDMATE_MODE=1
 fi
-if [ "$SECONDMATE_MODE" -eq 0 ] && [ "$HARNESS" = codex ] && [ "$READ_ONLY" -eq 0 ] && [ "$AFK" -eq 0 ] \
-  && [ -z "$HOST_SNIPPET" ] && [ -f "$FM_HOME/.fm-secondmate-home" ] && [ -x "$SCRIPT_DIR/fm-watch.sh" ]; then
-  "$SCRIPT_DIR/fm-watch.sh" --secondmate-unavailable >/dev/null 2>&1 || true
-fi
 pi_ext="$FM_ROOT/.pi/extensions/fm-primary-pi-watch.ts"
 pi_turnend_ext="$FM_ROOT/.pi/extensions/fm-primary-turnend-guard.ts"
 omp_ext="$FM_ROOT/.omp/extensions/fm-primary-omp-watch.ts"
@@ -204,13 +200,11 @@ repair_line() {
     fi
     return 0
   fi
-  if [ "$SECONDMATE_MODE" -eq 1 ]; then
-    printf '%s\n' 'Drain and acknowledge pending wakes, run bin/fm-watch.sh --secondmate to verify the outside-turn watcher and doorbell route, then end this turn.'
-    return 0
-  fi
 
   prefix=
-  if [ "$QUEUE_PENDING" -eq 1 ]; then
+  if [ "$SECONDMATE_MODE" -eq 1 ]; then
+    prefix='Drain and acknowledge pending wakes and run bin/fm-watch.sh --secondmate, then end this turn; if it reports a failure, '
+  elif [ "$QUEUE_PENDING" -eq 1 ]; then
     prefix='After draining queued wakes, '
   fi
   if [ "$X_MODE" -eq 1 ]; then
@@ -330,11 +324,10 @@ Read and acknowledge the steering inbox, drain and handle durable watcher events
 Send resulting actions and parent-channel replies in this handling turn.
 Run bin/fm-watch.sh --secondmate once to verify the outside-turn watcher and notification route, then end this turn.
 Do not wait for crews or poll a tool session; an existing inbox doorbell starts the next handling turn when an actionable event arrives.
-The Stop guard requires the live watcher, bound session and delivery route; a missing proof requires repair, never a supervision exemption.
+If bin/fm-watch.sh --secondmate reports a failure, follow the default checkpoint protocol below instead.
 EOF
-else
-  render_snippet
 fi
+render_snippet
 printf '\n'
 if [ -n "$HOST_SNIPPET" ]; then
   render_snippet "$HOST_SNIPPET"

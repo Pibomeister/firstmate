@@ -391,7 +391,6 @@ fi
 # session and turn only when nothing advanced since that block. A record from an
 # earlier turn, or a stop continued by some other hook's block, is judged fresh.
 if [ "$CODEX_MODE" -eq 1 ] && [ "$STOP_HOOK_ACTIVE" = "true" ] && [ "$CHECKPOINT_OPEN" -eq 0 ] \
-  && [ "$SECONDMATE_MODE" -eq 0 ] \
   && [ "$FM_SUP_QUEUE_PENDING" = false ] \
   && [ "$(sed -n 's/^turn=//p' "$CODEX_BLOCK" 2>/dev/null)" = "$TURN_ID" ] \
   && [ "$(sed -n 's/^progress=//p' "$CODEX_BLOCK" 2>/dev/null)" = "$(codex_progress)" ]; then
