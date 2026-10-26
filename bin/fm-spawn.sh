@@ -2192,15 +2192,20 @@ if [ "$RELAUNCH" -eq 1 ]; then
   #           so a closed terminal is told apart from an unreachable one; the
   #           proof then requires Orca's process sweep to have dropped the
   #           session and no agent to be working in the recorded worktree.
-  # Every transient or self-contradicting read stays `unreadable`/`ambiguous`
+  #           A stale handle after a host reboot reads `unreadable` here and
+  #           takes that same proof, which proves it gone only when the boot
+  #           postdates the handle's recorded evidence, the post-boot sweep
+  #           is readable, and no agent works in the recorded worktree.
+  # Every other transient or self-contradicting read stays `unreadable`/`ambiguous`
   # and refuses as it always did (bin/fm-backend.sh's fm_backend_agent_state
   # owns that vocabulary). The proof itself lives in one place for the whole
   # control plane - fm_control_endpoint_absence_verdict - so `exit` and
   # `relaunch` cannot reach two different answers about one endpoint.
-  if [ "$RELAUNCH_STATE" = missing ]; then
+  if [ "$RELAUNCH_STATE" = missing ] \
+     || { [ "$RELAUNCH_STATE" = unreadable ] && [ "$BACKEND" = orca ]; }; then
     if [ "$BACKEND" = orca ]; then
       RELAUNCH_ABSENCE=$(fm_control_endpoint_absence_verdict "$BACKEND" "$RELAUNCH_TARGET" \
-        "$(fm_meta_get "$RELAUNCH_META" worktree)")
+        "$(fm_meta_get "$RELAUNCH_META" worktree)" "$RELAUNCH_META")
     else
       RELAUNCH_ABSENCE=$(fm_control_endpoint_absence_verdict "$BACKEND" "$RELAUNCH_TARGET" "$RELAUNCH_META")
     fi
@@ -2209,7 +2214,7 @@ if [ "$RELAUNCH" -eq 1 ]; then
       dead) RELAUNCH_STATE=dead ;;
       alive) RELAUNCH_STATE=alive ;;
       *)
-        echo "error: task $ID's recorded endpoint $RELAUNCH_TARGET reads 'missing', but ${RELAUNCH_ABSENCE#*$'\t'}. An endpoint that cannot be proven absent may still hold a live agent on this task's worktree; refusing rather than launching a second agent into it" >&2
+        echo "error: task $ID's recorded endpoint $RELAUNCH_TARGET reads '$RELAUNCH_STATE', but ${RELAUNCH_ABSENCE#*$'\t'}. An endpoint that cannot be proven absent may still hold a live agent on this task's worktree; refusing rather than launching a second agent into it" >&2
         exit 1
         ;;
     esac

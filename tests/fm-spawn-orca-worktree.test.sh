@@ -301,7 +301,7 @@ EOF
   status=$?
 
   expect_code 1 "$status" "a relaunch against a recorded Orca task should refuse"$'\n'"$out"
-  assert_contains "$out" "a relaunch requires a positively agent-free endpoint" \
+  assert_contains "$out" "cannot be proven absent" \
     "the refusal should name the unproven endpoint, proving relaunch never reaches the worktree carve-out"
   pass "a relaunch against an Orca-backed task whose agent is not proven stopped is refused before the RELAUNCH+orca worktree carve-out could run"
 }
@@ -357,7 +357,7 @@ orca_relaunch() {  # [spawn args...] -> sets OUT and STATUS
   OUT=$(FM_ROOT_OVERRIDE='' FM_HOME="$HOME_DIR" HOME="$CASE_DIR/user-home" CLAUDE_CONFIG_DIR='' \
     FM_STATE_OVERRIDE="$HOME_DIR/state" FM_DATA_OVERRIDE="$HOME_DIR/data" \
     FM_PROJECTS_OVERRIDE="$HOME_DIR/projects" FM_CONFIG_OVERRIDE="$HOME_DIR/config" \
-    FM_SPAWN_NO_GUARD=1 FM_TEST_ORCA_DIR="$CASE_DIR" FM_TEST_ORCA_NEW_TERMINAL=term-new PATH="$FB:$PATH" \
+    FM_SPAWN_NO_GUARD=1 FM_TEST_ORCA_DIR="$CASE_DIR" FM_TEST_ORCA_NEW_TERMINAL=term-new FM_ORCA_BOOT_EPOCH="${FM_ORCA_BOOT_EPOCH:-}" PATH="$FB:$PATH" \
     "$SPAWN" "$TASK" --relaunch "$@" 2>&1)
   STATUS=$?
 }
@@ -380,6 +380,38 @@ test_orca_relaunch_rebinds_a_closed_terminal_in_the_recorded_worktree() {
   [ -d "$WT" ] || fail "the relaunch must keep the recorded worktree"
   [ ! -e "$CASE_DIR/terminal-closed" ] || fail "a successful relaunch must not close the terminal it created"
   pass "an Orca relaunch of a closed, agent-free terminal creates a new terminal in the recorded worktree"
+}
+
+test_orca_relaunch_rebinds_a_stale_terminal_after_reboot() {
+  orca_relaunch_case reboot
+  printf '{"ok":false,"error":{"code":"terminal_handle_stale"}}\n' > "$CASE_DIR/show-term-old.json"
+  echo "spawn_gen=s1000.4242.99" >> "$HOME_DIR/state/$TASK.meta"
+  FM_ORCA_BOOT_EPOCH=2000 orca_relaunch --harness claude
+  expect_code 0 "$STATUS" "a relaunch of a pre-boot stale Orca terminal with no agent left should succeed"$'\n'"$OUT"
+  [ -f "$CASE_DIR/terminal-create.log" ] || fail "the relaunch should create a new terminal"$'\n'"$OUT"
+  [ "$(orca_meta_field terminal)" = term-new ] || fail "the task record should name the new terminal, got '$(orca_meta_field terminal)'"
+  [ "$(orca_meta_field worktree)" = "$WT" ] || fail "the task record must keep its worktree, got '$(orca_meta_field worktree)'"
+  pass "an Orca relaunch rebinds a stale terminal recorded before the host reboot in the recorded worktree"
+}
+
+test_orca_relaunch_refuses_a_stale_terminal_with_a_surviving_agent_after_reboot() {
+  local standin agent
+  standin=$(fm_agent_standin "$TMP_ROOT/relaunch-standin") \
+    || { pass "SKIP: Orca reboot surviving-agent relaunch (no agent stand-in survives here)"; return 0; }
+  orca_relaunch_case reboot-survivor
+  printf '{"ok":false,"error":{"code":"terminal_handle_stale"}}\n' > "$CASE_DIR/show-term-old.json"
+  echo "spawn_gen=s1000.4242.99" >> "$HOME_DIR/state/$TASK.meta"
+  ln -sf "$standin" "$CASE_DIR/claude"
+  "$CASE_DIR/claude" 600 >/dev/null 2>&1 &
+  agent=$!
+  printf 'p%s\nn%s\n' "$agent" "$WT" >> "$CASE_DIR/lsof.out"
+  FM_ORCA_BOOT_EPOCH=2000 orca_relaunch --harness claude
+  kill "$agent" 2>/dev/null || true
+  expect_code 1 "$STATUS" "a reboot-stale relaunch with an agent surviving in the worktree must refuse"$'\n'"$OUT"
+  assert_contains "$OUT" "an agent process still runs in" "a surviving agent must be named as the reason"
+  [ ! -e "$CASE_DIR/terminal-create.log" ] || fail "the refusal must come before any terminal is created"$'\n'"$OUT"
+  [ "$(orca_meta_field terminal)" = term-old ] || fail "the refusal must leave the task record unchanged"
+  pass "an Orca relaunch refuses a stale terminal while an agent survives in the recorded worktree after a reboot"
 }
 
 test_orca_relaunch_adopts_a_dead_connected_terminal() {
@@ -1151,6 +1183,8 @@ test_orca_fresh_spawn_enters_the_worktree_it_created
 test_orca_aborted_spawn_safe_deletes_or_records_its_created_branch
 test_orca_relaunch_is_refused_before_the_worktree_carveout_could_run
 test_orca_relaunch_rebinds_a_closed_terminal_in_the_recorded_worktree
+test_orca_relaunch_rebinds_a_stale_terminal_after_reboot
+test_orca_relaunch_refuses_a_stale_terminal_with_a_surviving_agent_after_reboot
 test_orca_relaunch_adopts_a_dead_connected_terminal
 test_orca_relaunch_refuses_without_proof_of_a_stopped_agent
 test_orca_relaunch_takes_values_from_the_scoped_source

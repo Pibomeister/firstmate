@@ -121,8 +121,9 @@ An unreachable endpoint can still hold the live agent a rebind would duplicate, 
   A server still alive while its socket does not answer, a live server whose identity cannot be read, a window that survives under another name, a holder of the copy, and a record without those fields all refuse.
   A relaunch then re-creates the window in the recorded session on the recorded socket, and refuses when the seat addresses a different tmux server.
 - **Orca can prove it, against the task's recorded worktree:** [Orca agent stop proof](orca-backend.md#agent-stop-proof) owns the required reads and refusal conditions.
+  That proof also covers a stale Orca handle after a host reboot, where the terminal read is `unreadable` rather than `missing`: the boot must postdate the handle's recorded evidence, the post-boot process sweep must be readable, and no agent may survive in the recorded worktree.
 
-Every transient or self-contradicting read stays `unreadable` or `ambiguous` and still refuses, so a momentary backend failure can never be mistaken for absence.
+Every other transient or self-contradicting read stays `unreadable` or `ambiguous` and still refuses, so a momentary backend failure can never be mistaken for absence.
 
 That proof has one owner for the whole control plane (`fm_control_endpoint_absence_verdict` in `bin/fm-control-lib.sh`), so `exit` and `relaunch` cannot reach two different answers about one endpoint.
 `exit` reports what the proof established and nothing more - see its row in the verb table above.
@@ -179,7 +180,7 @@ The worktree and the task's records are unaffected either way.
   Only a positively classified state acts.
 - `exit`'s composer-empty check, above, is itself a fail-closed boundary that `relaunch` inherits by stopping the old agent through `exit`.
 - `fm-spawn --relaunch` independently refuses unless the endpoint is positively agent-free - either a `dead` endpoint that survives, or a Herdr, tmux, or Orca endpoint proven gone by the absence proof above - so a replacement can never join a live agent.
-  An `alive`, `ambiguous`, or `unreadable` verdict all refuse, and so does any endpoint whose absence is not provable, which on tmux is a `missing` its record cannot prove absent; absence is claimed only from positive evidence of it.
+  An `alive`, `ambiguous`, or `unreadable` verdict all refuse, except an Orca `unreadable` the reboot absence proof above proves gone, and so does any endpoint whose absence is not provable, which on tmux is a `missing` its record cannot prove absent; absence is claimed only from positive evidence of it.
   It also requires the shell to be in the recorded worktree: every backend but Orca (which owns its own task worktree with no current-path probe) gets one explicit `cd` to the recorded path, then a pre-launch path read that refuses before any harness starts unless it confirms the endpoint is sitting in the recorded copy.
 
 ## Capability matrix

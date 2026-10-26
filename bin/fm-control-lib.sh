@@ -404,12 +404,17 @@ fm_control_agent_state() {  # <backend> <target>
 #     worktree (bin/backends/orca.sh's
 #     fm_backend_orca_endpoint_absence_proof owns the reads;
 #     docs/orca-backend.md "Agent stop proof" owns the evidence).
+#     A handle Orca no longer recognizes at all is proven gone only through
+#     that same function's reboot case, which additionally needs the task's
+#     record file as the fourth argument here: the host boot time must
+#     postdate the handle's recorded evidence, the post-boot sweep must be
+#     readable, and no agent may be working in the recorded worktree.
 #
 # Both control-plane callers share this one implementation so the proof cannot
 # drift into two answers for the same endpoint. The third argument is the
 # backend's own record: tmux task meta for tmux, the recorded worktree for
 # orca; each caller passes the value its backend needs.
-fm_control_endpoint_absence_verdict() {  # <backend> <target> [<meta-or-worktree>]
+fm_control_endpoint_absence_verdict() {  # <backend> <target> [<meta-or-worktree>] [<meta>]
   local backend=${1-} target=${2-} meta=${3-}
   fm_backend_source "$backend" \
     || { printf 'unproven\tbackend %s could not be loaded to prove anything about that endpoint' "'$backend'"; return 0; }
@@ -429,7 +434,7 @@ fm_control_endpoint_absence_verdict() {  # <backend> <target> [<meta-or-worktree
       esac
       ;;
     orca)
-      fm_backend_orca_endpoint_absence_proof "$target" "$meta"
+      fm_backend_orca_endpoint_absence_proof "$target" "$meta" "${4-}"
       ;;
     *)
       printf 'unproven\tbackend %s has no recovery-grade classifier, so absence cannot be proven on it at all' "'$backend'"

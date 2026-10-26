@@ -40,7 +40,11 @@
 #              `missing` is put through the control plane's per-backend absence
 #              proof (fm_control_endpoint_absence_verdict) before anything is
 #              claimed about it, because `missing` also covers an endpoint that
-#              is merely unreachable from this seat. On HERDR, whose reads are
+#              is merely unreachable from this seat. An Orca endpoint reading
+#              `unreadable` because its handle is stale after a host reboot
+#              takes that same proof, which can prove it gone only when the
+#              boot postdates the handle's recorded evidence and no agent
+#              survives in the recorded worktree. On HERDR, whose reads are
 #              scoped to the session the record names, on tmux from the
 #              server identity a tmux spawn records, and on ORCA, which still
 #              describes a closed terminal and is checked against the recorded
@@ -716,13 +720,19 @@ do_exit() {
       return 0
       ;;
     alive) ;;
-    missing)
+    missing|unreadable)
       # `missing` on its own is not a finding about the endpoint: it conflates
-      # "destroyed" with "unreachable from this seat". Route it through the
-      # control plane's one absence proof - the same one the relaunch gate uses
-      # - and report what that proof actually established, never more.
+      # "destroyed" with "unreachable from this seat". An Orca `unreadable`
+      # can likewise be a handle the post-reboot runtime no longer
+      # recognizes. Route both through the control plane's one absence proof
+      # - the same one the relaunch gate uses - and report what that proof
+      # actually established, never more. Other backends keep refusing an
+      # unreadable endpoint outright.
+      if [ "$state" = unreadable ] && [ "$BACKEND" != orca ]; then
+        die "task $ID's endpoint reads '$state' rather than a positively classified state; refusing to send a lifecycle command into an unattributed endpoint"
+      fi
       if [ "$BACKEND" = orca ]; then
-        absence=$(fm_control_endpoint_absence_verdict "$BACKEND" "$T" "$WT")
+        absence=$(fm_control_endpoint_absence_verdict "$BACKEND" "$T" "$WT" "$META")
       else
         absence=$(fm_control_endpoint_absence_verdict "$BACKEND" "$T" "$META")
       fi
@@ -750,7 +760,7 @@ do_exit() {
           # alive path: interrupt if busy, then the harness's exit command.
           ;;
         *)
-          die "task $ID's endpoint $T reads 'missing', but ${absence#*$'\t'}; exit will not claim an agent stopped at an address it cannot trust, nor send lifecycle input to one"
+          die "task $ID's endpoint $T reads '$state', but ${absence#*$'\t'}; exit will not claim an agent stopped at an address it cannot trust, nor send lifecycle input to one"
           ;;
       esac
       ;;
