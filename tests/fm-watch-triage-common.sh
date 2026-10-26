@@ -4772,7 +4772,7 @@ test_open_captain_call_bounds_stale_churn() {
 # (test_worker_blocker_stale_first_sight_then_long_cadence), so its second
 # round must be absorbed rather than re-alarmed.
 test_stale_churn_without_a_captain_call_still_alarms() {
-  local spec name line dir state out capture round wakes
+  local spec name line again dir state out capture wakes
   command -v tasks-axi >/dev/null 2>&1 \
     || { echo "skip: tasks-axi not found (unheld stale alarm)"; return 0; }
   for spec in \
