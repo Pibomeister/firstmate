@@ -391,7 +391,10 @@ activate() {
     while IFS="$(printf '\t')" read -r role pid identity; do
       [ "$role" = arm ] || continue
       if fm_pid_alive "$pid" && [ "$(identity_of "$pid")" = "$identity" ]; then
-        retire_arm "$pid" "" || return 1
+        if ! retire_arm "$pid" ""; then
+          fm_pid_alive "$pid" && return 1
+          rc=1
+        fi
       fi
     done < "$HOST_RECORD"
   fi
@@ -484,7 +487,7 @@ read_arm_capture() {
 # Stop one arm this host started (its TERM handler stops the watcher it owns)
 # and drop its output file.
 retire_arm() {  # <pid> <output-file>
-  local pid=${1:-} out=${2:-} i text rc=0
+  local pid=${1:-} out=${2:-} i text rc=0 arm_rc=0 capture_rc=0
   if [ -n "$pid" ] && fm_pid_alive "$pid"; then
     kill -TERM "$pid" 2>/dev/null || true
     i=0
@@ -496,14 +499,21 @@ retire_arm() {  # <pid> <output-file>
       printf 'supervision-host: watcher arm %s did not finish retirement; retaining its capture and process record\n' "$pid"
       return 1
     fi
-    wait "$pid" 2>/dev/null || true
+  fi
+  if [ -n "$pid" ]; then
+    wait "$pid" 2>/dev/null || arm_rc=$?
+    case "$arm_rc" in
+      0 | 127 | 143) ;;
+      *) rc=1 ;;
+    esac
   fi
   if [ -n "$out" ]; then
-    text=$(read_arm_capture "$out") || rc=$?
-    if [ "$rc" -gt 1 ]; then
+    text=$(read_arm_capture "$out") || capture_rc=$?
+    if [ "$capture_rc" -gt 1 ]; then
       printf 'supervision-host: could not read arm capture %s; retaining it and the process record\n' "$out"
       return 1
     fi
+    [ "$capture_rc" -eq 0 ] || rc=1
     if [ "$rc" -ne 0 ] || printf '%s\n' "$text" | grep -Eq '^(signal:|stale:|check:|heartbeat($|:))'; then
       printf '%s\n' "$text" | grep -Ev '^watcher: (started|attached) ' || true
     fi
@@ -621,7 +631,7 @@ await_close() {
     # the close reads as one without a wake, so the owner re-arms.
     if host_watcher_stalled; then
       log_line "arm-retired	$HOST_STALL_DETAIL; its arm $ARM_PID had not replaced it"
-      if ! retire_arm "$ARM_PID" ""; then
+      if ! retire_arm "$ARM_PID" "" && fm_pid_alive "$ARM_PID"; then
         ARM_PID=
         ARM_OUT=
         exit 1
@@ -638,8 +648,12 @@ await_close() {
       i=$((i - 1))
     done
   done
-  wait "$ARM_PID" 2>/dev/null || true
-  ARM_TEXT=$(read_arm_capture "$ARM_OUT") || rc=$?
+  wait "$ARM_PID" 2>/dev/null || rc=$?
+  case "$rc" in
+    0 | 127 | 143) rc=0 ;;
+    *) rc=1 ;;
+  esac
+  ARM_TEXT=$(read_arm_capture "$ARM_OUT") || rc=1
   if [ -n "$READY_LINE" ]; then
     # Already printed: drop its first occurrence from this first close.
     ARM_TEXT=$(printf '%s\n' "$ARM_TEXT" | awk -v line="$READY_LINE" '!dropped && $0 == line { dropped = 1; next } { print }')

@@ -797,9 +797,19 @@ test_real_host_retirement_preserves_cleanup_failures() {
 
 # shellcheck disable=SC2016
 run_real_host_signal_close() {
-  local kind=$1 home checkpoint_pid holder watcher arm i status real_mv expected_status=1
-  home=$(make_real_host_home "host-signal-$kind")
+  local kind=$1 cleanup_bound=${2:-2} home checkpoint_pid holder watcher arm i status real_mv expected_status=1
+  home=$(make_real_host_home "host-signal-$kind-$cleanup_bound")
   real_mv=$(command -v mv) || fail "could not locate mv for delivery synchronization"
+  if [ "$cleanup_bound" -gt 5 ]; then
+    cat > "$home/fakebin/cat" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = "$FM_HOME/state/.watcher-down.lock/pid" ] && [ -e "$FM_HOME/observe-cleanup-wait" ]; then
+  : > "$FM_HOME/cleanup-wait-ready"
+fi
+exec /bin/cat "$@"
+SH
+    chmod +x "$home/fakebin/cat"
+  fi
   cat > "$home/fakebin/mv" <<'SH'
 #!/usr/bin/env bash
 last=
@@ -830,7 +840,7 @@ SH
     PATH="$home/fakebin:$PATH" FM_POLL=1 FM_CHECK_INTERVAL=999999 \
     FM_SIGNAL_GRACE=0 FM_HEARTBEAT=999999 FM_CODEX_WATCH_CHECKPOINT_AWAY=120 \
     FM_TEST_SUPERVISION_HOST_CLOCK="$home/park-clock" FM_SUPERVISION_HOST_TURN_TIMEOUT=60 FM_SUPERVISION_ENGINE_GRACE=1 \
-    FM_SUPERVISION_ENGINE_CLAUDE_BIN="$home/fakebin/engine" FM_WATCHER_CLEANUP_LOCK_BOUND=2 \
+    FM_SUPERVISION_ENGINE_CLAUDE_BIN="$home/fakebin/engine" FM_WATCHER_CLEANUP_LOCK_BOUND="$cleanup_bound" \
     "$home/fakebin/codex" -c '
       printf "%s\n" "$$" > "$FM_HOME/state/.lock"
       "$0" --seconds 120
@@ -864,6 +874,13 @@ SH
   i=0
   while [ ! -e "$home/completed-lock-held" ] && [ "$i" -lt 300 ]; do sleep 0.1; i=$((i + 1)); done
   [ -e "$home/completed-lock-held" ] || fail "completed-close fixture did not acquire its marker lock"
+  if [ "$cleanup_bound" -gt 5 ]; then
+    : > "$home/observe-cleanup-wait"
+    : > "$home/completed-output-go"
+    i=0
+    while [ ! -e "$home/cleanup-wait-ready" ] && [ "$i" -lt 100 ]; do sleep 0.05; i=$((i + 1)); done
+    [ -e "$home/cleanup-wait-ready" ] || fail "watcher did not reach its contended cleanup lock"
+  fi
   case "$kind" in
     predecessor-*)
       arm=$(awk -F '\t' '$1 == "arm" { print $2; exit }' "$home/state/.supervision-host")
@@ -879,7 +896,7 @@ SH
         PATH="$home/fakebin:$PATH" FM_POLL=1 FM_CHECK_INTERVAL=999999 \
         FM_SIGNAL_GRACE=0 FM_HEARTBEAT=999999 FM_CODEX_WATCH_CHECKPOINT_AWAY=120 \
         FM_TEST_SUPERVISION_HOST_CLOCK="$home/park-clock" FM_SUPERVISION_HOST_TURN_TIMEOUT=60 FM_SUPERVISION_ENGINE_GRACE=1 \
-        FM_SUPERVISION_ENGINE_CLAUDE_BIN="$home/fakebin/engine" FM_WATCHER_CLEANUP_LOCK_BOUND=2 \
+        FM_SUPERVISION_ENGINE_CLAUDE_BIN="$home/fakebin/engine" FM_WATCHER_CLEANUP_LOCK_BOUND="$cleanup_bound" \
         "$home/fakebin/codex" -c '
           printf "%s\n" "$$" > "$FM_HOME/state/.lock"
           "$0" --seconds 120
@@ -888,10 +905,14 @@ SH
       ;;
   esac
   if [ "$kind" != completed-failure ]; then
-    echo 120 > "$home/park-clock"
-    arm=$(awk -F '\t' '$1 == "arm" { print $2; exit }' "$home/state/.supervision-host")
-    kill -TERM "$arm" || fail "could not retire the arm with a real signal pending"
-    is_live_non_zombie "$watcher" || fail "watcher finished before controlled retirement"
+    if [ "$cleanup_bound" -le 5 ]; then
+      echo 120 > "$home/park-clock"
+      arm=$(awk -F '\t' '$1 == "arm" { print $2; exit }' "$home/state/.supervision-host")
+      kill -TERM "$arm" || fail "could not retire the arm with a real signal pending"
+      is_live_non_zombie "$watcher" || fail "watcher finished before controlled retirement"
+    elif [ "$kind" = retired-failure ]; then
+      echo 120 > "$home/park-clock"
+    fi
     if [ "$kind" = retired-clean ] || [ "$kind" = predecessor-clean ]; then
       expected_status=0
       : > "$home/release-cleanup-lock"
@@ -942,6 +963,13 @@ test_real_host_retired_signal_preserves_wake() {
 test_real_host_predecessor_capture_preserves_wake() {
   run_real_host_signal_close predecessor-clean
   run_real_host_signal_close predecessor-failure
+  run_real_host_signal_close predecessor-failure 8
+  run_real_host_signal_close predecessor-failure 30
+}
+
+test_real_host_forced_retirement_preserves_wake() {
+  run_real_host_signal_close retired-failure 8
+  run_real_host_signal_close retired-failure 30
 }
 
 start_orphaned_test_watcher() {
@@ -1338,6 +1366,7 @@ test_host_checkpoint_needs_the_file_and_honors_off
 test_real_host_completed_close_preserves_cleanup_failure
 test_real_host_retired_signal_preserves_wake
 test_real_host_predecessor_capture_preserves_wake
+test_real_host_forced_retirement_preserves_wake
 test_real_arm_forwarding_is_signal_safe
 test_real_attached_host_cleanup
 test_stop_preserves_foreign_process_identity_guards

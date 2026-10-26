@@ -1862,7 +1862,7 @@ test_host_retires_an_arm_that_left_its_watcher_stalled() {
     kill -KILL "$arm" "$watcher" 2>/dev/null
     fail "the host never retired an arm that left its watcher stalled past the bound"$'\n'"$(cat "$home/state/.supervision-host.log" 2>/dev/null)"
   fi
-  [ "$mode" != responsive ] || kill -CONT "$arm"
+  [ "$mode" != responsive ] || kill -CONT "$arm" "$watcher"
   wait_until 200 host_exited "$home" || { kill -KILL "$arm" "$watcher" 2>/dev/null; fail "the host did not close the cycle after retiring the arm"; }
   if [ "$mode" = stopped ]; then
     [ "$(cat "$home/host.rc")" != 0 ] || fail "the host accepted an unfinished arm retirement"

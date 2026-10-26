@@ -809,6 +809,7 @@ handle_arm_signal() {
     wait "$child" 2>/dev/null || true
   fi
   consume_child_output
+  watcher_cleanup_complete "$cycle_watcher_pid" "$cycle_watcher_identity" || rc=1
   cycle_log_append "$rc" "$signal" arm-interrupted none
   cleanup_child
   exit "$rc"
