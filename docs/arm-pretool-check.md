@@ -63,7 +63,7 @@ A command word in executed position is a protected execution when its normalized
 ```text
 bin/fm-watch-arm.sh          (arm; blessed entry point)
 bin/fm-watch-checkpoint.sh   (checkpoint; blessed entry point)
-bin/fm-watch.sh              (watch; protected but never blessed)
+bin/fm-watch.sh              (watch; blessed only as --secondmate or --secondmate-status)
 ```
 
 The relative form, the `<code-root>`-anchored absolute form, and any word ending in `/bin/<script>` all resolve to that identity.
@@ -72,8 +72,8 @@ The classifier never expands the variable or tilde; it matches the literal bytes
 Static quote forms are cooked before the suffix match, so a command word split by ordinary quotes (`fm-"watch"-arm.sh`), ANSI-C quoting (`fm-$'\x77'atch-arm.sh`), or a bash locale string (`fm-$"watch"-arm.sh`) all resolve to the same identity; this reads the fixed literal bytes as the shell would cook them and never runs an expansion or a command.
 This covers statically-visible literal words in command position; opaque dynamic dataflow such as `bash -lc "$WHOLE_COMMAND"` remains out of scope.
 
-`bin/fm-watch.sh` is protected but is not a blessed entry point.
-A direct `bin/fm-watch.sh` execution - relative, `<code-root>`-anchored, `$VAR`-prefixed, or `~`-prefixed - always denies with `watcher-direct`, whose reason points the caller at `bin/fm-watch-arm.sh` and `bin/fm-watch-checkpoint.sh`.
+`bin/fm-watch.sh` is protected and is blessed only when its single argument is `--secondmate` or `--secondmate-status`, the foreground Codex secondmate start and status entries.
+Any other direct `bin/fm-watch.sh` execution - relative, `<code-root>`-anchored, `$VAR`-prefixed, or `~`-prefixed - always denies with `watcher-direct`, whose reason points the caller at `bin/fm-watch-arm.sh` and `bin/fm-watch-checkpoint.sh`.
 
 The same bytes in an argument, comment, assertion, documentation query, Python string, `printf`, or `tmux send-keys` payload are data and do not make the outer command relevant.
 
@@ -93,7 +93,7 @@ An actual protected command with a heredoc still has a redirection and is denied
 ## Blessed syntax tree
 
 An allowed watcher program is one linear outer command list with zero or more approved setup nodes followed by exactly one direct protected node.
-`bin/fm-watch-arm.sh` and `bin/fm-watch-checkpoint.sh` are the only blessed final nodes, including their expanded-path forms; a `bin/fm-watch.sh` final node is never blessed and denies with `watcher-direct`.
+`bin/fm-watch-arm.sh`, `bin/fm-watch-checkpoint.sh`, and `bin/fm-watch.sh --secondmate` or `--secondmate-status` are the only blessed final nodes, including their expanded-path forms; any other `bin/fm-watch.sh` final node denies with `watcher-direct`.
 
 Approved setup nodes are:
 

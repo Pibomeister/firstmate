@@ -202,7 +202,7 @@ It enters its poll loop immediately and keeps scanning signals, stale panes, and
 - No PreToolUse hook denies fleet commands based on watcher status.
 - A genuine auto-arm failure describes the automatic mechanism as broken and never directs a routine manual background arm.
 - Terminal arm-output classification (`started`, `attached`, or `FAILED`) remains defense in depth for the manual recovery path.
-- Codex retains its bounded foreground checkpoint protocol.
+- Codex retains its bounded foreground checkpoint protocol by default; [`turnend-guard.md`](turnend-guard.md#codex-mode) owns the local tmux secondmate exception.
 - Grok retains its tracked background-task notification protocol.
 - Its plain arm exports FM_WATCH_GROK_CONTINUITY=1 and detaches a handling successor that holds the lock before the arm returns an actionable wake, unless state/.afk is present.
 - That successor retains the lock across quiet polls and later notices until the owner stops or restarts it; away and quiet mode keep wakes one-shot.
@@ -535,6 +535,6 @@ The other harnesses rely on these mechanisms:
 - Claude depends on the Stop `asyncRewake` rewake.
 - Cursor depends on its awaited stop-hook park.
 - Grok retains native background-completion notifications.
-- Codex retains bounded foreground checkpoints.
+- Codex retains bounded foreground checkpoints by default.
 
 [`verification/supervision.md`](verification/supervision.md#watcher-continuity) records the current cross-harness live evidence, the dated Stop-owned Claude auto-arm results, and exact opt-in commands.

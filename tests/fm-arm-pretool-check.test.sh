@@ -44,6 +44,9 @@ matrix_case A15 allow "cd $ROOT && exec bin/fm-watch-arm.sh"
 matrix_case A16 allow "export FM_HOME=$ROOT && bin/fm-watch-checkpoint.sh --seconds 180"
 matrix_case A17 allow $'source "config/x-mode.env"\nbin/fm-watch-checkpoint.sh --seconds 180'
 matrix_case A18 allow "[ -f 'config/x-mode.env' ] && . 'config/x-mode.env'; export FM_WATCH_GROK_CONTINUITY=1; exec bin/fm-watch-arm.sh"
+matrix_case A19 allow 'bin/fm-watch.sh --secondmate'
+matrix_case A20 allow 'bin/fm-watch.sh --secondmate-status'
+matrix_case A21 allow "cd '$ROOT'; $ROOT/bin/fm-watch.sh --secondmate"
 
 matrix_case R01 allow "pgrep -fl '/bin/fm-watch.sh' || true"
 matrix_case R02 allow "ps aux | rg '/bin/fm-watch.sh'"
@@ -132,6 +135,9 @@ matrix_case D62 deny "bash -xs sentinel <<< 'bin/fm-watch.sh'"
 matrix_case D63 deny "sh -s sentinel <<< 'bin/fm-watch.sh'"
 matrix_case D64 deny 'bash -s bin/fm-watch.sh'
 matrix_case D65 deny "bash -s -- -c harmless <<< 'bin/fm-watch.sh'"
+matrix_case D66 deny 'bin/fm-watch.sh --secondmate-hold'
+matrix_case D67 deny 'bin/fm-watch.sh --secondmate &'
+matrix_case D68 deny 'bin/fm-watch.sh --secondmate --restart'
 
 matrix_case E01 allow "bin/fm-watch-checkpoint.sh --seconds '180;still-one-arg'"
 matrix_case E02 allow "bin/fm-watch-checkpoint.sh --label 'fm-watch-arm.sh; literal argument'"

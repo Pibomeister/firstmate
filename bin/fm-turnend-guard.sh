@@ -299,6 +299,11 @@ EOF
 }
 
 CHECKPOINT_OPEN=0
+SECONDMATE_MODE=0
+if [ "$CODEX_MODE" -eq 1 ] && [ -x "$SCRIPT_DIR/fm-watch.sh" ] \
+  && "$SCRIPT_DIR/fm-watch.sh" --secondmate-selected >/dev/null 2>&1; then
+  SECONDMATE_MODE=1
+fi
 if [ "$CODEX_MODE" -eq 1 ] \
   && own_checkpoint_holds_watcher "$(cat "$STATE/.watch.lock/pid" 2>/dev/null)"; then
   CHECKPOINT_OPEN=1
@@ -306,7 +311,9 @@ fi
 if fm_watcher_healthy "$STATE" "$WATCH" "$GRACE" "$FM_HOME"; then
   if [ "$CHECKPOINT_OPEN" -eq 0 ]; then
     if [ "$CODEX_MODE" -eq 0 ] || [ "$FM_SUP_QUEUE_PENDING" = false ]; then
-      allow_supervised_stop
+      if [ "$SECONDMATE_MODE" -eq 0 ] || "$SCRIPT_DIR/fm-watch.sh" --secondmate-status >/dev/null 2>&1; then
+        allow_supervised_stop
+      fi
     fi
   fi
 fi

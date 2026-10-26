@@ -314,8 +314,8 @@ Both payloads carry `stop_hook_active`, and Codex sets it on every stop after th
 ### Codex mode
 
 The guard enters Codex mode when `bin/fm-harness.sh` resolves the hook's own harness to `codex`.
-Codex has no asynchronous wake: its foreground checkpoint is an exec session the model must poll, and a turn that ends while it runs leaves nobody to read its wake or start the next one.
-Codex mode therefore replaces the one-shot `stop_hook_active` allow with two rules, owned by the header of `bin/fm-turnend-guard.sh`:
+A default Codex primary uses a foreground checkpoint, an exec session the model must poll; ending the turn while it runs leaves nobody to read its wake or start the next one.
+For that default route, Codex mode replaces the one-shot `stop_hook_active` allow with two rules, owned by the header of `bin/fm-turnend-guard.sh`:
 
 - An identity-matched live watcher running under an `fm-watch-checkpoint.sh` that descends from this hook's own harness ancestry cannot justify ending the turn, even with a stale beacon, so the stop blocks and names the poll repair.
   A watcher another session started still allows the stop.
@@ -327,6 +327,23 @@ A home whose session lock another live session owns takes the [foreign session-l
 Queued wakes keep Codex's turn open until handling and acknowledgement finish, including after the last task clears; the no-progress escape cannot abandon that queue.
 An identity-matched own checkpoint also holds the turn when its beacon has gone stale; beacon freshness cannot prove that the foreground command ended.
 Away daemon ownership retains its existing allow path.
+
+A local tmux Codex secondmate with a validated parent/inbox binding uses the existing watcher outside the model turn instead; `bin/fm-watch.sh`'s header owns its command interfaces.
+Its actionable events ring the existing durable steering inbox, while the watcher's ordinary triage absorbs no-change heartbeats and retains the actionable-status backstop.
+The Stop guard allows a supervised stop only with the live watcher, session/process identity and delivery route proven; until that proof holds, the default Codex no-progress escape still bounds repeated blocks.
+When `bin/fm-watch.sh --secondmate` reports a failure, the emitted protocol and repair line fall back to the default foreground checkpoint.
+A failed notification is retried on the next poll, and the watcher stops after three consecutive binding-check failures without acknowledging pending events; away/quiet and supervision-host ownership take precedence, and unsupported combinations retain their existing protocol.
+
+This matrix owns short-turn route selection; existing native protocols remain authoritative outside the selected row.
+
+| Harness | Backend/route | Ownership mode | Result |
+| --- | --- | --- | --- |
+| Codex | tmux, validated local parent/inbox and foreground session | No other watcher/host/away owner | Persistent watcher with identity-bound doorbell; Stop requires its proof. |
+| Codex | Any | Away or quiet daemon | Existing daemon protocol; short-turn watcher stands down. |
+| Codex | Any | Supervision host selected | Existing host protocol; a stale short-turn record cannot force the new guard path. |
+| Codex | tmux/local | Other healthy watcher | Existing owner/protocol; no competing short-turn watcher. |
+| Codex | Other backend, including Herdr, or remote/unverified route | Any | Not converted; existing foreground checkpoint protocol. |
+| Other supported harnesses | Their existing supported backends/routes | Native ownership | Existing native protocol, without a new Codex short-turn owner. |
 
 ### Claude cooperative mode
 

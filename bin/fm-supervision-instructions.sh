@@ -124,6 +124,11 @@ case "$HARNESS" in
 esac
 
 checkpoint_seconds=${FM_CODEX_WATCH_CHECKPOINT:-180}
+SECONDMATE_MODE=0
+if [ "$HARNESS" = codex ] && [ "$AFK" -eq 0 ] && [ -x "$SCRIPT_DIR/fm-watch.sh" ] \
+  && "$SCRIPT_DIR/fm-watch.sh" --secondmate-selected >/dev/null 2>&1; then
+  SECONDMATE_MODE=1
+fi
 pi_ext="$FM_ROOT/.pi/extensions/fm-primary-pi-watch.ts"
 pi_turnend_ext="$FM_ROOT/.pi/extensions/fm-primary-turnend-guard.ts"
 omp_ext="$FM_ROOT/.omp/extensions/fm-primary-omp-watch.ts"
@@ -197,7 +202,9 @@ repair_line() {
   fi
 
   prefix=
-  if [ "$QUEUE_PENDING" -eq 1 ]; then
+  if [ "$SECONDMATE_MODE" -eq 1 ]; then
+    prefix='Drain and acknowledge pending wakes and run bin/fm-watch.sh --secondmate, then end this turn; if it reports a failure, '
+  elif [ "$QUEUE_PENDING" -eq 1 ]; then
     prefix='After draining queued wakes, '
   fi
   if [ "$X_MODE" -eq 1 ]; then
@@ -241,6 +248,10 @@ repair_line() {
 }
 
 ordinary_wake_line() {
+  if [ "$SECONDMATE_MODE" -eq 1 ]; then
+    printf '%s\n' '- Ordinary wake: handle and acknowledge durable inbox/watcher events, send actions and parent replies, then end this turn; the existing watcher remains outside it.'
+    return 0
+  fi
   case "$HARNESS" in
     claude)
       printf '%s\n' '- Ordinary wake: the Stop-owned auto-arm (bin/fm-claude-stop-autoarm.sh) already owns watcher continuity; drain and handle the wake, and do not arm another cycle yourself.'
@@ -306,6 +317,16 @@ if [ -n "$HOST_SNIPPET" ]; then
 fi
 ordinary_wake_line
 printf '\n'
+if [ "$SECONDMATE_MODE" -eq 1 ]; then
+  cat <<'EOF'
+Mode: Secondmate event-driven turns.
+Read and acknowledge the steering inbox, drain and handle durable watcher events, and run the exact WAKE_ACK_REQUIRED acknowledgement after handling them.
+Send resulting actions and parent-channel replies in this handling turn.
+Run bin/fm-watch.sh --secondmate once to verify the outside-turn watcher and notification route, then end this turn.
+Do not wait for crews or poll a tool session; an existing inbox doorbell starts the next handling turn when an actionable event arrives.
+If bin/fm-watch.sh --secondmate reports a failure, follow the default checkpoint protocol below instead.
+EOF
+fi
 render_snippet
 printf '\n'
 if [ -n "$HOST_SNIPPET" ]; then
