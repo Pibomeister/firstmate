@@ -172,6 +172,56 @@ test_stale_watch_lock_reclaimed() {
   pass "killed watcher stale lock is reclaimed"
 }
 
+test_ack_before_startup_arm_check_stays_silent() {
+  local dir state fakebin out pid i status=0
+  dir=$(make_case ack-before-startup-arm-check)
+  state="$dir/state"
+  fakebin="$dir/fakebin"
+  out="$dir/watch.out"
+  append_wake "$state" check startup-race 'check: handled during watcher startup' \
+    || fail "could not queue the startup-race wake"
+  mkdir "$state/.watch.lock"
+  dead_pid > "$state/.watch.lock/pid"
+  cat > "$fakebin/ln" <<'SH'
+#!/usr/bin/env bash
+last=
+for arg do last=$arg; done
+if [ "$last" = "$FM_STATE_OVERRIDE/.wake-queue.lock" ] \
+  && [ -s "$FM_STATE_OVERRIDE/.watch.lock/pid-identity" ] \
+  && mkdir "$FM_STATE_OVERRIDE/startup-paused" 2>/dev/null; then
+  i=0
+  while [ ! -e "$FM_STATE_OVERRIDE/startup-release" ]; do
+    [ "$i" -lt 600 ] || exit 1
+    sleep 0.05
+    i=$((i + 1))
+  done
+fi
+exec /bin/ln "$@"
+SH
+  chmod +x "$fakebin/ln"
+  PATH="$fakebin:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$state" FM_WATCH_ONCE=1 \
+    FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    "$WATCH" > "$out" 2>&1 &
+  pid=$!
+  i=0
+  while [ "$i" -lt 150 ] && [ ! -d "$state/startup-paused" ]; do
+    sleep 0.05
+    i=$((i + 1))
+  done
+  [ -d "$state/startup-paused" ] || fail "watcher did not pause before startup queue locking"
+  assert_grep 'pending:downtime:' "$state/.watcher-down" "stale-lock reclaim did not publish recovery"
+  [ -s "$state/.wake-queue" ] || fail "startup queue was empty before acknowledgement"
+  FM_HOME="$dir" drain_and_ack "$state" || fail "could not acknowledge the startup-race wake"
+  [ ! -s "$state/.wake-queue" ] || fail "acknowledgement left queued rows"
+  : > "$state/startup-release"
+  wait_for_exit "$pid" 200 || status=$?
+  expect_code 0 "$status" "watcher did not finish its quiet poll after startup acknowledgement: $(cat "$out")"
+  ! grep -qF 'check: rearm-resurface' "$out" || fail "watcher resurfaced already acknowledged startup work"
+  [ ! -s "$state/.wake-queue" ] || fail "watcher queued a bookkeeping wake after startup acknowledgement"
+  assert_absent "$state/.watch.lock/pid" "quiet watcher poll retained its singleton lock"
+  pass "startup recovery stays silent when queued work is acknowledged before the locked arm check"
+}
+
 test_live_stale_watch_lock_is_actionable() {
   local dir state fakebin out err status
   dir=$(make_case live-stale-lock)
@@ -1599,6 +1649,7 @@ test_pid_identity_is_terminal_width_invariant
 test_proc_pid_identity_ignores_wall_clock_and_detects_pid_reuse
 test_msys_pid_identity_uses_proc
 test_stale_watch_lock_reclaimed
+test_ack_before_startup_arm_check_stays_silent
 test_stale_watch_reclaim_publishes_before_clear
 test_live_stale_watch_lock_is_actionable
 test_live_stalled_watch_lock_is_replaced_past_hard_bound

@@ -3468,11 +3468,6 @@ if [ -n "$EVICTED_PID" ]; then
   echo "watcher: replaced stalled pid $EVICTED_PID (beacon ${EVICTED_BEAT_AGE}s past hard bound ${WATCHER_STALL_BOUND}s)"
 fi
 WATCHER_RECOVERY_PENDING=0
-# A dead holder buried nothing when the durable queue is empty; the poll loop's
-# arm check still recovers any row appended after this read.
-if [ -n "${FM_LOCK_RECOVERED_PID:-}" ] && [ -s "$FM_WAKE_QUEUE" ]; then
-  WATCHER_RECOVERY_PENDING=1
-fi
 if [ "${FM_WATCH_HANDLING_SUCCESSOR:-0}" != 1 ] \
   && [ "${FM_WATCH_FOREGROUND_CHECKPOINT:-0}" != 1 ]; then
   if ! fm_recovery_marker_reopen_announced "$WATCHER_DOWNTIME_MARKER"; then
