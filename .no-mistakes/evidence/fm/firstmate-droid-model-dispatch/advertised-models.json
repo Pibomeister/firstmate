@@ -1,0 +1,242 @@
+[
+  {
+    "id": "auto",
+    "label": "Auto Model"
+  },
+  {
+    "id": "claude-fable-5.1",
+    "label": "Fable 5.1"
+  },
+  {
+    "id": "claude-fable-5",
+    "label": "Fable 5"
+  },
+  {
+    "id": "claude-opus-5-5",
+    "label": "Opus 5.5"
+  },
+  {
+    "id": "claude-opus-5-5-fast",
+    "label": "Opus 5.5 Fast Mode"
+  },
+  {
+    "id": "claude-opus-5",
+    "label": "Opus 5"
+  },
+  {
+    "id": "claude-opus-5-fast",
+    "label": "Opus 5 Fast Mode"
+  },
+  {
+    "id": "claude-opus-4-8",
+    "label": "Opus 4.8"
+  },
+  {
+    "id": "claude-opus-4-8-fast",
+    "label": "Opus 4.8 Fast Mode"
+  },
+  {
+    "id": "claude-opus-4-7",
+    "label": "Opus 4.7"
+  },
+  {
+    "id": "claude-opus-4-6",
+    "label": "Opus 4.6"
+  },
+  {
+    "id": "claude-opus-4-5-20251101",
+    "label": "Opus 4.5"
+  },
+  {
+    "id": "claude-sonnet-5",
+    "label": "Sonnet 5"
+  },
+  {
+    "id": "claude-sonnet-4-6",
+    "label": "Sonnet 4.6"
+  },
+  {
+    "id": "claude-sonnet-4-5-20250929",
+    "label": "Sonnet 4.5"
+  },
+  {
+    "id": "claude-haiku-4-5-20251001",
+    "label": "Haiku 4.5"
+  },
+  {
+    "id": "gpt-6.1-sol",
+    "label": "GPT-6.1 Sol"
+  },
+  {
+    "id": "gpt-6.1-sol-ultrafast",
+    "label": "GPT-6.1 Sol Ultra Fast"
+  },
+  {
+    "id": "gpt-6-astra",
+    "label": "GPT-6 Astra"
+  },
+  {
+    "id": "gpt-6-sol",
+    "label": "GPT-6 Sol (default)"
+  },
+  {
+    "id": "gpt-6-sol-fast",
+    "label": "GPT-6 Sol Fast Mode"
+  },
+  {
+    "id": "gpt-6-luna",
+    "label": "GPT-6 Luna"
+  },
+  {
+    "id": "gpt-6-luna-fast",
+    "label": "GPT-6 Luna Fast Mode"
+  },
+  {
+    "id": "gpt-5.6-sol",
+    "label": "GPT-5.6 Sol"
+  },
+  {
+    "id": "gpt-5.6-sol-fast",
+    "label": "GPT-5.6 Sol Fast Mode"
+  },
+  {
+    "id": "gpt-5.6-terra",
+    "label": "GPT-5.6 Terra"
+  },
+  {
+    "id": "gpt-5.6-luna",
+    "label": "GPT-5.6 Luna"
+  },
+  {
+    "id": "gpt-5.5",
+    "label": "GPT-5.5"
+  },
+  {
+    "id": "gpt-5.5-fast",
+    "label": "GPT-5.5 Fast Mode"
+  },
+  {
+    "id": "gpt-5.5-pro",
+    "label": "GPT-5.5 Pro"
+  },
+  {
+    "id": "gpt-5.4",
+    "label": "GPT-5.4"
+  },
+  {
+    "id": "gpt-5.4-fast",
+    "label": "GPT-5.4 Fast Mode"
+  },
+  {
+    "id": "gpt-5.4-mini",
+    "label": "GPT-5.4 Mini"
+  },
+  {
+    "id": "gpt-5.4-mini-fast",
+    "label": "GPT-5.4 Mini Fast Mode"
+  },
+  {
+    "id": "gpt-5.3-codex",
+    "label": "GPT-5.3-Codex"
+  },
+  {
+    "id": "gpt-5.3-codex-fast",
+    "label": "GPT-5.3-Codex Fast Mode"
+  },
+  {
+    "id": "gpt-5.2",
+    "label": "GPT-5.2"
+  },
+  {
+    "id": "gemini-3.1-pro-preview",
+    "label": "Gemini 3.1 Pro"
+  },
+  {
+    "id": "gemini-3.8-flash",
+    "label": "Gemini 3.8 Flash"
+  },
+  {
+    "id": "gemini-3.7-flash",
+    "label": "Gemini 3.7 Flash"
+  },
+  {
+    "id": "gemini-3.6-flash",
+    "label": "Gemini 3.6 Flash"
+  },
+  {
+    "id": "gemini-3.5-flash",
+    "label": "Gemini 3.5 Flash"
+  },
+  {
+    "id": "gemini-3-flash-preview",
+    "label": "Gemini 3 Flash"
+  },
+  {
+    "id": "inkling",
+    "label": "Inkling"
+  },
+  {
+    "id": "mistral-medium-3.5",
+    "label": "Mistral Medium 3.5"
+  },
+  {
+    "id": "glm-5.3-flash",
+    "label": "GLM-5.3-Flash"
+  },
+  {
+    "id": "glm-5.3",
+    "label": "GLM-5.3"
+  },
+  {
+    "id": "glm-5.2",
+    "label": "GLM-5.2"
+  },
+  {
+    "id": "kimi-k3",
+    "label": "Kimi K3"
+  },
+  {
+    "id": "qwen3.8-max",
+    "label": "Qwen3.8 Max"
+  },
+  {
+    "id": "nemotron-3-ultra",
+    "label": "Nemotron 3 Ultra"
+  },
+  {
+    "id": "deepseek-v4.1-flash",
+    "label": "DeepSeek V4.1 Flash"
+  },
+  {
+    "id": "deepseek-v4-flash-0731",
+    "label": "DeepSeek V4 Flash 0731 [Deprecated]"
+  },
+  {
+    "id": "deepseek-v4-pro",
+    "label": "DeepSeek V4 Pro [Deprecated]"
+  },
+  {
+    "id": "minimax-m3",
+    "label": "MiniMax M3"
+  },
+  {
+    "id": "muse-spark-1.2",
+    "label": "Muse Spark 1.2"
+  },
+  {
+    "id": "grok-4.7",
+    "label": "Grok 4.7"
+  },
+  {
+    "id": "grok-4.6",
+    "label": "Grok 4.6"
+  },
+  {
+    "id": "grok-4.5",
+    "label": "Grok 4.5"
+  },
+  {
+    "id": "minimax-m2.7",
+    "label": "MiniMax M2.7 [Deprecated]"
+  }
+]

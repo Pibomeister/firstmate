@@ -1,0 +1,2 @@
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJCS392N92QV6H2V3AMEH1/.test-droid-validation/preflight-lab
+error: Droid did not answer the model check for 'claude-opus-5-5' within 1s; check its network and sign-in, then retry or omit --model

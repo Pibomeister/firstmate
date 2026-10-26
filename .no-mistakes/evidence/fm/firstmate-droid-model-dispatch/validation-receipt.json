@@ -1,0 +1,30 @@
+{
+  "revision": "a450c5e7a58a1c4ebd9250f323b3503aaa4ba4d5",
+  "native_cli_version": "0.249.0",
+  "focused_suite": {
+    "command": "TMPDIR=\"$PWD/.test-droid-validation/tmp\" bash tests/fm-droid-harness.test.sh",
+    "exit": 0,
+    "log": "targeted.log",
+    "native_droid_or_backend": false
+  },
+  "fresh_live_checks": [
+    "installed Droid model catalogue",
+    "Firstmate invalid-model refusal before task metadata or slot claim",
+    "Firstmate one-second native model-probe timeout before task metadata or slot claim"
+  ],
+  "isolation": {
+    "home": "worktree-local disposable HOME",
+    "factory_operator_data_read_denied": true,
+    "native_file_writes": "sandbox restricted to worktree-local test directory and evidence",
+    "model_turns_started": 0,
+    "fleet_endpoints_touched": false,
+    "source_changes": false
+  },
+  "preserved_scope": {
+    "normal_home_native_round": "Previously consumed; no new round attempted.",
+    "accepted_native_delivery": "Supplied scope adjudication accepts preserved Opus/high and Kimi/high identity, current-generation brief digest and nonce reports; these were not reproduced in this run.",
+    "limits": "No Kimi final ACK or actual native conditional trust-click proof claimed. Neither is forced as an additional successful-startup criterion. Portable refusal/retry tests remain intact.",
+    "prior_round10": "Read-only failure receipts retained unchanged; not used as evidence of success."
+  },
+  "visual_evidence": "No TUI started: recorded authorization forbids another native round. Current evidence is real CLI output, not a reconstructed screenshot."
+}
