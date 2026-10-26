@@ -710,7 +710,7 @@ retire_busy_incarnation() {
 # do_exit: stop the running agent, preserving endpoint and worktree. Prints
 # `already-stopped`, `endpoint-gone`, or `stopped`.
 do_exit() {
-  local state cmd hazard verdict composer_state cancel absence= interrupt_result=not-needed dialog
+  local state cmd hazard verdict composer_state cancel absence='' interrupt_result=not-needed dialog
   require_state_verified_backend exit
   if [ "$BACKEND" = orca ] && [ "$HARNESS" = droid ] \
     && [ "$(fm_control_agent_state "$BACKEND" "$T")" = unreadable ]; then
