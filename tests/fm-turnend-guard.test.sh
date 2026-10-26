@@ -2582,29 +2582,31 @@ test_secondmate_event_watcher_survives_and_notifies() {
   dir=$(make_secondmate_dir "$TMP_ROOT/sm-event-runtime")
   cp -R "$ROOT/bin/." "$dir/bin/"
   if ! python3 - "$dir" "$BASH" "$CODEX_BIN" <<'PY'
-import json, os, pathlib, shlex, signal, subprocess, sys, tempfile, time
+import json, os, pathlib, shlex, shutil, signal, subprocess, sys, tempfile, time
 root = pathlib.Path(sys.argv[1])
 socket_root = pathlib.Path(tempfile.mkdtemp(prefix='fm-sm-event-', dir='/tmp'))
 socket = str(socket_root/'socket')
 (root/'parent/state').mkdir(parents=True)
-(root/'config').mkdir()
+(root/'config').mkdir(exist_ok=True)
 (root/'bashbin').mkdir()
 os.symlink(sys.argv[2], root/'bashbin/bash')
 (root/'.fm-secondmate-parent').write_text('schema=fm-secondmate-parent.v1\nroute=local\nparent_home='+str(root/'parent')+'\n')
 fixture = root/'session.py'
 fixture.write_text(r'''
-import json, os, pathlib, subprocess, sys, time
+import json, os, pathlib, signal, subprocess, sys, time
 root = pathlib.Path(sys.argv[1])
 watch = str(root/'bin/fm-watch.sh')
 def phase(name, **details):
     (root/'phase.json').write_text(json.dumps({'phase':name,'at':time.time(),**details}))
-def run(*args):
+def run(*args, input_text=None):
     phase('command', argv=args)
-    result=subprocess.run(args, text=True, capture_output=True, timeout=25)
+    result=subprocess.run(args, input=input_text, text=True, capture_output=True, timeout=25)
     phase('command-returned', argv=args, exit_code=result.returncode)
     return result
 def require(ok, message):
     if not ok: raise RuntimeError(message)
+def guard(active=False):
+    return run(str(root/'bin/fm-turnend-guard.sh'),input_text=json.dumps({'session_id':'sm-event','turn_id':'test','stop_hook_active':active}))
 def until(test, label):
     phase('condition-wait', label=label)
     for _ in range(400):
@@ -2620,12 +2622,34 @@ try:
     r=run(str(root/'bin/fm-check-register.sh'), 'probe')
     require(r.returncode==0, 'check registration: '+r.stderr)
     require(run(str(root/'bin/fm-harness.sh')).stdout.strip()=='codex', 'portable fixture did not establish a Codex-shaped ancestor')
+    require(guard().returncode==2, 'selected secondmate ended blind without a watcher')
+    require(run(watch,'--secondmate-unavailable').returncode==0, 'parent diagnostic failed')
+    require(run(watch,'--secondmate-unavailable').returncode==0, 'repeated parent diagnostic failed')
+    parent_status=root/'parent/state/sm-test-1.status'
+    require(parent_status.read_text().count('blocked [')==1, 'unsupported route diagnostic repeated')
     r=run(watch, '--secondmate')
     require(r.returncode==0, 'outside-turn start: '+r.stdout+r.stderr)
+    until(lambda:run(watch,'--secondmate-status').returncode==0,'outside-turn watcher readiness')
     pid=(root/'state/.watch.lock/pid').read_text().strip()
     r=run(watch, '--secondmate')
     require(r.returncode==0 and (root/'state/.watch.lock/pid').read_text().strip()==pid, 'repeat start changed the singleton')
     require(run(watch, '--secondmate-status').returncode==0, 'live watcher was not ready')
+    require(guard().returncode==0, 'live outside-turn watcher did not permit the real guard to stop')
+    os.kill(int(pid),signal.SIGSTOP)
+    try:
+        os.utime(root/'state/.last-watcher-beat',(1,1))
+        require(guard().returncode==2, 'stale beacon allowed a secondmate stop')
+    finally:os.kill(int(pid),signal.SIGCONT)
+    until(lambda:run(watch,'--secondmate-status').returncode==0,'fresh beacon after resume')
+    binding=(root/'state/.secondmate-watch').read_text()
+    os.kill(int(pid),signal.SIGSTOP)
+    try:
+        lines=binding.splitlines();lines[3]='/tmp/wrong-secondmate-socket'
+        (root/'state/.secondmate-watch').write_text('\n'.join(lines)+'\n')
+        require(guard().returncode==2 and guard(True).returncode==2, 'mismatched route escaped the selected guard')
+    finally:
+        (root/'state/.secondmate-watch').write_text(binding)
+        os.kill(int(pid),signal.SIGCONT)
     inbox=root/'parent/state/sm-test-1.inbox'
     time.sleep(2)
     require(not list(inbox.glob('*.msg')), 'no-change heartbeat rang the mate')
@@ -2634,6 +2658,10 @@ try:
     (root/'trigger').unlink()
     rec=next(inbox.glob('*.msg'))
     require('FIRSTMATE_OP' in rec.read_text() and 'watcher' in rec.read_text(), 'notification lost its typed watcher envelope')
+    require((root/'state/.wake-queue').stat().st_size>0, 'notification was written before the durable wake')
+    os.utime(rec,(1,1))
+    retry=run(str(root/'bashbin/bash'),'-c','. "$1/bin/fm-task-inbox-lib.sh"; fm_task_inbox_due_action "$2/state" sm-test-1','_',str(root),str(root/'parent'))
+    require(retry.returncode==0 and retry.stdout.startswith('ring '+str(rec)), 'parent retry owner did not select the child-written ordinary record')
     time.sleep(2)
     require(len(list(inbox.glob('*.msg')))==1, 'pending input produced duplicate notification records')
     require(run(watch, '--secondmate-status').returncode==0, 'watcher stopped after its actionable wake')
@@ -2649,6 +2677,12 @@ try:
     require(run(watch, '--secondmate-status').returncode==1, 'reused session identity supplied readiness')
     until(lambda: not (root/'state/.watch.lock/pid').exists(), 'identity-loss shutdown')
     require(bool(list(inbox.glob('*.msg'))), 'owner shutdown acknowledged an unhandled event')
+    # Independent unsupported-owner scenario: no pending input is claimed here.
+    (root/'state/.wake-queue').write_text('')
+    (root/'config/supervision-host').touch()
+    (root/'config/supervision-host-off').unlink(missing_ok=True)
+    require(run(watch,'--secondmate-selected').returncode==1,'host ownership did not take precedence')
+    require(guard().returncode==2 and guard(True).returncode==0,'stale short-turn record forced an unsupported host into a permanent block')
     (root/'result.json').write_text(json.dumps({'passed': True, 'watcher_pid':pid}))
 except Exception as exc:
     (root/'result.json').write_text(json.dumps({'passed':False,'error':str(exc)}))
@@ -2686,6 +2720,8 @@ finally:
         pid=int(lock.read_text())
         args=subprocess.run(['ps','-p',str(pid),'-o','args='],text=True,capture_output=True).stdout
         if str(root/'bin/fm-watch.sh') in args: os.kill(pid,signal.SIGTERM)
+    # This directory belongs only to this fixture; cleanup must preserve its error.
+    shutil.rmtree(socket_root,ignore_errors=True)
 PY
   then
     fail "secondmate event watcher runtime failed"
@@ -2693,16 +2729,55 @@ PY
   pass "secondmate watcher survives wakes, deduplicates inbox notifications and stops on identity loss"
 }
 
+test_secondmate_event_scope_and_clock() {
+  local dir out status
+  dir=$(make_secondmate_dir "$TMP_ROOT/sm-event-scope")
+  cp -R "$ROOT/bin/." "$dir/bin/"
+  mkdir -p "$dir/parent/state" "$dir/config"
+  printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$dir/parent" > "$dir/.fm-secondmate-parent"
+  for scope in primary invalid remote away host; do
+    printf 'sm-test-1\n' > "$dir/.fm-secondmate-home"
+    printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$dir/parent" > "$dir/.fm-secondmate-parent"
+    case "$scope" in
+      primary) rm "$dir/.fm-secondmate-home" ;;
+      invalid) printf 'bad marker!\n' > "$dir/.fm-secondmate-home" ;;
+      remote) printf 'schema=fm-secondmate-parent.v1\nroute=remote\n' > "$dir/.fm-secondmate-parent" ;;
+      away) touch "$dir/state/.afk" ;;
+      host) touch "$dir/config/supervision-host" ;;
+    esac
+    if FM_HOME="$dir" FM_TASK_INBOX="$dir/parent/state/sm-test-1.inbox" TMUX=fixture,1,0 TMUX_PANE=%27 "$dir/bin/fm-watch.sh" --secondmate-selected; then
+      fail "unsupported $scope scope was selected"
+    fi
+    rm -f "$dir/state/.afk" "$dir/config/supervision-host"
+  done
+  out=$(FM_HOME="$dir" "$dir/bin/fm-brief.sh" --secondmate --no-projects lab-charter 2>&1); status=$?
+  expect_code 0 "$status" "charter generation failed: $out"
+  assert_contains "$(cat "$dir/data/lab-charter/brief.md")" 'end the turn when the emitted supervision protocol proves' "charter omitted the conditional turn end"
+  dir=$(make_primary_dir "$TMP_ROOT/sm-heartbeat-clock")
+  cp -R "$ROOT/bin/." "$dir/bin/"
+  python3 - "$dir/state/.last-heartbeat" <<'PY'
+import os,pathlib,sys
+p=pathlib.Path(sys.argv[1]);p.touch();os.utime(p,(1,1))
+PY
+  out=$(FM_HOME="$dir" FM_WATCH_NOW=100 FM_WATCH_ONCE=1 FM_HEARTBEAT=1 FM_HEARTBEAT_MAX=1 "$dir/bin/fm-watch.sh" 2>&1); status=$?
+  expect_code 0 "$status" "one-clock watcher failed: $out"
+  assert_contains "$(cat "$dir/state/.watch-triage.log")" 'absorbed heartbeat (no captain-relevant change)' "clock case never absorbed a heartbeat"
+  assert_not_contains "$out" 'heartbeat' "no-change heartbeat escaped triage"
+  pass "secondmate selection excludes unsupported scopes and the test clock proves heartbeat absorption"
+}
+
 if [ "${FM_TEST_ONLY:-}" = secondmate-endturn ]; then
   test_secondmate_event_instructions_finish_turn
   test_secondmate_event_status_requires_notification_owner
   test_secondmate_event_watcher_survives_and_notifies
+  test_secondmate_event_scope_and_clock
   exit 0
 fi
 
 test_secondmate_event_instructions_finish_turn
 test_secondmate_event_status_requires_notification_owner
 test_secondmate_event_watcher_survives_and_notifies
+test_secondmate_event_scope_and_clock
 test_predicate_healthy_no_inflight
 test_predicate_unhealthy_no_beacon
 test_predicate_unhealthy_stale_beacon

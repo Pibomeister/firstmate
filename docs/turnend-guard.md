@@ -328,10 +328,21 @@ Queued wakes keep Codex's turn open until handling and acknowledgement finish, i
 An identity-matched own checkpoint also holds the turn when its beacon has gone stale; beacon freshness cannot prove that the foreground command ended.
 Away daemon ownership retains its existing allow path.
 
-A local tmux Codex secondmate with a validated parent/inbox binding uses the existing watcher outside the model turn instead; `bin/fm-watch.sh` owns its start/status interface and supported ownership modes.
+A local tmux Codex secondmate with a validated parent/inbox binding uses the existing watcher outside the model turn instead; `bin/fm-watch.sh`'s header owns its command interfaces.
 Its actionable events ring the existing durable steering inbox, while the watcher's ordinary triage absorbs no-change heartbeats and retains the actionable-status backstop.
 The Stop guard requires the live watcher, session/process identity and delivery route before allowing the turn to finish, and its no-progress escape cannot substitute for that proof.
 The watcher stops on binding loss without acknowledging pending events; away/quiet and supervision-host ownership take precedence, and unsupported combinations retain their existing protocol.
+
+This matrix owns short-turn route selection; existing native protocols remain authoritative outside the selected row.
+
+| Harness | Backend/route | Ownership mode | Result |
+| --- | --- | --- | --- |
+| Codex | tmux, validated local parent/inbox and foreground session | No other watcher/host/away owner | Persistent watcher with identity-bound doorbell; Stop requires its proof. |
+| Codex | Any | Away or quiet daemon | Existing daemon protocol; short-turn watcher stands down. |
+| Codex | Any | Supervision host selected | Existing host protocol; a stale short-turn record cannot force the new guard path. |
+| Codex | tmux/local | Other healthy watcher | Existing owner/protocol; no competing short-turn watcher. |
+| Codex | Other backend or remote/unverified route | Any | Not converted; owning session reports one parent-channel diagnostic. |
+| Other supported harnesses | Their existing supported backends/routes | Native ownership | Existing native protocol, without a new Codex short-turn owner. |
 
 ### Claude cooperative mode
 

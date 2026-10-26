@@ -304,9 +304,6 @@ if [ "$CODEX_MODE" -eq 1 ] && [ -x "$SCRIPT_DIR/fm-watch.sh" ] \
   && "$SCRIPT_DIR/fm-watch.sh" --secondmate-selected >/dev/null 2>&1; then
   SECONDMATE_MODE=1
 fi
-if [ "$CODEX_MODE" -eq 1 ] && fm_root_is_secondmate_home "$FM_HOME" && [ -e "$STATE/.secondmate-watch" ]; then
-  SECONDMATE_MODE=1
-fi
 if [ "$CODEX_MODE" -eq 1 ] \
   && own_checkpoint_holds_watcher "$(cat "$STATE/.watch.lock/pid" 2>/dev/null)"; then
   CHECKPOINT_OPEN=1

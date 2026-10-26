@@ -3,6 +3,9 @@
 # The internal --grok-hold tag requires FM_WATCH_GROK_HOLD=1.
 # --secondmate starts and verifies a detached local Codex secondmate watcher;
 # --secondmate-status is its read-only identity, route and beacon proof.
+# --secondmate-selected reads route eligibility; --secondmate-unavailable reports
+# one parent-channel diagnostic for the owning session. Ownership-mode selection
+# is documented in docs/turnend-guard.md, not configured by these interfaces.
 # The internal --secondmate-hold mode retains this watcher across actionable
 # wakes, which ring the existing parent-owned steering inbox without a model poll.
 # Classifies supervision wakes in bash. In normal mode it absorbs benign wakes
@@ -207,7 +210,7 @@ if [ "${FM_WATCH_NOW+x}" ] && ! [[ $FM_WATCH_NOW =~ ^(0|[1-9][0-9]*)$ ]]; then
 fi
 if [ "${BASH_SOURCE[0]}" = "$0" ] && [ "$#" -gt 0 ]; then
   case "$1" in
-    --secondmate|--secondmate-status|--secondmate-selected|--secondmate-hold) [ "$#" -eq 1 ] || exit 2; SECONDMATE_MODE=$1 ;;
+    --secondmate|--secondmate-status|--secondmate-selected|--secondmate-unavailable|--secondmate-hold) [ "$#" -eq 1 ] || exit 2; SECONDMATE_MODE=$1 ;;
     *) [ "$#" -eq 1 ] && [ "$1" = --grok-hold ] && [ "${FM_WATCH_GROK_HOLD:-}" = 1 ] || exit 2 ;;
   esac
   shift
@@ -234,6 +237,7 @@ WATCH_HOME_EXISTED=0
 . "$SCRIPT_DIR/fm-push-transition-lib.sh"
 case "$SECONDMATE_MODE" in
   --secondmate-selected) fm_secondmate_watch_selected; exit $? ;;
+  --secondmate-unavailable) fm_secondmate_watch_report blocked; exit $? ;;
   --secondmate-status)
     fm_secondmate_watch_status && { echo 'secondmate watcher: ready'; exit 0; }
     echo 'secondmate watcher: not ready'; exit 1 ;;
