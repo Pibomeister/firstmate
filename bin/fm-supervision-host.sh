@@ -621,7 +621,11 @@ await_close() {
     # the close reads as one without a wake, so the owner re-arms.
     if host_watcher_stalled; then
       log_line "arm-retired	$HOST_STALL_DETAIL; its arm $ARM_PID had not replaced it"
-      retire_arm "$ARM_PID" "$ARM_OUT"
+      if ! retire_arm "$ARM_PID" ""; then
+        ARM_PID=
+        ARM_OUT=
+        exit 1
+      fi
       break
     fi
     [ "$READY_PENDING" -eq 0 ] || stream_ready_line

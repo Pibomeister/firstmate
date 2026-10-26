@@ -1845,8 +1845,8 @@ test_outcome_after_the_return_survives_a_host_killed_at_the_turn_end() {
 # bound plus the arm's confirm window the host retires that arm, names the
 # watcher in an arm-retired row, and closes the cycle for its owner to re-arm.
 test_host_retires_an_arm_that_left_its_watcher_stalled() {
-  local home arm watcher
-  home=$(make_home arm-stall attended)
+  local home arm watcher capture mode=${1:-stopped}
+  home=$(make_home "arm-stall-$mode" attended)
   FM_WATCHER_STALL_BOUND=12 start_host "$home"
   wait_until 300 watcher_live "$home" || fail "arm-stall: no watcher started"
   # Past startup: the watcher has published its identity and beaten once.
@@ -1855,17 +1855,36 @@ test_host_retires_an_arm_that_left_its_watcher_stalled() {
   arm=$(awk -F '\t' '$1 == "arm" { print $2; exit }' "$home/state/.supervision-host")
   watcher=$(cat "$home/state/.watch.lock/pid")
   [ -n "$arm" ] && [ -n "$watcher" ] || fail "arm-stall: no recorded arm ($arm) or watcher ($watcher)"
+  capture=$(printf '%s\n' "$home"/state/.supervision-host-arm.*)
+  [ -f "$capture" ] || fail "arm-stall: no arm capture"
   kill -STOP "$arm" "$watcher"
   if ! wait_until 900 grep -q "	arm-retired	watcher pid $watcher " "$home/state/.supervision-host.log"; then
     kill -KILL "$arm" "$watcher" 2>/dev/null
     fail "the host never retired an arm that left its watcher stalled past the bound"$'\n'"$(cat "$home/state/.supervision-host.log" 2>/dev/null)"
   fi
+  [ "$mode" != responsive ] || kill -CONT "$arm"
   wait_until 200 host_exited "$home" || { kill -KILL "$arm" "$watcher" 2>/dev/null; fail "the host did not close the cycle after retiring the arm"; }
-  kill -0 "$arm" 2>/dev/null && { kill -KILL "$arm" "$watcher" 2>/dev/null; fail "the host left the retired arm $arm running"; }
-  assert_re '	pass-through	a close without a wake' "$home/state/.supervision-host.log" "the retired arm's cycle must close without a wake for its owner to re-arm"
+  if [ "$mode" = stopped ]; then
+    [ "$(cat "$home/host.rc")" != 0 ] || fail "the host accepted an unfinished arm retirement"
+    assert_re "watcher arm $arm did not finish retirement" "$home/host.out" "the host must report the retirement refusal"
+    kill -0 "$arm" 2>/dev/null || fail "the host killed the arm whose retirement did not finish"
+    [ -f "$capture" ] || fail "the host discarded the surviving arm's capture"
+    assert_re "^arm	$arm	" "$home/state/.supervision-host" "the host must retain the surviving arm's process record"
+    assert_no_re '	pass-through	|	boundary	' "$home/state/.supervision-host.log" "failed retirement must not become a clean close"
+    kill -KILL "$arm" 2>/dev/null
+  else
+    [ "$(cat "$home/host.rc")" = 0 ] || fail "the host failed after retiring a responsive arm"
+    kill -0 "$arm" 2>/dev/null && { kill -KILL "$arm" "$watcher" 2>/dev/null; fail "the host left the retired arm $arm running"; }
+    assert_absent "$capture" "the host must consume the retired arm's capture"
+    assert_re '	pass-through	a close without a wake' "$home/state/.supervision-host.log" "the retired arm's cycle must close without a wake for its owner to re-arm"
+  fi
   kill -KILL "$watcher" 2>/dev/null
   stop_home_processes "$home"
-  pass "host: an arm that leaves its watcher stalled past the bound is retired and the cycle closes"
+  pass "host: a $mode arm's stalled-watcher retirement closes with the correct status and retained evidence"
+}
+
+test_host_retires_a_responsive_arm_that_left_its_watcher_stalled() {
+  test_host_retires_an_arm_that_left_its_watcher_stalled responsive
 }
 
 test_park_exit_probe_uses_half_second_child_sleeps() {
@@ -1957,7 +1976,8 @@ for host_test in \
   test_outcome_lookup_failure_is_not_treated_as_silence \
   test_outcome_after_the_return_survives_a_host_killed_at_the_turn_end \
   test_host_starts_despite_a_held_lease_command_lock \
-  test_host_retires_an_arm_that_left_its_watcher_stalled
+  test_host_retires_an_arm_that_left_its_watcher_stalled \
+  test_host_retires_a_responsive_arm_that_left_its_watcher_stalled
 do
   "$host_test"
   stop_registered_homes
