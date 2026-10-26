@@ -1,0 +1,4 @@
+.test-validation/prior-composer.sh: verdict=empty
+extracted=
+bin/fm-composer-lib.sh: verdict=unknown
+extracted=Context 77% left

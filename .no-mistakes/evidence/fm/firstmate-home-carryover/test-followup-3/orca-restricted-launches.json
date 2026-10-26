@@ -1,0 +1,28 @@
+[
+  {
+    "scenario": "orca-exit-relaunch",
+    "command": "sandbox-exec -f /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q/.t3/orca-exit-relaunch/boundary.sb orca serve --project-root /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q/.t3/orca-exit-relaunch --no-pairing --json",
+    "exit_code": 1,
+    "output_sha256": "373b73e91e3c9ebc5e7b70f8d91e58ad1f14311fd15fe9aa89ba0b7bac77b7fe",
+    "environment_overrides": {
+      "HOME": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q/.t3/orca-exit-relaunch",
+      "XDG_CONFIG_HOME": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q/.t3/orca-exit-relaunch/config",
+      "XDG_DATA_HOME": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q/.t3/orca-exit-relaunch/data",
+      "XDG_CACHE_HOME": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q/.t3/orca-exit-relaunch/cache",
+      "TMPDIR": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q/.test-validation/tmp"
+    }
+  },
+  {
+    "scenario": "orca-refuse-duplicate",
+    "command": "sandbox-exec -f /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q/.t3/orca-refuse-duplicate/boundary.sb orca serve --project-root /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q/.t3/orca-refuse-duplicate --no-pairing --json",
+    "exit_code": 1,
+    "output_sha256": "25970b258d8ae3b0ec584f1b80e6d4daac2c1d43542bd3555fe3ff902e7e582d",
+    "environment_overrides": {
+      "HOME": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q/.t3/orca-refuse-duplicate",
+      "XDG_CONFIG_HOME": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q/.t3/orca-refuse-duplicate/config",
+      "XDG_DATA_HOME": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q/.t3/orca-refuse-duplicate/data",
+      "XDG_CACHE_HOME": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q/.t3/orca-refuse-duplicate/cache",
+      "TMPDIR": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q/.test-validation/tmp"
+    }
+  }
+]

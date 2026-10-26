@@ -1,0 +1,17 @@
+[
+  {
+    "command": "TMPDIR=\"$PWD/.test-validation/tmp\" bash tests/fm-composer-lib.test.sh",
+    "exit_code": 0,
+    "log": "fm-composer-lib-rerun.log"
+  },
+  {
+    "command": "TMPDIR=\"$PWD/.test-validation/tmp\" bash tests/fm-control.test.sh",
+    "exit_code": 0,
+    "log": "fm-control-rerun.log"
+  },
+  {
+    "command": "TMPDIR=\"$PWD/.test-validation/tmp\" bash tests/fm-spawn-orca-worktree.test.sh",
+    "exit_code": 0,
+    "log": "fm-spawn-orca-worktree-rerun.log"
+  }
+]

@@ -1,0 +1,1 @@
+Private lab tmux server stopped; fm-lab-home teardown succeeded; .test-validation labs, test temp roots, drivers and previous-version library removed. Evidence remains in the permitted evidence directory. No source changes.

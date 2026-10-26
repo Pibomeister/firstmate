@@ -1,0 +1,4 @@
+styled=0 verdict=unknown
+extracted=? for shortcuts is my first question explain them
+styled=1 verdict=pending
+extracted=? for shortcuts is my first question explain them

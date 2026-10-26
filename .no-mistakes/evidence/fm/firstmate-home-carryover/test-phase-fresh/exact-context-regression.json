@@ -1,0 +1,12 @@
+[
+  {
+    "label": "before-fix-4ffbc145",
+    "exit": 0,
+    "output": "classification=empty\nextracted=\n"
+  },
+  {
+    "label": "target-52054826",
+    "exit": 0,
+    "output": "classification=unknown\nextracted=Context 77% left\n"
+  }
+]

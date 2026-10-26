@@ -1,0 +1,36 @@
+
+  [2m main[0m /U/e/.n/w/0/0/.r/grok
+
+
+
+   ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+   │                                                                                                            │
+   │  ⠀⠀⠀⠀⠀⠀⣀⣀⡀⠀⠀⠀⢀⠄   [1mGrok Build  [0m1.0.70                                                                       │
+   │  ⠀⠀⠀⣠⣾⠿⠛⠛⠛⠛⢀⡴⠁⠀                                                                                            │
+   │  ⠀⠀⣼⡟⠁⠀⠀⠀⢀⡴⠻⣿⡀⠀   [1mTool Call Density (v1.0.52)[0m                                                              │
+   │  ⠀⠀⣿⡇⠀⠀⠀⠔⠁⠀⠀⣿⡇⠀   Choose how much of each tool call you see with /density. Don't see it? Run grok update!  │
+   │  ⠀⠀⢹⣷⠀⠀⠀⠀⠀⢀⣴⡿⠀⠀                                                                                            │
+   │  ⠀⢀⠞⠁⠠⢶⣶⣶⣶⠿⠋⠀⠀⠀   [1mResume session[0m                                                                   ctrl+r  │
+   │  ⠐⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀   [1mNew worktree[0m                                                                     ctrl+w  │
+   │                   [1mChangelog[0m                                                                                │
+   │                   [1mQuit[0m                                                                             ctrl+q  │
+   │                                                                                                            │
+   ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+
+
+
+
+
+
+  Help improve Grok                                                                             [Opt out] [Opt in]
+  Off by default. Opt-in to allow SpaceXAI to retain coding data, e.g., prompts, traces, &
+  metrics, for training and debugging purposes. Change anytime via settings.
+  Read [4mTerms[0m and [4mPrivacy Policy[0m.
+
+  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ ❯                                                                                                            │
+  ╰──────────────────────────────────────────────────────────────────── Weekly limit left: 0% · [2mGrok 4.7 (high)[0m ─╯
+
+
+

@@ -1,0 +1,14 @@
+[
+  {
+    "revision": "6a7fa137ecb524d0e56fbd5c41c9bf750be6958b",
+    "exit_code": 0,
+    "stdout": "unknown\ndialog_exit=1\n",
+    "stderr": ""
+  },
+  {
+    "revision": "520548269ffccf3553b8d0d4982283753a30fed8",
+    "exit_code": 0,
+    "stdout": "unknown\ndialog_exit=1\n",
+    "stderr": ""
+  }
+]

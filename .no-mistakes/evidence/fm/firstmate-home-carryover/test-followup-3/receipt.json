@@ -1,0 +1,169 @@
+{
+  "revision": "520548269ffccf3553b8d0d4982283753a30fed8",
+  "created_utc": "2026-10-26T03:27:02.370660+00:00",
+  "summary": "All 14 selected behavioral test entrypoints pass. Two separate restricted Orca launches produced concrete startup failures. Copied existing Grok credentials reached current idle UI, replacing the prior login-blocker assumption; its different footer is unknown on untouched base and target. Weekly-limit choice was not forced because zero spend could not be guaranteed. No source fix is warranted by the observed results.",
+  "tests": [
+    {
+      "suite": "tests/fm-spawn-orca-worktree.test.sh",
+      "entrypoints": [
+        "test_orca_relaunch_rebinds_a_closed_terminal_in_the_recorded_worktree",
+        "test_orca_relaunch_adopts_a_dead_connected_terminal",
+        "test_orca_relaunch_refuses_without_proof_of_a_stopped_agent"
+      ],
+      "command": "TMPDIR=\"$PWD/.test-validation/tmp\" bash tests/.phase-fm-spawn-orca-worktree.sh",
+      "exit_code": 0,
+      "output_sha256": "eaf38e5a9086f1af2d732847ac114b281e4248b72c298a13acc29dc5d85122fc"
+    },
+    {
+      "suite": "tests/fm-control.test.sh",
+      "entrypoints": [
+        "test_closed_orca_terminal_exit_reports_endpoint_gone",
+        "test_closed_orca_terminal_exit_refuses_without_the_worktree_scan"
+      ],
+      "command": "TMPDIR=\"$PWD/.test-validation/tmp\" bash tests/.phase-fm-control.sh",
+      "exit_code": 0,
+      "output_sha256": "d2315f996f9040138aa9badd75df7941be476dbc595f8c692ca0b7b139f19d2d"
+    },
+    {
+      "suite": "tests/fm-backend-orca.test.sh",
+      "entrypoints": [
+        "test_orca_agent_state_reads_the_session_tree",
+        "test_orca_agent_state_unprovable_reads_are_unreadable",
+        "test_orca_absence_proof_refuses_without_every_fact",
+        "test_composer_state_grok_middle_dot_title",
+        "test_composer_state_grok_flush_hint_row"
+      ],
+      "command": "TMPDIR=\"$PWD/.test-validation/tmp\" bash tests/.phase-fm-backend-orca.sh",
+      "exit_code": 0,
+      "output_sha256": "d39dfbcf83b1b32b2b6ddd842477c61c26d71f2f8913fd07d980d0dcfd9cfef4"
+    },
+    {
+      "suite": "tests/fm-composer-lib.test.sh",
+      "entrypoints": [
+        "test_matrix_codex_0162_placeholder_on_plain_capture",
+        "test_matrix_grok_middle_dot_title",
+        "test_matrix_grok_hint_row_flush_under_box",
+        "test_grok_weekly_limit_choice_is_named_only_in_its_recorded_structure"
+      ],
+      "command": "TMPDIR=\"$PWD/.test-validation/tmp\" bash tests/.phase-fm-composer-lib.sh",
+      "exit_code": 0,
+      "output_sha256": "8a34c85465d3fc639037126dc5675d6ea0c78b153fc1c2be05ab05debb99f705"
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "Orca exit and relaunch preserves files and reuses or replaces terminal",
+      "result": "blocked before live setup",
+      "live": false,
+      "blocking_command": "sandbox-exec -f /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q/.t3/orca-exit-relaunch/boundary.sb orca serve --project-root /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q/.t3/orca-exit-relaunch --no-pairing --json",
+      "exit_code": 1,
+      "error": "runtime_serve_failed: Orca serve aborted with SIGABRT on macOS.",
+      "cause": "The write-restricted named lab could not start packaged Electron Orca. The policy allows file writes only inside this worktree (plus /dev/null), and denies Mach service lookup to prevent writes mediated by external services. The runtime itself reported startup-registration failure. This is a limitation of the restricted launch tested, not proof that every possible Orca isolation method is unavailable. No shared-runtime terminal was created.",
+      "evidence": [
+        "orca-exit-relaunch-restricted-launch.log",
+        "orca-exit-relaunch.sb",
+        "orca-exit-relaunch-supervisor-journal.json",
+        "orca-restricted-launches.json"
+      ],
+      "fixture_substitution": {
+        "test_file": "tests/fm-spawn-orca-worktree.test.sh",
+        "entrypoints": [
+          "test_orca_relaunch_rebinds_a_closed_terminal_in_the_recorded_worktree",
+          "test_orca_relaunch_adopts_a_dead_connected_terminal"
+        ],
+        "additional_exit_cases": [
+          "test_closed_orca_terminal_exit_reports_endpoint_gone",
+          "test_closed_orca_terminal_exit_refuses_without_the_worktree_scan"
+        ],
+        "result": "pass; disconnected replacement keeps the recorded worktree, connected dead terminal reuse keeps its handle; closed endpoint exit sends nothing. These are fixture proofs, not a live proof of local-file preservation."
+      }
+    },
+    {
+      "name": "Orca relaunch refuses surviving agent or unreadable endpoint without duplicate launch",
+      "result": "blocked before live setup",
+      "live": false,
+      "blocking_command": "sandbox-exec -f /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q/.t3/orca-refuse-duplicate/boundary.sb orca serve --project-root /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q/.t3/orca-refuse-duplicate --no-pairing --json",
+      "exit_code": 1,
+      "error": "runtime_serve_failed: Orca serve aborted with SIGABRT on macOS.",
+      "cause": "A separately named, write-restricted duplicate-refusal lab failed before a runtime endpoint existed. No fleet endpoint was used and no mutation command was sent to the shared running app.",
+      "evidence": [
+        "orca-refuse-duplicate-restricted-launch.log",
+        "orca-refuse-duplicate.sb",
+        "orca-refuse-duplicate-supervisor-journal.json",
+        "orca-restricted-launches.json"
+      ],
+      "fixture_substitution": {
+        "test_file": "tests/fm-spawn-orca-worktree.test.sh",
+        "entrypoints": [
+          "test_orca_relaunch_refuses_without_proof_of_a_stopped_agent"
+        ],
+        "backend_entrypoints": [
+          "test_orca_agent_state_reads_the_session_tree",
+          "test_orca_agent_state_unprovable_reads_are_unreadable",
+          "test_orca_absence_proof_refuses_without_every_fact"
+        ],
+        "additional_exit_cases": [
+          "test_closed_orca_terminal_exit_refuses_without_the_worktree_scan"
+        ],
+        "result": "pass; live-agent, agent-in-worktree, unreadable, ambiguous and failed scan all refuse before terminal creation and retain existing task metadata. Real stand-in process cases ran without skips."
+      }
+    },
+    {
+      "name": "Grok idle bordered composer with adjacent hint row reads empty",
+      "result": "live attempted; required historical layout unavailable",
+      "live": true,
+      "blocking_command": "grok --cwd /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q/.t3/grok --no-alt-screen --leader-socket /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q/.t3/g",
+      "observed": "Using a COPY of the existing supported auth file reached Grok Build 1.0.70 idle. Its actual footer is Weekly limit left: 0% \u00b7 Grok 4.7 (high), with no adjacent key-hint row. It displays the default-off training banner; neither option was selected. The classifier returns unknown for this shape on BOTH untouched base and target, so this is not a regression introduced by the carry-over. This does not establish empty recognition for the requested 1.0.62 layout.",
+      "evidence": [
+        "grok-existing-auth-20s.txt",
+        "grok-tmux.json",
+        "grok-base-target-comparison.json"
+      ],
+      "fixture_substitution": {
+        "test_file": "tests/fm-composer-lib.test.sh",
+        "entrypoints": [
+          "test_matrix_grok_middle_dot_title",
+          "test_matrix_grok_hint_row_flush_under_box"
+        ],
+        "backend_entrypoints": [
+          "test_composer_state_grok_middle_dot_title",
+          "test_composer_state_grok_flush_hint_row"
+        ],
+        "result": "pass; recorded 1.0.62 middle-dot title and adjacent hint classify empty when idle and pending when typed through production classifier and Orca adapter."
+      }
+    },
+    {
+      "name": "Grok weekly-limit choice is a blocking dialog without purchase",
+      "result": "not safely reachable; fixture substituted",
+      "live": false,
+      "blocking_command": "grok --cwd /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q/.t3/grok --no-alt-screen --leader-socket /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q/.t3/g",
+      "observed": "Authenticated startup shows Weekly limit left: 0% but no weekly-limit choice. Production dialog detection returns exit 1 on the actual capture on base and target. A cached 0% label does not guarantee a new submitted request cannot consume credits. No request was submitted, no training/privacy preference selected, no authentication approval sent, no quota consumed intentionally and no purchase confirmed. Triggering a server-side rejection to force the choice was not attempted under the zero-spend/account-state constraint.",
+      "evidence": [
+        "grok-existing-auth-20s.txt",
+        "grok-tmux.json",
+        "grok-base-target-comparison.json",
+        "fm-composer-lib-focused.log"
+      ],
+      "fixture_substitution": {
+        "test_file": "tests/fm-composer-lib.test.sh",
+        "entrypoints": [
+          "test_grok_weekly_limit_choice_is_named_only_in_its_recorded_structure"
+        ],
+        "result": "pass; exact recorded dialog is named Grok weekly-limit choice and cannot read empty; missing-choice and quoted-transcript variants do not match."
+      }
+    }
+  ],
+  "source_changes": false,
+  "verification_scope": "Only selected existing test functions, two restricted Orca launch probes, and a prompt-free real Grok startup. No full suite, linter, formatter, static analysis, pipeline command, push, PR or CI action.",
+  "cleanup": {
+    "remaining_owned_processes": [],
+    "removed": [
+      ".t3",
+      ".test-validation"
+    ],
+    "git_status": "",
+    "git_diff_exit_code": 0,
+    "source_or_test_changes": false,
+    "note": "Copied auth file, generated Grok data, private terminal socket, sandbox policies, fixture roots and generated runners removed. No prepare dependencies removed."
+  }
+}

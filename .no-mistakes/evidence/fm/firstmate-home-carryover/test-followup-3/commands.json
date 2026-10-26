@@ -1,0 +1,48 @@
+[
+  {
+    "label": "orca-exit-relaunch",
+    "command": "sandbox-exec -f /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q/.t3/orca-exit-relaunch/boundary.sb orca serve --project-root /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q/.t3/orca-exit-relaunch --no-pairing --json",
+    "started": "2026-10-26T03:21:14.385032+00:00",
+    "exit_code": 1,
+    "timed_out": false,
+    "output_sha256": "9263607a20587ace6be05fff9492363c45f0e886dd17d29290b7cc50d26a0efc"
+  },
+  {
+    "label": "orca-refuse-duplicate",
+    "command": "sandbox-exec -f /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q/.t3/orca-refuse-duplicate/boundary.sb orca serve --project-root /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q/.t3/orca-refuse-duplicate --no-pairing --json",
+    "started": "2026-10-26T03:21:14.402917+00:00",
+    "exit_code": 1,
+    "timed_out": false,
+    "output_sha256": "9263607a20587ace6be05fff9492363c45f0e886dd17d29290b7cc50d26a0efc"
+  },
+  {
+    "label": "orca-serve-help",
+    "command": "orca serve --help",
+    "started": "2026-10-26T03:21:14.420440+00:00",
+    "exit_code": 0,
+    "timed_out": false,
+    "output_sha256": "881914deefb3ae149746ef0750e70c19a7190a0767d17d38709b77d8d08880a4"
+  },
+  {
+    "label": "orca-terminal-create-help",
+    "command": "orca terminal create --help",
+    "started": "2026-10-26T03:21:14.490776+00:00",
+    "exit_code": 0,
+    "timed_out": false,
+    "output_sha256": "28f8b50df7d84c90b653d0604645a998cacb2f8fe795420869e309d94d616874"
+  },
+  {
+    "label": "grok-existing-auth",
+    "command": "grok --cwd /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q/.t3/grok --no-alt-screen --leader-socket g.sock",
+    "cwd": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q/.t3/grok",
+    "exit_code": 0,
+    "no_input_sent": true,
+    "observed_seconds": 25,
+    "credential": {
+      "source": "/Users/eduardopicazo/.grok/auth.json",
+      "readable": true,
+      "source_bytes_unchanged": true
+    },
+    "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+]

@@ -1,0 +1,75 @@
+{
+  "tested_head_sha": "520548269ffccf3553b8d0d4982283753a30fed8",
+  "finding": "test-2",
+  "verdict": "blocked: required Orca live validation cannot run within the workspace boundary",
+  "source_changes": [],
+  "reproduction": {
+    "trigger": "Attempt the remaining live carry-over acceptance scenarios",
+    "environment_limit": "All intentional runtime storage must remain inside this git worktree; no authentication or quota-state changes allowed",
+    "symptom": "Grok reaches browser sign-in instead of idle; Orca has no documented macOS runtime-storage isolation option"
+  },
+  "scenarios": [
+    {
+      "name": "Grok idle bordered composer with adjacent key-hint row",
+      "live": "blocked at authentication",
+      "evidence": "grok-blocker.txt",
+      "observed": "Real Grok 1.0.70 launched in named private fm-lab-carryover-grok tmux session with workspace-local HOME, GROK_HOME and XDG paths; screen reads Approve in your browser to finish signing in and Waiting for approval. No prompt or authentication approval was sent.",
+      "fixture_substitution": "tests/fm-composer-lib.test.sh: test_matrix_grok_titled_bottom_border, test_matrix_grok_middle_dot_title, test_matrix_grok_hint_row_flush_under_box; see fm-composer-lib.log",
+      "limit": "Fixture success does not establish a credentialed live idle state."
+    },
+    {
+      "name": "Grok weekly-limit blocking choice",
+      "live": "unreachable without changing authentication/account state",
+      "evidence": "grok-blocker.txt",
+      "observed": "Same sign-in blocker prevents reaching an authenticated account. No preauthenticated exhausted disposable home was supplied. Did not authenticate, consume quota, or confirm a purchase.",
+      "fixture_substitution": "tests/fm-composer-lib.test.sh: test_grok_weekly_limit_choice_is_named_only_in_its_recorded_structure executes production dialog identification and classification on the recorded dialog; see fm-composer-lib.log",
+      "limit": "Recorded-dialog fixture coverage substitutes for this unreachable live dialog; it is not live evidence."
+    },
+    {
+      "name": "Orca exit and relaunch preserving local files and terminal identity",
+      "live": "not run: isolation blocked",
+      "evidence": [
+        "orca-serve-help.txt",
+        "orca-terminal-create-help.txt"
+      ],
+      "observed": "serve help documents no macOS profile/storage-root launch option. --data-root is documented only for Linux stale-lock recovery; --project-root selects a project, not runtime storage. terminal create allocates app-managed tabs. Creating shared runtime records would exceed the workspace boundary, so no Orca terminal or runtime was created.",
+      "fixture_substitution": "tests/fm-backend-orca.test.sh, tests/fm-spawn-orca-worktree.test.sh and tests/fm-control.test.sh execute real firstmate lifecycle entrypoints with fixture Orca replies; see corresponding logs",
+      "limit": "Required live proof remains incomplete; fixture substitution does not satisfy the explicit live Orca requirement."
+    },
+    {
+      "name": "Orca relaunch refusal with surviving agent or unreadable endpoint",
+      "live": "not run: isolation blocked",
+      "evidence": [
+        "orca-serve-help.txt",
+        "orca-terminal-create-help.txt"
+      ],
+      "observed": "Same storage boundary prevents creating an owned live endpoint for adversarial checks. No shared or fleet endpoint was changed.",
+      "fixture_substitution": "tests/fm-spawn-orca-worktree.test.sh exercises live-agent, agent-in-worktree, unreadable, ambiguous and scan-failure refusal cases with controlled backend replies and real local process evidence; tests/fm-backend-orca.test.sh exercises stop proof; see corresponding logs",
+      "limit": "Required live proof remains incomplete; fixture substitution does not satisfy the explicit live Orca requirement."
+    }
+  ],
+  "tests": [
+    {
+      "command": "TMPDIR=\"$PWD/.test-validation/tmp\" bash tests/fm-composer-lib.test.sh",
+      "exit_code": 0,
+      "log": "fm-composer-lib.log"
+    },
+    {
+      "command": "TMPDIR=\"$PWD/.test-validation/tmp\" bash tests/fm-backend-orca.test.sh",
+      "exit_code": 0,
+      "log": "fm-backend-orca.log"
+    },
+    {
+      "command": "TMPDIR=\"$PWD/.test-validation/tmp\" bash tests/fm-spawn-orca-worktree.test.sh",
+      "exit_code": 0,
+      "log": "fm-spawn-orca-worktree.log"
+    },
+    {
+      "command": "TMPDIR=\"$PWD/.test-validation/tmp\" bash tests/fm-control.test.sh",
+      "exit_code": 0,
+      "log": "fm-control.log"
+    }
+  ],
+  "cleanup": "Private tmux server stopped and helper teardown completed; disposable lab and test temp root removed. No tracked source or test files changed.",
+  "conclusion": "All four focused fixture test files pass. No product/test failure reproduced, so no source fix was made. The selected finding is still blocked for both mandatory live Orca scenarios. Both Grok scenarios have named authentication-blocker evidence and passing fixture substitutions. No broad suite, lint, static analysis, pipeline control, push or PR action was performed."
+}

@@ -1,0 +1,41 @@
+{
+  "revision": "520548269ffccf3553b8d0d4982283753a30fed8",
+  "focused_checks": [
+    {
+      "command": "bash tests/fm-composer-lib.test.sh",
+      "exit_code": 0,
+      "live": false
+    },
+    {
+      "command": "bash tests/fm-backend-orca.test.sh",
+      "exit_code": 0,
+      "live": false
+    },
+    {
+      "command": "bash tests/fm-control.test.sh",
+      "exit_code": 0,
+      "live": false
+    },
+    {
+      "command": "bash tests/fm-spawn-orca-worktree.test.sh",
+      "exit_code": 0,
+      "live": false
+    },
+    {
+      "command": "bash tests/fm-backend-herdr.test.sh",
+      "exit_code": 0,
+      "live": false
+    }
+  ],
+  "test_environment": "TMPDIR=$PWD/.test-validation/tmp",
+  "live_checks": [
+    "Codex 0.163.0, private tmux server, 116x36 grid; hook review skipped without trusting hooks",
+    "Idle: plain and cursorless styled classifier both empty; direct cursor-anchored fm_tmux_composer_state empty",
+    "Five typed drafts: footer-prefix, complete footer row plus content, duplicate shortcut footer, context-like continuation, exact-placeholder extension; plain unknown, styled pending, extracted text retained",
+    "Additional Codex session with -c tui.status_line=[] preserved the context draft; vendor rendered a fallback context footer rather than the historical exact hint-only layout",
+    "fm-control.sh livetest exit returned 1 for pending Context 77% left draft, retained draft, and did not insert /quit"
+  ],
+  "deterministic_regression": "Exact hint-only capture: 4ffbc145 empty with lost draft; 52054826 unknown with Context 77% left preserved",
+  "cleanup": "Dedicated lab tmux server killed; private socket helper teardown complete; dedicated evidence Chrome session stopped; generated worktree data removed",
+  "limitations": "No live Orca lifecycle or authenticated Grok composer/weekly-quota proof; see isolation-limitations.txt."
+}

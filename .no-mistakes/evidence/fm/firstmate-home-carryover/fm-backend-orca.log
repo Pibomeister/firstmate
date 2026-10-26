@@ -1,0 +1,86 @@
+ok - Orca card hooks: exact argv, caller state override, and each event/backend/id guard
+ok - Orca card helper: requests exactly five seconds independently of caller wall-clock latency
+ok - Orca card pr hang elapsed=6.357420000000275s (required <15s)
+ok - Orca card merge hang elapsed=5.37113600000157s (required <15s)
+ok - Orca card local hang elapsed=5.766652000005706s (required <15s)
+ok - Orca card failures: caller results persist, JSON error and command failure warn once, hangs return under 7s
+ok - Orca branch teardown: safe delete, genuinely unmerged branch retained, checked-out Orca branch force-deleted even when its upstream lacks the squash-merged tip, missing-path fallback and legacy guards
+ok - fm_backend_orca_capture: parses result.terminal.tail and calls terminal read
+ok - fm_backend_orca_capture: falls back to result text fields
+ok - fm_backend_orca_capture: fails closed on Orca read error JSON
+ok - Orca trusts only source=screen for viewport decisions
+ok - Orca viewport reads only the exact recorded Droid terminal
+ok - Orca sends a recorded Droid task Escape and Ctrl+U as exact PTY bytes
+ok - Orca Escape and Ctrl+U stay unavailable to non-Droid or mismatched tasks
+ok - Orca Droid composer proof requires an exact task and terminal binding
+ok - Orca Droid typed send is never confirmed by a concurrent doorbell's UserPromptSubmit
+ok - Orca Droid confirms a typed send only when its own prompt hook matches
+ok - Orca Droid typed send ignores an unrelated late Stop event
+ok - fm_backend_orca_runtime_check: accepts reachable ready runtime
+ok - fm_backend_orca_runtime_check: fails closed when runtime is not ready
+ok - fm_backend_orca_send_text_submit: verifies empty composer after Enter with one bounded read
+ok - fm_backend_orca_send_text_submit: a borderless claude composer confirms delivery (the missing #2029 shape)
+ok - fm_backend_orca_composer_state: a stale startup banner cannot outrank the live composer row
+ok - fm_backend_orca_send_text_submit: retries Enter while composer remains pending
+ok - fm_backend_orca_composer_state: a slash-command popup's argument-hint placeholder still reads pending
+ok - fm_backend_orca_composer_state: Grok 1.0.62's middle-dot title reads empty when idle and pending when typed
+ok - fm_backend_orca_composer_state: idle codex's placeholder reads empty; other text after the glyph stays unknown
+ok - fm_backend_orca_composer_state: idle claude reads empty; its unstyled suggestion stays unknown
+ok - fm_backend_orca_composer_state: Grok's flush key-hint row reads empty when idle and pending when typed
+ok - fm_backend_orca_composer_state: a bare dead-shell prompt reads unknown (unsafe-for-injection), never empty
+ok - fm_backend_orca_send_text_submit: a slash-command popup's placeholder fill on Enter #1 does not short-circuit as submitted; Enter #2 is retried and lands it
+ok - fm_backend_orca_send_literal: sends text without submitting
+ok - fm_backend_orca_send_text_submit: reports send-failed when Orca send fails
+ok - Orca send helpers: fail closed on ok:false JSON
+ok - fm_backend_orca_send_key: Enter maps to empty enter, C-c maps to interrupt
+ok - fm_backend_orca_send_key: refuses unsupported keys loudly
+ok - fm_backend_orca_kill: calls terminal close and stays best-effort
+ok - fm_backend_orca_kill: a close its missing CLI never attempted reports the failure instead of a success
+ok - fm_backend_orca_remove_worktree: refuses empty worktree ids
+ok - fm_backend_orca_remove_worktree: fails closed on ok:false JSON
+ok - fm_backend_orca_worktree_path: resolves an Orca worktree id to its path
+ok - fm-backend dispatcher: accepts orca and routes capture through bin/backends/orca.sh
+ok - fm_backend_orca_json_get: ignores undocumented terminal id shapes
+ok - Orca lifecycle helpers: register repo, create worktree, create terminal, parse stable ids
+ok - fm_backend_orca_worktree_create: removes created worktree when path is missing
+ok - fm-spawn.sh --backend orca: preserves metadata when pathless cleanup fails
+ok - fm-spawn.sh --backend orca: reuses implicit terminal, records metadata, launches harness
+ok - fm-spawn.sh --backend orca --secondmate: refuses before secondmate-home mutation
+ok - fm-spawn.sh --backend orca: refuses before mutation when Orca runtime is not ready
+ok - fm-spawn.sh --backend orca: refuses non-isolated worktrees and closes implicit terminals
+ok - fm-spawn.sh --backend orca: removes worktree when terminal creation fails
+ok - fm-spawn.sh --backend orca: preserves metadata when abort cleanup fails
+ok - fm-spawn.sh --backend orca: releases terminal and worktree on later aborts
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no live watcher process holds this home lock (last beat: 0s ago).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  down 1s.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+WARNING: watcher still down (same stale episode; last beat: 2s ago, grace 300s; down 2s) - full banner already printed this episode.
+ok - fm-peek/fm-send/fm-crew-state route through backend=orca metadata and its durable inbox
+ok - fm-peek/fm-crew-state: Orca read error JSON fails closed
+ok - fm_backend_target_exists: Orca ok:false read JSON is not live
+ok - fm-teardown.sh backend=orca: scout report gate then helper-backed worktree removal
+ok - fm-teardown.sh backend=orca: scout teardown refuses id/path mismatches
+ok - fm-teardown.sh backend=orca: releases terminal/worktree when path is absent
+ok - fm-teardown.sh backend=orca: preserves metadata on remove ok:false JSON
+ok - fm-teardown.sh backend=orca: scout report gate precedes pathless helper cleanup
+ok - fm-teardown.sh backend=orca: ship teardown fails closed when worktree path is missing
+ok - fm-teardown.sh backend=orca: ship teardown requires a matching Orca id path
+ok - fm-teardown.sh backend=orca: ship teardown fails closed when id resolution fails
+ok - fm-teardown.sh backend=orca: ship teardown refuses id/path mismatches
+ok - fm-teardown.sh backend=orca: refuses missing worktree ids before cleanup
+ok - fm-teardown.sh backend=orca: refuses incomplete worktree-only endpoint metadata before runtime dispatch
+ok - fm-teardown.sh --force: removes Orca secondmate children through Orca
+ok - fm-teardown.sh --force: refuses Orca child id/path mismatches
+ok - fm-teardown.sh --force: refuses partial Orca secondmate children before runtime dispatch
+ok - fm_backend_orca_agent_state: a connected terminal reads alive, dead, or ambiguous from its session tree
+ok - fm_backend_orca_agent_state: a closed terminal with a recorded exit cause reads missing
+ok - fm_backend_orca_agent_state: every read that cannot prove a state reads unreadable
+ok - fm_backend_orca_endpoint_absence_proof: a closed terminal with no agent left proves gone
+ok - fm_backend_orca_endpoint_absence_proof: any missing fact is unproven, naming that fact
+ok - fm_backend_orca_endpoint_absence_proof: a still-connected terminal re-classifies as dead or alive
+ok - orca agent state: the control plane reads the classifier while fleet callers still see unverified

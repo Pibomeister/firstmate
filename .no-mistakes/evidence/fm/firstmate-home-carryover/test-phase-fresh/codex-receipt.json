@@ -1,0 +1,51 @@
+[
+  {
+    "name": "codex-idle",
+    "command": "real Codex paste; capture-pane; fm_composer_classify_screen / fm_composer_extract_selected_content / fm_tmux_composer_state",
+    "result": "styled=0 verdict=empty content=Ask Codex to do anything\nstyled=1 verdict=empty content=\ntmux=empty\n",
+    "exit_code": 0
+  },
+  {
+    "name": "codex-footer-prefix",
+    "command": "real Codex paste; capture-pane; fm_composer_classify_screen / fm_composer_extract_selected_content / fm_tmux_composer_state",
+    "result": "styled=0 verdict=unknown content=? for shortcuts is my first question explain them\nstyled=1 verdict=pending content=? for shortcuts is my first question explain them\ntmux=pending\n",
+    "exit_code": 0
+  },
+  {
+    "name": "codex-footer-row",
+    "command": "real Codex paste; capture-pane; fm_composer_classify_screen / fm_composer_extract_selected_content / fm_tmux_composer_state",
+    "result": "styled=0 verdict=unknown content=? for shortcuts explain them\nstyled=1 verdict=pending content=? for shortcuts explain them\ntmux=pending\n",
+    "exit_code": 0
+  },
+  {
+    "name": "codex-duplicate-footer",
+    "command": "real Codex paste; capture-pane; fm_composer_classify_screen / fm_composer_extract_selected_content / fm_tmux_composer_state",
+    "result": "styled=0 verdict=unknown content=? for shortcuts\nstyled=1 verdict=pending content=? for shortcuts\ntmux=pending\n",
+    "exit_code": 0
+  },
+  {
+    "name": "codex-status-draft",
+    "command": "real Codex paste; capture-pane; fm_composer_classify_screen / fm_composer_extract_selected_content / fm_tmux_composer_state",
+    "result": "styled=0 verdict=unknown content=Context 77% left\nstyled=1 verdict=pending content=Context 77% left\ntmux=pending\n",
+    "exit_code": 0
+  },
+  {
+    "name": "codex-after-refusal",
+    "command": "real Codex paste; capture-pane; fm_composer_classify_screen / fm_composer_extract_selected_content / fm_tmux_composer_state",
+    "result": "styled=0 verdict=unknown content=Context 77% left\nstyled=1 verdict=pending content=Context 77% left\ntmux=pending\n",
+    "exit_code": 0
+  },
+  {
+    "name": "control-refusal",
+    "exit_code": 1,
+    "output": "fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q/.c/lab\nerror: task codexcheck's composer visibly holds pending text; refusing to type the /quit exit command because it would concatenate onto that text. Clear or submit the pending text, then retry 'exit'\n",
+    "draft_retained": true,
+    "quit_inserted": false
+  },
+  {
+    "name": "codex-placeholder-extension",
+    "command": "real Codex paste; capture-pane; fm_composer_classify_screen / fm_composer_extract_selected_content / fm_tmux_composer_state",
+    "result": "styled=0 verdict=unknown content=Ask Codex to do anything now\nstyled=1 verdict=pending content=Ask Codex to do anything now\ntmux=pending\n",
+    "exit_code": 0
+  }
+]

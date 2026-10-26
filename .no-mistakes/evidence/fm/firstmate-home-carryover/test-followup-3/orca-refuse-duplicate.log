@@ -1,0 +1,2 @@
+/opt/homebrew/bin/orca: line 11: /dev/null: Operation not permitted
+Unable to determine Orca.app path from symlink: /opt/homebrew/bin/orca

@@ -1,0 +1,36 @@
+
+   detached worktree ~/.n/w/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q
+
+
+
+                                                   ⠀⠀⠀⠀⠀⠀⣀⣀⡀⠀⠀⠀⢀⠄
+                                                   ⠀⠀⠀⣠⣾⠿⠛⠛⠛⠛⢀⡴⠁⠀
+                                                   ⠀⠀⣼⡟⠁⠀⠀⠀⢀⡴⠻⣿⡀⠀
+                                                   ⠀⠀⣿⡇⠀⠀⠀⠔⠁⠀⠀⣿⡇⠀
+                                                   ⠀⠀⢹⣷⠀⠀⠀⠀⠀⢀⣴⡿⠀⠀
+                                                   ⠀⢀⠞⠁⠠⢶⣶⣶⣶⠿⠋⠀⠀⠀
+                                                   ⠐⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+
+
+                                    Do you trust the contents of this directory?
+                 /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q
+
+                              Grok Build may run or modify contents in this directory,
+                                               posing security risks.
+
+                                           Yes, proceed                 y
+                                           No, quit                     n
+
+
+
+
+
+
+
+
+
+
+
+
+                                                                                       Grok Build  1.0.70 [stable]
+

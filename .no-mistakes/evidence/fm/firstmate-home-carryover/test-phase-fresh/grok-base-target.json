@@ -1,0 +1,14 @@
+[
+  {
+    "label": "base",
+    "command": "source .test-validation/base-composer.sh; classify/detect actual grok-idle.txt",
+    "exit": 0,
+    "output": "classification=unknown\ndialog=\ndialog_exit=1\n"
+  },
+  {
+    "label": "target",
+    "command": "source bin/fm-composer-lib.sh; classify/detect actual grok-idle.txt",
+    "exit": 0,
+    "output": "classification=unknown\ndialog=\ndialog_exit=1\n"
+  }
+]

@@ -1,0 +1,31 @@
+{
+  "codex-idle": [
+    "styled=0 verdict=empty",
+    "styled=1 verdict=empty"
+  ],
+  "codex-footer-prefix": [
+    "styled=0 verdict=unknown",
+    "styled=1 verdict=pending"
+  ],
+  "codex-footer-row": [
+    "styled=0 verdict=unknown",
+    "styled=1 verdict=pending"
+  ],
+  "codex-duplicate-footer": [
+    "styled=0 verdict=unknown",
+    "styled=1 verdict=pending"
+  ],
+  "codex-status-draft": [
+    "styled=0 verdict=unknown",
+    "styled=1 verdict=pending"
+  ],
+  "codex-placeholder-extension": [
+    "styled=0 verdict=unknown",
+    "styled=1 verdict=pending"
+  ],
+  "codex-hint-only": [
+    "styled=0 verdict=unknown",
+    "styled=1 verdict=pending"
+  ],
+  "exit-refusal": "exit=1; pending-text refusal; draft retained; no /quit in pane"
+}

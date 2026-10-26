@@ -1,0 +1,11 @@
+{
+  "socket": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q/.c/t",
+  "lab": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q/.c",
+  "env": {
+    "HOME": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q/.c/home",
+    "CODEX_HOME": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q/.c/codex",
+    "TMPDIR": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q/.c/tmp",
+    "TERM": "xterm-256color"
+  },
+  "start_command": "codex --no-alt-screen"
+}

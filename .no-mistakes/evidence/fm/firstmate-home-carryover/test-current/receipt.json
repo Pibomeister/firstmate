@@ -1,0 +1,30 @@
+{
+  "revision": "520548269ffccf3553b8d0d4982283753a30fed8",
+  "verdict": "inconclusive",
+  "tests": [
+    {
+      "command": "TMPDIR=\"$PWD/.test-validation/tmp\" bash tests/fm-composer-lib.test.sh",
+      "exit_code": 0,
+      "log": "fm-composer-lib-rerun.log"
+    },
+    {
+      "command": "TMPDIR=\"$PWD/.test-validation/tmp\" bash tests/fm-control.test.sh",
+      "exit_code": 0,
+      "log": "fm-control-rerun.log"
+    },
+    {
+      "command": "TMPDIR=\"$PWD/.test-validation/tmp\" bash tests/fm-spawn-orca-worktree.test.sh",
+      "exit_code": 0,
+      "log": "fm-spawn-orca-worktree-rerun.log"
+    },
+    {
+      "command": "bash tests/fm-backend-orca.test.sh",
+      "exit_code": 0
+    }
+  ],
+  "live": "Codex 0.163.0 idle; five draft variants; fm-control exit refusal over pending Context 77% left; Grok 1.0.70 sign-in blocker observed with no approval",
+  "regression": "4ffbc145 exact hint-only capture returns empty with lost draft; 52054826 returns unknown with Context 77% left retained",
+  "limitations": "Both mandatory Orca live lifecycle proofs lack a safe storage-isolated runtime; Grok idle and quota dialog lack disposable authentication. Named blocker evidence and fixture substitution: isolation-limitations.txt.",
+  "baseline_note": "Initial four test wrappers returned a zsh read-only status variable error after the tests. Fresh subprocess reruns all returned 0; no product test failure observed.",
+  "cleanup": "Private tmux server killed; helper teardown succeeded; all worktree transients removed; no source changes. Browser evidence session stopped."
+}

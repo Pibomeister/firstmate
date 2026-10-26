@@ -1,0 +1,29 @@
+[
+  {
+    "scenario": "fm-lab-exit-relaunch",
+    "command": "sandbox-exec -f /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q/.r/fm-lab-exit-relaunch/boundary.sb orca serve --project-root /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q/.r/fm-lab-exit-relaunch --no-pairing --json",
+    "exit_code": 1,
+    "output": "[1025/213026.541263:ERROR:electron/shell/common/mac/codesign_util.cc:149] SecCodeCheckValidity: Error Domain=NSOSStatusErrorDomain Code=-2147409622 \"(null)\" (-2147409622)\n[serve] using Electron serve: packaged macOS serve stays on Electron so paired clients can still update it (orcad has no app updater)\n{\n  \"id\": \"local\",\n  \"ok\": false,\n  \"error\": {\n    \"code\": \"runtime_serve_failed\",\n    \"message\": \"Orca serve aborted with SIGABRT on macOS. This most often happens at application startup, when the process cannot register with Launch Services (_RegisterApplication / +[NSApplication sharedApplication]) before any Orca JavaScript runs. That is common in sandboxed agent environments, SSH sessions without a GUI login, and CI. Confirm the crashing frame in the crash report; this is not the Electron UTF-8 write abort (electron/electron#51871).\",\n    \"data\": {\n      \"nextSteps\": [\n        \"If a desktop Orca is already running, use `orca status` / `orca` against that instance instead of `orca serve`.\",\n        \"Re-run `orca serve` outside a sandboxed or restricted environment, with a macOS desktop login active. Later `orca serve` runs from this same environment refuse for 30 minutes; pass --force to try anyway.\",\n        \"Look for a crash report at ~/Library/Logs/DiagnosticReports/Orca-*.ips. If the crashing frame is _RegisterApplication, this is the startup-registration abort.\"\n      ]\n    }\n  },\n  \"_meta\": {\n    \"runtimeId\": null\n  }\n}\n",
+    "isolated_home": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q/.r/fm-lab-exit-relaunch"
+  },
+  {
+    "scenario": "fm-lab-refuse-duplicate",
+    "command": "sandbox-exec -f /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q/.r/fm-lab-refuse-duplicate/boundary.sb orca serve --project-root /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q/.r/fm-lab-refuse-duplicate --no-pairing --json",
+    "exit_code": 1,
+    "output": "[1025/213026.707304:ERROR:electron/shell/common/mac/codesign_util.cc:149] SecCodeCheckValidity: Error Domain=NSOSStatusErrorDomain Code=-2147409622 \"(null)\" (-2147409622)\n[serve] using Electron serve: packaged macOS serve stays on Electron so paired clients can still update it (orcad has no app updater)\n{\n  \"id\": \"local\",\n  \"ok\": false,\n  \"error\": {\n    \"code\": \"runtime_serve_failed\",\n    \"message\": \"Orca serve aborted with SIGABRT on macOS. This most often happens at application startup, when the process cannot register with Launch Services (_RegisterApplication / +[NSApplication sharedApplication]) before any Orca JavaScript runs. That is common in sandboxed agent environments, SSH sessions without a GUI login, and CI. Confirm the crashing frame in the crash report; this is not the Electron UTF-8 write abort (electron/electron#51871).\",\n    \"data\": {\n      \"nextSteps\": [\n        \"If a desktop Orca is already running, use `orca status` / `orca` against that instance instead of `orca serve`.\",\n        \"Re-run `orca serve` outside a sandboxed or restricted environment, with a macOS desktop login active. Later `orca serve` runs from this same environment refuse for 30 minutes; pass --force to try anyway.\",\n        \"Look for a crash report at ~/Library/Logs/DiagnosticReports/Orca-*.ips. If the crashing frame is _RegisterApplication, this is the startup-registration abort.\"\n      ]\n    }\n  },\n  \"_meta\": {\n    \"runtimeId\": null\n  }\n}\n",
+    "isolated_home": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q/.r/fm-lab-refuse-duplicate"
+  },
+  {
+    "scenario": "grok-idle-and-weekly-choice",
+    "command": "grok --cwd /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q/.r/grok --no-alt-screen --leader-socket /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q/.r/g",
+    "rows": 36,
+    "columns": 116,
+    "credentials_available": true,
+    "input_sent": [],
+    "start_exit": 0,
+    "classification": "classifier=unknowndialog=dialog_exit=1\n",
+    "capture_exit": 0,
+    "cleanup": 0,
+    "original_auth_unchanged": true
+  }
+]

@@ -1,0 +1,5 @@
+ok - fm_backend_orca_agent_state: a connected terminal reads alive, dead, or ambiguous from its session tree
+ok - fm_backend_orca_agent_state: every read that cannot prove a state reads unreadable
+ok - fm_backend_orca_endpoint_absence_proof: any missing fact is unproven, naming that fact
+ok - fm_backend_orca_composer_state: Grok 1.0.62's middle-dot title reads empty when idle and pending when typed
+ok - fm_backend_orca_composer_state: Grok's flush key-hint row reads empty when idle and pending when typed

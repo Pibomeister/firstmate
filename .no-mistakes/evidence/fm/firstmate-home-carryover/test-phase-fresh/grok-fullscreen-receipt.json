@@ -1,0 +1,15 @@
+[
+  {
+    "scenario": "grok-idle-and-weekly-choice",
+    "command": "grok --cwd /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q/.gf/grok --fullscreen --leader-socket /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q/.gf/g",
+    "rows": 36,
+    "columns": 116,
+    "credentials_available": true,
+    "input_sent": [],
+    "start_exit": 0,
+    "classification": "classifier=unknowndialog=dialog_exit=1\n",
+    "capture_exit": 0,
+    "cleanup": 0,
+    "original_auth_unchanged": true
+  }
+]

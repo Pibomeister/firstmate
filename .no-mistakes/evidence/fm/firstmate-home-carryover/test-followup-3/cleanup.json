@@ -1,0 +1,11 @@
+{
+  "remaining_owned_processes": [],
+  "removed": [
+    ".t3",
+    ".test-validation"
+  ],
+  "git_status": "",
+  "git_diff_exit_code": 0,
+  "source_or_test_changes": false,
+  "note": "Copied auth file, generated Grok data, private terminal socket, sandbox policies, fixture roots and generated runners removed. No prepare dependencies removed."
+}

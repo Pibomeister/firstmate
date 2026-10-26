@@ -1,0 +1,316 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Live Codex composer evidence</title><style>:root{color-scheme:light dark;--page:#faf9f5;--surface:#f0eee6;--border:#e8e6dc;--text:#141413;--muted:#5e5d59}@media(prefers-color-scheme:dark){:root{--page:#1f1e1d;--surface:#262624;--border:#3d3d3a;--text:#faf9f5;--muted:#b7b5a9}}*{box-sizing:border-box}body{margin:0;background:var(--page);color:var(--text);font:17px/1.6 system-ui}main{max-width:1180px;margin:auto;padding:32px}h1,h2{font-family:Georgia,serif}h1{font-size:32px}h2{font-size:24px}section{margin:48px 0}pre{font:13px/1.35 ui-monospace,monospace;background:var(--surface);border:1px solid var(--border);padding:24px;overflow:auto}p{max-width:72ch}.result{white-space:pre-wrap;color:var(--muted)}a{color:#d97757}</style><main><h1>Live Codex composer evidence</h1><p><strong>TL;DR.</strong> Codex 0.163.0 ran in a disposable 116 × 36 terminal. The idle composer read empty. Each typed draft remained protected input. Exit refused to overwrite the context-like draft. No model prompt was submitted. These are captured terminal rows and production classifier outputs. No decision is requested by this evidence page.</p><p>Target: <code>520548269ffccf3553b8d0d4982283753a30fed8</code>. Hooks were skipped in the vendor dialog and stayed disabled. Plain captures use the Orca/cmux capability profile; styled captures use the cursorless profile. This does not prove the Orca transport.</p><section><h2>Idle composer</h2><pre>╭─────────────────────────────────────────────────╮
+│ ✨ Update available! 0.163.0 -&gt; 0.164.0         │
+│ Run npm install -g @openai/codex to update.     │
+│                                                 │
+│ See full release notes:                         │
+│ https://github.com/openai/codex/releases/latest │
+╰─────────────────────────────────────────────────╯
+
+
+  &gt;_ OpenAI Codex (v0.163.0)
+     ~/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+› Ask Codex to do anything
+
+  GPT-6.1-Sol high · Context 100% left · 0 in · 0 out · weekly 68% left
+  ← for agents · ? for shortcuts                                                           ⚠ 1 warning · f2 to view</pre><pre class="result">styled=0 verdict=empty
+extracted=Ask Codex to do anything
+styled=1 verdict=empty
+extracted=
+</pre></section><section><h2>Draft starts with a shortcut-hint prefix</h2><pre>╭─────────────────────────────────────────────────╮
+│ ✨ Update available! 0.163.0 -&gt; 0.164.0         │
+│ Run npm install -g @openai/codex to update.     │
+│                                                 │
+│ See full release notes:                         │
+│ https://github.com/openai/codex/releases/latest │
+╰─────────────────────────────────────────────────╯
+
+
+  &gt;_ OpenAI Codex (v0.163.0)
+     ~/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+›
+  ? for shortcuts is my first question
+  explain them
+
+  GPT-6.1-Sol high · Context 100% left · 0 in · 0 out · weekly 68% left
+                                                                                           ⚠ 1 warning · f2 to view</pre><pre class="result">styled=0 verdict=unknown
+extracted=? for shortcuts is my first question explain them
+styled=1 verdict=pending
+extracted=? for shortcuts is my first question explain them
+</pre></section><section><h2>Draft contains a complete shortcut-hint row</h2><pre>╭─────────────────────────────────────────────────╮
+│ ✨ Update available! 0.163.0 -&gt; 0.164.0         │
+│ Run npm install -g @openai/codex to update.     │
+│                                                 │
+│ See full release notes:                         │
+│ https://github.com/openai/codex/releases/latest │
+╰─────────────────────────────────────────────────╯
+
+
+  &gt;_ OpenAI Codex (v0.163.0)
+     ~/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+›
+  ? for shortcuts
+  explain them
+
+  GPT-6.1-Sol high · Context 100% left · 0 in · 0 out · weekly 68% left
+                                                                                           ⚠ 1 warning · f2 to view</pre><pre class="result">styled=0 verdict=unknown
+extracted=? for shortcuts explain them
+styled=1 verdict=pending
+extracted=? for shortcuts explain them
+</pre></section><section><h2>Draft ends with a shortcut-hint row</h2><pre>╭─────────────────────────────────────────────────╮
+│ ✨ Update available! 0.163.0 -&gt; 0.164.0         │
+│ Run npm install -g @openai/codex to update.     │
+│                                                 │
+│ See full release notes:                         │
+│ https://github.com/openai/codex/releases/latest │
+╰─────────────────────────────────────────────────╯
+
+
+  &gt;_ OpenAI Codex (v0.163.0)
+     ~/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+›
+  ? for shortcuts
+
+  GPT-6.1-Sol high · Context 100% left · 0 in · 0 out · weekly 68% left
+                                                                                           ⚠ 1 warning · f2 to view</pre><pre class="result">styled=0 verdict=unknown
+extracted=? for shortcuts
+styled=1 verdict=pending
+extracted=? for shortcuts
+</pre></section><section><h2>Draft resembles a context status row</h2><pre>╭─────────────────────────────────────────────────╮
+│ ✨ Update available! 0.163.0 -&gt; 0.164.0         │
+│ Run npm install -g @openai/codex to update.     │
+│                                                 │
+│ See full release notes:                         │
+│ https://github.com/openai/codex/releases/latest │
+╰─────────────────────────────────────────────────╯
+
+
+  &gt;_ OpenAI Codex (v0.163.0)
+     ~/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+›
+  Context 77% left
+
+  GPT-6.1-Sol high · Context 100% left · 0 in · 0 out · weekly 68% left
+                                                                                           ⚠ 1 warning · f2 to view</pre><pre class="result">styled=0 verdict=unknown
+extracted=Context 77% left
+styled=1 verdict=pending
+extracted=Context 77% left
+</pre></section><section><h2>Draft extends the accepted placeholder</h2><pre>╭─────────────────────────────────────────────────╮
+│ ✨ Update available! 0.163.0 -&gt; 0.164.0         │
+│ Run npm install -g @openai/codex to update.     │
+│                                                 │
+│ See full release notes:                         │
+│ https://github.com/openai/codex/releases/latest │
+╰─────────────────────────────────────────────────╯
+
+
+  &gt;_ OpenAI Codex (v0.163.0)
+     ~/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+› Ask Codex to do anything else
+
+  GPT-6.1-Sol high · Context 100% left · 0 in · 0 out · weekly 68% left
+                                                                                           ⚠ 1 warning · f2 to view</pre><pre class="result">styled=0 verdict=unknown
+extracted=Ask Codex to do anything else
+styled=1 verdict=pending
+extracted=Ask Codex to do anything else
+</pre></section><section><h2>Draft with session-only empty status-line configuration</h2><pre>╭─────────────────────────────────────────────────╮
+│ ✨ Update available! 0.163.0 -&gt; 0.164.0         │
+│ Run npm install -g @openai/codex to update.     │
+│                                                 │
+│ See full release notes:                         │
+│ https://github.com/openai/codex/releases/latest │
+╰─────────────────────────────────────────────────╯
+
+
+  &gt;_ OpenAI Codex (v0.163.0)
+     ~/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+›
+  Context 77% left
+
+                                                                     100% context left    ⚠ 3 warnings · f2 to view</pre><pre class="result">styled=0 verdict=unknown
+extracted=Context 77% left
+styled=1 verdict=pending
+extracted=Context 77% left
+</pre></section><section><h2>Exit preserves the draft</h2><pre class="result">fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q/.test-validation/lab
+error: task livetest&#x27;s composer visibly holds pending text; refusing to type the /quit exit command because it would concatenate onto that text. Clear or submit the pending text, then retry &#x27;exit&#x27;
+</pre><pre>╭─────────────────────────────────────────────────╮
+│ ✨ Update available! 0.163.0 -&gt; 0.164.0         │
+│ Run npm install -g @openai/codex to update.     │
+│                                                 │
+│ See full release notes:                         │
+│ https://github.com/openai/codex/releases/latest │
+╰─────────────────────────────────────────────────╯
+
+
+  &gt;_ OpenAI Codex (v0.163.0)
+     ~/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+›
+  Context 77% left
+
+  GPT-6.1-Sol high · Context 100% left · 0 in · 0 out · weekly 68% left
+                                                                                           ⚠ 1 warning · f2 to view</pre></section><section><h2>Cursor-anchored idle read</h2><pre>real cursor-anchored idle state=empty
+</pre><h2>Exact ambiguous layout: behavioral regression probe</h2><p>This probe executes the classifier against the exact reported capture. It is a deterministic check, separate from the live terminal checks above. The previous revision loses the draft; the target preserves it.</p><pre>.test-validation/prior-composer.sh: verdict=empty
+extracted=
+bin/fm-composer-lib.sh: verdict=unknown
+extracted=Context 77% left
+</pre><h2>Live validation limits</h2><p>Grok 1.0.70 reached browser sign-in in a disposable GROK_HOME. No login or credential copy was attempted. Orca lifecycle calls were not driven: the available macOS CLI documents no isolated runtime data directory for this use, and shared application state is outside the allowed boundary. Focused adapter tests use fakes and do not establish live Orca or Grok behavior.</p></section></main></html>

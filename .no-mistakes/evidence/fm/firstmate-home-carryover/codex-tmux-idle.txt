@@ -1,0 +1,1 @@
+real cursor-anchored idle state=empty

@@ -1,0 +1,4 @@
+ok - matrix: codex 0.162's footer bounds its bare composer; only its exact placeholder reads empty unstyled
+ok - matrix: grok 1.0.62's middle-dot title reads empty when idle and pending when typed
+ok - matrix: grok's key-hint row flush under its box reads empty when idle and pending when typed
+ok - the Grok weekly-limit choice is named only in its recorded structure and never reads empty

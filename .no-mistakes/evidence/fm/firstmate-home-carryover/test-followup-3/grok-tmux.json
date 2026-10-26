@@ -1,0 +1,37 @@
+{
+  "command": "grok --cwd /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q/.t3/grok --no-alt-screen --leader-socket /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q/.t3/g",
+  "terminal": {
+    "columns": 116,
+    "rows": 36
+  },
+  "input_sent": [],
+  "auth": "copy of existing supported auth.json",
+  "captures": [
+    {
+      "after_seconds": 3,
+      "path": "/Users/eduardopicazo/.no-mistakes/evidence/01M5TWX28QV7MK1HBVJB807Z3Q/test-followup-3/grok-existing-auth-3s.txt",
+      "exit_code": 0,
+      "sha256": "3f06f3319df42c4ac80698d138040739e2aa60a14f980373e766c5a6503777c6"
+    },
+    {
+      "after_seconds": 10,
+      "path": "/Users/eduardopicazo/.no-mistakes/evidence/01M5TWX28QV7MK1HBVJB807Z3Q/test-followup-3/grok-existing-auth-10s.txt",
+      "exit_code": 0,
+      "sha256": "3f06f3319df42c4ac80698d138040739e2aa60a14f980373e766c5a6503777c6"
+    },
+    {
+      "after_seconds": 20,
+      "path": "/Users/eduardopicazo/.no-mistakes/evidence/01M5TWX28QV7MK1HBVJB807Z3Q/test-followup-3/grok-existing-auth-20s.txt",
+      "exit_code": 0,
+      "sha256": "3f06f3319df42c4ac80698d138040739e2aa60a14f980373e766c5a6503777c6"
+    }
+  ],
+  "tmux_start_exit": 0,
+  "production_classifier": {
+    "exit_code": 0,
+    "stdout": "unknown",
+    "stderr": ""
+  },
+  "cleanup_exit_code": 0,
+  "original_auth_bytes_unchanged": true
+}

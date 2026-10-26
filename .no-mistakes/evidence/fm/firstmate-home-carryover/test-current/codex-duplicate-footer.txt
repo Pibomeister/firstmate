@@ -1,0 +1,36 @@
+╭─────────────────────────────────────────────────╮
+│ ✨ Update available! 0.163.0 -> 0.164.0         │
+│ Run npm install -g @openai/codex to update.     │
+│                                                 │
+│ See full release notes:                         │
+│ https://github.com/openai/codex/releases/latest │
+╰─────────────────────────────────────────────────╯
+
+
+  >_ OpenAI Codex (v0.163.0)
+     ~/.no-mistakes/worktrees/075d7f40c28a/01M5TWX28QV7MK1HBVJB807Z3Q
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+›
+  ? for shortcuts
+
+  GPT-6.1-Sol high · Context 100% left · 0 in · 0 out · weekly 67% left
+                                                                                           ⚠ 1 warning · f2 to view

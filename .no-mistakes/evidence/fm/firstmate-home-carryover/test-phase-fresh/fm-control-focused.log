@@ -1,0 +1,2 @@
+ok - fm-control exit: a closed Orca terminal with no agent left reports endpoint-gone and sends nothing
+ok - fm-control exit: a closed Orca terminal refuses when the worktree scan cannot be read
