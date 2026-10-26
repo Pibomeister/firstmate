@@ -2604,7 +2604,8 @@ captain_call_stale_bound() {  # <window-key> <task>
 # still-open `blocked:` line (status_worker_wait_verb in fm-classify-lib.sh owns
 # which lines count and what ends them). That line already woke firstmate, and an
 # idle pane's ticking display re-enters the terminal path on every new hash, so
-# without this one blocker re-alarms on every tick. Bound to the status-log
+# without this one blocker re-alarms on every tick. A pane showing a blocking
+# dialog is never absorbed here, because the dialog is news. Bound to the status-log
 # signature, so any append starts a fresh window; a busy pane drops the throttle
 # (clear_worker_blocker_throttle), so a worker that works and goes idle again
 # alarms afresh.
@@ -4199,7 +4200,8 @@ EOF
               wedge_episode_end "$key" 0 1
               clear_write_tracking "$key"
               triage_log "absorbed stale (open captain call already surfaced for this status): $w"
-            elif [ -z "$STALE_WAIT_DECLARATION" ] && worker_blocker_stale_bound "$key" "$task"; then
+            elif [ -z "$STALE_WAIT_DECLARATION" ] && [ -z "$dialog" ] \
+              && worker_blocker_stale_bound "$key" "$task"; then
               printf '%s' "$h" > "$sf"
               # Pre-cap shape kept the count here (keep-count contract).
               wedge_episode_end "$key" 0 1

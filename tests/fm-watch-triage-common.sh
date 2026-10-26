@@ -2726,6 +2726,7 @@ test_own_work_wait_keeps_first_alert_then_long_cadence() {
   grep -F "stale: $window" "$state/.wake-queue" >/dev/null || fail "undeclared idle worker's wake was not queued"
   pass "own-work waits keep one first alert, then bounded rechecks without wedges; undeclared idle still alarms"
 }
+
 # --- worker-declared blocker on an idle, churning pane: first sight, then cadence
 # A worker whose newest status event is its own still-open `blocked:` line is
 # captain-relevant, so its stale pane takes the terminal path, which alarms on
@@ -2752,9 +2753,8 @@ worker_blocker_case() {  # <name>
 # with WORKER_BLOCKER_FIRST_RENDER=1, a pane showing it for the first time.
 # Prints the watcher's output; the wake (if any) is acknowledged afterwards so
 # the next pass starts from an empty queue.
-worker_blocker_cycle() {  # <dir> <text> [extra env assignments...]
+worker_blocker_cycle() {  # <dir> <text>
   local dir=$1 text=$2 state key out pid
-  shift 2
   state="$dir/state"; key=test_fm-blk; out="$dir/cycle.out"
   printf '%s' "$text" > "$dir/pane.txt"
   if [ "${WORKER_BLOCKER_FIRST_RENDER:-0}" = 1 ]; then
@@ -2766,7 +2766,7 @@ worker_blocker_cycle() {  # <dir> <text> [extra env assignments...]
   PATH="$dir/fakebin:$PATH" FM_FAKE_TMUX_WINDOW=test:fm-blk FM_FAKE_TMUX_CAPTURE="$dir/pane.txt" \
     FM_FAKE_CREW_STATE='state: unknown · source: none · no current-state source available' \
     FM_PAUSE_RESURFACE_SECS=1000 FM_BUSY_TURN_MAX_SECS=999999 \
-    watch_once_bg "$state" "$dir/fakebin" "$out" env "$@"
+    watch_once_bg "$state" "$dir/fakebin" "$out"
   pid=$!
   wait_for_exit "$pid" 100 || { reap "$pid"; fail "watcher cycle over '$text' did not finish: $(cat "$out")"; }
   cat "$out"
@@ -2788,6 +2788,14 @@ test_worker_blocker_stale_first_sight_then_long_cadence() {
   got=$(worker_blocker_cycle "$dir" 'idle prompt, tick 3')
   [ -z "$got" ] || fail "a blocked worker re-alarmed on a second pane tick inside the recheck cadence (got: $got)"
   [ ! -s "$state/.wake-queue" ] || fail "an absorbed pane tick queued a wake"
+
+  # A pane that now shows a blocking dialog is news, not a tick: it alarms and
+  # names the dialog even inside the cadence.
+  got=$(worker_blocker_cycle "$dir" "$(write_exit_picker /dev/stdout)")
+  case "$got" in
+    *"blocked-on-prompt: Claude background-task exit picker"*) ;;
+    *) fail "a blocked worker's pane showing a blocking dialog was absorbed (got: $got)" ;;
+  esac
 
   # The cadence elapses: the next new hash is the long recheck.
   set_mtime "$(( $(date +%s) - 2000 ))" "$throttle"
@@ -4759,32 +4767,43 @@ test_open_captain_call_bounds_stale_churn() {
 
 # The other half of the same bound, and the one that decides whether widening the
 # wait was safe: the identical fixtures with NO hold must keep alarming on every
-# new hash, on both branches.
+# new hash, on both branches. A worker's own open `blocked:` line is the one
+# exception: it alarms on first sight and is then bounded by its own cadence
+# (test_worker_blocker_stale_first_sight_then_long_cadence), so its second
+# round must be absorbed rather than re-alarmed.
 test_stale_churn_without_a_captain_call_still_alarms() {
   local spec name line dir state out capture round wakes
   command -v tasks-axi >/dev/null 2>&1 \
     || { echo "skip: tasks-axi not found (unheld stale alarm)"; return 0; }
   for spec in \
-    'unheld-delivery|done: PR https://example.invalid/pull/1 checks green' \
-    'unheld-blocker|blocked: cannot reach the release host' \
-    'unheld-worker-line|working: still tidying the branch'
+    'unheld-delivery|done: PR https://example.invalid/pull/1 checks green|1' \
+    'unheld-blocker|blocked: cannot reach the release host|0' \
+    'unheld-worker-line|working: still tidying the branch|1'
   do
-    name=${spec%%|*}; line=${spec#*|}
+    name=${spec%%|*}; line=${spec#*|}; again=${line##*|}; line=${line%|*}
     dir=$(make_hold_home "$name" "$line" nohold) \
       || fail "[$name] could not build an unheld backlog fixture"
     state="$dir/state"; out="$dir/watch.out"; capture="$dir/pane.txt"
-    round=1
-    while [ "$round" -le 2 ]; do
-      hold_watch_surface "$dir" "$out" "$capture" "idle, elapsed ${round}s" \
-        || fail "[$name] an unheld stale window stopped alarming on round $round"
+    hold_watch_surface "$dir" "$out" "$capture" "idle, elapsed 1s" \
+      || fail "[$name] an unheld stale window did not alarm on first sight"
+    wakes=$(hold_stale_wakes "$state")
+    [ "$wakes" -eq 1 ] || fail "[$name] first sight produced $wakes wakes instead of one"
+    ack_stopped_cycle "$state" || fail "[$name] could not acknowledge first sight"
+    if [ "$again" -eq 1 ]; then
+      hold_watch_surface "$dir" "$out" "$capture" "idle, elapsed 2s" \
+        || fail "[$name] an unheld stale window stopped alarming on round 2"
       wakes=$(hold_stale_wakes "$state")
-      [ "$wakes" -eq 1 ] \
-        || fail "[$name] round $round produced $wakes wakes instead of one"
-      ack_stopped_cycle "$state" || fail "[$name] could not acknowledge round $round"
-      round=$((round + 1))
-    done
+      [ "$wakes" -eq 1 ] || fail "[$name] round 2 produced $wakes wakes instead of one"
+      ack_stopped_cycle "$state" || fail "[$name] could not acknowledge round 2"
+    else
+      hold_watch_churn "$dir" "$out" "$capture" 'idle, elapsed' 2 \
+        || fail "[$name] watcher exited on pane churn instead of absorbing it: $(cat "$out")"
+      wakes=$(hold_stale_wakes "$state")
+      [ "$wakes" -eq 0 ] \
+        || fail "[$name] a worker's open blocker re-alarmed $wakes time(s) on pane ticks inside its cadence"
+    fi
   done
-  pass "a stale window with no open captain call keeps alarming on every new hash"
+  pass "a stale window with no open captain call keeps alarming on every new hash, except a worker's own open blocker"
 }
 
 
