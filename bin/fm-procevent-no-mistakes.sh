@@ -39,7 +39,7 @@ usage() { sed -n '2,/^set -u/{ /^#/s/^# \{0,1\}//p; }' "${BASH_SOURCE[0]}"; exit
 die() { printf 'error: %s\n' "$1" >&2; exit 1; }
 
 arm() {
-  local task=${1-} wt id digest= listening=0 owner
+  local task=${1-} wt id digest='' listening=0 owner
   [ "$#" -eq 1 ] || usage
   case "$FM_HOME" in /*) ;; *) die 'FM_HOME must explicitly name the owning home' ;; esac
   STATE=$(fm_procevent_state_root_resolve "$STATE") || die 'owning state root is unavailable'
