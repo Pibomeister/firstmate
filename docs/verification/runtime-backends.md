@@ -852,7 +852,7 @@ The other four panes showed the `You hit your weekly limit.` choice, read `pendi
 
 On 2026-10-20 a 120-column Orca capture of an idle Grok 1.0.62 (Grok 4.7, high effort) composer drew its `Shift+Tab:mode  │  Ctrl+x:shortcuts` key-hint row directly under the bottom border, with no blank row between them.
 The cursorless staleness probe read that row as a lower live shape, so the visibly empty box read `unknown` and `fm-control` refused to type `/exit`.
-The classifier now treats only that key-hint shape (`FM_COMPOSER_GROK_HINT_RE_DEFAULT` in `bin/fm-composer-lib.sh`), as the single row directly under a selected box, as box furniture; any other row there, or activity below the hint row, still makes the box stale.
+`FM_COMPOSER_GROK_HINT_RE_DEFAULT` and `_fm_composer_select_cursorless` in `bin/fm-composer-lib.sh` own the current hint-row contract; [Grok send and queue footer](#grok-send-and-queue-footer) records the newer accepted cells and refresh procedure.
 `tests/fm-composer-lib.test.sh` and `tests/fm-backend-orca.test.sh` pin the capture as idle `empty` and its typed variant as `pending`.
 This change was proven against the recorded capture only; no live Grok pane was rerun for it.
 
