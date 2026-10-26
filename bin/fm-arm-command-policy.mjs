@@ -830,10 +830,12 @@ function analyzeProgram(command, context, depth = 0) {
     }
 
     const executable = position.command?.value || "";
-    const protectedKind = protectedIdentity(executable, context.root);
-    if (hasUnclassifiableProtectedExpansion(position.command, context.root)) unclassifiableProtected = true;
     const commandName = basename(executable);
     const args = position.words.slice(position.index + 1);
+    let protectedKind = protectedIdentity(executable, context.root);
+    // The secondmate start and status entries return in the foreground; any other fm-watch.sh call stays direct.
+    if (protectedKind === "watch" && args.length === 1 && ["--secondmate", "--secondmate-status"].includes(args[0].value)) protectedKind = "secondmate";
+    if (hasUnclassifiableProtectedExpansion(position.command, context.root)) unclassifiableProtected = true;
     if (commandName === "pkill" && args.some((word) => /fm-watch/.test(word.value) || wordReferencesAny(word, nodeContext.watcherPatterns))) broadKill = true;
     if (commandName === "kill" && (nodePgrepWatcher || args.some((word) => wordReferencesAny(word, nodeContext.watcherPids)))) broadKill = true;
     if (isWatcherPgrep(position, nodeContext)) pgrepWatcher = true;
