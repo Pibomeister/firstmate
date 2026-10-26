@@ -646,6 +646,52 @@ test_matrix_codex_0162_placeholder_on_plain_capture() {
   pass "matrix: codex 0.162's footer bounds its bare composer; only its exact placeholder reads empty unstyled"
 }
 
+test_codex_footer_requires_complete_rows() {
+  local row screen caps out want envelope
+  envelope=$'╭────────────────────────╮\n│ ›                      │\n╰────────────────────────╯'
+  for row in '? for shortcuts' \
+             '← for agents · ? for shortcuts' \
+             '? for shortcuts      ⚠ 1 warning · f2 to view' \
+             '← for agents · ? for shortcuts      ⚠ 3 warnings · f2 to view' \
+             'Context 77% left' \
+             'gpt-5.5 xhigh · Context 100% left' \
+             'GPT-6.1-Sol medium · fm/branch · Context 77% left · 33.8M in · 37.8K out · weekly 0% left'; do
+    screen=$'›\n  '"$row"
+    for caps in "$CAPS_PLAIN" "$CAPS_STYLED" "$CAPS_STYLED_NOID"; do
+      assert_screen "complete Codex footer '$row'" empty "$caps" "$screen"
+      out=$(fm_composer_extract_selected_content "$caps" "$screen")
+      [ -z "$out" ] || fail "complete Codex footer leaked into extracted content: '$out'"
+      assert_screen "complete Codex envelope footer '$row'" empty "$caps" \
+        "$envelope"$'\n  '"$row"$'\n→ status'
+    done
+    assert_screen "cursor on complete Codex footer '$row'" unknown "$CAPS_TMUX" "$screen" 1
+  done
+  for row in '? for shortcuts is my first question' \
+             '← for agents · ? for shortcuts is my first question' \
+             '? for shortcuts ⚠ 3 warnings · f2 to view then explain' \
+             'notes · ? for shortcuts' \
+             'Context 77% left is my first question' \
+             'gpt-5.5 xhigh · Context 100% left then explain' \
+             'GPT-6.1-Sol medium · fm/branch · Context 77% left · arbitrary prose' \
+             'notes · Context 77% left'; do
+    screen=$'›\n  '"$row"$'\n explain them'
+    for caps in "$CAPS_PLAIN" "$CAPS_STYLED" "$CAPS_STYLED_NOID"; do
+      want=pending
+      [ "$caps" != "$CAPS_PLAIN" ] || want=unknown
+      assert_screen "footer-like draft '$row'" "$want" "$caps" "$screen"
+      out=$(fm_composer_extract_selected_content "$caps" "$screen")
+      [ "$out" = "$row explain them" ] || fail "footer-like draft lost during extraction: '$out'"
+      out=$(LC_ALL=C fm_composer_extract_selected_content "$caps" "$screen")
+      [ "$out" = "$row explain them" ] || fail "footer-like draft lost during C-locale extraction: '$out'"
+      assert_screen "footer-like activity below envelope '$row'" "$want" "$caps" \
+        "$envelope"$'\n  '"$row"$'\n→ keep draft'
+    done
+    assert_screen "cursor on footer-like draft '$row'" pending "$CAPS_TMUX" "$screen" 1
+    assert_screen "cursor below footer-like draft '$row'" pending "$CAPS_TMUX" "$screen" 2
+  done
+  pass "Codex footer matching requires complete rows across wrapping, envelopes, and extraction"
+}
+
 test_matrix_pi_separated_needs_identity() {
   # Real idle pi: a blank row between two solid rules. The blank row alone is
   # exactly what the strict rule refuses; only structure PLUS a live
@@ -1516,6 +1562,7 @@ test_matrix_herdr_halfblock_rule_bounds_bare_wrap
 test_matrix_omp_status_row_bounds_bare_composer
 test_matrix_codex_idle_starfield_furniture
 test_matrix_codex_0162_placeholder_on_plain_capture
+test_codex_footer_requires_complete_rows
 test_matrix_pi_separated_needs_identity
 test_matrix_pi_dollar_status_footer_is_empty
 test_matrix_opencode_leftbar_signals
