@@ -981,12 +981,12 @@ EOF
 # is a line of that verb that the worker wrote and that is still open: its key
 # must hold that verb in status_own_open_decisions, so a supervisor-reserved key
 # never counts. Only the newest event is read, so any later line ends it - a
-# resolved line for any key included - and so does a steering-inbox record the
-# worker acknowledged that was written after it (bin/fm-task-inbox-lib.sh owns
-# that handled/ layout), which is an answer that arrived without a closing
-# resolved line.
-status_worker_wait_verb() {  # <status-file>
-  local f=$1 last verb key own rec
+# resolved line for any key included. A steering-inbox record does not end it
+# here: a steer the worker acknowledged may as easily be "keep waiting" as the
+# answer, so a caller that bounds repeated alarms reads this and lets the
+# worker's own next line, or its next busy turn, end the wait.
+status_worker_open_wait_verb() {  # <status-file>
+  local f=$1 last verb key own
   last=$(last_status_line "$f")
   [ -n "$last" ] || return 1
   status_line_verb "$last" verb
@@ -997,6 +997,16 @@ status_worker_wait_verb() {  # <status-file>
     "$key"$'\t'"$verb"$'\t'*|*$'\n'"$key"$'\t'"$verb"$'\t'*) ;;
     *) return 1 ;;
   esac
+  printf '%s' "$verb"
+}
+
+# status_worker_open_wait_verb, also ended by a steering-inbox record the worker
+# acknowledged that was written after the line (bin/fm-task-inbox-lib.sh owns
+# that handled/ layout), which is an answer that arrived without a closing
+# resolved line.
+status_worker_wait_verb() {  # <status-file>
+  local f=$1 verb rec
+  verb=$(status_worker_open_wait_verb "$f") || return 1
   for rec in "${f%.status}.inbox/handled"/*.msg; do
     [ "$rec" -nt "$f" ] && return 1
   done

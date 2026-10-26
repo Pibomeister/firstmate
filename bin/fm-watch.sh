@@ -2601,19 +2601,21 @@ captain_call_stale_bound() {  # <window-key> <task>
 }
 
 # The same bound for a task whose newest status event is its worker's own
-# still-open `blocked:` line (status_worker_wait_verb in fm-classify-lib.sh owns
-# which lines count and what ends them). That line already woke firstmate, and an
-# idle pane's ticking display re-enters the terminal path on every new hash, so
-# without this one blocker re-alarms on every tick. A pane showing a blocking
-# dialog is never absorbed here, because the dialog is news. Bound to the status-log
-# signature, so any append starts a fresh window; a busy pane drops the throttle
-# (clear_worker_blocker_throttle), so a worker that works and goes idle again
-# alarms afresh.
-worker_blocker_stale_bound() {  # <window-key> <task>
-  local key=$1 task=$2 verb
+# still-open `blocked:` line (status_worker_open_wait_verb in fm-classify-lib.sh
+# owns which lines count and what ends them). That line already woke firstmate,
+# and an idle pane's ticking display re-enters the terminal path on every new
+# hash, so without this one blocker re-alarms on every tick. A pane showing a
+# blocking dialog, or one whose agent is confirmed gone, is never absorbed here,
+# because either is news. Bound to the status-log signature, so any append
+# starts a fresh window; a busy pane drops the throttle
+# (clear_worker_blocker_throttle), so a worker that works - including reading a
+# steer - and goes idle again alarms afresh.
+worker_blocker_stale_bound() {  # <window> <window-key> <task>
+  local win=$1 key=$2 task=$3 verb
   STALE_WAIT_DECLARATION=
-  verb=$(status_worker_wait_verb "$STATE/$task.status") || return 1
+  verb=$(status_worker_open_wait_verb "$STATE/$task.status") || return 1
   [ "$verb" = blocked ] || return 1
+  [ "$(fm_backend_agent_alive "$(window_backend "$win")" "$win" 2>/dev/null)" != dead ] || return 1
   STALE_WAIT_DECLARATION="worker-blocked:$(fm_wake_signal_sig "$STATE/$task.status" || true)"
   stale_wait_throttled "$key" "$STALE_WAIT_DECLARATION"
 }
@@ -4201,7 +4203,7 @@ EOF
               clear_write_tracking "$key"
               triage_log "absorbed stale (open captain call already surfaced for this status): $w"
             elif [ -z "$STALE_WAIT_DECLARATION" ] && [ -z "$dialog" ] \
-              && worker_blocker_stale_bound "$key" "$task"; then
+              && worker_blocker_stale_bound "$w" "$key" "$task"; then
               printf '%s' "$h" > "$sf"
               # Pre-cap shape kept the count here (keep-count contract).
               wedge_episode_end "$key" 0 1
