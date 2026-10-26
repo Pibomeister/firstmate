@@ -588,7 +588,7 @@ test_matrix_codex_0162_placeholder_on_plain_capture() {
   # wrap region swallowed both footer rows, and without the per-glyph
   # placeholder entry the plain row was indistinguishable from typed text, so
   # every Orca-backed codex pane read `unknown` and relaunch refused.
-  local status hint footer idle typed out
+  local status hint footer idle typed out caps want context hint_row
   status='  GPT-6.1-Sol medium · fm/ak-kimi-toml-bun142 · Context 77% left · 33.8M in · 37.8K out · weekly 0% left'
   hint='  ? for shortcuts                                    ⚠ 3 warnings · f2 to view'
   footer="$status"$'\n'"$hint"
@@ -616,6 +616,27 @@ test_matrix_codex_0162_placeholder_on_plain_capture() {
     $'transcript\n› Ask Codex to do anything\n'"$hint"
   assert_screen "codex 0.162 idle under its agents hint row only" empty "$CAPS_PLAIN" \
     $'transcript\n› Ask Codex to do anything\n  ← for agents · ? for shortcuts'
+
+  typed=$'›\n Context 77% left\n ← for agents · ? for shortcuts'
+  for caps in "$CAPS_PLAIN" "$CAPS_STYLED" "$CAPS_STYLED_NOID"; do
+    want=pending
+    [ "$caps" != "$CAPS_PLAIN" ] || want=unknown
+    assert_screen "context draft above hint-only Codex footer" "$want" "$caps" "$typed"
+    out=$(fm_composer_extract_selected_content "$caps" "$typed")
+    [ "$out" = 'Context 77% left' ] || fail "hint-only Codex footer discarded context draft: '$out'"
+    out=$(LC_ALL=C fm_composer_extract_selected_content "$caps" "$typed")
+    [ "$out" = 'Context 77% left' ] || fail "C-locale hint-only Codex footer discarded context draft: '$out'"
+  done
+  assert_screen "cursor on context draft above hint-only Codex footer" pending "$CAPS_TMUX" "$typed" 1
+  for context in 'Context 0% left' 'Context 100% left'; do
+    for hint_row in '? for shortcuts' '← for agents · ? for shortcuts' "$hint"; do
+      typed=$'›\n '"$context"$'\n '"$hint_row"
+      assert_screen "context draft '$context' above '$hint_row' on plain capture" unknown "$CAPS_PLAIN" "$typed"
+      assert_screen "context draft '$context' above '$hint_row' on styled capture" pending "$CAPS_STYLED" "$typed"
+      out=$(fm_composer_extract_selected_content "$CAPS_PLAIN" "$typed")
+      [ "$out" = "$context" ] || fail "hint-only footer discarded context variant: '$out'"
+    done
+  done
 
   # The dangerous direction: any other text after the glyph is never empty on
   # a plain capture - typed text, an extension or prefix of the placeholder,
@@ -653,7 +674,6 @@ test_codex_footer_requires_complete_rows() {
              '← for agents · ? for shortcuts' \
              '? for shortcuts      ⚠ 1 warning · f2 to view' \
              '← for agents · ? for shortcuts      ⚠ 3 warnings · f2 to view' \
-             'Context 77% left' \
              'gpt-5.5 xhigh · Context 100% left' \
              'GPT-6.1-Sol medium · fm/branch · Context 77% left · 33.8M in · 37.8K out · weekly 0% left'; do
     screen=$'›\n  '"$row"

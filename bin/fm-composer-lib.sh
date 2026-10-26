@@ -562,7 +562,7 @@ FM_COMPOSER_OMP_STATUS_RE_DEFAULT='^[[:space:]]*(π|󰵗)[[:space:]]+·[[:space:
 # composer, never on the composer row itself, so the same words typed after
 # the glyph stay composer input.
 FM_COMPOSER_CODEX_WARNINGS_RE_DEFAULT='⚠[[:space:]]+[0-9]+ warnings?[[:space:]]+·[[:space:]]+f2 to view'
-FM_COMPOSER_CODEX_FOOTER_RE_DEFAULT='^[[:space:]]*(([^[:space:]·]+[[:space:]]+(none|minimal|low|medium|high|xhigh|max)[[:space:]]+·[[:space:]]+([^[:space:]·]+[[:space:]]+·[[:space:]]+)?)?Context [0-9]+% left([[:space:]]+·[[:space:]]+[0-9]+(\.[0-9]+)?[KMB]?[[:space:]]+(in|out))*([[:space:]]+·[[:space:]]+weekly [0-9]+% left)?|(← for agents[[:space:]]+·[[:space:]]+)?\? for shortcuts([[:space:]]+'"$FM_COMPOSER_CODEX_WARNINGS_RE_DEFAULT"')?|'"$FM_COMPOSER_CODEX_WARNINGS_RE_DEFAULT"')[[:space:]]*$'
+FM_COMPOSER_CODEX_FOOTER_RE_DEFAULT='^[[:space:]]*(([^[:space:]·]+[[:space:]]+(none|minimal|low|medium|high|xhigh|max)[[:space:]]+·[[:space:]]+([^[:space:]·]+[[:space:]]+·[[:space:]]+)?)Context [0-9]+% left([[:space:]]+·[[:space:]]+[0-9]+(\.[0-9]+)?[KMB]?[[:space:]]+(in|out))*([[:space:]]+·[[:space:]]+weekly [0-9]+% left)?|(← for agents[[:space:]]+·[[:space:]]+)?\? for shortcuts([[:space:]]+'"$FM_COMPOSER_CODEX_WARNINGS_RE_DEFAULT"')?|'"$FM_COMPOSER_CODEX_WARNINGS_RE_DEFAULT"')[[:space:]]*$'
 # The per-glyph placeholder table: the exact text a harness renders after its
 # OWN agent glyph in an EMPTY bare composer, one `<glyph><TAB><placeholder>`
 # line per entry. Unlike the fleet-wide idle set above, an entry is bound to
