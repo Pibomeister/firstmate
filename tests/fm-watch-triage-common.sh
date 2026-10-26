@@ -7343,13 +7343,12 @@ test_firstmate_park_absorbs_a_quiet_pane_until_its_time() {
     --reason 'agent quota exhausted; PR awaiting upstream review' >/dev/null \
     || fail "fm-park refused a recorded task with a future until time"
   until_watch "$dir" 240
-  if ! wait_poll_cycle "$state" "$UNTIL_PID" || ! wait_poll_cycle "$state" "$UNTIL_PID"; then
-    reap "$UNTIL_PID"; fail "a firstmate-parked quiet pane was rechecked before its until time: $(cat "$dir/watch.out")"
-  fi
+  wait_for_exit "$UNTIL_PID" 100 || fail "first parked-pane cycle did not finish: $(cat "$dir/watch.out")"
+  until_watch "$dir" 240
+  wait_for_exit "$UNTIL_PID" 100 || fail "second parked-pane cycle did not finish: $(cat "$dir/watch.out")"
   [ ! -s "$state/.wake-queue" ] || fail "a firstmate-parked quiet pane was queued as stale: $(cat "$state/.wake-queue")"
   grep -F 'declared time not reached' "$state/.watch-triage.log" >/dev/null \
     || fail "the parked pane was not absorbed as a declared wait"
-  reap "$UNTIL_PID"
   pass "a firstmate park absorbs a quiet pane until its declared time, like a worker's own pause"
 }
 
