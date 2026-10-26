@@ -2087,9 +2087,23 @@ test_orca_absence_proof_reclassifies_a_connected_terminal() {
 
 # orca_reboot_case: a stale (unrecognized) handle whose record carries a
 # pre-boot spawn generation, with a readable sweep and only a shell in the
-# recorded worktree. FM_ORCA_BOOT_EPOCH pins the boot the proof compares.
+# recorded worktree.
 orca_reboot_case() {  # <name>
   orca_proof_case "$1"
+  cat > "$FB/awk" <<'SH'
+#!/usr/bin/env bash
+if [ "$#" -eq 2 ] && [ "$2" = /proc/stat ]; then
+  printf '%s\n' "${FM_TEST_ORCA_BOOT_EPOCH:-2000}"
+  exit 0
+fi
+SH
+  printf 'exec %q "$@"\n' "$(command -v awk)" >> "$FB/awk"
+  cat > "$FB/sysctl" <<'SH'
+#!/usr/bin/env bash
+[ "$*" = '-n kern.boottime' ] || exit 1
+printf '{ sec = %s, usec = 0 }\n' "${FM_TEST_ORCA_BOOT_EPOCH:-2000}"
+SH
+  chmod +x "$FB/awk" "$FB/sysctl"
   printf '{"ok":false,"error":{"code":"terminal_handle_stale"}}\n' > "$RESP/1.out"
   printf 'spawn_gen=s1000.4242.99\nterminal=term-1\n' > "$CASE_DIR/meta"
 }
@@ -2103,9 +2117,22 @@ orca_reboot_proof() {  # [env...] -> the absence proof with the record passed
 test_orca_absence_proof_reboot_stale_handle_is_gone() {
   local out
   orca_reboot_case proof-reboot-gone
-  out=$(orca_reboot_proof FM_ORCA_BOOT_EPOCH=2000)
+  out=$(orca_reboot_proof FM_TEST_ORCA_BOOT_EPOCH=2000)
   [ "$out" = $'gone\t' ] || fail "a stale handle recorded before the host boot, with a readable sweep and no agent in its worktree, must prove gone, got '$out'"
   pass "fm_backend_orca_endpoint_absence_proof: a pre-boot stale handle with no surviving agent proves gone after a reboot"
+}
+
+test_orca_absence_proof_ignores_a_forged_boot_override() {
+  local out
+  orca_reboot_case proof-forged-boot
+  printf 'spawn_gen=s2000.4242.99\nterminal=term-1\n' > "$CASE_DIR/meta"
+  out=$(orca_reboot_proof FM_TEST_ORCA_BOOT_EPOCH=1000 FM_ORCA_BOOT_EPOCH=3000)
+  case "$out" in
+    unproven$'\t'*) ;;
+    *) fail "a caller-supplied boot value must not make a post-boot stale handle prove gone, got '$out'" ;;
+  esac
+  assert_contains "$out" "does not postdate" "the proof must compare the kernel boot time"
+  pass "fm_backend_orca_endpoint_absence_proof: forged boot overrides cannot authorize recovery"
 }
 
 test_orca_absence_proof_reboot_stale_handle_refuses_a_surviving_agent() {
@@ -2119,7 +2146,7 @@ test_orca_absence_proof_reboot_stale_handle_refuses_a_surviving_agent() {
   ORCA_TREE_PIDS+=("$agent")
   printf 'p%s\nn%s/sub\n' "$agent" "$CASE_DIR/wt" >> "$CASE_DIR/lsof.out"
   mkdir -p "$CASE_DIR/wt/sub"
-  out=$(orca_reboot_proof FM_ORCA_BOOT_EPOCH=2000)
+  out=$(orca_reboot_proof FM_TEST_ORCA_BOOT_EPOCH=2000)
   orca_tree_cleanup
   case "$out" in
     unproven$'\t'*) ;;
@@ -2139,9 +2166,9 @@ test_orca_absence_proof_reboot_stale_handle_refuses_without_the_boot_proof() {
       no-boot-read) reason="host boot time could not be read" ;;
     esac
     case "$name" in
-      boot-not-after) out=$(orca_reboot_proof FM_ORCA_BOOT_EPOCH=500) ;;
-      sweep-unreadable) out=$(orca_reboot_proof FM_ORCA_BOOT_EPOCH=2000) ;;
-      no-boot-read) out=$(orca_reboot_proof FM_ORCA_BOOT_EPOCH=notanepoch) ;;
+      boot-not-after) out=$(orca_reboot_proof FM_TEST_ORCA_BOOT_EPOCH=500) ;;
+      sweep-unreadable) out=$(orca_reboot_proof FM_TEST_ORCA_BOOT_EPOCH=2000) ;;
+      no-boot-read) out=$(orca_reboot_proof FM_TEST_ORCA_BOOT_EPOCH=notanepoch) ;;
     esac
     case "$out" in
       unproven$'\t'*) ;;
@@ -2235,6 +2262,7 @@ test_orca_absence_proof_is_gone_for_a_closed_clean_terminal
 test_orca_absence_proof_refuses_without_every_fact
 test_orca_absence_proof_reclassifies_a_connected_terminal
 test_orca_absence_proof_reboot_stale_handle_is_gone
+test_orca_absence_proof_ignores_a_forged_boot_override
 test_orca_absence_proof_reboot_stale_handle_refuses_a_surviving_agent
 test_orca_absence_proof_reboot_stale_handle_refuses_without_the_boot_proof
 test_orca_state_is_read_only_by_the_control_plane

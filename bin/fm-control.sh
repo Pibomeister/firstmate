@@ -711,9 +711,20 @@ retire_busy_incarnation() {
 # do_exit: stop the running agent, preserving endpoint and worktree. Prints
 # `already-stopped`, `endpoint-gone`, or `stopped`.
 do_exit() {
-  local state cmd hazard verdict composer_state cancel absence interrupt_result=not-needed dialog
+  local state cmd hazard verdict composer_state cancel absence= interrupt_result=not-needed dialog
   require_state_verified_backend exit
+  if [ "$BACKEND" = orca ] && [ "$HARNESS" = droid ] \
+    && [ "$(fm_control_agent_state "$BACKEND" "$T")" = unreadable ]; then
+    absence=$(fm_control_endpoint_absence_verdict "$BACKEND" "$T" "$WT" "$META")
+    if [ "${absence%%$'\t'*}" = gone ]; then
+      printf 'endpoint-gone'
+      return 0
+    fi
+  fi
   state=$(agent_state)
+  if [ "$state" = unknown ] && [ -n "$absence" ]; then
+    die "task $ID's endpoint $T reads '$state', but ${absence#*$'\t'}; exit cannot prove the agent stopped"
+  fi
   case "$state" in
     dead)
       printf 'already-stopped'

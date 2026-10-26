@@ -629,18 +629,11 @@ PIDS
 }
 
 # fm_backend_orca_host_boot_epoch: the host's current boot time as epoch
-# seconds. FM_ORCA_BOOT_EPOCH (decimal epoch) overrides the read so tests can
-# pin a boot relative to a recorded handle; production reads the kernel:
+# seconds. Reads the kernel:
 # kern.boottime on Darwin, /proc/stat's btime on Linux. Returns 1 when no
 # boot time can be established, which the caller treats as missing proof.
 fm_backend_orca_host_boot_epoch() {
   local boot
-  if [ -n "${FM_ORCA_BOOT_EPOCH:-}" ]; then
-    case "$FM_ORCA_BOOT_EPOCH" in
-      ''|*[!0-9]*|0) return 1 ;;
-      *) printf '%s' "$FM_ORCA_BOOT_EPOCH"; return 0 ;;
-    esac
-  fi
   if [ "$(uname 2>/dev/null)" = Darwin ]; then
     boot=$(sysctl -n kern.boottime 2>/dev/null) || return 1
     # "sec = 1792904944, usec = 578002" (older form: "{ sec = ..., ... }").
