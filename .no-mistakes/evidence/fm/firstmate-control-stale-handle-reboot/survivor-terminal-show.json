@@ -1,0 +1,33 @@
+{
+  "id": "e3292097-b349-497b-9746-497b68cc2695",
+  "ok": true,
+  "result": {
+    "terminal": {
+      "handle": "term_bd71d300-54a8-4784-8ddf-d5c3711d3f22",
+      "ptyId": "25b49253-e9cb-4660-853c-4221043e66c6::/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-project@@521d94aa",
+      "incarnationId": "0e12670c-4838-44be-a79d-228311b70206",
+      "orphaned": false,
+      "worktreeId": "25b49253-e9cb-4660-853c-4221043e66c6::/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-project",
+      "worktreePath": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-project",
+      "branch": "refs/heads/main",
+      "tabId": "b1d78570-dc4f-479a-8734-aa72dea6c0a0",
+      "leafId": "a9b7b598-85d2-4f45-8eed-15c2197f883d",
+      "title": null,
+      "connected": true,
+      "writable": true,
+      "lastOutputAt": 1793036189032,
+      "preview": "odexaspartofyourpaidplanorconnectanAPIkeyforusage-basedbilling> 1. Sign in with ChatGPT     Usage included with Plus, Pro, Business, and Enterprise plans2.SigninwithDeviceCode     Sign in from another device with a one-time code3.ProvideyourownAPIkey     Pay for what you use  Press enter to continue",
+      "executionHostId": "local",
+      "paneRuntimeId": -1,
+      "rendererGraphEpoch": 0,
+      "agentWait": {
+        "source": "prompt-text",
+        "reason": "agent-interactive-prompt",
+        "since": 1793036189032
+      }
+    }
+  },
+  "_meta": {
+    "runtimeId": "743782a5-5681-47db-a408-df609a7f19a5"
+  }
+}

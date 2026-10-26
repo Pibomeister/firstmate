@@ -1,0 +1,33 @@
+{
+  "id": "55fa8cee-9e75-4e86-b913-8d9ce0ae0408",
+  "ok": true,
+  "result": {
+    "terminal": {
+      "handle": "term_bd71d300-54a8-4784-8ddf-d5c3711d3f22",
+      "status": "running",
+      "tail": [
+        "",
+        "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp\" (codex_home: AbsolutePathBuf(\"/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/codex-home\"))",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "WelcometoCodex,OpenAI'scommand-linecodingagentSigninwithChatGPTtouseCodexaspartofyourpaidplanorconnectanAPIkeyforusage-basedbilling> 1. Sign in with ChatGPT     Usage included with Plus, Pro, Business, and Enterprise plans2.SigninwithDeviceCode     Sign in from another device with a one-time code3.ProvideyourownAPIkey     Pay for what you use  Press enter to continue"
+      ],
+      "truncated": false,
+      "limited": false,
+      "oldestCursor": "0",
+      "nextCursor": "10",
+      "latestCursor": "10",
+      "returnedLineCount": 11,
+      "source": "stream"
+    }
+  },
+  "_meta": {
+    "runtimeId": "743782a5-5681-47db-a408-df609a7f19a5"
+  }
+}

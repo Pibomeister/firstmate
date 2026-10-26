@@ -1,0 +1,83 @@
+[
+  {
+    "command": [
+      "orca",
+      "status",
+      "--json"
+    ],
+    "environment": {},
+    "exit": 0,
+    "stdout": "{\n  \"id\": \"local-status\",\n  \"ok\": true,\n  \"result\": {\n    \"target\": {\n      \"kind\": \"local\"\n    },\n    \"app\": {\n      \"running\": true,\n      \"pid\": 43441,\n      \"desktopWindowStatus\": \"openable\"\n    },\n    \"runtime\": {\n      \"state\": \"ready\",\n      \"reachable\": true,\n      \"connectionState\": \"connected\",\n      \"runtimeId\": \"743782a5-5681-47db-a408-df609a7f19a5\",\n      \"appVersion\": \"1.4.241\",\n      \"remoteUpdateSupport\": {\n        \"installMode\": \"supervised-headless-serve\",\n        \"automatic\": true,\n        \"reason\": \"available\"\n      },\n      \"capabilities\": [\n        \"agent-session.saved-resume-origin.v1\",\n        \"runtime.status.compat.v1\",\n        \"runtime.environments.v1\",\n        \"remote-runtime.shared-control.v1\",\n        \"runtime.automatic-work.v1\",\n        \"updater.remote-control.v1\",\n        \"managed-runtime.install.v1\",\n        \"managed-runtime.remove.v1\",\n        \"runtime-source-fence.v1\",\n        \"ssh.target-management.v1\",\n        \"pairing.device-key.v1\",\n        \"pairing.device-key-ephemeral.v1\",\n        \"mobile.tasks.v1\",\n        \"notifications.remote-push.v1\",\n        \"notifications.desktop-presence.v1\",\n        \"pairing.delegated-mobile-devices.v1\",\n        \"mobile.desktop-relay.v1\",\n        \"orcad.stale-lock-reclaim.v1\",\n        \"orcad.terminal-census.v1\",\n        \"orcad.migration-catalog.v1\",\n        \"orcad.migration-catalog-abort-by-reference.v1\",\n        \"accounts.host-launch-env.v1\",\n        \"orchestration.federation.v1\",\n        \"orchestration.federation-control-mail.v1\",\n        \"orchestration.federation-lifecycle-settlement.v1\",\n        \"orchestration.worker-stop-verdict.v1\",\n        \"orchestration.worker-launch-preferences.v1\",\n        \"orchestration.federation-structured-read.v1\",\n        \"orchestration.federation-fleet-snapshot.v1\",\n        \"orchestration.federation-release-archive.v1\",\n        \"orchestration.contract.v1\",\n        \"settings.agent-launch.v1\",\n        \"settings.agent-launch.auto-permissions.v1\",\n        \"settings.agent-launch.native-chat-permissions.v1\",\n        \"settings.agent-permission.v1\",\n        \"agent.launch.v2\",\n        \"agent.launch.replay.v1\",\n        \"agent.launch.replay-required.v1\",\n        \"agent.launch.prompt-carry.v1\",\n        \"agent.launch.prompt-unconfirmed.v1\",\n        \"agent.launch.placement.v1\",\n        \"agent.launch.local-presentation.v1\",\n        \"agent.launch.create-folder-workspace.v1\",\n        \"agent.launch.surface.v1\",\n        \"agent-session.conversation-stop.v1\",\n        \"agent-session.prompt-cancel.v1\",\n        \"agent-session.repeated-stop.v1\",\n        \"agent-session.send-usage-limit-continuation.v1\",\n        \"agentSession.create.tab-id.v1\",\n        \"agentSession.create.message.v1\",\n        \"agentSession.create.tab-placement.v1\",\n        \"agent-session.send-options.v1\",\n        \"agent-session.account-env.v1\",\n        \"agent-session.send-skills.v1\",\n        \"agent-session.session-boundary.v1\",\n        \"agent-session.host-authority.v1\",\n        \"agent-session.omp-resume-path.v1\",\n        \"agent-session.keyboard.v1\",\n        \"agent-session.structured.v1\",\n        \"agent-session.current-requests.v1\",\n        \"agent-session.structured.client-launch-mode.v1\",\n        \"agent-session.pending-send-result.v1\",\n        \"agent-session.accepted-send.v1\",\n        \"agent-session.send-answers-proof.v1\",\n        \"agent-session.queued-commands.v1\",\n        \"agent-session.queued-message-edit.v1\",\n        \"agent-session.queued-message-image-edit.v1\",\n        \"agent-session.continue-interrupted.v1\",\n        \"agent-session.permission-modes.v1\",\n        \"agent-session.permission-own.v1\",\n        \"agent-session.coherent-model-catalog.v1\",\n        \"agent-session.structured.hold.v1\",\n        \"agent-session.structured.reveal.v1\",\n        \"agent-session.structured.registered-agents.v1\",\n        \"agent-session.structured.pi-dialogs.v1\",\n        \"agent-session.structured.resume-history.v1\",\n        \"agent-session.structured.cli-source.v1\",\n        \"agent-session.model-catalog.saved-only.v1\",\n        \"agent-session.structured.availability.v1\",\n        \"agent-session.structured.regenerate-name.v1\",\n        \"agent-session.structured.rename.v1\",\n        \"agent-session.status-feed.v1\",\n        \"agent-session.turn-completion.v1\",\n        \"agent-session.attention-ack.v1\",\n        \"agent-session.workspace-sleep-mark.v1\",\n        \"agent-session.rewind.v1\",\n        \"agent-session.rewind-recovery.v1\",\n        \"agent-session.conversation-outline.v1\",\n        \"agent-session.item-detail.v1\",\n        \"agent-session.background-task-stop.v1\",\n        \"agent-session.question-answers.v1\",\n        \"agent-session.attachments.v1\",\n        \"agent-session.attachments.phone.v1\",\n        \"agent-session.turn-item.v1\",\n        \"agent-session.background-task-row-stop.v1\",\n        \"agent-session.background-task-child-views.v1\",\n        \"agent-session.kimi-resume.v1\",\n        \"agent-session.cursor-resume.v1\",\n        \"agent-session.opencode2-resume.v1\",\n        \"agent-session.muse-resume.v1\",\n        \"agent-session.dsh-resume.v1\",\n        \"agent-session.kiro-resume.v1\",\n        \"agent-session.hermes-resume.v1\",\n        \"agent-session.qoder-resume.v1\",\n        \"agent-session.qoder-cn-resume.v1\",\n        \"agent-session.qwen-code-resume.v1\",\n        \"agent-session.codebuddy-resume.v1\",\n        \"agent-session.zcode-resume.v1\",\n        \"accounts.import-host-credentials.v1\",\n        \"accounts.claude-sign-in.v1\",\n        \"accounts.antigravity-native.v1\",\n        \"accounts.antigravity-chat-sign-in.v1\",\n        \"accounts.managed-data-profiles.v1\",\n        \"accounts.codex-reset-credit.v1\",\n        \"accounts.usage-credentials.v1\",\n        \"accounts.host-sign-in.v1\",\n        \"skills.install.v1\",\n        \"skills.install.bundle.v1\",\n        \"skills.install-cancel.v1\",\n        \"skills.install-progress.v1\",\n        \"skills.install-result.v2\",\n        \"skills.upload.v1\",\n        \"skills.manage.v1\",\n        \"skills.install-providers.v1\",\n        \"skills.delete.v1\",\n        \"skills.bundled-orca.v1\",\n        \"automation.list-host-scope.v1\",\n        \"automation.owner-fencing.v1\",\n        \"automation.create-idempotency.v1\",\n        \"automations.extra-agent-args.v1\",\n        \"project-host-setup.v1\",\n        \"project-host-setup.host-target.v1\",\n        \"workspace-run-context.v1\",\n        \"worktree.provisioned-root.v1\",\n        \"worktree.linked-work-item-context.v1\",\n        \"worktree.linked-items.v1\",\n        \"worktree.linked-items-delta.v1\",\n        \"worktree.github-pr-suppression.v1\",\n        \"repo.search-qualified-refs.v1\",\n        \"folder-workspace.path-status.v1\",\n        \"worktree.create-idempotency.v1\",\n        \"worktree.archive-failure-blocking.v1\",\n        \"worktree.visibility-defaults.v1\",\n        \"worktree.visibility-source-defaults.v1\",\n        \"preflight.workspace-scoped.v1\",\n        \"preflight.other-runtime-refusal.v1\",\n        \"workspace-ports.v1\",\n        \"workspace-ports.host-scoped.v1\",\n        \"session.tabs.qoderOwnedCreate.v1\",\n        \"session-tabs.close-intent.v1\",\n        \"session-tabs.close-force.v1\",\n        \"session-tabs.close-replay-reason.v1\",\n        \"session-tabs.authoritative-inventory.v1\",\n        \"session-tabs.split-group-placement.v1\",\n        \"session.tabs.chat-fork-cli.v1\",\n        \"session-tabs.empty-worktree-answer.v1\",\n        \"session-tabs.create-terminal-shell.v1\",\n        \"terminal.binary-stream.v1\",\n        \"terminal.program-status.v1\",\n        \"terminal.multiplex.v1\",\n        \"terminal.query-reply-input.v1\",\n        \"terminal.prompt-delivery.v1\",\n        \"terminal.paired-parking.v1\",\n        \"agent-status.turn-ended-at.v1\",\n        \"terminal.spawn-intent.v1\",\n        \"terminal.quick-commands.v1\",\n        \"terminal.quick-commands.long-prompts.v1\",\n        \"terminal.quick-commands.large-lists.v1\",\n        \"terminal.create-idempotency.v2\",\n        \"terminal.create-shell-selection.v1\",\n        \"terminal.split-retry.v1\",\n        \"files.pathsExist\",\n        \"files.resolve-terminal-path.cross-workspace.v1\",\n        \"files.readDocPreview\",\n        \"files.write.disk-precondition.v1\",\n        \"files.write.identical-noop.v1\",\n        \"files.mutation-ownership.v1\",\n        \"browser.screencast.v1\",\n        \"browser.tab-create-known-id.v1\",\n        \"browser.clientHost.v1\",\n        \"browser.clientHost.pageMetadata.v1\",\n        \"browser.clientHost.automation.v1\",\n        \"browser.clientHost.fileChannel.v1\",\n        \"network.browserTunnel.v1\",\n        \"network.browserTunnel.executionHosts.v1\",\n        \"git.antigravity-configured-model.v1\",\n        \"github.markPRReadyForReview\",\n        \"gitlab.updateMR.readyForReview.v1\",\n        \"task-source-context.v1\",\n        \"linear.issue-attribute-filter.v1\",\n        \"jira.transition-fields.v1\",\n        \"jira.agent-access.v1\",\n        \"jira.current-sprint.v1\",\n        \"jira.user-fields.v1\",\n        \"jira.attachment-images.v1\",\n        \"jira.issue-summary-generation.v1\",\n        \"jira.saved-filter-state.v1\",\n        \"jira.issue-list-statuses.v1\",\n        \"aiVault.v1\",\n        \"aiVault.session-titles.v1\",\n        \"ai-vault.chat-fork-source.v1\",\n        \"browser.headless.v1\",\n        \"browser.identity.v1\",\n        \"orcad.migration-blob.v1\",\n        \"orcad.migration-blob.terminal-restore-hints.v1\",\n        \"orcad.migration-blob.shell-history.v1\",\n        \"browser.certificate-trust.v1\",\n        \"mobileWeb.bundle.v1\"\n      ]\n    },\n    \"graph\": {\n      \"state\": \"ready\"\n    }\n  },\n  \"_meta\": {\n    \"runtimeId\": \"743782a5-5681-47db-a408-df609a7f19a5\"\n  }\n}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "ps",
+      "-p",
+      "43441",
+      "-o",
+      "args="
+    ],
+    "environment": {},
+    "exit": 0,
+    "stdout": "/Applications/Orca.app/Contents/MacOS/Orca --user-data-dir=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/o --serve --serve-json --serve-port 18746 --serve-no-pairing\n",
+    "stderr": ""
+  },
+  {
+    "observation": "Sent SIGTERM only to isolated Orca pid 43441, after verifying its --user-data-dir matches this worktree."
+  },
+  {
+    "command": [
+      "bash",
+      "bin/fm-lab-home.sh",
+      "create",
+      "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/offline-home"
+    ],
+    "environment": {},
+    "exit": 0,
+    "stdout": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/offline-home\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "bash",
+      "-c",
+      ". bin/backends/orca.sh; fm_backend_orca_host_boot_epoch"
+    ],
+    "environment": {},
+    "exit": 0,
+    "stdout": "1792904944",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "bash",
+      "bin/fm-control.sh",
+      "offline-claude",
+      "exit"
+    ],
+    "environment": {
+      "FM_HOME": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/offline-home"
+    },
+    "exit": 1,
+    "stdout": "",
+    "stderr": "fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/offline-home\nerror: task offline-claude's endpoint term_fm_lab_stale_offline reads 'unreadable', but Orca could not describe terminal term_fm_lab_stale_offline; exit will not claim an agent stopped at an address it cannot trust, nor send lifecycle input to one\n"
+  },
+  {
+    "command": [
+      "bash",
+      "bin/fm-control.sh",
+      "offline-droid",
+      "exit"
+    ],
+    "environment": {
+      "FM_HOME": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/offline-home"
+    },
+    "exit": 1,
+    "stdout": "",
+    "stderr": "fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/offline-home\nerror: task offline-droid's endpoint term_fm_lab_stale_offline reads 'unknown', but Orca could not describe terminal term_fm_lab_stale_offline; exit cannot prove the agent stopped\n"
+  },
+  {
+    "observation": "With the disposable runtime stopped, both Claude and Droid exits refuse despite pre-boot metadata. Neither claims endpoint-gone or changes the task record or saved copy."
+  }
+]

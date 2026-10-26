@@ -1,0 +1,30 @@
+{
+  "id": "efb4cc64-541f-427a-8c0d-06be7bbe0f50",
+  "ok": true,
+  "result": {
+    "repo": {
+      "id": "25b49253-e9cb-4660-853c-4221043e66c6",
+      "path": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-project",
+      "displayName": "orca-project",
+      "badgeColor": "#737373",
+      "addedAt": 1793036071386,
+      "kind": "git",
+      "externalWorktreeVisibilityLegacy": false,
+      "upstream": null,
+      "gitUsername": "",
+      "hookSettings": {
+        "mode": "auto",
+        "setupRunPolicy": "run-by-default",
+        "setupAgentStartupPolicy": "start-immediately",
+        "scripts": {
+          "setup": "",
+          "archive": ""
+        }
+      },
+      "externalWorktreeVisibility": "hide"
+    }
+  },
+  "_meta": {
+    "runtimeId": "743782a5-5681-47db-a408-df609a7f19a5"
+  }
+}

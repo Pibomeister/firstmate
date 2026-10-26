@@ -1,0 +1,71 @@
+[serve] using Electron serve: packaged macOS serve stays on Electron so paired clients can still update it (orcad has no app updater)
+[secrets] Secrets are unavailable for this run: this login has no default macOS keychain. Orca will not use the keychain until it restarts, so sealed settings such as a saved proxy URL are not applied. Start orca serve from a logged-in desktop session, or unlock the login keychain, to seal credentials.
+[secrets] The OS keychain is unavailable for this run (this login has no default macOS keychain), so secrets are stored unencrypted. Start orca serve from a logged-in desktop session, or unlock the login keychain, to seal them.
+[serve] orca CLI install: installed (/opt/homebrew/bin/orca)
+{"type":"orca_server_ready","schemaVersion":1,"runtimeId":"743782a5-5681-47db-a408-df609a7f19a5","endpoint":"ws://0.0.0.0:18746","boundEndpoint":"ws://0.0.0.0:18746","advertisedEndpoint":"ws://127.0.0.1:18746","managedWslCliReconciliation":"settled","pairing":{"available":false,"reason":"disabled_by_operator","guidance":"Restart without --no-pairing to create a client pairing offer."}}
+[updater] macos_installer_scheduling_configured {"processType":"Interactive"}
+[app-icon] failed to clear macOS dock icon: Error: Command failed: /usr/bin/osascript -e use framework "AppKit" -e use scripting additions -e set appPath to system attribute "ORCA_APP_BUNDLE_PATH" -e set ok to current application's NSWorkspace's sharedWorkspace()'s setIcon:(missing value) forFile:appPath options:0 -e if ok is false then error "Orca app icon could not be cleared"
+244:280: execution error: Orca app icon could not be cleared (-2700)
+
+    at genericNodeError (node:internal/errors:986:15)
+    at wrappedFn (node:internal/errors:540:14)
+    at ChildProcess.exithandler (node:child_process:417:12)
+    at ChildProcess.emit (node:events:514:28)
+    at maybeClose (node:internal/child_process:1172:16)
+    at ChildProcess._handle.onexit (node:internal/child_process:335:5) {
+  code: 1,
+  killed: false,
+  signal: null,
+  cmd: `/usr/bin/osascript -e use framework "AppKit" -e use scripting additions -e set appPath to system attribute "ORCA_APP_BUNDLE_PATH" -e set ok to current application's NSWorkspace's sharedWorkspace()'s setIcon:(missing value) forFile:appPath options:0 -e if ok is false then error "Orca app icon could not be cleared"`
+}
+[app-icon] failed to clear macOS dock icon metadata com.apple.ResourceFork: Error: Command failed: /usr/bin/xattr -d com.apple.ResourceFork /Applications/Orca.app
+xattr: [Errno 1] Operation not permitted: '/Applications/Orca.app'
+
+    at genericNodeError (node:internal/errors:986:15)
+    at wrappedFn (node:internal/errors:540:14)
+    at ChildProcess.exithandler (node:child_process:417:12)
+    at ChildProcess.emit (node:events:514:28)
+    at maybeClose (node:internal/child_process:1172:16)
+    at Socket.<anonymous> (node:internal/child_process:527:11)
+    at Socket.emit (node:events:514:28)
+    at Pipe.<anonymous> (node:net:362:12) {
+  code: 1,
+  killed: false,
+  signal: null,
+  cmd: '/usr/bin/xattr -d com.apple.ResourceFork /Applications/Orca.app'
+}
+[app-icon] failed to clear macOS dock icon metadata com.apple.FinderInfo: Error: Command failed: /usr/bin/xattr -d com.apple.FinderInfo /Applications/Orca.app
+xattr: [Errno 1] Operation not permitted: '/Applications/Orca.app'
+
+    at genericNodeError (node:internal/errors:986:15)
+    at wrappedFn (node:internal/errors:540:14)
+    at ChildProcess.exithandler (node:child_process:417:12)
+    at ChildProcess.emit (node:events:514:28)
+    at maybeClose (node:internal/child_process:1172:16)
+    at Socket.<anonymous> (node:internal/child_process:527:11)
+    at Socket.emit (node:events:514:28)
+    at Pipe.<anonymous> (node:net:362:12) {
+  code: 1,
+  killed: false,
+  signal: null,
+  cmd: '/usr/bin/xattr -d com.apple.FinderInfo /Applications/Orca.app'
+}
+[agent-state-rules] download failed: HTTP 404
+[updater] release feed fallback: current=1.4.241 includePrerelease=false → https://github.com/stablyai/orca/releases/latest/download
+[autoUpdater] Checking for update
+[autoUpdater] Generated new staging user ID: 71d8976d-0b21-5728-bfff-2da0976ceb90
+[autoUpdater] Update for version 1.4.241 is not available (latest version: 1.4.241, downgrade is disallowed).
+[pty:history] worktreeId=25b49253-e9cb-4660-853c-4221043e66c6::/Users/eduardopicazo/.... shell=zsh histFile=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/o/terminal-history/53f3f5289aa2de45/zsh_history fishSession=none
+[pty:history] worktreeId=25b49253-e9cb-4660-853c-4221043e66c6::/Users/eduardopicazo/.... shell=zsh histFile=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/o/terminal-history/53f3f5289aa2de45/zsh_history fishSession=none
+[pty:history] worktreeId=25b49253-e9cb-4660-853c-4221043e66c6::/Users/eduardopicazo/.... shell=zsh histFile=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/o/terminal-history/53f3f5289aa2de45/zsh_history fishSession=none
+[pty:history] worktreeId=25b49253-e9cb-4660-853c-4221043e66c6::/Users/eduardopicazo/.... shell=zsh histFile=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/o/terminal-history/6bcd728e4bc515e5/zsh_history fishSession=none
+[pty:history] worktreeId=25b49253-e9cb-4660-853c-4221043e66c6::/Users/eduardopicazo/.... shell=zsh histFile=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/o/terminal-history/6bcd728e4bc515e5/zsh_history fishSession=none
+[pty:history] worktreeId=25b49253-e9cb-4660-853c-4221043e66c6::/Users/eduardopicazo/.... shell=zsh histFile=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/o/terminal-history/6bcd728e4bc515e5/zsh_history fishSession=none
+[pty:history] worktreeId=25b49253-e9cb-4660-853c-4221043e66c6::/Users/eduardopicazo/.... shell=zsh histFile=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/o/terminal-history/6bcd728e4bc515e5/zsh_history fishSession=none
+[pty:history] worktreeId=25b49253-e9cb-4660-853c-4221043e66c6::/Users/eduardopicazo/.... shell=zsh histFile=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/o/terminal-history/6bcd728e4bc515e5/zsh_history fishSession=none
+[1026/114232.717345:ERROR:third_party/crashpad/crashpad/util/file/directory_reader_posix.cc:43] opendir /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/o/Crashpad/new: No such file or directory (2)
+[1026/114232.719323:ERROR:third_party/crashpad/crashpad/util/file/directory_reader_posix.cc:43] opendir /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/o/Crashpad/attachments: No such file or directory (2)
+[1026/114232.721340:ERROR:third_party/crashpad/crashpad/client/crash_report_database_mac.mm:823] Failed to enumerate reports in directory /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/o/Crashpad/pending: Error Domain=NSCocoaErrorDomain Code=260 "The folder “pending” doesn’t exist." UserInfo={NSUserStringVariant=(
+    Folder
+), NSFilePath=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/o/Crashpad/pending, NSURL=file:///Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/o/Crashpad/pending, NSUnderlyingError=0x11800050570 {Error Domain=NSOSStatusErrorDomain Code=-43 "fnfErr: File not found"}}
+[1026/114232.737706:ERROR:third_party/crashpad/crashpad/client/prune_crash_reports.cc:36] PruneCrashReportDatabase: Failed to get pending reports

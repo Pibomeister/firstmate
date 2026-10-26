@@ -1,0 +1,23 @@
+{
+  "id": "12c06451-ad76-4f60-aa05-6c637c408d30",
+  "ok": true,
+  "result": {
+    "terminal": {
+      "processId": 11369,
+      "handle": "term_bd71d300-54a8-4784-8ddf-d5c3711d3f22",
+      "tabId": "b1d78570-dc4f-479a-8734-aa72dea6c0a0",
+      "paneKey": "b1d78570-dc4f-479a-8734-aa72dea6c0a0:a9b7b598-85d2-4f45-8eed-15c2197f883d",
+      "ptyId": "25b49253-e9cb-4660-853c-4221043e66c6::/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-project@@521d94aa",
+      "worktreeId": "25b49253-e9cb-4660-853c-4221043e66c6::/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-project",
+      "title": null,
+      "executionHostId": "local",
+      "incarnationId": "0e12670c-4838-44be-a79d-228311b70206",
+      "hostPlatform": "darwin",
+      "surface": "background",
+      "warning": "Terminal term_bd71d300-54a8-4784-8ddf-d5c3711d3f22 is running, but Orca could not make it discoverable. Run `orca terminal focus --terminal term_bd71d300-54a8-4784-8ddf-d5c3711d3f22` to reveal and focus it."
+    }
+  },
+  "_meta": {
+    "runtimeId": "743782a5-5681-47db-a408-df609a7f19a5"
+  }
+}

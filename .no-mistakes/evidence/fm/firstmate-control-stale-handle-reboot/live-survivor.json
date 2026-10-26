@@ -1,0 +1,114 @@
+[
+  {
+    "command": [
+      "bash",
+      "bin/fm-lab-home.sh",
+      "create",
+      "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/survivor-home"
+    ],
+    "environment": {},
+    "exit": 0,
+    "stdout": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/survivor-home\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "orca",
+      "terminal",
+      "create",
+      "--worktree",
+      "id:25b49253-e9cb-4660-853c-4221043e66c6::/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-project",
+      "--command",
+      "stty rows 30 cols 100; exec env HOME=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-user-home CODEX_HOME=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/codex-home TERM=xterm-256color /opt/homebrew/bin/codex --no-alt-screen",
+      "--json"
+    ],
+    "environment": {},
+    "exit": 0,
+    "stdout": "{\n  \"id\": \"12c06451-ad76-4f60-aa05-6c637c408d30\",\n  \"ok\": true,\n  \"result\": {\n    \"terminal\": {\n      \"processId\": 11369,\n      \"handle\": \"term_bd71d300-54a8-4784-8ddf-d5c3711d3f22\",\n      \"tabId\": \"b1d78570-dc4f-479a-8734-aa72dea6c0a0\",\n      \"paneKey\": \"b1d78570-dc4f-479a-8734-aa72dea6c0a0:a9b7b598-85d2-4f45-8eed-15c2197f883d\",\n      \"ptyId\": \"25b49253-e9cb-4660-853c-4221043e66c6::/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-project@@521d94aa\",\n      \"worktreeId\": \"25b49253-e9cb-4660-853c-4221043e66c6::/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-project\",\n      \"title\": null,\n      \"executionHostId\": \"local\",\n      \"incarnationId\": \"0e12670c-4838-44be-a79d-228311b70206\",\n      \"hostPlatform\": \"darwin\",\n      \"surface\": \"background\",\n      \"warning\": \"Terminal term_bd71d300-54a8-4784-8ddf-d5c3711d3f22 is running, but Orca could not make it discoverable. Run `orca terminal focus --terminal term_bd71d300-54a8-4784-8ddf-d5c3711d3f22` to reveal and focus it.\"\n    }\n  },\n  \"_meta\": {\n    \"runtimeId\": \"743782a5-5681-47db-a408-df609a7f19a5\"\n  }\n}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "orca",
+      "terminal",
+      "show",
+      "--terminal",
+      "term_bd71d300-54a8-4784-8ddf-d5c3711d3f22",
+      "--json"
+    ],
+    "environment": {},
+    "exit": 0,
+    "stdout": "{\n  \"id\": \"e3292097-b349-497b-9746-497b68cc2695\",\n  \"ok\": true,\n  \"result\": {\n    \"terminal\": {\n      \"handle\": \"term_bd71d300-54a8-4784-8ddf-d5c3711d3f22\",\n      \"ptyId\": \"25b49253-e9cb-4660-853c-4221043e66c6::/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-project@@521d94aa\",\n      \"incarnationId\": \"0e12670c-4838-44be-a79d-228311b70206\",\n      \"orphaned\": false,\n      \"worktreeId\": \"25b49253-e9cb-4660-853c-4221043e66c6::/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-project\",\n      \"worktreePath\": \"/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-project\",\n      \"branch\": \"refs/heads/main\",\n      \"tabId\": \"b1d78570-dc4f-479a-8734-aa72dea6c0a0\",\n      \"leafId\": \"a9b7b598-85d2-4f45-8eed-15c2197f883d\",\n      \"title\": null,\n      \"connected\": true,\n      \"writable\": true,\n      \"lastOutputAt\": 1793036189032,\n      \"preview\": \"odexaspartofyourpaidplanorconnectanAPIkeyforusage-basedbilling> 1. Sign in with ChatGPT     Usage included with Plus, Pro, Business, and Enterprise plans2.SigninwithDeviceCode     Sign in from another device with a one-time code3.ProvideyourownAPIkey     Pay for what you use  Press enter to continue\",\n      \"executionHostId\": \"local\",\n      \"paneRuntimeId\": -1,\n      \"rendererGraphEpoch\": 0,\n      \"agentWait\": {\n        \"source\": \"prompt-text\",\n        \"reason\": \"agent-interactive-prompt\",\n        \"since\": 1793036189032\n      }\n    }\n  },\n  \"_meta\": {\n    \"runtimeId\": \"743782a5-5681-47db-a408-df609a7f19a5\"\n  }\n}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "orca",
+      "terminal",
+      "read",
+      "--terminal",
+      "term_bd71d300-54a8-4784-8ddf-d5c3711d3f22",
+      "--json"
+    ],
+    "environment": {},
+    "exit": 0,
+    "stdout": "{\n  \"id\": \"55fa8cee-9e75-4e86-b913-8d9ce0ae0408\",\n  \"ok\": true,\n  \"result\": {\n    \"terminal\": {\n      \"handle\": \"term_bd71d300-54a8-4784-8ddf-d5c3711d3f22\",\n      \"status\": \"running\",\n      \"tail\": [\n        \"\",\n        \"WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \\\"/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp\\\" (codex_home: AbsolutePathBuf(\\\"/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/codex-home\\\"))\",\n        \"\",\n        \"\",\n        \"\",\n        \"\",\n        \"\",\n        \"\",\n        \"\",\n        \"\",\n        \"WelcometoCodex,OpenAI'scommand-linecodingagentSigninwithChatGPTtouseCodexaspartofyourpaidplanorconnectanAPIkeyforusage-basedbilling> 1. Sign in with ChatGPT     Usage included with Plus, Pro, Business, and Enterprise plans2.SigninwithDeviceCode     Sign in from another device with a one-time code3.ProvideyourownAPIkey     Pay for what you use  Press enter to continue\"\n      ],\n      \"truncated\": false,\n      \"limited\": false,\n      \"oldestCursor\": \"0\",\n      \"nextCursor\": \"10\",\n      \"latestCursor\": \"10\",\n      \"returnedLineCount\": 11,\n      \"source\": \"stream\"\n    }\n  },\n  \"_meta\": {\n    \"runtimeId\": \"743782a5-5681-47db-a408-df609a7f19a5\"\n  }\n}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "bash",
+      "-c",
+      ". bin/backends/orca.sh; fm_backend_orca_host_boot_epoch"
+    ],
+    "environment": {},
+    "exit": 0,
+    "stdout": "1792904944",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "bash",
+      "bin/fm-control.sh",
+      "survivor-claude",
+      "exit"
+    ],
+    "environment": {
+      "FM_HOME": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/survivor-home"
+    },
+    "exit": 1,
+    "stdout": "",
+    "stderr": "fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/survivor-home\nerror: task survivor-claude's endpoint term_fm_lab_stale_survivor reads 'unreadable', but an agent process still runs in /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-project (11942 /opt/homebrew/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex,21020 /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/codex-home/packages/app-server-daemon/releases/0.163.0-aarch64-apple-darwin/bin/codex); exit will not claim an agent stopped at an address it cannot trust, nor send lifecycle input to one\n"
+  },
+  {
+    "command": [
+      "bash",
+      "bin/fm-control.sh",
+      "survivor-droid",
+      "exit"
+    ],
+    "environment": {
+      "FM_HOME": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/survivor-home"
+    },
+    "exit": 1,
+    "stdout": "",
+    "stderr": "fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/survivor-home\nerror: task survivor-droid's endpoint term_fm_lab_stale_survivor reads 'unknown', but an agent process still runs in /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-project (11942 /opt/homebrew/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex,21020 /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/codex-home/packages/app-server-daemon/releases/0.163.0-aarch64-apple-darwin/bin/codex); exit cannot prove the agent stopped\n"
+  },
+  {
+    "observation": "Actual Codex TUI remained in the isolated recorded worktree; both Claude and Droid stale-endpoint exit calls refused because the real process scan found it. No login or model request was submitted."
+  },
+  {
+    "command": [
+      "orca",
+      "terminal",
+      "close",
+      "--terminal",
+      "term_bd71d300-54a8-4784-8ddf-d5c3711d3f22",
+      "--json"
+    ],
+    "environment": {},
+    "exit": 0,
+    "stdout": "{\n  \"id\": \"e60e02fa-145c-478a-b0c0-28f71f279d8d\",\n  \"ok\": true,\n  \"result\": {\n    \"close\": {\n      \"handle\": \"term_bd71d300-54a8-4784-8ddf-d5c3711d3f22\",\n      \"tabId\": \"b1d78570-dc4f-479a-8734-aa72dea6c0a0\",\n      \"ptyKilled\": true\n    }\n  },\n  \"_meta\": {\n    \"runtimeId\": \"743782a5-5681-47db-a408-df609a7f19a5\"\n  }\n}\n",
+    "stderr": ""
+  }
+]

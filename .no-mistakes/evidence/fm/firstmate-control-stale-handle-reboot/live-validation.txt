@@ -1,0 +1,409 @@
+Live validation at ba5feb4a83ac4a14c1d0ac5fccfa5c3a2ef215fc
+Disposable Orca profile: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/o
+All runtime and fixture paths were inside the gate worktree.
+
+=== live-isolated ===
+$ orca terminal show --terminal term_fm_lab_stale_01M5WJ7HCFC7JBC37V8PH112BZ --json
+exit=1
+{
+  "id": "905f781f-99f0-4402-9571-ef8890c7d584",
+  "ok": false,
+  "error": {
+    "code": "terminal_handle_stale",
+    "message": "terminal_handle_stale",
+    "data": {
+      "nextSteps": [
+        "Terminal handles belong to the Orca server that issued them. If this handle came from a paired server (for example `orca terminal list --environment <server>`), pass the same --environment <server> to this command."
+      ]
+    }
+  },
+  "_meta": {
+    "runtimeId": "743782a5-5681-47db-a408-df609a7f19a5"
+  }
+}
+$ bash bin/fm-control.sh live-claude exit
+scenario environment: {"FM_HOME": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home"}
+exit=1
+
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home
+error: task live-claude's endpoint term_fm_lab_stale_01M5WJ7HCFC7JBC37V8PH112BZ reads 'unreadable', but Orca no longer recognizes terminal term_fm_lab_stale_01M5WJ7HCFC7JBC37V8PH112BZ, but the host boot time 1792904944 does not postdate its recorded evidence 1792908544, so its agent cannot be proven to have died with the old boot; exit will not claim an agent stopped at an address it cannot trust, nor send lifecycle input to one
+$ bash bin/fm-control.sh live-claude exit
+scenario environment: {"FM_HOME": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home", "FM_ORCA_BOOT_EPOCH": "1892904943"}
+exit=1
+
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home
+error: task live-claude's endpoint term_fm_lab_stale_01M5WJ7HCFC7JBC37V8PH112BZ reads 'unreadable', but Orca no longer recognizes terminal term_fm_lab_stale_01M5WJ7HCFC7JBC37V8PH112BZ, but the host boot time 1792904944 does not postdate its recorded evidence 1792908544, so its agent cannot be proven to have died with the old boot; exit will not claim an agent stopped at an address it cannot trust, nor send lifecycle input to one
+$ bash bin/fm-control.sh live-claude exit
+scenario environment: {"FM_HOME": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home"}
+exit=1
+
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home
+error: task live-claude's endpoint term_fm_lab_stale_01M5WJ7HCFC7JBC37V8PH112BZ reads 'unreadable', but Orca no longer recognizes terminal term_fm_lab_stale_01M5WJ7HCFC7JBC37V8PH112BZ, but the host boot time 1792904944 does not postdate its recorded evidence 1793035977, so its agent cannot be proven to have died with the old boot; exit will not claim an agent stopped at an address it cannot trust, nor send lifecycle input to one
+$ bash bin/fm-control.sh live-droid exit
+scenario environment: {"FM_HOME": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home"}
+exit=1
+
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home
+error: task live-droid's endpoint term_fm_lab_stale_01M5WJ7HCFC7JBC37V8PH112BZ reads 'unknown', but Orca no longer recognizes terminal term_fm_lab_stale_01M5WJ7HCFC7JBC37V8PH112BZ, but the host boot time 1792904944 does not postdate its recorded evidence 1792908544, so its agent cannot be proven to have died with the old boot; exit cannot prove the agent stopped
+$ bash bin/fm-control.sh live-droid exit
+scenario environment: {"FM_HOME": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home", "FM_ORCA_BOOT_EPOCH": "1892904943"}
+exit=1
+
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home
+error: task live-droid's endpoint term_fm_lab_stale_01M5WJ7HCFC7JBC37V8PH112BZ reads 'unknown', but Orca no longer recognizes terminal term_fm_lab_stale_01M5WJ7HCFC7JBC37V8PH112BZ, but the host boot time 1792904944 does not postdate its recorded evidence 1792908544, so its agent cannot be proven to have died with the old boot; exit cannot prove the agent stopped
+$ bash bin/fm-control.sh live-droid exit
+scenario environment: {"FM_HOME": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home"}
+exit=1
+
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home
+error: task live-droid's endpoint term_fm_lab_stale_01M5WJ7HCFC7JBC37V8PH112BZ reads 'unknown', but Orca no longer recognizes terminal term_fm_lab_stale_01M5WJ7HCFC7JBC37V8PH112BZ, but the host boot time 1792904944 does not postdate its recorded evidence 1793035979, so its agent cannot be proven to have died with the old boot; exit cannot prove the agent stopped
+$ bash bin/fm-control.sh live-claude exit
+scenario environment: {"FM_HOME": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home"}
+exit=0
+endpoint-gone live-claude harness=claude backend=orca endpoint=term_fm_lab_stale_01M5WJ7HCFC7JBC37V8PH112BZ worktree=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/preserved-copy
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home
+$ bash bin/fm-control.sh live-droid exit
+scenario environment: {"FM_HOME": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home"}
+exit=0
+endpoint-gone live-droid harness=droid backend=orca endpoint=term_fm_lab_stale_01M5WJ7HCFC7JBC37V8PH112BZ worktree=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/preserved-copy
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home
+Both Claude and Droid exit refused current-boot records; a forged boot environment value did not change either verdict; mtime fallback refused; task metadata and uncommitted task copy survived. Exact nonzero Orca stale response decoded successfully. Both Claude and Droid pre-boot records reported endpoint-gone without a SessionEnd marker, using real kernel boot and isolated Orca sweep, and preserved metadata and copy.
+
+=== live-survivor ===
+$ orca terminal show --terminal term_bd71d300-54a8-4784-8ddf-d5c3711d3f22 --json
+exit=0
+{
+  "id": "e3292097-b349-497b-9746-497b68cc2695",
+  "ok": true,
+  "result": {
+    "terminal": {
+      "handle": "term_bd71d300-54a8-4784-8ddf-d5c3711d3f22",
+      "ptyId": "25b49253-e9cb-4660-853c-4221043e66c6::/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-project@@521d94aa",
+      "incarnationId": "0e12670c-4838-44be-a79d-228311b70206",
+      "orphaned": false,
+      "worktreeId": "25b49253-e9cb-4660-853c-4221043e66c6::/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-project",
+      "worktreePath": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-project",
+      "branch": "refs/heads/main",
+      "tabId": "b1d78570-dc4f-479a-8734-aa72dea6c0a0",
+      "leafId": "a9b7b598-85d2-4f45-8eed-15c2197f883d",
+      "title": null,
+      "connected": true,
+      "writable": true,
+      "lastOutputAt": 1793036189032,
+      "preview": "odexaspartofyourpaidplanorconnectanAPIkeyforusage-basedbilling> 1. Sign in with ChatGPT     Usage included with Plus, Pro, Business, and Enterprise plans2.SigninwithDeviceCode     Sign in from another device with a one-time code3.ProvideyourownAPIkey     Pay for what you use  Press enter to continue",
+      "executionHostId": "local",
+      "paneRuntimeId": -1,
+      "rendererGraphEpoch": 0,
+      "agentWait": {
+        "source": "prompt-text",
+        "reason": "agent-interactive-prompt",
+        "since": 1793036189032
+      }
+    }
+  },
+  "_meta": {
+    "runtimeId": "743782a5-5681-47db-a408-df609a7f19a5"
+  }
+}
+$ orca terminal read --terminal term_bd71d300-54a8-4784-8ddf-d5c3711d3f22 --json
+exit=0
+{
+  "id": "55fa8cee-9e75-4e86-b913-8d9ce0ae0408",
+  "ok": true,
+  "result": {
+    "terminal": {
+      "handle": "term_bd71d300-54a8-4784-8ddf-d5c3711d3f22",
+      "status": "running",
+      "tail": [
+        "",
+        "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp\" (codex_home: AbsolutePathBuf(\"/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/codex-home\"))",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "WelcometoCodex,OpenAI'scommand-linecodingagentSigninwithChatGPTtouseCodexaspartofyourpaidplanorconnectanAPIkeyforusage-basedbilling> 1. Sign in with ChatGPT     Usage included with Plus, Pro, Business, and Enterprise plans2.SigninwithDeviceCode     Sign in from another device with a one-time code3.ProvideyourownAPIkey     Pay for what you use  Press enter to continue"
+      ],
+      "truncated": false,
+      "limited": false,
+      "oldestCursor": "0",
+      "nextCursor": "10",
+      "latestCursor": "10",
+      "returnedLineCount": 11,
+      "source": "stream"
+    }
+  },
+  "_meta": {
+    "runtimeId": "743782a5-5681-47db-a408-df609a7f19a5"
+  }
+}
+$ bash bin/fm-control.sh survivor-claude exit
+scenario environment: {"FM_HOME": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/survivor-home"}
+exit=1
+
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/survivor-home
+error: task survivor-claude's endpoint term_fm_lab_stale_survivor reads 'unreadable', but an agent process still runs in /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-project (11942 /opt/homebrew/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex,21020 /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/codex-home/packages/app-server-daemon/releases/0.163.0-aarch64-apple-darwin/bin/codex); exit will not claim an agent stopped at an address it cannot trust, nor send lifecycle input to one
+$ bash bin/fm-control.sh survivor-droid exit
+scenario environment: {"FM_HOME": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/survivor-home"}
+exit=1
+
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/survivor-home
+error: task survivor-droid's endpoint term_fm_lab_stale_survivor reads 'unknown', but an agent process still runs in /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-project (11942 /opt/homebrew/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex,21020 /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/codex-home/packages/app-server-daemon/releases/0.163.0-aarch64-apple-darwin/bin/codex); exit cannot prove the agent stopped
+Actual Codex TUI remained in the isolated recorded worktree; both Claude and Droid stale-endpoint exit calls refused because the real process scan found it. No login or model request was submitted.
+
+=== live-rebind ===
+$ bash bin/fm-spawn.sh rebind-codex --relaunch --harness codex
+scenario environment: {"FM_HOME": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/rebind-home", "TMUX": "/tmp/fml.FDeLpD/tmux-501/default,0,0"}
+exit=0
+spawned rebind-codex harness=codex kind=scout window=fm-rebind-codex worktree=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-workers/orca-project/fm-lab-rebind
+Persisted task record: {"persisted_metadata": {"window": "fm-rebind-codex", "endpoint_task_id": "rebind-codex", "worktree": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-workers/orca-project/fm-lab-rebind", "project": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-project", "harness": "codex", "kind": "scout", "tasktmp": "/tmp/fm-rebind-codex", "model": "default", "effort": "default", "spawn_gen": "s1793036344.85606.3158", "backend": "orca", "orca_worktree_id": "25b49253-e9cb-4660-853c-4221043e66c6::/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-workers/orca-project/fm-lab-rebind", "terminal": "term_190dd9d2-18a5-4b55-836a-30613d61ecfb"}, "preserved_copy": "uncommitted task survives endpoint replacement\n"}
+$ orca terminal show --terminal term_190dd9d2-18a5-4b55-836a-30613d61ecfb --json
+exit=0
+{
+  "id": "c0048ff5-d373-46d3-ac04-63b1baeea1d6",
+  "ok": true,
+  "result": {
+    "terminal": {
+      "handle": "term_190dd9d2-18a5-4b55-836a-30613d61ecfb",
+      "ptyId": "25b49253-e9cb-4660-853c-4221043e66c6::/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-workers/orca-project/fm-lab-rebind@@3d3639ee",
+      "incarnationId": "6177b37a-3994-4394-9618-991ebf528bb1",
+      "orphaned": false,
+      "worktreeId": "25b49253-e9cb-4660-853c-4221043e66c6::/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-workers/orca-project/fm-lab-rebind",
+      "worktreePath": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-workers/orca-project/fm-lab-rebind",
+      "branch": "refs/heads/fm-lab-rebind",
+      "tabId": "6f031d46-2fa0-4b10-9180-b48ccdb4dc5a",
+      "leafId": "0c4a578a-418b-4918-a230-f771bce94c69",
+      "title": "fm-rebind-codex",
+      "connected": true,
+      "writable": true,
+      "lastOutputAt": 1793036348970,
+      "preview": "Usage included with Plus, Pro, Business, and Enterprise plans\n2. Sign in with Device Code\nSign in from another device with a one-time code\n3. Provide your own API key\nPay for what you use\nPress enter to continue",
+      "executionHostId": "local",
+      "paneRuntimeId": -1,
+      "rendererGraphEpoch": 0,
+      "agentWait": {
+        "source": "prompt-text",
+        "reason": "agent-interactive-prompt",
+        "since": 1793036348970
+      }
+    }
+  },
+  "_meta": {
+    "runtimeId": "743782a5-5681-47db-a408-df609a7f19a5"
+  }
+}
+$ orca terminal read --terminal term_190dd9d2-18a5-4b55-836a-30613d61ecfb --json
+exit=0
+{
+  "id": "8fe5a894-624d-4483-a2db-d6c6a5299e05",
+  "ok": true,
+  "result": {
+    "terminal": {
+      "handle": "term_190dd9d2-18a5-4b55-836a-30613d61ecfb",
+      "status": "running",
+      "tail": [
+        "  Welcome to Codex, OpenAI's command-line coding agent",
+        "  Sign in with ChatGPT to use Codex as part of your paid plan",
+        "  or connect an API key for usage-based billing",
+        "> 1. Sign in with ChatGPT",
+        "     Usage included with Plus, Pro, Business, and Enterprise plans",
+        "  2. Sign in with Device Code",
+        "     Sign in from another device with a one-time code",
+        "  3. Provide your own API key",
+        "     Pay for what you use",
+        "  Press enter to continue"
+      ],
+      "truncated": false,
+      "limited": false,
+      "oldestCursor": "0",
+      "nextCursor": "6",
+      "latestCursor": "6",
+      "returnedLineCount": 10,
+      "tailRows": [
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        }
+      ],
+      "source": "screen"
+    }
+  },
+  "_meta": {
+    "runtimeId": "743782a5-5681-47db-a408-df609a7f19a5"
+  }
+}
+$ bash bin/fm-spawn.sh rebind-droid --relaunch --harness codex
+scenario environment: {"FM_HOME": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/rebind-home", "TMUX": "/tmp/fml.FDeLpD/tmux-501/default,0,0"}
+exit=0
+spawned rebind-droid harness=codex kind=scout window=fm-rebind-droid worktree=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-workers/orca-project/fm-lab-rebind
+Persisted task record: {"persisted_metadata": {"window": "fm-rebind-droid", "endpoint_task_id": "rebind-droid", "worktree": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-workers/orca-project/fm-lab-rebind", "project": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-project", "harness": "codex", "kind": "scout", "tasktmp": "/tmp/fm-rebind-droid", "model": "default", "effort": "default", "spawn_gen": "s1793036356.96526.12183", "backend": "orca", "orca_worktree_id": "25b49253-e9cb-4660-853c-4221043e66c6::/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-workers/orca-project/fm-lab-rebind", "terminal": "term_169dd369-d9f9-4b07-8d0c-b56db3de19f7"}, "preserved_copy": "uncommitted task survives endpoint replacement\n"}
+$ orca terminal show --terminal term_169dd369-d9f9-4b07-8d0c-b56db3de19f7 --json
+exit=0
+{
+  "id": "5772c1c0-8966-43fa-bd24-a5602e3bc50f",
+  "ok": true,
+  "result": {
+    "terminal": {
+      "handle": "term_169dd369-d9f9-4b07-8d0c-b56db3de19f7",
+      "ptyId": "25b49253-e9cb-4660-853c-4221043e66c6::/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-workers/orca-project/fm-lab-rebind@@bb25973b",
+      "incarnationId": "93ca8b78-42f6-41c8-b0cc-46e8ff7a4d91",
+      "orphaned": false,
+      "worktreeId": "25b49253-e9cb-4660-853c-4221043e66c6::/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-workers/orca-project/fm-lab-rebind",
+      "worktreePath": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-workers/orca-project/fm-lab-rebind",
+      "branch": "refs/heads/fm-lab-rebind",
+      "tabId": "b3bace42-e226-4806-91c6-64b0129af778",
+      "leafId": "b7cdf8a8-8677-42cf-aae4-90a8810d5221",
+      "title": "fm-rebind-droid",
+      "connected": true,
+      "writable": true,
+      "lastOutputAt": 1793036361676,
+      "preview": "Usage included with Plus, Pro, Business, and Enterprise plans\n2. Sign in with Device Code\nSign in from another device with a one-time code\n3. Provide your own API key\nPay for what you use\nPress enter to continue",
+      "executionHostId": "local",
+      "paneRuntimeId": -1,
+      "rendererGraphEpoch": 0,
+      "agentWait": {
+        "source": "prompt-text",
+        "reason": "agent-interactive-prompt",
+        "since": 1793036361676
+      }
+    }
+  },
+  "_meta": {
+    "runtimeId": "743782a5-5681-47db-a408-df609a7f19a5"
+  }
+}
+$ orca terminal read --terminal term_169dd369-d9f9-4b07-8d0c-b56db3de19f7 --json
+exit=0
+{
+  "id": "40a0f471-6f90-496b-9341-c48794da875e",
+  "ok": true,
+  "result": {
+    "terminal": {
+      "handle": "term_169dd369-d9f9-4b07-8d0c-b56db3de19f7",
+      "status": "running",
+      "tail": [
+        "  Welcome to Codex, OpenAI's command-line coding agent",
+        "  Sign in with ChatGPT to use Codex as part of your paid plan",
+        "  or connect an API key for usage-based billing",
+        "> 1. Sign in with ChatGPT",
+        "     Usage included with Plus, Pro, Business, and Enterprise plans",
+        "  2. Sign in with Device Code",
+        "     Sign in from another device with a one-time code",
+        "  3. Provide your own API key",
+        "     Pay for what you use",
+        "  Press enter to continue"
+      ],
+      "truncated": false,
+      "limited": false,
+      "oldestCursor": "0",
+      "nextCursor": "6",
+      "latestCursor": "6",
+      "returnedLineCount": 10,
+      "tailRows": [
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        }
+      ],
+      "source": "screen"
+    }
+  },
+  "_meta": {
+    "runtimeId": "743782a5-5681-47db-a408-df609a7f19a5"
+  }
+}
+Both recorded Codex and Droid stale handles admitted a real replacement terminal in the same linked worktree. No current-generation Droid SessionEnd was present. The real replacement Codex CLI has no login in this disposable home; productive task resumption is not proven.
+
+=== live-unreachable ===
+Sent SIGTERM only to isolated Orca pid 43441, after verifying its --user-data-dir matches this worktree.
+$ bash bin/fm-control.sh offline-claude exit
+scenario environment: {"FM_HOME": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/offline-home"}
+exit=1
+
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/offline-home
+error: task offline-claude's endpoint term_fm_lab_stale_offline reads 'unreadable', but Orca could not describe terminal term_fm_lab_stale_offline; exit will not claim an agent stopped at an address it cannot trust, nor send lifecycle input to one
+$ bash bin/fm-control.sh offline-droid exit
+scenario environment: {"FM_HOME": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/offline-home"}
+exit=1
+
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/offline-home
+error: task offline-droid's endpoint term_fm_lab_stale_offline reads 'unknown', but Orca could not describe terminal term_fm_lab_stale_offline; exit cannot prove the agent stopped
+With the disposable runtime stopped, both Claude and Droid exits refuse despite pre-boot metadata. Neither claims endpoint-gone or changes the task record or saved copy.
+
+Targeted suites: fm-backend-orca, fm-control, fm-spawn-orca-worktree. Each exited 0. See targeted-tests.json and targeted-tests.log.
+Limitation: no authenticated model turn was attempted. Disposable Codex displayed sign-in. The machine normal login was not tested or declared unavailable.

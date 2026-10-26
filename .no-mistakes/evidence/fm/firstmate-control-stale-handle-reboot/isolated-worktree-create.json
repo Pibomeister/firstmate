@@ -1,0 +1,75 @@
+{
+  "id": "ca4433a1-b718-4a26-9d81-119c4b7a5218",
+  "ok": true,
+  "result": {
+    "worktree": {
+      "id": "25b49253-e9cb-4660-853c-4221043e66c6::/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-workers/orca-project/fm-lab-rebind",
+      "identity": {
+        "key": "wt2:local:97589322-3983-410a-aae8-31f699d5d325",
+        "executionHostId": "local",
+        "instanceId": "97589322-3983-410a-aae8-31f699d5d325"
+      },
+      "instanceId": "97589322-3983-410a-aae8-31f699d5d325",
+      "repoId": "25b49253-e9cb-4660-853c-4221043e66c6",
+      "projectId": "repo:25b49253-e9cb-4660-853c-4221043e66c6",
+      "hostId": "local",
+      "projectHostSetupId": "25b49253-e9cb-4660-853c-4221043e66c6",
+      "creatorProvenance": {
+        "kind": "host"
+      },
+      "path": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-workers/orca-project/fm-lab-rebind",
+      "head": "a329d5ba7c1bcb862fb2af320ce31847d6dd6eb4",
+      "branch": "refs/heads/fm-lab-rebind",
+      "isBare": false,
+      "isMainWorktree": false,
+      "displayName": "fm-lab-rebind",
+      "displayNameMode": "fixed",
+      "comment": "",
+      "linkedIssue": null,
+      "linkedPR": null,
+      "linkedLinearIssue": null,
+      "linkedLinearIssueWorkspaceId": null,
+      "linkedLinearIssueOrganizationUrlKey": null,
+      "linkedGitLabMR": null,
+      "linkedGitLabIssue": null,
+      "linkedBitbucketPR": null,
+      "linkedAzureDevOpsPR": null,
+      "linkedGiteaPR": null,
+      "linkedWorkItem": null,
+      "linkedTaskSourceContext": null,
+      "isArchived": false,
+      "isUnread": false,
+      "isPinned": false,
+      "sortOrder": 1793036210650,
+      "lastActivityAt": 1793036210650,
+      "createdAt": 1793036210650,
+      "cliProvenance": {
+        "kind": "created-by-cli",
+        "createdAt": 1793036210307
+      },
+      "baseRef": "main",
+      "workspaceStatus": "in-progress",
+      "parentWorktreeId": null,
+      "childWorktreeIds": [],
+      "lineage": null,
+      "workspaceLineage": null,
+      "git": {
+        "path": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-workers/orca-project/fm-lab-rebind",
+        "head": "a329d5ba7c1bcb862fb2af320ce31847d6dd6eb4",
+        "branch": "refs/heads/fm-lab-rebind",
+        "isBare": false,
+        "isMainWorktree": false
+      }
+    },
+    "lineage": null,
+    "workspaceLineage": null,
+    "warnings": [],
+    "catalogVersion": {
+      "epoch": "d58b332b-ddb0-42a9-a470-a069fcb99878",
+      "sequence": 5
+    }
+  },
+  "_meta": {
+    "runtimeId": "743782a5-5681-47db-a408-df609a7f19a5"
+  }
+}

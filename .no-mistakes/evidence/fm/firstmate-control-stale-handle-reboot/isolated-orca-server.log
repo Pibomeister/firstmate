@@ -1,0 +1,21 @@
+[serve] using Electron serve: packaged macOS serve stays on Electron so paired clients can still update it (orcad has no app updater)
+[secrets] Secrets are unavailable for this run: this login has no default macOS keychain. Orca will not use the keychain until it restarts, so sealed settings such as a saved proxy URL are not applied. Start orca serve from a logged-in desktop session, or unlock the login keychain, to seal credentials.
+[secrets] The OS keychain is unavailable for this run (this login has no default macOS keychain), so secrets are stored unencrypted. Start orca serve from a logged-in desktop session, or unlock the login keychain, to seal them.
+[runtime] Failed to start headless RPC transport: Error: listen EINVAL: invalid argument /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-profile/o-16989-c911.sock
+    at Server.setupListenHandle [as _listen2] (node:net:2368:21)
+    at listenInCluster (node:net:2499:12)
+    at Server.listen (node:net:2641:5)
+    at /Applications/Orca.app/Contents/Resources/app.asar/out/main/index.js:3155:72455
+    at new Promise (<anonymous>)
+    at MNr.start (/Applications/Orca.app/Contents/Resources/app.asar/out/main/index.js:3155:72415)
+    at WFr.start (/Applications/Orca.app/Contents/Resources/app.asar/out/main/index.js:3159:46795)
+    at SBr (/Applications/Orca.app/Contents/Resources/app.asar/out/main/index.js:3220:19661)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async wBr (/Applications/Orca.app/Contents/Resources/app.asar/out/main/index.js:3220:21262) {
+  code: 'EINVAL',
+  errno: -22,
+  syscall: 'listen',
+  address: '/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-profile/o-16989-c911.sock',
+  port: -1
+}
+[profile-state] Orca could not finish starting: listen EINVAL: invalid argument /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-profile/o-16989-c911.sock

@@ -1,0 +1,155 @@
+[
+  {
+    "command": [
+      "bash",
+      "bin/fm-lab-home.sh",
+      "create",
+      "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home"
+    ],
+    "environment": {},
+    "exit": 0,
+    "stdout": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "orca",
+      "terminal",
+      "show",
+      "--terminal",
+      "term_fm_lab_stale_01M5WJ7HCFC7JBC37V8PH112BZ",
+      "--json"
+    ],
+    "environment": {},
+    "exit": 1,
+    "stdout": "{\n  \"id\": \"d5c13527-361e-460c-a94c-53c036d5c20a\",\n  \"ok\": false,\n  \"error\": {\n    \"code\": \"terminal_handle_stale\",\n    \"message\": \"terminal_handle_stale\",\n    \"data\": {\n      \"nextSteps\": [\n        \"Terminal handles belong to the Orca server that issued them. If this handle came from a paired server (for example `orca terminal list --environment <server>`), pass the same --environment <server> to this command.\"\n      ]\n    }\n  },\n  \"_meta\": {\n    \"runtimeId\": \"23be64a9-9116-4f71-9af6-452a8f6649b7\"\n  }\n}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "bash",
+      "-c",
+      ". bin/backends/orca.sh; fm_backend_orca_terminal_facts \"$1\"",
+      "_",
+      "term_fm_lab_stale_01M5WJ7HCFC7JBC37V8PH112BZ"
+    ],
+    "environment": {},
+    "exit": 0,
+    "stdout": "stale\u001f\u001f\u001f\u001f\u001f",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "bash",
+      "-c",
+      ". bin/backends/orca.sh; fm_backend_orca_host_boot_epoch"
+    ],
+    "environment": {},
+    "exit": 0,
+    "stdout": "1792904944",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "bash",
+      "bin/fm-control.sh",
+      "live-claude",
+      "exit"
+    ],
+    "environment": {
+      "FM_HOME": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home"
+    },
+    "exit": 1,
+    "stdout": "",
+    "stderr": "fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home\nerror: task live-claude's endpoint term_fm_lab_stale_01M5WJ7HCFC7JBC37V8PH112BZ reads 'unreadable', but Orca no longer recognizes terminal term_fm_lab_stale_01M5WJ7HCFC7JBC37V8PH112BZ, but the host boot time 1792904944 does not postdate its recorded evidence 1792908544, so its agent cannot be proven to have died with the old boot; exit will not claim an agent stopped at an address it cannot trust, nor send lifecycle input to one\n"
+  },
+  {
+    "command": [
+      "bash",
+      "bin/fm-control.sh",
+      "live-claude",
+      "exit"
+    ],
+    "environment": {
+      "FM_HOME": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home",
+      "FM_ORCA_BOOT_EPOCH": "1892904943"
+    },
+    "exit": 1,
+    "stdout": "",
+    "stderr": "fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home\nerror: task live-claude's endpoint term_fm_lab_stale_01M5WJ7HCFC7JBC37V8PH112BZ reads 'unreadable', but Orca no longer recognizes terminal term_fm_lab_stale_01M5WJ7HCFC7JBC37V8PH112BZ, but the host boot time 1792904944 does not postdate its recorded evidence 1792908544, so its agent cannot be proven to have died with the old boot; exit will not claim an agent stopped at an address it cannot trust, nor send lifecycle input to one\n"
+  },
+  {
+    "command": [
+      "bash",
+      "bin/fm-control.sh",
+      "live-claude",
+      "exit"
+    ],
+    "environment": {
+      "FM_HOME": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home"
+    },
+    "exit": 1,
+    "stdout": "",
+    "stderr": "fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home\nerror: task live-claude's endpoint term_fm_lab_stale_01M5WJ7HCFC7JBC37V8PH112BZ reads 'unreadable', but Orca no longer recognizes terminal term_fm_lab_stale_01M5WJ7HCFC7JBC37V8PH112BZ, but the host boot time 1792904944 does not postdate its recorded evidence 1793035825, so its agent cannot be proven to have died with the old boot; exit will not claim an agent stopped at an address it cannot trust, nor send lifecycle input to one\n"
+  },
+  {
+    "command": [
+      "bash",
+      "bin/fm-control.sh",
+      "live-droid",
+      "exit"
+    ],
+    "environment": {
+      "FM_HOME": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home"
+    },
+    "exit": 1,
+    "stdout": "",
+    "stderr": "fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home\nerror: task live-droid's endpoint term_fm_lab_stale_01M5WJ7HCFC7JBC37V8PH112BZ reads 'unknown', but Orca no longer recognizes terminal term_fm_lab_stale_01M5WJ7HCFC7JBC37V8PH112BZ, but the host boot time 1792904944 does not postdate its recorded evidence 1792908544, so its agent cannot be proven to have died with the old boot; exit cannot prove the agent stopped\n"
+  },
+  {
+    "command": [
+      "bash",
+      "bin/fm-control.sh",
+      "live-droid",
+      "exit"
+    ],
+    "environment": {
+      "FM_HOME": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home",
+      "FM_ORCA_BOOT_EPOCH": "1892904943"
+    },
+    "exit": 1,
+    "stdout": "",
+    "stderr": "fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home\nerror: task live-droid's endpoint term_fm_lab_stale_01M5WJ7HCFC7JBC37V8PH112BZ reads 'unknown', but Orca no longer recognizes terminal term_fm_lab_stale_01M5WJ7HCFC7JBC37V8PH112BZ, but the host boot time 1792904944 does not postdate its recorded evidence 1792908544, so its agent cannot be proven to have died with the old boot; exit cannot prove the agent stopped\n"
+  },
+  {
+    "command": [
+      "bash",
+      "bin/fm-control.sh",
+      "live-droid",
+      "exit"
+    ],
+    "environment": {
+      "FM_HOME": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home"
+    },
+    "exit": 1,
+    "stdout": "",
+    "stderr": "fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home\nerror: task live-droid's endpoint term_fm_lab_stale_01M5WJ7HCFC7JBC37V8PH112BZ reads 'unknown', but Orca no longer recognizes terminal term_fm_lab_stale_01M5WJ7HCFC7JBC37V8PH112BZ, but the host boot time 1792904944 does not postdate its recorded evidence 1793035827, so its agent cannot be proven to have died with the old boot; exit cannot prove the agent stopped\n"
+  },
+  {
+    "command": [
+      "bash",
+      "-c",
+      ". bin/backends/orca.sh; fm_backend_orca_endpoint_absence_proof \"$1\" \"$2\"",
+      "_",
+      "term_fm_lab_stale_01M5WJ7HCFC7JBC37V8PH112BZ",
+      "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/preserved-copy"
+    ],
+    "environment": {},
+    "exit": 0,
+    "stdout": "unproven\tOrca no longer recognizes terminal term_fm_lab_stale_01M5WJ7HCFC7JBC37V8PH112BZ, so it cannot say whether that terminal exited",
+    "stderr": ""
+  },
+  {
+    "observation": "Both Claude and Droid exit refused current-boot records; a forged boot environment value did not change either verdict; mtime fallback refused; task metadata and uncommitted task copy survived. Exact nonzero Orca stale response decoded successfully."
+  }
+]
