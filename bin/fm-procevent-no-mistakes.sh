@@ -39,7 +39,7 @@ usage() { sed -n '2,/^set -u/{ /^#/s/^# \{0,1\}//p; }' "${BASH_SOURCE[0]}"; exit
 die() { printf 'error: %s\n' "$1" >&2; exit 1; }
 
 arm() {
-  local task=${1-} wt id
+  local task=${1-} wt id digest= listening=0 owner
   [ "$#" -eq 1 ] || usage
   case "$FM_HOME" in /*) ;; *) die 'FM_HOME must explicitly name the owning home' ;; esac
   STATE=$(fm_procevent_state_root_resolve "$STATE") || die 'owning state root is unavailable'
@@ -49,10 +49,28 @@ arm() {
   case "$wt" in /*) ;; *) die 'task worktree must be absolute' ;; esac
   [ -d "$wt" ] || die "task worktree is unavailable: $wt"
   command -v no-mistakes >/dev/null 2>&1 || die 'no-mistakes is not installed'
-  id="nm-$(printf '%s\n%s\n' "$STATE" "$task" | shasum -a 256 | cut -c1-32)"
+  if command -v shasum >/dev/null 2>&1; then
+    digest=$(printf '%s\n%s\n' "$STATE" "$task" | shasum -a 256 | cut -c1-32)
+  elif command -v sha256sum >/dev/null 2>&1; then
+    digest=$(printf '%s\n%s\n' "$STATE" "$task" | sha256sum | cut -c1-32)
+  fi
+  [ "${#digest}" -eq 32 ] || die 'cannot derive the source id: shasum or sha256sum is required'
+  id="nm-$digest"
   "$SCRIPT_DIR/fm-procevent.sh" register-task no-mistakes "$id" "$task" -- \
     "$SCRIPT_DIR/fm-procevent-no-mistakes.sh" listen "$wt" || return 1
-  "$SCRIPT_DIR/fm-procevent.sh" ensure-listening "$id" || return 1
+  "$SCRIPT_DIR/fm-procevent.sh" ensure-listening "$id" || listening=$?
+  if [ "$listening" -eq 3 ]; then
+    printf 'still-listening: %s\n' "$id"
+    return 0
+  fi
+  if [ "$listening" -ne 0 ]; then
+    owner=$("$SCRIPT_DIR/fm-procevent.sh" list 2>/dev/null | awk -v id="$id" '$1 == id { print $3; exit }')
+    case "$owner" in
+      live|orphaned|task:*/listening|task:*/round-open) ;;
+      *) "$SCRIPT_DIR/fm-procevent.sh" retire "$id" >/dev/null 2>&1 || true ;;
+    esac
+    return 1
+  fi
   printf 'armed: %s\n' "$id"
 }
 

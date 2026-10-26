@@ -421,8 +421,7 @@ That declared wait is true only while the run is still working: a run parked at 
 So once a run of yours exists, read \`no-mistakes axi status\` before you declare a wait on it or end a turn with one standing - one read to learn who the run is waiting on, never a poll to wait with.
 When it shows the run parked at a gate, do not declare a wait: answer the gate with \`no-mistakes axi respond\`, or escalate its ask-user findings under the first rule below and stop.
 A wait you do declare is the wait on the confirmed completion listener attached to the run, never a promise to check the run later.
-A killed or timed-out call is never evidence the daemon died: the daemon accepts your response immediately and runs the round in the background, so the call was only ever waiting for a read while the run kept working.
-Reattach and keep going rather than reporting the pipeline blocked; rule 7 owns the checks that decide when a pipeline block is real.
+Recovery after an error or unknown wake follows rule 7, which owns the checks that decide when a pipeline block is real; the next wait is re-arming the listener, never a blocking reattach.
 
 Two firstmate-specific rules layer on top of that guidance:
 - ask-user findings are never yours to answer: escalate to firstmate using rule 6's ask-user format and stop.
