@@ -41,7 +41,11 @@
 #                          human the wait is on. Only when neither absorb class
 #                          applies does the log's latest recognized status event decide:
 #                          terminal (captain-relevant) or non-terminal (no verb),
-#                          both surfaced at once. A provably-working stale past the
+#                          both surfaced at once. A terminal pane whose task is
+#                          held for the captain in the backlog, or whose newest
+#                          event is its worker's own open `blocked:` line, then
+#                          re-alarms on a new pane hash at most once per
+#                          FM_PAUSE_RESURFACE_SECS. A provably-working stale past the
 #                          wedge threshold also surfaces, with an "escalation N"
 #                          count in the reason; at FM_WEDGE_DEMAND_INSPECT_COUNT
 #                          consecutive escalations on the SAME pane, the reason
@@ -2596,6 +2600,31 @@ captain_call_stale_bound() {  # <window-key> <task>
   stale_wait_throttled "$key" "$STALE_WAIT_DECLARATION"
 }
 
+# The same bound for a task whose newest status event is its worker's own
+# still-open `blocked:` line (status_worker_wait_verb in fm-classify-lib.sh owns
+# which lines count and what ends them). That line already woke firstmate, and an
+# idle pane's ticking display re-enters the terminal path on every new hash, so
+# without this one blocker re-alarms on every tick. Bound to the status-log
+# signature, so any append starts a fresh window; a busy pane drops the throttle
+# (clear_worker_blocker_throttle), so a worker that works and goes idle again
+# alarms afresh.
+worker_blocker_stale_bound() {  # <window-key> <task>
+  local key=$1 task=$2 verb
+  STALE_WAIT_DECLARATION=
+  verb=$(status_worker_wait_verb "$STATE/$task.status") || return 1
+  [ "$verb" = blocked ] || return 1
+  STALE_WAIT_DECLARATION="worker-blocked:$(fm_wake_signal_sig "$STATE/$task.status" || true)"
+  stale_wait_throttled "$key" "$STALE_WAIT_DECLARATION"
+}
+
+clear_worker_blocker_throttle() {  # <window-key>
+  local throttle="$STATE/.paused-resurfaced-$1"
+  [ -e "$throttle" ] || return 0
+  case "$(cat "$throttle" 2>/dev/null || true)" in
+    worker-blocked:*) rm -f "$throttle" ;;
+  esac
+}
+
 # Surface a stale pane no classifier could resolve, so firstmate inspects it: it
 # may have finished through an interactive menu that wrote no status, be waiting on
 # a decision, or be wedged. pause_state_class deliberately answers `none` for a
@@ -4170,6 +4199,12 @@ EOF
               wedge_episode_end "$key" 0 1
               clear_write_tracking "$key"
               triage_log "absorbed stale (open captain call already surfaced for this status): $w"
+            elif [ -z "$STALE_WAIT_DECLARATION" ] && worker_blocker_stale_bound "$key" "$task"; then
+              printf '%s' "$h" > "$sf"
+              # Pre-cap shape kept the count here (keep-count contract).
+              wedge_episode_end "$key" 0 1
+              clear_write_tracking "$key"
+              triage_log "absorbed stale (worker's open blocker already surfaced for this status): $w"
             else
               stale_reason=$(stale_reason_naming_dialog "stale: $w" "$dialog")
               fm_wake_append stale "$w" "$stale_reason" || exit 1
@@ -4276,6 +4311,7 @@ EOF
         # A pane that leaves the stale path ends the wedge episode it was in, so
         # the cap that episode fired goes with the rest of its bookkeeping.
         paused_bound=1
+        [ "$busy_now" -ne 0 ] || clear_worker_blocker_throttle "$key"
         if [ "$busy_now" -eq 0 ] && busy_turn_over_age "$task"; then
           busy_turn_bound_check "$w" "$task" "$h" "$ssf" "$ewf" "$dialog" && paused_bound=0
         else
@@ -4294,6 +4330,7 @@ EOF
       printf '%s' "$h" > "$hf"
       echo 0 > "$cf"
       paused_bound=1
+      [ "$busy_now" -ne 0 ] || clear_worker_blocker_throttle "$key"
       if [ "$busy_now" -eq 0 ] && busy_turn_over_age "$task"; then
         busy_turn_bound_check "$w" "$task" "$h" "$ssf" "$ewf" "$dialog" && paused_bound=0
       else
