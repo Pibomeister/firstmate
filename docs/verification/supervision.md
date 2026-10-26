@@ -418,6 +418,25 @@ FM_TEST_SUMMARY total=2 failed=0 skipped_gate=0 duration_ms=43472
 ```
 
 No live unattended Claude background session ran on the verifying machine: that topology is documented by the real process listings in issues #3902, #2314, #3398, and #4066, and the coverage above is the structural predicate plus those executable fixtures, not a live pass.
+Codex session-lock anchoring was verified on 2026-10-26 on macOS.
+A live `codex exec` probe (codex-cli 0.163.0) showed a tool shell carrying `CODEX_THREAD_ID` and `CODEX_SESSION_ID`, equal, with the session's native Codex process as its parent, and live process listings showed supervision tool shells parented directly by the shared `codex app-server --listen unix:// --managed-daemon` process (pid 28512, alive since 2026-10-24) with four homes' locks recorded against that daemon pid.
+`bin/fm-session-lock-lib.sh` therefore never treats that daemon (or the `codex-code-mode-host` helper) as a session process: the ancestry walk stops at the daemon, a daemon-anchored lock classifies stale and is reclaimed through the ordinary `bin/fm-lock.sh` path, a direct TUI anchors on its TUI process, and a daemon-served session owns by its trusted thread id recorded in `state/.lock-session`.
+The coverage ran with:
+
+```sh
+bin/fm-test-run.sh tests/fm-session-lock-ancestry.test.sh
+```
+
+Observed output, bounded to the lines that coverage adds:
+
+```text
+ok - session-lock: a daemon-parented Codex tool shell anchors off the daemon and owns by thread id
+ok - session-lock: a direct Codex TUI launch anchors on the TUI, directly or through its code-mode host
+ok - session-lock: two Codex sessions sharing one daemon never cross-own each other's locks
+ok - session-lock: a Codex thread id is trusted only inside a Codex session, and only when its published ids agree
+ok - session-lock e2e: a daemon-parented Codex session acquires and keeps its lock by thread id, never on the daemon
+ok - session-lock e2e: a dead session's daemon-anchored lock is reclaimed by its replacement through fm-lock.sh
+```
 [`sessionstart-nudge.md`](../sessionstart-nudge.md#shared-wrapper-and-safety) owns the nudge wrapper's separate ancestry check and its redundant-nudge behavior after helper-chain recycling.
 `tests/fm-watch-arm.test.sh` runs real watcher and arm cycles against durable on-disk state to verify that a delivered reason survives until post-handling acknowledgement and stops replaying after acknowledgement, while an unrelated queue append cannot make a watcher cycle that delivered nothing look successful.
 The same suite ingests a keyed remote-secondmate parent reply through the real adapter, establishes the incremental OPEN DECISIONS cursor, interrupts supervision, and proves re-arm replays every unacknowledged queue row plus the still-open decision through the ordinary drain path.

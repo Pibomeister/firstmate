@@ -8,11 +8,18 @@
 # which is dead moments after it is written. For a Claude session that proves a
 # trusted session id the anchor is CLAUDE_PID, the model-loop process, so a
 # shared transient daemon or a front-end that outlives the session never keeps
-# a dead session's lock alive. Line 1 keeps its whole-line pid format because
-# every other reader takes the first line as the pid.
+# a dead session's lock alive. A Codex session anchors on its TUI process,
+# never on the shared Codex app-server daemon that parents its tool shells;
+# a lock the old code recorded against that daemon pid is stale by
+# construction and is reclaimed here through the ordinary path, with no
+# hand-deletion. A Codex session served only by that daemon has no session
+# pid in its ancestry, so its line 1 carries no liveness meaning and the
+# sidecar below is its ownership proof. Line 1 keeps its whole-line pid
+# format because every other reader takes the first line as the pid.
 #
-# The trusted id itself is recorded beside the lock in state/.lock-session, a
-# sidecar written only here and only under the claim lock: refreshed on every
+# The trusted id itself (a Claude session id or a Codex thread id) is
+# recorded beside the lock in state/.lock-session, a sidecar written only
+# here and only under the claim lock: refreshed on every
 # confirmed-own acquisition, including the early already-mine exit that waits
 # for the claim lock, removed when the acquiring session proves no trusted id,
 # and left byte-identical when it already names that id. A same-session

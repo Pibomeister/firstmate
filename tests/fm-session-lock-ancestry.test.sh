@@ -31,6 +31,8 @@ VERSIONED_CLAUDE="$CLAUDE_VERSION_DIR/2.1.220"
 FAKEBIN=$(fm_fakebin "$TMP_ROOT/harness-bin")
 ln -s /bin/bash "$FAKEBIN/claude"
 NAMED_CLAUDE="$FAKEBIN/claude"
+ln -s /bin/bash "$FAKEBIN/codex"
+NAMED_CODEX="$FAKEBIN/codex"
 
 # --- unit layer: identity behind a deterministic process table ---------------
 
@@ -44,7 +46,16 @@ lib_eval() {  # <fakebin> <expression>
   local -a session_env=()
   [ -z "${FM_TEST_SESSION_ID:-}" ] || session_env+=("CLAUDE_CODE_SESSION_ID=$FM_TEST_SESSION_ID")
   [ -z "${FM_TEST_CLAUDE_PID:-}" ] || session_env+=("CLAUDE_PID=$FM_TEST_CLAUDE_PID")
-  env -u CLAUDE_CODE_SESSION_ID -u CLAUDE_PID ${session_env[@]+"${session_env[@]}"} \
+  # Codex publishes CODEX_THREAD_ID and CODEX_SESSION_ID, equal, to every
+  # tool shell. FM_TEST_CODEX_THREAD_ID alone mirrors that pair; setting
+  # FM_TEST_CODEX_SESSION_ID explicitly overrides the mirror so a
+  # disagreeing pair can be exercised.
+  if [ -n "${FM_TEST_CODEX_THREAD_ID:-}" ] || [ -n "${FM_TEST_CODEX_SESSION_ID:-}" ]; then
+    session_env+=("CODEX_THREAD_ID=${FM_TEST_CODEX_THREAD_ID:-}")
+    session_env+=("CODEX_SESSION_ID=${FM_TEST_CODEX_SESSION_ID:-${FM_TEST_CODEX_THREAD_ID:-}}")
+  fi
+  env -u CLAUDE_CODE_SESSION_ID -u CLAUDE_PID -u CODEX_THREAD_ID -u CODEX_SESSION_ID \
+    ${session_env[@]+"${session_env[@]}"} \
     PATH="$fakebin:$PATH" bash -c "
     . \"\$0\"
     kill() { return \${FM_TEST_KILL_RC:-0}; }
@@ -475,6 +486,221 @@ test_anchor_pid_is_the_model_loop_process_only_for_a_trusted_id() {
     || fail "no anchor pid was resolved for the healthy chain with a trusted id"
   [ "$got" = 710 ] || fail "the healthy chain with a trusted id anchored '$got', expected 710 rather than the front-end"
   pass "session-lock: a trusted id anchors the lock on the model-loop process, anything else on the outermost pid"
+}
+
+# --- Codex: the shared app-server daemon is never a session ------------------
+#
+# The process table a daemon-served Codex tool shell actually sees (measured
+# live on this fleet: a supervision checkpoint shell parented directly by
+# `codex app-server --listen unix:// --managed-daemon`): tool shell ->
+# code-mode host (800) -> shared daemon (900) -> the unrelated TUI that
+# launched the daemon (950) -> init. FM_TEST_CODEX_SHAPE=tui is a direct TUI
+# launch instead: tool shell -> session TUI (700) -> init, with host
+# inserting the code-mode host between the shell and that same TUI.
+write_codex_session_ps() {  # <fakebin>
+  cat > "$1/ps" <<'SH'
+#!/usr/bin/env bash
+set -u
+field= pid=
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -o) field=$2; shift 2 ;;
+    -p) pid=$2; shift 2 ;;
+    *) shift ;;
+  esac
+done
+case "$pid:$field:${FM_TEST_CODEX_SHAPE:-daemon}" in
+  900:comm=*) printf '%s\n' codex ;;
+  900:args=*) printf '%s\n' 'codex app-server --listen unix:// --analytics-default-enabled --managed-daemon' ;;
+  900:ppid=*) printf '%s\n' 950 ;;
+  950:comm=*) printf '%s\n' codex ;;
+  950:args=*) printf '%s\n' 'codex resume 01other' ;;
+  950:ppid=*) printf '%s\n' 1 ;;
+  800:comm=*) printf '%s\n' codex-code-mode-host ;;
+  800:args=*) printf '%s\n' 'codex-code-mode-host' ;;
+  800:ppid=:daemon) printf '%s\n' 900 ;;
+  800:ppid=:*) printf '%s\n' 700 ;;
+  700:comm=*) printf '%s\n' codex ;;
+  700:args=*) printf '%s\n' 'codex --model gpt-6.1-sol' ;;
+  700:ppid=*) printf '%s\n' 1 ;;
+  600:comm=*) printf '%s\n' pi ;;
+  600:args=*) printf '%s\n' 'pi' ;;
+  600:ppid=*) printf '%s\n' 900 ;;
+  *:comm=*) printf '%s\n' bash ;;
+  *:args=*) printf '%s\n' 'bash /repo/bin/fm-lock.sh' ;;
+  *:ppid=:daemon) printf '%s\n' 800 ;;
+  *:ppid=:host) printf '%s\n' 800 ;;
+  *:ppid=:pi) printf '%s\n' 600 ;;
+  *:ppid=:*) printf '%s\n' 700 ;;
+esac
+SH
+  chmod +x "$1/ps"
+}
+
+test_codex_daemon_parented_tool_shell() {
+  local dir fakebin state got
+  dir="$TMP_ROOT/codex-daemon-parented"
+  fakebin=$(fm_fakebin "$dir")
+  state="$dir/state"
+  mkdir -p "$state"
+  write_codex_session_ps "$fakebin"
+
+  # The daemon and the host are not session processes, and the walk must not
+  # climb past the daemon into the unrelated TUI that launched it.
+  if FM_TEST_CODEX_SHAPE=daemon lib_eval "$fakebin" 'fm_harness_ancestry_pids' >/dev/null 2>&1; then
+    fail "a daemon-parented tool shell resolved a session pid from the daemon or the TUI above it"
+  fi
+  if FM_TEST_CODEX_SHAPE=daemon lib_eval "$fakebin" 'fm_harness_pid_alive 900'; then
+    fail "the shared app-server daemon passed the harness-liveness predicate"
+  fi
+  if FM_TEST_CODEX_SHAPE=daemon lib_eval "$fakebin" 'fm_harness_pid_alive 800'; then
+    fail "the code-mode host passed the harness-liveness predicate"
+  fi
+  FM_TEST_CODEX_SHAPE=daemon lib_eval "$fakebin" 'fm_codex_pid_is_daemon 900' \
+    || fail "the app-server listener was not classified as the shared daemon"
+  if FM_TEST_CODEX_SHAPE=daemon lib_eval "$fakebin" 'fm_codex_pid_is_daemon 700'; then
+    fail "a session TUI was classified as the shared daemon"
+  fi
+
+  # The thread id is the session identity here, and the anchor is never the
+  # daemon, the host, or the daemon-launching TUI.
+  got=$(FM_TEST_CODEX_SHAPE=daemon FM_TEST_CODEX_THREAD_ID=T1 lib_eval "$fakebin" 'fm_session_lock_trusted_codex_session_id') \
+    || fail "a daemon-parented tool shell proved no trusted thread id"
+  [ "$got" = T1 ] || fail "the trusted thread id was '$got', expected T1"
+  got=$(FM_TEST_CODEX_SHAPE=daemon FM_TEST_CODEX_THREAD_ID=T1 lib_eval "$fakebin" 'fm_session_lock_anchor_pid') \
+    || fail "a daemon-parented tool shell resolved no anchor at all"
+  case "$got" in
+    800|900|950) fail "a daemon-parented tool shell anchored on shared process $got" ;;
+    ''|*[!0-9]*) fail "a daemon-parented tool shell anchored on non-pid '$got'" ;;
+  esac
+
+  # A lock the old code recorded against the daemon pid, with no sidecar:
+  # owned by nobody, foreign to nobody, and classified stale, so the
+  # ordinary fm-lock.sh path can reclaim it (end-to-end case below).
+  printf '900\n' > "$state/.lock"
+  if FM_TEST_CODEX_SHAPE=daemon FM_TEST_CODEX_THREAD_ID=T1 lib_eval "$fakebin" "fm_session_lock_owned_by_self '$state'"; then
+    fail "a daemon-anchored lock was owned through the shared daemon pid"
+  fi
+  if FM_TEST_CODEX_SHAPE=daemon FM_TEST_CODEX_THREAD_ID=T1 lib_eval "$fakebin" "fm_session_lock_foreign_owner_live '$state'"; then
+    fail "a daemon-anchored lock was reported as a live foreign owner"
+  fi
+  got=$(FM_TEST_CODEX_SHAPE=daemon lib_eval "$fakebin" "fm_session_lock_inspect '$state'; printf '%s' \"\$FM_LOCK_INSPECT_STATE\"")
+  [ "$got" = stale ] || fail "a daemon-anchored lock classified '$got', expected stale"
+
+  # A lock this daemon-served session recorded (acquiring-process line 1,
+  # thread sidecar): owned by the same thread, never by a different one.
+  printf '111\n' > "$state/.lock"
+  printf 'T1\n' > "$state/.lock-session"
+  FM_TEST_CODEX_SHAPE=daemon FM_TEST_CODEX_THREAD_ID=T1 lib_eval "$fakebin" "fm_session_lock_owned_by_self '$state'" \
+    || fail "a daemon-served session did not own its own thread-recorded lock"
+  if FM_TEST_CODEX_SHAPE=daemon FM_TEST_CODEX_THREAD_ID=T2 lib_eval "$fakebin" "fm_session_lock_owned_by_self '$state'"; then
+    fail "a different thread owned a daemon-served session's lock through its sidecar"
+  fi
+  pass "session-lock: a daemon-parented Codex tool shell anchors off the daemon and owns by thread id"
+}
+
+test_codex_direct_tui_launch() {
+  local dir fakebin state got shape
+  dir="$TMP_ROOT/codex-direct-tui"
+  fakebin=$(fm_fakebin "$dir")
+  state="$dir/state"
+  mkdir -p "$state"
+  write_codex_session_ps "$fakebin"
+  printf '700\n' > "$state/.lock"
+
+  for shape in tui host; do
+    got=$(FM_TEST_CODEX_SHAPE="$shape" FM_TEST_CODEX_THREAD_ID=T1 lib_eval "$fakebin" 'fm_session_lock_anchor_pid') \
+      || fail "$shape: a direct TUI launch resolved no anchor"
+    [ "$got" = 700 ] || fail "$shape: a direct TUI launch anchored '$got', expected the TUI pid 700"
+    FM_TEST_CODEX_SHAPE="$shape" FM_TEST_CODEX_THREAD_ID=T1 lib_eval "$fakebin" 'fm_harness_pid_alive 700' \
+      || fail "$shape: the session TUI was not a live harness"
+    FM_TEST_CODEX_SHAPE="$shape" FM_TEST_CODEX_THREAD_ID=T1 lib_eval "$fakebin" "fm_session_lock_owned_by_self '$state'" \
+      || fail "$shape: the TUI session did not own its own lock by ancestry"
+  done
+  # The same lock under the daemon-served shape proves nothing by pid: the
+  # walk stops at the daemon, so the TUI above it is never reached.
+  if FM_TEST_CODEX_SHAPE=daemon FM_TEST_CODEX_THREAD_ID=T9 lib_eval "$fakebin" "fm_session_lock_owned_by_self '$state'"; then
+    fail "a daemon-served shell owned a TUI-anchored lock by climbing past the daemon"
+  fi
+  pass "session-lock: a direct Codex TUI launch anchors on the TUI, directly or through its code-mode host"
+}
+
+test_codex_two_sessions_one_daemon_never_cross_own() {
+  local dir fakebin state_a got
+  dir="$TMP_ROOT/codex-two-sessions"
+  fakebin=$(fm_fakebin "$dir")
+  state_a="$dir/state-a"
+  mkdir -p "$state_a"
+  write_codex_session_ps "$fakebin"
+  # Session A's home: A's TUI anchored it and A's thread is beside it. This
+  # process is session B instead whenever FM_TEST_CODEX_PEER selects B's own
+  # TUI (750) as the ancestry; the shared daemon (900) sits above both.
+  cat > "$fakebin/ps" <<'SH'
+#!/usr/bin/env bash
+set -u
+field= pid=
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -o) field=$2; shift 2 ;;
+    -p) pid=$2; shift 2 ;;
+    *) shift ;;
+  esac
+done
+case "$pid:$field:${FM_TEST_CODEX_PEER:-A}" in
+  900:comm=*) printf '%s\n' codex ;;
+  900:args=*) printf '%s\n' 'codex app-server --listen unix:// --managed-daemon' ;;
+  900:ppid=*) printf '%s\n' 1 ;;
+  700:comm=*) printf '%s\n' codex ;;
+  700:args=*) printf '%s\n' 'codex' ;;
+  700:ppid=*) printf '%s\n' 900 ;;
+  750:comm=*) printf '%s\n' codex ;;
+  750:args=*) printf '%s\n' 'codex' ;;
+  750:ppid=*) printf '%s\n' 900 ;;
+  *:comm=*) printf '%s\n' bash ;;
+  *:args=*) printf '%s\n' 'bash /repo/bin/fm-lock.sh' ;;
+  *:ppid=:A) printf '%s\n' 700 ;;
+  *:ppid=:B) printf '%s\n' 750 ;;
+  *:ppid=*) printf '%s\n' 700 ;;
+esac
+SH
+  chmod +x "$fakebin/ps"
+  printf '700\n' > "$state_a/.lock"
+  printf 'TA\n' > "$state_a/.lock-session"
+
+  FM_TEST_CODEX_PEER=A FM_TEST_CODEX_THREAD_ID=TA lib_eval "$fakebin" "fm_session_lock_owned_by_self '$state_a'" \
+    || fail "session A did not own its own lock"
+  if FM_TEST_CODEX_PEER=B FM_TEST_CODEX_THREAD_ID=TB lib_eval "$fakebin" "fm_session_lock_owned_by_self '$state_a'"; then
+    fail "session B owned session A's lock across the shared daemon"
+  fi
+  got=$(FM_TEST_CODEX_PEER=B FM_TEST_CODEX_THREAD_ID=TB lib_eval "$fakebin" "fm_session_lock_foreign_owner_live '$state_a' && printf '%s' \"\$FM_SESSION_LOCK_FOREIGN_OWNER_PID\"") \
+    || fail "session B did not see session A's live TUI as a foreign owner"
+  [ "$got" = 700 ] || fail "the foreign owner pid was '$got', expected session A's TUI 700"
+  pass "session-lock: two Codex sessions sharing one daemon never cross-own each other's locks"
+}
+
+test_codex_thread_id_trust_gate() {
+  local dir fakebin got
+  dir="$TMP_ROOT/codex-trust-gate"
+  fakebin=$(fm_fakebin "$dir")
+  mkdir -p "$dir/state"
+  write_codex_session_ps "$fakebin"
+
+  # A retained thread id under a nearer non-Codex harness is not trusted,
+  # and that harness still anchors exactly as before.
+  if FM_TEST_CODEX_SHAPE=pi FM_TEST_CODEX_THREAD_ID=T1 lib_eval "$fakebin" 'fm_session_lock_trusted_codex_session_id' >/dev/null 2>&1; then
+    fail "a thread id retained under a Pi session was trusted as Codex identity"
+  fi
+  got=$(FM_TEST_CODEX_SHAPE=pi FM_TEST_CODEX_THREAD_ID=T1 lib_eval "$fakebin" 'fm_session_lock_anchor_pid') \
+    || fail "pi: the nested harness resolved no anchor"
+  [ "$got" = 600 ] || fail "pi: the nested harness anchored '$got', expected its own pid 600"
+  # Disagreeing published ids are not trusted either.
+  if FM_TEST_CODEX_SHAPE=daemon FM_TEST_CODEX_THREAD_ID=T1 FM_TEST_CODEX_SESSION_ID=T2 lib_eval "$fakebin" 'fm_session_lock_trusted_codex_session_id' >/dev/null 2>&1; then
+    fail "a Codex session whose thread and session ids disagree was trusted"
+  fi
+  if FM_TEST_CODEX_SHAPE=daemon lib_eval "$fakebin" 'fm_session_lock_trusted_codex_session_id' >/dev/null 2>&1; then
+    fail "a Codex session with no thread id at all was trusted"
+  fi
+  pass "session-lock: a Codex thread id is trusted only inside a Codex session, and only when its published ids agree"
 }
 
 # --- end-to-end layer: the real Stop auto-arm in real process trees ----------
@@ -1266,6 +1492,117 @@ test_reanchor_keeps_autoarm_midturn_healthy() {
   pass "session-lock: a re-anchor during a rewake turn keeps the mid-turn auto-arm proof healthy"
 }
 
+# --- end-to-end layer: Codex daemon locks through the real fm-lock.sh -------
+#
+# Real process trees with the fake Codex binary. The daemon fixture is a
+# codex-named process re-execed with the shared listener's argv, so ps
+# reports exactly the shape production tool shells are parented by.
+
+# Launch <body> as the shared daemon and register it for reaping.
+launch_codex_daemon() {  # <dir> <body>
+  local dir=$1 body=$2
+  env -u CLAUDE_CODE_SESSION_ID -u CLAUDE_PID -u CODEX_THREAD_ID -u CODEX_SESSION_ID \
+    FM_HOME="$dir" \
+    bash -c 'exec -a "codex app-server --listen unix:// --managed-daemon" "$1" "$2"' \
+    _ "$NAMED_CODEX" "$body" &
+  BG_FIXTURE_PIDS+=("$!")
+}
+
+test_e2e_codex_daemon_parented_session_acquires_by_thread() {
+  local dir daemon_pid
+  dir="$TMP_ROOT/e2e-codex-daemon-parented"
+  mkdir -p "$dir/state"
+  cat > "$dir/tool-acquire.sh" <<'SH'
+#!/usr/bin/env bash
+"$FM_LOCK" > "$FM_HOME/state/acquire.out" 2>&1
+printf '%s\n' "$?" > "$FM_HOME/state/acquire.rc"
+cat "$FM_HOME/state/.lock" > "$FM_HOME/state/lock-after-acquire"
+cat "$FM_HOME/state/.lock-session" > "$FM_HOME/state/session-after-acquire"
+SH
+  cat > "$dir/tool-confirm.sh" <<'SH'
+#!/usr/bin/env bash
+"$FM_LOCK" > "$FM_HOME/state/confirm.out" 2>&1
+printf '%s\n' "$?" > "$FM_HOME/state/confirm.rc"
+cat "$FM_HOME/state/.lock" > "$FM_HOME/state/lock-after-confirm"
+SH
+  cat > "$dir/tool-foreign.sh" <<'SH'
+#!/usr/bin/env bash
+bash -c '. "$1"; fm_session_lock_owned_by_self "$2"' _ "$FM_LIB" "$FM_HOME/state" \
+  > "$FM_HOME/state/foreign.out" 2>&1
+printf '%s\n' "$?" > "$FM_HOME/state/foreign.rc"
+SH
+  cat > "$dir/daemon-body.sh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$$" > "$FM_HOME/state/daemon-pid"
+CODEX_THREAD_ID=T1 CODEX_SESSION_ID=T1 "$FM_HOME/tool-acquire.sh"
+CODEX_THREAD_ID=T1 CODEX_SESSION_ID=T1 "$FM_HOME/tool-confirm.sh"
+CODEX_THREAD_ID=T2 CODEX_SESSION_ID=T2 "$FM_HOME/tool-foreign.sh"
+printf 'done\n' > "$FM_HOME/state/daemon-done"
+while [ ! -e "$FM_HOME/state/stop-daemon" ]; do sleep 0.05; done
+exit 0
+SH
+  chmod +x "$dir/tool-acquire.sh" "$dir/tool-confirm.sh" "$dir/tool-foreign.sh" "$dir/daemon-body.sh"
+  env -u CLAUDE_CODE_SESSION_ID -u CLAUDE_PID -u CODEX_THREAD_ID -u CODEX_SESSION_ID \
+    FM_HOME="$dir" FM_LOCK="$ROOT/bin/fm-lock.sh" FM_LIB="$LIB" \
+    bash -c 'exec -a "codex app-server --listen unix:// --managed-daemon" "$1" "$2"' \
+    _ "$NAMED_CODEX" "$dir/daemon-body.sh" &
+  BG_FIXTURE_PIDS+=("$!")
+  wait_for_file "$dir/state/daemon-done" "the daemon-parented lock exercise"
+  daemon_pid=$(tr -d '[:space:]' < "$dir/state/daemon-pid")
+  BG_FIXTURE_PIDS+=("$daemon_pid")
+  expect_code 0 "$(tr -d '[:space:]' < "$dir/state/acquire.rc")" \
+    "a daemon-parented session could not acquire its lock: $(cat "$dir/state/acquire.out")"
+  [ "$(tr -d '[:space:]' < "$dir/state/lock-after-acquire")" != "$daemon_pid" ] \
+    || fail "the daemon-parented session anchored its lock on the shared daemon pid $daemon_pid"
+  [ "$(tr -d '[:space:]' < "$dir/state/session-after-acquire")" = T1 ] \
+    || fail "the daemon-parented session did not record its thread beside the lock"
+  expect_code 0 "$(tr -d '[:space:]' < "$dir/state/confirm.rc")" \
+    "the same thread could not confirm its daemon-served lock: $(cat "$dir/state/confirm.out")"
+  [ "$(tr -d '[:space:]' < "$dir/state/lock-after-confirm")" = "$(tr -d '[:space:]' < "$dir/state/lock-after-acquire")" ] \
+    || fail "the same-thread confirmation rewrote lock line 1"
+  [ "$(tr -d '[:space:]' < "$dir/state/foreign.rc")" != 0 ] \
+    || fail "a different thread owned the daemon-served session's lock"
+  : > "$dir/state/stop-daemon"
+  pass "session-lock e2e: a daemon-parented Codex session acquires and keeps its lock by thread id, never on the daemon"
+}
+
+test_e2e_codex_dead_session_daemon_lock_reclaimed() {
+  local dir daemon_pid session_pid
+  dir="$TMP_ROOT/e2e-codex-daemon-reclaim"
+  mkdir -p "$dir/state"
+  cat > "$dir/daemon-body.sh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$$" > "$FM_HOME/state/daemon-pid"
+while [ ! -e "$FM_HOME/state/stop-daemon" ]; do sleep 0.05; done
+exit 0
+SH
+  chmod +x "$dir/daemon-body.sh"
+  launch_codex_daemon "$dir" "$dir/daemon-body.sh"
+  wait_for_file "$dir/state/daemon-pid" "the shared daemon pid"
+  daemon_pid=$(tr -d '[:space:]' < "$dir/state/daemon-pid")
+  BG_FIXTURE_PIDS+=("$daemon_pid")
+  # The old code's lock: the shared daemon pid on line 1, no sidecar, while
+  # the daemon itself stays alive the whole time.
+  printf '%s\n' "$daemon_pid" > "$dir/state/.lock"
+  env -u CLAUDE_CODE_SESSION_ID -u CLAUDE_PID \
+    FM_HOME="$dir" FM_LOCK="$ROOT/bin/fm-lock.sh" \
+    "$NAMED_CODEX" -c '
+      CODEX_THREAD_ID=T-new CODEX_SESSION_ID=T-new "$FM_LOCK" > "$FM_HOME/state/reclaim.out" 2>&1
+      printf "%s\n" "$?" > "$FM_HOME/state/reclaim.rc"
+      printf "%s\n" "$$" > "$FM_HOME/state/session-pid"
+    '
+  expect_code 0 "$(tr -d '[:space:]' < "$dir/state/reclaim.rc")" \
+    "the replacement session could not reclaim a daemon-anchored lock: $(cat "$dir/state/reclaim.out")"
+  session_pid=$(tr -d '[:space:]' < "$dir/state/session-pid")
+  kill -0 "$daemon_pid" 2>/dev/null || fail "the shared daemon died during the reclaim, so the case proves nothing"
+  [ "$(tr -d '[:space:]' < "$dir/state/.lock")" = "$session_pid" ] \
+    || fail "the reclaim left lock line 1 at $(cat "$dir/state/.lock"), expected the replacement session $session_pid"
+  [ "$(tr -d '[:space:]' < "$dir/state/.lock-session")" = T-new ] \
+    || fail "the reclaim did not record the replacement thread beside the lock"
+  : > "$dir/state/stop-daemon"
+  pass "session-lock e2e: a dead session's daemon-anchored lock is reclaimed by its replacement through fm-lock.sh"
+}
+
 test_version_named_session_is_identified_on_both_platforms
 test_muse_versioned_session_is_identified
 test_harness_at_namespace_pid1_is_examined
@@ -1274,6 +1611,12 @@ test_harness_beyond_a_gap_never_owns_the_lock
 test_competing_version_named_session_is_seen_as_live
 test_same_session_id_owns_a_recycled_background_chain
 test_anchor_pid_is_the_model_loop_process_only_for_a_trusted_id
+test_codex_daemon_parented_tool_shell
+test_codex_direct_tui_launch
+test_codex_two_sessions_one_daemon_never_cross_own
+test_codex_thread_id_trust_gate
+test_e2e_codex_daemon_parented_session_acquires_by_thread
+test_e2e_codex_dead_session_daemon_lock_reclaimed
 test_e2e_version_named_session_claims_the_home
 test_e2e_daemon_parented_session_claims_the_home
 test_e2e_daemon_parented_version_named_session_keeps_its_lock
