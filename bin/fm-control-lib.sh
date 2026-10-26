@@ -360,7 +360,8 @@ fm_control_agent_state() {  # <backend> <target>
 
 # fm_control_endpoint_absence_verdict: the ONE owner of the per-backend proof
 # that an endpoint reading `missing` is actually GONE rather than merely
-# unreachable from this seat. Call it only for a `missing` raw state.
+# unreachable from this seat. Call it for a `missing` raw state, or Orca's
+# `unreadable` state under docs/orca-backend.md "Agent stop proof".
 #
 # Prints "<verdict>\t<reason>" - always exactly one TAB, so a caller splits
 # unambiguously with ${raw%%$'\t'*} and ${raw#*$'\t'}. The reason is empty

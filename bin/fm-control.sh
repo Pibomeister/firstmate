@@ -127,8 +127,8 @@
 #     Orca, because without one the "the agent stopped" postcondition cannot
 #     be proven. zellij, cmux, and paseo combinations refuse unproven stops
 #     rather than reporting them as successful blind.
-#   - An ambiguous or unreadable endpoint state refuses; only a positively
-#     classified state acts.
+#   - An ambiguous endpoint state refuses. An unreadable state refuses unless
+#     Orca's absence proof above establishes that the endpoint is gone.
 #   - A composer that visibly holds pending text refuses before an exit command
 #     is typed, so existing text is preserved instead of being concatenated.
 #
