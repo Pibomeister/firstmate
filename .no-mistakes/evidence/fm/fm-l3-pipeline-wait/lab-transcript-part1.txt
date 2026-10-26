@@ -1,0 +1,76 @@
+
+===== S1 generated ship brief: Definition-of-done drive contract =====
+Start the run or answer a gate with `--wait 1s` so the call returns promptly; handle any gate or outcome it already returned.
+When the run is still working, arm its completion listener with `FM_HOME=/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.A0iSEF /Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M5WTPHT7TQ90XG4QC1FDT1S5/bin/fm-procevent-no-mistakes.sh arm ship`.
+Only after the listener confirms it is armed, declare one paused wait naming the run and the next gate or outcome, then end your turn.
+The existing watcher delivers the captured drive return through your steering inbox; do not poll the run, the inbox, or a background shell while waiting.
+Only a drive call's return reports the green PR: `no-mistakes axi status` shows progress but never reports `checks-passed` while the ci step is still monitoring the PR for merge, so never wait on a status poll for the next gate or outcome.
+The wake is advisory for your task's current branch, not pinned to an earlier run id.
+Before any gate response or ready report, reread current run evidence and refuse a stale captured result.
+Keep both the captured source round and its inbox record unacknowledged until handling or ask-user escalation is durable; then acknowledge the source/sequence with the command in the message, then move the message into handled/.
+Never replay an old `respond` on redelivery: if a response may already have been accepted and live evidence cannot establish what is owed, report a blocker instead of guessing.
+Resolve the paused wait when handling is durable; re-arm and declare the next wait only when external pipeline work is underway.
+An elapsed or interrupted drive attachment is not evidence the daemon died; the listener reattaches routine elapsed holds, while errors and unknown returns wake you for recovery.
+That declared wait is true only while the run is still working: a run parked at a gate is waiting on you, not you on it.
+So once a run of yours exists, read `no-mistakes axi status` before you declare a wait on it or end a turn with one standing - one read to learn who the run is waiting on, never a poll to wait with.
+When it shows the run parked at a gate, do not declare a wait: answer the gate with `no-mistakes axi respond`, or escalate its ask-user findings under the first rule below and stop.
+A wait you do declare is the wait on the confirmed completion listener attached to the run, never a promise to check the run later.
+Recovery after an error or unknown wake follows rule 7, which owns the checks that decide when a pipeline block is real; the next wait is re-arming the listener, never a blocking reattach.
+--- stale blocking-reattach wording present?
+0
+--- Waiting section pipeline line:
+--- extracted arm command: FM_HOME=/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.A0iSEF /Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M5WTPHT7TQ90XG4QC1FDT1S5/bin/fm-procevent-no-mistakes.sh arm ship
+
+===== S2 worker runs the brief arm command verbatim; gate wakes the worker pane =====
+registered: nm-9287501280bf46c6a24ae2d935440ec8 (no-mistakes, task=ship)
+armed: nm-9287501280bf46c6a24ae2d935440ec8
+arm rc=0
+SOURCE                       ADAPTER      OWNER      PENDING
+nm-9287501280bf46c6a24ae2d935440ec8 no-mistakes  task:ship/listening 0
+--- inbox before condition clears:
+0
+inbox record delivered
+schema=fm-task-inbox.v1
+at=2026-10-26T19:59:33Z
+--
+No-mistakes advisory completion for task ship is captured at /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.A0iSEF/state/procevent-inbox/nm-9287501280bf46c6a24ae2d935440ec8.1.result (source nm-9287501280bf46c6a24ae2d935440ec8 sequence 1). Read the capture and follow the completion-handling contract in your Definition of done. Check live run evidence before side effects. Source acknowledgement command: FM_HOME=/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.A0iSEF /Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M5WTPHT7TQ90XG4QC1FDT1S5/bin/fm-procevent.sh handled nm-9287501280bf46c6a24ae2d935440ec8 1.
+--- classify: gate
+attachment-exit: 0
+gate: review
+findings[1]{id,action,description}:
+  r1,ask-user,decision required
+--- worker pane (tmux capture):
+: Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your 'ship.inbox' steering inbox, read and act on each in numeric order, then mv each into its handled/.
+: Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your 'ship.inbox' steering inbox, read and act on each in numeric order, then mv each into its handled/.
+--- no-mistakes calls:
+axi run --wait 24h | cwd=/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.A0iSEF/worktree
+handled: nm-9287501280bf46c6a24ae2d935440ec8 1
+retired: nm-9287501280bf46c6a24ae2d935440ec8 (owner acknowledged its terminal round)
+handled rc=0
+
+===== S3 re-arm for next wait; elapsed hold reattaches silently, CI-ready wakes =====
+registered: nm-9287501280bf46c6a24ae2d935440ec8 (no-mistakes, task=ship)
+armed: nm-9287501280bf46c6a24ae2d935440ec8
+re-arm rc=0
+--- calls after elapsed hold:
+axi run --wait 24h | cwd=/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.A0iSEF/worktree
+axi run --wait 24h | cwd=/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.A0iSEF/worktree
+--- inbox .msg count while still running: 0
+--- classify: checks-passed
+
+===== S4 adversarial: duplicate arm and aliased FM_HOME while armed =====
+first arm rc=0
+error: cannot re-arm source nm-9287501280bf46c6a24ae2d935440ec8: task ship already holds this board and no captured round is waiting to be acknowledged
+duplicate rc=1
+error: cannot re-arm source nm-9287501280bf46c6a24ae2d935440ec8: task ship already holds this board and no captured round is waiting to be acknowledged
+alias rc=1
+error: cannot re-arm source nm-9287501280bf46c6a24ae2d935440ec8: task ship already holds this board and no captured round is waiting to be acknowledged
+dotdot alias rc=1
+--- attachments started: 1
+--- S6 error wake classify: error
+attachment-exit: 1
+error: daemon unavailable
+
+===== S5 adversarial: arm whose listener cannot start is retired, then re-arm works =====
+rm: /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.A0iSEF/claims: Permission denied
+rm: /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.A0iSEF: Directory not empty

@@ -1,0 +1,33 @@
+
+===== S1b brief with config/wait-no-turns: Waiting section routes pipeline waits to the listener =====
+# Waiting
+Every turn you take resends your whole context, so a wait must cost no turns.
+After you append `needs-decision:` or `blocked:`, end your turn at once: do not check the inbox, the status file, or anything else, because the answer arrives as a terminal message that starts your next turn.
+For your own no-mistakes run and its PR CI, follow the completion-listener contract in Definition of done.
+Wait on other external conditions - PR checks outside that run or a heavy-test slot - with ONE blocking shell command that returns when the state changes: `gh pr checks <pr> --watch`, or `until <condition>; do sleep 30; done` for anything else.
+Never spend turns on `sleep` followed by a status check, and never background a command in order to poll it.
+In Claude Code that `until` loop in a single Bash call is the sanctioned foreground wait: when the harness refuses a sleep-then-check command and points you at backgrounding instead, reissue the wait as the loop rather than accepting the background.
+Bound that command by what your harness lets one command run: in Pi pass the bash tool a `timeout` of at most 2700 seconds, because Pi sets none by default; in Claude Code pass the Bash tool its maximum `timeout` of 600000 ms, because its default is 2 minutes; in Codex keep waiting on a still-running command with empty `write_stdin` polls of up to 300000 ms; elsewhere pass your shell tool its largest timeout and assume at most 10 minutes.
+Give any `--wait` a duration a little under that bound.
+When the bound passes with nothing changed, run the same blocking command again, with no status check in between.
+A wait your shell can watch this way needs no `paused:` line, except a long foreground command or your own validation round, which you declare once just before its blocking hold: append `paused:` once just before its first blocking command, then stay in the command, and never append it again as you reissue that command.
+
+===== S5 adversarial: arm whose detached runner cannot start is retired, then re-arm works =====
+registered: nm-1b4743b7eb871ff7c66240d3104b2d26 (no-mistakes, task=ship)
+error: listener is not running: nm-1b4743b7eb871ff7c66240d3104b2d26
+failed arm rc=1
+--- registrations after failed arm (expect none):
+no sources registered
+registered: nm-1b4743b7eb871ff7c66240d3104b2d26 (no-mistakes, task=ship)
+armed: nm-1b4743b7eb871ff7c66240d3104b2d26
+re-arm after failure rc=0
+inbox record delivered
+--- classify: passed
+handled: nm-1b4743b7eb871ff7c66240d3104b2d26 1
+retired: nm-1b4743b7eb871ff7c66240d3104b2d26 (owner acknowledged its terminal round)
+
+===== S7 adversarial: no shasum/sha256sum on PATH refuses before registering =====
+error: cannot derive the source id: shasum or sha256sum is required
+no-digest arm rc=1
+--- registrations after (expect none):
+no sources registered
