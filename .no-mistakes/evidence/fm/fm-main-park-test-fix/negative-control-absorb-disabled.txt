@@ -1,0 +1,4 @@
+ bin/fm-watch.sh | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+not ok - the parked pane was not absorbed as a declared wait
+mutant rc=1

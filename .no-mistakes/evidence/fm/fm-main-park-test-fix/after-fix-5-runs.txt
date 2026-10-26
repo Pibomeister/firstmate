@@ -1,0 +1,10 @@
+ok - a firstmate park absorbs a quiet pane until its declared time, like a worker's own pause
+run 1 rc=0
+ok - a firstmate park absorbs a quiet pane until its declared time, like a worker's own pause
+run 2 rc=0
+ok - a firstmate park absorbs a quiet pane until its declared time, like a worker's own pause
+run 3 rc=0
+ok - a firstmate park absorbs a quiet pane until its declared time, like a worker's own pause
+run 4 rc=0
+ok - a firstmate park absorbs a quiet pane until its declared time, like a worker's own pause
+run 5 rc=0

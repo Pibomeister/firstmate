@@ -1,0 +1,2 @@
+not ok - a firstmate-parked quiet pane was rechecked before its until time: 
+base rc=1
