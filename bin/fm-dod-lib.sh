@@ -377,7 +377,7 @@ EOF
 
 # The forge-independent middle of the no-mistakes contract: how a worker drives
 # the pipeline, what `--intent` may carry, and the two firstmate-specific rules.
-# Written once; only the two sentences about a green PR depend on the forge,
+# Written once; only the sentence about a green PR depends on the forge,
 # because on gerrit the ci step is skipped and there is no PR to report.
 # The lines after the drive text are the worker half of the parked-run rule:
 # a wait is declared only on a run that is still working, and a parked gate is
