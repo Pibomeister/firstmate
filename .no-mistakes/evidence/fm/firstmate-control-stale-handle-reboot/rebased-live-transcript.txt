@@ -1,0 +1,184 @@
+Live reboot recovery validation
+Revision: f20861c6c3920698a04f9817bd3d8c2f65315b66
+Runtime: official bundled orcad, isolated user-data directory and local-only listener.
+All task homes, copies, configuration and runtime artifacts stayed in the run worktree.
+
+PASS: Decode the real nonzero stale-handle response
+PASS: Exit pre-boot Claude and Droid records without changing saved work
+PASS: Refuse current-boot records, forged boot values and missing metadata
+PASS: Refuse replacement without reboot proof and retain Droid SessionEnd checks
+PASS: Replace pre-boot Codex and Droid endpoints in the same preserved worktree
+PASS: Refuse stale-handle recovery while a real agent remains in the worktree
+PASS: Refuse recovery when the isolated Orca runtime is unavailable
+
+Product CLI transcript:
+
+$ orca terminal show --terminal term_fm_lab_stale_rebased --json
+exit=1
+{
+  "id": "a0683e85-30c9-4d49-a373-20fee9dd4bbc",
+  "ok": false,
+  "error": {
+    "code": "terminal_handle_stale",
+    "message": "terminal_handle_stale",
+    "data": {
+      "nextSteps": [
+        "Terminal handles belong to the Orca server that issued them. If this handle came from a paired server (for example `orca terminal list --environment <server>`), pass the same --environment <server> to this command."
+      ]
+    }
+  },
+  "_meta": {
+    "runtimeId": "fb9500b1-8c4f-4061-b83e-a4a609344e27"
+  }
+}
+
+
+$ bash bin/fm-control.sh recover-claude exit
+exit=0
+endpoint-gone recover-claude harness=claude backend=orca endpoint=term_fm_lab_stale_rebased worktree=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/preserved-copy
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home
+
+$ bash bin/fm-control.sh recover-droid exit
+exit=0
+endpoint-gone recover-droid harness=droid backend=orca endpoint=term_fm_lab_stale_rebased worktree=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/preserved-copy
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home
+
+$ bash bin/fm-control.sh mtime-recover exit
+exit=0
+endpoint-gone mtime-recover harness=claude backend=orca endpoint=term_fm_lab_stale_rebased worktree=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/preserved-copy
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home
+
+$ bash bin/fm-control.sh current-claude exit
+exit=1
+
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home
+error: task current-claude's endpoint term_fm_lab_stale_rebased reads 'unreadable', but Orca no longer recognizes terminal term_fm_lab_stale_rebased, but the host boot time 1792904944 does not postdate its recorded evidence 1792908544, so its agent cannot be proven to have died with the old boot; exit will not claim an agent stopped at an address it cannot trust, nor send lifecycle input to one
+
+$ bash bin/fm-control.sh current-claude exit
+exit=1
+
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home
+error: task current-claude's endpoint term_fm_lab_stale_rebased reads 'unreadable', but Orca no longer recognizes terminal term_fm_lab_stale_rebased, but the host boot time 1792904944 does not postdate its recorded evidence 1792908544, so its agent cannot be proven to have died with the old boot; exit will not claim an agent stopped at an address it cannot trust, nor send lifecycle input to one
+
+$ bash bin/fm-control.sh current-droid exit
+exit=1
+
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home
+error: task current-droid's endpoint term_fm_lab_stale_rebased reads 'unknown', but Orca no longer recognizes terminal term_fm_lab_stale_rebased, but the host boot time 1792904944 does not postdate its recorded evidence 1792908544, so its agent cannot be proven to have died with the old boot; exit cannot prove the agent stopped
+
+$ bash bin/fm-control.sh current-droid exit
+exit=1
+
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home
+error: task current-droid's endpoint term_fm_lab_stale_rebased reads 'unknown', but Orca no longer recognizes terminal term_fm_lab_stale_rebased, but the host boot time 1792904944 does not postdate its recorded evidence 1792908544, so its agent cannot be proven to have died with the old boot; exit cannot prove the agent stopped
+
+$ bash bin/fm-spawn.sh current-spawn-codex --relaunch --harness codex
+exit=1
+
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  6 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  down 0s.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds 180.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+error: task current-spawn-codex's recorded endpoint term_fm_lab_stale_rebased reads 'unreadable', but Orca no longer recognizes terminal term_fm_lab_stale_rebased, but the host boot time 1792904944 does not postdate its recorded evidence 1792908544, so its agent cannot be proven to have died with the old boot. An endpoint that cannot be proven absent may still hold a live agent on this task's worktree; refusing rather than launching a second agent into it
+
+$ bash bin/fm-spawn.sh current-spawn-droid --relaunch --harness codex
+exit=1
+
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s; down 1s) - full banner already printed this episode.
+error: Orca no longer recognizes terminal term_fm_lab_stale_rebased, but the host boot time 1792904944 does not postdate its recorded evidence 1792908544, so its agent cannot be proven to have died with the old boot
+error: Orca Droid relaunch has no current-generation SessionEnd proof with its process gone; refusing a duplicate agent
+
+$ bash bin/fm-spawn.sh rebind-codex --relaunch --harness codex
+exit=0
+spawned rebind-codex harness=codex kind=scout window=fm-rebind-codex worktree=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/workers/orca-project/fm-lab-rebased
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s; down 2s) - full banner already printed this episode.
+
+Replacement allocated in same worktree
+{
+  "window": "fm-rebind-codex",
+  "endpoint_task_id": "rebind-codex",
+  "worktree": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/workers/orca-project/fm-lab-rebased",
+  "project": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-project",
+  "harness": "codex",
+  "kind": "scout",
+  "tasktmp": "/tmp/fm-rebind-codex",
+  "model": "default",
+  "effort": "default",
+  "spawn_gen": "s1793046768.81074.14424",
+  "backend": "orca",
+  "orca_worktree_id": "05e388bf-5f63-4f9e-8ce8-0f184869c9d0::/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/workers/orca-project/fm-lab-rebased",
+  "terminal": "term_5fe29bbd-ad42-4b15-961b-fb2715c89cab"
+}
+Preserved copy: 'uncommitted task survives endpoint replacement\n'
+
+$ bash bin/fm-spawn.sh rebind-droid --relaunch --harness codex
+exit=0
+spawned rebind-droid harness=codex kind=scout window=fm-rebind-droid worktree=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/workers/orca-project/fm-lab-rebased
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s; down 16s) - full banner already printed this episode.
+
+Replacement allocated in same worktree
+{
+  "window": "fm-rebind-droid",
+  "endpoint_task_id": "rebind-droid",
+  "worktree": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/workers/orca-project/fm-lab-rebased",
+  "project": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-project",
+  "harness": "codex",
+  "kind": "scout",
+  "tasktmp": "/tmp/fm-rebind-droid",
+  "model": "default",
+  "effort": "default",
+  "spawn_gen": "s1793046784.7569.22277",
+  "backend": "orca",
+  "orca_worktree_id": "05e388bf-5f63-4f9e-8ce8-0f184869c9d0::/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/workers/orca-project/fm-lab-rebased",
+  "terminal": "term_5030c584-3fe3-4fe8-94a5-1620af75638b"
+}
+Preserved copy: 'uncommitted task survives endpoint replacement\n'
+
+$ bash bin/fm-control.sh survivor-claude exit
+exit=1
+
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home
+error: task survivor-claude's endpoint term_fm_lab_stale_rebased reads 'unreadable', but an agent process still runs in /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/workers/orca-project/fm-lab-rebased (31243 /opt/homebrew/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex); exit will not claim an agent stopped at an address it cannot trust, nor send lifecycle input to one
+
+$ bash bin/fm-spawn.sh survivor-claude --relaunch --harness codex
+exit=1
+
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s; down 39s) - full banner already printed this episode.
+error: task survivor-claude's recorded endpoint term_fm_lab_stale_rebased reads 'unreadable', but an agent process still runs in /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/workers/orca-project/fm-lab-rebased (31243 /opt/homebrew/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex). An endpoint that cannot be proven absent may still hold a live agent on this task's worktree; refusing rather than launching a second agent into it
+
+$ bash bin/fm-control.sh survivor-droid exit
+exit=1
+
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home
+error: task survivor-droid's endpoint term_fm_lab_stale_rebased reads 'unknown', but an agent process still runs in /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/workers/orca-project/fm-lab-rebased (31243 /opt/homebrew/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex); exit cannot prove the agent stopped
+
+$ bash bin/fm-spawn.sh survivor-droid --relaunch --harness codex
+exit=1
+
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s; down 43s) - full banner already printed this episode.
+error: an agent process still runs in /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/workers/orca-project/fm-lab-rebased (31243 /opt/homebrew/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex)
+error: Orca Droid relaunch has no current-generation SessionEnd proof with its process gone; refusing a duplicate agent
+
+$ bash bin/fm-control.sh offline-claude exit
+exit=1
+
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home
+error: task offline-claude's endpoint term_fm_lab_stale_rebased reads 'unreadable', but Orca could not describe terminal term_fm_lab_stale_rebased; exit will not claim an agent stopped at an address it cannot trust, nor send lifecycle input to one
+
+$ bash bin/fm-control.sh offline-droid exit
+exit=1
+
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home
+error: task offline-droid's endpoint term_fm_lab_stale_rebased reads 'unknown', but Orca could not describe terminal term_fm_lab_stale_rebased; exit cannot prove the agent stopped
+
+Authenticated work resumption: untested. Replacement screens show the real Codex sign-in page in the disposable account. No login or model request was submitted. This is the accepted limitation from the prior test round.

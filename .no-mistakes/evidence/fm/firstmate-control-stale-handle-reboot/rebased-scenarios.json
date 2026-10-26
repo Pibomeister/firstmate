@@ -1,0 +1,37 @@
+[
+  {
+    "name": "Decode the real nonzero stale-handle response",
+    "result": "pass",
+    "live": true
+  },
+  {
+    "name": "Exit pre-boot Claude and Droid records without changing saved work",
+    "result": "pass",
+    "live": true
+  },
+  {
+    "name": "Refuse current-boot records, forged boot values and missing metadata",
+    "result": "pass",
+    "live": true
+  },
+  {
+    "name": "Refuse replacement without reboot proof and retain Droid SessionEnd checks",
+    "result": "pass",
+    "live": true
+  },
+  {
+    "name": "Replace pre-boot Codex and Droid endpoints in the same preserved worktree",
+    "result": "pass",
+    "live": true
+  },
+  {
+    "name": "Refuse stale-handle recovery while a real agent remains in the worktree",
+    "result": "pass",
+    "live": true
+  },
+  {
+    "name": "Refuse recovery when the isolated Orca runtime is unavailable",
+    "result": "pass",
+    "live": true
+  }
+]

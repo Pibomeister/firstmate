@@ -1,0 +1,7 @@
+[
+  {
+    "pid": 44520,
+    "verified_args": "/Applications/Orca.app/Contents/Frameworks/Orca Helper.app/Contents/MacOS/Orca Helper /Applications/Orca.app/Contents/Resources/app.asar.unpacked/out/main/daemon-entry.js --socket /tmp/.orca-daemon-501/067e02a60a39/daemon-v52.sock --token /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/o/daemon/daemon-v52.token --pid-record /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/o/daemon/daemon-v52.pid --launch-nonce 349936e3-1980-47c9-8cbc-4ea788316798 --entry-path /Applications/Orca.app/Contents/Resources/app.asar.unpacked/out/main/daemon-entry.js --app-version 1.4.241 --spawner-exec-path /Applications/Orca.app/Contents/MacOS/Orca --spawn-admission enforce --log-file /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/o/logs/daemon.log",
+    "action": "SIGTERM lab daemon"
+  }
+]

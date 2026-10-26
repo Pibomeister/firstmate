@@ -1,0 +1,604 @@
+[
+  {
+    "command": [
+      "orca",
+      "status",
+      "--json"
+    ],
+    "environment": {},
+    "exit": 0,
+    "stdout": "{\n  \"id\": \"local-status\",\n  \"ok\": true,\n  \"result\": {\n    \"target\": {\n      \"kind\": \"local\"\n    },\n    \"app\": {\n      \"running\": true,\n      \"pid\": 67327,\n      \"desktopWindowStatus\": \"blocked\"\n    },\n    \"runtime\": {\n      \"state\": \"ready\",\n      \"reachable\": true,\n      \"connectionState\": \"connected\",\n      \"runtimeId\": \"fb9500b1-8c4f-4061-b83e-a4a609344e27\",\n      \"appVersion\": \"1.4.241\",\n      \"remoteUpdateSupport\": {\n        \"installMode\": \"unsupported-headless-serve\",\n        \"automatic\": false,\n        \"reason\": \"updater-unavailable\"\n      },\n      \"capabilities\": [\n        \"agent-session.saved-resume-origin.v1\",\n        \"runtime.status.compat.v1\",\n        \"runtime.environments.v1\",\n        \"remote-runtime.shared-control.v1\",\n        \"runtime.automatic-work.v1\",\n        \"updater.remote-control.v1\",\n        \"managed-runtime.install.v1\",\n        \"managed-runtime.remove.v1\",\n        \"runtime-source-fence.v1\",\n        \"ssh.target-management.v1\",\n        \"pairing.device-key.v1\",\n        \"pairing.device-key-ephemeral.v1\",\n        \"mobile.tasks.v1\",\n        \"notifications.remote-push.v1\",\n        \"notifications.desktop-presence.v1\",\n        \"pairing.delegated-mobile-devices.v1\",\n        \"mobile.desktop-relay.v1\",\n        \"orcad.stale-lock-reclaim.v1\",\n        \"orcad.terminal-census.v1\",\n        \"orcad.migration-catalog.v1\",\n        \"orcad.migration-catalog-abort-by-reference.v1\",\n        \"accounts.host-launch-env.v1\",\n        \"orchestration.federation.v1\",\n        \"orchestration.federation-control-mail.v1\",\n        \"orchestration.federation-lifecycle-settlement.v1\",\n        \"orchestration.worker-stop-verdict.v1\",\n        \"orchestration.worker-launch-preferences.v1\",\n        \"orchestration.federation-structured-read.v1\",\n        \"orchestration.federation-fleet-snapshot.v1\",\n        \"orchestration.federation-release-archive.v1\",\n        \"orchestration.contract.v1\",\n        \"settings.agent-launch.v1\",\n        \"settings.agent-launch.auto-permissions.v1\",\n        \"settings.agent-launch.native-chat-permissions.v1\",\n        \"settings.agent-permission.v1\",\n        \"agent.launch.v2\",\n        \"agent.launch.replay.v1\",\n        \"agent.launch.replay-required.v1\",\n        \"agent.launch.prompt-carry.v1\",\n        \"agent.launch.prompt-unconfirmed.v1\",\n        \"agent.launch.placement.v1\",\n        \"agent.launch.local-presentation.v1\",\n        \"agent.launch.create-folder-workspace.v1\",\n        \"agent.launch.surface.v1\",\n        \"agent-session.conversation-stop.v1\",\n        \"agent-session.prompt-cancel.v1\",\n        \"agent-session.repeated-stop.v1\",\n        \"agent-session.send-usage-limit-continuation.v1\",\n        \"agentSession.create.tab-id.v1\",\n        \"agentSession.create.message.v1\",\n        \"agentSession.create.tab-placement.v1\",\n        \"agent-session.send-options.v1\",\n        \"agent-session.account-env.v1\",\n        \"agent-session.send-skills.v1\",\n        \"agent-session.session-boundary.v1\",\n        \"agent-session.host-authority.v1\",\n        \"agent-session.omp-resume-path.v1\",\n        \"agent-session.keyboard.v1\",\n        \"agent-session.structured.v1\",\n        \"agent-session.current-requests.v1\",\n        \"agent-session.structured.client-launch-mode.v1\",\n        \"agent-session.pending-send-result.v1\",\n        \"agent-session.accepted-send.v1\",\n        \"agent-session.send-answers-proof.v1\",\n        \"agent-session.queued-commands.v1\",\n        \"agent-session.queued-message-edit.v1\",\n        \"agent-session.queued-message-image-edit.v1\",\n        \"agent-session.continue-interrupted.v1\",\n        \"agent-session.permission-modes.v1\",\n        \"agent-session.permission-own.v1\",\n        \"agent-session.coherent-model-catalog.v1\",\n        \"agent-session.structured.hold.v1\",\n        \"agent-session.structured.reveal.v1\",\n        \"agent-session.structured.registered-agents.v1\",\n        \"agent-session.structured.pi-dialogs.v1\",\n        \"agent-session.structured.resume-history.v1\",\n        \"agent-session.structured.cli-source.v1\",\n        \"agent-session.model-catalog.saved-only.v1\",\n        \"agent-session.structured.availability.v1\",\n        \"agent-session.structured.regenerate-name.v1\",\n        \"agent-session.structured.rename.v1\",\n        \"agent-session.status-feed.v1\",\n        \"agent-session.turn-completion.v1\",\n        \"agent-session.attention-ack.v1\",\n        \"agent-session.workspace-sleep-mark.v1\",\n        \"agent-session.rewind.v1\",\n        \"agent-session.rewind-recovery.v1\",\n        \"agent-session.conversation-outline.v1\",\n        \"agent-session.item-detail.v1\",\n        \"agent-session.background-task-stop.v1\",\n        \"agent-session.question-answers.v1\",\n        \"agent-session.attachments.v1\",\n        \"agent-session.attachments.phone.v1\",\n        \"agent-session.turn-item.v1\",\n        \"agent-session.background-task-row-stop.v1\",\n        \"agent-session.background-task-child-views.v1\",\n        \"agent-session.kimi-resume.v1\",\n        \"agent-session.cursor-resume.v1\",\n        \"agent-session.opencode2-resume.v1\",\n        \"agent-session.muse-resume.v1\",\n        \"agent-session.dsh-resume.v1\",\n        \"agent-session.kiro-resume.v1\",\n        \"agent-session.hermes-resume.v1\",\n        \"agent-session.qoder-resume.v1\",\n        \"agent-session.qoder-cn-resume.v1\",\n        \"agent-session.qwen-code-resume.v1\",\n        \"agent-session.codebuddy-resume.v1\",\n        \"agent-session.zcode-resume.v1\",\n        \"accounts.import-host-credentials.v1\",\n        \"accounts.claude-sign-in.v1\",\n        \"accounts.antigravity-native.v1\",\n        \"accounts.antigravity-chat-sign-in.v1\",\n        \"accounts.managed-data-profiles.v1\",\n        \"accounts.codex-reset-credit.v1\",\n        \"accounts.usage-credentials.v1\",\n        \"accounts.host-sign-in.v1\",\n        \"skills.install.v1\",\n        \"skills.install.bundle.v1\",\n        \"skills.install-cancel.v1\",\n        \"skills.install-progress.v1\",\n        \"skills.install-result.v2\",\n        \"skills.upload.v1\",\n        \"skills.manage.v1\",\n        \"skills.install-providers.v1\",\n        \"skills.delete.v1\",\n        \"skills.bundled-orca.v1\",\n        \"automation.list-host-scope.v1\",\n        \"automation.owner-fencing.v1\",\n        \"automation.create-idempotency.v1\",\n        \"automations.extra-agent-args.v1\",\n        \"project-host-setup.v1\",\n        \"project-host-setup.host-target.v1\",\n        \"workspace-run-context.v1\",\n        \"worktree.provisioned-root.v1\",\n        \"worktree.linked-work-item-context.v1\",\n        \"worktree.linked-items.v1\",\n        \"worktree.linked-items-delta.v1\",\n        \"worktree.github-pr-suppression.v1\",\n        \"repo.search-qualified-refs.v1\",\n        \"folder-workspace.path-status.v1\",\n        \"worktree.create-idempotency.v1\",\n        \"worktree.archive-failure-blocking.v1\",\n        \"worktree.visibility-defaults.v1\",\n        \"worktree.visibility-source-defaults.v1\",\n        \"preflight.workspace-scoped.v1\",\n        \"preflight.other-runtime-refusal.v1\",\n        \"workspace-ports.v1\",\n        \"workspace-ports.host-scoped.v1\",\n        \"session.tabs.qoderOwnedCreate.v1\",\n        \"session-tabs.close-intent.v1\",\n        \"session-tabs.close-force.v1\",\n        \"session-tabs.close-replay-reason.v1\",\n        \"session-tabs.authoritative-inventory.v1\",\n        \"session-tabs.split-group-placement.v1\",\n        \"session.tabs.chat-fork-cli.v1\",\n        \"session-tabs.empty-worktree-answer.v1\",\n        \"session-tabs.create-terminal-shell.v1\",\n        \"terminal.binary-stream.v1\",\n        \"terminal.program-status.v1\",\n        \"terminal.multiplex.v1\",\n        \"terminal.query-reply-input.v1\",\n        \"terminal.prompt-delivery.v1\",\n        \"terminal.paired-parking.v1\",\n        \"agent-status.turn-ended-at.v1\",\n        \"terminal.spawn-intent.v1\",\n        \"terminal.quick-commands.v1\",\n        \"terminal.quick-commands.long-prompts.v1\",\n        \"terminal.quick-commands.large-lists.v1\",\n        \"terminal.create-idempotency.v2\",\n        \"terminal.create-shell-selection.v1\",\n        \"terminal.split-retry.v1\",\n        \"files.pathsExist\",\n        \"files.resolve-terminal-path.cross-workspace.v1\",\n        \"files.readDocPreview\",\n        \"files.write.disk-precondition.v1\",\n        \"files.write.identical-noop.v1\",\n        \"files.mutation-ownership.v1\",\n        \"browser.tab-create-known-id.v1\",\n        \"browser.clientHost.v1\",\n        \"browser.clientHost.pageMetadata.v1\",\n        \"browser.clientHost.automation.v1\",\n        \"browser.clientHost.fileChannel.v1\",\n        \"network.browserTunnel.v1\",\n        \"network.browserTunnel.executionHosts.v1\",\n        \"git.antigravity-configured-model.v1\",\n        \"github.markPRReadyForReview\",\n        \"gitlab.updateMR.readyForReview.v1\",\n        \"task-source-context.v1\",\n        \"linear.issue-attribute-filter.v1\",\n        \"jira.transition-fields.v1\",\n        \"jira.agent-access.v1\",\n        \"jira.current-sprint.v1\",\n        \"jira.user-fields.v1\",\n        \"jira.attachment-images.v1\",\n        \"jira.issue-summary-generation.v1\",\n        \"jira.saved-filter-state.v1\",\n        \"jira.issue-list-statuses.v1\",\n        \"aiVault.v1\",\n        \"aiVault.session-titles.v1\",\n        \"ai-vault.chat-fork-source.v1\",\n        \"orcad.migration-blob.v1\",\n        \"orcad.migration-blob.terminal-restore-hints.v1\",\n        \"orcad.migration-blob.shell-history.v1\",\n        \"mobileWeb.bundle.v1\"\n      ],\n      \"degradations\": [\n        {\n          \"code\": \"browser_unavailable\",\n          \"capability\": \"browser.headless.v1\",\n          \"message\": \"The browser provider started but is no longer answering health checks.\",\n          \"reason\": \"provider_unhealthy\"\n        }\n      ]\n    },\n    \"graph\": {\n      \"state\": \"ready\"\n    }\n  },\n  \"_meta\": {\n    \"runtimeId\": \"fb9500b1-8c4f-4061-b83e-a4a609344e27\"\n  }\n}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "bash",
+      "bin/fm-lab-home.sh",
+      "create",
+      "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home"
+    ],
+    "environment": {},
+    "exit": 0,
+    "stdout": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "bash",
+      "-c",
+      ". bin/backends/orca.sh; fm_backend_orca_host_boot_epoch"
+    ],
+    "environment": {},
+    "exit": 0,
+    "stdout": "1792904944",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "orca",
+      "terminal",
+      "show",
+      "--terminal",
+      "term_fm_lab_stale_rebased",
+      "--json"
+    ],
+    "environment": {},
+    "exit": 1,
+    "stdout": "{\n  \"id\": \"a0683e85-30c9-4d49-a373-20fee9dd4bbc\",\n  \"ok\": false,\n  \"error\": {\n    \"code\": \"terminal_handle_stale\",\n    \"message\": \"terminal_handle_stale\",\n    \"data\": {\n      \"nextSteps\": [\n        \"Terminal handles belong to the Orca server that issued them. If this handle came from a paired server (for example `orca terminal list --environment <server>`), pass the same --environment <server> to this command.\"\n      ]\n    }\n  },\n  \"_meta\": {\n    \"runtimeId\": \"fb9500b1-8c4f-4061-b83e-a4a609344e27\"\n  }\n}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "bash",
+      "-c",
+      ". bin/backends/orca.sh; fm_backend_orca_terminal_facts term_fm_lab_stale_rebased"
+    ],
+    "environment": {},
+    "exit": 0,
+    "stdout": "stale\u001f\u001f\u001f\u001f\u001f",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "bash",
+      "bin/fm-control.sh",
+      "recover-claude",
+      "exit"
+    ],
+    "environment": {
+      "FM_HOME": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home"
+    },
+    "exit": 0,
+    "stdout": "endpoint-gone recover-claude harness=claude backend=orca endpoint=term_fm_lab_stale_rebased worktree=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/preserved-copy\n",
+    "stderr": "fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home\n"
+  },
+  {
+    "command": [
+      "bash",
+      "bin/fm-control.sh",
+      "recover-droid",
+      "exit"
+    ],
+    "environment": {
+      "FM_HOME": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home"
+    },
+    "exit": 0,
+    "stdout": "endpoint-gone recover-droid harness=droid backend=orca endpoint=term_fm_lab_stale_rebased worktree=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/preserved-copy\n",
+    "stderr": "fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home\n"
+  },
+  {
+    "command": [
+      "bash",
+      "bin/fm-control.sh",
+      "mtime-recover",
+      "exit"
+    ],
+    "environment": {
+      "FM_HOME": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home"
+    },
+    "exit": 0,
+    "stdout": "endpoint-gone mtime-recover harness=claude backend=orca endpoint=term_fm_lab_stale_rebased worktree=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/preserved-copy\n",
+    "stderr": "fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home\n"
+  },
+  {
+    "command": [
+      "bash",
+      "bin/fm-control.sh",
+      "current-claude",
+      "exit"
+    ],
+    "environment": {
+      "FM_HOME": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home"
+    },
+    "exit": 1,
+    "stdout": "",
+    "stderr": "fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home\nerror: task current-claude's endpoint term_fm_lab_stale_rebased reads 'unreadable', but Orca no longer recognizes terminal term_fm_lab_stale_rebased, but the host boot time 1792904944 does not postdate its recorded evidence 1792908544, so its agent cannot be proven to have died with the old boot; exit will not claim an agent stopped at an address it cannot trust, nor send lifecycle input to one\n"
+  },
+  {
+    "command": [
+      "bash",
+      "bin/fm-control.sh",
+      "current-claude",
+      "exit"
+    ],
+    "environment": {
+      "FM_HOME": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home",
+      "FM_ORCA_BOOT_EPOCH": "1892904943"
+    },
+    "exit": 1,
+    "stdout": "",
+    "stderr": "fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home\nerror: task current-claude's endpoint term_fm_lab_stale_rebased reads 'unreadable', but Orca no longer recognizes terminal term_fm_lab_stale_rebased, but the host boot time 1792904944 does not postdate its recorded evidence 1792908544, so its agent cannot be proven to have died with the old boot; exit will not claim an agent stopped at an address it cannot trust, nor send lifecycle input to one\n"
+  },
+  {
+    "command": [
+      "bash",
+      "bin/fm-control.sh",
+      "current-droid",
+      "exit"
+    ],
+    "environment": {
+      "FM_HOME": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home"
+    },
+    "exit": 1,
+    "stdout": "",
+    "stderr": "fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home\nerror: task current-droid's endpoint term_fm_lab_stale_rebased reads 'unknown', but Orca no longer recognizes terminal term_fm_lab_stale_rebased, but the host boot time 1792904944 does not postdate its recorded evidence 1792908544, so its agent cannot be proven to have died with the old boot; exit cannot prove the agent stopped\n"
+  },
+  {
+    "command": [
+      "bash",
+      "bin/fm-control.sh",
+      "current-droid",
+      "exit"
+    ],
+    "environment": {
+      "FM_HOME": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home",
+      "FM_ORCA_BOOT_EPOCH": "1892904943"
+    },
+    "exit": 1,
+    "stdout": "",
+    "stderr": "fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home\nerror: task current-droid's endpoint term_fm_lab_stale_rebased reads 'unknown', but Orca no longer recognizes terminal term_fm_lab_stale_rebased, but the host boot time 1792904944 does not postdate its recorded evidence 1792908544, so its agent cannot be proven to have died with the old boot; exit cannot prove the agent stopped\n"
+  },
+  {
+    "command": [
+      "bash",
+      "-c",
+      ". bin/backends/orca.sh; fm_backend_orca_endpoint_absence_proof term_fm_lab_stale_rebased \"$1\"",
+      "_",
+      "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/preserved-copy"
+    ],
+    "environment": {},
+    "exit": 0,
+    "stdout": "unproven\tOrca no longer recognizes terminal term_fm_lab_stale_rebased, so it cannot say whether that terminal exited",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "git",
+      "-C",
+      "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-project",
+      "init",
+      "-b",
+      "main"
+    ],
+    "environment": {},
+    "exit": 0,
+    "stdout": "Initialized empty Git repository in /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-project/.git/\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "git",
+      "-C",
+      "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-project",
+      "add",
+      "README.md"
+    ],
+    "environment": {},
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "git",
+      "-C",
+      "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-project",
+      "-c",
+      "user.name=Lab",
+      "-c",
+      "user.email=lab@example.invalid",
+      "commit",
+      "-m",
+      "Lab baseline"
+    ],
+    "environment": {},
+    "exit": 0,
+    "stdout": "[main (root-commit) 7708432] Lab baseline\n 1 file changed, 1 insertion(+)\n create mode 100644 README.md\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "orca",
+      "repo",
+      "add",
+      "--path",
+      "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-project",
+      "--json"
+    ],
+    "environment": {},
+    "exit": 0,
+    "stdout": "{\n  \"id\": \"04fc84a2-d354-4445-9b2a-f8c0694ee375\",\n  \"ok\": true,\n  \"result\": {\n    \"repo\": {\n      \"id\": \"05e388bf-5f63-4f9e-8ce8-0f184869c9d0\",\n      \"path\": \"/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-project\",\n      \"displayName\": \"orca-project\",\n      \"badgeColor\": \"#737373\",\n      \"addedAt\": 1793046650297,\n      \"kind\": \"git\",\n      \"externalWorktreeVisibilityLegacy\": false,\n      \"worktreeBasePath\": \"/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/workers\",\n      \"upstream\": null,\n      \"gitUsername\": \"\",\n      \"hookSettings\": {\n        \"mode\": \"auto\",\n        \"setupRunPolicy\": \"run-by-default\",\n        \"setupAgentStartupPolicy\": \"start-immediately\",\n        \"scripts\": {\n          \"setup\": \"\",\n          \"archive\": \"\"\n        }\n      },\n      \"externalWorktreeVisibility\": \"hide\"\n    }\n  },\n  \"_meta\": {\n    \"runtimeId\": \"fb9500b1-8c4f-4061-b83e-a4a609344e27\"\n  }\n}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "orca",
+      "project",
+      "setup-update",
+      "--setup",
+      "05e388bf-5f63-4f9e-8ce8-0f184869c9d0",
+      "--host",
+      "local",
+      "--worktree-base-path",
+      "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/workers",
+      "--json"
+    ],
+    "environment": {},
+    "exit": 0,
+    "stdout": "{\n  \"id\": \"a5ac449f-1252-42f4-b6a5-94b75a7e3d1c\",\n  \"ok\": true,\n  \"result\": {\n    \"result\": {\n      \"project\": {\n        \"id\": \"repo:05e388bf-5f63-4f9e-8ce8-0f184869c9d0\",\n        \"displayName\": \"orca-project\",\n        \"badgeColor\": \"#737373\",\n        \"kind\": \"git\",\n        \"sourceRepoIds\": [\n          \"05e388bf-5f63-4f9e-8ce8-0f184869c9d0\"\n        ],\n        \"createdAt\": 1793046650297,\n        \"updatedAt\": 1793046650297\n      },\n      \"setup\": {\n        \"id\": \"05e388bf-5f63-4f9e-8ce8-0f184869c9d0\",\n        \"projectId\": \"repo:05e388bf-5f63-4f9e-8ce8-0f184869c9d0\",\n        \"hostId\": \"local\",\n        \"repoId\": \"05e388bf-5f63-4f9e-8ce8-0f184869c9d0\",\n        \"path\": \"/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-project\",\n        \"displayName\": \"orca-project\",\n        \"kind\": \"git\",\n        \"worktreeBasePath\": \"/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/workers\",\n        \"setupState\": \"ready\",\n        \"setupMethod\": \"legacy-repo\",\n        \"createdAt\": 1793046650297,\n        \"updatedAt\": 1793046650297\n      },\n      \"repo\": {\n        \"id\": \"05e388bf-5f63-4f9e-8ce8-0f184869c9d0\",\n        \"path\": \"/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-project\",\n        \"displayName\": \"orca-project\",\n        \"badgeColor\": \"#737373\",\n        \"addedAt\": 1793046650297,\n        \"kind\": \"git\",\n        \"externalWorktreeVisibilityLegacy\": false,\n        \"worktreeBasePath\": \"/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/workers\",\n        \"upstream\": null,\n        \"gitUsername\": \"\",\n        \"hookSettings\": {\n          \"mode\": \"auto\",\n          \"setupRunPolicy\": \"run-by-default\",\n          \"setupAgentStartupPolicy\": \"start-immediately\",\n          \"scripts\": {\n            \"setup\": \"\",\n            \"archive\": \"\"\n          }\n        },\n        \"externalWorktreeVisibility\": \"hide\"\n      }\n    }\n  },\n  \"_meta\": {\n    \"runtimeId\": \"fb9500b1-8c4f-4061-b83e-a4a609344e27\"\n  }\n}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "orca",
+      "worktree",
+      "create",
+      "--repo",
+      "id:05e388bf-5f63-4f9e-8ce8-0f184869c9d0",
+      "--name",
+      "fm-lab-rebased",
+      "--no-parent",
+      "--setup",
+      "skip",
+      "--json"
+    ],
+    "environment": {},
+    "exit": 0,
+    "stdout": "{\n  \"id\": \"56f77ab1-79c8-4c00-ac11-4d899b163130\",\n  \"ok\": true,\n  \"result\": {\n    \"worktree\": {\n      \"id\": \"05e388bf-5f63-4f9e-8ce8-0f184869c9d0::/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/workers/orca-project/fm-lab-rebased\",\n      \"identity\": {\n        \"key\": \"wt2:local:669eb70c-0a7a-4676-8180-b0dcb047b9e7\",\n        \"executionHostId\": \"local\",\n        \"instanceId\": \"669eb70c-0a7a-4676-8180-b0dcb047b9e7\"\n      },\n      \"instanceId\": \"669eb70c-0a7a-4676-8180-b0dcb047b9e7\",\n      \"repoId\": \"05e388bf-5f63-4f9e-8ce8-0f184869c9d0\",\n      \"projectId\": \"repo:05e388bf-5f63-4f9e-8ce8-0f184869c9d0\",\n      \"hostId\": \"local\",\n      \"projectHostSetupId\": \"05e388bf-5f63-4f9e-8ce8-0f184869c9d0\",\n      \"creatorProvenance\": {\n        \"kind\": \"host\"\n      },\n      \"path\": \"/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/workers/orca-project/fm-lab-rebased\",\n      \"head\": \"770843222eefeb07e24b6b38cab8205aa24fc46d\",\n      \"branch\": \"refs/heads/fm-lab-rebased\",\n      \"isBare\": false,\n      \"isMainWorktree\": false,\n      \"displayName\": \"fm-lab-rebased\",\n      \"displayNameMode\": \"fixed\",\n      \"comment\": \"\",\n      \"linkedIssue\": null,\n      \"linkedPR\": null,\n      \"linkedLinearIssue\": null,\n      \"linkedLinearIssueWorkspaceId\": null,\n      \"linkedLinearIssueOrganizationUrlKey\": null,\n      \"linkedGitLabMR\": null,\n      \"linkedGitLabIssue\": null,\n      \"linkedBitbucketPR\": null,\n      \"linkedAzureDevOpsPR\": null,\n      \"linkedGiteaPR\": null,\n      \"linkedWorkItem\": null,\n      \"linkedTaskSourceContext\": null,\n      \"isArchived\": false,\n      \"isUnread\": false,\n      \"isPinned\": false,\n      \"sortOrder\": 1793046650879,\n      \"lastActivityAt\": 1793046763675,\n      \"createdAt\": 1793046763675,\n      \"cliProvenance\": {\n        \"kind\": \"created-by-cli\",\n        \"createdAt\": 1793046763471\n      },\n      \"baseRef\": \"main\",\n      \"workspaceStatus\": \"in-progress\",\n      \"parentWorktreeId\": null,\n      \"childWorktreeIds\": [],\n      \"lineage\": null,\n      \"workspaceLineage\": null,\n      \"git\": {\n        \"path\": \"/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/workers/orca-project/fm-lab-rebased\",\n        \"head\": \"770843222eefeb07e24b6b38cab8205aa24fc46d\",\n        \"branch\": \"refs/heads/fm-lab-rebased\",\n        \"isBare\": false,\n        \"isMainWorktree\": false\n      }\n    },\n    \"lineage\": null,\n    \"workspaceLineage\": null,\n    \"warnings\": [],\n    \"catalogVersion\": {\n      \"epoch\": \"cc76c159-569e-466a-9fd4-5d3b8525322f\",\n      \"sequence\": 3\n    }\n  },\n  \"_meta\": {\n    \"runtimeId\": \"fb9500b1-8c4f-4061-b83e-a4a609344e27\"\n  }\n}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "bash",
+      "bin/fm-spawn.sh",
+      "current-spawn-codex",
+      "--relaunch",
+      "--harness",
+      "codex"
+    ],
+    "environment": {
+      "FM_HOME": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home"
+    },
+    "exit": 1,
+    "stdout": "",
+    "stderr": "fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home\n\u25cf\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\u25cf  WATCHER DOWN - SUPERVISION IS OFF\n\u25cf  6 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).\n\u25cf  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.\n\u25cf  down 0s.\n\u25cf  This is a supervision warning only; the guarded operation WILL still run.\n\u25cf  repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds 180.\n\u25cf\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\nerror: task current-spawn-codex's recorded endpoint term_fm_lab_stale_rebased reads 'unreadable', but Orca no longer recognizes terminal term_fm_lab_stale_rebased, but the host boot time 1792904944 does not postdate its recorded evidence 1792908544, so its agent cannot be proven to have died with the old boot. An endpoint that cannot be proven absent may still hold a live agent on this task's worktree; refusing rather than launching a second agent into it\n"
+  },
+  {
+    "command": [
+      "bash",
+      "bin/fm-spawn.sh",
+      "current-spawn-droid",
+      "--relaunch",
+      "--harness",
+      "codex"
+    ],
+    "environment": {
+      "FM_HOME": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home"
+    },
+    "exit": 1,
+    "stdout": "",
+    "stderr": "fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home\nWARNING: watcher still down (same stale episode; last beat: never, grace 300s; down 1s) - full banner already printed this episode.\nerror: Orca no longer recognizes terminal term_fm_lab_stale_rebased, but the host boot time 1792904944 does not postdate its recorded evidence 1792908544, so its agent cannot be proven to have died with the old boot\nerror: Orca Droid relaunch has no current-generation SessionEnd proof with its process gone; refusing a duplicate agent\n"
+  },
+  {
+    "command": [
+      "bash",
+      "bin/fm-spawn.sh",
+      "rebind-codex",
+      "--relaunch",
+      "--harness",
+      "codex"
+    ],
+    "environment": {
+      "FM_HOME": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home"
+    },
+    "exit": 0,
+    "stdout": "spawned rebind-codex harness=codex kind=scout window=fm-rebind-codex worktree=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/workers/orca-project/fm-lab-rebased\n",
+    "stderr": "fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home\nWARNING: watcher still down (same stale episode; last beat: never, grace 300s; down 2s) - full banner already printed this episode.\n"
+  },
+  {
+    "command": [
+      "orca",
+      "terminal",
+      "show",
+      "--terminal",
+      "term_5fe29bbd-ad42-4b15-961b-fb2715c89cab",
+      "--json"
+    ],
+    "environment": {},
+    "exit": 0,
+    "stdout": "{\n  \"id\": \"5d39cb98-b30b-4e32-83f3-ceae914c3b15\",\n  \"ok\": true,\n  \"result\": {\n    \"terminal\": {\n      \"handle\": \"term_5fe29bbd-ad42-4b15-961b-fb2715c89cab\",\n      \"ptyId\": \"2\",\n      \"incarnationId\": \"a3441d93-c151-4c76-8cad-6570e531290f\",\n      \"orphaned\": false,\n      \"worktreeId\": \"05e388bf-5f63-4f9e-8ce8-0f184869c9d0::/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/workers/orca-project/fm-lab-rebased\",\n      \"worktreePath\": \"/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/workers/orca-project/fm-lab-rebased\",\n      \"branch\": \"refs/heads/fm-lab-rebased\",\n      \"tabId\": \"7bb82359-bb11-476b-9e83-87535484ba32\",\n      \"leafId\": \"3c8ed066-a622-4320-8920-edc6fe9f0c2a\",\n      \"title\": \"fm-rebind-codex\",\n      \"connected\": true,\n      \"writable\": true,\n      \"lastOutputAt\": 1793046775474,\n      \"preview\": \"Usage included with Plus, Pro, Business, and Enterprise plans\\n2. Sign in with Device Code\\nSign in from another device with a one-time code\\n3. Provide your own API key\\nPay for what you use\\nPress enter to continue\",\n      \"executionHostId\": \"local\",\n      \"paneRuntimeId\": -1,\n      \"rendererGraphEpoch\": 0,\n      \"agentWait\": {\n        \"source\": \"prompt-text\",\n        \"reason\": \"agent-interactive-prompt\",\n        \"since\": 1793046775474\n      }\n    }\n  },\n  \"_meta\": {\n    \"runtimeId\": \"fb9500b1-8c4f-4061-b83e-a4a609344e27\"\n  }\n}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "orca",
+      "terminal",
+      "read",
+      "--terminal",
+      "term_5fe29bbd-ad42-4b15-961b-fb2715c89cab",
+      "--json"
+    ],
+    "environment": {},
+    "exit": 0,
+    "stdout": "{\n  \"id\": \"755dd07f-dcf9-4dc5-a3c5-2f149e326989\",\n  \"ok\": true,\n  \"result\": {\n    \"terminal\": {\n      \"handle\": \"term_5fe29bbd-ad42-4b15-961b-fb2715c89cab\",\n      \"status\": \"running\",\n      \"tail\": [\n        \"  Welcome to Codex, OpenAI's command-line coding agent\",\n        \"  Sign in with ChatGPT to use Codex as part of your paid plan\",\n        \"  or connect an API key for usage-based billing\",\n        \"> 1. Sign in with ChatGPT\",\n        \"     Usage included with Plus, Pro, Business, and Enterprise plans\",\n        \"  2. Sign in with Device Code\",\n        \"     Sign in from another device with a one-time code\",\n        \"  3. Provide your own API key\",\n        \"     Pay for what you use\",\n        \"  Press enter to continue\"\n      ],\n      \"truncated\": false,\n      \"limited\": false,\n      \"oldestCursor\": \"0\",\n      \"nextCursor\": \"5\",\n      \"latestCursor\": \"5\",\n      \"returnedLineCount\": 10,\n      \"tailRows\": [\n        {\n          \"wrapped\": false,\n          \"trailingSpaces\": 0\n        },\n        {\n          \"wrapped\": false,\n          \"trailingSpaces\": 0\n        },\n        {\n          \"wrapped\": false,\n          \"trailingSpaces\": 0\n        },\n        {\n          \"wrapped\": false,\n          \"trailingSpaces\": 0\n        },\n        {\n          \"wrapped\": false,\n          \"trailingSpaces\": 0\n        },\n        {\n          \"wrapped\": false,\n          \"trailingSpaces\": 0\n        },\n        {\n          \"wrapped\": false,\n          \"trailingSpaces\": 0\n        },\n        {\n          \"wrapped\": false,\n          \"trailingSpaces\": 0\n        },\n        {\n          \"wrapped\": false,\n          \"trailingSpaces\": 0\n        },\n        {\n          \"wrapped\": false,\n          \"trailingSpaces\": 0\n        }\n      ],\n      \"source\": \"screen\"\n    }\n  },\n  \"_meta\": {\n    \"runtimeId\": \"fb9500b1-8c4f-4061-b83e-a4a609344e27\"\n  }\n}\n",
+    "stderr": ""
+  },
+  {
+    "observation": "Replacement allocated in same worktree",
+    "prior_harness": "codex",
+    "persisted_metadata": {
+      "window": "fm-rebind-codex",
+      "endpoint_task_id": "rebind-codex",
+      "worktree": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/workers/orca-project/fm-lab-rebased",
+      "project": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-project",
+      "harness": "codex",
+      "kind": "scout",
+      "tasktmp": "/tmp/fm-rebind-codex",
+      "model": "default",
+      "effort": "default",
+      "spawn_gen": "s1793046768.81074.14424",
+      "backend": "orca",
+      "orca_worktree_id": "05e388bf-5f63-4f9e-8ce8-0f184869c9d0::/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/workers/orca-project/fm-lab-rebased",
+      "terminal": "term_5fe29bbd-ad42-4b15-961b-fb2715c89cab"
+    },
+    "preserved_copy": "uncommitted task survives endpoint replacement\n"
+  },
+  {
+    "command": [
+      "orca",
+      "terminal",
+      "close",
+      "--terminal",
+      "term_5fe29bbd-ad42-4b15-961b-fb2715c89cab",
+      "--json"
+    ],
+    "environment": {},
+    "exit": 0,
+    "stdout": "{\n  \"id\": \"1a1f36c9-e2a3-4363-9566-188815d146e8\",\n  \"ok\": true,\n  \"result\": {\n    \"close\": {\n      \"handle\": \"term_5fe29bbd-ad42-4b15-961b-fb2715c89cab\",\n      \"tabId\": \"7bb82359-bb11-476b-9e83-87535484ba32\",\n      \"ptyKilled\": true\n    }\n  },\n  \"_meta\": {\n    \"runtimeId\": \"fb9500b1-8c4f-4061-b83e-a4a609344e27\"\n  }\n}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "bash",
+      "bin/fm-spawn.sh",
+      "rebind-droid",
+      "--relaunch",
+      "--harness",
+      "codex"
+    ],
+    "environment": {
+      "FM_HOME": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home"
+    },
+    "exit": 0,
+    "stdout": "spawned rebind-droid harness=codex kind=scout window=fm-rebind-droid worktree=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/workers/orca-project/fm-lab-rebased\n",
+    "stderr": "fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home\nWARNING: watcher still down (same stale episode; last beat: never, grace 300s; down 16s) - full banner already printed this episode.\n"
+  },
+  {
+    "command": [
+      "orca",
+      "terminal",
+      "show",
+      "--terminal",
+      "term_5030c584-3fe3-4fe8-94a5-1620af75638b",
+      "--json"
+    ],
+    "environment": {},
+    "exit": 0,
+    "stdout": "{\n  \"id\": \"4e66080c-b0a3-4041-ba23-f3351c0e91db\",\n  \"ok\": true,\n  \"result\": {\n    \"terminal\": {\n      \"handle\": \"term_5030c584-3fe3-4fe8-94a5-1620af75638b\",\n      \"ptyId\": \"3\",\n      \"incarnationId\": \"b664c8e9-4a6b-4094-97f4-7dd8c513b065\",\n      \"orphaned\": false,\n      \"worktreeId\": \"05e388bf-5f63-4f9e-8ce8-0f184869c9d0::/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/workers/orca-project/fm-lab-rebased\",\n      \"worktreePath\": \"/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/workers/orca-project/fm-lab-rebased\",\n      \"branch\": \"refs/heads/fm-lab-rebased\",\n      \"tabId\": \"af5ae43f-1a32-4a0a-8110-60281f0f72e1\",\n      \"leafId\": \"4f830635-62e4-4820-b246-b238be2c92e7\",\n      \"title\": \"fm-rebind-droid\",\n      \"connected\": true,\n      \"writable\": true,\n      \"lastOutputAt\": 1793046793435,\n      \"preview\": \"Usage included with Plus, Pro, Business, and Enterprise plans\\n2. Sign in with Device Code\\nSign in from another device with a one-time code\\n3. Provide your own API key\\nPay for what you use\\nPress enter to continue\",\n      \"executionHostId\": \"local\",\n      \"paneRuntimeId\": -1,\n      \"rendererGraphEpoch\": 0,\n      \"agentWait\": {\n        \"source\": \"prompt-text\",\n        \"reason\": \"agent-interactive-prompt\",\n        \"since\": 1793046793435\n      }\n    }\n  },\n  \"_meta\": {\n    \"runtimeId\": \"fb9500b1-8c4f-4061-b83e-a4a609344e27\"\n  }\n}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "orca",
+      "terminal",
+      "read",
+      "--terminal",
+      "term_5030c584-3fe3-4fe8-94a5-1620af75638b",
+      "--json"
+    ],
+    "environment": {},
+    "exit": 0,
+    "stdout": "{\n  \"id\": \"be87060c-8833-4bb9-bcf6-3cf3d9cb2b18\",\n  \"ok\": true,\n  \"result\": {\n    \"terminal\": {\n      \"handle\": \"term_5030c584-3fe3-4fe8-94a5-1620af75638b\",\n      \"status\": \"running\",\n      \"tail\": [\n        \"  Welcome to Codex, OpenAI's command-line coding agent\",\n        \"  Sign in with ChatGPT to use Codex as part of your paid plan\",\n        \"  or connect an API key for usage-based billing\",\n        \"> 1. Sign in with ChatGPT\",\n        \"     Usage included with Plus, Pro, Business, and Enterprise plans\",\n        \"  2. Sign in with Device Code\",\n        \"     Sign in from another device with a one-time code\",\n        \"  3. Provide your own API key\",\n        \"     Pay for what you use\",\n        \"  Press enter to continue\"\n      ],\n      \"truncated\": false,\n      \"limited\": false,\n      \"oldestCursor\": \"0\",\n      \"nextCursor\": \"5\",\n      \"latestCursor\": \"5\",\n      \"returnedLineCount\": 10,\n      \"tailRows\": [\n        {\n          \"wrapped\": false,\n          \"trailingSpaces\": 0\n        },\n        {\n          \"wrapped\": false,\n          \"trailingSpaces\": 0\n        },\n        {\n          \"wrapped\": false,\n          \"trailingSpaces\": 0\n        },\n        {\n          \"wrapped\": false,\n          \"trailingSpaces\": 0\n        },\n        {\n          \"wrapped\": false,\n          \"trailingSpaces\": 0\n        },\n        {\n          \"wrapped\": false,\n          \"trailingSpaces\": 0\n        },\n        {\n          \"wrapped\": false,\n          \"trailingSpaces\": 0\n        },\n        {\n          \"wrapped\": false,\n          \"trailingSpaces\": 0\n        },\n        {\n          \"wrapped\": false,\n          \"trailingSpaces\": 0\n        },\n        {\n          \"wrapped\": false,\n          \"trailingSpaces\": 0\n        }\n      ],\n      \"source\": \"screen\"\n    }\n  },\n  \"_meta\": {\n    \"runtimeId\": \"fb9500b1-8c4f-4061-b83e-a4a609344e27\"\n  }\n}\n",
+    "stderr": ""
+  },
+  {
+    "observation": "Replacement allocated in same worktree",
+    "prior_harness": "droid",
+    "persisted_metadata": {
+      "window": "fm-rebind-droid",
+      "endpoint_task_id": "rebind-droid",
+      "worktree": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/workers/orca-project/fm-lab-rebased",
+      "project": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-project",
+      "harness": "codex",
+      "kind": "scout",
+      "tasktmp": "/tmp/fm-rebind-droid",
+      "model": "default",
+      "effort": "default",
+      "spawn_gen": "s1793046784.7569.22277",
+      "backend": "orca",
+      "orca_worktree_id": "05e388bf-5f63-4f9e-8ce8-0f184869c9d0::/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/workers/orca-project/fm-lab-rebased",
+      "terminal": "term_5030c584-3fe3-4fe8-94a5-1620af75638b"
+    },
+    "preserved_copy": "uncommitted task survives endpoint replacement\n"
+  },
+  {
+    "command": [
+      "orca",
+      "terminal",
+      "close",
+      "--terminal",
+      "term_5030c584-3fe3-4fe8-94a5-1620af75638b",
+      "--json"
+    ],
+    "environment": {},
+    "exit": 0,
+    "stdout": "{\n  \"id\": \"1766f7fe-0e6a-4045-a3c6-bbaf04d1caac\",\n  \"ok\": true,\n  \"result\": {\n    \"close\": {\n      \"handle\": \"term_5030c584-3fe3-4fe8-94a5-1620af75638b\",\n      \"tabId\": \"af5ae43f-1a32-4a0a-8110-60281f0f72e1\",\n      \"ptyKilled\": true\n    }\n  },\n  \"_meta\": {\n    \"runtimeId\": \"fb9500b1-8c4f-4061-b83e-a4a609344e27\"\n  }\n}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "orca",
+      "terminal",
+      "create",
+      "--worktree",
+      "id:05e388bf-5f63-4f9e-8ce8-0f184869c9d0::/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/workers/orca-project/fm-lab-rebased",
+      "--command",
+      "stty rows 30 cols 100; exec env HOME=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/orca-user-home CODEX_HOME=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/codex-home TERM=xterm-256color codex --no-alt-screen",
+      "--json"
+    ],
+    "environment": {},
+    "exit": 0,
+    "stdout": "{\n  \"id\": \"22871fc4-42ab-46a8-b13c-e751074780a0\",\n  \"ok\": true,\n  \"result\": {\n    \"terminal\": {\n      \"processId\": 30684,\n      \"handle\": \"term_43d9f33f-87e4-4604-9306-212ed4f397b4\",\n      \"tabId\": \"0d374f58-6c0a-4268-a83f-9330cb307adf\",\n      \"paneKey\": \"0d374f58-6c0a-4268-a83f-9330cb307adf:95bd8d5d-83f4-412e-9827-454b7c66c69e\",\n      \"ptyId\": \"4\",\n      \"worktreeId\": \"05e388bf-5f63-4f9e-8ce8-0f184869c9d0::/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/workers/orca-project/fm-lab-rebased\",\n      \"title\": null,\n      \"executionHostId\": \"local\",\n      \"incarnationId\": \"dab5e1e9-e201-419d-bea0-ddc72682bc29\",\n      \"hostPlatform\": \"darwin\",\n      \"surface\": \"background\",\n      \"warning\": \"Terminal term_43d9f33f-87e4-4604-9306-212ed4f397b4 is running, but Orca could not make it discoverable. Run `orca terminal focus --terminal term_43d9f33f-87e4-4604-9306-212ed4f397b4` to reveal and focus it.\"\n    }\n  },\n  \"_meta\": {\n    \"runtimeId\": \"fb9500b1-8c4f-4061-b83e-a4a609344e27\"\n  }\n}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "orca",
+      "terminal",
+      "read",
+      "--terminal",
+      "term_43d9f33f-87e4-4604-9306-212ed4f397b4",
+      "--json"
+    ],
+    "environment": {},
+    "exit": 0,
+    "stdout": "{\n  \"id\": \"fe742e2c-a5b1-4ee1-9b48-2d0c83edba78\",\n  \"ok\": true,\n  \"result\": {\n    \"terminal\": {\n      \"handle\": \"term_43d9f33f-87e4-4604-9306-212ed4f397b4\",\n      \"status\": \"running\",\n      \"tail\": [\n        \"\"\n      ],\n      \"truncated\": false,\n      \"limited\": false,\n      \"oldestCursor\": \"0\",\n      \"nextCursor\": \"1\",\n      \"latestCursor\": \"1\",\n      \"returnedLineCount\": 1,\n      \"source\": \"stream\"\n    }\n  },\n  \"_meta\": {\n    \"runtimeId\": \"fb9500b1-8c4f-4061-b83e-a4a609344e27\"\n  }\n}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "orca",
+      "terminal",
+      "show",
+      "--terminal",
+      "term_43d9f33f-87e4-4604-9306-212ed4f397b4",
+      "--json"
+    ],
+    "environment": {},
+    "exit": 0,
+    "stdout": "{\n  \"id\": \"b334a214-a682-46e0-bd45-9168d0d21c38\",\n  \"ok\": true,\n  \"result\": {\n    \"terminal\": {\n      \"handle\": \"term_43d9f33f-87e4-4604-9306-212ed4f397b4\",\n      \"ptyId\": \"4\",\n      \"incarnationId\": \"dab5e1e9-e201-419d-bea0-ddc72682bc29\",\n      \"orphaned\": false,\n      \"worktreeId\": \"05e388bf-5f63-4f9e-8ce8-0f184869c9d0::/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/workers/orca-project/fm-lab-rebased\",\n      \"worktreePath\": \"/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/workers/orca-project/fm-lab-rebased\",\n      \"branch\": \"refs/heads/fm-lab-rebased\",\n      \"tabId\": \"0d374f58-6c0a-4268-a83f-9330cb307adf\",\n      \"leafId\": \"95bd8d5d-83f4-412e-9827-454b7c66c69e\",\n      \"title\": null,\n      \"connected\": true,\n      \"writable\": true,\n      \"lastOutputAt\": 1793046798723,\n      \"preview\": \"\",\n      \"executionHostId\": \"local\",\n      \"paneRuntimeId\": -1,\n      \"rendererGraphEpoch\": 0,\n      \"agentWait\": null\n    }\n  },\n  \"_meta\": {\n    \"runtimeId\": \"fb9500b1-8c4f-4061-b83e-a4a609344e27\"\n  }\n}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "bash",
+      "bin/fm-control.sh",
+      "survivor-claude",
+      "exit"
+    ],
+    "environment": {
+      "FM_HOME": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home"
+    },
+    "exit": 1,
+    "stdout": "",
+    "stderr": "fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home\nerror: task survivor-claude's endpoint term_fm_lab_stale_rebased reads 'unreadable', but an agent process still runs in /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/workers/orca-project/fm-lab-rebased (31243 /opt/homebrew/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex); exit will not claim an agent stopped at an address it cannot trust, nor send lifecycle input to one\n"
+  },
+  {
+    "command": [
+      "bash",
+      "bin/fm-spawn.sh",
+      "survivor-claude",
+      "--relaunch",
+      "--harness",
+      "codex"
+    ],
+    "environment": {
+      "FM_HOME": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home"
+    },
+    "exit": 1,
+    "stdout": "",
+    "stderr": "fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home\nWARNING: watcher still down (same stale episode; last beat: never, grace 300s; down 39s) - full banner already printed this episode.\nerror: task survivor-claude's recorded endpoint term_fm_lab_stale_rebased reads 'unreadable', but an agent process still runs in /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/workers/orca-project/fm-lab-rebased (31243 /opt/homebrew/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex). An endpoint that cannot be proven absent may still hold a live agent on this task's worktree; refusing rather than launching a second agent into it\n"
+  },
+  {
+    "command": [
+      "bash",
+      "bin/fm-control.sh",
+      "survivor-droid",
+      "exit"
+    ],
+    "environment": {
+      "FM_HOME": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home"
+    },
+    "exit": 1,
+    "stdout": "",
+    "stderr": "fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home\nerror: task survivor-droid's endpoint term_fm_lab_stale_rebased reads 'unknown', but an agent process still runs in /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/workers/orca-project/fm-lab-rebased (31243 /opt/homebrew/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex); exit cannot prove the agent stopped\n"
+  },
+  {
+    "command": [
+      "bash",
+      "bin/fm-spawn.sh",
+      "survivor-droid",
+      "--relaunch",
+      "--harness",
+      "codex"
+    ],
+    "environment": {
+      "FM_HOME": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home"
+    },
+    "exit": 1,
+    "stdout": "",
+    "stderr": "fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home\nWARNING: watcher still down (same stale episode; last beat: never, grace 300s; down 43s) - full banner already printed this episode.\nerror: an agent process still runs in /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/workers/orca-project/fm-lab-rebased (31243 /opt/homebrew/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex)\nerror: Orca Droid relaunch has no current-generation SessionEnd proof with its process gone; refusing a duplicate agent\n"
+  },
+  {
+    "command": [
+      "orca",
+      "terminal",
+      "close",
+      "--terminal",
+      "term_43d9f33f-87e4-4604-9306-212ed4f397b4",
+      "--json"
+    ],
+    "environment": {},
+    "exit": 0,
+    "stdout": "{\n  \"id\": \"8b40f40b-75c4-49bf-b5c4-7a243f9298f3\",\n  \"ok\": true,\n  \"result\": {\n    \"close\": {\n      \"handle\": \"term_43d9f33f-87e4-4604-9306-212ed4f397b4\",\n      \"tabId\": \"0d374f58-6c0a-4268-a83f-9330cb307adf\",\n      \"ptyKilled\": true\n    }\n  },\n  \"_meta\": {\n    \"runtimeId\": \"fb9500b1-8c4f-4061-b83e-a4a609344e27\"\n  }\n}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "bash",
+      "bin/fm-control.sh",
+      "offline-claude",
+      "exit"
+    ],
+    "environment": {
+      "FM_HOME": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home"
+    },
+    "exit": 1,
+    "stdout": "",
+    "stderr": "fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home\nerror: task offline-claude's endpoint term_fm_lab_stale_rebased reads 'unreadable', but Orca could not describe terminal term_fm_lab_stale_rebased; exit will not claim an agent stopped at an address it cannot trust, nor send lifecycle input to one\n"
+  },
+  {
+    "command": [
+      "bash",
+      "bin/fm-control.sh",
+      "offline-droid",
+      "exit"
+    ],
+    "environment": {
+      "FM_HOME": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home"
+    },
+    "exit": 1,
+    "stdout": "",
+    "stderr": "fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WJ7HCFC7JBC37V8PH112BZ/.test-phase-tmp/live-home\nerror: task offline-droid's endpoint term_fm_lab_stale_rebased reads 'unknown', but Orca could not describe terminal term_fm_lab_stale_rebased; exit cannot prove the agent stopped\n"
+  }
+]

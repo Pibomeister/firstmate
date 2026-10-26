@@ -1,0 +1,74 @@
+{
+  "id": "755dd07f-dcf9-4dc5-a3c5-2f149e326989",
+  "ok": true,
+  "result": {
+    "terminal": {
+      "handle": "term_5fe29bbd-ad42-4b15-961b-fb2715c89cab",
+      "status": "running",
+      "tail": [
+        "  Welcome to Codex, OpenAI's command-line coding agent",
+        "  Sign in with ChatGPT to use Codex as part of your paid plan",
+        "  or connect an API key for usage-based billing",
+        "> 1. Sign in with ChatGPT",
+        "     Usage included with Plus, Pro, Business, and Enterprise plans",
+        "  2. Sign in with Device Code",
+        "     Sign in from another device with a one-time code",
+        "  3. Provide your own API key",
+        "     Pay for what you use",
+        "  Press enter to continue"
+      ],
+      "truncated": false,
+      "limited": false,
+      "oldestCursor": "0",
+      "nextCursor": "5",
+      "latestCursor": "5",
+      "returnedLineCount": 10,
+      "tailRows": [
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        }
+      ],
+      "source": "screen"
+    }
+  },
+  "_meta": {
+    "runtimeId": "fb9500b1-8c4f-4061-b83e-a4a609344e27"
+  }
+}
