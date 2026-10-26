@@ -100,7 +100,7 @@ The task's worktree, branch, commits, and uncommitted changes all survive that; 
 
 **Reclaim covers Herdr, tmux, and Orca.**
 A tmux task can be reclaimed only when its record carries the server identity a tmux spawn now records; an older record still refuses, with the reason stated rather than guessed past.
-An Orca task is reclaimed only when its closed terminal passes the [Orca agent stop proof](orca-backend.md#agent-stop-proof).
+An Orca task is reclaimed only when its closed terminal or stale handle passes the [Orca agent stop proof](orca-backend.md#agent-stop-proof).
 
 Two endpoint verdicts are agent-free, and both license a relaunch:
 
@@ -120,8 +120,7 @@ An unreachable endpoint can still hold the live agent a rebind would duplicate, 
   The endpoint is gone only when that server process is gone or replaced and the socket answers with no server (or another server's pid), or when it is the same live server and the window id is gone from it with no pane of it inside the copy; and in every case no other process may have its working directory inside the copy.
   A server still alive while its socket does not answer, a live server whose identity cannot be read, a window that survives under another name, a holder of the copy, and a record without those fields all refuse.
   A relaunch then re-creates the window in the recorded session on the recorded socket, and refuses when the seat addresses a different tmux server.
-- **Orca can prove it, against the task's recorded worktree:** [Orca agent stop proof](orca-backend.md#agent-stop-proof) owns the required reads and refusal conditions.
-  That proof also covers a stale Orca handle after a host reboot, where the terminal read is `unreadable` rather than `missing`: the boot must postdate the handle's recorded evidence, the post-boot process sweep must be readable, and no agent may survive in the recorded worktree.
+- **Orca can prove it, against the task's recorded worktree:** [Orca agent stop proof](orca-backend.md#agent-stop-proof) owns the required reads and refusal conditions, including reboot recovery for a stale handle classified as `unreadable`.
 
 Every other transient or self-contradicting read stays `unreadable` or `ambiguous` and still refuses, so a momentary backend failure can never be mistaken for absence.
 
@@ -173,14 +172,15 @@ The worktree and the task's records are unaffected either way.
   Muse's [secondmate restriction](../.agents/skills/harness-adapters/SKILL.md#non-negotiable-safety) therefore causes relaunch to refuse while the current agent is still up.
 - A backend that cannot deliver the harness's interrupt key, or the composer clear that key needs, is refused rather than sent a different key.
   Orca 1.4.217 and 1.4.218 delivered raw Escape and Ctrl+U to Droid in live verification, while other harnesses retain their existing key-verification boundary.
-- `exit` and `relaunch` require a backend with a recovery-grade agent-state classifier - tmux, herdr, and orca - or, on Orca, Droid's stop proof (a current-generation `SessionEnd` marker with no `droid` process left in the task worktree), where a relaunch must also replace Droid with Droid, because without one the "the agent stopped" postcondition cannot be proven.
+- `exit` and `relaunch` require a backend with a recovery-grade agent-state classifier - tmux, herdr, and orca - because the agent's stop must be proven.
+  On Orca, [Droid's stop proof](../.agents/skills/harness-adapters/references/harness/droid.md#operating-facts) applies unless the shared absence proof establishes that its endpoint is gone; `fm-control relaunch` still requires a Droid replacement for a Droid task.
   Other zellij, cmux, and paseo combinations are refused rather than reported as successful blind.
   On the classifier backends `interrupt` also requires a positively `alive` agent before it sends a key, and confirms the agent is still alive afterwards.
-- An ambiguous or unreadable endpoint state refuses.
-  Only a positively classified state acts.
+- An ambiguous endpoint state refuses.
+  An unreadable endpoint state refuses unless Orca's [endpoint-absence proof](#reclaiming-a-task-whose-endpoint-is-gone) establishes that the endpoint is gone.
 - `exit`'s composer-empty check, above, is itself a fail-closed boundary that `relaunch` inherits by stopping the old agent through `exit`.
 - `fm-spawn --relaunch` independently refuses unless the endpoint is positively agent-free - either a `dead` endpoint that survives, or a Herdr, tmux, or Orca endpoint proven gone by the absence proof above - so a replacement can never join a live agent.
-  An `alive`, `ambiguous`, or `unreadable` verdict all refuse, except an Orca `unreadable` the reboot absence proof above proves gone, and so does any endpoint whose absence is not provable, which on tmux is a `missing` its record cannot prove absent; absence is claimed only from positive evidence of it.
+  Every other verdict refuses; absence is claimed only from positive evidence of it.
   It also requires the shell to be in the recorded worktree: every backend but Orca (which owns its own task worktree with no current-path probe) gets one explicit `cd` to the recorded path, then a pre-launch path read that refuses before any harness starts unless it confirms the endpoint is sitting in the recorded copy.
 
 ## Capability matrix

@@ -2134,10 +2134,10 @@ if [ "$RELAUNCH" -eq 1 ]; then
   fm_backend_validate_spawn "$BACKEND" || exit 1
   fm_backend_source "$BACKEND" || exit 1
   # A relaunch must prove the previous agent is gone before it launches
-  # another into the same endpoint. Orca Droid has a generation-bound
-  # SessionEnd hook; every other case goes through the control plane's
-  # recovery-grade classifier (bin/fm-control-lib.sh owns that capability
-  # table and the fm_control_agent_state read below).
+  # another into the same endpoint. Orca Droid keeps its generation-bound
+  # SessionEnd requirement unless the shared absence proof establishes that
+  # its endpoint is gone. bin/fm-control-lib.sh owns the recovery-grade
+  # classifier capability table and the fm_control_agent_state read below.
   RELAUNCH_PRIOR_HARNESS=$(fm_meta_get "$RELAUNCH_META" harness)
   fm_control_backend_state_verified "$BACKEND" || {
     echo "error: backend '$BACKEND' has no recovery-grade agent-state classifier, so a relaunch cannot prove the previous agent exited; refusing rather than risking two agents in one endpoint" >&2
@@ -2181,9 +2181,8 @@ if [ "$RELAUNCH" -eq 1 ]; then
   #           proof then requires Orca's process sweep to have dropped the
   #           session and no agent to be working in the recorded worktree.
   #           A stale handle after a host reboot reads `unreadable` here and
-  #           takes that same proof, which proves it gone only when the boot
-  #           postdates the handle's recorded evidence, the post-boot sweep
-  #           is readable, and no agent works in the recorded worktree.
+  #           takes that same proof; docs/orca-backend.md "Agent stop proof"
+  #           owns the reboot evidence requirements.
   # Every other transient or self-contradicting read stays `unreadable`/`ambiguous`
   # and refuses as it always did (bin/fm-backend.sh's fm_backend_agent_state
   # owns that vocabulary). The proof itself lives in one place for the whole

@@ -406,9 +406,8 @@ fm_control_agent_state() {  # <backend> <target>
 #     docs/orca-backend.md "Agent stop proof" owns the evidence).
 #     A handle Orca no longer recognizes at all is proven gone only through
 #     that same function's reboot case, which additionally needs the task's
-#     record file as the fourth argument here: the host boot time must
-#     postdate the handle's recorded evidence, the post-boot sweep must be
-#     readable, and no agent may be working in the recorded worktree.
+#     record file as the fourth argument here. The same documentation owner
+#     describes that case's evidence requirements.
 #
 # Both control-plane callers share this one implementation so the proof cannot
 # drift into two answers for the same endpoint. The third argument is the

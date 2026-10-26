@@ -42,9 +42,8 @@
 #              claimed about it, because `missing` also covers an endpoint that
 #              is merely unreachable from this seat. An Orca endpoint reading
 #              `unreadable` because its handle is stale after a host reboot
-#              takes that same proof, which can prove it gone only when the
-#              boot postdates the handle's recorded evidence and no agent
-#              survives in the recorded worktree. On HERDR, whose reads are
+#              takes that same proof; docs/orca-backend.md "Agent stop proof"
+#              owns the reboot evidence requirements. On HERDR, whose reads are
 #              scoped to the session the record names, on tmux from the
 #              server identity a tmux spawn records, and on ORCA, which still
 #              describes a closed terminal and is checked against the recorded
@@ -1193,10 +1192,10 @@ do_relaunch() {
 
   require_state_verified_backend relaunch
   resolve_relaunch_profile
-  # An Orca Droid task's stop proof is Droid's own hooks, so its replacement
-  # must be Droid too or its start could not be confirmed after the old one
-  # stops. Other Orca tasks stop through the backend's recovery-grade
-  # classifier and may swap harness.
+  # An Orca Droid replacement's start is confirmed through Droid's own hooks,
+  # even when reboot evidence proved the old endpoint gone. Keep the
+  # replacement on Droid so its start can still be confirmed. Other Orca
+  # tasks may swap harness through the backend's recovery-grade classifier.
   if [ "$BACKEND" = orca ] && [ "$HARNESS" = droid ] && [ "$TARGET_HARNESS" != droid ]; then
     die "task $ID runs on the $BACKEND backend, where only Droid's start and stop can be verified; relaunching onto '$TARGET_HARNESS' would stop the running agent for a replacement that cannot be confirmed"
   fi
