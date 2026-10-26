@@ -557,7 +557,7 @@ cmd_register_task() {
   local pending_rounds=0 delivered
   local -a argv=() kept=()
   shift 4 2>/dev/null || usage
-  [ "$adapter" = lavish ] || die "register-task is reserved for the Lavish adapter"
+  case "$adapter" in lavish|no-mistakes) ;; *) die "register-task requires the Lavish or no-mistakes adapter" ;; esac
   fm_procevent_adapter_valid "$adapter" || die "adapter name must be lowercase alphanumeric or dash: $adapter"
   fm_procevent_source_id_valid "$id" || die "source id must be path-safe and at most 64 characters: $id"
   fm_pr_task_id_valid "$task" || die "task id is invalid: $task"
@@ -820,7 +820,10 @@ publish_result() {  # <result-file>
   fm_procevent_source_lock_acquire "$id" || return 1
   if ! fm_procevent_is_handled "$STATE" "$id" "$seq"; then
     if [ -n "$owner_task" ]; then
-      if adapter_result_is_terminal "$adapter" "$result"; then
+      if [ "$adapter" = no-mistakes ]; then
+        printf -v message 'No-mistakes advisory completion for task %s is captured at %s (source %s sequence %s). Read the capture and follow the completion-handling contract in your Definition of done. Check live run evidence before side effects. Source acknowledgement command: FM_HOME=%q %q handled %s %s.' \
+          "$owner_task" "$result" "$id" "$seq" "$FM_HOME" "$SCRIPT_DIR/fm-procevent.sh" "$id" "$seq"
+      elif adapter_result_is_terminal "$adapter" "$result"; then
         message="Lavish review result $id sequence $seq is terminal at $result. Read it with bin/fm-procevent-lavish.sh read $result, stop and conclude the review, and do not re-arm the board. The board stays yours until you acknowledge this round with bin/fm-procevent.sh handled $id $seq, which retires it."
       else
         export FM_PROCEVENT_CAPTURE_SOURCE_LOCK_HELD=1
