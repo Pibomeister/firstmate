@@ -528,9 +528,11 @@ FM_COMPOSER_MODE_HINT_RE_DEFAULT='^[[:space:]]*(⏵|⏸)'
 # `Key:action` cells joined by a box-drawing bar (`Shift+Tab:mode  │  Ctrl+x:shortcuts`
 # idle, `Enter:send  │  Opt+Enter:newline  │  Shift+Tab:mode  │  Ctrl+x:`
 # typed). It may sit directly under the bottom border, where the cursorless
-# staleness probe would otherwise read it as a lower live shape. It is
-# consulted only as the single row directly below a selected box.
-FM_COMPOSER_GROK_HINT_RE_DEFAULT='^[A-Z][A-Za-z]*(\+[A-Za-z.]+)*:[a-z]*([[:space:]]+│[[:space:]]+[A-Z][A-Za-z]*(\+[A-Za-z.]+)*:[a-z]*)+$'
+# staleness probe would otherwise read it as a lower live shape. Accept only
+# the observed `Enter:send now` and `Ctrl+;:queue` cells as multiword-action
+# and punctuation-key exceptions. Consulted only at that boundary,
+# never on a composer content row; every row after this one still needs proof.
+FM_COMPOSER_GROK_HINT_RE_DEFAULT='^(Enter:send now|Ctrl\+;:queue|[A-Z][A-Za-z]*(\+[A-Za-z.]+)*:[a-z]*)([[:space:]]+│[[:space:]]+(Enter:send now|Ctrl\+;:queue|[A-Z][A-Za-z]*(\+[A-Za-z.]+)*:[a-z]*))+$'
 # omp (Oh My Pi) draws a one-row status line directly BELOW its borderless
 # composer: an identity or spinner cell, then middle-dot separated model, path,
 # git, and context cells. Verified live through Herdr on omp 18.1.11:
@@ -1934,8 +1936,8 @@ _fm_composer_select_cursorless() {
     raw=$(_fm_composer_screen_row "$next" "$plain")
     trimmed=$raw
     fm_composer_normalize_trim_var trimmed
-    # Grok's key-hint row directly under its box is that box's furniture; the
-    # probe resumes on the row after it.
+    # Only the single hint row immediately below the selected box is furniture.
+    # The probe resumes on the row after it.
     if [ "$FM_COMPOSER_SELECTED_KIND" = box ] && [ "$next" = "$((boundary + 1))" ] \
        && fm_composer_idle_matches "$trimmed" "$FM_COMPOSER_GROK_HINT_RE_DEFAULT" sensitive; then
       next=$((next + 1))

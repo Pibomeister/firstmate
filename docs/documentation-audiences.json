@@ -590,6 +590,10 @@
       "audience": "maintainer-verification"
     },
     {
+      "path": "tests/fixtures/grok-composer-footer.screen.txt",
+      "audience": "maintainer-verification"
+    },
+    {
       "path": ".agents/skills/agent-skill-trigger-index/SKILL.md",
       "audience": "agent-runtime"
     },
