@@ -2551,6 +2551,158 @@ test_non_codex_default_mode_keeps_one_shot_allow() {
   pass "fm-turnend-guard: non-Codex default mode keeps its one-shot allow and writes no Codex record"
 }
 
+test_secondmate_event_instructions_finish_turn() {
+  local dir out
+  dir=$(make_secondmate_dir "$TMP_ROOT/sm-event-instructions")
+  cp -R "$ROOT/bin/." "$dir/bin/"
+  mkdir -p "$dir/parent/state"
+  printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$dir/parent" > "$dir/.fm-secondmate-parent"
+  out=$(FM_HOME="$dir" FM_TASK_INBOX="$dir/parent/state/sm-test-1.inbox" TMUX=fixture,1,0 TMUX_PANE=%27 "$dir/bin/fm-supervision-instructions.sh" --harness codex)
+  assert_contains "$out" 'Mode: Secondmate event-driven turns.' "secondmate must receive the outside-turn protocol"
+  assert_contains "$out" 'end this turn' "secondmate must finish its handling turn"
+  assert_not_contains "$out" 'write_stdin' "secondmate must not poll a checkpoint"
+  assert_not_contains "$out" 'fm-watch-checkpoint.sh' "secondmate must not receive the primary checkpoint loop"
+  pass "secondmate instructions end the handling turn without model polling"
+}
+
+test_secondmate_event_status_requires_notification_owner() {
+  local dir out status
+  dir=$(make_secondmate_dir "$TMP_ROOT/sm-event-status")
+  cp -R "$ROOT/bin/." "$dir/bin/"
+  out=$(FM_HOME="$dir" "$dir/bin/fm-watch.sh" --secondmate-status 2>&1)
+  status=$?
+  expect_code 1 "$status" "a missing outside-turn owner must refuse readiness"
+  assert_contains "$out" 'secondmate watcher: not ready' "status must explain the missing notification proof"
+  pass "secondmate readiness fails closed without its watcher notification owner"
+}
+
+test_secondmate_event_watcher_survives_and_notifies() {
+  local dir
+  command -v tmux >/dev/null 2>&1 || { printf 'skip: tmux not found for secondmate event watcher\n'; return; }
+  dir=$(make_secondmate_dir "$TMP_ROOT/sm-event-runtime")
+  cp -R "$ROOT/bin/." "$dir/bin/"
+  if ! python3 - "$dir" "$BASH" "$CODEX_BIN" <<'PY'
+import json, os, pathlib, shlex, signal, subprocess, sys, tempfile, time
+root = pathlib.Path(sys.argv[1])
+socket_root = pathlib.Path(tempfile.mkdtemp(prefix='fm-sm-event-', dir='/tmp'))
+socket = str(socket_root/'socket')
+(root/'parent/state').mkdir(parents=True)
+(root/'config').mkdir()
+(root/'bashbin').mkdir()
+os.symlink(sys.argv[2], root/'bashbin/bash')
+(root/'.fm-secondmate-parent').write_text('schema=fm-secondmate-parent.v1\nroute=local\nparent_home='+str(root/'parent')+'\n')
+fixture = root/'session.py'
+fixture.write_text(r'''
+import json, os, pathlib, subprocess, sys, time
+root = pathlib.Path(sys.argv[1])
+watch = str(root/'bin/fm-watch.sh')
+def phase(name, **details):
+    (root/'phase.json').write_text(json.dumps({'phase':name,'at':time.time(),**details}))
+def run(*args):
+    phase('command', argv=args)
+    result=subprocess.run(args, text=True, capture_output=True, timeout=25)
+    phase('command-returned', argv=args, exit_code=result.returncode)
+    return result
+def require(ok, message):
+    if not ok: raise RuntimeError(message)
+def until(test, label):
+    phase('condition-wait', label=label)
+    for _ in range(400):
+        if test(): return
+        time.sleep(0.1)
+    raise RuntimeError('bounded condition did not become true: '+label)
+try:
+    phase('fixture-start')
+    (root/'state/.lock').write_text(str(os.getppid())+'\n')
+    check=root/'state/probe.check.sh'
+    check.write_text('#!/usr/bin/env bash\n[ ! -f "'+str(root/'trigger')+'" ] || echo actionable\n')
+    check.chmod(0o700)
+    r=run(str(root/'bin/fm-check-register.sh'), 'probe')
+    require(r.returncode==0, 'check registration: '+r.stderr)
+    require(run(str(root/'bin/fm-harness.sh')).stdout.strip()=='codex', 'portable fixture did not establish a Codex-shaped ancestor')
+    r=run(watch, '--secondmate')
+    require(r.returncode==0, 'outside-turn start: '+r.stdout+r.stderr)
+    pid=(root/'state/.watch.lock/pid').read_text().strip()
+    r=run(watch, '--secondmate')
+    require(r.returncode==0 and (root/'state/.watch.lock/pid').read_text().strip()==pid, 'repeat start changed the singleton')
+    require(run(watch, '--secondmate-status').returncode==0, 'live watcher was not ready')
+    inbox=root/'parent/state/sm-test-1.inbox'
+    time.sleep(2)
+    require(not list(inbox.glob('*.msg')), 'no-change heartbeat rang the mate')
+    (root/'trigger').touch()
+    until(lambda: bool(list(inbox.glob('*.msg'))), 'first notification')
+    (root/'trigger').unlink()
+    rec=next(inbox.glob('*.msg'))
+    require('FIRSTMATE_OP' in rec.read_text() and 'watcher' in rec.read_text(), 'notification lost its typed watcher envelope')
+    time.sleep(2)
+    require(len(list(inbox.glob('*.msg')))==1, 'pending input produced duplicate notification records')
+    require(run(watch, '--secondmate-status').returncode==0, 'watcher stopped after its actionable wake')
+    (inbox/'handled').mkdir(exist_ok=True)
+    rec.rename(inbox/'handled'/rec.name)
+    (root/'trigger').touch()
+    until(lambda: bool(list(inbox.glob('*.msg'))), 'notification after acknowledgement')
+    (root/'trigger').unlink()
+    require(len(list((inbox/'handled').glob('*.msg')))==1, 'delivery consumed an acknowledgement')
+    lines=(root/'state/.secondmate-watch').read_text().splitlines()
+    lines[1]='mismatched-process-identity'
+    (root/'state/.secondmate-watch').write_text('\n'.join(lines)+'\n')
+    require(run(watch, '--secondmate-status').returncode==1, 'reused session identity supplied readiness')
+    until(lambda: not (root/'state/.watch.lock/pid').exists(), 'identity-loss shutdown')
+    require(bool(list(inbox.glob('*.msg'))), 'owner shutdown acknowledged an unhandled event')
+    (root/'result.json').write_text(json.dumps({'passed': True, 'watcher_pid':pid}))
+except Exception as exc:
+    (root/'result.json').write_text(json.dumps({'passed':False,'error':str(exc)}))
+''')
+env={k:v for k,v in os.environ.items() if not k.startswith('FM_') and k not in ('TMUX','TMUX_PANE','CLAUDECODE')}
+env.update(FM_HOME=str(root), FM_ROOT_OVERRIDE=str(root), FM_STATE_OVERRIDE=str(root/'state'), FM_CONFIG_OVERRIDE=str(root/'config'),
+           FM_TASK_INBOX=str(root/'parent/state/sm-test-1.inbox'), FM_POLL='1', FM_HEARTBEAT='1', FM_HEARTBEAT_MAX='1', FM_CHECK_INTERVAL='1',
+           PATH=str(root/'bashbin')+os.pathsep+os.environ['PATH'])
+def tmux(*args):
+    return subprocess.run(['tmux','-S',socket,*args],env=env,text=True,capture_output=True)
+try:
+    command=shlex.join([sys.executable,str(fixture),str(root)])+'; :'
+    r=tmux('new-session','-d','-s','fixture','-n','sm-test-1','-c',str(root),shlex.join([sys.argv[3],'-c',command]))
+    if r.returncode: raise RuntimeError(r.stderr)
+    for _ in range(1000):
+        if (root/'result.json').exists(): break
+        time.sleep(0.1)
+    if not (root/'result.json').exists():
+        phase=(root/'phase.json').read_text() if (root/'phase.json').exists() else 'not started'
+        log=root/'state/.secondmate-watch.log'
+        raise RuntimeError('fixture timed out; '+phase+'\n'+(log.read_text() if log.exists() else 'no watcher log'))
+    result=json.loads((root/'result.json').read_text())
+    if not result['passed']:
+        log=root/'state/.secondmate-watch.log'
+        inbox=root/'parent/state/sm-test-1.inbox'
+        state={p.name:p.read_text() for p in (root/'state/.secondmate-watch',root/'state/.secondmate-watch-message') if p.exists()}
+        raise RuntimeError(result['error']+'\nstate='+json.dumps(state)+'\ninbox='+str(list(inbox.glob('**/*')))+'\n'+(log.read_text() if log.exists() else 'no watcher log'))
+finally:
+    tmux('kill-server')
+    for _ in range(100):
+        if not (root/'state/.watch.lock/pid').exists(): break
+        time.sleep(0.1)
+    lock=root/'state/.watch.lock/pid'
+    if lock.exists():
+        pid=int(lock.read_text())
+        args=subprocess.run(['ps','-p',str(pid),'-o','args='],text=True,capture_output=True).stdout
+        if str(root/'bin/fm-watch.sh') in args: os.kill(pid,signal.SIGTERM)
+PY
+  then
+    fail "secondmate event watcher runtime failed"
+  fi
+  pass "secondmate watcher survives wakes, deduplicates inbox notifications and stops on identity loss"
+}
+
+if [ "${FM_TEST_ONLY:-}" = secondmate-endturn ]; then
+  test_secondmate_event_instructions_finish_turn
+  test_secondmate_event_status_requires_notification_owner
+  test_secondmate_event_watcher_survives_and_notifies
+  exit 0
+fi
+
+test_secondmate_event_instructions_finish_turn
+test_secondmate_event_status_requires_notification_owner
+test_secondmate_event_watcher_survives_and_notifies
 test_predicate_healthy_no_inflight
 test_predicate_unhealthy_no_beacon
 test_predicate_unhealthy_stale_beacon

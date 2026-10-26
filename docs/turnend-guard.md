@@ -314,8 +314,8 @@ Both payloads carry `stop_hook_active`, and Codex sets it on every stop after th
 ### Codex mode
 
 The guard enters Codex mode when `bin/fm-harness.sh` resolves the hook's own harness to `codex`.
-Codex has no asynchronous wake: its foreground checkpoint is an exec session the model must poll, and a turn that ends while it runs leaves nobody to read its wake or start the next one.
-Codex mode therefore replaces the one-shot `stop_hook_active` allow with two rules, owned by the header of `bin/fm-turnend-guard.sh`:
+A default Codex primary uses a foreground checkpoint, an exec session the model must poll; ending the turn while it runs leaves nobody to read its wake or start the next one.
+For that default route, Codex mode replaces the one-shot `stop_hook_active` allow with two rules, owned by the header of `bin/fm-turnend-guard.sh`:
 
 - An identity-matched live watcher running under an `fm-watch-checkpoint.sh` that descends from this hook's own harness ancestry cannot justify ending the turn, even with a stale beacon, so the stop blocks and names the poll repair.
   A watcher another session started still allows the stop.
@@ -327,6 +327,11 @@ A home whose session lock another live session owns takes the [foreign session-l
 Queued wakes keep Codex's turn open until handling and acknowledgement finish, including after the last task clears; the no-progress escape cannot abandon that queue.
 An identity-matched own checkpoint also holds the turn when its beacon has gone stale; beacon freshness cannot prove that the foreground command ended.
 Away daemon ownership retains its existing allow path.
+
+A local tmux Codex secondmate with a validated parent/inbox binding uses the existing watcher outside the model turn instead; `bin/fm-watch.sh` owns its start/status interface and supported ownership modes.
+Its actionable events ring the existing durable steering inbox, while the watcher's ordinary triage absorbs no-change heartbeats and retains the actionable-status backstop.
+The Stop guard requires the live watcher, session/process identity and delivery route before allowing the turn to finish, and its no-progress escape cannot substitute for that proof.
+The watcher stops on binding loss without acknowledging pending events; away/quiet and supervision-host ownership take precedence, and unsupported combinations retain their existing protocol.
 
 ### Claude cooperative mode
 

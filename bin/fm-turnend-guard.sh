@@ -299,6 +299,14 @@ EOF
 }
 
 CHECKPOINT_OPEN=0
+SECONDMATE_MODE=0
+if [ "$CODEX_MODE" -eq 1 ] && [ -x "$SCRIPT_DIR/fm-watch.sh" ] \
+  && "$SCRIPT_DIR/fm-watch.sh" --secondmate-selected >/dev/null 2>&1; then
+  SECONDMATE_MODE=1
+fi
+if [ "$CODEX_MODE" -eq 1 ] && fm_root_is_secondmate_home "$FM_HOME" && [ -e "$STATE/.secondmate-watch" ]; then
+  SECONDMATE_MODE=1
+fi
 if [ "$CODEX_MODE" -eq 1 ] \
   && own_checkpoint_holds_watcher "$(cat "$STATE/.watch.lock/pid" 2>/dev/null)"; then
   CHECKPOINT_OPEN=1
@@ -306,7 +314,9 @@ fi
 if fm_watcher_healthy "$STATE" "$WATCH" "$GRACE" "$FM_HOME"; then
   if [ "$CHECKPOINT_OPEN" -eq 0 ]; then
     if [ "$CODEX_MODE" -eq 0 ] || [ "$FM_SUP_QUEUE_PENDING" = false ]; then
-      allow_supervised_stop
+      if [ "$SECONDMATE_MODE" -eq 0 ] || "$SCRIPT_DIR/fm-watch.sh" --secondmate-status >/dev/null 2>&1; then
+        allow_supervised_stop
+      fi
     fi
   fi
 fi
@@ -384,6 +394,7 @@ fi
 # session and turn only when nothing advanced since that block. A record from an
 # earlier turn, or a stop continued by some other hook's block, is judged fresh.
 if [ "$CODEX_MODE" -eq 1 ] && [ "$STOP_HOOK_ACTIVE" = "true" ] && [ "$CHECKPOINT_OPEN" -eq 0 ] \
+  && [ "$SECONDMATE_MODE" -eq 0 ] \
   && [ "$FM_SUP_QUEUE_PENDING" = false ] \
   && [ "$(sed -n 's/^turn=//p' "$CODEX_BLOCK" 2>/dev/null)" = "$TURN_ID" ] \
   && [ "$(sed -n 's/^progress=//p' "$CODEX_BLOCK" 2>/dev/null)" = "$(codex_progress)" ]; then

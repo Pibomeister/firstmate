@@ -529,6 +529,7 @@ $PROJECT_CLONES_NOTE
 Delegate project work to your own crewmates with the normal firstmate lifecycle: brief, spawn, status, watcher, steer, teardown, and recovery.
 Do not invent a second delegation system.
 Never do investigation, coding, review, or long waits in your own turn; delegate them to your own crews so you can always answer new messages.
+After handling inputs, sending actions and parent replies, and acknowledging handled events, end the turn when the emitted supervision protocol proves an outside-turn watcher and notification route.
 Read, acknowledge, and dispatch each new routed work request in the same handling turn, alongside existing crews unless a true technical dependency requires ordering.
 Never treat existing crew work as a reason to queue an independent request.
 Pace dispatch only if available credits would run out before the cutoff and preserving them would let work continue longer.

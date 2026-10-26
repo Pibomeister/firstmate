@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # Firstmate watcher.
 # The internal --grok-hold tag requires FM_WATCH_GROK_HOLD=1.
+# --secondmate starts and verifies a detached local Codex secondmate watcher;
+# --secondmate-status is its read-only identity, route and beacon proof.
+# The internal --secondmate-hold mode retains this watcher across actionable
+# wakes, which ring the existing parent-owned steering inbox without a model poll.
 # Classifies supervision wakes in bash. In normal mode it absorbs benign wakes
 # and keeps blocking; it queues and exits only for actionable wakes.
 # The no-verb signal and stale path is absorb-only-on-positive-evidence: a wake
@@ -196,12 +200,16 @@
 # one ordinary supervision cycle through cleanup without entering the poll wait.
 # With both unset, the watcher keeps its normal clock and continuous loop.
 set -u
+SECONDMATE_MODE=
 if [ "${FM_WATCH_NOW+x}" ] && ! [[ $FM_WATCH_NOW =~ ^(0|[1-9][0-9]*)$ ]]; then
   echo 'watcher: FM_WATCH_NOW must be non-negative epoch seconds' >&2
   exit 2
 fi
 if [ "${BASH_SOURCE[0]}" = "$0" ] && [ "$#" -gt 0 ]; then
-  [ "$#" -eq 1 ] && [ "$1" = --grok-hold ] && [ "${FM_WATCH_GROK_HOLD:-}" = 1 ] || exit 2
+  case "$1" in
+    --secondmate|--secondmate-status|--secondmate-selected|--secondmate-hold) [ "$#" -eq 1 ] || exit 2; SECONDMATE_MODE=$1 ;;
+    *) [ "$#" -eq 1 ] && [ "$1" = --grok-hold ] && [ "${FM_WATCH_GROK_HOLD:-}" = 1 ] || exit 2 ;;
+  esac
   shift
 fi
 
@@ -224,6 +232,16 @@ WATCH_HOME_EXISTED=0
 # runtime needlessly spends per-root CI lint memory while adding no uncovered file.
 # shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-push-transition-lib.sh"
+case "$SECONDMATE_MODE" in
+  --secondmate-selected) fm_secondmate_watch_selected; exit $? ;;
+  --secondmate-status)
+    fm_secondmate_watch_status && { echo 'secondmate watcher: ready'; exit 0; }
+    echo 'secondmate watcher: not ready'; exit 1 ;;
+  --secondmate) fm_secondmate_watch_start; exit $? ;;
+  --secondmate-hold)
+    fm_secondmate_watch_binding_valid || exit 1
+    export FM_WATCH_GROK_HOLD=1 FM_WATCH_SECONDMATE_HOLD=1 ;;
+esac
 # shellcheck source=bin/fm-pr-lib.sh
 . "$SCRIPT_DIR/fm-pr-lib.sh"
 # Only for the arm-time check on FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS below;
@@ -3627,6 +3645,9 @@ resurface_after_downtime() {
 }
 
 while :; do
+  if [ "${FM_WATCH_SECONDMATE_HOLD:-}" = 1 ]; then
+    fm_secondmate_watch_binding_valid || exit 1
+  fi
   # Home-gone exit: a deleted home, state directory, or code root means this
   # watcher's world is gone (a torn-down temporary home or a discarded
   # disposable checkout). Exit with a logged reason rather than writing state

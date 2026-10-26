@@ -100,6 +100,91 @@ fm_watch_grok_hold_active() {
   return 0
 }
 
+# Local Codex secondmates keep the existing watcher, not a model tool session,
+# alive. The parent binding supplies the existing steering inbox and doorbell.
+fm_secondmate_watch_selected() {
+  # shellcheck source=bin/fm-primary-scope-lib.sh
+  . "$FM_PUSH_TRANSITION_LIB_DIR/fm-primary-scope-lib.sh"
+  # shellcheck source=bin/fm-secondmate-parent-lib.sh
+  . "$FM_PUSH_TRANSITION_LIB_DIR/fm-secondmate-parent-lib.sh"
+  # shellcheck source=bin/fm-supervision-engine-lib.sh
+  . "$FM_PUSH_TRANSITION_LIB_DIR/fm-supervision-engine-lib.sh"
+  fm_root_is_secondmate_home "$FM_HOME" && [ -n "${TMUX_PANE:-}" ] && [ -n "${TMUX:-}" ] || return 1
+  [ ! -e "$STATE/.afk" ] && ! fm_supervision_host_enabled "$CONFIG" codex || return 1
+  fm_secondmate_parent_record_parse "$FM_HOME/.fm-secondmate-parent" || return 1
+  [ "$FM_SECONDMATE_PARENT_ROUTE" = local ] || return 1
+  FM_SM_ID=$(head -n 1 "$FM_HOME/.fm-secondmate-home")
+  FM_SM_ID=${FM_SM_ID//[[:space:]]/}
+  [ "${FM_TASK_INBOX:-}" = "$FM_SECONDMATE_PARENT_HOME/state/$FM_SM_ID.inbox" ]
+}
+
+fm_secondmate_watch_binding_valid() {
+  local pane_pid
+  fm_secondmate_watch_selected || return 1
+  [ ! -L "$STATE/.secondmate-watch" ] && [ -f "$STATE/.secondmate-watch" ] || return 1
+  {
+    IFS= read -r FM_SM_PID && IFS= read -r FM_SM_IDENTITY && IFS= read -r FM_SM_PANE && IFS= read -r FM_SM_SOCKET
+  } < "$STATE/.secondmate-watch" || return 1
+  [ "$FM_SM_PID" = "$(cat "$STATE/.lock" 2>/dev/null)" ] || return 1
+  [ -n "$FM_SM_IDENTITY" ] && [ "$FM_SM_IDENTITY" = "$(fm_pid_identity "$FM_SM_PID" 2>/dev/null)" ] || return 1
+  [ "$FM_SM_PANE" = "$TMUX_PANE" ] && [ "$FM_SM_SOCKET" = "${TMUX%%,*}" ] || return 1
+  pane_pid=$(tmux -S "$FM_SM_SOCKET" display-message -p -t "$FM_SM_PANE" '#{pane_pid}') || return 1
+  fm_pid_descends_from "$FM_SM_PID" "$pane_pid" || return 1
+  fm_backend_source tmux || return 1
+  fm_backend_tmux_foreground_pids "$FM_SM_PANE" | grep -Fx "$FM_SM_PID" >/dev/null
+}
+
+fm_secondmate_watch_status() {
+  local pid
+  fm_secondmate_watch_binding_valid || return 1
+  pid=$(cat "$STATE/.watch.lock/pid" 2>/dev/null) || return 1
+  case "$(ps -o args= -p "$pid" 2>/dev/null)" in *'/fm-watch.sh --secondmate-hold'*) ;; *) return 1 ;; esac
+  fm_watcher_healthy "$STATE" "$FM_PUSH_TRANSITION_LIB_DIR/fm-watch.sh" "${FM_GUARD_GRACE:-300}" "$FM_HOME"
+}
+
+fm_secondmate_watch_start() {
+  local pid identity tmp deadline monitor=0
+  fm_secondmate_watch_selected || { echo 'secondmate watcher: unsupported home, route or ownership mode' >&2; return 1; }
+  fm_secondmate_watch_status && return 0
+  [ "$("$FM_PUSH_TRANSITION_LIB_DIR/fm-harness.sh")" = codex ] || return 1
+  # shellcheck source=bin/fm-session-lock-lib.sh
+  . "$FM_PUSH_TRANSITION_LIB_DIR/fm-session-lock-lib.sh"
+  fm_session_lock_owned_by_self "$STATE" || return 1
+  fm_watcher_healthy "$STATE" "$FM_PUSH_TRANSITION_LIB_DIR/fm-watch.sh" "${FM_GUARD_GRACE:-300}" "$FM_HOME" && return 1
+  pid=$(cat "$STATE/.lock")
+  identity=$(fm_pid_identity "$pid") || return 1
+  tmp=$(mktemp "$STATE/.secondmate-watch.XXXXXX") || return 1
+  printf '%s\n' "$pid" "$identity" "$TMUX_PANE" "${TMUX%%,*}" > "$tmp" && mv "$tmp" "$STATE/.secondmate-watch" || return 1
+  fm_secondmate_watch_binding_valid || return 1
+  case $- in *m*) monitor=1 ;; esac
+  set -m
+  nohup "$FM_PUSH_TRANSITION_LIB_DIR/fm-watch.sh" --secondmate-hold >"$STATE/.secondmate-watch.log" 2>&1 </dev/null &
+  disown "$!" 2>/dev/null || true
+  [ "$monitor" -eq 1 ] || set +m
+  deadline=$(( $(date +%s) + 10 ))
+  while [ "$(date +%s)" -lt "$deadline" ]; do
+    fm_secondmate_watch_status && return 0
+    sleep 0.2
+  done
+  return 1
+}
+
+fm_secondmate_watch_notify() {
+  local rec body
+  fm_secondmate_watch_binding_valid || return 1
+  # shellcheck source=bin/fm-task-inbox-lib.sh
+  . "$FM_PUSH_TRANSITION_LIB_DIR/fm-task-inbox-lib.sh"
+  [ ! -L "$STATE/.secondmate-watch-message" ] || return 1
+  rec=$(cat "$STATE/.secondmate-watch-message" 2>/dev/null || true)
+  if [ "${rec%/*}" != "$FM_TASK_INBOX" ] || [ ! -f "$rec" ]; then
+    body=$(printf '%s\n' 'Run bin/fm-wake-drain.sh, handle and acknowledge the durable watcher events, send any resulting actions and parent replies, then end this turn.' | "$FM_PUSH_TRANSITION_LIB_DIR/fm-operational-input.sh" encode watcher) || return 1
+    rec=$(fm_task_inbox_write "$FM_SECONDMATE_PARENT_HOME/state" "$FM_SM_ID" "$body") || return 1
+    printf '%s\n' "$rec" > "$STATE/.secondmate-watch-message" || return 1
+  fi
+  fm_secondmate_watch_binding_valid || return 1
+  fm_task_inbox_ring tmux "$FM_SM_PANE" "$rec" "$FM_SM_ID" || true
+}
+
 # Exit after reporting one actionable wake. Tests override this callback.
 # FM_WATCH_GROK_HOLD=1 returns after the report so that watcher can keep the lock.
 wake() {
@@ -123,6 +208,9 @@ wake() {
     FM_WAKE_POST_OUTPUT_ACTION=
   fi
   [ "$output_status" -eq 0 ] || exit "$output_status"
+  if [ "${FM_WATCH_SECONDMATE_HOLD:-}" = 1 ]; then
+    fm_secondmate_watch_notify || exit 1
+  fi
   if fm_watch_grok_hold_active; then
     if declare -F watcher_stop_signals >/dev/null 2>&1; then
       watcher_stop_signals
