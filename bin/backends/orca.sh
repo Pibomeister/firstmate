@@ -435,13 +435,13 @@ fm_backend_orca_kill() {  # <terminal-id>
 #   ok|stale  connected(true|false)  exit-cause-kind  execution-host  pty-id  worktree-path
 # `stale` is Orca's own terminal_handle_stale answer: it no longer recognizes
 # the handle at all. `false` needs both connected and writable false, the pair
-# Orca reports after the pty is gone. Any CLI failure, unparsable output, other
+# Orca reports after the pty is gone. Other CLI failures, unparsable output, other
 # error, a result describing a different handle, or a mixed connection pair
 # returns 1.
 fm_backend_orca_terminal_facts() {  # <terminal-id>
-  local terminal=$1 out
+  local terminal=$1 out rc=0
   fm_backend_orca_tool_check 2>/dev/null || return 1
-  out=$(orca terminal show --terminal "$terminal" --json 2>/dev/null) || return 1
+  out=$(orca terminal show --terminal "$terminal" --json 2>/dev/null) || rc=$?
   printf '%s' "$out" | node -e '
 const fs = require("fs");
 const handle = process.argv[1];
@@ -461,6 +461,7 @@ if (data.ok === false) {
   process.exit(1);
 }
 const t = data.result && data.result.terminal;
+if (Number(process.argv[2]) !== 0) process.exit(1);
 if (!t || typeof t !== "object" || t.handle !== handle) process.exit(1);
 let connected;
 if (t.connected === true) connected = "true";
@@ -468,7 +469,7 @@ else if (t.connected === false && t.writable === false) connected = "false";
 else process.exit(1);
 const kind = t.exitCause && typeof t.exitCause === "object" ? str(t.exitCause.kind) : "";
 emit(["ok", connected, kind, str(t.executionHostId), str(t.ptyId), str(t.worktreePath)]);
-' "$terminal"
+' "$terminal" "$rc"
 }
 
 # fm_backend_orca_session_pid: the local process that roots pty session

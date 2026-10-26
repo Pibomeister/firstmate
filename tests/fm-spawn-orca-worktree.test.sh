@@ -80,7 +80,7 @@ case "$1 $2" in
     done
     [ -f "$DIR/show-${handle:-}.json" ] || exit 1
     cat "$DIR/show-$handle.json"
-    exit 0
+    exit "$(cat "$DIR/show-$handle.exit" 2>/dev/null || echo 0)"
     ;;
   "diagnostics memory")
     [ -f "$DIR/memory.json" ] || exit 1
@@ -406,6 +406,7 @@ test_orca_relaunch_rebinds_a_stale_terminal_after_reboot() {
     orca_relaunch_boot
     echo "harness=$harness" >> "$HOME_DIR/state/$TASK.meta"
     printf '{"ok":false,"error":{"code":"terminal_handle_stale"}}\n' > "$CASE_DIR/show-term-old.json"
+    echo 1 > "$CASE_DIR/show-term-old.exit"
     echo "spawn_gen=s1000.4242.99" >> "$HOME_DIR/state/$TASK.meta"
     FM_TEST_ORCA_BOOT_EPOCH=2000 orca_relaunch --harness claude
     expect_code 0 "$STATUS" "a relaunch of a pre-boot stale Orca terminal with no agent left should succeed"$'\n'"$OUT"
@@ -426,6 +427,7 @@ test_orca_droid_relaunch_keeps_non_reboot_prerequisites() {
     else
       orca_relaunch_boot
       printf '{"ok":false,"error":{"code":"terminal_handle_stale"}}\n' > "$CASE_DIR/show-term-old.json"
+      echo 1 > "$CASE_DIR/show-term-old.exit"
       echo 'spawn_gen=s3000.4242.99' >> "$HOME_DIR/state/$TASK.meta"
     fi
     orca_relaunch --harness claude
@@ -446,6 +448,7 @@ test_orca_relaunch_refuses_a_stale_terminal_with_a_surviving_agent_after_reboot(
     orca_relaunch_boot
     echo "harness=$harness" >> "$HOME_DIR/state/$TASK.meta"
     printf '{"ok":false,"error":{"code":"terminal_handle_stale"}}\n' > "$CASE_DIR/show-term-old.json"
+    echo 1 > "$CASE_DIR/show-term-old.exit"
     echo "spawn_gen=s1000.4242.99" >> "$HOME_DIR/state/$TASK.meta"
     ln -sf "$standin" "$CASE_DIR/claude"
     "$CASE_DIR/claude" 600 >/dev/null 2>&1 &

@@ -79,10 +79,10 @@ if [ "${1:-}" = status ] && [ "${FM_ORCA_STATUS_RESPONSE:-ready}" != sequence ];
 fi
 n=$next
 echo "$n" > "$COUNT_FILE"
+[ -f "$RESP/$n.out" ] && cat "$RESP/$n.out"
 if [ -f "$RESP/$n.exit" ]; then
   exit "$(cat "$RESP/$n.exit")"
 fi
-[ -f "$RESP/$n.out" ] && cat "$RESP/$n.out"
 exit 0
 SH
   chmod +x "$fb/orca"
@@ -1972,16 +1972,28 @@ test_orca_agent_state_reads_a_closed_terminal_as_missing() {
 
 test_orca_agent_state_unprovable_reads_are_unreadable() {
   local name out
-  for name in no-exit-cause stale remote error-json mismatch mixed-pair cli-fails not-swept; do
+  for name in no-exit-cause stale remote error-json mismatch mixed-pair cli-fails failed-success failed-json failed-malformed not-swept; do
     orca_case "state-$name"
     case "$name" in
       no-exit-cause) orca_show_json term-1 false false '' local pty-1 /orca/wt-1 > "$RESP/1.out" ;;
-      stale) printf '{"ok":false,"error":{"code":"terminal_handle_stale"}}\n' > "$RESP/1.out" ;;
+      stale) printf '{"ok":false,"error":{"code":"terminal_handle_stale"}}\n' > "$RESP/1.out"; echo 1 > "$RESP/1.exit" ;;
       remote) orca_show_json term-1 false false operator_close ssh-box pty-1 /orca/wt-1 > "$RESP/1.out" ;;
       error-json) printf '{"ok":false,"error":{"code":"runtime_unavailable"}}\n' > "$RESP/1.out" ;;
       mismatch) orca_show_json term-2 false false operator_close local pty-1 /orca/wt-1 > "$RESP/1.out" ;;
       mixed-pair) orca_show_json term-1 false true operator_close local pty-1 /orca/wt-1 > "$RESP/1.out" ;;
       cli-fails) echo 1 > "$RESP/1.exit" ;;
+      failed-success)
+        orca_show_json term-1 false false operator_close local pty-1 /orca/wt-1 > "$RESP/1.out"
+        echo 1 > "$RESP/1.exit"
+        ;;
+      failed-json)
+        printf '{"ok":false,"error":{"code":"runtime_unavailable"}}\n' > "$RESP/1.out"
+        echo 1 > "$RESP/1.exit"
+        ;;
+      failed-malformed)
+        printf 'not json\n' > "$RESP/1.out"
+        echo 1 > "$RESP/1.exit"
+        ;;
       not-swept)
         orca_show_json term-1 true true '' local pty-1 /orca/wt-1 > "$RESP/1.out"
         orca_memory_json pty-0 1234 > "$RESP/2.out"
@@ -2043,7 +2055,7 @@ test_orca_absence_proof_refuses_without_every_fact() {
         orca_show_json term-1 false false operator_close local pty-1 "$CASE_DIR/elsewhere" > "$RESP/1.out"
         reason="not the recorded"
         ;;
-      stale) printf '{"ok":false,"error":{"code":"terminal_handle_stale"}}\n' > "$RESP/1.out"; reason="no longer recognizes" ;;
+      stale) printf '{"ok":false,"error":{"code":"terminal_handle_stale"}}\n' > "$RESP/1.out"; reason="no longer recognizes"; echo 1 > "$RESP/1.exit" ;;
       remote) orca_show_json term-1 false false operator_close ssh-box pty-1 "$CASE_DIR/wt" > "$RESP/1.out"; reason="execution host ssh-box" ;;
       no-exit-cause) orca_show_json term-1 false false '' local pty-1 "$CASE_DIR/wt" > "$RESP/1.out"; reason="no exit cause" ;;
       no-worktree) reason="names no worktree" ;;
@@ -2105,6 +2117,7 @@ printf '{ sec = %s, usec = 0 }\n' "${FM_TEST_ORCA_BOOT_EPOCH:-2000}"
 SH
   chmod +x "$FB/awk" "$FB/sysctl"
   printf '{"ok":false,"error":{"code":"terminal_handle_stale"}}\n' > "$RESP/1.out"
+  echo 1 > "$RESP/1.exit"
   printf 'spawn_gen=s1000.4242.99\nterminal=term-1\n' > "$CASE_DIR/meta"
 }
 

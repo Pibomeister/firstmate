@@ -999,7 +999,10 @@ add_orca_closed_task() {
 #!/usr/bin/env bash
 D=$FM_FAKE_DIR
 case "$1 $2" in
-  "terminal show") cat "$D/orca-show" ;;
+  "terminal show")
+    cat "$D/orca-show"
+    exit "$(cat "$D/orca-show.exit" 2>/dev/null || echo 0)"
+    ;;
   "diagnostics memory") cat "$D/orca-memory" ;;
   "terminal send")
     prev=
@@ -1053,6 +1056,7 @@ SH
   chmod +x "$dir/fakebin/awk" "$dir/fakebin/sysctl"
   printf '{"ok":false,"error":{"code":"terminal_handle_stale","message":"terminal handle stale"}}\n' \
     > "$dir/fake/orca-show"
+  echo 1 > "$dir/fake/orca-show.exit"
   echo "spawn_gen=s1000.4242.99" >> "$dir/home/state/$id.meta"
 }
 
