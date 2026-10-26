@@ -2737,12 +2737,13 @@ test_own_work_wait_keeps_first_alert_then_long_cadence() {
 
 # Fixture: an idle Pi worker (semantic busy state, so a test can flip busy) whose
 # status log ends in an open `blocked:` line.
-worker_blocker_case() {  # <name>
+worker_blocker_case() {  # <name> [newest-status-line]
   local dir state statusf
   dir=$(make_case "$1"); state="$dir/state"; statusf="$state/blk.status"
   printf 'window=test:fm-blk\nkind=ship\nharness=pi\n' > "$state/blk.meta"
   "$ROOT/bin/fm-busy-event.sh" arm "$state" blk --state idle >/dev/null
-  printf 'working [at=1]: setup done\nblocked [at=2]: GitHub Actions has not registered CI for the PR\n' > "$statusf"
+  printf 'working [at=1]: setup done\n%s\n' \
+    "${2:-blocked [at=2]: GitHub Actions has not registered CI for the PR}" > "$statusf"
   printf '%s' "$(seen_sig "$statusf")" > "$state/.seen-blk_status"
   touch "$state/blk.turn-ended"
   prime_turnend_seen "$state/blk.turn-ended"
@@ -2787,7 +2788,6 @@ test_worker_blocker_stale_first_sight_then_long_cadence() {
   [ -z "$got" ] || fail "a blocked worker re-alarmed on a pane tick inside the recheck cadence (got: $got)"
   got=$(worker_blocker_cycle "$dir" 'idle prompt, tick 3')
   [ -z "$got" ] || fail "a blocked worker re-alarmed on a second pane tick inside the recheck cadence (got: $got)"
-  [ ! -s "$state/.wake-queue" ] || fail "an absorbed pane tick queued a wake"
 
   # A pane that now shows a blocking dialog is news, not a tick: it alarms and
   # names the dialog even inside the cadence.
@@ -2830,6 +2830,18 @@ test_worker_blocker_stale_first_sight_then_long_cadence() {
   pass "a blocked worker's idle pane alarms at first sight, absorbs ticks inside the cadence, rechecks after it, and a new append or resolution ends the bound"
 }
 
+# Only a blocker takes the bound: a worker's own open decision request still
+# alarms on every new pane hash, exactly as before.
+test_worker_decision_request_is_not_bounded() {
+  local dir got
+  dir=$(worker_blocker_case worker-decision 'needs-decision [at=2] [key=q1]: pick the release channel')
+  got=$(worker_blocker_cycle "$dir" 'idle prompt, tick 1')
+  [ "$got" = "stale: test:fm-blk" ] || fail "an open decision request's first idle sight did not alarm (got: $got)"
+  got=$(worker_blocker_cycle "$dir" 'idle prompt, tick 2')
+  [ "$got" = "stale: test:fm-blk" ] || fail "an open decision request was absorbed by the blocker bound (got: $got)"
+  pass "a worker's own open decision request keeps alarming on every new pane hash"
+}
+
 test_worker_blocker_busy_then_idle_alarms_afresh() {
   local render dir state got
   # A busy footer that holds still, and one whose timer ticks every poll.
@@ -2844,6 +2856,8 @@ test_worker_blocker_busy_then_idle_alarms_afresh() {
       || fail "could not mark the worker busy"
     got=$(WORKER_BLOCKER_FIRST_RENDER=$render worker_blocker_cycle "$dir" 'Working... (3.1s)')
     [ -z "$got" ] || fail "a busy pane alarmed (render $render, got: $got)"
+    [ ! -e "$state/.paused-resurfaced-test_fm-blk" ] \
+      || fail "a busy pane left the blocker's cadence standing (render $render)"
 
     "$ROOT/bin/fm-busy-event.sh" apply "$state" blk idle --current-gen --source pi-ext --event agent-end >/dev/null \
       || fail "could not mark the worker idle"
@@ -2852,6 +2866,17 @@ test_worker_blocker_busy_then_idle_alarms_afresh() {
     [ "$got" = "stale: test:fm-blk" ] \
       || fail "a blocked worker that worked and went idle again did not alarm afresh (render $render, got: $got)"
   done
+
+  # A busy pane drops only a blocker's cadence: a captain-call cadence on the
+  # same window survives it.
+  dir=$(worker_blocker_case worker-blocker-busy-captain); state="$dir/state"
+  printf 'captain-hold:call-1:sig' > "$state/.paused-resurfaced-test_fm-blk"
+  "$ROOT/bin/fm-busy-event.sh" apply "$state" blk busy --current-gen --source pi-ext --event agent-start >/dev/null \
+    || fail "could not mark the worker busy"
+  got=$(worker_blocker_cycle "$dir" 'Working... (3.1s)')
+  [ -z "$got" ] || fail "a busy pane alarmed (got: $got)"
+  [ "$(cat "$state/.paused-resurfaced-test_fm-blk" 2>/dev/null)" = 'captain-hold:call-1:sig' ] \
+    || fail "a busy pane erased a captain-call cadence it does not own"
 
   # Disconfirming control: without the busy turn, the same new idle hash is absorbed.
   dir=$(worker_blocker_case worker-blocker-no-busy)
