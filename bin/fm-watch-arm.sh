@@ -523,6 +523,10 @@ attach_and_wait() {
 handle_attached_signal() {
   local signal=$1 rc=$2
   trap '' HUP TERM INT
+  # An interrupted handover snapshot may still own locks its watcher needs
+  # for cleanup, including a lock just transferred by the bounded helper.
+  fm_lock_release "$STATE/.watcher-down.lock"
+  fm_lock_release "$FM_WAKE_QUEUE_LOCK"
   cycle_log_append "$rc" "$signal" arm-interrupted none
   if [ "$cycle_origin" = attached ]; then
     if attached_holder_live "$cycle_watcher_pid"; then

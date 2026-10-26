@@ -1220,6 +1220,10 @@ test_a_park_stopped_mid_take_over_leaves_the_take_over_to_the_next_park() {
   kill -STOP "$arm" 2>/dev/null || fail "fixture: could not pause the take-over arm"
   : > "$home/marker-lock-release"
   wait "$holder" 2>/dev/null || true
+  wait_until 100 sh -c '[ "$(cat "$1/pid" 2>/dev/null)" = "$2" ]' _ "$home/state/.watcher-down.lock" "$arm" \
+    || fail "fixture: the bounded helper did not hand the recovery-marker lock to the paused arm"
+  [ "$(cat "$home/state/.wake-queue.lock/pid" 2>/dev/null)" = "$arm" ] \
+    || fail "fixture: the paused snapshot did not retain the queue lock"
   kill -TERM "$host" 2>/dev/null || fail "fixture: the park host $host was not running"
   kill -TERM "$arm" 2>/dev/null || fail "fixture: could not interrupt the paused arm"
   kill -CONT "$arm" 2>/dev/null || fail "fixture: could not resume the interrupted arm"
