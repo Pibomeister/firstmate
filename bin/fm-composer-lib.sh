@@ -561,7 +561,8 @@ FM_COMPOSER_OMP_STATUS_RE_DEFAULT='^[[:space:]]*(π|󰵗)[[:space:]]+·[[:space:
 # the row or after a middle dot (`← for agents · ? for shortcuts`). It is consulted only as the boundary BELOW a bare
 # composer, never on the composer row itself, so the same words typed after
 # the glyph stay composer input.
-FM_COMPOSER_CODEX_FOOTER_RE_DEFAULT='^[[:space:]]*(([^[:space:]·]+[[:space:]]+(none|minimal|low|medium|high|xhigh|max)[[:space:]]+·[[:space:]]+([^[:space:]·]+[[:space:]]+·[[:space:]]+)?)?Context [0-9]+% left([[:space:]]+·[[:space:]]+[0-9]+(\.[0-9]+)?[KMB]?[[:space:]]+(in|out))*([[:space:]]+·[[:space:]]+weekly [0-9]+% left)?|(← for agents[[:space:]]+·[[:space:]]+)?\? for shortcuts([[:space:]]+⚠[[:space:]]+[0-9]+ warnings?[[:space:]]+·[[:space:]]+f2 to view)?)[[:space:]]*$'
+FM_COMPOSER_CODEX_WARNINGS_RE_DEFAULT='⚠[[:space:]]+[0-9]+ warnings?[[:space:]]+·[[:space:]]+f2 to view'
+FM_COMPOSER_CODEX_FOOTER_RE_DEFAULT='^[[:space:]]*(([^[:space:]·]+[[:space:]]+(none|minimal|low|medium|high|xhigh|max)[[:space:]]+·[[:space:]]+([^[:space:]·]+[[:space:]]+·[[:space:]]+)?)?Context [0-9]+% left([[:space:]]+·[[:space:]]+[0-9]+(\.[0-9]+)?[KMB]?[[:space:]]+(in|out))*([[:space:]]+·[[:space:]]+weekly [0-9]+% left)?|(← for agents[[:space:]]+·[[:space:]]+)?\? for shortcuts([[:space:]]+'"$FM_COMPOSER_CODEX_WARNINGS_RE_DEFAULT"')?|'"$FM_COMPOSER_CODEX_WARNINGS_RE_DEFAULT"')[[:space:]]*$'
 # The per-glyph placeholder table: the exact text a harness renders after its
 # OWN agent glyph in an EMPTY bare composer, one `<glyph><TAB><placeholder>`
 # line per entry. Unlike the fleet-wide idle set above, an entry is bound to
@@ -1345,17 +1346,27 @@ _fm_composer_row_is_codex_footer() {  # <trimmed-row>
 }
 
 _fm_composer_codex_footer_run() {
-  local plain=$1 first=$2 line
-  line=$(_fm_composer_screen_row "$first" "$plain")
-  fm_composer_normalize_trim_var line
-  _fm_composer_row_is_codex_footer "$line" || return 1
+  local plain=$1 first=$2 line order=0 next
   while IFS= read -r line; do
     fm_composer_normalize_trim_var line
-    [ -z "$line" ] || _fm_composer_row_is_codex_footer "$line" || return 1
+    if [ -z "$line" ]; then
+      [ "$order" -gt 0 ] || return 1
+      order=4
+      continue
+    fi
+    _fm_composer_row_is_codex_footer "$line" || return 1
+    case "$line" in
+      *'? for shortcuts'*'⚠'*) next=3 ;;
+      *'? for shortcuts'*) next=2 ;;
+      '⚠'*) [ "$order" -gt 0 ] || return 1; next=3 ;;
+      *) next=1 ;;
+    esac
+    [ "$next" -gt "$order" ] || return 1
+    order=$next
   done <<EOF
-$(printf '%s\n' "$plain" | sed -n "$((first + 2)),\$p")
+$(printf '%s\n' "$plain" | sed -n "$((first + 1)),\$p")
 EOF
-  return 0
+  [ "$order" -gt 0 ]
 }
 
 # _fm_composer_bare_row_is_placeholder: 0 when the plain bare <row> is exactly
@@ -1718,7 +1729,6 @@ _fm_composer_row_is_composer_furniture() {  # <trimmed-row> <proof-glyph>
   local row=$1 proof=$2 glyph=''
   [ -n "$row" ] || return 1
   _fm_composer_row_is_omp_status "$row" && return 0
-  _fm_composer_row_is_codex_footer "$row" && return 0
   _fm_composer_row_is_braille_furniture "$row" && return 0
   fm_composer_idle_matches "$row" \
     "${FM_COMPOSER_MODE_HINT_RE:-$FM_COMPOSER_MODE_HINT_RE_DEFAULT}" sensitive && return 0

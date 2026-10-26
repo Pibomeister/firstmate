@@ -661,7 +661,9 @@ test_codex_footer_requires_complete_rows() {
       assert_screen "complete Codex footer '$row'" empty "$caps" "$screen"
       out=$(fm_composer_extract_selected_content "$caps" "$screen")
       [ -z "$out" ] || fail "complete Codex footer leaked into extracted content: '$out'"
-      assert_screen "complete Codex envelope footer '$row'" empty "$caps" \
+      want=pending
+      [ "$caps" != "$CAPS_PLAIN" ] || want=unknown
+      assert_screen "Codex footer before a lower live composer '$row'" "$want" "$caps" \
         "$envelope"$'\n  '"$row"$'\n→ status'
     done
     assert_screen "cursor on complete Codex footer '$row'" unknown "$CAPS_TMUX" "$screen" 1
@@ -724,6 +726,54 @@ test_codex_footer_run_preserves_following_draft() {
     assert_screen "cursor on real footer below draft '$row'" unknown "$CAPS_TMUX" "$screen" 3
   done
   pass "Codex footer boundaries require a complete remaining footer run"
+}
+
+test_codex_footer_order_and_multiplicity() {
+  local status='gpt-5.5 xhigh · Context 100% left' hint='? for shortcuts'
+  local warning='⚠ 3 warnings · f2 to view' footer draft screen caps want out expected cy envelope
+  envelope=$'╭────────────────────────╮\n│ ›                      │\n╰────────────────────────╯'
+  footer="$status"$'\n'"$hint"
+  for draft in "$hint" 'Context 77% left' "$status" "$warning" \
+               "$hint $warning" "$hint"$'\n'"$hint" \
+               "$status"$'\n'"$status" "$hint"$'\n'"$status" \
+               "$status"$'\n'"$hint" "$hint"$'\n'"$warning" \
+               "$hint"$'\n'"$warning"$'\n'"$warning"; do
+    screen=$'›\n'"$draft"$'\n'"$footer"
+    expected=${draft//$'\n'/ }
+    for caps in "$CAPS_PLAIN" "$CAPS_STYLED" "$CAPS_STYLED_NOID"; do
+      want=pending
+      [ "$caps" != "$CAPS_PLAIN" ] || want=unknown
+      assert_screen "footer-like draft before real footer '$draft'" "$want" "$caps" "$screen"
+      out=$(fm_composer_extract_selected_content "$caps" "$screen")
+      [ "$out" = "$expected" ] || fail "footer order discarded draft: expected '$expected', got '$out'"
+      out=$(LC_ALL=C fm_composer_extract_selected_content "$caps" "$screen")
+      [ "$out" = "$expected" ] || fail "C-locale footer order discarded draft: '$out'"
+      assert_screen "duplicate footer cannot demote a lower composer '$draft'" "$want" "$caps" \
+        "$envelope"$'\n'"$draft"$'\n'"$footer"$'\n→ keep draft'
+    done
+    cy=1
+    while IFS= read -r out; do
+      assert_screen "cursor on draft row $cy before real footer '$draft'" pending "$CAPS_TMUX" "$screen" "$cy"
+      cy=$((cy + 1))
+    done <<EOF
+$draft
+EOF
+    assert_screen "cursor on real status below draft '$draft'" unknown "$CAPS_TMUX" "$screen" "$cy"
+  done
+  for footer in "$status"$'\n'"$hint" "$status"$'\n'"$hint $warning" \
+                "$status"$'\n'"$hint"$'\n'"$warning" "$hint"$'\n'"$warning"; do
+    for caps in "$CAPS_PLAIN" "$CAPS_STYLED" "$CAPS_STYLED_NOID"; do
+      screen=$'›\n'"$footer"$'\n\n'
+      assert_screen "ordered bottom footer '$footer'" empty "$caps" "$screen"
+      out=$(fm_composer_extract_selected_content "$caps" "$screen")
+      [ -z "$out" ] || fail "ordered footer leaked into draft: '$out'"
+      screen=$'›\n'"$footer"$'\nordinary content'
+      want=pending
+      [ "$caps" != "$CAPS_PLAIN" ] || want=unknown
+      assert_screen "ordinary content after real footer '$footer'" "$want" "$caps" "$screen"
+    done
+  done
+  pass "only one ordered Codex footer suffix is excluded from draft content"
 }
 
 test_matrix_pi_separated_needs_identity() {
@@ -1598,6 +1648,7 @@ test_matrix_codex_idle_starfield_furniture
 test_matrix_codex_0162_placeholder_on_plain_capture
 test_codex_footer_requires_complete_rows
 test_codex_footer_run_preserves_following_draft
+test_codex_footer_order_and_multiplicity
 test_matrix_pi_separated_needs_identity
 test_matrix_pi_dollar_status_footer_is_empty
 test_matrix_opencode_leftbar_signals
