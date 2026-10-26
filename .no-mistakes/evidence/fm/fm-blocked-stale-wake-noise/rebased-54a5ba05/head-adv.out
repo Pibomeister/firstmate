@@ -1,0 +1,14 @@
+17:09:20 +0s start scenario=adversarial code=/Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M5WH9Y6VPB133GX18HPG0MC4 status-last='blocked [at=2]: GitHub Actions has not registered CI for the PR'
+17:09:40 +20s pane now shows a blocking exit-picker dialog
+17:09:57 +37s steer acknowledged (keep waiting on CI), no status line
+17:10:11 +51s worker goes busy then idle
+17:10:29 +69s worker appends a NEW blocked line
+17:10:41 +81s agent process exits; pane falls back to a shell
+17:10:52 +92s stop
+WAKES: 6
+17:09:28 +8s signal: /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.FAmT1e/state/blk.status 
+17:09:48 +28s stale: lab:fm-blk (blocked-on-prompt: Claude background-task exit picker) 
+17:10:00 +40s stale: lab:fm-blk 
+17:10:30 +70s stale: lab:fm-blk 
+17:10:42 +82s signal: /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.FAmT1e/state/blk.status 
+17:10:57 +97s stale: lab:fm-blk 

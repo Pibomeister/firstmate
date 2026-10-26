@@ -1,0 +1,4 @@
+17:14:52 +0s start scenario=dialog code=/Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M5WH9Y6VPB133GX18HPG0MC4 status-last='blocked [at=2]: GitHub Actions has not registered CI for the PR'
+17:15:32 +40s dialog shown
+17:15:42 +50s dialog dismissed, idle
+17:16:23 +91s stop

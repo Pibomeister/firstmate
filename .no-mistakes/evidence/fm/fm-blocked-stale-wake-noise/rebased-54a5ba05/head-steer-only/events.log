@@ -1,0 +1,3 @@
+17:14:52 +0s start scenario=steer code=/Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M5WH9Y6VPB133GX18HPG0MC4 status-last='blocked [at=2]: GitHub Actions has not registered CI for the PR'
+17:15:32 +40s steer acknowledged (keep waiting on CI), no status line
+17:16:22 +90s stop

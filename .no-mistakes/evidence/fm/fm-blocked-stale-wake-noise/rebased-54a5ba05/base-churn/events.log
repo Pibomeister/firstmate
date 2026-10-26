@@ -1,0 +1,2 @@
+17:09:21 +0s start scenario=churn code=/tmp/fmblk-drv/base status-last='blocked [at=2]: GitHub Actions has not registered CI for the PR'
+17:11:01 +100s stop

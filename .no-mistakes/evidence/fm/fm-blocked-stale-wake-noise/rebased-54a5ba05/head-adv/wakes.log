@@ -1,0 +1,6 @@
+17:09:28 +8s signal: /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.FAmT1e/state/blk.status 
+17:09:48 +28s stale: lab:fm-blk (blocked-on-prompt: Claude background-task exit picker) 
+17:10:00 +40s stale: lab:fm-blk 
+17:10:30 +70s stale: lab:fm-blk 
+17:10:42 +82s signal: /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.FAmT1e/state/blk.status 
+17:10:57 +97s stale: lab:fm-blk 

@@ -1,0 +1,7 @@
+17:09:20 +0s start scenario=adversarial code=/Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M5WH9Y6VPB133GX18HPG0MC4 status-last='blocked [at=2]: GitHub Actions has not registered CI for the PR'
+17:09:40 +20s pane now shows a blocking exit-picker dialog
+17:09:57 +37s steer acknowledged (keep waiting on CI), no status line
+17:10:11 +51s worker goes busy then idle
+17:10:29 +69s worker appends a NEW blocked line
+17:10:41 +81s agent process exits; pane falls back to a shell
+17:10:52 +92s stop

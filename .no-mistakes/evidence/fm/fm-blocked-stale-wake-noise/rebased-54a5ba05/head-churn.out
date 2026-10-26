@@ -1,0 +1,6 @@
+17:09:20 +0s start scenario=churn code=/Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M5WH9Y6VPB133GX18HPG0MC4 status-last='blocked [at=2]: GitHub Actions has not registered CI for the PR'
+17:11:00 +100s stop
+WAKES: 3
+17:09:28 +9s signal: /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.uAtQpa/state/blk.status 
+17:09:49 +29s stale: lab:fm-blk 
+17:11:06 +106s stale: lab:fm-blk 
