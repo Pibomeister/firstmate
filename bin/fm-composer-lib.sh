@@ -1344,6 +1344,20 @@ _fm_composer_row_is_codex_footer() {  # <trimmed-row>
   fm_composer_idle_matches "$1" "$FM_COMPOSER_CODEX_FOOTER_RE_DEFAULT" sensitive
 }
 
+_fm_composer_codex_footer_run() {
+  local plain=$1 first=$2 line
+  line=$(_fm_composer_screen_row "$first" "$plain")
+  fm_composer_normalize_trim_var line
+  _fm_composer_row_is_codex_footer "$line" || return 1
+  while IFS= read -r line; do
+    fm_composer_normalize_trim_var line
+    [ -z "$line" ] || _fm_composer_row_is_codex_footer "$line" || return 1
+  done <<EOF
+$(printf '%s\n' "$plain" | sed -n "$((first + 2)),\$p")
+EOF
+  return 0
+}
+
 # _fm_composer_bare_row_is_placeholder: 0 when the plain bare <row> is exactly
 # an agent glyph followed by that glyph's own entry in
 # FM_COMPOSER_BARE_PLACEHOLDERS_DEFAULT, and nothing else.
@@ -1411,7 +1425,7 @@ _fm_composer_wrap_region_ok() {  # <plain-screen> <glyph-row> <cursor-row>
     [ -n "$trimmed" ] || return 1
     if fm_composer_row_has_edge "$trimmed"; then return 1; fi
     if _fm_composer_row_is_omp_status "$trimmed"; then return 1; fi
-    if _fm_composer_row_is_codex_footer "$trimmed"; then return 1; fi
+    if _fm_composer_codex_footer_run "$plain" "$row"; then return 1; fi
     if _fm_composer_row_is_braille_furniture "$trimmed"; then return 1; fi
     if fm_composer_leading_shell_glyph_var glyph "$trimmed"; then return 1; fi
     row=$((row + 1))
@@ -1875,7 +1889,7 @@ _fm_composer_select_cursorless() {
       [ -n "$trimmed" ] || break
       fm_composer_row_has_edge "$trimmed" && break
       _fm_composer_row_is_omp_status "$trimmed" && break
-      _fm_composer_row_is_codex_footer "$trimmed" && break
+      _fm_composer_codex_footer_run "$plain" "$next" && break
       _fm_composer_row_is_braille_furniture "$trimmed" && break
       FM_COMPOSER_SELECTED_LAST=$next
       next=$((next + 1))

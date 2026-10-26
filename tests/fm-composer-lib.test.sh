@@ -692,6 +692,40 @@ test_codex_footer_requires_complete_rows() {
   pass "Codex footer matching requires complete rows across wrapping, envelopes, and extraction"
 }
 
+test_codex_footer_run_preserves_following_draft() {
+  local row screen caps want out footer envelope
+  footer=$'gpt-5.5 xhigh · Context 100% left\n ? for shortcuts'
+  envelope=$'╭────────────────────────╮\n│ ›                      │\n╰────────────────────────╯'
+  for row in '? for shortcuts' \
+             '← for agents · ? for shortcuts' \
+             'Context 77% left' \
+             'gpt-5.5 xhigh · Context 100% left'; do
+    for caps in "$CAPS_PLAIN" "$CAPS_STYLED" "$CAPS_STYLED_NOID"; do
+      want=pending
+      [ "$caps" != "$CAPS_PLAIN" ] || want=unknown
+      screen=$'›\n '"$row"$'\n explain them\n '"$footer"
+      assert_screen "draft continues after complete-looking footer '$row'" "$want" "$caps" "$screen"
+      out=$(fm_composer_extract_selected_content "$caps" "$screen")
+      [ "$out" = "$row explain them" ] || fail "draft after footer-looking row was lost: '$out'"
+      out=$(LC_ALL=C fm_composer_extract_selected_content "$caps" "$screen")
+      [ "$out" = "$row explain them" ] || fail "C-locale draft after footer-looking row was lost: '$out'"
+      screen=$'›\n '"$row"$'\n\n explain them\n '"$footer"
+      assert_screen "draft after a footer-looking row and blank line '$row'" "$want" "$caps" "$screen"
+      screen=$'›\n '"$row"$'\n explain them'
+      assert_screen "draft after a footer-looking row without real footer '$row'" "$want" "$caps" "$screen"
+      screen="$envelope"$'\n '"$row"$'\n explain them\n→ keep draft'
+      assert_screen "ordinary activity invalidates envelope footer run '$row'" "$want" "$caps" "$screen"
+      screen=$'›\n '"$footer"$'\n\n'
+      assert_screen "real footer with trailing blank rows '$row'" empty "$caps" "$screen"
+    done
+    screen=$'›\n '"$row"$'\n explain them\n '"$footer"
+    assert_screen "cursor on draft footer-looking row '$row'" pending "$CAPS_TMUX" "$screen" 1
+    assert_screen "cursor after draft footer-looking row '$row'" pending "$CAPS_TMUX" "$screen" 2
+    assert_screen "cursor on real footer below draft '$row'" unknown "$CAPS_TMUX" "$screen" 3
+  done
+  pass "Codex footer boundaries require a complete remaining footer run"
+}
+
 test_matrix_pi_separated_needs_identity() {
   # Real idle pi: a blank row between two solid rules. The blank row alone is
   # exactly what the strict rule refuses; only structure PLUS a live
@@ -1563,6 +1597,7 @@ test_matrix_omp_status_row_bounds_bare_composer
 test_matrix_codex_idle_starfield_furniture
 test_matrix_codex_0162_placeholder_on_plain_capture
 test_codex_footer_requires_complete_rows
+test_codex_footer_run_preserves_following_draft
 test_matrix_pi_separated_needs_identity
 test_matrix_pi_dollar_status_footer_is_empty
 test_matrix_opencode_leftbar_signals
