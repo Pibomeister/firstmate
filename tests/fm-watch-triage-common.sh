@@ -7346,6 +7346,7 @@ test_firstmate_park_absorbs_a_quiet_pane_until_its_time() {
   wait_for_exit "$UNTIL_PID" 100 || fail "first parked cycle did not finish: $(cat "$dir/watch.out")"
   until_watch "$dir" 240
   wait_for_exit "$UNTIL_PID" 100 || fail "second parked cycle did not finish: $(cat "$dir/watch.out")"
+  [ ! -s "$dir/watch.out" ] || fail "a firstmate-parked quiet pane was rechecked before its until time: $(cat "$dir/watch.out")"
   [ ! -s "$state/.wake-queue" ] || fail "a firstmate-parked quiet pane was queued as stale: $(cat "$state/.wake-queue")"
   grep -F 'declared time not reached' "$state/.watch-triage.log" >/dev/null \
     || fail "the parked pane was not absorbed as a declared wait"

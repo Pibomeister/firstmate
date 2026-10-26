@@ -427,8 +427,11 @@ NEW_WORKER_PID=$(cat "$STATE_ROOT/worker.pid")
 pass "worker identity binds the canonical configured code root"
 
 CRASHED_WORKER_PID=$NEW_WORKER_PID
-kill -KILL "$CRASHED_WORKER_PID"
-wait "$CRASHED_WORKER_PID" 2>/dev/null || true
+# Preserve stale ownership without a supervisor or heartbeat racing the tamper.
+CRASHED_WORKER_GROUP=$(fm_remote_job_worker_process_group "$CRASHED_WORKER_PID") \
+  || fail "the stale ownership fixture could not resolve its isolated worker group"
+kill -KILL -- "-$CRASHED_WORKER_GROUP"
+wait "$CRASHED_WORKER_GROUP" 2>/dev/null || true
 assert_present "$STATE_ROOT/worker.lock" "an unclean exit did not retain the worker ownership lock"
 sleep 20 &
 OTHER_PID=$!
