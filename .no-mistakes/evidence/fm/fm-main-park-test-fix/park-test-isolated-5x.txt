@@ -1,0 +1,15 @@
+== run 1 @ a98bb0b1
+ok - a firstmate park absorbs a quiet pane until its declared time, like a worker's own pause
+exit=1
+== run 2 @ a98bb0b1
+ok - a firstmate park absorbs a quiet pane until its declared time, like a worker's own pause
+exit=1
+== run 3 @ a98bb0b1
+ok - a firstmate park absorbs a quiet pane until its declared time, like a worker's own pause
+exit=1
+== run 4 @ a98bb0b1
+ok - a firstmate park absorbs a quiet pane until its declared time, like a worker's own pause
+exit=1
+== run 5 @ a98bb0b1
+ok - a firstmate park absorbs a quiet pane until its declared time, like a worker's own pause
+exit=1

@@ -1,0 +1,53 @@
+ok - a captain-held secondmate re-surfaces on the bounded normal-mode cadence
+ok - a non-paused secondmate retains normal stale suppression
+ok - a resumed secondmate clears pause and stale tracking before stale exemption
+ok - unchanged stale hashes reclassify when a crew enters or leaves pause
+ok - a declared pause is periodically rechecked against authoritative active-run state
+ok - a paused status overridden by authoritative working preserves its wedge timer, is rechecked rather than wedge-escalated while the declaration stands, and escalates once it is lifted
+ok - matching non-terminal stale suppressors repair missing or corrupt stale-since timers
+ok - a quiet pane writing its own worktree is deferred, while one writing nothing still wedge-escalates on the unchanged schedule
+ok - a write deferral re-surfaces once on the bounded pause cadence, so a churning worktree cannot stay invisible
+ok - a secondmate's own home supervision churn is not crew write evidence, so a pane recording that home keeps the unchanged escalation schedule
+ok - an idle-window timer repair drops a finished write-deferral chain, so the next deferral gets a fresh re-surface window
+ok - both first-sight paths through a captain-relevant status drop a finished write-deferral chain with the idle window
+ok - triage log capping handles wc byte counts with leading spaces
+ok - a captured process-event result wakes a healthy watcher proactively, with no manual drain
+ok - an unacknowledged process-event result re-drains until handling is acknowledged
+ok - complete process-event queue keys map to distinct seen markers
+ok - process-event queue keys surface under their own headlines
+ok - every launch-failure episode is delivered under the failed-to-start headline
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 95872.1793043337.NPbrQV
+ok - queue revalidation, proactive output, and marker commit serialize with drain
+/Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M5WQDQ5PJV69ZEQJA1TTD8WG/bin/fm-push-transition-lib.sh: line 113: echo: write error: Broken pipe
+tests/wake-helpers.sh: line 333: 99511 Killed: 9                  PATH="$dir/fakebin:$PATH" FM_HOME="$dir" FM_PROCEVENT_CLAIM_ROOT="$dir/claims" FM_CREW_STATE_BIN="$dir/fakebin/fm-crew-state.sh" FM_POLL=0.2 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out"
+tests/wake-helpers.sh: line 333:   752 Killed: 9                  PATH="$dir/fakebin:$PATH" FM_HOME="$dir" FM_PROCEVENT_CLAIM_ROOT="$dir/claims" FM_CREW_STATE_BIN="$dir/fakebin/fm-crew-state.sh" FM_POLL=0.2 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out"
+ok - surfacing failures replay until post-handling acknowledgement
+ok - marker failure exits through the shared wake owner, releases its lock, and replays later
+ok - a heartbeat with no captain-relevant change is absorbed and backs off the cadence
+ok - heartbeat backstop fail-safe surfaces a captain-relevant status the per-wake path missed
+ok - the heartbeat backstop surfaces a captain event hidden behind a later routine append
+ok - the liveness beacon stays fresh while the watcher absorbs benign wakes (fm-guard never false-alarms)
+ok - an afk signal records its captured heartbeat endpoint
+ok - with .afk present the watcher reverts to one-shot so the daemon owns triage (no double-triage)
+ok - AFK changed paused panes hand off plain stale identities for daemon-owned pause triage
+ok - away mode hands a declared pause on an ask-user gate to the daemon as a parked run, not as a pause
+ok - away mode points a paused worker at a gate it can answer without waking anyone else
+ok - away mode leaves a declared pause alone while its run is still executing
+ok - away mode bounds the parked-gate read, so a hung no-mistakes neither holds the scan nor starves the next paused pane
+ok - away mode gives the parked-gate read to the pane read least recently, so a later paused pane is not starved
+ok - a captain-held item is never rechecked while the away-posture record exists, and the recheck returns once the record is archived
+ok - a live captain-held pane is absorbed on first sight while the away-posture record exists
+ok - a delivery the captain already holds is never rechecked while the away-posture record exists
+ok - the daemon-owned one-shot never hands off a captain-held pane while the away-posture record exists
+ok - quiet mode's record silences no captain-held recheck, on the watcher's cadence or through a quiet daemon's one-shot
+ok - a declared wait naming a near-future until time stays quiet until that time
+ok - a wrong-year declared time cannot silence the watcher beyond the recheck cadence
+ok - a declared wait whose until time has passed is rechecked at once, then held to the cadence
+ok - a firstmate park absorbs a quiet pane until its declared time, like a worker's own pause
+ok - without until, a worker paused on its own ended background job is not rechecked inside the cadence
+ok - until set to a background job's timeout rechecks the worker paused on it once the job must have ended
+ok - a pane on the exit picker is a named stale, from the one capture the poll already takes
+ok - a pane on the exit picker keeps the wedge ladder, and the name follows demand-deep-inspection
+ok - picker text quoted above a composer stays an ordinary stale
+ok - a second mate on the exit picker stays quiet, and the poll does not capture the pane
+ok - a closed picker drops the saved dialog name, and the stale stays ordinary
