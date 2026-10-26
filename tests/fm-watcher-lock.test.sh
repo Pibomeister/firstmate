@@ -830,6 +830,8 @@ test_watch_restart_replaces_term_resistant_peer() {
   printf '%s\n' "$WATCH" > "$state/.watch.lock/watcher-path"
   printf '%s\n' "$identity" > "$state/.watch.lock/pid-identity"
   touch "$state/.last-watcher-beat"
+  append_wake "$state" check term-resistant-holder \
+    'check: queued work behind a TERM-resistant lock'
   PATH="$fakebin:$PATH" FM_HOME="$dir" FM_POLL=5 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 FM_ARM_ATTACH_POLL=0.1 FM_ARM_CONFIRM_TIMEOUT=1 "$WATCH_ARM" --restart > "$out" 2> "$dir/arm.err" &
   armpid=$!
   i=0
@@ -848,24 +850,9 @@ test_watch_restart_replaces_term_resistant_peer() {
   wait "$armpid" 2>/dev/null || true
   ! is_live_non_zombie "$peer" || fail "restart left a TERM-resistant peer running"
   wait "$peer" 2>/dev/null || true
-<<<<<<< HEAD
   ! grep -qF "watcher: attached pid=$peer" "$out" || fail "restart attached to the peer it stopped: $(cat "$out")"
   grep -qF 'check: rearm-resurface' "$out" || fail "restart replaced a TERM-resistant peer without surfacing recovery: $(cat "$out")"
   pass "watch restart stops a TERM-resistant peer past its grace and resurfaces from a fresh watcher"
-=======
-  wait_for_exit "$armpid" 80
-  status=$?
-  [ "$status" -ne 0 ] && [ "$status" -ne 124 ] || fail "restart arm did not fail after its attached peer ended without a successor (status $status)"
-  # The synthetic peer cannot run watcher cleanup after SIGKILL. Its matching
-  # lock must remain evidence of failed cleanup, rather than a clean cycle end.
-  assert_contains "$(cat "$dir/arm.err")" 'watcher: recovery state could not be persisted; retaining stale lock evidence' \
-    "restart arm did not surface the attached cleanup failure"
-  [ "$(cat "$state/.watch.lock/pid")" = "$peer" ] \
-    && [ "$(cat "$state/.watch.lock/pid-identity")" = "$identity" ] \
-    || fail "restart arm discarded the attached peer's stale lock evidence"
-  assert_grep 'reason=attached-cleanup-failed' "$state/.watch-cycle-exits.log" "restart cleanup failure was not classified"
-  pass "watch restart attaches to a verified healthy peer and preserves failed-cleanup evidence after SIGKILL"
->>>>>>> fbdedc61 (no-mistakes(ci): Fixed three outdated watcher-shutdown assertions and two flaky concurrency fixtures. Full watcher-lock suite passed in 83 seconds. Pinned ShellCheck, syntax, and whitespace checks passed. Only tests/fm-watcher-lock.test.sh changed)
 }
 
 test_watcher_self_evicts_on_lock_takeover() {
