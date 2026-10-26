@@ -174,6 +174,11 @@ stop_home_processes() {  # <home>
     kill -TERM "$pid" 2>/dev/null || true
     wait_for_exit "$pid" 100 >/dev/null 2>&1 || true
   fi
+  if [ -e "$home/session.stop" ]; then
+    while IFS= read -r pid; do
+      wait_for_exit "$pid" 100 >/dev/null 2>&1 || true
+    done < <(cat "$home/claude-pids" 2>/dev/null)
+  fi
   while IFS= read -r pid; do
     kill -TERM "$pid" 2>/dev/null || true
   done < <(cat "$home/orphan-pid" 2>/dev/null)

@@ -10,6 +10,29 @@ command -v perl >/dev/null 2>&1 || { printf 'skip: perl absent\n'; exit 0; }
 # shellcheck source=tests/supervision-host-helpers.sh
 . "$(dirname "${BASH_SOURCE[0]}")/supervision-host-helpers.sh"
 
+test_cleanup_waits_for_a_stopping_session() {
+  local home session
+  home=$(make_home session-cleanup-wait attended)
+  FM_HOME="$home" bash -c '
+    trap '\''trap "" TERM; kill "$sleeper" 2>/dev/null || true; sleep 1; : > "$FM_HOME/session-finished"; exit 0'\'' TERM
+    sleep 300 &
+    sleeper=$!
+    : > "$FM_HOME/session-ready"
+    wait "$sleeper"
+  ' &
+  session=$!
+  printf '%s\n' "$session" > "$home/claude-pids"
+  wait_until 100 test -e "$home/session-ready" || fail "session cleanup fixture never became ready"
+  : > "$home/session.stop"
+  stop_home_processes "$home"
+  if [ ! -e "$home/session-finished" ]; then
+    wait_for_exit "$session" 100 >/dev/null 2>&1 || true
+    fail "cleanup returned before the stopping session completed"
+  fi
+  wait_for_exit "$session" 100 >/dev/null 2>&1 || fail "cleanup left the stopping session alive"
+  pass "fixture cleanup sends TERM first and waits for a stopping session to finish"
+}
+
 test_completed_case_stops_its_registered_processes() {
   local home pids pid
   home=$(make_home case-lifetime attended)
@@ -1915,6 +1938,7 @@ SH
 
 # A completed case must not leave polling fixtures competing with later cases.
 for host_test in \
+  test_cleanup_waits_for_a_stopping_session \
   test_completed_case_stops_its_registered_processes \
   test_claude_stop_hook_restores_handoff_when_successor_closed_before_exit_to_main \
   test_claude_stop_hook_restores_handoff_when_successor_closed_mid_engine_turn \

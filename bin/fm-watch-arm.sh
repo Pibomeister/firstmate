@@ -490,6 +490,7 @@ attach_and_wait() {
         continue
       fi
       cycle_log_append unknown unknown attached-holder-stalled none
+      consume_cycle_delivery || true
       echo "watcher: FAILED - attached watcher pid=$attached_pid stalled (beacon ${age}s at or past hard bound ${STALL_BOUND}s)"
       return 1
     fi
@@ -912,6 +913,7 @@ wait_owned_child() {
       cycle_log_append unknown unknown started-holder-stalled none
       fm_watcher_stop_tree "$child" "" 5 || true
       wait "$child" 2>/dev/null || true
+      consume_child_output
       echo "watcher: FAILED - started watcher pid=$child stalled (beacon ${age}s at or past hard bound ${STALL_BOUND}s)"
       cleanup_child
       exit 1

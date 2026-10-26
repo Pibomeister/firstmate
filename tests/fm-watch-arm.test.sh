@@ -392,6 +392,86 @@ test_attached_arm_hands_a_stalled_holder_to_its_replacement() {
   pass "watch-arm: an attached arm hands a holder stalled past the bound to its owner's replacement"
 }
 
+run_stalled_arm_preserves_delivered_wake() {
+  local mode=$1 dir state fakebin owned attached='' watcher holder target i status=0
+  dir=$(make_case "stalled-delivery-$mode")
+  state="$dir/state"
+  fakebin="$dir/fakebin"
+  printf '%s\tunrelated-fixture\t%04096d\n' "$$" 0 > "$state/.watch-deliveries.log"
+  cat > "$fakebin/mv" <<'SH'
+#!/usr/bin/env bash
+last=
+for last in "$@"; do :; done
+if [ "$last" = "$FM_HOME/state/.watch-deliveries.log" ]; then
+  : > "$FM_HOME/delivery-ready"
+  while [ ! -e "$FM_HOME/delivery-go" ] && [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do sleep 0.05; done
+fi
+exec /bin/mv "$@"
+SH
+  chmod +x "$fakebin/mv"
+  PATH="$fakebin:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$state" FM_POLL=1 FM_SIGNAL_GRACE=0 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 FM_GUARD_GRACE=5 FM_WATCHER_STALL_BOUND=12 \
+    FM_WATCHER_CLEANUP_LOCK_BOUND=30 FM_ARM_ATTACH_POLL=0.1 FM_WATCH_DELIVERY_MAX_BYTES=4096 \
+    "$WATCH_ARM" > "$dir/owned.out" 2> "$dir/owned.err" &
+  owned=$!
+  i=0
+  while ! grep -q '^watcher: started pid=' "$dir/owned.out" && [ "$i" -lt 200 ]; do sleep 0.1; i=$((i + 1)); done
+  grep -q '^watcher: started pid=' "$dir/owned.out" || fail "stalled delivery fixture never started its watcher"
+  watcher=$(cat "$state/.watch.lock/pid")
+  target=$owned
+  if [ "$mode" = attached ]; then
+    PATH="$fakebin:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$state" FM_GUARD_GRACE=5 \
+      FM_WATCHER_STALL_BOUND=12 FM_ARM_ATTACH_POLL=0.1 \
+      "$WATCH_ARM" > "$dir/attached.out" 2> "$dir/attached.err" &
+    attached=$!
+    target=$attached
+    i=0
+    while ! grep -q "^watcher: attached pid=$watcher " "$dir/attached.out" && [ "$i" -lt 100 ]; do sleep 0.05; i=$((i + 1)); done
+    grep -q "^watcher: attached pid=$watcher " "$dir/attached.out" || fail "stalled delivery observer never attached"
+  fi
+  printf 'done: wake before stalled cleanup\n' > "$state/stalled.status"
+  i=0
+  while [ ! -e "$dir/delivery-ready" ] && [ "$i" -lt 200 ]; do sleep 0.05; i=$((i + 1)); done
+  [ -e "$dir/delivery-ready" ] || fail "watcher did not reach its delivery publication"
+  FM_HOME="$dir" FM_STATE_OVERRIDE="$state" bash -c '
+    . "$1"
+    fm_lock_acquire_wait "$STATE/.watcher-down.lock" || exit 1
+    : > "$FM_HOME/cleanup-held"
+    while [ ! -e "$FM_HOME/cleanup-release" ] && kill -0 "$2" 2>/dev/null \
+      && [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do sleep 0.05; done
+    fm_lock_release "$STATE/.watcher-down.lock"
+  ' _ "$ROOT/bin/fm-wake-lib.sh" "$watcher" &
+  holder=$!
+  i=0
+  while [ ! -e "$dir/cleanup-held" ] && [ "$i" -lt 100 ]; do sleep 0.05; i=$((i + 1)); done
+  [ -e "$dir/cleanup-held" ] || fail "stalled delivery fixture never held the recovery lock"
+  : > "$dir/delivery-go"
+  i=0
+  while ! grep -qF "signal: $state/stalled.status" "$state/.watch-deliveries.log" 2>/dev/null \
+    && [ "$i" -lt 200 ]; do sleep 0.05; i=$((i + 1)); done
+  grep -qF "signal: $state/stalled.status" "$state/.watch-deliveries.log" \
+    || fail "watcher did not publish its delivered reason before stalling"
+  cp "$state/.wake-queue" "$dir/queued-before-stall"
+  wait_for_exit "$target" 400 || status=$?
+  : > "$dir/cleanup-release"
+  wait_for_exit "$holder" 100 >/dev/null 2>&1 || fail "stalled delivery lock holder did not finish"
+  [ -z "$attached" ] || wait_for_exit "$owned" 200 >/dev/null 2>&1 || true
+  expect_code 1 "$status" "$mode stalled arm must retain its failure status"
+  [ "$(grep -c '^signal: .*stalled.status' "$dir/$mode.out")" -eq 1 ] \
+    || fail "$mode stalled arm lost or repeated its delivered reason: $(cat "$dir/$mode.out")"
+  assert_grep 'watcher: FAILED -' "$dir/$mode.out" "$mode stalled arm lost its failure diagnostic"
+  cmp -s "$dir/queued-before-stall" "$state/.wake-queue" || fail "$mode stalled arm changed the durable wake rows"
+  if [ "$mode" = owned ]; then
+    for i in "$state"/.watch-arm-output.*; do [ ! -e "$i" ] || fail "owned stalled arm left its capture unread"; done
+  fi
+  pass "$mode stalled arm preserves its delivered reason and durable queue while failing"
+}
+
+test_stalled_arms_preserve_delivered_wakes() {
+  run_stalled_arm_preserves_delivered_wake owned
+  run_stalled_arm_preserves_delivered_wake attached
+}
+
 test_rearm_resurfaces_durable_queue_and_remote_open_decision() {
   local dir home state fakebin result armout drainout status watcher_pid generation i
   dir=$(make_case rearm-resurface)
@@ -2053,6 +2133,7 @@ test_reaper_stops_a_tracked_watcher
 test_attached_arm_still_fails_on_a_wake_it_did_not_deliver
 test_attached_arm_follows_a_slow_live_holder
 test_attached_arm_hands_a_stalled_holder_to_its_replacement
+test_stalled_arms_preserve_delivered_wakes
 test_rearm_resurfaces_durable_queue_and_remote_open_decision
 test_empty_queue_rearm_stays_silent
 test_slow_rearm_recovery_is_still_surfaced
