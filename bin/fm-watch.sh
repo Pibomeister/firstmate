@@ -2933,10 +2933,14 @@ procevent_surface_after_output() {
 # watch_stage <name>: record which part of its poll this watcher is in, as one
 # line "<pid>\t<epoch>\t<stage>" in state/.watcher-stage, so the guard's
 # watcher-down banner can name where a stalled watcher stopped (bin/fm-guard.sh).
+# Publish by rename so concurrent readers always see a complete record.
 watch_stage() {  # <name>
-  local now
+  local now tmp
   fm_watch_now now
-  printf '%s\t%s\t%s\n' "$$" "$now" "$1" > "$STATE/.watcher-stage" 2>/dev/null || true
+  tmp=$(mktemp "$STATE/.watcher-stage-XXXXXX" 2>/dev/null) || return 0
+  if ! { printf '%s\t%s\t%s\n' "$$" "$now" "$1" > "$tmp" && mv -f -- "$tmp" "$STATE/.watcher-stage"; } 2>/dev/null; then
+    rm -f -- "$tmp" 2>/dev/null || true
+  fi
 }
 
 # watch_lock_deferred <name> <holder-pid>: this cycle skipped work behind a
@@ -2946,14 +2950,18 @@ watch_stage() {  # <name>
 # for this watcher, which bin/fm-guard.sh reports as an outage once it outlives
 # the stall bound; watch_lock_acquired clears it.
 watch_lock_deferred() {  # <name> <holder-pid>
-  local name=$1 holder=${2:-} file now owner first=
+  local name=$1 holder=${2:-} file now owner tmp first=
   file="$STATE/.watcher-deferral.$name"
   fm_watch_now now
   if [ -f "$file" ]; then
     IFS=$'\t' read -r owner first _ < "$file" 2>/dev/null || first=
     [ "${owner:-}" = "$$" ] || first=
   fi
-  printf '%s\t%s\t%s\t%s\n' "$$" "${first:-$now}" "$name" "$holder" > "$file" 2>/dev/null || true
+  if tmp=$(mktemp "$STATE/.watcher-deferral-$name-XXXXXX" 2>/dev/null); then
+    if ! { printf '%s\t%s\t%s\t%s\n' "$$" "${first:-$now}" "$name" "$holder" > "$tmp" && mv -f -- "$tmp" "$file"; } 2>/dev/null; then
+      rm -f -- "$tmp" 2>/dev/null || true
+    fi
+  fi
   triage_log "deferred $name work this cycle: its lock is held by $(fm_lock_holder_name "$holder") past its bound"
 }
 

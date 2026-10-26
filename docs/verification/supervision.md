@@ -924,3 +924,7 @@ Observed output:
 ```
 
 The safe command-channel contract is covered without a notification by `tests/fm-daemon.test.sh`: the summary reaches both `$1` and stdin, every channel is process-group bounded, and a failed channel falls through.
+
+## Muse primary tracked-background wake, 2026-10-25
+
+[`muse.md`](muse.md#muse-as-a-verified-primary-2026-10-25) owns the live primary result and observed sequence; [`turnend-guard.md`](../turnend-guard.md#compatibility-limits) owns the remaining turn-end limits.

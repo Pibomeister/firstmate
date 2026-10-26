@@ -165,6 +165,60 @@ test_recovery_send_bound_records_unknown_never_failed() {
   pass "a recovery send stopped at its bound is recorded unknown; one that fails inside it stays failed"
 }
 
+test_watcher_diagnostic_records_stay_complete_during_updates() {
+  local kind dir file writer i owner epoch label holder
+  for kind in stage deferral; do
+    dir=$(make_case "diagnostic-$kind")
+    case "$kind" in
+      stage) file="$dir/state/.watcher-stage" ;;
+      deferral) file="$dir/state/.watcher-deferral.wake-queue" ;;
+    esac
+    FM_STATE_OVERRIDE="$dir/state" bash -c '
+      . "$1"
+      dir=$2
+      kind=$3
+      file=$4
+      FM_WATCH_NOW=100
+      if [ "$kind" = stage ]; then watch_stage first
+      else watch_lock_deferred wake-queue 111; fi
+      cp "$file" "$dir/before"
+      builtin printf "%s\n" "$$" > "$dir/writer"
+      # Pause the actual output operation after its redirection has opened.
+      # The public record must still contain the previous complete record.
+      printf() {
+        if [ "${1:-}" != -v ]; then
+          : > "$dir/paused"
+          while [ ! -e "$dir/resume" ]; do sleep 0.01; done
+        fi
+        builtin printf "$@"
+      }
+      FM_WATCH_NOW=200
+      if [ "$kind" = stage ]; then watch_stage next
+      else watch_lock_deferred wake-queue 222; fi
+    ' _ "$ROOT/bin/fm-watch.sh" "$dir" "$kind" "$file" &
+    writer=$!
+    FIXTURE_PIDS="$FIXTURE_PIDS $writer"
+    for i in $(seq 1 100); do [ -e "$dir/paused" ] && break; sleep 0.1; done
+    [ -e "$dir/paused" ] || fail "the $kind writer did not reach its update"
+    cmp -s "$dir/before" "$file" \
+      || fail "the published $kind record was incomplete during its update"
+    : > "$dir/resume"
+    wait "$writer" || fail "the $kind update failed"
+    IFS=$'\t' read -r owner epoch label holder < "$file"
+    [ "$owner" = "$(cat "$dir/writer")" ] || fail "the $kind update lost its owner"
+    if [ "$kind" = stage ]; then
+      [ "$epoch" = 200 ] && [ "$label" = next ] && [ -z "$holder" ] \
+        || fail "the new stage record was not published completely"
+    else
+      [ "$epoch" = 100 ] && [ "$label" = wake-queue ] && [ "$holder" = 222 ] \
+        || fail "the deferral update lost its first epoch or new holder"
+      FM_STATE_OVERRIDE="$dir/state" bash -c '. "$1"; watch_lock_acquired wake-queue' _ "$ROOT/bin/fm-watch.sh"
+      [ ! -e "$file" ] || fail "the acquired lock retained its deferral record"
+    fi
+  done
+  pass "watcher stage and deferral records remain complete during updates"
+}
+
 test_watcher_defers_work_behind_a_held_wake_queue_lock() {
   local dir state fakebin out holder holder_pid watcher i d_owner d_first d_name d_holder s_pid s_epoch s_stage
   dir=$(make_case wake-lock-held)
@@ -301,6 +355,7 @@ fi
 
 test_hung_doorbell_returns_delivered_and_frees_the_lock
 test_recovery_send_bound_records_unknown_never_failed
+test_watcher_diagnostic_records_stay_complete_during_updates
 test_watcher_defers_work_behind_a_held_wake_queue_lock
 test_stopped_perl_bound_stops_its_command
 test_herdr_server_survives_its_spawning_group_kill

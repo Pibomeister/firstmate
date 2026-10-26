@@ -166,7 +166,7 @@ The worktree and the task's records are unaffected either way.
 - An unverified harness is refused rather than guessed at.
 - An implicit relaunch from a prefixed raw-command basename is refused before the agent or durable state is touched because its original launch command cannot be reconstructed.
 - An adapter that is not verified for this task's kind is refused **before** the running agent is stopped, not after.
-  Muse is a crewmate and scout adapter only, so relaunching a secondmate onto it refuses while its agent is still up rather than leaving that secondmate with no agent when the launch owner refuses.
+  Muse's [secondmate restriction](../.agents/skills/harness-adapters/SKILL.md#non-negotiable-safety) therefore causes relaunch to refuse while the current agent is still up.
 - A backend that cannot deliver the harness's interrupt key, or the composer clear that key needs, is refused rather than sent a different key.
   Orca 1.4.217 and 1.4.218 delivered raw Escape and Ctrl+U to Droid in live verification, while other harnesses retain their existing key-verification boundary.
 - `exit` and `relaunch` require a backend with a recovery-grade agent-state classifier - tmux and herdr - or, on Orca, Droid's stop proof (a current-generation `SessionEnd` marker with no `droid` process left in the task worktree), where a relaunch must also replace Droid with Droid.

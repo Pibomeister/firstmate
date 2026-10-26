@@ -185,6 +185,7 @@ Applicability turns on one question: does the harness expose built-in delegation
 | Grok | present, exact tokens unconfirmed | Not wired pending live verification. See below. |
 | omp | present, per bundled material | Not wired and unverified. omp ships a built-in task delegation tool: its bundled docs list `tools/task.md` and the captain-level `task.maxConcurrency` setting governs it. No Firstmate delegation seatbelt is wired for it yet, and its status stays unverified until a live tool enumeration is recorded the way the Codex row was. |
 | OpenCode | present, exact tokens unconfirmed | Not wired pending live verification. See below. |
+| Muse | present (native sub-agents) | Not wired. Muse 1.4.13 exposes no PreToolUse hook in the default build, so `bin/fm-subagent-pretool-check.sh` cannot be invoked for a Muse primary. Native sub-agent work on a Muse primary therefore remains outside this guard; do not generalize Claude's tool names or deny list to Muse. |
 | Pi | none reported | Not wired pending live verification. See below. |
 
 ### Codex, verified not applicable

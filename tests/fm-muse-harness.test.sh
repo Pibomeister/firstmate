@@ -404,9 +404,7 @@ EOF
   pass "muse resolves relative XDG roots before preflight and launch"
 }
 
-# muse has no primary supervision protocol, and its Claude-compatible hook
-# dialect rejects the model-reawakening handlers a firstmate primary needs, so a
-# secondmate on muse could never arm a supervision cycle.
+# Muse has a verified primary protocol, but its secondmate integration is unverified.
 test_spawn_refuses_secondmate() {
   local case_dir home fakebin id out status
   case_dir="$TMP_ROOT/secondmate"
@@ -423,7 +421,9 @@ test_spawn_refuses_secondmate() {
     "$SPAWN" "$id" muse --secondmate 2>&1)
   status=$?
   [ "$status" -ne 0 ] || fail "muse was accepted as a secondmate harness"
-  assert_contains "$out" "crewmate/scout adapter only" "muse secondmate refusal did not explain the boundary"
+  assert_contains "$out" "secondmate integration remains unverified" "muse secondmate refusal did not explain the boundary"
+  assert_not_contains "$out" "crewmate/scout adapter only" "muse secondmate refusal denied its verified primary support"
+  assert_not_contains "$out" "no primary supervision protocol" "muse secondmate refusal denied its verified primary protocol"
   pass "muse is refused as a secondmate harness"
 }
 
