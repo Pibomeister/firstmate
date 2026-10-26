@@ -1,0 +1,83 @@
+{
+  "revision": "958c73f1be79af57ec9da713fa6bd4703e80a893",
+  "time_utc": "2026-10-26T16:53:31Z",
+  "sources": {
+    "bin/backends/orca.sh": "83d944b26c836982d0246591f2c31f64f966bacf3b488af12e699357ca81d969",
+    "bin/fm-composer-lib.sh": "8ca5952d8dcddba6faf5f80bcc49229795eed98f0ca92acc7dddcf16d2b0bbec"
+  },
+  "commands": [
+    {
+      "name": "orca-version",
+      "command": [
+        "orca",
+        "--version"
+      ],
+      "exit": 0,
+      "stdout_sha256": "ecd15cc053bc35d61b9e09b8e36662e828dea69a743b0e54348918164e1999d6",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "grok-version",
+      "command": [
+        "grok",
+        "--version"
+      ],
+      "exit": 0,
+      "stdout_sha256": "a6d1a7b05b0bfed71026e3faa86ad980272559dc05babc849d092bf6a5b0d161",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "protected-orca-viewport",
+      "command": [
+        "orca",
+        "terminal",
+        "read",
+        "--terminal",
+        "term_da54e1ca-45ea-477d-8f2f-b4a86cfd2f81",
+        "--screen",
+        "--limit",
+        "20",
+        "--json"
+      ],
+      "exit": 1,
+      "stdout_sha256": "993688ce8334b9885d84eb2ede5665da6b9526268810fe1b47c42bad47eee28a",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "protected-orca-adapter",
+      "command": [
+        "bash",
+        "-c",
+        "source bin/backends/orca.sh; fm_backend_orca_composer_state \"$1\"; printf \"\\n\"",
+        "_",
+        "term_da54e1ca-45ea-477d-8f2f-b4a86cfd2f81"
+      ],
+      "exit": 0,
+      "stdout_sha256": "7f51b4fb44dbc72708fac0a474600c2e9d8af4ce3a8b8f1680330454f6a8d68f",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "additional_evidence_sha256": {
+    "portable-counterfactual.json": "d6d1a8954c1de9aa0f1991396379031ded901e5a0a30de0580d63f202eec1d30",
+    "protected-orca-adapter.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "orca-version.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "grok-version.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "live-shell-guard.txt": "bb3c70c1c16221a7fc3afd524aebb11ff6a98b2b11fba96dfdfc1a93d31f095c",
+    "isolated-grok-startup.txt": "0108ca1e5bf0f4fbf0240beea54a95e09caa4683426be61c28c01c37eb8ada73",
+    "grok-version.stdout": "a6d1a7b05b0bfed71026e3faa86ad980272559dc05babc849d092bf6a5b0d161",
+    "targeted-tests.log": "a5cc7e101800d69553ef8dfa6d4ee084ef238ae620bc99bfacfbd31f6f67976b",
+    "orca-version.stdout": "ecd15cc053bc35d61b9e09b8e36662e828dea69a743b0e54348918164e1999d6",
+    "targeted-tests-receipt.json": "34aa91b69b5feafe8201a7c9a609ca81620e8fd11cfcbf0c0129b79d2c3352d1",
+    "live-shell-capture.txt": "2254d24a6db4b31619d0ea4f9a506657da53df73bb6e4df7a1d2c424f76a4225",
+    "protected-orca-adapter.stdout": "7f51b4fb44dbc72708fac0a474600c2e9d8af4ce3a8b8f1680330454f6a8d68f",
+    "protected-orca-viewport.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "protected-orca-show.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "protected-orca-viewport.stdout": "993688ce8334b9885d84eb2ede5665da6b9526268810fe1b47c42bad47eee28a",
+    "protected-orca-show.stdout": "c4a867b16ca38376e0caeb26c6d69da74babb36576333285b14f4267d9df7549",
+    "isolated-live-receipts.json": "b9697233a5598cd35b942156fa01c5d3609b7cbc9312c3b4c055b8b3947cc5b2",
+    "protected-orca-show-receipt.json": "9eec141b8152d92c24efa4b4c9176b1514e068f953adf725c0da2481f883dad8"
+  },
+  "final_revision": "958c73f1be79af57ec9da713fa6bd4703e80a893",
+  "worktree_status": "",
+  "scope_note": "No protected-terminal text, key, lifecycle, settings, or model request was sent. Disposable Grok launch reached unauthenticated browser-approval screen; no approval or sign-in was completed. Lab private tmux server and home were removed. Prior-run live passes cannot be claimed as live in this run; no prior artifacts were present in this evidence directory."
+}

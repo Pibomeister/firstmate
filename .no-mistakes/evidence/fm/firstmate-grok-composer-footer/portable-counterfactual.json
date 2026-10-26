@@ -1,0 +1,148 @@
+{
+  "contract": "Recorded Grok composer screen; behavioral execution, not live native input",
+  "base": "d0f8c61c0e57a08d8d0bb50c15eb5ad2943b11a2",
+  "target": "958c73f1be79af57ec9da713fa6bd4703e80a893",
+  "fixture_sha256": "ba4cd2e6a480851d9f12d015c5e2bd8ff6bccd80ebc0e4fdad566c50abe43953",
+  "cases": [
+    {
+      "case": "observed footer",
+      "expected_current": "empty",
+      "base": {
+        "exit": 0,
+        "verdict": "unknown",
+        "stderr": ""
+      },
+      "target": {
+        "exit": 0,
+        "verdict": "empty",
+        "stderr": ""
+      }
+    },
+    {
+      "case": "send now independently",
+      "expected_current": "empty",
+      "base": {
+        "exit": 0,
+        "verdict": "unknown",
+        "stderr": ""
+      },
+      "target": {
+        "exit": 0,
+        "verdict": "empty",
+        "stderr": ""
+      }
+    },
+    {
+      "case": "semicolon queue independently",
+      "expected_current": "empty",
+      "base": {
+        "exit": 0,
+        "verdict": "unknown",
+        "stderr": ""
+      },
+      "target": {
+        "exit": 0,
+        "verdict": "empty",
+        "stderr": ""
+      }
+    },
+    {
+      "case": "old footer",
+      "expected_current": "empty",
+      "base": {
+        "exit": 0,
+        "verdict": "empty",
+        "stderr": ""
+      },
+      "target": {
+        "exit": 0,
+        "verdict": "empty",
+        "stderr": ""
+      }
+    },
+    {
+      "case": "draft preserved",
+      "expected_current": "pending",
+      "base": {
+        "exit": 0,
+        "verdict": "unknown",
+        "stderr": ""
+      },
+      "target": {
+        "exit": 0,
+        "verdict": "pending",
+        "stderr": ""
+      }
+    },
+    {
+      "case": "footer words inside draft",
+      "expected_current": "pending",
+      "base": {
+        "exit": 0,
+        "verdict": "unknown",
+        "stderr": ""
+      },
+      "target": {
+        "exit": 0,
+        "verdict": "pending",
+        "stderr": ""
+      }
+    },
+    {
+      "case": "missing top border",
+      "expected_current": "unknown",
+      "base": {
+        "exit": 0,
+        "verdict": "unknown",
+        "stderr": ""
+      },
+      "target": {
+        "exit": 0,
+        "verdict": "unknown",
+        "stderr": ""
+      }
+    },
+    {
+      "case": "second footer row",
+      "expected_current": "unknown",
+      "base": {
+        "exit": 0,
+        "verdict": "unknown",
+        "stderr": ""
+      },
+      "target": {
+        "exit": 0,
+        "verdict": "unknown",
+        "stderr": ""
+      }
+    },
+    {
+      "case": "unexplained lower activity",
+      "expected_current": "unknown",
+      "base": {
+        "exit": 0,
+        "verdict": "unknown",
+        "stderr": ""
+      },
+      "target": {
+        "exit": 0,
+        "verdict": "unknown",
+        "stderr": ""
+      }
+    },
+    {
+      "case": "unobserved send later",
+      "expected_current": "unknown",
+      "base": {
+        "exit": 0,
+        "verdict": "unknown",
+        "stderr": ""
+      },
+      "target": {
+        "exit": 0,
+        "verdict": "unknown",
+        "stderr": ""
+      }
+    }
+  ]
+}

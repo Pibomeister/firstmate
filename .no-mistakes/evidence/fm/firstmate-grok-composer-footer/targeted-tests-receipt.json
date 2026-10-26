@@ -1,0 +1,11 @@
+{
+  "command": [
+    "bash",
+    "bin/fm-test-run.sh",
+    "--jobs",
+    "1",
+    "tests/fm-composer-lib.test.sh",
+    "tests/fm-composer-ghost.test.sh"
+  ],
+  "exit": 0
+}

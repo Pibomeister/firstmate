@@ -1,0 +1,11 @@
+{
+  "command": [
+    "orca",
+    "terminal",
+    "show",
+    "--terminal",
+    "term_da54e1ca-45ea-477d-8f2f-b4a86cfd2f81",
+    "--json"
+  ],
+  "exit": 1
+}
