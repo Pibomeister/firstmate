@@ -1900,7 +1900,7 @@ SH
 # ORCA_TREE_ROOT to the root pid (a global, so the pid also reaches cleanup). `shell` is the shell alone, `agent` adds a child named like a
 # verified harness, `stranger` adds a child named like nothing it knows.
 orca_tree() {  # <shell|agent|stranger>
-  local kind=$1 dir="$TMP_ROOT/tree-bin" pid i fifo
+  local kind=$1 dir="$TMP_ROOT/tree-bin" pid _ fifo
   mkdir -p "$dir"
   case "$kind" in
     shell)
@@ -1917,7 +1917,7 @@ orca_tree() {  # <shell|agent|stranger>
   esac
   pid=$!
   ORCA_TREE_PIDS+=("$pid")
-  for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
     case "$kind" in
       shell) [ -n "$(ps -p "$pid" -o comm= 2>/dev/null)" ] && break ;;
       *) [ -n "$(pgrep -P "$pid" 2>/dev/null)" ] && break ;;
