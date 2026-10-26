@@ -28,8 +28,7 @@ FM_REVIEW_BACKUP_PREFIX=
 # shellcheck source=bin/fm-pr-lib.sh
 . "$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; CDPATH='' cd -- "${d:-/}" && pwd)/fm-pr-lib.sh"
 
-# The config directory the renderers and spawn read, resolved the same way
-# bin/fm-dod-lib.sh resolves config/wait-no-turns.
+# The config directory the renderers and spawn read.
 fm_external_review_config_dir() {
   printf '%s\n' "${CONFIG:-${FM_CONFIG_OVERRIDE:-${FM_HOME:-}/config}}"
 }

@@ -619,8 +619,8 @@ The receipt prevents accidental publication through supported paths; it proves c
 ## Waiting worker spends no turns (config/wait-no-turns)
 
 The optional local, gitignored `config/wait-no-turns` presence flag opts this home into keeping a waiting worker from spending turns until it is answered.
-With it present, ship and scout briefs gain the `# Waiting` section and the foreground no-mistakes drive text, every brief's inbox section keeps the natural-checkpoint check and adds that a waiting worker does not poll or list its inbox because a waiting instruction rings, a pending-reply recovery waits while that mate has its own open decision or blocker, and a fire-and-forget steer whose doorbell did not land gets one later ring.
-With the file absent, generated briefs omit the waiting section and the no-poll inbox line, the drive text backgrounds the call, recovery sends during an open decision, and a fire-and-forget steer is not owed a retry ring.
+With it present, ship and scout briefs gain the `# Waiting` section, every brief's inbox section keeps the natural-checkpoint check and adds that a waiting worker does not poll or list its inbox because a waiting instruction rings, a pending-reply recovery waits while that mate has its own open decision or blocker, and a fire-and-forget steer whose doorbell did not land gets one later ring.
+With the file absent, generated briefs omit the waiting section and the no-poll inbox line, recovery sends during an open decision, and a fire-and-forget steer is not owed a retry ring.
 The flag is a home-local preference and is not inherited by secondmate homes.
 
 ## No-mistakes pipeline spend (config/pipeline-spend)
@@ -2190,6 +2190,9 @@ Never run the registered blocking source command directly in a conversational tu
 A long-polling external process is registered as a *source* through its adapter, whose header and `--help` own the commands and flags.
 `bin/fm-procevent.sh` owns the generic contract; built-in adapters retain their tracked `bin/fm-procevent-<adapter>.sh` commands, while an explicitly bound external adapter routes through the trusted host contract above.
 
+Ship workers use the task-owned `bin/fm-procevent-no-mistakes.sh` adapter to end their turn while their pipeline or PR CI runs; its header owns arming, advisory result delivery, and acknowledgement mechanics.
+`bin/fm-dod-lib.sh` owns the generated worker instructions, including fresh live-state inspection before acting on a completion wake.
+
 `bin/fm-procevent-lavish.sh` is the first built-in adapter and wraps the published `lavish-axi poll` interface plus `lavish-axi reply` when the installed version supports synchronous reply acceptance.
 
 **Open the Lavish artifact first**
@@ -2211,9 +2214,9 @@ An already-armed Lavish source keeps its registered listener command until it is
 A live task that hosts a Lavish board owns its listener, so firstmate must never arm that board.
 After opening the artifact as required above, the worker arms it with `bin/fm-procevent-lavish.sh arm <artifact.html> --for <task-id>` and never runs `lavish-axi poll` itself.
 
-`arm` prints `armed` only after the process-event owner confirms this registration generation's listener is running, and otherwise returns nonzero without that line.
+`arm` prints `armed` only after the process-event owner confirms readiness for this registration, and otherwise returns nonzero without that line.
 
-- The confirmation is the same live claim or launch-stamp evidence `reconcile` already uses, bounded by `FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS`, and a failed confirmation retires a source that never started unless `retire` refuses because something may still own it, in which case the registration stays for `reconcile` or a human.
+- The confirmation uses the evidence owned by `bin/fm-procevent.sh`'s `ensure-listening`, bounded by `FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS`, and a failed confirmation retires a source that never started unless `retire` refuses because something may still own it, in which case the registration stays for `reconcile` or a human.
 - An earlier registration's listener that releases the board inside the confirm window lets the new registration start, and `arm` then reports `armed` as usual.
 - When a live listener from an earlier registration of the same board still holds it when the window ends, `arm` exits zero with `still-listening` instead of `armed`, because that earlier listener keeps serving the board and the new registration takes effect only after the source is retired and armed again.
 - The arm is refused unless that task id has valid, identity-matching endpoint metadata, because a board whose owner has no endpoint would collect feedback nobody can be told about.

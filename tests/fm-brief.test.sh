@@ -556,10 +556,10 @@ test_no_mistakes_dod_green_detection() {
     "no-mistakes DOD must say axi status cannot show a green PR in merge monitoring"
   assert_grep "never wait on a status poll for the next gate or outcome" "$brief" \
     "no-mistakes DOD must forbid waiting on a status poll"
-  assert_grep "reattach at once by re-running \`no-mistakes axi run\` without flags" "$brief" \
-    "no-mistakes DOD must reattach the drive call after a bounded return"
-  assert_grep "once checks are green it returns \`checks-passed\` immediately" "$brief" \
-    "no-mistakes DOD must say a reattach reports an already-green PR"
+  assert_grep 'listener reattaches routine elapsed holds' "$brief" \
+    'no-mistakes DOD must assign reattachment to the completion listener'
+  assert_grep 'handle any gate or outcome it already returned' "$brief" \
+    'no-mistakes DOD must handle an already-ready return immediately'
   assert_no_grep "poll \`no-mistakes axi status\` from a separate call" "$brief" \
     "no-mistakes DOD still makes a status poll the wait for the next gate or outcome"
   pass "fm-brief.sh: no-mistakes DOD detects a green PR from the drive call, not a status poll"
@@ -1229,15 +1229,19 @@ test_workers_wait_without_spending_turns() {
     assert_grep "empty \`write_stdin\` polls of up to 300000 ms" "$brief" "$id: the Codex ceiling is missing"
     assert_grep "is the sanctioned foreground wait" "$brief" \
       "$id: the wait a Claude Code worker may use is not named"
-    assert_grep "reattach with \`no-mistakes axi run --wait\` instead, and never send the same \`respond\` again" "$brief" \
-      "$id: a timed-out respond must reattach with axi run, never resend its answer"
     assert_grep "Do not poll or list the inbox while waiting; a waiting instruction rings." "$brief" \
       "$id: polling the inbox while waiting is not forbidden"
     assert_grep "natural checkpoint" "$brief" "$id: the flag dropped the natural-checkpoint inbox check"
   done
   brief="$home/data/brief-wait-ship/brief.md"
-  assert_grep "issue the same foreground call again" "$brief" \
-    "the no-mistakes DOD must reattach with the same foreground call"
+  assert_grep 'fm-procevent-no-mistakes.sh arm brief-wait-ship' "$brief" \
+    'the no-mistakes DOD must name its task-owned completion listener'
+  assert_grep 'then end your turn' "$brief" 'the no-mistakes worker must end its turn after arming'
+  assert_grep 'Before any gate response or ready report, reread current run evidence' "$brief" \
+    'an advisory wake must not authorize stale side effects'
+  assert_grep 'until handling or ask-user escalation is durable' "$brief" \
+    'the source must remain unacknowledged until handling is durable'
+  assert_grep 'Never replay an old' "$brief" 'redelivery must not replay a gate response'
   assert_no_grep "background the drive call" "$brief" "the no-mistakes DOD still backgrounds the drive call"
 
   FM_SECONDMATE_CHARTER='Supervise the alpha domain.' \
@@ -1262,10 +1266,12 @@ test_wait_no_turns_absent_keeps_the_previous_brief() {
   assert_no_grep "end your turn at once" "$brief" "an absent flag still added the waiting section"
   assert_grep "natural checkpoint" "$brief" "an absent flag dropped the unprompted inbox check"
   assert_no_grep "Do not poll or list the inbox while waiting" "$brief" "an absent flag still added the no-poll inbox line"
-  assert_grep "background the drive call" "$brief" "an absent flag replaced the backgrounded drive text"
+  assert_grep 'fm-procevent-no-mistakes.sh arm brief-wait-off' "$brief" \
+    'the pipeline completion listener must also work without wait-no-turns'
+  assert_no_grep 'background the drive call' "$brief" 'an absent flag still required pipeline babysitting'
   assert_no_grep "issue the same foreground call again" "$brief" \
     "an absent flag still asked for the foreground reattach"
-  pass "fm-brief: without config/wait-no-turns the brief and drive text stay as they were"
+  pass "fm-brief: without wait-no-turns only the pipeline wait adopts the completion listener"
 }
 
 # A wait on a no-mistakes run is true only while that run is still working. The

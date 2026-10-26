@@ -1277,15 +1277,16 @@ test_forge_gerrit_changes_what_no_mistakes_means() {
        emit { print }
        emit && /hard rule violation\.$/ { exit }' "$plain" > "$TMP_ROOT/forge-dod/plain-middle"
   [ -s "$TMP_ROOT/forge-dod/gerrit-middle" ] || fail "the gerrit brief carries no pipeline-driving section to compare"
-  # Only the two statements about a green PR differ: the ci step is skipped on
-  # this forge, so there is no checks-passed return to wait for.
+  # Only the statement about a green PR differs: the ci step is skipped on
+  # this forge, so there is no checks-passed return to wait for. The arm
+  # command names each brief's own task id.
   grep -q "reports the green PR" "$TMP_ROOT/forge-dod/plain-middle" \
     || fail "the default contract lost the green-PR return statement the comparison removes"
   assert_no_grep "checks-passed" "$TMP_ROOT/forge-dod/gerrit-middle" \
     "the gerrit worker was told to wait for a checks-passed return its skipped ci step never gives"
   # shellcheck disable=SC2016 # Backticks are literal generated Markdown.
   grep -v "reports the green PR" "$TMP_ROOT/forge-dod/plain-middle" \
-    | sed 's/; once checks are green it returns `checks-passed` immediately, and if it refuses/; if it refuses/' \
+    | sed 's/ arm forge-dod-n1`/ arm forge-dod-g1`/' \
     > "$TMP_ROOT/forge-dod/plain-middle-no-pr"
   cmp -s "$TMP_ROOT/forge-dod/gerrit-middle" "$TMP_ROOT/forge-dod/plain-middle-no-pr" \
     || fail "the forge changed the forge-independent half of the pipeline contract"

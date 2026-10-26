@@ -377,35 +377,32 @@ EOF
 
 # The forge-independent middle of the no-mistakes contract: how a worker drives
 # the pipeline, what `--intent` may carry, and the two firstmate-specific rules.
-# Written once; only the two sentences about a green PR depend on the forge,
+# Written once; only the sentence about a green PR depends on the forge,
 # because on gerrit the ci step is skipped and there is no PR to report.
 # The lines after the drive text are the worker half of the parked-run rule:
 # a wait is declared only on a run that is still working, and a parked gate is
 # answered rather than waited on. parked_gate_notice in bin/fm-watch.sh is the
 # supervisor half, which rings a worker whose declared wait outlived its run.
-fm_nm_driving_block() {  # <forge>
-  local pr_return_line='' pr_reattach_clause=';' drive_block wait_cfg
+fm_nm_driving_block() {  # <forge> <task-id>
+  local pr_return_line='' drive_block script_dir home_q adapter_q task_q
   if [ "$1" != gerrit ]; then
     pr_return_line="Only a drive call's return reports the green PR: \`no-mistakes axi status\` shows progress but never reports \`checks-passed\` while the ci step is still monitoring the PR for merge, so never wait on a status poll for the next gate or outcome.
 "
-    pr_reattach_clause="; once checks are green it returns \`checks-passed\` immediately, and"
   fi
-  # config/wait-no-turns selects the foreground drive. Absent, the text matches
-  # the backgrounded drive a home had before that flag.
-  wait_cfg=${CONFIG:-${FM_CONFIG_OVERRIDE:-${FM_HOME:-}/config}}
-  if [ -e "$wait_cfg/wait-no-turns" ]; then
-    drive_block="Drive the run with ONE foreground \`no-mistakes axi run\` and let it block.
-It bounds its own hold for you: \`--wait\` (default 8m) exists precisely so a harness with a ten-minute command cap gets a structured return instead of being killed mid-hold.
-Declare that wait using the brief's status-reporting rule before the foreground drive call.
-Never background a wait, and never arm a timer to stand in for one: a backgrounded call returns in milliseconds, so it does not wait at all, and every timer left behind fires later as a paid wake for nothing.
-${pr_return_line}Whenever a drive call returns without a gate or an outcome - its own wait elapsed, or it was killed or timed out - that is not a failure: reattach at once by re-running \`no-mistakes axi run\` without flags, and issue the same foreground call again, one at a time, until a gate or outcome comes back${pr_reattach_clause} if it refuses because no run is active, read the finished outcome from \`no-mistakes axi status\`."
-  else
-    drive_block="One drive call blocks until the next gate or outcome, which routinely outlives what your harness lets a single command run: Claude Code kills a command at ten minutes maximum, while one fix round is capped around thirty minutes and up to three rounds chain.
-So background the drive call instead of sitting in one blocking hold your harness will kill, and read its return when it finishes.
-Declare that wait using the brief's status-reporting rule before waiting on the backgrounded drive call.
-Where a harness's own command limit is not established, assume it bounds commands and use that same backgrounded shape.
-${pr_return_line}Whenever a drive call returns without a gate or an outcome - its own wait elapsed, or it was killed or timed out - reattach at once by re-running \`no-mistakes axi run\` without flags, backgrounded the same way${pr_reattach_clause} if it refuses because no run is active, read the finished outcome from \`no-mistakes axi status\`."
-  fi
+  script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+  printf -v home_q '%q' "${FM_HOME:-${FM_ROOT_OVERRIDE:-$script_dir/..}}"
+  printf -v adapter_q '%q' "$script_dir/fm-procevent-no-mistakes.sh"
+  printf -v task_q '%q' "$2"
+  drive_block="Start the run or answer a gate with \`--wait 1s\` so the call returns promptly; handle any gate or outcome it already returned.
+When the run is still working, arm its completion listener with \`FM_HOME=$home_q $adapter_q arm $task_q\`.
+Only after the listener confirms it is armed, declare one paused wait naming the run and the next gate or outcome, then end your turn.
+The existing watcher delivers the captured drive return through your steering inbox; do not poll the run, the inbox, or a background shell while waiting.
+${pr_return_line}The wake is advisory for your task's current branch, not pinned to an earlier run id.
+Before any gate response or ready report, reread current run evidence and refuse a stale captured result.
+Keep both the captured source round and its inbox record unacknowledged until handling or ask-user escalation is durable; then acknowledge the source/sequence with the command in the message, then move the message into handled/.
+Never replay an old \`respond\` on redelivery: if a response may already have been accepted and live evidence cannot establish what is owed, report a blocker instead of guessing.
+Resolve the paused wait when handling is durable; re-arm and declare the next wait only when external pipeline work is underway.
+An elapsed or interrupted drive attachment is not evidence the daemon died; the listener reattaches routine elapsed holds, while errors and unknown returns wake you for recovery."
   cat <<EOF
 You drive no-mistakes by responding to its gates, not by implementing fixes.
 Follow the guidance no-mistakes itself provides for the mechanics: it loads when you invoke /no-mistakes, and \`no-mistakes axi run --help\` plus the \`help\` lines in each \`axi\` response are authoritative and version-matched to the installed binary.
@@ -423,9 +420,8 @@ $drive_block
 That declared wait is true only while the run is still working: a run parked at a gate is waiting on you, not you on it.
 So once a run of yours exists, read \`no-mistakes axi status\` before you declare a wait on it or end a turn with one standing - one read to learn who the run is waiting on, never a poll to wait with.
 When it shows the run parked at a gate, do not declare a wait: answer the gate with \`no-mistakes axi respond\`, or escalate its ask-user findings under the first rule below and stop.
-A wait you do declare is the wait on a drive call still attached to the run, never a promise to check the run later.
-A killed or timed-out call is never evidence the daemon died: the daemon accepts your response immediately and runs the round in the background, so the call was only ever waiting for a read while the run kept working.
-Reattach and keep going rather than reporting the pipeline blocked; rule 7 owns the checks that decide when a pipeline block is real.
+A wait you do declare is the wait on the confirmed completion listener attached to the run, never a promise to check the run later.
+Recovery after an error or unknown wake follows rule 7, which owns the checks that decide when a pipeline block is real; the next wait is re-arming the listener, never a blocking reattach.
 
 Two firstmate-specific rules layer on top of that guidance:
 - ask-user findings are never yours to answer: escalate to firstmate using rule 6's ask-user format and stop.
@@ -512,7 +508,7 @@ Firstmate will then instruct you to run /no-mistakes to validate.
 That first \`done:\` is the handoff that starts the pipeline; it is not a request to publish.
 
 EOF
-      fm_nm_driving_block "$forge"
+      fm_nm_driving_block "$forge" "$id"
       cat <<EOF
 
 Because \`push\` is skipped, the pipeline's fixes DO NOT arrive in your checkout: each fix round commits onto a branch inside no-mistakes' own local gate repository, and with no push nothing carries those commits back to you.
@@ -600,7 +596,7 @@ Firstmate will then instruct you to run /no-mistakes to validate and ship a PR.
 That first \`done:\` is the handoff that starts the pipeline, which owns the push; it is not a request to push from this copy.
 ${nm_base}
 EOF
-      fm_nm_driving_block "$forge"
+      fm_nm_driving_block "$forge" "$id"
       cat <<EOF
 
 After /no-mistakes reports CI green (the CI-ready return point - do not wait for it to keep monitoring in the background until merge), read the PR back from the forge and confirm it is not a draft $draft_check
