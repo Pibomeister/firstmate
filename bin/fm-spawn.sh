@@ -2425,6 +2425,23 @@ agy_model_validate() {  # <agy-bin> <model>
 # metadata but omit it from those settings, matching the common adapter policy.
 # Without an explicit model Droid runs the operator's own default, whose
 # catalog entry is unknown here, so the effort is omitted too.
+#
+# An explicit model is proven with `droid exec --model <id> --list-tools`, not
+# `droid --model <id> --help`: an unsupported id also exits 0 from --help.
+# The probe is a live Factory call and can take longer than a local --help
+# listing, so it runs under the shared hard bound (bin/fm-timeout-lib.sh) with
+# stdin detached. Timeout and a non-zero exit both refuse the spawn; the
+# requested id is never replaced. FM_DROID_MODEL_PROBE_TIMEOUT defaults to 60
+# seconds; an empty value, a non-digit, or a leading zero restores that default,
+# so malformed input cannot remove the bound.
+droid_model_probe_timeout() {
+  local bound=${FM_DROID_MODEL_PROBE_TIMEOUT:-60}
+  case "$bound" in
+    '' | *[!0-9]* | 0*) bound=60 ;;
+  esac
+  printf '%s\n' "$bound"
+}
+
 droid_catalog_efforts() {  # <model-id>, help text on stdin
   awk -v wanted="$1" '
     /^Available Models:/ { section="models"; next }
@@ -2884,11 +2901,12 @@ droid)
       exit 1
     fi
     if [ -n "$MODEL" ] && [ "$MODEL" != default ]; then
+      droid_probe_bound=$(droid_model_probe_timeout)
       droid_probe_rc=0
-      FACTORY_DROID_AUTO_UPDATE_ENABLED=false fm_run_timed 20 "$DROID_BIN" exec --model "$MODEL" --list-tools >/dev/null </dev/null \
+      FACTORY_DROID_AUTO_UPDATE_ENABLED=false fm_run_timed "$droid_probe_bound" "$DROID_BIN" exec --model "$MODEL" --list-tools >/dev/null </dev/null \
         || droid_probe_rc=$?
       if fm_timed_out "$droid_probe_rc"; then
-        echo "error: Droid did not answer the model check for '$MODEL' within 20s; check its network and sign-in, then retry or omit --model" >&2
+        echo "error: Droid did not answer the model check for '$MODEL' within ${droid_probe_bound}s; check its network and sign-in, then retry or omit --model" >&2
         exit 1
       elif [ "$droid_probe_rc" -ne 0 ]; then
         echo "error: Droid's model check for '$MODEL' failed (exit $droid_probe_rc); if its message above is not a model rejection, check its network and sign-in, otherwise choose an id from 'droid exec --help' or omit --model" >&2
@@ -5104,27 +5122,103 @@ agy_spawn_fail() {  # <detail>
   rovo_endpoint_cleanup
 }
 
-# A fresh worktree presents Droid's folder-trust dialog even with --auto high.
-# Only a complete live viewport authorizes Enter; the initial prompt is proved
-# delivered by Droid's own UserPromptSubmit hook replacing the fm-spawn seed.
+# A fresh worktree can present Droid's folder-trust dialog even with --auto high.
+# Only a complete live viewport with Trust selected authorizes Enter; a
+# swallowed startup key is retried while that complete selected dialog remains.
+# FM_DROID_TRUST_ENTER_MAX, when a non-negative integer, caps those wait-loop
+# keys; zero sends none, while unset or non-digit input keeps retries enabled.
+# FM_DROID_TRUST_KEY selects the wait-loop key: Enter (default) or 1.
+# FM_DROID_TRUST_PROBE_DIR writes the visible pane before the key that
+# spends that budget and at +0.3s and +2s after it, plus capture-route.txt
+# from the viewport reader and send-route.txt from the key sender;
+# FM_DROID_TRUST_PROBE_STOP=1 then returns without claiming brief delivery.
+# The initial prompt is proved delivered by Droid's own UserPromptSubmit hook
+# replacing the fm-spawn seed.
+droid_trust_dialog_is_negative() { # <plain-pane-capture>
+  printf '%s\n' "$1" | grep -Fq 'Trust this folder?' || return 1
+  printf '%s\n' "$1" | grep -Eq '^[[:space:]]*>[[:space:]]*2[.] Exit without trusting[[:space:]]*$'
+}
+
+droid_trust_dialog_is_affirmative() { # <plain-pane-capture>
+  printf '%s\n' "$1" | grep -Fq 'Trust this folder?' || return 1
+  printf '%s\n' "$1" | grep -Fq 'Exit without trusting' || return 1
+  printf '%s\n' "$1" | grep -Fq 'Enter to confirm' || return 1
+  printf '%s\n' "$1" | grep -Eq '^[[:space:]]*>[[:space:]]*1[.] Trust this folder[[:space:]]*$'
+}
+
 droid_capture_visible() {
   local bound=${FM_DROID_CAPTURE_TIMEOUT:-5}
   case "$bound" in ''|*[!0-9]*|0*) bound=5 ;; esac
   (
     export FM_ROOT_OVERRIDE="$FM_ROOT" FM_HOME FM_STATE_OVERRIDE="$STATE_REAL" FM_CONFIG_OVERRIDE="$CONFIG"
+    export FM_DROID_TRUST_PROBE_DIR
     # shellcheck disable=SC2016 # The child shell expands these positional arguments.
     fm_run_timed "$bound" bash -c '
       . "$1/bin/fm-backend.sh"
+      dir=${FM_DROID_TRUST_PROBE_DIR:-}
+      if [ -n "$dir" ]; then
+        mkdir -p "$dir" 2>/dev/null || true
+        fm_backend_visible_capture "$2" "$3" "$4" | tee "$dir/last-pane.txt"
+        st=${PIPESTATUS[0]}
+        if [ "$st" -eq 0 ]; then
+          {
+            printf "tmux_bin=%s\n" "$(command -v tmux)"
+            printf "target=%s\n" "$3"
+            tmux display-message -p -t "$3" "socket=#{socket_path} pane_id=#{pane_id} pane_pid=#{pane_pid} pane_tty=#{pane_tty} cmd=#{pane_current_command}"
+          } >"$dir/capture-route.txt" 2>/dev/null || true
+        fi
+        exit "$st"
+      fi
       fm_backend_visible_capture "$2" "$3" "$4"
     ' bash "$FM_ROOT" "$BACKEND" "$T" "$W" </dev/null
   )
 }
 
+droid_trust_enter_max() {
+  local bound=${FM_DROID_TRUST_ENTER_MAX:-}
+  case "$bound" in
+    '' | *[!0-9]*) printf '\n' ;;
+    *) printf '%s\n' "$bound" ;;
+  esac
+}
+
+droid_trust_probe_write() { # <name> <pane>
+  local dir=${FM_DROID_TRUST_PROBE_DIR:-}
+  [ -n "$dir" ] || return 0
+  mkdir -p "$dir" || return 1
+  printf '%s\n' "$2" >"$dir/$1"
+}
+
+droid_trust_key() {
+  local key=${FM_DROID_TRUST_KEY:-Enter}
+  case "$key" in
+    Enter | 1) printf '%s\n' "$key" ;;
+    *) return 1 ;;
+  esac
+}
+
+droid_trust_probe_write_send_route() { # <key>
+  local dir=${FM_DROID_TRUST_PROBE_DIR:-} key=$1
+  [ -n "$dir" ] || return 0
+  mkdir -p "$dir" || return 1
+  {
+    printf 'tmux_bin=%s\n' "$(command -v tmux)"
+    printf 'target=%s\n' "$T"
+    printf 'key=%s\n' "$key"
+    tmux display-message -p -t "$T" 'socket=#{socket_path} pane_id=#{pane_id} pane_pid=#{pane_pid} pane_tty=#{pane_tty} cmd=#{pane_current_command}'
+  } >"$dir/send-route.txt"
+}
+
 droid_wait_for_delivery() {
-  local pane record answered=0 trust_seen=0 captures_ok=0 capture_rc=0
+  local pane record trust_seen=0 trust_enters=0 captures_ok=0 capture_rc=0
   local i=0 max=${FM_DROID_READY_POLLS:-120} interval=${FM_DROID_POLL_INTERVAL:-0.5}
-  local seconds=${FM_DROID_READY_SECONDS:-60} deadline
+  local seconds=${FM_DROID_READY_SECONDS:-60} deadline enter_max after trust_key
   case "$seconds" in ''|*[!0-9]*|0*) seconds=60 ;; esac
+  enter_max=$(droid_trust_enter_max)
+  trust_key=$(droid_trust_key) || {
+    DROID_READY_FAILURE_DETAIL='Droid trust key is not a supported laboratory value'
+    return 1
+  }
   deadline=$(($(date +%s) + seconds))
   DROID_READY_FAILURE_DETAIL=
   while [ "$i" -lt "$max" ] && [ "$(date +%s)" -le "$deadline" ]; do
@@ -5136,22 +5230,52 @@ droid_wait_for_delivery() {
       [ "$i" -ge "$max" ] || sleep "$interval"
       continue
     fi
-    if printf '%s\n' "$pane" | grep -Fq 'Trust this folder?'; then
+    if [ -z "$pane" ]; then
+      i=$((i + 1))
+      [ "$i" -ge "$max" ] || sleep "$interval"
+      continue
+    fi
+    if droid_trust_dialog_is_negative "$pane"; then
+      DROID_READY_FAILURE_DETAIL='Droid folder-trust dialog has Exit without trusting selected; refusing Enter'
+      return 1
+    fi
+    if droid_trust_dialog_is_affirmative "$pane"; then
       trust_seen=1
-      if printf '%s\n' "$pane" | grep -Eq '^[[:space:]]*>[[:space:]]*2[.] Exit without trusting[[:space:]]*$'; then
-        DROID_READY_FAILURE_DETAIL='Droid folder-trust dialog has Exit without trusting selected; refusing Enter'
-        return 1
-      fi
-      if [ "$answered" -eq 0 ] \
-        && printf '%s\n' "$pane" | grep -Fq 'Exit without trusting' \
-        && printf '%s\n' "$pane" | grep -Fq 'Enter to confirm' \
-        && printf '%s\n' "$pane" | grep -Eq '^[[:space:]]*>[[:space:]]*1[.] Trust this folder[[:space:]]*$'; then
-        spawn_send_key "$T" Enter || {
+      if [ -z "$enter_max" ] || [ "$trust_enters" -lt "$enter_max" ]; then
+        droid_trust_probe_write before-enter.txt "$pane" || {
+          DROID_READY_FAILURE_DETAIL='Droid trust probe could not write the before-enter capture'
+          return 1
+        }
+        droid_trust_probe_write_send_route "$trust_key" || {
+          DROID_READY_FAILURE_DETAIL='Droid trust probe could not write the send-route identity'
+          return 1
+        }
+        spawn_send_key "$T" "$trust_key" || {
           DROID_READY_FAILURE_DETAIL='Droid affirmative folder-trust answer could not be delivered'
           return 1
         }
-        answered=1
+        trust_enters=$((trust_enters + 1))
+        if [ -n "${FM_DROID_TRUST_PROBE_DIR:-}" ]; then
+          sleep 0.3
+          after=$(droid_capture_visible 2>/dev/null || true)
+          droid_trust_probe_write after-0.3s.txt "$after" || {
+            DROID_READY_FAILURE_DETAIL='Droid trust probe could not write the +0.3s capture'
+            return 1
+          }
+          sleep 1.7
+          after=$(droid_capture_visible 2>/dev/null || true)
+          droid_trust_probe_write after-2s.txt "$after" || {
+            DROID_READY_FAILURE_DETAIL='Droid trust probe could not write the +2s capture'
+            return 1
+          }
+          if [ "${FM_DROID_TRUST_PROBE_STOP:-}" = 1 ]; then
+            DROID_READY_FAILURE_DETAIL="Droid trust probe captured one $trust_key delta and stopped"
+            return 1
+          fi
+        fi
       fi
+    elif printf '%s\n' "$pane" | grep -Fq 'Trust this folder?'; then
+      trust_seen=1
     else
       record=$(fm_busy_record_read "$STATE_REAL" "$ID" 2>/dev/null || true)
       case "$record" in
@@ -5163,9 +5287,9 @@ droid_wait_for_delivery() {
   done
   if [ "$captures_ok" -eq 0 ]; then
     DROID_READY_FAILURE_DETAIL="Droid viewport capture never succeeded (last exit $capture_rc); check backend readiness"
-  elif [ "$trust_seen" -eq 1 ] && [ "$answered" -eq 0 ]; then
+  elif [ "$trust_seen" -eq 1 ] && [ "$trust_enters" -eq 0 ]; then
     DROID_READY_FAILURE_DETAIL='Droid folder-trust dialog never showed a selected Trust this folder choice; no key was sent'
-  elif [ "$trust_seen" -eq 1 ] && [ "$answered" -eq 1 ]; then
+  elif [ "$trust_seen" -eq 1 ]; then
     DROID_READY_FAILURE_DETAIL='Droid folder-trust dialog was answered but the launch prompt hook did not acknowledge the brief; check sign-in and hook policy'
   else
     DROID_READY_FAILURE_DETAIL='Droid launch prompt hook did not acknowledge the brief; check sign-in and whether hooks are disabled'
