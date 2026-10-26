@@ -79,10 +79,10 @@ if [ "${1:-}" = status ] && [ "${FM_ORCA_STATUS_RESPONSE:-ready}" != sequence ];
 fi
 n=$next
 echo "$n" > "$COUNT_FILE"
+[ -f "$RESP/$n.out" ] && cat "$RESP/$n.out"
 if [ -f "$RESP/$n.exit" ]; then
   exit "$(cat "$RESP/$n.exit")"
 fi
-[ -f "$RESP/$n.out" ] && cat "$RESP/$n.out"
 exit 0
 SH
   chmod +x "$fb/orca"
@@ -1972,16 +1972,28 @@ test_orca_agent_state_reads_a_closed_terminal_as_missing() {
 
 test_orca_agent_state_unprovable_reads_are_unreadable() {
   local name out
-  for name in no-exit-cause stale remote error-json mismatch mixed-pair cli-fails not-swept; do
+  for name in no-exit-cause stale remote error-json mismatch mixed-pair cli-fails failed-success failed-json failed-malformed not-swept; do
     orca_case "state-$name"
     case "$name" in
       no-exit-cause) orca_show_json term-1 false false '' local pty-1 /orca/wt-1 > "$RESP/1.out" ;;
-      stale) printf '{"ok":false,"error":{"code":"terminal_handle_stale"}}\n' > "$RESP/1.out" ;;
+      stale) printf '{"ok":false,"error":{"code":"terminal_handle_stale"}}\n' > "$RESP/1.out"; echo 1 > "$RESP/1.exit" ;;
       remote) orca_show_json term-1 false false operator_close ssh-box pty-1 /orca/wt-1 > "$RESP/1.out" ;;
       error-json) printf '{"ok":false,"error":{"code":"runtime_unavailable"}}\n' > "$RESP/1.out" ;;
       mismatch) orca_show_json term-2 false false operator_close local pty-1 /orca/wt-1 > "$RESP/1.out" ;;
       mixed-pair) orca_show_json term-1 false true operator_close local pty-1 /orca/wt-1 > "$RESP/1.out" ;;
       cli-fails) echo 1 > "$RESP/1.exit" ;;
+      failed-success)
+        orca_show_json term-1 false false operator_close local pty-1 /orca/wt-1 > "$RESP/1.out"
+        echo 1 > "$RESP/1.exit"
+        ;;
+      failed-json)
+        printf '{"ok":false,"error":{"code":"runtime_unavailable"}}\n' > "$RESP/1.out"
+        echo 1 > "$RESP/1.exit"
+        ;;
+      failed-malformed)
+        printf 'not json\n' > "$RESP/1.out"
+        echo 1 > "$RESP/1.exit"
+        ;;
       not-swept)
         orca_show_json term-1 true true '' local pty-1 /orca/wt-1 > "$RESP/1.out"
         orca_memory_json pty-0 1234 > "$RESP/2.out"
@@ -2043,7 +2055,7 @@ test_orca_absence_proof_refuses_without_every_fact() {
         orca_show_json term-1 false false operator_close local pty-1 "$CASE_DIR/elsewhere" > "$RESP/1.out"
         reason="not the recorded"
         ;;
-      stale) printf '{"ok":false,"error":{"code":"terminal_handle_stale"}}\n' > "$RESP/1.out"; reason="no longer recognizes" ;;
+      stale) printf '{"ok":false,"error":{"code":"terminal_handle_stale"}}\n' > "$RESP/1.out"; reason="no longer recognizes"; echo 1 > "$RESP/1.exit" ;;
       remote) orca_show_json term-1 false false operator_close ssh-box pty-1 "$CASE_DIR/wt" > "$RESP/1.out"; reason="execution host ssh-box" ;;
       no-exit-cause) orca_show_json term-1 false false '' local pty-1 "$CASE_DIR/wt" > "$RESP/1.out"; reason="no exit cause" ;;
       no-worktree) reason="names no worktree" ;;
@@ -2083,6 +2095,101 @@ test_orca_absence_proof_reclassifies_a_connected_terminal() {
     [ "$out" = "$want"$'\t' ] || fail "a connected terminal whose session tree is '$kind' must re-classify as $want, got '$out'"
   done
   pass "fm_backend_orca_endpoint_absence_proof: a still-connected terminal re-classifies as dead or alive"
+}
+
+# orca_reboot_case: a stale (unrecognized) handle whose record carries a
+# pre-boot spawn generation, with a readable sweep and only a shell in the
+# recorded worktree.
+orca_reboot_case() {  # <name>
+  orca_proof_case "$1"
+  cat > "$FB/awk" <<'SH'
+#!/usr/bin/env bash
+if [ "$#" -eq 2 ] && [ "$2" = /proc/stat ]; then
+  printf '%s\n' "${FM_TEST_ORCA_BOOT_EPOCH:-2000}"
+  exit 0
+fi
+SH
+  printf 'exec %q "$@"\n' "$(command -v awk)" >> "$FB/awk"
+  cat > "$FB/sysctl" <<'SH'
+#!/usr/bin/env bash
+[ "$*" = '-n kern.boottime' ] || exit 1
+printf '{ sec = %s, usec = 0 }\n' "${FM_TEST_ORCA_BOOT_EPOCH:-2000}"
+SH
+  chmod +x "$FB/awk" "$FB/sysctl"
+  printf '{"ok":false,"error":{"code":"terminal_handle_stale"}}\n' > "$RESP/1.out"
+  echo 1 > "$RESP/1.exit"
+  printf 'spawn_gen=s1000.4242.99\nterminal=term-1\n' > "$CASE_DIR/meta"
+}
+
+orca_reboot_proof() {  # [env...] -> the absence proof with the record passed
+  # shellcheck disable=SC2016 # positional params expand in the child shell.
+  env "$@" FM_FAKE_LSOF="$CASE_DIR/lsof.out" PATH="$FB:$PATH" FM_ORCA_LOG="$LOG" FM_ORCA_RESPONSES="$RESP" \
+    bash -c '. "$0/bin/backends/orca.sh"; fm_backend_orca_endpoint_absence_proof term-1 "$1" "$2"' "$ROOT" "$CASE_DIR/wt" "$CASE_DIR/meta"
+}
+
+test_orca_absence_proof_reboot_stale_handle_is_gone() {
+  local out
+  orca_reboot_case proof-reboot-gone
+  out=$(orca_reboot_proof FM_TEST_ORCA_BOOT_EPOCH=2000)
+  [ "$out" = $'gone\t' ] || fail "a stale handle recorded before the host boot, with a readable sweep and no agent in its worktree, must prove gone, got '$out'"
+  pass "fm_backend_orca_endpoint_absence_proof: a pre-boot stale handle with no surviving agent proves gone after a reboot"
+}
+
+test_orca_absence_proof_ignores_a_forged_boot_override() {
+  local out
+  orca_reboot_case proof-forged-boot
+  printf 'spawn_gen=s2000.4242.99\nterminal=term-1\n' > "$CASE_DIR/meta"
+  out=$(orca_reboot_proof FM_TEST_ORCA_BOOT_EPOCH=1000 FM_ORCA_BOOT_EPOCH=3000)
+  case "$out" in
+    unproven$'\t'*) ;;
+    *) fail "a caller-supplied boot value must not make a post-boot stale handle prove gone, got '$out'" ;;
+  esac
+  assert_contains "$out" "does not postdate" "the proof must compare the kernel boot time"
+  pass "fm_backend_orca_endpoint_absence_proof: forged boot overrides cannot authorize recovery"
+}
+
+test_orca_absence_proof_reboot_stale_handle_refuses_a_surviving_agent() {
+  local out agent=''
+  [ -n "$ORCA_STANDIN" ] || { pass "SKIP: Orca reboot surviving-agent case (no agent stand-in survives here)"; return 0; }
+  orca_reboot_case proof-reboot-survivor
+  mkdir -p "$TMP_ROOT/tree-bin"
+  ln -sf "$ORCA_STANDIN" "$TMP_ROOT/tree-bin/claude"
+  "$TMP_ROOT/tree-bin/claude" 600 >/dev/null 2>&1 &
+  agent=$!
+  ORCA_TREE_PIDS+=("$agent")
+  printf 'p%s\nn%s/sub\n' "$agent" "$CASE_DIR/wt" >> "$CASE_DIR/lsof.out"
+  mkdir -p "$CASE_DIR/wt/sub"
+  out=$(orca_reboot_proof FM_TEST_ORCA_BOOT_EPOCH=2000)
+  orca_tree_cleanup
+  case "$out" in
+    unproven$'\t'*) ;;
+    *) fail "a surviving agent in the recorded worktree must keep a reboot-stale handle unproven, got '$out'" ;;
+  esac
+  assert_contains "$out" "an agent process still runs in" "the surviving-agent refusal must name the agent in the worktree"
+  pass "fm_backend_orca_endpoint_absence_proof: a reboot-stale handle still refuses when an agent survives in the worktree"
+}
+
+test_orca_absence_proof_reboot_stale_handle_refuses_without_the_boot_proof() {
+  local name out reason
+  for name in boot-not-after sweep-unreadable no-boot-read; do
+    orca_reboot_case "proof-reboot-$name"
+    case "$name" in
+      boot-not-after) reason="does not postdate" ;;
+      sweep-unreadable) echo 1 > "$RESP/2.exit"; reason="process sweep could not be read" ;;
+      no-boot-read) reason="host boot time could not be read" ;;
+    esac
+    case "$name" in
+      boot-not-after) out=$(orca_reboot_proof FM_TEST_ORCA_BOOT_EPOCH=500) ;;
+      sweep-unreadable) out=$(orca_reboot_proof FM_TEST_ORCA_BOOT_EPOCH=2000) ;;
+      no-boot-read) out=$(orca_reboot_proof FM_TEST_ORCA_BOOT_EPOCH=notanepoch) ;;
+    esac
+    case "$out" in
+      unproven$'\t'*) ;;
+      *) fail "the '$name' reboot case lacks a fact the proof needs and must be unproven, got '$out'" ;;
+    esac
+    assert_contains "$out" "$reason" "the '$name' refusal must name the fact it could not establish"
+  done
+  pass "fm_backend_orca_endpoint_absence_proof: a stale handle without the reboot proof stays unproven, naming the missing fact"
 }
 
 test_orca_state_is_read_only_by_the_control_plane() {
@@ -2167,4 +2274,8 @@ test_orca_agent_state_unprovable_reads_are_unreadable
 test_orca_absence_proof_is_gone_for_a_closed_clean_terminal
 test_orca_absence_proof_refuses_without_every_fact
 test_orca_absence_proof_reclassifies_a_connected_terminal
+test_orca_absence_proof_reboot_stale_handle_is_gone
+test_orca_absence_proof_ignores_a_forged_boot_override
+test_orca_absence_proof_reboot_stale_handle_refuses_a_surviving_agent
+test_orca_absence_proof_reboot_stale_handle_refuses_without_the_boot_proof
 test_orca_state_is_read_only_by_the_control_plane

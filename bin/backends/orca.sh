@@ -435,13 +435,13 @@ fm_backend_orca_kill() {  # <terminal-id>
 #   ok|stale  connected(true|false)  exit-cause-kind  execution-host  pty-id  worktree-path
 # `stale` is Orca's own terminal_handle_stale answer: it no longer recognizes
 # the handle at all. `false` needs both connected and writable false, the pair
-# Orca reports after the pty is gone. Any CLI failure, unparsable output, other
+# Orca reports after the pty is gone. Other CLI failures, unparsable output, other
 # error, a result describing a different handle, or a mixed connection pair
 # returns 1.
 fm_backend_orca_terminal_facts() {  # <terminal-id>
-  local terminal=$1 out
+  local terminal=$1 out rc=0
   fm_backend_orca_tool_check 2>/dev/null || return 1
-  out=$(orca terminal show --terminal "$terminal" --json 2>/dev/null) || return 1
+  out=$(orca terminal show --terminal "$terminal" --json 2>/dev/null) || rc=$?
   printf '%s' "$out" | node -e '
 const fs = require("fs");
 const handle = process.argv[1];
@@ -461,6 +461,7 @@ if (data.ok === false) {
   process.exit(1);
 }
 const t = data.result && data.result.terminal;
+if (Number(process.argv[2]) !== 0) process.exit(1);
 if (!t || typeof t !== "object" || t.handle !== handle) process.exit(1);
 let connected;
 if (t.connected === true) connected = "true";
@@ -468,7 +469,7 @@ else if (t.connected === false && t.writable === false) connected = "false";
 else process.exit(1);
 const kind = t.exitCause && typeof t.exitCause === "object" ? str(t.exitCause.kind) : "";
 emit(["ok", connected, kind, str(t.executionHostId), str(t.ptyId), str(t.worktreePath)]);
-' "$terminal"
+' "$terminal" "$rc"
 }
 
 # fm_backend_orca_session_pid: the local process that roots pty session
@@ -628,6 +629,69 @@ PIDS
   return 0
 }
 
+# fm_backend_orca_host_boot_epoch: the host's current boot time as epoch
+# seconds. Reads the kernel:
+# kern.boottime on Darwin, /proc/stat's btime on Linux. Returns 1 when no
+# boot time can be established, which the caller treats as missing proof.
+fm_backend_orca_host_boot_epoch() {
+  local boot
+  if [ "$(uname 2>/dev/null)" = Darwin ]; then
+    boot=$(sysctl -n kern.boottime 2>/dev/null) || return 1
+    # "sec = 1792904944, usec = 578002" (older form: "{ sec = ..., ... }").
+    boot=$(printf '%s' "$boot" | sed -n 's/.*[ {]sec = \([0-9][0-9]*\).*/\1/p' | head -1)
+  else
+    boot=$(awk '$1 == "btime" { print $2; exit }' /proc/stat 2>/dev/null)
+  fi
+  case "$boot" in ''|*[!0-9]*|0) return 1 ;; esac
+  printf '%s' "$boot"
+}
+
+# fm_backend_orca_recorded_evidence_epoch <meta-file>: when the recorded
+# terminal handle's incarnation was recorded, as epoch seconds. The spawn
+# generation (`spawn_gen=s<epoch>.<pid>.<rand>`) is written in the same
+# record publication as the terminal handle, so its epoch is the handle's
+# recorded evidence; a record without a parseable generation falls back to
+# the record file's own mtime. Returns 1 when neither can be established.
+fm_backend_orca_recorded_evidence_epoch() {  # <meta-file>
+  local meta=${1:-} gen epoch mtime
+  [ -n "$meta" ] && [ -f "$meta" ] && [ ! -L "$meta" ] || return 1
+  gen=$(awk -F= '$1 == "spawn_gen" { v = $2 } END { print v }' "$meta" 2>/dev/null) || return 1
+  case "$gen" in
+    s[0-9]*.*)
+      epoch=${gen#s}
+      epoch=${epoch%%.*}
+      case "$epoch" in ''|*[!0-9]*|0) ;;
+        *) printf '%s' "$epoch"; return 0 ;;
+      esac
+      ;;
+  esac
+  if [ "$(uname 2>/dev/null)" = Darwin ]; then
+    mtime=$(/usr/bin/stat -f %m "$meta" 2>/dev/null) || return 1
+  else
+    mtime=$(stat -c %Y "$meta" 2>/dev/null) || return 1
+  fi
+  case "$mtime" in ''|*[!0-9]*|0) return 1 ;; esac
+  printf '%s' "$mtime"
+}
+
+# fm_backend_orca_sweep_readable: whether Orca's process sweep
+# (`orca diagnostics memory`) can be read and carries the shape
+# fm_backend_orca_session_pid validates per session. A stale handle has no
+# pty to look up in the sweep, so the reboot proof below reads the sweep
+# itself: a readable sweep is what proves this seat's Orca is the post-boot
+# runtime rather than an unreachable one.
+fm_backend_orca_sweep_readable() {
+  local out
+  fm_backend_orca_tool_check 2>/dev/null || return 1
+  out=$(orca diagnostics memory --json 2>/dev/null) || return 1
+  printf '%s' "$out" | node -e '
+const fs = require("fs");
+let data;
+try { data = JSON.parse(fs.readFileSync(0, "utf8")); } catch (err) { process.exit(1); }
+if (!data || data.ok === false || !data.result || !Array.isArray(data.result.worktrees)) process.exit(1);
+'
+}
+
 # fm_backend_orca_endpoint_absence_proof: prints `<verdict>\t<reason>` in
 # fm_control_endpoint_absence_verdict's vocabulary for recorded terminal
 # <terminal> of the task whose recorded worktree is <worktree>. `gone` needs
@@ -643,8 +707,20 @@ PIDS
 # is `unproven`, with the fact that could not be established as the reason. An
 # agent found in the worktree is deliberately `unproven` rather than `alive`:
 # it is not in the recorded terminal, so no lifecycle command could reach it.
-fm_backend_orca_endpoint_absence_proof() {  # <terminal-id> <worktree>
-  local terminal=${1:-} worktree=${2:-} facts read connected kind host pty wtpath state pids rc
+#
+# The third argument, the task's record file, licenses one more `gone` case:
+# a handle Orca no longer recognizes at all (`terminal_handle_stale`) after
+# a host reboot. A pre-boot process cannot survive the boot, so when the
+# host boot time postdates the handle's recorded evidence (the record's
+# spawn generation, or its mtime without one), the stale lookup itself is
+# the terminal evidence, and `gone` then needs only the remaining stopped-
+# agent standards: a readable process sweep from the post-boot Orca and no
+# agent process working in the recorded worktree. Without the record, with
+# a boot that does not postdate it, or with any of those reads failing, a
+# stale handle stays `unproven` exactly as before: an Orca restart short of
+# a reboot can stale a handle whose agent may still be running.
+fm_backend_orca_endpoint_absence_proof() {  # <terminal-id> <worktree> [<meta-file>]
+  local terminal=${1:-} worktree=${2:-} meta=${3:-} facts read connected kind host pty wtpath state pids rc evidence boot
   [ -n "$terminal" ] || { printf 'unproven\tthe task record names no Orca terminal'; return 0; }
   [ -n "$worktree" ] \
     || { printf 'unproven\tthe task record names no worktree, so a surviving agent in it cannot be ruled out'; return 0; }
@@ -653,6 +729,26 @@ fm_backend_orca_endpoint_absence_proof() {  # <terminal-id> <worktree>
   IFS=$'\x1f' read -r read connected kind host pty wtpath <<FACTS
 $facts
 FACTS
+  if [ "$read" = stale ]; then
+    [ -n "$meta" ] \
+      || { printf 'unproven\tOrca no longer recognizes terminal %s, so it cannot say whether that terminal exited' "$terminal"; return 0; }
+    evidence=$(fm_backend_orca_recorded_evidence_epoch "$meta") \
+      || { printf 'unproven\tOrca no longer recognizes terminal %s and its record carries no recorded evidence time, so a reboot cannot be proven to postdate the handle' "$terminal"; return 0; }
+    boot=$(fm_backend_orca_host_boot_epoch) \
+      || { printf 'unproven\tOrca no longer recognizes terminal %s and the host boot time could not be read, so a reboot cannot be proven to postdate the handle' "$terminal"; return 0; }
+    [ "$boot" -gt "$evidence" ] \
+      || { printf 'unproven\tOrca no longer recognizes terminal %s, but the host boot time %s does not postdate its recorded evidence %s, so its agent cannot be proven to have died with the old boot' "$terminal" "$boot" "$evidence"; return 0; }
+    fm_backend_orca_sweep_readable \
+      || { printf 'unproven\tOrca no longer recognizes terminal %s and Orca'"'"'s process sweep could not be read, so a surviving agent cannot be ruled out' "$terminal"; return 0; }
+    pids=$(fm_backend_orca_worktree_agent_pids "$worktree") \
+      || { printf 'unproven\tthe working directories of local processes could not be read, so a surviving agent in %s cannot be ruled out' "$worktree"; return 0; }
+    if [ -n "$pids" ]; then
+      printf 'unproven\tan agent process still runs in %s (%s)' "$worktree" "$(printf '%s' "$pids" | tr '\t\n' ' ,')"
+      return 0
+    fi
+    printf 'gone\t'
+    return 0
+  fi
   [ "$read" = ok ] \
     || { printf 'unproven\tOrca no longer recognizes terminal %s, so it cannot say whether that terminal exited' "$terminal"; return 0; }
   [ "$host" = local ] \

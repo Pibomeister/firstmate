@@ -2134,37 +2134,25 @@ if [ "$RELAUNCH" -eq 1 ]; then
   fm_backend_validate_spawn "$BACKEND" || exit 1
   fm_backend_source "$BACKEND" || exit 1
   # A relaunch must prove the previous agent is gone before it launches
-  # another into the same endpoint. Orca Droid has a generation-bound
-  # SessionEnd hook; every other case goes through the control plane's
-  # recovery-grade classifier (bin/fm-control-lib.sh owns that capability
-  # table and the fm_control_agent_state read below).
+  # another into the same endpoint. Orca Droid keeps its generation-bound
+  # SessionEnd requirement unless the shared absence proof establishes that
+  # its endpoint is gone. bin/fm-control-lib.sh owns the recovery-grade
+  # classifier capability table and the fm_control_agent_state read below.
   RELAUNCH_PRIOR_HARNESS=$(fm_meta_get "$RELAUNCH_META" harness)
-  if [ "$BACKEND" = orca ] && [ "$RELAUNCH_PRIOR_HARNESS" = droid ]; then
-    fm_control_droid_session_ended "$STATE" "$ID" "$RELAUNCH_META" || {
-      echo "error: Orca Droid relaunch has no current-generation SessionEnd proof with its process gone; refusing a duplicate agent" >&2
+  fm_control_backend_state_verified "$BACKEND" || {
+    echo "error: backend '$BACKEND' has no recovery-grade agent-state classifier, so a relaunch cannot prove the previous agent exited; refusing rather than risking two agents in one endpoint" >&2
+    exit 1
+  }
+  # Classify only on the tmux server the record names: a same-named window
+  # on another server says nothing about the recorded agent.
+  if [ "$BACKEND" = tmux ] && TMUX_REBIND_SOCKET=$(fm_meta_get "$RELAUNCH_META" tmux_socket) && [ -n "$TMUX_REBIND_SOCKET" ]; then
+    TMUX_REBIND_ADDRESSED=$(fm_backend_tmux_addressed_socket)
+    if [ "$TMUX_REBIND_ADDRESSED" != "$TMUX_REBIND_SOCKET" ]; then
+      echo "error: task $ID's tmux endpoint was recorded on $TMUX_REBIND_SOCKET, but this process addresses $TMUX_REBIND_ADDRESSED; a relaunch never moves a task to another tmux server, so run it from a seat on the recorded one" >&2
       exit 1
-    }
-    fm_backend_target_exists orca "$RELAUNCH_TARGET" "fm-$ID" || {
-      echo "error: Orca Droid's recorded terminal cannot be re-read after SessionEnd; refusing to guess whether it can be adopted" >&2
-      exit 1
-    }
-    RELAUNCH_STATE=dead
-  else
-    fm_control_backend_state_verified "$BACKEND" || {
-      echo "error: backend '$BACKEND' has no recovery-grade agent-state classifier, so a relaunch cannot prove the previous agent exited; refusing rather than risking two agents in one endpoint" >&2
-      exit 1
-    }
-    # Classify only on the tmux server the record names: a same-named window
-    # on another server says nothing about the recorded agent.
-    if [ "$BACKEND" = tmux ] && TMUX_REBIND_SOCKET=$(fm_meta_get "$RELAUNCH_META" tmux_socket) && [ -n "$TMUX_REBIND_SOCKET" ]; then
-      TMUX_REBIND_ADDRESSED=$(fm_backend_tmux_addressed_socket)
-      if [ "$TMUX_REBIND_ADDRESSED" != "$TMUX_REBIND_SOCKET" ]; then
-        echo "error: task $ID's tmux endpoint was recorded on $TMUX_REBIND_SOCKET, but this process addresses $TMUX_REBIND_ADDRESSED; a relaunch never moves a task to another tmux server, so run it from a seat on the recorded one" >&2
-        exit 1
-      fi
     fi
-    RELAUNCH_STATE=$(fm_control_agent_state "$BACKEND" "$RELAUNCH_TARGET")
   fi
+  RELAUNCH_STATE=$(fm_control_agent_state "$BACKEND" "$RELAUNCH_TARGET")
   # Two states are agent-free, and both license a relaunch:
   #   dead    - the endpoint exists and confidently holds no agent. The
   #             endpoint is ADOPTED, so the task keeps its exact address.
@@ -2192,15 +2180,20 @@ if [ "$RELAUNCH" -eq 1 ]; then
   #           so a closed terminal is told apart from an unreachable one; the
   #           proof then requires Orca's process sweep to have dropped the
   #           session and no agent to be working in the recorded worktree.
-  # Every transient or self-contradicting read stays `unreadable`/`ambiguous`
+  #           A stale handle after a host reboot reads `unreadable` here and
+  #           takes that same proof; docs/orca-backend.md "Agent stop proof"
+  #           owns the reboot evidence requirements.
+  # Every other transient or self-contradicting read stays `unreadable`/`ambiguous`
   # and refuses as it always did (bin/fm-backend.sh's fm_backend_agent_state
   # owns that vocabulary). The proof itself lives in one place for the whole
   # control plane - fm_control_endpoint_absence_verdict - so `exit` and
   # `relaunch` cannot reach two different answers about one endpoint.
-  if [ "$RELAUNCH_STATE" = missing ]; then
+  RELAUNCH_ABSENCE=
+  if { [ "$RELAUNCH_STATE" = missing ] && { [ "$BACKEND" != orca ] || [ "$RELAUNCH_PRIOR_HARNESS" != droid ]; }; } \
+     || { [ "$RELAUNCH_STATE" = unreadable ] && [ "$BACKEND" = orca ]; }; then
     if [ "$BACKEND" = orca ]; then
       RELAUNCH_ABSENCE=$(fm_control_endpoint_absence_verdict "$BACKEND" "$RELAUNCH_TARGET" \
-        "$(fm_meta_get "$RELAUNCH_META" worktree)")
+        "$(fm_meta_get "$RELAUNCH_META" worktree)" "$RELAUNCH_META")
     else
       RELAUNCH_ABSENCE=$(fm_control_endpoint_absence_verdict "$BACKEND" "$RELAUNCH_TARGET" "$RELAUNCH_META")
     fi
@@ -2209,10 +2202,24 @@ if [ "$RELAUNCH" -eq 1 ]; then
       dead) RELAUNCH_STATE=dead ;;
       alive) RELAUNCH_STATE=alive ;;
       *)
-        echo "error: task $ID's recorded endpoint $RELAUNCH_TARGET reads 'missing', but ${RELAUNCH_ABSENCE#*$'\t'}. An endpoint that cannot be proven absent may still hold a live agent on this task's worktree; refusing rather than launching a second agent into it" >&2
-        exit 1
+        if [ "$BACKEND" != orca ] || [ "$RELAUNCH_PRIOR_HARNESS" != droid ]; then
+          echo "error: task $ID's recorded endpoint $RELAUNCH_TARGET reads '$RELAUNCH_STATE', but ${RELAUNCH_ABSENCE#*$'\t'}. An endpoint that cannot be proven absent may still hold a live agent on this task's worktree; refusing rather than launching a second agent into it" >&2
+          exit 1
+        fi
         ;;
     esac
+  fi
+  if [ "$BACKEND" = orca ] && [ "$RELAUNCH_PRIOR_HARNESS" = droid ] && [ "${RELAUNCH_ABSENCE%%$'\t'*}" != gone ]; then
+    fm_control_droid_session_ended "$STATE" "$ID" "$RELAUNCH_META" || {
+      [ -z "${RELAUNCH_ABSENCE:-}" ] || printf 'error: %s\n' "${RELAUNCH_ABSENCE#*$'\t'}" >&2
+      echo "error: Orca Droid relaunch has no current-generation SessionEnd proof with its process gone; refusing a duplicate agent" >&2
+      exit 1
+    }
+    fm_backend_target_exists orca "$RELAUNCH_TARGET" "fm-$ID" || {
+      echo "error: Orca Droid's recorded terminal cannot be re-read after SessionEnd; refusing to guess whether it can be adopted" >&2
+      exit 1
+    }
+    RELAUNCH_STATE=dead
   fi
   case "$RELAUNCH_STATE" in
     dead) ;;

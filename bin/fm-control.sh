@@ -40,7 +40,10 @@
 #              `missing` is put through the control plane's per-backend absence
 #              proof (fm_control_endpoint_absence_verdict) before anything is
 #              claimed about it, because `missing` also covers an endpoint that
-#              is merely unreachable from this seat. On HERDR, whose reads are
+#              is merely unreachable from this seat. An Orca endpoint reading
+#              `unreadable` because its handle is stale after a host reboot
+#              takes that same proof; docs/orca-backend.md "Agent stop proof"
+#              owns the reboot evidence requirements. On HERDR, whose reads are
 #              scoped to the session the record names, on tmux from the
 #              server identity a tmux spawn records, and on ORCA, which still
 #              describes a closed terminal and is checked against the recorded
@@ -124,8 +127,8 @@
 #     Orca, because without one the "the agent stopped" postcondition cannot
 #     be proven. zellij, cmux, and paseo combinations refuse unproven stops
 #     rather than reporting them as successful blind.
-#   - An ambiguous or unreadable endpoint state refuses; only a positively
-#     classified state acts.
+#   - An ambiguous endpoint state refuses. An unreadable state refuses unless
+#     Orca's absence proof above establishes that the endpoint is gone.
 #   - A composer that visibly holds pending text refuses before an exit command
 #     is typed, so existing text is preserved instead of being concatenated.
 #
@@ -707,22 +710,39 @@ retire_busy_incarnation() {
 # do_exit: stop the running agent, preserving endpoint and worktree. Prints
 # `already-stopped`, `endpoint-gone`, or `stopped`.
 do_exit() {
-  local state cmd hazard verdict composer_state cancel absence interrupt_result=not-needed dialog
+  local state cmd hazard verdict composer_state cancel absence='' interrupt_result=not-needed dialog
   require_state_verified_backend exit
+  if [ "$BACKEND" = orca ] && [ "$HARNESS" = droid ] \
+    && [ "$(fm_control_agent_state "$BACKEND" "$T")" = unreadable ]; then
+    absence=$(fm_control_endpoint_absence_verdict "$BACKEND" "$T" "$WT" "$META")
+    if [ "${absence%%$'\t'*}" = gone ]; then
+      printf 'endpoint-gone'
+      return 0
+    fi
+  fi
   state=$(agent_state)
+  if [ "$state" = unknown ] && [ -n "$absence" ]; then
+    die "task $ID's endpoint $T reads '$state', but ${absence#*$'\t'}; exit cannot prove the agent stopped"
+  fi
   case "$state" in
     dead)
       printf 'already-stopped'
       return 0
       ;;
     alive) ;;
-    missing)
+    missing|unreadable)
       # `missing` on its own is not a finding about the endpoint: it conflates
-      # "destroyed" with "unreachable from this seat". Route it through the
-      # control plane's one absence proof - the same one the relaunch gate uses
-      # - and report what that proof actually established, never more.
+      # "destroyed" with "unreachable from this seat". An Orca `unreadable`
+      # can likewise be a handle the post-reboot runtime no longer
+      # recognizes. Route both through the control plane's one absence proof
+      # - the same one the relaunch gate uses - and report what that proof
+      # actually established, never more. Other backends keep refusing an
+      # unreadable endpoint outright.
+      if [ "$state" = unreadable ] && [ "$BACKEND" != orca ]; then
+        die "task $ID's endpoint reads '$state' rather than a positively classified state; refusing to send a lifecycle command into an unattributed endpoint"
+      fi
       if [ "$BACKEND" = orca ]; then
-        absence=$(fm_control_endpoint_absence_verdict "$BACKEND" "$T" "$WT")
+        absence=$(fm_control_endpoint_absence_verdict "$BACKEND" "$T" "$WT" "$META")
       else
         absence=$(fm_control_endpoint_absence_verdict "$BACKEND" "$T" "$META")
       fi
@@ -750,7 +770,7 @@ do_exit() {
           # alive path: interrupt if busy, then the harness's exit command.
           ;;
         *)
-          die "task $ID's endpoint $T reads 'missing', but ${absence#*$'\t'}; exit will not claim an agent stopped at an address it cannot trust, nor send lifecycle input to one"
+          die "task $ID's endpoint $T reads '$state', but ${absence#*$'\t'}; exit will not claim an agent stopped at an address it cannot trust, nor send lifecycle input to one"
           ;;
       esac
       ;;
@@ -1172,10 +1192,10 @@ do_relaunch() {
 
   require_state_verified_backend relaunch
   resolve_relaunch_profile
-  # An Orca Droid task's stop proof is Droid's own hooks, so its replacement
-  # must be Droid too or its start could not be confirmed after the old one
-  # stops. Other Orca tasks stop through the backend's recovery-grade
-  # classifier and may swap harness.
+  # An Orca Droid replacement's start is confirmed through Droid's own hooks,
+  # even when reboot evidence proved the old endpoint gone. Keep the
+  # replacement on Droid so its start can still be confirmed. Other Orca
+  # tasks may swap harness through the backend's recovery-grade classifier.
   if [ "$BACKEND" = orca ] && [ "$HARNESS" = droid ] && [ "$TARGET_HARNESS" != droid ]; then
     die "task $ID runs on the $BACKEND backend, where only Droid's start and stop can be verified; relaunching onto '$TARGET_HARNESS' would stop the running agent for a replacement that cannot be confirmed"
   fi

@@ -262,6 +262,7 @@ run_control() {
     FM_FAKE_MUSE_DISAPPEAR_BEFORE_ACK="${FM_FAKE_MUSE_DISAPPEAR_BEFORE_ACK:-}" \
     FM_FAKE_INTERRUPT_STOPS_AGENT="${FM_FAKE_INTERRUPT_STOPS_AGENT:-}" \
     FM_FAKE_DEVIN_PICKER_STUCK="${FM_FAKE_DEVIN_PICKER_STUCK:-}" \
+    FM_TEST_ORCA_BOOT_EPOCH="${FM_TEST_ORCA_BOOT_EPOCH:-2000}" \
     "$CONTROL" "$@" 2>&1
 }
 
@@ -998,7 +999,10 @@ add_orca_closed_task() {
 #!/usr/bin/env bash
 D=$FM_FAKE_DIR
 case "$1 $2" in
-  "terminal show") cat "$D/orca-show" ;;
+  "terminal show")
+    cat "$D/orca-show"
+    exit "$(cat "$D/orca-show.exit" 2>/dev/null || echo 0)"
+    ;;
   "diagnostics memory") cat "$D/orca-memory" ;;
   "terminal send")
     prev=
@@ -1028,6 +1032,94 @@ test_closed_orca_terminal_exit_reports_endpoint_gone() {
   assert_contains "$out" "endpoint-gone" "the outcome should say the endpoint is gone"
   [ -z "$(literals "$dir")" ] || fail "a closed Orca terminal must not be sent an exit command"
   pass "fm-control exit: a closed Orca terminal with no agent left reports endpoint-gone and sends nothing"
+}
+
+# add_orca_stale_task <case-dir> <id>: an Orca task whose recorded terminal
+# the post-reboot runtime no longer recognizes, recorded before the boot
+# the kernel fixture names in the tests below.
+add_orca_stale_task() {
+  local dir=$1 id=$2
+  add_orca_closed_task "$dir" "$id" "${3:-claude}"
+  cat > "$dir/fakebin/awk" <<'SH'
+#!/usr/bin/env bash
+if [ "$#" -eq 2 ] && [ "$2" = /proc/stat ]; then
+  printf '%s\n' "${FM_TEST_ORCA_BOOT_EPOCH:-2000}"
+  exit 0
+fi
+SH
+  printf 'exec %q "$@"\n' "$(command -v awk)" >> "$dir/fakebin/awk"
+  cat > "$dir/fakebin/sysctl" <<'SH'
+#!/usr/bin/env bash
+[ "$*" = '-n kern.boottime' ] || exit 1
+printf '{ sec = %s, usec = 0 }\n' "${FM_TEST_ORCA_BOOT_EPOCH:-2000}"
+SH
+  chmod +x "$dir/fakebin/awk" "$dir/fakebin/sysctl"
+  printf '{"ok":false,"error":{"code":"terminal_handle_stale","message":"terminal handle stale"}}\n' \
+    > "$dir/fake/orca-show"
+  echo 1 > "$dir/fake/orca-show.exit"
+  echo "spawn_gen=s1000.4242.99" >> "$dir/home/state/$id.meta"
+}
+
+test_stale_orca_terminal_exit_reports_endpoint_gone_after_reboot() {
+  local harness dir out rc
+  for harness in claude droid; do
+    dir=$(new_case "$harness"-orca-reboot-gone)
+    add_orca_stale_task "$dir" t1 "$harness"
+    out=$(FM_TEST_ORCA_BOOT_EPOCH=2000 run_control "$dir" t1 exit); rc=$?
+    expect_code 0 "$rc" "exit on a pre-boot stale Orca terminal with no agent left should succeed"$'\n'"$out"
+    assert_contains "$out" "endpoint-gone" "the outcome should say the endpoint is gone"
+    [ -z "$(literals "$dir")" ] || fail "a stale Orca terminal must not be sent an exit command"
+  done
+  pass "fm-control exit: a stale Orca handle recorded before the host reboot reports endpoint-gone and sends nothing"
+}
+
+test_stale_orca_terminal_exit_refuses_a_surviving_agent_after_reboot() {
+  local harness dir out rc standin agent wt
+  standin=$(fm_agent_standin "$TMP_ROOT/standin-bin") \
+    || { pass "SKIP: Orca reboot surviving-agent exit (no agent stand-in survives here)"; return 0; }
+  for harness in claude droid; do
+    dir=$(new_case "$harness"-orca-reboot-survivor)
+    add_orca_stale_task "$dir" t1 "$harness"
+    wt=$(grep '^worktree=' "$dir/home/state/t1.meta" | cut -d= -f2-)
+    ln -sf "$standin" "$dir/fake/claude"
+    bash -c '"$0" 600 & wait' "$dir/fake/claude" >/dev/null 2>&1 &
+    agent=$!
+    for _ in 1 2 3 4 5 6 7 8 9 10; do [ -n "$(pgrep -P "$agent" 2>/dev/null)" ] && break; sleep 0.1; done
+    printf 'p%s\nn%s\n' "$(pgrep -P "$agent" | head -1)" "$wt" > "$dir/fake/lsof"
+    out=$(FM_TEST_ORCA_BOOT_EPOCH=2000 run_control "$dir" t1 exit); rc=$?
+    pkill -P "$agent" 2>/dev/null || true
+    kill "$agent" 2>/dev/null || true
+    expect_code 1 "$rc" "exit must refuse a reboot-stale handle while an agent survives in its worktree"$'\n'"$out"
+    assert_not_contains "$out" "endpoint-gone" "exit must not report a stop it could not prove"
+    assert_contains "$out" "an agent process still runs in" "the refusal should name the surviving agent"
+    [ -z "$(literals "$dir")" ] || fail "nothing may be sent into an endpoint exit cannot trust"
+  done
+  pass "fm-control exit: a reboot-stale Orca handle refuses while an agent survives in the recorded worktree"
+}
+
+test_stale_orca_terminal_exit_refuses_without_a_postdating_boot() {
+  local harness dir out rc
+  for harness in claude droid; do
+    dir=$(new_case "$harness"-orca-reboot-unproven)
+    add_orca_stale_task "$dir" t1 "$harness"
+    out=$(FM_TEST_ORCA_BOOT_EPOCH=500 run_control "$dir" t1 exit); rc=$?
+    expect_code 1 "$rc" "exit must refuse a stale handle the host boot does not postdate"$'\n'"$out"
+    assert_not_contains "$out" "endpoint-gone" "exit must not report a stop it could not prove"
+    assert_contains "$out" "does not postdate" "the refusal should name the boot that does not postdate the handle"
+    [ -z "$(literals "$dir")" ] || fail "nothing may be sent into an endpoint exit cannot trust"
+  done
+  pass "fm-control exit: a stale Orca handle refuses when the host boot does not postdate its recorded evidence"
+}
+
+test_closed_orca_droid_exit_requires_session_end() {
+  local dir out rc
+  dir=$(new_case orca-droid-closed-no-marker)
+  add_orca_closed_task "$dir" t1 droid
+  out=$(run_control "$dir" t1 exit); rc=$?
+  expect_code 1 "$rc" "a closed Droid terminal without SessionEnd must still refuse"$'\n'"$out"
+  assert_not_contains "$out" "endpoint-gone" "closed Droid terminals must retain their non-reboot stop proof"
+  [ -z "$(literals "$dir")" ] || fail "an unproven Droid endpoint must receive no input"
+  pass "fm-control exit: closed Droid terminals retain their SessionEnd requirement"
 }
 
 test_closed_orca_terminal_exit_refuses_without_the_worktree_scan() {
@@ -1440,6 +1532,10 @@ test_already_stopped_exit_is_idempotent
 test_missing_tmux_endpoint_refuses_rather_than_claiming_a_stop
 test_closed_orca_terminal_exit_reports_endpoint_gone
 test_closed_orca_terminal_exit_refuses_without_the_worktree_scan
+test_closed_orca_droid_exit_requires_session_end
+test_stale_orca_terminal_exit_reports_endpoint_gone_after_reboot
+test_stale_orca_terminal_exit_refuses_a_surviving_agent_after_reboot
+test_stale_orca_terminal_exit_refuses_without_a_postdating_boot
 test_interrupt_refuses_when_no_agent_runs
 test_ambiguous_endpoint_refuses
 test_busy_agent_is_interrupted_before_the_exit_command

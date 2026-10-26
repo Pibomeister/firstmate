@@ -2220,7 +2220,8 @@ A connected terminal read `connected=true`, `writable=true`, and no `exitCause`.
 An unknown handle returned `ok:false` with `error.code=terminal_handle_stale`.
 `orca diagnostics memory --json` listed each live session under `result.worktrees[].sessions[]` with `sessionId` equal to the terminal's `ptyId` and a `pid`.
 
-The adapter's verdicts were then read against those real terminals with `bin/backends/orca.sh` sourced under Bash, with this repository's worktree as the recorded worktree and a Claude worker running in it:
+The adapter's verdicts below were captured before reboot recovery support; [Orca agent stop proof](../orca-backend.md#agent-stop-proof) owns the current contract.
+They were read against those real terminals with `bin/backends/orca.sh` sourced under Bash, with this repository's worktree as the recorded worktree and a Claude worker running in it:
 
 ```sh
 fm_backend_orca_agent_state <handle>
@@ -2237,7 +2238,8 @@ Claude connected terminal:         state=alive  proof=alive  tree: /usr/bin/logi
 ```
 
 The two closed terminals refused because the working-directory scan found the running Claude worker in the same worktree, which is the survivor check working as intended.
-A live `gone` needs a closed terminal in a worktree with no agent, which this probe did not create; `tests/fm-backend-orca.test.sh`, `tests/fm-spawn-orca-worktree.test.sh`, and `tests/fm-control.test.sh` cover it with Orca's reads faked and real processes.
+The closed-terminal `gone` case needs a worktree with no agent, which this probe did not create; `tests/fm-backend-orca.test.sh`, `tests/fm-spawn-orca-worktree.test.sh`, and `tests/fm-control.test.sh` cover it with Orca's reads faked and real processes.
+Those suites also cover stale-handle responses with CLI exit status 1, reboot recovery and its refusal conditions, including Droid admission without a shutdown marker and preservation of its non-reboot stop checks.
 The `lsof -nP -a -u <uid> -d cwd -Fpn` scan took 0.63 seconds on this host.
 
 ### Orca environment source
