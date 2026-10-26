@@ -48,6 +48,8 @@
 #            Confirm the current registration generation's listener is running.
 #            Starts one when nothing live is in the way, and returns only after
 #            that generation's live claim or its launch stamp says it started.
+#            A matching unhandled task-owned capture also confirms readiness
+#            when the listener completed before this confirmation began.
 #            The wait is the reconcile confirm window and ends early on evidence.
 #            No evidence within the window is a nonzero result. Exit 3 means a
 #            live listener from another registration generation still held the
@@ -1928,13 +1930,28 @@ confirm_launched_runners() {  # <source-id><TAB><registration-identity><TAB><lau
 # 0 when this registration generation holds a live claim, 3 when another
 # generation does, 1 otherwise.
 generation_is_listening() {  # <source-id> <registration-identity>
-  local id=$1 identity=$2 state result=1
+  local id=$1 identity=$2 state result=1 owner adapter pending
   fm_procevent_source_lock_try_acquire "$id" || return 1
   fm_procevent_claim_state_locked "$id"
   state=$?
   if [ "$state" -eq 0 ]; then
     result=3
     [ "$FM_PROCEVENT_CLAIM_REG_IDENTITY" != "$identity" ] || result=0
+  fi
+  # Registration can finish its whole round before ensure-listening starts.
+  # Accept that durable task result under the same lock, never launch it again.
+  if [ "$result" -ne 0 ] \
+    && [ "$(fm_pr_file_identity "$(source_file "$id")" 2>/dev/null)" = "$identity" ] \
+    && [ "$(source_kind "$id" 2>/dev/null)" = task-owned ]; then
+    owner=$(source_owner_task "$id")
+    adapter=$(read_adapter "$id")
+    while IFS= read -r pending; do
+      if [ "$(fm_procevent_result_owner_task "$pending" 2>/dev/null)" = "$owner" ] \
+        && [ "$(fm_procevent_result_adapter "$pending" 2>/dev/null)" = "$adapter" ]; then
+        result=0
+        break
+      fi
+    done < <(source_pending "$id")
   fi
   fm_procevent_source_lock_release "$id"
   return "$result"
@@ -1956,8 +1973,8 @@ generation_can_launch() {  # <source-id>
 
 # Public readiness for one source. Same evidence reconcile uses after a launch:
 # a live claim bound to this registration generation, or that generation's
-# launch stamp advancing. Returns as soon as either appears. A fixed sleep is
-# not success.
+# launch stamp advancing, or a matching durable task-owned completion.
+# Returns as soon as evidence appears. A fixed sleep is not success.
 cmd_ensure_listening() {
   local id=${1-} identity before mark stamp deadline window started_once=0 listening
   [ "$#" -eq 1 ] || usage

@@ -54,6 +54,8 @@ printf 'gate: review\nfindings[1]{id,action,description}:\n  r1,ask-user,decisio
 out=$(adapter arm ship 2>&1) || fail "arm did not confirm a listener: $out"
 case "$out" in *'armed: '*) ;; *) fail "arm returned no confirmed listener: $out" ;; esac
 adapter arm ship > "$TMP_ROOT/rearm.out" 2>&1 && fail 'duplicate arm started a second attachment'
+FM_HOME="$HOME_FIXTURE/" "$ROOT/bin/fm-procevent-no-mistakes.sh" arm ship \
+  > "$TMP_ROOT/alias.out" 2>&1 && fail 'equivalent home spelling started a second attachment'
 for f in "$HOME_FIXTURE/state/procevent-inbox/"*.result; do
   [ ! -e "$f" ] || fail 'result appeared before the external condition cleared'
 done
@@ -114,3 +116,35 @@ rm -f "$HOME_FIXTURE/state/ship.meta"
 printf 'window=fmtest:fm-ship\nworktree=/nonexistent/fm-l3\nproject=fmtest\n' > "$HOME_FIXTURE/state/ship.meta"
 adapter arm ship > "$TMP_ROOT/missing-dir.out" 2>&1 && fail 'missing worktree was accepted'
 pass 'unusable task routing refuses before a successful wait'
+
+# Run the real watcher reconciliation between registration and readiness, so
+# the attachment has already completed when ensure-listening takes its stamp.
+prepare precompleted
+printf 'outcome: checks-passed\n' > "$HOME_FIXTURE/return"
+: > "$HOME_FIXTURE/trigger"
+export FM_TEST_REAL_BASH
+FM_TEST_REAL_BASH=$(command -v bash)
+export FM_TEST_CODE_ROOT="$ROOT"
+cat > "$FAKE/bash" <<'SH'
+#!/bin/bash
+if [ "${1-}" = "$FM_TEST_CODE_ROOT/bin/fm-procevent.sh" ] && [ "${2-}" = ensure-listening ]; then
+  "$FM_TEST_REAL_BASH" "$1" reconcile >/dev/null 2>&1 || exit 91
+  ready=0
+  for ignored in $(seq 1 200); do
+    for result in "$NM_FIXTURE_ROOT/state/procevent-inbox/"*.result; do
+      [ ! -f "$result" ] || ready=1
+    done
+    if [ "$ready" -eq 1 ] && [ ! -e "$FM_PROCEVENT_CLAIM_ROOT/${3-}.claim" ]; then break; fi
+    ready=0
+    sleep 0.05
+  done
+  [ "$ready" -eq 1 ] || exit 92
+  : > "$NM_FIXTURE_ROOT/captured-before-readiness"
+fi
+exec "$FM_TEST_REAL_BASH" "$@"
+SH
+chmod +x "$FAKE/bash"
+out=$(adapter arm ship 2>&1) || fail "an already-captured completion failed readiness: $out"
+[ -e "$HOME_FIXTURE/captured-before-readiness" ] || fail 'readiness race fixture did not complete before the check'
+[ "$(wc -l < "$HOME_FIXTURE/calls" | tr -d ' ')" = 1 ] || fail 'readiness restarted a completed attachment'
+pass 'a watcher-captured result confirms readiness without starting another attachment'

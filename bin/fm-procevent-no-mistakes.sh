@@ -6,8 +6,8 @@
 #   fm-procevent-no-mistakes.sh listen <worktree>
 #   fm-procevent-no-mistakes.sh read|classify|terminal <result-file>
 #
-# arm resolves the existing task endpoint/worktree and confirms a task-owned
-# process-event listener. Declare paused only after success, then end the turn.
+# arm resolves the existing task endpoint/worktree and confirms task-owned
+# completion readiness. Declare paused only after success, then end the turn.
 # listen is the runner's blocking child, never a conversational command. It
 # attaches with axi run --wait 24h, without intent or gate responses. A normal
 # elapsed hold reattaches here without a worker turn; other returns are captured
@@ -28,6 +28,12 @@ STATE=${FM_STATE_OVERRIDE:-$FM_HOME/state}
 . "$SCRIPT_DIR/fm-backend.sh"
 # shellcheck source=bin/fm-nm-run-lib.sh
 . "$SCRIPT_DIR/fm-nm-run-lib.sh"
+# shellcheck source=bin/fm-pr-lib.sh
+. "$SCRIPT_DIR/fm-pr-lib.sh"
+# shellcheck source=bin/fm-wake-lib.sh
+. "$SCRIPT_DIR/fm-wake-lib.sh"
+# shellcheck source=bin/fm-procevent-lib.sh
+. "$SCRIPT_DIR/fm-procevent-lib.sh"
 
 usage() { sed -n '2,/^set -u/{ /^#/s/^# \{0,1\}//p; }' "${BASH_SOURCE[0]}"; exit 2; }
 die() { printf 'error: %s\n' "$1" >&2; exit 1; }
@@ -36,13 +42,14 @@ arm() {
   local task=${1-} wt id
   [ "$#" -eq 1 ] || usage
   case "$FM_HOME" in /*) ;; *) die 'FM_HOME must explicitly name the owning home' ;; esac
+  STATE=$(fm_procevent_state_root_resolve "$STATE") || die 'owning state root is unavailable'
   fm_backend_validate_task_endpoint "$STATE/$task.meta" "$task" >/dev/null \
     || die "task endpoint is unavailable: $task"
   wt=$(fm_backend_meta_exact_value "$STATE/$task.meta" worktree) || die 'missing worktree'
   case "$wt" in /*) ;; *) die 'task worktree must be absolute' ;; esac
   [ -d "$wt" ] || die "task worktree is unavailable: $wt"
   command -v no-mistakes >/dev/null 2>&1 || die 'no-mistakes is not installed'
-  id="nm-$(printf '%s\n%s\n' "$FM_HOME" "$task" | shasum -a 256 | cut -c1-32)"
+  id="nm-$(printf '%s\n%s\n' "$STATE" "$task" | shasum -a 256 | cut -c1-32)"
   "$SCRIPT_DIR/fm-procevent.sh" register-task no-mistakes "$id" "$task" -- \
     "$SCRIPT_DIR/fm-procevent-no-mistakes.sh" listen "$wt" || return 1
   "$SCRIPT_DIR/fm-procevent.sh" ensure-listening "$id" || return 1
