@@ -418,7 +418,7 @@ fm_afk_launch_daemon_cmd() {  # <captain-target> <captain-backend>
   while IFS= read -r name; do
     case "$name" in FM_*_OVERRIDE) overrides="$overrides $name=$(printf '%q' "${!name}")" ;; esac
   done < <(fm_env_scrub_names)
-  printf 'exec %q exec env FM_HOME=%q%s FM_SUPERVISOR_TARGET=%q FM_SUPERVISOR_BACKEND=%q FM_DAEMON_PRIMARY_HARNESS=%q %q' \
+  printf 'exec %q exec env FM_AFK_STATE_PREPARED=1 FM_HOME=%q%s FM_SUPERVISOR_TARGET=%q FM_SUPERVISOR_BACKEND=%q FM_DAEMON_PRIMARY_HARNESS=%q %q' \
     "$FM_ROOT/bin/fm-env-scrub.sh" "$FM_HOME" "$overrides" "$1" "$2" "$(fm_afk_launch_primary_harness)" "$(fm_afk_launch_entry_cmd)"
 }
 
@@ -762,7 +762,8 @@ fm_afk_launch_start() {
   if ! fm_afk_launch_reconcile; then
     result=1
   else
-    if fm_afk_clear_stale_artifacts "$FM_AFK_LAUNCH_STATE"; then
+    if fm_afk_contract_quiet_possible "$FM_AFK_LAUNCH_STATE" \
+       || fm_afk_clear_stale_artifacts "$FM_AFK_LAUNCH_STATE"; then
       result=0
     else
       fm_afk_launch_log "failed to clear stale away-mode artifacts"
@@ -818,7 +819,8 @@ fm_afk_launch_start_native() {
   done
   fm_afk_launch_reconcile || result=1
   if [ "$result" -eq 0 ]; then
-    if ! fm_afk_clear_stale_artifacts "$FM_AFK_LAUNCH_STATE"; then
+    if ! fm_afk_contract_quiet_possible "$FM_AFK_LAUNCH_STATE" \
+       && ! fm_afk_clear_stale_artifacts "$FM_AFK_LAUNCH_STATE"; then
       fm_afk_launch_log "failed to clear stale away-mode artifacts"
       result=1
     elif ! fm_afk_launch_flag_write; then
