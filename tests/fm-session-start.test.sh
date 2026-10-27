@@ -948,7 +948,9 @@ EOF
   sleep 300 &
   holder_pid=$!
   printf '%s\n' "$holder_pid" > "$home/state/.lock"
-  out=$(FM_TRACE_CONTEXT=off run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  rm -f "$home/state/.lock-session"
+  out=$(FM_TRACE_CONTEXT=off FM_FAKE_LIVE_HOLDER_PID="$holder_pid" \
+    run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
   kill "$holder_pid" 2>/dev/null || true
   wait "$holder_pid" 2>/dev/null || true
   assert_contains "$out" "READ-ONLY SESSION" "trace-context refusal fixture did not enter read-only mode"
@@ -1692,6 +1694,8 @@ EOF
     --task task-b --verdict captain --summary 'PR https://example.com/pr/b checks green' >/dev/null \
     || fail "could not seed the unread branch outcome"
   printf 'branch\t999999\t123\n' > "$home/state/.lease-task-dead"
+  # A pinned branch claim needs the supervising session's home lock first.
+  printf '%s\n' "$$" > "$home/state/.lock"
   FM_HOME="$home" FM_SUPERVISION_ACTOR=branch FM_LEASE_HOLDER_PID=$$ "$ROOT/bin/fm-lease.sh" claim task-live --actor branch \
     || fail "could not seed the live lease"
 
@@ -1734,8 +1738,12 @@ EOF
     || fail "could not seed the non-Pi unread branch outcome"
   rm -f "$home/state/.branch-outcomes-cursor"
   printf 'branch\t999999\t123\n' > "$home/state/.lease-task-dead"
+  # Continue the existing session; a fresh acquisition retires old leases.
+  printf '%s\n' "$$" > "$home/state/.lock"
 
-  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  out=$(run_named_harness_session_start claude "$home" "$root" "$fakebin:$BASE_PATH")
+  assert_contains "$out" "lock acquired: harness pid $$" "non-Pi session did not confirm its existing lock"
+  assert_contains "$out" "SUPERVISION OPERATING INSTRUCTIONS - primary harness: claude" "non-Pi fixture did not run as Claude"
   case "$out" in
     *"BRANCH OUTCOMES"*|*"unread Pi branch outcome"*) fail "non-Pi session replayed Pi branch outcomes" ;;
   esac
@@ -2578,6 +2586,7 @@ EOF
   printf '%s\n%s\n' "$holder_pid" "$(hash_file_for_test "$root/AGENTS.md")" \
     > "$home/state/.session-start-agents-baseline"
   printf '%s\n' "$holder_pid" > "$home/state/.lock"
+  rm -f "$home/state/.lock-session"
   baseline_before=$(cat "$home/state/.session-start-agents-baseline")
   completion_before=$(cat "$home/state/.session-start-complete")
 
@@ -2684,7 +2693,7 @@ EOF
   assert_not_contains "$reemit" "must leave restore work to the session holding the fleet lock" \
     "--reemit misreported itself as an unlocked read-only session"
 
-  rm -f "$home/state/.lock"
+  rm -f "$home/state/.lock" "$home/state/.lock-session"
   sleep 300 &
   holder_pid=$!
   printf '%s\n' "$holder_pid" > "$home/state/.lock"

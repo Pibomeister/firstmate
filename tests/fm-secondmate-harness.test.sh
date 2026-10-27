@@ -386,11 +386,11 @@ while [ "$#" -gt 0 ]; do
 done
 [ -n "${FM_TEST_PS_LOG:-}" ] && printf '%s:%s\n' "$pid" "$field" >> "$FM_TEST_PS_LOG"
 case "$pid:$field" in
-  4242:comm=) printf '%s\n' '/opt/test/bin/codex' ;;
-  4242:args=) printf '%s\n' 'codex' ;;
+  4242:comm=) printf '%s\n' '/opt/test/bin/claude' ;;
+  4242:args=) printf '%s\n' 'claude' ;;
   4242:ppid=) printf '%s\n' 1 ;;
-  5252:comm=) if [ -n "${FM_TEST_PS_LIVENESS_PROBE:-}" ]; then printf '%s\n' '-codex'; else printf '%s\n' '-zsh'; fi ;;
-  5252:args=) if [ -n "${FM_TEST_PS_LIVENESS_PROBE:-}" ]; then printf '%s\n' '-codex'; else printf '%s\n' '-zsh'; fi ;;
+  5252:comm=) if [ -n "${FM_TEST_PS_LIVENESS_PROBE:-}" ]; then printf '%s\n' '-claude'; else printf '%s\n' '-zsh'; fi ;;
+  5252:args=) if [ -n "${FM_TEST_PS_LIVENESS_PROBE:-}" ]; then printf '%s\n' '-claude'; else printf '%s\n' '-zsh'; fi ;;
   5252:ppid=) printf '%s\n' 4242 ;;
   *:comm=) printf '%s\n' '-zsh' ;;
   *:args=) printf '%s\n' '-zsh' ;;
@@ -402,7 +402,7 @@ SH
   err="$dir/fm-harness.err"
   got=$(env -u CLAUDECODE -u PI_CODING_AGENT -u GROK_AGENT \
     PATH="$fakebin:$BASE_PATH" "$ROOT/bin/fm-harness.sh" 2>"$err")
-  [ "$got" = codex ] || fail "dash-leading shell ancestry resolved '$got', expected codex"
+  [ "$got" = claude ] || fail "dash-leading shell ancestry resolved '$got', expected claude"
   [ ! -s "$err" ] || fail "fm-harness wrote basename option noise for literal -zsh: $(cat "$err")"
 
   err="$dir/fm-session-lock-ancestry.err"
@@ -412,7 +412,7 @@ SH
   [ ! -s "$err" ] || fail "session-lock ancestry wrote basename option noise for literal -zsh: $(cat "$err")"
 
   # Force the collision: pid 5252 is a real ancestor of the caller. Its
-  # -codex label belongs to the liveness probe only, so the walk must pass
+  # -claude label belongs to the liveness probe only, so the walk must pass
   # through it as an ordinary shell and still select 4242.
   err="$dir/fm-session-lock-ancestry-collision.err"
   collision_log="$dir/fm-session-lock-ancestry-collision.log"
@@ -427,8 +427,8 @@ SH
   FM_TEST_PS_LIVENESS_PROBE=1 PATH="$fakebin:$BASE_PATH" bash -c \
     '. "$0/bin/fm-session-lock-lib.sh"; kill() { return 0; }; fm_harness_pid_alive 5252' \
     "$ROOT" 2>"$err"; status=$?
-  expect_code 0 "$status" "session-lock liveness should accept literal -codex as a harness process name"
-  [ ! -s "$err" ] || fail "session-lock liveness wrote basename option noise for literal -codex: $(cat "$err")"
+  expect_code 0 "$status" "session-lock liveness should accept literal -claude as a harness process name"
+  [ ! -s "$err" ] || fail "session-lock liveness wrote basename option noise for literal -claude: $(cat "$err")"
 
   pass "harness identity: dash-leading ps command names are basename operands, not options"
 }

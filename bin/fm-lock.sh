@@ -8,14 +8,26 @@
 # which is dead moments after it is written. For a Claude session that proves a
 # trusted session id the anchor is CLAUDE_PID, the model-loop process, so a
 # shared transient daemon or a front-end that outlives the session never keeps
-# a dead session's lock alive. Line 1 keeps its whole-line pid format because
-# every other reader takes the first line as the pid.
+# a dead session's lock alive. A Codex session anchors on its TUI process,
+# never on the shared Codex app-server daemon that parents its tool shells;
+# a legacy daemon-pid lock without session-lifetime evidence is reclaimed
+# here through the ordinary path, with no hand-deletion. A Codex session
+# served only by that daemon has no session
+# pid in its ancestry, so its line 1 carries no liveness meaning and the
+# sidecar below is its ownership proof. Line 1 keeps its whole-line pid
+# format because every other reader takes the first line as the pid.
 #
-# The trusted id itself is recorded beside the lock in state/.lock-session, a
-# sidecar written only here and only under the claim lock: refreshed on every
-# confirmed-own acquisition, including the early already-mine exit that waits
-# for the claim lock, removed when the acquiring session proves no trusted id,
-# and left byte-identical when it already names that id. A same-session
+# The trusted id itself (a Claude session id or a Codex thread id) is
+# recorded beside the lock in state/.lock-session, a sidecar written only
+# here and only under the claim lock. Line 1 holds that id (empty when no
+# trusted id is available); anchor_pid and anchor_start identify the recorded
+# process instance. Daemon-served Codex records also carry codex_daemon_pid
+# and codex_daemon_start for the lifetime query owned by the shared library.
+# Valid FM_SESSION_ENDPOINT_META from a secondmate launch contributes the
+# Orca backend, terminal, worktree, and spawn_gen fields; a same-id publication
+# preserves those fields when no new endpoint metadata is supplied.
+# Confirmed-own acquisition leaves a matching anchor instance's sidecar
+# byte-identical; otherwise it republishes the record. A same-session
 # confirmation keeps a live line 1 that is in this session's harness ancestry,
 # because bin/fm-startup-network.sh compares that pid across its deferred
 # sweeps; a dead recorded pid is reclaimed and rewritten to this session's
@@ -29,10 +41,10 @@
 # after the id changes, a held lease stays live, and the mid-turn guard still
 # accepts that rewake. A lease or rewake that cannot be moved, including when
 # the auto-arm lock stays busy past LEASE_LOCK_WAIT seconds, is reported as a
-# warning and the re-anchor still completes. When the lease-command
-# lock stays busy past LEASE_LOCK_WAIT seconds, the confirmation only refreshes
-# the sidecar, as for a line 1 in the ancestry, and a later acquisition
-# re-anchors.
+# warning and the re-anchor still completes. A busy lease-command lock past
+# LEASE_LOCK_WAIT seconds instead refuses acquisition without re-anchoring.
+# A foreign replacement retires the previous session's task leases under that
+# same lease-command lock before publishing its new anchor.
 #
 # Usage: fm-lock.sh           acquire; exit 1 unless ownership is verified
 #        fm-lock.sh status    print holder and liveness; always exits 0.
@@ -155,33 +167,62 @@ remember_lock_session() {
   LOCK_SESSION_PHASE=1
 }
 
-# Record the trusted session id beside the lock, or remove a sidecar that no
-# trusted id backs. Called only while the claim lock is held. A sidecar already
-# naming this id is left untouched, so a same-session confirmation keeps it
-# byte-identical.
+publish_lock_endpoint() {
+  local trusted=$1 recorded=$2 candidate=${FM_SESSION_ENDPOINT_META:-} source='' field value
+  if [ -n "$trusted" ] && [ "$trusted" = "$recorded" ]; then
+    source=$LOCK_SESSION
+  fi
+  if [ -n "$candidate" ] && [ -f "$candidate" ] && [ ! -L "$candidate" ] \
+    && [ "$(sed -n 's/^backend=//p' "$candidate")" = orca ] \
+    && [ "$(sed -n 's/^worktree=//p' "$candidate")" = "${FM_HOME%/}" ] \
+    && [ -n "$(sed -n 's/^terminal=//p' "$candidate")" ]; then
+    source=$candidate
+  fi
+  [ -n "$source" ] && [ -f "$source" ] && [ ! -L "$source" ] || return 0
+  [ "$(sed -n 's/^backend=//p' "$source")" = orca ] || return 0
+  value=$(sed -n 's/^worktree=//p' "$source")
+  [ -n "$value" ] && [ "$value" = "${FM_HOME%/}" ] || return 0
+  [ -n "$(sed -n 's/^terminal=//p' "$source")" ] || return 0
+  for field in backend terminal worktree spawn_gen; do
+    value=$(sed -n "s/^$field=//p" "$source")
+    case "$value" in *$'\n'*|*$'\r'*) return 1 ;; esac
+    [ -z "$value" ] || printf '%s=%s\n' "$field" "$value"
+  done
+  return 0
+}
+
 publish_lock_session() {
-  local trusted recorded tmp
-  if trusted=$(fm_session_lock_trusted_session_id); then
-    if recorded=$(fm_session_lock_recorded_session_id "$STATE") && [ "$recorded" = "$trusted" ]; then
-      return 0
-    fi
-    remember_lock_session || return 1
-    tmp=$(mktemp "$STATE/.lock-session.XXXXXX" 2>/dev/null) || return 1
-    if ! { printf '%s\n' "$trusted" > "$tmp" && mv -f "$tmp" "$LOCK_SESSION"; } 2>/dev/null; then
-      rm -f "$tmp" 2>/dev/null
-      return 1
-    fi
+  local anchor=${1:-$me} trusted recorded tmp start daemon daemon_start
+  trusted=$(fm_session_lock_trusted_session_id) || trusted=
+  recorded=$(fm_session_lock_recorded_session_id "$STATE") || recorded=
+  if [ "$anchor" = "$(cat "$LOCK" 2>/dev/null)" ] && [ "$trusted" = "$recorded" ] \
+    && [ -n "$(sed -n 's/^anchor_start=//p' "$LOCK_SESSION" 2>/dev/null)" ] \
+    && fm_session_lock_anchor_instance_matches "$STATE"; then
     return 0
   fi
-  if [ -e "$LOCK_SESSION" ] || [ -L "$LOCK_SESSION" ]; then
-    remember_lock_session || return 1
-    rm -f "$LOCK_SESSION" 2>/dev/null || return 1
+  start=$(fm_session_process_start "$anchor") || return 1
+  daemon=$(fm_session_lock_codex_daemon_pid) || daemon=
+  daemon_start=
+  if [ -n "$daemon" ]; then
+    daemon_start=$(fm_session_process_start "$daemon") || return 1
+  fi
+  remember_lock_session || return 1
+  tmp=$(mktemp "$STATE/.lock-session.XXXXXX" 2>/dev/null) || return 1
+  if ! {
+    {
+      printf '%s\nanchor_pid=%s\nanchor_start=%s\n' "$trusted" "$anchor" "$start"
+      [ -z "$daemon" ] || printf 'codex_daemon_pid=%s\ncodex_daemon_start=%s\n' "$daemon" "$daemon_start"
+      publish_lock_endpoint "$trusted" "$recorded"
+    } > "$tmp" && mv -f "$tmp" "$LOCK_SESSION"
+  } 2>/dev/null; then
+    rm -f "$tmp" 2>/dev/null
+    return 1
   fi
   return 0
 }
 
 publish_lock_session_or_die() {
-  publish_lock_session && return 0
+  publish_lock_session "${1:-$me}" && return 0
   echo "error: cannot record the session identity beside the lock; operate read-only until resolved" >&2
   exit 1
 }
@@ -206,15 +247,20 @@ confirm_own_lock() {  # <recorded-pid>
     waited=1
   fi
   recorded=$(cat "$LOCK" 2>/dev/null || true)
-  if [ "$recorded" = "$me" ] || fm_session_lock_owned_by_self "$STATE"; then
-    if [ "$recorded" != "$me" ] && pids=$(fm_harness_ancestry_pids) \
-      && ! fm_harness_pid_listed "$recorded" "$pids" \
-      && fm_lock_acquire_wait_max "$LEASE_LOCK" "$LEASE_LOCK_WAIT"; then
+  if fm_session_lock_owned_by_self "$STATE"; then
+    pids=$(fm_harness_ancestry_pids) || pids=
+    if ! fm_session_lock_anchor_instance_matches "$STATE" \
+      || ! kill -0 "$recorded" 2>/dev/null \
+      || { [ "$recorded" != "$me" ] && [ -n "$pids" ] && ! fm_harness_pid_listed "$recorded" "$pids"; }; then
+      if ! fm_lock_acquire_wait_max "$LEASE_LOCK" "$LEASE_LOCK_WAIT"; then
+        echo "error: cannot serialize the session re-anchor with task leases; operate read-only until resolved" >&2
+        exit 1
+      fi
       LEASE_LOCK_HELD=1
       REANCHOR=$recorded
       return 0
     fi
-    publish_lock_session_or_die
+    publish_lock_session_or_die "$recorded"
     commit_lock_session
     release_claim_lock
     echo "lock acquired: harness pid $recorded"
@@ -238,11 +284,11 @@ refuse_live_owner() {  # <recorded-pid>
 
 if [ -f "$LOCK" ] && [ ! -L "$LOCK" ]; then
   old=$(cat "$LOCK" 2>/dev/null || true)
-  if [ "$old" = "$me" ] || fm_session_lock_owned_by_self "$STATE"; then
+  if fm_session_lock_owned_by_self "$STATE"; then
     confirm_own_lock "$old"
     old=$(cat "$LOCK" 2>/dev/null || true)
   fi
-  if [ -z "$REANCHOR" ] && fm_harness_pid_alive "$old"; then
+  if [ -z "$REANCHOR" ] && fm_session_lock_recorded_owner_live "$STATE"; then
     refuse_live_owner "$old"
   fi
 fi
@@ -270,10 +316,10 @@ if [ -e "$LOCK" ] || [ -L "$LOCK" ]; then
   }
   # A re-anchor decided above has held the claim lock since, so line 1 is the
   # pid it recorded and needs no second verdict.
-  if [ -z "$REANCHOR" ] && [ "$old" != "$me" ] && fm_harness_pid_alive "$old"; then
+  if [ -z "$REANCHOR" ] && fm_session_lock_recorded_owner_live "$STATE"; then
     fm_session_lock_owned_by_self "$STATE" && confirm_own_lock "$old"
     old=$(cat "$LOCK" 2>/dev/null || true)
-    if [ -z "$REANCHOR" ] && [ "$old" != "$me" ] && fm_harness_pid_alive "$old"; then
+    if [ -z "$REANCHOR" ] && fm_session_lock_recorded_owner_live "$STATE"; then
       refuse_live_owner "$old"
     fi
   fi
@@ -287,6 +333,22 @@ fi
 # there a HUP, INT, or TERM during the lease move or the bounded
 # .claude-autoarm.lock wait, before commit_lock_session, still runs
 # restore_uncommitted_lock_session with phase 2 and removes the sidecar.
+if [ -z "$REANCHOR" ]; then
+  fm_lock_acquire_wait_max "$LEASE_LOCK" "$LEASE_LOCK_WAIT" || {
+    echo "error: cannot retire the previous session's task leases; operate read-only until resolved" >&2
+    exit 1
+  }
+  LEASE_LOCK_HELD=1
+  for lease in "$STATE"/.lease-*; do
+    [ -f "$lease" ] || [ -L "$lease" ] || continue
+    task=${lease##*/.lease-}
+    fm_lease_valid_id "$task" || continue
+    rm -f -- "$lease" || {
+      echo "error: cannot retire a previous session task lease; operate read-only until resolved" >&2
+      exit 1
+    }
+  done
+fi
 publish_lock_session_or_die
 if [ -f "$LOCK" ]; then
   LOCK_LINE_PRE=$(mktemp "$STATE/.lock.pre.XXXXXX") || {

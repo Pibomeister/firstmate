@@ -11,6 +11,15 @@ set -u
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
+# Lease liveness verifies the lock's harness process, so run the suite's
+# long-lived holder as Pi rather than an ordinary bash process.
+if [ "${FM_TEST_LEASE_HARNESS:-0}" != 1 ]; then
+  harness_dir=$(fm_test_tmproot fm-branch-supervision-harness)
+  ln -s /bin/bash "$harness_dir/pi"
+  FM_TEST_LEASE_HARNESS=1 "$harness_dir/pi" "$ROOT/tests/fm-branch-supervision.test.sh"
+  exit $?
+fi
+
 # shellcheck source=bin/fm-timeout-lib.sh
 . "$ROOT/bin/fm-timeout-lib.sh"
 TMP_ROOT=$(fm_test_tmproot fm-branch-supervision)
@@ -1168,38 +1177,25 @@ test_lease_liveness_binds_to_the_session_lock() {
   pass "lease liveness requires an exact valid session-lock pid"
 }
 
-test_claim_with_a_holder_pinned_before_a_reanchor_records_the_lock_holder() {
-  local home out status
+test_claim_with_unverified_holder_pin_is_refused() {
+  local home pin status holder
   local -x PI_CODING_AGENT=true
   home="$TMP_ROOT/pinned-reanchor-home"
   mkdir -p "$home/state"
-
-  # The branch turn pinned $PPID, then a same-session re-anchor moved line 1 to
-  # $$ while $PPID stayed alive: a new claim and a refresh record line 1.
-  printf '%s\n' "$$" > "$home/state/.lock"
-  FM_HOME="$home" FM_SUPERVISION_ACTOR=branch FM_LEASE_HOLDER_PID=$PPID "$ROOT/bin/fm-lease.sh" claim task-1 --actor branch \
-    || fail "branch claim with the pinned pre-re-anchor holder failed"
-  FM_HOME="$home" FM_SUPERVISION_ACTOR=branch FM_LEASE_HOLDER_PID=$PPID "$ROOT/bin/fm-lease.sh" claim task-1 --actor branch \
-    || fail "branch refresh with the pinned pre-re-anchor holder failed"
-  out=$(FM_HOME="$home" "$ROOT/bin/fm-lease.sh" check task-1)
-  case "$out" in
-    "branch $$ "*" live") ;;
-    *) fail "a claim pinned before the re-anchor did not record the live lock holder: $out" ;;
-  esac
-  out=$(FM_HOME="$home" FM_SUPERVISION_ACTOR=main "$ROOT/bin/fm-lease.sh" claim task-1 2>&1)
-  status=$?
-  [ "$status" -eq 6 ] || fail "main claimed the branch's task after the re-anchor: $status: $out"
-
-  # A dead pinned holder means another session took the lock: the claim keeps
-  # the dead pid, so the lease stays stale.
-  FM_HOME="$home" FM_SUPERVISION_ACTOR=branch FM_LEASE_HOLDER_PID=999999 "$ROOT/bin/fm-lease.sh" claim task-2 --actor branch \
-    || fail "branch claim with a dead pinned holder failed"
-  out=$(FM_HOME="$home" "$ROOT/bin/fm-lease.sh" check task-2)
-  case "$out" in
-    "branch 999999 "*" stale") ;;
-    *) fail "a dead pinned holder was replaced by the lock holder: $out" ;;
-  esac
-  pass "a claim pinned before a re-anchor records the live lock holder; a dead pin stays stale"
+  # A foreign owner, outside the caller's verified harness ancestry.
+  sleep 60 &
+  holder=$!
+  printf '%s\n' "$holder" > "$home/state/.lock"
+  for pin in "$PPID" 999999; do
+    FM_HOME="$home" FM_SUPERVISION_ACTOR=branch FM_LEASE_HOLDER_PID="$pin" \
+      "$ROOT/bin/fm-lease.sh" claim task-1 --actor branch > "$home/claim.out" 2>&1
+    status=$?
+    expect_code 6 "$status" "an unverified pinned holder acquired a lease: $(cat "$home/claim.out")"
+    [ ! -e "$home/state/.lease-task-1" ] || fail "an unverified pin wrote a stale lease"
+  done
+  kill "$holder" 2>/dev/null || true
+  wait "$holder" 2>/dev/null || true
+  pass "unverified and dead pinned holders are refused before writing a lease"
 }
 
 test_concurrent_stale_lease_claims_have_one_winner() {
@@ -1695,7 +1691,7 @@ test_unmarked_main_honors_a_live_branch_lease
 test_unmarked_guard_with_a_lease_file_holds_exclusivity_through_mutation
 test_host_home_unmarked_guard_excludes_the_first_claim
 test_lease_liveness_binds_to_the_session_lock
-test_claim_with_a_holder_pinned_before_a_reanchor_records_the_lock_holder
+test_claim_with_unverified_holder_pin_is_refused
 test_concurrent_stale_lease_claims_have_one_winner
 test_guard_stale_clear_cannot_delete_a_new_claim
 test_guard_holds_exclusivity_through_mutation

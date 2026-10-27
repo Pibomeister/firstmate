@@ -403,7 +403,7 @@ FIXED same-session id re-anchors the lock onto its own process; a different id i
 COMPLETE
 ```
 
-The auto-arm rewake move and the lease claim pinned before a re-anchor ran on 2026-10-16 on Linux with GNU bash 5.3.9 as the fake harness interpreter:
+The auto-arm rewake move and the then-current lease claim pinned before a re-anchor ran on 2026-10-16 on Linux with GNU bash 5.3.9 as the fake harness interpreter:
 
 ```sh
 bin/fm-test-run.sh tests/fm-session-lock-ancestry.test.sh tests/fm-branch-supervision.test.sh
@@ -418,6 +418,41 @@ FM_TEST_SUMMARY total=2 failed=0 skipped_gate=0 duration_ms=43472
 ```
 
 No live unattended Claude background session ran on the verifying machine: that topology is documented by the real process listings in issues #3902, #2314, #3398, and #4066, and the coverage above is the structural predicate plus those executable fixtures, not a live pass.
+The pinned-claim output above records the earlier behavior; `tests/fm-branch-supervision.test.sh` now covers refusal of unverified and dead pins, while the Codex restart case in `tests/fm-session-lock-ancestry.test.sh` covers verified claims after re-anchoring.
+Codex session-lock anchoring was verified on 2026-10-26 on macOS.
+A live `codex exec` probe (codex-cli 0.163.0) showed a tool shell carrying equal `CODEX_THREAD_ID` and `CODEX_SESSION_ID` values with the session's native Codex process as its parent; process listings also showed tool shells parented directly by the shared app-server daemon.
+[`bin/fm-session-lock-lib.sh`](../../bin/fm-session-lock-lib.sh) owns the ownership, lifetime, inspection, and stable owner-key rules; [`bin/fm-lock.sh`](../../bin/fm-lock.sh) owns sidecar publication and re-anchoring, and [`bin/fm-lease-lib.sh`](../../bin/fm-lease-lib.sh) owns lease liveness and claim pins.
+The read-only live probe on 2026-10-27 reached the existing 0.164.0 daemon over its Unix control socket without creating, resuming, or changing a thread.
+It completed a WebSocket HTTP Upgrade, initialized a client connection, listed loaded threads, and read one loaded thread with `includeTurns: false`:
+
+```text
+HTTP/1.1 101 Switching Protocols
+initialize: userAgent codex-tui/0.164.0
+thread/loaded/list: two loaded thread ids, nextCursor null
+thread/read: status {"type":"active","activeFlags":[]}
+```
+
+This live probe proves query reachability and the runtime-status response; the portable fixtures below cover live, unloaded, restart, and reused-pid transitions.
+The coverage ran with:
+
+```sh
+bash tests/fm-session-lock-ancestry.test.sh
+```
+
+Observed output, bounded to the lines that coverage adds:
+
+```text
+ok - session-lock: a daemon-parented Codex tool shell anchors off the daemon and owns by thread id
+ok - session-lock: a direct Codex TUI launch anchors on the TUI, directly or through its code-mode host
+ok - session-lock: two Codex sessions sharing one daemon never cross-own each other's locks
+ok - session-lock: a Codex thread id is trusted only inside a Codex session, and only when its published ids agree
+ok - session-lock: real argv and separate environment fields bind only their own thread
+ok - session-lock e2e: a daemon-parented Codex session acquires and keeps its lock by thread id, never on the daemon
+ok - session-lock e2e: a dead session's daemon-anchored lock is reclaimed by its replacement through fm-lock.sh
+ok - session-lock: daemon restart re-anchors dead and reused instances while preserving same-thread leases
+ok - session-lock: retained idle and errored threads need endpoint stop proof; active threads refuse
+ok - session-lock e2e: daemon thread state protects live owners and permits replacement while the daemon lives
+```
 [`sessionstart-nudge.md`](../sessionstart-nudge.md#shared-wrapper-and-safety) owns the nudge wrapper's separate ancestry check and its redundant-nudge behavior after helper-chain recycling.
 `tests/fm-watch-arm.test.sh` runs real watcher and arm cycles against durable on-disk state to verify that a delivered reason survives until post-handling acknowledgement and stops replaying after acknowledgement, while an unrelated queue append cannot make a watcher cycle that delivered nothing look successful.
 The same suite ingests a keyed remote-secondmate parent reply through the real adapter, establishes the incremental OPEN DECISIONS cursor, interrupts supervision, and proves re-arm replays every unacknowledged queue row plus the still-open decision through the ordinary drain path.

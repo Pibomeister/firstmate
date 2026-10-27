@@ -12,8 +12,8 @@
 #   fm-lease.sh claim <task> [--actor main|branch]
 #       Take the lease for the calling actor. Idempotent for the holder (the
 #       claim refreshes its own lease). Refuses with exit 6 while the other
-#       actor holds a live lease. A stale lease (dead pid, or a torn record)
-#       is cleared and re-claimed.
+#       actor holds a live lease. A stale lease, as defined by fm-lease-lib.sh,
+#       is cleared and re-claimed. An unverified holder pin also refuses.
 #   fm-lease.sh release <task> [--actor main|branch]
 #       Drop the calling actor's lease. Releasing a lease the actor does not
 #       hold is a silent no-op, so a retry after a partial failure is safe.
@@ -32,7 +32,7 @@
 #
 # The default actor is $FM_SUPERVISION_ACTOR (else main); when --actor is
 # supplied for a mutation, it must name that calling actor. Exit codes: 0 ok,
-# 1 check-miss, 2 usage, 6 refused (other actor holds, actor mismatch, or the
+# 1 check-miss, 2 usage, 6 refused (other actor holds, unverified pin, actor mismatch, or the
 # lease-command lock stayed held past FM_LEASE_COMMAND_LOCK_WAIT; see fm-lease-lib.sh).
 set -eu
 
@@ -117,24 +117,10 @@ case "$CMD" in
       echo "error: claim refused - task '$TASK' is leased to the $FM_LEASE_ACTOR supervision actor (state/.lease-$TASK)" >&2
       exit "$FM_LEASE_REFUSE_EXIT"
     fi
-    # The lease outlives this CLI call, so its liveness pid must be the
-    # long-lived supervising process: FM_LEASE_HOLDER_PID when the caller
-    # provides one (the Pi branch extension passes the session-lock holder),
-    # else the session-lock holder (state/.lock is the harness pid), else this
-    # shell; without a matching session lock the resulting lease is stale.
-    # A pinned holder that is alive but no longer line 1 was moved off by a
-    # same-session re-anchor (bin/fm-lock.sh), since another session takes the
-    # lock only from a holder that is no longer a live harness, so the claim
-    # records the live line 1.
-    HOLDER_PID=${FM_LEASE_HOLDER_PID:-}
-    case "$HOLDER_PID" in *[!0-9]*) HOLDER_PID= ;; esac
-    LOCK_PID=$(head -n 1 "$STATE/.lock" 2>/dev/null | tr -cd '0-9' || true)
-    if [ -z "$HOLDER_PID" ]; then
-      HOLDER_PID=$LOCK_PID
-    elif [ "$HOLDER_PID" != "$LOCK_PID" ] && fm_pid_alive "$HOLDER_PID" && fm_pid_alive "$LOCK_PID"; then
-      HOLDER_PID=$LOCK_PID
-    fi
-    [ -n "$HOLDER_PID" ] || HOLDER_PID=$$
+    HOLDER_PID=$(fm_lease_claim_holder) || {
+      echo "error: claim refused - the pinned supervision session no longer owns this home" >&2
+      exit "$FM_LEASE_REFUSE_EXIT"
+    }
     TMP=$(mktemp "$STATE/.fm-lease-tmp.XXXXXX")
     printf '%s\t%s\t%s\n' "$ACTOR" "$HOLDER_PID" "$(date +%s)" > "$TMP"
     if [ -e "$LEASE" ]; then

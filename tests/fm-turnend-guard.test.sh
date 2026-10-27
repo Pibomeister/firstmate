@@ -196,6 +196,7 @@ install_guard_scripts() {
   cp "$ROOT/bin/fm-path-lib.sh" "$dir/bin/fm-path-lib.sh"
   cp "$ROOT/bin/fm-hook-host-lib.sh" "$dir/bin/fm-hook-host-lib.sh"
   cp "$ROOT/bin/fm-session-lock-lib.sh" "$dir/bin/fm-session-lock-lib.sh"
+  cp "$ROOT/bin/fm-session-process.py" "$dir/bin/fm-session-process.py"
   cp "$ROOT/bin/fm-cursor-lib.sh" "$dir/bin/fm-cursor-lib.sh"
   # Launch probe sibling of fm-cursor-lib.sh; keep it next to the copy so a
   # fixture that ever verifies an executable does not source a missing file.
@@ -1325,6 +1326,7 @@ install_integrated_autoarm() {
   cp "$ROOT/bin/fm-path-lib.sh" "$dir/bin/fm-path-lib.sh"
   cp "$ROOT/bin/fm-hook-host-lib.sh" "$dir/bin/fm-hook-host-lib.sh"
   cp "$ROOT/bin/fm-session-lock-lib.sh" "$dir/bin/fm-session-lock-lib.sh"
+  cp "$ROOT/bin/fm-session-process.py" "$dir/bin/fm-session-process.py"
   cp "$ROOT/bin/fm-cursor-lib.sh" "$dir/bin/fm-cursor-lib.sh"
   # Launch probe sibling of fm-cursor-lib.sh; keep it next to the copy so a
   # fixture that ever verifies an executable does not source a missing file.
@@ -2312,7 +2314,7 @@ test_hook_no_afk_ignores_poll_derived_grace() {
 # the session ancestry resolve Codex structurally, as under a live Codex hook.
 # The driver forks the hook straight from that process (no command
 # substitution, whose fork would keep the codex name and shadow the session).
-CODEX_BIN=$(mkdir -p "$TMP_ROOT/codex-harness" && cp "$(command -v bash)" "$TMP_ROOT/codex-harness/codex" && printf '%s\n' "$TMP_ROOT/codex-harness/codex")
+CODEX_BIN=$(mkdir -p "$TMP_ROOT/codex-harness" && ln -s "$(command -v bash)" "$TMP_ROOT/codex-harness/codex" && printf '%s\n' "$TMP_ROOT/codex-harness/codex")
 CODEX_DRIVER="$TMP_ROOT/codex-driver.sh"
 cat > "$CODEX_DRIVER" <<'SH'
 # Runs under the codex-named process. Optionally starts a stand-in checkpoint

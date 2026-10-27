@@ -1,0 +1,719 @@
+﻿2026-10-27T18:02:56.6277199Z Current runner version: '2.338.0'
+2026-10-27T18:02:56.6303469Z ##[group]Runner Image Provisioner
+2026-10-27T18:02:56.6304435Z Hosted Compute Agent
+2026-10-27T18:02:56.6305110Z Version: 20261021.618
+2026-10-27T18:02:56.6305865Z Commit: 21505ad2541d5be6135ed84fc33697146cf75b8e
+2026-10-27T18:02:56.6306658Z Build Date: 2026-10-21T00:45:21Z
+2026-10-27T18:02:56.6307380Z Worker ID: {d359e608-7880-45de-bd7c-498e684bc88b}
+2026-10-27T18:02:56.6308172Z Region: eastus2
+2026-10-27T18:02:56.6308812Z Cloud: Azure
+2026-10-27T18:02:56.6309765Z ##[endgroup]
+2026-10-27T18:02:56.6311314Z ##[group]Operating System
+2026-10-27T18:02:56.6311983Z Ubuntu
+2026-10-27T18:02:56.6312665Z 24.04.5
+2026-10-27T18:02:56.6313334Z LTS
+2026-10-27T18:02:56.6313939Z ##[endgroup]
+2026-10-27T18:02:56.6314607Z ##[group]Runner Image
+2026-10-27T18:02:56.6315307Z Image: ubuntu-24.04
+2026-10-27T18:02:56.6316013Z Version: 20261025.353.1
+2026-10-27T18:02:56.6317390Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20261025.353/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-27T18:02:56.6319450Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20261025.353
+2026-10-27T18:02:56.6320505Z ##[endgroup]
+2026-10-27T18:02:56.6321711Z ##[group]GITHUB_TOKEN Permissions
+2026-10-27T18:02:56.6324051Z Contents: read
+2026-10-27T18:02:56.6324764Z Metadata: read
+2026-10-27T18:02:56.6325399Z ##[endgroup]
+2026-10-27T18:02:56.6327891Z Secret source: Actions
+2026-10-27T18:02:56.6329327Z Cache mode: write
+2026-10-27T18:02:56.6330270Z Prepare workflow directory
+2026-10-27T18:02:56.6657727Z Prepare all required actions
+2026-10-27T18:02:56.6705959Z Getting action download info
+2026-10-27T18:02:56.9300537Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+2026-10-27T18:02:57.0451177Z Download action repository 'actions/upload-artifact@v4' (SHA:ea165f8d65b6e75b540449e92b4886f43607fa02)
+2026-10-27T18:02:57.2559859Z Complete job name: Lint 2
+2026-10-27T18:02:57.3407907Z ##[group]Run actions/checkout@v6
+2026-10-27T18:02:57.3408740Z with:
+2026-10-27T18:02:57.3409371Z   repository: Pibomeister/firstmate
+2026-10-27T18:02:57.3413294Z   token: ***
+2026-10-27T18:02:57.3413743Z   ssh-strict: true
+2026-10-27T18:02:57.3414194Z   ssh-user: git
+2026-10-27T18:02:57.3414643Z   persist-credentials: true
+2026-10-27T18:02:57.3415133Z   clean: true
+2026-10-27T18:02:57.3415583Z   sparse-checkout-cone-mode: true
+2026-10-27T18:02:57.3416096Z   fetch-depth: 1
+2026-10-27T18:02:57.3416538Z   fetch-tags: false
+2026-10-27T18:02:57.3416981Z   show-progress: true
+2026-10-27T18:02:57.3417421Z   lfs: false
+2026-10-27T18:02:57.3417834Z   submodules: false
+2026-10-27T18:02:57.3418280Z   set-safe-directory: true
+2026-10-27T18:02:57.3418779Z   allow-unsafe-pr-checkout: false
+2026-10-27T18:02:57.3419604Z ##[endgroup]
+2026-10-27T18:02:57.5517128Z Syncing repository: Pibomeister/firstmate
+2026-10-27T18:02:57.5520285Z ##[group]Getting Git version info
+2026-10-27T18:02:57.5521686Z Working directory is '/home/runner/work/firstmate/firstmate'
+2026-10-27T18:02:57.5523546Z [command]/usr/bin/git version
+2026-10-27T18:02:57.5562571Z git version 2.56.0
+2026-10-27T18:02:57.5583895Z ##[endgroup]
+2026-10-27T18:02:57.5598222Z Temporarily overriding HOME='/home/runner/work/_temp/82317cf4-ca26-4e30-ac2b-1b300844773c' before making global git config changes
+2026-10-27T18:02:57.5600905Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-27T18:02:57.5604364Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/firstmate/firstmate
+2026-10-27T18:02:57.5650659Z Deleting the contents of '/home/runner/work/firstmate/firstmate'
+2026-10-27T18:02:57.5655219Z ##[group]Determining repository object format
+2026-10-27T18:02:57.5657422Z ##[endgroup]
+2026-10-27T18:02:57.5658722Z ##[group]Initializing the repository
+2026-10-27T18:02:57.5661700Z [command]/usr/bin/git init /home/runner/work/firstmate/firstmate
+2026-10-27T18:02:57.5750025Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-27T18:02:57.5752217Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-27T18:02:57.5753858Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-27T18:02:57.5755181Z hint: call:
+2026-10-27T18:02:57.5755874Z hint:
+2026-10-27T18:02:57.5756745Z hint: 	git config --global init.defaultBranch <name>
+2026-10-27T18:02:57.5757829Z hint:
+2026-10-27T18:02:57.5759015Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-27T18:02:57.5760673Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-27T18:02:57.5762067Z hint:
+2026-10-27T18:02:57.5762792Z hint: 	git branch -m <name>
+2026-10-27T18:02:57.5763638Z hint:
+2026-10-27T18:02:57.5764756Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-27T18:02:57.5766668Z Initialized empty Git repository in /home/runner/work/firstmate/firstmate/.git/
+2026-10-27T18:02:57.5780073Z [command]/usr/bin/git remote add origin https://github.com/Pibomeister/firstmate
+2026-10-27T18:02:57.5827728Z ##[endgroup]
+2026-10-27T18:02:57.5829640Z ##[group]Disabling automatic garbage collection
+2026-10-27T18:02:57.5831741Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-27T18:02:57.5870418Z ##[endgroup]
+2026-10-27T18:02:57.5872279Z ##[group]Setting up auth
+2026-10-27T18:02:57.5873387Z Removing SSH command configuration
+2026-10-27T18:02:57.5876029Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-27T18:02:57.5922663Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-27T18:02:57.6299672Z Removing HTTP extra header
+2026-10-27T18:02:57.6311127Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-27T18:02:57.6376760Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-27T18:02:57.6686008Z Removing includeIf entries pointing to credentials config files
+2026-10-27T18:02:57.6692320Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-27T18:02:57.6743445Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-27T18:02:57.7032391Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-a5681b6c-6bd8-41be-8c88-9a18091b8e79.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-27T18:02:57.7102936Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/firstmate/firstmate/.git.path /home/runner/work/_temp/git-credentials-a5681b6c-6bd8-41be-8c88-9a18091b8e79.config
+2026-10-27T18:02:57.7145322Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/firstmate/firstmate/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-a5681b6c-6bd8-41be-8c88-9a18091b8e79.config
+2026-10-27T18:02:57.7188711Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-a5681b6c-6bd8-41be-8c88-9a18091b8e79.config
+2026-10-27T18:02:57.7234599Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-a5681b6c-6bd8-41be-8c88-9a18091b8e79.config
+2026-10-27T18:02:57.7276720Z ##[endgroup]
+2026-10-27T18:02:57.7278742Z ##[group]Fetching the repository
+2026-10-27T18:02:57.7286883Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +dcce345e006fd5dee6740b36c78ad29581a7bf52:refs/remotes/pull/37/merge
+2026-10-27T18:03:01.7168015Z From https://github.com/Pibomeister/firstmate
+2026-10-27T18:03:01.7171072Z  * [new ref]         dcce345e006fd5dee6740b36c78ad29581a7bf52 -> pull/37/merge
+2026-10-27T18:03:01.7175253Z ##[endgroup]
+2026-10-27T18:03:01.7176622Z ##[group]Determining the checkout info
+2026-10-27T18:03:01.7178173Z ##[endgroup]
+2026-10-27T18:03:01.7181220Z [command]/usr/bin/git sparse-checkout disable
+2026-10-27T18:03:01.7241241Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-27T18:03:01.7284145Z ##[group]Checking out the ref
+2026-10-27T18:03:01.7287501Z [command]/usr/bin/git checkout --progress --force refs/remotes/pull/37/merge
+2026-10-27T18:03:01.8541071Z Note: switching to 'refs/remotes/pull/37/merge'.
+2026-10-27T18:03:01.8542032Z 
+2026-10-27T18:03:01.8542737Z You are in 'detached HEAD' state. You can look around, make experimental
+2026-10-27T18:03:01.8544511Z changes and commit them, and you can discard any commits you make in this
+2026-10-27T18:03:01.8546447Z state without impacting any branches by switching back to a branch.
+2026-10-27T18:03:01.8547441Z 
+2026-10-27T18:03:01.8548220Z If you want to create a new branch to retain commits you create, you may
+2026-10-27T18:03:01.8550676Z do so (now or later) by using -c with the switch command. Example:
+2026-10-27T18:03:01.8551950Z 
+2026-10-27T18:03:01.8552597Z   git switch -c <new-branch-name>
+2026-10-27T18:03:01.8553580Z 
+2026-10-27T18:03:01.8554333Z Or undo this operation with:
+2026-10-27T18:03:01.8555486Z 
+2026-10-27T18:03:01.8556230Z   git switch -
+2026-10-27T18:03:01.8557171Z 
+2026-10-27T18:03:01.8558601Z Turn off this advice by setting config variable advice.detachedHead to false
+2026-10-27T18:03:01.8560897Z 
+2026-10-27T18:03:01.8563468Z HEAD is now at dcce345 Merge c7606461d51aec061445e87473092d5200e13fa2 into 0dc30b2652f1f7c22190cc0c4cb9de25ce44040d
+2026-10-27T18:03:01.8570314Z ##[endgroup]
+2026-10-27T18:03:01.8618176Z [command]/usr/bin/git log -1 --format=%H
+2026-10-27T18:03:01.8657228Z dcce345e006fd5dee6740b36c78ad29581a7bf52
+2026-10-27T18:03:01.9016125Z ##[group]Run set -eu
+2026-10-27T18:03:01.9017432Z [36;1mset -eu[0m
+2026-10-27T18:03:01.9019050Z [36;1mbin/fm-install-shellcheck.sh "$RUNNER_TEMP/bin"[0m
+2026-10-27T18:03:01.9021051Z [36;1mecho "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"[0m
+2026-10-27T18:03:01.9048334Z shell: /usr/bin/bash -e {0}
+2026-10-27T18:03:01.9049787Z ##[endgroup]
+2026-10-27T18:03:02.3456020Z ShellCheck - shell script analysis tool
+2026-10-27T18:03:02.3458193Z version: 0.11.0
+2026-10-27T18:03:02.3460005Z license: GNU General Public License, version 3
+2026-10-27T18:03:02.3461572Z website: https://www.shellcheck.net
+2026-10-27T18:03:02.3581206Z ##[group]Run set -eu
+2026-10-27T18:03:02.3581951Z [36;1mset -eu[0m
+2026-10-27T18:03:02.3582723Z [36;1mbin/fm-install-actionlint.sh "$RUNNER_TEMP/bin"[0m
+2026-10-27T18:03:02.3583618Z [36;1mecho "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"[0m
+2026-10-27T18:03:02.3609115Z shell: /usr/bin/bash -e {0}
+2026-10-27T18:03:02.3609857Z ##[endgroup]
+2026-10-27T18:03:02.5710840Z 1.7.12
+2026-10-27T18:03:02.5712890Z installed by downloading from release page
+2026-10-27T18:03:02.5713341Z built with go1.26.1 compiler for linux/amd64
+2026-10-27T18:03:02.5835104Z ##[group]Run set -eu
+2026-10-27T18:03:02.5835397Z [36;1mset -eu[0m
+2026-10-27T18:03:02.5835654Z [36;1mmkdir -p "$RUNNER_TEMP/fm-lint"[0m
+2026-10-27T18:03:02.5835997Z [36;1mbin/fm-lint.sh --partition "2of2" \[0m
+2026-10-27T18:03:02.5836398Z [36;1m  --telemetry "$RUNNER_TEMP/fm-lint/partition-2.tsv"[0m
+2026-10-27T18:03:02.5859254Z shell: /usr/bin/bash -e {0}
+2026-10-27T18:03:02.5859535Z env:
+2026-10-27T18:03:02.5859760Z   FM_LINT_REQUIRE_BOUNDS: 1
+2026-10-27T18:03:02.5860028Z   FM_LINT_JOBS: 1
+2026-10-27T18:03:02.5860246Z ##[endgroup]
+2026-10-27T18:03:03.7569649Z fm-lint.sh: ShellCheck 0.11.0 (pinned 0.11.0)
+2026-10-27T18:03:03.7571106Z fm-lint.sh: full ShellCheck extended analysis enabled
+2026-10-27T18:03:06.5810930Z fm-lint: begin bin/fm-agy-trust.sh (shard 0, full mode)
+2026-10-27T18:03:06.8113877Z fm-lint: end bin/fm-agy-trust.sh reason=ok rc=0 duration_ms=230 rss_kib=44920
+2026-10-27T18:03:06.8124867Z fm-lint: begin bin/fm-bearings-snapshot.sh (shard 0, full mode)
+2026-10-27T18:03:07.3942612Z fm-lint: end bin/fm-bearings-snapshot.sh reason=ok rc=0 duration_ms=582 rss_kib=114440
+2026-10-27T18:03:07.3951428Z fm-lint: begin bin/fm-branch-outcome.sh (shard 0, full mode)
+2026-10-27T18:03:20.9045919Z fm-lint: end bin/fm-branch-outcome.sh reason=ok rc=0 duration_ms=13510 rss_kib=1367772
+2026-10-27T18:03:20.9057679Z fm-lint: begin bin/fm-captain-hold.sh (shard 0, full mode)
+2026-10-27T18:03:44.6360629Z fm-lint: end bin/fm-captain-hold.sh reason=ok rc=0 duration_ms=23730 rss_kib=2584352
+2026-10-27T18:03:44.6369403Z fm-lint: begin bin/fm-claude-trust.sh (shard 0, full mode)
+2026-10-27T18:03:45.1180473Z fm-lint: end bin/fm-claude-trust.sh reason=ok rc=0 duration_ms=481 rss_kib=86664
+2026-10-27T18:03:45.1189544Z fm-lint: begin bin/fm-dod-lib.sh (shard 0, full mode)
+2026-10-27T18:03:53.8674004Z fm-lint: end bin/fm-dod-lib.sh reason=ok rc=0 duration_ms=8748 rss_kib=940808
+2026-10-27T18:03:53.8683187Z fm-lint: begin bin/fm-env-lib.sh (shard 0, full mode)
+2026-10-27T18:03:53.9485680Z fm-lint: end bin/fm-env-lib.sh reason=ok rc=0 duration_ms=80 rss_kib=18428
+2026-10-27T18:03:53.9495029Z fm-lint: begin bin/fm-exclude-tools-lib.sh (shard 0, full mode)
+2026-10-27T18:03:54.0297135Z fm-lint: end bin/fm-exclude-tools-lib.sh reason=ok rc=0 duration_ms=80 rss_kib=21372
+2026-10-27T18:03:54.0306138Z fm-lint: begin bin/fm-extension.sh (shard 0, full mode)
+2026-10-27T18:03:54.1108531Z fm-lint: end bin/fm-extension.sh reason=ok rc=0 duration_ms=80 rss_kib=17064
+2026-10-27T18:03:54.1117704Z fm-lint: begin bin/fm-ff-lib.sh (shard 0, full mode)
+2026-10-27T18:03:55.0943068Z fm-lint: end bin/fm-ff-lib.sh reason=ok rc=0 duration_ms=982 rss_kib=136168
+2026-10-27T18:03:55.0952965Z fm-lint: begin bin/fm-fleet-snapshot.sh (shard 0, full mode)
+2026-10-27T18:04:10.1594493Z fm-lint: end bin/fm-fleet-snapshot.sh reason=ok rc=0 duration_ms=15064 rss_kib=1783548
+2026-10-27T18:04:10.1603874Z fm-lint: begin bin/fm-fleet-view.sh (shard 0, full mode)
+2026-10-27T18:04:10.2910379Z fm-lint: end bin/fm-fleet-view.sh reason=ok rc=0 duration_ms=131 rss_kib=28960
+2026-10-27T18:04:10.2919781Z fm-lint: begin bin/fm-git-push-guard.sh (shard 0, full mode)
+2026-10-27T18:04:12.9781104Z fm-lint: end bin/fm-git-push-guard.sh reason=ok rc=0 duration_ms=2686 rss_kib=358288
+2026-10-27T18:04:12.9790522Z fm-lint: begin bin/fm-herdr-session-cleanup.sh (shard 0, full mode)
+2026-10-27T18:04:26.7906077Z fm-lint: end bin/fm-herdr-session-cleanup.sh reason=ok rc=0 duration_ms=13811 rss_kib=1456020
+2026-10-27T18:04:26.7914826Z fm-lint: begin bin/fm-home-seed.sh (shard 0, full mode)
+2026-10-27T18:04:37.7460620Z fm-lint: end bin/fm-home-seed.sh reason=ok rc=0 duration_ms=10955 rss_kib=1179324
+2026-10-27T18:04:37.7469405Z fm-lint: begin bin/fm-kimi-turnend-hook.sh (shard 0, full mode)
+2026-10-27T18:04:37.9274412Z fm-lint: end bin/fm-kimi-turnend-hook.sh reason=ok rc=0 duration_ms=180 rss_kib=27448
+2026-10-27T18:04:37.9283103Z fm-lint: begin bin/fm-lease.sh (shard 0, full mode)
+2026-10-27T18:04:48.6325948Z fm-lint: end bin/fm-lease.sh reason=ok rc=0 duration_ms=10704 rss_kib=1080276
+2026-10-27T18:04:48.6335031Z fm-lint: begin bin/fm-lint.sh (shard 0, full mode)
+2026-10-27T18:04:50.1673386Z fm-lint: end bin/fm-lint.sh reason=ok rc=0 duration_ms=1533 rss_kib=309768
+2026-10-27T18:04:50.1683148Z fm-lint: begin bin/fm-live-lab.sh (shard 0, full mode)
+2026-10-27T18:04:51.0504487Z fm-lint: end bin/fm-live-lab.sh reason=ok rc=0 duration_ms=882 rss_kib=130824
+2026-10-27T18:04:51.0513941Z fm-lint: begin bin/fm-merge-local.sh (shard 0, full mode)
+2026-10-27T18:05:07.9163664Z fm-lint: end bin/fm-merge-local.sh reason=ok rc=0 duration_ms=16865 rss_kib=1727272
+2026-10-27T18:05:07.9172974Z fm-lint: begin bin/fm-on.sh (shard 0, full mode)
+2026-10-27T18:05:08.4484727Z fm-lint: end bin/fm-on.sh reason=ok rc=0 duration_ms=531 rss_kib=87912
+2026-10-27T18:05:08.4493926Z fm-lint: begin bin/fm-parent-channel-lib.sh (shard 0, full mode)
+2026-10-27T18:05:11.6865601Z fm-lint: end bin/fm-parent-channel-lib.sh reason=ok rc=0 duration_ms=3237 rss_kib=359364
+2026-10-27T18:05:11.6875189Z fm-lint: begin bin/fm-park.sh (shard 0, full mode)
+2026-10-27T18:05:24.5953219Z fm-lint: end bin/fm-park.sh reason=ok rc=0 duration_ms=12907 rss_kib=1422204
+2026-10-27T18:05:24.5964038Z fm-lint: begin bin/fm-path-lib.sh (shard 0, full mode)
+2026-10-27T18:05:24.6766301Z fm-lint: end bin/fm-path-lib.sh reason=ok rc=0 duration_ms=81 rss_kib=17404
+2026-10-27T18:05:24.6775402Z fm-lint: begin bin/fm-pending-reply-lib.sh (shard 0, full mode)
+2026-10-27T18:05:56.7316168Z fm-lint: end bin/fm-pending-reply-lib.sh reason=ok rc=0 duration_ms=32054 rss_kib=2708504
+2026-10-27T18:05:56.7325589Z fm-lint: begin bin/fm-pr-poll.sh (shard 0, full mode)
+2026-10-27T18:05:56.9132127Z fm-lint: end bin/fm-pr-poll.sh reason=ok rc=0 duration_ms=180 rss_kib=29152
+2026-10-27T18:05:56.9141683Z fm-lint: begin bin/fm-procevent-lavish.sh (shard 0, full mode)
+2026-10-27T18:06:10.6759749Z fm-lint: end bin/fm-procevent-lavish.sh reason=ok rc=0 duration_ms=13762 rss_kib=1392412
+2026-10-27T18:06:10.6768756Z fm-lint: begin bin/fm-procevent-no-mistakes.sh (shard 0, full mode)
+2026-10-27T18:06:26.0933977Z fm-lint: end bin/fm-procevent-no-mistakes.sh reason=ok rc=0 duration_ms=15416 rss_kib=1642288
+2026-10-27T18:06:26.0943966Z fm-lint: begin bin/fm-procevent-when.sh (shard 0, full mode)
+2026-10-27T18:06:40.5550113Z fm-lint: end bin/fm-procevent-when.sh reason=ok rc=0 duration_ms=14461 rss_kib=1500832
+2026-10-27T18:06:40.5559413Z fm-lint: begin bin/fm-public-followup.sh (shard 0, full mode)
+2026-10-27T18:07:02.6863454Z fm-lint: end bin/fm-public-followup.sh reason=ok rc=0 duration_ms=22130 rss_kib=2477932
+2026-10-27T18:07:02.6873150Z fm-lint: begin bin/fm-quota-choose.sh (shard 0, full mode)
+2026-10-27T18:07:03.7195374Z fm-lint: end bin/fm-quota-choose.sh reason=ok rc=0 duration_ms=1032 rss_kib=127748
+2026-10-27T18:07:03.7204459Z fm-lint: begin bin/fm-remote-delta-read.sh (shard 0, full mode)
+2026-10-27T18:07:04.0017840Z fm-lint: end bin/fm-remote-delta-read.sh reason=ok rc=0 duration_ms=281 rss_kib=43848
+2026-10-27T18:07:04.0027377Z fm-lint: begin bin/fm-remote-secondmate-control.sh (shard 0, full mode)
+2026-10-27T18:07:41.9184448Z fm-lint: end bin/fm-remote-secondmate-control.sh reason=ok rc=0 duration_ms=37915 rss_kib=3384024
+2026-10-27T18:07:41.9194118Z fm-lint: begin bin/fm-role-lib.sh (shard 0, full mode)
+2026-10-27T18:07:42.3505006Z fm-lint: end bin/fm-role-lib.sh reason=ok rc=0 duration_ms=431 rss_kib=63544
+2026-10-27T18:07:42.3515162Z fm-lint: begin bin/fm-role.sh (shard 0, full mode)
+2026-10-27T18:07:42.8829811Z fm-lint: end bin/fm-role.sh reason=ok rc=0 duration_ms=531 rss_kib=72424
+2026-10-27T18:07:42.8839348Z fm-lint: begin bin/fm-secondmate-nudge-lib.sh (shard 0, full mode)
+2026-10-27T18:07:43.0647359Z fm-lint: end bin/fm-secondmate-nudge-lib.sh reason=ok rc=0 duration_ms=181 rss_kib=28516
+2026-10-27T18:07:43.0656688Z fm-lint: begin bin/fm-secondmate-reconcile.sh (shard 0, full mode)
+2026-10-27T18:07:52.7168813Z fm-lint: end bin/fm-secondmate-reconcile.sh reason=ok rc=0 duration_ms=9651 rss_kib=923540
+2026-10-27T18:07:52.7180017Z fm-lint: begin bin/fm-send.sh (shard 0, full mode)
+2026-10-27T18:08:55.6927157Z fm-lint: end bin/fm-send.sh reason=ok rc=0 duration_ms=62975 rss_kib=4946736
+2026-10-27T18:08:55.6936531Z fm-lint: begin bin/fm-startup-growth-check.sh (shard 0, full mode)
+2026-10-27T18:08:58.5299650Z fm-lint: end bin/fm-startup-growth-check.sh reason=ok rc=0 duration_ms=2836 rss_kib=366460
+2026-10-27T18:08:58.5309428Z fm-lint: begin bin/fm-startup-memory-budget.sh (shard 0, full mode)
+2026-10-27T18:08:58.7614028Z fm-lint: end bin/fm-startup-memory-budget.sh reason=ok rc=0 duration_ms=230 rss_kib=35616
+2026-10-27T18:08:58.7623229Z fm-lint: begin bin/fm-startup-network.sh (shard 0, full mode)
+2026-10-27T18:09:09.7671863Z fm-lint: end bin/fm-startup-network.sh reason=ok rc=0 duration_ms=11005 rss_kib=1131204
+2026-10-27T18:09:09.7680741Z fm-lint: begin bin/fm-stow-cascade.sh (shard 0, full mode)
+2026-10-27T18:09:12.2036038Z fm-lint: end bin/fm-stow-cascade.sh reason=ok rc=0 duration_ms=2436 rss_kib=299900
+2026-10-27T18:09:12.2045135Z fm-lint: begin bin/fm-supervision-instructions.sh (shard 0, full mode)
+2026-10-27T18:09:12.9864635Z fm-lint: end bin/fm-supervision-instructions.sh reason=ok rc=0 duration_ms=781 rss_kib=113588
+2026-10-27T18:09:12.9874724Z fm-lint: begin bin/fm-tangle-lib.sh (shard 0, full mode)
+2026-10-27T18:09:13.2184929Z fm-lint: end bin/fm-tangle-lib.sh reason=ok rc=0 duration_ms=230 rss_kib=33592
+2026-10-27T18:09:13.2194273Z fm-lint: begin bin/fm-task-inbox-lib.sh (shard 0, full mode)
+2026-10-27T18:09:13.9008744Z fm-lint: end bin/fm-task-inbox-lib.sh reason=ok rc=0 duration_ms=682 rss_kib=90528
+2026-10-27T18:09:13.9017785Z fm-lint: begin bin/fm-tasks-axi-lib.sh (shard 0, full mode)
+2026-10-27T18:09:14.1328715Z fm-lint: end bin/fm-tasks-axi-lib.sh reason=ok rc=0 duration_ms=231 rss_kib=36540
+2026-10-27T18:09:14.1338271Z fm-lint: begin bin/fm-tmux-lib.sh (shard 0, full mode)
+2026-10-27T18:09:16.9207435Z fm-lint: end bin/fm-tmux-lib.sh reason=ok rc=0 duration_ms=2787 rss_kib=366460
+2026-10-27T18:09:16.9216716Z fm-lint: begin bin/fm-transition-lib.sh (shard 0, full mode)
+2026-10-27T18:09:17.0021438Z fm-lint: end bin/fm-transition-lib.sh reason=ok rc=0 duration_ms=80 rss_kib=18400
+2026-10-27T18:09:17.0030761Z fm-lint: begin bin/fm-wake-drain.sh (shard 0, full mode)
+2026-10-27T18:09:36.5290032Z fm-lint: end bin/fm-wake-drain.sh reason=ok rc=0 duration_ms=19526 rss_kib=1870760
+2026-10-27T18:09:36.5299561Z fm-lint: begin bin/fm-watch.sh (shard 0, full mode)
+2026-10-27T18:10:35.8448167Z fm-lint: end bin/fm-watch.sh reason=ok rc=0 duration_ms=59315 rss_kib=6634480
+2026-10-27T18:10:35.8458102Z fm-lint: begin bin/fm-worker-account-lib.sh (shard 0, full mode)
+2026-10-27T18:10:36.2770853Z fm-lint: end bin/fm-worker-account-lib.sh reason=ok rc=0 duration_ms=431 rss_kib=64184
+2026-10-27T18:10:36.2780614Z fm-lint: begin bin/fm-x-followup.sh (shard 0, full mode)
+2026-10-27T18:10:51.0425010Z fm-lint: end bin/fm-x-followup.sh reason=ok rc=0 duration_ms=14764 rss_kib=1450900
+2026-10-27T18:10:51.0434522Z fm-lint: begin tests/fm-afk-launch.test.sh (shard 0, full mode)
+2026-10-27T18:11:14.3255419Z fm-lint: end tests/fm-afk-launch.test.sh reason=ok rc=0 duration_ms=23282 rss_kib=2154276
+2026-10-27T18:11:14.3265093Z fm-lint: begin tests/fm-afk-pi-herdr-return-e2e.test.sh (shard 0, full mode)
+2026-10-27T18:11:15.1085510Z fm-lint: end tests/fm-afk-pi-herdr-return-e2e.test.sh reason=ok rc=0 duration_ms=781 rss_kib=115560
+2026-10-27T18:11:15.1094438Z fm-lint: begin tests/fm-ask-user-authority.test.sh (shard 0, full mode)
+2026-10-27T18:11:15.6406499Z fm-lint: end tests/fm-ask-user-authority.test.sh reason=ok rc=0 duration_ms=531 rss_kib=70524
+2026-10-27T18:11:15.6415601Z fm-lint: begin tests/fm-backend-cmux-smoke.test.sh (shard 0, full mode)
+2026-10-27T18:11:15.8222709Z fm-lint: end tests/fm-backend-cmux-smoke.test.sh reason=ok rc=0 duration_ms=180 rss_kib=32572
+2026-10-27T18:11:15.8232386Z fm-lint: begin tests/fm-backend-herdr-agent-exit-shell-e2e.test.sh (shard 0, full mode)
+2026-10-27T18:11:16.5550951Z fm-lint: end tests/fm-backend-herdr-agent-exit-shell-e2e.test.sh reason=ok rc=0 duration_ms=732 rss_kib=102460
+2026-10-27T18:11:16.5559839Z fm-lint: begin tests/fm-backend-herdr-respawn-idem-e2e.test.sh (shard 0, full mode)
+2026-10-27T18:11:16.7365554Z fm-lint: end tests/fm-backend-herdr-respawn-idem-e2e.test.sh reason=ok rc=0 duration_ms=180 rss_kib=35772
+2026-10-27T18:11:16.7374921Z fm-lint: begin tests/fm-backend-herdr.test.sh (shard 0, full mode)
+2026-10-27T18:12:11.1916368Z fm-lint: end tests/fm-backend-herdr.test.sh reason=ok rc=0 duration_ms=54454 rss_kib=4919264
+2026-10-27T18:12:11.1925840Z fm-lint: begin tests/fm-backend-paseo.test.sh (shard 0, full mode)
+2026-10-27T18:12:27.5600611Z fm-lint: end tests/fm-backend-paseo.test.sh reason=ok rc=0 duration_ms=16367 rss_kib=1440572
+2026-10-27T18:12:27.5609801Z fm-lint: begin tests/fm-backlog-handoff.test.sh (shard 0, full mode)
+2026-10-27T18:12:29.1443927Z fm-lint: end tests/fm-backlog-handoff.test.sh reason=ok rc=0 duration_ms=1583 rss_kib=175932
+2026-10-27T18:12:29.1453071Z fm-lint: begin tests/fm-bearings-board-render.test.sh (shard 0, full mode)
+2026-10-27T18:12:29.7769786Z fm-lint: end tests/fm-bearings-board-render.test.sh reason=ok rc=0 duration_ms=632 rss_kib=80612
+2026-10-27T18:12:29.7779694Z fm-lint: begin tests/fm-bootstrap-network-parallel.test.sh (shard 0, full mode)
+2026-10-27T18:12:30.8100777Z fm-lint: end tests/fm-bootstrap-network-parallel.test.sh reason=ok rc=0 duration_ms=1032 rss_kib=136892
+2026-10-27T18:12:30.8109981Z fm-lint: begin tests/fm-capacity.test.sh (shard 0, full mode)
+2026-10-27T18:12:31.4926737Z fm-lint: end tests/fm-capacity.test.sh reason=ok rc=0 duration_ms=682 rss_kib=83848
+2026-10-27T18:12:31.4935796Z fm-lint: begin tests/fm-captain-hold-lifecycle.test.sh (shard 0, full mode)
+2026-10-27T18:12:37.1366877Z fm-lint: end tests/fm-captain-hold-lifecycle.test.sh reason=ok rc=0 duration_ms=5643 rss_kib=608100
+2026-10-27T18:12:37.1376535Z fm-lint: begin tests/fm-claude-stop-autoarm-live-e2e.test.sh (shard 0, full mode)
+2026-10-27T18:12:37.8194427Z fm-lint: end tests/fm-claude-stop-autoarm-live-e2e.test.sh reason=ok rc=0 duration_ms=681 rss_kib=95160
+2026-10-27T18:12:37.8203672Z fm-lint: begin tests/fm-claude-stop-autoarm.test.sh (shard 0, full mode)
+2026-10-27T18:12:40.4061476Z fm-lint: end tests/fm-claude-stop-autoarm.test.sh reason=ok rc=0 duration_ms=2586 rss_kib=267992
+2026-10-27T18:12:40.4071311Z fm-lint: begin tests/fm-cmux-claude-composer-live-e2e.test.sh (shard 0, full mode)
+2026-10-27T18:12:41.8903184Z fm-lint: end tests/fm-cmux-claude-composer-live-e2e.test.sh reason=ok rc=0 duration_ms=1483 rss_kib=179964
+2026-10-27T18:12:41.8912538Z fm-lint: begin tests/fm-codex-continuity-live-e2e.test.sh (shard 0, full mode)
+2026-10-27T18:12:42.7736347Z fm-lint: end tests/fm-codex-continuity-live-e2e.test.sh reason=ok rc=0 duration_ms=883 rss_kib=117688
+2026-10-27T18:12:42.7745958Z fm-lint: begin tests/fm-codex-hook-layer-live-e2e.test.sh (shard 0, full mode)
+2026-10-27T18:12:43.4559806Z fm-lint: end tests/fm-codex-hook-layer-live-e2e.test.sh reason=ok rc=0 duration_ms=681 rss_kib=89904
+2026-10-27T18:12:43.4568687Z fm-lint: begin tests/fm-commandcode-harness.test.sh (shard 0, full mode)
+2026-10-27T18:12:50.1516771Z fm-lint: end tests/fm-commandcode-harness.test.sh reason=ok rc=0 duration_ms=6695 rss_kib=805776
+2026-10-27T18:12:50.1525653Z fm-lint: begin tests/fm-composer-lib.test.sh (shard 0, full mode)
+2026-10-27T18:12:52.5877519Z fm-lint: end tests/fm-composer-lib.test.sh reason=ok rc=0 duration_ms=2435 rss_kib=279396
+2026-10-27T18:12:52.5886715Z fm-lint: begin tests/fm-control-herdr-smoke.test.sh (shard 0, full mode)
+2026-10-27T18:12:53.4204980Z fm-lint: end tests/fm-control-herdr-smoke.test.sh reason=ok rc=0 duration_ms=831 rss_kib=120680
+2026-10-27T18:12:53.4213890Z fm-lint: begin tests/fm-daemon.test.sh (shard 0, full mode)
+2026-10-27T18:13:33.7895630Z fm-lint: end tests/fm-daemon.test.sh reason=ok rc=0 duration_ms=40369 rss_kib=4481996
+2026-10-27T18:13:33.7905348Z fm-lint: begin tests/fm-devin-harness.test.sh (shard 0, full mode)
+2026-10-27T18:13:40.0842049Z fm-lint: end tests/fm-devin-harness.test.sh reason=ok rc=0 duration_ms=6293 rss_kib=732092
+2026-10-27T18:13:40.0851465Z fm-lint: begin tests/fm-droid-harness.test.sh (shard 0, full mode)
+2026-10-27T18:13:41.4683990Z fm-lint: end tests/fm-droid-harness.test.sh reason=ok rc=0 duration_ms=1383 rss_kib=174780
+2026-10-27T18:13:41.4693519Z fm-lint: begin tests/fm-forge-detect.test.sh (shard 0, full mode)
+2026-10-27T18:13:42.0508115Z fm-lint: end tests/fm-forge-detect.test.sh reason=ok rc=0 duration_ms=582 rss_kib=72572
+2026-10-27T18:13:42.0517961Z fm-lint: begin tests/fm-gemini-harness.test.sh (shard 0, full mode)
+2026-10-27T18:13:42.8836152Z fm-lint: end tests/fm-gemini-harness.test.sh reason=ok rc=0 duration_ms=832 rss_kib=100196
+2026-10-27T18:13:42.8845103Z fm-lint: begin tests/fm-gitignore-config.test.sh (shard 0, full mode)
+2026-10-27T18:13:43.0151288Z fm-lint: end tests/fm-gitignore-config.test.sh reason=ok rc=0 duration_ms=130 rss_kib=22688
+2026-10-27T18:13:43.0160108Z fm-lint: begin tests/fm-gotmp.test.sh (shard 0, full mode)
+2026-10-27T18:13:43.1963291Z fm-lint: end tests/fm-gotmp.test.sh reason=ok rc=0 duration_ms=180 rss_kib=34024
+2026-10-27T18:13:43.1972527Z fm-lint: begin tests/fm-grok-continuity-live-e2e.test.sh (shard 0, full mode)
+2026-10-27T18:13:43.7786800Z fm-lint: end tests/fm-grok-continuity-live-e2e.test.sh reason=ok rc=0 duration_ms=582 rss_kib=82344
+2026-10-27T18:13:43.7796355Z fm-lint: begin tests/fm-grok-harness.test.sh (shard 0, full mode)
+2026-10-27T18:13:44.5117005Z fm-lint: end tests/fm-grok-harness.test.sh reason=ok rc=0 duration_ms=732 rss_kib=93060
+2026-10-27T18:13:44.5126620Z fm-lint: begin tests/fm-harness-liveness-drift-live-e2e.test.sh (shard 0, full mode)
+2026-10-27T18:13:45.1944271Z fm-lint: end tests/fm-harness-liveness-drift-live-e2e.test.sh reason=ok rc=0 duration_ms=681 rss_kib=91964
+2026-10-27T18:13:45.1953806Z fm-lint: begin tests/fm-herdr-lab.test.sh (shard 0, full mode)
+2026-10-27T18:13:46.2279491Z fm-lint: end tests/fm-herdr-lab.test.sh reason=ok rc=0 duration_ms=1033 rss_kib=115432
+2026-10-27T18:13:46.2288702Z fm-lint: begin tests/fm-herdr-pi-stale-registration-live-e2e.test.sh (shard 0, full mode)
+2026-10-27T18:13:46.9105659Z fm-lint: end tests/fm-herdr-pi-stale-registration-live-e2e.test.sh reason=ok rc=0 duration_ms=682 rss_kib=99560
+2026-10-27T18:13:46.9114826Z fm-lint: begin tests/fm-inactive-reconcile.test.sh (shard 0, full mode)
+2026-10-27T18:13:48.5452929Z fm-lint: end tests/fm-inactive-reconcile.test.sh reason=ok rc=0 duration_ms=1633 rss_kib=188220
+2026-10-27T18:13:48.5462480Z fm-lint: begin tests/fm-inbox.test.sh (shard 0, full mode)
+2026-10-27T18:13:49.8289524Z fm-lint: end tests/fm-inbox.test.sh reason=ok rc=0 duration_ms=1283 rss_kib=227688
+2026-10-27T18:13:49.8298468Z fm-lint: begin tests/fm-launch-prompt-signals-live-e2e.test.sh (shard 0, full mode)
+2026-10-27T18:15:20.4074318Z fm-lint: end tests/fm-launch-prompt-signals-live-e2e.test.sh reason=ok rc=0 duration_ms=90577 rss_kib=8159160
+2026-10-27T18:15:20.4083305Z fm-lint: begin tests/fm-mail-check.test.sh (shard 0, full mode)
+2026-10-27T18:15:21.3405499Z fm-lint: end tests/fm-mail-check.test.sh reason=ok rc=0 duration_ms=932 rss_kib=117540
+2026-10-27T18:15:21.3414685Z fm-lint: begin tests/fm-muse-harness.test.sh (shard 0, full mode)
+2026-10-27T18:15:23.8769926Z fm-lint: end tests/fm-muse-harness.test.sh reason=ok rc=0 duration_ms=2535 rss_kib=287420
+2026-10-27T18:15:23.8779942Z fm-lint: begin tests/fm-omp-harness.test.sh (shard 0, full mode)
+2026-10-27T18:15:31.3246800Z fm-lint: end tests/fm-omp-harness.test.sh reason=ok rc=0 duration_ms=7447 rss_kib=816956
+2026-10-27T18:15:31.3255824Z fm-lint: begin tests/fm-on.test.sh (shard 0, full mode)
+2026-10-27T18:15:34.6126983Z fm-lint: end tests/fm-on.test.sh reason=ok rc=0 duration_ms=3287 rss_kib=400232
+2026-10-27T18:15:34.6136733Z fm-lint: begin tests/fm-parent-channel-scan-exclusion.test.sh (shard 0, full mode)
+2026-10-27T18:15:35.3954912Z fm-lint: end tests/fm-parent-channel-scan-exclusion.test.sh reason=ok rc=0 duration_ms=781 rss_kib=99176
+2026-10-27T18:15:35.3964307Z fm-lint: begin tests/fm-park.test.sh (shard 0, full mode)
+2026-10-27T18:15:39.2852224Z fm-lint: end tests/fm-park.test.sh reason=ok rc=0 duration_ms=3889 rss_kib=454512
+2026-10-27T18:15:39.2861011Z fm-lint: begin tests/fm-peek-remote.test.sh (shard 0, full mode)
+2026-10-27T18:15:39.8676244Z fm-lint: end tests/fm-peek-remote.test.sh reason=ok rc=0 duration_ms=582 rss_kib=73532
+2026-10-27T18:15:39.8687492Z fm-lint: begin tests/fm-procevent-quota.test.sh (shard 0, full mode)
+2026-10-27T18:15:40.2497540Z fm-lint: end tests/fm-procevent-quota.test.sh reason=ok rc=0 duration_ms=381 rss_kib=53352
+2026-10-27T18:15:40.2506925Z fm-lint: begin tests/fm-project-mode.test.sh (shard 0, full mode)
+2026-10-27T18:15:40.8825074Z fm-lint: end tests/fm-project-mode.test.sh reason=ok rc=0 duration_ms=631 rss_kib=85820
+2026-10-27T18:15:40.8834669Z fm-lint: begin tests/fm-remote-delta-read.test.sh (shard 0, full mode)
+2026-10-27T18:15:41.6155516Z fm-lint: end tests/fm-remote-delta-read.test.sh reason=ok rc=0 duration_ms=732 rss_kib=98152
+2026-10-27T18:15:41.6165175Z fm-lint: begin tests/fm-remote-secondmate-parent-binding.test.sh (shard 0, full mode)
+2026-10-27T18:15:42.3984425Z fm-lint: end tests/fm-remote-secondmate-parent-binding.test.sh reason=ok rc=0 duration_ms=781 rss_kib=108348
+2026-10-27T18:15:42.3993928Z fm-lint: begin tests/fm-remote-transport-lanes.test.sh (shard 0, full mode)
+2026-10-27T18:15:45.8872559Z fm-lint: end tests/fm-remote-transport-lanes.test.sh reason=ok rc=0 duration_ms=3488 rss_kib=456336
+2026-10-27T18:15:45.8881660Z fm-lint: begin tests/fm-secondmate-liveness.test.sh (shard 0, full mode)
+2026-10-27T18:15:47.0711450Z fm-lint: end tests/fm-secondmate-liveness.test.sh reason=ok rc=0 duration_ms=1183 rss_kib=139068
+2026-10-27T18:15:47.0720728Z fm-lint: begin tests/fm-secondmate-restart.test.sh (shard 0, full mode)
+2026-10-27T18:15:48.3050424Z fm-lint: end tests/fm-secondmate-restart.test.sh reason=ok rc=0 duration_ms=1233 rss_kib=145212
+2026-10-27T18:15:48.3059556Z fm-lint: begin tests/fm-secondmate-safety.test.sh (shard 0, full mode)
+2026-10-27T18:15:52.2448723Z fm-lint: end tests/fm-secondmate-safety.test.sh reason=ok rc=0 duration_ms=3939 rss_kib=423780
+2026-10-27T18:15:52.2457455Z fm-lint: begin tests/fm-send-popup-settle.test.sh (shard 0, full mode)
+2026-10-27T18:15:52.8272858Z fm-lint: end tests/fm-send-popup-settle.test.sh reason=ok rc=0 duration_ms=581 rss_kib=76600
+2026-10-27T18:15:52.8282257Z fm-lint: begin tests/fm-send-remote-delivery.test.sh (shard 0, full mode)
+2026-10-27T18:16:31.8442491Z fm-lint: end tests/fm-send-remote-delivery.test.sh reason=ok rc=0 duration_ms=39016 rss_kib=3178428
+2026-10-27T18:16:31.8451696Z fm-lint: begin tests/fm-spawn-batch.test.sh (shard 0, full mode)
+2026-10-27T18:16:32.4768454Z fm-lint: end tests/fm-spawn-batch.test.sh reason=ok rc=0 duration_ms=632 rss_kib=76668
+2026-10-27T18:16:32.4777787Z fm-lint: begin tests/fm-spawn-compact-adviser-disable.test.sh (shard 0, full mode)
+2026-10-27T18:16:33.4103056Z fm-lint: end tests/fm-spawn-compact-adviser-disable.test.sh reason=ok rc=0 duration_ms=932 rss_kib=116528
+2026-10-27T18:16:33.4112084Z fm-lint: begin tests/fm-spawn-dispatch-profile.test.sh (shard 0, full mode)
+2026-10-27T18:16:36.8490378Z fm-lint: end tests/fm-spawn-dispatch-profile.test.sh reason=ok rc=0 duration_ms=3438 rss_kib=375512
+2026-10-27T18:16:36.8499919Z fm-lint: begin tests/fm-startup-growth-check.test.sh (shard 0, full mode)
+2026-10-27T18:16:40.1875335Z fm-lint: end tests/fm-startup-growth-check.test.sh reason=ok rc=0 duration_ms=3337 rss_kib=445288
+2026-10-27T18:16:40.1884582Z fm-lint: begin tests/fm-startup-network.test.sh (shard 0, full mode)
+2026-10-27T18:16:41.8223385Z fm-lint: end tests/fm-startup-network.test.sh reason=ok rc=0 duration_ms=1633 rss_kib=189244
+2026-10-27T18:16:41.8232583Z fm-lint: begin tests/fm-subagent-pretool-check.test.sh (shard 0, full mode)
+2026-10-27T18:16:42.6053814Z fm-lint: end tests/fm-subagent-pretool-check.test.sh reason=ok rc=0 duration_ms=782 rss_kib=98152
+2026-10-27T18:16:42.6063276Z fm-lint: begin tests/fm-supervision-host.test.sh (shard 0, full mode)
+2026-10-27T18:16:46.4450212Z fm-lint: end tests/fm-supervision-host.test.sh reason=ok rc=0 duration_ms=3839 rss_kib=378724
+2026-10-27T18:16:46.4458980Z fm-lint: begin tests/fm-task-delivery.test.sh (shard 0, full mode)
+2026-10-27T18:16:48.6806931Z fm-lint: end tests/fm-task-delivery.test.sh reason=ok rc=0 duration_ms=2235 rss_kib=259940
+2026-10-27T18:16:48.6816112Z fm-lint: begin tests/fm-teardown-endpoint-safety.test.sh (shard 0, full mode)
+2026-10-27T18:16:50.7163350Z fm-lint: end tests/fm-teardown-endpoint-safety.test.sh reason=ok rc=0 duration_ms=2034 rss_kib=228156
+2026-10-27T18:16:50.7172534Z fm-lint: begin tests/fm-test-fixtures.test.sh (shard 0, full mode)
+2026-10-27T18:16:51.6999265Z fm-lint: end tests/fm-test-fixtures.test.sh reason=ok rc=0 duration_ms=983 rss_kib=126820
+2026-10-27T18:16:51.7008756Z fm-lint: begin tests/fm-test-isolation-proof.test.sh (shard 0, full mode)
+2026-10-27T18:16:52.3825291Z fm-lint: end tests/fm-test-isolation-proof.test.sh reason=ok rc=0 duration_ms=681 rss_kib=83816
+2026-10-27T18:16:52.3834586Z fm-lint: begin tests/fm-test-queue.test.sh (shard 0, full mode)
+2026-10-27T18:16:53.4662934Z fm-lint: end tests/fm-test-queue.test.sh reason=ok rc=0 duration_ms=1082 rss_kib=142520
+2026-10-27T18:16:53.4672258Z fm-lint: begin tests/fm-timeout-lib.test.sh (shard 0, full mode)
+2026-10-27T18:16:56.5542988Z fm-lint: end tests/fm-timeout-lib.test.sh reason=ok rc=0 duration_ms=3087 rss_kib=319372
+2026-10-27T18:16:56.5552343Z fm-lint: begin tests/fm-trace-context-lib.test.sh (shard 0, full mode)
+2026-10-27T18:16:57.2870272Z fm-lint: end tests/fm-trace-context-lib.test.sh reason=ok rc=0 duration_ms=732 rss_kib=111464
+2026-10-27T18:16:57.2880070Z fm-lint: begin tests/fm-transition-lib.test.sh (shard 0, full mode)
+2026-10-27T18:16:57.8193764Z fm-lint: end tests/fm-transition-lib.test.sh reason=ok rc=0 duration_ms=531 rss_kib=73576
+2026-10-27T18:16:57.8202935Z fm-lint: begin tests/fm-wake-daemon-lifecycle-e2e.test.sh (shard 0, full mode)
+2026-10-27T18:16:58.6020488Z fm-lint: end tests/fm-wake-daemon-lifecycle-e2e.test.sh reason=ok rc=0 duration_ms=782 rss_kib=98228
+2026-10-27T18:16:58.6029383Z fm-lint: begin tests/fm-wake-queue.test.sh (shard 0, full mode)
+2026-10-27T18:17:03.0932260Z fm-lint: end tests/fm-wake-queue.test.sh reason=ok rc=0 duration_ms=4490 rss_kib=466788
+2026-10-27T18:17:03.0941302Z fm-lint: begin tests/fm-watch-checkpoint.test.sh (shard 0, full mode)
+2026-10-27T18:17:05.3292992Z fm-lint: end tests/fm-watch-checkpoint.test.sh reason=ok rc=0 duration_ms=2235 rss_kib=248636
+2026-10-27T18:17:05.3302192Z fm-lint: begin tests/fm-watch-triage-e.test.sh (shard 0, full mode)
+2026-10-27T18:17:17.7867658Z fm-lint: end tests/fm-watch-triage-e.test.sh reason=ok rc=0 duration_ms=12457 rss_kib=1298292
+2026-10-27T18:17:17.7876889Z fm-lint: begin tests/fm-watch-triage.test.sh (shard 0, full mode)
+2026-10-27T18:17:29.9937762Z fm-lint: end tests/fm-watch-triage.test.sh reason=ok rc=0 duration_ms=12206 rss_kib=1197732
+2026-10-27T18:17:29.9947397Z fm-lint: begin tests/fm-watch-wedge-cap-live.test.sh (shard 0, full mode)
+2026-10-27T18:17:31.5286036Z fm-lint: end tests/fm-watch-wedge-cap-live.test.sh reason=ok rc=0 duration_ms=1534 rss_kib=203912
+2026-10-27T18:17:31.5295282Z fm-lint: begin tests/git-config-helpers.sh (shard 0, full mode)
+2026-10-27T18:17:31.6097692Z fm-lint: end tests/git-config-helpers.sh reason=ok rc=0 duration_ms=80 rss_kib=16396
+2026-10-27T18:17:31.6107131Z fm-lint: begin tests/herdr-test-safety.sh (shard 0, full mode)
+2026-10-27T18:17:31.6907416Z fm-lint: end tests/herdr-test-safety.sh reason=ok rc=0 duration_ms=80 rss_kib=17532
+2026-10-27T18:17:31.6916468Z fm-lint: begin tests/secondmate-helpers.sh (shard 0, full mode)
+2026-10-27T18:17:32.2232088Z fm-lint: end tests/secondmate-helpers.sh reason=ok rc=0 duration_ms=531 rss_kib=71544
+2026-10-27T18:17:32.2390706Z fm-lint: begin bin/fm-afk-launch.sh (shard 1, full mode)
+2026-10-27T18:17:49.7059762Z fm-lint: end bin/fm-afk-launch.sh reason=ok rc=0 duration_ms=17467 rss_kib=1722272
+2026-10-27T18:17:49.7069377Z fm-lint: begin bin/fm-afk-start.sh (shard 1, full mode)
+2026-10-27T18:17:59.0071890Z fm-lint: end bin/fm-afk-start.sh reason=ok rc=0 duration_ms=9300 rss_kib=934840
+2026-10-27T18:17:59.0080597Z fm-lint: begin bin/fm-agent-process-lib.sh (shard 1, full mode)
+2026-10-27T18:18:00.2407747Z fm-lint: end bin/fm-agent-process-lib.sh reason=ok rc=0 duration_ms=1233 rss_kib=156512
+2026-10-27T18:18:00.2416640Z fm-lint: begin bin/fm-backlog-handoff.sh (shard 1, full mode)
+2026-10-27T18:19:14.2297795Z fm-lint: end bin/fm-backlog-handoff.sh reason=ok rc=0 duration_ms=73988 rss_kib=5959596
+2026-10-27T18:19:14.2306780Z fm-lint: begin bin/fm-bash-compat-lib.sh (shard 1, full mode)
+2026-10-27T18:19:14.3608479Z fm-lint: end bin/fm-bash-compat-lib.sh reason=ok rc=0 duration_ms=130 rss_kib=23804
+2026-10-27T18:19:14.3617400Z fm-lint: begin bin/fm-bearings-board.sh (shard 1, full mode)
+2026-10-27T18:19:14.6922965Z fm-lint: end bin/fm-bearings-board.sh reason=ok rc=0 duration_ms=330 rss_kib=50884
+2026-10-27T18:19:14.6932151Z fm-lint: begin bin/fm-branch-report.sh (shard 1, full mode)
+2026-10-27T18:19:28.3544002Z fm-lint: end bin/fm-branch-report.sh reason=ok rc=0 duration_ms=13661 rss_kib=1449812
+2026-10-27T18:19:28.3552979Z fm-lint: begin bin/fm-brief-heading-lib.sh (shard 1, full mode)
+2026-10-27T18:19:28.4351763Z fm-lint: end bin/fm-brief-heading-lib.sh reason=ok rc=0 duration_ms=80 rss_kib=18340
+2026-10-27T18:19:28.4360761Z fm-lint: begin bin/fm-brief.sh (shard 1, full mode)
+2026-10-27T18:19:43.4476613Z fm-lint: end bin/fm-brief.sh reason=ok rc=0 duration_ms=15012 rss_kib=1750664
+2026-10-27T18:19:43.4485432Z fm-lint: begin bin/fm-control-lib.sh (shard 1, full mode)
+2026-10-27T18:19:44.1301872Z fm-lint: end bin/fm-control-lib.sh reason=ok rc=0 duration_ms=681 rss_kib=90940
+2026-10-27T18:19:44.1310988Z fm-lint: begin bin/fm-control.sh (shard 1, full mode)
+2026-10-27T18:20:08.4662016Z fm-lint: end bin/fm-control.sh reason=ok rc=0 duration_ms=24335 rss_kib=2849808
+2026-10-27T18:20:08.4671661Z fm-lint: begin bin/fm-decision-hold.sh (shard 1, full mode)
+2026-10-27T18:20:08.6977272Z fm-lint: end bin/fm-decision-hold.sh reason=ok rc=0 duration_ms=231 rss_kib=41788
+2026-10-27T18:20:08.6986772Z fm-lint: begin bin/fm-dispatch-resolve.sh (shard 1, full mode)
+2026-10-27T18:20:09.9813933Z fm-lint: end bin/fm-dispatch-resolve.sh reason=ok rc=0 duration_ms=1282 rss_kib=157480
+2026-10-27T18:20:09.9822736Z fm-lint: begin bin/fm-forge-detect.sh (shard 1, full mode)
+2026-10-27T18:20:10.1626187Z fm-lint: end bin/fm-forge-detect.sh reason=ok rc=0 duration_ms=181 rss_kib=29600
+2026-10-27T18:20:10.1635174Z fm-lint: begin bin/fm-git-strip-ai-trailers.sh (shard 1, full mode)
+2026-10-27T18:20:10.4443498Z fm-lint: end bin/fm-git-strip-ai-trailers.sh reason=ok rc=0 duration_ms=280 rss_kib=43784
+2026-10-27T18:20:10.4452050Z fm-lint: begin bin/fm-guard.sh (shard 1, full mode)
+2026-10-27T18:20:20.7478521Z fm-lint: end bin/fm-guard.sh reason=ok rc=0 duration_ms=10303 rss_kib=1078192
+2026-10-27T18:20:20.7488012Z fm-lint: begin bin/fm-herdr-ci-cleanup.sh (shard 1, full mode)
+2026-10-27T18:20:20.8788125Z fm-lint: end bin/fm-herdr-ci-cleanup.sh reason=ok rc=0 duration_ms=130 rss_kib=20320
+2026-10-27T18:20:20.8796942Z fm-lint: begin bin/fm-hold-reason-lib.sh (shard 1, full mode)
+2026-10-27T18:20:20.9595427Z fm-lint: end bin/fm-hold-reason-lib.sh reason=ok rc=0 duration_ms=80 rss_kib=16616
+2026-10-27T18:20:20.9604419Z fm-lint: begin bin/fm-home-summary-refresh.sh (shard 1, full mode)
+2026-10-27T18:20:30.6621302Z fm-lint: end bin/fm-home-summary-refresh.sh reason=ok rc=0 duration_ms=9701 rss_kib=994676
+2026-10-27T18:20:30.6630904Z fm-lint: begin bin/fm-hook-host-lib.sh (shard 1, full mode)
+2026-10-27T18:20:30.7435344Z fm-lint: end bin/fm-hook-host-lib.sh reason=ok rc=0 duration_ms=80 rss_kib=16608
+2026-10-27T18:20:30.7444692Z fm-lint: begin bin/fm-install-shellcheck.sh (shard 1, full mode)
+2026-10-27T18:20:30.8246102Z fm-lint: end bin/fm-install-shellcheck.sh reason=ok rc=0 duration_ms=80 rss_kib=19452
+2026-10-27T18:20:30.8255255Z fm-lint: begin bin/fm-lock-lib.sh (shard 1, full mode)
+2026-10-27T18:20:31.0062553Z fm-lint: end bin/fm-lock-lib.sh reason=ok rc=0 duration_ms=180 rss_kib=31968
+2026-10-27T18:20:31.0070087Z fm-lint: begin bin/fm-lock.sh (shard 1, full mode)
+2026-10-27T18:20:43.5161508Z fm-lint: end bin/fm-lock.sh reason=ok rc=0 duration_ms=12509 rss_kib=1299172
+2026-10-27T18:20:43.5171017Z fm-lint: begin bin/fm-mail.sh (shard 1, full mode)
+2026-10-27T18:21:10.8078306Z fm-lint: end bin/fm-mail.sh reason=ok rc=0 duration_ms=27291 rss_kib=2020256
+2026-10-27T18:21:10.8087894Z fm-lint: begin bin/fm-marker-lib.sh (shard 1, full mode)
+2026-10-27T18:21:11.2897241Z fm-lint: end bin/fm-marker-lib.sh reason=ok rc=0 duration_ms=481 rss_kib=67428
+2026-10-27T18:21:11.2906148Z fm-lint: begin bin/fm-nm-run-lib.sh (shard 1, full mode)
+2026-10-27T18:21:11.6210932Z fm-lint: end bin/fm-nm-run-lib.sh reason=ok rc=0 duration_ms=330 rss_kib=49468
+2026-10-27T18:21:11.6220478Z fm-lint: begin bin/fm-operational-input.sh (shard 1, full mode)
+2026-10-27T18:21:12.0530723Z fm-lint: end bin/fm-operational-input.sh reason=ok rc=0 duration_ms=431 rss_kib=62136
+2026-10-27T18:21:12.0539902Z fm-lint: begin bin/fm-pipeline-spend.sh (shard 1, full mode)
+2026-10-27T18:21:14.7901909Z fm-lint: end bin/fm-pipeline-spend.sh reason=ok rc=0 duration_ms=2736 rss_kib=339792
+2026-10-27T18:21:14.7911027Z fm-lint: begin bin/fm-pr-check.sh (shard 1, full mode)
+2026-10-27T18:21:41.3287147Z fm-lint: end bin/fm-pr-check.sh reason=ok rc=0 duration_ms=26538 rss_kib=2985832
+2026-10-27T18:21:41.3296386Z fm-lint: begin bin/fm-pr-merge.sh (shard 1, full mode)
+2026-10-27T18:22:36.0297774Z fm-lint: end bin/fm-pr-merge.sh reason=ok rc=0 duration_ms=54700 rss_kib=5049376
+2026-10-27T18:22:36.0306824Z fm-lint: begin bin/fm-pr-reviewers.sh (shard 1, full mode)
+2026-10-27T18:22:38.0650416Z fm-lint: end bin/fm-pr-reviewers.sh reason=ok rc=0 duration_ms=2034 rss_kib=279420
+2026-10-27T18:22:38.0659373Z fm-lint: begin bin/fm-primary-scope-lib.sh (shard 1, full mode)
+2026-10-27T18:22:38.2461744Z fm-lint: end bin/fm-primary-scope-lib.sh reason=ok rc=0 duration_ms=180 rss_kib=29604
+2026-10-27T18:22:38.2470650Z fm-lint: begin bin/fm-procevent-lib.sh (shard 1, full mode)
+2026-10-27T18:22:39.5301941Z fm-lint: end bin/fm-procevent-lib.sh reason=ok rc=0 duration_ms=1283 rss_kib=159368
+2026-10-27T18:22:39.5310895Z fm-lint: begin bin/fm-procevent-remote-reply.sh (shard 1, full mode)
+2026-10-27T18:23:47.9104686Z fm-lint: end bin/fm-procevent-remote-reply.sh reason=ok rc=0 duration_ms=68379 rss_kib=5863468
+2026-10-27T18:23:47.9113660Z fm-lint: begin bin/fm-project-mode.sh (shard 1, full mode)
+2026-10-27T18:23:48.1418178Z fm-lint: end bin/fm-project-mode.sh reason=ok rc=0 duration_ms=231 rss_kib=38664
+2026-10-27T18:23:48.1427222Z fm-lint: begin bin/fm-promote.sh (shard 1, full mode)
+2026-10-27T18:24:37.9369711Z fm-lint: end bin/fm-promote.sh reason=ok rc=0 duration_ms=49794 rss_kib=5213168
+2026-10-27T18:24:37.9379028Z fm-lint: begin bin/fm-public-followup-lib.sh (shard 1, full mode)
+2026-10-27T18:24:54.3024507Z fm-lint: end bin/fm-public-followup-lib.sh reason=ok rc=0 duration_ms=16364 rss_kib=1710076
+2026-10-27T18:24:54.3033716Z fm-lint: begin bin/fm-push-transition-lib.sh (shard 1, full mode)
+2026-10-27T18:25:12.5256658Z fm-lint: end bin/fm-push-transition-lib.sh reason=ok rc=0 duration_ms=18223 rss_kib=1775408
+2026-10-27T18:25:12.5266132Z fm-lint: begin bin/fm-quota-axi-lib.sh (shard 1, full mode)
+2026-10-27T18:25:12.7075070Z fm-lint: end bin/fm-quota-axi-lib.sh reason=ok rc=0 duration_ms=180 rss_kib=34084
+2026-10-27T18:25:12.7084786Z fm-lint: begin bin/fm-remote-entrypoint.sh (shard 1, full mode)
+2026-10-27T18:25:14.7928637Z fm-lint: end bin/fm-remote-entrypoint.sh reason=ok rc=0 duration_ms=2084 rss_kib=248708
+2026-10-27T18:25:14.7938226Z fm-lint: begin bin/fm-remote-herdr-owner-lib.sh (shard 1, full mode)
+2026-10-27T18:25:15.0246439Z fm-lint: end bin/fm-remote-herdr-owner-lib.sh reason=ok rc=0 duration_ms=231 rss_kib=36664
+2026-10-27T18:25:15.0255754Z fm-lint: begin bin/fm-remote-job-worker.sh (shard 1, full mode)
+2026-10-27T18:25:18.6642350Z fm-lint: end bin/fm-remote-job-worker.sh reason=ok rc=0 duration_ms=3638 rss_kib=423688
+2026-10-27T18:25:18.6651450Z fm-lint: begin bin/fm-remote-readiness-lib.sh (shard 1, full mode)
+2026-10-27T18:25:18.7456490Z fm-lint: end bin/fm-remote-readiness-lib.sh reason=ok rc=0 duration_ms=81 rss_kib=19256
+2026-10-27T18:25:18.7466160Z fm-lint: begin bin/fm-secondmate-charter-lib.sh (shard 1, full mode)
+2026-10-27T18:25:18.8269517Z fm-lint: end bin/fm-secondmate-charter-lib.sh reason=ok rc=0 duration_ms=80 rss_kib=17696
+2026-10-27T18:25:18.8278774Z fm-lint: begin bin/fm-secondmate-liveness-lib.sh (shard 1, full mode)
+2026-10-27T18:25:29.2808755Z fm-lint: end bin/fm-secondmate-liveness-lib.sh reason=ok rc=0 duration_ms=10453 rss_kib=960400
+2026-10-27T18:25:29.2818052Z fm-lint: begin bin/fm-secondmate-registry-lib.sh (shard 1, full mode)
+2026-10-27T18:25:29.6125621Z fm-lint: end bin/fm-secondmate-registry-lib.sh reason=ok rc=0 duration_ms=330 rss_kib=58168
+2026-10-27T18:25:29.6134715Z fm-lint: begin bin/fm-secondmate-restart-lib.sh (shard 1, full mode)
+2026-10-27T18:25:31.2975715Z fm-lint: end bin/fm-secondmate-restart-lib.sh reason=ok rc=0 duration_ms=1683 rss_kib=201600
+2026-10-27T18:25:31.2985095Z fm-lint: begin bin/fm-session-lock-lib.sh (shard 1, full mode)
+2026-10-27T18:25:32.3308558Z fm-lint: end bin/fm-session-lock-lib.sh reason=ok rc=0 duration_ms=1032 rss_kib=116612
+2026-10-27T18:25:32.3317862Z fm-lint: begin bin/fm-sessionstart-run.sh (shard 1, full mode)
+2026-10-27T18:25:33.7654053Z fm-lint: end bin/fm-sessionstart-run.sh reason=ok rc=0 duration_ms=1433 rss_kib=161744
+2026-10-27T18:25:33.7663819Z fm-lint: begin bin/fm-spawn.sh (shard 1, full mode)
+2026-10-27T18:26:29.0991532Z fm-lint: end bin/fm-spawn.sh reason=memory-fallback rc=0 duration_ms=55333 rss_kib=8390628
+2026-10-27T18:26:29.1001061Z fm-lint: begin bin/fm-startup-memory-budget-lib.sh (shard 1, full mode)
+2026-10-27T18:26:29.2805151Z fm-lint: end bin/fm-startup-memory-budget-lib.sh reason=ok rc=0 duration_ms=180 rss_kib=29348
+2026-10-27T18:26:29.2814544Z fm-lint: begin bin/fm-subagent-pretool-check.sh (shard 1, full mode)
+2026-10-27T18:26:29.5119492Z fm-lint: end bin/fm-subagent-pretool-check.sh reason=ok rc=0 duration_ms=230 rss_kib=41596
+2026-10-27T18:26:29.5128412Z fm-lint: begin bin/fm-supervision-host.sh (shard 1, full mode)
+2026-10-27T18:26:48.1351398Z fm-lint: end bin/fm-supervision-host.sh reason=ok rc=0 duration_ms=18622 rss_kib=2133768
+2026-10-27T18:26:48.1361199Z fm-lint: begin bin/fm-supervision-lib.sh (shard 1, full mode)
+2026-10-27T18:26:48.2668326Z fm-lint: end bin/fm-supervision-lib.sh reason=ok rc=0 duration_ms=131 rss_kib=23716
+2026-10-27T18:26:48.2677819Z fm-lint: begin bin/fm-tasks-axi.sh (shard 1, full mode)
+2026-10-27T18:26:52.6079647Z fm-lint: end bin/fm-tasks-axi.sh reason=ok rc=0 duration_ms=4340 rss_kib=598780
+2026-10-27T18:26:52.6089252Z fm-lint: begin bin/fm-teardown.sh (shard 1, full mode)
+2026-10-27T18:28:32.0422625Z fm-lint: end bin/fm-teardown.sh reason=memory-fallback rc=0 duration_ms=99433 rss_kib=8390692
+2026-10-27T18:28:32.0431881Z fm-lint: begin bin/fm-turnend-guard-cursor.sh (shard 1, full mode)
+2026-10-27T18:28:44.0487391Z fm-lint: end bin/fm-turnend-guard-cursor.sh reason=ok rc=0 duration_ms=12006 rss_kib=1241048
+2026-10-27T18:28:44.0496104Z fm-lint: begin bin/fm-update.sh (shard 1, full mode)
+2026-10-27T18:28:47.2873352Z fm-lint: end bin/fm-update.sh reason=ok rc=0 duration_ms=3237 rss_kib=405308
+2026-10-27T18:28:47.2882528Z fm-lint: begin bin/fm-vendor-auth-probe.sh (shard 1, full mode)
+2026-10-27T18:28:47.6692968Z fm-lint: end bin/fm-vendor-auth-probe.sh reason=ok rc=0 duration_ms=381 rss_kib=56120
+2026-10-27T18:28:47.6701857Z fm-lint: begin bin/fm-wake-lib.sh (shard 1, full mode)
+2026-10-27T18:28:56.3198735Z fm-lint: end bin/fm-wake-lib.sh reason=ok rc=0 duration_ms=8650 rss_kib=869164
+2026-10-27T18:28:56.3207733Z fm-lint: begin bin/fm-watch-checkpoint.sh (shard 1, full mode)
+2026-10-27T18:28:56.9022833Z fm-lint: end bin/fm-watch-checkpoint.sh reason=ok rc=0 duration_ms=581 rss_kib=79740
+2026-10-27T18:28:56.9032408Z fm-lint: begin bin/fm-x-lib.sh (shard 1, full mode)
+2026-10-27T18:29:02.2949087Z fm-lint: end bin/fm-x-lib.sh reason=ok rc=0 duration_ms=5392 rss_kib=700392
+2026-10-27T18:29:02.2957614Z fm-lint: begin bin/backends/orca.sh (shard 1, full mode)
+2026-10-27T18:29:06.9866073Z fm-lint: end bin/backends/orca.sh reason=ok rc=0 duration_ms=4691 rss_kib=506552
+2026-10-27T18:29:06.9875361Z fm-lint: begin tests/fm-afk-inject-e2e.test.sh (shard 1, full mode)
+2026-10-27T18:29:07.2182029Z fm-lint: end tests/fm-afk-inject-e2e.test.sh reason=ok rc=0 duration_ms=230 rss_kib=30524
+2026-10-27T18:29:07.2191317Z fm-lint: begin tests/fm-agy-harness.test.sh (shard 1, full mode)
+2026-10-27T18:29:08.5521391Z fm-lint: end tests/fm-agy-harness.test.sh reason=ok rc=0 duration_ms=1333 rss_kib=170812
+2026-10-27T18:29:08.5530539Z fm-lint: begin tests/fm-backend-herdr-prune-safety-e2e.test.sh (shard 1, full mode)
+2026-10-27T18:29:08.7837048Z fm-lint: end tests/fm-backend-herdr-prune-safety-e2e.test.sh reason=ok rc=0 duration_ms=231 rss_kib=41148
+2026-10-27T18:29:08.7846451Z fm-lint: begin tests/fm-backend-herdr-stale-active-tab-e2e.test.sh (shard 1, full mode)
+2026-10-27T18:29:08.9149919Z fm-lint: end tests/fm-backend-herdr-stale-active-tab-e2e.test.sh reason=ok rc=0 duration_ms=130 rss_kib=20896
+2026-10-27T18:29:08.9159288Z fm-lint: begin tests/fm-backend-paseo-smoke.test.sh (shard 1, full mode)
+2026-10-27T18:29:09.0966944Z fm-lint: end tests/fm-backend-paseo-smoke.test.sh reason=ok rc=0 duration_ms=180 rss_kib=32616
+2026-10-27T18:29:09.0974516Z fm-lint: begin tests/fm-backend-zellij-smoke.test.sh (shard 1, full mode)
+2026-10-27T18:29:09.3281813Z fm-lint: end tests/fm-backend-zellij-smoke.test.sh reason=ok rc=0 duration_ms=230 rss_kib=39716
+2026-10-27T18:29:09.3291373Z fm-lint: begin tests/fm-backend-zellij.test.sh (shard 1, full mode)
+2026-10-27T18:29:16.7750991Z fm-lint: end tests/fm-backend-zellij.test.sh reason=ok rc=0 duration_ms=7446 rss_kib=696124
+2026-10-27T18:29:16.7760331Z fm-lint: begin tests/fm-backend.test.sh (shard 1, full mode)
+2026-10-27T18:29:18.4598516Z fm-lint: end tests/fm-backend.test.sh reason=ok rc=0 duration_ms=1684 rss_kib=201632
+2026-10-27T18:29:18.4607747Z fm-lint: begin tests/fm-bearings-board-lavish-live-e2e.test.sh (shard 1, full mode)
+2026-10-27T18:29:19.0421657Z fm-lint: end tests/fm-bearings-board-lavish-live-e2e.test.sh reason=ok rc=0 duration_ms=581 rss_kib=79720
+2026-10-27T18:29:19.0430632Z fm-lint: begin tests/fm-branch-supervision.test.sh (shard 1, full mode)
+2026-10-27T18:29:21.7294590Z fm-lint: end tests/fm-branch-supervision.test.sh reason=ok rc=0 duration_ms=2686 rss_kib=294756
+2026-10-27T18:29:21.7303900Z fm-lint: begin tests/fm-busy-state.test.sh (shard 1, full mode)
+2026-10-27T18:29:22.8629818Z fm-lint: end tests/fm-busy-state.test.sh reason=ok rc=0 duration_ms=1133 rss_kib=121660
+2026-10-27T18:29:22.8639686Z fm-lint: begin tests/fm-calm-pi-extension.test.sh (shard 1, full mode)
+2026-10-27T18:29:25.7001457Z fm-lint: end tests/fm-calm-pi-extension.test.sh reason=ok rc=0 duration_ms=2836 rss_kib=389988
+2026-10-27T18:29:25.7010716Z fm-lint: begin tests/fm-cd-pretool-check.test.sh (shard 1, full mode)
+2026-10-27T18:29:26.5332580Z fm-lint: end tests/fm-cd-pretool-check.test.sh reason=ok rc=0 duration_ms=832 rss_kib=110392
+2026-10-27T18:29:26.5341548Z fm-lint: begin tests/fm-ci-workflow.test.sh (shard 1, full mode)
+2026-10-27T18:29:27.2661066Z fm-lint: end tests/fm-ci-workflow.test.sh reason=ok rc=0 duration_ms=732 rss_kib=87844
+2026-10-27T18:29:27.2670509Z fm-lint: begin tests/fm-classify-decision-key.test.sh (shard 1, full mode)
+2026-10-27T18:29:31.6566554Z fm-lint: end tests/fm-classify-decision-key.test.sh reason=ok rc=0 duration_ms=4390 rss_kib=499508
+2026-10-27T18:29:31.6575996Z fm-lint: begin tests/fm-contributions.test.sh (shard 1, full mode)
+2026-10-27T18:29:33.9931918Z fm-lint: end tests/fm-contributions.test.sh reason=ok rc=0 duration_ms=2335 rss_kib=228196
+2026-10-27T18:29:33.9941552Z fm-lint: begin tests/fm-control-relaunch.test.sh (shard 1, full mode)
+2026-10-27T18:29:59.4297904Z fm-lint: end tests/fm-control-relaunch.test.sh reason=ok rc=0 duration_ms=25436 rss_kib=2430184
+2026-10-27T18:29:59.4307445Z fm-lint: begin tests/fm-crew-state.test.sh (shard 1, full mode)
+2026-10-27T18:30:05.8245909Z fm-lint: end tests/fm-crew-state.test.sh reason=ok rc=0 duration_ms=6394 rss_kib=903012
+2026-10-27T18:30:05.8255315Z fm-lint: begin tests/fm-cursor-primary.test.sh (shard 1, full mode)
+2026-10-27T18:30:07.1082861Z fm-lint: end tests/fm-cursor-primary.test.sh reason=ok rc=0 duration_ms=1282 rss_kib=140024
+2026-10-27T18:30:07.1092867Z fm-lint: begin tests/fm-dispatch-resolve.test.sh (shard 1, full mode)
+2026-10-27T18:30:08.8937742Z fm-lint: end tests/fm-dispatch-resolve.test.sh reason=ok rc=0 duration_ms=1785 rss_kib=358204
+2026-10-27T18:30:08.8947295Z fm-lint: begin tests/fm-gate-refuse.test.sh (shard 1, full mode)
+2026-10-27T18:30:10.1777560Z fm-lint: end tests/fm-gate-refuse.test.sh reason=ok rc=0 duration_ms=1283 rss_kib=154428
+2026-10-27T18:30:10.1786532Z fm-lint: begin tests/fm-git-strip-ai-trailers.test.sh (shard 1, full mode)
+2026-10-27T18:30:11.2111031Z fm-lint: end tests/fm-git-strip-ai-trailers.test.sh reason=ok rc=0 duration_ms=1032 rss_kib=129000
+2026-10-27T18:30:11.2120269Z fm-lint: begin tests/fm-guard-stale-banner.test.sh (shard 1, full mode)
+2026-10-27T18:30:12.6453261Z fm-lint: end tests/fm-guard-stale-banner.test.sh reason=ok rc=0 duration_ms=1433 rss_kib=155452
+2026-10-27T18:30:12.6462614Z fm-lint: begin tests/fm-herdr-attached-viewer-live-e2e.test.sh (shard 1, full mode)
+2026-10-27T18:30:13.3779953Z fm-lint: end tests/fm-herdr-attached-viewer-live-e2e.test.sh reason=ok rc=0 duration_ms=732 rss_kib=109672
+2026-10-27T18:30:13.3789112Z fm-lint: begin tests/fm-jev-mem-guard.test.sh (shard 1, full mode)
+2026-10-27T18:30:13.5094061Z fm-lint: end tests/fm-jev-mem-guard.test.sh reason=ok rc=0 duration_ms=130 rss_kib=19324
+2026-10-27T18:30:13.5103641Z fm-lint: begin tests/fm-live-gate.test.sh (shard 1, full mode)
+2026-10-27T18:30:14.3927141Z fm-lint: end tests/fm-live-gate.test.sh reason=ok rc=0 duration_ms=883 rss_kib=108388
+2026-10-27T18:30:14.3936288Z fm-lint: begin tests/fm-live-lab-up-mate.test.sh (shard 1, full mode)
+2026-10-27T18:30:15.0753666Z fm-lint: end tests/fm-live-lab-up-mate.test.sh reason=ok rc=0 duration_ms=681 rss_kib=94060
+2026-10-27T18:30:15.0762731Z fm-lint: begin tests/fm-live-lab.test.sh (shard 1, full mode)
+2026-10-27T18:30:16.8102931Z fm-lint: end tests/fm-live-lab.test.sh reason=ok rc=0 duration_ms=1734 rss_kib=290492
+2026-10-27T18:30:16.8112788Z fm-lint: begin tests/fm-mail.test.sh (shard 1, full mode)
+2026-10-27T18:30:19.1469004Z fm-lint: end tests/fm-mail.test.sh reason=ok rc=0 duration_ms=2336 rss_kib=272100
+2026-10-27T18:30:19.1478001Z fm-lint: begin tests/fm-pending-reply.test.sh (shard 1, full mode)
+2026-10-27T18:32:21.1274090Z fm-lint: end tests/fm-pending-reply.test.sh reason=memory-fallback rc=0 duration_ms=121979 rss_kib=8390732
+2026-10-27T18:32:21.1283317Z fm-lint: begin tests/fm-pi-branch-responsiveness-live-e2e.test.sh (shard 1, full mode)
+2026-10-27T18:32:21.7598136Z fm-lint: end tests/fm-pi-branch-responsiveness-live-e2e.test.sh reason=ok rc=0 duration_ms=632 rss_kib=87932
+2026-10-27T18:32:21.7607281Z fm-lint: begin tests/fm-pi-codex-native.test.sh (shard 1, full mode)
+2026-10-27T18:32:22.2926848Z fm-lint: end tests/fm-pi-codex-native.test.sh reason=ok rc=0 duration_ms=532 rss_kib=73084
+2026-10-27T18:32:22.2938122Z fm-lint: begin tests/fm-pi-primary-live-e2e.test.sh (shard 1, full mode)
+2026-10-27T18:32:23.1759574Z fm-lint: end tests/fm-pi-primary-live-e2e.test.sh reason=ok rc=0 duration_ms=882 rss_kib=114492
+2026-10-27T18:32:23.1768707Z fm-lint: begin tests/fm-pi-primary-types.test.sh (shard 1, full mode)
+2026-10-27T18:32:23.3074835Z fm-lint: end tests/fm-pi-primary-types.test.sh reason=ok rc=0 duration_ms=130 rss_kib=19324
+2026-10-27T18:32:23.3084415Z fm-lint: begin tests/fm-pi-windows-shell-invocation.test.sh (shard 1, full mode)
+2026-10-27T18:32:23.8398707Z fm-lint: end tests/fm-pi-windows-shell-invocation.test.sh reason=ok rc=0 duration_ms=532 rss_kib=66340
+2026-10-27T18:32:23.8408393Z fm-lint: begin tests/fm-pr-merge.test.sh (shard 1, full mode)
+2026-10-27T18:32:27.9801969Z fm-lint: end tests/fm-pr-merge.test.sh reason=ok rc=0 duration_ms=4139 rss_kib=383844
+2026-10-27T18:32:27.9811562Z fm-lint: begin tests/fm-procevent-no-mistakes.test.sh (shard 1, full mode)
+2026-10-27T18:32:28.8131759Z fm-lint: end tests/fm-procevent-no-mistakes.test.sh reason=ok rc=0 duration_ms=832 rss_kib=111536
+2026-10-27T18:32:28.8141156Z fm-lint: begin tests/fm-procevent-when.test.sh (shard 1, full mode)
+2026-10-27T18:32:32.4023822Z fm-lint: end tests/fm-procevent-when.test.sh reason=ok rc=0 duration_ms=3588 rss_kib=617320
+2026-10-27T18:32:32.4033979Z fm-lint: begin tests/fm-quota-array-dispatch-live-e2e.test.sh (shard 1, full mode)
+2026-10-27T18:32:32.9850782Z fm-lint: end tests/fm-quota-array-dispatch-live-e2e.test.sh reason=ok rc=0 duration_ms=582 rss_kib=82724
+2026-10-27T18:32:32.9860348Z fm-lint: begin tests/fm-remote-backlog-handoff.test.sh (shard 1, full mode)
+2026-10-27T18:32:34.3195145Z fm-lint: end tests/fm-remote-backlog-handoff.test.sh reason=ok rc=0 duration_ms=1333 rss_kib=213820
+2026-10-27T18:32:34.3204607Z fm-lint: begin tests/fm-remote-job-claim-reap.test.sh (shard 1, full mode)
+2026-10-27T18:32:39.2616616Z fm-lint: end tests/fm-remote-job-claim-reap.test.sh reason=ok rc=0 duration_ms=4942 rss_kib=490416
+2026-10-27T18:32:39.2625841Z fm-lint: begin tests/fm-remote-job-claim-retention.test.sh (shard 1, full mode)
+2026-10-27T18:32:41.8490073Z fm-lint: end tests/fm-remote-job-claim-retention.test.sh reason=ok rc=0 duration_ms=2586 rss_kib=283508
+2026-10-27T18:32:41.8499231Z fm-lint: begin tests/fm-remote-job-launchagent.test.sh (shard 1, full mode)
+2026-10-27T18:32:44.8869604Z fm-lint: end tests/fm-remote-job-launchagent.test.sh reason=ok rc=0 duration_ms=3037 rss_kib=383784
+2026-10-27T18:32:44.8879463Z fm-lint: begin tests/fm-remote-job-orphan-reap.test.sh (shard 1, full mode)
+2026-10-27T18:32:45.5699769Z fm-lint: end tests/fm-remote-job-orphan-reap.test.sh reason=ok rc=0 duration_ms=682 rss_kib=93032
+2026-10-27T18:32:45.5709458Z fm-lint: begin tests/fm-review-diff.test.sh (shard 1, full mode)
+2026-10-27T18:32:46.3028642Z fm-lint: end tests/fm-review-diff.test.sh reason=ok rc=0 duration_ms=732 rss_kib=87784
+2026-10-27T18:32:46.3037811Z fm-lint: begin tests/fm-rovo-harness.test.sh (shard 1, full mode)
+2026-10-27T18:32:50.4434678Z fm-lint: end tests/fm-rovo-harness.test.sh reason=ok rc=0 duration_ms=4139 rss_kib=474940
+2026-10-27T18:32:50.4444264Z fm-lint: begin tests/fm-secondmate-lifecycle-e2e.test.sh (shard 1, full mode)
+2026-10-27T18:32:51.2766197Z fm-lint: end tests/fm-secondmate-lifecycle-e2e.test.sh reason=ok rc=0 duration_ms=833 rss_kib=106312
+2026-10-27T18:32:51.2775591Z fm-lint: begin tests/fm-send-inbox-doorbell-live-e2e.test.sh (shard 1, full mode)
+2026-10-27T18:32:51.9593035Z fm-lint: end tests/fm-send-inbox-doorbell-live-e2e.test.sh reason=ok rc=0 duration_ms=681 rss_kib=95104
+2026-10-27T18:32:51.9602798Z fm-lint: begin tests/fm-send-inbox.test.sh (shard 1, full mode)
+2026-10-27T18:32:52.8925174Z fm-lint: end tests/fm-send-inbox.test.sh reason=ok rc=0 duration_ms=932 rss_kib=118072
+2026-10-27T18:32:52.8935165Z fm-lint: begin tests/fm-send-secondmate-marker.test.sh (shard 1, full mode)
+2026-10-27T18:32:53.6255455Z fm-lint: end tests/fm-send-secondmate-marker.test.sh reason=ok rc=0 duration_ms=731 rss_kib=92996
+2026-10-27T18:32:53.6265278Z fm-lint: begin tests/fm-spawn-orca-worktree.test.sh (shard 1, full mode)
+2026-10-27T18:32:55.4607472Z fm-lint: end tests/fm-spawn-orca-worktree.test.sh reason=ok rc=0 duration_ms=1834 rss_kib=216892
+2026-10-27T18:32:55.4616664Z fm-lint: begin tests/fm-spawn-worktree-settle.test.sh (shard 1, full mode)
+2026-10-27T18:32:56.2436016Z fm-lint: end tests/fm-spawn-worktree-settle.test.sh reason=ok rc=0 duration_ms=782 rss_kib=99248
+2026-10-27T18:32:56.2445758Z fm-lint: begin tests/fm-stat-shadowing.test.sh (shard 1, full mode)
+2026-10-27T18:33:45.8551952Z ##[error]The operation was canceled.
+2026-10-27T18:33:45.8663534Z ##[group]Run actions/upload-artifact@v4
+2026-10-27T18:33:45.8663853Z with:
+2026-10-27T18:33:45.8664071Z   name: fm-lint-telemetry-2
+2026-10-27T18:33:45.8664716Z   path: /home/runner/work/_temp/fm-lint/partition-2.tsv
+/home/runner/work/_temp/fm-lint/partition-2.roots.tsv
+
+2026-10-27T18:33:45.8665493Z   if-no-files-found: warn
+2026-10-27T18:33:45.8665734Z   compression-level: 6
+2026-10-27T18:33:45.8665968Z   overwrite: false
+2026-10-27T18:33:45.8666186Z   include-hidden-files: false
+2026-10-27T18:33:45.8666432Z ##[endgroup]
+2026-10-27T18:33:46.0479586Z (node:10303) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-10-27T18:33:46.0480924Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-10-27T18:33:46.0568608Z Multiple search paths detected. Calculating the least common ancestor of all paths
+2026-10-27T18:33:46.0570628Z The least common ancestor is /home/runner/work/_temp/fm-lint. This will be the root directory of the artifact
+2026-10-27T18:33:46.0571558Z With the provided path, there will be 1 file uploaded
+2026-10-27T18:33:46.0573003Z Artifact name is valid!
+2026-10-27T18:33:46.0573398Z Root directory input is valid!
+2026-10-27T18:33:46.2674175Z Beginning upload of artifact content to blob storage
+2026-10-27T18:33:46.2983036Z (node:10303) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+2026-10-27T18:33:46.3269631Z Uploaded bytes 7678
+2026-10-27T18:33:46.3440076Z Finished uploading artifact content to blob storage!
+2026-10-27T18:33:46.3441372Z SHA256 digest of uploaded artifact zip is a3028b0fb8bb4a97452323fb820838104e93959b199ec18cc33de741d017acfb
+2026-10-27T18:33:46.3442556Z Finalizing artifact upload
+2026-10-27T18:33:46.7665791Z Artifact fm-lint-telemetry-2.zip successfully finalized. Artifact ID 12760831416
+2026-10-27T18:33:46.7666899Z Artifact fm-lint-telemetry-2 has been successfully uploaded! Final size is 7678 bytes. Artifact ID is 12760831416
+2026-10-27T18:33:46.7667971Z Artifact download URL: https://github.com/Pibomeister/firstmate/actions/runs/40555731948/artifacts/12760831416
+2026-10-27T18:33:46.7925321Z Post job cleanup.
+2026-10-27T18:33:46.8882444Z [command]/usr/bin/git version
+2026-10-27T18:33:46.8937764Z git version 2.56.0
+2026-10-27T18:33:46.8994148Z Temporarily overriding HOME='/home/runner/work/_temp/62eafc5a-a7e6-4e35-89d9-0d64a8b26b31' before making global git config changes
+2026-10-27T18:33:46.8995496Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-27T18:33:46.9007391Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/firstmate/firstmate
+2026-10-27T18:33:46.9060576Z Removing SSH command configuration
+2026-10-27T18:33:46.9069397Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-27T18:33:46.9129276Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-27T18:33:47.0019872Z Removing HTTP extra header
+2026-10-27T18:33:47.0024903Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-27T18:33:47.0031173Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-27T18:33:47.0109086Z Removing includeIf entries pointing to credentials config files
+2026-10-27T18:33:47.0129923Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-27T18:33:47.0176456Z includeif.gitdir:/home/runner/work/firstmate/firstmate/.git.path
+2026-10-27T18:33:47.0177519Z includeif.gitdir:/home/runner/work/firstmate/firstmate/.git/worktrees/*.path
+2026-10-27T18:33:47.0179234Z includeif.gitdir:/github/workspace/.git.path
+2026-10-27T18:33:47.0180021Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-27T18:33:47.0188660Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/firstmate/firstmate/.git.path
+2026-10-27T18:33:47.0269953Z /home/runner/work/_temp/git-credentials-a5681b6c-6bd8-41be-8c88-9a18091b8e79.config
+2026-10-27T18:33:47.0285502Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/firstmate/firstmate/.git.path /home/runner/work/_temp/git-credentials-a5681b6c-6bd8-41be-8c88-9a18091b8e79.config
+2026-10-27T18:33:47.0355188Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/firstmate/firstmate/.git/worktrees/*.path
+2026-10-27T18:33:47.0408579Z /home/runner/work/_temp/git-credentials-a5681b6c-6bd8-41be-8c88-9a18091b8e79.config
+2026-10-27T18:33:47.0421342Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/firstmate/firstmate/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-a5681b6c-6bd8-41be-8c88-9a18091b8e79.config
+2026-10-27T18:33:47.0483979Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-27T18:33:47.0531896Z /github/runner_temp/git-credentials-a5681b6c-6bd8-41be-8c88-9a18091b8e79.config
+2026-10-27T18:33:47.0543886Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-a5681b6c-6bd8-41be-8c88-9a18091b8e79.config
+2026-10-27T18:33:47.0605716Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-27T18:33:47.0665640Z /github/runner_temp/git-credentials-a5681b6c-6bd8-41be-8c88-9a18091b8e79.config
+2026-10-27T18:33:47.0673279Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-a5681b6c-6bd8-41be-8c88-9a18091b8e79.config
+2026-10-27T18:33:47.0735946Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-27T18:33:47.1115770Z Removing credentials config '/home/runner/work/_temp/git-credentials-a5681b6c-6bd8-41be-8c88-9a18091b8e79.config'
+2026-10-27T18:33:47.1344251Z Cleaning up orphan processes
+2026-10-27T18:33:47.1662626Z Terminate orphan process: pid (2363) (bash)
+2026-10-27T18:33:47.1696234Z Terminate orphan process: pid (7698) (time)
+2026-10-27T18:33:47.1718755Z Terminate orphan process: pid (7700) (bash)
+2026-10-27T18:33:47.1791960Z Terminate orphan process: pid (10283) (perl)
+2026-10-27T18:33:47.1813278Z Terminate orphan process: pid (10288) (time)
+2026-10-27T18:33:47.1835160Z Terminate orphan process: pid (10294) (shellcheck)
+2026-10-27T18:33:47.1911520Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
