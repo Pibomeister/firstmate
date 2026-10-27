@@ -7099,7 +7099,9 @@ test_parked_gate_notice_tracks_each_pause_occurrence() {
         export FM_CREW_STATE_BIN="$dir/fakebin/fm-crew-state.sh" FM_FAKE_CREW_STATE
         # shellcheck source=/dev/null
         . "$WATCH"
+        # shellcheck disable=SC2329 # Runtime override called by the sourced watcher.
         fm_backend_agent_alive() { printf 'dead\n'; }
+        # shellcheck disable=SC2329 # Runtime override called by the sourced watcher.
         fm_task_inbox_ring() { printf '%s\n' "$3" >> "$dir/rings"; }
         case "$mode" in
           attended) entry=pause_gate_class ;;
