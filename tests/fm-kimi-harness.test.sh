@@ -998,7 +998,7 @@ test_kimi_trust_failures_report_only_observed_signals() {
       assert_not_contains "$out" 'Exit option' "Kimi trust diagnostic assumed the new negative option"
       assert_not_contains "$out" "Don't trust" "Kimi trust diagnostic assumed the legacy negative option"
       [ ! -s "$CASE_DIR/pointer.log" ] || fail "Kimi pointer was sent before verified readiness"
-      status=$(cat "$HOME_DIR/state/$id.status")
+      status=$(sed -E 's/ \[at=[0-9]+\]//' "$HOME_DIR/state/$id.status")
       assert_contains "$status" "failed: $detail" "Kimi trust timeout did not leave a supervisor-visible failure"
     done
   done
