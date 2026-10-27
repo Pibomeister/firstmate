@@ -168,7 +168,7 @@ remember_lock_session() {
 }
 
 publish_lock_endpoint() {
-  local trusted=$1 recorded=$2 candidate=${FM_SESSION_ENDPOINT_META:-} source= field value
+  local trusted=$1 recorded=$2 candidate=${FM_SESSION_ENDPOINT_META:-} source='' field value
   if [ -n "$trusted" ] && [ "$trusted" = "$recorded" ]; then
     source=$LOCK_SESSION
   fi
