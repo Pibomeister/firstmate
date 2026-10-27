@@ -1699,7 +1699,7 @@ spawn_abort_cleanup() {
       local reclaim_status=0
       spawn_orca_reclaim_launch_file || reclaim_status=$?
       case "$reclaim_status" in
-        0) kimi_spawn_fail "spawn ended before Orca terminal $T ran the launch command; removed the launch file and refused the worker launch" || true ;;
+        0) spawn_report_failure "spawn ended before Orca terminal $T ran the launch command; removed the launch file and refused the worker launch" || true ;;
         2) echo "warning: could not remove Orca launch file $SPAWN_STAGED_LAUNCH_FILE; remove it by hand" >&2 ;;
       esac
     fi
@@ -4990,9 +4990,13 @@ kimi_wait_for_delivery() {
   return 1
 }
 
-kimi_spawn_fail() { # <detail>
+spawn_report_failure() { # <detail>
   printf '%s\n' "$(status_stamp_line "failed: $1")" >>"$STATE/$ID.status"
   echo "error: $1; inspect window $T" >&2
+}
+
+kimi_spawn_fail() { # <detail>
+  spawn_report_failure "$1"
   spawn_gate_endpoint_cleanup
 }
 
@@ -6936,7 +6940,7 @@ spawn_orca_wait_launch_consumed() {
     if [ "$i" -gt "$max" ]; then
       spawn_orca_reclaim_launch_file || reclaim_status=$?
       [ "$reclaim_status" != 1 ] || return 0
-      kimi_spawn_fail "Orca terminal $T did not run the launch command or could not remove the launch file; refused the worker launch"
+      spawn_report_failure "Orca terminal $T did not run the launch command or could not remove the launch file; refused the worker launch"
       exit 1
     fi
     sleep 0.2
