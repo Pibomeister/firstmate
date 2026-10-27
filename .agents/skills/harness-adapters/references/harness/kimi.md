@@ -1,6 +1,6 @@
 # Kimi Code
 
-Verified on 2026-09-17 with Kimi Code CLI 2.0.0.
+Verified on 2026-09-17 with Kimi Code CLI 2.0.0; the folder-trust dialog below was re-verified live on 2026-10-26 with Kimi Code CLI 2.3.1.
 
 ## Operating facts
 
@@ -14,7 +14,7 @@ Verified on 2026-09-17 with Kimi Code CLI 2.0.0.
 | Interrupt | Single Escape, which prints `Interrupted by user`. |
 | Skill invocation | `/<skill>`, for example `/no-mistakes`; Firstmate skills are discovered. |
 | Autonomy | `--auto` is the `Never Ask` tier; `-y` and `--yolo` now select the distinct, weaker `Ask When Needed` tier and are not used. |
-| Trust dialog | A fresh worktree shows `Trust this folder?` with `Trust this folder` pre-selected; spawn reads the visible pane, recognizes the complete dialog (its title, both navigation-hint tokens `↑↓ navigate` and `Enter select` - matched separately so a hint wrapped in a narrow pane still counts - the selected `❯ Trust this folder`, and `Don't trust`), sends Enter on every poll the complete dialog is still there, verifies that a later visible-pane capture no longer contains it, and then continues the ordinary readiness gate. Trust is never pre-registered in `config.toml`; the dialog is answered live. |
+| Trust dialog | A fresh worktree shows `Trust this folder?`; Kimi 2.3.1 pre-selects `❯ Trust and continue` over a bare `Exit` line (2.0.0 showed selected `❯ Trust this folder` and `Don't trust`). Spawn reads the visible pane, recognizes the complete dialog (its title, both navigation-hint tokens `↑↓ navigate` and `Enter select` - matched separately so a hint wrapped in a narrow pane still counts - plus either complete option pair), sends Enter on every poll the complete dialog is still there, verifies that a later visible-pane capture no longer contains it, and then continues the ordinary readiness gate. Trust is never pre-registered in `config.toml`; the dialog is answered live. |
 | Slash submission | One Enter submits, with no popup swallow or settle hazard. |
 | Environment marker | None; identity comes from process ancestry command name `kimi`, which `../../../bin/fm-harness.sh` keeps a retained foreign marker from overriding. |
 | Composer | Bordered box with a bare `>` prompt glyph and no observed ghost or placeholder text. |
@@ -22,7 +22,7 @@ Verified on 2026-09-17 with Kimi Code CLI 2.0.0.
 
 ## Readiness-gated start
 
-`../../../bin/fm-spawn.sh` launches Kimi bare, handles the complete 2.0.0 trust dialog when it appears, waits for the composer box or `Welcome to Kimi Code!`, sends only `Read the brief at <absolute-path> and follow it exactly.`, and requires a cleared composer plus either the echoed `✨` submission or nonzero context before accepting delivery.
+`../../../bin/fm-spawn.sh` launches Kimi bare, handles the complete trust dialog when it appears, waits for the composer box or `Welcome to Kimi Code!`, sends only `Read the brief at <absolute-path> and follow it exactly.`, and requires a cleared composer plus either the echoed `✨` submission or nonzero context before accepting delivery.
 Every trust predicate reads `fm_backend_visible_capture`, the viewport without scrollback, because a history read could replay a cleared dialog and send Enter to a live composer.
 The verified viewport implementations for Kimi are tmux, Herdr, and Zellij, as recorded in `bin/fm-backend.sh` and `docs/verification/runtime-backends.md`.
 Orca now exposes a viewport, but Kimi readiness and typed submission have not been live-verified there; cmux lacks a verified viewport.
@@ -30,7 +30,7 @@ Spawn refuses Kimi on Orca and cmux before creating a worktree or pane.
 A failed viewport read ends readiness with the backend named, and a blank successful read restarts the two-capture ready count without claiming a cleared dialog.
 Kimi's trust answer can be retried only while the complete dialog remains on the live viewport, since the CLI can swallow an Enter during startup.
 Trust is accepted only after a later viewport capture proves that the dialog cleared; a stuck dialog reports the observed signals and answer count.
-Any single marker of the dialog on that visible pane - `Trust this folder` or the negative `Don't trust` option - withholds the ready verdict, because a capture caught mid-redraw and a capture that has painted only the box title both miss the complete dialog while the banner above it would otherwise read as ready. The banner also prints before the dialog paints at all, which no single capture can distinguish from a ready pane, so the verdict additionally requires two consecutive captures that are each ready and free of dialog text; a capture that is not ready, and a blank one, restarts that count, which is what keeps the pre-banner boot captures and redraw frames from spending it.
+Any single marker of the dialog on that visible pane - `Trust this folder`, `Trust and continue`, or the negative `Don't trust` option - withholds the ready verdict, because a capture caught mid-redraw and a capture that has painted only the box title both miss the complete dialog while the banner above it would otherwise read as ready. The banner also prints before the dialog paints at all, which no single capture can distinguish from a ready pane, so the verdict additionally requires two consecutive captures that are each ready and free of dialog text; a capture that is not ready, and a blank one, restarts that count, which is what keeps the pre-banner boot captures and redraw frames from spending it.
 This launch-then-send shape is mandatory because Kimi rejects positional instructions as an unknown command.
 The path must be absolute because the instructions live outside the task worktree and Kimi reads them there without `--add-dir`.
 

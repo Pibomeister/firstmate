@@ -4866,11 +4866,19 @@ kimi_composer_is_empty() {
 # The navigation hint is matched as its two distinctive tokens rather than as
 # one row: a pane narrower than the row wraps it, and a wrapped hint is still
 # the complete dialog waiting for an answer.
+# Kimi 2.3.1 (live-captured 2026-10-26) renamed the options: the selected one
+# is now `❯ Trust and continue` and the negative is a bare `Exit` line, where
+# 2.0.0 showed selected `❯ Trust this folder` and `Don't trust`. Either
+# complete option pair proves the dialog; a mix or a single option never does.
 kimi_trust_dialog_is_visible() { # <plain-pane-capture>
   local pane=$1
   case "$pane" in *'Trust this folder?'*) ;; *) return 1 ;; esac
   case "$pane" in *'↑↓ navigate'*) ;; *) return 1 ;; esac
   case "$pane" in *'Enter select'*) ;; *) return 1 ;; esac
+  if [ "${pane#*'❯ Trust and continue'}" != "$pane" ]; then
+    printf '%s\n' "$pane" | grep -Eq '^[[:space:]]*Exit[[:space:]]*$' && return 0
+    return 1
+  fi
   case "$pane" in *'❯ Trust this folder'*) ;; *) return 1 ;; esac
   case "$pane" in *"Don't trust"*) ;; *) return 1 ;; esac
 }
@@ -4883,7 +4891,7 @@ kimi_trust_dialog_is_visible() { # <plain-pane-capture>
 # Treating such a pane as ready would type the brief pointer into the dialog
 # and lose it.
 kimi_trust_marker_is_present() { # <plain-pane-capture>
-  case "$1" in *'Trust this folder'* | *"Don't trust"*) return 0 ;; esac
+  case "$1" in *'Trust this folder'* | *'Trust and continue'* | *"Don't trust"*) return 0 ;; esac
   return 1
 }
 
@@ -4950,9 +4958,9 @@ kimi_wait_for_ready() {
     [ "$i" -ge "$max" ] || sleep "$interval"
   done
   if [ "$trust_still_visible" -eq 1 ]; then
-    KIMI_READY_FAILURE_DETAIL="kimi trust dialog did not clear after selecting 'Trust this folder' on $trust_enters poll(s); saw 'Trust this folder?', the navigation hint, selected 'Trust this folder', and the negative Don't trust option"
+    KIMI_READY_FAILURE_DETAIL="kimi trust dialog did not clear after submitting the affirmative selection on $trust_enters poll(s); saw 'Trust this folder?', the navigation hint, a selected affirmative option, and a negative option"
   elif [ "$trust_seen" -eq 1 ]; then
-    KIMI_READY_FAILURE_DETAIL="kimi trust dialog was answered but the pane never advanced to a verified ready signal; saw 'Trust this folder?', the navigation hint, selected 'Trust this folder', and the negative Don't trust option"
+    KIMI_READY_FAILURE_DETAIL="kimi trust dialog was answered but the pane never advanced to a verified ready signal; saw 'Trust this folder?', the navigation hint, a selected affirmative option, and a negative option"
   elif [ "$trust_markers_pending" -eq 1 ]; then
     KIMI_READY_FAILURE_DETAIL="kimi did not show a verified ready signal before brief delivery; trust dialog text stayed on screen without the complete dialog, so the pane was never safe to answer or to treat as ready"
   fi
