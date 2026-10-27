@@ -97,13 +97,7 @@ The hook handles the session lock as follows:
 - A numeric session-lock owner that fails the shared `fm_harness_pid_alive` predicate is reclaimed through `bin/fm-lock.sh` before auto-arm state changes.
 - A live owner the session does not own, an absent lock, or a malformed lock keeps the competing hook inert.
 
-Whether the session owns that lock is the shared `fm_session_lock_owned_by_self` verdict in `bin/fm-session-lock-lib.sh`.
-That verdict accepts either of two cases:
-
-- A recorded pid inside the current harness ancestry.
-- A live lock recorded under this same trusted Claude session id.
-
-With that verdict, a background session keeps arming after its transient helper chain is recycled.
+[`bin/fm-session-lock-lib.sh`](../bin/fm-session-lock-lib.sh) owns the shared ownership verdict, including anchor-instance checks and trusted session identity after helper-chain recycling.
 [`turnend-guard.md`](turnend-guard.md#guard-predicates) owns the Claude guard's behavior when that live owner is genuinely another session.
 The stale-owner claim occurs only after the existing AFK and supervision-need gates pass.
 

@@ -403,7 +403,7 @@ FIXED same-session id re-anchors the lock onto its own process; a different id i
 COMPLETE
 ```
 
-The auto-arm rewake move and the lease claim pinned before a re-anchor ran on 2026-10-16 on Linux with GNU bash 5.3.9 as the fake harness interpreter:
+The auto-arm rewake move and the then-current lease claim pinned before a re-anchor ran on 2026-10-16 on Linux with GNU bash 5.3.9 as the fake harness interpreter:
 
 ```sh
 bin/fm-test-run.sh tests/fm-session-lock-ancestry.test.sh tests/fm-branch-supervision.test.sh
@@ -418,27 +418,10 @@ FM_TEST_SUMMARY total=2 failed=0 skipped_gate=0 duration_ms=43472
 ```
 
 No live unattended Claude background session ran on the verifying machine: that topology is documented by the real process listings in issues #3902, #2314, #3398, and #4066, and the coverage above is the structural predicate plus those executable fixtures, not a live pass.
+The pinned-claim output above records the earlier behavior; `tests/fm-branch-supervision.test.sh` now covers refusal of unverified and dead pins, while the Codex restart case in `tests/fm-session-lock-ancestry.test.sh` covers verified claims after re-anchoring.
 Codex session-lock anchoring was verified on 2026-10-26 on macOS.
-A live `codex exec` probe (codex-cli 0.163.0) showed a tool shell carrying `CODEX_THREAD_ID` and `CODEX_SESSION_ID`, equal, with the session's native Codex process as its parent, and live process listings showed supervision tool shells parented directly by the shared `codex app-server --listen unix:// --managed-daemon` process (pid 28512, alive since 2026-10-24) with four homes' locks recorded against that daemon pid.
-`bin/fm-session-lock-lib.sh` therefore never treats that daemon (or the `codex-code-mode-host` helper) as a session process: the ancestry walk stops at the daemon, a daemon-anchored lock classifies stale and is reclaimed through the ordinary `bin/fm-lock.sh` path, a direct TUI anchors on its TUI process, and a daemon-served session owns by its trusted thread id recorded in `state/.lock-session`.
-Only the published pair counts for that identity: `CODEX_THREAD_ID` and `CODEX_SESSION_ID` both present and equal.
-The sidecar keeps the thread id on line 1 and records the anchor pid and its kernel start time, plus the hosting daemon pid and kernel start time for daemon-served sessions.
-A reused numeric pid cannot inherit the recorded process instance's ownership.
-A daemon-served owner's acquiring process may exit while the thread remains active without any identity-bearing process.
-The shared boundary queries `thread/read` over the recorded daemon instance's control socket, using the WebSocket transport described by the [app-server protocol](https://learn.chatgpt.com/docs/app-server).
-Runtime state `active` always retains the lock, and `notLoaded` permits replacement while the daemon remains alive.
-An `idle` or `systemError` thread permits replacement only when its recorded supervisor endpoint is proven gone by `fm_backend_orca_endpoint_absence_proof`, including the terminal lookup, readable process sweep, and clean recorded-worktree agent scan.
-Missing endpoint metadata, a live endpoint, or any unreadable proof retains the lock through the daemon's retention interval.
-Secondmate launches pass their existing endpoint metadata to lock acquisition, which snapshots the Orca terminal, worktree, and spawn generation in the sidecar; same-session re-anchors preserve that evidence.
-If the query is unavailable, the identity-bound process scan supplies the fallback verdict; daemon uptime alone never retains ownership.
-The daemon pid and kernel start time select the server instance to query, rather than serving as thread-lifetime evidence.
-Same-thread acquisition re-anchors a dead or reused anchor under the claim and lease-command locks, moving that thread's leases to its current anchor.
-A replacement session retires prior task leases under the lease-command lock before publishing its fresh anchor instance.
-The shared owner-key boundary uses the recorded session identity after verifying owner liveness; that key survives helper re-anchoring and keeps supervision conversations and the two-error cooldown under one session.
-The host pins the engine turn's verified session key alongside its holder pid; subsequent lease claims resolve the current holder only when that key still matches, and a branch from a replaced session is refused.
-Separate argv and environment fields come from Linux procfs or macOS KERN_PROCARGS2, with kernel start times from procfs or proc_pidinfo.
-Only the actual `resume <id>` argument pair or both equal environment identity fields bind a process to a thread.
-Inspection carries the verified owner pid and Codex harness evidence through to inbox readiness, and task leases use the same owner-lifetime boundary.
+A live `codex exec` probe (codex-cli 0.163.0) showed a tool shell carrying equal `CODEX_THREAD_ID` and `CODEX_SESSION_ID` values with the session's native Codex process as its parent; process listings also showed tool shells parented directly by the shared app-server daemon.
+[`bin/fm-session-lock-lib.sh`](../../bin/fm-session-lock-lib.sh) owns the ownership, lifetime, inspection, and stable owner-key rules; [`bin/fm-lock.sh`](../../bin/fm-lock.sh) owns sidecar publication and re-anchoring, and [`bin/fm-lease-lib.sh`](../../bin/fm-lease-lib.sh) owns lease liveness and claim pins.
 The read-only live probe on 2026-10-27 reached the existing 0.164.0 daemon over its Unix control socket without creating, resuming, or changing a thread.
 It completed a WebSocket HTTP Upgrade, initialized a client connection, listed loaded threads, and read one loaded thread with `includeTurns: false`:
 

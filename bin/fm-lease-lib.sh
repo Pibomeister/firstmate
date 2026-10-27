@@ -26,23 +26,23 @@
 #     supervision host's engine environment), not by agent memory. Any other
 #     value is refused loudly - an unknown actor is a wiring bug, not a third
 #     role.
-#   - Staleness: the recorded pid is the long-lived supervising process (the
-#     session-lock holder, or FM_LEASE_HOLDER_PID - see bin/fm-lease.sh), so a
-#     dead recorded pid means the supervising session died; the lease is
-#     cleared at the next claim, guard, or sweep. Liveness is the pure record
-#     test, identical in every calling context: the recorded pid is alive and
-#     IS the current state/.lock holder. So a lease left by an exited session
-#     goes stale for every reader, whichever harness now owns the home, and an
-#     unmarked main honors a live branch lease exactly as a Pi main does. A
-#     same-session re-anchor that moves lock line 1 off a live pid
-#     (bin/fm-lock.sh) moves the leases recorded against that pid with it
-#     (fm_lease_rekey_holder), so they stay live. The one residual is a
-#     recorded pid recycled onto the next session-lock holder itself; the
-#     host that owns a branch conversation releases that actor's leases when
-#     it activates a new one (the Pi branch extension's
-#     generation-activation cleanup; the supervision host also releases them
-#     after every engine turn), which also recovers a lease held by the live
-#     session but an abandoned branch conversation.
+#   - Staleness: the recorded pid must equal the current state/.lock anchor,
+#     and fm_session_lock_recorded_owner_live in bin/fm-session-lock-lib.sh
+#     must prove that lock's owner live. A dead acquiring pid alone does not
+#     expire a daemon-served Codex session's leases. Every caller uses this
+#     same record test; a stale lease is cleared at the next claim, guard,
+#     or sweep. An unmarked main honors a live branch lease on every harness.
+#     A same-session re-anchor moves existing leases with lock line 1 through
+#     fm_lease_rekey_holder; foreign replacement retires old leases in
+#     bin/fm-lock.sh. A host also releases branch leases at conversation
+#     activation (Pi) or after every engine turn (the supervision host), so
+#     an abandoned branch conversation cannot retain its leases indefinitely.
+#   - Claim pins: FM_LEASE_HOLDER_SESSION must match the verified owner key
+#     before a pinned claim resolves to the current anchor. Without a session
+#     key, FM_LEASE_HOLDER_PID requires current-session ownership and a live
+#     owner, or an equal live pid on a legacy lock without a sidecar. An
+#     unverified pin refuses before publication instead of writing a stale
+#     lease. Unpinned claims use the current numeric lock anchor.
 #
 # THREAT MODEL (deliberate, captain-decided): these guards are
 # CONFUSED-AGENT-GRADE, the same grade bin/fm-gate-refuse-lib.sh documents

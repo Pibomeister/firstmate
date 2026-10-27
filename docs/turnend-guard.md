@@ -100,22 +100,14 @@ In [Codex mode](#codex-mode), an identity-matched live watcher held by this sess
 
 When an active home instead has a live session lock held by a verified harness that the current session does not own, the Claude and Codex guards emit a read-only ownership diagnostic and allow the turn to end safely.
 
-Ownership is the shared `fm_session_lock_owned_by_self` verdict in `bin/fm-session-lock-lib.sh`.
-The current session owns the lock when either of these holds:
-
-- The recorded pid is a member of the current session's contiguous harness ancestry.
-- The trusted Claude session id recorded beside the lock in `state/.lock-session` matches this hook's own environment while the recorded pid is still a live harness.
-
-That second signal keeps a background Claude session owning its own lock after the transient helper chain between its hooks and its recorded owner is recycled.
-The library's header owns the trust gate (`CLAUDE_PID` must be a Claude-shaped member of the current run).
-`bin/fm-lock.sh` owns the sidecar and the line-1 anchor it records for such a session.
+[`bin/fm-session-lock-lib.sh`](../bin/fm-session-lock-lib.sh) owns the shared ownership and owner-lifetime verdicts, including trusted Claude and Codex identities; [`bin/fm-lock.sh`](../bin/fm-lock.sh) owns sidecar publication and anchor changes.
 
 A Claude or Codex session that does not own the lock cannot arm or repair the home without stealing the live owner's lock, so blocking it would create an unbounded loop.
 The lock-owning session remains responsible for restoring supervision.
 
 The exception has these limits:
 
-- Malformed, absent, dead, or ancestry-uncertain lock records do not satisfy this exception and retain the ordinary guard behavior.
+- A lock without shared proof of a live foreign owner does not satisfy this exception and retains the ordinary guard behavior.
 - A missing or mismatched sidecar or an untrusted id adds nothing to the verdict, so a live owner outside the ancestry still takes this exit exactly as before.
 
 ### Pull-warning verdict by supervision model
@@ -317,7 +309,8 @@ The guard enters Codex mode when `bin/fm-harness.sh` resolves the hook's own har
 A default Codex primary uses a foreground checkpoint, an exec session the model must poll; ending the turn while it runs leaves nobody to read its wake or start the next one.
 For that default route, Codex mode replaces the one-shot `stop_hook_active` allow with two rules, owned by the header of `bin/fm-turnend-guard.sh`:
 
-- An identity-matched live watcher running under an `fm-watch-checkpoint.sh` that descends from this hook's own harness ancestry cannot justify ending the turn, even with a stale beacon, so the stop blocks and names the poll repair.
+- An identity-matched live watcher held by this session's own `fm-watch-checkpoint.sh` cannot justify ending the turn, even with a stale beacon, so the stop blocks and names the poll repair.
+  `own_checkpoint_holds_watcher` in [`bin/fm-turnend-guard.sh`](../bin/fm-turnend-guard.sh) owns checkpoint attribution, including the trusted-thread fallback for daemon-served sessions without harness ancestry.
   A watcher another session started still allows the stop.
 - A stop that follows the guard's own block in the same session and turn is allowed only when this session's checkpoint is no longer running and neither the watcher beacon mtime, read at sub-second precision, nor the watch-lock identity advanced since that block.
   While this session's own checkpoint is alive the first rule still blocks every stop, so the turn stays held for at most that checkpoint's bound: 180 seconds by default (`FM_CODEX_WATCH_CHECKPOINT`), or the larger explicit bounds `bin/fm-watch-checkpoint.sh` documents for away mode and the supervision-host path.

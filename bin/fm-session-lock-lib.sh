@@ -6,9 +6,8 @@
 # bin/fm-lock.sh uses it to acquire and inspect state/.lock and its
 # state/.lock-session sidecar; bin/fm-claude-stop-autoarm.sh uses it to prove a
 # Stop hook fires inside the lock-owning primary session before it may arm or
-# rewake. Two signals decide ownership, either one sufficient: the recorded pid
-# is a member of this process's contiguous harness ancestry, or the trusted
-# session id below matches the id recorded beside the lock. Neither
+# rewake. Ancestry ownership requires the recorded anchor instance to match;
+# the alternative is the trusted same-session identity described below. Neither
 # signal ever fails open: no id, no sidecar, an untrusted id, or a different
 # recorded id leaves the ancestry verdict exactly as it was.
 #
@@ -451,6 +450,19 @@ fm_session_lock_codex_daemon_pid() {
   return 1
 }
 
+# Owner lifetime is separate from this caller's right to mutate. A matching
+# anchor instance that is a live harness is sufficient. Otherwise, a recorded
+# session id uses the daemon's thread/read status: active retains ownership;
+# notLoaded releases it; idle or systemError releases it only after the
+# recorded Orca endpoint passes fm_backend_orca_endpoint_absence_proof
+# (terminal absent, readable process sweep clean, recorded-worktree scan clean).
+# Missing endpoint metadata or inconclusive absence proof retains those idle
+# or errored threads. The daemon's recorded pid/start select a server instance;
+# daemon uptime itself is never session-lifetime evidence.
+# If the query is unavailable, use a fresh identity-bound process scan instead.
+# bin/fm-session-process.py reads real argv and separate environment fields:
+# only codex's leading resume <id> pair or both matching CODEX identity
+# variables bind a process, never prompt text in flattened ps output.
 fm_session_lock_recorded_owner_live() {
   local state=$1 lock_pid recorded verdict
   FM_SESSION_LOCK_OWNER_HARNESS=
@@ -473,6 +485,12 @@ fm_session_lock_recorded_owner_live() {
   FM_SESSION_LOCK_OWNER_HARNESS=codex
 }
 
+# A verified recorded session id supplies a stable key across helper
+# re-anchors for engine conversations, the error latch, and pinned claims.
+# Legacy records retain the pid/process-identity/sidecar checksum key.
+# An unavailable owner verdict or legacy process identity returns no key,
+# so consumers cannot reuse old state.
+# The legacy path needs fm_pid_identity from bin/fm-wake-lib.sh sourced first.
 fm_session_lock_owner_key() {
   local state=$1 pid identity recorded anchor_start
   pid=$(sed -n '1p' "$state/.lock" 2>/dev/null)
@@ -532,23 +550,15 @@ fm_session_lock_anchor_pid() {
   return 1
 }
 
-# True when state dir $1 holds a session lock that this process's session owns:
-# the recorded pid is ANY harness ancestor of the current process, or the lock
-# was recorded by this same trusted session. Membership is the honest ancestry
-# test, because the lock owner sits at an unknown depth in a contiguous Claude
-# run - it is the outermost pid when the hook fires inside the session's own
-# nested worker chain, and an inner pid when a harness-named daemon parents the
-# session. The same-session path requires the recorded pid alive so that a
-# dead one is reclaimed through bin/fm-lock.sh's ordinary stale-owner path,
-# which refreshes line 1, rather than silently owned with a dead anchor. A
-# Codex session served only by the shared app-server daemon is the one
-# exception: its recorded pid is the acquiring process by construction
-# (fm_session_lock_anchor_pid), never a live session process, so a trusted
-# thread id matching the sidecar is ownership on its own. A missing lock, a
-# malformed lock, a lock held by a harness outside this ancestry under
-# another (or no) session id, or an ancestry that cannot be resolved all
-# fail closed. A recorded pid that is the shared Codex daemon can never own
-# a lock here: it is in no session's ancestry and is not a live harness.
+# True when state dir $1 holds this session's lock. Ancestry membership accepts
+# any pid in the contiguous harness run, because Claude's owner can sit at
+# different depths, but also requires a matching recorded anchor instance.
+# Otherwise the trusted id must match the sidecar. Claude additionally requires
+# a matching live harness anchor; Codex accepts its trusted matching thread id
+# even after the acquiring process exits, and fm-lock.sh re-anchors on the next
+# acquisition. The shared Codex daemon supplies no ancestry ownership proof.
+# A missing or malformed lock, or a foreign owner proven by neither path,
+# grants no ownership.
 fm_session_lock_owned_by_self() {
   local state=$1 lock_pid pids
   lock_pid=$(cat "$state/.lock" 2>/dev/null || true)
@@ -567,11 +577,10 @@ fm_session_lock_owned_by_self() {
   fm_session_lock_trusted_codex_session_id >/dev/null
 }
 
-# True when state dir $1 records a live verified harness session process
-# outside this process's contiguous harness ancestry that was not recorded
-# by this same trusted session. Sets FM_SESSION_LOCK_FOREIGN_OWNER_PID for
-# a diagnostic caller. Malformed, missing, dead, daemon-anchored, and
-# ancestry-uncertain locks are not foreign-owner evidence.
+# True when state dir $1 records a live owner outside this session, using
+# fm_session_lock_recorded_owner_live and the same-session identity boundary.
+# Sets FM_SESSION_LOCK_FOREIGN_OWNER_PID to the recorded anchor for diagnostics;
+# that anchor need not itself be alive for a daemon-served Codex owner.
 # shellcheck disable=SC2034 # Output global, read by the sourcing guard caller.
 FM_SESSION_LOCK_FOREIGN_OWNER_PID=
 fm_session_lock_foreign_owner_live() {
@@ -605,9 +614,12 @@ fm_session_lock_foreign_owner_live() {
 #   FM_LOCK_INSPECT_OWNER_PID     a live pid evidencing the owner, or empty:
 #                                 the recorded pid when it is a live session
 #                                 process, else a live process bound to the
-#                                 recorded Codex thread. Consumers that need
-#                                 a live owner's ancestry use this, never a
-#                                 dead recorded pid.
+#                                 recorded Codex thread, or the verified daemon
+#                                 instance whose query retained that thread.
+#   FM_LOCK_INSPECT_HARNESS       codex when verified by the shared boundary,
+#                                 otherwise empty. Use this before ancestry
+#                                 classification: a daemon pid alone cannot
+#                                 identify an individual session's harness.
 #
 # shellcheck disable=SC2034 # Output globals, read by lock status and inbox ready.
 FM_LOCK_INSPECT_STATE=unknown

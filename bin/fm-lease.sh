@@ -12,8 +12,8 @@
 #   fm-lease.sh claim <task> [--actor main|branch]
 #       Take the lease for the calling actor. Idempotent for the holder (the
 #       claim refreshes its own lease). Refuses with exit 6 while the other
-#       actor holds a live lease. A stale lease (dead pid, or a torn record)
-#       is cleared and re-claimed.
+#       actor holds a live lease. A stale lease, as defined by fm-lease-lib.sh,
+#       is cleared and re-claimed. An unverified holder pin also refuses.
 #   fm-lease.sh release <task> [--actor main|branch]
 #       Drop the calling actor's lease. Releasing a lease the actor does not
 #       hold is a silent no-op, so a retry after a partial failure is safe.
@@ -32,7 +32,7 @@
 #
 # The default actor is $FM_SUPERVISION_ACTOR (else main); when --actor is
 # supplied for a mutation, it must name that calling actor. Exit codes: 0 ok,
-# 1 check-miss, 2 usage, 6 refused (other actor holds, actor mismatch, or the
+# 1 check-miss, 2 usage, 6 refused (other actor holds, unverified pin, actor mismatch, or the
 # lease-command lock stayed held past FM_LEASE_COMMAND_LOCK_WAIT; see fm-lease-lib.sh).
 set -eu
 
