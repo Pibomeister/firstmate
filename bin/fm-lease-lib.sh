@@ -209,13 +209,6 @@ fm_lease_read() {
   return 0
 }
 
-# fm_lease_live <task>: 0 iff a well-formed lease exists, its recorded pid is
-# alive, and that pid IS the current session-lock holder (the staleness
-# contract above). The calling context never enters the verdict. A lease
-# recorded against a daemon-served Codex holder's short-lived acquiring pid
-# stays live while that holder's recorded thread still has a live bound
-# process (fm_session_lock_recorded_owner_live), because line 1 of the lock
-# and the lease name the same dead pid for a session that is still alive.
 fm_lease_live() {
   local lock_pid
   fm_lease_read "$1" || return 1
@@ -224,7 +217,6 @@ fm_lease_live() {
   lock_pid=$(head -n 1 "$STATE/.lock" 2>/dev/null || true)
   case "$lock_pid" in ''|0|1|*[!0-9]*) return 1 ;; esac
   [ "$FM_LEASE_PID" = "$lock_pid" ] || return 1
-  kill -0 "$FM_LEASE_PID" 2>/dev/null && return 0
   # shellcheck source=/dev/null
   command -v fm_session_lock_recorded_owner_live >/dev/null 2>&1 \
     || . "$FM_LEASE_LIB_DIR/fm-session-lock-lib.sh"

@@ -162,33 +162,38 @@ remember_lock_session() {
   LOCK_SESSION_PHASE=1
 }
 
-# Record the trusted session id beside the lock, or remove a sidecar that no
-# trusted id backs. Called only while the claim lock is held. A sidecar already
-# naming this id is left untouched, so a same-session confirmation keeps it
-# byte-identical.
 publish_lock_session() {
-  local trusted recorded tmp
-  if trusted=$(fm_session_lock_trusted_session_id); then
-    if recorded=$(fm_session_lock_recorded_session_id "$STATE") && [ "$recorded" = "$trusted" ]; then
-      return 0
-    fi
-    remember_lock_session || return 1
-    tmp=$(mktemp "$STATE/.lock-session.XXXXXX" 2>/dev/null) || return 1
-    if ! { printf '%s\n' "$trusted" > "$tmp" && mv -f "$tmp" "$LOCK_SESSION"; } 2>/dev/null; then
-      rm -f "$tmp" 2>/dev/null
-      return 1
-    fi
+  local anchor=${1:-$me} trusted recorded tmp start daemon daemon_start
+  trusted=$(fm_session_lock_trusted_session_id) || trusted=
+  recorded=$(fm_session_lock_recorded_session_id "$STATE") || recorded=
+  if [ "$anchor" = "$(cat "$LOCK" 2>/dev/null)" ] && [ "$trusted" = "$recorded" ] \
+    && [ -n "$(sed -n 's/^anchor_start=//p' "$LOCK_SESSION" 2>/dev/null)" ] \
+    && { fm_session_lock_anchor_instance_matches "$STATE" \
+      || { [ -n "$trusted" ] && fm_session_lock_daemon_instance_live "$STATE"; }; }; then
     return 0
   fi
-  if [ -e "$LOCK_SESSION" ] || [ -L "$LOCK_SESSION" ]; then
-    remember_lock_session || return 1
-    rm -f "$LOCK_SESSION" 2>/dev/null || return 1
+  start=$(fm_session_process_start "$anchor") || return 1
+  daemon=$(fm_session_lock_codex_daemon_pid) || daemon=
+  daemon_start=
+  if [ -n "$daemon" ]; then
+    daemon_start=$(fm_session_process_start "$daemon") || return 1
+  fi
+  remember_lock_session || return 1
+  tmp=$(mktemp "$STATE/.lock-session.XXXXXX" 2>/dev/null) || return 1
+  if ! {
+    {
+      printf '%s\nanchor_pid=%s\nanchor_start=%s\n' "$trusted" "$anchor" "$start"
+      [ -z "$daemon" ] || printf 'codex_daemon_pid=%s\ncodex_daemon_start=%s\n' "$daemon" "$daemon_start"
+    } > "$tmp" && mv -f "$tmp" "$LOCK_SESSION"
+  } 2>/dev/null; then
+    rm -f "$tmp" 2>/dev/null
+    return 1
   fi
   return 0
 }
 
 publish_lock_session_or_die() {
-  publish_lock_session && return 0
+  publish_lock_session "${1:-$me}" && return 0
   echo "error: cannot record the session identity beside the lock; operate read-only until resolved" >&2
   exit 1
 }
@@ -213,7 +218,7 @@ confirm_own_lock() {  # <recorded-pid>
     waited=1
   fi
   recorded=$(cat "$LOCK" 2>/dev/null || true)
-  if [ "$recorded" = "$me" ] || fm_session_lock_owned_by_self "$STATE"; then
+  if fm_session_lock_owned_by_self "$STATE"; then
     if [ "$recorded" != "$me" ] && pids=$(fm_harness_ancestry_pids) \
       && ! fm_harness_pid_listed "$recorded" "$pids" \
       && fm_lock_acquire_wait_max "$LEASE_LOCK" "$LEASE_LOCK_WAIT"; then
@@ -221,7 +226,7 @@ confirm_own_lock() {  # <recorded-pid>
       REANCHOR=$recorded
       return 0
     fi
-    publish_lock_session_or_die
+    publish_lock_session_or_die "$recorded"
     commit_lock_session
     release_claim_lock
     echo "lock acquired: harness pid $recorded"
@@ -245,7 +250,7 @@ refuse_live_owner() {  # <recorded-pid>
 
 if [ -f "$LOCK" ] && [ ! -L "$LOCK" ]; then
   old=$(cat "$LOCK" 2>/dev/null || true)
-  if [ "$old" = "$me" ] || fm_session_lock_owned_by_self "$STATE"; then
+  if fm_session_lock_owned_by_self "$STATE"; then
     confirm_own_lock "$old"
     old=$(cat "$LOCK" 2>/dev/null || true)
   fi
@@ -277,10 +282,10 @@ if [ -e "$LOCK" ] || [ -L "$LOCK" ]; then
   }
   # A re-anchor decided above has held the claim lock since, so line 1 is the
   # pid it recorded and needs no second verdict.
-  if [ -z "$REANCHOR" ] && [ "$old" != "$me" ] && fm_session_lock_recorded_owner_live "$STATE"; then
+  if [ -z "$REANCHOR" ] && fm_session_lock_recorded_owner_live "$STATE"; then
     fm_session_lock_owned_by_self "$STATE" && confirm_own_lock "$old"
     old=$(cat "$LOCK" 2>/dev/null || true)
-    if [ -z "$REANCHOR" ] && [ "$old" != "$me" ] && fm_session_lock_recorded_owner_live "$STATE"; then
+    if [ -z "$REANCHOR" ] && fm_session_lock_recorded_owner_live "$STATE"; then
       refuse_live_owner "$old"
     fi
   fi

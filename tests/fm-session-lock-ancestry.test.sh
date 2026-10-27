@@ -34,6 +34,25 @@ NAMED_CLAUDE="$FAKEBIN/claude"
 ln -s /bin/bash "$FAKEBIN/codex"
 NAMED_CODEX="$FAKEBIN/codex"
 
+mkdir -p "$TMP_ROOT/native"
+cat > "$TMP_ROOT/native/codex.c" <<'C'
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/wait.h>
+int main(void) {
+  const char *body = getenv("FM_TEST_CODEX_BODY");
+  if (!body) { while (1) sleep(1); }
+  pid_t child = fork();
+  if (child < 0) return 1;
+  if (!child) { execl("/bin/bash", "bash", body, (char *)0); _exit(127); }
+  int status;
+  if (waitpid(child, &status, 0) < 0) return 1;
+  return WIFEXITED(status) ? WEXITSTATUS(status) : 1;
+}
+C
+cc "$TMP_ROOT/native/codex.c" -o "$TMP_ROOT/native/codex" || fail "cannot compile the real argv fixture"
+NATIVE_CODEX="$TMP_ROOT/native/codex"
+
 # --- unit layer: identity behind a deterministic process table ---------------
 
 # Run one library expression with <fakebin> shadowing ps. kill is stubbed so
@@ -60,6 +79,9 @@ lib_eval() {  # <fakebin> <expression>
     PATH="$fakebin:$PATH" bash -c "
     . \"\$0\"
     kill() { return \${FM_TEST_KILL_RC:-0}; }
+    fm_codex_process_class() {
+      case \$1 in 900) printf daemon ;; 800) printf host ;; *) printf session ;; esac
+    }
     $expr
   " "$LIB"
 }
@@ -628,13 +650,6 @@ test_codex_direct_tui_launch() {
   # A prompt that merely contains the daemon's words is still a session:
   # daemon classification reads argument boundaries, not substrings.
   for shape in prompt prompt2; do
-    got=$(FM_TEST_CODEX_SHAPE="$shape" FM_TEST_CODEX_ID=T1 lib_eval "$fakebin" 'fm_codex_process_class codex "codex app-server --listen unix:// --managed-daemon"') \
-      || fail "$shape: the daemon-shaped process was not classified"
-    [ "$got" = daemon ] || fail "$shape: the real daemon argv classified '$got', expected daemon"
-    got=$(FM_TEST_CODEX_SHAPE="$shape" lib_eval "$fakebin" 'fm_codex_process_class codex "codex Diagnose codex app-server --listen unix:// --managed-daemon lock ownership"')
-    [ "$got" = session ] || fail "$shape: a prompt containing daemon words classified '$got', expected session"
-    got=$(FM_TEST_CODEX_SHAPE="$shape" lib_eval "$fakebin" 'fm_codex_process_class codex "codex app-server --listen unix:// is holding the lock; diagnose it"')
-    [ "$got" = session ] || fail "$shape: a leading prompt containing daemon words classified '$got', expected session"
     FM_TEST_CODEX_SHAPE="$shape" FM_TEST_CODEX_ID=T1 lib_eval "$fakebin" 'fm_harness_pid_alive 700' \
       || fail "$shape: a prompt-shaped session TUI was not a live harness"
     got=$(FM_TEST_CODEX_SHAPE="$shape" FM_TEST_CODEX_ID=T1 lib_eval "$fakebin" 'fm_session_lock_anchor_pid') \
@@ -730,57 +745,39 @@ test_codex_thread_id_trust_gate() {
 }
 
 test_codex_thread_binding() {
-  local dir fakebin
-  dir="$TMP_ROOT/codex-thread-binding"
-  fakebin=$(fm_fakebin "$dir")
+  local pid prompt dir got
+  dir="$TMP_ROOT/real-binding"
   mkdir -p "$dir/state"
-  cat > "$fakebin/ps" <<'SH'
-#!/usr/bin/env bash
-set -u
-case " $* " in
-  *" -eo "*)
-    printf '%s\n' '950 1 codex resume TA' '960 950 bash -c grep TA /tmp/notes'
-    exit 0
-    ;;
-esac
-field= pid=
-while [ "$#" -gt 0 ]; do
-  case "$1" in
-    -o) field=$2; shift 2 ;;
-    -p) pid=$2; shift 2 ;;
-    *) shift ;;
-  esac
-done
-case "$pid:$field" in
-  950:comm=*) printf '%s\n' codex ;;
-  950:args=*) printf '%s\n' 'codex resume TA' ;;
-  950:ppid=*) printf '%s\n' 1 ;;
-  960:comm=*) printf '%s\n' bash ;;
-  960:args=*) printf '%s\n' 'bash -c grep TA /tmp/notes' ;;
-  960:ppid=*) printf '%s\n' 950 ;;
-  *:comm=*) printf '%s\n' bash ;;
-  *:args=*) printf '%s\n' 'bash /repo/bin/fm-lock.sh' ;;
-  *:ppid=*) printf '%s\n' 950 ;;
-esac
-SH
-  chmod +x "$fakebin/ps"
-  # A resumed TUI carrying the thread id as an argv token is bound to it.
-  lib_eval "$fakebin" 'fm_codex_pid_bound_to_id 950 TA' \
-    || fail "a resumed TUI carrying its thread id was not bound to that thread"
-  if lib_eval "$fakebin" 'fm_codex_pid_bound_to_id 950 TB'; then
-    fail "a resumed TUI was bound to a different thread id"
-  fi
-  # Command text alone never binds: a shell merely mentioning the id is
-  # not a member of the thread.
-  if lib_eval "$fakebin" 'fm_codex_pid_bound_to_id 960 TA'; then
-    fail "a shell mentioning a thread id in its command text was bound to that thread"
-  fi
-  lib_eval "$fakebin" 'fm_codex_session_identity_live TA' \
-    || fail "a live resumed TUI did not prove its thread live"
-  if lib_eval "$fakebin" 'fm_codex_session_identity_live TB'; then
-    fail "an unbound thread id was reported live"
-  fi
-  pass "session-lock: thread binding requires an identity-bearing process, never command text"
+  for prompt in 'app-server --listen unix:// --managed-daemon' 'app-server daemon diagnose this' 'Diagnose TA lock ownership' 'CODEX_THREAD_ID=TA CODEX_SESSION_ID=TA'; do
+    env -u CODEX_THREAD_ID -u CODEX_SESSION_ID "$NATIVE_CODEX" "$prompt" &
+    pid=$!
+    BG_FIXTURE_PIDS+=("$pid")
+    got=$(bash -c '. "$1"; fm_codex_process_class "$2"' _ "$LIB" "$pid")
+    [ "$got" = session ] || fail "a single prompt argument classified as $got"
+    if bash -c '. "$1"; fm_codex_pid_bound_to_id "$2" TA' _ "$LIB" "$pid"; then
+      fail "prompt text bound an unrelated process to TA"
+    fi
+    kill "$pid"
+    wait "$pid" 2>/dev/null || true
+  done
+  env -u CODEX_THREAD_ID -u CODEX_SESSION_ID "$NATIVE_CODEX" resume TA &
+  pid=$!
+  BG_FIXTURE_PIDS+=("$pid")
+  bash -c '. "$1"; fm_codex_pid_bound_to_id "$2" TA && fm_codex_session_identity_live TA' _ "$LIB" "$pid" \
+    || fail "the actual resume identifier did not bind its thread"
+  kill "$pid"
+  wait "$pid" 2>/dev/null || true
+  bash -c '
+    . "$1"
+    CODEX_THREAD_ID=TA CODEX_SESSION_ID=TA "$2" &
+    pid=$!
+    fm_codex_pid_bound_to_id "$pid" TA && fm_codex_session_identity_live TA
+    live=$?
+    kill "$pid"
+    wait "$pid" 2>/dev/null || true
+    [ "$live" -eq 0 ] && ! fm_codex_session_identity_live TA
+  ' _ "$LIB" "$NATIVE_CODEX" || fail "separate environment binding or the fresh post-exit scan failed"
+  pass "session-lock: real argv and separate environment fields bind only their own thread"
 }
 
 # --- end-to-end layer: the real Stop auto-arm in real process trees ----------
@@ -795,6 +792,7 @@ install_autoarm_scripts() {
   cp "$ROOT/bin/fm-wake-lib.sh" "$dir/bin/fm-wake-lib.sh"
   cp "$ROOT/bin/fm-path-lib.sh" "$dir/bin/fm-path-lib.sh"
   cp "$ROOT/bin/fm-session-lock-lib.sh" "$dir/bin/fm-session-lock-lib.sh"
+  cp "$ROOT/bin/fm-session-process.py" "$dir/bin/fm-session-process.py"
   cp "$ROOT/bin/fm-cursor-lib.sh" "$dir/bin/fm-cursor-lib.sh"
   # Launch probe sibling of fm-cursor-lib.sh; keep it next to the copy so a
   # fixture that ever verifies an executable does not source a missing file.
@@ -1082,11 +1080,13 @@ expect_phase_owned() {  # <dir> <n> <expected-arms> <expected-lock-pid> <label> 
   [ "$(phase_value "$dir" "$n" lock-after)" = "$lock_pid" ] \
     || fail "$label: lock line 1 is $(phase_value "$dir" "$n" lock-after), expected $lock_pid"
   if [ -n "$session_id" ]; then
-    [ "$(phase_value "$dir" "$n" session-after)" = "$session_id" ] \
-      || fail "$label: the session sidecar names $(phase_value "$dir" "$n" session-after), expected $session_id"
+    [ "$(head -n 1 "$dir/state/phase-$n/session-after")" = "$session_id" ] \
+      || fail "$label: the session sidecar names $(head -n 1 "$dir/state/phase-$n/session-after"), expected $session_id"
   else
-    cmp -s "$dir/state/phase-$n/session-after" "$dir/sidecar-initial" \
-      || fail "$label: the session sidecar is not byte-identical to the one the owner wrote"
+    [ "$(head -n 1 "$dir/state/phase-$n/session-after")" = "$(head -n 1 "$dir/sidecar-initial")" ] \
+      || fail "$label: the session identity changed"
+    [ "$(sed -n 's/^anchor_pid=//p' "$dir/state/phase-$n/session-after")" = "$lock_pid" ] \
+      || fail "$label: the anchor instance does not name the lock holder"
   fi
 }
 
@@ -1123,7 +1123,7 @@ test_e2e_background_session_keeps_its_lock_across_a_recycled_chain() {
   expect_code 0 "$(tr -d '[:space:]' < "$dir/state/frontend-lock.rc")" "the front-end could not acquire the lock: $(cat "$dir/state/frontend-lock.out")"
   [ "$(tr -d '[:space:]' < "$dir/state/.lock")" = "$frontend" ] \
     || fail "the front-end's lock names $(cat "$dir/state/.lock"), expected its own pid $frontend"
-  [ "$(tr -d '[:space:]' < "$dir/state/.lock-session")" = S1 ] \
+  [ "$(head -n 1 "$dir/state/.lock-session")" = S1 ] \
     || fail "the front-end did not record its trusted session id beside the lock"
   cp "$dir/state/.lock-session" "$dir/sidecar-initial"
 
@@ -1244,7 +1244,7 @@ SH
   wait_for_file "$dir/state/acquire.rc" "the initial lock acquisition"
   expect_code 0 "$(tr -d '[:space:]' < "$dir/state/acquire.rc")" \
     "the session could not acquire its lock: $(cat "$dir/state/acquire.out")"
-  [ "$(tr -d '[:space:]' < "$dir/state/sidecar-after-acquire")" = S1 ] \
+  [ "$(head -n 1 "$dir/state/sidecar-after-acquire")" = S1 ] \
     || fail "the initial acquire did not record S1"
   wait_for_file "$dir/state/holder-pid" "the claim-lock holder pid"
   holder_pid=$(tr -d '[:space:]' < "$dir/state/holder-pid")
@@ -1256,7 +1256,7 @@ SH
   wait "$session_pid" || true
   expect_code 0 "$(tr -d '[:space:]' < "$dir/state/confirm.rc")" \
     "the same-session confirmation failed while the claim lock was held: $(cat "$dir/state/confirm.out")"
-  [ "$(tr -d '[:space:]' < "$dir/state/.lock-session")" = S2 ] \
+  [ "$(head -n 1 "$dir/state/.lock-session")" = S2 ] \
     || fail "the sidecar still names $(cat "$dir/state/.lock-session"), expected the re-keyed id S2"
   [ "$(tr -d '[:space:]' < "$dir/state/.lock")" = "$(tr -d '[:space:]' < "$dir/state/session-pid")" ] \
     || fail "the confirmation rewrote lock line 1"
@@ -1366,7 +1366,7 @@ SH
   wait "$session_pid" || true
   [ "$(tr -d '[:space:]' < "$dir/state/confirm.rc")" != 0 ] \
     || fail "the waiter reported success after another live session published: $(cat "$dir/state/confirm.out")"
-  [ "$(tr -d '[:space:]' < "$dir/state/.lock-session")" = OTHER ] \
+  [ "$(head -n 1 "$dir/state/.lock-session")" = OTHER ] \
     || fail "the waiter overwrote the other session's sidecar to $(cat "$dir/state/.lock-session")"
   [ "$(tr -d '[:space:]' < "$dir/state/.lock")" = "$other_pid" ] \
     || fail "the waiter rewrote lock line 1 off the other live session"
@@ -1390,7 +1390,7 @@ test_failed_lock_write_restores_previous_sidecar() {
     '
   expect_code 0 "$(tr -d '[:space:]' < "$dir/state/acquire.rc")" \
     "the first session could not acquire its lock: $(cat "$dir/state/acquire.out")"
-  [ "$(tr -d '[:space:]' < "$dir/state/.lock-session")" = S1 ] \
+  [ "$(head -n 1 "$dir/state/.lock-session")" = S1 ] \
     || fail "the first session did not record S1"
   stale_pid=$(tr -d '[:space:]' < "$dir/state/stale-pid")
   cp "$dir/state/.lock" "$dir/state/lock-before-reclaim"
@@ -1406,7 +1406,7 @@ test_failed_lock_write_restores_previous_sidecar() {
     || fail "a read-only stale lock was overwritten: $(cat "$dir/state/reclaim.out")"
   grep -q 'cannot write session lock' "$dir/state/reclaim.out" \
     || fail "the reclaim did not fail on the lock write: $(cat "$dir/state/reclaim.out")"
-  [ "$(tr -d '[:space:]' < "$dir/state/.lock-session")" = S1 ] \
+  [ "$(head -n 1 "$dir/state/.lock-session")" = S1 ] \
     || fail "the failed reclaim left sidecar $(cat "$dir/state/.lock-session"), expected the previous id S1"
   [ "$(tr -d '[:space:]' < "$dir/state/.lock")" = "$stale_pid" ] \
     || fail "the failed reclaim rewrote lock line 1"
@@ -1458,7 +1458,7 @@ test_verified_reclaim_keeps_new_sidecar() {
     '
   expect_code 0 "$(tr -d '[:space:]' < "$dir/state/reclaim.rc")" \
     "the reclaim failed: $(cat "$dir/state/reclaim.out")"
-  [ "$(tr -d '[:space:]' < "$dir/state/.lock-session")" = S2 ] \
+  [ "$(head -n 1 "$dir/state/.lock-session")" = S2 ] \
     || fail "the verified reclaim left sidecar $(cat "$dir/state/.lock-session"), expected S2"
   [ "$(tr -d '[:space:]' < "$dir/state/.lock")" = "$(tr -d '[:space:]' < "$dir/state/new-pid")" ] \
     || fail "the verified reclaim did not record the new anchor pid"
@@ -1594,9 +1594,8 @@ wait_for_daemon_done() {  # <path> <what>
 launch_codex_daemon() {  # <dir> <body>
   local dir=$1 body=$2
   env -u CLAUDE_CODE_SESSION_ID -u CLAUDE_PID -u CODEX_THREAD_ID -u CODEX_SESSION_ID \
-    FM_HOME="$dir" \
-    bash -c 'exec -a "codex app-server --listen unix:// --managed-daemon" "$1" "$2"' \
-    _ "$NAMED_CODEX" "$body" &
+    FM_HOME="$dir" FM_TEST_CODEX_BODY="$body" \
+    "$NATIVE_CODEX" app-server --listen unix:// --managed-daemon &
   BG_FIXTURE_PIDS+=("$!")
 }
 
@@ -1609,7 +1608,7 @@ test_e2e_codex_daemon_parented_session_acquires_by_thread() {
 "$FM_LOCK" > "$FM_HOME/state/acquire.out" 2>&1
 printf '%s\n' "$?" > "$FM_HOME/state/acquire.rc"
 cat "$FM_HOME/state/.lock" > "$FM_HOME/state/lock-after-acquire"
-cat "$FM_HOME/state/.lock-session" > "$FM_HOME/state/session-after-acquire"
+head -n 1 "$FM_HOME/state/.lock-session" > "$FM_HOME/state/session-after-acquire"
 SH
   cat > "$dir/tool-confirm.sh" <<'SH'
 #!/usr/bin/env bash
@@ -1625,7 +1624,7 @@ printf '%s\n' "$?" > "$FM_HOME/state/foreign.rc"
 SH
   cat > "$dir/daemon-body.sh" <<'SH'
 #!/usr/bin/env bash
-printf '%s\n' "$$" > "$FM_HOME/state/daemon-pid"
+printf '%s\n' "$PPID" > "$FM_HOME/state/daemon-pid"
 CODEX_THREAD_ID=T1 CODEX_SESSION_ID=T1 "$FM_HOME/tool-acquire.sh"
 CODEX_THREAD_ID=T1 CODEX_SESSION_ID=T1 "$FM_HOME/tool-confirm.sh"
 CODEX_THREAD_ID=T2 CODEX_SESSION_ID=T2 "$FM_HOME/tool-foreign.sh"
@@ -1636,8 +1635,8 @@ SH
   chmod +x "$dir/tool-acquire.sh" "$dir/tool-confirm.sh" "$dir/tool-foreign.sh" "$dir/daemon-body.sh"
   env -u CLAUDE_CODE_SESSION_ID -u CLAUDE_PID -u CODEX_THREAD_ID -u CODEX_SESSION_ID \
     FM_HOME="$dir" FM_LOCK="$ROOT/bin/fm-lock.sh" FM_LIB="$LIB" \
-    bash -c 'exec -a "codex app-server --listen unix:// --managed-daemon" "$1" "$2"' \
-    _ "$NAMED_CODEX" "$dir/daemon-body.sh" &
+    FM_TEST_CODEX_BODY="$dir/daemon-body.sh" \
+    "$NATIVE_CODEX" app-server --listen unix:// --managed-daemon &
   BG_FIXTURE_PIDS+=("$!")
   wait_for_daemon_done "$dir/state/daemon-done" "the daemon-parented lock exercise"
   daemon_pid=$(tr -d '[:space:]' < "$dir/state/daemon-pid")
@@ -1664,7 +1663,7 @@ test_e2e_codex_dead_session_daemon_lock_reclaimed() {
   mkdir -p "$dir/state"
   cat > "$dir/daemon-body.sh" <<'SH'
 #!/usr/bin/env bash
-printf '%s\n' "$$" > "$FM_HOME/state/daemon-pid"
+printf '%s\n' "$PPID" > "$FM_HOME/state/daemon-pid"
 while [ ! -e "$FM_HOME/state/stop-daemon" ]; do sleep 0.05; done
 exit 0
 SH
@@ -1689,54 +1688,38 @@ SH
   kill -0 "$daemon_pid" 2>/dev/null || fail "the shared daemon died during the reclaim, so the case proves nothing"
   [ "$(tr -d '[:space:]' < "$dir/state/.lock")" = "$session_pid" ] \
     || fail "the reclaim left lock line 1 at $(cat "$dir/state/.lock"), expected the replacement session $session_pid"
-  [ "$(tr -d '[:space:]' < "$dir/state/.lock-session")" = T-new ] \
+  [ "$(head -n 1 "$dir/state/.lock-session")" = T-new ] \
     || fail "the reclaim did not record the replacement thread beside the lock"
   : > "$dir/state/stop-daemon"
   pass "session-lock e2e: a dead session's daemon-anchored lock is reclaimed by its replacement through fm-lock.sh"
 }
 
-# Session A is daemon-served and still alive - a process bound to its
-# thread (its resumed TUI) runs the whole time - while its recorded anchor
-# pid is the short-lived fm-lock.sh process that already exited. Session B,
-# served by the same daemon with a different thread, actively tries to
-# acquire A's home through the real fm-lock.sh: it must be refused while A
-# lives, and may acquire only once no process bound to A's thread remains.
 test_e2e_codex_foreign_acquisition_refused_while_owner_lives() {
-  local dir daemon_pid
+  local dir daemon_pid anchor ready watcher_pid
   dir="$TMP_ROOT/e2e-codex-foreign-acquire"
   mkdir -p "$dir/state"
-  cat > "$dir/bound-body.sh" <<'SH'
-#!/usr/bin/env bash
-printf '%s\n' "$$" > "$FM_HOME/state/bound-pid"
-while [ ! -e "$FM_HOME/state/stop-bound" ]; do sleep 0.05; done
-exit 0
-SH
   cat > "$dir/tool.sh" <<'SH'
 #!/usr/bin/env bash
 # $1 = result prefix; thread pair comes from the caller's environment.
 "$FM_LOCK" > "$FM_HOME/state/$1.out" 2>&1
 printf '%s\n' "$?" > "$FM_HOME/state/$1.rc"
 cat "$FM_HOME/state/.lock" > "$FM_HOME/state/$1.lock-after" 2>/dev/null || true
-cat "$FM_HOME/state/.lock-session" > "$FM_HOME/state/$1.session-after" 2>/dev/null || true
+head -n 1 "$FM_HOME/state/.lock-session" > "$FM_HOME/state/$1.session-after" 2>/dev/null || true
 SH
   cat > "$dir/daemon-body.sh" <<'SH'
 #!/usr/bin/env bash
-printf '%s\n' "$$" > "$FM_HOME/state/daemon-pid"
-bash -c 'exec -a "codex resume TA" "$1" "$2"' _ "$FM_CODEX" "$FM_HOME/bound-body.sh" &
+printf '%s\n' "$PPID" > "$FM_HOME/state/daemon-pid"
 CODEX_THREAD_ID=TA CODEX_SESSION_ID=TA "$FM_HOME/tool.sh" acquire
 CODEX_THREAD_ID=TB CODEX_SESSION_ID=TB "$FM_HOME/tool.sh" steal
-: > "$FM_HOME/state/stop-bound"
-wait
-CODEX_THREAD_ID=TB CODEX_SESSION_ID=TB "$FM_HOME/tool.sh" reclaim
 printf 'done\n' > "$FM_HOME/state/daemon-done"
 while [ ! -e "$FM_HOME/state/stop-daemon" ]; do sleep 0.05; done
 exit 0
 SH
-  chmod +x "$dir/bound-body.sh" "$dir/tool.sh" "$dir/daemon-body.sh"
+  chmod +x "$dir/tool.sh" "$dir/daemon-body.sh"
   env -u CLAUDE_CODE_SESSION_ID -u CLAUDE_PID -u CODEX_THREAD_ID -u CODEX_SESSION_ID \
-    FM_HOME="$dir" FM_LOCK="$ROOT/bin/fm-lock.sh" FM_CODEX="$NAMED_CODEX" \
-    bash -c 'exec -a "codex app-server --listen unix:// --managed-daemon" "$1" "$2"' \
-    _ "$NAMED_CODEX" "$dir/daemon-body.sh" &
+    FM_HOME="$dir" FM_LOCK="$ROOT/bin/fm-lock.sh" \
+    FM_TEST_CODEX_BODY="$dir/daemon-body.sh" \
+    "$NATIVE_CODEX" app-server --listen unix:// --managed-daemon &
   BG_FIXTURE_PIDS+=("$!")
   wait_for_daemon_done "$dir/state/daemon-done" "the foreign-acquisition exercise"
   daemon_pid=$(tr -d '[:space:]' < "$dir/state/daemon-pid")
@@ -1753,12 +1736,63 @@ SH
     || fail "the refused foreign acquisition rewrote lock line 1"
   [ "$(tr -d '[:space:]' < "$dir/state/steal.session-after")" = TA ] \
     || fail "the refused foreign acquisition rewrote the owner's sidecar"
+  anchor=$(cat "$dir/state/.lock")
+  if kill -0 "$anchor" 2>/dev/null; then fail "the acquiring helper did not exit"; fi
+  if bash -c '. "$1"; fm_codex_session_identity_live TA' _ "$LIB"; then
+    fail "the daemon-only fixture has an identity-bearing stand-in"
+  fi
+  bash -c '. "$1"; fm_session_lock_inspect "$2"; [ "$FM_LOCK_INSPECT_STATE" = held ] && [ "$FM_LOCK_INSPECT_OWNER_PID" = "$3" ]' \
+    _ "$LIB" "$dir/state" "$daemon_pid" || fail "inspection lost the daemon-served owner"
+  printf 'branch\t%s\t100\n' "$anchor" > "$dir/state/.lease-t1"
+  FM_HOME="$dir" STATE="$dir/state" bash -c '. "$1"; fm_lease_live t1' _ "$ROOT/bin/fm-lease-lib.sh" \
+    || fail "a dead acquiring helper made the owner's lease stale"
+  sleep 60 &
+  watcher_pid=$!
+  BG_FIXTURE_PIDS+=("$watcher_pid")
+  mkdir -p "$dir/state/.watch.lock"
+  printf '%s\n' "$watcher_pid" > "$dir/state/.watch.lock/pid"
+  printf '%s\n' "$dir" > "$dir/state/.watch.lock/fm-home"
+  printf '%s\n' "$ROOT/bin/fm-watch.sh" > "$dir/state/.watch.lock/watcher-path"
+  bash -c '. "$1"; fm_pid_identity "$2"' _ "$ROOT/bin/fm-wake-lib.sh" "$watcher_pid" \
+    > "$dir/state/.watch.lock/pid-identity"
+  touch "$dir/state/.last-watcher-beat"
+  ready=$(env -u FM_SUPERVISION_MODEL FM_HOME="$dir" bash "$ROOT/bin/fm-inbox.sh" ready) \
+    || fail "readiness failed for the daemon-served owner"
+  printf '%s' "$ready" | python3 -c 'import json,sys; r=json.load(sys.stdin); assert r["lock"]["state"] == "held" and r["wake_consumer"]["state"] == "healthy" and r["can_receive"] is True' \
+    || fail "readiness lost the verified owner's harness: $ready"
+  kill "$watcher_pid"
+  wait "$watcher_pid" 2>/dev/null || true
+  : > "$dir/state/stop-daemon"
+  wait "$daemon_pid" || fail "the hosting daemon failed to exit"
+  env -u CLAUDE_CODE_SESSION_ID -u CLAUDE_PID \
+    CODEX_THREAD_ID=TB CODEX_SESSION_ID=TB FM_HOME="$dir" FM_LOCK="$ROOT/bin/fm-lock.sh" \
+    "$NAMED_CODEX" -c '"$FM_HOME/tool.sh" reclaim'
   expect_code 0 "$(tr -d '[:space:]' < "$dir/state/reclaim.rc")" \
-    "the foreign thread could not acquire once the owner's bound process ended: $(cat "$dir/state/reclaim.out")"
+    "the foreign thread could not acquire after the hosting daemon exited: $(cat "$dir/state/reclaim.out")"
   [ "$(tr -d '[:space:]' < "$dir/state/reclaim.session-after")" = TB ] \
     || fail "the post-owner acquisition did not record its own thread"
   : > "$dir/state/stop-daemon"
-  pass "session-lock e2e: foreign acquisition is refused while a daemon-served owner lives, and succeeds once its thread is gone"
+  pass "session-lock e2e: daemon lifetime protects acquisition, leases, and readiness without a session process"
+}
+
+test_reused_anchor_instance_does_not_inherit_ownership() {
+  local dir
+  dir="$TMP_ROOT/reused-anchor"
+  mkdir -p "$dir/state"
+  cat > "$dir/run.sh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$$" > "$FM_HOME/state/.lock"
+printf 'ended-owner\nanchor_pid=%s\nanchor_start=0\n' "$$" > "$FM_HOME/state/.lock-session"
+printf 'branch\t%s\t100\n' "$$" > "$FM_HOME/state/.lease-t1"
+bash -c '. "$1"; ! fm_session_lock_owned_by_self "$2"' _ "$FM_LIB" "$FM_HOME/state" || exit 1
+STATE="$FM_HOME/state" bash -c '. "$1"; ! fm_lease_live t1' _ "$FM_ROOT/bin/fm-lease-lib.sh" || exit 2
+"$FM_ROOT/bin/fm-lock.sh" || exit 3
+bash -c '. "$1"; fm_session_lock_anchor_instance_matches "$2" && fm_session_lock_owned_by_self "$2"' _ "$FM_LIB" "$FM_HOME/state" || exit 4
+SH
+  env -u CLAUDE_CODE_SESSION_ID -u CLAUDE_PID -u CODEX_THREAD_ID -u CODEX_SESSION_ID \
+    FM_HOME="$dir" FM_ROOT="$ROOT" FM_LIB="$LIB" "$NAMED_CODEX" "$dir/run.sh" \
+    > "$dir/result" 2>&1 || fail "reused anchor inherited ownership or failed fresh acquisition: $(cat "$dir/result")"
+  pass "session-lock: a mismatched kernel start time cannot inherit ownership or leases"
 }
 
 test_version_named_session_is_identified_on_both_platforms
@@ -1774,6 +1808,7 @@ test_codex_direct_tui_launch
 test_codex_two_sessions_one_daemon_never_cross_own
 test_codex_thread_id_trust_gate
 test_codex_thread_binding
+test_reused_anchor_instance_does_not_inherit_ownership
 test_e2e_codex_daemon_parented_session_acquires_by_thread
 test_e2e_codex_dead_session_daemon_lock_reclaimed
 test_e2e_codex_foreign_acquisition_refused_while_owner_lives

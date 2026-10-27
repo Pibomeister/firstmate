@@ -36,6 +36,7 @@ _FM_SESSION_LOCK_LIB_DIR=${BASH_SOURCE[0]%/*}
 [ "$_FM_SESSION_LOCK_LIB_DIR" != "${BASH_SOURCE[0]}" ] || _FM_SESSION_LOCK_LIB_DIR=.
 # shellcheck source=bin/fm-cursor-lib.sh
 . "${_FM_SESSION_LOCK_LIB_DIR:-/}/fm-cursor-lib.sh"
+FM_SESSION_PROCESS_READER="${_FM_SESSION_LOCK_LIB_DIR:-/}/fm-session-process.py"
 unset _FM_SESSION_LOCK_LIB_DIR
 
 # Known harness command names; extend when a new adapter is verified. omp is
@@ -72,60 +73,12 @@ fm_harness_path_name() {  # <path>
   return 1
 }
 
-# Print the Codex process class of command name $1 and argument string $2:
-# daemon for the shared app-server listener and its `app-server daemon`
-# helpers, host for the code-mode execution helper, session for any other
-# Codex process. Callers must already know the process is Codex-shaped
-# (fm_codex_process_shaped); this only splits the shape.
-#
-# The daemon class is read from argument boundaries, never from a substring
-# search: `app-server` must be the executable's first subcommand token, and
-# a listener must carry `--managed-daemon` with every remaining token
-# option- or value-shaped. A prompt that merely contains the daemon's words
-# (a normal `codex "<prompt>"` launch, whose prompt is the token after the
-# executable or a later bare word) therefore stays a session.
-fm_codex_process_class() {  # <comm> <args>
-  local comm=$1 args=$2 base argv0 tok managed=0 shaped=1 prev_listen=0
-  local -a toks=()
-  base=$(basename -- "$comm")
-  argv0=${args%% *}
-  case "$base" in codex-code-mode-host) printf 'host'; return 0 ;; esac
-  case "$(basename -- "$argv0")" in codex-code-mode-host) printf 'host'; return 0 ;; esac
-  read -ra toks <<< "$args"
-  [ "${#toks[@]}" -ge 2 ] || { printf 'session'; return 0; }
-  [ "${toks[1]}" = app-server ] || { printf 'session'; return 0; }
-  if [ "${toks[2]:-}" = daemon ]; then
-    printf 'daemon'
-    return 0
-  fi
-  local i
-  for ((i = 2; i < ${#toks[@]}; i++)); do
-    tok=${toks[$i]}
-    if [ "$prev_listen" -eq 1 ]; then
-      prev_listen=0
-      continue
-    fi
-    case "$tok" in
-      --managed-daemon) managed=1 ;;
-      --listen) prev_listen=1 ;;
-      -*) ;;
-      *://*|*=*) ;;
-      *)
-        # One trailing existing-file token is a wrapper's script path, not
-        # prompt text; any other bare word breaks the daemon shape.
-        if [ "$managed" -eq 1 ] && [ -f "$tok" ]; then
-          managed=2
-        else
-          shaped=0
-        fi
-        ;;
-    esac
-  done
-  if [ "$managed" -ge 1 ] && [ "$shaped" -eq 1 ]; then
-    printf 'daemon'
-    return 0
-  fi
-  printf 'session'
+fm_codex_process_class() {
+  python3 "$FM_SESSION_PROCESS_READER" class "$1" 2>/dev/null
+}
+
+fm_session_process_start() {
+  python3 "$FM_SESSION_PROCESS_READER" start "$1" 2>/dev/null
 }
 
 # True when the process described by command name $1 and full argument string $2
@@ -139,129 +92,23 @@ fm_codex_process_shaped() {  # <comm> <args>
 
 # True when pid $1 is a live Codex app-server daemon process.
 fm_codex_pid_is_daemon() {  # <pid>
-  local comm args
+  local pid=$1 comm args
   comm=$(ps -o comm= -p "$1" 2>/dev/null) || return 1
   args=$(ps -o args= -p "$1" 2>/dev/null)
   fm_codex_process_shaped "$comm" "$args" || return 1
-  [ "$(fm_codex_process_class "$comm" "$args")" = daemon ]
+  [ "$(fm_codex_process_class "$pid")" = daemon ]
 }
 
-# True when pid $1 is bound to Codex thread id $2: a Codex-shaped process
-# carrying the id as an argv token (`codex resume <id>`), or any process
-# whose environment carries the published pair member naming that id (the
-# shape every tool shell of the thread runs with). Command text alone never
-# binds: a shell that merely mentions the id in its command line is not a
-# member of the thread.
-fm_codex_pid_bound_to_id() {  # <pid> <id>
-  local pid=$1 id=$2 comm args
-  [ -n "$id" ] || return 1
-  kill -0 "$pid" 2>/dev/null || return 1
-  comm=$(ps -o comm= -p "$pid" 2>/dev/null) || return 1
-  args=$(ps -o args= -p "$pid" 2>/dev/null)
-  if fm_codex_process_shaped "$comm" "$args"; then
-    case " $args " in
-      *" $id "*) return 0 ;;
-    esac
-  fi
-  _fm_codex_pid_env_bound "$pid" "$id"
+fm_codex_pid_bound_to_id() {
+  [ -n "$2" ] || return 1
+  kill -0 "$1" 2>/dev/null || return 1
+  python3 "$FM_SESSION_PROCESS_READER" bound "$1" "$2" 2>/dev/null
 }
 
-# True when pid $1's environment carries Codex thread id $2 as a published
-# pair member. Split from fm_codex_pid_bound_to_id so the identity scan
-# below can apply it only to its bounded candidate set.
-_fm_codex_pid_env_bound() {  # <pid> <id>
-  local pid=$1 id=$2 environ_file
-  environ_file="/proc/$pid/environ"
-  if [ -r "$environ_file" ]; then
-    tr '\0' '\n' < "$environ_file" 2>/dev/null \
-      | grep -qx -e "CODEX_THREAD_ID=$id" -e "CODEX_SESSION_ID=$id" && return 0
-    return 1
-  fi
-  ps eww -p "$pid" 2>/dev/null | tr ' ' '\n' \
-    | grep -qx -e "CODEX_THREAD_ID=$id" -e "CODEX_SESSION_ID=$id"
-}
-
-# True when some live process is bound to Codex thread id $1
-# (fm_codex_pid_bound_to_id). Sets FM_CODEX_IDENTITY_OWNER_PID to the first
-# such pid. This is the session-lifetime evidence for a daemon-served
-# session, whose thread lives inside the shared daemon and has no session
-# process of its own: a tool shell, checkpoint shell, or resumed TUI of
-# that thread is bound to its id for as long as it runs.
-#
-# The scan is two bounded phases over process-table snapshots, never a
-# per-pid probe of the whole machine: first argv binding among Codex-shaped
-# processes, then environment binding from one environment-carrying
-# snapshot, where a process counts only when it carries both published
-# pair members naming the id (command text mentioning one variable is not
-# a binding). The verdict is memoized per id for the calling process,
-# because one fm-lock.sh run asks the question at several boundaries.
-# shellcheck disable=SC2034 # Output globals, read by inspection consumers.
 FM_CODEX_IDENTITY_OWNER_PID=
-FM_CODEX_IDENTITY_SCAN_ID=
-FM_CODEX_IDENTITY_SCAN_LIVE=0
-fm_codex_session_identity_live() {  # <id>
-  local id=$1 snapshot line pid ppid args comm roots=''
-  [ -n "$id" ] || return 1
-  case "$id" in *$'\n'*|*$'\r'*|*' '*) return 1 ;; esac
-  if [ "$FM_CODEX_IDENTITY_SCAN_ID" = "$id" ]; then
-    [ "$FM_CODEX_IDENTITY_SCAN_LIVE" -eq 1 ]
-    return
-  fi
-  FM_CODEX_IDENTITY_OWNER_PID=
-  snapshot=$(ps -eo pid=,ppid=,args= 2>/dev/null) || return 1
-  while IFS= read -r line; do
-    line=${line#"${line%%[! ]*}"}
-    pid=${line%% *}
-    case "$pid" in ''|*[!0-9]*) continue ;; esac
-    args=${line#"$pid"}
-    args=${args# }
-    ppid=${args%% *}
-    args=${args#"$ppid"}
-    args=${args# }
-    comm=${args%% *}
-    case "$args" in *codex*) ;; *) continue ;; esac
-    fm_codex_process_shaped "$comm" "$args" || continue
-    roots="$roots $pid"
-    case " $args " in
-      *" $id "*)
-        FM_CODEX_IDENTITY_OWNER_PID=$pid
-        FM_CODEX_IDENTITY_SCAN_ID=$id
-        FM_CODEX_IDENTITY_SCAN_LIVE=1
-        return 0
-        ;;
-    esac
-  done <<EOF
-$snapshot
-EOF
-  [ -n "$roots" ] || {
-    FM_CODEX_IDENTITY_SCAN_ID=$id
-    FM_CODEX_IDENTITY_SCAN_LIVE=0
-    return 1
-  }
-  snapshot=$(ps -eww -o pid=,args= 2>/dev/null) || return 1
-  while IFS= read -r line; do
-    case "$line" in
-      *" CODEX_THREAD_ID=$id "*|*" CODEX_THREAD_ID=$id") ;;
-      *) continue ;;
-    esac
-    case "$line" in
-      *" CODEX_SESSION_ID=$id "*|*" CODEX_SESSION_ID=$id") ;;
-      *) continue ;;
-    esac
-    line=${line#"${line%%[! ]*}"}
-    pid=${line%% *}
-    case "$pid" in ''|*[!0-9]*) continue ;; esac
-    [ "$pid" -gt 1 ] || continue
-    FM_CODEX_IDENTITY_OWNER_PID=$pid
-    FM_CODEX_IDENTITY_SCAN_ID=$id
-    FM_CODEX_IDENTITY_SCAN_LIVE=1
-    return 0
-  done <<EOF
-$snapshot
-EOF
-  FM_CODEX_IDENTITY_SCAN_ID=$id
-  FM_CODEX_IDENTITY_SCAN_LIVE=0
-  return 1
+fm_codex_session_identity_live() {
+  FM_CODEX_IDENTITY_OWNER_PID=$(python3 "$FM_SESSION_PROCESS_READER" scan "$1" 2>/dev/null)
+  [ -n "$FM_CODEX_IDENTITY_OWNER_PID" ]
 }
 
 # True when the process described by command name $1 and full argument string $2
@@ -282,11 +129,11 @@ EOF
 #   4. Cursor's own structural identity, owned by bin/fm-cursor-lib.sh.
 FM_HARNESS_IS_CLAUDE=0
 FM_HARNESS_IS_CODEX=0
-fm_harness_process_matches() {  # <comm> <args>
+fm_harness_process_matches() {  # <comm> <args> [pid]
   _fm_harness_process_matches_raw "$1" "$2" || return 1
   if [ "$FM_HARNESS_IS_CODEX" -eq 1 ]; then
-    case "$(fm_codex_process_class "$1" "$2")" in
-      daemon|host) return 1 ;;
+    case "$(fm_codex_process_class "${3:-}")" in
+      daemon|host|'') return 1 ;;
     esac
   fi
   return 0
@@ -361,10 +208,10 @@ fm_harness_ancestry_pids() {
     # needs no special case here - it never matches as a session process,
     # so the walk climbs through it to the session process above it.
     if fm_codex_process_shaped "$comm" "$args" \
-      && [ "$(fm_codex_process_class "$comm" "$args")" = daemon ]; then
+      && [ "$(fm_codex_process_class "$pid")" = daemon ]; then
       break
     fi
-    if fm_harness_process_matches "$comm" "$args"; then
+    if fm_harness_process_matches "$comm" "$args" "$pid"; then
       printf '%s\n' "$pid"
       printed=1
       [ "$FM_HARNESS_IS_CLAUDE" -eq 1 ] || break
@@ -423,7 +270,7 @@ fm_harness_pid_alive() {
   kill -0 "$pid" 2>/dev/null || return 1
   comm=$(ps -o comm= -p "$pid" 2>/dev/null) || return 1
   args=$(ps -o args= -p "$pid" 2>/dev/null)
-  fm_harness_process_matches "$comm" "$args"
+  fm_harness_process_matches "$comm" "$args" "$pid"
 }
 
 # --- trusted same-session identity -------------------------------------------
@@ -464,7 +311,7 @@ fm_session_lock_trusted_claude_session_id() {  # [<ancestry-pids>]
     [ "$pid" = "$claude_pid" ] || continue
     comm=$(ps -o comm= -p "$pid" 2>/dev/null) || return 1
     args=$(ps -o args= -p "$pid" 2>/dev/null)
-    fm_harness_process_matches "$comm" "$args" || return 1
+    fm_harness_process_matches "$comm" "$args" "$pid" || return 1
     [ "$FM_HARNESS_IS_CLAUDE" -eq 1 ] || return 1
     printf '%s\n' "$id"
     return 0
@@ -507,7 +354,7 @@ fm_session_lock_trusted_codex_session_id() {
       printf '%s\n' "$id"
       return 0
     fi
-    if fm_harness_process_matches "$comm" "$args"; then
+    if fm_harness_process_matches "$comm" "$args" "$pid"; then
       return 1
     fi
     pid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
@@ -540,24 +387,52 @@ fm_session_lock_recorded_session_id() {  # <state>
   printf '%s\n' "$recorded"
 }
 
-# True when the session that recorded the lock in state dir $1 is still
-# live: its recorded pid is a live harness session process, or a live
-# process is bound to the Codex thread id recorded beside the lock
-# (fm_codex_session_identity_live). This is the takeover boundary for a
-# daemon-served Codex session, whose recorded pid is its short-lived
-# acquiring process: that pid being dead proves nothing while a process
-# bound to the recorded thread still runs, and the thread is proven gone
-# only when the recorded pid is dead AND no bound process remains. An old
-# lock recorded against the shared daemon pid, with no sidecar, is never
-# live here: the daemon is not a session and no thread is recorded.
-fm_session_lock_recorded_owner_live() {  # <state>
+fm_session_lock_anchor_instance_matches() {
+  local state=$1 pid recorded current
+  pid=$(cat "$state/.lock" 2>/dev/null) || return 1
+  recorded=$(sed -n 's/^anchor_start=//p' "$state/.lock-session" 2>/dev/null)
+  [ -n "$recorded" ] || return 0
+  [ "$(sed -n 's/^anchor_pid=//p' "$state/.lock-session")" = "$pid" ] || return 1
+  current=$(fm_session_process_start "$pid") || return 1
+  [ "$current" = "$recorded" ]
+}
+
+fm_session_lock_daemon_instance_live() {
+  local state=$1 pid recorded current
+  pid=$(sed -n 's/^codex_daemon_pid=//p' "$state/.lock-session" 2>/dev/null)
+  recorded=$(sed -n 's/^codex_daemon_start=//p' "$state/.lock-session" 2>/dev/null)
+  case "$pid" in ''|0|1|*[!0-9]*) return 1 ;; esac
+  [ -n "$recorded" ] || return 1
+  current=$(fm_session_process_start "$pid") || return 1
+  [ "$current" = "$recorded" ] || return 1
+  FM_CODEX_IDENTITY_OWNER_PID=$pid
+}
+
+fm_session_lock_codex_daemon_pid() {
+  local pid=$$ comm args
+  fm_session_lock_trusted_codex_session_id >/dev/null || return 1
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do
+    fm_codex_pid_is_daemon "$pid" && { printf '%s\n' "$pid"; return 0; }
+    comm=$(ps -o comm= -p "$pid" 2>/dev/null) || return 1
+    args=$(ps -o args= -p "$pid" 2>/dev/null)
+    fm_harness_process_matches "$comm" "$args" "$pid" && return 1
+    pid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
+    case "$pid" in ''|0|1|*[!0-9]*) return 1 ;; esac
+  done
+  return 1
+}
+
+fm_session_lock_recorded_owner_live() {
   local state=$1 lock_pid recorded
+  FM_CODEX_IDENTITY_OWNER_PID=
   lock_pid=$(cat "$state/.lock" 2>/dev/null || true)
-  case "$lock_pid" in
-    ''|*[!0-9]*) return 1 ;;
-  esac
-  fm_harness_pid_alive "$lock_pid" && return 0
+  case "$lock_pid" in ''|*[!0-9]*) return 1 ;; esac
+  if fm_session_lock_anchor_instance_matches "$state" && fm_harness_pid_alive "$lock_pid"; then
+    FM_CODEX_IDENTITY_OWNER_PID=$lock_pid
+    return 0
+  fi
   recorded=$(fm_session_lock_recorded_session_id "$state") || return 1
+  fm_session_lock_daemon_instance_live "$state" && return 0
   fm_codex_session_identity_live "$recorded"
 }
 
@@ -628,11 +503,14 @@ fm_session_lock_owned_by_self() {
     ''|*[!0-9]*) return 1 ;;
   esac
   pids=$(fm_harness_ancestry_pids) || pids=''
-  if [ -n "$pids" ] && fm_harness_pid_listed "$lock_pid" "$pids"; then
+  if [ -n "$pids" ] && fm_harness_pid_listed "$lock_pid" "$pids" \
+    && fm_session_lock_anchor_instance_matches "$state"; then
     return 0
   fi
   fm_session_lock_same_session "$state" "$pids" || return 1
-  fm_harness_pid_alive "$lock_pid" && return 0
+  if fm_session_lock_anchor_instance_matches "$state" && fm_harness_pid_alive "$lock_pid"; then
+    return 0
+  fi
   fm_session_lock_trusted_codex_session_id >/dev/null
 }
 
@@ -653,7 +531,8 @@ fm_session_lock_foreign_owner_live() {
   esac
   fm_session_lock_recorded_owner_live "$state" || return 1
   pids=$(fm_harness_ancestry_pids) || pids=''
-  if [ -n "$pids" ] && fm_harness_pid_listed "$lock_pid" "$pids"; then
+  if [ -n "$pids" ] && fm_harness_pid_listed "$lock_pid" "$pids" \
+    && fm_session_lock_anchor_instance_matches "$state"; then
     return 1
   fi
   fm_session_lock_same_session "$state" "$pids" && return 1
@@ -677,14 +556,6 @@ fm_session_lock_foreign_owner_live() {
 #                                 a live owner's ancestry use this, never a
 #                                 dead recorded pid.
 #
-# held: the recorded pid is a live verified harness session process, or a
-# live process is bound to the Codex thread recorded beside the lock.
-# stale: the recorded pid is gone with no bound process remaining, or is
-# the shared Codex app-server daemon, which is not any session however
-# long it lives.
-# unknown: the file or pid cannot be classified without guessing, including a
-# live process that is not a verified harness. Existence of a lock file, a
-# session record, or a pane is never treated as liveness.
 # shellcheck disable=SC2034 # Output globals, read by lock status and inbox ready.
 FM_LOCK_INSPECT_STATE=unknown
 FM_LOCK_INSPECT_PID=
@@ -723,36 +594,17 @@ fm_session_lock_inspect() {  # <state>
       return 0
       ;;
   esac
-  if kill -0 "$pid" 2>/dev/null; then
-    if fm_harness_pid_alive "$pid"; then
-      FM_LOCK_INSPECT_STATE=held
-      FM_LOCK_INSPECT_LIVE_HARNESS=true
-      FM_LOCK_INSPECT_OWNER_PID=$pid
-    elif fm_codex_pid_is_daemon "$pid"; then
-      # The recorded pid is the shared Codex app-server daemon: alive, but
-      # it is not any session, so the lock it anchors is not held.
-      FM_LOCK_INSPECT_STATE=stale
-      FM_LOCK_INSPECT_LIVE_HARNESS=false
-    else
-      FM_LOCK_INSPECT_STATE=unknown
-      FM_LOCK_INSPECT_LIVE_HARNESS=false
-    fi
-    return 0
-  fi
-  if ps -o comm= -p "$pid" >/dev/null 2>&1; then
-    FM_LOCK_INSPECT_STATE=unknown
-    return 0
-  fi
-  # The recorded pid is gone. A daemon-served Codex owner is still held
-  # while a live process remains bound to its recorded thread.
   if fm_session_lock_recorded_owner_live "$state"; then
     FM_LOCK_INSPECT_STATE=held
     FM_LOCK_INSPECT_LIVE_HARNESS=true
     FM_LOCK_INSPECT_OWNER_PID=$FM_CODEX_IDENTITY_OWNER_PID
     return 0
   fi
-  # shellcheck disable=SC2034 # Output global, read by lock status and inbox ready.
+  if kill -0 "$pid" 2>/dev/null && ! fm_codex_pid_is_daemon "$pid"; then
+    FM_LOCK_INSPECT_STATE=unknown
+    FM_LOCK_INSPECT_LIVE_HARNESS=false
+    return 0
+  fi
   FM_LOCK_INSPECT_STATE=stale
-  # shellcheck disable=SC2034 # Output global, read by lock status and inbox ready.
   FM_LOCK_INSPECT_LIVE_HARNESS=false
 }

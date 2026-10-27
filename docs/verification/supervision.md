@@ -422,7 +422,14 @@ Codex session-lock anchoring was verified on 2026-10-26 on macOS.
 A live `codex exec` probe (codex-cli 0.163.0) showed a tool shell carrying `CODEX_THREAD_ID` and `CODEX_SESSION_ID`, equal, with the session's native Codex process as its parent, and live process listings showed supervision tool shells parented directly by the shared `codex app-server --listen unix:// --managed-daemon` process (pid 28512, alive since 2026-10-24) with four homes' locks recorded against that daemon pid.
 `bin/fm-session-lock-lib.sh` therefore never treats that daemon (or the `codex-code-mode-host` helper) as a session process: the ancestry walk stops at the daemon, a daemon-anchored lock classifies stale and is reclaimed through the ordinary `bin/fm-lock.sh` path, a direct TUI anchors on its TUI process, and a daemon-served session owns by its trusted thread id recorded in `state/.lock-session`.
 Only the published pair counts for that identity: `CODEX_THREAD_ID` and `CODEX_SESSION_ID` both present and equal.
-A daemon-served owner's recorded pid is its short-lived acquiring process, so takeover is governed by session lifetime, not that pid: a foreign acquisition is refused while any live process remains bound to the recorded thread (an argv-carried resume id, or the published pair in a session descendant's environment where the platform exposes it), and reclaim requires the recorded pid dead with no bound process remaining.
+The sidecar keeps the thread id on line 1 and records the anchor pid and its kernel start time, plus the hosting daemon pid and kernel start time for daemon-served sessions.
+A reused numeric pid cannot inherit the recorded process instance's ownership.
+A daemon-served owner's acquiring process may exit while the thread remains active without any identity-bearing process.
+The shared boundary therefore retains that owner's lock for the lifetime of its recorded hosting daemon instance, even when a process scan finds nothing.
+This is conservative: an ended thread can keep its home locked until that daemon exits; absence from the process table alone never authorizes takeover.
+Separate argv and environment fields come from Linux procfs or macOS KERN_PROCARGS2, with kernel start times from procfs or proc_pidinfo.
+Only the actual `resume <id>` argument pair or both equal environment identity fields bind a process to a thread.
+Inspection carries the verified hosting process through to inbox readiness, and task leases use the same owner-lifetime boundary.
 The coverage ran with:
 
 ```sh
@@ -436,10 +443,10 @@ ok - session-lock: a daemon-parented Codex tool shell anchors off the daemon and
 ok - session-lock: a direct Codex TUI launch anchors on the TUI, directly or through its code-mode host
 ok - session-lock: two Codex sessions sharing one daemon never cross-own each other's locks
 ok - session-lock: a Codex thread id is trusted only inside a Codex session, and only when its published ids agree
-ok - session-lock: thread binding requires an identity-bearing process, never command text
+ok - session-lock: real argv and separate environment fields bind only their own thread
 ok - session-lock e2e: a daemon-parented Codex session acquires and keeps its lock by thread id, never on the daemon
 ok - session-lock e2e: a dead session's daemon-anchored lock is reclaimed by its replacement through fm-lock.sh
-ok - session-lock e2e: foreign acquisition is refused while a daemon-served owner lives, and succeeds once its thread is gone
+ok - session-lock e2e: daemon lifetime protects acquisition, leases, and readiness without a session process
 ```
 [`sessionstart-nudge.md`](../sessionstart-nudge.md#shared-wrapper-and-safety) owns the nudge wrapper's separate ancestry check and its redundant-nudge behavior after helper-chain recycling.
 `tests/fm-watch-arm.test.sh` runs real watcher and arm cycles against durable on-disk state to verify that a delivered reason survives until post-handling acknowledgement and stops replaying after acknowledgement, while an unrelated queue append cannot make a watcher cycle that delivered nothing look successful.
