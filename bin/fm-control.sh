@@ -820,9 +820,9 @@ do_exit() {
   # The submit verdict is NOT the postcondition here: a successful exit command
   # destroys the composer the verdict is read from, so a post-exit read can
   # legitimately report anything. Only a hard transport failure aborts; the
-  # authoritative proof is the agent-state wait below. The retried Enter still
-  # matters, because a slash command opens a completion popup on some TUIs that
-  # swallows the first Enter.
+  # authoritative proof is the agent-state wait or Herdr absence proof below.
+  # The retried Enter still matters: a slash command can open a completion
+  # popup that swallows the first Enter on some TUIs.
   verdict=$(fm_backend_send_text_submit "$BACKEND" "$T" "$cmd" "$EXIT_RETRIES" "$POLL" 1.2 "$LABEL") \
     || die "the exit command could not be sent to task $ID on $BACKEND"
   [ "$verdict" != send-failed ] \
@@ -837,6 +837,20 @@ do_exit() {
     fi
   fi
   state=$(wait_agent_state "$EXIT_WAIT" dead) || {
+    if [ "$BACKEND" = herdr ] && [ "$state" = missing ]; then
+      absence=$(fm_control_endpoint_absence_verdict "$BACKEND" "$T" "$META")
+      case "${absence%%$'\t'*}" in
+        gone|dead)
+          retire_busy_incarnation
+          if [ "${absence%%$'\t'*}" = gone ]; then
+            printf 'endpoint-gone'
+          else
+            printf 'stopped'
+          fi
+          return 0
+          ;;
+      esac
+    fi
     # A submit can return before any read sees the picker: a native busy
     # verdict needs no composer read, and a cleared composer can be read
     # before the picker renders. Read the screen once more here.
@@ -844,6 +858,9 @@ do_exit() {
     fm_backend_composer_state "$BACKEND" "$T" "$LABEL" >/dev/null 2>&1 || true
     if [ -s "$FM_COMPOSER_DIALOG_SINK" ]; then
       refuse_blocking_prompt "$(cat "$FM_COMPOSER_DIALOG_SINK")"
+    fi
+    if [ "$BACKEND" = herdr ] && [ "$state" = missing ] && [ -n "${absence#*$'\t'}" ]; then
+      die "exit-delivered $ID interrupt=$interrupt_result exit-command=delivered agent-state=$state exit=unconfirmed; ${absence#*$'\t'}"
     fi
     die "exit-delivered $ID interrupt=$interrupt_result exit-command=delivered agent-state=$state exit=unconfirmed; the agent did not stop within ${EXIT_WAIT}s"
   }

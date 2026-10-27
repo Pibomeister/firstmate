@@ -2573,7 +2573,9 @@ if [ "${1:-}" = status ] && [ "${2:-}" = --json ]; then
   exit 0
 fi
 if [ "${1:-}" = server ]; then
+  [ ! -f "$D/herdr-server-start-fails" ] || exit 1
   rm -f "$D/herdr-stopped"
+  [ ! -f "$D/herdr-server-restores-agent" ] || : > "$D/herdr-agent-live"
   exit 0
 fi
 if [ -f "$D/herdr-stopped" ]; then
@@ -2583,6 +2585,9 @@ if [ -f "$D/herdr-stopped" ]; then
   exit 1
 fi
 case "${1:-} ${2:-}" in
+  'pane read')
+    printf '╭────╮\n│    │\n╰────╯\n'
+    exit 0 ;;
   'pane get')
     if [ "${3:-}" = "$(cat "$D/herdr-pane")" ]; then
       printf '{"result":{"pane":{"pane_id":"%s","foreground_cwd":"%s"}}}\n' \
@@ -2627,10 +2632,21 @@ case "${1:-} ${2:-}" in
       ". '"*"'") staged=${payload#". '"}; staged=${staged%"'"}; [ ! -f "$staged" ] || payload=$(cat "$staged") ;;
     esac
     case "$payload" in
+      /exit) : > "$D/herdr-exit-staged" ;;
       *'encode launch-brief'* | *'Firstmate operational input waiting: read'*)
         printf '%s\n' "$payload" > "$D/launched-command"
         : > "$D/herdr-agent-live" ;;
     esac
+    exit 0 ;;
+  'pane send-keys')
+    if [ "${4:-}" = enter ] && [ -f "$D/herdr-exit-staged" ]; then
+      if [ -f "$D/herdr-exit-closes-pane" ]; then
+        printf '%%none' > "$D/herdr-pane"
+      elif [ -f "$D/herdr-exit-stops-server" ]; then
+        : > "$D/herdr-stopped"
+        rm -f "$D/herdr-agent-live"
+      fi
+    fi
     exit 0 ;;
   'workspace list')
     printf '{"result":{"workspaces":[]}}\n'
@@ -2739,7 +2755,12 @@ test_herdr_relaunch_resumes_only_the_registered_pi_session() {
     }
     dir=$HERDR_CASE_DIR
     rm -f "$dir/fake/herdr-stopped"
-    sed -i 's/^harness=claude$/harness=pi/' "$dir/home/state/resume-$registered.meta"
+    sed 's/^harness=claude$/harness=pi/' "$dir/home/state/resume-$registered.meta" \
+      > "$dir/home/state/resume-$registered.meta.tmp"
+    mv "$dir/home/state/resume-$registered.meta.tmp" "$dir/home/state/resume-$registered.meta"
+    # Launch delivery is stubbed below; executable discovery must be hermetic too.
+    printf '#!/usr/bin/env bash\nexit 0\n' > "$dir/fakebin/pi"
+    chmod +x "$dir/fakebin/pi"
     # Keep the pane's status authority registered to an existing Pi session,
     # while process-info proves that its previous agent has exited.
     printf '{"result":{"agent":{"agent":"%s","agent_status":"idle","agent_session":{"kind":"path","value":"/tmp/pi-bound-session.jsonl"}}}}\n' \
@@ -2813,6 +2834,64 @@ test_herdr_exit_reports_already_stopped_when_the_pane_outlived_its_server() {
   [ "$(meta_field "$dir" rl72 window)" = 'fmlab:%7' ] \
     || fail "exit must leave the recorded endpoint exactly as it found it"
   pass "fm-control exit: a herdr pane that outlived its stopped server is already-stopped, not gone"
+}
+
+test_herdr_exit_proves_the_post_command_endpoint_state() {
+  local dir out rc outcome id gen
+  for outcome in closed idle unreachable alive; do
+    id="post-exit-$outcome"
+    herdr_case_or_skip "$id" "$id" || {
+      echo "skip - Herdr post-exit absence proof needs jq"
+      return 0
+    }
+    dir=$HERDR_CASE_DIR
+    rm -f "$dir/fake/herdr-stopped"
+    : > "$dir/fake/herdr-agent-live"
+    printf 'uncommitted work\n' > "$dir/wt/preserved.txt"
+    gen=$("$ROOT/bin/fm-busy-event.sh" arm "$dir/home/state" "$id")
+    printf 'busy_gen=%s\n' "$gen" >> "$dir/home/state/$id.meta"
+    case "$outcome" in
+      closed) : > "$dir/fake/herdr-exit-closes-pane" ;;
+      *) : > "$dir/fake/herdr-exit-stops-server" ;;
+    esac
+    if [ "$outcome" = unreachable ]; then
+      : > "$dir/fake/herdr-server-start-fails"
+    elif [ "$outcome" = alive ]; then
+      # The server comes back with an agent; absence proof must not stop it.
+      : > "$dir/fake/herdr-server-restores-agent"
+    fi
+
+    rc=0
+    out=$(run_control "$dir" "$id" exit) || rc=$?
+    case "$outcome" in
+      closed|idle)
+        expect_code 0 "$rc" "$outcome endpoint must be proved stopped after the exit command"$'\n'"$out"
+        if [ "$outcome" = closed ]; then
+          assert_contains "$out" "endpoint-gone $id" "the exact pane was destroyed"
+        else
+          assert_contains "$out" "stopped $id" "a restored idle pane is stopped"
+          assert_not_contains "$out" "endpoint-gone" "the idle pane survived"
+        fi
+        [ ! -e "$dir/home/state/$id.busy-gen" ] || fail "$outcome exit left a busy generation"
+        [ ! -e "$dir/home/state/$id.busy-state" ] || fail "$outcome exit left busy state"
+        [ -z "$(meta_field "$dir" "$id" busy_gen)" ] || fail "$outcome exit left its metadata busy generation"
+        ;;
+      *)
+        expect_code 1 "$rc" "$outcome endpoint cannot prove a stopped agent"$'\n'"$out"
+        assert_contains "$out" "exit=unconfirmed" "unproved exit must stay unconfirmed"
+        [ "$(cat "$dir/home/state/$id.busy-gen")" = "$gen" ] || fail "unproved exit retired its busy generation"
+        if [ "$outcome" = unreachable ]; then
+          assert_contains "$out" "the recorded herdr session's server could not be started" \
+            "the refusal must explain why absence was not proven"
+        fi
+        ;;
+    esac
+    assert_contains "$(cat "$dir/fake/herdr-log")" "pane send-keys %7 enter --session fmlab" \
+      "the exit command must reach the recorded endpoint"
+    [ "$(meta_field "$dir" "$id" worktree)" = "$dir/wt" ] || fail "exit changed the worktree record"
+    [ "$(cat "$dir/wt/preserved.txt")" = 'uncommitted work' ] || fail "exit changed uncommitted work"
+  done
+  pass "fm-control exit: post-command Herdr absence proof confirms only gone or idle endpoints"
 }
 
 test_herdr_rebind_stays_in_the_recorded_session() {
@@ -3162,6 +3241,7 @@ test_reclaim_refuses_an_unreadable_endpoint
 test_herdr_relaunch_resumes_only_the_registered_pi_session
 test_herdr_reclaim_adopts_a_pane_that_outlived_its_server
 test_herdr_exit_reports_already_stopped_when_the_pane_outlived_its_server
+test_herdr_exit_proves_the_post_command_endpoint_state
 test_herdr_rebind_stays_in_the_recorded_session
 test_herdr_reclaim_refuses_an_agent_that_came_back
 test_herdr_reclaim_keeps_the_task_whole

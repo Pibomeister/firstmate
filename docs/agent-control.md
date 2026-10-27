@@ -36,6 +36,10 @@ A recorded `harness=` is not always an exact adapter name: a task launched from 
 | `exit` | Stop the agent, preserving the endpoint, the worktree, and every uncommitted change. | The backend's recovery-grade classifier reports the agent gone. Already-stopped is idempotent success. The shared [absence proof](#reclaiming-a-task-whose-endpoint-is-gone) owns admission for `missing` endpoints and Orca's `unreadable` stale handles: proven gone reports `endpoint-gone` (the agent went with it, and the endpoint this verb normally preserves did not survive), a pane that turns out to be there and idle is the ordinary `already-stopped`, one whose agent is back takes the ordinary interrupt-then-exit path. An endpoint whose absence cannot be proven refuses rather than claim a stop it cannot see. |
 | `relaunch` | Replace the running agent with a new one in the same worktree - and the same endpoint whenever that endpoint still exists - on the exact recorded adapter or an explicitly chosen harness, model, and effort. | The new agent is alive on the endpoint the task's record now names, and that record names the harness that is actually running. |
 
+After delivering a Herdr exit command, a `missing` agent-state result runs the same absence proof again: a proven gone pane reports `endpoint-gone`, and a pane restored idle reports `stopped`.
+Both confirmed outcomes retire the exited agent's busy incarnation and preserve the worktree and uncommitted changes.
+An unreachable server or any other unproved result remains `exit=unconfirmed`.
+
 An exit that delivers lifecycle input but cannot prove the agent stopped fails with `exit=unconfirmed`, reports the observed agent state and any interrupt cancellation claim, and never claims that nothing changed.
 Interrupt never rewrites busy state as proof of its own success.
 Claude exposes no lifecycle acknowledgement for a manual interrupt, so delivery succeeds with `cancel=unconfirmed` and its adapter-owned busy state remains as observed.
