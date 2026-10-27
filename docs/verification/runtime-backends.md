@@ -1434,6 +1434,22 @@ The CLI matrix was checked directly:
 All destructive verification used `bin/fm-herdr-lab.sh` with a non-default `fm-lab-` name and a byte-identical default-session tripwire.
 No ambient `herdr server stop` command is a supported test operation.
 
+### Post-command exit and exhausted-quota handoff
+
+Verified on 2026-10-27 on macOS arm64 with the Herdr 0.8.2 CLI (protocol 20), Grok 1.0.70, and codex-cli 0.163.0.
+Refresh the guarded, opt-in live proof while Grok credits are exhausted:
+
+```sh
+FM_GROK_QUOTA_HANDOFF_LIVE=1 bash tests/fm-grok-quota-handoff-live-e2e.test.sh
+```
+
+The guard exited 0 and printed `ok - Grok pane cwd matches the isolated secondmate home`.
+It refused relaunch into the purchase dialog, dismissed that dialog with zero model calls, replaced Grok with Codex in the same home, and preserved the checkout, charter, child record, and inbox.
+Stopping only the named lab server immediately after the Codex exit key produced `exit=unconfirmed` with the recorded-server absence-proof reason.
+Cleanup stopped the lab-specific Codex daemon and removed the disposable files; the Herdr helper's default-session tripwire passed.
+Grok's live exit retained its shell pane and reported `stopped`; the destroyed-pane `endpoint-gone` result, restored-idle result, returning-agent refusal, worktree preservation, and busy-incarnation retirement are covered by the fake-Herdr cases in `tests/fm-control-relaunch.test.sh`.
+The [control-plane reference](../agent-control.md#verbs) owns these postconditions.
+
 ### fm-remote server birth and login-keychain access
 
 Measured 2026-09-09 on macOS 26 (Darwin 25.6.0) aarch64 with Claude Code 2.1.266 and Herdr 0.9.0, the guarantee behind `bin/fm-remote-herdr-guard.sh` and the doctor's `herdr-server` check: login-keychain access follows the audit session a process was born into, never the launch shape or the shell.
