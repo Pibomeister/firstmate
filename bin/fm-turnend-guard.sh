@@ -276,11 +276,11 @@ allow_supervised_stop() {
 # this hook's own harness ancestry, i.e. a checkpoint this Codex session started.
 # A daemon-served session has no harness ancestry pid (the walk stops at the
 # shared app-server daemon), so its checkpoint is instead proven by thread
-# binding: the checkpoint process in the watcher's ancestry must be bound to
-# this session's trusted Codex thread id. Another thread's checkpoint fails
+# binding: the checkpoint or its watcher descendants must be bound to this
+# session's trusted Codex thread id. Another thread's checkpoint fails
 # that binding exactly as it fails the ancestry membership above.
 own_checkpoint_holds_watcher() {  # <watcher-pid>
-  local pid=$1 checkpoint='' own owner thread
+  local pid=$1 checkpoint='' own owner thread binding_status=1
   kill -0 "$pid" 2>/dev/null || return 1
   fm_watcher_lock_matches_pid "$STATE" "$WATCH" "$pid" "$FM_HOME" || return 1
   if own=$(fm_harness_ancestry_pids); then
@@ -305,10 +305,12 @@ EOF
   thread=$(fm_session_lock_trusted_codex_session_id) || return 1
   pid=$1
   for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do
+    # macOS can hide a script shell's environment while its children retain
+    # readable thread evidence. Keep that proof within this checkpoint tree.
+    fm_codex_pid_bound_to_id "$pid" "$thread" && binding_status=0
     case "$(ps -o args= -p "$pid" 2>/dev/null)" in
       *fm-watch-checkpoint.sh*)
-        fm_codex_pid_bound_to_id "$pid" "$thread" && return 0
-        return 1
+        return "$binding_status"
         ;;
     esac
     pid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')

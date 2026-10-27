@@ -2314,7 +2314,7 @@ test_hook_no_afk_ignores_poll_derived_grace() {
 # the session ancestry resolve Codex structurally, as under a live Codex hook.
 # The driver forks the hook straight from that process (no command
 # substitution, whose fork would keep the codex name and shadow the session).
-CODEX_BIN=$(mkdir -p "$TMP_ROOT/codex-harness" && cp "$(command -v bash)" "$TMP_ROOT/codex-harness/codex" && printf '%s\n' "$TMP_ROOT/codex-harness/codex")
+CODEX_BIN=$(mkdir -p "$TMP_ROOT/codex-harness" && ln -s "$(command -v bash)" "$TMP_ROOT/codex-harness/codex" && printf '%s\n' "$TMP_ROOT/codex-harness/codex")
 CODEX_DRIVER="$TMP_ROOT/codex-driver.sh"
 cat > "$CODEX_DRIVER" <<'SH'
 # Runs under the codex-named process. Optionally starts a stand-in checkpoint

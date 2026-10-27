@@ -2047,6 +2047,83 @@ SH
   pass "session-lock: a mismatched kernel start time cannot inherit ownership or leases"
 }
 
+test_codex_stop_binds_checkpoint_descendant() {
+  local dir thread expected
+  for thread in T1 T2 none; do
+    dir="$TMP_ROOT/checkpoint-descendant-$thread"
+    mkdir -p "$dir/state" "$dir/checkpoint"
+    git init -q "$dir"
+    : > "$dir/AGENTS.md"
+    : > "$dir/state/task.meta"
+    cp -R "$ROOT/bin" "$dir/bin"
+    cat > "$dir/watcher.py" <<'PYTHON'
+import os
+from pathlib import Path
+import time
+
+Path(os.environ['FM_HOME'], 'state', 'watcher-ready').touch()
+time.sleep(30)
+PYTHON
+    cat > "$dir/checkpoint/fm-watch-checkpoint.sh" <<'SH'
+#!/usr/bin/env bash
+if [ "$FM_TEST_CHECKPOINT_THREAD" = none ]; then
+  python3 "$FM_HOME/watcher.py" &
+else
+  CODEX_THREAD_ID="$FM_TEST_CHECKPOINT_THREAD" CODEX_SESSION_ID="$FM_TEST_CHECKPOINT_THREAD" python3 "$FM_HOME/watcher.py" &
+fi
+pid=$!
+trap 'kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true' EXIT
+i=0
+while [ ! -e "$FM_HOME/state/watcher-ready" ] && [ "$i" -lt 200 ]; do sleep 0.05; i=$((i + 1)); done
+[ -e "$FM_HOME/state/watcher-ready" ] || exit 1
+. "$FM_HOME/bin/fm-wake-lib.sh"
+mkdir -p "$FM_HOME/state/.watch.lock"
+printf '%s\n' "$pid" > "$FM_HOME/state/.watch.lock/pid"
+printf '%s\n' "$FM_HOME" > "$FM_HOME/state/.watch.lock/fm-home"
+printf '%s\n' "$FM_HOME/bin/fm-watch.sh" > "$FM_HOME/state/.watch.lock/watcher-path"
+fm_pid_identity "$pid" > "$FM_HOME/state/.watch.lock/pid-identity"
+touch "$FM_HOME/state/.last-watcher-beat"
+printf 'ready\n' > "$FM_HOME/state/checkpoint-ready"
+wait "$pid"
+SH
+    cat > "$dir/body.sh" <<'SH'
+#!/usr/bin/env bash
+"$FM_HOME/checkpoint/fm-watch-checkpoint.sh" &
+checkpoint=$!
+trap 'kill "$checkpoint" 2>/dev/null || true; wait "$checkpoint" 2>/dev/null || true' EXIT
+i=0
+while [ ! -s "$FM_HOME/state/checkpoint-ready" ] && [ "$i" -lt 200 ]; do sleep 0.05; i=$((i + 1)); done
+[ -s "$FM_HOME/state/checkpoint-ready" ] || exit 1
+reader="$FM_HOME/bin/fm-session-process.py"
+if python3 "$reader" bound "$checkpoint" T1; then exit 2; fi
+watcher=$(cat "$FM_HOME/state/.watch.lock/pid")
+if [ "$FM_TEST_CHECKPOINT_THREAD" = none ]; then
+  if python3 "$reader" bound "$watcher" T1; then exit 3; fi
+else
+  python3 "$reader" bound "$watcher" "$FM_TEST_CHECKPOINT_THREAD" || exit 4
+fi
+printf '%s\n' '{"session_id":"T1","turn_id":"checkpoint","stop_hook_active":false}' \
+  | CODEX_THREAD_ID=T1 CODEX_SESSION_ID=T1 "$FM_HOME/bin/fm-turnend-guard.sh" > "$FM_HOME/state/guard.out" 2>&1
+printf '%s\n' "$?" > "$FM_HOME/state/guard.rc"
+SH
+    chmod +x "$dir/checkpoint/fm-watch-checkpoint.sh"
+    env -u CLAUDE_CODE_SESSION_ID -u CLAUDE_PID -u CODEX_THREAD_ID -u CODEX_SESSION_ID \
+      FM_HOME="$dir" FM_TEST_CODEX_BODY="$dir/body.sh" FM_TEST_CHECKPOINT_THREAD="$thread" \
+      "$NATIVE_CODEX" app-server --listen unix:// --managed-daemon \
+      || fail "$thread: checkpoint fixture lost its intended process identity (exit $?)"
+    expected=0
+    [ "$thread" != T1 ] || expected=2
+    expect_code "$expected" "$(cat "$dir/state/guard.rc")" "$thread: wrong Stop verdict with an unbound checkpoint shell: $(cat "$dir/state/guard.out")"
+  done
+  pass "session-lock: Stop binds checkpoint descendants and rejects foreign or absent thread identity"
+}
+
+if [ "${FM_TEST_ONLY:-}" = codex-checkpoint-descendant ]; then
+  test_codex_stop_binds_checkpoint_descendant
+  exit 0
+fi
+
+test_codex_stop_binds_checkpoint_descendant
 test_version_named_session_is_identified_on_both_platforms
 test_muse_versioned_session_is_identified
 test_harness_at_namespace_pid1_is_examined
