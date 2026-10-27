@@ -1,0 +1,2 @@
+supervision-host: watcher: recovery state could not be persisted; retaining stale lock evidence
+supervision-host: the host could not finish predecessor cleanup or write its record

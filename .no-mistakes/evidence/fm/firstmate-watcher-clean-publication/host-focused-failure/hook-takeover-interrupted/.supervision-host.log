@@ -1,0 +1,12 @@
+1793058225	init	stop-predecessor
+1793058225	init	stop-engine
+1793058225	init	stop-arms
+1793058225	init	release-leases
+1793058225	start	gen=host-87377-1793058225	primary=claude
+1793058228	pass-through	attended	main-only	signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase/tmp/fm-supervision-host.NekW4o/hook-takeover-interrupted/state/demo.status
+1793058231	init	stop-predecessor
+1793058231	init	stop-engine
+1793058231	init	stop-arms
+1793058231	init	release-leases
+1793058231	start	gen=host-1218-1793058231	primary=claude
+1793058231	take-over	arm=92956

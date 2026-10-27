@@ -1,0 +1,12 @@
+Revision: db0511b9b046f06dde5655ace113960421fbf195, harness: codex
+lock acquired: harness pid 16156
+fm-wake: the lock /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase-tmp/live-stalled-arms/state/.watcher-down.lock is still held by pid 70228 (fm-wake-lib.sh) after 30s; the state it guards was left untouched
+LIVE FAILURE: queue stalled wake
+.test-phase-tmp/live-edge-checks.sh: line 14: 70228 Terminated: 15          FM_HOME="$FM_HOME" bash -c '
+    . "$1"
+    fm_lock_acquire_wait "$STATE/.watcher-down.lock" || exit 1
+    touch "$FM_HOME/held"
+    n=0
+    while [ ! -e "$FM_HOME/release" ] && [ "$n" -lt 1200 ]; do sleep 0.1; n=$((n+1)); done
+    fm_lock_release "$STATE/.watcher-down.lock"
+  ' _ "$ROOT/bin/fm-wake-lib.sh"

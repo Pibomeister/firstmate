@@ -1,0 +1,3 @@
+Revision: db0511b9b046f06dde5655ace113960421fbf195, harness: codex
+lock acquired: harness pid 16156
+LIVE FAILURE: left successor arm record

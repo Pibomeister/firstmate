@@ -1,0 +1,8 @@
+1793059338	init	stop-predecessor
+1793059338	init	stop-engine
+1793059338	init	stop-arms
+1793059338	init	release-leases
+1793059338	start	gen=host-38492-1793059338	primary=codex
+1793059341	init	stop-predecessor
+1793059341	init	stop-engine
+1793059341	init	stop-arms

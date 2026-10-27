@@ -1,0 +1,19 @@
+live-checkpoint-signal
+Writing a real status file closed the foreground checkpoint with one signal line, exit 0, and a durable wake row.
+
+$ checkpoint.out
+signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase/live-checkpoint-signal/state/demo.status
+
+
+Persisted .watcher-down
+pending:downtime:48787.1793057765.ILjffA
+
+
+Persisted .wake-queue
+1793057764	1	signal	demo.status	signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase/live-checkpoint-signal/state/demo.status
+1793057765	2	signal	demo.status	signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase/live-checkpoint-signal/state/demo.status
+
+
+Persisted .watch-deliveries.log
+48787	Mon Oct 26 17:36:02 2026     bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/bin/fm-watch.sh	signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase/live-checkpoint-signal/state/demo.status
+

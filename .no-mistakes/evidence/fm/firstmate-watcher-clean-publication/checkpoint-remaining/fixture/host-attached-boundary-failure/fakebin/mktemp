@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+case "$*" in
+  *'/.supervision-host-arm.XXXXXX'*)
+    if [ -e "$FM_HOME/pause-successor" ] && [ -e "$FM_HOME/first-arm-allocated" ]; then
+      : > "$FM_HOME/successor-allocation-ready"
+      while [ ! -e "$FM_HOME/successor-allocation-go" ] && [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do sleep 0.1; done
+    fi
+    : > "$FM_HOME/first-arm-allocated"
+    ;;
+esac
+exec "$FM_TEST_REAL_MKTEMP" "$@"

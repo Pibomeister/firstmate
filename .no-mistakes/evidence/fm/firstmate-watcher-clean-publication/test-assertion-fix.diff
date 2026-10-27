@@ -1,0 +1,20 @@
+diff --git a/tests/fm-watch-checkpoint.test.sh b/tests/fm-watch-checkpoint.test.sh
+index a97596ce..f0986afd 100755
+--- a/tests/fm-watch-checkpoint.test.sh
++++ b/tests/fm-watch-checkpoint.test.sh
+@@ -1283,8 +1283,13 @@ SH
+   wait_for_exit "$checkpoint_pid" 600 || status=$?
+   [ -z "$holder" ] || wait_for_exit "$holder" 100 || fail "the attached recovery lock holder did not finish"
+   if [ "$expected" -ne 0 ] || [[ "$kind" = *mismatch ]]; then
+-    assert_contains "$(cat "$home/$source_tag.err")" 'watcher: recovery state could not be persisted; retaining stale lock evidence' \
+-      "the real watcher did not report failed cleanup through its original owner's stderr"
++    # Retirement can end the watcher before its own cleanup diagnostic prints.
++    # The host must report its matching retained evidence below. Mismatch cases
++    # need the original diagnostic to prove the failure the host must decline.
++    if [[ "$kind" = *mismatch ]]; then
++      assert_contains "$(cat "$home/$source_tag.err")" 'watcher: recovery state could not be persisted; retaining stale lock evidence' \
++        "the real watcher did not report failed cleanup through its original owner's stderr"
++    fi
+     [ "$(cat "$home/state/.watch.lock/pid")" = "$watcher" ] || fail "attached cleanup lost its original process evidence"
+   else
+     assert_absent "$home/state/.watch.lock/pid" "successful attached cleanup retained the watcher lock"

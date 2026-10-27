@@ -1,0 +1,21 @@
+Revision: db0511b9b046f06dde5655ace113960421fbf195, harness: codex
+lock acquired: harness pid 16156
+completed host exit=1
+watcher: started pid=36544 (beacon fresh)
+supervision-host: watcher: recovery state could not be persisted; retaining stale lock evidence
+supervision-host: watcher: recovery state could not be persisted; retaining stale lock evidence
+signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase-tmp/live-host-completed-failure/state/demo.status
+lock acquired: harness pid 16156
+retired host exit=1
+watcher: started pid=43976 (beacon fresh)
+supervision-host: watcher: recovery state could not be persisted; retaining stale lock evidence
+signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase-tmp/live-host-retired-failure/state/demo.status
+supervision-host: watcher: recovery state could not be persisted; retaining stale lock evidence
+supervision-host: cycle boundary - the host ended its park at its bound; drain, acknowledge, and end the turn, and the next park starts on its own
+lock acquired: harness pid 16156
+predecessor host exit=1
+supervision-host: watcher: recovery state could not be persisted; retaining stale lock evidence
+signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase-tmp/live-host-predecessor-failure/state/demo.status
+supervision-host: watcher: recovery state could not be persisted; retaining stale lock evidence
+supervision-host: the host could not finish predecessor cleanup or write its record
+LIVE HOST FAILURE CHECKS COMPLETE

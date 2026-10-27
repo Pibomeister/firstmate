@@ -1,0 +1,34 @@
+Revision: db0511b9b046f06dde5655ace113960421fbf195
+Harness: codex
+lock acquired: harness pid 16156
+live-quiet exit=0
+checkpoint: no actionable wake within 2s
+lock acquired: harness pid 16156
+.test-phase-tmp/live-checks.sh: line 62: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase-tmp/live-empty-recovery/state/.wake-queue: No such file or directory
+before=pending:downtime:14671.1793059019.2hkvS7
+after=acked:downtime:14671.1793059019.2hkvS7
+queue_bytes=0
+live concurrent append arm exit=0
+watcher: started pid=14897 (beacon fresh)
+check: rearm-resurface
+lock acquired: harness pid 16156
+live-buried-first exit=0
+check: rearm-resurface
+live-buried-second exit=0
+checkpoint: no actionable wake within 2s
+lock acquired: harness pid 16156
+live-interrupted exit=1
+watcher: recovery state could not be persisted; retaining stale lock evidence
+elapsed_seconds=3
+lock_pid=25299
+beacon_exists=no
+lock acquired: harness pid 16156
+live-host-quiet exit=0
+checkpoint: no actionable wake within 4s
+lock acquired: harness pid 16156
+live attended host exit=0
+watcher: started pid=39668 (beacon fresh)
+signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase-tmp/live-attended/state/demo.status
+successor_pid=47511
+successor_alive=yes
+LIVE CHECKS COMPLETE

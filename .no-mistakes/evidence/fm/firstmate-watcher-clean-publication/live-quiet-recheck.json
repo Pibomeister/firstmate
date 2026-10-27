@@ -1,0 +1,7 @@
+[
+  {
+    "name": "live-quiet-and-empty-recovery",
+    "result": "pass",
+    "detail": "Two real foreground checkpoints returned 0 without wakes. Ordinary downtime was retired on the same generation; the singleton lock was released."
+  }
+]

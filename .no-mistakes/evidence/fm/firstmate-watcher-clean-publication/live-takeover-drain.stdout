@@ -1,0 +1,4 @@
+1793059741	2	signal	demo.status	signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase-tmp/live-interrupted-takeover-v2/state/demo.status
+wake annotation: latest wake-EVENT observed at drain, not current state: demo.status: done: first attended wake
+STATUS OUTCOME BACKSTOP (newest captain-facing task event has no covering branch outcome):
+demo done: first attended wake

@@ -1,0 +1,7 @@
+[
+  {
+    "name": "live-codex-away-checkpoint-note",
+    "result": "pass",
+    "detail": "Real Codex detection: away entry without a watcher prints the foreground-checkpoint warning and creates no cycle; a healthy real foreground checkpoint suppresses it; quiet entry does not print the away warning."
+  }
+]

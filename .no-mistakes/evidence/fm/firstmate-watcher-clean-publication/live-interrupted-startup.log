@@ -1,0 +1,6 @@
+live-interrupted-startup
+Interrupted real startup returned failure in 2.79s (1s checkpoint plus 2s cleanup, below the 5s kill grace), retained the identity-bound lock, and never published a beacon.
+
+$ checkpoint.err
+watcher: recovery state could not be persisted; retaining stale lock evidence
+

@@ -1,0 +1,6 @@
+live-startup-refusal
+A real arm with an unusable startup confirmation budget failed before publishing a singleton, with its typed launch diagnostic.
+
+$ arm.out
+watcher: FAILED - FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS must be whole seconds from 1 to 600
+

@@ -1,0 +1,1 @@
+supervision-host: watcher: FAILED - FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS must be whole seconds from 1 to 600

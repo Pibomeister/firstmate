@@ -1,0 +1,31 @@
+live-interrupted-takeover
+Traceback (most recent call last):
+  File "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase/live_probe.py", line 44, in scenario
+    detail=fn(h);log(h,name,detail);results.append(dict(name=name,result='pass',detail=detail))
+  File "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase/interrupted_takeover.py", line 18, in interrupted_takeover
+    assert 'recovery state could not be persisted' not in err, 'The interrupted take-over arm stopped the original watcher while still owning the handed-off recovery lock; it emitted a cleanup-failure diagnostic after the external recovery-lock holder had released. taker exit=%s; original arm exit=%s'%(rc,owner_rc)
+AssertionError: The interrupted take-over arm stopped the original watcher while still owning the handed-off recovery lock; it emitted a cleanup-failure diagnostic after the external recovery-lock holder had released. taker exit=143; original arm exit=143
+
+
+$ observation.out
+original_watcher_pid=49844
+original_arm_pid=49779
+interrupted_taker_pid=51123
+queue_lock_owner_at_interruption=51123
+recovery_lock_owner_after_external_release=51123
+taker_exit=143
+original_arm_exit=143
+retained_watcher_lock=49844
+
+
+$ owner.out
+watcher: started pid=49844 (beacon fresh)
+
+
+$ owner.err
+watcher: recovery state could not be persisted; retaining stale lock evidence
+
+
+$ takeover.err
+watcher: recovery state could not be persisted; retaining stale lock evidence
+

@@ -1,0 +1,6 @@
+1793059410	init	stop-predecessor
+1793059410	init	stop-engine
+1793059410	init	stop-arms
+1793059410	init	release-leases
+1793059410	start	gen=host-42979-1793059410	primary=codex
+1793059420	boundary	after 10s

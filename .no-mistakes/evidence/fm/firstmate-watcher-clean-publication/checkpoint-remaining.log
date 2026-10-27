@@ -1,0 +1,3 @@
+not ok - the real watcher did not report failed cleanup through its original owner's stderr (missing: 'watcher: recovery state could not be persisted; retaining stale lock evidence')
+--- output ---
+

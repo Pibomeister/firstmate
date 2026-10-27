@@ -1,0 +1,33 @@
+ok - checkpoint: interrupted startup retains failed-cleanup evidence and returns nonzero
+ok - preconfirmation predecessor retirement reports cleanup failure using the verified post-exec identity
+ok - quiet checkpoint exits 0 with a clean checkpoint line, no wake, and no live lock
+ok - checkpoint reports recovery persistence failure instead of quiet success
+ok - Perl fallback honors the cleanup bound before escalating an INT-ignoring direct watcher
+ok - real Perl blocked preserves the shutdown result and any real wake
+ok - real Perl signal preserves the shutdown result and any real wake
+ok - real Perl quiet preserves the shutdown result and any real wake
+ok - an announced recovery is not reannounced by the next foreground checkpoint
+ok - a never-announced recovery surfaces once while a row is buried and retires silently with an empty queue
+ok - a queue append during a foreground checkpoint still resurfaces
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 71190.1793058941.kb807c
+ok - checkpoint passes through a real watcher wake and leaves the queue for drain
+ok - checkpoint preserves watcher environment for registered custom checks
+ok - checkpoint rejects an existing watcher singleton as unowned
+ok - checkpoint: an opted-in home runs the host for the checkpoint's bound, raised only while away
+ok - checkpoint preserves host cleanup failures and their actionable wakes on either output stream
+ok - checkpoint: a handed-back wake passes through, and a host stand-down is a failure
+ok - checkpoint: a Codex home without config/supervision-host, or with an off file, never runs the host
+ok - completed-failure preserves one real signal and durable wake with its cleanup result
+ok - retired-clean preserves one real signal and durable wake with its cleanup result
+ok - retired-failure preserves one real signal and durable wake with its cleanup result
+ok - predecessor-clean preserves one real signal and durable wake with its cleanup result
+ok - predecessor-failure preserves one real signal and durable wake with its cleanup result
+ok - predecessor-failure preserves one real signal and durable wake with its cleanup result
+ok - predecessor-failure preserves one real signal and durable wake with its cleanup result
+ok - retired-failure preserves one real signal and durable wake with its cleanup result
+ok - retired-failure preserves one real signal and durable wake with its cleanup result
+ok - normal during real arm forwarding preserves exactly one wake and its queue
+ok - TERM during real arm forwarding preserves exactly one wake and its queue
+not ok - the real watcher did not report failed cleanup through its original owner's stderr (missing: 'watcher: recovery state could not be persisted; retaining stale lock evidence')
+--- output ---
+

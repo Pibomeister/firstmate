@@ -1,0 +1,22 @@
+[
+  {
+    "name": "live-host-quiet-boundary",
+    "result": "pass",
+    "detail": "The opted-in real Codex primary ran a host checkpoint to its park boundary, returned quiet exit 0, and left no watcher singleton."
+  },
+  {
+    "name": "live-host-attended-successors",
+    "result": "pass",
+    "detail": "Two attended wakes from a real Codex primary reached main exactly once, each retained a live successor across acknowledgement, and the second host took over the previous cycle. Explicit stop succeeded."
+  },
+  {
+    "name": "live-host-predecessor-delivery",
+    "result": "pass",
+    "detail": "Replacement activation after a real host KILL returned 1, reported forced-cleanup failure, retained the same watcher identity, and surfaced its delivered wake once."
+  },
+  {
+    "name": "live-host-preconfirmation-retirement",
+    "result": "pass",
+    "detail": "Replacement activation after a real host KILL returned 1, reported forced-cleanup failure, retained the same watcher identity, and did not accept interrupted pre-beacon startup as healthy."
+  }
+]

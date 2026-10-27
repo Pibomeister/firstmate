@@ -1,0 +1,15 @@
+{
+  "revision": "4ea4ad697bbffb03bdbf15fb8b6a3aafa869afca",
+  "targeted_suites": {
+    "tests/fm-watch-checkpoint.test.sh": 0,
+    "tests/fm-watch-arm.test.sh": 0,
+    "tests/fm-watcher-lock.test.sh": 0,
+    "tests/fm-supervision-host.test.sh": 1
+  },
+  "focused_interrupted_takeover": 1,
+  "live_passed": 13,
+  "live_failed": 1,
+  "failure": "interrupted takeover after recovery-lock handoff",
+  "private_tmux_stopped": true,
+  "source_changes": false
+}

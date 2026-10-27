@@ -1,0 +1,32 @@
+[
+  {
+    "name": "live-quiet-and-empty-recovery",
+    "result": "fail",
+    "detail": ""
+  },
+  {
+    "name": "live-durable-recovery-ack",
+    "result": "pass",
+    "detail": "A real queued wake resurfaced once, survived a second quiet checkpoint unchanged, and was removed only by the drain acknowledgement printed by the product."
+  },
+  {
+    "name": "live-checkpoint-signal",
+    "result": "pass",
+    "detail": "Writing a real status file closed the foreground checkpoint with one signal line, exit 0, and a durable wake row."
+  },
+  {
+    "name": "live-interrupted-startup",
+    "result": "pass",
+    "detail": "Interrupted real startup returned failure in 2.79s (1s checkpoint plus 2s cleanup, below the 5s kill grace), retained the identity-bound lock, and never published a beacon."
+  },
+  {
+    "name": "live-owned-stall",
+    "result": "pass",
+    "detail": "The real owned arm returned nonzero for a watcher stalled on the recovery lock, printed the already-delivered signal exactly once, and retained the durable queue byte for byte."
+  },
+  {
+    "name": "live-attached-stall",
+    "result": "pass",
+    "detail": "The real attached arm returned nonzero for a watcher stalled on the recovery lock, printed the already-delivered signal exactly once, and retained the durable queue byte for byte."
+  }
+]

@@ -1,0 +1,443 @@
+live-quiet-and-empty-recovery
+Two real foreground checkpoints returned 0 without wakes. Ordinary downtime was retired on the same generation; the singleton lock was released.
+
+$ checkpoint.out
+checkpoint: no actionable wake within 2s
+
+
+$ retired-while-running.out
+marker=acked:downtime:73020.1793057871.JhO5ZV
+successor_running=true
+queue_empty=true
+
+
+$ successor.out
+checkpoint: no actionable wake within 4s
+
+
+Persisted .watcher-down
+pending:downtime:76512.1793057876.eWpH9p
+
+
+
+live-durable-recovery-ack
+A real queued wake resurfaced once, survived a second quiet checkpoint unchanged, and was removed only by the drain acknowledgement printed by the product.
+
+$ drain.out
+1793057753	1	check	live-probe	check: durable work during downtime
+
+
+$ initial.out
+checkpoint: no actionable wake within 1s
+
+
+$ next.out
+checkpoint: no actionable wake within 2s
+
+
+$ recover.out
+check: rearm-resurface
+
+
+$ drain.err
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 32740.1793057752.SjJAuO
+
+
+Persisted .watcher-down
+acked:handling:32740.1793057752.SjJAuO
+
+
+Persisted .wake-queue
+
+
+Persisted .watch-deliveries.log
+35185	Mon Oct 26 17:35:53 2026     bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/bin/fm-watch.sh	check: rearm-resurface
+
+
+
+live-checkpoint-signal
+Writing a real status file closed the foreground checkpoint with one signal line, exit 0, and a durable wake row.
+
+$ checkpoint.out
+signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase/live-checkpoint-signal/state/demo.status
+
+
+Persisted .watcher-down
+pending:downtime:48787.1793057765.ILjffA
+
+
+Persisted .wake-queue
+1793057764	1	signal	demo.status	signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase/live-checkpoint-signal/state/demo.status
+1793057765	2	signal	demo.status	signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase/live-checkpoint-signal/state/demo.status
+
+
+Persisted .watch-deliveries.log
+48787	Mon Oct 26 17:36:02 2026     bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/bin/fm-watch.sh	signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase/live-checkpoint-signal/state/demo.status
+
+
+
+live-interrupted-startup
+Interrupted real startup returned failure in 2.79s (1s checkpoint plus 2s cleanup, below the 5s kill grace), retained the identity-bound lock, and never published a beacon.
+
+$ checkpoint.err
+watcher: recovery state could not be persisted; retaining stale lock evidence
+
+
+
+live-owned-stall
+The real owned arm returned nonzero for a watcher stalled on the recovery lock, printed the already-delivered signal exactly once, and retained the durable queue byte for byte.
+
+$ owned.out
+watcher: started pid=59958 (beacon fresh)
+signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase/live-owned-stall/state/demo.status
+watcher: FAILED - started watcher pid=59958 stalled (beacon 12s at or past hard bound 12s)
+
+
+$ owned.err
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/bin/fm-wake-lib.sh: line 1526: 59958 Killed: 9               "$WATCH" > "$child_out"
+
+
+Persisted .watcher-down
+pending:downtime:59958.1793057773.mpiCph
+
+
+Persisted .wake-queue
+1793057773	1	signal	demo.status	signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase/live-owned-stall/state/demo.status
+1793057774	2	signal	demo.status	signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase/live-owned-stall/state/demo.status
+
+
+Persisted .watch-deliveries.log
+59958	Mon Oct 26 17:36:09 2026     bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/bin/fm-watch.sh	signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase/live-owned-stall/state/demo.status
+
+
+
+live-attached-stall
+The real attached arm returned nonzero for a watcher stalled on the recovery lock, printed the already-delivered signal exactly once, and retained the durable queue byte for byte.
+
+$ attached.out
+watcher: attached pid=14089 (beacon 1s)
+signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase/live-attached-stall/state/demo.status
+watcher: FAILED - attached watcher pid=14089 stalled (beacon 12s at or past hard bound 12s)
+
+
+$ owned.out
+watcher: started pid=14089 (beacon fresh)
+signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase/live-attached-stall/state/demo.status
+watcher: FAILED - started watcher pid=14089 stalled (beacon 12s at or past hard bound 12s)
+
+
+$ owned.err
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/bin/fm-wake-lib.sh: line 1526: 14089 Killed: 9               "$WATCH" > "$child_out"
+
+
+Persisted .watcher-down
+pending:downtime:14089.1793057801.T94S9j
+
+
+Persisted .wake-queue
+1793057801	1	signal	demo.status	signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase/live-attached-stall/state/demo.status
+1793057802	2	signal	demo.status	signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase/live-attached-stall/state/demo.status
+
+
+Persisted .watch-deliveries.log
+14089	Mon Oct 26 17:36:36 2026     bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/bin/fm-watch.sh	signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase/live-attached-stall/state/demo.status
+
+
+
+live-host-quiet-boundary
+The opted-in real Codex primary ran a host checkpoint to its park boundary, returned quiet exit 0, and left no watcher singleton.
+
+$ checkpoint.out
+checkpoint: no actionable wake within 3s
+
+
+$ session-lock.out
+lock acquired: harness pid 28512
+
+
+$ session-status.out
+lock: held by live harness pid 28512
+
+
+Persisted .watcher-down
+pending:downtime:92173.1793058110.Her0O3
+
+
+Persisted .supervision-host.log
+1793058107	init	stop-predecessor
+1793058107	init	stop-engine
+1793058107	init	stop-arms
+1793058107	init	release-leases
+1793058107	start	gen=host-90665-1793058107	primary=codex
+1793058111	boundary	after 4s
+
+
+
+live-host-attended-successors
+Two attended wakes from a real Codex primary reached main exactly once, each retained a live successor across acknowledgement, and the second host took over the previous cycle. Explicit stop succeeded.
+
+$ drain.out
+1793058121	4	signal	demo.status	signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase/live-host-attended-successors/state/demo.status
+wake annotation: latest wake-EVENT observed at drain, not current state: demo.status: done [at=2]: live attended cycle 2
+STATUS OUTCOME BACKSTOP (newest captain-facing task event has no covering branch outcome):
+demo done [at=2]: live attended cycle 2
+
+
+$ host1.out
+watcher: started pid=13130 (beacon fresh)
+signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase/live-host-attended-successors/state/demo.status
+
+
+$ host2.out
+watcher: started pid=44386 (beacon fresh)
+signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase/live-host-attended-successors/state/demo.status
+
+
+$ session-lock.out
+lock acquired: harness pid 28512
+
+
+$ session-status.out
+lock: held by live harness pid 28512
+
+
+$ stop.out
+watcher: stopped pid=56596
+
+
+$ successor1.out
+retained_live_watcher=23995
+23651	Mon Oct 26 17:41:55 2026     bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/bin/fm-watch-arm.sh
+
+
+$ successor2.out
+retained_live_watcher=56596
+56376	Mon Oct 26 17:42:02 2026     bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/bin/fm-watch-arm.sh
+
+
+$ drain.err
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 4 --recovery-generation 44386.1793058121.rKq0e8
+
+
+Persisted .watcher-down
+pending:downtime:56596.1793058124.HkZo7h
+
+
+Persisted .wake-queue
+
+
+Persisted .watch-deliveries.log
+13130	Mon Oct 26 17:41:51 2026     bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/bin/fm-watch.sh	signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase/live-host-attended-successors/state/demo.status
+44386	Mon Oct 26 17:41:59 2026     bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/bin/fm-watch.sh	signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase/live-host-attended-successors/state/demo.status
+
+
+Persisted .supervision-host.log
+1793058111	init	stop-predecessor
+1793058111	init	stop-engine
+1793058111	init	stop-arms
+1793058111	init	release-leases
+1793058111	start	gen=host-11978-1793058111	primary=codex
+1793058115	pass-through	attended	no supervision engine	signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase/live-host-attended-successors/state/demo.status
+1793058118	init	stop-predecessor
+1793058118	init	stop-engine
+1793058118	init	stop-arms
+1793058118	init	release-leases
+1793058118	start	gen=host-37545-1793058118	primary=codex
+1793058118	take-over	arm=23651
+1793058122	pass-through	attended	no supervision engine	signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase/live-host-attended-successors/state/demo.status
+
+
+Persisted .supervision-host-left
+56376	Mon Oct 26 17:42:02 2026     bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/bin/fm-watch-arm.sh
+
+
+
+live-host-predecessor-delivery
+Replacement activation after a real host KILL returned 1, reported forced-cleanup failure, retained the same watcher identity, and surfaced its delivered wake once.
+
+$ predecessor.out
+watcher: started pid=72428 (beacon fresh)
+
+
+$ replacement.out
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/bin/fm-wake-lib.sh: line 1526: 72428 Killed: 9               "$WATCH" > "$child_out"
+signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase/live-host-predecessor-delivery/state/demo.status
+supervision-host: watcher: recovery state could not be persisted; retaining stale lock evidence
+supervision-host: the host could not finish predecessor cleanup or write its record
+
+
+$ session-lock.out
+lock acquired: harness pid 28512
+
+
+$ session-status.out
+lock: held by live harness pid 28512
+
+
+Persisted .watcher-down
+pending:downtime:72428.1793058127.bxsSst
+
+
+Persisted .wake-queue
+1793058127	1	signal	demo.status	signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase/live-host-predecessor-delivery/state/demo.status
+1793058127	2	signal	demo.status	signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase/live-host-predecessor-delivery/state/demo.status
+
+
+Persisted .watch-deliveries.log
+72428	Mon Oct 26 17:42:05 2026     bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/bin/fm-watch.sh	signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase/live-host-predecessor-delivery/state/demo.status
+
+
+Persisted .supervision-host.log
+1793058124	init	stop-predecessor
+1793058124	init	stop-engine
+1793058124	init	stop-arms
+1793058124	init	release-leases
+1793058125	start	gen=host-71375-1793058124	primary=codex
+1793058128	init	stop-predecessor
+1793058128	init	stop-engine
+1793058128	init	stop-arms
+
+
+
+live-host-preconfirmation-retirement
+Replacement activation after a real host KILL returned 1, reported forced-cleanup failure, retained the same watcher identity, and did not accept interrupted pre-beacon startup as healthy.
+
+$ replacement.out
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/bin/fm-wake-lib.sh: line 1526: 12405 Killed: 9               "$WATCH" > "$child_out"
+supervision-host: watcher: recovery state could not be persisted; retaining stale lock evidence
+supervision-host: the host could not finish predecessor cleanup or write its record
+
+
+$ session-lock.out
+lock acquired: harness pid 28512
+
+
+$ session-status.out
+lock: held by live harness pid 28512
+
+
+Persisted .supervision-host.log
+1793058134	init	stop-predecessor
+1793058134	init	stop-engine
+1793058134	init	stop-arms
+1793058134	init	release-leases
+1793058134	start	gen=host-11645-1793058134	primary=codex
+1793058134	init	stop-predecessor
+1793058134	init	stop-engine
+1793058134	init	stop-arms
+
+
+
+live-forced-kill-checkpoint
+A real watcher frozen with SIGSTOP during contended shutdown outlasted the kill grace: the real checkpoint returned 137 after 11.33s, printed the forced-KILL diagnostic, and retained stale lock evidence.
+
+$ checkpoint.err
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/bin/fm-watch-checkpoint.sh: line 116: 89948 Killed: 9               timeout --signal="$signal" --kill-after="${kill_after}s" "$seconds" "$@"
+checkpoint: forced KILL ended the checkpoint before clean shutdown
+
+
+
+live-startup-refusal
+A real arm with an unusable startup confirmation budget failed before publishing a singleton, with its typed launch diagnostic.
+
+$ arm.out
+watcher: FAILED - FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS must be whole seconds from 1 to 600
+
+
+
+live-codex-away-checkpoint-note
+Real Codex detection: away entry without a watcher prints the foreground-checkpoint warning and creates no cycle; a healthy real foreground checkpoint suppresses it; quiet entry does not print the away warning.
+
+$ archive.out
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase/live-codex-away-checkpoint-note/state/afk-contracts/1793058450.afk-contract
+
+
+$ away-before-checkpoint.out
+Away posture recorded at 2026-10-26T23:47:30Z: hold-for-return only. No phone channel is configured; anything that needs you waits for your return. Your away instructions are recorded verbatim; the away session will carry them out where it can, and anything it is unsure of, or that needs you, waits for your return. Destructive, irreversible, and security-sensitive actions are never pre-authorizable, whatever the words say. Expected return: not given. Spend cap: 4 concurrent workers.
+Away posture (recorded):
+  entered: 2026-10-26T23:47:30Z
+  expected return: not given
+  spend cap: 4 concurrent workers
+  reach: hold-for-return only. No phone channel is configured; anything that needs you waits for your return.
+  your words (verbatim):
+    live test; merge nothing
+Away supervision is not running yet: on this home it runs only inside a foreground checkpoint, so start bin/fm-watch-checkpoint.sh now and announce away mode only once it is running; a turn interrupted before then leaves the fleet unsupervised until the next message arrives.
+
+
+$ away-while-supervising.out
+Away posture recorded at 2026-10-26T23:47:32Z: hold-for-return only. No phone channel is configured; anything that needs you waits for your return. Your away instructions are recorded verbatim; the away session will carry them out where it can, and anything it is unsure of, or that needs you, waits for your return. Destructive, irreversible, and security-sensitive actions are never pre-authorizable, whatever the words say. Expected return: not given. Spend cap: 4 concurrent workers.
+Away posture (recorded):
+  entered: 2026-10-26T23:47:30Z
+  expected return: not given
+  spend cap: 4 concurrent workers
+  reach: hold-for-return only. No phone channel is configured; anything that needs you waits for your return.
+  your words (verbatim):
+    live test refresh; merge nothing
+
+
+$ foreground-checkpoint.out
+checkpoint: no actionable wake within 5s
+
+
+$ quiet-entry.out
+Quiet mode recorded at 2026-10-26T23:47:38Z: you are present, so nothing waits for your return: every action you ask for, a local landing or a merge included, proceeds now under ordinary attended authority, and quiet mode changes only which updates reach this conversation. Only an explicit /quiet off ends it.
+Quiet mode (recorded):
+  entered: 2026-10-26T23:47:38Z
+  holds: none - you are present, so nothing waits for your return: every action you ask for, a local landing or a merge included, proceeds now under ordinary attended authority, and quiet mode changes only which updates reach this conversation.
+  your words (verbatim):
+    quiet test
+
+
+$ session-lock.out
+lock acquired: harness pid 64724
+
+
+$ away-while-supervising.err
+fm-afk-contract: replaced the earlier away posture; its record is archived at /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase/live-codex-away-checkpoint-note/state/afk-contracts/1793058450-superseded-1793058452.afk-contract
+
+
+Persisted .watcher-down
+pending:downtime:30994.1793058457.nHz7kI
+
+
+Persisted .supervision-host.log
+1793058451	init	stop-predecessor
+1793058451	init	stop-engine
+1793058451	init	stop-arms
+1793058451	init	release-leases
+1793058451	start	gen=host-30352-1793058451	primary=codex
+1793058457	boundary	after 6s
+
+
+
+live-interrupted-takeover
+Traceback (most recent call last):
+  File "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase/live_probe.py", line 44, in scenario
+    detail=fn(h);log(h,name,detail);results.append(dict(name=name,result='pass',detail=detail))
+  File "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase/interrupted_takeover.py", line 18, in interrupted_takeover
+    assert 'recovery state could not be persisted' not in err, 'The interrupted take-over arm stopped the original watcher while still owning the handed-off recovery lock; it emitted a cleanup-failure diagnostic after the external recovery-lock holder had released. taker exit=%s; original arm exit=%s'%(rc,owner_rc)
+AssertionError: The interrupted take-over arm stopped the original watcher while still owning the handed-off recovery lock; it emitted a cleanup-failure diagnostic after the external recovery-lock holder had released. taker exit=143; original arm exit=143
+
+
+$ observation.out
+original_watcher_pid=49844
+original_arm_pid=49779
+interrupted_taker_pid=51123
+queue_lock_owner_at_interruption=51123
+recovery_lock_owner_after_external_release=51123
+taker_exit=143
+original_arm_exit=143
+retained_watcher_lock=49844
+
+
+$ owner.out
+watcher: started pid=49844 (beacon fresh)
+
+
+$ owner.err
+watcher: recovery state could not be persisted; retaining stale lock evidence
+
+
+$ takeover.err
+watcher: recovery state could not be persisted; retaining stale lock evidence
+

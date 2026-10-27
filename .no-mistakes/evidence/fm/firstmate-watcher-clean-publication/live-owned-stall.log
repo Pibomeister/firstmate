@@ -1,0 +1,25 @@
+live-owned-stall
+The real owned arm returned nonzero for a watcher stalled on the recovery lock, printed the already-delivered signal exactly once, and retained the durable queue byte for byte.
+
+$ owned.out
+watcher: started pid=59958 (beacon fresh)
+signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase/live-owned-stall/state/demo.status
+watcher: FAILED - started watcher pid=59958 stalled (beacon 12s at or past hard bound 12s)
+
+
+$ owned.err
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/bin/fm-wake-lib.sh: line 1526: 59958 Killed: 9               "$WATCH" > "$child_out"
+
+
+Persisted .watcher-down
+pending:downtime:59958.1793057773.mpiCph
+
+
+Persisted .wake-queue
+1793057773	1	signal	demo.status	signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase/live-owned-stall/state/demo.status
+1793057774	2	signal	demo.status	signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase/live-owned-stall/state/demo.status
+
+
+Persisted .watch-deliveries.log
+59958	Mon Oct 26 17:36:09 2026     bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/bin/fm-watch.sh	signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase/live-owned-stall/state/demo.status
+

@@ -1,0 +1,5 @@
+watcher: started pid=43976 (beacon fresh)
+supervision-host: watcher: recovery state could not be persisted; retaining stale lock evidence
+signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase-tmp/live-host-retired-failure/state/demo.status
+supervision-host: watcher: recovery state could not be persisted; retaining stale lock evidence
+supervision-host: cycle boundary - the host ended its park at its bound; drain, acknowledge, and end the turn, and the next park starts on its own

@@ -1,0 +1,7 @@
+[
+  {
+    "name": "live-interrupted-takeover",
+    "result": "fail",
+    "detail": "The interrupted take-over arm stopped the original watcher while still owning the handed-off recovery lock; it emitted a cleanup-failure diagnostic after the external recovery-lock holder had released. taker exit=143; original arm exit=143"
+  }
+]

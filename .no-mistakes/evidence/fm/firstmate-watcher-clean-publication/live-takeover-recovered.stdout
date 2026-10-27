@@ -1,0 +1,2 @@
+watcher: started pid=64599 (beacon fresh)
+supervision-host: cycle boundary - the host ended its park at its bound; drain, acknowledge, and end the turn, and the next park starts on its own

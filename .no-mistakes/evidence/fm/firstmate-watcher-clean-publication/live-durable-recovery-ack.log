@@ -1,0 +1,33 @@
+live-durable-recovery-ack
+A real queued wake resurfaced once, survived a second quiet checkpoint unchanged, and was removed only by the drain acknowledgement printed by the product.
+
+$ drain.out
+1793057753	1	check	live-probe	check: durable work during downtime
+
+
+$ initial.out
+checkpoint: no actionable wake within 1s
+
+
+$ next.out
+checkpoint: no actionable wake within 2s
+
+
+$ recover.out
+check: rearm-resurface
+
+
+$ drain.err
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 32740.1793057752.SjJAuO
+
+
+Persisted .watcher-down
+acked:handling:32740.1793057752.SjJAuO
+
+
+Persisted .wake-queue
+
+
+Persisted .watch-deliveries.log
+35185	Mon Oct 26 17:35:53 2026     bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/bin/fm-watch.sh	check: rearm-resurface
+

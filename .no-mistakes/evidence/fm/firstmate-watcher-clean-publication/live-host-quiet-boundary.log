@@ -1,0 +1,27 @@
+live-host-quiet-boundary
+The opted-in real Codex primary ran a host checkpoint to its park boundary, returned quiet exit 0, and left no watcher singleton.
+
+$ checkpoint.out
+checkpoint: no actionable wake within 3s
+
+
+$ session-lock.out
+lock acquired: harness pid 28512
+
+
+$ session-status.out
+lock: held by live harness pid 28512
+
+
+Persisted .watcher-down
+pending:downtime:92173.1793058110.Her0O3
+
+
+Persisted .supervision-host.log
+1793058107	init	stop-predecessor
+1793058107	init	stop-engine
+1793058107	init	stop-arms
+1793058107	init	release-leases
+1793058107	start	gen=host-90665-1793058107	primary=codex
+1793058111	boundary	after 4s
+

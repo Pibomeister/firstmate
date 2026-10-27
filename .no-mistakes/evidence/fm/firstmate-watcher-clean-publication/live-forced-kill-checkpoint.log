@@ -1,0 +1,7 @@
+live-forced-kill-checkpoint
+A real watcher frozen with SIGSTOP during contended shutdown outlasted the kill grace: the real checkpoint returned 137 after 11.33s, printed the forced-KILL diagnostic, and retained stale lock evidence.
+
+$ checkpoint.err
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/bin/fm-watch-checkpoint.sh: line 116: 89948 Killed: 9               timeout --signal="$signal" --kill-after="${kill_after}s" "$seconds" "$@"
+checkpoint: forced KILL ended the checkpoint before clean shutdown
+

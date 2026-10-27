@@ -1,0 +1,63 @@
+live-codex-away-checkpoint-note
+Real Codex detection: away entry without a watcher prints the foreground-checkpoint warning and creates no cycle; a healthy real foreground checkpoint suppresses it; quiet entry does not print the away warning.
+
+$ archive.out
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase/live-codex-away-checkpoint-note/state/afk-contracts/1793058450.afk-contract
+
+
+$ away-before-checkpoint.out
+Away posture recorded at 2026-10-26T23:47:30Z: hold-for-return only. No phone channel is configured; anything that needs you waits for your return. Your away instructions are recorded verbatim; the away session will carry them out where it can, and anything it is unsure of, or that needs you, waits for your return. Destructive, irreversible, and security-sensitive actions are never pre-authorizable, whatever the words say. Expected return: not given. Spend cap: 4 concurrent workers.
+Away posture (recorded):
+  entered: 2026-10-26T23:47:30Z
+  expected return: not given
+  spend cap: 4 concurrent workers
+  reach: hold-for-return only. No phone channel is configured; anything that needs you waits for your return.
+  your words (verbatim):
+    live test; merge nothing
+Away supervision is not running yet: on this home it runs only inside a foreground checkpoint, so start bin/fm-watch-checkpoint.sh now and announce away mode only once it is running; a turn interrupted before then leaves the fleet unsupervised until the next message arrives.
+
+
+$ away-while-supervising.out
+Away posture recorded at 2026-10-26T23:47:32Z: hold-for-return only. No phone channel is configured; anything that needs you waits for your return. Your away instructions are recorded verbatim; the away session will carry them out where it can, and anything it is unsure of, or that needs you, waits for your return. Destructive, irreversible, and security-sensitive actions are never pre-authorizable, whatever the words say. Expected return: not given. Spend cap: 4 concurrent workers.
+Away posture (recorded):
+  entered: 2026-10-26T23:47:30Z
+  expected return: not given
+  spend cap: 4 concurrent workers
+  reach: hold-for-return only. No phone channel is configured; anything that needs you waits for your return.
+  your words (verbatim):
+    live test refresh; merge nothing
+
+
+$ foreground-checkpoint.out
+checkpoint: no actionable wake within 5s
+
+
+$ quiet-entry.out
+Quiet mode recorded at 2026-10-26T23:47:38Z: you are present, so nothing waits for your return: every action you ask for, a local landing or a merge included, proceeds now under ordinary attended authority, and quiet mode changes only which updates reach this conversation. Only an explicit /quiet off ends it.
+Quiet mode (recorded):
+  entered: 2026-10-26T23:47:38Z
+  holds: none - you are present, so nothing waits for your return: every action you ask for, a local landing or a merge included, proceeds now under ordinary attended authority, and quiet mode changes only which updates reach this conversation.
+  your words (verbatim):
+    quiet test
+
+
+$ session-lock.out
+lock acquired: harness pid 64724
+
+
+$ away-while-supervising.err
+fm-afk-contract: replaced the earlier away posture; its record is archived at /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase/live-codex-away-checkpoint-note/state/afk-contracts/1793058450-superseded-1793058452.afk-contract
+
+
+Persisted .watcher-down
+pending:downtime:30994.1793058457.nHz7kI
+
+
+Persisted .supervision-host.log
+1793058451	init	stop-predecessor
+1793058451	init	stop-engine
+1793058451	init	stop-arms
+1793058451	init	release-leases
+1793058451	start	gen=host-30352-1793058451	primary=codex
+1793058457	boundary	after 6s
+

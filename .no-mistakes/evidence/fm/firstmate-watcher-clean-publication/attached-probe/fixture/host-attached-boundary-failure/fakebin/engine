@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+: > "$FM_HOME/engine-ready"
+while [ ! -e "$FM_HOME/engine-go" ] && [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do sleep 0.1; done
+exit 3

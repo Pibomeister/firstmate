@@ -1,0 +1,50 @@
+{
+  "revision": "db0511b9b046f06dde5655ace113960421fbf195",
+  "production_changes_in_this_phase": false,
+  "final_targeted_results": {
+    "bash tests/fm-watch-checkpoint.test.sh": 0,
+    "bash tests/fm-watch-arm.test.sh": 0,
+    "bash tests/fm-supervision-host.test.sh": 0,
+    "env -u FM_HOME bash tests/fm-watcher-lock.test.sh": 0
+  },
+  "initial_failures": [
+    {
+      "command": "bash tests/fm-watch-checkpoint.test.sh",
+      "exit": 1,
+      "resolution": "Reproduced the test assertion failure and preserved host diagnostics plus retained lock evidence. Restricted the original-stderr assertion to mismatched identity fixtures; the failure cases still require host diagnostics, nonzero status, durable rows and matching stale evidence. Complete script passed after this test-only correction."
+    },
+    {
+      "command": "bash tests/fm-watcher-lock.test.sh with outer FM_HOME set to unused-home",
+      "exit": 1,
+      "resolution": "The outer FM_HOME masked the guard fixture config selected through FM_ROOT_OVERRIDE. Removed the outer FM_HOME and the complete script passed."
+    }
+  ],
+  "live_drivers": [
+    {
+      "command": "timeout 180 bash .test-phase-tmp/live-checks.sh",
+      "exit": 0
+    },
+    {
+      "command": "timeout 180 bash .test-phase-tmp/live-edge-checks.sh",
+      "exit": 0
+    },
+    {
+      "command": "timeout 180 bash .test-phase-tmp/live-host-failures.sh",
+      "exit": 0
+    },
+    {
+      "command": "timeout 60 bash .test-phase-tmp/live-afk-checks.sh",
+      "exit": 0
+    },
+    {
+      "command": "timeout 90 bash .test-phase-tmp/live-startup-guards.sh",
+      "exit": 0
+    },
+    {
+      "command": "timeout 90 bash .test-phase-tmp/live-takeover.sh",
+      "exit": 0
+    }
+  ],
+  "live_environment": "Actual Codex 0.163.0, shell mode, hooks disabled, private tmux fm-lab socket with 140x45 grid; disposable marked FM_HOME fixtures; all lab state removed.",
+  "probe_setup_corrections": "Moved contention after actual delivery, allocated enough ledger space to retain the delivery record, and read the documented left-arm record field. Initial setup attempts remain in the evidence directory."
+}

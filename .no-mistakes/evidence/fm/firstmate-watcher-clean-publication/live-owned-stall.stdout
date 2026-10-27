@@ -1,0 +1,3 @@
+watcher: started pid=82207 (beacon fresh)
+check: rearm-resurface
+watcher: FAILED - started watcher pid=82207 stalled (beacon 12s at or past hard bound 12s)

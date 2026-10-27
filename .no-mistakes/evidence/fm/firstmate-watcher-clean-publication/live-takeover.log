@@ -1,0 +1,10 @@
+Revision: db0511b9b046f06dde5655ace113960421fbf195, harness: codex
+lock acquired: harness pid 16156
+live-takeover-recovered exit=0
+watcher: started pid=64599 (beacon fresh)
+supervision-host: cycle boundary - the host ended its park at its bound; drain, acknowledge, and end the turn, and the next park starts on its own
+original_arm=57871
+original_watcher=57924
+interrupted_arm=61702
+recovered_park_exit=0
+LIVE TAKEOVER CHECK COMPLETE

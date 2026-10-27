@@ -1,0 +1,45 @@
+live-host-predecessor-delivery
+Replacement activation after a real host KILL returned 1, reported forced-cleanup failure, retained the same watcher identity, and surfaced its delivered wake once.
+
+$ predecessor.out
+watcher: started pid=72428 (beacon fresh)
+
+
+$ replacement.out
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/bin/fm-wake-lib.sh: line 1526: 72428 Killed: 9               "$WATCH" > "$child_out"
+signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase/live-host-predecessor-delivery/state/demo.status
+supervision-host: watcher: recovery state could not be persisted; retaining stale lock evidence
+supervision-host: the host could not finish predecessor cleanup or write its record
+
+
+$ session-lock.out
+lock acquired: harness pid 28512
+
+
+$ session-status.out
+lock: held by live harness pid 28512
+
+
+Persisted .watcher-down
+pending:downtime:72428.1793058127.bxsSst
+
+
+Persisted .wake-queue
+1793058127	1	signal	demo.status	signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase/live-host-predecessor-delivery/state/demo.status
+1793058127	2	signal	demo.status	signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase/live-host-predecessor-delivery/state/demo.status
+
+
+Persisted .watch-deliveries.log
+72428	Mon Oct 26 17:42:05 2026     bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/bin/fm-watch.sh	signal: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/.test-phase/live-host-predecessor-delivery/state/demo.status
+
+
+Persisted .supervision-host.log
+1793058124	init	stop-predecessor
+1793058124	init	stop-engine
+1793058124	init	stop-arms
+1793058124	init	release-leases
+1793058125	start	gen=host-71375-1793058124	primary=codex
+1793058128	init	stop-predecessor
+1793058128	init	stop-engine
+1793058128	init	stop-arms
+

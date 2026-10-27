@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+case "$*" in
+  *'/.watch.lock/pid')
+    if [ -e "$FM_HOME/stop-order" ] && [ -e "$FM_HOME/retiring-arm.pid" ] \
+      && grep -q "arm_pid=$("$FM_TEST_REAL_CAT" "$FM_HOME/retiring-arm.pid").*reason=arm-interrupted" "$FM_HOME/state/.watch-cycle-exits.log" 2>/dev/null; then
+      case "$(ps -o args= -p "$PPID" 2>/dev/null)" in
+        *fm-watch-arm.sh*)
+          if mkdir "$FM_HOME/ordered-read-claimed" 2>/dev/null; then
+            if [ "$("$FM_TEST_REAL_CAT" "$FM_HOME/stop-order")" = stop-first ]; then
+              "$FM_TEST_REAL_CAT" "$@" > "$FM_HOME/ordered-pid"
+            fi
+            : > "$FM_HOME/ordered-read-ready"
+            while [ ! -e "$FM_HOME/ordered-read-go" ] && [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do sleep 0.05; done
+            if [ -e "$FM_HOME/ordered-pid" ]; then
+              exec "$FM_TEST_REAL_CAT" "$FM_HOME/ordered-pid"
+            fi
+            [ ! -e "$FM_HOME/state/.watch.lock/pid" ] || exit 1
+            : > "$FM_HOME/ordered-read-after-cleanup"
+          fi
+          ;;
+      esac
+    fi
+    ;;
+esac
+exec "$FM_TEST_REAL_CAT" "$@"

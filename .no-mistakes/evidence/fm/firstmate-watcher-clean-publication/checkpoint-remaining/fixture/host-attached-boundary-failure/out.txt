@@ -1,0 +1,3 @@
+watcher: attached pid=53653 (beacon 1s)
+supervision-host: watcher: recovery state could not be persisted; retaining stale lock evidence
+supervision-host: cycle boundary - the host ended its park at its bound; drain, acknowledge, and end the turn, and the next park starts on its own

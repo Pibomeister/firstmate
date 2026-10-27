@@ -1,0 +1,27 @@
+live-host-preconfirmation-retirement
+Replacement activation after a real host KILL returned 1, reported forced-cleanup failure, retained the same watcher identity, and did not accept interrupted pre-beacon startup as healthy.
+
+$ replacement.out
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/bin/fm-wake-lib.sh: line 1526: 12405 Killed: 9               "$WATCH" > "$child_out"
+supervision-host: watcher: recovery state could not be persisted; retaining stale lock evidence
+supervision-host: the host could not finish predecessor cleanup or write its record
+
+
+$ session-lock.out
+lock acquired: harness pid 28512
+
+
+$ session-status.out
+lock: held by live harness pid 28512
+
+
+Persisted .supervision-host.log
+1793058134	init	stop-predecessor
+1793058134	init	stop-engine
+1793058134	init	stop-arms
+1793058134	init	release-leases
+1793058134	start	gen=host-11645-1793058134	primary=codex
+1793058134	init	stop-predecessor
+1793058134	init	stop-engine
+1793058134	init	stop-arms
+

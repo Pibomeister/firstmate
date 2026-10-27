@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+last=
+for last in "$@"; do :; done
+if [ "$last" = "$FM_HOME/state/.watch-deliveries.log" ] && [ -e "$FM_HOME/block-delivery" ]; then
+  : > "$FM_HOME/external-output-ready"
+  while [ ! -e "$FM_HOME/external-output-go" ] && [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do sleep 0.1; done
+fi
+exec "$FM_TEST_REAL_MV" "$@"

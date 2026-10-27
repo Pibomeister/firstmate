@@ -1,0 +1,11 @@
+Revision: db0511b9b046f06dde5655ace113960421fbf195, harness: codex
+lock acquired: harness pid 16156
+owned_exit=1
+attached_exit=1
+watcher: started pid=71591 (beacon fresh)
+check: rearm-resurface
+watcher: FAILED - started watcher pid=71591 stalled (beacon 12s at or past hard bound 12s)
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5WPXNZDE1WCTBNY9HZY8TTC/bin/fm-wake-lib.sh: line 1526: 71591 Killed: 9               "$WATCH" > "$child_out"
+watcher: attached pid=71591 (beacon 0s)
+watcher: FAILED - attached watcher pid=71591 stalled (beacon 12s at or past hard bound 12s)
+LIVE FAILURE: attached stall lost delivered wake

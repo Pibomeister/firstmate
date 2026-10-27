@@ -1,0 +1,9 @@
+Revision: db0511b9b046f06dde5655ace113960421fbf195, harness: codex
+lock acquired: harness pid 16156
+live-invalid-startup exit=1
+supervision-host: watcher: FAILED - FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS must be whole seconds from 1 to 600
+lock acquired: harness pid 16156
+live-singleton-refusal exit=1
+watcher: already running pid 8553
+checkpoint: watcher is already running outside this foreground checkpoint
+LIVE STARTUP GUARDS COMPLETE

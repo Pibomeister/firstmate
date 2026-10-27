@@ -1,0 +1,20 @@
+live-quiet-and-empty-recovery
+Two real foreground checkpoints returned 0 without wakes. Ordinary downtime was retired on the same generation; the singleton lock was released.
+
+$ checkpoint.out
+checkpoint: no actionable wake within 2s
+
+
+$ retired-while-running.out
+marker=acked:downtime:73020.1793057871.JhO5ZV
+successor_running=true
+queue_empty=true
+
+
+$ successor.out
+checkpoint: no actionable wake within 4s
+
+
+Persisted .watcher-down
+pending:downtime:76512.1793057876.eWpH9p
+
