@@ -7082,6 +7082,73 @@ test_afk_declared_pause_on_an_executing_run_stays_handed_off_once() {
   pass "away mode leaves a declared pause alone while its run is still executing"
 }
 
+test_parked_gate_notice_tracks_each_pause_occurrence() {
+  local mode owner expected FM_FAKE_CREW_STATE
+  for mode in attended away; do
+    for owner in worker human; do
+      FM_FAKE_CREW_STATE=$PARKED_GATE_WORKER
+      expected=0
+      if [ "$owner" = human ]; then FM_FAKE_CREW_STATE=$PARKED_GATE_HUMAN; expected=1; fi
+      (
+        local dir state key entry
+        local window="test:fm-afk-parked"
+        local pause='paused: waiting for no-mistakes run 01RUNAFK'
+        dir=$(afk_parked_fixture "parked-repeat-$mode-$owner"); state="$dir/state"
+        key=$(printf '%s' "$window" | tr '.:/' '___')
+        export FM_HOME="$dir" FM_STATE_OVERRIDE="$state"
+        export FM_CREW_STATE_BIN="$dir/fakebin/fm-crew-state.sh" FM_FAKE_CREW_STATE
+        # shellcheck source=/dev/null
+        . "$WATCH"
+        fm_backend_agent_alive() { printf 'dead\n'; }
+        fm_task_inbox_ring() { printf '%s\n' "$3" >> "$dir/rings"; }
+        case "$mode" in
+          attended) entry=pause_gate_class ;;
+          away) entry=parked_gate_away_read ;;
+        esac
+        read_park() {
+          parked_gate_scan_begin
+          rm -f "$state/.paused-gate-read-$key"
+          "$entry" "$window" afk-parked
+        }
+        printf '%s\n' "$pause" > "$state/afk-parked.status"
+        read_park
+        [ -f "$state/afk-parked.inbox/001.msg" ] || fail "$mode/$owner missed the first park"
+        mkdir -p "$state/afk-parked.inbox/handled"
+        mv "$state/afk-parked.inbox/001.msg" "$state/afk-parked.inbox/handled/"
+        read_park
+        printf 'resolved [key=unrelated]: another decision answered\nContinuation of the answer.\n' >> "$state/afk-parked.status"
+        read_park
+        [ "$(afk_parked_records "$dir")" = 0 ] || fail "$mode/$owner repeated a notice for the same pause"
+        [ "$(wc -l < "$dir/rings" | tr -d ' ')" = 1 ] || fail "$mode/$owner repeated the doorbell"
+        [ "$(fm_wake_actor_pending_count main)" = "$expected" ] || fail "$mode/$owner repeated the human wake"
+
+        printf 'working: answering the gate and running another review\n%s\n' "$pause" >> "$state/afk-parked.status"
+        read_park
+        [ -f "$state/afk-parked.inbox/002.msg" ] || fail "$mode/$owner suppressed the second identical park"
+        mv "$state/afk-parked.inbox/002.msg" "$state/afk-parked.inbox/handled/"
+        read_park
+        [ "$(afk_parked_records "$dir")" = 0 ] || fail "$mode/$owner repeated the second notice"
+        [ "$(wc -l < "$dir/rings" | tr -d ' ')" = 2 ] || fail "$mode/$owner did not ring once per park"
+        [ "$(fm_wake_actor_pending_count main)" = "$((expected * 2))" ] || fail "$mode/$owner lost the second human wake"
+
+        printf 'needs-decision [key=nm-01RUNAFK-fix_review]: authority for run 01RUNAFK\n%s\n' "$pause" >> "$state/afk-parked.status"
+        read_park
+        read_park
+        [ "$(afk_parked_records "$dir")" = 0 ] || fail "$mode/$owner rang an already escalated gate"
+        printf 'resolved [key=nm-01RUNAFK-fix_review]: authority supplied\n' >> "$state/afk-parked.status"
+        read_park
+        [ "$(afk_parked_records "$dir")" = 0 ] || fail "$mode/$owner replayed the escalated pause"
+        printf 'working: applying the decision\n%s\n' "$pause" >> "$state/afk-parked.status"
+        read_park
+        [ -f "$state/afk-parked.inbox/003.msg" ] || fail "$mode/$owner inherited the escalated pause marker"
+        [ "$(wc -l < "$dir/rings" | tr -d ' ')" = 3 ] || fail "$mode/$owner lost the post-escalation doorbell"
+        [ "$(fm_wake_actor_pending_count main)" = "$((expected * 3))" ] || fail "$mode/$owner lost the post-escalation wake"
+        pass "$mode/$owner notices each new pause once, including identical verdicts and declarations"
+      ) || fail "$mode/$owner parked-notice regression failed"
+    done
+  done
+}
+
 # A no-mistakes that stops answering must not hold the fleet scan behind this
 # read. Two handed-off paused panes: the first in scan order reads a current
 # state that hangs far past the bound, the second's run is parked on an ask-user
