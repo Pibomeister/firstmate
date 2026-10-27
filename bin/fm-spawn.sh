@@ -5065,9 +5065,10 @@ rovo_spawn_fail() { # <detail>
   spawn_gate_endpoint_cleanup
 }
 
-# kimi, rovo, agy, and Droid's launch-then-confirm gates run after the task record
-# is published, when ORCA_ABORT_CLEANUP is already cleared and neither the
-# abort trap nor a teardown owns this endpoint yet, so a gate failure must
+# The launch-then-confirm gates for Kimi, Rovo, agy, Droid, and Polytoken run
+# after the task record is published, when ORCA_ABORT_CLEANUP is already
+# cleared and neither the abort trap nor a teardown owns this endpoint yet,
+# so a gate failure must
 # close the launched process here or it keeps running as an orphaned
 # autonomous agent outside task control: the rollback that follows a failed
 # spawn removes the only durable record that names it. Mirrors
