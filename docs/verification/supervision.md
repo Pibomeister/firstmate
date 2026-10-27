@@ -426,11 +426,16 @@ The sidecar keeps the thread id on line 1 and records the anchor pid and its ker
 A reused numeric pid cannot inherit the recorded process instance's ownership.
 A daemon-served owner's acquiring process may exit while the thread remains active without any identity-bearing process.
 The shared boundary queries `thread/read` over the recorded daemon instance's control socket, using the WebSocket transport described by the [app-server protocol](https://learn.chatgpt.com/docs/app-server).
-Runtime states `active`, `idle`, and `systemError` retain the lock; `notLoaded` permits replacement while that same daemon is still alive.
+Runtime state `active` always retains the lock, and `notLoaded` permits replacement while the daemon remains alive.
+An `idle` or `systemError` thread permits replacement only when its recorded supervisor endpoint is proven gone by `fm_backend_orca_endpoint_absence_proof`, including the terminal lookup, readable process sweep, and clean recorded-worktree agent scan.
+Missing endpoint metadata, a live endpoint, or any unreadable proof retains the lock through the daemon's retention interval.
+Secondmate launches pass their existing endpoint metadata to lock acquisition, which snapshots the Orca terminal, worktree, and spawn generation in the sidecar; same-session re-anchors preserve that evidence.
 If the query is unavailable, the identity-bound process scan supplies the fallback verdict; daemon uptime alone never retains ownership.
 The daemon pid and kernel start time select the server instance to query, rather than serving as thread-lifetime evidence.
 Same-thread acquisition re-anchors a dead or reused anchor under the claim and lease-command locks, moving that thread's leases to its current anchor.
 A replacement session retires prior task leases under the lease-command lock before publishing its fresh anchor instance.
+The shared owner-key boundary uses the recorded session identity after verifying owner liveness; that key survives helper re-anchoring and keeps supervision conversations and the two-error cooldown under one session.
+The host pins the engine turn's verified session key alongside its holder pid; subsequent lease claims resolve the current holder only when that key still matches, and a branch from a replaced session is refused.
 Separate argv and environment fields come from Linux procfs or macOS KERN_PROCARGS2, with kernel start times from procfs or proc_pidinfo.
 Only the actual `resume <id>` argument pair or both equal environment identity fields bind a process to a thread.
 Inspection carries the verified owner pid and Codex harness evidence through to inbox readiness, and task leases use the same owner-lifetime boundary.
@@ -462,6 +467,7 @@ ok - session-lock: real argv and separate environment fields bind only their own
 ok - session-lock e2e: a daemon-parented Codex session acquires and keeps its lock by thread id, never on the daemon
 ok - session-lock e2e: a dead session's daemon-anchored lock is reclaimed by its replacement through fm-lock.sh
 ok - session-lock: daemon restart re-anchors dead and reused instances while preserving same-thread leases
+ok - session-lock: retained idle and errored threads need endpoint stop proof; active threads refuse
 ok - session-lock e2e: daemon thread state protects live owners and permits replacement while the daemon lives
 ```
 [`sessionstart-nudge.md`](../sessionstart-nudge.md#shared-wrapper-and-safety) owns the nudge wrapper's separate ancestry check and its redundant-nudge behavior after helper-chain recycling.

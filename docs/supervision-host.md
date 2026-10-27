@@ -93,7 +93,7 @@ An attended turn queues nothing: its captain rows reach main through the host's 
 The host's engine runs with these settings:
 
 - `FM_SUPERVISION_ACTOR=branch`.
-- The session-lock holder as `FM_LEASE_HOLDER_PID`.
+- The session-lock holder as `FM_LEASE_HOLDER_PID` and its verified session key as `FM_LEASE_HOLDER_SESSION`.
 - The primary's harness pin.
 
 So every guarded script treats it exactly as it treats the Pi branch.

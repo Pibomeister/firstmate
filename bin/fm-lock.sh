@@ -162,6 +162,30 @@ remember_lock_session() {
   LOCK_SESSION_PHASE=1
 }
 
+publish_lock_endpoint() {
+  local trusted=$1 recorded=$2 candidate=${FM_SESSION_ENDPOINT_META:-} source= field value
+  if [ -n "$trusted" ] && [ "$trusted" = "$recorded" ]; then
+    source=$LOCK_SESSION
+  fi
+  if [ -n "$candidate" ] && [ -f "$candidate" ] && [ ! -L "$candidate" ] \
+    && [ "$(sed -n 's/^backend=//p' "$candidate")" = orca ] \
+    && [ "$(sed -n 's/^worktree=//p' "$candidate")" = "${FM_HOME%/}" ] \
+    && [ -n "$(sed -n 's/^terminal=//p' "$candidate")" ]; then
+    source=$candidate
+  fi
+  [ -n "$source" ] && [ -f "$source" ] && [ ! -L "$source" ] || return 0
+  [ "$(sed -n 's/^backend=//p' "$source")" = orca ] || return 0
+  value=$(sed -n 's/^worktree=//p' "$source")
+  [ -n "$value" ] && [ "$value" = "${FM_HOME%/}" ] || return 0
+  [ -n "$(sed -n 's/^terminal=//p' "$source")" ] || return 0
+  for field in backend terminal worktree spawn_gen; do
+    value=$(sed -n "s/^$field=//p" "$source")
+    case "$value" in *$'\n'*|*$'\r'*) return 1 ;; esac
+    [ -z "$value" ] || printf '%s=%s\n' "$field" "$value"
+  done
+  return 0
+}
+
 publish_lock_session() {
   local anchor=${1:-$me} trusted recorded tmp start daemon daemon_start
   trusted=$(fm_session_lock_trusted_session_id) || trusted=
@@ -183,6 +207,7 @@ publish_lock_session() {
     {
       printf '%s\nanchor_pid=%s\nanchor_start=%s\n' "$trusted" "$anchor" "$start"
       [ -z "$daemon" ] || printf 'codex_daemon_pid=%s\ncodex_daemon_start=%s\n' "$daemon" "$daemon_start"
+      publish_lock_endpoint "$trusted" "$recorded"
     } > "$tmp" && mv -f "$tmp" "$LOCK_SESSION"
   } 2>/dev/null; then
     rm -f "$tmp" 2>/dev/null

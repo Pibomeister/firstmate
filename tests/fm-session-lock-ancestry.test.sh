@@ -1583,7 +1583,7 @@ test_reanchor_keeps_task_leases_live() {
     || fail "the main lease was not moved to the new anchor: $(cat "$dir/state/.lease-t2")"
   cmp -s "$dir/state/lease-t3-before" "$dir/state/.lease-t3" \
     || fail "a lease recorded against another pid changed: $(cat "$dir/state/.lease-t3")"
-  env -u FM_SUPERVISION_ACTOR -u FM_LEASE_HOLDER_PID FM_HOME="$dir" \
+  env -u FM_SUPERVISION_ACTOR -u FM_LEASE_HOLDER_PID -u FM_LEASE_HOLDER_SESSION FM_HOME="$dir" \
     "$ROOT/bin/fm-lease.sh" claim t1 > "$dir/state/main-claim.out" 2>&1
   lease_rc=$?
   expect_code 6 "$lease_rc" "main claimed the branch's task after the re-anchor: $(cat "$dir/state/main-claim.out")"
@@ -1772,7 +1772,7 @@ SH
 }
 
 test_e2e_codex_foreign_acquisition_refused_while_owner_lives() {
-  local dir daemon_pid anchor ready watcher_pid
+  local dir daemon_pid anchor ready watcher_pid session_key
   dir="$TMP_ROOT/e2e-codex-foreign-acquire"
   mkdir -p "$dir/state"
   cat > "$dir/tool.sh" <<'SH'
@@ -1822,6 +1822,8 @@ SH
   fi
   bash -c '. "$1"; fm_session_lock_inspect "$2"; [ "$FM_LOCK_INSPECT_STATE" = held ] && [ "$FM_LOCK_INSPECT_OWNER_PID" = "$3" ]' \
     _ "$LIB" "$dir/state" "$daemon_pid" || fail "inspection lost the daemon-served owner"
+  session_key=$(FM_HOME="$dir" STATE="$dir/state" bash -c '. "$1/bin/fm-wake-lib.sh"; . "$1/bin/fm-supervision-engine-lib.sh"; fm_supervision_host_main_key "$STATE"' _ "$ROOT") \
+    || fail "the daemon owner has no verified main-session key"
   printf 'branch\t%s\t100\n' "$anchor" > "$dir/state/.lease-t1"
   FM_HOME="$dir" STATE="$dir/state" bash -c '. "$1"; fm_lease_live t1' _ "$ROOT/bin/fm-lease-lib.sh" \
     || fail "a dead acquiring helper made the owner's lease stale"
@@ -1851,13 +1853,94 @@ SH
     || fail "the post-owner acquisition did not record its own thread"
   kill -0 "$daemon_pid" 2>/dev/null || fail "replacement required daemon shutdown"
   [ ! -e "$dir/state/.lease-t1" ] || fail "replacement revived the previous owner's lease"
+  FM_HOME="$dir" FM_SUPERVISION_ACTOR=branch FM_LEASE_HOLDER_PID="$anchor" FM_LEASE_HOLDER_SESSION="$session_key" \
+    "$ROOT/bin/fm-lease.sh" claim stale-branch > "$dir/state/stale-branch.out" 2>&1
+  expect_code 6 "$?" "the previous owner's branch acquired a lease after foreign takeover"
+  [ ! -e "$dir/state/.lease-stale-branch" ] || fail "a previous branch published a stale lease"
   : > "$dir/state/stop-daemon"
   wait "$daemon_pid" || fail "the daemon failed to exit"
   pass "session-lock e2e: daemon thread state protects live owners and permits replacement while the daemon lives"
 }
 
+test_codex_retained_thread_requires_endpoint_stop_proof() {
+  local dir fakebin case_spec status endpoint expected daemon_pid socket_index=0
+  for case_spec in idle:alive:1 idle:gone:0 active:gone:1 systemError:alive:1 systemError:gone:0 idle:unreadable:1 idle:process-left:1 notLoaded:alive:0; do
+    status=${case_spec%%:*}
+    endpoint=${case_spec#*:}; endpoint=${endpoint%:*}
+    expected=${case_spec##*:}
+    dir="$TMP_ROOT/retained-$status-$endpoint"
+    fakebin=$(fm_fakebin "$dir")
+    mkdir -p "$dir/state"
+    printf '{"TA":"%s","TB":"active"}\n' "$status" > "$dir/state/thread-states.json"
+    printf 'backend=orca\nterminal=term-owner\nworktree=%s\nspawn_gen=s1.1.1\n' "$dir" > "$dir/endpoint.meta"
+    cat > "$fakebin/orca" <<'SH'
+#!/usr/bin/env bash
+case "$*" in
+  'terminal show --terminal term-owner --json')
+    python3 - <<'PYTHON'
+import json,os
+phase=os.environ['FM_TEST_ENDPOINT_PHASE']
+if phase == 'unreadable':
+    print('unreadable')
+else:
+    print(json.dumps({'ok':True,'result':{'terminal':{'handle':'term-owner','connected':phase=='alive','writable':phase=='alive','executionHostId':'local','ptyId':'owner-pty','worktreePath':os.environ['FM_HOME'],'exitCause':{'kind':'exit'}}}}))
+PYTHON
+    ;;
+  'diagnostics memory --json') printf '{"ok":true,"result":{"worktrees":[]}}\n' ;;
+  *) exit 1 ;;
+esac
+SH
+    cat > "$fakebin/lsof" <<'SH'
+#!/usr/bin/env bash
+case " $* " in
+  *' -d cwd '*)
+    if [ "$FM_TEST_ENDPOINT_PHASE" = process-left ]; then
+      printf 'p%s\nn%s\n' "$(cat "$FM_HOME/state/daemon-pid")" "$FM_HOME"
+    else
+      printf 'p1\nn/\n'
+    fi
+    exit 0
+    ;;
+esac
+SH
+    printf 'exec %q "$@"\n' "$(command -v lsof)" >> "$fakebin/lsof"
+    chmod +x "$fakebin/orca" "$fakebin/lsof"
+    cat > "$dir/body.sh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$PPID" > "$FM_HOME/state/daemon-pid"
+CODEX_THREAD_ID=TA CODEX_SESSION_ID=TA "$FM_LOCK" > "$FM_HOME/state/acquire.out" 2>&1
+printf '%s\n' "$?" > "$FM_HOME/state/acquire.rc"
+cp "$FM_HOME/state/.lock-session" "$FM_HOME/state/owner-record"
+CODEX_THREAD_ID=TB CODEX_SESSION_ID=TB "$FM_LOCK" > "$FM_HOME/state/foreign.out" 2>&1
+printf '%s\n' "$?" > "$FM_HOME/state/foreign.rc"
+printf done > "$FM_HOME/state/done"
+while [ ! -e "$FM_HOME/state/stop" ]; do sleep 0.05; done
+SH
+    socket_index=$((socket_index + 1))
+    env -u CLAUDE_CODE_SESSION_ID -u CLAUDE_PID -u CODEX_THREAD_ID -u CODEX_SESSION_ID \
+      FM_HOME="$dir" FM_LOCK="$ROOT/bin/fm-lock.sh" FM_SESSION_ENDPOINT_META="$dir/endpoint.meta" \
+      FM_TEST_ENDPOINT_PHASE="$endpoint" PATH="$fakebin:$PATH" \
+      FM_TEST_CODEX_BODY="$dir/body.sh" FM_TEST_CODEX_SOCKET="$TMP_ROOT/t$socket_index.sock" \
+      FM_TEST_CODEX_SERVER="$TMP_ROOT/native/server.py" \
+      "$NATIVE_CODEX" app-server --listen unix:// --managed-daemon &
+    daemon_pid=$!
+    BG_FIXTURE_PIDS+=("$daemon_pid")
+    wait_for_daemon_done "$dir/state/done" "the retained $status/$endpoint exercise"
+    expect_code 0 "$(cat "$dir/state/acquire.rc")" "retained-thread setup failed: $(cat "$dir/state/acquire.out")"
+    [ "$(sed -n 's/^terminal=//p' "$dir/state/owner-record")" = term-owner ] || fail "acquisition did not snapshot its supervisor endpoint"
+    expect_code "$expected" "$(cat "$dir/state/foreign.rc")" "$status/$endpoint: incorrect foreign acquisition verdict: $(cat "$dir/state/foreign.out")"
+    kill -0 "$daemon_pid" 2>/dev/null || fail "retained-thread acquisition required daemon shutdown"
+    if [ "$expected" -ne 0 ]; then
+      cmp -s "$dir/state/.lock-session" "$dir/state/owner-record" || fail "a refused takeover changed the recorded owner"
+    fi
+    : > "$dir/state/stop"
+    wait "$daemon_pid" || fail "retained-thread fixture failed to exit"
+  done
+  pass "session-lock: retained idle and errored threads need endpoint stop proof; active threads refuse"
+}
+
 test_codex_restart_reanchors_same_thread() {
-  local dir shape daemon_pid first_daemon old_anchor new_anchor replacement_pid
+  local dir shape daemon_pid first_daemon old_anchor new_anchor replacement_pid first_key next_key claim_rc
   for shape in dead reused; do
     dir="$TMP_ROOT/restart-$shape"
     mkdir -p "$dir/state"
@@ -1884,6 +1967,8 @@ SH
     wait_for_daemon_done "$dir/state/first.done" "the initial daemon acquisition"
     expect_code 0 "$(cat "$dir/state/first.rc")" "initial acquisition failed: $(cat "$dir/state/first.out")"
     old_anchor=$(cat "$dir/state/.lock")
+    first_key=$(FM_HOME="$dir" STATE="$dir/state" bash -c '. "$1/bin/fm-wake-lib.sh"; . "$1/bin/fm-supervision-engine-lib.sh"; fm_supervision_host_main_key "$STATE"' _ "$ROOT") \
+      || fail "a dead acquiring helper broke the supervision key"
     : > "$dir/state/stop-first"
     wait "$daemon_pid" || fail "the first daemon failed to exit"
     if [ "$shape" = reused ]; then
@@ -1920,6 +2005,19 @@ SH
       || fail "$shape: recovery skipped a valid task id ending in .lock"
     STATE="$dir/state" bash -c '. "$1"; fm_lease_live t1' _ "$ROOT/bin/fm-lease-lib.sh" \
       || fail "$shape: the moved lease is not live"
+    next_key=$(FM_HOME="$dir" STATE="$dir/state" bash -c '. "$1/bin/fm-wake-lib.sh"; . "$1/bin/fm-supervision-engine-lib.sh"; fm_supervision_host_main_key "$STATE"' _ "$ROOT") \
+      || fail "the re-anchored supervisor has no main-session key"
+    [ "$first_key" = "$next_key" ] || fail "a helper re-anchor changed the supervision session key"
+    FM_HOME="$dir" FM_SUPERVISION_ACTOR=branch FM_LEASE_HOLDER_PID="$old_anchor" FM_LEASE_HOLDER_SESSION="$first_key" \
+      "$ROOT/bin/fm-lease.sh" claim later-task > "$dir/state/later-claim.out" 2>&1 \
+      || fail "a branch pinned before re-anchoring could not claim: $(cat "$dir/state/later-claim.out")"
+    [ "$(cut -f2 "$dir/state/.lease-later-task")" = "$new_anchor" ] || fail "the branch wrote its dead pinned pid"
+    FM_HOME="$dir" "$ROOT/bin/fm-lease.sh" claim later-task > "$dir/state/main-claim.out" 2>&1
+    claim_rc=$?
+    expect_code 6 "$claim_rc" "main stole a task held by the re-anchored branch"
+    FM_HOME="$dir" STATE="$dir/state" FM_SUPERVISION_ENGINE=claude FM_SUPERVISION_ENGINE_MODEL=sonnet \
+      bash -c '. "$1/bin/fm-wake-lib.sh"; . "$1/bin/fm-supervision-engine-lib.sh"; key=$(fm_supervision_host_health_key "$STATE") || exit 1; printf "key=%s\nerrors=2\ncooldown=300\nretry_after=9999999999\n" "$key" > "$STATE/.supervision-host-health"; [ "$(fm_supervision_host_paused_until "$STATE")" = 9999999999 ]' _ "$ROOT" \
+      || fail "the dead-anchor supervisor could not retain its error cooldown"
     : > "$dir/state/stop-second"
     wait "$daemon_pid" || fail "the second daemon failed to exit"
     if [ "$shape" = reused ]; then kill "$replacement_pid"; wait "$replacement_pid" 2>/dev/null || true; fi
@@ -1964,6 +2062,7 @@ test_codex_thread_id_trust_gate
 test_codex_thread_binding
 test_reused_anchor_instance_does_not_inherit_ownership
 test_codex_restart_reanchors_same_thread
+test_codex_retained_thread_requires_endpoint_stop_proof
 test_e2e_codex_daemon_parented_session_acquires_by_thread
 test_e2e_codex_dead_session_daemon_lock_reclaimed
 test_e2e_codex_foreign_acquisition_refused_while_owner_lives

@@ -209,6 +209,30 @@ fm_lease_read() {
   return 0
 }
 
+fm_lease_claim_holder() {
+  local pin=${FM_LEASE_HOLDER_PID:-} session=${FM_LEASE_HOLDER_SESSION:-} current key
+  current=$(head -n 1 "$STATE/.lock" 2>/dev/null) || current=
+  case "$current" in ''|0|1|*[!0-9]*) return 1 ;; esac
+  if [ -z "$pin" ] && [ -z "$session" ]; then
+    printf '%s\n' "$current"
+    return 0
+  fi
+  if ! command -v fm_session_lock_owner_key >/dev/null 2>&1; then
+    . "$FM_LEASE_LIB_DIR/fm-session-lock-lib.sh"
+  fi
+  if [ -n "$session" ]; then
+    key=$(fm_session_lock_owner_key "$STATE") || return 1
+    [ "$session" = "$key" ] || return 1
+  elif fm_session_lock_owned_by_self "$STATE"; then
+    fm_session_lock_recorded_owner_live "$STATE" || return 1
+  elif [ "$pin" = "$current" ] && [ ! -e "$STATE/.lock-session" ]; then
+    fm_pid_alive "$pin" || return 1
+  else
+    return 1
+  fi
+  printf '%s\n' "$current"
+}
+
 fm_lease_live() {
   local lock_pid
   fm_lease_read "$1" || return 1

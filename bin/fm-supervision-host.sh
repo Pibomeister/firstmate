@@ -1001,6 +1001,8 @@ handle_wake() {  # <reason-lines>
     export FM_SUPERVISION_ACTOR=branch
     FM_LEASE_HOLDER_PID=$(sed -n '1p' "$STATE/.lock" 2>/dev/null | tr -cd '0-9')
     export FM_LEASE_HOLDER_PID
+    FM_LEASE_HOLDER_SESSION=$ENGINE_KEY
+    export FM_LEASE_HOLDER_SESSION
     export FM_SUPERVISION_PRIMARY_HARNESS="$PRIMARY"
     export FM_BRANCH_REPORT_TURN="$turn"
     fm_supervision_engine_turn "$FM_SUPERVISION_ENGINE" "$FM_SUPERVISION_ENGINE_MODEL" \

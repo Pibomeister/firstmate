@@ -428,9 +428,13 @@ test_first_cycle_status_streams_and_owner_options_reach_it() {
 }
 
 test_latch_trips_after_two_engine_errors_then_probes_and_recovers() {
-  local home
+  local home key
   home=$(make_home away-latch away)
   trip_latch "$home"
+  key=$(FM_HOME="$home" bash -c '. "$1/bin/fm-wake-lib.sh"; . "$1/bin/fm-supervision-engine-lib.sh"; fm_supervision_host_main_key "$STATE"' _ "$ROOT") \
+    || fail "latch: the main-session key is unavailable"
+  assert_grep "holder_session=$key" "$home/engine-call.1" "the engine must pin its verified main-session identity"
+  assert_grep "holder_session=$key" "$home/engine-call.2" "the second error turn must keep the same session identity"
 
   park_again "$home"
   append_status "$home" 'inside the cooldown'

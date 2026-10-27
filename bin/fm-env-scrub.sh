@@ -16,7 +16,7 @@ fm_env_scrub_names() {  # [keep-zellij-session: 0|1]
   while IFS= read -r name; do
     case "$name" in
       FM_ZELLIJ_SESSION) [ "$keep_zellij" -eq 0 ] || continue ;;
-      FM_HOME | FM_TASK_ID | FM_TASK_INBOX | FM_PUBLIC_FOLLOWUP_PRIMARY_HOME | \
+      FM_HOME | FM_TASK_ID | FM_TASK_INBOX | FM_PUBLIC_FOLLOWUP_PRIMARY_HOME | FM_SESSION_ENDPOINT_META | FM_LEASE_HOLDER_SESSION | \
         FM_*_OVERRIDE | FM_PROCEVENT_CLAIM_* | FM_PROCEVENT_CAPTURE_*) ;;
       *) continue ;;
     esac

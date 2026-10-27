@@ -397,6 +397,22 @@ fm_session_lock_anchor_instance_matches() {
   [ "$current" = "$recorded" ]
 }
 
+fm_session_lock_endpoint_gone() {
+  local state=$1 backend terminal worktree proof
+  backend=$(sed -n 's/^backend=//p' "$state/.lock-session" 2>/dev/null)
+  [ "$backend" = orca ] || return 1
+  terminal=$(sed -n 's/^terminal=//p' "$state/.lock-session")
+  worktree=$(sed -n 's/^worktree=//p' "$state/.lock-session")
+  [ -n "$terminal" ] && [ -n "$worktree" ] || return 1
+  proof=$(
+    if ! command -v fm_backend_orca_endpoint_absence_proof >/dev/null 2>&1; then
+      . "${FM_SESSION_PROCESS_READER%/*}/backends/orca.sh"
+    fi
+    fm_backend_orca_endpoint_absence_proof "$terminal" "$worktree" "$state/.lock-session"
+  ) || return 1
+  [ "${proof%%$'\t'*}" = gone ]
+}
+
 fm_session_lock_codex_thread_state() {
   local state=$1 id=$2 pid recorded status
   pid=$(sed -n 's/^codex_daemon_pid=//p' "$state/.lock-session" 2>/dev/null)
@@ -405,7 +421,13 @@ fm_session_lock_codex_thread_state() {
   [ -n "$recorded" ] || return 2
   status=$(python3 "$FM_SESSION_PROCESS_READER" thread "$pid" "$id" "$recorded" 2>/dev/null) || return 2
   case "$status" in
-    active|idle|systemError)
+    idle|systemError)
+      fm_session_lock_endpoint_gone "$state" && return 1
+      FM_CODEX_IDENTITY_OWNER_PID=$pid
+      FM_SESSION_LOCK_OWNER_HARNESS=codex
+      return 0
+      ;;
+    active)
       FM_CODEX_IDENTITY_OWNER_PID=$pid
       FM_SESSION_LOCK_OWNER_HARNESS=codex
       return 0
@@ -449,6 +471,22 @@ fm_session_lock_recorded_owner_live() {
   esac
   fm_codex_session_identity_live "$recorded" || return 1
   FM_SESSION_LOCK_OWNER_HARNESS=codex
+}
+
+fm_session_lock_owner_key() {
+  local state=$1 pid identity recorded anchor_start
+  pid=$(sed -n '1p' "$state/.lock" 2>/dev/null)
+  recorded=$(fm_session_lock_recorded_session_id "$state") || recorded=
+  anchor_start=$(sed -n 's/^anchor_start=//p' "$state/.lock-session" 2>/dev/null)
+  if [ -n "$recorded" ] && [ -n "$anchor_start" ]; then
+    fm_session_lock_recorded_owner_live "$state" || return 1
+    printf 'session:%s\n' "$recorded"
+    return 0
+  fi
+  fm_session_lock_anchor_instance_matches "$state" || return 1
+  identity=$(fm_pid_identity "$pid" 2>/dev/null) && [ -n "$identity" ] || return 1
+  printf '%s:%s:%s\n' "$pid" "$(printf '%s\n' "$identity" | cksum | awk '{ print $1 }')" \
+    "$(sed -n '1p' "$state/.lock-session" 2>/dev/null | cksum | awk '{ print $1 }')"
 }
 
 # True when the lock in state dir $1 was recorded by this same session:
