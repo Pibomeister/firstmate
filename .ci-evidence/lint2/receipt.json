@@ -1,0 +1,27 @@
+{
+  "head": "c7606461d51aec061445e87473092d5200e13fa2",
+  "ci_merge": "dcce345e006fd5dee6740b36c78ad29581a7bf52",
+  "green_main": "e32f4511c6adc8b2f3f67dd0e62bad329789731b",
+  "latest_main_observed": "a1bd6650adca36aded317274c9b087719f3f1a35",
+  "commands": [
+    {
+      "command": "bash bin/fm-lint.sh --partition 1of2 --list-files",
+      "exit_code": 0,
+      "roots": 258
+    },
+    {
+      "command": "bash bin/fm-lint.sh --partition 2of2 --list-files",
+      "exit_code": 0,
+      "roots": 259
+    },
+    {
+      "command": "CI=true bash bin/fm-lint.sh --list-files",
+      "exit_code": 0,
+      "roots": 517
+    }
+  ],
+  "evidence_assertions": "passed",
+  "completed_lint_verdict": false,
+  "source_changed": false,
+  "pipeline_action_required": "Reconcile onto current fork main through outer executor; no unchanged third rerun."
+}
