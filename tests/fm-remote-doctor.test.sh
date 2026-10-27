@@ -39,7 +39,14 @@ BASE_PATH="$TOOLS:/usr/bin:/bin:/usr/sbin:/sbin"
 
 # Real socket-owner holders for the Darwin birth check: jq blocked on a fifo
 # this test keeps open, with exactly the marker environment each birth needs.
+# macOS hides the environment of Apple-signed platform binaries from ps -E.
+# Re-sign a private copy so the fixture's birth markers remain observable.
 JQ=$(command -v jq)
+if [ "$(uname -s)" = Darwin ] && [ "$JQ" = /usr/bin/jq ]; then
+  cp "$JQ" "$TMP_ROOT/jq-holder"
+  JQ="$TMP_ROOT/jq-holder"
+  codesign --force --sign - "$JQ" >/dev/null 2>&1 || fail "could not sign the private jq holder fixture"
+fi
 HOLDER_FD=5
 hold() { # <marker-env...> -> HOLDER_PID
   local fifo="$TMP_ROOT/holder-$HOLDER_FD.fifo"
