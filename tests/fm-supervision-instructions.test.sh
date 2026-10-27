@@ -34,6 +34,8 @@ test_selected_harness_block_only() {
   assert_contains "$out" 'poll it with `write_stdin` (empty input) until it exits' "codex must read a yielded checkpoint to completion"
   assert_contains "$out" "start exactly one successor checkpoint after the previous command exits" "codex must finish the current cycle before replacing it"
   assert_contains "$out" "Keep the turn open while supervision is needed or wakes still need handling and acknowledgement" "codex must not end a turn with supervision work unresolved"
+  assert_contains "$out" "send each captain-facing reply as an interim (commentary) message" "codex must reply without ending the supervised turn"
+  assert_contains "$out" "Never send it as the turn's final answer" "codex must not end a supervised turn with a final answer"
   assert_not_contains "$out" "Mode: Claude Stop-hook-owned supervision." "renderer printed the claude snippet too"
   assert_not_contains "$out" "Mode: Pi extension background wake." "renderer printed the pi snippet too"
   pass "renderer prints exactly the selected harness block"
@@ -188,6 +190,7 @@ test_repair_lines() {
   mkdir -p "$home/state" "$home/config"
   out=$(FM_HOME="$home" FM_CODEX_WATCH_CHECKPOINT=7 "$RENDER" --harness codex --repair-line)
   assert_contains "$out" "bin/fm-watch-checkpoint.sh --seconds 7" "codex repair line did not use checkpoint helper and env override"
+  assert_contains "$out" "send captain replies as interim messages, never as the turn's final answer" "codex repair line did not name the turn-ending final answer"
 
   out=$(FM_HOME="$home" "$RENDER" --harness claude --queue-pending 1 --repair-line)
   assert_contains "$out" "After draining queued wakes" "queue-pending prefix missing"
