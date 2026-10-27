@@ -1,0 +1,23 @@
+$ fm-lab-home.sh create /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/.test-tmp/appended-home
+exit=0
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/.test-tmp/appended-home
+$ fm-afk-contract.sh enter
+exit=0
+Quiet mode recorded at 2026-10-27T17:42:50Z: you are present, so nothing waits for your return: every action you ask for, a local landing or a merge included, proceeds now under ordinary attended authority, and quiet mode changes only which updates reach this conversation. Only an explicit /quiet off ends it.
+Quiet mode (recorded):
+  entered: 2026-10-27T17:42:50Z
+  holds: none - you are present, so nothing waits for your return: every action you ask for, a local landing or a merge included, proceeds now under ordinary attended authority, and quiet mode changes only which updates reach this conversation.
+  your words: (none)
+$ fm-afk-launch.sh start-native
+exit=0
+$ fm-afk-return.sh begin
+exit=1
+$ fm-afk-return.sh check
+exit=1
+$ fm-afk-return.sh check
+exit=1
+$ fm-afk-return.sh check
+exit=0
+Quiet exit detail: archive=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/.test-tmp/appended-home/state/.subsuper-digests/quiet-exit.faMHBQ events=2
+LIVE RESULT: an older matching receipt never cleared newly appended detail; a missing archive also refused clearing; repair and retry archived both exact lines.
+CLEANUP: workspace lab removed.

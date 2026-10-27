@@ -1,0 +1,2 @@
+original-live-detail
+appended-live-detail

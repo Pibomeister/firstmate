@@ -1,0 +1,615 @@
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-lab-home.sh create /Users/eduardopicazo/.no-mistakes/evidence/01M5Z4KMK1FX0G4B29YQRJKJQG/b
+exit=0
+/Users/eduardopicazo/.no-mistakes/evidence/01M5Z4KMK1FX0G4B29YQRJKJQG/b
+
+$ tmux -L fm-lab new-session -d -s primary -x 120 -y 40 -c /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG -e FM_HOME=/Users/eduardopicazo/.no-mistakes/evidence/01M5Z4KMK1FX0G4B29YQRJKJQG/b claude
+exit=0
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-contract.sh enter
+exit=0
+Quiet mode recorded at 2026-10-27T17:40:28Z: you are present, so nothing waits for your return: every action you ask for, a local landing or a merge included, proceeds now under ordinary attended authority, and quiet mode changes only which updates reach this conversation. Only an explicit /quiet off ends it.
+Quiet mode (recorded):
+  entered: 2026-10-27T17:40:28Z
+  holds: none - you are present, so nothing waits for your return: every action you ask for, a local landing or a merge included, proceeds now under ordinary attended authority, and quiet mode changes only which updates reach this conversation.
+  your words: (none)
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-contract.sh enter
+exit=0
+Away posture recorded at 2026-10-27T17:40:31Z: hold-for-return only. No phone channel is configured; anything that needs you waits for your return. No away instructions were recorded; the away session acts on standing authority only, and anything that needs you waits for your return. Destructive, irreversible, and security-sensitive actions are never pre-authorizable, whatever the words say. Expected return: not given. Spend cap: 4 concurrent workers.
+Away posture (recorded):
+  entered: 2026-10-27T17:40:31Z
+  expected return: not given
+  spend cap: 4 concurrent workers
+  reach: hold-for-return only. No phone channel is configured; anything that needs you waits for your return.
+  your words: (none)
+fm-afk-contract: quiet mode became the away posture; the quiet record is archived at /Users/eduardopicazo/.no-mistakes/evidence/01M5Z4KMK1FX0G4B29YQRJKJQG/b/state/afk-contracts/1793122828-superseded-1793122831.afk-contract
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-return.sh guard
+exit=3
+fm-afk-return: away mode is still active; run bin/fm-afk-return.sh before ordinary captain work
+
+$ tmux -L fm-lab capture-pane -p -S -80 -t primary
+exit=0
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Accessing workspace:
+
+ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG
+
+ Quick safety check: Is this a project you created or one you trust? (Like your own code, a well-known open source
+ project, or work from your team). If not, take a moment to review what's in this folder first.
+
+ Claude Code'll be able to read, edit, and execute files here.
+
+ Security guide
+
+ ❯ No, exit
+   Yes, I trust this folder
+
+ Enter to confirm · Esc to cancel
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+LIVE RESULT: flag-only retained detail and blocked composer; guard refused invalid/contradictory posture
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-return.sh guard
+exit=3
+fm-afk-contract: record /Users/eduardopicazo/.no-mistakes/evidence/01M5Z4KMK1FX0G4B29YQRJKJQG/b/state/.afk-contract carries version 'none', expected one of 1, 2; refusing to read it
+fm-afk-return: away mode is still active; run bin/fm-afk-return.sh before ordinary captain work
+
+$ tmux -L fm-lab capture-pane -p -S -80 -t primary
+exit=0
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Accessing workspace:
+
+ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG
+
+ Quick safety check: Is this a project you created or one you trust? (Like your own code, a well-known open source
+ project, or work from your team). If not, take a moment to review what's in this folder first.
+
+ Claude Code'll be able to read, edit, and execute files here.
+
+ Security guide
+
+ ❯ No, exit
+   Yes, I trust this folder
+
+ Enter to confirm · Esc to cancel
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+LIVE RESULT: invalid-record retained detail and blocked composer; guard refused invalid/contradictory posture
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-return.sh guard
+exit=0
+
+$ tmux -L fm-lab capture-pane -p -S -80 -t primary
+exit=0
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Accessing workspace:
+
+ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG
+
+ Quick safety check: Is this a project you created or one you trust? (Like your own code, a well-known open source
+ project, or work from your team). If not, take a moment to review what's in this folder first.
+
+ Claude Code'll be able to read, edit, and execute files here.
+
+ Security guide
+
+ ❯ No, exit
+   Yes, I trust this folder
+
+ Enter to confirm · Esc to cancel
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+LIVE RESULT: record-only retained detail and blocked composer; guard accepted validated quiet
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-return.sh guard
+exit=0
+
+LIVE RESULT: summary-only command notifications throttled across real defer windows: [1793122866, 1793122875, 1793122881]
+$ tmux -L fm-lab capture-pane -p -S -80 -t primary
+exit=0
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Accessing workspace:
+
+ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG
+
+ Quick safety check: Is this a project you created or one you trust? (Like your own code, a well-known open source
+ project, or work from your team). If not, take a moment to review what's in this folder first.
+
+ Claude Code'll be able to read, edit, and execute files here.
+
+ Security guide
+
+ ❯ No, exit
+   Yes, I trust this folder
+
+ Enter to confirm · Esc to cancel
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+LIVE RESULT: validated-quiet retained detail and blocked composer; guard accepted validated quiet
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-return.sh guard
+exit=3
+fm-afk-return: away mode is still active; run bin/fm-afk-return.sh before ordinary captain work
+
+$ tmux -L fm-lab capture-pane -p -S -80 -t primary
+exit=0
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Accessing workspace:
+
+ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG
+
+ Quick safety check: Is this a project you created or one you trust? (Like your own code, a well-known open source
+ project, or work from your team). If not, take a moment to review what's in this folder first.
+
+ Claude Code'll be able to read, edit, and execute files here.
+
+ Security guide
+
+ ❯ No, exit
+   Yes, I trust this folder
+
+ Enter to confirm · Esc to cancel
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+LIVE RESULT: contradictory-away retained detail and blocked composer; guard refused invalid/contradictory posture
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-return.sh guard
+exit=3
+fm-afk-return: away mode is still active; run bin/fm-afk-return.sh before ordinary captain work
+
+$ tmux -L fm-lab capture-pane -p -S -80 -t primary
+exit=0
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Accessing workspace:
+
+ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG
+
+ Quick safety check: Is this a project you created or one you trust? (Like your own code, a well-known open source
+ project, or work from your team). If not, take a moment to review what's in this folder first.
+
+ Claude Code'll be able to read, edit, and execute files here.
+
+ Security guide
+
+ ❯ No, exit
+   Yes, I trust this folder
+
+ Enter to confirm · Esc to cancel
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+LIVE RESULT: contradictory-quiet retained detail and blocked composer; guard refused invalid/contradictory posture
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-return.sh guard
+exit=3
+fm-afk-return: away mode is still active; run bin/fm-afk-return.sh before ordinary captain work
+
+$ tmux -L fm-lab capture-pane -p -S -80 -t primary
+exit=0
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Accessing workspace:
+
+ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG
+
+ Quick safety check: Is this a project you created or one you trust? (Like your own code, a well-known open source
+ project, or work from your team). If not, take a moment to review what's in this folder first.
+
+ Claude Code'll be able to read, edit, and execute files here.
+
+ Security guide
+
+ ❯ No, exit
+   Yes, I trust this folder
+
+ Enter to confirm · Esc to cancel
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+LIVE RESULT: malformed-flag retained detail and blocked composer; guard refused invalid/contradictory posture
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-return.sh guard
+exit=3
+fm-afk-return: away mode is still active; run bin/fm-afk-return.sh before ordinary captain work
+
+$ tmux -L fm-lab capture-pane -p -S -80 -t primary
+exit=0
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Accessing workspace:
+
+ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG
+
+ Quick safety check: Is this a project you created or one you trust? (Like your own code, a well-known open source
+ project, or work from your team). If not, take a moment to review what's in this folder first.
+
+ Claude Code'll be able to read, edit, and execute files here.
+
+ Security guide
+
+ ❯ No, exit
+   Yes, I trust this folder
+
+ Enter to confirm · Esc to cancel
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+LIVE RESULT: directory-flag retained detail and blocked composer; guard refused invalid/contradictory posture
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-return.sh guard
+exit=3
+fm-afk-return: away mode is still active; run bin/fm-afk-return.sh before ordinary captain work
+
+$ tmux -L fm-lab capture-pane -p -S -80 -t primary
+exit=0
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Accessing workspace:
+
+ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG
+
+ Quick safety check: Is this a project you created or one you trust? (Like your own code, a well-known open source
+ project, or work from your team). If not, take a moment to review what's in this folder first.
+
+ Claude Code'll be able to read, edit, and execute files here.
+
+ Security guide
+
+ ❯ No, exit
+   Yes, I trust this folder
+
+ Enter to confirm · Esc to cancel
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+LIVE RESULT: duplicate-mode retained detail and blocked composer; guard refused invalid/contradictory posture
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-launch.sh start-native
+exit=0
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-return.sh begin
+exit=0
+Quiet exit detail: archive=/Users/eduardopicazo/.no-mistakes/evidence/01M5Z4KMK1FX0G4B29YQRJKJQG/b/state/.subsuper-digests/quiet-exit.sxBo0T events=1
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-contract.sh enter --words 'real-away boundary'
+exit=0
+Away posture recorded at 2026-10-27T17:42:24Z: hold-for-return only. No phone channel is configured; anything that needs you waits for your return. Your away instructions are recorded verbatim; the away session will carry them out where it can, and anything it is unsure of, or that needs you, waits for your return. Destructive, irreversible, and security-sensitive actions are never pre-authorizable, whatever the words say. Expected return: not given. Spend cap: 4 concurrent workers.
+Away posture (recorded):
+  entered: 2026-10-27T17:42:24Z
+  expected return: not given
+  spend cap: 4 concurrent workers
+  reach: hold-for-return only. No phone channel is configured; anything that needs you waits for your return.
+  your words (verbatim):
+    real-away boundary
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-launch.sh start-native
+exit=0
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-return.sh begin
+exit=3
+=== Return brief (away 2026-10-27T17:42:24Z -> 2026-10-27T17:42:48Z, 24s) ===
+Supervisor health:
+  - GAP: watcher downtime was detected during the away window (recovery marker present)
+  - GAP: the away daemon was not running at return (the away flag stood with no live daemon)
+Your instructions:
+  your words at entry:
+    real-away boundary
+  the away session took no action under them.
+Waiting on you:
+  (nothing)
+Tried and failed, or could not be fixed:
+  - repair [key=real-away] still blocked, firstmate remediates before ordinary work: disposable dependency needs repair
+Landed, cleanup due:
+  (nothing)
+Handled while away:
+  0 outcome(s) handled by the away session (0 routine, 0 escalated above)
+  (no routine outcomes recorded in the store for this window)
+Cost: 0 supervision outcome(s) recorded (0 routine, 0 captain); 1 task(s) live at return.
+fm-afk-launch: away-posture record archived at /Users/eduardopicazo/.no-mistakes/evidence/01M5Z4KMK1FX0G4B29YQRJKJQG/b/state/afk-contracts/1793122944.afk-contract
+fm-afk-launch: away mode stopped; no daemon terminal was running, .afk cleared, and the posture record archived
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no live watcher process holds this home lock (last beat: 16s ago).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  down 2s.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+fm-afk-return: catch-up must finish before the captain request
+catch-up health: GAP: watcher downtime was detected during the away window (recovery marker present)
+catch-up health: GAP: the away daemon was not running at return (the away flag stood with no live daemon)
+catch-up wake: OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+catch-up wake: repair [key=real-away] blocked: disposable dependency needs repair
+catch-up wake: OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+firstmate-actionable blocker: repair [key=real-away] disposable dependency needs repair
+fm-afk-return: handle each blocker now, or close it with resolved [key=...] and append a durable reclassification reason, then run bin/fm-afk-return.sh check
+
+LIVE RESULT: an old quiet receipt did not bypass the real-away blocker.
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-return.sh check
+exit=0
+=== Return brief (away 2026-10-27T17:42:24Z -> 2026-10-27T17:43:05Z, 41s) ===
+Supervisor health:
+  - GAP: watcher downtime was detected during the away window (recovery marker present)
+  - GAP: the away daemon was not running at return (the away flag stood with no live daemon)
+Your instructions:
+  your words at entry:
+    real-away boundary
+  the away session took no action under them.
+Waiting on you:
+  (nothing)
+Tried and failed, or could not be fixed:
+  (nothing)
+Landed, cleanup due:
+  (nothing)
+Handled while away:
+  0 outcome(s) handled by the away session (0 routine, 0 escalated above)
+  (no routine outcomes recorded in the store for this window)
+Cost: 0 supervision outcome(s) recorded (0 routine, 0 captain); 1 task(s) live at return.
+catch-up health: GAP: watcher downtime was detected during the away window (recovery marker present)
+catch-up health: GAP: the away daemon was not running at return (the away flag stood with no live daemon)
+catch-up wake: OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+catch-up wake: repair [key=real-away] blocked: disposable dependency needs repair
+catch-up wake: OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+fm-afk-return: catch-up clear; ordinary captain work may proceed
+WARNING: watcher still down (same stale episode; last beat: 33s ago, grace 300s; down 18s) - full banner already printed this episode.
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 0 --recovery-generation 16309.1793122934.EsbC1o
+
+LIVE RESULT: real-away reconciliation closed after durable resolution and preserved the prior quiet receipt.
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-return.sh begin
+exit=3
+=== Return brief (away 2026-10-27T17:43:10Z -> 2026-10-27T17:43:23Z, 13s) ===
+Supervisor health:
+  - GAP: the away daemon was not running at return (the away flag stood with no live daemon)
+  - a wake was being handled at return (recovery marker pending:handling); not a gap
+Your instructions:
+  (no away-posture record for this window; legacy away flag only)
+Waiting on you:
+  (nothing)
+Tried and failed, or could not be fixed:
+  - repair [key=legacy] still blocked, firstmate remediates before ordinary work: compatibility must not bypass return
+Landed, cleanup due:
+  (nothing)
+Handled while away:
+  0 outcome(s) handled by the away session (0 routine, 0 escalated above)
+  (no routine outcomes recorded in the store for this window)
+Cost: 0 supervision outcome(s) recorded (0 routine, 0 captain); 1 task(s) live at return.
+fm-afk-launch: away mode stopped; no daemon terminal was running, .afk cleared, and the posture record archived
+WARNING: watcher still down (same stale episode; last beat: 53s ago, grace 300s; down 37s) - full banner already printed this episode.
+fm-afk-return: catch-up must finish before the captain request
+catch-up health: GAP: the away daemon was not running at return (the away flag stood with no live daemon)
+catch-up health: a wake was being handled at return (recovery marker pending:handling); not a gap
+catch-up wake: OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+catch-up wake: repair [key=legacy] blocked: compatibility must not bypass return
+catch-up wake: OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+firstmate-actionable blocker: repair [key=legacy] compatibility must not bypass return
+fm-afk-return: handle each blocker now, or close it with resolved [key=...] and append a durable reclassification reason, then run bin/fm-afk-return.sh check
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-return.sh check
+exit=0
+=== Return brief (away 2026-10-27T17:43:10Z -> 2026-10-27T17:43:41Z, 31s) ===
+Supervisor health:
+  - GAP: the away daemon was not running at return (the away flag stood with no live daemon)
+  - a wake was being handled at return (recovery marker pending:handling); not a gap
+Your instructions:
+  (no away-posture record for this window; legacy away flag only)
+Waiting on you:
+  (nothing)
+Tried and failed, or could not be fixed:
+  (nothing)
+Landed, cleanup due:
+  (nothing)
+Handled while away:
+  0 outcome(s) handled by the away session (0 routine, 0 escalated above)
+  (no routine outcomes recorded in the store for this window)
+Cost: 0 supervision outcome(s) recorded (0 routine, 0 captain); 1 task(s) live at return.
+catch-up health: GAP: the away daemon was not running at return (the away flag stood with no live daemon)
+catch-up health: a wake was being handled at return (recovery marker pending:handling); not a gap
+catch-up wake: OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+catch-up wake: repair [key=legacy] blocked: compatibility must not bypass return
+catch-up wake: OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+fm-afk-return: catch-up clear; ordinary captain work may proceed
+WARNING: watcher still down (same stale episode; last beat: 72s ago, grace 300s; down 56s) - full banner already printed this episode.
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 0 --recovery-generation 16309.1793122934.EsbC1o
+
+LIVE RESULT: flag-only legacy quiet used catch-up reconciliation and required blocker resolution.
+ALL BOUNDARY LIVE SCENARIOS PASSED
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-launch.sh stop
+exit=0
+fm-afk-launch: away mode stopped; no daemon terminal was running, .afk cleared, and the posture record archived
+
+$ tmux -L fm-lab kill-server
+exit=0
+
+CLEANUP: disposable boundary lab removed.

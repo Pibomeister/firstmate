@@ -1,0 +1,11 @@
+schema	fm-afk-return.v1
+started	1793122951
+phase	blocked
+window	1793122944
+contract	1793122944
+evidence	health	GAP: watcher downtime was detected during the away window (recovery marker present)
+evidence	health	GAP: the away daemon was not running at return (the away flag stood with no live daemon)
+evidence	wake	OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+evidence	wake	repair [key=real-away] blocked: disposable dependency needs repair
+evidence	wake	OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+blocker	repair	real-away	disposable dependency needs repair

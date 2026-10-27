@@ -1,0 +1,36 @@
+{
+  "revision": "85fdab5f414c3ca29ea9fc03db9e72fc209111f5",
+  "executions": [
+    {
+      "command": "TMPDIR=\"$PWD/.test-tmp\" bash tests/fm-afk-return.test.sh",
+      "exit": 0
+    },
+    {
+      "command": "TMPDIR=\"$PWD/.test-tmp\" bash tests/fm-supervise-quiet.test.sh",
+      "exit": 0
+    },
+    {
+      "command": "python3 .test-tmp/live-quiet.py",
+      "exit": 0
+    },
+    {
+      "command": "python3 .test-tmp/live-boundaries.py",
+      "exit": 0
+    },
+    {
+      "command": "python3 .test-tmp/live-appended.py",
+      "exit": 0
+    },
+    {
+      "command": "python3 .test-tmp/live-composer.py",
+      "exit": 0
+    },
+    {
+      "command": "TMPDIR=\"$PWD/.test-tmp\" bash .test-tmp/prior/tests/reentry-red.test.sh",
+      "production_revision": "5ce17e91",
+      "exit": 1,
+      "expected": "regression reproduces before fix"
+    }
+  ],
+  "labs_removed": true
+}

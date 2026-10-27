@@ -1,0 +1,20 @@
+[2026-10-27T11:40:35-0600] daemon starting (pid 55218); target=primary:0; target_source=FM_SUPERVISOR_TARGET; backend=tmux; backend_source=FM_SUPERVISOR_BACKEND; afk=on; inject_skip='heartbeat'; stale_escalate=240s; batch=0s
+[2026-10-27T11:40:37-0600] quiet escalations retained 104s; non-composer alert attempted
+[2026-10-27T11:40:44-0600] daemon shutting down
+[2026-10-27T11:40:47-0600] daemon starting (pid 8171); target=primary:0; target_source=FM_SUPERVISOR_TARGET; backend=tmux; backend_source=FM_SUPERVISOR_BACKEND; afk=off; inject_skip='heartbeat'; stale_escalate=240s; batch=0s
+[2026-10-27T11:40:54-0600] daemon shutting down
+[2026-10-27T11:40:56-0600] daemon starting (pid 49173); target=primary:0; target_source=FM_SUPERVISOR_TARGET; backend=tmux; backend_source=FM_SUPERVISOR_BACKEND; afk=off; inject_skip='heartbeat'; stale_escalate=240s; batch=0s
+[2026-10-27T11:41:03-0600] daemon shutting down
+[2026-10-27T11:41:05-0600] daemon starting (pid 52610); target=primary:0; target_source=FM_SUPERVISOR_TARGET; backend=tmux; backend_source=FM_SUPERVISOR_BACKEND; afk=on; inject_skip='heartbeat'; stale_escalate=240s; batch=0s
+[2026-10-27T11:41:06-0600] quiet escalations retained 102s; non-composer alert attempted
+[2026-10-27T11:41:07-0600] watcher pid 52975 stalled (beacon 999999s at or past hard bound 900s); stopping it and everything it started, then restarting
+[2026-10-27T11:41:09-0600] watcher exited rc=143 reason=''; restarting after 5s
+[2026-10-27T11:41:15-0600] quiet escalations retained 111s; non-composer alert attempted
+[2026-10-27T11:41:21-0600] quiet escalations retained 117s; non-composer alert attempted
+[2026-10-27T11:41:25-0600] daemon shutting down
+[2026-10-27T11:41:27-0600] daemon starting (pid 83357); target=primary:0; target_source=FM_SUPERVISOR_TARGET; backend=tmux; backend_source=FM_SUPERVISOR_BACKEND; afk=on; inject_skip='heartbeat'; stale_escalate=240s; batch=0s
+[2026-10-27T11:41:29-0600] quiet escalations retained 103s; non-composer alert attempted
+[2026-10-27T11:41:36-0600] daemon shutting down
+[2026-10-27T11:41:38-0600] daemon starting (pid 93285); target=primary:0; target_source=FM_SUPERVISOR_TARGET; backend=tmux; backend_source=FM_SUPERVISOR_BACKEND; afk=on; inject_skip='heartbeat'; stale_escalate=240s; batch=0s
+[2026-10-27T11:41:40-0600] quiet escalations retained 104s; non-composer alert attempted
+[2026-10-27T11:41:46-0600] daemon shutting down

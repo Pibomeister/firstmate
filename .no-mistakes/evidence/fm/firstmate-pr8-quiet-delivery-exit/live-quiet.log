@@ -1,0 +1,376 @@
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-lab-home.sh create /Users/eduardopicazo/.no-mistakes/evidence/01M5Z4KMK1FX0G4B29YQRJKJQG/l
+exit=0
+/Users/eduardopicazo/.no-mistakes/evidence/01M5Z4KMK1FX0G4B29YQRJKJQG/l
+
+$ tmux -L fm-lab new-session -d -s primary -x 120 -y 40 -c /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG -e FM_HOME=/Users/eduardopicazo/.no-mistakes/evidence/01M5Z4KMK1FX0G4B29YQRJKJQG/l claude
+exit=0
+
+$ tmux -L fm-lab capture-pane -p -t primary
+exit=0
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Accessing workspace:
+
+ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG
+
+ Quick safety check: Is this a project you created or one you trust? (Like your own code, a well-known open source
+ project, or work from your team). If not, take a moment to review what's in this folder first.
+
+ Claude Code'll be able to read, edit, and execute files here.
+
+ Security guide
+
+ ❯ No, exit
+   Yes, I trust this folder
+
+ Enter to confirm · Esc to cancel
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-contract.sh enter
+exit=0
+Quiet mode recorded at 2026-10-27T17:39:48Z: you are present, so nothing waits for your return: every action you ask for, a local landing or a merge included, proceeds now under ordinary attended authority, and quiet mode changes only which updates reach this conversation. Only an explicit /quiet off ends it.
+Quiet mode (recorded):
+  entered: 2026-10-27T17:39:48Z
+  holds: none - you are present, so nothing waits for your return: every action you ask for, a local landing or a merge included, proceeds now under ordinary attended authority, and quiet mode changes only which updates reach this conversation.
+  your words: (none)
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-launch.sh start
+exit=0
+fm-afk-launch: daemon launched in detached tmux session 'fm-afk-daemon-1241347940-33851-3484-1793122791', supervising primary:0
+
+$ tmux -L fm-lab capture-pane -p -S -100 -t primary
+exit=0
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Accessing workspace:
+
+ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG
+
+ Quick safety check: Is this a project you created or one you trust? (Like your own code, a well-known open source
+ project, or work from your team). If not, take a moment to review what's in this folder first.
+
+ Claude Code'll be able to read, edit, and execute files here.
+
+ Security guide
+
+ ❯ No, exit
+   Yes, I trust this folder
+
+ Enter to confirm · Esc to cancel
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+LIVE RESULT: real status watcher retained private nonce, diagnostics redacted it, non-composer alarm fired, primary received no escalation.
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-launch.sh start
+exit=0
+fm-afk-launch: reconciling leaked daemon terminal tmux:fm-afk-daemon-1241347940-33851-3484-1793122791
+fm-afk-launch: terminal close command failed, but exact absence was confirmed
+fm-afk-launch: daemon launched in detached tmux session 'fm-afk-daemon-1241347940-54328-3326-1793122872', supervising primary:0
+
+LIVE RESULT: terminal launcher restart preserved full retained status detail.
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-launch.sh start-native
+exit=0
+fm-afk-launch: reconciling leaked daemon terminal tmux:fm-afk-daemon-1241347940-54328-3326-1793122872
+fm-afk-launch: terminal close command failed, but exact absence was confirmed
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-return.sh guard
+exit=0
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-return.sh begin
+exit=0
+Quiet exit detail: archive=/Users/eduardopicazo/.no-mistakes/evidence/01M5Z4KMK1FX0G4B29YQRJKJQG/l/state/.subsuper-digests/quiet-exit.rKQsHl events=2
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-return.sh begin
+exit=0
+Quiet exit detail: archive=/Users/eduardopicazo/.no-mistakes/evidence/01M5Z4KMK1FX0G4B29YQRJKJQG/l/state/.subsuper-digests/quiet-exit.rKQsHl events=2
+
+LIVE RESULT: native restart retained detail; quiet exit stopped real daemon, archived exact bytes, and printed only receipt; repeat was idempotent.
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-contract.sh enter
+exit=0
+Quiet mode recorded at 2026-10-27T17:41:57Z: you are present, so nothing waits for your return: every action you ask for, a local landing or a merge included, proceeds now under ordinary attended authority, and quiet mode changes only which updates reach this conversation. Only an explicit /quiet off ends it.
+Quiet mode (recorded):
+  entered: 2026-10-27T17:41:57Z
+  holds: none - you are present, so nothing waits for your return: every action you ask for, a local landing or a merge included, proceeds now under ordinary attended authority, and quiet mode changes only which updates reach this conversation.
+  your words: (none)
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-launch.sh start-native
+exit=0
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-return.sh begin
+exit=1
+mkdir: /Users/eduardopicazo/.no-mistakes/evidence/01M5Z4KMK1FX0G4B29YQRJKJQG/l/state/.subsuper-digests: File exists
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-contract.sh enter
+exit=1
+fm-afk-contract: quiet exit is still pending; run bin/fm-afk-return.sh check before entering or restarting supervision
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-launch.sh enter
+exit=1
+fm-afk-contract: quiet exit is still pending; run bin/fm-afk-return.sh check before entering or restarting supervision
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-launch.sh start
+exit=1
+fm-afk-contract: quiet exit is still pending; run bin/fm-afk-return.sh check before entering or restarting supervision
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-launch.sh start-native
+exit=1
+fm-afk-contract: quiet exit is still pending; run bin/fm-afk-return.sh check before entering or restarting supervision
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-contract.sh enter
+exit=1
+fm-afk-contract: quiet exit is still pending; run bin/fm-afk-return.sh check before entering or restarting supervision
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-launch.sh enter
+exit=1
+fm-afk-contract: quiet exit is still pending; run bin/fm-afk-return.sh check before entering or restarting supervision
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-launch.sh start
+exit=1
+fm-afk-contract: quiet exit is still pending; run bin/fm-afk-return.sh check before entering or restarting supervision
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-launch.sh start-native
+exit=1
+fm-afk-contract: quiet exit is still pending; run bin/fm-afk-return.sh check before entering or restarting supervision
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-return.sh check
+exit=0
+Quiet exit detail: archive=/Users/eduardopicazo/.no-mistakes/evidence/01M5Z4KMK1FX0G4B29YQRJKJQG/l/state/.subsuper-digests/quiet-exit.aDiWZW events=1
+
+LIVE RESULT: archive failure retained authoritative detail; unfinished exit refused quiet/away re-entry through every launcher; retry recovered correctly.
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-contract.sh enter
+exit=0
+Quiet mode recorded at 2026-10-27T17:42:13Z: you are present, so nothing waits for your return: every action you ask for, a local landing or a merge included, proceeds now under ordinary attended authority, and quiet mode changes only which updates reach this conversation. Only an explicit /quiet off ends it.
+Quiet mode (recorded):
+  entered: 2026-10-27T17:42:13Z
+  holds: none - you are present, so nothing waits for your return: every action you ask for, a local landing or a merge included, proceeds now under ordinary attended authority, and quiet mode changes only which updates reach this conversation.
+  your words: (none)
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-launch.sh start-native
+exit=0
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-return.sh begin
+exit=1
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-contract.sh enter
+exit=1
+fm-afk-contract: quiet exit is still pending; run bin/fm-afk-return.sh check before entering or restarting supervision
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-launch.sh enter
+exit=1
+fm-afk-contract: quiet exit is still pending; run bin/fm-afk-return.sh check before entering or restarting supervision
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-launch.sh start
+exit=1
+fm-afk-contract: quiet exit is still pending; run bin/fm-afk-return.sh check before entering or restarting supervision
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-launch.sh start-native
+exit=1
+fm-afk-contract: quiet exit is still pending; run bin/fm-afk-return.sh check before entering or restarting supervision
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-contract.sh enter
+exit=1
+fm-afk-contract: quiet exit is still pending; run bin/fm-afk-return.sh check before entering or restarting supervision
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-launch.sh enter
+exit=1
+fm-afk-contract: quiet exit is still pending; run bin/fm-afk-return.sh check before entering or restarting supervision
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-launch.sh start
+exit=1
+fm-afk-contract: quiet exit is still pending; run bin/fm-afk-return.sh check before entering or restarting supervision
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-launch.sh start-native
+exit=1
+fm-afk-contract: quiet exit is still pending; run bin/fm-afk-return.sh check before entering or restarting supervision
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-return.sh check
+exit=0
+Quiet exit detail: archive=/Users/eduardopicazo/.no-mistakes/evidence/01M5Z4KMK1FX0G4B29YQRJKJQG/l/state/.subsuper-digests/quiet-exit.35wyCt events=1
+
+LIVE RESULT: receipt failure retained authoritative detail; unfinished exit refused quiet/away re-entry through every launcher; retry recovered correctly.
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-contract.sh enter
+exit=0
+Quiet mode recorded at 2026-10-27T17:42:32Z: you are present, so nothing waits for your return: every action you ask for, a local landing or a merge included, proceeds now under ordinary attended authority, and quiet mode changes only which updates reach this conversation. Only an explicit /quiet off ends it.
+Quiet mode (recorded):
+  entered: 2026-10-27T17:42:32Z
+  holds: none - you are present, so nothing waits for your return: every action you ask for, a local landing or a merge included, proceeds now under ordinary attended authority, and quiet mode changes only which updates reach this conversation.
+  your words: (none)
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-launch.sh start-native
+exit=0
+
+$ bash -c 'exec 1>&-; exec "$1" begin' _ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-return.sh
+exit=1
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-return.sh: line 343: printf: write error: Bad file descriptor
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-contract.sh enter
+exit=1
+fm-afk-contract: quiet exit is still pending; run bin/fm-afk-return.sh check before entering or restarting supervision
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-launch.sh enter
+exit=1
+fm-afk-contract: quiet exit is still pending; run bin/fm-afk-return.sh check before entering or restarting supervision
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-launch.sh start
+exit=1
+fm-afk-contract: quiet exit is still pending; run bin/fm-afk-return.sh check before entering or restarting supervision
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-launch.sh start-native
+exit=1
+fm-afk-contract: quiet exit is still pending; run bin/fm-afk-return.sh check before entering or restarting supervision
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-contract.sh enter
+exit=1
+fm-afk-contract: quiet exit is still pending; run bin/fm-afk-return.sh check before entering or restarting supervision
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-launch.sh enter
+exit=1
+fm-afk-contract: quiet exit is still pending; run bin/fm-afk-return.sh check before entering or restarting supervision
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-launch.sh start
+exit=1
+fm-afk-contract: quiet exit is still pending; run bin/fm-afk-return.sh check before entering or restarting supervision
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-launch.sh start-native
+exit=1
+fm-afk-contract: quiet exit is still pending; run bin/fm-afk-return.sh check before entering or restarting supervision
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-return.sh check
+exit=0
+Quiet exit detail: archive=/Users/eduardopicazo/.no-mistakes/evidence/01M5Z4KMK1FX0G4B29YQRJKJQG/l/state/.subsuper-digests/quiet-exit.yxl7N0 events=1
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-contract.sh enter
+exit=0
+Quiet mode recorded at 2026-10-27T17:42:51Z: you are present, so nothing waits for your return: every action you ask for, a local landing or a merge included, proceeds now under ordinary attended authority, and quiet mode changes only which updates reach this conversation. Only an explicit /quiet off ends it.
+Quiet mode (recorded):
+  entered: 2026-10-27T17:42:51Z
+  holds: none - you are present, so nothing waits for your return: every action you ask for, a local landing or a merge included, proceeds now under ordinary attended authority, and quiet mode changes only which updates reach this conversation.
+  your words: (none)
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-launch.sh start-native
+exit=0
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-return.sh begin
+exit=0
+Quiet exit detail: archive=/Users/eduardopicazo/.no-mistakes/evidence/01M5Z4KMK1FX0G4B29YQRJKJQG/l/state/.subsuper-digests/quiet-exit.q7B153 events=2
+
+LIVE RESULT: presentation-retained failure retained authoritative detail; unfinished exit refused quiet/away re-entry through every launcher; retry recovered correctly.
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-contract.sh enter
+exit=0
+Quiet mode recorded at 2026-10-27T17:43:01Z: you are present, so nothing waits for your return: every action you ask for, a local landing or a merge included, proceeds now under ordinary attended authority, and quiet mode changes only which updates reach this conversation. Only an explicit /quiet off ends it.
+Quiet mode (recorded):
+  entered: 2026-10-27T17:43:01Z
+  holds: none - you are present, so nothing waits for your return: every action you ask for, a local landing or a merge included, proceeds now under ordinary attended authority, and quiet mode changes only which updates reach this conversation.
+  your words: (none)
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-launch.sh start-native
+exit=0
+
+$ bash -c 'exec 1>&-; exec "$1" begin' _ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-return.sh
+exit=1
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-return.sh: line 343: printf: write error: Bad file descriptor
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-contract.sh enter
+exit=1
+fm-afk-contract: quiet exit is still pending; run bin/fm-afk-return.sh check before entering or restarting supervision
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-launch.sh enter
+exit=1
+fm-afk-contract: quiet exit is still pending; run bin/fm-afk-return.sh check before entering or restarting supervision
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-launch.sh start
+exit=1
+fm-afk-contract: quiet exit is still pending; run bin/fm-afk-return.sh check before entering or restarting supervision
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-launch.sh start-native
+exit=1
+fm-afk-contract: quiet exit is still pending; run bin/fm-afk-return.sh check before entering or restarting supervision
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-contract.sh enter
+exit=1
+fm-afk-contract: quiet exit is still pending; run bin/fm-afk-return.sh check before entering or restarting supervision
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-launch.sh enter
+exit=1
+fm-afk-contract: quiet exit is still pending; run bin/fm-afk-return.sh check before entering or restarting supervision
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-launch.sh start
+exit=1
+fm-afk-contract: quiet exit is still pending; run bin/fm-afk-return.sh check before entering or restarting supervision
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-launch.sh start-native
+exit=1
+fm-afk-contract: quiet exit is still pending; run bin/fm-afk-return.sh check before entering or restarting supervision
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-return.sh check
+exit=0
+Quiet exit detail: archive=/Users/eduardopicazo/.no-mistakes/evidence/01M5Z4KMK1FX0G4B29YQRJKJQG/l/state/.subsuper-digests/quiet-exit.DgJBlh events=1
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-contract.sh enter
+exit=0
+Quiet mode recorded at 2026-10-27T17:43:20Z: you are present, so nothing waits for your return: every action you ask for, a local landing or a merge included, proceeds now under ordinary attended authority, and quiet mode changes only which updates reach this conversation. Only an explicit /quiet off ends it.
+Quiet mode (recorded):
+  entered: 2026-10-27T17:43:20Z
+  holds: none - you are present, so nothing waits for your return: every action you ask for, a local landing or a merge included, proceeds now under ordinary attended authority, and quiet mode changes only which updates reach this conversation.
+  your words: (none)
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-launch.sh start-native
+exit=0
+
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-return.sh begin
+exit=0
+Quiet exit detail: archive=/Users/eduardopicazo/.no-mistakes/evidence/01M5Z4KMK1FX0G4B29YQRJKJQG/l/state/.subsuper-digests/quiet-exit.JXt8Sm events=0
+
+LIVE RESULT: presentation-empty failure retained authoritative detail; unfinished exit refused quiet/away re-entry through every launcher; retry recovered correctly.
+CORE LIVE SCENARIOS PASSED
+$ /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-afk-launch.sh stop
+exit=0
+fm-afk-launch: away mode stopped; no daemon terminal was running, .afk cleared, and the posture record archived
+
+$ tmux -L fm-lab kill-server
+exit=0
+
+CLEANUP: disposable home removed; only published evidence remains.

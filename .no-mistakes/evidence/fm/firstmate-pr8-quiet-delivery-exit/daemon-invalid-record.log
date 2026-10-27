@@ -1,0 +1,1 @@
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z4KMK1FX0G4B29YQRJKJQG/bin/fm-wake-lib.sh: line 1467: 25781 Terminated: 15          "$WATCH" > "$CUR_TMP" 2>> "$WATCH_ERR"

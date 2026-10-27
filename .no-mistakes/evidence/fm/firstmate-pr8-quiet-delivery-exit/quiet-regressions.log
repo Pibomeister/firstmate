@@ -1,0 +1,5 @@
+ok - quiet delivery suppression accepts either signal; quiet guard requires validated consistent state
+ok - quiet alarm repeats only after a full max-defer window without copying detail
+ok - quiet executable daemon batching, restart, shutdown and launcher preserve detail without composer send
+ok - both launcher paths refuse unfinished quiet exits without rollback or retained detail loss
+ok - real private tmux same-posture launcher restart preserves detail without model calls

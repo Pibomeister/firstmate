@@ -1,0 +1,4 @@
+[2026-10-27T11:39:53-0600] daemon starting (pid 35339); target=primary:0; target_source=FM_SUPERVISOR_TARGET; backend=tmux; backend_source=FM_SUPERVISOR_BACKEND; afk=on; inject_skip='heartbeat'; stale_escalate=240s; batch=90s
+[2026-10-27T11:39:55-0600] quiet escalations retained 20005s; non-composer alert attempted
+[2026-10-27T11:40:57-0600] wake: signal: /Users/eduardopicazo/.no-mistakes/evidence/01M5Z4KMK1FX0G4B29YQRJKJQG/l/state/live-task.status
+[2026-10-27T11:41:06-0600] escalate: signal: /Users/eduardopicazo/.no-mistakes/evidence/01M5Z4KMK1FX0G4B29YQRJKJQG/l/state/live-task.status -> detail retained in durable state
