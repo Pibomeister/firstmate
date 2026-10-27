@@ -1,0 +1,20 @@
+## spawn output
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.MxPsJ0
+spawned budgetlive harness=codex kind=scout window=primary:fm-budgetlive worktree=/Users/eduardopicazo/.treehouse/budgetproj-06ee3f/1/budgetproj
+exit=0
+## state/budgetlive.meta budget_* fields
+harness=codex
+kind=scout
+budget_inclusive_hard=40000000
+budget_inclusive_stop=1
+budget_fresh_hard=1500000
+budget_fresh_stop=1
+budget_launch_at=1793128181.426207
+budget_worktree=/Users/eduardopicazo/.treehouse/budgetproj-06ee3f/1/budgetproj
+budget_log_root=/Users/eduardopicazo/.codex/sessions
+budget_launch_marker=FM_BUDGET_LAUNCH_36c48bcdf38a4b55fa6c41bd18b5de95
+budget_prior_inclusive=0
+budget_prior_fresh=0
+budget_started_at=1793128181.426207
+## launch-brief marker line
+11:FM_BUDGET_LAUNCH_36c48bcdf38a4b55fa6c41bd18b5de95

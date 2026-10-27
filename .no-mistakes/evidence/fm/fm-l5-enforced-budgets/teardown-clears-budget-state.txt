@@ -1,0 +1,17 @@
+## before teardown:
+budgetlive.budget-diagnostic
+budgetlive.git-hooks
+budgetlive.meta
+## fm-teardown.sh budgetlive --force
+teardown: reaping leaked worktree process(es) for budgetlive: 15814 21476 21477
+teardown: force-killing leaked worktree process(es) for budgetlive: 15814
+A new version of treehouse is available: v2.3.0 → v3.1.6
+Run "treehouse update" to update
+
+🌳 Worktree returned to pool.
+teardown budgetlive complete (window primary:fm-budgetlive, worktree /Users/eduardopicazo/.treehouse/budgetproj-06ee3f/1/budgetproj)
+Backlog: budgetlive just finished (this home keeps no markdown backlog at /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.MxPsJ0/data/backlog.md). Update /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.MxPsJ0/data/backlog.md - move budgetlive to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+teardown exit=
+## after teardown (budgetlive.* in state):
+(none: .meta, .budget-diagnostic removed)
+worktree exists: yes

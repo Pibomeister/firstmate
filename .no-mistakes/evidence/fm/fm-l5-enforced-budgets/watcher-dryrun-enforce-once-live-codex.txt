@@ -1,0 +1,45 @@
+## cycle 1: config/budget-enforcement absent (default dry-run)
+watch exit=0
+budget-would-pause task=chain inclusive=35179 fresh=35179 inclusive_stop=1 fresh_stop=1 inclusive_hard=40000000 fresh_hard=1500000 observed=2026-10-27T19:12:17.951749+00:00 source=/Users/eduardopicazo/.codex/sessions/2026/10/27/rollout-2026-10-27T13-11-49-01a17ec6-a439-7923-8e66-99d1c29d6329.jsonl
+-- chain.status:
+(absent)
+-- needs-decision lines: 0
+
+## cycle 2: config/budget-enforcement=enforce
+watch exit=0
+-- chain.status:
+needs-decision [at=1793128339] [key=budget-stop-d465b2e7b210b9e0]: budget-stop inclusive=35179 stop=1 hard=40000000 fresh=35179 stop=1 hard=1500000 observed=2026-10-27T19:12:18.936919+00:00 interrupt=fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.MxPsJ0 interrupt-delivered chain harness=codex backend=tmux verified=agent-alive cancel=unconfirmed; details=/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.MxPsJ0/state/chain.budget
+-- needs-decision lines: 1
+-- worker pane after interrupt:
+› FM_BUDGET_LAUNCH_watchchain
+  Run exactly sleep 120 using a shell tool once, then reply NATIVE_BUDGET_DONE. Do not inspect files or use any other tools.
+• I’ll run the single sleep 120 shell command, then reply with the requested text.
+■ Conversation interrupted - use /feedback if something went wrong
+  1 background terminal running · /ps to view · /stop to close
+› Ask Codex to do anything
+  GPT-6-Sol medium · Context 97% left · 34.7K in · 476 out · weekly 46% left
+  ? for shortcuts                                                                                                                                                             ⚠ 2 warnings · f2 to view
+
+## cycle 3 (later usage growth allowed, same episode): enforce again
+{"status": "ok", "harness": "codex", "session": "01a17ec6-a439-7923-8e66-99d1c29d6329", "source": "/Users/eduardopicazo/.codex/sessions/2026/10/27/rollout-2026-10-27T13-11-49-01a17ec6-a439-7923-8e66-99d1c29d6329.jsonl", "inclusive": 35179, "fresh": 35179, "observed_at": "2026-10-27T19:12:56.200918+00:00"}
+watch exit=0
+-- chain.status:
+needs-decision [at=1793128339] [key=budget-stop-d465b2e7b210b9e0]: budget-stop inclusive=35179 stop=1 hard=40000000 fresh=35179 stop=1 hard=1500000 observed=2026-10-27T19:12:18.936919+00:00 interrupt=fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.MxPsJ0 interrupt-delivered chain harness=codex backend=tmux verified=agent-alive cancel=unconfirmed; details=/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.MxPsJ0/state/chain.budget
+-- needs-decision lines: 1
+-- episode.attempt: {"outcome": "fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.MxPsJ0\ninterrupt-delivered chain harness=codex backend=tmux verified=agent-alive cancel=unconfirmed", "deferred": false}
+-- episode.sample: {"status": "ok", "harness": "codex", "session": "01a17ec6-a439-7923-8e66-99d1c29d6329", "source": "/Users/eduardopicazo/.codex/sessions/2026/10/27/rollout-2026-10-27T13-11-49-01a17ec6-a439-7923-8e66-99d1c29d6329.jsonl", "inclusive": 35179, "fresh": 35179, "observed_at": "2026-10-27T19:12:56.704683+00:00"}
+## cycle 4: worker resumed after decision and grew usage
+{"status": "ok", "harness": "codex", "session": "01a17ec6-a439-7923-8e66-99d1c29d6329", "source": "/Users/eduardopicazo/.codex/sessions/2026/10/27/rollout-2026-10-27T13-11-49-01a17ec6-a439-7923-8e66-99d1c29d6329.jsonl", "inclusive": 70450, "fresh": 35506, "observed_at": "2026-10-27T19:13:23.014923+00:00"}
+watch exit=0
+-- needs-decision lines in chain.status: 1
+-- worker pane (expect CONTINUED reply, no second interrupt banner):
+• I’ll run the single sleep 120 shell command, then reply with the requested text.
+■ Conversation interrupted - use /feedback if something went wrong
+› Reply with the single word CONTINUED and nothing else.
+• CONTINUED
+  Worked for 6s • 1:13 PM
+  1 background terminal running · /ps to view · /stop to close
+› Ask Codex to do anything
+  GPT-6-Sol medium · Context 97% left · 70K in · 483 out · weekly 46% left
+  ? for shortcuts                                                                                                                                                             ⚠ 2 warnings · f2 to view
+-- interrupt banners: 1

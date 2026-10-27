@@ -1,0 +1,25 @@
+## config/budget-enforcement=enforce; measure before watcher:
+{"status": "pending", "reason": "native main session not yet identified"}
+## real fm-watch.sh single cycle (FM_WATCH_ONCE=1)
+watch exit=0
+budget-unknown task=budgetlive harness=codex: native main session not yet identified
+## after watcher: state listing
+.count-primary_fm-budgetlive
+.fm-lab-tmux-dir
+.hash-primary_fm-budgetlive
+.inactive-outcome-reconcile
+.last-check
+.last-heartbeat
+.last-watcher-beat
+.watcher-down
+.watcher-stage
+budgetlive.budget-diagnostic
+budgetlive.git-hooks
+budgetlive.meta
+home-summary.json
+terminal-outcomes
+(no budgetlive.status: no interrupt, no decision)
+## budgetlive.budget-diagnostic
+harness=codex: native main session not yet identified
+## budgetlive.budget
+

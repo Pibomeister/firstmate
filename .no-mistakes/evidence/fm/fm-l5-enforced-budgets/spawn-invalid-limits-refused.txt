@@ -1,0 +1,19 @@
+$ fm-spawn.sh budgetlive $LAB/projects/budgetproj --scout --harness codex --budget-inclusive-hard 100 --budget-inclusive-stop 50 --budget-fresh-hard 100
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.MxPsJ0
+task-budget: all four budget limits must be positive decimal token counts
+exit=1
+$ fm-spawn.sh budgetlive $LAB/projects/budgetproj --scout --harness codex --budget-inclusive-hard 100 --budget-inclusive-stop 150 --budget-fresh-hard 100 --budget-fresh-stop 50
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.MxPsJ0
+task-budget: budget stop lines must not exceed their hard caps
+exit=1
+$ fm-spawn.sh budgetlive $LAB/projects/budgetproj --scout --harness codex --budget-inclusive-hard 100 --budget-inclusive-stop 0 --budget-fresh-hard 100 --budget-fresh-stop 50
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.MxPsJ0
+task-budget: all four budget limits must be positive decimal token counts
+exit=1
+$ fm-spawn.sh budgetlive $LAB/projects/budgetproj --scout --harness codex --budget-inclusive-hard 100 --budget-inclusive-stop 50 --budget-fresh-hard 100 --budget-fresh-stop 50 --budget-fresh-stop 40
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.MxPsJ0
+error: duplicate --budget-fresh-stop
+exit=1
+--- lab state after refusals (no task meta expected):
+.fm-lab-tmux-dir
+.last-watcher-beat
