@@ -185,6 +185,12 @@ fm_afk_contract_present() {  # [state-dir]
   [ -f "$(fm_afk_contract_path "${1:-$FM_AFK_CONTRACT_STATE}")" ]
 }
 
+fm_afk_contract_entry_allowed() {
+  [ -e "${1:-$FM_AFK_CONTRACT_STATE}/.quiet-exit-pending" ] || return 0
+  fm_afk_contract_log "quiet exit is still pending; run bin/fm-afk-return.sh check before entering or restarting supervision"
+  return 1
+}
+
 # The ordinary worker records this home holds right now (the header's SPEND
 # CAP): every state/*.meta whose kind is not secondmate, because a secondmate is
 # a persistent home rather than spend. This is the one implementation of that
@@ -568,6 +574,7 @@ fm_afk_contract_archive_target() {  # <record> [superseded-stamp]
 # follows the header's AWAY OR QUIET rules.
 fm_afk_contract_cmd_enter() {
   local record legacy now now_epoch session_entered session_entered_epoch staged archived archived_tmp standing=''
+  fm_afk_contract_entry_allowed || return 1
   record=$(fm_afk_contract_path)
   legacy=$(fm_afk_contract_legacy_proposal_path)
   FM_AFK_CONTRACT_ENTRY_MODE=away

@@ -1437,6 +1437,60 @@ test_quiet_archive_and_presentation_interruptions() {
   pass 'quiet archive failure preserves buffer; presentation failure retries durable receipt'
 }
 
+test_quiet_reentry_refuses_unfinished_exit() {
+  local dir detail out rc first_id first_archive archive count mode
+  for detail in retained empty; do
+    dir="$TMP_ROOT/quiet-reentry-$detail"
+    install_runner "$dir"
+    FM_HOME="$dir/home" FM_AFK_MODE=quiet "$dir/bin/fm-afk-contract.sh" enter >/dev/null
+    printf 'quiet\n%s\n' "$(date +%s)" > "$dir/home/state/.afk"
+    printf 'first session detail\n' > "$dir/home/state/.subsuper-escalations"
+    FM_HOME="$dir/home" "$dir/bin/fm-afk-return.sh" begin >&- 2> "$dir/presentation.err"
+    rc=$?
+    [ "$rc" -ne 0 ] || fail 'interrupted presentation reported success'
+    [ -f "$dir/home/state/.quiet-exit-pending" ] || fail 'interruption lost pending exit'
+    [ ! -e "$dir/home/state/.subsuper-escalations" ] || fail 'interruption did not reach buffer clear'
+    first_id=$(jq -r '.id' "$dir/home/state/.quiet-exit-receipt")
+    first_archive=$(jq -r '.archive' "$dir/home/state/.quiet-exit-receipt")
+    for mode in quiet away; do
+      if FM_HOME="$dir/home" FM_AFK_MODE="$mode" "$dir/bin/fm-afk-contract.sh" enter > "$dir/entry.out" 2>&1; then
+        fail "direct $mode entry accepted unfinished quiet exit"
+      fi
+      if FM_HOME="$dir/home" FM_STATE_OVERRIDE="$dir/home/state" FM_AFK_MODE="$mode" \
+        bash "$ROOT/bin/fm-afk-launch.sh" enter > "$dir/launch-entry.out" 2>&1; then
+        fail "launcher $mode entry accepted unfinished quiet exit"
+      fi
+    done
+    [ ! -e "$dir/home/state/.afk-contract" ] || fail 'refused re-entry wrote a record'
+    [ "$(cat "$dir/home/state/.quiet-exit-pending")" = "$first_id" ] || fail 'refused re-entry changed pending ID'
+    out=$(run_return "$dir" check) || fail "unfinished exit retry failed: $out"
+    assert_contains "$out" "archive=$first_archive events=1" 'retry did not present original receipt'
+    [ ! -e "$dir/home/state/.quiet-exit-pending" ] || fail 'retry did not finish exit'
+    FM_HOME="$dir/home" FM_AFK_MODE=quiet "$dir/bin/fm-afk-contract.sh" enter >/dev/null \
+      || fail 'quiet re-entry failed after completing exit'
+    printf 'quiet\n%s\n' "$(date +%s)" > "$dir/home/state/.afk"
+    : > "$dir/expected-detail"
+    count=0
+    if [ "$detail" = retained ]; then
+      printf 'second session detail\nsecond session extra detail\n' > "$dir/expected-detail"
+      cp "$dir/expected-detail" "$dir/home/state/.subsuper-escalations"
+      count=2
+    fi
+    out=$(run_return "$dir" begin) || fail "second quiet exit failed: $out"
+    archive=$(jq -r '.archive' "$dir/home/state/.quiet-exit-receipt")
+    [ "$archive" != "$first_archive" ] || fail 'second exit reused previous archive'
+    [ "$(jq -r '.id' "$dir/home/state/.quiet-exit-receipt")" != "$first_id" ] || fail 'second exit reused pending ID'
+    cmp -s "$dir/expected-detail" "$archive" || fail 'second exit archived wrong detail'
+    grep -qx 'first session detail' "$first_archive" || fail 'second exit changed original archive'
+    assert_contains "$out" "archive=$archive events=$count" 'second exit presented previous receipt'
+    [ ! -e "$dir/home/state/.subsuper-escalations" ] || fail 'second exit left buffer'
+    [ ! -e "$dir/home/state/.quiet-exit-pending" ] || fail 'second exit left pending transaction'
+    [ ! -e "$dir/home/state/.afk-return-catchup" ] || fail 'quiet re-entry opened away gate'
+    [ "$(wc -l < "$dir/home/stop.log" | tr -d ' ')" = 2 ] || fail 'quiet re-entry stopped wrong session'
+  done
+  pass 'unfinished quiet exit refuses re-entry until retry; new exits own retained or empty detail'
+}
+
 test_quiet_receipt_never_bypasses_away_or_legacy_gate() {
   local dir out rc
   dir="$TMP_ROOT/quiet-away-control"
@@ -1464,6 +1518,7 @@ test_quiet_receipt_never_bypasses_away_or_legacy_gate() {
 test_quiet_exit_retains_detail_without_away_gate
 test_quiet_receipt_failure_preserves_original_buffer
 test_quiet_archive_and_presentation_interruptions
+test_quiet_reentry_refuses_unfinished_exit
 test_quiet_receipt_never_bypasses_away_or_legacy_gate
 
 test_return_gate_owns_remediation_and_reports_catchup_to_bearings

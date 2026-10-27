@@ -935,6 +935,9 @@ fm_afk_launch_main() {
   trap 'exit 143' TERM
   fm_afk_launch_lock_acquire || return 1
   case "${1:-start}" in
+    enter|start|start-native) fm_afk_contract_entry_allowed "$FM_AFK_LAUNCH_STATE" || return 1 ;;
+  esac
+  case "${1:-start}" in
     enter) shift; fm_afk_launch_enter "$@" ;;
     propose|confirm)
       fm_afk_launch_log "'$1' was retired with the wait-for-go gate: /afk is itself the go, so run 'enter' to write the record in the same turn"

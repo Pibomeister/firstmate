@@ -167,6 +167,26 @@ grep -qx 'blocked nonce: private full detail' "$FM_STATE_OVERRIDE/.subsuper-esca
 [ ! -e "$FM_HOME/composer" ] && [ ! -e "$FM_HOME/keys" ] || fail 'restart wrote composer'
 pass 'quiet executable daemon batching, restart, shutdown and launcher preserve detail without composer send'
 
+printf 'interrupted-quiet-exit\n' > "$FM_STATE_OVERRIDE/.quiet-exit-pending"
+for artifact in .afk .afk-contract .afk-daemon-terminal .subsuper-escalations; do
+  cp "$FM_STATE_OVERRIDE/$artifact" "$TMP_ROOT/pending-$artifact"
+done
+for mode in quiet away; do
+  for command in enter start start-native; do
+    if FM_AFK_MODE="$mode" bash "$TMP_ROOT/bin/fm-afk-launch.sh" "$command" > "$TMP_ROOT/pending-entry.out" 2>&1; then
+      fail "$mode launcher $command accepted pending quiet exit"
+    fi
+    for artifact in .afk .afk-contract .afk-daemon-terminal .subsuper-escalations; do
+      cmp -s "$FM_STATE_OVERRIDE/$artifact" "$TMP_ROOT/pending-$artifact" \
+        || fail "$mode launcher $command changed $artifact before exit completion"
+    done
+    grep -qx 'interrupted-quiet-exit' "$FM_STATE_OVERRIDE/.quiet-exit-pending" \
+      || fail "$mode launcher $command changed pending transaction"
+  done
+done
+rm "$FM_STATE_OVERRIDE/.quiet-exit-pending"
+pass 'both launcher paths refuse unfinished quiet exits without rollback or retained detail loss'
+
 if [ -n "$REAL_TMUX" ]; then
   # Use a short private socket path; no operation addresses the operator server.
   export FM_QUIET_SOCKET="/tmp/fm-quiet-$$.sock"
