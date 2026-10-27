@@ -1846,7 +1846,7 @@ SH
   printf '{"TA":"notLoaded","TB":"active"}\n' > "$dir/state/thread-states.json"
   env -u CLAUDE_CODE_SESSION_ID -u CLAUDE_PID \
     CODEX_THREAD_ID=TB CODEX_SESSION_ID=TB FM_HOME="$dir" FM_LOCK="$ROOT/bin/fm-lock.sh" \
-    "$NAMED_CODEX" -c '"$FM_HOME/tool.sh" reclaim'
+    "$NAMED_CODEX" -c '"$FM_HOME/tool.sh" reclaim; exit $?'
   expect_code 0 "$(tr -d '[:space:]' < "$dir/state/reclaim.rc")" \
     "the foreign thread could not acquire after the daemon reported notLoaded: $(cat "$dir/state/reclaim.out")"
   [ "$(tr -d '[:space:]' < "$dir/state/reclaim.session-after")" = TB ] \

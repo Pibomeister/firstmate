@@ -48,6 +48,7 @@ def make(name):
     (root / "state/task.meta").write_text("project=synthetic\n")
     (root / "state/home-summary.json").write_text("{}\n")
     env = BASE_ENV | {
+        "FM_GATE_REFUSE_BYPASS": "1",  # Isolated test homes, as in tests/lib.sh.
         "FM_HOME": str(root),
         "FM_ROOT_OVERRIDE": str(root),
         "FM_STATE_OVERRIDE": str(root / "state"),
@@ -233,8 +234,10 @@ try:
         message="same-session owner published state/.lock but did not reach owner-ready",
     )
     same_lock_owner = session_lock_text(same_lock)
+    # The sidecar's first line is the persisted session ID; later lines carry
+    # anchor-instance and endpoint fields.
     require(
-        (same / "state/.lock-session").read_text().strip() == "synthetic-same",
+        (same / "state/.lock-session").read_text().splitlines()[0] == "synthetic-same",
         "the owner did not record its trusted session id beside the lock",
     )
     same_beat = same / "state/.last-watcher-beat"
@@ -259,7 +262,7 @@ try:
     require(same_owner.poll() is None, "the original owner exited, so the re-anchor proves nothing over a live line 1")
     require(accepted_pid != same_lock_owner, "the same-session acquisition ran as the original owner")
     require(session_lock_text(same_lock) == accepted_pid, "a same-session confirmation outside the owner's ancestry did not re-anchor line 1 onto its own CLAUDE_PID")
-    require((same / "state/.lock-session").read_text().strip() == "synthetic-same", "a same-session confirmation changed the recorded id")
+    require((same / "state/.lock-session").read_text().splitlines()[0] == "synthetic-same", "a same-session confirmation changed the recorded id")
     refused = run(
         same_env | {"CLAUDE_CODE_SESSION_ID": "synthetic-other"},
         'export CLAUDE_PID=$$; "$FM_ROOT_OVERRIDE/bin/fm-lock.sh"; rc=$?; printf "lock_rc=%s\\n" "$rc"; true',

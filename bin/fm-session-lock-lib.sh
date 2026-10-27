@@ -405,6 +405,7 @@ fm_session_lock_endpoint_gone() {
   [ -n "$terminal" ] && [ -n "$worktree" ] || return 1
   proof=$(
     if ! command -v fm_backend_orca_endpoint_absence_proof >/dev/null 2>&1; then
+      # shellcheck source=/dev/null # Backend checked as its own canonical root.
       . "${FM_SESSION_PROCESS_READER%/*}/backends/orca.sh"
     fi
     fm_backend_orca_endpoint_absence_proof "$terminal" "$worktree" "$state/.lock-session"
@@ -627,6 +628,7 @@ FM_LOCK_INSPECT_PID=
 FM_LOCK_INSPECT_LIVE_HARNESS=unknown
 FM_LOCK_INSPECT_OWNER_PID=
 FM_LOCK_INSPECT_HARNESS=
+# shellcheck disable=SC2034 # Output globals, read by lock status and inbox ready.
 fm_session_lock_inspect() {  # <state>
   local state=$1 lock pid
   FM_LOCK_INSPECT_HARNESS=

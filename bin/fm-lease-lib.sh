@@ -218,6 +218,7 @@ fm_lease_claim_holder() {
     return 0
   fi
   if ! command -v fm_session_lock_owner_key >/dev/null 2>&1; then
+    # shellcheck source=/dev/null # Canonical root checked separately, as in fm_lease_live.
     . "$FM_LEASE_LIB_DIR/fm-session-lock-lib.sh"
   fi
   if [ -n "$session" ]; then

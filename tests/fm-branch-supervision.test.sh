@@ -11,6 +11,15 @@ set -u
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
+# Lease liveness verifies the lock's harness process, so run the suite's
+# long-lived holder as Pi rather than an ordinary bash process.
+if [ "${FM_TEST_LEASE_HARNESS:-0}" != 1 ]; then
+  harness_dir=$(fm_test_tmproot fm-branch-supervision-harness)
+  ln -s /bin/bash "$harness_dir/pi"
+  FM_TEST_LEASE_HARNESS=1 "$harness_dir/pi" "$ROOT/tests/fm-branch-supervision.test.sh"
+  exit $?
+fi
+
 # shellcheck source=bin/fm-timeout-lib.sh
 . "$ROOT/bin/fm-timeout-lib.sh"
 TMP_ROOT=$(fm_test_tmproot fm-branch-supervision)
@@ -1169,11 +1178,14 @@ test_lease_liveness_binds_to_the_session_lock() {
 }
 
 test_claim_with_unverified_holder_pin_is_refused() {
-  local home pin status
+  local home pin status holder
   local -x PI_CODING_AGENT=true
   home="$TMP_ROOT/pinned-reanchor-home"
   mkdir -p "$home/state"
-  printf '%s\n' "$$" > "$home/state/.lock"
+  # A foreign owner, outside the caller's verified harness ancestry.
+  sleep 60 &
+  holder=$!
+  printf '%s\n' "$holder" > "$home/state/.lock"
   for pin in "$PPID" 999999; do
     FM_HOME="$home" FM_SUPERVISION_ACTOR=branch FM_LEASE_HOLDER_PID="$pin" \
       "$ROOT/bin/fm-lease.sh" claim task-1 --actor branch > "$home/claim.out" 2>&1
@@ -1181,6 +1193,8 @@ test_claim_with_unverified_holder_pin_is_refused() {
     expect_code 6 "$status" "an unverified pinned holder acquired a lease: $(cat "$home/claim.out")"
     [ ! -e "$home/state/.lease-task-1" ] || fail "an unverified pin wrote a stale lease"
   done
+  kill "$holder" 2>/dev/null || true
+  wait "$holder" 2>/dev/null || true
   pass "unverified and dead pinned holders are refused before writing a lease"
 }
 

@@ -948,7 +948,9 @@ EOF
   sleep 300 &
   holder_pid=$!
   printf '%s\n' "$holder_pid" > "$home/state/.lock"
-  out=$(FM_TRACE_CONTEXT=off run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  rm -f "$home/state/.lock-session"
+  out=$(FM_TRACE_CONTEXT=off FM_FAKE_LIVE_HOLDER_PID="$holder_pid" \
+    run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
   kill "$holder_pid" 2>/dev/null || true
   wait "$holder_pid" 2>/dev/null || true
   assert_contains "$out" "READ-ONLY SESSION" "trace-context refusal fixture did not enter read-only mode"
@@ -2578,6 +2580,7 @@ EOF
   printf '%s\n%s\n' "$holder_pid" "$(hash_file_for_test "$root/AGENTS.md")" \
     > "$home/state/.session-start-agents-baseline"
   printf '%s\n' "$holder_pid" > "$home/state/.lock"
+  rm -f "$home/state/.lock-session"
   baseline_before=$(cat "$home/state/.session-start-agents-baseline")
   completion_before=$(cat "$home/state/.session-start-complete")
 
@@ -2684,7 +2687,7 @@ EOF
   assert_not_contains "$reemit" "must leave restore work to the session holding the fleet lock" \
     "--reemit misreported itself as an unlocked read-only session"
 
-  rm -f "$home/state/.lock"
+  rm -f "$home/state/.lock" "$home/state/.lock-session"
   sleep 300 &
   holder_pid=$!
   printf '%s\n' "$holder_pid" > "$home/state/.lock"

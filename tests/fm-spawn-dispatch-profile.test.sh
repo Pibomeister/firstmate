@@ -1933,6 +1933,8 @@ SH
       FM_HOME=/synthetic/foreign FM_PUBLIC_FOLLOWUP_PRIMARY_HOME=/synthetic/foreign-primary \
       FM_CREW_STATE_META_OVERRIDE=/synthetic/foreign.meta \
       FM_CREW_STATE_STATUS_OVERRIDE=/synthetic/foreign.status \
+      FM_SESSION_ENDPOINT_META=/synthetic/foreign-endpoint.meta \
+      FM_LEASE_HOLDER_SESSION=synthetic-foreign-session \
       FM_SEND_RETRIES=7 FM_TASK_ID="$id" FM_TASK_INBOX=/synthetic/foreign.inbox \
       TEST_CREDENTIAL=keep /bin/sh -c "$launch") \
       || fail "$kind emitted launch did not execute"
@@ -1940,6 +1942,7 @@ SH
     if [ "$kind" = secondmate ]; then
       expected=$(printf '%s\n' \
         "FM_HOME=$target" "FM_PUBLIC_FOLLOWUP_PRIMARY_HOME=$HOME_DIR" \
+        "FM_SESSION_ENDPOINT_META=$state/$id.meta" \
         'FM_ROOT_OVERRIDE=' 'FM_STATE_OVERRIDE=' 'FM_DATA_OVERRIDE=' \
         'FM_PROJECTS_OVERRIDE=' 'FM_CONFIG_OVERRIDE=' \
         'FM_TRACE_CONTEXT=off' 'FM_SUPERVISION_MODEL=persistent' 'FM_SEND_RETRIES=7' \
