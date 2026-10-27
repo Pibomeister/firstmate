@@ -335,7 +335,8 @@ def prepare(path, config):
         values = [int(meta["budget_" + key]) for key in LIMITS]
         allocation = [meta["budget_started_at"], values]
         episode = read_state(path.with_suffix(".budget")).get("episode", {})
-        if episode.get("allocation") == allocation and episode.get("attempt"):
+        attempt = episode.get("attempt")
+        if episode.get("allocation") == allocation and attempt and not attempt.get("deferred"):
             # A claimed action already has evidence, even if its native log is gone.
             decision(path, episode)
         setting = Path(config) / "budget-enforcement"
@@ -390,7 +391,8 @@ def finish(path, code, output):
     deferred = code != "0" and "another lifecycle action is already running" in output
     episode["attempt"].update(outcome=output or f"control exit={code} without proof", deferred=deferred)
     save_state(path.with_suffix(".budget"), state)
-    decision(path, episode)
+    if not deferred:
+        decision(path, episode)
 
 
 def main():

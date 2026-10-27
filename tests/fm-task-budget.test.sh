@@ -398,6 +398,41 @@ PY
   pass 'crash uncertainty is preserved and one stop-line episode interrupts at most once'
 }
 
+test_deferred_interrupt_records_delivered_outcome() {
+  local dir="$TMP_ROOT/deferred"
+  make_counter_case "$dir" codex
+  write_native "$dir" codex
+  cp -R "$ROOT/bin" "$dir/bin"
+  printf 'enforce\n' > "$dir/config/budget-enforcement"
+  python3 - "$dir/state/task.meta" <<'PY'
+from pathlib import Path
+import sys
+p=Path(sys.argv[1]);p.write_text(p.read_text().replace('budget_inclusive_stop=32000000','budget_inclusive_stop=2030'))
+PY
+  cat > "$dir/bin/fm-control.sh" <<'SH'
+#!/usr/bin/env bash
+printf 'busy\n' >> "$FM_HOME/control.log"
+echo 'error: another lifecycle action is already running for task' >&2
+exit 1
+SH
+  "$TEST_BASH" "$dir/bin/fm-task-budget.sh" tick "$dir/state/task.meta" "$dir/config" "$dir"
+  [ ! -e "$dir/state/task.status" ] || fail 'a deferred interrupt opened the budget-stop decision'
+  "$TEST_BASH" "$dir/bin/fm-task-budget.sh" tick "$dir/state/task.meta" "$dir/config" "$dir"
+  [ "$(wc -l < "$dir/control.log" | tr -d ' ')" = 2 ] || fail 'a deferred interrupt was not retried'
+  [ ! -e "$dir/state/task.status" ] || fail 'a deferred retry opened the budget-stop decision'
+  cat > "$dir/bin/fm-control.sh" <<'SH'
+#!/usr/bin/env bash
+printf 'delivered\n' >> "$FM_HOME/control.log"
+printf '%s\n' 'interrupt-delivered task harness=codex backend=tmux verified=agent-alive cancel=confirmed'
+SH
+  "$TEST_BASH" "$dir/bin/fm-task-budget.sh" tick "$dir/state/task.meta" "$dir/config" "$dir"
+  "$TEST_BASH" "$dir/bin/fm-task-budget.sh" tick "$dir/state/task.meta" "$dir/config" "$dir"
+  [ "$(wc -l < "$dir/control.log" | tr -d ' ')" = 3 ] || fail 'a delivered interrupt was repeated'
+  [ "$(wc -l < "$dir/state/task.status" | tr -d ' ')" = 1 ] || fail 'budget-stop decision was not opened exactly once'
+  assert_grep 'interrupt=interrupt-delivered task' "$dir/state/task.status" 'decision records the delivered outcome'
+  pass 'a deferred interrupt retries and its one decision records the delivered outcome'
+}
+
 spawn_reuse() {  # <home> <wt> <fakebin> <project>
   fm_test_run_spawn "$1" "$2" "$3" reuse "$4" --scout \
     --budget-inclusive-hard 40000000 --budget-inclusive-stop 32000000 \
@@ -646,7 +681,8 @@ case "${FM_TEST_ONLY:-all}" in
 esac
 case "${FM_TEST_ONLY:-all}" in all|relaunch-unknown) test_relaunch_with_unknown_prior_usage_still_launches ;; esac
 case "${FM_TEST_ONLY:-all}" in all|incremental) test_bound_log_folds_appended_records_only ;; esac
-case "${FM_TEST_ONLY:-all}" in all|reuse) test_teardown_retires_budget_state_for_id_reuse ;; esac
+case "${FM_TEST_ONLY:-all}" in all|deferred) test_deferred_interrupt_records_delivered_outcome ;; esac
+case "${FM_TEST_ONLY:-all}" in all|reuse)test_teardown_retires_budget_state_for_id_reuse ;; esac
 case "${FM_TEST_ONLY:-all}" in
   all|watcher) test_ordinary_watcher_checks_budget ;;
 esac
