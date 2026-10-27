@@ -249,7 +249,7 @@ if [ -f "$LOCK" ] && [ ! -L "$LOCK" ]; then
     confirm_own_lock "$old"
     old=$(cat "$LOCK" 2>/dev/null || true)
   fi
-  if [ -z "$REANCHOR" ] && fm_harness_pid_alive "$old"; then
+  if [ -z "$REANCHOR" ] && fm_session_lock_recorded_owner_live "$STATE"; then
     refuse_live_owner "$old"
   fi
 fi
@@ -277,10 +277,10 @@ if [ -e "$LOCK" ] || [ -L "$LOCK" ]; then
   }
   # A re-anchor decided above has held the claim lock since, so line 1 is the
   # pid it recorded and needs no second verdict.
-  if [ -z "$REANCHOR" ] && [ "$old" != "$me" ] && fm_harness_pid_alive "$old"; then
+  if [ -z "$REANCHOR" ] && [ "$old" != "$me" ] && fm_session_lock_recorded_owner_live "$STATE"; then
     fm_session_lock_owned_by_self "$STATE" && confirm_own_lock "$old"
     old=$(cat "$LOCK" 2>/dev/null || true)
-    if [ -z "$REANCHOR" ] && [ "$old" != "$me" ] && fm_harness_pid_alive "$old"; then
+    if [ -z "$REANCHOR" ] && [ "$old" != "$me" ] && fm_session_lock_recorded_owner_live "$STATE"; then
       refuse_live_owner "$old"
     fi
   fi

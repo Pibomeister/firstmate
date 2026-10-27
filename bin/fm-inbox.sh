@@ -888,10 +888,14 @@ cmd_ready() {
   # classify the lock-holder pid through fm-harness.sh ancestry. No holder,
   # or a walk that names nothing, is honest unknown - never the caller's
   # own harness, and never a durable per-home model record.
-  local resolved_model harness anc
+  local resolved_model harness anc owner_pid
   resolved_model=${FM_SUPERVISION_MODEL:-}
-  if [ -z "$resolved_model" ] && [ "$lock_state" = held ] && [ -n "$lock_pid" ]; then
-    anc=$("$SELF_DIR/fm-harness.sh" ancestry "$lock_pid" 2>/dev/null || true)
+  # Classify through a live owner pid: a daemon-served Codex lock records a
+  # short-lived acquiring pid, and the inspection's bound owner pid is the
+  # live process whose ancestry names the holder's harness.
+  owner_pid=${FM_LOCK_INSPECT_OWNER_PID:-$lock_pid}
+  if [ -z "$resolved_model" ] && [ "$lock_state" = held ] && [ -n "$owner_pid" ]; then
+    anc=$("$SELF_DIR/fm-harness.sh" ancestry "$owner_pid" 2>/dev/null || true)
     harness=${anc#* }
     case "$harness" in
       claude|cursor) resolved_model=autoarm ;;
