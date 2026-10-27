@@ -185,6 +185,12 @@ fm_afk_contract_present() {  # [state-dir]
   [ -f "$(fm_afk_contract_path "${1:-$FM_AFK_CONTRACT_STATE}")" ]
 }
 
+fm_afk_contract_entry_allowed() {
+  [ -e "${1:-$FM_AFK_CONTRACT_STATE}/.quiet-exit-pending" ] || return 0
+  fm_afk_contract_log "quiet exit is still pending; run bin/fm-afk-return.sh check before entering or restarting supervision"
+  return 1
+}
+
 # The ordinary worker records this home holds right now (the header's SPEND
 # CAP): every state/*.meta whose kind is not secondmate, because a secondmate is
 # a persistent home rather than spend. This is the one implementation of that
@@ -206,6 +212,26 @@ fm_afk_contract_entry_spend_default() {  # [state-dir]
   live=$(fm_afk_contract_live_ordinary_workers "${1:-$FM_AFK_CONTRACT_STATE}")
   [ "$live" -gt "$FM_AFK_CONTRACT_SPEND_DEFAULT" ] || live=$FM_AFK_CONTRACT_SPEND_DEFAULT
   printf '%s\n' "$live"
+}
+
+# Either quiet signal suppresses composer delivery, including inconsistent records.
+fm_afk_contract_quiet_possible() {  # <state-dir>
+  [ "$(head -1 "$1/.afk" 2>/dev/null)" = quiet ] \
+    || grep -qx 'mode: quiet' "$(fm_afk_contract_path "$1")" 2>/dev/null
+}
+
+# Exit uses a validated quiet record and refuses a contradictory legacy flag.
+fm_afk_contract_quiet_active() {  # <state-dir>
+  local state=$1 record flag
+  record=$(fm_afk_contract_path "$state")
+  fm_afk_contract_validate "$record" || return 1
+  [ "$(sed -n '/^mode: /p' "$record")" = 'mode: quiet' ] || return 1
+  flag=quiet
+  if [ -e "$state/.afk" ]; then
+    [ -f "$state/.afk" ] || return 1
+    flag=$(head -1 "$state/.afk" 2>/dev/null) || return 1
+  fi
+  [ "$flag" = quiet ]
 }
 
 # The posture a record at <path> is (the header's AWAY OR QUIET): quiet only
@@ -548,6 +574,7 @@ fm_afk_contract_archive_target() {  # <record> [superseded-stamp]
 # follows the header's AWAY OR QUIET rules.
 fm_afk_contract_cmd_enter() {
   local record legacy now now_epoch session_entered session_entered_epoch staged archived archived_tmp standing=''
+  fm_afk_contract_entry_allowed || return 1
   record=$(fm_afk_contract_path)
   legacy=$(fm_afk_contract_legacy_proposal_path)
   FM_AFK_CONTRACT_ENTRY_MODE=away

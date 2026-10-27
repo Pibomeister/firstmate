@@ -1,9 +1,10 @@
-# Away-mode injection wedge alarm
+# Away and quiet supervision alarms
 
 The away-mode sub-supervisor (`bin/fm-supervise-daemon.sh`) buffers escalations and injects them into Firstmate's own pane.
 When injection cannot confirm a submit past `FM_MAX_DEFER_SECS`, `inject_wedge_alarm` raises a loud, rate-limited alarm so the stall never stays invisible.
 The active alert is pane-independent because a tmux status-line flash has no cross-backend equivalent and cannot reach an unattended captain reliably.
 The durable marker and tmux flash remain as additional signals.
+In quiet mode the daemon never retries composer delivery; retained escalations older than `FM_MAX_DEFER_SECS` raise only a summary through the configured channels below, throttled in memory to once per max-defer window, with no durable marker or tmux flash.
 
 ## Channels
 
@@ -11,15 +12,15 @@ The durable marker and tmux flash remain as additional signals.
 It lists channel directives, one per non-empty, non-comment line, and every listed non-`off` channel fires best-effort.
 `FM_WEDGE_ALARM_CHANNEL` overrides the file with one directive for focused testing.
 
-- `off` disables every active alert while retaining the durable marker and tmux flash.
+- `off` disables every active alert; away mode retains its durable marker and tmux flash, and quiet detail stays in its buffer.
 - `auto` or `default` resolves to `osascript` on macOS.
-  Other platforms have no built-in OS channel, so configure `command:` when a durable marker alone is insufficient.
+  Other platforms have no built-in OS channel, so configure `command:` when retained state alone is insufficient.
 - `osascript` posts a macOS Notification Center banner outside the terminal pane.
 - `herdr` calls `herdr notification show` outside the supervised pane.
 - `command:<cmd>` runs `<cmd>` through `sh -c` with the alarm summary as `$1` and on stdin, allowing delivery to a phone or pager service.
 
 An absent `config/wedge-alarm` behaves as `auto`, which is default-on on macOS.
-This is deliberate because the alarm fires only after a genuine max-defer wedge and is rate-limited to at most once per max-defer window.
+Alerts require the max-defer threshold and are rate-limited to at most once per max-defer window.
 
 Each channel is best-effort.
 A missing binary or non-zero exit logs a warning and continues to the next channel without crashing the daemon loop.
@@ -36,4 +37,5 @@ When the daemon is sourced as a library, that seam defaults to `discard`, so a t
 Production leaves the seam unset and uses the configured real channels.
 
 `tests/fm-daemon.test.sh` covers directive parsing, rate limiting, timeout and process-group cleanup, argv-safe dispatch, channel fallback, and safe `command:` summary delivery.
+`tests/fm-supervise-quiet.test.sh` covers quiet retention, alert throttling, diagnostic redaction, and launcher restart behavior.
 [`verification/supervision.md`](verification/supervision.md#wedge-alarm-channels) records the bounded manual macOS and Herdr channel proof.

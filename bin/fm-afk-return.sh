@@ -1,16 +1,29 @@
 #!/usr/bin/env bash
-# fm-afk-return.sh - deterministic away-mode return: the return brief and the
-# catch-up gate.
+# fm-afk-return.sh - deterministic away-mode return and receipted quiet exit.
 #
 # Usage:
-#   fm-afk-return.sh          Stop away mode, render the return brief, and open/check the gate.
+#   fm-afk-return.sh          Exit quiet mode, or stop away mode and open/check its gate.
 #   fm-afk-return.sh begin    Same as the default command.
-#   fm-afk-return.sh check    Re-render the brief and close the gate only after blockers resolve.
+#   fm-afk-return.sh check    Retry quiet exit, or recheck the away brief and blockers.
 #   fm-afk-return.sh guard    Read-only consult: exit 3 while away mode is still
 #                            active, exit 4 while return catch-up is pending.
+#                            Validated quiet mode passes unless an away gate remains.
 #   fm-afk-return.sh catchup-summary  Read-only catch-up projection for a reporting surface.
+# Quiet exit requires a validated quiet record with no contradictory legacy flag
+# (bin/fm-afk-contract.sh owns the predicates). An existing away gate always goes
+# through normal reconciliation before any quiet receipt is considered.
+# Quiet exit stops the daemon, retains detail in .subsuper-digests, and atomically
+# records its transaction ID, archive path, and event count in .quiet-exit-receipt
+# before clearing only a buffer whose bytes match the archive.
+# .quiet-exit-pending carries a unique transaction across lifecycle shutdown;
+# retries before receipt persistence read the original buffer, afterward the receipt.
+# Entry and restart refuse while that transaction remains pending; run `check`
+# to finish presentation before entering either posture again.
+# Quiet output contains only receipt data, never raw event text.
+# Quiet exit opens no away catch-up gate and does not resolve existing blockers.
+# tests/fm-afk-return.test.sh covers archive, receipt, presentation, and re-entry retries.
 #
-# THE RETURN BRIEF (stdout, on begin and on every check) is rendered from durable
+# THE AWAY RETURN BRIEF (stdout, on begin and every away check) uses durable
 # records, never from conversation memory: the archived away-posture record
 # (bin/fm-afk-contract.sh), the supervision outcome store
 # (bin/fm-branch-outcome.sh), the held set in the backlog (tasks-axi), and the
@@ -30,7 +43,7 @@
 # the away session handled, then cost. The health snapshot is taken BEFORE the
 # daemon shutdown so the shutdown itself cannot read as a gap.
 #
-# THE GATE. `blocked:` is the crewmate protocol's firstmate-actionable verb. A
+# THE AWAY GATE. `blocked:` is the crewmate protocol's firstmate-actionable verb. A
 # live task's open blocked event must be remediated and closed with
 # `resolved [key=...]`, or explicitly reclassified in the status stream with a
 # durable reason, before an ordinary captain request may proceed.
@@ -295,7 +308,8 @@ catchup_summary() {
 
 return_guard() {
   local reasons
-  if [ -e "$STATE/.afk" ] || fm_afk_contract_present "$STATE"; then
+  if { [ -e "$STATE/.afk" ] || fm_afk_contract_present "$STATE"; } \
+     && ! fm_afk_contract_quiet_active "$STATE"; then
     printf 'fm-afk-return: away mode is still active; run bin/fm-afk-return.sh before ordinary captain work\n' >&2
     return 3
   fi
@@ -320,6 +334,78 @@ return_guard() {
     return 4
   fi
   return 0
+}
+
+quiet_receipt_present() {
+  [ -f "$STATE/.quiet-exit-receipt" ] \
+    && jq -e '.schema == "fm-quiet-exit.v1" and (.archive | type == "string" and length > 0) and (.count | type == "number" and . >= 0 and . == floor) and (.id | type == "string" and length > 0)' \
+      "$STATE/.quiet-exit-receipt" >/dev/null 2>&1
+}
+
+quiet_receipt_print() {
+  local archive count
+  quiet_receipt_present || return 1
+  archive=$(jq -r '.archive' "$STATE/.quiet-exit-receipt") || return 1
+  count=$(jq -r '.count' "$STATE/.quiet-exit-receipt") || return 1
+  [ -f "$archive" ] && [ -r "$archive" ] || return 1
+  printf 'Quiet exit detail: archive=%s events=%s\n' "$archive" "$count"
+}
+
+quiet_exit() {
+  local pending="$STATE/.quiet-exit-pending" receipt="$STATE/.quiet-exit-receipt"
+  local buf="$STATE/.subsuper-escalations" id archived count tmp receipt_id
+  # An old away gate has no unique posture identity: never clear or reinterpret it.
+  [ ! -e "$GATE" ] || { return_guard; return 3; }
+  if [ ! -f "$pending" ]; then
+    if ! fm_afk_contract_quiet_active "$STATE"; then
+      quiet_receipt_print
+      return
+    fi
+    # Persist intent before stopping so an interruption cannot lose quiet identity.
+    # The nonce is independent of the second-resolution posture entry timestamp.
+    tmp=$(umask 077; mktemp "$STATE/.quiet-exit-intent.XXXXXX") || return 1
+    id=${tmp##*/}
+    printf '%s\n' "$id" > "$tmp" || { rm -f "$tmp"; return 1; }
+    mv -f "$tmp" "$pending" || { rm -f "$tmp"; return 1; }
+  fi
+  id=$(cat "$pending") || return 1
+  # A later real away entry must go through its own gate, never this transaction.
+  if { [ -e "$STATE/.afk" ] || fm_afk_contract_present "$STATE"; } \
+     && ! fm_afk_contract_quiet_active "$STATE"; then
+    return 1
+  fi
+  if [ -e "$STATE/.afk" ] || fm_afk_contract_present "$STATE" \
+     || [ -e "$STATE/.afk-daemon-terminal" ]; then
+    "$SCRIPT_DIR/fm-afk-launch.sh" stop >/dev/null 2>&1 || return 1
+  fi
+  receipt_id=
+  if quiet_receipt_present; then
+    receipt_id=$(jq -r '.id' "$receipt") || return 1
+  fi
+  if [ "$receipt_id" != "$id" ]; then
+    [ ! -e "$buf" ] || { [ -f "$buf" ] && [ -r "$buf" ]; } || return 1
+    # Original buffer remains authoritative through archive AND receipt failures.
+    (umask 077; mkdir -p "$STATE/.subsuper-digests") || return 1
+    archived=$(umask 077; mktemp "$STATE/.subsuper-digests/quiet-exit.XXXXXX") || return 1
+    if [ -f "$buf" ]; then
+      cat "$buf" > "$archived" || return 1
+    fi
+    count=$(awk 'END { print NR + 0 }' "$archived") || return 1
+    tmp=$(umask 077; mktemp "$STATE/.quiet-exit-receipt.XXXXXX") || return 1
+    jq -n --arg id "$id" --arg archive "$archived" --argjson count "$count" \
+      '{schema:"fm-quiet-exit.v1", id:$id, archive:$archive, count:$count}' > "$tmp" \
+      || { rm -f "$tmp"; return 1; }
+    [ ! -d "$receipt" ] || { rm -f "$tmp"; return 1; }
+    mv -f "$tmp" "$receipt" || { rm -f "$tmp"; return 1; }
+  fi
+  # A durable matching receipt now owns retry; ensure its archive still exists.
+  archived=$(jq -r '.archive' "$receipt") || return 1
+  [ -f "$archived" ] && [ -r "$archived" ] || return 1
+  # A restarted producer may have appended new detail; an older receipt cannot clear it.
+  [ ! -e "$buf" ] || cmp -s "$buf" "$archived" || return 1
+  rm -f "$buf" "${buf}.since" || return 1
+  quiet_receipt_print || return 1
+  rm -f "$pending"
 }
 
 # --- supervisor health, snapshotted before anything is shut down ------------
@@ -700,7 +786,7 @@ EOF
 
 return_reconcile() {
   local evidence blockers drain_err drained drain_ok=1 wake_ack_line wake_ack_through wake_ack_generation wedge escalations lifecycle_ok=1 since contract_since superseded_record retained_record
-  local archived_contract tag kind text retained_live restored_epoch
+  local archived_contract tag kind text retained_live restored_epoch brief
   evidence=$(mktemp "$STATE/.afk-return-evidence.XXXXXX") || return 1
   blockers=$(mktemp "$STATE/.afk-return-blockers.XXXXXX") || { rm -f "$evidence"; return 1; }
   drain_err=$(mktemp "$STATE/.afk-return-drain.XXXXXX") || { rm -f "$evidence" "$blockers"; return 1; }
@@ -849,7 +935,15 @@ EOF
     append_evidence lifecycle "status file unreadable: $STATUS_SCAN_ERROR; catch-up stays gated" "$evidence"
     lifecycle_ok=0
   fi
-  render_return_brief "$evidence" "$blockers" "$since" "$drain_ok"
+  # Render to a file before publishing: failed stdout writes can leave Bash's
+  # buffered output in later command substitutions and corrupt numeric fields.
+  brief=$(mktemp "$STATE/.afk-return-brief.XXXXXX") || { rm -f "$evidence" "$blockers" "$drain_err"; return 1; }
+  if ! render_return_brief "$evidence" "$blockers" "$since" "$drain_ok" > "$brief" \
+     || ! cat "$brief"; then
+    append_evidence lifecycle 'recovery evidence publication failed; retry catch-up before ordinary work' "$evidence"
+    lifecycle_ok=0
+  fi
+  rm -f "$brief"
   if [ "$HELD_READ_FAILED" -eq 1 ]; then
     append_evidence lifecycle "held set unreadable: $HELD_READ_PATH; catch-up stays gated" "$evidence"
     lifecycle_ok=0
@@ -914,6 +1008,16 @@ main() {
   mkdir -p "$STATE" || return 1
   fm_lock_acquire_wait "$LOCK"
   trap 'fm_lock_release "$LOCK"' EXIT
+  if [ ! -e "$GATE" ] \
+     && { fm_afk_contract_quiet_active "$STATE" \
+          || { [ ! -e "$STATE/.afk" ] && ! fm_afk_contract_present "$STATE" \
+               && { [ -f "$STATE/.quiet-exit-pending" ] || quiet_receipt_present; }; }; }; then
+    quiet_exit
+    rc=$?
+    fm_lock_release "$LOCK"
+    trap - EXIT
+    return "$rc"
+  fi
   window_epoch=$(window_start_epoch)
   contract_epoch=$(gate_contract_epoch)
   if [ -z "$contract_epoch" ] && fm_afk_contract_present "$STATE"; then

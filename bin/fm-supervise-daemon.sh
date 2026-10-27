@@ -12,7 +12,9 @@
 # Escalated events reach the LLM as one pre-read digest per
 # batch window. That digest is byte-bounded (see escalate_flush); when it cuts
 # or omits anything it names a state/.subsuper-digests/ file holding every
-# buffered event verbatim.
+# buffered event verbatim. In quiet mode, escalate_flush and inject_msg keep
+# detail in the durable buffer, and handle_wake logs only a placeholder after
+# classification enrichment. Startup and shutdown diagnostics remain visible.
 #
 # PRESENCE-GATING (the /afk contract). The daemon is the away-mode engine: it
 # injects ONLY when the durable away-mode flag state/.afk is present. Invoking
@@ -64,7 +66,9 @@
 #     Buffered escalation delivery also has a max-defer alarm: if a digest stays
 #     undelivered past FM_MAX_DEFER_SECS, the daemon retries a normal flush and
 #     writes state/.subsuper-inject-wedged and attempts a configurable active
-#     alert if submit still cannot be confirmed.
+#     alert if submit still cannot be confirmed. Quiet mode skips composer
+#     retries and uses only a summary alert, throttled in memory once per
+#     max-defer window; it never copies raw detail into a wedge marker.
 #   - Cheap heartbeat catch-all: every HEARTBEAT_SCAN_SECS the daemon greps the
 #     state dir's task status logs for a captain-relevant line the per-wake
 #     classifier might have missed (e.g. a status verb outside CAPTAIN_RE) and
@@ -885,6 +889,8 @@ escalate_flush() {  # <state>
   local state=$1 buf msg full='' fresh=0
   buf="$state/.subsuper-escalations"
   [ -s "$buf" ] || return 0
+  # Quiet detail stays durable for explicit handling, never composer delivery.
+  fm_afk_contract_quiet_possible "$state" && return 0
   if [ ! -f "$buf" ] || [ ! -r "$buf" ]; then
     INJECT_LAST_FAILURE="escalation buffer $buf is not a readable file"
     log "inject skipped: $INJECT_LAST_FAILURE"
@@ -1246,7 +1252,19 @@ housekeeping() {  # <state>
   # retry the normal delivery path. If that still cannot confirm, raise a loud
   # wedge alarm while preserving the buffer.
   max_defer=${FM_MAX_DEFER_SECS:-$MAX_DEFER_SECS_DEFAULT}
-  if afk_active "$state" && [ "$max_defer" -gt 0 ] && [ -s "$state/.subsuper-escalations" ]; then
+  # Quiet never retries the composer; it only raises the non-composer alert.
+  if afk_active "$state" && fm_afk_contract_quiet_possible "$state" \
+     && [ "$max_defer" -gt 0 ] && [ -s "$state/.subsuper-escalations" ]; then
+    oldest=$(_oldest_line_age "$state/.subsuper-escalations")
+    if [ "$oldest" -ge "$max_defer" ] && [ $((now - WEDGE_ALARM_LAST_EPOCH)) -ge "$max_defer" ]; then
+      WEDGE_ALARM_LAST_EPOCH=$now
+      log "quiet escalations retained ${oldest}s; non-composer alert attempted"
+      wedge_alarm_notify "quiet supervision retained escalations ${oldest}s - run bin/fm-afk-return.sh" \
+        "$state/.subsuper-escalations"
+    fi
+  fi
+  if afk_active "$state" && ! fm_afk_contract_quiet_possible "$state" \
+     && [ "$max_defer" -gt 0 ] && [ -s "$state/.subsuper-escalations" ]; then
     oldest=$(_oldest_line_age "$state/.subsuper-escalations")
     # Throttle the alarm to once per max-defer window (the wedge marker doubles
     # as the throttle). A successful flush clears the buffer; a failed one alarms
@@ -1472,6 +1490,10 @@ inject_msg() {  # <message> [state]
   # watcher triage. Escalations buffer and survive for the next catch-up flush.
   INJECT_LAST_FAILURE=
   INJECT_SUBMIT_ATTEMPTED=0
+  if fm_afk_contract_quiet_possible "$state"; then
+    INJECT_LAST_FAILURE="deferred: quiet posture retains durable detail"
+    return 1
+  fi
   afk_active "$state" || { INJECT_LAST_FAILURE="deferred: afk inactive"; log "inject $INJECT_LAST_FAILURE"; return 1; }
   # (2) Single-line digest: collapse any embedded newlines so submission via
   # send-keys + Enter is unambiguous regardless of how the TUI composer treats
@@ -1591,7 +1613,7 @@ is_wake_reason() {  # <reason>
 # is populated, suppression markers commit, and the digest names the decision
 # instead of "unknown wake:".
 handle_wake() {  # <reason> <state>
-  local reason=$1 state=$2 decision action distilled task last stale_detail dialog_name=''
+  local reason=$1 state=$2 decision action distilled logged task last stale_detail dialog_name=''
   local capture="$state/.subsuper-classified-end.$$" span_record='' span_rc='' endpoint ident rest sig marker
   local kind="" arg="" classification_failed=0 span_failure_repeat=0
   : > "$capture" || return 1
@@ -1691,9 +1713,11 @@ handle_wake() {  # <reason> <state>
     last=$(status_declared_wait_line "$state/$task.status")
     reconcile_pause_tracking "$arg" "$state" "$last"
   fi
+  logged=$distilled
+  fm_afk_contract_quiet_possible "$state" && logged='detail retained in durable state'
   case "$action" in
     escalate)
-      log "escalate: $reason -> $distilled"
+      log "escalate: $reason -> $logged"
       if escalate_add "$state" "$distilled"; then
         # A terminal-stale escalate must not leave a persistence marker behind, or
         # housekeeping re-escalates the same pane as a false wedge later.
@@ -1713,7 +1737,7 @@ handle_wake() {  # <reason> <state>
         stale_marker_remove "$arg" "$state"
         pause_marker_record "$arg" "$state"
       fi
-      log "self-handle (paused): $reason -> $distilled"
+      log "self-handle (paused): $reason -> $logged"
       ;;
     *)
       # Transient (non-terminal) stale: record/refresh the wedge marker so
@@ -1749,7 +1773,7 @@ handle_wake() {  # <reason> <state>
           fi
         fi
       fi
-      log "self-handle: $reason -> $distilled"
+      log "self-handle: $reason -> $logged"
       ;;
   esac
   if [ "$action" = self ] && { [ "$kind" = signal ] || [ "$kind" = stale ]; }; then
