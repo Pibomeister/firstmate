@@ -1,0 +1,134 @@
+Live product transcript at d864ff128702ea9bb07117457b5f7801f31cee67
+macOS; codex-cli 0.163.0; 120x40 private tmux lab.
+
+The driver talks to a real disposable Codex app-server over its Unix WebSocket control socket. It starts real threads and invokes the real Firstmate scripts through command/exec with each thread's documented identity pair. Active-state checks use a real turn against an unreachable loopback model endpoint. The host cooldown check uses the real Claude CLI with an isolated unauthenticated configuration to cause two engine failures.
+
+=== legacy-daemon-reclaim.log ===
+thread/start 01a17dcd-4ce2-7f22-b4f3-41208a5cb26b status={"type": "idle"}
+command/exec exitCode=0
+lock: stale (pid 57569 dead or not a harness)
+lock acquired: harness pid 83433
+lock: held by live harness pid 83433
+01a17dcd-4ce2-7f22-b4f3-41208a5cb26b
+anchor_pid=83433
+anchor_start=1793111969.232965
+codex_daemon_pid=57569
+codex_daemon_start=1793111672.567579
+kind=ship
+status=working
+EXISTING_WORKER_RECORD_UNCHANGED true
+
+=== foreign-acquire.log ===
+command/exec exitCode=1
+error: another live firstmate session holds the lock (pid 82448, session 01a17dc9-2cf3-7353-8bf6-6cfd8fb190e4); operate read-only until resolved
+
+=== active-verified.log ===
+thread/read 01a17dcb-d182-72c1-bad4-1788a6c37187 status={"type": "active", "activeFlags": []}
+Before foreign attempt: {'type': 'active', 'activeFlags': []}
+command/exec exitCode=0
+foreign-acquisition-exit=1
+error: another live firstmate session holds the lock (pid 99164, session 01a17dcb-d182-72c1-bad4-1788a6c37187); operate read-only until resolved
+thread/read 01a17dcb-d182-72c1-bad4-1788a6c37187 status={"type": "active", "activeFlags": []}
+After foreign attempt: {'type': 'active', 'activeFlags': []}
+
+=== reanchor-leases-key.log ===
+command/exec exitCode=0
+before: anchor=82448 key=session:01a17dc9-2cf3-7353-8bf6-6cfd8fb190e4
+lock acquired: harness pid 19100
+after: anchor=19100 key=session:01a17dc9-2cf3-7353-8bf6-6cfd8fb190e4
+branch 19100 1793111732 live
+branch 19100 1793111734 live
+
+=== inbox-live-checkpoint.log ===
+command/exec exitCode=0
+{"schema":"fm-primary-ready.v1","home":".live-check/lab","observed_at":"2026-10-27T14:36:06Z","lock":{"state":"held","pid":19100,"live_harness":true},"wake_consumer":{"state":"down","reason":"no-beacon","beacon_age_seconds":null},"posture":{"state":"present"},"can_receive":false}
+{"schema":"fm-primary-ready.v1","home":".live-check/lab","observed_at":"2026-10-27T14:36:09Z","lock":{"state":"held","pid":19100,"live_harness":true},"wake_consumer":{"state":"healthy","reason":"supervised","beacon_age_seconds":2},"posture":{"state":"present"},"can_receive":true}
+checkpoint: no actionable wake within 12s
+
+=== thread-end-replacement.log ===
+RPC thread/archive {"id": 2, "result": {}}
+thread/read 01a17dc9-2cf3-7353-8bf6-6cfd8fb190e4 status={"type": "notLoaded"}
+command/exec exitCode=6
+lock acquired: harness pid 23985
+lock: held by live harness pid 23985
+01a17dc9-2d26-7911-ae3f-768aae0ed61a
+anchor_pid=23985
+anchor_start=1793111835.680113
+codex_daemon_pid=57569
+codex_daemon_start=1793111672.567579
+error: claim refused - the pinned supervision session no longer owns this home
+command/exec exitCode=0
+old-branch-rc=6
+error: claim refused - the pinned supervision session no longer owns this home
+
+=== daemon-restart-reanchor.log ===
+thread/resume 01a17dcd-4ce2-7f22-b4f3-41208a5cb26b status={"type": "idle"}
+command/exec exitCode=0
+BEFORE
+01a17dcd-4ce2-7f22-b4f3-41208a5cb26b
+anchor_pid=83433
+anchor_start=1793111969.232965
+codex_daemon_pid=57569
+codex_daemon_start=1793111672.567579
+lock acquired: harness pid 97742
+AFTER
+01a17dcd-4ce2-7f22-b4f3-41208a5cb26b
+anchor_pid=97742
+anchor_start=1793112312.445139
+codex_daemon_pid=93781
+codex_daemon_start=1793112303.641784
+owner-key=session:01a17dcd-4ce2-7f22-b4f3-41208a5cb26b
+branch 97742 1793112123 live
+branch 97742 1793112314 live
+
+=== live-host-error-latch-final.log ===
+command/exec exitCode=0
+lock acquired: harness pid 47227
+ROUND 1
+watcher: started pid=51284 (beacon fresh)
+check: rearm-resurface
+supervision-host: the away session could not take this wake: the engine turn failed (exit 1); this wake is yours
+key=session:01a17dcb-d182-72c1-bad4-1788a6c37187|claude|sonnet
+errors=1
+cooldown=0
+retry_after=0
+lock acquired: harness pid 57908
+ROUND 2
+watcher: started pid=62680 (beacon fresh)
+check: rearm-resurface
+supervision-host: the away session could not take this wake: the engine turn failed (exit 1); this wake is yours
+supervision-host: the supervision session is paused after repeated engine errors; every wake reaches you for the next 5 minutes, then one wake probes it again
+key=session:01a17dcb-d182-72c1-bad4-1788a6c37187|claude|sonnet
+errors=2
+cooldown=300
+retry_after=1793112531
+fm-afk-contract: replaced the earlier away posture; its record is archived at /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5XD1NE62VTK3EA453994TMJ/.live-check/lab/state/afk-contracts/1793112093-superseded-1793112209.afk-contract
+
+=== identity-pair-boundary.log ===
+command/exec exitCode=0
+valid-pair=01a17dcb-d182-72c1-bad4-1788a6c37187
+thread-only-rejected
+session-only-rejected
+unequal-pair-rejected
+
+=== mismatched-instance.log ===
+command/exec exitCode=0
+old-instance-rejected
+branch 8383 100 stale
+lock acquired: harness pid 50079
+prior-task-claim-retired
+01a17dcd-4ce2-7f22-b4f3-41208a5cb26b
+anchor_pid=50079
+anchor_start=1793112278.405611
+codex_daemon_pid=57569
+codex_daemon_start=1793111672.567579
+
+=== prompt-argv-exact.log ===
+Actual native CLI argv: ['/opt/homebrew/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex', 'app-server --listen unix:// --managed-daemon']
+class=session
+live-harness=true
+ 
+Actual native CLI argv: ['/opt/homebrew/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex', 'app-server daemon diagnose this']
+class=session
+live-harness=true
+ 

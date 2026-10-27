@@ -1,0 +1,2 @@
+tests/.fm-targeted-turnend-run.sh: line 2337: 35019 Killed: 9               env -u CLAUDECODE -u PI_CODING_AGENT -u FM_PI_HARNESS -u GROK_AGENT -u CURSOR_AGENT -u CURSOR_INVOKED_AS FM_T_HOME="$home" FM_T_DIR="$io" FM_T_PAYLOAD="$payload" FM_T_CHECKPOINT="$checkpoint" "$CODEX_BIN" "$CODEX_DRIVER"
+not ok - a Codex stop while this session's own checkpoint runs must block; nothing reads it after the turn ends: : expected exit 2, got 

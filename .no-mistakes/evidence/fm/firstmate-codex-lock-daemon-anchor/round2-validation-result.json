@@ -1,0 +1,96 @@
+{
+  "tested_head_sha": "d864ff128702ea9bb07117457b5f7801f31cee67",
+  "worktree_patch_sha256": "efb2ce489b18d2dfb736582bf0381ebce7c4869b9d8a25d28091c9aedcff3c0a",
+  "verdict": "inconclusive: Orca retention live validation needs an isolated runtime",
+  "fix": {
+    "failure": "Real daemon-served Stop returned 0 while its own foreground checkpoint and healthy watcher were alive.",
+    "cause": "On this macOS host the kernel process reader could not recover the checkpoint Bash process identity environment. Its timeout child retained the identity pair, but the guard checked only the checkpoint shell.",
+    "remedy": "Accept matching thread evidence from the watcher ancestry up to and including its checkpoint. Foreign or missing thread evidence still does not establish ownership.",
+    "test_fixture": "The new focused regression waits for its Python watcher to execute before recording the process identity. A prior rerun caught the fixture recording its pre-exec identity.",
+    "previous_fix_preserved": "The existing copied-Bash to symlink fixture repair in tests/fm-turnend-guard.test.sh remains."
+  },
+  "focused_regression": {
+    "command": "FM_TEST_ONLY=codex-checkpoint-descendant bash tests/fm-session-lock-ancestry.test.sh",
+    "before": {
+      "exit_code": 1,
+      "output": "not ok - T1: wrong Stop verdict with an unbound checkpoint shell: : expected exit 2, got 0",
+      "transcript": "round2-checkpoint-regression-before.log"
+    },
+    "after": {
+      "exit_code": 0,
+      "output": "ok - session-lock: Stop binds checkpoint descendants and rejects foreign or absent thread identity",
+      "transcript": "round2-checkpoint-regression-after.log"
+    }
+  },
+  "scenarios": [
+    {
+      "name": "Retained idle/systemError owner plus positive endpoint-death proof",
+      "result": "blocked",
+      "live": false,
+      "exact_preflight_commands": [
+        {
+          "command": "orca serve --help",
+          "exit_code": 0,
+          "stdout": "round2-orca-serve-help.txt"
+        },
+        {
+          "command": "orca skills get orca-cli --json",
+          "exit_code": 0,
+          "stdout": "round2-orca-guide.json"
+        }
+      ],
+      "missing_capability": "A disposable Orca macOS runtime/profile whose terminals and process inventory can be created and stopped entirely inside this worktree, or an explicitly supplied isolated paired runtime.",
+      "unsafe_command_not_executed": "orca serve --project-root /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5XD1NE62VTK3EA453994TMJ/.live-check/primary --no-pairing --json",
+      "why_not_executed": "The documented --project-root sets project context, not the runtime profile/data root. --data-root is documented only for Linux stale-lock reclamation. Starting this command or creating a terminal would use and mutate the operator runtime outside the worktree. No such write was authorized.",
+      "remaining_cases": [
+        "idle retained + endpoint gone permits replacement",
+        "idle retained + endpoint alive refuses",
+        "systemError + endpoint gone permits replacement",
+        "systemError + endpoint alive refuses"
+      ],
+      "active_case": "Previously driven live at this target commit; see active-verified.log. Not reclassified as new live coverage."
+    },
+    {
+      "name": "Real daemon/checkpoint and registered Stop command",
+      "result": "pass",
+      "live": true,
+      "command": "python3 .live-check/check-stop.py",
+      "exit_code": 0,
+      "before": "round2-live-stop-command.log",
+      "after": "round2-live-stop-command-after.log",
+      "observable": "Own checkpoint: Stop=2; repeated own Stop=2; foreign checkpoint: Stop=0; both real checkpoints completed with quiet timeout=124."
+    },
+    {
+      "name": "Native Codex Stop blocks its own checkpoint",
+      "result": "pass",
+      "live": true,
+      "command": "python3 .live-check/native-exec.py own",
+      "exit_code": 0,
+      "transcript": "round2-native-exec-own-final.log",
+      "hook_stderr": "round2-native-own-hook-stderr.txt",
+      "observable": "The real Codex CLI invoked the registered Stop command with its native payload. Hook exit 2 reached the next model request as the foreground-checkpoint repair message. The CLI and real watcher were both still alive. The test then intentionally interrupted the CLI (CLI exit 1)."
+    },
+    {
+      "name": "Native Codex Stop distinguishes another thread checkpoint",
+      "result": "pass",
+      "live": true,
+      "command": "python3 .live-check/native-exec.py foreign",
+      "exit_code": 0,
+      "transcript": "round2-native-exec-foreign-final.log",
+      "observable": "Native Stop returned 0 and the real CLI completed with exit 0 while the foreign thread real watcher was positively checked alive. Native session and checkpoint thread identifiers differ."
+    }
+  ],
+  "native_lab_details": {
+    "harness": "codex-cli 0.163.0; actual installed binary, no replacement executable or identity-bearing stand-in",
+    "provider": "Disposable loopback Responses protocol fixture emits fixed tool calls and final responses. This validates native hook/runtime delivery, not model interpretation.",
+    "primary_scope": "fm-lab-home.sh create under .live-check/primary; git init plus git archive HEAD bin AGENTS.md .codex. No primary or secondmate marker and no scope bypass. Gate worktree scope=1; disposable plain-checkout scope=0.",
+    "native_hook_instrumentation": "A disposable receipt wrapper captures payload and exit status then invokes the unmodified registered Stop command. The wrapper name retains fm-turnend-guard.sh so the transport self-check still validates its registration.",
+    "hook_trust": "The real CLI documented --dangerously-bypass-hook-trust automation flag was used only against the reviewed disposable project hook. No user/global trust configuration or credentials changed.",
+    "initial_app_server_attempt": "round2-native-stop-events.log records a turn completing without hook notifications; its hooks/list metadata was untrusted. This attempt is not counted as a pass. Native CLI invocation supplied the supported trust flag and emitted the actual native Stop payload.",
+    "guard_sha256_in_live_lab": "99b8b9bb063706043d1ad327dfafb90859adc9dcbb3dad0b70e33266c1a56e85",
+    "final_guard_sha256": "46dcd5b2d2d2cea445bef9f1a67b5ed4f3f2d1b45ad2d99adc6638a0016a619b",
+    "snapshot_note": "Live guard tests used the fixed predicate before its local exit-status variable was renamed from bound to binding_status. The final focused regression exercised the final source."
+  },
+  "scope": "No complete suite, linters, formatters, static analysis, pipeline controls, pushes, PR operations, global configuration changes, or package installations were run.",
+  "cleanup": "See round2-cleanup.log."
+}

@@ -1,0 +1,2 @@
+RPC initialize {"id": 1, "result": {"userAgent": "firstmate_live_test/0.163.0 (Mac OS 26.6.2; arm64) tmux-256color (firstmate_live_test; 1.0)", "codexHome": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5XD1NE62VTK3EA453994TMJ/.live-check/codex-home", "platformFamily": "unix", "platformOs": "macos"}}
+RPC command/exec {"id": 2, "result": {"exitCode": 0, "stdout": "valid-pair=01a17dcb-d182-72c1-bad4-1788a6c37187\nthread-only-rejected\nsession-only-rejected\nunequal-pair-rejected\n", "stderr": ""}}

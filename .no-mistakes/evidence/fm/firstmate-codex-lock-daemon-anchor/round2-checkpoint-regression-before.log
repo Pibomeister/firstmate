@@ -1,0 +1,1 @@
+not ok - T1: wrong Stop verdict with an unbound checkpoint shell: : expected exit 2, got 0

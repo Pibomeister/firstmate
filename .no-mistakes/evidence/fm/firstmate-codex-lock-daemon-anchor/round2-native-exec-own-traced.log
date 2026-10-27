@@ -1,0 +1,7 @@
+NATIVE_CLI ["codex", "--no-daemon", "exec", "--json", "--dangerously-bypass-hook-trust", "-s", "danger-full-access", "-C", "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5XD1NE62VTK3EA453994TMJ/.live-check/primary", "Reply OK."]
+REQUEST 1 TOOLS ["exec_command", "write_stdin", "request_user_input", "view_image", "multi_agent_v1", "get_goal", "create_goal", "update_goal", "web_search"]
+REQUEST 2 TOOLS ["exec_command", "write_stdin", "request_user_input", "view_image", "multi_agent_v1", "get_goal", "create_goal", "update_goal", "web_search"]
+Traceback (most recent call last):
+  File "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5XD1NE62VTK3EA453994TMJ/.live-check/native-exec.py", line 79, in <module>
+    assert continuation.wait(20),'no native blocked-Stop continuation'
+AssertionError: no native blocked-Stop continuation

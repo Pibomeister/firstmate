@@ -1,0 +1,5 @@
+Private marked-lab tmux server stopped through fm-lab-home.sh.
+fm-lab-home.sh teardown exited 0.
+Bounded lsof process-cwd scan found no process under .live-check.
+Removed .live-check and .s.sock from the worktree.
+Preserved the three intentional source/test changes.

@@ -1,0 +1,11 @@
+/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-turnend-guard.JaSEpt/codex-own-checkpoint/ckpt/fm-watch-checkpoint.sh: line 12: 86384 Terminated: 15          sleep 30
+ok - fm-turnend-guard codex: blocks a turn end while its own checkpoint is still running
+ok - fm-turnend-guard codex: stop_hook_active is no longer a one-shot allow over a running checkpoint
+/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-turnend-guard.JaSEpt/codex-own-checkpoint-reblock/ckpt/fm-watch-checkpoint.sh: line 12: 91520 Terminated: 15          sleep 30
+/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-turnend-guard.JaSEpt/codex-own-checkpoint-ends-300/ckpt/fm-watch-checkpoint.sh: line 12: 97241 Terminated: 15          sleep 30
+ok - fm-turnend-guard codex: holds the turn while its own checkpoint runs, then the no-progress escape applies
+/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-turnend-guard.JaSEpt/codex-foreign-checkpoint/ckpt/fm-watch-checkpoint.sh: line 12:  3332 Terminated: 15          sleep 30
+ok - fm-turnend-guard codex: a live watcher another session owns still allows the stop
+ok - fm-turnend-guard codex: a home owned by another live session gets the read-only diagnostic exit
+ok - fm-turnend-guard codex: silent with nothing in flight
+ok - fm-turnend-guard codex: a queued wake holds the turn after the last task clears

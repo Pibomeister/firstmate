@@ -1,0 +1,7 @@
+ok - secondmate instructions end the handling turn without model polling
+ok - secondmate readiness fails closed without its watcher notification owner
+Traceback (most recent call last):
+  File "<stdin>", line 131, in <module>
+RuntimeError: fixture timed out; not started
+no watcher log
+not ok - secondmate event watcher runtime failed

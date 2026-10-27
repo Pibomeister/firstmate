@@ -1,0 +1,11 @@
+[startup] Preflight failed: Error: Refusing to start E2E outside its disposable home boundary
+    at HSn (/Applications/Orca.app/Contents/Resources/app.asar/out/main/index.js:2349:11120)
+    at wkn (/Applications/Orca.app/Contents/Resources/app.asar/out/main/index.js:2359:4075)
+    at Ckn (/Applications/Orca.app/Contents/Resources/app.asar/out/main/index.js:2359:2949)
+    at Module.<anonymous> (/Applications/Orca.app/Contents/Resources/app.asar/out/main/index.js:3222:806)
+    at Module._compile (node:internal/modules/cjs/loader:1937:14)
+    at Object..js (node:internal/modules/cjs/loader:2070:10)
+    at Module.load (node:internal/modules/cjs/loader:1658:32)
+    at node:internal/modules/cjs/loader:1450:12
+    at Module._load (node:electron/js2c/node_init:2:18263)
+    at node:electron/js2c/browser_init:2:150708

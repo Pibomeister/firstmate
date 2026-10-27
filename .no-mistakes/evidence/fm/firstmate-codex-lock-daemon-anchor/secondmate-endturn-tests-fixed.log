@@ -1,0 +1,4 @@
+ok - secondmate instructions end the handling turn without model polling
+ok - secondmate readiness fails closed without its watcher notification owner
+ok - secondmate watcher survives wakes, deduplicates inbox notifications and stops on identity loss
+ok - secondmate selection excludes unsupported scopes and the test clock proves heartbeat absorption

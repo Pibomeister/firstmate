@@ -1,0 +1,2 @@
+copied-bash exit= -9 stdout= '' stderr= ''
+linked-bash exit= 0 stdout= 'fixture-started\n' stderr= ''

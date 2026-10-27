@@ -1,0 +1,24 @@
+{
+  "revision": "e322c95bacd5184da980b9a27176d55e45dafc40",
+  "source_hashes": {
+    "bin/fm-turnend-guard.sh": "46dcd5b2d2d2cea445bef9f1a67b5ed4f3f2d1b45ad2d99adc6638a0016a619b",
+    "bin/fm-session-lock-lib.sh": "d32923e1d466c901bfc986537970172d569621a330ccaa883686062da6b74612",
+    "bin/fm-session-process.py": "2b3401a89179aa278ebfd6f4bac980eb4a2c84e2789a3ac6b6c3622de2c8a7d1",
+    "bin/fm-lock.sh": "baa5c240a833cba757e135b821362ef0589e18a54b73a63f5999c406c0659b4c"
+  },
+  "lab_copy_matches_target": true,
+  "runtimes": {
+    "codex": "0.163.0",
+    "orca": "1.4.241"
+  },
+  "model_fixture": "Loopback Responses endpoint supplies deterministic tools/messages or HTTP 500. Actual installed Codex CLI, daemon, process reader, lock, checkpoint, watcher, and hooks run unchanged. No identity-bearing substitute executable is used.",
+  "private_orca_profile": "o/ inside the gate worktree; ORCA_USER_DATA_PATH pins both serve and CLI. A launcher adds password-store=basic/use-mock-keychain.",
+  "scope": "Only the two previously untested scenario groups were assigned. Other ten scenarios from prior rounds were not reclassified as live in this run.",
+  "setup_retries": [
+    "Orca E2E mode refused its disposable-home check. The supported selected-profile route started successfully.",
+    "Long socket paths failed on macOS; shortening the in-worktree profile to o/ fixed startup.",
+    "Fresh remote Codex threads needed one real turn before the TUI could resume them. Separate text and Enter calls answered the local hook-review menu.",
+    "Native checks needed an in-flight task record. Each checkpoint check then used fresh disposable state so the prior timeout recovery wake did not end the next checkpoint."
+  ],
+  "source_changes_this_turn": false
+}

@@ -1,0 +1,61 @@
+[ws-transport] Failed to bind port 6768 (listen EADDRINUSE: address already in use 0.0.0.0:6768), trying next candidate
+[serve] orca CLI install: installed (/opt/homebrew/bin/orca)
+{"type":"orca_server_ready","schemaVersion":1,"runtimeId":"b70253fe-abb9-4389-9627-2a7801fd2cb1","endpoint":"ws://0.0.0.0:6770","boundEndpoint":"ws://0.0.0.0:6770","advertisedEndpoint":"ws://127.0.0.1:6770","managedWslCliReconciliation":"settled","pairing":{"available":false,"reason":"disabled_by_operator","guidance":"Restart without --no-pairing to create a client pairing offer."}}
+[updater] macos_installer_scheduling_configured {"processType":"Interactive"}
+[app-icon] failed to clear macOS dock icon: Error: Command failed: /usr/bin/osascript -e use framework "AppKit" -e use scripting additions -e set appPath to system attribute "ORCA_APP_BUNDLE_PATH" -e set ok to current application's NSWorkspace's sharedWorkspace()'s setIcon:(missing value) forFile:appPath options:0 -e if ok is false then error "Orca app icon could not be cleared"
+244:280: execution error: Orca app icon could not be cleared (-2700)
+
+    at genericNodeError (node:internal/errors:986:15)
+    at wrappedFn (node:internal/errors:540:14)
+    at ChildProcess.exithandler (node:child_process:417:12)
+    at ChildProcess.emit (node:events:514:28)
+    at maybeClose (node:internal/child_process:1172:16)
+    at ChildProcess._handle.onexit (node:internal/child_process:335:5) {
+  code: 1,
+  killed: false,
+  signal: null,
+  cmd: `/usr/bin/osascript -e use framework "AppKit" -e use scripting additions -e set appPath to system attribute "ORCA_APP_BUNDLE_PATH" -e set ok to current application's NSWorkspace's sharedWorkspace()'s setIcon:(missing value) forFile:appPath options:0 -e if ok is false then error "Orca app icon could not be cleared"`
+}
+[app-icon] failed to clear macOS dock icon metadata com.apple.ResourceFork: Error: Command failed: /usr/bin/xattr -d com.apple.ResourceFork /Applications/Orca.app
+xattr: [Errno 1] Operation not permitted: '/Applications/Orca.app'
+
+    at genericNodeError (node:internal/errors:986:15)
+    at wrappedFn (node:internal/errors:540:14)
+    at ChildProcess.exithandler (node:child_process:417:12)
+    at ChildProcess.emit (node:events:514:28)
+    at maybeClose (node:internal/child_process:1172:16)
+    at Socket.<anonymous> (node:internal/child_process:527:11)
+    at Socket.emit (node:events:514:28)
+    at Pipe.<anonymous> (node:net:362:12) {
+  code: 1,
+  killed: false,
+  signal: null,
+  cmd: '/usr/bin/xattr -d com.apple.ResourceFork /Applications/Orca.app'
+}
+[app-icon] failed to clear macOS dock icon metadata com.apple.FinderInfo: Error: Command failed: /usr/bin/xattr -d com.apple.FinderInfo /Applications/Orca.app
+xattr: [Errno 1] Operation not permitted: '/Applications/Orca.app'
+
+    at genericNodeError (node:internal/errors:986:15)
+    at wrappedFn (node:internal/errors:540:14)
+    at ChildProcess.exithandler (node:child_process:417:12)
+    at ChildProcess.emit (node:events:514:28)
+    at maybeClose (node:internal/child_process:1172:16)
+    at Socket.<anonymous> (node:internal/child_process:527:11)
+    at Socket.emit (node:events:514:28)
+    at Pipe.<anonymous> (node:net:362:12) {
+  code: 1,
+  killed: false,
+  signal: null,
+  cmd: '/usr/bin/xattr -d com.apple.FinderInfo /Applications/Orca.app'
+}
+[agent-state-rules] download failed: HTTP 404
+[updater] release feed pinned: current=1.4.241 includePrerelease=false → https://github.com/stablyai/orca/releases/download/v1.4.242
+[autoUpdater] Checking for update
+[autoUpdater] Generated new staging user ID: ea1802fe-158f-555f-acfa-57830d195f37
+[autoUpdater] Found version 1.4.242 (url: Orca-1.4.242-mac.zip, Orca-1.4.242-arm64-mac.zip, orca-macos-x64.dmg, orca-macos-arm64.dmg)
+[pty:history] worktreeId=5dbecccc-99b1-4f8c-9502-f7449809f26f::/Users/eduardopicazo/.... shell=zsh histFile=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5XD1NE62VTK3EA453994TMJ/o/terminal-history/5aa934beb4c66c90/zsh_history fishSession=none
+[pty:history] worktreeId=5dbecccc-99b1-4f8c-9502-f7449809f26f::/Users/eduardopicazo/.... shell=zsh histFile=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5XD1NE62VTK3EA453994TMJ/o/terminal-history/5aa934beb4c66c90/zsh_history fishSession=none
+[pty:history] worktreeId=5dbecccc-99b1-4f8c-9502-f7449809f26f::/Users/eduardopicazo/.... shell=zsh histFile=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5XD1NE62VTK3EA453994TMJ/o/terminal-history/5aa934beb4c66c90/zsh_history fishSession=none
+[pty:history] worktreeId=5dbecccc-99b1-4f8c-9502-f7449809f26f::/Users/eduardopicazo/.... shell=zsh histFile=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5XD1NE62VTK3EA453994TMJ/o/terminal-history/5aa934beb4c66c90/zsh_history fishSession=none
+[pty:history] worktreeId=5dbecccc-99b1-4f8c-9502-f7449809f26f::/Users/eduardopicazo/.... shell=zsh histFile=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5XD1NE62VTK3EA453994TMJ/o/terminal-history/5aa934beb4c66c90/zsh_history fishSession=none
+[pty:history] worktreeId=5dbecccc-99b1-4f8c-9502-f7449809f26f::/Users/eduardopicazo/.... shell=zsh histFile=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5XD1NE62VTK3EA453994TMJ/o/terminal-history/5aa934beb4c66c90/zsh_history fishSession=none

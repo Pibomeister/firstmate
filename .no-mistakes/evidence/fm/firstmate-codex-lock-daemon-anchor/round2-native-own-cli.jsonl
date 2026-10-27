@@ -1,0 +1,10 @@
+{"type":"thread.started","thread_id":"01a17df1-3b46-7fc1-82f4-dc21067f3d03"}
+{"type":"item.completed","item":{"id":"item_0","type":"error","message":"`--dangerously-bypass-hook-trust` is enabled. Enabled hooks may run without review for this invocation."}}
+{"type":"item.completed","item":{"id":"item_1","type":"error","message":"`--dangerously-bypass-hook-trust` is enabled. Enabled hooks may run without review for this invocation."}}
+{"type":"item.completed","item":{"id":"item_2","type":"error","message":"Model metadata for `live-fixture` not found. Defaulting to fallback metadata; this can degrade performance and cause issues."}}
+{"type":"turn.started"}
+{"type":"item.started","item":{"id":"item_3","type":"command_execution","command":"/bin/zsh -lc bin/fm-lock.sh","aggregated_output":"","exit_code":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_3","type":"command_execution","command":"/bin/zsh -lc bin/fm-lock.sh","aggregated_output":"lock acquired: harness pid 30644\n","exit_code":0,"status":"completed"}}
+{"type":"item.started","item":{"id":"item_4","type":"command_execution","command":"/bin/zsh -lc 'bin/fm-watch-checkpoint.sh --seconds 25'","aggregated_output":"","exit_code":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_5","type":"agent_message","text":"OK"}}
+{"type":"item.completed","item":{"id":"item_6","type":"agent_message","text":"OK"}}

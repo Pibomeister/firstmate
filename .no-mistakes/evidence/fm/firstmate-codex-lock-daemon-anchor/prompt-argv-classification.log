@@ -1,0 +1,11 @@
+ 8327 57503 node node /opt/homebrew/bin/codex --no-alt-screen app-server --listen unix:// --managed-daemon
+class=session
+daemon=false
+live-harness=true
+ 
+ 8383  8327 /opt/homebrew/li /opt/homebrew/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex --no-alt-screen app-server --listen unix:// --managed-daemon
+class=session
+daemon=false
+live-harness=true
+ 
+The prompt is one argv argument. Both the launcher and native TUI remain session processes.

@@ -1,0 +1,106 @@
+[
+  {
+    "transcript": "round3-retention-live-retry.log",
+    "exitCode": 0,
+    "stdout": "lock acquired: harness pid 2206\n01a17dfa-4862-7131-8121-c3670639e69b\nanchor_pid=2206\nanchor_start=1793114919.704109\ncodex_daemon_pid=96923\ncodex_daemon_start=1793114916.912333\nbackend=orca\nterminal=term_72f9df3d-c6d9-4787-b427-6a23dc8c794e\nworktree=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5XD1NE62VTK3EA453994TMJ/.live-check/primary\nspawn_gen=s1793114917.1.1\n",
+    "stderr": ""
+  },
+  {
+    "transcript": "round3-retention-live-retry.log",
+    "exitCode": 0,
+    "stdout": "alive\t",
+    "stderr": ""
+  },
+  {
+    "transcript": "round3-retention-live-retry.log",
+    "exitCode": 1,
+    "stdout": "",
+    "stderr": "error: another live firstmate session holds the lock (pid 2206, session 01a17dfa-4862-7131-8121-c3670639e69b); operate read-only until resolved\n"
+  },
+  {
+    "transcript": "round3-retention-transition.log",
+    "exitCode": 0,
+    "stdout": "gone\t",
+    "stderr": ""
+  },
+  {
+    "transcript": "round3-retention-transition.log",
+    "exitCode": 0,
+    "stdout": "lock acquired: harness pid 59456\n01a17dfb-21a1-74e3-a3cf-4c5bd9438408\nanchor_pid=59456\nanchor_start=1793114973.733928\ncodex_daemon_pid=96923\ncodex_daemon_start=1793114916.912333\nbackend=orca\nterminal=term_72f9df3d-c6d9-4787-b427-6a23dc8c794e\nworktree=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5XD1NE62VTK3EA453994TMJ/.live-check/primary\nspawn_gen=s1793114917.1.1\n",
+    "stderr": ""
+  },
+  {
+    "transcript": "round3-retention-transition.log",
+    "exitCode": 1,
+    "stdout": "",
+    "stderr": "error: another live firstmate session holds the lock (pid 59456, session 01a17dfb-21a1-74e3-a3cf-4c5bd9438408); operate read-only until resolved\n"
+  },
+  {
+    "transcript": "round3-retention-transition.log",
+    "exitCode": 0,
+    "stdout": "lock acquired: harness pid 65279\n",
+    "stderr": ""
+  },
+  {
+    "transcript": "round3-retention-error-alive-seeded.log",
+    "exitCode": 0,
+    "stdout": "lock acquired: harness pid 93898\n01a17dfd-9108-7e82-b0b5-574b3f891dcd\nanchor_pid=93898\nanchor_start=1793115138.399845\ncodex_daemon_pid=96923\ncodex_daemon_start=1793114916.912333\nbackend=orca\nterminal=term_3df17d34-bd97-4727-b152-6e8be0b42cd1\nworktree=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5XD1NE62VTK3EA453994TMJ/.live-check/primary\nspawn_gen=s1793115138.1.1\n",
+    "stderr": ""
+  },
+  {
+    "transcript": "round3-retention-error-alive-seeded.log",
+    "exitCode": 0,
+    "stdout": "alive\t",
+    "stderr": ""
+  },
+  {
+    "transcript": "round3-retention-error-alive-seeded.log",
+    "exitCode": 1,
+    "stdout": "",
+    "stderr": "error: another live firstmate session holds the lock (pid 93898, session 01a17dfd-9108-7e82-b0b5-574b3f891dcd); operate read-only until resolved\n"
+  },
+  {
+    "transcript": "round3-native-own-clean.log",
+    "observation": "OWN_STOP_BLOCKED_CLI_STILL_RUNNING watcher=9365"
+  },
+  {
+    "transcript": "round3-native-own-clean.log",
+    "observation": "NATIVE_EXIT 1"
+  },
+  {
+    "transcript": "round3-native-foreign.log",
+    "observation": "NATIVE_EXIT 0"
+  },
+  {
+    "transcript": "round3-native-foreign.log",
+    "observation": "NATIVE_FOREIGN_STOP_ALLOWED {\"native_session\": \"01a17e00-2e27-7823-a7c7-7e764614815d\", \"checkpoint_thread\": \"01a17e00-2a17-74c1-8e9d-235433bc0b1d\", \"watcher_still_alive\": 52511, \"stop_exit\": 0}"
+  },
+  {
+    "transcript": "round3-daemon-own-stop.log",
+    "phase": "own",
+    "exitCode": 2,
+    "stdout": "",
+    "stderr": "\u25cf\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\u25cf  TURN WOULD END BLIND - SUPERVISION IS OFF\n\u25cf  Your foreground checkpoint is still running; once this turn ends nothing reads its wake or starts the next one.\n\u25cf  Poll its exec session with write_stdin until it exits, handle any wake, then start the next checkpoint.\n\u25cf  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.\n\u25cf\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
+  },
+  {
+    "transcript": "round3-daemon-own-stop.log",
+    "phase": "own",
+    "exitCode": 124,
+    "stdout": "checkpoint: no actionable wake within 20s\n",
+    "stderr": ""
+  },
+  {
+    "transcript": "round3-daemon-foreign-stop.log",
+    "phase": "foreign",
+    "exitCode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "transcript": "round3-daemon-foreign-stop.log",
+    "phase": "foreign",
+    "exitCode": 124,
+    "stdout": "checkpoint: no actionable wake within 20s\n",
+    "stderr": ""
+  }
+]

@@ -1,0 +1,27 @@
+1793112094	init	stop-predecessor
+1793112094	init	stop-engine
+1793112094	init	stop-arms
+1793112094	init	release-leases
+1793112094	start	gen=host-1400-1793112094	primary=codex
+1793112098	to-main	the away session could not take this wake: a queued wake could not be read or resolved to a task record, so its scope is unknown; this wake is yours
+1793112159	init	stop-predecessor
+1793112159	init	stop-engine
+1793112159	init	stop-arms
+1793112159	init	release-leases
+1793112160	start	gen=host-82692-1793112159	primary=codex
+1793112181	boundary	after 22s
+1793112212	init	stop-predecessor
+1793112212	init	stop-engine
+1793112212	init	stop-arms
+1793112212	init	release-leases
+1793112212	start	gen=host-50446-1793112212	primary=codex
+1793112220	failed	turn=host-50446-1793112212.1	posture=away	rc=1	reports=0	unacked=1	error=1 cost=0 conversation_cost=0 input=0 cache_read=0 cache_write=0 output=0 turns=1		check: rearm-resurface
+1793112221	to-main	the away session could not take this wake: the engine turn failed (exit 1); this wake is yours
+1793112223	init	stop-predecessor
+1793112223	init	stop-engine
+1793112223	init	stop-arms
+1793112223	init	release-leases
+1793112223	start	gen=host-61655-1793112223	primary=codex
+1793112231	latch	errors=2	cooldown=300s
+1793112231	failed	turn=host-61655-1793112223.1	posture=away	rc=1	reports=0	unacked=2	error=1 cost=0 conversation_cost=0 input=0 cache_read=0 cache_write=0 output=0 turns=1		check: rearm-resurface
+1793112231	to-main	the away session could not take this wake: the engine turn failed (exit 1); this wake is yours

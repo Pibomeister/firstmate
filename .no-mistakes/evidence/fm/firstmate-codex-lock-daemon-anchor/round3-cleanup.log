@@ -1,0 +1,5 @@
+Private Orca runtime stopped (serve exited 0).
+Private lab tmux server stopped through fm-lab-home.sh; teardown exited 0.
+Real lsof process-cwd scan found no remaining processes under the lab directories.
+Removed .live-check/, o/, and .s.sock.
+Tracked source unchanged; git status --short is empty.
