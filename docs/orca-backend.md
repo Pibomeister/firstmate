@@ -27,6 +27,9 @@ Routine supervision uses the recorded endpoint through `bin/fm-peek.sh <id>` and
 Enter and Ctrl-C are supported for every harness.
 Escape and Ctrl+U are verified for Droid on Orca 1.4.217 and 1.4.218 through raw terminal bytes; other harnesses do not inherit that lifecycle control capability.
 
+`config/launch-env-allowlist` alone cannot scope worker credentials on Orca, because allowlisted values resolve from the Orca terminal's own environment.
+When scoped worker credentials live in a tmux session, configure the [Orca environment source](configuration.md#orca-environment-source-configlaunch-env-tmux-session).
+
 ## Task shape and metadata
 
 Each task has one Orca-managed git worktree and one Orca terminal.
@@ -62,7 +65,10 @@ An ordinary metadata-routed `fm-send.sh` text steer becomes a durable steering-i
 On the typed plane, `fm-send.sh` verifies composer clearance through the fleet-wide classifier in `bin/fm-composer-lib.sh`, retrying Enter without retyping when a slash popup first fills an argument placeholder.
 For a recorded Droid task, a matching post-Enter `UserPromptSubmit` receipt also confirms a typed send when the composer is temporarily unreadable during Droid's turn; the receipt binds the prompt digest and event sequence to the current task generation.
 The composer read is one bounded tail of the live terminal and never pages backward into scrollback, so a stale startup banner cannot compete with the bottom-anchored composer.
-A bare shell row is `unknown`, not an empty agent composer, and plain-text captures degrade a glyph row carrying trailing text to `unknown` rather than a false `pending`.
+Supported Grok send and queue footer evidence and its read-only refresh procedure are in [runtime backend verification](verification/runtime-backends.md#grok-send-and-queue-footer).
+A bare shell row is `unknown`, not an empty agent composer.
+The shared classifier owns plain-capture handling, including the exact per-glyph placeholder exception in `FM_COMPOSER_BARE_PLACEHOLDERS_DEFAULT`.
+Plain-text captures degrade a glyph row carrying trailing text to `unknown` rather than a false `pending`.
 The watcher has no native Orca busy signal, so each harness adapter's semantic lifecycle supplies worker state.
 Grok alone retains its isolated rendered-tail fallback.
 
@@ -75,6 +81,33 @@ After those checks, Firstmate closes the exact terminal and releases the exact w
 It never raw-deletes an Orca worktree.
 A close the CLI never attempted, because `orca` is not on the path, stops cleanup with the metadata intact even under `--force`: removing those records would leave nothing on disk naming a terminal that may still be live.
 Reinstall the CLI and rerun; [`verification/runtime-backends.md`](verification/runtime-backends.md) "Endpoint close" owns what this arm can and cannot prove about its own close.
+
+## Agent stop proof
+
+`fm-control.sh` and `fm-spawn.sh --relaunch` read a recovery-grade agent state for an Orca task, so a stopped worker can be exited, relaunched, or moved to another harness in place.
+Supervision and cleanup do not read it; for them Orca agent state stays unverified.
+`bin/backends/orca.sh` owns the reads, and [`agent-control.md`](agent-control.md#reclaiming-a-task-whose-endpoint-is-gone) owns what each verdict licenses.
+
+Orca's terminal API never names the processes behind a terminal, so the verdict joins three reads:
+
+- `orca terminal show` says whether the recorded terminal is connected, and for a disconnected one whether Orca recorded an exit cause, on which execution host, and in which worktree.
+  Orca keeps describing a closed terminal by its handle, so a closed terminal is a positive finding, not a failed read.
+- `orca diagnostics memory` lists each live pty session with the local process that roots it.
+  On macOS that root is `/usr/bin/login`, whose child is the login shell, whose children are whatever the terminal runs.
+- The process table under that root is classified by the shared harness-process classifier in `bin/fm-agent-process-lib.sh`.
+
+A connected terminal is `alive` when any process in its session tree is a verified harness, `dead` when the tree holds only shells besides the `login` root, and `ambiguous` otherwise.
+A disconnected terminal with a recorded exit cause is `missing`, and the absence proof then decides whether it is gone.
+That proof also requires that Orca's sweep no longer lists the session and that no process of this user that classifies as an agent has its working directory in the recorded worktree, read with `lsof`.
+The working-directory read exists because an agent can outlive the terminal it started in; such a survivor returns `unproven` and refuses the relaunch, since lifecycle commands cannot reach it through the recorded terminal.
+A remote execution host, a missing exit cause, a worktree mismatch, or any failed read refuses rather than proving absence.
+A stale handle reads `unreadable`; only Orca's exact `ok:false` response with `error.code=terminal_handle_stale` is accepted as stale evidence, including when the CLI exits nonzero.
+It proves absence only after a host reboot: the boot time read from the kernel must postdate the handle's recorded evidence (the record's spawn generation, or its mtime without one), Orca's process sweep must be readable from the post-boot runtime, and no agent process may be working in the recorded worktree.
+Without that reboot proof a stale handle refuses exactly like any other unprovable read, so an Orca restart short of a reboot can never license a second agent.
+
+A rebind creates the new terminal through the recorded `orca_worktree_id=`, and refuses unless that id names the recorded worktree.
+The [Orca environment source](configuration.md#orca-environment-source-configlaunch-env-tmux-session) owns launch-environment handling for relaunches.
+[`verification/runtime-backends.md`](verification/runtime-backends.md#orca-agent-stop-proof) records the observed Orca responses and process layout.
 
 ## Active limits
 
@@ -90,6 +123,8 @@ Reinstall the CLI and rerun; [`verification/runtime-backends.md`](verification/r
 
 ```sh
 tests/fm-backend-orca.test.sh
+tests/fm-spawn-orca-worktree.test.sh
+tests/fm-control.test.sh
 tests/fm-backend.test.sh
 tests/fm-bootstrap.test.sh
 tests/fm-teardown-endpoint-safety.test.sh

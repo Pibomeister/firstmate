@@ -107,7 +107,7 @@ Only an away record is away: no record, or the record daemon-backed quiet mode w
 
 The host asks the Pi branch's offer rule (`branchOfferForWake`, through `bin/fm-branch-dispatch.mjs offer`) whether the branch may take the close.
 So a close reaches main off Pi exactly when it would on Pi: a check trigger, a decision-owned signal or stale trigger, and a scan that is unsafe or holds nothing for the branch stay main's.
-On that main-only pass-through the host starts the successor watcher cycle and leaves it running, then prints the close unchanged.
+An attended pass-through can leave a successor watcher cycle running before printing the close unchanged; the [host header](../bin/fm-supervision-host.sh) owns the eligibility and failure path.
 That successor, like one a turn hands back at its start (see [Away](#away)), runs in a process group of its own, so the harness tearing down the hook's group after the rewake does not stop it.
 The host leaves the watcher's recovery marker reading downtime, confirming no handling handoff, because the re-arm owner delivers a close to main only while that marker reads downtime.
 The session's next park without `--restart` requests a take-over to restore a single host-owned arm; the [host header](../bin/fm-supervision-host.sh) owns successor persistence and cleanup, and the [arm header](../bin/fm-watch-arm.sh) owns take-over eligibility and fallback.
@@ -275,7 +275,9 @@ Grok's model and Codex's checkpoint see it as a failed cycle and start the next 
 Before it arms, the next host does two things:
 
 - It stops, by recorded identity, whatever its predecessor left running, including the engine descendants a killed turn recorded.
-- It removes that turn's files.
+- It reads retained arm captures before removing them, handing any delivered wake or cleanup failure to main instead of discarding it.
+
+The [host header](../bin/fm-supervision-host.sh) owns retirement failure handling and the records retained for a later cleanup attempt.
 
 ## The park boundary
 
@@ -293,7 +295,7 @@ The OpenCode, omp, and Grok owners have no hook timeout and keep the same defaul
 
 ### At the boundary
 
-At the boundary the host stops the home's watcher and exits with one `supervision-host: cycle boundary` line.
+At a clean boundary with no delivered wake, the host stops the home's watcher and exits with one `supervision-host: cycle boundary` line.
 Main drains and acknowledges, and the owner starts the next park:
 
 | Primary | When the next park starts |
@@ -311,7 +313,7 @@ One short main turn per boundary is the cost of never losing the park silently.
 ### Codex checkpoint bound
 
 Codex has no asynchronous wake, so its checkpoint's own bound is the park.
-The checkpoint passes it as the boundary and reports the boundary as its ordinary quiet line (`checkpoint: no actionable wake within <n>s`).
+The checkpoint passes it as the boundary and reports a clean boundary with no delivered wake as its ordinary quiet line (`checkpoint: no actionable wake within <n>s`).
 
 | Posture | Checkpoint bound |
 |---|---|
@@ -408,12 +410,13 @@ Each arm owner's own suite covers its host mode against a stub host.
 
 | Test | What it covers |
 |---|---|
-| `tests/fm-supervision-host.test.sh` | Drives the real host, auto-arm, grant, drain, report, and lease scripts against a stub engine, in both postures, including the shared offer rule and the drain's `BRANCH OUTCOMES` section. |
+| `tests/fm-supervision-host.test.sh` | Drives the real host, auto-arm, grant, drain, report, and lease scripts against a stub engine, in both postures, covering report and dispatch surfaces, Stop-hook handoff, branch outcomes, attended routing, the dialog mirror, and away turns. |
+| `tests/fm-supervision-host-engine.test.sh` | Uses the same shared fixtures to cover engine failures, latch recovery, bounding and reaping, predecessor cleanup, park boundaries, status streams, and ownership stand-down. |
 | `tests/fm-claude-stop-autoarm.test.sh` | The Claude arm owner's host mode against a stub host. |
 | `tests/fm-cursor-primary.test.sh` | The Cursor arm owner's host mode against a stub host. |
 | `tests/fm-pi-watch-extension.test.sh` | The OpenCode plugin's host mode against a stub host. |
 | `tests/fm-omp-harness.test.sh` | The omp arm owner's host mode against a stub host. |
-| `tests/fm-watch-checkpoint.test.sh` | The Codex checkpoint's host mode against a stub host. |
+| `tests/fm-watch-checkpoint.test.sh` | The Codex checkpoint against stub and real hosts, quiet completion, startup and shutdown failures, signal-safe arm output, and wake preservation during retirement and predecessor recovery. |
 | `tests/fm-supervision-instructions.test.sh` | The rendered protocol, including Grok's arm command. |
 | `tests/fm-host-mirror.test.sh` | The dialog mirror's writers through the tracked Claude and Cursor registrations, the home gate, the feed, and the verified-writer list. |
 | `tests/fm-afk-launch.test.sh` | The home gate on each primary, the `/afk` daemon refusal, and `/quiet` on a home that runs the host: the statement, the paused statement, each named missing part, the quiet daemon fallback that carries its recorded mode, a failed quiet start that archives its quiet record, and the refusal under a live away record until the return. |

@@ -33,10 +33,13 @@
 #     test, identical in every calling context: the recorded pid is alive and
 #     IS the current state/.lock holder. So a lease left by an exited session
 #     goes stale for every reader, whichever harness now owns the home, and an
-#     unmarked main honors a live branch lease exactly as a Pi main does. The
-#     one residual is a recorded pid recycled onto the next session-lock holder
-#     itself; the host that owns a branch conversation releases that actor's
-#     leases when it activates a new one (the Pi branch extension's
+#     unmarked main honors a live branch lease exactly as a Pi main does. A
+#     same-session re-anchor that moves lock line 1 off a live pid
+#     (bin/fm-lock.sh) moves the leases recorded against that pid with it
+#     (fm_lease_rekey_holder), so they stay live. The one residual is a
+#     recorded pid recycled onto the next session-lock holder itself; the
+#     host that owns a branch conversation releases that actor's leases when
+#     it activates a new one (the Pi branch extension's
 #     generation-activation cleanup; the supervision host also releases them
 #     after every engine turn), which also recovers a lease held by the live
 #     session but an abandoned branch conversation.
@@ -93,15 +96,19 @@
 #     backlog lease guard in this scope.
 #
 # Sourced by bin/fm-send.sh, bin/fm-control.sh, bin/fm-teardown.sh,
-# bin/fm-pr-merge.sh, bin/fm-merge-local.sh, bin/fm-spawn.sh, and
-# bin/fm-lease.sh. Callers must have $STATE resolved before calling. No side
+# bin/fm-pr-merge.sh, bin/fm-merge-local.sh, bin/fm-spawn.sh, bin/fm-lock.sh,
+# and bin/fm-lease.sh. Callers must have $STATE resolved before calling. No side
 # effects on source. set -u / set -e safe.
 
 # Distinct from usage errors (2), the gate refusal (3), and fm-send's
 # unconfirmed submit (3): recognizable as "the other supervision actor holds
-# this task right now - retry after the lease clears".
+# this task right now, or this home's lease-command lock stayed busy past its
+# bound - retry later"; nothing was mutated either way, which the watcher's
+# pending-reply recovery send relies on to retry instead of failing.
 FM_LEASE_REFUSE_EXIT=6
-FM_LEASE_LIB_DIR="$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd "${d:-/}" && pwd)"
+FM_LEASE_LIB_DIR="$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; CDPATH='' cd -- "${d:-/}" && pwd)"
+# shellcheck source=bin/fm-bash-compat-lib.sh
+. "$FM_LEASE_LIB_DIR/fm-bash-compat-lib.sh"
 FM_LEASE_GUARD_LOCK=
 
 fm_lease_lock_helpers() {
@@ -112,6 +119,32 @@ fm_lease_lock_helpers() {
   # recursively duplicate that large graph for every lease-lib consumer.
   # shellcheck source=/dev/null
   . "$FM_LEASE_LIB_DIR/fm-wake-lib.sh"
+}
+
+# fm_lease_command_lock_acquire <lockdir> <action-label>: take the home-wide
+# lease-command lock within FM_LEASE_COMMAND_LOCK_WAIT seconds (default 60,
+# below the roughly 120 s a harness tool call allows, so a refusal is seen
+# rather than completing later as an orphan). A live holder is named on stderr
+# when the wait starts and again in the refusal, which exits
+# FM_LEASE_REFUSE_EXIT and never touches the holder's lock; a dead holder is
+# reclaimed as before. The holder is named by pid and script basename only,
+# never its argument list, which can carry message text.
+fm_lease_command_lock_acquire() {
+  local lockdir=$1 action=$2 wait holder rc
+  wait=${FM_LEASE_COMMAND_LOCK_WAIT:-60}
+  case "$wait" in '' | *[!0-9]* | 0) wait=60 ;; esac
+  fm_lock_try_acquire "$lockdir" && return 0
+  holder=$(fm_lock_holder_name "${FM_LOCK_HELD_PID:-}")
+  [ -z "$holder" ] \
+    || echo "fm-lease: $action is waiting up to ${wait}s for this home's lease-command lock, held by $holder" >&2
+  if fm_lock_acquire_wait_bounded "$lockdir" "$wait"; then
+    return 0
+  else
+    rc=$?
+  fi
+  holder=$(fm_lock_holder_name "${FM_LOCK_HELD_PID:-}")
+  echo "error: $action refused - this home's lease-command lock ($lockdir) is busy, still held${holder:+ by $holder} after ${wait}s (wait status $rc); retry the command once that holder finishes, and if it stays held, inspect that process and never remove the lock by hand" >&2
+  exit "$FM_LEASE_REFUSE_EXIT"
 }
 
 # fm_lease_home_runs_host: 0 iff this home runs the supervision host
@@ -190,6 +223,28 @@ fm_lease_live() {
   [ "$FM_LEASE_PID" = "$lock_pid" ]
 }
 
+# fm_lease_rekey_holder <old-pid> <new-pid>: rewrite every lease recorded
+# against <old-pid> to <new-pid>, keeping its actor and epoch. The caller holds
+# the lease-command lock. Returns 1 when any matching lease could not be
+# rewritten.
+fm_lease_rekey_holder() {
+  local old=$1 new=$2 lease task tmp rc=0
+  for lease in "$STATE"/.lease-*; do
+    [ -e "$lease" ] || continue
+    case "$lease" in *.lock) continue ;; esac
+    task=${lease##*/.lease-}
+    fm_lease_valid_id "$task" || continue
+    fm_lease_read "$task" || continue
+    [ -n "$FM_LEASE_ACTOR" ] && [ "$FM_LEASE_PID" = "$old" ] || continue
+    tmp=$(mktemp "$STATE/.fm-lease-tmp.XXXXXX" 2>/dev/null) || { rc=1; continue; }
+    if ! { printf '%s\t%s\t%s\n' "$FM_LEASE_ACTOR" "$new" "$FM_LEASE_EPOCH" > "$tmp" && mv -f -- "$tmp" "$lease"; } 2>/dev/null; then
+      rm -f -- "$tmp"
+      rc=1
+    fi
+  done
+  return "$rc"
+}
+
 # fm_lease_clear_stale <task>: remove the lease file when it exists but is not
 # live. Silent; never touches a live lease.
 fm_lease_clear_stale() {
@@ -220,7 +275,7 @@ fm_lease_guard() {
   # A caller with more than one guarded phase already excludes claims until
   # its shared cleanup; do not recursively acquire the non-reentrant lock.
   if [ "$FM_LEASE_GUARD_LOCK" != "$lock" ]; then
-    fm_lock_acquire_wait "$lock"
+    fm_lease_command_lock_acquire "$lock" "$action"
     FM_LEASE_GUARD_LOCK=$lock
   fi
   if ! fm_lease_live "$task"; then

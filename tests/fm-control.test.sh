@@ -35,7 +35,7 @@ mkdir -p "$TMP_ROOT"
 TMP_ROOT=$(cd "$TMP_ROOT" && pwd)
 trap 'rm -rf "$TMP_ROOT"' EXIT
 
-VERIFIED_HARNESSES="claude codex opencode pi pi-signed grok kimi cursor muse omp devin"
+VERIFIED_HARNESSES="claude codex opencode pi pi-signed grok kimi cursor muse omp devin commandcode"
 
 # The expectation table, written out independently of the implementation so a
 # silent change to either side shows up here. The fourth field is the composer
@@ -50,6 +50,7 @@ verified_adapter_contract() {  # <harness> -> exit command, interrupt key, repea
     pi-signed) printf '/quit\tEscape\t1\t\n' ;;
     omp) printf '/quit\tEscape\t1\t\n' ;;
     devin) printf '/quit\tEscape\t2\t\n' ;;
+    commandcode) printf '/quit\tEscape\t1\t\n' ;;
     grok) printf '/exit\tC-c\t1\t\n' ;;
     kimi) printf '/exit\tEscape\t1\t\n' ;;
     cursor) printf '/exit\tEscape\t1\t\n' ;;
@@ -261,6 +262,7 @@ run_control() {
     FM_FAKE_MUSE_DISAPPEAR_BEFORE_ACK="${FM_FAKE_MUSE_DISAPPEAR_BEFORE_ACK:-}" \
     FM_FAKE_INTERRUPT_STOPS_AGENT="${FM_FAKE_INTERRUPT_STOPS_AGENT:-}" \
     FM_FAKE_DEVIN_PICKER_STUCK="${FM_FAKE_DEVIN_PICKER_STUCK:-}" \
+    FM_TEST_ORCA_BOOT_EPOCH="${FM_TEST_ORCA_BOOT_EPOCH:-2000}" \
     "$CONTROL" "$@" 2>&1
 }
 
@@ -285,11 +287,11 @@ test_exit_types_each_harness_verified_command() {
   for harness in $VERIFIED_HARNESSES; do
     dir=$(new_case "exit-$harness")
     add_task "$dir" t1 "$harness"
-    if [ "$harness" = cursor ]; then
-      alive_as "$dir" cursor-agent
-    else
-      alive_as "$dir" "$harness"
-    fi
+    case "$harness" in
+      cursor) alive_as "$dir" cursor-agent ;;
+      commandcode) alive_as "$dir" command-code ;;
+      *) alive_as "$dir" "$harness" ;;
+    esac
     out=$(run_control "$dir" t1 exit); rc=$?
     expect_code 0 "$rc" "exit on $harness should succeed"$'\n'"$out"
     IFS=$'\t' read -r expected key repeat clear <<< "$(verified_adapter_contract "$harness")"
@@ -307,11 +309,11 @@ test_interrupt_sends_each_harness_verified_key() {
     add_task "$dir" t1 "$harness"
     # Devin sends its second press only onto a running turn.
     [ "$harness" != devin ] || printf running > "$dir/fake/devin"
-    if [ "$harness" = cursor ]; then
-      alive_as "$dir" cursor-agent
-    else
-      alive_as "$dir" "$harness"
-    fi
+    case "$harness" in
+      cursor) alive_as "$dir" cursor-agent ;;
+      commandcode) alive_as "$dir" command-code ;;
+      *) alive_as "$dir" "$harness" ;;
+    esac
     out=$(run_control "$dir" t1 interrupt); rc=$?
     expect_code 0 "$rc" "interrupt on $harness should succeed"$'\n'"$out"
     IFS=$'\t' read -r expected key repeat clear <<< "$(verified_adapter_contract "$harness")"
@@ -505,9 +507,9 @@ test_unverified_harness_is_refused() {
 
 test_backend_key_capability_matrix() {
   local backend key
-  for backend in tmux herdr zellij cmux; do
-    # C-u is the composer clear muse's interrupt needs; these backends
-    # normalize it (bin/backends/*.sh).
+  for backend in tmux herdr zellij cmux paseo; do
+    # C-u is the composer clear muse's interrupt needs; every session provider
+    # but Orca normalizes it (bin/backends/*.sh).
     for key in Escape Enter C-c C-u; do
       fm_control_backend_supports_key "$backend" "$key" \
         || fail "$backend should be able to deliver $key"
@@ -539,6 +541,8 @@ test_harness_kind_capability() {
   done
   fm_control_harness_supports_kind muse secondmate \
     && fail "muse has no primary supervision protocol and must not claim a secondmate"
+  fm_control_harness_supports_kind commandcode secondmate \
+    && fail "commandcode has no primary supervision protocol and must not claim a secondmate"
   for harness in claude codex opencode pi pi-signed grok kimi omp; do
     fm_control_harness_supports_kind "$harness" secondmate \
       || fail "$harness should be able to run a secondmate"
@@ -549,17 +553,23 @@ test_harness_kind_capability() {
 }
 
 test_orca_refuses_an_escape_harness_interrupt() {
-  local dir out rc
+  local dir out rc standin agent
+  standin=$(fm_agent_standin "$TMP_ROOT/standin-bin") \
+    || { pass "SKIP: Orca Escape interrupt (no agent stand-in survives here)"; return 0; }
   dir=$(new_case orca-escape)
-  add_task "$dir" t1 claude ship orca "term-1"
-  # Orca records its endpoint as terminal=, which endpoint validation requires.
-  {
-    cat "$dir/home/state/t1.meta"
-    echo "terminal=term-1"
-    echo "orca_worktree_id=wt-1::/orca/wt-1"
-  } > "$dir/home/state/t1.meta.new"
-  sed 's|^window=.*|window=fm-t1|' "$dir/home/state/t1.meta.new" > "$dir/home/state/t1.meta"
+  add_orca_closed_task "$dir" t1 claude
+  # The terminal is connected and its session runs a live claude, so the
+  # interrupt reaches the key check rather than stopping at the state check.
+  ln -sf "$standin" "$dir/fake/claude"
+  bash -c '"$0" 600 & wait' "$dir/fake/claude" >/dev/null 2>&1 &
+  agent=$!
+  for _ in 1 2 3 4 5 6 7 8 9 10; do [ -n "$(pgrep -P "$agent" 2>/dev/null)" ] && break; sleep 0.1; done
+  sed 's/"connected":false,"writable":false,"exitCause":{"kind":"operator_close"}/"connected":true,"writable":true,"exitCause":null/' \
+    "$dir/fake/orca-show" > "$dir/fake/orca-show.new" && mv "$dir/fake/orca-show.new" "$dir/fake/orca-show"
+  printf '{"ok":true,"result":{"worktrees":[{"sessions":[{"sessionId":"pty-1","pid":%s}]}]}}\n' "$agent" > "$dir/fake/orca-memory"
   out=$(run_control "$dir" t1 interrupt); rc=$?
+  pkill -P "$agent" 2>/dev/null || true
+  kill "$agent" 2>/dev/null || true
   expect_code 1 "$rc" "an Escape harness on orca should refuse"
   assert_contains "$out" "cannot deliver" "refusal should name the undeliverable key"
   pass "fm-control interrupt: a backend that cannot deliver the harness's key refuses instead of sending another"
@@ -598,6 +608,86 @@ SH
   pass "fm-control relaunch: Orca Droid refuses a non-Droid replacement before stopping the worker"
 }
 
+add_orca_droid_task() {  # <case-dir>
+  local dir=$1 state="$1/home/state" gen wt
+  add_task "$dir" t1 droid ship orca "term-1"
+  gen=$("$ROOT/bin/fm-busy-event.sh" arm "$state" t1 --state idle --source droid-hook --event stop) \
+    || fail "could not arm the Orca Droid busy generation"
+  {
+    sed 's|^window=.*|window=fm-t1|' "$state/t1.meta"
+    echo "terminal=term-1"
+    echo "orca_worktree_id=wt-1::/orca/wt-1"
+    echo "busy_gen=$gen"
+  } > "$state/t1.meta.new"
+  mv "$state/t1.meta.new" "$state/t1.meta"
+  wt=$(cd "$dir/wt-t1" && pwd -P)
+  printf '%s\n' "$gen" > "$dir/fake/gen"
+  printf '%s\n' "$state/t1.droid-session-end" > "$dir/fake/marker"
+  printf '%s\n' "$wt" > "$dir/fake/droid-cwd"
+  node -e 'const fs = require("fs");
+process.stdout.write(JSON.stringify({ ok: true, result: { terminal: {
+  source: "screen", tail: fs.readFileSync(process.argv[1], "utf8").replace(/\n$/, "").split("\n") } } }));' \
+    "$ROOT/tests/fixtures/droid/idle-orca-0.230.0.txt" > "$dir/fake/screen.json"
+  cat > "$dir/fakebin/orca" <<'SH'
+#!/usr/bin/env bash
+D=$FM_FAKE_DIR
+printf '%s\n' "$*" >> "$D/orca.log"
+case "$*" in
+  "terminal read --terminal term-1 --screen --json") cat "$D/screen.json" ;;
+  "terminal read --terminal term-1 --limit "*) printf '{"ok":true,"result":{"terminal":{"tail":[]}}}' ;;
+  "terminal send --terminal term-1 --text /exit --json")
+    cat "$D/gen" > "$(cat "$D/marker")"
+    : > "$D/exited"
+    printf '{"ok":true}'
+    ;;
+  "terminal send --terminal term-1 "*) printf '{"ok":true}' ;;
+  *) exit 1 ;;
+esac
+SH
+  cat > "$dir/fakebin/lsof" <<'SH'
+#!/usr/bin/env bash
+[ ! -e "$FM_FAKE_DIR/exited" ] || exit 1
+printf 'p4242\nn%s\n' "$(cat "$FM_FAKE_DIR/droid-cwd")"
+SH
+  chmod +x "$dir/fakebin/orca" "$dir/fakebin/lsof"
+  printf '%s\n' "$gen"
+}
+
+test_orca_droid_second_exit_is_idempotent() {
+  local dir out rc gen
+  dir=$(new_case orca-droid-exit)
+  gen=$(add_orca_droid_task "$dir")
+  out=$(run_control "$dir" t1 exit); rc=$?
+  expect_code 0 "$rc" "exit on Orca Droid should succeed"$'\n'"$out"
+  assert_contains "$out" "stopped t1 harness=droid" "the first exit should report the stop"
+  grep -qx "busy_gen=$gen" "$dir/home/state/t1.meta" \
+    || fail "Orca Droid exit must keep the retired busy_gen its stop proof binds to"
+  [ ! -e "$dir/home/state/t1.busy-gen" ] || fail "exit must still retire the busy sidecar"
+  out=$(run_control "$dir" t1 exit); rc=$?
+  expect_code 0 "$rc" "a second exit on Orca Droid should succeed"$'\n'"$out"
+  assert_contains "$out" "already-stopped" "the second exit should be idempotent"
+  [ "$(grep -c -- '--text /exit' "$dir/fake/orca.log")" = 1 ] \
+    || fail "the second exit must not type another exit command: $(cat "$dir/fake/orca.log")"
+  pass "fm-control exit: a second exit on a stopped Orca Droid is idempotent success"
+}
+
+test_orca_droid_exit_then_relaunch_is_admitted() {
+  local dir out
+  dir=$(new_case orca-droid-relaunch)
+  add_orca_droid_task "$dir" >/dev/null
+  out=$(run_control "$dir" t1 exit) \
+    || fail "exit on Orca Droid should succeed"$'\n'"$out"
+  : > "$dir/fake/orca.log"
+  out=$(run_control "$dir" t1 relaunch --harness droid --note x)
+  assert_not_contains "$out" "SessionEnd proof" \
+    "an exited Orca Droid must pass relaunch's stop proof"
+  assert_not_contains "$out" "rather than a positively classified state" \
+    "relaunch's exit step must see the stopped Orca Droid as stopped"
+  grep -qx 'terminal read --terminal term-1 --limit 1 --json' "$dir/fake/orca.log" \
+    || fail "fm-spawn --relaunch never reached the Orca terminal re-read after admission"$'\n'"$out"
+  pass "fm-control relaunch: an exited Orca Droid is admitted for a Droid replacement"
+}
+
 test_unverified_state_backends_refuse_stop_verbs() {
   local dir out rc backend
   for backend in zellij cmux; do
@@ -629,11 +719,51 @@ test_unverified_state_backends_refuse_stop_verbs() {
   pass "fm-control: a backend that cannot prove an agent stopped refuses exit and relaunch"
 }
 
-test_state_verified_backends_are_exactly_tmux_and_herdr() {
+# bin/fm-spawn.sh refuses a Command Code launch off tmux and herdr, but only
+# after a relaunch has stopped the old agent, so fm-control must refuse a
+# relaunch onto commandcode there while the running agent is untouched.
+test_commandcode_relaunch_off_tmux_and_herdr_refuses_before_stopping() {
+  local dir out rc backend meta_before
+  for backend in zellij cmux orca; do
+    dir=$(new_case "cc-relaunch-$backend")
+    case "$backend" in
+      zellij)
+        add_task "$dir" t1 claude ship zellij "sess:7"
+        printf 'zellij_session=sess\nzellij_tab_id=1\nzellij_pane_id=7\n' >> "$dir/home/state/t1.meta"
+        ;;
+      cmux)
+        add_task "$dir" t1 claude ship cmux "ws1:surface1"
+        printf 'cmux_workspace_id=ws1\ncmux_surface_id=surface1\n' >> "$dir/home/state/t1.meta"
+        ;;
+      orca)
+        add_task "$dir" t1 claude ship orca "term-1"
+        sed 's|^window=.*|window=fm-t1|' "$dir/home/state/t1.meta" > "$dir/home/state/t1.meta.new"
+        printf 'terminal=term-1\norca_worktree_id=wt-1::/orca/wt-1\n' >> "$dir/home/state/t1.meta.new"
+        mv "$dir/home/state/t1.meta.new" "$dir/home/state/t1.meta"
+        ;;
+    esac
+    alive_as "$dir" claude
+    meta_before=$(cat "$dir/home/state/t1.meta")
+    out=$(run_control "$dir" t1 relaunch --harness commandcode --note x); rc=$?
+    expect_code 1 "$rc" "a commandcode relaunch on $backend should refuse"$'\n'"$out"
+    [ -z "$(literals "$dir")" ] && [ -z "$(keys_sent "$dir")" ] \
+      || fail "a refused commandcode relaunch on $backend must send the running agent nothing"
+    [ "$(cat "$dir/fake/command")" = claude ] \
+      || fail "the running agent on $backend must still be running"
+    [ "$(cat "$dir/home/state/t1.meta")" = "$meta_before" ] \
+      || fail "a refused commandcode relaunch on $backend must leave the task record unchanged"
+    [ ! -e "$dir/home/state/t1.control-relaunch" ] && [ ! -e "$dir/home/state/t1.control-relaunch.meta-prior" ] \
+      || fail "a refused commandcode relaunch on $backend must open no relaunch transaction"
+  done
+  pass "fm-control relaunch: commandcode off tmux and herdr is refused before the running agent is stopped"
+}
+
+test_state_verified_backends_are_exactly_tmux_herdr_and_orca() {
   fm_control_backend_state_verified tmux || fail "tmux has a recovery-grade classifier"
   fm_control_backend_state_verified herdr || fail "herdr has a recovery-grade classifier"
+  fm_control_backend_state_verified orca || fail "orca has a recovery-grade classifier"
   local backend
-  for backend in zellij orca cmux; do
+  for backend in zellij cmux paseo; do
     fm_control_backend_state_verified "$backend" \
       && fail "$backend has no recovery-grade classifier and must not claim one"
   done
@@ -836,12 +966,173 @@ test_missing_tmux_endpoint_refuses_rather_than_claiming_a_stop() {
   # this process addresses, so a window that is merely on a server this seat
   # cannot reach is indistinguishable from one that was destroyed. exit refuses
   # rather than claim a stop it cannot see, and sends nothing to an address it
-  # cannot trust. Reclaim of a destroyed endpoint is Herdr-only
+  # cannot trust. Reclaim of a destroyed endpoint is Herdr and Orca only
   # (docs/agent-control.md "Reclaiming a task whose endpoint is gone").
   expect_code 1 "$rc" "a tmux endpoint whose absence cannot be proven must refuse"
   assert_not_contains "$out" "endpoint-gone" "exit must not report a stop it could not prove"
   [ -z "$(literals "$dir")" ] || fail "nothing may be sent into an endpoint exit cannot trust"
   pass "fm-control exit: an unprovable tmux endpoint refuses instead of claiming the agent stopped"
+}
+
+# add_orca_closed_task <case-dir> <id> [harness]: an Orca task whose recorded terminal
+# Orca reports closed in the task's own worktree, whose session Orca no longer
+# sweeps, and whose worktree holds no process. An orca stub on the case's
+# fakebin answers those reads and records any send as a literal, and an lsof
+# stub answers the working-directory scan from fake/lsof, failing without it.
+add_orca_closed_task() {
+  local dir=$1 id=$2 harness=${3:-claude} wt
+  add_task "$dir" "$id" "$harness" ship orca term-1
+  wt=$(grep '^worktree=' "$dir/home/state/$id.meta" | cut -d= -f2-)
+  wt=$(cd -P "$wt" && pwd -P)
+  # Orca records its endpoint as terminal=, beside a window label.
+  {
+    sed "s|^window=.*|window=fm-$id|" "$dir/home/state/$id.meta"
+    echo "terminal=term-1"
+    echo "orca_worktree_id=wt-1::$wt"
+  } > "$dir/home/state/$id.meta.new"
+  mv "$dir/home/state/$id.meta.new" "$dir/home/state/$id.meta"
+  printf '{"ok":true,"result":{"terminal":{"handle":"term-1","ptyId":"pty-1","connected":false,"writable":false,"exitCause":{"kind":"operator_close"},"executionHostId":"local","worktreePath":"%s"}}}\n' \
+    "$wt" > "$dir/fake/orca-show"
+  printf '{"ok":true,"result":{"worktrees":[{"sessions":[]}]}}\n' > "$dir/fake/orca-memory"
+  printf 'p%s\nn%s\n' "$$" "$dir" > "$dir/fake/lsof"
+  cat > "$dir/fakebin/orca" <<'SH'
+#!/usr/bin/env bash
+D=$FM_FAKE_DIR
+case "$1 $2" in
+  "terminal show")
+    cat "$D/orca-show"
+    exit "$(cat "$D/orca-show.exit" 2>/dev/null || echo 0)"
+    ;;
+  "diagnostics memory") cat "$D/orca-memory" ;;
+  "terminal send")
+    prev=
+    for a in "$@"; do
+      [ "$prev" != --text ] || printf '%s\n' "$a" >> "$D/literal"
+      prev=$a
+    done
+    printf '{"ok":true}\n'
+    ;;
+  *) printf '{"ok":true}\n' ;;
+esac
+SH
+  cat > "$dir/fakebin/lsof" <<'SH'
+#!/usr/bin/env bash
+[ -f "$FM_FAKE_DIR/lsof" ] || exit 1
+cat "$FM_FAKE_DIR/lsof"
+SH
+  chmod +x "$dir/fakebin/orca" "$dir/fakebin/lsof"
+}
+
+test_closed_orca_terminal_exit_reports_endpoint_gone() {
+  local dir out rc
+  dir=$(new_case orca-gone)
+  add_orca_closed_task "$dir" t1
+  out=$(run_control "$dir" t1 exit); rc=$?
+  expect_code 0 "$rc" "exit on a closed, agent-free Orca terminal should succeed"$'\n'"$out"
+  assert_contains "$out" "endpoint-gone" "the outcome should say the endpoint is gone"
+  [ -z "$(literals "$dir")" ] || fail "a closed Orca terminal must not be sent an exit command"
+  pass "fm-control exit: a closed Orca terminal with no agent left reports endpoint-gone and sends nothing"
+}
+
+# add_orca_stale_task <case-dir> <id>: an Orca task whose recorded terminal
+# the post-reboot runtime no longer recognizes, recorded before the boot
+# the kernel fixture names in the tests below.
+add_orca_stale_task() {
+  local dir=$1 id=$2
+  add_orca_closed_task "$dir" "$id" "${3:-claude}"
+  cat > "$dir/fakebin/awk" <<'SH'
+#!/usr/bin/env bash
+if [ "$#" -eq 2 ] && [ "$2" = /proc/stat ]; then
+  printf '%s\n' "${FM_TEST_ORCA_BOOT_EPOCH:-2000}"
+  exit 0
+fi
+SH
+  printf 'exec %q "$@"\n' "$(command -v awk)" >> "$dir/fakebin/awk"
+  cat > "$dir/fakebin/sysctl" <<'SH'
+#!/usr/bin/env bash
+[ "$*" = '-n kern.boottime' ] || exit 1
+printf '{ sec = %s, usec = 0 }\n' "${FM_TEST_ORCA_BOOT_EPOCH:-2000}"
+SH
+  chmod +x "$dir/fakebin/awk" "$dir/fakebin/sysctl"
+  printf '{"ok":false,"error":{"code":"terminal_handle_stale","message":"terminal handle stale"}}\n' \
+    > "$dir/fake/orca-show"
+  echo 1 > "$dir/fake/orca-show.exit"
+  echo "spawn_gen=s1000.4242.99" >> "$dir/home/state/$id.meta"
+}
+
+test_stale_orca_terminal_exit_reports_endpoint_gone_after_reboot() {
+  local harness dir out rc
+  for harness in claude droid; do
+    dir=$(new_case "$harness"-orca-reboot-gone)
+    add_orca_stale_task "$dir" t1 "$harness"
+    out=$(FM_TEST_ORCA_BOOT_EPOCH=2000 run_control "$dir" t1 exit); rc=$?
+    expect_code 0 "$rc" "exit on a pre-boot stale Orca terminal with no agent left should succeed"$'\n'"$out"
+    assert_contains "$out" "endpoint-gone" "the outcome should say the endpoint is gone"
+    [ -z "$(literals "$dir")" ] || fail "a stale Orca terminal must not be sent an exit command"
+  done
+  pass "fm-control exit: a stale Orca handle recorded before the host reboot reports endpoint-gone and sends nothing"
+}
+
+test_stale_orca_terminal_exit_refuses_a_surviving_agent_after_reboot() {
+  local harness dir out rc standin agent wt
+  standin=$(fm_agent_standin "$TMP_ROOT/standin-bin") \
+    || { pass "SKIP: Orca reboot surviving-agent exit (no agent stand-in survives here)"; return 0; }
+  for harness in claude droid; do
+    dir=$(new_case "$harness"-orca-reboot-survivor)
+    add_orca_stale_task "$dir" t1 "$harness"
+    wt=$(grep '^worktree=' "$dir/home/state/t1.meta" | cut -d= -f2-)
+    ln -sf "$standin" "$dir/fake/claude"
+    bash -c '"$0" 600 & wait' "$dir/fake/claude" >/dev/null 2>&1 &
+    agent=$!
+    for _ in 1 2 3 4 5 6 7 8 9 10; do [ -n "$(pgrep -P "$agent" 2>/dev/null)" ] && break; sleep 0.1; done
+    printf 'p%s\nn%s\n' "$(pgrep -P "$agent" | head -1)" "$wt" > "$dir/fake/lsof"
+    out=$(FM_TEST_ORCA_BOOT_EPOCH=2000 run_control "$dir" t1 exit); rc=$?
+    pkill -P "$agent" 2>/dev/null || true
+    kill "$agent" 2>/dev/null || true
+    expect_code 1 "$rc" "exit must refuse a reboot-stale handle while an agent survives in its worktree"$'\n'"$out"
+    assert_not_contains "$out" "endpoint-gone" "exit must not report a stop it could not prove"
+    assert_contains "$out" "an agent process still runs in" "the refusal should name the surviving agent"
+    [ -z "$(literals "$dir")" ] || fail "nothing may be sent into an endpoint exit cannot trust"
+  done
+  pass "fm-control exit: a reboot-stale Orca handle refuses while an agent survives in the recorded worktree"
+}
+
+test_stale_orca_terminal_exit_refuses_without_a_postdating_boot() {
+  local harness dir out rc
+  for harness in claude droid; do
+    dir=$(new_case "$harness"-orca-reboot-unproven)
+    add_orca_stale_task "$dir" t1 "$harness"
+    out=$(FM_TEST_ORCA_BOOT_EPOCH=500 run_control "$dir" t1 exit); rc=$?
+    expect_code 1 "$rc" "exit must refuse a stale handle the host boot does not postdate"$'\n'"$out"
+    assert_not_contains "$out" "endpoint-gone" "exit must not report a stop it could not prove"
+    assert_contains "$out" "does not postdate" "the refusal should name the boot that does not postdate the handle"
+    [ -z "$(literals "$dir")" ] || fail "nothing may be sent into an endpoint exit cannot trust"
+  done
+  pass "fm-control exit: a stale Orca handle refuses when the host boot does not postdate its recorded evidence"
+}
+
+test_closed_orca_droid_exit_requires_session_end() {
+  local dir out rc
+  dir=$(new_case orca-droid-closed-no-marker)
+  add_orca_closed_task "$dir" t1 droid
+  out=$(run_control "$dir" t1 exit); rc=$?
+  expect_code 1 "$rc" "a closed Droid terminal without SessionEnd must still refuse"$'\n'"$out"
+  assert_not_contains "$out" "endpoint-gone" "closed Droid terminals must retain their non-reboot stop proof"
+  [ -z "$(literals "$dir")" ] || fail "an unproven Droid endpoint must receive no input"
+  pass "fm-control exit: closed Droid terminals retain their SessionEnd requirement"
+}
+
+test_closed_orca_terminal_exit_refuses_without_the_worktree_scan() {
+  local dir out rc
+  dir=$(new_case orca-noscan)
+  add_orca_closed_task "$dir" t1
+  rm -f "$dir/fake/lsof"
+  out=$(run_control "$dir" t1 exit); rc=$?
+  expect_code 1 "$rc" "exit must refuse when a surviving agent in the worktree cannot be ruled out"$'\n'"$out"
+  assert_not_contains "$out" "endpoint-gone" "exit must not report a stop it could not prove"
+  assert_contains "$out" "could not be read" "the refusal should name the scan that failed"
+  [ -z "$(literals "$dir")" ] || fail "nothing may be sent into an endpoint exit cannot trust"
+  pass "fm-control exit: a closed Orca terminal refuses when the worktree scan cannot be read"
 }
 
 test_interrupt_refuses_when_no_agent_runs() {
@@ -1223,8 +1514,11 @@ test_backend_key_capability_matrix
 test_harness_kind_capability
 test_orca_refuses_an_escape_harness_interrupt
 test_orca_droid_relaunch_refuses_a_non_droid_replacement_before_stopping
+test_orca_droid_second_exit_is_idempotent
+test_orca_droid_exit_then_relaunch_is_admitted
 test_unverified_state_backends_refuse_stop_verbs
-test_state_verified_backends_are_exactly_tmux_and_herdr
+test_commandcode_relaunch_off_tmux_and_herdr_refuses_before_stopping
+test_state_verified_backends_are_exactly_tmux_herdr_and_orca
 test_window_label_is_refused_with_the_exact_id
 test_explicit_endpoint_is_refused
 test_unknown_task_is_refused
@@ -1236,6 +1530,12 @@ test_resume_is_refused_with_its_reason
 test_relaunch_only_flags_are_rejected_on_other_verbs
 test_already_stopped_exit_is_idempotent
 test_missing_tmux_endpoint_refuses_rather_than_claiming_a_stop
+test_closed_orca_terminal_exit_reports_endpoint_gone
+test_closed_orca_terminal_exit_refuses_without_the_worktree_scan
+test_closed_orca_droid_exit_requires_session_end
+test_stale_orca_terminal_exit_reports_endpoint_gone_after_reboot
+test_stale_orca_terminal_exit_refuses_a_surviving_agent_after_reboot
+test_stale_orca_terminal_exit_refuses_without_a_postdating_boot
 test_interrupt_refuses_when_no_agent_runs
 test_ambiguous_endpoint_refuses
 test_busy_agent_is_interrupted_before_the_exit_command

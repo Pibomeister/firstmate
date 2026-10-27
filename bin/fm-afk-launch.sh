@@ -17,12 +17,14 @@
 # harness.
 # On Pi and pi-signed the entry ENDS there: the away daemon is no longer launched
 # on Pi, the ordinary supervision session keeps running in both postures, and
-# `start` refuses on those harnesses. The same holds for away mode (not quiet
-# mode) on a claude, cursor, opencode, omp, grok, or codex primary whose home
+# `start` refuses on those harnesses. The same daemon refusal holds for away
+# mode (not quiet mode) on a claude, cursor, opencode, omp, grok, or codex primary whose home
 # runs the supervision host (fm_supervision_host_enabled: by default on
 # Claude, by config/supervision-host elsewhere), where the host runs the away
 # session; `enter` there adds one line when the host has no
-# engine, because every away wake then reaches main. Every other harness still
+# engine, because every away wake then reaches main. On Codex, it also names a
+# missing foreground checkpoint; docs/supervision-protocols/codex.md owns the
+# required checkpoint protocol. Every other harness still
 # runs the daemon for now, so `start` and `start-native` require the record
 # `enter` wrote before they launch the daemon.
 # QUIET MODE on a home that runs the supervision host needs nothing
@@ -143,6 +145,8 @@ FM_AFK_LAUNCH_WS_LABEL="firstmate-afk-daemon"
 
 # shellcheck source=bin/fm-backend.sh
 . "$FM_AFK_LAUNCH_DIR/fm-backend.sh"
+# shellcheck source=bin/fm-env-scrub.sh
+. "$FM_AFK_LAUNCH_DIR/fm-env-scrub.sh"
 # shellcheck source=bin/fm-supervisor-target-lib.sh
 . "$FM_AFK_LAUNCH_DIR/fm-supervisor-target-lib.sh"
 # fm-afk-start.sh provides the daemon-lock liveness helpers and
@@ -345,6 +349,20 @@ fm_afk_launch_host_engine_note() {
     "$FM_SUPERVISION_ENGINE_PROBLEM"
 }
 
+# One line for the entry on a Codex home that runs the supervision host, where
+# away supervision exists only while a foreground checkpoint holds the watcher
+# (docs/supervision-protocols/codex.md): unless a healthy watcher already runs,
+# the record alone supervises nothing, and an interrupted turn leaves no cycle.
+fm_afk_launch_checkpoint_note() {
+  local config
+  [ "${FM_AFK_MODE:-}" != quiet ] || return 0
+  [ "$(fm_afk_launch_primary_harness)" = codex ] || return 0
+  config=${FM_CONFIG_OVERRIDE:-$FM_HOME/config}
+  fm_supervision_host_config "$config" codex || return 0
+  fm_watcher_healthy "$FM_AFK_LAUNCH_STATE" "$FM_AFK_LAUNCH_DIR/fm-watch.sh" "${FM_GUARD_GRACE:-300}" "$FM_HOME" && return 0
+  printf 'Away supervision is not running yet: on this home it runs only inside a foreground checkpoint, so start bin/fm-watch-checkpoint.sh now and announce away mode only once it is running; a turn interrupted before then leaves the fleet unsupervised until the next message arrives.\n'
+}
+
 fm_afk_launch_catchup_pending() {
   if [ -e "$FM_AFK_LAUNCH_STATE/.afk-return-catchup" ]; then
     fm_afk_launch_log "return catch-up is still pending; run bin/fm-afk-return.sh check before re-entering away mode"
@@ -381,6 +399,7 @@ fm_afk_launch_enter() {
   fi
   "$FM_AFK_CONTRACT_CMD" enter "$@" || return
   fm_afk_launch_host_engine_note
+  fm_afk_launch_checkpoint_note
 }
 
 # The command run inside the created terminal. Real launch runs the shared
@@ -392,10 +411,15 @@ fm_afk_launch_entry_cmd() {
 # The shell command a created daemon terminal runs. The terminal is not in the
 # captain's process tree, so the daemon cannot detect the captain's harness
 # itself; the launcher names it here (bin/fm-supervise-daemon.sh
-# fm_daemon_primary_harness).
+# fm_daemon_primary_harness). The terminal may inherit another home's FM_*
+# values from its server, so they are dropped before this home's are set.
 fm_afk_launch_daemon_cmd() {  # <captain-target> <captain-backend>
-  printf 'exec env FM_HOME=%q FM_SUPERVISOR_TARGET=%q FM_SUPERVISOR_BACKEND=%q FM_DAEMON_PRIMARY_HARNESS=%q %q' \
-    "$FM_HOME" "$1" "$2" "$(fm_afk_launch_primary_harness)" "$(fm_afk_launch_entry_cmd)"
+  local name overrides=
+  while IFS= read -r name; do
+    case "$name" in FM_*_OVERRIDE) overrides="$overrides $name=$(printf '%q' "${!name}")" ;; esac
+  done < <(fm_env_scrub_names)
+  printf 'exec %q exec env FM_HOME=%q%s FM_SUPERVISOR_TARGET=%q FM_SUPERVISOR_BACKEND=%q FM_DAEMON_PRIMARY_HARNESS=%q %q' \
+    "$FM_ROOT/bin/fm-env-scrub.sh" "$FM_HOME" "$overrides" "$1" "$2" "$(fm_afk_launch_primary_harness)" "$(fm_afk_launch_entry_cmd)"
 }
 
 fm_afk_launch_record_write() {  # <backend> <target> <extra>
@@ -689,7 +713,7 @@ fm_afk_launch_create_tmux() {  # <captain-target> <captain-backend>
     fm_afk_launch_log "failed to persist planned tmux daemon session '$session'"
     return 1
   fi
-  if ! tmux new-session -d -s "$session" "$cmd" 2>/dev/null; then
+  if ! ( fm_env_scrub; tmux new-session -d -s "$session" "$cmd" ) 2>/dev/null; then
     fm_afk_launch_log "failed to create detached tmux daemon session '$session'"
     if ! rm -f "$FM_AFK_LAUNCH_RECORD"; then
       fm_afk_launch_log "failed to remove planned tmux daemon record after creation failure"

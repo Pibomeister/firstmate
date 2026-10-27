@@ -35,14 +35,27 @@ set -u
 case "$*" in
   *"#{pane_current_path}"*) printf '%s\n' "${FM_FAKE_PANE_PATH:-}"; exit 0 ;;
 esac
+window_file="$(dirname "$0")/.spawn-window"
 case "${1:-}" in
   display-message) printf 'firstmate\n'; exit 0 ;;
   list-windows)
     [ -z "${FM_FAKE_DUPLICATE_WINDOW:-}" ] || printf '%s\n' "$FM_FAKE_DUPLICATE_WINDOW"
+    [ ! -s "$window_file" ] || cat "$window_file"
     exit 0
     ;;
-  has-session|new-session|new-window|kill-window) exit 0 ;;
+  new-window)
+    name=
+    previous=
+    for arg in "$@"; do
+      [ "$previous" = -n ] && name=$arg
+      previous=$arg
+    done
+    printf '%s\n' "$name" > "$window_file"
+    exit 0 ;;
+  kill-window) : > "$window_file"; exit 0 ;;
+  has-session|new-session) exit 0 ;;
   send-keys)
+    case " $* " in *' -l '*) : > "$window_file.launch-pending" ;; esac
     if [ "${FM_FAKE_TRACEPARENT_SEND_FAIL:-0}" = 1 ]; then
       for a in "$@"; do
         case "$a" in
@@ -87,6 +100,14 @@ case "${1:-}" in
         esac
       done
     fi
+    case " $* " in
+      *' Enter '*|*' C-m '*)
+        if [ -e "$window_file.launch-pending" ]; then
+          : > "$window_file"
+          rm -f "$window_file.launch-pending"
+        fi
+        ;;
+    esac
     exit 0
     ;;
 esac
@@ -358,7 +379,7 @@ test_unsafe_delivery_refuses_to_append_launch() {
 }
 
 test_failed_metadata_append_unsets_carrier_and_still_launches() {
-  local rec out status meta
+  local rec out status meta launch
   rec=$(make_spawn_case tc-metadata-failure)
   read_case_record "$rec"
   : > "$HOME_DIR/config/trace-context"
@@ -373,7 +394,8 @@ test_failed_metadata_append_unsets_carrier_and_still_launches() {
 
   ! grep -q '^traceparent=' "$meta" \
     || fail "failed metadata append must not leave a traceparent= claim in meta"
-  grep -q '^unset TRACEPARENT; .*claude' "$LAUNCH_LOG" \
+  launch=$(grep 'claude' "$LAUNCH_LOG" | tail -1)
+  [[ "$(fm_test_launch_without_env_scrub "$launch")" == "export FM_TASK_ID=$CASE_ID; unset TRACEPARENT; "*claude* ]] \
     || fail "failed metadata append must unset TRACEPARENT in the launch command"
   pass "failed traceparent metadata append removes the carrier from the launched task"
 }

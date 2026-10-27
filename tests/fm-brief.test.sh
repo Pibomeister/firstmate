@@ -288,14 +288,70 @@ test_forge_selection_renders_correct_cli() {
     assert_contains "$out" "$expect" "$label was refused without its reason"
     [ ! -e "$home/data/brief-forge-bad/brief.md" ] || fail "$label left a brief behind"
   done <<'ROWS'
-a value outside the closed set|--mode direct-PR --forge gitlab|expected none, gerrit, or forgejo
-the removed github value|--mode direct-PR --forge github|expected none, gerrit, or forgejo
+a value outside the closed set|--mode direct-PR --forge gitlab|expected none, gerrit, forgejo, or external
+the removed github value|--mode direct-PR --forge github|expected none, gerrit, forgejo, or external
 forgejo on local-only|--mode local-only --forge forgejo|cannot ship mode=local-only
 a shape on forgejo|--mode direct-PR --forge forgejo --shape squash|--shape applies only with --forge gerrit
 forgejo on a scout|--scout --forge forgejo|apply only to ship briefs
 ROWS
 
   pass "fm-brief.sh: --forge forgejo names tea in Rule 3, the direct-PR DOD, and the draft read-back, marks the delivery contract, and the closed set refuses everything else"
+}
+
+# --forge external renders the external review rail from bin/fm-dod-lib.sh: a
+# first rule that forbids every task push, the review-tool contract, and the
+# home's adapter body. It is direct-PR only, carries no base branch, and needs
+# config/external-review.md; an adapter that tries to carry its own delivery
+# contract line is refused.
+test_forge_external_renders_the_review_rail() {
+  local home brief out rc
+  home="$TMP_ROOT/forge-external-home"
+  mkdir -p "$home/data" "$home/config"
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-ext-noadapter some-proj --mode direct-PR --forge external 2>&1); rc=$?
+  expect_code 1 "$rc" "--forge external without an adapter must be refused"
+  assert_contains "$out" "external-review.md" "the missing-adapter refusal did not name the file"
+  [ ! -e "$home/data/brief-ext-noadapter/brief.md" ] || fail "a refused external scaffold left a brief behind"
+
+  printf '%s\n' 'Delivery contract: mode=direct-PR' > "$home/config/external-review.md"
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-ext-contract some-proj --mode direct-PR --forge external 2>&1); rc=$?
+  expect_code 1 "$rc" "an adapter carrying a delivery contract line must be refused"
+  assert_contains "$out" "must not carry a 'Delivery contract: mode=' line" "the adapter contract refusal did not say why"
+
+  # shellcheck disable=SC2016 # Backticks are literal adapter text.
+  printf '%s\n' 'Run `review-tool upload --draft`.' > "$home/config/external-review.md"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-ext some-proj --mode direct-PR --forge external >/dev/null 2>&1 \
+    || fail "--forge external should scaffold a direct-PR ship brief"
+  brief="$home/data/brief-ext/brief.md"
+  grep -qx "Delivery contract: mode=direct-PR forge=external" "$brief" \
+    || fail "--forge external must mark the delivery contract line for the spawn's registry check"
+  # shellcheck disable=SC2016 # Backticks are literal generated brief text.
+  assert_grep '1. Never push to `origin`' "$brief" "--forge external must forbid the origin push in rule 1"
+  assert_grep "Publish only through the review tool your Definition of done names" "$brief" \
+    "--forge external must not send the worker to a forge CLI in rule 3"
+  assert_grep "## Review tool instructions (home configuration)" "$brief" "--forge external must render the adapter section"
+  assert_grep "review-tool upload --draft" "$brief" "--forge external must render the adapter body"
+  assert_no_grep "personal backup remote" "$brief" "--forge external offered a backup nobody configured"
+
+  printf 'backup\n' > "$home/config/external-review-backup"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-ext-backup some-proj --mode direct-PR --forge external >/dev/null 2>&1 \
+    || fail "--forge external with a backup should scaffold"
+  # shellcheck disable=SC2016 # Backticks are literal generated brief text.
+  assert_grep '`git push backup HEAD:refs/heads/backup/brief-ext-backup`' "$home/data/brief-ext-backup/brief.md" \
+    "--forge external with a backup must name the durable copy"
+
+  while IFS='|' read -r label args expect; do
+    [ -n "$label" ] || continue
+    # shellcheck disable=SC2086 # The row's arguments must split into words.
+    out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-ext-bad some-proj $args 2>&1); rc=$?
+    expect_code 1 "$rc" "$label must be refused"
+    assert_contains "$out" "$expect" "$label was refused without its reason"
+    [ ! -e "$home/data/brief-ext-bad/brief.md" ] || fail "$label left a brief behind"
+  done <<'ROWS'
+external on no-mistakes|--mode no-mistakes --forge external|ships direct-PR only for now
+external on local-only|--mode local-only --forge external|cannot ship mode=local-only
+external with a base branch|--mode direct-PR --forge external --base-branch release|not supported on forge=external
+ROWS
+  pass "fm-brief.sh: --forge external renders the no-push rule, the review contract, and the adapter, and refuses every impossible shape"
 }
 
 # A ship task's delivery mode is firstmate's per-task decision, so a missing or
@@ -500,10 +556,10 @@ test_no_mistakes_dod_green_detection() {
     "no-mistakes DOD must say axi status cannot show a green PR in merge monitoring"
   assert_grep "never wait on a status poll for the next gate or outcome" "$brief" \
     "no-mistakes DOD must forbid waiting on a status poll"
-  assert_grep "reattach at once by re-running \`no-mistakes axi run\` without flags" "$brief" \
-    "no-mistakes DOD must reattach the drive call after a bounded return"
-  assert_grep "once checks are green it returns \`checks-passed\` immediately" "$brief" \
-    "no-mistakes DOD must say a reattach reports an already-green PR"
+  assert_grep 'listener reattaches routine elapsed holds' "$brief" \
+    'no-mistakes DOD must assign reattachment to the completion listener'
+  assert_grep 'handle any gate or outcome it already returned' "$brief" \
+    'no-mistakes DOD must handle an already-ready return immediately'
   assert_no_grep "poll \`no-mistakes axi status\` from a separate call" "$brief" \
     "no-mistakes DOD still makes a status poll the wait for the next gate or outcome"
   pass "fm-brief.sh: no-mistakes DOD detects a green PR from the drive call, not a status poll"
@@ -760,11 +816,22 @@ test_secondmate_marked_request_reporting_contract() {
     "$ROOT/bin/fm-brief.sh" marked-request-reporting --secondmate --no-projects >/dev/null 2>&1
   brief="$home/data/marked-request-reporting/brief.md"
 
-  assert_grep 'A marked request requires one correlated answer after the work' "$brief" \
-    "secondmate charter did not require the correlated answer after the work"
-  assert_grep 'does not require a separate receipt or start acknowledgement' "$brief" \
-    "secondmate charter did not reject a separate receipt/start acknowledgement"
-  assert_grep "Never append \`working:\` merely to acknowledge receipt or announce that a marked request has started." "$brief" \
+  assert_grep 'A marked request for new work requires one correlated dispatch answer in the same handling turn' "$brief" \
+    "secondmate charter did not require prompt correlated dispatch"
+  assert_grep 'include that exact token in your same-turn parent status answer' "$brief" \
+    "secondmate answer did not identify the marked request"
+  # shellcheck disable=SC2016 # Backticks are literal generated brief text.
+  assert_grep 'For new work, make that answer a dispatch report naming the crew task: `working [corr=<id>] [key=<work-slug>] [at=<epoch>]: dispatched <crew task>`.' "$brief" \
+    "secondmate dispatch did not identify its crew task"
+  assert_grep "The pending-reply guard closes on that dispatch answer; report the crew's finished deliverable separately when it lands." "$brief" \
+    "secondmate charter confused intake correlation with outcome delivery"
+  assert_grep 'The dispatch report is the acknowledgement; do not add a separate generic receipt' "$brief" \
+    "secondmate charter did not make dispatch the acknowledgement"
+  assert_grep 'Never do investigation, coding, review, or long waits in your own turn' "$brief" \
+    "secondmate charter still permits substantive work to block its own turn"
+  assert_grep 'Report every finished report, review, ready PR, and merge to the parent channel immediately' "$brief" \
+    "secondmate charter did not require every finished deliverable to reach the parent"
+  assert_grep "Never append a generic \`working:\` line merely to acknowledge receipt or announce that a marked request has started; the correlated dispatch answer naming its crew task is the only intake \`working\` line." "$brief" \
     "secondmate charter did not forbid a generic working acknowledgement"
   assert_no_grep "Give every routed-work phase a stable key: open it with \`working" "$brief" \
     "secondmate charter retained the unconditional working opener"
@@ -777,8 +844,6 @@ test_secondmate_marked_request_reporting_contract() {
   assert_grep 'resolved [key=<work-slug>]' "$brief" \
     "secondmate charter lost resolved closure for a keyed material phase"
 
-  assert_grep 'include that exact token in your parent status reply' "$brief" \
-    "secondmate charter lost correlated parent results"
   assert_grep 'bin/fm-secondmate-report.sh <verb> <corr_id> <note>' "$brief" \
     "secondmate charter lost the mechanical helper invocation"
   assert_grep 'do not pass a status path' "$brief" \
@@ -797,7 +862,7 @@ test_secondmate_marked_request_reporting_contract() {
     "secondmate charter did not name a landed merge as a reporting trigger"
   assert_grep 'States: working, needs-decision, blocked, paused, done, failed.' "$brief" \
     "secondmate charter changed the preserved status vocabulary"
-  pass "fm-brief.sh: marked requests avoid generic acknowledgements and preserve material reporting"
+  pass "fm-brief.sh: marked requests report dispatch and finishes without generic acknowledgements"
 }
 
 test_secondmate_directory_paths_are_absolute_and_output_is_stable() {
@@ -1110,6 +1175,37 @@ test_scout_and_secondmate_scaffold() {
   pass "fm-brief: scout and secondmate code paths still scaffold well-formed briefs"
 }
 
+# Contract: the inbox listing the brief tells a worker to run succeeds silently
+# on an empty or absent inbox and lists messages in numeric order, in bash and zsh.
+test_inbox_listing_command_is_safe_on_empty_inbox() {
+  local home brief cmd inbox shell_name out status
+  home="$TMP_ROOT/inbox-listing-home"
+  mkdir -p "$home/data" "$home/config"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-inbox-list some-proj --mode no-mistakes >/dev/null 2>&1 \
+    || fail "fm-brief.sh ship scaffold exited non-zero"
+  brief="$home/data/brief-inbox-list/brief.md"
+  # shellcheck disable=SC2016
+  cmd=$(sed -n 's/.*list them with `\(find [^`]*\)`.*/\1/p' "$brief" | head -1)
+  [ -n "$cmd" ] || fail "the brief does not give a find-based inbox listing command"
+  inbox="$home/state/brief-inbox-list.inbox"
+  for shell_name in bash zsh; do
+    command -v "$shell_name" >/dev/null 2>&1 || continue
+    rm -rf "$inbox"
+    status=0
+    out=$("$shell_name" -c "$cmd" 2>&1) || status=$?
+    [ "$status" -eq 0 ] && [ -z "$out" ] || fail "$shell_name: absent inbox listing was not silent success (exit $status): $out"
+    mkdir -p "$inbox"
+    status=0
+    out=$("$shell_name" -c "$cmd" 2>&1) || status=$?
+    [ "$status" -eq 0 ] && [ -z "$out" ] || fail "$shell_name: empty inbox listing was not silent success (exit $status): $out"
+    : > "$inbox/1000.msg"
+    : > "$inbox/999.msg"
+    out=$("$shell_name" -c "$cmd" 2>&1 | sed 's#.*/##' | tr '\n' ' ')
+    [ "$out" = "999.msg 1000.msg " ] || fail "$shell_name: messages not listed in numeric order: $out"
+  done
+  pass "fm-brief: inbox listing is silent on empty/absent inbox and numerically ordered"
+}
+
 # Contract: a waiting worker spends no turns. A decision wait ends the turn, an
 # external wait sleeps in one bounded blocking shell command sized per harness,
 # and a waiting worker neither polls its inbox nor polls a pipeline between holds.
@@ -1133,15 +1229,19 @@ test_workers_wait_without_spending_turns() {
     assert_grep "empty \`write_stdin\` polls of up to 300000 ms" "$brief" "$id: the Codex ceiling is missing"
     assert_grep "is the sanctioned foreground wait" "$brief" \
       "$id: the wait a Claude Code worker may use is not named"
-    assert_grep "reattach with \`no-mistakes axi run --wait\` instead, and never send the same \`respond\` again" "$brief" \
-      "$id: a timed-out respond must reattach with axi run, never resend its answer"
     assert_grep "Do not poll or list the inbox while waiting; a waiting instruction rings." "$brief" \
       "$id: polling the inbox while waiting is not forbidden"
     assert_grep "natural checkpoint" "$brief" "$id: the flag dropped the natural-checkpoint inbox check"
   done
   brief="$home/data/brief-wait-ship/brief.md"
-  assert_grep "issue the same foreground call again" "$brief" \
-    "the no-mistakes DOD must reattach with the same foreground call"
+  assert_grep 'fm-procevent-no-mistakes.sh arm brief-wait-ship' "$brief" \
+    'the no-mistakes DOD must name its task-owned completion listener'
+  assert_grep 'then end your turn' "$brief" 'the no-mistakes worker must end its turn after arming'
+  assert_grep 'Before any gate response or ready report, reread current run evidence' "$brief" \
+    'an advisory wake must not authorize stale side effects'
+  assert_grep 'until handling or ask-user escalation is durable' "$brief" \
+    'the source must remain unacknowledged until handling is durable'
+  assert_grep 'Never replay an old' "$brief" 'redelivery must not replay a gate response'
   assert_no_grep "background the drive call" "$brief" "the no-mistakes DOD still backgrounds the drive call"
 
   FM_SECONDMATE_CHARTER='Supervise the alpha domain.' \
@@ -1166,10 +1266,46 @@ test_wait_no_turns_absent_keeps_the_previous_brief() {
   assert_no_grep "end your turn at once" "$brief" "an absent flag still added the waiting section"
   assert_grep "natural checkpoint" "$brief" "an absent flag dropped the unprompted inbox check"
   assert_no_grep "Do not poll or list the inbox while waiting" "$brief" "an absent flag still added the no-poll inbox line"
-  assert_grep "background the drive call" "$brief" "an absent flag replaced the backgrounded drive text"
+  assert_grep 'fm-procevent-no-mistakes.sh arm brief-wait-off' "$brief" \
+    'the pipeline completion listener must also work without wait-no-turns'
+  assert_no_grep 'background the drive call' "$brief" 'an absent flag still required pipeline babysitting'
   assert_no_grep "issue the same foreground call again" "$brief" \
     "an absent flag still asked for the foreground reattach"
-  pass "fm-brief: without config/wait-no-turns the brief and drive text stay as they were"
+  pass "fm-brief: without wait-no-turns only the pipeline wait adopts the completion listener"
+}
+
+# A wait on a no-mistakes run is true only while that run is still working. The
+# brief must send the worker to `no-mistakes axi status` before it declares one,
+# and to the gate rather than to a pause when the run is parked - in both drive
+# variants, and not in a mode that drives no run.
+test_no_mistakes_brief_reads_run_status_before_a_wait() {
+  local home variant id brief
+  for variant in backgrounded foreground; do
+    home="$TMP_ROOT/parked-run-$variant"
+    mkdir -p "$home/data" "$home/config"
+    [ "$variant" != foreground ] || : > "$home/config/wait-no-turns"
+    id="brief-parked-run-$variant"
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode no-mistakes >/dev/null 2>&1 \
+      || fail "fm-brief.sh no-mistakes scaffold ($variant drive) exited non-zero"
+    brief="$home/data/$id/brief.md"
+    assert_grep 'a run parked at a gate is waiting on you, not you on it' "$brief" \
+      "$variant drive: the brief does not say a parked run waits on the worker"
+    assert_grep "read \`no-mistakes axi status\` before you declare a wait on it or end a turn with one standing" "$brief" \
+      "$variant drive: the brief does not send the worker to the run's status before a declared wait"
+    assert_grep "When it shows the run parked at a gate, do not declare a wait: answer the gate with \`no-mistakes axi respond\`, or escalate its ask-user findings" "$brief" \
+      "$variant drive: the brief does not tell the worker to answer a parked gate instead of pausing"
+    assert_grep 'never a promise to check the run later' "$brief" \
+      "$variant drive: the brief still lets a wait stand in for a later status check"
+    assert_grep 'never wait on a status poll for the next gate or outcome' "$brief" \
+      "$variant drive: the one status read displaced the rule against waiting on a status poll"
+  done
+  home="$TMP_ROOT/parked-run-direct"
+  mkdir -p "$home/data"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-parked-run-direct some-proj --mode direct-PR >/dev/null 2>&1 \
+    || fail "fm-brief.sh direct-PR scaffold exited non-zero"
+  assert_no_grep 'a run parked at a gate is waiting on you' "$home/data/brief-parked-run-direct/brief.md" \
+    "a direct-PR brief, which drives no run, carried the parked-run rule"
+  pass "fm-brief: a no-mistakes worker reads its run's status before declaring a wait and answers a parked gate instead of pausing"
 }
 
 # A wait on a no-mistakes run is true only while that run is still working. The
@@ -1489,9 +1625,13 @@ test_branch_prefix_value_is_validated() {
 test_branch_prefix_command_is_shell_safe() {
   local home id prefix marker brief command repo branch
   home="$TMP_ROOT/branch-prefix-shell-safe-home"
-  marker="$TMP_ROOT/branch-prefix-shell-safe-marker"
+  repo="$TMP_ROOT/branch-prefix-shell-safe-repo"
+  marker="$repo/branch-prefix-shell-safe-marker"
   id='brief-branch-safe-g3'
-  prefix="\$(touch\${IFS}$marker)"
+  # Keep temporary-directory components out of the literal Git ref: a hidden
+  # parent directory is not a valid ref component, regardless of shell safety.
+  # shellcheck disable=SC2016
+  prefix='$(touch${IFS}branch-prefix-shell-safe-marker)'
   mkdir -p "$home/data"
   FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode local-only --branch-prefix "$prefix" >/dev/null 2>&1 \
     || fail "a ref-format-valid metacharacter prefix should scaffold safely"
@@ -1499,7 +1639,6 @@ test_branch_prefix_command_is_shell_safe() {
   # shellcheck disable=SC2016 # The sed expression intentionally contains literal backticks.
   command=$(sed -n 's/^1\. First action: create your branch: `\(.*\)`$/\1/p' "$brief")
   [ -n "$command" ] || fail "generated brief exposed no branch-creation command"
-  repo="$TMP_ROOT/branch-prefix-shell-safe-repo"
   git init -q "$repo" || fail "could not initialize shell-safety fixture repository"
   ( cd "$repo" && eval "$command" ) || fail "generated branch-creation command did not run"
   assert_absent "$marker" "generated branch command executed the prefix's command substitution"
@@ -1558,6 +1697,13 @@ test_crewmate_scaffolds_forbid_pool_administration() {
   [ "$ship_rule" = "$scout_rule" ] \
     || fail "ship and scout shared-infrastructure rules have drifted apart"
 
+  ship_cd_rule=$(awk '/^8\. Never start a shell command with/,/^$/' "$home/data/brief-pool-no-mistakes/brief.md")
+  scout_cd_rule=$(awk '/^8\. Never start a shell command with/,/^$/' "$brief")
+  [ -n "$ship_cd_rule" ] || fail "ship brief emitted no leading-cd rule"
+  [ "$ship_cd_rule" = "$scout_cd_rule" ] \
+    || fail "scout brief leading-cd rule is missing or differs from the ship brief"
+  assert_grep "every sub-agent you launch" "$brief" "scout brief did not pass the leading-cd rule to sub-agents"
+
   # The daemon half of the rule survived the fold.
   assert_grep "no-mistakes" "$brief" "scout brief lost the shared no-mistakes daemon rule"
   # shellcheck disable=SC2016 # Literal backticks and braces must remain unexpanded.
@@ -1576,11 +1722,75 @@ test_crewmate_scaffolds_forbid_pool_administration() {
   pass "fm-brief.sh: every crewmate scaffold forbids administering the shared worktree pool"
 }
 
+# Heavy test suites share one machine, so every crewmate scaffold sends them
+# through the machine-wide line, from one shared string in both scaffolds.
+test_crewmate_scaffolds_route_heavy_tests_through_the_queue() {
+  local home brief mode ship_rule scout_rule
+  home="$TMP_ROOT/test-queue-home"
+  mkdir -p "$home/data"
+  for mode in no-mistakes direct-PR local-only; do
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "brief-queue-$mode" alpha --mode "$mode" >/dev/null 2>&1 \
+      || fail "fm-brief.sh --mode $mode exited non-zero"
+    assert_grep "'$ROOT/bin/fm-test-queue.sh' run -- <command>" "$home/data/brief-queue-$mode/brief.md" \
+      "$mode ship brief did not route heavy test suites through the test queue"
+  done
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-queue-scout alpha --scout >/dev/null 2>&1 \
+    || fail "fm-brief.sh --scout exited non-zero"
+  brief="$home/data/brief-queue-scout/brief.md"
+  assert_grep "'$ROOT/bin/fm-test-queue.sh' run -- <command>" "$brief" \
+    "scout brief did not route heavy test suites through the test queue"
+  ship_rule=$(grep -F 'Run heavy test suites only through' "$home/data/brief-queue-no-mistakes/brief.md")
+  scout_rule=$(grep -F 'Run heavy test suites only through' "$brief")
+  [ "$ship_rule" = "$scout_rule" ] || fail "ship and scout test-queue rules have drifted apart"
+  FM_SECONDMATE_CHARTER='Supervise the alpha domain.' \
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-queue-mate --secondmate alpha >/dev/null 2>&1 \
+    || fail "fm-brief.sh --secondmate exited non-zero"
+  assert_no_grep "fm-test-queue.sh" "$home/data/brief-queue-mate/brief.md" \
+    "secondmate charter must not carry the crewmate test-queue rule"
+  pass "fm-brief.sh: every crewmate scaffold routes heavy test suites through the test queue"
+}
+
+test_queue_command_quotes_foreign_firstmate_path() {
+  local home foreign_root mode brief rule ship_rule command out rc
+  home="$TMP_ROOT/test-queue-foreign-home"
+  foreign_root="$TMP_ROOT/firstmate helper's root"
+  mkdir -p "$home/data" "$foreign_root/bin"
+  cat > "$foreign_root/bin/fm-test-queue.sh" <<'SH'
+#!/bin/sh
+[ "$1" = run ] && [ "$2" = -- ] || exit 99
+shift 2
+exec "$@"
+SH
+  chmod +x "$foreign_root/bin/fm-test-queue.sh"
+  ship_rule=""
+  for mode in no-mistakes direct-PR local-only scout; do
+    if [ "$mode" = scout ]; then
+      FM_HOME="$home" FM_ROOT_OVERRIDE="$foreign_root" "$ROOT/bin/fm-brief.sh" "queue-foreign-$mode" alpha --scout >/dev/null 2>&1 \
+        || fail "foreign-root scout brief failed"
+    else
+      FM_HOME="$home" FM_ROOT_OVERRIDE="$foreign_root" "$ROOT/bin/fm-brief.sh" "queue-foreign-$mode" alpha --mode "$mode" >/dev/null 2>&1 \
+        || fail "foreign-root $mode ship brief failed"
+    fi
+    brief="$home/data/queue-foreign-$mode/brief.md"
+    rule=$(grep -F 'Run heavy test suites only through' "$brief")
+    [ -n "$rule" ] || fail "$mode omitted the generated queue rule"
+    [ -n "$ship_rule" ] || ship_rule=$rule
+    assert_equals "$ship_rule" "$rule" "foreign-root ship and scout queue rules differ"
+    command=$(printf '%s\n' "$rule" | cut -d '`' -f 2)
+    assert_contains "$command" '<command>' "$mode omitted the queue command placeholder"
+    out=$(/bin/bash -c "${command%'<command>'} printf '%s' 'queued command'"); rc=$?
+    expect_code 0 "$rc" "$mode generated queue command with space and quote in root"
+    assert_equals 'queued command' "$out" "$mode generated queue command did not execute the workload"
+  done
+  pass "fm-brief.sh: emitted ship and scout queue commands execute from roots with spaces and quotes"
+}
+
 test_script_parses
 test_no_heredoc_in_command_substitution
 test_help_includes_entire_header
 test_ship_modes_generate_clean_briefs
 test_forge_selection_renders_correct_cli
+test_forge_external_renders_the_review_rail
 test_ship_mode_is_required_and_closed_set
 test_ship_mode_is_explicit_not_registry
 test_delivery_flags_are_refused_where_they_do_not_apply
@@ -1603,6 +1813,7 @@ test_ship_and_scout_teach_validation_round_pause
 test_scout_and_secondmate_load_decision_hold_policy
 test_scout_and_secondmate_scaffold
 test_scout_lavish_line_follows_presentation_floor
+test_inbox_listing_command_is_safe_on_empty_inbox
 test_workers_wait_without_spending_turns
 test_wait_no_turns_absent_keeps_the_previous_brief
 test_no_mistakes_brief_reads_run_status_before_a_wait
@@ -1615,3 +1826,5 @@ test_branch_prefix_is_refused_where_it_does_not_apply
 test_branch_prefix_value_is_validated
 test_branch_prefix_command_is_shell_safe
 test_crewmate_scaffolds_forbid_pool_administration
+test_crewmate_scaffolds_route_heavy_tests_through_the_queue
+test_queue_command_quotes_foreign_firstmate_path

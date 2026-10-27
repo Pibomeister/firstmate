@@ -31,7 +31,9 @@ Usage: fm-watch-checkpoint.sh [--seconds <n>]
 
 Run bin/fm-watch.sh in the foreground for a bounded checkpoint.
 On an actionable watcher wake, pass through the watcher output and exit 0.
-On a quiet checkpoint, print "checkpoint: no actionable wake within <n>s" and exit 124.
+On a quiet checkpoint, print "checkpoint: no actionable wake within <n>s" and exit 0,
+so a harness never presents an ordinary quiet bound as a failed command.
+A nonzero exit always means the checkpoint itself failed.
 EOF
 }
 
@@ -93,7 +95,7 @@ run_with_perl_timeout() {  # <seconds> <signal> <kill-after-seconds> <command...
       if ($timed_out) {
         kill "KILL", -$pid;
         waitpid $pid, 0;
-        exit 124;
+        exit 137;
       }
       $timed_out = 1;
       kill $signal, -$pid;
@@ -145,6 +147,20 @@ positive_or() {  # <value> <default>
   case "$1" in ''|0*|*[!0-9]*) printf '%s\n' "$2" ;; *) printf '%s\n' "$1" ;; esac
 }
 
+require_clean_shutdown() {
+  if [ "$RC" -eq 137 ]; then
+    [ ! -s "$OUT" ] || cat "$OUT"
+    [ ! -s "$ERR" ] || cat "$ERR" >&2
+    echo "checkpoint: forced KILL ended the checkpoint before clean shutdown" >&2
+    exit "$RC"
+  fi
+  if grep -E '^(supervision-host: )?watcher: recovery state could not be persisted;' "$OUT" "$ERR" >/dev/null 2>&1; then
+    [ ! -s "$OUT" ] || cat "$OUT"
+    [ ! -s "$ERR" ] || cat "$ERR" >&2
+    exit 1
+  fi
+}
+
 # shellcheck source=bin/fm-supervision-engine-lib.sh
 . "$SCRIPT_DIR/fm-supervision-engine-lib.sh"
 if fm_supervision_host_enabled "$CONFIG" codex; then
@@ -164,15 +180,16 @@ if fm_supervision_host_enabled "$CONFIG" codex; then
     run_bounded $((LIMIT + 120)) TERM 0 "$SCRIPT_DIR/fm-supervision-host.sh" park >"$OUT" 2>"$ERR"
   RC=$?
   set -e
+  require_clean_shutdown
   if grep -E '^(signal:|stale:|check:|heartbeat($|:)|supervision-host:)' "$OUT" 2>/dev/null \
     | grep -Ev '^supervision-host: cycle boundary' >/dev/null; then
     grep -Ev '^watcher: (started|attached) ' "$OUT"
     [ ! -s "$ERR" ] || cat "$ERR" >&2
-    exit 0
+    exit "$RC"
   fi
-  if grep -E '^supervision-host: cycle boundary' "$OUT" >/dev/null 2>&1; then
+  if [ "$RC" -eq 0 ] && grep -E '^supervision-host: cycle boundary' "$OUT" >/dev/null 2>&1; then
     printf 'checkpoint: no actionable wake within %ss\n' "$BOUND"
-    exit 124
+    exit 0
   fi
   [ ! -s "$OUT" ] || cat "$OUT"
   [ ! -s "$ERR" ] || cat "$ERR" >&2
@@ -189,6 +206,7 @@ set +e
 run_bounded "$SECONDS_ARG" INT 5 "$SCRIPT_DIR/fm-watch.sh" >"$OUT" 2>"$ERR"
 RC=$?
 set -e
+require_clean_shutdown
 
 if grep -E '^(signal:|stale:|check:|heartbeat($|:))' "$OUT" >/dev/null 2>&1; then
   cat "$OUT"
@@ -205,7 +223,7 @@ fi
 
 if [ "$RC" -eq 124 ]; then
   printf 'checkpoint: no actionable wake within %ss\n' "$SECONDS_ARG"
-  exit 124
+  exit 0
 fi
 
 [ ! -s "$OUT" ] || cat "$OUT"

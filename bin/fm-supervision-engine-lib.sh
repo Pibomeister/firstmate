@@ -47,6 +47,8 @@
 # known harness token; otherwise detection remains real (tests/lib.sh arms
 # the marker for isolated suites).
 
+# shellcheck source=bin/fm-bash-compat-lib.sh
+. "$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; CDPATH='' cd -- "${d:-/}" && pwd)/fm-bash-compat-lib.sh"
 FM_SUPERVISION_ENGINES_VERIFIED='claude'
 
 # fm_supervision_host_primary: print the primary harness the home gate judges
@@ -55,7 +57,7 @@ FM_SUPERVISION_ENGINES_VERIFIED='claude'
 fm_supervision_host_primary() {
   if [ "${FM_TEST_SEAM:-}" = 1 ]; then
     case "${FM_TEST_HARNESS:-}" in
-      claude | codex | opencode | pi | pi-signed | grok | kimi | cursor | gemini | muse | rovo | omp | agy | devin | unknown)
+      claude | codex | opencode | pi | pi-signed | grok | kimi | cursor | gemini | muse | rovo | omp | agy | devin | commandcode | polytoken | unknown)
         printf '%s\n' "$FM_TEST_HARNESS"
         return
         ;;
@@ -252,81 +254,6 @@ fm_supervision_engine_bin() {
   printf '%s\n' "$bin"
 }
 
-# Print a process's identity (bin/fm-wake-lib.sh fm_pid_identity) on one
-# line, the form the descendant ledger records and compares.
-_fm_engine_identity() {  # <pid>
-  local identity
-  identity=$(fm_pid_identity "$1" 2>/dev/null) || return 1
-  [ -n "$identity" ] || return 1
-  printf '%s\n' "$identity" | tr '\t\n' '  ' | sed 's/ *$//'
-}
-
-# Print "<pid> <ppid>" for every process.
-_fm_engine_process_table() {
-  ps -A -o pid= -o ppid= 2>/dev/null
-}
-
-# _fm_engine_snapshot_descendants <root-pid> <ledger-file>: record every
-# current descendant of <root-pid> as "<pid>\t<identity>". A pid that is still
-# a descendant is re-recorded under its current identity, because a process
-# first seen between its fork and its exec carries its parent's command line;
-# a pid that is no longer a descendant keeps the last identity it was seen
-# with, which is what the reap matches once the engine has exited.
-_fm_engine_snapshot_descendants() {
-  local root=$1 ledger=$2 table pids pid identity fresh
-  table=$(_fm_engine_process_table) || return 0
-  pids=$(printf '%s\n' "$table" | awk -v root="$root" '
-    { parent[$1] = $2; seen[$1] = 1 }
-    END {
-      for (pid in seen) {
-        p = parent[pid]; depth = 0
-        while (p != "" && p != "0" && p != "1" && depth < 64) {
-          if (p == root) { print pid; break }
-          p = parent[p]; depth++
-        }
-      }
-    }')
-  [ -n "$pids" ] || return 0
-  fresh=
-  for pid in $pids; do
-    identity=$(_fm_engine_identity "$pid") || continue
-    fresh="$fresh$pid	$identity
-"
-  done
-  [ -n "$fresh" ] || return 0
-  {
-    printf '%s' "$fresh" | awk -F '\t' '{ print $1 }' > "$ledger.pids"
-    awk -F '\t' 'NR == FNR { now[$1] = 1; next } !($1 in now)' "$ledger.pids" "$ledger" 2>/dev/null
-    printf '%s' "$fresh"
-  } > "$ledger.next" && mv -f "$ledger.next" "$ledger"
-  rm -f "$ledger.pids" "$ledger.next" 2>/dev/null || true
-}
-
-# _fm_engine_reap <ledger-file>: TERM, then KILL, every recorded descendant
-# that is still alive under its recorded identity. A recycled pid never
-# matches its recorded identity, so it is never signalled.
-_fm_engine_reap() {
-  local ledger=$1 pid identity current signal survivors i
-  [ -s "$ledger" ] || return 0
-  for signal in TERM KILL; do
-    survivors=0
-    while IFS="$(printf '\t')" read -r pid identity; do
-      fm_pid_alive "$pid" || continue
-      current=$(_fm_engine_identity "$pid") || continue
-      [ "$current" = "$identity" ] || continue
-      kill "-$signal" "$pid" 2>/dev/null || true
-      survivors=$((survivors + 1))
-    done < "$ledger"
-    [ "$survivors" -gt 0 ] || return 0
-    [ "$signal" = KILL ] && return 0
-    i=0
-    while [ "$i" -lt 20 ]; do
-      sleep 0.1
-      i=$((i + 1))
-    done
-  done
-}
-
 # fm_supervision_engine_turn <engine> <model> <prompt-file> <message-file>
 #     <session-id> <new|resume> <timeout-seconds> <result-file> <error-file>
 #     [<pid-file>]
@@ -385,13 +312,13 @@ fm_supervision_engine_turn() {
     # be recycled here; its identity is refreshed until the subshell's exec
     # into the watchdog has settled.
     if [ -n "$pid_file" ]; then
-      identity=$(_fm_engine_identity "$watched" || true)
+      identity=$(fm_pid_identity_line "$watched" || true)
       if [ -n "$identity" ] && [ "$identity" != "$recorded" ]; then
         printf '%s\t%s\n' "$watched" "$identity" > "$pid_file" 2>/dev/null || true
         recorded=$identity
       fi
     fi
-    _fm_engine_snapshot_descendants "$watched" "$ledger"
+    fm_snapshot_descendants "$watched" "$ledger"
     # Between the one-second snapshots the engine's exit is probed at a tenth
     # of a second: the turn closes promptly when the engine dies while the
     # process-table scans keep their one-second cadence.
@@ -404,7 +331,7 @@ fm_supervision_engine_turn() {
   wait "$watched"
   rc=$?
   [ -z "$pid_file" ] || rm -f "$pid_file" 2>/dev/null || true
-  _fm_engine_reap "$ledger"
+  fm_reap_ledger "$ledger"
   rm -f "$ledger" 2>/dev/null || true
   return "$rc"
 }

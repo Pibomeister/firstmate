@@ -21,10 +21,15 @@
 # lock is down; under every
 # persistent-watcher harness a live identity-matched watcher with a fresh beacon
 # is required. The banner names the true failing condition (a missing live
-# watcher process vs a genuinely stale beacon). The full banner is emitted once
-# per distinct down-episode in this FM_HOME (keyed to the failing condition, not
-# the beacon mtime, which a healthy between-turns watcher advances every poll);
-# later guarded commands in the same episode print a one-line reminder instead.
+# watcher process vs a genuinely stale beacon). A watcher that still beats but
+# has skipped a piece of its work behind a held lock past that lock's bound (its
+# state/.watcher-deferral.<name> record, current only while recent and its
+# holder alive) is reported as WATCHER BLOCKED, naming the work and the holder.
+# The full banner is emitted at the start of each distinct down-episode in this
+# FM_HOME (keyed to the failing condition, not the beacon mtime, which a healthy
+# between-turns watcher advances every poll) and again each
+# FM_GUARD_BANNER_RESURFACE_SECS while it lasts; other guarded commands in the
+# episode print a one-line reminder instead.
 # Episode state lives only under state/.guard-watcher-stale-banner (volatile,
 # bounded). Independent alarms (queued wakes, worktree tangle) are never
 # suppressed by that dedup. Normal wake handling (watcher briefly down between a
@@ -60,7 +65,8 @@ READ_ONLY=${FM_GUARD_READ_ONLY:-0}
 case "$READ_ONLY" in 1|true|TRUE|yes|YES) READ_ONLY=1 ;; *) READ_ONLY=0 ;; esac
 CONTINUE_LINE=${FM_GUARD_CONTINUE_LINE:-This is a supervision warning only; the guarded operation WILL still run.}
 
-# Volatile, home-scoped episode marker: one line = the current stale-episode key.
+# Volatile, home-scoped episode marker; its one-line format is described at
+# fm_guard_read_marker below.
 # Cleared when the home leaves the unhealthy state so a later episode re-arms.
 STALE_BANNER_MARKER="$STATE/.guard-watcher-stale-banner"
 
@@ -87,6 +93,30 @@ fm_guard_stale_episode_key() {
   printf '%s\n' "$1"
 }
 
+# The marker's one line is "<episode key>\t<episode start>\t<last full banner>"
+# (a key-only line from an older guard reads as an episode starting now). A
+# long episode re-prints the full banner once the last full print is
+# FM_GUARD_BANNER_RESURFACE_SECS old (default 1800), so a lasting outage keeps
+# resurfacing instead of shrinking to one reminder line for hours.
+GUARD_RESURFACE_SECS=${FM_GUARD_BANNER_RESURFACE_SECS:-1800}
+case "$GUARD_RESURFACE_SECS" in '' | *[!0-9]* | 0) GUARD_RESURFACE_SECS=1800 ;; esac
+GUARD_EPISODE_START=
+fm_guard_read_marker() {  # <marker> -> sets MARKER_KEY MARKER_START MARKER_LAST
+  local line now
+  now=$(date +%s)
+  line=$(cat "$1" 2>/dev/null || true)
+  line=${line%$'\n'}
+  MARKER_KEY=${line%%$'\t'*}
+  MARKER_START=$now MARKER_LAST=$now
+  case "$line" in
+    *$'\t'*$'\t'*)
+      MARKER_START=${line#*$'\t'}; MARKER_START=${MARKER_START%%$'\t'*}
+      MARKER_LAST=${line##*$'\t'}
+      ;;
+  esac
+  case "$MARKER_START$MARKER_LAST" in '' | *[!0-9]*) MARKER_START=$now MARKER_LAST=$now ;; esac
+}
+
 # Claim the full banner for this episode. Exit 0 = print full banner (this call
 # owns the first announcement). Exit 1 = same episode already announced (print
 # reminder). The shared wake lock helper owns the race-safety mechanics; the
@@ -95,32 +125,35 @@ fm_guard_claim_stale_banner() {
   local state=$1 key=$2
   local marker="$state/.guard-watcher-stale-banner"
   local lock="$state/.guard-watcher-stale-banner.lock"
-  local seen i
+  local i now
 
-  seen=$(cat "$marker" 2>/dev/null || true)
-  # Strip a single trailing newline so key comparison is line-content based.
-  seen=${seen%$'\n'}
-  if [ "$seen" = "$key" ]; then
+  now=$(date +%s)
+  fm_guard_read_marker "$marker"
+  GUARD_EPISODE_START=$MARKER_START
+  if [ "$MARKER_KEY" = "$key" ] && [ $((now - MARKER_LAST)) -lt "$GUARD_RESURFACE_SECS" ]; then
     return 1
   fi
 
   i=0
   while [ "$i" -lt 50 ]; do
     if fm_lock_try_acquire "$lock"; then
-      seen=$(cat "$marker" 2>/dev/null || true)
-      seen=${seen%$'\n'}
-      if [ "$seen" = "$key" ]; then
+      fm_guard_read_marker "$marker"
+      if [ "$MARKER_KEY" = "$key" ] && [ $((now - MARKER_LAST)) -lt "$GUARD_RESURFACE_SECS" ]; then
+        GUARD_EPISODE_START=$MARKER_START
         fm_lock_release "$lock" 2>/dev/null || true
         return 1
       fi
+      # A new episode starts now; a resurfacing one keeps its start.
+      [ "$MARKER_KEY" = "$key" ] || MARKER_START=$now
+      GUARD_EPISODE_START=$MARKER_START
       # Bounded write: one line, no growth across episodes (overwrite).
-      printf '%s\n' "$key" > "$marker" || true
+      printf '%s\t%s\t%s\n' "$key" "$MARKER_START" "$now" > "$marker" || true
       fm_lock_release "$lock" 2>/dev/null || true
       return 0
     fi
-    seen=$(cat "$marker" 2>/dev/null || true)
-    seen=${seen%$'\n'}
-    if [ "$seen" = "$key" ]; then
+    fm_guard_read_marker "$marker"
+    if [ "$MARKER_KEY" = "$key" ] && [ $((now - MARKER_LAST)) -lt "$GUARD_RESURFACE_SECS" ]; then
+      GUARD_EPISODE_START=$MARKER_START
       return 1
     fi
     # Brief yield; 0.02s is fine on macOS/Linux sleep, fall back to 1s.
@@ -134,11 +167,56 @@ fm_guard_claim_stale_banner() {
 fm_guard_stale_banner_seen() {
   local state=$1 key=$2
   local marker="$state/.guard-watcher-stale-banner"
-  local seen
 
-  seen=$(cat "$marker" 2>/dev/null || true)
-  seen=${seen%$'\n'}
-  [ "$seen" = "$key" ]
+  fm_guard_read_marker "$marker"
+  GUARD_EPISODE_START=$MARKER_START
+  [ "$MARKER_KEY" = "$key" ] && [ $(($(date +%s) - MARKER_LAST)) -lt "$GUARD_RESURFACE_SECS" ]
+}
+
+# fm_guard_episode_detail: "down <age>s; <stage>" for the current episode, where
+# the stage is the one the watcher holding this home's lock last recorded
+# (state/.watcher-stage, written by bin/fm-watch.sh at each poll stage).
+fm_guard_episode_detail() {
+  local now age stage_pid stage_epoch stage lock_pid
+  now=$(date +%s)
+  age=$((now - ${GUARD_EPISODE_START:-$now}))
+  printf 'down %ss' "$age"
+  [ -f "$STATE/.watcher-stage" ] || return 0
+  IFS=$'\t' read -r stage_pid stage_epoch stage < "$STATE/.watcher-stage" 2>/dev/null || return 0
+  lock_pid=$(cat "$STATE/.watch.lock/pid" 2>/dev/null || true)
+  [ -n "$stage_pid" ] && [ "$stage_pid" = "$lock_pid" ] || return 0
+  case "$stage_epoch" in '' | *[!0-9]*) return 0 ;; esac
+  printf '; watcher pid %s last recorded stage %s %ss ago' "$stage_pid" "$stage" "$((now - stage_epoch))"
+}
+
+# fm_guard_blocked_watcher: 0 when the live watcher holding this home's lock has
+# skipped one kind of work behind the same held lock for longer than the stall
+# bound (its state/.watcher-deferral.<name> record); sets GUARD_BLOCKED_KEY and
+# GUARD_BLOCKED_DETAIL. Such a watcher beats, so only this read can see it.
+fm_guard_blocked_watcher() {
+  local f lock_pid owner first name holder now bound fresh
+  lock_pid=$(cat "$STATE/.watch.lock/pid" 2>/dev/null || true)
+  [ -n "$lock_pid" ] || return 1
+  now=$(date +%s)
+  bound=$(fm_watcher_stall_bound)
+  # The watcher repeats a deferral at least once per its stale grace, the same
+  # grace fm_watcher_stall_bound derives from.
+  fresh=${FM_WATCHER_STALE_GRACE:-${FM_GUARD_GRACE:-$(fm_poll_derived_grace "${FM_POLL:-15}")}}
+  for f in "$STATE"/.watcher-deferral.*; do
+    [ -f "$f" ] || continue
+    IFS=$'\t' read -r owner first name holder < "$f" 2>/dev/null || continue
+    [ "$owner" = "$lock_pid" ] || continue
+    # Only a deferral the watcher repeated recently, behind a holder that is
+    # still alive, is current: a site that stopped running leaves a stale record.
+    [ "$(fm_path_age "$f")" -lt "$fresh" ] || continue
+    fm_pid_alive "$holder" || continue
+    case "$first" in '' | *[!0-9]*) continue ;; esac
+    [ $((now - first)) -ge "$bound" ] || continue
+    GUARD_BLOCKED_KEY="blocked:$name"
+    GUARD_BLOCKED_DETAIL="the watcher (pid $lock_pid) is alive but has skipped its $name work for $((now - first))s because $(fm_lock_holder_name "$holder" | sed 's/^$/an unidentified process/') holds that lock past its bound"
+    return 0
+  done
+  return 1
 }
 
 fm_guard_clear_stale_banner() {
@@ -153,7 +231,7 @@ fm_guard_clear_stale_banner() {
 # only: detached HEAD (linked worktrees, secondmate homes) never trips this.
 tangle_branch=$(fm_primary_tangle_branch "$FM_ROOT" || true)
 if [ -n "$tangle_branch" ]; then
-  tangle_default=$(fm_default_branch "$FM_ROOT" 2>/dev/null || echo main)
+  tangle_default=$(fm_primary_expected_branch "$FM_ROOT" 2>/dev/null || echo main)
   trule='━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
   {
     printf '●%s\n' "$trule"
@@ -209,6 +287,12 @@ fi
 # bordered banner FIRST so it reads as an alarm, not a buried stderr line. Later
 # calls in the same episode get a one-line reminder only. The supervision branch
 # actor neither sees nor advances an episode (header).
+GUARD_BLOCKED_KEY=
+GUARD_BLOCKED_DETAIL=
+if [ "$watcher_healthy" != false ] && fm_guard_blocked_watcher; then
+  watcher_healthy=false
+  watcher_down_reason=$GUARD_BLOCKED_KEY
+fi
 if [ "$GUARD_ACTOR" = branch ]; then
   :
 elif [ "$watcher_healthy" = false ]; then
@@ -236,6 +320,16 @@ elif [ "$watcher_healthy" = false ]; then
       --repair-line 2>/dev/null || printf '%s\n' 'Repair missing watcher supervision according to the session-start operating block.')
     rule='━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
     {
+      if [ -n "$GUARD_BLOCKED_KEY" ]; then
+        printf '●%s\n' "$rule"
+        printf '●  WATCHER BLOCKED - PART OF SUPERVISION IS OFF\n'
+        printf '●  %s.\n' "$GUARD_BLOCKED_DETAIL"
+        printf '●  The watcher resumes that work by itself once the lock is free; inspect that process (never remove the lock by hand).\n'
+        printf '●  %s.\n' "$(fm_guard_episode_detail)"
+        printf '●%s\n' "$rule"
+      fi
+    } >&2
+    [ -n "$GUARD_BLOCKED_KEY" ] || {
       printf '●%s\n' "$rule"
       printf '●  WATCHER DOWN - SUPERVISION IS OFF\n'
       if [ "$watcher_down_reason" = no-watcher ]; then
@@ -257,13 +351,17 @@ elif [ "$watcher_healthy" = false ]; then
       else
         printf '●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.\n'
       fi
+      printf '●  %s.\n' "$(fm_guard_episode_detail)"
       printf '●  %s\n' "$CONTINUE_LINE"
       printf '●  %s\n' "$fix"
       printf '●%s\n' "$rule"
     } >&2
+  elif [ -n "$GUARD_BLOCKED_KEY" ]; then
+    printf 'WARNING: watcher still blocked (same episode; %s) - full banner already printed this episode.\n' \
+      "$(fm_guard_episode_detail)" >&2
   else
-    printf 'WARNING: watcher still down (same stale episode; last beat: %s, grace %ss) - full banner already printed this episode.\n' \
-      "$beacon_desc" "$GRACE" >&2
+    printf 'WARNING: watcher still down (same stale episode; last beat: %s, grace %ss; %s) - full banner already printed this episode.\n' \
+      "$beacon_desc" "$GRACE" "$(fm_guard_episode_detail)" >&2
   fi
 else
   # Healthy again while work is still in flight: end the episode so a later

@@ -39,6 +39,12 @@ case "${1:-}" in
       && [ "${1:-}" = "$FM_FAKE_TMUX_SEND_KEY_FAIL" ]; then
       exit 1
     fi
+    # FM_FAKE_TMUX_SEND_KEY_HANG names one key whose delivery never returns,
+    # standing in for a pane server that stopped answering.
+    if [ "$literal" = 0 ] && [ -n "${FM_FAKE_TMUX_SEND_KEY_HANG:-}" ] \
+      && [ "${1:-}" = "$FM_FAKE_TMUX_SEND_KEY_HANG" ]; then
+      exec /bin/sleep 120
+    fi
     exit 0 ;;
   display-message)
     target=
@@ -60,7 +66,8 @@ case "${1:-}" in
     printf '╭────╮\n│    │\n╰────╯\n'
     exit 0 ;;
   list-windows)
-    printf 'foreign:%s\nfm-mpf-lane-m8\nfm-lane-ok\n' "${FM_FAKE_TMUX_WINDOW:-fm-lost}"
+    printf 'foreign:%s\nfm-mpf-lane-m8\nfm-lane-key\nfm-lane-ok\n' \
+      "${FM_FAKE_TMUX_WINDOW:-fm-lost}"
     exit 0 ;;
 esac
 exit 0
@@ -231,8 +238,28 @@ test_key_send_exit_status_follows_delivery() {
   pass "fm-send --key: exit status follows delivery, and an undelivered key never reports success"
 }
 
+# A send can hold the home's lease-command lock, so a key to a pane server that
+# stopped answering must end at FM_SEND_BACKEND_BUDGET with its outcome unknown,
+# not keep the lock held.
+test_hung_key_send_stops_at_its_budget() {
+  local dir fb home err log rc start elapsed
+  dir="$TMP_ROOT/key-hang"; mkdir -p "$dir"
+  fb=$(make_stubs "$dir"); home=$(setup_home keyhang); err="$dir/send.err"; log="$dir/tmux.log"; : > "$log"
+  fm_write_meta "$home/state/lane-key.meta" "window=sess:fm-lane-key" "kind=ship"
+  start=$(date +%s)
+  PATH="$fb:$PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$home" FM_TMUX_LOG="$log" FM_SEND_SETTLE=0 \
+    FM_SEND_BACKEND_BUDGET=2 FM_FAKE_TMUX_SEND_KEY_HANG=Escape \
+    perl -e 'alarm 60; exec @ARGV' "$SEND" lane-key --key Escape >/dev/null 2>"$err"; rc=$?
+  elapsed=$(( $(date +%s) - start ))
+  expect_code 1 "$rc" "a key send stopped at its budget must fail"
+  [ "$elapsed" -le 20 ] || fail "a hung key send took ${elapsed}s to stop with a 2s budget"
+  assert_contains "$(cat "$err")" "completion is unknown" "the stopped key send must say its completion is unknown"
+  pass "fm-send --key: a key to a pane server that stopped answering ends at its budget, outcome unknown"
+}
+
 test_exact_lane_id_send_still_works
 test_key_send_exit_status_follows_delivery
+test_hung_key_send_stops_at_its_budget
 test_unset_fm_home_fails
 test_unresolvable_target_does_not_tmux_fallback
 test_prefixless_herdr_pane_id_fails

@@ -7,6 +7,8 @@
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=bin/fm-bash-compat-lib.sh
+. "$SCRIPT_DIR/fm-bash-compat-lib.sh"
 
 usage() {
   cat <<'EOF'

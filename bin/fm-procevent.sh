@@ -48,6 +48,8 @@
 #            Confirm the current registration generation's listener is running.
 #            Starts one when nothing live is in the way, and returns only after
 #            that generation's live claim or its launch stamp says it started.
+#            A matching unhandled task-owned capture also confirms readiness
+#            when the listener completed before this confirmation began.
 #            The wait is the reconcile confirm window and ends early on evidence.
 #            No evidence within the window is a nonzero result. Exit 3 means a
 #            live listener from another registration generation still held the
@@ -557,7 +559,7 @@ cmd_register_task() {
   local pending_rounds=0 delivered
   local -a argv=() kept=()
   shift 4 2>/dev/null || usage
-  [ "$adapter" = lavish ] || die "register-task is reserved for the Lavish adapter"
+  case "$adapter" in lavish|no-mistakes) ;; *) die "register-task requires the Lavish or no-mistakes adapter" ;; esac
   fm_procevent_adapter_valid "$adapter" || die "adapter name must be lowercase alphanumeric or dash: $adapter"
   fm_procevent_source_id_valid "$id" || die "source id must be path-safe and at most 64 characters: $id"
   fm_pr_task_id_valid "$task" || die "task id is invalid: $task"
@@ -820,7 +822,10 @@ publish_result() {  # <result-file>
   fm_procevent_source_lock_acquire "$id" || return 1
   if ! fm_procevent_is_handled "$STATE" "$id" "$seq"; then
     if [ -n "$owner_task" ]; then
-      if adapter_result_is_terminal "$adapter" "$result"; then
+      if [ "$adapter" = no-mistakes ]; then
+        printf -v message 'No-mistakes advisory completion for task %s is captured at %s (source %s sequence %s). Read the capture and follow the completion-handling contract in your Definition of done. Check live run evidence before side effects. Source acknowledgement command: FM_HOME=%q %q handled %s %s.' \
+          "$owner_task" "$result" "$id" "$seq" "$FM_HOME" "$SCRIPT_DIR/fm-procevent.sh" "$id" "$seq"
+      elif adapter_result_is_terminal "$adapter" "$result"; then
         message="Lavish review result $id sequence $seq is terminal at $result. Read it with bin/fm-procevent-lavish.sh read $result, stop and conclude the review, and do not re-arm the board. The board stays yours until you acknowledge this round with bin/fm-procevent.sh handled $id $seq, which retires it."
       else
         export FM_PROCEVENT_CAPTURE_SOURCE_LOCK_HELD=1
@@ -1937,6 +1942,29 @@ generation_is_listening() {  # <source-id> <registration-identity>
   return "$result"
 }
 
+# 0 when this registration generation's task already captured an unhandled
+# round, so its listener ran to completion before readiness was asked. Kept
+# out of the per-tick readiness probe: holding the source lock for this scan on
+# every tick starves the runner that needs the same lock to claim.
+generation_has_task_capture() {  # <source-id> <registration-identity>
+  local id=$1 identity=$2 result=1 owner adapter pending
+  fm_procevent_source_lock_acquire "$id" || return 1
+  if [ "$(fm_pr_file_identity "$(source_file "$id")" 2>/dev/null)" = "$identity" ] \
+    && [ "$(source_kind "$id" 2>/dev/null)" = task-owned ]; then
+    owner=$(source_owner_task "$id")
+    adapter=$(read_adapter "$id")
+    while IFS= read -r pending; do
+      if [ "$(fm_procevent_result_owner_task "$pending" 2>/dev/null)" = "$owner" ] \
+        && [ "$(fm_procevent_result_adapter "$pending" 2>/dev/null)" = "$adapter" ]; then
+        result=0
+        break
+      fi
+    done < <(source_pending "$id")
+  fi
+  fm_procevent_source_lock_release "$id"
+  return "$result"
+}
+
 # 0 when no live, uncertain, leaderless, terminal, or undisplaceable claim
 # blocks a launch, the same rule reconcile applies.
 generation_can_launch() {  # <source-id>
@@ -1953,8 +1981,8 @@ generation_can_launch() {  # <source-id>
 
 # Public readiness for one source. Same evidence reconcile uses after a launch:
 # a live claim bound to this registration generation, or that generation's
-# launch stamp advancing. Returns as soon as either appears. A fixed sleep is
-# not success.
+# launch stamp advancing, or a matching durable task-owned completion.
+# Returns as soon as evidence appears. A fixed sleep is not success.
 cmd_ensure_listening() {
   local id=${1-} identity before mark stamp deadline window started_once=0 listening
   [ "$#" -eq 1 ] || usage
@@ -1969,6 +1997,9 @@ cmd_ensure_listening() {
   if stamp=$(fm_procevent_launch_floor_stamp_path "$STATE" "$id" "$identity"); then
     before=$(cat -- "$stamp" 2>/dev/null || true)
   fi
+  # Registration can finish its whole round before ensure-listening starts;
+  # accept that durable task result, never launch it again.
+  ! generation_has_task_capture "$id" "$identity" || return 0
   deadline=$((SECONDS + 10#$window + 1))
   while :; do
     listening=0
@@ -1989,6 +2020,7 @@ cmd_ensure_listening() {
     sleep 0.05
   done
   [ "$listening" -ne 3 ] || return 3
+  ! generation_has_task_capture "$id" "$identity" || return 0
   printf 'error: listener is not running: %s\n' "$id" >&2
   return 1
 }

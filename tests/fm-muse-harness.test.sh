@@ -3,7 +3,7 @@
 # spawn launch shape and credential preflight, the secondmate refusal, the
 # session-log busy source, and teardown cleanup of the busy binding.
 #
-# The session-log fixtures below reproduce muse 0.1.0-R708.1's real record
+# The session-log fixtures below reproduce muse's real record
 # shapes, including the nested "record":{"kind":"terminal"} cleanup payload that
 # is NOT a run terminal. That decoy is the whole reason the fold matches an
 # anchored structural prefix instead of searching for "kind":"terminal", so a
@@ -31,6 +31,12 @@ TMP_ROOT=$(fm_test_tmproot fm-muse-harness)
 # which is what binds a log to a task worktree.
 muse_log_metadata() {
   printf '{"schema_version":1,"id":"d77de583","stream":{"kind":"session","id":"52f21aea"},"sequence":1,"record_type":"event","durability":"durable","payload_type":"runtime.session.metadata","payload":{"kind":"metadata","record":{"workspace_root":"%s","provider_id":"meta","build":{"sha":"427a430436","semver":"0.1.0"}}}}\n' "$1"
+}
+
+# muse 1.4.13 prepends a retained_frame transaction before the metadata
+# record, so the metadata record is no longer the first line of the log.
+muse_log_retained_frame_prefix() {
+  printf '%s\n' '{"retained_frame":"session_permission_transaction","frame_schema_version":1,"outer_log_ordinal":1,"children":[{"child_index":0,"record_json":"{\"payload_type\":\"runtime.session.permission_format_declared\",\"payload\":{\"schema_version\":1,\"format\":\"profile_v1\"}}"}]}'
 }
 
 muse_log_run_started() {  # <run-id>
@@ -75,6 +81,7 @@ set -u
 case "$*" in
   *"#{pane_current_path}"*) printf '%s\n' "${FM_FAKE_PANE_PATH:-}"; exit 0 ;;
 esac
+window_file="$(dirname "$0")/.spawn-window"
 case "${1:-}" in
   show-environment)
     [ "${FM_FAKE_WORKER_META_KEY:-}" = present ] || exit 1
@@ -82,8 +89,18 @@ case "${1:-}" in
     exit 0
     ;;
   display-message) printf 'firstmate\n'; exit 0 ;;
-  list-windows) exit 0 ;;
-  has-session|new-session|new-window|kill-window) exit 0 ;;
+  list-windows) [ ! -s "$window_file" ] || cat "$window_file"; exit 0 ;;
+  new-window)
+    name=
+    previous=
+    for arg in "$@"; do
+      [ "$previous" = -n ] && name=$arg
+      previous=$arg
+    done
+    printf '%s\n' "$name" > "$window_file"
+    exit 0 ;;
+  kill-window) : > "$window_file"; exit 0 ;;
+  has-session|new-session) exit 0 ;;
   send-keys)
     prev=
     for arg in "$@"; do
@@ -111,7 +128,8 @@ esac
 exit 0
 SH
   chmod +x "$fakebin/tmux"
-  cp "$(command -v bash)" "$fakebin/muse-bin-test-version"
+  # Preserve the platform shell's signature; macOS kills copied system binaries.
+  ln -s "$(command -v bash)" "$fakebin/muse-bin-test-version"
   cat > "$fakebin/muse" <<'SH'
 #!/usr/bin/env bash
 set -u
@@ -188,7 +206,7 @@ test_detects_versioned_process_ancestor() {
   dir="$TMP_ROOT/detect"
   mkdir -p "$dir"
   for bin in muse-bin-0.1.0-R708.1 muse-bin-9.9.9-RZZZ.9 muse; do
-    cp "$(command -v bash)" "$dir/$bin"
+    ln -s "$(command -v bash)" "$dir/$bin"
     out=$(env -u CLAUDECODE -u PI_CODING_AGENT -u FM_PI_HARNESS -u GROK_AGENT \
       -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI \
       "$dir/$bin" -c "r=\$(\"$HARNESS\"); printf '%s' \"\$r\"")
@@ -204,7 +222,7 @@ test_detection_is_anchored() {
   dir="$TMP_ROOT/detect-neg"
   mkdir -p "$dir"
   for bin in musescore amuse notmuse-bin muse-binary muse-bind; do
-    cp "$(command -v bash)" "$dir/$bin"
+    ln -s "$(command -v bash)" "$dir/$bin"
     out=$(env -u CLAUDECODE -u PI_CODING_AGENT -u FM_PI_HARNESS -u GROK_AGENT \
       -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI \
       "$dir/$bin" -c "r=\$(\"$HARNESS\"); printf '%s' \"\$r\"")
@@ -386,9 +404,7 @@ EOF
   pass "muse resolves relative XDG roots before preflight and launch"
 }
 
-# muse has no primary supervision protocol, and its Claude-compatible hook
-# dialect rejects the model-reawakening handlers a firstmate primary needs, so a
-# secondmate on muse could never arm a supervision cycle.
+# Muse has a verified primary protocol, but its secondmate integration is unverified.
 test_spawn_refuses_secondmate() {
   local case_dir home fakebin id out status
   case_dir="$TMP_ROOT/secondmate"
@@ -405,7 +421,9 @@ test_spawn_refuses_secondmate() {
     "$SPAWN" "$id" muse --secondmate 2>&1)
   status=$?
   [ "$status" -ne 0 ] || fail "muse was accepted as a secondmate harness"
-  assert_contains "$out" "crewmate/scout adapter only" "muse secondmate refusal did not explain the boundary"
+  assert_contains "$out" "secondmate integration remains unverified" "muse secondmate refusal did not explain the boundary"
+  assert_not_contains "$out" "crewmate/scout adapter only" "muse secondmate refusal denied its verified primary support"
+  assert_not_contains "$out" "no primary supervision protocol" "muse secondmate refusal denied its verified primary protocol"
   pass "muse is refused as a secondmate harness"
 }
 
@@ -460,7 +478,13 @@ set -u
 case "${1:-}" in
   display-message) printf 'fakepane\n'; exit 0 ;;
   has-session) exit 0 ;;
-  list-panes|list-windows) printf 'fm-send:0\n'; exit 0 ;;
+  list-windows)
+    case "$*" in
+      *'#{window_id}'*'#{window_index}'*'#{window_name}'*) printf '@0|0|muse\n' ;;
+      *) printf '0\n' ;;
+    esac
+    exit 0 ;;
+  list-panes) printf '%%0\n'; exit 0 ;;
   send-keys)
     shift
     printf '%s\n' "$*" >> "$FM_FAKE_KEY_LOG"
@@ -538,18 +562,17 @@ EOF
 
 # --- busy source ------------------------------------------------------------
 
+# shellcheck source=bin/fm-busy-lib.sh
+. "$ROOT/bin/fm-busy-lib.sh"
+
 classify_muse() {  # <state-dir> <id>
   (
-    # shellcheck source=bin/fm-busy-lib.sh
-    . "$ROOT/bin/fm-busy-lib.sh"
     fm_busy_classify tmux fake:0 muse "$2" "$1"
   )
 }
 
 run_state() {  # <log>
   (
-    # shellcheck source=bin/fm-busy-lib.sh
-    . "$ROOT/bin/fm-busy-lib.sh"
     fm_busy_muse_run_state "$1"
   )
 }
@@ -651,6 +674,72 @@ EOF
   pass "the session binding folds only the log matching this task's worktree"
 }
 
+test_binding_finds_metadata_after_retained_frame() (
+  local dir state id verdict root logdir competing_log metadata today=2026/12/31
+  date() {
+    if [ "${1:-}" = '+%Y/%m/%d' ]; then
+      printf '%s\n' "$today"
+    else
+      command date "$@"
+    fi
+  }
+  dir="$TMP_ROOT/bind-retained"
+  state="$dir/state"
+  root="$dir/sessions"
+  id=retainedtask
+  mkdir -p "$state"
+  logdir="$root/$(date '+%Y/%m/%d')/muse1413"
+  mkdir -p "$logdir"
+  {
+    muse_log_retained_frame_prefix
+    muse_log_metadata "$dir/my-ws"
+    muse_log_run_started my-run
+    muse_log_run_terminal my-run completed
+  } > "$logdir/session.jsonl"
+  printf 'sessions_root=%s\nworkspace_root=%s\nbinding_id=retained-incarnation\n' \
+    "$root" "$dir/my-ws" > "$state/$id.muse-session"
+  verdict=$(classify_muse "$state" "$id")
+  [ "$verdict" = "idle muse-session-log" ] \
+    || fail "a 1.4.13 log with metadata after a retained frame classified '$verdict', expected idle"
+  [ -s "$state/$id.muse-session-current" ] || fail "the retained-frame session was not cached"
+
+  competing_log="${logdir%/*}/competing/session.jsonl"
+  mkdir -p "${competing_log%/*}"
+  muse_log_retained_frame_prefix > "$competing_log"
+  verdict=$(classify_muse "$state" "$id")
+  [ "$verdict" = "idle muse-session-log" ] \
+    || fail "a retained prefix without metadata changed the cached verdict to '$verdict'"
+
+  today=2027/01/01
+  verdict=$(classify_muse "$state" "$id")
+  [ "$verdict" = "idle muse-session-log" ] \
+    || fail "a date rollover changed the unique session's verdict to '$verdict'"
+
+  metadata=$(muse_log_metadata "$dir/my-ws")
+  printf '%s' "${metadata%?}" >> "$competing_log"
+  verdict=$(classify_muse "$state" "$id")
+  [ "$verdict" = "idle muse-session-log" ] \
+    || fail "incomplete workspace metadata changed the cached verdict to '$verdict'"
+
+  {
+    printf '}\n'
+    muse_log_run_started competing-run
+  } >> "$competing_log"
+  verdict=$(classify_muse "$state" "$id")
+  [ "$verdict" = "unknown muse-session-log" ] \
+    || fail "a competing session appending metadata left the cached verdict at '$verdict'"
+
+  rm -f "$competing_log"
+  verdict=$(classify_muse "$state" "$id")
+  [ "$verdict" = "idle muse-session-log" ] \
+    || fail "removing the competing session did not restore the unique binding: got '$verdict'"
+  muse_log_run_started next-run >> "$logdir/session.jsonl"
+  verdict=$(classify_muse "$state" "$id")
+  [ "$verdict" = "busy muse-session-log" ] \
+    || fail "the uniquely bound session's next turn classified '$verdict', expected busy"
+  pass "retained-frame bindings refresh across midnight as workspace metadata becomes ready"
+)
+
 test_workspace_binding_treats_glob_characters_literally() {
   local dir state id root verdict
   dir="$TMP_ROOT/workspace-literal"
@@ -707,7 +796,7 @@ EOF
 }
 
 test_session_log_cache_reuses_and_refreshes_binding() {
-  local dir state id root old fresh verdict fakebin
+  local dir state id root old fresh verdict
   dir="$TMP_ROOT/cache"
   state="$dir/state"
   root="$dir/sessions"
@@ -725,15 +814,12 @@ EOF
   [ "$verdict" = "busy muse-session-log" ] \
     || fail "the initial session did not resolve before caching: got '$verdict'"
 
-  fakebin=$(fm_fakebin "$dir/fake")
-  cat > "$fakebin/node" <<'SH'
-#!/usr/bin/env bash
-exit 97
-SH
-  chmod +x "$fakebin/node"
-  verdict=$(PATH="$fakebin:$PATH" classify_muse "$state" "$id")
+  verdict=$(
+    fm_busy_muse_cache_session_log() { return 97; }
+    fm_busy_classify tmux fake:0 muse "$id" "$state"
+  )
   [ "$verdict" = "busy muse-session-log" ] \
-    || fail "a cached session triggered another tree resolution: got '$verdict'"
+    || fail "a valid cached session required rewriting its binding: got '$verdict'"
 
   muse_log_run_terminal old-run completed >> "$old"
   fresh=$(write_session_log "$root" 2026 08 05 fresh "$dir/ws" <<EOF
@@ -760,7 +846,54 @@ EOF
   verdict=$(classify_muse "$state" "$id")
   [ "$verdict" = "unknown muse-session-log" ] \
     || fail "ambiguous replacement sessions produced '$verdict' instead of unknown"
-  pass "the Muse session cache avoids rescans and refreshes safely across incarnations"
+  pass "the Muse session cache reuses bindings and refreshes safely across incarnations"
+}
+
+test_run_appends_preserve_workspace_binding() {
+  local dir state id root log verdict fakebin record active resolved
+  dir="$TMP_ROOT/cache-appends"
+  state="$dir/state"
+  root="$dir/sessions"
+  id=appendtask
+  mkdir -p "$state"
+  log="$root/$(date '+%Y/%m/%d')/active/session.jsonl"
+  mkdir -p "${log%/*}"
+  {
+    muse_log_metadata "$dir/ws"
+    muse_log_run_started active-run
+  } > "$log"
+  printf 'sessions_root=%s\nworkspace_root=%s\nbinding_id=append-incarnation\n' \
+    "$root" "$dir/ws" > "$state/$id.muse-session"
+  record="$dir/append.jsonl"
+  muse_log_noise active-run > "$record"
+  fakebin=$(fm_fakebin "$dir/fake")
+  cat > "$fakebin/node" <<'SH'
+#!/usr/bin/env bash
+"$FM_TEST_REAL_NODE" "$@"
+status=$?
+cat "$FM_TEST_MUSE_APPEND_RECORD" >> "$FM_TEST_MUSE_APPEND_LOG"
+exit "$status"
+SH
+  chmod +x "$fakebin/node"
+  local FM_TEST_REAL_NODE FM_TEST_MUSE_APPEND_RECORD=$record FM_TEST_MUSE_APPEND_LOG=$log
+  FM_TEST_REAL_NODE=$(command -v node)
+  export FM_TEST_REAL_NODE FM_TEST_MUSE_APPEND_RECORD FM_TEST_MUSE_APPEND_LOG
+  verdict=$(PATH="$fakebin:$PATH" classify_muse "$state" "$id")
+  [ "$verdict" = "busy muse-session-log" ] \
+    || fail "run content appended during initial binding changed the verdict to '$verdict'"
+  [ "$(wc -l < "$log")" -gt 2 ] || fail "the log did not grow during resolution"
+  verdict=$(PATH="$fakebin:$PATH" classify_muse "$state" "$id")
+  [ "$verdict" = "busy muse-session-log" ] \
+    || fail "run content appended during cached binding changed the verdict to '$verdict'"
+  resolved=$(
+    PATH="$fakebin:$PATH" fm_busy_muse_session_log "$state" "$id"
+  )
+  [ "$resolved" = "$log" ] || fail "run appends prevented interrupt log resolution"
+  active=$(
+    fm_busy_muse_active_run_id "$resolved"
+  )
+  [ "$active" = active-run ] || fail "run appends hid the interrupt's active run: '$active'"
+  pass "run appends preserve cold and cached bindings and interrupt run selection"
 }
 
 test_cached_session_revalidates_after_namespace_change() {
@@ -911,8 +1044,6 @@ EOF
 test_muse_trusts_no_record_sources() {
   local out
   out=$(
-    # shellcheck source=bin/fm-busy-lib.sh
-    . "$ROOT/bin/fm-busy-lib.sh"
     fm_busy_sources_for_harness muse
   )
   [ -z "$out" ] || fail "muse trusts record sources it has no writer for: '$out'"
@@ -965,9 +1096,11 @@ test_failed_clear_is_reported
 test_run_fold_tracks_open_and_settled_turns
 test_nested_terminal_record_does_not_settle_a_run
 test_binding_selects_the_matching_main_log
+test_binding_finds_metadata_after_retained_frame
 test_workspace_binding_treats_glob_characters_literally
 test_binding_excludes_preexisting_log_when_mtimes_tie
 test_session_log_cache_reuses_and_refreshes_binding
+test_run_appends_preserve_workspace_binding
 test_cached_session_revalidates_after_namespace_change
 test_subagent_logs_are_excluded
 test_missing_and_unreadable_bindings_are_unknown_never_idle

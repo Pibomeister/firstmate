@@ -186,6 +186,7 @@ install_guard_scripts() {
   cp "$ROOT/bin/fm-turnend-guard.sh" "$dir/bin/fm-turnend-guard.sh"
   cp "$ROOT/bin/fm-turnend-guard-grok.sh" "$dir/bin/fm-turnend-guard-grok.sh"
   cp "$ROOT/bin/fm-operational-input.sh" "$dir/bin/fm-operational-input.sh"
+  cp "$ROOT/bin/fm-bash-compat-lib.sh" "$dir/bin/fm-bash-compat-lib.sh"
   cp "$ROOT/bin/fm-supervision-instructions.sh" "$dir/bin/fm-supervision-instructions.sh"
   cp "$ROOT/bin/fm-harness.sh" "$dir/bin/fm-harness.sh"
   cp "$ROOT/bin/fm-primary-scope-lib.sh" "$dir/bin/fm-primary-scope-lib.sh"
@@ -196,6 +197,9 @@ install_guard_scripts() {
   cp "$ROOT/bin/fm-hook-host-lib.sh" "$dir/bin/fm-hook-host-lib.sh"
   cp "$ROOT/bin/fm-session-lock-lib.sh" "$dir/bin/fm-session-lock-lib.sh"
   cp "$ROOT/bin/fm-cursor-lib.sh" "$dir/bin/fm-cursor-lib.sh"
+  # Launch probe sibling of fm-cursor-lib.sh; keep it next to the copy so a
+  # fixture that ever verifies an executable does not source a missing file.
+  cp "$ROOT/bin/fm-timeout-lib.sh" "$dir/bin/fm-timeout-lib.sh"
   mkdir -p "$dir/docs"
   cp -R "$ROOT/docs/supervision-protocols" "$dir/docs/supervision-protocols"
   chmod +x "$dir/bin/fm-turnend-guard.sh" "$dir/bin/fm-turnend-guard-grok.sh" "$dir/bin/fm-operational-input.sh" "$dir/bin/fm-supervision-instructions.sh" "$dir/bin/fm-harness.sh"
@@ -1070,6 +1074,7 @@ test_pi_extension_injects_once_per_logical_agent_run() {
   cp "$ROOT/.pi/extensions/fm-primary-turnend-guard.ts" "$ext"
   cp "$ROOT/.pi/extensions/lib/fm-operational-input.ts" "$repo/.pi/extensions/lib/fm-operational-input.ts"
   cp "$ROOT/bin/fm-operational-input.sh" "$repo/bin/fm-operational-input.sh"
+  cp "$ROOT/bin/fm-bash-compat-lib.sh" "$repo/bin/fm-bash-compat-lib.sh"
   cat > "$repo/bin/fm-turnend-guard.sh" <<'SH'
 #!/usr/bin/env bash
 cat >/dev/null
@@ -1136,6 +1141,7 @@ test_pi_extension_retries_after_followup_delivery_failure() {
   cp "$ROOT/.pi/extensions/fm-primary-turnend-guard.ts" "$ext"
   cp "$ROOT/.pi/extensions/lib/fm-operational-input.ts" "$repo/.pi/extensions/lib/fm-operational-input.ts"
   cp "$ROOT/bin/fm-operational-input.sh" "$repo/bin/fm-operational-input.sh"
+  cp "$ROOT/bin/fm-bash-compat-lib.sh" "$repo/bin/fm-bash-compat-lib.sh"
   cat > "$repo/bin/fm-turnend-guard.sh" <<'SH'
 #!/usr/bin/env bash
 cat >/dev/null
@@ -1176,6 +1182,108 @@ EOF
   pass ".pi primary extension: delivery failure resets the logical-run latch"
 }
 
+# A Pi command started from inside the live session, such as the `pi --help`
+# capability probe, auto-loads this extension too and passes the ancestor walk
+# in lockOwnership. Its pid dies at once, so the marker must stay on the live
+# session above it, while a dead or foreign marker pid is still replaced.
+test_pi_extension_keeps_marker_of_live_ancestor_session() {
+  local repo home ext marker_case out status
+  repo="$TMP_ROOT/pi-marker-guard-root"
+  home="$TMP_ROOT/pi-marker-guard-home"
+  ext="$repo/.pi/extensions/fm-primary-turnend-guard.ts"
+  mkdir -p "$repo/.pi/extensions/lib" "$repo/bin" "$home/state"
+  cp "$ROOT/.pi/extensions/fm-primary-turnend-guard.ts" "$ext"
+  cp "$ROOT/.pi/extensions/lib/fm-operational-input.ts" "$repo/.pi/extensions/lib/fm-operational-input.ts"
+  cp "$ROOT/bin/fm-operational-input.sh" "$repo/bin/fm-operational-input.sh"
+  cp "$ROOT/bin/fm-bash-compat-lib.sh" "$repo/bin/fm-bash-compat-lib.sh"
+  for marker_case in nested dead foreign fresh; do
+    rm -f "$home/state/.pi-turnend-extension-loaded"
+    out=$(PLUGIN="$ext" FM_HOME="$home" MARKER_CASE="$marker_case" node --input-type=module 2>&1 <<'EOF'
+import { spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+
+const marker = `${process.env.FM_HOME}/state/.pi-turnend-extension-loaded`;
+const version = `sha256:${createHash("sha256").update(readFileSync(process.env.PLUGIN)).digest("hex")}`;
+// The lock names the parent of this process: a live strict ancestor, exactly where
+// the real session sits above a nested `pi --help`.
+writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.ppid}\n`);
+
+const handlers = new Map();
+const pi = {
+  on(event, handler) {
+    handlers.set(event, handler);
+  },
+  async sendUserMessage() {},
+};
+async function load() {
+  const mod = await import(pathToFileURL(process.env.PLUGIN).href);
+  mod.default(pi);
+}
+function expectBoundToThisProcess(label) {
+  const content = readFileSync(marker, "utf8");
+  if (content !== `${version}\n${process.pid}\n`) {
+    throw new Error(`${label}: marker was not bound to this process: ${JSON.stringify(content)}`);
+  }
+}
+function pidAlive(pid) {
+  try {
+    process.kill(Number(pid), 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+switch (process.env.MARKER_CASE) {
+  case "nested": {
+    const before = `${version}\n${process.ppid}\n`;
+    writeFileSync(marker, before);
+    await load();
+    // "reload" exercises the session_start write path without a startup digest.
+    await handlers.get("session_start")?.({ type: "session_start", reason: "reload" }, {});
+    const after = readFileSync(marker, "utf8");
+    if (after !== before) throw new Error(`nested load replaced the marker of the live session: ${JSON.stringify(after)}`);
+    break;
+  }
+  case "dead": {
+    const dead = spawnSync(process.execPath, ["-e", "0"], { stdio: "ignore" }).pid;
+    if (!dead || pidAlive(dead)) throw new Error(`could not produce a dead pid (got ${dead})`);
+    writeFileSync(marker, `${version}\n${dead}\n`);
+    await load();
+    expectBoundToThisProcess("marker on a dead pid");
+    break;
+  }
+  case "foreign": {
+    const foreign = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+    try {
+      writeFileSync(marker, `${version}\n${foreign.pid}\n`);
+      await load();
+      expectBoundToThisProcess("marker on a live non-ancestor pid");
+    } finally {
+      foreign.kill("SIGTERM");
+    }
+    break;
+  }
+  case "fresh": {
+    if (existsSync(marker)) throw new Error("fresh case started with a marker present");
+    await load();
+    expectBoundToThisProcess("fresh load");
+    break;
+  }
+  default:
+    throw new Error(`unknown marker case: ${process.env.MARKER_CASE}`);
+}
+EOF
+)
+    status=$?
+    [ "$status" = 0 ] || fail "Pi turn-end marker guard failed for the '$marker_case' case (exit $status): $out"
+    [ -z "$out" ] || fail "Pi turn-end marker guard '$marker_case' case printed output: $out"
+  done
+  pass ".pi primary extension: a nested load keeps the live session's turn-end marker"
+}
+
 # --- --claude cooperative mode -----------------------------------------------
 # In --claude mode the guard ignores stop_hook_active (Claude marks every stop
 # after ANY stop-hook continuation true, including asyncRewake rewake turns) and
@@ -1211,12 +1319,16 @@ install_integrated_autoarm() {
   local dir=$1
   cp "$ROOT/bin/fm-claude-stop-autoarm.sh" "$dir/bin/fm-claude-stop-autoarm.sh"
   cp "$ROOT/bin/fm-primary-scope-lib.sh" "$dir/bin/fm-primary-scope-lib.sh"
+  cp "$ROOT/bin/fm-bash-compat-lib.sh" "$dir/bin/fm-bash-compat-lib.sh"
   cp "$ROOT/bin/fm-supervision-lib.sh" "$dir/bin/fm-supervision-lib.sh"
   cp "$ROOT/bin/fm-wake-lib.sh" "$dir/bin/fm-wake-lib.sh"
   cp "$ROOT/bin/fm-path-lib.sh" "$dir/bin/fm-path-lib.sh"
   cp "$ROOT/bin/fm-hook-host-lib.sh" "$dir/bin/fm-hook-host-lib.sh"
   cp "$ROOT/bin/fm-session-lock-lib.sh" "$dir/bin/fm-session-lock-lib.sh"
   cp "$ROOT/bin/fm-cursor-lib.sh" "$dir/bin/fm-cursor-lib.sh"
+  # Launch probe sibling of fm-cursor-lib.sh; keep it next to the copy so a
+  # fixture that ever verifies an executable does not source a missing file.
+  cp "$ROOT/bin/fm-timeout-lib.sh" "$dir/bin/fm-timeout-lib.sh"
   cp "$ROOT/bin/fm-lock.sh" "$dir/bin/fm-lock.sh"
   cp "$ROOT/bin/fm-supervision-engine-lib.sh" "$dir/bin/fm-supervision-engine-lib.sh"
   chmod +x "$dir/bin/fm-claude-stop-autoarm.sh" "$dir/bin/fm-lock.sh"
@@ -1487,12 +1599,13 @@ test_hook_claude_mode_blocks_on_stuck_arming_claim() {
 }
 
 # The generation model's ownership proof: a live open ledger claim (two-line
-# entry, identity-matched owner, watcher still beating) owns recovery with no
-# lock held at all.
+# entry, identity-matched owner descending from the session-lock pid, watcher
+# still beating) owns recovery with no owner lock held at all.
 test_hook_claude_mode_allows_on_open_generation_claim() {
   local dir out status pid identity
   dir=$(make_primary_dir "$TMP_ROOT/hook-claude-open-generation")
   : > "$dir/state/task1.meta"
+  printf '%s\n' "$$" > "$dir/state/.lock"
   sleep 60 &
   pid=$!
   identity=$(fm_test_pid_identity "$pid") || fail "could not compute a claim pid-identity"
@@ -2194,6 +2307,488 @@ test_hook_no_afk_ignores_poll_derived_grace() {
   pass "fm-turnend-guard: with away mode off, the poll-derived grace never applies"
 }
 
+# --- HOOK, Codex mode: the foreground checkpoint must not end a turn blind ---
+# A real process named codex is the harness ancestor, so bin/fm-harness.sh and
+# the session ancestry resolve Codex structurally, as under a live Codex hook.
+# The driver forks the hook straight from that process (no command
+# substitution, whose fork would keep the codex name and shadow the session).
+CODEX_BIN=$(mkdir -p "$TMP_ROOT/codex-harness" && cp "$(command -v bash)" "$TMP_ROOT/codex-harness/codex" && printf '%s\n' "$TMP_ROOT/codex-harness/codex")
+CODEX_DRIVER="$TMP_ROOT/codex-driver.sh"
+cat > "$CODEX_DRIVER" <<'SH'
+# Runs under the codex-named process. Optionally starts a stand-in checkpoint
+# (a script named fm-watch-checkpoint.sh whose `sleep` child holds the watch
+# lock), then runs the guard once and records its exit and output.
+set -u
+if [ -n "${FM_T_CHECKPOINT:-}" ]; then
+  "$FM_T_CHECKPOINT" "$FM_T_DIR/watcher.pid" &
+  while [ ! -s "$FM_T_DIR/watcher.pid" ]; do sleep 0.05; done
+fi
+printf '%s' "$FM_T_PAYLOAD" | FM_HOME="$FM_T_HOME" bash "$FM_T_HOME/bin/fm-turnend-guard.sh" > "$FM_T_DIR/out" 2>&1
+printf '%s\n' "$?" > "$FM_T_DIR/rc"
+SH
+
+codex_payload() {  # <session> <turn> <stop_hook_active>
+  printf '{"session_id":"%s","turn_id":"%s","hook_event_name":"Stop","stop_hook_active":%s}' "$1" "$2" "$3"
+}
+
+# Run the guard under a codex-named harness process. Sets OUT and STATUS.
+run_codex_hook() {  # <dir> <payload> [checkpoint-script]
+  local dir=$1 payload=$2 checkpoint=${3:-} home io
+  home=$(cd "$dir" && pwd)
+  io="$dir/codex-io"
+  rm -rf "$io"
+  mkdir -p "$io"
+  env -u CLAUDECODE -u PI_CODING_AGENT -u FM_PI_HARNESS -u GROK_AGENT -u CURSOR_AGENT -u CURSOR_INVOKED_AS \
+    FM_T_HOME="$home" FM_T_DIR="$io" FM_T_PAYLOAD="$payload" FM_T_CHECKPOINT="$checkpoint" \
+    "$CODEX_BIN" "$CODEX_DRIVER"
+  OUT=$(cat "$io/out" 2>/dev/null)
+  STATUS=$(cat "$io/rc" 2>/dev/null)
+}
+
+# A stand-in checkpoint whose watcher child is recorded as this home's live,
+# identity-matched watch lock with a fresh beacon.
+make_codex_checkpoint() {  # <dir>
+  local dir=$1 script
+  script="$dir/ckpt/fm-watch-checkpoint.sh"
+  mkdir -p "$dir/ckpt"
+  cat > "$script" <<SH
+#!/usr/bin/env bash
+sleep 30 &
+pid=\$!
+identity=\$(FM_STATE_OVERRIDE="$dir/state" bash -c '. "\$1"; fm_pid_identity "\$2"' _ "$dir/bin/fm-wake-lib.sh" "\$pid")
+mkdir -p "$dir/state/.watch.lock"
+printf '%s\n' "\$pid" > "$dir/state/.watch.lock/pid"
+printf '%s\n' "$(cd "$dir" && pwd)" > "$dir/state/.watch.lock/fm-home"
+printf '%s\n' "$(cd "$dir/bin" && pwd)/fm-watch.sh" > "$dir/state/.watch.lock/watcher-path"
+printf '%s\n' "\$identity" > "$dir/state/.watch.lock/pid-identity"
+touch "$dir/state/.last-watcher-beat"
+printf '%s\n' "\$pid" > "\$1"
+wait "\$pid"
+SH
+  chmod +x "$script"
+  printf '%s\n' "$script"
+}
+
+stop_codex_checkpoint() {  # <dir>
+  local pid
+  pid=$(cat "$1/codex-io/watcher.pid" 2>/dev/null || true)
+  [ -z "$pid" ] || kill "$pid" 2>/dev/null || true
+}
+
+test_codex_blocks_turn_end_while_own_checkpoint_runs() {
+  local dir checkpoint
+  dir=$(make_primary_dir "$TMP_ROOT/codex-own-checkpoint")
+  : > "$dir/state/task1.meta"
+  checkpoint=$(make_codex_checkpoint "$dir")
+  run_codex_hook "$dir" "$(codex_payload s1 t1 false)" "$checkpoint"
+  stop_codex_checkpoint "$dir"
+  expect_code 2 "$STATUS" "a Codex stop while this session's own checkpoint runs must block; nothing reads it after the turn ends: $OUT"
+  assert_contains "$OUT" "foreground checkpoint is still running" "the block must name the running checkpoint"
+  assert_contains "$OUT" "Poll its exec session with write_stdin" "the block must name the repair"
+  pass "fm-turnend-guard codex: blocks a turn end while its own checkpoint is still running"
+}
+
+test_codex_reblocks_open_checkpoint_after_its_own_block() {
+  local dir checkpoint
+  dir=$(make_primary_dir "$TMP_ROOT/codex-own-checkpoint-reblock")
+  : > "$dir/state/task1.meta"
+  checkpoint=$(make_codex_checkpoint "$dir")
+  run_codex_hook "$dir" "$(codex_payload s1 t1 true)" "$checkpoint"
+  stop_codex_checkpoint "$dir"
+  expect_code 2 "$STATUS" "stop_hook_active=true must not end a Codex turn over a checkpoint that is still running: $OUT"
+  pass "fm-turnend-guard codex: stop_hook_active is no longer a one-shot allow over a running checkpoint"
+}
+
+test_codex_holds_own_checkpoint_then_ignored_repair_can_end() {
+  local dir checkpoint home io grace=${1:-300} age=${2:-0}
+  dir=$(make_primary_dir "$TMP_ROOT/codex-own-checkpoint-ends-$grace")
+  : > "$dir/state/task1.meta"
+  checkpoint=$(make_codex_checkpoint "$dir")
+  home=$(cd "$dir" && pwd)
+  io="$dir/codex-io"
+  mkdir -p "$io"
+  # One codex session: block, continue while its checkpoint runs, then continue
+  # again once that checkpoint has ended with nothing advanced.
+  # shellcheck disable=SC2016 # the codex-named shell expands its own FM_T_* environment.
+  env -u CLAUDECODE -u PI_CODING_AGENT -u FM_PI_HARNESS -u GROK_AGENT -u CURSOR_AGENT -u CURSOR_INVOKED_AS \
+    FM_T_HOME="$home" FM_T_DIR="$io" FM_T_CHECKPOINT="$checkpoint" \
+    FM_T_FIRST="$(codex_payload s1 t1 false)" FM_T_NEXT="$(codex_payload s1 t1 true)" FM_GUARD_GRACE="$grace" FM_T_AGE="$age" \
+    "$CODEX_BIN" -c '
+"$FM_T_CHECKPOINT" "$FM_T_DIR/watcher.pid" &
+ckpt=$!
+while [ ! -s "$FM_T_DIR/watcher.pid" ]; do sleep 0.05; done
+      sleep "$FM_T_AGE"
+printf "%s" "$FM_T_FIRST" | FM_HOME="$FM_T_HOME" bash "$FM_T_HOME/bin/fm-turnend-guard.sh" > "$FM_T_DIR/out1" 2>&1
+printf "%s\n" "$?" > "$FM_T_DIR/rc1"
+printf "%s" "$FM_T_NEXT" | FM_HOME="$FM_T_HOME" bash "$FM_T_HOME/bin/fm-turnend-guard.sh" > "$FM_T_DIR/out2" 2>&1
+printf "%s\n" "$?" > "$FM_T_DIR/rc2"
+kill "$(cat "$FM_T_DIR/watcher.pid")" 2>/dev/null
+wait "$ckpt" 2>/dev/null
+printf "%s" "$FM_T_NEXT" | FM_HOME="$FM_T_HOME" bash "$FM_T_HOME/bin/fm-turnend-guard.sh" > "$FM_T_DIR/out3" 2>&1
+printf "%s\n" "$?" > "$FM_T_DIR/rc3"
+:'
+  expect_code 2 "$(cat "$io/rc1")" "a Codex stop while this session's own checkpoint runs must block: $(cat "$io/out1")"
+  expect_code 2 "$(cat "$io/rc2")" "a continuation while the own checkpoint is still alive must stay held: $(cat "$io/out2")"
+  expect_code 0 "$(cat "$io/rc3")" "once the own checkpoint has ended and nothing advanced, the continuation may end: $(cat "$io/out3")"
+  pass "fm-turnend-guard codex: holds the turn while its own checkpoint runs, then the no-progress escape applies"
+}
+
+test_codex_allows_watcher_owned_by_another_session() {
+  local dir checkpoint io pid
+  dir=$(make_primary_dir "$TMP_ROOT/codex-foreign-checkpoint")
+  : > "$dir/state/task1.meta"
+  checkpoint=$(make_codex_checkpoint "$dir")
+  io="$dir/foreign-io"
+  mkdir -p "$io"
+  # A different codex process starts the checkpoint; this hook's session did not.
+  env -u CLAUDECODE "$CODEX_BIN" -c "\"$checkpoint\" \"$io/watcher.pid\"; :" &
+  pid=$!
+  while [ ! -s "$io/watcher.pid" ]; do sleep 0.05; done
+  run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
+  kill "$(cat "$io/watcher.pid")" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  expect_code 0 "$STATUS" "a healthy watcher outside this session's checkpoint is still supervision: $OUT"
+  pass "fm-turnend-guard codex: a live watcher another session owns still allows the stop"
+}
+
+test_codex_ignored_repair_can_end_and_progress_keeps_holding() {
+  local dir
+  dir=$(make_primary_dir "$TMP_ROOT/codex-progress")
+  : > "$dir/state/task1.meta"
+  touch "$dir/state/.last-watcher-beat"
+  run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
+  expect_code 2 "$STATUS" "a Codex stop with no watcher must block"
+  run_codex_hook "$dir" "$(codex_payload s1 t1 true)"
+  expect_code 0 "$STATUS" "a continuation that advanced nothing since the block must be allowed to end"
+  # The next beat lands in the same whole second as the beat the block recorded:
+  # full mtime precision must still see it as progress.
+  touch -d 2026-01-01T00:00:00.1 "$dir/state/.last-watcher-beat"
+  run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
+  expect_code 2 "$STATUS" "re-arming block"
+  touch -d 2026-01-01T00:00:00.6 "$dir/state/.last-watcher-beat"
+  run_codex_hook "$dir" "$(codex_payload s1 t1 true)"
+  expect_code 2 "$STATUS" "a continuation that ran a watcher since the block must stay held: $OUT"
+  run_codex_hook "$dir" "$(codex_payload s1 t1 true)"
+  expect_code 0 "$STATUS" "after the progress re-block, an idle continuation may end"
+  pass "fm-turnend-guard codex: an ignored repair can end, while watcher progress keeps the turn held"
+}
+
+test_codex_new_watch_lock_identity_counts_as_progress() {
+  local dir
+  dir=$(make_primary_dir "$TMP_ROOT/codex-identity-progress")
+  : > "$dir/state/task1.meta"
+  run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
+  expect_code 2 "$STATUS" "a Codex stop with no watcher must block"
+  record_watcher_lock "$dir" "$(nonexistent_pid)" "new cycle identity"
+  run_codex_hook "$dir" "$(codex_payload s1 t1 true)"
+  expect_code 2 "$STATUS" "a new watch-lock identity since the block is progress even before a beat: $OUT"
+  pass "fm-turnend-guard codex: a new watch-lock identity counts as progress"
+}
+
+test_codex_stale_or_foreign_block_record_is_judged_fresh() {
+  local dir
+  dir=$(make_primary_dir "$TMP_ROOT/codex-stale-record")
+  : > "$dir/state/task1.meta"
+  run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
+  expect_code 2 "$STATUS" "a Codex stop with no watcher must block"
+  run_codex_hook "$dir" "$(codex_payload s1 t2 true)"
+  expect_code 2 "$STATUS" "a record from an earlier turn must not allow a later turn's continued stop: $OUT"
+  run_codex_hook "$dir" "$(codex_payload s2 t2 true)"
+  expect_code 2 "$STATUS" "another session's record must not allow this session's continued stop: $OUT"
+  run_codex_hook "$dir" "$(codex_payload s1 t2 true)"
+  expect_code 0 "$STATUS" "each session keeps its own record: s1 t2 is now an idle continuation"
+  pass "fm-turnend-guard codex: block records are scoped to their own session and turn"
+}
+
+test_codex_foreign_lock_owner_gets_read_only_exit() {
+  local dir owner
+  dir=$(make_primary_dir "$TMP_ROOT/codex-foreign-owner")
+  : > "$dir/state/task1.meta"
+  env -u CLAUDECODE "$CODEX_BIN" -c 'sleep 30; :' &
+  owner=$!
+  printf '%s\n' "$owner" > "$dir/state/.lock"
+  run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
+  kill "$owner" 2>/dev/null || true
+  wait "$owner" 2>/dev/null || true
+  expect_code 0 "$STATUS" "a read-only Codex session must not be held by a home another live session owns: $OUT"
+  assert_contains "$OUT" "OWNED BY ANOTHER LIVE SESSION" "the read-only exit must explain the ownership conflict"
+  pass "fm-turnend-guard codex: a home owned by another live session gets the read-only diagnostic exit"
+}
+
+test_codex_no_work_stays_silent() {
+  local dir
+  dir=$(make_primary_dir "$TMP_ROOT/codex-idle")
+  run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
+  expect_code 0 "$STATUS" "Codex with nothing in flight must allow the stop"
+  [ -z "$OUT" ] || fail "Codex with nothing in flight produced output: $OUT"
+  pass "fm-turnend-guard codex: silent with nothing in flight"
+}
+
+test_codex_queued_wake_keeps_turn_open_after_last_task_clears() {
+  local dir
+  dir=$(make_primary_dir "$TMP_ROOT/codex-queued-wake")
+  printf '1790000000 1 signal task1.status done\n' > "$dir/state/.wake-queue"
+  run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
+  expect_code 2 "$STATUS" "a queued wake still needs handling after the last task clears: $OUT"
+  assert_contains "$OUT" "acknowledge" "the block must name the pending wake repair"
+  run_codex_hook "$dir" "$(codex_payload s1 t1 true)"
+  expect_code 2 "$STATUS" "the no-progress escape must not discard an unacknowledged wake: $OUT"
+  rm -f "$dir/state/.wake-queue"
+  run_codex_hook "$dir" "$(codex_payload s1 t1 true)"
+  expect_code 0 "$STATUS" "after the queued wake clears, an idle Codex turn may end: $OUT"
+  pass "fm-turnend-guard codex: a queued wake holds the turn after the last task clears"
+}
+
+test_non_codex_default_mode_keeps_one_shot_allow() {
+  local dir out status
+  dir=$(make_primary_dir "$TMP_ROOT/non-codex-one-shot")
+  : > "$dir/state/task1.meta"
+  out=$(run_hook "$dir" true); status=$?
+  expect_code 0 "$status" "the default (non-Codex) mode keeps its one-shot stop_hook_active allow: $out"
+  out=$(run_hook "$dir" false); status=$?
+  expect_code 2 "$status" "the default (non-Codex) mode still blocks a first unsupervised stop"
+  [ -z "$(ls "$dir/state"/.turnend-codex-block.* 2>/dev/null)" ] || fail "a non-Codex block wrote a Codex record"
+  pass "fm-turnend-guard: non-Codex default mode keeps its one-shot allow and writes no Codex record"
+}
+
+test_secondmate_event_instructions_finish_turn() {
+  local dir out
+  dir=$(make_secondmate_dir "$TMP_ROOT/sm-event-instructions")
+  cp -R "$ROOT/bin/." "$dir/bin/"
+  mkdir -p "$dir/parent/state"
+  printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$dir/parent" > "$dir/.fm-secondmate-parent"
+  out=$(FM_HOME="$dir" FM_TASK_INBOX="$dir/parent/state/sm-test-1.inbox" TMUX=fixture,1,0 TMUX_PANE=%27 "$dir/bin/fm-supervision-instructions.sh" --harness codex)
+  assert_contains "$out" 'Mode: Secondmate event-driven turns.' "secondmate must receive the outside-turn protocol"
+  assert_contains "$out" 'end this turn' "secondmate must finish its handling turn"
+  assert_contains "$out" 'If bin/fm-watch.sh --secondmate reports a failure, follow the default checkpoint protocol below instead.' "secondmate must keep the explicit checkpoint fallback"
+  assert_contains "$out" 'fm-watch-checkpoint.sh' "secondmate fallback must name the checkpoint loop"
+  out=$(FM_HOME="$dir" FM_TASK_INBOX="$dir/parent/state/sm-test-1.inbox" TMUX=fixture,1,0 TMUX_PANE=%27 "$dir/bin/fm-supervision-instructions.sh" --harness codex --repair-line)
+  assert_contains "$out" 'if it reports a failure, repair missing watcher supervision with a foreground checkpoint' "secondmate repair must fall back to the checkpoint loop"
+  pass "secondmate instructions end the handling turn without model polling"
+}
+
+test_secondmate_event_status_requires_notification_owner() {
+  local dir out status
+  dir=$(make_secondmate_dir "$TMP_ROOT/sm-event-status")
+  cp -R "$ROOT/bin/." "$dir/bin/"
+  out=$(FM_HOME="$dir" "$dir/bin/fm-watch.sh" --secondmate-status 2>&1)
+  status=$?
+  expect_code 1 "$status" "a missing outside-turn owner must refuse readiness"
+  assert_contains "$out" 'secondmate watcher: not ready' "status must explain the missing notification proof"
+  pass "secondmate readiness fails closed without its watcher notification owner"
+}
+
+test_secondmate_event_watcher_survives_and_notifies() {
+  local dir
+  command -v tmux >/dev/null 2>&1 || { printf 'skip: tmux not found for secondmate event watcher\n'; return; }
+  dir=$(make_secondmate_dir "$TMP_ROOT/sm-event-runtime")
+  cp -R "$ROOT/bin/." "$dir/bin/"
+  if ! python3 - "$dir" "$BASH" "$CODEX_BIN" <<'PY'
+import json, os, pathlib, shlex, shutil, signal, subprocess, sys, tempfile, time
+root = pathlib.Path(sys.argv[1])
+socket_root = pathlib.Path(tempfile.mkdtemp(prefix='fm-sm-event-', dir='/tmp'))
+socket = str(socket_root/'socket')
+(root/'parent/state').mkdir(parents=True)
+(root/'config').mkdir(exist_ok=True)
+(root/'bashbin').mkdir()
+os.symlink(sys.argv[2], root/'bashbin/bash')
+(root/'.fm-secondmate-parent').write_text('schema=fm-secondmate-parent.v1\nroute=local\nparent_home='+str(root/'parent')+'\n')
+fixture = root/'session.py'
+fixture.write_text(r'''
+import json, os, pathlib, signal, subprocess, sys, time
+root = pathlib.Path(sys.argv[1])
+watch = str(root/'bin/fm-watch.sh')
+def phase(name, **details):
+    (root/'phase.json').write_text(json.dumps({'phase':name,'at':time.time(),**details}))
+def run(*args, input_text=None):
+    phase('command', argv=args)
+    result=subprocess.run(args, input=input_text, text=True, capture_output=True, timeout=25)
+    phase('command-returned', argv=args, exit_code=result.returncode)
+    return result
+def require(ok, message):
+    if not ok: raise RuntimeError(message)
+def guard(active=False):
+    return run(str(root/'bin/fm-turnend-guard.sh'),input_text=json.dumps({'session_id':'sm-event','turn_id':'test','stop_hook_active':active}))
+def until(test, label):
+    phase('condition-wait', label=label)
+    for _ in range(400):
+        if test(): return
+        time.sleep(0.1)
+    raise RuntimeError('bounded condition did not become true: '+label)
+try:
+    phase('fixture-start')
+    (root/'state/.lock').write_text(str(os.getppid())+'\n')
+    check=root/'state/probe.check.sh'
+    check.write_text('#!/usr/bin/env bash\n[ ! -f "'+str(root/'trigger')+'" ] || echo actionable\n')
+    check.chmod(0o700)
+    r=run(str(root/'bin/fm-check-register.sh'), 'probe')
+    require(r.returncode==0, 'check registration: '+r.stderr)
+    require(run(str(root/'bin/fm-harness.sh')).stdout.strip()=='codex', 'portable fixture did not establish a Codex-shaped ancestor')
+    require(guard().returncode==2, 'selected secondmate ended blind without a watcher')
+    require(guard(True).returncode==0, 'unproven watcher lost the bounded no-progress escape')
+    require(not (root/'parent/state/sm-test-1.status').exists(), 'secondmate guard wrote a parent blocker')
+    r=run(watch, '--secondmate')
+    require(r.returncode==0, 'outside-turn start: '+r.stdout+r.stderr)
+    until(lambda:run(watch,'--secondmate-status').returncode==0,'outside-turn watcher readiness')
+    pid=(root/'state/.watch.lock/pid').read_text().strip()
+    r=run(watch, '--secondmate')
+    require(r.returncode==0 and (root/'state/.watch.lock/pid').read_text().strip()==pid, 'repeat start changed the singleton')
+    require(run(watch, '--secondmate-status').returncode==0, 'live watcher was not ready')
+    require(guard().returncode==0, 'live outside-turn watcher did not permit the real guard to stop')
+    os.kill(int(pid),signal.SIGSTOP)
+    try:
+        os.utime(root/'state/.last-watcher-beat',(1,1))
+        require(guard().returncode==2, 'stale beacon allowed a secondmate stop')
+    finally:os.kill(int(pid),signal.SIGCONT)
+    until(lambda:run(watch,'--secondmate-status').returncode==0,'fresh beacon after resume')
+    binding=(root/'state/.secondmate-watch').read_text()
+    os.kill(int(pid),signal.SIGSTOP)
+    try:
+        lines=binding.splitlines();lines[3]='/tmp/wrong-secondmate-socket'
+        (root/'state/.secondmate-watch').write_text('\n'.join(lines)+'\n')
+        require(guard().returncode==2 and guard(True).returncode==0, 'mismatched route allowed a fresh stop or lost the no-progress escape')
+    finally:
+        (root/'state/.secondmate-watch').write_text(binding)
+        os.kill(int(pid),signal.SIGCONT)
+    inbox=root/'parent/state/sm-test-1.inbox'
+    time.sleep(2)
+    require(not list(inbox.glob('*.msg')), 'no-change heartbeat rang the mate')
+    (root/'trigger').touch()
+    until(lambda: bool(list(inbox.glob('*.msg'))), 'first notification')
+    (root/'trigger').unlink()
+    rec=next(inbox.glob('*.msg'))
+    require('FIRSTMATE_OP' in rec.read_text() and 'watcher' in rec.read_text(), 'notification lost its typed watcher envelope')
+    require((root/'state/.wake-queue').stat().st_size>0, 'notification was written before the durable wake')
+    os.utime(rec,(1,1))
+    retry=run(str(root/'bashbin/bash'),'-c','. "$1/bin/fm-task-inbox-lib.sh"; fm_task_inbox_due_action "$2/state" sm-test-1','_',str(root),str(root/'parent'))
+    require(retry.returncode==0 and retry.stdout.startswith('ring '+str(rec)), 'parent retry owner did not select the child-written ordinary record')
+    time.sleep(2)
+    require(len(list(inbox.glob('*.msg')))==1, 'pending input produced duplicate notification records')
+    require(run(watch, '--secondmate-status').returncode==0, 'watcher stopped after its actionable wake')
+    (inbox/'handled').mkdir(exist_ok=True)
+    rec.rename(inbox/'handled'/rec.name)
+    (root/'trigger').touch()
+    until(lambda: bool(list(inbox.glob('*.msg'))), 'notification after acknowledgement')
+    (root/'trigger').unlink()
+    require(len(list((inbox/'handled').glob('*.msg')))==1, 'delivery consumed an acknowledgement')
+    for pending in inbox.glob('*.msg'): pending.rename(inbox/'handled'/pending.name)
+    queued=(root/'state/.wake-queue').stat().st_size
+    inbox.chmod(0o500)
+    try:
+        (root/'trigger').touch()
+        until(lambda:(root/'state/.wake-queue').stat().st_size>queued,'wake during failing notification')
+        (root/'trigger').unlink()
+        time.sleep(2)
+        require(not list(inbox.glob('*.msg')) and run(watch,'--secondmate-status').returncode==0, 'failed notification stopped the idle watcher')
+    finally: inbox.chmod(0o700)
+    until(lambda: bool(list(inbox.glob('*.msg'))), 'retried notification')
+    lines=(root/'state/.secondmate-watch').read_text().splitlines()
+    lines[1]='mismatched-process-identity'
+    (root/'state/.secondmate-watch').write_text('\n'.join(lines)+'\n')
+    require(run(watch, '--secondmate-status').returncode==1, 'reused session identity supplied readiness')
+    until(lambda: not (root/'state/.watch.lock/pid').exists(), 'identity-loss shutdown')
+    require(bool(list(inbox.glob('*.msg'))), 'owner shutdown acknowledged an unhandled event')
+    # Independent unsupported-owner scenario: no pending input is claimed here.
+    (root/'state/.wake-queue').write_text('')
+    (root/'config/supervision-host').touch()
+    (root/'config/supervision-host-off').unlink(missing_ok=True)
+    require(run(watch,'--secondmate-selected').returncode==1,'host ownership did not take precedence')
+    require(guard().returncode==2 and guard(True).returncode==0,'stale short-turn record forced an unsupported host into a permanent block')
+    (root/'result.json').write_text(json.dumps({'passed': True, 'watcher_pid':pid}))
+except Exception as exc:
+    (root/'result.json').write_text(json.dumps({'passed':False,'error':str(exc)}))
+''')
+env={k:v for k,v in os.environ.items() if not k.startswith('FM_') and k not in ('TMUX','TMUX_PANE','CLAUDECODE')}
+env.update(FM_HOME=str(root), FM_ROOT_OVERRIDE=str(root), FM_STATE_OVERRIDE=str(root/'state'), FM_CONFIG_OVERRIDE=str(root/'config'),
+           FM_TASK_INBOX=str(root/'parent/state/sm-test-1.inbox'), FM_POLL='1', FM_HEARTBEAT='1', FM_HEARTBEAT_MAX='1', FM_CHECK_INTERVAL='1',
+           PATH=str(root/'bashbin')+os.pathsep+os.environ['PATH'])
+def tmux(*args):
+    return subprocess.run(['tmux','-S',socket,*args],env=env,text=True,capture_output=True)
+try:
+    command=shlex.join([sys.executable,str(fixture),str(root)])+'; :'
+    r=tmux('new-session','-d','-s','fixture','-n','sm-test-1','-c',str(root),shlex.join([sys.argv[3],'-c',command]))
+    if r.returncode: raise RuntimeError(r.stderr)
+    for _ in range(1000):
+        if (root/'result.json').exists(): break
+        time.sleep(0.1)
+    if not (root/'result.json').exists():
+        phase=(root/'phase.json').read_text() if (root/'phase.json').exists() else 'not started'
+        log=root/'state/.secondmate-watch.log'
+        raise RuntimeError('fixture timed out; '+phase+'\n'+(log.read_text() if log.exists() else 'no watcher log'))
+    result=json.loads((root/'result.json').read_text())
+    if not result['passed']:
+        log=root/'state/.secondmate-watch.log'
+        inbox=root/'parent/state/sm-test-1.inbox'
+        state={p.name:p.read_text() for p in (root/'state/.secondmate-watch',root/'state/.secondmate-watch-message') if p.exists()}
+        raise RuntimeError(result['error']+'\nstate='+json.dumps(state)+'\ninbox='+str(list(inbox.glob('**/*')))+'\n'+(log.read_text() if log.exists() else 'no watcher log'))
+finally:
+    tmux('kill-server')
+    for _ in range(100):
+        if not (root/'state/.watch.lock/pid').exists(): break
+        time.sleep(0.1)
+    lock=root/'state/.watch.lock/pid'
+    if lock.exists():
+        pid=int(lock.read_text())
+        args=subprocess.run(['ps','-p',str(pid),'-o','args='],text=True,capture_output=True).stdout
+        if str(root/'bin/fm-watch.sh') in args: os.kill(pid,signal.SIGTERM)
+    # This directory belongs only to this fixture; cleanup must preserve its error.
+    shutil.rmtree(socket_root,ignore_errors=True)
+PY
+  then
+    fail "secondmate event watcher runtime failed"
+  fi
+  pass "secondmate watcher survives wakes, deduplicates inbox notifications and stops on identity loss"
+}
+
+test_secondmate_event_scope_and_clock() {
+  local dir out status
+  dir=$(make_secondmate_dir "$TMP_ROOT/sm-event-scope")
+  cp -R "$ROOT/bin/." "$dir/bin/"
+  mkdir -p "$dir/parent/state" "$dir/config"
+  printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$dir/parent" > "$dir/.fm-secondmate-parent"
+  for scope in primary invalid remote away host; do
+    printf 'sm-test-1\n' > "$dir/.fm-secondmate-home"
+    printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$dir/parent" > "$dir/.fm-secondmate-parent"
+    case "$scope" in
+      primary) rm "$dir/.fm-secondmate-home" ;;
+      invalid) printf 'bad marker!\n' > "$dir/.fm-secondmate-home" ;;
+      remote) printf 'schema=fm-secondmate-parent.v1\nroute=remote\n' > "$dir/.fm-secondmate-parent" ;;
+      away) touch "$dir/state/.afk" ;;
+      host) touch "$dir/config/supervision-host" ;;
+    esac
+    if FM_HOME="$dir" FM_TASK_INBOX="$dir/parent/state/sm-test-1.inbox" TMUX=fixture,1,0 TMUX_PANE=%27 "$dir/bin/fm-watch.sh" --secondmate-selected; then
+      fail "unsupported $scope scope was selected"
+    fi
+    rm -f "$dir/state/.afk" "$dir/config/supervision-host"
+  done
+  out=$(FM_HOME="$dir" "$dir/bin/fm-brief.sh" --secondmate --no-projects lab-charter 2>&1); status=$?
+  expect_code 0 "$status" "charter generation failed: $out"
+  assert_contains "$(cat "$dir/data/lab-charter/brief.md")" 'end the turn when the emitted supervision protocol proves' "charter omitted the conditional turn end"
+  dir=$(make_primary_dir "$TMP_ROOT/sm-heartbeat-clock")
+  cp -R "$ROOT/bin/." "$dir/bin/"
+  python3 - "$dir/state/.last-heartbeat" <<'PY'
+import os,pathlib,sys
+p=pathlib.Path(sys.argv[1]);p.touch();os.utime(p,(1,1))
+PY
+  out=$(FM_HOME="$dir" FM_WATCH_NOW=100 FM_WATCH_ONCE=1 FM_HEARTBEAT=1 FM_HEARTBEAT_MAX=1 "$dir/bin/fm-watch.sh" 2>&1); status=$?
+  expect_code 0 "$status" "one-clock watcher failed: $out"
+  assert_contains "$(cat "$dir/state/.watch-triage.log")" 'absorbed heartbeat (no captain-relevant change)' "clock case never absorbed a heartbeat"
+  assert_not_contains "$out" 'heartbeat' "no-change heartbeat escaped triage"
+  pass "secondmate selection excludes unsupported scopes and the test clock proves heartbeat absorption"
+}
+
+if [ "${FM_TEST_ONLY:-}" = secondmate-endturn ]; then
+  test_secondmate_event_instructions_finish_turn
+  test_secondmate_event_status_requires_notification_owner
+  test_secondmate_event_watcher_survives_and_notifies
+  test_secondmate_event_scope_and_clock
+  exit 0
+fi
+
+test_secondmate_event_instructions_finish_turn
+test_secondmate_event_status_requires_notification_owner
+test_secondmate_event_watcher_survives_and_notifies
+test_secondmate_event_scope_and_clock
 test_predicate_healthy_no_inflight
 test_predicate_unhealthy_no_beacon
 test_predicate_unhealthy_stale_beacon
@@ -2246,6 +2841,7 @@ test_codex_hook_ignores_nested_git_root_guard
 test_opencode_plugin_anchors_guard_to_worktree
 test_pi_extension_injects_once_per_logical_agent_run
 test_pi_extension_retries_after_followup_delivery_failure
+test_pi_extension_keeps_marker_of_live_ancestor_session
 test_hook_claude_mode_reblocks_stop_hook_active_when_unhealthy
 test_hook_claude_mode_reblocks_x_mode_without_tasks
 test_hook_claude_mode_allows_when_autoarm_owner_alive
@@ -2283,3 +2879,15 @@ test_hook_away_daemon_allows_beacon_within_poll_derived_grace
 test_hook_away_daemon_blocks_dead_daemon_despite_poll_derived_grace
 test_hook_away_daemon_blocks_beacon_older_than_poll_derived_grace
 test_hook_no_afk_ignores_poll_derived_grace
+test_codex_blocks_turn_end_while_own_checkpoint_runs
+test_codex_reblocks_open_checkpoint_after_its_own_block
+test_codex_holds_own_checkpoint_then_ignored_repair_can_end
+test_codex_holds_own_checkpoint_then_ignored_repair_can_end 1 2
+test_codex_allows_watcher_owned_by_another_session
+test_codex_ignored_repair_can_end_and_progress_keeps_holding
+test_codex_new_watch_lock_identity_counts_as_progress
+test_codex_stale_or_foreign_block_record_is_judged_fresh
+test_codex_foreign_lock_owner_gets_read_only_exit
+test_codex_no_work_stays_silent
+test_codex_queued_wake_keeps_turn_open_after_last_task_clears
+test_non_codex_default_mode_keeps_one_shot_allow

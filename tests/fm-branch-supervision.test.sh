@@ -11,6 +11,8 @@ set -u
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
+# shellcheck source=bin/fm-timeout-lib.sh
+. "$ROOT/bin/fm-timeout-lib.sh"
 TMP_ROOT=$(fm_test_tmproot fm-branch-supervision)
 fm_git_identity fmtest fmtest@example.invalid
 
@@ -70,6 +72,43 @@ test_branch_prompt_is_byte_stable_and_above_cache_floor() {
     *) fail "branch prompt lost the second-mate relay, signal-span, or stale-liveness rule" ;;
   esac
   pass "branch prompt is byte-stable across homes, cwd, timezone, and time, above the cache floor"
+}
+
+test_branch_prompt_routes_completed_scouts_through_guarded_cleanup() {
+  local prompt skill
+  prompt=$(bash "$ROOT/bin/fm-branch-prompt.sh") || fail "branch prompt generator failed"
+
+  # The emitted system prompt is the contract, not the generator's source or
+  # proof that a model will obey it. No live agent or endpoint is involved.
+  case "$prompt" in
+    *"For a completed scout, follow the scout-completion and captain-hold-lifecycle policies included below in both postures."*"After their completion gate passes, retain the report, claim the task's lease, and run \`bin/fm-teardown.sh <task>\` with no flags."*"Report the findings and cleanup result in that event's outcome; a refusal is reported with its exact reason and never forced, worked around, or repaired by hand."*) ;;
+    *) fail "branch prompt omits the completed-scout cleanup sequence or refusal reporting" ;;
+  esac
+  assert_contains "$prompt" \
+    "Reporting a scout as finished and idle is not a substitute for that cleanup." \
+    "branch prompt permits stopping after an idle assessment of a completed scout"
+  assert_contains "$prompt" \
+    "Missing or incomplete reports, an unreviewed decision inventory or unrecorded captain calls, WIP ships, deliberate external waits, and idle or exited agents are not proof of task completion." \
+    "branch prompt lost the incomplete-work and agent-lifetime boundaries"
+  assert_contains "$prompt" \
+    "Ordinary teardown of a confirmed-landed ship or a completed scout, steering, lifecycle control, PR checks, and backlog status moves are yours, under the task's lease." \
+    "branch role limits still exclude completed-scout cleanup"
+
+  # This checks delivery of the per-task result contract, not model adherence.
+  assert_contains "$prompt" \
+    "Run each task's cleanup in a separate tool call and use that call's exit status and output for its outcome." \
+    "branch prompt omits per-task cleanup result attribution"
+  assert_contains "$prompt" \
+    "An allowance diagnostic is not a refusal; report a refusal only when that task's cleanup actually refuses, quoting its reason." \
+    "branch prompt does not distinguish cleanup permission from refusal"
+
+  # Verbatim policy inclusion is an owned output contract. These owners must
+  # reach hosts that disable automatic skill loading, without a policy copy.
+  for skill in scout-completion captain-hold-lifecycle; do
+    assert_contains "$prompt" "$(cat "$ROOT/.agents/skills/$skill/SKILL.md")" \
+      "branch prompt does not include the complete $skill policy"
+  done
+  pass "emitted branch prompt routes completed scouts through existing policies and leased cleanup, preserving unfinished work"
 }
 
 # --- append-only outcome store ------------------------------------------------
@@ -664,6 +703,62 @@ test_outcome_processed_marker_is_sequence_bound() {
 
 # --- lease contract -----------------------------------------------------------
 
+# A live holder of the home-wide lease-command lock must never make a lease
+# command wait forever: the waiter names the holder when it starts waiting and
+# refuses with the lease exit once the bound passes, leaving the holder's lock
+# alone. A dead holder is still reclaimed at once.
+test_lease_command_lock_wait_is_bounded_and_names_the_holder() {
+  local home lock holder_script holder_pid out rc start elapsed i
+  home="$TMP_ROOT/lease-lock-bound"
+  mkdir -p "$home/state"
+  lock="$home/state/.fm-lease-command.lock"
+  holder_script="$TMP_ROOT/fm-fake-lock-holder.sh"
+  # shellcheck disable=SC2016 # expanded by the holder script
+  printf '%s\n' '#!/usr/bin/env bash' 'STATE=$2 . "$1"' 'fm_lock_try_acquire "$3" || exit 1' 'sleep 60 >/dev/null 2>&1 &' 'trap "kill $! 2>/dev/null; exit 0" TERM' 'wait $!' > "$holder_script"
+  chmod +x "$holder_script"
+  "$holder_script" "$ROOT/bin/fm-wake-lib.sh" "$home/state" "$lock" &
+  holder_pid=$!
+  for i in $(seq 1 50); do [ "$(cat "$lock/pid" 2>/dev/null)" = "$holder_pid" ] && break; sleep 0.1; done
+  [ "$(cat "$lock/pid" 2>/dev/null)" = "$holder_pid" ] || fail "the fixture could not take the lease-command lock"
+
+  start=$(date +%s)
+  out=$(FM_HOME="$home" FM_LEASE_COMMAND_LOCK_WAIT=3 fm_run_timed 30 "$ROOT/bin/fm-lease.sh" release-actor --actor branch 2>&1)
+  rc=$?
+  elapsed=$(( $(date +%s) - start ))
+  [ "$rc" -eq 6 ] || fail "fm-lease.sh behind a live lease-command lock holder should refuse with exit 6, got $rc after ${elapsed}s: $out"
+  [ "$elapsed" -le 8 ] || fail "fm-lease.sh took ${elapsed}s to refuse with a 3s lock bound"
+  assert_contains "$out" "$holder_pid" "the refusal must name the holder pid"
+  assert_contains "$out" "fm-fake-lock-holder.sh" "the refusal must name the holder's script"
+  assert_not_contains "$out" "fm-wake-lib.sh" "the refusal must never print the holder's argument list"
+  assert_contains "$out" "waiting" "the waiter must name the holder as soon as it starts waiting"
+  if ! { [ "$(cat "$lock/pid" 2>/dev/null)" = "$holder_pid" ] && kill -0 "$holder_pid" 2>/dev/null; }; then
+    fail "a refused lease command must leave the holder and its lock untouched"
+  fi
+
+  # The same bound through the guard every mutating script takes (fm-send,
+  # fm-control, fm-teardown) in a home that runs the supervision host.
+  mkdir -p "$home/config" && : > "$home/config/supervision-host"
+  start=$(date +%s)
+  # shellcheck disable=SC2016 # expanded by the nested shell
+  out=$(fm_run_timed 30 env -u PI_CODING_AGENT FM_SUPERVISION_ACTOR=main FM_HOME="$home" STATE="$home/state" \
+    FM_LEASE_COMMAND_LOCK_WAIT=3 bash -c '. "$1"; fm_lease_guard task-x "steer (fm-send)"; echo passed' _ "$ROOT/bin/fm-lease-lib.sh" 2>&1)
+  rc=$?
+  elapsed=$(( $(date +%s) - start ))
+  [ "$rc" -eq 6 ] || fail "the lease guard behind a live lock holder should refuse with exit 6, got $rc after ${elapsed}s: $out"
+  [ "$elapsed" -le 8 ] || fail "the lease guard took ${elapsed}s to refuse with a 3s lock bound"
+  assert_contains "$out" "$holder_pid" "the guard refusal must name the holder pid"
+  assert_contains "$out" "is busy" "the guard refusal must say the lock is busy"
+  assert_contains "$out" "retry the command" "the guard refusal must tell the operator to retry"
+  kill "$holder_pid" 2>/dev/null
+  wait "$holder_pid" 2>/dev/null
+
+  # Control: a dead holder is reclaimed at once, exactly as before.
+  out=$(FM_HOME="$home" FM_LEASE_COMMAND_LOCK_WAIT=3 fm_run_timed 30 "$ROOT/bin/fm-lease.sh" sweep 2>&1)
+  rc=$?
+  [ "$rc" -eq 0 ] || fail "a dead lock holder must be reclaimed as before, got $rc: $out"
+  pass "a live lease-command lock holder is named and refused within the bound; a dead one is reclaimed"
+}
+
 test_lease_exclusivity_release_stale_and_sweep() {
   local home out status
   local -x PI_CODING_AGENT=true
@@ -1071,6 +1166,40 @@ test_lease_liveness_binds_to_the_session_lock() {
   FM_HOME="$home" "$ROOT/bin/fm-lease.sh" sweep || fail "sweep under malformed lock failed"
   [ ! -e "$home/state/.lease-task-current" ] || fail "sweep kept a lease proven only by a malformed lock"
   pass "lease liveness requires an exact valid session-lock pid"
+}
+
+test_claim_with_a_holder_pinned_before_a_reanchor_records_the_lock_holder() {
+  local home out status
+  local -x PI_CODING_AGENT=true
+  home="$TMP_ROOT/pinned-reanchor-home"
+  mkdir -p "$home/state"
+
+  # The branch turn pinned $PPID, then a same-session re-anchor moved line 1 to
+  # $$ while $PPID stayed alive: a new claim and a refresh record line 1.
+  printf '%s\n' "$$" > "$home/state/.lock"
+  FM_HOME="$home" FM_SUPERVISION_ACTOR=branch FM_LEASE_HOLDER_PID=$PPID "$ROOT/bin/fm-lease.sh" claim task-1 --actor branch \
+    || fail "branch claim with the pinned pre-re-anchor holder failed"
+  FM_HOME="$home" FM_SUPERVISION_ACTOR=branch FM_LEASE_HOLDER_PID=$PPID "$ROOT/bin/fm-lease.sh" claim task-1 --actor branch \
+    || fail "branch refresh with the pinned pre-re-anchor holder failed"
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-lease.sh" check task-1)
+  case "$out" in
+    "branch $$ "*" live") ;;
+    *) fail "a claim pinned before the re-anchor did not record the live lock holder: $out" ;;
+  esac
+  out=$(FM_HOME="$home" FM_SUPERVISION_ACTOR=main "$ROOT/bin/fm-lease.sh" claim task-1 2>&1)
+  status=$?
+  [ "$status" -eq 6 ] || fail "main claimed the branch's task after the re-anchor: $status: $out"
+
+  # A dead pinned holder means another session took the lock: the claim keeps
+  # the dead pid, so the lease stays stale.
+  FM_HOME="$home" FM_SUPERVISION_ACTOR=branch FM_LEASE_HOLDER_PID=999999 "$ROOT/bin/fm-lease.sh" claim task-2 --actor branch \
+    || fail "branch claim with a dead pinned holder failed"
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-lease.sh" check task-2)
+  case "$out" in
+    "branch 999999 "*" stale") ;;
+    *) fail "a dead pinned holder was replaced by the lock holder: $out" ;;
+  esac
+  pass "a claim pinned before a re-anchor records the live lock holder; a dead pin stays stale"
 }
 
 test_concurrent_stale_lease_claims_have_one_winner() {
@@ -1541,6 +1670,7 @@ WRAPPER
 }
 
 test_branch_prompt_is_byte_stable_and_above_cache_floor
+test_branch_prompt_routes_completed_scouts_through_guarded_cleanup
 test_outcome_store_is_append_only_with_cursor_reads
 test_outcome_append_keeps_a_bounded_display_tail
 test_outcome_tail_keeps_whole_newest_rows_within_its_byte_budget
@@ -1556,6 +1686,7 @@ test_outcome_non_jsonl_layout_fails_closed
 test_outcome_processed_marker_is_sequence_bound
 test_outcome_present_reads_without_advancing
 test_outcome_rows_carry_their_recorded_age
+test_lease_command_lock_wait_is_bounded_and_names_the_holder
 test_lease_exclusivity_release_stale_and_sweep
 test_mutating_scripts_refuse_the_other_actors_lease
 test_main_owned_actions_refuse_the_branch_actor
@@ -1564,6 +1695,7 @@ test_unmarked_main_honors_a_live_branch_lease
 test_unmarked_guard_with_a_lease_file_holds_exclusivity_through_mutation
 test_host_home_unmarked_guard_excludes_the_first_claim
 test_lease_liveness_binds_to_the_session_lock
+test_claim_with_a_holder_pinned_before_a_reanchor_records_the_lock_holder
 test_concurrent_stale_lease_claims_have_one_winner
 test_guard_stale_clear_cannot_delete_a_new_claim
 test_guard_holds_exclusivity_through_mutation

@@ -65,6 +65,8 @@ set -euo pipefail
 
 # --- resolve home, env, and endpoints -------------------------------------
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=bin/fm-bash-compat-lib.sh
+. "$SCRIPT_DIR/fm-bash-compat-lib.sh"
 FM_HOME="${FM_HOME:-}"
 if [ -z "$FM_HOME" ]; then
   FM_HOME="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -375,7 +377,7 @@ wake_for() {
   # shellcheck source=bin/fm-wake-lib.sh
   # shellcheck disable=SC1091
   . "$lib"
-  fm_lock_acquire_wait "$FM_WAKE_QUEUE_LOCK"
+  fm_wake_queue_lock_acquire || return 1
   if fm_wake_append_locked check "$wake_key" "check: mail $id - $summary"; then
     if mail_record_evidence "$generation" "$id" "$tag"; then
       :

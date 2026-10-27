@@ -33,11 +33,6 @@ task_inbox_export() {  # <home> <id>
   printf "export FM_TASK_INBOX='%s'; " "$state/$2.inbox"
 }
 
-ai_trailer_hooks_prefix() {  # <home> <id>
-  local state
-  state=$(CDPATH='' cd -- "$1/state" && pwd -P) || fail "cannot resolve state dir $1/state"
-  printf "export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0='%s'; " "$state/$2.git-hooks"
-}
 
 cleanup_kimi_harness() {
   [ -z "$KIMI_RUNTIME_TASK_TMP" ] || fm_test_remove_tree "$KIMI_RUNTIME_TASK_TMP"
@@ -60,13 +55,16 @@ fake_screen() {
       printf 'Welcome to Kimi Code!\ncontext: 0%% (0/256k)\n╭────────────────────────────────╮\n│ >                              │\n╰────────────────────────────────╯\n'
       ;;
     trust)
-      printf '╭─ Trust this folder? ─╮\n│ ↑↓ navigate · Enter select · Esc exit │\n│ %s │\n│ ❯ Trust this folder │\n│   Don'"'"'t trust │\n╰──────────────────────────────╯\n' "$FM_FAKE_PANE_PATH"
+      # Verbatim Kimi 2.3.1 dialog live-captured 2026-10-26 (path line varies).
+      printf 'Trust this folder?\n↑↓ navigate · Enter select · Esc exit\n\n%s\n\nNo project integrations or instructions to activate.\n\nTrust is remembered for this folder, including future project config changes.\nTool approvals follow your permission settings.\n\n ❯ Trust and continue\n   Exit\n' "$FM_FAKE_PANE_PATH"
       ;;
     trust-decoy)
-      printf 'Trust this folder?\n%s\n❯ Trust this folder\nDon'"'"'t trust\n' "$FM_FAKE_PANE_PATH"
+      # Real dialog text minus the navigation hint: never safe to answer.
+      printf 'Trust this folder?\n%s\n ❯ Trust and continue\n   Exit\n' "$FM_FAKE_PANE_PATH"
       ;;
     trust-partial)
-      printf 'Welcome to Kimi Code!\nTrust this folder?\n%s\nDon'"'"'t trust\n' "$FM_FAKE_PANE_PATH"
+      # Mid-redraw frame of the real dialog: title and path painted only.
+      printf 'Welcome to Kimi Code!\nTrust this folder?\n%s\n' "$FM_FAKE_PANE_PATH"
       ;;
     booting)
       printf 'shell starting\n$ \n'
@@ -77,7 +75,10 @@ fake_screen() {
     blank-frame)
       ;;
     trust-wrapped)
-      printf '╭─ Trust this folder? ─╮\n│ ↑↓ navigate ·        │\n│ Enter select · Esc   │\n│ exit                 │\n│ %s │\n│ ❯ Trust this folder  │\n│   Don'"'"'t trust         │\n╰──────────────────────╯\n' "$FM_FAKE_PANE_PATH"
+      printf 'Trust this folder?\n↑↓ navigate ·        \nEnter select · Esc   \nexit                 \n%s\n ❯ Trust and continue  \n   Exit         \n' "$FM_FAKE_PANE_PATH"
+      ;;
+    trust-legacy)
+      printf 'Trust this folder?\n↑↓ navigate · Enter select · Esc exit\n%s\n❯ Trust this folder\nDon'"'"'t trust\n' "$FM_FAKE_PANE_PATH"
       ;;
     pointer-typed)
       printf 'context: 0%% (0/256k)\n╭────────────────────────────────╮\n│ > Read the brief and follow it │\n│                                │\n╰────────────────────────────────╯\n'
@@ -93,7 +94,7 @@ fake_screen() {
 fake_history() {
   if [ "${FM_FAKE_KIMI_HISTORY_KEEPS_DIALOG:-no}" = yes ] \
      && [ -s "$FM_FAKE_KIMI_TRUST_ENTER_LOG" ]; then
-    printf '╭─ Trust this folder? ─╮\n│ ↑↓ navigate · Enter select · Esc exit │\n│ ❯ Trust this folder │\n│   Don'"'"'t trust │\n╰──────────────────────╯\n'
+    printf 'Trust this folder?\n↑↓ navigate · Enter select · Esc exit\n ❯ Trust and continue\n   Exit\n'
   fi
 }
 fake_cursor_y() {
@@ -112,17 +113,27 @@ case "${1:-}" in
   list-windows)
     if [ "${FM_FAKE_KILL_SURVIVES:-no}" = yes ] && [ -f "$FM_FAKE_KILL_ATTEMPTED" ]; then
       printf '%s\n' "$FM_FAKE_WINDOW_NAME"
+      exit 0
     fi
-    exit 0
-    ;;
-  has-session|new-session|new-window) exit 0 ;;
+    [ ! -s "$FM_FAKE_KIMI_STATE.window" ] || cat "$FM_FAKE_KIMI_STATE.window"
+    exit 0 ;;
+  new-window)
+    name=
+    previous=
+    for arg in "$@"; do
+      [ "$previous" = -n ] && name=$arg
+      previous=$arg
+    done
+    printf '%s\n' "$name" > "$FM_FAKE_KIMI_STATE.window"
+    exit 0 ;;
   kill-window)
     if [ "${FM_FAKE_KILL_SURVIVES:-no}" = yes ]; then
       : > "$FM_FAKE_KILL_ATTEMPTED"
       exit 1
     fi
-    exit 0
-    ;;
+    : > "$FM_FAKE_KIMI_STATE.window"
+    exit 0 ;;
+  has-session|new-session) exit 0 ;;
   send-keys)
     prev=
     literal=
@@ -161,11 +172,12 @@ case "${1:-}" in
                 late) printf 'booting\n' > "$FM_FAKE_KIMI_STATE" ;;
                 blink) printf 'banner-first\n' > "$FM_FAKE_KIMI_STATE" ;;
                 wrapped) printf 'trust-wrapped\n' > "$FM_FAKE_KIMI_STATE" ;;
+                legacy) printf 'trust-legacy\n' > "$FM_FAKE_KIMI_STATE" ;;
                 *) printf 'ready\n' > "$FM_FAKE_KIMI_STATE" ;;
               esac
             fi
             ;;
-          trust|trust-wrapped)
+          trust|trust-wrapped|trust-legacy)
             printf 'enter\n' >> "$FM_FAKE_KIMI_TRUST_ENTER_LOG"
             trust_enters=$(wc -l < "$FM_FAKE_KIMI_TRUST_ENTER_LOG" | tr -d ' ')
             case "${FM_FAKE_KIMI_TRUST_CLEARS:-yes}" in
@@ -325,7 +337,7 @@ test_kimi_launch_then_send_is_verified() {
   assert_contains "$out" "spawned $id harness=kimi" "kimi spawn did not report success"
 
   launch=$(cat "$CASE_DIR/launch.log")
-  [ "$launch" = "export COMPACT_ADVISER_DISABLE=1; $(task_inbox_export "$HOME_DIR" "$id")$(ai_trailer_hooks_prefix "$HOME_DIR" "$id")env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI '$FAKEBIN_DIR/kimi' --model 'kimi-code/k3' --auto" ] \
+  [ "$(fm_test_launch_without_env_scrub "$launch")" = "export FM_TASK_ID=$id; export COMPACT_ADVISER_DISABLE=1; $(task_inbox_export "$HOME_DIR" "$id")$(fm_test_launch_git_prefix "$launch")env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI '$FAKEBIN_DIR/kimi' --model 'kimi-code/k3' --auto" ] \
     || fail "kimi launch did not use the absolute binary, model, and --auto only: $launch"
   assert_not_contains "$launch" "--effort" "kimi launch emitted a nonexistent effort flag"
   assert_not_contains "$launch" "turn-ended" "kimi launch embedded a turn-end path"
@@ -703,7 +715,7 @@ test_kimi_falls_back_to_expanded_home_binary() {
   rc=$?
   expect_code 0 "$rc" "Kimi HOME fallback spawn should succeed"
   launch=$(cat "$CASE_DIR/launch.log")
-  [ "$launch" = "export COMPACT_ADVISER_DISABLE=1; $(task_inbox_export "$HOME_DIR" "$id")$(ai_trailer_hooks_prefix "$HOME_DIR" "$id")env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI '$fallback' --auto" ] \
+  [ "$(fm_test_launch_without_env_scrub "$launch")" = "export FM_TASK_ID=$id; export COMPACT_ADVISER_DISABLE=1; $(task_inbox_export "$HOME_DIR" "$id")$(fm_test_launch_git_prefix "$launch")env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI '$fallback' --auto" ] \
     || fail "Kimi fallback did not expand HOME into an absolute executable: $launch"
   pass "fm-spawn: Kimi fallback expands the active HOME"
 }
@@ -1160,25 +1172,37 @@ test_kimi_partial_trust_dialog_blocks_the_ready_verdict() {
   pass "fm-spawn: Kimi refuses the ready verdict while trust dialog markers remain"
 }
 
-test_kimi_stuck_trust_dialog_fails_before_delivery() {
-  local id rec out rc
-  id=kimi-trust-stuck-y1
-  rec=$(make_spawn_case trust-stuck "$id")
-  read_spawn_record "$rec"
-  rc=0
-  out=$(FM_FAKE_KIMI_TRUST=fresh FM_FAKE_KIMI_TRUST_CLEARS=no run_spawn \
-    "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id") || rc=$?
-  [ "$rc" -ne 0 ] || fail "a Kimi trust dialog that never clears should fail"
-  assert_contains "$out" "kimi trust dialog did not clear after selecting 'Trust this folder'" \
-    "stuck Kimi trust dialog lacked its concrete failure reason"
-  assert_contains "$out" "navigation hint, selected 'Trust this folder'" \
-    "stuck Kimi trust diagnostic did not name the observed dialog signals"
-  [ "$(wc -l < "$CASE_DIR/trust-enter.log" | tr -d ' ')" -gt 1 ] \
-    || fail "stuck Kimi trust dialog was not re-answered while it stayed on screen"
-  [ ! -s "$CASE_DIR/pointer.log" ] || fail "Kimi pointer was sent through a stuck trust dialog"
-  assert_grep 'failed: kimi trust dialog did not clear' <(sed -E 's/ \[at=[0-9]+\]//' "$HOME_DIR/state/$id.status") \
-    "stuck Kimi trust dialog did not leave a supervisor-visible failure"
-  pass "fm-spawn: a Kimi trust dialog must visibly clear before brief delivery"
+test_kimi_trust_failures_report_only_observed_signals() {
+  local variant clears id rec out rc detail enters status
+  for variant in fresh legacy; do
+    for clears in no yes; do
+      id="kimi-trust-$variant-$clears-y1"
+      rec=$(make_spawn_case "trust-$variant-$clears" "$id")
+      read_spawn_record "$rec"
+      rc=0
+      out=$(FM_KIMI_READY_POLLS=2 FM_FAKE_KIMI_TRUST=$variant FM_FAKE_KIMI_TRUST_CLEARS=$clears run_spawn \
+        "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id") || rc=$?
+      [ "$rc" -ne 0 ] || fail "Kimi trust without verified readiness should fail"
+      enters=$(wc -l < "$CASE_DIR/trust-enter.log" | tr -d ' ')
+      if [ "$clears" = no ]; then
+        detail="kimi trust dialog did not clear after submitting the affirmative selection on $enters poll(s)"
+        [ "$enters" -gt 1 ] || fail "stuck Kimi trust dialog was not re-answered while it stayed on screen"
+      else
+        detail='kimi trust dialog was answered but the pane never advanced to a verified ready signal'
+        [ "$enters" -eq 1 ] || fail "cleared Kimi trust dialog was answered again"
+      fi
+      assert_contains "$out" "$detail" "Kimi trust timeout lacked its concrete failure reason"
+      assert_contains "$out" "saw 'Trust this folder?', the navigation hint, a selected affirmative option, and a negative option" \
+        "Kimi trust diagnostic did not name the observed dialog signals"
+      assert_not_contains "$out" 'Trust and continue' "Kimi trust diagnostic assumed the new option pair"
+      assert_not_contains "$out" 'Exit option' "Kimi trust diagnostic assumed the new negative option"
+      assert_not_contains "$out" "Don't trust" "Kimi trust diagnostic assumed the legacy negative option"
+      [ ! -s "$CASE_DIR/pointer.log" ] || fail "Kimi pointer was sent before verified readiness"
+      status=$(sed -E 's/ \[at=[0-9]+\]//' "$HOME_DIR/state/$id.status")
+      assert_contains "$status" "failed: $detail" "Kimi trust timeout did not leave a supervisor-visible failure"
+    done
+  done
+  pass "fm-spawn: both Kimi trust variants report observed signals for stuck and answered timeouts"
 }
 
 test_kimi_trust_detection_requires_the_complete_dialog() {
@@ -1196,6 +1220,20 @@ test_kimi_trust_detection_requires_the_complete_dialog() {
     || fail "Kimi answered an incomplete trust lookalike with Enter"
   [ ! -s "$CASE_DIR/pointer.log" ] || fail "Kimi pointer was sent through a trust lookalike"
   pass "fm-spawn: Kimi trust detection requires every observed dialog signal"
+}
+
+test_kimi_answers_a_legacy_trust_dialog() {
+  local id rec out rc
+  id=kimi-trust-legacy-y3
+  rec=$(make_spawn_case trust-legacy "$id")
+  read_spawn_record "$rec"
+  rc=0
+  out=$(FM_KIMI_READY_POLLS=6 FM_FAKE_KIMI_TRUST=legacy run_spawn \
+    "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id") || rc=$?
+  expect_code 0 "$rc" "the pre-2.3.1 complete trust dialog should still be answered"
+  assert_contains "$out" "spawned $id harness=kimi" \
+    "Kimi spawn did not survive the legacy trust dialog"
+  pass "fm-spawn: the legacy complete Kimi trust dialog is still answered"
 }
 
 test_kimi_detection_uses_ancestry_after_markers() {
@@ -1386,8 +1424,9 @@ test_kimi_answers_a_trust_dialog_with_a_wrapped_hint
 test_kimi_blank_frame_between_banners_restarts_the_ready_count
 test_kimi_failed_viewport_read_fails_readiness_at_once
 test_kimi_partial_trust_dialog_blocks_the_ready_verdict
-test_kimi_stuck_trust_dialog_fails_before_delivery
+test_kimi_trust_failures_report_only_observed_signals
 test_kimi_trust_detection_requires_the_complete_dialog
+test_kimi_answers_a_legacy_trust_dialog
 test_kimi_detection_uses_ancestry_after_markers
 test_kimi_session_lock_identity
 test_kimi_busy_signature_is_scoped_to_spinner_lines

@@ -8,15 +8,46 @@ set -u
 TMP_ROOT=$(fm_test_tmproot fm-supervision-instructions)
 RENDER="$ROOT/bin/fm-supervision-instructions.sh"
 
+test_muse_primary_block() {
+  local out ordinary
+  out=$("$RENDER" --harness muse)
+  assert_contains "$out" "SUPERVISION OPERATING INSTRUCTIONS - primary harness: muse" "muse heading missing"
+  assert_contains "$out" "Mode: Muse tracked-background supervision." "muse snippet missing"
+  assert_contains "$out" "bin/fm-watch-arm.sh" "muse snippet missing watcher arm"
+  assert_contains "$out" "tracked background" "muse snippet missing tracked background shape"
+  assert_not_contains "$out" "Mode: Unknown harness fallback." "muse fell back to unknown"
+  ordinary=$(printf '%s\n' "$out" | grep -F -- '- Ordinary wake:')
+  assert_contains "$ordinary" "re-arm exactly one" "muse ordinary-wake line missing"
+  out=$("$RENDER" --harness muse --repair-line)
+  assert_contains "$out" "Muse tracked background task" "muse repair line missing"
+  assert_contains "$out" "never shell &" "muse repair line missing anti-pattern guard"
+  pass "renderer prints the muse primary block with tracked-background repair"
+}
+
 test_selected_harness_block_only() {
   local out
   out=$("$RENDER" --harness codex)
   assert_contains "$out" "SUPERVISION OPERATING INSTRUCTIONS - primary harness: codex" "codex heading missing"
   assert_contains "$out" "Mode: Codex foreground checkpoint." "codex snippet missing"
   assert_contains "$out" "bin/fm-watch-checkpoint.sh" "codex checkpoint helper missing"
+  # shellcheck disable=SC2016 # Backticks are literal protocol markup.
+  assert_contains "$out" 'poll it with `write_stdin` (empty input) until it exits' "codex must read a yielded checkpoint to completion"
+  assert_contains "$out" "start exactly one successor checkpoint after the previous command exits" "codex must finish the current cycle before replacing it"
+  assert_contains "$out" "Keep the turn open while supervision is needed or wakes still need handling and acknowledgement" "codex must not end a turn with supervision work unresolved"
   assert_not_contains "$out" "Mode: Claude Stop-hook-owned supervision." "renderer printed the claude snippet too"
   assert_not_contains "$out" "Mode: Pi extension background wake." "renderer printed the pi snippet too"
   pass "renderer prints exactly the selected harness block"
+}
+
+test_secondmate_turn_boundary_remains_responsive() {
+  local harness out
+  for harness in claude codex opencode pi pi-signed grok cursor omp muse unknown; do
+    out=$("$RENDER" --harness "$harness")
+    # shellcheck disable=SC2016 # Backticks are literal charter markup.
+    assert_contains "$out" 'In a secondmate home, apply the routed-work and return-channel rules in `data/charter.md` before the next supervision wait.' \
+      "$harness supervision omitted the secondmate turn-boundary obligation"
+  done
+  pass "every rendered supervision protocol keeps secondmate inbox and finishes ahead of waits"
 }
 
 # A Claude home runs the host by default, so its block carries the host
@@ -184,6 +215,34 @@ test_repair_lines() {
   pass "renderer repair-line mode is harness-aware and honors conditional state"
 }
 
+test_omp_restart_guidance_depends_on_home_vs_checkout() {
+  local home out
+  home="$TMP_ROOT/omp-other-home"
+  mkdir -p "$home/state"
+
+  # Home is not the firstmate checkout: relaunch through the launcher.
+  out=$(FM_HOME="$home" "$RENDER" --harness omp --repair-line)
+  # shellcheck disable=SC2016  # backticks are literal text
+  assert_contains "$out" 'relaunch through `fm <project>`' "omp repair line must direct a non-checkout home to the fm launcher"
+  assert_contains "$out" "a bare omp or /resume from the firstmate checkout does not register the extensions for this home" "omp repair line omits the bare omp warning"
+  assert_not_contains "$out" "restart omp inside this home" "omp repair line still tells a non-checkout home to restart omp inside it"
+  out=$(FM_HOME="$home" "$RENDER" --harness omp)
+  # shellcheck disable=SC2016  # backticks are literal text
+  assert_contains "$out" 'exit omp and relaunch through `fm <project>`, which sets FM_HOME and --cwd' "omp protocol must direct a non-checkout home to the fm launcher"
+  assert_contains "$out" "a bare omp or /resume from the firstmate checkout does not register the extensions for this home" "omp protocol omits the bare omp warning"
+  assert_not_contains "$out" "restart omp inside this home" "omp protocol still tells a non-checkout home to restart omp inside it"
+
+  # Home is the checkout itself: today's text.
+  out=$(FM_HOME="$ROOT" "$RENDER" --harness omp --repair-line)
+  assert_contains "$out" "restart omp inside this home" "omp repair line lost today's wording for the checkout home"
+  assert_not_contains "$out" "fm <project>" "omp repair line named the launcher for the checkout home"
+  out=$(env -u FM_HOME "$RENDER" --harness omp)
+  assert_contains "$out" "restart omp inside this home; pass \`-e " "omp protocol lost today's wording for the checkout home"
+  assert_contains "$out" "restart omp inside this home if the extensions are not loaded" "omp protocol repair step lost today's wording for the checkout home"
+  assert_not_contains "$out" "fm <project>" "omp protocol named the launcher for the checkout home"
+  pass "omp restart guidance names the fm launcher only when the home is not the checkout"
+}
+
 test_cross_harness_ordinary_continuation_and_repair_matrix() {
   local ordinary out
 
@@ -269,6 +328,7 @@ test_grok_is_background_notify() {
   assert_contains "$out" "background: true" "grok snippet missing tracked background tool instruction"
   assert_contains "$out" "synthetic_reason: task_completed" "grok snippet missing auto-wake synthetic prompt detail"
   assert_contains "$out" "bin/fm-watch-arm.sh" "grok snippet missing watcher arm"
+  assert_contains "$out" "export FM_WATCH_GROK_CONTINUITY=1; exec bin/fm-watch-arm.sh" "grok snippet missing the continuity opt-in"
   assert_not_contains "$out" "__FM_X_MODE_ENV" "renderer leaked an x-mode path placeholder"
   assert_not_contains "$out" "foreground checkpoint" "grok snippet must not be Codex-style foreground checkpoint"
   out=$("$RENDER" --harness grok --repair-line)
@@ -282,7 +342,7 @@ test_grok_command_sources_effective_config() {
   config="$TMP_ROOT/grok-config"
   mkdir -p "$home/state" "$config"
   out=$(FM_HOME="$home" FM_CONFIG_OVERRIDE="$config" "$RENDER" --harness grok --x-mode 1)
-  assert_contains "$out" "[ -f '$config/x-mode.env' ] && . '$config/x-mode.env'; exec bin/fm-watch-arm.sh" "grok arm command did not use the effective x-mode config path"
+  assert_contains "$out" "[ -f '$config/x-mode.env' ] && . '$config/x-mode.env'; export FM_WATCH_GROK_CONTINUITY=1; exec bin/fm-watch-arm.sh" "grok arm command did not use the effective x-mode config path"
   pass "grok rendered command sources the effective x-mode config"
 }
 
@@ -306,11 +366,14 @@ test_pi_snippet_uses_effective_extension_path() {
 
 test_supervision_host_protocol_on_a_claude_home_unless_off
 test_supervision_host_protocol_on_every_arm_owner
+test_muse_primary_block
 test_selected_harness_block_only
+test_secondmate_turn_boundary_remains_responsive
 test_unknown_fallback
 test_conditional_stanzas
 test_quiet_mode_stanzas
 test_repair_lines
+test_omp_restart_guidance_depends_on_home_vs_checkout
 test_cross_harness_ordinary_continuation_and_repair_matrix
 test_pi_signed_preserves_identity_with_pi_supervision_protocol
 test_grok_is_background_notify

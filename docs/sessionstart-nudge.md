@@ -27,7 +27,7 @@ The tier is a property of the harness surface, not of the home.
 | Tier | What the adapter does | Used by |
 | --- | --- | --- |
 | Run | Executes `bin/fm-session-start.sh` through the native session-open adapter and gates its ordered digest into model context before the first turn. | Claude, `codex exec`, Pi / pi-signed, omp, Cursor |
-| Nudge | Asks the agent to run the digest through the native adapter or the tracked session-start instruction. | Grok, OpenCode, and run-tier sources routed to the nudge |
+| Nudge | Asks the agent to run the digest through the native adapter or the tracked session-start instruction. | Grok, OpenCode, Muse, and run-tier sources routed to the nudge |
 
 Codex's interactive TUI has no tracked session-open, compaction, or re-emit channel and is not covered by either tier.
 
@@ -43,6 +43,7 @@ Codex's interactive TUI has no tracked session-open, compaction, or re-emit chan
 | Grok | Nudge | [Grok](#grok) |
 | Cursor | Run | [Cursor](#cursor) |
 | omp | Run | [omp](#omp) |
+| Muse | Nudge | [Muse](#muse) |
 | Cursor compaction | Uncovered | [Cursor compaction](#cursor-compaction) |
 
 ### Why the run tier exists
@@ -238,6 +239,9 @@ Claude is a run-tier harness.
 `.claude/settings.json` registers one unmatched `SessionStart` hook, invoked through `CLAUDE_PROJECT_DIR` with a 180s timeout.
 The wrapper reads `source` from the hook payload.
 Native stdout context injection is supported.
+Claude caps one hook output string at 10,000 characters.
+Above the cap the model receives a preview of the first 2,000 characters plus the path of a saved file, and is not asked to read that file.
+A context re-emit therefore prints a short `RE-EMIT CUE` first, which tells the model to read the saved file.
 
 ### Codex exec
 
@@ -364,6 +368,14 @@ So the source is derived following the Cursor precedent:
 
 A later in-process `clear` re-emits only when this lock owner completed a full startup.
 `before_agent_start` message delivery was verified to reach model context on 18.1.11.
+
+### Muse
+
+Muse is a nudge-tier harness.
+Muse 1.4.13 exposes no tracked SessionStart hook in the default build, and its plugin engine is unavailable unless `MUSE_EXPERIMENTAL_PLUGINS=on`.
+Muse loads the project's `AGENTS.md` natively at session open, so `AGENTS.md` section 3's instruction to run `bin/fm-session-start.sh` exactly once is the transport.
+That instruction was live-verified as the session-open path for a Muse primary on 2026-10-25 in [`verification/muse.md`](verification/muse.md).
+No source routing, re-emit, or compaction channel is claimed for Muse.
 
 ### Cursor compaction
 

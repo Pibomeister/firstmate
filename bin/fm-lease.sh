@@ -32,7 +32,8 @@
 #
 # The default actor is $FM_SUPERVISION_ACTOR (else main); when --actor is
 # supplied for a mutation, it must name that calling actor. Exit codes: 0 ok,
-# 1 check-miss, 2 usage, 6 refused (other actor holds or actor mismatch).
+# 1 check-miss, 2 usage, 6 refused (other actor holds, actor mismatch, or the
+# lease-command lock stayed held past FM_LEASE_COMMAND_LOCK_WAIT; see fm-lease-lib.sh).
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -46,7 +47,7 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 
 mkdir -p "$STATE"
 LEASE_COMMAND_LOCK="$STATE/.fm-lease-command.lock"
-fm_lock_acquire_wait "$LEASE_COMMAND_LOCK"
+fm_lease_command_lock_acquire "$LEASE_COMMAND_LOCK" "lease command (fm-lease)"
 trap 'fm_lock_release "$LEASE_COMMAND_LOCK"' EXIT
 
 usage() {
@@ -121,10 +122,17 @@ case "$CMD" in
     # provides one (the Pi branch extension passes the session-lock holder),
     # else the session-lock holder (state/.lock is the harness pid), else this
     # shell; without a matching session lock the resulting lease is stale.
+    # A pinned holder that is alive but no longer line 1 was moved off by a
+    # same-session re-anchor (bin/fm-lock.sh), since another session takes the
+    # lock only from a holder that is no longer a live harness, so the claim
+    # records the live line 1.
     HOLDER_PID=${FM_LEASE_HOLDER_PID:-}
     case "$HOLDER_PID" in *[!0-9]*) HOLDER_PID= ;; esac
+    LOCK_PID=$(head -n 1 "$STATE/.lock" 2>/dev/null | tr -cd '0-9' || true)
     if [ -z "$HOLDER_PID" ]; then
-      HOLDER_PID=$(head -n 1 "$STATE/.lock" 2>/dev/null | tr -cd '0-9' || true)
+      HOLDER_PID=$LOCK_PID
+    elif [ "$HOLDER_PID" != "$LOCK_PID" ] && fm_pid_alive "$HOLDER_PID" && fm_pid_alive "$LOCK_PID"; then
+      HOLDER_PID=$LOCK_PID
     fi
     [ -n "$HOLDER_PID" ] || HOLDER_PID=$$
     TMP=$(mktemp "$STATE/.fm-lease-tmp.XXXXXX")

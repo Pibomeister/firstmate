@@ -130,20 +130,109 @@ make_droid_case() {  # <name> <id>
   mv "$fakebin/tmux" "$fakebin/tmux-base"
   cat >"$fakebin/tmux" <<'SH'
 #!/usr/bin/env bash
-if [ "${1:-}" = send-keys ] && [ "${*: -1}" = Enter ] && [ -n "${FM_FAKE_DROID_SETTINGS:-}" ]; then
-  printf 'Enter\n' >>"${FM_FAKE_DROID_SETTINGS}.enters"
+# Identity queries for the trust-route probe. Keep these ahead of send-keys
+# so a called send-key is not the only recorded proof of the target.
+if [ "${1:-}" = display-message ]; then
+  case "$*" in
+    *'#{socket_path}'*|*'#{pane_id}'*|*'#{pane_pid}'*|*'#{pane_tty}'*|*'#{pane_current_command}'*)
+      printf 'socket=/tmp/tmux-501/fm-droid-signals-fake pane_id=%%0 pane_pid=4242 pane_tty=/dev/ttys001 cmd=droid\n'
+      exit 0
+      ;;
+  esac
+fi
+# Count only a bare named Enter or 1 (`send-keys -t <target> Enter|1`). A
+# text-line payload and a -l literal both end with a key but are not the
+# trust-dialog key.
+if [ "${1:-}" = send-keys ] && [ -n "${FM_FAKE_DROID_SETTINGS:-}" ]; then
+  skip_next=
+  extra=
+  saw_enter=
+  saw_one=
+  send_target=
+  first=1
+  for a in "$@"; do
+    if [ -n "$first" ]; then first=; continue; fi
+    if [ -n "$skip_next" ]; then
+      [ -n "$send_target" ] || send_target=$a
+      skip_next=
+      continue
+    fi
+    case "$a" in
+      -t) skip_next=1; continue ;;
+      -l) extra=1; continue ;;
+      Enter)
+        [ -z "$saw_enter" ] || extra=1
+        saw_enter=1
+        ;;
+      1)
+        [ -z "$saw_one" ] || extra=1
+        saw_one=1
+        ;;
+      *) extra=1 ;;
+    esac
+  done
+  if [ -n "$saw_enter" ] && [ -z "$extra" ]; then
+    printf 'Enter\n' >>"${FM_FAKE_DROID_SETTINGS}.enters"
+    if [ -f "${FM_FAKE_DROID_SETTINGS}.trust" ]; then
+      printf 'Enter\n' >>"${FM_FAKE_DROID_SETTINGS}.trust-enters"
+      printf '%s\n' "$send_target" >>"${FM_FAKE_DROID_SETTINGS}.trust-send-target"
+    fi
+  fi
+  if [ -n "$saw_one" ] && [ -z "$extra" ]; then
+    printf '1\n' >>"${FM_FAKE_DROID_SETTINGS}.ones"
+    if [ -f "${FM_FAKE_DROID_SETTINGS}.trust" ]; then
+      printf '1\n' >>"${FM_FAKE_DROID_SETTINGS}.trust-ones"
+      printf '%s\n' "$send_target" >>"${FM_FAKE_DROID_SETTINGS}.trust-send-target"
+    fi
+  fi
 fi
 if [ "${1:-}" = capture-pane ] && [ -f "${FM_FAKE_DROID_SETTINGS:-/nonexistent}" ]; then
+  cap_skip=
+  cap_target=
+  for a in "$@"; do
+    if [ -n "$cap_skip" ]; then
+      cap_target=$a
+      cap_skip=
+      continue
+    fi
+    [ "$a" = -t ] && cap_skip=1
+  done
+  [ -z "$cap_target" ] || printf '%s\n' "$cap_target" >>"${FM_FAKE_DROID_SETTINGS}.capture-target"
+  launched=$(wc -l <"${FM_FAKE_DROID_SETTINGS}.enters" 2>/dev/null | tr -d ' ')
+  case "$launched" in ''|*[!0-9]*) launched=0 ;; esac
+  # Pre-launch cwd probes are not the TUI. Trust and wait-loop poll counts
+  # start only after the launch Enter that starts Droid.
+  if [ "$launched" -lt 1 ]; then
+    printf '\n'
+    exit 0
+  fi
   [ -z "${FM_FAKE_DROID_CAPTURE_SLEEP:-}" ] || sleep "$FM_FAKE_DROID_CAPTURE_SLEEP"
   captures=$(cat "${FM_FAKE_DROID_SETTINGS}.captures" 2>/dev/null || printf 0)
   captures=$((captures + 1))
   printf '%s\n' "$captures" >"${FM_FAKE_DROID_SETTINGS}.captures"
   [ "$captures" -gt "${FM_FAKE_DROID_CAPTURE_FAIL_POLLS:-0}" ] || exit 1
+  if [ "$captures" -le "${FM_FAKE_DROID_BLANK_POLLS:-0}" ]; then
+    printf '\n'
+    exit 0
+  fi
   shown=$(cat "${FM_FAKE_DROID_SETTINGS}.trust" 2>/dev/null || printf 0)
-  if [ "$shown" -lt "${FM_FAKE_DROID_TRUST_POLLS:-0}" ]; then
+  trust_enters=$(wc -l <"${FM_FAKE_DROID_SETTINGS}.trust-enters" 2>/dev/null | tr -d ' ')
+  case "$trust_enters" in ''|*[!0-9]*) trust_enters=0 ;; esac
+  case "$shown" in ''|*[!0-9]*) shown=0 ;; esac
+  clears=$(tr -d '\n' <"${FM_FAKE_DROID_SETTINGS}.trust-clears" 2>/dev/null || true)
+  [ -n "$clears" ] || clears=${FM_FAKE_DROID_TRUST_CLEARS:-}
+  show_trust=0
+  if [ "$clears" = after-second ]; then
+    [ "$trust_enters" -ge 2 ] || show_trust=1
+  elif [ "$shown" -lt "${FM_FAKE_DROID_TRUST_POLLS:-0}" ]; then
+    show_trust=1
+  fi
+  if [ "$show_trust" -eq 1 ]; then
     printf '%s\n' "$((shown + 1))" >"${FM_FAKE_DROID_SETTINGS}.trust"
     if [ "${FM_FAKE_DROID_TRUST_NEGATIVE:-0}" = 1 ]; then
       printf 'Trust this folder?\n  1. Trust this folder\n> 2. Exit without trusting\nEnter to confirm · Esc to exit\n'
+    elif [ "${FM_FAKE_DROID_TRUST_PARTIAL:-0}" = 1 ]; then
+      printf 'Trust this folder?\nEnter to confirm · Esc to exit\n'
     else
       printf 'Trust this folder?\n> 1. Trust this folder\n  2. Exit without trusting\nEnter to confirm · Esc to exit\n'
     fi
@@ -179,6 +268,17 @@ Model details:
 HELP
   exit 0
 fi
+if [ "${1:-}" = exec ]; then
+  case " $* " in
+    *" --list-tools "*)
+      if [ -n "${FM_FAKE_DROID_PROBE_HANG:-}" ]; then
+        sleep "$FM_FAKE_DROID_PROBE_HANG"
+      elif [ -n "${FM_FAKE_DROID_PROBE_SLEEP:-}" ]; then
+        sleep "$FM_FAKE_DROID_PROBE_SLEEP"
+      fi
+      ;;
+  esac
+fi
 if [ "${1:-}" = exec ] && [ -n "${FM_FAKE_DROID_REJECT_MODEL:-}" ]; then
   printf 'Invalid model: %s\n' "$FM_FAKE_DROID_REJECT_MODEL" >&2
   exit 1
@@ -191,8 +291,16 @@ SH
 run_droid_spawn() {  # <id> [extra args]
   local id=$1
   shift
+  mkdir -p "$HOME_DIR/state"
+  printf '%s\n' "${FM_FAKE_DROID_TRUST_CLEARS:-}" >"$HOME_DIR/state/$id.droid-settings.json.trust-clears"
   FM_FAKE_DROID_SETTINGS="$HOME_DIR/state/$id.droid-settings.json" \
     FM_FAKE_LAUNCH_LOG="$CASE_DIR/launch.log" \
+    FM_FAKE_DROID_TRUST_CLEARS="${FM_FAKE_DROID_TRUST_CLEARS:-}" \
+    FM_FAKE_DROID_TRUST_POLLS="${FM_FAKE_DROID_TRUST_POLLS:-0}" \
+    FM_FAKE_DROID_TRUST_NEGATIVE="${FM_FAKE_DROID_TRUST_NEGATIVE:-0}" \
+    FM_FAKE_DROID_TRUST_PARTIAL="${FM_FAKE_DROID_TRUST_PARTIAL:-0}" \
+    FM_FAKE_DROID_BLANK_POLLS="${FM_FAKE_DROID_BLANK_POLLS:-0}" \
+    FM_FAKE_DROID_CAPTURE_FAIL_POLLS="${FM_FAKE_DROID_CAPTURE_FAIL_POLLS:-0}" \
     fm_test_run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" \
       "$id" "$PROJ_DIR" --scout --harness droid "$@"
 }
@@ -205,7 +313,7 @@ test_droid_launch_and_hooks() {
   expect_code 0 "$rc" "Droid spawn failed: $out"
   settings="$HOME_DIR/state/$id.droid-settings.json"
   state="$HOME_DIR/state"
-  jq -e '.model == "gpt-5.6-luna" and .reasoningEffort == "low" and .sessionDefaultSettings.autonomyLevel == "high" and (has("hooksDisabled") | not)' "$settings" >/dev/null \
+  jq -e '.sessionDefaultSettings.model == "gpt-5.6-luna" and .reasoningEffort == "low" and .sessionDefaultSettings.autonomyLevel == "high" and (has("hooksDisabled") | not)' "$settings" >/dev/null \
     || fail "Droid settings lost model/effort/autonomy or overrode the operator's hooks policy"
   out=$(sh -c "$(jq -r '.statusLine.command' "$settings")" 2>/dev/null)
   [ -n "$out" ] && [ "$(fm_tmux_droid_composer_state "${DROID_IDLE_SCREEN%firstmate}$out")" = empty ] \
@@ -251,7 +359,9 @@ test_droid_launch_and_hooks() {
     || fail "SessionEnd did not record the current busy generation"
   live_bin="$CASE_DIR/live-droid"
   mkdir -p "$live_bin"
-  cp "$(command -v sleep)" "$live_bin/droid"
+  # A re-signed copy of macOS's universal arm64e sleep is SIGKILLed on launch, so take its x86_64 slice.
+  lipo "$(command -v sleep)" -thin x86_64 -output "$live_bin/droid" 2>/dev/null \
+    || cp "$(command -v sleep)" "$live_bin/droid"
   if command -v codesign >/dev/null 2>&1; then
     codesign -s - -f "$live_bin/droid" >/dev/null 2>&1 || fail "could not sign the live droid stand-in"
   fi
@@ -279,20 +389,175 @@ test_droid_launch_and_hooks() {
   pass "Droid spawn passes the brief and model settings; hooks open and close turns"
 }
 
-test_droid_trust_dialog_is_answered_once() {
-  local out rc base trusted
+droid_enter_lines() {  # <id> [suffix]
+  local f="$HOME_DIR/state/$1.droid-settings.json${2:-.enters}"
+  if [ -f "$f" ]; then
+    wc -l <"$f" | tr -d ' '
+  else
+    printf '0'
+  fi
+}
+
+test_droid_swallowed_trust_enter_is_retried_until_the_dialog_clears() {
+  local out rc base trust_enters
   make_droid_case trust-base droid-trust-base
   out=$(run_droid_spawn droid-trust-base)
   expect_code 0 $? "Droid baseline spawn failed: $out"
-  base=$(wc -l <"$HOME_DIR/state/droid-trust-base.droid-settings.json.enters")
-  make_droid_case trust-held droid-trust-held
-  out=$(FM_FAKE_DROID_TRUST_POLLS=3 run_droid_spawn droid-trust-held)
+  base=$(droid_enter_lines droid-trust-base)
+  make_droid_case trust-swallow droid-trust-swallow
+  out=$(FM_FAKE_DROID_TRUST_CLEARS=after-second \
+    FM_DROID_READY_POLLS=6 FM_DROID_POLL_INTERVAL=0 FM_DROID_READY_SECONDS=5 \
+    run_droid_spawn droid-trust-swallow)
   rc=$?
-  expect_code 0 "$rc" "Droid spawn behind a lingering trust dialog failed: $out"
-  trusted=$(wc -l <"$HOME_DIR/state/droid-trust-held.droid-settings.json.enters")
-  [ "$trusted" -eq $((base + 1)) ] \
-    || fail "a trust dialog drawn for three polls must get one Enter, got $((trusted - base))"
-  pass "Droid answers a lingering trust dialog once"
+  expect_code 0 "$rc" "a swallowed first trust Enter should be retried into a verified spawn: $out"
+  [ "$(droid_enter_lines droid-trust-swallow)" -eq $((base + 2)) ] \
+    || fail "Droid trust dialog was not re-answered until it cleared, extra $(( $(droid_enter_lines droid-trust-swallow) - base ))"
+  trust_enters=$(droid_enter_lines droid-trust-swallow .trust-enters)
+  [ "$trust_enters" -eq 2 ] \
+    || fail "Droid trust-time Enter count should be 2 after a swallowed first key, got $trust_enters"
+  pass "Droid retries a swallowed trust Enter until the dialog clears"
+}
+
+test_droid_trust_enter_max_sends_one_enter_while_the_dialog_stays() {
+  local out rc trust_enters
+  make_droid_case trust-max-one droid-trust-max-one
+  out=$(FM_FAKE_DROID_TRUST_POLLS=5 \
+    FM_DROID_TRUST_ENTER_MAX=1 \
+    FM_DROID_READY_POLLS=5 FM_DROID_POLL_INTERVAL=0 FM_DROID_READY_SECONDS=5 \
+    run_droid_spawn droid-trust-max-one)
+  rc=$?
+  expect_code 1 "$rc" "a staying trust dialog with ENTER_MAX=1 should not claim delivery: $out"
+  trust_enters=$(droid_enter_lines droid-trust-max-one .trust-enters)
+  [ "$trust_enters" -eq 1 ] \
+    || fail "Droid trust-time Enter count should be 1 under ENTER_MAX=1, got $trust_enters"
+  printf '%s' "$out" | grep -Fq 'answered but the launch prompt hook did not acknowledge' \
+    || fail "capped trust Enter must still report unanswered brief: $out"
+  pass "Droid sends exactly one trust Enter when ENTER_MAX=1 and the dialog stays"
+}
+
+test_droid_trust_probe_stop_captures_one_enter_delta() {
+  local out rc probe trust_enters
+  probe="$TMP_ROOT/trust-probe-a"
+  make_droid_case trust-probe-stop droid-trust-probe-stop
+  out=$(FM_FAKE_DROID_TRUST_POLLS=5 \
+    FM_DROID_TRUST_ENTER_MAX=1 \
+    FM_DROID_TRUST_PROBE_DIR="$probe" \
+    FM_DROID_TRUST_PROBE_STOP=1 \
+    FM_DROID_READY_POLLS=8 FM_DROID_POLL_INTERVAL=0 FM_DROID_READY_SECONDS=8 \
+    run_droid_spawn droid-trust-probe-stop)
+  rc=$?
+  expect_code 1 "$rc" "trust probe stop should not claim delivery: $out"
+  trust_enters=$(droid_enter_lines droid-trust-probe-stop .trust-enters)
+  [ "$trust_enters" -eq 1 ] || fail "probe stop sent $trust_enters trust Enters"
+  [ -s "$probe/before-enter.txt" ] || fail "missing before-enter capture"
+  [ -f "$probe/after-0.3s.txt" ] || fail "missing +0.3s capture"
+  [ -f "$probe/after-2s.txt" ] || fail "missing +2s capture"
+  grep -Fq 'Trust this folder?' "$probe/before-enter.txt" \
+    || fail "before-enter must be the affirmative dialog"
+  printf '%s' "$out" | grep -Fq 'trust probe captured one Enter delta and stopped' \
+    || fail "probe stop must name the laboratory stop: $out"
+  pass "Droid trust probe captures one Enter delta and stops"
+}
+
+test_droid_trust_key_one_sends_digit_once_while_the_dialog_stays() {
+  local out rc ones enters
+  make_droid_case trust-key-one droid-trust-key-one
+  out=$(FM_FAKE_DROID_TRUST_POLLS=5 \
+    FM_DROID_TRUST_ENTER_MAX=1 \
+    FM_DROID_TRUST_KEY=1 \
+    FM_DROID_READY_POLLS=5 FM_DROID_POLL_INTERVAL=0 FM_DROID_READY_SECONDS=5 \
+    run_droid_spawn droid-trust-key-one)
+  rc=$?
+  expect_code 1 "$rc" "a staying trust dialog with KEY=1 should not claim delivery: $out"
+  ones=$(droid_enter_lines droid-trust-key-one .trust-ones)
+  enters=$(droid_enter_lines droid-trust-key-one .trust-enters)
+  case "$ones" in ''|*[!0-9]*) ones=0 ;; esac
+  case "$enters" in ''|*[!0-9]*) enters=0 ;; esac
+  [ "$ones" -eq 1 ] || fail "Droid trust-time key 1 count should be 1, got $ones"
+  [ "$enters" -eq 0 ] || fail "KEY=1 must not send a wait-loop Enter, got $enters"
+  pass "Droid sends exactly one trust key 1 when KEY=1 and the dialog stays"
+}
+
+test_droid_trust_probe_records_matching_send_and_capture_routes() {
+  local out rc probe send_target capture_cmd send_cmd
+  probe="$TMP_ROOT/trust-probe-route"
+  make_droid_case trust-probe-route droid-trust-probe-route
+  out=$(FM_FAKE_DROID_TRUST_POLLS=5 \
+    FM_DROID_TRUST_ENTER_MAX=1 \
+    FM_DROID_TRUST_PROBE_DIR="$probe" \
+    FM_DROID_TRUST_PROBE_STOP=1 \
+    FM_DROID_READY_POLLS=8 FM_DROID_POLL_INTERVAL=0 FM_DROID_READY_SECONDS=8 \
+    run_droid_spawn droid-trust-probe-route)
+  rc=$?
+  expect_code 1 "$rc" "route probe stop should not claim delivery: $out"
+  [ -s "$probe/capture-route.txt" ] || fail "missing capture-route identity"
+  [ -s "$probe/send-route.txt" ] || fail "missing send-route identity"
+  [ -s "$probe/last-pane.txt" ] || fail "missing last viewport pane"
+  capture_cmd=$(grep -E 'cmd=' "$probe/capture-route.txt" | tail -1)
+  send_cmd=$(grep -E 'cmd=' "$probe/send-route.txt" | tail -1)
+  [ -n "$capture_cmd" ] && [ "$capture_cmd" = "$send_cmd" ] \
+    || fail "capture and send routes diverged: capture='$capture_cmd' send='$send_cmd'"
+  printf '%s' "$capture_cmd" | grep -Fq 'cmd=droid' \
+    || fail "route identity must name the live Droid command: $capture_cmd"
+  send_target=$(droid_enter_lines droid-trust-probe-route .trust-send-target)
+  [ "$send_target" -eq 1 ] || fail "trust send should record one target line, got $send_target"
+  pass "Droid trust probe records matching send and capture routes"
+}
+
+test_droid_sends_no_trust_enter_after_the_dialog_clears() {
+  local out rc base
+  make_droid_case trust-clear-base droid-trust-clear-base
+  out=$(run_droid_spawn droid-trust-clear-base)
+  expect_code 0 $? "Droid baseline spawn failed: $out"
+  base=$(droid_enter_lines droid-trust-clear-base)
+  make_droid_case trust-clear droid-trust-clear
+  out=$(FM_FAKE_DROID_TRUST_POLLS=1 run_droid_spawn droid-trust-clear)
+  rc=$?
+  expect_code 0 "$rc" "Droid spawn after a one-frame trust dialog failed: $out"
+  [ "$(droid_enter_lines droid-trust-clear)" -eq $((base + 1)) ] \
+    || fail "Droid sent Enter after the trust dialog cleared, extra $(( $(droid_enter_lines droid-trust-clear) - base ))"
+  [ "$(droid_enter_lines droid-trust-clear .trust-enters)" -eq 1 ] \
+    || fail "a cleared Droid trust dialog was answered more than once"
+  pass "Droid sends no trust Enter after the dialog disappears"
+}
+
+test_droid_sends_no_trust_enter_on_a_blank_or_failed_viewport() {
+  local out rc base
+  make_droid_case trust-blank-base droid-trust-blank-base
+  out=$(run_droid_spawn droid-trust-blank-base)
+  expect_code 0 $? "Droid baseline spawn failed: $out"
+  base=$(droid_enter_lines droid-trust-blank-base)
+  make_droid_case trust-blank droid-trust-blank
+  out=$(FM_FAKE_DROID_BLANK_POLLS=1 FM_FAKE_DROID_TRUST_POLLS=1 run_droid_spawn droid-trust-blank)
+  rc=$?
+  expect_code 0 "$rc" "Droid spawn after a blank viewport frame failed: $out"
+  [ "$(droid_enter_lines droid-trust-blank)" -eq $((base + 1)) ] \
+    || fail "Droid sent Enter on a blank viewport, extra $(( $(droid_enter_lines droid-trust-blank) - base ))"
+  make_droid_case capture-retry-enters droid-capture-retry-enters
+  out=$(FM_FAKE_DROID_CAPTURE_FAIL_POLLS=1 run_droid_spawn droid-capture-retry-enters)
+  rc=$?
+  expect_code 0 "$rc" "Droid spawn after a failed viewport read failed: $out"
+  [ "$(droid_enter_lines droid-capture-retry-enters)" -eq "$base" ] \
+    || fail "Droid sent Enter without a successful viewport, extra $(( $(droid_enter_lines droid-capture-retry-enters) - base ))"
+  pass "Droid sends no trust Enter on a blank or failed viewport"
+}
+
+test_droid_sends_no_trust_enter_on_an_ambiguous_dialog() {
+  local id=droid-trust-partial out rc base
+  make_droid_case trust-partial-base droid-trust-partial-base
+  out=$(run_droid_spawn droid-trust-partial-base)
+  expect_code 0 $? "Droid baseline spawn failed: $out"
+  base=$(droid_enter_lines droid-trust-partial-base)
+  make_droid_case trust-partial "$id"
+  out=$(FM_FAKE_DROID_TRUST_POLLS=3 FM_FAKE_DROID_TRUST_PARTIAL=1 \
+    FM_DROID_READY_POLLS=3 FM_DROID_POLL_INTERVAL=0 run_droid_spawn "$id")
+  rc=$?
+  expect_code 1 "$rc" "Droid must refuse an incomplete trust dialog: $out"
+  printf '%s' "$out" | grep -Fq 'never showed a selected Trust this folder choice' \
+    || fail "incomplete Droid trust dialog did not name the missing selection: $out"
+  [ "$(droid_enter_lines "$id")" -eq "$base" ] \
+    || fail "Droid answered an incomplete trust lookalike, extra $(( $(droid_enter_lines "$id") - base ))"
+  pass "Droid sends no Enter on an ambiguous trust view"
 }
 
 test_droid_refuses_a_negative_trust_selection() {
@@ -359,7 +624,7 @@ test_droid_omits_unsupported_model_effort() {
   rc=$?
   expect_code 0 "$rc" "unsupported effort should use the recorded-and-omitted contract: $out"
   settings="$HOME_DIR/state/$id.droid-settings.json"
-  jq -e '.model == "claude-haiku-4-5-20251001" and (has("reasoningEffort") | not)' "$settings" >/dev/null \
+  jq -e '.sessionDefaultSettings.model == "claude-haiku-4-5-20251001" and (has("reasoningEffort") | not)' "$settings" >/dev/null \
     || fail "unsupported Haiku xhigh effort reached Droid runtime settings"
   grep -Fqx 'effort=xhigh' "$HOME_DIR/state/$id.meta" || fail "requested effort was not recorded"
   printf '%s' "$out" | grep -Fq 'unsupported' || fail "effort omission was not disclosed"
@@ -373,7 +638,7 @@ test_droid_omits_effort_without_explicit_model() {
   rc=$?
   expect_code 0 "$rc" "effort without a model should use the recorded-and-omitted contract: $out"
   settings="$HOME_DIR/state/$id.droid-settings.json"
-  jq -e '(has("model") | not) and (has("reasoningEffort") | not)' "$settings" >/dev/null \
+  jq -e '(.sessionDefaultSettings | has("model") | not) and (has("reasoningEffort") | not)' "$settings" >/dev/null \
     || fail "effort without --model reached Droid runtime settings for the operator's default model"
   grep -Fqx 'effort=low' "$HOME_DIR/state/$id.meta" || fail "requested effort was not recorded"
   printf '%s' "$out" | grep -Fq 'omitting it from runtime settings' || fail "effort omission was not disclosed: $out"
@@ -388,6 +653,36 @@ test_droid_model_probe_detaches_stdin() {
   expect_code 0 "$rc" "Droid spawn with piped stdin failed: $out"
   [ ! -e "$FAKEBIN_DIR/probe-read-stdin" ] || fail "Droid model probe read the caller's stdin"
   pass "Droid model probe cannot read the caller's stdin"
+}
+
+test_droid_model_probe_accepts_a_slow_valid_answer() {
+  local id=droid-probe-slow out rc settings
+  make_droid_case probe-slow "$id"
+  out=$(FM_FAKE_DROID_PROBE_SLEEP=1 FM_DROID_MODEL_PROBE_TIMEOUT=3 \
+    run_droid_spawn "$id" --model gpt-5.6-luna)
+  rc=$?
+  expect_code 0 "$rc" "a valid model probe that answers inside its bound must spawn: $out"
+  settings="$HOME_DIR/state/$id.droid-settings.json"
+  jq -e '.sessionDefaultSettings.model == "gpt-5.6-luna"' "$settings" >/dev/null \
+    || fail "a slow valid probe lost the requested model"
+  [ -e "$CASE_DIR/launch.log" ] || fail "a slow valid probe never launched"
+  pass "Droid accepts a valid model whose tool-list probe answers inside its bound"
+}
+
+test_droid_model_probe_refuses_when_the_bound_expires() {
+  local id=droid-probe-hang out rc started elapsed
+  make_droid_case probe-hang "$id"
+  started=$(date +%s)
+  out=$(FM_FAKE_DROID_PROBE_HANG=30 FM_DROID_MODEL_PROBE_TIMEOUT=1 \
+    run_droid_spawn "$id" --model gpt-5.6-luna)
+  rc=$?
+  elapsed=$(( $(date +%s) - started ))
+  expect_code 1 "$rc" "a hung model probe must refuse: $out"
+  [ "$elapsed" -lt 15 ] || fail "hung Droid model probe exceeded its bound (${elapsed}s)"
+  printf '%s' "$out" | grep -Fq "within 1s" || fail "hung model probe did not name its bound: $out"
+  [ ! -e "$CASE_DIR/launch.log" ] || fail "Droid launched after a hung model probe"
+  [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "Droid created a task record after a hung model probe"
+  pass "Droid refuses a model probe that does not answer within its bound"
 }
 
 test_droid_bad_model_refuses_before_launch() {
@@ -418,7 +713,14 @@ test_droid_composer_envelope
 test_droid_composer_requires_a_droid_process
 test_droid_orca_composer_uses_the_live_screen
 test_droid_launch_and_hooks
-test_droid_trust_dialog_is_answered_once
+test_droid_swallowed_trust_enter_is_retried_until_the_dialog_clears
+test_droid_trust_enter_max_sends_one_enter_while_the_dialog_stays
+test_droid_trust_probe_stop_captures_one_enter_delta
+test_droid_trust_key_one_sends_digit_once_while_the_dialog_stays
+test_droid_trust_probe_records_matching_send_and_capture_routes
+test_droid_sends_no_trust_enter_after_the_dialog_clears
+test_droid_sends_no_trust_enter_on_a_blank_or_failed_viewport
+test_droid_sends_no_trust_enter_on_an_ambiguous_dialog
 test_droid_refuses_a_negative_trust_selection
 test_droid_retries_one_transient_viewport_failure
 test_droid_bounds_a_hung_viewport_read
@@ -426,6 +728,8 @@ test_droid_respects_disabled_hooks_policy
 test_droid_omits_unsupported_model_effort
 test_droid_omits_effort_without_explicit_model
 test_droid_model_probe_detaches_stdin
+test_droid_model_probe_accepts_a_slow_valid_answer
+test_droid_model_probe_refuses_when_the_bound_expires
 test_droid_bad_model_refuses_before_launch
 test_raw_droid_command_does_not_arm_unused_hooks
 fm_test_cleanup "$TMP_ROOT"

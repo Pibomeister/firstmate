@@ -25,7 +25,8 @@ live_lab_cleanup() {
   while read -r pid; do [ -n "$pid" ] && { pkill -P "$pid" 2>/dev/null || true; kill "$pid" 2>/dev/null || true; }; done < "$TMP_ROOT/pids"
   while read -r dir; do
     [ -n "$dir" ] || continue
-    env -u TMUX TMUX_TMPDIR="$dir" tmux kill-server 2>/dev/null
+    [ -d "$dir" ] || continue
+    env -u TMUX -u TMUX_PANE tmux -S "$dir/tmux-$(id -u)/default" kill-server 2>/dev/null
     case "$dir" in /tmp/fml.*) rm -rf "$dir" ;; esac
   done < "$TMP_ROOT/tmux-dirs"
   rm -rf "/tmp/fm-labt$$-mate" "/tmp/fm-labt$$-worker" "/tmp/fm-labt$$-other" /tmp/fm-labt"$$"-*+*
@@ -117,10 +118,11 @@ record_pid() {  # <root> <pid>
 }
 
 lab_tmux() {  # <root> <tmux args...>
-  local dir
-  dir=$(sed -n 's/^tmux_dir=//p' "$1/.fm-live-lab")
+  local home
+  home=$(sed -n 's/^home=//p' "$1/.fm-live-lab")
+  [ -n "$home" ] || return 1
   shift
-  env -u TMUX TMUX_TMPDIR="$dir" tmux "$@"
+  "$ROOT/bin/fm-lab-home.sh" tmux "$home" "$@"
 }
 
 start_sleeper() {
@@ -263,6 +265,7 @@ kill "$host_pid" 2>/dev/null
 wait "$host_pid" 2>/dev/null
 mkdir -p "$C/mate/config" "$C/mate/bin"
 cp "$ROOT/bin/fm-supervision-engine-lib.sh" "$C/mate/bin/"
+cp "$ROOT/bin/fm-bash-compat-lib.sh" "$C/mate/bin/"
 run_check "$C"
 expect_code 1 "$CHECK_RC" "off readiness refuses a mate without its inherited flag"
 assert_contains "$CHECK_OUT" "fail mate: the inherited supervision-host-off flag is missing" "mate names the missing opt-out"

@@ -14,9 +14,10 @@
 #   session), never a split of the captain's pane. The herdr path runs on a
 #   throwaway, NEVER-default HERDR_SESSION and asserts the default session is
 #   byte-identical via the fm-herdr-lab.sh fleet-state tripwire; the tmux path
-#   uses uniquely-named throwaway sessions killed by exact name. A harmless
+#   uses uniquely-named throwaway sessions on a private server. A harmless
 #   sleeper replaces the real daemon (FM_AFK_LAUNCH_ENTRY) so the test observes
-#   only the terminal lifecycle.
+#   only the terminal lifecycle. Every tmux call runs on a private server (see
+#   AFK_TMUX_SOCKET below), never the server of the pane the suite runs in.
 set -u
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -46,14 +47,32 @@ pass() { printf 'ok - %s\n' "$1"; }
 SLEEPER=$(mktemp "${TMPDIR:-/tmp}/fm-afk-sleeper.XXXXXX")
 printf '#!/usr/bin/env bash\nexec sleep 600\n' > "$SLEEPER"
 chmod +x "$SLEEPER"
-TRACK_TMUX_SESSIONS=""
+# Keep every tmux call off the server of the pane this suite runs in (see
+# bin/fm-lab-home.sh's header for why TMUX must go): a PATH shim pins bare
+# calls, including the launch script's, to a private socket, the suite's own
+# create and kill calls name that socket so fm-lint can see it, and a private
+# TMUX_TMPDIR catches any call that bypasses the shim. -f /dev/null keeps the
+# operator's tmux config and plugins out of that server.
+unset TMUX TMUX_PANE
+REAL_TMUX=$(command -v tmux 2>/dev/null || true)
+AFK_TMUX_DIR=$(mktemp -d /tmp/fmafk.XXXXXX) || { echo "cannot create the private tmux directory" >&2; exit 1; }
+AFK_TMUX_SOCKET="$AFK_TMUX_DIR/tmux.sock"
+export TMUX_TMPDIR="$AFK_TMUX_DIR"
+if [ -n "$REAL_TMUX" ]; then
+  # shellcheck disable=SC2016 # the shim expands its own arguments.
+  if ! { mkdir "$AFK_TMUX_DIR/bin" \
+    && printf '#!/bin/sh\nexec "%s" -f /dev/null -S "%s" "$@"\n' "$REAL_TMUX" "$AFK_TMUX_SOCKET" > "$AFK_TMUX_DIR/bin/tmux" \
+    && chmod +x "$AFK_TMUX_DIR/bin/tmux"; }; then
+    echo "cannot install the private tmux shim" >&2
+    exit 1
+  fi
+  PATH="$AFK_TMUX_DIR/bin:$PATH"
+fi
 GLOBAL_CLEANUP() {
   rm -f "$SLEEPER" 2>/dev/null || true
   rm -rf "$OFF_CONFIG" 2>/dev/null || true
-  local s
-  for s in $TRACK_TMUX_SESSIONS; do
-    tmux kill-session -t "$s" 2>/dev/null || true
-  done
+  [ -z "$REAL_TMUX" ] || "$REAL_TMUX" -S "$AFK_TMUX_SOCKET" kill-server 2>/dev/null || true
+  rm -rf "$AFK_TMUX_DIR" 2>/dev/null || true
 }
 trap GLOBAL_CLEANUP EXIT
 
@@ -614,8 +633,7 @@ unit_concurrent_start_serialized() {
   local st cap_session cap_pane first second rec count
   st=$(mktemp -d "${TMPDIR:-/tmp}/fm-afk-concurrent.XXXXXX")
   cap_session="fm-afk-concurrent-cap-$$"
-  tmux new-session -d -s "$cap_session" 2>/dev/null || { fail "concurrent start: captain session creation failed"; rm -rf "$st"; return 0; }
-  TRACK_TMUX_SESSIONS="$TRACK_TMUX_SESSIONS $cap_session"
+  "$REAL_TMUX" -f /dev/null -S "$AFK_TMUX_SOCKET" new-session -d -s "$cap_session" 2>/dev/null || { fail "concurrent start: captain session creation failed"; rm -rf "$st"; return 0; }
   cap_pane=$(tmux display-message -p -t "$cap_session" '#{pane_id}')
   enter_posture "$st" || fail "concurrent start: could not enter fixture posture"
   FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" FM_SUPERVISOR_TARGET="$cap_pane" \
@@ -629,14 +647,13 @@ unit_concurrent_start_serialized() {
   wait "$first"; wait "$second"
   rec=$(cut -f2 "$st/state/.afk-daemon-terminal" 2>/dev/null || true)
   count=$(tmux list-sessions -F '#{session_name}' 2>/dev/null | awk -v expected="$rec" '$0 == expected {n++} END{print n+0}')
-  TRACK_TMUX_SESSIONS="$TRACK_TMUX_SESSIONS $rec"
   if [ -n "$rec" ] && tmux has-session -t "$rec" 2>/dev/null && [ "$count" -eq 1 ]; then
     pass "concurrent start: one serialized daemon terminal remains tracked"
   else
     fail "concurrent start: leaked or lost daemon terminal (count $count, record $rec)"
   fi
   FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" "$LAUNCH" stop >/dev/null 2>&1
-  tmux kill-session -t "$cap_session" 2>/dev/null || true
+  "$REAL_TMUX" -S "$AFK_TMUX_SOCKET" kill-session -t "$cap_session" 2>/dev/null || true
   rm -rf "$st"
 }
 
@@ -803,12 +820,12 @@ unit_daemon_terminal_receives_the_primary_harness() {
   st=$(mktemp -d "${TMPDIR:-/tmp}/fm-afk-daemon-harness.XXXXXX")
   entry="$st/entry"
   # shellcheck disable=SC2016 # expands in the entry script.
-  printf '#!/usr/bin/env bash\nprintf "%%s" "${FM_DAEMON_PRIMARY_HARNESS-unset}" > "$FM_HOME/daemon-harness"\n' > "$entry"
+  printf '#!/usr/bin/env bash\nprintf "%%s" "${FM_DAEMON_PRIMARY_HARNESS-unset}" > "$FM_HOME/daemon-harness"\nprintf "%%s" "${FM_DATA_OVERRIDE-unset}" > "$FM_HOME/daemon-config"\nprintf "%%s" "${FM_STATE_OVERRIDE-unset}" > "$FM_HOME/daemon-state"\n' > "$entry"
   chmod +x "$entry"
   # shellcheck disable=SC2016 # positional params expand in the child shell.
   for backend in herdr tmux; do
-    rm -f "$st/daemon-harness"
-    env -u FM_DAEMON_PRIMARY_HARNESS FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" FM_AFK_LAUNCH_ENTRY="$entry" \
+    rm -f "$st/daemon-harness" "$st/daemon-config" "$st/daemon-state"
+    env -u FM_DAEMON_PRIMARY_HARNESS -u FM_DATA_OVERRIDE FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" FM_AFK_LAUNCH_ENTRY="$entry" \
       FM_TEST_HARNESS=claude bash -c '
       . "$1"
       fm_backend_source() { return 0; }
@@ -817,10 +834,10 @@ unit_daemon_terminal_receives_the_primary_harness() {
         if [ "$2 $3" = "workspace create" ]; then
           printf %s '\''{"result":{"workspace":{"workspace_id":"ws-exact"},"root_pane":{"pane_id":"pane-exact"}}}'\''
         elif [ "$2 $3" = "pane run" ]; then
-          bash -c "$5"
+          FM_DATA_OVERRIDE=/synthetic/foreign bash -c "$5"
         fi
       }
-      tmux() { [ "$1" = new-session ] && bash -c "$5"; }
+      tmux() { [ "$1" = new-session ] && FM_DATA_OVERRIDE=/synthetic/foreign bash -c "$5"; }
       fm_afk_launch_record_write() { return 0; }
       fm_afk_launch_commit_terminal() { return 0; }
       fm_afk_launch_create_"$2" lab:captain "$2"
@@ -830,6 +847,18 @@ unit_daemon_terminal_receives_the_primary_harness() {
       pass "$backend daemon terminal: runs with the captain's primary harness"
     else
       fail "$backend daemon terminal: primary harness not handed over (got '${got:-nothing}')"
+    fi
+    got=$(cat "$st/daemon-config" 2>/dev/null || true)
+    if [ "$got" = unset ]; then
+      pass "$backend daemon terminal: drops FM values inherited from its server"
+    else
+      fail "$backend daemon terminal: kept an inherited foreign FM value (got '${got:-nothing}')"
+    fi
+    got=$(cat "$st/daemon-state" 2>/dev/null || true)
+    if [ "$got" = "$st/state" ]; then
+      pass "$backend daemon terminal: keeps this home's own state override"
+    else
+      fail "$backend daemon terminal: lost this home's state override (got '${got:-nothing}')"
     fi
   done
   rm -rf "$st"
@@ -1036,6 +1065,14 @@ unit_supervision_host_other_harnesses_run_no_away_daemon() {
   out=$(enter_with cursor off)
   printf '%s' "$out" | grep -F 'Supervision host' >/dev/null && fail "enter must stay quiet on a home that opted out: $out"
   pass "supervision host: enter names a missing engine on an opted-in home and says nothing otherwise"
+  out=$(enter_with codex claude); rc=$?
+  [ "$rc" -eq 0 ] && [ -f "$st/state/.afk-contract" ] \
+    || fail "codex: the entry must record the posture without claiming a supervisor: $out"
+  printf '%s' "$out" | grep -F 'Away supervision is not running yet:' >/dev/null \
+    || fail "codex: a record without a watcher must name the missing checkpoint: $out"
+  [ ! -e "$st/state/.watch.lock" ] && [ ! -e "$st/state/.supervision-host" ] \
+    || fail "codex: entry must not fabricate a watcher or host record"
+  pass "codex: a recorded away posture names the missing foreground checkpoint without fabricating readiness"
   rm -rf "$st"
 }
 
@@ -1390,15 +1427,16 @@ unit_tmux_planned_record_and_collision() {
   local st first second
   st=$(mktemp -d "${TMPDIR:-/tmp}/fm-afk-tmux-plan.XXXXXX")
   mkdir -p "$st/state"
-  if FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" bash -c '
+  if TEST_HOME="$st" TEST_RECORD="$st/state/.afk-daemon-terminal" \
+    FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" bash -c '
     . "$1"
     tmux() {
       if [ "$1" = new-session ]; then
-        [ -s "$FM_AFK_LAUNCH_RECORD" ] || return 9
-        printf "%s" "$4" > "$FM_HOME/created-name"
+        [ -s "$TEST_RECORD" ] || return 9
+        printf "%s" "$4" > "$TEST_HOME/created-name"
         return 1
       fi
-      [ "$1" != kill-session ] || : > "$FM_HOME/killed"
+      [ "$1" != kill-session ] || : > "$TEST_HOME/killed"
       return 1
     }
     ! fm_afk_launch_create_tmux captain:0 tmux
@@ -1412,11 +1450,11 @@ unit_tmux_planned_record_and_collision() {
 
   st=$(mktemp -d "${TMPDIR:-/tmp}/fm-afk-tmux-unique.XXXXXX")
   mkdir -p "$st/state"
-  if FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" bash -c '
+  if TEST_HOME="$st" FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" bash -c '
     . "$1"
     tmux() {
-      [ "$1" != new-session ] || { printf "%s" "$4" > "$FM_HOME/created-name"; return 1; }
-      [ "$1" != kill-session ] || : > "$FM_HOME/killed"
+      [ "$1" != new-session ] || { printf "%s" "$4" > "$TEST_HOME/created-name"; return 1; }
+      [ "$1" != kill-session ] || : > "$TEST_HOME/killed"
       return 1
     }
     ! fm_afk_launch_create_tmux captain:0 tmux
@@ -1693,8 +1731,7 @@ e2e_tmux() {
   local cap_session home_tmp cap_pane before during after rec
   cap_session="fm-afk-launch-cap-$$"
   home_tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-afk-tmux-home.XXXXXX")
-  tmux new-session -d -s "$cap_session" 2>/dev/null || { fail "tmux e2e: could not create captain session"; rm -rf "$home_tmp"; return 0; }
-  TRACK_TMUX_SESSIONS="$TRACK_TMUX_SESSIONS $cap_session"
+  "$REAL_TMUX" -f /dev/null -S "$AFK_TMUX_SOCKET" new-session -d -s "$cap_session" 2>/dev/null || { fail "tmux e2e: could not create captain session"; rm -rf "$home_tmp"; return 0; }
   cap_pane=$(tmux display-message -p -t "$cap_session" '#{pane_id}')
   enter_posture "$home_tmp" || fail "tmux e2e: could not enter fixture posture"
   before=$(tmux list-panes -t "$cap_session" | wc -l | tr -d ' ')
@@ -1705,7 +1742,6 @@ e2e_tmux() {
 
   during=$(tmux list-panes -t "$cap_session" | wc -l | tr -d ' ')
   rec=$(cut -f2 "$home_tmp/state/.afk-daemon-terminal" 2>/dev/null || true)
-  TRACK_TMUX_SESSIONS="$TRACK_TMUX_SESSIONS $rec"
   if [ "$before" = "$during" ]; then pass "tmux e2e: captain window pane count unchanged after start (no split-window)"; else fail "tmux e2e: captain window pane count changed ($before -> $during)"; fi
   if [ -n "$rec" ] && tmux has-session -t "$rec" 2>/dev/null && [ "$rec" != "$cap_session" ]; then pass "tmux e2e: daemon launched in a separate detached session"; else fail "tmux e2e: no separate daemon session ($rec)"; fi
 
@@ -1717,7 +1753,7 @@ e2e_tmux() {
   if [ -n "$rec" ] && ! tmux has-session -t "$rec" 2>/dev/null; then pass "tmux e2e: daemon session killed by exact id on stop"; else fail "tmux e2e: daemon session leaked ($rec)"; fi
   if [ ! -e "$home_tmp/state/.afk-daemon-terminal" ] && [ ! -e "$home_tmp/state/.afk" ]; then pass "tmux e2e: record + .afk cleared on stop"; else fail "tmux e2e: record or .afk not cleared"; fi
 
-  tmux kill-session -t "$cap_session" 2>/dev/null || true
+  "$REAL_TMUX" -S "$AFK_TMUX_SOCKET" kill-session -t "$cap_session" 2>/dev/null || true
   rm -rf "$home_tmp" 2>/dev/null || true
 }
 

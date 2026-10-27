@@ -653,7 +653,7 @@ test_changed_mode_drops_external_sources_and_excludes_cross_file_codes() {
     "changed-mode local lint did not disclose dropped source following"
   assert_grep $'analysis_mode\tlocal' "$telemetry" \
     "telemetry did not record local analysis mode"
-  assert_grep $'source_directives\t5' "$telemetry" \
+  assert_grep $'source_directives\t6' "$telemetry" \
     "telemetry did not count the changed root's source directives"
   assert_grep $'source_followed_directives\t0' "$telemetry" \
     "telemetry reported followed sources in no-external-sources mode"
@@ -1218,6 +1218,134 @@ test_rejects_direct_beads_cli_in_explicit_core_path() {
       "explicit core path did not report the backend-boundary violation: $spelling"
   done
   pass "fm-lint.sh enforces backend purity for explicit core paths"
+}
+
+test_tmux_commands_must_name_their_server() {
+  local tmp fakebin log lint_copy entry target line out rc
+  tmp=$(fm_test_tmproot fm-lint-tmux-socket)
+  fakebin=$(fm_fakebin "$tmp")
+  log="$tmp/shellcheck.log"
+  mkdir -p "$tmp/repo/bin" "$tmp/repo/tests"
+  lint_copy="$tmp/repo/bin/fm-lint.sh"
+  cp "$LINT" "$lint_copy"
+  chmod +x "$lint_copy"
+  fm_lint_stub_shellcheck "$fakebin" "$log"
+
+  # shellcheck disable=SC2016 # the fixture lines are literal script text.
+  for entry in \
+    'bin/lab.sh|tmux kill-server' \
+    'bin/lab.sh|TMUX_TMPDIR="$dir" tmux kill-server' \
+    'bin/lab.sh|env -u TMUX TMUX_TMPDIR="$dir" /usr/bin/tmux kill-server' \
+    'bin/lab.sh|trap '\''"$REAL_TMUX" kill-server'\'' EXIT; true' \
+    'bin/lab.sh|true && "${REAL_TMUX}" \
+  kill-server' \
+    'tests/lab.test.sh|tmux kill-session -t lab' \
+    'tests/lab.test.sh|tmux -f /dev/null new-session -d -s lab' \
+    'tests/lab.test.sh|if tmux new-session -d -s lab; then :; fi' \
+    'tests/lab.test.sh|trap '\''TMUX_TMPDIR="$LAB_TMUX_DIR" tmux kill-server'\'' EXIT' \
+    'tests/lab.test.sh|"$real_tmux" kill-server' \
+    'tests/lab.test.sh|"$TMUX" kill-server' \
+    'tests/lab.test.sh|bash -lc '\''tmux kill-server'\''' \
+    'tests/lab.test.sh|sh -c "tmux kill-server"' \
+    'tests/lab.test.sh|eval "tmux kill-server"' \
+    'tests/lab.test.sh|elif tmux kill-server; then :; fi' \
+    'tests/lab.test.sh|timeout 5 tmux kill-server' \
+    'tests/lab.test.sh|nohup tmux new -d -s lab &' \
+    'tests/lab.test.sh|env "${lab_env[@]}" tmux kill-ses -t lab' \
+    'tests/lab.test.sh|pane="$(tmux new-session -d -P)"' \
+    'tests/lab.test.sh|tmux -L default kill-server' \
+    'tests/lab.test.sh|tmux list-panes -F '\'' #{pane_id}'\''; tmux kill-server' \
+    'tests/lab.test.sh|tmux kill-server  # fm-lint: tmux-socket-ok' \
+    'tests/lab.test.sh|x=`tmux kill-server`' \
+    'tests/lab.test.sh|tmux -uf /dev/null new-session -d' \
+    'tests/lab.test.sh|tmux -2 kill-session -t lab' \
+    'tests/lab.test.sh|tmux -Ldefault kill-server' \
+    'tests/lab.test.sh|tmux -fconf kill-server' \
+    'tests/lab.test.sh|tmux -f "$(lab_cfg)" kill-server' \
+    'tests/lab.test.sh|tmux "${opts[@]}" kill-session -t lab' \
+    'tests/lab.test.sh|tmux -f "my cfg" kill-server' \
+    'tests/lab.test.sh|trap '\''tmux "${o[@]}" kill-server'\'' EXIT' \
+    'tests/lab.test.sh|tmux "kill-server"' \
+    'tests/lab.test.sh|x=$(tmux kill-server)' \
+    'tests/lab.test.sh|(tmux kill-server) || true' \
+    'tests/lab.test.sh|tmux $(lab_flags lab) kill-server' \
+    'tests/lab.test.sh|tmux -f "$(cfg "a b")" kill-server' \
+    'tests/lab.test.sh|tmux "$o" -f "$(cfg a b)" kill-server' \
+    'tests/lab.test.sh|x=$(tmux -- kill-server)' \
+    'tests/lab.test.sh|tmux -c "$(pwd -L)" kill-server' \
+    'tests/lab.test.sh|tmux -f "$(realpath -L "$cfg")" kill-server' \
+    'tests/lab.test.sh|tmux "$o" new-window -S "tmux kill-server"' \
+    'tests/lab.test.sh|tmux "${opts[@]}" new-session -d "curl -L $url"' \
+    'tests/lab.test.sh|echo "`tmux new-session -d`"' \
+    'tests/lab.test.sh|"${TMUX_CMD[@]}" kill-server' \
+    'tests/lab.test.sh|echo '\''# fm-lint: tmux-socket-ok x'\''; tmux kill-server' \
+    'bin/lab.sh|tmux kill-server  # fm-lint: tmux-socket-ok bin may not opt out'
+  do
+    target=${entry%%|*}
+    line=${entry#*|}
+    printf '#!/usr/bin/env bash\n%s\n' "$line" > "$tmp/repo/$target"
+    rc=0
+    out=$(cd "$tmp/repo" && PATH="$fakebin:$PATH" "$lint_copy" "$target" 2>&1) || rc=$?
+    [ "$rc" -ne 0 ] || fail "lint accepted a tmux command that names no server in $target: $line"
+    assert_contains "$out" "tmux command without -S or -L can reach the operator's tmux server" \
+      "lint did not name the unaddressed tmux command in $target: $line"
+    rm -f "$tmp/repo/$target"
+  done
+
+  # shellcheck disable=SC2016 # the fixture lines are literal script text.
+  for entry in \
+    'bin/lab.sh|tmux -S "$sock" kill-server' \
+    'bin/lab.sh|env -u TMUX "$REAL_TMUX" -L lab kill-server' \
+    'bin/lab.sh|tmux kill-session -t "$target"' \
+    'bin/lab.sh|tmux new-session -d -s firstmate' \
+    'tests/lab.test.sh|"$REAL_TMUX" -f /dev/null -S "$sock" new-session -d -s lab' \
+    'tests/lab.test.sh|tmux() { [ "$1" = new-session ] && return 0; }' \
+    'tests/lab.test.sh|  has-session|new-session) exit 0 ;;' \
+    'tests/lab.test.sh|record_write tmux new-session owned' \
+    'tests/lab.test.sh|lab_tmux kill-server' \
+    'tests/lab.test.sh|tmux new-window -d -t lab' \
+    'tests/lab.test.sh|echo "tmux kill-server"' \
+    'tests/lab.test.sh|echo "$(echo hi) and $x; tmux kill-server"' \
+    'tests/lab.test.sh|tmux new-window -d -n new -t lab' \
+    'tests/lab.test.sh|tmux send-keys -t lab '\''git switch new'\'' Enter' \
+    'tests/lab.test.sh|tmux -f /dev/null -S "$sock" new-session -d' \
+    'tests/lab.test.sh|tmux "${opts[@]}" list-sessions' \
+    'tests/lab.test.sh|tmux -Lfm-lab kill-server' \
+    'bin/lab.sh|    tmux) tmux -S "$sock" kill-server ;;' \
+    'tests/lab.test.sh|tmux "${opts[@]}" -S "$sock" kill-server' \
+    'tests/lab.test.sh|tmux "${opts[@]}" new-window -d -n new -t lab' \
+    'tests/lab.test.sh|tmux "$o" -f cfg -S "$sock" kill-server' \
+    'tests/lab.test.sh|tmux -f "$(cfg)" -S "$sock" kill-server' \
+    'tests/lab.test.sh|tmux "$o" -f '\''a b'\'' -S s kill-server' \
+    'tests/lab.test.sh|tmux "$o" -L default -S x kill-server' \
+    'tests/lab.test.sh|[ "$(tmux "$o" -f cfg)" = kill-server ]' \
+    'tests/lab.test.sh|tmux -S "$dir/tmux-$(id -u)/default" kill-server' \
+    'tests/lab.test.sh|tmux kill-server  # fm-lint: tmux-socket-ok guarded negative control'
+  do
+    target=${entry%%|*}
+    line=${entry#*|}
+    printf '#!/usr/bin/env bash\n%s\n' "$line" > "$tmp/repo/$target"
+    rc=0
+    out=$(cd "$tmp/repo" && PATH="$fakebin:$PATH" "$lint_copy" "$target" 2>&1) || rc=$?
+    [ "$rc" -eq 0 ] || fail "lint rejected a server-addressed or non-invoking tmux line in $target: $line"$'\n'"$out"
+    rm -f "$tmp/repo/$target"
+  done
+
+  # The default (no-path) run covers tests/ as well as bin/.
+  cat > "$tmp/repo/bin/fm-lint-workflows.sh" <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
+  chmod +x "$tmp/repo/bin/fm-lint-workflows.sh"
+  mkdir -p "$tmp/repo/bin/backends"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$tmp/repo/bin/backends/noop.sh"
+  printf '#!/usr/bin/env bash\ntmux kill-session -t lab\n' > "$tmp/repo/tests/lab.test.sh"
+  rc=0
+  out=$(cd "$tmp/repo" && CI=true PATH="$fakebin:$PATH" "$lint_copy" 2>&1) || rc=$?
+  [ "$rc" -ne 0 ] || fail "the default lint run accepted an unaddressed tmux kill-session under tests/"
+  assert_contains "$out" "tests/lab.test.sh:2: tmux command without -S or -L can reach the operator's tmux server" \
+    "the default lint run did not name the unaddressed tmux command under tests/"
+  pass "fm-lint.sh rejects tmux kill-server, and test kill-session/new-session, that name no -S/-L server"
 }
 
 test_ignores_ambient_shellcheck_opts() {
@@ -1889,6 +2017,7 @@ test_sidecar_result_exit_reflects_final_status() {
   mkdir -p "$tmp/repo/bin/backends" "$tmp/repo/tests" "$tmp/repo/.github/workflows"
   cp "$LINT" "$tmp/repo/bin/fm-lint.sh"
   cp "$ROOT/bin/fm-timeout-lib.sh" "$tmp/repo/bin/fm-timeout-lib.sh"
+  cp "$ROOT/bin/fm-bash-compat-lib.sh" "$tmp/repo/bin/fm-bash-compat-lib.sh"
   cat > "$tmp/repo/bin/fm-lint-workflows.sh" <<'SH'
 #!/usr/bin/env bash
 exit 0
@@ -2045,6 +2174,7 @@ test_rejects_wrong_shellcheck_version
 test_catches_a_real_lint_defect
 test_rejects_direct_beads_cli_invocations
 test_rejects_direct_beads_cli_in_explicit_core_path
+test_tmux_commands_must_name_their_server
 test_ignores_ambient_shellcheck_opts
 test_clean_fixture_passes
 test_jobs_are_deterministic_and_complete

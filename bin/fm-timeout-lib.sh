@@ -21,7 +21,19 @@
 #       exit, and is reported as 124 too. Only 137 raised by GNU/BSD timeout's
 #       own KILL escalation, with no status recorded by the bounded command,
 #       also collapses into 124: there it means the bound fired, not that the
-#       command chose to die.
+#       command chose to die. The perl and bash mechanisms TERM the bounded
+#       group at the bound and KILL it 1 s later. A perl runner that is itself
+#       sent TERM, INT or HUP (an outer bound stopping it) TERMs its bounded
+#       group, KILLs it 0.5 s later and exits, so a bound nested inside another
+#       never strands its command; GNU/BSD timeout places its command in a group
+#       of its own that an outer group signal does not reach, so there the
+#       inner deadline still applies.
+#
+#   fm_run_timed_fn <seconds> <function-or-command> [args...]
+#       fm_run_timed for a shell function too: the call runs in a subshell in
+#       its own process group under the bash mechanism, with the same status
+#       contract (124 when the bound fired). Variables the call sets do not
+#       reach the caller.
 #
 #   fm_exec_timed <seconds> <grace-seconds> <command> [args...]
 #       Replaces the calling shell with the bounded command, so it must be the
@@ -71,6 +83,8 @@
 # foreground process group; the perl fallback does it explicitly with setpgrp
 # plus a negative pid, and the bash fallback uses monitor mode to give the
 # bounded child its own process group before signaling its negative pid.
+# shellcheck source=bin/fm-bash-compat-lib.sh
+. "$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; CDPATH='' cd -- "${d:-/}" && pwd)/fm-bash-compat-lib.sh"
 set -u
 
 fm_timeout_mechanism() {
@@ -88,8 +102,9 @@ fm_timeout_mechanism() {
 }
 
 fm_run_bash_timeout() {
-  local seconds=$1 command_status deadline_status child_pid watchdog_pid command_rc recorded_rc monitor_was_on=0
+  local seconds=$1 command_status deadline_status child_pid watchdog_pid command_rc recorded_rc monitor_was_on=0 caller
   shift
+  caller=$(exec sh -c 'echo "$PPID"')
   command_status=$(mktemp "${TMPDIR:-/tmp}/fm-bash-timeout-command.XXXXXX" 2>/dev/null) || return 124
   deadline_status="${command_status}.deadline"
   case $- in *m*) monitor_was_on=1 ;; esac
@@ -102,12 +117,24 @@ fm_run_bash_timeout() {
     exit "$command_rc"
   ) &
   child_pid=$!
+  # The watchdog's sleeps come from the default PATH (command -p): a bound is
+  # wall-clock time even where a caller's PATH puts a stub or wrapper first.
+  # Its own group outlives a caller stopped from outside, so it also ends the
+  # command within a second of that caller's exit.
   (
     set +m
-    sleep "$seconds"
+    case "$seconds" in
+      *[!0-9]*) command -p sleep "$seconds" ;;
+      *)
+        i=0
+        while [ "$i" -lt "$seconds" ] && kill -0 "$caller" 2>/dev/null; do
+          command -p sleep 1
+          i=$((i + 1))
+        done ;;
+    esac
     printf 'expired\n' > "$deadline_status"
     kill -TERM -- "-$child_pid" 2>/dev/null || true
-    sleep 0.2
+    command -p sleep 1
     kill -KILL -- "-$child_pid" 2>/dev/null || true
     exit 124
   ) &
@@ -185,12 +212,16 @@ fm_run_timed() {  # <seconds> <command...>
     timeout) fm_run_external_timeout timeout "$seconds" "$@" ;;
     gtimeout) fm_run_external_timeout gtimeout "$seconds" "$@" ;;
     perl)
-      perl -e 'my $t = shift; my $pid = fork; die "fork failed" unless defined $pid; if (!$pid) { setpgrp(0, 0); exec @ARGV } local $SIG{ALRM} = sub { kill "TERM", -$pid; select undef, undef, undef, 0.2; kill "KILL", -$pid; exit 124 }; alarm $t; waitpid $pid, 0; exit(($? & 127) ? 128 + ($? & 127) : $? >> 8)' \
+      perl -e 'my $t = shift; my $pid = fork; die "fork failed" unless defined $pid; if (!$pid) { setpgrp(0, 0); exec @ARGV } local $SIG{ALRM} = sub { kill "TERM", -$pid; select undef, undef, undef, 1; kill "KILL", -$pid; exit 124 }; my $stop = sub { my $n = shift; alarm 0; kill "TERM", -$pid; select undef, undef, undef, 0.5; kill "KILL", -$pid; exit(128 + ($n eq "INT" ? 2 : $n eq "HUP" ? 1 : 15)) }; local $SIG{TERM} = $stop; local $SIG{INT} = $stop; local $SIG{HUP} = $stop; alarm $t; waitpid $pid, 0; exit(($? & 127) ? 128 + ($? & 127) : $? >> 8)' \
         "$seconds" "$@"
       ;;
     bash) fm_run_bash_timeout "$seconds" "$@" ;;
     *) return 124 ;;
   esac
+}
+
+fm_run_timed_fn() {  # <seconds> <function-or-command> [args...]
+  fm_run_bash_timeout "$@"
 }
 
 fm_timed_out() {  # <status>

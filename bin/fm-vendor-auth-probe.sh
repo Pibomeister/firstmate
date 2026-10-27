@@ -61,6 +61,8 @@
 #                                  positive integer, otherwise the default 20 is
 #                                  used. Zero is rejected because `timeout 0` and
 #                                  `alarm 0` both mean "no deadline".
+# shellcheck source=bin/fm-bash-compat-lib.sh
+. "$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; CDPATH='' cd -- "${d:-/}" && pwd)/fm-bash-compat-lib.sh"
 set -u
 
 VERIFIED_GROK_VERSION=0.2.117

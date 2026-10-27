@@ -1,7 +1,7 @@
 # Rovo CLI
 
 Verified 2026-09-02 on Rovo CLI 202609.1.2 for crewmate/scout work only.
-Not verified, and not naturally verifiable, as a secondmate or primary: rovo has no turn-end hook and no primary supervision protocol, the same gap that scopes muse to crewmate/scout.
+Not verified as a secondmate or primary: rovo has no turn-end hook and no verified primary supervision protocol.
 
 ## Operating facts
 

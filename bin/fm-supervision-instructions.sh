@@ -13,6 +13,8 @@
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=bin/fm-bash-compat-lib.sh
+. "$SCRIPT_DIR/fm-bash-compat-lib.sh"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$REPO_ROOT}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
@@ -101,13 +103,14 @@ if [ -z "$HARNESS" ]; then
 fi
 
 case "$HARNESS" in
-  claude|codex|opencode|pi|grok|cursor|omp) SNIPPET="$DOC_DIR/$HARNESS.md" ;;
+  claude|codex|opencode|pi|grok|cursor|omp|muse) SNIPPET="$DOC_DIR/$HARNESS.md" ;;
   pi-signed) SNIPPET="$DOC_DIR/pi.md" ;;
   *) HARNESS=unknown; SNIPPET="$DOC_DIR/unknown.md" ;;
 esac
 [ -f "$SNIPPET" ] || SNIPPET="$DOC_DIR/unknown.md"
 HOST_SNIPPET=
 grok_arm='bin/fm-watch-arm.sh'
+grok_arm_command='export FM_WATCH_GROK_CONTINUITY=1; exec bin/fm-watch-arm.sh'
 case "$HARNESS" in
   claude|cursor|opencode|omp|grok|codex)
     # shellcheck source=bin/fm-supervision-engine-lib.sh
@@ -115,16 +118,37 @@ case "$HARNESS" in
     if fm_supervision_host_enabled "$CONFIG" "$HARNESS"; then
       HOST_SNIPPET="$DOC_DIR/supervision-host.md"
       grok_arm='bin/fm-supervision-host.sh park'
+      grok_arm_command='exec bin/fm-supervision-host.sh park'
     fi
     ;;
 esac
 
 checkpoint_seconds=${FM_CODEX_WATCH_CHECKPOINT:-180}
+SECONDMATE_MODE=0
+if [ "$HARNESS" = codex ] && [ "$AFK" -eq 0 ] && [ -x "$SCRIPT_DIR/fm-watch.sh" ] \
+  && "$SCRIPT_DIR/fm-watch.sh" --secondmate-selected >/dev/null 2>&1; then
+  SECONDMATE_MODE=1
+fi
 pi_ext="$FM_ROOT/.pi/extensions/fm-primary-pi-watch.ts"
 pi_turnend_ext="$FM_ROOT/.pi/extensions/fm-primary-turnend-guard.ts"
 omp_ext="$FM_ROOT/.omp/extensions/fm-primary-omp-watch.ts"
 omp_turnend_ext="$FM_ROOT/.omp/extensions/fm-primary-turnend-guard.ts"
 x_mode_env="$CONFIG/x-mode.env"
+
+# True when the active home is not the firstmate checkout: omp's extensions load
+# from the checkout, and only the `fm <project>` launcher points them at another home.
+omp_home_elsewhere=0
+if [ "$(cd -P "$FM_HOME" 2>/dev/null && pwd -P || printf '%s' "$FM_HOME")" != "$(cd -P "$FM_ROOT" 2>/dev/null && pwd -P || printf '%s' "$FM_ROOT")" ]; then
+  omp_home_elsewhere=1
+fi
+# shellcheck disable=SC2016  # backticks are literal markdown in the rendered text
+if [ "$omp_home_elsewhere" -eq 1 ]; then
+  omp_restart_long='exit omp and relaunch through `fm <project>`, which sets FM_HOME and --cwd; a bare omp or /resume from the firstmate checkout does not register the extensions for this home'
+  omp_restart_short='exit omp and relaunch through `fm <project>`'
+else
+  omp_restart_long="restart omp inside this home; pass \`-e $omp_turnend_ext -e $omp_ext\` only when omp must start from another directory, because omp loads a file named both ways twice"
+  omp_restart_short='restart omp inside this home'
+fi
 
 shell_quote() {
   printf "'"
@@ -151,10 +175,13 @@ render_snippet() {  # [snippet]
     esac
     line=${line//__FM_PI_EXT__/$pi_ext}
     line=${line//__FM_PI_TURNEND_EXT__/$pi_turnend_ext}
+    line=${line//__FM_OMP_RESTART_LONG__/$omp_restart_long}
+    line=${line//__FM_OMP_RESTART_SHORT__/$omp_restart_short}
     line=${line//__FM_OMP_EXT__/$omp_ext}
     line=${line//__FM_OMP_TURNEND_EXT__/$omp_turnend_ext}
     line=${line//__FM_X_MODE_ENV_SH__/$x_mode_env_sh}
     line=${line//__FM_X_MODE_ENV__/$x_mode_env}
+    line=${line//__FM_GROK_ARM_COMMAND__/$grok_arm_command}
     line=${line//__FM_GROK_ARM__/$grok_arm}
     printf '%s\n' "$line"
   done < "$snippet"
@@ -175,7 +202,9 @@ repair_line() {
   fi
 
   prefix=
-  if [ "$QUEUE_PENDING" -eq 1 ]; then
+  if [ "$SECONDMATE_MODE" -eq 1 ]; then
+    prefix='Drain and acknowledge pending wakes and run bin/fm-watch.sh --secondmate, then end this turn; if it reports a failure, '
+  elif [ "$QUEUE_PENDING" -eq 1 ]; then
     prefix='After draining queued wakes, '
   fi
   if [ "$X_MODE" -eq 1 ]; then
@@ -193,16 +222,24 @@ repair_line() {
       printf '%s%s%s%s%s%s\n' "$prefix" 'repair a missing or failed watcher cycle with the Pi tool fm_watch_arm_pi, or restart Pi with -e ' "$pi_turnend_ext" ' -e ' "$pi_ext" ' if the extensions are not loaded.'
       ;;
     omp)
-      printf '%s%s%s%s%s%s\n' "$prefix" 'repair a missing or failed watcher cycle with the omp tool fm_watch_arm_omp, or restart omp inside this home so ' "$omp_turnend_ext" ' and ' "$omp_ext" ' auto-load from .omp/extensions/ (use -e with both paths only when starting omp from another directory).'
+      # shellcheck disable=SC2016  # backticks are literal markdown in the rendered text
+      if [ "$omp_home_elsewhere" -eq 1 ]; then
+        printf '%s%s%s%s%s%s\n' "$prefix" 'repair a missing or failed watcher cycle with the omp tool fm_watch_arm_omp, or exit omp and relaunch through `fm <project>` (the launcher sets FM_HOME and --cwd) so ' "$omp_turnend_ext" ' and ' "$omp_ext" ' load for this home; a bare omp or /resume from the firstmate checkout does not register the extensions for this home.'
+      else
+        printf '%s%s%s%s%s%s\n' "$prefix" 'repair a missing or failed watcher cycle with the omp tool fm_watch_arm_omp, or restart omp inside this home so ' "$omp_turnend_ext" ' and ' "$omp_ext" ' auto-load from .omp/extensions/ (use -e with both paths only when starting omp from another directory).'
+      fi
       ;;
     opencode)
       printf '%s%s\n' "$prefix" 'repair missing watcher supervision by letting the OpenCode TUI plugin arm after idle; use bin/fm-watch-arm.sh only as a manual recovery probe if the plugin reports failure.'
       ;;
     grok)
-      printf '%s%s%s%s\n' "$prefix" 'repair missing watcher supervision with ' "$grok_arm" ' as its own Grok tracked background task, never shell &.'
+      printf '%s%s%s%s\n' "$prefix" 'repair missing watcher supervision with ' "$grok_arm_command" ' as its own Grok tracked background task, never shell &.'
       ;;
     cursor)
       printf '%s%s\n' "$prefix" 'watcher supervision is owned by the stop-hook park; inspect the hook registration and watcher startup path before ending the turn.'
+      ;;
+    muse)
+      printf '%s%s\n' "$prefix" 'repair missing watcher supervision with bin/fm-watch-arm.sh as its own Muse tracked background task, never shell & or a foreground wait.'
       ;;
     *)
       printf '%s%s\n' "$prefix" 'repair missing watcher supervision according to the session-start block for this harness; do not use shell &.'
@@ -211,6 +248,10 @@ repair_line() {
 }
 
 ordinary_wake_line() {
+  if [ "$SECONDMATE_MODE" -eq 1 ]; then
+    printf '%s\n' '- Ordinary wake: handle and acknowledge durable inbox/watcher events, send actions and parent replies, then end this turn; the existing watcher remains outside it.'
+    return 0
+  fi
   case "$HARNESS" in
     claude)
       printf '%s\n' '- Ordinary wake: the Stop-owned auto-arm (bin/fm-claude-stop-autoarm.sh) already owns watcher continuity; drain and handle the wake, and do not arm another cycle yourself.'
@@ -228,10 +269,13 @@ ordinary_wake_line() {
       printf '%s\n' '- Ordinary wake: the OpenCode TUI plugin already owns watcher continuity; do not arm manually.'
       ;;
     grok)
-      printf '%s%s%s\n' '- Ordinary wake: re-arm exactly one ' "$grok_arm" ' Grok tracked background task as directed below.'
+      printf '%s%s%s\n' '- Ordinary wake: re-arm exactly one ' "$grok_arm_command" ' Grok tracked background task as directed below.'
       ;;
     cursor)
       printf '%s\n' '- Ordinary wake: the stop-hook park (bin/fm-turnend-guard-cursor.sh) already owns watcher continuity; drain and handle the wake, and do not arm another cycle yourself.'
+      ;;
+    muse)
+      printf '%s\n' '- Ordinary wake: re-arm exactly one bin/fm-watch-arm.sh Muse tracked background task as directed below.'
       ;;
     *)
       printf '%s\n' '- Ordinary wake: follow the continuation in the harness protocol below; do not use shell &.'
@@ -273,6 +317,16 @@ if [ -n "$HOST_SNIPPET" ]; then
 fi
 ordinary_wake_line
 printf '\n'
+if [ "$SECONDMATE_MODE" -eq 1 ]; then
+  cat <<'EOF'
+Mode: Secondmate event-driven turns.
+Read and acknowledge the steering inbox, drain and handle durable watcher events, and run the exact WAKE_ACK_REQUIRED acknowledgement after handling them.
+Send resulting actions and parent-channel replies in this handling turn.
+Run bin/fm-watch.sh --secondmate once to verify the outside-turn watcher and notification route, then end this turn.
+Do not wait for crews or poll a tool session; an existing inbox doorbell starts the next handling turn when an actionable event arrives.
+If bin/fm-watch.sh --secondmate reports a failure, follow the default checkpoint protocol below instead.
+EOF
+fi
 render_snippet
 printf '\n'
 if [ -n "$HOST_SNIPPET" ]; then

@@ -92,7 +92,7 @@ unset _fm_classify_nounset
 # classification below.
 FM_CLASSIFY_CAPTAIN_RE_DEFAULT='done:|needs-decision:|blocked:|failed:|PR ready|checks green|ready in branch|merged'
 
-# The declared-wait verb. A crew (or firstmate steering it) appends
+# The declared-wait verb. A crew (or firstmate, through bin/fm-park.sh) appends
 #   paused: <reason>
 # to declare a known wait expected to clear on its own. The legacy "external
 # wait" name and "awaiting external" reason also cover the worker's own work;
@@ -417,7 +417,8 @@ _fm_status_declared_wait_scan() {  # <resolve-verb> <legacy-captain-re>
 
 # A condition-aware declared wait: a `paused:` line may say WHEN it expects to
 # clear with `until <YYYY-MM-DDTHH:MM[:SS]Z>` anywhere in its text (UTC only, so
-# no local-zone guess is ever recorded). Prints that time as epoch seconds so a
+# no local-zone guess is ever recorded). The last matching token wins, whether
+# it uses minute or seconds precision. Prints that time as epoch seconds so a
 # supervisor rechecks the wait when the worker said it would clear instead of on
 # the flat cadence; returns 1 when the line is not a pause or declares no time,
 # or the time is malformed, so a bad token falls back to the cadence rather than
@@ -426,8 +427,7 @@ status_paused_until() {  # <status-line> -> epoch on stdout
   local line=$1 token
   status_is_paused "$line" || return 1
   token=$(printf '%s' "$line" \
-    | sed -n 's/.*[[:space:]][Uu][Nn][Tt][Ii][Ll][[:space:]]\{1,\}\([0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]Z\).*/\1/p; s/.*[[:space:]][Uu][Nn][Tt][Ii][Ll][[:space:]]\{1,\}\([0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z\).*/\1/p' \
-    | head -1)
+    | sed -n 's/.*[[:space:]][Uu][Nn][Tt][Ii][Ll][[:space:]]\{1,\}\([0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]\(:[0-9][0-9]\)\{0,1\}Z\).*/\1/p')
   [ -n "$token" ] || return 1
   fm_utc_iso_to_epoch "$token"
 }
@@ -815,7 +815,7 @@ _fm_decision_key_transition_allowed() {  # <key> <note>
 _fm_is_pending_reply_escalation() {  # <key> <note>
   case "$1" in pending-reply-*) ;; *) return 1 ;; esac
   case "$2" in
-    pending-reply-missed:*|pending-reply-delivery-unknown:*|pending-reply-recovery-delivery-failed:*|pending-reply-recovery-delivery-unknown:*) return 0 ;;
+    pending-reply-missed:*|pending-reply-delivery-unknown:*|pending-reply-recovery-delivery-failed:*|pending-reply-recovery-delivery-unknown:*|pending-reply-recovery-busy:*) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -975,6 +975,42 @@ status_has_open_needs_decision() {  # <status-file> [<run-id>]
 $open
 EOF
   return 1
+}
+
+# 0, printing `blocked` or `needs-decision`, when the task's newest status event
+# is a line of that verb that the worker wrote and that is still open: its key
+# must hold that verb in status_own_open_decisions, so a supervisor-reserved key
+# never counts. Only the newest event is read, so any later line ends it - a
+# resolved line for any key included. A steering-inbox record does not end it
+# here: a steer the worker acknowledged may as easily be "keep waiting" as the
+# answer, so a caller that bounds repeated alarms reads this and lets the
+# worker's own next line, or its next busy turn, end the wait.
+status_worker_open_wait_verb() {  # <status-file>
+  local f=$1 last verb key own
+  last=$(last_status_line "$f")
+  [ -n "$last" ] || return 1
+  status_line_verb "$last" verb
+  case "$verb" in blocked|needs-decision) ;; *) return 1 ;; esac
+  key=$(_fm_decision_key "$last") || return 1
+  own=$(status_own_open_decisions "$f")
+  case "$own" in
+    "$key"$'\t'"$verb"$'\t'*|*$'\n'"$key"$'\t'"$verb"$'\t'*) ;;
+    *) return 1 ;;
+  esac
+  printf '%s' "$verb"
+}
+
+# status_worker_open_wait_verb, also ended by a steering-inbox record the worker
+# acknowledged that was written after the line (bin/fm-task-inbox-lib.sh owns
+# that handled/ layout), which is an answer that arrived without a closing
+# resolved line.
+status_worker_wait_verb() {  # <status-file>
+  local f=$1 verb rec
+  verb=$(status_worker_open_wait_verb "$f") || return 1
+  for rec in "${f%.status}.inbox/handled"/*.msg; do
+    [ "$rec" -nt "$f" ] && return 1
+  done
+  printf '%s' "$verb"
 }
 
 # 0 when <key> has a record in a folded "<key>\t<verb>\t<note>" open set.
