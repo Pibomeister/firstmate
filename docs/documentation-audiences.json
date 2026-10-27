@@ -274,6 +274,30 @@
       "audience": "agent-runtime"
     },
     {
+      "path": ".ci-evidence/lint2/ci-merge-partition1-files.txt",
+      "audience": "maintainer-verification"
+    },
+    {
+      "path": ".ci-evidence/lint2/ci-merge-partition2-files.txt",
+      "audience": "maintainer-verification"
+    },
+    {
+      "path": ".ci-evidence/lint2/pr37-canonical-files.txt",
+      "audience": "maintainer-verification"
+    },
+    {
+      "path": ".ci-evidence/lint2/pr37-partition1-files.txt",
+      "audience": "maintainer-verification"
+    },
+    {
+      "path": ".ci-evidence/lint2/pr37-partition2-files.txt",
+      "audience": "maintainer-verification"
+    },
+    {
+      "path": ".ci-evidence/lint2/report.md",
+      "audience": "maintainer-verification"
+    },
+    {
       "path": ".greptile/rules.md",
       "audience": "maintainer-architecture"
     },
