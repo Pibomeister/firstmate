@@ -10,6 +10,29 @@ command -v perl >/dev/null 2>&1 || { printf 'skip: perl absent\n'; exit 0; }
 # shellcheck source=tests/supervision-host-helpers.sh
 . "$(dirname "${BASH_SOURCE[0]}")/supervision-host-helpers.sh"
 
+test_next_park_waits_for_the_previous_successor_to_be_taken_over() {
+  local home session waiter early=0
+  home=$(make_home park-readiness attended)
+  start_session "$home"
+  park_again "$home"
+  append_status "$home" 'choose the export format' needs-decision
+  wait_until 250 host_exited "$home" || fail "readiness: the attended close did not reach main"
+  main_drain_and_ack "$home"
+  watcher_live "$home" || fail "readiness: the attended close left no live successor"
+
+  # Hold the session before it can take the next park request. The surviving
+  # watcher must not make park_again report that this next park is ready.
+  session=$(cat "$home/state/.lock")
+  kill -STOP "$session"
+  (park_again "$home" && : > "$home/park.ready") &
+  waiter=$!
+  wait_until 10 test -e "$home/park.ready" && early=1
+  kill -CONT "$session"
+  wait "$waiter" || fail "readiness: the resumed session did not park"
+  [ "$early" -eq 0 ] || fail "the next park returned ready on the previous park's successor"
+  pass "host: a repeated park waits for takeover before the test can append its next status"
+}
+
 
 test_attended_latch_keeps_closes_on_main_and_records_recovery_off_main() {
   local home handled
@@ -630,6 +653,7 @@ test_superseded_host_leaves_the_owner_untouched() {
 
 # A completed case must not leave polling fixtures competing with later cases.
 for host_test in \
+  test_next_park_waits_for_the_previous_successor_to_be_taken_over \
   test_next_host_clears_a_turn_its_killed_predecessor_left \
   test_report_without_acknowledgement_hands_the_wake_to_main \
   test_return_during_a_failed_turn_still_hands_its_outcomes_to_main \

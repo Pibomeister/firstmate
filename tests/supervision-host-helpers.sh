@@ -273,10 +273,10 @@ wait_until() {  # <polls of 0.1s> <command...>
   return 1
 }
 
-watcher_live() {  # <home>
+watcher_live() {  # <home> [previous-watcher-pid]
   local pid
   pid=$(cat "$1/state/.watch.lock/pid" 2>/dev/null) || return 1
-  [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null
+  [ -n "$pid" ] && [ "$pid" != "${2:-}" ] && kill -0 "$pid" 2>/dev/null
 }
 host_exited() { [ -s "$1/host.rc" ]; }
 # The recovery marker's episode kind (downtime or handling), read through its
@@ -641,9 +641,13 @@ start_session() {  # <home>
 }
 
 park_again() {  # <home>
+  local previous
+  previous=$(cat "$1/state/.watch.lock/pid" 2>/dev/null || true)
   rm -f "$1/host.rc"
   : > "$1/park.go"
-  wait_until 150 watcher_live "$1" \
+  # An attended pass-through leaves a live successor. Its takeover must finish
+  # before the caller appends a status, or that old cycle can deliver it first.
+  wait_until 150 watcher_live "$1" "$previous" \
     || fail "the next park never started a watcher cycle: $(cat "$1/host.out"; tail -n 5 "$1/state/.supervision-host.log" 2>/dev/null)"
 }
 

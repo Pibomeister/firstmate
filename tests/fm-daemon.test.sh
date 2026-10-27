@@ -407,9 +407,14 @@ EOF
   printf '❯ \n' > "$pane"
   PATH="$dir/fakebin:$PATH" FM_FAKE_TMUX_SENT="$sent" FM_FAKE_TMUX_CAPTURE="$pane" \
     FM_SUPERVISOR_BACKEND=tmux FM_SUPERVISOR_TARGET=sess:supervisor escalate_flush "$state" \
-    || fail "$variant $mode inbox escalation did not reach the supervisor"
-  assert_contains "$(delivered_digest "$sent")" "${reason#stale: }" "supervisor digest lost the inbox reason"
-  [ ! -s "$buffer" ] || fail "delivered inbox escalation stayed buffered"
+    || fail "$variant $mode inbox escalation flush failed"
+  if [ "$mode" = quiet ]; then
+    [ ! -s "$sent" ] || fail "quiet inbox escalation reached the composer"
+    [ "$(cat "$buffer")" = "${reason#stale: }" ] || fail "quiet flush lost the inbox escalation"
+  else
+    assert_contains "$(delivered_digest "$sent")" "${reason#stale: }" "supervisor digest lost the inbox reason"
+    [ ! -s "$buffer" ] || fail "delivered inbox escalation stayed buffered"
+  fi
 
   rm "$buffer" "$dir/acked"
   mkdir "$buffer"
@@ -421,7 +426,7 @@ EOF
     handle_durable_wakes "$reason" "$state" || fail "inbox fallback reason did not recover"
   [ "$(cat "$buffer")" = "${reason#stale: }" ] || fail "fallback lost the inbox escalation"
   [ "$(cat "$dir/acked")" = ack ] || fail "recovered inbox buffering did not acknowledge the wake"
-  pass "$variant inbox escalation reaches supervision in $mode mode and survives buffering failure"
+  pass "$variant inbox escalation follows $mode delivery policy and survives buffering failure"
 }
 
 test_busy_inbox_dispatch_preserves_other_stale_reasons() {
