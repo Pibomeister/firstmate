@@ -1,0 +1,87 @@
+
+BASELINE
+Kimi CLI: 2.3.3
+Profile: lab-readiness / high / tmux
+No production credentials or model were used.
+Spawn exit: 1
+
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5X9S3P63K4EHNJMZQN8M557/.test-kimi/baseline/home
+error: kimi did not show a verified ready signal before brief delivery; trust dialog text stayed on screen without the complete dialog, so the pane was never safe to answer or to treat as ready; inspect window fm-lab-kimi:fm-kimi-baseline-831a-99719
+warning: leaving task kimi-baseline-831a-99719's slot claim on /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5X9S3P63K4EHNJMZQN8M557/.test-kimi/baseline/pool/.treehouse/project-82c7ea/1/project in place; the Treehouse project lock is no longer held, so the next spawn's claim replaces it
+
+LIVE
+Kimi CLI: 2.3.1
+Profile: lab-readiness / high / tmux
+No production credentials or model were used.
+Spawn exit: 0
+
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5X9S3P63K4EHNJMZQN8M557/.test-kimi/live/home
+spawned kimi-live-gate-831a-75693 harness=kimi kind=scout window=fm-lab-kimi:fm-kimi-live-gate-831a-75693 worktree=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5X9S3P63K4EHNJMZQN8M557/.test-kimi/live/pool/.treehouse/project-d48b03/1/project
+
+CURRENT
+Kimi CLI: 2.3.3
+Profile: lab-readiness / high / tmux
+No production credentials or model were used.
+Spawn exit: 0
+
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5X9S3P63K4EHNJMZQN8M557/.test-kimi/current/home
+spawned kimi-current-831a-40409 harness=kimi kind=scout window=fm-lab-kimi:fm-kimi-current-831a-40409 worktree=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5X9S3P63K4EHNJMZQN8M557/.test-kimi/current/pool/.treehouse/project-529b1c/1/project
+
+LEGACY
+Kimi CLI: 2.0.0
+Profile: lab-readiness / high / tmux
+No production credentials or model were used.
+Spawn exit: 0
+
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5X9S3P63K4EHNJMZQN8M557/.test-kimi/legacy/home
+spawned kimi-legacy-831a-66815 harness=kimi kind=scout window=fm-lab-kimi:fm-kimi-legacy-831a-66815 worktree=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5X9S3P63K4EHNJMZQN8M557/.test-kimi/legacy/pool/.treehouse/project-d6e959/1/project
+
+CLIPPED
+Kimi CLI: 2.3.3
+Profile: lab-readiness / high / tmux
+No production credentials or model were used.
+Spawn exit: 1
+
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5X9S3P63K4EHNJMZQN8M557/.test-kimi/clipped/home
+error: kimi did not show a verified ready signal before brief delivery; trust dialog text stayed on screen without the complete dialog, so the pane was never safe to answer or to treat as ready; inspect window fm-lab-kimi:fm-kimi-clipped-831a-11802
+warning: leaving task kimi-clipped-831a-11802's slot claim on /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5X9S3P63K4EHNJMZQN8M557/.test-kimi/clipped/pool/.treehouse/project-a2df6a/1/project in place; the Treehouse project lock is no longer held, so the next spawn's claim replaces it
+
+WRAPPED
+Kimi CLI: 2.3.3
+Profile: lab-readiness / high / tmux
+No production credentials or model were used.
+Spawn exit: 1
+
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5X9S3P63K4EHNJMZQN8M557/.test-kimi/wrapped/home
+error: kimi did not show a verified ready signal before brief delivery; trust dialog text stayed on screen without the complete dialog, so the pane was never safe to answer or to treat as ready; inspect window fm-lab-kimi:fm-kimi-wrapped-831a-85835
+warning: leaving task kimi-wrapped-831a-85835's slot claim on /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5X9S3P63K4EHNJMZQN8M557/.test-kimi/wrapped/pool/.treehouse/project-a21388/1/project in place; the Treehouse project lock is no longer held, so the next spawn's claim replaces it
+
+STUCK-FROZEN2
+Kimi CLI: 2.3.3
+Profile: lab-readiness / high / tmux
+No production credentials or model were used.
+Spawn exit: 1
+
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5X9S3P63K4EHNJMZQN8M557/.test-kimi/stuck-frozen2/home
+error: kimi trust dialog did not clear after submitting the affirmative selection on 11 poll(s); saw 'Trust this folder?', the navigation hint, a selected affirmative option, and a negative option; inspect window fm-lab-kimi:fm-kimi-stuck-frozen2-831a-77515
+warning: leaving task kimi-stuck-frozen2-831a-77515's slot claim on /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5X9S3P63K4EHNJMZQN8M557/.test-kimi/stuck-frozen2/pool/.treehouse/project-2c81ba/1/project in place; the Treehouse project lock is no longer held, so the next spawn's claim replaces it
+
+LEGACY-STUCK-FROZEN2
+Kimi CLI: 2.0.0
+Profile: lab-readiness / high / tmux
+No production credentials or model were used.
+Spawn exit: 1
+
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5X9S3P63K4EHNJMZQN8M557/.test-kimi/legacy-stuck-frozen2/home
+error: kimi trust dialog did not clear after submitting the affirmative selection on 11 poll(s); saw 'Trust this folder?', the navigation hint, a selected affirmative option, and a negative option; inspect window fm-lab-kimi:fm-kimi-legacy-stuck-frozen2-831a-80040
+warning: leaving task kimi-legacy-stuck-frozen2-831a-80040's slot claim on /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5X9S3P63K4EHNJMZQN8M557/.test-kimi/legacy-stuck-frozen2/pool/.treehouse/project-7338a2/1/project in place; the Treehouse project lock is no longer held, so the next spawn's claim replaces it
+
+ANSWERED
+Kimi CLI: 2.3.3
+Profile: lab-readiness / high / tmux
+No production credentials or model were used.
+Spawn exit: 1
+
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5X9S3P63K4EHNJMZQN8M557/.test-kimi/answered/home
+error: kimi trust dialog was answered but the pane never advanced to a verified ready signal; saw 'Trust this folder?', the navigation hint, a selected affirmative option, and a negative option; inspect window fm-lab-kimi:fm-kimi-answered-831a-44809
+warning: leaving task kimi-answered-831a-44809's slot claim on /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5X9S3P63K4EHNJMZQN8M557/.test-kimi/answered/pool/.treehouse/project-11fbd5/1/project in place; the Treehouse project lock is no longer held, so the next spawn's claim replaces it

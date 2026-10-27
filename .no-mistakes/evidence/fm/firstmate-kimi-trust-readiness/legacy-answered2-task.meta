@@ -1,0 +1,14 @@
+window=fm-lab-kimi:fm-kimi-legacy-answered2-831a-26331
+tmux_socket=/private/tmp/fml.l5nse6/tmux-501/default
+tmux_server_pid=26516
+tmux_server_identity=Mon Oct 26 17:59:44 2026     tmux -f /dev/null -S /tmp/fml.l5nse6/tmux-501/default new-session -d -s fm-lab-kimi -x 120 -y 40 -c /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5X9S3P63K4EHNJMZQN8M557 /bin/bash --noprofile --norc
+tmux_window_id=@1
+endpoint_task_id=kimi-legacy-answered2-831a-26331
+worktree=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5X9S3P63K4EHNJMZQN8M557/.test-kimi/legacy-answered2/pool/.treehouse/project-9abfbc/1/project
+project=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5X9S3P63K4EHNJMZQN8M557/.test-kimi/legacy-answered2/project
+harness=kimi
+kind=scout
+tasktmp=/tmp/fm-kimi-legacy-answered2-831a-26331
+model=lab-readiness
+effort=high
+spawn_gen=s1793059187.26683.21526

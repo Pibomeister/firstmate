@@ -1,0 +1,3 @@
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5X9S3P63K4EHNJMZQN8M557/.test-kimi/legacy-stuck-frozen2/home
+error: kimi trust dialog did not clear after submitting the affirmative selection on 11 poll(s); saw 'Trust this folder?', the navigation hint, a selected affirmative option, and a negative option; inspect window fm-lab-kimi:fm-kimi-legacy-stuck-frozen2-831a-80040
+warning: leaving task kimi-legacy-stuck-frozen2-831a-80040's slot claim on /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5X9S3P63K4EHNJMZQN8M557/.test-kimi/legacy-stuck-frozen2/pool/.treehouse/project-7338a2/1/project in place; the Treehouse project lock is no longer held, so the next spawn's claim replaces it

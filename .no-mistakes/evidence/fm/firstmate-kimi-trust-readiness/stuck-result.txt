@@ -1,0 +1,5 @@
+Kimi CLI: 2.3.3
+Profile: lab-readiness / high / tmux
+No production credentials or model were used.
+Spawn exit: 0
+

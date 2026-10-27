@@ -1,0 +1,9 @@
+live: real trust visible before pointer; trust cleared before pointer; spawn exit 0
+current: real trust visible before pointer; trust cleared before pointer; spawn exit 0
+legacy: real trust visible before pointer; trust cleared before pointer; spawn exit 0
+clipped: no pointer in any recorded viewport; spawn exit 1
+wrapped: no pointer in any recorded viewport; spawn exit 1
+stuck-frozen2: no pointer in any recorded viewport; spawn exit 1
+legacy-stuck-frozen2: no pointer in any recorded viewport; spawn exit 1
+answered: no pointer in any recorded viewport; spawn exit 1
+baseline: no pointer in any recorded viewport; spawn exit 1

@@ -1,0 +1,40 @@
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+bash-3.2$ treehouse get
+🌳 Setting up worktree...
+🌳 Entered worktree at /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5X9S3P63K4EHNJMZQN8M557/.test-kimi/st
+uck-frozen2/pool/.treehouse/project-2c81ba/1/project. Type 'exit' to return.
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+Eduardos-MacBook-Pro-2:project eduardopicazo$ cd -- '/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5X9S3P6
+3K4EHNJMZQN8M557/.test-kimi/stuck-frozen2/pool/.treehouse/project-2c81ba/1/project'
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export GOTMPDIR=/tmp/fm-kimi-stuck-frozen2-831a-77515/gotmp
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export COMPACT_ADVISER_DISABLE=1
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export FM_TASK_ID=kimi-stuck-frozen2-831a-77515
+Eduardos-MacBook-Pro-2:project eduardopicazo$ . '/tmp/fm-kimi-stuck-frozen2-831a-77515+8a5cdf4293780b3545065938f315a9f17
+1a01a449d325bb538e78e077e516544/launch.s1793059066.78188.26981.sh'
+ ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Trust this folder?
+  ↑↓ navigate · Enter select · Esc exit
+
+  /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5X9S3P63K4EHNJMZQN8M557/.test-kimi/stuck-frozen2/pool/.tr
+  eehouse/project-2c81ba/1/project
+
+  No project integrations or instructions to activate.
+
+  Trust is remembered for this folder, including future project config changes.
+  Tool approvals follow your permission settings.
+
+   ❯ Trust and continue
+     Exit
+ ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+
+
+
+

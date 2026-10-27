@@ -1,0 +1,14 @@
+window=fm-lab-kimi:fm-kimi-stuck-831a-66522
+tmux_socket=/private/tmp/fml.MYUq7A/tmux-501/default
+tmux_server_pid=72463
+tmux_server_identity=Mon Oct 26 17:55:40 2026     tmux -f /dev/null -S /tmp/fml.MYUq7A/tmux-501/default new-session -d -s fm-lab-kimi -x 120 -y 40 -c /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5X9S3P63K4EHNJMZQN8M557 /bin/bash --noprofile --norc
+tmux_window_id=@1
+endpoint_task_id=kimi-stuck-831a-66522
+worktree=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5X9S3P63K4EHNJMZQN8M557/.test-kimi/stuck/pool/.treehouse/project-0f3be0/1/project
+project=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5X9S3P63K4EHNJMZQN8M557/.test-kimi/stuck/project
+harness=kimi
+kind=scout
+tasktmp=/tmp/fm-kimi-stuck-831a-66522
+model=lab-readiness
+effort=high
+spawn_gen=s1793058943.72853.28962

@@ -1,0 +1,151 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Kimi readiness: live terminal evidence</title><style>:root{color-scheme:light dark;--page:#FAF9F5;--surface:#F0EEE6;--border:#E8E6DC;--text:#141413;--muted:#5E5D59;--accent:#D97757}@media(prefers-color-scheme:dark){:root{--page:#1F1E1D;--surface:#262624;--border:#3D3D3A;--text:#FAF9F5;--muted:#B7B5A9}}*{box-sizing:border-box}body{background:var(--page);color:var(--text);font:17px/1.6 system-ui;margin:0;padding:40px}main{max-width:1350px;margin:auto}h1,h2{font-family:Georgia,serif;line-height:1.2}h1{font-size:38px;margin:16px 0}h2{font-size:25px;margin:0 0 8px}header p{max-width:72ch}section{margin:48px 0;padding:24px;background:var(--surface);border:1px solid var(--border);border-radius:12px;min-width:0}.source{color:var(--muted);font-size:14px;margin:0 0 16px}pre{font:13px/1.35 ui-monospace,Menlo,monospace;overflow:auto;white-space:pre;background:var(--page);padding:16px;border-radius:8px}a{color:var(--accent)}@media(max-width:600px){body{padding:16px}section{padding:16px}h1{font-size:28px}}</style><main><header><p><strong>TL;DR.</strong> These are recorded viewports from real Kimi CLIs launched by Firstmate in disposable tmux labs. The new and legacy dialogs clear before brief delivery. Small or unresponsive terminals withhold delivery. This is test evidence; no decision is required.</p><h1>Kimi trust and readiness</h1><p>The terminal grids below reproduce actual tmux captures. They are not native screenshots. The lab used a local profile with no production credential; the expected connection error after pointer submission does not prove a model response or a Casco design review.</p><p>Base revision: d616fdd. Target: 831a081 plus one timestamp-normalization fix in the timeout test. Captured 26 October 2026.</p></header><section><h2>Kimi 2.3.1: actual trust dialog</h2><p class="source">Source: live-trust-pane.txt</p><pre> ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Trust this folder?
+  ↑↓ navigate · Enter select · Esc exit
+
+  /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5X9S3P63K4EHNJMZQN8M557/.test-kimi/live/pool/.treehouse/p
+  roject-d48b03/1/project
+
+  No project integrations or instructions to activate.
+
+  Trust is remembered for this folder, including future project config changes.
+  Tool approvals follow your permission settings.
+
+   ❯ Trust and continue
+     Exit
+ ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</pre></section><section><h2>Kimi 2.3.1: pointer submitted</h2><p class="source">Source: live-final-pane.txt</p><pre> ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │                                                                                                                    │
+ │  ▐█▛█▛█▌  Welcome to Kimi Code!                                                                                    │
+ │  ▐█████▌  Send /help for help information.                                                                         │
+ │                                                                                                                    │
+ │  Directory: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5X9S3P63K4EHNJMZQN8M557/.test-kimi/live/po…│
+ │  Session:   session_2369a22e-28e1-4ea4-81ce-979b9b353eee                                                           │
+ │  Model:     lab-readiness                                                                                          │
+ │  Version:   2.3.1                                                                                                  │
+ │                                                                                                                    │
+ ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+ ✦ Kimi K3.1 Pro is ready - use the model in a fresh session for the best results
+   Standard: Plus/Moderato and above; Highspeed: Pro/Allegretto and above
+
+   No session yet — one will be created on your first message.
+   tmux extended-keys is off. Modified Enter keys may not work. Add `set -g extended-keys on` to ~/.tmux.conf and
+ restart tmux.
+
+ ❯ Read the brief at
+   /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5X9S3P63K4EHNJMZQN8M557/.test-kimi/live/home/data/kimi-l
+   ive-gate-831a-75693/launch-brief.md and follow it exactly.
+   Error: [provider.connection_error] Connection error.
+   If this persists, run `/export-debug-zip` and share the file with us for diagnosis. Please don&#x27;t share it publicly.
+
+ ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │ &gt;                                                                                                                  │
+ ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+ Never Ask  lab-readiness  …/project-d48b03/1/project
+                                                                                                 context: 1% (239/256k)</pre></section><section><h2>Kimi 2.0.0: legacy dialog</h2><p class="source">Source: legacy-trust-pane.txt</p><pre> ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Trust this folder?
+  ↑↓ navigate · Enter select · Esc exit
+
+  /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5X9S3P63K4EHNJMZQN8M557/.test-kimi/legacy/pool/.treehous
+  e/project-d6e959/1/project
+
+  Project-level MCP servers are disabled until you explicitly choose Trust. Trust starts the listed project MCP
+  targets and remembers this folder.
+
+   ❯ Trust this folder
+     Enable project MCP servers. Remembered for this folder.
+
+     Don&#x27;t trust
+     Exit Kimi Code. Asked again next launch.
+
+ ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</pre></section><section><h2>Kimi 2.0.0: pointer submitted</h2><p class="source">Source: legacy-final-pane.txt</p><pre> ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │                                                                                                                    │
+ │  ▐█▛█▛█▌  Welcome to Kimi Code!                                                                                    │
+ │  ▐█████▌  Send /help for help information.                                                                         │
+ │                                                                                                                    │
+ │  Directory: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5X9S3P63K4EHNJMZQN8M557/.test-kimi/legacy/…│
+ │  Session:   session_fde286c6-d440-49b7-95cf-5901ba1fb960                                                           │
+ │  Model:     lab-readiness                                                                                          │
+ │  Version:   2.0.0                                                                                                  │
+ │                                                                                                                    │
+ ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+ ✦ Kimi K3.1 Pro is ready - use the model in a fresh session for the best results
+   Standard: Plus/Moderato and above; Highspeed: Pro/Allegretto and above
+
+   No session yet — one will be created on your first message.
+   tmux extended-keys is off. Modified Enter keys may not work. Add `set -g extended-keys on` to ~/.tmux.conf and
+ restart tmux.
+
+ ✨ Read the brief at
+    /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5X9S3P63K4EHNJMZQN8M557/.test-kimi/legacy/home/data/kim
+    i-legacy-831a-66815/launch-brief.md and follow it exactly.
+   Error: [provider.connection_error] Connection error.
+   If this persists, run `/export-debug-zip` and share the file with us for diagnosis. Please don&#x27;t share it publicly.
+
+ ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │ &gt;                                                                                                                  │
+ ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+ Never Ask  lab-readiness  …/project-d6e959/1/project                                         /init: generate AGENTS.md
+                                                                                                 context: 1% (250/256k)</pre></section><section><h2>Clipped dialog: delivery withheld</h2><p class="source">Source: clipped-final-pane.txt</p><pre>For more details, please visit https://support.apple.com/kb/HT208050.
+Eduardos-MacBook-Pro-2:project eduardopicazo$ cd -- &#x27;/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5X9S3P6
+3K4EHNJMZQN8M557/.test-kimi/clipped/pool/.treehouse/project-a2df6a/1/project&#x27;
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export GOTMPDIR=/tmp/fm-kimi-clipped-831a-11802/gotmp
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export COMPACT_ADVISER_DISABLE=1
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export FM_TASK_ID=kimi-clipped-831a-11802
+Eduardos-MacBook-Pro-2:project eduardopicazo$ . &#x27;/tmp/fm-kimi-clipped-831a-11802+3b8415285646d919a9036cb391a7164179c34db
+96ac08a95e073d75f2f86953b/launch.s1793058885.11944.30858.sh&#x27;
+  Trust this folder?
+  Enlarge terminal to review sources. Esc exit.</pre></section><section><h2>Truncated navigation hint: delivery withheld</h2><p class="source">Source: wrapped-final-pane.txt</p><pre> ────────────────────────────
+  Trust this folder?
+  ↑↓ navigate · Enter sele...
+
+  /Users/eduardopicazo/.no-mi
+  stakes/worktrees/075d7f40c2
+  8a/01M5X9S3P63K4EHNJMZQN8M5
+  57/.test-kimi/wrapped/pool/
+  .treehouse/project-a21388/1
+  /project
+
+  No project integrations or
+  instructions to activate.
+
+  Trust is remembered for
+  this folder, including
+  future project config
+  changes.
+  Tool approvals follow your
+  permission settings.
+
+   ❯ Trust and continue
+     Exit
+ ────────────────────────────</pre></section><section><h2>Unresponsive 2.3.3: timeout</h2><p class="source">Source: stuck-frozen2-final-pane.txt</p><pre> ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Trust this folder?
+  ↑↓ navigate · Enter select · Esc exit
+
+  /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5X9S3P63K4EHNJMZQN8M557/.test-kimi/stuck-frozen2/pool/.tr
+  eehouse/project-2c81ba/1/project
+
+  No project integrations or instructions to activate.
+
+  Trust is remembered for this folder, including future project config changes.
+  Tool approvals follow your permission settings.
+
+   ❯ Trust and continue
+     Exit
+ ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</pre></section><section><h2>Unresponsive 2.0.0: timeout</h2><p class="source">Source: legacy-stuck-frozen2-final-pane.txt</p><pre> ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Trust this folder?
+  ↑↓ navigate · Enter select · Esc exit
+
+  /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5X9S3P63K4EHNJMZQN8M557/.test-kimi/legacy-stuck-frozen2/
+  pool/.treehouse/project-7338a2/1/project
+
+  Project-level MCP servers are disabled until you explicitly choose Trust. Trust starts the listed project MCP
+  targets and remembers this folder.
+
+   ❯ Trust this folder
+     Enable project MCP servers. Remembered for this folder.
+
+     Don&#x27;t trust
+     Exit Kimi Code. Asked again next launch.
+
+ ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────</pre></section></main></html>

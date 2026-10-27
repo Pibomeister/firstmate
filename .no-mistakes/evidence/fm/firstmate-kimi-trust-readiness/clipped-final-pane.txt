@@ -1,0 +1,10 @@
+For more details, please visit https://support.apple.com/kb/HT208050.
+Eduardos-MacBook-Pro-2:project eduardopicazo$ cd -- '/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5X9S3P6
+3K4EHNJMZQN8M557/.test-kimi/clipped/pool/.treehouse/project-a2df6a/1/project'
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export GOTMPDIR=/tmp/fm-kimi-clipped-831a-11802/gotmp
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export COMPACT_ADVISER_DISABLE=1
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export FM_TASK_ID=kimi-clipped-831a-11802
+Eduardos-MacBook-Pro-2:project eduardopicazo$ . '/tmp/fm-kimi-clipped-831a-11802+3b8415285646d919a9036cb391a7164179c34db
+96ac08a95e073d75f2f86953b/launch.s1793058885.11944.30858.sh'
+  Trust this folder?
+  Enlarge terminal to review sources. Esc exit.

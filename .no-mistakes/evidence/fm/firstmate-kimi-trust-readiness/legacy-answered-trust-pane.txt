@@ -1,0 +1,40 @@
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+bash-3.2$ treehouse get
+🌳 Setting up worktree...
+🌳 Entered worktree at /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5X9S3P63K4EHNJMZQN8M557/.test-kimi/le
+gacy-answered/pool/.treehouse/project-02a10e/1/project. Type 'exit' to return.
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+Eduardos-MacBook-Pro-2:project eduardopicazo$ cd -- '/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5X9S3P6
+3K4EHNJMZQN8M557/.test-kimi/legacy-answered/pool/.treehouse/project-02a10e/1/project'
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export GOTMPDIR=/tmp/fm-kimi-legacy-answered-831a-48545/gotmp
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export COMPACT_ADVISER_DISABLE=1
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export FM_TASK_ID=kimi-legacy-answered-831a-48545
+Eduardos-MacBook-Pro-2:project eduardopicazo$ . '/tmp/fm-kimi-legacy-answered-831a-48545+9107ca430f88d4af591739e35b3c747
+25a7e5ef13d77d0339c9ea3d25f99135a/launch.s1793059143.49683.24364.sh'
+ ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Trust this folder?
+  ↑↓ navigate · Enter select · Esc exit
+
+  /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5X9S3P63K4EHNJMZQN8M557/.test-kimi/legacy-answered/pool/
+  .treehouse/project-02a10e/1/project
+
+  Project-level MCP servers are disabled until you explicitly choose Trust. Trust starts the listed project MCP
+  targets and remembers this folder.
+
+   ❯ Trust this folder
+     Enable project MCP servers. Remembered for this folder.
+
+     Don't trust
+     Exit Kimi Code. Asked again next launch.
+
+ ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+
+

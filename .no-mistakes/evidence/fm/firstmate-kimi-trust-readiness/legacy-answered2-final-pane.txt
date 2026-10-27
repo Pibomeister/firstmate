@@ -1,0 +1,40 @@
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+Eduardos-MacBook-Pro-2:project eduardopicazo$ cd -- '/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5X9S3P6
+3K4EHNJMZQN8M557/.test-kimi/legacy-answered2/pool/.treehouse/project-9abfbc/1/project'
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export GOTMPDIR=/tmp/fm-kimi-legacy-answered2-831a-26331/gotmp
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export COMPACT_ADVISER_DISABLE=1
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export FM_TASK_ID=kimi-legacy-answered2-831a-26331
+Eduardos-MacBook-Pro-2:project eduardopicazo$ . '/tmp/fm-kimi-legacy-answered2-831a-26331+35953b9c19f63a675dbb8704435719
+1500740d890393b6c26fddccf19e640ef1/launch.s1793059187.26683.21526.sh'
+
+ ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │                                                                                                                    │
+ │  ▐█▛█▛█▌  Welcome to Kimi Code!                                                                                    │
+ │  ▐█████▌  Send /help for help information.                                                                         │
+ │                                                                                                                    │
+ │  Directory: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5X9S3P63K4EHNJMZQN8M557/.test-kimi/legacy-…│
+ │  Session:   session_bedf2fac-b067-4f97-b223-b66435a5c8b2                                                           │
+ │  Model:     lab-readiness                                                                                          │
+ │  Version:   2.0.0                                                                                                  │
+ │                                                                                                                    │
+ ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+ ✦ Kimi K3.1 Pro is ready - use the model in a fresh session for the best results
+   Standard: Plus/Moderato and above; Highspeed: Pro/Allegretto and above
+
+   No session yet — one will be created on your first message.
+   tmux extended-keys is off. Modified Enter keys may not work. Add `set -g extended-keys on` to ~/.tmux.conf and
+ restart tmux.
+
+ ✨ Read the brief at
+    /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5X9S3P63K4EHNJMZQN8M557/.test-kimi/legacy-answered2/hom
+    e/data/kimi-legacy-answered2-831a-26331/launch-brief.md and follow it exactly.
+   Error: [provider.connection_error] Connection error.
+   If this persists, run `/export-debug-zip` and share the file with us for diagnosis. Please don't share it publicly.
+
+ ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │ >                                                                                                                  │
+ ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+ Never Ask  lab-readiness  …/project-9abfbc/1/project
+                                                                                                 context: 1% (255/256k)

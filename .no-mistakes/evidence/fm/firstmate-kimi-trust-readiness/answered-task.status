@@ -1,0 +1,1 @@
+failed [at=1793059147]: kimi trust dialog was answered but the pane never advanced to a verified ready signal; saw 'Trust this folder?', the navigation hint, a selected affirmative option, and a negative option

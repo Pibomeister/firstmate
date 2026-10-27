@@ -1,0 +1,1 @@
+failed [at=1793059102]: kimi did not show a verified ready signal before brief delivery; trust dialog text stayed on screen without the complete dialog, so the pane was never safe to answer or to treat as ready
