@@ -39,19 +39,96 @@ cat > "$TMP_ROOT/native/codex.c" <<'C'
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <signal.h>
+#include <stdio.h>
+#include <string.h>
 int main(void) {
   const char *body = getenv("FM_TEST_CODEX_BODY");
   if (!body) { while (1) sleep(1); }
+  int listener = -1;
+  pid_t server = -1;
+  const char *path = getenv("FM_TEST_CODEX_SOCKET");
+  if (path) {
+    struct sockaddr_un address = {0};
+    address.sun_family = AF_UNIX;
+    if (strlen(path) >= sizeof(address.sun_path)) return 2;
+    strcpy(address.sun_path, path);
+    unlink(path);
+    listener = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (listener < 0 || bind(listener, (struct sockaddr *)&address, sizeof(address)) || listen(listener, 8)) return 3;
+    server = fork();
+    if (server < 0) return 4;
+    if (!server) {
+      char fd[24];
+      snprintf(fd, sizeof(fd), "%d", listener);
+      execlp("python3", "python3", getenv("FM_TEST_CODEX_SERVER"), fd, (char *)0);
+      _exit(127);
+    }
+  }
   pid_t child = fork();
   if (child < 0) return 1;
   if (!child) { execl("/bin/bash", "bash", body, (char *)0); _exit(127); }
   int status;
   if (waitpid(child, &status, 0) < 0) return 1;
+  if (server > 0) { kill(server, SIGTERM); waitpid(server, NULL, 0); close(listener); unlink(path); }
   return WIFEXITED(status) ? WEXITSTATUS(status) : 1;
 }
 C
 cc "$TMP_ROOT/native/codex.c" -o "$TMP_ROOT/native/codex" || fail "cannot compile the real argv fixture"
 NATIVE_CODEX="$TMP_ROOT/native/codex"
+
+cat > "$TMP_ROOT/native/server.py" <<'PYTHON'
+import base64
+import hashlib
+import json
+import os
+import socket
+import struct
+import sys
+from pathlib import Path
+
+listener = socket.socket(fileno=int(sys.argv[1]))
+while True:
+    connection, _ = listener.accept()
+    connection.settimeout(8)
+    stream = connection.makefile("rwb", buffering=0)
+    try:
+        headers = {}
+        stream.readline()
+        while True:
+            line = stream.readline().strip()
+            if not line:
+                break
+            key, value = line.split(b":", 1)
+            headers[key.lower()] = value.strip()
+        accept = base64.b64encode(hashlib.sha1(headers[b"sec-websocket-key"] + b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11").digest())
+        stream.write(b"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: " + accept + b"\r\n\r\n")
+        while True:
+            first, second = stream.read(2)
+            size = second & 127
+            if size == 126:
+                size = struct.unpack("!H", stream.read(2))[0]
+            mask = stream.read(4)
+            data = stream.read(size)
+            request = json.loads(bytes(c ^ mask[i % 4] for i, c in enumerate(data)))
+            if "id" not in request:
+                continue
+            result = {}
+            if request["method"] == "thread/read":
+                identity = request["params"]["threadId"]
+                states = json.loads(Path(os.environ["FM_HOME"], "state/thread-states.json").read_text())
+                result = {"thread": {"id": identity, "status": {"type": states.get(identity, "notLoaded")}}}
+            encoded = json.dumps({"id": request["id"], "result": result}).encode()
+            prefix = bytes([129, len(encoded)]) if len(encoded) < 126 else bytes([129, 126]) + struct.pack("!H", len(encoded))
+            stream.write(prefix + encoded)
+    except (OSError, ValueError, KeyError):
+        pass
+    finally:
+        stream.close()
+        connection.close()
+PYTHON
 
 # --- unit layer: identity behind a deterministic process table ---------------
 
@@ -1649,8 +1726,8 @@ SH
     || fail "the daemon-parented session did not record its thread beside the lock"
   expect_code 0 "$(tr -d '[:space:]' < "$dir/state/confirm.rc")" \
     "the same thread could not confirm its daemon-served lock: $(cat "$dir/state/confirm.out")"
-  [ "$(tr -d '[:space:]' < "$dir/state/lock-after-confirm")" = "$(tr -d '[:space:]' < "$dir/state/lock-after-acquire")" ] \
-    || fail "the same-thread confirmation rewrote lock line 1"
+  [ "$(tr -d '[:space:]' < "$dir/state/lock-after-confirm")" != "$(tr -d '[:space:]' < "$dir/state/lock-after-acquire")" ] \
+    || fail "the same-thread confirmation retained the dead acquiring instance"
   [ "$(tr -d '[:space:]' < "$dir/state/foreign.rc")" != 0 ] \
     || fail "a different thread owned the daemon-served session's lock"
   : > "$dir/state/stop-daemon"
@@ -1709,6 +1786,7 @@ SH
   cat > "$dir/daemon-body.sh" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$PPID" > "$FM_HOME/state/daemon-pid"
+printf '{"TA":"idle","TB":"active"}\n' > "$FM_HOME/state/thread-states.json"
 CODEX_THREAD_ID=TA CODEX_SESSION_ID=TA "$FM_HOME/tool.sh" acquire
 CODEX_THREAD_ID=TB CODEX_SESSION_ID=TB "$FM_HOME/tool.sh" steal
 printf 'done\n' > "$FM_HOME/state/daemon-done"
@@ -1718,7 +1796,8 @@ SH
   chmod +x "$dir/tool.sh" "$dir/daemon-body.sh"
   env -u CLAUDE_CODE_SESSION_ID -u CLAUDE_PID -u CODEX_THREAD_ID -u CODEX_SESSION_ID \
     FM_HOME="$dir" FM_LOCK="$ROOT/bin/fm-lock.sh" \
-    FM_TEST_CODEX_BODY="$dir/daemon-body.sh" \
+    FM_TEST_CODEX_BODY="$dir/daemon-body.sh" FM_TEST_CODEX_SOCKET="$TMP_ROOT/q.sock" \
+    FM_TEST_CODEX_SERVER="$TMP_ROOT/native/server.py" \
     "$NATIVE_CODEX" app-server --listen unix:// --managed-daemon &
   BG_FIXTURE_PIDS+=("$!")
   wait_for_daemon_done "$dir/state/daemon-done" "the foreign-acquisition exercise"
@@ -1762,17 +1841,90 @@ SH
     || fail "readiness lost the verified owner's harness: $ready"
   kill "$watcher_pid"
   wait "$watcher_pid" 2>/dev/null || true
-  : > "$dir/state/stop-daemon"
-  wait "$daemon_pid" || fail "the hosting daemon failed to exit"
+  printf '{"TA":"notLoaded","TB":"active"}\n' > "$dir/state/thread-states.json"
   env -u CLAUDE_CODE_SESSION_ID -u CLAUDE_PID \
     CODEX_THREAD_ID=TB CODEX_SESSION_ID=TB FM_HOME="$dir" FM_LOCK="$ROOT/bin/fm-lock.sh" \
     "$NAMED_CODEX" -c '"$FM_HOME/tool.sh" reclaim'
   expect_code 0 "$(tr -d '[:space:]' < "$dir/state/reclaim.rc")" \
-    "the foreign thread could not acquire after the hosting daemon exited: $(cat "$dir/state/reclaim.out")"
+    "the foreign thread could not acquire after the daemon reported notLoaded: $(cat "$dir/state/reclaim.out")"
   [ "$(tr -d '[:space:]' < "$dir/state/reclaim.session-after")" = TB ] \
     || fail "the post-owner acquisition did not record its own thread"
+  kill -0 "$daemon_pid" 2>/dev/null || fail "replacement required daemon shutdown"
+  [ ! -e "$dir/state/.lease-t1" ] || fail "replacement revived the previous owner's lease"
   : > "$dir/state/stop-daemon"
-  pass "session-lock e2e: daemon lifetime protects acquisition, leases, and readiness without a session process"
+  wait "$daemon_pid" || fail "the daemon failed to exit"
+  pass "session-lock e2e: daemon thread state protects live owners and permits replacement while the daemon lives"
+}
+
+test_codex_restart_reanchors_same_thread() {
+  local dir shape daemon_pid first_daemon old_anchor new_anchor replacement_pid
+  for shape in dead reused; do
+    dir="$TMP_ROOT/restart-$shape"
+    mkdir -p "$dir/state"
+    printf '{"T1":"idle"}\n' > "$dir/state/thread-states.json"
+    cat > "$dir/body.sh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$PPID" > "$FM_HOME/state/daemon-pid"
+CODEX_THREAD_ID=T1 CODEX_SESSION_ID=T1 "$FM_LOCK" > "$FM_HOME/state/$FM_TEST_PHASE.out" 2>&1 &
+acquiring=$!
+wait "$acquiring"
+printf '%s\n' "$?" > "$FM_HOME/state/$FM_TEST_PHASE.rc"
+printf '%s\n' "$acquiring" > "$FM_HOME/state/$FM_TEST_PHASE.pid"
+printf 'done\n' > "$FM_HOME/state/$FM_TEST_PHASE.done"
+while [ ! -e "$FM_HOME/state/stop-$FM_TEST_PHASE" ]; do sleep 0.05; done
+SH
+    env -u CLAUDE_CODE_SESSION_ID -u CLAUDE_PID -u CODEX_THREAD_ID -u CODEX_SESSION_ID \
+      FM_HOME="$dir" FM_LOCK="$ROOT/bin/fm-lock.sh" FM_TEST_PHASE=first \
+      FM_TEST_CODEX_BODY="$dir/body.sh" FM_TEST_CODEX_SOCKET="$TMP_ROOT/r.sock" \
+      FM_TEST_CODEX_SERVER="$TMP_ROOT/native/server.py" \
+      "$NATIVE_CODEX" app-server --listen unix:// --managed-daemon &
+    daemon_pid=$!
+    first_daemon=$daemon_pid
+    BG_FIXTURE_PIDS+=("$daemon_pid")
+    wait_for_daemon_done "$dir/state/first.done" "the initial daemon acquisition"
+    expect_code 0 "$(cat "$dir/state/first.rc")" "initial acquisition failed: $(cat "$dir/state/first.out")"
+    old_anchor=$(cat "$dir/state/.lock")
+    : > "$dir/state/stop-first"
+    wait "$daemon_pid" || fail "the first daemon failed to exit"
+    if [ "$shape" = reused ]; then
+      sleep 60 &
+      replacement_pid=$!
+      BG_FIXTURE_PIDS+=("$replacement_pid")
+      old_anchor=$replacement_pid
+      printf '%s\n' "$old_anchor" > "$dir/state/.lock"
+      sed -e "s/^anchor_pid=.*/anchor_pid=$old_anchor/" -e 's/^anchor_start=.*/anchor_start=0/' \
+        "$dir/state/.lock-session" > "$dir/state/sidecar-reused"
+      mv "$dir/state/sidecar-reused" "$dir/state/.lock-session"
+    fi
+    printf 'branch\t%s\t100\n' "$old_anchor" > "$dir/state/.lease-t1"
+    printf 'main\t%s\t200\n' "$old_anchor" > "$dir/state/.lease-t2.lock"
+    env -u CLAUDE_CODE_SESSION_ID -u CLAUDE_PID -u CODEX_THREAD_ID -u CODEX_SESSION_ID \
+      FM_HOME="$dir" FM_LOCK="$ROOT/bin/fm-lock.sh" FM_TEST_PHASE=second \
+      FM_TEST_CODEX_BODY="$dir/body.sh" FM_TEST_CODEX_SOCKET="$TMP_ROOT/r.sock" \
+      FM_TEST_CODEX_SERVER="$TMP_ROOT/native/server.py" \
+      "$NATIVE_CODEX" app-server --listen unix:// --managed-daemon &
+    daemon_pid=$!
+    BG_FIXTURE_PIDS+=("$daemon_pid")
+    wait_for_daemon_done "$dir/state/second.done" "same-thread acquisition after restart"
+    expect_code 0 "$(cat "$dir/state/second.rc")" "$shape: restart acquisition failed: $(cat "$dir/state/second.out")"
+    new_anchor=$(cat "$dir/state/.lock")
+    [ "$new_anchor" = "$(cat "$dir/state/second.pid")" ] && [ "$new_anchor" != "$old_anchor" ] \
+      || fail "$shape: restart reused the previous anchor"
+    [ "$(sed -n 's/^anchor_pid=//p' "$dir/state/.lock-session")" = "$new_anchor" ] \
+      || fail "$shape: sidecar did not record the new anchor instance"
+    [ "$(sed -n 's/^codex_daemon_pid=//p' "$dir/state/.lock-session")" = "$daemon_pid" ] && [ "$daemon_pid" != "$first_daemon" ] \
+      || fail "$shape: sidecar retained the previous daemon instance"
+    [ "$(cat "$dir/state/.lease-t1")" = "$(printf 'branch\t%s\t100' "$new_anchor")" ] \
+      || fail "$shape: same-thread recovery lost the task lease"
+    [ "$(cat "$dir/state/.lease-t2.lock")" = "$(printf 'main\t%s\t200' "$new_anchor")" ] \
+      || fail "$shape: recovery skipped a valid task id ending in .lock"
+    STATE="$dir/state" bash -c '. "$1"; fm_lease_live t1' _ "$ROOT/bin/fm-lease-lib.sh" \
+      || fail "$shape: the moved lease is not live"
+    : > "$dir/state/stop-second"
+    wait "$daemon_pid" || fail "the second daemon failed to exit"
+    if [ "$shape" = reused ]; then kill "$replacement_pid"; wait "$replacement_pid" 2>/dev/null || true; fi
+  done
+  pass "session-lock: daemon restart re-anchors dead and reused instances while preserving same-thread leases"
 }
 
 test_reused_anchor_instance_does_not_inherit_ownership() {
@@ -1784,9 +1936,11 @@ test_reused_anchor_instance_does_not_inherit_ownership() {
 printf '%s\n' "$$" > "$FM_HOME/state/.lock"
 printf 'ended-owner\nanchor_pid=%s\nanchor_start=0\n' "$$" > "$FM_HOME/state/.lock-session"
 printf 'branch\t%s\t100\n' "$$" > "$FM_HOME/state/.lease-t1"
+printf 'main\t%s\t200\n' "$$" > "$FM_HOME/state/.lease-t1.lock"
 bash -c '. "$1"; ! fm_session_lock_owned_by_self "$2"' _ "$FM_LIB" "$FM_HOME/state" || exit 1
 STATE="$FM_HOME/state" bash -c '. "$1"; ! fm_lease_live t1' _ "$FM_ROOT/bin/fm-lease-lib.sh" || exit 2
 "$FM_ROOT/bin/fm-lock.sh" || exit 3
+STATE="$FM_HOME/state" bash -c '. "$1"; ! fm_lease_live t1 && [ ! -e "$STATE/.lease-t1" ] && [ ! -e "$STATE/.lease-t1.lock" ]' _ "$FM_ROOT/bin/fm-lease-lib.sh" || exit 5
 bash -c '. "$1"; fm_session_lock_anchor_instance_matches "$2" && fm_session_lock_owned_by_self "$2"' _ "$FM_LIB" "$FM_HOME/state" || exit 4
 SH
   env -u CLAUDE_CODE_SESSION_ID -u CLAUDE_PID -u CODEX_THREAD_ID -u CODEX_SESSION_ID \
@@ -1809,6 +1963,7 @@ test_codex_two_sessions_one_daemon_never_cross_own
 test_codex_thread_id_trust_gate
 test_codex_thread_binding
 test_reused_anchor_instance_does_not_inherit_ownership
+test_codex_restart_reanchors_same_thread
 test_e2e_codex_daemon_parented_session_acquires_by_thread
 test_e2e_codex_dead_session_daemon_lock_reclaimed
 test_e2e_codex_foreign_acquisition_refused_while_owner_lives

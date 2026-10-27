@@ -425,15 +425,30 @@ Only the published pair counts for that identity: `CODEX_THREAD_ID` and `CODEX_S
 The sidecar keeps the thread id on line 1 and records the anchor pid and its kernel start time, plus the hosting daemon pid and kernel start time for daemon-served sessions.
 A reused numeric pid cannot inherit the recorded process instance's ownership.
 A daemon-served owner's acquiring process may exit while the thread remains active without any identity-bearing process.
-The shared boundary therefore retains that owner's lock for the lifetime of its recorded hosting daemon instance, even when a process scan finds nothing.
-This is conservative: an ended thread can keep its home locked until that daemon exits; absence from the process table alone never authorizes takeover.
+The shared boundary queries `thread/read` over the recorded daemon instance's control socket, using the WebSocket transport described by the [app-server protocol](https://learn.chatgpt.com/docs/app-server).
+Runtime states `active`, `idle`, and `systemError` retain the lock; `notLoaded` permits replacement while that same daemon is still alive.
+If the query is unavailable, the identity-bound process scan supplies the fallback verdict; daemon uptime alone never retains ownership.
+The daemon pid and kernel start time select the server instance to query, rather than serving as thread-lifetime evidence.
+Same-thread acquisition re-anchors a dead or reused anchor under the claim and lease-command locks, moving that thread's leases to its current anchor.
+A replacement session retires prior task leases under the lease-command lock before publishing its fresh anchor instance.
 Separate argv and environment fields come from Linux procfs or macOS KERN_PROCARGS2, with kernel start times from procfs or proc_pidinfo.
 Only the actual `resume <id>` argument pair or both equal environment identity fields bind a process to a thread.
-Inspection carries the verified hosting process through to inbox readiness, and task leases use the same owner-lifetime boundary.
+Inspection carries the verified owner pid and Codex harness evidence through to inbox readiness, and task leases use the same owner-lifetime boundary.
+The read-only live probe on 2026-10-27 reached the existing 0.164.0 daemon over its Unix control socket without creating, resuming, or changing a thread.
+It completed a WebSocket HTTP Upgrade, initialized a client connection, listed loaded threads, and read one loaded thread with `includeTurns: false`:
+
+```text
+HTTP/1.1 101 Switching Protocols
+initialize: userAgent codex-tui/0.164.0
+thread/loaded/list: two loaded thread ids, nextCursor null
+thread/read: status {"type":"active","activeFlags":[]}
+```
+
+This live probe proves query reachability and the runtime-status response; the portable fixtures below cover live, unloaded, restart, and reused-pid transitions.
 The coverage ran with:
 
 ```sh
-bin/fm-test-run.sh tests/fm-session-lock-ancestry.test.sh
+bash tests/fm-session-lock-ancestry.test.sh
 ```
 
 Observed output, bounded to the lines that coverage adds:
@@ -446,7 +461,8 @@ ok - session-lock: a Codex thread id is trusted only inside a Codex session, and
 ok - session-lock: real argv and separate environment fields bind only their own thread
 ok - session-lock e2e: a daemon-parented Codex session acquires and keeps its lock by thread id, never on the daemon
 ok - session-lock e2e: a dead session's daemon-anchored lock is reclaimed by its replacement through fm-lock.sh
-ok - session-lock e2e: daemon lifetime protects acquisition, leases, and readiness without a session process
+ok - session-lock: daemon restart re-anchors dead and reused instances while preserving same-thread leases
+ok - session-lock e2e: daemon thread state protects live owners and permits replacement while the daemon lives
 ```
 [`sessionstart-nudge.md`](../sessionstart-nudge.md#shared-wrapper-and-safety) owns the nudge wrapper's separate ancestry check and its redundant-nudge behavior after helper-chain recycling.
 `tests/fm-watch-arm.test.sh` runs real watcher and arm cycles against durable on-disk state to verify that a delivered reason survives until post-handling acknowledgement and stops replaying after acknowledgement, while an unrelated queue append cannot make a watcher cycle that delivered nothing look successful.

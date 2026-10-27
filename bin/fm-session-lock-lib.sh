@@ -397,15 +397,22 @@ fm_session_lock_anchor_instance_matches() {
   [ "$current" = "$recorded" ]
 }
 
-fm_session_lock_daemon_instance_live() {
-  local state=$1 pid recorded current
+fm_session_lock_codex_thread_state() {
+  local state=$1 id=$2 pid recorded status
   pid=$(sed -n 's/^codex_daemon_pid=//p' "$state/.lock-session" 2>/dev/null)
   recorded=$(sed -n 's/^codex_daemon_start=//p' "$state/.lock-session" 2>/dev/null)
-  case "$pid" in ''|0|1|*[!0-9]*) return 1 ;; esac
-  [ -n "$recorded" ] || return 1
-  current=$(fm_session_process_start "$pid") || return 1
-  [ "$current" = "$recorded" ] || return 1
-  FM_CODEX_IDENTITY_OWNER_PID=$pid
+  case "$pid" in ''|0|1|*[!0-9]*) return 2 ;; esac
+  [ -n "$recorded" ] || return 2
+  status=$(python3 "$FM_SESSION_PROCESS_READER" thread "$pid" "$id" "$recorded" 2>/dev/null) || return 2
+  case "$status" in
+    active|idle|systemError)
+      FM_CODEX_IDENTITY_OWNER_PID=$pid
+      FM_SESSION_LOCK_OWNER_HARNESS=codex
+      return 0
+      ;;
+    notLoaded) return 1 ;;
+  esac
+  return 2
 }
 
 fm_session_lock_codex_daemon_pid() {
@@ -423,17 +430,25 @@ fm_session_lock_codex_daemon_pid() {
 }
 
 fm_session_lock_recorded_owner_live() {
-  local state=$1 lock_pid recorded
+  local state=$1 lock_pid recorded verdict
+  FM_SESSION_LOCK_OWNER_HARNESS=
   FM_CODEX_IDENTITY_OWNER_PID=
   lock_pid=$(cat "$state/.lock" 2>/dev/null || true)
   case "$lock_pid" in ''|*[!0-9]*) return 1 ;; esac
   if fm_session_lock_anchor_instance_matches "$state" && fm_harness_pid_alive "$lock_pid"; then
     FM_CODEX_IDENTITY_OWNER_PID=$lock_pid
+    [ "$FM_HARNESS_IS_CODEX" -ne 1 ] || FM_SESSION_LOCK_OWNER_HARNESS=codex
     return 0
   fi
   recorded=$(fm_session_lock_recorded_session_id "$state") || return 1
-  fm_session_lock_daemon_instance_live "$state" && return 0
-  fm_codex_session_identity_live "$recorded"
+  verdict=0
+  fm_session_lock_codex_thread_state "$state" "$recorded" || verdict=$?
+  case "$verdict" in
+    0) return 0 ;;
+    1) return 1 ;;
+  esac
+  fm_codex_session_identity_live "$recorded" || return 1
+  FM_SESSION_LOCK_OWNER_HARNESS=codex
 }
 
 # True when the lock in state dir $1 was recorded by this same session:
@@ -561,8 +576,10 @@ FM_LOCK_INSPECT_STATE=unknown
 FM_LOCK_INSPECT_PID=
 FM_LOCK_INSPECT_LIVE_HARNESS=unknown
 FM_LOCK_INSPECT_OWNER_PID=
+FM_LOCK_INSPECT_HARNESS=
 fm_session_lock_inspect() {  # <state>
   local state=$1 lock pid
+  FM_LOCK_INSPECT_HARNESS=
   # shellcheck disable=SC2034 # Output globals, read by lock status and inbox ready.
   FM_LOCK_INSPECT_STATE=unknown
   # shellcheck disable=SC2034 # Output globals, read by lock status and inbox ready.
@@ -598,6 +615,7 @@ fm_session_lock_inspect() {  # <state>
     FM_LOCK_INSPECT_STATE=held
     FM_LOCK_INSPECT_LIVE_HARNESS=true
     FM_LOCK_INSPECT_OWNER_PID=$FM_CODEX_IDENTITY_OWNER_PID
+    FM_LOCK_INSPECT_HARNESS=$FM_SESSION_LOCK_OWNER_HARNESS
     return 0
   fi
   if kill -0 "$pid" 2>/dev/null && ! fm_codex_pid_is_daemon "$pid"; then

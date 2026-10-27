@@ -231,7 +231,6 @@ fm_lease_rekey_holder() {
   local old=$1 new=$2 lease task tmp rc=0
   for lease in "$STATE"/.lease-*; do
     [ -e "$lease" ] || continue
-    case "$lease" in *.lock) continue ;; esac
     task=${lease##*/.lease-}
     fm_lease_valid_id "$task" || continue
     fm_lease_read "$task" || continue

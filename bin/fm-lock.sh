@@ -168,8 +168,7 @@ publish_lock_session() {
   recorded=$(fm_session_lock_recorded_session_id "$STATE") || recorded=
   if [ "$anchor" = "$(cat "$LOCK" 2>/dev/null)" ] && [ "$trusted" = "$recorded" ] \
     && [ -n "$(sed -n 's/^anchor_start=//p' "$LOCK_SESSION" 2>/dev/null)" ] \
-    && { fm_session_lock_anchor_instance_matches "$STATE" \
-      || { [ -n "$trusted" ] && fm_session_lock_daemon_instance_live "$STATE"; }; }; then
+    && fm_session_lock_anchor_instance_matches "$STATE"; then
     return 0
   fi
   start=$(fm_session_process_start "$anchor") || return 1
@@ -219,9 +218,14 @@ confirm_own_lock() {  # <recorded-pid>
   fi
   recorded=$(cat "$LOCK" 2>/dev/null || true)
   if fm_session_lock_owned_by_self "$STATE"; then
-    if [ "$recorded" != "$me" ] && pids=$(fm_harness_ancestry_pids) \
-      && ! fm_harness_pid_listed "$recorded" "$pids" \
-      && fm_lock_acquire_wait_max "$LEASE_LOCK" "$LEASE_LOCK_WAIT"; then
+    pids=$(fm_harness_ancestry_pids) || pids=
+    if ! fm_session_lock_anchor_instance_matches "$STATE" \
+      || ! kill -0 "$recorded" 2>/dev/null \
+      || { [ "$recorded" != "$me" ] && [ -n "$pids" ] && ! fm_harness_pid_listed "$recorded" "$pids"; }; then
+      if ! fm_lock_acquire_wait_max "$LEASE_LOCK" "$LEASE_LOCK_WAIT"; then
+        echo "error: cannot serialize the session re-anchor with task leases; operate read-only until resolved" >&2
+        exit 1
+      fi
       LEASE_LOCK_HELD=1
       REANCHOR=$recorded
       return 0
@@ -299,6 +303,22 @@ fi
 # there a HUP, INT, or TERM during the lease move or the bounded
 # .claude-autoarm.lock wait, before commit_lock_session, still runs
 # restore_uncommitted_lock_session with phase 2 and removes the sidecar.
+if [ -z "$REANCHOR" ]; then
+  fm_lock_acquire_wait_max "$LEASE_LOCK" "$LEASE_LOCK_WAIT" || {
+    echo "error: cannot retire the previous session's task leases; operate read-only until resolved" >&2
+    exit 1
+  }
+  LEASE_LOCK_HELD=1
+  for lease in "$STATE"/.lease-*; do
+    [ -f "$lease" ] || [ -L "$lease" ] || continue
+    task=${lease##*/.lease-}
+    fm_lease_valid_id "$task" || continue
+    rm -f -- "$lease" || {
+      echo "error: cannot retire a previous session task lease; operate read-only until resolved" >&2
+      exit 1
+    }
+  done
+fi
 publish_lock_session_or_die
 if [ -f "$LOCK" ]; then
   LOCK_LINE_PRE=$(mktemp "$STATE/.lock.pre.XXXXXX") || {

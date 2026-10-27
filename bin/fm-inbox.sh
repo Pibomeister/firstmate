@@ -895,7 +895,7 @@ cmd_ready() {
   # live process whose ancestry names the holder's harness.
   owner_pid=${FM_LOCK_INSPECT_OWNER_PID:-$lock_pid}
   if [ -z "$resolved_model" ] && [ "$lock_state" = held ] && [ -n "$owner_pid" ]; then
-    if fm_session_lock_daemon_instance_live "$STATE"; then
+    if [ "${FM_LOCK_INSPECT_HARNESS:-}" = codex ]; then
       resolved_model=persistent
     fi
     anc=$("$SELF_DIR/fm-harness.sh" ancestry "$owner_pid" 2>/dev/null || true)
