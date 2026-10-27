@@ -170,6 +170,7 @@ SH
   i=0
   while [ ! -e "$home/recovery-held" ] && [ "$i" -lt 100 ]; do sleep 0.05; i=$((i + 1)); done
   [ -e "$home/recovery-held" ] || fail "preconfirmation fixture never held the recovery lock"
+  # shellcheck disable=SC2016
   FM_HOME="$home" BASH_ENV="$home/pre-exec.env" PATH="$home/fakebin:$PATH" FM_TEST_REAL_DATE="$real_date" FM_TEST_REAL_MKTEMP="$real_mktemp" \
     FM_TEST_WATCH_PATH="${CHECKPOINT%/*}/fm-watch.sh" \
     FM_SUPERVISION_HOST_PRIMARY=codex FM_SUPERVISION_HOST_PARK_SECONDS=120 \
@@ -195,6 +196,7 @@ SH
   kill -KILL "$(awk -F '\t' '$1 == "host" { print $2; exit }' "$home/state/.supervision-host")"
   wait_for_exit "$predecessor" 200 >/dev/null 2>&1 || true
   : > "$home/predecessor-killed"
+  # shellcheck disable=SC2016
   FM_HOME="$home" BASH_ENV="$home/pre-exec.env" PATH="$home/fakebin:$PATH" FM_TEST_REAL_DATE="$real_date" FM_TEST_REAL_MKTEMP="$real_mktemp" \
     FM_TEST_WATCH_PATH="${CHECKPOINT%/*}/fm-watch.sh" \
     FM_SUPERVISION_HOST_PRIMARY=codex FM_SUPERVISION_HOST_PARK_SECONDS=120 \
