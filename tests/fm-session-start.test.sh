@@ -1738,8 +1738,12 @@ EOF
     || fail "could not seed the non-Pi unread branch outcome"
   rm -f "$home/state/.branch-outcomes-cursor"
   printf 'branch\t999999\t123\n' > "$home/state/.lease-task-dead"
+  # Continue the existing session; a fresh acquisition retires old leases.
+  printf '%s\n' "$$" > "$home/state/.lock"
 
-  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  out=$(run_named_harness_session_start claude "$home" "$root" "$fakebin:$BASE_PATH")
+  assert_contains "$out" "lock acquired: harness pid $$" "non-Pi session did not confirm its existing lock"
+  assert_contains "$out" "SUPERVISION OPERATING INSTRUCTIONS - primary harness: claude" "non-Pi fixture did not run as Claude"
   case "$out" in
     *"BRANCH OUTCOMES"*|*"unread Pi branch outcome"*) fail "non-Pi session replayed Pi branch outcomes" ;;
   esac
