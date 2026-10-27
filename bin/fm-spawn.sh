@@ -1549,7 +1549,7 @@ spawn_abort_cleanup() {
       fm_backend_kill orca "$ORCA_TERMINAL" 2>/dev/null && SPAWN_ENDPOINT_CLOSED=1 || true
     fi
     if [ -n "${ORCA_WORKTREE_ID:-}" ]; then
-      if fm_backend_remove_worktree orca "$ORCA_WORKTREE_ID" 2>/dev/null; then
+      if fm_backend_remove_worktree orca "$ORCA_WORKTREE_ID" "${WT:-}" 2>/dev/null; then
         if [ -n "$ORCA_CREATED_BRANCH" ] &&
           git check-ref-format --branch "$ORCA_CREATED_BRANCH" >/dev/null 2>&1 &&
           git -C "$PROJ_ABS" show-ref --verify --quiet "refs/heads/$ORCA_CREATED_BRANCH"; then
@@ -5450,7 +5450,7 @@ polytoken_spawn_fail() {  # <detail>
       --sessions-dir "$(fm_polytoken_sessions_root "$STATE_REAL" "$ID")" >/dev/null 2>&1 || true
   fi
   clear_relaunch_harness_wiring polytoken "$WT" "$STATE_REAL" "$ID" || true
-  rovo_endpoint_cleanup
+  spawn_gate_endpoint_cleanup
 }
 
 if [ "$RELAUNCH" -eq 1 ] && [ "$BACKEND" = orca ]; then
@@ -6921,7 +6921,6 @@ sleep 0.3
 spawn_orca_launch_send_fail() {
   rm -f -- "$LAUNCH_FILE" 2>/dev/null || true
   kimi_spawn_fail "launch command could not be delivered to Orca terminal $T"
-  rovo_endpoint_cleanup
   exit 1
 }
 # Orca source mode: the pane unlinks the credential-bearing file as it starts
