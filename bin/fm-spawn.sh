@@ -102,7 +102,7 @@
 #   all together. Stops may not exceed hard caps. These ship/scout-only options
 #   publish budget_* metadata before launch; relaunch keeps the recorded budget.
 #   A budgeted relaunch folds final native usage before replacing its source
-#   binding and refuses unknown usage, so replacement never resets consumption.
+#   binding; unknown prior usage is reported and not carried, never blocking launch.
 #   Native usage and watcher enforcement are owned by bin/fm-task-budget.sh.
 #   --model <name> and --effort <low|medium|high|xhigh|max|ultra> are concrete profile
 #   axes chosen by firstmate at intake. They are only threaded into harnesses whose

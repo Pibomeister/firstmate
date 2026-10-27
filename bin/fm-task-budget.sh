@@ -4,11 +4,13 @@
 #   fm-task-budget.sh seed <prior-meta-or-dash> <harness> <worktree> <native-log-root> <launch-marker> <four-limits>
 #   fm-task-budget.sh measure <task-meta>  # JSON: ok totals, pending, or unknown with reason
 #   fm-task-budget.sh tick <task-meta> <config-dir> <home>
-# validate performs no writes; seed finalizes prior source evidence and prints
-# a fragment for atomic task metadata publication.
+# validate performs no writes; seed carries measured prior-incarnation usage
+# (or warns and carries none when it is unknown) and prints a fragment for
+# atomic task metadata publication.
 # tick holds the existing task-meta lock, defaults to dry-run, and uses only the
-# existing fm-control interrupt. <id>.budget holds native bindings, counters,
-# finalized incarnations, allocation episodes and claimed control attempts; <id>.budget-diagnostic
+# existing fm-control interrupt, at most once per stop-line episode. <id>.budget
+# holds native bindings, incremental counters (byte offset plus folded totals),
+# allocation episodes and claimed control attempts; <id>.budget-diagnostic
 # deduplicates unknown telemetry without discarding corrupt counter state.
 # A claim without a completion proof is uncertain and is not blindly replayed.
 # fresh = uncached input + cache write + output; inclusive adds cache reads.

@@ -142,14 +142,55 @@ test_relaunch_keeps_native_consumption() {
   write_native "$dir" codex
   out=$("$TEST_BASH" "$ROOT/bin/fm-task-budget.sh" measure "$dir/state/task.meta")
   assert_usage "$out" 4225 504
-  python3 - "$dir/state/task.budget" <<'PY'
-import json,sys
-s=json.load(open(sys.argv[1]));entries=s['finalized']
-assert [(e['generation'],e['harness'],e['session'],e['native_inclusive'],e['native_fresh']) for e in entries]==[('s1','codex','main',2030,230),('s2','claude','main',165,44)],entries
-assert all(e['source'].endswith('/main.jsonl') for e in entries),entries
-assert [(e['inclusive'],e['fresh']) for e in entries]==[(2030,230),(2195,274)],entries
-PY
   pass 'native allocation consumption survives a harness switch'
+}
+
+test_relaunch_with_unknown_prior_usage_still_launches() {
+  local dir="$TMP_ROOT/relaunch-pending" record
+  make_counter_case "$dir" codex
+  # The first incarnation died before writing any native session.
+  record=$("$TEST_BASH" "$ROOT/bin/fm-task-budget.sh" seed "$dir/state/task.meta" codex "$dir/wt" "$dir/native" \
+    FM_BUDGET_LAUNCH_fixture2 40000000 32000000 1500000 1200000 2> "$dir/seed.err") \
+    || fail "relaunch seed refused after the old agent was stopped: $(cat "$dir/seed.err")"
+  assert_contains "$record" 'budget_prior_inclusive=0' 'unknown prior usage is not carried'
+  assert_contains "$record" 'budget_launch_marker=FM_BUDGET_LAUNCH_fixture2' 'replacement binding is seeded'
+  assert_grep 'budget-unknown task=task prior incarnation usage not carried over' "$dir/seed.err" \
+    'unknown prior usage is reported'
+  printf 'harness=pi\nkind=scout\nspawn_gen=s1\nworktree=%s\n' "$dir/wt" > "$dir/state/other.meta"
+  "$TEST_BASH" "$ROOT/bin/fm-task-budget.sh" seed - pi "$dir/wt" "" FM_BUDGET_LAUNCH_fixture1 \
+    40000000 32000000 1500000 1200000 >> "$dir/state/other.meta"
+  "$TEST_BASH" "$ROOT/bin/fm-task-budget.sh" seed "$dir/state/other.meta" codex "$dir/wt" "$dir/native" \
+    FM_BUDGET_LAUNCH_fixture3 40000000 32000000 1500000 1200000 > /dev/null 2>&1 \
+    || fail 'relaunch from an unsupported-harness budget refused'
+  pass 'relaunch never strands a task on unmeasurable prior usage'
+}
+
+test_bound_log_folds_appended_records_only() {
+  local harness dir out
+  for harness in claude codex; do
+    dir="$TMP_ROOT/incremental-$harness"
+    make_counter_case "$dir" "$harness"
+    write_native "$dir" "$harness"
+    out=$("$TEST_BASH" "$ROOT/bin/fm-task-budget.sh" measure "$dir/state/task.meta")
+    if [ "$harness" = claude ]; then assert_usage "$out" 165 44; else assert_usage "$out" 2030 230; fi
+    python3 - "$dir/native/project/main.jsonl" "$harness" <<'PY'
+import json,pathlib,sys
+p=pathlib.Path(sys.argv[1]);lines=p.read_text().splitlines();last=json.loads(lines[-1])
+# Overwrite an already-folded usage record in place; only appended bytes are read again.
+lines[2]='#'*len(lines[2])
+p.write_text(''.join(line+'\n' for line in lines))
+if sys.argv[2]=='claude':
+ last['message']['usage']['output_tokens']=12  # A later snapshot of message 'two'.
+ rows=[last,dict(last,message={'id':'three','usage':{'input_tokens':1,'output_tokens':1}})]
+else:
+ last['payload']['info']['total_token_usage'].update(input_tokens=3000,cached_input_tokens=2700,output_tokens=45,total_tokens=3045)
+ rows=[last]
+with p.open('a') as f:f.write(''.join(json.dumps(row)+'\n' for row in rows))
+PY
+    out=$("$TEST_BASH" "$ROOT/bin/fm-task-budget.sh" measure "$dir/state/task.meta")
+    if [ "$harness" = claude ]; then assert_usage "$out" 177 56; else assert_usage "$out" 3045 345; fi
+  done
+  pass 'bound native logs fold appended records into retained totals'
 }
 
 test_ordinary_watcher_checks_budget() {
@@ -343,9 +384,77 @@ u.update(input_tokens=3000,cached_input_tokens=2700,output_tokens=45,total_token
 with p.open('a') as f:f.write(json.dumps(row)+'\n')
 PY
   "$TEST_BASH" "$dir/bin/fm-task-budget.sh" tick "$dir/state/task.meta" "$dir/config" "$dir"
-  [ "$(wc -l < "$dir/control.log" | tr -d ' ')" = 2 ] || fail 'new native usage did not trigger a new interrupt attempt'
+  [ "$(wc -l < "$dir/control.log" | tr -d ' ')" = 1 ] || fail 'later native usage re-interrupted the same stop-line episode'
   [ "$(wc -l < "$dir/state/task.status" | tr -d ' ')" = 1 ] || fail 'continued usage duplicated the open budget decision'
-  pass 'crash uncertainty is preserved and continued usage rechecks without duplicate decisions'
+  printf 'resolved: [key=budget-stop] continue\n' >> "$dir/state/task.status"
+  python3 - "$dir/native/project/main.jsonl" <<'PY'
+import json,pathlib,sys
+p=pathlib.Path(sys.argv[1]);row=json.loads(p.read_text().splitlines()[-1]);u=row['payload']['info']['total_token_usage']
+u.update(input_tokens=4000,cached_input_tokens=3600,output_tokens=60,total_tokens=4060)
+with p.open('a') as f:f.write(json.dumps(row)+'\n')
+PY
+  "$TEST_BASH" "$dir/bin/fm-task-budget.sh" tick "$dir/state/task.meta" "$dir/config" "$dir"
+  [ "$(wc -l < "$dir/control.log" | tr -d ' ')" = 1 ] || fail 'work after the answered decision was re-interrupted'
+  pass 'crash uncertainty is preserved and one stop-line episode interrupts at most once'
+}
+
+spawn_reuse() {  # <home> <wt> <fakebin> <project>
+  fm_test_run_spawn "$1" "$2" "$3" reuse "$4" --scout \
+    --budget-inclusive-hard 40000000 --budget-inclusive-stop 32000000 \
+    --budget-fresh-hard 1500000 --budget-fresh-stop 1200000
+}
+
+in_reuse_home() {  # <home> <wt> <fakebin> <command...>
+  local home=$1 wt=$2 fakebin=$3
+  shift 3
+  FM_ROOT_OVERRIDE='' FM_HOME="$home" HOME="$home/user-home" CLAUDE_CONFIG_DIR='' \
+    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" FM_PROJECTS_OVERRIDE="$home/projects" \
+    FM_CONFIG_OVERRIDE="$home/config" FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$wt" TMUX=fake,1,0 \
+    PATH="$fakebin:$PATH" "$@"
+}
+
+test_teardown_retires_budget_state_for_id_reuse() {
+  local dir="$TMP_ROOT/reuse" home proj wt fakebin out
+  home="$dir/home"; proj="$dir/project"; wt="$dir/wt"
+  fm_test_spawn_home "$home" codex
+  fm_test_spawn_brief "$home" reuse
+  fm_git_worktree "$proj" "$wt" reuse-fixture
+  fakebin=$(fm_test_make_spawn_fakebin "$dir/fake" codex)
+  out=$(spawn_reuse "$home" "$wt" "$fakebin" "$proj") || fail "first budgeted spawn failed: $out"
+  # The previous incarnation claimed an interrupt and recorded a diagnostic.
+  python3 - "$home/state/reuse.meta" current <<'PY'
+import json,pathlib,sys
+p=pathlib.Path(sys.argv[1]);meta=dict(line.split('=',1) for line in p.read_text().splitlines() if '=' in line)
+limits=[40000000,32000000,1500000,1200000]
+started=meta['budget_started_at'] if sys.argv[2]=='current' else '0'
+episode={'allocation':[started,limits],'limits':limits,'key':'budget-stop-old','attempt':{'outcome':'old interrupt'},
+ 'sample':{'inclusive':1,'fresh':1,'observed_at':'then'}}
+p.with_suffix('.budget').write_text(json.dumps({'sequence':1,'episode':episode})+'\n')
+p.with_suffix('.budget-diagnostic').write_text('old')
+PY
+  printf 'report\n' > "$home/data/reuse/report.md"
+  out=$(in_reuse_home "$home" "$wt" "$fakebin" "$ROOT/bin/fm-captain-hold.sh" complete reuse --none 2>&1) \
+    || fail "captain-call inventory: $out"
+  out=$(in_reuse_home "$home" "$wt" "$fakebin" "$ROOT/bin/fm-teardown.sh" reuse 2>&1) || fail "teardown failed: $out"
+  [ ! -e "$home/state/reuse.budget" ] || fail 'teardown left the task budget state'
+  [ ! -e "$home/state/reuse.budget-diagnostic" ] || fail 'teardown left the task budget diagnostic'
+  fm_test_spawn_brief "$home" reuse
+  out=$(spawn_reuse "$home" "$wt" "$fakebin" "$proj") || fail "reused task id spawn failed: $out"
+  # Budget state left by an older allocation must not replay into the new one.
+  python3 - "$home/state/reuse.meta" stale <<'PY'
+import json,pathlib,sys
+p=pathlib.Path(sys.argv[1])
+limits=[40000000,32000000,1500000,1200000]
+episode={'allocation':['0',limits],'limits':limits,'key':'budget-stop-old','attempt':{'outcome':'old interrupt'},
+ 'sample':{'inclusive':1,'fresh':1,'observed_at':'then'}}
+p.with_suffix('.budget').write_text(json.dumps({'sequence':1,'episode':episode})+'\n')
+PY
+  printf 'enforce\n' > "$home/config/budget-enforcement"
+  "$TEST_BASH" "$ROOT/bin/fm-task-budget.sh" tick "$home/state/reuse.meta" "$home/config" "$home" > /dev/null 2>&1
+  if [ -e "$home/state/reuse.status" ] && grep -q 'budget-stop-old' "$home/state/reuse.status"; then
+    fail 'a previous allocation budget decision replayed into the reused task id'
+  fi
+  pass 'teardown retires budget state and a reused task id starts a clean allocation'
 }
 
 test_invalid_limits_refuse_before_provisioning() {
@@ -535,6 +644,9 @@ esac
 case "${FM_TEST_ONLY:-all}" in
   all|relaunch) test_relaunch_keeps_native_consumption ;;
 esac
+case "${FM_TEST_ONLY:-all}" in all|relaunch-unknown) test_relaunch_with_unknown_prior_usage_still_launches ;; esac
+case "${FM_TEST_ONLY:-all}" in all|incremental) test_bound_log_folds_appended_records_only ;; esac
+case "${FM_TEST_ONLY:-all}" in all|reuse) test_teardown_retires_budget_state_for_id_reuse ;; esac
 case "${FM_TEST_ONLY:-all}" in
   all|watcher) test_ordinary_watcher_checks_budget ;;
 esac

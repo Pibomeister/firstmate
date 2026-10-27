@@ -48,16 +48,18 @@ def save_state(path, value):
             os.unlink(staging)
 
 
-def records(path):
-    with path.open() as stream:
+def records(path, offset=0):
+    with path.open("rb") as stream:
+        stream.seek(offset)
         for line in stream:
-            if not line.endswith("\n"):
+            if not line.endswith(b"\n"):
                 break  # The harness may still be appending its last record.
+            offset += len(line)
             if line.strip():
                 value = json.loads(line)
                 if not isinstance(value, dict):
                     raise ValueError("invalid native record")
-                yield value
+                yield offset, value
 
 
 def timestamp(value):
@@ -73,7 +75,7 @@ def mapping(value):
 
 
 def initial_launch_matches(path, harness, marker):
-    for row in records(path):
+    for _, row in records(path):
         if harness == "claude":
             if row.get("type") != "user" or row.get("isMeta"):
                 continue
@@ -105,7 +107,7 @@ def initial_launch_matches(path, harness, marker):
 
 
 def identity(path, harness, marker):
-    for row in records(path):
+    for _, row in records(path):
         if harness == "codex":
             if row.get("type") != "session_meta":
                 return None
@@ -131,10 +133,11 @@ def number(value):
     return value
 
 
-def fold(path, harness):
-    messages = {}
-    previous = None
-    for row in records(path):
+def fold(path, harness, cache):
+    offset = cache.get("offset", 0)
+    messages = dict(cache.get("messages", {}))
+    previous = cache.get("previous")
+    for offset, row in records(path, offset):
         if harness == "claude":
             if row.get("type") != "assistant":
                 continue
@@ -151,7 +154,7 @@ def fold(path, harness):
             ))
             if "input_tokens" not in usage or "output_tokens" not in usage:
                 raise ValueError("unsupported Claude usage shape")
-            messages[mid] = (sum(values), sum(values[:3]))
+            messages[mid] = [sum(values), sum(values[:3])]
         elif row.get("type") in ("event_msg", "token_usage_record"):
             payload = mapping(row.get("payload"))
             if row["type"] == "token_usage_record":
@@ -171,7 +174,8 @@ def fold(path, harness):
                 raise ValueError("inconsistent Codex cache-write counters")
             if previous is not None and any(now < before for now, before in zip(values, previous)):
                 raise ValueError("Codex cumulative counters reset")
-            previous = values
+            previous = list(values)
+    cache.update(offset=offset, messages=messages, previous=previous)
     if harness == "claude" and messages:
         return tuple(sum(value[i] for value in messages.values()) for i in (0, 1))
     if previous is not None:
@@ -238,16 +242,18 @@ def measure(path, persist=True):
     if old and (signature[:2] != old[:2] or signature[2] < old[2]):
         raise ValueError("bound native log was replaced or truncated")
     if signature != old:
-        usage = fold(log, harness)
-        if usage is None:
-            return {"status": "pending", "reason": "native usage not yet recorded"}
-        inclusive, fresh = usage
-        if inclusive < cache.get("inclusive", 0) or fresh < cache.get("fresh", 0):
-            raise ValueError("native usage decreased")
-        cache.update(signature=signature, inclusive=inclusive, fresh=fresh)
+        usage = fold(log, harness, cache)
+        if usage is not None:
+            inclusive, fresh = usage
+            if inclusive < cache.get("inclusive", 0) or fresh < cache.get("fresh", 0):
+                raise ValueError("native usage decreased")
+            cache.update(inclusive=inclusive, fresh=fresh)
+        cache["signature"] = signature
     if persist:
         state["counter"] = cache
         save_state(state_path, state)
+    if "inclusive" not in cache:
+        return {"status": "pending", "reason": "native usage not yet recorded"}
     return {
         "status": "ok", "harness": harness, "session": cache["session"], "source": cache["log"],
         "inclusive": cache["inclusive"] + prior_inclusive,
@@ -274,9 +280,14 @@ def seed(args):
         raise ValueError("invalid native launch marker")
     previous = None
     if prior != "-":
-        previous = measure(prior, persist=False)
-        if previous["status"] != "ok":
-            raise ValueError("cannot establish final prior-incarnation usage")
+        try:
+            previous = measure(prior, persist=False)
+            if previous["status"] != "ok":
+                raise ValueError(previous["reason"])
+        except (ValueError, KeyError, OSError, TypeError, AttributeError) as error:
+            previous = None
+            print(f"budget-unknown task={Path(prior).stem} prior incarnation usage not carried over: {error}",
+                  file=sys.stderr)
     record = {"budget_" + key: value for key, value in bounds.items()}
     record.update(
         budget_launch_at=str(time.time()),
@@ -290,18 +301,6 @@ def seed(args):
     for key, value in record.items():
         if "\n" in str(value) or "\r" in str(value):
             raise ValueError("budget source identity must be one line")
-    if previous:
-        old_meta = read_meta(prior)
-        state_path = Path(prior).with_suffix(".budget")
-        state = read_state(state_path)
-        finalized = dict(previous, generation=old_meta["spawn_gen"],
-                         native_inclusive=previous["inclusive"] - int(old_meta["budget_prior_inclusive"]),
-                         native_fresh=previous["fresh"] - int(old_meta["budget_prior_fresh"]),
-                         launch_marker=old_meta["budget_launch_marker"],
-                         launch_fingerprint=old_meta.get("budget_launch_fingerprint"))
-        state["finalized"] = [entry for entry in state.get("finalized", [])
-                              if entry["generation"] != finalized["generation"]] + [finalized]
-        save_state(state_path, state)
     for key, value in record.items():
         print(f"{key}={value}")
 
@@ -333,10 +332,12 @@ def prepare(path, config):
         harness = meta.get("harness", "unknown")
         if meta.get("kind") == "secondmate":
             return "none"
-        state = read_state(path.with_suffix(".budget"))
-        if state.get("episode", {}).get("attempt"):
+        values = [int(meta["budget_" + key]) for key in LIMITS]
+        allocation = [meta["budget_started_at"], values]
+        episode = read_state(path.with_suffix(".budget")).get("episode", {})
+        if episode.get("allocation") == allocation and episode.get("attempt"):
             # A claimed action already has evidence, even if its native log is gone.
-            decision(path, state["episode"])
+            decision(path, episode)
         setting = Path(config) / "budget-enforcement"
         mode = setting.read_text().strip() if setting.exists() else "dry-run"
         if mode not in ("dry-run", "enforce"):
@@ -345,8 +346,6 @@ def prepare(path, config):
         if sample["status"] != "ok":
             raise ValueError(sample["reason"])
         state = read_state(path.with_suffix(".budget"))
-        values = [int(meta["budget_" + key]) for key in LIMITS]
-        allocation = [meta["budget_started_at"], values]
         episode = state.get("episode", {})
         if episode.get("allocation") != allocation:
             sequence = state.get("sequence", 0) + 1
@@ -363,18 +362,17 @@ def prepare(path, config):
             if "dry_run_event" not in episode:
                 event = dict(sample, kind="would-pause", limits=values, task=path.stem)
                 episode["dry_run_event"] = event
-                state.setdefault("events", []).append(event)
                 print(f"budget-would-pause task={path.stem} inclusive={sample['inclusive']} fresh={sample['fresh']} "
                       f"inclusive_stop={values[1]} fresh_stop={values[3]} inclusive_hard={values[0]} fresh_hard={values[2]} "
                       f"observed={sample['observed_at']} source={sample['source']}", file=sys.stderr)
             save_state(path.with_suffix(".budget"), state)
             return "none"
         previous = episode.get("attempt")
-        usage = [sample["inclusive"], sample["fresh"]]
-        if previous and previous["usage"] == usage and not previous.get("deferred"):
+        if previous and not previous.get("deferred"):
+            # One interrupt per stop-line episode; later usage awaits the open decision.
             save_state(path.with_suffix(".budget"), state)
             return "none"
-        episode["attempt"] = {"usage": usage, "outcome": "uncertain: attempt claimed before lifecycle action"}
+        episode["attempt"] = {"outcome": "uncertain: attempt claimed before lifecycle action"}
         save_state(path.with_suffix(".budget"), state)
         return "interrupt"
     except (ValueError, KeyError, OSError, TypeError, AttributeError) as error:
