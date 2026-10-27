@@ -669,7 +669,7 @@ sed '/^export FM_WATCH_FOREGROUND_CHECKPOINT=1$/d' \
   "$root/bin/fm-watch-checkpoint.sh" > "$control_bin/fm-watch-checkpoint.sh"
 chmod +x "$control_bin/fm-watch-checkpoint.sh"
 awk '
-  /^test_quiet_checkpoint_exits_0_cleanly$/ { exit }
+  /^test_[[:alnum:]_]+$/ { exit }
   /^CHECKPOINT=/ {
     print "CHECKPOINT=\"${FM_TEST_CHECKPOINT:-$ROOT/bin/fm-watch-checkpoint.sh}\""
     next

@@ -313,7 +313,7 @@ One short main turn per boundary is the cost of never losing the park silently.
 ### Codex checkpoint bound
 
 Codex has no asynchronous wake, so its checkpoint's own bound is the park.
-The checkpoint passes it as the boundary and reports the boundary as its ordinary quiet line (`checkpoint: no actionable wake within <n>s`).
+The checkpoint passes it as the boundary and reports a clean boundary with no delivered wake as its ordinary quiet line (`checkpoint: no actionable wake within <n>s`).
 
 | Posture | Checkpoint bound |
 |---|---|

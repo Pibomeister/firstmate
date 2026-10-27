@@ -257,7 +257,7 @@ It is a non-fatal result that names its own remedy: re-drain, then acknowledge t
 
 The acknowledgement retires the marker only when no rows remain after sequence-bound consumption.
 A concurrently appended wake has a higher sequence, remains queued, and keeps the episode pending for presentation.
-Consequently, a watcher close during handling republishes the same generation as pending, which forces one recovery turn only while a queue row remains and is otherwise retired by the next arm, while the outstanding generation-bound acknowledgement stays valid.
+For a watcher close during handling, [Generation reuse](#generation-reuse) describes how the pending episode keeps the outstanding acknowledgement valid.
 An acknowledged episode does not freeze the generation, because the next downtime after it opens an episode of its own.
 
 ## Per-actor acknowledgement

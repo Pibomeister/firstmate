@@ -485,7 +485,7 @@ read_arm_capture() {
 }
 
 # Stop one arm this host started (its TERM handler stops the watcher it owns)
-# and drop its output file.
+# and consume its capture; the header owns retention on retirement failure.
 retire_arm() {  # <pid> <output-file>
   local pid=${1:-} out=${2:-} i text rc=0 arm_rc=0 capture_rc=0
   if [ -n "$pid" ] && fm_pid_alive "$pid"; then
