@@ -1063,6 +1063,8 @@ SH
   case "$(cat "$home/state/.lock")" in
     ''|*[!0-9]*) fail "fm-lock did not record the Kimi harness ancestor" ;;
   esac
+  # Inspect a legacy lock without the acquiring process's instance sidecar.
+  rm -f "$home/state/.lock-session"
   printf '%s\n' "$$" > "$home/state/.lock"
   out=$(FM_HOME="$home" PATH="$fakebin:$BASE_PATH" "$ROOT/bin/fm-lock.sh" status)
   assert_contains "$out" "lock: held by live harness pid" \
