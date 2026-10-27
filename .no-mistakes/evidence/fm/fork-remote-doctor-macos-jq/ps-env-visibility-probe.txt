@@ -1,0 +1,4 @@
+# ps -Eww env visibility: Apple /usr/bin/jq vs ad-hoc re-signed copy (26.5.2)
+./jq-copy: replacing existing signature
+apple jq pid 60013 marker visible: 0
+copy  jq pid 60014 marker visible: 1
