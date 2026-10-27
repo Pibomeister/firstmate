@@ -198,12 +198,15 @@ test_new_arm_evicts_a_stalled_holder_and_its_tree() {
   done
   printf '%s\n' '#!/usr/bin/env bash' 'echo "state: working source: run-step"' > "$dir/fakebin/hang-crew-state.sh"
   start_arm "$dir"
-  for i in $(seq 1 300); do grep -q 'replaced stalled pid' "$dir/arm.out" 2>/dev/null && break; sleep 0.1; done
-  assert_contains "$(cat "$dir/arm.out")" "replaced stalled pid $BARE_PID" "a new arm must evict the stalled holder"
+  for i in $(seq 1 300); do grep -q '^watcher: started pid=' "$dir/arm.out" 2>/dev/null && break; sleep 0.1; done
+  assert_contains "$(cat "$dir/arm.out")" "watcher: started pid=" "a new arm must confirm its replacement watcher"
   gone_within "$BARE_PID" 50 || fail "the evicted holder survived"
   gone_within "$reader" 50 || fail "the evicted holder's blocked read (its own process group) survived the eviction"
   gone_within "$rsleep" 50 || fail "the state read's own child $rsleep survived"
+  # Quiet recovery keeps the arm open; its child output flushes on close.
   kill -TERM "$ARM_PID" 2>/dev/null
+  gone_within "$ARM_PID" 150 || fail "the replacement arm did not stop on TERM"
+  assert_contains "$(cat "$dir/arm.out")" "replaced stalled pid $BARE_PID" "a new arm must evict the stalled holder"
   pass "a replacement evicts a stalled holder together with everything the holder started"
 }
 
@@ -270,9 +273,9 @@ test_away_daemon_replaces_a_stalled_watcher() {
   pass "the away daemon replaces a watcher stalled past the bound with a fresh one"
 }
 
-# A watcher that took the lock but wedged before publishing its identity (here,
-# waiting on a recovery-marker lock a live stranger holds) is still the away
-# daemon's own child, so the daemon replaces it at the bound like any other.
+# A watcher that took the lock but wedged before its first heartbeat (here,
+# waiting on a recovery-marker lock a live stranger holds) must be replaced at
+# the bound even though it already published its identity.
 test_away_daemon_replaces_a_watcher_wedged_in_startup() {
   local dir log holder holder_pid watcher dpid i
   dir=$(make_case daemon-startup-wedge)
@@ -300,7 +303,9 @@ test_away_daemon_replaces_a_watcher_wedged_in_startup() {
   [ -n "$watcher" ] || fail "the daemon's watcher never took its lock: $(cat "$dir/daemon.out" "$log" 2>/dev/null)"
   FIXTURE_PIDS="$FIXTURE_PIDS $watcher"
   sleep 1
-  [ ! -s "$dir/state/.watch.lock/pid-identity" ] || fail "fixture: the watcher published its identity, so it did not wedge in startup"
+  [ "$(cat "$dir/state/.watcher-down.lock/pid" 2>/dev/null)" = "$holder_pid" ] || fail "fixture: the recovery-marker lock was released"
+  kill -0 "$watcher" 2>/dev/null || fail "fixture: the watcher exited instead of wedging in startup"
+  [ ! -e "$dir/state/.last-watcher-beat" ] || fail "fixture: the watcher reached its first heartbeat, so it did not wedge in startup"
   for i in $(seq 1 600); do grep -q "watcher pid $watcher stalled" "$log" 2>/dev/null && break; sleep 0.1; done
   grep -q "watcher pid $watcher stalled" "$log" 2>/dev/null \
     || { kill -TERM "$dpid" "$holder_pid" 2>/dev/null; fail "the daemon never replaced its watcher wedged in startup past a 12s bound: $(cat "$log" 2>/dev/null)"; }
@@ -308,7 +313,7 @@ test_away_daemon_replaces_a_watcher_wedged_in_startup() {
   kill -0 "$dpid" 2>/dev/null || fail "the daemon must still be running when its stalled watcher is gone"
   kill -TERM "$dpid" "$holder_pid" 2>/dev/null
   for i in $(seq 1 100); do kill -0 "$dpid" 2>/dev/null || break; sleep 0.1; done
-  pass "the away daemon replaces its own watcher wedged in startup before it published an identity"
+  pass "the away daemon replaces its own watcher wedged in startup before its first heartbeat"
 }
 
 test_stalled_predicate_needs_the_bound_and_this_homes_lock() {
