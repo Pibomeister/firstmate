@@ -43,6 +43,7 @@ For captain-held rechecks under quiet, see [architecture](../../../docs/architec
    this harness uses without the host; `start` and `start-native` take quiet
    mode from the record `enter` wrote.
    Keep `FM_AFK_MODE=quiet` on a quiet refresh: an `/afk` entry, even without new words, replaces a quiet record with an away record and starts hold-for-return.
+   If entry or restart refuses an unfinished quiet exit, follow the receipt retry contract in the `bin/fm-afk-return.sh` header before re-entry.
 
 2. **Acknowledge** in `AGENTS.md` section 9 language: "Captain, quiet mode is
    active; I will batch routine updates and surface only decisions, failures,
@@ -55,7 +56,7 @@ Unlike `/afk`, ordinary chat is never the exit signal - that is the entire
 point of this mode (AGENTS.md section 8's away-mode stub, quiet branch).
 
 - Only an explicit `/quiet off` (or the captain plainly asking to leave quiet mode / resume normal supervision) exits it: run `bin/fm-afk-return.sh`.
-  For a validated quiet record, it stops the daemon, archives retained detail, and prints only the archive path and event count.
+  For a validated, noncontradictory quiet record, it stops the daemon, archives retained detail, and prints only the archive path and event count.
   It opens no away return-catch-up gate because the captain never left.
   Read the archive to surface the retained detail; the script's header owns its receipt and retry contract.
   Existing away gates still follow normal reconciliation.
@@ -77,8 +78,6 @@ Every action the captain asks for or standing authority covers - landing local-o
 ## Must not hide a decision or a failure
 
 Per the issue's own author triage: quiet mode is presentation only.
-Progress, retries, and internal mechanics stay below deck exactly as in away
-mode, but review-ready work, findings, decisions, failures, and credentials
-escalate every time through the classification policy `/afk` owns, into the durable buffer and non-composer alert described above.
+Progress, retries, and internal mechanics stay below deck exactly as in away mode, but review-ready work, findings, decisions, failures, and credentials escalate every time through the classification policy `/afk` owns, into the durable buffer and non-composer alert described above.
 Quiet mode is opt-in and never the unconsented default; only an explicit
 `/quiet` invocation enters it.

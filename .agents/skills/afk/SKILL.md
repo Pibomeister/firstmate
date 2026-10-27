@@ -257,12 +257,13 @@ The single-line format makes submission unambiguous across harnesses; the carrie
   misapplying tmux primitives to a pane that isn't one
   (docs/herdr-backend.md "Away-mode supervisor support").
 
-### Stale-artifact lifecycle
+### Away-mode stale-artifact lifecycle
 
 Treat `state/.subsuper-escalations`, its `.since` sidecar, `state/.subsuper-inject-wedged`, and `state/.subsuper-unknown-acked` as session-scoped delivery artifacts, not as the durable work record.
 Always enter through `bin/fm-afk-launch.sh`, which clears prior-session artifacts only for a fresh entry and preserves the current session's buffer on refresh.
 Always exit through `bin/fm-afk-launch.sh stop`, which keeps `state/.afk` present through the daemon's shutdown flush, clears it, and archives the posture record last.
 `docs/herdr-backend.md` "Away-mode supervisor support" owns the current mechanism, and `docs/verification/runtime-backends.md` "Away-mode transport" owns active evidence.
+For quiet mode, follow the [quiet skill's exit procedure](../quiet/SKILL.md#how-to-exit-quiet-mode) and the lifecycle contracts in `bin/fm-afk-launch.sh` and `bin/fm-afk-return.sh`.
 
 ### Reliability properties
 

@@ -48,6 +48,10 @@
 # until `/quiet off`. A quiet `start` or `start-native` that fails while no
 # daemon runs ends quiet mode as `stop` does, so no quiet record outlives its
 # daemon to park a present captain's main.
+# Both launcher paths preserve retained quiet detail across restart.
+# Terminal launch passes FM_AFK_STATE_PREPARED=1 through the scrubbed command
+# to prevent the entrypoint from clearing it again.
+# bin/fm-afk-return.sh owns quiet exit and pending-exit recovery before re-entry.
 # `stop` (the return, driven by bin/fm-afk-return.sh) shuts the daemon down,
 # clears state/.afk last, and archives the record under state/afk-contracts/.
 #

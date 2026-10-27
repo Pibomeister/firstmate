@@ -1,21 +1,29 @@
 #!/usr/bin/env bash
-# fm-afk-return.sh - deterministic away-mode return: the return brief and the
-# catch-up gate.
+# fm-afk-return.sh - deterministic away-mode return and receipted quiet exit.
 #
 # Usage:
-#   fm-afk-return.sh          Stop away mode, render the return brief, and open/check the gate.
+#   fm-afk-return.sh          Exit quiet mode, or stop away mode and open/check its gate.
 #   fm-afk-return.sh begin    Same as the default command.
-#   fm-afk-return.sh check    Re-render the brief and close the gate only after blockers resolve.
+#   fm-afk-return.sh check    Retry quiet exit, or recheck the away brief and blockers.
 #   fm-afk-return.sh guard    Read-only consult: exit 3 while away mode is still
 #                            active, exit 4 while return catch-up is pending.
+#                            Validated quiet mode passes unless an away gate remains.
 #   fm-afk-return.sh catchup-summary  Read-only catch-up projection for a reporting surface.
-# Quiet exit retains detail in .subsuper-digests and atomically records its path
-# and count in .quiet-exit-receipt before clearing the original buffer.
+# Quiet exit requires a validated quiet record with no contradictory legacy flag
+# (bin/fm-afk-contract.sh owns the predicates). An existing away gate always goes
+# through normal reconciliation before any quiet receipt is considered.
+# Quiet exit stops the daemon, retains detail in .subsuper-digests, and atomically
+# records its transaction ID, archive path, and event count in .quiet-exit-receipt
+# before clearing only a buffer whose bytes match the archive.
 # .quiet-exit-pending carries a unique transaction across lifecycle shutdown;
 # retries before receipt persistence read the original buffer, afterward the receipt.
+# Entry and restart refuse while that transaction remains pending; run `check`
+# to finish presentation before entering either posture again.
 # Quiet output contains only receipt data, never raw event text.
+# Quiet exit opens no away catch-up gate and does not resolve existing blockers.
+# tests/fm-afk-return.test.sh covers archive, receipt, presentation, and re-entry retries.
 #
-# THE RETURN BRIEF (stdout, on begin and on every check) is rendered from durable
+# THE AWAY RETURN BRIEF (stdout, on begin and every away check) uses durable
 # records, never from conversation memory: the archived away-posture record
 # (bin/fm-afk-contract.sh), the supervision outcome store
 # (bin/fm-branch-outcome.sh), the held set in the backlog (tasks-axi), and the
@@ -35,7 +43,7 @@
 # the away session handled, then cost. The health snapshot is taken BEFORE the
 # daemon shutdown so the shutdown itself cannot read as a gap.
 #
-# THE GATE. `blocked:` is the crewmate protocol's firstmate-actionable verb. A
+# THE AWAY GATE. `blocked:` is the crewmate protocol's firstmate-actionable verb. A
 # live task's open blocked event must be remediated and closed with
 # `resolved [key=...]`, or explicitly reclassified in the status stream with a
 # durable reason, before an ordinary captain request may proceed.

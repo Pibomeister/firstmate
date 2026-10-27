@@ -930,7 +930,7 @@ On stop:
 2. The recorded terminal is closed.
 3. The AFK flag is removed last.
 
-A fresh entry clears stale transient escalation caches, while durable queue and task records remain authoritative.
+`bin/fm-afk-launch.sh` owns posture-specific restart retention; follow the [quiet exit procedure](../.agents/skills/quiet/SKILL.md#how-to-exit-quiet-mode) for quiet mode.
 
 ## Destructive lab safety
 
