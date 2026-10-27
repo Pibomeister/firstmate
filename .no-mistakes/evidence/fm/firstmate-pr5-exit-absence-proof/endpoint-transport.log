@@ -1,0 +1,8 @@
+{"id":"cli:pane:close","result":{"type":"ok"}}
+after submitted /exit: closed mutated real recorded pane w2:p1
+{"session":{"default":false,"name":"fm-lab-firstmate-pr5-ex-99822-9100","running":false,"session_dir":"/Users/eduardopicazo/.config/herdr/sessions/fm-lab-firstmate-pr5-ex-99822-9100","socket_path":"/Users/eduardopicazo/.config/herdr/sessions/fm-lab-firstmate-pr5-ex-99822-9100/herdr.sock"},"stopped":true}
+after submitted /exit: idle mutated real recorded pane w3:p1
+real server restart requested for idle
+{"session":{"default":false,"name":"fm-lab-firstmate-pr5-ex-99822-9100","running":false,"session_dir":"/Users/eduardopicazo/.config/herdr/sessions/fm-lab-firstmate-pr5-ex-99822-9100","socket_path":"/Users/eduardopicazo/.config/herdr/sessions/fm-lab-firstmate-pr5-ex-99822-9100/herdr.sock"},"stopped":true}
+after submitted /exit: alive mutated real recorded pane w4:p1
+real server restart requested for alive

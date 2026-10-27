@@ -1,0 +1,6 @@
+ok - fm-control exit: a closed Orca terminal with no agent left reports endpoint-gone and sends nothing
+ok - fm-control exit: a closed Orca terminal refuses when the worktree scan cannot be read
+ok - fm-control exit: closed Droid terminals retain their SessionEnd requirement
+ok - fm-control exit: a stale Orca handle recorded before the host reboot reports endpoint-gone and sends nothing
+ok - fm-control exit: a reboot-stale Orca handle refuses while an agent survives in the recorded worktree
+ok - fm-control exit: a stale Orca handle refuses when the host boot does not postdate its recorded evidence

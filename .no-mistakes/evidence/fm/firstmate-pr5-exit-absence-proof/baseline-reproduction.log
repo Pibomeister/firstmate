@@ -1,0 +1,2 @@
+not ok - closed endpoint must be proved stopped after the exit command
+error: exit-delivered post-exit-closed interrupt=delivered verified=agent-alive cancel=unconfirmed exit-command=delivered agent-state=missing exit=unconfirmed; the agent did not stop within 0.05s: expected exit 0, got 1

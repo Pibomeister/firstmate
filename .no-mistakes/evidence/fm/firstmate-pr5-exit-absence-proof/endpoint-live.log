@@ -1,0 +1,20 @@
+viewer attached to fm-lab-firstmate-pr5-ex-99822-9100 (pid 3509)
+
+SCENARIO=closed
+ok - Grok pane cwd matches the isolated secondmate home
+exit-status=0
+endpoint-gone labmate harness=grok backend=herdr endpoint=fm-lab-firstmate-pr5-ex-99822-9100:w2:p1 worktree=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z521319WB01Q59P4W9N75G/.test-phase-tmp/fm-grok-handoff.gi6Xb4/secondmate
+durable state and uncommitted work preserved; busy-incarnation postcondition holds
+
+SCENARIO=idle
+ok - Grok pane cwd matches the isolated secondmate home
+exit-status=0
+stopped labmate harness=grok backend=herdr endpoint=fm-lab-firstmate-pr5-ex-99822-9100:w3:p1 worktree=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z521319WB01Q59P4W9N75G/.test-phase-tmp/fm-grok-handoff.gi6Xb4/secondmate
+durable state and uncommitted work preserved; busy-incarnation postcondition holds
+
+SCENARIO=alive
+ok - Grok pane cwd matches the isolated secondmate home
+exit-status=1
+error: exit-delivered labmate interrupt=not-needed exit-command=delivered agent-state=missing exit=unconfirmed; the agent did not stop within 2s
+durable state and uncommitted work preserved; busy-incarnation postcondition holds
+ok - named Herdr lab fm-lab-firstmate-pr5-ex-99822-9100: disposable files removed

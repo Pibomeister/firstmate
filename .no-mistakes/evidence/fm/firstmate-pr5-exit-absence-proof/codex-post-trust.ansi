@@ -1,0 +1,1 @@
+{"id":"cli:pane:read","error":{"code":"server_not_running","message":"no herdr server is running at /Users/eduardopicazo/.config/herdr/sessions/fm-lab-firstmate-pr5-ex-89066-12765/herdr.sock; run `herdr session attach fm-lab-firstmate-pr5-ex-89066-12765` to start or attach it"}}

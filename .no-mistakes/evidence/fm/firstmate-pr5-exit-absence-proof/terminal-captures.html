@@ -1,0 +1,116 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>PR 5 live terminal evidence</title><style>:root{color-scheme:light dark;--bg:#FAF9F5;--surface:#F0EEE6;--border:#E8E6DC;--text:#141413;--muted:#5E5D59;--accent:#D97757}@media(prefers-color-scheme:dark){:root{--bg:#1F1E1D;--surface:#262624;--border:#3D3D3A;--text:#FAF9F5;--muted:#B7B5A9}}body{margin:0;background:var(--bg);color:var(--text);font:16px/1.6 system-ui,sans-serif}main{max-width:1120px;margin:auto;padding:40px 24px}h1,h2{font-family:Georgia,serif;line-height:1.2}h1{font-size:36px}h2{font-size:26px}p{max-width:68ch;color:var(--muted)}section{margin-top:56px;min-width:0}pre{background:var(--surface);border:1px solid var(--border);padding:24px;overflow:auto;font:12px/1.5 ui-monospace,monospace}code{overflow-wrap:anywhere}a{color:var(--accent)}</style><main><h1>PR 5: live terminal evidence</h1><p><strong>TL;DR.</strong> These captures show the exhausted Grok quota dialog, its dismissal, and the Codex replacement in a disposable Herdr lab. This is test evidence for commit <code>48641272ed26c85437e83672b72949e83f9b28e7</code>. No decision is required on this page. The control transcripts record the exit-proof results and preservation checks.</p><section><h2>Grok quota dialog</h2><p>Captured from the real named Herdr lab. ANSI styling removed.</p><pre>
+  master /p/t/fm-grok-handoff.wMA2AV/secondmate      ⠼ MCP (3/4) │ 1.3K / 256K │ [Dashboard]
+
+
+     ❯ Reply with one word: OK.                                                   11:11 AM
+
+                                                      
+                                                      
+                                                      
+                                                      
+                                                      
+                                                      
+                                                      
+
+
+                                                                     
+                                                                      
+
+                                                                           
+                                                          
+
+                                                              
+                                                              
+
+
+
+
+  ┃
+  ┃  You hit your weekly limit.
+  ┃
+  ┃
+  ┃  1 (○) Buy more credits  Purchase credits to keep using Grok Build                      
+  ┃  2 (○) Try Again         Resubmit the last prompt once you have usage again
+  ┃                                                                                         
+  ┃  ↑/↓ navigate · y copy                                                  Enter:submit    
+  ┃                                                                                         
+
+  Tab:next answer  │  Esc:scrollback  │  Shift+x:dismiss                                    
+</pre></section><section><h2>Dialog dismissed; empty composer</h2><p>Captured from the real named Herdr lab. ANSI styling removed.</p><pre>
+  master /p/t/fm-grok-handoff.wMA2AV/secondmate                    1.3K / 256K │ [Dashboard]
+
+
+     ❯ Reply with one word: OK.                                                   11:11 AM
+
+                                                      
+     ◆ session_start hook (global/settings) failed, ignored: timed out after 10000ms
+                                                      
+                                                      
+                                                      
+                                                      
+                                                      
+
+
+                                                                     
+                                                                      
+
+                                                                           
+                                                          
+
+                                                              
+                                                              
+
+
+
+
+   
+                               
+   
+   
+                                                                                            
+                                                                               
+  ╭────────────────────────────────────────────────────────────────────────────────────────╮
+  │ ❯                                                                                      │
+  ╰────────────────────────────── Weekly limit left: 0% · Grok 4.7 (low) · always-approve ─╯
+
+  Shift+Tab:mode  │  Ctrl+.:shortcuts                                                       
+</pre></section><section><h2>Codex replacement in the preserved home</h2><p>Captured from the real named Herdr lab. ANSI styling removed.</p><pre> 
+  Folder access
+  /private/tmp/fm-grok-handoff.wMA2AV/secondmate                                            
+ 
+  Trust this folder? Codex can read, edit, and run files here, subject to your permission
+  settings. Folder settings can run code automatically, even without a model request.
+  Continue only if you trust these files. Your trust decision will be saved.
+ 
+› 1. Trust and continue                                                                       
+  2. Back to Agent Command Center
+ 
+  enter continue · esc back
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+</pre></section></main></html>
