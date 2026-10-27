@@ -17,12 +17,14 @@
 # harness.
 # On Pi and pi-signed the entry ENDS there: the away daemon is no longer launched
 # on Pi, the ordinary supervision session keeps running in both postures, and
-# `start` refuses on those harnesses. The same holds for away mode (not quiet
-# mode) on a claude, cursor, opencode, omp, grok, or codex primary whose home
+# `start` refuses on those harnesses. The same daemon refusal holds for away
+# mode (not quiet mode) on a claude, cursor, opencode, omp, grok, or codex primary whose home
 # runs the supervision host (fm_supervision_host_enabled: by default on
 # Claude, by config/supervision-host elsewhere), where the host runs the away
 # session; `enter` there adds one line when the host has no
-# engine, because every away wake then reaches main. Every other harness still
+# engine, because every away wake then reaches main. On Codex, it also names a
+# missing foreground checkpoint; docs/supervision-protocols/codex.md owns the
+# required checkpoint protocol. Every other harness still
 # runs the daemon for now, so `start` and `start-native` require the record
 # `enter` wrote before they launch the daemon.
 # QUIET MODE on a home that runs the supervision host needs nothing
@@ -347,6 +349,20 @@ fm_afk_launch_host_engine_note() {
     "$FM_SUPERVISION_ENGINE_PROBLEM"
 }
 
+# One line for the entry on a Codex home that runs the supervision host, where
+# away supervision exists only while a foreground checkpoint holds the watcher
+# (docs/supervision-protocols/codex.md): unless a healthy watcher already runs,
+# the record alone supervises nothing, and an interrupted turn leaves no cycle.
+fm_afk_launch_checkpoint_note() {
+  local config
+  [ "${FM_AFK_MODE:-}" != quiet ] || return 0
+  [ "$(fm_afk_launch_primary_harness)" = codex ] || return 0
+  config=${FM_CONFIG_OVERRIDE:-$FM_HOME/config}
+  fm_supervision_host_config "$config" codex || return 0
+  fm_watcher_healthy "$FM_AFK_LAUNCH_STATE" "$FM_AFK_LAUNCH_DIR/fm-watch.sh" "${FM_GUARD_GRACE:-300}" "$FM_HOME" && return 0
+  printf 'Away supervision is not running yet: on this home it runs only inside a foreground checkpoint, so start bin/fm-watch-checkpoint.sh now and announce away mode only once it is running; a turn interrupted before then leaves the fleet unsupervised until the next message arrives.\n'
+}
+
 fm_afk_launch_catchup_pending() {
   if [ -e "$FM_AFK_LAUNCH_STATE/.afk-return-catchup" ]; then
     fm_afk_launch_log "return catch-up is still pending; run bin/fm-afk-return.sh check before re-entering away mode"
@@ -383,6 +399,7 @@ fm_afk_launch_enter() {
   fi
   "$FM_AFK_CONTRACT_CMD" enter "$@" || return
   fm_afk_launch_host_engine_note
+  fm_afk_launch_checkpoint_note
 }
 
 # The command run inside the created terminal. Real launch runs the shared

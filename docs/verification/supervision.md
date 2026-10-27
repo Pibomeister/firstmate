@@ -421,7 +421,7 @@ No live unattended Claude background session ran on the verifying machine: that 
 [`sessionstart-nudge.md`](../sessionstart-nudge.md#shared-wrapper-and-safety) owns the nudge wrapper's separate ancestry check and its redundant-nudge behavior after helper-chain recycling.
 `tests/fm-watch-arm.test.sh` runs real watcher and arm cycles against durable on-disk state to verify that a delivered reason survives until post-handling acknowledgement and stops replaying after acknowledgement, while an unrelated queue append cannot make a watcher cycle that delivered nothing look successful.
 The same suite ingests a keyed remote-secondmate parent reply through the real adapter, establishes the incremental OPEN DECISIONS cursor, interrupts supervision, and proves re-arm replays every unacknowledged queue row plus the still-open decision through the ordinary drain path.
-It also covers decision-only recovery, interrupted handling, handling-window generation reuse, non-fatal moved-generation acknowledgement with sequence-bounded consumption, and a persistent successor remaining live after recovery is acknowledged.
+It also covers unchanged decisions remaining available to the next drain without an empty-queue wake, interrupted handling, handling-window generation reuse, non-fatal moved-generation acknowledgement with sequence-bounded consumption, and a persistent successor remaining live after recovery is acknowledged.
 
 The Claude product live path ran with Claude Code 2.1.278 on 2026-09-21.
 The same guard also passed once under Claude Code 2.1.236 and 2.1.219 during this verification.
@@ -650,6 +650,8 @@ FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=11750
 On 2026-10-07 the announced-recovery fixture was revised so it reproduces the original failure.
 It appends a durable queue row, lets a first checkpoint announce that recovery generation while the row stays unacknowledged, then runs a second checkpoint and asserts it supervises for its full bound with the generation and row unchanged.
 The fixture was run on its own in an isolated copy of the test file, once with the checkpoint wrapper as committed and once with its `FM_WATCH_FOREGROUND_CHECKPOINT=1` export removed.
+On 2026-10-23 the fixture was rerun with a quiet checkpoint that exits 0 instead of 124 and a five-second bound that lets its first poll finish.
+The control now fails because it emits a recovery wake instead of supervising for that bound; the output below records that result.
 From the repository root, this command isolates that test function, runs it against the committed wrapper, then runs it against a temporary control wrapper with the checkpoint export removed:
 
 ```sh
@@ -667,7 +669,7 @@ sed '/^export FM_WATCH_FOREGROUND_CHECKPOINT=1$/d' \
   "$root/bin/fm-watch-checkpoint.sh" > "$control_bin/fm-watch-checkpoint.sh"
 chmod +x "$control_bin/fm-watch-checkpoint.sh"
 awk '
-  /^test_quiet_checkpoint_exits_124_cleanly$/ { exit }
+  /^test_[[:alnum:]_]+$/ { exit }
   /^CHECKPOINT=/ {
     print "CHECKPOINT=\"${FM_TEST_CHECKPOINT:-$ROOT/bin/fm-watch-checkpoint.sh}\""
     next
@@ -681,7 +683,7 @@ FM_TEST_CHECKPOINT="$control_bin/fm-watch-checkpoint.sh" bash "$runner" \
   > "$control_bin/control.out" 2>&1 || status=$?
 cat "$control_bin/control.out"
 [ "$status" -eq 1 ] \
-  && grep -Fqx 'not ok - announced recovery checkpoint exit: expected exit 124, got 0' \
+  && grep -Fqx "not ok - announced recovery checkpoint did not supervise for its bound (missing: 'checkpoint: no actionable wake within 5s')" \
     "$control_bin/control.out"
 ```
 
@@ -694,7 +696,9 @@ ok - an announced recovery is not reannounced by the next foreground checkpoint
 Observed output without the checkpoint distinction:
 
 ```text
-not ok - announced recovery checkpoint exit: expected exit 124, got 0
+not ok - announced recovery checkpoint did not supervise for its bound (missing: 'checkpoint: no actionable wake within 5s')
+--- output ---
+check: rearm-resurface
 ```
 
 Deterministic entry points:

@@ -941,6 +941,19 @@ _fm_recovery_marker_arm_check() {
       return 0
       ;;
     pending:downtime:*)
+      # Nothing is buried when every row was acknowledged: retire the episode
+      # on its own generation instead of waking for bookkeeping, so an
+      # acknowledgement already printed for it stays valid.
+      if [ ! -s "$FM_WAKE_QUEUE" ]; then
+        if ! _fm_recovery_marker_write_locked "$marker" downtime "${line##*:}" acked; then
+          fm_lock_release "$lock"
+          fm_lock_release "$FM_WAKE_QUEUE_LOCK"
+          return 1
+        fi
+        fm_lock_release "$lock"
+        fm_lock_release "$FM_WAKE_QUEUE_LOCK"
+        return 0
+      fi
       if ! _fm_recovery_marker_write_locked "$marker" downtime "${line##*:}" announced; then
         fm_lock_release "$lock"
         fm_lock_release "$FM_WAKE_QUEUE_LOCK"
@@ -1336,7 +1349,7 @@ _fm_lock_acquire_wait_handoff() {  # <lockdir> <caller-pid>
 # reconciliation refusal instead of wedging an unattended close.
 # Mutation-critical callers that can safely block keep fm_lock_acquire_wait.
 fm_lock_acquire_wait_bounded() {
-  local lockdir=$1 seconds=$2 caller_pid rc owner_pid
+  local lockdir=$1 seconds=$2 caller_pid rc owner_pid wait_pid
   case "$seconds" in ''|*[!0-9]*|0) return 2 ;; esac
   _fm_wake_require_timeout || return 1
   if fm_lock_try_acquire "$lockdir"; then
@@ -1344,18 +1357,27 @@ fm_lock_acquire_wait_bounded() {
   fi
 
   fm_current_pid caller_pid || return 1
+  # Run the timed helper as a background job and wait on it: a caller's trap
+  # runs immediately while bash sits in the wait builtin, whereas a trap taken
+  # during a foreground external command is deferred until that command's
+  # whole bound elapses, which stranded interrupted watcher startup inside
+  # this wait for its full 30s. A caller whose trap only records the signal
+  # keeps waiting here instead, so the helper - and the handoff that proves
+  # lock exclusion - never outlives this call.
   # shellcheck disable=SC2016 # Positional parameters expand in the child shell.
-  if fm_run_timed "$seconds" env \
+  fm_run_timed "$seconds" env \
     "FM_STATE_OVERRIDE=$STATE" \
     "FM_ROOT_OVERRIDE=$FM_ROOT" \
     "FM_LOCK_STALE_AFTER=$FM_LOCK_STALE_AFTER" \
     bash -c '. "$1"; _fm_lock_acquire_wait_handoff "$2" "$3"' \
       _ "$FM_WAKE_LIB_DIR/fm-wake-lib.sh" "$lockdir" "$caller_pid" \
-      </dev/null >/dev/null 2>&1; then
-    rc=0
-  else
-    rc=$?
-  fi
+      </dev/null >/dev/null 2>&1 &
+  wait_pid=$!
+  rc=0
+  while :; do
+    if wait "$wait_pid" 2>/dev/null; then rc=0; else rc=$?; fi
+    kill -0 "$wait_pid" 2>/dev/null || break
+  done
 
   owner_pid=$(cat "$lockdir/pid" 2>/dev/null || true)
   if [ "$owner_pid" = "$caller_pid" ]; then

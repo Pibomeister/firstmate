@@ -153,6 +153,10 @@ HOMES_FILE="$TMP_ROOT/homes"
 # Stop whatever a case left running, by the exact pids its home recorded.
 stop_home_processes() {  # <home>
   local home=$1 pid arms='' i=0
+  # End the session before its host, so the Stop hook cannot rearm during cleanup.
+  while IFS= read -r pid; do
+    kill -TERM "$pid" 2>/dev/null || true
+  done < <(cat "$home/claude-pids" 2>/dev/null)
   if [ -f "$home/state/.supervision-host" ]; then
     arms=$(awk -F '\t' '$1 == "arm" { print $2 }' "$home/state/.supervision-host")
     pid=$(awk -F '\t' '$1 == "host" { print $2; exit }' "$home/state/.supervision-host")
@@ -166,14 +170,15 @@ stop_home_processes() {  # <home>
     kill -TERM "$pid" 2>/dev/null || true
   done
   pid=$(cat "$home/state/.watch.lock/pid" 2>/dev/null || true)
-  [ -z "$pid" ] || kill -TERM "$pid" 2>/dev/null || true
-  while IFS= read -r pid; do
-    if [ -e "$home/session.stop" ]; then
-      wait "$pid" 2>/dev/null || true
-    else
-      kill -TERM "$pid" 2>/dev/null || true
-    fi
-  done < <(cat "$home/claude-pids" 2>/dev/null)
+  if [ -n "$pid" ]; then
+    kill -TERM "$pid" 2>/dev/null || true
+    wait_for_exit "$pid" 100 >/dev/null 2>&1 || true
+  fi
+  if [ -e "$home/session.stop" ]; then
+    while IFS= read -r pid; do
+      wait_for_exit "$pid" 100 >/dev/null 2>&1 || true
+    done < <(cat "$home/claude-pids" 2>/dev/null)
+  fi
   while IFS= read -r pid; do
     kill -TERM "$pid" 2>/dev/null || true
   done < <(cat "$home/orphan-pid" 2>/dev/null)
@@ -535,10 +540,6 @@ no_home_arms() { [ -z "$(home_arms "$1")" ]; }
 
 mode_of() { stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"; }
 
-# Park again after a host was stopped mid-park: the new cycle's first close is
-# the watcher's downtime resurface, which main drains before the next park.
-# That close can end the park before its cycle is ever seen live, so this
-# waits for the exit itself.
 # The resurface pass-through leaves its successor running. Stop that watcher
 # and acknowledge the downtime its exit records, so the next park starts a
 # watcher it owns. Attaching instead would not observe the exit until the
@@ -566,6 +567,12 @@ quiet_pass_through_successor() {  # <home>
 }
 
 park_after_stop() {  # <home>
+  if [ ! -s "$1/state/.wake-queue" ]; then
+    park_again "$1"
+    [ ! -s "$1/host.rc" ] || fail "an empty-queue restart ended the park"
+    assert_no_re '^check: rearm-resurface' "$1/host.out" "an empty-queue restart woke for bookkeeping"
+    return
+  fi
   rm -f "$1/host.rc"
   : > "$1/park.go"
   wait_until 150 host_exited "$1" || fail "the watcher's downtime resurface did not reach main: $(cat "$1/host.out")"

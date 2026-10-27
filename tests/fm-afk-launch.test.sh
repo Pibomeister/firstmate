@@ -1065,6 +1065,14 @@ unit_supervision_host_other_harnesses_run_no_away_daemon() {
   out=$(enter_with cursor off)
   printf '%s' "$out" | grep -F 'Supervision host' >/dev/null && fail "enter must stay quiet on a home that opted out: $out"
   pass "supervision host: enter names a missing engine on an opted-in home and says nothing otherwise"
+  out=$(enter_with codex claude); rc=$?
+  [ "$rc" -eq 0 ] && [ -f "$st/state/.afk-contract" ] \
+    || fail "codex: the entry must record the posture without claiming a supervisor: $out"
+  printf '%s' "$out" | grep -F 'Away supervision is not running yet:' >/dev/null \
+    || fail "codex: a record without a watcher must name the missing checkpoint: $out"
+  [ ! -e "$st/state/.watch.lock" ] && [ ! -e "$st/state/.supervision-host" ] \
+    || fail "codex: entry must not fabricate a watcher or host record"
+  pass "codex: a recorded away posture names the missing foreground checkpoint without fabricating readiness"
   rm -rf "$st"
 }
 

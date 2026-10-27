@@ -217,7 +217,7 @@ In its `--claude` mode it cooperates with the auto-arm.
 ## Recovery episode acknowledgement
 
 A recovery episode is one generation of the `state/.watcher-down` marker.
-It is retired only by the generation-bound acknowledgement the drain prints as `WAKE_ACK_REQUIRED`.
+The drain prints generation-bound acknowledgement as `WAKE_ACK_REQUIRED`; [Announcement](#announcement) also describes silent retirement when no queued work remains.
 The away return brief treats a still-open handling episode as a wake in progress, not watcher downtime; an open downtime episode remains a gap.
 
 ### Announcement
@@ -227,8 +227,10 @@ The first recovery marks that generation announced, and later empty-queue arms l
 A non-successor watcher start checks the durable queue and recovery marker under their locks.
 If an announced-but-unacknowledged episode has an empty queue, the arm leaves that generation announced, making repeated empty-queue arms idempotent while a long-poll source is merely alive.
 If a durable row arrived after the announcement, the arm opens a fresh pending downtime generation so buried work still resurfaces once.
+A pending downtime generation that an arm finds with an empty queue is retired on its own generation without a wake, because there is no queued work to replay and the watcher's persisted seen markers re-detect any status written during downtime.
+Recovering a dead holder's lock alone does not create a wake when the queue is empty.
 A Codex foreground checkpoint skips the announced-episode reopen transition, so an already-announced generation stays announced while the checkpoint continues its bounded supervision.
-Its ordinary arm check still announces a never-announced generation, including one made pending by a durable queue append during the checkpoint.
+Its ordinary arm check still announces a never-announced generation while durable rows remain, including one made pending by a durable queue append during the checkpoint.
 
 ### Generation reuse
 
@@ -238,9 +240,9 @@ If EXIT cleanup cannot acquire the downtime-marker lock within its bound, it ret
 A downtime republication of a pending episode reuses its generation.
 A watcher close leaves an announced downtime episode announced, while a successful durable append opens a fresh pending generation so a live watcher can recover the new work.
 An announced handling episode becomes pending downtime on the same generation because its handling turn may have been interrupted.
-That handling republication gives a successor exactly one recovery presentation without orphaning the acknowledgement already printed for that generation.
+That handling republication gives a successor exactly one recovery presentation while queue rows remain, without orphaning the acknowledgement already printed for that generation.
 A watcher stopped so an arm can take its cycle over (`bin/fm-watch-arm.sh --take-over`) publishes downtime like any close, but the taking arm restores an acknowledged episode that stop reopened only when the taken-over arm's cycle-ledger row for that exact arm and watcher records the watcher ending by the take-over's TERM and no wake was appended in between.
-The taking arm waits within a short bound for that row; a missing row or any other signal leaves downtime for the fresh cycle's ordinary recovery wake, while take-over still proceeds.
+The taking arm waits within a short bound for that row; a missing row or any other signal leaves downtime for the fresh cycle's ordinary arm check, while take-over still proceeds.
 Any other episode is left for the next cycle's arm check.
 
 ### What an acknowledgement retires
@@ -255,7 +257,7 @@ It is a non-fatal result that names its own remedy: re-drain, then acknowledge t
 
 The acknowledgement retires the marker only when no rows remain after sequence-bound consumption.
 A concurrently appended wake has a higher sequence, remains queued, and keeps the episode pending for presentation.
-Consequently, a watcher close during handling republishes the same generation as pending and forces one recovery turn even when no queue row remains, while the outstanding generation-bound acknowledgement stays valid.
+For a watcher close during handling, [Generation reuse](#generation-reuse) describes how the pending episode keeps the outstanding acknowledgement valid.
 An acknowledged episode does not freeze the generation, because the next downtime after it opens an episode of its own.
 
 ## Per-actor acknowledgement
@@ -373,7 +375,7 @@ Branch acknowledgement retiring the check-row receipts of exactly its granted se
 
 | Child return | What the arm does |
 | --- | --- |
-| Actionable output | Returns that reason normally. |
+| Actionable output | Returns that reason normally when cleanup succeeds. |
 | Zero/empty | Rechecks the home lock and beacon, attaches to a verified healthy successor when one exists, or resolves the close against the watcher's bounded terminal-delivery ledger. |
 
 An attached arm follows verified identity-matched successors and resolves the same way when that chain ends without one.
@@ -382,7 +384,7 @@ It does this because it holds no handle on the watcher's stdout and cannot read 
 ### Terminal-delivery ledger
 
 Before releasing its singleton lock after printing an actionable reason, the watcher records that reason with its PID and process identity in `state/.watch-deliveries.log`.
-A matching PID and identity lets an attached arm report the delivered reason and exit zero, even after its durable wake was handled and acknowledged.
+A matching PID and identity lets an attached arm report the delivered reason and, when cleanup succeeds, exit zero, even after its durable wake was handled and acknowledged.
 An unrelated queue producer or a recycled PID cannot satisfy the match.
 Only a cycle with no matching delivery record emits `watcher: FAILED - cycle ended without an actionable reason` and exits nonzero.
 
@@ -414,6 +416,9 @@ The watcher uses bash's native fatal handling for HUP and TERM, including during
 The EXIT cleanup bounds its wait for `state/.watcher-down.lock` while persisting recovery state with `FM_WATCHER_CLEANUP_LOCK_BOUND` (default 2 seconds).
 Only positive decimal integers are accepted, including leading-zero forms such as `08`; empty, non-numeric, and zero values (including `00`) fall back to 2 seconds.
 A live foreign holder therefore cannot strand a TERM'd watcher in this marker-lock wait: on timeout the recovery transition fails without releasing the singleton, leaving dead-pid stale evidence for the next arm to republish and clear.
+Cleanup is installed before singleton publication and recovery startup, so an interruption during startup also attempts to preserve recovery state.
+An arm reports failed cleanup even when that cycle delivered an actionable reason, and preserves the reason in its output.
+The foreground checkpoint's [help](../bin/fm-watch-checkpoint.sh) owns its exit-status contract, including quiet completion and shutdown failures.
 
 ## Regression coverage
 
@@ -451,7 +456,8 @@ They also prove that a legacy or handoff-phase watcher marker from an absent rep
 
 - Durable queue replay.
 - Real remote parent-replies ingestion into the authoritative status log.
-- Decision-only OPEN DECISIONS recovery.
+- An unchanged open decision folded by the next drain after an empty-queue down interval, without a bookkeeping wake.
+- An empty-queue re-arm after an ordinary close or over a dead holder that stays silent while a later durable row still wakes.
 - Interrupted handling replay.
 - Generation-bound acknowledgement.
 - A persistent live successor after recovery.
