@@ -1,0 +1,14 @@
+Invoking real fm-teardown against a marked lab home and absent Orca selector.
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z2YVYD9EGB6XV27VF5X4A3/.nm-test-lab/orca-teardown
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  down 1s.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+warning: Orca no longer lists worktree nm-nonexistent-worktree-01M5Z2YVYD9EGB6XV27VF5X4A3::/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z2YVYD9EGB6XV27VF5X4A3/.nm-test-lab/orca-teardown/already-absent and its recorded path /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z2YVYD9EGB6XV27VF5X4A3/.nm-test-lab/orca-teardown/already-absent is confirmed absent; treating it as already removed
+teardown nm-orca-absent complete (window nm-nonexistent-terminal-01M5Z2YVYD9EGB6XV27VF5X4A3, worktree /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z2YVYD9EGB6XV27VF5X4A3/.nm-test-lab/orca-teardown/already-absent)
+Backlog: nm-orca-absent just finished (config/backlog-backend selects manual editing). Update /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z2YVYD9EGB6XV27VF5X4A3/.nm-test-lab/orca-teardown/data/backlog.md - move nm-orca-absent to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+Observed: task metadata and status retired after already-absent recovery.

@@ -1,0 +1,10 @@
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z2YVYD9EGB6XV27VF5X4A3/.nm-test-lab/spawn
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s; down 449s) - full banner already printed this episode.
+teardown: reaping leaked worktree process(es) for nm-kimi-ok: 72972 86559
+teardown: force-killing leaked worktree process(es) for nm-kimi-ok: 72972
+A new version of treehouse is available: v3.1.1 → v3.1.7
+Run "treehouse update" to update
+
+🌳 Worktree returned to pool.
+teardown nm-kimi-ok complete (window primary:fm-nm-kimi-ok, worktree /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z2YVYD9EGB6XV27VF5X4A3/.nm-test-lab/spawn/pool/.treehouse/product-lab-4893ff/1/product-lab)
+Backlog: nm-kimi-ok just finished (config/backlog-backend selects manual editing). Update /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z2YVYD9EGB6XV27VF5X4A3/.nm-test-lab/spawn/data/backlog.md - move nm-kimi-ok to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.

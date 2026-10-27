@@ -1,0 +1,6 @@
+Invoking real cleanup for a disposable secondmate with an already-absent Orca child.
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z2YVYD9EGB6XV27VF5X4A3/.nm-test-lab/orca-parent
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s; down 37s) - full banner already printed this episode.
+warning: Orca no longer lists worktree nm-nonexistent-child-worktree-01M5Z2YVYD9EGB6XV27VF5X4A3::/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z2YVYD9EGB6XV27VF5X4A3/.nm-test-lab/orca-child/already-absent and its recorded path /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z2YVYD9EGB6XV27VF5X4A3/.nm-test-lab/orca-child/already-absent is confirmed absent; treating it as already removed
+teardown domain complete (window firstmate:fm-domain, worktree /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z2YVYD9EGB6XV27VF5X4A3/.nm-test-lab/orca-child)
+Observed: child removal accepted as already absent; parent record and disposable secondmate home retired.

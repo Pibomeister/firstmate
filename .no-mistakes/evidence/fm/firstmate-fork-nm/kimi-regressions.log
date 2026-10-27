@@ -1,0 +1,2 @@
+fm-kimi-turnend-hook: refused: python3 with tomllib is required to validate config.toml.
+not ok - Kimi hook install refused a realistic config

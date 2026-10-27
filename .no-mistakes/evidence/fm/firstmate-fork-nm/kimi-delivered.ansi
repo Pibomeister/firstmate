@@ -1,0 +1,40 @@
+spawn/pool/.treehouse/product-lab-4893ff/1/product-lab. Type 'exit' to return.
+eduardopicazo@Eduardos-MacBook-Pro-2 product-lab % cd -- '/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z
+2YVYD9EGB6XV27VF5X4A3/.nm-test-lab/spawn/pool/.treehouse/product-lab-4893ff/1/product-lab'
+eduardopicazo@Eduardos-MacBook-Pro-2 product-lab % export GOTMPDIR=/tmp/fm-nm-kimi-ok/gotmp
+eduardopicazo@Eduardos-MacBook-Pro-2 product-lab % export COMPACT_ADVISER_DISABLE=1
+eduardopicazo@Eduardos-MacBook-Pro-2 product-lab % export FM_TASK_ID=nm-kimi-ok
+eduardopicazo@Eduardos-MacBook-Pro-2 product-lab % . '/tmp/fm-nm-kimi-ok+c409694bfebe2734f56e45ea9f3116603d7967231fbb849
+1134a14b4f6fc0088/launch.s1793122512.42717.3773.sh'
+
+ [38;2;79;168;255m╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮[39m
+ [38;2;79;168;255m│[39m                                                                                                                    [38;2;79;168;255m│[39m
+ [38;2;79;168;255m│[39m  [38;2;79;168;255m▐█▛█▛█▌[39m  [1m[38;2;79;168;255mWelcome to Kimi Code![0m                                                                                    [38;2;79;168;255m│[39m
+ [38;2;79;168;255m│[39m  [38;2;79;168;255m▐█████▌[39m  [38;2;136;136;136mSend /help for help information.[39m                                                                         [38;2;79;168;255m│[39m
+ [38;2;79;168;255m│[39m                                                                                                                    [38;2;79;168;255m│[39m
+ [38;2;79;168;255m│[39m  [1m[38;2;136;136;136mDirectory: [0m/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z2YVYD9EGB6XV27VF5X4A3/.nm-test-lab/spawn…[38;2;79;168;255m│[39m
+ [38;2;79;168;255m│[39m  [1m[38;2;136;136;136mSession:   [0msession_75e490da-d7f9-487d-bde8-69559b0b2cfd                                                           [38;2;79;168;255m│[39m
+ [38;2;79;168;255m│[39m  [1m[38;2;136;136;136mModel:     [0mlab                                                                                                    [38;2;79;168;255m│[39m
+ [38;2;79;168;255m│[39m  [1m[38;2;136;136;136mVersion:   [0m2.3.3                                                                                                  [38;2;79;168;255m│[39m
+ [38;2;79;168;255m│[39m                                                                                                                    [38;2;79;168;255m│[39m
+ [38;2;79;168;255m╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯[39m
+
+ [1m[38;2;79;168;255m✦ Kimi K3.1 Pro is ready[0m [1m[38;2;245;245;245m- use the model in a fresh session for the best results[0m
+   [38;2;136;136;136mStandard: Plus/Moderato and above; Highspeed: Pro/Allegretto and above[39m
+
+   [38;2;136;136;136mNo session yet — one will be created on your first message.[39m
+   [38;2;232;168;56mtmux extended-keys is off. Modified Enter keys may not work. Add `set -g extended-keys on` to ~/.tmux.conf and      [39m
+ [38;2;232;168;56mrestart tmux.[39m
+
+ [1m[38;2;255;203;107m❯ Read the brief at                                                                                                   [0m
+   [1m[38;2;255;203;107m/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z2YVYD9EGB6XV27VF5X4A3/.nm-test-lab/spawn/data/nm-kimi-[0m
+   [1m[38;2;255;203;107mok/launch-brief.md and follow it exactly.[0m
+
+ [38;2;224;224;224m● [39mDisposable lab provider received the message.
+
+ [38;2;90;90;90m╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮[39m
+ [38;2;90;90;90m│[39m > [7m [0m                                                                                                                [38;2;90;90;90m│[39m
+ [38;2;90;90;90m╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯[39m
+ [1m[38;2;232;168;56mNever Ask[0m  [38;2;224;224;224mlab[39m  [38;2;136;136;136m…/product-lab-4893ff/1/product-lab[39m                                            [38;2;107;107;107m! to run a shell command[39m
+                                                                                                 [38;2;224;224;224mcontext: 1% (247/256k)[39m
+

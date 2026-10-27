@@ -1,0 +1,37 @@
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z2YVYD9EGB6XV27VF5X4A3/.nm-test-lab/spawn
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s; down 258s) - full banner already printed this episode.
+warning: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z2YVYD9EGB6XV27VF5X4A3/.nm-test-lab/spawn/data/nm-kimi-zj/launch-brief.md records no ship branch; defaulting to legacy branch fm/nm-kimi-zj
+warning: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z2YVYD9EGB6XV27VF5X4A3/.nm-test-lab/spawn/data/nm-kimi-zj/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode local-only - confirm its definition of done matches
+notice: nm-kimi-zj ships mode=local-only while the standing posture for product-lab is no-mistakes - less rigor than the captain's standing posture; proceed only on a current explicit captain instruction or an intake judgment you can state
+error: kimi did not show a verified ready signal before brief delivery; inspect window nm-lab-23:1
+warning: the endpoint nm-lab-23:1 of this failed spawn could not be proven closed; keeping its provisional task record so a possibly surviving worker stays named for recovery
+
+Observed failed spawn exit: 1
+
+Retained task metadata:
+window=nm-lab-23:1
+endpoint_task_id=nm-kimi-zj
+worktree=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z2YVYD9EGB6XV27VF5X4A3/.nm-test-lab/spawn/pool/.treehouse/product-lab-4893ff/2/product-lab
+project=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z2YVYD9EGB6XV27VF5X4A3/.nm-test-lab/spawn/projects/product-lab
+harness=kimi
+kind=ship
+mode=local-only
+yolo=off
+branch=fm/nm-kimi-zj
+tasktmp=/tmp/fm-nm-kimi-zj
+model=default
+effort=default
+spawn_gen=s1793122879.8592.13708
+backend=zellij
+zellij_session=nm-lab-23
+zellij_tab_id=1
+zellij_pane_id=1
+
+Persisted backlog after the failed launch:
+# Backlog
+
+## In flight
+- [ ] nm-kimi-zj - Exercise retained failed-launch record through Zellij (repo: product-lab) (kind: ship) (since 2026-10-27)
+## Queued
+- [ ] nm-kimi-kept2 - Exercise retained failed-launch record (repo: product-lab) (kind: ship) (since 2026-10-27)
+## Done

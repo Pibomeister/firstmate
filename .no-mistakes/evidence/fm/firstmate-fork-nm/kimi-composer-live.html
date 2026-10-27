@@ -1,0 +1,49 @@
+<!doctype html><html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Live Kimi composer evidence</title><style>:root{color-scheme:light dark;--bg:#faf9f5;--surface:#f0eee6;--fg:#141413;--border:#e8e6dc}@media(prefers-color-scheme:dark){:root{--bg:#1f1e1d;--surface:#262624;--fg:#faf9f5;--border:#3d3d3a}}*{box-sizing:border-box}body{background:var(--bg);color:var(--fg);font:17px/1.6 system-ui,sans-serif;margin:40px}h1,h2{font-family:Georgia,serif}p{max-width:68ch}section{margin:48px 0;padding:24px;background:var(--surface);border:1px solid var(--border);border-radius:12px;min-width:0}pre{font:12px/1.5 ui-monospace,monospace;overflow:auto;max-width:100%}</style><h1>Live Kimi composer evidence</h1><p>TL;DR: This records Kimi Code 2.3.3 in a disposable 120 × 40 terminal. The real Firstmate classifier reads the idle composer as empty and unsubmitted brief text as pending. These are captures from this validation run. No decision is required.</p><p>The provider configuration is disposable and points only at localhost. No production login or model interpretation is part of these two composer checks.</p><section><h2>Idle composer → empty</h2><pre>
+ ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │                                                                                                                    │
+ │  ▐█▛█▛█▌  Welcome to Kimi Code!                                                                                    │
+ │  ▐█████▌  Send /help for help information.                                                                         │
+ │                                                                                                                    │
+ │  Directory: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z2YVYD9EGB6XV27VF5X4A3/.nm-test-lab/kimi/…│
+ │  Session:                                                                                                          │
+ │  Model:     lab                                                                                                    │
+ │  Version:   2.3.3                                                                                                  │
+ │                                                                                                                    │
+ ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+ ✦ Kimi K3.1 Pro is ready - use the model in a fresh session for the best results
+   Standard: Plus/Moderato and above; Highspeed: Pro/Allegretto and above
+
+   No session yet — one will be created on your first message.
+   tmux extended-keys is off. Modified Enter keys may not work. Add `set -g extended-keys on` to ~/.tmux.conf and      
+ restart tmux.
+
+ ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │ &gt;                                                                                                                  │
+ ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+ Never Ask  lab  …/.nm-test-lab/kimi/workspace                                                           ctrl+c: cancel
+                                                                                                   context: 0% (0/256k)</pre></section><section><h2>Typed composer → pending</h2><pre>
+ ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │                                                                                                                    │
+ │  ▐█▛█▛█▌  Welcome to Kimi Code!                                                                                    │
+ │  ▐█████▌  Send /help for help information.                                                                         │
+ │                                                                                                                    │
+ │  Directory: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z2YVYD9EGB6XV27VF5X4A3/.nm-test-lab/kimi/…│
+ │  Session:                                                                                                          │
+ │  Model:     lab                                                                                                    │
+ │  Version:   2.3.3                                                                                                  │
+ │                                                                                                                    │
+ ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+ ✦ Kimi K3.1 Pro is ready - use the model in a fresh session for the best results
+   Standard: Plus/Moderato and above; Highspeed: Pro/Allegretto and above
+
+   No session yet — one will be created on your first message.
+   tmux extended-keys is off. Modified Enter keys may not work. Add `set -g extended-keys on` to ~/.tmux.conf and      
+ restart tmux.
+
+ ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │ &gt; Read the brief at /disposable/brief.md and follow it exactly.                                                    │
+ ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+ Never Ask  lab  …/.nm-test-lab/kimi/workspace                                                 ! to run a shell command
+                                                                                                   context: 0% (0/256k)</pre></section></html>

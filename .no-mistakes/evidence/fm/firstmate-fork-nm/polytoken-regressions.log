@@ -1,0 +1,2 @@
+ok - fm-spawn: a failed readiness gate fails loudly, reaps, and retires its wiring
+ok - fm-spawn: a gate failure after publication drops the slot claim with the record

@@ -1,0 +1,9 @@
+ok - fm_backend_orca_remove_worktree: accepts selector_not_found only when the recorded path is absent
+ok - fm_backend_orca_remove_worktree: refuses selector_not_found while the recorded path exists
+ok - fm_backend_orca_remove_worktree: refuses selector_not_found when the recorded path is inaccessible
+ok - fm_backend_orca_remove_worktree: surfaces other Orca errors and fails closed
+ok - fm-spawn.sh --backend orca: removes worktree when terminal creation fails
+ok - fm-spawn.sh --backend orca: preserves metadata when abort cleanup fails
+ok - fm-teardown.sh backend=orca: releases terminal/worktree when path is absent
+ok - fm-teardown.sh backend=orca: preserves metadata on remove ok:false JSON
+ok - fm-teardown.sh --force: removes Orca secondmate children through Orca

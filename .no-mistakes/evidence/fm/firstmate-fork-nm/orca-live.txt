@@ -1,0 +1,20 @@
+
+Scenario: Already removed Orca worktree is accepted when recorded directory is absent
+warning: Orca no longer lists worktree nm-validation-13429-71368::/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z2YVYD9EGB6XV27VF5X4A3/.nm-test-lab/orca-paths/missing and its recorded path /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z2YVYD9EGB6XV27VF5X4A3/.nm-test-lab/orca-paths/missing is confirmed absent; treating it as already removed
+Observed exit: 0; expected: 0
+
+Scenario: Missing selector with a present recorded directory refuses
+error: Orca no longer lists worktree nm-validation-13429-71368::/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z2YVYD9EGB6XV27VF5X4A3/.nm-test-lab/orca-paths/missing, but its recorded path still exists at /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z2YVYD9EGB6XV27VF5X4A3/.nm-test-lab/orca-paths/present; refusing removal
+Observed exit: 1; expected: 1
+
+Scenario: Missing selector with no recorded path refuses
+error: Orca no longer lists worktree nm-validation-13429-71368::/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z2YVYD9EGB6XV27VF5X4A3/.nm-test-lab/orca-paths/missing, but no recorded path was provided to prove it is absent; refusing removal
+Observed exit: 1; expected: 1
+
+Scenario: Missing selector with a dangling symlink refuses
+error: Orca no longer lists worktree nm-validation-13429-71368::/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z2YVYD9EGB6XV27VF5X4A3/.nm-test-lab/orca-paths/missing, but its recorded path still exists at /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z2YVYD9EGB6XV27VF5X4A3/.nm-test-lab/orca-paths/dangling; refusing removal
+Observed exit: 1; expected: 1
+
+Scenario: Missing selector with an inaccessible recorded directory refuses
+error: Orca no longer lists worktree nm-validation-13429-71368::/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z2YVYD9EGB6XV27VF5X4A3/.nm-test-lab/orca-paths/missing, but its recorded path /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z2YVYD9EGB6XV27VF5X4A3/.nm-test-lab/orca-paths/locked/child could not be inspected: EACCES: EACCES: permission denied, lstat '/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M5Z2YVYD9EGB6XV27VF5X4A3/.nm-test-lab/orca-paths/locked/child'; refusing removal
+Observed exit: 1; expected: 1

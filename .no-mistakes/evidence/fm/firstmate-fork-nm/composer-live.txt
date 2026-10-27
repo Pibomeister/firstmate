@@ -1,0 +1,5 @@
+Kimi Code CLI version: 2.3.3
+
+Real Kimi 120x40 private tmux pane; isolated HOME and a configured local-only provider.
+idle: observed=empty expected=empty
+typed: observed=pending expected=pending
