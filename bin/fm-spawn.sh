@@ -97,6 +97,13 @@
 #   only a shell that will not go refuses.
 #   --harness <name> is the explicit per-spawn harness/profile adapter. The old
 #   positional harness arg still works for back-compat.
+#   --budget-inclusive-hard, --budget-inclusive-stop, --budget-fresh-hard, and
+#   --budget-fresh-stop each take a positive whole token count, exactly once and
+#   all together. Stops may not exceed hard caps. These ship/scout-only options
+#   publish budget_* metadata before launch; relaunch keeps the recorded budget.
+#   A budgeted relaunch folds final native usage before replacing its source
+#   binding; unknown prior usage is reported and not carried, never blocking launch.
+#   Native usage and watcher enforcement are owned by bin/fm-task-budget.sh.
 #   --model <name> and --effort <low|medium|high|xhigh|max|ultra> are concrete profile
 #   axes chosen by firstmate at intake. They are only threaded into harnesses whose
 #   installed CLIs were verified to support that axis; unsupported axes are omitted
@@ -830,6 +837,12 @@ UPSTREAM_CONSENT=
 UPSTREAM_CONSENT_SET=0
 TRACEPARENT_SET=0
 RELAUNCH=0
+BUDGET_IH=''
+BUDGET_IS=''
+BUDGET_FH=''
+BUDGET_FS=''
+BUDGET_SEEN=''
+BUDGET_LAUNCH_MARKER=''
 # Opt-in only: exact-resume presentation-order lock waits instead of refusing.
 # Absent/unset keeps upstream refuse-on-contention. See header.
 HERDR_RESUME_LOCK_WAIT=0
@@ -844,6 +857,18 @@ for a in "$@"; do
       ;;
     esac
     case "$want_value" in
+    budget-*)
+      case " $BUDGET_SEEN " in
+        *" $want_value "*) echo "error: duplicate --$want_value" >&2; exit 1 ;;
+      esac
+      BUDGET_SEEN="$BUDGET_SEEN $want_value"
+      case "$want_value" in
+        budget-inclusive-hard) BUDGET_IH=$a ;;
+        budget-inclusive-stop) BUDGET_IS=$a ;;
+        budget-fresh-hard) BUDGET_FH=$a ;;
+        budget-fresh-stop) BUDGET_FS=$a ;;
+      esac
+      ;;
     harness)
       HARNESS_ARG=$a
       HARNESS_SET=1
@@ -893,6 +918,9 @@ for a in "$@"; do
     continue
   fi
   case "$a" in
+  --budget-inclusive-hard|--budget-inclusive-stop|--budget-fresh-hard|--budget-fresh-stop)
+    want_value=${a#--}
+    ;;
   --scout)
     KIND=scout
     KIND_SET=1
@@ -960,6 +988,13 @@ done
   echo "error: --$want_value requires a value" >&2
   exit 1
 }
+if [ -n "$BUDGET_SEEN" ]; then
+  [ "$RELAUNCH" = 0 ] && [ "$KIND" != secondmate ] || {
+    echo 'error: budget options apply only to fresh ship/scout spawns' >&2
+    exit 1
+  }
+  "$SCRIPT_DIR/fm-task-budget.sh" validate "$BUDGET_IH" "$BUDGET_IS" "$BUDGET_FH" "$BUDGET_FS" || exit 1
+fi
 [ "$HARNESS_SET" -eq 0 ] || [ -n "$HARNESS_ARG" ] || {
   echo "error: --harness requires a non-empty value" >&2
   exit 1
@@ -3812,9 +3847,13 @@ if [ "$KIND" = ship ] || [ "$KIND" = scout ]; then
   SOURCE_BRIEF=$BRIEF
   BRIEF="$DATA/$ID/launch-brief.md"
   BRIEF_TMP="$DATA/$ID/.launch-brief.md.${BASHPID:-$$}"
+  if [ -n "$BUDGET_IH" ] || { [ "$RELAUNCH" -eq 1 ] && [ -n "$(fm_meta_get "$RELAUNCH_META" budget_inclusive_hard)" ]; }; then
+    BUDGET_LAUNCH_MARKER="FM_BUDGET_LAUNCH_$(python3 -c 'import secrets; print(secrets.token_hex(16))')" || exit 1
+  fi
   {
     fm_brief_worker_role "$STATE" "$ID" "$FM_ROOT" &&
       printf '\n' &&
+      { [ -z "$BUDGET_LAUNCH_MARKER" ] || printf '%s\n\n' "$BUDGET_LAUNCH_MARKER"; } &&
       cat "$SOURCE_BRIEF" &&
       if [ "$KIND" = ship ] && [ "$MODE" = no-mistakes ]; then
         fm_brief_intent_overlay "$CAPTAIN_INTENT"
@@ -6293,6 +6332,26 @@ if [ "$BACKEND" = tmux ]; then
   fi
 fi
 SPAWN_GEN="s$(date +%s).${BASHPID:-$$}.$RANDOM"
+SPAWN_BUDGET_RECORD=
+BUDGET_PRIOR=-
+if [ "$RELAUNCH" = 1 ] && [ "$KIND" != secondmate ]; then
+  BUDGET_IH=$(fm_meta_get "$RELAUNCH_META" budget_inclusive_hard)
+  if [ -n "$BUDGET_IH" ]; then
+    BUDGET_IS=$(fm_meta_get "$RELAUNCH_META" budget_inclusive_stop)
+    BUDGET_FH=$(fm_meta_get "$RELAUNCH_META" budget_fresh_hard)
+    BUDGET_FS=$(fm_meta_get "$RELAUNCH_META" budget_fresh_stop)
+    BUDGET_PRIOR=$RELAUNCH_META
+  fi
+fi
+if [ -n "$BUDGET_IH" ]; then
+  BUDGET_LOG_ROOT=
+  case "$HARNESS" in
+    claude) BUDGET_LOG_ROOT=${CLAUDE_CONFIG_DIR:-${HOME:-}/.claude}/projects ;;
+    codex) BUDGET_LOG_ROOT=${CODEX_HOME:-${HOME:-}/.codex}/sessions ;;
+  esac
+  SPAWN_BUDGET_RECORD=$("$SCRIPT_DIR/fm-task-budget.sh" seed "$BUDGET_PRIOR" "$HARNESS" "$WT" "$BUDGET_LOG_ROOT" \
+    "$BUDGET_LAUNCH_MARKER" "$BUDGET_IH" "$BUDGET_IS" "$BUDGET_FH" "$BUDGET_FS") || exit 1
+fi
 SPAWN_META_PATH="$STATE/$ID.meta"
 if [ "$SPAWN_META_LOCK_HELD" != 1 ]; then
   SPAWN_META_LOCK=$(fm_meta_lock_path "$STATE/$ID.meta") || exit 1
@@ -6307,10 +6366,14 @@ else
 fi
 SPAWN_META_PATH=$SPAWN_META_TMP
 preserve_relaunch_meta() {
-  awk -F= '
+  awk -F= -v budget_owned="${SPAWN_BUDGET_RECORD:+1}" '
     BEGIN {
       split("window endpoint_task_id worktree project harness kind mode yolo branch tasktmp base_branch upstream_consent forge backup_remote backup_prefix model effort account account_provider busy_gen spawn_gen traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id paseo_terminal_id paseo_workspace_id home projects control_relaunch_tx polytoken_session polytoken_port polytoken_credential tmux_socket tmux_server_pid tmux_server_identity tmux_window_id", keys, " ")
       for (i in keys) owned[keys[i]] = 1
+      if (budget_owned) {
+        split("budget_inclusive_hard budget_inclusive_stop budget_fresh_hard budget_fresh_stop budget_launch_at budget_worktree budget_log_root budget_launch_marker budget_launch_fingerprint budget_prior_inclusive budget_prior_fresh budget_started_at", budgets, " ")
+        for (i in budgets) owned[budgets[i]] = 1
+      }
     }
     !($1 in owned)
   ' "$RELAUNCH_META"
@@ -6341,6 +6404,7 @@ preserve_relaunch_meta() {
   [ -z "$WORKER_ACCOUNT_PROVIDER" ] || echo "account_provider=$WORKER_ACCOUNT_PROVIDER"
   [ -z "${BUSY_GEN:-}" ] || echo "busy_gen=$BUSY_GEN"
   echo "spawn_gen=$SPAWN_GEN"
+  [ -z "$SPAWN_BUDGET_RECORD" ] || printf '%s\n' "$SPAWN_BUDGET_RECORD"
   # Default-off writes no traceparent= line.
   # backend= is written only for a non-default (non-tmux) backend, so the
   # default path's meta stays byte-identical (absent backend= means tmux;
@@ -6572,6 +6636,16 @@ case "$LAUNCH" in
     echo "error: could not publish the launch brief for $ID as an operational-inbox record under $brief_opstate; $HARNESS strips the typed operational marker, so the worker was not launched" >&2
     exit 1
   }
+  if [ "$HARNESS" = claude ] && [ -n "$BUDGET_LAUNCH_MARKER" ]; then
+    # The canonical doorbell already contains a unique record nonce. Bind its
+    # exact initial message without changing classification or retaining text.
+    budget_fingerprint=$(printf '%s' "$brief_doorbell" | python3 -c 'import hashlib,sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())') || exit 1
+    budget_meta="$STATE/$ID.meta"
+    [ "$RELAUNCH" -eq 0 ] || budget_meta=$SPAWN_META_TMP
+    # Spawn still owns the task metadata lock; no reader or worker can observe
+    # this incarnation before its fingerprint is complete.
+    printf 'budget_launch_fingerprint=%s\n' "$budget_fingerprint" >> "$budget_meta" || exit 1
+  fi
   LAUNCH=${LAUNCH//__BRIEFDOORBELL__/"$(shell_quote "$brief_doorbell")"}
   ;;
 esac

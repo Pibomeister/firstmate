@@ -11,7 +11,7 @@ Start with the directory layout, then use the setting reference for the behavior
 | Task windows and worker tools | [Runtime backend](#runtime-backend-configbackend--fm_backend) and [harness support](#harness-support) |
 | Worker permissions, accounts, or environment | [Claude permission mode](#claude-permission-mode-configclaude-permission-mode), [worker account pin](#worker-account-pin-configclaude-account-configpi-account), [worker tool exclusions](#worker-tool-exclusions-configcrew-exclude-tools), [worker launch environment](#worker-launch-environment-configlaunch-env-allowlist), and its [Orca environment source](#orca-environment-source-configlaunch-env-tmux-session) |
 | Backlog, preferences, and memory | [Backlog backend](#backlog-backend-taskstoml--configbacklog-backend), [captain preferences](#captain-preferences-datacaptainmd--datacaptain-sharedmd), [external memory tiers](#external-memory-tiers-memory-layering-section), and [startup memory budget](#startup-memory-budget-configstartup-memory-budget) |
-| Supervision and presentation | [Pi supervision branch](#pi-supervision-branch), [supervision host](#supervision-host-configsupervision-host), and [Calm preference](#calm-preference-configcalm) |
+| Supervision and presentation | [Pi supervision branch](#pi-supervision-branch), [supervision host](#supervision-host-configsupervision-host), [task budgets](#task-budget-enforcement-configbudget-enforcement), and [Calm preference](#calm-preference-configcalm) |
 | Persistent secondmates | [Secondmate routes](#secondmate-routes-datasecondmatesmd) |
 | Machine-wide heavy test admission | [`fm-test-queue.sh` header](../bin/fm-test-queue.sh) |
 | Per-run overrides and tuning | [Environment variables](#environment-variables) |
@@ -610,6 +610,21 @@ The optional local, gitignored `config/wait-no-turns` presence flag opts this ho
 With it present, ship and scout briefs gain the `# Waiting` section, every brief's inbox section keeps the natural-checkpoint check and adds that a waiting worker does not poll or list its inbox because a waiting instruction rings, a pending-reply recovery waits while that mate has its own open decision or blocker, and a fire-and-forget steer whose doorbell did not land gets one later ring.
 With the file absent, generated briefs omit the waiting section and the no-poll inbox line, recovery sends during an open decision, and a fire-and-forget steer is not owed a retry ring.
 The flag is a home-local preference and is not inherited by secondmate homes.
+
+## Task budget enforcement (config/budget-enforcement)
+
+Enforcement is off until both opt-ins are present: `config/budget-enforcement` contains `enforce`, and the task was spawned with all four `--budget-*` flags.
+The optional local, gitignored `config/budget-enforcement` file accepts `dry-run` or `enforce`.
+An absent file selects `dry-run`; any other value reports a configuration error without enabling interruption.
+Dry-run records would-pause events without interrupting a worker or opening a budget-stop decision.
+Enforce asks the existing lifecycle control plane to interrupt a task once at its recorded stop line and opens one budget-stop decision with measured usage and the actual control result; later usage, including work after the decision is answered, is not interrupted again.
+The watcher checks allocations independently of ordinary busy, stale, paused, and away-mode triage.
+
+Only tasks launched with all four explicit budget flags in [`fm-spawn.sh`](../bin/fm-spawn.sh) have a recorded allocation; existing prose-only budgets are not parsed or retrofitted.
+Native counting supports Claude and Codex main sessions, preserves measured consumption across relaunch (an unmeasurable prior incarnation is reported and not carried), and excludes pipeline invocations, child sessions, and secondmate homes.
+Missing or ambiguous telemetry is visible as unknown rather than zero or an enforcement guarantee.
+Native counters arrive after charged work, so a stop can overshoot and an interrupt can remain unconfirmed.
+[`fm-task-budget.sh`'s header and help](../bin/fm-task-budget.sh) own counter definitions, executable interfaces, binding, attempt deduplication, and state mechanics.
 
 ## No-mistakes pipeline spend (config/pipeline-spend)
 

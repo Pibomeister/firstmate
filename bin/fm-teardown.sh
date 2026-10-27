@@ -3367,6 +3367,7 @@ cleanup_firstmate_home_children() {
       "$sub_state/$child_id.droid-settings.json" "$sub_state/$child_id.droid-session-end" \
       "$sub_state/$child_id.droid-submit-receipts" \
       "$sub_state/$child_id.polytoken-busy.sh" \
+      "$sub_state/$child_id.budget" "$sub_state/$child_id.budget-diagnostic" \
       "$sub_state/.$child_id.branch-outcome-index"
     chmod u+w "$sub_state/$child_id.git-hooks" 2>/dev/null || true
     rm -rf "$sub_state/$child_id.git-hooks" "$sub_state/$child_id.push-guard" \
@@ -3874,6 +3875,7 @@ rm -f "$STATE/$ID.turn-ended" "$STATE/$ID.progress" \
   "$STATE/$ID.droid-settings.json" "$STATE/$ID.droid-session-end" \
   "$STATE/$ID.droid-submit-receipts" \
   "$STATE/$ID.polytoken-busy.sh" \
+  "$STATE/$ID.budget" "$STATE/$ID.budget-diagnostic" \
   "$STATE/.$ID.branch-outcome-index" \
   "$STATE/.secondmate-relaunch-$ID" "$STATE/.secondmate-relaunch-bound-$ID"
 # The steering inbox (bin/fm-task-inbox-lib.sh) is runtime state for the
