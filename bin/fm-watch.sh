@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 # Firstmate watcher.
+# Budgeted ship/scout records are checked each ordinary poll, independently of
+# wake triage; bin/fm-task-budget.sh owns native usage, dry-run/enforce policy,
+# deduplication, and exact-task interrupt outcomes.
 # The internal --grok-hold tag requires FM_WATCH_GROK_HOLD=1.
 # --secondmate starts and verifies a detached local Codex secondmate watcher;
 # --secondmate-status is its read-only identity, route and beacon proof.
@@ -3730,6 +3733,13 @@ while :; do
   # Liveness beacon for fm-guard.sh: a fresh mtime here means a watcher is
   # alive. Supervision scripts warn when this goes stale with tasks in flight.
   touch "$STATE/.last-watcher-beat"
+
+  for budget_meta in "$STATE"/*.meta; do
+    [ -f "$budget_meta" ] && [ ! -L "$budget_meta" ] || continue
+    grep -q '^budget_inclusive_hard=' "$budget_meta" || continue
+    fm_run_timed "$WATCH_HELPER_BUDGET" "$BASH" "$SCRIPT_DIR/fm-task-budget.sh" \
+      tick "$budget_meta" "$CONFIG" "$FM_HOME" || true
+  done
 
   # Opt-in fleet activity ledger (docs/fleet-ledger.md): pick up newly appended
   # status lines before this cycle can exit on a wake. Off costs one file test.

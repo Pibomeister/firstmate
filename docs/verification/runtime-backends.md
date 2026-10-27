@@ -6,6 +6,35 @@ This record contains reusable version-scoped evidence for active runtime guarant
 The backend guides own current setup, safety boundaries, and limitations.
 Exact task chronology, branch names, temporary homes, local paths, process ids, thread ids, and delivery transcripts remain in private reports or PR evidence.
 
+## Native task budget stop lines
+
+Verified on 2026-10-27 on macOS arm64 with Codex CLI 0.162.1 and a private tmux lab.
+The current native guard refreshes the counter-format and interruption evidence:
+
+```sh
+FM_LIVE=1 bash bin/fm-test-run.sh tests/fm-task-budget-live-e2e.test.sh
+```
+
+The Codex workload starts one bounded shell wait, records a dry-run observation, enables enforcement, and checks the native turn-aborted event after the existing lifecycle interrupt.
+Claude's generated initial launch argument, record doorbell, binding and counter totals have deterministic coverage in `tests/fm-task-budget.test.sh`.
+The live Claude launch path remains unverified because the disposable home has no login; this guard neither copies credentials nor starts a login.
+The complete guard requires Codex for interruption verification and refuses a counter-only installation.
+Selected output from the successful guard:
+
+```text
+control interrupt-delivered codex harness=codex backend=tmux verified=agent-alive cancel=unconfirmed
+codex native inclusive=35268 fresh=35268 stop=1 overshoot=35267 turn_aborted=true
+# claude version: 2.1.311 (Claude Code); live path not exercised; deterministic carrier/counter coverage only
+ok - native budget guard exercised 1 supported harnesses and 1 interruption
+```
+
+The numeric totals identify this run; the guard compares native sources rather than requiring those values.
+Codex 0.162.1 emits cumulative `token_usage_record.thread_token_usage`; the portable regression also covers legacy `token_count` totals, repeated events, Claude message-id deduplication, and allocation continuity.
+The native abort acknowledgement is separate from the control plane's unconfirmed cancellation result and does not change that result.
+The deliberately tiny test stop line proves the stop path, without establishing the audit's proposed five-percent overshoot bound.
+This live evidence covers tmux; other runtime combinations retain the existing control plane's capability and proof limits.
+[`fm-task-budget.sh`](../../bin/fm-task-budget.sh) owns counter and state mechanics, and [the configuration reference](../configuration.md#task-budget-enforcement-configbudget-enforcement) owns operator mode selection.
+
 ## Polytoken worker lifecycle
 
 Verified on 2026-10-14 with Polytoken 0.9.0 on macOS arm64 using the tmux worker path.
