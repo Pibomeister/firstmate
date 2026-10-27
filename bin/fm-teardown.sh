@@ -3652,7 +3652,9 @@ if [ "$BACKEND" = orca ] && [ "$KIND" != secondmate ]; then
     branch=$(git -C "$WT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)
     if [ "$branch" != "HEAD" ]; then
       if git -C "$WT" checkout --detach -q 2>/dev/null; then
-        git -C "$WT" branch -D "$branch" >/dev/null 2>&1 || true
+        if [ "$branch" != "$orca_created_branch" ]; then
+          git -C "$WT" branch -D "$branch" >/dev/null 2>&1 || true
+        fi
       fi
     fi
     rm -f "$WT/.claude/settings.local.json" "$WT/.opencode/plugins/fm-turn-end.js" \
@@ -3660,19 +3662,11 @@ if [ "$BACKEND" = orca ] && [ "$KIND" != secondmate ]; then
       "$WT/.fm-grok-turnend" "$WT/.fm-kimi-turnend"
     remove_harness_worktree_wiring "$WT"
   fi
-  # Git compares against this detached task HEAD, or the project HEAD only
-  # when the worktree is already gone. Never force-delete an Orca-created
-  # branch that teardown did not find checked out.
+  # The shared helper keeps the recorded Orca branch when neither ordinary
+  # safe deletion nor an exact remote-tracking containment proof permits it.
   orca_branch_repo=$WT
   [ -d "$WT" ] || orca_branch_repo=$PROJ
-  if [ -n "$orca_created_branch" ]; then
-    if ! git check-ref-format --branch "$orca_created_branch" >/dev/null 2>&1; then
-      printf 'warning: kept invalid Orca-created branch %s\n' "$orca_created_branch" >&2
-    elif git -C "$orca_branch_repo" show-ref --verify --quiet "refs/heads/$orca_created_branch"; then
-      git -C "$orca_branch_repo" branch -d "$orca_created_branch" >/dev/null 2>&1 \
-        || printf 'warning: kept Orca-created branch %s (safe deletion refused)\n' "$orca_created_branch" >&2
-    fi
-  fi
+  fm_backend_orca_safe_delete_created_branch "$orca_branch_repo" "$orca_created_branch" "$BASE_BRANCH" || true
   if [ -n "$T_ORCA" ]; then
     fm_backend_kill "$BACKEND" "$T" "$(meta_value "$META" zellij_tab_id)" "fm-$ID" \
       || { endpoint_close_refusal "$ID" "$BACKEND" "$T" 0; exit 1; }

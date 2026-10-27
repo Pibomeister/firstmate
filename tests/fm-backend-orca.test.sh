@@ -872,7 +872,7 @@ test_spawn_writes_orca_metadata_and_launches_harness() {
   data="$TMP_ROOT/spawn-data"
   state="$TMP_ROOT/spawn-state"
   config="$TMP_ROOT/spawn-config"
-  fm_git_worktree "$proj" "$wt" "fm/$id"
+  fm_git_worktree "$proj" "$wt" "Pibomeister/fm-$id"
   mkdir -p "$data/$id" "$state" "$config"
   write_spawn_brief "$data" "$id"
   touch "$state/.last-watcher-beat"
@@ -892,7 +892,7 @@ test_spawn_writes_orca_metadata_and_launches_harness() {
   assert_grep "window=fm-$id" "$state/$id.meta" "meta missing stable Orca window alias"
   assert_grep "terminal=term-spawn" "$state/$id.meta" "meta missing terminal handle"
   assert_grep "orca_worktree_id=wt-spawn::/orca/wt-spawn" "$state/$id.meta" "meta missing Orca worktree id"
-  assert_grep "orca_created_branch=fm/$id" "$state/$id.meta" "meta missing actual Orca-created branch"
+  assert_grep "orca_created_branch=Pibomeister/fm-$id" "$state/$id.meta" "meta missing actual Orca-created branch"
   assert_grep "worktree=$wt" "$state/$id.meta" "meta missing Orca worktree path"
   assert_not_contains "$(cat "$log")" $'orca\x1f''terminal'$'\x1f''create' \
     "spawn should reuse the implicit terminal returned by Orca worktree creation"
@@ -1816,10 +1816,11 @@ test_card_lifecycle_sites_and_guards() {
   out=$(card_site pr 2>&1) && fail 'draft PR registration should refuse'
   assert_equals '' "$(cat "$LOG")" 'refused PR registration must not move card'
   card_case card-failed-merge
-  mv "$CARD_STATE" "$CARD_STATE.saved"
+  mkdir "$CARD_STATE/.wake-queue"
   out=$(card_site merge 2>&1)
   rc=$?
-  expect_code 1 "$rc" 'missing state should fail merge outcome recording'
+  expect_code 1 "$rc" 'failed wake append should fail merge outcome recording'
+  assert_present "$CARD_STATE/$CARD_ID.meta" 'failed wake append must leave metadata present at the card guard'
   assert_equals '' "$(cat "$LOG")" 'failed merge recording must not move card'
   card_case card-refused-local
   printf 'mode=direct-PR\n' >> "$CARD_STATE/$CARD_ID.meta"
@@ -1893,10 +1894,16 @@ test_card_failures_preserve_caller_results() {
 
 test_teardown_deletes_only_safe_recorded_orca_branch() {
   local variant out branch initial rc
-  for variant in merged unmerged current current-upstream missing-path invalid absent; do
+  for variant in merged unmerged contained-upstream current current-upstream missing-path invalid absent; do
     card_case "card-branch-$variant"
     branch="Pibomeister/fm-$CARD_ID"
-    git -C "$CARD_WT" branch "$branch"
+    if [ "$variant" = contained-upstream ]; then
+      git -C "$CARD_PROJ" -c user.name=Tests -c user.email=tests@example.invalid commit --allow-empty -qm 'fork ahead of worker'
+      git -C "$CARD_PROJ" update-ref refs/remotes/origin/main main
+      git -C "$CARD_WT" branch "$branch" main
+    else
+      git -C "$CARD_WT" branch "$branch"
+    fi
     fm_write_meta "$CARD_STATE/$CARD_ID.meta" "project=$CARD_PROJ" "worktree=$CARD_WT" \
       "branch=fm/$CARD_ID" "kind=scout" "mode=no-mistakes" "harness=claude" "yolo=off" \
       "window=fm-$CARD_ID" "endpoint_task_id=$CARD_ID" "terminal=card-term" \
@@ -1929,16 +1936,19 @@ test_teardown_deletes_only_safe_recorded_orca_branch() {
     rc=$?
     expect_code 0 "$rc" "scout branch $variant teardown failed: $out"
     case "$variant" in
-      unmerged)
+      unmerged|current-upstream)
         git -C "$CARD_PROJ" show-ref --verify --quiet "refs/heads/$branch" || fail 'unmerged initial branch must survive'
-        assert_equals "$initial" "$(git -C "$CARD_PROJ" rev-parse "$branch")" 'unmerged branch tip changed'
+        if [ "$variant" = unmerged ]; then
+          assert_equals "$initial" "$(git -C "$CARD_PROJ" rev-parse "$branch")" 'unmerged branch tip changed'
+        fi
         assert_contains "$out" "warning: kept Orca-created branch $branch" 'safe-delete refusal must report preserved branch'
         ;;
-      merged|current|current-upstream|missing-path)
+      merged|contained-upstream|current|missing-path)
         git -C "$CARD_PROJ" show-ref --verify --quiet "refs/heads/$branch" && fail "$variant initial branch leaked"
         ;;
       invalid|absent)
         git -C "$CARD_PROJ" show-ref --verify --quiet "refs/heads/Pibomeister/fm-$CARD_ID" || fail "$variant meta should not guess or delete initial branch"
+        [ "$variant" != invalid ] || assert_contains "$out" 'warning: kept invalid Orca-created branch --delete' 'invalid recorded name must warn'
         ;;
     esac
     if [ "$variant" != current ] && [ "$variant" != current-upstream ] && [ "$variant" != missing-path ]; then
@@ -1946,13 +1956,98 @@ test_teardown_deletes_only_safe_recorded_orca_branch() {
     fi
     assert_absent "$CARD_STATE/$CARD_ID.meta" 'branch retention should not block task metadata retirement'
   done
-  pass 'Orca branch teardown: safe delete, genuinely unmerged branch retained, checked-out Orca branch force-deleted even when its upstream lacks the squash-merged tip, missing-path fallback and legacy guards'
+  pass 'Orca branch teardown: contained tips deleted, uncontained tips retained even when checked out, invalid names warned, missing-path fallback and legacy guards'
+}
+
+test_orca_branch_cleanup_protects_refs_and_races() {
+  local proj wt out rc original moved real_git fb variant
+  real_git=$(command -v git)
+  for variant in default base unknown-default checked-out invalid remote-race local-race; do
+    proj="$TMP_ROOT/branch-guard-$variant"
+    fm_git_init_commit "$proj"
+    case "$variant" in
+      default)
+        out=$(bash -c '. "$1"; fm_backend_orca_safe_delete_created_branch "$2" main ""' \
+          _ "$ROOT/bin/fm-backend.sh" "$proj" 2>&1); rc=$?
+        git -C "$proj" show-ref --verify --quiet refs/heads/main || fail 'default branch was deleted'
+        ;;
+      base)
+        git -C "$proj" branch candidate
+        out=$(bash -c '. "$1"; fm_backend_orca_safe_delete_created_branch "$2" candidate candidate' \
+          _ "$ROOT/bin/fm-backend.sh" "$proj" 2>&1); rc=$?
+        git -C "$proj" show-ref --verify --quiet refs/heads/candidate || fail 'recorded base branch was deleted'
+        ;;
+      unknown-default)
+        git -C "$proj" branch -m trunk
+        git -C "$proj" branch candidate
+        out=$(bash -c '. "$1"; fm_backend_orca_safe_delete_created_branch "$2" candidate ""' \
+          _ "$ROOT/bin/fm-backend.sh" "$proj" 2>&1); rc=$?
+        git -C "$proj" show-ref --verify --quiet refs/heads/candidate || fail 'unresolved default allowed deletion'
+        ;;
+      checked-out)
+        wt="$TMP_ROOT/branch-guard-active-wt"
+        git -C "$proj" worktree add --quiet -b candidate "$wt" || fail 'active checkout fixture failed'
+        out=$(bash -c '. "$1"; fm_backend_orca_safe_delete_created_branch "$2" candidate ""' \
+          _ "$ROOT/bin/fm-backend.sh" "$proj" 2>&1); rc=$?
+        git -C "$proj" show-ref --verify --quiet refs/heads/candidate || fail 'active checkout was deleted'
+        ;;
+      invalid)
+        out=$(bash -c '. "$1"; fm_backend_orca_safe_delete_created_branch "$2" --delete ""' \
+          _ "$ROOT/bin/fm-backend.sh" "$proj" 2>&1); rc=$?
+        assert_contains "$out" 'warning: kept invalid Orca-created branch --delete' 'invalid branch warning missing'
+        ;;
+      remote-race|local-race)
+        original=$(git -C "$proj" rev-parse HEAD)
+        git -C "$proj" branch candidate
+        git -C "$proj" checkout -q candidate
+        git -C "$proj" -c user.name=Tests -c user.email=tests@example.invalid commit --allow-empty -qm 'remote-contained branch'
+        git -C "$proj" checkout -q main
+        git -C "$proj" update-ref refs/remotes/origin/main candidate
+        if [ "$variant" = local-race ]; then
+          moved=$(printf 'new local tip\n' | git -C "$proj" -c user.name=Tests -c user.email=tests@example.invalid \
+            commit-tree 'candidate^{tree}' -p candidate) || fail 'moved tip fixture failed'
+        else
+          moved=$original
+        fi
+        fb="$TMP_ROOT/branch-guard-$variant-fakebin"
+        mkdir -p "$fb"
+        cat > "$fb/git" <<'SH'
+#!/usr/bin/env bash
+case " $* " in
+  *' update-ref --stdin '*)
+    if [ "$FM_TEST_GIT_RACE_KIND" = local-race ]; then
+      "$FM_TEST_REAL_GIT" -C "$FM_TEST_GIT_REPO" update-ref refs/heads/candidate "$FM_TEST_GIT_REWRITE"
+    else
+      "$FM_TEST_REAL_GIT" -C "$FM_TEST_GIT_REPO" update-ref refs/remotes/origin/main "$FM_TEST_GIT_REWRITE"
+    fi
+    ;;
+esac
+exec "$FM_TEST_REAL_GIT" "$@"
+SH
+        chmod +x "$fb/git"
+        out=$(PATH="$fb:$PATH" FM_TEST_GIT_RACE_KIND="$variant" FM_TEST_GIT_REPO="$proj" \
+          FM_TEST_GIT_REWRITE="$moved" FM_TEST_REAL_GIT="$real_git" \
+          bash -c '. "$1"; fm_backend_orca_safe_delete_created_branch "$2" candidate ""' \
+          _ "$ROOT/bin/fm-backend.sh" "$proj" 2>&1); rc=$?
+        if [ "$variant" = local-race ]; then
+          assert_equals "$moved" "$(git -C "$proj" rev-parse candidate)" 'moved local branch was deleted or changed'
+        else
+          assert_equals "$original" "$(git -C "$proj" rev-parse refs/remotes/origin/main)" 'remote race fixture did not move'
+          git -C "$proj" show-ref --verify --quiet refs/heads/candidate || fail 'remote race deleted local branch'
+        fi
+        ;;
+    esac
+    expect_code 1 "$rc" "$variant should retain the Orca-created branch"
+    assert_contains "$out" 'warning: kept' "$variant should warn about retained branch"
+  done
+  pass 'Orca branch cleanup retains protected, invalid, active, and concurrently changed refs'
 }
 
 test_card_lifecycle_sites_and_guards
 test_card_requests_five_second_timeout
 test_card_failures_preserve_caller_results
 test_teardown_deletes_only_safe_recorded_orca_branch
+test_orca_branch_cleanup_protects_refs_and_races
 # --- Recovery-grade agent state and endpoint absence --------------------------
 #
 # These cases pin the classifier's logic with real processes standing in for an
