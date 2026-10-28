@@ -1585,12 +1585,7 @@ spawn_abort_cleanup() {
     fi
     if [ -n "${ORCA_WORKTREE_ID:-}" ]; then
       if fm_backend_remove_worktree orca "$ORCA_WORKTREE_ID" "${WT:-}" 2>/dev/null; then
-        if [ -n "$ORCA_CREATED_BRANCH" ] &&
-          git check-ref-format --branch "$ORCA_CREATED_BRANCH" >/dev/null 2>&1 &&
-          git -C "$PROJ_ABS" show-ref --verify --quiet "refs/heads/$ORCA_CREATED_BRANCH"; then
-          git -C "$PROJ_ABS" branch -d "$ORCA_CREATED_BRANCH" >/dev/null 2>&1 \
-            || printf 'warning: kept Orca-created branch %s (safe deletion refused)\n' "$ORCA_CREATED_BRANCH" >&2
-        fi
+        fm_backend_orca_safe_delete_created_branch "$PROJ_ABS" "$ORCA_CREATED_BRANCH" "$BASE_BRANCH" || true
       else
         if [ "$SPAWN_FRESH_COMMIT_PENDING" = 1 ]; then
           if ! spawn_fresh_commit_rollback; then
@@ -1612,6 +1607,7 @@ spawn_abort_cleanup() {
             [ -z "${MODE:-}" ] || echo "mode=$MODE"
             [ -z "${YOLO:-}" ] || echo "yolo=$YOLO"
             [ -z "${BRANCH:-}" ] || echo "branch=$BRANCH"
+            [ -z "${BASE_BRANCH:-}" ] || echo "base_branch=$BASE_BRANCH"
             echo "tasktmp=${TASK_TMP:-}"
             echo "model=${MODEL:-default}"
             echo "effort=${EFFORT:-default}"

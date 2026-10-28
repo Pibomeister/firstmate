@@ -422,6 +422,76 @@ fm_backend_orca_worktree_id_valid() {  # <value>
   esac
 }
 
+# A worktree rebasing a branch has a detached HEAD, so the worktree listing does
+# not name it; git's own branch deletion reads the same rebase state instead.
+# State that cannot be read or does not name a branch counts as in use.
+fm_backend_orca_branch_rebasing() {  # <common-git-dir> <branch>
+  local gitdir state head
+  for gitdir in "$1" "$1"/worktrees/*; do
+    for state in "$gitdir/rebase-merge/head-name" "$gitdir/rebase-apply/head-name"; do
+      [ -e "$state" ] || continue
+      head=$(cat -- "$state" 2>/dev/null) || return 0
+      case $head in
+        "refs/heads/$2") return 0 ;;
+        'detached HEAD' | refs/heads/?*) ;;
+        *) return 0 ;;
+      esac
+    done
+  done
+  return 1
+}
+
+# Best-effort cleanup of the branch Orca created before a task switched to its
+# worker branch. HEAD and local branches are never proof: delete only an
+# unchecked-out branch whose exact tip a remote-tracking ref contains, verifying
+# that ref and the expected local tip atomically with the delete.
+fm_backend_orca_safe_delete_created_branch() {  # <repo> <branch> <base-branch>
+  local repo=$1 branch=$2 base=${3:-} default='' ref listed common tip remotes remote remote_tip
+  [ -n "$branch" ] || return 0
+  if ! git check-ref-format --branch "$branch" >/dev/null 2>&1; then
+    printf 'warning: kept invalid Orca-created branch %s\n' "$branch" >&2
+    return 1
+  fi
+  git -C "$repo" show-ref --verify --quiet "refs/heads/$branch" || return 0
+
+  ref=$(git -C "$repo" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null) || ref=
+  if [ -n "$ref" ]; then
+    default=${ref#origin/}
+  else
+    for ref in main master; do
+      if git -C "$repo" show-ref --verify --quiet "refs/heads/$ref"; then
+        default=$ref
+        break
+      fi
+    done
+  fi
+  if [ -z "$default" ] || [ "$branch" = "$default" ] || { [ -n "$base" ] && [ "$branch" = "$base" ]; }; then
+    printf 'warning: kept Orca-created branch %s (protected or unresolved default/base branch)\n' "$branch" >&2
+    return 1
+  fi
+  listed=$(git -C "$repo" -c core.quotePath=false worktree list --porcelain 2>/dev/null) || listed=
+  common=$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || common=
+  if [ -z "$listed" ] || [ -z "$common" ] ||
+    printf '%s\n' "$listed" | grep -Fx -- "branch refs/heads/$branch" >/dev/null ||
+    fm_backend_orca_branch_rebasing "$common" "$branch"; then
+    printf 'warning: kept Orca-created branch %s (safe deletion refused)\n' "$branch" >&2
+    return 1
+  fi
+  tip=$(git -C "$repo" show-ref --verify --hash "refs/heads/$branch" 2>/dev/null) || tip=
+  if [ -n "$tip" ]; then
+    remotes=$(git -C "$repo" for-each-ref --contains "$tip" --format='%(refname) %(objectname)' refs/remotes 2>/dev/null) || remotes=
+    while read -r remote remote_tip; do
+      [ -n "$remote" ] && [ -n "$remote_tip" ] || continue
+      if printf 'start\nverify %s %s\ndelete refs/heads/%s %s\nprepare\ncommit\n' \
+        "$remote" "$remote_tip" "$branch" "$tip" | git -C "$repo" update-ref --stdin >/dev/null 2>&1; then
+        return 0
+      fi
+    done <<< "$remotes"
+  fi
+  printf 'warning: kept Orca-created branch %s (safe deletion refused)\n' "$branch" >&2
+  return 1
+}
+
 fm_backend_validate_task_endpoint() {  # <meta-file> <task-id>
   local meta=$1 id=$2 backend_count backend window worktree project binding_count binding
   local session pane recorded_session workspace tab terminal worktree_id surface

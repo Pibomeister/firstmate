@@ -56,8 +56,12 @@ Exact command flags and response parsing are owned by `bin/backends/orca.sh` and
 
 PR registration moves Orca cards to `in-review`; successful PR merge recording or local-only landing moves them to `completed` until teardown removes the card.
 `bin/fm-orca-card.sh` bounds each best-effort update to five seconds plus termination grace and warns on failure without changing the caller's outcome; a hung merge-time update can stall the watcher for that bounded interval.
-Spawn records the initial Orca-created branch, including in abort-recovery metadata, and an aborted spawn safe-deletes it after removing the Orca worktree.
-Teardown force-deletes whichever branch is checked out in the task worktree, which may be that initial branch; an initial branch that is not checked out gets only safe deletion after detaching in the task worktree, using the project checkout only when the worktree is already gone; a refused deletion keeps the branch and prints a warning.
+Spawn records the initial Orca-created branch, including the recorded base branch in abort-recovery metadata, and attempts guarded cleanup after removing the Orca worktree.
+Teardown detaches the task worktree and uses the same guarded cleanup for the recorded Orca-created branch, even when that branch was checked out; a distinct worker branch keeps its existing teardown behavior.
+The guard retains invalid, default, recorded-base, and observed checked-out or rebasing branches, and keeps uncontained work with a warning.
+It removes the exact recorded branch tip only when a remote-tracking ref contains that tip, verifying that ref and the tip atomically with the delete; task or project `HEAD` and local branches never count as proof, so unpushed work is retained and an unresolved default or failed proof also retains the branch and warns.
+A deletion through this proof leaves any `branch.<name>.*` config behind; that residue is harmless and intentionally not removed.
+The real Orca card movement from `in-progress` through `in-review` to `completed`, and the branch name and upstream state real Orca gives the branch it creates, have not been observed in a live smoke; this behavior is covered only by deterministic fixtures, and the cleanup never consults branch upstream state.
 Tasks waiting without a PR and existing leaked branches are not reconciled by these event hooks.
 
 `fm-peek.sh` reads with `orca terminal read`.
