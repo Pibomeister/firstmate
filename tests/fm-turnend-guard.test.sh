@@ -2779,11 +2779,135 @@ PY
   pass "secondmate selection excludes unsupported scopes and the test clock proves heartbeat absorption"
 }
 
+# A Herdr pane only names the binding candidate. Real processes stand in for the
+# pane shell, its session-lock-owning child and an unrelated stranger; a fake
+# herdr reports process-info about them and a fake tty foreground serves tmux.
+test_secondmate_event_herdr_binding() {
+  local dir shell owner stranger identity real_ps out rc
+  local -a herdr_env=(HERDR_SESSION=lab HERDR_PANE_ID=w1:p1) tmux_env=("TMUX=/tmp/fm-fake-tmux-socket,1,0" TMUX_PANE=%27)
+  dir=$(make_secondmate_dir "$TMP_ROOT/sm-event-herdr")
+  cp -R "$ROOT/bin/." "$dir/bin/"
+  mkdir -p "$dir/parent/state" "$dir/fakebin"
+  printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$dir/parent" > "$dir/.fm-secondmate-parent"
+  cat > "$dir/fakebin/herdr" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$FM_T_HERDR_LOG"
+case "${1:-} ${2:-}" in
+  "pane process-info") cat "$FM_T_HERDR_INFO" ;;
+  "status --json") printf '{"client":{"version":"0.7.4","protocol":14},"server":{"running":true}}\n' ;;
+  "agent get") printf '{"result":{"agent":{"agent":"codex","agent_status":"idle"}}}\n' ;;
+  "pane read")
+    printf '  >_ OpenAI Codex (v0.162.1)\n\n'
+    if [ -s "$FM_T_HERDR_COMPOSER" ]; then
+      fold -w 48 "$FM_T_HERDR_COMPOSER" | awk 'NR == 1 { print "› " $0; next } { print "  " $0 }'
+    else
+      printf '› \n'
+    fi
+    printf '\n  GPT-6-Sol medium · main · 100%% context left\n' ;;
+  "pane send-text") printf '%s' "$4" >> "$FM_T_HERDR_COMPOSER" ;;
+  "pane send-keys") [ "$4" != Enter ] || : > "$FM_T_HERDR_COMPOSER" ;;
+esac
+exit 0
+SH
+  cat > "$dir/fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+case "$*" in
+  *pane_pid*) printf '%s\n' "$FM_T_SHELL" ;;
+  *pane_tty*) printf '/dev/ttys-fm-fake\n' ;;
+  *) exit 1 ;;
+esac
+SH
+  cat > "$dir/fakebin/ps" <<'SH'
+#!/usr/bin/env bash
+[ "${1:-}" != -t ] || { printf '%s %s %s sleep\n' "$FM_T_OWNER" "$FM_T_OWNER" "$FM_T_OWNER"; exit 0; }
+exec "$FM_T_REAL_PS" "$@"
+SH
+  real_ps=$(command -v ps)
+  chmod +x "$dir/fakebin/herdr" "$dir/fakebin/tmux" "$dir/fakebin/ps"
+  # shellcheck disable=SC2016 # positional params expand in the child shell.
+  "$BASH" -c 'sleep 60 & printf "%s\n" "$!" > "$1"; wait' _ "$dir/owner.pid" >/dev/null 2>&1 &
+  shell=$!
+  sleep 60 >/dev/null 2>&1 &
+  stranger=$!
+  until [ -s "$dir/owner.pid" ]; do sleep 0.05; done
+  owner=$(cat "$dir/owner.pid")
+  printf '%s\n' "$owner" > "$dir/state/.lock"
+
+  sm_call() {  # [VAR=value...] <function> [args...]: one route function in this home
+    local -a envs=()
+    while [ "$#" -gt 0 ] && [[ $1 == *=* ]]; do envs+=("$1"); shift; done
+    # shellcheck disable=SC2016 # positional params expand in the child shell.
+    env -u TMUX -u TMUX_PANE -u HERDR_SESSION -u HERDR_PANE_ID FM_HOME="$dir" STATE="$dir/state" CONFIG="$dir/config" \
+      FM_TASK_INBOX="$dir/parent/state/sm-test-1.inbox" PATH="$dir/fakebin:$PATH" FM_T_REAL_PS="$real_ps" FM_T_SHELL="$shell" FM_T_OWNER="$owner" \
+      FM_T_HERDR_INFO="$dir/process-info.json" FM_T_HERDR_LOG="$dir/herdr.log" FM_T_HERDR_COMPOSER="$dir/composer" \
+      FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 ${envs[@]+"${envs[@]}"} \
+      "$BASH" -c '. "$FM_HOME/bin/fm-push-transition-lib.sh" && "$@"' _ "$@"
+  }
+  herdr_info() {  # <pane-id> <shell-pid> <foreground-pid>
+    printf '{"result":{"type":"pane_process_info","process_info":{"pane_id":"%s","shell_pid":%s,"foreground_process_group_id":%s,"foreground_processes":[{"pid":%s,"name":"codex","argv0":"codex"}]}}}\n' \
+      "$1" "$2" "$3" "$3" > "$dir/process-info.json"
+  }
+  binding() {  # <line>...: replace the binding file
+    printf '%s\n' "$@" > "$dir/state/.secondmate-watch"
+  }
+  expect_binding() {  # <expected-exit> <label> [VAR=value...]
+    local expected=$1 label=$2 status=0
+    shift 2
+    sm_call "$@" fm_secondmate_watch_binding_valid >/dev/null 2>&1 || status=$?
+    expect_code "$expected" "$status" "$label"
+  }
+
+  rc=0; env -u TMUX -u TMUX_PANE FM_HOME="$dir" FM_TASK_INBOX="$dir/parent/state/sm-test-1.inbox" "${herdr_env[@]}" \
+    "$dir/bin/fm-watch.sh" --secondmate-selected || rc=$?
+  expect_code 0 "$rc" "a local Codex secondmate in a Herdr pane was not selected"
+  rc=0; env -u TMUX -u TMUX_PANE FM_HOME="$dir" FM_TASK_INBOX="$dir/parent/state/sm-test-1.inbox" HERDR_SESSION=lab \
+    "$dir/bin/fm-watch.sh" --secondmate-selected || rc=$?
+  expect_code 1 "$rc" "a Herdr session without HERDR_PANE_ID was selected"
+  rc=0; env -u TMUX -u TMUX_PANE FM_HOME="$dir" FM_TASK_INBOX="$dir/parent/state/sm-test-1.inbox" HERDR_PANE_ID=w1:p1 \
+    "$dir/bin/fm-watch.sh" --secondmate-selected || rc=$?
+  expect_code 1 "$rc" "a Herdr pane without HERDR_SESSION was selected"
+
+  identity=$(sm_call fm_pid_identity "$owner") || fail "could not read the lock owner's identity"
+  herdr_info w1:p1 "$shell" "$owner"
+  expect_binding 1 "a missing binding file validated" "${herdr_env[@]}"
+  binding "$owner" "$identity" lab:w1:p1 lab herdr
+  expect_binding 0 "a proven Herdr binding did not validate" "${herdr_env[@]}"
+  expect_binding 1 "a Herdr binding validated without HERDR_PANE_ID" HERDR_SESSION=lab
+  herdr_info w2:p2 "$shell" "$owner"
+  expect_binding 1 "a binding recorded for another pane validated" HERDR_SESSION=lab HERDR_PANE_ID=w2:p2
+  expect_binding 1 "process-info describing a different pane validated" "${herdr_env[@]}"
+  herdr_info w1:p1 "$stranger" "$owner"
+  expect_binding 1 "a lock owner outside the pane's process tree validated" "${herdr_env[@]}"
+  herdr_info w1:p1 "$shell" "$stranger"
+  expect_binding 1 "a lock owner outside the foreground group validated" "${herdr_env[@]}"
+  herdr_info w1:p1 "$shell" "$owner"
+  binding "$owner" mismatched-process-identity lab:w1:p1 lab herdr
+  expect_binding 1 "a changed lock-owner identity validated" "${herdr_env[@]}"
+  binding "$owner" "$identity" lab:w1:p1 lab herdr
+  printf '%s\n' "$stranger" > "$dir/state/.lock"
+  expect_binding 1 "a binding for a replaced lock owner validated" "${herdr_env[@]}"
+  printf '%s\n' "$owner" > "$dir/state/.lock"
+  expect_binding 0 "the restored Herdr binding did not validate" "${herdr_env[@]}"
+
+  out=$(sm_call "${herdr_env[@]}" fm_secondmate_watch_notify 2>&1) || fail "Herdr notification failed: $out"
+  [ -n "$(ls "$dir/parent/state/sm-test-1.inbox/"*.msg 2>/dev/null)" ] || fail "Herdr notification wrote no parent inbox record"
+  grep -F 'pane send-text w1:p1 ' "$dir/herdr.log" | grep -Fq -- '--session lab' \
+    || fail "Herdr notification did not ring the recorded target:"$'\n'"$(cat "$dir/herdr.log")"
+
+  binding "$owner" "$identity" %27 /tmp/fm-fake-tmux-socket
+  expect_binding 0 "a legacy four-line tmux binding stopped validating" "${tmux_env[@]}"
+  expect_binding 1 "a tmux binding validated inside a Herdr pane" "${herdr_env[@]}"
+  kill "$shell" "$owner" "$stranger" 2>/dev/null || true
+  wait "$shell" "$stranger" 2>/dev/null || true
+  pass "secondmate Herdr binding is proven from the lock owner and rings its recorded target; legacy tmux bindings still validate"
+}
+
 if [ "${FM_TEST_ONLY:-}" = secondmate-endturn ]; then
   test_secondmate_event_instructions_finish_turn
   test_secondmate_event_status_requires_notification_owner
   test_secondmate_event_watcher_survives_and_notifies
   test_secondmate_event_scope_and_clock
+  test_secondmate_event_herdr_binding
   exit 0
 fi
 
@@ -2791,6 +2915,7 @@ test_secondmate_event_instructions_finish_turn
 test_secondmate_event_status_requires_notification_owner
 test_secondmate_event_watcher_survives_and_notifies
 test_secondmate_event_scope_and_clock
+test_secondmate_event_herdr_binding
 test_predicate_healthy_no_inflight
 test_predicate_unhealthy_no_beacon
 test_predicate_unhealthy_stale_beacon

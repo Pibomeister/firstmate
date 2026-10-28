@@ -33,6 +33,8 @@
 #                              so later polls suppress another escalation
 #   <task>.inbox/.retry-ring   name of a fire-and-forget record still owed its
 #                              one retry ring (fm_task_inbox_mark_retry)
+#   <task>.inbox/.recover-state  automatic secondmate recovery budget:
+#                              "<msg>\t<count>\t<epoch>\t<spawn-gen>"
 #
 # Record format (fm_task_inbox_write / fm_task_inbox_body):
 #   schema=fm-task-inbox.v1
@@ -60,6 +62,17 @@
 # this budget. Fire-and-forget retries remain outside escalation. A positively
 # dead or missing endpoint skips delivery and the ladder and escalates directly.
 # This library owns the schedule, durable budgets, and escalation marker.
+#
+# Automatic recovery (fm_task_inbox_recover_next): for a local secondmate the
+# watcher answers a spent ladder or busy budget with the existing lifecycle
+# interrupt plus an ordinary doorbell instead of an alarm, at most
+# FM_TASK_INBOX_RECOVER_MAX (2) times for the same oldest record of the same
+# worker generation. Each recovery is persisted before it runs and restarts
+# the ladder, so the acknowledgement stays the only progress proof and a crash
+# can never repeat a slot. The first slot rings without interrupting when the
+# parent channel already proves an answer to that exact record
+# (fm_task_inbox_record_answered). With both slots spent, the ordinary single
+# escalation follows. Records are never moved, edited or deleted here.
 # If delivery-attempt or busy-deferral bookkeeping fails while the record remains unhandled,
 # the caller surfaces that failure instead of retrying silently; a concurrently
 # removed inbox is a quiet no-op. Escalation deliberately queues the wake before
@@ -349,10 +362,15 @@ fm_task_inbox_doorbell_line() {  # <record-path>
 # CONSTANT line the worker recovers semantically, while skipping on ambiguous
 # verdicts would starve a harness whose idle screen the classifier cannot
 # positively identify (that classifier is advisory here by design).
-# A pending composer holding exactly our own doorbell line is a previous ring
-# whose Enter never landed, so on an agent not reported busy it is submitted
-# rather than skipped; skipping it would block every later ring. On both paths
-# a lost first Enter gets one confirmed retry.
+# A pending composer holding only whole copies of our own doorbell line is
+# earlier rings whose Enter never landed (later rings concatenate onto it), so
+# on an agent not reported busy it is submitted rather than skipped; skipping
+# it would block every later ring. A busy Codex takes that Enter as a mid-turn
+# steer (measured live on Codex 0.162.1 in a private Herdr lab), so a task
+# whose record harness is codex submits it while busy too. A paste placeholder
+# such as Codex's `[Pasted Content N chars]` is opaque and never proves
+# ownership, whatever its size. On both paths a lost first Enter gets one
+# retry, and only while the composer still holds exactly the owned copies.
 # The whole ring is bounded: it runs under fm_run_timed_fn for
 # FM_SEND_RING_BUDGET seconds (default 20), and a ring still running then is
 # stopped and returns 2, so a hung backend read can never hold its caller - or
@@ -380,9 +398,10 @@ _fm_task_inbox_ring_once() {  # <backend> <target> <record-path> [expected-label
   cstate=$(fm_backend_composer_state "$backend" "$target" "$label" 2>/dev/null) || cstate=unknown
   case "$cstate" in
     pending)
-      fm_task_inbox_composer_holds "$backend" "$target" "$line" "$label" \
-        && [ "$(fm_backend_busy_state "$backend" "$target" 2>/dev/null)" != busy ] \
-        || return 1
+      if [ "$(fm_backend_busy_state "$backend" "$target" 2>/dev/null)" = busy ]; then
+        [ "$(fm_task_inbox_record_harness "$rec")" = codex ] || return 1
+      fi
+      fm_task_inbox_composer_holds "$backend" "$target" "$line" "$label" || return 1
       fm_backend_send_key "$backend" "$target" Enter "$label" >/dev/null 2>&1 || return 2
       sleep 0.3
       fm_task_inbox_composer_holds "$backend" "$target" "$line" "$label" || return 0
@@ -403,13 +422,30 @@ _fm_task_inbox_ring_once() {  # <backend> <target> <record-path> [expected-label
   return 0
 }
 
-# Whether the composer's content, ignoring line wrapping, is exactly <line>.
+# Whether the composer's content, ignoring line wrapping, is one or more whole
+# copies of <line> and nothing else.
 fm_task_inbox_composer_holds() {  # <backend> <target> <line> [expected-label]
-  local cap held
+  local cap held line
   fm_backend_source "$1" || return 1
   cap=$(fm_backend_capture "$1" "$2" "$FM_COMPOSER_CAPTURE_LINES" "${4:-}" 2>/dev/null) || return 1
   held=$(fm_composer_extract_selected_content styled=0 "$cap") || return 1
-  [ -n "$held" ] && [ "$(printf '%s' "$held" | tr -d '[:space:]')" = "$(printf '%s' "$3" | tr -d '[:space:]')" ]
+  held=$(printf '%s' "$held" | tr -d '[:space:]')
+  line=$(printf '%s' "$3" | tr -d '[:space:]')
+  [ -n "$held" ] && [ -n "$line" ] || return 1
+  while [ "${held#"$line"}" != "$held" ]; do
+    held=${held#"$line"}
+  done
+  [ -z "$held" ]
+}
+
+# The harness recorded for the task that owns <record-path>, from the task's
+# own meta beside its inbox; empty when the meta or field is absent.
+fm_task_inbox_record_harness() {  # <record-path>
+  local dir=${1%/*} task
+  dir=${dir%/handled}
+  task=${dir##*/}
+  task=${task%.inbox}
+  sed -n 's/^harness=//p' "${dir%/*}/$task.meta" 2>/dev/null | head -n 1
 }
 
 fm_task_inbox_is_fire_and_forget() {  # <record-path>
@@ -472,7 +508,7 @@ fm_task_inbox_due_action() {  # <state-dir> <task-id>
   local dir oldest base now grace max ladder rec_base count last
   dir=$(fm_task_inbox_dir "$1" "$2")
   if ! oldest=$(fm_task_inbox_oldest_unhandled "$1" "$2"); then
-    rm -f "$dir/.ring-state" "$dir/.escalated" "$dir/.busy-state" 2>/dev/null || true
+    rm -f "$dir/.ring-state" "$dir/.escalated" "$dir/.busy-state" "$dir/.recover-state" 2>/dev/null || true
     # The one retry ring exists only while config/wait-no-turns is present.
     # Absent, a mark is left untouched and the inbox stays quiet, as before.
     if [ -e "${FM_CONFIG_OVERRIDE:-${FM_HOME:-}/config}/wait-no-turns" ]; then
@@ -545,6 +581,49 @@ EOF
     [ -d "$dir" ] || return 0
     return 1
   fi
+}
+
+FM_TASK_INBOX_RECOVER_MAX=2
+
+# Claim the next automatic recovery slot for <record-path>, the current oldest:
+# persist it, restart that record's ladder and busy budget, and print the slot
+# number (1 or 2). A different record or a different worker generation starts
+# a fresh budget. Returns 1 when both slots are spent and 2 when the budget or
+# ladder cannot be written; neither claims a slot.
+fm_task_inbox_recover_next() {  # <state-dir> <task-id> <record-path> <spawn-gen>
+  local dir base gen=$4 state rec_base count last rec_gen now
+  dir=$(fm_task_inbox_dir "$1" "$2")
+  base=${3##*/}
+  case "$gen" in *[!A-Za-z0-9._:-]*) gen=invalid ;; esac
+  state=$(cat "$dir/.recover-state" 2>/dev/null || true)
+  IFS=$(printf '\t') read -r rec_base count last rec_gen <<EOF
+$state
+EOF
+  { [ "$rec_base" = "$base" ] && [ "$rec_gen" = "$gen" ]; } || count=0
+  case "$count" in ''|*[!0-9]*) count=0 ;; esac
+  [ "$count" -lt "$FM_TASK_INBOX_RECOVER_MAX" ] || return 1
+  now=$(date +%s)
+  { printf '%s\t%s\t%s\t%s\n' "$base" "$((count + 1))" "$now" "$gen" > "$dir/.recover-state"; } 2>/dev/null || return 2
+  { printf '%s\t0\t%s\n' "$base" "$now" > "$dir/.ring-state"; } 2>/dev/null || return 2
+  rm -f "$dir/.busy-state" 2>/dev/null || return 2
+  printf '%s' "$((count + 1))"
+}
+
+# Whether the parent status log already holds an answer to this exact record:
+# a line carrying the record's own corr token, stamped no earlier than the
+# record was enqueued. A record without a token never qualifies.
+fm_task_inbox_record_answered() {  # <state-dir> <task-id> <record-path>
+  local corr enq
+  corr=$(fm_task_inbox_body "$3" 2>/dev/null | grep -o 'corr=[A-Za-z0-9]*' | head -n 1)
+  corr=${corr#corr=}
+  [ -n "$corr" ] || return 1
+  enq=$(( $(date +%s) - $(fm_path_age "$3") ))
+  awk -v c="corr=$corr" -v e="$enq" '
+    $0 ~ (c "([^A-Za-z0-9]|$)") && match($0, /\[at=[0-9]+\]/) {
+      if (substr($0, RSTART + 4, RLENGTH - 5) + 0 >= e) found = 1
+    }
+    END { exit(found ? 0 : 1) }
+  ' "$1/$2.status" 2>/dev/null
 }
 
 # Mark the current oldest as escalated after its stale wake is durably queued,

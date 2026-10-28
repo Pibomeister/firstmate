@@ -10,6 +10,7 @@ When this session owns supervision and no away daemon is active:
    When the call returns a still-running exec session, poll it with `write_stdin` (empty input) until it exits; never end the turn while your checkpoint runs, because nothing reads its wake or starts the next one once the turn ends.
 4. Ordinary wake: if the command prints `signal:`, `stale:`, `check:`, or `heartbeat`, drain queued wakes, handle that wake, acknowledge it, then start exactly one successor checkpoint after the previous command exits.
 5. If the command exits 0 and prints `checkpoint: no actionable wake` with no wake, drain queued wakes anyway, process any queued user message now visible to Codex, then start the next checkpoint.
+   In a secondmate home, `checkpoint: firstmate instruction waiting in the steering inbox` names records to read, act on and acknowledge now, before the next checkpoint.
 6. While supervision is needed, send each captain-facing reply as an interim (commentary) message, then keep polling the running checkpoint or start the next one in the same turn.
    Never send it as the turn's final answer: a final answer ends the turn, and the turn-end guard then blocks it with a visible repair prompt.
    That interim message carries the whole reply and must stand alone exactly as a final reply would.

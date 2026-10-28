@@ -21,6 +21,24 @@ fm_root_is_secondmate_home() {
   return 0
 }
 
+# Echo the parent-owned steering inbox of the genuine local secondmate home $1,
+# <parent_home>/state/<id>.inbox, from its identity marker and parent record and
+# never from the environment. Fails for a primary home, a remote route, or a
+# missing or malformed record.
+fm_secondmate_home_inbox() {
+  local id
+  fm_root_is_secondmate_home "$1" || return 1
+  IFS= read -r id < "$1/.fm-secondmate-home" || return 1
+  id=${id//[[:space:]]/}
+  if ! command -v fm_secondmate_parent_record_parse >/dev/null 2>&1; then
+    # shellcheck source=bin/fm-secondmate-parent-lib.sh
+    . "$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; CDPATH='' cd -- "${d:-/}" && pwd)/fm-secondmate-parent-lib.sh"
+  fi
+  fm_secondmate_parent_record_parse "$1/.fm-secondmate-parent" || return 1
+  [ "$FM_SECONDMATE_PARENT_ROUTE" = local ] || return 1
+  printf '%s/state/%s.inbox\n' "$FM_SECONDMATE_PARENT_HOME" "$id"
+}
+
 # Echo the branch named by $1's genuine linked-primary marker and return 0.
 # The captain writes .fm-primary-home by hand in a primary home that is itself a
 # linked git worktree (an Orca workspace, for example); its whitespace-stripped

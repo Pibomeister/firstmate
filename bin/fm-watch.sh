@@ -623,8 +623,35 @@ inbox_steer_escalate_unavailable() {  # <window> <task> <record>
   wake "$reason"
 }
 
+# Automatic bounded recovery for a local secondmate's unacknowledged oldest
+# record: bin/fm-task-inbox-lib.sh owns the budget and the answered proof; this
+# runs the existing lifecycle interrupt under a 30 s bound and the ordinary
+# doorbell as the redirect. Returns 0 when a recovery ran, 1 when the window is
+# out of scope or the budget is spent, and 2 when its bookkeeping is unwritable.
+inbox_steer_recover() {  # <window> <task> <record>
+  local w=$1 task=$2 rec=$3 meta slot rc=0 mode=interrupt ctl_rc=0 ring_rc=0
+  meta="$STATE/$task.meta"
+  [ "$(window_kind "$w")" = secondmate ] || return 1
+  [ -z "$(fm_meta_get "$meta" remote_host 2>/dev/null)" ] || return 1
+  slot=$(fm_task_inbox_recover_next "$STATE" "$task" "$rec" "$(fm_meta_get "$meta" spawn_gen 2>/dev/null)") || rc=$?
+  [ "$rc" -eq 0 ] || return "$rc"
+  if [ "$slot" = 1 ] && fm_task_inbox_record_answered "$STATE" "$task" "$rec"; then
+    mode=ring
+  else
+    # shellcheck source=bin/fm-timeout-lib.sh
+    command -v fm_run_timed_fn >/dev/null 2>&1 || . "$SCRIPT_DIR/fm-timeout-lib.sh"
+    FM_HOME=$FM_HOME fm_run_timed_fn 30 "${FM_CONTROL_BIN:-$SCRIPT_DIR/fm-control.sh}" "$task" interrupt \
+      >/dev/null 2>&1 || ctl_rc=$?
+  fi
+  fm_task_inbox_ring "$(window_backend "$w")" "$w" "$rec" "$(window_label "$w")" || ring_rc=$?
+  triage_log "steer-inbox auto-recovery $slot/$FM_TASK_INBOX_RECOVER_MAX: $task ${rec##*/} mode=$mode interrupt_rc=$ctl_rc ring_rc=$ring_rc"
+}
+
 inbox_steer_recovery_action() {  # <window> <task>
   if [ "$(window_kind "$1")" = secondmate ]; then
+    if [ "$(cut -f2 "$STATE/$2.inbox/.recover-state" 2>/dev/null)" = "$FM_TASK_INBOX_RECOVER_MAX" ]; then
+      printf 'automatic recovery already interrupted and redirected it %s times without an acknowledgement; ' "$FM_TASK_INBOX_RECOVER_MAX"
+    fi
     printf 'with FM_HOME set to this firstmate home, interrupt the secondmate now with bin/fm-control.sh %s interrupt, then redirect it with bin/fm-send.sh %s to drain its inbox and dispatch independent work; do not wait for its other crews' "$2" "$2"
   else
     printf 'inspect the worker'
@@ -639,7 +666,7 @@ inbox_steer_recovery_action() {  # <window> <task>
 # Runs for secondmates too: their pane-staleness exemption is about quiet panes
 # being healthy, while an unacknowledged instruction can still be a stuck steer.
 inbox_steer_check() {  # <window> <task>
-  local w=$1 task=$2 action verb rec count tail40 reason='' ring_rc backend agent_state
+  local w=$1 task=$2 action verb rec count tail40 reason='' ring_rc backend agent_state recover_rc
   action=$(fm_task_inbox_due_action "$STATE" "$task") || return 0
   verb=${action%% *}
   [ "$verb" != quiet ] || return 0
@@ -715,6 +742,16 @@ inbox_steer_check() {  # <window> <task>
       triage_log "steer-inbox retry ring: $task ${rec##*/} result=$ring_rc"
       ;;
     escalate)
+      if [ -z "$reason" ] || [ "${reason#*stuck-busy}" != "$reason" ]; then
+        recover_rc=0
+        inbox_steer_recover "$w" "$task" "$rec" || recover_rc=$?
+        [ "$recover_rc" -ne 0 ] || return 0
+        if [ "$recover_rc" -eq 2 ]; then
+          reason="stale: $w (steering-inbox recovery bookkeeping unwritable: ${rec%/*}/.recover-state cannot be written while $rec stays unhandled; no interrupt was sent - inspect the inbox directory)"
+        elif [ -n "$reason" ]; then
+          reason="stale: $w (unread firstmate instruction: stuck-busy after $count consecutive busy-deferred due doorbells; $rec stays unhandled and no doorbell was typed; $(inbox_steer_recovery_action "$w" "$task"))"
+        fi
+      fi
       # Name the pane state actually read: "idle" only for an idle verdict, so
       # a harness whose busy state cannot be read is never reported idle.
       case "$WINDOW_BUSY_VERDICT" in
@@ -3399,6 +3436,35 @@ heartbeat_scan_finds_actionable() {
   return "$found"
 }
 
+# checkpoint_inbox_sleep: the cycle's wait inside a secondmate's foreground
+# checkpoint (bin/fm-watch-checkpoint.sh owns the contract and exports the
+# parent-owned inbox). It sleeps POLL in one-second steps and exits 0 with
+# "checkpoint-inbox: <names>" as soon as that inbox holds a record not yet
+# announced, recording the announced names in state/.checkpoint-inbox-seen.
+# Only record names are printed, never bodies.
+checkpoint_inbox_sleep() {
+  local i=0 f names current seen="$STATE/.checkpoint-inbox-seen"
+  while :; do
+    names=''
+    current=''
+    for f in "$FM_WATCH_CHECKPOINT_INBOX"/*.msg; do
+      [ -f "$f" ] || continue
+      current="$current${f##*/}"$'\n'
+      grep -Fqx "${f##*/}" "$seen" 2>/dev/null || names="$names ${f##*/}"
+    done
+    if [ -z "$current" ]; then
+      rm -f "$seen" 2>/dev/null || true
+    elif [ -n "$names" ]; then
+      printf '%s' "$current" > "$seen" 2>/dev/null || true
+      echo "checkpoint-inbox:$names"
+      exit 0
+    fi
+    [ "$i" -lt "$POLL" ] || return 0
+    sleep 1
+    i=$((i + 1))
+  done
+}
+
 # event_wait_or_sleep: the terminal wait of each supervision cycle. For a home
 # with push-capable windows (herdr), it replaces the blind `sleep POLL` with a
 # bounded wait on the backend's native transition stream, so a crew going
@@ -3413,6 +3479,10 @@ heartbeat_scan_finds_actionable() {
 event_wait_or_sleep() {
   local w b session first_backend="" first_session="" rec rc
   local windows=()
+  if [ "${FM_WATCH_FOREGROUND_CHECKPOINT:-0}" = 1 ] && [ -n "${FM_WATCH_CHECKPOINT_INBOX:-}" ]; then
+    checkpoint_inbox_sleep
+    return
+  fi
   while IFS= read -r w; do
     b=$(window_backend "$w")
     fm_backend_has_push "$b" || continue

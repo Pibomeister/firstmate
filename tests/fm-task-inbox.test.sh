@@ -401,6 +401,127 @@ test_ring_submits_its_own_stuck_doorbell() {
   pass "inbox: the ring submits its own stuck doorbell, skips other pending text, and retries a lost Enter once on both paths"
 }
 
+# Unsubmitted doorbells accumulate: a ring typed while an earlier copy still
+# sat in the composer leaves the copies concatenated (measured on real Codex
+# 0.162.1). A composer holding only whole copies of our own constant line is
+# ours and is submitted once; anything else, including an opaque paste
+# placeholder of exactly that length, is protected untouched.
+test_ring_submits_repeated_own_doorbells_only() {
+  local dir state rec doorbell log composer rc other
+  dir="$TMP_ROOT/ring-repeated"
+  state="$dir/state"
+  mkdir -p "$state"
+  make_composer_stub "$dir"
+  rec=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "please continue")
+  doorbell=$(inbox_lib "$state" fm_task_inbox_doorbell_line "$rec")
+  log="$dir/send.log"; composer="$dir/composer"
+  ring() {
+    PATH="$dir/fakebin:$PATH" FM_SEND_LOG="$log" FM_FAKE_COMPOSER="$composer" \
+      FM_FAKE_DROP_ENTERS="$dir/drops" inbox_lib "$state" fm_task_inbox_ring tmux sess:fm-t1 "$rec" fm-t1
+  }
+
+  : > "$log"; printf '%s%s' "$doorbell" "$doorbell" > "$composer"
+  rc=0; ring || rc=$?
+  [ "$rc" = 0 ] || fail "two concatenated copies of our own doorbell should be submitted, got rc $rc"
+  [ "$(cat "$log")" = "SUBMIT: $doorbell$doorbell" ] \
+    || fail "the concatenated doorbells should be submitted once, not retyped:"$'\n'"$(cat "$log")"
+  [ ! -s "$composer" ] || fail "the concatenated doorbells were left in the composer"
+
+  for other in "[Pasted Content $(( ${#doorbell} * 6 )) chars]" "$doorbell$doorbell x" '12345'; do
+    : > "$log"; printf '%s' "$other" > "$composer"
+    rc=0; ring || rc=$?
+    [ "$rc" = 1 ] || fail "unproven composer content should skip the ring, got rc $rc for: $other"
+    [ ! -s "$log" ] || fail "unproven composer content was submitted:"$'\n'"$(cat "$log")"
+    [ "$(cat "$composer")" = "$other" ] || fail "unproven composer content was changed: $(cat "$composer")"
+  done
+  pass "inbox: the ring submits whole repeated copies of its own doorbell and protects a same-length paste placeholder and other text"
+}
+
+# A Codex pane on Herdr: the composer is rendered from a real Codex 0.162.1
+# capture, `agent get` reports the native agent_status, Enter submits, and an
+# armed FM_FAKE_HUMAN_TYPES appends a human's keystrokes on the first Enter
+# instead of submitting, so a change between proofs is observable.
+make_herdr_codex_stub() {  # <dir>
+  mkdir -p "$1/fakebin"
+  cat > "$1/fakebin/herdr" <<'SH'
+#!/usr/bin/env bash
+set -u
+case "${1:-} ${2:-}" in
+  "status --json") printf '{"client":{"version":"0.7.4","protocol":14},"server":{"running":true}}\n' ;;
+  "agent get") printf '{"result":{"agent":{"agent":"codex","agent_status":"%s"}}}\n' "${FM_FAKE_AGENT_STATUS:-idle}" ;;
+  "pane read")
+    printf '  >_ OpenAI Codex (v0.162.1)\n\n'
+    if [ -s "$FM_FAKE_COMPOSER" ]; then
+      fold -w 48 "$FM_FAKE_COMPOSER" | awk 'NR == 1 { print "› " $0; next } { print "  " $0 }'
+    else
+      printf '› Ask Codex to do anything\n'
+    fi
+    printf '\n  GPT-6-Sol medium · main · 100%% context left\n' ;;
+  "pane send-text") printf '%s' "${4:-}" >> "$FM_FAKE_COMPOSER" ;;
+  "pane send-keys")
+    case "${4:-}" in
+      Enter|enter)
+        printf 'ENTER\n' >> "$FM_SEND_LOG"
+        if [ -n "${FM_FAKE_HUMAN_TYPES:-}" ] && [ -f "$FM_FAKE_HUMAN_TYPES" ]; then
+          cat "$FM_FAKE_HUMAN_TYPES" >> "$FM_FAKE_COMPOSER"; rm -f "$FM_FAKE_HUMAN_TYPES"
+        elif [ -s "$FM_FAKE_COMPOSER" ]; then
+          printf 'SUBMIT: %s\n' "$(cat "$FM_FAKE_COMPOSER")" >> "$FM_SEND_LOG"
+          : > "$FM_FAKE_COMPOSER"
+        fi ;;
+    esac ;;
+esac
+exit 0
+SH
+  chmod +x "$1/fakebin/herdr"
+}
+
+# A busy Codex accepts Enter as a mid-turn steer that clears the composer
+# (measured live on Codex 0.162.1 in a private Herdr lab), so owned doorbells
+# are submitted while it works; a busy pane of any other harness keeps the
+# existing protection. Ownership is re-proved before the retry Enter, so
+# text a human typed after the first Enter is never submitted.
+test_ring_submits_owned_doorbells_on_a_busy_codex_only() {
+  local dir state rec doorbell log composer rc harness
+  dir="$TMP_ROOT/ring-busy-codex"
+  state="$dir/state"
+  mkdir -p "$state"
+  make_herdr_codex_stub "$dir"
+  rec=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "please continue")
+  doorbell=$(inbox_lib "$state" fm_task_inbox_doorbell_line "$rec")
+  log="$dir/send.log"; composer="$dir/composer"
+  ring() {
+    PATH="$dir/fakebin:$PATH" FM_SEND_LOG="$log" FM_FAKE_COMPOSER="$composer" \
+      FM_FAKE_AGENT_STATUS=working FM_FAKE_HUMAN_TYPES="$dir/human" \
+      FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 \
+      inbox_lib "$state" fm_task_inbox_ring herdr lab:w1:p1 "$rec" fm-t1
+  }
+
+  for harness in codex claude; do
+    printf 'harness=%s\n' "$harness" > "$state/t1.meta"
+    : > "$log"; printf '%s%s' "$doorbell" "$doorbell" > "$composer"
+    rc=0; ring || rc=$?
+    if [ "$harness" = codex ]; then
+      [ "$rc" = 0 ] || fail "owned doorbells on a busy Codex should be submitted, got rc $rc"
+      grep -Fqx "SUBMIT: $doorbell$doorbell" "$log" \
+        || fail "owned doorbells on a busy Codex were not submitted once:"$'\n'"$(cat "$log")"
+      [ ! -s "$composer" ] || fail "owned doorbells were left in a busy Codex composer"
+    else
+      [ "$rc" = 1 ] || fail "owned doorbells on a busy $harness pane should keep the busy skip, got rc $rc"
+      [ ! -s "$log" ] || fail "a busy $harness pane received keys:"$'\n'"$(cat "$log")"
+    fi
+  done
+
+  printf 'harness=codex\n' > "$state/t1.meta"
+  : > "$log"; printf '%s' "$doorbell" > "$composer"; printf ' and my own draft' > "$dir/human"
+  rc=0; ring || rc=$?
+  [ "$(grep -c '^ENTER$' "$log")" = 1 ] \
+    || fail "a composer that changed after the first Enter must not get the retry Enter:"$'\n'"$(cat "$log")"
+  ! grep -q '^SUBMIT' "$log" || fail "a human's changed draft was submitted:"$'\n'"$(cat "$log")"
+  [ "$(cat "$composer")" = "$doorbell and my own draft" ] \
+    || fail "the human's changed draft was altered: $(cat "$composer")"
+  pass "inbox: owned doorbells are submitted on a busy Codex, other busy harnesses stay protected, and a changed composer gets no retry"
+}
+
 test_idempotent_write_dedups_exact_body() {
   local state r1 r2 r3 r4 count text
   state="$TMP_ROOT/idem/state"; mkdir -p "$state"
@@ -770,6 +891,7 @@ test_watcher_busy_secondmate_unread_inbox_names_immediate_recovery() {
   dir=$(busy_case busy-secondmate)
   state="$dir/state"
   fm_write_meta "$state/t1.meta" "window=sess:fm-t1" "kind=secondmate" "harness=grok"
+  printf '001.msg\t2\t%s\t\n' "$(date +%s)" > "$state/t1.inbox/.recover-state"
   busy_steer_check "$dir"
   [ ! -s "$state/.wake-queue" ] || fail "first busy secondmate deferral must wait"
   busy_steer_check "$dir"
@@ -778,6 +900,24 @@ test_watcher_busy_secondmate_unread_inbox_names_immediate_recovery() {
   grep -qF 'fm-send.sh t1' "$state/.wake-queue" \
     || fail "busy secondmate wake omitted redirection"
   pass "watcher: a busy secondmate's unread ask names immediate interrupt and redirect"
+}
+
+# Stuck-busy on a local secondmate of a harness whose busy state is verified is
+# answered by the same bounded recovery before any alarm.
+test_watcher_busy_secondmate_is_recovered_before_alarm() {
+  local dir state
+  dir=$(busy_case busy-recover)
+  state="$dir/state"
+  fm_write_meta "$state/t1.meta" "window=sess:fm-t1" "kind=secondmate" "harness=grok"
+  printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> "%s/control.log"\n' "$dir" > "$dir/fakebin/fm-control"
+  chmod +x "$dir/fakebin/fm-control"
+  : > "$dir/control.log"
+  FM_CONTROL_BIN="$dir/fakebin/fm-control" busy_steer_check "$dir"
+  FM_CONTROL_BIN="$dir/fakebin/fm-control" busy_steer_check "$dir"
+  [ "$(grep -c '^t1 interrupt$' "$dir/control.log")" = 1 ] \
+    || fail "a stuck-busy secondmate was not interrupted once:"$'\n'"$(cat "$dir/control.log")"
+  [ ! -s "$state/.wake-queue" ] || fail "a recovered stuck-busy secondmate also alarmed:"$'\n'"$(cat "$state/.wake-queue")"
+  pass "watcher: a stuck-busy local secondmate is interrupted and redirected before any alarm"
 }
 
 test_watcher_busy_budget_resets_on_ring_and_ack() {
@@ -1188,6 +1328,8 @@ test_watcher_secondmate_unread_inbox_names_immediate_recovery() {
   fm_write_meta "$state/t1.meta" "window=sess:fm-t1" "kind=secondmate" "harness=grok"
   rec=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "independent routed ask")
   age_path "$rec"
+  # Automatic recovery already spent its two slots (pinned separately above).
+  printf '001.msg\t2\t%s\t\n' "$(date +%s)" > "$state/t1.inbox/.recover-state"
   watch_bg "$state" "$dir/fakebin" "$out" \
     FM_SEND_LOG="$log" FM_FAKE_TMUX_CAPTURE="$(idle_capture "$dir")" \
     FM_TASK_INBOX_RING_MAX=1
@@ -1201,6 +1343,138 @@ test_watcher_secondmate_unread_inbox_names_immediate_recovery() {
   grep -qF "$rec" "$state/.wake-queue" \
     || fail "the wake omitted the durable inbox record"
   pass "watcher: an unread secondmate ask names immediate interrupt and redirect"
+}
+
+# A local secondmate's unacknowledged record is recovered automatically, at
+# most twice per record, through the existing lifecycle interrupt and an
+# ordinary doorbell, before exactly one alarm. The control plane is a
+# recording stand-in reached through the watcher's real escalation path.
+recover_case() {  # <name> [meta lines...]
+  local dir
+  dir=$(setup_watch_case "$1")
+  shift
+  fm_write_meta "$dir/state/t1.meta" "window=sess:fm-t1" "$@"
+  cat > "$dir/fakebin/fm-control" <<'SH'
+#!/usr/bin/env bash
+printf 'FM_HOME=%s %s\n' "${FM_HOME:-}" "$*" >> "$FM_CONTROL_LOG"
+SH
+  chmod +x "$dir/fakebin/fm-control"
+  : > "$dir/control.log"; : > "$dir/send.log"
+  printf '%s' "$dir"
+}
+
+recover_check() {  # <case-dir>
+  PATH="$1/fakebin:$PATH" FM_STATE_OVERRIDE="$1/state" FM_SEND_LOG="$1/send.log" \
+    FM_FAKE_TMUX_CAPTURE="$(idle_capture "$1")" FM_TASK_INBOX_GRACE_SECS=0 FM_TASK_INBOX_RING_MAX="${RECOVER_RING_MAX:-0}" \
+    FM_CONTROL_BIN="$1/fakebin/fm-control" FM_CONTROL_LOG="$1/control.log" FM_HOME="$1/home" \
+    bash -c '. "$1" && inbox_steer_check sess:fm-t1 t1' _ "$WATCH" > "$1/check.out" 2>&1
+}
+
+recover_wakes() { cat "$1/state/.wake-queue" 2>/dev/null | grep -c 'unread firstmate instruction' || true; }
+recover_interrupts() { grep -c ' t1 interrupt$' "$1/control.log" || true; }
+recover_rings() { grep -cF 'Firstmate instruction waiting' "$1/send.log" || true; }
+
+test_watcher_auto_recovers_a_secondmate_twice_then_alarms_once() {
+  local dir rec
+  dir=$(recover_case recover-twice "kind=secondmate" "harness=codex" "spawn_gen=g1")
+  rec=$(inbox_lib "$dir/state" fm_task_inbox_write "$dir/state" t1 "routed ask")
+  age_path "$rec"
+  recover_check "$dir"
+  [ "$(recover_interrupts "$dir")" = 1 ] || fail "the first spent ladder should interrupt once:"$'\n'"$(cat "$dir/control.log")"
+  grep -qF "FM_HOME=$dir/home t1 interrupt" "$dir/control.log" || fail "the interrupt did not name this home explicitly"
+  [ "$(recover_rings "$dir")" = 1 ] || fail "the interrupt should be followed by one redirect doorbell:"$'\n'"$(cat "$dir/send.log")"
+  [ "$(recover_wakes "$dir")" = 0 ] || fail "a recovered record must not also alarm:"$'\n'"$(cat "$dir/state/.wake-queue")"
+  recover_check "$dir"
+  [ "$(recover_interrupts "$dir")" = 2 ] || fail "the second spent ladder should interrupt again"
+  [ "$(recover_wakes "$dir")" = 0 ] || fail "the second recovery must not alarm"
+  recover_check "$dir"
+  [ "$(recover_interrupts "$dir")" = 2 ] || fail "a third interrupt was sent after two recoveries"
+  [ "$(recover_wakes "$dir")" = 1 ] || fail "spent recovery should raise exactly one alarm"
+  grep -qF 'automatic recovery already interrupted and redirected it 2 times' "$dir/state/.wake-queue" \
+    || fail "the alarm does not say automatic recovery was spent:"$'\n'"$(cat "$dir/state/.wake-queue")"
+  grep -qF "$rec" "$dir/state/.wake-queue" || fail "the alarm omitted the durable record"
+  recover_check "$dir"; recover_check "$dir"
+  [ "$(recover_interrupts "$dir")" = 2 ] && [ "$(recover_wakes "$dir")" = 1 ] \
+    || fail "an exhausted record kept interrupting or alarming"
+  [ -f "$rec" ] || fail "recovery moved or removed the durable record"
+  mv "$rec" "$dir/state/t1.inbox/handled/"
+  recover_check "$dir"
+  [ ! -e "$dir/state/t1.inbox/.recover-state" ] || fail "an emptied inbox kept its recovery budget"
+  pass "watcher: a local secondmate's unacked record is interrupted and redirected twice, then alarms exactly once"
+}
+
+test_watcher_recovery_rings_first_only_for_a_proven_answer() {
+  local dir rec now
+  dir=$(recover_case recover-answered "kind=secondmate" "harness=codex")
+  rec=$(inbox_lib "$dir/state" fm_task_inbox_write "$dir/state" t1 $'[from-firstmate]\xe2\x81\xa3corr=ab12cd34 routed ask')
+  age_path "$rec"
+  now=$(date +%s)
+  printf 'working [corr=ab12cd340] [at=%s]: other request\n' "$now" > "$dir/state/t1.status"
+  printf 'working [corr=ab12cd34] [at=1500000000]: an answer from before this record was enqueued\n' >> "$dir/state/t1.status"
+  recover_check "$dir"
+  [ "$(recover_interrupts "$dir")" = 1 ] || fail "a historic or prefix corr match must not suppress the interrupt"
+  dir=$(recover_case recover-answered-2 "kind=secondmate" "harness=codex")
+  rec=$(inbox_lib "$dir/state" fm_task_inbox_write "$dir/state" t1 $'[from-firstmate]\xe2\x81\xa3corr=ab12cd34 routed ask')
+  age_path "$rec"
+  printf 'working [corr=ab12cd34] [key=x] [at=%s]: dispatched crew-x\n' "$(date +%s)" > "$dir/state/t1.status"
+  recover_check "$dir"
+  [ "$(recover_interrupts "$dir")" = 0 ] || fail "a proven answer should make the first recovery ring-only"
+  [ "$(recover_rings "$dir")" = 1 ] || fail "the ring-only recovery did not ring"
+  recover_check "$dir"
+  [ "$(recover_interrupts "$dir")" = 1 ] || fail "a record still unacked after the ring-only slot should be interrupted"
+  recover_check "$dir"
+  [ "$(recover_interrupts "$dir")" = 1 ] && [ "$(recover_wakes "$dir")" = 1 ] \
+    || fail "the ring-only slot must count toward the two-recovery budget"
+  pass "watcher: only a proven post-enqueue answer makes the first recovery ring-only, and it consumes a slot"
+}
+
+# Each recovery restarts the record's ladder, so the redirect is followed by
+# ordinary doorbells before the next recovery rather than an immediate repeat.
+test_watcher_recovery_restarts_the_ladder() {
+  local dir rec
+  dir=$(recover_case recover-ladder "kind=secondmate" "harness=codex")
+  rec=$(inbox_lib "$dir/state" fm_task_inbox_write "$dir/state" t1 "routed ask")
+  age_path "$rec"
+  printf '001.msg\t1\t0\n' > "$dir/state/t1.inbox/.ring-state"
+  RECOVER_RING_MAX=1 recover_check "$dir"
+  [ "$(recover_interrupts "$dir")" = 1 ] || fail "a spent ladder was not recovered"
+  RECOVER_RING_MAX=1 recover_check "$dir"
+  [ "$(recover_interrupts "$dir")" = 1 ] || fail "the restarted ladder was skipped: a second interrupt followed at once"
+  [ "$(recover_rings "$dir")" = 2 ] || fail "the restarted ladder did not ring after the redirect:"$'\n'"$(cat "$dir/send.log")"
+  RECOVER_RING_MAX=1 recover_check "$dir"
+  [ "$(recover_interrupts "$dir")" = 2 ] || fail "the restarted ladder did not lead to the second recovery"
+  pass "watcher: each recovery restarts the ladder before the next recovery"
+}
+
+test_watcher_recovery_scope_and_generation() {
+  local dir rec kind
+  for kind in ship remote; do
+    if [ "$kind" = remote ]; then
+      dir=$(recover_case "recover-$kind" "kind=secondmate" "harness=codex" "remote_host=example")
+    else
+      dir=$(recover_case "recover-$kind" "kind=ship" "harness=codex")
+    fi
+    rec=$(inbox_lib "$dir/state" fm_task_inbox_write "$dir/state" t1 "steer")
+    age_path "$rec"
+    recover_check "$dir"
+    [ "$(recover_interrupts "$dir")" = 0 ] || fail "a $kind worker was interrupted automatically"
+    [ "$(recover_wakes "$dir")" = 1 ] || fail "a $kind worker lost its single alarm"
+  done
+  dir=$(recover_case recover-gen "kind=secondmate" "harness=codex" "spawn_gen=g1")
+  rec=$(inbox_lib "$dir/state" fm_task_inbox_write "$dir/state" t1 "steer")
+  age_path "$rec"
+  recover_check "$dir"; recover_check "$dir"
+  fm_write_meta "$dir/state/t1.meta" "window=sess:fm-t1" "kind=secondmate" "harness=codex" "spawn_gen=g2"
+  recover_check "$dir"
+  [ "$(recover_interrupts "$dir")" = 3 ] && [ "$(recover_wakes "$dir")" = 0 ] \
+    || fail "a relaunched secondmate should get a fresh recovery budget, not the old worker's alarm"
+  rm -f "$dir/state/t1.inbox/.recover-state"
+  mkdir "$dir/state/t1.inbox/.recover-state"
+  recover_check "$dir"
+  [ "$(recover_interrupts "$dir")" = 3 ] || fail "unwritable recovery bookkeeping still interrupted"
+  grep -q 'recovery bookkeeping unwritable' "$dir/state/.wake-queue" \
+    || fail "unwritable recovery bookkeeping did not surface:"$'\n'"$(cat "$dir/state/.wake-queue" 2>/dev/null)"
+  pass "watcher: crewmates and remote secondmates keep one alarm, a relaunch resets the budget, and unwritable bookkeeping alarms without interrupting"
 }
 
 test_watcher_dead_pane_escalates_once_without_ringing() {
@@ -1518,6 +1792,8 @@ test_doorbell_is_a_shell_noop
 test_doorbell_rejects_terminal_controls
 test_ring_skips_dead_agent
 test_ring_submits_its_own_stuck_doorbell
+test_ring_submits_repeated_own_doorbells_only
+test_ring_submits_owned_doorbells_on_a_busy_codex_only
 test_idempotent_write_dedups_exact_body
 test_idempotent_write_follows_concurrent_ack
 test_handled_mv_dedups_by_sequence
@@ -1532,6 +1808,7 @@ test_watcher_rerings_idle_pane_quietly
 test_escalation_names_the_pane_state_it_read
 test_watcher_waits_on_busy_pane
 test_watcher_busy_secondmate_unread_inbox_names_immediate_recovery
+test_watcher_busy_secondmate_is_recovered_before_alarm
 test_watcher_busy_budget_resets_on_ring_and_ack
 test_watcher_busy_bookkeeping_failure_surfaces
 test_watcher_successor_busy_reset_failure_surfaces idle
@@ -1561,6 +1838,10 @@ test_watcher_holds_retry_while_the_worker_decides
 test_watcher_retry_keeps_a_newer_mark
 test_watcher_escalates_once_after_budget
 test_watcher_secondmate_unread_inbox_names_immediate_recovery
+test_watcher_auto_recovers_a_secondmate_twice_then_alarms_once
+test_watcher_recovery_rings_first_only_for_a_proven_answer
+test_watcher_recovery_restarts_the_ladder
+test_watcher_recovery_scope_and_generation
 test_watcher_dead_pane_escalates_once_without_ringing
 test_watcher_dead_pane_ignores_stale_busy_state
 test_parked_gate_notice_rings_once_per_park
