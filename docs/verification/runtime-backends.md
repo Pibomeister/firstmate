@@ -2964,14 +2964,18 @@ Verified on 2026-10-01 with Droid 0.230.0, tmux 3.6a, and Orca 1.4.218 on Darwin
 The [Factory CLI](https://docs.factory.com/droid-cli/cli-reference.md), [settings](https://docs.factory.com/droid-cli/settings.md), and [hooks](https://docs.factory.com/harness/hooks.md) references own those vendor contracts.
 The [Droid adapter reference](../../.agents/skills/harness-adapters/references/harness/droid.md) owns model selection, billing distinctions, task settings, trust handling, and supported worker backends.
 
-The tmux composer proof uses the live `droid` process identity, the bounded box, a `[⏱ …]` timer row with a nonempty trailing integration indicator after `|`, and the task-owned status row.
-The Orca proof requires `terminal read --screen` to return `source=screen` and the exact recorded task terminal, then applies the same box, timer, and status-row check.
-The live captures showed `TMUX ⧉` on tmux and `IDE ◌` on Orca, while the production parser accepts other trailing integration indicators.
+The recorded tmux composer proof used the live `droid` process identity, the bounded box, a `[⏱ …]` timer row with a nonempty trailing integration indicator after `|`, and the task-owned status row.
+The Orca proof requires `terminal read --screen` to return `source=screen` and the exact recorded task terminal, then applies the shared shape check owned by [`fm_composer_droid_state`](../../bin/fm-composer-lib.sh).
+The live captures showed `TMUX ⧉` on tmux and `IDE ◌` on Orca.
+The portable [Droid regression](../../tests/fm-droid-harness.test.sh) covers the older pipe-separated footer and the current footer without a pipe, including pending input, a missing timer, and a stale frame above a shell prompt.
 The opt-in Orca guard still asserts the observed `IDE ◌` indicator as a version drift check.
 An unrelated process, stale frame, extra row, or unknown terminal reads `unknown` and cannot authorize typed input.
 Orca 1.4.218 delivered Droid's raw Escape and Ctrl+U keys, while its current-generation `SessionEnd` hook marked exit before relaunch or teardown.
 A later rerun of the opt-in Orca guard on Orca 1.4.220 with Droid 0.233.0 passed relaunch, exit, and teardown with the process-gone check in place. Sampling `lsof -w -a -c droid -d cwd` every 3 seconds during that run found one `droid` process in the task worktree at a time and none after exit, so no `droid exec` worker child outlived the TUI there.
-A disposable Droid 0.230.0 TUI with a payload-recording `SessionEnd` hook showed `/clear` emitting `reason=clear` and then `reason=other` for the same old `session_id` while the process kept running, and `/exit` and Ctrl+C each emitting one `reason=other` for the current session. `reason=other` is therefore a session-close signal, not proof of process exit: the installed binary also sends it when it reloads a session or closes a Task subagent's session. Stop proof additionally requires an `lsof` scan finding no `droid` process whose working directory is inside the task worktree.
+A disposable Droid 0.230.0 TUI with a payload-recording `SessionEnd` hook showed `/clear` emitting `reason=clear` and then `reason=other` for the same old `session_id` while the process kept running, and `/exit` and Ctrl+C each emitting one `reason=other` for the current session.
+`reason=other` is therefore a session-close signal, not proof of process exit: the installed binary also sends it when it reloads a session or closes a Task subagent's session.
+[`fm_control_droid_agent_absent`](../../bin/fm-control-lib.sh) owns the current stop proofs; the live runs above exercised the marker route.
+Portable coverage in [the Droid regression](../../tests/fm-droid-harness.test.sh), [control regression](../../tests/fm-control.test.sh), and [Orca relaunch regression](../../tests/fm-spawn-orca-worktree.test.sh) exercises the connected owned-shell route and its refusal conditions, including preservation of its generation and idle record across combined and separate exit/relaunch flows.
 The live interrupt checks observed a busy running tool, then an idle hook and missing completion marker before the tool's 45-second duration; control conservatively reports `cancel=unconfirmed` because the vendor offers no separate cancellation acknowledgement.
 
 Refresh commands:

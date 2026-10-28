@@ -2170,9 +2170,8 @@ if [ "$RELAUNCH" -eq 1 ]; then
   fm_backend_source "$BACKEND" || exit 1
   # A relaunch must prove the previous agent is gone before it launches
   # another into the same endpoint. Orca Droid uses the shared absence
-  # proof in bin/fm-control-lib.sh (fm_control_droid_agent_absent: the
-  # generation-bound SessionEnd marker, or the connected owned-shell proof
-  # without it) unless the shared endpoint-absence proof establishes that
+  # proof in bin/fm-control-lib.sh (fm_control_droid_agent_absent) unless
+  # the shared endpoint-absence proof establishes that
   # its endpoint is gone. bin/fm-control-lib.sh also owns the recovery-grade
   # classifier capability table and the fm_control_agent_state read below.
   RELAUNCH_PRIOR_HARNESS=$(fm_meta_get "$RELAUNCH_META" harness)

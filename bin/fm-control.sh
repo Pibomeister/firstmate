@@ -124,9 +124,8 @@
 #     Orca's raw Escape and Ctrl+U control is verified for Droid only.
 #   - `exit` and `relaunch` require a recovery-grade agent-state classifier
 #     (tmux, herdr, orca) or Droid's shared absence proof on Orca
-#     (fm_control_droid_agent_absent in bin/fm-control-lib.sh: the
-#     current-generation SessionEnd marker, or the connected owned-shell
-#     proof without it), because without one the "the agent stopped"
+#     (fm_control_droid_agent_absent in bin/fm-control-lib.sh), because
+#     without one the "the agent stopped"
 #     postcondition cannot be proven. zellij, cmux, and paseo combinations
 #     refuse unproven stops rather than reporting them as successful blind.
 #   - An ambiguous endpoint state refuses. An unreadable state refuses unless
@@ -697,6 +696,9 @@ clear_retired_meta_busy_gen() {  # <gen>
 retire_busy_incarnation() {
   local gen=
   if [ "$BACKEND" = orca ] && [ "$HARNESS" = droid ]; then
+    # Replacement admission still needs the stopped generation and its idle
+    # record for fm_control_droid_agent_absent, even after a separate exit.
+    # fm-spawn retires that wiring only after consuming the stop proof.
     return 0
   fi
   if [ -f "$STATE/$ID.busy-gen" ]; then

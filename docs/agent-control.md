@@ -177,7 +177,7 @@ The worktree and the task's records are unaffected either way.
 - A backend that cannot deliver the harness's interrupt key, or the composer clear that key needs, is refused rather than sent a different key.
   Orca 1.4.217 and 1.4.218 delivered raw Escape and Ctrl+U to Droid in live verification, while other harnesses retain their existing key-verification boundary.
 - `exit` and `relaunch` require a backend with a recovery-grade agent-state classifier - tmux, herdr, and orca - because the agent's stop must be proven.
-  On Orca, Droid's shared absence proof in `bin/fm-control-lib.sh` (`fm_control_droid_agent_absent`, used by both `fm-control` and `fm-spawn --relaunch`), [its normal stop proof and reboot exception](../.agents/skills/harness-adapters/references/harness/droid.md#operating-facts), apply; `fm-control relaunch` still requires a Droid replacement for a Droid task.
+  On Orca, [Droid's stop proofs and reboot exception](orca-backend.md#agent-stop-proof) apply; `fm-control relaunch` still requires a Droid replacement for a Droid task.
   Other zellij, cmux, and paseo combinations are refused rather than reported as successful blind.
   On the classifier backends `interrupt` also requires a positively `alive` agent before it sends a key, and confirms the agent is still alive afterwards.
 - An ambiguous endpoint state refuses.
