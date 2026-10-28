@@ -1,0 +1,31 @@
+== S1 teardown shape: task worktree detached at unpushed Orca tip, no upstream (round-1 defect)
+old behaviour (base commit used git branch -d from detached task HEAD):
+Deleted branch Pibomeister/fm-t1 (was f194152).
+new helper:
+warning: kept Orca-created branch Pibomeister/fm-t1 (safe deletion refused)
+rc=1 branch=KEPT tip_preserved=yes
+
+== S2 counterfactual: same detached tip after a real git push + fetch
+  contained by refs/remotes/origin/Pibomeister/fm-t1
+rc=0 branch=DELETED
+
+== S3 aborted-spawn shape: Orca branch at base tip, worktree already removed, origin/main contains it
+rc=0 branch=DELETED
+
+== S4 protected: default branch main, and recorded base branch release (both remote-contained)
+warning: kept Orca-created branch main (protected or unresolved default/base branch)
+rc=1 main=KEPT
+warning: kept Orca-created branch release (protected or unresolved default/base branch)
+rc=1 release=KEPT
+
+== S5 contained but still checked out in another worktree
+warning: kept Orca-created branch Pibomeister/fm-t5 (safe deletion refused)
+rc=1 branch=KEPT
+
+== S6 local branch is not proof: tip contained only by local branch 'feature'
+warning: kept Orca-created branch Pibomeister/fm-t6 (safe deletion refused)
+rc=1 branch=KEPT
+
+== S7 hostile recorded name
+warning: kept invalid Orca-created branch --delete
+rc=1
