@@ -768,6 +768,7 @@ droid_absent_run() {  # [target]
   local target=${1:-term-1}
   (
     fm_backend_source orca >/dev/null 2>&1 || exit 99
+    # shellcheck disable=SC2329 # Invoked indirectly by fm_control_droid_agent_absent.
     fm_backend_orca_terminal_facts() {
       case "${FM_STUB_FACTS:-ok}" in
         ok) printf 'ok\037true\037\037local\037pty-1\037%s' "$ABSENT_WT" ;;
@@ -778,6 +779,7 @@ droid_absent_run() {  # [target]
         *) return 1 ;;
       esac
     }
+    # shellcheck disable=SC2329 # Invoked indirectly by fm_control_droid_agent_absent.
     fm_backend_orca_session_pid() {
       case "${FM_STUB_SESSION:-ok}" in
         ok) printf '4242' ;;
@@ -785,7 +787,9 @@ droid_absent_run() {  # [target]
         *) return 2 ;;
       esac
     }
+    # shellcheck disable=SC2329 # Invoked indirectly by fm_control_droid_agent_absent.
     fm_backend_orca_tree_state() { printf '%s' "${FM_STUB_TREE:-dead}"; }
+    # shellcheck disable=SC2329 # Invoked indirectly by fm_control_droid_agent_absent.
     fm_backend_orca_physical_dir() { (cd -P -- "$1" 2>/dev/null && pwd -P); }
     PATH="$ABSENT_CASE/fakebin:$PATH" \
       fm_control_droid_agent_absent "$ABSENT_STATE" "$ABSENT_ID" \
