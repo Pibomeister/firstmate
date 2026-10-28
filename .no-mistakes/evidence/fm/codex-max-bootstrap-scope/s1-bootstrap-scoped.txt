@@ -1,0 +1,6 @@
+## S1 mixed per-profile catalog miss (real fm-bootstrap.sh, lab FM_HOME, lab CODEX_HOME derived from codex-cli 0.162.1 catalog with max stripped from gpt-5.6-luna)
+{"rules":[{"when":"mixed","use":[{"harness":"codex","model":"gpt-5.6-luna","effort":"max"},{"harness":"codex","model":"gpt-does-not-exist","effort":"max"},{"harness":"codex","model":"gpt-6-astra","effort":"max"},{"harness":"claude","model":"claude-sonnet-5"}]}],"default":{"harness":"codex","model":"gpt-5.6-luna","effort":"max"}}
+CREW_DISPATCH: unusable profile rules[0].use[0] codex/gpt-5.6-luna/max - codex effort max refused for model 'gpt-5.6-luna': catalog does not advertise max (supported: low medium high xhigh) (/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.YCW573/codex-home/models_cache.json)
+CREW_DISPATCH: unusable profile rules[0].use[1] codex/gpt-does-not-exist/max - codex effort max refused for model 'gpt-does-not-exist': model is not in the catalog (/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.YCW573/codex-home/models_cache.json)
+CREW_DISPATCH: unusable profile default codex/gpt-5.6-luna/max - codex effort max refused for model 'gpt-5.6-luna': catalog does not advertise max (supported: low medium high xhigh) (/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.YCW573/codex-home/models_cache.json)
+exit=0

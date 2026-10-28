@@ -1,0 +1,18 @@
+## S2 codex max missing model mixed with catalog-miss profile -> whole-config error only, no partial unusable-profile lines
+{"rules":[{"when":"big","use":{"harness":"codex","model":"gpt-5.6-luna","effort":"max"}},{"when":"other","use":{"harness":"codex","effort":"max"}}]}
+CREW_DISPATCH: invalid config/crew-dispatch.json - codex effort max requires a model whose installed catalog entry advertises max
+exit=0
+
+## S3a malformed JSON -> whole-config error
+{"rules":[
+CREW_DISPATCH: invalid config/crew-dispatch.json - malformed JSON
+exit=0
+
+## S3b unverified harness alongside a catalog-miss profile -> whole-config error only
+{"rules":[{"when":"a","use":{"harness":"spaceship"}},{"when":"b","use":{"harness":"codex","model":"gpt-5.6-luna","effort":"max"}}]}
+CREW_DISPATCH: invalid config/crew-dispatch.json - unverified harness: spaceship
+exit=0
+
+## S3c all profiles valid under the real-derived catalog -> silent
+{"rules":[{"when":"a","use":{"harness":"codex","model":"gpt-6-astra","effort":"max"}}],"default":{"harness":"codex","model":"gpt-6-luna","effort":"max"}}
+exit=0

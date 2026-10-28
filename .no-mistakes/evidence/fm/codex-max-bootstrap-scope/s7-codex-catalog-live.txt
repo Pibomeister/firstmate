@@ -1,0 +1,4 @@
+## S7 live token-free Codex catalog guard at d1774111f87921b1af56108ce2d619dd772260fc
+codex-cli 0.162.1
+ok - codex-cli 0.162.1 on 2026-10-28: catalog advertises max for gpt-6.1-sol; validator agrees; unsupported=none-listed; no Codex model launched
+exit=0

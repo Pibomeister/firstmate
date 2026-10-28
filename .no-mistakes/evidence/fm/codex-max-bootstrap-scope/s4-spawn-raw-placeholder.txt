@@ -1,0 +1,5 @@
+## S4 raw 'codex __EFFORTFLAG__' + --effort max on a model whose catalog lacks max -> refused before task record (FM_HOME=/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.YCW573, CODEX_HOME=/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.YCW573/codex-home)
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.YCW573
+error: codex effort max refused for model 'gpt-5.6-luna': catalog does not advertise max (supported: low medium high xhigh) (/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.YCW573/codex-home/models_cache.json)
+exit=1
+state files after: 

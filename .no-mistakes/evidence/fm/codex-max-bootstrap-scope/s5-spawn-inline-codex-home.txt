@@ -1,0 +1,6 @@
+## S5 caller CODEX_HOME catalog (real 0.162.1 copy) advertises max for gpt-5.6-luna; raw launch reassigns CODEX_HOME inline to a home whose catalog lacks it -> refused
+caller validator: exit=0
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.YCW573
+error: raw Codex max with inline CODEX_HOME cannot be validated against the worker catalog; use a canonical Codex launch or remove the assignment
+exit=1
+state files after: 
