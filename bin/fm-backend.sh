@@ -422,12 +422,31 @@ fm_backend_orca_worktree_id_valid() {  # <value>
   esac
 }
 
+# A worktree rebasing a branch has a detached HEAD, so the worktree listing does
+# not name it; git's own branch deletion reads the same rebase state instead.
+# State that cannot be read or does not name a branch counts as in use.
+fm_backend_orca_branch_rebasing() {  # <common-git-dir> <branch>
+  local gitdir state head
+  for gitdir in "$1" "$1"/worktrees/*; do
+    for state in "$gitdir/rebase-merge/head-name" "$gitdir/rebase-apply/head-name"; do
+      [ -e "$state" ] || continue
+      head=$(cat -- "$state" 2>/dev/null) || return 0
+      case $head in
+        "refs/heads/$2") return 0 ;;
+        'detached HEAD' | refs/heads/?*) ;;
+        *) return 0 ;;
+      esac
+    done
+  done
+  return 1
+}
+
 # Best-effort cleanup of the branch Orca created before a task switched to its
 # worker branch. HEAD and local branches are never proof: delete only an
 # unchecked-out branch whose exact tip a remote-tracking ref contains, verifying
 # that ref and the expected local tip atomically with the delete.
 fm_backend_orca_safe_delete_created_branch() {  # <repo> <branch> <base-branch>
-  local repo=$1 branch=$2 base=${3:-} default='' ref listed tip remotes remote remote_tip
+  local repo=$1 branch=$2 base=${3:-} default='' ref listed common tip remotes remote remote_tip
   [ -n "$branch" ] || return 0
   if ! git check-ref-format --branch "$branch" >/dev/null 2>&1; then
     printf 'warning: kept invalid Orca-created branch %s\n' "$branch" >&2
@@ -451,7 +470,10 @@ fm_backend_orca_safe_delete_created_branch() {  # <repo> <branch> <base-branch>
     return 1
   fi
   listed=$(git -C "$repo" -c core.quotePath=false worktree list --porcelain 2>/dev/null) || listed=
-  if [ -z "$listed" ] || printf '%s\n' "$listed" | grep -Fx -- "branch refs/heads/$branch" >/dev/null; then
+  common=$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || common=
+  if [ -z "$listed" ] || [ -z "$common" ] ||
+    printf '%s\n' "$listed" | grep -Fx -- "branch refs/heads/$branch" >/dev/null ||
+    fm_backend_orca_branch_rebasing "$common" "$branch"; then
     printf 'warning: kept Orca-created branch %s (safe deletion refused)\n' "$branch" >&2
     return 1
   fi

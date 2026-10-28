@@ -219,13 +219,26 @@ EOF
 }
 
 test_orca_aborted_spawn_safe_deletes_or_records_its_created_branch() {
-  local variant case_dir home id fb out status rm_fail start_ref old_main
-  for variant in removed removed-contained-ahead removed-unmerged rm-fails; do
+  local variant case_dir home id fb out status rm_fail start_ref old_main base_setup base_args
+  for variant in removed removed-contained-ahead removed-unmerged removed-base rm-fails rm-fails-base; do
     id="orca-abort-$variant"
     case_dir="$TMP_ROOT/abort-$variant"
     home="$case_dir/home"
     rm_fail=
-    [ "$variant" = rm-fails ] && rm_fail=1
+    case "$variant" in rm-fails*) rm_fail=1 ;; esac
+    # A recorded base equal to the Orca-created branch must reach the helper
+    # (removed-base) and the recovery record (rm-fails-base).
+    base_setup=
+    base_args=()
+    case "$variant" in
+      *-base)
+        base_setup="# Setup
+You are in a disposable git worktree of project, at a detached HEAD on a clean copy of its base branch.
+Base branch: orca-fm-$id
+"
+        base_args=(--base-branch "orca-fm-$id")
+        ;;
+    esac
     mkdir -p "$home/data/$id" "$home/projects" "$home/state" "$home/config"
     touch "$home/state/.last-watcher-beat"
     printf 'codex\n' > "$home/config/crew-harness"
@@ -248,6 +261,8 @@ Exercise an aborted Orca-backed spawn for $id.
 
 ## Firstmate spec
 Confirm the abort does not leak the branch Orca created.
+
+$base_setup
 EOF
     fb=$(make_orca_fakebin "$case_dir")
     out=$(FM_ROOT_OVERRIDE='' FM_HOME="$home" HOME="$case_dir/user-home" \
@@ -257,7 +272,8 @@ EOF
       FM_TEST_ORCA_TERMINAL_FAIL=1 FM_TEST_ORCA_RM_FAIL="$rm_fail" \
       FM_TEST_ORCA_NEW_COMMIT="$([ "$variant" = removed-unmerged ] && echo 1 || echo 0)" \
       FM_TEST_ORCA_START_REF="$start_ref" \
-      "$SPAWN" "$id" "$case_dir/project" --mode no-mistakes --yolo off --backend orca 2>&1)
+      "$SPAWN" "$id" "$case_dir/project" --mode no-mistakes --yolo off --backend orca \
+      ${base_args[@]+"${base_args[@]}"} 2>&1)
     status=$?
     [ "$status" -ne 0 ] || fail "$variant: spawn should fail when Orca terminal creation fails"$'\n'"$out"
     case "$variant" in
@@ -274,6 +290,16 @@ EOF
         assert_contains "$out" "warning: kept Orca-created branch orca-fm-$id" \
           'aborted spawn must warn when it preserves uncontained work'
         ;;
+      removed-base)
+        git -C "$case_dir/project" show-ref --verify --quiet "refs/heads/orca-fm-$id" \
+          || fail "aborted spawn deleted its recorded base branch: $out"
+        assert_contains "$out" "warning: kept Orca-created branch orca-fm-$id (protected" \
+          'aborted spawn must protect its recorded base branch'
+        ;;
+      rm-fails-base)
+        assert_grep "base_branch=orca-fm-$id" "$home/state/$id.meta" \
+          "recovery metadata must record the base branch for teardown"
+        ;;
       rm-fails)
         git -C "$case_dir/project" show-ref --verify --quiet "refs/heads/orca-fm-$id" \
           || fail "a branch still checked out in an unremoved worktree must be kept"
@@ -282,7 +308,7 @@ EOF
         ;;
     esac
   done
-  pass "an aborted Orca spawn deletes only contained work, retains uncontained commits, or records recovery metadata"
+  pass "an aborted Orca spawn deletes only contained work, retains uncontained commits and its recorded base, or records recovery metadata with the base"
 }
 test_orca_relaunch_is_refused_before_the_worktree_carveout_could_run() {
   local case_dir home proj wt id=orca-relaunch-a2 out status
