@@ -2828,7 +2828,7 @@ case "$ARG3" in
   HARNESS=""
   for word in $LAUNCH; do
     case "$word" in
-    CODEX_HOME=*) RAW_CODEX_HOME_OVERRIDE=1; continue ;;
+    CODEX_HOME=* | HOME=*) RAW_CODEX_HOME_OVERRIDE=1; continue ;;
     [A-Za-z_]*=*) continue ;;
     *)
       HARNESS=$(basename "$word")
@@ -3087,7 +3087,7 @@ fi
 # an unadvertised max cannot launch at the default effort.
 if [ "$HARNESS" = codex ] && [ "$EFFORT" = max ] && { [ "$RAW_LAUNCH" = 0 ] || [[ "$ARG3" == *'__EFFORTFLAG__'* ]]; }; then
   if [ "$RAW_CODEX_HOME_OVERRIDE" = 1 ]; then
-    echo "error: raw Codex max with inline CODEX_HOME cannot be validated against the worker catalog; use a canonical Codex launch or remove the assignment" >&2
+    echo "error: raw Codex max with inline CODEX_HOME or HOME cannot be validated against the worker catalog; use a canonical Codex launch or remove the assignment" >&2
     exit 1
   fi
   "$SCRIPT_DIR/fm-harness.sh" validate-native-effort "$HARNESS" "$MODEL" "$EFFORT" || exit 1
