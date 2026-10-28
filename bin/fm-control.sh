@@ -696,15 +696,14 @@ clear_retired_meta_busy_gen() {  # <gen>
 
 retire_busy_incarnation() {
   local gen=
+  if [ "$BACKEND" = orca ] && [ "$HARNESS" = droid ]; then
+    return 0
+  fi
   if [ -f "$STATE/$ID.busy-gen" ]; then
     gen=$(fm_busy_current_gen "$STATE" "$ID" 2>/dev/null || true)
     if [ -n "$gen" ] \
       && "$SCRIPT_DIR/fm-busy-event.sh" retire "$STATE" "$ID" --gen "$gen" >/dev/null 2>&1; then
-      # Orca Droid's stop proof still needs the retired generation until a
-      # replacement spawn records its own generation.
-      if [ "$BACKEND" != orca ] || [ "$HARNESS" != droid ]; then
-        clear_retired_meta_busy_gen "$gen" || true
-      fi
+      clear_retired_meta_busy_gen "$gen" || true
     fi
   fi
 }
