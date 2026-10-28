@@ -29,8 +29,9 @@
 #                              (the session and the away daemon)
 #   <task>.inbox/.ring-state   watcher re-ring ladder: "<msg>\t<count>\t<epoch>"
 #   <task>.inbox/.busy-state   consecutive busy deferrals: "<msg>\t<count>"
-#   <task>.inbox/.escalated    oldest-message name already surfaced as stale,
-#                              so later polls suppress another escalation
+#   <task>.inbox/.escalated    names of records already surfaced as stale,
+#                              one per line, so later polls suppress another
+#                              escalation for them and move to the next record
 #   <task>.inbox/.retry-ring   name of a fire-and-forget record still owed its
 #                              one retry ring (fm_task_inbox_mark_retry)
 #   <task>.inbox/.recover-state  automatic secondmate recovery budget:
@@ -66,13 +67,16 @@
 # Automatic recovery (fm_task_inbox_recover_next): for a local secondmate the
 # watcher answers a spent ladder or busy budget with the existing lifecycle
 # interrupt plus an ordinary doorbell instead of an alarm, at most
-# FM_TASK_INBOX_RECOVER_MAX (2) times for the same oldest record of the same
-# worker generation. Each recovery is persisted before it runs and restarts
-# the ladder, so the acknowledgement stays the only progress proof and a crash
-# can never repeat a slot. The first slot rings without interrupting when the
-# parent channel already proves an answer to that exact record
-# (fm_task_inbox_record_answered). With both slots spent, the ordinary single
-# escalation follows. Records are never moved, edited or deleted here.
+# FM_TASK_INBOX_RECOVER_MAX (2) times for the same ladder record of the same
+# worker generation, and never before that record is
+# FM_TASK_INBOX_RECOVER_AFTER seconds old (the charter's 5-minute
+# acknowledgement allowance, bin/fm-brief.sh). Each recovery is persisted
+# before it runs and restarts the ladder, so the acknowledgement stays the
+# only progress proof and a crash can never repeat a slot. The first slot
+# rings without interrupting when the parent channel already proves an answer
+# to that exact record (fm_task_inbox_record_answered). With both slots spent,
+# the ordinary single escalation follows. Records are never moved, edited or
+# deleted here.
 # If delivery-attempt or busy-deferral bookkeeping fails while the record remains unhandled,
 # the caller surfaces that failure instead of retrying silently; a concurrently
 # removed inbox is a quiet no-op. Escalation deliberately queues the wake before
@@ -104,6 +108,7 @@
 #   FM_TASK_INBOX_GRACE_SECS   default 90; delivery-attempt grace and spacing
 #   FM_TASK_INBOX_RING_MAX     default 3; delivery attempts before escalation
 #   FM_TASK_INBOX_BUSY_MAX     default 2; consecutive busy-deferred due polls before escalation
+#   FM_TASK_INBOX_RECOVER_AFTER  default 300; record age before automatic recovery
 
 _FM_TASK_INBOX_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Both dependencies are canonical lint roots in their own right. Keep them as
@@ -119,11 +124,18 @@ FM_TASK_INBOX_GRACE_DEFAULT=90
 FM_TASK_INBOX_RING_MAX_DEFAULT=3
 FM_TASK_INBOX_BUSY_MAX_DEFAULT=2
 FM_TASK_INBOX_LOCK_WAIT_DEFAULT=5
+FM_TASK_INBOX_RECOVER_AFTER_DEFAULT=300
 
 fm_task_inbox_grace_secs() {
   local g=${FM_TASK_INBOX_GRACE_SECS:-$FM_TASK_INBOX_GRACE_DEFAULT}
   case "$g" in ''|*[!0-9]*) g=$FM_TASK_INBOX_GRACE_DEFAULT ;; esac
   printf '%s' "$g"
+}
+
+fm_task_inbox_recover_after() {
+  local a=${FM_TASK_INBOX_RECOVER_AFTER:-$FM_TASK_INBOX_RECOVER_AFTER_DEFAULT}
+  case "$a" in ''|*[!0-9]*) a=$FM_TASK_INBOX_RECOVER_AFTER_DEFAULT ;; esac
+  printf '%s' "$a"
 }
 
 fm_task_inbox_ring_max() {
@@ -366,8 +378,9 @@ fm_task_inbox_doorbell_line() {  # <record-path>
 # earlier rings whose Enter never landed (later rings concatenate onto it), so
 # on an agent not reported busy it is submitted rather than skipped; skipping
 # it would block every later ring. A busy Codex takes that Enter as a mid-turn
-# steer (measured live on Codex 0.162.1 in a private Herdr lab), so a task
-# whose record harness is codex submits it while busy too. A paste placeholder
+# steer (docs/verification/runtime-backends.md, "Steering-inbox doorbell on a
+# busy Codex"), so a task whose record harness is codex submits it while busy
+# too. A paste placeholder
 # such as Codex's `[Pasted Content N chars]` is opaque and never proves
 # ownership, whatever its size. On both paths a lost first Enter gets one
 # retry, and only while the composer still holds exactly the owned copies.
@@ -445,7 +458,7 @@ fm_task_inbox_record_harness() {  # <record-path>
   dir=${dir%/handled}
   task=${dir##*/}
   task=${task%.inbox}
-  sed -n 's/^harness=//p' "${dir%/*}/$task.meta" 2>/dev/null | head -n 1
+  fm_meta_get "${dir%/*}/$task.meta" harness
 }
 
 fm_task_inbox_is_fire_and_forget() {  # <record-path>
@@ -478,6 +491,34 @@ fm_task_inbox_oldest_unhandled() {  # <state-dir> <task-id>
   printf '%s' "$best"
 }
 
+# Every unhandled record name in <inbox-dir>, fire-and-forget included, one
+# per line in sequence order.
+fm_task_inbox_records_in() {  # <inbox-dir>
+  local f n
+  for f in "$1"/*.msg; do
+    [ -e "$f" ] || continue
+    n=$(fm_task_inbox_seq_of "${f##*/}") || continue
+    printf '%s\t%s\n' "$n" "${f##*/}"
+  done | sort -n | cut -f2
+}
+
+# Whether <record-path> is one its inbox already escalated.
+fm_task_inbox_record_is_escalated() {  # <record-path>
+  grep -Fqx -- "${1##*/}" "${1%/*}/.escalated" 2>/dev/null
+}
+
+# The lowest escalation-tracked record path in <inbox-dir> not yet escalated,
+# or nothing when every waiting record already escalated.
+fm_task_inbox_next_unescalated() {  # <inbox-dir>
+  local name
+  fm_task_inbox_records_in "$1" | while IFS= read -r name; do
+    fm_task_inbox_is_fire_and_forget "$1/$name" && continue
+    fm_task_inbox_record_is_escalated "$1/$name" && continue
+    printf '%s/%s' "$1" "$name"
+    break
+  done
+}
+
 # Owe a fire-and-forget record its one retry ring (see the header). A newer
 # mark replaces an older one: a ring names the whole inbox, not one record.
 fm_task_inbox_mark_retry() {  # <state-dir> <task-id> <record-path>
@@ -498,7 +539,7 @@ fm_task_inbox_clear_retry() {  # <state-dir> <task-id> <record-path>
 
 # The re-ring ladder decision for one task. Prints exactly one of:
 #   quiet                     nothing due (healthy, within grace or spacing,
-#                             or already escalated for the current oldest)
+#                             or every waiting record already escalated)
 #   ring <record-path>        one doorbell re-ring is due
 #   escalate <record-path> <count>   attempt budget spent; surface as stale
 #   retry <record-path>       a fire-and-forget record's one retry ring is due
@@ -523,6 +564,13 @@ fm_task_inbox_due_action() {  # <state-dir> <task-id>
     printf 'quiet'
     return 0
   fi
+  # An escalated record stays with recovery; the ladder moves to the next one,
+  # so a stuck record never silences the records behind it.
+  oldest=$(fm_task_inbox_next_unescalated "$dir")
+  if [ -z "$oldest" ]; then
+    printf 'quiet'
+    return 0
+  fi
   base=${oldest##*/}
   grace=$(fm_task_inbox_grace_secs)
   if [ "$(fm_path_age "$oldest")" -lt "$grace" ]; then
@@ -541,10 +589,6 @@ EOF
   fi
   case "$count" in ''|*[!0-9]*) count=0 ;; esac
   case "$last" in ''|*[!0-9]*) last=0 ;; esac
-  if [ "$(cat "$dir/.escalated" 2>/dev/null || true)" = "$base" ]; then
-    printf 'quiet'
-    return 0
-  fi
   max=$(fm_task_inbox_ring_max)
   if [ "$count" -ge "$max" ]; then
     printf 'escalate %s %s' "$oldest" "$count"
@@ -585,22 +629,36 @@ EOF
 
 FM_TASK_INBOX_RECOVER_MAX=2
 
-# Claim the next automatic recovery slot for <record-path>, the current oldest:
+# Recovery slots already claimed for <record-path> in worker generation
+# <spawn-gen>; a different record or generation has claimed none.
+_fm_task_inbox_recover_count() {  # <state-dir> <task-id> <record-path> <spawn-gen>
+  local gen=$4 state rec_base count last rec_gen
+  case "$gen" in *[!A-Za-z0-9._:-]*) gen=invalid ;; esac
+  state=$(cat "$(fm_task_inbox_dir "$1" "$2")/.recover-state" 2>/dev/null || true)
+  IFS=$(printf '\t') read -r rec_base count last rec_gen <<EOF
+$state
+EOF
+  { [ "$rec_base" = "${3##*/}" ] && [ "$rec_gen" = "$gen" ]; } || count=0
+  case "$count" in ''|*[!0-9]*) count=0 ;; esac
+  printf '%s' "$count"
+}
+
+# Whether both automatic recovery slots for <record-path> are spent.
+fm_task_inbox_recover_spent() {  # <state-dir> <task-id> <record-path> <spawn-gen>
+  [ "$(_fm_task_inbox_recover_count "$@")" -ge "$FM_TASK_INBOX_RECOVER_MAX" ]
+}
+
+# Claim the next automatic recovery slot for <record-path>, the ladder's record:
 # persist it, restart that record's ladder and busy budget, and print the slot
 # number (1 or 2). A different record or a different worker generation starts
 # a fresh budget. Returns 1 when both slots are spent and 2 when the budget or
 # ladder cannot be written; neither claims a slot.
 fm_task_inbox_recover_next() {  # <state-dir> <task-id> <record-path> <spawn-gen>
-  local dir base gen=$4 state rec_base count last rec_gen now
+  local dir base gen=$4 count now
   dir=$(fm_task_inbox_dir "$1" "$2")
   base=${3##*/}
   case "$gen" in *[!A-Za-z0-9._:-]*) gen=invalid ;; esac
-  state=$(cat "$dir/.recover-state" 2>/dev/null || true)
-  IFS=$(printf '\t') read -r rec_base count last rec_gen <<EOF
-$state
-EOF
-  { [ "$rec_base" = "$base" ] && [ "$rec_gen" = "$gen" ]; } || count=0
-  case "$count" in ''|*[!0-9]*) count=0 ;; esac
+  count=$(_fm_task_inbox_recover_count "$1" "$2" "$3" "$gen")
   [ "$count" -lt "$FM_TASK_INBOX_RECOVER_MAX" ] || return 1
   now=$(date +%s)
   { printf '%s\t%s\t%s\t%s\n' "$base" "$((count + 1))" "$now" "$gen" > "$dir/.recover-state"; } 2>/dev/null || return 2
@@ -626,15 +684,15 @@ fm_task_inbox_record_answered() {  # <state-dir> <task-id> <record-path>
   ' "$1/$2.status" 2>/dev/null
 }
 
-# Mark the current oldest as escalated after its stale wake is durably queued,
-# suppressing another wake on later polls. Wake-before-marker ordering favors
+# Mark the record as escalated after its stale wake is durably queued,
+# suppressing another wake for it on later polls. Wake-before-marker ordering favors
 # at-least-once recovery: a crash or marker failure can cause a rare duplicate;
 # stuck-crewmate-recovery owns the message from here.
 fm_task_inbox_record_escalated() {  # <state-dir> <task-id> <record-path>
   local dir
   dir=$(fm_task_inbox_dir "$1" "$2")
   [ -d "$dir" ] || return 0
-  if ! { printf '%s\n' "${3##*/}" > "$dir/.escalated"; } 2>/dev/null; then
+  if ! { printf '%s\n' "${3##*/}" >> "$dir/.escalated"; } 2>/dev/null; then
     [ -d "$dir" ] || return 0
     return 1
   fi

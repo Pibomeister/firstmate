@@ -106,8 +106,6 @@ fm_secondmate_watch_selected() {
   local watcher_pid
   # shellcheck source=bin/fm-primary-scope-lib.sh
   . "$FM_PUSH_TRANSITION_LIB_DIR/fm-primary-scope-lib.sh"
-  # shellcheck source=bin/fm-secondmate-parent-lib.sh
-  . "$FM_PUSH_TRANSITION_LIB_DIR/fm-secondmate-parent-lib.sh"
   # shellcheck source=bin/fm-supervision-engine-lib.sh
   . "$FM_PUSH_TRANSITION_LIB_DIR/fm-supervision-engine-lib.sh"
   fm_root_is_secondmate_home "$FM_HOME" || return 1
@@ -122,11 +120,9 @@ fm_secondmate_watch_selected() {
   fi
   # shellcheck disable=SC2153 # CONFIG is set by bin/fm-watch.sh.
   [ ! -e "$STATE/.afk" ] && ! fm_supervision_host_enabled "$CONFIG" codex || return 1
-  fm_secondmate_parent_record_parse "$FM_HOME/.fm-secondmate-parent" || return 1
-  [ "$FM_SECONDMATE_PARENT_ROUTE" = local ] || return 1
-  FM_SM_ID=$(head -n 1 "$FM_HOME/.fm-secondmate-home")
-  FM_SM_ID=${FM_SM_ID//[[:space:]]/}
-  [ "${FM_TASK_INBOX:-}" = "$FM_SECONDMATE_PARENT_HOME/state/$FM_SM_ID.inbox" ] || return 1
+  FM_SM_INBOX=$(fm_secondmate_home_inbox "$FM_HOME") && [ "${FM_TASK_INBOX:-}" = "$FM_SM_INBOX" ] || return 1
+  FM_SM_ID=${FM_SM_INBOX##*/}
+  FM_SM_ID=${FM_SM_ID%.inbox}
   if fm_watcher_healthy "$STATE" "$FM_PUSH_TRANSITION_LIB_DIR/fm-watch.sh" "${FM_GUARD_GRACE:-300}" "$FM_HOME"; then
     watcher_pid=$(cat "$STATE/.watch.lock/pid")
     case "$(ps -o args= -p "$watcher_pid" 2>/dev/null)" in *'/fm-watch.sh --secondmate-hold'*) ;; *) return 1 ;; esac
@@ -206,7 +202,7 @@ fm_secondmate_watch_notify() {
   rec=$(cat "$STATE/.secondmate-watch-message" 2>/dev/null || true)
   if [ "${rec%/*}" != "$FM_TASK_INBOX" ] || [ ! -f "$rec" ]; then
     body=$(printf '%s\n' 'Run bin/fm-wake-drain.sh, handle and acknowledge the durable watcher events, send any resulting actions and parent replies, then end this turn.' | "$FM_PUSH_TRANSITION_LIB_DIR/fm-operational-input.sh" encode watcher) || return 1
-    rec=$(fm_task_inbox_write "$FM_SECONDMATE_PARENT_HOME/state" "$FM_SM_ID" "$body") || return 1
+    rec=$(fm_task_inbox_write "${FM_SM_INBOX%/*}" "$FM_SM_ID" "$body") || return 1
     printf '%s\n' "$rec" > "$STATE/.secondmate-watch-message" || return 1
   else
     return 0
@@ -214,7 +210,7 @@ fm_secondmate_watch_notify() {
   fm_secondmate_watch_binding_valid || return 1
   fm_task_inbox_ring "$FM_SM_BACKEND" "$FM_SM_TARGET" "$rec" "$FM_SM_ID" || ring_rc=$?
   case "$ring_rc" in
-    1|2) fm_task_inbox_mark_retry "$FM_SECONDMATE_PARENT_HOME/state" "$FM_SM_ID" "$rec" ;;
+    1|2) fm_task_inbox_mark_retry "${FM_SM_INBOX%/*}" "$FM_SM_ID" "$rec" ;;
     3) return 1 ;;
   esac
 }

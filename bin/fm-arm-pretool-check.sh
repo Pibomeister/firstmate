@@ -4,9 +4,11 @@
 # A firstmate primary must arm the watcher or run a Codex checkpoint as a
 # standalone verified harness call.
 # bin/fm-arm-command-policy.mjs is the sole owner of shell classification,
-# protected execution identity, the blessed setup tree, and deny reason codes.
+# protected execution identity, the blessed setup tree, and every deny reason
+# code but one; bin/fm-secondmate-inbox-guard.sh is the second deny owner, of
+# the code secondmate-inbox (below).
 # This wrapper only acquires the harness payload, discovers the active roots,
-# invokes that policy, and renders the established harness-specific responses.
+# invokes those owners, and renders the established harness-specific responses.
 # It never executes, sources, evaluates, or expands the submitted command.
 # See docs/arm-pretool-check.md for the complete contract and validation record.
 #
@@ -29,6 +31,10 @@
 # Claude-settings duplicate Cursor also loads.
 # CLI mode is used by OpenCode and Pi after their adapters extract the exact
 # command string.
+# Test-only: with FM_PRETOOL_PAYLOAD_KEYS_FILE set, stdin mode appends the
+# payload's top-level key names (one sorted JSON array, never a value) to that
+# file; tests/fm-task-inbox-codex-busy-live-e2e.test.sh uses it to record a real
+# Codex PreToolUse payload shape.
 # --background remains accepted for compatibility, but harness-native tracked
 # background execution is not itself a policy signal.
 #
@@ -133,6 +139,11 @@ if [ "$CMD_SET" -eq 0 ]; then
   PAYLOAD=$(cat 2>/dev/null || true)
   [ -n "$PAYLOAD" ] || exit 0
   command -v jq >/dev/null 2>&1 || exit 0
+  # Live-guard capture switch: only the payload's top-level key names, never
+  # a value, so a real harness payload shape can be recorded without its content.
+  if [ -n "${FM_PRETOOL_PAYLOAD_KEYS_FILE:-}" ]; then
+    printf '%s' "$PAYLOAD" | jq -c 'keys' >> "$FM_PRETOOL_PAYLOAD_KEYS_FILE" 2>/dev/null || true
+  fi
   # shellcheck source=bin/fm-hook-host-lib.sh
   . "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/fm-hook-host-lib.sh"
   # Cursor's own registration passes --cursor. Without it a Cursor-delivered

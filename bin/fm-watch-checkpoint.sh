@@ -21,12 +21,14 @@
 # path, is capped at FM_SECONDMATE_CHECKPOINT_MAX (default 60) and the away
 # raise never lifts it above that, so the secondmate's turn returns to its
 # parent-owned steering inbox regularly; a primary's bound is unchanged. On the
-# plain path the watcher also ends the checkpoint within a few seconds of a
+# plain path only (the inbox is passed to that watcher alone, never exported to
+# the host's), the watcher also ends the checkpoint within a few seconds of a
 # record in that inbox it has not yet announced, and this script prints
 # "checkpoint: firstmate instruction waiting in the steering inbox: <names>".
 # Each record is announced once, so one the model cannot acknowledge yet
-# never turns checkpoints into a tight loop. The inbox path comes from the
-# home's own marker and parent record (fm_secondmate_home_inbox).
+# never turns checkpoints into a tight loop; when the announce-once record
+# cannot be written the wait stays an ordinary bounded one. The inbox path
+# comes from the home's own marker and parent record (fm_secondmate_home_inbox).
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -160,12 +162,13 @@ positive_or() {  # <value> <default>
 # shellcheck source=bin/fm-primary-scope-lib.sh
 . "$SCRIPT_DIR/fm-primary-scope-lib.sh"
 SECONDMATE_MAX=
-if FM_WATCH_CHECKPOINT_INBOX=$(fm_secondmate_home_inbox "$FM_HOME" 2>/dev/null); then
+SECONDMATE_INBOX=
+# Only the plain path's own watcher receives the inbox (passed inline below);
+# the supervision host's watchers never see it.
+unset FM_WATCH_CHECKPOINT_INBOX
+if SECONDMATE_INBOX=$(fm_secondmate_home_inbox "$FM_HOME" 2>/dev/null); then
   SECONDMATE_MAX=$(positive_or "${FM_SECONDMATE_CHECKPOINT_MAX:-}" 60)
   [ "$SECONDS_ARG" -le "$SECONDMATE_MAX" ] || SECONDS_ARG=$SECONDMATE_MAX
-  export FM_WATCH_CHECKPOINT_INBOX
-else
-  unset FM_WATCH_CHECKPOINT_INBOX
 fi
 
 require_clean_shutdown() {
@@ -225,7 +228,7 @@ fi
 
 set +e
 # Interrupt the checkpoint's active check group so the watcher's native EXIT cleanup can release its lock; ordinary watcher shutdown still uses TERM.
-run_bounded "$SECONDS_ARG" INT 5 "$SCRIPT_DIR/fm-watch.sh" >"$OUT" 2>"$ERR"
+FM_WATCH_CHECKPOINT_INBOX=$SECONDMATE_INBOX run_bounded "$SECONDS_ARG" INT 5 "$SCRIPT_DIR/fm-watch.sh" >"$OUT" 2>"$ERR"
 RC=$?
 set -e
 require_clean_shutdown
