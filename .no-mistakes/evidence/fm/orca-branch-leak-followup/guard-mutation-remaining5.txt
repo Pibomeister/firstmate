@@ -1,0 +1,5 @@
+spawn abort stops threading base             rc=1 TEST FAILS (guard is pinned)  first failure: not ok - aborted spawn deleted its recorded base branch: warn: no registry at /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-sp
+spawn recovery drops base_branch=            rc=1 TEST FAILS (guard is pinned)  first failure: not ok - recovery metadata must record the base branch for teardown
+teardown stops threading base                rc=1 TEST FAILS (guard is pinned)  first failure: not ok - teardown deleted the recorded base branch
+local branch accepted as proof               rc=1 TEST FAILS (guard is pinned)  first failure: not ok - a local branch counted as containment proof (expected '5157fcf2ae0b8cd5cbd853e9023e9fe6e416c2a9', got '')
+rebase-state guard removed                   rc=1 TEST FAILS (guard is pinned)  first failure: not ok - rebase-linked: branch being rebased was deleted

@@ -1,0 +1,7 @@
+ok - Orca branch teardown: remote-contained tips deleted, unpushed or uncontained tips retained even when detached at their tip, recorded base retained, invalid names warned, missing-path fallback and legacy guards
+ok - Orca branch cleanup deletes a contained branch but retains default, base, unresolved-default, checked-out, unlisted, unresolved-common-dir, locally-contained-only, rebasing, invalid and concurrently changed refs
+backend rc=0
+ok - real tmux preserves absent/C locale values and reported raw bytes, rejects missing/phantom names and excludes the automatic SSH agent
+ok - an aborted Orca spawn deletes only contained work, retains uncontained commits and its recorded base, or records recovery metadata with the base
+# all fm-spawn-orca-worktree tests passed
+spawn rc=0

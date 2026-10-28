@@ -1,0 +1,8 @@
+unmutated baseline: both focused tests GREEN
+default-branch guard removed                 rc=1 TEST FAILS (guard is pinned)  first failure: not ok - default branch was deleted
+base-branch guard removed                    rc=1 TEST FAILS (guard is pinned)  first failure: not ok - teardown deleted the recorded base branch
+unresolved-default guard removed             rc=1 TEST FAILS (guard is pinned)  first failure: not ok - unresolved default allowed deletion
+checked-out guard removed                    rc=1 TEST FAILS (guard is pinned)  first failure: not ok - active checkout was deleted
+empty worktree-listing guard removed         rc=1 TEST FAILS (guard is pinned)  first failure: not ok - listing-failure: unprovable worktree state allowed deletion
+unresolved common-dir guard removed          rc=1 TEST FAILS (guard is pinned)  first failure: not ok - common-dir-failure: unprovable worktree state allowed deletion
+(stopped at background time limit after 6 of 11 mutations; remaining 5 not run)

@@ -1,0 +1,19 @@
+== git 2.50.1, helper from /Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M61WB3G29XX20A825W6PCVBW/bin/fm-backend.sh
+1 pushed-at-base tip contained by origin/main              rc=0 branch=deleted expect=deleted PASS | <no output>
+2 pushed work contained by origin/Pibomeister/fm-b         rc=0 branch=deleted expect=deleted PASS | <no output>
+3 unpushed work, only a LOCAL branch contains it           rc=1 branch=kept    expect=kept    PASS | warning: kept Orca-created branch Pibomeister/fm-c (safe deletion refused)
+   (worktree HEAD a4fc379 == branch tip a4fc379)
+4 teardown shape: worktree detached AT unpushed tip, no upstream rc=1 branch=kept    expect=kept    PASS | warning: kept Orca-created branch Pibomeister/fm-d (safe deletion refused)
+5 recorded base branch 'dev', remote-contained             rc=1 branch=kept    expect=kept    PASS | warning: kept Orca-created branch dev (protected or unresolved default/base branch)
+5b same branch, no base recorded (counterfactual)          rc=0 branch=deleted expect=deleted PASS | <no output>
+6 default branch main, remote-contained                    rc=1 branch=kept    expect=kept    PASS | warning: kept Orca-created branch main (protected or unresolved default/base branch)
+7 checked out in another worktree, remote-contained        rc=1 branch=kept    expect=kept    PASS | warning: kept Orca-created branch Pibomeister/fm-e (safe deletion refused)
+   (rebase state in worktree: HEAD=HEAD, head-name=refs/heads/Pibomeister/fm-f)
+   (git branch -d says: error: cannot delete branch 'Pibomeister/fm-f' used by worktree at '/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-orca-live.tyqokD/wt')
+8 remote-contained branch mid-rebase (detached HEAD)       rc=1 branch=kept    expect=kept    PASS | warning: kept Orca-created branch Pibomeister/fm-f (safe deletion refused)
+8b after rebase --abort (branch checked out again)         rc=1 branch=kept    expect=kept    PASS | warning: kept Orca-created branch Pibomeister/fm-f (safe deletion refused)
+8c same branch, worktree detached, no rebase (counterfactual) rc=0 branch=deleted expect=deleted PASS | <no output>
+9 unresolved default (no origin/HEAD, no main/master)      rc=1 branch=kept    expect=kept    PASS | warning: kept Orca-created branch Pibomeister/fm-g (protected or unresolved default/base branch)
+9b same, local main now resolves default (counterfactual)  rc=0 branch=deleted expect=deleted PASS | <no output>
+   (refs/heads/--delete exists: yes)
+10 invalid branch name '--delete'                          rc=1 branch=kept    expect=kept    PASS | warning: kept invalid Orca-created branch --delete
