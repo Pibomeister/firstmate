@@ -231,6 +231,7 @@ test_orca_aborted_spawn_safe_deletes_or_records_its_created_branch() {
     printf 'codex\n' > "$home/config/crew-harness"
     printf 'manual\n' > "$home/config/backlog-backend"
     fm_git_init_commit "$case_dir/project"
+    git -C "$case_dir/project" update-ref refs/remotes/origin/main main
     start_ref=HEAD
     if [ "$variant" = removed-contained-ahead ]; then
       old_main=$(git -C "$case_dir/project" rev-parse main)

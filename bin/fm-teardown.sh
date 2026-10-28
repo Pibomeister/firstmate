@@ -3662,8 +3662,8 @@ if [ "$BACKEND" = orca ] && [ "$KIND" != secondmate ]; then
       "$WT/.fm-grok-turnend" "$WT/.fm-kimi-turnend"
     remove_harness_worktree_wiring "$WT"
   fi
-  # The shared helper keeps the recorded Orca branch when neither ordinary
-  # safe deletion nor an exact remote-tracking containment proof permits it.
+  # The shared helper keeps the recorded Orca branch unless an exact
+  # remote-tracking containment proof permits deleting it.
   orca_branch_repo=$WT
   [ -d "$WT" ] || orca_branch_repo=$PROJ
   fm_backend_orca_safe_delete_created_branch "$orca_branch_repo" "$orca_created_branch" "$BASE_BRANCH" || true

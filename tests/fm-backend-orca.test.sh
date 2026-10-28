@@ -1894,9 +1894,10 @@ test_card_failures_preserve_caller_results() {
 
 test_teardown_deletes_only_safe_recorded_orca_branch() {
   local variant out branch initial rc
-  for variant in merged unmerged contained-upstream current current-upstream missing-path invalid absent; do
+  for variant in merged unmerged contained-upstream current current-unpushed current-upstream missing-path invalid absent; do
     card_case "card-branch-$variant"
     branch="Pibomeister/fm-$CARD_ID"
+    [ "$variant" = current-unpushed ] || git -C "$CARD_PROJ" update-ref refs/remotes/origin/main main
     if [ "$variant" = contained-upstream ]; then
       git -C "$CARD_PROJ" -c user.name=Tests -c user.email=tests@example.invalid commit --allow-empty -qm 'fork ahead of worker'
       git -C "$CARD_PROJ" update-ref refs/remotes/origin/main main
@@ -1918,8 +1919,12 @@ test_teardown_deletes_only_safe_recorded_orca_branch() {
         git -C "$CARD_WT" merge-base --is-ancestor "$initial" HEAD && fail 'refusal fixture branch must be unreachable from deletion-time HEAD'
         ;;
       current) git -C "$CARD_WT" checkout -q "$branch" ;;
+      current-unpushed)
+        git -C "$CARD_WT" checkout -q "$branch"
+        git -C "$CARD_WT" -c user.name=Tests -c user.email=tests@example.invalid commit --allow-empty -qm unpushed
+        initial=$(git -C "$CARD_WT" rev-parse HEAD)
+        ;;
       current-upstream)
-        git -C "$CARD_PROJ" update-ref refs/remotes/origin/main main
         git -C "$CARD_WT" checkout -q "$branch"
         git -C "$CARD_WT" branch -q --set-upstream-to=origin/main "$branch"
         git -C "$CARD_WT" -c user.name=Tests -c user.email=tests@example.invalid commit --allow-empty -qm squash-merged
@@ -1936,9 +1941,9 @@ test_teardown_deletes_only_safe_recorded_orca_branch() {
     rc=$?
     expect_code 0 "$rc" "scout branch $variant teardown failed: $out"
     case "$variant" in
-      unmerged|current-upstream)
-        git -C "$CARD_PROJ" show-ref --verify --quiet "refs/heads/$branch" || fail 'unmerged initial branch must survive'
-        if [ "$variant" = unmerged ]; then
+      unmerged|current-unpushed|current-upstream)
+        git -C "$CARD_PROJ" show-ref --verify --quiet "refs/heads/$branch" || fail "$variant initial branch must survive"
+        if [ "$variant" != current-upstream ]; then
           assert_equals "$initial" "$(git -C "$CARD_PROJ" rev-parse "$branch")" 'unmerged branch tip changed'
         fi
         assert_contains "$out" "warning: kept Orca-created branch $branch" 'safe-delete refusal must report preserved branch'
@@ -1951,12 +1956,12 @@ test_teardown_deletes_only_safe_recorded_orca_branch() {
         [ "$variant" != invalid ] || assert_contains "$out" 'warning: kept invalid Orca-created branch --delete' 'invalid recorded name must warn'
         ;;
     esac
-    if [ "$variant" != current ] && [ "$variant" != current-upstream ] && [ "$variant" != missing-path ]; then
+    if [ "$variant" != current ] && [ "$variant" != current-unpushed ] && [ "$variant" != current-upstream ] && [ "$variant" != missing-path ]; then
       git -C "$CARD_PROJ" show-ref --verify --quiet "refs/heads/fm/$CARD_ID" && fail 'scout current branch cleanup regressed'
     fi
     assert_absent "$CARD_STATE/$CARD_ID.meta" 'branch retention should not block task metadata retirement'
   done
-  pass 'Orca branch teardown: contained tips deleted, uncontained tips retained even when checked out, invalid names warned, missing-path fallback and legacy guards'
+  pass 'Orca branch teardown: remote-contained tips deleted, unpushed or uncontained tips retained even when detached at their tip, invalid names warned, missing-path fallback and legacy guards'
 }
 
 test_orca_branch_cleanup_protects_refs_and_races() {

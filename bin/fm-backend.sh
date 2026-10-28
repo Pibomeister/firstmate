@@ -423,10 +423,9 @@ fm_backend_orca_worktree_id_valid() {  # <value>
 }
 
 # Best-effort cleanup of the branch Orca created before a task switched to its
-# worker branch. Git's -d handles the ordinary case and protects a branch
-# checked out in another worktree. When only the current HEAD comparison
-# refuses, require an exact remote-tracking containment proof and atomically
-# verify that proof while deleting the expected local tip.
+# worker branch. HEAD and local branches are never proof: delete only an
+# unchecked-out branch whose exact tip a remote-tracking ref contains, verifying
+# that ref and the expected local tip atomically with the delete.
 fm_backend_orca_safe_delete_created_branch() {  # <repo> <branch> <base-branch>
   local repo=$1 branch=$2 base=${3:-} default='' ref listed tip remotes remote remote_tip
   [ -n "$branch" ] || return 0
@@ -451,10 +450,6 @@ fm_backend_orca_safe_delete_created_branch() {  # <repo> <branch> <base-branch>
     printf 'warning: kept Orca-created branch %s (protected or unresolved default/base branch)\n' "$branch" >&2
     return 1
   fi
-  if git -C "$repo" branch -d "$branch" >/dev/null 2>&1; then
-    return 0
-  fi
-
   listed=$(git -C "$repo" -c core.quotePath=false worktree list --porcelain 2>/dev/null) || listed=
   if [ -z "$listed" ] || printf '%s\n' "$listed" | grep -Fx -- "branch refs/heads/$branch" >/dev/null; then
     printf 'warning: kept Orca-created branch %s (safe deletion refused)\n' "$branch" >&2
