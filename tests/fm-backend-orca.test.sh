@@ -1972,7 +1972,7 @@ test_teardown_deletes_only_safe_recorded_orca_branch() {
 test_orca_branch_cleanup_protects_refs_and_races() {
   local proj wt out rc original moved real_git fb variant gitdir
   real_git=$(command -v git)
-  for variant in contained default base unknown-default checked-out listing-failure local-proof \
+  for variant in contained default base unknown-default checked-out listing-failure common-dir-failure local-proof \
     rebase-linked rebase-main rebase-state-unreadable rebase-state-invalid invalid remote-race local-race; do
     proj="$TMP_ROOT/branch-guard-$variant"
     fm_git_init_commit "$proj"
@@ -2018,23 +2018,24 @@ test_orca_branch_cleanup_protects_refs_and_races() {
           _ "$ROOT/bin/fm-backend.sh" "$proj" 2>&1); rc=$?
         git -C "$proj" show-ref --verify --quiet refs/heads/candidate || fail 'active checkout was deleted'
         ;;
-      listing-failure)
+      listing-failure|common-dir-failure)
         git -C "$proj" branch candidate
         git -C "$proj" update-ref refs/remotes/origin/main candidate
         fb="$TMP_ROOT/branch-guard-$variant-fakebin"
         mkdir -p "$fb"
         cat > "$fb/git" <<'SH'
 #!/usr/bin/env bash
-case " $* " in
-  *' worktree list '*) exit 1 ;;
+case "$FM_TEST_GIT_FAIL: $* " in
+  'listing-failure:'*' worktree list '*) exit 1 ;;
+  'common-dir-failure:'*' --git-common-dir '*) exit 1 ;;
 esac
 exec "$FM_TEST_REAL_GIT" "$@"
 SH
         chmod +x "$fb/git"
-        out=$(PATH="$fb:$PATH" FM_TEST_REAL_GIT="$real_git" \
+        out=$(PATH="$fb:$PATH" FM_TEST_REAL_GIT="$real_git" FM_TEST_GIT_FAIL="$variant" \
           bash -c '. "$1"; fm_backend_orca_safe_delete_created_branch "$2" candidate ""' \
           _ "$ROOT/bin/fm-backend.sh" "$proj" 2>&1); rc=$?
-        git -C "$proj" show-ref --verify --quiet refs/heads/candidate || fail 'unlisted worktrees allowed deletion'
+        git -C "$proj" show-ref --verify --quiet refs/heads/candidate || fail "$variant: unprovable worktree state allowed deletion"
         ;;
       local-proof)
         git -C "$proj" update-ref refs/remotes/origin/main main
@@ -2146,7 +2147,7 @@ SH
     expect_code 1 "$rc" "$variant should retain the Orca-created branch"
     assert_contains "$out" 'warning: kept' "$variant should warn about retained branch"
   done
-  pass 'Orca branch cleanup deletes a contained branch but retains default, base, unresolved-default, checked-out, unlisted, locally-contained-only, rebasing, invalid and concurrently changed refs'
+  pass 'Orca branch cleanup deletes a contained branch but retains default, base, unresolved-default, checked-out, unlisted, unresolved-common-dir, locally-contained-only, rebasing, invalid and concurrently changed refs'
 }
 
 test_card_lifecycle_sites_and_guards
