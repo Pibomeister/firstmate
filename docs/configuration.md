@@ -1397,7 +1397,8 @@ This single-provider table is separate from the frozen legacy mapping used by `f
 **Model, effort, and fallback behavior**
 
 - `ultra` is native-only: the model-aware validation contract and launch mapping are owned by `bin/fm-harness.sh validate-native-effort` and `bin/fm-spawn.sh` respectively.
-- Codex `max` on a launch is passed when the requested model's entry in the installed Codex catalog lists `max` in `supported_reasoning_levels`, and the spawn is refused when that catalog does not advertise it; `bin/fm-harness.sh validate-native-effort` owns the check.
+- Codex `max` on a launch is passed when the requested model's entry in the installed Codex catalog lists `max` in `supported_reasoning_levels`, and the spawn is refused when that catalog does not advertise it; `bin/fm-harness.sh validate-native-effort` owns the check against the worker's effective `CODEX_HOME`.
+  A raw Codex launch command that carries the `__EFFORTFLAG__` placeholder gets the same check, and refuses if it assigns `CODEX_HOME` inline, because that catalog cannot be validated before launch.
 - A `crew-dispatch.json` Codex `max` profile with an explicit model is structurally well formed; dispatch resolution does not read the catalog, and bootstrap names each candidate whose catalog is unavailable or does not advertise max as `CREW_DISPATCH: unusable profile` without invalidating other routes.
 - An omitted model or effort means the selected harness uses its own default for that axis.
 - OpenCode receives the effort as its default `build` agent's `variant`, keyed to the resolved model, inside the `OPENCODE_CONFIG_CONTENT` JSON its launch already writes (the per-model reasoning-effort field of the config schema, verified on opencode 1.18.32); with no model resolved, the effort is recorded in task metadata but omitted from the launch.
