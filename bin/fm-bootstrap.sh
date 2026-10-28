@@ -11,6 +11,7 @@
 #                 "BACKEND_INVALID: <name> (known: <names>)",
 #                 "STARTUP_MEMORY_BUDGET: invalid config/startup-memory-budget - <reason>",
 #                 "CREW_DISPATCH: invalid config/crew-dispatch.json - <reason>",
+#                 "CREW_DISPATCH: unusable profile <location> codex/<model>/max - <reason>",
 #                 "FLEET_SYNC: <repo>: skipped|recovered|STUCK: <detail>",
 #                 "HOME_SUMMARY: <ledger never published|not republished since
 #                 <stamp>>; <n> failed attempt(s) ... last: <recorded failure>",
@@ -1218,24 +1219,27 @@ crew_dispatch_validate() {
   # Codex max is structurally legal above. validate-native-effort owns whether
   # the installed catalog advertises it for the profile's model.
   if ! codex_max_models=$(jq -r '
-    def profiles($value):
-      if ($value | type) == "array" then $value
-      elif ($value | type) == "object" then [$value]
-      else [] end;
-    (
-      [(.rules // [])[]? | profiles(.use?)[]? | select(type == "object" and .harness == "codex" and .effort == "max") | "max\t" + (.model // "")]
-      + (if has("default") then [profiles(.default)[]? | select(type == "object" and .harness == "codex" and .effort == "max") | "max\t" + (.model // "")] else [] end)
-    )
-    | .[]
+    def codex_max($value; $location):
+      if ($value | type) == "array" then
+        $value | to_entries[] | select(.value.harness == "codex" and .value.effort == "max")
+        | "\($location)[\(.key)]\t\(.value.model // "")"
+      elif ($value | type) == "object" and $value.harness == "codex" and $value.effort == "max" then
+        "\($location)\t\($value.model // "")"
+      else empty end;
+    (.rules // [] | to_entries[] | .key as $i | codex_max(.value.use?; "rules[\($i)].use")),
+    (if has("default") then codex_max(.default; "default") else empty end)
   ' "$file" 2>/dev/null); then
     echo "CREW_DISPATCH: invalid config/crew-dispatch.json - malformed JSON"
     return 0
   fi
-  while IFS=$'\t' read -r tag model; do
-    [ "$tag" = max ] || continue
-    if ! err=$("$SCRIPT_DIR/fm-harness.sh" validate-native-effort codex "$model" max 2>&1 >/dev/null); then
-      echo "CREW_DISPATCH: invalid config/crew-dispatch.json - ${err#error: }"
+  while IFS=$'\t' read -r location model; do
+    [ -n "$location" ] || continue
+    if [ -z "$model" ]; then
+      echo "CREW_DISPATCH: invalid config/crew-dispatch.json - codex effort max requires an explicit --model whose installed catalog entry advertises max"
       return 0
+    fi
+    if ! err=$("$SCRIPT_DIR/fm-harness.sh" validate-native-effort codex "$model" max 2>&1 >/dev/null); then
+      echo "CREW_DISPATCH: unusable profile $location codex/$model/max - ${err#error: }"
     fi
   done <<< "$codex_max_models"
   if [ "${FM_BOOTSTRAP_VERBOSE_FACTS:-0}" = 1 ]; then

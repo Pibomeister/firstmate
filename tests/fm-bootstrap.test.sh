@@ -1151,8 +1151,8 @@ malformed dispatch config is flagged^{"rules":[^exact^CREW_DISPATCH: invalid con
 unverified dispatch harness is flagged^{"rules":[{"when":"anything","use":{"harness":"spaceship"}}],"default":{"harness":"codex"}}^exact^CREW_DISPATCH: invalid config/crew-dispatch.json - unverified harness: spaceship
 codex Luna max effort is accepted^{"rules":[{"when":"big feature","use":{"harness":"codex","model":"gpt-5.6-luna","effort":"max"}}]}^empty^
 codex Astra max effort is accepted^{"rules":[{"when":"big feature","use":{"harness":"codex","model":"gpt-6-astra","effort":"max"}}]}^empty^
-codex max effort is flagged when the catalog does not advertise it^{"rules":[{"when":"big feature","use":{"harness":"codex","model":"gpt-5","effort":"max"}}]}^contains^CREW_DISPATCH: invalid config/crew-dispatch.json - codex effort max refused for model 'gpt-5': catalog does not advertise max (supported: low medium high xhigh)
-codex max effort names a model missing from the catalog^{"rules":[{"when":"big feature","use":{"harness":"codex","model":"gpt-9","effort":"max"}}]}^contains^CREW_DISPATCH: invalid config/crew-dispatch.json - codex effort max refused for model 'gpt-9': model is not in the catalog
+codex max effort is scoped when the catalog does not advertise it^{"rules":[{"when":"big feature","use":{"harness":"codex","model":"gpt-5","effort":"max"}}]}^contains^CREW_DISPATCH: unusable profile rules[0].use codex/gpt-5/max - codex effort max refused for model 'gpt-5': catalog does not advertise max (supported: low medium high xhigh)
+codex max effort names a model missing from the catalog^{"rules":[{"when":"big feature","use":{"harness":"codex","model":"gpt-9","effort":"max"}}]}^contains^CREW_DISPATCH: unusable profile rules[0].use codex/gpt-9/max - codex effort max refused for model 'gpt-9': model is not in the catalog
 unsupported grok max effort is flagged^{"rules":[{"when":"deep current work","use":{"harness":"grok","model":"grok-4","effort":"max"}}]}^exact^CREW_DISPATCH: invalid config/crew-dispatch.json - invalid effort: grok:max
 unsupported grok xhigh effort is flagged^{"rules":[{"when":"deep current work","use":{"harness":"grok","model":"grok-4","effort":"xhigh"}}]}^exact^CREW_DISPATCH: invalid config/crew-dispatch.json - invalid effort: grok:xhigh
 native pi ultra is accepted^{"rules":[],"default":{"harness":"pi","model":"codex-native/gpt-6-astra","effort":"ultra","provider":"codex"}}^empty^
@@ -1205,6 +1205,30 @@ default array malformed effort is flagged^{"default":[{"harness":"codex","effort
 default profile floor without min_percent is flagged^{"default":[{"harness":"codex","floor":{"scope":"all_models"}}]}^exact^CREW_DISPATCH: invalid config/crew-dispatch.json - default profile floor needs scope and min_percent 0..100
 default profile floor provider override is flagged^{"default":{"harness":"codex","floor":{"scope":"all_models","min_percent":50,"provider":"claude"}}}^exact^CREW_DISPATCH: invalid config/crew-dispatch.json - default profile floor needs scope and min_percent 0..100
 ROWS
+
+  case_dir="$TMP_ROOT/dispatch-codex-catalog-scope"
+  mkdir -p "$case_dir/home/config"
+  printf '%s\n' manual > "$case_dir/home/config/backlog-backend"
+  fakebin=$(make_fake_toolchain "$case_dir")
+  add_real_jq "$fakebin"
+  printf '%s\n' '{"rules":[{"when":"mixed","use":[{"harness":"codex","model":"gpt-5","effort":"max"},{"harness":"codex","model":"gpt-9","effort":"max"},{"harness":"claude","model":"claude-sonnet-5"}]}]}' > "$case_dir/home/config/crew-dispatch.json"
+  out=$(PATH="$fakebin:$BASE_PATH" FM_HOME="$case_dir/home" FM_ROOT_OVERRIDE="$case_dir/home" FM_CODEX_MODELS_CACHE="$catalog" TYPESAFE_API_KEY=test-key FM_FAKE_TREEHOUSE_LEASE_HELP=1 "$ROOT/bin/fm-bootstrap.sh")
+  [ "$(printf '%s\n' "$out" | grep -c '^CREW_DISPATCH: unusable profile ')" -eq 2 ] || fail "both bad Codex profiles must be named: $out"
+  assert_contains "$out" 'rules[0].use[0] codex/gpt-5/max' 'first bad profile location missing'
+  assert_contains "$out" 'rules[0].use[1] codex/gpt-9/max' 'second bad profile location missing'
+  assert_not_contains "$out" 'invalid config/crew-dispatch.json' 'catalog miss invalidated the whole config'
+
+  for catalog_case in absent malformed; do
+    if [ "$catalog_case" = malformed ]; then
+      printf '{' > "$case_dir/malformed.json"
+      candidate_catalog="$case_dir/malformed.json"
+    else
+      candidate_catalog="$case_dir/absent.json"
+    fi
+    out=$(PATH="$fakebin:$BASE_PATH" FM_HOME="$case_dir/home" FM_ROOT_OVERRIDE="$case_dir/home" FM_CODEX_MODELS_CACHE="$candidate_catalog" TYPESAFE_API_KEY=test-key FM_FAKE_TREEHOUSE_LEASE_HELP=1 "$ROOT/bin/fm-bootstrap.sh")
+    [ "$(printf '%s\n' "$out" | grep -c '^CREW_DISPATCH: unusable profile ')" -eq 2 ] || fail "$catalog_case catalog must name both affected profiles: $out"
+    assert_not_contains "$out" 'invalid config/crew-dispatch.json' "$catalog_case catalog invalidated the whole config"
+  done
 
   case_dir="$TMP_ROOT/dispatch-opt-in-gate"
   mkdir -p "$case_dir/home/config"
