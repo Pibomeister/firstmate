@@ -173,6 +173,7 @@ esac
 PAUSED_VERB=${FM_CLASSIFY_PAUSED_VERB:-$FM_CLASSIFY_PAUSED_VERB_DEFAULT}
 IFS= read -r -d '' CREWMATE_PAUSE_INSTRUCTIONS <<EOF || true
    Use \`$PAUSED_VERB: {why}\` - distinct from \`blocked:\` - when deliberately waiting for work or an external condition expected to clear on its own, including your own validation round.
+   Outside your own no-mistakes run, do not poll for external PR checks: firstmate arms the watch and steers its identity; declare a pause only with the exact check name and \`check-watch=<watch-ref> head=<bound-sha> producer=app:<id>\`, or report \`blocked:\` if the watch is missing.
    Before ending your turn with your own background shell or monitor still running, or before waiting on your own pipeline run or a long foreground command, append \`$PAUSED_VERB [at=<epoch>]: {job and completion condition}\` to the status file.
    Name what you are waiting for and what will let you resume; do not repeat the declaration on every poll.
    Do not declare active implementation or reasoning as a wait.
@@ -468,21 +469,24 @@ fi
 INBOX_SECTION=${INBOX_SECTION%$'\n'}
 
 # How a crewmate or scout waits. Every model turn resends the whole context, so
-# a wait must cost no turns: a decision wait ends the turn, and an external
-# wait sleeps in one bounded blocking shell command sized to the harness.
+# a wait must cost no turns: a decision wait ends the turn, an external PR
+# check belongs to firstmate's registered watch, and other external shell
+# waits use one bounded blocking command sized to the harness.
 # Emitted only when config/wait-no-turns is present.
 IFS= read -r -d '' WAIT_SECTION <<'EOF' || true
 # Waiting
 Every turn you take resends your whole context, so a wait must cost no turns.
 After you append `needs-decision:` or `blocked:`, end your turn at once: do not check the inbox, the status file, or anything else, because the answer arrives as a terminal message that starts your next turn.
 For your own no-mistakes run and its PR CI, follow the completion-listener contract in Definition of done.
-Wait on other external conditions - PR checks outside that run or a heavy-test slot - with ONE blocking shell command that returns when the state changes: `gh pr checks <pr> --watch`, or `until <condition>; do sleep 30; done` for anything else.
+For a PR check outside that run, firstmate arms the named PR check watch and steers you its watch reference, bound head, exact check name, and trusted App ID. Do not poll that check yourself. If the reference is missing, report `blocked:` to firstmate and end the turn.
+Once firstmate supplies it, append `paused [at=<epoch>]: external PR check <exact name> check-watch=<watch-ref> head=<bound-sha> producer=app:<id>` and end the turn. The watch wakes firstmate, which validates the current check and steers you to resume or update the pause with a new reference.
+Wait on other external conditions - such as a heavy-test slot - with ONE blocking shell command that returns when the state changes: `until <condition>; do sleep 30; done`.
 Never spend turns on `sleep` followed by a status check, and never background a command in order to poll it.
 In Claude Code that `until` loop in a single Bash call is the sanctioned foreground wait: when the harness refuses a sleep-then-check command and points you at backgrounding instead, reissue the wait as the loop rather than accepting the background.
 Bound that command by what your harness lets one command run: in Pi pass the bash tool a `timeout` of at most 2700 seconds, because Pi sets none by default; in Claude Code pass the Bash tool its maximum `timeout` of 600000 ms, because its default is 2 minutes; in Codex keep waiting on a still-running command with empty `write_stdin` polls of up to 300000 ms; elsewhere pass your shell tool its largest timeout and assume at most 10 minutes.
 Give any `--wait` a duration a little under that bound.
 When the bound passes with nothing changed, run the same blocking command again, with no status check in between.
-A wait your shell can watch this way needs no `paused:` line, except a long foreground command or your own validation round, which you declare once just before its blocking hold: append `paused:` once just before its first blocking command, then stay in the command, and never append it again as you reissue that command.
+A non-PR wait your shell can watch this way needs no `paused:` line, except a long foreground command or your own validation round, which you declare once just before its blocking hold: append `paused:` once just before its first blocking command, then stay in the command, and never append it again as you reissue that command.
 EOF
 WAIT_SECTION=${WAIT_SECTION%$'\n'}
 WAIT_BLOCK=
