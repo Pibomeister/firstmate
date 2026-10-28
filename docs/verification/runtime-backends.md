@@ -10,8 +10,10 @@ Exact task chronology, branch names, temporary homes, local paths, process ids, 
 
 Verified on 2026-10-28 on macOS arm64 with Bash 5.3.20, gh-axi 0.1.36, jq 1.7.1-apple, and tmux 3.6a.
 `bin/fm-pr-check-watch.sh` registers a head- and GitHub App-bound condition through the shared process-event runner, and `bin/fm-watch.sh` reads the task's local registration before accepting an external-check pause.
-The real tmux runner with a disposable forge fixture registered the source, captured a `fired` result, woke the watcher, and acknowledged the result.
-The same run also captured a second `ambiguous` result during watcher reconciliation, so the terminal handoff remains unverified; the private task report holds the exact smoke transcript and fixture command.
+With `FM_ROOT_OVERRIDE` naming the code root, a private tmux runner and a disposable forge fixture registered the source and captured one `fired` result, and the runner retired the terminal source within one second.
+The watcher woke once, acknowledgement moved `status` to `state=ended`, and two later `fm-procevent.sh reconcile` cycles reported `started=0` with no second result.
+The same fixture with `FM_ROOT_OVERRIDE` naming an empty directory left the source registered, because the runner resolves each adapter's terminal classifier under that root's `bin/`, so every reconcile relaunched the spent watch and captured a further `ambiguous` result.
+That fixture-only path explains an earlier smoke's duplicate `ambiguous` capture; this record covers only that controlled fixture on tmux, and the private task report holds both transcripts and the fixture command.
 
 The primary harness inventory in `bin/fm-harness.sh` includes claude, codex, opencode, pi, pi-signed, grok, kimi, cursor, gemini, muse, rovo, omp, agy, devin, commandcode, droid, and polytoken.
 Inspection of the named-check command and pause-warning path found no harness-specific branch or rendered-harness signal; all listed primary harnesses enter through the same task status and process-event state.
