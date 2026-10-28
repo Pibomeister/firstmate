@@ -1,0 +1,30 @@
+# /private/tmp/fm-althome-s2/.codex/models_cache.json advertises only 'high' for gpt-5.6-luna; caller HOME/.codex advertises 'max'.
+### S2 positive control (head): raw 'codex __EFFORTFLAG__' --effort max, no inline HOME
+--- [head-raw] caller: CODEX_HOME unset, HOME=/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.C7KtfC/user-home; fm-spawn output:
+spawned raw-ctl harness=codex kind=ship mode=no-mistakes yolo=off window=firstmate:fm-raw-ctl worktree=$LAB/wt
+exit=0
+--- [head-raw] task meta present: yes; lab windows: bash fm-raw-ctl 
+--- [head-raw] what the launched worker observed:
+argv=-c model_reasoning_effort="max"   ...
+CODEX_HOME=<unset>
+HOME=$LAB/user-home
+effective_codex_home=$LAB/user-home/.codex
+
+### S2 head: raw 'HOME=/private/tmp/fm-althome-s2 codex __EFFORTFLAG__' --effort max
+--- [head-inline-home] caller: CODEX_HOME unset, HOME=/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.pmROOd/user-home; fm-spawn output:
+error: raw Codex max with inline CODEX_HOME or HOME cannot be validated against the worker catalog; use a canonical Codex launch or remove the assignment
+exit=1
+--- [head-inline-home] task meta present: no; lab windows: bash 
+--- [head-inline-home] what the launched worker observed:
+(no worker launched)
+
+### S2 negative control: same inline HOME raw launch with the HOME=* correction removed
+--- [nohome] caller: CODEX_HOME unset, HOME=/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.y5ODzu/user-home; fm-spawn output:
+spawned raw-home-n harness=codex kind=ship mode=no-mistakes yolo=off window=firstmate:fm-raw-home-n worktree=$LAB/wt
+exit=0
+--- [nohome] task meta present: yes; lab windows: bash fm-raw-home-n 
+--- [nohome] what the launched worker observed:
+argv=-c model_reasoning_effort="max"   ...
+CODEX_HOME=<unset>
+HOME=/private/tmp/fm-althome-s2
+effective_codex_home=/private/tmp/fm-althome-s2/.codex

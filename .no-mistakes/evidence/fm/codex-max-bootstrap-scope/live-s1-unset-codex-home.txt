@@ -1,0 +1,25 @@
+### S1 head: canonical codex max, caller CODEX_HOME unset, tmux server global CODEX_HOME=foreign
+--- [head] caller: CODEX_HOME unset, HOME=/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.SQ0qMa/user-home; fm-spawn output:
+warning: $LAB/data/live-unset-h/launch-brief.md records no ship branch; defaulting to legacy branch fm/live-unset-h
+warning: $LAB/data/live-unset-h/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+spawned live-unset-h harness=codex kind=ship mode=no-mistakes yolo=off window=firstmate:fm-live-unset-h worktree=$LAB/wt
+exit=0
+--- [head] task meta present: yes; lab windows: bash fm-live-unset-h 
+--- [head] what the launched worker observed:
+argv=--model gpt-5.6-luna -c model_reasoning_effort="max" ...
+CODEX_HOME=<unset>
+HOME=$LAB/user-home
+effective_codex_home=$LAB/user-home/.codex
+
+### S1 negative control: same, with the '-u CODEX_HOME' unset guard removed from the Codex launch
+--- [unguard] caller: CODEX_HOME unset, HOME=/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.bZ4MbA/user-home; fm-spawn output:
+warning: $LAB/data/live-unset-u/launch-brief.md records no ship branch; defaulting to legacy branch fm/live-unset-u
+warning: $LAB/data/live-unset-u/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+spawned live-unset-u harness=codex kind=ship mode=no-mistakes yolo=off window=firstmate:fm-live-unset-u worktree=$LAB/wt
+exit=0
+--- [unguard] task meta present: yes; lab windows: bash fm-live-unset-u 
+--- [unguard] what the launched worker observed:
+argv=--model gpt-5.6-luna -c model_reasoning_effort="max" ...
+CODEX_HOME=$LAB/foreign-codex
+HOME=$LAB/user-home
+effective_codex_home=$LAB/foreign-codex
