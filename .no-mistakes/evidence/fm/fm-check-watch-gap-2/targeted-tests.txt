@@ -1,0 +1,11 @@
+ok - arm binds head and producer and refuses a duplicate
+ok - condition and action reject non-green, wrong-producer, and moved-head observations
+ok - status distinguishes an unhandled result from a handled result
+ok - condition refuses changed bound identity
+ok - real runner captures, acknowledges, and re-arms a bound check watch
+ok - pending check reaches an explicit bounded deadline
+ok - forge error terminates through the registered runner
+rc=
+ok - a paused external PR check without a watch wakes supervision
+ok - live and unhandled references cover; mismatches warn once; no-mistakes stays separate
+rc=

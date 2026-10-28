@@ -1,0 +1,112 @@
+
+### S1 green check -> one fired result, ack -> ended, reconciles do not refire
+state=live
+watch_ref=when-prcheck-628b49d96dcd-3b05d54c3d79
+task=t1
+pr=https://github.com/acme/widget/pull/1
+head=0000000000000000000000000000000000000001
+check=Build
+producer=app:42
+result=<lab>/state/procevent-inbox/when-prcheck-628b49d96dcd-3b05d54c3d79.1.result class=fired
+  | when: when-prcheck-628b49d96dcd-3b05d54c3d79
+  | status: fired
+  | detail: the condition held and the action exited 0
+  | condition_polls: 2
+  | action_exit: 0
+  | output:
+  | watch_ref=when-prcheck-628b49d96dcd-3b05d54c3d79
+  | head=0000000000000000000000000000000000000001
+  | observed_at=2026-10-28T22:44:29Z
+  | check=Build
+  | producer=app:42
+source file present after terminal: no
+state=result-unhandled
+watch_ref=when-prcheck-628b49d96dcd-3b05d54c3d79
+task=t1
+pr=https://github.com/acme/widget/pull/1
+head=0000000000000000000000000000000000000001
+check=Build
+producer=app:42
+result_source=when-prcheck-628b49d96dcd-3b05d54c3d79
+result_sequence=1
+result_handled=false
+handled: when-prcheck-628b49d96dcd-3b05d54c3d79 1
+state=ended
+reconcile 1: reconciled: published=0 started=0 stopped=0 uncertain=0 failed=0
+reconcile 2: reconciled: published=0 started=0 stopped=0 uncertain=0 failed=0
+result count=1
+
+### S2 rerun: failed attempt + pending rerun in same suite waits, then fires when rerun is green
+watch_ref=when-prcheck-c44474038d45-b259dc5d92ee
+after ~4s pending rerun: results=0 status=state=live
+result=<lab>/state/procevent-inbox/when-prcheck-c44474038d45-b259dc5d92ee.1.result class=fired
+  | when: when-prcheck-c44474038d45-b259dc5d92ee
+  | status: fired
+  | detail: the condition held and the action exited 0
+  | condition_polls: 11
+  | action_exit: 0
+  | output:
+  | watch_ref=when-prcheck-c44474038d45-b259dc5d92ee
+  | head=0000000000000000000000000000000000000002
+  | observed_at=2026-10-28T22:44:43Z
+  | check=Build
+  | producer=app:42
+
+### S3a adversarial: same check+App in two suites -> ambiguous, not green
+result=<lab>/state/procevent-inbox/when-prcheck-cece8a9cecfb-ec74c90d59e1.1.result class=condition-error
+  | when: when-prcheck-cece8a9cecfb-ec74c90d59e1
+  | status: condition-error
+  | detail: the condition exited 2 on 1 consecutive polls; the action was not run
+  | condition_polls: 1
+  | output:
+  | ambiguous
+
+### S3b adversarial: green run only from another App -> producer-mismatch, not green
+result=<lab>/state/procevent-inbox/when-prcheck-a2f1a68a3cf7-7fb828a2b390.1.result class=condition-error
+  | when: when-prcheck-a2f1a68a3cf7-7fb828a2b390
+  | status: condition-error
+  | detail: the condition exited 2 on 1 consecutive polls; the action was not run
+  | condition_polls: 1
+  | output:
+  | producer-mismatch
+
+### S3c adversarial: bound App newest attempt failed, competing App green -> failed, not green
+result=<lab>/state/procevent-inbox/when-prcheck-f413e43d74f8-ee0bd6865dff.1.result class=condition-error
+  | when: when-prcheck-f413e43d74f8-ee0bd6865dff
+  | status: condition-error
+  | detail: the condition exited 2 on 1 consecutive polls; the action was not run
+  | condition_polls: 1
+  | output:
+  | failed
+
+### S4 adversarial: PR head moves while pending -> head-moved condition-error
+pending before move: results=0
+result=<lab>/state/procevent-inbox/when-prcheck-8a37b83c96f1-5f6276313972.1.result class=condition-error
+  | when: when-prcheck-8a37b83c96f1-5f6276313972
+  | status: condition-error
+  | detail: the condition exited 2 on 1 consecutive polls; the action was not run
+  | condition_polls: 6
+  | output:
+  | head-moved: bound=0000000000000000000000000000000000000006 current=ffffffffffffffffffffffffffffffffffffffff
+
+### S5 forge read error -> immediate condition-error (fail-fast, as decided)
+result=<lab>/state/procevent-inbox/when-prcheck-3e6558d0cb97-65f44c03d35d.1.result class=condition-error
+  | when: when-prcheck-3e6558d0cb97-65f44c03d35d
+  | status: condition-error
+  | detail: the condition exited 2 on 1 consecutive polls; the action was not run
+  | condition_polls: 1
+  | output:
+  | forge-error: cannot read check runs
+
+DRIVER-DONE
+## post-run: two more reconcile cycles, registered sources and result counts
+reconciled: published=6 started=0 stopped=0 uncertain=0 failed=0
+reconciled: published=6 started=0 stopped=0 uncertain=0 failed=0
+registered when-prcheck sources: 0
+when-prcheck-3e6558d0cb97-65f44c03d35d results=1
+when-prcheck-628b49d96dcd-3b05d54c3d79 results=1
+when-prcheck-8a37b83c96f1-5f6276313972 results=1
+when-prcheck-a2f1a68a3cf7-7fb828a2b390 results=1
+when-prcheck-c44474038d45-b259dc5d92ee results=1
+when-prcheck-cece8a9cecfb-ec74c90d59e1 results=1
+when-prcheck-f413e43d74f8-ee0bd6865dff results=1
