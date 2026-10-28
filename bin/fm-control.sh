@@ -123,10 +123,12 @@
 #   - A backend that cannot deliver the harness's interrupt key is refused;
 #     Orca's raw Escape and Ctrl+U control is verified for Droid only.
 #   - `exit` and `relaunch` require a recovery-grade agent-state classifier
-#     (tmux, herdr, orca) or Droid's current-generation SessionEnd proof on
-#     Orca, because without one the "the agent stopped" postcondition cannot
-#     be proven. zellij, cmux, and paseo combinations refuse unproven stops
-#     rather than reporting them as successful blind.
+#     (tmux, herdr, orca) or Droid's shared absence proof on Orca
+#     (fm_control_droid_agent_absent in bin/fm-control-lib.sh: the
+#     current-generation SessionEnd marker, or the connected owned-shell
+#     proof without it), because without one the "the agent stopped"
+#     postcondition cannot be proven. zellij, cmux, and paseo combinations
+#     refuse unproven stops rather than reporting them as successful blind.
 #   - An ambiguous endpoint state refuses. An unreadable state refuses unless
 #     Orca's absence proof above establishes that the endpoint is gone.
 #   - A composer that visibly holds pending text refuses before an exit command
@@ -394,7 +396,7 @@ droid_orca_agent_state() {
   fm_backend_source orca >/dev/null 2>&1 || { printf 'unknown'; return 0; }
   gen=$(fm_meta_get "$META" busy_gen)
   [ -n "$gen" ] || { printf 'unknown'; return 0; }
-  fm_control_droid_session_ended "$STATE" "$ID" "$META" && { printf 'dead'; return 0; }
+  fm_control_droid_agent_absent "$STATE" "$ID" "$META" "$T" && { printf 'dead'; return 0; }
   record=$(fm_busy_record_read "$STATE" "$ID" 2>/dev/null) || record=
   case "$record" in
     "busy droid-hook "*|"idle droid-hook "*) ;;

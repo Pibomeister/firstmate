@@ -697,6 +697,38 @@ fm_control_harness_wiring_dirs() {  # <harness> <state-dir> <id>
   esac
 }
 
+# fm_control_droid_worktree_no_droid: one successful bounded `lsof` scan
+# showing no `droid` process whose working directory is <worktree> (already
+# physical) or under it. A missing `lsof`, a nonzero status other than the
+# empty-result status 1, a status-1 scan that still printed rows, or a
+# malformed or partial row all fail closed: none of them is a clean scan.
+fm_control_droid_worktree_no_droid() {  # <physical-worktree>
+  local wt=$1 out status line path
+  [ -n "$wt" ] || return 1
+  command -v lsof >/dev/null 2>&1 || return 1
+  out=$(lsof -w -a -c droid -d cwd -Fn 2>&1) && status=0 || status=$?
+  case "$status" in
+    0) ;;
+    1) [ -z "$out" ] || return 1; return 0 ;;
+    *) return 1 ;;
+  esac
+  while IFS= read -r line; do
+    case "$line" in
+      p*|f*) ;;
+      n*)
+        path=${line#n}
+        [ -n "$path" ] || return 1
+        case "$path" in "$wt"|"$wt"/*) return 1 ;; esac
+        ;;
+      '') ;;
+      *) return 1 ;;
+    esac
+  done <<EOF
+$out
+EOF
+  return 0
+}
+
 # Droid's SessionEnd hook writes the armed busy generation when the current
 # generation closes a session with reason "other". Droid also closes sessions
 # that way without exiting (after /clear, on a session reload, or for a Task
@@ -706,7 +738,7 @@ fm_control_harness_wiring_dirs() {  # <harness> <state-dir> <id>
 # task worktree. A marker from a prior incarnation, a missing worktree, a
 # missing lsof, or an lsof error all fail closed.
 fm_control_droid_session_ended() {  # <state-dir> <id> <meta-file>
-  local state=$1 id=$2 meta=$3 gen ended path wt out status line
+  local state=$1 id=$2 meta=$3 gen ended path wt
   gen=$(fm_meta_get "$meta" busy_gen)
   [ -n "$gen" ] || return 1
   path="$state/$id.droid-session-end"
@@ -715,18 +747,93 @@ fm_control_droid_session_ended() {  # <state-dir> <id> <meta-file>
   [ "$ended" = "$gen" ] || return 1
   wt=$(fm_meta_get "$meta" worktree)
   [ -n "$wt" ] && wt=$(cd "$wt" 2>/dev/null && pwd -P) || return 1
-  command -v lsof >/dev/null 2>&1 || return 1
-  out=$(lsof -w -a -c droid -d cwd -Fn 2>&1) && status=0 || status=$?
-  case "$status" in
-    0) ;;
-    1) [ -z "$out" ]; return ;;
+  fm_control_droid_worktree_no_droid "$wt"
+}
+
+# fm_control_droid_agent_absent: the ONE shared Orca Droid absence proof for
+# fm-control and fm-spawn --relaunch, so the two enforcement points can never
+# drift. It succeeds by exactly one of two routes, and every element of the
+# route taken is required on its own:
+#   1. Marker route: the current-generation SessionEnd marker above, with
+#      its clean worktree scan (fm_control_droid_session_ended).
+#   2. Connected-shell route, only when no marker file exists at all: the
+#      recorded endpoint is affirmatively read as a connected, local Orca
+#      terminal that belongs to the exact recorded worktree and to this
+#      task's recorded terminal, its recorded session process tree
+#      classifies `dead` (only shells beside Orca's `login` root, which is
+#      the owned idle shell), the task's busy record is the current
+#      generation's idle `droid-hook` record, and one successful scan shows
+#      no `droid` process whose working directory is the exact recorded
+#      worktree or under it.
+# A marker file that exists but names another generation, is a symlink, or
+# cannot be read refuses on both routes rather than falling through to the
+# shell route: it is evidence about a different incarnation. A live Droid
+# in the worktree, an ambiguous or unreadable endpoint, a terminal whose
+# worktree differs from the record, a failed or partial scan, and a process
+# that survived a session-only close (marker route scan, live tree, or the
+# worktree scan) all refuse. Nothing here synthesizes a marker or rewrites
+# metadata, and the endpoint-gone proof
+# (fm_control_endpoint_absence_verdict) is untouched.
+fm_control_droid_agent_absent() {  # <state-dir> <id> <meta-file> <target>
+  local state=${1-} id=${2-} meta=${3-} target=${4-}
+  local gen marker ended wt recorded harness current record facts
+  local f_read f_connected f_host f_pty f_wtpath pid tree wt_phys term_phys
+  [ -n "$state" ] && [ -n "$id" ] && [ -n "$meta" ] && [ -n "$target" ] || return 1
+  harness=$(fm_meta_get "$meta" harness) || return 1
+  [ -n "$harness" ] || return 1
+  harness=$(fm_control_harness_family "$harness") || return 1
+  [ "$harness" = droid ] || return 1
+  case "$(fm_meta_get "$meta" backend)" in ''|orca) ;; *) return 1 ;; esac
+  gen=$(fm_meta_get "$meta" busy_gen)
+  [ -n "$gen" ] || return 1
+  marker="$state/$id.droid-session-end"
+  if [ -e "$marker" ] || [ -L "$marker" ]; then
+    [ -f "$marker" ] && [ ! -L "$marker" ] || return 1
+    IFS= read -r ended <"$marker" 2>/dev/null || ended=
+    [ "$ended" = "$gen" ] || return 1
+    fm_control_droid_session_ended "$state" "$id" "$meta"
+    return $?
+  fi
+  # Connected-shell route: no marker file exists.
+  wt=$(fm_meta_get "$meta" worktree)
+  [ -n "$wt" ] && wt_phys=$(cd "$wt" 2>/dev/null && pwd -P) || return 1
+  [ -n "$wt_phys" ] || return 1
+  recorded=$(fm_meta_get "$meta" terminal)
+  [ -n "$recorded" ] && [ "$recorded" = "$target" ] || return 1
+  command -v fm_busy_current_gen >/dev/null 2>&1 || return 1
+  command -v fm_busy_record_read >/dev/null 2>&1 || return 1
+  current=$(fm_busy_current_gen "$state" "$id" 2>/dev/null) || return 1
+  [ "$current" = "$gen" ] || return 1
+  record=$(fm_busy_record_read "$state" "$id" 2>/dev/null) || return 1
+  case "$record" in
+    'idle droid-hook '*) ;;
     *) return 1 ;;
   esac
-  while IFS= read -r line; do
-    case "$line" in "n$wt"|"n$wt"/*) return 1 ;; esac
-  done <<EOF
-$out
-EOF
+  fm_backend_source orca >/dev/null 2>&1 || return 1
+  command -v fm_backend_orca_terminal_facts >/dev/null 2>&1 || return 1
+  command -v fm_backend_orca_session_pid >/dev/null 2>&1 || return 1
+  command -v fm_backend_orca_tree_state >/dev/null 2>&1 || return 1
+  facts=$(fm_backend_orca_terminal_facts "$target" 2>/dev/null) || return 1
+  [ -n "$facts" ] || return 1
+  IFS=$'\037' read -r f_read f_connected _ f_host f_pty f_wtpath <<FACTS
+$facts
+FACTS
+  [ "$f_read" = ok ] || return 1
+  [ "$f_connected" = true ] || return 1
+  [ "$f_host" = local ] || return 1
+  [ -n "$f_pty" ] || return 1
+  [ -n "$f_wtpath" ] || return 1
+  if command -v fm_backend_orca_physical_dir >/dev/null 2>&1; then
+    term_phys=$(fm_backend_orca_physical_dir "$f_wtpath" 2>/dev/null) || return 1
+  else
+    term_phys=$(cd "$f_wtpath" 2>/dev/null && pwd -P) || return 1
+  fi
+  [ "$term_phys" = "$wt_phys" ] || return 1
+  pid=$(fm_backend_orca_session_pid "$f_pty" 2>/dev/null) || return 1
+  [ -n "$pid" ] || return 1
+  tree=$(fm_backend_orca_tree_state "$pid" 2>/dev/null) || return 1
+  [ "$tree" = dead ] || return 1
+  fm_control_droid_worktree_no_droid "$wt_phys"
 }
 
 # The firstmate-owned global turn-end registry entry a harness mints per task.
