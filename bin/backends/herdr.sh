@@ -2246,6 +2246,19 @@ EOF
   printf 'shell'
 }
 
+# fm_backend_herdr_pane_process_pids: print <pane_id>'s shell pid, then each
+# foreground process pid, one per line, from `pane process-info`; fails unless
+# the result describes exactly that pane and names a shell pid.
+fm_backend_herdr_pane_process_pids() {  # <session> <pane_id>
+  local info
+  info=$(fm_backend_herdr_cli "$1" pane process-info --pane "$2" 2>/dev/null) || return 1
+  printf '%s' "$info" | jq -er --arg pane "$2" '
+    .result | select(.type == "pane_process_info") | .process_info
+    | select(.pane_id == $pane and (.shell_pid | type) == "number" and .shell_pid > 1)
+    | (.shell_pid | floor), (.foreground_processes | arrays | .[].pid | numbers | floor)
+  ' 2>/dev/null
+}
+
 # fm_backend_herdr_pane_agent_state: classify <pane_id> in <session> as one of
 # dead|no-agent|stale-agent|live|unknown, from the JSON body of two read-only
 # calls plus, for a registered agent, the pane's process-level view - never

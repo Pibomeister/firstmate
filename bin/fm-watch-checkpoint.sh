@@ -16,6 +16,17 @@
 # "supervision-host:" line other than the park boundary passes through as a
 # wake; the boundary alone is the ordinary quiet checkpoint. On a home that
 # does not run the host nothing below changes.
+#
+# SECONDMATE HOME. In a genuine local secondmate home the bound, on either
+# path, is capped at FM_SECONDMATE_CHECKPOINT_MAX (default 60) and the away
+# raise never lifts it above that, so the secondmate's turn returns to its
+# parent-owned steering inbox regularly; a primary's bound is unchanged. On the
+# plain path the watcher also ends the checkpoint within a few seconds of a
+# record in that inbox it has not yet announced, and this script prints
+# "checkpoint: firstmate instruction waiting in the steering inbox: <names>".
+# Each record is announced once, so one the model cannot acknowledge yet
+# never turns checkpoints into a tight loop. The inbox path comes from the
+# home's own marker and parent record (fm_secondmate_home_inbox).
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -146,6 +157,16 @@ run_bounded() {  # <seconds> <signal> <kill-after-seconds> <command...>
 positive_or() {  # <value> <default>
   case "$1" in ''|0*|*[!0-9]*) printf '%s\n' "$2" ;; *) printf '%s\n' "$1" ;; esac
 }
+# shellcheck source=bin/fm-primary-scope-lib.sh
+. "$SCRIPT_DIR/fm-primary-scope-lib.sh"
+SECONDMATE_MAX=
+if FM_WATCH_CHECKPOINT_INBOX=$(fm_secondmate_home_inbox "$FM_HOME" 2>/dev/null); then
+  SECONDMATE_MAX=$(positive_or "${FM_SECONDMATE_CHECKPOINT_MAX:-}" 60)
+  [ "$SECONDS_ARG" -le "$SECONDMATE_MAX" ] || SECONDS_ARG=$SECONDMATE_MAX
+  export FM_WATCH_CHECKPOINT_INBOX
+else
+  unset FM_WATCH_CHECKPOINT_INBOX
+fi
 
 require_clean_shutdown() {
   if [ "$RC" -eq 137 ]; then
@@ -170,6 +191,7 @@ if fm_supervision_host_enabled "$CONFIG" codex; then
     AWAY_BOUND=$(positive_or "${FM_CODEX_WATCH_CHECKPOINT_AWAY:-}" 3600)
     [ "$AWAY_BOUND" -le "$BOUND" ] 2>/dev/null || BOUND=$AWAY_BOUND
   fi
+  [ -z "$SECONDMATE_MAX" ] || [ "$BOUND" -le "$SECONDMATE_MAX" ] || BOUND=$SECONDMATE_MAX
   # The host's park boundary stays below the 28800-second registration.
   [ "$BOUND" -lt 27000 ] 2>/dev/null || BOUND=27000
   LIMIT=$(( BOUND + $(positive_or "${FM_SUPERVISION_HOST_TURN_TIMEOUT:-}" 1200) + $(positive_or "${FM_SUPERVISION_ENGINE_GRACE:-}" 30) ))
@@ -211,6 +233,12 @@ require_clean_shutdown
 if grep -E '^(signal:|stale:|check:|heartbeat($|:))' "$OUT" >/dev/null 2>&1; then
   cat "$OUT"
   [ ! -s "$ERR" ] || cat "$ERR" >&2
+  exit 0
+fi
+
+if INBOX_NAMES=$(sed -n 's/^checkpoint-inbox://p' "$OUT" 2>/dev/null) && [ -n "$INBOX_NAMES" ]; then
+  [ ! -s "$ERR" ] || cat "$ERR" >&2
+  printf 'checkpoint: firstmate instruction waiting in the steering inbox:%s - read, act on and acknowledge each record now, then start the next checkpoint\n' "$INBOX_NAMES"
   exit 0
 fi
 

@@ -787,6 +787,12 @@ test_secondmate_no_projects_charter() {
     "secondmate charter did not close a quietly ended routed-work phase"
   assert_grep 'use the same key on its later' "$brief" \
     "secondmate charter did not supersede working phases with later states"
+  assert_grep 'as soon as its dispatch or established answer and its correlated parent line exist' "$brief" \
+    "secondmate charter lost the acknowledge-on-dispatch rule"
+  assert_grep 'never leave a waiting record unacknowledged for more than 5 minutes' "$brief" \
+    "secondmate charter lost the acknowledgement bound"
+  assert_grep 'Keep each of your own foreground waits and polls to 60 seconds or less' "$brief" \
+    "secondmate charter lost the own-wait bound"
   if grep -nE '^-[[:space:]]*$' "$brief" >/dev/null; then
     fail "project-less charter left a stray empty project bullet"
   fi

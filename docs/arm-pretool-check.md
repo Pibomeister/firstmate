@@ -169,6 +169,8 @@ Prose may improve without changing adapter behavior.
 | Muse | None | Muse 1.4.13 exposes no PreToolUse equivalent in the default build, so no seatbelt is wired for a Muse primary. The classifier is not invoked, a bundled or backgrounded arm is not denied before execution, and the Muse protocol plus post-arm liveness checks own that risk. Do not generalize another harness's hook to Muse. |
 | Cursor | `.tool_input.command` | `.cursor/hooks.json` matches `tool_name` `Shell` and forwards stdin with `--cursor`. Cursor reads the RETURNED object rather than the exit status, so `--cursor` prints `{"permission":"deny","user_message":"[code] reason"}` on stdout and exits 0; only that rendering is verified to block the command and surface the reason. |
 
+A Codex payload in stdin mode also passes the secondmate steering-inbox guard first; [`bin/fm-secondmate-inbox-guard.sh`](../bin/fm-secondmate-inbox-guard.sh) owns that policy, and its deny uses the code `secondmate-inbox`.
+
 Cursor also loads `<project>/.claude/settings.json`, so the tracked Claude entry receives the same event. Without `--cursor` a Cursor-delivered payload is that duplicate and allows without re-classifying, decided from the payload's own `cursor_version` by `bin/fm-hook-host-lib.sh`; [`turnend-guard.md`](turnend-guard.md#harness-integrations) owns why that predicate reads the payload rather than the environment.
 
 Grok project hooks require folder trust.

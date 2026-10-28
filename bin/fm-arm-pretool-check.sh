@@ -10,6 +10,13 @@
 # It never executes, sources, evaluates, or expands the submitted command.
 # See docs/arm-pretool-check.md for the complete contract and validation record.
 #
+# A Codex payload (stdin mode, no --claude or --cursor) first passes the
+# secondmate steering-inbox guard, whose policy bin/fm-secondmate-inbox-guard.sh
+# owns: it rides this already-trusted registration because a new
+# .codex/hooks.json entry makes codex ask for hook-trust review at launch. Its
+# deny renders below with the code secondmate-inbox; every other outcome falls
+# through to the watcher-arm policy unchanged.
+#
 # Usage:
 #   <PreToolUse JSON on stdin> | bin/fm-arm-pretool-check.sh
 #   bin/fm-arm-pretool-check.sh --command '<cmd>' [--background true|false]
@@ -105,6 +112,23 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
+json_escape() {
+  printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr '\n' ' '
+}
+
+# Render the deny for CODE and REASON in the calling harness's shape and exit.
+render_deny() {
+  local escaped
+  escaped=$(json_escape "[$CODE] $REASON")
+  if [ "$CURSOR_MODE" -eq 1 ]; then
+    printf '{"permission":"deny","user_message":"%s"}\n' "$escaped"
+    exit 0
+  fi
+  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":"%s"}\n' "$escaped" >&2
+  [ "$CLAUDE_MODE" -eq 1 ] || printf '{"decision":"deny","reason":"%s"}\n' "$escaped"
+  exit 2
+}
+
 if [ "$CMD_SET" -eq 0 ]; then
   PAYLOAD=$(cat 2>/dev/null || true)
   [ -n "$PAYLOAD" ] || exit 0
@@ -116,6 +140,15 @@ if [ "$CMD_SET" -eq 0 ]; then
   # evaluated by that registration, so this copy allows without re-classifying.
   if [ "$CURSOR_MODE" -eq 0 ] && fm_hook_payload_is_foreign_host "$PAYLOAD"; then
     exit 0
+  fi
+  if [ "$CLAUDE_MODE" -eq 0 ] && [ "$CURSOR_MODE" -eq 0 ]; then
+    GUARD=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P)/fm-secondmate-inbox-guard.sh
+    if HOOK_ROOT=$(pwd -P 2>/dev/null) \
+      && INBOX_REASON=$(printf '%s' "$PAYLOAD" | "$GUARD" "$HOOK_ROOT" 2>/dev/null) && [ -n "$INBOX_REASON" ]; then
+      CODE=secondmate-inbox
+      REASON=$INBOX_REASON
+      render_deny
+    fi
   fi
   CMD=$(printf '%s' "$PAYLOAD" | jq -r '(.toolInput.command // .tool_input.command // empty)' 2>/dev/null) || exit 0
   [ -n "$CMD" ] || exit 0
@@ -187,16 +220,4 @@ CODE=${REST%%"$TAB"*}
 REASON=${REST#*"$TAB"}
 [ -n "$CODE" ] && [ -n "$REASON" ] && [ "$REASON" != "$REST" ] || exit 0
 
-json_escape() {
-  printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr '\n' ' '
-}
-
-DETAIL="[$CODE] $REASON"
-ESCAPED=$(json_escape "$DETAIL")
-if [ "$CURSOR_MODE" -eq 1 ]; then
-  printf '{"permission":"deny","user_message":"%s"}\n' "$ESCAPED"
-  exit 0
-fi
-printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":"%s"}\n' "$ESCAPED" >&2
-[ "$CLAUDE_MODE" -eq 1 ] || printf '{"decision":"deny","reason":"%s"}\n' "$ESCAPED"
-exit 2
+render_deny

@@ -43,6 +43,67 @@ test_quiet_checkpoint_exits_0_cleanly() {
   pass "quiet checkpoint exits 0 with a clean checkpoint line, no wake, and no live lock"
 }
 
+# A seeded local secondmate home: identity marker plus a parent record whose
+# home owns the steering inbox the checkpoint watches.
+make_secondmate_home() {  # <name> -> echoes the secondmate home
+  local home parent
+  home=$(make_home "$1")
+  parent="$TMP_ROOT/$1-parent"
+  mkdir -p "$parent/state/sm1.inbox/handled"
+  printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$parent" > "$home/.fm-secondmate-parent"
+  printf 'sm1\n' > "$home/.fm-secondmate-home"
+  printf '%s\n' "$home"
+}
+
+run_secondmate_checkpoint() {  # <home> <seconds> [max]; sets STATUS and ELAPSED
+  local start
+  start=$(date +%s)
+  STATUS=0
+  FM_HOME="$1" FM_POLL=2 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    FM_SECONDMATE_CHECKPOINT_MAX="${3:-60}" \
+    "$CHECKPOINT" --seconds "$2" >"$1/out.txt" 2>"$1/err.txt" || STATUS=$?
+  ELAPSED=$(( $(date +%s) - start ))
+}
+
+# A secondmate's own checkpoint is capped (60 s by default) while a primary's
+# requested bound is unchanged.
+test_secondmate_checkpoint_bound_is_capped() {
+  local home
+  home=$(make_secondmate_home sm-cap)
+  run_secondmate_checkpoint "$home" 180 2
+  expect_code 0 "$STATUS" "secondmate quiet checkpoint: $(cat "$home/err.txt")"
+  assert_contains "$(cat "$home/out.txt")" "checkpoint: no actionable wake within 2s" "the secondmate bound was not capped"
+  [ "$ELAPSED" -le 15 ] || fail "a capped secondmate checkpoint ran ${ELAPSED}s"
+  home=$(make_home primary-uncapped)
+  run_secondmate_checkpoint "$home" 3 2
+  assert_contains "$(cat "$home/out.txt")" "checkpoint: no actionable wake within 3s" "a primary's bound was capped"
+  pass "checkpoint: a secondmate's own checkpoint is capped and a primary's bound is unchanged"
+}
+
+# A record arriving in the parent-owned inbox ends the secondmate checkpoint
+# within a few seconds, once per record, so an unacknowledgeable record can
+# never turn checkpoints into a tight loop.
+test_secondmate_checkpoint_returns_for_a_waiting_record() {
+  local home inbox
+  home=$(make_secondmate_home sm-inbox)
+  inbox="$TMP_ROOT/sm-inbox-parent/state/sm1.inbox"
+  ( sleep 2; printf 'schema=fm-task-inbox.v1\nat=x\n--\nroute this\n' > "$inbox/001.msg" ) &
+  run_secondmate_checkpoint "$home" 40
+  wait
+  expect_code 0 "$STATUS" "inbox checkpoint: $(cat "$home/err.txt")"
+  assert_contains "$(cat "$home/out.txt")" "checkpoint: firstmate instruction waiting in the steering inbox: 001.msg" "the waiting record was not announced"
+  [ "$ELAPSED" -le 12 ] || fail "the checkpoint took ${ELAPSED}s to return for a waiting record"
+  ! grep -qF 'route this' "$home/out.txt" "$home/err.txt" || fail "the checkpoint printed a record body"
+  assert_absent "$home/state/.watch.lock/pid" "watch lock pid survived the inbox return"
+  run_secondmate_checkpoint "$home" 3
+  assert_contains "$(cat "$home/out.txt")" "checkpoint: no actionable wake within 3s" "an announced record returned the checkpoint again"
+  printf 'schema=fm-task-inbox.v1\nat=x\n--\nnext\n' > "$inbox/002.msg"
+  run_secondmate_checkpoint "$home" 40
+  assert_contains "$(cat "$home/out.txt")" "steering inbox: 002.msg" "a new record behind an announced one was not announced"
+  [ "$ELAPSED" -le 12 ] || fail "a record waiting at start took ${ELAPSED}s to return"
+  pass "checkpoint: a secondmate returns within seconds for each new parent inbox record, once per record"
+}
+
 test_cleanup_persistence_failure_is_not_a_quiet_checkpoint() {
   local home holder status
   home=$(make_home cleanup-persistence-failure)
@@ -1458,6 +1519,8 @@ test_real_host_checkpoint_ends_quietly_at_its_bound() {
 test_interrupted_startup_reports_failed_cleanup
 test_preconfirmation_predecessor_retirement_uses_verified_identity
 test_quiet_checkpoint_exits_0_cleanly
+test_secondmate_checkpoint_bound_is_capped
+test_secondmate_checkpoint_returns_for_a_waiting_record
 test_cleanup_persistence_failure_is_not_a_quiet_checkpoint
 test_perl_timeout_fallback_honors_cleanup_bound_before_escalating
 test_real_perl_shutdown_classification

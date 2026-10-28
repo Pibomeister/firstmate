@@ -312,7 +312,7 @@ family_for_basename() {
       printf '%s\n' pure-contract-unit
       ;;
     fm-daemon.test.sh|fm-guard-stale-banner.test.sh|fm-pi-watch-extension.test.sh|\
-    fm-session-lock-ancestry.test.sh|fm-cursor-primary.test.sh|\
+    fm-session-lock-ancestry.test.sh|fm-cursor-primary.test.sh|fm-secondmate-inbox-guard.test.sh|\
     fm-parent-channel-scan-exclusion.test.sh|\
     fm-supervision-events.test.sh|fm-turnend-guard.test.sh|fm-wake-daemon-lifecycle-e2e.test.sh|\
     fm-wake-drain-unread-status.test.sh|\
@@ -856,6 +856,7 @@ tests/fm-rovo-harness.test.sh 19794
 tests/fm-rovo-signals-live-e2e.test.sh 68
 tests/fm-secondmate-busy-contract-live-e2e.test.sh 6484
 tests/fm-secondmate-harness.test.sh 232587
+tests/fm-secondmate-inbox-guard.test.sh 4133
 tests/fm-secondmate-lifecycle-e2e.test.sh 12765
 tests/fm-secondmate-liveness.test.sh 35974
 tests/fm-secondmate-reconcile.test.sh 75649
