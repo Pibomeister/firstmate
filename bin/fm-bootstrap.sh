@@ -1102,7 +1102,7 @@ EOF
 
 crew_dispatch_validate() {
   local file err verified_harnesses typed_key typed_active=false
-  local codex_max_models tag model
+  local codex_max_models location model
   file="$CONFIG/crew-dispatch.json"
   [ -f "$file" ] || return 0
   if ! command -v jq >/dev/null 2>&1; then
@@ -1208,6 +1208,8 @@ crew_dispatch_validate() {
         | unique) as $bad_harnesses
       | if ($bad_harnesses | length) > 0 then "unverified harness: " + ($bad_harnesses | join(", "))
         elif (bad_efforts | length) > 0 then "invalid effort: " + (bad_efforts | join(", "))
+        elif configured_profiles | any(.harness == "codex" and .effort == "max" and (has("model") | not)) then
+          "codex effort max requires a model whose installed catalog entry advertises max"
         else empty
         end
     end
@@ -1222,9 +1224,9 @@ crew_dispatch_validate() {
     def codex_max($value; $location):
       if ($value | type) == "array" then
         $value | to_entries[] | select(.value.harness == "codex" and .value.effort == "max")
-        | "\($location)[\(.key)]\t\(.value.model // "")"
+        | "\($location)[\(.key)]\t\(.value.model)"
       elif ($value | type) == "object" and $value.harness == "codex" and $value.effort == "max" then
-        "\($location)\t\($value.model // "")"
+        "\($location)\t\($value.model)"
       else empty end;
     (.rules // [] | to_entries[] | .key as $i | codex_max(.value.use?; "rules[\($i)].use")),
     (if has("default") then codex_max(.default; "default") else empty end)
@@ -1234,10 +1236,6 @@ crew_dispatch_validate() {
   fi
   while IFS=$'\t' read -r location model; do
     [ -n "$location" ] || continue
-    if [ -z "$model" ]; then
-      echo "CREW_DISPATCH: invalid config/crew-dispatch.json - codex effort max requires an explicit --model whose installed catalog entry advertises max"
-      return 0
-    fi
     if ! err=$("$SCRIPT_DIR/fm-harness.sh" validate-native-effort codex "$model" max 2>&1 >/dev/null); then
       echo "CREW_DISPATCH: unusable profile $location codex/$model/max - ${err#error: }"
     fi
