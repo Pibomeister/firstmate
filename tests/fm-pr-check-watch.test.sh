@@ -120,10 +120,20 @@ assert_contains "$(cat "$TMP_ROOT/producer.out")" producer-mismatch 'wrong produ
 printf '%s\n' '{"total_count":0,"check_runs":[]}' > "$FM_TEST_CHECKS_FILE"
 "$WATCH" condition "$ref" "$original_hash" >"$TMP_ROOT/missing.out"; rc=$?
 [ "$rc" -eq 1 ] || fail "missing check should remain false until deadline, got exit $rc"
-printf '%s\n' '{"total_count":2,"check_runs":[{"name":"Build","status":"completed","conclusion":"success","app":{"id":42}},{"name":"Build","status":"completed","conclusion":"success","app":{"id":42}}]}' > "$FM_TEST_CHECKS_FILE"
+printf '%s\n' '{"total_count":2,"check_runs":[{"id":11,"name":"Build","status":"completed","conclusion":"success","app":{"id":42},"check_suite":{"id":1}},{"id":12,"name":"Build","status":"completed","conclusion":"success","app":{"id":42},"check_suite":{"id":2}}]}' > "$FM_TEST_CHECKS_FILE"
 "$WATCH" condition "$ref" "$original_hash" >"$TMP_ROOT/ambiguous.out"; rc=$?
 [ "$rc" -eq 2 ] || fail "duplicate producer runs should be ambiguous, got exit $rc"
 assert_contains "$(cat "$TMP_ROOT/ambiguous.out")" ambiguous 'duplicate runs are named'
+printf '%s\n' '{"total_count":2,"check_runs":[{"id":12,"name":"Build","status":"in_progress","conclusion":null,"app":{"id":42},"check_suite":{"id":1}},{"id":11,"name":"Build","status":"completed","conclusion":"failure","app":{"id":42},"check_suite":{"id":1}}]}' > "$FM_TEST_CHECKS_FILE"
+"$WATCH" condition "$ref" "$original_hash" >"$TMP_ROOT/rerun-pending.out"; rc=$?
+[ "$rc" -eq 1 ] || fail "a pending re-run of a failed attempt should wait, got exit $rc"
+printf '%s\n' '{"total_count":3,"check_runs":[{"id":12,"name":"Build","status":"completed","conclusion":"success","app":{"id":42},"check_suite":{"id":1}},{"id":11,"name":"Build","status":"completed","conclusion":"failure","app":{"id":42},"check_suite":{"id":1}},{"id":13,"name":"Build","status":"completed","conclusion":"success","app":{"id":99},"check_suite":{"id":5}}]}' > "$FM_TEST_CHECKS_FILE"
+"$WATCH" condition "$ref" "$original_hash" >"$TMP_ROOT/rerun-green.out" || fail 'the green newest re-run attempt should satisfy the condition'
+"$WATCH" action "$ref" "$original_hash" >"$TMP_ROOT/rerun-action.out" || fail 'the action boundary should accept the green newest re-run attempt'
+printf '%s\n' '{"total_count":2,"check_runs":[{"id":11,"name":"Build","status":"completed","conclusion":"success","app":{"id":42},"check_suite":{"id":1}},{"id":12,"name":"Build","status":"completed","conclusion":"failure","app":{"id":42},"check_suite":{"id":1}}]}' > "$FM_TEST_CHECKS_FILE"
+"$WATCH" condition "$ref" "$original_hash" >"$TMP_ROOT/rerun-failed.out"; rc=$?
+[ "$rc" -eq 2 ] || fail "a failed newest attempt must not be masked by an older green one, got exit $rc"
+assert_contains "$(cat "$TMP_ROOT/rerun-failed.out")" failed 'the newest attempt decides the verdict'
 printf '%s\n' '{"total_count":101,"check_runs":[{"name":"Build","status":"completed","conclusion":"success","app":{"id":42}}]}' > "$FM_TEST_CHECKS_FILE"
 "$WATCH" condition "$ref" "$original_hash" >"$TMP_ROOT/incomplete.out"; rc=$?
 [ "$rc" -eq 2 ] || fail "incomplete check-run pagination should not be green, got exit $rc"
@@ -236,6 +246,7 @@ done
 assert_contains "$("$ROOT/bin/fm-procevent-when.sh" classify "$deadline_result")" never-true 'deadline is actionable without a green claim'
 pass 'pending check reaches an explicit bounded deadline'
 
+unset FM_PR_CHECK_WATCH_DEADLINE
 printf '%s\n' '{malformed' > "$FM_TEST_CHECKS_FILE"
 task_meta error-task
 error_watch=$("$WATCH" arm error-task https://github.com/acme/widget/pull/7 Build --producer-app 42) \

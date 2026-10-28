@@ -19,6 +19,9 @@
 # The condition polls every 30 seconds until stable success or a 24-hour deadline;
 # FM_PR_CHECK_WATCH_INTERVAL and FM_PR_CHECK_WATCH_DEADLINE may override those
 # positive values for a private bounded fixture.
+# Re-runs of the bound check within one check suite resolve to the newest attempt;
+# the same check from the same App in more than one suite is ambiguous.
+# Any forge read error ends the watch with condition-error at once; re-arm it.
 set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -127,7 +130,8 @@ check_current() {
     if (.check_runs|type) != "array" then "invalid"
     elif (.total_count // (.check_runs|length)) > (.check_runs|length) then "incomplete"
     else
-      [.check_runs[] | select(.name == env.FM_CHECK_NAME and .app.id == (env.FM_APP_ID|tonumber))] as $bound
+      ([.check_runs[] | select(.name == env.FM_CHECK_NAME and .app.id == (env.FM_APP_ID|tonumber))]
+        | group_by(.check_suite.id) | map(max_by(.id))) as $bound
       | if ($bound|length) > 1 then "ambiguous"
         elif ($bound|length) == 1 then
           if $bound[0].status == "completed" then
