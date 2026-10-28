@@ -719,6 +719,163 @@ test_codex_refuses_max_effort_when_catalog_does_not_advertise_it() {
   pass "codex refuses max when the catalog does not advertise it"
 }
 
+test_raw_codex_effort_placeholder_checks_catalog() {
+  local rec id out status catalog launch caller_home override_home
+  id=profile-codex-raw-max-placeholder
+  rec=$(make_spawn_case profile-codex-raw-max-placeholder codex "$id")
+  read_case_record "$rec"
+  catalog="$CASE_DIR/codex-models.json"
+  write_codex_models_cache "$catalog"
+
+  out=$(FM_CODEX_MODELS_CACHE="$catalog" run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
+    'codex __EFFORTFLAG__' --model gpt-5 --effort max 2>&1)
+  status=$?
+  expect_code 1 "$status" "raw Codex effort placeholder must refuse unsupported max: $out"
+  assert_contains "$out" 'does not advertise max' 'raw placeholder refusal lost the catalog reason'
+  assert_absent "$HOME_DIR/state/$id.meta" 'refused raw max published task metadata'
+  [ ! -s "$LAUNCH_LOG" ] || fail 'refused raw max launched an agent'
+
+  id=profile-codex-raw-max-inline-home
+  rec=$(make_spawn_case profile-codex-raw-max-inline-home codex "$id")
+  read_case_record "$rec"
+  caller_home="$CASE_DIR/caller-codex"
+  override_home="$CASE_DIR/worker-codex"
+  write_codex_models_cache "$caller_home/models_cache.json"
+  mkdir -p "$override_home"
+  printf '%s\n' '{"models":[{"slug":"gpt-5.6-luna","supported_reasoning_levels":[{"effort":"high"}]}]}' > "$override_home/models_cache.json"
+  out=$(CODEX_HOME="$caller_home" run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
+    "CODEX_HOME=$override_home codex __EFFORTFLAG__" --model gpt-5.6-luna --effort max 2>&1)
+  status=$?
+  expect_code 1 "$status" "raw inline Codex home must not bypass the catalog checked before launch: $out"
+  assert_contains "$out" 'inline CODEX_HOME or HOME cannot be validated' 'inline home refusal was not actionable'
+  assert_absent "$HOME_DIR/state/$id.meta" 'raw inline home refusal published task metadata'
+  [ ! -s "$LAUNCH_LOG" ] || fail 'raw inline home refusal launched an agent'
+
+  # Inline HOME= moves the worker's default Codex home (HOME/.codex) away from
+  # the one the validator read when the caller has no CODEX_HOME. The caller
+  # catalog advertises max, so without the refusal this spawn would launch max
+  # against a worker catalog that lacks it.
+  id=profile-codex-raw-max-inline-user-home
+  rec=$(make_spawn_case profile-codex-raw-max-inline-user-home codex "$id" "$id-control")
+  read_case_record "$rec"
+  write_codex_models_cache "$HOME_DIR/user-home/.codex/models_cache.json"
+  override_home="$CASE_DIR/worker-user-home"
+  mkdir -p "$override_home/.codex"
+  printf '%s\n' '{"models":[{"slug":"gpt-5.6-luna","supported_reasoning_levels":[{"effort":"high"}]}]}' > "$override_home/.codex/models_cache.json"
+  out=$(unset CODEX_HOME; run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id-control" "$PROJ_DIR" \
+    'codex __EFFORTFLAG__' --model gpt-5.6-luna --effort max 2>&1)
+  status=$?
+  expect_code 0 "$status" "raw Codex max must launch against the caller's default Codex home catalog: $out"
+  assert_contains "$(launch_inner "$(cat "$LAUNCH_LOG")")" 'model_reasoning_effort="max"' 'raw max control did not reach the max launch path'
+  out=$(unset CODEX_HOME; run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
+    "HOME=$override_home codex __EFFORTFLAG__" --model gpt-5.6-luna --effort max 2>&1)
+  status=$?
+  expect_code 1 "$status" "raw inline HOME must not validate one Codex home and launch another: $out"
+  assert_contains "$out" 'inline CODEX_HOME or HOME cannot be validated' 'inline HOME refusal was not actionable'
+  assert_absent "$HOME_DIR/state/$id.meta" 'raw inline HOME refusal published task metadata'
+  [ ! -s "$LAUNCH_LOG" ] || fail 'raw inline HOME refusal launched an agent'
+
+  # A quote inside the inline HOME word still refuses. A value containing
+  # whitespace is outside this parser: the raw word loop splits on it.
+  id=profile-codex-raw-max-inline-quoted-home
+  rec=$(make_spawn_case profile-codex-raw-max-inline-quoted-home codex "$id")
+  read_case_record "$rec"
+  write_codex_models_cache "$HOME_DIR/user-home/.codex/models_cache.json"
+  out=$(unset CODEX_HOME; run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
+    "HOME=$CASE_DIR/o'q\$x-home codex __EFFORTFLAG__" --model gpt-5.6-luna --effort max 2>&1)
+  status=$?
+  expect_code 1 "$status" "raw inline HOME with shell metacharacters must refuse: $out"
+  assert_contains "$out" 'inline CODEX_HOME or HOME cannot be validated' 'quoted inline HOME refusal was not actionable'
+  assert_absent "$HOME_DIR/state/$id.meta" 'quoted inline HOME refusal published task metadata'
+  [ ! -s "$LAUNCH_LOG" ] || fail 'quoted inline HOME refusal launched an agent'
+
+  id=profile-codex-raw-max-no-placeholder
+  rec=$(make_spawn_case profile-codex-raw-max-no-placeholder codex "$id")
+  read_case_record "$rec"
+  out=$(FM_CODEX_MODELS_CACHE="$catalog" run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
+    'codex --raw-mode' --model gpt-5 --effort max 2>&1)
+  status=$?
+  expect_code 0 "$status" "raw Codex command without effort placeholder must retain its prior path: $out"
+  launch=$(launch_inner "$(cat "$LAUNCH_LOG")")
+  assert_contains "$launch" 'codex --raw-mode' 'raw command changed without an effort placeholder'
+  assert_not_contains "$launch" 'model_reasoning_effort=' 'effort flag leaked into raw command without placeholder'
+  pass 'raw Codex max is catalog-gated only when its effort placeholder is substituted'
+}
+
+# Run the captured Codex launch in a private tmux server whose own environment
+# carries a foreign CODEX_HOME, and set WORKER_SEEN to what the worker saw as
+# "<CODEX_HOME or unset>|<effective Codex home>".
+run_codex_launch_in_foreign_tmux() { # <server HOME>
+  local server_home=$1 real_tmux socket_label foreign_home worker_home worker_script n
+  real_tmux=$(command -v tmux) || fail 'real tmux is required for the Codex worker environment check'
+  socket_label="fm-codex-home-$$-$RANDOM"
+  foreign_home="$CASE_DIR/foreign-server-home"
+  worker_home="$CASE_DIR/worker-codex-home.txt"
+  worker_script="$CASE_DIR/run-worker.sh"
+  rm -f "$worker_home"
+  cat > "$FAKEBIN_DIR/codex" <<SH
+#!/bin/sh
+printf '%s\n' "\${CODEX_HOME-unset}|\${CODEX_HOME:-\$HOME/.codex}" > "$worker_home"
+SH
+  chmod +x "$FAKEBIN_DIR/codex"
+  printf '%s\n' "$(cat "$LAUNCH_LOG")" > "$worker_script"
+  env -u TMUX -u TMUX_PANE HOME="$server_home" CODEX_HOME="$foreign_home" "$real_tmux" -L "$socket_label" -f /dev/null \
+    new-session -d -s hold 'sleep 30' || fail 'private tmux server failed to start'
+  [ "$(env -u TMUX -u TMUX_PANE "$real_tmux" -L "$socket_label" show-environment -g CODEX_HOME)" = "CODEX_HOME=$foreign_home" ] \
+    || fail 'private tmux server does not carry the foreign Codex home'
+  env -u TMUX -u TMUX_PANE "$real_tmux" -L "$socket_label" \
+    new-session -d -s worker "PATH='$FAKEBIN_DIR':\"\$PATH\" /bin/sh '$worker_script'" \
+    || fail 'private tmux worker failed to start'
+  for n in 1 2 3 4 5; do
+    [ ! -f "$worker_home" ] || break
+    sleep 1
+  done
+  env -u TMUX -u TMUX_PANE "$real_tmux" -L "$socket_label" kill-server >/dev/null 2>&1 || true
+  [ -f "$worker_home" ] || fail 'private tmux worker did not run the captured Codex launch'
+  WORKER_SEEN=$(cat "$worker_home")
+}
+
+test_codex_home_is_forwarded_to_worker() {
+  local rec id out status catalog codex_home launch caller
+  id=profile-codex-private-home
+  rec=$(make_spawn_case profile-codex-private-home codex "$id")
+  read_case_record "$rec"
+  codex_home="$CASE_DIR/private-codex-home"
+  catalog="$codex_home/models_cache.json"
+  write_codex_models_cache "$catalog"
+
+  out=$(CODEX_HOME="$codex_home" run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
+    --model gpt-5.6-luna --effort max 2>&1)
+  status=$?
+  expect_code 0 "$status" "caller-selected Codex home must pass catalog validation: $out"
+  launch=$(launch_inner "$(cat "$LAUNCH_LOG")")
+  assert_contains "$launch" "CODEX_HOME='$codex_home'" 'worker launch omitted caller-selected Codex home'
+  run_codex_launch_in_foreign_tmux "$HOME_DIR/user-home"
+  [ "$WORKER_SEEN" = "$codex_home|$codex_home" ] || fail "tmux server home replaced the validated Codex home: $WORKER_SEEN"
+
+  # Mirror direction: with no caller CODEX_HOME the validator reads HOME/.codex,
+  # so the worker must not pick up the tmux server's CODEX_HOME instead.
+  for caller in unset empty; do
+    id=profile-codex-default-home-$caller
+    rec=$(make_spawn_case "$id" codex "$id")
+    read_case_record "$rec"
+    write_codex_models_cache "$HOME_DIR/user-home/.codex/models_cache.json"
+    if [ "$caller" = unset ]; then
+      out=$(unset CODEX_HOME; run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
+        --model gpt-5.6-luna --effort max 2>&1)
+    else
+      out=$(CODEX_HOME='' run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
+        --model gpt-5.6-luna --effort max 2>&1)
+    fi
+    status=$?
+    expect_code 0 "$status" "$caller caller Codex home must validate the default home catalog: $out"
+    run_codex_launch_in_foreign_tmux "$HOME_DIR/user-home"
+    [ "$WORKER_SEEN" = "unset|$HOME_DIR/user-home/.codex" ] \
+      || fail "$caller caller Codex home let the tmux server's Codex home reach the worker: $WORKER_SEEN"
+  done
+  pass 'Codex spawn forwards the catalog home it validated to the worker'
+}
+
 # Codex parks a crewmate launch forever on its unanswerable hook-trust modal
 # unless the launch turns the hook layer off. These two cases pin the split:
 # a crewmate runs hook-free, a secondmate keeps the project hooks that carry its
@@ -2435,6 +2592,8 @@ test_codex_threads_model_and_effort
 test_codex_threads_model_and_max_effort
 test_codex_threads_astra_max_effort
 test_codex_refuses_max_effort_when_catalog_does_not_advertise_it
+test_raw_codex_effort_placeholder_checks_catalog
+test_codex_home_is_forwarded_to_worker
 test_codex_crewmate_launch_disables_the_hook_layer
 test_codex_secondmate_launch_keeps_the_hook_layer
 test_grok_threads_model_and_reasoning_effort

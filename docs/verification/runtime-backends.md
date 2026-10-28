@@ -35,6 +35,24 @@ The deliberately tiny test stop line proves the stop path, without establishing 
 This live evidence covers tmux; other runtime combinations retain the existing control plane's capability and proof limits.
 [`fm-task-budget.sh`](../../bin/fm-task-budget.sh) owns counter and state mechanics, and [the configuration reference](../configuration.md#task-budget-enforcement-configbudget-enforcement) owns operator mode selection.
 
+## Codex model catalog max validation
+
+Verified on 2026-10-27 with codex-cli 0.162.1 on macOS arm64.
+The installed catalog advertised max for `gpt-6.1-sol`, and Firstmate's validator accepted that catalog entry without launching a model.
+The guard found no installed model lacking max, so its negative branch was not live-verified on this machine; portable fixture tests cover that refusal.
+
+```sh
+codex --version
+/opt/homebrew/bin/bash tests/fm-codex-catalog-live-e2e.test.sh
+```
+
+Observed output:
+
+```text
+codex-cli 0.162.1
+ok - codex-cli 0.162.1 on 2026-10-27: catalog advertises max for gpt-6.1-sol; validator agrees; unsupported=none-listed; no Codex model launched
+```
+
 ## Polytoken worker lifecycle
 
 Verified on 2026-10-14 with Polytoken 0.9.0 on macOS arm64 using the tmux worker path.

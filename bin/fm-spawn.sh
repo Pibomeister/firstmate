@@ -2128,6 +2128,7 @@ PROJ=
 ARG3=
 FIRSTMATE_HOME=
 RAW_LAUNCH=0
+RAW_CODEX_HOME_OVERRIDE=0
 
 # --relaunch adoption: every identity axis comes from the task's own validated
 # durable record, never from the command line, so a relaunch can only ever
@@ -2822,7 +2823,10 @@ case "$ARG3" in
   LAUNCH=$ARG3
   HARNESS=""
   for word in $LAUNCH; do
-    case "$word" in [A-Za-z_]*=*) continue ;; *)
+    case "$word" in
+    CODEX_HOME=* | HOME=*) RAW_CODEX_HOME_OVERRIDE=1; continue ;;
+    [A-Za-z_]*=*) continue ;;
+    *)
       HARNESS=$(basename "$word")
       break
       ;;
@@ -3077,7 +3081,11 @@ if [ "$EFFORT" = ultra ]; then
 fi
 # Codex max follows the catalog. Refuse before any endpoint or task record so
 # an unadvertised max cannot launch at the default effort.
-if [ "$HARNESS" = codex ] && [ "$EFFORT" = max ] && [ "$RAW_LAUNCH" = 0 ]; then
+if [ "$HARNESS" = codex ] && [ "$EFFORT" = max ] && { [ "$RAW_LAUNCH" = 0 ] || [[ "$ARG3" == *'__EFFORTFLAG__'* ]]; }; then
+  if [ "$RAW_CODEX_HOME_OVERRIDE" = 1 ]; then
+    echo "error: raw Codex max with inline CODEX_HOME or HOME cannot be validated against the worker catalog; use a canonical Codex launch or remove the assignment" >&2
+    exit 1
+  fi
   "$SCRIPT_DIR/fm-harness.sh" validate-native-effort "$HARNESS" "$MODEL" "$EFFORT" || exit 1
 fi
 if [ "$HARNESS" = omp ]; then
@@ -6706,7 +6714,14 @@ case "$LAUNCH" in
   ;;
 esac
 case "$HARNESS" in
-claude | codex | opencode | pi | pi-signed | grok | kimi | gemini | muse | rovo | agy | devin | commandcode)
+codex)
+  if [ -n "${CODEX_HOME:-}" ]; then
+    LAUNCH="env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI CODEX_HOME=$(shell_quote "$CODEX_HOME") $LAUNCH"
+  else
+    LAUNCH="env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI -u CODEX_HOME $LAUNCH"
+  fi
+  ;;
+claude | opencode | pi | pi-signed | grok | kimi | gemini | muse | rovo | agy | devin | commandcode)
   LAUNCH="env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI $LAUNCH"
   ;;
 esac

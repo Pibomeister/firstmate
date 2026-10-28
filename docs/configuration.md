@@ -1249,7 +1249,7 @@ Choose the minimum additions for the authentication method actually in use:
 | --- | --- |
 | Provider login stored under the normal home directory | None for the environment contract; the same user still has access to that provider's stored login. |
 | Provider configured through environment variables | The exact credential and endpoint names required by that provider, for example `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`; a multi-provider tool needs each provider it will actually use. |
-| Custom provider store | Its configured location variables, such as `CODEX_HOME`, `GROK_HOME`, or `XDG_CONFIG_HOME`; Firstmate's existing explicit Claude and Muse store assignments still apply. |
+| Custom provider store | Its configured location variables, such as `GROK_HOME` or `XDG_CONFIG_HOME`; Firstmate's existing explicit Claude, Codex, and Muse store assignments still apply, so a Codex worker takes `CODEX_HOME` from the invoking Firstmate process, or runs with it unset, regardless of the allowlist. |
 | Muse environment authentication | `META_API_KEY`, already present in the target tmux session environment; Firstmate's preflight requires the stored-login path on other backends. |
 | Git over SSH with an agent | `SSH_AUTH_SOCK`; add `GIT_SSH_COMMAND` only if the chosen transport requires that override. |
 | Git over SSH with a key file | No credential variable when normal SSH configuration selects the key; file permissions and any passphrase handling still apply. |
@@ -1397,8 +1397,9 @@ This single-provider table is separate from the frozen legacy mapping used by `f
 **Model, effort, and fallback behavior**
 
 - `ultra` is native-only: the model-aware validation contract and launch mapping are owned by `bin/fm-harness.sh validate-native-effort` and `bin/fm-spawn.sh` respectively.
-- Codex `max` on a launch is passed when the requested model's entry in the installed Codex catalog lists `max` in `supported_reasoning_levels`, and the spawn is refused when that catalog does not advertise it; `bin/fm-harness.sh validate-native-effort` owns the check.
-- A `crew-dispatch.json` Codex `max` profile is well formed for any model; dispatch resolution does not read the catalog, and bootstrap reports a catalog that does not advertise it as a `CREW_DISPATCH` diagnostic.
+- Codex `max` on a launch is passed when the requested model's entry in the installed Codex catalog lists `max` in `supported_reasoning_levels`, and the spawn is refused when that catalog does not advertise it; `bin/fm-harness.sh validate-native-effort` owns the check against the worker's effective `CODEX_HOME`.
+  A raw Codex launch command that carries the `__EFFORTFLAG__` placeholder gets the same check, and refuses if it assigns `CODEX_HOME` or `HOME` inline, because that catalog cannot be validated before launch.
+- A `crew-dispatch.json` Codex `max` profile with an explicit model is structurally well formed; dispatch resolution does not read the catalog, and bootstrap names each candidate whose catalog is unavailable or does not advertise max as `CREW_DISPATCH: unusable profile` without invalidating other routes.
 - An omitted model or effort means the selected harness uses its own default for that axis.
 - OpenCode receives the effort as its default `build` agent's `variant`, keyed to the resolved model, inside the `OPENCODE_CONFIG_CONTENT` JSON its launch already writes (the per-model reasoning-effort field of the config schema, verified on opencode 1.18.32); with no model resolved, the effort is recorded in task metadata but omitted from the launch.
 - Every profile array is an implicit quota-aware choice resolved through `quota-array-dispatch`.
