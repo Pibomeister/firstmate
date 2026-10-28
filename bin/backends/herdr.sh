@@ -2248,10 +2248,13 @@ EOF
 
 # fm_backend_herdr_pane_process_pids: print <pane_id>'s shell pid, then each
 # foreground process pid, one per line, from `pane process-info`; fails unless
-# the result describes exactly that pane and names a shell pid.
+# the result describes exactly that pane and names a shell pid. The read is
+# bounded at 5 s, and a read that times out fails like any other.
 fm_backend_herdr_pane_process_pids() {  # <session> <pane_id>
   local info
-  info=$(fm_backend_herdr_cli "$1" pane process-info --pane "$2" 2>/dev/null) || return 1
+  # shellcheck source=bin/fm-timeout-lib.sh
+  command -v fm_run_timed_fn >/dev/null 2>&1 || . "$FM_BACKEND_HERDR_ROOT/bin/fm-timeout-lib.sh"
+  info=$(fm_run_timed_fn 5 fm_backend_herdr_cli "$1" pane process-info --pane "$2" 2>/dev/null) || return 1
   printf '%s' "$info" | jq -er --arg pane "$2" '
     .result | select(.type == "pane_process_info") | .process_info
     | select(.pane_id == $pane and (.shell_pid | type) == "number" and .shell_pid > 1)

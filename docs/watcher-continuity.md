@@ -196,7 +196,7 @@ It enters its poll loop immediately and keeps scanning signals, stale panes, and
 - No PreToolUse hook denies fleet commands based on watcher status.
 - A genuine auto-arm failure describes the automatic mechanism as broken and never directs a routine manual background arm.
 - Terminal arm-output classification (`started`, `attached`, or `FAILED`) remains defense in depth for the manual recovery path.
-- Codex retains its bounded foreground checkpoint protocol by default; [`turnend-guard.md`](turnend-guard.md#codex-mode) owns the local tmux secondmate exception.
+- Codex retains its bounded foreground checkpoint protocol by default; [`turnend-guard.md`](turnend-guard.md#codex-mode) owns the local tmux or Herdr secondmate exception.
 - Grok retains its tracked background-task notification protocol.
 - Its plain arm exports FM_WATCH_GROK_CONTINUITY=1 and detaches a handling successor that holds the lock before the arm returns an actionable wake, unless state/.afk is present.
 - That successor retains the lock across quiet polls and later notices until the owner stops or restarts it; away and quiet mode keep wakes one-shot.

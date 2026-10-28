@@ -476,10 +476,12 @@ SH
 }
 
 # A busy Codex accepts Enter as a mid-turn steer that clears the composer
-# (measured live on Codex 0.162.1 in a private Herdr lab), so owned doorbells
-# are submitted while it works; a busy pane of any other harness keeps the
-# existing protection. Ownership is re-proved before the retry Enter, so
-# text a human typed after the first Enter is never submitted.
+# (docs/verification/runtime-backends.md, "Steering-inbox doorbell on a busy
+# Codex"), so owned doorbells are submitted while it works; a busy pane of any
+# other harness keeps the existing protection. The harness is the meta's last
+# harness line, as every meta reader takes it. Ownership is re-proved before
+# the retry Enter, so text a human typed after the first Enter is never
+# submitted.
 test_ring_submits_owned_doorbells_on_a_busy_codex_only() {
   local dir state rec doorbell log composer rc harness
   dir="$TMP_ROOT/ring-busy-codex"
@@ -511,7 +513,22 @@ test_ring_submits_owned_doorbells_on_a_busy_codex_only() {
     fi
   done
 
+  printf 'harness=claude\nharness=codex\n' > "$state/t1.meta"
+  : > "$log"; printf '%s' "$doorbell" > "$composer"
+  rc=0; ring || rc=$?
+  [ "$rc" = 0 ] || fail "a meta whose last harness line is codex was not read as Codex, rc $rc:"$'\n'"$(cat "$log")"
+  grep -Fqx "SUBMIT: $doorbell" "$log" || fail "a meta whose last harness line is codex was not submitted once:"$'\n'"$(cat "$log")"
+
   printf 'harness=codex\n' > "$state/t1.meta"
+  local foreign
+  for foreign in "[Pasted Content $(( ${#doorbell} * 6 )) chars]" "$doorbell$doorbell x" "my draft"; do
+    : > "$log"; printf '%s' "$foreign" > "$composer"
+    rc=0; ring || rc=$?
+    [ "$rc" = 1 ] || fail "a busy Codex composer holding '$foreign' should be skipped, got rc $rc"
+    [ ! -s "$log" ] || fail "a busy Codex composer holding '$foreign' received keys:"$'\n'"$(cat "$log")"
+    [ "$(cat "$composer")" = "$foreign" ] || fail "a busy Codex composer holding '$foreign' was altered: $(cat "$composer")"
+  done
+
   : > "$log"; printf '%s' "$doorbell" > "$composer"; printf ' and my own draft' > "$dir/human"
   rc=0; ring || rc=$?
   [ "$(grep -c '^ENTER$' "$log")" = 1 ] \
@@ -734,6 +751,28 @@ test_fire_and_forget_retry_is_quiet_without_the_flag() {
   [ -e "$state/t1.inbox/.retry-ring" ] || fail "an absent flag removed a retry mark it should have left"
   unset FM_CONFIG_OVERRIDE
   pass "inbox: without config/wait-no-turns a fire-and-forget retry mark stays quiet"
+}
+
+# An escalated record stays with recovery while the ladder moves to the next
+# waiting record: a stuck oldest record never silences the records behind it,
+# each record escalates at most once, and once every waiting record escalated
+# the inbox stays quiet.
+test_ladder_moves_past_an_escalated_record() {
+  local state first second action
+  state="$TMP_ROOT/ladder-next/state"; mkdir -p "$state"
+  first=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "stuck ask")
+  second=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "redirect")
+  age_path "$first"; age_path "$second"
+  inbox_lib "$state" fm_task_inbox_record_escalated "$state" t1 "$first"
+  action=$(FM_TASK_INBOX_GRACE_SECS=60 FM_TASK_INBOX_RING_MAX=3 inbox_lib "$state" fm_task_inbox_due_action "$state" t1)
+  [ "$action" = "ring $second" ] || fail "a record behind an escalated one was not rung, got: $action"
+  printf '%s\t3\t100\n' "${second##*/}" > "$state/t1.inbox/.ring-state"
+  action=$(FM_TASK_INBOX_GRACE_SECS=60 FM_TASK_INBOX_RING_MAX=3 inbox_lib "$state" fm_task_inbox_due_action "$state" t1)
+  [ "$action" = "escalate $second 3" ] || fail "a record behind an escalated one never escalated, got: $action"
+  inbox_lib "$state" fm_task_inbox_record_escalated "$state" t1 "$second"
+  action=$(FM_TASK_INBOX_GRACE_SECS=60 FM_TASK_INBOX_RING_MAX=3 inbox_lib "$state" fm_task_inbox_due_action "$state" t1)
+  [ "$action" = quiet ] || fail "an inbox whose waiting records all escalated was not quiet, got: $action"
+  pass "inbox: the ladder moves past an escalated record and escalates each record once"
 }
 
 test_ring_ladder_policy() {
@@ -1374,6 +1413,37 @@ recover_wakes() { cat "$1/state/.wake-queue" 2>/dev/null | grep -c 'unread first
 recover_interrupts() { grep -c ' t1 interrupt$' "$1/control.log" || true; }
 recover_rings() { grep -cF 'Firstmate instruction waiting' "$1/send.log" || true; }
 
+# A record behind an escalated one gets the watcher's own ladder. The newer
+# record here is the fm-send redirect the alarm recommends: it is rung, then
+# recovered past the bound with an interrupt and its redirect doorbell, and the
+# escalated record is not touched again.
+test_watcher_recovers_a_record_behind_an_escalated_one() {
+  local dir first second rings
+  dir=$(recover_case recover-behind "kind=secondmate" "harness=codex" "spawn_gen=g1")
+  first=$(inbox_lib "$dir/state" fm_task_inbox_write "$dir/state" t1 "stuck ask")
+  age_path "$first"
+  inbox_lib "$dir/state" fm_task_inbox_record_escalated "$dir/state" t1 "$first"
+  PATH="$dir/fakebin:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$dir/state" FM_SEND_LOG="$dir/send.log" \
+    FM_FAKE_TMUX_CAPTURE="$(idle_capture "$dir")" \
+    "$ROOT/bin/fm-send.sh" t1 "drain your inbox and dispatch independent work" > "$dir/fm-send.out" 2>&1 \
+    || fail "the fm-send redirect failed:"$'\n'"$(cat "$dir/fm-send.out")"
+  second=$(inbox_lib "$dir/state" fm_task_inbox_records_in "$dir/state/t1.inbox" | tail -n 1)
+  [ -n "$second" ] && [ "$second" != "${first##*/}" ] || fail "the fm-send redirect wrote no new record"
+  second="$dir/state/t1.inbox/$second"
+  age_path "$second"
+  rings=$(recover_rings "$dir")
+  RECOVER_RING_MAX=1 recover_check "$dir"
+  [ "$(recover_rings "$dir")" = $((rings + 1)) ] && [ "$(recover_interrupts "$dir")" = 0 ] \
+    || fail "the redirect behind an escalated record was not rung:"$'\n'"$(cat "$dir/send.log" "$dir/control.log" 2>/dev/null)"
+  recover_check "$dir"
+  [ "$(recover_interrupts "$dir")" = 1 ] || fail "the redirect behind an escalated record was not recovered:"$'\n'"$(cat "$dir/control.log" 2>/dev/null)"
+  [ "$(recover_rings "$dir")" = $((rings + 2)) ] || fail "the recovery interrupt was not followed by its redirect doorbell:"$'\n'"$(cat "$dir/send.log")"
+  [ "$(cut -f1 "$dir/state/t1.inbox/.recover-state")" = "${second##*/}" ] \
+    || fail "recovery claimed a slot for the escalated record instead of the redirect"
+  [ "$(recover_wakes "$dir")" = 0 ] || fail "the escalated record alarmed again"
+  pass "watcher: an fm-send redirect behind an escalated record is rung, then interrupted and redirected on its own ladder"
+}
+
 test_watcher_auto_recovers_a_secondmate_twice_then_alarms_once() {
   local dir rec
   dir=$(recover_case recover-twice "kind=secondmate" "harness=codex" "spawn_gen=g1")
@@ -1475,6 +1545,147 @@ test_watcher_recovery_scope_and_generation() {
   grep -q 'recovery bookkeeping unwritable' "$dir/state/.wake-queue" \
     || fail "unwritable recovery bookkeeping did not surface:"$'\n'"$(cat "$dir/state/.wake-queue" 2>/dev/null)"
   pass "watcher: crewmates and remote secondmates keep one alarm, a relaunch resets the budget, and unwritable bookkeeping alarms without interrupting"
+}
+
+age_by() {  # <path> <seconds>: set the mtime that many seconds in the past
+  python3 -c 'import os, sys, time; t = time.time() - int(sys.argv[2]); os.utime(sys.argv[1], (t, t))' "$1" "$2"
+}
+
+# Recovery never interrupts before the charter's 5-minute acknowledgement
+# allowance: a spent ladder or busy budget on a younger record stays quiet
+# (no slot, no interrupt, no doorbell, no alarm) and the first recovery
+# follows once the record is past the default 300 s bound.
+test_watcher_recovery_waits_for_the_charter_bound() {
+  local dir rec
+  dir=$(recover_case recover-bound "kind=secondmate" "harness=codex")
+  rec=$(inbox_lib "$dir/state" fm_task_inbox_write "$dir/state" t1 "routed ask")
+  age_by "$rec" 290
+  recover_check "$dir"; recover_check "$dir"
+  [ "$(recover_interrupts "$dir")" = 0 ] && [ "$(recover_rings "$dir")" = 0 ] && [ "$(recover_wakes "$dir")" = 0 ] \
+    || fail "a 290 s record was interrupted, rung or alarmed before the bound:"$'\n'"$(cat "$dir/control.log" "$dir/send.log" "$dir/state/.wake-queue" 2>/dev/null)"
+  [ ! -e "$dir/state/t1.inbox/.recover-state" ] || fail "a record younger than the bound claimed a recovery slot"
+  age_by "$rec" 310
+  recover_check "$dir"
+  [ "$(recover_interrupts "$dir")" = 1 ] && [ "$(recover_wakes "$dir")" = 0 ] \
+    || fail "a 310 s record was not recovered once:"$'\n'"$(cat "$dir/control.log" "$dir/state/.wake-queue" 2>/dev/null)"
+  pass "watcher: automatic recovery of a spent ladder waits until the record is 300 s old"
+}
+
+# The same bound holds for a busy-verified non-Codex secondmate (Claude, Pi or
+# Grok) whose busy budget is spent: no interrupt at 120 s, exactly one past
+# 300 s.
+test_watcher_busy_recovery_waits_for_the_charter_bound() {
+  local harness
+  for harness in claude pi grok; do
+    busy_recovery_bound_case "$harness"
+  done
+  pass "watcher: automatic recovery of a stuck-busy Claude, Pi or Grok secondmate waits until the record is 300 s old"
+}
+
+busy_recovery_bound_case() {  # <harness>
+  local dir gen source event
+  dir=$(busy_case "busy-bound-$1")
+  fm_write_meta "$dir/state/t1.meta" "window=sess:fm-t1" "kind=secondmate" "harness=$1"
+  # Claude and Pi report busy through their own trusted semantic source;
+  # Grok's busy read is its pane regex.
+  case "$1" in
+    claude) source=claude-hook event=user-prompt-submit ;;
+    pi) source=pi-ext event=agent-start ;;
+    *) source='' ;;
+  esac
+  if [ -n "$source" ]; then
+    gen=$("$ROOT/bin/fm-busy-event.sh" arm "$dir/state" t1) || fail "$1: could not arm the busy record"
+    "$ROOT/bin/fm-busy-event.sh" apply "$dir/state" t1 busy --gen "$gen" --source "$source" --event "$event" \
+      || fail "$1: could not record a busy turn"
+    [ "$(bash -c '. "$1" && fm_busy_classify tmux sess:fm-t1 "$2" t1 "$3"' _ "$ROOT/bin/fm-busy-lib.sh" "$1" "$dir/state")" = "busy $source" ] \
+      || fail "$1: the fixture pane is not verified busy"
+  fi
+  printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> "%s/control.log"\n' "$dir" > "$dir/fakebin/fm-control"
+  chmod +x "$dir/fakebin/fm-control"
+  : > "$dir/control.log"
+  age_by "$dir/state/t1.inbox/001.msg" 120
+  FM_CONTROL_BIN="$dir/fakebin/fm-control" busy_steer_check "$dir"
+  FM_CONTROL_BIN="$dir/fakebin/fm-control" busy_steer_check "$dir"
+  FM_CONTROL_BIN="$dir/fakebin/fm-control" busy_steer_check "$dir"
+  [ ! -s "$dir/control.log" ] && [ ! -s "$dir/state/.wake-queue" ] \
+    || fail "$1: a stuck-busy secondmate was interrupted or alarmed at 120 s:"$'\n'"$(cat "$dir/control.log" "$dir/state/.wake-queue" 2>/dev/null)"
+  [ "$(cut -f2 "$dir/state/t1.inbox/.busy-state" 2>/dev/null)" -ge 2 ] 2>/dev/null \
+    || fail "$1: the watcher never counted the pane busy, so the stuck-busy path did not run"
+  age_by "$dir/state/t1.inbox/001.msg" 310
+  FM_CONTROL_BIN="$dir/fakebin/fm-control" busy_steer_check "$dir"
+  [ "$(grep -c '^t1 interrupt$' "$dir/control.log")" = 1 ] || fail "$1: a stuck-busy secondmate past the bound was not interrupted once"
+}
+
+# An interrupt that fails or outlives its bound rings nothing: the slot stays
+# spent and the same poll raises one alarm naming the failure and its status.
+test_watcher_recovery_interrupt_failure_alarms_at_once() {
+  local dir rec kind start elapsed
+  for kind in exit hang; do
+    dir=$(recover_case "recover-ctl-$kind" "kind=secondmate" "harness=codex")
+    # The stand-in logs like recover_case's, then fails or hangs.
+    if [ "$kind" = exit ]; then
+      printf 'exit 1\n' >> "$dir/fakebin/fm-control"
+    else
+      printf 'sleep 30\nexit 1\n' >> "$dir/fakebin/fm-control"
+    fi
+    rec=$(inbox_lib "$dir/state" fm_task_inbox_write "$dir/state" t1 "routed ask")
+    age_path "$rec"
+    start=$(date +%s)
+    FM_WATCH_RECOVER_INTERRUPT_SECS=2 recover_check "$dir"
+    elapsed=$(( $(date +%s) - start ))
+    [ "$elapsed" -le 8 ] || fail "$kind: the recovery interrupt held the poll for ${elapsed}s against a 2 s bound"
+    [ "$(recover_interrupts "$dir")" = 1 ] || fail "$kind: the recovery interrupt was not attempted once"
+    [ "$(recover_rings "$dir")" = 0 ] || fail "$kind: a failed interrupt was followed by a doorbell:"$'\n'"$(cat "$dir/send.log")"
+    grep -c 'steering-inbox recovery interrupt failed' "$dir/state/.wake-queue" 2>/dev/null | grep -qx 1 \
+      || fail "$kind: a failed interrupt did not alarm exactly once on the same poll:"$'\n'"$(cat "$dir/state/.wake-queue" 2>/dev/null)"
+    [ "$(cat "$dir/state/t1.inbox/.escalated" 2>/dev/null)" = 001.msg ] || fail "$kind: the alarm did not mark the record escalated"
+    if [ "$kind" = exit ]; then
+      grep -qF 'interrupt exited 1 ' "$dir/state/.wake-queue" || fail "the alarm did not name the interrupt's exit status 1"
+    else
+      grep -qF 'interrupt exited 124 ' "$dir/state/.wake-queue" || fail "the alarm did not name the timed-out interrupt's status 124"
+    fi
+    recover_check "$dir"
+    [ "$(recover_interrupts "$dir")" = 1 ] && [ "$(grep -c 'recovery interrupt failed' "$dir/state/.wake-queue")" = 1 ] \
+      || fail "$kind: the escalated record was interrupted or alarmed again"
+  done
+  pass "watcher: a failed or timed-out recovery interrupt rings nothing and alarms once at once, within the interrupt bound"
+}
+
+# The spent budget comes from the recovery result, not from the slot count in
+# the bookkeeping: a second slot whose interrupt failed is not reported as a
+# second completed interrupt-and-redirect.
+test_watcher_failed_second_recovery_is_not_reported_spent() {
+  local dir rec
+  dir=$(recover_case recover-second-fails "kind=secondmate" "harness=codex")
+  rec=$(inbox_lib "$dir/state" fm_task_inbox_write "$dir/state" t1 "routed ask")
+  age_path "$rec"
+  recover_check "$dir"
+  [ "$(recover_interrupts "$dir")" = 1 ] && [ "$(recover_rings "$dir")" = 1 ] || fail "the first recovery did not interrupt and ring once"
+  printf 'exit 1\n' >> "$dir/fakebin/fm-control"
+  recover_check "$dir"
+  grep -qF 'steering-inbox recovery interrupt failed' "$dir/state/.wake-queue" 2>/dev/null \
+    || fail "the failed second interrupt did not alarm:"$'\n'"$(cat "$dir/state/.wake-queue" 2>/dev/null)"
+  ! grep -qF 'automatic recovery already interrupted and redirected it' "$dir/state/.wake-queue" \
+    || fail "a failed second interrupt was reported as a completed recovery:"$'\n'"$(cat "$dir/state/.wake-queue")"
+  pass "watcher: a failed second recovery interrupt is not reported as a spent interrupt-and-redirect budget"
+}
+
+# Recovery is chosen from the stuck-busy flag, never by searching the reason
+# text, so a busy-bookkeeping failure whose paths contain "stuck-busy" still
+# alarms as bookkeeping and interrupts nothing.
+test_watcher_busy_bookkeeping_failure_never_recovers() {
+  local dir
+  dir=$(busy_case busy-stuck-busy-unwritable)
+  fm_write_meta "$dir/state/t1.meta" "window=sess:fm-t1" "kind=secondmate" "harness=grok"
+  printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> "%s/control.log"\n' "$dir" > "$dir/fakebin/fm-control"
+  chmod +x "$dir/fakebin/fm-control"
+  : > "$dir/control.log"
+  mkdir "$dir/state/t1.inbox/.busy-state"
+  FM_CONTROL_BIN="$dir/fakebin/fm-control" busy_steer_check "$dir"
+  grep -q 'busy bookkeeping unwritable' "$dir/state/.wake-queue" \
+    || fail "a busy-bookkeeping failure did not alarm as bookkeeping:"$'\n'"$(cat "$dir/state/.wake-queue" 2>/dev/null)"
+  [ ! -s "$dir/control.log" ] || fail "a busy-bookkeeping failure interrupted the secondmate"
+  pass "watcher: a busy-bookkeeping failure alarms as bookkeeping and never triggers recovery"
 }
 
 test_watcher_dead_pane_escalates_once_without_ringing() {
@@ -1804,6 +2015,7 @@ test_fire_and_forget_records_never_enter_the_ladder
 test_fire_and_forget_retry_is_owed_once
 test_fire_and_forget_retry_is_quiet_without_the_flag
 test_ring_ladder_policy
+test_ladder_moves_past_an_escalated_record
 test_watcher_rerings_idle_pane_quietly
 test_escalation_names_the_pane_state_it_read
 test_watcher_waits_on_busy_pane
@@ -1839,9 +2051,15 @@ test_watcher_retry_keeps_a_newer_mark
 test_watcher_escalates_once_after_budget
 test_watcher_secondmate_unread_inbox_names_immediate_recovery
 test_watcher_auto_recovers_a_secondmate_twice_then_alarms_once
+test_watcher_recovers_a_record_behind_an_escalated_one
 test_watcher_recovery_rings_first_only_for_a_proven_answer
 test_watcher_recovery_restarts_the_ladder
 test_watcher_recovery_scope_and_generation
+test_watcher_recovery_waits_for_the_charter_bound
+test_watcher_busy_recovery_waits_for_the_charter_bound
+test_watcher_recovery_interrupt_failure_alarms_at_once
+test_watcher_failed_second_recovery_is_not_reported_spent
+test_watcher_busy_bookkeeping_failure_never_recovers
 test_watcher_dead_pane_escalates_once_without_ringing
 test_watcher_dead_pane_ignores_stale_busy_state
 test_parked_gate_notice_rings_once_per_park

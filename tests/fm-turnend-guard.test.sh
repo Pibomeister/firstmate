@@ -2783,7 +2783,7 @@ PY
 # pane shell, its session-lock-owning child and an unrelated stranger; a fake
 # herdr reports process-info about them and a fake tty foreground serves tmux.
 test_secondmate_event_herdr_binding() {
-  local dir shell owner stranger identity real_ps out rc
+  local dir shell owner stranger identity real_ps out rc i watcher start elapsed
   local -a herdr_env=(HERDR_SESSION=lab HERDR_PANE_ID=w1:p1) tmux_env=("TMUX=/tmp/fm-fake-tmux-socket,1,0" TMUX_PANE=%27)
   dir=$(make_secondmate_dir "$TMP_ROOT/sm-event-herdr")
   cp -R "$ROOT/bin/." "$dir/bin/"
@@ -2793,7 +2793,7 @@ test_secondmate_event_herdr_binding() {
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$FM_T_HERDR_LOG"
 case "${1:-} ${2:-}" in
-  "pane process-info") cat "$FM_T_HERDR_INFO" ;;
+  "pane process-info") [ ! -e "$FM_T_HERDR_HANG" ] || sleep 30; cat "$FM_T_HERDR_INFO" ;;
   "status --json") printf '{"client":{"version":"0.7.4","protocol":14},"server":{"running":true}}\n' ;;
   "agent get") printf '{"result":{"agent":{"agent":"codex","agent_status":"idle"}}}\n' ;;
   "pane read")
@@ -2824,14 +2824,34 @@ exec "$FM_T_REAL_PS" "$@"
 SH
   real_ps=$(command -v ps)
   chmod +x "$dir/fakebin/herdr" "$dir/fakebin/tmux" "$dir/fakebin/ps"
+  # The lock owner is a Codex-named session below the pane shell. Told to, it
+  # runs the production fm_secondmate_watch_start, so the binding under test
+  # is the one production writes; it then stays up as the lock owner for at
+  # most two minutes, so a failed run leaves nothing behind for long.
+  cat > "$dir/owner.sh" <<'SH'
+printf '%s\n' "$$" > "$FM_HOME/state/.lock"
+printf '%s\n' "$$" > "$FM_T_DIR/owner.pid"
+i=0
+while [ ! -e "$FM_T_DIR/start" ] && [ "$i" -lt 1200 ]; do sleep 0.05; i=$((i + 1)); done
+rc=0
+. "$FM_HOME/bin/fm-push-transition-lib.sh" && fm_secondmate_watch_start > "$FM_T_DIR/start.out" 2>&1 || rc=$?
+printf '%s\n' "$rc" > "$FM_T_DIR/start.rc"
+i=0
+while [ "$i" -lt 120 ]; do sleep 1; i=$((i + 1)); done
+SH
   # shellcheck disable=SC2016 # positional params expand in the child shell.
-  "$BASH" -c 'sleep 60 & printf "%s\n" "$!" > "$1"; wait' _ "$dir/owner.pid" >/dev/null 2>&1 &
+  env -u TMUX -u TMUX_PANE FM_HOME="$dir" STATE="$dir/state" CONFIG="$dir/config" FM_T_DIR="$dir" \
+    FM_TASK_INBOX="$dir/parent/state/sm-test-1.inbox" PATH="$dir/fakebin:$PATH" FM_T_REAL_PS="$real_ps" \
+    FM_T_HERDR_INFO="$dir/process-info.json" FM_T_HERDR_LOG="$dir/herdr.log" FM_T_HERDR_COMPOSER="$dir/composer" \
+    FM_T_HERDR_HANG="$dir/hang" FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_POLL=1 "${herdr_env[@]}" \
+    "$BASH" -c '"$1" "$2" & wait' _ "$CODEX_BIN" "$dir/owner.sh" >/dev/null 2>&1 &
   shell=$!
   sleep 60 >/dev/null 2>&1 &
   stranger=$!
-  until [ -s "$dir/owner.pid" ]; do sleep 0.05; done
+  i=0
+  while [ ! -s "$dir/owner.pid" ] && [ "$i" -lt 200 ]; do sleep 0.05; i=$((i + 1)); done
+  [ -s "$dir/owner.pid" ] || { kill "$shell" "$stranger" 2>/dev/null; fail "the fixture's lock owner never started"; }
   owner=$(cat "$dir/owner.pid")
-  printf '%s\n' "$owner" > "$dir/state/.lock"
 
   sm_call() {  # [VAR=value...] <function> [args...]: one route function in this home
     local -a envs=()
@@ -2840,7 +2860,7 @@ SH
     env -u TMUX -u TMUX_PANE -u HERDR_SESSION -u HERDR_PANE_ID FM_HOME="$dir" STATE="$dir/state" CONFIG="$dir/config" \
       FM_TASK_INBOX="$dir/parent/state/sm-test-1.inbox" PATH="$dir/fakebin:$PATH" FM_T_REAL_PS="$real_ps" FM_T_SHELL="$shell" FM_T_OWNER="$owner" \
       FM_T_HERDR_INFO="$dir/process-info.json" FM_T_HERDR_LOG="$dir/herdr.log" FM_T_HERDR_COMPOSER="$dir/composer" \
-      FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 ${envs[@]+"${envs[@]}"} \
+      FM_T_HERDR_HANG="$dir/hang" FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 ${envs[@]+"${envs[@]}"} \
       "$BASH" -c '. "$FM_HOME/bin/fm-push-transition-lib.sh" && "$@"' _ "$@"
   }
   herdr_info() {  # <pane-id> <shell-pid> <foreground-pid>
@@ -2870,6 +2890,26 @@ SH
   identity=$(sm_call fm_pid_identity "$owner") || fail "could not read the lock owner's identity"
   herdr_info w1:p1 "$shell" "$owner"
   expect_binding 1 "a missing binding file validated" "${herdr_env[@]}"
+  : > "$dir/start"
+  i=0
+  while [ ! -s "$dir/start.rc" ] && [ "$i" -lt 400 ]; do sleep 0.05; i=$((i + 1)); done
+  [ -s "$dir/start.rc" ] || fail "the production watcher start never returned"
+  out=$(cat "$dir/state/.secondmate-watch" 2>/dev/null || true)
+  expect_binding 0 "the binding the production start wrote did not validate" "${herdr_env[@]}"
+  watcher=$(cat "$dir/state/.watch.lock/pid" 2>/dev/null || true)
+  if [ -n "$watcher" ] && ps -o args= -p "$watcher" 2>/dev/null | grep -Fq -- "$dir/bin/fm-watch.sh --secondmate-hold"; then
+    kill "$watcher" 2>/dev/null || true
+  fi
+  [ "$(printf '%s\n' "$out" | sed -n 5p)" = herdr ] \
+    || fail "the production start did not record a Herdr binding:"$'\n'"$out"$'\n'"$(cat "$dir/start.out" 2>/dev/null)"
+  [ "$(printf '%s\n' "$out" | sed -n 3,4p | tr '\n' ' ')" = 'lab:w1:p1 lab ' ] \
+    || fail "the production start recorded the wrong Herdr target or route: $out"
+  : > "$dir/hang"
+  start=$(date +%s)
+  expect_binding 1 "a hung Herdr process-info read validated" "${herdr_env[@]}"
+  elapsed=$(( $(date +%s) - start ))
+  rm -f "$dir/hang"
+  [ "$elapsed" -le 9 ] || fail "a hung Herdr process-info read held the binding proof for ${elapsed}s"
   binding "$owner" "$identity" lab:w1:p1 lab herdr
   expect_binding 0 "a proven Herdr binding did not validate" "${herdr_env[@]}"
   expect_binding 1 "a Herdr binding validated without HERDR_PANE_ID" HERDR_SESSION=lab
