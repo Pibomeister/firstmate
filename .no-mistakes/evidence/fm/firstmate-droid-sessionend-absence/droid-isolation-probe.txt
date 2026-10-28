@@ -1,0 +1,5 @@
+Real Droid started in isolated HOME; PTY 40x120; no prompt or login submitted.
+PID=11851
+p11851
+fcwd
+n/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M61NZTJEF70VE1TJK1B32GGY/.test-validation/droid-home

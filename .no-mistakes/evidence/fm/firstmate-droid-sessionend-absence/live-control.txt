@@ -1,0 +1,40 @@
+Real Droid PID=50590; PTY=40x120; no model prompt or login submitted.
+p50590
+fcwd
+n/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M61NZTJEF70VE1TJK1B32GGY/.test-validation/live-control-final/worktree
+
+CASE: current SessionEnd marker with surviving Droid in exact worktree
+COMMAND: FM_HOME=<disposable-lab> bin/fm-control.sh live-droid-absence exit
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M61NZTJEF70VE1TJK1B32GGY/.test-validation/live-control-final
+error: task live-droid-absence's endpoint fm-lab-unregistered-01M61NZTJEF70VE1TJK1B32GGY reads 'unknown', but Orca no longer recognizes terminal fm-lab-unregistered-01M61NZTJEF70VE1TJK1B32GGY, but the host boot time 1792904944 does not postdate its recorded evidence 1793206514, so its agent cannot be proven to have died with the old boot; exit cannot prove the agent stopped
+exit_status=1
+
+CASE: Droid in another worktree does not block current marker proof
+COMMAND: FM_HOME=<disposable-lab> bin/fm-control.sh live-droid-absence exit
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M61NZTJEF70VE1TJK1B32GGY/.test-validation/live-control-final
+already-stopped live-droid-absence harness=droid backend=orca endpoint=fm-lab-unregistered-01M61NZTJEF70VE1TJK1B32GGY worktree=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M61NZTJEF70VE1TJK1B32GGY/.test-validation/live-control-final/unrelated-worktree
+exit_status=0
+
+CASE: stale SessionEnd marker refuses while Droid survives
+COMMAND: FM_HOME=<disposable-lab> bin/fm-control.sh live-droid-absence exit
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M61NZTJEF70VE1TJK1B32GGY/.test-validation/live-control-final
+error: task live-droid-absence's endpoint fm-lab-unregistered-01M61NZTJEF70VE1TJK1B32GGY reads 'unknown', but Orca no longer recognizes terminal fm-lab-unregistered-01M61NZTJEF70VE1TJK1B32GGY, but the host boot time 1792904944 does not postdate its recorded evidence 1793206533, so its agent cannot be proven to have died with the old boot; exit cannot prove the agent stopped
+exit_status=1
+
+CASE: stale SessionEnd marker also refuses after the real Droid exits
+COMMAND: FM_HOME=<disposable-lab> bin/fm-control.sh live-droid-absence exit
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M61NZTJEF70VE1TJK1B32GGY/.test-validation/live-control-final
+error: task live-droid-absence's endpoint fm-lab-unregistered-01M61NZTJEF70VE1TJK1B32GGY reads 'unknown', but Orca no longer recognizes terminal fm-lab-unregistered-01M61NZTJEF70VE1TJK1B32GGY, but the host boot time 1792904944 does not postdate its recorded evidence 1793206533, so its agent cannot be proven to have died with the old boot; exit cannot prove the agent stopped
+exit_status=1
+
+CASE: current marker and genuinely absent Droid reports already stopped
+COMMAND: FM_HOME=<disposable-lab> bin/fm-control.sh live-droid-absence exit
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M61NZTJEF70VE1TJK1B32GGY/.test-validation/live-control-final
+already-stopped live-droid-absence harness=droid backend=orca endpoint=fm-lab-unregistered-01M61NZTJEF70VE1TJK1B32GGY worktree=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M61NZTJEF70VE1TJK1B32GGY/.test-validation/live-control-final/worktree
+exit_status=0
+
+CASE: missing marker and unreadable real Orca endpoint refuses
+COMMAND: FM_HOME=<disposable-lab> bin/fm-control.sh live-droid-absence exit
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M61NZTJEF70VE1TJK1B32GGY/.test-validation/live-control-final
+error: task live-droid-absence's endpoint fm-lab-unregistered-01M61NZTJEF70VE1TJK1B32GGY reads 'unknown', but Orca no longer recognizes terminal fm-lab-unregistered-01M61NZTJEF70VE1TJK1B32GGY, but the host boot time 1792904944 does not postdate its recorded evidence 1793206533, so its agent cannot be proven to have died with the old boot; exit cannot prove the agent stopped
+exit_status=1

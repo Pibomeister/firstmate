@@ -1,0 +1,32 @@
+[
+  {
+    "case": "current SessionEnd marker with surviving Droid in exact worktree",
+    "exit_status": 1,
+    "state_preserved": true
+  },
+  {
+    "case": "Droid in another worktree does not block current marker proof",
+    "exit_status": 0,
+    "state_preserved": true
+  },
+  {
+    "case": "stale SessionEnd marker refuses while Droid survives",
+    "exit_status": 1,
+    "state_preserved": true
+  },
+  {
+    "case": "stale SessionEnd marker also refuses after the real Droid exits",
+    "exit_status": 1,
+    "state_preserved": true
+  },
+  {
+    "case": "current marker and genuinely absent Droid reports already stopped",
+    "exit_status": 0,
+    "state_preserved": true
+  },
+  {
+    "case": "missing marker and unreadable real Orca endpoint refuses",
+    "exit_status": 1,
+    "state_preserved": true
+  }
+]
