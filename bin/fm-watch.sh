@@ -2435,6 +2435,80 @@ clear_pause_tracking() {  # <window-key>
   clear_stale_hash_tracking "$key"
 }
 
+# A paused external PR-check wait must name an actual, task-bound condition
+# source. This local status read never polls GitHub; fm-procevent-when owns the
+# check condition and its durable terminal wake. The marker keeps an unchanged
+# bad declaration from waking firstmate on every watcher cycle.
+external_pr_check_pause_notice() {  # <window> <task>
+  local win=$1 task=$2 key marker last lower ref='' reason='' state='' bound_ref='' bound_task='' bound_pr=''
+  local bound_head='' bound_check='' bound_producer='' expected_head='' expected_check='' expected_producer=''
+  local meta_pr='' meta_head='' field note watch_status
+  key=$(window_key "$win")
+  marker="$STATE/.paused-check-$key"
+  last=$(status_declared_wait_line "$STATE/$task.status")
+  if ! status_is_paused "$last"; then
+    rm -f "$marker"
+    return 0
+  fi
+  lower=$(printf '%s' "$last" | tr '[:upper:]' '[:lower:]')
+  case "$lower" in *no-mistakes*) rm -f "$marker"; return 0 ;; esac
+  if [[ "$last" =~ check-watch=([^[:space:]]+) ]]; then
+    ref=${BASH_REMATCH[1]}
+  else
+    case "$lower" in
+      *'pr check'*|*'github check'*)
+        reason="check: external PR check pause has no registered watch for task=$task; arm bin/fm-pr-check-watch.sh and steer its watch_ref to the worker"
+        ;;
+      *) rm -f "$marker"; return 0 ;;
+    esac
+  fi
+  if [ -n "$ref" ]; then
+    case "$last" in
+      *'external PR check '*' check-watch='*)
+        expected_check=${last#*external PR check }
+        expected_check=${expected_check%% check-watch=*}
+        ;;
+    esac
+    if [[ "$last" =~ [[:space:]]head=([0-9a-f]{40}|[0-9a-f]{64})([[:space:]]|$) ]]; then
+      expected_head=${BASH_REMATCH[1]}
+    fi
+    if [[ "$last" =~ [[:space:]]producer=app:([1-9][0-9]*)([[:space:]]|$) ]]; then
+      expected_producer=app:${BASH_REMATCH[1]}
+    fi
+    watch_status=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-pr-check-watch.sh" status "$ref" 2>/dev/null) || watch_status=
+    while IFS= read -r field; do
+      case "$field" in
+        state=*) state=${field#state=} ;;
+        watch_ref=*) bound_ref=${field#watch_ref=} ;;
+        task=*) bound_task=${field#task=} ;;
+        pr=*) bound_pr=${field#pr=} ;;
+        head=*) bound_head=${field#head=} ;;
+        check=*) bound_check=${field#check=} ;;
+        producer=*) bound_producer=${field#producer=} ;;
+      esac
+    done <<< "$watch_status"
+    meta_pr=$(sed -n 's/^pr=//p' "$STATE/$task.meta" 2>/dev/null | tail -1)
+    meta_head=$(sed -n 's/^pr_head=//p' "$STATE/$task.meta" 2>/dev/null | tail -1)
+    if { [ "$state" = live ] || [ "$state" = result-unhandled ]; } \
+      && [ "$bound_ref" = "$ref" ] && [ "$bound_task" = "$task" ] \
+      && [ -n "$meta_pr" ] && [ "$bound_pr" = "$meta_pr" ] \
+      && { [ -z "$meta_head" ] || [ "$bound_head" = "$meta_head" ]; } \
+      && [ -n "$expected_head" ] && [ "$bound_head" = "$expected_head" ] \
+      && [ -n "$expected_check" ] && [ "$bound_check" = "$expected_check" ] \
+      && [ -n "$expected_producer" ] && [ "$bound_producer" = "$expected_producer" ]; then
+      rm -f "$marker"
+      return 0
+    fi
+    reason="check: external PR check pause has no matching live or unhandled watch for task=$task ref=$ref; inspect bin/fm-pr-check-watch.sh status and re-arm or resolve the result"
+  fi
+  note="$last"$'\n'"$reason"
+  [ "$(cat "$marker" 2>/dev/null || true)" != "$note" ] || return 0
+  fm_wake_append check "pr-check-watch-$task" "$reason" || return 1
+  [ ! -L "$marker" ] || return 1
+  (umask 077; printf '%s' "$note" > "$marker") || return 1
+  wake "$reason"
+}
+
 # Reconcile a declared pause or captain-held status with authoritative crew state.
 # After fm-crew-state has fallen back to stopped or unknown, paused classification is
 # recovered only for a confidently dead ordinary crew, or for a secondmate, whose
@@ -4094,6 +4168,9 @@ EOF
     [ -z "$task" ] || inbox_steer_check "$w" "$task"
     key=$(window_key "$w")
     last=$(status_declared_wait_line "$STATE/$task.status")
+    if [ "$kind" = ship ] && [ -n "$task" ]; then
+      external_pr_check_pause_notice "$w" "$task" || exit 1
+    fi
     if ! status_is_paused_or_captain_held "$last" && [ -e "$STATE/.paused-$key" ]; then
       clear_pause_tracking "$key"
     fi

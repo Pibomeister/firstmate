@@ -6,6 +6,19 @@ This record contains reusable version-scoped evidence for active runtime guarant
 The backend guides own current setup, safety boundaries, and limitations.
 Exact task chronology, branch names, temporary homes, local paths, process ids, thread ids, and delivery transcripts remain in private reports or PR evidence.
 
+## Named PR check supervision
+
+Verified on 2026-10-28 on macOS arm64 with Bash 5.3.20, gh-axi 0.1.36, jq 1.7.1-apple, and tmux 3.6a.
+`bin/fm-pr-check-watch.sh` registers a head- and GitHub App-bound condition through the shared process-event runner, and `bin/fm-watch.sh` reads the task's local registration before accepting an external-check pause.
+The real tmux runner with a disposable forge fixture registered the source, captured a `fired` result, woke the watcher, and acknowledged the result.
+The same run also captured a second `ambiguous` result during watcher reconciliation, so the terminal handoff remains unverified; the private task report holds the exact smoke transcript and fixture command.
+
+The primary harness inventory in `bin/fm-harness.sh` includes claude, codex, opencode, pi, pi-signed, grok, kimi, cursor, gemini, muse, rovo, omp, agy, devin, commandcode, droid, and polytoken.
+Inspection of the named-check command and pause-warning path found no harness-specific branch or rendered-harness signal; all listed primary harnesses enter through the same task status and process-event state.
+The runtime inventory in `bin/fm-backend.sh` includes tmux, herdr, zellij, orca, cmux, and paseo.
+The watcher resolves a ship's task through the existing backend metadata seam before checking its local watch; the check condition and process-event registration do not select a backend.
+Only the tmux endpoint was driven in the live smoke, so the other five backend endpoints and individual primary harness binaries are not live-verified by this check-watch run.
+
 ## Polytoken worker lifecycle
 
 Verified on 2026-10-14 with Polytoken 0.9.0 on macOS arm64 using the tmux worker path.
