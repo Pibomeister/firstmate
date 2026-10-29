@@ -830,9 +830,18 @@ ok - codex (codex-cli 0.162.1): a real Bash PreToolUse payload carries tool_inpu
 ok - live busy-Codex doorbell guard verified 2 live surface(s)
 ```
 
+Result: passed 2026-10-29 on codex-cli 0.165.0, macOS arm64, at revision `4b0ce535`, with `FM_TASK_INBOX_CODEX_HOOK_TRUST_WITHHELD=1` and this checkout's hook left untrusted; the payload-key surface above was therefore skipped, not exercised, and its 0.162.1 record stands as earlier-version evidence:
+
+```text
+ok - codex (codex-cli 0.165.0): an owned doorbell submitted into a busy Codex composer reached the model inside the running turn
+skip: codex (codex-cli 0.165.0): live PreToolUse surface not exercised: requires hook trust, which is withheld
+ok - live busy-Codex doorbell guard verified 1 live surface(s), skipped 1
+```
+
 The secondmate steering-inbox guard (`bin/fm-secondmate-inbox-guard.sh`) also depends on the shape of Codex's Bash PreToolUse payload (`tool_input`, `session_id` and `turn_id`).
-The same live guard records that shape: one `codex exec` in the repository root runs a shell command through this checkout's existing, already-trusted PreToolUse registration, and `bin/fm-arm-pretool-check.sh`'s test-only `FM_PRETOOL_PAYLOAD_KEYS_FILE` switch appends only the payload's top-level key names, never a value; the second line above is that record.
+The same live guard records that shape: one `codex exec` in the repository root runs a shell command through this checkout's existing, already-trusted PreToolUse registration, and `bin/fm-arm-pretool-check.sh`'s test-only `FM_PRETOOL_PAYLOAD_KEYS_FILE` switch appends only the payload's top-level key names, never a value; the second line of the 0.162.1 result is that record.
 The guard adds no `.codex/hooks.json` entry and never grants or bypasses hook trust ([Codex hook trust](#codex-hook-trust)), so on a Codex home that has not trusted the registration no hook runs and that surface fails.
+`FM_TASK_INBOX_CODEX_HOOK_TRUST_WITHHELD=1` turns that one failure into a logged skip, and only while the Codex config records no trust for this checkout's PreToolUse hook; the test header owns the rule.
 The inbox guard still allows the call for a payload missing any of those keys, which `test_guard_allows_everything_it_does_not_own` in `tests/fm-secondmate-inbox-guard.test.sh` pins.
 
 ## Codex secondmate watcher on Herdr
