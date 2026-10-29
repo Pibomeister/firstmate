@@ -484,6 +484,10 @@ fake_path_trusted() {
 }
 case "$*" in
   *"#{pane_current_path}"*) printf '%s\n' "$FM_FAKE_PANE_PATH"; exit 0 ;;
+  *"#{pane_current_command}"*)
+    if [ "$state" = busy ]; then printf 'agy\n'; else printf 'bash\n'; fi
+    exit 0 ;;
+  *"#{pane_tty}"*) exit 0 ;;
   *"#{cursor_y}"*) printf '1\n'; exit 0 ;;
 esac
 case "${1:-}" in
@@ -516,6 +520,7 @@ case "${1:-}" in
         *--prompt-interactive*)
           printf '%s\n' "$literal" >> "$FM_FAKE_LAUNCH_LOG"
           printf 'launched\n' > "$FM_FAKE_AGY_STATE"
+          [ "${FM_FAKE_AGY_FAIL:-}" != literal ] || exit 1
           ;;
       esac
       exit 0
@@ -524,6 +529,7 @@ case "${1:-}" in
       *' Enter '*)
         case "$state" in
           launched)
+            [ "${FM_FAKE_AGY_FAIL:-}" != enter ] || exit 1
             if fake_path_trusted && [ "${FM_FAKE_AGY_NEVER_BUSY:-0}" = 1 ]; then
               printf 'idle\n' > "$FM_FAKE_AGY_STATE"
             elif fake_path_trusted; then
@@ -544,7 +550,20 @@ case "${1:-}" in
     esac
     exit 0
     ;;
-  capture-pane) fake_screen; exit 0 ;;
+  capture-pane)
+    if [ "${FM_FAKE_AGY_FAIL:-}" = signal ] && [ "$state" = busy ]; then
+      parent=$PPID
+      spawn_pid=
+      while [ "$parent" -gt 1 ]; do
+        case "$(ps -o args= -p "$parent")" in
+          *fm-spawn.sh*) spawn_pid=$parent ;;
+        esac
+        parent=$(ps -o ppid= -p "$parent" | tr -d ' ')
+      done
+      [ -z "$spawn_pid" ] || kill -TERM "$spawn_pid"
+      exit 1
+    fi
+    fake_screen; exit 0 ;;
 esac
 exit 0
 SH
@@ -614,6 +633,8 @@ BASE_PATH=${FM_TEST_BASE_PATH:-$NODE_BIN_DIR:/usr/bin:/bin:/usr/sbin:/sbin}
 run_agy_spawn() {
   local case_dir=$1 home=$2 proj=$3 wt=$4 fakebin=$5 id=$6
   shift 6
+  local spawn_args=("$id" "$proj" --harness agy --mode no-mistakes --yolo off)
+  [ "${FM_FAKE_AGY_RELAUNCH:-0}" != 1 ] || spawn_args=("$id" --relaunch --harness agy)
   HOME="$home" FM_ROOT_OVERRIDE='' FM_HOME="$home" \
     FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
     FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
@@ -630,9 +651,109 @@ run_agy_spawn() {
     FM_FAKE_AGY_ANSWER="${FM_FAKE_AGY_ANSWER:-works}" \
     FM_FAKE_AGY_NEVER_BUSY="${FM_FAKE_AGY_NEVER_BUSY:-0}" \
     FM_FAKE_AGY_MODELS_LOG="${FM_FAKE_AGY_MODELS_LOG:-}" \
+    FM_FAKE_AGY_FAIL="${FM_FAKE_AGY_FAIL:-}" \
     FM_AGY_READY_POLLS=4 FM_AGY_POLL_INTERVAL=0 FM_AGY_MODELS_TIMEOUT=${FM_AGY_MODELS_TIMEOUT:-1} \
     PATH="$fakebin:$BASE_PATH" \
-    "$SPAWN" "$id" "$proj" --harness agy --mode no-mistakes --yolo off "$@" 2>&1
+    "$SPAWN" "${spawn_args[@]}" "$@" 2>&1
+}
+
+make_agy_pooled_case() {
+  local real_treehouse=$1
+  WT_DIR=$(cd "$PROJ_DIR" && "$real_treehouse" --root "$CASE_DIR/pool" get --lease --no-fetch) || fail "could not allocate fixture pool slot"
+  (cd "$PROJ_DIR" && "$real_treehouse" return "$WT_DIR" --force) || fail "could not return fixture slot"
+  cat > "$FAKEBIN_DIR/treehouse" <<SH
+#!/usr/bin/env bash
+exec '$real_treehouse' --root '$CASE_DIR/pool' "\$@"
+SH
+  chmod +x "$FAKEBIN_DIR/treehouse"
+}
+
+test_agy_post_publication_failures_keep_records() {
+  local mode id rec rc out real_tasks
+  real_tasks=$(command -v tasks-axi) || fail "test needs tasks-axi"
+  for mode in literal enter signal backlog; do
+    id="agy-failure-$mode-$$"
+    rec=$(make_agy_spawn_case "failure-$mode" "$id")
+    read_agy_spawn_record "$rec"
+    fm_test_tasks_toml "$HOME_DIR/.tasks.toml"
+    printf '# Backlog\n\n## In flight\n\n## Queued\n\n## Done\n' > "$HOME_DIR/data/backlog.md"
+    (cd "$HOME_DIR" && "$real_tasks" add "$id" "AGY failure" --kind ship --file "$HOME_DIR/data/backlog.md") >/dev/null || fail "could not seed backlog"
+    cat > "$FAKEBIN_DIR/tasks-axi" <<SH
+#!/usr/bin/env bash
+if [ '$mode' = backlog ] && [ "\${1:-}" = start ]; then exit 1; fi
+exec '$real_tasks' "\$@"
+SH
+    chmod +x "$FAKEBIN_DIR/tasks-axi"
+    rc=0
+    out=$(FM_FAKE_AGY_FAIL="$mode" run_agy_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id") || rc=$?
+    [ "$rc" -ne 0 ] || fail "$mode did not fail the AGY spawn: $out"
+    [ -f "$HOME_DIR/state/$id.meta" ] || fail "$mode erased the published AGY task: $out"
+    assert_grep "worktree=$WT_DIR" "$HOME_DIR/state/$id.meta" "$mode lost the recorded checkout"
+    if [ "$mode" != backlog ]; then
+      out=$(cd "$HOME_DIR" && "$real_tasks" show "$id" --file "$HOME_DIR/data/backlog.md")
+      assert_contains "$out" 'state: in_flight' "$mode left the preserved record's backlog queued"
+    fi
+  done
+  pass "fm-spawn: AGY send, signal, and backlog failures preserve published records"
+}
+
+test_agy_live_guard_always_stops_server() {
+  local dir mode rc out
+  dir="$TMP_ROOT/live-cleanup"
+  mkdir -p "$dir/tests" "$dir/bin" "$dir/fakebin" "$dir/home/.gemini" "$dir/tmp"
+  cp "$ROOT/tests/fm-agy-spawn-live-e2e.test.sh" "$dir/tests/guard.sh"
+  cat > "$dir/tests/lib.sh" <<'SH'
+ROOT=$FM_CLEANUP_FIXTURE
+fm_live_gate() { :; }
+pass() { printf 'ok - %s\n' "$1"; }
+SH
+  cat > "$dir/bin/fm-spawn.sh" <<'SH'
+#!/usr/bin/env bash
+lab=${FM_HOME%/home}
+printf '%s\n' "$lab" > "$FM_CLEANUP_FIXTURE/lab"
+[ "$FM_CLEANUP_MODE" != failure ] || exit 1
+mkdir -p "$FM_HOME/state" "$FM_HOME/data/$1" "$HOME/.gemini/antigravity-cli"
+printf 'window=firstmate:fm-%s\nworktree=%s/wt\n' "$1" "$FM_CLEANUP_FIXTURE" > "$FM_HOME/state/$1.meta"
+printf '{"trustedWorkspaces":["%s/wt"]}\n' "$FM_CLEANUP_FIXTURE" > "$HOME/.gemini/antigravity-cli/settings.json"
+[ "$1" != agy-custody ] || exit 1
+printf 'BRIEF_RECEIVED 80235 %s/wt\n' "$FM_CLEANUP_FIXTURE" > "$FM_HOME/data/$1/report.md"
+SH
+  cat > "$dir/bin/fm-control.sh" <<'SH'
+#!/usr/bin/env bash
+printf 'BRIEF_RECEIVED 80235 %s/wt\n' "$FM_CLEANUP_FIXTURE" > "$FM_HOME/data/$1/report.md"
+SH
+  cat > "$dir/bin/fm-teardown.sh" <<'SH'
+#!/usr/bin/env bash
+rm -f "$FM_HOME/state/$1.meta"
+SH
+  cat > "$dir/fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+case "$*" in
+  *kill-server*) printf 'closed\n' >> "$FM_CLEANUP_FIXTURE/closed" ;;
+  *display-message*) printf '%s/socket,1,0\n' "$FM_CLEANUP_FIXTURE" ;;
+esac
+SH
+  cat > "$dir/fakebin/treehouse" <<'SH'
+#!/usr/bin/env bash
+[ "${1:-}" != get ] || printf '%s/second\n' "$FM_CLEANUP_FIXTURE"
+SH
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$dir/bin/fm-captain-hold.sh"
+  printf '#!/usr/bin/env bash\nprintf "test-version\\n"\n' > "$dir/fakebin/agy"
+  chmod +x "$dir/bin/"* "$dir/fakebin/"*
+  for mode in success failure; do
+    rm -f "$dir/closed"
+    rc=0
+    out=$(HOME="$dir/home" TMPDIR="$dir/tmp" FM_CLEANUP_FIXTURE="$dir" FM_CLEANUP_MODE="$mode" \
+      FM_AGY_SPAWN_LIVE_KEEP=1 PATH="$dir/fakebin:$PATH" bash "$dir/tests/guard.sh" 2>&1) || rc=$?
+    if [ "$mode" = success ]; then
+      expect_code 0 "$rc" "live cleanup success fixture failed: $out"
+    else
+      [ "$rc" -ne 0 ] || fail "live cleanup failure fixture did not fail"
+    fi
+    [ -f "$dir/closed" ] || fail "live guard did not stop its isolated server on $mode: $out"
+    [ ! -d "$(cat "$dir/lab")" ] || fail "live guard retained its lab on $mode"
+  done
+  pass "AGY live guard stops its isolated server on success and failure"
 }
 
 test_agy_launch_carries_the_brief_with_model_effort_and_autonomy() {
@@ -863,10 +984,12 @@ test_agy_pre_trusted_path_that_never_turns_busy_fails_the_spawn() {
 # names the closed endpoint and the worktree for fm-control relaunch, and that
 # fm-teardown can resolve. The kill must target only the task's own window.
 test_agy_readiness_failure_keeps_a_recoverable_record() {
-  local id rec out rc meta calls
+  local id rec out rc meta calls real_treehouse second launch_before
+  real_treehouse=$(command -v treehouse) || fail "test needs treehouse"
   id="agy-custody-z14-$$"
   rec=$(make_agy_spawn_case custody "$id")
   read_agy_spawn_record "$rec"
+  make_agy_pooled_case "$real_treehouse"
   rc=0
   out=$(FM_FAKE_AGY_ASSUME_TRUSTED=1 FM_FAKE_AGY_ANSWER=stuck FM_FAKE_AGY_NEVER_BUSY=1 run_agy_spawn \
     "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" --model gemini-3.8-flash-low) || rc=$?
@@ -887,6 +1010,26 @@ test_agy_readiness_failure_keeps_a_recoverable_record() {
   assert_contains "$out" "bin/fm-control.sh $id relaunch" "the failure did not name the recovery command"
   assert_grep 'failed: agy did not start processing its brief' <(sed -E 's/ \[at=[0-9]+\]//' "$HOME_DIR/state/$id.status") \
     "a failed agy readiness gate did not record the failure in the task status"
+  second=$(cd "$PROJ_DIR" && "$real_treehouse" --root "$CASE_DIR/pool" get --lease --no-fetch) || fail "second dispatch could not allocate"
+  [ "$second" != "$WT_DIR" ] || fail "second dispatch stole the failed AGY task's slot"
+  "$real_treehouse" return "$second" --force || fail "could not release second slot"
+  printf 'original work\n' > "$WT_DIR/recovery-sentinel"
+  printf 'shell\n' > "$CASE_DIR/agy.state"
+  rc=0
+  out=$(FM_FAKE_AGY_RELAUNCH=1 run_agy_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id") || rc=$?
+  expect_code 0 "$rc" "the kept AGY task could not relaunch: $out"
+  assert_grep "worktree=$WT_DIR" "$meta" "relaunch changed the original worktree"
+  [ "$(cat "$WT_DIR/recovery-sentinel")" = 'original work' ] || fail "relaunch discarded original work"
+  launch_before=$(cat "$CASE_DIR/launch.log")
+  printf 'shell\n' > "$CASE_DIR/agy.state"
+  printf 'task=another-task\nhome=%s\n' "$HOME_DIR" > "$(dirname "$WT_DIR")/.fm-slot-owner"
+  rc=0
+  out=$(FM_FAKE_AGY_RELAUNCH=1 run_agy_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id") || rc=$?
+  [ "$rc" -ne 0 ] || fail "relaunch accepted a reassigned slot"
+  assert_contains "$out" 'ownership=other' "relaunch did not refuse at slot ownership: $out"
+  [ "$(cat "$CASE_DIR/launch.log")" = "$launch_before" ] || fail "relaunch launched into a reassigned slot"
+  printf 'task=%s\nhome=%s\n' "$id" "$HOME_DIR" > "$(dirname "$WT_DIR")/.fm-slot-owner"
+  rm "$WT_DIR/recovery-sentinel"
   rc=0
   out=$(HOME="$HOME_DIR" FM_ROOT_OVERRIDE='' FM_HOME="$HOME_DIR" \
     FM_STATE_OVERRIDE="$HOME_DIR/state" FM_DATA_OVERRIDE="$HOME_DIR/data" \
@@ -896,6 +1039,9 @@ test_agy_readiness_failure_keeps_a_recoverable_record() {
     "$ROOT/bin/fm-teardown.sh" "$id" 2>&1) || rc=$?
   expect_code 0 "$rc" "fm-teardown could not resolve the kept agy record"$'\n'"$out"
   [ ! -e "$meta" ] || fail "fm-teardown left the kept agy record behind"
+  second=$(cd "$PROJ_DIR" && "$real_treehouse" --root "$CASE_DIR/pool" get --lease --no-fetch) || fail "could not allocate after teardown"
+  [ "$second" = "$WT_DIR" ] || fail "teardown did not release durable slot custody"
+  "$real_treehouse" return "$second" --force || fail "could not return teardown probe"
   pass "fm-spawn: an agy readiness failure closes only its window and keeps a record fm-teardown resolves"
 }
 
@@ -1020,6 +1166,8 @@ test_agy_unregistered_path_ignores_busy_until_the_dialog_is_answered
 test_agy_unregistered_path_without_a_dialog_fails_the_spawn
 test_agy_pre_trusted_path_that_never_turns_busy_fails_the_spawn
 test_agy_readiness_failure_keeps_a_recoverable_record
+test_agy_post_publication_failures_keep_records
+test_agy_live_guard_always_stops_server
 test_agy_unverified_backend_refuses_before_anything_launches
 test_agy_missing_binary_refuses_before_pane_creation
 test_agy_secondmate_launch_pre_trusts_home_and_records_meta
