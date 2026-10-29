@@ -1,0 +1,4 @@
+# negative control: tree of 4d32af8d with bin/fm-primary-scope-lib.sh reverted to 6cbab66b; cmd=./tests/fm-secondmate-inbox-guard.test.sh
+ok - inbox guard: each waiting record is denied with names only, at most 3 times, and the window spaces every deny
+not ok - an aged waiting record with no trailing newline in the home marker: expected a deny (exit 2), got 0: 
+EXIT=1

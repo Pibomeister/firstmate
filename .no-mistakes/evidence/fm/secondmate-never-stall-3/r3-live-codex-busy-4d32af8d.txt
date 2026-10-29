@@ -1,0 +1,5 @@
+# rev=4d32af8d50aa25fc83e4078c29465e6e44a2634c codex-cli 0.165.0 cmd=FM_TASK_INBOX_CODEX_BUSY_LIVE=1 FM_TASK_INBOX_CODEX_HOOK_TRUST_WITHHELD=1 bash tests/fm-task-inbox-codex-busy-live-e2e.test.sh 2026-10-29T12:18:14Z
+ok - codex (codex-cli 0.165.0): an owned doorbell submitted into a busy Codex composer reached the model inside the running turn
+skip: codex (codex-cli 0.165.0): live PreToolUse surface not exercised: requires hook trust, which is withheld
+ok - live busy-Codex doorbell guard verified 1 live surface(s), skipped 1
+EXIT=0

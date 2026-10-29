@@ -1,0 +1,5 @@
+ok - checkpoint: interrupted startup retains failed-cleanup evidence and returns nonzero
+not ok - preconfirmation retirement discarded its failed-cleanup diagnostic (missing: 'supervision-host: watcher: recovery state could not be persisted; retaining stale lock evidence')
+--- output ---
+watcher: FAILED - the supervision host could not start a watcher cycle
+EXIT=1

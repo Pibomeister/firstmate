@@ -1,0 +1,4 @@
+# rev=4d32af8d50aa25fc83e4078c29465e6e44a2634c herdr 0.7.4 cmd='FM_HERDR_SECONDMATE_WATCH_LIVE_E2E=1 bash tests/fm-herdr-secondmate-watch-live-e2e.test.sh' date=2026-10-29T12:45:03Z
+ok - herdr 0.7.4: production watch start binds a Codex-named owner in a real Herdr pane, proven from real process-info, refused for another pane
+ok - herdr 0.7.4: notification wrote durable record 001.msg and its doorbell reached the real Herdr pane
+EXIT=0

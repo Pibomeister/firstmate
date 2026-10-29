@@ -1,0 +1,4 @@
+# rev=4d32af8d50aa25fc83e4078c29465e6e44a2634c cmd=bash tests/fm-watch-checkpoint.test.sh (alone) 2026-10-29T12:05:20Z
+not ok - interrupted startup must report failed cleanup: expected exit 1, got 0
+bash tests/fm-watch-checkpoint.test.sh 2>&1  0.42s user 0.66s system 29% cpu 3.639 total
+EXIT=1

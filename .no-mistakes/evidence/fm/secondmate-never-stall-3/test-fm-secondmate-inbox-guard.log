@@ -1,0 +1,11 @@
+ok - inbox guard: each waiting record is denied with names only, at most 3 times, and the window spaces every deny
+ok - inbox guard: a home marker without a trailing newline still denies an aged waiting record
+ok - inbox guard: an escalated oldest record with its denies spent does not stop the drain for a later record
+ok - inbox guard: a record the watcher escalated before any deny is skipped on its own, not only once its denies are spent
+ok - inbox guard: escalated records ahead of a later record never hide it, however many there are
+ok - inbox guard: the oldest waiting record is the lowest sequence number, not the first name as text
+ok - inbox guard: the record's age is read portably, so a GNU stat first on PATH still denies
+ok - inbox guard: fire-and-forget records are skipped exactly as the watcher's ladder skips them
+ok - inbox guard: primaries, crewmates, nested or foreign sessions, stale bindings, young records and other payloads are allowed
+ok - pretool hook: the capture switch records top-level payload key names only
+EXIT=0

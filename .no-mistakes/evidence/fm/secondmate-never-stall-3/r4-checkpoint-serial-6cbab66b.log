@@ -1,0 +1,6 @@
+# rev=6cbab66b6f03ac4c0075e342664d4fd74867a9be fixture=git-archive:/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-r4-6cbab66b.U8c0pL cmd='bash tests/fm-watch-checkpoint.test.sh' serial(alone) bash=GNU bash, version 5.3.20(1)-release (aarch64-apple-darwin25.6.0) date=2026-10-29T12:44:32Z
+ok - checkpoint: interrupted startup retains failed-cleanup evidence and returns nonzero
+not ok - preconfirmation retirement discarded its failed-cleanup diagnostic (missing: 'supervision-host: watcher: recovery state could not be persisted; retaining stale lock evidence')
+--- output ---
+watcher: FAILED - the supervision host could not start a watcher cycle
+EXIT=1

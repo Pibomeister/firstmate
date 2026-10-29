@@ -1,0 +1,2 @@
+not ok - interrupted startup must report failed cleanup: expected exit 1, got 137
+EXIT=1

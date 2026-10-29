@@ -1,0 +1,2 @@
+not ok - codex (codex-cli 0.165.0): a trust dialog opened in /Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M63PCD0HBAZBT3RSQDSN47BN; trust the folder in an ordinary session first
+EXIT=1

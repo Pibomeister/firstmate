@@ -1,0 +1,4 @@
+221a222,224
+> [projects."/Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M63PCD0HBAZBT3RSQDSN47BN"]
+> trust_level = "trusted"
+> 

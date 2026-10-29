@@ -1,0 +1,2 @@
+not ok - codex (codex-cli 0.165.0): the tool loop never started
+EXIT=1
