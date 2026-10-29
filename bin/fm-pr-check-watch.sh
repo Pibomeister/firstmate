@@ -21,7 +21,9 @@
 # positive values for a private bounded fixture.
 # Re-runs of the bound check within one check suite resolve to the newest attempt;
 # the same check from the same App in more than one suite is ambiguous.
-# Any forge read error ends the watch with condition-error at once; re-arm it.
+# Any forge read error, or a missing or changed watch record, ends the watch with
+# condition-error at once; re-arm it. retire on an absent record still retires
+# a leftover registered source.
 set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -35,7 +37,8 @@ WATCH_DIR=$STATE/pr-check-watch
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"
 
-die() { printf 'fm-pr-check-watch: %s\n' "$*" >&2; exit 1; }
+# Condition mode sets DIE_RC=2 so a bad record ends the watch instead of reading as not-yet-true.
+die() { printf 'fm-pr-check-watch: %s\n' "$*" >&2; exit "${DIE_RC:-1}"; }
 usage() { sed -n '2,/^set -euo pipefail$/s/^# \{0,1\}//p' "$0"; }
 valid_ref() { [[ ${1-} =~ ^when-prcheck-[0-9a-f]{12}-[0-9a-f]{12}$ ]]; }
 record_path() { printf '%s/%s.json\n' "$WATCH_DIR" "$1"; }
@@ -221,6 +224,7 @@ cmd_status() {
 
 cmd_condition() {
   [ "$#" -eq 2 ] || die 'usage: condition <watch-ref> <bound-record-hash>'
+  DIE_RC=2
   check_record_hash "$1" "$2"
   load_record "$1"
   check_current "$(record_field pr)" "$(record_field head)" "$(record_field check)" "$(record_field producer_app)"
@@ -241,10 +245,12 @@ cmd_retire() {
   [ "$#" -eq 1 ] || die 'usage: retire <watch-ref>'
   local ref=$1 name
   valid_ref "$ref" || die 'invalid watch reference'
-  [ -f "$(record_path "$ref")" ] || { printf 'state=absent\nwatch_ref=%s\n' "$ref"; return 0; }
+  name=${ref#when-}
+  [ -f "$(record_path "$ref")" ] || {
+    [ ! -e "$STATE/procevent/$ref.source" ] || "$SCRIPT_DIR/fm-procevent-when.sh" retire "$name" >/dev/null
+    printf 'state=absent\nwatch_ref=%s\n' "$ref"; return 0; }
   load_record "$ref"
   [ "$(local_state "$ref")" != result-unhandled ] || die 'handle the terminal result before retiring'
-  name=${ref#when-}
   "$SCRIPT_DIR/fm-procevent-when.sh" retire "$name" >/dev/null
   rm -f "$(record_path "$ref")"
   printf 'state=retired\nwatch_ref=%s\n' "$ref"
@@ -256,7 +262,7 @@ cmd_rearm() {
   load_record "$ref"
   [ "$(local_state "$ref")" = ended ] || die 'handle the terminal result before re-arming'
   task=$(record_field task); url=$(record_field pr); check=$(record_field check); app=$(record_field producer_app)
-  next=$($0 arm "$task" "$url" "$check" --producer-app "$app") || die 'new generation could not be armed'
+  next=$("$SCRIPT_DIR/fm-pr-check-watch.sh" arm "$task" "$url" "$check" --producer-app "$app") || die 'new generation could not be armed'
   cmd_retire "$ref" >/dev/null
   printf '%s\n' "$next"
 }

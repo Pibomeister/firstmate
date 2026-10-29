@@ -159,10 +159,11 @@ pass 'status distinguishes an unhandled result from a handled result'
 jq '.check = "Other"' "$record" > "$TMP_ROOT/tampered.json"
 chmod 0600 "$TMP_ROOT/tampered.json"
 mv "$TMP_ROOT/tampered.json" "$record"
-if "$WATCH" condition "$ref" "$original_hash" >"$TMP_ROOT/tamper.out" 2>&1; then
-  fail 'a changed watch record must not be used by the registered condition'
-fi
+"$WATCH" condition "$ref" "$original_hash" >"$TMP_ROOT/tamper.out" 2>&1; rc=$?
+[ "$rc" -eq 2 ] || fail "a changed watch record must end the condition actionably, got exit $rc"
 assert_contains "$(cat "$TMP_ROOT/tamper.out")" 'watch record changed' 'identity mutation is detected before a forge read'
+"$WATCH" condition when-prcheck-000000000000-000000000000 "$original_hash" >"$TMP_ROOT/absent-cond.out" 2>&1; rc=$?
+[ "$rc" -eq 2 ] || fail "an absent watch record must end the condition actionably, got exit $rc"
 pass 'condition refuses changed bound identity'
 
 export FM_PR_CHECK_WATCH_INTERVAL=0.1
@@ -211,7 +212,8 @@ status=$("$WATCH" status "$runtime_ref") || fail 'status reads the handled resul
 assert_contains "$status" 'state=ended' 'acknowledged result ends pause coverage'
 assert_contains "$status" "result_source=$runtime_ref" 'handled result retains its captured source identity'
 assert_contains "$status" "result_sequence=$seq" 'handled result retains its captured sequence identity'
-new=$("$WATCH" rearm "$runtime_ref") || fail 'handled result can be explicitly re-armed'
+ln -s "$ROOT/bin" "$TMP_ROOT/bin dir"
+new=$("$TMP_ROOT/bin dir/fm-pr-check-watch.sh" rearm "$runtime_ref") || fail 'handled result can be explicitly re-armed'
 new_ref=$(printf '%s\n' "$new" | sed -n 's/^watch_ref=//p')
 [ "$new_ref" != "$runtime_ref" ] || fail 're-arm must allocate a new generation'
 : > "$FM_STATE_OVERRIDE/procevent/.$new_ref.launch-failed"
@@ -225,6 +227,13 @@ rm -f "$FM_STATE_OVERRIDE/procevent/.$new_ref.launch-failed"
 "$WATCH" retire "$new_ref" >/dev/null || fail 'an active watch can be retired explicitly'
 absent=$("$WATCH" retire "$new_ref") || fail 'retire is idempotent after cleanup'
 assert_contains "$absent" 'state=absent' 'retire reports an absent watch without creating state'
+orphan=$("$WATCH" arm runtime-task https://github.com/acme/widget/pull/7 Build --producer-app 42) \
+  || fail 'orphan watch must arm'
+orphan_ref=$(printf '%s\n' "$orphan" | sed -n 's/^watch_ref=//p')
+[ -e "$FM_STATE_OVERRIDE/procevent/$orphan_ref.source" ] || fail 'armed watch must register its source'
+rm -f "$FM_HOME/state/pr-check-watch/$orphan_ref.json" "$FM_STATE_OVERRIDE/pr-check-watch/$orphan_ref.json"
+"$WATCH" retire "$orphan_ref" >/dev/null || fail 'retire of an absent record must succeed'
+[ ! -e "$FM_STATE_OVERRIDE/procevent/$orphan_ref.source" ] || fail 'retire of an absent record must still retire its source'
 pass 'real runner captures, acknowledges, and re-arms a bound check watch'
 
 printf '%s\n' '{"total_count":1,"check_runs":[{"name":"Build","status":"in_progress","conclusion":null,"app":{"id":42}}]}' > "$FM_TEST_CHECKS_FILE"
