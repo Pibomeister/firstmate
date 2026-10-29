@@ -1,0 +1,31 @@
+===== [pre-fix f5ac073f^ (negative control)] bin=/tmp/fmcw-live.OcXi8L/old/bin home=/tmp/fmcw-home.5otjtN =====
+--- S1 green check on real PR head fires ---
+state=live
+watch_ref=when-prcheck-4d20fa458640-97e4eb4e6ebc
+task=t-green
+pr=https://github.com/Pibomeister/firstmate/pull/47
+head=c871805a4abd44e2e47cc8843bb96c0b95f1bb5c
+check=Repo invariants
+producer=app:15368
+result=/tmp/fmcw-home.5otjtN/state/procevent-inbox/when-prcheck-4d20fa458640-97e4eb4e6ebc.1.result class=fired
+state=result-unhandled
+--- S2 record deleted while watch polls a missing check ---
+watch_ref=when-prcheck-572b6fb25714-1448bd06628c
+before delete: state=live
+after delete: NO terminal result after 15s; source still registered: yes
+--- S3 record tampered while watch polls ---
+watch_ref=when-prcheck-5ae47374d71b-227c8ac604a9
+after tamper: NO terminal result after 15s
+--- S4 retire with absent record retires the registered source ---
+watch_ref=when-prcheck-f06795e458d3-1e9bc88f36ac
+state=absent
+watch_ref=when-prcheck-f06795e458d3-1e9bc88f36ac
+retire rc=0
+source registered after retire: YES-orphaned
+--- S5 rearm through a script path containing a space ---
+handled when-prcheck-4d20fa458640-97e4eb4e6ebc seq=1
+rearm rc=1
+/tmp/fmcw-home.5otjtN/bin dir/fm-pr-check-watch.sh: line 259: /tmp/fmcw-home.5otjtN/bin: No such file or directory
+fm-pr-check-watch: new generation could not be armed
+--- cleanup ---
+leftover procs: 0

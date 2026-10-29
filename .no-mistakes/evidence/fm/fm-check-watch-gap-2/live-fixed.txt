@@ -1,0 +1,40 @@
+===== [fixed f5ac073f] bin=/Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M62K3CGS6897SMNWJ6HY0GYP/bin home=/tmp/fmcw-home.r9StYD =====
+--- S1 green check on real PR head fires ---
+state=live
+watch_ref=when-prcheck-4d20fa458640-4fb5312b0d7d
+task=t-green
+pr=https://github.com/Pibomeister/firstmate/pull/47
+head=c871805a4abd44e2e47cc8843bb96c0b95f1bb5c
+check=Repo invariants
+producer=app:15368
+result=/tmp/fmcw-home.r9StYD/state/procevent-inbox/when-prcheck-4d20fa458640-4fb5312b0d7d.1.result class=fired
+state=result-unhandled
+--- S2 record deleted while watch polls a missing check ---
+watch_ref=when-prcheck-572b6fb25714-265b63434735
+before delete: state=live
+after delete: terminal after 2s class=condition-error
+watch record is unavailable
+--- S3 record tampered while watch polls ---
+watch_ref=when-prcheck-5ae47374d71b-4e0f358e8495
+after tamper: terminal after 2s class=condition-error
+watch record changed
+--- S4 retire with absent record retires the registered source ---
+watch_ref=when-prcheck-f06795e458d3-4f69269d63c1
+state=absent
+watch_ref=when-prcheck-f06795e458d3-4f69269d63c1
+retire rc=0
+source registered after retire: no
+--- S5 rearm through a script path containing a space ---
+handled when-prcheck-4d20fa458640-4fb5312b0d7d seq=1
+rearm rc=0
+state=live
+watch_ref=when-prcheck-4d20fa458640-fdd0298ff5fb
+task=t-green
+pr=https://github.com/Pibomeister/firstmate/pull/47
+head=c871805a4abd44e2e47cc8843bb96c0b95f1bb5c
+check=Repo invariants
+producer=app:15368
+new generation differs: yes
+state=live
+--- cleanup ---
+leftover procs: 0
