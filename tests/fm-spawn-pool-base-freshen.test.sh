@@ -1174,6 +1174,125 @@ test_scout_base_branch_refused_on_gerrit_forge() {
   pass "a based scout on a forge=gerrit project is refused at spawn"
 }
 
+# The pipeline rebased <branch> onto a moved main, added a review fix and
+# published it with lease, while the project's local <branch> still holds the
+# pre-rebase commit (STALE_SHA); PUBLISHED_SHA is origin's head.
+stale_pr_branch() { # <branch>
+  local pub="$CASE_DIR/publisher" old
+  publish_feature_branch "$1"
+  git -C "$PROJECT_DIR" fetch --quiet origin "$1"
+  git -C "$PROJECT_DIR" branch --quiet "$1" FETCH_HEAD
+  STALE_SHA=$(git -C "$PROJECT_DIR" rev-parse "refs/heads/$1")
+  old=$STALE_SHA
+  git -C "$pub" checkout --quiet "$DEFAULT_BRANCH"
+  printf 'moved\n' > "$pub/moved-main.txt"
+  git -C "$pub" add moved-main.txt
+  git -C "$pub" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit -qm move-main
+  git -C "$pub" push --quiet origin "$DEFAULT_BRANCH"
+  git -C "$pub" checkout --quiet "$1"
+  git -C "$pub" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' rebase --quiet "$DEFAULT_BRANCH"
+  printf 'review fix\n' > "$pub/review-fix.txt"
+  git -C "$pub" add review-fix.txt
+  git -C "$pub" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit -qm review-fix
+  git -C "$pub" push --quiet --force-with-lease="$1:$old" origin "$1"
+  PUBLISHED_SHA=$(git -C "$pub" rev-parse HEAD)
+}
+
+brief_with_setup_line() { # <id> <line>
+  fm_test_spawn_brief "$HOME_DIR" "$1"
+  printf '\n# Setup\n%s\n' "$2" >> "$HOME_DIR/data/$1/brief.md"
+}
+
+test_pr_branch_continues_the_published_head() {
+  local rec id out status
+  id='pool-pr-continue-r1'
+  rec=$(make_case pr-continue "$id")
+  read_case_record "$rec"
+  stale_pr_branch feature/pr
+  brief_with_setup_line "$id" 'Ship branch: feature/pr'
+  out=$(run_spawn "$id" --mode direct-PR --yolo off --pr-branch feature/pr)
+  status=$?
+  expect_code 0 "$status" "a continuation spawn should launch on the published head"$'\n'"$out"
+  [ "$(git -C "$POOL_DIR" symbolic-ref -q HEAD)" = refs/heads/feature/pr ] \
+    || fail "the continuation copy is not on feature/pr"
+  [ "$(git -C "$POOL_DIR" rev-parse HEAD)" = "$PUBLISHED_SHA" ] \
+    || fail "the continuation copy did not start from the published head"
+  [ "$(git -C "$POOL_DIR" rev-parse -q --verify "refs/heads/archive/$id-pre-rebase-${STALE_SHA:0:8}")" = "$STALE_SHA" ] \
+    || fail "the stale pre-rebase commit was not archived"
+  assert_grep 'review fix' "$POOL_DIR/review-fix.txt" "the copy is missing the pipeline's review fix"
+  assert_grep 'branch=feature/pr' "$HOME_DIR/state/$id.meta" "the task record does not carry the exact branch"
+  assert_contains "$out" "result=archived-advanced" "the spawn did not report the owner's outcome"
+  pass "--pr-branch archives the stale local branch and launches on origin's published head"
+}
+
+test_pr_branch_refusals_leave_the_branch_and_records() {
+  local rec id out status
+  id='pool-pr-dirty-r1'
+  rec=$(make_case pr-dirty "$id")
+  read_case_record "$rec"
+  stale_pr_branch feature/pr
+  brief_with_setup_line "$id" 'Ship branch: feature/pr'
+  printf 'keep this local work\n' > "$POOL_DIR/uncommitted.txt"
+  out=$(run_spawn "$id" --mode direct-PR --yolo off --pr-branch feature/pr)
+  status=$?
+  [ "$status" -ne 0 ] || fail "a continuation spawn launched from a dirty copy"
+  assert_contains "$out" "bin/fm-pr-resync.sh exited 1" "the dirty refusal does not come from the owner"$'\n'"$out"
+  [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "a refused continuation published task metadata"
+  [ "$(git -C "$PROJECT_DIR" rev-parse refs/heads/feature/pr)" = "$STALE_SHA" ] \
+    || fail "a refused continuation moved the local branch"
+  assert_grep 'keep this local work' "$POOL_DIR/uncommitted.txt" "a refused continuation discarded local work"
+
+  for flags in "--mode direct-PR --yolo off --pr-branch feature/pr --branch-prefix fix/" \
+    "--mode direct-PR --yolo off --pr-branch feature/pr --from-branch feature/pr" \
+    "--scout --pr-branch feature/pr"; do
+    # shellcheck disable=SC2086  # the case's flags are deliberately word-split
+    out=$(run_spawn "$id" $flags)
+    status=$?
+    [ "$status" -ne 0 ] || fail "spawn accepted $flags"
+    assert_contains "$out" "--pr-branch" "the refusal of '$flags' does not name --pr-branch"
+    [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "a refused '$flags' spawn published task metadata"
+  done
+  pass "a dirty copy or a contradicting flag refuses a continuation with the branch and records untouched"
+}
+
+test_from_branch_starts_from_the_source_and_keeps_the_default_target() {
+  local rec id out status
+  id='pool-from-branch-r1'
+  rec=$(make_case from-branch "$id")
+  read_case_record "$rec"
+  publish_feature_branch feature/src
+  brief_with_setup_line "$id" 'Source branch: feature/src'
+  out=$(run_spawn "$id" --mode direct-PR --yolo off --from-branch feature/src)
+  status=$?
+  expect_code 0 "$status" "a successor spawn should start from its source branch"$'\n'"$out"
+  [ "$(git -C "$POOL_DIR" rev-parse HEAD)" = "$(git -C "$POOL_DIR" rev-parse origin/feature/src)" ] \
+    || fail "the successor copy did not start from origin/feature/src"
+  assert_grep 'only on feature/src' "$POOL_DIR/feature-only.txt" "the successor copy is missing the source content"
+  assert_no_grep 'base_branch=' "$HOME_DIR/state/$id.meta" "--from-branch recorded a base branch, retargeting the PR"
+
+  id='pool-from-branch-line-only-r1'
+  brief_with_setup_line "$id" 'Source branch: feature/src'
+  out=$(run_spawn "$id" --mode direct-PR --yolo off)
+  status=$?
+  [ "$status" -ne 0 ] || fail "a brief with a Source branch line launched without --from-branch"
+  assert_contains "$out" "records a Source branch line" "the line-only refusal did not explain itself"
+  id='pool-from-branch-flag-only-r1'
+  fm_test_spawn_brief "$HOME_DIR" "$id"
+  out=$(run_spawn "$id" --mode direct-PR --yolo off --from-branch feature/src)
+  status=$?
+  [ "$status" -ne 0 ] || fail "--from-branch launched against a brief without its Source branch line"
+  assert_contains "$out" "must record Source branch: feature/src" "the flag-only refusal did not explain itself"
+  id='pool-from-branch-mismatch-r1'
+  brief_with_setup_line "$id" 'Source branch: feature/other'
+  out=$(run_spawn "$id" --mode direct-PR --yolo off --from-branch feature/src)
+  status=$?
+  [ "$status" -ne 0 ] || fail "--from-branch launched against a brief naming another source"
+  for id in pool-from-branch-line-only-r1 pool-from-branch-flag-only-r1 pool-from-branch-mismatch-r1; do
+    [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "a refused --from-branch spawn published $id metadata"
+  done
+  pass "--from-branch starts from origin's source, records no base, and must agree with the brief"
+}
+
 test_remote_seeded_home_spawns_from_treehouse_pool
 test_pool_slot_claim_follows_the_spawn_outcome
 test_refused_launch_leaves_the_pool_for_a_retry_and_a_second_task
@@ -1202,5 +1321,9 @@ test_unpushed_submodule_commit_is_still_uncommitted_work
 test_work_inside_submodule_is_still_uncommitted_work
 test_stale_pin_carrying_real_work_is_not_called_stale
 test_stale_pin_beside_other_dirt_reports_one_verdict
+
+test_pr_branch_continues_the_published_head
+test_pr_branch_refusals_leave_the_branch_and_records
+test_from_branch_starts_from_the_source_and_keeps_the_default_target
 
 echo "# all fm-spawn-pool-base-freshen tests passed"

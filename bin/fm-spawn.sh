@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Spawn a direct report: a crewmate in a treehouse or Orca worktree, or a
 # secondmate in its isolated firstmate home.
-# Usage: fm-spawn.sh <task-id> <project-dir> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--branch-prefix <prefix>] [--base-branch <branch>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] [--herdr-resume-lock-wait]
-#        fm-spawn.sh <task-id> <project-dir> --scout [--base-branch <branch>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] [--herdr-resume-lock-wait]
+# Usage: fm-spawn.sh <task-id> <project-dir> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--branch-prefix <prefix>|--pr-branch <branch>] [--base-branch <branch>] [--from-branch <branch>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] [--herdr-resume-lock-wait]
+#        fm-spawn.sh <task-id> <project-dir> --scout [--base-branch <branch>] [--from-branch <branch>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] [--herdr-resume-lock-wait]
 #        fm-spawn.sh <task-id> [<firstmate-home>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] --secondmate
 #   --mode and --yolo are this task's delivery contract, REQUIRED for every ship
 #   spawn and refused on --scout and --secondmate spawns. Firstmate resolves both
@@ -53,6 +53,20 @@
 #   base_branch= in state/<id>.meta, which a relaunch reuses and later review and
 #   cleanup read; it is refused on secondmates and relaunches, and without it
 #   nothing changes.
+#   --pr-branch <branch> continues an existing published ship branch: the
+#   brief's Ship branch line, the agreement check and branch= in the task record
+#   carry that exact name, and it is refused with --branch-prefix, --from-branch,
+#   scouts and relaunches. Instead of the base refresh, the launch runs
+#   bin/fm-pr-resync.sh on the pooled copy and refuses unless it exits 0, so no
+#   hard reset moves the branch before its stale history is archived.
+#   --from-branch <branch> starts a ship or scout from origin/<branch> while its
+#   pull request keeps targeting the default branch (or --base-branch, which
+#   keeps its meaning); it must agree with the brief's Setup "Source branch:"
+#   lines and is not recorded, since nothing after launch reads it.
+#   A ship relaunch whose recorded branch exists on origin runs
+#   bin/fm-pr-resync.sh in the recorded worktree first: exit 0 proceeds, exit 3
+#   launches with the owner's monitoring-only contract appended to the launch
+#   brief, and any other exit refuses the relaunch.
 #   Ship/scout launches always put fm-dod-lib.sh's current worker role scope
 #   first in the private launch-brief overlay, including the exact task-owned
 #   steering inbox. This never rewrites a project's instruction files or a
@@ -833,6 +847,11 @@ YOLO_SET=0
 BRANCH_PREFIX_SET=0
 BASE_BRANCH=
 BASE_BRANCH_SET=0
+PR_BRANCH=
+PR_BRANCH_SET=0
+FROM_BRANCH=
+FROM_BRANCH_SET=0
+RELAUNCH_MONITOR=
 UPSTREAM_CONSENT=
 UPSTREAM_CONSENT_SET=0
 TRACEPARENT_SET=0
@@ -900,6 +919,14 @@ for a in "$@"; do
     base-branch)
       BASE_BRANCH=$a
       BASE_BRANCH_SET=1
+      ;;
+    pr-branch)
+      PR_BRANCH=$a
+      PR_BRANCH_SET=1
+      ;;
+    from-branch)
+      FROM_BRANCH=$a
+      FROM_BRANCH_SET=1
       ;;
     upstream-consent)
       UPSTREAM_CONSENT=$a
@@ -970,6 +997,16 @@ for a in "$@"; do
   --base-branch=*)
     BASE_BRANCH=${a#--base-branch=}
     BASE_BRANCH_SET=1
+    ;;
+  --pr-branch) want_value="pr-branch" ;;
+  --pr-branch=*)
+    PR_BRANCH=${a#--pr-branch=}
+    PR_BRANCH_SET=1
+    ;;
+  --from-branch) want_value="from-branch" ;;
+  --from-branch=*)
+    FROM_BRANCH=${a#--from-branch=}
+    FROM_BRANCH_SET=1
     ;;
   --upstream-consent) want_value="upstream-consent" ;;
   --upstream-consent=*)
@@ -1077,6 +1114,10 @@ if [ "$RELAUNCH" -eq 1 ]; then
     echo "error: --relaunch reuses the task's recorded base branch; --base-branch cannot override it" >&2
     exit 1
   }
+  [ "$PR_BRANCH_SET" -eq 0 ] && [ "$FROM_BRANCH_SET" -eq 0 ] || {
+    echo "error: --relaunch reuses the task's recorded branch and worktree; --pr-branch and --from-branch apply only to a fresh launch" >&2
+    exit 1
+  }
   [ "$UPSTREAM_CONSENT_SET" -eq 0 ] || {
     echo "error: --relaunch reuses the task's recorded upstream consent; --upstream-consent cannot override it" >&2
     exit 1
@@ -1139,6 +1180,14 @@ else
     }
     [ "$KIND" != secondmate ] || [ "$BASE_BRANCH_SET" -eq 0 ] || {
       echo "error: --base-branch applies only to ship and scout spawns; a secondmate charter has no task base" >&2
+      exit 1
+    }
+    [ "$PR_BRANCH_SET" -eq 0 ] || {
+      echo "error: --pr-branch applies only to ship spawns; it continues a published ship branch" >&2
+      exit 1
+    }
+    [ "$KIND" != secondmate ] || [ "$FROM_BRANCH_SET" -eq 0 ] || {
+      echo "error: --from-branch applies only to ship and scout spawns; a secondmate charter has no task source" >&2
       exit 1
     }
     [ "$UPSTREAM_CONSENT_SET" -eq 0 ] || {
@@ -1865,6 +1914,8 @@ if [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart" ] && case "$idpart" in *
   [ "$YOLO_SET" -eq 0 ] || shared_args+=(--yolo "$YOLO")
   [ "$BRANCH_PREFIX_SET" -eq 0 ] || shared_args+=(--branch-prefix "$BRANCH_PREFIX")
   [ "$BASE_BRANCH_SET" -eq 0 ] || shared_args+=(--base-branch "$BASE_BRANCH")
+  [ "$PR_BRANCH_SET" -eq 0 ] || shared_args+=(--pr-branch "$PR_BRANCH")
+  [ "$FROM_BRANCH_SET" -eq 0 ] || shared_args+=(--from-branch "$FROM_BRANCH")
   [ "$HERDR_RESUME_LOCK_WAIT" -eq 0 ] || shared_args+=(--herdr-resume-lock-wait)
   for pair in "${POS[@]}"; do
     case "$pair" in
@@ -1899,8 +1950,20 @@ fm_task_id_creation_valid "$ID" || {
   echo "error: invalid task id" >&2
   exit 2
 }
+for flag in pr-branch from-branch; do
+  case $flag in pr-branch) set_flag=$PR_BRANCH_SET value=$PR_BRANCH ;; *) set_flag=$FROM_BRANCH_SET value=$FROM_BRANCH ;; esac
+  [ "$set_flag" -eq 0 ] || git check-ref-format --branch "$value" >/dev/null 2>&1 || {
+    echo "error: --$flag requires a valid branch name (got '$value')" >&2
+    exit 1
+  }
+done
+[ "$PR_BRANCH_SET" -eq 0 ] || { [ "$BRANCH_PREFIX_SET" -eq 0 ] && [ "$FROM_BRANCH_SET" -eq 0 ]; } || {
+  echo "error: --pr-branch names the exact published branch to continue; it cannot be combined with --branch-prefix or --from-branch" >&2
+  exit 1
+}
 if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" = ship ]; then
   BRANCH="$BRANCH_PREFIX$ID"
+  [ "$PR_BRANCH_SET" -eq 0 ] || BRANCH=$PR_BRANCH
   if ! git check-ref-format --branch "$BRANCH" >/dev/null 2>&1; then
     echo "error: --branch-prefix and task id must form a valid git branch (got '$BRANCH')" >&2
     exit 1
@@ -3805,6 +3868,43 @@ fi
   echo "error: task $ID has no brief at inaccessible data path $BRIEF" >&2
   exit 1
 }
+# Setup "Source branch:" lines bin/fm-brief.sh --from-branch writes; the same
+# line elsewhere in the brief is prose.
+brief_source_branches() {  # <brief>
+  awk '/^# / { setup = ($0 == "# Setup") } setup && sub(/^Source branch: /, "") { print; n++ } END { exit !n }' "$1"
+}
+
+# Continuation launch: bin/fm-pr-resync.sh replaces the base refresh and must settle.
+spawn_pr_resync() {  # <worktree> <branch>
+  local out rc=0
+  out=$("$FM_ROOT/bin/fm-pr-resync.sh" "$ID" "$1" "$2" 2>&1) || rc=$?
+  printf '%s\n' "$out" >&2
+  [ "$rc" -ne 0 ] || return 0
+  echo "error: $ID cannot continue $2: bin/fm-pr-resync.sh exited $rc (output above); refusing to launch" >&2
+  return 1
+}
+
+# Ship relaunch: resync the recorded worktree to the recorded branch's published
+# head when origin has that branch; exit 3 keeps the owner's monitoring-only lines.
+relaunch_pr_resync() {
+  local out rc=0
+  git -C "$RELAUNCH_WT" remote get-url origin >/dev/null 2>&1 || return 0
+  git -C "$RELAUNCH_WT" ls-remote --exit-code --heads origin "refs/heads/$BRANCH" >/dev/null 2>&1 || rc=$?
+  [ "$rc" -ne 2 ] || return 0
+  [ "$rc" -eq 0 ] || {
+    echo "error: could not read origin's $BRANCH for relaunching $ID (git ls-remote exited $rc); refusing to relaunch from an unverified head" >&2
+    return 1
+  }
+  out=$("$FM_ROOT/bin/fm-pr-resync.sh" "$ID" "$RELAUNCH_WT" "$BRANCH" 2>&1) || rc=$?
+  printf '%s\n' "$out" >&2
+  case "$rc" in
+    0) return 0 ;;
+    3) RELAUNCH_MONITOR=$(printf '%s\n' "$out" | sed -n 's/^fm-pr-resync: monitoring-only: //p'); return 0 ;;
+  esac
+  echo "error: $ID cannot relaunch: bin/fm-pr-resync.sh exited $rc on $BRANCH (output above); the worktree holds only what it reported" >&2
+  return 1
+}
+
 if [ "$KIND" = ship ] || [ "$KIND" = scout ]; then
   if fm_brief_task_placeholders_present "$BRIEF"; then
     echo "error: $BRIEF still contains {TASK} or {FIRSTMATE_SPEC}; fill ## Captain's intent and ## Firstmate spec before spawn" >&2
@@ -3847,6 +3947,16 @@ if [ "$KIND" = ship ] || [ "$KIND" = scout ]; then
     echo "error: $BRIEF records a Base branch line but the spawn has no --base-branch; pass the brief's base with --base-branch or re-scaffold the brief without one" >&2
     exit 1
   fi
+  if [ "$FROM_BRANCH_SET" -eq 1 ]; then
+    if ! brief_source_branches "$BRIEF" >/dev/null || brief_source_branches "$BRIEF" | grep -vxF -- "$FROM_BRANCH" >/dev/null; then
+      echo "error: $BRIEF must record Source branch: $FROM_BRANCH and no other Source branch line to spawn with --from-branch $FROM_BRANCH; scaffold it with bin/fm-brief.sh --from-branch $FROM_BRANCH" >&2
+      exit 1
+    fi
+  elif brief_source_branches "$BRIEF" >/dev/null; then
+    echo "error: $BRIEF records a Source branch line but the spawn has no --from-branch; pass it with --from-branch or re-scaffold the brief without one" >&2
+    exit 1
+  fi
+  [ "$RELAUNCH" -eq 0 ] || [ "$KIND" != ship ] || relaunch_pr_resync || exit 1
   # Use the existing launch-brief overlay for every worker kind, including
   # pre-scope briefs and relaunches. Charters never enter this worker path.
   SOURCE_BRIEF=$BRIEF
@@ -3862,6 +3972,9 @@ if [ "$KIND" = ship ] || [ "$KIND" = scout ]; then
       cat "$SOURCE_BRIEF" &&
       if [ "$KIND" = ship ] && [ "$MODE" = no-mistakes ]; then
         fm_brief_intent_overlay "$CAPTAIN_INTENT"
+      fi &&
+      if [ -n "$RELAUNCH_MONITOR" ]; then
+        printf '\n# Monitoring-only relaunch\n%s\n' "$RELAUNCH_MONITOR"
       fi
   } >"$BRIEF_TMP" || {
     rm -f -- "$BRIEF_TMP"
@@ -4022,7 +4135,7 @@ if [ "$KIND" = ship ]; then
   # announced, not refused: the brief-vs-spawn agreement above already
   # guarantees the worker's instructions match the branch this spawn selected.
   STANDING_BRANCH=$("$FM_ROOT/bin/fm-project-mode.sh" --branch-prefix "$PROJ_NAME" 2>/dev/null) || STANDING_BRANCH=
-  if [ "$BRANCH" != "$STANDING_BRANCH$ID" ]; then
+  if [ "$PR_BRANCH_SET" -eq 0 ] && [ "$BRANCH" != "$STANDING_BRANCH$ID" ]; then
     echo "notice: $ID ships branch=$BRANCH while $PROJ_NAME registers the ship-branch prefix '$STANDING_BRANCH' (branch $STANDING_BRANCH$ID) - the task's branch and PR will read as firstmate-authored; proceed only on a current explicit captain instruction or an intake judgment you can state" >&2
   fi
 fi
@@ -5624,7 +5737,11 @@ elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
   fi
 fi
 if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ]; then
-  freshen_spawn_worktree_base "$WT" "$BASE_BRANCH" || exit 1
+  if [ "$PR_BRANCH_SET" -eq 1 ]; then
+    spawn_pr_resync "$WT" "$PR_BRANCH" || exit 1
+  else
+    freshen_spawn_worktree_base "$WT" "${FROM_BRANCH:-$BASE_BRANCH}" || exit 1
+  fi
 fi
 
 # Re-assert the durable task copy after either treehouse acquisition or endpoint
