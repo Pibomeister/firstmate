@@ -34,7 +34,10 @@
 # (FM_PRETOOL_PAYLOAD_KEYS_FILE) records only that payload's top-level key
 # names, never a value. It requires tool_input, session_id and turn_id. The
 # guard never grants or bypasses hook trust: an untrusted registration runs no
-# hook, records nothing and fails the surface.
+# hook, records nothing and fails the surface. The one exception is explicit:
+# FM_TASK_INBOX_CODEX_HOOK_TRUST_WITHHELD=1 turns that empty capture into a
+# logged skip of this surface alone, and only while the operator's Codex
+# config records no trust for this checkout's PreToolUse hook.
 #
 # The guard submits prompts and spends model tokens, so it is opt-in
 # (fm_live_gate): FM_TASK_INBOX_CODEX_BUSY_LIVE=1 or FM_LIVE=1 runs it, and an
@@ -190,11 +193,20 @@ KEYS="$LAB/pretool-keys"
 ( cd "$ROOT" && FM_PRETOOL_PAYLOAD_KEYS_FILE="$KEYS" codex exec --skip-git-repo-check -s read-only \
     "Run exactly one shell command, true, and then reply DONE." < /dev/null > "$LAB/exec.out" 2>&1 ) \
   || fail "codex ($VERSION): codex exec failed: $(tail -n 5 "$LAB/exec.out")"
-[ -s "$KEYS" ] || fail "codex ($VERSION): no Bash PreToolUse payload reached this checkout's hook; its .codex/hooks.json registration runs only once trusted in an ordinary session, which this guard never does"
-jq -se 'length > 0 and all(.[]; index("tool_input") != null and index("session_id") != null and index("turn_id") != null)' "$KEYS" >/dev/null \
-  || fail "codex ($VERSION): a real Bash PreToolUse payload lacks a key the inbox guard reads: $(cat "$KEYS")"
-CHECKED=$((CHECKED + 1))
-pass "codex ($VERSION): a real Bash PreToolUse payload carries tool_input, session_id and turn_id ($(head -n 1 "$KEYS"))"
+SKIPPED=0
+if [ ! -s "$KEYS" ] && [ "${FM_TASK_INBOX_CODEX_HOOK_TRUST_WITHHELD:-0}" = 1 ] \
+  && ! grep -qF "[hooks.state.\"$ROOT/.codex/hooks.json:pre_tool_use:" "${CODEX_HOME:-$HOME/.codex}/config.toml" 2>/dev/null; then
+  # Explicit per-surface opt-out: the operator withholds hook trust for this
+  # checkout and Codex's config indeed records none for its PreToolUse hook.
+  SKIPPED=$((SKIPPED + 1))
+  printf 'skip: codex (%s): live PreToolUse surface not exercised: requires hook trust, which is withheld\n' "$VERSION"
+else
+  [ -s "$KEYS" ] || fail "codex ($VERSION): no Bash PreToolUse payload reached this checkout's hook; its .codex/hooks.json registration runs only once trusted in an ordinary session, which this guard never does"
+  jq -se 'length > 0 and all(.[]; index("tool_input") != null and index("session_id") != null and index("turn_id") != null)' "$KEYS" >/dev/null \
+    || fail "codex ($VERSION): a real Bash PreToolUse payload lacks a key the inbox guard reads: $(cat "$KEYS")"
+  CHECKED=$((CHECKED + 1))
+  pass "codex ($VERSION): a real Bash PreToolUse payload carries tool_input, session_id and turn_id ($(head -n 1 "$KEYS"))"
+fi
 
 [ "$CHECKED" -gt 0 ] || fail "live busy-Codex doorbell guard verified nothing; refusing a vacuous pass"
-pass "live busy-Codex doorbell guard verified $CHECKED live surface(s)"
+pass "live busy-Codex doorbell guard verified $CHECKED live surface(s), skipped $SKIPPED"
