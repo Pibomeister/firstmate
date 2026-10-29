@@ -808,6 +808,64 @@ ok - secondmate busy contract live guard checked every installed harness
 Pi's real parked pane classified `unknown launch-prompt`.
 That is the launch-prompt backstop: the same spawn's record classified `busy fm-spawn` for a non-prompt mid-turn tail, which is what the active-turn gate reads while a turn is in progress.
 
+## Steering-inbox doorbell on a busy Codex
+
+Entry dated 2026-10-28.
+
+`bin/fm-task-inbox-lib.sh` submits a composer that holds only whole copies of its own doorbell line on a busy Codex task, on the premise that a busy Codex takes that Enter as a mid-turn steer.
+That is a vendor key binding, so it is pinned by the opt-in live guard `tests/fm-task-inbox-codex-busy-live-e2e.test.sh`, which also refreshes this entry:
+
+```bash
+FM_TASK_INBOX_CODEX_BUSY_LIVE=1 tests/fm-task-inbox-codex-busy-live-e2e.test.sh
+```
+
+The guard runs the installed Codex under the operator's own login on a private tmux socket and copies nothing into or out of the operator's Codex home.
+It passes only when the doorbell, which names the run's unique task inbox, appears as a user message before the first `task_complete` event in the session rollout written since the run started that names the run's unique lab path.
+
+Result: passed 2026-10-29 on codex-cli 0.162.1, macOS arm64, tmux 3.6a:
+
+```text
+ok - codex (codex-cli 0.162.1): an owned doorbell submitted into a busy Codex composer reached the model inside the running turn
+ok - codex (codex-cli 0.162.1): a real Bash PreToolUse payload carries tool_input, session_id and turn_id (["cwd","hook_event_name","model","permission_mode","session_id","tool_input","tool_name","tool_use_id","transcript_path","turn_id"])
+ok - live busy-Codex doorbell guard verified 2 live surface(s)
+```
+
+Result: passed 2026-10-29 on codex-cli 0.165.0, macOS arm64, at revision `4b0ce535`, with `FM_TASK_INBOX_CODEX_HOOK_TRUST_WITHHELD=1` and this checkout's hook left untrusted; the payload-key surface above was therefore skipped, not exercised, and its 0.162.1 record stands as earlier-version evidence:
+
+```text
+ok - codex (codex-cli 0.165.0): an owned doorbell submitted into a busy Codex composer reached the model inside the running turn
+skip: codex (codex-cli 0.165.0): live PreToolUse surface not exercised: requires hook trust, which is withheld
+ok - live busy-Codex doorbell guard verified 1 live surface(s), skipped 1
+```
+
+The secondmate steering-inbox guard (`bin/fm-secondmate-inbox-guard.sh`) also depends on the shape of Codex's Bash PreToolUse payload (`tool_input`, `session_id` and `turn_id`).
+The same live guard records that shape: one `codex exec` in the repository root runs a shell command through this checkout's existing, already-trusted PreToolUse registration, and `bin/fm-arm-pretool-check.sh`'s test-only `FM_PRETOOL_PAYLOAD_KEYS_FILE` switch appends only the payload's top-level key names, never a value; the second line of the 0.162.1 result is that record.
+The guard adds no `.codex/hooks.json` entry and never grants or bypasses hook trust ([Codex hook trust](#codex-hook-trust)), so on a Codex home that has not trusted the registration no hook runs and that surface fails.
+`FM_TASK_INBOX_CODEX_HOOK_TRUST_WITHHELD=1` turns that one failure into a logged skip, and only while the Codex config records no trust for this checkout's PreToolUse hook; the test header owns the rule.
+The inbox guard still allows the call for a payload missing any of those keys, which `test_guard_allows_everything_it_does_not_own` in `tests/fm-secondmate-inbox-guard.test.sh` pins.
+
+## Codex secondmate watcher on Herdr
+
+Entry dated 2026-10-29.
+
+A local Codex secondmate's outside-turn watcher binds to its own pane, and on Herdr the binding proof (`fm_secondmate_watch_binding_valid` in `bin/fm-push-transition-lib.sh`) reads Herdr's `pane process-info` to show the session-lock owner descends from the pane's shell and sits in its foreground group.
+That is a vendor-emitted surface, so the portable regression `test_secondmate_event_herdr_binding` in `tests/fm-turnend-guard.test.sh`, which uses a fake herdr, is backed by the default-on live guard `tests/fm-herdr-secondmate-watch-live-e2e.test.sh`, which also refreshes this entry:
+
+```bash
+tests/fm-herdr-secondmate-watch-live-e2e.test.sh
+```
+
+In a named non-default lab session from `bin/fm-herdr-lab.sh`, a Codex-named lock owner inside a real pane runs the production `fm_secondmate_watch_start`.
+From outside, the production binding proof, watcher status and notification run against the real server, and the notification's doorbell must appear in the pane.
+The lock owner is `bash` symlinked as `codex`, so this proves the Herdr backend route, not a genuine Codex session.
+
+Result: passed 2026-10-29 on herdr 0.7.4 (client and server, protocol 16), macOS 26.5.2 arm64, bash 5.3.20:
+
+```text
+ok - herdr 0.7.4: production watch start binds a Codex-named owner in a real Herdr pane, proven from real process-info, refused for another pane
+ok - herdr 0.7.4: notification wrote durable record 001.msg and its doorbell reached the real Herdr pane
+```
+
 ## Codex hook trust
 
 Verified 2026-09-16 on codex-cli 0.151.0, macOS arm64, in a fresh linked worktree of this repository.

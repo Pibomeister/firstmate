@@ -12,13 +12,36 @@ fm_root_is_secondmate_home() {
   local marker="$1/.fm-secondmate-home" id LC_ALL=C
   [ -L "$marker" ] && return 1
   [ -f "$marker" ] || return 1
-  IFS= read -r id < "$marker" 2>/dev/null || return 1
+  IFS= read -r id < "$marker" 2>/dev/null || [ -n "$id" ] || return 1
   id=${id//[[:space:]]/}
   [ -n "$id" ] || return 1
   case "$id" in
     *[!A-Za-z0-9._-]*) return 1 ;;
   esac
   return 0
+}
+
+# Echo the parent-owned steering inbox of the genuine local secondmate home $1,
+# fm_task_inbox_dir of <parent_home>/state and <id>, from its identity marker
+# and parent record and never from the environment. Fails for a primary home,
+# a remote route, or a missing or malformed record.
+fm_secondmate_home_inbox() {
+  local id dir
+  fm_root_is_secondmate_home "$1" || return 1
+  IFS= read -r id < "$1/.fm-secondmate-home" || [ -n "$id" ] || return 1
+  id=${id//[[:space:]]/}
+  dir=$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; CDPATH='' cd -- "${d:-/}" && pwd)
+  if ! command -v fm_secondmate_parent_record_parse >/dev/null 2>&1; then
+    # shellcheck source=bin/fm-secondmate-parent-lib.sh
+    . "$dir/fm-secondmate-parent-lib.sh"
+  fi
+  fm_secondmate_parent_record_parse "$1/.fm-secondmate-parent" || return 1
+  [ "$FM_SECONDMATE_PARENT_ROUTE" = local ] || return 1
+  if ! command -v fm_task_inbox_dir >/dev/null 2>&1; then
+    # shellcheck source=bin/fm-task-inbox-lib.sh
+    . "$dir/fm-task-inbox-lib.sh"
+  fi
+  printf '%s\n' "$(fm_task_inbox_dir "$FM_SECONDMATE_PARENT_HOME/state" "$id")"
 }
 
 # Echo the branch named by $1's genuine linked-primary marker and return 0.

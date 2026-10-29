@@ -321,7 +321,7 @@ Queued wakes keep Codex's turn open until handling and acknowledgement finish, i
 An identity-matched own checkpoint also holds the turn when its beacon has gone stale; beacon freshness cannot prove that the foreground command ended.
 Away daemon ownership retains its existing allow path.
 
-A local tmux Codex secondmate with a validated parent/inbox binding uses the existing watcher outside the model turn instead; `bin/fm-watch.sh`'s header owns its command interfaces.
+A local tmux or Herdr Codex secondmate with a validated parent/inbox binding uses the existing watcher outside the model turn instead; `bin/fm-watch.sh`'s header owns its command interfaces.
 Its actionable events ring the existing durable steering inbox, while the watcher's ordinary triage absorbs no-change heartbeats and retains the actionable-status backstop.
 The Stop guard allows a supervised stop only with the live watcher, session/process identity and delivery route proven; until that proof holds, the default Codex no-progress escape still bounds repeated blocks.
 When `bin/fm-watch.sh --secondmate` reports a failure, the emitted protocol and repair line fall back to the default foreground checkpoint.
@@ -331,11 +331,11 @@ This matrix owns short-turn route selection; existing native protocols remain au
 
 | Harness | Backend/route | Ownership mode | Result |
 | --- | --- | --- | --- |
-| Codex | tmux, validated local parent/inbox and foreground session | No other watcher/host/away owner | Persistent watcher with identity-bound doorbell; Stop requires its proof. |
+| Codex | tmux or Herdr, validated local parent/inbox and foreground session | No other watcher/host/away owner | Persistent watcher with identity-bound doorbell; Stop requires its proof. |
 | Codex | Any | Away or quiet daemon | Existing daemon protocol; short-turn watcher stands down. |
 | Codex | Any | Supervision host selected | Existing host protocol; a stale short-turn record cannot force the new guard path. |
-| Codex | tmux/local | Other healthy watcher | Existing owner/protocol; no competing short-turn watcher. |
-| Codex | Other backend, including Herdr, or remote/unverified route | Any | Not converted; existing foreground checkpoint protocol. |
+| Codex | tmux or Herdr, local | Other healthy watcher | Existing owner/protocol; no competing short-turn watcher. |
+| Codex | Other backend, or remote/unverified route | Any | Not converted; existing foreground checkpoint protocol. |
 | Other supported harnesses | Their existing supported backends/routes | Native ownership | Existing native protocol, without a new Codex short-turn owner. |
 
 ### Claude cooperative mode

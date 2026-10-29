@@ -106,38 +106,56 @@ fm_secondmate_watch_selected() {
   local watcher_pid
   # shellcheck source=bin/fm-primary-scope-lib.sh
   . "$FM_PUSH_TRANSITION_LIB_DIR/fm-primary-scope-lib.sh"
-  # shellcheck source=bin/fm-secondmate-parent-lib.sh
-  . "$FM_PUSH_TRANSITION_LIB_DIR/fm-secondmate-parent-lib.sh"
   # shellcheck source=bin/fm-supervision-engine-lib.sh
   . "$FM_PUSH_TRANSITION_LIB_DIR/fm-supervision-engine-lib.sh"
-  fm_root_is_secondmate_home "$FM_HOME" && [ -n "${TMUX_PANE:-}" ] && [ -n "${TMUX:-}" ] || return 1
+  fm_root_is_secondmate_home "$FM_HOME" || return 1
+  # The pane environment only names the candidate endpoint, tmux first as in
+  # fm_backend_detect; fm_secondmate_watch_binding_valid owns its proof.
+  if [ -n "${TMUX_PANE:-}" ] && [ -n "${TMUX:-}" ]; then
+    FM_SM_BACKEND=tmux FM_SM_TARGET=$TMUX_PANE FM_SM_ROUTE=${TMUX%%,*}
+  elif [ -n "${HERDR_SESSION:-}" ] && [ -n "${HERDR_PANE_ID:-}" ]; then
+    FM_SM_BACKEND=herdr FM_SM_TARGET=$HERDR_SESSION:$HERDR_PANE_ID FM_SM_ROUTE=$HERDR_SESSION
+  else
+    return 1
+  fi
   # shellcheck disable=SC2153 # CONFIG is set by bin/fm-watch.sh.
   [ ! -e "$STATE/.afk" ] && ! fm_supervision_host_enabled "$CONFIG" codex || return 1
-  fm_secondmate_parent_record_parse "$FM_HOME/.fm-secondmate-parent" || return 1
-  [ "$FM_SECONDMATE_PARENT_ROUTE" = local ] || return 1
-  FM_SM_ID=$(head -n 1 "$FM_HOME/.fm-secondmate-home")
-  FM_SM_ID=${FM_SM_ID//[[:space:]]/}
-  [ "${FM_TASK_INBOX:-}" = "$FM_SECONDMATE_PARENT_HOME/state/$FM_SM_ID.inbox" ] || return 1
+  FM_SM_INBOX=$(fm_secondmate_home_inbox "$FM_HOME") && [ "${FM_TASK_INBOX:-}" = "$FM_SM_INBOX" ] || return 1
+  FM_SM_ID=${FM_SM_INBOX##*/}
+  FM_SM_ID=${FM_SM_ID%.inbox}
   if fm_watcher_healthy "$STATE" "$FM_PUSH_TRANSITION_LIB_DIR/fm-watch.sh" "${FM_GUARD_GRACE:-300}" "$FM_HOME"; then
     watcher_pid=$(cat "$STATE/.watch.lock/pid")
     case "$(ps -o args= -p "$watcher_pid" 2>/dev/null)" in *'/fm-watch.sh --secondmate-hold'*) ;; *) return 1 ;; esac
   fi
 }
 
+# The binding file records the session-lock owner pid, its fm_pid_identity,
+# the ring target, the server route (tmux socket or Herdr session) and the
+# backend; a file without the fifth line is a tmux binding. The owner must
+# descend from the pane's shell and sit in its foreground group.
 fm_secondmate_watch_binding_valid() {
-  local pane_pid
+  local target route backend pane_pid fg
   fm_secondmate_watch_selected || return 1
   [ ! -L "$STATE/.secondmate-watch" ] && [ -f "$STATE/.secondmate-watch" ] || return 1
   {
-    IFS= read -r FM_SM_PID && IFS= read -r FM_SM_IDENTITY && IFS= read -r FM_SM_PANE && IFS= read -r FM_SM_SOCKET
+    IFS= read -r FM_SM_PID && IFS= read -r FM_SM_IDENTITY && IFS= read -r target && IFS= read -r route \
+      && { IFS= read -r backend || :; }
   } < "$STATE/.secondmate-watch" || return 1
   [ "$FM_SM_PID" = "$(cat "$STATE/.lock" 2>/dev/null)" ] || return 1
   [ -n "$FM_SM_IDENTITY" ] && [ "$FM_SM_IDENTITY" = "$(fm_pid_identity "$FM_SM_PID" 2>/dev/null)" ] || return 1
-  [ "$FM_SM_PANE" = "$TMUX_PANE" ] && [ "$FM_SM_SOCKET" = "${TMUX%%,*}" ] || return 1
-  pane_pid=$(tmux -S "$FM_SM_SOCKET" display-message -p -t "$FM_SM_PANE" '#{pane_pid}') || return 1
+  [ "${backend:-tmux}" = "$FM_SM_BACKEND" ] && [ "$target" = "$FM_SM_TARGET" ] && [ "$route" = "$FM_SM_ROUTE" ] || return 1
+  fm_backend_source "$FM_SM_BACKEND" || return 1
+  if [ "$FM_SM_BACKEND" = herdr ]; then
+    fm_backend_herdr_parse_target "$FM_SM_TARGET" || return 1
+    fg=$(fm_backend_herdr_pane_process_pids "$FM_BACKEND_HERDR_SESSION" "$FM_BACKEND_HERDR_PANE") || return 1
+    pane_pid=${fg%%$'\n'*}
+    fg=${fg#"$pane_pid"}
+  else
+    pane_pid=$(tmux -S "$FM_SM_ROUTE" display-message -p -t "$FM_SM_TARGET" '#{pane_pid}') || return 1
+    fg=$(fm_backend_tmux_foreground_pids "$FM_SM_TARGET")
+  fi
   fm_pid_descends_from "$FM_SM_PID" "$pane_pid" || return 1
-  fm_backend_source tmux || return 1
-  fm_backend_tmux_foreground_pids "$FM_SM_PANE" | grep -Fx "$FM_SM_PID" >/dev/null
+  printf '%s\n' "$fg" | grep -Fx "$FM_SM_PID" >/dev/null
 }
 
 fm_secondmate_watch_status() {
@@ -160,7 +178,7 @@ fm_secondmate_watch_start() {
   pid=$(cat "$STATE/.lock")
   identity=$(fm_pid_identity "$pid") || return 1
   tmp=$(mktemp "$STATE/.secondmate-watch.XXXXXX") || return 1
-  printf '%s\n' "$pid" "$identity" "$TMUX_PANE" "${TMUX%%,*}" > "$tmp" && mv "$tmp" "$STATE/.secondmate-watch" || return 1
+  printf '%s\n' "$pid" "$identity" "$FM_SM_TARGET" "$FM_SM_ROUTE" "$FM_SM_BACKEND" > "$tmp" && mv "$tmp" "$STATE/.secondmate-watch" || return 1
   fm_secondmate_watch_binding_valid || return 1
   case $- in *m*) monitor=1 ;; esac
   set -m
@@ -184,15 +202,15 @@ fm_secondmate_watch_notify() {
   rec=$(cat "$STATE/.secondmate-watch-message" 2>/dev/null || true)
   if [ "${rec%/*}" != "$FM_TASK_INBOX" ] || [ ! -f "$rec" ]; then
     body=$(printf '%s\n' 'Run bin/fm-wake-drain.sh, handle and acknowledge the durable watcher events, send any resulting actions and parent replies, then end this turn.' | "$FM_PUSH_TRANSITION_LIB_DIR/fm-operational-input.sh" encode watcher) || return 1
-    rec=$(fm_task_inbox_write "$FM_SECONDMATE_PARENT_HOME/state" "$FM_SM_ID" "$body") || return 1
+    rec=$(fm_task_inbox_write "${FM_SM_INBOX%/*}" "$FM_SM_ID" "$body") || return 1
     printf '%s\n' "$rec" > "$STATE/.secondmate-watch-message" || return 1
   else
     return 0
   fi
   fm_secondmate_watch_binding_valid || return 1
-  fm_task_inbox_ring tmux "$FM_SM_PANE" "$rec" "$FM_SM_ID" || ring_rc=$?
+  fm_task_inbox_ring "$FM_SM_BACKEND" "$FM_SM_TARGET" "$rec" "$FM_SM_ID" || ring_rc=$?
   case "$ring_rc" in
-    1|2) fm_task_inbox_mark_retry "$FM_SECONDMATE_PARENT_HOME/state" "$FM_SM_ID" "$rec" ;;
+    1|2) fm_task_inbox_mark_retry "${FM_SM_INBOX%/*}" "$FM_SM_ID" "$rec" ;;
     3) return 1 ;;
   esac
 }

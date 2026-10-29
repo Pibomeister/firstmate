@@ -1,7 +1,7 @@
 # Watcher arm PreToolUse seatbelt
 
 This document is the authoritative human-readable contract for the watcher arm PreToolUse seatbelt.
-`bin/fm-arm-command-policy.mjs` is the single semantic owner.
+`bin/fm-arm-command-policy.mjs` is the semantic owner of the watcher-arm policy, and [`bin/fm-secondmate-inbox-guard.sh`](../bin/fm-secondmate-inbox-guard.sh) is the second deny owner, of the Codex secondmate steering-inbox check alone.
 `bin/fm-arm-pretool-check.sh` is only the stable harness transport and output renderer.
 The tracked harness adapters forward command text without classifying it.
 `bin/fm-arm-command-policy.mjs` is also the sole owner of firstmate's shell classification: it exports the tokenizer and command-position analysis, which the sibling cd-guard seatbelt (`bin/fm-cd-pretool-check.sh`, `docs/cd-guard.md`) reuses instead of duplicating shell lexing.
@@ -142,6 +142,7 @@ Every semantic deny includes one stable code in square brackets before its prose
 | `broad-watcher-kill` | An actual broad process kill targets the watcher. |
 | `unclassifiable-protected-command` | Malformed or unsupported syntax contains a protected command and cannot be safely classified. |
 | `watcher-direct` | A direct `bin/fm-watch.sh` execution; the watcher must be reached through `bin/fm-watch-arm.sh` or `bin/fm-watch-checkpoint.sh`. |
+| `secondmate-inbox` | A Codex secondmate's parent-owned steering inbox has a waiting record; [`bin/fm-secondmate-inbox-guard.sh`](../bin/fm-secondmate-inbox-guard.sh) owns when it denies. |
 
 Reason codes are the stable contract for tests and adapters.
 Prose may improve without changing adapter behavior.
@@ -168,6 +169,8 @@ Prose may improve without changing adapter behavior.
 | omp | `event.input.command` | `.omp/extensions/fm-primary-turnend-guard.ts` passes one `--command` argument and returns `{block: true, reason}` only for exit 2; omp surfaces the reason verbatim to the model (verified 18.1.2). |
 | Muse | None | Muse 1.4.13 exposes no PreToolUse equivalent in the default build, so no seatbelt is wired for a Muse primary. The classifier is not invoked, a bundled or backgrounded arm is not denied before execution, and the Muse protocol plus post-arm liveness checks own that risk. Do not generalize another harness's hook to Muse. |
 | Cursor | `.tool_input.command` | `.cursor/hooks.json` matches `tool_name` `Shell` and forwards stdin with `--cursor`. Cursor reads the RETURNED object rather than the exit status, so `--cursor` prints `{"permission":"deny","user_message":"[code] reason"}` on stdout and exits 0; only that rendering is verified to block the command and surface the reason. |
+
+A Codex payload in stdin mode also passes the secondmate steering-inbox guard first; [`bin/fm-secondmate-inbox-guard.sh`](../bin/fm-secondmate-inbox-guard.sh) owns that policy, and its deny uses the code `secondmate-inbox`.
 
 Cursor also loads `<project>/.claude/settings.json`, so the tracked Claude entry receives the same event. Without `--cursor` a Cursor-delivered payload is that duplicate and allows without re-classifying, decided from the payload's own `cursor_version` by `bin/fm-hook-host-lib.sh`; [`turnend-guard.md`](turnend-guard.md#harness-integrations) owns why that predicate reads the payload rather than the environment.
 

@@ -36,89 +36,14 @@ set -u
 
 # shellcheck source=tests/wake-helpers.sh
 . "$(dirname "${BASH_SOURCE[0]}")/wake-helpers.sh"
+# shellcheck source=tests/task-inbox-helpers.sh
+. "$(dirname "${BASH_SOURCE[0]}")/task-inbox-helpers.sh"
 
 WATCH="$ROOT/bin/fm-watch.sh"
 TMP_ROOT=$(fm_test_tmproot fm-task-inbox)
 # The doorbell line canonicalizes its paths, so keep the fixture root
 # canonical too (a trailing-slash TMPDIR otherwise yields a double slash).
 TMP_ROOT=$(cd "$TMP_ROOT" && pwd)
-
-# Run one library function against a state dir through a subshell that sources
-# the production library, so the tests exercise the executable surface rather
-# than re-implementing any format knowledge here.
-inbox_lib() {  # <state> <function> [args...]
-  local state=$1
-  shift
-  FM_STATE_OVERRIDE="$state" bash -c '
-    . "$1"
-    fn=$2
-    shift 2
-    "$fn" "$@"
-  ' _ "$ROOT/bin/fm-task-inbox-lib.sh" "$@"
-}
-
-# A fake tmux for the watcher cases: capture-pane replays FM_FAKE_TMUX_CAPTURE,
-# display-message yields a numeric cursor row, and every literal send-keys is
-# logged to FM_SEND_LOG so a doorbell ring is observable. With
-# FM_FAKE_TMUX_AGENT set, the inventory lists window fm-t1 and its
-# #{pane_current_command} answers with that value, so `zsh` makes
-# fm_backend_tmux_agent_state read the pane as a dead bare shell.
-make_watch_stubs() {  # <dir> -> echoes fakebin dir
-  local dir=$1 fb="$1/fakebin"
-  mkdir -p "$fb"
-  cat > "$fb/tmux" <<'SH'
-#!/usr/bin/env bash
-set -u
-case "${1:-}" in
-  send-keys)
-    if [ "${FM_FAKE_TMUX_SEND_FAIL:-0}" = 1 ]; then
-      printf 'send failed\n' >> "${FM_SEND_LOG:-/dev/null}"
-      exit 1
-    fi
-    shift
-    literal=0
-    while [ $# -gt 0 ]; do
-      case "$1" in
-        -t) shift 2 ;;
-        -l) literal=1; shift ;;
-        *) break ;;
-      esac
-    done
-    if [ "$literal" = 1 ]; then
-      printf '%s\n' "${1:-}" >> "${FM_SEND_LOG:-/dev/null}"
-      if [ -n "${FM_ACK_RECORD:-}" ] && [ -f "$FM_ACK_RECORD" ]; then
-        mv "$FM_ACK_RECORD" "${FM_ACK_RECORD%/*}/handled/"
-      fi
-      # A concurrent fire-and-forget send marking its newer record mid-ring.
-      if [ -n "${FM_RING_MARKS_RETRY:-}" ]; then
-        printf '%s\n' "${FM_RING_MARKS_RETRY##*/}" > "${FM_RING_MARKS_RETRY%/*}/.retry-ring"
-      fi
-    fi
-    exit 0 ;;
-  display-message)
-    for a in "$@"; do
-      case "$a" in
-        *cursor_y*) printf '1\n'; exit 0 ;;
-        *pane_current_command*) [ -z "${FM_FAKE_TMUX_AGENT:-}" ] || { printf '%s\n' "$FM_FAKE_TMUX_AGENT"; exit 0; } ;;
-        *pane_tty*) [ -z "${FM_FAKE_TMUX_AGENT:-}" ] || { printf '\n'; exit 0; } ;;
-      esac
-    done
-    printf 'fakepane\n'; exit 0 ;;
-  capture-pane)
-    if [ -n "${FM_FAKE_TMUX_CAPTURE:-}" ] && [ -f "$FM_FAKE_TMUX_CAPTURE" ]; then
-      cat "$FM_FAKE_TMUX_CAPTURE"
-    else
-      printf '╭────╮\n│    │\n╰────╯\n'
-    fi
-    exit 0 ;;
-  list-windows) [ "${FM_FAKE_TMUX_MISSING:-0}" = 1 ] || printf 'fm-t1\n'; exit 0 ;;
-esac
-exit 0
-SH
-  chmod +x "$fb/tmux"
-  make_fake_crew_state "$fb" >/dev/null
-  printf '%s\n' "$fb"
-}
 
 watch_bg() {  # <state> <fakebin> <out> [extra env assignments...]
   local state=$1 fakebin=$2 out=$3
@@ -139,10 +64,6 @@ wait_watcher_gone() {  # <pid> [limit-ticks]
     i=$((i + 1))
   done
   return 1
-}
-
-age_path() {  # <path>  (set mtime well past any grace under test)
-  touch -t 202001010000 "$1"
 }
 
 test_write_is_durable_and_exact() {
@@ -401,6 +322,144 @@ test_ring_submits_its_own_stuck_doorbell() {
   pass "inbox: the ring submits its own stuck doorbell, skips other pending text, and retries a lost Enter once on both paths"
 }
 
+# Unsubmitted doorbells accumulate: a ring typed while an earlier copy still
+# sat in the composer leaves the copies concatenated (measured on real Codex
+# 0.162.1). A composer holding only whole copies of our own constant line is
+# ours and is submitted once; anything else, including an opaque paste
+# placeholder of exactly that length, is protected untouched.
+test_ring_submits_repeated_own_doorbells_only() {
+  local dir state rec doorbell log composer rc other
+  dir="$TMP_ROOT/ring-repeated"
+  state="$dir/state"
+  mkdir -p "$state"
+  make_composer_stub "$dir"
+  rec=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "please continue")
+  doorbell=$(inbox_lib "$state" fm_task_inbox_doorbell_line "$rec")
+  log="$dir/send.log"; composer="$dir/composer"
+  ring() {
+    PATH="$dir/fakebin:$PATH" FM_SEND_LOG="$log" FM_FAKE_COMPOSER="$composer" \
+      FM_FAKE_DROP_ENTERS="$dir/drops" inbox_lib "$state" fm_task_inbox_ring tmux sess:fm-t1 "$rec" fm-t1
+  }
+
+  : > "$log"; printf '%s%s' "$doorbell" "$doorbell" > "$composer"
+  rc=0; ring || rc=$?
+  [ "$rc" = 0 ] || fail "two concatenated copies of our own doorbell should be submitted, got rc $rc"
+  [ "$(cat "$log")" = "SUBMIT: $doorbell$doorbell" ] \
+    || fail "the concatenated doorbells should be submitted once, not retyped:"$'\n'"$(cat "$log")"
+  [ ! -s "$composer" ] || fail "the concatenated doorbells were left in the composer"
+
+  for other in "[Pasted Content $(( ${#doorbell} * 6 )) chars]" "$doorbell$doorbell x" '12345'; do
+    : > "$log"; printf '%s' "$other" > "$composer"
+    rc=0; ring || rc=$?
+    [ "$rc" = 1 ] || fail "unproven composer content should skip the ring, got rc $rc for: $other"
+    [ ! -s "$log" ] || fail "unproven composer content was submitted:"$'\n'"$(cat "$log")"
+    [ "$(cat "$composer")" = "$other" ] || fail "unproven composer content was changed: $(cat "$composer")"
+  done
+  pass "inbox: the ring submits whole repeated copies of its own doorbell and protects a same-length paste placeholder and other text"
+}
+
+# A Codex pane on Herdr: the composer is rendered from a real Codex 0.162.1
+# capture, `agent get` reports the native agent_status, Enter submits, and an
+# armed FM_FAKE_HUMAN_TYPES appends a human's keystrokes on the first Enter
+# instead of submitting, so a change between proofs is observable.
+make_herdr_codex_stub() {  # <dir>
+  mkdir -p "$1/fakebin"
+  cat > "$1/fakebin/herdr" <<'SH'
+#!/usr/bin/env bash
+set -u
+case "${1:-} ${2:-}" in
+  "status --json") printf '{"client":{"version":"0.7.4","protocol":14},"server":{"running":true}}\n' ;;
+  "agent get") printf '{"result":{"agent":{"agent":"codex","agent_status":"%s"}}}\n' "${FM_FAKE_AGENT_STATUS:-idle}" ;;
+  "pane read")
+    printf '  >_ OpenAI Codex (v0.162.1)\n\n'
+    if [ -s "$FM_FAKE_COMPOSER" ]; then
+      fold -w 48 "$FM_FAKE_COMPOSER" | awk 'NR == 1 { print "› " $0; next } { print "  " $0 }'
+    else
+      printf '› Ask Codex to do anything\n'
+    fi
+    printf '\n  GPT-6-Sol medium · main · 100%% context left\n' ;;
+  "pane send-text") printf '%s' "${4:-}" >> "$FM_FAKE_COMPOSER" ;;
+  "pane send-keys")
+    case "${4:-}" in
+      Enter|enter)
+        printf 'ENTER\n' >> "$FM_SEND_LOG"
+        if [ -n "${FM_FAKE_HUMAN_TYPES:-}" ] && [ -f "$FM_FAKE_HUMAN_TYPES" ]; then
+          cat "$FM_FAKE_HUMAN_TYPES" >> "$FM_FAKE_COMPOSER"; rm -f "$FM_FAKE_HUMAN_TYPES"
+        elif [ -s "$FM_FAKE_COMPOSER" ]; then
+          printf 'SUBMIT: %s\n' "$(cat "$FM_FAKE_COMPOSER")" >> "$FM_SEND_LOG"
+          : > "$FM_FAKE_COMPOSER"
+        fi ;;
+    esac ;;
+esac
+exit 0
+SH
+  chmod +x "$1/fakebin/herdr"
+}
+
+# A busy Codex accepts Enter as a mid-turn steer that clears the composer
+# (docs/verification/runtime-backends.md, "Steering-inbox doorbell on a busy
+# Codex"), so owned doorbells are submitted while it works; a busy pane of any
+# other harness keeps the existing protection. The harness is the meta's last
+# harness line, as every meta reader takes it. Ownership is re-proved before
+# the retry Enter, so text a human typed after the first Enter is never
+# submitted.
+test_ring_submits_owned_doorbells_on_a_busy_codex_only() {
+  local dir state rec doorbell log composer rc harness
+  dir="$TMP_ROOT/ring-busy-codex"
+  state="$dir/state"
+  mkdir -p "$state"
+  make_herdr_codex_stub "$dir"
+  rec=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "please continue")
+  doorbell=$(inbox_lib "$state" fm_task_inbox_doorbell_line "$rec")
+  log="$dir/send.log"; composer="$dir/composer"
+  ring() {
+    PATH="$dir/fakebin:$PATH" FM_SEND_LOG="$log" FM_FAKE_COMPOSER="$composer" \
+      FM_FAKE_AGENT_STATUS=working FM_FAKE_HUMAN_TYPES="$dir/human" \
+      FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 \
+      inbox_lib "$state" fm_task_inbox_ring herdr lab:w1:p1 "$rec" fm-t1
+  }
+
+  for harness in codex claude; do
+    printf 'harness=%s\n' "$harness" > "$state/t1.meta"
+    : > "$log"; printf '%s%s' "$doorbell" "$doorbell" > "$composer"
+    rc=0; ring || rc=$?
+    if [ "$harness" = codex ]; then
+      [ "$rc" = 0 ] || fail "owned doorbells on a busy Codex should be submitted, got rc $rc"
+      grep -Fqx "SUBMIT: $doorbell$doorbell" "$log" \
+        || fail "owned doorbells on a busy Codex were not submitted once:"$'\n'"$(cat "$log")"
+      [ ! -s "$composer" ] || fail "owned doorbells were left in a busy Codex composer"
+    else
+      [ "$rc" = 1 ] || fail "owned doorbells on a busy $harness pane should keep the busy skip, got rc $rc"
+      [ ! -s "$log" ] || fail "a busy $harness pane received keys:"$'\n'"$(cat "$log")"
+    fi
+  done
+
+  printf 'harness=claude\nharness=codex\n' > "$state/t1.meta"
+  : > "$log"; printf '%s' "$doorbell" > "$composer"
+  rc=0; ring || rc=$?
+  [ "$rc" = 0 ] || fail "a meta whose last harness line is codex was not read as Codex, rc $rc:"$'\n'"$(cat "$log")"
+  grep -Fqx "SUBMIT: $doorbell" "$log" || fail "a meta whose last harness line is codex was not submitted once:"$'\n'"$(cat "$log")"
+
+  printf 'harness=codex\n' > "$state/t1.meta"
+  local foreign
+  for foreign in "[Pasted Content $(( ${#doorbell} * 6 )) chars]" "$doorbell$doorbell x" "my draft"; do
+    : > "$log"; printf '%s' "$foreign" > "$composer"
+    rc=0; ring || rc=$?
+    [ "$rc" = 1 ] || fail "a busy Codex composer holding '$foreign' should be skipped, got rc $rc"
+    [ ! -s "$log" ] || fail "a busy Codex composer holding '$foreign' received keys:"$'\n'"$(cat "$log")"
+    [ "$(cat "$composer")" = "$foreign" ] || fail "a busy Codex composer holding '$foreign' was altered: $(cat "$composer")"
+  done
+
+  : > "$log"; printf '%s' "$doorbell" > "$composer"; printf ' and my own draft' > "$dir/human"
+  rc=0; ring || rc=$?
+  [ "$(grep -c '^ENTER$' "$log")" = 1 ] \
+    || fail "a composer that changed after the first Enter must not get the retry Enter:"$'\n'"$(cat "$log")"
+  ! grep -q '^SUBMIT' "$log" || fail "a human's changed draft was submitted:"$'\n'"$(cat "$log")"
+  [ "$(cat "$composer")" = "$doorbell and my own draft" ] \
+    || fail "the human's changed draft was altered: $(cat "$composer")"
+  pass "inbox: owned doorbells are submitted on a busy Codex, other busy harnesses stay protected, and a changed composer gets no retry"
+}
+
 test_idempotent_write_dedups_exact_body() {
   local state r1 r2 r3 r4 count text
   state="$TMP_ROOT/idem/state"; mkdir -p "$state"
@@ -615,6 +674,28 @@ test_fire_and_forget_retry_is_quiet_without_the_flag() {
   pass "inbox: without config/wait-no-turns a fire-and-forget retry mark stays quiet"
 }
 
+# An escalated record stays with recovery while the ladder moves to the next
+# waiting record: a stuck oldest record never silences the records behind it,
+# each record escalates at most once, and once every waiting record escalated
+# the inbox stays quiet.
+test_ladder_moves_past_an_escalated_record() {
+  local state first second action
+  state="$TMP_ROOT/ladder-next/state"; mkdir -p "$state"
+  first=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "stuck ask")
+  second=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "redirect")
+  age_path "$first"; age_path "$second"
+  inbox_lib "$state" fm_task_inbox_record_escalated "$state" t1 "$first"
+  action=$(FM_TASK_INBOX_GRACE_SECS=60 FM_TASK_INBOX_RING_MAX=3 inbox_lib "$state" fm_task_inbox_due_action "$state" t1)
+  [ "$action" = "ring $second" ] || fail "a record behind an escalated one was not rung, got: $action"
+  printf '%s\t3\t100\n' "${second##*/}" > "$state/t1.inbox/.ring-state"
+  action=$(FM_TASK_INBOX_GRACE_SECS=60 FM_TASK_INBOX_RING_MAX=3 inbox_lib "$state" fm_task_inbox_due_action "$state" t1)
+  [ "$action" = "escalate $second 3" ] || fail "a record behind an escalated one never escalated, got: $action"
+  inbox_lib "$state" fm_task_inbox_record_escalated "$state" t1 "$second"
+  action=$(FM_TASK_INBOX_GRACE_SECS=60 FM_TASK_INBOX_RING_MAX=3 inbox_lib "$state" fm_task_inbox_due_action "$state" t1)
+  [ "$action" = quiet ] || fail "an inbox whose waiting records all escalated was not quiet, got: $action"
+  pass "inbox: the ladder moves past an escalated record and escalates each record once"
+}
+
 test_ring_ladder_policy() {
   local state rec action
   state="$TMP_ROOT/ladder/state"; mkdir -p "$state"
@@ -654,20 +735,6 @@ test_ring_ladder_policy() {
   pass "inbox: the re-ring ladder paces by grace, escalates once, and resets on ack"
 }
 
-setup_watch_case() {  # <name> -> echoes case dir; state in <dir>/state
-  local name=$1 dir
-  dir="$TMP_ROOT/$name"
-  mkdir -p "$dir/state"
-  make_watch_stubs "$dir" >/dev/null
-  fm_write_meta "$dir/state/t1.meta" "window=sess:fm-t1" "kind=ship" "harness=grok"
-  printf '%s\n' "$dir"
-}
-
-idle_capture() {  # <dir>
-  printf '╭────╮\n│    │\n╰────╯\n' > "$1/idle.capture"
-  printf '%s\n' "$1/idle.capture"
-}
-
 test_watcher_rerings_idle_pane_quietly() {
   local dir state out log pid rec
   dir=$(setup_watch_case rering)
@@ -699,23 +766,6 @@ test_watcher_rerings_idle_pane_quietly() {
   kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null
   [ ! -s "$log" ] || fail "the watcher kept ringing after the ack:"$'\n'"$(cat "$log")"
   pass "watcher: an unhandled aged message on an idle pane re-rings without waking firstmate, and the ack silences it"
-}
-
-# A fresh process for each check proves the busy budget survives watcher restarts.
-busy_steer_check() {  # <case-dir> [capture] [busy-max]
-  PATH="$1/fakebin:$PATH" FM_STATE_OVERRIDE="$1/state" FM_SEND_LOG="$1/send.log" \
-    FM_FAKE_TMUX_CAPTURE="${2:-$1/busy.capture}" FM_BUSY_REGEX=BUSYTOKEN \
-    FM_TASK_INBOX_GRACE_SECS=0 FM_TASK_INBOX_BUSY_MAX="${3-2}" \
-    bash -c '. "$1" && inbox_steer_check sess:fm-t1 t1' _ "$WATCH" > "$1/check.out" 2>&1
-}
-
-busy_case() {
-  local dir rec
-  dir=$(setup_watch_case "$1")
-  printf 'some output\nBUSYTOKEN active\n' > "$dir/busy.capture"
-  rec=$(inbox_lib "$dir/state" fm_task_inbox_write "$dir/state" t1 "please continue")
-  age_path "$rec"
-  printf '%s' "$dir"
 }
 
 # The escalation names the pane state it actually read: a harness whose busy
@@ -770,6 +820,7 @@ test_watcher_busy_secondmate_unread_inbox_names_immediate_recovery() {
   dir=$(busy_case busy-secondmate)
   state="$dir/state"
   fm_write_meta "$state/t1.meta" "window=sess:fm-t1" "kind=secondmate" "harness=grok"
+  printf '001.msg\t2\t%s\t\n' "$(date +%s)" > "$state/t1.inbox/.recover-state"
   busy_steer_check "$dir"
   [ ! -s "$state/.wake-queue" ] || fail "first busy secondmate deferral must wait"
   busy_steer_check "$dir"
@@ -1188,6 +1239,8 @@ test_watcher_secondmate_unread_inbox_names_immediate_recovery() {
   fm_write_meta "$state/t1.meta" "window=sess:fm-t1" "kind=secondmate" "harness=grok"
   rec=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "independent routed ask")
   age_path "$rec"
+  # Automatic recovery already spent its two slots (tests/fm-watch-inbox-recovery.test.sh pins that).
+  printf '001.msg\t2\t%s\t\n' "$(date +%s)" > "$state/t1.inbox/.recover-state"
   watch_bg "$state" "$dir/fakebin" "$out" \
     FM_SEND_LOG="$log" FM_FAKE_TMUX_CAPTURE="$(idle_capture "$dir")" \
     FM_TASK_INBOX_RING_MAX=1
@@ -1518,6 +1571,8 @@ test_doorbell_is_a_shell_noop
 test_doorbell_rejects_terminal_controls
 test_ring_skips_dead_agent
 test_ring_submits_its_own_stuck_doorbell
+test_ring_submits_repeated_own_doorbells_only
+test_ring_submits_owned_doorbells_on_a_busy_codex_only
 test_idempotent_write_dedups_exact_body
 test_idempotent_write_follows_concurrent_ack
 test_handled_mv_dedups_by_sequence
@@ -1528,6 +1583,7 @@ test_fire_and_forget_records_never_enter_the_ladder
 test_fire_and_forget_retry_is_owed_once
 test_fire_and_forget_retry_is_quiet_without_the_flag
 test_ring_ladder_policy
+test_ladder_moves_past_an_escalated_record
 test_watcher_rerings_idle_pane_quietly
 test_escalation_names_the_pane_state_it_read
 test_watcher_waits_on_busy_pane

@@ -4,11 +4,20 @@
 # A firstmate primary must arm the watcher or run a Codex checkpoint as a
 # standalone verified harness call.
 # bin/fm-arm-command-policy.mjs is the sole owner of shell classification,
-# protected execution identity, the blessed setup tree, and deny reason codes.
+# protected execution identity, the blessed setup tree, and every deny reason
+# code but one; bin/fm-secondmate-inbox-guard.sh is the second deny owner, of
+# the code secondmate-inbox (below).
 # This wrapper only acquires the harness payload, discovers the active roots,
-# invokes that policy, and renders the established harness-specific responses.
+# invokes those owners, and renders the established harness-specific responses.
 # It never executes, sources, evaluates, or expands the submitted command.
 # See docs/arm-pretool-check.md for the complete contract and validation record.
+#
+# A Codex payload (stdin mode, no --claude or --cursor) first passes the
+# secondmate steering-inbox guard, whose policy bin/fm-secondmate-inbox-guard.sh
+# owns: it rides this already-trusted registration because a new
+# .codex/hooks.json entry makes codex ask for hook-trust review at launch. Its
+# deny renders below with the code secondmate-inbox; every other outcome falls
+# through to the watcher-arm policy unchanged.
 #
 # Usage:
 #   <PreToolUse JSON on stdin> | bin/fm-arm-pretool-check.sh
@@ -22,6 +31,10 @@
 # Claude-settings duplicate Cursor also loads.
 # CLI mode is used by OpenCode and Pi after their adapters extract the exact
 # command string.
+# Test-only: with FM_PRETOOL_PAYLOAD_KEYS_FILE set, stdin mode appends the
+# payload's top-level key names (one sorted JSON array, never a value) to that
+# file; tests/fm-task-inbox-codex-busy-live-e2e.test.sh uses it to record a real
+# Codex PreToolUse payload shape.
 # --background remains accepted for compatibility, but harness-native tracked
 # background execution is not itself a policy signal.
 #
@@ -105,10 +118,32 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
+json_escape() {
+  printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr '\n' ' '
+}
+
+# Render the deny for CODE and REASON in the calling harness's shape and exit.
+render_deny() {
+  local escaped
+  escaped=$(json_escape "[$CODE] $REASON")
+  if [ "$CURSOR_MODE" -eq 1 ]; then
+    printf '{"permission":"deny","user_message":"%s"}\n' "$escaped"
+    exit 0
+  fi
+  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":"%s"}\n' "$escaped" >&2
+  [ "$CLAUDE_MODE" -eq 1 ] || printf '{"decision":"deny","reason":"%s"}\n' "$escaped"
+  exit 2
+}
+
 if [ "$CMD_SET" -eq 0 ]; then
   PAYLOAD=$(cat 2>/dev/null || true)
   [ -n "$PAYLOAD" ] || exit 0
   command -v jq >/dev/null 2>&1 || exit 0
+  # Live-guard capture switch: only the payload's top-level key names, never
+  # a value, so a real harness payload shape can be recorded without its content.
+  if [ -n "${FM_PRETOOL_PAYLOAD_KEYS_FILE:-}" ]; then
+    printf '%s' "$PAYLOAD" | jq -c 'keys' >> "$FM_PRETOOL_PAYLOAD_KEYS_FILE" 2>/dev/null || true
+  fi
   # shellcheck source=bin/fm-hook-host-lib.sh
   . "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/fm-hook-host-lib.sh"
   # Cursor's own registration passes --cursor. Without it a Cursor-delivered
@@ -116,6 +151,15 @@ if [ "$CMD_SET" -eq 0 ]; then
   # evaluated by that registration, so this copy allows without re-classifying.
   if [ "$CURSOR_MODE" -eq 0 ] && fm_hook_payload_is_foreign_host "$PAYLOAD"; then
     exit 0
+  fi
+  if [ "$CLAUDE_MODE" -eq 0 ] && [ "$CURSOR_MODE" -eq 0 ]; then
+    GUARD=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P)/fm-secondmate-inbox-guard.sh
+    if HOOK_ROOT=$(pwd -P 2>/dev/null) \
+      && INBOX_REASON=$(printf '%s' "$PAYLOAD" | "$GUARD" "$HOOK_ROOT" 2>/dev/null) && [ -n "$INBOX_REASON" ]; then
+      CODE=secondmate-inbox
+      REASON=$INBOX_REASON
+      render_deny
+    fi
   fi
   CMD=$(printf '%s' "$PAYLOAD" | jq -r '(.toolInput.command // .tool_input.command // empty)' 2>/dev/null) || exit 0
   [ -n "$CMD" ] || exit 0
@@ -187,16 +231,4 @@ CODE=${REST%%"$TAB"*}
 REASON=${REST#*"$TAB"}
 [ -n "$CODE" ] && [ -n "$REASON" ] && [ "$REASON" != "$REST" ] || exit 0
 
-json_escape() {
-  printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr '\n' ' '
-}
-
-DETAIL="[$CODE] $REASON"
-ESCAPED=$(json_escape "$DETAIL")
-if [ "$CURSOR_MODE" -eq 1 ]; then
-  printf '{"permission":"deny","user_message":"%s"}\n' "$ESCAPED"
-  exit 0
-fi
-printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":"%s"}\n' "$ESCAPED" >&2
-[ "$CLAUDE_MODE" -eq 1 ] || printf '{"decision":"deny","reason":"%s"}\n' "$ESCAPED"
-exit 2
+render_deny
