@@ -66,10 +66,10 @@
 #   reads it; a relaunch neither checks that line nor accepts the flag.
 #   A fresh isolated clean Orca copy is detached while its initial branch stays
 #   preserved before continuation resync; reused copies keep the named-branch guard.
-#   A ship relaunch whose recorded branch exists on origin runs
-#   bin/fm-pr-resync.sh in the recorded worktree first: exit 0 proceeds, exit 3
-#   launches with the owner's monitoring-only contract appended to the launch
-#   brief, and any other exit refuses the relaunch.
+#   A no-mistakes ship relaunch, or one with a no-mistakes remote, resyncs a
+#   recorded branch present on origin without archive-advancing divergence:
+#   exit 0 proceeds, exit 3 launches with the monitoring-only contract, and
+#   any other exit leaves the branch as-is and refuses the relaunch.
 #   The origin pre-probe is bounded to 120 seconds; a timeout refuses launch.
 #   Ship/scout launches always put fm-dod-lib.sh's current worker role scope
 #   first in the private launch-brief overlay, including the exact task-owned
@@ -3880,10 +3880,18 @@ brief_source_branches() {  # <brief>
 
 # Continuation launch: bin/fm-pr-resync.sh replaces the base refresh and must settle.
 spawn_pr_resync() {  # <worktree> <branch>
-  local out rc=0
+  local out rc=0 was_detached=0
+  [ -n "$(git -C "$1" symbolic-ref -q HEAD 2>/dev/null)" ] || was_detached=1
   out=$("$FM_ROOT/bin/fm-pr-resync.sh" "$ID" "$1" "$2" 2>&1) || rc=$?
   printf '%s\n' "$out" >&2
   [ "$rc" -ne 0 ] || return 0
+  if [ "$was_detached" -eq 1 ] && [ -n "$(git -C "$1" symbolic-ref -q HEAD 2>/dev/null)" ]; then
+    if git -C "$1" switch --quiet --detach; then
+      echo "fm-spawn: restored detached pool copy $1 at its current HEAD" >&2
+    else
+      echo "error: could not restore detached pool copy $1 at its current HEAD" >&2
+    fi
+  fi
   echo "error: $ID cannot continue $2: bin/fm-pr-resync.sh exited $rc (output above); refusing to launch" >&2
   return 1
 }
@@ -3892,6 +3900,9 @@ spawn_pr_resync() {  # <worktree> <branch>
 # head when origin has that branch; exit 3 keeps the owner's monitoring-only lines.
 relaunch_pr_resync() {
   local out rc=0
+  if [ "$MODE" != no-mistakes ]; then
+    git -C "$RELAUNCH_WT" remote get-url no-mistakes >/dev/null 2>&1 || return 0
+  fi
   git -C "$RELAUNCH_WT" remote get-url origin >/dev/null 2>&1 || return 0
   fm_nm_bounded "$RELAUNCH_WT" 120 git ls-remote --exit-code --heads origin "refs/heads/$BRANCH" >/dev/null 2>&1 || rc=$?
   [ "$rc" -ne 2 ] || return 0
@@ -3899,13 +3910,13 @@ relaunch_pr_resync() {
     echo "error: could not read origin's $BRANCH for relaunching $ID (git ls-remote exited $rc, bounded to 120s); refusing to relaunch from an unverified head" >&2
     return 1
   }
-  out=$("$FM_ROOT/bin/fm-pr-resync.sh" "$ID" "$RELAUNCH_WT" "$BRANCH" 2>&1) || rc=$?
+  out=$("$FM_ROOT/bin/fm-pr-resync.sh" "$ID" "$RELAUNCH_WT" "$BRANCH" --refuse-diverged 2>&1) || rc=$?
   printf '%s\n' "$out" >&2
   case "$rc" in
     0) return 0 ;;
     3) RELAUNCH_MONITOR=$(printf '%s\n' "$out" | sed -n 's/^fm-pr-resync: monitoring-only: //p'); return 0 ;;
   esac
-  echo "error: $ID cannot relaunch: bin/fm-pr-resync.sh exited $rc on $BRANCH (output above); the worktree holds only what it reported" >&2
+  echo "error: $ID cannot relaunch: bin/fm-pr-resync.sh exited $rc on $BRANCH (output above); the branch was left as-is unless the owner reported a change" >&2
   return 1
 }
 

@@ -1265,8 +1265,37 @@ SH
   assert_absent "$CASE_DIR/launch.log" "active continuation launched a worker"
   assert_absent "$HOME_DIR/state/$id.meta" "active continuation published fresh-task metadata"
   assert_equals "$before" "$(git -C "$PROJECT_DIR" for-each-ref --format='%(refname) %(objectname)')" "active continuation changed refs"
+  [ -z "$(git -C "$POOL_DIR" symbolic-ref -q HEAD)" ] || fail "active continuation left the pool copy on a named branch"
+  assert_equals "$STALE_SHA" "$(git -C "$POOL_DIR" rev-parse HEAD)" "active continuation discarded the pool copy's HEAD"
+  assert_grep 'base' "$POOL_DIR/README.md" "active continuation discarded the pool copy's files"
+  assert_contains "$out" 'restored detached pool copy' "active continuation did not report the restore"
   assert_equals 'axi sync --check' "$(cat "$CASE_DIR/active.calls")" "active continuation must only read custody"
   pass "fresh continuation refuses owner exit 3 with no launch, metadata or branch/archive change"
+}
+
+test_pr_branch_unsettled_custody_restores_detached_pool() {
+  local rec id=pool-pr-unsettled-r1 out status before
+  rec=$(make_case pr-unsettled "$id")
+  read_case_record "$rec"
+  stale_pr_branch feature/pr
+  brief_with_setup_line "$id" 'Ship branch: feature/pr'
+  git -C "$PROJECT_DIR" remote add no-mistakes "$CASE_DIR/origin.git"
+  cat > "$FAKEBIN_DIR/no-mistakes" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' 'branch_sync:' '  state: blocked' '  safety: blocked_unknown' '  next_action:' '    code: inspect' '    command: none'
+SH
+  chmod +x "$FAKEBIN_DIR/no-mistakes"
+  before=$(git -C "$PROJECT_DIR" for-each-ref --format='%(refname) %(objectname)' refs/heads)
+  out=$(run_spawn "$id" --mode direct-PR --yolo off --pr-branch feature/pr)
+  status=$?
+  expect_code 1 "$status" "unsettled continuation must refuse"$'\n'"$out"
+  assert_contains "$out" 'bin/fm-pr-resync.sh exited 1' "unsettled continuation did not preserve owner exit 1"
+  [ -z "$(git -C "$POOL_DIR" symbolic-ref -q HEAD)" ] || fail "unsettled continuation left the pool copy on a named branch"
+  assert_equals "$STALE_SHA" "$(git -C "$POOL_DIR" rev-parse HEAD)" "unsettled continuation discarded the pool copy's HEAD"
+  assert_grep 'base' "$POOL_DIR/README.md" "unsettled continuation discarded the pool copy's files"
+  assert_equals "$before" "$(git -C "$PROJECT_DIR" for-each-ref --format='%(refname) %(objectname)' refs/heads)" "unsettled continuation changed branch refs"
+  assert_contains "$out" 'restored detached pool copy' "unsettled continuation did not report the restore"
+  pass "an owner exit 1 after switching leaves the pool copy detached and intact"
 }
 
 test_pr_branch_refusals_leave_the_branch_and_records() {
@@ -1378,6 +1407,7 @@ test_stale_pin_beside_other_dirt_reports_one_verdict
 test_pr_branch_continues_the_published_head
 test_pr_branch_with_base_scaffold_launches
 test_pr_branch_active_custody_refuses_without_launch
+test_pr_branch_unsettled_custody_restores_detached_pool
 test_pr_branch_refusals_leave_the_branch_and_records
 test_from_branch_starts_from_the_source_and_keeps_the_default_target
 

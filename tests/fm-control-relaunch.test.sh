@@ -1662,10 +1662,8 @@ test_spawn_relaunch_of_promoted_scout_uses_the_recorded_branch() {
   pass "fm-spawn --relaunch: a promoted scout with a recorded custom branch relaunches on it instead of being refused"
 }
 
-# A ship relaunch whose recorded branch is on origin resyncs the recorded
-# worktree through bin/fm-pr-resync.sh before anything launches. The pipeline
-# rebased the branch onto a moved main and published it with lease while the
-# worktree's branch kept the pre-rebase commit (STALE_SHA; PUBLISHED_SHA is origin's).
+# A no-mistakes ship relaunch whose recorded branch is on origin resyncs the
+# worktree before launch, while a direct-PR or local-only branch stays worker-owned.
 stale_published_task() {  # <case-dir> <id>: ship task on task-<id>, stale against origin
   local dir=$1 id=$2 pipe="$1/pipe" old
   add_ship_task "$dir" "$id" claude
@@ -1692,18 +1690,54 @@ stale_published_task() {  # <case-dir> <id>: ship task on task-<id>, stale again
 }
 
 test_spawn_relaunch_resyncs_the_recorded_branch_to_its_published_head() {
-  local dir out
+  local dir out mode local_sha
   dir=$(new_case prresync rl90)
   stale_published_task "$dir" rl90
   out=$(run_spawn "$dir" rl90 --relaunch)
-  assert_contains "$out" "spawned rl90" "the relaunch should launch after the owner settles"$'\n'"$out"
-  assert_contains "$out" "result=archived-advanced" "the relaunch did not run the owner"
+  assert_contains "$out" "cannot relaunch: bin/fm-pr-resync.sh exited 1" "a diverged relaunch was not refused"$'\n'"$out"
+  assert_not_contains "$out" "spawned rl90" "a diverged relaunch launched"
+  assert_contains "$out" "branch was left as-is" "the relaunch refusal did not explain branch custody"
+  [ "$(git -C "$dir/wt" rev-parse HEAD)" = "$STALE_SHA" ] \
+    || fail "a diverged relaunch moved the worker branch"
+  [ -z "$(git -C "$dir/wt" for-each-ref --format='%(refname)' refs/heads/archive/rl90-)" ] \
+    || fail "a diverged relaunch created an archive"
+
+  dir=$(new_case prresync-behind rl95)
+  add_ship_task "$dir" rl95 claude
+  printf 'branch=task-rl95\n' >> "$dir/home/state/rl95.meta"
+  printf 'zsh' > "$dir/fake/command"
+  printf 'a\n' > "$dir/wt/a.txt"
+  git -C "$dir/wt" add a.txt
+  git -C "$dir/wt" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit -qm a
+  git -C "$dir/wt" push -q origin task-rl95
+  git clone -q "$dir/proj.origin.git" "$dir/pipe"
+  git -C "$dir/pipe" switch -q task-rl95
+  printf 'fix\n' > "$dir/pipe/fix.txt"
+  git -C "$dir/pipe" add fix.txt
+  git -C "$dir/pipe" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit -qm fix
+  git -C "$dir/pipe" push -q origin task-rl95
+  PUBLISHED_SHA=$(git -C "$dir/pipe" rev-parse HEAD)
+  out=$(run_spawn "$dir" rl95 --relaunch)
+  assert_contains "$out" "spawned rl95" "a behind relaunch did not launch"$'\n'"$out"
+  assert_contains "$out" "result=advanced" "a behind relaunch did not advance"
   [ "$(git -C "$dir/wt" rev-parse HEAD)" = "$PUBLISHED_SHA" ] \
-    || fail "the relaunched worktree is not at the published head"
-  [ "$(git -C "$dir/wt" rev-parse -q --verify "refs/heads/archive/rl90-pre-rebase-${STALE_SHA:0:8}")" = "$STALE_SHA" ] \
-    || fail "the relaunch did not archive the stale pre-rebase commit"
-  assert_no_grep 'Monitoring-only relaunch' "$dir/home/data/rl90/launch-brief.md" \
-    "a settled relaunch was told it is monitoring-only"
+    || fail "a behind relaunch did not reach the published head"
+
+  for mode in direct-PR local-only; do
+    dir=$(new_case "prresync-$mode" "rl96-$mode")
+    stale_published_task "$dir" "rl96-$mode"
+    sed -i.bak "s/^mode=no-mistakes$/mode=$mode/" "$dir/home/state/rl96-$mode.meta"
+    printf 'local amendment\n' >> "$dir/wt/a.txt"
+    git -C "$dir/wt" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit --amend --no-edit -aq
+    local_sha=$(git -C "$dir/wt" rev-parse HEAD)
+    out=$(run_spawn "$dir" "rl96-$mode" --relaunch)
+    assert_contains "$out" "spawned rl96-$mode" "$mode worker-owned branch did not relaunch"$'\n'"$out"
+    assert_not_contains "$out" "fm-pr-resync:" "$mode relaunch invoked the owner"
+    [ "$(git -C "$dir/wt" rev-parse HEAD)" = "$local_sha" ] \
+      || fail "$mode relaunch moved the unpushed worker commit"
+    [ -z "$(git -C "$dir/wt" for-each-ref --format='%(refname)' "refs/heads/archive/rl96-$mode-")" ] \
+      || fail "$mode relaunch created an archive"
+  done
 
   dir=$(new_case prresync-dirty rl91)
   stale_published_task "$dir" rl91
@@ -1716,7 +1750,7 @@ test_spawn_relaunch_resyncs_the_recorded_branch_to_its_published_head() {
 
   out=$(run_spawn "$dir" rl91 --relaunch --pr-branch task-rl91)
   assert_contains "$out" "--pr-branch and --from-branch apply only to a fresh launch" "--relaunch accepted --pr-branch"
-  pass "fm-spawn --relaunch: a published recorded branch is resynced through the owner first; its refusal stops the launch"
+  pass "fm-spawn --relaunch: no-mistakes divergence refuses, behind advances, and worker-owned modes skip resync"
 }
 
 # A successor launched with --from-branch keeps its brief's Setup "Source

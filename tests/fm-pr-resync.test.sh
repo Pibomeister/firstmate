@@ -41,6 +41,10 @@ op=$1
 if [ "${GIT_CAPTURE_FAIL:-0}" = 1 ] && [ "$op" = rev-parse ]; then
   case "$*" in *' --verify HEAD') exit 1 ;; esac
 fi
+if [ "$op" = read-tree ] && [ -n "${GIT_READ_TREE_WRITER_SHA:-}" ]; then
+  "$REAL_GIT" -C "$GIT_READ_TREE_WT" update-ref "refs/heads/$GIT_READ_TREE_BRANCH" "$GIT_READ_TREE_WRITER_SHA"
+  exit 1
+fi
 if [ -n "${GIT_NETWORK_CALLS:-}" ]; then
   case "$op" in
     fetch|ls-remote)
@@ -182,6 +186,19 @@ assert_equals "" "$(archives)" "behind: no archive"
 assert_contains "$LAST" "result=advanced archive=- custody=none" "behind: result line"
 pass "behind branch advances without an archive"
 
+fixture behind-refuse-flag; cm "$D/pipe" fix; git -C "$D/pipe" push -q origin "$B"; PUB=$(git -C "$D/origin.git" rev-parse "$B"); run_owner "$B" --refuse-diverged
+expect_code 0 "$RC" "behind with refusal flag: exit"
+assert_equals "$PUB" "$(ref "refs/heads/$B")" "behind with refusal flag: advanced"
+pass "the divergence refusal flag still allows a behind branch to advance"
+
+fixture diverged-refuse-flag; rebase_publish; run_owner "$B" --refuse-diverged
+expect_code 1 "$RC" "diverged with refusal flag: exit"
+assert_equals "$A" "$(ref "refs/heads/$B")" "diverged with refusal flag: branch unchanged"
+assert_equals "$A" "$(ref HEAD)" "diverged with refusal flag: worktree unchanged"
+assert_equals "" "$(archives)" "diverged with refusal flag: no archive"
+assert_contains "$OUT" "branch was left as-is" "diverged with refusal flag: reason"
+pass "the divergence refusal flag leaves a diverged branch and worktree untouched"
+
 fixture equal; printf 'x\n' > "$WT/untracked"; run_owner
 expect_code 0 "$RC" "equal: exit"
 assert_equals "fm-pr-resync: result=equal archive=- custody=none head=$A" "$LAST" "equal: result line"
@@ -284,11 +301,24 @@ LOCK=$(git -C "$WT" rev-parse --git-path index.lock)
 : > "$LOCK"
 run_owner
 expect_code 1 "$RC" "index update refused: exit"
-assert_equals "$PUB" "$(ref "refs/heads/$B")" "index update refused: conditional advance kept"
+assert_equals "$A" "$(ref "refs/heads/$B")" "index update refused: branch moved back"
+assert_equals "$A" "$(ref HEAD)" "index update refused: worktree HEAD moved back"
+assert_equals "" "$(git -C "$WT" status --porcelain)" "index update refused: index and worktree stay clean"
 assert_equals "$A" "$(ref "$(pre "$A")")" "index update refused: archive kept"
 assert_contains "$OUT" "keep-style index/worktree update" "index update refused: reason"
 assert_contains "$OUT" "advanced $B from $A to $PUB" "index update refused: earlier advance reported"
-pass "an index update failure refuses and reports the preserved archive and conditional advance"
+assert_contains "$OUT" "moved $B back from $PUB to $A" "index update refused: move-back reported"
+pass "an index update failure restores the branch and reports the retained archive"
+
+fixture index-writer; rebase_publish
+git -C "$WT" fetch -q origin "$B"
+WRITER=$(git -C "$WT" -c user.name=Tests -c user.email=tests@example.invalid commit-tree "$PUB^{tree}" -p "$PUB" -m writer)
+GIT_READ_TREE_WRITER_SHA="$WRITER" GIT_READ_TREE_WT="$WT" GIT_READ_TREE_BRANCH="$B" run_owner
+expect_code 1 "$RC" "index update concurrent writer: exit"
+assert_equals "$WRITER" "$(ref "refs/heads/$B")" "index update concurrent writer: writer preserved"
+assert_equals "$A" "$(ref "$(pre "$A")")" "index update concurrent writer: archive kept"
+assert_contains "$OUT" "was not moved back" "index update concurrent writer: reason"
+pass "a concurrent writer after advance survives the failed index update"
 
 fixture detached-capture; git -C "$WT" switch -q --detach; cm "$WT" detached-fix
 S=$(ref HEAD)

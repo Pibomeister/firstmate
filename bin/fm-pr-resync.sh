@@ -3,7 +3,7 @@
 # no-mistakes pipeline may have rebased and republished. Spawn, promotion,
 # relaunch and worker guidance call this instead of hand-run recovery.
 #
-# Usage: fm-pr-resync.sh <task-id> <worktree> <branch> [--check]
+# Usage: fm-pr-resync.sh <task-id> <worktree> <branch> [--check|--refuse-diverged]
 #
 # In the absolute task <worktree> it verifies <branch>'s published head on
 # origin (the fetched ref must equal the freshly advertised head), classifies the
@@ -14,6 +14,9 @@
 #   advanced           local was behind and now sits at the published head
 #   archived-advanced  local diverged (stale pre-rebase history): it is first
 #                      preserved at refs/heads/archive/<task>-pre-rebase-<sha8>
+# --refuse-diverged leaves a diverged branch as-is after custody checks, while
+# an active run still exits 3. A failed index update conditionally attempts to
+# move an advanced branch back and retains any archive already made.
 # A detached worktree is first switched to <branch>, created at the published
 # head when absent, refusing without switching if detached commits are absent
 # from the requested branch, the published head and every origin ref; the switch
@@ -68,13 +71,18 @@ NM_TIMEOUT=${FM_PR_RESYNC_TIMEOUT:-120}
 [[ "$NM_TIMEOUT" =~ ^[0-9]*[1-9][0-9]*$ ]] || { echo "error: FM_PR_RESYNC_TIMEOUT must be a positive integer" >&2; exit 2; }
 
 usage() {
-  echo "usage: fm-pr-resync.sh <task-id> <absolute-worktree> <branch> [--check]" >&2
+  echo "usage: fm-pr-resync.sh <task-id> <absolute-worktree> <branch> [--check|--refuse-diverged]" >&2
   exit 2
 }
 
 check_mode=0
-if [ "$#" -eq 4 ] && [ "$4" = --check ]; then
-  check_mode=1
+refuse_diverged=0
+if [ "$#" -eq 4 ]; then
+  case "$4" in
+    --check) check_mode=1 ;;
+    --refuse-diverged) refuse_diverged=1 ;;
+    *) usage ;;
+  esac
   set -- "$1" "$2" "$3"
 fi
 [ "$#" -eq 3 ] || usage
@@ -276,13 +284,24 @@ case "$rel" in
       [ "$v_code" != continue_active_run ] || monitoring_only "$result"
       handled || unsettled
     fi
+    [ "$rel" != diverged ] || [ "$refuse_diverged" -eq 0 ] \
+      || refuse "branch $branch diverged from the published head; the branch was left as-is"
     now=$(advertised) || refuse "could not re-read origin $branch before the advance (network failure or ${NM_TIMEOUT}s timeout)"
     [ "$now" = "$pub" ] || refuse "origin $branch moved from $pub before the advance"
     [ "$rel" = behind ] || make_archive pre-rebase "$local_head"
     g update-ref "refs/heads/$branch" "$pub" "$local_head" \
       || refuse "branch $branch changed after classification; conditional advance from $local_head refused"
     note_change "advanced $branch from $local_head to $pub"
-    g read-tree -m -u "$local_head" "$pub" || refuse "keep-style index/worktree update to $pub failed after the conditional advance"
+    if ! g read-tree -m -u "$local_head" "$pub"; then
+      if g update-ref "refs/heads/$branch" "$local_head" "$pub"; then
+        note_change "moved $branch back from $pub to $local_head"
+        refuse "keep-style index/worktree update to $pub failed; branch $branch is back at $local_head"
+      fi
+      actual=$(g rev-parse -q --verify "refs/heads/$branch" 2>/dev/null || echo -)
+      [ "$actual" != "$pub" ] \
+        || refuse "keep-style index/worktree update to $pub failed; branch $branch still holds $pub and was not moved back"
+      refuse "keep-style index/worktree update to $pub failed; branch $branch no longer holds $pub (now at $actual) and was not moved back"
+    fi
     [ "$(g rev-parse "refs/heads/$branch")" = "$pub" ] \
       || refuse "branch $branch changed after the conditional advance; the concurrent head is preserved"
     if [ "$rel" = behind ]; then result=advanced; else result=archived-advanced; fi
