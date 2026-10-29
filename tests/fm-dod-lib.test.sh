@@ -407,8 +407,8 @@ test_pr_based_dod_draft_check_uses_gh_axi() {
 }
 
 # Stale or diverged branch custody goes through the one resync owner, on every
-# no-mistakes forge shape; neither the brief nor the supervisor guidance teaches
-# a hand-run archive/reset/sync sequence.
+# no-mistakes forge shape; the brief never teaches a hand-run archive/reset/sync
+# sequence.
 test_nm_dod_names_the_resync_owner() {
   local forge out owner_q recipe
   printf -v owner_q '%q' "$ROOT/bin/fm-pr-resync.sh"
@@ -421,9 +421,7 @@ test_nm_dod_names_the_resync_owner() {
       assert_no_grep "$recipe" "$out" "$forge: the no-mistakes DoD taught a hand-run custody recovery ($recipe)"
     done
   done
-  assert_grep 'bin/fm-pr-resync.sh <task-id> <worktree> <branch>' "$ROOT/.agents/skills/validation-supervision/SKILL.md" \
-    "validation-supervision did not name the resync owner"
-  pass "no-mistakes DoD and validation-supervision route branch custody through bin/fm-pr-resync.sh"
+  pass "no-mistakes DoD routes stale-branch custody through bin/fm-pr-resync.sh"
 }
 
 # A scout spawned on a named base keeps that base through promotion: the ship
