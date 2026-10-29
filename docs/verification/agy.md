@@ -169,6 +169,7 @@ error: agy launch readiness is live-verified on the tmux and herdr backends only
 | Backend | agy | Platform | Date | Result |
 |---|---|---|---|---|
 | Herdr | 1.2.0 | Linux x64 | 2026-09-10 | Verified; the sections above. |
+| Herdr | 1.4.10 | macOS arm64 | - | Unverified; Herdr stays allowed on the 2026-09-10 Linux evidence above. |
 | tmux | 1.4.10 | macOS arm64 | 2026-10-29 | Verified through the real spawn path; below. |
 | Orca | 1.4.10 | macOS arm64 | 2026-10-29 | Refused. A real agy launch timed out in the readiness gate while agy was already running tool calls, because `orca terminal read` returns the output stream tail, which did not carry the pinned busy row. The visible-screen read is restricted to recorded Droid tasks. |
 | zellij, cmux, paseo | - | - | - | Refused; never exercised with agy. |
