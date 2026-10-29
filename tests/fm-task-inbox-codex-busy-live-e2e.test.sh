@@ -133,6 +133,12 @@ while [ "$i" -lt 60 ]; do
   if printf '%s\n' "$screen" | grep -Eq 'Trust this folder\?|Do you trust the contents of this directory\?'; then
     fail "codex ($VERSION): a trust dialog opened in $ROOT; trust the folder in an ordinary session first"
   fi
+  # A running shared daemon with hooks on asks how to honour --disable hooks;
+  # only "without daemon this time" leaves the shared settings untouched.
+  if printf '%s\n' "$screen" | grep -q 'Run without daemon this time'; then
+    tmux send-keys -t "$TARGET" 1
+    sleep 1
+  fi
   if [ "$dismissed" -eq 0 ] && [ "$i" -ge 20 ]; then
     printf '%s\n' "$screen" | grep -qi 'trust' || tmux send-keys -t "$TARGET" Escape
     dismissed=1
