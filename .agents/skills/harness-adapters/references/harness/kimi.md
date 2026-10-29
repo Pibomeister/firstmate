@@ -32,8 +32,9 @@ Spawn refuses Kimi on Orca and cmux before creating a worktree or pane.
 A failed viewport read ends readiness with the backend named, and a blank successful read restarts the two-capture ready count without claiming a cleared dialog.
 Kimi's trust answer can be retried only while the complete dialog remains on the live viewport, since the CLI can swallow an Enter during startup.
 Trust is accepted only after a later viewport capture proves that the dialog cleared; a stuck dialog reports the observed signals and answer count.
-A failed spawn closes its pane, so every readiness refusal first writes `data/<id>/kimi-readiness-refusal.txt` with the Kimi version, poll counts, each missing element, and the last non-empty visible capture, and its failure detail names that file.
-Start a readiness diagnosis from that record, and compare its capture against the predicate in the Firstmate code root that actually ran the spawn, because a secondmate home behind its origin runs older recognition code.
+Before cleanup can close the pane, a readiness refusal attempts to save evidence at the path named in its failure detail; if that write fails, the detail reports the failure.
+`kimi_ready_refusal` in [fm-spawn.sh](../../../../../bin/fm-spawn.sh) owns that record's format.
+Start a readiness diagnosis from the saved capture, when available, and compare it against the predicate in the Firstmate code root that actually ran the spawn; a secondmate home may run a different revision.
 Any single marker of the dialog on that visible pane - `Trust this folder`, `Trust and continue`, or the negative `Don't trust` option - withholds the ready verdict, because a capture caught mid-redraw and a capture that has painted only the box title both miss the complete dialog while the banner above it would otherwise read as ready. The banner also prints before the dialog paints at all, which no single capture can distinguish from a ready pane, so the verdict additionally requires two consecutive captures that are each ready and free of dialog text; a capture that is not ready, and a blank one, restarts that count, which is what keeps the pre-banner boot captures and redraw frames from spending it.
 This launch-then-send shape is mandatory because Kimi rejects positional instructions as an unknown command.
 The path must be absolute because the instructions live outside the task worktree and Kimi reads them there without `--add-dir`.
@@ -53,7 +54,7 @@ The delivery-only spinner match covers the full moon-phase glyph set but remains
 ## Crew turn-end hook and primary limit
 
 Kimi is outside the primary turn-end guard scope.
-The installer needs Python 3.11 or newer for `tomllib`, which the default macOS `python3` 3.9 lacks; [`fm-kimi-turnend-hook.sh --help`](../../../../../bin/fm-kimi-turnend-hook.sh) owns the fixed search order over PATH, Homebrew, and uv-managed interpreters and its refusal that names each searched interpreter.
+[Configuration](../../../../../docs/configuration.md#installed-hooks-and-launch-details) owns the Kimi installer prerequisites and links to the interpreter search contract.
 `../../../docs/turnend-guard.md` owns its separate global hook surface and captain-approved crew wake integration.
 
 `../../../bin/fm-spawn.sh` installs one marker-delimited Firstmate entry in `$HOME/.kimi-code/config.toml`, one silent always-zero hook script, and one private token registry under `$HOME/.kimi-code/fm-turn-end.d/`.
