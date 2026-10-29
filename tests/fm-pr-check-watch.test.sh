@@ -164,6 +164,8 @@ mv "$TMP_ROOT/tampered.json" "$record"
 assert_contains "$(cat "$TMP_ROOT/tamper.out")" 'watch record changed' 'identity mutation is detected before a forge read'
 "$WATCH" condition when-prcheck-000000000000-000000000000 "$original_hash" >"$TMP_ROOT/absent-cond.out" 2>&1; rc=$?
 [ "$rc" -eq 2 ] || fail "an absent watch record must end the condition actionably, got exit $rc"
+"$WATCH" condition "$ref" >"$TMP_ROOT/argc-cond.out" 2>&1; rc=$?
+[ "$rc" -eq 2 ] || fail "a malformed condition invocation must end the condition actionably, got exit $rc"
 pass 'condition refuses changed bound identity'
 
 export FM_PR_CHECK_WATCH_INTERVAL=0.1

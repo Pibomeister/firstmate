@@ -223,8 +223,8 @@ cmd_status() {
 }
 
 cmd_condition() {
-  [ "$#" -eq 2 ] || die 'usage: condition <watch-ref> <bound-record-hash>'
   DIE_RC=2
+  [ "$#" -eq 2 ] || die 'usage: condition <watch-ref> <bound-record-hash>'
   check_record_hash "$1" "$2"
   load_record "$1"
   check_current "$(record_field pr)" "$(record_field head)" "$(record_field check)" "$(record_field producer_app)"
