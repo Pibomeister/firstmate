@@ -4914,17 +4914,26 @@ kimi_composer_is_empty() {
 # is now `❯ Trust and continue` and the negative is a bare `Exit` line, where
 # 2.0.0 showed selected `❯ Trust this folder` and `Don't trust`. Either
 # complete option pair proves the dialog; a mix or a single option never does.
-kimi_trust_dialog_is_visible() { # <plain-pane-capture>
+# Kimi 2.4.0 (live-captured 2026-10-29) keeps the 2.3.1 shape.
+# This prints each required element the capture lacks, one per line, and
+# prints nothing for the complete dialog, so a refusal can name what was absent.
+kimi_trust_dialog_missing() { # <plain-pane-capture>
   local pane=$1
-  case "$pane" in *'Trust this folder?'*) ;; *) return 1 ;; esac
-  case "$pane" in *'↑↓ navigate'*) ;; *) return 1 ;; esac
-  case "$pane" in *'Enter select'*) ;; *) return 1 ;; esac
+  case "$pane" in *'Trust this folder?'*) ;; *) printf '%s\n' "title 'Trust this folder?'" ;; esac
+  case "$pane" in *'↑↓ navigate'*) ;; *) printf '%s\n' "navigation hint '↑↓ navigate'" ;; esac
+  case "$pane" in *'Enter select'*) ;; *) printf '%s\n' "navigation hint 'Enter select'" ;; esac
   if [ "${pane#*'❯ Trust and continue'}" != "$pane" ]; then
-    printf '%s\n' "$pane" | grep -Eq '^[[:space:]]*Exit[[:space:]]*$' && return 0
-    return 1
+    printf '%s\n' "$pane" | grep -Eq '^[[:space:]]*Exit[[:space:]]*$' ||
+      printf '%s\n' "negative option 'Exit' on its own line beside selected 'Trust and continue'"
+  elif [ "${pane#*'❯ Trust this folder'}" != "$pane" ]; then
+    case "$pane" in *"Don't trust"*) ;; *) printf '%s\n' "negative option \"Don't trust\" beside selected 'Trust this folder'" ;; esac
+  else
+    printf '%s\n' "selected affirmative option ('❯ Trust and continue' or '❯ Trust this folder')"
   fi
-  case "$pane" in *'❯ Trust this folder'*) ;; *) return 1 ;; esac
-  case "$pane" in *"Don't trust"*) ;; *) return 1 ;; esac
+}
+
+kimi_trust_dialog_is_visible() { # <plain-pane-capture>
+  [ -z "$(kimi_trust_dialog_missing "$1")" ]
 }
 
 # The complete dialog above decides whether to press Enter. Any single marker
@@ -4946,16 +4955,46 @@ kimi_ready_signal_is_present() { # <plain-pane-capture>
   kimi_composer_is_empty
 }
 
+# Failed-gate cleanup can close the endpoint, so preserve readiness evidence
+# before returning: the Kimi version, the poll counts, each missing element,
+# and the last non-empty visible capture, in the task's data directory.
+# The refusal detail names that record's path and reports a failed write.
+kimi_ready_refusal() { # <missing-lines> <last-pane> <last-poll> <polls> <max> <trust-enters>
+  local record="$DATA/$ID/kimi-readiness-refusal.txt" version=''
+  [ -z "${KIMI_BIN:-}" ] ||
+    version=$(fm_run_timed 5 "$KIMI_BIN" --version </dev/null 2>/dev/null | head -n 1) || version=''
+  if mkdir -p "$DATA/$ID" 2>/dev/null && {
+    printf 'kimi readiness refusal at=%s\n' "$(date +%s)"
+    printf 'kimi=%s version=%s\n' "${KIMI_BIN:-unknown}" "${version:-unknown}"
+    printf 'backend=%s target=%s\n' "$BACKEND" "$T"
+    printf 'polls=%s of %s, trust_enters=%s\n' "$4" "$5" "$6"
+    printf 'detail=%s\n' "$KIMI_READY_FAILURE_DETAIL"
+    printf 'missing:\n'
+    printf '%s\n' "$1" | sed '/^$/d; s/^/- /'
+    if [ -n "$2" ]; then
+      printf 'last visible capture (poll %s):\n%s\n' "$3" "$2"
+    else
+      printf 'last visible capture: none (every poll read an empty viewport)\n'
+    fi
+  } >"$record" 2>/dev/null; then
+    KIMI_READY_FAILURE_DETAIL="$KIMI_READY_FAILURE_DETAIL; last visible capture and missing elements recorded at $record"
+  else
+    KIMI_READY_FAILURE_DETAIL="$KIMI_READY_FAILURE_DETAIL; the last visible capture could not be recorded at $record"
+  fi
+}
+
 kimi_wait_for_ready() {
   local pane capture_rc i=0 max=${FM_KIMI_READY_POLLS:-60} interval=${FM_KIMI_POLL_INTERVAL:-0.5}
   local trust_enters=0 trust_seen=0 trust_still_visible=0 trust_markers_pending=0
-  local ready_captures=0
+  local ready_captures=0 last_pane='' last_poll=0 missing
+  local ready_signal="verified ready signal: the 'Welcome to Kimi Code!' banner or an empty composer on two consecutive captures free of trust dialog text"
   KIMI_READY_FAILURE_DETAIL='kimi did not show a verified ready signal before brief delivery'
   while [ "$i" -lt "$max" ]; do
     capture_rc=0
     pane=$(kimi_visible_capture) || capture_rc=$?
     if [ "$capture_rc" -ne 0 ]; then
       KIMI_READY_FAILURE_DETAIL="kimi readiness could not read the visible viewport of backend '$BACKEND' (viewport capture exited $capture_rc), so the trust dialog could neither be answered nor ruled out"
+      kimi_ready_refusal "readable visible viewport (capture exited $capture_rc)" "$last_pane" "$last_poll" "$((i + 1))" "$max" "$trust_enters"
       return 1
     fi
     if [ -z "$pane" ]; then
@@ -4964,6 +5003,8 @@ kimi_wait_for_ready() {
       [ "$i" -ge "$max" ] || sleep "$interval"
       continue
     fi
+    last_pane=$pane
+    last_poll=$((i + 1))
     if kimi_trust_dialog_is_visible "$pane"; then
       trust_seen=1
       trust_still_visible=1
@@ -4976,6 +5017,7 @@ kimi_wait_for_ready() {
       # once it clears, this branch cannot fire again.
       if ! spawn_send_key "$T" Enter; then
         KIMI_READY_FAILURE_DETAIL="kimi trust dialog was seen but the affirmative selection could not be submitted"
+        kimi_ready_refusal "accepted Enter key for the complete trust dialog" "$last_pane" "$last_poll" "$((i + 1))" "$max" "$trust_enters"
         return 1
       fi
       trust_enters=$((trust_enters + 1))
@@ -5001,13 +5043,17 @@ kimi_wait_for_ready() {
     i=$((i + 1))
     [ "$i" -ge "$max" ] || sleep "$interval"
   done
+  missing=$ready_signal
   if [ "$trust_still_visible" -eq 1 ]; then
     KIMI_READY_FAILURE_DETAIL="kimi trust dialog did not clear after submitting the affirmative selection on $trust_enters poll(s); saw 'Trust this folder?', the navigation hint, a selected affirmative option, and a negative option"
+    missing="trust dialog dismissal after $trust_enters Enter key(s)"
   elif [ "$trust_seen" -eq 1 ]; then
     KIMI_READY_FAILURE_DETAIL="kimi trust dialog was answered but the pane never advanced to a verified ready signal; saw 'Trust this folder?', the navigation hint, a selected affirmative option, and a negative option"
   elif [ "$trust_markers_pending" -eq 1 ]; then
-    KIMI_READY_FAILURE_DETAIL="kimi did not show a verified ready signal before brief delivery; trust dialog text stayed on screen without the complete dialog, so the pane was never safe to answer or to treat as ready"
+    missing=$(kimi_trust_dialog_missing "$last_pane")
+    KIMI_READY_FAILURE_DETAIL="kimi did not show a verified ready signal before brief delivery; trust dialog text stayed on screen without the complete dialog (missing: ${missing//$'\n'/; }), so the pane was never safe to answer or to treat as ready"
   fi
+  kimi_ready_refusal "$missing" "$last_pane" "$last_poll" "$i" "$max" "$trust_enters"
   return 1
 }
 
