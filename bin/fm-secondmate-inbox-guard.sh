@@ -22,12 +22,13 @@
 #     ownership proof (fm_session_lock_owned_by_self), whose ancestry walk stops
 #     at the nearest harness process, so a nested Codex, crewmate or probe that
 #     merely inherited this home's environment is never steered;
-#   - among the 200 lowest-sequence waiting records (fm_task_inbox_records_in),
-#     the first that is not fire-and-forget (fm_task_inbox_is_fire_and_forget,
-#     skipped exactly as the watcher's ladder skips it), that the watcher has
-#     not escalated and that has been denied fewer than 3 times is at least
-#     FM_SECONDMATE_INBOX_GUARD_GRACE seconds old (default 60), so a stuck
-#     oldest record never switches the drain off for later ones;
+#   - among all waiting records in sequence order, the first that the watcher
+#     has not escalated (fm_task_inbox_unescalated_in), that has been denied
+#     fewer than 3 times and that is not fire-and-forget
+#     (fm_task_inbox_is_fire_and_forget, skipped exactly as the watcher's
+#     ladder skips it) is at least FM_SECONDMATE_INBOX_GUARD_GRACE seconds old
+#     (default 60), so however many stuck records wait ahead, they never switch
+#     the drain off for later ones; the deny names that record first;
 #   - the last deny for any record is at least FM_SECONDMATE_INBOX_GUARD_REDENY
 #     seconds old (default 60), so the drain's own calls run between denies.
 # Every other case, including any error, exits 1 and the call is allowed: the
@@ -61,7 +62,7 @@ case "$GRACE" in '' | *[!0-9]*) GRACE=60 ;; esac
 case "$WINDOW" in '' | *[!0-9]*) WINDOW=60 ;; esac
 STATE_FILE="$ROOT/state/.inbox-guard"
 
-WAITING=$(fm_task_inbox_records_in "$INBOX" | head -n 200)
+WAITING=$(fm_task_inbox_records_in "$INBOX")
 if [ -z "$WAITING" ]; then
   rm -f "$STATE_FILE" 2>/dev/null
   exit 1
@@ -73,17 +74,20 @@ DENIES=$(awk -F '\t' 'NR == FNR { waiting[$0] = 1; next }
 $WAITING
 EOF
 )
+# Escalated and deny-spent records drop out in one pass, so only the remaining
+# candidates are read one by one, up to the first that is not fire-and-forget.
+CANDIDATES=$({ printf '%s\n--\n' "$DENIES"; fm_task_inbox_unescalated_in "$INBOX"; } | awk -F '\t' '
+  !listed { if ($0 == "--") listed = 1; else denied[$1] = $2; next }
+  denied[$0] + 0 < 3 { print $0 "\t" denied[$0] + 0 }')
 TARGET=
 COUNT=0
-while IFS= read -r NAME; do
+while IFS=$(printf '\t') read -r NAME COUNT; do
+  [ -n "$NAME" ] || continue
   fm_task_inbox_is_fire_and_forget "$INBOX/$NAME" && continue
-  fm_task_inbox_record_is_escalated "$INBOX/$NAME" && continue
-  COUNT=$(printf '%s\n' "$DENIES" | awk -F '\t' -v n="$NAME" '$1 == n { c = $2 } END { print c + 0 }')
-  [ "$COUNT" -lt 3 ] || continue
   TARGET=$NAME
   break
 done <<EOF
-$WAITING
+$CANDIDATES
 EOF
 [ -n "$TARGET" ] || exit 1
 # fm_path_mtime picks the stat style by platform; a record that vanished
@@ -98,6 +102,6 @@ LAST=$(printf '%s\n' "$DENIES" | awk -F '\t' '$3 > m { m = $3 } END { print m + 
   printf '%s\t%s\t%s\n' "$TARGET" "$((COUNT + 1))" "$NOW"
 } > "$STATE_FILE" 2>/dev/null || exit 1
 
-LISTED=$(printf '%s\n' "$WAITING" | head -n 5 | tr '\n' ' ')
+LISTED=$(printf '%s\n' "$WAITING" | awk -v t="$TARGET" '$0 == t { on = 1 } on' | head -n 5 | tr '\n' ' ')
 printf 'Firstmate steering records are waiting in your parent-owned inbox %s: %s- before any other work, read each in numeric order, act on it (dispatch or answer, with its correlated parent line), then mv it into handled/. Calls are allowed again for the next %s seconds so the drain can run.' \
   "$INBOX" "$LISTED" "$WINDOW"

@@ -322,6 +322,7 @@ The checkpoint passes it as the boundary and reports a clean boundary with no de
 
 Because that bound is not a harness timeout, the checkpoint also sets `FM_SUPERVISION_HOST_PARK_LIMIT`.
 That setting lets an engine turn that starts before the boundary finish after it.
+A secondmate home is the exception: its capped bound is also its turn limit, so no engine turn runs past it (`bin/fm-watch-checkpoint.sh`, "SECONDMATE HOME").
 A captain message typed during the park waits for the checkpoint to return, at most the bound plus one engine turn, unless the captain interrupts it.
 
 ## Engine conversations

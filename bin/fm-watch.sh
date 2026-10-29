@@ -125,6 +125,7 @@
 #   stale: <window> (steering-inbox busy bookkeeping unwritable: ...)
 #   stale: <window> (steering-inbox recovery bookkeeping unwritable: ...)
 #   stale: <window> (steering-inbox recovery interrupt failed: ...)
+#   stale: <window> (steering-inbox recovery doorbell failed: ...)
 #                          steering-inbox recovery; bin/fm-task-inbox-lib.sh owns
 #                          delivery-attempt, busy-deferral, unavailable-endpoint
 #                          and automatic-recovery policy. For a local secondmate
@@ -133,7 +134,8 @@
 #                          FM_WATCH_RECOVER_INTERRUPT_SECS (default 30), plus an
 #                          ordinary doorbell ("Automatic recovery" there); an
 #                          interrupt that fails or times out rings nothing and
-#                          surfaces at once with its exit status
+#                          surfaces at once with its exit status, as does a
+#                          redirect doorbell that fails after it
 #   checkpoint-inbox: <names>
 #                          only inside a secondmate's plain foreground
 #                          checkpoint (bin/fm-watch-checkpoint.sh owns it): a
@@ -645,10 +647,13 @@ inbox_steer_escalate_unavailable() {  # <window> <task> <record>
 # FM_WATCH_RECOVER_INTERRUPT_SECS and the ordinary doorbell as the redirect.
 # Returns 0 when a recovery ran, 1 when the window is out of scope, 2 when its
 # bookkeeping is unwritable, 3 when the budget is spent, 4 when the record is
-# younger than the recovery bound (nothing claimed or sent), and 5 when the
+# younger than the recovery bound (nothing claimed or sent), 5 when the
 # claimed interrupt failed or timed out, with its status in
-# INBOX_RECOVER_INTERRUPT_RC and no doorbell typed.
+# INBOX_RECOVER_INTERRUPT_RC and no doorbell typed, and 6 when the redirect
+# doorbell failed (the ring leaves composer text it does not own in place),
+# with its status in INBOX_RECOVER_RING_RC.
 INBOX_RECOVER_INTERRUPT_RC=
+INBOX_RECOVER_RING_RC=
 inbox_steer_recover() {  # <window> <task> <record>
   local w=$1 task=$2 rec=$3 meta gen slot rc=0 mode=interrupt ctl_rc=0 ring_rc=0 bound
   meta="$STATE/$task.meta"
@@ -674,6 +679,7 @@ inbox_steer_recover() {  # <window> <task> <record>
   fi
   triage_log "steer-inbox auto-recovery $slot/$FM_TASK_INBOX_RECOVER_MAX: $task ${rec##*/} mode=$mode interrupt_rc=$ctl_rc ring_rc=$ring_rc"
   [ "$ctl_rc" -eq 0 ] || { INBOX_RECOVER_INTERRUPT_RC=$ctl_rc; return 5; }
+  [ "$ring_rc" -eq 0 ] || { INBOX_RECOVER_RING_RC=$ring_rc; return 6; }
 }
 
 inbox_steer_recovery_action() {  # <window> <task> <recover-rc>
@@ -776,8 +782,9 @@ inbox_steer_check() {  # <window> <task>
         inbox_steer_recover "$w" "$task" "$rec" || recover_rc=$?
         case "$recover_rc" in
           0|4) return 0 ;;
-          2) reason="stale: $w (steering-inbox recovery bookkeeping unwritable: ${rec%/*}/.recover-state cannot be written while $rec stays unhandled; no interrupt was sent - inspect the inbox directory)" ;;
+          2) reason="stale: $w (steering-inbox recovery bookkeeping unwritable: ${rec%/*}/.ring-state, .busy-state or .recover-state cannot be written while $rec stays unhandled; no recovery slot was spent and no interrupt was sent - inspect the inbox directory)" ;;
           5) reason="stale: $w (steering-inbox recovery interrupt failed: bin/fm-control.sh $task interrupt exited $INBOX_RECOVER_INTERRUPT_RC while $rec stays unhandled, so no doorbell was typed; $(inbox_steer_recovery_action "$w" "$task" "$recover_rc"))" ;;
+          6) reason="stale: $w (steering-inbox recovery doorbell failed: the redirect doorbell exited $INBOX_RECOVER_RING_RC, so $rec stays unhandled and was not redirected, and any composer text was left in place; $(inbox_steer_recovery_action "$w" "$task" "$recover_rc"))" ;;
         esac
       fi
       if [ -z "$reason" ] && [ "$stuck_busy" -eq 1 ]; then

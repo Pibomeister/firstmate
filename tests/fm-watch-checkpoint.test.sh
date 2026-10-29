@@ -783,6 +783,56 @@ test_real_host_secondmate_park_ignores_the_inbox() {
   pass "checkpoint: a secondmate's host park never runs the plain path's inbox exit"
 }
 
+# A secondmate's capped bound is also the real host's turn limit: an away close
+# whose engine turn could outlast it is handed to the secondmate at once rather
+# than holding its turn for the engine's own bound, and the checkpoint leaves
+# no host, engine or watcher behind.
+# shellcheck disable=SC2016
+test_real_host_secondmate_turn_never_outlives_the_cap() {
+  local home fakebin start elapsed status pid
+  home=$(make_secondmate_home host-real-sm-turn)
+  printf 'claude\n' > "$home/config/supervision-host"
+  printf 'project=demo\nwindow=fm-demo\nharness=claude\n' > "$home/state/demo.meta"
+  FM_HOME="$home" "$ROOT/bin/fm-afk-contract.sh" enter --words 'watch the fleet; merge nothing' >/dev/null 2>&1 \
+    || fail "fixture: could not record the away posture"
+  fakebin="$TMP_ROOT/host-real-sm-turn-bin"
+  mkdir -p "$fakebin"
+  ln -s /bin/bash "$fakebin/codex"
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$fakebin/tmux"
+  printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$$" >> "%s/engine-calls"\nexec sleep 40\n' "$home" > "$fakebin/engine"
+  chmod +x "$fakebin/tmux" "$fakebin/engine"
+  make_fake_crew_state "$fakebin" >/dev/null
+  (
+    i=0
+    while [ "$i" -lt 150 ] && [ ! -s "$home/state/.watch.lock/pid" ]; do sleep 0.1; i=$((i + 1)); done
+    sleep 1
+    printf 'working [at=%s]: one close\n' "$(date +%s)" >> "$home/state/demo.status"
+  ) &
+  start=$(date +%s)
+  status=0
+  FM_HOME="$home" PATH="$fakebin:$PATH" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" \
+    FM_SUPERVISION_ENGINE_CLAUDE_BIN="$fakebin/engine" FM_SUPERVISION_HOST_TURN_TIMEOUT=25 FM_SUPERVISION_ENGINE_GRACE=1 \
+    FM_SECONDMATE_CHECKPOINT_MAX=15 FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    "$fakebin/codex" -c '
+      printf "%s\n" "$$" > "$FM_HOME/state/.lock"
+      "$0" --seconds 60
+    ' "$CHECKPOINT" >"$home/out.txt" 2>"$home/err.txt" || status=$?
+  elapsed=$(( $(date +%s) - start ))
+  wait
+  expect_code 0 "$status" "a secondmate host checkpoint with an away close: $(cat "$home/out.txt" "$home/err.txt")"
+  [ "$elapsed" -le 20 ] || fail "a secondmate host checkpoint capped at 15s ran ${elapsed}s: $(cat "$home/out.txt" "$home/err.txt")"
+  assert_contains "$(cat "$home/out.txt")" "signal: $home/state/demo.status" "the close was not handed to the secondmate"
+  assert_absent "$home/engine-calls" "the host ran an engine turn that could outlast the secondmate's cap"
+  pid=$(awk -F '\t' '$1 == "host" { print $2; exit }' "$home/state/.supervision-host" 2>/dev/null)
+  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+    fail "a secondmate host checkpoint left its host running"
+  fi
+  if [ -e "$home/state/.watch.lock/pid" ] && kill -0 "$(cat "$home/state/.watch.lock/pid")" 2>/dev/null; then
+    fail "a secondmate host checkpoint left its watcher running"
+  fi
+  pass "checkpoint: a secondmate's host park never runs an engine turn past its capped bound"
+}
+
 test_host_checkpoint_does_not_mask_cleanup_failure() {
   local home kind channel
   home=$(make_host_home host-cleanup-failure)
@@ -1615,4 +1665,5 @@ test_stop_preserves_foreign_process_identity_guards
 test_real_host_retirement_preserves_cleanup_failures
 test_real_host_startup_failures_stay_nonzero
 test_real_host_secondmate_park_ignores_the_inbox
+test_real_host_secondmate_turn_never_outlives_the_cap
 test_real_host_checkpoint_ends_quietly_at_its_bound

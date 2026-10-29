@@ -320,7 +320,7 @@ family_for_basename() {
     fm-mail.test.sh|fm-mail-check.test.sh|\
     fm-turnend-foreign-owner-arm-fix.test.sh|\
     fm-wake-queue.test.sh|fm-watch-arm.test.sh|fm-watch-checkpoint.test.sh|fm-watch-recovery-loop.test.sh|\
-    fm-watch-triage.test.sh|fm-watch-triage-b.test.sh|fm-watch-triage-c.test.sh|fm-watch-triage-d.test.sh|fm-watch-triage-e.test.sh|fm-watch-triage-f.test.sh|fm-watch-triage-g.test.sh|fm-task-inbox.test.sh|\
+    fm-watch-triage.test.sh|fm-watch-triage-b.test.sh|fm-watch-triage-c.test.sh|fm-watch-triage-d.test.sh|fm-watch-triage-e.test.sh|fm-watch-triage-f.test.sh|fm-watch-triage-g.test.sh|fm-task-inbox.test.sh|fm-watch-inbox-recovery.test.sh|\
     fm-watcher-lock.test.sh|fm-inactive-reconcile.test.sh|fm-watch-wedge-cap.test.sh|\
     fm-watch-wedge-cap-unconfigured-parity.test.sh|fm-supervision-bounds.test.sh|fm-watcher-replacement.test.sh)
       printf '%s\n' watcher-wake-lock
