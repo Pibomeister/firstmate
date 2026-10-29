@@ -194,11 +194,14 @@ cur=$(g symbolic-ref -q --short HEAD)
 [ -z "$cur" ] || [ "$cur" = "$branch" ] || refuse "worktree is on branch $cur, not $branch"
 
 if [ "$check_mode" -eq 1 ]; then
-  # Objects only: no remote-tracking ref or FETCH_HEAD changes in --check.
+  # Objects only: no remote-tracking ref or FETCH_HEAD changes in --check, so
+  # the advertised head is read before and after the fetch and must agree.
+  pub=$(advertised)
   g fetch --quiet --no-tags --no-write-fetch-head --refmap= origin "refs/heads/$branch" 2>/dev/null \
     || refuse "origin has no branch $branch, or it could not be fetched"
-  pub=$(advertised)
   fetched=$(g rev-parse -q --verify "$pub^{commit}" 2>/dev/null)
+  now=$(advertised)
+  [ "$now" = "$pub" ] || refuse "origin $branch moved from ${pub:-nothing} to ${now:-nothing} during the fetch"
 else
   g fetch --quiet --no-tags origin "+refs/heads/$branch:refs/remotes/origin/$branch" 2>/dev/null \
     || refuse "origin has no branch $branch, or it could not be fetched"
@@ -234,10 +237,6 @@ gate=0
 g remote get-url no-mistakes >/dev/null 2>&1 && gate=1
 if [ "$gate" -eq 1 ]; then
   nm_check
-  if [ -z "$v_state" ]; then
-    printf '%s\n' "$v_out"
-    refuse "no-mistakes branch custody is unreadable"
-  fi
   [ "$v_code" != continue_active_run ] || monitoring_only "$result"
   handled || unsettled
 fi

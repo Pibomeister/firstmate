@@ -327,6 +327,29 @@ assert_equals "1" "$(calls | wc -l | tr -d ' ')" "--check: read-only preflight o
 assert_equals "fm-pr-resync: result=planned:archive-advance archive=- custody=none head=$A" "$LAST" "--check: planned action"
 pass "--check reports the planned action and changes nothing"
 
+race_upload_pack() {  # <n>: move origin's $B back to the stale local A right after the nth origin read
+  cat > "$D/upload-pack" <<EOF
+#!/usr/bin/env bash
+n=\$(( \$(cat "$D/up.count" 2>/dev/null || echo 0) + 1 ))
+echo "\$n" > "$D/up.count"
+git upload-pack "\$@"
+rc=\$?
+if [ "\$n" = "$1" ]; then
+  (unset GIT_DIR GIT_WORK_TREE GIT_PROTOCOL; git -C "$D/pipe" push -q --force origin "$A:refs/heads/$B")
+fi
+exit "\$rc"
+EOF
+  chmod +x "$D/upload-pack"
+  git -C "$D/repo" config remote.origin.uploadpack "$D/upload-pack"
+}
+
+for n in 1 2; do
+  fixture "checkrace$n"; rebase_publish; race_upload_pack "$n"; run_owner "$B" --check
+  expect_code 1 "$RC" "--check origin move to a present commit after read $n: exit"
+  assert_contains "$OUT" "moved" "--check origin move after read $n: reason"
+  pass "--check refuses when origin moves to an already-present commit around its fetch (after read $n)"
+done
+
 fixture between; gate; rebase_publish; resp 1 1 "$DIVERGED"; resp 2 0 "$ACTIVE"; run_owner
 expect_code 3 "$RC" "custody between preflight and move: exit"
 assert_equals "$A" "$(ref "refs/heads/$B")" "between: branch unchanged"
