@@ -1,0 +1,21 @@
+== CF1: precedence guard removed (explicit mode falls through to remote probe)
+ bin/fm-spawn.sh | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+ok - fm-control relaunch: an unreadable composer fails safe before the exit command is typed
+ok - fm-control relaunch: wiring cleanup failure refuses replacement arming
+not ok - direct-PR worker-owned branch did not relaunch
+exit=
+== CF2: --refuse-diverged not passed on relaunch
+ bin/fm-spawn.sh | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+ok - fm-control relaunch: an unreadable composer fails safe before the exit command is typed
+ok - fm-control relaunch: wiring cleanup failure refuses replacement arming
+not ok - a diverged relaunch was not refused
+exit=
+== CF3: pool detach restore removed
+exit=
+== CF4: read-tree move-back removed
+ bin/fm-pr-resync.sh | 4 ----
+ 1 file changed, 4 deletions(-)
+not ok - index update refused: branch moved back (expected '25c8779b9949d36687f57b54d2759062809d1fe9', got '0faa42beacce4835c02df358c52220097f1ba0a8')
+exit=

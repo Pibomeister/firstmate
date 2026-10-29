@@ -1,0 +1,3 @@
+fm-pr-resync exit=0
+fm-spawn-pool-base-freshen exit=0
+fm-control-relaunch exit=0
