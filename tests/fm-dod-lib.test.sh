@@ -406,6 +406,26 @@ test_pr_based_dod_draft_check_uses_gh_axi() {
   pass "PR-based DoD draft check uses gh-axi"
 }
 
+# Stale or diverged branch custody goes through the one resync owner, on every
+# no-mistakes forge shape; neither the brief nor the supervisor guidance teaches
+# a hand-run archive/reset/sync sequence.
+test_nm_dod_names_the_resync_owner() {
+  local forge out owner_q recipe
+  printf -v owner_q '%q' "$ROOT/bin/fm-pr-resync.sh"
+  for forge in none gerrit; do
+    out="$TMP_ROOT/dod-resync-$forge.md"
+    fm_dod_block no-mistakes resync-task fix/resync-1 "$forge" > "$out"
+    assert_grep "$owner_q resync-task \"\$(git rev-parse --show-toplevel)\" fix/resync-1" "$out" \
+      "$forge: the no-mistakes DoD did not name the resync owner with the task and branch"
+    for recipe in 'reset --keep' 'bind-archive-ref' '--keep-local'; do
+      assert_no_grep "$recipe" "$out" "$forge: the no-mistakes DoD taught a hand-run custody recovery ($recipe)"
+    done
+  done
+  assert_grep 'bin/fm-pr-resync.sh <task-id> <worktree> <branch>' "$ROOT/.agents/skills/validation-supervision/SKILL.md" \
+    "validation-supervision did not name the resync owner"
+  pass "no-mistakes DoD and validation-supervision route branch custody through bin/fm-pr-resync.sh"
+}
+
 # A scout spawned on a named base keeps that base through promotion: the ship
 # instructions start from it and the PR targets it; local-only cannot carry it.
 test_promotion_keeps_the_recorded_base_branch() {
@@ -467,6 +487,7 @@ test_standalone_local_only_needs_project_ref
 test_non_done_lines_are_not_gated
 test_fenced_and_indented_captain_lines_are_not_intent
 test_pr_based_dod_draft_check_uses_gh_axi
+test_nm_dod_names_the_resync_owner
 test_promotion_keeps_the_recorded_base_branch
 
 # The launch role is the generated text a worker receives. It must keep the
