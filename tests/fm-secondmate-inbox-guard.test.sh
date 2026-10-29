@@ -136,8 +136,9 @@ test_guard_skips_a_record_the_watcher_escalated_before_any_deny() {
   add_record "$home" 006
   hook_call "$home" "$home" self FM_SECONDMATE_INBOX_GUARD_REDENY=0
   expect_deny "an aged record behind one escalated with no denies"
-  grep -q '006.msg' "$ERR" && ! grep -q '005.msg' "$ERR" \
-    || fail "the deny does not name only the later record: $(cat "$ERR")"
+  if ! grep -q '006.msg' "$ERR" || grep -q '005.msg' "$ERR"; then
+    fail "the deny does not name only the later record: $(cat "$ERR")"
+  fi
   [ "$(cut -f1,2 "$home/state/.inbox-guard")" = "$(printf '006.msg\t1')" ] \
     || fail "the guard state does not record one deny for 006.msg: $(cat "$home/state/.inbox-guard")"
   pass "inbox guard: a record the watcher escalated before any deny is skipped on its own, not only once its denies are spent"
