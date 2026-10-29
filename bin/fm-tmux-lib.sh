@@ -125,6 +125,7 @@ fm_tmux_composer_identity() {  # <target>
           pi|pi-signed|pi-launcher|Pi) owner=pi ;;
           polytoken) owner=polytoken ;;
           command-code) owner=commandcode ;;
+          agy) owner=agy ;;
         esac
         [ -n "$owner" ] && break
       done <<EOF
@@ -137,6 +138,7 @@ EOF
     case "${comm##*/}" in
       pi|pi-signed|pi-launcher) owner=pi ;;
       polytoken) owner=polytoken ;;
+      agy) owner=agy ;;
     esac
   fi
   [ -n "$owner" ] || return 1

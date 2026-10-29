@@ -192,6 +192,64 @@ test_agy_busy_signatures_are_harness_scoped() {
   pass "fm-composer-lib: agy delivery signatures never cross harnesses"
 }
 
+# agy's composer is a `>` prompt row between two full-width rules, with the
+# `? for shortcuts` idle footer below (verified live, agy 1.4.10 on tmux). Only
+# that footer under an identified agy owner proves the composer empty, so
+# fm-control can type /quit; typed text reads pending, and a busy row, a missing
+# footer, or a missing owner keeps the strict unknown.
+AGY_RULE=$(printf '%.0s─' $(seq 1 24))
+AGY_CAPS_TMUX=$'styled=1\ncursor=1\nidentity=1\nrows=0'
+AGY_CAPS_HERDR=$'styled=1\ncursor=0\nidentity=1'
+
+agy_screen() {  # <composer-row> <footer-row>
+  printf 'reply landed\n\n%s\n%s\n%s\n%s' "$AGY_RULE" "$1" "$AGY_RULE" "$2"
+}
+
+test_agy_composer_reads_its_own_prompt_row_and_idle_footer() {
+  local idle_footer busy_footer agy_idle out
+  idle_footer='? for shortcuts                                   Gemini 4 Argon · high'
+  busy_footer='esc to cancel                                     Gemini 4 Argon · high'
+  agy_idle=$(printf 'agy\tidle')
+  out=$(fm_composer_classify_screen "$AGY_CAPS_TMUX" "$(agy_screen '>' "$idle_footer")" 3 "$agy_idle")
+  [ "$out" = empty ] || fail "an idle agy prompt row must read empty on tmux, got '$out'"
+  out=$(fm_composer_classify_screen "$AGY_CAPS_HERDR" "$(agy_screen '> ' "$idle_footer")" '' "$(printf 'agy\tdone')")
+  [ "$out" = empty ] || fail "an idle agy prompt row must read empty on herdr, got '$out'"
+  out=$(fm_composer_classify_screen "$AGY_CAPS_TMUX" "$(agy_screen '> half a thought' "$idle_footer")" 3 "$agy_idle")
+  [ "$out" = pending ] || fail "typed text after the agy prompt must read pending, got '$out'"
+  out=$(fm_composer_classify_screen "$AGY_CAPS_TMUX" "$(agy_screen '>' "$busy_footer")" 3 "$(printf 'agy\tworking')")
+  [ "$out" = unknown ] || fail "a busy agy footer must keep the strict unknown, got '$out'"
+  out=$(fm_composer_classify_screen "$AGY_CAPS_TMUX" "$(agy_screen '>' '')" 3 "$agy_idle")
+  [ "$out" = unknown ] || fail "an agy composer without its idle footer must read unknown, got '$out'"
+  out=$(fm_composer_classify_screen "$AGY_CAPS_TMUX" "$(agy_screen '>' "$idle_footer")" 3 probe-absent)
+  [ "$out" = unknown ] || fail "an agy shape with no live owner must read unknown, got '$out'"
+  out=$(fm_composer_classify_screen "$AGY_CAPS_TMUX" "$(agy_screen '' "$idle_footer")" 3 "$agy_idle")
+  [ "$out" = unknown ] || fail "an agy composer without its prompt glyph must read unknown, got '$out'"
+  pass "fm-composer-lib: the agy composer reads empty, pending, and unknown exactly"
+}
+
+test_agy_tmux_identity_names_the_agy_process() {
+  local dir fakebin out
+  dir="$TMP_ROOT/agy-identity"; mkdir -p "$dir"
+  fakebin=$(fm_fakebin "$dir")
+  cat > "$fakebin/tmux" <<'EOF'
+#!/bin/sh
+case "$*" in
+  *pane_tty*) echo /dev/ttys999 ;;
+  *pane_current_command*) echo agy ;;
+  *capture-pane*) printf 'reply landed\n? for shortcuts   Gemini 4 Argon · high\n' ;;
+esac
+EOF
+  cat > "$fakebin/ps" <<'EOF'
+#!/bin/sh
+echo "  100   100   200 -zsh"
+echo "  200   200   200 /Users/someone/.local/bin/agy"
+EOF
+  chmod +x "$fakebin/tmux" "$fakebin/ps"
+  out=$(PATH="$fakebin:$PATH" bash -c '. "$1/bin/fm-backend.sh"; fm_backend_source tmux; fm_tmux_composer_identity fake:win' _ "$ROOT")
+  [ "$out" = "$(printf 'agy\tidle')" ] || fail "the tmux identity probe must name an idle agy pane, got '$out'"
+  pass "fm-tmux-lib: the composer identity probe names the agy process"
+}
+
 test_agy_classify_reports_unknown_when_the_marker_scrolls_out() {
   local statedir busy idle
   statedir="$TMP_ROOT/classify"; mkdir -p "$statedir"
@@ -1323,6 +1381,8 @@ test_agy_claims_no_inherited_launcher_marker
 test_agy_control_mechanics_are_the_verified_ones
 test_agy_busy_tail_needs_the_pinned_status_row
 test_agy_busy_signatures_are_harness_scoped
+test_agy_composer_reads_its_own_prompt_row_and_idle_footer
+test_agy_tmux_identity_names_the_agy_process
 test_agy_classify_reports_unknown_when_the_marker_scrolls_out
 test_agy_tmux_names_the_native_binary_an_agent
 test_herdr_done_with_live_registry_stays_live
