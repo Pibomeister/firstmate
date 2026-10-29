@@ -1719,6 +1719,20 @@ test_spawn_relaunch_resyncs_the_recorded_branch_to_its_published_head() {
   pass "fm-spawn --relaunch: a published recorded branch is resynced through the owner first; its refusal stops the launch"
 }
 
+# A successor launched with --from-branch keeps its brief's Setup "Source
+# branch:" line; that agreement binds only the fresh launch, so its relaunch
+# proceeds without the flag.
+test_spawn_relaunch_of_a_successor_ignores_its_source_line() {
+  local dir out
+  dir=$(new_case successor rl93)
+  add_ship_task "$dir" rl93 claude
+  printf '\n# Setup\nSource branch: feature/src\n' >> "$dir/home/data/rl93/brief.md"
+  printf 'zsh' > "$dir/fake/command"
+  out=$(run_spawn "$dir" rl93 --relaunch)
+  assert_contains "$out" "spawned rl93" "a successor's Source branch line refused its relaunch"$'\n'"$out"
+  pass "fm-spawn --relaunch: a successor relaunches without --from-branch despite its brief's Source branch line"
+}
+
 test_spawn_relaunch_under_an_active_run_is_monitoring_only() {
   local dir out launch
   dir=$(new_case prresync-active rl92)
@@ -3286,6 +3300,7 @@ test_spawn_relaunch_without_a_harness_reuses_the_recorded_one
 test_spawn_relaunch_of_promoted_scout_uses_the_recorded_branch
 test_spawn_relaunch_resyncs_the_recorded_branch_to_its_published_head
 test_spawn_relaunch_under_an_active_run_is_monitoring_only
+test_spawn_relaunch_of_a_successor_ignores_its_source_line
 test_promoted_scout_relaunch_receives_the_current_delivery_contract
 test_prefixed_prior_harness_wiring_is_still_retired
 test_muse_session_binding_is_retired_on_a_harness_switch

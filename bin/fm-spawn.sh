@@ -62,7 +62,8 @@
 #   --from-branch <branch> starts a ship or scout from origin/<branch> while its
 #   pull request keeps targeting the default branch (or --base-branch, which
 #   keeps its meaning); it must agree with the brief's Setup "Source branch:"
-#   lines and is not recorded, since nothing after launch reads it.
+#   lines on a fresh launch and is not recorded, since nothing after launch
+#   reads it; a relaunch neither checks that line nor accepts the flag.
 #   A ship relaunch whose recorded branch exists on origin runs
 #   bin/fm-pr-resync.sh in the recorded worktree first: exit 0 proceeds, exit 3
 #   launches with the owner's monitoring-only contract appended to the launch
@@ -3947,7 +3948,11 @@ if [ "$KIND" = ship ] || [ "$KIND" = scout ]; then
     echo "error: $BRIEF records a Base branch line but the spawn has no --base-branch; pass the brief's base with --base-branch or re-scaffold the brief without one" >&2
     exit 1
   fi
-  if [ "$FROM_BRANCH_SET" -eq 1 ]; then
+  # Source agreement binds only the launch that selects the start; a relaunch
+  # keeps its recorded copy and refuses --from-branch.
+  if [ "$RELAUNCH" -eq 1 ]; then
+    :
+  elif [ "$FROM_BRANCH_SET" -eq 1 ]; then
     if ! brief_source_branches "$BRIEF" >/dev/null || brief_source_branches "$BRIEF" | grep -vxF -- "$FROM_BRANCH" >/dev/null; then
       echo "error: $BRIEF must record Source branch: $FROM_BRANCH and no other Source branch line to spawn with --from-branch $FROM_BRANCH; scaffold it with bin/fm-brief.sh --from-branch $FROM_BRANCH" >&2
       exit 1
@@ -4025,6 +4030,9 @@ if [ "$KIND" = ship ]; then
       echo "error: branch mismatch for $ID: the brief says branch=$BRIEF_BRANCH but this spawn selected branch=$BRANCH" >&2
       exit 1
     }
+  elif [ "$PR_BRANCH_SET" -eq 1 ]; then
+    echo "error: $BRIEF records no ship branch; a continuation must agree with it, so scaffold it with bin/fm-brief.sh --pr-branch $BRANCH" >&2
+    exit 1
   elif [ "$BRANCH" != "fm/$ID" ]; then
     # A relaunch's branch comes from the meta record (--branch-prefix is refused
     # there), so a promoted scout whose brief never carried a Ship branch line

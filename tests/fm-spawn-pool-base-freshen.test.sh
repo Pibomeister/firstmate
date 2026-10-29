@@ -1242,6 +1242,15 @@ test_pr_branch_refusals_leave_the_branch_and_records() {
     || fail "a refused continuation moved the local branch"
   assert_grep 'keep this local work' "$POOL_DIR/uncommitted.txt" "a refused continuation discarded local work"
 
+  id='pool-pr-no-ship-line-r1'
+  fm_test_spawn_brief "$HOME_DIR" "$id"
+  out=$(run_spawn "$id" --mode direct-PR --yolo off --pr-branch "fm/$id")
+  status=$?
+  [ "$status" -ne 0 ] || fail "--pr-branch launched against a brief with no Ship branch line"
+  assert_contains "$out" "records no ship branch; a continuation must agree with it" \
+    "--pr-branch fm/<id> fell back to the legacy default-branch warning"$'\n'"$out"
+  [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "a continuation without a Ship branch line published task metadata"
+
   for flags in "--mode direct-PR --yolo off --pr-branch feature/pr --branch-prefix fix/" \
     "--mode direct-PR --yolo off --pr-branch feature/pr --from-branch feature/pr" \
     "--scout --pr-branch feature/pr"; do
