@@ -5482,11 +5482,10 @@ kimi_ready_signal_is_present() { # <plain-pane-capture>
   kimi_composer_is_empty
 }
 
-# A failed spawn closes its endpoint, so a refused readiness wait leaves no
-# pane to inspect afterwards. The refusal therefore records its own evidence
+# Failed-gate cleanup can close the endpoint, so preserve readiness evidence
 # before returning: the Kimi version, the poll counts, each missing element,
-# and the last non-empty visible capture, in the task's data directory, and
-# the refusal detail names that record's path.
+# and the last non-empty visible capture, in the task's data directory.
+# The refusal detail names that record's path and reports a failed write.
 kimi_ready_refusal() { # <missing-lines> <last-pane> <last-poll> <polls> <max> <trust-enters>
   local record="$DATA/$ID/kimi-readiness-refusal.txt" version=''
   [ -z "${KIMI_BIN:-}" ] ||

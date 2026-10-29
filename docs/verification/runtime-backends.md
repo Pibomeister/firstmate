@@ -1094,7 +1094,7 @@ user@host project % . '/tmp/fm-<id>+<hash>/launch.s<stamp>.sh'
 ```
 
 `kimi_trust_dialog_missing` in [fm-spawn.sh](../../bin/fm-spawn.sh) finds every required element in that capture, so it is the complete dialog that spawn answers.
-A readiness refusal on such a pane therefore points at the recognition code that ran rather than at the capture; the `data/<id>/kimi-readiness-refusal.txt` record that every readiness refusal writes carries the capture and the missing elements for that comparison.
+For a readiness refusal, compare the saved capture with the recognition code that actually ran; `kimi_ready_refusal` in [fm-spawn.sh](../../bin/fm-spawn.sh) owns the evidence record, and the failure detail reports whether it could be written.
 
 The end-to-end proof ran one real scout spawn with the default `PATH`, from a scratch `FM_HOME` and a scratch git project whose worktree path Kimi had never seen:
 
