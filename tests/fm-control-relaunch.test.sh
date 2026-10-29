@@ -1727,6 +1727,7 @@ test_spawn_relaunch_resyncs_the_recorded_branch_to_its_published_head() {
     dir=$(new_case "prresync-$mode" "rl96-$mode")
     stale_published_task "$dir" "rl96-$mode"
     sed -i.bak "s/^mode=no-mistakes$/mode=$mode/" "$dir/home/state/rl96-$mode.meta"
+    git -C "$dir/wt" remote add no-mistakes "$dir/proj.origin.git"
     printf 'local amendment\n' >> "$dir/wt/a.txt"
     git -C "$dir/wt" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit --amend --no-edit -aq
     local_sha=$(git -C "$dir/wt" rev-parse HEAD)
@@ -1739,6 +1740,14 @@ test_spawn_relaunch_resyncs_the_recorded_branch_to_its_published_head() {
       || fail "$mode relaunch created an archive"
   done
 
+  dir=$(new_case prresync-legacy rl97)
+  stale_published_task "$dir" rl97
+  sed -i.bak '/^mode=/d' "$dir/home/state/rl97.meta"
+  git -C "$dir/wt" remote add no-mistakes "$dir/proj.origin.git"
+  out=$(run_spawn "$dir" rl97 --relaunch)
+  assert_contains "$out" "cannot relaunch: bin/fm-pr-resync.sh exited 1" "a legacy relaunch with a no-mistakes remote skipped the owner"$'\n'"$out"
+  [ "$(git -C "$dir/wt" rev-parse HEAD)" = "$STALE_SHA" ] || fail "a refused legacy relaunch moved the branch"
+
   dir=$(new_case prresync-dirty rl91)
   stale_published_task "$dir" rl91
   printf 'keep\n' > "$dir/wt/uncommitted.txt"
@@ -1750,7 +1759,7 @@ test_spawn_relaunch_resyncs_the_recorded_branch_to_its_published_head() {
 
   out=$(run_spawn "$dir" rl91 --relaunch --pr-branch task-rl91)
   assert_contains "$out" "--pr-branch and --from-branch apply only to a fresh launch" "--relaunch accepted --pr-branch"
-  pass "fm-spawn --relaunch: no-mistakes divergence refuses, behind advances, and worker-owned modes skip resync"
+  pass "fm-spawn --relaunch: no-mistakes divergence refuses, behind advances, and explicit worker-owned modes skip resync despite a no-mistakes remote"
 }
 
 # A successor launched with --from-branch keeps its brief's Setup "Source

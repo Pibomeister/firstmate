@@ -66,10 +66,11 @@
 #   reads it; a relaunch neither checks that line nor accepts the flag.
 #   A fresh isolated clean Orca copy is detached while its initial branch stays
 #   preserved before continuation resync; reused copies keep the named-branch guard.
-#   A no-mistakes ship relaunch, or one with a no-mistakes remote, resyncs a
-#   recorded branch present on origin without archive-advancing divergence:
-#   exit 0 proceeds, exit 3 launches with the monitoring-only contract, and
-#   any other exit leaves the branch as-is and refuses the relaunch.
+#   A no-mistakes ship relaunch, or one with no recorded mode and a no-mistakes
+#   remote, resyncs a recorded branch present on origin without archive-advancing
+#   divergence: exit 0 proceeds, exit 3 launches with the monitoring-only
+#   contract, and any other exit leaves the branch as-is and refuses the
+#   relaunch. An explicit direct-PR or local-only relaunch never resyncs.
 #   The origin pre-probe is bounded to 120 seconds; a timeout refuses launch.
 #   Ship/scout launches always put fm-dod-lib.sh's current worker role scope
 #   first in the private launch-brief overlay, including the exact task-owned
@@ -3900,9 +3901,11 @@ spawn_pr_resync() {  # <worktree> <branch>
 # head when origin has that branch; exit 3 keeps the owner's monitoring-only lines.
 relaunch_pr_resync() {
   local out rc=0
-  if [ "$MODE" != no-mistakes ]; then
-    git -C "$RELAUNCH_WT" remote get-url no-mistakes >/dev/null 2>&1 || return 0
-  fi
+  case "$MODE" in
+    no-mistakes) ;;
+    '') git -C "$RELAUNCH_WT" remote get-url no-mistakes >/dev/null 2>&1 || return 0 ;;
+    *) return 0 ;;
+  esac
   git -C "$RELAUNCH_WT" remote get-url origin >/dev/null 2>&1 || return 0
   fm_nm_bounded "$RELAUNCH_WT" 120 git ls-remote --exit-code --heads origin "refs/heads/$BRANCH" >/dev/null 2>&1 || rc=$?
   [ "$rc" -ne 2 ] || return 0
