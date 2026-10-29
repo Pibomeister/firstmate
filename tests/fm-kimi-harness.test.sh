@@ -92,6 +92,16 @@ fake_screen() {
       esac
       sed "s|{WORKDIR}|$FM_FAKE_PANE_PATH|g" "$FM_FAKE_KIMI_CAPTURES/$capture"
       ;;
+    trust-preamble|trust-renamed)
+      # Verbatim 80x24 viewport of a real Kimi 2.4.0 tmux spawn live-captured
+      # 2026-10-29: the wrapped treehouse shell preamble and launch line sit
+      # above the dialog's box (user, host, and paths vary). trust-renamed
+      # swaps the negative option for one no verified Kimi version shows.
+      negative=Exit
+      [ "$state" = trust-preamble ] || negative=Quit
+      rule=' ──────────────────────────────────────────────────────────────────────────────'
+      printf 'export FM_TASK_ID=fake-task\nuser@host wt %% export COMPACT_ADVISER_DIS\nABLE=1\nexport FM_TASK_ID=fake-task\nuser@host wt %% export FM_TASK_ID=fake-tas\nk\nuser@host wt %% . '"'"'/tmp/fm-fake-task+0123456789abcdef0123456789abcdef0123456789ab\ncdef/launch.s1793266373.29604.14955.sh'"'"'\n%s\n  Trust this folder?\n  ↑↓ navigate · Enter select · Esc exit\n\n  %s\n\n  Load project instructions\n    Check: AGENTS.md · .agents/skills/\n\n  Trust is remembered for this folder, including future project config changes.\n  Tool approvals follow your permission settings.\n\n   ❯ Trust and continue\n     %s\n%s\n' "$rule" "$FM_FAKE_PANE_PATH" "$negative" "$rule"
+      ;;
     pointer-typed)
       printf 'context: 0%% (0/256k)\n╭────────────────────────────────╮\n│ > Read the brief and follow it │\n│                                │\n╰────────────────────────────────╯\n'
       ;;
@@ -165,7 +175,7 @@ case "${1:-}" in
         *)
           printf '%s\n' "$literal" >> "$FM_FAKE_POINTER_LOG"
           case "$state" in
-            trust|trust-wrapped|trust-partial|trust-decoy|trust-230|trust-230-rootmcp|trust-230-kimimcp|trust-230-small|trust-230-paged|booting|banner-only|banner-first|blank-frame) ;;
+            trust|trust-wrapped|trust-partial|trust-decoy|trust-230|trust-230-rootmcp|trust-230-kimimcp|trust-230-small|trust-230-paged|trust-preamble|trust-renamed|booting|banner-only|banner-first|blank-frame) ;;
             *) printf 'pointer-typed\n' > "$FM_FAKE_KIMI_STATE" ;;
           esac
           ;;
@@ -190,11 +200,13 @@ case "${1:-}" in
                 230-kimimcp) printf 'trust-230-kimimcp\n' > "$FM_FAKE_KIMI_STATE" ;;
                 230-small) printf 'trust-230-small\n' > "$FM_FAKE_KIMI_STATE" ;;
                 230-paged) printf 'trust-230-paged\n' > "$FM_FAKE_KIMI_STATE" ;;
+                preamble) printf 'trust-preamble\n' > "$FM_FAKE_KIMI_STATE" ;;
+                renamed) printf 'trust-renamed\n' > "$FM_FAKE_KIMI_STATE" ;;
                 *) printf 'ready\n' > "$FM_FAKE_KIMI_STATE" ;;
               esac
             fi
             ;;
-          trust|trust-wrapped|trust-legacy|trust-230)
+          trust|trust-wrapped|trust-legacy|trust-230|trust-preamble|trust-renamed)
             printf 'enter\n' >> "$FM_FAKE_KIMI_TRUST_ENTER_LOG"
             trust_enters=$(wc -l < "$FM_FAKE_KIMI_TRUST_ENTER_LOG" | tr -d ' ')
             case "${FM_FAKE_KIMI_TRUST_CLEARS:-yes}" in
@@ -640,6 +652,130 @@ test_kimi_hook_install_refuses_without_jq() {
   pass "Kimi hook install refuses without jq before any config write"
 }
 
+# A stand-in interpreter for the installer's Python search: "real" execs the
+# suite's tomllib Python and logs each call's first argument, so the log shows
+# whether this candidate ran the installer itself ("-"); "old" behaves like
+# the macOS 3.9 python3, which runs but cannot import tomllib; "broken" fails
+# every call, like an unconfigured version-manager shim.
+make_kimi_python() { # <path> <real|old|broken> [log]
+  mkdir -p "$(dirname "$1")"
+  case "$2" in
+    real)
+      cat > "$1" <<SH
+#!/bin/sh
+printf '%s\\n' "\$1" >> '$3'
+exec '$PYTHON_BIN' "\$@"
+SH
+      ;;
+    old)
+      cat > "$1" <<'SH'
+#!/bin/sh
+case "$*" in
+  *'import tomllib'*) exit 1 ;;
+  *version_info*) printf '3.9.6\n'; exit 0 ;;
+esac
+exit 1
+SH
+      ;;
+    broken) printf '#!/bin/sh\nexit 127\n' > "$1" ;;
+  esac
+  chmod +x "$1"
+}
+
+kimi_python_case() { # <name>: prints "<home>|<fakebin>"
+  local home fakebin
+  home="$TMP_ROOT/python-$1"
+  fakebin=$(fm_fakebin "$home/bin")
+  mkdir -p "$home/.kimi-code" "$home/logs"
+  printf '# Captain config\nmodel = "test"\n' > "$home/.kimi-code/config.toml"
+  cp "$home/.kimi-code/config.toml" "$home/config-before.toml"
+  ln -s "$(command -v bash)" "$fakebin/bash"
+  ln -s "$JQ_BIN" "$fakebin/jq"
+  make_kimi_python "$fakebin/python3" old
+  printf '%s\n' "$home|$fakebin"
+}
+
+run_kimi_hook_python() { # <home> <fakebin> <prefixes> <action>
+  env -u XDG_DATA_HOME -u UV_PYTHON_INSTALL_DIR HOME="$1" PATH="$2" \
+    FM_KIMI_PYTHON_PREFIXES="$3" "$KIMI_HOOK" "$4" 2>&1
+}
+
+test_kimi_hook_install_selects_a_tomllib_python_deterministically() {
+  local rec home fakebin uv out rc
+  rec=$(kimi_python_case uv)
+  home=${rec%%|*}
+  fakebin=${rec#*|}
+  uv="$home/.local/share/uv/python"
+  make_kimi_python "$uv/cpython-3.9.6-macos-aarch64-none/bin/python3" old
+  make_kimi_python "$uv/cpython-3.12.4-macos-aarch64-none/bin/python3" real "$home/logs/uv-3.12.4"
+  make_kimi_python "$uv/cpython-3.13.9-macos-aarch64-none/bin/python3" real "$home/logs/uv-3.13.9"
+  make_kimi_python "$uv/cpython-3.13.10-macos-aarch64-none/bin/python3" real "$home/logs/uv-3.13.10"
+  rc=0
+  out=$(run_kimi_hook_python "$home" "$fakebin" '' install) || rc=$?
+  expect_code 0 "$rc" "Kimi hook install should select a uv-managed Python past a tomllib-less python3: $out"
+  assert_present "$home/.kimi-code/fm-turn-end.sh" "Kimi hook install through uv Python wrote no hook script"
+  grep -Fxq -- - "$home/logs/uv-3.13.10" \
+    || fail "Kimi hook install did not run on the newest uv-managed Python"
+  assert_absent "$home/logs/uv-3.13.9" "Kimi hook install ordered uv versions as text rather than numbers"
+  assert_absent "$home/logs/uv-3.12.4" "Kimi hook install tried an older uv Python before the newest"
+
+  rec=$(kimi_python_case brew)
+  home=${rec%%|*}
+  fakebin=${rec#*|}
+  uv="$home/.local/share/uv/python"
+  make_kimi_python "$uv/cpython-3.13.10-macos-aarch64-none/bin/python3" real "$home/logs/uv"
+  make_kimi_python "$home/brew/bin/python3.12" real "$home/logs/brew"
+  mkdir -p "$home/brew-empty/bin"
+  rc=0
+  out=$(run_kimi_hook_python "$home" "$fakebin" "$home/brew-empty $home/brew" install) || rc=$?
+  expect_code 0 "$rc" "Kimi hook install should select a Homebrew Python: $out"
+  grep -Fxq -- - "$home/logs/brew" || fail "Kimi hook install did not run on the Homebrew Python"
+  assert_absent "$home/logs/uv" "Kimi hook install preferred uv over an earlier Homebrew prefix"
+  rc=0
+  out=$(run_kimi_hook_python "$home" "$fakebin" "$home/brew-empty $home/brew" remove) || rc=$?
+  expect_code 0 "$rc" "Kimi hook remove should select the same Homebrew Python: $out"
+  cmp -s "$home/config-before.toml" "$home/.kimi-code/config.toml" \
+    || fail "Kimi hook remove through the selected Python did not restore config bytes"
+  pass "Kimi hook install selects a tomllib Python in its documented order"
+}
+
+test_kimi_hook_install_refusal_names_every_searched_python() {
+  local rec home fakebin uv out rc
+  rec=$(kimi_python_case refused)
+  home=${rec%%|*}
+  fakebin=${rec#*|}
+  uv="$home/.local/share/uv/python"
+  make_kimi_python "$fakebin/python3.11" broken
+  make_kimi_python "$uv/cpython-3.9.6-macos-aarch64-none/bin/python3" old
+  mkdir -p "$home/brew-empty/bin"
+  rc=0
+  out=$(run_kimi_hook_python "$home" "$fakebin" "$home/brew-empty" install) || rc=$?
+  [ "$rc" -ne 0 ] || fail "Kimi hook install succeeded without any tomllib Python"
+  assert_contains "$out" "no Python 3.11 or newer with tomllib was found to validate config.toml; searched interpreters:" \
+    "Kimi Python refusal did not say what it needed"
+  assert_contains "$out" "$fakebin/python3 (python3 on PATH): Python 3.9.6, no tomllib" \
+    "Kimi Python refusal did not name the tomllib-less python3 and its version"
+  assert_contains "$out" "$fakebin/python3.11 (python3.11 on PATH): did not run" \
+    "Kimi Python refusal did not name the interpreter that would not run"
+  assert_contains "$out" "not on PATH: python3.14 python3.13 python3.12" \
+    "Kimi Python refusal did not name the versions absent from PATH"
+  assert_contains "$out" "not in $home/brew-empty/bin: python3 python3.14 python3.13 python3.12 python3.11" \
+    "Kimi Python refusal did not name the searched Homebrew prefix"
+  assert_contains "$out" "$uv/cpython-3.9.6-macos-aarch64-none/bin/python3 (uv-managed): Python 3.9.6, no tomllib" \
+    "Kimi Python refusal did not name the tomllib-less uv Python"
+  cmp -s "$home/config-before.toml" "$home/.kimi-code/config.toml" \
+    || fail "Kimi Python refusal changed config bytes"
+  assert_absent "$home/.kimi-code/fm-turn-end.sh" "Kimi Python refusal wrote the hook script"
+
+  rm -rf "$uv"
+  rc=0
+  out=$(run_kimi_hook_python "$home" "$fakebin" '' install) || rc=$?
+  [ "$rc" -ne 0 ] || fail "Kimi hook install succeeded with no uv Python installed"
+  assert_contains "$out" "$uv/cpython-3.*/bin/python3 (uv-managed): none installed" \
+    "Kimi Python refusal did not name the empty uv install directory"
+  pass "Kimi hook install refusal names every searched Python before any config write"
+}
+
 test_kimi_hook_is_silent_and_requires_registered_workspace_token() {
   local id rec out rc hook target token no_token snapshot_before snapshot_after fakebin
   id=kimi-hook-auth-z6
@@ -968,6 +1104,21 @@ test_gate_cleanup_bounds_the_row_move_like_the_commit_point() {
   pass "fm-spawn: the kept-record path's backlog move carries the commit point's tasks-axi bound"
 }
 
+# A refused readiness wait closes its pane, so the refusal itself must leave
+# the evidence: the record named in the detail, holding the missing element
+# and the last visible capture.
+assert_kimi_refusal_record() { # <home> <id> <spawn-output> <capture-line> <missing-line>
+  local record="$1/data/$2/kimi-readiness-refusal.txt"
+  [ -s "$record" ] || fail "Kimi readiness refusal left no evidence record at $record"
+  assert_contains "$3" "last visible capture and missing elements recorded at $record" \
+    "Kimi readiness refusal did not name its evidence record"
+  grep -Eq '^last visible capture \(poll [0-9]+\):$' "$record" \
+    || fail "Kimi refusal record lacked the last visible capture"
+  grep -Fxq -- "$4" "$record" || fail "Kimi refusal record lacked capture line: $4"
+  grep -Fxq -- "$5" "$record" || fail "Kimi refusal record lacked missing element: $5"
+  grep -q '^backend=tmux target=' "$record" || fail "Kimi refusal record did not name the backend"
+}
+
 test_kimi_readiness_gate_precedes_pointer() {
   local id rec out rc
   id=kimi-not-ready-z3
@@ -980,6 +1131,8 @@ test_kimi_readiness_gate_precedes_pointer() {
   assert_contains "$out" "kimi did not show a verified ready signal" \
     "kimi readiness failure lacked a loud diagnostic"
   [ ! -s "$CASE_DIR/pointer.log" ] || fail "kimi pointer was sent before readiness"
+  assert_kimi_refusal_record "$HOME_DIR" "$id" "$out" 'shell starting' \
+    "- verified ready signal: the 'Welcome to Kimi Code!' banner or an empty composer on two consecutive captures free of trust dialog text"
   assert_grep "kill-window -t =firstmate:=fm-$id" "$CASE_DIR/tmux-calls.log" \
     "a kimi readiness failure left the launched worker running without a task record"
   jq -e --arg id "$id" 'any(.endpoints[]; .id == $id)' \
@@ -1200,6 +1353,10 @@ test_kimi_partial_trust_dialog_blocks_the_ready_verdict() {
     || fail "Kimi pointer was sent while trust dialog markers were still on screen"
   [ ! -s "$CASE_DIR/trust-enter.log" ] \
     || fail "Kimi answered a trust dialog it could not fully read"
+  assert_contains "$out" "(missing: navigation hint '↑↓ navigate'; navigation hint 'Enter select'; selected affirmative option" \
+    "partial Kimi trust refusal did not name the elements the capture lacked"
+  assert_kimi_refusal_record "$HOME_DIR" "$id" "$out" "Welcome to Kimi Code!" \
+    "- navigation hint '↑↓ navigate'"
   pass "fm-spawn: Kimi refuses the ready verdict while trust dialog markers remain"
 }
 
@@ -1250,7 +1407,48 @@ test_kimi_trust_detection_requires_the_complete_dialog() {
   [ ! -s "$CASE_DIR/trust-enter.log" ] \
     || fail "Kimi answered an incomplete trust lookalike with Enter"
   [ ! -s "$CASE_DIR/pointer.log" ] || fail "Kimi pointer was sent through a trust lookalike"
+  assert_kimi_refusal_record "$HOME_DIR" "$id" "$out" " ❯ Trust and continue" \
+    "- navigation hint 'Enter select'"
   pass "fm-spawn: Kimi trust detection requires every observed dialog signal"
+}
+
+test_kimi_answers_the_2_4_0_dialog_below_a_shell_preamble() {
+  local id rec out rc
+  id=kimi-trust-preamble-x1
+  rec=$(make_spawn_case trust-preamble "$id")
+  read_spawn_record "$rec"
+  rc=0
+  out=$(FM_KIMI_READY_POLLS=3 FM_FAKE_KIMI_TRUST=preamble run_spawn \
+    "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id") || rc=$?
+  expect_code 0 "$rc" "the Kimi 2.4.0 dialog below a wrapped shell preamble should be answered"
+  assert_contains "$out" "spawned $id harness=kimi" \
+    "Kimi spawn did not seat through the 2.4.0 dialog below a shell preamble"
+  [ "$(wc -l < "$CASE_DIR/trust-enter.log" | tr -d ' ')" = 1 ] \
+    || fail "Kimi did not answer the 2.4.0 dialog below a shell preamble exactly once"
+  assert_grep "Read the brief at " "$CASE_DIR/pointer.log" \
+    "Kimi brief pointer was not delivered after the 2.4.0 dialog cleared"
+  [ ! -e "$HOME_DIR/data/$id/kimi-readiness-refusal.txt" ] \
+    || fail "a seated Kimi spawn left a readiness refusal record"
+  pass "fm-spawn: the Kimi 2.4.0 trust dialog below a wrapped shell preamble is answered and seated"
+}
+
+test_kimi_refusal_records_a_dialog_with_an_unverified_option() {
+  local id rec out rc
+  id=kimi-trust-renamed-x2
+  rec=$(make_spawn_case trust-renamed "$id")
+  read_spawn_record "$rec"
+  rc=0
+  out=$(FM_FAKE_KIMI_TRUST=renamed run_spawn \
+    "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id") || rc=$?
+  [ "$rc" -ne 0 ] || fail "a trust dialog with an unverified negative option should not be answered"
+  assert_contains "$out" "trust dialog text stayed on screen without the complete dialog (missing: negative option 'Exit' on its own line beside selected 'Trust and continue')" \
+    "Kimi refusal did not name the one element the renamed dialog lacked"
+  [ ! -s "$CASE_DIR/trust-enter.log" ] \
+    || fail "Kimi pressed Enter on a dialog whose options it has not verified"
+  [ ! -s "$CASE_DIR/pointer.log" ] || fail "Kimi pointer was sent into an unproven pane"
+  assert_kimi_refusal_record "$HOME_DIR" "$id" "$out" "     Quit" \
+    "- negative option 'Exit' on its own line beside selected 'Trust and continue'"
+  pass "fm-spawn: a Kimi dialog with an unverified option refuses and records what was missing"
 }
 
 test_kimi_answers_a_legacy_trust_dialog() {
@@ -1524,6 +1722,8 @@ test_kimi_hook_install_is_surgical_idempotent_and_removable
 test_kimi_hook_remove_preserves_owned_newline_boundary
 test_kimi_hook_fails_closed_on_missing_malformed_or_partial_config
 test_kimi_hook_install_refuses_without_jq
+test_kimi_hook_install_selects_a_tomllib_python_deterministically
+test_kimi_hook_install_refusal_names_every_searched_python
 test_kimi_launch_then_send_is_verified
 test_kimi_spawn_refuses_shared_task_temp_root
 test_kimi_hook_is_silent_and_requires_registered_workspace_token
@@ -1551,6 +1751,8 @@ test_kimi_failed_viewport_read_fails_readiness_at_once
 test_kimi_partial_trust_dialog_blocks_the_ready_verdict
 test_kimi_trust_failures_report_only_observed_signals
 test_kimi_trust_detection_requires_the_complete_dialog
+test_kimi_answers_the_2_4_0_dialog_below_a_shell_preamble
+test_kimi_refusal_records_a_dialog_with_an_unverified_option
 test_kimi_answers_a_legacy_trust_dialog
 test_kimi_detection_uses_ancestry_after_markers
 test_kimi_session_lock_identity

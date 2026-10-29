@@ -2,6 +2,7 @@
 
 Verified on 2026-09-17 with Kimi Code CLI 2.0.0.
 The folder prompt was recorded again on 2026-10-23 with Kimi Code CLI 2.3.0 and 2.3.1, which reworded it; `tests/fm-kimi-trust-prompt-live-e2e.test.sh` refreshes that evidence against the installed binary.
+The folder-trust dialog was also re-verified live on 2026-10-29 with Kimi Code CLI 2.4.0 through a tmux spawn.
 
 ## Operating facts
 
@@ -28,6 +29,8 @@ Kimi 2.3.0 reads a root `.mcp.json` at the git worktree root as a project MCP de
 Every trust predicate reads `fm_backend_visible_capture` - the viewport with no scrollback - never the 120-line history read the delivery gate uses: the dialog is a TUI frame, and a history-backed capture would keep reporting it after Kimi redrew past it, storming Enter into a live composer and then failing an already trusted spawn.
 `FM_BACKEND_VISIBLE_CAPTURE` in `bin/fm-backend.sh` is the authoritative capability list; [`docs/rex-backend.md`](../../../../../docs/rex-backend.md#current-operation-and-safety) explains Rex's derived viewport.
 Orca has only a history read; cmux's `read-screen` without `--scrollback` plausibly reads just the viewport but has not been live-verified. A Kimi spawn on either is therefore refused at preflight, before the worktree or pane exists, naming the backend and the missing verified viewport capability, pending that verification for cmux. There is no fallback to the scrollback read. A viewport read that exits nonzero fails readiness immediately with the backend named, rather than being mistaken for a blank screen. A successful but blank viewport read is absence of evidence, not evidence of a cleared dialog: it costs that poll, restarts the two-capture ready count below, and leaves the trust diagnostics where they were. The trust answer is retried until the dialog clears - Kimi swallows keypresses during its startup window, so a single Enter can be dropped - and the re-send is gated on the complete dialog still being on that visible pane, so it cannot fire once the dialog cleared. Trust is accepted only after a later visible-pane capture proves that the dialog cleared; a stuck dialog fails with the observed dialog signals and the answer count in the diagnostic.
+A failed spawn closes its pane, so every readiness refusal first writes `data/<id>/kimi-readiness-refusal.txt` with the Kimi version, poll counts, each missing element, and the last non-empty visible capture, and its failure detail names that file.
+Start a readiness diagnosis from that record, and compare its capture against the predicate in the Firstmate code root that actually ran the spawn, because a secondmate home behind its origin runs older recognition code.
 Any single marker of the dialog on that visible pane - `Trust this folder`, `Trust and continue`, or the negative `Don't trust` option - withholds the ready verdict, because a capture caught mid-redraw and a capture that has painted only the box title both miss the complete dialog while the banner above it would otherwise read as ready. The banner also prints before the dialog paints at all, which no single capture can distinguish from a ready pane, so the verdict additionally requires two consecutive captures that are each ready and free of dialog text; a capture that is not ready, and a blank one, restarts that count, which is what keeps the pre-banner boot captures and redraw frames from spending it.
 `spawn_gate_endpoint_cleanup` in [fm-spawn.sh](../../../../../bin/fm-spawn.sh) owns failed-gate endpoint cleanup and provisional-record retention.
 This launch-then-send shape is mandatory because Kimi rejects positional instructions as an unknown command.
@@ -48,6 +51,7 @@ The delivery-only spinner match covers the full moon-phase glyph set but remains
 ## Crew turn-end hook and primary limit
 
 Kimi is outside the primary turn-end guard scope.
+The installer needs Python 3.11 or newer for `tomllib`, which the default macOS `python3` 3.9 lacks; [`fm-kimi-turnend-hook.sh --help`](../../../../../bin/fm-kimi-turnend-hook.sh) owns the fixed search order over PATH, Homebrew, and uv-managed interpreters and its refusal that names each searched interpreter.
 `../../../docs/turnend-guard.md` owns its separate global hook surface and captain-approved crew wake integration.
 
 `../../../bin/fm-spawn.sh` installs one marker-delimited Firstmate entry in `$HOME/.kimi-code/config.toml`, one silent always-zero hook script, and one private token registry under `$HOME/.kimi-code/fm-turn-end.d/`.
