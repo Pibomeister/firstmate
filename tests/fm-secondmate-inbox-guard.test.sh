@@ -124,6 +124,25 @@ test_guard_moves_past_a_stuck_oldest_record() {
 
 # However many escalated records wait ahead of it, a later record still gets
 # its deny: 200 escalated records never hide an aged 201st.
+test_guard_skips_a_record_the_watcher_escalated_before_any_deny() {
+  local home
+  home=$(make_secondmate escalated-undenied)
+  # The watcher escalates a due record when the endpoint is unavailable, which
+  # can happen before the guard has denied it at all.
+  add_record "$home" 005
+  printf '005.msg\n' > "$(inbox_of "$home")/.escalated"
+  hook_call "$home" "$home" self FM_SECONDMATE_INBOX_GUARD_REDENY=0
+  expect_allow "a lone record the watcher escalated before any deny"
+  add_record "$home" 006
+  hook_call "$home" "$home" self FM_SECONDMATE_INBOX_GUARD_REDENY=0
+  expect_deny "an aged record behind one escalated with no denies"
+  grep -q '006.msg' "$ERR" && ! grep -q '005.msg' "$ERR" \
+    || fail "the deny does not name only the later record: $(cat "$ERR")"
+  [ "$(cut -f1,2 "$home/state/.inbox-guard")" = "$(printf '006.msg\t1')" ] \
+    || fail "the guard state does not record one deny for 006.msg: $(cat "$home/state/.inbox-guard")"
+  pass "inbox guard: a record the watcher escalated before any deny is skipped on its own, not only once its denies are spent"
+}
+
 test_guard_scans_past_any_number_of_spent_records() {
   local home i
   home=$(make_secondmate spent-prefix)
@@ -242,6 +261,7 @@ test_guard_allows_everything_it_does_not_own() {
 
 test_guard_denies_a_waiting_record_then_lets_the_drain_run
 test_guard_moves_past_a_stuck_oldest_record
+test_guard_skips_a_record_the_watcher_escalated_before_any_deny
 test_guard_scans_past_any_number_of_spent_records
 test_guard_orders_records_numerically
 test_guard_age_read_survives_gnu_stat
