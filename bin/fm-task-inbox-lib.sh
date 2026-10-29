@@ -507,6 +507,15 @@ fm_task_inbox_record_is_escalated() {  # <record-path>
   grep -Fqx -- "${1##*/}" "${1%/*}/.escalated" 2>/dev/null
 }
 
+# Every unhandled record name in <inbox-dir> its inbox has not escalated,
+# fire-and-forget included, one per line in sequence order, read in one pass
+# so a caller's work does not grow with the escalated records ahead.
+fm_task_inbox_unescalated_in() {  # <inbox-dir>
+  fm_task_inbox_records_in "$1" | awk -v f="$1/.escalated" '
+    BEGIN { while ((getline n < f) > 0) esc[n] = 1 }
+    !($0 in esc)'
+}
+
 # The lowest escalation-tracked record path in <inbox-dir> not yet escalated,
 # or nothing when every waiting record already escalated.
 fm_task_inbox_next_unescalated() {  # <inbox-dir>
@@ -661,9 +670,10 @@ fm_task_inbox_recover_next() {  # <state-dir> <task-id> <record-path> <spawn-gen
   count=$(_fm_task_inbox_recover_count "$1" "$2" "$3" "$gen")
   [ "$count" -lt "$FM_TASK_INBOX_RECOVER_MAX" ] || return 1
   now=$(date +%s)
-  { printf '%s\t%s\t%s\t%s\n' "$base" "$((count + 1))" "$now" "$gen" > "$dir/.recover-state"; } 2>/dev/null || return 2
+  # The slot is written last, so a failed restart never leaves it claimed.
   { printf '%s\t0\t%s\n' "$base" "$now" > "$dir/.ring-state"; } 2>/dev/null || return 2
   rm -f "$dir/.busy-state" 2>/dev/null || return 2
+  { printf '%s\t%s\t%s\t%s\n' "$base" "$((count + 1))" "$now" "$gen" > "$dir/.recover-state"; } 2>/dev/null || return 2
   printf '%s' "$((count + 1))"
 }
 

@@ -122,6 +122,24 @@ test_guard_moves_past_a_stuck_oldest_record() {
   pass "inbox guard: an escalated oldest record with its denies spent does not stop the drain for a later record"
 }
 
+# However many escalated records wait ahead of it, a later record still gets
+# its deny: 200 escalated records never hide an aged 201st.
+test_guard_scans_past_any_number_of_spent_records() {
+  local home i
+  home=$(make_secondmate spent-prefix)
+  i=1
+  while [ "$i" -le 200 ]; do
+    add_record "$home" "$(printf '%03d' "$i")"
+    printf '%03d.msg\n' "$i" >> "$(inbox_of "$home")/.escalated"
+    i=$((i + 1))
+  done
+  add_record "$home" 201
+  hook_call "$home" "$home" self
+  expect_deny "an aged 201st record behind 200 escalated ones"
+  grep -q '201.msg' "$ERR" || fail "the deny does not name the 201st record: $(cat "$ERR")"
+  pass "inbox guard: escalated records ahead of a later record never hide it, however many there are"
+}
+
 # The oldest record is chosen by sequence number, so 999 precedes 1000 even
 # though it sorts after it as text.
 test_guard_orders_records_numerically() {
@@ -224,6 +242,7 @@ test_guard_allows_everything_it_does_not_own() {
 
 test_guard_denies_a_waiting_record_then_lets_the_drain_run
 test_guard_moves_past_a_stuck_oldest_record
+test_guard_scans_past_any_number_of_spent_records
 test_guard_orders_records_numerically
 test_guard_age_read_survives_gnu_stat
 test_guard_skips_fire_and_forget_records

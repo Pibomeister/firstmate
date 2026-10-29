@@ -20,7 +20,9 @@
 # SECONDMATE HOME. In a genuine local secondmate home the bound, on either
 # path, is capped at FM_SECONDMATE_CHECKPOINT_MAX (default 60) and the away
 # raise never lifts it above that, so the secondmate's turn returns to its
-# parent-owned steering inbox regularly; a primary's bound is unchanged. On the
+# parent-owned steering inbox regularly; on the host path that bound is also
+# the host's turn limit, so an away close whose engine turn could outlast it
+# is handed to the secondmate rather than run. A primary's bound is unchanged. On the
 # plain path only (the inbox is passed to that watcher alone, never exported to
 # the host's), the watcher also ends the checkpoint within a few seconds of a
 # record in that inbox it has not yet announced, and this script prints
@@ -197,7 +199,9 @@ if fm_supervision_host_enabled "$CONFIG" codex; then
   [ -z "$SECONDMATE_MAX" ] || [ "$BOUND" -le "$SECONDMATE_MAX" ] || BOUND=$SECONDMATE_MAX
   # The host's park boundary stays below the 28800-second registration.
   [ "$BOUND" -lt 27000 ] 2>/dev/null || BOUND=27000
-  LIMIT=$(( BOUND + $(positive_or "${FM_SUPERVISION_HOST_TURN_TIMEOUT:-}" 1200) + $(positive_or "${FM_SUPERVISION_ENGINE_GRACE:-}" 30) ))
+  LIMIT=$BOUND
+  [ -n "$SECONDMATE_MAX" ] \
+    || LIMIT=$(( BOUND + $(positive_or "${FM_SUPERVISION_HOST_TURN_TIMEOUT:-}" 1200) + $(positive_or "${FM_SUPERVISION_ENGINE_GRACE:-}" 30) ))
   set +e
   # The host ends its own park; the outer bound only catches a host that
   # outlived every one of its own bounds.
