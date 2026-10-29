@@ -48,7 +48,8 @@
 # A verdict outside that handled set (settled, blocked_diverged,
 # blocked_remote_rewritten, blocked_recover_manual_reconciliation, a
 # recover_custody or adopt_published offer, continue_active_run) refuses before
-# any ref moves. --check runs the checks and the read-only custody preflight,
+# any archive or advance; a detached switch or branch creation before it is
+# reported. --check runs the checks and the read-only custody preflight,
 # fetching objects only, then reports the planned action without any switch,
 # ref change (remote-tracking refs and FETCH_HEAD included) or recovery.
 #

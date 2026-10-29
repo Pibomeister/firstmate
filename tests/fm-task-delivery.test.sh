@@ -517,6 +517,18 @@ SH
   if [ -n "$(git -C "$wt" status --porcelain)" ] || git -C "$wt" symbolic-ref -q HEAD >/dev/null; then
     fail "a refused flag combination touched the worktree"
   fi
+  cp "$home/data/$id/brief.md" "$base/brief.valid"
+  sed 's/^Promote onto the published branch\.$/{TASK}/' "$base/brief.valid" > "$home/data/$id/brief.md"
+  refs_before=$(git -C "$wt" for-each-ref --format='%(refname) %(objectname)')
+  out=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" "$PROMOTE" "$id" \
+    --mode direct-PR --yolo off --pr-branch feature/pr 2>&1) \
+    && fail "promotion accepted a brief with a placeholder"
+  assert_contains "$out" "still contains {TASK}" "the placeholder refusal did not explain itself"
+  assert_equals "$before" "$(cat "$meta")" "a refused placeholder promotion changed the task record"
+  assert_equals "$refs_before" "$(git -C "$wt" for-each-ref --format='%(refname) %(objectname)')" "a refused placeholder promotion changed branch or archive refs"
+  git -C "$wt" symbolic-ref -q HEAD >/dev/null && fail "a refused placeholder promotion switched the detached worktree"
+  [ "$(git -C "$wt" rev-parse HEAD)" = "$(git -C "$base/repo" rev-parse origin/main)" ] || fail "a refused placeholder promotion moved HEAD"
+  cp "$base/brief.valid" "$home/data/$id/brief.md"
   out=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" "$PROMOTE" "$id" \
     --mode direct-PR --yolo off --pr-branch feature/pr 2>&1) \
     || fail "promotion onto a published branch should succeed from a clean worktree"$'\n'"$out"

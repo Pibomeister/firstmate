@@ -264,15 +264,6 @@ if [ "$MODE" != local-only ] && [ -n "$PROMOTE_PROJECT" ]; then
     ;;
   esac
 fi
-if [ "$PR_BRANCH_SET" -eq 1 ]; then
-  PROMOTE_WT=$(sed -n 's/^worktree=//p' "$META" | head -n 1)
-  resync_rc=0
-  "$SCRIPT_DIR/fm-pr-resync.sh" "$ID" "$PROMOTE_WT" "$BRANCH" >&2 || resync_rc=$?
-  [ "$resync_rc" -eq 0 ] || {
-    echo "error: cannot promote $ID onto $BRANCH: bin/fm-pr-resync.sh exited $resync_rc in '${PROMOTE_WT:-no recorded worktree}' (output above); the task record is unchanged" >&2
-    exit 1
-  }
-fi
 PROMOTE_BASE_WORDS='default-branch base'
 [ -z "$BASE_BRANCH" ] || PROMOTE_BASE_WORDS="copy of the base branch \`$BASE_BRANCH\`"
 PROMOTE_BRANCH_STEP="3. Return to a clean $PROMOTE_BASE_WORDS, then create your branch: \`git checkout -b $BRANCH_Q --\`."
@@ -352,6 +343,15 @@ EOF
 }
 mkdir -p "$DATA/$ID"
 [ ! -d "$INSTRUCTIONS" ] || { echo "error: ship instructions path is a directory: $INSTRUCTIONS" >&2; exit 1; }
+if [ "$PR_BRANCH_SET" -eq 1 ]; then
+  PROMOTE_WT=$(sed -n 's/^worktree=//p' "$META" | head -n 1)
+  resync_rc=0
+  "$SCRIPT_DIR/fm-pr-resync.sh" "$ID" "$PROMOTE_WT" "$BRANCH" >&2 || resync_rc=$?
+  [ "$resync_rc" -eq 0 ] || {
+    echo "error: cannot promote $ID onto $BRANCH: bin/fm-pr-resync.sh exited $resync_rc in '${PROMOTE_WT:-no recorded worktree}' (output above); the task record is unchanged" >&2
+    exit 1
+  }
+fi
 TMP="$DATA/$ID/.ship-instructions.md.${BASHPID:-$$}"
 {
   cat <<EOF
