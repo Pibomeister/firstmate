@@ -446,7 +446,9 @@ test_agy_trust_refuses_out_of_scope_paths() {
 # of where the turn runs);
 # FM_FAKE_AGY_RACE=1 models Herdr's native busy verdict rendering one capture
 # before the dialog paints; FM_FAKE_AGY_ANSWER=stuck models a dialog whose
-# answer never turns into a busy turn.
+# answer never turns into a busy turn; FM_FAKE_AGY_NEVER_BUSY=1 models a
+# trusted pane that renders its idle row and never turns busy;
+# FM_FAKE_AGY_MODELS_LOG records every `agy models` fetch.
 make_agy_fakebin() {
   local dir=$1 fakebin
   fakebin=$(fm_fakebin "$dir")
@@ -466,6 +468,9 @@ fake_screen() {
     racing)
       printf 'esc to cancel                                Gemini 3.8 Flash · low\n'
       printf 'dialog\n' > "$FM_FAKE_AGY_STATE"
+      ;;
+    idle)
+      printf '>\n? for shortcuts                              Gemini 3.8 Flash · low\n'
       ;;
     *)
       printf 'shell starting\n$ \n'
@@ -520,7 +525,9 @@ case "${1:-}" in
       *' Enter '*)
         case "$state" in
           launched)
-            if fake_path_trusted; then
+            if fake_path_trusted && [ "${FM_FAKE_AGY_NEVER_BUSY:-0}" = 1 ]; then
+              printf 'idle\n' > "$FM_FAKE_AGY_STATE"
+            elif fake_path_trusted; then
               printf 'busy\n' > "$FM_FAKE_AGY_STATE"
             elif [ "${FM_FAKE_AGY_RACE:-0}" = 1 ]; then
               printf 'racing\n' > "$FM_FAKE_AGY_STATE"
@@ -547,6 +554,7 @@ SH
 #!/usr/bin/env bash
 set -u
 if [ "${1:-}" = models ]; then
+  [ -z "${FM_FAKE_AGY_MODELS_LOG:-}" ] || printf 'models\n' >> "$FM_FAKE_AGY_MODELS_LOG"
   if [ "${FM_FAKE_AGY_MODELS_FAIL:-0}" = 1 ]; then exit 3; fi
   if [ "${FM_FAKE_AGY_MODELS_HANG:-0}" = 1 ]; then cat > /dev/null; sleep 30; exit 0; fi
   printf 'gemini-3.8-flash-high\tGemini 3.8 Flash (High)\n'
@@ -621,6 +629,8 @@ run_agy_spawn() {
     FM_FAKE_AGY_ASSUME_TRUSTED="${FM_FAKE_AGY_ASSUME_TRUSTED:-0}" \
     FM_FAKE_AGY_RACE="${FM_FAKE_AGY_RACE:-0}" \
     FM_FAKE_AGY_ANSWER="${FM_FAKE_AGY_ANSWER:-works}" \
+    FM_FAKE_AGY_NEVER_BUSY="${FM_FAKE_AGY_NEVER_BUSY:-0}" \
+    FM_FAKE_AGY_MODELS_LOG="${FM_FAKE_AGY_MODELS_LOG:-}" \
     FM_AGY_READY_POLLS=4 FM_AGY_POLL_INTERVAL=0 FM_AGY_MODELS_TIMEOUT=${FM_AGY_MODELS_TIMEOUT:-1} \
     PATH="$fakebin:$BASE_PATH" \
     "$SPAWN" "$id" "$proj" --harness agy --mode no-mistakes --yolo off "$@" 2>&1
@@ -849,6 +859,74 @@ test_agy_pre_trusted_path_that_never_turns_busy_fails_the_spawn() {
   pass "fm-spawn: an agy dialog that never turns busy fails the spawn and closes the endpoint"
 }
 
+# A readiness timeout cannot prove the brief never ran, because the brief rides
+# the launch command, so a proven close must still leave a task record that
+# names the closed endpoint and the worktree for fm-control relaunch, and that
+# fm-teardown can resolve. The kill must target only the task's own window.
+test_agy_readiness_failure_keeps_a_recoverable_record() {
+  local id rec out rc meta calls
+  id="agy-custody-z14-$$"
+  rec=$(make_agy_spawn_case custody "$id")
+  read_agy_spawn_record "$rec"
+  rc=0
+  out=$(FM_FAKE_AGY_ASSUME_TRUSTED=1 FM_FAKE_AGY_ANSWER=stuck FM_FAKE_AGY_NEVER_BUSY=1 run_agy_spawn \
+    "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" --model gemini-3.8-flash-low) || rc=$?
+  [ "$rc" -ne 0 ] || fail "a pre-trusted agy pane that never turns busy must fail the spawn"
+  assert_contains "$out" "did not start processing its brief in the pre-trusted worktree" \
+    "the failure did not name the pre-trusted readiness timeout"
+  calls=$(cat "$CASE_DIR/tmux-calls.log")
+  assert_contains "$calls" "kill-window -t =firstmate:=fm-$id" \
+    "a failed agy readiness gate did not close exactly its own window"
+  [ "$(grep -c '^kill-window' "$CASE_DIR/tmux-calls.log")" -eq 1 ] \
+    || fail "a failed agy readiness gate closed more than its own window"
+  meta="$HOME_DIR/state/$id.meta"
+  [ -f "$meta" ] || fail "a failed agy readiness gate rolled back its task record, leaving nothing to relaunch or tear down"$'\n'"$out"
+  assert_grep 'harness=agy' "$meta" "the kept agy record lost its harness"
+  assert_grep "worktree=$WT_DIR" "$meta" "the kept agy record lost its worktree"
+  assert_grep "window=firstmate:fm-$id" "$meta" "the kept agy record lost its endpoint"
+  assert_grep "endpoint_task_id=$id" "$meta" "the kept agy record lost its endpoint binding"
+  assert_contains "$out" "bin/fm-control.sh $id relaunch" "the failure did not name the recovery command"
+  assert_grep 'failed: agy did not start processing its brief' <(sed -E 's/ \[at=[0-9]+\]//' "$HOME_DIR/state/$id.status") \
+    "a failed agy readiness gate did not record the failure in the task status"
+  rc=0
+  out=$(HOME="$HOME_DIR" FM_ROOT_OVERRIDE='' FM_HOME="$HOME_DIR" \
+    FM_STATE_OVERRIDE="$HOME_DIR/state" FM_DATA_OVERRIDE="$HOME_DIR/data" \
+    FM_PROJECTS_OVERRIDE="$HOME_DIR/projects" FM_CONFIG_OVERRIDE="$HOME_DIR/config" \
+    FM_FAKE_TMUX_CALL_LOG="$CASE_DIR/tmux-calls.log" FM_FAKE_AGY_STATE="$CASE_DIR/agy.state" \
+    FM_FAKE_PANE_PATH="$WT_DIR" TMUX="fake,1,0" PATH="$FAKEBIN_DIR:$BASE_PATH" \
+    "$ROOT/bin/fm-teardown.sh" "$id" 2>&1) || rc=$?
+  expect_code 0 "$rc" "fm-teardown could not resolve the kept agy record"$'\n'"$out"
+  [ ! -e "$meta" ] || fail "fm-teardown left the kept agy record behind"
+  pass "fm-spawn: an agy readiness failure closes only its window and keeps a record fm-teardown resolves"
+}
+
+# agy readiness is proven per backend; every other spawn-capable backend is
+# refused before any worktree, endpoint, task record, or model fetch exists.
+test_agy_unverified_backend_refuses_before_anything_launches() {
+  local id rec out rc backend
+  for backend in orca zellij cmux paseo; do
+    id="agy-backend-$backend-z15-$$"
+    rec=$(make_agy_spawn_case "backend-$backend" "$id")
+    read_agy_spawn_record "$rec"
+    cat > "$FAKEBIN_DIR/orca" <<'EOF'
+#!/bin/sh
+printf '%s\n' '{"ok":true,"result":{"runtime":{"reachable":true,"state":"ready"}}}'
+EOF
+    chmod +x "$FAKEBIN_DIR/orca"
+    rc=0
+    out=$(FM_FAKE_AGY_MODELS_LOG="$CASE_DIR/models.log" run_agy_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" \
+      "$FAKEBIN_DIR" "$id" --model gemini-3.8-flash-low --backend "$backend") || rc=$?
+    [ "$rc" -ne 0 ] || fail "an agy spawn on unverified backend=$backend was accepted"
+    assert_contains "$out" "agy launch readiness is live-verified on the tmux and herdr backends only; backend=$backend" \
+      "wrong refusal for agy on backend=$backend: $out"
+    [ -s "$CASE_DIR/launch.log" ] && fail "agy launched on unverified backend=$backend" || true
+    [ -s "$CASE_DIR/tmux-calls.log" ] && fail "a refused agy spawn on backend=$backend touched a terminal" || true
+    [ -s "$CASE_DIR/models.log" ] && fail "a refused agy spawn on backend=$backend fetched the model listing" || true
+    assert_absent "$HOME_DIR/state/$id.meta" "a refused agy spawn on backend=$backend left a task record"
+  done
+  pass "fm-spawn: agy is refused on orca, zellij, cmux, and paseo before anything launches"
+}
+
 test_agy_missing_binary_refuses_before_pane_creation() {
   local id rec out rc
   id="agy-missing-z5-$$"
@@ -925,6 +1003,8 @@ test_agy_dialog_despite_registration_is_answered_once
 test_agy_unregistered_path_ignores_busy_until_the_dialog_is_answered
 test_agy_unregistered_path_without_a_dialog_fails_the_spawn
 test_agy_pre_trusted_path_that_never_turns_busy_fails_the_spawn
+test_agy_readiness_failure_keeps_a_recoverable_record
+test_agy_unverified_backend_refuses_before_anything_launches
 test_agy_missing_binary_refuses_before_pane_creation
 test_agy_secondmate_is_refused
 test_agy_spawn_arms_no_busy_wiring

@@ -1225,6 +1225,10 @@ do_relaunch() {
   if [ "$TARGET_HARNESS" = commandcode ] && [ "$BACKEND" != tmux ] && [ "$BACKEND" != herdr ]; then
     die "task $ID runs on the $BACKEND backend, where commandcode is verified on the tmux and herdr backends only; relaunching onto 'commandcode' would stop the running agent for a launch that must be refused"
   fi
+  # agy's launch readiness is likewise verified on tmux and herdr only.
+  if [ "$TARGET_HARNESS" = agy ] && [ "$BACKEND" != tmux ] && [ "$BACKEND" != herdr ]; then
+    die "task $ID runs on the $BACKEND backend, where agy launch readiness is verified on the tmux and herdr backends only; relaunching onto 'agy' would stop the running agent for a launch that must be refused"
+  fi
 
   case "$KIND" in
     ship|scout)

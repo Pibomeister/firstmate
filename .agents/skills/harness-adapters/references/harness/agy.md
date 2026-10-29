@@ -1,6 +1,6 @@
 # Antigravity CLI
 
-Antigravity's `agy` TUI, verified end to end on 2026-09-10 with agy 1.2.0 on Linux through the Herdr backend.
+Antigravity's `agy` TUI, verified end to end on 2026-09-10 with agy 1.2.0 on Linux through the Herdr backend, and through the spawn path on 2026-10-29 with agy 1.4.10 on macOS through the tmux backend.
 Verified as a CREWMATE and SCOUT adapter only; `../../../../../bin/fm-spawn.sh` refuses a secondmate launch on it because `../../../../../docs/supervision-protocols/` carries no agy wake protocol.
 `../../../../../docs/verification/agy.md` owns how every fact below was established and what is still unproven.
 
@@ -8,6 +8,7 @@ Verified as a CREWMATE and SCOUT adapter only; `../../../../../bin/fm-spawn.sh` 
 
 | Fact | Value |
 |---|---|
+| Backends | tmux and Herdr only; `../../../../../bin/fm-spawn.sh` refuses an agy spawn or relaunch on any other backend before anything launches, because the readiness gate is proven only where the pane capture shows the pinned busy row. |
 | Binary | Absolute `agy` from `PATH`, refused if absent; a Go-compiled single binary, so the live process name is exactly `agy` with `argv[0]=agy`. |
 | Launch | `agy --prompt-interactive "<brief>" --model <id> --effort <level> --dangerously-skip-permissions`, with the resolved absolute binary; the brief auto-submits with no extra Enter. The spawn pre-registers the worktree in agy's trust store first, then waits for a busy turn (answering the folder-trust dialog if it renders anyway) before reporting success. |
 | Busy state | No hook or plugin writer, so nothing is armed and no record is seeded; on Herdr the native `working` status classifies busy, and everywhere else the `agy-regex` rendered-tail fallback in `../../../../../bin/fm-busy-lib.sh` does. |
@@ -28,7 +29,7 @@ Verified as a CREWMATE and SCOUT adapter only; `../../../../../bin/fm-spawn.sh` 
 Every task worktree is a path agy has never seen, so an unregistered launch stops on `Do you trust the contents of this project?` with the safe choice `Yes, I trust this folder` preselected, and an unanswered dialog sends the turn into agy's scratch directory instead of the worktree.
 There is no launch flag that suppresses the dialog, but agy honours a `trustedWorkspaces` entry in the captain's own `~/.gemini/antigravity-cli/settings.json` written ahead of launch (verified live), so `../../../../../bin/fm-spawn.sh` pre-registers the worktree through `../../../../../bin/fm-agy-trust.sh` before launch, the claude shape: the helper refuses anything but a linked worktree of the spawning project, records both the logical pane path and its resolved form because agy compares the logical cwd, and preserves every other key in the store.
 The post-launch readiness gate is the backstop: it answers a dialog that renders anyway with a single Enter, then requires a busy verdict (Herdr's native `working` status or the pinned `esc to cancel` row) before the spawn reports success, and on a path that was not pre-registered it never counts a busy verdict as ready until the dialog has been answered, because Herdr's native verdict can precede the dialog.
-A pane whose brief cannot be confirmed to run in the worktree fails the spawn, records the failure in the task status, and closes the endpoint.
+A pane whose brief cannot be confirmed to run in the worktree fails the spawn, records the failure in the task status, closes only its own endpoint, and keeps the task record, so recover it with `../../../../../bin/fm-control.sh <id> relaunch --note ...` or clean it up with `../../../../../bin/fm-teardown.sh <id>`.
 Never steer into a pane still showing the dialog; a spawn that reported success has already cleared it.
 
 ## Credential precondition
