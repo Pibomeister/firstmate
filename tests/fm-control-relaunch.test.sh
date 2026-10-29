@@ -1751,9 +1751,38 @@ SH
   launch="$dir/home/data/rl92/launch-brief.md"
   assert_grep '# Monitoring-only relaunch' "$launch" "the replacement was not told it is monitoring-only"
   assert_grep 'A no-mistakes run holds custody of branch task-rl92.' "$launch" "the owner's monitoring-only contract is missing"
+  # shellcheck disable=SC2016 # The rendered contract contains literal backticks.
+  assert_grep 'You may reattach the active run with `no-mistakes axi run` (no flags), answer the gates it presents under your brief' "$launch" "monitoring-only reattachment and gate permission missing"
+  assert_grep "gate and ask-user rules, and make your brief's CI-ready report through its named-head check." "$launch" "monitoring-only named-head reporting permission missing"
+  assert_grep 'Do not edit, commit, start, rerun or abort a run, begin a new phase, or take any other outward action until' "$launch" "monitoring-only prohibitions missing"
+  assert_grep "fm-pr-resync.sh rl92 $dir/wt task-rl92" "$launch" "monitoring-only release must name this task's owner invocation"
+  assert_grep 'exits 0 against the published head.' "$launch" "monitoring-only fresh successful resync release condition missing"
   assert_no_grep 'fm-pr-resync: monitoring-only:' "$launch" "the owner's output prefix leaked into the instructions"
   [ "$(git -C "$dir/wt" rev-parse HEAD)" = "$STALE_SHA" ] || fail "an active-run relaunch moved the branch"
   pass "fm-spawn --relaunch: under an active run the replacement launches with the owner's monitoring-only contract"
+}
+
+test_spawn_relaunch_origin_probe_timeout_refuses() {
+  local dir out before
+  dir=$(new_case prprobe-timeout rl94)
+  stale_published_task "$dir" rl94
+  before=$(git -C "$dir/wt" for-each-ref --format='%(refname) %(objectname)')
+  cat > "$dir/fakebin/timeout" <<'SH'
+#!/usr/bin/env bash
+if [ "$1 $2 $3" = '120 git ls-remote' ]; then
+  printf '%s\n' "$*" > "$FM_FAKE_DIR/probe-timeout"
+  exit 124
+fi
+shift
+exec "$@"
+SH
+  chmod +x "$dir/fakebin/timeout"
+  out=$(run_spawn "$dir" rl94 --relaunch)
+  assert_contains "$out" 'git ls-remote exited 124, bounded to 120s' "origin probe must refuse a bounded timeout"$'\n'"$out"
+  assert_contains "$(cat "$dir/fake/probe-timeout")" '120 git ls-remote --exit-code --heads origin refs/heads/task-rl94' "origin probe must use the 120s bound"
+  assert_equals "$before" "$(git -C "$dir/wt" for-each-ref --format='%(refname) %(objectname)')" "probe timeout changed refs"
+  [ ! -s "$dir/fake/literal" ] || fail "probe timeout launched a replacement"
+  pass "relaunch refuses a bounded origin pre-probe timeout before launching or changing refs"
 }
 
 test_promoted_scout_relaunch_receives_the_current_delivery_contract() {
@@ -3300,6 +3329,7 @@ test_spawn_relaunch_without_a_harness_reuses_the_recorded_one
 test_spawn_relaunch_of_promoted_scout_uses_the_recorded_branch
 test_spawn_relaunch_resyncs_the_recorded_branch_to_its_published_head
 test_spawn_relaunch_under_an_active_run_is_monitoring_only
+test_spawn_relaunch_origin_probe_timeout_refuses
 test_spawn_relaunch_of_a_successor_ignores_its_source_line
 test_promoted_scout_relaunch_receives_the_current_delivery_contract
 test_prefixed_prior_harness_wiring_is_still_retired

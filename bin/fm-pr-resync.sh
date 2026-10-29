@@ -7,18 +7,24 @@
 #
 # In the absolute task <worktree> it verifies <branch>'s published head on
 # origin (the fetched ref must equal the freshly advertised head), classifies the
-# local branch against it and moves it only with `git reset --keep` on a clean
-# tree:
+# local branch against it and advances it with an old-OID-conditional ref
+# update followed by a keep-style two-tree index/worktree update on a clean tree:
 #   equal              no ref change
 #   ahead:N            no ref change; N unpublished local commits stay
 #   advanced           local was behind and now sits at the published head
 #   archived-advanced  local diverged (stale pre-rebase history): it is first
 #                      preserved at refs/heads/archive/<task>-pre-rebase-<sha8>
 # A detached worktree is first switched to <branch>, created at the published
-# head when absent. It refuses an in-progress rebase/merge/cherry-pick/revert/
-# bisect, <branch> checked out elsewhere, a different named branch, a branch
+# head when absent, refusing without switching if detached commits are absent
+# from both the requested branch and published history. It refuses an in-progress
+# rebase/merge/cherry-pick/revert/bisect, <branch> checked out elsewhere, a different named branch, a branch
 # origin lacks, and an archive name already held by another commit. The remote
-# head is read again just before and just after the move.
+# head is read again just before and just after the move. A concurrent local
+# branch writer makes the conditional update refuse, preserving that writer.
+# Every Git network operation uses the existing bounded-command runner with
+# NM_TIMEOUT seconds (120 by default, FM_PR_RESYNC_TIMEOUT may override with a
+# positive integer). Network failure or timeout refuses and reports any earlier
+# archive or advance; no coreutils timeout dependency is required.
 #
 # When the worktree has a `no-mistakes` remote, branch custody is read with the
 # read-only `no-mistakes axi sync --check` before anything moves, again just
@@ -56,7 +62,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=bin/fm-nm-run-lib.sh
 . "$SCRIPT_DIR/fm-nm-run-lib.sh"
 
-NM_TIMEOUT=120
+NM_TIMEOUT=${FM_PR_RESYNC_TIMEOUT:-120}
+[[ "$NM_TIMEOUT" =~ ^[0-9]*[1-9][0-9]*$ ]] || { echo "error: FM_PR_RESYNC_TIMEOUT must be a positive integer" >&2; exit 2; }
 
 usage() {
   echo "usage: fm-pr-resync.sh <task-id> <absolute-worktree> <branch> [--check]" >&2
@@ -91,7 +98,12 @@ refuse() {
 }
 note_change() { changed="${changed:+$changed; }$1"; }
 clean() { [ -z "$(g status --porcelain --untracked-files=all 2>&1)" ]; }
-advertised() { g ls-remote --heads origin "refs/heads/$branch" 2>/dev/null | awk 'NR == 1 { print $1 }'; }
+network_git() { fm_nm_bounded "$wt" "$NM_TIMEOUT" git "$@"; }
+advertised() {
+  local out
+  out=$(network_git ls-remote --heads origin "refs/heads/$branch" 2>/dev/null) || return 1
+  printf '%s\n' "$out" | awk 'NR == 1 { print $1 }'
+}
 
 monitoring_only() {  # <rc-3 result>
   local line
@@ -166,7 +178,7 @@ bind_pipeline_head() {
   case "$ph" in *[!0-9a-f]*|'') unsettled ;; esac
   [ "${#ph}" -eq 40 ] || unsettled
   ! g merge-base --is-ancestor "$ph" "refs/heads/$branch" 2>/dev/null || unsettled
-  g fetch --quiet --no-tags no-mistakes "$ph" || refuse "could not fetch preserved pipeline head $ph from the no-mistakes gate"
+  network_git fetch --quiet --no-tags no-mistakes "$ph" || refuse "could not fetch preserved pipeline head $ph from the no-mistakes gate (network failure or ${NM_TIMEOUT}s timeout)"
   [ "$(g cat-file -t "$ph" 2>/dev/null)" = commit ] || refuse "preserved pipeline head $ph is not a commit"
   make_archive pipeline "$ph"
   run_fixed sync --bind-archive-ref "refs/heads/archive/$task-pipeline-$(printf '%.8s' "$ph")"
@@ -196,21 +208,31 @@ cur=$(g symbolic-ref -q --short HEAD)
 if [ "$check_mode" -eq 1 ]; then
   # Objects only: no remote-tracking ref or FETCH_HEAD changes in --check, so
   # the advertised head is read before and after the fetch and must agree.
-  pub=$(advertised)
-  g fetch --quiet --no-tags --no-write-fetch-head --refmap= origin "refs/heads/$branch" 2>/dev/null \
-    || refuse "origin has no branch $branch, or it could not be fetched"
+  pub=$(advertised) || refuse "could not read origin $branch (network failure or ${NM_TIMEOUT}s timeout)"
+  network_git fetch --quiet --no-tags --no-write-fetch-head --refmap= origin "refs/heads/$branch" 2>/dev/null \
+    || refuse "origin has no branch $branch, or fetch failed (network failure or ${NM_TIMEOUT}s timeout)"
   fetched=$(g rev-parse -q --verify "$pub^{commit}" 2>/dev/null)
-  now=$(advertised)
+  now=$(advertised) || refuse "could not re-read origin $branch (network failure or ${NM_TIMEOUT}s timeout)"
   [ "$now" = "$pub" ] || refuse "origin $branch moved from ${pub:-nothing} to ${now:-nothing} during the fetch"
 else
-  g fetch --quiet --no-tags origin "+refs/heads/$branch:refs/remotes/origin/$branch" 2>/dev/null \
-    || refuse "origin has no branch $branch, or it could not be fetched"
+  network_git fetch --quiet --no-tags origin "+refs/heads/$branch:refs/remotes/origin/$branch" 2>/dev/null \
+    || refuse "origin has no branch $branch, or fetch failed (network failure or ${NM_TIMEOUT}s timeout)"
   fetched=$(g rev-parse -q --verify "refs/remotes/origin/$branch^{commit}")
-  pub=$(advertised)
+  pub=$(advertised) || refuse "could not read origin $branch (network failure or ${NM_TIMEOUT}s timeout)"
 fi
 [ "$pub" = "$fetched" ] || refuse "origin advertises $branch at $pub but the fetch produced ${fetched:-nothing}"
 
 local_head=$(g rev-parse -q --verify "refs/heads/$branch^{commit}")
+if [ -z "$cur" ]; then
+  detached_head=$(g rev-parse --verify HEAD) || refuse "could not capture detached HEAD"
+  # Both tips may contain different parts of the detached history.
+  if [ -n "$local_head" ]; then
+    uncontained=$(g rev-list "$detached_head" --not "$local_head" "$pub")
+  else
+    uncontained=$(g rev-list "$detached_head" --not "$pub")
+  fi
+  [ -z "$uncontained" ] || refuse "detached HEAD $detached_head contains commits absent from $branch and the published head; HEAD is unchanged"
+fi
 if [ -z "$cur" ] && [ "$check_mode" -eq 0 ]; then
   clean || refuse "detached worktree has local changes; cannot switch to $branch"
   if [ -n "$local_head" ]; then
@@ -253,12 +275,17 @@ case "$rel" in
       [ "$v_code" != continue_active_run ] || monitoring_only "$result"
       handled || unsettled
     fi
-    [ "$(advertised)" = "$pub" ] || refuse "origin $branch moved from $pub before the advance"
+    now=$(advertised) || refuse "could not re-read origin $branch before the advance (network failure or ${NM_TIMEOUT}s timeout)"
+    [ "$now" = "$pub" ] || refuse "origin $branch moved from $pub before the advance"
     [ "$rel" = behind ] || make_archive pre-rebase "$local_head"
-    g reset --quiet --keep "$pub" || refuse "git reset --keep to $pub failed"
+    g update-ref "refs/heads/$branch" "$pub" "$local_head" \
+      || refuse "branch $branch changed after classification; conditional advance from $local_head refused"
     note_change "advanced $branch from $local_head to $pub"
+    g read-tree -m -u "$local_head" "$pub" || refuse "keep-style index/worktree update to $pub failed after the conditional advance"
+    [ "$(g rev-parse "refs/heads/$branch")" = "$pub" ] \
+      || refuse "branch $branch changed after the conditional advance; the concurrent head is preserved"
     if [ "$rel" = behind ]; then result=advanced; else result=archived-advanced; fi
-    now=$(advertised)
+    now=$(advertised) || refuse "could not re-read origin $branch (network failure or ${NM_TIMEOUT}s timeout)"
     [ "$now" = "$pub" ] || refuse "origin $branch moved to ${now:-nothing} after the advance; $branch stays at the previously verified published head $pub"
     ;;
 esac

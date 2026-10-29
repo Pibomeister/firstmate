@@ -1225,6 +1225,50 @@ test_pr_branch_continues_the_published_head() {
   pass "--pr-branch archives the stale local branch and launches on origin's published head"
 }
 
+test_pr_branch_with_base_scaffold_launches() {
+  local rec id=pool-pr-base-r1 out status
+  rec=$(make_case pr-base "$id")
+  read_case_record "$rec"
+  stale_pr_branch feature/pr
+  mv "$HOME_DIR/data/$id/brief.md" "$CASE_DIR/initial-brief.md"
+  FM_HOME="$HOME_DIR" "$ROOT/bin/fm-brief.sh" "$id" fixture-project --mode direct-PR --pr-branch feature/pr --base-branch release/2 >/dev/null 2>&1 \
+    || fail "continuation/base brief did not scaffold"
+  # Fill the public scaffold's task placeholders, leaving Setup intact.
+  sed -i.bak -e 's/{TASK}/Continue the existing pull request./g' -e 's/{FIRSTMATE_SPEC}/Preserve the selected target./g' "$HOME_DIR/data/$id/brief.md"
+  out=$(run_spawn "$id" --mode direct-PR --yolo off --pr-branch feature/pr --base-branch release/2)
+  status=$?
+  expect_code 0 "$status" "continuation/base scaffold must pass spawn agreement"$'\n'"$out"
+  assert_grep 'base_branch=release/2' "$HOME_DIR/state/$id.meta" "continuation lost its target"
+  assert_equals "$PUBLISHED_SHA" "$(git -C "$POOL_DIR" rev-parse HEAD)" "continuation/base published head"
+  pass "a continuation scaffold with an explicit target passes the public spawn agreement"
+}
+
+test_pr_branch_active_custody_refuses_without_launch() {
+  local rec id=pool-pr-active-r1 out status before
+  rec=$(make_case pr-active "$id")
+  read_case_record "$rec"
+  stale_pr_branch feature/pr
+  brief_with_setup_line "$id" 'Ship branch: feature/pr'
+  git -C "$PROJECT_DIR" remote add no-mistakes "$CASE_DIR/origin.git"
+  cat > "$FAKEBIN_DIR/no-mistakes" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$FM_ACTIVE_CALLS"
+printf '%s\n' 'branch_sync:' '  state: pipeline_owned' '  safety: pipeline_owned_active' '  next_action:' '    code: continue_active_run' '    command: no-mistakes axi run'
+SH
+  chmod +x "$FAKEBIN_DIR/no-mistakes"
+  git -C "$PROJECT_DIR" fetch --quiet origin
+  before=$(git -C "$PROJECT_DIR" for-each-ref --format='%(refname) %(objectname)')
+  out=$(FM_FAKE_LAUNCH_LOG="$CASE_DIR/launch.log" FM_ACTIVE_CALLS="$CASE_DIR/active.calls" run_spawn "$id" --mode direct-PR --yolo off --pr-branch feature/pr)
+  status=$?
+  expect_code 1 "$status" "active continuation must refuse"$'\n'"$out"
+  assert_contains "$out" 'bin/fm-pr-resync.sh exited 3' "active continuation must propagate owner exit 3"
+  assert_absent "$CASE_DIR/launch.log" "active continuation launched a worker"
+  assert_absent "$HOME_DIR/state/$id.meta" "active continuation published fresh-task metadata"
+  assert_equals "$before" "$(git -C "$PROJECT_DIR" for-each-ref --format='%(refname) %(objectname)')" "active continuation changed refs"
+  assert_equals 'axi sync --check' "$(cat "$CASE_DIR/active.calls")" "active continuation must only read custody"
+  pass "fresh continuation refuses owner exit 3 with no launch, metadata or branch/archive change"
+}
+
 test_pr_branch_refusals_leave_the_branch_and_records() {
   local rec id out status
   id='pool-pr-dirty-r1'
@@ -1332,6 +1376,8 @@ test_stale_pin_carrying_real_work_is_not_called_stale
 test_stale_pin_beside_other_dirt_reports_one_verdict
 
 test_pr_branch_continues_the_published_head
+test_pr_branch_with_base_scaffold_launches
+test_pr_branch_active_custody_refuses_without_launch
 test_pr_branch_refusals_leave_the_branch_and_records
 test_from_branch_starts_from_the_source_and_keeps_the_default_target
 

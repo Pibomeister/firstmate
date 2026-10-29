@@ -1481,6 +1481,16 @@ test_pr_and_from_branch_are_rendered_and_bounded() {
   assert_grep 'do not create a branch' "$brief" "the --pr-branch Setup still tells the worker to create a branch"
   assert_no_grep 'git checkout -b' "$brief" "the --pr-branch brief still teaches branch creation"
 
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-pr-base-p6 some-proj --mode no-mistakes --pr-branch feature/pr-7 --base-branch release/2 >/dev/null 2>&1 \
+    || fail "continuation with a non-default base should scaffold"
+  brief="$home/data/brief-pr-base-p6/brief.md"
+  # Parse the generated Setup through the same public library spawn uses.
+  . "$ROOT/bin/fm-dod-lib.sh"
+  assert_equals release/2 "$(fm_brief_base_branches "$brief")" "continuation dropped its base agreement marker"
+  grep -qxF 'Ship branch: feature/pr-7' "$brief" || fail "continuation with a base lost its ship branch"
+  assert_grep 'already on branch feature/pr-7' "$brief" "continuation with a base lost its setup"
+  assert_no_grep 'git checkout -b' "$brief" "continuation with a base teaches branch creation"
+
   FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-from-f1 some-proj --mode direct-PR --from-branch feature/src >/dev/null 2>&1 \
     || fail "direct-PR --from-branch should scaffold"
   brief="$home/data/brief-from-f1/brief.md"

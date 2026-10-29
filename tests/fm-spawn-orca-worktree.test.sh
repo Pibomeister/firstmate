@@ -66,6 +66,7 @@ case "$1 $2" in
       git -C "$wt" -c user.name=Tests -c user.email=tests@example.invalid \
         commit --allow-empty -qm 'uncontained Orca work' || exit 1
     fi
+    if [ "${FM_TEST_ORCA_DIRTY:-0}" = 1 ]; then printf 'local work\n' > "$wt/untracked"; fi
     printf '{"ok":true,"result":{"worktree":{"id":"wt-%s","path":"%s"}}}\n' "$name" "$wt"
     exit 0
     ;;
@@ -216,6 +217,63 @@ EOF
   [ "$(cd "$wt_recorded" && git rev-parse --show-toplevel)" = "$(cd "$wt_recorded" && pwd -P)" ] \
     || fail "the recorded worktree is not the isolated worktree Orca created"
   pass "an Orca-backed fresh spawn enters the worktree Orca created for it, instead of hard-refusing on the post-launch proof"
+}
+
+test_orca_fresh_pr_continuation_preserves_initial_branch() {
+  local variant case_dir home id fb out status wt initial pub branch
+  for variant in clean dirty; do
+    id="orca-pr-$variant"
+    case_dir="$TMP_ROOT/pr-$variant"
+    home="$case_dir/home"
+    mkdir -p "$home/data/$id" "$home/projects" "$home/state" "$home/config"
+    touch "$home/state/.last-watcher-beat"
+    printf 'codex\n' > "$home/config/crew-harness"
+    printf 'manual\n' > "$home/config/backlog-backend"
+    fm_git_init_commit "$case_dir/project"
+    initial=$(git -C "$case_dir/project" rev-parse HEAD)
+    git clone -q --bare "$case_dir/project" "$case_dir/origin.git"
+    git -C "$case_dir/project" remote add origin "$case_dir/origin.git"
+    git clone -q "$case_dir/origin.git" "$case_dir/publisher"
+    git -C "$case_dir/publisher" switch -q -c feature/pr
+    git -C "$case_dir/publisher" -c user.name=Tests -c user.email=tests@example.invalid commit --allow-empty -qm published
+    git -C "$case_dir/publisher" push -q origin feature/pr
+    pub=$(git -C "$case_dir/publisher" rev-parse HEAD)
+    cat > "$home/data/$id/brief.md" <<EOF
+# Task
+## Captain's intent
+Continue the existing pull request.
+## Firstmate spec
+Preserve Orca's initial branch and use the verified published head.
+# Setup
+Ship branch: feature/pr
+EOF
+    fb=$(make_orca_fakebin "$case_dir")
+    out=$(FM_ROOT_OVERRIDE='' FM_HOME="$home" HOME="$case_dir/user-home" \
+      FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+      FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
+      FM_SPAWN_NO_GUARD=1 FM_TEST_ORCA_DIR="$case_dir" PATH="$fb:$PATH" \
+      FM_TEST_ORCA_DIRTY="$([ "$variant" = dirty ] && echo 1 || echo 0)" \
+      FM_TEST_ORCA_RM_FAIL=1 FM_TEST_ORCA_LOG="$case_dir/send.log" \
+      "$SPAWN" "$id" "$case_dir/project" --mode direct-PR --yolo off --backend orca --pr-branch feature/pr 2>&1)
+    status=$?
+    wt="$case_dir/orca-worktrees/fm-$id"
+    branch="orca-fm-$id"
+    assert_equals "$initial" "$(git -C "$case_dir/project" rev-parse "refs/heads/$branch")" "$variant: Orca initial branch preserved"
+    if [ "$variant" = clean ]; then
+      expect_code 0 "$status" "fresh Orca PR continuation must launch"$'\n'"$out"
+      assert_equals "$pub" "$(git -C "$wt" rev-parse HEAD)" "fresh Orca continuation published head"
+      assert_equals feature/pr "$(git -C "$wt" symbolic-ref --short HEAD)" "fresh Orca continued branch"
+      assert_grep 'branch=feature/pr' "$home/state/$id.meta" "Orca continuation metadata branch"
+      assert_contains "$out" "spawned $id" "Orca continuation never launched"
+    else
+      expect_code 1 "$status" "dirty fresh Orca continuation must refuse"$'\n'"$out"
+      assert_contains "$out" 'refusing to detach for PR continuation' "dirty Orca continuation reason"
+      assert_equals "$branch" "$(git -C "$wt" symbolic-ref --short HEAD)" "dirty Orca continuation must remain on initial branch"
+      assert_grep 'local work' "$wt/untracked" "dirty Orca continuation lost local work"
+      assert_absent "$case_dir/send.log" "dirty Orca continuation launched a worker"
+    fi
+  done
+  pass "fresh Orca PR continuation detaches only its clean isolated copy and preserves the initial branch"
 }
 
 test_orca_aborted_spawn_safe_deletes_or_records_its_created_branch() {
@@ -1332,6 +1390,7 @@ test_orca_launch_file_delete_failure_keeps_terminal
 test_orca_pane_wins_launch_file_race_at_deadline
 test_orca_snapshot_keeps_raw_bytes_tmux_reports
 test_orca_fresh_spawn_enters_the_worktree_it_created
+test_orca_fresh_pr_continuation_preserves_initial_branch
 test_orca_aborted_spawn_safe_deletes_or_records_its_created_branch
 test_orca_relaunch_is_refused_before_the_worktree_carveout_could_run
 test_orca_relaunch_rebinds_a_closed_terminal_in_the_recorded_worktree

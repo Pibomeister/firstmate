@@ -64,10 +64,13 @@
 #   keeps its meaning); it must agree with the brief's Setup "Source branch:"
 #   lines on a fresh launch and is not recorded, since nothing after launch
 #   reads it; a relaunch neither checks that line nor accepts the flag.
+#   A fresh isolated clean Orca copy is detached while its initial branch stays
+#   preserved before continuation resync; reused copies keep the named-branch guard.
 #   A ship relaunch whose recorded branch exists on origin runs
 #   bin/fm-pr-resync.sh in the recorded worktree first: exit 0 proceeds, exit 3
 #   launches with the owner's monitoring-only contract appended to the launch
 #   brief, and any other exit refuses the relaunch.
+#   The origin pre-probe is bounded to 120 seconds; a timeout refuses launch.
 #   Ship/scout launches always put fm-dod-lib.sh's current worker role scope
 #   first in the private launch-brief overlay, including the exact task-owned
 #   steering inbox. This never rewrites a project's instruction files or a
@@ -3890,10 +3893,10 @@ spawn_pr_resync() {  # <worktree> <branch>
 relaunch_pr_resync() {
   local out rc=0
   git -C "$RELAUNCH_WT" remote get-url origin >/dev/null 2>&1 || return 0
-  git -C "$RELAUNCH_WT" ls-remote --exit-code --heads origin "refs/heads/$BRANCH" >/dev/null 2>&1 || rc=$?
+  fm_nm_bounded "$RELAUNCH_WT" 120 git ls-remote --exit-code --heads origin "refs/heads/$BRANCH" >/dev/null 2>&1 || rc=$?
   [ "$rc" -ne 2 ] || return 0
   [ "$rc" -eq 0 ] || {
-    echo "error: could not read origin's $BRANCH for relaunching $ID (git ls-remote exited $rc); refusing to relaunch from an unverified head" >&2
+    echo "error: could not read origin's $BRANCH for relaunching $ID (git ls-remote exited $rc, bounded to 120s); refusing to relaunch from an unverified head" >&2
     return 1
   }
   out=$("$FM_ROOT/bin/fm-pr-resync.sh" "$ID" "$RELAUNCH_WT" "$BRANCH" 2>&1) || rc=$?
@@ -5746,6 +5749,13 @@ elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
 fi
 if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ]; then
   if [ "$PR_BRANCH_SET" -eq 1 ]; then
+    if [ "$BACKEND" = orca ] && [ -n "$ORCA_CREATED_BRANCH" ]; then
+      [ -z "$(git -C "$WT" status --porcelain --untracked-files=all 2>&1)" ] || {
+        echo "error: newly created Orca worktree has local changes; refusing to detach for PR continuation" >&2
+        exit 1
+      }
+      git -C "$WT" switch --quiet --detach || exit 1
+    fi
     spawn_pr_resync "$WT" "$PR_BRANCH" || exit 1
   else
     freshen_spawn_worktree_base "$WT" "${FROM_BRANCH:-$BASE_BRANCH}" || exit 1

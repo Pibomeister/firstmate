@@ -442,7 +442,7 @@ test_promotion_persists_the_selected_ship_branch() {
 # while the project's local feature/pr kept the pre-rebase commit; promotion runs
 # bin/fm-pr-resync.sh in the recorded worktree before the task record changes.
 test_promotion_onto_a_published_branch_resyncs_first() {
-  local base home id meta out wt pipe stale pub before
+  local base home id meta out wt pipe stale pub before refs_before activebin
   base="$TMP_ROOT/promote-pr"
   home="$base/home"
   id=promote-pr-e1
@@ -487,6 +487,28 @@ test_promotion_onto_a_published_branch_resyncs_first() {
   assert_grep 'scratch' "$wt/scratch.txt" "a refused promotion discarded scratch work"
 
   rm -f "$wt/scratch.txt"
+  git -C "$base/repo" fetch -q origin
+  git -C "$base/repo" remote add no-mistakes "$base/origin.git"
+  activebin="$base/activebin"
+  mkdir -p "$activebin"
+  cat > "$activebin/no-mistakes" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$FM_ACTIVE_CALLS"
+printf '%s\n' 'branch_sync:' '  state: pipeline_owned' '  safety: pipeline_owned_active' '  next_action:' '    code: continue_active_run' '    command: no-mistakes axi run'
+SH
+  chmod +x "$activebin/no-mistakes"
+  refs_before=$(git -C "$wt" for-each-ref --format='%(refname) %(objectname)')
+  out=$(PATH="$activebin:$PATH" FM_ACTIVE_CALLS="$base/active.calls" FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" "$PROMOTE" "$id" \
+    --mode direct-PR --yolo off --pr-branch feature/pr 2>&1) \
+    && fail "promotion accepted owner exit 3"
+  assert_contains "$out" 'bin/fm-pr-resync.sh exited 3' "active promotion did not propagate owner exit 3"
+  assert_equals "$before" "$(cat "$meta")" "active promotion changed metadata"
+  assert_equals "$refs_before" "$(git -C "$wt" for-each-ref --format='%(refname) %(objectname)')" "active promotion changed refs"
+  assert_absent "$home/data/$id/ship-instructions.md" "active promotion published ship instructions"
+  assert_equals 'axi sync --check' "$(cat "$base/active.calls")" "active promotion must only read custody"
+  git -C "$base/repo" remote remove no-mistakes
+  # Return to the scout's original detached setup for the following flag-refusal check.
+  git -C "$wt" switch -q --detach origin/main
   out=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" "$PROMOTE" "$id" \
     --mode direct-PR --yolo off --pr-branch feature/pr --branch-prefix fix/ 2>&1) \
     && fail "promotion accepted --pr-branch with --branch-prefix"

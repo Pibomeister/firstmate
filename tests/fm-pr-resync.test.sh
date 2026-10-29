@@ -32,6 +32,40 @@ printf '%s\n' "$*" >> "$NM_STUB/calls"
 EOF
 chmod +x "$STUB_BIN/no-mistakes"
 
+REAL_GIT=$(command -v git)
+export REAL_GIT
+cat > "$STUB_BIN/git" <<'SH'
+#!/usr/bin/env bash
+op=$1
+[ "$op" != -C ] || op=$3
+if [ "${GIT_CAPTURE_FAIL:-0}" = 1 ] && [ "$op" = rev-parse ]; then
+  case "$*" in *' --verify HEAD') exit 1 ;; esac
+fi
+if [ -n "${GIT_NETWORK_CALLS:-}" ]; then
+  case "$op" in
+    fetch|ls-remote)
+      n=$(( $(cat "$GIT_NETWORK_CALLS" 2>/dev/null || echo 0) + 1 ))
+      echo "$n" > "$GIT_NETWORK_CALLS"
+      if [ "$n" = "${GIT_NETWORK_HANG_AT:-0}" ]; then
+        printf '%s:%s\n' "$op" "$n" > "$GIT_NETWORK_CALLS.hung"
+        sleep 30 &
+        child=$!
+        printf '%s\n' "$child" > "$GIT_NETWORK_CALLS.child"
+        trap 'wait "$child" 2>/dev/null; exit 124' TERM
+        wait "$child"
+        exit $?
+      fi
+      if [ "$n" = "${GIT_NETWORK_COMMIT_AT:-0}" ]; then
+        "$REAL_GIT" -C "$GIT_NETWORK_WT" -c user.name=Tests -c user.email=tests@example.invalid commit --allow-empty -qm concurrent
+        "$REAL_GIT" -C "$GIT_NETWORK_WT" rev-parse HEAD > "$GIT_NETWORK_WT/../concurrent-head"
+      fi
+      ;;
+  esac
+fi
+exec "$REAL_GIT" "$@"
+SH
+chmod +x "$STUB_BIN/git"
+
 cm() {  # <repo> <file>: commit one new file
   printf '%s\n' "$2" > "$1/$2"
   git -C "$1" add "$2"
@@ -122,6 +156,13 @@ run_owner() {  # [branch] [--check]
   RC=$?
   LAST=$(printf '%s\n' "$OUT" | tail -1)
 }
+no_transport_child() {
+  local pid state
+  pid=$(cat "$1.child")
+  state=$(ps -p "$pid" -o stat= 2>/dev/null | tr -d '[:space:]')
+  # A zombie has exited; the transport cannot keep running after refusal.
+  case "$state" in ''|Z*) ;; *) fail "network timeout left transport child $pid running ($state)" ;; esac
+}
 pre() { printf 'refs/heads/archive/%s-pre-rebase-%.8s' "$TASK" "$1"; }
 
 # --- git step without a gate ---------------------------------------------------
@@ -211,6 +252,91 @@ assert_contains "$OUT" "after the advance" "after: reason"
 assert_contains "$LAST" "archive=$(pre "$A") custody=refused head=$PUB" "after: archive and head reported"
 pass "a remote move after the advance refuses with the archive and verified head reported"
 
+# The final advertisement deterministically commits on the branch after classification.
+fixture concurrent; cm "$D/pipe" fix; git -C "$D/pipe" push -q origin "$B"
+GIT_NETWORK_CALLS="$D/net.count" GIT_NETWORK_COMMIT_AT=3 GIT_NETWORK_WT="$WT" run_owner
+expect_code 1 "$RC" "concurrent local writer: exit"
+C=$(cat "$D/concurrent-head")
+assert_equals "$C" "$(ref "refs/heads/$B")" "concurrent local writer: commit stays on branch"
+assert_contains "$OUT" "conditional advance" "concurrent local writer: reason"
+pass "a concurrent local commit refuses the old-OID-conditional advance"
+
+fixture concurrent-after; cm "$D/pipe" fix; git -C "$D/pipe" push -q origin "$B"
+cat > "$D/hooks/reference-transaction" <<EOF
+#!/usr/bin/env bash
+[ "\$1" = committed ] || exit 0
+grep -q ' refs/heads/$B\$' || exit 0
+[ ! -e "$D/hooks/fired" ] || exit 0
+: > "$D/hooks/fired"
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX
+git -C "$WT" -c user.name=Tests -c user.email=tests@example.invalid commit --allow-empty -qm concurrent-after
+git -C "$WT" rev-parse HEAD > "$D/concurrent-head"
+EOF
+chmod +x "$D/hooks/reference-transaction"
+run_owner
+expect_code 1 "$RC" "concurrent post-advance writer: exit"
+assert_equals "$(cat "$D/concurrent-head")" "$(ref "refs/heads/$B")" "concurrent post-advance writer: commit stays on branch"
+assert_contains "$OUT" "changed after the conditional advance" "concurrent post-advance writer: reason"
+pass "a concurrent local commit after the conditional advance is preserved and reported"
+
+fixture index-locked; rebase_publish
+LOCK=$(git -C "$WT" rev-parse --git-path index.lock)
+: > "$LOCK"
+run_owner
+expect_code 1 "$RC" "index update refused: exit"
+assert_equals "$PUB" "$(ref "refs/heads/$B")" "index update refused: conditional advance kept"
+assert_equals "$A" "$(ref "$(pre "$A")")" "index update refused: archive kept"
+assert_contains "$OUT" "keep-style index/worktree update" "index update refused: reason"
+assert_contains "$OUT" "advanced $B from $A to $PUB" "index update refused: earlier advance reported"
+pass "an index update failure refuses and reports the preserved archive and conditional advance"
+
+fixture detached-capture; git -C "$WT" switch -q --detach; cm "$WT" detached-fix
+S=$(ref HEAD)
+GIT_CAPTURE_FAIL=1 run_owner
+expect_code 1 "$RC" "detached HEAD capture failure: exit"
+assert_equals "$S" "$(ref HEAD)" "detached HEAD capture failure: HEAD unchanged"
+assert_contains "$OUT" "could not capture detached HEAD" "detached HEAD capture failure: reason"
+pass "a detached HEAD capture failure refuses without switching or losing its commit"
+
+fixture detached-uncontained; git -C "$WT" switch -q --detach; cm "$WT" detached-fix
+S=$(ref HEAD)
+run_owner
+expect_code 1 "$RC" "detached unpublished commit: exit"
+assert_equals "$S" "$(ref HEAD)" "detached unpublished commit: HEAD unchanged"
+assert_equals "" "$(git -C "$WT" symbolic-ref -q HEAD)" "detached unpublished commit: stays detached"
+assert_equals "$A" "$(ref "refs/heads/$B")" "detached unpublished commit: branch unchanged"
+assert_contains "$OUT" "detached HEAD" "detached unpublished commit: reason"
+run_owner "$B" --check
+expect_code 1 "$RC" "detached unpublished commit: check refuses too"
+pass "a detached unpublished commit refuses without switching HEAD"
+
+# Every network site is reached with preceding calls real and a bounded hang at that site.
+for mode in normal check; do
+  case "$mode" in normal) sites='1 2 3 4' ;; check) sites='1 2 3' ;; esac
+  for site in $sites; do
+    fixture "timeout-$mode-$site"; rebase_publish
+    if [ "$mode" = check ]; then
+      FM_PR_RESYNC_TIMEOUT=1 GIT_NETWORK_CALLS="$D/net.count" GIT_NETWORK_HANG_AT=$site run_owner "$B" --check
+    else
+      FM_PR_RESYNC_TIMEOUT=1 GIT_NETWORK_CALLS="$D/net.count" GIT_NETWORK_HANG_AT=$site run_owner
+    fi
+    assert_contains "$(cat "$D/net.count.hung")" ":$site" "network timeout $mode/$site: selected operation reached"
+    expect_code 1 "$RC" "network timeout $mode/$site: exit"
+    assert_contains "$OUT" "timeout" "network timeout $mode/$site: reason"
+    no_transport_child "$D/net.count"
+    if [ "$mode/$site" = normal/4 ]; then
+      assert_equals "$PUB" "$(ref "refs/heads/$B")" "post-advance timeout: advanced branch kept"
+      assert_equals "$A" "$(ref "$(pre "$A")")" "post-advance timeout: archive kept"
+      assert_contains "$OUT" "changed: created archive" "post-advance timeout: changes reported"
+      assert_contains "$LAST" "result=archived-advanced" "post-advance timeout: result"
+    else
+      assert_equals "$A" "$(ref "refs/heads/$B")" "network timeout $mode/$site: branch unchanged"
+      assert_equals "" "$(archives)" "network timeout $mode/$site: no archive"
+    fi
+    pass "Git network timeout refuses safely at $mode operation $site"
+  done
+done
+
 # --- custody through the no-mistakes gate ------------------------------------------
 
 fixture before; gate; rebase_publish; race_commit
@@ -255,7 +381,7 @@ assert_contains "$LAST" "custody=refused" "recovery that does not settle: result
 pass "a recovery whose fresh re-check is not settled refuses"
 
 p44() {  # <proof> <archive_ref-or-empty>: the retained PR44 terminal-run sequence
-  fixture "pr44-$1${2:+-foreign}"; gate
+  fixture "pr44-$1${2:+-foreign}${3:+-$3}"; gate
   git -C "$D/pipe" switch -q main; cm "$D/pipe" m2
   git -C "$D/pipe" switch -q -c nmrun; cm "$D/pipe" a-rebased
   P=$(git -C "$D/pipe" rev-parse nmrun)
@@ -267,10 +393,21 @@ p44() {  # <proof> <archive_ref-or-empty>: the retained PR44 terminal-run sequen
   fi
   MANUAL=$(bs pipeline_owned blocked_recover_manual_reconciliation inspect_and_reconcile_manually 'no-mistakes axi status' 01RUN "$P")
   resp 1 1 "$MANUAL"; resp 2 1 "$MANUAL"; resp 3 0 'Archive evidence bound; follow the exact guarded recovery action shown above.'
-  resp 4 1 "$(bs pipeline_owned blocked_pipeline_owned_recoverable recover_custody 'no-mistakes axi sync --recover --keep-local' 01RUN "$P" "$(recov "$A" "$P" "${2:-$PIPE_ARCHIVE}" "$1")")"
+  local required=$A preserved=$P
+  case "${3:-}" in preserved) preserved=$A ;; required) required=$P ;; esac
+  resp 4 1 "$(bs pipeline_owned blocked_pipeline_owned_recoverable recover_custody 'no-mistakes axi sync --recover --keep-local' 01RUN "$P" "$(recov "$required" "$preserved" "${2:-$PIPE_ARCHIVE}" "$1")")"
   resp 5 0 recovered; resp 6 0 "$RETURNED"
   run_owner
 }
+
+FM_PR_RESYNC_TIMEOUT=1 GIT_NETWORK_CALLS="$TMP_ROOT/gate-timeout.count" GIT_NETWORK_HANG_AT=3 p44 verified "" gate-timeout
+expect_code 1 "$RC" "gate fetch timeout: exit"
+assert_contains "$OUT" "timeout" "gate fetch timeout: reason"
+no_transport_child "$TMP_ROOT/gate-timeout.count"
+assert_equals "$A" "$(ref "refs/heads/$B")" "gate fetch timeout: branch unchanged"
+assert_equals "" "$(archives)" "gate fetch timeout: no archive"
+assert_equals "2" "$(calls | wc -l | tr -d ' ')" "gate fetch timeout: no bind/recovery"
+pass "a preserved pipeline-head fetch timeout refuses before binding or recovering"
 
 p44 verified
 expect_code 0 "$RC" "PR44 shape: exit"
@@ -280,8 +417,12 @@ assert_equals "axi sync --recover --keep-local" "$(calls | sed -n 5p)" "PR44 sha
 assert_equals "fm-pr-resync: result=equal archive=$PIPE_ARCHIVE custody=settled head=$A" "$LAST" "PR44 shape: result line"
 pass "terminal-run manual reconciliation archives, binds and recovers only under verified proof"
 
-for bad in unverified foreign; do
-  if [ "$bad" = foreign ]; then p44 verified refs/heads/archive/other; else p44 unverified; fi
+for bad in unverified foreign preserved required; do
+  case "$bad" in
+    foreign) p44 verified refs/heads/archive/other ;;
+    unverified) p44 unverified ;;
+    *) p44 verified "" "$bad" ;;
+  esac
   expect_code 1 "$RC" "keep-local without proof ($bad): exit"
   assert_equals "4" "$(calls | wc -l | tr -d ' ')" "keep-local without proof ($bad): no recovery call"
   assert_equals "$P" "$(ref "$PIPE_ARCHIVE")" "keep-local without proof ($bad): archive kept and reported"
@@ -369,6 +510,13 @@ assert_equals "$B" "$(git -C "$WT" symbolic-ref -q --short HEAD)" "detached: swi
 assert_equals "$PUB" "$(ref "refs/heads/$B")" "detached: created at the published head"
 assert_contains "$OUT" "created local branch $B" "detached: creation reported"
 pass "a detached worktree without a local branch reports the created branch on exit 3"
+
+for bad_timeout in 0 00 invalid; do
+  FM_PR_RESYNC_TIMEOUT=$bad_timeout run_owner
+  expect_code 2 "$RC" "invalid network bound $bad_timeout: usage"
+  assert_contains "$OUT" 'must be a positive integer' "invalid network bound: reason"
+done
+pass "an invalid timeout cannot disable the Git network bound"
 
 run_owner_rel() { OUT=$(bash "$OWNER" "$TASK" relative/wt "$B" 2>&1); RC=$?; }
 run_owner_rel

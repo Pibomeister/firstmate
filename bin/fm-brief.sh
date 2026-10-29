@@ -734,10 +734,13 @@ TEST_QUEUE_RULE="9. Run heavy test suites only through the machine-wide test lin
 if [ -n "$PR_BRANCH" ]; then
   SETUP_BASE="You are in a disposable git worktree of $REPO, already on branch $PR_BRANCH, which contains its verified published pull-request head: equal to it, or ahead of it by the unpublished local commits the launch reported."
 elif [ -n "$BASE_BRANCH" ]; then
-  SETUP_BASE="You are in a disposable git worktree of $REPO, at a detached HEAD on a clean copy of its base branch.
-Base branch: $BASE_BRANCH"
+  SETUP_BASE="You are in a disposable git worktree of $REPO, at a detached HEAD on a clean copy of its base branch."
 else
   SETUP_BASE="You are in a disposable git worktree of $REPO, at a detached HEAD on a clean default branch."
+fi
+if [ -n "$BASE_BRANCH" ]; then
+  SETUP_BASE="$SETUP_BASE
+Base branch: $BASE_BRANCH"
 fi
 if [ -n "$FROM_BRANCH" ]; then
   SETUP_BASE="$SETUP_BASE
