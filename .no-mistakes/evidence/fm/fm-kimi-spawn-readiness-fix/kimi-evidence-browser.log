@@ -1,0 +1,4 @@
+error: Bridge failed to start within 30s
+code: BRIDGE_NOT_READY
+help[4]: "Check that chrome-devtools-mcp is installed: npx chrome-devtools-mcp@latest --help","If `npx -y chrome-devtools-mcp@latest` is slow on this machine, install mcp globally and set:","  export CHROME_DEVTOOLS_AXI_MCP_PATH=\"$(npm prefix -g)/lib/node_modules/chrome-devtools-mcp/build/src/bin/chrome-devtools-mcp.js\"","Or extend the deadline: export CHROME_DEVTOOLS_AXI_BRIDGE_TIMEOUT_MS=60000"
+status: stopped (no-op)

@@ -1,0 +1,14 @@
+BASE 12f3759, default Python 3.9.6, real workspace uv Python 3.12 available:
+fm-kimi-turnend-hook: refused: python3 with tomllib is required to validate config.toml.
+base_exit=1
+
+TARGET e153b52, identical environment:
+target_exit=0
+# Disposable regression config
+# BEGIN FIRSTMATE KIMI TURN-END HOOK
+[[hooks]]
+event = "Stop"
+matcher = "^$"
+command = "bash \"$HOME/.kimi-code/fm-turn-end.sh\" >/dev/null 2>&1 || true"
+timeout = 1
+# END FIRSTMATE KIMI TURN-END HOOK

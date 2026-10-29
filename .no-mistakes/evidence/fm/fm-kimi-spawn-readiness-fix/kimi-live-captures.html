@@ -1,0 +1,106 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Kimi live validation captures</title><style>:root{color-scheme:light dark;--bg:#FAF9F5;--surface:#F0EEE6;--ink:#141413;--muted:#5E5D59;--line:#E8E6DC}@media(prefers-color-scheme:dark){:root{--bg:#1F1E1D;--surface:#262624;--ink:#FAF9F5;--muted:#B7B5A9;--line:#3D3D3A}}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 system-ui;padding:40px 24px}main{max-width:1120px;margin:auto}h1,h2{font-family:Georgia,serif;line-height:1.2}h1{font-size:36px}h2{font-size:25px}p{max-width:72ch;color:var(--muted)}section{margin-top:48px}pre{white-space:pre;overflow:auto;border:1px solid var(--line);background:var(--surface);padding:24px;border-radius:8px;font:13px/1.4 Menlo,monospace}strong{color:var(--ink)}</style><main><h1>Kimi live validation captures</h1><p><strong>TL;DR:</strong> Python fallback and trust handling were exercised against real CLI processes. The clipped dialog refused safely and retained diagnostics. Full brief execution remains unproven: the isolated Kimi homes have no configured model or login. No decision is requested by this evidence viewer.</p><p>These are rendered transcripts of actual captured terminal viewports. They are not native application screenshots. Target: e153b5253a07dfe7ca31ba797ab57132488623d2.</p><section><h2>Fresh Kimi 2.4.0 trust dialog, 80 × 24</h2><p>Exact recorded CLI output · kimi-isolated-startup.txt</p><pre> ──────────────────────────────────────────────────────────────────────────────
+  Trust this folder?
+  ↑↓ navigate · Enter select · Esc exit
+
+  /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M649GT90YA0AQX8YHN
+  A4K4BZ/.kimi-validation/ui-project
+
+  Load project instructions
+    Check:
+    /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M649GT90YA0AQX8Y
+    HNA4K4BZ/AGENTS.md ·
+    /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M649GT90YA0AQX8Y
+    HNA4K4BZ/.agents/skills
+
+  Project skills are still loading; inspect the project skill directories.
+  AGENTS.md total 50.3 KB exceeds the recommended 32 KB. Large instruction
+  files increase cost and may impact performance; consider trimming.
+  Trust is remembered for this folder, including future project config changes.
+  Tool approvals follow your permission settings.
+
+   ❯ Trust and continue
+     Exit
+ ──────────────────────────────────────────────────────────────────────────────
+
+</pre></section><section><h2>Real tmux worker reached composer; model unavailable</h2><p>Exact recorded CLI output · kimi-live-tmux-current.txt</p><pre> │  Directory: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M64…│
+ │  Session:                                                                  │
+ │  Model:     not set, run /login or /provider                               │
+ │  Version:   2.4.0                                                          │
+ │                                                                            │
+ ╰────────────────────────────────────────────────────────────────────────────╯
+
+ ✦ Kimi K3.1 Pro is ready - use the model in a fresh session for the best
+                          results
+   Standard: Plus/Moderato and above; Highspeed: Pro/Allegretto and above
+
+   No session yet — one will be created on your first message.
+   tmux extended-keys is off. Modified Enter keys may not work. Add `set -g
+ extended-keys on` to ~/.tmux.conf and restart tmux.
+   Error: LLM not set, send &quot;/login&quot; to login
+
+ ╭────────────────────────────────────────────────────────────────────────────╮
+ │ &gt;                                                                          │
+ ╰────────────────────────────────────────────────────────────────────────────╯
+ Never Ask  …/project-2bf899/1/project
+                                                                    context: 0%
+
+
+
+</pre></section><section><h2>Real Herdr worker reached composer; model unavailable</h2><p>Exact recorded CLI output · kimi-live-herdr-viewport.txt</p><pre>eturn.
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+Eduardos-MacBook-Pro-2:project eduardopicazo$ cd -- &#x27;/Users/eduardopicazo/.no-mistakes/worktre
+es/075d7f40c28a/01M649GT90YA0AQX8YHNA4K4BZ/.kimi-validation/herdr-pool/.treehouse/project-2bf8
+99/1/project&#x27;
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export GOTMPDIR=/tmp/fm-lab-kimi-herdr2/gotmp
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export COMPACT_ADVISER_DISABLE=1
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export FM_TASK_ID=lab-kimi-herdr2
+Eduardos-MacBook-Pro-2:project eduardopicazo$ . &#x27;/tmp/fm-lab-kimi-herdr2+af394ad501dafa2ec94e1
+8a454d5373bf9c5d1bcab04c4a03be88bc733a2aa9a/launch.s1793294285.26553.418.sh&#x27;
+
+ ╭──────────────────────────────────────────────────────────────────────────────────────────╮
+ │                                                                                          │
+ │  ▐█▛█▛█▌  Welcome to Kimi Code!                                                          │
+ │  ▐█████▌  Run /login or /provider to get started.                                        │
+ │                                                                                          │
+ │  Directory: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M649GT90YA0AQX8YH…│
+ │  Session:                                                                                │
+ │  Model:     not set, run /login or /provider                                             │
+ │  Version:   2.4.0                                                                        │
+ │                                                                                          │
+ ╰──────────────────────────────────────────────────────────────────────────────────────────╯
+
+ ✦ Kimi K3.1 Pro is ready - use the model in a fresh session for the best results
+   Standard: Plus/Moderato and above; Highspeed: Pro/Allegretto and above
+
+   No session yet — one will be created on your first message.
+   Error: LLM not set, send &quot;/login&quot; to login
+
+ ╭──────────────────────────────────────────────────────────────────────────────────────────╮
+ │ &gt;                                                                                        │
+ ╰──────────────────────────────────────────────────────────────────────────────────────────╯
+ Never Ask  …/project-2bf899/1/project                               ! to run a shell command
+                                                                                  context: 0%
+</pre></section><section><h2>Clipped 80 × 10 dialog: no Enter sent; refusal preserved</h2><p>Exact recorded CLI output · kimi-clipped-readiness-refusal.txt</p><pre>kimi readiness refusal at=1793294366
+kimi=/Users/eduardopicazo/.kimi-code/bin/kimi version=unknown
+backend=tmux target=firstmate:fm-lab-kimi-clipped
+polls=20 of 20, trust_enters=0
+detail=kimi did not show a verified ready signal before brief delivery; trust dialog text stayed on screen without the complete dialog (missing: navigation hint &#x27;↑↓ navigate&#x27;; navigation hint &#x27;Enter select&#x27;; selected affirmative option (&#x27;❯ Trust and continue&#x27; or &#x27;❯ Trust this folder&#x27;)), so the pane was never safe to answer or to treat as ready
+missing:
+- navigation hint &#x27;↑↓ navigate&#x27;
+- navigation hint &#x27;Enter select&#x27;
+- selected affirmative option (&#x27;❯ Trust and continue&#x27; or &#x27;❯ Trust this folder&#x27;)
+last visible capture (poll 20):
+b-kimi-clipped/gotmp
+Eduardos-MacBook-Pro-2:project-clipped eduardopicazo$ export COMPACT_ADVISER_DIS
+ABLE=1
+Eduardos-MacBook-Pro-2:project-clipped eduardopicazo$ export FM_TASK_ID=lab-kimi
+-clipped
+Eduardos-MacBook-Pro-2:project-clipped eduardopicazo$ . &#x27;/tmp/fm-lab-kimi-clippe
+d+ad418eecff1fcc439b23ab6de2ce60b2cd9d3f7ceb5dcaae8d5551c144a32ec9/launch.s17932
+94301.32929.15460.sh&#x27;
+  Trust this folder?
+  Enlarge terminal to review sources. Esc exit.
+</pre></section></main></html>

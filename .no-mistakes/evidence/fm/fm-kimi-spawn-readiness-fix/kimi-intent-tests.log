@@ -1,0 +1,5 @@
+ok - Kimi hook install selects a tomllib Python in its documented order
+ok - Kimi hook install refusal names every searched Python before any config write
+ok - fm-spawn: the Kimi 2.4.0 trust dialog below a wrapped shell preamble is answered and seated
+ok - fm-spawn: a Kimi dialog with an unverified option refuses and records what was missing
+ok - fm-spawn: a failed Kimi viewport read fails readiness with the backend named

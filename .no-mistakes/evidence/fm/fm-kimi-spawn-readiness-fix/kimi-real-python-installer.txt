@@ -1,0 +1,17 @@
+Default interpreter: Python 3.9.6
+Default interpreter tomllib: unavailable
+Fallback interpreter: Python 3.12.12
+# Disposable settings; no credentials.
+[ui]
+show_usage = true
+# BEGIN FIRSTMATE KIMI TURN-END HOOK
+[[hooks]]
+event = "Stop"
+matcher = "^$"
+command = "bash \"$HOME/.kimi-code/fm-turn-end.sh\" >/dev/null 2>&1 || true"
+timeout = 1
+# END FIRSTMATE KIMI TURN-END HOOK
+Second install preserved config bytes.
+Remove restored original config bytes and removed hook and registry.
+fm-kimi-turnend-hook: refused: config.toml is malformed TOML: Expected ']' at the end of a table declaration (at line 1, column 8).
+Malformed config refusal preserved original bytes, exit=1.

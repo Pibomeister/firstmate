@@ -1,0 +1,8 @@
+fm-kimi-turnend-hook: refused: no Python 3.11 or newer with tomllib was found to validate config.toml; searched interpreters:
+  /usr/bin/python3 (python3 on PATH): Python 3.9.6, no tomllib
+  not on PATH: python3.14 python3.13 python3.12 python3.11
+  not in /opt/homebrew/bin: python3 python3.14 python3.13 python3.12 python3.11
+  not in /usr/local/bin: python3 python3.14 python3.13 python3.12 python3.11
+  /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-kimi-harness.GjmKsb/config-surgery/.local/share/uv/python/cpython-3.*/bin/python3 (uv-managed): none installed
+fm-kimi-turnend-hook: install Python 3.11 or newer (for example "uv python install 3.12" or "brew install python"), then retry.
+not ok - Kimi hook install refused a realistic config

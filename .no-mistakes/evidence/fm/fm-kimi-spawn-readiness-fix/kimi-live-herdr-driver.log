@@ -1,0 +1,5 @@
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M649GT90YA0AQX8YHNA4K4BZ/.kimi-validation/herdr-home
+warning: herdr presentation parent is absent or ambiguous; using the ordinary flat layout without projection
+error: kimi brief pointer delivery was not confirmed; inspect window fm-lab-kimigate2-649:w1:p2
+warning: leaving task lab-kimi-herdr2's slot claim on /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M649GT90YA0AQX8YHNA4K4BZ/.kimi-validation/herdr-pool/.treehouse/project-2bf899/1/project in place; the Treehouse project lock is no longer held, so the next spawn's claim replaces it
+spawn_exit=1

@@ -1,0 +1,20 @@
+kimi readiness refusal at=1793294366
+kimi=/Users/eduardopicazo/.kimi-code/bin/kimi version=unknown
+backend=tmux target=firstmate:fm-lab-kimi-clipped
+polls=20 of 20, trust_enters=0
+detail=kimi did not show a verified ready signal before brief delivery; trust dialog text stayed on screen without the complete dialog (missing: navigation hint '↑↓ navigate'; navigation hint 'Enter select'; selected affirmative option ('❯ Trust and continue' or '❯ Trust this folder')), so the pane was never safe to answer or to treat as ready
+missing:
+- navigation hint '↑↓ navigate'
+- navigation hint 'Enter select'
+- selected affirmative option ('❯ Trust and continue' or '❯ Trust this folder')
+last visible capture (poll 20):
+b-kimi-clipped/gotmp
+Eduardos-MacBook-Pro-2:project-clipped eduardopicazo$ export COMPACT_ADVISER_DIS
+ABLE=1
+Eduardos-MacBook-Pro-2:project-clipped eduardopicazo$ export FM_TASK_ID=lab-kimi
+-clipped
+Eduardos-MacBook-Pro-2:project-clipped eduardopicazo$ . '/tmp/fm-lab-kimi-clippe
+d+ad418eecff1fcc439b23ab6de2ce60b2cd9d3f7ceb5dcaae8d5551c144a32ec9/launch.s17932
+94301.32929.15460.sh'
+  Trust this folder?
+  Enlarge terminal to review sources. Esc exit.
