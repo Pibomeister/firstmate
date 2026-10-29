@@ -437,6 +437,111 @@ test_promotion_persists_the_selected_ship_branch() {
   pass "fm-promote: a selected branch prefix reaches both worker instructions and durable task state"
 }
 
+# --pr-branch promotes a scout into continuing an existing published branch.
+# The pipeline rebased feature/pr onto a moved main and published it with lease
+# while the project's local feature/pr kept the pre-rebase commit; promotion runs
+# bin/fm-pr-resync.sh in the recorded worktree before the task record changes.
+test_promotion_onto_a_published_branch_resyncs_first() {
+  local base home id meta out wt pipe stale pub before refs_before activebin
+  base="$TMP_ROOT/promote-pr"
+  home="$base/home"
+  id=promote-pr-e1
+  meta="$home/state/$id.meta"
+  wt="$base/wt"
+  pipe="$base/pipe"
+  mkdir -p "$home/state" "$base/seed"
+  git -C "$base/seed" init -q -b main
+  git -C "$base/seed" -c user.name=test -c user.email=test@example.com commit -q --allow-empty -m init
+  git clone -q --bare "$base/seed" "$base/origin.git"
+  git clone -q "$base/origin.git" "$pipe"
+  git -C "$pipe" switch -q -c feature/pr
+  git -C "$pipe" -c user.name=test -c user.email=test@example.com commit -q --allow-empty -m a
+  git -C "$pipe" push -q origin feature/pr
+  git clone -q "$base/origin.git" "$base/repo"
+  git -C "$base/repo" branch -q feature/pr origin/feature/pr
+  git -C "$base/repo" worktree add -q --detach "$wt" origin/main
+  stale=$(git -C "$base/repo" rev-parse feature/pr)
+  git -C "$pipe" switch -q main
+  git -C "$pipe" -c user.name=test -c user.email=test@example.com commit -q --allow-empty -m m2
+  git -C "$pipe" push -q origin main
+  git -C "$pipe" switch -q feature/pr
+  git -C "$pipe" -c user.name=test -c user.email=test@example.com rebase -q main
+  git -C "$pipe" -c user.name=test -c user.email=test@example.com commit -q --allow-empty -m fix
+  git -C "$pipe" push -q --force-with-lease="feature/pr:$stale" origin feature/pr
+  pub=$(git -C "$pipe" rev-parse HEAD)
+  printf 'window=fm-%s\nkind=scout\nworktree=%s\n' "$id" "$wt" > "$meta"
+  FM_HOME="$home" "$BRIEF" "$id" fixture-project --scout >/dev/null 2>&1 \
+    || fail "continuation promotion scout brief should scaffold"
+  fill_brief_subsections "$home/data/$id/brief.md" \
+    "Promote onto the published branch." "Continue the existing pull request."
+
+  printf 'scratch\n' > "$wt/scratch.txt"
+  before=$(cat "$meta")
+  out=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" "$PROMOTE" "$id" \
+    --mode direct-PR --yolo off --pr-branch feature/pr 2>&1) \
+    && fail "promotion onto a published branch succeeded from a dirty worktree"
+  assert_contains "$out" "bin/fm-pr-resync.sh exited 1" "the dirty refusal does not come from the owner"$'\n'"$out"
+  assert_contains "$out" "the task record is unchanged" "the refusal does not say the record is unchanged"
+  [ "$(cat "$meta")" = "$before" ] || fail "a refused promotion changed the task record"
+  [ "$(git -C "$base/repo" rev-parse feature/pr)" = "$stale" ] || fail "a refused promotion moved the local branch"
+  assert_grep 'scratch' "$wt/scratch.txt" "a refused promotion discarded scratch work"
+
+  rm -f "$wt/scratch.txt"
+  git -C "$base/repo" fetch -q origin
+  git -C "$base/repo" remote add no-mistakes "$base/origin.git"
+  activebin="$base/activebin"
+  mkdir -p "$activebin"
+  cat > "$activebin/no-mistakes" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$FM_ACTIVE_CALLS"
+printf '%s\n' 'branch_sync:' '  state: pipeline_owned' '  safety: pipeline_owned_active' '  next_action:' '    code: continue_active_run' '    command: no-mistakes axi run'
+SH
+  chmod +x "$activebin/no-mistakes"
+  refs_before=$(git -C "$wt" for-each-ref --format='%(refname) %(objectname)')
+  out=$(PATH="$activebin:$PATH" FM_ACTIVE_CALLS="$base/active.calls" FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" "$PROMOTE" "$id" \
+    --mode direct-PR --yolo off --pr-branch feature/pr 2>&1) \
+    && fail "promotion accepted owner exit 3"
+  assert_contains "$out" 'bin/fm-pr-resync.sh exited 3' "active promotion did not propagate owner exit 3"
+  assert_equals "$before" "$(cat "$meta")" "active promotion changed metadata"
+  assert_equals "$refs_before" "$(git -C "$wt" for-each-ref --format='%(refname) %(objectname)')" "active promotion changed refs"
+  assert_absent "$home/data/$id/ship-instructions.md" "active promotion published ship instructions"
+  assert_equals 'axi sync --check' "$(cat "$base/active.calls")" "active promotion must only read custody"
+  git -C "$base/repo" remote remove no-mistakes
+  # Return to the scout's original detached setup for the following flag-refusal check.
+  git -C "$wt" switch -q --detach origin/main
+  out=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" "$PROMOTE" "$id" \
+    --mode direct-PR --yolo off --pr-branch feature/pr --branch-prefix fix/ 2>&1) \
+    && fail "promotion accepted --pr-branch with --branch-prefix"
+  assert_contains "$out" "cannot be combined with --branch-prefix" "the flag refusal did not explain itself"
+  [ "$(cat "$meta")" = "$before" ] || fail "a refused flag combination changed the task record"
+  if [ -n "$(git -C "$wt" status --porcelain)" ] || git -C "$wt" symbolic-ref -q HEAD >/dev/null; then
+    fail "a refused flag combination touched the worktree"
+  fi
+  cp "$home/data/$id/brief.md" "$base/brief.valid"
+  sed 's/^Promote onto the published branch\.$/{TASK}/' "$base/brief.valid" > "$home/data/$id/brief.md"
+  refs_before=$(git -C "$wt" for-each-ref --format='%(refname) %(objectname)')
+  out=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" "$PROMOTE" "$id" \
+    --mode direct-PR --yolo off --pr-branch feature/pr 2>&1) \
+    && fail "promotion accepted a brief with a placeholder"
+  assert_contains "$out" "still contains {TASK}" "the placeholder refusal did not explain itself"
+  assert_equals "$before" "$(cat "$meta")" "a refused placeholder promotion changed the task record"
+  assert_equals "$refs_before" "$(git -C "$wt" for-each-ref --format='%(refname) %(objectname)')" "a refused placeholder promotion changed branch or archive refs"
+  git -C "$wt" symbolic-ref -q HEAD >/dev/null && fail "a refused placeholder promotion switched the detached worktree"
+  [ "$(git -C "$wt" rev-parse HEAD)" = "$(git -C "$base/repo" rev-parse origin/main)" ] || fail "a refused placeholder promotion moved HEAD"
+  cp "$base/brief.valid" "$home/data/$id/brief.md"
+  out=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" "$PROMOTE" "$id" \
+    --mode direct-PR --yolo off --pr-branch feature/pr 2>&1) \
+    || fail "promotion onto a published branch should succeed from a clean worktree"$'\n'"$out"
+  assert_grep 'branch=feature/pr' "$meta" "promotion did not record the exact continued branch"
+  [ "$(git -C "$wt" symbolic-ref -q HEAD)" = refs/heads/feature/pr ] || fail "promotion did not put the worktree on feature/pr"
+  [ "$(git -C "$wt" rev-parse HEAD)" = "$pub" ] || fail "promotion did not start from the published head"
+  [ "$(git -C "$wt" rev-parse -q --verify "refs/heads/archive/$id-pre-rebase-${stale:0:8}")" = "$stale" ] \
+    || fail "promotion did not archive the stale pre-rebase commit"
+  assert_grep 'do not create a branch' "$home/data/$id/ship-instructions.md" "the instructions still tell the worker to create a branch"
+  assert_no_grep 'git checkout -b' "$home/data/$id/ship-instructions.md" "the instructions still teach branch creation"
+  pass "fm-promote --pr-branch: the owner settles the worktree on the published head before the record changes; its refusal changes nothing"
+}
+
 # The promotion instructions embed the branch in the `git checkout -b` command
 # the worker executes, so a ref-format-valid metacharacter prefix must stay
 # literal there, exactly as it does in a generated ship brief.
@@ -1278,15 +1383,16 @@ test_forge_gerrit_changes_what_no_mistakes_means() {
        emit && /hard rule violation\.$/ { exit }' "$plain" > "$TMP_ROOT/forge-dod/plain-middle"
   [ -s "$TMP_ROOT/forge-dod/gerrit-middle" ] || fail "the gerrit brief carries no pipeline-driving section to compare"
   # Only the statement about a green PR differs: the ci step is skipped on
-  # this forge, so there is no checks-passed return to wait for. The arm
-  # command names each brief's own task id.
+  # this forge, so there is no checks-passed return to wait for. The arm and
+  # resync commands name each brief's own task id and branch.
   grep -q "reports the green PR" "$TMP_ROOT/forge-dod/plain-middle" \
     || fail "the default contract lost the green-PR return statement the comparison removes"
   assert_no_grep "checks-passed" "$TMP_ROOT/forge-dod/gerrit-middle" \
     "the gerrit worker was told to wait for a checks-passed return its skipped ci step never gives"
   # shellcheck disable=SC2016 # Backticks are literal generated Markdown.
   grep -v "reports the green PR" "$TMP_ROOT/forge-dod/plain-middle" \
-    | sed 's/ arm forge-dod-n1`/ arm forge-dod-g1`/' \
+    | sed -e 's/ arm forge-dod-n1`/ arm forge-dod-g1`/' \
+      -e 's/ forge-dod-n1 \(".*"\) fm\/forge-dod-n1`/ forge-dod-g1 \1 fm\/forge-dod-g1`/' \
     > "$TMP_ROOT/forge-dod/plain-middle-no-pr"
   cmp -s "$TMP_ROOT/forge-dod/gerrit-middle" "$TMP_ROOT/forge-dod/plain-middle-no-pr" \
     || fail "the forge changed the forge-independent half of the pipeline contract"
@@ -1708,6 +1814,7 @@ test_promote_requires_and_records_the_delivery_contract
 test_promote_refuses_a_symlinked_task_record
 test_promotion_delivers_the_real_definition_of_done
 test_promotion_persists_the_selected_ship_branch
+test_promotion_onto_a_published_branch_resyncs_first
 test_promotion_branch_command_is_shell_safe
 test_local_merge_uses_the_recorded_ship_branch
 test_project_mode_matches_whole_multiword_names
