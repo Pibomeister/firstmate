@@ -1662,6 +1662,172 @@ test_spawn_relaunch_of_promoted_scout_uses_the_recorded_branch() {
   pass "fm-spawn --relaunch: a promoted scout with a recorded custom branch relaunches on it instead of being refused"
 }
 
+# A no-mistakes ship relaunch whose recorded branch is on origin resyncs the
+# worktree before launch, while a direct-PR or local-only branch stays worker-owned.
+stale_published_task() {  # <case-dir> <id>: ship task on task-<id>, stale against origin
+  local dir=$1 id=$2 pipe="$1/pipe" old
+  add_ship_task "$dir" "$id" claude
+  printf 'branch=task-%s\n' "$id" >> "$dir/home/state/$id.meta"
+  printf 'zsh' > "$dir/fake/command"
+  printf 'a\n' > "$dir/wt/a.txt"
+  git -C "$dir/wt" add a.txt
+  git -C "$dir/wt" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit -qm a
+  git -C "$dir/wt" push -q origin "task-$id"
+  STALE_SHA=$(git -C "$dir/wt" rev-parse HEAD)
+  old=$STALE_SHA
+  git clone -q "$dir/proj.origin.git" "$pipe"
+  printf 'm2\n' > "$pipe/m2.txt"
+  git -C "$pipe" add m2.txt
+  git -C "$pipe" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit -qm m2
+  git -C "$pipe" push -q origin main
+  git -C "$pipe" switch -q "task-$id"
+  git -C "$pipe" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' rebase -q main
+  printf 'fix\n' > "$pipe/fix.txt"
+  git -C "$pipe" add fix.txt
+  git -C "$pipe" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit -qm fix
+  git -C "$pipe" push -q --force-with-lease="task-$id:$old" origin "task-$id"
+  PUBLISHED_SHA=$(git -C "$pipe" rev-parse HEAD)
+}
+
+test_spawn_relaunch_resyncs_the_recorded_branch_to_its_published_head() {
+  local dir out mode local_sha
+  dir=$(new_case prresync rl90)
+  stale_published_task "$dir" rl90
+  out=$(run_spawn "$dir" rl90 --relaunch)
+  assert_contains "$out" "cannot relaunch: bin/fm-pr-resync.sh exited 1" "a diverged relaunch was not refused"$'\n'"$out"
+  assert_not_contains "$out" "spawned rl90" "a diverged relaunch launched"
+  assert_contains "$out" "branch was left as-is" "the relaunch refusal did not explain branch custody"
+  [ "$(git -C "$dir/wt" rev-parse HEAD)" = "$STALE_SHA" ] \
+    || fail "a diverged relaunch moved the worker branch"
+  [ -z "$(git -C "$dir/wt" for-each-ref --format='%(refname)' refs/heads/archive/rl90-)" ] \
+    || fail "a diverged relaunch created an archive"
+
+  dir=$(new_case prresync-behind rl95)
+  add_ship_task "$dir" rl95 claude
+  printf 'branch=task-rl95\n' >> "$dir/home/state/rl95.meta"
+  printf 'zsh' > "$dir/fake/command"
+  printf 'a\n' > "$dir/wt/a.txt"
+  git -C "$dir/wt" add a.txt
+  git -C "$dir/wt" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit -qm a
+  git -C "$dir/wt" push -q origin task-rl95
+  git clone -q "$dir/proj.origin.git" "$dir/pipe"
+  git -C "$dir/pipe" switch -q task-rl95
+  printf 'fix\n' > "$dir/pipe/fix.txt"
+  git -C "$dir/pipe" add fix.txt
+  git -C "$dir/pipe" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit -qm fix
+  git -C "$dir/pipe" push -q origin task-rl95
+  PUBLISHED_SHA=$(git -C "$dir/pipe" rev-parse HEAD)
+  out=$(run_spawn "$dir" rl95 --relaunch)
+  assert_contains "$out" "spawned rl95" "a behind relaunch did not launch"$'\n'"$out"
+  assert_contains "$out" "result=advanced" "a behind relaunch did not advance"
+  [ "$(git -C "$dir/wt" rev-parse HEAD)" = "$PUBLISHED_SHA" ] \
+    || fail "a behind relaunch did not reach the published head"
+
+  for mode in direct-PR local-only; do
+    dir=$(new_case "prresync-$mode" "rl96-$mode")
+    stale_published_task "$dir" "rl96-$mode"
+    sed -i.bak "s/^mode=no-mistakes$/mode=$mode/" "$dir/home/state/rl96-$mode.meta"
+    git -C "$dir/wt" remote add no-mistakes "$dir/proj.origin.git"
+    printf 'local amendment\n' >> "$dir/wt/a.txt"
+    git -C "$dir/wt" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit --amend --no-edit -aq
+    local_sha=$(git -C "$dir/wt" rev-parse HEAD)
+    out=$(run_spawn "$dir" "rl96-$mode" --relaunch)
+    assert_contains "$out" "spawned rl96-$mode" "$mode worker-owned branch did not relaunch"$'\n'"$out"
+    assert_not_contains "$out" "fm-pr-resync:" "$mode relaunch invoked the owner"
+    [ "$(git -C "$dir/wt" rev-parse HEAD)" = "$local_sha" ] \
+      || fail "$mode relaunch moved the unpushed worker commit"
+    [ -z "$(git -C "$dir/wt" for-each-ref --format='%(refname)' "refs/heads/archive/rl96-$mode-")" ] \
+      || fail "$mode relaunch created an archive"
+  done
+
+  dir=$(new_case prresync-legacy rl97)
+  stale_published_task "$dir" rl97
+  sed -i.bak '/^mode=/d' "$dir/home/state/rl97.meta"
+  git -C "$dir/wt" remote add no-mistakes "$dir/proj.origin.git"
+  out=$(run_spawn "$dir" rl97 --relaunch)
+  assert_contains "$out" "cannot relaunch: bin/fm-pr-resync.sh exited 1" "a legacy relaunch with a no-mistakes remote skipped the owner"$'\n'"$out"
+  [ "$(git -C "$dir/wt" rev-parse HEAD)" = "$STALE_SHA" ] || fail "a refused legacy relaunch moved the branch"
+
+  dir=$(new_case prresync-dirty rl91)
+  stale_published_task "$dir" rl91
+  printf 'keep\n' > "$dir/wt/uncommitted.txt"
+  out=$(run_spawn "$dir" rl91 --relaunch)
+  assert_contains "$out" "cannot relaunch: bin/fm-pr-resync.sh exited 1" "a dirty worktree did not refuse the relaunch"$'\n'"$out"
+  assert_not_contains "$out" "spawned rl91" "a refused relaunch still launched"
+  [ "$(git -C "$dir/wt" rev-parse HEAD)" = "$STALE_SHA" ] || fail "a refused relaunch moved the branch"
+  assert_grep 'keep' "$dir/wt/uncommitted.txt" "a refused relaunch discarded local work"
+
+  out=$(run_spawn "$dir" rl91 --relaunch --pr-branch task-rl91)
+  assert_contains "$out" "--pr-branch and --from-branch apply only to a fresh launch" "--relaunch accepted --pr-branch"
+  pass "fm-spawn --relaunch: no-mistakes divergence refuses, behind advances, and explicit worker-owned modes skip resync despite a no-mistakes remote"
+}
+
+# A successor launched with --from-branch keeps its brief's Setup "Source
+# branch:" line; that agreement binds only the fresh launch, so its relaunch
+# proceeds without the flag.
+test_spawn_relaunch_of_a_successor_ignores_its_source_line() {
+  local dir out
+  dir=$(new_case successor rl93)
+  add_ship_task "$dir" rl93 claude
+  printf '\n# Setup\nSource branch: feature/src\n' >> "$dir/home/data/rl93/brief.md"
+  printf 'zsh' > "$dir/fake/command"
+  out=$(run_spawn "$dir" rl93 --relaunch)
+  assert_contains "$out" "spawned rl93" "a successor's Source branch line refused its relaunch"$'\n'"$out"
+  pass "fm-spawn --relaunch: a successor relaunches without --from-branch despite its brief's Source branch line"
+}
+
+test_spawn_relaunch_under_an_active_run_is_monitoring_only() {
+  local dir out launch
+  dir=$(new_case prresync-active rl92)
+  stale_published_task "$dir" rl92
+  git -C "$dir/proj" remote add no-mistakes "$dir/proj.origin.git"
+  cat > "$dir/fakebin/no-mistakes" <<'SH'
+#!/usr/bin/env bash
+[ "${1:-} ${2:-}" = "axi sync" ] || exit 0
+printf '%s\n' 'branch_sync:' '  state: pipeline_owned' '  changed: false' '  pipeline:' '    run: "01RUN"' \
+  '    status: running' '    current_head: ""' '  relation: diverged' '  safety: pipeline_owned_active' \
+  '  next_action:' '    code: continue_active_run' '    command: no-mistakes axi run'
+SH
+  chmod +x "$dir/fakebin/no-mistakes"
+  out=$(run_spawn "$dir" rl92 --relaunch)
+  assert_contains "$out" "spawned rl92" "an active-run relaunch should still launch"$'\n'"$out"
+  launch="$dir/home/data/rl92/launch-brief.md"
+  assert_grep '# Monitoring-only relaunch' "$launch" "the replacement was not told it is monitoring-only"
+  assert_grep 'A no-mistakes run holds custody of branch task-rl92.' "$launch" "the owner's monitoring-only contract is missing"
+  # shellcheck disable=SC2016 # The rendered contract contains literal backticks.
+  assert_grep 'You may reattach the active run with `no-mistakes axi run` (no flags), answer the gates it presents under your brief' "$launch" "monitoring-only reattachment and gate permission missing"
+  assert_grep "gate and ask-user rules, and make your brief's CI-ready report through its named-head check." "$launch" "monitoring-only named-head reporting permission missing"
+  assert_grep 'Do not edit, commit, start, rerun or abort a run, begin a new phase, or take any other outward action until' "$launch" "monitoring-only prohibitions missing"
+  assert_grep "fm-pr-resync.sh rl92 $dir/wt task-rl92" "$launch" "monitoring-only release must name this task's owner invocation"
+  assert_grep 'exits 0 against the published head.' "$launch" "monitoring-only fresh successful resync release condition missing"
+  assert_no_grep 'fm-pr-resync: monitoring-only:' "$launch" "the owner's output prefix leaked into the instructions"
+  [ "$(git -C "$dir/wt" rev-parse HEAD)" = "$STALE_SHA" ] || fail "an active-run relaunch moved the branch"
+  pass "fm-spawn --relaunch: under an active run the replacement launches with the owner's monitoring-only contract"
+}
+
+test_spawn_relaunch_origin_probe_timeout_refuses() {
+  local dir out before
+  dir=$(new_case prprobe-timeout rl94)
+  stale_published_task "$dir" rl94
+  before=$(git -C "$dir/wt" for-each-ref --format='%(refname) %(objectname)')
+  cat > "$dir/fakebin/timeout" <<'SH'
+#!/usr/bin/env bash
+if [ "$1 $2 $3" = '120 git ls-remote' ]; then
+  printf '%s\n' "$*" > "$FM_FAKE_DIR/probe-timeout"
+  exit 124
+fi
+shift
+exec "$@"
+SH
+  chmod +x "$dir/fakebin/timeout"
+  out=$(run_spawn "$dir" rl94 --relaunch)
+  assert_contains "$out" 'git ls-remote exited 124, bounded to 120s' "origin probe must refuse a bounded timeout"$'\n'"$out"
+  assert_contains "$(cat "$dir/fake/probe-timeout")" '120 git ls-remote --exit-code --heads origin refs/heads/task-rl94' "origin probe must use the 120s bound"
+  assert_equals "$before" "$(git -C "$dir/wt" for-each-ref --format='%(refname) %(objectname)')" "probe timeout changed refs"
+  [ ! -s "$dir/fake/literal" ] || fail "probe timeout launched a replacement"
+  pass "relaunch refuses a bounded origin pre-probe timeout before launching or changing refs"
+}
+
 test_promoted_scout_relaunch_receives_the_current_delivery_contract() {
   local dir home id brief launch out mode rule
   for mode in no-mistakes direct-PR local-only; do
@@ -3204,6 +3370,10 @@ test_explicit_secondmate_harness_ignores_configured_profile_axes
 test_ship_relaunch_ignores_the_crew_harness_config
 test_spawn_relaunch_without_a_harness_reuses_the_recorded_one
 test_spawn_relaunch_of_promoted_scout_uses_the_recorded_branch
+test_spawn_relaunch_resyncs_the_recorded_branch_to_its_published_head
+test_spawn_relaunch_under_an_active_run_is_monitoring_only
+test_spawn_relaunch_origin_probe_timeout_refuses
+test_spawn_relaunch_of_a_successor_ignores_its_source_line
 test_promoted_scout_relaunch_receives_the_current_delivery_contract
 test_prefixed_prior_harness_wiring_is_still_retired
 test_muse_session_binding_is_retired_on_a_harness_switch

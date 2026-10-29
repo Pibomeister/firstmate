@@ -14,8 +14,8 @@
 # charters still use a single `{TASK}` charter fill. Firstmate may adjust other
 # sections when the task genuinely deviates (e.g. working an existing external
 # PR instead of shipping a new one).
-# Usage: fm-brief.sh <task-id> <repo-name> --mode <no-mistakes|direct-PR|local-only> [--branch-prefix <prefix>] [--base-branch <branch>] [--forge <none|gerrit|forgejo|external> [--shape squash]] [--herdr-lab]
-#        fm-brief.sh <task-id> <repo-name> --scout [--base-branch <branch>] [--herdr-lab]
+# Usage: fm-brief.sh <task-id> <repo-name> --mode <no-mistakes|direct-PR|local-only> [--branch-prefix <prefix>|--pr-branch <branch>] [--base-branch <branch>] [--from-branch <branch>] [--forge <none|gerrit|forgejo|external> [--shape squash]] [--herdr-lab]
+#        fm-brief.sh <task-id> <repo-name> --scout [--base-branch <branch>] [--from-branch <branch>] [--herdr-lab]
 #        fm-brief.sh <task-id> --secondmate {<project>...|--no-projects}
 #   --scout writes the scout contract instead: the deliverable is a report at
 #   data/<task-id>/report.md (no branch, no push, no PR) and the worktree is scratch.
@@ -67,6 +67,15 @@
 # Definition of done then targets that branch with its pull request.
 # bin/fm-dod-lib.sh's fm_base_branch_valid owns which deliveries accept one.
 # Refused on --secondmate.
+# --pr-branch <branch> scaffolds a ship that continues that existing published
+# branch: the Ship branch line carries the exact name, and Setup tells the worker
+# it is already on it (bin/fm-spawn.sh --pr-branch resyncs it through
+# bin/fm-pr-resync.sh) instead of creating a branch. Ship only, and refused with
+# --branch-prefix or --from-branch.
+# --from-branch <branch> starts a ship or scout from origin's <branch> while its
+# pull request keeps targeting the default branch (or --base-branch); it writes
+# a Setup "Source branch: <branch>" line that bin/fm-spawn.sh --from-branch must
+# agree with. Refused on --secondmate.
 # --forge names the project's forge, defaults to none, and is orthogonal to --mode
 # exactly as the registry's `forge=` token is. It is the captain's confirmed
 # registry binding, read from data/projects.md at intake and passed here; this
@@ -218,6 +227,10 @@ BRANCH_PREFIX=fm/
 BRANCH_PREFIX_SET=0
 BASE_BRANCH=
 BASE_BRANCH_SET=0
+PR_BRANCH=
+PR_BRANCH_SET=0
+FROM_BRANCH=
+FROM_BRANCH_SET=0
 FORGE=none
 FORGE_SET=0
 SHAPE=
@@ -237,6 +250,8 @@ for a in "$@"; do
       mode) MODE=$a; MODE_SET=1 ;;
       branch-prefix) BRANCH_PREFIX=$a; BRANCH_PREFIX_SET=1 ;;
       base-branch) BASE_BRANCH=$a; BASE_BRANCH_SET=1 ;;
+      pr-branch) PR_BRANCH=$a; PR_BRANCH_SET=1 ;;
+      from-branch) FROM_BRANCH=$a; FROM_BRANCH_SET=1 ;;
       forge) FORGE=$a; FORGE_SET=1 ;;
       shape) SHAPE=$a; SHAPE_SET=1 ;;
       upstream-consent) UPSTREAM_CONSENT=$a; UPSTREAM_CONSENT_SET=1 ;;
@@ -257,6 +272,10 @@ for a in "$@"; do
     --branch-prefix=*) BRANCH_PREFIX=${a#--branch-prefix=}; BRANCH_PREFIX_SET=1 ;;
     --base-branch) want_value="base-branch" ;;
     --base-branch=*) BASE_BRANCH=${a#--base-branch=}; BASE_BRANCH_SET=1 ;;
+    --pr-branch) want_value="pr-branch" ;;
+    --pr-branch=*) PR_BRANCH=${a#--pr-branch=}; PR_BRANCH_SET=1 ;;
+    --from-branch) want_value="from-branch" ;;
+    --from-branch=*) FROM_BRANCH=${a#--from-branch=}; FROM_BRANCH_SET=1 ;;
     --forge) want_value=forge ;;
     --forge=*) FORGE=${a#--forge=}; FORGE_SET=1 ;;
     --shape) want_value=shape ;;
@@ -341,6 +360,22 @@ if [ "$BASE_BRANCH_SET" -eq 1 ]; then
   fi
   fm_base_branch_valid "$BASE_BRANCH" "$MODE" "$FORGE" "fm-brief.sh --base-branch" || exit 1
 fi
+if [ "$PR_BRANCH_SET" -eq 1 ]; then
+  if [ "$KIND" != ship ] || [ "$BRANCH_PREFIX_SET" -eq 1 ] || [ "$FROM_BRANCH_SET" -eq 1 ]; then
+    echo "error: --pr-branch applies only to ship briefs and cannot be combined with --branch-prefix or --from-branch" >&2
+    exit 1
+  fi
+  git check-ref-format --branch "$PR_BRANCH" >/dev/null 2>&1 || {
+    echo "error: --pr-branch requires a valid branch name (got '$PR_BRANCH')" >&2
+    exit 1
+  }
+fi
+if [ "$FROM_BRANCH_SET" -eq 1 ]; then
+  if [ "$KIND" = secondmate ] || ! git check-ref-format --branch "$FROM_BRANCH" >/dev/null 2>&1; then
+    echo "error: --from-branch takes a valid branch name and applies only to ship and scout briefs" >&2
+    exit 1
+  fi
+fi
 if [ "$KIND" != ship ]; then
   [ "$UPSTREAM_CONSENT_SET" -eq 0 ] || {
     echo "error: --upstream-consent applies only to ship briefs; a scout publishes nothing and a charter is not a delivery contract" >&2
@@ -383,6 +418,7 @@ if [ "$KIND" = ship ] && [ "$MODE" != local-only ] && [ "$PROJECT_DIR_SET" -eq 1
 fi
 ID=${POS[0]}
 BRANCH="$BRANCH_PREFIX$ID"
+[ "$PR_BRANCH_SET" -eq 0 ] || BRANCH=$PR_BRANCH
 if ! git check-ref-format --branch "$BRANCH" >/dev/null 2>&1; then
   echo "error: --branch-prefix and task id must form a valid git branch (got '$BRANCH')" >&2
   exit 1
@@ -695,12 +731,24 @@ SHARED_NO_CD_RULE=${SHARED_NO_CD_RULE%$'\n'}
 # bin/fm-test-queue.sh owns the queue contract.
 TEST_QUEUE_RULE="9. Run heavy test suites only through the machine-wide test line, \`$(shell_quote "$FM_ROOT/bin/fm-test-queue.sh") run -- <command>\`, which waits for your turn, a free slot, and a low load; run targeted tests directly."
 
-if [ -n "$BASE_BRANCH" ]; then
-  SETUP_BASE="You are in a disposable git worktree of $REPO, at a detached HEAD on a clean copy of its base branch.
-Base branch: $BASE_BRANCH"
+if [ -n "$PR_BRANCH" ]; then
+  SETUP_BASE="You are in a disposable git worktree of $REPO, already on branch $PR_BRANCH, which contains its verified published pull-request head: equal to it, or ahead of it by the unpublished local commits the launch reported."
+elif [ -n "$BASE_BRANCH" ]; then
+  SETUP_BASE="You are in a disposable git worktree of $REPO, at a detached HEAD on a clean copy of its base branch."
 else
   SETUP_BASE="You are in a disposable git worktree of $REPO, at a detached HEAD on a clean default branch."
 fi
+if [ -n "$BASE_BRANCH" ]; then
+  SETUP_BASE="$SETUP_BASE
+Base branch: $BASE_BRANCH"
+fi
+if [ -n "$FROM_BRANCH" ]; then
+  SETUP_BASE="$SETUP_BASE
+Source branch: $FROM_BRANCH
+Your copy starts from origin's source branch above, not from your pull request's target."
+fi
+SETUP1="1. First action: create your branch: \`git checkout -b $BRANCH_Q --\`"
+[ -z "$PR_BRANCH" ] || SETUP1="1. First action: confirm \`git status --short --branch\` shows $BRANCH_Q; do not create a branch."
 
 if [ "$KIND" = scout ]; then
 if "$SCRIPT_DIR/fm-bootstrap.sh" lavish-compatible >/dev/null 2>&1; then
@@ -795,7 +843,7 @@ $SETUP_BASE
 The path check is authoritative: \`git rev-parse --git-dir\` and \`git rev-parse --git-common-dir\` can help inspect the repo, but they do not prove you are outside the primary checkout.
 If the top-level path is the primary checkout or not the worktree you were launched in, STOP - do not branch or commit here - append \`blocked [at=<epoch>]: launched in primary checkout, not an isolated worktree\` to the status file and stop.
 
-1. First action: create your branch: \`git checkout -b $BRANCH_Q --\`$SETUP2
+$SETUP1$SETUP2
 
 # Rules
 $RULE1

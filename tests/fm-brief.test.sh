@@ -1463,6 +1463,70 @@ test_base_branch_is_rendered_and_bounded() {
   pass "fm-brief.sh: --base-branch records the base, targets the PR at it, and is refused where no PR carries it"
 }
 
+# --pr-branch continues an existing published branch: its exact name is the Ship
+# branch and Setup says the copy is already on it. --from-branch only moves the
+# starting point: the Source branch line names it while the definition of done
+# keeps targeting the default branch, or --base-branch when both are given.
+test_pr_and_from_branch_are_rendered_and_bounded() {
+  local home out rc brief id
+  home="$TMP_ROOT/pr-from-branch-home"
+  mkdir -p "$home/data"
+
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-pr-p1 some-proj --mode no-mistakes --pr-branch feature/pr-7 >/dev/null 2>&1 \
+    || fail "no-mistakes --pr-branch should scaffold"
+  brief="$home/data/brief-pr-p1/brief.md"
+  grep -qxF -- 'Ship branch: feature/pr-7' "$brief" || fail "the --pr-branch brief does not ship the exact branch"
+  assert_grep 'already on branch feature/pr-7, which contains its verified published pull-request head' "$brief" \
+    "the --pr-branch Setup does not say the copy is already on the published branch"
+  assert_grep 'do not create a branch' "$brief" "the --pr-branch Setup still tells the worker to create a branch"
+  assert_no_grep 'git checkout -b' "$brief" "the --pr-branch brief still teaches branch creation"
+
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-pr-base-p6 some-proj --mode no-mistakes --pr-branch feature/pr-7 --base-branch release/2 >/dev/null 2>&1 \
+    || fail "continuation with a non-default base should scaffold"
+  brief="$home/data/brief-pr-base-p6/brief.md"
+  # Parse the generated Setup through the same public library spawn uses.
+  . "$ROOT/bin/fm-dod-lib.sh"
+  assert_equals release/2 "$(fm_brief_base_branches "$brief")" "continuation dropped its base agreement marker"
+  grep -qxF 'Ship branch: feature/pr-7' "$brief" || fail "continuation with a base lost its ship branch"
+  assert_grep 'already on branch feature/pr-7' "$brief" "continuation with a base lost its setup"
+  assert_no_grep 'git checkout -b' "$brief" "continuation with a base teaches branch creation"
+
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-from-f1 some-proj --mode direct-PR --from-branch feature/src >/dev/null 2>&1 \
+    || fail "direct-PR --from-branch should scaffold"
+  brief="$home/data/brief-from-f1/brief.md"
+  grep -qxF -- 'Source branch: feature/src' "$brief" || fail "the --from-branch brief does not record its source"
+  ! grep -q '^Base branch:' "$brief" || fail "--from-branch alone recorded a base branch"
+  grep -qxF -- 'Ship branch: fm/brief-from-f1' "$brief" || fail "--from-branch changed the ship branch"
+  # shellcheck disable=SC2016  # literal backticks in rendered prose must stay unexpanded
+  assert_grep 'open a PR with `gh-axi` that is ready for review, not a draft.' "$brief" \
+    "--from-branch moved the pull-request target off the default branch"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-from-f2 some-proj --mode direct-PR --from-branch feature/src --base-branch release/2 >/dev/null 2>&1 \
+    || fail "--from-branch with --base-branch should scaffold"
+  brief="$home/data/brief-from-f2/brief.md"
+  grep -qxF -- 'Source branch: feature/src' "$brief" || fail "the combined brief lost its source"
+  grep -qxF -- 'Base branch: release/2' "$brief" || fail "the combined brief lost its base"
+  # shellcheck disable=SC2016  # literal backticks in rendered prose must stay unexpanded
+  assert_grep 'against the base branch `release/2` (`--base release/2`)' "$brief" "the combined brief does not target its base"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-from-scout-f3 some-proj --scout --from-branch feature/src >/dev/null 2>&1 \
+    || fail "scout --from-branch should scaffold"
+  grep -qxF -- 'Source branch: feature/src' "$home/data/brief-from-scout-f3/brief.md" || fail "the scout brief lost its source"
+
+  for args in "brief-pr-scout-p2|--scout --pr-branch feature/pr-7" \
+    "brief-pr-prefix-p3|--mode direct-PR --pr-branch feature/pr-7 --branch-prefix fix/" \
+    "brief-pr-from-p4|--mode direct-PR --pr-branch feature/pr-7 --from-branch feature/src" \
+    "brief-pr-bad-p5|--mode direct-PR --pr-branch bad..name" \
+    "brief-from-bad-f4|--mode direct-PR --from-branch bad..name"; do
+    id=${args%%|*}
+    # shellcheck disable=SC2086  # the case's flags are deliberately word-split
+    out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj ${args#*|} 2>&1); rc=$?
+    [ "$rc" -ne 0 ] || fail "$id should be refused"
+    [ ! -e "$home/data/$id/brief.md" ] || fail "a refused scaffold wrote $id"
+  done
+  out=$(FM_HOME="$home" FM_SECONDMATE_CHARTER=charter "$ROOT/bin/fm-brief.sh" brief-from-sm-f5 --secondmate --no-projects --from-branch feature/src 2>&1); rc=$?
+  [ "$rc" -ne 0 ] || fail "a secondmate charter should refuse --from-branch"
+  pass "fm-brief.sh: --pr-branch ships the exact branch it continues, --from-branch moves only the start, and both are bounded"
+}
+
 # (a) An unregistered/default project - no --branch-prefix passed at all - must
 # keep every generated ship mode's branch on the legacy "fm/<task-id>" name, byte
 # for byte, so every existing firstmate installation is unaffected.
@@ -1789,6 +1853,7 @@ test_wait_no_turns_absent_keeps_the_previous_brief
 test_no_mistakes_brief_reads_run_status_before_a_wait
 test_home_brief_include_is_appended_last
 test_base_branch_is_rendered_and_bounded
+test_pr_and_from_branch_are_rendered_and_bounded
 test_ship_branch_prefix_defaults_to_legacy_fm
 test_ship_branch_prefix_override_is_consistent_across_modes
 test_ship_branch_prefix_empty_override_yields_bare_task_id

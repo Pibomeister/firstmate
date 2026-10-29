@@ -39,7 +39,11 @@
 # binding and bin/fm-dod-lib.sh owns what it changes for the worker, including
 # the refusal of a forge on local-only. A forge=external project is refused
 # outright, because its push guard is installed only by a ship spawn.
-# Usage: fm-promote.sh <task-id> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--branch-prefix <prefix>] [--upstream-consent <host>/<owner>/<repo>]
+# Usage: fm-promote.sh <task-id> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--branch-prefix <prefix>|--pr-branch <branch>] [--upstream-consent <host>/<owner>/<repo>]
+# --pr-branch promotes the scout into continuing that existing published branch:
+# bin/fm-pr-resync.sh runs in the scout's recorded worktree before the task record
+# changes, its exit 1 or 3 refuses the promotion with the record unchanged, and
+# branch= records that exact name.
 # --upstream-consent records the captain's one-off approval for this task to
 # publish to firstmate's own upstream repository; promotion applies the same
 # self-repository publication gate as bin/fm-spawn.sh (bin/fm-role-lib.sh), so
@@ -75,6 +79,9 @@ CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 MODE=
 YOLO=
 BRANCH_PREFIX=fm/
+BRANCH_PREFIX_SET=0
+PR_BRANCH=
+PR_BRANCH_SET=0
 MODE_SET=0
 YOLO_SET=0
 FORGE=none
@@ -90,7 +97,8 @@ for a in "$@"; do
     case "$want_value" in
       mode) MODE=$a; MODE_SET=1 ;;
       yolo) YOLO=$a; YOLO_SET=1 ;;
-      branch-prefix) BRANCH_PREFIX=$a ;;
+      branch-prefix) BRANCH_PREFIX=$a; BRANCH_PREFIX_SET=1 ;;
+      pr-branch) PR_BRANCH=$a; PR_BRANCH_SET=1 ;;
       upstream-consent) UPSTREAM_CONSENT=$a; UPSTREAM_CONSENT_SET=1 ;;
     esac
     want_value=
@@ -102,7 +110,9 @@ for a in "$@"; do
     --yolo) want_value=yolo ;;
     --yolo=*) YOLO=${a#--yolo=}; YOLO_SET=1 ;;
     --branch-prefix) want_value="branch-prefix" ;;
-    --branch-prefix=*) BRANCH_PREFIX=${a#--branch-prefix=} ;;
+    --branch-prefix=*) BRANCH_PREFIX=${a#--branch-prefix=}; BRANCH_PREFIX_SET=1 ;;
+    --pr-branch) want_value="pr-branch" ;;
+    --pr-branch=*) PR_BRANCH=${a#--pr-branch=}; PR_BRANCH_SET=1 ;;
     --upstream-consent) want_value="upstream-consent" ;;
     --upstream-consent=*) UPSTREAM_CONSENT=${a#--upstream-consent=}; UPSTREAM_CONSENT_SET=1 ;;
     *) POS+=("$a") ;;
@@ -168,6 +178,13 @@ refuse_impossible_forge_posture || exit 1
 ID=${POS[0]}
 fm_task_id_creation_valid "$ID" || { echo "error: invalid task id" >&2; exit 2; }
 BRANCH="$BRANCH_PREFIX$ID"
+if [ "$PR_BRANCH_SET" -eq 1 ]; then
+  if [ "$BRANCH_PREFIX_SET" -eq 1 ] || ! git check-ref-format --branch "$PR_BRANCH" >/dev/null 2>&1; then
+    echo "error: --pr-branch takes a valid branch name and cannot be combined with --branch-prefix" >&2
+    exit 1
+  fi
+  BRANCH=$PR_BRANCH
+fi
 if ! git check-ref-format --branch "$BRANCH" >/dev/null 2>&1; then
   echo "error: --branch-prefix and task id must form a valid git branch (got '$BRANCH')" >&2
   exit 1
@@ -249,6 +266,8 @@ if [ "$MODE" != local-only ] && [ -n "$PROMOTE_PROJECT" ]; then
 fi
 PROMOTE_BASE_WORDS='default-branch base'
 [ -z "$BASE_BRANCH" ] || PROMOTE_BASE_WORDS="copy of the base branch \`$BASE_BRANCH\`"
+PROMOTE_BRANCH_STEP="3. Return to a clean $PROMOTE_BASE_WORDS, then create your branch: \`git checkout -b $BRANCH_Q --\`."
+[ "$PR_BRANCH_SET" -eq 0 ] || PROMOTE_BRANCH_STEP="3. Promotion already put this worktree on \`$BRANCH_Q\` at its verified published head (or ahead of it by unpublished local commits); keep your scratch state out of it and do not create a branch."
 # An unbound project keeps the exact wording it always had.
 PROMOTE_FORGE_WORDS=
 [ "$FORGE" = none ] || PROMOTE_FORGE_WORDS=" forge=$FORGE"
@@ -293,7 +312,7 @@ IFS= read -r -d '' PROMOTION_SHIP_SPEC <<EOF || true
 If these promotion steps were already completed before a relaunch, preserve the existing \`$BRANCH_Q\` branch and continue from its current state; do not repeat them destructively.
 1. **Verify isolation before anything else.** Run \`pwd -P\` and \`git rev-parse --show-toplevel\`; both must resolve to the disposable task worktree you were launched in, such as a treehouse pool path or an Orca-managed worktree, not the primary checkout firstmate operates from. If either does not resolve to the worktree you were launched in, stop and escalate to firstmate.
 2. Inventory this worktree's scratch state with \`git status\` and \`git log\` before changing anything.
-3. Return to a clean $PROMOTE_BASE_WORDS, then create your branch: \`git checkout -b $BRANCH_Q --\`.
+$PROMOTE_BRANCH_STEP
 4. Carry over only the intended fix changes. Leave scratch commits, debug edits, and experiment files behind.
 5. If you reproduced a bug, turn that reproduction into a regression test.
 6. Treat the scout-time Firstmate spec and any unmarked legacy \`# Task\` text as investigation context, not captain intent or current ship-time instructions.
@@ -324,6 +343,15 @@ EOF
 }
 mkdir -p "$DATA/$ID"
 [ ! -d "$INSTRUCTIONS" ] || { echo "error: ship instructions path is a directory: $INSTRUCTIONS" >&2; exit 1; }
+if [ "$PR_BRANCH_SET" -eq 1 ]; then
+  PROMOTE_WT=$(sed -n 's/^worktree=//p' "$META" | head -n 1)
+  resync_rc=0
+  "$SCRIPT_DIR/fm-pr-resync.sh" "$ID" "$PROMOTE_WT" "$BRANCH" >&2 || resync_rc=$?
+  [ "$resync_rc" -eq 0 ] || {
+    echo "error: cannot promote $ID onto $BRANCH: bin/fm-pr-resync.sh exited $resync_rc in '${PROMOTE_WT:-no recorded worktree}' (output above); the task record is unchanged" >&2
+    exit 1
+  }
+fi
 TMP="$DATA/$ID/.ship-instructions.md.${BASHPID:-$$}"
 {
   cat <<EOF
