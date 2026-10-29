@@ -1,0 +1,337 @@
+#!/usr/bin/env bash
+# tests/fm-pr-resync.test.sh - behavioral tests for bin/fm-pr-resync.sh, the
+# published-head resync owner. Each case builds a real bare origin and reproduces
+# the pipeline shape: the published branch is rebased onto a moved main, extended
+# by a review fix and published with lease, while the task's local branch still
+# holds the pre-rebase commit. A `no-mistakes` stand-in on PATH replays branch
+# custody verdict shapes recorded from no-mistakes v1.84.0 (blocked_diverged then
+# synchronized after the reset; pipeline_owned recover_custody; the terminal-run
+# blocked_recover_manual_reconciliation, bind-only archive binding, bound-archive
+# keep-local recovery and custody_returned/gate_ready sequence). Races are driven
+# by stand-in side effects or a reference-transaction hook, never by timing.
+set -u
+
+# shellcheck source=tests/lib.sh
+. "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+
+OWNER=${FM_PR_RESYNC_UNDER_TEST:-$ROOT/bin/fm-pr-resync.sh}
+TMP_ROOT=$(fm_test_tmproot fm-pr-resync-tests)
+fm_git_identity
+B=fm/t-resync
+TASK=t1
+
+STUB_BIN=$TMP_ROOT/stub-bin
+mkdir -p "$STUB_BIN"
+cat > "$STUB_BIN/no-mistakes" <<'EOF'
+#!/usr/bin/env bash
+n=$(( $(cat "$NM_STUB/count" 2>/dev/null || echo 0) + 1 ))
+echo "$n" > "$NM_STUB/count"
+printf '%s\n' "$*" >> "$NM_STUB/calls"
+[ -f "$NM_STUB/resp.$n" ] || { echo "stub: no response $n for: $*" >&2; exit 97; }
+. "$NM_STUB/resp.$n"
+EOF
+chmod +x "$STUB_BIN/no-mistakes"
+
+cm() {  # <repo> <file>: commit one new file
+  printf '%s\n' "$2" > "$1/$2"
+  git -C "$1" add "$2"
+  git -C "$1" commit -qm "$2"
+}
+
+fixture() {  # <name>: origin publishes $B at A; repo's worktree WT holds $B at A
+  D=$TMP_ROOT/$1
+  fm_git_init_commit "$D/seed"
+  git clone -q --bare "$D/seed" "$D/origin.git"
+  git clone -q "$D/origin.git" "$D/pipe"
+  git -C "$D/pipe" switch -q -c "$B"
+  cm "$D/pipe" a
+  git -C "$D/pipe" push -q origin "$B"
+  git clone -q "$D/origin.git" "$D/repo"
+  git -C "$D/repo" worktree add -q "$D/wt" "$B"
+  mkdir -p "$D/nm" "$D/hooks"
+  WT=$D/wt
+  A=$(ref "refs/heads/$B")
+  PUB=$A
+}
+
+rebase_publish() {  # the pipeline rebases $B onto a moved main, adds a review fix, publishes with lease
+  local old
+  old=$(git -C "$D/pipe" rev-parse "$B")
+  git -C "$D/pipe" switch -q main
+  cm "$D/pipe" m2
+  git -C "$D/pipe" push -q origin main
+  git -C "$D/pipe" switch -q "$B"
+  git -C "$D/pipe" rebase -q main
+  cm "$D/pipe" fix
+  git -C "$D/pipe" push -q --force-with-lease="$B:$old" origin "$B"
+  PUB=$(git -C "$D/origin.git" rev-parse "$B")
+}
+
+race_commit() {  # prepare (unpublished) one more pipeline commit on $B
+  cm "$D/pipe" race
+}
+
+race_hook() {  # <ref>: when <ref> is updated in the task repo, publish the race commit once
+  cat > "$D/hooks/reference-transaction" <<EOF
+#!/usr/bin/env bash
+[ "\$1" = committed ] || exit 0
+grep -q " $1\$" || exit 0
+[ -e "$D/hooks/fired" ] && exit 0
+: > "$D/hooks/fired"
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX
+git -C "$D/pipe" push -q origin "$B"
+EOF
+  chmod +x "$D/hooks/reference-transaction"
+}
+
+gate() {  # give the task repo a no-mistakes gate remote
+  git clone -q --bare "$D/origin.git" "$D/gate.git"
+  git -C "$D/gate.git" config uploadpack.allowAnySHA1InWant true
+  git -C "$D/repo" remote add no-mistakes "$D/gate.git"
+}
+
+resp() {  # <n> <rc> <text> [side-effect shell]: the stand-in's nth answer
+  { [ -z "${4:-}" ] || printf '%s\n' "$4"
+    printf "cat <<'TOON'\n%s\nTOON\nexit %s\n" "$3" "$2"
+  } > "$D/nm/resp.$1"
+}
+
+bs() {  # <state> <safety> <code> <command> [run] [current_head] [extra]: v1.84.0 branch_sync shape
+  printf 'branch_sync:\n  state: %s\n  changed: false\n  pipeline:\n    run: "%s"\n    status: cancelled\n    current_head: "%s"\n  relation: diverged\n  safety: %s\n%s  next_action:\n    code: %s\n    command: %s\n' \
+    "$1" "${5:-}" "${6:-}" "$2" "${7:+$7$'\n'}" "$3" "$4"
+}
+
+recov() {  # <required> <preserved> <archive_ref> <proof>
+  printf '  recovery:\n    source: bound_archive\n    required_head: %s\n    preserved_head: "%s"\n    archive_ref: %s\n    keep_local: true\n    proof: %s\n' "$@"
+}
+
+DIVERGED=$(bs diverged blocked_diverged inspect_and_reconcile_manually 'git log --oneline --left-right HEAD...x' 01RUN)
+SYNCED=$(bs synchronized synchronized run_pipeline 'no-mistakes axi run' 01RUN)
+ACTIVE=$(bs pipeline_owned pipeline_owned_active continue_active_run 'no-mistakes axi run' 01RUN)
+RETURNED=$(bs custody_returned gate_ready run_pipeline 'no-mistakes axi run' 01RUN)
+
+ref() { git -C "$WT" rev-parse -q --verify "$1" 2>/dev/null; }
+archives() { git -C "$WT" for-each-ref --format='%(refname)' refs/heads/archive; }
+calls() { cat "$D/nm/calls" 2>/dev/null; }
+run_owner() {  # [branch] [--check]
+  local branch=${1:-$B}
+  [ "$#" -eq 0 ] || shift
+  # The owner's git sees only this case's hooks, whatever hooks path the caller pins.
+  OUT=$(PATH="$STUB_BIN:$PATH" NM_STUB="$D/nm" GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath \
+    GIT_CONFIG_VALUE_0="$D/hooks" bash "$OWNER" "$TASK" "$WT" "$branch" "$@" 2>&1)
+  RC=$?
+  LAST=$(printf '%s\n' "$OUT" | tail -1)
+}
+pre() { printf 'refs/heads/archive/%s-pre-rebase-%.8s' "$TASK" "$1"; }
+
+# --- git step without a gate ---------------------------------------------------
+
+fixture diverged; rebase_publish; run_owner
+expect_code 0 "$RC" "diverged: exit"
+assert_equals "$PUB" "$(ref "refs/heads/$B")" "diverged: branch advanced to the published head"
+assert_equals "$A" "$(ref "$(pre "$A")")" "diverged: stale pre-rebase head archived"
+assert_equals "fm-pr-resync: result=archived-advanced archive=$(pre "$A") custody=none head=$PUB" "$LAST" "diverged: result line"
+assert_equals "" "$(calls)" "diverged without a gate: no no-mistakes call"
+pass "diverged stale local branch is archived and advanced to the pipeline-rebased published head"
+
+fixture behind; cm "$D/pipe" fix; git -C "$D/pipe" push -q origin "$B"; PUB=$(git -C "$D/origin.git" rev-parse "$B"); run_owner
+expect_code 0 "$RC" "behind: exit"
+assert_equals "$PUB" "$(ref "refs/heads/$B")" "behind: advanced"
+assert_equals "" "$(archives)" "behind: no archive"
+assert_contains "$LAST" "result=advanced archive=- custody=none" "behind: result line"
+pass "behind branch advances without an archive"
+
+fixture equal; printf 'x\n' > "$WT/untracked"; run_owner
+expect_code 0 "$RC" "equal: exit"
+assert_equals "fm-pr-resync: result=equal archive=- custody=none head=$A" "$LAST" "equal: result line"
+pass "equal branch changes nothing, even with an untracked file"
+
+fixture ahead; cm "$WT" local1; L=$(ref "refs/heads/$B"); run_owner
+expect_code 0 "$RC" "ahead: exit"
+assert_equals "$L" "$(ref "refs/heads/$B")" "ahead: unpublished local commit kept"
+assert_contains "$LAST" "result=ahead:1 archive=- custody=none head=$L" "ahead: reports the unpublished count"
+pass "ahead branch changes nothing and reports ahead:1"
+
+# --- refusals --------------------------------------------------------------------
+
+fixture dirty; rebase_publish; printf 'x\n' > "$WT/untracked"; run_owner
+expect_code 1 "$RC" "dirty: exit"
+assert_equals "$A" "$(ref "refs/heads/$B")" "dirty: branch unchanged"
+assert_equals "" "$(archives)" "dirty: no archive"
+assert_contains "$OUT" "local changes" "dirty: reason"
+pass "a dirty tree refuses when the branch must move"
+
+fixture bisect; rebase_publish; git -C "$WT" bisect start -q 2>/dev/null || git -C "$WT" bisect start >/dev/null; run_owner
+expect_code 1 "$RC" "in-progress: exit"
+assert_equals "$A" "$(ref "refs/heads/$B")" "in-progress: branch unchanged"
+assert_contains "$OUT" "in-progress operation" "in-progress: reason"
+pass "an in-progress operation refuses"
+
+fixture otherwt; rebase_publish; git -C "$WT" switch -q --detach; git -C "$D/repo" worktree add -q "$D/other" "$B"; run_owner
+expect_code 1 "$RC" "other worktree: exit"
+assert_equals "$A" "$(ref "refs/heads/$B")" "other worktree: branch unchanged"
+assert_contains "$OUT" "checked out in another worktree" "other worktree: reason"
+pass "a branch checked out in another worktree refuses"
+
+fixture named; git -C "$WT" switch -q -c side; run_owner
+expect_code 1 "$RC" "other named branch: exit"
+assert_contains "$OUT" "on branch side" "other named branch: reason"
+pass "a worktree on a different named branch refuses"
+
+fixture absent; git -C "$WT" switch -q --detach; run_owner fm/absent
+expect_code 1 "$RC" "origin lacks branch: exit"
+assert_equals "" "$(ref refs/heads/fm/absent)" "origin lacks branch: nothing created"
+assert_contains "$OUT" "origin has no branch fm/absent" "origin lacks branch: reason"
+pass "a branch missing on origin refuses"
+
+fixture mismatch; rebase_publish; race_commit; race_hook "refs/remotes/origin/$B"; run_owner
+expect_code 1 "$RC" "fetched/advertised mismatch: exit"
+assert_equals "$A" "$(ref "refs/heads/$B")" "mismatch: branch unchanged"
+assert_equals "" "$(archives)" "mismatch: no archive"
+assert_contains "$OUT" "advertises" "mismatch: reason"
+pass "a fetched head that differs from the advertised head refuses"
+
+fixture collide; rebase_publish; git -C "$WT" update-ref "$(pre "$A")" "$(ref refs/heads/main)"; run_owner
+expect_code 1 "$RC" "archive collision: exit"
+assert_equals "$A" "$(ref "refs/heads/$B")" "collision: branch unchanged"
+assert_equals "$(ref refs/heads/main)" "$(ref "$(pre "$A")")" "collision: existing archive untouched"
+assert_contains "$OUT" "already exists" "collision: reason"
+pass "an archive name held by another commit refuses before any move"
+
+fixture reuse; rebase_publish; git -C "$WT" update-ref "$(pre "$A")" "$A"; run_owner
+expect_code 0 "$RC" "archive reuse: exit"
+assert_equals "$PUB" "$(ref "refs/heads/$B")" "archive reuse: advanced"
+pass "an archive already at the stale head is reused"
+
+fixture after; rebase_publish; race_commit; race_hook "refs/heads/$B"; run_owner
+expect_code 1 "$RC" "remote move after advance: exit"
+assert_equals "$PUB" "$(ref "refs/heads/$B")" "after: branch at the previously verified published head"
+assert_equals "$A" "$(ref "$(pre "$A")")" "after: stale head archived"
+assert_contains "$OUT" "after the advance" "after: reason"
+assert_contains "$LAST" "archive=$(pre "$A") custody=refused head=$PUB" "after: archive and head reported"
+pass "a remote move after the advance refuses with the archive and verified head reported"
+
+# --- custody through the no-mistakes gate ------------------------------------------
+
+fixture before; gate; rebase_publish; race_commit
+resp 1 1 "$DIVERGED"; resp 2 1 "$DIVERGED" "git -C '$D/pipe' push -q origin '$B'"; run_owner
+expect_code 1 "$RC" "remote move before advance: exit"
+assert_equals "$A" "$(ref "refs/heads/$B")" "before: branch unchanged"
+assert_equals "" "$(archives)" "before: no archive"
+assert_contains "$OUT" "before the advance" "before: reason"
+pass "a remote move before the advance refuses with nothing moved"
+
+fixture active; gate; rebase_publish; resp 1 0 "$ACTIVE"; run_owner
+expect_code 3 "$RC" "preflight active: exit"
+assert_equals "$A" "$(ref "refs/heads/$B")" "preflight active: branch unchanged"
+assert_equals "" "$(archives)" "preflight active: no archive"
+assert_contains "$OUT" "monitoring-only" "preflight active: monitoring-only contract"
+assert_contains "$LAST" "custody=pipeline-active" "preflight active: result line"
+pass "custody active at preflight exits 3 with nothing changed"
+
+fixture pr47; gate; rebase_publish; resp 1 1 "$DIVERGED"; resp 2 1 "$DIVERGED"; resp 3 0 "$SYNCED"; run_owner
+expect_code 0 "$RC" "blocked_diverged: exit"
+assert_equals "$PUB" "$(ref "refs/heads/$B")" "blocked_diverged: advanced"
+assert_contains "$LAST" "result=archived-advanced archive=$(pre "$A") custody=settled" "blocked_diverged: settled"
+pass "blocked_diverged custody settles after archive and advance"
+
+for code in recover_custody adopt_published; do
+  case $code in
+    recover_custody) cmd='no-mistakes axi sync --recover'; args='axi sync --recover' ;;
+    *) cmd='no-mistakes axi sync --adopt-published'; args='axi sync --adopt-published' ;;
+  esac
+  V=$(bs pipeline_owned blocked_pipeline_owned_recoverable "$code" "$cmd" 01RUN)
+  fixture "$code"; gate; resp 1 1 "$V"; resp 2 1 "$V"; resp 3 0 recovered; resp 4 0 "$RETURNED"; run_owner
+  expect_code 0 "$RC" "$code: exit"
+  assert_equals "$args" "$(calls | sed -n 3p)" "$code: fixed command run"
+  assert_contains "$LAST" "custody=settled" "$code: settled after re-check"
+  pass "$code runs its fixed command and re-checks to settled"
+done
+
+V=$(bs pipeline_owned blocked_pipeline_owned_recoverable recover_custody 'no-mistakes axi sync --recover' 01RUN)
+fixture still; gate; resp 1 1 "$V"; resp 2 1 "$V"; resp 3 0 recovered; resp 4 1 "$V"; run_owner
+expect_code 1 "$RC" "recovery that does not settle: exit"
+assert_contains "$LAST" "custody=refused" "recovery that does not settle: result line"
+pass "a recovery whose fresh re-check is not settled refuses"
+
+p44() {  # <proof> <archive_ref-or-empty>: the retained PR44 terminal-run sequence
+  fixture "pr44-$1${2:+-foreign}"; gate
+  git -C "$D/pipe" switch -q main; cm "$D/pipe" m2
+  git -C "$D/pipe" switch -q -c nmrun; cm "$D/pipe" a-rebased
+  P=$(git -C "$D/pipe" rev-parse nmrun)
+  git -C "$D/pipe" push -q "$D/gate.git" "+nmrun:refs/heads/$B"
+  PIPE_ARCHIVE=refs/heads/archive/$TASK-pipeline-${P:0:8}
+  if [ -n "${2:-}" ]; then  # a real archive at the preserved head, but not one of this task's
+    git -C "$D/repo" fetch -q "$D/gate.git" "refs/heads/$B"
+    git -C "$WT" update-ref "$2" "$P"
+  fi
+  MANUAL=$(bs pipeline_owned blocked_recover_manual_reconciliation inspect_and_reconcile_manually 'no-mistakes axi status' 01RUN "$P")
+  resp 1 1 "$MANUAL"; resp 2 1 "$MANUAL"; resp 3 0 'Archive evidence bound; follow the exact guarded recovery action shown above.'
+  resp 4 1 "$(bs pipeline_owned blocked_pipeline_owned_recoverable recover_custody 'no-mistakes axi sync --recover --keep-local' 01RUN "$P" "$(recov "$A" "$P" "${2:-$PIPE_ARCHIVE}" "$1")")"
+  resp 5 0 recovered; resp 6 0 "$RETURNED"
+  run_owner
+}
+
+p44 verified
+expect_code 0 "$RC" "PR44 shape: exit"
+assert_equals "$P" "$(ref "$PIPE_ARCHIVE")" "PR44 shape: preserved pipeline head archived from the gate"
+assert_equals "sync --bind-archive-ref $PIPE_ARCHIVE" "$(calls | sed -n 3p)" "PR44 shape: bind-only call"
+assert_equals "axi sync --recover --keep-local" "$(calls | sed -n 5p)" "PR44 shape: keep-local recovery under proof"
+assert_equals "fm-pr-resync: result=equal archive=$PIPE_ARCHIVE custody=settled head=$A" "$LAST" "PR44 shape: result line"
+pass "terminal-run manual reconciliation archives, binds and recovers only under verified proof"
+
+for bad in unverified foreign; do
+  if [ "$bad" = foreign ]; then p44 verified refs/heads/archive/other; else p44 unverified; fi
+  expect_code 1 "$RC" "keep-local without proof ($bad): exit"
+  assert_equals "4" "$(calls | wc -l | tr -d ' ')" "keep-local without proof ($bad): no recovery call"
+  assert_equals "$P" "$(ref "$PIPE_ARCHIVE")" "keep-local without proof ($bad): archive kept and reported"
+  assert_contains "$LAST" "archive=$PIPE_ARCHIVE custody=refused" "keep-local without proof ($bad): result line"
+  pass "keep-local recovery without a verified own-archive proof refuses ($bad)"
+done
+
+fixture other; gate
+V=$(bs pipeline_owned blocked_remote_rewritten inspect_and_reconcile_manually 'no-mistakes axi status' 01RUN)
+resp 1 1 "$V"; resp 2 1 "$V"; run_owner
+expect_code 1 "$RC" "unhandled verdict: exit"
+assert_contains "$OUT" "safety: blocked_remote_rewritten" "unhandled verdict: native output verbatim"
+assert_contains "$LAST" "custody=refused" "unhandled verdict: result line"
+pass "an unhandled native verdict refuses with its output"
+
+fixture unreadable; gate; resp 1 1 'error: daemon unavailable'; rebase_publish; run_owner
+expect_code 1 "$RC" "unreadable custody: exit"
+assert_equals "$A" "$(ref "refs/heads/$B")" "unreadable custody: branch unchanged"
+assert_contains "$OUT" "daemon unavailable" "unreadable custody: native output"
+pass "unreadable custody refuses before any change"
+
+fixture check; gate; rebase_publish; resp 1 1 "$DIVERGED"; run_owner "$B" --check
+expect_code 0 "$RC" "--check: exit"
+assert_equals "$A" "$(ref "refs/heads/$B")" "--check: branch unchanged"
+assert_equals "" "$(archives)" "--check: no archive"
+assert_equals "1" "$(calls | wc -l | tr -d ' ')" "--check: read-only preflight only"
+assert_equals "fm-pr-resync: result=planned:archive-advance archive=- custody=none head=$A" "$LAST" "--check: planned action"
+pass "--check reports the planned action and changes nothing"
+
+fixture between; gate; rebase_publish; resp 1 1 "$DIVERGED"; resp 2 0 "$ACTIVE"; run_owner
+expect_code 3 "$RC" "custody between preflight and move: exit"
+assert_equals "$A" "$(ref "refs/heads/$B")" "between: branch unchanged"
+assert_equals "" "$(archives)" "between: no archive"
+pass "custody taken between preflight and move is caught before any ref moves"
+
+fixture late; gate; rebase_publish; resp 1 1 "$DIVERGED"; resp 2 1 "$DIVERGED"; resp 3 0 "$ACTIVE"; run_owner
+expect_code 3 "$RC" "custody after the pre-move check: exit"
+assert_equals "$PUB" "$(ref "refs/heads/$B")" "late: advance kept"
+assert_equals "$A" "$(ref "$(pre "$A")")" "late: stale head archived"
+assert_contains "$LAST" "result=archived-advanced archive=$(pre "$A") custody=pipeline-active" "late: archive and advance reported"
+pass "custody taken after the pre-move check is reported with the archive and advance"
+
+fixture detached; gate; git -C "$WT" switch -q --detach; git -C "$D/repo" branch -q -D "$B"; resp 1 0 "$ACTIVE"; run_owner
+expect_code 3 "$RC" "detached without a local branch: exit"
+assert_equals "$B" "$(git -C "$WT" symbolic-ref -q --short HEAD)" "detached: switched to the branch"
+assert_equals "$PUB" "$(ref "refs/heads/$B")" "detached: created at the published head"
+assert_contains "$OUT" "created local branch $B" "detached: creation reported"
+pass "a detached worktree without a local branch reports the created branch on exit 3"
+
+run_owner_rel() { OUT=$(bash "$OWNER" "$TASK" relative/wt "$B" 2>&1); RC=$?; }
+run_owner_rel
+expect_code 2 "$RC" "usage: relative worktree"
+pass "a relative worktree is a usage error"
