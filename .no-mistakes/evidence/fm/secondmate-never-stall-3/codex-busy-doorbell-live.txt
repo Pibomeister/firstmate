@@ -1,0 +1,4 @@
+ok - codex (codex-cli 0.165.0): an owned doorbell submitted into a busy Codex composer reached the model inside the running turn
+ok - codex (codex-cli 0.165.0): a real Bash PreToolUse payload carries tool_input, session_id and turn_id (["cwd","hook_event_name","model","permission_mode","session_id","tool_input","tool_name","tool_use_id","transcript_path","turn_id"])
+ok - live busy-Codex doorbell guard verified 2 live surface(s)
+exit=0

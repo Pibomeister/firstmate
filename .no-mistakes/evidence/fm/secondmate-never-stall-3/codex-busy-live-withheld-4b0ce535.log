@@ -1,0 +1,5 @@
+rev 4b0ce535029a7ad79e56f34ecfa7640e6817d1a2 codex codex-cli 0.165.0
+ok - codex (codex-cli 0.165.0): an owned doorbell submitted into a busy Codex composer reached the model inside the running turn
+skip: codex (codex-cli 0.165.0): live PreToolUse surface not exercised: requires hook trust, which is withheld
+ok - live busy-Codex doorbell guard verified 1 live surface(s), skipped 1
+EXIT=0

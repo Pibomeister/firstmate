@@ -1,0 +1,4 @@
+rev=c6579049f57cac67f37767d43b92b1bc4f3a310d dirty= codex=codex-cli 0.165.0 date=2026-10-29T08:28:31Z
+ok - codex (codex-cli 0.165.0): an owned doorbell submitted into a busy Codex composer reached the model inside the running turn
+not ok - codex (codex-cli 0.165.0): no Bash PreToolUse payload reached this checkout's hook; its .codex/hooks.json registration runs only once trusted in an ordinary session, which this guard never does
+exit=1

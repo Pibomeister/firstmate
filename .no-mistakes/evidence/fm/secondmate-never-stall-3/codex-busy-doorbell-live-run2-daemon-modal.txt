@@ -1,0 +1,3 @@
+can't find window: codex
+not ok - codex (codex-cli 0.165.0): never reached an empty composer; pane tail: 
+exit=1

@@ -1,0 +1,4 @@
+rev=09e6cd81d40c5c03d96130e115519d806feab452 dirty= M tests/fm-task-inbox-codex-busy-live-e2e.test.sh  codex=codex-cli 0.165.0 date=2026-10-29T08:24:33Z
+ok - codex (codex-cli 0.165.0): an owned doorbell submitted into a busy Codex composer reached the model inside the running turn
+not ok - codex (codex-cli 0.165.0): no Bash PreToolUse payload reached this checkout's hook; its .codex/hooks.json registration runs only once trusted in an ordinary session, which this guard never does
+exit=1
