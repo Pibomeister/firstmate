@@ -1475,6 +1475,7 @@ SPAWN_TASK_SET_LOCK_HELD=0
 SPAWN_TREEHOUSE_PROJECT_LOCK=
 SPAWN_TREEHOUSE_PROJECT_LOCK_HELD=0
 SPAWN_SLOT_CLAIMED=0
+SPAWN_SLOT_RESERVED=0
 SPAWN_FRESH_ENDPOINT_OPENED=0
 SPAWN_FRESH_WIRING_PENDING=0
 SPAWN_TASK_TMP_CREATED=0
@@ -1491,6 +1492,14 @@ SPAWN_ENDPOINT_CLOSED=0
 SPAWN_STAGED_LAUNCH_FILE=
 
 spawn_fresh_commit_rollback() {
+  if [ "${HARNESS:-}" = agy ] && [ -f "$STATE/$ID.meta" ] && [ ! -L "$STATE/$ID.meta" ]; then
+    SPAWN_FRESH_COMMIT_PENDING=0
+    if declare -F spawn_commit_backlog_transition >/dev/null && ! spawn_commit_backlog_transition; then
+      echo "warning: the kept AGY record's backlog item could not be moved to In flight ($FM_BACKLOG_TRANSITION_ERROR)" >&2
+    fi
+    echo "warning: keeping task $ID's published AGY record and worktree for relaunch or teardown" >&2
+    return 0
+  fi
   if fm_backlog_atomic_transition rollback "$STATE/$ID.meta" \
     "$FM_ROOT/bin/fm-busy-event.sh" "$STATE" "$ID" "${BUSY_GEN:-}"; then
     SPAWN_FRESH_COMMIT_PENDING=0
@@ -1701,7 +1710,12 @@ spawn_abort_cleanup() {
     fm_treehouse_pool_slot "$PROJ_ABS" "$WT"; then
     SPAWN_SLOT_CLAIMED=0
     if [ "$SPAWN_TREEHOUSE_PROJECT_LOCK_HELD" = 1 ]; then
-      fm_treehouse_slot_owner_release "$WT" "$ID" || true
+      if [ "$SPAWN_SLOT_RESERVED" = 0 ] ||
+        (cd "$PROJ_ABS" && treehouse return "$WT" --if-lease-holder "$ID" --force); then
+        fm_treehouse_slot_owner_release "$WT" "$ID" || true
+      else
+        echo "warning: could not return unpublished task $ID's reserved slot $WT; its claim is retained" >&2
+      fi
     elif [ "${HARNESS:-}" = polytoken ] && [ -n "$SPAWN_TREEHOUSE_PROJECT_LOCK" ] &&
       fm_lock_try_acquire "$SPAWN_TREEHOUSE_PROJECT_LOCK"; then
       fm_treehouse_slot_owner_release "$WT" "$ID" || true
@@ -2925,6 +2939,11 @@ if [ "$HARNESS" = agy ] && [ "$BACKEND" != tmux ] && [ "$BACKEND" != herdr ]; th
   echo "error: agy launch readiness is live-verified on the tmux and herdr backends only; backend=$BACKEND cannot prove the brief started. Select backend tmux or herdr." >&2
   exit 1
 fi
+if [ "$HARNESS" = agy ]; then
+  trap 'exit 129' HUP
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+fi
 
 # config/crew-exclude-tools (header above): refuse before worker provisioning
 # if this launch cannot honor the list. Secondmate agents are not covered.
@@ -3804,6 +3823,22 @@ if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ] &&
     exit 1
   fi
   SPAWN_TREEHOUSE_PROJECT_LOCK_HELD=1
+fi
+if [ "$RELAUNCH" -eq 1 ] && [ "$KIND" != secondmate ] &&
+  fm_treehouse_pool_slot "$PROJ_ABS" "$RELAUNCH_WT"; then
+  SPAWN_TREEHOUSE_PROJECT_LOCK=$(fm_treehouse_project_lock_path "$PROJ_ABS") || exit 1
+  fm_lock_try_acquire "$SPAWN_TREEHOUSE_PROJECT_LOCK" || {
+    echo "error: another Treehouse slot allocation or return is in progress for $PROJ_ABS; refusing to race it" >&2
+    exit 1
+  }
+  SPAWN_TREEHOUSE_PROJECT_LOCK_HELD=1
+  fm_treehouse_slot_require_owner "$RELAUNCH_WT" "$ID" || exit 1
+  if [ "$HARNESS" = agy ] || [ "$RELAUNCH_PRIOR_HARNESS" = agy ]; then
+    fm_treehouse_slot_reserve "$PROJ_ABS" "$RELAUNCH_WT" "$ID" || {
+      echo "error: could not reserve task $ID's pool slot $RELAUNCH_WT; refusing to relaunch without durable custody" >&2
+      exit 1
+    }
+  fi
 fi
 if [ -n "$SPAWN_PROJECT_CAPACITY" ]; then
   if ! fm_project_capacity_occupants "$SPAWN_TREEHOUSE_PROJECT_LOCK" "$PROJ_ABS" "$STATE" "$ID"; then
@@ -5155,12 +5190,8 @@ rovo_spawn_fail() { # <detail>
 # a row that was never dispatched, and the possibly surviving worker blocks a
 # duplicate dispatch of the same item. A row that cannot be moved is named in
 # its own warning rather than silently left disagreeing with its record.
-# keep-record (agy) keeps the record even after a proven close: an agy brief
-# rides its launch command, so a readiness timeout cannot prove the brief never
-# ran, and the kept record is what lets fm-control.sh relaunch reclaim the task
-# on the same worktree or fm-teardown.sh resolve it.
-spawn_gate_endpoint_cleanup() {  # [keep-record]
-  local keep=${1:-} tab_id='' kill_unproven=0
+spawn_gate_endpoint_cleanup() {
+  local tab_id='' kill_unproven=0
   [ "$BACKEND" = zellij ] && tab_id=$ZELLIJ_TAB_ID
   case "$BACKEND" in
     tmux)
@@ -5179,7 +5210,7 @@ spawn_gate_endpoint_cleanup() {  # [keep-record]
       kill_unproven=1
       ;;
   esac
-  [ "$kill_unproven" -eq 0 ] && [ "$keep" != keep-record ] && return 0
+  [ "$kill_unproven" -eq 0 ] && [ "$HARNESS" != agy ] && return 0
   SPAWN_FRESH_COMMIT_PENDING=0
   if [ "$RELAUNCH" -eq 0 ] && [ "$BACKLOG_TRANSITION" = 1 ] &&
     ! spawn_commit_backlog_transition; then
@@ -5245,7 +5276,7 @@ agy_wait_for_working() {
 agy_spawn_fail() {  # <detail>
   printf '%s\n' "$(status_stamp_line "failed: $1")" >>"$STATE/$ID.status"
   echo "error: $1; inspect window $T" >&2
-  spawn_gate_endpoint_cleanup keep-record
+  spawn_gate_endpoint_cleanup
 }
 
 # A fresh worktree can present Droid's folder-trust dialog even with --auto high.
@@ -5626,9 +5657,7 @@ elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
   fi
 
   # Claim the pool slot for this task. The interactive `treehouse get` sent to
-  # the pane above records only a process lease (Treehouse's durable
-  # `get --lease --lease-holder`, which bin/fm-home-seed.sh uses for secondmate
-  # homes, is not this path), so Treehouse cannot say which task a slot belongs
+  # the pane above records only a process lease, so Treehouse cannot say which task a slot belongs
   # to once that task's worker exits - and that is exactly when the slot is
   # handed on and this task's worktree= line goes stale. The claim is what lets
   # bin/fm-teardown.sh leave a slot that has since been reassigned untouched, so
@@ -5643,6 +5672,13 @@ elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
       exit 1
     fi
     SPAWN_SLOT_CLAIMED=1
+    if [ "$HARNESS" = agy ]; then
+      SPAWN_SLOT_RESERVED=1
+      fm_treehouse_slot_reserve "$PROJ_ABS" "$WT" "$ID" || {
+        echo "error: could not reserve task $ID's pool slot $WT; refusing to launch without durable custody" >&2
+        exit 1
+      }
+    fi
   fi
 fi
 if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ]; then
@@ -7208,7 +7244,10 @@ else
 fi
 if [ "$SPAWN_BACKLOG_COMMIT_STATUS" -ne 0 ]; then
   if [ "$RELAUNCH" -eq 0 ]; then
-    if spawn_fresh_commit_rollback; then
+    if [ "$HARNESS" = agy ]; then
+      SPAWN_FRESH_COMMIT_PENDING=0
+      echo "error: task $ID's backlog item could not be moved to In flight ($FM_BACKLOG_TRANSITION_ERROR); its AGY record and worktree are preserved for recovery" >&2
+    elif spawn_fresh_commit_rollback; then
       echo "error: task $ID's backlog item could not be moved to In flight ($FM_BACKLOG_TRANSITION_ERROR); its record was removed so no worker is left that the backlog does not own - close out endpoint $T and local copy $WT by hand, then re-run the spawn" >&2
     else
       echo "error: task $ID's backlog item could not be moved to In flight ($FM_BACKLOG_TRANSITION_ERROR), and failed-dispatch cleanup is incomplete; the provisional record may remain at $STATE/$ID.meta - close out endpoint $T and local copy $WT by hand, then remove the record and busy state before retrying" >&2

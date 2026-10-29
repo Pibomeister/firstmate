@@ -1792,22 +1792,6 @@ fm_treehouse_pool_slot() {  # <project-dir> <worktree>
 
 # Slot-owner claim: which task a Treehouse pool slot currently belongs to.
 #
-# Treehouse can record ownership durably: `treehouse get --lease --lease-holder`
-# reserves a slot under a label until `treehouse return --if-lease-holder`
-# releases it, and Firstmate uses exactly that for secondmate homes
-# (bin/fm-home-seed.sh). Crewmate spawns do not take that path: they acquire
-# their slot through the interactive pane-driven `treehouse get`, whose state
-# entry is a live process lease (owner_pid plus owner_started_at, and `treehouse
-# status` reports in-use from the processes actually running under the path).
-# That answers "is anything running here", never "which task owns this", and it
-# is released by the very event that makes a task record stale - the worker
-# exiting - so a slot whose lease has lapsed reads identical whether it is still
-# this task's or has since been handed to another one. Firstmate therefore keeps
-# its own claim on top: one file naming the task that took the slot, written by
-# bin/fm-spawn.sh under the same project lock that allocates the slot and
-# released by bin/fm-teardown.sh when the slot goes back to the pool. Moving
-# crewmate spawns onto the durable lease is separate follow-up work.
-#
 # The claim lives at <pool>/<slot>/.fm-slot-owner - a sibling of the repo
 # checkout rather than a file inside it - so claiming a slot can never dirty the
 # copy teardown's landed-work checks inspect, and a returned slot carries no
@@ -1886,6 +1870,36 @@ fm_treehouse_slot_owner_release() {  # <worktree> <task-id>
   [ "$FM_TREEHOUSE_SLOT_OWNER" = mine ] || return 0
   marker=$(fm_treehouse_slot_owner_marker "$worktree") || return 0
   rm -f "$marker" 2>/dev/null || true
+}
+
+fm_treehouse_slot_require_owner() {
+  local worktree=$1 id=$2
+  fm_treehouse_slot_owner_state "$worktree" "$id"
+  [ "$FM_TREEHOUSE_SLOT_OWNER" = mine ] && return 0
+  echo "error: task $id cannot reclaim pool slot $worktree: ownership=$FM_TREEHOUSE_SLOT_OWNER claimant=${FM_TREEHOUSE_SLOT_OWNER_ID:-none}; refusing to touch another task's checkout" >&2
+  return 1
+}
+
+fm_treehouse_slot_reserve() {
+  local project=$1 worktree=$2 id=$3 slot reserved lease_state
+  fm_treehouse_slot_require_owner "$worktree" "$id" || return 1
+  slot=$(CDPATH='' cd -- "$worktree" && pwd -P) || return 1
+  lease_state=$(set -o pipefail
+    cd "$project" && treehouse status --json | node -e '
+    const fs = require("node:fs");
+    const [path, holder] = process.argv.slice(1);
+    const rows = JSON.parse(fs.readFileSync(0, "utf8"));
+    const matches = rows.filter(row => fs.existsSync(row.path) && fs.realpathSync(row.path) === path);
+    if (matches.length !== 1) throw new Error("recorded checkout is not uniquely present in the configured Treehouse pool");
+    const row = matches[0];
+    if (row.lease_id && row.lease_holder === holder) console.log("owned");
+    else if (!row.lease_id && !row.lease_holder) console.log("unleased");
+    else throw new Error("recorded checkout carries a different Treehouse lease holder");
+  ' "$slot" "$id") || return 1
+  [ "$lease_state" != owned ] || return 0
+  slot=$(basename "${slot%/*}")
+  reserved=$(cd "$project" && treehouse lease "$slot" --lease-holder "$id") || return 1
+  [ "$reserved" -ef "$worktree" ]
 }
 
 fm_failure_episode_reset() {

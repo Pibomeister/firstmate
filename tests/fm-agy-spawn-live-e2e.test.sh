@@ -21,10 +21,6 @@ PROJECT="$HOME_DIR/projects/scratch"
 MODEL=${FM_AGY_LIVE_MODEL:-gemini-3.8-flash-low}
 
 cleanup() {
-  if [ "${FM_AGY_SPAWN_LIVE_KEEP:-0}" = 1 ] || [ "${FM_AGY_SPAWN_LIVE_DONE:-0}" != 1 ]; then
-    printf '# kept live lab at %s\n' "$LAB" >&2
-    return
-  fi
   "$REAL_TMUX" -L "$SOCKET" kill-server >/dev/null 2>&1 || true
   chmod -R u+w "$LAB" 2>/dev/null || true
   [ -n "${LAB:-}" ] && rm -rf "$LAB"
@@ -118,12 +114,16 @@ out=$(FM_AGY_READY_POLLS=1 FM_AGY_POLL_INTERVAL=0 FM_SPAWN_NO_GUARD=1 "$ROOT/bin
   --harness agy --model "$MODEL" --effort low --backend tmux 2>&1) || rc=$?
 [ "$rc" -ne 0 ] || fail "a one-poll agy readiness gate unexpectedly passed; the custody case was not exercised"$'\n'"$out"
 [ -f "$HOME_DIR/state/$ID.meta" ] || fail "a failed agy readiness gate rolled back its record"$'\n'"$out"
+WT=$(sed -n 's/^worktree=//p' "$HOME_DIR/state/$ID.meta")
+SECOND_WT=$(cd "$PROJECT" && treehouse get --lease --no-fetch) || fail "second dispatch could not allocate a slot"
+[ "$SECOND_WT" != "$WT" ] || fail "second dispatch stole the failed AGY task's checkout"
+treehouse return "$SECOND_WT" --force || fail "second dispatch slot could not be returned"
 WINDOW=$(sed -n 's/^window=//p' "$HOME_DIR/state/$ID.meta")
 tmux list-windows -a -F '#{session_name}:#{window_name}' | grep -Fqx "$WINDOW" \
   && fail "a failed agy readiness gate left its window $WINDOW open"
 pass "a failed agy readiness gate closed its own window and kept its record"
 "$ROOT/bin/fm-control.sh" "$ID" relaunch --note "The first launch failed its readiness check; do the brief task now." || fail "fm-control could not relaunch the kept agy record"
+[ "$(sed -n 's/^worktree=//p' "$HOME_DIR/state/$ID.meta")" = "$WT" ] || fail "relaunch changed the original task worktree"
 wait_for 'relaunched brief report' "grep -Fq BRIEF_RECEIVED '$HOME_DIR/data/$ID/report.md'"
 pass "fm-control relaunched the kept agy record and the worker processed its brief"
 retire "$ID"
-FM_AGY_SPAWN_LIVE_DONE=1
