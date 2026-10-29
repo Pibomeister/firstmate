@@ -835,6 +835,28 @@ The same live guard records that shape: one `codex exec` in the repository root 
 The guard adds no `.codex/hooks.json` entry and never grants or bypasses hook trust ([Codex hook trust](#codex-hook-trust)), so on a Codex home that has not trusted the registration no hook runs and that surface fails.
 The inbox guard still allows the call for a payload missing any of those keys, which `test_guard_allows_everything_it_does_not_own` in `tests/fm-secondmate-inbox-guard.test.sh` pins.
 
+## Codex secondmate watcher on Herdr
+
+Entry dated 2026-10-29.
+
+A local Codex secondmate's outside-turn watcher binds to its own pane, and on Herdr the binding proof (`fm_secondmate_watch_binding_valid` in `bin/fm-push-transition-lib.sh`) reads Herdr's `pane process-info` to show the session-lock owner descends from the pane's shell and sits in its foreground group.
+That is a vendor-emitted surface, so the portable regression `test_secondmate_event_herdr_binding` in `tests/fm-turnend-guard.test.sh`, which uses a fake herdr, is backed by the default-on live guard `tests/fm-herdr-secondmate-watch-live-e2e.test.sh`, which also refreshes this entry:
+
+```bash
+tests/fm-herdr-secondmate-watch-live-e2e.test.sh
+```
+
+In a named non-default lab session from `bin/fm-herdr-lab.sh`, a Codex-named lock owner inside a real pane runs the production `fm_secondmate_watch_start`.
+From outside, the production binding proof, watcher status and notification run against the real server, and the notification's doorbell must appear in the pane.
+The lock owner is `bash` symlinked as `codex`, so this proves the Herdr backend route, not a genuine Codex session.
+
+Result: passed 2026-10-29 on herdr 0.7.4 (client and server, protocol 16), macOS 26.5.2 arm64, bash 5.3.20:
+
+```text
+ok - herdr 0.7.4: production watch start binds a Codex-named owner in a real Herdr pane, proven from real process-info, refused for another pane
+ok - herdr 0.7.4: notification wrote durable record 001.msg and its doorbell reached the real Herdr pane
+```
+
 ## Codex hook trust
 
 Verified 2026-09-16 on codex-cli 0.151.0, macOS arm64, in a fresh linked worktree of this repository.
