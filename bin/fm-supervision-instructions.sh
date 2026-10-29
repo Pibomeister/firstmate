@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Render the primary-harness supervision operating block for session start and
 # the short repair line used by guards and turn-end hooks. On a non-Pi primary
-# with a supervision protocol (claude, cursor, opencode, omp, grok, codex) whose
+# with a supervision protocol (claude, cursor, opencode, omp, grok, codex, agy) whose
 # home runs the supervision host (fm_supervision_host_enabled in
 # bin/fm-supervision-engine-lib.sh: by default on Claude, by
 # config/supervision-host elsewhere, never with config/supervision-host-off), the block
@@ -103,7 +103,7 @@ if [ -z "$HARNESS" ]; then
 fi
 
 case "$HARNESS" in
-  claude|codex|opencode|pi|grok|cursor|omp|muse) SNIPPET="$DOC_DIR/$HARNESS.md" ;;
+  claude|codex|opencode|pi|grok|cursor|omp|muse|agy) SNIPPET="$DOC_DIR/$HARNESS.md" ;;
   pi-signed) SNIPPET="$DOC_DIR/pi.md" ;;
   *) HARNESS=unknown; SNIPPET="$DOC_DIR/unknown.md" ;;
 esac
@@ -112,7 +112,7 @@ HOST_SNIPPET=
 grok_arm='bin/fm-watch-arm.sh'
 grok_arm_command='export FM_WATCH_GROK_CONTINUITY=1; exec bin/fm-watch-arm.sh'
 case "$HARNESS" in
-  claude|cursor|opencode|omp|grok|codex)
+  claude|cursor|opencode|omp|grok|codex|agy)
     # shellcheck source=bin/fm-supervision-engine-lib.sh
     . "$SCRIPT_DIR/fm-supervision-engine-lib.sh"
     if fm_supervision_host_enabled "$CONFIG" "$HARNESS"; then
@@ -243,6 +243,13 @@ repair_line() {
     muse)
       printf '%s%s\n' "$prefix" 'repair missing watcher supervision with bin/fm-watch-arm.sh as its own Muse tracked background task, never shell & or a foreground wait.'
       ;;
+    agy)
+      if [ -n "$HOST_SNIPPET" ]; then
+        printf '%s%s\n' "$prefix" 'supervision is owned by the Stop-hook park (.agents/hooks.json -> bin/fm-turnend-guard-agy.sh running the supervision host); inspect the hook registration and supervision host startup path before ending the turn.'
+      else
+        printf '%s%s\n' "$prefix" 'watcher supervision is owned by the Stop-hook park (.agents/hooks.json -> bin/fm-turnend-guard-agy.sh); inspect the hook registration and watcher startup path before ending the turn.'
+      fi
+      ;;
     *)
       printf '%s%s\n' "$prefix" 'repair missing watcher supervision according to the session-start block for this harness; do not use shell &.'
       ;;
@@ -278,6 +285,9 @@ ordinary_wake_line() {
       ;;
     muse)
       printf '%s\n' '- Ordinary wake: re-arm exactly one bin/fm-watch-arm.sh Muse tracked background task as directed below.'
+      ;;
+    agy)
+      printf '%s\n' '- Ordinary wake: the Stop-hook park (bin/fm-turnend-guard-agy.sh) already owns watcher continuity; drain and handle the wake, and do not arm another cycle yourself.'
       ;;
     *)
       printf '%s\n' '- Ordinary wake: follow the continuation in the harness protocol below; do not use shell &.'

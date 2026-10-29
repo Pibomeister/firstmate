@@ -4,6 +4,8 @@ Verified on 2026-06-11 with codex-cli 0.139.0 unless a fact gives a newer versio
 
 ## Operating facts
 
+These command-line and terminal facts apply to pane-backed sessions; for T3 Code, read the [native lifecycle](../../../../../docs/t3code-backend.md#current-lifecycle-and-safety) and [provider-command limits](../../../../../docs/t3code-backend.md#active-limits).
+
 | Fact | Value |
 |---|---|
 | Busy state | Unknown until a semantic source is live-verified: the app-server turn lifecycle is unreachable for a pane worker, and project lifecycle hooks did not fire for a Firstmate-launched worker. |
@@ -14,6 +16,7 @@ Verified on 2026-06-11 with codex-cli 0.139.0 unless a fact gives a newer versio
 | Model flag | `--model <model>`. |
 | Effort flag | `-c 'model_reasoning_effort="<low\|medium\|high\|xhigh\|max>"'`, verified on codex-cli 0.142.1 whose installed schema contains `model_reasoning_effort`; `low` through `xhigh` are passed for every Codex model, and `max` is passed only when the requested model's entry in `${CODEX_HOME:-~/.codex}/models_cache.json` lists `max` under `supported_reasoning_levels`, with the spawn refused when it does not (`bin/fm-harness.sh validate-native-effort` owns that check). |
 | Model discovery | Open the current interactive session's `/model` picker. |
+| Approval posture | See [`Codex automatic approval review`](../../../../../docs/configuration.md#codex-automatic-approval-review) and [`persistent failover`](../../../../../docs/configuration.md#persistent-managed-policy-failover). |
 | Marker | None for harness identity; identity comes from ancestry, and `../../../bin/fm-harness.sh` is what keeps a retained foreign `CLAUDECODE` from renaming it. Verified on 2026-09-01 with codex-cli 0.152.0: the pane process is the `node` npm shim and the native `codex` binary runs as its foreground child, so a tool subprocess reaches the native name directly while the shim itself is identified from its script path. [`bin/fm-session-lock-lib.sh`](../../../../../bin/fm-session-lock-lib.sh) owns the separate session-lock identity rules, including daemon-served sessions; [`supervision.md`](../../../../../docs/verification/supervision.md) records the live Codex evidence. |
 
 The catalog and validator were checked against codex-cli 0.162.1 on 2026-10-27; the command and output are in [runtime backend verification](../../../../../docs/verification/runtime-backends.md#codex-model-catalog-max-validation).
@@ -27,7 +30,8 @@ The decision persists for the repository, so later worktrees of the same project
 A second dialog, "Hooks need review - N hooks are new or changed", appears whenever the machine's `~/.codex/hooks.json` or a project's own `.codex/hooks.json` carries a hook Codex has not persisted trust for.
 It is unanswerable rather than merely inconvenient: its selection starts on "Review hooks", which is neither trusting nor declining, and Firstmate's key plane carries Enter, Escape and Ctrl-C with no arrow navigation.
 Writing Codex's own trust store to pre-accept it would manufacture an operator consent that was never given.
-So crewmate and scout launches disable Codex's hook layer outright (`bin/fm-spawn.sh`'s launch template owns the flag), which is the opposite of `--dangerously-bypass-hook-trust` - that flag RUNS the untrusted hooks.
+So pane-backed crewmate and scout launches request that Codex disable its hook layer (`bin/fm-spawn.sh`'s launch template owns the flag), which is the opposite of `--dangerously-bypass-hook-trust` - that flag RUNS the untrusted hooks.
+A managed policy can override the requested disablement, so a worker can still encounter a policy-provided hook or its review; Firstmate does not modify the operator's Codex settings to bypass either outcome.
 A crewmate loses nothing: its turn-end signal is the `-c notify=` program on the same launch, and the Firstmate hooks in a project's `.codex/hooks.json` are primary-session infrastructure that stands down in a child worktree.
 A secondmate is a primary in its own home and keeps its hooks, so an unanswerable modal there is still possible and is the operator's own hook review to settle.
 
@@ -35,7 +39,7 @@ A secondmate is a primary in its own home and keeps its hooks, so an unanswerabl
 
 A `$<skill>` invocation opens a `$` autocomplete popup.
 Submitting too fast lets the popup swallow Enter, so the invocation never lands.
-`../../../bin/fm-send.sh` gives a leading `$` a 1.2-second settle before the first Enter only when the exact task metadata records `harness=codex`, with the target backend's submit retry as the safety net.
+For pane-backed sessions, `../../../bin/fm-send.sh` gives a leading `$` a 1.2-second settle before the first Enter only when the exact task metadata records `harness=codex`, with the target backend's submit retry as the safety net.
 That scope is load-bearing because a leading `$` commonly starts ordinary text such as `$5/month` or `$HOME`.
 An explicit `session:window` target has no metadata, so its harness is unknown and uses the non-Codex fast path.
 This is why `$no-mistakes` reaches a Codex worker instead of being consumed by the popup.

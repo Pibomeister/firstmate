@@ -147,6 +147,24 @@ fm_lease_command_lock_acquire() {
   exit "$FM_LEASE_REFUSE_EXIT"
 }
 
+# fm_lease_tagged_holder_live <value>: 0 iff <value> is a Windows-tagged
+# session-lock identity whose holder is a live verified harness. Only a
+# win:-shaped value reaches the session-lock library, so a POSIX home never
+# loads it here and its lease verdicts stay byte for byte as before.
+fm_lease_tagged_holder_live() {
+  case "$1" in
+    win:*) ;;
+    *) return 1 ;;
+  esac
+  if ! command -v fm_harness_pid_alive >/dev/null 2>&1; then
+    # Kept an analysis boundary for the same reason as fm-wake-lib.sh above.
+    # shellcheck source=/dev/null
+    . "$FM_LEASE_LIB_DIR/fm-session-lock-lib.sh"
+  fi
+  fm_session_pid_valid "$1" || return 1
+  fm_harness_pid_alive "$1"
+}
+
 # fm_lease_home_runs_host: 0 iff this home runs the supervision host
 # (fm_supervision_host_enabled owns the gate).
 fm_lease_home_runs_host() {
@@ -204,6 +222,11 @@ fm_lease_read() {
     *) FM_LEASE_ACTOR= ;;
   esac
   case "$FM_LEASE_PID" in
+    win:*)
+      case "${FM_LEASE_PID#win:}" in
+        '' | *[!0-9]*) FM_LEASE_PID= ;;
+      esac
+      ;;
     '' | *[!0-9]*) FM_LEASE_PID= ;;
   esac
   return 0
@@ -212,7 +235,10 @@ fm_lease_read() {
 fm_lease_claim_holder() {
   local pin=${FM_LEASE_HOLDER_PID:-} session=${FM_LEASE_HOLDER_SESSION:-} current key
   current=$(head -n 1 "$STATE/.lock" 2>/dev/null) || current=
-  case "$current" in ''|0|1|*[!0-9]*) return 1 ;; esac
+  case "$current" in
+    win:*) fm_lease_tagged_holder_live "$current" || return 1 ;;
+    ''|0|1|*[!0-9]*) return 1 ;;
+  esac
   if [ -z "$pin" ] && [ -z "$session" ]; then
     printf '%s\n' "$current"
     return 0
@@ -240,6 +266,17 @@ fm_lease_live() {
   [ -n "$FM_LEASE_ACTOR" ] || return 1
   [ -n "$FM_LEASE_PID" ] || return 1
   lock_pid=$(head -n 1 "$STATE/.lock" 2>/dev/null || true)
+  # A Windows-tagged holder is outside this process table, so kill -0 cannot
+  # see it; the lease is live while it is still the lock holder and that
+  # holder is a live verified harness.
+  case "$FM_LEASE_PID" in
+    win:*)
+      [ "$FM_LEASE_PID" = "$lock_pid" ] || return 1
+      fm_lease_tagged_holder_live "$lock_pid"
+      return
+      ;;
+  esac
+  kill -0 "$FM_LEASE_PID" 2>/dev/null || return 1
   case "$lock_pid" in ''|0|1|*[!0-9]*) return 1 ;; esac
   [ "$FM_LEASE_PID" = "$lock_pid" ] || return 1
   # shellcheck source=/dev/null
