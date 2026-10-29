@@ -649,6 +649,7 @@ set -u
 if [ "${1:-}" = models ]; then
   [ -z "${FM_FAKE_AGY_MODELS_LOG:-}" ] || printf 'models\n' >> "$FM_FAKE_AGY_MODELS_LOG"
   if [ "${FM_FAKE_AGY_MODELS_FAIL:-0}" = 1 ]; then exit 3; fi
+  if [ "${FM_FAKE_AGY_MODELS_EMPTY:-0}" = 1 ]; then exit 0; fi
   if [ "${FM_FAKE_AGY_MODELS_HANG:-0}" = 1 ]; then
     cat > /dev/null
     sleep 30
@@ -658,6 +659,12 @@ if [ "${1:-}" = models ]; then
   printf 'gemini-3.8-flash-high\tGemini 3.8 Flash (High)\n'
   printf 'gemini-3.8-flash-medium\tGemini 3.8 Flash (Medium)\n'
   printf 'gemini-3.8-flash-low\tGemini 3.8 Flash (Low)\n'
+  exit 0
+fi
+# agy prints its help on stderr (1.4.10).
+if [ "${1:-}" = --help ]; then
+  printf '  --effort                        Reasoning effort for the current CLI session (%s)\n' \
+    "${FM_FAKE_AGY_HELP_EFFORTS:-low|medium|high}" >&2
   exit 0
 fi
 echo "fake agy must never execute" >&2
@@ -688,6 +695,10 @@ EOF
   mkdir -p "$home/.gemini/antigravity-cli"
   printf '%s\n' '{"model":"Gemini 3.8 Flash (High)","trustedWorkspaces":["/home/someone/elsewhere"]}' \
     > "$home/.gemini/antigravity-cli/settings.json"
+  # On macOS agy keeps its sign-in in the login keychain under $HOME, and the
+  # spawn refuses a HOME without one; give the fake HOME one.
+  mkdir -p "$home/Library/Keychains"
+  : > "$home/Library/Keychains/login.keychain-db"
   fm_git_worktree "$proj" "$wt" "wt-$name"
   fm_test_fake_treehouse "$fakebin" "$proj" "$case_dir/pool" "$wt"
   touch "$home/state/.last-watcher-beat"
@@ -725,6 +736,8 @@ run_agy_spawn() {
     FM_FAKE_AGY_STATE="$case_dir/agy.state" \
     FM_FAKE_AGY_SETTINGS="$home/.gemini/antigravity-cli/settings.json" \
     FM_FAKE_AGY_MODELS_FAIL="${FM_FAKE_AGY_MODELS_FAIL:-0}" \
+    FM_FAKE_AGY_MODELS_EMPTY="${FM_FAKE_AGY_MODELS_EMPTY:-0}" \
+    FM_FAKE_AGY_HELP_EFFORTS="${FM_FAKE_AGY_HELP_EFFORTS:-}" \
     FM_FAKE_AGY_MODELS_HANG="${FM_FAKE_AGY_MODELS_HANG:-0}" \
     FM_FAKE_AGY_MODELS_FINISHED="${FM_FAKE_AGY_MODELS_FINISHED:-}" \
     FM_FAKE_AGY_IGNORE_TRUST="${FM_FAKE_AGY_IGNORE_TRUST:-0}" \
@@ -946,6 +959,24 @@ test_agy_effort_xhigh_is_recorded_but_omitted() {
   pass "fm-spawn: agy omits xhigh from the launch but records it in task metadata"
 }
 
+# agy 1.4.10 lists low|medium|high|xhigh|max for --effort; a build whose help
+# lists xhigh and max gets them, and an older build keeps record-and-omit.
+test_agy_effort_xhigh_and_max_pass_when_help_lists_them() {
+  local level id rec out rc launch
+  for level in xhigh max; do
+    id="agy-$level-z21-$$"
+    rec=$(make_agy_spawn_case "help-$level" "$id")
+    read_agy_spawn_record "$rec"
+    out=$(FM_FAKE_AGY_HELP_EFFORTS='low|medium|high|xhigh|max' run_agy_spawn "$CASE_DIR" "$HOME_DIR" \
+      "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" --model gemini-3.8-flash-low --effort "$level")
+    rc=$?
+    expect_code 0 "$rc" "agy spawn with a listed $level effort should succeed: $out"
+    launch=$(cat "$CASE_DIR/launch.log")
+    assert_contains "$launch" "--effort '$level'" "agy launch dropped the $level effort its help lists"
+  done
+  pass "fm-spawn: agy passes xhigh and max through when its help lists them"
+}
+
 test_agy_unlisted_model_refuses_before_pane_creation() {
   local id rec out rc
   id="agy-badmodel-z3-$$"
@@ -972,6 +1003,26 @@ test_agy_unreachable_listing_launches_unvalidated() {
   [ -s "$CASE_DIR/launch.log" ] || fail "an unreachable listing produced no launch command"
   assert_contains "$out" "listing is unreachable" "an unreachable listing launched without its notice"
   pass "fm-spawn: an unreachable agy listing establishes nothing and launches"
+}
+
+# A signed-out agy answers `agy models` with an empty catalog and exit 0 (its
+# own log: "Auth mode is unspecified, skipping fetchAvailableModels and
+# returning empty response"). That is sign-in evidence, not an unreachable
+# listing, so the spawn refuses with the sign-in step instead of launching a
+# worker that can never start its brief.
+test_agy_empty_listing_refuses_as_signed_out() {
+  local id rec out rc
+  id="agy-signedout-z20-$$"
+  rec=$(make_agy_spawn_case signedout "$id")
+  read_agy_spawn_record "$rec"
+  rc=0
+  out=$(FM_FAKE_AGY_MODELS_EMPTY=1 run_agy_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" \
+    "$FAKEBIN_DIR" "$id" --model gemini-3.8-flash-low) || rc=$?
+  [ "$rc" -ne 0 ] || fail "an empty agy model catalog was accepted"
+  assert_contains "$out" "agy is not signed in" "the empty catalog refusal did not name the sign-in cause: $out"
+  assert_not_contains "$out" "is not listed by" "the empty catalog refusal blamed the model id"
+  [ -s "$CASE_DIR/launch.log" ] && fail "a signed-out agy still launched" || true
+  pass "fm-spawn: an empty agy model catalog refuses as signed out before anything launches"
 }
 
 test_agy_hung_listing_is_cut_off_and_launches() {
@@ -1306,6 +1357,28 @@ EOF
   pass "fm-spawn: agy on a configured orca backend prefers herdr over tmux"
 }
 
+# macOS resolves the login keychain from $HOME. Under a HOME with no
+# login keychain, agy cannot read its sign-in, and saving one makes macOS
+# show its modal "A keychain cannot be found" dialog. The spawn refuses
+# that HOME, with the cause, before anything launches.
+test_agy_macos_home_without_login_keychain_refuses() {
+  local id rec out rc
+  id="agy-nokeychain-z19-$$"
+  rec=$(make_agy_spawn_case nokeychain "$id")
+  read_agy_spawn_record "$rec"
+  rm -f "$HOME_DIR/Library/Keychains/login.keychain-db"
+  printf '#!/bin/sh\necho Darwin\n' > "$FAKEBIN_DIR/uname"
+  chmod +x "$FAKEBIN_DIR/uname"
+  rc=0
+  out=$(run_agy_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" \
+    --model gemini-3.8-flash-low) || rc=$?
+  [ "$rc" -ne 0 ] || fail "agy under a macOS HOME with no login keychain was accepted"
+  assert_contains "$out" "has no macOS login keychain" "the keychain refusal lacked its concrete cause: $out"
+  [ -s "$CASE_DIR/launch.log" ] && fail "the keychain refusal still launched agy" || true
+  assert_absent "$HOME_DIR/state/$id.meta" "the keychain refusal left a task record"
+  pass "fm-spawn: agy refuses a macOS HOME with no login keychain before anything launches"
+}
+
 test_agy_fallback_refuses_when_no_verified_backend_is_available() {
   local id rec out rc
   id="agy-fallback-none-z18-$$"
@@ -1392,8 +1465,10 @@ test_herdr_lone_unregistered_pane_is_agent_free
 test_herdr_malformed_and_failed_reads_stay_unknown
 test_agy_launch_carries_the_brief_with_model_effort_and_autonomy
 test_agy_effort_xhigh_is_recorded_but_omitted
+test_agy_effort_xhigh_and_max_pass_when_help_lists_them
 test_agy_unlisted_model_refuses_before_pane_creation
 test_agy_unreachable_listing_launches_unvalidated
+test_agy_empty_listing_refuses_as_signed_out
 test_agy_hung_listing_is_cut_off_and_launches
 test_agy_zero_model_timeout_is_clamped_to_the_default_bound
 test_agy_trust_registers_the_logical_and_resolved_worktree_paths
@@ -1412,6 +1487,7 @@ test_agy_unverified_backend_refuses_before_anything_launches
 test_agy_configured_orca_falls_back_to_tmux_without_herdr
 test_agy_configured_orca_prefers_herdr_when_available
 test_agy_fallback_refuses_when_no_verified_backend_is_available
+test_agy_macos_home_without_login_keychain_refuses
 test_agy_missing_binary_refuses_before_pane_creation
 test_agy_secondmate_is_refused
 test_agy_spawn_arms_no_busy_wiring

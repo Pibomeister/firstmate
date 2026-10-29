@@ -2464,13 +2464,20 @@ omp_model_validate() { # <omp-bin> <model>
 # bound (bin/fm-timeout-lib.sh) with stdin detached: a stalled fetch or a
 # sign-in prompt can never block the spawn before any pane exists. An
 # unreachable listing establishes nothing (harness-adapters
-# model-and-effort.md) and launches unvalidated with a notice.
+# model-and-effort.md) and launches unvalidated with a notice. A signed-out
+# agy instead exits 0 with an empty catalog (its log: "Auth mode is
+# unspecified, skipping fetchAvailableModels and returning empty response"),
+# and that refuses with the sign-in step rather than blaming the model id.
 agy_model_validate() {  # <agy-bin> <model>
   local bin=$1 model=$2 listing rc=0 bound=${FM_AGY_MODELS_TIMEOUT:-15}
   case "$bound" in ''|*[!0-9]*|0*) bound=15 ;; esac
   [ -n "$model" ] && [ "$model" != default ] || return 0
   listing=$(fm_run_timed "$bound" "$bin" models 2>/dev/null < /dev/null) || rc=$?
-  if [ "$rc" -ne 0 ] || [ -z "$listing" ]; then
+  if [ "$rc" -eq 0 ] && [ -z "$(printf '%s' "$listing" | tr -d '[:space:]')" ]; then
+    echo "error: agy is not signed in: 'agy models' returned an empty catalog, which is how a signed-out agy answers; run 'agy' once in a normal terminal on this account, sign in, then retry" >&2
+    return 1
+  fi
+  if [ "$rc" -ne 0 ]; then
     if [ "$rc" -eq 124 ]; then
       echo "notice: 'agy models' did not answer within ${bound}s; launching with --model '$model' unvalidated" >&2
     else
@@ -2483,6 +2490,16 @@ agy_model_validate() {  # <agy-bin> <model>
   fi
   echo "error: agy model '$model' is not listed by 'agy models'; choose a listed id or omit --model" >&2
   return 1
+}
+
+# agy's --effort set is read from its own help line, "(low|medium|high|xhigh|max)"
+# on agy 1.4.10 and "(low|medium|high)" on 1.2.0, under the shared hard bound
+# with stdin detached. An unreadable help lists nothing, which keeps
+# record-and-omit for the build-dependent levels. agy prints its help on
+# stderr (1.4.10), so both streams are read.
+agy_effort_levels() {  # <agy-bin> -> pipe-separated levels or nothing
+  fm_run_timed 10 "$1" --help 2>&1 < /dev/null \
+    | sed -n 's/^[[:space:]]*--effort[[:space:]].*(\([a-z|]*\)).*/\1/p' | head -n 1
 }
 
 # Droid's exec help is its model-specific effort catalog. Interactive Droid
@@ -2976,6 +2993,16 @@ if [ "$HARNESS" = agy ] && [ "$BACKEND" != tmux ] && [ "$BACKEND" != herdr ]; th
   fm_backend_source "$BACKEND" || exit 1
   echo "notice: agy launch readiness is not verified on the configured backend=$AGY_CONFIGURED_BACKEND; this agy task runs on backend=$BACKEND" >&2
 fi
+# On macOS agy keeps its sign-in in the login keychain, which the Security
+# framework finds through $HOME. Under a HOME with no login keychain (a
+# substituted test HOME, some sandboxes) agy cannot read the sign-in, and
+# saving one raises macOS's modal "A keychain cannot be found" dialog on the
+# captain's screen. Refuse that HOME here, before anything launches.
+if [ "$HARNESS" = agy ] && [ "$(uname -s 2>/dev/null)" = Darwin ] \
+   && [ ! -e "$HOME/Library/Keychains/login.keychain-db" ]; then
+  echo "error: HOME=$HOME has no macOS login keychain (Library/Keychains/login.keychain-db), where agy keeps its sign-in; agy would run signed out and macOS would show a 'keychain cannot be found' dialog. Launch from the account's real HOME." >&2
+  exit 1
+fi
 if [ "$HARNESS" = agy ]; then
   if [ "$RELAUNCH" -eq 0 ]; then
     fm_treehouse_require_agy_custody || exit 1
@@ -3167,6 +3194,10 @@ if [ "$HARNESS" = omp ]; then
 fi
 if [ "$HARNESS" = agy ]; then
   agy_model_validate "$AGY_BIN" "$MODEL" || exit 1
+  # Only xhigh and max depend on the build, so only they pay the help probe.
+  case "$EFFORT" in
+    xhigh | max) AGY_EFFORT_LEVELS=$(agy_effort_levels "$AGY_BIN") ;;
+  esac
 fi
 # polytoken's model validation composes firstmate's model and effort axes into
 # the launch model reference (bin/fm-polytoken-lib.sh owns the reasoning): the
@@ -3404,10 +3435,17 @@ effort_flag_for_harness() {
     esac
     ;;
   agy)
-    # agy 1.2.0 --effort accepts exactly low|medium|high, so xhigh and max are
-    # omitted rather than passed as known-bad values (record-and-omit).
+    # Every agy build accepts low|medium|high. xhigh and max pass only when
+    # the build's own help lists them (agy 1.4.10 does, 1.2.0 does not), and
+    # are otherwise omitted rather than passed as known-bad values
+    # (record-and-omit).
     case "$effort" in
     low | medium | high) printf -- '--effort %s ' "$(shell_quote "$effort")" ;;
+    xhigh | max)
+      case "|${AGY_EFFORT_LEVELS:-}|" in
+      *"|$effort|"*) printf -- '--effort %s ' "$(shell_quote "$effort")" ;;
+      esac
+      ;;
     esac
     ;;
   commandcode)
