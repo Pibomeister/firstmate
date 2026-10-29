@@ -8,22 +8,22 @@ Verified as a CREWMATE and SCOUT adapter only; `../../../../../bin/fm-spawn.sh` 
 
 | Fact | Value |
 |---|---|
-| Backends | tmux and Herdr only; `../../../../../bin/fm-spawn.sh` refuses an agy spawn or relaunch on any other backend before anything launches, because the readiness gate is proven only where the pane capture shows the pinned busy row. |
+| Backends | tmux and Herdr only, because the readiness gate is proven only where the pane capture shows the pinned busy row. When the backend comes only from `config/backend` and is neither, `../../../../../bin/fm-spawn.sh` runs that one agy task on Herdr if its tools pass, else tmux, and prints a notice naming both; the task record names the backend it really runs on. An explicit `--backend` or a relaunch onto any other backend is refused before anything launches, and so is a spawn with neither Herdr nor tmux available. |
 | Treehouse | Fresh spawns require the custody capabilities documented in `../../../../../bin/fm-spawn.sh`'s header; the check refuses before endpoint creation and names the missing capability. The general Treehouse version floor alone does not establish AGY compatibility. |
 | Binary | Absolute `agy` from `PATH`, refused if absent; a Go-compiled single binary, so the live process name is exactly `agy` with `argv[0]=agy`. |
 | Launch | `agy --prompt-interactive "<brief>" --model <id> --effort <level> --dangerously-skip-permissions`, with the resolved absolute binary; the brief auto-submits with no extra Enter. The spawn pre-registers the worktree in agy's trust store first, then waits for a busy turn (answering the folder-trust dialog if it renders anyway) before reporting success. |
 | Busy state | No hook or plugin writer, so nothing is armed and no record is seeded; on Herdr the native `working` status classifies busy, and everywhere else the `agy-regex` rendered-tail fallback in `../../../../../bin/fm-busy-lib.sh` does. |
 | Rendered tail | Busy status row carries `esc to cancel` on the left; the idle row shows `? for shortcuts` instead. The `Generating...` word beside the braille spinner is free-floating output and is not a signal. |
 | Turn end | No turn-end hook or notification touch exists; completion arrives through the worker status protocol and, on Herdr, the native return to `idle`. |
-| Exit | `/quit`, one Enter; the process exits. |
+| Exit | `/quit`, one Enter; the process exits. `../../../../../bin/fm-control.sh` types it only after the composer reads `empty` (see Composer). |
 | Interrupt | Single `Escape`, which prints the Interrupted row and leaves an idle composer with no repollution, so no clear key follows. |
 | Skill | No verified slash-skill form; use natural language. |
 | Autonomy | `--dangerously-skip-permissions` auto-approves tool calls for the run. |
 | Marker | None; a live TUI carries no `AGY_*` or `ANTIGRAVITY_*` variable. |
 | Resume | `--continue` and `--conversation` exist but carry no verified pane-resume contract; use deterministic relaunch. |
-| Model | `--model <id>` with the bare catalog id from `agy models` (for example `gemini-3.8-flash-high`); `bin/fm-spawn.sh` refuses a requested id a reachable listing omits. The listing is a remote fetch, so the probe runs stdin-detached under the shared hard bound and an unreachable or hung listing launches unvalidated with a notice. |
-| Effort | `--effort low\|medium\|high`; `xhigh` and `max` stay in task metadata under the record-and-omit contract. |
-| Composer | Borderless bare `>` row, which the shared classifier reads as `unknown` under the dead-shell rule, never `empty`; steering confirms delivery through native agent-state and the delivery footer instead, the cursor precedent. |
+| Model | `--model <id>` with the bare catalog id from `agy models` (for example `gemini-4-argon-high`); `bin/fm-spawn.sh` refuses a requested id a reachable listing omits. The listing is a remote fetch, so the probe runs stdin-detached under the shared hard bound and a failed or hung listing launches unvalidated with a notice. An empty catalog with exit 0 is how a signed-out agy answers, so it refuses with the sign-in step. |
+| Effort | `--effort low\|medium\|high` always; `xhigh` and `max` pass only when the build's own `--effort` help line lists them (agy 1.4.10 does; it prints help on stderr), and otherwise stay in task metadata under the record-and-omit contract. |
+| Composer | A `>` prompt row between two full-width rules, with `? for shortcuts` on the row below: the separated shape pi and polytoken share. The shared classifier reads it only under an identified agy owner (the tmux process probe or Herdr's native `agy`): text after `>` is `pending`, the idle footer proves `empty`, and a busy row or any other footer stays `unknown`. agy's native status is not trusted for `empty`. |
 
 ## Trust, and where the decision persists
 
@@ -43,7 +43,12 @@ Never steer into a pane still showing the dialog; a spawn that reported success 
 ## Credential precondition
 
 A verified agy worker ran under a signed-in Google account with no key export and no dialog.
-The unauthenticated failure mode was not observed, so treat any auth prompt or refusal as a credential blocker under `../../../../../AGENTS.md` section 9, fix the environment, and retire the endpoint rather than typing into it.
+On macOS the sign-in lives in the login keychain, which macOS finds through `HOME`.
+Under a `HOME` with no `Library/Keychains/login.keychain-db`, agy runs signed out and saving a sign-in makes macOS show its modal "A keychain cannot be found" dialog, so `../../../../../bin/fm-spawn.sh` refuses that `HOME` before anything launches.
+Launch agy from the account's real `HOME`; never substitute a throwaway one on macOS.
+A signed-out agy answers `agy models` with an empty catalog, and the spawn refuses with the sign-in step.
+Treat that refusal, and any auth prompt, as a credential blocker under `../../../../../AGENTS.md` section 9: the captain runs `agy` once in a normal terminal and signs in.
+Never type into a pane that shows an auth prompt; retire the endpoint instead.
 
 ## Detection
 

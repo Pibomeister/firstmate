@@ -86,6 +86,14 @@ gemini-3.8-flash-low	Gemini 3.8 Flash (Low)
 The bare `gemini-3.8-flash` id from this home's previous config is not listed; only the suffixed `-high`, `-medium`, and `-low` variants are.
 `bin/fm-spawn.sh`'s `agy_model_validate` refuses a requested id a reachable `agy models` listing omits, and launches unvalidated with a stderr notice when the listing is unreachable.
 The listing is a remote fetch (`Fetching available models...`), so the probe runs with stdin detached under the shared hard bound from `bin/fm-timeout-lib.sh` (15 seconds by default, `FM_AGY_MODELS_TIMEOUT`; a non-positive or non-numeric value clamps back to that default, because a non-positive bound is not a bound); a stalled fetch or a sign-in prompt is cut off and falls through to the unvalidated launch instead of blocking the spawn before any pane exists.
+On `agy 1.4.10` (2026-10-29, macOS) the `--effort` help line reads `(low|medium|high|xhigh|max)`, and agy prints its whole help on stderr.
+`bin/fm-spawn.sh` reads that line under the shared hard bound with stdin detached, but only when `xhigh` or `max` is requested.
+It passes `xhigh` and `max` only when the line lists them, and otherwise keeps record-and-omit, which is the `agy 1.2.0` behavior.
+`tests/fm-agy-harness.test.sh` pins both cases with a fake agy that prints its help on stderr.
+A signed-out agy answers `agy models` with an empty catalog and exit 0.
+agy's own log for such a run reads "Auth mode is unspecified, skipping fetchAvailableModels and returning empty response" and "You are not logged into Antigravity".
+The stdout shape is inferred from that log; it was not captured directly, because a signed-out run on macOS needs a throwaway `HOME`, which raises the keychain dialog below.
+`agy_model_validate` therefore refuses an empty listing with exit 0 and names the sign-in step, while a failed or hung listing still launches unvalidated.
 Print mode (`agy -p "Reply with exactly: AGY_PRINT_PROBE_OK" --model gemini-3.8-flash-low`) returned the exact reply with exit 0 in about 8 seconds, proving the credential path without a pane.
 
 ## Busy state: the pinned status row, unknown on absence
@@ -136,14 +144,19 @@ Herdr tracks agy natively (`antigravity-cli` integration, detected as `agent=agy
 The tmux adapter classifies the anchored process name `agy` as `agent` through the shared name vocabulary in `bin/fm-agent-process-lib.sh`, the muse/omp precedent for short bare-word names.
 The [adapter reference](../../.agents/skills/harness-adapters/references/harness/agy.md#detection) owns agy's session-lock restriction.
 
-## Composer: unknown by design
+## Composer: empty only under an identified agy owner
 
 Byte-level capture of the idle pane shows a bare unstyled `>` between two full-width `─` rules, with an unstyled `? for shortcuts` cell and a dim (`SGR 2`) model cell in the status row below.
-The shared classifier reads that bare `>` as `unknown` under the dead-shell rule, never `empty`.
+Until 2026-10-29 the shared classifier read that bare `>` as `unknown` under the dead-shell rule, so `bin/fm-control.sh <id> exit` never typed `/quit` and agy outlived its task.
+The scanner sees this layout as the separated rule pair that pi and polytoken use, so the shape alone cannot name the owner.
+`bin/fm-composer-lib.sh` now reads it as agy only when the owner is identified: the tmux probe in `bin/fm-tmux-lib.sh` maps a foreground `agy` process, and Herdr reports `agent=agy` natively.
+Under that owner, text after `>` reads `pending`, a `? for shortcuts` footer reads `empty`, and an `esc to cancel` row or any other footer stays `unknown`.
+The 2026-10-29 live panes on `agy 1.4.10` read `empty` when idle, and `exit` then stopped agy.
+`tests/fm-agy-harness.test.sh` pins the empty, pending, and unknown cases for both owners and the tmux identity probe.
 Steering still confirms delivery: the Herdr submit core leads with the native `idle`-to-`working` transition, which agy performs, and the delivery footer regex covers the tmux path.
 agy renders the busy footer late for that confirm loop - about 1.5 s after Enter for a short steer and 4-5 s for a realistic longer brief, measured live on `agy 1.2.1` (2026-09-12) against the shared budget's 3 x 0.4 s - so `bin/fm-send.sh` gives agy typed targets a longer default submit-confirm budget (20 retries, about 8 s at the default cadence); an explicit `FM_SEND_RETRIES` still wins and every other harness keeps the shared 3-retry default.
 `tests/fm-send-agy-confirm.test.sh` pins the raised default and `tests/fm-agy-harness.test.sh` pins the Herdr transition path.
-This is the cursor precedent, not a gap to patch in shared code.
+The delivery confirm keeps this transition path; the `empty` verdict serves exit and relaunch.
 
 ## Supervised task: spawn, steer, relaunch, and exit through the new path
 
@@ -157,23 +170,27 @@ No automatic quota failover was exercised or claimed; every handoff above was an
 ## Backend readiness: the spawn refuses unproven backends
 
 The readiness gate reads the trust dialog and the pinned `esc to cancel` row from the backend's pane capture, so it is only as good as that capture.
-The [adapter reference](../../.agents/skills/harness-adapters/references/harness/agy.md#operating-facts) owns the backend restriction; a fresh spawn on Orca reports:
+`bin/fm-spawn.sh` therefore never launches agy on another backend.
+When the backend comes only from `config/backend`, as with the default orca, the spawn runs that one agy task on Herdr if its tools and version check pass, else on tmux, and prints a notice that names both backends.
+The task record names the backend the task really runs on, so later control commands reach it.
+An explicit `--backend`, a relaunch onto another backend, or a host with neither Herdr nor tmux is refused before any worktree, endpoint, task record, or model fetch exists:
 
 ```
 error: agy launch readiness is live-verified on the tmux and herdr backends only; backend=orca cannot prove the brief started. Select backend tmux or herdr.
 ```
 
 `tests/fm-agy-harness.test.sh` pins that refusal for orca, zellij, cmux, and paseo, with no launch, no terminal call, no model fetch, and no task record.
+It also pins the fallback from a configured orca to tmux, the preference for a working Herdr, and the refusal when neither is available.
 
 | Backend | agy | Platform | Date | Result |
 |---|---|---|---|---|
 | Herdr | 1.2.0 | Linux x64 | 2026-09-10 | Verified; the sections above. |
 | Herdr | 1.4.10 | macOS arm64 | - | Unverified; Herdr stays allowed on the 2026-09-10 Linux evidence above. |
 | tmux | 1.4.10 | macOS arm64 | 2026-10-29 | Verified through the real spawn path; below. |
-| Orca | 1.4.10 | macOS arm64 | 2026-10-29 | Refused. A real agy launch timed out in the readiness gate while agy was already running tool calls, because `orca terminal read` returns the output stream tail, which did not carry the pinned busy row. The visible-screen read is restricted to recorded Droid tasks. |
+| Orca | 1.4.10 | macOS arm64 | 2026-10-29 | Refused. A real agy launch timed out in the readiness gate while agy was already running tool calls, because `orca terminal read` returns the output stream tail, which did not carry the pinned busy row. The visible-screen read is restricted to recorded Droid tasks. An orca set only in `config/backend` now falls back to Herdr or tmux for agy. |
 | zellij, cmux, paseo | - | - | - | Refused; never exercised with agy. |
 
-The recorded tmux run used an earlier version of `tests/fm-agy-spawn-live-e2e.test.sh` on an isolated tmux socket, a throwaway treehouse pool, and a throwaway `HOME` holding a copy of `~/.gemini`.
+The first recorded tmux run used an earlier version of `tests/fm-agy-spawn-live-e2e.test.sh` on an isolated tmux socket, a throwaway treehouse pool, and a throwaway `HOME` holding a copy of `~/.gemini`, with `--backend tmux`.
 It predates the durable custody and fresh relaunch-token checks now in that guard; its recovery success line does not prove those checks passed.
 Recorded output:
 
@@ -190,17 +207,32 @@ The first case found the worktree in the throwaway trust store, and the worker w
 The second case forced a readiness failure with `FM_AGY_READY_POLLS=1 FM_AGY_POLL_INTERVAL=0`: the spawn exited non-zero, its window was gone, and its record stayed.
 The old recovery assertion could accept the first worker's report, so it does not establish that the replacement processed the brief.
 The current guard probes a second allocation to reject reuse of the kept slot, then requires a fresh token supplied only in the relaunch note, the correct sum, and the original worktree on one exact report line.
-On tmux, `bin/fm-control.sh <id> exit` refuses to type `/quit` because the composer reads `unknown` (see [Composer](#composer-unknown-by-design)), so the guard retires each task with `bin/fm-teardown.sh`, which closes the window.
+That run retired each task with `bin/fm-teardown.sh`, because the composer still read `unknown` and `exit` refused to type `/quit`.
+The throwaway `HOME` also made macOS show "A keychain cannot be found to store 'antigravity'" (see [Keychain](#keychain-the-real-home-on-macos)).
+The reworked guard, run the same day with `FM_AGY_LIVE_MODEL=gemini-4-argon-high`, sets `config/backend=orca` with no `--backend` and shadows `herdr` so the operator's Herdr session is never touched.
+It proved the fallback notice to tmux, processed the brief, stopped each idle worker with `bin/fm-control.sh <id> exit`, and checked that no `agy` process stayed in the worktree.
+On macOS it keeps the real `HOME`, and on exit it removes only its own `trustedWorkspaces` entries; the store matched its pre-run snapshot afterwards.
 
 The portable regression coverage for custody is in `tests/fm-agy-harness.test.sh` and `tests/fm-control-relaunch.test.sh`, using the self-contained Treehouse model in `tests/treehouse-helpers.sh` rather than a real Treehouse installation.
 The cases cover slot reuse prevention, original-worktree relaunch, ownership refusal, post-publication send/signal/backlog failures, unpublished allocation cleanup, and capability refusal before endpoint creation or stopping the old worker.
 The relaunch matrix also covers legacy Claude/Codex transitions without owner claims and with the project lock held.
 The live-guard fixture rejects stale reports and incorrect tokens, sums, or worktrees, and checks that EXIT cleanup stops the isolated tmux server on success and failure, including report-wait failure.
 
+## Keychain: the real HOME on macOS
+
+agy keeps its sign-in in the macOS login keychain, and macOS finds that keychain through `HOME`.
+Under a `HOME` with no `Library/Keychains/login.keychain-db`, agy runs signed out, and saving a sign-in makes macOS show "A keychain cannot be found to store 'antigravity'".
+The keychain itself was healthy; only the substituted `HOME` hid it.
+`bin/fm-spawn.sh` refuses an agy launch on macOS under such a `HOME` before anything launches, and names the cause.
+`tests/fm-agy-harness.test.sh` pins the refusal with a fake `uname` that reports Darwin.
+Never press "Reset To Defaults" on that dialog; it does not apply to this cause.
+
 ## What is still unproven
 
 No refreshed live receipt for the current custody and fresh-token recovery guard is recorded here.
 The unauthenticated failure mode was never observed; this host's agy runs signed in, so any auth prompt is a fail-loud credential blocker, not a handled dialog.
+No in-pane auth prompt was observed; any auth prompt is a fail-loud credential blocker, not a handled dialog.
+Orca support needs a visible-screen read for agy, like the one recorded Droid tasks use; until then agy on orca falls back as described above.
 No slash-skill invocation form was verified, so skill invocation stays natural language.
 `--continue` and `--conversation` resume were never exercised; recovery uses deterministic relaunch from the brief on disk.
 No primary or secondmate behavior was built or tested, and none is claimed.
