@@ -2316,7 +2316,10 @@ EOF
 # Droid parks the terminal cursor below its boxed composer. A caller first
 # proves this is its task's live agent; this shared shape reader then accepts
 # only Droid's timer footer with a trailing integration indicator plus
-# Firstmate's task-scoped status row. A shell prompt or any other row below the box is
+# Firstmate's task-scoped status row. The timer footer carries its
+# integration indicator after an ASCII pipe in the older shape and as a
+# trailing `IDE <glyph>` with no pipe in the current shape; both are
+# accepted, and a footer without Droid's timer still refuses. A shell prompt or any other row below the box is
 # unknown, even when an old Droid frame remains visible above it.
 fm_composer_droid_state() {  # <styled viewport> <tmux|orca>
   local plain region
@@ -2333,7 +2336,7 @@ fm_composer_droid_state() {  # <styled viewport> <tmux|orca>
       next
     }
     active && closed && NF {
-      if (!footer && $0 ~ /^\[⏱ [^]]+\].*[|][[:space:]]*[^[:space:]][^|]*$/) { footer=1; next }
+      if (!footer && $0 ~ /^\[⏱ [^]]+\]/ && ($0 ~ /[|][[:space:]]*[^[:space:]]/ || $0 ~ /IDE[[:space:]][[:space:]]*[^[:space:]][[:space:]]*$/)) { footer=1; next }
       if (footer && !status && $0 ~ /^firstmate[[:space:]]*$/) { status=1; next }
       valid=0
     }

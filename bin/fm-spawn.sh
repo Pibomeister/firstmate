@@ -2166,9 +2166,10 @@ if [ "$RELAUNCH" -eq 1 ]; then
   fm_backend_validate_spawn "$BACKEND" || exit 1
   fm_backend_source "$BACKEND" || exit 1
   # A relaunch must prove the previous agent is gone before it launches
-  # another into the same endpoint. Orca Droid keeps its generation-bound
-  # SessionEnd requirement unless the shared absence proof establishes that
-  # its endpoint is gone. bin/fm-control-lib.sh owns the recovery-grade
+  # another into the same endpoint. Orca Droid uses the shared absence
+  # proof in bin/fm-control-lib.sh (fm_control_droid_agent_absent) unless
+  # the shared endpoint-absence proof establishes that
+  # its endpoint is gone. bin/fm-control-lib.sh also owns the recovery-grade
   # classifier capability table and the fm_control_agent_state read below.
   RELAUNCH_PRIOR_HARNESS=$(fm_meta_get "$RELAUNCH_META" harness)
   fm_control_backend_state_verified "$BACKEND" || {
@@ -2242,13 +2243,13 @@ if [ "$RELAUNCH" -eq 1 ]; then
     esac
   fi
   if [ "$BACKEND" = orca ] && [ "$RELAUNCH_PRIOR_HARNESS" = droid ] && [ "${RELAUNCH_ABSENCE%%$'\t'*}" != gone ]; then
-    fm_control_droid_session_ended "$STATE" "$ID" "$RELAUNCH_META" || {
+    fm_control_droid_agent_absent "$STATE" "$ID" "$RELAUNCH_META" "$RELAUNCH_TARGET" || {
       [ -z "${RELAUNCH_ABSENCE:-}" ] || printf 'error: %s\n' "${RELAUNCH_ABSENCE#*$'\t'}" >&2
-      echo "error: Orca Droid relaunch has no current-generation SessionEnd proof with its process gone; refusing a duplicate agent" >&2
+      echo "error: Orca Droid relaunch has no current-generation SessionEnd proof or connected owned-shell absence proof with its process gone; refusing a duplicate agent" >&2
       exit 1
     }
     fm_backend_target_exists orca "$RELAUNCH_TARGET" "fm-$ID" || {
-      echo "error: Orca Droid's recorded terminal cannot be re-read after SessionEnd; refusing to guess whether it can be adopted" >&2
+      echo "error: Orca Droid's recorded terminal cannot be re-read after its absence proof; refusing to guess whether it can be adopted" >&2
       exit 1
     }
     RELAUNCH_STATE=dead

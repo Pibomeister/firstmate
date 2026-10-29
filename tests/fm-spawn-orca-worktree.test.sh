@@ -531,6 +531,58 @@ test_orca_relaunch_adopts_a_dead_connected_terminal() {
   pass "an Orca relaunch adopts a connected terminal whose agent is proven stopped"
 }
 
+test_orca_droid_relaunch_connected_shell_without_marker() {
+  local variant shell_pid fifo gen
+  for variant in positive wrong-gen live-scan scan-fails; do
+    orca_relaunch_case "droid-shell-$variant"
+    echo 'harness=droid' >> "$HOME_DIR/state/$TASK.meta"
+    gen=$("$ROOT/bin/fm-busy-event.sh" arm "$HOME_DIR/state" "$TASK")
+    "$ROOT/bin/fm-busy-event.sh" apply "$HOME_DIR/state" "$TASK" idle \
+      --gen "$gen" --source droid-hook --event stop >/dev/null
+    echo "busy_gen=$gen" >> "$HOME_DIR/state/$TASK.meta"
+    case "$variant" in
+      wrong-gen) printf 'g-other-generation\n' > "$HOME_DIR/state/$TASK.droid-session-end" ;;
+      live-scan) printf 'p999\nn%s\n' "$WT" >> "$CASE_DIR/lsof.out" ;;
+      scan-fails)
+        printf '#!/usr/bin/env bash\nexit 2\n' > "$FB/lsof"
+        chmod +x "$FB/lsof"
+        ;;
+    esac
+    mv "$FB/orca" "$FB/orca-base"
+    cat > "$FB/orca" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-} ${2:-}" = "terminal read" ]; then
+  printf '{"ok":true,"result":{"terminal":{"tail":["shell"]}}}\n'
+  exit 0
+fi
+exec "$(dirname "$0")/orca-base" "$@"
+SH
+    chmod +x "$FB/orca"
+    fifo="$CASE_DIR/hold-$variant"
+    mkfifo "$fifo"
+    bash -c 'exec 3<>"$0"; read -r _ <&3' "$fifo" >/dev/null 2>&1 &
+    shell_pid=$!
+    orca_relaunch_show true ''
+    printf '{"ok":true,"result":{"worktrees":[{"sessions":[{"sessionId":"pty-old","pid":%s}]}]}}\n' \
+      "$shell_pid" > "$CASE_DIR/memory.json"
+    orca_relaunch --harness claude
+    kill "$shell_pid" 2>/dev/null || true
+    wait "$shell_pid" 2>/dev/null || true
+    if [ "$variant" = positive ]; then
+      expect_code 0 "$STATUS" "a Droid relaunch from a connected owned shell with no marker, a dead tree, an idle current record, and a clean scan should succeed"$'\n'"$OUT"
+      [ ! -e "$CASE_DIR/terminal-create.log" ] || fail "a connected-shell Droid relaunch must adopt its terminal, not replace it"$'\n'"$OUT"
+      [ "$(orca_meta_field terminal)" = term-old ] || fail "an adopted Droid terminal keeps its handle, got '$(orca_meta_field terminal)'"
+      [ ! -e "$HOME_DIR/state/$TASK.droid-session-end" ] || fail "the connected-shell proof must not synthesize a SessionEnd marker"
+    else
+      expect_code 1 "$STATUS" "the '$variant' Droid connected-shell relaunch must refuse"$'\n'"$OUT"
+      assert_contains "$OUT" "absence proof" "the '$variant' refusal must name the missing absence proof"
+      [ ! -e "$CASE_DIR/terminal-create.log" ] || fail "the '$variant' refusal must come before any terminal is created"$'\n'"$OUT"
+      [ "$(orca_meta_field terminal)" = term-old ] || fail "the '$variant' refusal must leave the task record unchanged"
+    fi
+  done
+  pass "an Orca Droid relaunch adopts a connected owned shell without a marker, and refuses a wrong generation, a live worktree process, and a failed scan"
+}
+
 test_orca_relaunch_refuses_without_proof_of_a_stopped_agent() {
   local name agent='' standin
   standin=$(fm_agent_standin "$TMP_ROOT/relaunch-standin") || standin=
@@ -1287,6 +1339,7 @@ test_orca_relaunch_rebinds_a_stale_terminal_after_reboot
 test_orca_droid_relaunch_keeps_non_reboot_prerequisites
 test_orca_relaunch_refuses_a_stale_terminal_with_a_surviving_agent_after_reboot
 test_orca_relaunch_adopts_a_dead_connected_terminal
+test_orca_droid_relaunch_connected_shell_without_marker
 test_orca_relaunch_refuses_without_proof_of_a_stopped_agent
 test_orca_relaunch_takes_values_from_the_scoped_source
 

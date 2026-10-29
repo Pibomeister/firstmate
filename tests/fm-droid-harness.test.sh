@@ -708,10 +708,191 @@ test_raw_droid_command_does_not_arm_unused_hooks() {
   pass "raw Droid commands remain outside canonical hook arming"
 }
 
+test_droid_composer_current_footer_shape() {
+  local screen out
+  screen=' Auto (High) · allow all commands                                  GLM-5.3-Flash (High)
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ >                                                                            │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[⏱ 37m 20s] 6 config issues — /diagnostics                                         IDE ◌
+firstmate'
+  out=$(fm_composer_droid_state "$screen" orca)
+  [ "$out" = empty ] || fail "the current Droid footer without a pipe must read empty, got '$out'"
+  out=$(fm_composer_droid_state "${screen/│ >           /│ > /exit     }" orca)
+  [ "$out" = pending ] || fail "typed text under the current Droid footer must stay pending, got '$out'"
+  out=$(fm_composer_droid_state "${screen/\[⏱ 37m 20s\] /}" orca)
+  [ "$out" = unknown ] || fail "a footer without Droid's timer must refuse input under the current shape, got '$out'"
+  out=$(fm_composer_droid_state "$screen
+shell prompt" orca)
+  [ "$out" = unknown ] || fail "a shell prompt below the current Droid frame must stay unknown, got '$out'"
+  pass "the current Droid footer without an ASCII pipe reads empty or pending, never a shell"
+}
+
+# --- shared connected-shell absence proof -----------------------------------
+# Stubs are defined only inside the run subshell, so no fake Orca surface
+# leaks into the other cases in this file.
+ABSENT_CASE=
+ABSENT_STATE=
+ABSENT_WT=
+ABSENT_OTHER=
+ABSENT_ID=droid-absent-1
+ABSENT_GEN=
+
+make_absent_case() {  # <name>
+  ABSENT_CASE="$TMP_ROOT/absent-$1"
+  ABSENT_STATE="$ABSENT_CASE/state"
+  ABSENT_WT="$ABSENT_CASE/wt"
+  ABSENT_OTHER="$ABSENT_CASE/other"
+  mkdir -p "$ABSENT_STATE" "$ABSENT_WT" "$ABSENT_OTHER" "$ABSENT_CASE/fakebin"
+  cat >"$ABSENT_CASE/fakebin/lsof" <<'SH'
+#!/usr/bin/env bash
+cat "${FM_STUB_LSOF_FILE:?}" 2>/dev/null
+exit "${FM_STUB_LSOF_EXIT:-0}"
+SH
+  chmod +x "$ABSENT_CASE/fakebin/lsof"
+  printf 'p999\nn%s\n' "$ABSENT_OTHER" >"$ABSENT_CASE/scan-clean"
+  printf 'p999\nn%s\n' "$ABSENT_WT" >"$ABSENT_CASE/scan-in-wt"
+  printf 'p999\nn%s/sub\n' "$ABSENT_WT" >"$ABSENT_CASE/scan-in-wt-sub"
+  mkdir -p "$ABSENT_WT/sub"
+  ABSENT_GEN=$("$ROOT/bin/fm-busy-event.sh" arm "$ABSENT_STATE" "$ABSENT_ID")
+  "$ROOT/bin/fm-busy-event.sh" apply "$ABSENT_STATE" "$ABSENT_ID" idle \
+    --gen "$ABSENT_GEN" --source droid-hook --event stop >/dev/null
+  fm_write_meta "$ABSENT_STATE/$ABSENT_ID.meta" \
+    'harness=droid' 'backend=orca' "worktree=$ABSENT_WT" \
+    'terminal=term-1' "busy_gen=$ABSENT_GEN"
+  export FM_STUB_LSOF_FILE="$ABSENT_CASE/scan-clean" FM_STUB_LSOF_EXIT=0
+  export FM_STUB_FACTS=ok FM_STUB_TREE=dead FM_STUB_SESSION=ok
+}
+
+droid_absent_run() {  # [target]
+  local target=${1:-term-1}
+  (
+    fm_backend_source orca >/dev/null 2>&1 || exit 99
+    # shellcheck disable=SC2329 # Invoked indirectly by fm_control_droid_agent_absent.
+    fm_backend_orca_terminal_facts() {
+      case "${FM_STUB_FACTS:-ok}" in
+        ok) printf 'ok\037true\037\037local\037pty-1\037%s' "$ABSENT_WT" ;;
+        disconnected) printf 'ok\037false\037operator_close\037local\037pty-1\037%s' "$ABSENT_WT" ;;
+        remote) printf 'ok\037true\037\037ssh-box\037pty-1\037%s' "$ABSENT_WT" ;;
+        stale) printf 'stale\037\037\037\037\037' ;;
+        otherwt) printf 'ok\037true\037\037local\037pty-1\037%s' "$ABSENT_OTHER" ;;
+        *) return 1 ;;
+      esac
+    }
+    # shellcheck disable=SC2329 # Invoked indirectly by fm_control_droid_agent_absent.
+    fm_backend_orca_session_pid() {
+      case "${FM_STUB_SESSION:-ok}" in
+        ok) printf '4242' ;;
+        missing) return 1 ;;
+        *) return 2 ;;
+      esac
+    }
+    # shellcheck disable=SC2329 # Invoked indirectly by fm_control_droid_agent_absent.
+    fm_backend_orca_tree_state() { printf '%s' "${FM_STUB_TREE:-dead}"; }
+    # shellcheck disable=SC2329 # Invoked indirectly by fm_control_droid_agent_absent.
+    fm_backend_orca_physical_dir() { (cd -P -- "$1" 2>/dev/null && pwd -P); }
+    PATH="$ABSENT_CASE/fakebin:$PATH" \
+      fm_control_droid_agent_absent "$ABSENT_STATE" "$ABSENT_ID" \
+        "$ABSENT_STATE/$ABSENT_ID.meta" "$target"
+  )
+}
+
+expect_absent() {  # <label>
+  droid_absent_run || fail "connected-shell absence proof must accept: $1"
+}
+expect_present() {  # <label>
+  droid_absent_run && fail "connected-shell absence proof must refuse: $1" || true
+}
+
+test_droid_connected_shell_absence_proof() {
+  local name
+  make_absent_case positive
+  expect_absent "a connected owned idle shell, dead tree, current idle record, and clean exact-worktree scan, with no marker"
+  # A Droid process whose cwd is a different worktree does not block this
+  # task (the clean scan above already carries exactly that row).
+
+  make_absent_case live-scan
+  FM_STUB_LSOF_FILE="$ABSENT_CASE/scan-in-wt" expect_present "a live Droid process in the worktree"
+  FM_STUB_LSOF_FILE="$ABSENT_CASE/scan-in-wt-sub" expect_present "a live Droid process under the worktree"
+
+  make_absent_case wrong-gen
+  printf 'g-other-generation\n' >"$ABSENT_STATE/$ABSENT_ID.droid-session-end"
+  expect_present "a SessionEnd marker from another generation"
+
+  make_absent_case ambiguous
+  FM_STUB_TREE=ambiguous expect_present "an ambiguous endpoint tree"
+  FM_STUB_TREE=alive expect_present "a live agent in the endpoint tree"
+  FM_STUB_TREE=unreadable expect_present "an unreadable endpoint tree"
+  FM_STUB_FACTS=unreadable expect_present "an unreadable endpoint"
+  FM_STUB_FACTS=stale expect_present "a stale endpoint handle with no marker"
+  FM_STUB_FACTS=disconnected expect_present "a disconnected endpoint with no marker"
+  FM_STUB_FACTS=remote expect_present "an endpoint on another execution host"
+  FM_STUB_SESSION=missing expect_present "a session the sweep no longer lists"
+  FM_STUB_SESSION=unreadable expect_present "a session the sweep cannot read"
+
+  make_absent_case scan
+  FM_STUB_LSOF_EXIT=2 expect_present "a failed process scan"
+  FM_STUB_LSOF_EXIT=0
+  printf 'p999\nn%s\n' "$ABSENT_WT" >"$ABSENT_CASE/scan-partial"
+  FM_STUB_LSOF_FILE="$ABSENT_CASE/scan-partial" FM_STUB_LSOF_EXIT=1 \
+    expect_present "a partial process scan (status 1 with rows)"
+  printf 'xgarbage\n' >"$ABSENT_CASE/scan-malformed"
+  FM_STUB_LSOF_FILE="$ABSENT_CASE/scan-malformed" expect_present "a malformed process scan"
+
+  make_absent_case different-worktree
+  FM_STUB_FACTS=otherwt expect_present "an endpoint whose worktree is a different worktree"
+
+  make_absent_case session-only-close
+  # The marker is current, so neither route may fall through: the surviving
+  # Droid in the worktree scan refuses both.
+  printf '%s\n' "$ABSENT_GEN" >"$ABSENT_STATE/$ABSENT_ID.droid-session-end"
+  FM_STUB_LSOF_FILE="$ABSENT_CASE/scan-in-wt" \
+    expect_present "a process that survives a session-only close"
+
+  make_absent_case marker-route
+  printf '%s\n' "$ABSENT_GEN" >"$ABSENT_STATE/$ABSENT_ID.droid-session-end"
+  FM_STUB_TREE=ambiguous FM_STUB_FACTS=unreadable expect_absent \
+    "the unchanged current-generation marker route with a clean scan"
+
+  for name in busy-record gen-mismatch no-gen-file target-mismatch recorded-mismatch; do
+    make_absent_case "missing-$name"
+    case "$name" in
+      busy-record)
+        "$ROOT/bin/fm-busy-event.sh" apply "$ABSENT_STATE" "$ABSENT_ID" busy \
+          --gen "$ABSENT_GEN" --source droid-hook --event user-prompt-submit >/dev/null
+        expect_present "a busy (not idle) current-generation record"
+        ;;
+      gen-mismatch)
+        fm_write_meta "$ABSENT_STATE/$ABSENT_ID.meta" \
+          'harness=droid' 'backend=orca' "worktree=$ABSENT_WT" \
+          'terminal=term-1' 'busy_gen=g-other-generation'
+        expect_present "a busy generation that is not the armed generation"
+        ;;
+      no-gen-file)
+        rm -f "$ABSENT_STATE/$ABSENT_ID.busy-gen"
+        expect_present "a missing armed-generation sidecar"
+        ;;
+      target-mismatch)
+        droid_absent_run term-other \
+          && fail "an endpoint handle that is not the recorded terminal must refuse" || true
+        ;;
+      recorded-mismatch)
+        fm_write_meta "$ABSENT_STATE/$ABSENT_ID.meta" \
+          'harness=droid' 'backend=orca' "worktree=$ABSENT_WT" \
+          'terminal=term-other' "busy_gen=$ABSENT_GEN"
+        expect_present "a target that is not this task's recorded terminal"
+        ;;
+    esac
+  done
+  pass "connected owned-shell absence proof accepts only the full proof and refuses every missing or wrong element"
+}
+
 test_droid_identity_and_control
 test_droid_composer_envelope
 test_droid_composer_requires_a_droid_process
 test_droid_orca_composer_uses_the_live_screen
+test_droid_composer_current_footer_shape
+test_droid_connected_shell_absence_proof
 test_droid_launch_and_hooks
 test_droid_swallowed_trust_enter_is_retried_until_the_dialog_clears
 test_droid_trust_enter_max_sends_one_enter_while_the_dialog_stays

@@ -635,8 +635,12 @@ printf '%s\n' "$*" >> "$D/orca.log"
 case "$*" in
   "terminal read --terminal term-1 --screen --json") cat "$D/screen.json" ;;
   "terminal read --terminal term-1 --limit "*) printf '{"ok":true,"result":{"terminal":{"tail":[]}}}' ;;
+  "terminal show --terminal term-1 --json") cat "$D/orca-show" ;;
+  "diagnostics memory --json") cat "$D/orca-memory" ;;
   "terminal send --terminal term-1 --text /exit --json")
-    cat "$D/gen" > "$(cat "$D/marker")"
+    if [ ! -e "$D/no-marker" ]; then
+      cat "$D/gen" > "$(cat "$D/marker")"
+    fi
     : > "$D/exited"
     printf '{"ok":true}'
     ;;
@@ -662,7 +666,8 @@ test_orca_droid_second_exit_is_idempotent() {
   assert_contains "$out" "stopped t1 harness=droid" "the first exit should report the stop"
   grep -qx "busy_gen=$gen" "$dir/home/state/t1.meta" \
     || fail "Orca Droid exit must keep the retired busy_gen its stop proof binds to"
-  [ ! -e "$dir/home/state/t1.busy-gen" ] || fail "exit must still retire the busy sidecar"
+  cmp -s "$dir/fake/gen" "$dir/home/state/t1.busy-gen" \
+    || fail "Orca Droid exit must preserve its stop-proof generation until replacement"
   out=$(run_control "$dir" t1 exit); rc=$?
   expect_code 0 "$rc" "a second exit on Orca Droid should succeed"$'\n'"$out"
   assert_contains "$out" "already-stopped" "the second exit should be idempotent"
@@ -686,6 +691,53 @@ test_orca_droid_exit_then_relaunch_is_admitted() {
   grep -qx 'terminal read --terminal term-1 --limit 1 --json' "$dir/fake/orca.log" \
     || fail "fm-spawn --relaunch never reached the Orca terminal re-read after admission"$'\n'"$out"
   pass "fm-control relaunch: an exited Orca Droid is admitted for a Droid replacement"
+}
+
+test_orca_droid_live_exit_without_marker_preserves_relaunch_proof() {
+  local flow dir out rc gen wt fifo shell_pid
+  for flow in separate combined; do
+    dir=$(new_case "orca-droid-no-marker-$flow")
+    gen=$(add_orca_droid_task "$dir")
+    wt=$(cd "$dir/wt-t1" && pwd -P)
+    : > "$dir/fake/no-marker"
+    cp "$dir/home/state/t1.busy-state" "$dir/fake/prior-busy-state"
+    printf '{"ok":true,"result":{"terminal":{"handle":"term-1","ptyId":"pty-1","connected":true,"writable":true,"exitCause":null,"executionHostId":"local","worktreePath":"%s"}}}\n' \
+      "$wt" > "$dir/fake/orca-show"
+    fifo="$dir/fake/hold"
+    mkfifo "$fifo"
+    bash -c 'exec 3<>"$0"; read -r _ <&3' "$fifo" >/dev/null 2>&1 &
+    shell_pid=$!
+    printf '{"ok":true,"result":{"worktrees":[{"sessions":[{"sessionId":"pty-1","pid":%s}]}]}}\n' \
+      "$shell_pid" > "$dir/fake/orca-memory"
+    if [ "$flow" = separate ]; then
+      out=$(run_control "$dir" t1 exit); rc=$?
+      if [ "$rc" -ne 0 ]; then
+        kill "$shell_pid" 2>/dev/null || true
+        wait "$shell_pid" 2>/dev/null || true
+        fail "a live Droid exit without a marker should succeed"$'\n'"$out"
+      fi
+      assert_contains "$out" "stopped t1" "exit must observe the live Droid stop"
+      [ "$(cat "$dir/home/state/t1.busy-gen")" = "$gen" ] \
+        || fail "exit must preserve the current stop-proof generation"
+      cmp -s "$dir/fake/prior-busy-state" "$dir/home/state/t1.busy-state" \
+        || fail "exit must preserve the current idle record for replacement admission"
+      out=$(run_control "$dir" t1 exit); rc=$?
+      expect_code 0 "$rc" "a second marker-free exit must remain idempotent"$'\n'"$out"
+      assert_contains "$out" "already-stopped" "the second exit must retain its stop proof"
+    fi
+    out=$(run_control "$dir" t1 relaunch --harness droid --note x)
+    kill "$shell_pid" 2>/dev/null || true
+    wait "$shell_pid" 2>/dev/null || true
+    [ -e "$dir/fake/exited" ] || fail "the live Droid must receive its exit command"
+    [ ! -e "$dir/home/state/t1.droid-session-end" ] || fail "the marker-free exit must not synthesize a marker"
+    assert_not_contains "$out" "has no current-generation SessionEnd proof" \
+      "replacement admission must retain the marker-free stop proof ($flow)"
+    grep -qx 'terminal read --terminal term-1 --limit 1 --json' "$dir/fake/orca.log" \
+      || fail "replacement admission never reached the terminal re-read ($flow)"$'\n'"$out"
+    [ "$(grep -c -- '--text /exit' "$dir/fake/orca.log")" = 1 ] \
+      || fail "the stopped Droid must receive exactly one exit command ($flow)"
+  done
+  pass "fm-control relaunch: live marker-free Droid exits retain proof for separate and combined replacement admission"
 }
 
 test_unverified_state_backends_refuse_stop_verbs() {
@@ -1122,6 +1174,74 @@ test_closed_orca_droid_exit_requires_session_end() {
   pass "fm-control exit: closed Droid terminals retain their SessionEnd requirement"
 }
 
+# add_orca_connected_shell_task <case-dir> <id>: a connected Orca Droid
+# terminal in its own worktree whose busy record is the current
+# generation's idle droid-hook record, with no SessionEnd marker. The
+# caller supplies the real shell session root in orca-memory.
+add_orca_connected_shell_task() {
+  local dir=$1 id=$2 wt gen
+  add_orca_closed_task "$dir" "$id" droid
+  wt=$(grep '^worktree=' "$dir/home/state/$id.meta" | cut -d= -f2-)
+  wt=$(cd -P "$wt" && pwd -P)
+  printf '{"ok":true,"result":{"terminal":{"handle":"term-1","ptyId":"pty-1","connected":true,"writable":true,"exitCause":null,"executionHostId":"local","worktreePath":"%s"}}}\n' \
+    "$wt" > "$dir/fake/orca-show"
+  gen=$("$ROOT/bin/fm-busy-event.sh" arm "$dir/home/state" "$id")
+  "$ROOT/bin/fm-busy-event.sh" apply "$dir/home/state" "$id" idle \
+    --gen "$gen" --source droid-hook --event stop >/dev/null
+  echo "busy_gen=$gen" >> "$dir/home/state/$id.meta"
+  printf '%s\n' "$gen" > "$dir/fake/connected-gen"
+}
+
+orca_connected_shell_run() {  # <case-dir> -> sets out and rc
+  local dir=$1 fifo shell_pid
+  fifo="$dir/fake/hold"
+  mkfifo "$fifo"
+  bash -c 'exec 3<>"$0"; read -r _ <&3' "$fifo" >/dev/null 2>&1 &
+  shell_pid=$!
+  printf '{"ok":true,"result":{"worktrees":[{"sessions":[{"sessionId":"pty-1","pid":%s}]}]}}\n' \
+    "$shell_pid" > "$dir/fake/orca-memory"
+  out=$(run_control "$dir" t1 exit); rc=$?
+  kill "$shell_pid" 2>/dev/null || true
+  wait "$shell_pid" 2>/dev/null || true
+}
+
+test_connected_orca_droid_shell_exit_reports_already_stopped() {
+  local dir out rc wt
+  dir=$(new_case orca-droid-connected-shell)
+  add_orca_connected_shell_task "$dir" t1
+  orca_connected_shell_run "$dir"
+  expect_code 0 "$rc" "exit on a connected owned Droid shell with no marker but a dead tree, idle current record, and clean scan should succeed"$'\n'"$out"
+  assert_contains "$out" "already-stopped" "the connected-shell proof should report the agent already stopped"
+  [ -z "$(literals "$dir")" ] || fail "a proven-stopped Droid shell must not be sent an exit command"
+  [ ! -e "$dir/home/state/t1.droid-session-end" ] || fail "the absence proof must not synthesize a SessionEnd marker"
+  wt=$(grep '^worktree=' "$dir/home/state/t1.meta" | cut -d= -f2-)
+  [ -d "$wt" ] || fail "the connected-shell exit must preserve the worktree"
+  pass "fm-control exit: a connected owned Droid shell proves the agent stopped without a SessionEnd marker"
+}
+
+test_connected_orca_droid_shell_exit_refuses_wrong_generation_and_live_scan() {
+  local dir out rc wt gen
+  dir=$(new_case orca-droid-connected-wrong-gen)
+  add_orca_connected_shell_task "$dir" t1
+  printf 'g-other-generation\n' > "$dir/home/state/t1.droid-session-end"
+  orca_connected_shell_run "$dir"
+  expect_code 1 "$rc" "a SessionEnd marker from another generation must refuse the connected-shell proof"$'\n'"$out"
+  assert_not_contains "$out" "already-stopped" "a wrong-generation marker must not report a stop"
+  [ -z "$(literals "$dir")" ] || fail "a wrong-generation endpoint must receive no input"
+
+  dir=$(new_case orca-droid-connected-live-scan)
+  add_orca_connected_shell_task "$dir" t1
+  wt=$(grep '^worktree=' "$dir/home/state/t1.meta" | cut -d= -f2-)
+  printf 'p999\nn%s\n' "$wt" > "$dir/fake/lsof"
+  orca_connected_shell_run "$dir"
+  expect_code 1 "$rc" "a live Droid process in the worktree must refuse the connected-shell proof"$'\n'"$out"
+  assert_not_contains "$out" "already-stopped" "a live worktree process must not report a stop"
+  [ -z "$(literals "$dir")" ] || fail "an endpoint with a live worktree process must receive no input"
+  gen=$(cat "$dir/fake/connected-gen")
+  [ -n "$gen" ] || fail "connected-shell fixture lost its generation"
+  pass "fm-control exit: the connected-shell proof refuses a wrong-generation marker and a live worktree process"
+}
+
 test_closed_orca_terminal_exit_refuses_without_the_worktree_scan() {
   local dir out rc
   dir=$(new_case orca-noscan)
@@ -1516,6 +1636,7 @@ test_orca_refuses_an_escape_harness_interrupt
 test_orca_droid_relaunch_refuses_a_non_droid_replacement_before_stopping
 test_orca_droid_second_exit_is_idempotent
 test_orca_droid_exit_then_relaunch_is_admitted
+test_orca_droid_live_exit_without_marker_preserves_relaunch_proof
 test_unverified_state_backends_refuse_stop_verbs
 test_commandcode_relaunch_off_tmux_and_herdr_refuses_before_stopping
 test_state_verified_backends_are_exactly_tmux_herdr_and_orca
@@ -1533,6 +1654,8 @@ test_missing_tmux_endpoint_refuses_rather_than_claiming_a_stop
 test_closed_orca_terminal_exit_reports_endpoint_gone
 test_closed_orca_terminal_exit_refuses_without_the_worktree_scan
 test_closed_orca_droid_exit_requires_session_end
+test_connected_orca_droid_shell_exit_reports_already_stopped
+test_connected_orca_droid_shell_exit_refuses_wrong_generation_and_live_scan
 test_stale_orca_terminal_exit_reports_endpoint_gone_after_reboot
 test_stale_orca_terminal_exit_refuses_a_surviving_agent_after_reboot
 test_stale_orca_terminal_exit_refuses_without_a_postdating_boot

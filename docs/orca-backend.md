@@ -108,6 +108,7 @@ A disconnected terminal with a recorded exit cause is `missing`, and the absence
 That proof also requires that Orca's sweep no longer lists the session and that no process of this user that classifies as an agent has its working directory in the recorded worktree, read with `lsof`.
 The working-directory read exists because an agent can outlive the terminal it started in; such a survivor returns `unproven` and refuses the relaunch, since lifecycle commands cannot reach it through the recorded terminal.
 A remote execution host, a missing exit cause, a worktree mismatch, or any failed read refuses rather than proving absence.
+For a Droid task, [`fm_control_droid_agent_absent` in `bin/fm-control-lib.sh`](../bin/fm-control-lib.sh) owns the shared marker and connected owned-shell stop proofs, including their refusal conditions, for `fm-control` and `fm-spawn --relaunch`.
 A stale handle reads `unreadable`; only Orca's exact `ok:false` response with `error.code=terminal_handle_stale` is accepted as stale evidence, including when the CLI exits nonzero.
 It proves absence only after a host reboot: the boot time read from the kernel must postdate the handle's recorded evidence (the record's spawn generation, or its mtime without one), Orca's process sweep must be readable from the post-boot runtime, and no agent process may be working in the recorded worktree.
 Without that reboot proof a stale handle refuses exactly like any other unprovable read, so an Orca restart short of a reboot can never license a second agent.
