@@ -1013,6 +1013,61 @@ Those guard runs' claude, codex, opencode, and grok arms failed on machine-local
 `tests/fm-kimi-harness.test.sh` pins the failure-path cleanup: the unconfirmed-delivery and readiness failures close the launched window and roll the provisional record back, an unproven close keeps that record so the surviving worker stays named, and the verified spawn closes nothing.
 The same suite drives the extracted cleanup across the backend matrix: a cmux, zellij, or orca close status can never mark the endpoint closed (their kept records warn and move the backlog item to In flight), only tmux's meaningful status and herdr's confirmed-gone read roll a failed spawn's record back, a kept record's row moves to In flight or the mismatch is named, a relaunch's already-In-flight row is never re-dispatched, and the row move carries the commit point's tasks-axi bound while an operator's own bound is preserved.
 
+### 2026-10-29 Kimi Code CLI 2.4.0 trust dialog and installer Python through tmux
+
+Verified on 2026-10-29 on macOS 26.6.2 arm64 against Kimi Code CLI 2.4.0 (`kimi --version` prints `2.4.0`) in a private tmux 3.6a server, with treehouse v3.1.1 allocating the worktree.
+A folder new to Kimi shows this complete dialog on the 80x24 visible viewport, directly below the wrapped shell preamble that typed the launch line (user, host, and paths vary):
+
+```text
+user@host project % . '/tmp/fm-<id>+<hash>/launch.s<stamp>.sh'
+ ──────────────────────────────────────────────────────────────────────────────
+  Trust this folder?
+  ↑↓ navigate · Enter select · Esc exit
+
+  /Users/<user>/.treehouse/<pool>/1/<project>
+
+  Load project instructions
+    Check: AGENTS.md · .agents/skills/
+
+  Trust is remembered for this folder, including future project config changes.
+  Tool approvals follow your permission settings.
+
+   ❯ Trust and continue
+     Exit
+ ──────────────────────────────────────────────────────────────────────────────
+```
+
+`kimi_trust_dialog_missing` in [fm-spawn.sh](../../bin/fm-spawn.sh) finds every required element in that capture, so it is the complete dialog that spawn answers.
+A readiness refusal on such a pane therefore points at the recognition code that ran rather than at the capture; the `data/<id>/kimi-readiness-refusal.txt` record that every readiness refusal writes carries the capture and the missing elements for that comparison.
+
+The end-to-end proof ran one real scout spawn with the default `PATH`, from a scratch `FM_HOME` and a scratch git project whose worktree path Kimi had never seen:
+
+```text
+$ FM_HOME=<scratch-home> bin/fm-brief.sh kimi-proof-1 kimiproof --scout
+$ TMUX=<private-server> FM_HOME=<scratch-home> FM_SPAWN_NO_GUARD=1 bin/fm-spawn.sh kimi-proof-1 <scratch-project> --scout --harness kimi
+spawned kimi-proof-1 harness=kimi kind=scout window=firstmate:fm-kimi-proof-1 worktree=/Users/<user>/.treehouse/kimiproof-775286/1/kimiproof
+```
+
+Kimi's own folder-trust registry listed that worktree only after spawn had answered the dialog, and nothing was pre-registered in `config.toml`.
+The worker read its instructions, wrote the one-line report `OK kimi seated`, and appended `done`; `bin/fm-teardown.sh kimi-proof-1` then cleaned it up.
+
+That `PATH` resolves `python3` to `/usr/bin/python3` 3.9.6, which has no `tomllib`, and `python3.11` to a version-manager shim that does not run, so the turn-end hook installer selected the newest uv-managed CPython, 3.13.9.
+With no qualifying interpreter, the installer refuses before any config write and names each candidate (temporary `HOME`, `/bin/bash` 3.2.57):
+
+```text
+fm-kimi-turnend-hook: refused: no Python 3.11 or newer with tomllib was found to validate config.toml; searched interpreters:
+  /usr/bin/python3 (python3 on PATH): Python 3.9.6, no tomllib
+  not on PATH: python3.14 python3.13 python3.12 python3.11
+  not in /opt/homebrew/bin: python3 python3.14 python3.13 python3.12 python3.11
+  not in /usr/local/bin: python3 python3.14 python3.13 python3.12 python3.11
+  <HOME>/.local/share/uv/python/cpython-3.*/bin/python3 (uv-managed): none installed
+fm-kimi-turnend-hook: install Python 3.11 or newer (for example "uv python install 3.12" or "brew install python"), then retry.
+```
+
+[`fm-kimi-turnend-hook.sh --help`](../../bin/fm-kimi-turnend-hook.sh) owns the search order.
+`tests/fm-kimi-harness.test.sh` pins this capture shape below its preamble, the refusal record with its missing elements and last capture, and the interpreter search order and refusal.
+No live guard drives the trust dialog yet, so rerun the scout spawn above after a Kimi upgrade to refresh this entry.
+
 ### 2026-10-14 opencode 1.19.0 de-emphasised mode/footer row in the left-bar composer
 
 Verified on 2026-10-14 on macOS arm64 against an installed opencode 1.19.0 running as a Firstmate worker in a tmux 3.6a pane, read through `fm_tmux_composer_state` (`bin/fm-tmux-lib.sh`) with the tmux capability descriptor (`styled=1`, `cursor=1`, `identity=1`, `rows=0`).

@@ -12,6 +12,18 @@
 # touches a task turn-end marker only when the pointer names a Firstmate-created
 # token in $HOME/.kimi-code/fm-turn-end.d/.
 #
+# Validation needs Python 3.11 or newer for tomllib, which the default macOS
+# python3 (3.9) lacks, so the interpreter is searched in this fixed order and
+# the first one that imports tomllib runs install or remove:
+#   1. python3, then python3.14 down to python3.11, on PATH
+#   2. bin/python3, then bin/python3.14 down to bin/python3.11, under each
+#      Homebrew prefix in FM_KIMI_PYTHON_PREFIXES (default: /opt/homebrew
+#      /usr/local)
+#   3. uv-managed CPython, newest version first, under UV_PYTHON_INSTALL_DIR
+#      (default: ${XDG_DATA_HOME:-$HOME/.local/share}/uv/python)
+# When none qualifies, the refusal names every searched interpreter and why it
+# did not qualify, before any config write.
+#
 # Usage:
 #   fm-kimi-turnend-hook.sh install
 #   fm-kimi-turnend-hook.sh remove
@@ -22,7 +34,7 @@ set -u
 case "${1:-}" in
   install|remove) ACTION=$1 ;;
   -h|--help)
-    sed -n '2,18{s/^# \{0,1\}//;p;}' "$0"
+    sed -n '2,29{s/^# \{0,1\}//;p;}' "$0"
     exit 0
     ;;
   *)
@@ -35,8 +47,107 @@ if [ -z "${HOME:-}" ]; then
   printf 'fm-kimi-turnend-hook: refused: HOME is unset.\n' >&2
   exit 1
 fi
-if ! command -v python3 >/dev/null 2>&1; then
-  printf 'fm-kimi-turnend-hook: refused: python3 with tomllib is required to validate config.toml.\n' >&2
+KIMI_PYTHON=
+KIMI_PYTHON_TRIED=
+KIMI_PYTHON_REPORT=
+
+# Record one searched location's outcome for the refusal.
+kimi_python_note() { # <line>
+  KIMI_PYTHON_REPORT="$KIMI_PYTHON_REPORT  $1
+"
+}
+
+# Select <path> when it imports tomllib; otherwise record why it did not.
+kimi_python_try() { # <path> <label>
+  local version
+  case "
+$KIMI_PYTHON_TRIED" in *"
+$1
+"*) return 1 ;; esac
+  KIMI_PYTHON_TRIED="$KIMI_PYTHON_TRIED$1
+"
+  if "$1" -c 'import tomllib' >/dev/null 2>&1; then
+    KIMI_PYTHON=$1
+    return 0
+  fi
+  if version=$("$1" -c 'import sys; print("%d.%d.%d" % sys.version_info[:3])' 2>/dev/null) &&
+    [ -n "$version" ]; then
+    kimi_python_note "$1 ($2): Python $version, no tomllib"
+  else
+    kimi_python_note "$1 ($2): did not run"
+  fi
+  return 1
+}
+
+# Try uv-managed CPython installs under <root>, highest version first.
+kimi_python_try_uv() { # <root>
+  local candidate rest major minor patch key best best_key i n round
+  local -a paths keys
+  paths=()
+  keys=()
+  for candidate in "$1"/cpython-3.*/bin/python3; do
+    [ -x "$candidate" ] || continue
+    rest=${candidate##*/cpython-}
+    major=${rest%%.*}
+    rest=${rest#*.}
+    minor=${rest%%.*}
+    rest=${rest#*.}
+    patch=${rest%%[!0-9]*}
+    case "$major$minor" in '' | *[!0-9]*) continue ;; esac
+    key=$((10#$major * 1000000 + 10#$minor * 1000 + 10#${patch:-0}))
+    paths+=("$candidate")
+    keys+=("$key")
+  done
+  n=${#paths[@]}
+  if [ "$n" -eq 0 ]; then
+    kimi_python_note "$1/cpython-3.*/bin/python3 (uv-managed): none installed"
+    return 1
+  fi
+  # Each round tries the highest remaining version, then retires its key.
+  for ((round = 0; round < n; round++)); do
+    best=0
+    best_key=-1
+    for ((i = 0; i < n; i++)); do
+      if [ "${keys[i]}" -gt "$best_key" ]; then
+        best=$i
+        best_key=${keys[i]}
+      fi
+    done
+    kimi_python_try "${paths[best]}" uv-managed && return 0
+    keys[best]=-1
+  done
+  return 1
+}
+
+# The search order this header documents; the first qualifying interpreter
+# wins, so the same machine always selects the same one.
+kimi_python_select() {
+  local name path prefix missing=''
+  for name in python3 python3.14 python3.13 python3.12 python3.11; do
+    if path=$(command -v "$name" 2>/dev/null) && [ -n "$path" ]; then
+      kimi_python_try "$path" "$name on PATH" && return 0
+    else
+      missing="$missing $name"
+    fi
+  done
+  [ -z "$missing" ] || kimi_python_note "not on PATH:$missing"
+  for prefix in ${FM_KIMI_PYTHON_PREFIXES-/opt/homebrew /usr/local}; do
+    missing=''
+    for name in python3 python3.14 python3.13 python3.12 python3.11; do
+      if [ -x "$prefix/bin/$name" ]; then
+        kimi_python_try "$prefix/bin/$name" Homebrew && return 0
+      else
+        missing="$missing $name"
+      fi
+    done
+    [ -z "$missing" ] || kimi_python_note "not in $prefix/bin:$missing"
+  done
+  kimi_python_try_uv "${UV_PYTHON_INSTALL_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/uv/python}"
+}
+
+if ! kimi_python_select; then
+  printf 'fm-kimi-turnend-hook: refused: no Python 3.11 or newer with tomllib was found to validate config.toml; searched interpreters:\n%s' "$KIMI_PYTHON_REPORT" >&2
+  printf '%s\n' "fm-kimi-turnend-hook: install Python 3.11 or newer (for example \"uv python install 3.12\" or \"brew install python\"), then retry." >&2
   exit 1
 fi
 if [ "$ACTION" = install ] && ! command -v jq >/dev/null 2>&1; then
@@ -44,7 +155,7 @@ if [ "$ACTION" = install ] && ! command -v jq >/dev/null 2>&1; then
   exit 1
 fi
 
-python3 - "$ACTION" "$HOME/.kimi-code" <<'PY'
+"$KIMI_PYTHON" - "$ACTION" "$HOME/.kimi-code" <<'PY'
 import os
 import re
 import shutil
