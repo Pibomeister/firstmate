@@ -1187,6 +1187,85 @@ EOF
   pass "fm-spawn: agy is refused on orca, zellij, cmux, and paseo before anything launches"
 }
 
+# A configured (not explicit) backend that cannot prove agy readiness falls
+# back to a verified one, herdr before tmux, and says so; the record names the
+# backend the task really runs on.
+write_agy_fake_orca() {  # <fakebin>
+  cat > "$1/orca" <<'EOF'
+#!/bin/sh
+printf '%s\n' '{"ok":true,"result":{"runtime":{"reachable":true,"state":"ready"}}}'
+EOF
+  chmod +x "$1/orca"
+}
+
+test_agy_configured_orca_falls_back_to_tmux_without_herdr() {
+  local id rec out rc meta
+  id="agy-fallback-tmux-z16-$$"
+  rec=$(make_agy_spawn_case fallback-tmux "$id")
+  read_agy_spawn_record "$rec"
+  write_agy_fake_orca "$FAKEBIN_DIR"
+  printf 'orca\n' > "$HOME_DIR/config/backend"
+  rc=0
+  out=$(run_agy_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" \
+    --model gemini-3.8-flash-low) || rc=$?
+  expect_code 0 "$rc" "agy on a configured orca backend should fall back, got: $out"
+  assert_contains "$out" "notice: agy launch readiness is not verified on the configured backend=orca; this agy task runs on backend=tmux" \
+    "the agy fallback did not announce the backend it chose: $out"
+  [ -s "$CASE_DIR/launch.log" ] || fail "the agy fallback never launched agy in tmux"
+  meta="$HOME_DIR/state/$id.meta"
+  # A tmux record carries no backend line (fm_backend_of_meta defaults it).
+  grep -Eq '^backend=' "$meta" && ! grep -qx 'backend=tmux' "$meta" \
+    && fail "the agy fallback recorded a backend other than tmux: $(grep '^backend=' "$meta")" || true
+  assert_grep "window=firstmate:fm-$id" "$meta" "the agy fallback record has no tmux window: $(cat "$meta")"
+  pass "fm-spawn: agy on a configured orca backend falls back to tmux when herdr is unavailable"
+}
+
+test_agy_configured_orca_prefers_herdr_when_available() {
+  local id rec out rc
+  id="agy-fallback-herdr-z17-$$"
+  rec=$(make_agy_spawn_case fallback-herdr "$id")
+  read_agy_spawn_record "$rec"
+  write_agy_fake_orca "$FAKEBIN_DIR"
+  # A herdr client that passes the version check; every later herdr call
+  # fails, so the spawn stops after choosing herdr and never reaches tmux.
+  cat > "$FAKEBIN_DIR/herdr" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$*" >> "$FM_FAKE_HERDR_CALL_LOG"
+case "$*" in
+  "status --json") printf '%s\n' '{"client":{"protocol":99,"version":"9.9.9"}}'; exit 0 ;;
+esac
+exit 1
+EOF
+  chmod +x "$FAKEBIN_DIR/herdr"
+  printf 'orca\n' > "$HOME_DIR/config/backend"
+  : > "$CASE_DIR/herdr-calls.log"
+  rc=0
+  out=$(FM_FAKE_HERDR_CALL_LOG="$CASE_DIR/herdr-calls.log" run_agy_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" \
+    "$FAKEBIN_DIR" "$id" --model gemini-3.8-flash-low) || rc=$?
+  assert_contains "$out" "this agy task runs on backend=herdr" \
+    "the agy fallback did not prefer an available herdr: $out"
+  [ -s "$CASE_DIR/launch.log" ] && fail "the agy fallback launched in tmux although herdr was chosen" || true
+  pass "fm-spawn: agy on a configured orca backend prefers herdr over tmux"
+}
+
+test_agy_fallback_refuses_when_no_verified_backend_is_available() {
+  local id rec out rc
+  id="agy-fallback-none-z18-$$"
+  rec=$(make_agy_spawn_case fallback-none "$id")
+  read_agy_spawn_record "$rec"
+  write_agy_fake_orca "$FAKEBIN_DIR"
+  rm -f "$FAKEBIN_DIR/tmux"
+  printf 'orca\n' > "$HOME_DIR/config/backend"
+  rc=0
+  out=$(run_agy_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" \
+    --model gemini-3.8-flash-low) || rc=$?
+  [ "$rc" -ne 0 ] || fail "agy with no verified backend available was accepted"
+  assert_contains "$out" "no verified agy backend (herdr, tmux) is available" \
+    "the agy fallback refusal lacked its concrete reason: $out"
+  assert_absent "$HOME_DIR/state/$id.meta" "a refused agy fallback left a task record"
+  pass "fm-spawn: agy refuses when neither herdr nor tmux is available"
+}
+
 test_agy_missing_binary_refuses_before_pane_creation() {
   local id rec out rc
   id="agy-missing-z5-$$"
@@ -1270,6 +1349,9 @@ test_agy_post_publication_failures_keep_records
 test_agy_live_guard_always_stops_server
 test_agy_missing_treehouse_capability_refuses_before_launch
 test_agy_unverified_backend_refuses_before_anything_launches
+test_agy_configured_orca_falls_back_to_tmux_without_herdr
+test_agy_configured_orca_prefers_herdr_when_available
+test_agy_fallback_refuses_when_no_verified_backend_is_available
 test_agy_missing_binary_refuses_before_pane_creation
 test_agy_secondmate_is_refused
 test_agy_spawn_arms_no_busy_wiring

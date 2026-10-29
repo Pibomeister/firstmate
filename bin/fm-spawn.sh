@@ -2942,11 +2942,39 @@ fi
 # the pinned busy row from the backend's pane capture, which is proven per
 # backend rather than assumed (docs/verification/agy.md owns the evidence).
 # Orca's stream read never showed agy 1.4.10 busy while it was working, so the
-# gate timed out on a live worker. Refuse an unproven backend here, before any
-# worktree, endpoint, task record, or remote model fetch exists.
+# gate timed out on a live worker. An explicit --backend or a relaunch onto an
+# unproven backend is refused here, before any worktree, endpoint, task record,
+# or remote model fetch exists. A backend that only came from config/backend
+# instead moves this one task to the first verified backend whose tools are
+# present, herdr before tmux, and says so; the task record names where it runs.
+agy_fallback_backend() {
+  local candidate tool
+  for candidate in herdr tmux; do
+    for tool in $(fm_backend_required_tools "$candidate"); do
+      command -v "$tool" >/dev/null 2>&1 || continue 2
+    done
+    if [ "$candidate" = herdr ]; then
+      fm_backend_source herdr >/dev/null 2>&1 || continue
+      fm_backend_herdr_version_check >/dev/null 2>&1 || continue
+    fi
+    printf '%s' "$candidate"
+    return 0
+  done
+  return 1
+}
 if [ "$HARNESS" = agy ] && [ "$BACKEND" != tmux ] && [ "$BACKEND" != herdr ]; then
-  echo "error: agy launch readiness is live-verified on the tmux and herdr backends only; backend=$BACKEND cannot prove the brief started. Select backend tmux or herdr." >&2
-  exit 1
+  if [ "$RELAUNCH" -eq 1 ] || [ "$BACKEND_SET" -eq 1 ]; then
+    echo "error: agy launch readiness is live-verified on the tmux and herdr backends only; backend=$BACKEND cannot prove the brief started. Select backend tmux or herdr." >&2
+    exit 1
+  fi
+  AGY_CONFIGURED_BACKEND=$BACKEND
+  BACKEND=$(agy_fallback_backend) || {
+    echo "error: agy launch readiness is live-verified on the tmux and herdr backends only, the configured backend=$AGY_CONFIGURED_BACKEND is neither, and no verified agy backend (herdr, tmux) is available; install one of them" >&2
+    exit 1
+  }
+  fm_backend_validate_spawn "$BACKEND" || exit 1
+  fm_backend_source "$BACKEND" || exit 1
+  echo "notice: agy launch readiness is not verified on the configured backend=$AGY_CONFIGURED_BACKEND; this agy task runs on backend=$BACKEND" >&2
 fi
 if [ "$HARNESS" = agy ]; then
   if [ "$RELAUNCH" -eq 0 ]; then
