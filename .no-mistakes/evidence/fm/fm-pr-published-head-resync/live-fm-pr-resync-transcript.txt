@@ -1,0 +1,78 @@
+=== S1 pipeline-rebased published head vs stale local branch (stale=40cf3753b13e0813f85d796b2609da866e5b6067 pub=63b44a2829038712bd28d6d87a5ff455d96e3656)
+$ git -C task status -sb
+## fm/demo...origin/fm/demo
+[exit 0]
+--- S1a --check plans, changes nothing
+$ /Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M63E4CADHRP84V4BGJB5J6SX/bin/fm-pr-resync.sh demo /private/tmp/fmlive.PQxK/task fm/demo --check
+fm-pr-resync: result=planned:archive-advance archive=- custody=none head=40cf3753b13e0813f85d796b2609da866e5b6067
+[exit 0]
+refs unchanged by --check: OK
+no FETCH_HEAD: OK
+--- S1b dirty tree refuses before archive/advance
+$ /Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M63E4CADHRP84V4BGJB5J6SX/bin/fm-pr-resync.sh demo /private/tmp/fmlive.PQxK/task fm/demo
+fm-pr-resync: refused: worktree has local changes and fm/demo must move to the published head 63b44a2829038712bd28d6d87a5ff455d96e3656
+fm-pr-resync: changed: nothing; no commit was made unreachable
+fm-pr-resync: result=planned:archive-advance archive=- custody=refused head=40cf3753b13e0813f85d796b2609da866e5b6067
+[exit 1]
+$ git -C task for-each-ref refs/heads
+40cf3753b13e0813f85d796b2609da866e5b6067 commit	refs/heads/fm/demo
+28ab518074bd583744b044e1823333936b2da07a commit	refs/heads/main
+[exit 0]
+--- S1c real run
+$ /Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M63E4CADHRP84V4BGJB5J6SX/bin/fm-pr-resync.sh demo /private/tmp/fmlive.PQxK/task fm/demo
+fm-pr-resync: result=archived-advanced archive=refs/heads/archive/demo-pre-rebase-40cf3753 custody=none head=63b44a2829038712bd28d6d87a5ff455d96e3656
+[exit 0]
+$ git -C task for-each-ref --format=%(refname) %(objectname:short) refs/heads
+refs/heads/archive/demo-pre-rebase-40cf3753 40cf375
+refs/heads/fm/demo 63b44a2
+refs/heads/main 28ab518
+[exit 0]
+$ git -C task log --oneline -3
+63b44a2 review fix
+a65b7e5 task work
+9150902 main moves
+[exit 0]
+$ git -C task status -sb
+## fm/demo...origin/fm/demo
+[exit 0]
+origin fm/demo now: 63b44a2829038712bd28d6d87a5ff455d96e3656 (pub 63b44a2829038712bd28d6d87a5ff455d96e3656) -- no push happened
+stale commit still reachable via archive: archive/demo-pre-rebase-40cf3753
+--- S1d rerun is idempotent
+$ /Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M63E4CADHRP84V4BGJB5J6SX/bin/fm-pr-resync.sh demo /private/tmp/fmlive.PQxK/task fm/demo
+fm-pr-resync: result=equal archive=- custody=none head=63b44a2829038712bd28d6d87a5ff455d96e3656
+[exit 0]
+=== S2 detached copy at a moved origin/main (beyond the PR base) — must be accepted
+$ git -C pool status -sb
+## HEAD (no branch)
+[exit 0]
+$ /Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M63E4CADHRP84V4BGJB5J6SX/bin/fm-pr-resync.sh demo2 /private/tmp/fmlive.PQxK/pool fm/demo
+fm-pr-resync: created local branch fm/demo at the published head 63b44a2829038712bd28d6d87a5ff455d96e3656
+fm-pr-resync: result=equal archive=- custody=none head=63b44a2829038712bd28d6d87a5ff455d96e3656
+[exit 0]
+$ git -C pool status -sb
+## fm/demo
+[exit 0]
+=== S3 adversarial: detached copy with a genuinely unanchored commit — must refuse, HEAD unchanged
+$ /Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M63E4CADHRP84V4BGJB5J6SX/bin/fm-pr-resync.sh demo3 /private/tmp/fmlive.PQxK/lost fm/demo
+fm-pr-resync: refused: detached HEAD 93ca851b01c75f9271e138b6c8ea92134ad378e6 contains commits absent from fm/demo, the published head and origin; HEAD is unchanged
+fm-pr-resync: changed: nothing; no commit was made unreachable
+fm-pr-resync: result=planned:none archive=- custody=refused head=-
+[exit 1]
+HEAD after refusal: 93ca851b01c75f9271e138b6c8ea92134ad378e6 (was 93ca851b01c75f9271e138b6c8ea92134ad378e6); branch: detached; local fm/demo: none
+=== S4 adversarial: existing archive name held by another commit refuses
+$ /Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M63E4CADHRP84V4BGJB5J6SX/bin/fm-pr-resync.sh demo4 /private/tmp/fmlive.PQxK/coll fm/demo
+fm-pr-resync: refused: archive refs/heads/archive/demo4-pre-rebase-40cf3753 already exists at 63b44a2829038712bd28d6d87a5ff455d96e3656, not 40cf3753b13e0813f85d796b2609da866e5b6067
+fm-pr-resync: changed: nothing; no commit was made unreachable
+fm-pr-resync: result=planned:archive-advance archive=- custody=refused head=40cf3753b13e0813f85d796b2609da866e5b6067
+[exit 1]
+fm/demo still at 40cf3753b13e0813f85d796b2609da866e5b6067 (stale 40cf3753b13e0813f85d796b2609da866e5b6067)
+=== S5 ahead: unpublished local commits on top of the published head are kept
+$ /Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M63E4CADHRP84V4BGJB5J6SX/bin/fm-pr-resync.sh demo /private/tmp/fmlive.PQxK/task fm/demo
+fm-pr-resync: result=ahead:1 archive=- custody=none head=c667e9c390c3789ff18aaa2c7dab049e6c83e4e7
+[exit 0]
+=== S6 branch origin lacks refuses
+$ /Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M63E4CADHRP84V4BGJB5J6SX/bin/fm-pr-resync.sh demo /private/tmp/fmlive.PQxK/task fm/nope
+fm-pr-resync: refused: worktree is on branch fm/demo, not fm/nope
+fm-pr-resync: changed: nothing; no commit was made unreachable
+fm-pr-resync: result=planned:none archive=- custody=refused head=-
+[exit 1]

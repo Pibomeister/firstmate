@@ -1,0 +1,55 @@
+ok - diverged stale local branch is archived and advanced to the pipeline-rebased published head
+ok - behind branch advances without an archive
+ok - equal branch changes nothing, even with an untracked file
+ok - ahead branch changes nothing and reports ahead:1
+ok - a dirty tree refuses when the branch must move
+status: waiting for both good and bad commits
+ok - an in-progress operation refuses
+ok - a branch checked out in another worktree refuses
+ok - a worktree on a different named branch refuses
+ok - a branch missing on origin refuses
+ok - a fetched head that differs from the advertised head refuses
+ok - an archive name held by another commit refuses before any move
+ok - an archive already at the stale head is reused
+ok - a remote move after the advance refuses with the archive and verified head reported
+ok - a concurrent local commit refuses the old-OID-conditional advance
+ok - a concurrent local commit after the conditional advance is preserved and reported
+ok - an index update failure refuses and reports the preserved archive and conditional advance
+ok - a detached HEAD capture failure refuses without switching or losing its commit
+ok - a detached unpublished commit refuses without switching HEAD
+ok - a copy detached at an origin/main newer than the published head's base continues the branch
+ok - a copy detached at a moved origin/main switches to and archive-advances its stale branch
+ok - an unanchored detached commit on top of a moved origin/main still refuses
+ok - Git network timeout refuses safely at normal operation 1
+ok - Git network timeout refuses safely at normal operation 2
+ok - Git network timeout refuses safely at normal operation 3
+ok - Git network timeout refuses safely at normal operation 4
+ok - Git network timeout refuses safely at check operation 1
+ok - Git network timeout refuses safely at check operation 2
+ok - Git network timeout refuses safely at check operation 3
+ok - a remote move before the advance refuses with nothing moved
+ok - custody active at preflight exits 3 with nothing changed
+ok - blocked_diverged custody settles after archive and advance
+ok - recover_custody runs its fixed command and re-checks to settled
+ok - adopt_published runs its fixed command and re-checks to settled
+ok - a recovery whose fresh re-check is not settled refuses
+ok - a preserved pipeline-head fetch timeout refuses before binding or recovering
+ok - terminal-run manual reconciliation archives, binds and recovers only under verified proof
+ok - keep-local recovery without a verified own-archive proof refuses (unverified)
+ok - keep-local recovery without a verified own-archive proof refuses (foreign)
+ok - keep-local recovery without a verified own-archive proof refuses (preserved)
+ok - keep-local recovery without a verified own-archive proof refuses (required)
+ok - an unhandled native verdict refuses with its output
+ok - a native verdict outside the handled set refuses before any change
+ok - a native verdict outside the handled set just before the move refuses with nothing moved
+ok - unreadable custody refuses before any change
+ok - --check reports the planned action and changes nothing
+ok - --check refuses when origin moves to an already-present commit around its fetch (after read 1)
+ok - --check refuses when origin moves to an already-present commit around its fetch (after read 2)
+ok - custody taken between preflight and move is caught before any ref moves
+ok - custody taken after the pre-move check is reported with the archive and advance
+ok - a detached worktree without a local branch reports the created branch on exit 3
+ok - a detached worktree switched to its existing branch reports the switch on exit 3
+ok - an unsettled verdict after a detached switch refuses and reports the switch
+ok - an invalid timeout cannot disable the Git network bound
+ok - a relative worktree is a usage error

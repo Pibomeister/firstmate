@@ -1,0 +1,56 @@
+=== lab home /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.bYPbD1; stale local feature/pr=1b34661743873db86e912c770403d1324bf91d58; pipeline-published head=c0e93f2de5736a6603f9650e4fbe64c73cdb925f
+$ fm-brief.sh live-pr1 fixture-project --scout
+scaffolded: /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.bYPbD1/data/live-pr1/brief.md (scout; replace {TASK} and {FIRSTMATE_SPEC})
+[exit 0]
+--- P1 adversarial: dirty scout worktree refuses promotion, nothing moves
+$ fm-promote.sh live-pr1 --mode direct-PR --yolo off --pr-branch feature/pr
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  down 0s.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+fm-pr-resync: refused: detached worktree has local changes; cannot switch to feature/pr
+fm-pr-resync: changed: nothing; no commit was made unreachable
+fm-pr-resync: result=planned:none archive=- custody=refused head=1b34661743873db86e912c770403d1324bf91d58
+error: cannot promote live-pr1 onto feature/pr: bin/fm-pr-resync.sh exited 1 in '/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.bYPbD1/repos/wt' (output above); the task record is unchanged
+[exit 1]
+task record unchanged: OK
+local feature/pr: 1b34661743873db86e912c770403d1324bf91d58 (stale 1b34661743873db86e912c770403d1324bf91d58)
+worktree: detached
+--- P2 clean promotion continues from the published head
+$ fm-promote.sh live-pr1 --mode direct-PR --yolo off --pr-branch feature/pr
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s; down 1s) - full banner already printed this episode.
+fm-pr-resync: switched the detached worktree to feature/pr
+fm-pr-resync: result=archived-advanced archive=refs/heads/archive/live-pr1-pre-rebase-1b346617 custody=none head=c0e93f2de5736a6603f9650e4fbe64c73cdb925f
+promoted live-pr1 to ship mode=direct-PR yolo=off (teardown protection restored)
+wrote ship instructions for mode=direct-PR: /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.bYPbD1/data/live-pr1/ship-instructions.md
+next: FM_HOME=/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.bYPbD1 bin/fm-send.sh fm-live-pr1 "$(cat /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.bYPbD1/data/live-pr1/ship-instructions.md)"
+[exit 0]
+meta:
+window=fm-live-pr1
+worktree=/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.bYPbD1/repos/wt
+kind=ship
+mode=direct-PR
+yolo=off
+branch=feature/pr
+worktree branch: refs/heads/feature/pr at c0e93f2de5736a6603f9650e4fbe64c73cdb925f (published c0e93f2de5736a6603f9650e4fbe64c73cdb925f)
+refs/heads/archive/live-pr1-pre-rebase-1b346617 1b34661743873db86e912c770403d1324bf91d58
+origin feature/pr: c0e93f2de5736a6603f9650e4fbe64c73cdb925f (unchanged; no push)
+ship-instructions branch step:
+11:3. Promotion already put this worktree on `feature/pr` at its verified published head (or ahead of it by unpublished local commits); keep your scratch state out of it and do not create a branch.
+=== B1 successor ship brief: --pr-branch continues the branch, PR targets the default branch
+$ fm-brief.sh live-pr2 fixture-project --mode no-mistakes --pr-branch feature/pr
+scaffolded: /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.bYPbD1/data/live-pr2/brief.md (ship, mode=no-mistakes; replace {TASK} and {FIRSTMATE_SPEC})
+[exit 0]
+16:You are in a disposable git worktree of fixture-project, already on branch feature/pr, which contains its verified published pull-request head: equal to it, or ahead of it by the unpublished local commits the launch reported.
+22:1. First action: confirm `git status --short --branch` shows feature/pr; do not create a branch.
+26:1. Never push to the default branch. Never merge a PR.
+100:Ship branch: feature/pr
+117:When `branch_sync` reports this branch diverged from or rewritten against the pipeline's published head, never archive, reset, or sync it by hand: run `/Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M63E4CADHRP84V4BGJB5J6SX/bin/fm-pr-resync.sh live-pr2 "$(git rev-parse --show-toplevel)" feature/pr`; on exit 3 follow its monitoring-only lines, and on any other nonzero exit report a blocker with its output.
+--- B2 adversarial: --pr-branch with --branch-prefix refused
+error: --pr-branch applies only to ship briefs and cannot be combined with --branch-prefix or --from-branch
+[exit 1]
+lab removed
