@@ -12,7 +12,7 @@ fm_root_is_secondmate_home() {
   local marker="$1/.fm-secondmate-home" id LC_ALL=C
   [ -L "$marker" ] && return 1
   [ -f "$marker" ] || return 1
-  IFS= read -r id < "$marker" 2>/dev/null || return 1
+  IFS= read -r id < "$marker" 2>/dev/null || [ -n "$id" ] || return 1
   id=${id//[[:space:]]/}
   [ -n "$id" ] || return 1
   case "$id" in
@@ -28,7 +28,7 @@ fm_root_is_secondmate_home() {
 fm_secondmate_home_inbox() {
   local id dir
   fm_root_is_secondmate_home "$1" || return 1
-  IFS= read -r id < "$1/.fm-secondmate-home" || return 1
+  IFS= read -r id < "$1/.fm-secondmate-home" || [ -n "$id" ] || return 1
   id=${id//[[:space:]]/}
   dir=$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; CDPATH='' cd -- "${d:-/}" && pwd)
   if ! command -v fm_secondmate_parent_record_parse >/dev/null 2>&1; then

@@ -100,6 +100,17 @@ test_guard_denies_a_waiting_record_then_lets_the_drain_run() {
   pass "inbox guard: each waiting record is denied with names only, at most 3 times, and the window spaces every deny"
 }
 
+test_guard_denies_with_a_marker_without_a_trailing_newline() {
+  local home
+  home=$(make_secondmate no-marker-newline)
+  printf 'sm1' > "$home/.fm-secondmate-home"
+  add_record "$home" 001
+  hook_call "$home" "$home" self
+  expect_deny "an aged waiting record with no trailing newline in the home marker"
+  grep -q '001.msg' "$ERR" || fail "the deny does not name the waiting record: $(cat "$ERR")"
+  pass "inbox guard: a home marker without a trailing newline still denies an aged waiting record"
+}
+
 # A stuck oldest record that the watcher escalated after its denies were spent
 # never switches the drain off for a later record.
 test_guard_moves_past_a_stuck_oldest_record() {
@@ -261,6 +272,7 @@ test_guard_allows_everything_it_does_not_own() {
 }
 
 test_guard_denies_a_waiting_record_then_lets_the_drain_run
+test_guard_denies_with_a_marker_without_a_trailing_newline
 test_guard_moves_past_a_stuck_oldest_record
 test_guard_skips_a_record_the_watcher_escalated_before_any_deny
 test_guard_scans_past_any_number_of_spent_records
