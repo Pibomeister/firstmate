@@ -297,14 +297,30 @@ assert_contains "$OUT" "safety: blocked_remote_rewritten" "unhandled verdict: na
 assert_contains "$LAST" "custody=refused" "unhandled verdict: result line"
 pass "an unhandled native verdict refuses with its output"
 
+UNKNOWN=$(bs pipeline_owned blocked_some_new_verdict inspect_and_reconcile_manually 'no-mistakes axi status' 01RUN)
+fixture unknownpre; gate; rebase_publish; resp 1 1 "$UNKNOWN"; run_owner
+expect_code 1 "$RC" "unhandled preflight verdict: exit"
+assert_equals "$A" "$(ref "refs/heads/$B")" "unhandled preflight verdict: branch unchanged"
+assert_equals "" "$(archives)" "unhandled preflight verdict: no archive"
+assert_contains "$OUT" "safety: blocked_some_new_verdict" "unhandled preflight verdict: native output verbatim"
+pass "a native verdict outside the handled set refuses before any change"
+
+fixture unknownmove; gate; rebase_publish; resp 1 1 "$DIVERGED"; resp 2 1 "$UNKNOWN"; run_owner
+expect_code 1 "$RC" "unhandled pre-move verdict: exit"
+assert_equals "$A" "$(ref "refs/heads/$B")" "unhandled pre-move verdict: branch unchanged"
+assert_equals "" "$(archives)" "unhandled pre-move verdict: no archive"
+pass "a native verdict outside the handled set just before the move refuses with nothing moved"
+
 fixture unreadable; gate; resp 1 1 'error: daemon unavailable'; rebase_publish; run_owner
 expect_code 1 "$RC" "unreadable custody: exit"
 assert_equals "$A" "$(ref "refs/heads/$B")" "unreadable custody: branch unchanged"
 assert_contains "$OUT" "daemon unavailable" "unreadable custody: native output"
 pass "unreadable custody refuses before any change"
 
-fixture check; gate; rebase_publish; resp 1 1 "$DIVERGED"; run_owner "$B" --check
+fixture check; gate; rebase_publish; TRACK=$(ref "refs/remotes/origin/$B"); resp 1 1 "$DIVERGED"; run_owner "$B" --check
 expect_code 0 "$RC" "--check: exit"
+assert_equals "$TRACK" "$(ref "refs/remotes/origin/$B")" "--check: remote-tracking ref unchanged"
+assert_absent "$(git -C "$WT" rev-parse --path-format=absolute --git-path FETCH_HEAD)" "--check: no FETCH_HEAD written"
 assert_equals "$A" "$(ref "refs/heads/$B")" "--check: branch unchanged"
 assert_equals "" "$(archives)" "--check: no archive"
 assert_equals "1" "$(calls | wc -l | tr -d ' ')" "--check: read-only preflight only"

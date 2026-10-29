@@ -38,8 +38,12 @@
 # must read settled; anything else refuses and prints the native output.
 # It never force-pushes, force-moves or deletes a ref, starts, aborts or
 # cancels a run, discards a pipeline commit, or administers the daemon.
-# --check runs the checks and the read-only custody preflight, then reports the
-# planned action without any switch, ref change or recovery.
+# A verdict outside that handled set (settled, blocked_diverged,
+# blocked_remote_rewritten, blocked_recover_manual_reconciliation, a
+# recover_custody or adopt_published offer, continue_active_run) refuses before
+# anything moves. --check runs the checks and the read-only custody preflight,
+# fetching objects only, then reports the planned action without any switch,
+# ref change (remote-tracking refs and FETCH_HEAD included) or recovery.
 #
 # Exit: 0 settled, 1 refused (output names what already changed), 2 usage,
 # 3 pipeline-active (prints the monitoring-only contract, each line prefixed
@@ -117,6 +121,12 @@ unsettled() {
   printf '%s\n' "$v_out"
   refuse "no-mistakes custody is ${v_state:-unreadable}/${v_safety:-unknown} (next_action ${v_code:-none}), not a verdict this owner settles"
 }
+handled() {  # verdicts the git step or a native-offered action can settle
+  settled && return 0
+  case "$v_safety" in blocked_diverged|blocked_remote_rewritten|blocked_recover_manual_reconciliation) return 0 ;; esac
+  case "$v_code" in recover_custody|adopt_published) return 0 ;; esac
+  return 1
+}
 rec() { fm_nm_branch_sync_nested "$v_out" recovery "$1"; }
 keep_local_proven() {
   local ref pres
@@ -183,10 +193,18 @@ done < <(g worktree list --porcelain | awk -v want="branch refs/heads/$branch" \
 cur=$(g symbolic-ref -q --short HEAD)
 [ -z "$cur" ] || [ "$cur" = "$branch" ] || refuse "worktree is on branch $cur, not $branch"
 
-g fetch --quiet --no-tags origin "+refs/heads/$branch:refs/remotes/origin/$branch" 2>/dev/null \
-  || refuse "origin has no branch $branch, or it could not be fetched"
-fetched=$(g rev-parse -q --verify "refs/remotes/origin/$branch^{commit}")
-pub=$(advertised)
+if [ "$check_mode" -eq 1 ]; then
+  # Objects only: no remote-tracking ref or FETCH_HEAD changes in --check.
+  g fetch --quiet --no-tags --no-write-fetch-head --refmap= origin "refs/heads/$branch" 2>/dev/null \
+    || refuse "origin has no branch $branch, or it could not be fetched"
+  pub=$(advertised)
+  fetched=$(g rev-parse -q --verify "$pub^{commit}" 2>/dev/null)
+else
+  g fetch --quiet --no-tags origin "+refs/heads/$branch:refs/remotes/origin/$branch" 2>/dev/null \
+    || refuse "origin has no branch $branch, or it could not be fetched"
+  fetched=$(g rev-parse -q --verify "refs/remotes/origin/$branch^{commit}")
+  pub=$(advertised)
+fi
 [ "$pub" = "$fetched" ] || refuse "origin advertises $branch at $pub but the fetch produced ${fetched:-nothing}"
 
 local_head=$(g rev-parse -q --verify "refs/heads/$branch^{commit}")
@@ -221,6 +239,7 @@ if [ "$gate" -eq 1 ]; then
     refuse "no-mistakes branch custody is unreadable"
   fi
   [ "$v_code" != continue_active_run ] || monitoring_only "$result"
+  handled || unsettled
 fi
 [ "$check_mode" -eq 0 ] || finish 0 "$result" none
 
@@ -233,6 +252,7 @@ case "$rel" in
     if [ "$gate" -eq 1 ]; then
       nm_check
       [ "$v_code" != continue_active_run ] || monitoring_only "$result"
+      handled || unsettled
     fi
     [ "$(advertised)" = "$pub" ] || refuse "origin $branch moved from $pub before the advance"
     [ "$rel" = behind ] || make_archive pre-rebase "$local_head"
