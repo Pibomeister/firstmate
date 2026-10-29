@@ -12,8 +12,9 @@ The skill tree rooted at [`.agents/skills/harness-adapters/SKILL.md`](../../.age
 | Binary | `/home/andpod/.local/bin/agy`, an ELF 64-bit Go-compiled single executable |
 | Platform | Linux x64 (Arch, kernel 7.2.3) |
 | Backend | Herdr, in an isolated non-`default` lab session (`fm-lab-firstmate-agy-ad-*` via `bin/fm-herdr-lab.sh`); the live `default` session was unchanged throughout |
+| Re-verified | 2026-10-29, `agy 1.4.10` on macOS (Darwin 25.6.0, arm64) through tmux 3.6a; see [Backend readiness](#backend-readiness-the-spawn-refuses-unproven-backends) |
 
-Every command below ran inside the disposable firstmate task worktree or the named Herdr lab session.
+Every command below ran inside the disposable firstmate task worktree, the named Herdr lab session, or an isolated tmux socket.
 No captain fleet state was touched.
 
 ## Detection: ancestry only, no marker
@@ -67,8 +68,9 @@ The mechanism behind the difference was not established; path, backend, and late
 The spawn therefore does not depend on it: after pre-registration, `bin/fm-spawn.sh` runs a post-launch readiness gate (`agy_wait_for_working`) in the rovo/kimi launch-then-confirm shape as the backstop.
 It polls the pane capture, answers the dialog with a single Enter the first time the `Do you trust the contents of this project?` text renders, and reports success only once `fm_busy_classify` returns a busy verdict for the pane (Herdr's native `working` status or the pinned `esc to cancel` status row).
 Because Herdr's native `working` verdict is known to coexist with an unanswered dialog, the gate is strict about order: a busy verdict counts as ready only when the worktree was pre-registered before launch or the dialog has already been seen and answered; on an unregistered path it keeps polling for the dialog instead of accepting the early busy verdict.
-When the brief cannot be confirmed to run within the window (an answered dialog never turns busy, a pre-trusted pane never turns busy, or an unregistered pane never shows the dialog), the spawn fails, records `failed:` in the task status, and closes the endpoint so no orphan worker survives outside task control.
-`tests/fm-agy-harness.test.sh` covers the helper's registration and scope refusals against a throwaway store, and drives a fake pane whose dialog decision reads the store the spawn just wrote: the pre-trusted launch with no dialog, a dialog that renders anyway answered exactly once, the premature busy verdict on an unregistered path waiting for the dialog, and both fail-and-close paths.
+When the brief cannot be confirmed to run within the window (an answered dialog never turns busy, a pre-trusted pane never turns busy, or an unregistered pane never shows the dialog), the spawn fails, records `failed:` in the task status, and closes only its own endpoint so no orphan worker survives outside task control.
+It keeps the task record even when that close is proven, because the brief rides the launch command and a timeout cannot prove it never ran: the kept record names the closed endpoint and the worktree, so `bin/fm-control.sh <id> relaunch` reclaims the task on the same worktree and `bin/fm-teardown.sh <id>` resolves it.
+`tests/fm-agy-harness.test.sh` covers the helper's registration and scope refusals against a throwaway store, and drives a fake pane whose dialog decision reads the store the spawn just wrote: the pre-trusted launch with no dialog, a dialog that renders anyway answered exactly once, the premature busy verdict on an unregistered path waiting for the dialog, both fail-and-close paths, and a kept record after a failure that closes exactly one window and that `bin/fm-teardown.sh` resolves.
 
 ## Model and effort
 
@@ -162,6 +164,39 @@ In primary and secondmate homes, watcher commands are classified by the shared a
 Supervision continuity uses synchronous Stop-hook parking via `bin/fm-turnend-guard-agy.sh`, running `bin/fm-watch-arm.sh` (or the supervision host) which waits under the 28800s hook timeout until woken by an incoming event (bounded only when the optional `FM_AGY_PARK_TIMEOUT` is set) and falls back to bounded repair nagging via `bin/fm-turnend-guard.sh --agy`.
 Session lock verification recognizes `agy` process ancestry via `bin/fm-session-lock-lib.sh`.
 
+## Backend readiness: the spawn refuses unproven backends
+
+The readiness gate reads the trust dialog and the pinned `esc to cancel` row from the backend's pane capture, so it is only as good as that capture.
+`bin/fm-spawn.sh` therefore refuses an agy spawn or relaunch on any backend other than tmux and Herdr before any worktree, endpoint, task record, or model fetch exists:
+
+```
+error: agy launch readiness is live-verified on the tmux and herdr backends only; backend=orca cannot prove the brief started. Select backend tmux or herdr.
+```
+
+`tests/fm-agy-harness.test.sh` pins that refusal for orca, zellij, cmux, and paseo, with no launch, no terminal call, no model fetch, and no task record.
+
+| Backend | agy | Platform | Date | Result |
+|---|---|---|---|---|
+| Herdr | 1.2.0 | Linux x64 | 2026-09-10 | Verified; the sections above. |
+| tmux | 1.4.10 | macOS arm64 | 2026-10-29 | Verified through the real spawn path; below. |
+| Orca | 1.4.10 | macOS arm64 | 2026-10-29 | Refused. A real agy launch timed out in the readiness gate while agy was already running tool calls, because `orca terminal read` returns the output stream tail, which did not carry the pinned busy row. The visible-screen read is restricted to recorded Droid tasks. |
+| zellij, cmux, paseo | - | - | - | Refused; never exercised with agy. |
+
+The tmux run used `tests/fm-agy-spawn-live-e2e.test.sh`, which drives `bin/fm-spawn.sh --scout --harness agy --model gemini-3.8-flash-low --effort low --backend tmux` on an isolated tmux socket, a throwaway treehouse pool, and a throwaway `HOME` holding a copy of `~/.gemini`:
+
+```
+$ FM_AGY_SPAWN_LIVE=1 bin/fm-test-run.sh tests/fm-agy-spawn-live-e2e.test.sh
+spawned agy-live harness=agy kind=scout window=firstmate:fm-agy-live worktree=.../pool/.treehouse/scratch-c1c0cc/1/scratch
+ok - agy 1.4.10 on tmux pre-registered trust and processed its brief in the worktree
+ok - a failed agy readiness gate closed its own window and kept its record
+ok - fm-control relaunched the kept agy record and the worker processed its brief
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=76837
+```
+
+The first case found the worktree in the throwaway trust store, and the worker wrote the brief's sum and its worktree path to its report.
+The second case forced a readiness failure with `FM_AGY_READY_POLLS=1 FM_AGY_POLL_INTERVAL=0`: the spawn exited non-zero, its window was gone, its record stayed, and `bin/fm-control.sh <id> relaunch --note ...` launched a replacement that processed the brief.
+On tmux, `bin/fm-control.sh <id> exit` refuses to type `/quit` because the composer reads `unknown` (see [Composer](#composer-unknown-by-design)), so the guard retires each task with `bin/fm-teardown.sh`, which closes the window.
+
 ## What is still unproven
 
 The unauthenticated failure mode was never observed; this host's agy runs signed in, so any auth prompt is a fail-loud credential blocker, not a handled dialog.
@@ -175,4 +210,5 @@ Run the portable suite and the live guard after any agy upgrade, because the pro
 ```
 bin/fm-test-run.sh tests/fm-agy-harness.test.sh
 FM_AGY_SIGNALS_LIVE=1 bin/fm-test-run.sh tests/fm-agy-signals-live-e2e.test.sh
+FM_AGY_SPAWN_LIVE=1 bin/fm-test-run.sh tests/fm-agy-spawn-live-e2e.test.sh
 ```

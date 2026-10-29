@@ -629,6 +629,9 @@
 # screen-scrape fallback like grok and rovo, while an agy SECONDMATE runs the
 # tracked project-scope .agents/hooks.json in its own home, whose stop-hook park
 # owns that home's supervision (docs/supervision-protocols/agy.md).
+# The readiness gate is proven only on tmux and Herdr, so every other backend
+# is refused before anything launches. A failed gate closes its own endpoint
+# but keeps the task record for fm-control.sh relaunch or fm-teardown.sh.
 # cursor installs no per-task hook either: it writes state/<id>.cursor-session to
 # bind the pane to cursor's own conversation transcript (projects root, the exact
 # workspace path cursor records in .workspace-trusted, and the conversations that
@@ -3174,6 +3177,17 @@ if [ "$HARNESS" = cortex ] && [ "$BACKEND" != tmux ] && [ "$BACKEND" != herdr ];
   exit 1
 fi
 
+# agy's launch readiness gate (agy_wait_for_working) reads the trust dialog and
+# the pinned busy row from the backend's pane capture, which is proven per
+# backend rather than assumed (docs/verification/agy.md owns the evidence).
+# Orca's stream read never showed agy 1.4.10 busy while it was working, so the
+# gate timed out on a live worker. Refuse an unproven backend here, before any
+# worktree, endpoint, task record, or remote model fetch exists.
+if [ "$HARNESS" = agy ] && [ "$BACKEND" != tmux ] && [ "$BACKEND" != herdr ]; then
+  echo "error: agy launch readiness is live-verified on the tmux and herdr backends only; backend=$BACKEND cannot prove the brief started. Select backend tmux or herdr." >&2
+  exit 1
+fi
+
 # config/crew-exclude-tools (header above): refuse before worker provisioning
 # if this launch cannot honor the list. Secondmate agents are not covered.
 EXCLUDE_TOOLS=
@@ -5688,8 +5702,12 @@ rovo_spawn_fail() { # <detail>
 # a row that was never dispatched, and the possibly surviving worker blocks a
 # duplicate dispatch of the same item. A row that cannot be moved is named in
 # its own warning rather than silently left disagreeing with its record.
-spawn_gate_endpoint_cleanup() {
-  local tab_id='' kill_unproven=0
+# keep-record (agy) keeps the record even after a proven close: an agy brief
+# rides its launch command, so a readiness timeout cannot prove the brief never
+# ran, and the kept record is what lets fm-control.sh relaunch reclaim the task
+# on the same worktree or fm-teardown.sh resolve it.
+spawn_gate_endpoint_cleanup() {  # [keep-record]
+  local keep=${1:-} tab_id='' kill_unproven=0
   [ "$BACKEND" = zellij ] && tab_id=$ZELLIJ_TAB_ID
   case "$BACKEND" in
     tmux)
@@ -5708,13 +5726,17 @@ spawn_gate_endpoint_cleanup() {
       kill_unproven=1
       ;;
   esac
-  [ "$kill_unproven" -eq 0 ] && return 0
+  [ "$kill_unproven" -eq 0 ] && [ "$keep" != keep-record ] && return 0
   SPAWN_FRESH_COMMIT_PENDING=0
   if [ "$RELAUNCH" -eq 0 ] && [ "$BACKLOG_TRANSITION" = 1 ] &&
     ! spawn_commit_backlog_transition; then
     echo "warning: the kept record's backlog item could not be moved to In flight ($FM_BACKLOG_TRANSITION_ERROR), so its row still reads Queued while its record stays - reconcile the record and its backlog item by hand" >&2
   fi
-  echo "warning: the endpoint $T of this failed spawn could not be proven closed; keeping its provisional task record so a possibly surviving worker stays named for recovery" >&2
+  if [ "$kill_unproven" -eq 1 ]; then
+    echo "warning: the endpoint $T of this failed spawn could not be proven closed; keeping its provisional task record so a possibly surviving worker stays named for recovery" >&2
+  else
+    echo "warning: closed the endpoint $T of this failed spawn and kept task $ID's record; recover it with 'bin/fm-control.sh $ID relaunch --note \"<what happened>\"' or clean it up with 'bin/fm-teardown.sh $ID'" >&2
+  fi
 }
 
 # OpenCode 2 takes its brief on the launch command (--prompt), but some 2.x
@@ -5814,7 +5836,7 @@ agy_wait_for_working() {
 agy_spawn_fail() {  # <detail>
   printf '%s\n' "$(status_stamp_line "failed: $1")" >>"$STATE/$ID.status"
   echo "error: $1; inspect window $T" >&2
-  spawn_gate_endpoint_cleanup
+  spawn_gate_endpoint_cleanup keep-record
 }
 
 # A fresh worktree can present Droid's folder-trust dialog even with --auto high.
