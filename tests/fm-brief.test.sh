@@ -1206,9 +1206,8 @@ test_inbox_listing_command_is_safe_on_empty_inbox() {
   pass "fm-brief: inbox listing is silent on empty/absent inbox and numerically ordered"
 }
 
-# Contract: a waiting worker spends no turns. A decision wait ends the turn, an
-# external wait sleeps in one bounded blocking shell command sized per harness,
-# and a waiting worker neither polls its inbox nor polls a pipeline between holds.
+# Contract: a waiting worker spends no turns. Firstmate owns external PR-check
+# watches, while other external shell waits remain bounded by the harness.
 test_workers_wait_without_spending_turns() {
   local home id brief
   home="$TMP_ROOT/wait-home"
@@ -1222,8 +1221,11 @@ test_workers_wait_without_spending_turns() {
     brief="$home/data/$id/brief.md"
     assert_grep "end your turn at once" "$brief" "$id: a decision wait must end the turn"
     assert_grep "with ONE blocking shell command that returns when the state changes" "$brief" \
-      "$id: an external wait must sleep in one blocking shell command"
-    assert_grep "gh pr checks <pr> --watch" "$brief" "$id: the CI wait primitive is missing"
+      "$id: a non-PR external wait must use one blocking shell command"
+    assert_no_grep "gh pr checks <pr> --watch" "$brief" "$id: a paused worker must not poll an external PR check"
+    assert_grep 'firstmate arms the named PR check watch' "$brief" "$id: external PR-check ownership is missing"
+    assert_grep 'check-watch=<watch-ref> head=<bound-sha> producer=app:<id>' "$brief" \
+      "$id: the pause must carry the exact watch identity"
     assert_grep "a \`timeout\` of at most 2700 seconds" "$brief" "$id: the Pi ceiling is missing"
     assert_grep "its maximum \`timeout\` of 600000 ms" "$brief" "$id: the Claude Code ceiling is missing"
     assert_grep "empty \`write_stdin\` polls of up to 300000 ms" "$brief" "$id: the Codex ceiling is missing"
@@ -1254,7 +1256,7 @@ test_workers_wait_without_spending_turns() {
   pass "fm-brief: workers end the turn on a decision, wait in one bounded shell command, and never poll"
 }
 
-# Without config/wait-no-turns the scaffold matches the pre-flag brief and drive text.
+# Without config/wait-no-turns the external-check safety rule still applies.
 test_wait_no_turns_absent_keeps_the_previous_brief() {
   local home brief
   home="$TMP_ROOT/wait-off"
@@ -1266,6 +1268,8 @@ test_wait_no_turns_absent_keeps_the_previous_brief() {
   assert_no_grep "end your turn at once" "$brief" "an absent flag still added the waiting section"
   assert_grep "natural checkpoint" "$brief" "an absent flag dropped the unprompted inbox check"
   assert_no_grep "Do not poll or list the inbox while waiting" "$brief" "an absent flag still added the no-poll inbox line"
+  assert_grep 'do not poll for external PR checks' "$brief" 'an absent wait flag must still prevent worker-owned check polling'
+  assert_grep 'check-watch=<watch-ref>' "$brief" 'an absent wait flag must still name the pause identity'
   assert_grep 'fm-procevent-no-mistakes.sh arm brief-wait-off' "$brief" \
     'the pipeline completion listener must also work without wait-no-turns'
   assert_no_grep 'background the drive call' "$brief" 'an absent flag still required pipeline babysitting'
