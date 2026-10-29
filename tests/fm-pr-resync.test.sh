@@ -310,6 +310,32 @@ run_owner "$B" --check
 expect_code 1 "$RC" "detached unpublished commit: check refuses too"
 pass "a detached unpublished commit refuses without switching HEAD"
 
+detach_at_moved_main() {  # the copy detaches at an origin/main one commit past the published head's base
+  git -C "$D/pipe" switch -q main; cm "$D/pipe" m3; git -C "$D/pipe" push -q origin main
+  git -C "$WT" fetch -q origin main:refs/remotes/origin/main; git -C "$WT" switch -q --detach origin/main
+}
+fixture detached-main; rebase_publish
+detach_at_moved_main; git -C "$D/repo" branch -q -D "$B"; run_owner
+expect_code 0 "$RC" "detached at a moved origin/main: exit"
+assert_equals "$B" "$(git -C "$WT" symbolic-ref -q --short HEAD)" "detached at a moved origin/main: switched"
+assert_equals "$PUB" "$(ref "refs/heads/$B")" "detached at a moved origin/main: created at the published head"
+pass "a copy detached at an origin/main newer than the published head's base continues the branch"
+
+fixture detached-main-existing; rebase_publish; detach_at_moved_main; run_owner
+expect_code 0 "$RC" "detached at a moved origin/main with a stale branch: exit"
+assert_equals "$PUB" "$(ref "refs/heads/$B")" "detached at a moved origin/main with a stale branch: advanced"
+assert_equals "$A" "$(ref "$(pre "$A")")" "detached at a moved origin/main with a stale branch: archived"
+assert_contains "$OUT" "switched the detached worktree to $B" "detached at a moved origin/main with a stale branch: switch reported"
+pass "a copy detached at a moved origin/main switches to and archive-advances its stale branch"
+
+fixture detached-main-unanchored; rebase_publish; detach_at_moved_main; cm "$WT" detached-fix
+S=$(ref HEAD); run_owner
+expect_code 1 "$RC" "unanchored commit past a moved origin/main: exit"
+assert_equals "$S" "$(ref HEAD)" "unanchored commit past a moved origin/main: HEAD unchanged"
+assert_equals "$A" "$(ref "refs/heads/$B")" "unanchored commit past a moved origin/main: branch unchanged"
+assert_contains "$OUT" "changed: nothing" "unanchored commit past a moved origin/main: nothing changed"
+pass "an unanchored detached commit on top of a moved origin/main still refuses"
+
 # Every network site is reached with preceding calls real and a bounded hang at that site.
 for mode in normal check; do
   case "$mode" in normal) sites='1 2 3 4' ;; check) sites='1 2 3' ;; esac
@@ -510,6 +536,23 @@ assert_equals "$B" "$(git -C "$WT" symbolic-ref -q --short HEAD)" "detached: swi
 assert_equals "$PUB" "$(ref "refs/heads/$B")" "detached: created at the published head"
 assert_contains "$OUT" "created local branch $B" "detached: creation reported"
 pass "a detached worktree without a local branch reports the created branch on exit 3"
+
+fixture detached-existing-active; gate; rebase_publish; git -C "$WT" switch -q --detach; resp 1 0 "$ACTIVE"; run_owner
+expect_code 3 "$RC" "detached with a local branch under active custody: exit"
+assert_equals "$B" "$(git -C "$WT" symbolic-ref -q --short HEAD)" "detached existing active: switched"
+assert_equals "$A" "$(ref "refs/heads/$B")" "detached existing active: branch unchanged"
+assert_contains "$OUT" "changed: switched the detached worktree from $A to $B" "detached existing active: switch reported"
+assert_contains "$LAST" "custody=pipeline-active" "detached existing active: result line"
+pass "a detached worktree switched to its existing branch reports the switch on exit 3"
+
+fixture detached-existing-unsettled; gate; rebase_publish; git -C "$WT" switch -q --detach
+resp 1 1 "$(bs pipeline_owned blocked_unknown inspect 'no-mistakes axi status' 01RUN)"; run_owner
+expect_code 1 "$RC" "detached with a local branch and unsettled custody: exit"
+assert_equals "$B" "$(git -C "$WT" symbolic-ref -q --short HEAD)" "detached existing unsettled: HEAD state matches the report"
+assert_equals "$A" "$(ref "refs/heads/$B")" "detached existing unsettled: branch unchanged"
+assert_equals "" "$(archives)" "detached existing unsettled: no archive"
+assert_contains "$OUT" "changed: switched the detached worktree from $A to $B" "detached existing unsettled: switch reported"
+pass "an unsettled verdict after a detached switch refuses and reports the switch"
 
 for bad_timeout in 0 00 invalid; do
   FM_PR_RESYNC_TIMEOUT=$bad_timeout run_owner

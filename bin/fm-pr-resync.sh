@@ -16,7 +16,8 @@
 #                      preserved at refs/heads/archive/<task>-pre-rebase-<sha8>
 # A detached worktree is first switched to <branch>, created at the published
 # head when absent, refusing without switching if detached commits are absent
-# from both the requested branch and published history. It refuses an in-progress
+# from the requested branch, the published head and every origin ref; the switch
+# is reported as a change, since custody is read on the branch. It refuses an in-progress
 # rebase/merge/cherry-pick/revert/bisect, <branch> checked out elsewhere, a different named branch, a branch
 # origin lacks, and an archive name already held by another commit. The remote
 # head is read again just before and just after the move. A concurrent local
@@ -47,7 +48,7 @@
 # A verdict outside that handled set (settled, blocked_diverged,
 # blocked_remote_rewritten, blocked_recover_manual_reconciliation, a
 # recover_custody or adopt_published offer, continue_active_run) refuses before
-# anything moves. --check runs the checks and the read-only custody preflight,
+# any ref moves. --check runs the checks and the read-only custody preflight,
 # fetching objects only, then reports the planned action without any switch,
 # ref change (remote-tracking refs and FETCH_HEAD included) or recovery.
 #
@@ -113,6 +114,7 @@ monitoring_only() {  # <rc-3 result>
     "Do not edit, commit, start, rerun or abort a run, begin a new phase, or take any other outward action until \`$SCRIPT_DIR/fm-pr-resync.sh $task $wt $branch\` exits 0 against the published head."; do
     say "monitoring-only: $line"
   done
+  say "changed: ${changed:-nothing}"
   finish 3 "$1" pipeline-active
 }
 
@@ -225,23 +227,21 @@ fi
 local_head=$(g rev-parse -q --verify "refs/heads/$branch^{commit}")
 if [ -z "$cur" ]; then
   detached_head=$(g rev-parse --verify HEAD) || refuse "could not capture detached HEAD"
-  # Both tips may contain different parts of the detached history.
-  if [ -n "$local_head" ]; then
-    uncontained=$(g rev-list "$detached_head" --not "$local_head" "$pub")
-  else
-    uncontained=$(g rev-list "$detached_head" --not "$pub")
-  fi
-  [ -z "$uncontained" ] || refuse "detached HEAD $detached_head contains commits absent from $branch and the published head; HEAD is unchanged"
+  # Both tips may contain different parts of the detached history; a copy
+  # detached at a newer origin/main is anchored on origin.
+  uncontained=$(g rev-list "$detached_head" --not "$pub" ${local_head:+"$local_head"} --exclude="origin/$branch" --remotes=origin)
+  [ -z "$uncontained" ] || refuse "detached HEAD $detached_head contains commits absent from $branch, the published head and origin; HEAD is unchanged"
 fi
 if [ -z "$cur" ] && [ "$check_mode" -eq 0 ]; then
   clean || refuse "detached worktree has local changes; cannot switch to $branch"
   if [ -n "$local_head" ]; then
     g switch -q "$branch" || refuse "could not switch the detached worktree to $branch"
+    note_change "switched the detached worktree from $detached_head to $branch"
     say "switched the detached worktree to $branch"
   else
     g switch -q -c "$branch" "$pub" || refuse "could not create $branch at $pub"
     local_head=$pub
-    note_change "created local branch $branch at $pub"
+    note_change "created local branch $branch at $pub and switched the detached worktree from $detached_head to it"
     say "created local branch $branch at the published head $pub"
   fi
 fi

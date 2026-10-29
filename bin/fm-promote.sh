@@ -249,15 +249,6 @@ if [ -n "$PROMOTE_PROJECT" ]; then
 fi
 BASE_BRANCH=$(sed -n 's/^base_branch=//p' "$META" | head -n 1)
 fm_base_branch_valid "$BASE_BRANCH" "$MODE" "$FORGE" "fm-promote.sh $ID" || exit 1
-if [ "$PR_BRANCH_SET" -eq 1 ]; then
-  PROMOTE_WT=$(sed -n 's/^worktree=//p' "$META" | head -n 1)
-  resync_rc=0
-  "$SCRIPT_DIR/fm-pr-resync.sh" "$ID" "$PROMOTE_WT" "$BRANCH" >&2 || resync_rc=$?
-  [ "$resync_rc" -eq 0 ] || {
-    echo "error: cannot promote $ID onto $BRANCH: bin/fm-pr-resync.sh exited $resync_rc in '${PROMOTE_WT:-no recorded worktree}' (output above); the task record is unchanged" >&2
-    exit 1
-  }
-fi
 # The same self-repository publication gate bin/fm-spawn.sh applies to a fresh
 # ship spawn runs here on the recorded project: a promoted scout reaches no
 # greater upstream authority than the spawn path would grant.
@@ -272,6 +263,15 @@ if [ "$MODE" != local-only ] && [ -n "$PROMOTE_PROJECT" ]; then
     exit 1
     ;;
   esac
+fi
+if [ "$PR_BRANCH_SET" -eq 1 ]; then
+  PROMOTE_WT=$(sed -n 's/^worktree=//p' "$META" | head -n 1)
+  resync_rc=0
+  "$SCRIPT_DIR/fm-pr-resync.sh" "$ID" "$PROMOTE_WT" "$BRANCH" >&2 || resync_rc=$?
+  [ "$resync_rc" -eq 0 ] || {
+    echo "error: cannot promote $ID onto $BRANCH: bin/fm-pr-resync.sh exited $resync_rc in '${PROMOTE_WT:-no recorded worktree}' (output above); the task record is unchanged" >&2
+    exit 1
+  }
 fi
 PROMOTE_BASE_WORDS='default-branch base'
 [ -z "$BASE_BRANCH" ] || PROMOTE_BASE_WORDS="copy of the base branch \`$BASE_BRANCH\`"
