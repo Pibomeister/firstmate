@@ -39,11 +39,11 @@ case "$out" in 'OVERDUE g1 age=16m received=2027-01-15T08:00:00Z project=shipcon
   *) fail "unexpected overdue line: $out" ;; esac
 pass "overdue stays quiet inside the 15-minute SLA and flags the goal after it"
 
-out=$(dl $((T0 + 16 * 60)) overdue --minutes 30); rc=$?
-[ "$rc" = 0 ] && [ -z "$out" ] || fail "--minutes 30 did not widen the SLA"
+out=$(FM_DISPATCH_SLA_MINUTES=30 dl $((T0 + 16 * 60)) overdue); rc=$?
+[ "$rc" = 0 ] && [ -z "$out" ] || fail "FM_DISPATCH_SLA_MINUTES=30 did not widen the SLA"
 out=$(FM_DISPATCH_SLA_MINUTES=5 FM_STATE_OVERRIDE="$STATE" FM_DISPATCH_NOW=$((T0 + 6 * 60)) bash "$DL" overdue); rc=$?
 [ "$rc" = 3 ] || fail "FM_DISPATCH_SLA_MINUTES=5 did not tighten the SLA"
-pass "the SLA is configurable per call and per environment"
+pass "FM_DISPATCH_SLA_MINUTES widens and tightens the SLA"
 
 dl $((T0 + 700)) dispatched g1 --task shipcontent-polished-first-video >/dev/null \
   || fail "dispatched refused a received goal"
@@ -70,7 +70,8 @@ dl "$T0" received g3 >/dev/null 2>&1 && fail "received without --summary was acc
 dl "$T0" dispatched nope --task t >/dev/null 2>&1 && fail "dispatched for an unknown goal was accepted"
 dl "$T0" dispatched g1 >/dev/null 2>&1 && fail "dispatched without --task was accepted"
 dl "$T0" blocked g1 >/dev/null 2>&1 && fail "blocked without --reason was accepted"
-dl "$T0" overdue --minutes x >/dev/null 2>&1 && fail "a non-numeric --minutes was accepted"
+FM_DISPATCH_SLA_MINUTES=x dl "$T0" overdue >/dev/null 2>&1 && fail "a non-numeric FM_DISPATCH_SLA_MINUTES was accepted"
+dl "$T0" overdue --minutes 30 >/dev/null 2>&1 && fail "the removed --minutes flag was accepted"
 [ "$(wc -l < "$LOG" | tr -d ' ')" = "$before" ] || fail "a refused request wrote to the ledger"
 pass "malformed, duplicate, and orphan requests are refused without writing"
 
