@@ -33,8 +33,13 @@
 # never add a late mark. A trailing ` late=<m>m` in caller free text is dropped,
 # so only the script can write the mark.
 #
-# `overdue` prints every goal that has never had a final line and is older than
-# the SLA, as `OVERDUE <goal-id> age=<m>m received=<iso>
+# A goal is overdue when its newest line is `received` or `queued` and the SLA
+# has passed since its clock start: `received` if it has never had a final line
+# (`queued` does not reset it), else its newest `queued` line. A re-queued goal
+# that goes overdue and is later dispatched gets no second late mark.
+#
+# `overdue` prints every overdue goal, with age counted from its clock start, as
+# `OVERDUE <goal-id> age=<m>m received=<iso>
 # [project=<name> ]summary=<text>`, then every goal whose late final line was
 # written in the last 24 hours, as `LATE <goal-id> late=<m>m event=<event>`; older
 # late marks stay in `show`. It exits 3 when any OVERDUE line exists and 0 otherwise;
@@ -174,12 +179,14 @@ case "$cmd" in
         final[$4] = $2
         if (match($5, / late=[0-9]+m$/)) { late[$4] = substr($5, RSTART + 6, RLENGTH - 6); lev[$4] = $3 }
       }
-      $3 == "received" { at[$4] = $2; iso[$4] = $1; det[$4] = $5; order[++n] = $4 }
+      $3 == "queued" && ($4 in final) { start[$4] = $2 }
+      $3 == "received" { start[$4] = $2; iso[$4] = $1; det[$4] = $5; order[++n] = $4 }
+      { ev[$4] = $3 }
       END {
         for (i = 1; i <= n; i++) {
           g = order[i]
-          if (!(g in final) && now - at[g] > sla) {
-            printf "OVERDUE %s age=%dm received=%s %s\n", g, int((now - at[g]) / 60), iso[g], det[g]
+          if ((ev[g] == "received" || ev[g] == "queued") && now - start[g] > sla) {
+            printf "OVERDUE %s age=%dm received=%s %s\n", g, int((now - start[g]) / 60), iso[g], det[g]
             over = 1
           }
         }
