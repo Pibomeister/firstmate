@@ -218,6 +218,22 @@ The Claude hook's detached handling successor is launched by the hook itself, wh
 The turn-end guard remains the final backstop rather than the normal continuity mechanism.
 In its `--claude` mode it cooperates with the auto-arm.
 
+### Independent home watchdog
+
+`bin/fm-monitor-watchdog.sh` can own a foreground arm from a native macOS
+LaunchAgent or Linux user service, independently of the captain's turn. The
+native manager restarts the owner if it exits; the owner follows each completed
+arm with another home-scoped arm. A healthy watcher keeps its singleton lock,
+so this owner can coexist with the ordinary Stop hook or supervision host.
+
+Install the rendered service for each intended home explicitly. The script's
+`help`, `render-launchd`, `render-systemd`, and `manager-status` commands own
+the commands and status labels. `manager-status` reports `uncovered` until the
+unit is installed, and `disabled` when installed but not running. A failed
+rearm leaves a durable alert in that home's state and reports a configured
+notification's actual result; without a configured channel it remains pending.
+No unit is installed by a repository checkout alone.
+
 ## Recovery episode acknowledgement
 
 A recovery episode is one generation of the `state/.watcher-down` marker.
