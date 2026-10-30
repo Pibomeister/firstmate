@@ -24,18 +24,17 @@
 # goal still goes overdue until it is dispatched or blocked.
 # The ledger is append-only TSV:
 #   <utc-iso>\t<epoch>\t<event>\t<goal-id>\t<detail>
-# A goal's current state is its newest line. `blocked` is final and is not
-# overdue; a later `dispatched` supersedes it.
-# Lateness is measured until the goal's first final line: while its newest line
-# is `received` or `queued`, a `dispatched`, `queued` or `blocked` line past the
-# SLA ends its detail with ` late=<m>m` (minutes since `received`) and also
-# prints `LATE <goal-id> late=<m>m`, so a late dispatch stays on record for
-# `show`. Lines after a `dispatched` or `blocked` append with no late mark. A
-# trailing ` late=<m>m` in caller free text is dropped, so only the script can
-# write the mark.
+# A goal's current state is its newest line. `dispatched` and `blocked` are
+# final; a later `dispatched` supersedes a `blocked`.
+# The SLA is judged once, at the goal's first final line anywhere in its history:
+# if that line is past the SLA, its detail ends with ` late=<m>m` (minutes since
+# `received`) and it also prints `LATE <goal-id> late=<m>m`, so a late dispatch
+# stays on record for `show`. `queued` lines and lines after the first final line
+# never add a late mark. A trailing ` late=<m>m` in caller free text is dropped,
+# so only the script can write the mark.
 #
-# `overdue` prints every goal whose newest line is `received` or `queued` and
-# older than the SLA, as `OVERDUE <goal-id> age=<m>m received=<iso>
+# `overdue` prints every goal that has never had a final line and is older than
+# the SLA, as `OVERDUE <goal-id> age=<m>m received=<iso>
 # [project=<name> ]summary=<text>`, then every goal resolved late and received
 # in the last 24 hours, as `LATE <goal-id> late=<m>m event=<event>`; older late
 # marks stay in `show`. It exits 3 when any OVERDUE line exists and 0 otherwise;
@@ -99,13 +98,13 @@ append() {  # <epoch> <event> <goal-id> <detail>
 }
 
 resolve() {  # <event> <goal-id> <detail>: append a resolution, marking lateness
-  local sla epoch latest received age late='' detail
+  local sla epoch received judged age late='' detail
   sla=$(sla_seconds)
-  latest=$(latest_event "$2")
-  [ -n "$latest" ] || fail "goal $2 has no received line"
+  [ -n "$(latest_event "$2")" ] || fail "goal $2 has no received line"
   epoch=$(now_epoch)
   detail=$(clean "$3" | sed -E 's/( late=[0-9]+m)+$//')
-  if [ "$latest" = received ] || [ "$latest" = queued ]; then
+  judged=$(awk -F '\t' -v g="$2" '$4 == g && ($3 == "dispatched" || $3 == "blocked") { print "yes"; exit }' "$LOG")
+  if [ "$1" != queued ] && [ -z "$judged" ]; then
     received=$(awk -F '\t' -v g="$2" '$4 == g && $3 == "received" { print $2; exit }' "$LOG")
     age=$((epoch - received))
     [ "$age" -le "$sla" ] || late=" late=$((age / 60))m"
@@ -171,13 +170,15 @@ case "$cmd" in
     now=$(now_epoch)
     rc=0
     out=$(awk -F '\t' -v now="$now" -v sla="$sla" '
-      $3 != "received" && (ev[$4] == "received" || ev[$4] == "queued") && match($5, / late=[0-9]+m$/) { late[$4] = substr($5, RSTART + 6, RLENGTH - 6); lev[$4] = $3 }
-      { ev[$4] = $3 }
+      ($3 == "dispatched" || $3 == "blocked") && !($4 in final) {
+        final[$4] = 1
+        if (match($5, / late=[0-9]+m$/)) { late[$4] = substr($5, RSTART + 6, RLENGTH - 6); lev[$4] = $3 }
+      }
       $3 == "received" { at[$4] = $2; iso[$4] = $1; det[$4] = $5; order[++n] = $4 }
       END {
         for (i = 1; i <= n; i++) {
           g = order[i]
-          if ((ev[g] == "received" || ev[g] == "queued") && now - at[g] > sla) {
+          if (!(g in final) && now - at[g] > sla) {
             printf "OVERDUE %s age=%dm received=%s %s\n", g, int((now - at[g]) / 60), iso[g], det[g]
             over = 1
           }
