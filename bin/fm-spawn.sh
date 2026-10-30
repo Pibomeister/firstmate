@@ -3825,6 +3825,7 @@ if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ] &&
   SPAWN_TREEHOUSE_PROJECT_LOCK_HELD=1
 fi
 if [ "$RELAUNCH" -eq 1 ] && [ "$KIND" != secondmate ] &&
+  { [ "$HARNESS" = agy ] || [ "$RELAUNCH_PRIOR_HARNESS" = agy ]; } &&
   fm_treehouse_pool_slot "$PROJ_ABS" "$RELAUNCH_WT"; then
   SPAWN_TREEHOUSE_PROJECT_LOCK=$(fm_treehouse_project_lock_path "$PROJ_ABS") || exit 1
   fm_lock_try_acquire "$SPAWN_TREEHOUSE_PROJECT_LOCK" || {
@@ -3833,12 +3834,10 @@ if [ "$RELAUNCH" -eq 1 ] && [ "$KIND" != secondmate ] &&
   }
   SPAWN_TREEHOUSE_PROJECT_LOCK_HELD=1
   fm_treehouse_slot_require_owner "$RELAUNCH_WT" "$ID" || exit 1
-  if [ "$HARNESS" = agy ] || [ "$RELAUNCH_PRIOR_HARNESS" = agy ]; then
-    fm_treehouse_slot_reserve "$PROJ_ABS" "$RELAUNCH_WT" "$ID" || {
-      echo "error: could not reserve task $ID's pool slot $RELAUNCH_WT; refusing to relaunch without durable custody" >&2
-      exit 1
-    }
-  fi
+  fm_treehouse_slot_reserve "$PROJ_ABS" "$RELAUNCH_WT" "$ID" || {
+    echo "error: could not reserve task $ID's pool slot $RELAUNCH_WT; refusing to relaunch without durable custody" >&2
+    exit 1
+  }
 fi
 if [ -n "$SPAWN_PROJECT_CAPACITY" ]; then
   if ! fm_project_capacity_occupants "$SPAWN_TREEHOUSE_PROJECT_LOCK" "$PROJ_ABS" "$STATE" "$ID"; then

@@ -716,12 +716,28 @@ printf '%s\n' "$lab" > "$FM_CLEANUP_FIXTURE/lab"
 mkdir -p "$FM_HOME/state" "$FM_HOME/data/$1" "$HOME/.gemini/antigravity-cli"
 printf 'window=firstmate:fm-%s\nworktree=%s/wt\n' "$1" "$FM_CLEANUP_FIXTURE" > "$FM_HOME/state/$1.meta"
 printf '{"trustedWorkspaces":["%s/wt"]}\n' "$FM_CLEANUP_FIXTURE" > "$HOME/.gemini/antigravity-cli/settings.json"
-[ "$1" != agy-custody ] || exit 1
+[ "$1" != agy-custody ] || {
+  printf 'BRIEF_RECEIVED stale-token 80235 %s/wt\n' "$FM_CLEANUP_FIXTURE" > "$FM_HOME/data/$1/report.md"
+  exit 1
+}
 printf 'BRIEF_RECEIVED 80235 %s/wt\n' "$FM_CLEANUP_FIXTURE" > "$FM_HOME/data/$1/report.md"
 SH
   cat > "$dir/bin/fm-control.sh" <<'SH'
 #!/usr/bin/env bash
-printf 'BRIEF_RECEIVED 80235 %s/wt\n' "$FM_CLEANUP_FIXTURE" > "$FM_HOME/data/$1/report.md"
+id=$1
+shift 2
+[ "$1" = --note ] || exit 1
+token=$(printf '%s\n' "$2" | sed -n 's/^BRIEF_RECEIVED \([^ ]*\) .*/\1/p')
+[ -n "$token" ] || exit 1
+sum=80235
+worktree="$FM_CLEANUP_FIXTURE/wt"
+case "$FM_CLEANUP_MODE" in
+  stale-report) exit 0 ;;
+  wrong-token) token=wrong-token ;;
+  wrong-sum) sum=0 ;;
+  wrong-worktree) worktree="$FM_CLEANUP_FIXTURE/another-wt" ;;
+esac
+printf 'BRIEF_RECEIVED %s %s %s\n' "$token" "$sum" "$worktree" > "$FM_HOME/data/$id/report.md"
 SH
   cat > "$dir/bin/fm-teardown.sh" <<'SH'
 #!/usr/bin/env bash
@@ -739,9 +755,10 @@ SH
 [ "${1:-}" != get ] || printf '%s/second\n' "$FM_CLEANUP_FIXTURE"
 SH
   printf '#!/usr/bin/env bash\nexit 0\n' > "$dir/bin/fm-captain-hold.sh"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$dir/fakebin/sleep"
   printf '#!/usr/bin/env bash\nprintf "test-version\\n"\n' > "$dir/fakebin/agy"
   chmod +x "$dir/bin/"* "$dir/fakebin/"*
-  for mode in success failure; do
+  for mode in success failure stale-report wrong-token wrong-sum wrong-worktree; do
     rm -f "$dir/closed"
     rc=0
     out=$(HOME="$dir/home" TMPDIR="$dir/tmp" FM_CLEANUP_FIXTURE="$dir" FM_CLEANUP_MODE="$mode" \
@@ -750,11 +767,17 @@ SH
       expect_code 0 "$rc" "live cleanup success fixture failed: $out"
     else
       [ "$rc" -ne 0 ] || fail "live cleanup failure fixture did not fail"
+      if [ "$mode" != failure ]; then
+        assert_contains "$out" 'relaunched brief report with fresh token, sum, and worktree did not appear' \
+          "$mode failed before checking the replacement report: $out"
+        assert_not_contains "$out" 'fm-control relaunched the kept agy record and the worker processed its brief' \
+          "$mode falsely reported recovery success"
+      fi
     fi
     [ -f "$dir/closed" ] || fail "live guard did not stop its isolated server on $mode: $out"
     [ ! -d "$(cat "$dir/lab")" ] || fail "live guard retained its lab on $mode"
   done
-  pass "AGY live guard stops its isolated server on success and failure"
+  pass "AGY live guard requires a fresh correct recovery report and always stops its isolated server"
 }
 
 test_agy_launch_carries_the_brief_with_model_effort_and_autonomy() {
