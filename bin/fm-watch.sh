@@ -4148,9 +4148,9 @@ resurface_after_downtime() {
     handling_successor_has_queued_row || successor_rc=$?
     if [ "$successor_rc" -eq 124 ]; then
       watch_lock_deferred wake-queue "${FM_LOCK_HELD_PID:-}"
+    elif [ "$successor_rc" -ne 0 ]; then
       return 0
     fi
-    [ "$successor_rc" -eq 0 ] || return 0
     wake "check: rearm-resurface"
   fi
   if [ "$WATCHER_RECOVERY_PENDING" -ne 1 ]; then
