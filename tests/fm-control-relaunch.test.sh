@@ -271,7 +271,10 @@ run_control() {  # <case-dir> <args...>
   # A claude spawn pre-registers workspace trust in the launching user's own
   # store (bin/fm-claude-trust.sh), and a relaunch reaches it through fm-control.sh, so this runs against a throwaway HOME;
   # without it this suite would write the developer's real ~/.claude.json.
-  mkdir -p "$dir/user-home"
+  # agy on macOS refuses a HOME with no login keychain, so the throwaway HOME
+  # carries a stand-in keychain file.
+  mkdir -p "$dir/user-home/Library/Keychains"
+  : > "$dir/user-home/Library/Keychains/login.keychain-db"
   env -u HERDR_ENV -u HERDR_PANE_ID -u HERDR_SESSION -u HERDR_SOCKET_PATH \
     -u HERDR_TAB_ID -u HERDR_WORKSPACE_ID \
     PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" \
@@ -293,7 +296,10 @@ run_spawn() {  # <case-dir> <args...>
   # A claude spawn pre-registers workspace trust in the launching user's own
   # store (bin/fm-claude-trust.sh), so it runs against a throwaway HOME;
   # without it this suite would write the developer's real ~/.claude.json.
-  mkdir -p "$dir/user-home"
+  # agy on macOS refuses a HOME with no login keychain, so the throwaway HOME
+  # carries a stand-in keychain file.
+  mkdir -p "$dir/user-home/Library/Keychains"
+  : > "$dir/user-home/Library/Keychains/login.keychain-db"
   env -u HERDR_ENV -u HERDR_PANE_ID -u HERDR_SESSION -u HERDR_SOCKET_PATH \
     -u HERDR_TAB_ID -u HERDR_WORKSPACE_ID \
     PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" \

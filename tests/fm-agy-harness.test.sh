@@ -849,7 +849,9 @@ SH
 #!/usr/bin/env bash
 lab=${FM_HOME%/home}
 printf '%s\n' "$lab" > "$FM_CLEANUP_FIXTURE/lab"
+rm -f "$FM_CLEANUP_FIXTURE/exited"
 [ "$FM_CLEANUP_MODE" != failure ] || exit 1
+[ "$1" != agy-live ] || echo "notice: agy launch readiness is not verified on the configured backend=orca; this agy task runs on backend=tmux" >&2
 mkdir -p "$FM_HOME/state" "$FM_HOME/data/$1" "$HOME/.gemini/antigravity-cli"
 printf 'window=firstmate:fm-%s\nworktree=%s/wt\n' "$1" "$FM_CLEANUP_FIXTURE" > "$FM_HOME/state/$1.meta"
 printf '{"trustedWorkspaces":["%s/wt"]}\n' "$FM_CLEANUP_FIXTURE" > "$HOME/.gemini/antigravity-cli/settings.json"
@@ -862,6 +864,8 @@ SH
   cat > "$dir/bin/fm-control.sh" <<'SH'
 #!/usr/bin/env bash
 id=$1
+[ "$2" != exit ] || { : > "$FM_CLEANUP_FIXTURE/exited"; exit 0; }
+rm -f "$FM_CLEANUP_FIXTURE/exited"
 shift 2
 [ "$1" = --note ] || exit 1
 token=$(printf '%s\n' "$2" | sed -n 's/^BRIEF_RECEIVED \([^ ]*\) .*/\1/p')
@@ -885,7 +889,15 @@ SH
 case "$*" in
   *kill-server*) printf 'closed\n' >> "$FM_CLEANUP_FIXTURE/closed" ;;
   *display-message*) printf '%s/socket,1,0\n' "$FM_CLEANUP_FIXTURE" ;;
+  *capture-pane*) printf '? for shortcuts\n' ;;
 esac
+SH
+  # The retire leak check sees one agy process in the worktree until
+  # fm-control exit stops it.
+  printf '#!/usr/bin/env bash\nprintf "4242\\n"\n' > "$dir/fakebin/lsof"
+  cat > "$dir/fakebin/ps" <<'SH'
+#!/usr/bin/env bash
+if [ -e "$FM_CLEANUP_FIXTURE/exited" ]; then printf 'zsh\n'; else printf 'agy\n'; fi
 SH
   cat > "$dir/fakebin/treehouse" <<'SH'
 #!/usr/bin/env bash
@@ -1379,6 +1391,25 @@ test_agy_macos_home_without_login_keychain_refuses() {
   pass "fm-spawn: agy refuses a macOS HOME with no login keychain before anything launches"
 }
 
+# FM_BACKEND is an explicit choice like --backend, so it is refused, never
+# silently replaced by the fallback.
+test_agy_env_backend_refuses_instead_of_falling_back() {
+  local id rec out rc
+  id="agy-env-backend-z22-$$"
+  rec=$(make_agy_spawn_case env-backend "$id")
+  read_agy_spawn_record "$rec"
+  write_agy_fake_orca "$FAKEBIN_DIR"
+  rc=0
+  out=$(FM_BACKEND=orca FM_FAKE_AGY_MODELS_LOG="$CASE_DIR/models.log" run_agy_spawn "$CASE_DIR" "$HOME_DIR" \
+    "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" --model gemini-3.8-flash-low) || rc=$?
+  [ "$rc" -ne 0 ] || fail "an agy spawn with FM_BACKEND=orca fell back instead of refusing: $out"
+  assert_contains "$out" "agy launch readiness is live-verified on the tmux and herdr backends only; backend=orca" \
+    "wrong refusal for agy with FM_BACKEND=orca: $out"
+  [ -s "$CASE_DIR/launch.log" ] && fail "agy launched with FM_BACKEND=orca" || true
+  assert_absent "$HOME_DIR/state/$id.meta" "a refused FM_BACKEND=orca agy spawn left a task record"
+  pass "fm-spawn: agy refuses an FM_BACKEND choice it cannot verify instead of falling back"
+}
+
 test_agy_fallback_refuses_when_no_verified_backend_is_available() {
   local id rec out rc
   id="agy-fallback-none-z18-$$"
@@ -1487,6 +1518,7 @@ test_agy_unverified_backend_refuses_before_anything_launches
 test_agy_configured_orca_falls_back_to_tmux_without_herdr
 test_agy_configured_orca_prefers_herdr_when_available
 test_agy_fallback_refuses_when_no_verified_backend_is_available
+test_agy_env_backend_refuses_instead_of_falling_back
 test_agy_macos_home_without_login_keychain_refuses
 test_agy_missing_binary_refuses_before_pane_creation
 test_agy_secondmate_is_refused

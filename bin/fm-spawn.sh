@@ -2980,7 +2980,9 @@ agy_fallback_backend() {
   return 1
 }
 if [ "$HARNESS" = agy ] && [ "$BACKEND" != tmux ] && [ "$BACKEND" != herdr ]; then
-  if [ "$RELAUNCH" -eq 1 ] || [ "$BACKEND_SET" -eq 1 ]; then
+  # --backend and FM_BACKEND are explicit choices; only config/backend or
+  # runtime auto-detection may be replaced by the fallback below.
+  if [ "$RELAUNCH" -eq 1 ] || [ "$BACKEND_SET" -eq 1 ] || [ -n "${FM_BACKEND:-}" ]; then
     echo "error: agy launch readiness is live-verified on the tmux and herdr backends only; backend=$BACKEND cannot prove the brief started. Select backend tmux or herdr." >&2
     exit 1
   fi

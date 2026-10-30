@@ -171,16 +171,16 @@ No automatic quota failover was exercised or claimed; every handoff above was an
 
 The readiness gate reads the trust dialog and the pinned `esc to cancel` row from the backend's pane capture, so it is only as good as that capture.
 `bin/fm-spawn.sh` therefore never launches agy on another backend.
-When the backend comes only from `config/backend`, as with the default orca, the spawn runs that one agy task on Herdr if its tools and version check pass, else on tmux, and prints a notice that names both backends.
+When the backend comes only from `config/backend` or runtime detection, as with the default orca, the spawn runs that one agy task on Herdr if its tools and version check pass, else on tmux, and prints a notice that names both backends.
 The task record names the backend the task really runs on, so later control commands reach it.
-An explicit `--backend`, a relaunch onto another backend, or a host with neither Herdr nor tmux is refused before any worktree, endpoint, task record, or model fetch exists:
+An explicit `--backend` or `FM_BACKEND`, a relaunch onto another backend, or a host with neither Herdr nor tmux is refused before any worktree, endpoint, task record, or model fetch exists:
 
 ```
 error: agy launch readiness is live-verified on the tmux and herdr backends only; backend=orca cannot prove the brief started. Select backend tmux or herdr.
 ```
 
 `tests/fm-agy-harness.test.sh` pins that refusal for orca, zellij, cmux, and paseo, with no launch, no terminal call, no model fetch, and no task record.
-It also pins the fallback from a configured orca to tmux, the preference for a working Herdr, and the refusal when neither is available.
+It also pins the refusal of `FM_BACKEND=orca`, the fallback from a configured orca to tmux, the preference for a working Herdr, and the refusal when neither is available.
 
 | Backend | agy | Platform | Date | Result |
 |---|---|---|---|---|
