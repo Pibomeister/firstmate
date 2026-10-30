@@ -212,8 +212,12 @@
 #   contention refuses rather than waits.
 #   AGY acquires a durable task lease in the spawning process, so allocation,
 #   custody, and return resolve the same Treehouse pool even when the endpoint
-#   shell has another HOME or TREEHOUSE_ROOT. Before metadata publication, an
-#   abort returns that lease and closes the unused endpoint.
+#   shell has another HOME or TREEHOUSE_ROOT. Its capability preflight requires
+#   get --lease --lease-holder, lease --lease-holder, status --json, and
+#   return --if-lease-holder before endpoint creation. A pooled relaunch from
+#   or to AGY repeats that preflight before reserving its recorded checkout;
+#   fm-control.sh also runs it before stopping the old worker. Before metadata
+#   publication, an abort returns that lease and closes the unused endpoint.
 #   Project capacity: when this machine declares how many workers a project
 #   admits at once (config/project-capacity; bin/fm-project-capacity-lib.sh owns
 #   the declaration, what holds a place, and the race argument), a fresh ship or
@@ -549,9 +553,10 @@
 # busy turn - answering the dialog first if it renders anyway - before
 # reporting success (the rovo/kimi launch-then-confirm shape). That gate is
 # proven only on tmux and Herdr, so every other backend is refused before
-# anything launches, and a failed gate closes its own endpoint but keeps the
-# task record for fm-control.sh relaunch or fm-teardown.sh. Its busy state
-# is a screen-scrape fallback like grok and rovo, and it is crewmate/scout only.
+# anything launches. The AGY adapter reference owns published-record recovery
+# and custody rules (.agents/skills/harness-adapters/references/harness/agy.md).
+# Its busy state is a screen-scrape fallback like grok and rovo, and it is
+# crewmate/scout only.
 # cursor installs no per-task hook either: it writes state/<id>.cursor-session to
 # bind the pane to cursor's own conversation transcript (projects root, the exact
 # workspace path cursor records in .workspace-trusted, and the conversations that
@@ -5175,8 +5180,8 @@ rovo_spawn_fail() { # <detail>
 # cleared and neither the abort trap nor a teardown owns this endpoint yet,
 # so a gate failure must
 # close the launched process here or it keeps running as an orphaned
-# autonomous agent outside task control: the rollback that follows a failed
-# spawn removes the only durable record that names it. Mirrors
+# autonomous agent outside task control: for harnesses other than AGY, the
+# rollback after a proven close removes the durable record that names it. Mirrors
 # fm-teardown.sh's own generic kill call. On orca only the exact terminal is
 # closed: that stops the CLI while its worktree stays for the record's own
 # teardown, which owns worktree deletion.
@@ -5188,6 +5193,8 @@ rovo_spawn_fail() { # <detail>
 # for a close command that failed after being accepted, and orca reports
 # failure only for a close its missing CLI never attempted, so no status of
 # theirs can prove the endpoint gone: their close stays unproven either way.
+# AGY retains its record even after a proven close; its adapter reference owns
+# that recovery rule.
 # When the close stays unproven the rollback must NOT run: keeping the
 # provisional task record keeps the possibly surviving worker named for
 # recovery, the same accountability the orca abort path keeps through its
