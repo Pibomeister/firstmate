@@ -1004,6 +1004,25 @@ Pass them in the watcher's environment, or export them in `config/watch.env` for
 The flag is home-local and is not inherited by secondmate homes.
 `bin/fm-watch.sh`'s `open_decision_reminder_tick` owns the per-key schedule, which persists across watcher restarts.
 
+## Away decision age routing (config/decision-age-authority)
+
+The watcher checks unresolved keyed `needs-decision` and `blocked` records while
+`state/.afk-contract` validates as away. Present and quiet postures never route.
+`FM_AWAY_DECISION_OVERDUE_SECS` defaults to `1800` seconds; set a canonical
+positive integer of at most nine digits in `config/watch.env` to change it.
+Source status lines need a valid `[at=<epoch>]`; deferred waits and captain-held
+tasks are excluded. A claim in `state/.away-decision-age-claims` binds each
+attempt to the task, key, opening epoch and away confirmation.
+
+`config/decision-age-authority` may contain tab-separated rows with task id,
+decision key, exact opening epoch, and `routine` or `captain-only`. Only a
+Firstmate-owned explicit `routine` row permits the council-pending wake.
+Missing, malformed, or `captain-only` classifications leave the decision open
+and enter the configured captain page path. The claim records `page-sent`,
+`page-failed`, or `page-pending` from the notifier's actual result. A routine
+wake is only a pending council request; the council entrypoint must be wired
+before it can be treated as a decision or guarded answer.
+
 ## Validating-run deferral (config/wedge-defer-validating)
 
 The optional local, gitignored `config/wedge-defer-validating` presence flag opts this home into a default-off deferral in the watcher's wedge timer.
