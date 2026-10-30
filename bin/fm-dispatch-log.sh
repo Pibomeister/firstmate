@@ -26,15 +26,18 @@
 #   <utc-iso>\t<epoch>\t<event>\t<goal-id>\t<detail>
 # A goal's current state is its newest line. `blocked` is final and is not
 # overdue; a later `dispatched` supersedes it.
-# A `dispatched`, `queued` or `blocked` line written after the SLA ends its
-# detail with ` late=<m>m` (minutes since `received`) and also prints
+# Lateness is measured once, on the line written directly after `received`: if
+# that `dispatched`, `queued` or `blocked` line is past the SLA, its detail ends
+# with ` late=<m>m` (minutes since `received`) and it also prints
 # `LATE <goal-id> late=<m>m`, so a late dispatch stays on record for `show`.
+# Later lines for the goal append with no late mark.
 #
 # `overdue` prints every goal whose newest line is `received` or `queued` and
 # older than the SLA, as `OVERDUE <goal-id> age=<m>m received=<iso>
-# [project=<name> ]summary=<text>`, then every goal resolved late, as
-# `LATE <goal-id> late=<m>m event=<event>`. It exits 3 when any OVERDUE line
-# exists and 0 otherwise; exit 3 is a result to act on, not an error.
+# [project=<name> ]summary=<text>`, then every goal resolved late and received
+# in the last 24 hours, as `LATE <goal-id> late=<m>m event=<event>`; older late
+# marks stay in `show`. It exits 3 when any OVERDUE line exists and 0 otherwise;
+# exit 3 is a result to act on, not an error.
 #
 # Refuses, and writes nothing, when: the goal id is not [A-Za-z0-9._-]+; a
 # required flag is missing or empty; or `dispatched`/`queued`/`blocked` names a
@@ -43,16 +46,16 @@
 # Tabs and newlines in free text are folded to spaces.
 #
 # Environment: FM_HOME selects the home; FM_STATE_OVERRIDE overrides its state
-# directory; FM_DISPATCH_LOG overrides the ledger path (default
-# <state>/dispatch-log.tsv); FM_DISPATCH_SLA_MINUTES overrides the default SLA;
-# FM_DISPATCH_NOW overrides the current epoch (tests only).
+# directory (the ledger is <state>/dispatch-log.tsv); FM_DISPATCH_SLA_MINUTES
+# overrides the default SLA; FM_DISPATCH_NOW overrides the current epoch (tests
+# only).
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
-LOG="${FM_DISPATCH_LOG:-$STATE/dispatch-log.tsv}"
+LOG="$STATE/dispatch-log.tsv"
 SLA_MIN="${FM_DISPATCH_SLA_MINUTES:-15}"
 
 usage() {
@@ -88,19 +91,22 @@ latest_event() {  # <goal-id> -> newest event name, empty when absent
 }
 
 append() {  # <epoch> <event> <goal-id> <detail>
-  mkdir -p "$(dirname "$LOG")"
+  mkdir -p "$STATE"
   printf '%s\t%s\t%s\t%s\t%s\n' "$(iso_of "$1")" "$1" "$2" "$3" "$(clean "$4")" >> "$LOG"
   printf '%s %s %s: %s\n' "$(iso_of "$1")" "$2" "$3" "$(clean "$4")"
 }
 
 resolve() {  # <event> <goal-id> <detail>: append a resolution, marking lateness
-  local sla epoch received age late=''
+  local sla epoch latest received age late=''
   sla=$(sla_seconds)
-  [ -n "$(latest_event "$2")" ] || fail "goal $2 has no received line"
+  latest=$(latest_event "$2")
+  [ -n "$latest" ] || fail "goal $2 has no received line"
   epoch=$(now_epoch)
-  received=$(awk -F '\t' -v g="$2" '$4 == g && $3 == "received" { print $2; exit }' "$LOG")
-  age=$((epoch - received))
-  [ "$age" -le "$sla" ] || late=" late=$((age / 60))m"
+  if [ "$latest" = received ]; then
+    received=$(awk -F '\t' -v g="$2" '$4 == g && $3 == "received" { print $2; exit }' "$LOG")
+    age=$((epoch - received))
+    [ "$age" -le "$sla" ] || late=" late=$((age / 60))m"
+  fi
   append "$epoch" "$1" "$2" "$3$late"
   [ -z "$late" ] || printf 'LATE %s%s\n' "$2" "$late"
 }
@@ -162,9 +168,9 @@ case "$cmd" in
     now=$(now_epoch)
     rc=0
     out=$(awk -F '\t' -v now="$now" -v sla="$sla" '
+      $3 != "received" && ev[$4] == "received" && match($5, / late=[0-9]+m$/) { late[$4] = substr($5, RSTART + 6, RLENGTH - 6); lev[$4] = $3 }
       { ev[$4] = $3 }
       $3 == "received" { at[$4] = $2; iso[$4] = $1; det[$4] = $5; order[++n] = $4 }
-      $3 != "received" && match($5, / late=[0-9]+m$/) { late[$4] = substr($5, RSTART + 6, RLENGTH - 6); lev[$4] = $3 }
       END {
         for (i = 1; i <= n; i++) {
           g = order[i]
@@ -175,7 +181,7 @@ case "$cmd" in
         }
         for (i = 1; i <= n; i++) {
           g = order[i]
-          if (g in late) printf "LATE %s late=%s event=%s\n", g, late[g], lev[g]
+          if ((g in late) && now - at[g] <= 86400) printf "LATE %s late=%s event=%s\n", g, late[g], lev[g]
         }
         exit over ? 3 : 0
       }' "$LOG") || rc=$?
