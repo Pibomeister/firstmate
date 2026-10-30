@@ -37,6 +37,55 @@ PY
   pass 'spawn records all four explicit budget limits'
 }
 
+test_budgeted_claude_relaunch_records_fingerprint() {
+  local dir="$TMP_ROOT/claude-relaunch" home proj wt fakebin out old_gen old_marker launch
+  home="$dir/home"; proj="$dir/project"; wt="$dir/wt"
+  fm_test_spawn_home "$home" claude
+  fm_test_spawn_brief "$home" budget-relaunch
+  fm_git_worktree "$proj" "$wt" budget-relaunch-fixture
+  fakebin=$(fm_test_make_spawn_fakebin "$dir/fake" claude)
+  out=$(fm_test_run_spawn "$home" "$wt" "$fakebin" budget-relaunch "$proj" --scout \
+    --budget-inclusive-hard 40000000 --budget-inclusive-stop 32000000 \
+    --budget-fresh-hard 1500000 --budget-fresh-stop 1200000) \
+    || fail "fresh Claude budget spawn failed: $out"
+  old_gen=$(sed -n 's/^spawn_gen=//p' "$home/state/budget-relaunch.meta")
+  old_marker=$(sed -n 's/^budget_launch_marker=//p' "$home/state/budget-relaunch.meta")
+  mv "$fakebin/tmux" "$fakebin/tmux-original"
+  cat > "$fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+case "$*" in
+  *'#{pane_tty}'*) printf '/dev/ttys999\n'; exit 0 ;;
+  *'#{pane_current_command}'*) printf 'zsh\n'; exit 0 ;;
+esac
+exec "$(dirname "$0")/tmux-original" "$@"
+SH
+  cat > "$fakebin/ps" <<'SH'
+#!/usr/bin/env bash
+case "$*" in
+  *'-o pid=,pgid=,tpgid=,comm='*) printf '123 123 123 zsh\n' ;;
+  *'-o args='*) printf 'zsh\n' ;;
+esac
+SH
+  chmod +x "$fakebin/tmux" "$fakebin/ps"
+  out=$(FM_FAKE_LAUNCH_LOG="$dir/launch.sh" fm_test_run_spawn "$home" "$wt" "$fakebin" budget-relaunch --relaunch) \
+    || fail "budgeted Claude relaunch failed: $out"
+  cat > "$fakebin/claude" <<'SH'
+#!/usr/bin/env bash
+printf '%s' "${*: -1}" > "$FM_BUDGET_CAPTURE"
+SH
+  launch=$(cat "$dir/launch.sh")
+  fm_eval_launch "$launch" "$wt" "$fakebin" "FM_BUDGET_CAPTURE=$dir/prompt"
+  python3 - "$home/state/budget-relaunch.meta" "$old_gen" "$old_marker" "$dir/prompt" <<'PY'
+import hashlib,pathlib,sys
+meta=dict(line.split('=',1) for line in pathlib.Path(sys.argv[1]).read_text().splitlines() if '=' in line)
+assert meta['spawn_gen'] != sys.argv[2], 'relaunch did not publish a new generation'
+assert meta['budget_launch_marker'] != sys.argv[3], 'relaunch reused the previous marker'
+assert meta['budget_launch_fingerprint'] == hashlib.sha256(pathlib.Path(sys.argv[4]).read_bytes()).hexdigest(), 'published fingerprint does not match the launch prompt'
+assert meta['budget_inclusive_hard'] == '40000000', 'budget limits were lost'
+PY
+  pass 'budgeted Claude relaunch publishes its fingerprint and preserves limits'
+}
+
 make_counter_case() {
   local dir=$1 harness=$2
   mkdir -p "$dir/state" "$dir/native/project" "$dir/wt" "$dir/config"
@@ -669,6 +718,9 @@ PY
 
 case "${FM_TEST_ONLY:-all}" in
   all|spawn) test_spawn_records_explicit_budget ;;
+esac
+case "${FM_TEST_ONLY:-all}" in
+  all|claude-relaunch) test_budgeted_claude_relaunch_records_fingerprint ;;
 esac
 case "${FM_TEST_ONLY:-all}" in
   all|counter) test_native_counters_deduplicate ;;
