@@ -210,6 +210,14 @@
 #   fm_firstmate_root_home resolves, so a home seeded from another machine anchors
 #   that lock itself rather than failing to resolve one;
 #   contention refuses rather than waits.
+#   AGY acquires a durable task lease in the spawning process, so allocation,
+#   custody, and return resolve the same Treehouse pool even when the endpoint
+#   shell has another HOME or TREEHOUSE_ROOT. Its capability preflight requires
+#   get --lease --lease-holder, lease --lease-holder, status --json, and
+#   return --if-lease-holder before endpoint creation. A pooled relaunch from
+#   or to AGY repeats that preflight before reserving its recorded checkout;
+#   fm-control.sh also runs it before stopping the old worker. Before metadata
+#   publication, an abort returns that lease and closes the unused endpoint.
 #   Project capacity: when this machine declares how many workers a project
 #   admits at once (config/project-capacity; bin/fm-project-capacity-lib.sh owns
 #   the declaration, what holds a place, and the race argument), a fresh ship or
@@ -543,8 +551,12 @@
 # spawn pre-registers the worktree in agy's own trust store through
 # bin/fm-agy-trust.sh (the claude shape, but non-fatal) and then waits for a
 # busy turn - answering the dialog first if it renders anyway - before
-# reporting success (the rovo/kimi launch-then-confirm shape). Its busy state
-# is a screen-scrape fallback like grok and rovo, and it is crewmate/scout only.
+# reporting success (the rovo/kimi launch-then-confirm shape). That gate is
+# proven only on tmux and Herdr, so every other backend is refused before
+# anything launches. The AGY adapter reference owns published-record recovery
+# and custody rules (.agents/skills/harness-adapters/references/harness/agy.md).
+# Its busy state is a screen-scrape fallback like grok and rovo, and it is
+# crewmate/scout only.
 # cursor installs no per-task hook either: it writes state/<id>.cursor-session to
 # bind the pane to cursor's own conversation transcript (projects root, the exact
 # workspace path cursor records in .workspace-trusted, and the conversations that
@@ -1472,6 +1484,7 @@ SPAWN_TASK_SET_LOCK_HELD=0
 SPAWN_TREEHOUSE_PROJECT_LOCK=
 SPAWN_TREEHOUSE_PROJECT_LOCK_HELD=0
 SPAWN_SLOT_CLAIMED=0
+SPAWN_SLOT_RESERVED=0
 SPAWN_FRESH_ENDPOINT_OPENED=0
 SPAWN_FRESH_WIRING_PENDING=0
 SPAWN_TASK_TMP_CREATED=0
@@ -1488,6 +1501,14 @@ SPAWN_ENDPOINT_CLOSED=0
 SPAWN_STAGED_LAUNCH_FILE=
 
 spawn_fresh_commit_rollback() {
+  if [ "${HARNESS:-}" = agy ] && [ -f "$STATE/$ID.meta" ] && [ ! -L "$STATE/$ID.meta" ]; then
+    SPAWN_FRESH_COMMIT_PENDING=0
+    if declare -F spawn_commit_backlog_transition >/dev/null && ! spawn_commit_backlog_transition; then
+      echo "warning: the kept AGY record's backlog item could not be moved to In flight ($FM_BACKLOG_TRANSITION_ERROR)" >&2
+    fi
+    echo "warning: keeping task $ID's published AGY record and worktree for relaunch or teardown" >&2
+    return 0
+  fi
   if fm_backlog_atomic_transition rollback "$STATE/$ID.meta" \
     "$FM_ROOT/bin/fm-busy-event.sh" "$STATE" "$ID" "${BUSY_GEN:-}"; then
     SPAWN_FRESH_COMMIT_PENDING=0
@@ -1635,14 +1656,14 @@ spawn_abort_cleanup() {
     SPAWN_META_LOCK_HELD=0
     fm_lock_release "$SPAWN_META_LOCK" || true
   fi
-  # A fresh polytoken spawn that fails and leaves no record must leave the pool
-  # as it found it. Before its launch is delivered, the endpoint it opened holds nothing but
-  # the shell whose `treehouse get` leases the slot, so closing it returns the
-  # slot to the pool and leaves no window or tab for a retry to trip over; the
+  # A fresh AGY or polytoken spawn that fails and leaves no record must leave the pool
+  # as it found it. Before its launch is delivered, the endpoint holds only a
+  # shell. Closing it releases polytoken's process lease; AGY's durable lease
+  # is returned below. Neither leaves a window or tab for a retry to trip over; the
   # Firstmate wiring, task temp root, and staged launch file it wrote go with it.
   # Once a launch was delivered into an endpoint still open, a worker may be
   # running there, so those stay for the operator, as the refusal says.
-  if [ "$status" -ne 0 ] && [ "${HARNESS:-}" = polytoken ] &&
+  if [ "$status" -ne 0 ] && { [ "${HARNESS:-}" = polytoken ] || [ "${HARNESS:-}" = agy ]; } &&
     { [ "$SPAWN_FRESH_ENDPOINT_OPENED" = 1 ] || [ "$SPAWN_FRESH_WIRING_PENDING" = 1 ] ||
       [ "$SPAWN_TASK_TMP_CREATED" = 1 ] || [ -n "$SPAWN_STAGED_LAUNCH_FILE" ]; } &&
     [ "$RELAUNCH" -eq 0 ] &&
@@ -1685,20 +1706,25 @@ spawn_abort_cleanup() {
       fi
     fi
   fi
-  # A spawn that aborts after claiming its slot but before its record survives
-  # must not leave a claim naming a task no record describes. The release is a
+  # A spawn that aborts after allocating or claiming its slot but before its record survives
+  # must not leave an unpublished lease or claim. The claim release is a
   # read-then-remove, so it runs only while the project lock that wrote the
   # claim is still held (aborts before metadata publication); a later abort has
   # already released that lock and leaves the claim for the next spawn's
   # atomic replacement rather than racing it. A polytoken spawn instead retakes
   # that lock once for a later failure whose record was rolled back. The
   # release itself never removes another task's claim.
-  if [ "$SPAWN_SLOT_CLAIMED" = 1 ] && [ -n "${WT:-}" ] &&
+  if { [ "$SPAWN_SLOT_CLAIMED" = 1 ] || [ "$SPAWN_SLOT_RESERVED" = 1 ]; } && [ -n "${WT:-}" ] &&
     [ ! -e "$STATE/$ID.meta" ] && [ ! -L "$STATE/$ID.meta" ] &&
     fm_treehouse_pool_slot "$PROJ_ABS" "$WT"; then
     SPAWN_SLOT_CLAIMED=0
     if [ "$SPAWN_TREEHOUSE_PROJECT_LOCK_HELD" = 1 ]; then
-      fm_treehouse_slot_owner_release "$WT" "$ID" || true
+      if [ "$SPAWN_SLOT_RESERVED" = 0 ] ||
+        (cd "$PROJ_ABS" && treehouse return "$WT" --if-lease-holder "$ID" --force); then
+        fm_treehouse_slot_owner_release "$WT" "$ID" || true
+      else
+        echo "warning: could not return unpublished task $ID's reserved slot $WT; its claim is retained" >&2
+      fi
     elif [ "${HARNESS:-}" = polytoken ] && [ -n "$SPAWN_TREEHOUSE_PROJECT_LOCK" ] &&
       fm_lock_try_acquire "$SPAWN_TREEHOUSE_PROJECT_LOCK"; then
       fm_treehouse_slot_owner_release "$WT" "$ID" || true
@@ -2113,10 +2139,10 @@ if [ "$RELAUNCH" -eq 0 ]; then
     echo "error: backend=paseo does not support --secondmate spawns yet" >&2
     exit 1
   fi
-  if [ "$BACKEND" = orca ]; then
-    fm_backend_orca_runtime_check || exit 1
-    resolve_orca_launch_env_source
-  fi
+  # The harness is not resolved yet, and an agy task may leave orca for a
+  # verified backend, so the Orca runtime and launch-env checks run after
+  # that decision (below the agy gate), still before any terminal exists.
+  [ "$BACKEND" != orca ] || ORCA_SPAWN_CHECKS_PENDING=1
 fi
 SPAWN_TASK_LOCK="$STATE/.spawn-$ID.lock"
 if ! fm_lock_try_acquire "$SPAWN_TASK_LOCK"; then
@@ -2438,25 +2464,46 @@ omp_model_validate() { # <omp-bin> <model>
 # bound (bin/fm-timeout-lib.sh) with stdin detached: a stalled fetch or a
 # sign-in prompt can never block the spawn before any pane exists. An
 # unreachable listing establishes nothing (harness-adapters
-# model-and-effort.md) and launches unvalidated with a notice.
+# model-and-effort.md) and launches unvalidated with a notice. A signed-out
+# agy instead exits 0 with an empty catalog (its log: "Auth mode is
+# unspecified, skipping fetchAvailableModels and returning empty response"),
+# and that refuses with the sign-in step rather than blaming the model id.
 agy_model_validate() {  # <agy-bin> <model>
   local bin=$1 model=$2 listing rc=0 bound=${FM_AGY_MODELS_TIMEOUT:-15}
   case "$bound" in ''|*[!0-9]*|0*) bound=15 ;; esac
-  [ -n "$model" ] && [ "$model" != default ] || return 0
+  # The listing doubles as the sign-in probe, so it runs even when no model
+  # is requested; only the catalog check below needs a requested id.
   listing=$(fm_run_timed "$bound" "$bin" models 2>/dev/null < /dev/null) || rc=$?
-  if [ "$rc" -ne 0 ] || [ -z "$listing" ]; then
+  if [ "$rc" -eq 0 ] && [ -z "$(printf '%s' "$listing" | tr -d '[:space:]')" ]; then
+    echo "error: agy is not signed in: 'agy models' returned an empty catalog, which is how a signed-out agy answers; run 'agy' once in a normal terminal on this account, sign in, then retry" >&2
+    return 1
+  fi
+  if [ "$rc" -ne 0 ]; then
+    local what="--model '$model' unvalidated"
+    [ -n "$model" ] && [ "$model" != default ] || what="agy's default model without a sign-in check"
     if [ "$rc" -eq 124 ]; then
-      echo "notice: 'agy models' did not answer within ${bound}s; launching with --model '$model' unvalidated" >&2
+      echo "notice: 'agy models' did not answer within ${bound}s; launching with $what" >&2
     else
-      echo "notice: 'agy models' listing is unreachable (exit $rc); launching with --model '$model' unvalidated" >&2
+      echo "notice: 'agy models' listing is unreachable (exit $rc); launching with $what" >&2
     fi
     return 0
   fi
+  [ -n "$model" ] && [ "$model" != default ] || return 0
   if printf '%s\n' "$listing" | awk '{print $1}' | grep -qxF -- "$model"; then
     return 0
   fi
   echo "error: agy model '$model' is not listed by 'agy models'; choose a listed id or omit --model" >&2
   return 1
+}
+
+# agy's --effort set is read from its own help line, "(low|medium|high|xhigh|max)"
+# on agy 1.4.10 and "(low|medium|high)" on 1.2.0, under the shared hard bound
+# with stdin detached. An unreadable help lists nothing, which keeps
+# record-and-omit for the build-dependent levels. agy prints its help on
+# stderr (1.4.10), so both streams are read.
+agy_effort_levels() {  # <agy-bin> -> pipe-separated levels or nothing
+  fm_run_timed 10 "$1" --help 2>&1 < /dev/null \
+    | sed -n 's/^[[:space:]]*--effort[[:space:]].*(\([a-z|]*\)).*/\1/p' | head -n 1
 }
 
 # Droid's exec help is its model-specific effort catalog. Interactive Droid
@@ -2912,6 +2959,69 @@ if [ "$HARNESS" = commandcode ] && [ "$BACKEND" != tmux ] && [ "$BACKEND" != her
   exit 1
 fi
 
+# agy's launch readiness gate (agy_wait_for_working) reads the trust dialog and
+# the pinned busy row from the backend's pane capture, which is proven per
+# backend rather than assumed (docs/verification/agy.md owns the evidence).
+# Orca's stream read never showed agy 1.4.10 busy while it was working, so the
+# gate timed out on a live worker. An explicit --backend or a relaunch onto an
+# unproven backend is refused here, before any worktree, endpoint, task record,
+# or remote model fetch exists. A backend that only came from config/backend
+# instead moves this one task to the first verified backend whose tools are
+# present, herdr before tmux, and says so; the task record names where it runs.
+agy_fallback_backend() {
+  local candidate tool
+  for candidate in herdr tmux; do
+    for tool in $(fm_backend_required_tools "$candidate"); do
+      command -v "$tool" >/dev/null 2>&1 || continue 2
+    done
+    if [ "$candidate" = herdr ]; then
+      fm_backend_source herdr >/dev/null 2>&1 || continue
+      fm_backend_herdr_version_check >/dev/null 2>&1 || continue
+    fi
+    printf '%s' "$candidate"
+    return 0
+  done
+  return 1
+}
+if [ "$HARNESS" = agy ] && [ "$BACKEND" != tmux ] && [ "$BACKEND" != herdr ]; then
+  # --backend and FM_BACKEND are explicit choices; only config/backend or
+  # runtime auto-detection may be replaced by the fallback below.
+  if [ "$RELAUNCH" -eq 1 ] || [ "$BACKEND_SET" -eq 1 ] || [ -n "${FM_BACKEND:-}" ]; then
+    echo "error: agy launch readiness is live-verified on the tmux and herdr backends only; backend=$BACKEND cannot prove the brief started. Select backend tmux or herdr." >&2
+    exit 1
+  fi
+  AGY_CONFIGURED_BACKEND=$BACKEND
+  BACKEND=$(agy_fallback_backend) || {
+    echo "error: agy launch readiness is live-verified on the tmux and herdr backends only, the configured backend=$AGY_CONFIGURED_BACKEND is neither, and no verified agy backend (herdr, tmux) is available; install one of them" >&2
+    exit 1
+  }
+  fm_backend_validate_spawn "$BACKEND" || exit 1
+  fm_backend_source "$BACKEND" || exit 1
+  echo "notice: agy launch readiness is not verified on the configured backend=$AGY_CONFIGURED_BACKEND; this agy task runs on backend=$BACKEND" >&2
+fi
+if [ "${ORCA_SPAWN_CHECKS_PENDING:-0}" = 1 ] && [ "$BACKEND" = orca ]; then
+  fm_backend_orca_runtime_check || exit 1
+  resolve_orca_launch_env_source
+fi
+# On macOS agy keeps its sign-in in the login keychain, which the Security
+# framework finds through $HOME. Under a HOME with no login keychain (a
+# substituted test HOME, some sandboxes) agy cannot read the sign-in, and
+# saving one raises macOS's modal "A keychain cannot be found" dialog on the
+# captain's screen. Refuse that HOME here, before anything launches.
+if [ "$HARNESS" = agy ] && [ "$(uname -s 2>/dev/null)" = Darwin ] \
+   && [ ! -e "$HOME/Library/Keychains/login.keychain-db" ]; then
+  echo "error: HOME=$HOME has no macOS login keychain (Library/Keychains/login.keychain-db), where agy keeps its sign-in; agy would run signed out and macOS would show a 'keychain cannot be found' dialog. Launch from the account's real HOME." >&2
+  exit 1
+fi
+if [ "$HARNESS" = agy ]; then
+  if [ "$RELAUNCH" -eq 0 ]; then
+    fm_treehouse_require_agy_custody || exit 1
+  fi
+  trap 'exit 129' HUP
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+fi
+
 # config/crew-exclude-tools (header above): refuse before worker provisioning
 # if this launch cannot honor the list. Secondmate agents are not covered.
 EXCLUDE_TOOLS=
@@ -3094,6 +3204,10 @@ if [ "$HARNESS" = omp ]; then
 fi
 if [ "$HARNESS" = agy ]; then
   agy_model_validate "$AGY_BIN" "$MODEL" || exit 1
+  # Only xhigh and max depend on the build, so only they pay the help probe.
+  case "$EFFORT" in
+    xhigh | max) AGY_EFFORT_LEVELS=$(agy_effort_levels "$AGY_BIN") ;;
+  esac
 fi
 # polytoken's model validation composes firstmate's model and effort axes into
 # the launch model reference (bin/fm-polytoken-lib.sh owns the reasoning): the
@@ -3331,10 +3445,17 @@ effort_flag_for_harness() {
     esac
     ;;
   agy)
-    # agy 1.2.0 --effort accepts exactly low|medium|high, so xhigh and max are
-    # omitted rather than passed as known-bad values (record-and-omit).
+    # Every agy build accepts low|medium|high. xhigh and max pass only when
+    # the build's own help lists them (agy 1.4.10 does, 1.2.0 does not), and
+    # are otherwise omitted rather than passed as known-bad values
+    # (record-and-omit).
     case "$effort" in
     low | medium | high) printf -- '--effort %s ' "$(shell_quote "$effort")" ;;
+    xhigh | max)
+      case "|${AGY_EFFORT_LEVELS:-}|" in
+      *"|$effort|"*) printf -- '--effort %s ' "$(shell_quote "$effort")" ;;
+      esac
+      ;;
     esac
     ;;
   commandcode)
@@ -3791,6 +3912,22 @@ if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ] &&
   fi
   SPAWN_TREEHOUSE_PROJECT_LOCK_HELD=1
 fi
+if [ "$RELAUNCH" -eq 1 ] && [ "$KIND" != secondmate ] &&
+  { [ "$HARNESS" = agy ] || [ "$RELAUNCH_PRIOR_HARNESS" = agy ]; } &&
+  fm_treehouse_pool_slot "$PROJ_ABS" "$RELAUNCH_WT"; then
+  fm_treehouse_require_agy_custody || exit 1
+  SPAWN_TREEHOUSE_PROJECT_LOCK=$(fm_treehouse_project_lock_path "$PROJ_ABS") || exit 1
+  fm_lock_try_acquire "$SPAWN_TREEHOUSE_PROJECT_LOCK" || {
+    echo "error: another Treehouse slot allocation or return is in progress for $PROJ_ABS; refusing to race it" >&2
+    exit 1
+  }
+  SPAWN_TREEHOUSE_PROJECT_LOCK_HELD=1
+  fm_treehouse_slot_require_owner "$RELAUNCH_WT" "$ID" || exit 1
+  fm_treehouse_slot_reserve "$PROJ_ABS" "$RELAUNCH_WT" "$ID" || {
+    echo "error: could not reserve task $ID's pool slot $RELAUNCH_WT; refusing to relaunch without durable custody" >&2
+    exit 1
+  }
+fi
 if [ -n "$SPAWN_PROJECT_CAPACITY" ]; then
   if ! fm_project_capacity_occupants "$SPAWN_TREEHOUSE_PROJECT_LOCK" "$PROJ_ABS" "$STATE" "$ID"; then
     echo "error: spawn refused: project $(basename "$PROJ_ABS") declares a capacity of $SPAWN_PROJECT_CAPACITY, but this machine's task records cannot all be read to count it ($FM_PROJECT_CAPACITY_ERROR)" >&2
@@ -4128,7 +4265,7 @@ spawn_worktree_isolated() { # <path>
 }
 
 # spawn_endpoint_hint: the operator pointer for a pre-launch refusal. Only a
-# fresh polytoken spawn closes its endpoint on abort, so only it points away
+# fresh AGY or polytoken spawn closes its endpoint on abort, so only those point away
 # from the window; every other harness keeps the plain inspect pointer.
 spawn_endpoint_closes_on_abort() {
   [ "$SPAWN_FRESH_ENDPOINT_OPENED" = 1 ] && [ "$SPAWN_LAUNCH_SENT" = 0 ]
@@ -4790,9 +4927,10 @@ EOF
     ;;
   esac
   # Orca and the Herdr projection own their own abort cleanup above; every other
-  # endpoint a fresh polytoken spawn opened is closed by spawn_abort_cleanup when
+  # endpoint a fresh AGY or polytoken spawn opened is closed by spawn_abort_cleanup when
   # the spawn ends with no record before its launch is delivered.
-  if [ "$HARNESS" = polytoken ] && [ "$BACKEND" != orca ] && [ "${HERDR_PROJECTED:-0}" -ne 1 ]; then
+  if { [ "$HARNESS" = polytoken ] || [ "$HARNESS" = agy ]; } &&
+    [ "$BACKEND" != orca ] && [ "${HERDR_PROJECTED:-0}" -ne 1 ]; then
     SPAWN_FRESH_ENDPOINT_OPENED=1
   fi
 fi
@@ -5118,8 +5256,8 @@ rovo_spawn_fail() { # <detail>
 # cleared and neither the abort trap nor a teardown owns this endpoint yet,
 # so a gate failure must
 # close the launched process here or it keeps running as an orphaned
-# autonomous agent outside task control: the rollback that follows a failed
-# spawn removes the only durable record that names it. Mirrors
+# autonomous agent outside task control: for harnesses other than AGY, the
+# rollback after a proven close removes the durable record that names it. Mirrors
 # fm-teardown.sh's own generic kill call. On orca only the exact terminal is
 # closed: that stops the CLI while its worktree stays for the record's own
 # teardown, which owns worktree deletion.
@@ -5131,6 +5269,8 @@ rovo_spawn_fail() { # <detail>
 # for a close command that failed after being accepted, and orca reports
 # failure only for a close its missing CLI never attempted, so no status of
 # theirs can prove the endpoint gone: their close stays unproven either way.
+# AGY retains its record even after a proven close; its adapter reference owns
+# that recovery rule.
 # When the close stays unproven the rollback must NOT run: keeping the
 # provisional task record keeps the possibly surviving worker named for
 # recovery, the same accountability the orca abort path keeps through its
@@ -5161,13 +5301,17 @@ spawn_gate_endpoint_cleanup() {
       kill_unproven=1
       ;;
   esac
-  [ "$kill_unproven" -eq 0 ] && return 0
+  [ "$kill_unproven" -eq 0 ] && [ "$HARNESS" != agy ] && return 0
   SPAWN_FRESH_COMMIT_PENDING=0
   if [ "$RELAUNCH" -eq 0 ] && [ "$BACKLOG_TRANSITION" = 1 ] &&
     ! spawn_commit_backlog_transition; then
     echo "warning: the kept record's backlog item could not be moved to In flight ($FM_BACKLOG_TRANSITION_ERROR), so its row still reads Queued while its record stays - reconcile the record and its backlog item by hand" >&2
   fi
-  echo "warning: the endpoint $T of this failed spawn could not be proven closed; keeping its provisional task record so a possibly surviving worker stays named for recovery" >&2
+  if [ "$kill_unproven" -eq 1 ]; then
+    echo "warning: the endpoint $T of this failed spawn could not be proven closed; keeping its provisional task record so a possibly surviving worker stays named for recovery" >&2
+  else
+    echo "warning: closed the endpoint $T of this failed spawn and kept task $ID's record; recover it with 'bin/fm-control.sh $ID relaunch --note \"<what happened>\"' or clean it up with 'bin/fm-teardown.sh $ID'" >&2
+  fi
 }
 
 # agy carries its brief on the launch command, so it needs no delivery gate,
@@ -5538,6 +5682,13 @@ elif [ "$RELAUNCH" -eq 1 ]; then
   fi
   [ "$KIND" = secondmate ] || validate_spawn_worktree "relaunch" "$T"
 elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
+  if [ "$HARNESS" = agy ]; then
+    WT=$(cd "$PROJ_ABS" && treehouse get --lease --lease-holder "$ID") || {
+      echo "error: could not acquire a durable Treehouse worktree for task $ID; refusing to launch" >&2
+      exit 1
+    }
+    SPAWN_SLOT_RESERVED=1
+  else
   spawn_send_text_line "$WT_TARGET" 'treehouse get'
 
   # Wait for the treehouse subshell: the pane's cwd moves from the project to the worktree.
@@ -5596,6 +5747,7 @@ elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
     echo "error: treehouse get did not enter an isolated worktree within 60s (last seen '${last_seen:-none}': $last_reason; spawning project '$PROJ_ABS'); $(spawn_endpoint_hint)" >&2
     exit 1
   fi
+  fi
 
   if spawn_endpoint_closes_on_abort; then
     validate_spawn_worktree "treehouse get" "$WT ($(spawn_endpoint_hint))"
@@ -5603,10 +5755,8 @@ elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
     validate_spawn_worktree "treehouse get" "$T"
   fi
 
-  # Claim the pool slot for this task. The interactive `treehouse get` sent to
-  # the pane above records only a process lease (Treehouse's durable
-  # `get --lease --lease-holder`, which bin/fm-home-seed.sh uses for secondmate
-  # homes, is not this path), so Treehouse cannot say which task a slot belongs
+  # Claim the pool slot for this task. A non-AGY interactive `treehouse get` sent to
+  # the pane above records only a process lease, so Treehouse cannot say which task a slot belongs
   # to once that task's worker exits - and that is exactly when the slot is
   # handed on and this task's worktree= line goes stale. The claim is what lets
   # bin/fm-teardown.sh leave a slot that has since been reassigned untouched, so
@@ -7186,7 +7336,10 @@ else
 fi
 if [ "$SPAWN_BACKLOG_COMMIT_STATUS" -ne 0 ]; then
   if [ "$RELAUNCH" -eq 0 ]; then
-    if spawn_fresh_commit_rollback; then
+    if [ "$HARNESS" = agy ]; then
+      SPAWN_FRESH_COMMIT_PENDING=0
+      echo "error: task $ID's backlog item could not be moved to In flight ($FM_BACKLOG_TRANSITION_ERROR); its AGY record and worktree are preserved for recovery" >&2
+    elif spawn_fresh_commit_rollback; then
       echo "error: task $ID's backlog item could not be moved to In flight ($FM_BACKLOG_TRANSITION_ERROR); its record was removed so no worker is left that the backlog does not own - close out endpoint $T and local copy $WT by hand, then re-run the spawn" >&2
     else
       echo "error: task $ID's backlog item could not be moved to In flight ($FM_BACKLOG_TRANSITION_ERROR), and failed-dispatch cleanup is incomplete; the provisional record may remain at $STATE/$ID.meta - close out endpoint $T and local copy $WT by hand, then remove the record and busy state before retrying" >&2

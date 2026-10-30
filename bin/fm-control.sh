@@ -1115,6 +1115,11 @@ safe_checkpoint() {
   CHECKPOINT_LINES=()
   [ -n "$WT" ] || die "task $ID has no recorded worktree; refusing to relaunch without a recorded local copy to preserve"
   [ -d "$WT" ] || die "task $ID's recorded worktree $WT is missing; refusing to relaunch and lose track of its work"
+  if [ "$KIND" != secondmate ] && { [ "$PRIOR_HARNESS" = agy ] || [ "$TARGET_HARNESS" = agy ]; } &&
+    fm_treehouse_pool_slot "$(fm_meta_get "$META" project)" "$WT"; then
+    fm_treehouse_require_agy_custody || exit 1
+    fm_treehouse_slot_require_owner "$WT" "$ID" || exit 1
+  fi
   wt_real=$(cd "$WT" 2>/dev/null && pwd -P) || die "task $ID's recorded worktree $WT cannot be resolved"
   wt_top=$(git -C "$WT" rev-parse --show-toplevel 2>/dev/null) \
     || die "task $ID's recorded worktree $WT is not a git worktree; refusing to relaunch without a checkout whose unlanded work can be accounted for"
@@ -1224,6 +1229,10 @@ do_relaunch() {
   # while the running agent is untouched.
   if [ "$TARGET_HARNESS" = commandcode ] && [ "$BACKEND" != tmux ] && [ "$BACKEND" != herdr ]; then
     die "task $ID runs on the $BACKEND backend, where commandcode is verified on the tmux and herdr backends only; relaunching onto 'commandcode' would stop the running agent for a launch that must be refused"
+  fi
+  # agy's launch readiness is likewise verified on tmux and herdr only.
+  if [ "$TARGET_HARNESS" = agy ] && [ "$BACKEND" != tmux ] && [ "$BACKEND" != herdr ]; then
+    die "task $ID runs on the $BACKEND backend, where agy launch readiness is verified on the tmux and herdr backends only; relaunching onto 'agy' would stop the running agent for a launch that must be refused"
   fi
 
   case "$KIND" in

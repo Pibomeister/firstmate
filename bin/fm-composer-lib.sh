@@ -2403,6 +2403,47 @@ _fm_composer_classify_pi_rows() {  # <screen> <styled>
   printf 'empty'
 }
 
+# agy is the third owner of the separated shape (verified live, agy 1.4.10 on
+# tmux): a `>` prompt row between two full-width rules, with the idle footer
+# `? for shortcuts` on the row below the closing rule and the busy row
+# `esc to cancel` in that place while a turn runs. agy's native status is not
+# trusted here: only its own idle footer, read from this same screen, proves
+# the composer empty. Text after the prompt glyph is pending under any footer,
+# and a busy, missing, or unrecognised footer keeps the strict unknown.
+_fm_composer_agy_verdict() {  # <screen> <styled>
+  local screen=$1 styled=$2 row raw content footer glyph_seen=0
+  [ "$FM_COMPOSER_SCAN_PI_PAIR_VALID" = 1 ] || { printf 'unknown'; return 0; }
+  row=$((FM_COMPOSER_SCAN_PI_OPEN + 1))
+  while [ "$row" -lt "$FM_COMPOSER_SCAN_PI_CLOSE" ]; do
+    raw=$(_fm_composer_screen_row "$row" "$screen")
+    content=$(_fm_composer_row_content "$raw" "$styled")
+    if [ "$glyph_seen" = 0 ]; then
+      case "$content" in
+        '>'*) glyph_seen=1; content=${content#>} ;;
+        *) printf 'unknown'; return 0 ;;
+      esac
+    fi
+    fm_composer_normalize_trim_var content
+    if [ -n "$content" ]; then
+      printf 'pending'
+      return 0
+    fi
+    row=$((row + 1))
+  done
+  [ "$glyph_seen" = 1 ] || { printf 'unknown'; return 0; }
+  raw=$(_fm_composer_screen_row "$((FM_COMPOSER_SCAN_PI_CLOSE + 1))" "$screen")
+  footer=$(printf '%s\n' "$raw" | fm_composer_strip_ansi)
+  fm_composer_normalize_trim_var footer
+  if printf '%s\n' "$footer" | grep -Eq "$FM_DELIVERY_AGY_BUSY_REGEX_DEFAULT"; then
+    printf 'unknown'
+    return 0
+  fi
+  case "$footer" in
+    '? for shortcuts'*) printf 'empty' ;;
+    *) printf 'unknown' ;;
+  esac
+}
+
 _fm_composer_classify_bare_pi_overlap() {  # <screen> <styled> <has-identity> <identity> <bare-row>
   local screen=$1 styled=$2 has_identity=$3 identity=$4 row=$5 agent
   if [ "$has_identity" != 1 ]; then
@@ -2450,6 +2491,10 @@ _fm_composer_pi_verdict() {  # <screen> <styled> <has_identity> <identity>
   fi
   agent=${identity%%$'\t'*}
   agent_status=${identity#*$'\t'}
+  if [ "$agent" = agy ]; then
+    _fm_composer_agy_verdict "$screen" "$styled"
+    return 0
+  fi
   # polytoken is the second verified owner of the separated shape (verified
   # live, 0.8.19: a full-width separator pair over one blank or pending
   # content row with a footer below), so its identity passes the same
