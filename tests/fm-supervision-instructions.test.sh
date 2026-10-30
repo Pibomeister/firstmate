@@ -160,7 +160,7 @@ test_conditional_stanzas() {
 }
 
 test_quiet_mode_stanzas() {
-  local home config out
+  local home config out scope
   home="$TMP_ROOT/quiet-home"
   config="$TMP_ROOT/quiet-config"
   mkdir -p "$home/state" "$config"
@@ -175,6 +175,9 @@ test_quiet_mode_stanzas() {
   out=$(FM_HOME="$home" "$RENDER" --harness codex --afk 1)
   assert_contains "$out" "- Away mode: active" "omitting --afk-mode did not default to away (regression)"
   assert_not_contains "$out" "Quiet mode" "omitting --afk-mode leaked quiet-mode text"
+  scope="When this session owns supervision and no away daemon is active:"
+  assert_contains "${out#*"$scope"}" "it requires the turn to remain open" "codex turn-open rule missing from the no-away-daemon scope"
+  assert_not_contains "${out%%"$scope"*}" "it requires the turn to remain open" "codex turn-open rule rendered outside the no-away-daemon scope"
 
   out=$(FM_HOME="$home" "$RENDER" --harness codex --afk 1 --afk-mode not-a-real-mode)
   assert_contains "$out" "- Away mode: active" "unrecognized --afk-mode value did not fall back to away"
