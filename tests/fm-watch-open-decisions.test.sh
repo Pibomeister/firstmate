@@ -229,6 +229,10 @@ test_away_age_route() {
   [ "$(count_wakes)" = 1 ] || fail 'away decision did not route at 30 minutes'
   away_decision_age_tick 2801
   [ "$(count_wakes)" = 1 ] || fail 'same decision generation routed twice'
+  rm -f -- "$STATE/.afk-contract"
+  FM_AFK_MODE=away bash "$ROOT/bin/fm-afk-contract.sh" enter --words 'new away session' >/dev/null
+  away_decision_age_tick 2802
+  [ "$(count_wakes)" = 1 ] || fail 'same decision generation rerouted in a new away session'
   printf 'blocked [at=1050] [key=followup]: choose again\n' > "$STATE/second.status"
   printf 'second\tfollowup\t1050\troutine\n' >> "$CONFIG/decision-age-authority"
   away_decision_age_tick 2850
@@ -303,9 +307,26 @@ test_away_watcher_loop() {
   pass 'real watcher publishes one pending away route'
 }
 
+test_away_page_retries_after_channel_configured() {
+  reset_case
+  printf 'needs-decision [at=1000] [key=approval]: choose\n' > "$STATE/worker.status"
+  FM_AFK_MODE=away bash "$ROOT/bin/fm-afk-contract.sh" enter --words 'away test' >/dev/null
+  FM_WEDGE_ALARM_CHANNEL=off FM_AWAY_DECISION_OVERDUE_SECS=60 away_decision_age_tick 1060
+  grep -q 'page-pending' "$STATE/.away-decision-age-claims" || fail 'missing channel was not pending'
+  FM_WEDGE_ALARM_EXEC='' FM_WEDGE_ALARM_CHANNEL=command:true \
+    FM_AWAY_DECISION_OVERDUE_SECS=60 away_decision_age_tick 1119
+  ! grep -q 'page-sent' "$STATE/.away-decision-age-claims" || fail 'page retried before retry bound'
+  FM_WEDGE_ALARM_EXEC='' FM_WEDGE_ALARM_CHANNEL=command:true \
+    FM_AWAY_DECISION_OVERDUE_SECS=60 away_decision_age_tick 1120
+  grep -q 'page-sent' "$STATE/.away-decision-age-claims" || fail 'configured channel did not retry pending page'
+  [ "$(count_wakes)" = 0 ] || fail 'page retry sent a council wake'
+  pass 'pending page retries when a channel becomes available'
+}
+
 fm_test_run test_disabled test_oldest_and_backoff test_numeric_keys_are_distinct \
   test_numeric_tasks_are_distinct test_resolution_and_reopen \
   test_wait_exemptions test_unknown_times_and_keyless test_timed_fold_is_incremental \
   test_invalid_settings test_timed_cursor_retirement test_watcher_loop \
   test_away_age_route test_away_age_page_and_staleness \
-  test_away_authority_change_refuses_route test_away_watcher_loop
+  test_away_authority_change_refuses_route test_away_watcher_loop \
+  test_away_page_retries_after_channel_configured

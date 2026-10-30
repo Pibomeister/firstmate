@@ -1012,14 +1012,16 @@ The watcher checks unresolved keyed `needs-decision` and `blocked` records while
 positive integer of at most nine digits in `config/watch.env` to change it.
 Source status lines need a valid `[at=<epoch>]`; deferred waits and captain-held
 tasks are excluded. A claim in `state/.away-decision-age-claims` binds each
-attempt to the task, key, opening epoch and away confirmation.
+attempt to the task, key and opening epoch; the away confirmation is checked
+again before the route acts.
 
 `config/decision-age-authority` may contain tab-separated rows with task id,
 decision key, exact opening epoch, and `routine` or `captain-only`. Only a
 Firstmate-owned explicit `routine` row permits the council-pending wake.
 Missing, malformed, or `captain-only` classifications leave the decision open
 and enter the configured captain page path. The claim records `page-sent`,
-`page-failed`, or `page-pending` from the notifier's actual result. A routine
+`page-failed`, or `page-pending` from the notifier's actual result. Pending or
+failed pages retry after 60 seconds while that decision remains open. A routine
 wake is only a pending council request; the council entrypoint must be wired
 before it can be treated as a decision or guarded answer.
 
