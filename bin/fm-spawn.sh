@@ -210,6 +210,10 @@
 #   fm_firstmate_root_home resolves, so a home seeded from another machine anchors
 #   that lock itself rather than failing to resolve one;
 #   contention refuses rather than waits.
+#   AGY acquires a durable task lease in the spawning process, so allocation,
+#   custody, and return resolve the same Treehouse pool even when the endpoint
+#   shell has another HOME or TREEHOUSE_ROOT. Before metadata publication, an
+#   abort returns that lease and closes the unused endpoint.
 #   Project capacity: when this machine declares how many workers a project
 #   admits at once (config/project-capacity; bin/fm-project-capacity-lib.sh owns
 #   the declaration, what holds a place, and the race argument), a fresh ship or
@@ -1647,14 +1651,14 @@ spawn_abort_cleanup() {
     SPAWN_META_LOCK_HELD=0
     fm_lock_release "$SPAWN_META_LOCK" || true
   fi
-  # A fresh polytoken spawn that fails and leaves no record must leave the pool
-  # as it found it. Before its launch is delivered, the endpoint it opened holds nothing but
-  # the shell whose `treehouse get` leases the slot, so closing it returns the
-  # slot to the pool and leaves no window or tab for a retry to trip over; the
+  # A fresh AGY or polytoken spawn that fails and leaves no record must leave the pool
+  # as it found it. Before its launch is delivered, the endpoint holds only a
+  # shell. Closing it releases polytoken's process lease; AGY's durable lease
+  # is returned below. Neither leaves a window or tab for a retry to trip over; the
   # Firstmate wiring, task temp root, and staged launch file it wrote go with it.
   # Once a launch was delivered into an endpoint still open, a worker may be
   # running there, so those stay for the operator, as the refusal says.
-  if [ "$status" -ne 0 ] && [ "${HARNESS:-}" = polytoken ] &&
+  if [ "$status" -ne 0 ] && { [ "${HARNESS:-}" = polytoken ] || [ "${HARNESS:-}" = agy ]; } &&
     { [ "$SPAWN_FRESH_ENDPOINT_OPENED" = 1 ] || [ "$SPAWN_FRESH_WIRING_PENDING" = 1 ] ||
       [ "$SPAWN_TASK_TMP_CREATED" = 1 ] || [ -n "$SPAWN_STAGED_LAUNCH_FILE" ]; } &&
     [ "$RELAUNCH" -eq 0 ] &&
@@ -1697,15 +1701,15 @@ spawn_abort_cleanup() {
       fi
     fi
   fi
-  # A spawn that aborts after claiming its slot but before its record survives
-  # must not leave a claim naming a task no record describes. The release is a
+  # A spawn that aborts after allocating or claiming its slot but before its record survives
+  # must not leave an unpublished lease or claim. The claim release is a
   # read-then-remove, so it runs only while the project lock that wrote the
   # claim is still held (aborts before metadata publication); a later abort has
   # already released that lock and leaves the claim for the next spawn's
   # atomic replacement rather than racing it. A polytoken spawn instead retakes
   # that lock once for a later failure whose record was rolled back. The
   # release itself never removes another task's claim.
-  if [ "$SPAWN_SLOT_CLAIMED" = 1 ] && [ -n "${WT:-}" ] &&
+  if { [ "$SPAWN_SLOT_CLAIMED" = 1 ] || [ "$SPAWN_SLOT_RESERVED" = 1 ]; } && [ -n "${WT:-}" ] &&
     [ ! -e "$STATE/$ID.meta" ] && [ ! -L "$STATE/$ID.meta" ] &&
     fm_treehouse_pool_slot "$PROJ_ABS" "$WT"; then
     SPAWN_SLOT_CLAIMED=0
@@ -4180,7 +4184,7 @@ spawn_worktree_isolated() { # <path>
 }
 
 # spawn_endpoint_hint: the operator pointer for a pre-launch refusal. Only a
-# fresh polytoken spawn closes its endpoint on abort, so only it points away
+# fresh AGY or polytoken spawn closes its endpoint on abort, so only those point away
 # from the window; every other harness keeps the plain inspect pointer.
 spawn_endpoint_closes_on_abort() {
   [ "$SPAWN_FRESH_ENDPOINT_OPENED" = 1 ] && [ "$SPAWN_LAUNCH_SENT" = 0 ]
@@ -4842,9 +4846,10 @@ EOF
     ;;
   esac
   # Orca and the Herdr projection own their own abort cleanup above; every other
-  # endpoint a fresh polytoken spawn opened is closed by spawn_abort_cleanup when
+  # endpoint a fresh AGY or polytoken spawn opened is closed by spawn_abort_cleanup when
   # the spawn ends with no record before its launch is delivered.
-  if [ "$HARNESS" = polytoken ] && [ "$BACKEND" != orca ] && [ "${HERDR_PROJECTED:-0}" -ne 1 ]; then
+  if { [ "$HARNESS" = polytoken ] || [ "$HARNESS" = agy ]; } &&
+    [ "$BACKEND" != orca ] && [ "${HERDR_PROJECTED:-0}" -ne 1 ]; then
     SPAWN_FRESH_ENDPOINT_OPENED=1
   fi
 fi
@@ -5594,6 +5599,13 @@ elif [ "$RELAUNCH" -eq 1 ]; then
   fi
   [ "$KIND" = secondmate ] || validate_spawn_worktree "relaunch" "$T"
 elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
+  if [ "$HARNESS" = agy ]; then
+    WT=$(cd "$PROJ_ABS" && treehouse get --lease --lease-holder "$ID") || {
+      echo "error: could not acquire a durable Treehouse worktree for task $ID; refusing to launch" >&2
+      exit 1
+    }
+    SPAWN_SLOT_RESERVED=1
+  else
   spawn_send_text_line "$WT_TARGET" 'treehouse get'
 
   # Wait for the treehouse subshell: the pane's cwd moves from the project to the worktree.
@@ -5652,6 +5664,7 @@ elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
     echo "error: treehouse get did not enter an isolated worktree within 60s (last seen '${last_seen:-none}': $last_reason; spawning project '$PROJ_ABS'); $(spawn_endpoint_hint)" >&2
     exit 1
   fi
+  fi
 
   if spawn_endpoint_closes_on_abort; then
     validate_spawn_worktree "treehouse get" "$WT ($(spawn_endpoint_hint))"
@@ -5659,7 +5672,7 @@ elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
     validate_spawn_worktree "treehouse get" "$T"
   fi
 
-  # Claim the pool slot for this task. The interactive `treehouse get` sent to
+  # Claim the pool slot for this task. A non-AGY interactive `treehouse get` sent to
   # the pane above records only a process lease, so Treehouse cannot say which task a slot belongs
   # to once that task's worker exits - and that is exactly when the slot is
   # handed on and this task's worktree= line goes stale. The claim is what lets
@@ -5675,13 +5688,6 @@ elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
       exit 1
     fi
     SPAWN_SLOT_CLAIMED=1
-    if [ "$HARNESS" = agy ]; then
-      SPAWN_SLOT_RESERVED=1
-      fm_treehouse_slot_reserve "$PROJ_ABS" "$WT" "$ID" || {
-        echo "error: could not reserve task $ID's pool slot $WT; refusing to launch without durable custody" >&2
-        exit 1
-      }
-    fi
   fi
 fi
 if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ]; then

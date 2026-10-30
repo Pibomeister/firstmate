@@ -459,6 +459,7 @@ make_agy_fakebin() {
 set -u
 printf '%s\n' "$*" >> "$FM_FAKE_TMUX_CALL_LOG"
 state=$(cat "$FM_FAKE_AGY_STATE" 2>/dev/null || true)
+[ ! -f "$FM_FAKE_AGY_STATE.cwd" ] || FM_FAKE_PANE_PATH=$(cat "$FM_FAKE_AGY_STATE.cwd")
 fake_screen() {
   case "$state" in
     dialog)
@@ -509,6 +510,19 @@ case "${1:-}" in
     exit 0 ;;
   has-session|new-session|kill-window) exit 0 ;;
   send-keys)
+    for arg in "$@"; do
+      case "$arg" in
+        'treehouse get')
+          if [ -n "${FM_FAKE_ENDPOINT_POOL:-}" ]; then
+            (cd "$FM_FAKE_PROJECT" && TREEHOUSE_ROOT="$FM_FAKE_ENDPOINT_POOL" treehouse get) > "$FM_FAKE_AGY_STATE.cwd" || exit 1
+          fi
+          ;;
+        'cd -- '*)
+          [ "${FM_FAKE_AGY_FAIL:-}" != cd ] || exit 1
+          bash -c "$arg && pwd" > "$FM_FAKE_AGY_STATE.cwd" || exit 1
+          ;;
+      esac
+    done
     literal=
     prev=
     for arg in "$@"; do
@@ -577,7 +591,12 @@ set -u
 if [ "${1:-}" = models ]; then
   [ -z "${FM_FAKE_AGY_MODELS_LOG:-}" ] || printf 'models\n' >> "$FM_FAKE_AGY_MODELS_LOG"
   if [ "${FM_FAKE_AGY_MODELS_FAIL:-0}" = 1 ]; then exit 3; fi
-  if [ "${FM_FAKE_AGY_MODELS_HANG:-0}" = 1 ]; then cat > /dev/null; sleep 30; exit 0; fi
+  if [ "${FM_FAKE_AGY_MODELS_HANG:-0}" = 1 ]; then
+    cat > /dev/null
+    sleep 30
+    [ -z "${FM_FAKE_AGY_MODELS_FINISHED:-}" ] || printf 'finished\n' > "$FM_FAKE_AGY_MODELS_FINISHED"
+    exit 0
+  fi
   printf 'gemini-3.8-flash-high\tGemini 3.8 Flash (High)\n'
   printf 'gemini-3.8-flash-medium\tGemini 3.8 Flash (Medium)\n'
   printf 'gemini-3.8-flash-low\tGemini 3.8 Flash (Low)\n'
@@ -596,7 +615,7 @@ make_agy_spawn_case() {
   case_dir="$TMP_ROOT/$name"
   home="$case_dir/home"
   proj="$case_dir/project"
-  wt="$case_dir/wt"
+  wt="$case_dir/pool/1/project"
   fakebin=$(make_agy_fakebin "$case_dir/fake")
   mkdir -p "$home/data/$id" "$home/projects" "$home/state" "$home/config"
   cat > "$home/data/$id/brief.md" <<'EOF'
@@ -612,7 +631,7 @@ EOF
   printf '%s\n' '{"model":"Gemini 3.8 Flash (High)","trustedWorkspaces":["/home/someone/elsewhere"]}' \
     > "$home/.gemini/antigravity-cli/settings.json"
   fm_git_worktree "$proj" "$wt" "wt-$name"
-  fm_test_fake_treehouse "$fakebin" "$proj" "$case_dir/pool"
+  fm_test_fake_treehouse "$fakebin" "$proj" "$case_dir/pool" "$wt"
   touch "$home/state/.last-watcher-beat"
   : > "$case_dir/launch.log"
   : > "$case_dir/tmux-calls.log"
@@ -649,6 +668,7 @@ run_agy_spawn() {
     FM_FAKE_AGY_SETTINGS="$home/.gemini/antigravity-cli/settings.json" \
     FM_FAKE_AGY_MODELS_FAIL="${FM_FAKE_AGY_MODELS_FAIL:-0}" \
     FM_FAKE_AGY_MODELS_HANG="${FM_FAKE_AGY_MODELS_HANG:-0}" \
+    FM_FAKE_AGY_MODELS_FINISHED="${FM_FAKE_AGY_MODELS_FINISHED:-}" \
     FM_FAKE_AGY_IGNORE_TRUST="${FM_FAKE_AGY_IGNORE_TRUST:-0}" \
     FM_FAKE_AGY_ASSUME_TRUSTED="${FM_FAKE_AGY_ASSUME_TRUSTED:-0}" \
     FM_FAKE_AGY_RACE="${FM_FAKE_AGY_RACE:-0}" \
@@ -656,6 +676,7 @@ run_agy_spawn() {
     FM_FAKE_AGY_NEVER_BUSY="${FM_FAKE_AGY_NEVER_BUSY:-0}" \
     FM_FAKE_AGY_MODELS_LOG="${FM_FAKE_AGY_MODELS_LOG:-}" \
     FM_FAKE_AGY_FAIL="${FM_FAKE_AGY_FAIL:-}" \
+    FM_FAKE_ENDPOINT_POOL="${FM_FAKE_ENDPOINT_POOL:-}" FM_FAKE_PROJECT="$proj" \
     FM_AGY_READY_POLLS=4 FM_AGY_POLL_INTERVAL=0 FM_AGY_MODELS_TIMEOUT=${FM_AGY_MODELS_TIMEOUT:-1} \
     PATH="$fakebin:$BASE_PATH" \
     "$SPAWN" "${spawn_args[@]}" "$@" 2>&1
@@ -664,6 +685,54 @@ run_agy_spawn() {
 make_agy_pooled_case() {
   WT_DIR=$("$FAKEBIN_DIR/treehouse" get --lease --no-fetch) || fail "could not allocate fixture pool slot"
   "$FAKEBIN_DIR/treehouse" return "$WT_DIR" --force || fail "could not return fixture slot"
+}
+
+test_agy_allocation_uses_the_custody_pool() {
+  local id rec out rc second
+  id="agy-pool-mismatch-$$"
+  rec=$(make_agy_spawn_case pool-mismatch "$id")
+  read_agy_spawn_record "$rec"
+  make_agy_pooled_case
+  rc=0
+  out=$(FM_FAKE_TREEHOUSE_USE_ROOT=1 TREEHOUSE_ROOT="$CASE_DIR/pool" FM_FAKE_ENDPOINT_POOL="$CASE_DIR/endpoint-pool" \
+    FM_FAKE_AGY_NEVER_BUSY=1 run_agy_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" \
+    "$FAKEBIN_DIR" "$id") || rc=$?
+  [ "$rc" -ne 0 ] || fail "readiness fault did not fail the mixed-pool spawn"
+  [ -f "$HOME_DIR/state/$id.meta" ] || fail "mixed-pool spawn left no recoverable task: $out"
+  assert_grep "worktree=$WT_DIR" "$HOME_DIR/state/$id.meta" "mixed-pool spawn recorded the wrong checkout"
+  assert_absent "$CASE_DIR/endpoint-pool/treehouse-state.json" "endpoint allocated from a different pool"
+  second=$("$FAKEBIN_DIR/treehouse" get --lease) || fail "second allocation failed"
+  [ "$second" != "$WT_DIR" ] || fail "second dispatch stole the failed task's checkout"
+  "$FAKEBIN_DIR/treehouse" return "$second" --force || fail "could not return second checkout"
+  printf 'original work\n' > "$WT_DIR/recovery-sentinel"
+  printf 'shell\n' > "$CASE_DIR/agy.state"
+  rc=0
+  out=$(FM_FAKE_AGY_RELAUNCH=1 run_agy_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" \
+    "$FAKEBIN_DIR" "$id") || rc=$?
+  expect_code 0 "$rc" "mixed-pool task could not relaunch: $out"
+  assert_grep "worktree=$WT_DIR" "$HOME_DIR/state/$id.meta" "relaunch lost the original checkout"
+  [ "$(cat "$WT_DIR/recovery-sentinel")" = 'original work' ] || fail "relaunch discarded work"
+  pass "AGY allocation and recovery use the caller's custody pool despite endpoint environment differences"
+}
+
+test_agy_unpublished_allocation_is_returned() {
+  local id rec out rc next
+  id="agy-unpublished-$$"
+  rec=$(make_agy_spawn_case unpublished "$id")
+  read_agy_spawn_record "$rec"
+  rc=0
+  out=$(FM_FAKE_AGY_FAIL=cd run_agy_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" \
+    "$FAKEBIN_DIR" "$id") || rc=$?
+  [ "$rc" -ne 0 ] || fail "failed cwd handoff did not refuse the spawn"
+  assert_contains "$out" 'endpoint could not be moved' "failure did not reach the cwd handoff: $out"
+  [ ! -s "$CASE_DIR/launch.log" ] || fail "failed cwd handoff launched an agent"
+  assert_absent "$HOME_DIR/state/$id.meta" "unpublished allocation left a task record"
+  assert_contains "$(cat "$CASE_DIR/tmux-calls.log")" 'kill-window' "unpublished allocation left an endpoint"
+  assert_absent "$(dirname "$WT_DIR")/.fm-slot-owner" "unpublished allocation retained its slot claim"
+  next=$("$FAKEBIN_DIR/treehouse" get --lease) || fail "could not allocate after aborted spawn"
+  [ "$next" = "$WT_DIR" ] || fail "unpublished allocation retained its durable lease"
+  "$FAKEBIN_DIR/treehouse" return "$next" --force || fail "could not return cleanup probe"
+  pass "AGY returns an unpublished allocation and closes its endpoint after a failed cwd handoff"
 }
 
 test_agy_post_publication_failures_keep_records() {
@@ -867,18 +936,19 @@ test_agy_hung_listing_is_cut_off_and_launches() {
 }
 
 test_agy_zero_model_timeout_is_clamped_to_the_default_bound() {
-  local id rec out rc started elapsed
+  local id rec out rc finished
   id="agy-zerobound-z14-$$"
   rec=$(make_agy_spawn_case zerobound "$id")
   read_agy_spawn_record "$rec"
   rc=0
-  started=$(date +%s)
+  finished="$CASE_DIR/models-finished"
   out=$(FM_FAKE_AGY_MODELS_HANG=1 FM_AGY_MODELS_TIMEOUT=0 \
+    FM_FAKE_AGY_MODELS_FINISHED="$finished" \
     run_agy_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" \
     "$FAKEBIN_DIR" "$id" --model gemini-3.8-flash-low) || rc=$?
-  elapsed=$(( $(date +%s) - started ))
   expect_code 0 "$rc" "a hung listing with a zero bound must not block the spawn"
-  [ "$elapsed" -lt 25 ] || fail "a zero model bound disabled the deadline (took ${elapsed}s)"
+  # Measure the bounded command's lifecycle, not unrelated spawn setup time.
+  assert_absent "$finished" "the timed-out model listing ran to completion"
   assert_contains "$out" "did not answer within 15s" \
     "a zero model bound was not clamped to the documented default"
   [ -s "$CASE_DIR/launch.log" ] || fail "a zero model bound produced no launch command"
@@ -1083,6 +1153,8 @@ test_agy_missing_treehouse_capability_refuses_before_launch() {
     assert_absent "$HOME_DIR/state/$id.meta" "capability refusal published a task"
     assert_absent "$CASE_DIR/pool/treehouse-state.json" "capability refusal allocated a slot"
   done <<'EOF'
+get:lease|get --lease
+get:lease-holder|get --lease-holder
 lease|lease --lease-holder
 status:json|status --json
 return:if-lease-holder|return --if-lease-holder
@@ -1164,6 +1236,8 @@ test_agy_spawn_arms_no_busy_wiring() {
   pass "fm-spawn: agy arms no busy wiring and writes no sidecar"
 }
 
+test_agy_unpublished_allocation_is_returned
+test_agy_allocation_uses_the_custody_pool
 test_agy_ancestry_detects_the_native_command_name
 test_agy_ancestry_rejects_unrelated_mentions
 test_agy_claims_no_inherited_launcher_marker
