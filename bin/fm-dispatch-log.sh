@@ -26,11 +26,13 @@
 #   <utc-iso>\t<epoch>\t<event>\t<goal-id>\t<detail>
 # A goal's current state is its newest line. `blocked` is final and is not
 # overdue; a later `dispatched` supersedes it.
-# Lateness is measured once, on the line written directly after `received`: if
-# that `dispatched`, `queued` or `blocked` line is past the SLA, its detail ends
-# with ` late=<m>m` (minutes since `received`) and it also prints
-# `LATE <goal-id> late=<m>m`, so a late dispatch stays on record for `show`.
-# Later lines for the goal append with no late mark.
+# Lateness is measured until the goal's first final line: while its newest line
+# is `received` or `queued`, a `dispatched`, `queued` or `blocked` line past the
+# SLA ends its detail with ` late=<m>m` (minutes since `received`) and also
+# prints `LATE <goal-id> late=<m>m`, so a late dispatch stays on record for
+# `show`. Lines after a `dispatched` or `blocked` append with no late mark. A
+# trailing ` late=<m>m` in caller free text is dropped, so only the script can
+# write the mark.
 #
 # `overdue` prints every goal whose newest line is `received` or `queued` and
 # older than the SLA, as `OVERDUE <goal-id> age=<m>m received=<iso>
@@ -97,17 +99,18 @@ append() {  # <epoch> <event> <goal-id> <detail>
 }
 
 resolve() {  # <event> <goal-id> <detail>: append a resolution, marking lateness
-  local sla epoch latest received age late=''
+  local sla epoch latest received age late='' detail
   sla=$(sla_seconds)
   latest=$(latest_event "$2")
   [ -n "$latest" ] || fail "goal $2 has no received line"
   epoch=$(now_epoch)
-  if [ "$latest" = received ]; then
+  detail=$(clean "$3" | sed -E 's/( late=[0-9]+m)+$//')
+  if [ "$latest" = received ] || [ "$latest" = queued ]; then
     received=$(awk -F '\t' -v g="$2" '$4 == g && $3 == "received" { print $2; exit }' "$LOG")
     age=$((epoch - received))
     [ "$age" -le "$sla" ] || late=" late=$((age / 60))m"
   fi
-  append "$epoch" "$1" "$2" "$3$late"
+  append "$epoch" "$1" "$2" "$detail$late"
   [ -z "$late" ] || printf 'LATE %s%s\n' "$2" "$late"
 }
 
@@ -168,7 +171,7 @@ case "$cmd" in
     now=$(now_epoch)
     rc=0
     out=$(awk -F '\t' -v now="$now" -v sla="$sla" '
-      $3 != "received" && ev[$4] == "received" && match($5, / late=[0-9]+m$/) { late[$4] = substr($5, RSTART + 6, RLENGTH - 6); lev[$4] = $3 }
+      $3 != "received" && (ev[$4] == "received" || ev[$4] == "queued") && match($5, / late=[0-9]+m$/) { late[$4] = substr($5, RSTART + 6, RLENGTH - 6); lev[$4] = $3 }
       { ev[$4] = $3 }
       $3 == "received" { at[$4] = $2; iso[$4] = $1; det[$4] = $5; order[++n] = $4 }
       END {
