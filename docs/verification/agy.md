@@ -231,7 +231,7 @@ Never press "Reset To Defaults" on that dialog; it does not apply to this cause.
 
 ## What is still unproven
 
-The unauthenticated failure mode was never observed; this host's agy runs signed in, so any auth prompt is a fail-loud credential blocker, not a handled dialog.
+The signed-out `agy models` stdout was inferred from agy's log, not captured (see [Model and effort](#model-and-effort)).
 No in-pane auth prompt was observed; any auth prompt is a fail-loud credential blocker, not a handled dialog.
 Orca support needs a visible-screen read for agy, like the one recorded Droid tasks use; until then agy on orca falls back as described above.
 No slash-skill invocation form was verified, so skill invocation stays natural language.
