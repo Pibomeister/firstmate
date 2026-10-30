@@ -5,7 +5,7 @@
 #   fm-dispatch-log.sh received   <goal-id> --summary <text> [--project <name>]
 #   fm-dispatch-log.sh dispatched <goal-id> --task <task-id> [--note <text>]
 #   fm-dispatch-log.sh blocked    <goal-id> --reason <text>
-#   fm-dispatch-log.sh overdue    [--minutes <n>]
+#   fm-dispatch-log.sh overdue
 #   fm-dispatch-log.sh show       [<goal-id>]
 #
 # Every new captain goal gets one `received` line the moment it is read, and
@@ -92,7 +92,7 @@ case "$cmd" in
     ;;
 esac
 
-summary='' project='' task='' note='' reason='' minutes="$SLA_MIN"
+summary='' project='' task='' note='' reason=''
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --summary) summary="${2:-}"; shift 2 || fail "--summary needs a value" ;;
@@ -100,7 +100,6 @@ while [ "$#" -gt 0 ]; do
     --task) task="${2:-}"; shift 2 || fail "--task needs a value" ;;
     --note) note="${2:-}"; shift 2 || fail "--note needs a value" ;;
     --reason) reason="${2:-}"; shift 2 || fail "--reason needs a value" ;;
-    --minutes) minutes="${2:-}"; shift 2 || fail "--minutes needs a value" ;;
     *) fail "unknown argument: $1" ;;
   esac
 done
@@ -126,10 +125,10 @@ case "$cmd" in
     append blocked "$goal" "reason=$reason"
     ;;
   overdue)
-    case "$minutes" in ''|*[!0-9]*) fail "--minutes must be a whole number" ;; esac
+    case "$SLA_MIN" in ''|*[!0-9]*) fail "FM_DISPATCH_SLA_MINUTES must be a whole number" ;; esac
     [ -f "$LOG" ] || exit 0
     now=$(now_epoch)
-    out=$(awk -F '\t' -v now="$now" -v sla="$((minutes * 60))" '
+    out=$(awk -F '\t' -v now="$now" -v sla="$((SLA_MIN * 60))" '
       { ev[$4] = $3; if ($3 == "received") { at[$4] = $2; iso[$4] = $1; det[$4] = $5; order[++n] = $4 } }
       END {
         for (i = 1; i <= n; i++) {
