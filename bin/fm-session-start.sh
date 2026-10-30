@@ -1028,6 +1028,18 @@ if fm_pf_relay_active "$FM_HOME" \
   fi
 fi
 
+# Captain goals past the dispatch SLA (bin/fm-dispatch-log.sh owns the ledger).
+# A read-only `overdue` call, so it runs for lock-refused sessions too; a home
+# with no ledger prints nothing.
+if [ -f "$STATE/dispatch-log.tsv" ]; then
+  DISPATCH_OVERDUE=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-dispatch-log.sh" overdue 2>&1) || true
+  if [ -n "$DISPATCH_OVERDUE" ]; then
+    subsection "Dispatch ledger (fm-dispatch-log.sh overdue)"
+    printf '%s\n' "$DISPATCH_OVERDUE"
+    printf '\nDispatch or block each OVERDUE goal this turn, and tell the captain about each OVERDUE goal and, once, each LATE goal.\n'
+  fi
+fi
+
 # --- 7. network checks ------------------------------------------------------
 # Deliberately here and not later: these lines are actionable (a stuck clone, a
 # secondmate that could not be relaunched, broken GitHub auth), and the section
