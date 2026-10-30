@@ -1,0 +1,16 @@
+ok - received appends one timestamped TSV line with project and summary
+ok - overdue stays quiet inside the 15-minute SLA and flags the goal after it
+ok - FM_DISPATCH_SLA_MINUTES widens and tightens the SLA, and a leading zero stays decimal
+ok - a dispatched goal is never overdue
+ok - blocked is a logged, non-overdue outcome that a later dispatch supersedes
+ok - malformed, duplicate, and orphan requests are refused without writing
+ok - whitespace-only summary, task, and reason are refused without writing
+ok - a value that starts with a dash is refused, including --summary --project p
+ok - tabs and newlines in free text are folded so every line stays five fields
+ok - a dispatched or blocked line written after the SLA records late=<m>m, and show and overdue surface it
+ok - a duplicate received exits 4, distinct from other refusals
+ok - queued is a non-final state that still goes overdue, and a secondmate hand-off dispatches it
+ok - overdue judges each of two goals by its own newest event
+ok - FM_DISPATCH_LOG does not select a second ledger
+ok - show names a goal's current state, and an unknown goal is not an empty ledger
+ok - bare show prints the ledger

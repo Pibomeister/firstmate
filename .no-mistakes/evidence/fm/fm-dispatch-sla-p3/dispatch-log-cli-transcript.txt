@@ -1,0 +1,129 @@
+=== C-1: SLA read as decimal ===
+$ env FM_DISPATCH_NOW=1800000000 bin/fm-dispatch-log.sh received g1 --summary first goal --project p
+2027-01-15T08:00:00Z received g1: project=p summary=first goal
+[exit 0]
+$ env FM_DISPATCH_SLA_MINUTES=08 FM_DISPATCH_NOW=1800000060 bin/fm-dispatch-log.sh overdue
+[exit 0]
+$ env FM_DISPATCH_SLA_MINUTES=08 FM_DISPATCH_NOW=1800000481 bin/fm-dispatch-log.sh overdue
+OVERDUE g1 age=8m received=2027-01-15T08:00:00Z project=p summary=first goal
+[exit 3]
+$ env FM_DISPATCH_SLA_MINUTES=010 FM_DISPATCH_NOW=1800000540 bin/fm-dispatch-log.sh overdue
+[exit 0]
+$ env FM_DISPATCH_SLA_MINUTES=010 FM_DISPATCH_NOW=1800000601 bin/fm-dispatch-log.sh overdue
+OVERDUE g1 age=10m received=2027-01-15T08:00:00Z project=p summary=first goal
+[exit 3]
+$ env FM_DISPATCH_SLA_MINUTES=1x bin/fm-dispatch-log.sh overdue
+fm-dispatch-log: FM_DISPATCH_SLA_MINUTES must be a whole number
+[exit 1]
+
+=== C-2: whitespace-only text refused ===
+$ bin/fm-dispatch-log.sh received g2 --summary  
+fm-dispatch-log: received needs --summary
+[exit 1]
+$ bin/fm-dispatch-log.sh received g2 --summary 	
+fm-dispatch-log: received needs --summary
+[exit 1]
+$ bin/fm-dispatch-log.sh dispatched g1 --task  
+fm-dispatch-log: dispatched needs --task
+[exit 1]
+$ bin/fm-dispatch-log.sh queued g1 --reason    
+fm-dispatch-log: queued needs --reason
+[exit 1]
+$ bin/fm-dispatch-log.sh blocked g1 --reason  
+fm-dispatch-log: blocked needs --reason
+[exit 1]
+ledger unchanged after refusals: OK
+
+=== PS-1: header vs OVERDUE output with --project ===
+older than the SLA, as `OVERDUE <goal-id> age=<m>m received=<iso>
+[project=<name> ]summary=<text>`, then every goal resolved late, as
+`LATE <goal-id> late=<m>m event=<event>`. It exits 3 when any OVERDUE line
+$ env FM_DISPATCH_NOW=1800001000 bin/fm-dispatch-log.sh overdue
+OVERDUE g1 age=16m received=2027-01-15T08:00:00Z project=p summary=first goal
+[exit 3]
+
+=== T-1: two goals at once, judged independently ===
+$ env FM_DISPATCH_NOW=1800000010 bin/fm-dispatch-log.sh received g3 --summary second goal
+2027-01-15T08:00:10Z received g3: summary=second goal
+[exit 0]
+$ env FM_DISPATCH_NOW=1800000020 bin/fm-dispatch-log.sh dispatched g3 --task task-g3
+2027-01-15T08:00:20Z dispatched g3: task=task-g3
+[exit 0]
+$ env FM_DISPATCH_NOW=1800000030 bin/fm-dispatch-log.sh received g4 --summary third goal
+2027-01-15T08:00:30Z received g4: summary=third goal
+[exit 0]
+$ env FM_DISPATCH_NOW=1800002000 bin/fm-dispatch-log.sh overdue
+OVERDUE g1 age=33m received=2027-01-15T08:00:00Z project=p summary=first goal
+OVERDUE g4 age=32m received=2027-01-15T08:00:30Z summary=third goal
+[exit 3]
+
+=== T-2: exact 15-minute boundary (900s ok, 901s overdue) ===
+$ env FM_DISPATCH_NOW=1800000000 bin/fm-dispatch-log.sh received b1 --summary boundary
+2027-01-15T08:00:00Z received b1: summary=boundary
+[exit 0]
+$ env FM_DISPATCH_NOW=1800000900 bin/fm-dispatch-log.sh overdue
+[exit 0]
+$ env FM_DISPATCH_NOW=1800000901 bin/fm-dispatch-log.sh overdue
+OVERDUE b1 age=15m received=2027-01-15T08:00:00Z summary=boundary
+[exit 3]
+-- late marking at boundary --
+$ env FM_DISPATCH_NOW=1800000000 bin/fm-dispatch-log.sh received b2 --summary b2
+2027-01-15T08:00:00Z received b2: summary=b2
+[exit 0]
+$ env FM_DISPATCH_NOW=1800000900 bin/fm-dispatch-log.sh dispatched b2 --task t2
+2027-01-15T08:15:00Z dispatched b2: task=t2
+[exit 0]
+$ env FM_DISPATCH_NOW=1800000000 bin/fm-dispatch-log.sh received b3 --summary b3
+2027-01-15T08:00:00Z received b3: summary=b3
+[exit 0]
+$ env FM_DISPATCH_NOW=1800000901 bin/fm-dispatch-log.sh dispatched b3 --task t3
+2027-01-15T08:15:01Z dispatched b3: task=t3 late=15m
+LATE b3 late=15m
+[exit 0]
+
+=== T-3: bare show equals ledger ===
+bare show == ledger: OK
+$ bin/fm-dispatch-log.sh show
+2027-01-15T08:00:00Z	1800000000	received	b1	summary=boundary
+2027-01-15T08:00:00Z	1800000000	received	b2	summary=b2
+2027-01-15T08:15:00Z	1800000900	dispatched	b2	task=t2
+2027-01-15T08:00:00Z	1800000000	received	b3	summary=b3
+2027-01-15T08:15:01Z	1800000901	dispatched	b3	task=t3 late=15m
+[exit 0]
+
+=== M-1: FM_DISPATCH_LOG ignored; FM_STATE_OVERRIDE moves ledger ===
+$ env FM_DISPATCH_LOG=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-alt.n1T3Zz/other.tsv FM_DISPATCH_NOW=1800000000 bin/fm-dispatch-log.sh received m1 --summary m1
+2027-01-15T08:00:00Z received m1: summary=m1
+[exit 0]
+1
+$ FM_STATE_OVERRIDE=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-alt.n1T3Zz/st received m2
+2026-10-30T07:05:40Z received m2: summary=m2
+[exit 0]
+2026-10-30T07:05:40Z	1793343940	received	m2	summary=m2
+
+=== AN-5: per-goal state, unknown id, flag-looking values ===
+$ bin/fm-dispatch-log.sh show b3
+STATE b3 event=dispatched at=2027-01-15T08:15:01Z task=t3 late=15m
+2027-01-15T08:00:00Z	1800000000	received	b3	summary=b3
+2027-01-15T08:15:01Z	1800000901	dispatched	b3	task=t3 late=15m
+[exit 0]
+$ bin/fm-dispatch-log.sh show nosuch
+fm-dispatch-log: goal nosuch is not in the ledger
+[exit 1]
+$ show nosuch (no ledger)
+fm-dispatch-log: goal nosuch is not in the ledger
+[exit 1]
+$ show (empty home)
+[exit 0]
+$ bin/fm-dispatch-log.sh received x1 --summary --project p
+fm-dispatch-log: --summary value looks like a flag: --project
+[exit 1]
+$ bin/fm-dispatch-log.sh dispatched b1 --task --note n
+fm-dispatch-log: --task value looks like a flag: --note
+[exit 1]
+$ bin/fm-dispatch-log.sh received b1 --summary dup
+fm-dispatch-log: goal b1 is already in the ledger
+[exit 4]
+$ bin/fm-dispatch-log.sh dispatched ghost --task t
+fm-dispatch-log: goal ghost has no received line
+[exit 1]
