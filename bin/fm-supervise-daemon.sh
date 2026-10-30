@@ -1267,25 +1267,44 @@ wedge_alarm_emit() {  # <channel> <summary>
 # `off` directive disables the alert, regardless of position; an unresolvable
 # `auto` (no OS channel on this platform) logs that the durable marker is the
 # only signal. Every notifier routes through the test-forced recorder seam.
-wedge_alarm_notify() {  # <summary> <marker>
-  local summary=$1 marker=$2 ch
+wedge_alarm_notify() {  # <summary> <marker> [strict]
+  local summary=$1 marker=$2 strict=${3:-} ch attempted=0 delivered=0
   local -a channels=()
+  WEDGE_ALARM_PAGE_RESULT=pending
   while IFS= read -r ch; do
     [ -n "$ch" ] || continue
     channels+=("$ch")
   done < <(wedge_alarm_configured_channels)
   for ch in "${channels[@]}"; do
-    [ "$ch" = off ] && return 0
+    if [ "$ch" = off ]; then
+      [ "$strict" = strict ] && return 2
+      return 0
+    fi
   done
   for ch in "${channels[@]}"; do
     case "$ch" in auto|default) ch=$(wedge_alarm_platform_default) ;; esac
     case "$ch" in
       '') log "wedge alarm: no OS-level alert channel on $(uname); durable marker $marker is the only signal - set config/wedge-alarm (e.g. a command: directive)" ;;
-      osascript|herdr|rex) wedge_alarm_emit "$ch" "$summary" || true ;;
-      command:*) wedge_alarm_emit command "$summary" "${ch#command:}" || true ;;
+      osascript|herdr|rex)
+        attempted=1
+        wedge_alarm_emit "$ch" "$summary" && delivered=1 ;;
+      command:*)
+        attempted=1
+        wedge_alarm_emit command "$summary" "${ch#command:}" && delivered=1 ;;
       *) log "wedge alarm: unrecognized active-alert channel directive (redacted); marker still written" ;;
     esac
   done
+  if [ "$strict" = strict ]; then
+    if [ "$delivered" -eq 1 ]; then
+      WEDGE_ALARM_PAGE_RESULT=sent
+      return 0
+    fi
+    if [ "$attempted" -eq 1 ]; then
+      WEDGE_ALARM_PAGE_RESULT=failed
+      return 1
+    fi
+    return 2
+  fi
   return 0
 }
 
@@ -2262,6 +2281,15 @@ fm_super_main() {
 
 # Run only when executed, not when sourced (tests source the classifiers).
 if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
+  if [ "${1:-}" = page ]; then
+    [ "$#" -eq 3 ] || { echo 'usage: fm-supervise-daemon.sh page <summary> <marker>' >&2; exit 2; }
+    LOG="$(_state_root)/.monitor-watchdog-page.log"
+    [ -d "${LOG%/*}" ] || { echo 'page: pending' >&2; exit 2; }
+    wedge_alarm_notify "$2" "$3" strict
+    rc=$?
+    printf 'page: %s\n' "$WEDGE_ALARM_PAGE_RESULT"
+    exit "$rc"
+  fi
   fm_super_main "$@"
 else
   # Library mode: these functions were SOURCED (only tests do this - production
