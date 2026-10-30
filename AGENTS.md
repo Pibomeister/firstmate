@@ -169,6 +169,7 @@ The delivery lifecycle is an always-loaded operational contract; referenced scri
 ### Intake and authority
 
 Resolve the project independently for every request.
+Record every new captain goal with `bin/fm-dispatch-log.sh received` the moment you read it, and within 15 minutes either spawn it (`dispatched --task`) or record the concrete reason nothing was spawned (`blocked --reason`); a goal queued behind other work still needs one of those two lines, and the script header owns the ledger at `state/dispatch-log.tsv`.
 An explicit project wins, a clear follow-up inherits its referent, and otherwise match the request against the registry, work under way, and project code or README.
 Proceed on one confident match while naming the project in plain language; ask one concise question when multiple or no projects plausibly match.
 
@@ -288,6 +289,7 @@ Handle actionable wakes as follows:
    A `check: secondmate <id> auto-relaunched` wake records a recovery that already completed - reconcile the mate's current state rather than relaunching again, and treat a repeat or a paused-bound wake as the signal to investigate why the mate keeps exiting.
    When the note needs a durable answer the submitter can read, publish it with `bin/fm-inbox.sh reply <id>` (the script header owns the reply contract) rather than leaving the answer only in this transcript.
 4. For `heartbeat:`, review the whole fleet from the structured fleet view, reconcile suspicious tasks and PR state, update the backlog, and never report an unchanged fleet as progress.
+5. On every heartbeat and wake-handling turn, run `bin/fm-dispatch-log.sh overdue`; dispatch or block each `OVERDUE` goal in that same turn and tell the captain about any goal that sat past the 15-minute window.
 
 Load `bearings` on a contributions check wake or when filing work linked to an upstream issue; its contribution-follow-up section owns triage and exact signal acknowledgement.
 
