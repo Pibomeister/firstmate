@@ -93,6 +93,10 @@ if [ "${QUOTA_AXI_SCHEMA6:-0}" = 1 ]; then
   printf '{"schemaVersion":6,"providers":[{"provider":"codex","accountKey":"openai-codex","quotaSemantics":{"status":"known","effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":3,"runway":{"status":"projected_exhaustion"}}]}},{"provider":"codex","accountKey":"openai-codex-work","quotaSemantics":{"status":"known","effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":0,"runway":{"status":"exhausted_now"}}]}},{"provider":"cursor","accountKey":"default","quotaSemantics":{"status":"known","effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":5,"runway":{"status":"through_reset"}}]}}]}\n'
   exit 0
 fi
+if [ "${QUOTA_AXI_CURSOR_POOLS:-0}" = 1 ]; then
+  printf '{"schemaVersion":5,"providers":[{"provider":"cursor","windows":[{"id":"included_usage","percentRemaining":90},{"id":"auto_usage","percentRemaining":93},{"id":"api_usage","percentRemaining":2}],"quotaSemantics":{"status":"known","effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":2,"runway":{"status":"unknown"}},{"scope":"pool:api","status":"known","effectivePercentRemaining":2,"runway":{"status":"unknown"}}]}}]}\n'
+  exit 0
+fi
 if [ "${QUOTA_AXI_SCHEMA5_PAIR:-0}" = 1 ]; then
   printf '{"schemaVersion":5,"providers":[{"provider":"codex","quotaSemantics":{"status":"known","effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":3,"runway":{"status":"projected_exhaustion"}}]}},{"provider":"cursor","quotaSemantics":{"status":"known","effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":5,"runway":{"status":"through_reset"}}]}}]}\n'
   exit 0
@@ -310,6 +314,10 @@ printf '%s\n' "$detail" | jq -e '
   ([.summary[] | select(.accountKey == "openai-codex") | .best.effectivePercentRemaining] == [3])
 ' >/dev/null || fail "schema 6 aggregate detail did not keep each account separate: $detail"
 ok "aggregate watch reads every schema 6 account row without combining them"
+
+out=$(QUOTA_AXI_CURSOR_POOLS=1 QUOTA_AXI_COUNT="$COUNT" PATH="$FAKEBIN:$PATH" "$BIN/fm-procevent-quota.sh" poll --interval 1 --threshold 10 --provider cursor --timeout 1)
+printf '%s\n' "$out" | grep -qx 'status: timeout' || fail "cursor watch read the collapsed api bound as low: $out"
+ok "cursor provider watch judges its default auto pool, not the collapsed minimum"
 
 out=$(QUOTA_AXI_SCHEMA6=1 QUOTA_AXI_COUNT="$COUNT" PATH="$FAKEBIN:$PATH" "$BIN/fm-procevent-quota.sh" poll --interval 1 --threshold 10 --provider cursor --timeout 1)
 printf '%s\n' "$out" | grep -qx 'status: low' || fail "schema 6 provider watch included another provider's exhausted account"

@@ -346,6 +346,8 @@ effective_for_provider_model() {
     elif ($known | length) == 0 then {status: "unknown"}
     elif any($known[]; .effectivePercentRemaining == 0) then
       ($known | map(select(.effectivePercentRemaining == 0)) | first)
+    elif any($known[]; quota_below_pool_floor(.)) then
+      ($known | map(select(quota_below_pool_floor(.))) | first)
     else ($known | min_by(.effectivePercentRemaining))
     end
     end
@@ -377,9 +379,10 @@ for c in "${CANDIDATES[@]}"; do
   if [ -z "$effective" ] || [ "$effective" = "null" ]; then
     continue
   fi
-  if printf '%s\n' "$effective" | jq -e '
+  if printf '%s\n' "$effective" | jq -e "$FM_QUOTA_ROW_JQ"'
     if (.runway.status // "") == "exhausted_now" then false
     elif .status == "unknown" then false
+    elif quota_below_pool_floor(.) then false
     else
       .effectivePercentRemaining as $remaining |
       (($remaining | type) == "number") and

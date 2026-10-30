@@ -34,13 +34,31 @@ FM_QUOTA_PROVIDER_ID_RE='^[a-z0-9]+(-[a-z0-9]+)*\z'
 #   quota_applicable($provider_row; $model)
 #                                  the effective-availability rows that bound a
 #                                  model. Cursor splits its all_models minimum
-#                                  into pools (auto/composer, grok, named API
-#                                  models) so api_usage does not bound auto.
-#                                  No Cursor window is documented as billing
+#                                  into pools (auto/composer by auto_usage and
+#                                  included_usage, named API models by
+#                                  api_usage) so api_usage does not bound auto.
+#                                  No Cursor window is confirmed as billing
 #                                  grok-* models (grok_bot is the separate Grok
 #                                  Bot meter), so grok-* takes the conservative
-#                                  api pool; an unrecognized model keeps the
-#                                  all_models minimum.
+#                                  api pool unless quota-axi emits pool:grok;
+#                                  an unrecognized model keeps the all_models
+#                                  minimum. A real pool:<name> row from
+#                                  quota-axi wins. Deriving a row from windows,
+#                                  ranked by its own remaining percent, is the
+#                                  fallback for quota-axi builds without pool
+#                                  rows; the default TOON has no windows, so it
+#                                  stays collapsed until those builds are gone.
+#   quota_scope_rows($provider_row; $model; $scope)
+#                                  the rows a floor on $scope reads for a model:
+#                                  on Cursor, all_models means the model's pool
+#                                  and pool:<name> resolves real or derived.
+#   quota_provider_rows($provider_row)
+#                                  the rows a provider-wide reader judges with
+#                                  no model in hand: on Cursor, its default
+#                                  auto pool replaces all_models and the other
+#                                  pools.
+#   quota_below_pool_floor($row)   true when a known Cursor api or grok pool row
+#                                  sits under cursor_api_pool_floor.
 # shellcheck disable=SC2016,SC2034  # jq program text, not shell expansion; read by the sourcing consumers
 FM_QUOTA_ROW_JQ='
   def quota_lane($harness; $model):
@@ -61,17 +79,20 @@ FM_QUOTA_ROW_JQ='
     elif ($t | test("^(cursor-)?grok-")) then "grok"
     elif ($t | test("^(claude|gpt|gemini|o[0-9])")) then "api"
     else null end;
+  def cursor_api_pool_floor: 5;
   def cursor_pool_row($p; $pool):
-    (if $pool == "auto" then ["auto_usage", "included_usage"] else ["api_usage", "included_usage"] end) as $ids |
-    (if $pool == "grok" then ["pool:grok", "pool:api"] else ["pool:" + $pool] end) as $scopes |
-    ([($p.quotaSemantics.effectiveAvailability // [])[] | select(. as $r | $scopes | index($r.scope))
-      | select(.status == "known")] | first) as $explicit |
+    ([($p.quotaSemantics.effectiveAvailability // [])[]
+      | select(.scope == "pool:\($pool)" and .status == "known")] | first) as $explicit |
     if $explicit != null then $explicit
+    elif $p.quotaSemantics.status == "unknown" then null
+    elif $pool == "grok" then cursor_pool_row($p; "api")
     else
-      [($p.windows // [])[] | select(. as $w | $ids | index($w.id)) | select((.percentRemaining | type) == "number")] as $ws |
+      ({auto: ["auto_usage", "included_usage"], api: ["api_usage"]}[$pool // ""] // []) as $ids |
+      [($p.windows // [])[] | select(.id as $id | $ids | index($id)) | select((.percentRemaining | type) == "number")] as $ws |
       if ($ws | map(select(.id == $ids[0])) | length) == 0 then null
       else ($ws | map(.percentRemaining) | min) as $min |
         {scope: ("pool:" + $pool), status: "known", effectivePercentRemaining: $min,
+         selection: {spendPriority: ($min / 100)},
          runway: {status: (if $min <= 0 then "exhausted_now" else "unknown" end)},
          limitingWindowIds: ($ws | map(select(.percentRemaining == $min) | .id))}
       end
@@ -85,12 +106,28 @@ FM_QUOTA_ROW_JQ='
        ($model_token == ($scope | sub("^(model|product):"; ""))))
     )] as $base |
     if $p.provider != "cursor" then $base
-    else (cursor_pool($model_token)) as $pool |
-      (if $pool == null then null else cursor_pool_row($p; $pool) end) as $pr |
+    else cursor_pool_row($p; cursor_pool($model_token)) as $pr |
       if $pr == null then $base
       else ($base | map(select(.scope != "all_models"))) + [$pr]
       end
     end;
+  def quota_scope_rows($p; $model; $scope):
+    (if $p.provider != "cursor" then null
+     elif $scope == "all_models" then cursor_pool_row($p; cursor_pool($model))
+     elif ($scope | startswith("pool:")) then cursor_pool_row($p; $scope | ltrimstr("pool:"))
+     else null end) as $pr |
+    if $pr != null then [$pr]
+    else [($p.quotaSemantics.effectiveAvailability // [])[] | select(.scope == $scope)]
+    end;
+  def quota_provider_rows($p):
+    ($p.quotaSemantics.effectiveAvailability // []) as $rows |
+    (if $p.provider == "cursor" then cursor_pool_row($p; "auto") else null end) as $pr |
+    if $pr == null then $rows
+    else ($rows | map(select(.scope != "all_models" and (.scope | startswith("pool:") | not)))) + [$pr]
+    end;
+  def quota_below_pool_floor($r):
+    $r.status == "known" and (["pool:api", "pool:grok"] | index($r.scope)) != null and
+    $r.effectivePercentRemaining < cursor_api_pool_floor;
 '
 
 # fm_quota_axi_version_compatible <version-output>

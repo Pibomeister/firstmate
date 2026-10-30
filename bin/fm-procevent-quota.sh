@@ -151,7 +151,7 @@ quota_json() {
 condition_status() {
   local json=$1 provider=${2:-} threshold=${3:-$DEFAULT_THRESHOLD}
   printf '%s\n' "$json" | fm_quota_json_valid || { printf 'error\n'; return; }
-  printf '%s\n' "$json" | jq -r --arg provider "$provider" --arg threshold "$threshold" '
+  printf '%s\n' "$json" | jq -r --arg provider "$provider" --arg threshold "$threshold" "$FM_QUOTA_ROW_JQ"'
     def classify($availability):
       ($availability | map(select(.status == "known"))) as $known |
       if ($availability | length) == 0 then "error"
@@ -162,8 +162,8 @@ condition_status() {
       end;
     .providers |= map(select($provider == "" or .provider == $provider)) |
     if (.providers | length) == 0 and $provider != "" then "error"
-    elif ([.providers[]?.quotaSemantics.effectiveAvailability[]?] | length) == 0 then "healthy"
-    else classify([.providers[]?.quotaSemantics.effectiveAvailability[]?])
+    elif ([.providers[]? | quota_provider_rows(.)[]] | length) == 0 then "healthy"
+    else classify([.providers[]? | quota_provider_rows(.)[]])
     end
   ' 2>/dev/null || printf 'error\n'
 }
@@ -172,7 +172,7 @@ condition_status() {
 # Print a one-line summary of the quota state for the result document.
 details() {
   local json=$1 provider=${2:-}
-  printf '%s\n' "$json" | jq -c --arg provider "$provider" '
+  printf '%s\n' "$json" | jq -c --arg provider "$provider" "$FM_QUOTA_ROW_JQ"'
     def best_detail($availability):
       ($availability | map(select(.status == "known"))) as $known |
       ($availability | map(select((.runway.status // "") == "exhausted_now"))) as $exhausted |
@@ -183,7 +183,7 @@ details() {
     [.providers[]? | select($provider == "" or .provider == $provider) |
       {provider}
       + (if has("accountKey") then {accountKey} else {} end)
-      + {best: best_detail(.quotaSemantics.effectiveAvailability // [])}
+      + {best: best_detail(quota_provider_rows(.))}
     ] as $summary |
     if $provider == "" or ($summary | length) > 1 then
       {

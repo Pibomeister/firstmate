@@ -504,14 +504,28 @@ RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg non
     if $row == null then []
     else quota_applicable($row; bare($m))
     end;
-  def floor_state($f; $p; $lane):
+  def floor_rows($f; $p; $lane; $m):
+    if $f == null then []
+    elif $m == null then [rows($p; $lane)[] | select(.scope == $f.scope)]
+    else quota_scope_rows(prov($p; $lane); bare($m) // ""; $f.scope)
+    end;
+  def floor_state($f; $p; $lane; $m):
     if $f == null then "none"
     elif prov($p; $lane) == null or (measured($p; $lane) | not) then "unknown"
-    else [rows($p; $lane)[] | select(.scope == $f.scope)] as $matches
+    else floor_rows($f; $p; $lane; $m) as $matches
       | if ($matches | length) == 0 or any($matches[]; .status != "known") then "unknown"
         elif any($matches[]; .effectivePercentRemaining < $f.min_percent) then "below"
         else "ok"
         end
+    end;
+  def rule_floor_state($rule):
+    if $rule.floor == null then "none"
+    else
+      ($rule.floor.provider) as $p |
+      ([profiles($rule.use)[] | select(provider_of(.) == $p) | (.model // "")]) as $models |
+      (if ($models | length) == 0 then [null] else $models end) as $targets |
+      [$targets[] as $m | floor_state($rule.floor; $p; ""; $m)] as $states |
+      first(("ok", "below", "unknown") as $state | select($states | index($state)) | $state)
     end;
   def evidence($rows):
     $rows | map({scope, status, pct: (.effectivePercentRemaining // null), runway: (.runway.status // null), spendPriority: (.selection.spendPriority // null)});
@@ -526,18 +540,19 @@ RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg non
     else
       (applicable($p; $lane; ($c.model // ""))) as $rows |
       (evidence($rows)) as $bounds |
-      (floor_state($c.floor; $p; $lane)) as $profile_floor_state |
+      (floor_rows($c.floor; $p; $lane; ($c.model // ""))) as $floor_rows |
+      (floor_state($c.floor; $p; $lane; ($c.model // ""))) as $profile_floor_state |
       if any($rows[]; (.runway.status // "") == "exhausted_now") then
         ($rows | map(select((.runway.status // "") == "exhausted_now")) | first) as $bad |
         {profile: $c, provider: $p, bounds: $bounds, scope: $bad.scope, pct: ($bad.effectivePercentRemaining // null), runway: $bad.runway.status, eligible: false, reason: "runway exhausted_now at \($bad.scope)"}
       elif any($rows[]; .status == "known" and (.effectivePercentRemaining | type) == "number" and .effectivePercentRemaining <= 0) then
         ($rows | map(select(.status == "known" and (.effectivePercentRemaining | type) == "number" and .effectivePercentRemaining <= 0)) | first) as $bad |
         {profile: $c, provider: $p, bounds: $bounds, scope: $bad.scope, pct: $bad.effectivePercentRemaining, runway: $bad.runway.status, eligible: false, reason: "0% remaining at \($bad.scope)"}
+      elif any($rows[]; quota_below_pool_floor(.)) then
+        ($rows | map(select(quota_below_pool_floor(.))) | first) as $bad |
+        {profile: $c, provider: $p, bounds: $bounds, scope: $bad.scope, pct: $bad.effectivePercentRemaining, runway: $bad.runway.status, eligible: false, reason: "\($bad.scope) below the Cursor pool floor \(cursor_api_pool_floor)%"}
       elif $profile_floor_state == "below" then
-        ([rows($p; $lane)[] | select(
-          .scope == $c.floor.scope and
-          .effectivePercentRemaining < $c.floor.min_percent
-        )] | first) as $floor_row |
+        ($floor_rows | map(select(.effectivePercentRemaining < $c.floor.min_percent)) | first) as $floor_row |
         {profile: $c, provider: $p, bounds: $bounds, scope: ($floor_row.scope // $c.floor.scope), pct: ($floor_row.effectivePercentRemaining // null), runway: ($floor_row.runway.status // null), eligible: false, reason: "profile floor \($c.floor.scope) below \($c.floor.min_percent)%"}
       elif (measured($p; $lane) | not) then
         ($rows | first) as $row |
@@ -545,7 +560,7 @@ RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg non
       elif ($rows | length) == 0 then
         {profile: $c, provider: $p, bounds: $bounds, eligible: true, unranked: true, unknown: true, reason: "no applicable quota row for provider \($p)"}
       elif $profile_floor_state == "unknown" then
-        ([rows($p; $lane)[] | select(.scope == $c.floor.scope)] | first) as $floor_row |
+        ($floor_rows | first) as $floor_row |
         {profile: $c, provider: $p, bounds: $bounds, scope: $c.floor.scope, pct: ($floor_row.effectivePercentRemaining // null), runway: ($floor_row.runway.status // null), eligible: true, unranked: true, unknown: true, reason: "profile floor \($c.floor.scope) is unverifiable: not rankable"}
       elif any($rows[]; .status != "known") then
         ($rows | map(select(.status != "known")) | first) as $bad |
@@ -585,7 +600,7 @@ RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg non
    end) as $fb |
   (if $fb.to then $fb.to else $picked end) as $choice |
   (rule_at($choice)) as $rule |
-  (if $rule == null then "none" else floor_state($rule.floor; $rule.floor.provider; "") end) as $rule_floor_state |
+  (if $rule == null then "none" else rule_floor_state($rule) end) as $rule_floor_state |
   (if $choice != "default" and $rule == null then []
    elif $rule == null then profiles($cfg.default // null)
    else profiles($rule.use)

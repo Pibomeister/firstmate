@@ -796,8 +796,7 @@ for model in default auto composer-2.5; do
 done
 ok "cursor auto and composer models are judged by auto_usage, not api_usage"
 
-# This helper's floor is "greater than zero", so the api pool is exercised at
-# 0% (blocked) and at the live 2% (still judged by api_usage, not auto_usage).
+# The Cursor api pool has a 5% floor: the live 2% is rejected and 6% passes.
 jq '(.providers[0].windows[] | select(.id == "api_usage").percentRemaining) = 0
   | (.providers[0].quotaSemantics.effectiveAvailability[] | select(.scope == "all_models")) |=
     (.effectivePercentRemaining = 0 | .runway.status = "exhausted_now")' "$CURSOR_POOLS" > "$LAB/cursor-pools-api-empty.json"
@@ -808,9 +807,17 @@ for model in claude-opus-5-thinking-high gpt-5.6-sol-high gemini-3.7-flash-high;
   out=$(call_choose --snapshot "$LAB/cursor-pools-api-empty.json" --candidate "cursor:$model" --candidate cursor:composer-2.5)
   [ "$out" = "cursor composer-2.5" ] || fail "composer did not stay eligible with api_usage exhausted: $out"
 done
-out=$(call_choose --snapshot "$CURSOR_POOLS" --candidate cursor:claude-opus-5-thinking-high)
+if out=$(call_choose --snapshot "$CURSOR_POOLS" --candidate cursor:claude-opus-5-thinking-high); then
+  fail "named cursor model passed the api pool floor at 2%: $out"
+fi
+jq '(.providers[0].windows[] | select(.id == "api_usage").percentRemaining) = 6' "$CURSOR_POOLS" > "$LAB/cursor-pools-api-6.json"
+out=$(call_choose --snapshot "$LAB/cursor-pools-api-6.json" --candidate cursor:claude-opus-5-thinking-high)
 [ "$out" = "cursor claude-opus-5-thinking-high" ] || fail "named cursor model ignored its api pool headroom: $out"
-ok "cursor named API models are judged by api_usage"
+jq '(.providers[0].windows[] | select(.id == "api_usage").percentRemaining) = 50
+  | (.providers[0].windows[] | select(.id == "included_usage").percentRemaining) = 0' "$CURSOR_POOLS" > "$LAB/cursor-pools-included-empty.json"
+out=$(call_choose --snapshot "$LAB/cursor-pools-included-empty.json" --candidate cursor:claude-opus-5-thinking-high)
+[ "$out" = "cursor claude-opus-5-thinking-high" ] || fail "included_usage bounded the api pool: $out"
+ok "cursor named API models are judged by api_usage alone with a 5% floor"
 
 # The window that bills grok-* models through cursor-agent is unconfirmed, so
 # they take the conservative api pool and never the unrelated grok_bot window.
@@ -819,7 +826,10 @@ for model in grok-4.7-high cursor-grok-4.5-high; do
     fail "cursor grok model $model borrowed headroom from another pool: $out"
   fi
 done
-jq '(.providers[0].windows[] | select(.id == "grok_bot").percentRemaining) = 0' "$CURSOR_POOLS" > "$LAB/cursor-pools-grokbot-empty.json"
+if out=$(call_choose --snapshot "$CURSOR_POOLS" --candidate cursor:grok-4.7-high); then
+  fail "cursor grok model passed the conservative api pool floor at 2%: $out"
+fi
+jq '(.providers[0].windows[] | select(.id == "grok_bot").percentRemaining) = 0' "$LAB/cursor-pools-api-6.json" > "$LAB/cursor-pools-grokbot-empty.json"
 out=$(call_choose --snapshot "$LAB/cursor-pools-grokbot-empty.json" --candidate cursor:grok-4.7-high)
 [ "$out" = "cursor grok-4.7-high" ] || fail "unrelated grok_bot window blocked a cursor grok model: $out"
 ok "cursor grok models use the conservative api pool and ignore grok_bot"
@@ -847,6 +857,38 @@ jq '(.providers[0].quotaSemantics.effectiveAvailability[] | select(.scope == "al
   | del(.providers[0].windows)' "$CURSOR_POOLS" > "$LAB/cursor-pools-scopes.json"
 out=$(call_choose --snapshot "$LAB/cursor-pools-scopes.json" --candidate cursor:composer-2.5)
 [ "$out" = "cursor composer-2.5" ] || fail "explicit pool:auto scope was ignored: $out"
+jq '.providers[0].quotaSemantics.effectiveAvailability += [
+  { "scope": "pool:api", "status": "known", "effectivePercentRemaining": 3, "runway": { "status": "through_reset" } },
+  { "scope": "pool:grok", "status": "known", "effectivePercentRemaining": 60, "runway": { "status": "through_reset" } }]' \
+  "$LAB/cursor-pools-scopes.json" > "$LAB/cursor-pools-all-scopes.json"
+out=$(call_choose --snapshot "$LAB/cursor-pools-all-scopes.json" --candidate cursor:grok-4.7-high)
+[ "$out" = "cursor grok-4.7-high" ] || fail "explicit pool:grok scope lost to pool:api: $out"
+if out=$(call_choose --snapshot "$LAB/cursor-pools-all-scopes.json" --candidate cursor:gpt-5.6-sol-high); then
+  fail "explicit pool:api row escaped the floor: $out"
+fi
 ok "an explicit pool:<name> scope from quota-axi takes precedence over derived windows"
+
+cat > "$LAB/cursor-pools.toon" <<'TOON'
+bin: quota-axi
+generatedAt: "2030-01-01T00:00:00Z"
+quota[3]{provider,scope,effectivePercentRemaining,spendPriority,runway,confidence,limitedBy,resetsAt}:
+  cursor,all_models,0,0,exhausted_now,high,api_usage,2030-01-02T00:00:00Z
+  cursor,pool:auto,90,0.9,through_reset,high,auto_usage,2030-01-02T00:00:00Z
+  cursor,pool:api,0,0,exhausted_now,high,api_usage,2030-01-02T00:00:00Z
+exhaustion[0]:
+attention[0]:
+TOON
+out=$(call_choose --snapshot "$LAB/cursor-pools.toon" --candidate cursor:composer-2.5)
+[ "$out" = "cursor composer-2.5" ] || fail "default TOON pool:auto row was ignored: $out"
+if out=$(call_choose --snapshot "$LAB/cursor-pools.toon" --candidate cursor:claude-opus-5-thinking-high); then
+  fail "default TOON pool:api row did not block a named model: $out"
+fi
+ok "a default TOON snapshot with real pool rows splits Cursor"
+
+jq '.providers[0].quotaSemantics = {status: "unknown", effectiveAvailability: [{scope: "all_models", status: "unknown"}]}' "$CURSOR_POOLS" > "$LAB/cursor-pools-unmeasured.json"
+if out=$(call_choose --snapshot "$LAB/cursor-pools-unmeasured.json" --candidate cursor:composer-2.5); then
+  fail "windows made an unmeasured cursor row dispatchable: $out"
+fi
+ok "windows never turn an unmeasured cursor row into known capacity"
 
 printf '# all fm-quota-choose tests passed\n'

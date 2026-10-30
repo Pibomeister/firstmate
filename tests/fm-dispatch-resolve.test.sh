@@ -804,14 +804,42 @@ CURSOR_POOLS_QUOTA="$TMP_ROOT/cursor-pools-quota.json"
 jq '.providers |= map(select(.provider != "cursor")) + [{"provider":"cursor","state":{"status":"fresh"},
   "windows":[{"id":"included_usage","percentRemaining":90},{"id":"auto_usage","percentRemaining":93},{"id":"api_usage","percentRemaining":2},{"id":"spend_limit","percentRemaining":100},{"id":"grok_bot","percentRemaining":42}],
   "quotaSemantics":{"status":"known","effectiveAvailability":[
-    {"scope":"all_models","status":"known","effectivePercentRemaining":2,"runway":{"status":"unknown"}},
-    {"scope":"grok_bot","status":"known","effectivePercentRemaining":42,"runway":{"status":"through_reset"}}]}}]' "$QUOTA" > "$CURSOR_POOLS_QUOTA"
-printf '%s\n' '{"rules":[{"when":"Cursor work.","use":[{"harness":"cursor","model":"composer-2.5"},{"harness":"cursor","model":"claude-opus-5-thinking-high"},{"harness":"cursor","model":"mystery-model-9"}]}]}' > "$RULES"
-reset_log
-QUOTA_AXI_FIXTURE="$CURSOR_POOLS_QUOTA" TYPESAFE_API_KEY=$KEY run code out err "$BRIEF"
-assert_contains "$out" 'candidate: cursor:composer-2.5  provider=cursor  scope=pool:auto  remaining=90%' "the resolver judges a cursor composer model by the auto pool (auto_usage and included_usage)"
-assert_contains "$out" 'candidate: cursor:claude-opus-5-thinking-high  provider=cursor  scope=pool:api  remaining=2%' "the resolver judges a named cursor model by api_usage"
-assert_contains "$out" 'candidate: cursor:mystery-model-9  provider=cursor  scope=all_models  remaining=2%' "the resolver bounds an unknown cursor model by the all_models minimum"
+    {"scope":"all_models","status":"known","effectivePercentRemaining":2,"runway":{"status":"unknown"},"selection":{"spendPriority":0.02}},
+    {"scope":"grok_bot","status":"known","effectivePercentRemaining":42,"runway":{"status":"through_reset"},"selection":{"spendPriority":0.3}}]}}]' "$QUOTA" > "$CURSOR_POOLS_QUOTA"
+cursor_case() {  # <rules-json> [quota-file]
+  printf '%s\n' "$1" > "$RULES"
+  reset_log
+  QUOTA_AXI_FIXTURE="${2:-$CURSOR_POOLS_QUOTA}" TYPESAFE_API_KEY=$KEY run code out err "$BRIEF"
+}
+CURSOR_THREE='{"rules":[{"when":"Cursor work.","use":[{"harness":"cursor","model":"composer-2.5"},{"harness":"cursor","model":"claude-opus-5-thinking-high"},{"harness":"cursor","model":"grok-4.7-high"},{"harness":"cursor","model":"mystery-model-9"}]}]}'
+cursor_case "$CURSOR_THREE"
+assert_contains "$out" 'candidate: cursor:composer-2.5  provider=cursor  scope=pool:auto  remaining=90%  spendPriority=0.9  runway=unknown  -> eligible' "a derived auto pool row ranks by its own remaining percent"
+assert_contains "$out" '  status: clear' "the composer candidate resolves clear on a windows-only snapshot"
+assert_contains "$out" "  profile: --harness 'cursor' --model 'composer-2.5'" "the composer candidate is chosen"
+assert_contains "$out" 'candidate: cursor:claude-opus-5-thinking-high  provider=cursor  scope=pool:api  remaining=2%  spendPriority=-  runway=unknown  -> not eligible: pool:api below the Cursor pool floor 5%' "a named cursor model fails the api pool floor at 2%"
+assert_contains "$out" 'candidate: cursor:grok-4.7-high  provider=cursor  scope=pool:api  remaining=2%  spendPriority=-  runway=unknown  -> not eligible: pool:api below the Cursor pool floor 5%' "a cursor grok model stays on the conservative api pool"
+assert_contains "$out" 'candidate: cursor:mystery-model-9  provider=cursor  scope=all_models  remaining=2%  spendPriority=0.02' "an unknown cursor model keeps the all_models minimum"
+
+CURSOR_REAL_POOLS="$TMP_ROOT/cursor-real-pools-quota.json"
+jq '(.providers[] | select(.provider == "cursor") | .quotaSemantics.effectiveAvailability) += [
+  {"scope":"pool:auto","status":"known","effectivePercentRemaining":88,"runway":{"status":"through_reset"},"selection":{"spendPriority":0.7}}]' \
+  "$CURSOR_POOLS_QUOTA" > "$CURSOR_REAL_POOLS"
+cursor_case "$CURSOR_THREE" "$CURSOR_REAL_POOLS"
+assert_contains "$out" 'candidate: cursor:composer-2.5  provider=cursor  scope=pool:auto  remaining=88%  spendPriority=0.7  runway=through_reset  -> eligible' "a real pool row and its selection win over the derived row"
+assert_contains "$out" "  profile: --harness 'cursor' --model 'composer-2.5'" "the real pool row is chosen"
+
+cursor_case '{"rules":[{"when":"Cursor work.","use":[{"harness":"cursor","model":"composer-2.5","floor":{"scope":"all_models","min_percent":20}}]}]}'
+assert_contains "$out" "  profile: --harness 'cursor' --model 'composer-2.5'" "a profile all_models floor reads the composer pool, not the collapsed row"
+cursor_case '{"rules":[{"when":"Cursor work.","use":[{"harness":"cursor","model":"composer-2.5","floor":{"scope":"pool:auto","min_percent":95}}]}]}'
+assert_contains "$out" 'scope=pool:auto  remaining=90%  spendPriority=-  runway=unknown  -> not eligible: profile floor pool:auto below 95%' "a profile pool floor reads the derived pool row"
+cursor_case '{"rules":[{"when":"Cursor work.","use":[{"harness":"cursor","model":"mystery-model-9","floor":{"scope":"all_models","min_percent":20}}]}]}'
+assert_contains "$out" 'not eligible: profile floor all_models below 20%' "an unknown model keeps the collapsed floor"
+cursor_case '{"rules":[{"when":"Cursor work.","floor":{"provider":"cursor","scope":"all_models","min_percent":20},"use":[{"harness":"cursor","model":"composer-2.5"}]}],"default":{"harness":"claude","model":"sonnet"}}'
+assert_contains "$out" "  profile: --harness 'cursor' --model 'composer-2.5'" "a rule all_models floor reads the pool of the rule's cursor profile"
+cursor_case '{"rules":[{"when":"Cursor work.","floor":{"provider":"cursor","scope":"all_models","min_percent":20},"use":[{"harness":"cursor","model":"claude-opus-5-thinking-high"}]}],"default":{"harness":"cursor","model":"composer-2.5"}}'
+assert_contains "$out" 'rule rule_1 floor all_models below 20%: fall through to default' "a rule all_models floor fails on the api pool of its named model"
+cursor_case '{"rules":[{"when":"Cursor work.","floor":{"provider":"cursor","scope":"pool:api","min_percent":20},"use":[{"harness":"cursor","model":"composer-2.5"}]}],"default":{"harness":"cursor","model":"composer-2.5"}}'
+assert_contains "$out" 'rule rule_1 floor pool:api below 20%: fall through to default' "a rule pool floor reads the named pool"
 cp "$BASE_RULES" "$RULES"
 
 cp "$ROOT/docs/examples/crew-dispatch.json" "$RULES"

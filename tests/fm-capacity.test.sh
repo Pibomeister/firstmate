@@ -470,6 +470,16 @@ SH
   doc=$(capacity_doc "$home" "$fakebin")
   assert_equals 'present|{"provider":"claude","runway":"projected_exhaustion"}' \
     "$(printf '%s\n' "$doc" | jq -c -r '"\(.captain)|\(.quota | tojson)"')" "recent input must read present, quota its all-models runway"
+  cp "$fakebin/quota-axi" "$fakebin/quota-axi.claude"
+  cat > "$fakebin/quota-axi" <<'SH'
+#!/usr/bin/env bash
+echo '{"providers":[{"provider":"cursor","windows":[{"id":"auto_usage","percentRemaining":93},{"id":"api_usage","percentRemaining":0}],"quotaSemantics":{"status":"known","effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":0,"runway":{"status":"exhausted_now"}}]}}]}'
+SH
+  printf '3\ncaptain-idle 300\nquota-provider cursor\n' > "$home/config/lane-capacity"
+  doc=$(capacity_doc "$home" "$fakebin")
+  assert_equals unknown "$(printf '%s\n' "$doc" | jq -r .quota.runway)" "cursor runway must read its auto pool, not the collapsed api bound"
+  mv "$fakebin/quota-axi.claude" "$fakebin/quota-axi"
+  printf '3\ncaptain-idle 300\nquota-provider claude\n' > "$home/config/lane-capacity"
   printf '%s\n' 900000000000 > "$fakebin/idle-ns"
   doc=$(capacity_doc "$home" "$fakebin")
   assert_equals idle "$(printf '%s\n' "$doc" | jq -r .captain)" "old input must read idle"
