@@ -798,6 +798,22 @@ QUOTA_AXI_FIXTURE="$DROID_QUOTA" TYPESAFE_API_KEY=$KEY run code out err "$BRIEF"
 assert_contains "$out" 'candidate: droid:gpt-5.6-luna  provider=test-provider  scope=all_models  remaining=57%  spendPriority=0.15  runway=through_reset  -> eligible' "Droid resolves through its explicitly declared test provider"
 assert_contains "$out" "  profile: --harness 'droid' --model 'gpt-5.6-luna' --effort 'low'" "Droid model and effort survive typed dispatch"
 
+CURSOR_POOLS_QUOTA="$TMP_ROOT/cursor-pools-quota.json"
+# One cursor row, shaped like live quota-axi: the joint all_models minimum is
+# bounded by api_usage (2%) while auto_usage (93%) has plenty of headroom.
+jq '.providers |= map(select(.provider != "cursor")) + [{"provider":"cursor","state":{"status":"fresh"},
+  "windows":[{"id":"included_usage","percentRemaining":90},{"id":"auto_usage","percentRemaining":93},{"id":"api_usage","percentRemaining":2},{"id":"spend_limit","percentRemaining":100},{"id":"grok_bot","percentRemaining":42}],
+  "quotaSemantics":{"status":"known","effectiveAvailability":[
+    {"scope":"all_models","status":"known","effectivePercentRemaining":2,"runway":{"status":"unknown"}},
+    {"scope":"grok_bot","status":"known","effectivePercentRemaining":42,"runway":{"status":"through_reset"}}]}}]' "$QUOTA" > "$CURSOR_POOLS_QUOTA"
+printf '%s\n' '{"rules":[{"when":"Cursor work.","use":[{"harness":"cursor","model":"composer-2.5"},{"harness":"cursor","model":"claude-opus-5-thinking-high"},{"harness":"cursor","model":"mystery-model-9"}]}]}' > "$RULES"
+reset_log
+QUOTA_AXI_FIXTURE="$CURSOR_POOLS_QUOTA" TYPESAFE_API_KEY=$KEY run code out err "$BRIEF"
+assert_contains "$out" 'candidate: cursor:composer-2.5  provider=cursor  scope=pool:auto  remaining=90%' "the resolver judges a cursor composer model by the auto pool (auto_usage and included_usage)"
+assert_contains "$out" 'candidate: cursor:claude-opus-5-thinking-high  provider=cursor  scope=pool:api  remaining=2%' "the resolver judges a named cursor model by api_usage"
+assert_contains "$out" 'candidate: cursor:mystery-model-9  provider=cursor  scope=all_models  remaining=2%' "the resolver bounds an unknown cursor model by the all_models minimum"
+cp "$BASE_RULES" "$RULES"
+
 cp "$ROOT/docs/examples/crew-dispatch.json" "$RULES"
 cat > "$RESPONSE" <<'JSON'
 {"model":"jev-1.13.0","answers":{"rule":{"type":"choice","choice":"default","confidence":0.9,"probabilities":{"rule_1":0.02,"rule_2":0.02,"rule_3":0.02,"default":0.94}}},"usage":{"input_tokens":812,"output_tokens":60}}

@@ -766,4 +766,87 @@ out=$(bash -c 'set -e; . "$1/fm-quota-axi-lib.sh"; fm_quota_single_provider_for_
 [ "$out" = claude ] || fail "provider-table lookup under set -e printed: $out"
 ok "provider-table lookup prints the provider when called directly under set -e"
 
+# Cursor pools: one cursor row carries included/auto/api windows whose joint
+# all_models minimum (api_usage) must not bound auto/composer models. Shaped
+# like the live quota-axi --json cursor row: grok_bot is a separate product and
+# spend_limit is unmeasurable.
+CURSOR_POOLS="$LAB/cursor-pools.json"
+cat > "$CURSOR_POOLS" <<'JSON'
+{
+  "generatedAt": "2030-01-01T00:00:00Z",
+  "schemaVersion": 5,
+  "providers": [
+    { "provider": "cursor",
+      "windows": [
+        { "id": "included_usage", "percentRemaining": 90 },
+        { "id": "auto_usage", "percentRemaining": 93 },
+        { "id": "api_usage", "percentRemaining": 2 },
+        { "id": "spend_limit", "percentRemaining": 100 },
+        { "id": "grok_bot", "percentRemaining": 42 }
+      ],
+      "quotaSemantics": { "status": "known", "effectiveAvailability": [
+        { "scope": "all_models", "status": "known", "effectivePercentRemaining": 2, "runway": { "status": "unknown" } },
+        { "scope": "grok_bot", "status": "known", "effectivePercentRemaining": 42, "runway": { "status": "through_reset" } } ] } }
+  ]
+}
+JSON
+for model in default auto composer-2.5; do
+  out=$(call_choose --snapshot "$CURSOR_POOLS" --candidate "cursor:$model")
+  [ "$out" = "cursor $model" ] || fail "cursor auto pool did not pass at 93% for $model: $out"
+done
+ok "cursor auto and composer models are judged by auto_usage, not api_usage"
+
+# This helper's floor is "greater than zero", so the api pool is exercised at
+# 0% (blocked) and at the live 2% (still judged by api_usage, not auto_usage).
+jq '(.providers[0].windows[] | select(.id == "api_usage").percentRemaining) = 0
+  | (.providers[0].quotaSemantics.effectiveAvailability[] | select(.scope == "all_models")) |=
+    (.effectivePercentRemaining = 0 | .runway.status = "exhausted_now")' "$CURSOR_POOLS" > "$LAB/cursor-pools-api-empty.json"
+for model in claude-opus-5-thinking-high gpt-5.6-sol-high gemini-3.7-flash-high; do
+  if out=$(call_choose --snapshot "$LAB/cursor-pools-api-empty.json" --candidate "cursor:$model"); then
+    fail "named cursor model $model dispatched with api_usage exhausted: $out"
+  fi
+  out=$(call_choose --snapshot "$LAB/cursor-pools-api-empty.json" --candidate "cursor:$model" --candidate cursor:composer-2.5)
+  [ "$out" = "cursor composer-2.5" ] || fail "composer did not stay eligible with api_usage exhausted: $out"
+done
+out=$(call_choose --snapshot "$CURSOR_POOLS" --candidate cursor:claude-opus-5-thinking-high)
+[ "$out" = "cursor claude-opus-5-thinking-high" ] || fail "named cursor model ignored its api pool headroom: $out"
+ok "cursor named API models are judged by api_usage"
+
+# The window that bills grok-* models through cursor-agent is unconfirmed, so
+# they take the conservative api pool and never the unrelated grok_bot window.
+for model in grok-4.7-high cursor-grok-4.5-high; do
+  if out=$(call_choose --snapshot "$LAB/cursor-pools-api-empty.json" --candidate "cursor:$model"); then
+    fail "cursor grok model $model borrowed headroom from another pool: $out"
+  fi
+done
+jq '(.providers[0].windows[] | select(.id == "grok_bot").percentRemaining) = 0' "$CURSOR_POOLS" > "$LAB/cursor-pools-grokbot-empty.json"
+out=$(call_choose --snapshot "$LAB/cursor-pools-grokbot-empty.json" --candidate cursor:grok-4.7-high)
+[ "$out" = "cursor grok-4.7-high" ] || fail "unrelated grok_bot window blocked a cursor grok model: $out"
+ok "cursor grok models use the conservative api pool and ignore grok_bot"
+
+if out=$(call_choose --snapshot "$LAB/cursor-pools-api-empty.json" --candidate cursor:mystery-model-9); then
+  fail "unknown cursor model escaped the all_models minimum: $out"
+fi
+jq 'del(.providers[0].windows[] | select(.id == "included_usage"))' "$LAB/cursor-pools-api-empty.json" > "$LAB/cursor-pools-no-included.json"
+out=$(call_choose --snapshot "$LAB/cursor-pools-no-included.json" --candidate cursor:composer-2.5)
+[ "$out" = "cursor composer-2.5" ] || fail "auto pool depended on included_usage being present: $out"
+jq 'del(.providers[0].windows)' "$LAB/cursor-pools-api-empty.json" > "$LAB/cursor-pools-nowindows.json"
+if out=$(call_choose --snapshot "$LAB/cursor-pools-nowindows.json" --candidate cursor:composer-2.5); then
+  fail "cursor without per-window rows stopped using the all_models minimum: $out"
+fi
+jq '(.providers[0].windows[] | select(.id == "auto_usage").percentRemaining) = 0' "$CURSOR_POOLS" > "$LAB/cursor-pools-auto-empty.json"
+if out=$(call_choose --snapshot "$LAB/cursor-pools-auto-empty.json" --candidate cursor:composer-2.5); then
+  fail "exhausted auto pool still dispatched: $out"
+fi
+ok "unknown cursor models and missing window rows fall back to the all_models minimum"
+
+jq '(.providers[0].quotaSemantics.effectiveAvailability[] | select(.scope == "all_models")) |=
+    (.effectivePercentRemaining = 0 | .runway.status = "exhausted_now")
+  | .providers[0].quotaSemantics.effectiveAvailability += [
+  { "scope": "pool:auto", "status": "known", "effectivePercentRemaining": 70, "runway": { "status": "through_reset" } }]
+  | del(.providers[0].windows)' "$CURSOR_POOLS" > "$LAB/cursor-pools-scopes.json"
+out=$(call_choose --snapshot "$LAB/cursor-pools-scopes.json" --candidate cursor:composer-2.5)
+[ "$out" = "cursor composer-2.5" ] || fail "explicit pool:auto scope was ignored: $out"
+ok "an explicit pool:<name> scope from quota-axi takes precedence over derived windows"
+
 printf '# all fm-quota-choose tests passed\n'
