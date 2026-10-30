@@ -110,17 +110,28 @@ dl "$T0" received fail1 --summary 'blocked after an on-time dispatch' >/dev/null
 dl $((T0 + 300)) dispatched fail1 --task t3 >/dev/null || fail "fail1 dispatch refused"
 dl $((T0 + 180 * 60)) blocked fail1 --reason 'task failed' >/dev/null || fail "fail1 block refused"
 dl "$T0" received note1 --summary 'free text that looks like a mark' >/dev/null || fail "note1 refused"
-dl $((T0 + 300)) dispatched note1 --task t4 >/dev/null || fail "note1 dispatch refused"
-dl $((T0 + 600)) dispatched note1 --task t4-retry --note 'was late=9m' >/dev/null || fail "note1 retry refused"
+out=$(dl $((T0 + 300)) dispatched note1 --task t4 --note 'earlier attempt was late=9m') || fail "note1 dispatch refused"
+case "$out" in *LATE*) fail "free text forged a late print: $out" ;; esac
+[ "$(dl 0 show note1 | tail -n 1 | cut -f5)" = 'task=t4 note=earlier attempt was' ] \
+  || fail "a forged note mark stayed in the ledger: $(dl 0 show note1)"
+dl "$T0" received note2 --summary 'folded free text that looks like a mark' >/dev/null || fail "note2 refused"
+dl $((T0 + 300)) blocked note2 --reason $'no quota\tlate=9m late=8m' >/dev/null || fail "note2 block refused"
+dl "$T0" received note3 --summary 'queued free text that looks like a mark' >/dev/null || fail "note3 refused"
+dl $((T0 + 300)) queued note3 --reason 'behind a ship late=9m' >/dev/null || fail "note3 queue refused"
+dl $((T0 + 600)) dispatched note3 --task t6 >/dev/null || fail "note3 dispatch refused"
+dl "$T0" received note4 --summary 'real mark after forged text' >/dev/null || fail "note4 refused"
+dl $((T0 + 20 * 60)) dispatched note4 --task t7 --note 'was late=9m' >/dev/null || fail "note4 dispatch refused"
+[ "$(dl 0 show note4 | tail -n 1 | cut -f5)" = 'task=t7 note=was late=20m' ] \
+  || fail "a real late mark did not replace forged text: $(dl 0 show note4)"
 dl "$T0" received twice --summary 'late, then retried' >/dev/null || fail "twice refused"
 dl $((T0 + 20 * 60)) dispatched twice --task t5 >/dev/null || fail "twice dispatch refused"
 out=$(dl $((T0 + 30 * 60)) dispatched twice --task t5-retry) || fail "twice retry refused"
 case "$out" in *LATE*) fail "a retry repeated the late mark: $out" ;; esac
 out=$(dl $((T0 + 181 * 60)) overdue); rc=$?
 [ "$rc" = 0 ] || fail "resolved goals made overdue exit $rc"
-case "$out" in *'LATE retry1'*|*'LATE block1'*|*'LATE fail1'*|*'LATE note1'*) fail "a goal that met the SLA was reported late: $out" ;; esac
+case "$out" in *'LATE retry1'*|*'LATE block1'*|*'LATE fail1'*|*'LATE note1'*|*'LATE note2'*|*'LATE note3'*) fail "a goal that met the SLA was reported late: $out" ;; esac
 case "$out" in *'LATE twice late=20m event=dispatched'*) ;; *) fail "a retry hid the first late mark: $out" ;; esac
-pass "lateness is measured only on the first line after received, so a goal that met the SLA is never late"
+pass "a goal that met the SLA is never late, and free text cannot forge a late mark"
 
 out=$(dl $((T0 + 24 * 3600)) overdue)
 case "$out" in *'LATE late1 late=66m'*) ;; *) fail "a late goal received 24 hours ago was dropped: $out" ;; esac
@@ -145,9 +156,36 @@ dl $((T0 + 600)) overdue >/dev/null; rc=$?
 out=$(dl $((T0 + 16 * 60)) overdue); rc=$?
 [ "$rc" = 3 ] || fail "a queued goal past the SLA did not exit 3 (rc=$rc)"
 case "$out" in *'OVERDUE q1 age=16m'*) ;; *) fail "queued goal missing from overdue: $out" ;; esac
-dl $((T0 + 17 * 60)) dispatched q1 --task secondmate:infra >/dev/null || fail "secondmate hand-off refused"
+out=$(dl $((T0 + 17 * 60)) dispatched q1 --task secondmate:infra) || fail "secondmate hand-off refused"
+case "$out" in *'LATE q1 late=17m'*) ;; *) fail "a late dispatch after a queue did not print LATE: $out" ;; esac
 out=$(dl $((T0 + 18 * 60)) overdue); rc=$?
 case "$out" in *'OVERDUE q1'*) fail "a dispatched queued goal stayed overdue: $out" ;; esac
 dl "$T0" queued nope --reason x >/dev/null 2>&1 && fail "queued for an unknown goal was accepted"
 dl "$T0" queued q1 >/dev/null 2>&1 && fail "queued without --reason was accepted"
 pass "queued is a non-final state that still goes overdue, and a secondmate hand-off dispatches it"
+
+dl "$T0" received q2 --summary 'queued on time, dispatched late' >/dev/null || fail "q2 refused"
+dl $((T0 + 60)) queued q2 --reason 'capacity full' >/dev/null || fail "q2 queue refused"
+out=$(dl $((T0 + 61 * 60)) dispatched q2 --task t-q2) || fail "q2 dispatch refused"
+case "$out" in *'LATE q2 late=61m'*) ;; *) fail "an on-time queue hid a late dispatch: $out" ;; esac
+[ "$(dl 0 show q2 | tail -n 1 | cut -f5)" = 'task=t-q2 late=61m' ] \
+  || fail "show did not carry the late mark after a queue: $(dl 0 show q2)"
+dl $((T0 + 90 * 60)) dispatched q2 --task t-q2-retry >/dev/null || fail "q2 retry refused"
+[ "$(dl 0 show q2 | tail -n 1 | cut -f5)" = 'task=t-q2-retry' ] \
+  || fail "a retry after the first final line was marked late: $(dl 0 show q2)"
+dl "$T0" received q3 --summary 'queued late, dispatched later' >/dev/null || fail "q3 refused"
+dl $((T0 + 20 * 60)) queued q3 --reason 'capacity full' >/dev/null || fail "q3 queue refused"
+dl $((T0 + 70 * 60)) dispatched q3 --task t-q3 >/dev/null || fail "q3 dispatch refused"
+dl "$T0" received q4 --summary 'queued on time, blocked late' >/dev/null || fail "q4 refused"
+dl $((T0 + 60)) queued q4 --reason 'capacity full' >/dev/null || fail "q4 queue refused"
+dl $((T0 + 30 * 60)) blocked q4 --reason 'no quota' >/dev/null || fail "q4 block refused"
+dl "$T0" received q5 --summary 'queued and dispatched on time' >/dev/null || fail "q5 refused"
+dl $((T0 + 60)) queued q5 --reason 'capacity full' >/dev/null || fail "q5 queue refused"
+dl $((T0 + 120)) dispatched q5 --task t-q5 >/dev/null || fail "q5 dispatch refused"
+out=$(dl $((T0 + 91 * 60)) overdue); rc=$?
+[ "$rc" = 0 ] || fail "late-resolved queued goals made overdue exit $rc"
+case "$out" in *'LATE q2 late=61m event=dispatched'*) ;; *) fail "overdue missed a late dispatch after a queue: $out" ;; esac
+case "$out" in *'LATE q3 late=70m event=dispatched'*) ;; *) fail "overdue understated a late queue followed by a dispatch: $out" ;; esac
+case "$out" in *'LATE q4 late=30m event=blocked'*) ;; *) fail "overdue missed a late block after a queue: $out" ;; esac
+case "$out" in *'LATE q5'*) fail "a goal queued and dispatched on time was reported late: $out" ;; esac
+pass "queued is not final, so lateness is measured through it until the first dispatched or blocked line"
