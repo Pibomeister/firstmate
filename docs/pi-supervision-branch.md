@@ -700,7 +700,7 @@ Other tests remain where they were:
 - A session replaced mid-delivery neither loses nor duplicates an outcome.
 - A failing store script surfaces without losing or doubling one.
 
-The watch-triage suite (`tests/fm-watch-triage-common.sh`, run by `tests/fm-watch-triage.test.sh` and its `-b` through `-g` parts) covers `bin/fm-watch.sh`'s side of the contract end to end:
+The watch-triage suite (`tests/fm-watch-triage-common.sh`, run by `tests/fm-watch-triage.test.sh` and its `-pause`, `-wedge-defer`, and `-fork` parts) covers `bin/fm-watch.sh`'s side of the contract end to end:
 
 - Needs-decision, no-verb captain-held, and pending-reply second-mate escalation signal rows are marked `needs-decision:`.
 - A needs-decision whose key transition was rejected by the reserved-key vocabulary (`fm-classify-lib.sh`'s `reconciliation-required:` wrapper) is still marked.

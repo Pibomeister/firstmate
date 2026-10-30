@@ -178,17 +178,17 @@ test_list_files_reports_the_shell_inventory() {
 }
 
 test_canonical_partitions_preserve_full_lint() {
-  local tmp fakebin all part selected log flags mode rc option invocation_count root_count
+  local tmp fakebin all part parts selected log flags mode rc option invocation_count root_count
   tmp=$(fm_test_tmproot fm-lint-partitions)
   fakebin="$tmp/bin"
   mkdir -p "$fakebin"
   all=$(CI=true "$LINT" --list-files | LC_ALL=C sort)
-  : > "$tmp/union"
-  for part in 1of2 2of2; do
+  for part in 1of2 2of2 1of3 2of3 3of3; do
+    parts=${part#*of}
     selected=$(CI=false GITHUB_ACTIONS=false "$LINT" --partition "$part" --list-files) \
       || fail "partition $part must select full canonical roots even on a local branch"
     [ -n "$selected" ] || fail "empty lint partition $part"
-    printf '%s\n' "$selected" >> "$tmp/union"
+    printf '%s\n' "$selected" >> "$tmp/union-$parts"
     [ "$selected" = "$("$LINT" --partition "$part" --list-files)" ] \
       || fail "partition $part is nondeterministic"
     log="$tmp/$part.roots"
@@ -212,8 +212,16 @@ test_canonical_partitions_preserve_full_lint() {
     [ "$(grep -c '^fm-lint: end ' "$tmp/$part.out" || true)" -eq "$root_count" ] \
       || fail "partition $part did not stream an end record per root"
   done
-  [ "$(LC_ALL=C sort "$tmp/union")" = "$all" ] || fail "lint partitions lose or duplicate canonical roots"
-  for option in 0of2 3of2 1of3; do
+  for parts in 2 3; do
+    [ "$(LC_ALL=C sort "$tmp/union-$parts")" = "$all" ] \
+      || fail "$parts lint partitions lose or duplicate canonical roots"
+  done
+  [ "$("$LINT" --partition 1of1 --list-files | LC_ALL=C sort)" = "$all" ] \
+    || fail "single partition did not select every canonical root"
+  [ -z "$("$LINT" --partition 9999of10000 --list-files)" ] || fail "partition beyond the root count selected roots"
+  "$LINT" --partition 9999of10000 > "$tmp/empty.out" 2>&1 \
+    || fail "partition with no roots failed: $(cat "$tmp/empty.out")"
+  for option in 0of2 3of2 0of3 4of3 1of0 01of2 1of02 1of2of3 3 of2 1of 1ofx x1of2 -1of2 1of99999999999999999999; do
     rc=0
     "$LINT" --partition "$option" --list-files > "$tmp/refused" 2>&1 || rc=$?
     [ "$rc" = 2 ] || fail "invalid partition $option was not refused"
@@ -224,7 +232,7 @@ test_canonical_partitions_preserve_full_lint() {
   rc=0
   "$LINT" --partition 1of2 bin/fm-lint.sh > "$tmp/refused" 2>&1 || rc=$?
   [ "$rc" = 2 ] || fail "partition accepted an explicit subset"
-  pass "two canonical lint partitions preserve complete source-aware coverage and reject weakened modes"
+  pass "canonical lint partitions preserve complete source-aware coverage and reject weakened modes"
 }
 
 # fm_lint_stub_git <fakebin-dir>: install a git stub for the changed-file mode
