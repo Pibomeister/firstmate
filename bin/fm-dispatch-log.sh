@@ -35,9 +35,9 @@
 #
 # `overdue` prints every goal that has never had a final line and is older than
 # the SLA, as `OVERDUE <goal-id> age=<m>m received=<iso>
-# [project=<name> ]summary=<text>`, then every goal resolved late and received
-# in the last 24 hours, as `LATE <goal-id> late=<m>m event=<event>`; older late
-# marks stay in `show`. It exits 3 when any OVERDUE line exists and 0 otherwise;
+# [project=<name> ]summary=<text>`, then every goal whose late final line was
+# written in the last 24 hours, as `LATE <goal-id> late=<m>m event=<event>`; older
+# late marks stay in `show`. It exits 3 when any OVERDUE line exists and 0 otherwise;
 # exit 3 is a result to act on, not an error.
 #
 # Refuses, and writes nothing, when: the goal id is not [A-Za-z0-9._-]+; a
@@ -171,7 +171,7 @@ case "$cmd" in
     rc=0
     out=$(awk -F '\t' -v now="$now" -v sla="$sla" '
       ($3 == "dispatched" || $3 == "blocked") && !($4 in final) {
-        final[$4] = 1
+        final[$4] = $2
         if (match($5, / late=[0-9]+m$/)) { late[$4] = substr($5, RSTART + 6, RLENGTH - 6); lev[$4] = $3 }
       }
       $3 == "received" { at[$4] = $2; iso[$4] = $1; det[$4] = $5; order[++n] = $4 }
@@ -185,7 +185,7 @@ case "$cmd" in
         }
         for (i = 1; i <= n; i++) {
           g = order[i]
-          if ((g in late) && now - at[g] <= 86400) printf "LATE %s late=%s event=%s\n", g, late[g], lev[g]
+          if ((g in late) && now - final[g] <= 86400) printf "LATE %s late=%s event=%s\n", g, late[g], lev[g]
         }
         exit over ? 3 : 0
       }' "$LOG") || rc=$?
