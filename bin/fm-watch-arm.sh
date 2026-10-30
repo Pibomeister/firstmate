@@ -16,6 +16,8 @@
 # "already running" off the dying process. That exact mistake silently took
 # supervision down for ~30 minutes.
 # FM_WATCH_GROK_CONTINUITY=1 opts this arm into the Grok continuity in docs/watcher-continuity.md.
+# FM_WATCH_MANAGED_HOLD=1 is the watchdog's foreground-owner variant: its
+# watcher remains this arm's child after a wake, with no detached successor.
 # On a harness with a PreToolUse-equivalent hook, bin/fm-arm-pretool-check.sh
 # applies the command-position policy before the command runs; see
 # docs/arm-pretool-check.md for the blessed tree and deny reason codes. It is a
@@ -890,7 +892,9 @@ child_out=$(mktemp "$STATE/.watch-arm-output.XXXXXX") || {
 # date(1) exposes whole seconds. Keep the configured confirmation budget from
 # collapsing when startup begins just before the next second boundary.
 deadline=$(( $(date +%s) + CONFIRM_TIMEOUT + 1 ))
-if [ -n "${FM_WATCH_PREDECESSOR_ARM_PID:-}" ]; then
+if [ "${FM_WATCH_MANAGED_HOLD:-}" = 1 ]; then
+  FM_WATCH_MANAGED_HOLD=1 "$WATCH" --managed-hold >"$child_out" &
+elif [ -n "${FM_WATCH_PREDECESSOR_ARM_PID:-}" ]; then
   FM_WATCH_HANDLING_SUCCESSOR=1 "$WATCH" >"$child_out" &
 else
   "$WATCH" >"$child_out" &
