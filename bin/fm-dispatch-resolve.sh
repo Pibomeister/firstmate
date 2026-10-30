@@ -525,7 +525,7 @@ RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg non
       ([profiles($rule.use)[] | select(provider_of(.) == $p) | (.model // "")]) as $models |
       (if ($models | length) == 0 then [null] else $models end) as $targets |
       [$targets[] as $m | floor_state($rule.floor; $p; ""; $m)] as $states |
-      first(("ok", "below", "unknown") as $state | select($states | index($state)) | $state)
+      first(("ok", "unknown", "below") as $state | select($states | index($state)) | $state)
     end;
   def evidence($rows):
     $rows | map({scope, status, pct: (.effectivePercentRemaining // null), runway: (.runway.status // null), spendPriority: (.selection.spendPriority // null)});
@@ -612,6 +612,14 @@ RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg non
    elif $rule_floor_state == "below"
      then {source: "default", use: profiles($cfg.default // null), note: "rule \($choice) floor \($rule.floor.scope) below \($rule.floor.min_percent)%: fall through to default"}
    else {source: $choice, use: profiles($rule.use), note: "rule matched"} end) as $sel |
+  def evaluate_in_rule($c):
+    evaluate($c) as $e |
+    if $rule_floor_state == "ok" and $e.eligible and $e.provider == $rule.floor.provider and
+       floor_state($rule.floor; $e.provider; ""; ($c.model // "")) == "below" then
+      (floor_rows($rule.floor; $e.provider; ""; ($c.model // "")) | map(select(.effectivePercentRemaining < $rule.floor.min_percent)) | first) as $floor_row |
+      ($e | del(.spendPriority, .unranked, .unknown)) +
+      {scope: $floor_row.scope, pct: $floor_row.effectivePercentRemaining, runway: ($floor_row.runway.status // null), eligible: false, reason: "rule floor \($rule.floor.scope) below \($rule.floor.min_percent)%"}
+    else $e end;
   def when_of($c): (if rule_at($c) == null then $none_criterion else rule_at($c).when end | .[0:60]);
   {
     model: $r.model, latency_ms: $lat, tokens: ($r.usage // null),
@@ -623,14 +631,14 @@ RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg non
   as $ev |
   if $sel.invalid then $ev + {status: "error", reason: $sel.invalid}
   elif $fb.below and $fb.global then
-    $ev + {status: "ambiguous", reason: "confidence \($a.confidence) below floor \($floor)", candidates: ($answer_use | map(evaluate(.)))}
+    $ev + {status: "ambiguous", reason: "confidence \($a.confidence) below floor \($floor)", candidates: ($answer_use | map(evaluate_in_rule(.)))}
   elif $fb.below and ($fb.to | not) then
-    $ev + {status: "ambiguous", reason: "\($picked) probability \($a.probabilities[$picked]) below its floor \($picked_floor); \($fb.why)", candidates: ($answer_use | map(evaluate(.)))}
+    $ev + {status: "ambiguous", reason: "\($picked) probability \($a.probabilities[$picked]) below its floor \($picked_floor); \($fb.why)", candidates: ($answer_use | map(evaluate_in_rule(.)))}
   elif $sel.escalate then
-    $ev + {status: "escalate", reason: $sel.escalate, candidates: ($answer_use | map(evaluate(.)))}
+    $ev + {status: "escalate", reason: $sel.escalate, candidates: ($answer_use | map(evaluate_in_rule(.)))}
   elif ($sel.use | length) == 0 then $ev + {status: "escalate", reason: "no profiles configured for \($sel.source)", note: $sel.note, candidates: []}
   else
-    ($sel.use | map(evaluate(.))) as $cands |
+    ($sel.use | map(evaluate_in_rule(.))) as $cands |
     ([$cands[] | select(.provider == $cfg.preferred_provider)]) as $family |
     ([$family[] | select(.eligible)]) as $preferred |
     (if ($preferred | length) > 0 then $preferred else $cands end) as $pool |

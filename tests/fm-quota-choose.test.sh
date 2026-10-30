@@ -848,6 +848,18 @@ jq '(.providers[0].windows[] | select(.id == "auto_usage").percentRemaining) = 0
 if out=$(call_choose --snapshot "$LAB/cursor-pools-auto-empty.json" --candidate cursor:composer-2.5); then
   fail "exhausted auto pool still dispatched: $out"
 fi
+if out=$(call_choose --snapshot "$CURSOR_POOLS" --candidate cursor:mystery-model-9); then
+  fail "unknown cursor model passed the pool floor at 2%: $out"
+fi
+jq '.providers[0].quotaSemantics.effectiveAvailability[0].effectivePercentRemaining = 6' "$CURSOR_POOLS" > "$LAB/cursor-pools-all-models-6.json"
+out=$(call_choose --snapshot "$LAB/cursor-pools-all-models-6.json" --candidate cursor:mystery-model-9)
+[ "$out" = "cursor mystery-model-9" ] || fail "unknown cursor model ignored its all_models headroom: $out"
+jq 'del(.providers[0].windows)' "$CURSOR_POOLS" > "$LAB/cursor-pools-collapsed-2.json"
+if out=$(call_choose --snapshot "$LAB/cursor-pools-collapsed-2.json" --candidate cursor:claude-opus-5-thinking-high); then
+  fail "named cursor model passed the pool floor on a collapsed all_models row: $out"
+fi
+out=$(call_choose --snapshot "$LAB/cursor-pools-collapsed-2.json" --candidate cursor:composer-2.5)
+[ "$out" = "cursor composer-2.5" ] || fail "composer took the pool floor on a collapsed all_models row: $out"
 ok "unknown cursor models and missing window rows fall back to the all_models minimum"
 
 jq '(.providers[0].quotaSemantics.effectiveAvailability[] | select(.scope == "all_models")) |=
@@ -888,6 +900,15 @@ ok "a default TOON snapshot with real pool rows splits Cursor"
 jq '.providers[0].quotaSemantics = {status: "unknown", effectiveAvailability: [{scope: "all_models", status: "unknown"}]}' "$CURSOR_POOLS" > "$LAB/cursor-pools-unmeasured.json"
 if out=$(call_choose --snapshot "$LAB/cursor-pools-unmeasured.json" --candidate cursor:composer-2.5); then
   fail "windows made an unmeasured cursor row dispatchable: $out"
+fi
+jq '.providers[0].state = {stale: true}
+  | .providers[0].quotaSemantics = {status: "partial", effectiveAvailability: [{scope: "all_models", status: "unknown"}]}' "$CURSOR_POOLS" > "$LAB/cursor-pools-stale-partial.json"
+if out=$(call_choose --snapshot "$LAB/cursor-pools-stale-partial.json" --candidate cursor:composer-2.5); then
+  fail "stale windows made a partial cursor row dispatchable: $out"
+fi
+jq '.providers[0].quotaSemantics.effectiveAvailability += [{scope: "pool:auto", status: "unknown"}]' "$CURSOR_POOLS" > "$LAB/cursor-pools-auto-unknown.json"
+if out=$(call_choose --snapshot "$LAB/cursor-pools-auto-unknown.json" --candidate cursor:composer-2.5); then
+  fail "windows replaced an unknown pool:auto row: $out"
 fi
 ok "windows never turn an unmeasured cursor row into known capacity"
 
