@@ -1,0 +1,78 @@
+## lab home: $LAB (disposable); ledger resolves to $LAB/state/dispatch-log.tsv
+$ fm-dispatch-log.sh --help
+fm-dispatch-log.sh - timestamped captain-goal intake ledger with a dispatch SLA.
+
+Usage:
+  fm-dispatch-log.sh received   <goal-id> --summary <text> [--project <name>]
+$ fm-dispatch-log.sh received cap-001 --summary ship polished V2 video --project shipcontent-v2
+2026-10-30T01:45:26Z received cap-001: project=shipcontent-v2 summary=ship polished V2 video
+[exit 0]
+$ fm-dispatch-log.sh received cap-002 --summary audit grok quota
+2026-10-30T01:45:26Z received cap-002: summary=audit grok quota
+[exit 0]
+$ fm-dispatch-log.sh received cap-003 --summary queued behind other work
+2026-10-30T01:45:26Z received cap-003: summary=queued behind other work
+[exit 0]
+## within default 15m window (real clock):
+$ fm-dispatch-log.sh overdue
+[exit 0]
+## FM_DISPATCH_SLA_MINUTES=0 (2s later, real clock):
+$ FM_DISPATCH_SLA_MINUTES=0 fm-dispatch-log.sh overdue
+OVERDUE cap-001 age=0m received=2026-10-30T01:45:26Z project=shipcontent-v2 summary=ship polished V2 video
+OVERDUE cap-002 age=0m received=2026-10-30T01:45:26Z summary=audit grok quota
+OVERDUE cap-003 age=0m received=2026-10-30T01:45:26Z summary=queued behind other work
+[exit 3]
+## simulate 16 minutes later with default SLA:
+$ FM_DISPATCH_NOW=<now+16m> fm-dispatch-log.sh overdue
+OVERDUE cap-001 age=16m received=2026-10-30T01:45:26Z project=shipcontent-v2 summary=ship polished V2 video
+OVERDUE cap-002 age=16m received=2026-10-30T01:45:26Z summary=audit grok quota
+OVERDUE cap-003 age=16m received=2026-10-30T01:45:26Z summary=queued behind other work
+[exit 3]
+$ fm-dispatch-log.sh dispatched cap-001 --task shipcontent-polished-first-video
+2026-10-30T01:45:28Z dispatched cap-001: task=shipcontent-polished-first-video
+[exit 0]
+$ fm-dispatch-log.sh blocked cap-002 --reason grok quota at fair-share floor
+2026-10-30T01:45:28Z blocked cap-002: reason=grok quota at fair-share floor
+[exit 0]
+$ FM_DISPATCH_NOW=<now+16m> fm-dispatch-log.sh overdue
+OVERDUE cap-003 age=16m received=2026-10-30T01:45:26Z summary=queued behind other work
+[exit 3]
+$ fm-dispatch-log.sh dispatched cap-003 --task queued-task --note after drain
+2026-10-30T01:45:28Z dispatched cap-003: task=queued-task note=after drain
+[exit 0]
+$ FM_DISPATCH_NOW=<now+16m> fm-dispatch-log.sh overdue
+[exit 0]
+## adversarial refusals:
+$ fm-dispatch-log.sh received cap-001 --summary dup
+fm-dispatch-log: goal cap-001 is already in the ledger
+[exit 1]
+$ fm-dispatch-log.sh received bad;id --summary x
+fm-dispatch-log: goal id must match [A-Za-z0-9._-]+: 'bad;id'
+[exit 1]
+$ fm-dispatch-log.sh received cap-009
+fm-dispatch-log: received needs --summary
+[exit 1]
+$ fm-dispatch-log.sh dispatched ghost --task t
+fm-dispatch-log: goal ghost has no received line
+[exit 1]
+$ fm-dispatch-log.sh blocked cap-001
+fm-dispatch-log: blocked needs --reason
+[exit 1]
+$ fm-dispatch-log.sh overdue --minutes 30
+fm-dispatch-log: unknown argument: --minutes
+[exit 1]
+$ FM_DISPATCH_SLA_MINUTES=abc fm-dispatch-log.sh overdue
+fm-dispatch-log: FM_DISPATCH_SLA_MINUTES must be a whole number
+[exit 1]
+## ledger lines before refusals=       6 after=       6
+$ fm-dispatch-log.sh show cap-002
+2026-10-30T01:45:26Z	1793324726	received	cap-002	summary=audit grok quota
+2026-10-30T01:45:28Z	1793324728	blocked	cap-002	reason=grok quota at fair-share floor
+[exit 0]
+## full ledger (persisted state):
+2026-10-30T01:45:26Z	1793324726	received	cap-001	project=shipcontent-v2 summary=ship polished V2 video
+2026-10-30T01:45:26Z	1793324726	received	cap-002	summary=audit grok quota
+2026-10-30T01:45:26Z	1793324726	received	cap-003	summary=queued behind other work
+2026-10-30T01:45:28Z	1793324728	dispatched	cap-001	task=shipcontent-polished-first-video
+2026-10-30T01:45:28Z	1793324728	blocked	cap-002	reason=grok quota at fair-share floor
+2026-10-30T01:45:28Z	1793324728	dispatched	cap-003	task=queued-task note=after drain
