@@ -225,6 +225,12 @@ LaunchAgent or Linux user service, independently of the captain's turn. The
 native manager restarts the owner if it exits; the owner follows each completed
 arm with another home-scoped arm. A healthy watcher keeps its singleton lock,
 so this owner can coexist with the ordinary Stop hook or supervision host.
+The watchdog's arm owns a non-detached holding watcher: after an actionable
+wake, that watcher keeps its live lock while the wake remains queued for the
+captain. It suppresses a second recovery announcement for that same pending
+queue, and resumes ordinary recovery checks after acknowledgement. The usual
+one-shot watcher contract remains in force outside this managed mode; away
+and quiet supervision keep their existing daemon-owned triage behavior.
 
 Install the rendered service for each intended home explicitly. The script's
 `help`, `render-launchd`, `render-systemd`, and `manager-status` commands own

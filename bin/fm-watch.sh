@@ -3,7 +3,8 @@
 # Budgeted ship/scout records are checked each ordinary poll, independently of
 # wake triage; bin/fm-task-budget.sh owns native usage, dry-run/enforce policy,
 # deduplication, and exact-task interrupt outcomes.
-# The internal --grok-hold tag requires FM_WATCH_GROK_HOLD=1.
+# Internal hold tags require their matching environment opt-in. The watchdog's
+# --managed-hold watcher remains the arm's child; --grok-hold is Grok-owned.
 # --secondmate starts and verifies a detached local Codex secondmate watcher;
 # --secondmate-status is its read-only identity, route and beacon proof.
 # --secondmate-selected reads route eligibility. Ownership-mode selection is
@@ -253,6 +254,7 @@ fi
 if [ "${BASH_SOURCE[0]}" = "$0" ] && [ "$#" -gt 0 ]; then
   case "$1" in
     --secondmate|--secondmate-status|--secondmate-selected|--secondmate-hold) [ "$#" -eq 1 ] || exit 2; SECONDMATE_MODE=$1 ;;
+    --managed-hold) [ "$#" -eq 1 ] && [ "${FM_WATCH_MANAGED_HOLD:-}" = 1 ] || exit 2 ;;
     *) [ "$#" -eq 1 ] && [ "$1" = --grok-hold ] && [ "${FM_WATCH_GROK_HOLD:-}" = 1 ] || exit 2 ;;
   esac
   shift
@@ -4308,6 +4310,16 @@ rerecord_device_shifted_pr_poll() {  # <id>
 }
 
 resurface_after_downtime() {
+  local managed_queue_rc=0
+  if [ "${FM_WATCH_MANAGED_HOLD:-}" = 1 ] \
+    && [ "${FM_MANAGED_WAKE_DELIVERED:-0}" = 1 ]; then
+    handling_successor_has_queued_row || managed_queue_rc=$?
+    case "$managed_queue_rc" in
+      0) return 0 ;; # The wake was delivered and still awaits acknowledgement.
+      1) FM_MANAGED_WAKE_DELIVERED=0 ;; # The queue drained; retire the episode below.
+      *) return 0 ;; # A contended queue cannot justify another delivery.
+    esac
+  fi
   # Handling successors already have a predecessor-delivered wake on the way.
   # Re-announcing from this cycle is what turned a lost handshake into an
   # unbounded recovery loop. A handled host turn explicitly settles its

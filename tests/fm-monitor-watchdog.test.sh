@@ -59,11 +59,13 @@ drain_and_ack() {  # <home>
 }
 
 test_actionable_close_without_successor() {
-  local home first second
+  local home first second arm_pid still queued
   home=$(make_case actionable-close)
   mkdir -p "$home/config"
-  start_owner "$home"
-  first=$(wait_healthy "$home") || fail "independent owner did not start a watcher: $(cat "$home/watchdog.out")"
+  FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_CONFIG_OVERRIDE="$home/config" \
+    FM_POLL=1 FM_GUARD_GRACE=10 bash "$ROOT/bin/fm-watch-arm.sh" > "$home/arm.out" 2>&1 &
+  arm_pid=$!
+  first=$(wait_healthy "$home") || fail 'plain arm did not start a watcher'
   cat > "$home/state/probe.check.sh" <<'SH'
 #!/usr/bin/env bash
 printf 'done: one actionable close\n'
@@ -79,11 +81,47 @@ SH
     || fail "watcher did not close on the actionable check"
   FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" bash "$ROOT/bin/fm-check-unregister.sh" probe >/dev/null \
     || fail "could not unregister actionable check"
-  drain_and_ack "$home" || fail "could not acknowledge actionable close"
+  wait "$arm_pid" || fail 'plain arm did not finish its actionable cycle'
+  [ -z "$(healthy_pid "$home" 2>/dev/null || true)" ] || fail 'plain arm left a successor before recovery'
+  start_owner "$home"
   second=$(wait_healthy "$home" "$first") || fail "no successor after actionable close: $(cat "$home/watchdog.out")"
   [ "$second" != "$first" ] || fail "actionable close kept the old watcher pid"
+  queued=$(wc -l < "$home/state/.wake-queue" | tr -d ' ')
+  [ "$queued" -ge 1 ] || fail 'recovery consumed the unacknowledged wake'
+  sleep 3
+  still=$(healthy_pid "$home") || fail 'managed successor did not stay live'
+  [ "$still" = "$second" ] || fail 'managed successor was replaced during the unacknowledged wake'
   stop_owner
-  pass "independent owner restores watcher after actionable close"
+  pass "independent owner restores a stable watcher after actionable close without ack"
+}
+
+test_unacked_actionable_close_stability() {
+  local home first count second deliveries
+  home=$(make_case unacked-actionable)
+  mkdir -p "$home/config"
+  start_owner "$home"
+  first=$(wait_healthy "$home") || fail 'unacked case did not start a watcher'
+  cat > "$home/state/probe.check.sh" <<'SH'
+#!/usr/bin/env bash
+printf 'done: one actionable close\n'
+SH
+  chmod 0700 "$home/state/probe.check.sh"
+  FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" bash "$ROOT/bin/fm-check-register.sh" probe >/dev/null
+  for _ in $(seq 1 100); do
+    [ -s "$home/state/.wake-queue" ] && break
+    sleep 0.1
+  done
+  [ -s "$home/state/.wake-queue" ] || fail 'managed watcher did not publish actionable wake'
+  FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" bash "$ROOT/bin/fm-check-unregister.sh" probe >/dev/null
+  sleep 3
+  count=$(wc -l < "$home/state/.wake-queue" | tr -d ' ')
+  deliveries=$(wc -l < "$home/state/.watch-deliveries.log" | tr -d ' ')
+  second=$(healthy_pid "$home" 2>/dev/null || true)
+  stop_owner
+  [ "$second" = "$first" ] || fail "unacknowledged wake lost the managed watcher (queue=$count)"
+  [ "$count" -eq 1 ] || fail "unacknowledged wake duplicated $count queued rows"
+  [ "$deliveries" -eq 1 ] || fail "managed watcher delivered $deliveries notifications: $(cut -f3 "$home/state/.watch-deliveries.log" | tr '\n' ';')"
+  pass 'unacknowledged actionable wake retains stable watcher coverage'
 }
 
 test_dead_owner_lock() {
@@ -98,6 +136,63 @@ test_dead_owner_lock() {
   [ "$current" != "$dead" ] || fail "dead-owner pid remained the lock owner"
   stop_owner
   pass "independent owner reclaims a dead watch lock"
+}
+
+test_healthy_owner_and_takeover() {
+  local home first first_owner second_owner rc still arm_pid
+  home=$(make_case healthy-owner)
+  mkdir -p "$home/config"
+  start_owner "$home"; first_owner=$OWNER_PID
+  first=$(wait_healthy "$home") || fail 'healthy owner did not start a watcher'
+  start_owner "$home"; second_owner=$OWNER_PID
+  rc=0; wait "$second_owner" || rc=$?
+  [ "$rc" -ne 0 ] || fail 'a second independent owner acquired the same home'
+  still=$(healthy_pid "$home") || fail 'duplicate owner disturbed the watcher'
+  [ "$still" = "$first" ] || fail 'duplicate owner replaced a healthy watcher'
+  OWNER_PID=$first_owner; stop_owner
+
+  home=$(make_case healthy-takeover)
+  mkdir -p "$home/config"
+  FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_CONFIG_OVERRIDE="$home/config" \
+    FM_POLL=1 FM_GUARD_GRACE=10 bash "$ROOT/bin/fm-watch-arm.sh" > "$home/arm.out" 2>&1 &
+  arm_pid=$!
+  first=$(wait_healthy "$home") || fail 'existing arm did not start a watcher'
+  start_owner "$home"
+  sleep 2
+  still=$(healthy_pid "$home") || fail 'watchdog did not attach to healthy predecessor'
+  [ "$still" = "$first" ] || fail 'watchdog replaced a healthy predecessor'
+  stop_owner
+  kill -TERM "$arm_pid" 2>/dev/null || true
+  wait "$arm_pid" 2>/dev/null || true
+  pass 'healthy owner and healthy take-over retain one watcher'
+}
+
+test_alert_clears_after_recovery() {
+  local home arm i current
+  home=$(make_case alert-clears)
+  mkdir -p "$home/config"
+  printf 'off\n' > "$home/config/wedge-alarm"
+  arm="$home/two-failures-then-arm.sh"
+  cat > "$arm" <<'SH'
+#!/usr/bin/env bash
+count=$(cat "$FM_STATE_OVERRIDE/attempts" 2>/dev/null || echo 0)
+count=$((count + 1))
+printf '%s\n' "$count" > "$FM_STATE_OVERRIDE/attempts"
+if [ "$count" -le 2 ]; then echo 'watcher: FAILED - fixture failure'; exit 1; fi
+exec bash "$FM_TEST_REAL_ARM"
+SH
+  chmod 0700 "$arm"
+  FM_TEST_WATCHDOG_ARM="$arm" FM_TEST_REAL_ARM="$ROOT/bin/fm-watch-arm.sh" start_owner "$home"
+  current=$(wait_healthy "$home") || fail "watcher did not recover: $(cat "$home/watchdog.out")"
+  for i in $(seq 1 50); do
+    [ ! -f "$home/state/.monitor-watchdog-alert" ] && break
+    sleep 0.1
+  done
+  [ ! -f "$home/state/.monitor-watchdog-alert" ] || fail 'recovered watcher left stale failure alert'
+  [ "$(cat "$home/state/attempts")" -ge 3 ] || fail 'fixture did not exercise two failed arms'
+  [ -n "$current" ] || fail 'recovered watcher identity missing'
+  stop_owner
+  pass 'successful recovery retires the prior failure alert'
 }
 
 test_term_without_successor() {
@@ -227,23 +322,60 @@ test_configured_page_results() {
   pass 'configured notifier records actual success and failure'
 }
 
+test_failed_rearm_retries_pending_page() {
+  local home arm alert i
+  home=$(make_case retry-page)
+  mkdir -p "$home/config"
+  printf 'off\n' > "$home/config/wedge-alarm"
+  arm="$home/failing-arm.sh"
+  cat > "$arm" <<'SH'
+#!/usr/bin/env bash
+echo 'watcher: FAILED - fixture arm could not start'
+exit 1
+SH
+  chmod 0700 "$arm"
+  FM_TEST_WATCHDOG_ARM="$arm" FM_MONITOR_ALERT_RETRY_SECS=2 start_owner "$home"
+  alert="$home/state/.monitor-watchdog-alert"
+  for i in $(seq 1 80); do
+    grep -q 'page=pending' "$alert" 2>/dev/null && break
+    sleep 0.1
+  done
+  grep -q 'page=pending' "$alert" 2>/dev/null || fail 'initial pending page was not recorded'
+  printf 'command:true\n' > "$home/config/wedge-alarm"
+  for i in $(seq 1 80); do
+    grep -q 'page=sent' "$alert" 2>/dev/null && break
+    sleep 0.1
+  done
+  stop_owner
+  grep -q 'page=sent' "$alert" 2>/dev/null || fail 'configured channel did not retry pending watcher page'
+  pass 'failed rearm retries a pending page after channel configuration'
+}
+
 case "${1:-all}" in
   actionable) test_actionable_close_without_successor ;;
+  unacked) test_unacked_actionable_close_stability ;;
   dead-lock) test_dead_owner_lock ;;
+  healthy) test_healthy_owner_and_takeover ;;
+  alert-clear) test_alert_clears_after_recovery ;;
   term) test_term_without_successor ;;
   page) test_page_channel_result ;;
   failure-page) test_failed_rearm_records_pending_page ;;
   two-home) test_two_home_term_isolation ;;
   stalled) test_stalled_watcher_bound ;;
   configured-page) test_configured_page_results ;;
+  retry-page) test_failed_rearm_retries_pending_page ;;
   all)
     test_actionable_close_without_successor
+    test_unacked_actionable_close_stability
     test_dead_owner_lock
+    test_healthy_owner_and_takeover
+    test_alert_clears_after_recovery
     test_term_without_successor
     test_page_channel_result
     test_failed_rearm_records_pending_page
     test_two_home_term_isolation
     test_stalled_watcher_bound
-    test_configured_page_results ;;
+    test_configured_page_results
+    test_failed_rearm_retries_pending_page ;;
   *) fail "unknown case: $1" ;;
 esac

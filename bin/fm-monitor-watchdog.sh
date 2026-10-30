@@ -134,12 +134,19 @@ EOF
 }
 
 watchdog_alert() {  # <arm-exit-code>
-  local arm_rc=$1 page_state=failed tmp
-  [ ! -f "$ALERT" ] || return 0
+  local arm_rc=$1 page_state=failed tmp prior retry=${FM_MONITOR_ALERT_RETRY_SECS:-60}
+  local config=${FM_CONFIG_OVERRIDE:-$FM_HOME/config} summary="Firstmate watcher recovery failed for $FM_HOME"
+  case "$retry" in ''|0*|*[!0-9]*) echo 'watchdog: invalid alert retry interval' >&2; return 1 ;; esac
+  [ "${#retry}" -le 9 ] || return 1
+  if [ -f "$ALERT" ]; then
+    prior=$(sed -n 's/.* page=\([^ ]*\).*/\1/p' "$ALERT")
+    [ "$prior" != sent ] || return 0
+    [ "$(fm_path_age "$ALERT")" -ge "$retry" ] || return 0
+  fi
   page_state=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
-    FM_CONFIG_OVERRIDE="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}" \
+    FM_CONFIG_OVERRIDE="$config" \
     bash "$SCRIPT_DIR/fm-supervise-daemon.sh" page \
-      "Firstmate watcher recovery failed for $FM_HOME" "$ALERT" 2>/dev/null) || true
+      "$summary" "$ALERT" 2>/dev/null) || true
   page_state=${page_state#page: }
   case "$page_state" in sent|failed|pending) ;; *) page_state=failed ;; esac
   tmp=$(mktemp "$STATE/.monitor-watchdog-alert.XXXXXX") || return 1
@@ -160,7 +167,7 @@ watchdog_cleanup() {
 }
 
 watchdog_run() {
-  local rc=0
+  local rc=0 failures=0
   umask 077
   mkdir -p "$STATE" || return 1
   if ! fm_lock_try_acquire "$LOCK"; then
@@ -174,15 +181,27 @@ watchdog_run() {
     # This child is never fire-and-forget: the service waits for its complete
     # arm cycle and owns the next one. The watch lock still elects one watcher
     # if a Stop-hook arm or supervision host is active at the same time.
-    FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" bash "$ARM" >"$CAPTURE" 2>&1 &
+    FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_WATCH_MANAGED_HOLD=1 \
+      bash "$ARM" >"$CAPTURE" 2>&1 &
     CHILD=$!
+    while kill -0 "$CHILD" 2>/dev/null; do
+      if fm_watcher_healthy "$STATE" "$WATCH" "${FM_GUARD_GRACE:-300}" "$FM_HOME"; then
+        failures=0
+        [ ! -f "$ALERT" ] || rm -f -- "$ALERT"
+      fi
+      sleep 1
+    done
     wait "$CHILD" || rc=$?
     CHILD=
-    if [ "$rc" -ne 0 ]; then
-      printf 'watchdog: arm exited %s: %s\n' "$rc" "$(tail -n 1 "$CAPTURE")" >&2
-      if ! fm_watcher_healthy "$STATE" "$WATCH" "${FM_GUARD_GRACE:-300}" "$FM_HOME"; then
+    if ! fm_watcher_healthy "$STATE" "$WATCH" "${FM_GUARD_GRACE:-300}" "$FM_HOME"; then
+      failures=$((failures + 1))
+      if [ "$failures" -ge 2 ]; then
+        printf 'watchdog: arm exited %s without a healthy successor: %s\n' "$rc" "$(tail -n 1 "$CAPTURE")" >&2
         watchdog_alert "$rc" || echo 'watchdog: could not persist recovery alert' >&2
       fi
+    else
+      failures=0
+      [ ! -f "$ALERT" ] || rm -f -- "$ALERT"
     fi
     rm -f -- "$CAPTURE"
     CAPTURE=
