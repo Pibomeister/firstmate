@@ -212,6 +212,8 @@ The throwaway `HOME` also made macOS show "A keychain cannot be found to store '
 The reworked guard, run the same day with `FM_AGY_LIVE_MODEL=gemini-4-argon-high`, sets `config/backend=orca` with no `--backend` and shadows `herdr` so the operator's Herdr session is never touched.
 It proved the fallback notice to tmux, processed the brief, stopped each idle worker with `bin/fm-control.sh <id> exit`, and checked that no `agy` process stayed in the worktree.
 On macOS it keeps the real `HOME`, and on exit it removes only its own `trustedWorkspaces` entries; the store matched its pre-run snapshot afterwards.
+The current guard, with the custody and fresh-token checks above, passed live on 2026-10-29 with `FM_AGY_LIVE_MODEL=gemini-4-argon-high`: a second allocation did not reuse the kept slot, the relaunch kept the original worktree, and the replacement wrote the fresh token, the sum, and that worktree on one report line.
+The store kept the same JSON content; the cleanup rewrite writes `&` plainly where agy's own writer escapes it as `\u0026`.
 
 The portable regression coverage for custody is in `tests/fm-agy-harness.test.sh` and `tests/fm-control-relaunch.test.sh`, using the self-contained Treehouse model in `tests/treehouse-helpers.sh` rather than a real Treehouse installation.
 The cases cover slot reuse prevention, original-worktree relaunch, ownership refusal, post-publication send/signal/backlog failures, unpublished allocation cleanup, and capability refusal before endpoint creation or stopping the old worker.
@@ -229,7 +231,6 @@ Never press "Reset To Defaults" on that dialog; it does not apply to this cause.
 
 ## What is still unproven
 
-No refreshed live receipt for the current custody and fresh-token recovery guard is recorded here.
 The unauthenticated failure mode was never observed; this host's agy runs signed in, so any auth prompt is a fail-loud credential blocker, not a handled dialog.
 No in-pane auth prompt was observed; any auth prompt is a fail-loud credential blocker, not a handled dialog.
 Orca support needs a visible-screen read for agy, like the one recorded Droid tasks use; until then agy on orca falls back as described above.
