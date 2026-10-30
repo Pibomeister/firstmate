@@ -1036,7 +1036,7 @@ if [ -f "$STATE/dispatch-log.tsv" ]; then
   if [ -n "$DISPATCH_OVERDUE" ]; then
     subsection "Dispatch ledger (fm-dispatch-log.sh overdue)"
     printf '%s\n' "$DISPATCH_OVERDUE"
-    printf '\nDispatch or block each OVERDUE goal this turn, and tell the captain about each OVERDUE goal and, once, each LATE goal.\n'
+    printf '\nDispatch or block each OVERDUE goal this turn, and tell the captain about each OVERDUE and LATE goal listed.\n'
   fi
 fi
 

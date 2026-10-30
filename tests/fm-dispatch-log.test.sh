@@ -96,6 +96,40 @@ out=$(dl $((T0 + 900)) dispatched ontime --task t-ok) || fail "on-time dispatch 
 case "$out" in *LATE*) fail "a dispatch at exactly the SLA was marked late: $out" ;; esac
 pass "a dispatched or blocked line written after the SLA records late=<m>m, and show and overdue surface it"
 
+dl "$T0" received retry1 --summary 'retried after an on-time dispatch' >/dev/null || fail "retry1 refused"
+dl $((T0 + 300)) dispatched retry1 --task t1 >/dev/null || fail "retry1 dispatch refused"
+out=$(dl $((T0 + 180 * 60)) dispatched retry1 --task t1-retry) || fail "retry1 retry refused"
+case "$out" in *LATE*) fail "a retry after an on-time dispatch was marked late: $out" ;; esac
+[ "$(dl 0 show retry1 | tail -n 1 | cut -f5)" = 'task=t1-retry' ] \
+  || fail "a retry after an on-time dispatch carries a late mark: $(dl 0 show retry1)"
+dl "$T0" received block1 --summary 'dispatched after an on-time block' >/dev/null || fail "block1 refused"
+dl $((T0 + 300)) blocked block1 --reason 'no quota' >/dev/null || fail "block1 block refused"
+out=$(dl $((T0 + 180 * 60)) dispatched block1 --task t2) || fail "block1 dispatch refused"
+case "$out" in *LATE*) fail "a dispatch after an on-time block was marked late: $out" ;; esac
+dl "$T0" received fail1 --summary 'blocked after an on-time dispatch' >/dev/null || fail "fail1 refused"
+dl $((T0 + 300)) dispatched fail1 --task t3 >/dev/null || fail "fail1 dispatch refused"
+dl $((T0 + 180 * 60)) blocked fail1 --reason 'task failed' >/dev/null || fail "fail1 block refused"
+dl "$T0" received note1 --summary 'free text that looks like a mark' >/dev/null || fail "note1 refused"
+dl $((T0 + 300)) dispatched note1 --task t4 >/dev/null || fail "note1 dispatch refused"
+dl $((T0 + 600)) dispatched note1 --task t4-retry --note 'was late=9m' >/dev/null || fail "note1 retry refused"
+dl "$T0" received twice --summary 'late, then retried' >/dev/null || fail "twice refused"
+dl $((T0 + 20 * 60)) dispatched twice --task t5 >/dev/null || fail "twice dispatch refused"
+out=$(dl $((T0 + 30 * 60)) dispatched twice --task t5-retry) || fail "twice retry refused"
+case "$out" in *LATE*) fail "a retry repeated the late mark: $out" ;; esac
+out=$(dl $((T0 + 181 * 60)) overdue); rc=$?
+[ "$rc" = 0 ] || fail "resolved goals made overdue exit $rc"
+case "$out" in *'LATE retry1'*|*'LATE block1'*|*'LATE fail1'*|*'LATE note1'*) fail "a goal that met the SLA was reported late: $out" ;; esac
+case "$out" in *'LATE twice late=20m event=dispatched'*) ;; *) fail "a retry hid the first late mark: $out" ;; esac
+pass "lateness is measured only on the first line after received, so a goal that met the SLA is never late"
+
+out=$(dl $((T0 + 24 * 3600)) overdue)
+case "$out" in *'LATE late1 late=66m'*) ;; *) fail "a late goal received 24 hours ago was dropped: $out" ;; esac
+out=$(dl $((T0 + 24 * 3600 + 1)) overdue); rc=$?
+[ "$rc" = 0 ] && [ -z "$out" ] || fail "late goals older than 24 hours were still reported (rc=$rc): $out"
+[ "$(dl 0 show late1 | tail -n 1 | cut -f5)" = 'task=t-late late=66m' ] \
+  || fail "show lost the late mark of an expired goal: $(dl 0 show late1)"
+pass "overdue reports LATE only for goals received in the last 24 hours, and show keeps the record"
+
 dl "$T0" received g1 --summary dup >/dev/null 2>&1; rc=$?
 [ "$rc" = 4 ] || fail "a duplicate received exited $rc, not 4"
 dl "$T0" received 'bad id' --summary x >/dev/null 2>&1; rc=$?
