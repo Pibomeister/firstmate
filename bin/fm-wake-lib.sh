@@ -1981,6 +1981,9 @@ fm_treehouse_pool_slot() {  # <project-dir> <worktree>
 
 # Slot-owner claim: which task a Treehouse pool slot currently belongs to.
 #
+# The claim identifies a task even after a process lease expires. AGY's durable
+# lease prevents slot reuse across endpoint close, but does not replace this
+# claim: relaunch must also reject a checkout claimed by another task or home.
 # The claim lives at <pool>/<slot>/.fm-slot-owner - a sibling of the repo
 # checkout rather than a file inside it - so claiming a slot can never dirty the
 # copy teardown's landed-work checks inspect, and a returned slot carries no
