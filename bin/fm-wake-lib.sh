@@ -2071,7 +2071,7 @@ fm_treehouse_slot_require_owner() {
 
 fm_treehouse_require_agy_custody() {
   local capability command flag help
-  for capability in lease:lease-holder status:json return:if-lease-holder; do
+  for capability in get:lease get:lease-holder lease:lease-holder status:json return:if-lease-holder; do
     command=${capability%%:*}
     flag=${capability#*:}
     if ! help=$(treehouse "$command" --help 2>/dev/null) ||

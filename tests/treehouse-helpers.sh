@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
 
 fm_test_fake_treehouse() {
-  local fakebin=$1 project=$2 pool=$3
+  local fakebin=$1 project=$2 pool=$3 initial_worktree=${4:-}
   mkdir -p "$fakebin"
-  node -e 'require("node:fs").writeFileSync(process.argv[1], JSON.stringify({project:process.argv[2],pool:process.argv[3]}))' \
-    "$fakebin/treehouse.fixture.json" "$project" "$pool"
+  node -e 'require("node:fs").writeFileSync(process.argv[1], JSON.stringify({project:process.argv[2],pool:process.argv[3],initialWorktree:process.argv[4]}))' \
+    "$fakebin/treehouse.fixture.json" "$project" "$pool" "$initial_worktree"
   cat > "$fakebin/treehouse" <<'JS'
 #!/usr/bin/env node
 const fs = require('node:fs');
 const path = require('node:path');
 const {execFileSync} = require('node:child_process');
-const {project, pool} = JSON.parse(fs.readFileSync(__filename + '.fixture.json', 'utf8'));
+const {project, pool:defaultPool, initialWorktree} = JSON.parse(fs.readFileSync(__filename + '.fixture.json', 'utf8'));
+const pool = process.env.FM_FAKE_TREEHOUSE_USE_ROOT === '1' ? process.env.TREEHOUSE_ROOT || defaultPool : defaultPool;
 const args = process.argv.slice(2);
 const command = args[0];
 const missingFile = __filename + '.missing';
@@ -26,6 +27,9 @@ if (args.some(arg => command + ':' + arg.slice(2) === missing)) process.exit(1);
 fs.mkdirSync(pool, {recursive:true});
 const stateFile = path.join(pool, 'treehouse-state.json');
 const rows = fs.existsSync(stateFile) ? JSON.parse(fs.readFileSync(stateFile, 'utf8')) : [];
+if (!fs.existsSync(stateFile) && pool === defaultPool && initialWorktree) {
+  rows.push({name:'1', path:initialWorktree, lease_id:'', lease_holder:''});
+}
 const save = () => fs.writeFileSync(stateFile, JSON.stringify(rows));
 const value = flag => { const index = args.indexOf(flag); return index < 0 ? '' : args[index + 1]; };
 const git = (...argv) => execFileSync('git', argv, {stdio:['ignore','pipe','pipe']});
