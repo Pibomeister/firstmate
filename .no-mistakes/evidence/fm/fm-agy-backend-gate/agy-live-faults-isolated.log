@@ -1,0 +1,95 @@
+
+fault=literal exit=1
+A new version of treehouse is available: v3.1.1 → v3.1.7
+Run "treehouse update" to update
+
+A new version of treehouse is available: v3.1.1 → v3.1.7
+Run "treehouse update" to update
+
+🌳 Leased worktree 1 at /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/fm-agy-spawn.uHtLYj/pool/.treehouse/scratch-fbf260/1/scratch. Run 'treehouse return /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/fm-agy-spawn.uHtLYj/pool/.treehouse/scratch-fbf260/1/scratch' to release it.
+warning: keeping task agy-fault-literal's published AGY record and worktree for relaunch or teardown
+Preserved task=agy-fault-literal worktree=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/fm-agy-spawn.uHtLYj/pool/.treehouse/scratch-fbf260/1/scratch
+complete: agy-fault-literal captain-call inventory reviewed
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  down 0s.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds 180; send captain replies as interim messages, never as the turn's final answer, while supervision is needed.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+teardown: reaping leaked worktree process(es) for agy-fault-literal: 86800
+teardown: force-killing leaked worktree process(es) for agy-fault-literal: 86800
+A new version of treehouse is available: v3.1.1 → v3.1.7
+Run "treehouse update" to update
+
+🌳 Worktree returned to pool.
+teardown agy-fault-literal complete (window firstmate:fm-agy-fault-literal, worktree /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/fm-agy-spawn.uHtLYj/pool/.treehouse/scratch-fbf260/1/scratch)
+Backlog: agy-fault-literal is closed in /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/fm-agy-spawn.uHtLYj/home/data/backlog.md. Run bin/fm-tasks-axi.sh ready for dependency-cleared candidates, check date gates, and dispatch only work whose blockers are gone and date is due.
+Task teardown verified: agy-fault-literal
+
+fault=enter exit=1
+A new version of treehouse is available: v3.1.1 → v3.1.7
+Run "treehouse update" to update
+
+A new version of treehouse is available: v3.1.1 → v3.1.7
+Run "treehouse update" to update
+
+🌳 Leased worktree 1 at /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/fm-agy-spawn.uHtLYj/pool/.treehouse/scratch-fbf260/1/scratch. Run 'treehouse return /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/fm-agy-spawn.uHtLYj/pool/.treehouse/scratch-fbf260/1/scratch' to release it.
+warning: keeping task agy-fault-enter's published AGY record and worktree for relaunch or teardown
+Preserved task=agy-fault-enter worktree=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/fm-agy-spawn.uHtLYj/pool/.treehouse/scratch-fbf260/1/scratch
+complete: agy-fault-enter captain-call inventory reviewed
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s; down 30s) - full banner already printed this episode.
+teardown: reaping leaked worktree process(es) for agy-fault-enter: 38423 48889
+teardown: force-killing leaked worktree process(es) for agy-fault-enter: 38423
+A new version of treehouse is available: v3.1.1 → v3.1.7
+Run "treehouse update" to update
+
+🌳 Worktree returned to pool.
+teardown agy-fault-enter complete (window firstmate:fm-agy-fault-enter, worktree /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/fm-agy-spawn.uHtLYj/pool/.treehouse/scratch-fbf260/1/scratch)
+Backlog: agy-fault-enter is closed in /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/fm-agy-spawn.uHtLYj/home/data/backlog.md. Run bin/fm-tasks-axi.sh ready for dependency-cleared candidates, check date gates, and dispatch only work whose blockers are gone and date is due.
+Task teardown verified: agy-fault-enter
+
+fault=signal exit=143
+A new version of treehouse is available: v3.1.1 → v3.1.7
+Run "treehouse update" to update
+
+A new version of treehouse is available: v3.1.1 → v3.1.7
+Run "treehouse update" to update
+
+🌳 Leased worktree 1 at /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/fm-agy-spawn.uHtLYj/pool/.treehouse/scratch-fbf260/1/scratch. Run 'treehouse return /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/fm-agy-spawn.uHtLYj/pool/.treehouse/scratch-fbf260/1/scratch' to release it.
+warning: keeping task agy-fault-signal's published AGY record and worktree for relaunch or teardown
+Preserved task=agy-fault-signal worktree=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/fm-agy-spawn.uHtLYj/pool/.treehouse/scratch-fbf260/1/scratch
+complete: agy-fault-signal captain-call inventory reviewed
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s; down 68s) - full banner already printed this episode.
+teardown: reaping leaked worktree process(es) for agy-fault-signal: 2788 92717
+teardown: force-killing leaked worktree process(es) for agy-fault-signal: 92717
+A new version of treehouse is available: v3.1.1 → v3.1.7
+Run "treehouse update" to update
+
+🌳 Worktree returned to pool.
+teardown agy-fault-signal complete (window firstmate:fm-agy-fault-signal, worktree /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/fm-agy-spawn.uHtLYj/pool/.treehouse/scratch-fbf260/1/scratch)
+Backlog: agy-fault-signal is closed in /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/fm-agy-spawn.uHtLYj/home/data/backlog.md. Run bin/fm-tasks-axi.sh ready for dependency-cleared candidates, check date gates, and dispatch only work whose blockers are gone and date is due.
+Task teardown verified: agy-fault-signal
+
+fault=backlog exit=1
+A new version of treehouse is available: v3.1.1 → v3.1.7
+Run "treehouse update" to update
+
+A new version of treehouse is available: v3.1.1 → v3.1.7
+Run "treehouse update" to update
+
+🌳 Leased worktree 1 at /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/fm-agy-spawn.uHtLYj/pool/.treehouse/scratch-fbf260/1/scratch. Run 'treehouse return /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/fm-agy-spawn.uHtLYj/pool/.treehouse/scratch-fbf260/1/scratch' to release it.
+error: task agy-fault-backlog's backlog item could not be moved to In flight (tasks-axi start agy-fault-backlog failed with no output); its AGY record and worktree are preserved for recovery
+Preserved task=agy-fault-backlog worktree=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/fm-agy-spawn.uHtLYj/pool/.treehouse/scratch-fbf260/1/scratch
+complete: agy-fault-backlog captain-call inventory reviewed
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s; down 158s) - full banner already printed this episode.
+teardown: reaping leaked worktree process(es) for agy-fault-backlog: 12807 91781
+teardown: force-killing leaked worktree process(es) for agy-fault-backlog: 91781
+A new version of treehouse is available: v3.1.1 → v3.1.7
+Run "treehouse update" to update
+
+🌳 Worktree returned to pool.
+teardown agy-fault-backlog complete (window firstmate:fm-agy-fault-backlog, worktree /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/fm-agy-spawn.uHtLYj/pool/.treehouse/scratch-fbf260/1/scratch)
+Backlog: agy-fault-backlog is closed in /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/fm-agy-spawn.uHtLYj/home/data/backlog.md. Run bin/fm-tasks-axi.sh ready for dependency-cleared candidates, check date gates, and dispatch only work whose blockers are gone and date is due.
+Task teardown verified: agy-fault-backlog

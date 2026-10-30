@@ -1,0 +1,28 @@
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-agy/legacy/home
+SCENARIO: legacy Codex relaunch without a slot-owner claim ignores unrelated project allocation lock
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-agy/legacy/home
+spawned legacy-codex harness=codex kind=scout window=firstmate:fm-legacy-codex worktree=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-agy/legacy/caller-pool/.treehouse/scratch-d0412d/1/scratch
+BRIEF_RECEIVED legacy-initial-9770 80235 /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-agy/legacy/caller-pool/.treehouse/scratch-d0412d/1/scratch
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-agy/legacy/home
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-agy/legacy/home
+relaunched legacy-codex harness=codex from=codex model=default effort=default backend=tmux endpoint=firstmate:fm-legacy-codex worktree=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-agy/legacy/caller-pool/.treehouse/scratch-d0412d/1/scratch
+BRIEF_RECEIVED legacy-relaunch-9770-11467 80235 /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-agy/legacy/caller-pool/.treehouse/scratch-d0412d/1/scratch
+complete: legacy-codex captain-call inventory reviewed
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-agy/legacy/home
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  down 0s.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds 180; send captain replies as interim messages, never as the turn's final answer, while supervision is needed.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+teardown: reaping leaked worktree process(es) for legacy-codex: 57605 60080 60160 68128
+teardown: force-killing leaked worktree process(es) for legacy-codex: 57605
+A new version of treehouse is available: v3.1.1 → v3.1.7
+Run "treehouse update" to update
+
+🌳 Worktree returned to pool.
+teardown legacy-codex complete (window firstmate:fm-legacy-codex, worktree /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-agy/legacy/caller-pool/.treehouse/scratch-d0412d/1/scratch)
+Backlog: legacy-codex just finished (this home keeps no markdown backlog at /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-agy/legacy/home/data/backlog.md). Update /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-agy/legacy/home/data/backlog.md - move legacy-codex to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+PASS: legacy Codex control relaunch processes a new brief without a claim despite allocation lock contention

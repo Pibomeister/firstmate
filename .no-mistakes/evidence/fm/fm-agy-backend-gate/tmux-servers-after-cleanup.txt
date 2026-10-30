@@ -1,0 +1,8 @@
+socket=/private/tmp/tmux-501/fm-agy-spawn-26442 exit=1
+no server running on /private/tmp/tmux-501/fm-agy-spawn-26442
+socket=/private/tmp/tmux-501/fm-agy-spawn-47726 exit=1
+no server running on /private/tmp/tmux-501/fm-agy-spawn-47726
+socket=/private/tmp/tmux-501/fm-agy-spawn-75976 exit=1
+no server running on /private/tmp/tmux-501/fm-agy-spawn-75976
+failed-probe socket=fm-agy-spawn-47726 exit=1
+no server running on /private/tmp/tmux-501/fm-agy-spawn-47726

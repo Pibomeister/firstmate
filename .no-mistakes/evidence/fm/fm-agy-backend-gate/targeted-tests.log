@@ -1,0 +1,119 @@
+FM_TEST_BEGIN 2026-10-30T01:05:50Z tests/fm-agy-harness.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - fm-harness.sh: ancestry detects a natively-named agy command
+ok - fm-harness.sh: ancestry rejects unrelated agy mentions
+ok - fm-harness.sh: no inherited launcher marker claims the agy identity
+ok - fm-control-lib: agy mechanics are Escape once, no clear key, and /quit
+ok - fm-busy-lib: only the pinned esc-to-cancel row carries the agy busy verdict
+ok - fm-composer-lib: agy delivery signatures never cross harnesses
+ok - fm-busy-lib: agy classifies busy on its marker and unknown without it
+ok - bin/fm-agent-process-lib.sh: agy is an agent, fragments are not
+ok - herdr exit detection: done with a live registry and an agy process view stays live and refuses replacement
+ok - herdr exit detection: a registered status over a shell-only pane is stale-agent and still refuses closing
+ok - herdr exit detection: a registered pane with an agy foreground stays live however its shell ranks
+ok - herdr exit detection: only a positively unregistered pane is agent-free
+ok - herdr exit detection: malformed and failed reads stay unknown
+ok - fm-spawn: agy launch carries brief, model, effort, and autonomy with cleared markers
+ok - fm-spawn: agy omits xhigh from the launch but records it in task metadata
+ok - fm-spawn: an unlisted agy model refuses before pane creation
+ok - fm-spawn: an unreachable agy listing establishes nothing and launches
+ok - fm-spawn: a hung agy listing is cut off by the shared bound and launches unvalidated
+not ok - a zero model bound disabled the deadline (took 25s)
+FM_TEST_END 2026-10-30T01:07:06Z tests/fm-agy-harness.test.sh exit=1 duration_ms=76233 gate_skip=false
+FM_TEST_BEGIN 2026-10-30T01:07:06Z tests/fm-control-relaunch.test.sh family=backend-dispatch expected_gate_skip=none
+ok - fm-spawn --relaunch: tracked opencode wiring is retired as on main
+ok - fm-control removes the dialog file after exit and after relaunch
+ok - fm-control exit removes the dialog file before it releases the control lock
+ok - fm-control relaunch: a same-harness relaunch replaces the agent in the same endpoint and worktree
+ok - pooled relaunches preserve legacy compatibility and require custody for either AGY harness
+ok - AGY relaunch checks Treehouse capabilities before stopping or replacing a worker
+ok - fm-control relaunch: pending composer text refuses before the exit command is typed
+ok - fm-control relaunch: an unreadable composer fails safe before the exit command is typed
+ok - fm-control relaunch: a linked spawning home preserves committed and unfinished work in the recorded copy
+ok - fm-control relaunch: durable task metadata survives replacement launch publication
+ok - fm-control relaunch: delivery and concurrent task metadata publication serialize
+ok - fm-control relaunch: disabling tracing clears metadata and pane context
+ok - fm-control relaunch: progress and the Firstmate-worktree worker identity reach the replacement
+ok - fm-control relaunch: the progress note's inbox listing is silent on an empty inbox
+ok - fm-control relaunch: a ship task refuses without the progress note its replacement needs
+ok - fm-control relaunch: switching harness is one ordinary relaunch, and the old wiring goes with the old agent
+ok - fm-control relaunch: a refused relaunch onto polytoken keeps the project's own hook layer and the running agent
+ok - fm-control relaunch: a refused polytoken profile leaves the running agent untouched
+ok - fm-spawn --relaunch: retiring a raw polytoken launch's wiring keeps the project's own layers
+ok - fm-control relaunch: a harness switch resets model and effort unless they are named too
+ok - fm-control relaunch: a prefixed recorded harness can switch adapters transactionally
+ok - fm-control relaunch: a prefixed command requires an explicit replacement harness
+ok - fm-control relaunch: a same-harness relaunch keeps the profile axes it was running with
+ok - native Ultra relaunch preserves its profile and rejects an unsupported model before stopping
+ok - codex max relaunch rejects a model the catalog does not advertise max for before stopping
+ok - fm-control relaunch: a signed-out worker account pin refuses before the old agent stops
+ok - fm-control relaunch: the replacement follows the home's current worker account pin
+not ok - the secondmate should relaunch on its claude pin: error: secondmate home cannot be inside the firstmate repo: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/fm-control-relaunch.XBoS2T/sm-account-claude-2260/wt
+error: the replacement agent for rl-sm-acct could not be launched on claude
+error: rl-sm-acct's agent was stopped but the replacement did not launch; no agent is running, and its work plus the recorded progress note are preserved at /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/fm-control-relaunch.XBoS2T/sm-account-claude-2260/wt: expected exit 0, got 1
+FM_TEST_END 2026-10-30T01:13:32Z tests/fm-control-relaunch.test.sh exit=1 duration_ms=385140 gate_skip=false
+FM_TEST_BEGIN 2026-10-30T01:13:32Z tests/fm-control.test.sh family=backend-dispatch expected_gate_skip=none
+ok - fm-control exit: every verified harness gets its own verified exit command
+ok - fm-control interrupt: every verified harness gets its own verified key and repeat count
+ok - fm-control Devin interrupt: second press only after the armed hint, then busy invalidated without fabricating idle
+ok - fm-control Devin interrupt: an idle agent gets one Escape and reports not-running
+ok - fm-control Devin exit: a busy record whose turn already ended never opens the revert picker
+ok - fm-control Devin interrupt: a revert picker a press opened is closed with Escape, never Enter
+ok - fm-control Devin: an open revert picker refuses every typed command
+ok - fm-control interrupt: opencode needs a double Escape, claude a single one
+ok - fm-control: a harness with no verified control mechanics is refused, not guessed at
+ok - fm-control-lib: a recorded harness resolves to its verified adapter without guessing
+ok - fm-control-lib: only a runtime's own recorded session has a relaunch resume form
+ok - fm-control: prefixed recorded harnesses reach interrupt and exit mechanics
+ok - fm-control-lib: the backend key matrix matches each adapter's real send-key surface
+ok - fm-control-lib: adapter capability is per task kind, not per adapter alone
+ok - fm-control interrupt: a backend that cannot deliver the harness's key refuses instead of sending another
+ok - fm-control relaunch: Orca Droid refuses a non-Droid replacement before stopping the worker
+ok - fm-control exit: a second exit on a stopped Orca Droid is idempotent success
+ok - fm-control relaunch: an exited Orca Droid is admitted for a Droid replacement
+ok - fm-control relaunch: live marker-free Droid exits retain proof for separate and combined replacement admission
+ok - fm-control: a backend that cannot prove an agent stopped refuses exit and relaunch
+ok - fm-control relaunch: commandcode and agy off tmux and herdr are refused before the running agent is stopped
+ok - fm-control-lib: stop-proving verbs are gated on the backends that really classify agent state
+ok - fm-control: a legacy window label is refused and the exact task id is named
+ok - fm-control: an explicit backend endpoint is never a control target
+ok - fm-control: an unrecorded task id is refused
+ok - fm-control: a record whose endpoint identity names another task is refused
+ok - fm-control: a remotely placed secondmate is refused by placement, not by a metadata complaint
+ok - fm-control: interrupt and exit lock before task-state resolution
+ok - fm-control: the verb list is closed - no raw keys, arbitrary text, or clear verb
+ok - fm-control: resume is refused with the determinism reason and the alternative
+ok - fm-control: profile and note flags belong to relaunch only
+ok - fm-control exit: an already-stopped agent is idempotent success with no bytes sent
+ok - fm-control exit: an unprovable tmux endpoint refuses instead of claiming the agent stopped
+ok - fm-control exit: a closed Orca terminal with no agent left reports endpoint-gone and sends nothing
+ok - fm-control exit: a closed Orca terminal refuses when the worktree scan cannot be read
+ok - fm-control exit: closed Droid terminals retain their SessionEnd requirement
+ok - fm-control exit: a connected owned Droid shell proves the agent stopped without a SessionEnd marker
+ok - fm-control exit: the connected-shell proof refuses a wrong-generation marker and a live worktree process
+ok - fm-control exit: a stale Orca handle recorded before the host reboot reports endpoint-gone and sends nothing
+ok - fm-control exit: a reboot-stale Orca handle refuses while an agent survives in the recorded worktree
+ok - fm-control exit: a stale Orca handle refuses when the host boot does not postdate its recorded evidence
+ok - fm-control interrupt: refuses when no agent is running rather than keying a shell
+ok - fm-control exit: an endpoint whose process cannot be attributed refuses
+ok - fm-control exit: a busy agent receives interrupt delivery before the exit command
+ok - fm-control exit: an idle agent goes straight to its exit command
+ok - fm-control exit: retiring a codex incarnation drops busy_gen with the sidecar
+ok - fm-control exit: an already-open background-task picker is not typed into
+ok - fm-control exit: the Enter that opens the background-task picker is not followed by a confirming Enter
+ok - fm-control exit: a picker that renders after the submit returned is named when the stop wait times out
+ok - fm-control interrupt: unconfirmed delivery preserves observed busy state
+ok - fm-control interrupt: muse confirms cancellation from its session log
+ok - fm-control interrupt: postconditions are revalidated after acknowledgement polling
+ok - fm-control exit: an interrupt-stopped agent satisfies the gone-state postcondition
+ok - fm-control exit: a stubborn agent reports delivered input and an unconfirmed exit
+ok - fm-control interrupt: grok reports delivery without claiming cancellation
+ok - fm-control interrupt: grok's idle footer does not confirm cancellation
+ok - fm-control: a lifecycle command to a secondmate is unmarked and opens no reply expectation
+ok - fm-control's arrival leaves fm-send's from-firstmate marking untouched
+FM_TEST_END 2026-10-30T01:18:11Z tests/fm-control.test.sh exit=0 duration_ms=279483 gate_skip=false
+FM_TEST_SUMMARY total=3 failed=2 skipped_gate=0 duration_ms=741184
+FM_TEST_SUMMARY_FAMILY family=backend-dispatch count=2 duration_ms=664623 failed=1
+FM_TEST_SUMMARY_FAMILY family=pure-contract-unit count=1 duration_ms=76233 failed=1
+FM_TEST_SLOWEST rank=1 script=tests/fm-control-relaunch.test.sh duration_ms=385140
+FM_TEST_SLOWEST rank=2 script=tests/fm-control.test.sh duration_ms=279483
+FM_TEST_SLOWEST rank=3 script=tests/fm-agy-harness.test.sh duration_ms=76233

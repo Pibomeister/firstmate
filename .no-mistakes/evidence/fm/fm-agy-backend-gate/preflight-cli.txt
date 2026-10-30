@@ -1,0 +1,35 @@
+
+backend=orca exit=1
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/preflight.AOIc0Q/home
+error: agy launch readiness is live-verified on the tmux and herdr backends only; backend=orca cannot prove the brief started. Select backend tmux or herdr.
+Observed: no task metadata and no allocated project checkout.
+
+backend=zellij exit=1
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/preflight.AOIc0Q/home
+error: agy launch readiness is live-verified on the tmux and herdr backends only; backend=zellij cannot prove the brief started. Select backend tmux or herdr.
+Observed: no task metadata and no allocated project checkout.
+
+backend=cmux exit=1
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/preflight.AOIc0Q/home
+error: agy launch readiness is live-verified on the tmux and herdr backends only; backend=cmux cannot prove the brief started. Select backend tmux or herdr.
+Observed: no task metadata and no allocated project checkout.
+
+backend=paseo exit=1
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/preflight.AOIc0Q/home
+error: agy launch readiness is live-verified on the tmux and herdr backends only; backend=paseo cannot prove the brief started. Select backend tmux or herdr.
+Observed: no task metadata and no allocated project checkout.
+
+missing_capability=lease:lease-holder exit=1
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/preflight.AOIc0Q/home
+error: AGY custody requires 'treehouse lease --lease-holder'; installed Treehouse does not advertise this capability
+Observed: refusal before task publication or endpoint allocation.
+
+missing_capability=status:json exit=1
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/preflight.AOIc0Q/home
+error: AGY custody requires 'treehouse status --json'; installed Treehouse does not advertise this capability
+Observed: refusal before task publication or endpoint allocation.
+
+missing_capability=return:if-lease-holder exit=1
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/preflight.AOIc0Q/home
+error: AGY custody requires 'treehouse return --if-lease-holder'; installed Treehouse does not advertise this capability
+Observed: refusal before task publication or endpoint allocation.

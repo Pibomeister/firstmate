@@ -1,0 +1,32 @@
+spawn_exit=1
+warning: herdr presentation parent is absent or ambiguous; using the ordinary flat layout without projection
+A new version of treehouse is available: v3.1.1 → v3.1.7
+Run "treehouse update" to update
+
+[eval]:6
+    if (matches.length !== 1) throw new Error("recorded checkout is not uniquely present in the configured Treehouse pool");
+                              ^
+
+Error: recorded checkout is not uniquely present in the configured Treehouse pool
+    at [eval]:6:37
+    at runScriptInThisContext (node:internal/vm:219:10)
+    at node:internal/process/execution:451:12
+    at [eval]-wrapper:6:24
+    at runScriptInContext (node:internal/process/execution:449:60)
+    at evalFunction (node:internal/process/execution:283:30)
+    at evalTypeScript (node:internal/process/execution:295:3)
+    at node:internal/main/eval_string:71:3
+
+Node.js v24.12.0
+error: could not reserve task agy-herdr-live's pool slot /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/agy-herdr.p4aqlf/worker-pool/.treehouse/scratch-6aa6e8/1/scratch; refusing to launch without durable custody
+A new version of treehouse is available: v3.1.1 → v3.1.7
+Run "treehouse update" to update
+
+failed to return worktree: lease precondition failed: worktree /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/agy-herdr.p4aqlf/worker-pool/.treehouse/scratch-6aa6e8/1/scratch is not leased
+warning: could not return unpublished task agy-herdr-live's reserved slot /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/agy-herdr.p4aqlf/worker-pool/.treehouse/scratch-6aa6e8/1/scratch; its claim is retained
+task_record_present=false
+supported_relaunch_exit=1
+error: no task 'agy-herdr-live' in /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/agy-herdr.p4aqlf/home/state (fm-control resolves an exact task id only)
+remaining_claim=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/agy-herdr.p4aqlf/worker-pool/.treehouse/scratch-6aa6e8/1/.fm-slot-owner
+task=agy-herdr-live
+home=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/agy-herdr.p4aqlf/home

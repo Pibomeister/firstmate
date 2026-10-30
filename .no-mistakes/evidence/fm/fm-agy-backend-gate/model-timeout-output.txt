@@ -1,0 +1,5 @@
+notice: 'agy models' did not answer within 15s; launching with --model 'gemini-3.8-flash-low' unvalidated
+warning: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/fm-agy-harness.HxS1aP/zerobound/home/data/agy-zerobound-z14-56289/launch-brief.md records no ship branch; defaulting to legacy branch fm/agy-zerobound-z14-56289
+warning: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/fm-agy-harness.HxS1aP/zerobound/home/data/agy-zerobound-z14-56289/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+warning: the tmux server identity for firstmate:fm-agy-zerobound-z14-56289 could not be read; the record omits it, so a later loss of that server cannot be proven
+spawned agy-zerobound-z14-56289 harness=agy kind=ship mode=no-mistakes yolo=off window=firstmate:fm-agy-zerobound-z14-56289 worktree=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/fm-agy-harness.HxS1aP/zerobound/wt

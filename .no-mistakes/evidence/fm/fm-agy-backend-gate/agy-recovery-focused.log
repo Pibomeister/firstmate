@@ -1,0 +1,4 @@
+ok - fm-spawn: an agy readiness failure closes only its window and keeps a record fm-teardown resolves
+ok - fm-spawn: AGY send, signal, and backlog failures preserve published records
+ok - AGY live guard requires a fresh correct recovery report and always stops its isolated server
+ok - AGY refuses missing Treehouse custody capabilities before endpoint creation

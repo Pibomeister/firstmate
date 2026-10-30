@@ -1,0 +1,28 @@
+warning: herdr presentation parent is absent or ambiguous; using the ordinary flat layout without projection
+A new version of treehouse is available: v3.1.1 → v3.1.7
+Run "treehouse update" to update
+
+A new version of treehouse is available: v3.1.1 → v3.1.7
+Run "treehouse update" to update
+
+🌳 Leased worktree 1 at /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/agy-herdr.jLsndv/pool/.treehouse/scratch-4c2ce6/1/scratch. Run 'treehouse return /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/agy-herdr.jLsndv/pool/.treehouse/scratch-4c2ce6/1/scratch' to release it.
+spawned agy-herdr-live harness=agy kind=scout window=fm-lab-agy-gate-01m653:w1:p2 worktree=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/agy-herdr.jLsndv/pool/.treehouse/scratch-4c2ce6/1/scratch
+BRIEF_RECEIVED herdr-gate 80235 /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/agy-herdr.jLsndv/pool/.treehouse/scratch-4c2ce6/1/scratch
+complete: agy-herdr-live captain-call inventory reviewed
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  down 1s.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds 180; send captain replies as interim messages, never as the turn's final answer, while supervision is needed.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+teardown: reaping leaked worktree process(es) for agy-herdr-live: 16176 32876
+teardown: force-killing leaked worktree process(es) for agy-herdr-live: 16176
+A new version of treehouse is available: v3.1.1 → v3.1.7
+Run "treehouse update" to update
+
+🌳 Worktree returned to pool.
+teardown agy-herdr-live complete (window fm-lab-agy-gate-01m653:w1:p2, worktree /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/agy-herdr.jLsndv/pool/.treehouse/scratch-4c2ce6/1/scratch)
+Backlog: agy-herdr-live just finished (this home keeps no markdown backlog at /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/agy-herdr.jLsndv/home/data/backlog.md). Update /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/agy-herdr.jLsndv/home/data/backlog.md - move agy-herdr-live to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+Herdr launch report verified; task torn down.

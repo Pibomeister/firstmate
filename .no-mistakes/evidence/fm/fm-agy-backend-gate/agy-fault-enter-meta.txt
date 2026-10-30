@@ -1,0 +1,14 @@
+window=firstmate:fm-agy-fault-enter
+tmux_socket=/private/tmp/tmux-501/fm-agy-spawn-47726
+tmux_server_pid=84848
+tmux_server_identity=Thu Oct 29 19:17:52 2026     /opt/homebrew/bin/tmux -L fm-agy-spawn-47726 new-session -d -s firstmate
+tmux_window_id=@2
+endpoint_task_id=agy-fault-enter
+worktree=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/fm-agy-spawn.uHtLYj/pool/.treehouse/scratch-fbf260/1/scratch
+project=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/fm-agy-spawn.uHtLYj/home/projects/scratch
+harness=agy
+kind=scout
+tasktmp=/tmp/fm-agy-fault-enter
+model=gemini-3.8-flash-low
+effort=low
+spawn_gen=s1793323108.33815.5165

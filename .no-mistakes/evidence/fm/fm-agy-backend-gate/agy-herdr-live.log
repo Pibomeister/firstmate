@@ -1,0 +1,20 @@
+fm-herdr-lab: tripwire already exists for 'fm-lab-agy-gate-01m653'; refusing ambiguous ownership
+warning: herdr presentation parent is absent or ambiguous; using the ordinary flat layout without projection
+[eval]:6
+    if (matches.length !== 1) throw new Error("recorded checkout is not uniquely present in the configured Treehouse pool");
+                              ^
+
+Error: recorded checkout is not uniquely present in the configured Treehouse pool
+    at [eval]:6:37
+    at runScriptInThisContext (node:internal/vm:219:10)
+    at node:internal/process/execution:451:12
+    at [eval]-wrapper:6:24
+    at runScriptInContext (node:internal/process/execution:449:60)
+    at evalFunction (node:internal/process/execution:283:30)
+    at evalTypeScript (node:internal/process/execution:295:3)
+    at node:internal/main/eval_string:71:3
+
+Node.js v24.12.0
+error: could not reserve task agy-herdr-live's pool slot /Users/eduardopicazo/.treehouse/scratch-5b9802/1/scratch; refusing to launch without durable custody
+failed to return worktree: lease precondition failed: worktree /Users/eduardopicazo/.treehouse/scratch-5b9802/1/scratch is not leased
+warning: could not return unpublished task agy-herdr-live's reserved slot /Users/eduardopicazo/.treehouse/scratch-5b9802/1/scratch; its claim is retained

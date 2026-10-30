@@ -1,0 +1,17 @@
+window=firstmate:fm-agy-custody
+tmux_socket=/private/tmp/tmux-501/fm-agy-spawn-75976
+tmux_server_pid=96825
+tmux_server_identity=Thu Oct 29 19:06:11 2026     /opt/homebrew/bin/tmux -L fm-agy-spawn-75976 new-session -d -s firstmate
+tmux_window_id=@3
+endpoint_task_id=agy-custody
+worktree=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/fm-agy-spawn.vUCkRM/pool/.treehouse/scratch-44fb94/1/scratch
+project=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/fm-agy-spawn.vUCkRM/home/projects/scratch
+harness=agy
+kind=scout
+tasktmp=/tmp/fm-agy-custody
+model=gemini-3.8-flash-low
+effort=low
+spawn_gen=s1793322440.19479.8716
+control_relaunch_tx=16385.20261030T010716Z.12977
+decisions_reviewed=1
+decision_keys=

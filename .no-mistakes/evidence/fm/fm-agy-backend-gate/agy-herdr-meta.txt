@@ -1,0 +1,15 @@
+window=fm-lab-agy-gate-01m653:w1:p2
+endpoint_task_id=agy-herdr-live
+worktree=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/agy-herdr.jLsndv/pool/.treehouse/scratch-4c2ce6/1/scratch
+project=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/agy-herdr.jLsndv/home/projects/scratch
+harness=agy
+kind=scout
+tasktmp=/tmp/fm-agy-herdr-live
+model=gemini-3.8-flash-low
+effort=low
+spawn_gen=s1793322798.85987.9183
+backend=herdr
+herdr_session=fm-lab-agy-gate-01m653
+herdr_workspace_id=w1
+herdr_tab_id=w1:t2
+herdr_pane_id=w1:p2

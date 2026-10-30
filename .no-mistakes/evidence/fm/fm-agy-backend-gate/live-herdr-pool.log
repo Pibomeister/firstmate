@@ -1,0 +1,50 @@
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-agy/herdr/home
+SCENARIO: Herdr caller and endpoint shell use different Treehouse roots
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-agy/herdr/home
+🌳 Setting up worktree...
+🌳 Leased worktree at /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-agy/herdr/caller-pool/.treehouse/scratch-34453c/1/scratch. Run 'treehouse return /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-agy/herdr/caller-pool/.treehouse/scratch-34453c/1/scratch' to release it.
+error: agy did not start processing its brief in the pre-trusted worktree in window fm-lab-agy-pool-10995-12221:w1:p2; inspect window fm-lab-agy-pool-10995-12221:w1:p2
+warning: closed the endpoint fm-lab-agy-pool-10995-12221:w1:p2 of this failed spawn and kept task agy-herdr's record; recover it with 'bin/fm-control.sh agy-herdr relaunch --note "<what happened>"' or clean it up with 'bin/fm-teardown.sh agy-herdr'
+Recorded caller-pool checkout=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-agy/herdr/caller-pool/.treehouse/scratch-34453c/1/scratch; endpoint pool is unused
+failed [at=1793325385]: agy did not start processing its brief in the pre-trusted worktree in window fm-lab-agy-pool-10995-12221:w1:p2
+A new version of treehouse is available: v3.1.1 → v3.1.7
+Run "treehouse update" to update
+
+[{"name":"1","path":"/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-agy/herdr/caller-pool/.treehouse/scratch-34453c/1/scratch","status":"leased","branch":"","detached":true,"flavor":"git","lease_id":"e93003d1130e0a2c2d4a49e3b2a45082","lease_holder":"agy-herdr","leased_at":"2026-10-29T19:56:21.444714-06:00","processes":[]}]
+A new version of treehouse is available: v3.1.1 → v3.1.7
+Run "treehouse update" to update
+
+🌳 Setting up worktree...
+🌳 Leased worktree at /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-agy/herdr/caller-pool/.treehouse/scratch-34453c/2/scratch. Run 'treehouse return /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-agy/herdr/caller-pool/.treehouse/scratch-34453c/2/scratch' to release it.
+Second dispatch obtained /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-agy/herdr/caller-pool/.treehouse/scratch-34453c/2/scratch rather than /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-agy/herdr/caller-pool/.treehouse/scratch-34453c/1/scratch
+A new version of treehouse is available: v3.1.1 → v3.1.7
+Run "treehouse update" to update
+
+🌳 Worktree returned to pool.
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-agy/herdr/home
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-agy/herdr/home
+A new version of treehouse is available: v3.1.1 → v3.1.7
+Run "treehouse update" to update
+
+relaunched agy-herdr harness=agy from=agy model=gemini-3.8-flash-low effort=low backend=herdr endpoint=fm-lab-agy-pool-10995-12221:w2:p2 worktree=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-agy/herdr/caller-pool/.treehouse/scratch-34453c/1/scratch
+BRIEF_RECEIVED herdr-relaunch-10051-9340 80235 /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-agy/herdr/caller-pool/.treehouse/scratch-34453c/1/scratch
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  down 3s.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds 180; send captain replies as interim messages, never as the turn's final answer, while supervision is needed.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+complete: agy-herdr captain-call inventory reviewed
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-agy/herdr/home
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s; down 39s) - full banner already printed this episode.
+teardown: reaping leaked worktree process(es) for agy-herdr: 48801 54118
+teardown: force-killing leaked worktree process(es) for agy-herdr: 48801
+A new version of treehouse is available: v3.1.1 → v3.1.7
+Run "treehouse update" to update
+
+🌳 Worktree returned to pool.
+teardown agy-herdr complete (window fm-lab-agy-pool-10995-12221:w2:p2, worktree /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-agy/herdr/caller-pool/.treehouse/scratch-34453c/1/scratch)
+Backlog: agy-herdr just finished (this home keeps no markdown backlog at /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-agy/herdr/home/data/backlog.md). Update /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-agy/herdr/home/data/backlog.md - move agy-herdr to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+PASS: Herdr mismatch cannot lose custody and recovery processes a fresh brief in the original checkout

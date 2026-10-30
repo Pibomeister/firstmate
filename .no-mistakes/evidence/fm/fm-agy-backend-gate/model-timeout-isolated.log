@@ -1,0 +1,2 @@
+elapsed=29
+not ok - a zero model bound disabled the deadline (took 29s)

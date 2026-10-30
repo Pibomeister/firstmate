@@ -1,0 +1,14 @@
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-agy/live/home
+SCENARIO: unsupported Orca backend refuses without task or checkout
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-agy/live/home
+error: backend=orca requires a ready Orca runtime (reachable=false, state=not_running)
+PASS: refusal before allocation
+SCENARIO: real tmux AGY receives brief
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-agy/live/home
+🌳 Setting up worktree...
+🌳 Leased worktree at /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-agy/live/caller-pool/.treehouse/scratch-90133d/1/scratch. Run 'treehouse return /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-agy/live/caller-pool/.treehouse/scratch-90133d/1/scratch' to release it.
+warning: keeping task agy-tmux's published AGY record and worktree for relaunch or teardown
+rm: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-agy/live/agent-home/.gemini/antigravity-cli: Directory not empty
+rm: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-agy/live/agent-home/.gemini: Directory not empty
+rm: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-agy/live/agent-home: Directory not empty
+rm: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-agy/live: Directory not empty

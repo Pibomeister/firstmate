@@ -1,0 +1,24 @@
+  You are a crewmate worker managed by Firstmate, not a supervisor.
+  Do this bounded smoke task yourself and report through the task report only.
+
+  # Task
+  ## Captain's intent
+  Prove that the agy worker receives its launch brief.
+
+  ## Firstmate spec
+  Add 12345 and 67890.
+  Create a report at the absolute path
+  /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G
+  6EYEZE/.test-tmp/fm-agy-spawn.vUCkRM/home/data/agy-live/report.md
+  with one line beginning BRIEF_RECEIVED, the sum, and your current working
+  directory, unless the existing report already contains that line.
+  Then stop and wait.
+  Do not commit, push, or publish anything.
+
+● Ran (python3 -c "print(12345 + 67890); import os; prin...) (ctrl+o to expand)
+⣻  Running command...
+└ Tip: Press shift+tab to cycle modes (default, accept-edits, plan).
+────────────────────────────────────────────────────────────────────────────────
+>
+────────────────────────────────────────────────────────────────────────────────
+esc to cancel                                             Gemini 3.8 Flash · low

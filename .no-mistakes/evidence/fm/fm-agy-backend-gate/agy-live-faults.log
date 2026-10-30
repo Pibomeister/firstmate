@@ -1,0 +1,24 @@
+tests/.agy-live-faults.test.sh: line 129: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/fm-agy-spawn.QZH6J3/home/data/backlog.md: No such file or directory
+
+fault=literal exit=1
+A new version of treehouse is available: v3.1.1 → v3.1.7
+Run "treehouse update" to update
+
+A new version of treehouse is available: v3.1.1 → v3.1.7
+Run "treehouse update" to update
+
+🌳 Leased worktree 1 at /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/fm-agy-spawn.QZH6J3/pool/.treehouse/scratch-3d56a1/1/scratch. Run 'treehouse return /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/fm-agy-spawn.QZH6J3/pool/.treehouse/scratch-3d56a1/1/scratch' to release it.
+warning: keeping task agy-fault-literal's published AGY record and worktree for relaunch or teardown
+Preserved task=agy-fault-literal worktree=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/fm-agy-spawn.QZH6J3/pool/.treehouse/scratch-3d56a1/1/scratch
+complete: agy-fault-literal captain-call inventory reviewed
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  down 0s.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds 180; send captain replies as interim messages, never as the turn's final answer, while supervision is needed.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REFUSED: scout task agy-fault-literal has no report at /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.test-tmp/fm-agy-spawn.QZH6J3/home/data/agy-fault-literal/report.md.
+The report is the work product. Have the crewmate write it, or use --force after explicit discard approval.
+not ok - agy scout teardown failed for agy-fault-literal
