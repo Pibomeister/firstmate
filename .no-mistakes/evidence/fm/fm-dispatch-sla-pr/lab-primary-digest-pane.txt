@@ -1,0 +1,30 @@
+⏺ Captain, I received no session-start digest, so I have no Dispatch ledger section to quote. The only startup output in this session came from the browser tool status and the
+  superpowers skill introduction. As you asked, I ran no tools, so the startup command has not run in this session.
+✻ Churned for 10s · done 12:29 PM
+❯ Run bin/fm-session-start.sh now as your startup step. Then quote verbatim every line of its Dispatch ledger section and say what it tells you to do. Do not act on the goals 
+  Ran 1 shell command
+⏺ Captain, the startup step ran and the session holds the lock. Here is the Dispatch ledger section, verbatim:
+  Dispatch ledger (fm-dispatch-log.sh overdue)
+  --------------------------------------------------------------------------------
+  OVERDUE stale-goal age=70m received=2026-10-30T10:00:00Z project=demo summary=still waiting
+  LATE late-goal late=20m event=dispatched
+  Dispatch or block each OVERDUE goal this turn and report it to the captain, because it still needs action. Each LATE goal is already resolved: include it in the next batched
+  update or morning report rather than on each heartbeat.
+  What it tells me to do:
+  - stale-goal (overdue, project demo): This goal has waited 70 minutes with no dispatch or recorded blocker. I must dispatch it or block it this turn, and report it to you. T
+    line is that report.
+  - late-goal (late): This goal was dispatched 20 minutes past its deadline, so it needs no action. I only mention it in the next batched update or morning report.
+  Not acted on, as you ordered: I did not dispatch or block either goal, so stale-goal stays overdue and the digest's "this turn" instruction is unmet. It will keep being list
+  until it is resolved.
+  Other startup results:
+  - Empty home: The backlog, project registry, and captain records are all absent, and no work is under way. demo is therefore not a registered project, which would matter if 
+    want stale-goal dispatched.
+  - Possible startup fault: The network checks finished, but bin/fm-bootstrap.sh printed child setpgid (48562 to 48562): Operation not permitted. I have not investigated it.
+  - Older tool: The installed lavish-axi is older than 0.1.80. It still works, but confirmed board replies need the upgrade.
+✻ Churned for 58s · done 12:31 PM
+  #1 Without running any tool: quote verbatim the Dispatch ledger section of your session-start digest, or say that you received no digest.                                    
+  ┃│
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle)

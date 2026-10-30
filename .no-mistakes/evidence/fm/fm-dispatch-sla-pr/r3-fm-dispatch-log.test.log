@@ -1,0 +1,17 @@
+ok - received appends one timestamped TSV line with project and summary
+ok - overdue stays quiet inside the 15-minute SLA and flags the goal after it
+ok - FM_DISPATCH_SLA_MINUTES widens and tightens the SLA
+ok - a dispatched goal is never overdue
+ok - blocked is a logged, non-overdue outcome that a later dispatch supersedes
+ok - malformed, duplicate, and orphan requests are refused without writing
+ok - tabs and newlines in free text are folded so every line stays five fields
+ok - a dispatched or blocked line written after the SLA records late=<m>m, and show and overdue surface it
+ok - a goal that met the SLA is never late, and free text cannot forge a late mark
+ok - overdue reports LATE for 24 hours after the late line, and show keeps the record
+ok - a duplicate received exits 4, distinct from other refusals
+ok - queued is a non-final state that still goes overdue, and a secondmate hand-off dispatches it
+ok - queued is not final, so lateness is measured through it until the first dispatched or blocked line
+ok - the SLA is judged once at the first final line, and a later queue never adds a late mark
+ok - the LATE window runs from the late final line, not from received or a later retry
+timeout 1700 bash tests/fm-dispatch-log.test.sh  9.18s user 22.32s system 1% cpu 28:27.04 total
+rc=124

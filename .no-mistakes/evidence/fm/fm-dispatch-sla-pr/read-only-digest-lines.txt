@@ -1,0 +1,5 @@
+10:●  READ-ONLY SESSION - FLEET LOCK OWNERSHIP WAS NOT VERIFIED
+103:Dispatch ledger (fm-dispatch-log.sh overdue)
+105:OVERDUE stale-goal age=71m received=2026-10-30T10:00:00Z project=demo summary=still waiting
+106:LATE late-goal late=20m event=dispatched
+108:Information only: the session holding the lock owns these goals.

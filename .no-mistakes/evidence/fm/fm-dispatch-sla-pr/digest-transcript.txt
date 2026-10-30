@@ -1,0 +1,45 @@
+NOTE: section D3 below is a failed fixture attempt (the copied sleep binary died, so the lock was stale and the session acquired it). It proves nothing about read-only mode. See digest-read-only-summary.txt for the valid read-only run.
+=== D1 no ledger: no ledger section
+3:SESSION START - /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.wJDXxT
+8:lock acquired: harness pid 30983
+28:- Supervision host: on; it takes away-posture wakes and, where the dialog mirror is verified, eligible attended wakes itself, and hands the rest to you (protocol at the end of this block).
+51:   [`watcher-continuity.md`](../watcher-continuity.md) owns the exact session-lock recovery boundary.
+64:   `supervision-host: branch-outcome: ...` means it handled a wake and recorded captain outcomes for you: run `bin/fm-wake-drain.sh`, process each entry of its `BRANCH OUTCOMES` section as firstmate from the task's current state, because each entry says how
+158:Follow the supervision operating instructions block above for harness 'claude'.
+163:[session-start exit 0]
+
+=== D2 lock-holding session with overdue + LATE
+3:SESSION START - /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.wJDXxT
+8:lock acquired: harness pid 30983
+28:- Supervision host: on; it takes away-posture wakes and, where the dialog mirror is verified, eligible attended wakes itself, and hands the rest to you (protocol at the end of this block).
+51:   [`watcher-continuity.md`](../watcher-continuity.md) owns the exact session-lock recovery boundary.
+64:   `supervision-host: branch-outcome: ...` means it handled a wake and recorded captain outcomes for you: run `bin/fm-wake-drain.sh`, process each entry of its `BRANCH OUTCOMES` section as firstmate from the task's current state, because each entry says how
+125:Dispatch ledger (fm-dispatch-log.sh overdue)
+127:OVERDUE lab-overdue age=3592486m received=2026-10-30T18:45:14Z summary=still waiting
+128:LATE lab-late late=30m event=dispatched
+130:Dispatch or block each OVERDUE goal this turn and report it to the captain, because it still needs action. Each LATE goal is already resolved: include it in the next batched update or morning report rather than on each heartbeat.
+165:Follow the supervision operating instructions block above for harness 'claude'.
+170:[session-start exit 0]
+
+=== D3 second session refused by a live lock fixture (disposable process named claude)
+3:SESSION START - /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.wJDXxT
+8:lock acquired: harness pid 30983
+28:- Supervision host: on; it takes away-posture wakes and, where the dialog mirror is verified, eligible attended wakes itself, and hands the rest to you (protocol at the end of this block).
+51:   [`watcher-continuity.md`](../watcher-continuity.md) owns the exact session-lock recovery boundary.
+64:   `supervision-host: branch-outcome: ...` means it handled a wake and recorded captain outcomes for you: run `bin/fm-wake-drain.sh`, process each entry of its `BRANCH OUTCOMES` section as firstmate from the task's current state, because each entry says how
+125:Dispatch ledger (fm-dispatch-log.sh overdue)
+127:OVERDUE lab-overdue age=3592487m received=2026-10-30T18:45:14Z summary=still waiting
+128:LATE lab-late late=30m event=dispatched
+130:Dispatch or block each OVERDUE goal this turn and report it to the captain, because it still needs action. Each LATE goal is already resolved: include it in the next batched update or morning report rather than on each heartbeat.
+165:Follow the supervision operating instructions block above for harness 'claude'.
+170:[session-start exit 0]
+ledger unchanged by read-only session
+
+=== D4 only resolved old entries: section absent
+3:SESSION START - /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.wJDXxT
+8:lock acquired: harness pid 30983
+28:- Supervision host: on; it takes away-posture wakes and, where the dialog mirror is verified, eligible attended wakes itself, and hands the rest to you (protocol at the end of this block).
+51:   [`watcher-continuity.md`](../watcher-continuity.md) owns the exact session-lock recovery boundary.
+64:   `supervision-host: branch-outcome: ...` means it handled a wake and recorded captain outcomes for you: run `bin/fm-wake-drain.sh`, process each entry of its `BRANCH OUTCOMES` section as firstmate from the task's current state, because each entry says how
+158:Follow the supervision operating instructions block above for harness 'claude'.
+163:[session-start exit 0]

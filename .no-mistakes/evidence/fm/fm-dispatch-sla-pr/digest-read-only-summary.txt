@@ -1,0 +1,16 @@
+fixture pid 12691 comm=claude args=claude 300
+8:error: another live firstmate session holds the lock (pid 12691); operate read-only until resolved
+10:●  READ-ONLY SESSION - FLEET LOCK OWNERSHIP WAS NOT VERIFIED
+11:●  error: another live firstmate session holds the lock (pid 12691); operate read-only until resolved
+30:skipped (read-only session) - 0 record(s) remain queued because this session lacks verified fleet-lock ownership.
+38:- Supervision host: on; it takes away-posture wakes and, where the dialog mirror is verified, eligible attended wakes itself, and hands the rest to you (protocol at the end of this block).
+135:Dispatch ledger (fm-dispatch-log.sh overdue)
+137:OVERDUE lab-overdue age=3592490m received=2020-01-01T00:00:00Z summary=still waiting
+138:LATE lab-late late=30m event=dispatched
+140:Information only: the session holding the lock owns these goals.
+147:They need the fleet lock, and this session must not spawn, steer, or merge, so it
+148:has no action they would gate. The session holding the lock runs them.
+177:This session did not acquire the fleet lock. Stay read-only: do not arm,
+179:with verified fleet-lock ownership may perform mutable follow-up.
+183:[session-start exit 0]
+ledger unchanged by read-only session

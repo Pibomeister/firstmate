@@ -1,0 +1,11 @@
+== digest test alone
+ok - session start lists overdue goals, and only a lock-holding session is told to act on them
+rc=
+== lock concurrency run 1
+rc=
+== lock concurrency run 2
+rc=
+== lock concurrency run 3
+tests/.tmp-select-695.test.sh: line 1004: 16982 Terminated: 15          sleep 0.05
+tests/.tmp-select-695.test.sh: line 1004: 16980 Terminated: 15          sleep 0.05
+rc=

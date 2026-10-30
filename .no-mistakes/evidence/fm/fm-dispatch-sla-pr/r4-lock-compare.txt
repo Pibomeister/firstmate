@@ -1,0 +1,11 @@
+=== base start 15:13:47 load: load averages: 307.59 392.18 434.06
+=== base rc=124 wall=725s load: load averages: 429.18 484.91 470.13
+=== head start 15:25:53 load: load averages: 429.18 484.91 470.13
+tests/lock-only.test.sh: line 1007:  3517 Terminated: 15          sleep 0.05
+tests/lock-only.test.sh: line 1007:  3553 Terminated: 15          sleep 0.05
+tests/lock-only.test.sh: line 1007:  3525 Terminated: 15          sleep 0.05
+tests/lock-only.test.sh: line 1007:  3581 Terminated: 15          sleep 0.05
+tests/lock-only.test.sh: line 1007:  3820 Terminated: 15          sleep 0.05
+tests/lock-only.test.sh: line 1007:  3531 Terminated: 15          sleep 0.05
+tests/lock-only.test.sh: line 1007:  3533 Terminated: 15          sleep 0.05
+=== head rc=137 wall=730s load: load averages: 482.82 392.86 417.13

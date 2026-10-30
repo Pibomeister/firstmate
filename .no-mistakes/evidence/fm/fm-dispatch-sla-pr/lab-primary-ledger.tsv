@@ -1,0 +1,6 @@
+2026-10-30T10:00:00Z	received	stale-goal	project=demo summary=still waiting
+x	received	late-goal	summary=dispatched late
+x	dispatched	late-goal	task=t late=20m
+2026-10-30T18:32:09Z	received	demo-202610301832	project=demo summary=write a release note for the demo project
+2026-10-30T18:32:10Z	blocked	demo-202610301832	reason=demo is not registered in this home and nothing can start in this lab; the captain ordered no spawn
+2026-10-30T18:32:10Z	blocked	stale-goal	reason=demo is not registered in this home and nothing can start in this lab; the captain ordered no spawn late=71m

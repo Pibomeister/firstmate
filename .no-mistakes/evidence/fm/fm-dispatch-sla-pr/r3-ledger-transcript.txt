@@ -1,0 +1,230 @@
+## S1 on-time dispatch
+$ [t=0s] fm-dispatch-log.sh received ontime-1 --summary fix login --project app
+2026-10-30T20:18:18Z received ontime-1: project=app summary=fix login
+[exit 0]
+$ [t=600s] fm-dispatch-log.sh dispatched ontime-1 --task app-t1 --note routed
+2026-10-30T20:28:18Z dispatched ontime-1: task=app-t1 note=routed
+[exit 0]
+$ [t=600s] fm-dispatch-log.sh overdue
+[exit 0]
+## S2 overdue then late dispatch
+$ [t=0s] fm-dispatch-log.sh received slow-1 --summary slow goal
+2026-10-30T20:18:18Z received slow-1: summary=slow goal
+[exit 0]
+$ [t=901s] fm-dispatch-log.sh overdue
+OVERDUE slow-1 age=15m received=2026-10-30T20:18:18Z summary=slow goal
+[exit 3]
+$ [t=1200s] fm-dispatch-log.sh dispatched slow-1 --task app-t2
+2026-10-30T20:38:18Z dispatched slow-1: task=app-t2 late=20m
+LATE slow-1 late=20m
+[exit 0]
+$ [t=1200s] fm-dispatch-log.sh overdue
+LATE slow-1 late=20m event=dispatched
+[exit 0]
+$ [t=1200s] fm-dispatch-log.sh show slow-1
+2026-10-30T20:18:18Z	1793391498	received	slow-1	summary=slow goal
+2026-10-30T20:38:18Z	1793392698	dispatched	slow-1	task=app-t2 late=20m
+[exit 0]
+## S3 LATE window from late final line
+$ [t=0s] fm-dispatch-log.sh received wk-1 --summary weekend
+2026-10-30T20:18:18Z received wk-1: summary=weekend
+[exit 0]
+$ [t=90000s] fm-dispatch-log.sh dispatched wk-1 --task t
+2026-10-31T21:18:18Z dispatched wk-1: task=t late=1500m
+LATE wk-1 late=1500m
+[exit 0]
+$ [t=90060s] fm-dispatch-log.sh overdue
+LATE wk-1 late=1500m event=dispatched
+[exit 0]
+$ [t=176401s] fm-dispatch-log.sh overdue
+[exit 0]
+## S4 queued stays overdue; blocked final; re-queue reopens
+$ [t=0s] fm-dispatch-log.sh received q-1 --summary queued
+2026-10-30T20:18:18Z received q-1: summary=queued
+[exit 0]
+$ [t=60s] fm-dispatch-log.sh queued q-1 --reason capacity full
+2026-10-30T20:19:18Z queued q-1: reason=capacity full
+[exit 0]
+$ [t=901s] fm-dispatch-log.sh overdue
+OVERDUE q-1 age=15m received=2026-10-30T20:18:18Z summary=queued
+LATE slow-1 late=20m event=dispatched
+LATE wk-1 late=1500m event=dispatched
+[exit 3]
+$ [t=901s] fm-dispatch-log.sh received b-1 --summary b
+2026-10-30T20:33:19Z received b-1: summary=b
+[exit 0]
+$ [t=1000s] fm-dispatch-log.sh blocked b-1 --reason no quota
+2026-10-30T20:34:58Z blocked b-1: reason=no quota
+[exit 0]
+$ [t=1900s] fm-dispatch-log.sh queued b-1 --reason quota back
+2026-10-30T20:49:58Z queued b-1: reason=quota back
+[exit 0]
+$ [t=1900s] fm-dispatch-log.sh overdue
+OVERDUE q-1 age=31m received=2026-10-30T20:18:18Z summary=queued
+LATE slow-1 late=20m event=dispatched
+LATE wk-1 late=1500m event=dispatched
+[exit 3]
+$ [t=2801s] fm-dispatch-log.sh overdue
+OVERDUE q-1 age=46m received=2026-10-30T20:18:18Z summary=queued
+OVERDUE b-1 age=15m received=2026-10-30T20:33:19Z summary=b
+LATE slow-1 late=20m event=dispatched
+LATE wk-1 late=1500m event=dispatched
+[exit 3]
+$ [t=2801s] fm-dispatch-log.sh dispatched b-1 --task t9
+2026-10-30T21:04:59Z dispatched b-1: task=t9
+[exit 0]
+$ [t=2801s] fm-dispatch-log.sh dispatched q-1 --task secondmate:mate1
+2026-10-30T21:04:59Z dispatched q-1: task=secondmate:mate1 late=46m
+LATE q-1 late=46m
+[exit 0]
+$ [t=2801s] fm-dispatch-log.sh overdue
+LATE slow-1 late=20m event=dispatched
+LATE wk-1 late=1500m event=dispatched
+LATE q-1 late=46m event=dispatched
+[exit 0]
+$ [t=2801s] fm-dispatch-log.sh show b-1
+2026-10-30T20:33:19Z	1793392399	received	b-1	summary=b
+2026-10-30T20:34:58Z	1793392498	blocked	b-1	reason=no quota
+2026-10-30T20:49:58Z	1793393398	queued	b-1	reason=quota back
+2026-10-30T21:04:59Z	1793394299	dispatched	b-1	task=t9
+[exit 0]
+## S5 adversarial
+      13
+$ [t=0s] fm-dispatch-log.sh received bad id --summary x
+fm-dispatch-log: goal id must match [A-Za-z0-9._-]+: 'bad id'
+[exit 1]
+$ [t=0s] fm-dispatch-log.sh received x1
+fm-dispatch-log: received needs --summary
+[exit 1]
+$ [t=0s] fm-dispatch-log.sh received ontime-1 --summary dup
+fm-dispatch-log: goal ontime-1 is already in the ledger
+[exit 4]
+$ [t=0s] fm-dispatch-log.sh dispatched ghost --task t
+fm-dispatch-log: goal ghost has no received line
+[exit 1]
+$ [t=0s] fm-dispatch-log.sh dispatched ontime-1
+fm-dispatch-log: dispatched needs --task
+[exit 1]
+$ [t=0s] fm-dispatch-log.sh blocked ontime-1 --reason 
+fm-dispatch-log: blocked needs --reason
+[exit 1]
+$ [t=0s] fm-dispatch-log.sh received x2 --summary s --bogus 1
+fm-dispatch-log: unknown argument: --bogus
+[exit 1]
+$ [t=0s] fm-dispatch-log.sh nosuchcmd
+fm-dispatch-log.sh - timestamped captain-goal intake ledger with a dispatch SLA.
+
+Usage:
+  fm-dispatch-log.sh received   <goal-id> --summary <text> [--project <name>]
+  fm-dispatch-log.sh dispatched <goal-id> --task <task-id> [--note <text>]
+  fm-dispatch-log.sh queued     <goal-id> --reason <text>
+  fm-dispatch-log.sh blocked    <goal-id> --reason <text>
+  fm-dispatch-log.sh overdue
+  fm-dispatch-log.sh show       [<goal-id>]
+
+A goal is one new captain ask for work: a chat request, an inbox note, or an
+away-mode ask. A follow-up that only amends a goal already in the ledger is
+not a new goal. Its id is `<project-or-topic>-<yyyymmddHHMM>` from the moment
+it was read (add `-2`, `-3` for more goals in the same minute) and must match
+[A-Za-z0-9._-]+.
+
+Every new goal gets one `received` line the moment it is read, and then,
+within the dispatch SLA (default 15 minutes), a `dispatched` line naming the
+spawned task or a `blocked` line naming the concrete reason nothing can start.
+Routing a goal to a secondmate is `dispatched --task secondmate:<id>`; the
+secondmate logs the goal again in its own home's ledger.
+`queued` records work waiting behind other work: it is not final, and the
+goal still goes overdue until it is dispatched or blocked.
+The ledger is append-only TSV:
+  <utc-iso>\t<epoch>\t<event>\t<goal-id>\t<detail>
+A goal's current state is its newest line. `dispatched` and `blocked` are
+final; a later `dispatched` supersedes a `blocked`.
+The SLA is judged once, at the goal's first final line anywhere in its history:
+if that line is past the SLA, its detail ends with ` late=<m>m` (minutes since
+`received`) and it also prints `LATE <goal-id> late=<m>m`, so a late dispatch
+stays on record for `show`. `queued` lines and lines after the first final line
+never add a late mark. A trailing ` late=<m>m` in caller free text is dropped,
+so only the script can write the mark.
+
+A goal is overdue when its newest line is `received` or `queued` and the SLA
+has passed since its clock start: `received` if it has never had a final line
+(`queued` does not reset it), else its newest `queued` line. A re-queued goal
+that goes overdue and is later dispatched gets no second late mark.
+
+`overdue` prints every overdue goal, with age counted from its clock start, as
+`OVERDUE <goal-id> age=<m>m received=<iso>
+[project=<name> ]summary=<text>`, then every goal whose late final line was
+written in the last 24 hours, as `LATE <goal-id> late=<m>m event=<event>`; older
+late marks stay in `show`. It exits 3 when any OVERDUE line exists and 0 otherwise;
+exit 3 is a result to act on, not an error.
+
+Refuses, and writes nothing, when: the goal id is not [A-Za-z0-9._-]+; a
+required flag is missing or empty; an argument is unknown;
+FM_DISPATCH_SLA_MINUTES is not a whole number; or `dispatched`/`queued`/`blocked`
+names a goal with no `received` line (all exit 1). An unknown subcommand prints
+this usage and exits 2. `received` for an id already in the ledger exits 4, so
+a retry can tell "already logged" from a mistake.
+Tabs and newlines in free text are folded to spaces.
+
+Environment: FM_HOME selects the home; FM_STATE_OVERRIDE overrides its state
+directory (the ledger is <state>/dispatch-log.tsv); FM_DISPATCH_SLA_MINUTES
+overrides the default SLA; FM_DISPATCH_NOW overrides the current epoch (tests
+only).
+[exit 2]
+$ [t=0s] fm-dispatch-log.sh overdue
+fm-dispatch-log: FM_DISPATCH_SLA_MINUTES must be a whole number
+[exit 1]
+$ [t=0s] fm-dispatch-log.sh received forge --summary a
+2026-10-30T20:18:18Z received forge: summary=a
+[exit 0]
+$ [t=0s] fm-dispatch-log.sh dispatched forge --task t late=999m
+2026-10-30T20:18:18Z dispatched forge: task=t
+[exit 0]
+$ [t=0s] fm-dispatch-log.sh show forge
+2026-10-30T20:18:18Z	1793391498	received	forge	summary=a
+2026-10-30T20:18:18Z	1793391498	dispatched	forge	task=t
+[exit 0]
+$ [t=5s] fm-dispatch-log.sh received tabs --summary a	b
+c
+2026-10-30T20:18:23Z received tabs: summary=a b c
+[exit 0]
+$ [t=5s] fm-dispatch-log.sh show tabs
+2026-10-30T20:18:23Z	1793391503	received	tabs	summary=a b c
+[exit 0]
+      16
+## S6 SLA override
+$ [t=5s] fm-dispatch-log.sh received sla --summary s
+2026-10-30T20:18:23Z received sla: summary=s
+[exit 0]
+$ [t=125s] fm-dispatch-log.sh overdue
+LATE slow-1 late=20m event=dispatched
+LATE wk-1 late=1500m event=dispatched
+LATE q-1 late=46m event=dispatched
+[exit 0]
+## S6-redo SLA boundary and override (fresh lab)
+$ [t=0s sla=default] fm-dispatch-log.sh received a --summary a
+2026-10-30T20:19:20Z received a: summary=a
+[exit 0]
+$ [t=900s sla=default] fm-dispatch-log.sh overdue
+[exit 0]
+$ [t=901s sla=default] fm-dispatch-log.sh overdue
+OVERDUE a age=15m received=2026-10-30T20:19:20Z summary=a
+[exit 3]
+$ [t=120s sla=2] fm-dispatch-log.sh overdue
+[exit 0]
+$ [t=121s sla=2] fm-dispatch-log.sh overdue
+OVERDUE a age=2m received=2026-10-30T20:19:20Z summary=a
+[exit 3]
+$ [t=900s sla=default] fm-dispatch-log.sh received b --summary b
+2026-10-30T20:34:20Z received b: summary=b
+[exit 0]
+$ [t=1800s sla=default] fm-dispatch-log.sh dispatched b --task t
+2026-10-30T20:49:20Z dispatched b: task=t
+[exit 0]
+$ [t=1800s sla=default] fm-dispatch-log.sh received c --summary c
+2026-10-30T20:49:20Z received c: summary=c
+[exit 0]
+$ [t=2701s sla=default] fm-dispatch-log.sh blocked c --reason r
+2026-10-30T21:04:21Z blocked c: reason=r late=15m
+LATE c late=15m
+[exit 0]

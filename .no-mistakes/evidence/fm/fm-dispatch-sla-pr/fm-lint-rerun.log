@@ -1,0 +1,3 @@
+ok - fm-lint.sh --help reports the complete executable interface
+ok - fm-lint.sh --list-files reports the complete shell inventory
+lint rc=124

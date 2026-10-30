@@ -1,0 +1,4 @@
+2026-10-30T19:21:47Z	1793388107	received	lab-overdue	project=app summary=still waiting
+2026-10-30T19:21:47Z	1793388107	received	lab-late	summary=late one
+2026-10-30T20:11:47Z	1793391107	dispatched	lab-late	task=t1 late=50m
+2026-10-30T20:21:51Z	1793391711	received	lab-fresh	summary=just in

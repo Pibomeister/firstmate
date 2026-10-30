@@ -1,0 +1,28 @@
+  - Older tool: The installed lavish-axi is older than 0.1.80. It still works, but confirmed board replies need the upgrade.
+✻ Churned for 58s · done 12:31 PM
+❯ New ask from the captain, this is a new goal: write a release note for the demo project. Follow AGENTS.md intake. demo is not registered and nothing can start in this lab, s
+  not spawn. Also resolve stale-goal the same way. Then run bin/fm-dispatch-log.sh overdue and show its exact output and exit code.
+  Ran 2 shell commands
+⏺ Captain, both goals are now recorded as blocked, and nothing was spawned. The ledger has no overdue goals left.
+  Exact output of bin/fm-dispatch-log.sh overdue:
+  LATE stale-goal late=71m event=blocked
+  LATE late-goal late=20m event=dispatched
+  Exit code: 0
+  The goals:
+  - Release note for demo: I logged this as new goal demo-202610301832 and blocked it in the same minute, so it was on time.
+  - stale-goal: It is blocked for the same reason, but past the 15-minute limit, so the ledger marks it 71 minutes late.
+  - late-goal: This is unchanged and is listed only as already resolved.
+  Reason recorded for both blocks: "demo is not registered in this home and nothing can start in this lab; the captain ordered no spawn".
+  What this means:
+  - The release note will not get written yet. A block is not a cancellation, and a later dispatch can replace it. To unblock it, demo must be registered in a home where work 
+    start. This home's project registry is absent, so I am raising that gap with you.
+  - No backlog item exists. I filed neither goal in the backlog, because you asked only for intake and the ledger result. The ledger is the only record of them.
+  Ledger timing mismatch: stale-goal shows a receipt time of 10:00Z, but the ledger counted about 70 minutes when the clock read 18:32Z. That gap should be about 8.5 hours. Th
+  looks like lab data or a test clock, but I did not investigate it. If it is real data, the 71-minute late mark understates the delay.
+✻ Sautéed for 25s · done 12:32 PM
+  #2 Run bin/fm-session-start.sh now as your startup step. Then quote verbatim every line of its Dispatch ledger section and say what it tells you to do. Do not act on the …  
+  │┃│
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle)

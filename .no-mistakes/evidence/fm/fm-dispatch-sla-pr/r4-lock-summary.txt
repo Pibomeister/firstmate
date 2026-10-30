@@ -1,0 +1,14 @@
+=== base start 15:13:47 load: load averages: 307.59 392.18 434.06
+=== base rc=124 wall=725s load: load averages: 429.18 484.91 470.13
+=== head start 15:25:53 load: load averages: 429.18 484.91 470.13
+=== head rc=137 wall=730s load: load averages: 482.82 392.86 417.13
+--- samples: fixture state over time
+15:24:59 base ready=      40 done=      12 winners=       4 stalled=1
+15:25:36 base ready=      40 done=      13 winners=       4 stalled=1 lockpid=31380
+15:27:03 head ready=      40 done=       0 winners=       0 stalled=0 lockpid=
+15:29:18 head ready=      40 done=       2 winners=       1 stalled=0 lockpid=57057
+15:31:28 head ready=      40 done=       6 winners=       1 stalled=0 lockpid=57057
+15:33:36 head ready=      40 done=      11 winners=       1 stalled=0 lockpid=57057
+15:35:43 head ready=      40 done=      18 winners=       1 stalled=0 lockpid=57057
+15:37:53 head ready=      40 done=      23 winners=       1 stalled=0 lockpid=57057
+15:37:53 head ready=      40 done=      23 winners=       1 stalled=0 lockpid=57057

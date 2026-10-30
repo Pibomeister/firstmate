@@ -1,0 +1,2 @@
+not ok - concurrent session-lock acquisition produced 3 winners
+lock rc=1

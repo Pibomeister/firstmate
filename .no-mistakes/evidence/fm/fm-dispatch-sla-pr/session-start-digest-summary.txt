@@ -1,0 +1,18 @@
+=== A: lab home, no ledger
+rc=0
+(no dispatch lines)
+=== B: lock holder, overdue+LATE+fresh goals
+rc=0
+93:Dispatch ledger (fm-dispatch-log.sh overdue)
+95:OVERDUE stale-goal age=60m received=2026-10-30T10:00:00Z project=demo summary=still waiting
+96:LATE late-goal late=20m event=dispatched
+98:Dispatch or block each OVERDUE goal this turn and report it to the captain, because it still needs action. Each LATE goal is already resolved: include it in the next batched update or morning report rather than on each heartbeat.
+=== D: all goals resolved on time -> no section
+rc=0
+(no dispatch lines)
+=== E: garbage ledger does not break digest
+rc=0
+(no dispatch lines)
+
+The digest above is complete for this session start. The READ-ONCE CONTRACT
+section near the top of it governs what may still be read from disk.
