@@ -185,7 +185,35 @@ dl $((T0 + 120)) dispatched q5 --task t-q5 >/dev/null || fail "q5 dispatch refus
 out=$(dl $((T0 + 91 * 60)) overdue); rc=$?
 [ "$rc" = 0 ] || fail "late-resolved queued goals made overdue exit $rc"
 case "$out" in *'LATE q2 late=61m event=dispatched'*) ;; *) fail "overdue missed a late dispatch after a queue: $out" ;; esac
-case "$out" in *'LATE q3 late=70m event=dispatched'*) ;; *) fail "overdue understated a late queue followed by a dispatch: $out" ;; esac
+case "$out" in *'LATE q3 late=70m event=dispatched'*) ;; *) fail "overdue did not judge a late-queued goal at its dispatch: $out" ;; esac
 case "$out" in *'LATE q4 late=30m event=blocked'*) ;; *) fail "overdue missed a late block after a queue: $out" ;; esac
 case "$out" in *'LATE q5'*) fail "a goal queued and dispatched on time was reported late: $out" ;; esac
 pass "queued is not final, so lateness is measured through it until the first dispatched or blocked line"
+
+dl "$T0" received rq1 --summary 'blocked on time, queued, dispatched' >/dev/null || fail "rq1 refused"
+dl $((T0 + 5 * 60)) blocked rq1 --reason 'no quota' >/dev/null || fail "rq1 block refused"
+out=$(dl $((T0 + 60 * 60)) queued rq1 --reason 'quota back, capacity full') || fail "rq1 queue refused"
+case "$out" in *LATE*) fail "a queue after an on-time block was marked late: $out" ;; esac
+out=$(dl $((T0 + 61 * 60)) overdue | grep ' rq1 ')
+[ -z "$out" ] || fail "a queue after an on-time block was reported: $out"
+out=$(dl $((T0 + 65 * 60)) dispatched rq1 --task t-rq1) || fail "rq1 dispatch refused"
+case "$out" in *LATE*) fail "a dispatch after a re-queue was marked late: $out" ;; esac
+[ "$(dl 0 show rq1 | tail -n 1 | cut -f5)" = 'task=t-rq1' ] \
+  || fail "a re-queued goal carries a false late mark: $(dl 0 show rq1)"
+dl "$T0" received rq2 --summary 'dispatched late, queued, dispatched again' >/dev/null || fail "rq2 refused"
+dl $((T0 + 20 * 60)) dispatched rq2 --task t-rq2 >/dev/null || fail "rq2 dispatch refused"
+dl $((T0 + 30 * 60)) queued rq2 --reason 'task failed, capacity full' >/dev/null || fail "rq2 queue refused"
+out=$(dl $((T0 + 120 * 60)) dispatched rq2 --task t-rq2-retry) || fail "rq2 retry refused"
+case "$out" in *LATE*) fail "a retry after a re-queue added a late mark: $out" ;; esac
+dl "$T0" received rq3 --summary 'queued past the SLA, not yet final' >/dev/null || fail "rq3 refused"
+out=$(dl $((T0 + 20 * 60)) queued rq3 --reason 'capacity full') || fail "rq3 queue refused"
+case "$out" in *LATE*) fail "a queued line was judged late: $out" ;; esac
+[ "$(dl 0 show rq3 | tail -n 1 | cut -f5)" = 'reason=capacity full' ] \
+  || fail "a queued line carries a late mark: $(dl 0 show rq3)"
+out=$(dl $((T0 + 121 * 60)) overdue); rc=$?
+[ "$rc" = 3 ] || fail "a goal with no final line did not exit 3 (rc=$rc): $out"
+case "$out" in *'OVERDUE rq3 age=121m'*) ;; *) fail "a queued goal with no final line was not overdue: $out" ;; esac
+case "$out" in *'OVERDUE rq1'*|*'OVERDUE rq2'*) fail "a goal with a final line was overdue: $out" ;; esac
+case "$out" in *'LATE rq1'*|*'LATE rq3'*) fail "a goal not judged late was listed LATE: $out" ;; esac
+case "$out" in *'LATE rq2 late=20m event=dispatched'*) ;; *) fail "a later line changed the judged late mark: $out" ;; esac
+pass "the SLA is judged once at the first final line, and a later queue neither reopens it nor goes overdue"
