@@ -803,7 +803,7 @@ run_gate_cleanup() {  # <dir> <backend> -> "closed=N pending=N dispatch=N"; warn
   (
     set -u
     # Exported because the extracted functions sourced below consume them.
-    export BACKEND=$backend T='fakeses:1' ID=gateunit ZELLIJ_TAB_ID=7
+    export BACKEND=$backend HARNESS=kimi T='fakeses:1' ID=gateunit ZELLIJ_TAB_ID=7
     export RELAUNCH="${FAKE_RELAUNCH:-0}" BACKLOG_TRANSITION="${FAKE_BACKLOG_TRANSITION:-1}"
     export FM_BACKLOG_TRANSITION_ERROR='fake dispatch refusal'
     export STATE=$dir DATA=$dir
