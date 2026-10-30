@@ -1,0 +1,23 @@
+--- lock-holding session, lab home
+135:Dispatch ledger (fm-dispatch-log.sh overdue)
+136---------------------------------------------------------------------------------
+137-OVERDUE lab-old age=60m received=2026-10-30T16:35:42Z project=acme summary=wait
+138-LATE lab-late late=60m event=dispatched
+139-
+140-Information only: the session holding the lock owns these goals.
+141-
+142-================================================================================
+143-NETWORK CHECKS
+rc=0
+--- second session, lock held
+10:●  READ-ONLY SESSION - FLEET LOCK OWNERSHIP WAS NOT VERIFIED
+135:Dispatch ledger (fm-dispatch-log.sh overdue)
+136---------------------------------------------------------------------------------
+137-OVERDUE lab-old age=60m received=2026-10-30T16:35:42Z project=acme summary=wait
+138-LATE lab-late late=60m event=dispatched
+139-
+140-Information only: the session holding the lock owns these goals.
+141-
+142-================================================================================
+143-NETWORK CHECKS
+rc=0

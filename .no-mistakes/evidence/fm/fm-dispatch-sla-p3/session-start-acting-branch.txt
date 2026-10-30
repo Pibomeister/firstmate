@@ -1,0 +1,3 @@
+ok - session start lists overdue goals, and only a lock-holding session is told to act on them
+# fm-session-start.test.sh: all assertions passed
+rc=

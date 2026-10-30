@@ -1,0 +1,219 @@
+=== C-1 SLA decimal
+$ received c1 --summary octal
+2027-01-15T08:00:00Z received c1: summary=octal
+[exit 0] ledger_lines=1
+$ overdue
+[exit 0] ledger_lines=1
+$ overdue
+OVERDUE c1 age=8m received=2027-01-15T08:00:00Z summary=octal
+[exit 3] ledger_lines=1
+$ overdue
+OVERDUE c1 age=10m received=2027-01-15T08:00:00Z summary=octal
+[exit 3] ledger_lines=1
+$ overdue
+OVERDUE c1 age=10m received=2027-01-15T08:00:00Z summary=octal
+[exit 3] ledger_lines=1
+$ overdue
+OVERDUE c1 age=9m received=2027-01-15T08:00:00Z summary=octal
+[exit 3] ledger_lines=1
+$ overdue
+OVERDUE c1 age=9m received=2027-01-15T08:00:00Z summary=octal
+[exit 3] ledger_lines=1
+$ overdue
+[exit 0] ledger_lines=1
+$ overdue
+[exit 0] ledger_lines=1
+$ overdue
+[exit 0] ledger_lines=1
+$ overdue
+OVERDUE c1 age=10m received=2027-01-15T08:00:00Z summary=octal
+[exit 3] ledger_lines=1
+$ overdue
+[exit 0] ledger_lines=1
+$ overdue
+[exit 0] ledger_lines=1
+$ overdue
+[exit 0] ledger_lines=1
+$ overdue
+[exit 0] ledger_lines=1
+$ overdue
+OVERDUE c1 age=10m received=2027-01-15T08:00:00Z summary=octal
+[exit 3] ledger_lines=1
+$ overdue
+OVERDUE c1 age=10m received=2027-01-15T08:00:00Z summary=octal
+[exit 3] ledger_lines=1
+$ overdue
+[exit 0] ledger_lines=1
+$ overdue
+OVERDUE c1 age=9m received=2027-01-15T08:00:00Z summary=octal
+[exit 3] ledger_lines=1
+$ overdue
+fm-dispatch-log: FM_DISPATCH_SLA_MINUTES must be a whole number
+[exit 1] ledger_lines=1
+$ overdue
+fm-dispatch-log: FM_DISPATCH_SLA_MINUTES must be a whole number
+[exit 1] ledger_lines=1
+$ overdue
+[exit 0] ledger_lines=1
+$ dispatched c1 --task t1
+2027-01-15T08:08:01Z dispatched c1: task=t1 late=8m
+LATE c1 late=8m
+[exit 0] ledger_lines=2
+=== C-2 whitespace
+$ received w1 --summary  
+fm-dispatch-log: received needs --summary
+[exit 1] ledger_lines=2
+$ received w1 --summary 	
+ 
+fm-dispatch-log: received needs --summary
+[exit 1] ledger_lines=2
+$ received w1 --summary  late=5m
+fm-dispatch-log: received needs --summary
+[exit 1] ledger_lines=2
+$ received w1 --summary 
+fm-dispatch-log: received needs --summary
+[exit 1] ledger_lines=2
+$ received w2 --summary real
+2027-01-15T08:00:00Z received w2: summary=real
+[exit 0] ledger_lines=3
+$ dispatched w2 --task  
+fm-dispatch-log: dispatched needs --task
+[exit 1] ledger_lines=3
+$ queued w2 --reason  
+fm-dispatch-log: queued needs --reason
+[exit 1] ledger_lines=3
+$ blocked w2 --reason 
+
+fm-dispatch-log: blocked needs --reason
+[exit 1] ledger_lines=3
+$ blocked w2 --reason  late=3m
+fm-dispatch-log: blocked needs --reason
+[exit 1] ledger_lines=3
+=== AN-5 flag-looking values
+$ received f1 --summary --project p
+fm-dispatch-log: --summary value looks like a flag: --project
+[exit 1] ledger_lines=3
+$ received f1 --summary -x
+fm-dispatch-log: --summary value looks like a flag: -x
+[exit 1] ledger_lines=3
+$ received f1 --summary ok --project --task
+fm-dispatch-log: --project value looks like a flag: --task
+[exit 1] ledger_lines=3
+$ dispatched w2 --task --note x
+fm-dispatch-log: --task value looks like a flag: --note
+[exit 1] ledger_lines=3
+$ dispatched w2 --task t --note --reason
+fm-dispatch-log: --note value looks like a flag: --reason
+[exit 1] ledger_lines=3
+$ blocked w2 --reason --task
+fm-dispatch-log: --reason value looks like a flag: --task
+[exit 1] ledger_lines=3
+$ received f1 --summary
+fm-dispatch-log: --summary needs a value
+[exit 1] ledger_lines=3
+$ received f1 --bogus x
+fm-dispatch-log: unknown argument: --bogus
+[exit 1] ledger_lines=3
+=== AN-5 show
+$ show nope
+fm-dispatch-log: goal nope is not in the ledger
+[exit 1] ledger_lines=3
+$ show w2
+STATE w2 event=received at=2027-01-15T08:00:00Z summary=real
+2027-01-15T08:00:00Z	1800000000	received	w2	summary=real
+[exit 0] ledger_lines=3
+$ dispatched w2 --task task-9 --note hi
+2027-01-15T08:00:10Z dispatched w2: task=task-9 note=hi
+[exit 0] ledger_lines=4
+$ show w2
+STATE w2 event=dispatched at=2027-01-15T08:00:10Z task=task-9 note=hi
+2027-01-15T08:00:00Z	1800000000	received	w2	summary=real
+2027-01-15T08:00:10Z	1800000010	dispatched	w2	task=task-9 note=hi
+[exit 0] ledger_lines=4
+$ show
+2027-01-15T08:00:00Z	1800000000	received	c1	summary=octal
+2027-01-15T08:08:01Z	1800000481	dispatched	c1	task=t1 late=8m
+2027-01-15T08:00:00Z	1800000000	received	w2	summary=real
+2027-01-15T08:00:10Z	1800000010	dispatched	w2	task=task-9 note=hi
+[exit 0] ledger_lines=4
+$ show a.*
+fm-dispatch-log: goal a.* is not in the ledger
+[exit 1] ledger_lines=4
+$ show w
+fm-dispatch-log: goal w is not in the ledger
+[exit 1] ledger_lines=4
+=== exit 4 duplicate
+$ received w2 --summary again
+fm-dispatch-log: goal w2 is already in the ledger
+[exit 4] ledger_lines=4
+=== M-1 FM_DISPATCH_LOG ignored
+$ received m1 --summary x
+2027-01-15T08:00:00Z received m1: summary=x
+[exit 0] ledger_lines=5
+ls: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-dl.nZy8is/split.tsv: No such file or directory
+$ show m1
+STATE m1 event=received at=2027-01-15T08:00:00Z summary=x
+2027-01-15T08:00:00Z	1800000000	received	m1	summary=x
+[exit 0] ledger_lines=5
+=== PS-1 project form + header
+$ received p1 --summary with proj --project acme
+2027-01-15T08:00:00Z received p1: project=acme summary=with proj
+[exit 0] ledger_lines=6
+$ overdue
+OVERDUE m1 age=15m received=2027-01-15T08:00:00Z summary=x
+OVERDUE p1 age=15m received=2027-01-15T08:00:00Z project=acme summary=with proj
+LATE c1 late=8m event=dispatched
+[exit 3] ledger_lines=6
+`overdue` prints every overdue goal, with age counted from its clock start, as
+`OVERDUE <goal-id> age=<m>m received=<iso>
+[project=<name> ]summary=<text>`, then every goal whose late final line was
+written in the last 24 hours, as `LATE <goal-id> late=<m>m event=<event>`; older
+late marks stay in `show`. It exits 3 when any OVERDUE line exists and 0 otherwise;
+=== T-1 two goals, independent
+$ received a --summary a
+2027-01-15T08:00:00Z received a: summary=a
+[exit 0] ledger_lines=1
+$ received b --summary b
+2027-01-15T08:00:00Z received b: summary=b
+[exit 0] ledger_lines=2
+$ received c --summary c
+2027-01-15T08:00:00Z received c: summary=c
+[exit 0] ledger_lines=3
+$ dispatched b --task tb
+2027-01-15T08:01:00Z dispatched b: task=tb
+[exit 0] ledger_lines=4
+$ overdue
+OVERDUE a age=16m received=2027-01-15T08:00:00Z summary=a
+OVERDUE c age=16m received=2027-01-15T08:00:00Z summary=c
+[exit 3] ledger_lines=4
+$ dispatched c --task tc
+2027-01-15T08:16:40Z dispatched c: task=tc late=16m
+LATE c late=16m
+[exit 0] ledger_lines=5
+$ overdue
+OVERDUE a age=16m received=2027-01-15T08:00:00Z summary=a
+LATE c late=16m event=dispatched
+[exit 3] ledger_lines=5
+=== T-2 boundary
+$ overdue
+[exit 0] ledger_lines=0
+$ show
+[exit 0] ledger_lines=0
+$ received z --summary z
+2027-01-15T08:00:00Z received z: summary=z
+[exit 0] ledger_lines=1
+$ overdue
+[exit 0] ledger_lines=1
+$ overdue
+OVERDUE z age=15m received=2027-01-15T08:00:00Z summary=z
+[exit 3] ledger_lines=1
+=== real clock
+$ received live --summary wall clock
+2026-10-30T17:32:49Z received live: summary=wall clock
+[exit 0] ledger_lines=2
+$ overdue
+[exit 0] ledger_lines=2
+$ show live
+STATE live event=received at=2026-10-30T17:32:49Z summary=wall clock
+2026-10-30T17:32:49Z	1793381569	received	live	summary=wall clock
+[exit 0] ledger_lines=2
