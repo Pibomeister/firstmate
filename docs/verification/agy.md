@@ -93,7 +93,7 @@ It passes `xhigh` and `max` only when the line lists them, and otherwise keeps r
 A signed-out agy answers `agy models` with an empty catalog and exit 0.
 agy's own log for such a run reads "Auth mode is unspecified, skipping fetchAvailableModels and returning empty response" and "You are not logged into Antigravity".
 The stdout shape is inferred from that log; it was not captured directly, because a signed-out run on macOS needs a throwaway `HOME`, which raises the keychain dialog below.
-`agy_model_validate` therefore refuses an empty listing with exit 0 and names the sign-in step, while a failed or hung listing still launches unvalidated.
+`agy_model_validate` therefore runs the listing even when no model is requested, refuses an empty listing with exit 0 and names the sign-in step, while a failed or hung listing still launches unvalidated with a notice.
 Print mode (`agy -p "Reply with exactly: AGY_PRINT_PROBE_OK" --model gemini-3.8-flash-low`) returned the exact reply with exit 0 in about 8 seconds, proving the credential path without a pane.
 
 ## Busy state: the pinned status row, unknown on absence
@@ -180,7 +180,7 @@ error: agy launch readiness is live-verified on the tmux and herdr backends only
 ```
 
 `tests/fm-agy-harness.test.sh` pins that refusal for orca, zellij, cmux, and paseo, with no launch, no terminal call, no model fetch, and no task record.
-It also pins the refusal of `FM_BACKEND=orca`, the fallback from a configured orca to tmux, the preference for a working Herdr, and the refusal when neither is available.
+It also pins the refusal of `FM_BACKEND=orca`, the fallback from a configured orca to tmux even when that Orca is not running, the preference for a working Herdr, and the refusal when neither is available.
 
 | Backend | agy | Platform | Date | Result |
 |---|---|---|---|---|

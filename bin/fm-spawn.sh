@@ -2139,10 +2139,10 @@ if [ "$RELAUNCH" -eq 0 ]; then
     echo "error: backend=paseo does not support --secondmate spawns yet" >&2
     exit 1
   fi
-  if [ "$BACKEND" = orca ]; then
-    fm_backend_orca_runtime_check || exit 1
-    resolve_orca_launch_env_source
-  fi
+  # The harness is not resolved yet, and an agy task may leave orca for a
+  # verified backend, so the Orca runtime and launch-env checks run after
+  # that decision (below the agy gate), still before any terminal exists.
+  [ "$BACKEND" != orca ] || ORCA_SPAWN_CHECKS_PENDING=1
 fi
 SPAWN_TASK_LOCK="$STATE/.spawn-$ID.lock"
 if ! fm_lock_try_acquire "$SPAWN_TASK_LOCK"; then
@@ -2471,20 +2471,24 @@ omp_model_validate() { # <omp-bin> <model>
 agy_model_validate() {  # <agy-bin> <model>
   local bin=$1 model=$2 listing rc=0 bound=${FM_AGY_MODELS_TIMEOUT:-15}
   case "$bound" in ''|*[!0-9]*|0*) bound=15 ;; esac
-  [ -n "$model" ] && [ "$model" != default ] || return 0
+  # The listing doubles as the sign-in probe, so it runs even when no model
+  # is requested; only the catalog check below needs a requested id.
   listing=$(fm_run_timed "$bound" "$bin" models 2>/dev/null < /dev/null) || rc=$?
   if [ "$rc" -eq 0 ] && [ -z "$(printf '%s' "$listing" | tr -d '[:space:]')" ]; then
     echo "error: agy is not signed in: 'agy models' returned an empty catalog, which is how a signed-out agy answers; run 'agy' once in a normal terminal on this account, sign in, then retry" >&2
     return 1
   fi
   if [ "$rc" -ne 0 ]; then
+    local what="--model '$model' unvalidated"
+    [ -n "$model" ] && [ "$model" != default ] || what="agy's default model without a sign-in check"
     if [ "$rc" -eq 124 ]; then
-      echo "notice: 'agy models' did not answer within ${bound}s; launching with --model '$model' unvalidated" >&2
+      echo "notice: 'agy models' did not answer within ${bound}s; launching with $what" >&2
     else
-      echo "notice: 'agy models' listing is unreachable (exit $rc); launching with --model '$model' unvalidated" >&2
+      echo "notice: 'agy models' listing is unreachable (exit $rc); launching with $what" >&2
     fi
     return 0
   fi
+  [ -n "$model" ] && [ "$model" != default ] || return 0
   if printf '%s\n' "$listing" | awk '{print $1}' | grep -qxF -- "$model"; then
     return 0
   fi
@@ -2994,6 +2998,10 @@ if [ "$HARNESS" = agy ] && [ "$BACKEND" != tmux ] && [ "$BACKEND" != herdr ]; th
   fm_backend_validate_spawn "$BACKEND" || exit 1
   fm_backend_source "$BACKEND" || exit 1
   echo "notice: agy launch readiness is not verified on the configured backend=$AGY_CONFIGURED_BACKEND; this agy task runs on backend=$BACKEND" >&2
+fi
+if [ "${ORCA_SPAWN_CHECKS_PENDING:-0}" = 1 ] && [ "$BACKEND" = orca ]; then
+  fm_backend_orca_runtime_check || exit 1
+  resolve_orca_launch_env_source
 fi
 # On macOS agy keeps its sign-in in the login keychain, which the Security
 # framework finds through $HOME. Under a HOME with no login keychain (a

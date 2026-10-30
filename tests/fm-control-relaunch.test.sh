@@ -453,6 +453,17 @@ SH
   pass "fm-control relaunch: a same-harness relaunch replaces the agent in the same endpoint and worktree"
 }
 
+# A signed-in agy lists at least one model; fm-spawn reads an empty listing
+# as signed out and refuses before any custody check.
+write_signed_in_fake_agy() {  # <path>
+  cat > "$1" <<'SH'
+#!/usr/bin/env bash
+[ "${1:-}" != models ] || printf 'gemini-3.8-flash-low\tGemini 3.8 Flash (Low)\n'
+exit 0
+SH
+  chmod +x "$1"
+}
+
 test_pooled_relaunch_custody_is_agy_only() {
   local dir prior target entry wt lock out rc harness
   . "$ROOT/bin/fm-wake-lib.sh"
@@ -464,10 +475,11 @@ test_pooled_relaunch_custody_is_agy_only() {
         wt=$(meta_field "$dir" rl-pool worktree)
         printf '%s' "$prior" > "$dir/fake/command"
         printf '%s' "$target" > "$dir/fake/becomes"
-        for harness in claude codex agy; do
+        for harness in claude codex; do
           printf '#!/usr/bin/env bash\nexit 0\n' > "$dir/fakebin/$harness"
           chmod +x "$dir/fakebin/$harness"
         done
+        write_signed_in_fake_agy "$dir/fakebin/agy"
         fm_treehouse_pool_slot "$dir/proj" "$wt" || fail "the fixture is not a pooled checkout"
         [ ! -e "$(dirname "$wt")/.fm-slot-owner" ] || fail "the legacy fixture has an owner claim"
         lock=$(FM_HOME="$dir/home" fm_treehouse_project_lock_path "$dir/proj") || fail "could not resolve project lock"
@@ -504,8 +516,7 @@ test_agy_relaunch_requires_treehouse_capabilities_before_stopping() {
     while IFS='|' read -r capability expected prior target; do
       dir=$(new_case "capability-$entry-${capability//:/-}-$prior" rl-capability)
       add_pooled_ship_task "$dir" rl-capability "$prior"
-      printf '#!/usr/bin/env bash\nexit 0\n' > "$dir/fakebin/agy"
-      chmod +x "$dir/fakebin/agy"
+      write_signed_in_fake_agy "$dir/fakebin/agy"
       printf '%s\n' "$capability" > "$dir/fakebin/treehouse.missing"
       before=$(cat "$dir/home/state/rl-capability.meta")
       rc=0

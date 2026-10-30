@@ -1022,19 +1022,24 @@ test_agy_unreachable_listing_launches_unvalidated() {
 # returning empty response"). That is sign-in evidence, not an unreachable
 # listing, so the spawn refuses with the sign-in step instead of launching a
 # worker that can never start its brief.
+# The sign-in probe runs whether or not a model is requested, because the
+# operator's default model needs a signed-in agy just as much.
 test_agy_empty_listing_refuses_as_signed_out() {
-  local id rec out rc
-  id="agy-signedout-z20-$$"
-  rec=$(make_agy_spawn_case signedout "$id")
-  read_agy_spawn_record "$rec"
-  rc=0
-  out=$(FM_FAKE_AGY_MODELS_EMPTY=1 run_agy_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" \
-    "$FAKEBIN_DIR" "$id" --model gemini-3.8-flash-low) || rc=$?
-  [ "$rc" -ne 0 ] || fail "an empty agy model catalog was accepted"
-  assert_contains "$out" "agy is not signed in" "the empty catalog refusal did not name the sign-in cause: $out"
-  assert_not_contains "$out" "is not listed by" "the empty catalog refusal blamed the model id"
-  [ -s "$CASE_DIR/launch.log" ] && fail "a signed-out agy still launched" || true
-  pass "fm-spawn: an empty agy model catalog refuses as signed out before anything launches"
+  local id rec out rc model_args
+  for model_args in '--model gemini-3.8-flash-low' ''; do
+    id="agy-signedout-z20-${model_args:+m}$$"
+    rec=$(make_agy_spawn_case "signedout${model_args:+-model}" "$id")
+    read_agy_spawn_record "$rec"
+    rc=0
+    # shellcheck disable=SC2086 # model_args is either empty or two words
+    out=$(FM_FAKE_AGY_MODELS_EMPTY=1 run_agy_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" \
+      "$FAKEBIN_DIR" "$id" $model_args) || rc=$?
+    [ "$rc" -ne 0 ] || fail "an empty agy model catalog was accepted (args: ${model_args:-none})"
+    assert_contains "$out" "agy is not signed in" "the empty catalog refusal did not name the sign-in cause: $out"
+    assert_not_contains "$out" "is not listed by" "the empty catalog refusal blamed the model id"
+    [ -s "$CASE_DIR/launch.log" ] && fail "a signed-out agy still launched (args: ${model_args:-none})" || true
+  done
+  pass "fm-spawn: an empty agy model catalog refuses as signed out, with or without --model"
 }
 
 test_agy_hung_listing_is_cut_off_and_launches() {
@@ -1391,6 +1396,27 @@ test_agy_macos_home_without_login_keychain_refuses() {
   pass "fm-spawn: agy refuses a macOS HOME with no login keychain before anything launches"
 }
 
+# An Orca that is configured but not running is no reason to refuse agy: the
+# fallback decides first, and the Orca runtime check runs only if Orca stays.
+test_agy_configured_orca_that_is_down_still_falls_back() {
+  local id rec out rc
+  id="agy-orca-down-z23-$$"
+  rec=$(make_agy_spawn_case orca-down "$id")
+  read_agy_spawn_record "$rec"
+  cat > "$FAKEBIN_DIR/orca" <<'EOF'
+#!/bin/sh
+printf '%s\n' '{"ok":true,"result":{"runtime":{"reachable":false,"state":"stopped"}}}'
+EOF
+  chmod +x "$FAKEBIN_DIR/orca"
+  printf 'orca\n' > "$HOME_DIR/config/backend"
+  rc=0
+  out=$(run_agy_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" \
+    --model gemini-3.8-flash-low) || rc=$?
+  expect_code 0 "$rc" "agy on a configured but stopped orca should fall back: $out"
+  assert_contains "$out" "this agy task runs on backend=tmux" "agy on a stopped orca did not announce its fallback: $out"
+  pass "fm-spawn: agy on a configured but stopped orca still falls back to tmux"
+}
+
 # FM_BACKEND is an explicit choice like --backend, so it is refused, never
 # silently replaced by the fallback.
 test_agy_env_backend_refuses_instead_of_falling_back() {
@@ -1519,6 +1545,7 @@ test_agy_configured_orca_falls_back_to_tmux_without_herdr
 test_agy_configured_orca_prefers_herdr_when_available
 test_agy_fallback_refuses_when_no_verified_backend_is_available
 test_agy_env_backend_refuses_instead_of_falling_back
+test_agy_configured_orca_that_is_down_still_falls_back
 test_agy_macos_home_without_login_keychain_refuses
 test_agy_missing_binary_refuses_before_pane_creation
 test_agy_secondmate_is_refused
