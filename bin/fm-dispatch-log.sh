@@ -46,9 +46,11 @@
 # exit 3 is a result to act on, not an error.
 #
 # Refuses, and writes nothing, when: the goal id is not [A-Za-z0-9._-]+; a
-# required flag is missing or empty; or `dispatched`/`queued`/`blocked` names a
-# goal with no `received` line (all exit 1). `received` for an id already in
-# the ledger exits 4, so a retry can tell "already logged" from a mistake.
+# required flag is missing or empty; an argument is unknown;
+# FM_DISPATCH_SLA_MINUTES is not a whole number; or `dispatched`/`queued`/`blocked`
+# names a goal with no `received` line (all exit 1). An unknown subcommand prints
+# this usage and exits 2. `received` for an id already in the ledger exits 4, so
+# a retry can tell "already logged" from a mistake.
 # Tabs and newlines in free text are folded to spaces.
 #
 # Environment: FM_HOME selects the home; FM_STATE_OVERRIDE overrides its state
