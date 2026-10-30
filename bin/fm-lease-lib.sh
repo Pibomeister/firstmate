@@ -235,8 +235,11 @@ fm_lease_read() {
 fm_lease_claim_holder() {
   local pin=${FM_LEASE_HOLDER_PID:-} session=${FM_LEASE_HOLDER_SESSION:-} current key
   current=$(head -n 1 "$STATE/.lock" 2>/dev/null) || current=
+  # A well-formed tagged Windows holder is an anchor like a numeric pid: an
+  # unpinned claim records it as is, and fm_lease_live judges it later.
   case "$current" in
-    win:*) fm_lease_tagged_holder_live "$current" || return 1 ;;
+    win: | win:*[!0-9]*) return 1 ;;
+    win:*) ;;
     ''|0|1|*[!0-9]*) return 1 ;;
   esac
   if [ -z "$pin" ] && [ -z "$session" ]; then
@@ -253,7 +256,7 @@ fm_lease_claim_holder() {
   elif fm_session_lock_owned_by_self "$STATE"; then
     fm_session_lock_recorded_owner_live "$STATE" || return 1
   elif [ "$pin" = "$current" ] && [ ! -e "$STATE/.lock-session" ]; then
-    fm_pid_alive "$pin" || return 1
+    fm_session_pid_alive "$pin" || return 1
   else
     return 1
   fi
@@ -276,7 +279,6 @@ fm_lease_live() {
       return
       ;;
   esac
-  kill -0 "$FM_LEASE_PID" 2>/dev/null || return 1
   case "$lock_pid" in ''|0|1|*[!0-9]*) return 1 ;; esac
   [ "$FM_LEASE_PID" = "$lock_pid" ] || return 1
   # shellcheck source=/dev/null

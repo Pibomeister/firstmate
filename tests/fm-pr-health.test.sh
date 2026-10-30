@@ -530,7 +530,8 @@ test_watcher_surfaces_one_wake() {
   rc=0
   with_home "$home" env FM_WATCH_HANDLING_SUCCESSOR=1 FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=0 FM_HEARTBEAT=999999 \
     "$ROOT/bin/fm-watch-checkpoint.sh" --seconds 3 > "$home/watcher-repeat.out" 2> "$home/watcher-repeat.err" || rc=$?
-  [ "$rc" -eq 124 ] || fail "an unchanged conflict woke the watcher again: $(cat "$home/watcher-repeat.out")"
+  { [ "$rc" -eq 0 ] && grep -qx 'checkpoint: no actionable wake within 3s' "$home/watcher-repeat.out"; } \
+    || fail "an unchanged conflict woke the watcher again (rc=$rc): $(cat "$home/watcher-repeat.out")"
   pass 'the watcher turns one conflict into one durable wake'
 }
 

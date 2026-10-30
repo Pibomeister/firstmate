@@ -5485,7 +5485,7 @@ kimi_ready_signal_is_present() { # <plain-pane-capture>
 kimi_wait_for_ready() {
   local pane capture_rc i=0 max=${FM_KIMI_READY_POLLS:-60} interval=${FM_KIMI_POLL_INTERVAL:-0.5}
   local trust_enters=0 trust_seen=0 trust_still_visible=0 trust_markers_pending=0
-  local trust_affirmative='' trust_negative='' ready_captures=0
+  local ready_captures=0
   KIMI_READY_FAILURE_DETAIL='kimi did not show a verified ready signal before brief delivery'
   while [ "$i" -lt "$max" ]; do
     capture_rc=0
@@ -5516,8 +5516,6 @@ kimi_wait_for_ready() {
       trust_still_visible=1
       trust_markers_pending=0
       ready_captures=0
-      trust_affirmative=$KIMI_TRUST_AFFIRMATIVE
-      trust_negative=$KIMI_TRUST_NEGATIVE
       # Kimi swallows keypresses during its startup window - the same hazard
       # FM_KIMI_SUBMIT_RETRIES covers for the brief pointer - so the
       # affirmative selection is re-sent on every poll the complete dialog is
@@ -5551,9 +5549,9 @@ kimi_wait_for_ready() {
     [ "$i" -ge "$max" ] || sleep "$interval"
   done
   if [ "$trust_still_visible" -eq 1 ]; then
-    KIMI_READY_FAILURE_DETAIL="kimi trust dialog did not clear after selecting '$trust_affirmative' on $trust_enters poll(s); saw 'Trust this folder?', the navigation hint, selected '$trust_affirmative', and the negative $trust_negative option"
+    KIMI_READY_FAILURE_DETAIL="kimi trust dialog did not clear after submitting the affirmative selection on $trust_enters poll(s); saw 'Trust this folder?', the navigation hint, a selected affirmative option, and a negative option"
   elif [ "$trust_seen" -eq 1 ]; then
-    KIMI_READY_FAILURE_DETAIL="kimi trust dialog was answered but the pane never advanced to a verified ready signal; saw 'Trust this folder?', the navigation hint, selected '$trust_affirmative', and the negative $trust_negative option"
+    KIMI_READY_FAILURE_DETAIL="kimi trust dialog was answered but the pane never advanced to a verified ready signal; saw 'Trust this folder?', the navigation hint, a selected affirmative option, and a negative option"
   elif [ "$trust_markers_pending" -eq 1 ]; then
     KIMI_READY_FAILURE_DETAIL="kimi did not show a verified ready signal before brief delivery; trust dialog text stayed on screen without the complete dialog, so the pane was never safe to answer or to treat as ready"
   fi

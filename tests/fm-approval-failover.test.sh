@@ -43,6 +43,9 @@ esac
 exec "$REAL_PERL" "$@"
 SH
 chmod +x "$BIN/perl"
+FAKE_HARNESS="$TMP_ROOT/harness/claude"
+mkdir -p "${FAKE_HARNESS%/*}"
+ln -s /bin/bash "$FAKE_HARNESS"
 run_apply() {
   env -u FM_SUPERVISION_ACTOR FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
     FM_STATE_OVERRIDE="$home/state" FM_CONFIG_OVERRIDE="$home/config" \
@@ -135,8 +138,12 @@ for harness in codex claude; do
   [ "$(wc -l < "$home/control.log")" = "$before" ] || fail 'publication failure touched the worker'
   pass "$harness atomically preserves concurrent explicit destinations"
 
-  printf '%s\n' "$$" > "$home/state/.lock"
-  printf 'branch\t%s\t%s\n' "$$" "$(date +%s)" > "$home/state/.lease-task"
+  # A lease is live only while the lock names a live verified harness
+  # (bin/fm-lease-lib.sh), so a stand-in Claude process holds the lock.
+  "$FAKE_HARNESS" -c 'while :; do sleep 1; done' &
+  holder=$!
+  printf '%s\n' "$holder" > "$home/state/.lock"
+  printf 'branch\t%s\t%s\n' "$holder" "$(date +%s)" > "$home/state/.lease-task"
   for actor in '' main; do
     rc=0
     run_apply FM_SUPERVISION_ACTOR="$actor" > "$home/lease.out" 2>&1 || rc=$?
@@ -146,6 +153,8 @@ for harness in codex claude; do
   done
   run_apply FM_SUPERVISION_ACTOR=branch >/dev/null || fail 'same-actor lifecycle call deadlocked or failed'
   [ "$(cat "$home/config/$setting")" = "$fallback" ] || fail 'authorized actor lost fallback'
+  kill "$holder" 2>/dev/null || true
+  wait "$holder" 2>/dev/null || true
   rm "$home/config/$setting" "$home/state/.lease-task" "$home/state/.lock"
   pass "$harness honors live leases before saving and releases its guard before child control"
 

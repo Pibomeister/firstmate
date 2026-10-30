@@ -357,6 +357,10 @@ run_legacy_identity_takeover() {  # <case> <successor-first>
   if [ "$successor_first" -eq 1 ]; then
     stop_outside_state_locks "$old" "$state" \
       || fail "could not pause the old holder outside its state locks: $(cat "$old_out")"
+    # A takeover with nothing queued retires its downtime episode silently and
+    # keeps watching, so leave one row behind for the successor to deliver.
+    append_wake "$state" check legacy-takeover 'check: queued before the takeover' \
+      || fail "could not queue the takeover wake"
   fi
   PATH="$fakebin:$PATH" FM_PROC_ROOT_OVERRIDE="$no_proc" TZ=America/Los_Angeles FM_HOME="$dir" FM_STATE_OVERRIDE="$state" FM_GUARD_GRACE=1 FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$new_out" 2>&1 &
   new=$!

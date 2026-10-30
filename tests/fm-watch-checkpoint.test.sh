@@ -347,7 +347,7 @@ expect_gnu_timeout_call() {  # <home> <command-name> <label>
   status=0
   PATH="$home/fixture-bin" FM_HOME="$home" FM_SIGNAL_GRACE=1 \
     "$home/root/bin/fm-watch-checkpoint.sh" --seconds 1 >"$home/out.txt" 2>"$home/err.txt" || status=$?
-  expect_code 124 "$status" "$label checkpoint exit"
+  expect_code 0 "$status" "$label checkpoint exit"
   assert_contains "$(cat "$home/out.txt")" "checkpoint: no actionable wake within 1s" \
     "$label did not return a quiet checkpoint"
   [ "$(cat "$home/timeout-calls" 2>/dev/null)" = "$name --signal=INT --kill-after=5s 1 $home/root/bin/fm-watch.sh" ] \

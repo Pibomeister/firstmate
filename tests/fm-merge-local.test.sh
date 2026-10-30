@@ -166,16 +166,16 @@ test_snapshot_cannot_pin_a_replacement_task() {
 }
 
 test_done_recording_preserves_caller_locks() {
-  local caller
-  for caller in ledger teardown; do
-    make_case "locked-$caller"
+  local lock_caller
+  for lock_caller in ledger teardown; do
+    make_case "locked-$lock_caller"
     (
       local FM_HOME="$HOME_DIR" FM_STATE_OVERRIDE="$HOME_DIR/state"
       # shellcheck source=bin/fm-wake-lib.sh
       . "$ROOT/bin/fm-wake-lib.sh"
       local lock control='' owner
       lock=$(fm_meta_lock_path "$META") || exit 1
-      if [ "$caller" = teardown ]; then
+      if [ "$lock_caller" = teardown ]; then
         control="$HOME_DIR/state/.control-local-task.lock"
         fm_lock_try_acquire "$control" || exit 1
       fi
@@ -195,7 +195,7 @@ test_done_recording_preserves_caller_locks() {
       [ "$(fm_dod_local_done_head "$META")" = "$X" ] || exit 1
       [ "$(cat "$lock/pid")" = "$owner" ] || exit 1
       [ -z "$control" ] || [ "$(cat "$control/pid")" = "$owner" ] || exit 1
-    ) || fail "$caller: done recording failed or changed the caller's locks"
+    ) || fail "$lock_caller: done recording failed or changed the caller's locks"
   done
   pass 'ledger and teardown record the first done head without reacquiring or releasing caller locks'
 }

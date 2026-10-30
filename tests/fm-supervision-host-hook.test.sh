@@ -510,10 +510,15 @@ test_a_park_stopped_mid_take_over_leaves_the_take_over_to_the_next_park() {
   kill -STOP "$arm" 2>/dev/null || fail "fixture: could not pause the take-over arm"
   : > "$home/marker-lock-release"
   wait "$holder" 2>/dev/null || true
-  wait_until 100 sh -c '[ "$(cat "$1/pid" 2>/dev/null)" = "$2" ]' _ "$home/state/.watcher-down.lock" "$arm" \
-    || fail "fixture: the bounded helper did not hand the recovery-marker lock to the paused arm"
-  [ "$(cat "$home/state/.wake-queue.lock/pid" 2>/dev/null)" = "$arm" ] \
+  # The handling successor's per-beat recovery check takes the queue lock before
+  # the marker lock too, so it can win the queue lock while the barrier holds
+  # the marker lock. The paused snapshot then holds only the queue lock, which
+  # its bounded helper hands over once that check finishes; otherwise the arm
+  # also waits on, and is handed, the recovery-marker lock.
+  wait_until 100 sh -c '[ "$(cat "$1/pid" 2>/dev/null)" = "$2" ]' _ "$home/state/.wake-queue.lock" "$arm" \
     || fail "fixture: the paused snapshot did not retain the queue lock"
+  wait_until 100 sh -c '[ ! -e "$1" ] || [ "$(cat "$1/pid" 2>/dev/null)" = "$2" ]' _ "$home/state/.watcher-down.lock" "$arm" \
+    || fail "fixture: the recovery-marker lock is held by another process than the paused arm"
   kill -TERM "$host" 2>/dev/null || fail "fixture: the park host $host was not running"
   kill -TERM "$arm" 2>/dev/null || fail "fixture: could not interrupt the paused arm"
   kill -CONT "$arm" 2>/dev/null || fail "fixture: could not resume the interrupted arm"

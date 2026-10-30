@@ -78,6 +78,14 @@ fm_codex_process_class() {
 }
 
 fm_session_process_start() {
+  local identity
+  # A tagged Windows pid has no kernel start time on this side, so its live
+  # Windows identity (pid and executable) stands in as the instance check.
+  if fm_win_untag_pid "$1" >/dev/null; then
+    identity=$(fm_session_pid_identity "$1") && [ -n "$identity" ] || return 1
+    printf '%s\n' "${identity//$'\n'/ }"
+    return 0
+  fi
   python3 "$FM_SESSION_PROCESS_READER" start "$1" 2>/dev/null
 }
 
@@ -698,7 +706,16 @@ fm_session_lock_recorded_owner_live() {
   FM_SESSION_LOCK_OWNER_HARNESS=
   FM_CODEX_IDENTITY_OWNER_PID=
   lock_pid=$(cat "$state/.lock" 2>/dev/null || true)
-  case "$lock_pid" in ''|*[!0-9]*) return 1 ;; esac
+  case "$lock_pid" in
+    # A tagged Windows holder is outside this process table: it owns the lock
+    # while the Windows process table still shows it as a verified harness.
+    win:*)
+      fm_session_pid_valid "$lock_pid" || return 1
+      fm_harness_pid_alive "$lock_pid"
+      return
+      ;;
+    ''|*[!0-9]*) return 1 ;;
+  esac
   if fm_session_lock_anchor_instance_matches "$state" && fm_harness_pid_alive "$lock_pid"; then
     FM_CODEX_IDENTITY_OWNER_PID=$lock_pid
     [ "$FM_HARNESS_IS_CODEX" -ne 1 ] || FM_SESSION_LOCK_OWNER_HARNESS=codex
@@ -720,7 +737,8 @@ fm_session_lock_recorded_owner_live() {
 # Legacy records retain the pid/process-identity/sidecar checksum key.
 # An unavailable owner verdict or legacy process identity returns no key,
 # so consumers cannot reuse old state.
-# The legacy path needs fm_pid_identity from bin/fm-wake-lib.sh sourced first.
+# The legacy path needs fm_pid_identity from bin/fm-wake-lib.sh sourced first
+# (fm_session_pid_identity answers a tagged Windows pid itself).
 fm_session_lock_owner_key() {
   local state=$1 pid identity recorded anchor_start
   pid=$(sed -n '1p' "$state/.lock" 2>/dev/null)
@@ -732,7 +750,7 @@ fm_session_lock_owner_key() {
     return 0
   fi
   fm_session_lock_anchor_instance_matches "$state" || return 1
-  identity=$(fm_pid_identity "$pid" 2>/dev/null) && [ -n "$identity" ] || return 1
+  identity=$(fm_session_pid_identity "$pid" 2>/dev/null) && [ -n "$identity" ] || return 1
   printf '%s:%s:%s\n' "$pid" "$(printf '%s\n' "$identity" | cksum | awk '{ print $1 }')" \
     "$(sed -n '1p' "$state/.lock-session" 2>/dev/null | cksum | awk '{ print $1 }')"
 }

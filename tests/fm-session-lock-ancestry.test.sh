@@ -1090,14 +1090,14 @@ test_windows_clear_rekeys_the_lock_under_the_same_pid() {
   }
   out=$(win_lock S1) || fail "the Windows session could not acquire its lock: $out"
   [ "$(cat "$home/state/.lock")" = 'win:7204' ] || fail "the lock names '$(cat "$home/state/.lock")', not win:7204"
-  [ "$(cat "$home/state/.lock-session" 2>/dev/null)" = S1 ] \
+  [ "$(sed -n 1p "$home/state/.lock-session" 2>/dev/null)" = S1 ] \
     || fail "the Windows session did not record its session id beside the lock"
 
   # /clear keeps the Claude process, so CLAUDE_PID stays while the session id
   # changes. As on POSIX the session keeps its lock and the sidecar is re-keyed.
   out=$(win_lock S2) || fail "the Windows session was refused its own lock after /clear: $out"
   [ "$(cat "$home/state/.lock")" = 'win:7204' ] || fail "the /clear re-key rewrote the lock to '$(cat "$home/state/.lock")'"
-  [ "$(cat "$home/state/.lock-session")" = S2 ] || fail "the /clear re-key did not record the new session id"
+  [ "$(sed -n 1p "$home/state/.lock-session")" = S2 ] || fail "the /clear re-key did not record the new session id"
   FM_TEST_WIN_TABLE="$WIN_TABLE" FM_TEST_SESSION_ID=S2 FM_TEST_CLAUDE_PID=7204 owned "$fakebin" "$home/state" \
     || fail "the Windows session did not own its lock after /clear"
   if FM_TEST_WIN_TABLE="$WIN_TABLE" FM_TEST_SESSION_ID=S2 FM_TEST_CLAUDE_PID=7204 foreign_owner "$fakebin" "$home/state" >/dev/null; then
@@ -1169,24 +1169,27 @@ test_windows_task_lease_follows_a_tagged_lock_holder() {
     FM_TEST_WIN_TABLE='' FM_HOME="$home" FM_SUPERVISION_ACTOR=main \
     "$ROOT/bin/fm-lease.sh" claim task-1 || fail "a lease whose tagged holder exited still blocked the other actor"
 
-  # A caller-supplied tagged holder naming a live harness is taken whole ahead
-  # of the lock holder, never as its digits; a dead one falls back to the lock.
+  # A caller-supplied tagged holder follows the claim-pin contract in
+  # bin/fm-lease-lib.sh: a pin equal to the live tagged lock holder on a lock
+  # without a sidecar is recorded whole, never as its digits, and a pin naming
+  # any other live session refuses before publication.
   table="$WIN_TABLE
   4201600       0       0       7300  ?              0 22:24:48 C:\Users\u\.local\bin\claude.exe"
   rm -f "$home/state/.lease-task-1"
   env -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID PATH="$fakebin:$PATH" \
     FM_TEST_WIN_TABLE="$table" FM_HOME="$home" FM_SUPERVISION_ACTOR=branch \
-    FM_LEASE_HOLDER_PID=win:7300 \
+    FM_LEASE_HOLDER_PID=win:7204 \
     "$ROOT/bin/fm-lease.sh" claim task-1 --actor branch || fail "branch lease claim failed with a tagged FM_LEASE_HOLDER_PID"
   out=$(cut -f2 "$home/state/.lease-task-1")
-  [ "$out" = 'win:7300' ] || fail "a caller-supplied tagged holder was recorded as '$out', not win:7300"
+  [ "$out" = 'win:7204' ] || fail "a caller-supplied tagged holder was recorded as '$out', not win:7204"
   rm -f "$home/state/.lease-task-1"
-  env -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID PATH="$fakebin:$PATH" \
-    FM_TEST_WIN_TABLE="$WIN_TABLE" FM_HOME="$home" FM_SUPERVISION_ACTOR=branch \
+  out=$(env -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID PATH="$fakebin:$PATH" \
+    FM_TEST_WIN_TABLE="$table" FM_HOME="$home" FM_SUPERVISION_ACTOR=branch \
     FM_LEASE_HOLDER_PID=win:7300 \
-    "$ROOT/bin/fm-lease.sh" claim task-1 --actor branch || fail "branch lease claim failed with a dead tagged FM_LEASE_HOLDER_PID"
-  out=$(cut -f2 "$home/state/.lease-task-1")
-  [ "$out" = 'win:7204' ] || fail "a dead caller-supplied tagged holder was recorded as '$out', not the lock holder win:7204"
+    "$ROOT/bin/fm-lease.sh" claim task-1 --actor branch 2>&1)
+  status=$?
+  [ "$status" -eq 6 ] || fail "a tagged pin naming another session exited $status, not 6: $out"
+  [ ! -e "$home/state/.lease-task-1" ] || fail "a refused tagged pin still published a lease"
   pass "session-lock: a task lease follows a live tagged lock holder and goes stale when it exits"
 }
 

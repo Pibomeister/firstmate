@@ -25,14 +25,14 @@ test_branch_grant_requires_lock_acquisition() {
   dir=$(make_case grant-lock-failure)
   fixture="$dir/bin"
   mkdir -p "$fixture"
-  cp "$GRANT" "$ROOT/bin/fm-wake-lib.sh" "$ROOT/bin/fm-path-lib.sh" "$fixture/"
+  cp "$GRANT" "$ROOT/bin/fm-wake-lib.sh" "$ROOT/bin/fm-bash-compat-lib.sh" "$ROOT/bin/fm-path-lib.sh" "$fixture/"
   # Inject only the acquire result in this disposable copy. Keep real owner
   # validation, grant mutations, and pid-guarded lock release in use.
   cat >> "$fixture/fm-wake-lib.sh" <<'SH'
-fm_lock_acquire_wait() {
+fm_wake_queue_lock_acquire() {
   printf 'acquire\n' >> "$STATE/acquire.log"
   [ "${FM_GRANT_FAIL_ACQUIRE:-0}" = 0 ] || return 2
-  fm_lock_try_acquire "$1"
+  fm_lock_try_acquire "${1:-$FM_WAKE_QUEUE_LOCK}"
 }
 SH
   for outcome in failure success; do

@@ -3964,9 +3964,11 @@ printf '%s\n' "$FM_WATCH_DELIVERY_IDENTITY" > "$WATCH_LOCK/pid-identity" 2>/dev/
 if [ -n "$EVICTED_PID" ]; then
   echo "watcher: replaced stalled pid $EVICTED_PID (beacon ${EVICTED_BEAT_AGE}s past hard bound ${WATCHER_STALL_BOUND}s)"
 fi
+# 0 when a row is queued, 1 when none is, and 124 when a live holder keeps the
+# queue lock past its bound.
 handling_successor_has_queued_row() {
   local queued=1
-  fm_lock_acquire_wait "$FM_WAKE_QUEUE_LOCK" || return 1
+  fm_wake_queue_lock_acquire || return $?
   [ ! -s "$FM_WAKE_QUEUE" ] || queued=0
   fm_lock_release "$FM_WAKE_QUEUE_LOCK"
   return "$queued"
@@ -4132,12 +4134,23 @@ resurface_after_downtime() {
   # handoff after consuming the predecessor's rows, making any row left for
   # main a recoverable downtime episode.
   if [ "${FM_WATCH_HANDLING_SUCCESSOR:-0}" = 1 ]; then
-    if ! fm_recovery_marker_arm_check "$WATCHER_DOWNTIME_MARKER"; then
+    local successor_rc=0
+    fm_recovery_marker_arm_check "$WATCHER_DOWNTIME_MARKER" || successor_rc=$?
+    if [ "$successor_rc" -eq 124 ]; then
+      watch_lock_deferred wake-queue "${FM_LOCK_HELD_PID:-}"
+      return 0
+    elif [ "$successor_rc" -ne 0 ]; then
       echo "watcher: recovery state could not be consumed safely" >&2
       exit 1
     fi
+    watch_lock_acquired wake-queue
     [ "$FM_RECOVERY_MARKER_ACTION" = recover ] || return 0
-    handling_successor_has_queued_row || return 0
+    handling_successor_has_queued_row || successor_rc=$?
+    if [ "$successor_rc" -eq 124 ]; then
+      watch_lock_deferred wake-queue "${FM_LOCK_HELD_PID:-}"
+      return 0
+    fi
+    [ "$successor_rc" -eq 0 ] || return 0
     wake "check: rearm-resurface"
   fi
   if [ "$WATCHER_RECOVERY_PENDING" -ne 1 ]; then

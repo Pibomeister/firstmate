@@ -575,6 +575,9 @@ handle_attached_signal() {
   trap '' HUP TERM INT
   # An interrupted handover snapshot may still own locks its watcher needs
   # for cleanup, including a lock just transferred by the bounded helper.
+  # That helper keeps running in the background, so it can still hand a lock
+  # over after this release; the wait below releases again on every poll, and
+  # fm_lock_release only ever removes a lock this arm owns.
   fm_lock_release "$STATE/.watcher-down.lock"
   fm_lock_release "$FM_WAKE_QUEUE_LOCK"
   cycle_log_append "$rc" "$signal" arm-interrupted none
@@ -585,6 +588,8 @@ handle_attached_signal() {
     while fm_pid_alive "$cycle_watcher_pid" \
       && [ "$(fm_pid_identity "$cycle_watcher_pid" 2>/dev/null)" = "$cycle_watcher_identity" ]; do
       sleep 0.1
+      fm_lock_release "$STATE/.watcher-down.lock"
+      fm_lock_release "$FM_WAKE_QUEUE_LOCK"
     done
     watcher_cleanup_complete "$cycle_watcher_pid" "$cycle_watcher_identity" || true
     consume_cycle_delivery || true
