@@ -1,0 +1,82 @@
+FM_TEST_BEGIN 2026-10-30T04:26:39Z tests/fm-agy-spawn-live-e2e.test.sh family=live-harness-optin expected_gate_skip=live-capability
+grep: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-agy-spawn.VKJa7a/home/data/agy-live/report.md: No such file or directory
+grep: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-agy-spawn.VKJa7a/home/data/agy-live/report.md: No such file or directory
+grep: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-agy-spawn.VKJa7a/home/data/agy-live/report.md: No such file or directory
+grep: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-agy-spawn.VKJa7a/home/data/agy-live/report.md: No such file or directory
+grep: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-agy-spawn.VKJa7a/home/data/agy-live/report.md: No such file or directory
+grep: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-agy-spawn.VKJa7a/home/data/agy-live/report.md: No such file or directory
+grep: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-agy-spawn.VKJa7a/home/data/agy-live/report.md: No such file or directory
+grep: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-agy-spawn.VKJa7a/home/data/agy-live/report.md: No such file or directory
+grep: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-agy-spawn.VKJa7a/home/data/agy-live/report.md: No such file or directory
+grep: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-agy-spawn.VKJa7a/home/data/agy-live/report.md: No such file or directory
+grep: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-agy-spawn.VKJa7a/home/data/agy-live/report.md: No such file or directory
+grep: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-agy-spawn.VKJa7a/home/data/agy-live/report.md: No such file or directory
+grep: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-agy-spawn.VKJa7a/home/data/agy-live/report.md: No such file or directory
+grep: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-agy-spawn.VKJa7a/home/data/agy-live/report.md: No such file or directory
+grep: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-agy-spawn.VKJa7a/home/data/agy-live/report.md: No such file or directory
+grep: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-agy-spawn.VKJa7a/home/data/agy-live/report.md: No such file or directory
+grep: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-agy-spawn.VKJa7a/home/data/agy-live/report.md: No such file or directory
+grep: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-agy-spawn.VKJa7a/home/data/agy-live/report.md: No such file or directory
+grep: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-agy-spawn.VKJa7a/home/data/agy-live/report.md: No such file or directory
+ok - agy 1.4.10 fell back from orca to tmux, pre-registered trust, and processed its brief in the worktree
+stopped agy-live harness=agy backend=tmux endpoint=firstmate:fm-agy-live worktree=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-agy-spawn.VKJa7a/pool/.treehouse/scratch-3b2b9c/1/scratch
+ok - fm-control exit stopped the idle agy worker for agy-live
+complete: agy-live captain-call inventory reviewed
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  down 1s.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+teardown: reaping leaked worktree process(es) for agy-live: 26066
+teardown: force-killing leaked worktree process(es) for agy-live: 26066
+A new version of treehouse is available: v3.1.1 → v3.1.7
+Run "treehouse update" to update
+
+🌳 Worktree returned to pool.
+teardown agy-live complete (window firstmate:fm-agy-live, worktree /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-agy-spawn.VKJa7a/pool/.treehouse/scratch-3b2b9c/1/scratch)
+Backlog: agy-live just finished (this home keeps no markdown backlog at /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-agy-spawn.VKJa7a/home/data/backlog.md). Update /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-agy-spawn.VKJa7a/home/data/backlog.md - move agy-live to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+A new version of treehouse is available: v3.1.1 → v3.1.7
+Run "treehouse update" to update
+
+🌳 Setting up worktree...
+🌳 Leased worktree at /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-agy-spawn.VKJa7a/pool/.treehouse/scratch-3b2b9c/2/scratch. Run 'treehouse return /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-agy-spawn.VKJa7a/pool/.treehouse/scratch-3b2b9c/2/scratch' to release it.
+A new version of treehouse is available: v3.1.1 → v3.1.7
+Run "treehouse update" to update
+
+🌳 Worktree returned to pool.
+ok - a failed agy readiness gate closed its own window and kept its record
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s; down 837s) - full banner already printed this episode.
+A new version of treehouse is available: v3.1.1 → v3.1.7
+Run "treehouse update" to update
+
+relaunched agy-custody harness=agy from=agy model=gemini-4-argon-high effort=low backend=tmux endpoint=firstmate:fm-agy-custody worktree=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-agy-spawn.VKJa7a/pool/.treehouse/scratch-3b2b9c/1/scratch
+grep: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-agy-spawn.VKJa7a/home/data/agy-custody/report.md: No such file or directory
+grep: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-agy-spawn.VKJa7a/home/data/agy-custody/report.md: No such file or directory
+grep: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-agy-spawn.VKJa7a/home/data/agy-custody/report.md: No such file or directory
+grep: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-agy-spawn.VKJa7a/home/data/agy-custody/report.md: No such file or directory
+grep: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-agy-spawn.VKJa7a/home/data/agy-custody/report.md: No such file or directory
+grep: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-agy-spawn.VKJa7a/home/data/agy-custody/report.md: No such file or directory
+grep: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-agy-spawn.VKJa7a/home/data/agy-custody/report.md: No such file or directory
+grep: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-agy-spawn.VKJa7a/home/data/agy-custody/report.md: No such file or directory
+grep: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-agy-spawn.VKJa7a/home/data/agy-custody/report.md: No such file or directory
+grep: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-agy-spawn.VKJa7a/home/data/agy-custody/report.md: No such file or directory
+grep: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-agy-spawn.VKJa7a/home/data/agy-custody/report.md: No such file or directory
+grep: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-agy-spawn.VKJa7a/home/data/agy-custody/report.md: No such file or directory
+grep: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-agy-spawn.VKJa7a/home/data/agy-custody/report.md: No such file or directory
+grep: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-agy-spawn.VKJa7a/home/data/agy-custody/report.md: No such file or directory
+grep: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-agy-spawn.VKJa7a/home/data/agy-custody/report.md: No such file or directory
+grep: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-agy-spawn.VKJa7a/home/data/agy-custody/report.md: No such file or directory
+grep: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-agy-spawn.VKJa7a/home/data/agy-custody/report.md: No such file or directory
+grep: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-agy-spawn.VKJa7a/home/data/agy-custody/report.md: No such file or directory
+grep: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-agy-spawn.VKJa7a/home/data/agy-custody/report.md: No such file or directory
+grep: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-agy-spawn.VKJa7a/home/data/agy-custody/report.md: No such file or directory
+grep: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-agy-spawn.VKJa7a/home/data/agy-custody/report.md: No such file or directory
+grep: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-agy-spawn.VKJa7a/home/data/agy-custody/report.md: No such file or directory
+ok - fm-control relaunched the kept agy record and the worker processed its brief
+stopped agy-custody harness=agy backend=tmux endpoint=firstmate:fm-agy-custody worktree=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-agy-spawn.VKJa7a/pool/.treehouse/scratch-3b2b9c/1/scratch
+ok - fm-control exit stopped the idle agy worker for agy-custody
+complete: agy-custody captain-call inventory reviewed
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s; down 1089s) - full banner already printed this episode.

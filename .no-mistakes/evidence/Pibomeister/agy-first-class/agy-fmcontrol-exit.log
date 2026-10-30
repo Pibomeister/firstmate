@@ -1,0 +1,22 @@
+### idle pane before exit
+  instructions.
+
+────────────────────────────────────────────────────────────────────────────────
+>
+────────────────────────────────────────────────────────────────────────────────
+? for shortcuts                                          Gemini 4 Argon · medium
+
+
+### fm-control rD exit
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.w8cgPC
+stopped rD harness=agy backend=tmux endpoint=firstmate:fm-rD worktree=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.w8cgPC/pool/.treehouse/scratch-93a7fd/1/scratch
+exit=0
+### agy pid 32100 alive?
+  PID COMM
+gone
+### pane after exit
+────────────────────────────────────────────────────────────────────────────────
+
+Resume with -c (or command below):
+agy --conversation=16fcf3e8-3201-42a8-8b03-39019a3968f9
+eduardopicazo@Eduardos-MacBook-Pro-2 scratch %

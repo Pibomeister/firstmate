@@ -1,0 +1,52 @@
+FM_TEST_BEGIN 2026-10-30T04:27:10Z tests/fm-agy-harness.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - AGY returns an unpublished allocation and closes its endpoint after a failed cwd handoff
+ok - AGY allocation and recovery use the caller's custody pool despite endpoint environment differences
+ok - fm-harness.sh: ancestry detects a natively-named agy command
+ok - fm-harness.sh: ancestry rejects unrelated agy mentions
+ok - fm-harness.sh: no inherited launcher marker claims the agy identity
+ok - fm-control-lib: agy mechanics are Escape once, no clear key, and /quit
+ok - fm-busy-lib: only the pinned esc-to-cancel row carries the agy busy verdict
+ok - fm-composer-lib: agy delivery signatures never cross harnesses
+ok - fm-composer-lib: the agy composer reads empty, pending, and unknown exactly
+ok - fm-tmux-lib: the composer identity probe names the agy process
+ok - fm-busy-lib: agy classifies busy on its marker and unknown without it
+ok - bin/fm-agent-process-lib.sh: agy is an agent, fragments are not
+ok - herdr exit detection: done with a live registry and an agy process view stays live and refuses replacement
+ok - herdr exit detection: a registered status over a shell-only pane is stale-agent and still refuses closing
+ok - herdr exit detection: a registered pane with an agy foreground stays live however its shell ranks
+ok - herdr exit detection: only a positively unregistered pane is agent-free
+ok - herdr exit detection: malformed and failed reads stay unknown
+ok - fm-spawn: agy launch carries brief, model, effort, and autonomy with cleared markers
+ok - fm-spawn: agy omits xhigh from the launch but records it in task metadata
+ok - fm-spawn: agy passes xhigh and max through when its help lists them
+ok - fm-spawn: an unlisted agy model refuses before pane creation
+ok - fm-spawn: an unreachable agy listing establishes nothing and launches
+ok - fm-spawn: an empty agy model catalog refuses as signed out, with or without --model
+ok - fm-spawn: a hung agy listing is cut off by the shared bound and launches unvalidated
+ok - fm-spawn: a zero FM_AGY_MODELS_TIMEOUT is clamped to the default bound
+ok - fm-agy-trust.sh: registers the logical and resolved worktree paths and preserves the store
+ok - fm-agy-trust.sh: creates agy's settings store when none exists
+ok - fm-agy-trust.sh: refuses every out-of-scope path and never rewrites a broken store
+ok - fm-spawn: agy pre-registers the worktree and launches straight into a busy turn
+ok - fm-spawn: agy answers a dialog that renders anyway exactly once, then confirms busy
+ok - fm-spawn: on an unregistered path a premature busy verdict waits for the dialog to be answered
+ok - fm-spawn: a busy verdict on an unregistered path without a dialog fails and closes the endpoint
+ok - fm-spawn: an agy dialog that never turns busy fails the spawn and closes the endpoint
+ok - fm-spawn: an agy readiness failure closes only its window and keeps a record fm-teardown resolves
+ok - fm-spawn: AGY send, signal, and backlog failures preserve published records
+ok - AGY live guard requires a fresh correct recovery report and always stops its isolated server
+ok - AGY refuses missing Treehouse custody capabilities before endpoint creation
+ok - fm-spawn: agy is refused on orca, zellij, cmux, and paseo before anything launches
+ok - fm-spawn: agy on a configured orca backend falls back to tmux when herdr is unavailable
+ok - fm-spawn: agy on a configured orca backend prefers herdr over tmux
+ok - fm-spawn: agy refuses when neither herdr nor tmux is available
+ok - fm-spawn: agy refuses an FM_BACKEND choice it cannot verify instead of falling back
+ok - fm-spawn: agy on a configured but stopped orca still falls back to tmux
+ok - fm-spawn: agy refuses a macOS HOME with no login keychain before anything launches
+ok - fm-spawn: a missing agy executable refuses before pane creation
+ok - fm-spawn: agy cannot be launched as a secondmate
+ok - fm-spawn: agy arms no busy wiring and writes no sidecar
+FM_TEST_END 2026-10-30T04:36:46Z tests/fm-agy-harness.test.sh exit=0 duration_ms=575383 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=575671
+FM_TEST_SUMMARY_FAMILY family=pure-contract-unit count=1 duration_ms=575383 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-agy-harness.test.sh duration_ms=575383
