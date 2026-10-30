@@ -218,7 +218,7 @@ case "$out" in *'OVERDUE rq3 age=121m'*) ;; *) fail "a queued goal with no final
 case "$out" in *'OVERDUE rq1'*|*'OVERDUE rq2'*) fail "a goal with a final line was overdue: $out" ;; esac
 case "$out" in *'LATE rq1'*|*'LATE rq3'*) fail "a goal not judged late was listed LATE: $out" ;; esac
 case "$out" in *'LATE rq2 late=20m event=dispatched'*) ;; *) fail "a later line changed the judged late mark: $out" ;; esac
-pass "the SLA is judged once at the first final line, and a later queue neither reopens it nor goes overdue"
+pass "the SLA is judged once at the first final line, and a later queue never adds a late mark"
 
 dl "$T0" received weekend --summary 'first resolved after 24 hours' >/dev/null || fail "weekend refused"
 dl $((T0 + 25 * 3600)) dispatched weekend --task t-weekend >/dev/null || fail "weekend dispatch refused"
@@ -228,3 +228,102 @@ dl $((T0 + 26 * 3600)) dispatched weekend --task t-weekend-retry >/dev/null || f
 out=$(dl $((T0 + 49 * 3600 + 1)) overdue)
 case "$out" in *'LATE weekend'*) fail "a later retry extended the LATE window: $out" ;; esac
 pass "the LATE window runs from the late final line, not from received or a later retry"
+
+# Every ordering of up to three lines after `received`, with each line one minute
+# or 20 minutes after the one before, against the model the script header states.
+STATE="$TMP_ROOT/matrix"
+mkdir -p "$STATE"
+LOG="$STATE/dispatch-log.tsv"
+RECEIVED_ISO=2027-01-15T08:00:00Z
+SLA=900
+matrix_count=0
+
+check_probe() {  # <sequence label> <probe epoch>
+  local label=$1 probe=$2 want='' want_rc=0 out rc
+  case "$m_newest" in
+    received|queued)
+      if [ $((probe - m_start)) -gt "$SLA" ]; then
+        want="OVERDUE m age=$(((probe - m_start) / 60))m received=$RECEIVED_ISO summary=s"
+        want_rc=3
+      fi
+      ;;
+  esac
+  if [ -n "$m_late" ] && [ $((probe - m_late_at)) -le 86400 ]; then
+    [ -z "$want" ] || want="$want"$'\n'
+    want="${want}LATE m late=${m_late}m event=$m_late_event"
+  fi
+  out=$(dl "$probe" overdue); rc=$?
+  [ "$rc" = "$want_rc" ] || fail "$label: overdue at T0+$((probe - T0))s exited $rc, not $want_rc"
+  [ "$out" = "$want" ] || fail "$label: overdue at T0+$((probe - T0))s printed '$out', not '$want'"
+}
+
+check_sequence() {  # <event:gap-seconds>...
+  local label="received" step event gap t=$T0 detail mark out probe
+  rm -f "$LOG"
+  dl "$T0" received m --summary s >/dev/null || fail "matrix: received refused"
+  m_newest=received m_start=$T0 m_final='' m_late='' m_late_event='' m_late_at=''
+  for step in "$@"; do
+    event=${step%:*}
+    gap=${step#*:}
+    t=$((t + gap))
+    label="$label $event@+$((t - T0))s"
+    mark=''
+    case "$event" in
+      queued)
+        [ -z "$m_final" ] || m_start=$t
+        out=$(dl "$t" queued m --reason r) || fail "$label: refused"
+        detail='reason=r'
+        ;;
+      *)
+        if [ -z "$m_final" ]; then
+          m_final=1
+          if [ $((t - T0)) -gt "$SLA" ]; then
+            m_late=$(((t - T0) / 60))
+            m_late_event=$event
+            m_late_at=$t
+            mark=" late=${m_late}m"
+          fi
+        fi
+        if [ "$event" = dispatched ]; then
+          out=$(dl "$t" dispatched m --task k) || fail "$label: refused"
+          detail='task=k'
+        else
+          out=$(dl "$t" blocked m --reason r) || fail "$label: refused"
+          detail='reason=r'
+        fi
+        ;;
+    esac
+    m_newest=$event
+    [ "$(tail -n 1 "$LOG" | cut -f5)" = "$detail$mark" ] \
+      || fail "$label: line detail is '$(tail -n 1 "$LOG" | cut -f5)', not '$detail$mark'"
+    case "$out" in
+      *LATE*) [ -n "$mark" ] || fail "$label: printed LATE with no late mark: $out" ;;
+      *) [ -z "$mark" ] || fail "$label: did not print LATE: $out" ;;
+    esac
+  done
+  for probe in "$t" $((t + SLA + 1)) $((t + 86401)) $((m_start + SLA)) $((m_start + SLA + 1)); do
+    [ "$probe" -ge "$t" ] && check_probe "$label" "$probe"
+  done
+  matrix_count=$((matrix_count + 1))
+}
+
+EVENTS='queued blocked dispatched'
+GAPS='60 1200'
+check_sequence
+for e1 in $EVENTS; do
+  for g1 in $GAPS; do
+    check_sequence "$e1:$g1"
+    for e2 in $EVENTS; do
+      for g2 in $GAPS; do
+        check_sequence "$e1:$g1" "$e2:$g2"
+        for e3 in $EVENTS; do
+          for g3 in $GAPS; do
+            check_sequence "$e1:$g1" "$e2:$g2" "$e3:$g3"
+          done
+        done
+      done
+    done
+  done
+done
+[ "$matrix_count" = 259 ] || fail "the ordering matrix ran $matrix_count sequences, not 259"
+pass "every ordering of received, queued, blocked and dispatched up to 4 lines matches the stated model on each side of the SLA"
