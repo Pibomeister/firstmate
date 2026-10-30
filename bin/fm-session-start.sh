@@ -1039,7 +1039,7 @@ if [ -f "$STATE/dispatch-log.tsv" ]; then
     if [ "$READ_ONLY" -eq 1 ]; then
       printf '\nInformation only: the session holding the lock owns these goals.\n'
     else
-      printf '\nDispatch or block each OVERDUE goal this turn, and tell the captain about each OVERDUE and LATE goal listed.\n'
+      printf '\nDispatch or block each OVERDUE goal this turn and report it to the captain, because it still needs action. Each LATE goal is already resolved: include it in the next batched update or morning report rather than on each heartbeat.\n'
     fi
   fi
 fi
