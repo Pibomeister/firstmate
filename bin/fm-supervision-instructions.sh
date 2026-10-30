@@ -217,7 +217,7 @@ repair_line() {
       ;;
     codex)
       suffix=
-      [ "$SECONDMATE_MODE" -eq 1 ] || suffix="; send captain replies as interim messages, never as the turn's final answer, while supervision is needed"
+      [ "$SECONDMATE_MODE" -eq 1 ] || suffix="; keep this turn open while supervision is needed, because a returning checkpoint is a tool result, and a fresh beacon does not let you end the turn; send captain replies as interim messages, never as the turn's final answer"
       printf '%s%s%s%s%s\n' "$prefix" 'repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds ' "$checkpoint_seconds" "$suffix" '.'
       ;;
     pi|pi-signed)

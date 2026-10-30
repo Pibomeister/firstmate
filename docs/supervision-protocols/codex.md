@@ -1,5 +1,10 @@
 Mode: Codex foreground checkpoint.
 
+A bounded checkpoint is a tool call, not a conversation turn.
+When the checkpoint returns, control comes back to you inside the same turn, and that return does not end the turn.
+On a plain Codex/Herdr home the foreground checkpoint is the Herdr fallback, and it requires the turn to remain open: nothing resumes the conversation after the model returns, so ending the turn leaves supervision unwatched.
+A fresh advancing beacon does not change this.
+
 In a secondmate home, apply the routed-work and return-channel rules in `data/charter.md` before the next supervision wait.
 
 When this session owns supervision and no away daemon is active:

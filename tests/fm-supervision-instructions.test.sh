@@ -191,6 +191,8 @@ test_repair_lines() {
   out=$(FM_HOME="$home" FM_CODEX_WATCH_CHECKPOINT=7 "$RENDER" --harness codex --repair-line)
   assert_contains "$out" "bin/fm-watch-checkpoint.sh --seconds 7" "codex repair line did not use checkpoint helper and env override"
   assert_contains "$out" "send captain replies as interim messages, never as the turn's final answer" "codex repair line did not name the turn-ending final answer"
+  assert_contains "$out" "keep this turn open while supervision is needed" "codex repair line did not forbid ending the turn after a checkpoint"
+  assert_contains "$out" "a fresh beacon does not let you end the turn" "codex repair line let a fresh beacon read as a turn end"
 
   out=$(FM_HOME="$home" "$RENDER" --harness claude --queue-pending 1 --repair-line)
   assert_contains "$out" "After draining queued wakes" "queue-pending prefix missing"
