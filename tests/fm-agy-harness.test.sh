@@ -1437,12 +1437,24 @@ test_agy_env_backend_refuses_instead_of_falling_back() {
 }
 
 test_agy_fallback_refuses_when_no_verified_backend_is_available() {
-  local id rec out rc
+  local id rec out rc dir tool
   id="agy-fallback-none-z18-$$"
   rec=$(make_agy_spawn_case fallback-none "$id")
   read_agy_spawn_record "$rec"
   write_agy_fake_orca "$FAKEBIN_DIR"
   rm -f "$FAKEBIN_DIR/tmux"
+  # A runner's own tmux (apt puts it in /usr/bin) must not count as available:
+  # mirror BASE_PATH into one directory without it.
+  local base_dirs
+  IFS=: read -r -a base_dirs <<< "$BASE_PATH"
+  local BASE_PATH="$CASE_DIR/base-without-tmux"
+  mkdir -p "$BASE_PATH"
+  for dir in "${base_dirs[@]}"; do
+    for tool in "$dir"/*; do
+      [ -x "$tool" ] && [ "${tool##*/}" != tmux ] && [ ! -e "$BASE_PATH/${tool##*/}" ] || continue
+      ln -s "$tool" "$BASE_PATH/${tool##*/}"
+    done
+  done
   printf 'orca\n' > "$HOME_DIR/config/backend"
   rc=0
   out=$(run_agy_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" \

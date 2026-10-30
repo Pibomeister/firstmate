@@ -1884,13 +1884,13 @@ fm_treehouse_slot_require_owner() {
 }
 
 fm_treehouse_require_agy_custody() {
-  local capability command flag help
+  local capability subcommand flag help
   for capability in get:lease get:lease-holder lease:lease-holder status:json return:if-lease-holder; do
-    command=${capability%%:*}
+    subcommand=${capability%%:*}
     flag=${capability#*:}
-    if ! help=$(treehouse "$command" --help 2>/dev/null) ||
+    if ! help=$(treehouse "$subcommand" --help 2>/dev/null) ||
       ! printf '%s\n' "$help" | grep -Eq "(^|[[:space:],])--$flag([=[:space:],]|$)"; then
-      echo "error: AGY custody requires 'treehouse $command --$flag'; installed Treehouse does not advertise this capability" >&2
+      echo "error: AGY custody requires 'treehouse $subcommand --$flag'; installed Treehouse does not advertise this capability" >&2
       return 1
     fi
   done
