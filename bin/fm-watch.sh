@@ -269,10 +269,18 @@ mkdir -p "$STATE"
 # held descriptor keeps its inode from being reused. It is opened before the
 # lock claim so a teardown during startup is not mistaken for the directory
 # this watcher claimed in. A host that cannot open a directory keeps reading a
-# lock with no holder as a teardown.
+# lock with no holder as a teardown. The held directory is identified by its
+# inode, read through the path, because macOS reports devfs identity for a
+# stat of /dev/fd/N.
+watch_state_inode() {
+  # shellcheck disable=SC2012 # Only the leading inode field of one path is read.
+  ls -di "$STATE" 2>/dev/null | awk '{ print $1; exit }'
+}
 WATCH_STATE_HELD=0
+WATCH_STATE_INODE=
 if { exec 6<"$STATE"; } 2>/dev/null; then
-  WATCH_STATE_HELD=1
+  WATCH_STATE_INODE=$(watch_state_inode)
+  [ -z "$WATCH_STATE_INODE" ] || WATCH_STATE_HELD=1
 fi
 # A home that never existed (a state-only test fixture) is not a home that
 # disappeared, so the per-poll home-gone exit below applies only when it did.
@@ -4199,7 +4207,7 @@ while :; do
     echo "watcher: exiting - state directory no longer exists: $STATE" >&2
     exit 1
   elif [ ! -e "$WATCH_LOCK/pid" ] \
-    && { [ "$WATCH_STATE_HELD" -ne 1 ] || [ ! /dev/fd/6 -ef "$STATE" ]; }; then
+    && { [ "$WATCH_STATE_HELD" -ne 1 ] || [ "$(watch_state_inode)" != "$WATCH_STATE_INODE" ]; }; then
     echo "watcher: exiting - state directory was torn down (singleton lock removed): $STATE" >&2
     exit 1
   elif [ ! -d "$SCRIPT_DIR" ]; then
