@@ -1,0 +1,3 @@
+18:Keep each of your own foreground waits and polls to 60 seconds or less, and never wait on a crew inside your own turn: once the emitted supervision protocol proves an outside-turn watcher, end the turn and let its doorbell start the next one.
+19:After handling inputs, sending actions and parent replies, and acknowledging handled events, end the turn when the emitted supervision protocol proves an outside-turn watcher and notification route.
+20:On a foreground-only fallback the emitted protocol keeps the turn open instead, so follow its checkpoint rather than ending the turn.

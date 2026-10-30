@@ -1,0 +1,50 @@
+### codex plain
+================================================================================
+SUPERVISION OPERATING INSTRUCTIONS - primary harness: codex
+================================================================================
+Current state:
+- Lock: held by this session; this session owns normal supervision unless away mode says otherwise.
+- Away/quiet mode: inactive.
+- X mode: inactive; use the default watcher cadence.
+- Ordinary wake: take the next foreground bin/fm-watch-checkpoint.sh checkpoint as directed below.
+
+Mode: Codex foreground checkpoint.
+
+A bounded checkpoint is a tool call, not a conversation turn.
+When the checkpoint returns, control comes back to you inside the same turn, and that return does not end the turn.
+
+In a secondmate home, apply the routed-work and return-channel rules in `data/charter.md` before the next supervision wait.
+
+When this session owns supervision and no away daemon is active:
+On a plain Codex/Herdr home the foreground checkpoint is the Herdr fallback, and it requires the turn to remain open: nothing resumes the conversation after the model returns, so ending the turn leaves supervision unwatched.
+A fresh advancing beacon does not change this.
+1. Drain first with `bin/fm-wake-drain.sh`.
+   After handling all emitted wakes and reconciling open decisions and unread status lines, run the exact `--ack-through` command printed as `WAKE_ACK_REQUIRED`; until then the work remains durable for idempotent re-handling after interruption.
+2. Source `/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.6PDE45bT0l/config/x-mode.env` first when Relay is active.
+3. First cycle: run one foreground watcher checkpoint with `bin/fm-watch-checkpoint.sh --seconds "${FM_CODEX_WATCH_CHECKPOINT:-180}"`.
+   When the call returns a still-running exec session, poll it with `write_stdin` (empty input) until it exits; never end the turn while your checkpoint runs, because nothing reads its wake or starts the next one once the turn ends.
+4. Ordinary wake: if the command prints `signal:`, `stale:`, `check:`, or `heartbeat`, drain queued wakes, handle that wake, acknowledge it, then start exactly one successor checkpoint after the previous command exits.
+5. If the command exits 0 and prints `checkpoint: no actionable wake` with no wake, drain queued wakes anyway, process any queued user message now visible to Codex, then start the next checkpoint.
+   In a secondmate home, `checkpoint: firstmate instruction waiting in the steering inbox` names records to read, act on and acknowledge now, before the next checkpoint.
+6. While supervision is needed, send each captain-facing reply as an interim (commentary) message, then keep polling the running checkpoint or start the next one in the same turn.
+   Never send it as the turn's final answer: a final answer ends the turn, and the turn-end guard then blocks it with a visible repair prompt.
+   That interim message carries the whole reply and must stand alone exactly as a final reply would.
+### codex away
+6:- Away mode: active; load /afk and keep normal harness supervision paused while the daemon owns the watcher.
+17:When this session owns supervision and no away daemon is active:
+18:On a plain Codex/Herdr home the foreground checkpoint is the Herdr fallback, and it requires the turn to remain open: nothing resumes the conversation after the model returns, so ending the turn leaves supervision unwatched.
+19:A fresh advancing beacon does not change this.
+### codex repair
+repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds 180; keep this turn open while supervision is needed, because a returning checkpoint is a tool result, and a fresh beacon does not let you end the turn; send captain replies as interim messages, never as the turn's final answer.
+### codex repair secondmate
+error: unknown argument: --secondmate
+Usage: fm-supervision-instructions.sh [--harness <name>] [--read-only 0|1] [--afk 0|1] [--afk-mode away|quiet] [--x-mode 0|1] [--repair-line] [--queue-pending 0|1]
+
+Print the current primary harness's supervision operating instructions.
+With --repair-line, print one concise repair instruction for guard and hook messages.
+--afk-mode only matters when --afk 1 (present); it selects the away-mode vs
+quiet-mode (kunchenguid/firstmate#2356) wording, and defaults to away.
+### away repair
+Away mode owns watcher supervision; load /afk and ensure the daemon is running instead of starting normal supervision directly.
+### claude render plain-codex leak count
+0

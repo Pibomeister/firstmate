@@ -1,0 +1,12 @@
+### Repo invariants (steps from .github/workflows/ci.yml)
+CLAUDE.md not a symlink: ok
+CLAUDE.md pointer: ok
+.claude/skills symlink: ok
+personal fleet paths untracked: ok
+### Secondmate charter from real fm-brief.sh
+fm-brief exit=0
+18:Keep each of your own foreground waits and polls to 60 seconds or less, and never wait on a crew inside your own turn: once the emitted supervision protocol proves an outside-turn watcher, end the turn and let its doorbell start the next one.
+19:After handling inputs, sending actions and parent replies, and acknowledging handled events, end the turn when the emitted supervision protocol proves an outside-turn watcher and notification route.
+20:On a foreground-only fallback the emitted protocol keeps the turn open instead, so follow its checkpoint rather than ending the turn.
+### Skipped
+Live Codex and Herdr end-to-end tests skipped: the Codex update prompt blocks them (operator decision). Codex was not updated.

@@ -1,0 +1,19 @@
+Note: switching to '12f37598333ec5223bedbd09b339a392e39de6f6'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+ok - codex-cli 0.163.0 live E2E preserved the one-second foreground checkpoint path
+not ok - the guard did not block the Codex turn while work was in flight

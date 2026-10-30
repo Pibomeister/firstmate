@@ -1,0 +1,38 @@
+Note: switching to '66f170c94469b6cc47484bdcabfa6d60ed5f3a9a'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+ok - codex-cli 0.163.0 live E2E preserved the one-second foreground checkpoint path
+not ok - Codex held-turn run failed: {"type":"item.started","item":{"id":"item_16","type":"command_execution","command":"/bin/zsh -lc 'bin/fm-watch-checkpoint.sh --seconds 30'","aggregated_output":"","exit_code":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_16","type":"command_execution","command":"/bin/zsh -lc 'bin/fm-watch-checkpoint.sh --seconds 30'","aggregated_output":"checkpoint: no actionable wake within 30s\n","exit_code":0,"status":"completed"}}
+{"type":"item.completed","item":{"id":"item_17","type":"agent_message","text":"Captain, the live-probe decision is still pending. I have made no resolution entry."}}
+{"type":"item.started","item":{"id":"item_18","type":"command_execution","command":"/bin/zsh -lc bin/fm-wake-drain.sh","aggregated_output":"","exit_code":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_18","type":"command_execution","command":"/bin/zsh -lc bin/fm-wake-drain.sh","aggregated_output":"WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 0 --recovery-generation 81150.1793348714.2DsTq6\n","exit_code":0,"status":"completed"}}
+{"type":"item.started","item":{"id":"item_19","type":"command_execution","command":"/bin/zsh -lc 'bin/fm-wake-drain.sh --ack-through 0 --recovery-generation 81150.1793348714.2DsTq6'","aggregated_output":"","exit_code":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_19","type":"command_execution","command":"/bin/zsh -lc 'bin/fm-wake-drain.sh --ack-through 0 --recovery-generation 81150.1793348714.2DsTq6'","aggregated_output":"","exit_code":0,"status":"completed"}}
+{"type":"item.started","item":{"id":"item_20","type":"command_execution","command":"/bin/zsh -lc 'bin/fm-watch-checkpoint.sh --seconds 30'","aggregated_output":"","exit_code":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_20","type":"command_execution","command":"/bin/zsh -lc 'bin/fm-watch-checkpoint.sh --seconds 30'","aggregated_output":"checkpoint: no actionable wake within 30s\n","exit_code":0,"status":"completed"}}
+{"type":"item.started","item":{"id":"item_21","type":"command_execution","command":"/bin/zsh -lc 'bin/fm-watch-checkpoint.sh --seconds 30'","aggregated_output":"","exit_code":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_21","type":"command_execution","command":"/bin/zsh -lc 'bin/fm-watch-checkpoint.sh --seconds 30'","aggregated_output":"checkpoint: no actionable wake within 30s\n","exit_code":0,"status":"completed"}}
+{"type":"item.started","item":{"id":"item_22","type":"command_execution","command":"/bin/zsh -lc 'bin/fm-watch-checkpoint.sh --seconds 30'","aggregated_output":"","exit_code":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_22","type":"command_execution","command":"/bin/zsh -lc 'bin/fm-watch-checkpoint.sh --seconds 30'","aggregated_output":"checkpoint: no actionable wake within 30s\n","exit_code":0,"status":"completed"}}
+{"type":"item.started","item":{"id":"item_23","type":"command_execution","command":"/bin/zsh -lc 'bin/fm-watch-checkpoint.sh --seconds 30'","aggregated_output":"","exit_code":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_23","type":"command_execution","command":"/bin/zsh -lc 'bin/fm-watch-checkpoint.sh --seconds 30'","aggregated_output":"checkpoint: no actionable wake within 30s\n","exit_code":0,"status":"completed"}}
+{"type":"item.started","item":{"id":"item_24","type":"command_execution","command":"/bin/zsh -lc 'bin/fm-watch-checkpoint.sh --seconds 2'","aggregated_output":"","exit_code":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_24","type":"command_execution","command":"/bin/zsh -lc 'bin/fm-watch-checkpoint.sh --seconds 2'","aggregated_output":"checkpoint: no actionable wake within 2s\n","exit_code":0,"status":"completed"}}
+{"type":"item.started","item":{"id":"item_25","type":"command_execution","command":"/bin/zsh -lc 'bin/fm-watch-checkpoint.sh --seconds 30'","aggregated_output":"","exit_code":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_25","type":"command_execution","command":"/bin/zsh -lc 'bin/fm-watch-checkpoint.sh --seconds 30'","aggregated_output":"checkpoint: no actionable wake within 30s\n","exit_code":0,"status":"completed"}}
+{"type":"item.started","item":{"id":"item_26","type":"command_execution","command":"/bin/zsh -lc 'bin/fm-watch-checkpoint.sh --seconds 30'","aggregated_output":"","exit_code":null,"status":"in_progress"}}

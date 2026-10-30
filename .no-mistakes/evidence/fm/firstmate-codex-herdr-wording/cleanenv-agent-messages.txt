@@ -1,0 +1,7 @@
+Captain, I’ll arm the foreground checkpoint in the disposable lab and verify its beacon. I’ll use the operational-home and supervision skills and leave the repo unchanged.
+Captain, the foreground checkpoint is armed. Its beacon was 4 seconds old when verified. No repo edits.
+Captain, the checkpoint is still running. I’ll keep this turn open while it supervises the lab task.
+Captain, watcher PID 26498 is live and its beacon has advanced. The checkpoint remains open.
+Captain, no wake has arrived. Supervision is still active.
+Captain, the 45-second foreground checkpoint is armed. The previous checkpoint verified an advancing beacon. No repo edits.
+Captain, I ended the turn too soon. The hook requires this turn to stay open while the lab task is in flight. I’m keeping the checkpoint open now.
