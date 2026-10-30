@@ -102,7 +102,7 @@ if [ "${QUOTA_AXI_CURSOR_POOLS:-0}" = 1 ]; then
   printf '%s\n' "$count" > "$QUOTA_AXI_COUNT"
   auto=93
   [ "$count" -eq 1 ] || auto=5
-  printf '{"schemaVersion":5,"providers":[{"provider":"cursor","windows":[{"id":"included_usage","percentRemaining":90},{"id":"auto_usage","percentRemaining":%s},{"id":"api_usage","percentRemaining":2}],"quotaSemantics":{"status":"known","effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":2,"runway":{"status":"unknown"}},{"scope":"pool:api","status":"known","effectivePercentRemaining":2,"runway":{"status":"unknown"}}]}}]}\n' "$auto"
+  printf '{"schemaVersion":5,"providers":[{"provider":"cursor","windows":[{"id":"included_usage","percentRemaining":90},{"id":"auto_usage","percentRemaining":%s},{"id":"api_usage","percentRemaining":2}],"quotaSemantics":{"status":"known","effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":2,"runway":{"status":"unknown"}},{"scope":"pool:api","status":"known","effectivePercentRemaining":2,"runway":{"status":"unknown"}},{"scope":"grok_bot","status":"known","effectivePercentRemaining":3,"runway":{"status":"through_reset"}}]}}]}\n' "$auto"
   exit 0
 fi
 if [ "${QUOTA_AXI_SCHEMA5_PAIR:-0}" = 1 ]; then
@@ -325,12 +325,12 @@ ok "aggregate watch reads every schema 6 account row without combining them"
 
 rm -f "$COUNT"
 out=$(QUOTA_AXI_CURSOR_POOLS=1 QUOTA_AXI_COUNT="$COUNT" PATH="$FAKEBIN:$PATH" "$BIN/fm-procevent-quota.sh" poll --interval 0.01 --threshold 10 --provider cursor --timeout 1)
-printf '%s\n' "$out" | grep -qx 'condition_polls: 2' || fail "cursor watch read the collapsed api bound as low: $out"
+printf '%s\n' "$out" | grep -qx 'condition_polls: 2' || fail "cursor watch read the collapsed api bound or grok_bot as low: $out"
 printf '%s\n' "$out" | grep -qx 'status: low' || fail "cursor watch missed its low auto pool: $out"
 detail=$(printf '%s\n' "$out" | sed -n 's/^detail: //p')
 printf '%s\n' "$detail" | jq -e '.best.scope == "pool:auto" and .best.effectivePercentRemaining == 5' >/dev/null \
   || fail "cursor watch detail did not name its auto pool: $detail"
-ok "cursor provider watch judges its default auto pool, not the collapsed minimum"
+ok "cursor provider watch judges its default auto pool, not the collapsed minimum or grok_bot"
 
 out=$(QUOTA_AXI_SCHEMA6=1 QUOTA_AXI_COUNT="$COUNT" PATH="$FAKEBIN:$PATH" "$BIN/fm-procevent-quota.sh" poll --interval 1 --threshold 10 --provider cursor --timeout 1)
 printf '%s\n' "$out" | grep -qx 'status: low' || fail "schema 6 provider watch included another provider's exhausted account"

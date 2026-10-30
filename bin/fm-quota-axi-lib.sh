@@ -58,9 +58,9 @@ FM_QUOTA_PROVIDER_ID_RE='^[a-z0-9]+(-[a-z0-9]+)*\z'
 #                                  and pool:<name> resolves real or derived.
 #   quota_provider_rows($provider_row)
 #                                  the rows a provider-wide reader judges with
-#                                  no model in hand: on Cursor, its default
-#                                  auto pool replaces all_models and the other
-#                                  pools.
+#                                  no model in hand: on Cursor, the rows that
+#                                  apply to its default model, so the other
+#                                  pools and grok_bot never judge it.
 #   quota_below_pool_floor($row)   true when a known row from quota_applicable
 #                                  sits under its poolFloor.
 # shellcheck disable=SC2016,SC2034  # jq program text, not shell expansion; read by the sourcing consumers
@@ -130,10 +130,8 @@ FM_QUOTA_ROW_JQ='
     else [($p.quotaSemantics.effectiveAvailability // [])[] | select(.scope == $scope)]
     end;
   def quota_provider_rows($p):
-    ($p.quotaSemantics.effectiveAvailability // []) as $rows |
-    (if $p.provider == "cursor" then cursor_pool_row($p; "auto") else null end) as $pr |
-    if $pr == null then $rows
-    else ($rows | map(select(.scope != "all_models" and (.scope | startswith("pool:") | not)))) + [$pr]
+    if $p.provider == "cursor" then quota_applicable($p; "default")
+    else $p.quotaSemantics.effectiveAvailability // []
     end;
   def quota_below_pool_floor($r):
     $r.poolFloor != null and $r.status == "known" and $r.effectivePercentRemaining < $r.poolFloor;
