@@ -2069,6 +2069,19 @@ fm_treehouse_slot_require_owner() {
   return 1
 }
 
+fm_treehouse_require_agy_custody() {
+  local capability command flag help
+  for capability in lease:lease-holder status:json return:if-lease-holder; do
+    command=${capability%%:*}
+    flag=${capability#*:}
+    if ! help=$(treehouse "$command" --help 2>/dev/null) ||
+      ! printf '%s\n' "$help" | grep -Eq "(^|[[:space:],])--$flag([=[:space:],]|$)"; then
+      echo "error: AGY custody requires 'treehouse $command --$flag'; installed Treehouse does not advertise this capability" >&2
+      return 1
+    fi
+  done
+}
+
 fm_treehouse_slot_reserve() {
   local project=$1 worktree=$2 id=$3 slot reserved lease_state
   fm_treehouse_slot_require_owner "$worktree" "$id" || return 1

@@ -21,6 +21,8 @@ set -u
 
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+# shellcheck source=tests/treehouse-helpers.sh
+. "$ROOT/tests/treehouse-helpers.sh"
 # shellcheck source=/dev/null
 . "$ROOT/bin/fm-control-lib.sh"
 # shellcheck source=/dev/null
@@ -253,6 +255,17 @@ EOF
   TASK_TMPS+=("/tmp/fm-$id")
 }
 
+add_pooled_ship_task() {
+  local dir=$1 id=$2 harness=$3 wt
+  add_ship_task "$dir" "$id" "$harness"
+  fm_test_fake_treehouse "$dir/fakebin" "$dir/proj" "$dir/pool"
+  wt=$("$dir/fakebin/treehouse" get --lease --no-fetch) || fail "could not allocate the relaunch fixture slot"
+  "$dir/fakebin/treehouse" return "$wt" --force || fail "could not return the relaunch fixture slot"
+  sed "s|^worktree=.*|worktree=$wt|" "$dir/home/state/$id.meta" > "$dir/pooled.meta"
+  mv "$dir/pooled.meta" "$dir/home/state/$id.meta"
+  printf '%s' "$wt" > "$dir/fake/cwd"
+}
+
 run_control() {  # <case-dir> <args...>
   local dir=$1; shift
   # A claude spawn pre-registers workspace trust in the launching user's own
@@ -441,13 +454,8 @@ test_pooled_relaunch_custody_is_agy_only() {
     for prior in claude codex agy; do
       for target in claude codex agy; do
         dir=$(new_case "pool-$entry-$prior-$target" rl-pool)
-        add_ship_task "$dir" rl-pool "$prior"
-        wt=$(cd "$dir/proj" && treehouse --root "$dir/pool" get --lease --no-fetch) \
-          || fail "could not allocate the relaunch fixture slot"
-        treehouse return "$wt" --force || fail "could not return the relaunch fixture slot"
-        sed "s|^worktree=.*|worktree=$wt|" "$dir/home/state/rl-pool.meta" > "$dir/pooled.meta"
-        mv "$dir/pooled.meta" "$dir/home/state/rl-pool.meta"
-        printf '%s' "$wt" > "$dir/fake/cwd"
+        add_pooled_ship_task "$dir" rl-pool "$prior"
+        wt=$(meta_field "$dir" rl-pool worktree)
         printf '%s' "$prior" > "$dir/fake/command"
         printf '%s' "$target" > "$dir/fake/becomes"
         for harness in claude codex agy; do
@@ -482,6 +490,41 @@ test_pooled_relaunch_custody_is_agy_only() {
     done
   done
   pass "pooled relaunches preserve legacy compatibility and require custody for either AGY harness"
+}
+
+test_agy_relaunch_requires_treehouse_capabilities_before_stopping() {
+  local dir entry capability expected prior target before out rc
+  for entry in control spawn; do
+    while IFS='|' read -r capability expected prior target; do
+      dir=$(new_case "capability-$entry-${capability//:/-}-$prior" rl-capability)
+      add_pooled_ship_task "$dir" rl-capability "$prior"
+      printf '#!/usr/bin/env bash\nexit 0\n' > "$dir/fakebin/agy"
+      chmod +x "$dir/fakebin/agy"
+      printf '%s\n' "$capability" > "$dir/fakebin/treehouse.missing"
+      before=$(cat "$dir/home/state/rl-capability.meta")
+      rc=0
+      if [ "$entry" = control ]; then
+        printf '%s' "$prior" > "$dir/fake/command"
+        out=$(run_control "$dir" rl-capability relaunch --harness "$target" --note "recover the pooled task") || rc=$?
+        [ "$(cat "$dir/fake/command")" = "$prior" ] || fail "capability refusal stopped the old worker"
+      else
+        printf 'zsh' > "$dir/fake/command"
+        out=$(run_spawn "$dir" rl-capability --relaunch --harness "$target") || rc=$?
+      fi
+      expect_code 1 "$rc" "$entry accepted missing Treehouse $expected: $out"
+      assert_contains "$out" "AGY custody requires 'treehouse $expected'" "$entry lost the capability refusal: $out"
+      [ -z "$(cat "$dir/fake/literal")$(cat "$dir/fake/keys")" ] || fail "capability refusal sent lifecycle bytes"
+      [ "$(cat "$dir/home/state/rl-capability.meta")" = "$before" ] || fail "capability refusal changed task metadata"
+      assert_absent "$dir/home/state/rl-capability.control-relaunch" "capability refusal opened a relaunch transaction"
+    done <<'EOF'
+lease|lease --lease-holder|claude|agy
+status:json|status --json|claude|agy
+return:if-lease-holder|return --if-lease-holder|claude|agy
+status:json|status --json|agy|claude
+status:json|status --json|agy|agy
+EOF
+  done
+  pass "AGY relaunch checks Treehouse capabilities before stopping or replacing a worker"
 }
 
 test_relaunch_refuses_before_exit_when_the_composer_holds_pending_text() {
@@ -3214,6 +3257,7 @@ test_exit_and_relaunch_remove_the_dialog_file
 test_exit_removes_the_dialog_file_before_releasing_the_lock
 test_same_harness_relaunch_keeps_identity_and_reuses_the_endpoint
 test_pooled_relaunch_custody_is_agy_only
+test_agy_relaunch_requires_treehouse_capabilities_before_stopping
 test_relaunch_refuses_before_exit_when_the_composer_holds_pending_text
 test_relaunch_refuses_before_exit_when_the_composer_state_is_unproven
 test_relaunch_from_linked_home_preserves_recorded_worktree

@@ -3202,6 +3202,9 @@ if [ "$HARNESS" = agy ] && [ "$BACKEND" != tmux ] && [ "$BACKEND" != herdr ]; th
   exit 1
 fi
 if [ "$HARNESS" = agy ]; then
+  if [ "$RELAUNCH" -eq 0 ]; then
+    fm_treehouse_require_agy_custody || exit 1
+  fi
   trap 'exit 129' HUP
   trap 'exit 130' INT
   trap 'exit 143' TERM
@@ -4156,6 +4159,7 @@ fi
 if [ "$RELAUNCH" -eq 1 ] && [ "$KIND" != secondmate ] &&
   { [ "$HARNESS" = agy ] || [ "$RELAUNCH_PRIOR_HARNESS" = agy ]; } &&
   fm_treehouse_pool_slot "$PROJ_ABS" "$RELAUNCH_WT"; then
+  fm_treehouse_require_agy_custody || exit 1
   SPAWN_TREEHOUSE_PROJECT_LOCK=$(fm_treehouse_project_lock_path "$PROJ_ABS") || exit 1
   fm_lock_try_acquire "$SPAWN_TREEHOUSE_PROJECT_LOCK" || {
     echo "error: another Treehouse slot allocation or return is in progress for $PROJ_ABS; refusing to race it" >&2

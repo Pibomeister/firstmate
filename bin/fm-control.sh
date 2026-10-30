@@ -1174,6 +1174,7 @@ safe_checkpoint() {
   [ -d "$WT" ] || die "task $ID's recorded worktree $WT is missing; refusing to relaunch and lose track of its work"
   if [ "$KIND" != secondmate ] && { [ "$PRIOR_HARNESS" = agy ] || [ "$TARGET_HARNESS" = agy ]; } &&
     fm_treehouse_pool_slot "$(fm_meta_get "$META" project)" "$WT"; then
+    fm_treehouse_require_agy_custody || exit 1
     fm_treehouse_slot_require_owner "$WT" "$ID" || exit 1
   fi
   wt_real=$(cd "$WT" 2>/dev/null && pwd -P) || die "task $ID's recorded worktree $WT cannot be resolved"

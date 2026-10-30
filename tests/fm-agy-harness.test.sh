@@ -36,6 +36,8 @@ set -u
 
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+# shellcheck source=tests/treehouse-helpers.sh
+. "$ROOT/tests/treehouse-helpers.sh"
 
 # bin/fm-harness.sh checks verified ENV markers before ancestry. A suite run
 # from inside another harness inherits those markers, which outrank the fake
@@ -584,7 +586,7 @@ echo "fake agy must never execute" >&2
 exit 9
 SH
   chmod +x "$fakebin/agy"
-  fm_fake_exit0 "$fakebin" treehouse gh-axi gh
+  fm_fake_exit0 "$fakebin" gh-axi gh
   printf '%s\n' "$fakebin"
 }
 
@@ -609,6 +611,7 @@ EOF
   printf '%s\n' '{"model":"Gemini 3.8 Flash (High)","trustedWorkspaces":["/home/someone/elsewhere"]}' \
     > "$home/.gemini/antigravity-cli/settings.json"
   fm_git_worktree "$proj" "$wt" "wt-$name"
+  fm_test_fake_treehouse "$fakebin" "$proj" "$case_dir/pool"
   touch "$home/state/.last-watcher-beat"
   : > "$case_dir/launch.log"
   : > "$case_dir/tmux-calls.log"
@@ -658,14 +661,8 @@ run_agy_spawn() {
 }
 
 make_agy_pooled_case() {
-  local real_treehouse=$1
-  WT_DIR=$(cd "$PROJ_DIR" && "$real_treehouse" --root "$CASE_DIR/pool" get --lease --no-fetch) || fail "could not allocate fixture pool slot"
-  (cd "$PROJ_DIR" && "$real_treehouse" return "$WT_DIR" --force) || fail "could not return fixture slot"
-  cat > "$FAKEBIN_DIR/treehouse" <<SH
-#!/usr/bin/env bash
-exec '$real_treehouse' --root '$CASE_DIR/pool' "\$@"
-SH
-  chmod +x "$FAKEBIN_DIR/treehouse"
+  WT_DIR=$("$FAKEBIN_DIR/treehouse" get --lease --no-fetch) || fail "could not allocate fixture pool slot"
+  "$FAKEBIN_DIR/treehouse" return "$WT_DIR" --force || fail "could not return fixture slot"
 }
 
 test_agy_post_publication_failures_keep_records() {
@@ -1007,12 +1004,11 @@ test_agy_pre_trusted_path_that_never_turns_busy_fails_the_spawn() {
 # names the closed endpoint and the worktree for fm-control relaunch, and that
 # fm-teardown can resolve. The kill must target only the task's own window.
 test_agy_readiness_failure_keeps_a_recoverable_record() {
-  local id rec out rc meta calls real_treehouse second launch_before
-  real_treehouse=$(command -v treehouse) || fail "test needs treehouse"
+  local id rec out rc meta calls second launch_before
   id="agy-custody-z14-$$"
   rec=$(make_agy_spawn_case custody "$id")
   read_agy_spawn_record "$rec"
-  make_agy_pooled_case "$real_treehouse"
+  make_agy_pooled_case
   rc=0
   out=$(FM_FAKE_AGY_ASSUME_TRUSTED=1 FM_FAKE_AGY_ANSWER=stuck FM_FAKE_AGY_NEVER_BUSY=1 run_agy_spawn \
     "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" --model gemini-3.8-flash-low) || rc=$?
@@ -1033,9 +1029,9 @@ test_agy_readiness_failure_keeps_a_recoverable_record() {
   assert_contains "$out" "bin/fm-control.sh $id relaunch" "the failure did not name the recovery command"
   assert_grep 'failed: agy did not start processing its brief' <(sed -E 's/ \[at=[0-9]+\]//' "$HOME_DIR/state/$id.status") \
     "a failed agy readiness gate did not record the failure in the task status"
-  second=$(cd "$PROJ_DIR" && "$real_treehouse" --root "$CASE_DIR/pool" get --lease --no-fetch) || fail "second dispatch could not allocate"
+  second=$("$FAKEBIN_DIR/treehouse" get --lease --no-fetch) || fail "second dispatch could not allocate"
   [ "$second" != "$WT_DIR" ] || fail "second dispatch stole the failed AGY task's slot"
-  "$real_treehouse" return "$second" --force || fail "could not release second slot"
+  "$FAKEBIN_DIR/treehouse" return "$second" --force || fail "could not release second slot"
   printf 'original work\n' > "$WT_DIR/recovery-sentinel"
   printf 'shell\n' > "$CASE_DIR/agy.state"
   rc=0
@@ -1062,14 +1058,37 @@ test_agy_readiness_failure_keeps_a_recoverable_record() {
     "$ROOT/bin/fm-teardown.sh" "$id" 2>&1) || rc=$?
   expect_code 0 "$rc" "fm-teardown could not resolve the kept agy record"$'\n'"$out"
   [ ! -e "$meta" ] || fail "fm-teardown left the kept agy record behind"
-  second=$(cd "$PROJ_DIR" && "$real_treehouse" --root "$CASE_DIR/pool" get --lease --no-fetch) || fail "could not allocate after teardown"
+  second=$("$FAKEBIN_DIR/treehouse" get --lease --no-fetch) || fail "could not allocate after teardown"
   [ "$second" = "$WT_DIR" ] || fail "teardown did not release durable slot custody"
-  "$real_treehouse" return "$second" --force || fail "could not return teardown probe"
+  "$FAKEBIN_DIR/treehouse" return "$second" --force || fail "could not return teardown probe"
   pass "fm-spawn: an agy readiness failure closes only its window and keeps a record fm-teardown resolves"
 }
 
 # agy readiness is proven per backend; every other spawn-capable backend is
 # refused before any worktree, endpoint, task record, or model fetch exists.
+test_agy_missing_treehouse_capability_refuses_before_launch() {
+  local id rec out rc capability expected
+  while IFS='|' read -r capability expected; do
+    id="agy-capability-$$"
+    rec=$(make_agy_spawn_case "capability-${capability//:/-}" "$id")
+    read_agy_spawn_record "$rec"
+    printf '%s\n' "$capability" > "$FAKEBIN_DIR/treehouse.missing"
+    rc=0
+    out=$(run_agy_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id") || rc=$?
+    expect_code 1 "$rc" "AGY accepted missing Treehouse $expected: $out"
+    assert_contains "$out" "AGY custody requires 'treehouse $expected'" "missing capability was not identified: $out"
+    [ ! -s "$CASE_DIR/tmux-calls.log" ] || fail "capability refusal touched an endpoint"
+    [ ! -s "$CASE_DIR/launch.log" ] || fail "capability refusal launched a worker"
+    assert_absent "$HOME_DIR/state/$id.meta" "capability refusal published a task"
+    assert_absent "$CASE_DIR/pool/treehouse-state.json" "capability refusal allocated a slot"
+  done <<'EOF'
+lease|lease --lease-holder
+status:json|status --json
+return:if-lease-holder|return --if-lease-holder
+EOF
+  pass "AGY refuses missing Treehouse custody capabilities before endpoint creation"
+}
+
 test_agy_unverified_backend_refuses_before_anything_launches() {
   local id rec out rc backend
   for backend in orca zellij cmux paseo; do
@@ -1191,6 +1210,7 @@ test_agy_pre_trusted_path_that_never_turns_busy_fails_the_spawn
 test_agy_readiness_failure_keeps_a_recoverable_record
 test_agy_post_publication_failures_keep_records
 test_agy_live_guard_always_stops_server
+test_agy_missing_treehouse_capability_refuses_before_launch
 test_agy_unverified_backend_refuses_before_anything_launches
 test_agy_missing_binary_refuses_before_pane_creation
 test_agy_secondmate_launch_pre_trusts_home_and_records_meta
