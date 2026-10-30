@@ -1,0 +1,39 @@
+=== A: direct session start in lab home with overdue ledger
+rc=0
+6:LOCK
+125:Dispatch ledger (fm-dispatch-log.sh overdue)
+127:OVERDUE overdue-goal age=60m received=2026-10-30T10:00:00Z summary=still waiting
+129:Dispatch or block each OVERDUE goal this turn and report it to the captain, because it still needs action. Each LATE goal is already resolved: include it in the next batched update or morning report rather than on each heartbeat.
+=== B: read-only, lock held by a live non-ancestor claude process, overdue plus LATE
+lock acquired: harness pid 72156
+Dispatch ledger (fm-dispatch-log.sh overdue)
+OVERDUE overdue-goal age=63m received=2026-10-30T10:00:00Z summary=still waiting
+LATE late-goal late=20m event=dispatched
+Dispatch or block each OVERDUE goal this turn and report it to the captain, because it still needs action. Each LATE goal is already resolved: include it in the next batched update or morning report rather than on each heartbeat.
+lock still=72156 holder=46099; ledger unchanged: yes
+=== C: lock holder, LATE only, no OVERDUE
+lock acquired: harness pid 72156
+Dispatch ledger (fm-dispatch-log.sh overdue)
+LATE late-goal late=20m event=dispatched
+Dispatch or block each OVERDUE goal this turn and report it to the captain, because it still needs action. Each LATE goal is already resolved: include it in the next batched update or morning report rather than on each heartbeat.
+=== D: resolved on time, section absent
+lock acquired: harness pid 72156
+=== E: no ledger, section absent, none created
+lock acquired: harness pid 72156
+dispatch-log.tsv: No such file or directory
+=== B2: read-only, lock held by live process named claude outside this ancestry (disposable holder, real fm-lock refusal)
+lock acquired: harness pid 72156
+- Lock: held by this session; this session owns normal supervision unless away mode says otherwise.
+Dispatch ledger (fm-dispatch-log.sh overdue)
+OVERDUE overdue-goal age=60m received=2026-10-30T10:00:00Z summary=still waiting
+LATE late-goal late=20m event=dispatched
+Dispatch or block each OVERDUE goal this turn and report it to the captain, because it still needs action. Each LATE goal is already resolved: include it in the next batched update or morning report rather than on each heartbeat.
+lock=72156 holder=72329 ledger-unchanged=yes
+=== B3: read-only, lock held by live disposable process with comm=claude outside this ancestry (real fm-lock refusal)
+error: another live firstmate session holds the lock (pid 99338); operate read-only until resolved
+●  READ-ONLY SESSION - FLEET LOCK OWNERSHIP WAS NOT VERIFIED
+Dispatch ledger (fm-dispatch-log.sh overdue)
+OVERDUE overdue-goal age=60m received=2026-10-30T10:00:00Z summary=still waiting
+LATE late-goal late=20m event=dispatched
+Information only: the session holding the lock owns these goals.
+lock=99338 holder=99338 ledger-unchanged=yes
