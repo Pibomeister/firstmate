@@ -62,7 +62,9 @@
 #                       run serially, so with a wedged backend the stage's
 #                       ceiling is tasks x the per-read bound
 #                       (FM_SESSION_START_ENDPOINT_TIMEOUT, default 10s) and
-#                       can itself reach the digest's runtime bound.
+#                       can itself reach the digest's runtime bound. It ends
+#                       with the dispatch ledger's `overdue` lines, when any
+#                       (bin/fm-dispatch-log.sh).
 #   7. network checks - the result of the deferred network stage started back at
 #                       step 1, harvested WITHOUT waiting for it.
 #   8. context digest - data/projects.md, data/secondmates.md, data/captain.md,
@@ -1031,6 +1033,22 @@ if fm_pf_relay_active "$FM_HOME" \
     printf 'Reconcile terminal results with %s/bin/fm-public-followup.sh consume, then deliver a ready one with\n' "$FM_ROOT"
     printf '%s/bin/fm-public-followup.sh deliver <id>. Hand a delivered loop on with rechain, or close it with\n' "$FM_ROOT"
     printf '%s/bin/fm-public-followup.sh retire <id> --reason "...". Load fmx-respond for the procedure.\n' "$FM_ROOT"
+  fi
+fi
+
+# Captain goals past the dispatch SLA (bin/fm-dispatch-log.sh owns the ledger).
+# A read-only `overdue` call, so it runs for lock-refused sessions too; a home
+# with no ledger prints nothing.
+if [ -f "$STATE/dispatch-log.tsv" ]; then
+  DISPATCH_OVERDUE=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-dispatch-log.sh" overdue 2>&1) || true
+  if [ -n "$DISPATCH_OVERDUE" ]; then
+    subsection "Dispatch ledger (fm-dispatch-log.sh overdue)"
+    printf '%s\n' "$DISPATCH_OVERDUE"
+    if [ "$READ_ONLY" -eq 1 ]; then
+      printf '\nInformation only: the session holding the lock owns these goals.\n'
+    else
+      printf '\nDispatch or block each OVERDUE goal this turn and report it to the captain, because it still needs action. Each LATE goal is already resolved: include it in the next batched update or morning report rather than on each heartbeat.\n'
+    fi
   fi
 fi
 

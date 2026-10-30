@@ -169,6 +169,8 @@ The delivery lifecycle is an always-loaded operational contract; referenced scri
 ### Intake and authority
 
 Resolve the project independently for every request.
+Record every new captain goal - a chat ask, inbox note, or away-mode ask for work, not a follow-up that only amends a logged goal - with `bin/fm-dispatch-log.sh received` the moment you read it, and within 15 minutes either spawn it (`dispatched --task`, or `--task secondmate:<id>` when routed to a secondmate) or record the concrete reason nothing can start (`blocked --reason`).
+Work waiting behind other work is `queued --reason`, which stays overdue until dispatched or blocked; the script header owns goal ids, exit codes, and the ledger at `state/dispatch-log.tsv`.
 An explicit project wins, a clear follow-up inherits its referent, and otherwise match the request against the registry, work under way, and project code or README.
 Proceed on one confident match while naming the project in plain language; ask one concise question when multiple or no projects plausibly match.
 
@@ -288,6 +290,7 @@ Handle actionable wakes as follows:
    A `check: secondmate <id> auto-relaunched` wake records a recovery that already completed - reconcile the mate's current state rather than relaunching again, and treat a repeat or a paused-bound wake as the signal to investigate why the mate keeps exiting.
    When the note needs a durable answer the submitter can read, publish it with `bin/fm-inbox.sh reply <id>` (the script header owns the reply contract) rather than leaving the answer only in this transcript.
 4. For `heartbeat:`, review the whole fleet from the structured fleet view, reconcile suspicious tasks and PR state, update the backlog, and never report an unchanged fleet as progress.
+5. The session-start digest shows the dispatch ledger's overdue goals; on every heartbeat and wake-handling turn, run `bin/fm-dispatch-log.sh overdue`, where exit 3 means `OVERDUE` lines to act on, not an error, and dispatch or block each `OVERDUE` goal in that same turn, report each `OVERDUE` goal to the captain whenever it is listed because it still needs action, and include each `LATE` goal, already resolved, in the next batched update or morning report rather than on each heartbeat; a secondmate tells the captain only through its parent channel.
 
 Load `bearings` on a contributions check wake or when filing work linked to an upstream issue; its contribution-follow-up section owns triage and exact signal acknowledgement.
 
