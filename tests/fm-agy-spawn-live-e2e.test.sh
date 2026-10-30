@@ -122,8 +122,11 @@ WINDOW=$(sed -n 's/^window=//p' "$HOME_DIR/state/$ID.meta")
 tmux list-windows -a -F '#{session_name}:#{window_name}' | grep -Fqx "$WINDOW" \
   && fail "a failed agy readiness gate left its window $WINDOW open"
 pass "a failed agy readiness gate closed its own window and kept its record"
-"$ROOT/bin/fm-control.sh" "$ID" relaunch --note "The first launch failed its readiness check; do the brief task now." || fail "fm-control could not relaunch the kept agy record"
+RELAUNCH_TOKEN="relaunch-$$-$RANDOM-$RANDOM"
+"$ROOT/bin/fm-control.sh" "$ID" relaunch --note "The first launch failed its readiness check. Add 12345 and 67890. Overwrite the task report even if it already exists, using this exact format with the computed sum and your actual current working directory:
+BRIEF_RECEIVED $RELAUNCH_TOKEN <sum> <current working directory>
+Then stop and wait." || fail "fm-control could not relaunch the kept agy record"
 [ "$(sed -n 's/^worktree=//p' "$HOME_DIR/state/$ID.meta")" = "$WT" ] || fail "relaunch changed the original task worktree"
-wait_for 'relaunched brief report' "grep -Fq BRIEF_RECEIVED '$HOME_DIR/data/$ID/report.md'"
+wait_for 'relaunched brief report with fresh token, sum, and worktree' "grep -Fxq 'BRIEF_RECEIVED $RELAUNCH_TOKEN 80235 $WT' '$HOME_DIR/data/$ID/report.md'"
 pass "fm-control relaunched the kept agy record and the worker processed its brief"
 retire "$ID"

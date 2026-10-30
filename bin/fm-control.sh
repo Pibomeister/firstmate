@@ -1172,7 +1172,8 @@ safe_checkpoint() {
   CHECKPOINT_LINES=()
   [ -n "$WT" ] || die "task $ID has no recorded worktree; refusing to relaunch without a recorded local copy to preserve"
   [ -d "$WT" ] || die "task $ID's recorded worktree $WT is missing; refusing to relaunch and lose track of its work"
-  if [ "$KIND" != secondmate ] && fm_treehouse_pool_slot "$(fm_meta_get "$META" project)" "$WT"; then
+  if [ "$KIND" != secondmate ] && { [ "$PRIOR_HARNESS" = agy ] || [ "$TARGET_HARNESS" = agy ]; } &&
+    fm_treehouse_pool_slot "$(fm_meta_get "$META" project)" "$WT"; then
     fm_treehouse_slot_require_owner "$WT" "$ID" || exit 1
   fi
   wt_real=$(cd "$WT" 2>/dev/null && pwd -P) || die "task $ID's recorded worktree $WT cannot be resolved"

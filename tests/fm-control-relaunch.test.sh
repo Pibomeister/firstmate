@@ -434,6 +434,56 @@ SH
   pass "fm-control relaunch: a same-harness relaunch replaces the agent in the same endpoint and worktree"
 }
 
+test_pooled_relaunch_custody_is_agy_only() {
+  local dir prior target entry wt lock out rc harness
+  . "$ROOT/bin/fm-wake-lib.sh"
+  for entry in control spawn; do
+    for prior in claude codex agy; do
+      for target in claude codex agy; do
+        dir=$(new_case "pool-$entry-$prior-$target" rl-pool)
+        add_ship_task "$dir" rl-pool "$prior"
+        wt=$(cd "$dir/proj" && treehouse --root "$dir/pool" get --lease --no-fetch) \
+          || fail "could not allocate the relaunch fixture slot"
+        treehouse return "$wt" --force || fail "could not return the relaunch fixture slot"
+        sed "s|^worktree=.*|worktree=$wt|" "$dir/home/state/rl-pool.meta" > "$dir/pooled.meta"
+        mv "$dir/pooled.meta" "$dir/home/state/rl-pool.meta"
+        printf '%s' "$wt" > "$dir/fake/cwd"
+        printf '%s' "$prior" > "$dir/fake/command"
+        printf '%s' "$target" > "$dir/fake/becomes"
+        for harness in claude codex agy; do
+          printf '#!/usr/bin/env bash\nexit 0\n' > "$dir/fakebin/$harness"
+          chmod +x "$dir/fakebin/$harness"
+        done
+        fm_treehouse_pool_slot "$dir/proj" "$wt" || fail "the fixture is not a pooled checkout"
+        [ ! -e "$(dirname "$wt")/.fm-slot-owner" ] || fail "the legacy fixture has an owner claim"
+        lock=$(FM_HOME="$dir/home" fm_treehouse_project_lock_path "$dir/proj") || fail "could not resolve project lock"
+        if [ "$prior" != agy ] && [ "$target" != agy ]; then
+          fm_lock_try_acquire "$lock" || fail "could not hold the project lock"
+        fi
+        rc=0
+        if [ "$entry" = control ]; then
+          out=$(run_control "$dir" rl-pool relaunch --harness "$target" --note "recover the pooled task") || rc=$?
+        else
+          printf 'zsh' > "$dir/fake/command"
+          out=$(run_spawn "$dir" rl-pool --relaunch --harness "$target") || rc=$?
+        fi
+        if [ "$prior" = agy ] || [ "$target" = agy ]; then
+          expect_code 1 "$rc" "$entry must refuse an AGY transition without custody: $out"
+          assert_contains "$out" 'ownership=absent' "$entry did not check AGY custody: $out"
+          [ -z "$(cat "$dir/fake/literal")" ] || fail "an AGY custody refusal sent lifecycle bytes"
+        else
+          fm_lock_release "$lock"
+          expect_code 0 "$rc" "$entry broke the legacy $prior to $target relaunch: $out"
+          [ "$(meta_field "$dir" rl-pool worktree)" = "$wt" ] || fail "legacy relaunch changed checkout"
+          [ "$(meta_field "$dir" rl-pool harness)" = "$target" ] || fail "legacy relaunch lost the replacement harness"
+          [ "$(cat "$dir/fake/command")" = "$target" ] || fail "legacy replacement did not launch"
+        fi
+      done
+    done
+  done
+  pass "pooled relaunches preserve legacy compatibility and require custody for either AGY harness"
+}
+
 test_relaunch_refuses_before_exit_when_the_composer_holds_pending_text() {
   local dir out rc
   dir=$(new_case pending-exit rl43)
@@ -3163,6 +3213,7 @@ test_relaunch_off_opencode_removes_tracked_wiring
 test_exit_and_relaunch_remove_the_dialog_file
 test_exit_removes_the_dialog_file_before_releasing_the_lock
 test_same_harness_relaunch_keeps_identity_and_reuses_the_endpoint
+test_pooled_relaunch_custody_is_agy_only
 test_relaunch_refuses_before_exit_when_the_composer_holds_pending_text
 test_relaunch_refuses_before_exit_when_the_composer_state_is_unproven
 test_relaunch_from_linked_home_preserves_recorded_worktree
