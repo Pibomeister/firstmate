@@ -1,0 +1,6 @@
+== FM_TEST_ONLY=claude-relaunch (fixed head)
+ok - budgeted Claude relaunch publishes its fingerprint and preserves limits
+exit=0
+== FM_TEST_ONLY=spawn (fixed head)
+ok - spawn records all four explicit budget limits
+exit=0

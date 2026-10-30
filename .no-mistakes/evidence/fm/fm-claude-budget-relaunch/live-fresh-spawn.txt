@@ -1,0 +1,20 @@
+$ fm-spawn.sh budget-live <proj> --scout --harness claude --budget-inclusive-hard 40000000 --budget-inclusive-stop 32000000 --budget-fresh-hard 1500000 --budget-fresh-stop 1200000
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.F8d6HY
+spawned budget-live harness=claude kind=scout window=firstmate:fm-budget-live worktree=/Users/eduardopicazo/.treehouse/proj-8cf4ed/1/proj
+exit=0
+--- state/budget-live.meta (budget/gen keys)
+window=firstmate:fm-budget-live
+harness=claude
+spawn_gen=s1793398137.6916.30276
+budget_inclusive_hard=40000000
+budget_inclusive_stop=32000000
+budget_fresh_hard=1500000
+budget_fresh_stop=1200000
+budget_launch_at=1793398138.028388
+budget_worktree=/Users/eduardopicazo/.treehouse/proj-8cf4ed/1/proj
+budget_log_root=/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.F8d6HY/claude-cfg/projects
+budget_launch_marker=FM_BUDGET_LAUNCH_39c77476a680fee4e1ce42fd77deeac4
+budget_prior_inclusive=0
+budget_prior_fresh=0
+budget_started_at=1793398138.028388
+budget_launch_fingerprint=56253810e7baab77c65d0e8c8e707be9d88e2bece3ab3191bcade7ffc2c4e061

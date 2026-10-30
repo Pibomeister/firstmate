@@ -1,0 +1,5 @@
+== FM_TEST_ONLY=claude-relaunch with BASE bin/fm-spawn.sh (7cdb43c2)
+not ok - budgeted Claude relaunch failed: warning: the tmux server identity for firstmate:fm-budget-relaunch could not be read; the record omits it, so a later loss of that server cannot be proven
+budget-unknown task=budget-relaunch prior incarnation usage not carried over: native log root is missing or not absolute
+/Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M67DHA69TD3HTQW8MV1MJR51/bin/fm-spawn.sh: line 7601: : No such file or directory
+exit=1

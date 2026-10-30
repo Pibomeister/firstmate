@@ -1,0 +1,7 @@
+live claude pid=72704: claude --dangerously-skip-permissions --add-dir /private/var
+argc 15 last_arg_sha256 95dd7ab148eee4c1bf018478cef9d6fd8caac2678086d9c373895e750e6fb87b
+published fingerprint lines: 1
+budget_inclusive_hard=40000000
+budget_inclusive_stop=32000000
+budget_fresh_hard=1500000
+budget_fresh_stop=1200000
