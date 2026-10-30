@@ -93,8 +93,16 @@ if [ "${QUOTA_AXI_SCHEMA6:-0}" = 1 ]; then
   printf '{"schemaVersion":6,"providers":[{"provider":"codex","accountKey":"openai-codex","quotaSemantics":{"status":"known","effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":3,"runway":{"status":"projected_exhaustion"}}]}},{"provider":"codex","accountKey":"openai-codex-work","quotaSemantics":{"status":"known","effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":0,"runway":{"status":"exhausted_now"}}]}},{"provider":"cursor","accountKey":"default","quotaSemantics":{"status":"known","effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":5,"runway":{"status":"through_reset"}}]}}]}\n'
   exit 0
 fi
+# First read: only api_usage is low, the collapsed minimum. Later reads: auto
+# itself is low, so a healthy first read ends the watch instead of polling forever.
 if [ "${QUOTA_AXI_CURSOR_POOLS:-0}" = 1 ]; then
-  printf '{"schemaVersion":5,"providers":[{"provider":"cursor","windows":[{"id":"included_usage","percentRemaining":90},{"id":"auto_usage","percentRemaining":93},{"id":"api_usage","percentRemaining":2}],"quotaSemantics":{"status":"known","effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":2,"runway":{"status":"unknown"}},{"scope":"pool:api","status":"known","effectivePercentRemaining":2,"runway":{"status":"unknown"}}]}}]}\n'
+  count=0
+  [ ! -f "$QUOTA_AXI_COUNT" ] || read -r count < "$QUOTA_AXI_COUNT"
+  count=$((count + 1))
+  printf '%s\n' "$count" > "$QUOTA_AXI_COUNT"
+  auto=93
+  [ "$count" -eq 1 ] || auto=5
+  printf '{"schemaVersion":5,"providers":[{"provider":"cursor","windows":[{"id":"included_usage","percentRemaining":90},{"id":"auto_usage","percentRemaining":%s},{"id":"api_usage","percentRemaining":2}],"quotaSemantics":{"status":"known","effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":2,"runway":{"status":"unknown"}},{"scope":"pool:api","status":"known","effectivePercentRemaining":2,"runway":{"status":"unknown"}}]}}]}\n' "$auto"
   exit 0
 fi
 if [ "${QUOTA_AXI_SCHEMA5_PAIR:-0}" = 1 ]; then
@@ -315,8 +323,13 @@ printf '%s\n' "$detail" | jq -e '
 ' >/dev/null || fail "schema 6 aggregate detail did not keep each account separate: $detail"
 ok "aggregate watch reads every schema 6 account row without combining them"
 
-out=$(QUOTA_AXI_CURSOR_POOLS=1 QUOTA_AXI_COUNT="$COUNT" PATH="$FAKEBIN:$PATH" "$BIN/fm-procevent-quota.sh" poll --interval 1 --threshold 10 --provider cursor --timeout 1)
-printf '%s\n' "$out" | grep -qx 'status: timeout' || fail "cursor watch read the collapsed api bound as low: $out"
+rm -f "$COUNT"
+out=$(QUOTA_AXI_CURSOR_POOLS=1 QUOTA_AXI_COUNT="$COUNT" PATH="$FAKEBIN:$PATH" "$BIN/fm-procevent-quota.sh" poll --interval 0.01 --threshold 10 --provider cursor --timeout 1)
+printf '%s\n' "$out" | grep -qx 'condition_polls: 2' || fail "cursor watch read the collapsed api bound as low: $out"
+printf '%s\n' "$out" | grep -qx 'status: low' || fail "cursor watch missed its low auto pool: $out"
+detail=$(printf '%s\n' "$out" | sed -n 's/^detail: //p')
+printf '%s\n' "$detail" | jq -e '.best.scope == "pool:auto" and .best.effectivePercentRemaining == 5' >/dev/null \
+  || fail "cursor watch detail did not name its auto pool: $detail"
 ok "cursor provider watch judges its default auto pool, not the collapsed minimum"
 
 out=$(QUOTA_AXI_SCHEMA6=1 QUOTA_AXI_COUNT="$COUNT" PATH="$FAKEBIN:$PATH" "$BIN/fm-procevent-quota.sh" poll --interval 1 --threshold 10 --provider cursor --timeout 1)
