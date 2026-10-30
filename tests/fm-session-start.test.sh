@@ -774,6 +774,23 @@ write_omp_loaded_markers() {
 
 # --- context digest: absent vs empty vs present -----------------------------
 
+test_dispatch_ledger_overdue_in_digest() {
+  local rec root home fakebin out
+  rec=$(new_world dispatch-ledger)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  case "$out" in *"Dispatch ledger"*) fail "a home with no dispatch ledger printed a ledger section" ;; esac
+  printf '%s\t%s\treceived\tlate-goal\tsummary=still waiting\n' 2020-01-01T00:00:00Z 1577836800 > "$home/state/dispatch-log.tsv"
+  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  assert_contains "$out" "Dispatch ledger" "session start must show the dispatch ledger section when goals are overdue"
+  assert_contains "$out" "OVERDUE late-goal" "session start must list the overdue goal"
+  pass "session start runs the dispatch ledger overdue check and lists overdue goals"
+}
+
 test_affected_bash_warning_comes_first_and_once() {
   local rec root home fakebin out before_lock
   rec=$(new_world affected-bash-warning)
@@ -3186,5 +3203,6 @@ test_codex_unreachable_reset_sources_do_not_claim_instruction_refresh
 test_agents_baseline_requires_sha256_and_successful_completion
 test_reemit_keeps_repair_ownership_with_the_lock_holder
 test_affected_bash_warning_comes_first_and_once
+test_dispatch_ledger_overdue_in_digest
 
 echo "# fm-session-start.test.sh: all assertions passed"
