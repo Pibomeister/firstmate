@@ -775,7 +775,7 @@ write_omp_loaded_markers() {
 # --- context digest: absent vs empty vs present -----------------------------
 
 test_dispatch_ledger_overdue_in_digest() {
-  local rec root home fakebin out
+  local rec root home fakebin holder_pid out
   rec=$(new_world dispatch-ledger)
   IFS='|' read -r root home fakebin <<EOF
 $rec
@@ -788,7 +788,26 @@ EOF
   out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
   assert_contains "$out" "Dispatch ledger" "session start must show the dispatch ledger section when goals are overdue"
   assert_contains "$out" "OVERDUE late-goal" "session start must list the overdue goal"
-  pass "session start runs the dispatch ledger overdue check and lists overdue goals"
+  assert_contains "$out" "Dispatch or block each OVERDUE goal this turn" "a lock-holding session must be told to act on overdue goals"
+
+  rec=$(new_world dispatch-ledger-read-only)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  printf '%s\t%s\treceived\tlate-goal\tsummary=still waiting\n' 2020-01-01T00:00:00Z 1577836800 > "$home/state/dispatch-log.tsv"
+  sleep 300 &
+  holder_pid=$!
+  printf '%s\n' "$holder_pid" > "$home/state/.lock"
+  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  kill "$holder_pid" 2>/dev/null || true
+  wait "$holder_pid" 2>/dev/null || true
+  assert_contains "$out" "READ-ONLY SESSION" "a held lock must make the session read-only"
+  assert_contains "$out" "OVERDUE late-goal" "a read-only session must still list the overdue goal"
+  assert_contains "$out" "the session holding the lock owns these goals" "a read-only session must say who owns the overdue goals"
+  assert_not_contains "$out" "Dispatch or block each OVERDUE goal" "a read-only session must not be told to dispatch or block goals"
+  pass "session start lists overdue goals, and only a lock-holding session is told to act on them"
 }
 
 test_affected_bash_warning_comes_first_and_once() {
