@@ -30,8 +30,9 @@
 # if that line is past the SLA, its detail ends with ` late=<m>m` (minutes since
 # `received`) and it also prints `LATE <goal-id> late=<m>m`, so a late dispatch
 # stays on record for `show`. `queued` lines and lines after the first final line
-# never add a late mark. A trailing ` late=<m>m` in caller free text is dropped,
-# so only the script can write the mark.
+# never add a late mark. A trailing ` late=<m>m` in the free text of a
+# `dispatched`, `queued`, or `blocked` line is dropped, so only the script can
+# write the mark.
 #
 # A goal is overdue when its newest line is `received` or `queued` and the SLA
 # has passed since its clock start: `received` if it has never had a final line
