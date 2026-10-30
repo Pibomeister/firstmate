@@ -30,8 +30,9 @@
 # if that line is past the SLA, its detail ends with ` late=<m>m` (minutes since
 # `received`) and it also prints `LATE <goal-id> late=<m>m`, so a late dispatch
 # stays on record for `show`. `queued` lines and lines after the first final line
-# never add a late mark. A trailing ` late=<m>m` in caller free text is dropped,
-# so only the script can write the mark.
+# never add a late mark. A trailing ` late=<m>m` in the free text of a
+# `dispatched`, `queued`, or `blocked` line is dropped, so only the script can
+# write the mark.
 #
 # A goal is overdue when its newest line is `received` or `queued` and the SLA
 # has passed since its clock start: `received` if it has never had a final line
@@ -46,17 +47,21 @@
 # exit 3 is a result to act on, not an error.
 #
 # Refuses, and writes nothing, when: the goal id is not [A-Za-z0-9._-]+; a
-# required flag is missing or empty; an argument is unknown;
+# required flag is missing, empty, or only space after tab and newline folding
+# and late-mark removal; a flag value starts with `-`; an argument is unknown;
 # FM_DISPATCH_SLA_MINUTES is not a whole number; or `dispatched`/`queued`/`blocked`
 # names a goal with no `received` line (all exit 1). An unknown subcommand prints
 # this usage and exits 2. `received` for an id already in the ledger exits 4, so
 # a retry can tell "already logged" from a mistake.
 # Tabs and newlines in free text are folded to spaces.
+# `show` with no id prints the ledger. `show <goal-id>` prints one state line,
+# `STATE <goal-id> event=<event> at=<iso> <detail>`, then that goal's ledger
+# lines. An id with no ledger line exits 1, unlike an empty ledger.
 #
 # Environment: FM_HOME selects the home; FM_STATE_OVERRIDE overrides its state
 # directory (the ledger is <state>/dispatch-log.tsv); FM_DISPATCH_SLA_MINUTES
-# overrides the default SLA; FM_DISPATCH_NOW overrides the current epoch (tests
-# only).
+# overrides the default SLA as a decimal whole number (a leading zero does not
+# make it octal); FM_DISPATCH_NOW overrides the current epoch (tests only).
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -83,14 +88,25 @@ iso_of() {
 
 clean() { printf '%s' "$1" | tr '\t\r\n' '   '; }
 
+strip_late() { clean "$1" | sed -E 's/( late=[0-9]+m)+$//'; }
+
+has_text() {
+  local text
+  text=$(strip_late "$1")
+  case "$text" in *[![:space:]]*) return 0 ;; esac
+  return 1
+}
+
 valid_id() {
   case "$1" in ''|*[!A-Za-z0-9._-]*) return 1 ;; esac
   return 0
 }
 
 sla_seconds() {
-  case "$SLA_MIN" in ''|*[!0-9]*) fail "FM_DISPATCH_SLA_MINUTES must be a whole number" ;; esac
-  printf '%s\n' "$((SLA_MIN * 60))"
+  local minutes=$SLA_MIN
+  case "$minutes" in ''|*[!0-9]*) fail "FM_DISPATCH_SLA_MINUTES must be a whole number" ;; esac
+  minutes=$((10#$minutes))
+  printf '%s\n' "$((minutes * 60))"
 }
 
 latest_event() {  # <goal-id> -> newest event name, empty when absent
@@ -109,7 +125,7 @@ resolve() {  # <event> <goal-id> <detail>: append a resolution, marking lateness
   sla=$(sla_seconds)
   [ -n "$(latest_event "$2")" ] || fail "goal $2 has no received line"
   epoch=$(now_epoch)
-  detail=$(clean "$3" | sed -E 's/( late=[0-9]+m)+$//')
+  detail=$(strip_late "$3")
   judged=$(awk -F '\t' -v g="$2" '$4 == g && ($3 == "dispatched" || $3 == "blocked") { print "yes"; exit }' "$LOG")
   if [ "$1" != queued ] && [ -z "$judged" ]; then
     received=$(awk -F '\t' -v g="$2" '$4 == g && $3 == "received" { print $2; exit }' "$LOG")
@@ -141,18 +157,43 @@ esac
 summary='' project='' task='' note='' reason=''
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --summary) summary="${2:-}"; shift 2 || fail "--summary needs a value" ;;
-    --project) project="${2:-}"; shift 2 || fail "--project needs a value" ;;
-    --task) task="${2:-}"; shift 2 || fail "--task needs a value" ;;
-    --note) note="${2:-}"; shift 2 || fail "--note needs a value" ;;
-    --reason) reason="${2:-}"; shift 2 || fail "--reason needs a value" ;;
+    --summary)
+      [ $# -ge 2 ] || fail "--summary needs a value"
+      case "$2" in -*) fail "--summary value looks like a flag: $2" ;; esac
+      summary=$2
+      shift 2
+      ;;
+    --project)
+      [ $# -ge 2 ] || fail "--project needs a value"
+      case "$2" in -*) fail "--project value looks like a flag: $2" ;; esac
+      project=$2
+      shift 2
+      ;;
+    --task)
+      [ $# -ge 2 ] || fail "--task needs a value"
+      case "$2" in -*) fail "--task value looks like a flag: $2" ;; esac
+      task=$2
+      shift 2
+      ;;
+    --note)
+      [ $# -ge 2 ] || fail "--note needs a value"
+      case "$2" in -*) fail "--note value looks like a flag: $2" ;; esac
+      note=$2
+      shift 2
+      ;;
+    --reason)
+      [ $# -ge 2 ] || fail "--reason needs a value"
+      case "$2" in -*) fail "--reason value looks like a flag: $2" ;; esac
+      reason=$2
+      shift 2
+      ;;
     *) fail "unknown argument: $1" ;;
   esac
 done
 
 case "$cmd" in
   received)
-    [ -n "$summary" ] || fail "received needs --summary"
+    has_text "$summary" || fail "received needs --summary"
     if [ -n "$(latest_event "$goal")" ]; then
       printf 'fm-dispatch-log: goal %s is already in the ledger\n' "$goal" >&2
       exit 4
@@ -162,13 +203,13 @@ case "$cmd" in
     append "$(now_epoch)" received "$goal" "$detail"
     ;;
   dispatched)
-    [ -n "$task" ] || fail "dispatched needs --task"
+    has_text "$task" || fail "dispatched needs --task"
     detail="task=$task"
     [ -z "$note" ] || detail="$detail note=$note"
     resolve dispatched "$goal" "$detail"
     ;;
   queued|blocked)
-    [ -n "$reason" ] || fail "$cmd needs --reason"
+    has_text "$reason" || fail "$cmd needs --reason"
     resolve "$cmd" "$goal" "reason=$reason"
     ;;
   overdue)
@@ -202,11 +243,18 @@ case "$cmd" in
     exit "$rc"
     ;;
   show)
-    [ -f "$LOG" ] || exit 0
-    if [ -n "$goal" ]; then
-      awk -F '\t' -v g="$goal" '$4 == g' "$LOG"
-    else
+    if [ -z "$goal" ]; then
+      [ -f "$LOG" ] || exit 0
       cat "$LOG"
+      exit 0
     fi
+    [ -f "$LOG" ] || fail "goal $goal is not in the ledger"
+    state=$(awk -F '\t' -v g="$goal" '
+      $4 == g { e = $3; iso = $1; det = $5; found = 1 }
+      END { if (found) printf "STATE %s event=%s at=%s %s\n", g, e, iso, det }
+    ' "$LOG")
+    [ -n "$state" ] || fail "goal $goal is not in the ledger"
+    printf '%s\n' "$state"
+    awk -F '\t' -v g="$goal" '$4 == g' "$LOG"
     ;;
 esac
