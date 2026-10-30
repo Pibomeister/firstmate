@@ -1,0 +1,7 @@
+ok - a hung doorbell after enqueue returns 'durably recorded' within its bound and a send to another task proceeds
+ok - a recovery send stopped at its bound is recorded unknown; one that fails inside it stays failed
+ok - watcher stage and deferral records remain complete during updates
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-supervision-bounds.fZiDcl/wake-lock-held/state/.wake-queue.lock is still held by pid 26330 (fm-fake-queue-holder.sh) after 2s; the state it guards was left untouched
+ok - a held wake-queue lock defers the watcher's queue work while it keeps beating; the work is delivered after release
+ok - a perl bound stopped by an outer bound stops its TERM-ignoring command; shell functions can be bounded
+ok - a herdr server started by the backend survives a kill of its spawning process group

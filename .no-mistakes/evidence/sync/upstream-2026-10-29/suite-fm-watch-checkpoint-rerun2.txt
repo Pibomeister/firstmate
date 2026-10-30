@@ -1,0 +1,7 @@
+ok - checkpoint: interrupted startup retains failed-cleanup evidence and returns nonzero
+ok - preconfirmation predecessor retirement reports cleanup failure using the verified post-exec identity
+ok - quiet checkpoint exits 0 with a clean checkpoint line, no wake, and no live lock
+ok - checkpoint: a secondmate's own checkpoint is capped and a primary's bound is unchanged
+ok - checkpoint: a secondmate returns within seconds for each new parent inbox record, once per record
+ok - checkpoint: an unwritable announce-once marker leaves the secondmate checkpoint an ordinary bounded wait
+Terminated: 15

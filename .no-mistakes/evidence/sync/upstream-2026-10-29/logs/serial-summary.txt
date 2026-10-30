@@ -1,0 +1,5 @@
+fm-watch-checkpoint rc=124 318s ok=29 notok=0
+fm-watcher-lock rc=1 87s ok=15 notok=1
+fm-watch-recovery-loop rc=0 86s ok=3 notok=0
+fm-supervision-bounds rc=1 13s ok=0 notok=1
+fm-wake-queue rc=1 248s ok=32 notok=1

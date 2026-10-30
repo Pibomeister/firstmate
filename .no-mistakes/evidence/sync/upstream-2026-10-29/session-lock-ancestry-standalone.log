@@ -1,0 +1,19 @@
+ok - session-lock: Stop binds checkpoint descendants and rejects foreign or absent thread identity
+ok - session-lock: a version-named Claude Code session is identified from its install path and argv[0]
+ok - session-lock: a version-suffixed muse session is identified, and substring decoys are not
+ok - session-lock: a harness that is pid 1 of its own namespace is examined, not skipped
+ok - session-lock: ordinary script paths under a harness directory are not harness processes
+ok - session-lock: ownership stops at the first non-harness gap above the contiguous run
+ok - session-lock: a live version-named session holding the lock is not mistaken for a stale owner
+ok - session-lock: a trusted same-session id keeps owning a recycled background chain, and nothing weaker does
+ok - session-lock: a trusted id anchors the lock on the model-loop process, anything else on the outermost pid
+ok - session-lock: a daemon-parented Codex tool shell anchors off the daemon and owns by thread id
+ok - session-lock: a direct Codex TUI launch anchors on the TUI, directly or through its code-mode host
+ok - session-lock: two Codex sessions sharing one daemon never cross-own each other's locks
+ok - session-lock: a Codex thread id is trusted only inside a Codex session, and only when its published ids agree
+ok - session-lock: real argv and separate environment fields bind only their own thread
+ok - session-lock: a mismatched kernel start time cannot inherit ownership or leases
+ok - session-lock: daemon restart re-anchors dead and reused instances while preserving same-thread leases
+ok - session-lock: retained idle and errored threads need endpoint stop proof; active threads refuse
+ok - session-lock e2e: a daemon-parented Codex session acquires and keeps its lock by thread id, never on the daemon
+Terminated: 15

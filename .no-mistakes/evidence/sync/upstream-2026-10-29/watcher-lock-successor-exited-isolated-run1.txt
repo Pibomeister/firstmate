@@ -1,0 +1,25 @@
+ok - disposable watcher refuses inherited state outside its marked lab
+ok - wait deadline diagnoses and reaps a stopped test child without hanging
+ok - simultaneous watcher starts leave exactly one live process
+ok - fm_pid_identity real ps fallback is locale-invariant
+ok - fm_pid_identity is locale-invariant across LC_ALL/LC_TIME
+ok - fm_pid_identity ps fallback is terminal-width-invariant
+ok - /proc process identity ignores simulated btime changes
+ok - /proc process identity detects pid reuse
+ok - MSYS /proc process identity regression skipped on non-Windows host
+ok - killed watcher stale lock is reclaimed
+NEW_OUT: check: rearm-resurface
+total 56
+drwxr-xr-x@ 12 eduardopicazo  staff   384 Oct 30 00:40 .
+drwxr-xr-x@  7 eduardopicazo  staff   224 Oct 30 00:40 ..
+-rw-r--r--@  1 eduardopicazo  staff     2 Oct 30 00:40 .heartbeat-streak
+-rw-r--r--@  1 eduardopicazo  staff     0 Oct 30 00:40 .last-heartbeat
+-rw-r--r--@  1 eduardopicazo  staff     0 Oct 30 00:40 .last-watcher-beat
+-rw-r--r--@  1 eduardopicazo  staff     0 Oct 30 00:40 .secondmate-liveness-tick
+-rw-r--r--@  1 eduardopicazo  staff    69 Oct 30 00:40 .wake-queue
+-rw-r--r--@  1 eduardopicazo  staff     2 Oct 30 00:40 .wake-queue.seq
+-rw-r--r--@  1 eduardopicazo  staff   163 Oct 30 00:40 .watch-deliveries.log
+-rw-------@  1 eduardopicazo  staff    43 Oct 30 00:40 .watcher-down
+-rw-------@  1 eduardopicazo  staff    33 Oct 30 00:40 .watcher-stage
+-rw-------@  1 eduardopicazo  staff  1119 Oct 30 00:40 home-summary.json
+not ok - the replaced watcher did not stand down on its own (exit 1): watcher: exiting - state directory was torn down (singleton lock removed): /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-watcher-lock-tests.R9sOdR/watch-legacy-identity-successor-exited/state

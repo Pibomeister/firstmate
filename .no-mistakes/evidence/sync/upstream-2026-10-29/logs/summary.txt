@@ -1,0 +1,15 @@
+fm-watch-checkpoint rc=1 21s
+fm-backend-tmux-smoke rc=0 25s
+fm-watcher-lock rc=1 29s
+fm-watch-recovery-loop rc=1 32s
+fm-supervision-bounds rc=1 33s
+fm-wake-queue rc=1 57s
+fm-approval-failover rc=0 115s
+fm-merge-local rc=0 118s
+fm-agy-primary rc=0 210s
+fm-pr-health rc=0 300s
+fm-watch-arm rc=1 604s
+fm-session-lock-ancestry rc=0 727s
+fm-supervision-host-hook rc=1 1359s
+fm-backend-orca rc=124 1512s
+DONE

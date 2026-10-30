@@ -1,0 +1,53 @@
+ok - codex refuses gate callers before configuration, lease or lifecycle mutation
+ok - codex permits disposable lab recovery only through its stock layout
+ok - codex publishes a single-linked setting before interrupt and relaunch
+error: config/codex-approval-mode already exists; nothing overwritten
+ok - codex writes once and relaunches through the lifecycle owner
+error: config/codex-approval-mode already exists; nothing overwritten
+error: config/codex-approval-mode already exists; nothing overwritten
+error: config/codex-approval-mode already exists; nothing overwritten
+error: config/codex-approval-mode already exists; nothing overwritten
+error: config/codex-approval-mode already exists; nothing overwritten
+error: config/codex-approval-mode already exists; nothing overwritten
+ok - codex preserves explicit files, invalid values, empty files, links and directories
+File exists
+error: could not publish config/codex-approval-mode; nothing overwritten
+File exists
+error: could not publish config/codex-approval-mode; nothing overwritten
+File exists
+error: could not publish config/codex-approval-mode; nothing overwritten
+ok - codex atomically preserves concurrent explicit destinations
+ok - codex honors live leases before saving and releases its guard before child control
+error: the recorded launch did not use bypass; nothing changed
+error: invoke failover in the remote worker owning home
+ok - codex needs no detector state and refuses contradictory or remote records
+ok - codex refuses a t3code task before saving a fallback T3 cannot honor
+ok - codex keeps the setting while reporting incomplete recovery
+ok - claude refuses gate callers before configuration, lease or lifecycle mutation
+ok - claude permits disposable lab recovery only through its stock layout
+ok - claude publishes a single-linked setting before interrupt and relaunch
+error: config/claude-permission-mode already exists; nothing overwritten
+ok - claude writes once and relaunches through the lifecycle owner
+error: config/claude-permission-mode already exists; nothing overwritten
+error: config/claude-permission-mode already exists; nothing overwritten
+error: config/claude-permission-mode already exists; nothing overwritten
+error: config/claude-permission-mode already exists; nothing overwritten
+error: config/claude-permission-mode already exists; nothing overwritten
+error: config/claude-permission-mode already exists; nothing overwritten
+ok - claude preserves explicit files, invalid values, empty files, links and directories
+File exists
+error: could not publish config/claude-permission-mode; nothing overwritten
+File exists
+error: could not publish config/claude-permission-mode; nothing overwritten
+File exists
+error: could not publish config/claude-permission-mode; nothing overwritten
+ok - claude atomically preserves concurrent explicit destinations
+ok - claude honors live leases before saving and releases its guard before child control
+error: the recorded launch did not use bypass; nothing changed
+error: invoke failover in the remote worker owning home
+ok - claude needs no detector state and refuses contradictory or remote records
+ok - claude refuses a t3code task before saving a fallback T3 cannot honor
+ok - claude keeps the setting while reporting incomplete recovery
+ok - codex-approval-mode follows primary values and absence locally and remotely
+ok - claude-permission-mode follows primary values and absence locally and remotely
+# all fm-approval-failover tests passed

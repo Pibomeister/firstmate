@@ -1,0 +1,13 @@
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-supervision-bounds.R4ONRM/wake-lock-held/state/.wake-queue.lock is still held by pid 84600 (fm-fake-queue-holder.sh) after 2s; the state it guards was left untouched
+ok - a held wake-queue lock defers the watcher's queue work while it keeps beating; the work is delivered after release
+test_watcher_defers_work_behind_a_held_wake_queue_lock exit=
+ok - a recovery send stopped at its bound is recorded unknown; one that fails inside it stays failed
+test_recovery_send_bound_records_unknown_never_failed exit=
+ok - watcher stage and deferral records remain complete during updates
+test_watcher_diagnostic_records_stay_complete_during_updates exit=
+ok - a perl bound stopped by an outer bound stops its TERM-ignoring command; shell functions can be bounded
+test_stopped_perl_bound_stops_its_command exit=
+ok - a herdr server started by the backend survives a kill of its spawning process group
+test_herdr_server_survives_its_spawning_group_kill exit=
+not ok - a send whose doorbell hung took 12s with a 3s ring bound
+test_hung_doorbell_returns_delivered_and_frees_the_lock exit=

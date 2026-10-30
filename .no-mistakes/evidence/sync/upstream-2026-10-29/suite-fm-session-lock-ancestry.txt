@@ -1,0 +1,41 @@
+ok - session-lock: Stop binds checkpoint descendants and rejects foreign or absent thread identity
+ok - session-lock: a version-named Claude Code session is identified from its install path and argv[0]
+ok - session-lock: a version-suffixed muse session is identified, and substring decoys are not
+ok - session-lock: a harness that is pid 1 of its own namespace is examined, not skipped
+ok - session-lock: ordinary script paths under a harness directory are not harness processes
+ok - session-lock: ownership stops at the first non-harness gap above the contiguous run
+ok - session-lock: a live version-named session holding the lock is not mistaken for a stale owner
+ok - session-lock: a trusted same-session id keeps owning a recycled background chain, and nothing weaker does
+ok - session-lock: a trusted id anchors the lock on the model-loop process, anything else on the outermost pid
+ok - session-lock: a daemon-parented Codex tool shell anchors off the daemon and owns by thread id
+ok - session-lock: a direct Codex TUI launch anchors on the TUI, directly or through its code-mode host
+ok - session-lock: two Codex sessions sharing one daemon never cross-own each other's locks
+ok - session-lock: a Codex thread id is trusted only inside a Codex session, and only when its published ids agree
+ok - session-lock: real argv and separate environment fields bind only their own thread
+ok - session-lock: a mismatched kernel start time cannot inherit ownership or leases
+ok - session-lock: daemon restart re-anchors dead and reused instances while preserving same-thread leases
+ok - session-lock: retained idle and errored threads need endpoint stop proof; active threads refuse
+ok - session-lock e2e: a daemon-parented Codex session acquires and keeps its lock by thread id, never on the daemon
+ok - session-lock e2e: a dead session's daemon-anchored lock is reclaimed by its replacement through fm-lock.sh
+ok - session-lock e2e: daemon thread state protects live owners and permits replacement while the daemon lives
+ok - session-lock: a Windows session is identified from its published pid across the severed parent link
+ok - session-lock: a published Windows pid is confirmed against the process table before it is trusted
+ok - session-lock: a tagged Windows pid is never resolved against the Cygwin process table
+ok - session-lock: a published identity is accepted by every gate that reads the lock
+ok - session-lock: a live tagged lock holder is a live foreign owner to a second Windows session
+ok - session-lock: a published Windows Claude pid is accepted only with its session id
+ok - session-lock: a Windows /clear keeps the lock and re-keys its session id
+ok - session-lock: a Windows-tagged lock stays inert off Windows
+ok - session-lock: a task lease follows a live tagged lock holder and goes stale when it exits
+ok - session-lock: a harness in the local process table resolves untagged when ps has no -o option
+ok - session-lock e2e: a version-named session claims the home and arms supervision
+ok - session-lock e2e: a session parented by a harness-named daemon claims the home and arms supervision
+ok - session-lock e2e: a version-named session under a harness-named daemon keeps its own lock
+ok - session-lock e2e: a background session keeps its lock and its supervision across a recycled helper chain and a same-process session-id change
+ok - session-lock: a same-session confirmation waits for the claim lock and refreshes a re-keyed id
+ok - session-lock: a waiting confirmation does not steal another session's lock
+ok - session-lock: a failed lock write restores the previous sidecar
+ok - session-lock: a failed lock write removes a newly created sidecar
+ok - session-lock: a verified reclaim keeps the new sidecar beside the new pid
+ok - session-lock: a re-anchor keeps both supervision actors' task leases live
+ok - session-lock: a re-anchor during a rewake turn keeps the mid-turn auto-arm proof healthy

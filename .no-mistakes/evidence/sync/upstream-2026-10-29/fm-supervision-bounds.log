@@ -1,0 +1,2 @@
+not ok - a send whose doorbell hung took 10s with a 3s ring bound
+exit=1 secs=13

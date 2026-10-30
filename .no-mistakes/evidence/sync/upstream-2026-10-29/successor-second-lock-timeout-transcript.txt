@@ -1,0 +1,16 @@
+[prefix-b0c2bea8] watcher pid=2962 alive after first beat; marker now: acked:downtime:repro.1.aaa
+[prefix-b0c2bea8] queued a row: check inbox:n1 check: captain inbox note n1 - from Basecamp
+[prefix-b0c2bea8] holder pid=6505 took .wake-queue.lock right after arm-check; marker now: announced:downtime:6505.1793334585.z90ecR; rearm-resurface already printed: 0
+[prefix-b0c2bea8] triage deferrals: 5
+[prefix-b0c2bea8] after holder released + 6s: marker=announced:downtime:6505.1793334585.z90ecR; queue rows=1
+[prefix-b0c2bea8] RESULT: NO WAKE - announced episode with a buried row was dropped (watch output: fm-wake: the lock /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-succ-repro.RtMSWl/state/.wake-queue.lock is still held by pid 6505 (fm-wake-lib.sh) after 2s; the state it guards was left untouched fm-wake: the lock /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-succ-repro.RtMSWl/state/.wake-queue.lock is still held by pid 6505 (fm-wake-lib.sh) after 2s; the state it guards was left untouched fm-wake: the lock /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-succ-repro.RtMSWl/state/.wake-queue.lock is still held by pid 6505 (fm-wake-lib.sh) after 2s; the state it guards was left untouched fm-wake: the lock /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-succ-repro.RtMSWl/state/.wake-queue.lock is still held by pid 6505 (fm-wake-lib.sh) after 2s; the state it guards was left untouched fm-wake: the lock /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-succ-repro.RtMSWl/state/.wake-queue.lock is still held by pid 6505 (fm-wake-lib.sh) after 2s; the state it guards was left untouched )
+[prefix-b0c2bea8] script rc=
+
+[fixed-4a3eed59] watcher pid=22660 alive after first beat; marker now: acked:downtime:repro.1.aaa
+[fixed-4a3eed59] queued a row: check inbox:n1 check: captain inbox note n1 - from Basecamp
+[fixed-4a3eed59] holder pid=25155 took .wake-queue.lock right after arm-check; marker now: announced:downtime:25155.1793334638.flpyJS; rearm-resurface already printed: 0
+[fixed-4a3eed59] triage deferrals: 1
+[fixed-4a3eed59] RESULT: watcher woke main with 'check: rearm-resurface' while the lock was still held (exit status of watcher follows)
+[fixed-4a3eed59] watcher exited rc=0
+[fixed-4a3eed59] watch output: fm-wake: the lock /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-succ-repro.wskRV8/state/.wake-queue.lock is still held by pid 25155 (fm-wake-lib.sh) after 2s; the state it guards was left untouched check: rearm-resurface 
+[fixed-4a3eed59] script rc=

@@ -1,0 +1,298 @@
+FM_TEST_BEGIN 2026-10-30T04:24:30Z tests/fm-brief.test.sh family=pure-contract-unit expected_gate_skip=none
+FM_TEST_BEGIN 2026-10-30T04:24:30Z tests/fm-test-run.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - fm-brief: scaffolds leave the worker role scope to the launch boundary and keep the secondmate contract
+ok - fm-brief.sh: bash -n succeeds
+/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-run.Yyu5ts/w1/tmp/fm-brief.xTLl7e/heredoc-in-substitution.sh:2
+ok - fm-brief.sh: no heredoc is nested inside a command substitution (Bash 3.2 parse-safe)
+ok - fm-brief.sh: --help renders the complete header
+ok - fm-brief.sh: no-mistakes/direct-PR/local-only briefs generate cleanly
+ok - fm-brief.sh: --forge forgejo names tea in Rule 3, the direct-PR DOD, and the draft read-back, marks the delivery contract, and the closed set refuses everything else
+ok - fm-brief.sh: --forge external renders the no-push rule, the review contract, and the adapter, and refuses every impossible shape
+ok - fm-brief.sh: ship --mode is required and closed-set validated
+ok - fm-brief.sh: the explicit ship mode wins over the registered posture
+ok - fm-brief.sh: --yolo and scout/secondmate --mode are refused, never silently dropped
+ok - fm-brief.sh: faster paths use configured authority without stacked review
+ok - fm-brief.sh: no-mistakes DOD keeps its apostrophe prose and bans --yes outright
+ok - fm-brief.sh: no-mistakes DOD detects a green PR from the drive call, not a status poll
+ok - fm-brief.sh: PR-based done requires a non-draft PR; a deliberate draft declares a wait
+ok - fm-brief.sh: no-mistakes ask-user findings use one event plus a verbatim snapshot
+ok - fm-brief.sh: ship project-memory wording bounds edits to corrections of wrong information
+ok - fm-brief.sh: --herdr-lab emits the complete hard safety contract
+ok - fm-brief.sh: --herdr-lab uses its quoted Firstmate-owned helper path
+ok - fm-brief.sh: ship and scout scaffolds make omitted Herdr intent fail-visible
+ok - fm-brief.sh: the documented {TASK} and {FIRSTMATE_SPEC} fills cannot corrupt the Herdr safety gate
+ok - fm-brief.sh: Herdr lab contract covers scouts and rejects secondmate misuse
+ok - fm-brief.sh: --no-projects scaffolds a project-less charter and guards misuse
+ok - fm-brief.sh: marked requests report dispatch and finishes without generic acknowledgements
+ok - fm-brief.sh: relative directory inputs ignore CDPATH, render stable absolute charter paths, or fail loudly
+ok - fm-brief.sh: custom pause verb renders in every scaffold
+ok - fm-brief.sh: ship and scout scaffolds declare a validation-round pause once, then hold it
+ok - fm-brief.sh: investigation and visual-review completions load the shared decision policy
+ok - fm-brief.sh: scouts may attest only their own empty inventory through the guarded command
+ok - fm-brief: scout and secondmate code paths still scaffold well-formed briefs
+ok - fm-brief.sh: scout Lavish hosting follows the bootstrap lavish-axi floor
+ok - fm-brief: inbox listing is silent on empty/absent inbox and numerically ordered
+ok - fm-brief: workers end the turn on a decision, wait in one bounded shell command, and never poll
+ok - fm-brief: without wait-no-turns only the pipeline wait adopts the completion listener
+ok - fm-brief: a no-mistakes worker reads its run's status before declaring a wait and answers a parked gate instead of pausing
+ok - fm-brief: inbox guidance explains marked synthetic terminators in every scaffold
+ok - fm-brief.sh: the home brief include lands last on ship and scout, verbatim, and fails closed
+ok - fm-brief.sh: --base-branch records the base, targets the PR at it, and is refused where no PR carries it
+ok - fm-brief.sh: --branch-prefix omitted defaults every ship mode to fm/<task-id>
+ok - fm-brief.sh: a --branch-prefix override renders identically across every generated section
+ok - fm-brief.sh: an empty --branch-prefix override resolves to a bare <task-id> branch
+ok - fm-brief.sh: --branch-prefix is refused on scout and secondmate scaffolds
+ok - fm-brief.sh: --branch-prefix value is validated against embedded spaces and a leading dash
+Switched to a new branch '$(touch${IFS}branch-prefix-shell-safe-marker)brief-branch-safe-g3'
+ok - fm-brief.sh: ref-format-valid shell metacharacters stay literal in generated branch commands
+ok - fm-brief.sh: every crewmate scaffold forbids administering the shared worktree pool
+ok - fm-brief.sh: every crewmate scaffold routes heavy test suites through the test queue
+ok - fm-brief.sh: emitted ship and scout queue commands execute from roots with spaces and quotes
+FM_TEST_END 2026-10-30T04:25:52Z tests/fm-brief.test.sh exit=0 duration_ms=82411 gate_skip=false
+ok - exact suite coverage: --all lists every tests/*.test.sh once
+ok - family selection returns a proper subset of the suite
+ok - single-script selection lists exactly that path
+ok - changed-file selection stays conservative (never silent full suite)
+ok - a task marker refuses execution in the primary checkout and leaves worktrees and inspection alone
+ok - runner and its documentation surfaces select their curated family, not just their contract owners
+ok - shell line-ending policy selects runner coverage
+fm-test-run: no tests selected for changes vs HEAD (map is conservative; use --all for the complete suite)
+ok - changed selection covers dependents, fails closed for live unmapped source, and accepts retired unconsumed source
+ok - a bin reference selects the referencing scripts, and consumers still select their curated families
+ok - changed defaults to bounded automatic scheduling with serial override
+ok - Windows emulation exempts only synthetic POSIX modes
+ok - a plain script list defaults to bounded automatic concurrency without an automatic timeout
+ok - family proofs run concurrently only within separate family phases
+ok - empty changed selection emits deterministic text and JSON summaries
+ok - timing markers and JSON artifact are valid
+ok - aggregate exit reflects any script failure
+ok - gate-skip accounting is honest and non-failing
+ok - a gate skip records why it skipped
+ok - a script that actually ran records no skip reason
+ok - live guards are recorded as a capability class, not a bare env opt-in
+ok - fail-on-gate-skip converts herdr-not-found into a hard failure
+ok - exclude-family drops the named primary family after selection
+ok - fm-test-run: family tern selects the tern suite and smoke test, and the lane coverage guard accepts them
+ok - proven-isolated scheduling ignores parallel hints
+ok - family, all, changed, and script selections ignore parallel hints
+ok - portable shard union, disjointness, and coverage guard hold
+ok - portable parallel lanes are fully hinted and packed within 5% of each other
+ok - portable serial shards are a deterministic disjoint cover of the serial lane
+ok - coverage guard bounds the unmeasured share and serial packing within twenty minutes
+ok - serial packing accepts the exact budget and refuses one millisecond above it
+ok - a lone indivisible script over the packing budget is reported, not refused
+ok - portable serial shard lanes refuse mismatched, out-of-range, and countless names
+ok - --jobs refuses non-proven / stateful selections
+not ok - --jobs on a proven family must be admitted, got 1:  FM_TEST_BEGIN 2026-10-30T04:38:30Z tests/fm-session-lock-ancestry.test.sh family=watcher-wake-lock expected_gate_skip=none
+FM_TEST_BEGIN 2026-10-30T04:38:30Z tests/fm-supervision-events.test.sh family=watcher-wake-lock expected_gate_skip=none
+ok - handle_push_transition: a blocked crew enqueues a stale wake naming its window and wakes the supervisor
+ok - handle_push_transition: a rex blocked edge's wake names the backend and carries Rex's blocked kind and message
+ok - handle_push_transition: enqueue failure cannot commit the Herdr dedupe marker
+ok - handle_push_transition: a declared-pause crew is absorbed (no fast wake), left to the poll loop's long cadence
+ok - handle_push_transition: a captain-held crew is absorbed (no fast wake), left to the poll loop's long cadence
+ok - event_wait_or_sleep: herdr windows go on the event pane list, but kind=secondmate endpoints are excluded
+ok - event_wait_or_sleep: herdr keeps the push wait in a mixed home; T3's wait runs only without another push backend
+ok - event_wait_or_sleep: one cached capability probe owns validation across bounded waits
+ok - event_wait_or_sleep: a home with no push-capable window is inert (sleeps POLL, never touches the event path)
+ok - event_wait_or_sleep: consecutive event-path failures disable the fast-path and revert to pure polling (fail-closed)
+# fm-supervision-events.test.sh: all assertions passed
+FM_TEST_END 2026-10-30T04:38:34Z tests/fm-supervision-events.test.sh exit=0 duration_ms=4230 gate_skip=false
+ok - session-lock: Stop binds checkpoint descendants and rejects foreign or absent thread identity
+ok - session-lock: a version-named Claude Code session is identified from its install path and argv[0]
+ok - session-lock: a version-suffixed muse session is identified, and substring decoys are not
+ok - session-lock: a harness that is pid 1 of its own namespace is examined, not skipped
+ok - session-lock: ordinary script paths under a harness directory are not harness processes
+ok - session-lock: ownership stops at the first non-harness gap above the contiguous run
+ok - session-lock: a live version-named session holding the lock is not mistaken for a stale owner
+ok - session-lock: a trusted same-session id keeps owning a recycled background chain, and nothing weaker does
+ok - session-lock: a trusted id anchors the lock on the model-loop process, anything else on the outermost pid
+ok - session-lock: a daemon-parented Codex tool shell anchors off the daemon and owns by thread id
+ok - session-lock: a direct Codex TUI launch anchors on the TUI, directly or through its code-mode host
+ok - session-lock: two Codex sessions sharing one daemon never cross-own each other's locks
+ok - session-lock: a Codex thread id is trusted only inside a Codex session, and only when its published ids agree
+ok - session-lock: real argv and separate environment fields bind only their own thread
+ok - session-lock: a mismatched kernel start time cannot inherit ownership or leases
+not ok - daemon fixture never produced the initial daemon acquisition
+FM_TEST_END 2026-10-30T04:52:21Z tests/fm-session-lock-ancestry.test.sh exit=1 duration_ms=831241 gate_skip=false
+FM_TEST_SUMMARY total=2 failed=1 skipped_gate=0 duration_ms=831840
+FM_TEST_SUMMARY_FAMILY family=watcher-wake-lock count=2 duration_ms=835471 failed=1
+FM_TEST_SLOWEST rank=1 script=tests/fm-session-lock-ancestry.test.sh duration_ms=831241
+FM_TEST_SLOWEST rank=2 script=tests/fm-supervision-events.test.sh duration_ms=4230
+FM_TEST_END 2026-10-30T04:52:24Z tests/fm-test-run.test.sh exit=1 duration_ms=1674465 gate_skip=false
+FM_TEST_BEGIN 2026-10-30T04:52:24Z tests/fm-wake-queue.test.sh family=watcher-wake-lock expected_gate_skip=none
+FM_TEST_BEGIN 2026-10-30T04:52:24Z tests/fm-watch-arm.test.sh family=watcher-wake-lock expected_gate_skip=none
+FM_TEST_BEGIN 2026-10-30T04:52:25Z tests/fm-cursor-primary.test.sh family=watcher-wake-lock expected_gate_skip=none
+FM_TEST_BEGIN 2026-10-30T04:52:25Z tests/fm-watcher-lock.test.sh family=watcher-wake-lock expected_gate_skip=none
+ok - disposable watcher refuses inherited state outside its marked lab
+ok - wait deadline diagnoses and reaps a stopped test child without hanging
+ok - simultaneous watcher starts leave exactly one live process
+ok - fm_pid_identity real ps fallback is locale-invariant
+ok - fm_pid_identity is locale-invariant across LC_ALL/LC_TIME
+ok - fm_pid_identity ps fallback is terminal-width-invariant
+ok - /proc process identity ignores simulated btime changes
+ok - /proc process identity detects pid reuse
+ok - MSYS /proc process identity regression skipped on non-Windows host
+ok - killed watcher stale lock is reclaimed
+ok - startup recovery stays silent when queued work is acknowledged before the locked arm check
+tests/fm-watcher-lock.test.sh: line 1942: 29305 Killed: 9               FM_STATE_OVERRIDE="$state" bash -c '
+    . "$1"
+    fm_lock_remove_path() {
+      if [ "$1" = "$STATE/.watch.lock" ]; then
+        kill -KILL "${BASHPID:-$$}"
+      fi
+      return 1
+    }
+    fm_lock_try_acquire "$2"
+  ' _ "$LIB" "$lockdir" > /dev/null 2>&1
+ok - stale watcher reclaim publishes durable recovery evidence before clear
+ok - live watcher lock with stale heartbeat is actionable
+ok - live watcher lock with a beacon past the hard bound is replaced, under it is still refused
+ok - a fresh watcher replaces a live holder whose pre-UTC-pin identity no longer recomputes, and the old holder stands down unsignalled
+not ok - the replaced watcher did not stand down on its own (exit 1): watcher: exiting - state directory was torn down (singleton lock removed): /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-run.Yyu5ts/w6/tmp/fm-watcher-lock-tests.BDNvuV/watch-legacy-identity-successor-exited/state
+FM_TEST_END 2026-10-30T04:53:14Z tests/fm-watcher-lock.test.sh exit=1 duration_ms=49118 gate_skip=false
+FM_TEST_BEGIN 2026-10-30T04:53:14Z tests/fm-watch-recovery-loop.test.sh family=watcher-wake-lock expected_gate_skip=none
+ok - a resurfacing handling successor stays alive and supervises instead of going blind
+ok - a handling successor resurfaces a row appended during startup
+ok - unacknowledged recovery is announced at most once per generation and the successor stays alive
+FM_TEST_END 2026-10-30T04:54:45Z tests/fm-watch-recovery-loop.test.sh exit=0 duration_ms=91023 gate_skip=false
+FM_TEST_BEGIN 2026-10-30T04:54:46Z tests/fm-agy-primary.test.sh family=watcher-wake-lock expected_gate_skip=none
+1..14
+ok - .agents/hooks.json: valid JSON and hook commands resolve from both .agents/ and repo root
+warning: re-init: ignored --initial-branch=main
+ok - fm-sessionstart-agy: runs in primary and seeded secondmate homes, stands down with {} in crewmate worktree
+ok - fm-turnend-guard-agy: actionable arm close returns continue decision and resets turnend-blocks
+ok - fm-turnend-guard-agy: an opted-in home parks on the supervision host with the agy pin
+not ok - FM_AGY_PARK_TIMEOUT must bound the total park, not grant each arm attempt a fresh budget
+FM_TEST_END 2026-10-30T04:56:15Z tests/fm-agy-primary.test.sh exit=1 duration_ms=89172 gate_skip=false
+FM_TEST_BEGIN 2026-10-30T04:56:15Z tests/fm-supervision-bounds.test.sh family=watcher-wake-lock expected_gate_skip=none
+not ok - a send whose doorbell hung took 12s with a 3s ring bound
+FM_TEST_END 2026-10-30T04:56:34Z tests/fm-supervision-bounds.test.sh exit=1 duration_ms=18899 gate_skip=false
+FM_TEST_BEGIN 2026-10-30T04:56:34Z tests/fm-watch-checkpoint.test.sh family=watcher-wake-lock expected_gate_skip=none
+not ok - interrupted startup must report failed cleanup: expected exit 1, got 0
+FM_TEST_END 2026-10-30T04:56:40Z tests/fm-watch-checkpoint.test.sh exit=1 duration_ms=5568 gate_skip=false
+FM_TEST_BEGIN 2026-10-30T04:56:40Z tests/fm-session-lock-ancestry.test.sh family=watcher-wake-lock expected_gate_skip=none
+ok - branch grant release lock acquisition: failure
+ok - branch grant deactivate lock acquisition: failure
+ok - branch grant activate lock acquisition: failure
+ok - branch grant publish lock acquisition: failure
+ok - branch grant release lock acquisition: success
+ok - branch grant deactivate lock acquisition: success
+ok - branch grant activate lock acquisition: success
+ok - branch grant publish lock acquisition: success
+ok - an abandoned same-process lock hold is reclaimed; a parent's live hold is not
+ok - a lock wait returns within its bound once its directory is removed
+ok - without BASHPID a subshell cannot release or reclaim its parent lock and owns its own hold
+ok - bounded acquire hands ownership to the waiting caller after contention
+ok - presentation lock waits are bounded and retriable without weakening acknowledgement atomicity
+ok - malformed presentation locks report acquire failure instead of contention
+tests/wake-helpers.sh: line 329: 65476 Killed: 9               PATH="$dir/fakebin:$PATH" FM_FAKE_NOW_FILE="$dir/now" FM_HOME="$dir" FM_ROOT_OVERRIDE="$ROOT" FM_STATE_OVERRIDE="$dir/state" FM_FAKE_TMUX_WINDOW='firstmate:fm-mate' FM_SECONDMATE_WAKE_STALL_SECS=1 FM_SECONDMATE_LIVENESS_SECS=99999999 FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$dir/watch-$leg.out" 2> "$dir/watch-$leg.err"
+tests/wake-helpers.sh: line 329: 70935 Killed: 9               PATH="$dir/fakebin:$PATH" FM_FAKE_NOW_FILE="$dir/now" FM_HOME="$dir" FM_ROOT_OVERRIDE="$ROOT" FM_STATE_OVERRIDE="$dir/state" FM_FAKE_TMUX_WINDOW='firstmate:fm-mate' FM_SECONDMATE_WAKE_STALL_SECS=1 FM_SECONDMATE_LIVENESS_SECS=99999999 FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$dir/watch-$leg.out" 2> "$dir/watch-$leg.err"
+tests/wake-helpers.sh: line 329: 97329 Killed: 9               PATH="$dir/fakebin:$PATH" FM_FAKE_NOW_FILE="$dir/now" FM_HOME="$dir" FM_ROOT_OVERRIDE="$ROOT" FM_STATE_OVERRIDE="$dir/state" FM_FAKE_TMUX_WINDOW='firstmate:fm-mate' FM_SECONDMATE_WAKE_STALL_SECS=1 FM_SECONDMATE_LIVENESS_SECS=99999999 FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$dir/watch-$leg.out" 2> "$dir/watch-$leg.err"
+ok - foreign secondmate queue alerts once per no-progress episode without age-only or cascade noise
+ok - declared external-wait pause rows do not feed secondmate wake-loop escalation
+ok - a reprovisioned queue generation starts a fresh no-progress interval
+ok - an active turn defers the secondmate stall escalation without cancelling it
+ok - a long-lived mate mid-turn is not a stall, but a queue frozen past the busy bound still alarms
+ok - a proven-idle leftover row is rung so the child home can drain without a parent alarm
+ok - TERM stops a watcher blocked in the drain-ring idle capture and runs its cleanup
+ok - busy panes defer without a ring and unknown panes keep the parent alarm
+ok - a leftover row that survives a proven-idle ring still surfaces as a genuine stall
+ok - secondmate stall markers reject symlinks without touching their targets
+ok - stall publication acknowledgement closes the pre-marker crash window
+ok - empty prefix mate cleanup preserves another mate's stall receipt
+ok - self-announced appends suppress only their own bytes and fail toward waking
+ok - separate self-announced answers after a fold stay owned; worker decisions and later lines still wake
+ok - an unreadable status still reads as unreported, with or without owned growth
+ok - a worker resolved in fold lag still wakes after this home's close
+ok - owned growth suppresses the wake without hiding the turn-ended annotation
+ok - historical annotations replay nothing already announced and keep everything new
+wake drain: queue lock could not be acquired safely
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-run.Yyu5ts/w3/tmp/fm-wake-tests.gMDWaP/concurrent/state/.wake-queue.lock is still held after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-run.Yyu5ts/w3/tmp/fm-wake-tests.gMDWaP/concurrent/state/.wake-queue.lock is still held after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-run.Yyu5ts/w3/tmp/fm-wake-tests.gMDWaP/concurrent/state/.wake-queue.lock is still held after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-run.Yyu5ts/w3/tmp/fm-wake-tests.gMDWaP/concurrent/state/.wake-queue.lock is still held after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-run.Yyu5ts/w3/tmp/fm-wake-tests.gMDWaP/concurrent/state/.wake-queue.lock is still held after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-run.Yyu5ts/w3/tmp/fm-wake-tests.gMDWaP/concurrent/state/.wake-queue.lock is still held after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-run.Yyu5ts/w3/tmp/fm-wake-tests.gMDWaP/concurrent/state/.wake-queue.lock is still held after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-run.Yyu5ts/w3/tmp/fm-wake-tests.gMDWaP/concurrent/state/.wake-queue.lock is still held after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-run.Yyu5ts/w3/tmp/fm-wake-tests.gMDWaP/concurrent/state/.wake-queue.lock is still held after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-run.Yyu5ts/w3/tmp/fm-wake-tests.gMDWaP/concurrent/state/.wake-queue.lock is still held after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-run.Yyu5ts/w3/tmp/fm-wake-tests.gMDWaP/concurrent/state/.wake-queue.lock is still held after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-run.Yyu5ts/w3/tmp/fm-wake-tests.gMDWaP/concurrent/state/.wake-queue.lock is still held after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-run.Yyu5ts/w3/tmp/fm-wake-tests.gMDWaP/concurrent/state/.wake-queue.lock is still held after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-run.Yyu5ts/w3/tmp/fm-wake-tests.gMDWaP/concurrent/state/.wake-queue.lock is still held after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-run.Yyu5ts/w3/tmp/fm-wake-tests.gMDWaP/concurrent/state/.wake-queue.lock is still held after 30s; the state it guards was left untouched
+not ok - concurrent append/drain subprocess failed
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-run.Yyu5ts/w3/tmp/fm-wake-tests.gMDWaP/concurrent/state/.wake-queue.lock is still held after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-run.Yyu5ts/w3/tmp/fm-wake-tests.gMDWaP/concurrent/state/.wake-queue.lock is still held after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-run.Yyu5ts/w3/tmp/fm-wake-tests.gMDWaP/concurrent/state/.wake-queue.lock is still held after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-run.Yyu5ts/w3/tmp/fm-wake-tests.gMDWaP/concurrent/state/.wake-queue.lock is still held after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-run.Yyu5ts/w3/tmp/fm-wake-tests.gMDWaP/concurrent/state/.wake-queue.lock is still held after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-run.Yyu5ts/w3/tmp/fm-wake-tests.gMDWaP/concurrent/state/.wake-queue.lock is still held after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-run.Yyu5ts/w3/tmp/fm-wake-tests.gMDWaP/concurrent/state/.wake-queue.lock is still held after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-run.Yyu5ts/w3/tmp/fm-wake-tests.gMDWaP/concurrent/state/.wake-queue.lock is still held after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-run.Yyu5ts/w3/tmp/fm-wake-tests.gMDWaP/concurrent/state/.wake-queue.lock is still held after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-run.Yyu5ts/w3/tmp/fm-wake-tests.gMDWaP/concurrent/state/.wake-queue.lock is still held after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-run.Yyu5ts/w3/tmp/fm-wake-tests.gMDWaP/concurrent/state/.wake-queue.lock is still held after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-run.Yyu5ts/w3/tmp/fm-wake-tests.gMDWaP/concurrent/state/.wake-queue.lock is still held by pid 93128 (fm-wake-lib.sh) after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-run.Yyu5ts/w3/tmp/fm-wake-tests.gMDWaP/concurrent/state/.wake-queue.lock is still held by pid 93128 (fm-wake-lib.sh) after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-run.Yyu5ts/w3/tmp/fm-wake-tests.gMDWaP/concurrent/state/.wake-queue.lock is still held by pid 93128 (fm-wake-lib.sh) after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-run.Yyu5ts/w3/tmp/fm-wake-tests.gMDWaP/concurrent/state/.wake-queue.lock is still held by pid 93128 (fm-wake-lib.sh) after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-run.Yyu5ts/w3/tmp/fm-wake-tests.gMDWaP/concurrent/state/.wake-queue.lock is still held by pid 93128 (fm-wake-lib.sh) after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-run.Yyu5ts/w3/tmp/fm-wake-tests.gMDWaP/concurrent/state/.wake-queue.lock is still held by pid 93128 (fm-wake-lib.sh) after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-run.Yyu5ts/w3/tmp/fm-wake-tests.gMDWaP/concurrent/state/.wake-queue.lock is still held by pid 93128 (fm-wake-lib.sh) after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-run.Yyu5ts/w3/tmp/fm-wake-tests.gMDWaP/concurrent/state/.wake-queue.lock is still held by pid 93128 (fm-wake-lib.sh) after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-run.Yyu5ts/w3/tmp/fm-wake-tests.gMDWaP/concurrent/state/.wake-queue.lock is still held by pid 93128 (fm-wake-lib.sh) after 30s; the state it guards was left untouched
+FM_TEST_END 2026-10-30T04:59:01Z tests/fm-wake-queue.test.sh exit=1 duration_ms=396736 gate_skip=false
+ok - grok: one stale notice leaves a successor holding the lock, and plain, away, and quiet arms stay one-shot
+ok - grok: a holding watcher reports a second wake after a process-event wake
+ok - grok: the real arm holds across quiet polls and the next tracked arm delivers fresh work
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M65FZAGTBH5THVT8CTWDJSMT/bin/fm-wake-lib.sh: line 708: 23272 Terminated: 15          sleep "$POLL"
+ok - watch-arm: handling successor delivers fresh new inbox work after-ack (intact counter) without consuming or looping
+ok - watch-arm: handling successor delivers fresh new inbox work before-ack (intact counter) without consuming or looping
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M65FZAGTBH5THVT8CTWDJSMT/bin/fm-wake-lib.sh: line 708: 60078 Terminated: 15          sleep "$POLL"
+ok - watch-arm: handling successor delivers fresh new inbox work after-ack (missing counter) without consuming or looping
+ok - watch-arm: handling successor delivers fresh new inbox work before-ack (missing counter) without consuming or looping
+ok - watch-arm: handling successor delivers fresh new inbox work after-ack (malformed counter) without consuming or looping
+ok - watch-arm: handling successor delivers fresh new inbox work before-ack (malformed counter) without consuming or looping
+not ok - re-append was not byte-identical to the inherited row
+FM_TEST_END 2026-10-30T05:01:40Z tests/fm-watch-arm.test.sh exit=1 duration_ms=555248 gate_skip=false
+ok - fm-turnend-guard: Cursor payload is inert without --cursor and blocks with it
+ok - fm-turnend-guard: a non-Cursor payload keeps blocking
+ok - fm-claude-stop-autoarm: inert on a Cursor-delivered payload
+ok - fm-sessionstart-run: inert on a Cursor payload, unchanged otherwise
+ok - fm-arm-pretool-check: Cursor duplicate allows, --cursor denies in Cursor's own shape
+ok - fm-cd-pretool-check: Cursor duplicate allows, --cursor denies in Cursor's own shape
+ok - cursor park: silent no-op when no supervision is needed
+ok - cursor park: an actionable close is delivered as one watcher-kind follow-up
+ok - cursor park: always exits 0, even when supervision is genuinely down
+ok - cursor park: the repair nag is bounded and then goes quiet
+ok - cursor park: a repair nag is emitted only after its budget persists
+ok - cursor park: a delivered wake resets the bounded repair budget
+ok - cursor park: the loop_count ceiling warns exactly once, then stops the loop
+ok - cursor park: an older park stands down after a newer stop claim
+ok - cursor park: the newest stop exclusively owns a concurrent commit
+ok - cursor park: a superseded park cannot consume repair budget
+ok - cursor park: inert while away mode is active
+ok - cursor park: an opted-in home parks on the supervision host and relays every host line
+ok - cursor park: the host's boundary wakes, its stand-down is silent, and a host that died is retried
+ok - cursor park: inert when PI_CODING_AGENT marks a Pi host session
+ok - cursor park: parks when PI_CODING_AGENT leaks alongside Cursor identity
+ok - cursor park: an away-mode transition wins before follow-up commit
+ok - cursor park: inert when this session does not hold the home lock
+ok - cursor park: session takeover stops polling without output or state mutation
+ok - cursor park: a Windows-tagged session lock is owned by its session and reclaimed from a dead holder
+ok - cursor park: a live, malformed, or off-Windows tagged lock is left alone
+warning: re-init: ignored --initial-branch=main
+ok - cursor park: inert inside a child crewmate worktree
+ok - cursor park: malformed payloads fail open without arming
+ok - fm-sessionstart-cursor: sessionStart injects context
+warning: re-init: ignored --initial-branch=main
+ok - fm-sessionstart-cursor: silent inside a child crewmate worktree
+ok - cursor registration: covers every primary event with a bounded stop loop
+ok - cursor bounds nest: firstmate's default ceiling stops the loop before Cursor's loop_limit does
+FM_TEST_END 2026-10-30T05:02:09Z tests/fm-cursor-primary.test.sh exit=0 duration_ms=584300 gate_skip=false
+bin/fm-test-run.sh: line 2549: 21847 Terminated: 15          ( trap - EXIT HUP INT TERM; set +e; export TMPDIR="$work/tmp"; export TMP="$work/tmp"; unset FM_HOME FM_STATE_OVERRIDE FM_DATA_OVERRIDE FM_ROOT_OVERRIDE FM_PROJECTS_OVERRIDE FM_CONFIG_OVERRIDE FM_BACKEND 2> /dev/null || true; cd "$ROOT" || exit 1; begin_ms=$(now_ms); set +e; run_script_bounded "$script" "$work/output" 0 "w$worker_n"; rc=$?; set -e; end_ms=$(now_ms); duration=$((end_ms - begin_ms)); if [ "$duration" -lt 0 ]; then
+    duration=0;
+fi; printf '%s\n' "$duration" > "$work/duration_ms"; printf '%s\n' "$rc" > "$work/exit"; exit 0 )
+bin/fm-test-run.sh: line 2549: 40276 Terminated: 15          sleep 0.01

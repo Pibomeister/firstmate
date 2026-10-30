@@ -1,0 +1,5 @@
+$ bash -c "exec 6</private/tmp; [ /dev/fd/6 -ef /private/tmp ] && echo same || echo differ"
+differ
+# /bin/bash 3.2 heredoc: ${r%%$'	'*} expands to:
+111	1	c
+GNU bash, version 3.2.57(1)-release (arm64-apple-darwin25)

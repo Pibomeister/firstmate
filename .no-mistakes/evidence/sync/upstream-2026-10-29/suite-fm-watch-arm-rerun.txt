@@ -1,0 +1,16 @@
+ok - grok: one stale notice leaves a successor holding the lock, and plain, away, and quiet arms stay one-shot
+ok - grok: a holding watcher reports a second wake after a process-event wake
+ok - grok: the real arm holds across quiet polls and the next tracked arm delivers fresh work
+ok - watch-arm: handling successor delivers fresh new inbox work after-ack (intact counter) without consuming or looping
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M65FZAGTBH5THVT8CTWDJSMT/bin/fm-wake-lib.sh: line 708: 57403 Terminated: 15          sleep "$POLL"
+ok - watch-arm: handling successor delivers fresh new inbox work before-ack (intact counter) without consuming or looping
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M65FZAGTBH5THVT8CTWDJSMT/bin/fm-wake-lib.sh: line 708: 55476 Terminated: 15          sleep "$POLL"
+ok - watch-arm: handling successor delivers fresh new inbox work after-ack (missing counter) without consuming or looping
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M65FZAGTBH5THVT8CTWDJSMT/bin/fm-wake-lib.sh: line 708: 92083 Terminated: 15          sleep "$POLL"
+ok - watch-arm: handling successor delivers fresh new inbox work before-ack (missing counter) without consuming or looping
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M65FZAGTBH5THVT8CTWDJSMT/bin/fm-wake-lib.sh: line 708: 31818 Terminated: 15          sleep "$POLL"
+ok - watch-arm: handling successor delivers fresh new inbox work after-ack (malformed counter) without consuming or looping
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M65FZAGTBH5THVT8CTWDJSMT/bin/fm-wake-lib.sh: line 708: 80537 Terminated: 15          sleep "$POLL"
+ok - watch-arm: handling successor delivers fresh new inbox work before-ack (malformed counter) without consuming or looping
+not ok - re-append was not byte-identical to the inherited row
+rc=1

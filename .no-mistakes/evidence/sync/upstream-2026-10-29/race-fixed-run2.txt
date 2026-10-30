@@ -1,0 +1,8 @@
+elapsed=11s watcher_still_running_after_30s=no holder_won_lock=yes
+deferral_file: none
+marker: announced:downtime:later.1.aaa
+--- watcher stdout:
+check: rearm-resurface
+--- watcher stderr (lock lines):
+fm-wake: the lock /tmp/fm-race-drv/fixed2/state/.wake-queue.lock is still held by pid 81941 (fm-wake-lib.sh) after 2s; the state it guards was left untouched
+rearm_resurface_count=1

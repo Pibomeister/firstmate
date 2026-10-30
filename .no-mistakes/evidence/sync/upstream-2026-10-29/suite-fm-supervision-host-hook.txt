@@ -1,0 +1,42 @@
+1..24
+ok - host+hook: a main-only close after a handled turn restores inherited handling and rewakes main
+tests/supervision-host-helpers.sh: line 196:  8405 Terminated: 15          FM_HOME="$home" FM_ROOT_OVERRIDE="$home" FM_CREW_STATE_BIN="$home/fakebin/fm-crew-state.sh" PATH="$home/fakebin:$PATH" "$FAKE_CLAUDE" -c '
+      printf "%s\n" "$$" > "$FM_HOME/state/.lock"
+      printf "%s\n" "$$" >> "$FM_HOME/claude-pids"
+      for seed in "$FM_HOME"/mirror-seed.*; do
+        [ -f "$seed" ] || continue
+        "$FM_HOME/bin/fm-host-mirror.sh" hook claude < "$seed"
+      done
+      while [ ! -e "$FM_HOME/session.stop" ] && [ -d "$FM_HOME" ] \
+        && kill -0 "$FM_TEST_SUITE_PID" 2>/dev/null; do
+        if [ -e "$FM_HOME/stop.go" ]; then
+          rm -f "$FM_HOME/stop.go"
+          if [ -e "$FM_HOME/hook.own-group" ]; then
+            # Claude owns the hook as a process group of its own and tears the
+            # whole group down once the hook has exited.
+            printf "{\"session_id\":\"sess-host-hook\",\"stop_hook_active\":false}\n" > "$FM_HOME/hook.stdin"
+            set -m
+            "$FM_HOME/bin/fm-claude-stop-autoarm.sh" < "$FM_HOME/hook.stdin" > "$FM_HOME/hook.out" 2> "$FM_HOME/hook.err" &
+            printf "%s\n" "$!" > "$FM_HOME/hook.pgid"
+            wait "$!"
+            printf "%s\n" "$?" > "$FM_HOME/hook.rc"
+            set +m
+          else
+            printf "{\"session_id\":\"sess-host-hook\",\"stop_hook_active\":false}\n" \
+              | "$FM_HOME/bin/fm-claude-stop-autoarm.sh" > "$FM_HOME/hook.out" 2> "$FM_HOME/hook.err"
+            printf "%s\n" "$?" > "$FM_HOME/hook.rc"
+          fi
+        fi
+        sleep 0.1
+      done
+    ' 2>> "$home/claude.err"
+ok - host+hook: a refused inherited handling restore delivers a failure instead of silent success
+ok - host+hook: a driver returning to an idle worker is stale-handled while attended
+ok - host+hook: a driver returning to an idle worker is stale-handled while away
+ok - host+hook: boundary survives a lost continuation, retries, and transfers one watcher after acknowledgement
+ok - host+hook: pass-through survives a lost continuation, retries, and transfers one watcher after acknowledgement
+ok - host+hook: an acknowledged hand-back at the turn keeps its pass-through row
+ok - host+hook: hand-back retry submits only to the idle owning pane without replacing human input
+ok - host+hook: a successor closed before exit_to_main does not suppress the branch-outcome rewake
+Terminated: 15
+tests/supervision-host-helpers.sh: line 235: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-supervision-host.8GR3tU/homes: No such file or directory

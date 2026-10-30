@@ -1,0 +1,4 @@
+ok - a resurfacing handling successor stays alive and supervises instead of going blind
+ok - a handling successor resurfaces a row appended during startup
+ok - unacknowledged recovery is announced at most once per generation and the successor stays alive
+bash tests/fm-watch-recovery-loop.test.sh  4.98s user 8.53s system 18% cpu 1:13.55 total

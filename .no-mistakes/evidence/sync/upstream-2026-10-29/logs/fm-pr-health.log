@@ -1,0 +1,23 @@
+ok - UNKNOWN then DIRTY wakes once
+ok - DIRTY seen again at the same commits wakes nothing
+ok - a conflict notifies once per latest commit despite recovery or base movement
+ok - each required check that fails on an adopted draft wakes once per latest commit
+ok - a fallback notification does not hide a later required failure at the same commit
+ok - each check is judged by its newest run
+ok - a latest commit that moves between the two reads waits for the next pass
+ok - a red check on another home's PR wakes nothing in this home
+ok - a PR enrolled before any ready report, and one kept after cleanup, both still wake
+ok - an open PR that replaces a closed one on the same task branch is discovered
+ok - a green PR without a reviewer never notifies
+ok - a base with no required checks counts a failing reported check
+ok - a retired contribution is not reclaimed through the cached branch lookup
+ok - a retired contribution is not reclaimed by a fresh branch lookup
+ok - an unreadable durable record pauses the monitor once and keeps its fingerprints
+ok - nothing prints while nothing changed
+ok - a merged PR leaves the monitor
+ok - an absent flag leaves the home untouched
+ok - the watcher turns one conflict into one durable wake
+ok - check notifications survive cleanup and repeat only at a new latest commit
+ok - all owned PR reads start in one wave without rotating a backlog
+ok - all check pages contribute to required-check classification
+ok - GitLab ownership and branch discovery make no GitHub reads

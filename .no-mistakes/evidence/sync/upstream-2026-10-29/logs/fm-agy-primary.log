@@ -1,0 +1,19 @@
+1..14
+ok - .agents/hooks.json: valid JSON and hook commands resolve from both .agents/ and repo root
+warning: re-init: ignored --initial-branch=main
+ok - fm-sessionstart-agy: runs in primary and seeded secondmate homes, stands down with {} in crewmate worktree
+ok - fm-turnend-guard-agy: actionable arm close returns continue decision and resets turnend-blocks
+ok - fm-turnend-guard-agy: an opted-in home parks on the supervision host with the agy pin
+ok - fm-turnend-guard-agy: park timeout stops the arm and returns continue with [supervision-park]
+ok - fm-turnend-guard-agy: returns {} when the fleet is empty or a healthy watcher owns the home
+ok - fm-turnend-guard-agy: non-normal terminationReason values pass through with {}
+ok - fm-turnend-guard-agy: the loop ceiling notifies once while supervision is needed, then passes through
+ok - fm-turnend-guard-agy: superseded park owner returns {}
+ok - fm-turnend-guard --agy & fm-turnend-guard-agy: bounded repair nag blocks 3 times then fails open with {}
+ok - fm-arm-pretool-check --agy: denies through the shared policy and allows ordinary commands
+warning: re-init: ignored --initial-branch=main
+ok - fm-cd-pretool-check --agy: denies persistent cd in primary, allows subshell cd, inert in worktree
+warning: re-init: ignored --initial-branch=main
+ok - fm-subagent-pretool-check --agy: denies invoke_subagent, allows observe-only tools, inert in worktree
+ok - session-lock & supervision model: agy ancestry, autoarm model, and supervision instructions verified
+FM_TEST_COMPLETE

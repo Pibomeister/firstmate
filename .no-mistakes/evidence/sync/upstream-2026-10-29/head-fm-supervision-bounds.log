@@ -1,0 +1,4 @@
+ok - a hung doorbell after enqueue returns 'durably recorded' within its bound and a send to another task proceeds
+ok - a recovery send stopped at its bound is recorded unknown; one that fails inside it stays failed
+ok - watcher stage and deferral records remain complete during updates
+not ok - the watcher did not record deferring its wake-queue work; triage: ; queue: ; lock pid:  holder 72070; out: 
