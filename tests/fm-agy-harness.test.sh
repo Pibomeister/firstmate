@@ -721,7 +721,7 @@ test_agy_unpublished_allocation_is_returned() {
   rec=$(make_agy_spawn_case unpublished "$id")
   read_agy_spawn_record "$rec"
   rc=0
-  out=$(FM_FAKE_AGY_FAIL=cd run_agy_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" \
+  out=$(FM_FAKE_AGY_FAIL='cd' run_agy_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" \
     "$FAKEBIN_DIR" "$id") || rc=$?
   [ "$rc" -ne 0 ] || fail "failed cwd handoff did not refuse the spawn"
   assert_contains "$out" 'endpoint could not be moved' "failure did not reach the cwd handoff: $out"
