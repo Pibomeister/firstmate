@@ -133,13 +133,15 @@ case "$out" in *'LATE retry1'*|*'LATE block1'*|*'LATE fail1'*|*'LATE note1'*|*'L
 case "$out" in *'LATE twice late=20m event=dispatched'*) ;; *) fail "a retry hid the first late mark: $out" ;; esac
 pass "a goal that met the SLA is never late, and free text cannot forge a late mark"
 
-out=$(dl $((T0 + 24 * 3600)) overdue)
-case "$out" in *'LATE late1 late=66m'*) ;; *) fail "a late goal received 24 hours ago was dropped: $out" ;; esac
-out=$(dl $((T0 + 24 * 3600 + 1)) overdue); rc=$?
-[ "$rc" = 0 ] && [ -z "$out" ] || fail "late goals older than 24 hours were still reported (rc=$rc): $out"
+out=$(dl $((T0 + 20 * 60 + 24 * 3600 + 1)) overdue)
+case "$out" in *'LATE late2'*) fail "a late line older than 24 hours was still reported: $out" ;; esac
+out=$(dl $((T0 + 66 * 60 + 24 * 3600)) overdue)
+case "$out" in *'LATE late1 late=66m'*) ;; *) fail "a late line written 24 hours ago was dropped: $out" ;; esac
+out=$(dl $((T0 + 66 * 60 + 24 * 3600 + 1)) overdue); rc=$?
+[ "$rc" = 0 ] && [ -z "$out" ] || fail "late lines older than 24 hours were still reported (rc=$rc): $out"
 [ "$(dl 0 show late1 | tail -n 1 | cut -f5)" = 'task=t-late late=66m' ] \
   || fail "show lost the late mark of an expired goal: $(dl 0 show late1)"
-pass "overdue reports LATE only for goals received in the last 24 hours, and show keeps the record"
+pass "overdue reports LATE for 24 hours after the late line, and show keeps the record"
 
 dl "$T0" received g1 --summary dup >/dev/null 2>&1; rc=$?
 [ "$rc" = 4 ] || fail "a duplicate received exited $rc, not 4"
@@ -217,3 +219,12 @@ case "$out" in *'OVERDUE rq1'*|*'OVERDUE rq2'*) fail "a goal with a final line w
 case "$out" in *'LATE rq1'*|*'LATE rq3'*) fail "a goal not judged late was listed LATE: $out" ;; esac
 case "$out" in *'LATE rq2 late=20m event=dispatched'*) ;; *) fail "a later line changed the judged late mark: $out" ;; esac
 pass "the SLA is judged once at the first final line, and a later queue neither reopens it nor goes overdue"
+
+dl "$T0" received weekend --summary 'first resolved after 24 hours' >/dev/null || fail "weekend refused"
+dl $((T0 + 25 * 3600)) dispatched weekend --task t-weekend >/dev/null || fail "weekend dispatch refused"
+out=$(dl $((T0 + 25 * 3600 + 60)) overdue)
+case "$out" in *'LATE weekend late=1500m event=dispatched'*) ;; *) fail "a goal first resolved after 24 hours was not listed LATE: $out" ;; esac
+dl $((T0 + 26 * 3600)) dispatched weekend --task t-weekend-retry >/dev/null || fail "weekend retry refused"
+out=$(dl $((T0 + 49 * 3600 + 1)) overdue)
+case "$out" in *'LATE weekend'*) fail "a later retry extended the LATE window: $out" ;; esac
+pass "the LATE window runs from the late final line, not from received or a later retry"
