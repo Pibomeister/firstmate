@@ -443,7 +443,7 @@ test_leftover_transcript_in_a_reused_slot_is_ignored() {
 }
 
 test_ambiguous_transcript_when_two_qualify() {
-  local home transcript now other
+  local home transcript now other script
   home=$(make_home ambiguous-transcripts)
   now=$(date +%s)
   transcript=$(task_transcript "$home")
@@ -460,7 +460,18 @@ test_ambiguous_transcript_when_two_qualify() {
     and .tasks[0].context_left.used_tokens.reason == "ambiguous transcript"
     and .tasks[0].last_output_time.reason == "ambiguous transcript"' \
     "two qualifying transcripts were attributed to one mate"
-  pass "two Claude transcripts since spawn publish unknown, not a pick"
+  printf 'abc' > "$home/state/.hash-fmtest_hb"
+  script=$(canned_snapshot "$home")
+  jq --arg gen "s$(( now - 60 )).1.1" '.tasks[0] += {endpoint:{target:"fmtest:hb",exists:true},spawn_gen:$gen}' \
+    "$home/canned-snapshot.json" > "$home/live.json"
+  mv "$home/live.json" "$home/canned-snapshot.json"
+  publish "$home" FAKE_PANE_TEXT='12% until auto-compact' FM_HEARTBEAT_SNAPSHOT_SCRIPT="$script"
+  assert_ledger "$home" '.tasks[0].session.reason == "ambiguous transcript"
+    and .tasks[0].context_left.used_tokens.reason == "ambiguous transcript"
+    and .tasks[0].context_left.remaining == {percent:12,source:"terminal"}
+    and .tasks[0].last_output_time.source == "terminal"' \
+    "ambiguity discarded evidence that does not come from a transcript"
+  pass "two Claude transcripts since spawn blank only transcript-derived fields"
 }
 
 test_remaining_context_comes_from_pane_text() {
@@ -805,4 +816,4 @@ test_stale_work_dir_is_swept
 test_watcher_poll_does_not_wait_for_heartbeat
 test_watcher_runs_one_heartbeat_at_a_time
 
-printf 'ok - %s tests passed\n' 27
+printf 'ok - %s tests passed\n' 28
