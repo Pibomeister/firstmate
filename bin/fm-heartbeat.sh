@@ -2,16 +2,18 @@
 # fm-heartbeat.sh - publish a bounded fleet heartbeat ledger for self-watching.
 #
 # Usage:
-#   fm-heartbeat.sh --json   print the fm-heartbeat.v1 document on stdout
 #   fm-heartbeat.sh --write  atomically write state/heartbeat.json (best-effort)
 #
 # Each run observes bin/fm-fleet-snapshot.sh --json under FM_HEARTBEAT_SNAPSHOT_TIMEOUT
-# (default 5 seconds), enriches that snapshot with git, no-mistakes, inbox, and
-# primary-session facts, and never guesses: unread fields stay explicitly unknown.
-# A slow snapshot read or any heartbeat failure is recorded in the document's
-# failure and snapshot.failure fields while still publishing every field that
-# was read successfully. Atomic publication matches state/home-summary.json:
-# mode 0600 temp file on the state directory, then rename over the ledger.
+# (default 30 seconds, above the snapshot's own inner bounds), enriches that
+# snapshot with git, no-mistakes, inbox, terminal, and transcript facts, and never
+# guesses: unread fields carry {unknown:true,reason}. Every primary and per-task
+# read has its own bound (FM_HEARTBEAT_READ_TIMEOUT, default 3 seconds, and
+# FM_HEARTBEAT_NM_TIMEOUT, default 2), and FM_HEARTBEAT_DEADLINE (default 90
+# seconds) stops starting new task reads. A deadline hit or a TERM, INT, or HUP
+# still publishes what was read, with unknown rows for the rest. A SIGKILL cannot
+# publish; the next run sweeps what it left. All temp files live in one private
+# state/.heartbeat-work.* directory, and the ledger is renamed from it.
 #
 # Top-level fields:
 #   schema            stable id fm-heartbeat.v1
@@ -20,27 +22,37 @@
 #   fm_home           resolved operational home
 #   snapshot          {ok, schema, generated, failure} for the fleet snapshot read
 #   primary           supervising firstmate session (not a ship/scout task row)
-#     terminal        {backend, target, present}
-#     session         {trusted_id, anchor_pid, recorded}
+#     terminal          {backend, target, present}
+#     session           {trusted_id, anchor_pid, recorded}
 #     last_turn         {observed_at, age_seconds, source}
 #     composer_state    empty|pending|pending-unproven|unknown
-#     context_left      {used_tokens, limit_tokens, remaining_tokens}
+#     context_left      {used_tokens, remaining_tokens}; remaining stays unknown
+#                       until a real model window size is read
 #   tasks[]           one row per snapshot task id, sorted by id
 #     id
+#     terminal          {backend, target, exists} from snapshot endpoint
+#     session           {id} from the worktree's newest Claude transcript
+#     last_turn         as primary
+#     composer_state    as primary; read only for a live local endpoint
+#     context_left      as primary
 #     stage             {state, source, detail} from snapshot current_state
-#     last_commit       {sha, branch} or unknown
-#     last_push         {sha, ref} or unknown
-#     pr_head           string or null from snapshot pr.head
-#     no_mistakes_run   {run_id, step, active} or null
-#     last_output_time  {observed_at, age_seconds, source}
-#     open_asks         {decisions[], inbox_unhandled}
-#   failure           null, or {reason} when the heartbeat itself failed partially
+#     last_commit       {sha, branch}
+#     last_push         {sha, ref}: the local no-mistakes tracking ref, else origin;
+#                       never a network read
+#     pr_head           string; null when the task records no PR
+#     no_mistakes_run   {run_id, step, active}; null only on the CLI's explicit
+#                       runs_on_current_branch: 0
+#     last_output_time  {observed_at, age_seconds, source}: terminal (the watcher's
+#                       pane-change marker), transcript, or turn-ended
+#     open_asks         {decisions, inbox_unhandled}
+#   failure           null only on a clean run, else {reason, count} naming every
+#                     read that failed or timed out; absent evidence is not a failure
 #
 # FM_HEARTBEAT_SNAPSHOT_SCRIPT may name a replacement snapshot producer; tests
 # use it to simulate slow reads without touching the real fleet snapshot.
 #
-# bin/fm-watch.sh invokes --write once per poll under fm_run_timed; a failure
-# there must never block or kill the watcher poll.
+# bin/fm-watch.sh runs --write detached and single-flight, so no read here can
+# hold a watcher poll.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -52,14 +64,13 @@ CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 PROJECTS="${FM_PROJECTS_OVERRIDE:-$FM_HOME/projects}"
 LEDGER="$STATE/heartbeat.json"
 
-FM_HEARTBEAT_SNAPSHOT_TIMEOUT=${FM_HEARTBEAT_SNAPSHOT_TIMEOUT:-5}
-FM_HEARTBEAT_GIT_TIMEOUT=${FM_HEARTBEAT_GIT_TIMEOUT:-2}
+FM_HEARTBEAT_SNAPSHOT_TIMEOUT=${FM_HEARTBEAT_SNAPSHOT_TIMEOUT:-30}
+FM_HEARTBEAT_READ_TIMEOUT=${FM_HEARTBEAT_READ_TIMEOUT:-3}
 FM_HEARTBEAT_NM_TIMEOUT=${FM_HEARTBEAT_NM_TIMEOUT:-2}
+FM_HEARTBEAT_DEADLINE=${FM_HEARTBEAT_DEADLINE:-90}
 
-MODE=
 case "${1:-}" in
-  --json) MODE=json ;;
-  --write) MODE="write" ;;
+  --write) ;;
   -h|--help)
     sed -n '2,${/^#/!q;p;}' "$0" | sed 's/^# \{0,1\}//'
     exit 0
@@ -67,9 +78,10 @@ case "${1:-}" in
   *) sed -n '2,${/^#/!q;p;}' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2 ;;
 esac
 
-case "$FM_HEARTBEAT_SNAPSHOT_TIMEOUT" in ''|*[!0-9]*|0) FM_HEARTBEAT_SNAPSHOT_TIMEOUT=5 ;; esac
-case "$FM_HEARTBEAT_GIT_TIMEOUT" in ''|*[!0-9]*|0) FM_HEARTBEAT_GIT_TIMEOUT=2 ;; esac
+case "$FM_HEARTBEAT_SNAPSHOT_TIMEOUT" in ''|*[!0-9]*|0) FM_HEARTBEAT_SNAPSHOT_TIMEOUT=30 ;; esac
+case "$FM_HEARTBEAT_READ_TIMEOUT" in ''|*[!0-9]*|0) FM_HEARTBEAT_READ_TIMEOUT=3 ;; esac
 case "$FM_HEARTBEAT_NM_TIMEOUT" in ''|*[!0-9]*|0) FM_HEARTBEAT_NM_TIMEOUT=2 ;; esac
+case "$FM_HEARTBEAT_DEADLINE" in ''|*[!0-9]*|0) FM_HEARTBEAT_DEADLINE=90 ;; esac
 
 command -v jq >/dev/null 2>&1 || {
   echo 'fm-heartbeat: jq is required' >&2
@@ -116,131 +128,128 @@ heartbeat_unknown() {  # <reason>
   jq -n --arg reason "$1" '{unknown:true,reason:$reason}'
 }
 
+heartbeat_note_failure() {  # <reason>
+  printf '%s\n' "$1" >> "$HEARTBEAT_WORK/failures" 2>/dev/null || true
+}
+
+# Run one read under its own bound. Stdout and status are the read's own; a hit
+# bound is also recorded as a failure.
+heartbeat_read() {  # <label> <function-or-command> [args...]
+  local label=$1 rc=0
+  shift
+  fm_run_timed_fn "$FM_HEARTBEAT_READ_TIMEOUT" "$@" 2>/dev/null </dev/null || rc=$?
+  if fm_timed_out "$rc"; then
+    heartbeat_note_failure "$label timed out after ${FM_HEARTBEAT_READ_TIMEOUT}s"
+  fi
+  return "$rc"
+}
+
+# The background job plus wait lets a TERM reach the trap at once. A stopped run
+# leaves the job to end at its own bound, which removes its own temp file.
 heartbeat_read_snapshot() {  # <dest-file>
-  local dest=$1 err rc snapshot_sh
+  local dest=$1 err=$HEARTBEAT_WORK/snapshot.err rc reason snapshot_sh
   snapshot_sh="${FM_HEARTBEAT_SNAPSHOT_SCRIPT:-$SCRIPT_DIR/fm-fleet-snapshot.sh}"
-  err=$(mktemp "${dest}.err.XXXXXX") || return 1
-  if fm_run_timed "$FM_HEARTBEAT_SNAPSHOT_TIMEOUT" env \
+  fm_run_timed "$FM_HEARTBEAT_SNAPSHOT_TIMEOUT" env \
     FM_ROOT_OVERRIDE="$FM_ROOT" FM_HOME="$FM_HOME" \
     FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" \
     FM_CONFIG_OVERRIDE="$CONFIG" FM_PROJECTS_OVERRIDE="$PROJECTS" \
     FM_SNAPSHOT_NOW="$HEARTBEAT_NOW" FM_SNAPSHOT_NOW_EPOCH="$HEARTBEAT_EPOCH" \
-    "$snapshot_sh" --json > "$dest" 2>"$err"; then
-    rc=0
+    "$snapshot_sh" --json > "$dest" 2>"$err" </dev/null &
+  if wait "$!"; then
+    return 0
   else
     rc=$?
   fi
-  if [ "$rc" -ne 0 ]; then
-    HEARTBEAT_SNAPSHOT_FAILURE=$(tail -n 1 "$err" 2>/dev/null | tr '\t\r\n' '   ' | cut -c1-300)
-    [ -n "$HEARTBEAT_SNAPSHOT_FAILURE" ] || HEARTBEAT_SNAPSHOT_FAILURE="exit $rc"
-    if fm_timed_out "$rc"; then
-      HEARTBEAT_SNAPSHOT_FAILURE="snapshot timed out after ${FM_HEARTBEAT_SNAPSHOT_TIMEOUT}s"
-    fi
-    rm -f "$err"
-    return 1
+  if fm_timed_out "$rc"; then
+    reason="snapshot timed out after ${FM_HEARTBEAT_SNAPSHOT_TIMEOUT}s"
+  else
+    reason=$(tail -n 1 "$err" 2>/dev/null | tr '\t\r\n' '   ' | cut -c1-300)
+    [ -n "$reason" ] || reason="snapshot exit $rc"
   fi
-  rm -f "$err"
-  return 0
-}
-
-heartbeat_claude_transcript_for_session() {  # <session-id>
-  local session=$1 root=${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects dir
-  case "$session" in ''|*/|*..*) return 1 ;; esac
-  for dir in "$root"/*/; do
-    [ -f "${dir}${session}.jsonl" ] || continue
-    printf '%s\n' "${dir}${session}.jsonl"
-    return 0
-  done
+  HEARTBEAT_SNAPSHOT_FAILURE=$reason
   return 1
 }
 
-heartbeat_primary_transcript() {
-  local session transcript
-  session=$(fm_session_lock_recorded_session_id "$STATE" 2>/dev/null) || session=
-  [ -n "$session" ] || return 1
-  heartbeat_claude_transcript_for_session "$session"
-}
-
-heartbeat_last_turn_from_transcript() {  # <transcript> <now-epoch>
-  local transcript=$1 now=$2 line ts
+heartbeat_last_turn_from_transcript() {  # <transcript>
+  local transcript=$1 line stamp ts age
   [ -r "$transcript" ] || return 1
   line=$(tail -n 200 "$transcript" 2>/dev/null | jq -R -r '
     fromjson? | select(.type? == "turn_ended" or .type? == "assistant") | .timestamp // empty
   ' 2>/dev/null | awk 'NF { last=$0 } END { if (last != "") print last }')
   [ -n "$line" ] || return 1
-  ts=$(date -u -j -f '%Y-%m-%dT%H:%M:%S.%NZ' "$line" +%s 2>/dev/null \
-    || date -u -j -f '%Y-%m-%dT%H:%M:%SZ' "$line" +%s 2>/dev/null \
-    || date -u -d "$line" +%s 2>/dev/null) || return 1
-  jq -n --arg observed "$line" --argjson age "$(( now - ts < 0 ? 0 : now - ts ))" \
-    --arg source transcript '{observed_at:$observed,age_seconds:$age,source:$source}'
+  stamp=${line%%.*}
+  stamp=${stamp%Z}Z
+  ts=$(date -u -j -f '%Y-%m-%dT%H:%M:%SZ' "$stamp" +%s 2>/dev/null \
+    || date -u -d "$stamp" +%s 2>/dev/null) || return 1
+  age=$(( HEARTBEAT_EPOCH - ts ))
+  [ "$age" -ge 0 ] || age=0
+  jq -n --arg observed "$line" --argjson age "$age" \
+    '{observed_at:$observed,age_seconds:$age,source:"transcript"}'
+}
+
+heartbeat_turn_json() {  # <label> <transcript-or-empty>
+  if [ -z "$2" ]; then
+    heartbeat_unknown "no transcript found"
+    return 0
+  fi
+  heartbeat_read "$1 last turn" heartbeat_last_turn_from_transcript "$2" \
+    || heartbeat_unknown "transcript had no readable turn boundary"
+}
+
+heartbeat_context_json() {  # <label> <transcript-or-empty>
+  local tokens=
+  [ -z "$2" ] || tokens=$(heartbeat_read "$1 context" fm_warm_compact_context_tokens "$2") || tokens=
+  jq -n --arg used "$tokens" '
+    def u(r): {unknown:true,reason:r};
+    {
+      used_tokens:(if ($used | test("^[0-9]+$")) then ($used | tonumber) else u("transcript had no token usage") end),
+      remaining_tokens:u("model context window not read")
+    }'
 }
 
 heartbeat_primary_json() {
-  local backend target present=unknown composer=unknown session_id anchor_pid recorded=0
-  local transcript tokens limit remaining transcript_path turn_json context_json
-  backend=$(discover_supervisor_backend 2>/dev/null) || backend=unknown
-  target=$(discover_supervisor_target 2>/dev/null) || target=
-  if [ -n "$target" ] && [ "$backend" != unknown ]; then
-    if fm_backend_target_exists "$backend" "$target" 2>/dev/null; then
+  local backend target present composer=unknown session_id anchor_pid rc=0 transcript
+  local turn_json context_json
+  backend=$(heartbeat_read "primary backend" discover_supervisor_backend) || backend=
+  target=$(heartbeat_read "primary target" discover_supervisor_target) || target=
+  present=$(heartbeat_unknown "no supervisor endpoint discovered")
+  if [ -n "$target" ] && [ -n "$backend" ]; then
+    heartbeat_read "primary terminal" fm_backend_target_exists "$backend" "$target" >/dev/null || rc=$?
+    if [ "$rc" -eq 0 ]; then
       present=true
+    elif fm_timed_out "$rc"; then
+      present=$(heartbeat_unknown "terminal read timed out")
     else
       present=false
     fi
-    composer=$(fm_backend_composer_state "$backend" "$target" 2>/dev/null) || composer=unknown
+    composer=$(heartbeat_read "primary composer" fm_backend_composer_state "$backend" "$target") || composer=unknown
   fi
-  session_id=$(fm_session_lock_recorded_session_id "$STATE" 2>/dev/null) || session_id=
-  anchor_pid=$(sed -n '1p' "$STATE/.lock" 2>/dev/null) || anchor_pid=
-  case "$anchor_pid" in ''|*[!0-9]*) anchor_pid= ;; esac
-  [ -n "$session_id" ] && recorded=1 || recorded=0
-  transcript_path=$(heartbeat_primary_transcript 2>/dev/null) || transcript_path=
-  turn_json=$(heartbeat_unknown "no turn boundary read")
-  if [ -n "$transcript_path" ]; then
-    turn_json=$(heartbeat_last_turn_from_transcript "$transcript_path" "$HEARTBEAT_EPOCH" 2>/dev/null) \
-      || turn_json=$(heartbeat_unknown "transcript had no turn boundary")
-  fi
-  tokens=
-  if [ -n "$transcript_path" ]; then
-    tokens=$(fm_warm_compact_context_tokens "$transcript_path" 2>/dev/null) || tokens=
-  fi
-  limit=
-  if fm_warm_compact_config "$CONFIG" 2>/dev/null; then
-    limit=$FM_WARM_COMPACT_MIN
-  fi
-  remaining=
-  if [ -n "$tokens" ] && [ -n "$limit" ]; then
-    case "$tokens" in *[!0-9]*) remaining= ;; *)
-      if [ "$limit" -gt "$tokens" ]; then remaining=$((limit - tokens)); else remaining=0; fi
-    ;; esac
-  fi
-  context_json=$(jq -n \
-    --arg used "${tokens:-}" \
-    --arg lim "${limit:-}" \
-    --arg rem "${remaining:-}" '
-    {
-      used_tokens: (if $used == "" then null else ($used | tonumber) end),
-      limit_tokens: (if $lim == "" then null else ($lim | tonumber) end),
-      remaining_tokens: (if $rem == "" then null else ($rem | tonumber) end)
-    }')
+  session_id=$(heartbeat_read "primary session" fm_session_lock_recorded_session_id "$STATE") || session_id=
+  anchor_pid=$(heartbeat_read "primary anchor" sed -n '1p' "$STATE/.lock") || anchor_pid=
+  transcript=
+  [ -z "$session_id" ] || transcript=$(heartbeat_read "primary transcript" fm_warm_compact_engine_transcript "$session_id") || transcript=
+  turn_json=$(heartbeat_turn_json primary "$transcript")
+  context_json=$(heartbeat_context_json primary "$transcript")
   jq -n \
     --arg backend "$backend" \
     --arg target "$target" \
-    --arg present "$present" \
+    --argjson present "$present" \
     --arg composer "$composer" \
     --arg trusted "$session_id" \
     --arg anchor "$anchor_pid" \
-    --argjson recorded "$recorded" \
     --argjson last_turn "$turn_json" \
     --argjson context_left "$context_json" \
-    '{
+    'def u(r): {unknown:true,reason:r};
+    {
       terminal:{
-        backend:(if $backend == "" then null else $backend end),
-        target:(if $target == "" then null else $target end),
-        present:(if $present == "unknown" then "unknown" elif $present == "true" then true else false end)
+        backend:(if $backend == "" then u("no supervisor backend discovered") else $backend end),
+        target:(if $target == "" then u("no supervisor target discovered") else $target end),
+        present:$present
       },
       session:{
-        trusted_id:(if $trusted == "" then null else $trusted end),
-        anchor_pid:(if $anchor == "" then null else ($anchor | tonumber) end),
-        recorded:($recorded == 1)
+        trusted_id:(if $trusted == "" then u("no session recorded") else $trusted end),
+        anchor_pid:(if ($anchor | test("^[0-9]+$")) then ($anchor | tonumber) else u("no lock anchor read") end),
+        recorded:($trusted != "")
       },
       last_turn:$last_turn,
       composer_state:(if $composer == "" then "unknown" else $composer end),
@@ -250,7 +259,10 @@ heartbeat_primary_json() {
 
 heartbeat_inbox_unhandled() {  # <task-id>
   local dir=$STATE/$1.inbox count=0 f
-  [ -d "$dir" ] && [ ! -L "$dir" ] || { printf 'null\n'; return 0; }
+  if [ ! -d "$dir" ] || [ -L "$dir" ]; then
+    heartbeat_unknown "no readable inbox directory"
+    return 0
+  fi
   for f in "$dir"/*.msg; do
     [ -f "$f" ] || continue
     count=$((count + 1))
@@ -258,178 +270,262 @@ heartbeat_inbox_unhandled() {  # <task-id>
   printf '%s\n' "$count"
 }
 
-heartbeat_git_field() {  # <worktree> <command...>
-  local wt=$1
-  shift
-  fm_run_timed "$FM_HEARTBEAT_GIT_TIMEOUT" git -C "$wt" "$@" 2>/dev/null
+# Claude keeps a worktree's transcripts in a directory named after its path,
+# with every non-alphanumeric byte replaced by a dash.
+heartbeat_worktree_transcript() {  # <worktree>
+  local slug file m newest=0 found=
+  slug=$(printf '%s' "$1" | LC_ALL=C sed 's/[^A-Za-z0-9]/-/g')
+  for file in "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/$slug"/*.jsonl; do
+    [ -f "$file" ] || continue
+    m=$(file_mtime "$file") || continue
+    [ "$m" -le "$newest" ] || { newest=$m; found=$file; }
+  done
+  [ -n "$found" ] || return 1
+  printf '%s\n' "$found"
+}
+
+heartbeat_last_output_json() {  # <id> <target-or-empty> <transcript-or-empty>
+  local id=$1 target=$2 transcript=$3 key newest=0 source='' observed_iso age f m label pair
+  key=${target//:/_}
+  key=${key//\//_}
+  key=${key//./_}
+  for pair in "terminal|$STATE/.hash-$key" "transcript|$transcript" "turn-ended|$STATE/$id.turn-ended"; do
+    label=${pair%%|*}
+    f=${pair#*|}
+    [ "$f" != "$STATE/.hash-" ] && [ -f "$f" ] || continue
+    m=$(file_mtime "$f") || continue
+    [ "$m" -le "$newest" ] || { newest=$m; source=$label; }
+  done
+  if [ "$newest" -eq 0 ]; then
+    heartbeat_unknown "no terminal or transcript activity read"
+    return 0
+  fi
+  observed_iso=$(date -u -r "$newest" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+    || date -u -d "@$newest" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+    || printf '%s\n' "$newest")
+  age=$(( HEARTBEAT_EPOCH - newest ))
+  [ "$age" -ge 0 ] || age=0
+  jq -n --arg observed "$observed_iso" --argjson age "$age" --arg source "$source" \
+    '{observed_at:$observed,age_seconds:$age,source:$source}'
+}
+
+heartbeat_last_push_json() {  # <id> <worktree> <branch>
+  local id=$1 wt=$2 branch=$3 remote sha
+  if [ -z "$branch" ]; then
+    heartbeat_unknown "branch unknown"
+    return 0
+  fi
+  for remote in no-mistakes origin; do
+    sha=$(heartbeat_read "task $id $remote ref" git -C "$wt" rev-parse --verify --quiet \
+      "refs/remotes/$remote/$branch^{commit}") || sha=
+    if [ -n "$sha" ]; then
+      jq -n --arg sha "$sha" --arg ref "$remote/$branch" '{sha:$sha,ref:$ref}'
+      return 0
+    fi
+  done
+  heartbeat_unknown "no local no-mistakes or origin ref for the branch"
+}
+
+heartbeat_no_mistakes_json() {  # <id> <worktree> <branch>
+  local id=$1 wt=$2 branch=$3 out rc=0 run_id run_branch step active=false
+  out=$(fm_nm_run_checked "$wt" "$FM_HEARTBEAT_NM_TIMEOUT" axi status </dev/null) || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    heartbeat_note_failure "task $id no-mistakes status exit $rc"
+    heartbeat_unknown "no-mistakes status read failed"
+    return 0
+  fi
+  if [ "$(fm_nm_strip_quotes "$(fm_nm_field "$out" runs_on_current_branch)")" = 0 ]; then
+    printf 'null\n'
+    return 0
+  fi
+  run_id=$(fm_nm_strip_quotes "$(fm_nm_field "$out" id)")
+  if [ -z "$run_id" ]; then
+    heartbeat_note_failure "task $id no-mistakes status had no run identity"
+    heartbeat_unknown "no-mistakes status had no run identity"
+    return 0
+  fi
+  run_branch=$(fm_nm_strip_quotes "$(fm_nm_field "$out" branch)")
+  if [ -z "$branch" ] || [ "$run_branch" != "$branch" ]; then
+    heartbeat_unknown "no-mistakes status reported a run on another branch"
+    return 0
+  fi
+  step=$(fm_nm_table_column "$out" active_steps step | head -1)
+  if fm_nm_run_is_active "$out"; then active=true; fi
+  jq -n --arg run_id "$run_id" --arg step "$step" --argjson active "$active" \
+    '{run_id:$run_id,step:(if $step == "" then null else $step end),active:$active}'
 }
 
 heartbeat_task_row() {  # <snapshot-task-json>
-  local task_json=$1 id wt branch sha push_ref push_sha nm_out run_id step active
-  local meta status turn now newest age source decisions inbox last_output
-  local last_commit last_push nm_json observed_iso f m
+  local task_json=$1 id wt branch backend target exists remote harness transcript=
+  local session composer=unknown last_commit last_push nm_json sha
   id=$(printf '%s' "$task_json" | jq -r '.id')
   wt=$(printf '%s' "$task_json" | jq -r '.paths.worktree.path // ""')
   branch=$(printf '%s' "$task_json" | jq -r '.branch // ""')
-  meta="$STATE/$id.meta"
-  status="$STATE/$id.status"
-  turn="$STATE/$id.turn-ended"
-  now=$HEARTBEAT_EPOCH
-  newest=0
-  source=unknown
-  for f in "$meta" "$status" "$turn"; do
-    [ -e "$f" ] || continue
-    m=$(file_mtime "$f" 2>/dev/null) || continue
-    [ "$m" -le "$newest" ] || { newest=$m; source=$(basename "$f"); }
-  done
-  if [ "$newest" -gt 0 ]; then
-    observed_iso=$(date -u -r "$newest" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
-      || date -u -d "@$newest" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
-      || printf '%s\n' "$newest")
-    age=$(( now - newest ))
-    [ "$age" -ge 0 ] || age=0
-    last_output=$(jq -n \
-      --arg observed "$observed_iso" \
-      --argjson age "$age" \
-      --arg source "$source" \
-      '{observed_at:$observed,age_seconds:$age,source:$source}')
+  backend=$(printf '%s' "$task_json" | jq -r '.backend // ""')
+  target=$(printf '%s' "$task_json" | jq -r '.endpoint.target // ""')
+  exists=$(printf '%s' "$task_json" | jq -r '.endpoint.exists // ""')
+  remote=$(printf '%s' "$task_json" | jq -r '.remote.host // ""')
+  harness=$(printf '%s' "$task_json" | jq -r '.harness // ""')
+  if [ "$harness" = claude ] && [ -n "$wt" ]; then
+    transcript=$(heartbeat_read "task $id transcript" heartbeat_worktree_transcript "$wt") || transcript=
+  fi
+  if [ -n "$transcript" ]; then
+    session=$(jq -n --arg id "$(basename "$transcript" .jsonl)" '{id:$id}')
   else
-    last_output=$(heartbeat_unknown "no task output markers")
+    session=$(heartbeat_unknown "no readable session for this harness and worktree")
+  fi
+  if [ "$exists" = true ] && [ -z "$remote" ] && [ -n "$backend" ] && [ -n "$target" ]; then
+    composer=$(heartbeat_read "task $id composer" fm_backend_composer_state "$backend" "$target" "fm-$id") || composer=unknown
   fi
   last_commit=$(heartbeat_unknown "no worktree")
   last_push=$(heartbeat_unknown "no worktree")
+  nm_json=$(heartbeat_unknown "no worktree")
   if [ -n "$wt" ] && [ -d "$wt" ]; then
-    sha=$(heartbeat_git_field "$wt" rev-parse --verify HEAD 2>/dev/null) || sha=
+    sha=$(heartbeat_read "task $id HEAD" git -C "$wt" rev-parse --verify HEAD) || sha=
     if [ -n "$sha" ]; then
       last_commit=$(jq -n --arg sha "$sha" --arg branch "$branch" \
         '{sha:$sha,branch:(if $branch == "" then null else $branch end)}')
     else
+      heartbeat_note_failure "task $id git HEAD unreadable"
       last_commit=$(heartbeat_unknown "git HEAD unreadable")
     fi
-    if [ -n "$branch" ]; then
-      push_ref="origin/$branch"
-      push_sha=$(heartbeat_git_field "$wt" rev-parse --verify "$push_ref^{commit}" 2>/dev/null) || push_sha=
-      if [ -n "$push_sha" ]; then
-        last_push=$(jq -n --arg sha "$push_sha" --arg ref "$push_ref" '{sha:$sha,ref:$ref}')
-      else
-        last_push=$(heartbeat_unknown "remote tracking ref unreadable")
-      fi
-    else
-      last_push=$(heartbeat_unknown "branch unknown")
-    fi
+    last_push=$(heartbeat_last_push_json "$id" "$wt" "$branch")
+    nm_json=$(heartbeat_no_mistakes_json "$id" "$wt" "$branch")
   fi
-  nm_out=
-  run_id='' step='' active=false
-  if [ -n "$wt" ] && [ -d "$wt" ]; then
-    nm_out=$(fm_nm_run_checked "$wt" "$FM_HEARTBEAT_NM_TIMEOUT" axi status 2>/dev/null) || nm_out=
-    if [ -n "$nm_out" ]; then
-      run_id=$(fm_nm_field "$nm_out" run_id)
-      step=$(fm_nm_field "$nm_out" step)
-      if fm_nm_run_is_active "$nm_out" 2>/dev/null; then active=true; fi
-    fi
-  fi
-  if [ -n "$run_id" ]; then
-    nm_json=$(jq -n --arg run_id "$run_id" --arg step "$step" --argjson active "$active" \
-      '{run_id:(if $run_id == "" then null else $run_id end),step:(if $step == "" then null else $step end),active:$active}')
-  else
-    nm_json=null
-  fi
-  decisions=$(printf '%s' "$task_json" | jq -c '.hints.open_decisions // []')
-  inbox=$(heartbeat_inbox_unhandled "$id")
-  jq -n \
-    --arg id "$id" \
-    --argjson stage "$(printf '%s' "$task_json" | jq -c \
-      '{state:(.current_state.state // "unknown"),source:(.current_state.source // "unknown"),detail:(.current_state.detail // null)}')" \
+  printf '%s' "$task_json" | jq -c \
+    --argjson session "$session" \
+    --argjson last_turn "$(heartbeat_turn_json "task $id" "$transcript")" \
+    --arg composer "${composer:-unknown}" \
+    --argjson context_left "$(heartbeat_context_json "task $id" "$transcript")" \
     --argjson last_commit "$last_commit" \
     --argjson last_push "$last_push" \
-    --arg pr_head "$(printf '%s' "$task_json" | jq -r '.pr.head // ""')" \
     --argjson no_mistakes_run "$nm_json" \
-    --argjson last_output_time "$last_output" \
-    --argjson decisions "$decisions" \
-    --argjson inbox "$inbox" \
-    '{
-      id:$id,
-      stage:$stage,
+    --argjson last_output_time "$(heartbeat_last_output_json "$id" "$target" "$transcript")" \
+    --argjson inbox "$(heartbeat_inbox_unhandled "$id")" '
+    def u(r): {unknown:true,reason:r};
+    {
+      id:.id,
+      terminal:{
+        backend:(.backend // u("no backend recorded")),
+        target:(.endpoint.target // u("no endpoint recorded")),
+        exists:(if (.endpoint.exists | type) == "boolean" then .endpoint.exists else u("endpoint not read") end)
+      },
+      session:$session,
+      last_turn:$last_turn,
+      composer_state:$composer,
+      context_left:$context_left,
+      stage:{state:(.current_state.state // "unknown"),source:(.current_state.source // "unknown"),detail:(.current_state.detail // null)},
       last_commit:$last_commit,
       last_push:$last_push,
-      pr_head:(if $pr_head == "" then null else $pr_head end),
+      pr_head:(.pr.head // (if .pr.url then u("PR head not recorded") else null end)),
       no_mistakes_run:$no_mistakes_run,
       last_output_time:$last_output_time,
-      open_asks:{decisions:$decisions,inbox_unhandled:$inbox}
+      open_asks:{decisions:(.hints.open_decisions // u("open decisions not read")),inbox_unhandled:$inbox}
     }'
 }
 
-heartbeat_tasks_json() {  # <snapshot-file>
-  local snapshot=$1
-  jq -c '.tasks[]?' "$snapshot" 2>/dev/null | while IFS= read -r row; do
-    [ -n "$row" ] || continue
-    heartbeat_task_row "$row"
-  done | jq -s 'sort_by(.id)'
+heartbeat_collect_tasks() {
+  local line row
+  jq -c '.tasks[]?' "$SNAPSHOT_FILE" > "$HEARTBEAT_WORK/task-lines" 2>/dev/null || return 0
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    if [ "$SECONDS" -ge "$FM_HEARTBEAT_DEADLINE" ]; then
+      heartbeat_note_failure "deadline of ${FM_HEARTBEAT_DEADLINE}s hit before every task was read"
+      return 0
+    fi
+    if row=$(heartbeat_task_row "$line" </dev/null); then
+      printf '%s\n' "$row" >> "$HEARTBEAT_WORK/rows"
+    else
+      heartbeat_note_failure "a task row could not be assembled"
+    fi
+  done < "$HEARTBEAT_WORK/task-lines"
 }
 
-HEARTBEAT_SNAPSHOT_FAILURE=
-SNAPSHOT_FILE=$(mktemp "${TMPDIR:-/tmp}/fm-heartbeat-snapshot.XXXXXX") || exit 1
+# Rows the run did not finish come from the snapshot with every read unknown, so
+# a stopped run still lists each task it was told about.
+heartbeat_publish() {
+  local snapshot_meta tmp=$HEARTBEAT_WORK/heartbeat.json
+  if [ "$SNAPSHOT_OK" = true ]; then
+    snapshot_meta=$(jq -c '{ok:true,schema:.schema,generated:(.generated // null),failure:null}' "$SNAPSHOT_FILE")
+    jq -s --slurpfile snapshot "$SNAPSHOT_FILE" '
+      def u: {unknown:true,reason:"heartbeat stopped before this task was read"};
+      . as $rows | ($rows | map(.id)) as $seen
+      | ($snapshot[0].tasks // [])
+      | map(select(.id as $id | $seen | index($id) | not)
+        | {id:.id,terminal:u,session:u,last_turn:u,composer_state:"unknown",context_left:u,
+           stage:{state:(.current_state.state // "unknown"),source:(.current_state.source // "unknown"),detail:(.current_state.detail // null)},
+           last_commit:u,last_push:u,pr_head:u,no_mistakes_run:u,last_output_time:u,
+           open_asks:{decisions:u,inbox_unhandled:u}})
+      | ($rows + .) | sort_by(.id)
+    ' "$HEARTBEAT_WORK/rows" > "$HEARTBEAT_WORK/tasks" 2>/dev/null || printf '[]\n' > "$HEARTBEAT_WORK/tasks"
+  else
+    snapshot_meta=$(jq -n --arg reason "${HEARTBEAT_SNAPSHOT_FAILURE:-snapshot not read}" \
+      '{ok:false,schema:null,generated:null,failure:{reason:$reason}}')
+    printf '[]\n' > "$HEARTBEAT_WORK/tasks"
+  fi
+  if jq -n \
+    --arg generated "$HEARTBEAT_NOW" \
+    --argjson generated_epoch "$HEARTBEAT_EPOCH" \
+    --arg fm_home "$FM_HOME" \
+    --argjson snapshot "$snapshot_meta" \
+    --argjson primary "$PRIMARY_JSON" \
+    --slurpfile tasks "$HEARTBEAT_WORK/tasks" \
+    --rawfile failures "$HEARTBEAT_WORK/failures" \
+    '($failures | split("\n") | map(select(. != ""))) as $f
+    | {schema:"fm-heartbeat.v1",generated:$generated,generated_epoch:$generated_epoch,fm_home:$fm_home,
+       snapshot:$snapshot,primary:$primary,tasks:$tasks[0],
+       failure:(if ($f | length) == 0 then null else {reason:($f[:10] | join("; ")),count:($f | length)} end)}' > "$tmp" \
+    && chmod 600 "$tmp" \
+    && mv -f "$tmp" "$LEDGER"; then
+    return 0
+  fi
+  echo "fm-heartbeat: could not write $LEDGER" >&2
+}
+
+heartbeat_on_signal() {
+  trap '' TERM INT HUP
+  heartbeat_note_failure "heartbeat stopped by a signal before every read finished"
+  heartbeat_publish
+  exit 0
+}
+
+if [ ! -d "$STATE" ]; then
+  echo "fm-heartbeat: no state directory at $STATE; nothing published" >&2
+  exit 0
+fi
+find "$STATE" -maxdepth 1 -type d -name '.heartbeat-work.*' -mmin +10 -exec rm -rf {} + 2>/dev/null || true
+HEARTBEAT_WORK=$(mktemp -d "$STATE/.heartbeat-work.XXXXXX" 2>/dev/null) || {
+  echo "fm-heartbeat: cannot create a work directory in $STATE; nothing published" >&2
+  exit 0
+}
+trap 'rm -rf "$HEARTBEAT_WORK"' EXIT
+: > "$HEARTBEAT_WORK/failures"
+: > "$HEARTBEAT_WORK/rows"
+
+SNAPSHOT_FILE=$HEARTBEAT_WORK/snapshot.json
 SNAPSHOT_OK=false
+HEARTBEAT_SNAPSHOT_FAILURE=
+PRIMARY_JSON=$(jq -n '
+  {unknown:true,reason:"primary session not read"} as $u
+  | {terminal:$u,session:$u,last_turn:$u,composer_state:"unknown",context_left:$u}')
+trap heartbeat_on_signal TERM INT HUP
+
 if heartbeat_read_snapshot "$SNAPSHOT_FILE"; then
   if jq -e '.schema == "fm-fleet-snapshot.v1"' "$SNAPSHOT_FILE" >/dev/null 2>&1; then
     SNAPSHOT_OK=true
   else
     HEARTBEAT_SNAPSHOT_FAILURE='snapshot returned malformed JSON'
   fi
+fi
+[ "$SNAPSHOT_OK" = true ] || heartbeat_note_failure "snapshot: ${HEARTBEAT_SNAPSHOT_FAILURE:-read failed}"
+
+if primary=$(heartbeat_primary_json); then
+  PRIMARY_JSON=$primary
 else
-  [ -n "$HEARTBEAT_SNAPSHOT_FAILURE" ] || HEARTBEAT_SNAPSHOT_FAILURE='snapshot read failed'
+  heartbeat_note_failure "primary session row could not be assembled"
 fi
+[ "$SNAPSHOT_OK" != true ] || heartbeat_collect_tasks
 
-PRIMARY_JSON=$(heartbeat_primary_json) || PRIMARY_JSON='{}'
-if [ "$SNAPSHOT_OK" = true ]; then
-  TASKS_JSON=$(heartbeat_tasks_json "$SNAPSHOT_FILE") || TASKS_JSON='[]'
-  SNAPSHOT_META=$(jq -n -c \
-    --argjson ok true \
-    --arg failure '' \
-    --arg generated "$(jq -r '.generated // ""' "$SNAPSHOT_FILE")" \
-    --arg schema "$(jq -r '.schema // ""' "$SNAPSHOT_FILE")" \
-    '{ok:$ok,schema:(if $schema == "" then null else $schema end),generated:(if $generated == "" then null else $generated end),failure:(if $failure == "" then null else {reason:$failure} end)}')
-else
-  TASKS_JSON='[]'
-  SNAPSHOT_META=$(jq -n --arg reason "${HEARTBEAT_SNAPSHOT_FAILURE:-snapshot unavailable}" \
-    '{ok:false,schema:null,generated:null,failure:{reason:$reason}}')
-fi
-rm -f "$SNAPSHOT_FILE"
-
-DOC=$(jq -n \
-  --arg schema fm-heartbeat.v1 \
-  --arg generated "$HEARTBEAT_NOW" \
-  --argjson generated_epoch "$HEARTBEAT_EPOCH" \
-  --arg fm_home "$FM_HOME" \
-  --argjson snapshot "$SNAPSHOT_META" \
-  --argjson primary "$PRIMARY_JSON" \
-  --argjson tasks "$TASKS_JSON" \
-  --arg failure '' \
-  '{schema:$schema,generated:$generated,generated_epoch:$generated_epoch,fm_home:$fm_home,
-    snapshot:$snapshot,primary:$primary,tasks:$tasks,failure:(if $failure == "" then null else {reason:$failure} end)}') \
-  || {
-    echo 'fm-heartbeat: could not assemble heartbeat document' >&2
-    exit 1
-  }
-
-if [ "$MODE" = json ]; then
-  printf '%s\n' "$DOC"
-  exit 0
-fi
-
-if [ ! -d "$STATE" ]; then
-  echo "fm-heartbeat: no state directory at $STATE; nothing published" >&2
-  exit 0
-fi
-tmp=$(umask 077; mktemp "$STATE/.heartbeat.json.XXXXXX" 2>/dev/null) || {
-  echo "fm-heartbeat: cannot create a temporary file in $STATE; nothing published" >&2
-  exit 0
-}
-if chmod 600 "$tmp" 2>/dev/null \
-  && printf '%s\n' "$DOC" > "$tmp" \
-  && mv -f "$tmp" "$LEDGER" 2>/dev/null; then
-  exit 0
-fi
-rm -f "$tmp"
-echo "fm-heartbeat: could not write $LEDGER" >&2
+trap '' TERM INT HUP
+heartbeat_publish
 exit 0

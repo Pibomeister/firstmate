@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Behavioral coverage for bin/fm-heartbeat.sh: snapshot-backed assembly, atomic
-# --write publication, explicit unknowns, bounded reads, and watcher poll safety.
+# --write publication, explicit unknowns, the failure field, bounded reads, stopped
+# runs, and detached single-flight watcher publication.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -21,8 +22,14 @@ cleanup() {
 }
 trap cleanup EXIT
 
+unset TMUX TMUX_PANE HERDR_ENV HERDR_PANE_ID HERDR_SESSION REX_SESSION REX_BLOCK TERM_PROGRAM \
+  FM_SUPERVISOR_TARGET FM_SUPERVISOR_BACKEND FM_BACKEND
+export PATH="$FAKEBIN:$PATH"
+export CLAUDE_CONFIG_DIR="$TMP_ROOT/claude"
+
 cat > "$FAKEBIN/tmux" <<'SH'
 #!/usr/bin/env bash
+[ "${FAKE_TMUX_MODE:-}" != hang ] || sleep 30
 case "${1:-}" in
   display-message) printf '%1\n' ;;
   capture-pane) printf 'fixture pane\n> \n' ;;
@@ -31,6 +38,32 @@ exit 0
 SH
 cat > "$FAKEBIN/no-mistakes" <<'SH'
 #!/usr/bin/env bash
+[ -z "${FAKE_NM_MARKER:-}" ] || : > "$FAKE_NM_MARKER"
+case "${FAKE_NM_MODE:-none}" in
+  none)
+    printf 'current_branch: fm/hb-task\nruns_on_current_branch: 0\n'
+    ;;
+  run|sibling)
+    branch=fm/hb-task
+    [ "$FAKE_NM_MODE" = run ] || branch=fm/older-sibling
+    cat <<EOF
+run:
+  id: "01RUN"
+  branch: $branch
+  status: running
+  head: "abc1234"
+  pr: ""
+  findings: none
+  steps[2]{step,status,findings,duration_ms}:
+    intent,completed,0,0
+    review,running,0,0
+  active_steps[1]{step,active_for,last_activity,agent_pid,round}:
+    review,1m,now,123,1
+EOF
+    ;;
+  fail) echo 'repo not initialized' >&2; exit 1 ;;
+  hang) sleep 30 ;;
+esac
 exit 0
 SH
 chmod +x "$FAKEBIN/tmux" "$FAKEBIN/no-mistakes"
@@ -61,46 +94,173 @@ EOF
   printf '%s\n' "$home"
 }
 
-test_json_schema_and_task_fields() {
-  local home out
-  home=$(make_home json-fields)
-  out=$(FM_HOME="$home" FM_HEARTBEAT_NOW=2026-10-30T12:00:00Z FM_HEARTBEAT_NOW_EPOCH=1761825600 \
-    "$HEARTBEAT" --json) || fail "heartbeat --json failed"
-  jq -e '
+# The ledger is the script's persisted public output.
+ledger() {  # <home>
+  printf '%s\n' "$1/state/heartbeat.json"
+}
+
+publish() {  # <home> [ENV=value...]
+  local home=$1
+  shift
+  env FM_HOME="$home" "$@" "$HEARTBEAT" --write || fail "heartbeat --write failed"
+}
+
+assert_ledger() {  # <home> <jq-filter> <message>
+  jq -e "$2" "$(ledger "$1")" >/dev/null \
+    || fail "$3: $(cat "$(ledger "$1")" 2>/dev/null)"
+}
+
+assert_no_work_left() {  # <home>
+  local left
+  left=$(find "$1/state" -maxdepth 1 -name '.heartbeat*' 2>/dev/null)
+  [ -z "$left" ] || fail "temp files leaked: $left"
+}
+
+# Canned snapshot with two live-worktree tasks, so read-failure cases do not also
+# wait for the real snapshot's bounded no-mistakes reads.
+canned_snapshot() {  # <home>
+  local home=$1 script="$1/canned-snapshot.sh"
+  jq -n --arg wt "$home/projects/ship" '{schema:"fm-fleet-snapshot.v1",generated:"2026-10-30T12:00:00Z",
+    tasks:[{id:"task-a",branch:"fm/hb-task",harness:"claude",backend:"tmux",paths:{worktree:{path:$wt}}},
+           {id:"task-b",branch:"fm/hb-task",harness:"codex",backend:"tmux",paths:{worktree:{path:$wt}}}]}' \
+    > "$home/canned-snapshot.json"
+  cat > "$script" <<SH
+#!/usr/bin/env bash
+cat "$home/canned-snapshot.json"
+SH
+  chmod +x "$script"
+  printf '%s\n' "$script"
+}
+
+wait_for_file() {  # <path> <seconds>
+  local i=0
+  while [ ! -e "$1" ] && [ "$i" -lt $(( $2 * 10 )) ]; do
+    command -p sleep 0.1
+    i=$((i + 1))
+  done
+  [ -e "$1" ]
+}
+
+test_ledger_schema_and_clean_run() {
+  local home
+  home=$(make_home clean)
+  publish "$home" FM_HEARTBEAT_NOW=2026-10-30T12:00:00Z
+  assert_ledger "$home" '
     .schema == "fm-heartbeat.v1"
     and .generated == "2026-10-30T12:00:00Z"
     and .snapshot.ok == true
-    and (.primary | type) == "object"
-    and (.tasks | length) >= 1
-    and (.tasks[0].id == "hb-task")
+    and .failure == null
+    and (.tasks | length) == 1
+    and .tasks[0].id == "hb-task"
     and (.tasks[0].stage.state | type) == "string"
     and (.tasks[0].last_commit.sha | type) == "string"
-    and (.tasks[0].open_asks | type) == "object"
-  ' <<< "$out" >/dev/null || fail "heartbeat JSON missing required fields: $out"
-  pass "heartbeat --json assembles schema, primary, and enriched task rows"
+    and .tasks[0].no_mistakes_run == null
+    and .tasks[0].terminal.target == "fmtest:hb"
+    and (.tasks[0].composer_state | type) == "string"
+    and .tasks[0].session.unknown == true
+    and .tasks[0].last_turn.unknown == true
+    and .tasks[0].context_left.used_tokens.unknown == true
+  ' "clean run ledger is wrong"
+  assert_no_work_left "$home"
+  [ "$(stat -f %Lp "$(ledger "$home")" 2>/dev/null || stat -c %a "$(ledger "$home")")" = 600 ] \
+    || fail "ledger is not mode 600"
+  pass "--write publishes every field atomically with a null failure on a clean run"
 }
 
-test_write_is_atomic() {
+test_no_mistakes_run_is_parsed_from_real_status() {
   local home
-  home=$(make_home atomic)
-  FM_HOME="$home" "$HEARTBEAT" --write || fail "heartbeat --write failed"
-  [ -f "$home/state/heartbeat.json" ] || fail "ledger was not published"
-  jq -e '.schema == "fm-heartbeat.v1"' "$home/state/heartbeat.json" >/dev/null \
-    || fail "published ledger is malformed"
-  pass "heartbeat --write publishes state/heartbeat.json atomically"
+  home=$(make_home nm-run)
+  publish "$home" FAKE_NM_MODE=run
+  assert_ledger "$home" '.tasks[0].no_mistakes_run == {run_id:"01RUN",step:"review",active:true}' \
+    "active run was not published"
+  publish "$home" FAKE_NM_MODE=sibling
+  assert_ledger "$home" '.tasks[0].no_mistakes_run.unknown == true' \
+    "a run on another branch was attributed to this task"
+  pass "no_mistakes_run reads the real status shape and refuses a sibling branch's run"
+}
+
+test_failed_status_is_unknown_not_no_run() {
+  local home script
+  home=$(make_home nm-fail)
+  script=$(canned_snapshot "$home")
+  publish "$home" FAKE_NM_MODE=fail FM_HEARTBEAT_SNAPSHOT_SCRIPT="$script"
+  assert_ledger "$home" '
+    .tasks[0].no_mistakes_run.unknown == true
+    and (.failure.reason | test("no-mistakes status exit"))
+    and .tasks[0].open_asks.decisions.unknown == true
+    and .tasks[0].open_asks.inbox_unhandled.unknown == true
+    and .tasks[0].pr_head == null
+  ' "failed status did not read as unknown with a failure"
+  pass "a failed no-mistakes read is unknown and sets failure"
+}
+
+test_transcript_fields_with_fractional_timestamps() {
+  local home project slug line
+  home=$(make_home transcript)
+  line='{"type":"assistant","timestamp":"2026-10-30T11:59:00.123Z","message":{"usage":{"input_tokens":90000}}}'
+  printf 'sess-primary\n' > "$home/state/.lock-session"
+  project="$CLAUDE_CONFIG_DIR/projects/primary-project"
+  mkdir -p "$project"
+  printf '%s\n' "$line" > "$project/sess-primary.jsonl"
+  slug=$(printf '%s' "$home/projects/ship" | LC_ALL=C sed 's/[^A-Za-z0-9]/-/g')
+  mkdir -p "$CLAUDE_CONFIG_DIR/projects/$slug"
+  printf '%s\n' "$line" > "$CLAUDE_CONFIG_DIR/projects/$slug/sess-task.jsonl"
+  publish "$home" FM_HEARTBEAT_NOW=2026-10-30T12:00:00Z
+  assert_ledger "$home" '
+    .primary.session.trusted_id == "sess-primary"
+    and .primary.last_turn.age_seconds == 60
+    and .primary.last_turn.observed_at == "2026-10-30T11:59:00.123Z"
+    and .primary.context_left.used_tokens == 90000
+    and .primary.context_left.remaining_tokens.unknown == true
+    and .tasks[0].session.id == "sess-task"
+    and .tasks[0].last_turn.age_seconds == 60
+    and .tasks[0].context_left.used_tokens == 90000
+    and .tasks[0].last_output_time.source == "transcript"
+  ' "transcript facts were not read"
+  pass "real fractional transcripts give last turn and used tokens, with remaining unknown"
+}
+
+test_last_output_needs_real_activity() {
+  local home
+  home=$(make_home last-output)
+  touch "$home/state/hb-task.meta" "$home/state/hb-task.status"
+  publish "$home"
+  assert_ledger "$home" '.tasks[0].last_output_time.unknown == true' \
+    "meta or status counted as output"
+  printf 'abc' > "$home/state/.hash-fmtest_hb"
+  publish "$home"
+  assert_ledger "$home" '.tasks[0].last_output_time.source == "terminal"' \
+    "the pane-change marker was not read as output"
+  pass "last output comes from terminal evidence, never .meta or .status"
+}
+
+test_last_push_names_the_local_ref() {
+  local home sha
+  home=$(make_home last-push)
+  sha=$(git -C "$home/projects/ship" rev-parse HEAD)
+  publish "$home"
+  assert_ledger "$home" '.tasks[0].last_push.unknown == true' "no ref should be unknown"
+  git -C "$home/projects/ship" update-ref refs/remotes/origin/fm/hb-task "$sha"
+  publish "$home"
+  assert_ledger "$home" '.tasks[0].last_push.ref == "origin/fm/hb-task"' "origin ref not reported"
+  git -C "$home/projects/ship" update-ref refs/remotes/no-mistakes/fm/hb-task "$sha"
+  publish "$home"
+  assert_ledger "$home" '.tasks[0].last_push.ref == "no-mistakes/fm/hb-task"' "gate ref not preferred"
+  pass "last_push reads local gate and origin refs and names the source"
 }
 
 test_snapshot_failure_is_recorded() {
-  local home out
+  local home
   home=$(make_home snap-fail)
-  out=$(FM_HOME="$home" FM_SNAPSHOT_BUDGET=0 "$HEARTBEAT" --json) || fail "heartbeat should exit 0 on partial failure"
-  jq -e '.snapshot.ok == false and .snapshot.failure.reason != null and (.tasks | length) == 0' <<< "$out" >/dev/null \
-    || fail "snapshot failure was not recorded: $out"
-  pass "a failed snapshot read is recorded without guessing task rows"
+  publish "$home" FM_SNAPSHOT_BUDGET=0
+  assert_ledger "$home" '.snapshot.ok == false and .snapshot.failure.reason != null
+    and (.tasks | length) == 0 and (.failure.reason | test("snapshot"))' \
+    "snapshot failure was not recorded"
+  pass "a failed snapshot read sets failure without guessing task rows"
 }
 
 test_unreadable_fields_report_unknown() {
-  local home out
+  local home
   home=$(make_home unknown-fields)
   fm_write_meta "$home/state/no-wt.meta" \
     "window=fmtest:nwt" \
@@ -110,18 +270,19 @@ test_unreadable_fields_report_unknown() {
     "kind=ship" \
     "spawn_gen=fm.hb999999"
   printf 'working: no worktree\n' > "$home/state/no-wt.status"
-  out=$(FM_HOME="$home" FM_HEARTBEAT_NOW=2026-10-30T12:00:00Z FM_HEARTBEAT_NOW_EPOCH=1761825600 \
-    "$HEARTBEAT" --json) || fail "heartbeat --json failed"
-  jq -e '
+  publish "$home"
+  assert_ledger "$home" '
     (.tasks[] | select(.id == "no-wt") | .last_commit.unknown) == true
     and (.tasks[] | select(.id == "no-wt") | .last_push.unknown) == true
+    and (.tasks[] | select(.id == "no-wt") | .no_mistakes_run.unknown) == true
     and .primary.last_turn.unknown == true
-  ' <<< "$out" >/dev/null || fail "unreadable fields did not report unknown: $out"
+    and .primary.session.trusted_id.unknown == true
+  ' "unreadable fields did not report unknown"
   pass "unreadable task and primary fields stay explicitly unknown"
 }
 
 test_slow_snapshot_is_bounded() {
-  local home slow out started elapsed
+  local home slow started elapsed
   home=$(make_home slow-snap)
   slow="$TMP_ROOT/slow-snapshot.sh"
   cat > "$slow" <<'SH'
@@ -131,19 +292,100 @@ exit 0
 SH
   chmod +x "$slow"
   started=$(date +%s)
-  out=$(FM_HOME="$home" FM_HEARTBEAT_SNAPSHOT_TIMEOUT=1 FM_HEARTBEAT_SNAPSHOT_SCRIPT="$slow" \
-    "$HEARTBEAT" --json) || fail "bounded slow snapshot should still exit 0"
+  publish "$home" FM_HEARTBEAT_SNAPSHOT_TIMEOUT=1 FM_HEARTBEAT_SNAPSHOT_SCRIPT="$slow"
   elapsed=$(( $(date +%s) - started ))
   [ "$elapsed" -lt 8 ] || fail "heartbeat waited ${elapsed}s for a slow snapshot"
-  jq -e '.snapshot.ok == false and .snapshot.failure.reason != null' <<< "$out" >/dev/null \
-    || fail "slow snapshot did not record failure: $out"
+  assert_ledger "$home" '.snapshot.ok == false and (.failure.reason | test("timed out"))' \
+    "slow snapshot did not record failure"
   pass "a slow snapshot read is bounded and recorded as failure"
 }
 
-test_watcher_poll_survives_slow_heartbeat() {
-  local home slow started elapsed
+test_hung_primary_reads_are_bounded() {
+  local home script started elapsed
+  home=$(make_home hung-primary)
+  script=$(canned_snapshot "$home")
+  jq '.tasks = []' "$home/canned-snapshot.json" > "$home/empty.json"
+  mv "$home/empty.json" "$home/canned-snapshot.json"
+  started=$(date +%s)
+  publish "$home" FAKE_TMUX_MODE=hang FM_HEARTBEAT_READ_TIMEOUT=1 FM_HEARTBEAT_SNAPSHOT_SCRIPT="$script" \
+    FM_SUPERVISOR_BACKEND=tmux FM_SUPERVISOR_TARGET=%1
+  elapsed=$(( $(date +%s) - started ))
+  [ "$elapsed" -lt 15 ] || fail "hung primary reads took ${elapsed}s"
+  assert_ledger "$home" '.primary.terminal.present.unknown == true
+    and .primary.composer_state == "unknown"
+    and (.failure.reason | test("primary terminal timed out"))' \
+    "hung primary read was not reported"
+  pass "each hung primary read has its own bound and sets failure"
+}
+
+test_deadline_publishes_unread_tasks_as_unknown() {
+  local home script
+  home=$(make_home deadline)
+  script=$(canned_snapshot "$home")
+  publish "$home" FAKE_NM_MODE=hang FM_HEARTBEAT_NM_TIMEOUT=2 FM_HEARTBEAT_DEADLINE=1 \
+    FM_HEARTBEAT_SNAPSHOT_SCRIPT="$script"
+  assert_ledger "$home" '(.tasks | map(.id)) == ["task-a","task-b"]
+    and (.tasks[1].last_commit.reason | test("stopped before"))
+    and (.failure.reason | test("deadline"))' \
+    "deadline did not publish unknown rows"
+  assert_no_work_left "$home"
+  pass "a run past its deadline publishes unread tasks as unknown"
+}
+
+test_term_during_snapshot_still_publishes() {
+  local home slow marker pid
+  home=$(make_home term-snap)
+  marker="$TMP_ROOT/term-snap.started"
+  slow="$TMP_ROOT/term-slow-snapshot.sh"
+  cat > "$slow" <<SH
+#!/usr/bin/env bash
+: > "$marker"
+sleep 120
+SH
+  chmod +x "$slow"
+  FM_HOME="$home" FM_HEARTBEAT_SNAPSHOT_TIMEOUT=5 FM_HEARTBEAT_SNAPSHOT_SCRIPT="$slow" "$HEARTBEAT" --write &
+  pid=$!
+  wait_for_file "$marker" 10 || fail "slow snapshot never started"
+  kill -TERM "$pid"
+  wait "$pid" 2>/dev/null
+  assert_ledger "$home" '.snapshot.ok == false and (.failure.reason | test("signal"))
+    and .primary.terminal.unknown == true' "a stopped run did not publish its state"
+  assert_no_work_left "$home"
+  pass "TERM during the snapshot read publishes unknown markers and leaks no temp files"
+}
+
+test_term_during_task_read_still_publishes() {
+  local home script marker pid
+  home=$(make_home term-task)
+  script=$(canned_snapshot "$home")
+  marker="$TMP_ROOT/term-task.started"
+  FM_HOME="$home" FAKE_NM_MODE=hang FAKE_NM_MARKER="$marker" FM_HEARTBEAT_NM_TIMEOUT=2 \
+    FM_HEARTBEAT_SNAPSHOT_SCRIPT="$script" "$HEARTBEAT" --write &
+  pid=$!
+  wait_for_file "$marker" 20 || fail "task read never started"
+  kill -TERM "$pid"
+  wait "$pid" 2>/dev/null
+  assert_ledger "$home" '(.tasks | map(.id)) == ["task-a","task-b"]
+    and (.tasks[1].last_commit.reason | test("stopped before"))
+    and (.failure.reason | test("signal"))' "a stopped run lost its task list"
+  assert_no_work_left "$home"
+  pass "TERM during a task read publishes the whole task list with unknown markers"
+}
+
+test_stale_work_dir_is_swept() {
+  local home stale
+  home=$(make_home sweep)
+  stale="$home/state/.heartbeat-work.killed"
+  mkdir "$stale"
+  fm_touch_epoch "$(( $(date +%s) - 3600 ))" "$stale"
+  publish "$home"
+  assert_no_work_left "$home"
+  pass "the next run removes what a SIGKILLed run left"
+}
+
+test_watcher_poll_does_not_wait_for_heartbeat() {
+  local home slow rc
   home=$(make_home watch-slow)
-  mkdir -p "$home/projects"
   slow="$TMP_ROOT/watch-slow-snapshot.sh"
   cat > "$slow" <<'SH'
 #!/usr/bin/env bash
@@ -151,31 +393,70 @@ sleep 120
 exit 0
 SH
   chmod +x "$slow"
-  started=$(date +%s)
-  PATH="$FAKEBIN:$PATH" \
-    FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
     FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
-    FM_HEARTBEAT_SNAPSHOT_TIMEOUT=1 FM_HEARTBEAT_SNAPSHOT_SCRIPT="$slow" \
+    FM_HEARTBEAT_SNAPSHOT_TIMEOUT=60 FM_HEARTBEAT_SNAPSHOT_SCRIPT="$slow" \
     FM_WATCH_ONCE=1 \
     "$WATCH" > "$TMP_ROOT/watch-slow.out" 2> "$TMP_ROOT/watch-slow.err" &
   WATCH_PID=$!
-  wait "$WATCH_PID"; local rc=$?
+  wait "$WATCH_PID"; rc=$?
   WATCH_PID=
-  elapsed=$(( $(date +%s) - started ))
-  [ "$rc" -eq 0 ] || fail "watcher poll exited $rc on slow heartbeat: $(cat "$TMP_ROOT/watch-slow.err")"
-  [ "$elapsed" -lt 15 ] || fail "watcher poll waited ${elapsed}s on slow heartbeat"
+  [ "$rc" -eq 0 ] || fail "watcher poll exited $rc: $(cat "$TMP_ROOT/watch-slow.err")"
+  [ ! -e "$(ledger "$home")" ] || fail "the poll waited for the heartbeat to publish"
   [ -e "$home/state/.last-watcher-beat" ] || fail "watcher never advanced its liveness beacon"
-  [ -f "$home/state/heartbeat.json" ] || fail "watcher poll did not publish heartbeat.json"
-  jq -e '.snapshot.ok == false' "$home/state/heartbeat.json" >/dev/null \
-    || fail "slow heartbeat did not record snapshot failure in the ledger"
-  pass "a slow heartbeat does not block or kill a watcher poll"
+  pass "a watcher poll does not wait for a slow heartbeat"
 }
 
-test_json_schema_and_task_fields
-test_write_is_atomic
+test_watcher_runs_one_heartbeat_at_a_time() {
+  local home slow runs count
+  home=$(make_home watch-single)
+  rm -f "$home/state/hb-task.meta" "$home/state/hb-task.status"
+  runs="$TMP_ROOT/watch-single.runs"
+  : > "$runs"
+  slow="$TMP_ROOT/watch-single-snapshot.sh"
+  cat > "$slow" <<SH
+#!/usr/bin/env bash
+echo started >> "$runs"
+sleep 120
+SH
+  chmod +x "$slow"
+  fm_test_track_watcher_state "$home/state"
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
+    FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    FM_HEARTBEAT_SNAPSHOT_TIMEOUT=6 FM_HEARTBEAT_SNAPSHOT_SCRIPT="$slow" \
+    "$WATCH" > "$TMP_ROOT/watch-single.out" 2> "$TMP_ROOT/watch-single.err" &
+  WATCH_PID=$!
+  wait_for_file "$home/state/.last-watcher-beat" 30 || fail "watcher never polled"
+  rm -f "$home/state/.last-watcher-beat"
+  wait_for_file "$home/state/.last-watcher-beat" 4 || fail "polls stopped while a heartbeat ran"
+  rm -f "$home/state/.last-watcher-beat"
+  wait_for_file "$home/state/.last-watcher-beat" 4 || fail "polls stopped while a heartbeat ran"
+  count=$(wc -l < "$runs" | tr -d ' ')
+  [ "$count" = 1 ] || fail "expected one heartbeat in flight, saw $count"
+  kill -KILL "$WATCH_PID" 2>/dev/null
+  wait "$WATCH_PID" 2>/dev/null
+  WATCH_PID=
+  wait_for_file "$home/state/heartbeat.json" 20 || fail "the bounded heartbeat never published"
+  assert_ledger "$home" '.snapshot.ok == false and (.failure.reason | test("timed out"))' \
+    "timed-out detached heartbeat published no failure"
+  pass "the watcher keeps polling with one detached heartbeat in flight, which still publishes"
+}
+
+test_ledger_schema_and_clean_run
+test_no_mistakes_run_is_parsed_from_real_status
+test_failed_status_is_unknown_not_no_run
+test_transcript_fields_with_fractional_timestamps
+test_last_output_needs_real_activity
+test_last_push_names_the_local_ref
 test_snapshot_failure_is_recorded
 test_unreadable_fields_report_unknown
 test_slow_snapshot_is_bounded
-test_watcher_poll_survives_slow_heartbeat
+test_hung_primary_reads_are_bounded
+test_deadline_publishes_unread_tasks_as_unknown
+test_term_during_snapshot_still_publishes
+test_term_during_task_read_still_publishes
+test_stale_work_dir_is_swept
+test_watcher_poll_does_not_wait_for_heartbeat
+test_watcher_runs_one_heartbeat_at_a_time
 
-printf 'ok - %s tests passed\n' 6
+printf 'ok - %s tests passed\n' 16
