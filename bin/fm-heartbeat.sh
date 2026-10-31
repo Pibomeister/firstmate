@@ -45,7 +45,8 @@
 #     no_mistakes_run   {run_id, step, active} for the run fm_nm_select_run picks;
 #                       null when it finds no run on the branch; unknown, not a
 #                       failure, in a repo with no gate or for a run that fails
-#                       the fm-nm-run-lib.sh attribution rule; active is unknown
+#                       the fm-nm-run-lib.sh attribution rule; unknown when the
+#                       worktree left the recorded branch; active is unknown
 #                       for an active record whose daemon answered down
 #     last_output_time  {observed_at, age_seconds, source}: terminal (the watcher's
 #                       pane-change marker) or transcript, each only from since the
@@ -361,8 +362,8 @@ heartbeat_last_push_json() {  # <id> <worktree> <branch>
   heartbeat_unknown "no local no-mistakes or origin ref for the branch"
 }
 
-heartbeat_no_mistakes_json() {  # <id> <worktree> <branch>
-  local id=$1 wt=$2 branch=$3 out overview choice run_id rc=0 step active=false daemon=""
+heartbeat_no_mistakes_json() {  # <id> <worktree> <branch> <worktree-branch, empty when detached, ? when unread>
+  local id=$1 wt=$2 branch=$3 wt_branch=$4 out overview choice run_id rc=0 step active=false daemon=""
   out=$(fm_nm_run_checked "$wt" "$FM_HEARTBEAT_NM_TIMEOUT" axi status </dev/null) || rc=$?
   if [ "$(fm_nm_strip_quotes "$(fm_nm_field "$out" error)")" = "repo not initialized (run 'no-mistakes init' first)" ]; then
     heartbeat_unknown "repo has no gate"
@@ -375,6 +376,14 @@ heartbeat_no_mistakes_json() {  # <id> <worktree> <branch>
   fi
   if [ -z "$branch" ]; then
     heartbeat_unknown "task records no branch"
+    return 0
+  fi
+  if [ "$wt_branch" = "?" ]; then
+    heartbeat_unknown "worktree branch unread"
+    return 0
+  fi
+  if [ -n "$wt_branch" ] && [ "$wt_branch" != "$branch" ]; then
+    heartbeat_unknown "worktree is on branch $wt_branch; task records $branch"
     return 0
   fi
   if [ "$(fm_nm_strip_quotes "$(fm_nm_field "$out" current_branch)")" = "$branch" ] \
@@ -435,6 +444,7 @@ heartbeat_no_mistakes_json() {  # <id> <worktree> <branch>
 }
 
 heartbeat_task_row() {  # <snapshot-task-json>
+  local wt_branch wt_branch_rc
   local task_json=$1 id wt branch backend target exists remote harness spawn_gen kind transcript=
   local pane_backend='' pane_target='' pane_label=''
   local session composer=unknown last_commit last_push nm_json sha
@@ -475,7 +485,17 @@ heartbeat_task_row() {  # <snapshot-task-json>
       last_commit=$(heartbeat_unknown "git HEAD unreadable")
     fi
     last_push=$(heartbeat_last_push_json "$id" "$wt" "$branch")
-    nm_json=$(heartbeat_no_mistakes_json "$id" "$wt" "$branch")
+    wt_branch_rc=0
+    wt_branch=$(heartbeat_read "task $id worktree branch" git -C "$wt" symbolic-ref --quiet --short HEAD) || wt_branch_rc=$?
+    case "$wt_branch_rc" in
+      0) ;;
+      1) wt_branch= ;;
+      *)
+        fm_timed_out "$wt_branch_rc" || heartbeat_note_failure "task $id worktree branch unreadable"
+        wt_branch="?"
+        ;;
+    esac
+    nm_json=$(heartbeat_no_mistakes_json "$id" "$wt" "$branch" "$wt_branch")
   fi
   printf '%s' "$task_json" | jq -c \
     --argjson session "$session" \

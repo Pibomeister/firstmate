@@ -54,7 +54,7 @@ if [ "$#" = 1 ] && [ "$1" = axi ]; then
   [ -z "${FAKE_NM_OVERVIEW_FAIL:-}" ] || exit 1
   case "${FAKE_NM_MODE:-none}" in
     run) rows="01RUN,fm/hb-task,running,$head,\"\"" ;;
-    sibling) rows="01RUN,fm/older-sibling,running,$head,\"\"" ;;
+    sibling) rows="01RUN,${FAKE_NM_SIBLING:-fm/older-sibling},running,$head,\"\"" ;;
     terminal) rows="01OLD,fm/hb-task,completed,$head,\"\"" ;;
     parked) rows="01OLD,fm/hb-task,running,$head,\"\"" ;;
     newer-failed) rows="01NEW,fm/hb-task,failed,$head,\"\"
@@ -77,7 +77,7 @@ case "$detail_mode" in
     ;;
   run|sibling)
     branch=fm/hb-task
-    [ "$detail_mode" = run ] || branch=fm/older-sibling
+    [ "$detail_mode" = run ] || branch=${FAKE_NM_SIBLING:-fm/older-sibling}
     cat <<EOF
 run:
   id: "01RUN"
@@ -278,6 +278,52 @@ SH
   assert_ledger "$home" '.tasks[0].no_mistakes_run.unknown == true and (.failure.reason | test("run head timed out"))' \
     "a hung head check was not bounded and recorded"
   pass "a hung run head check is bounded, unknown, and sets failure"
+}
+
+test_worktree_off_recorded_branch_is_unknown() {
+  local home real_git fake script
+  home=$(make_home nm-moved)
+  git -C "$home/projects/ship" checkout -q -b fm/hb-other
+  publish "$home" FAKE_NM_MODE=sibling FAKE_NM_SIBLING=fm/hb-other
+  assert_ledger "$home" '
+    .tasks[0].no_mistakes_run.unknown == true
+    and (.tasks[0].no_mistakes_run.reason | test("fm/hb-other") and test("fm/hb-task"))
+  ' "a moved worktree published a confident run value"
+
+  home=$(make_home nm-detached)
+  git -C "$home/projects/ship" checkout -q --detach
+  publish "$home" FAKE_NM_MODE=run
+  assert_ledger "$home" '.tasks[0].no_mistakes_run == {run_id:"01RUN",step:"review",active:true} and .failure == null' \
+    "a detached worktree did not keep the selection path"
+
+  real_git=$(command -v git)
+  fake="$TMP_ROOT/branch-git"
+  mkdir -p "$fake"
+  cat > "$fake/git" <<SH
+#!/usr/bin/env bash
+case "\$*" in
+  *symbolic-ref*)
+    [ "\${FAKE_GIT_BRANCH:-}" != hang ] || sleep 30
+    exit 128
+    ;;
+esac
+exec "$real_git" "\$@"
+SH
+  chmod +x "$fake/git"
+  home=$(make_home nm-branch-unread)
+  script=$(canned_snapshot "$home")
+  publish "$home" FAKE_NM_MODE=run FM_HEARTBEAT_SNAPSHOT_SCRIPT="$script" "PATH=$fake:$PATH"
+  assert_ledger "$home" '
+    .tasks[0].no_mistakes_run == {unknown:true,reason:"worktree branch unread"}
+    and (.failure.reason | test("worktree branch unreadable"))
+  ' "a failed branch read was treated as a match"
+  publish "$home" FAKE_NM_MODE=run FM_HEARTBEAT_SNAPSHOT_SCRIPT="$script" \
+    FAKE_GIT_BRANCH=hang FM_HEARTBEAT_READ_TIMEOUT=1 "PATH=$fake:$PATH"
+  assert_ledger "$home" '
+    .tasks[0].no_mistakes_run == {unknown:true,reason:"worktree branch unread"}
+    and (.failure.reason | test("worktree branch timed out"))
+  ' "a hung branch read was treated as a match"
+  pass "a worktree off its recorded branch or with an unread branch reads as unknown"
 }
 
 test_settled_run_binds_only_on_worktree_head() {
@@ -705,6 +751,7 @@ test_ledger_schema_and_clean_run
 test_no_mistakes_run_is_parsed_from_real_status
 test_selection_owner_decides_the_run
 test_run_head_check_is_bounded
+test_worktree_off_recorded_branch_is_unknown
 test_settled_run_binds_only_on_worktree_head
 test_daemon_answer_qualifies_executing_run
 test_failed_status_is_unknown_not_no_run
@@ -728,4 +775,4 @@ test_stale_work_dir_is_swept
 test_watcher_poll_does_not_wait_for_heartbeat
 test_watcher_runs_one_heartbeat_at_a_time
 
-printf 'ok - %s tests passed\n' 26
+printf 'ok - %s tests passed\n' 27
