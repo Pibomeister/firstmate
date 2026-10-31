@@ -1,0 +1,2 @@
+== A (pre-fix 155a6854): record archived between presence check and validation
+rc=1

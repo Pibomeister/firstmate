@@ -1,0 +1,40 @@
+### run 1
+1..1
+ok - host: a captain return during an engine turn hands that turn's outcomes to main
+FM_TEST_COMPLETE
+exit=0
+### run 2
+1..1
+ok - host: a captain return during an engine turn hands that turn's outcomes to main
+FM_TEST_COMPLETE
+exit=0
+### run 3
+1..1
+ok - host: a captain return during an engine turn hands that turn's outcomes to main
+FM_TEST_COMPLETE
+exit=0
+### run 4
+1..1
+ok - host: a captain return during an engine turn hands that turn's outcomes to main
+FM_TEST_COMPLETE
+exit=0
+### run 5
+1..1
+ok - host: a captain return during an engine turn hands that turn's outcomes to main
+FM_TEST_COMPLETE
+exit=0
+### run 6
+1..1
+ok - host: a captain return during an engine turn hands that turn's outcomes to main
+FM_TEST_COMPLETE
+exit=0
+### run 7
+1..1
+ok - host: a captain return during an engine turn hands that turn's outcomes to main
+FM_TEST_COMPLETE
+exit=0
+### run 8
+1..1
+ok - host: a captain return during an engine turn hands that turn's outcomes to main
+FM_TEST_COMPLETE
+exit=0

@@ -1,0 +1,7 @@
+== A: record archived between presence check and validation (race)
+rc=0 presence_calls=2 stderr=[] record_exists=no
+== B: record present but corrupt (guard must still fail)
+present_before=yes rc=1 stderr=[fm-afk-contract: record /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/tmp.FtgSDaVFso/state/.afk-contract carries version '999', expected one of 1, 2; refusing to read it]
+== C: valid record, overdue decision (happy path unchanged)
+rc=0 claims=[worker api 1000 1793416990 claiming 2800
+worker api 1000 1793416990 page-pending 2800] stderr=[]

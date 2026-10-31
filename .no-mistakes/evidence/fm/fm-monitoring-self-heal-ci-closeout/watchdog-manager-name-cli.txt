@@ -1,0 +1,20 @@
+$ FM_HOME=<tmp> bin/fm-monitor-watchdog.sh manager-name
+firstmate-monitor-watchdog-2864153272
+exit=0
+$ FM_HOME=<tmp> bin/fm-monitor-watchdog.sh render-launchd
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>firstmate-monitor-watchdog-2864153272</string>
+  <key>ProgramArguments</key><array>
+    <string>/bin/bash</string><string>/Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M67ZFFW775E8KZJT04CK36JA/bin/fm-monitor-watchdog.sh</string><string>run</string>
+  </array>
+  <key>EnvironmentVariables</key><dict><key>FM_HOME</key><string>/private<tmp></string></dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>1</integer>
+</dict></plist>
+exit=0
+$ FM_HOME=relative bin/fm-monitor-watchdog.sh manager-name
+watchdog: FM_HOME must be absolute
+exit=2
