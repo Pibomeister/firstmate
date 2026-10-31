@@ -1,0 +1,269 @@
+=== S1 new issue, labels created (maintainer home)
+
+$ fm-self-heal-issue.sh --repo Pibomeister/firstmate --failure-class gate-stall --title Gate\ stalls\ on\ lint:\ \`timeout\`\ \&\ \"quotes\" --evidence 10:54\ PM\ CDMX\ log=/tmp/x.log\ sha=abc123 --evidence 10:55\ PM\ CDMX\ log=/tmp/x2.log --instance-fix restarted\ gate --proposed-fix raise\ the\ lint\ timeout
+created 1 https://github.localhost/pibomeister/firstmate/issues/1
+-> rc=0 github_requests=9
+=== S2 repeat: comment, no new issue, labels not recreated
+
+$ fm-self-heal-issue.sh --repo Pibomeister/firstmate --failure-class gate-stall --title different\ title --evidence 11:10\ PM\ CDMX\ log=/tmp/y.log\ sha=def456
+commented 1
+-> rc=0 github_requests=6
+label-create calls so far: 2
+SEARCH label:failure-class:gate-stall repo:pibomeister/firstmate state:open type:issue
+=== S3 other failure class does not dedupe into it
+
+$ fm-self-heal-issue.sh --repo Pibomeister/firstmate --failure-class watcher-lost --title Watcher\ lost --evidence e1
+created 2 https://github.localhost/pibomeister/firstmate/issues/2
+-> rc=0 github_requests=8
+=== S4 closed issue does not absorb a new occurrence
+
+$ fm-self-heal-issue.sh --repo Pibomeister/firstmate --failure-class gate-stall --title Gate\ stalls\ again --evidence after\ close
+created 3 https://github.localhost/pibomeister/firstmate/issues/3
+-> rc=0 github_requests=7
+=== S5 repeat with no evidence, then no-evidence new issue
+
+$ fm-self-heal-issue.sh --repo Pibomeister/firstmate --failure-class gate-stall --title t
+commented 3
+-> rc=0 github_requests=6
+
+$ fm-self-heal-issue.sh --repo Pibomeister/firstmate --failure-class no-ev --title No\ evidence
+created 4 https://github.localhost/pibomeister/firstmate/issues/4
+-> rc=0 github_requests=8
+=== S6 search failure must not file a duplicate
+
+$ fm-self-heal-issue.sh --repo Pibomeister/firstmate --failure-class gate-stall --title dup\? --evidence x
+GraphQL: search unavailable
+fm-self-heal-issue: could not search open issues
+-> rc=1 github_requests=4
+=== S7 unapproved repositories refused
+
+$ fm-self-heal-issue.sh --repo Pibomeister/not-approved --failure-class k --title t --evidence e
+fm-self-heal-issue: repository Pibomeister/not-approved is outside the approved self-heal targets
+-> rc=1 github_requests=0
+
+$ fm-self-heal-issue.sh --repo cli/cli --failure-class k --title t --evidence e
+fm-self-heal-issue: repository cli/cli is outside the approved self-heal targets
+-> rc=1 github_requests=0
+
+$ fm-self-heal-issue.sh --repo github.com/Pibomeister/firstmate --failure-class k --title t
+fm-self-heal-issue: invalid --repo (expected owner/name): github.com/Pibomeister/firstmate
+-> rc=1 github_requests=0
+
+$ fm-self-heal-issue.sh --repo Pibomeister/firstmate/../evil --failure-class k --title t
+fm-self-heal-issue: invalid --repo (expected owner/name): Pibomeister/firstmate/../evil
+-> rc=1 github_requests=0
+=== S8 secrets refused before any GitHub call
+
+$ fm-self-heal-issue.sh --repo Pibomeister/firstmate --failure-class k --title t --evidence <redacted-shape>
+fm-self-heal-issue: refusing input that looks like a secret; redact before filing
+-> rc=1 github_requests=0
+
+$ fm-self-heal-issue.sh --repo Pibomeister/firstmate --failure-class k --title t --evidence authorization:\ token\ abc
+fm-self-heal-issue: refusing input that looks like a secret; redact before filing
+-> rc=1 github_requests=0
+
+$ fm-self-heal-issue.sh --repo Pibomeister/firstmate --failure-class k --title t --evidence bearer\ abc123
+fm-self-heal-issue: refusing input that looks like a secret; redact before filing
+-> rc=1 github_requests=0
+
+$ fm-self-heal-issue.sh --repo Pibomeister/firstmate --failure-class k --title t --evidence <redacted-shape>
+fm-self-heal-issue: refusing input that looks like a secret; redact before filing
+-> rc=1 github_requests=0
+
+$ fm-self-heal-issue.sh --repo Pibomeister/firstmate --failure-class k --title t --evidence <redacted-shape>
+fm-self-heal-issue: refusing input that looks like a secret; redact before filing
+-> rc=1 github_requests=0
+
+$ fm-self-heal-issue.sh --repo Pibomeister/firstmate --failure-class k --title t --evidence <redacted-shape>
+fm-self-heal-issue: refusing input that looks like a secret; redact before filing
+-> rc=1 github_requests=0
+
+$ fm-self-heal-issue.sh --repo Pibomeister/firstmate --failure-class k --title t --evidence <redacted-shape>
+fm-self-heal-issue: refusing input that looks like a secret; redact before filing
+-> rc=1 github_requests=0
+
+$ fm-self-heal-issue.sh --repo Pibomeister/firstmate --failure-class k --title t --evidence <redacted-shape>
+fm-self-heal-issue: refusing input that looks like a secret; redact before filing
+-> rc=1 github_requests=0
+
+$ fm-self-heal-issue.sh --repo Pibomeister/firstmate --failure-class k --title t --evidence -----BEGIN\ RSA\ PRIVATE\ KEY-----
+fm-self-heal-issue: refusing input that looks like a secret; redact before filing
+-> rc=1 github_requests=0
+
+$ fm-self-heal-issue.sh --repo Pibomeister/firstmate --failure-class k --title leak\ <redacted-shape>
+fm-self-heal-issue: refusing input that looks like a secret; redact before filing
+-> rc=1 github_requests=0
+=== S9 firstmate publication grant
+--- no role file (user default): firstmate refused
+
+$ fm-self-heal-issue.sh --repo Pibomeister/firstmate --failure-class grant --title t --evidence e
+fm-self-heal-issue: refusing to publish to github.com/pibomeister/firstmate: this home is missing the grant 'maintainer github.com/pibomeister/firstmate' in /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.HLjBX6/config/firstmate-role (this home runs as firstmate user/operator and holds no publication authority for github.com/pibomeister/firstmate)
+-> rc=1 github_requests=0
+--- explicit user role: firstmate refused
+
+$ fm-self-heal-issue.sh --repo Pibomeister/firstmate --failure-class grant --title t --evidence e
+fm-self-heal-issue: refusing to publish to github.com/pibomeister/firstmate: this home is missing the grant 'maintainer github.com/pibomeister/firstmate' in /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.HLjBX6/config/firstmate-role (this home runs as firstmate user/operator and holds no publication authority for github.com/pibomeister/firstmate)
+-> rc=1 github_requests=0
+--- maintainer of another repo: firstmate refused
+
+$ fm-self-heal-issue.sh --repo Pibomeister/firstmate --failure-class grant --title t --evidence e
+fm-self-heal-issue: refusing to publish to github.com/pibomeister/firstmate: this home is missing the grant 'maintainer github.com/pibomeister/firstmate' in /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.HLjBX6/config/firstmate-role (this home runs as firstmate user/operator and holds no publication authority for github.com/pibomeister/firstmate)
+-> rc=1 github_requests=0
+--- user role: agent-kit still files
+
+$ fm-self-heal-issue.sh --repo Pibomeister/agent-kit --failure-class ak-fail --title Agent\ kit\ failure --evidence e
+created 1 https://github.localhost/pibomeister/agent-kit/issues/1
+-> rc=0 github_requests=9
+
+$ fm-self-heal-issue.sh --repo PIBOMEISTER/AGENT-KIT --failure-class ak-fail --title dedupes\ across\ casing --evidence e2
+commented 1
+-> rc=0 github_requests=6
+=== S10 gate-project repo
+--- own origin with flag: files
+
+$ fm-self-heal-issue.sh --repo Pibomeister/casco --for-gate-project casco --failure-class gate-sh --title Casco\ gate.sh\ fix --evidence e --proposed-fix patch\ gate.sh
+created 1 https://github.localhost/pibomeister/casco/issues/1
+-> rc=0 github_requests=9
+--- no flag: refused
+
+$ fm-self-heal-issue.sh --repo Pibomeister/casco --failure-class gate-sh --title t --evidence e
+fm-self-heal-issue: repository Pibomeister/casco is outside the approved self-heal targets
+-> rc=1 github_requests=0
+--- third-party upstream of the project: refused
+
+$ fm-self-heal-issue.sh --repo third-party/casco --for-gate-project casco --failure-class gate-sh --title t --evidence e
+fm-self-heal-issue: repository third-party/casco is outside the approved self-heal targets
+-> rc=1 github_requests=0
+--- unregistered project and path traversal: refused
+
+$ fm-self-heal-issue.sh --repo Pibomeister/casco --for-gate-project nope --failure-class gate-sh --title t
+fm-self-heal-issue: repository Pibomeister/casco is outside the approved self-heal targets
+-> rc=1 github_requests=0
+
+$ fm-self-heal-issue.sh --repo Pibomeister/casco --for-gate-project ../projects/casco --failure-class gate-sh --title t
+fm-self-heal-issue: repository Pibomeister/casco is outside the approved self-heal targets
+-> rc=1 github_requests=0
+=== S11 bad usage
+
+$ fm-self-heal-issue.sh --repo Pibomeister/agent-kit --failure-class bad\ key --title t
+fm-self-heal-issue: failure-class key must be non-empty alphanumeric with . _ - only
+-> rc=1 github_requests=0
+
+$ fm-self-heal-issue.sh --repo Pibomeister/agent-kit --failure-class k
+usage:
+  fm-self-heal-issue.sh --repo <owner/name> --failure-class <key> --title <title>
+      [--instance-fix <text>] [--proposed-fix <text>] [--evidence <line>]...
+      [--for-gate-project <name>]
+-> rc=2 github_requests=0
+
+=== Final GitHub-side state
+{
+ "labels": {
+  "pibomeister/firstmate": [
+   "self-heal",
+   "failure-class:gate-stall",
+   "failure-class:watcher-lost",
+   "failure-class:no-ev"
+  ],
+  "pibomeister/agent-kit": [
+   "self-heal",
+   "failure-class:ak-fail"
+  ],
+  "pibomeister/casco": [
+   "self-heal",
+   "failure-class:gate-sh"
+  ]
+ },
+ "issues": {
+  "pibomeister/firstmate": [
+   {
+    "number": 1,
+    "title": "Gate stalls on lint: `timeout` & \"quotes\"",
+    "body": "## Failure class\ngate-stall\n\n## Evidence\n- 10:54 PM CDMX log=/tmp/x.log sha=abc123\n- 10:55 PM CDMX log=/tmp/x2.log\n\n## Instance fix taken\nrestarted gate\n\n## Proposed root fix\nraise the lint timeout",
+    "labels": [
+     "self-heal",
+     "failure-class:gate-stall"
+    ],
+    "state": "CLOSED",
+    "comments": [
+     "## New evidence\n- 11:10 PM CDMX log=/tmp/y.log sha=def456"
+    ],
+    "url": "https://github.localhost/pibomeister/firstmate/issues/1"
+   },
+   {
+    "number": 2,
+    "title": "Watcher lost",
+    "body": "## Failure class\nwatcher-lost\n\n## Evidence\n- e1\n\n## Instance fix taken\nnone recorded\n\n## Proposed root fix\nnone recorded",
+    "labels": [
+     "self-heal",
+     "failure-class:watcher-lost"
+    ],
+    "state": "OPEN",
+    "comments": [],
+    "url": "https://github.localhost/pibomeister/firstmate/issues/2"
+   },
+   {
+    "number": 3,
+    "title": "Gate stalls again",
+    "body": "## Failure class\ngate-stall\n\n## Evidence\n- after close\n\n## Instance fix taken\nnone recorded\n\n## Proposed root fix\nnone recorded",
+    "labels": [
+     "self-heal",
+     "failure-class:gate-stall"
+    ],
+    "state": "OPEN",
+    "comments": [
+     "## New evidence\n(none supplied)"
+    ],
+    "url": "https://github.localhost/pibomeister/firstmate/issues/3"
+   },
+   {
+    "number": 4,
+    "title": "No evidence",
+    "body": "## Failure class\nno-ev\n\n## Evidence\n(none supplied)\n\n## Instance fix taken\nnone recorded\n\n## Proposed root fix\nnone recorded",
+    "labels": [
+     "self-heal",
+     "failure-class:no-ev"
+    ],
+    "state": "OPEN",
+    "comments": [],
+    "url": "https://github.localhost/pibomeister/firstmate/issues/4"
+   }
+  ],
+  "pibomeister/agent-kit": [
+   {
+    "number": 1,
+    "title": "Agent kit failure",
+    "body": "## Failure class\nak-fail\n\n## Evidence\n- e\n\n## Instance fix taken\nnone recorded\n\n## Proposed root fix\nnone recorded",
+    "labels": [
+     "self-heal",
+     "failure-class:ak-fail"
+    ],
+    "state": "OPEN",
+    "comments": [
+     "## New evidence\n- e2"
+    ],
+    "url": "https://github.localhost/pibomeister/agent-kit/issues/1"
+   }
+  ],
+  "pibomeister/casco": [
+   {
+    "number": 1,
+    "title": "Casco gate.sh fix",
+    "body": "## Failure class\ngate-sh\n\n## Evidence\n- e\n\n## Instance fix taken\nnone recorded\n\n## Proposed root fix\npatch gate.sh",
+    "labels": [
+     "self-heal",
+     "failure-class:gate-sh"
+    ],
+    "state": "OPEN",
+    "comments": [],
+    "url": "https://github.localhost/pibomeister/casco/issues/1"
+   }
+  ]
+ },
+ "next": {
+  "pibomeister/firstmate": 5,
+  "pibomeister/agent-kit": 2,
+  "pibomeister/casco": 2
+ },
+ "fail_search": false
+}
