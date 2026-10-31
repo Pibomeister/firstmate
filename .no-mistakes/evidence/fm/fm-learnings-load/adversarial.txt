@@ -1,0 +1,37 @@
+### missing
+session-start exit=0
+docs/learnings/overnight-learnings.md (tracked fleet learnings; read at session start and each AFK preflight)
+--------------------------------------------------------------------------------
+ABSENT
+
+preflight exit=0
+--------------------------------------------------------------------------------
+ABSENT
+### empty
+session-start exit=0
+docs/learnings/overnight-learnings.md (tracked fleet learnings; read at session start and each AFK preflight)
+--------------------------------------------------------------------------------
+(present, empty)
+
+preflight exit=0
+--------------------------------------------------------------------------------
+(present, empty)
+### unreadable
+session-start exit=0
+docs/learnings/overnight-learnings.md (tracked fleet learnings; read at session start and each AFK preflight)
+--------------------------------------------------------------------------------
+
+preflight exit=0
+--------------------------------------------------------------------------------
+cat: <copy>/docs/learnings/overnight-learnings.md: Permission denied
+### growth check: arm baseline then grow the file
+armed: state/startup-growth.check.sh
+arm=0
+check1=0
+startup-growth: printed-memory growth docs/learnings/overnight-learnings.md +2667 estimated_tokens (+8000 bytes, total 14199 bytes)
+check2=0
+startup-growth.check-trust
+startup-growth.check.sh
+disarmed: state/startup-growth.check.sh
+### self-update re-read: learnings-only change
+changed_instr=[]

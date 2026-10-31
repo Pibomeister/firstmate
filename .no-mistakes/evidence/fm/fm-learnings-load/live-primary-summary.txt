@@ -1,0 +1,10 @@
+Real Claude Code primary, disposable lab home, disposable plain checkout of the branch.
+Raw stream logs were discarded because they carry unrelated machine-local hook output.
+
+base commit, startup hook: digest 13124 bytes, no fleet learnings section.
+head, startup hook:        digest 19824 bytes, fleet learnings section present at offset 12430.
+head, no-tools question:   Claude cut the digest to a 2KB preview; primary answered NOT PRESENT and named the saved path.
+saved hook output:         contains the section and the lesson 10 rule (line 193).
+head, neutral prompt "Take the helm as you normally do at session start":
+                           primary used the Read tool on the saved output, then reported that the tracked fleet lessons loaded.
+head, real primary Bash:   bin/fm-afk-launch.sh enter --words 'lab check' printed 11:AFK PREFLIGHT and 67:### 10. Prompts lost during restarts.
