@@ -100,8 +100,8 @@ When every remaining candidate is tight, dispatch inside the strongest-reasoning
 If none in that class can proceed, reroute through the pool below to the strongest available class, reaching another provider or account when needed, disclose the downgrade, and never pause new work on a quota floor.
 The reroute pool, in order, is the matched profile array (including same provider or account candidates), the configured default profile set, then the static crewmate harness profile.
 A rule's profile list alone is not a restriction: restricted means an explicit captain instruction recorded for that task or a captain-pinned account, and the pool then holds only the candidates that restriction permits.
-When no pool candidate can proceed, whether because reroute would violate a restriction or because every candidate is `exhausted_now` or blocked, the item stays queued with the reason reported and other work proceeds; never poll-loop waiting for quota or authority.
-Within each pool step, prefer the strongest reasoning class and report any class drop.
+When no pool candidate can proceed, whether because reroute would violate a restriction or because every candidate is `exhausted_now`, blocked, or known to be below an explicit captain floor, the item stays queued with the reason reported and other work proceeds; never poll-loop waiting for quota or authority.
+Within each pool step, prefer the strongest reasoning class, rank eligible candidates under [Rank by spendPriority](#rank-by-spendpriority), break `spendPriority` ties by greater known runway, never pick by array order, and report any class drop.
 
 ### 3. Runway feasibility floor
 
@@ -110,9 +110,10 @@ Read `runway` from the `quota[]` row: `through_reset` passes this generic feasib
 `exhausted_now` is zero, and `projected_exhaustion` uses the matching `exhaustion[]` row's `usableRunwaySeconds`.
 A high `spendPriority` on a nearly empty window that will exhaust soon must not route into a mid-task stall.
 Unknown or unmeasurable runway stays eligible with disclosed uncertainty and is never assumed to pass.
-When every matched candidate fails this floor on known evidence, walk the reroute pool from gate 2 and dispatch its first eligible candidate that does not fail this floor, disclosing the reroute and any class drop.
+When every matched candidate fails this floor on known evidence, walk the reroute pool from gate 2 and dispatch from the first step holding an eligible candidate that does not fail this floor, choosing within that step as gate 2 states and disclosing the reroute and any class drop.
 Only when the pool has no such candidate, dispatch the pool candidate with the greatest known usable runway above zero, disclose the floor breach, and never pause waiting for quota or authority.
-Do not invent a generic percentage floor, and honor an explicit captain floor for a candidate when one exists.
+Do not invent a generic percentage floor.
+An explicit captain floor for a candidate outranks the greatest-runway rule: a candidate known to be below it is never dispatched, and gate 2's queued outcome applies when no other pool candidate can proceed.
 
 ## Rank by spendPriority
 
@@ -122,7 +123,7 @@ Within the already matched rule or default, restrict ranking to eligible candida
 This preference does not introduce other profiles, change a Claude-only rule, or override an explicit captain choice or approval requirement.
 Only concrete evidence that every matched preferred candidate is ineligible authorizes fallback to other families.
 Unknown quota, missing account evidence, and unrankable scalars do not establish ineligibility.
-If preferred candidates remain eligible but none can be ranked, pick the best candidate on known evidence, disclose the uncertainty, and proceed within permitted families instead of escalating or waiting.
+If preferred candidates remain eligible but none can be ranked, pick among those preferred candidates on known evidence, disclose the uncertainty, and proceed without switching families, escalating, or waiting.
 When no matched profile belongs to the preferred family, preserve the rule's candidate set.
 With the field absent, keep the existing candidate set unchanged.
 Print the preferred-family decision, including the reason for any fallback.
