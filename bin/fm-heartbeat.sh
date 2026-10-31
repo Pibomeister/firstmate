@@ -46,7 +46,9 @@
 #                       runs_on_current_branch: 0; unknown, not a failure, in a
 #                       repo with no gate
 #     last_output_time  {observed_at, age_seconds, source}: terminal (the watcher's
-#                       pane-change marker) or transcript
+#                       pane-change marker) or transcript, each only from since the
+#                       spawn_gen epoch; a secondmate's marker is never read, since
+#                       the watcher does not refresh it for that kind
 #     open_asks         {decisions, inbox_unhandled}
 #   failure           null only on a clean run, else {reason, count} naming every
 #                     read that failed or timed out; absent evidence is not a failure
@@ -240,7 +242,11 @@ heartbeat_primary_json() {
   transcript=
   [ -z "$session_id" ] || transcript=$(heartbeat_read "primary transcript" fm_warm_compact_engine_transcript "$session_id") || transcript=
   turn_json=$(heartbeat_turn_json primary "$transcript")
-  context_json=$(heartbeat_context_json primary "$transcript" "$backend" "$target")
+  if [ "$present" = true ]; then
+    context_json=$(heartbeat_context_json primary "$transcript" "$backend" "$target")
+  else
+    context_json=$(heartbeat_context_json primary "$transcript")
+  fi
   jq -n \
     --arg backend "$backend" \
     --arg target "$target" \
@@ -281,16 +287,22 @@ heartbeat_inbox_unhandled() {  # <task-id>
   printf '%s\n' "$count"
 }
 
+heartbeat_spawn_epoch() {  # <spawn-gen>
+  local epoch
+  case "$1" in s[0-9]*.*) ;; *) return 1 ;; esac
+  epoch=${1#s}
+  epoch=${epoch%%.*}
+  case "$epoch" in *[!0-9]*) return 1 ;; esac
+  printf '%s\n' "$epoch"
+}
+
 # Claude keeps a worktree's transcripts in a directory named after its path,
 # with every non-alphanumeric byte replaced by a dash.
 # Slots are reused and transcripts outlive them, so only one written since this
 # task's spawn belongs to it.
 heartbeat_worktree_transcript() {  # <worktree> <spawn-gen>
   local slug file m newest=0 found='' spawn_epoch
-  case "$2" in s[0-9]*.*) ;; *) return 1 ;; esac
-  spawn_epoch=${2#s}
-  spawn_epoch=${spawn_epoch%%.*}
-  case "$spawn_epoch" in *[!0-9]*) return 1 ;; esac
+  spawn_epoch=$(heartbeat_spawn_epoch "$2") || return 1
   slug=$(printf '%s' "$1" | LC_ALL=C sed 's/[^A-Za-z0-9]/-/g')
   for file in "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/$slug"/*.jsonl; do
     [ -f "$file" ] || continue
@@ -301,20 +313,24 @@ heartbeat_worktree_transcript() {  # <worktree> <spawn-gen>
   printf '%s\n' "$found"
 }
 
-heartbeat_last_output_json() {  # <target-or-empty> <transcript-or-empty>
-  local target=$1 transcript=$2 key newest=0 source='' observed_iso age f m label pair
-  key=${target//:/_}
-  key=${key//\//_}
-  key=${key//./_}
-  for pair in "terminal|$STATE/.hash-$key" "transcript|$transcript"; do
+heartbeat_last_output_json() {  # <target-or-empty> <qualified-transcript-or-empty> <spawn-gen> <kind>
+  local target=$1 transcript=$2 spawn_gen=$3 kind=$4 key marker='' spawn_epoch newest=0 source='' observed_iso age f m label pair
+  if [ -n "$target" ] && [ "$kind" != secondmate ] && spawn_epoch=$(heartbeat_spawn_epoch "$spawn_gen"); then
+    key=${target//:/_}
+    key=${key//\//_}
+    key=${key//./_}
+    m=$(file_mtime "$STATE/.hash-$key") || m=0
+    [ "$m" -lt "$spawn_epoch" ] || marker=$STATE/.hash-$key
+  fi
+  for pair in "terminal|$marker" "transcript|$transcript"; do
     label=${pair%%|*}
     f=${pair#*|}
-    [ "$f" != "$STATE/.hash-" ] && [ -f "$f" ] || continue
+    [ -f "$f" ] || continue
     m=$(file_mtime "$f") || continue
     [ "$m" -le "$newest" ] || { newest=$m; source=$label; }
   done
   if [ "$newest" -eq 0 ]; then
-    heartbeat_unknown "no terminal or transcript activity read"
+    heartbeat_unknown "no terminal or transcript activity read since this spawn"
     return 0
   fi
   observed_iso=$(date -u -r "$newest" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
@@ -377,7 +393,7 @@ heartbeat_no_mistakes_json() {  # <id> <worktree> <branch>
 }
 
 heartbeat_task_row() {  # <snapshot-task-json>
-  local task_json=$1 id wt branch backend target exists remote harness spawn_gen transcript=
+  local task_json=$1 id wt branch backend target exists remote harness spawn_gen kind transcript=
   local pane_backend='' pane_target='' pane_label=''
   local session composer=unknown last_commit last_push nm_json sha
   id=$(printf '%s' "$task_json" | jq -r '.id')
@@ -389,6 +405,7 @@ heartbeat_task_row() {  # <snapshot-task-json>
   remote=$(printf '%s' "$task_json" | jq -r '.remote.host // ""')
   harness=$(printf '%s' "$task_json" | jq -r '.harness // ""')
   spawn_gen=$(printf '%s' "$task_json" | jq -r '.spawn_gen // ""')
+  kind=$(printf '%s' "$task_json" | jq -r '.kind // ""')
   if [ "$harness" = claude ] && [ -n "$wt" ]; then
     transcript=$(heartbeat_read "task $id transcript" heartbeat_worktree_transcript "$wt" "$spawn_gen") || transcript=
   fi
@@ -426,7 +443,7 @@ heartbeat_task_row() {  # <snapshot-task-json>
     --argjson last_commit "$last_commit" \
     --argjson last_push "$last_push" \
     --argjson no_mistakes_run "$nm_json" \
-    --argjson last_output_time "$(heartbeat_last_output_json "$target" "$transcript")" \
+    --argjson last_output_time "$(heartbeat_last_output_json "$target" "$transcript" "$spawn_gen" "$kind")" \
     --argjson inbox "$(heartbeat_inbox_unhandled "$id")" '
     def u(r): {unknown:true,reason:r};
     {

@@ -32,6 +32,7 @@ cat > "$FAKEBIN/tmux" <<'SH'
 [ "${FAKE_TMUX_MODE:-}" != hang ] || sleep 30
 case "${1:-}" in
   display-message) printf '%1\n' ;;
+  list-panes) [ "${FAKE_TMUX_MODE:-}" = gone ] || printf '%%1\n' ;;
   capture-pane) printf 'fixture pane\n%s\n> \n' "${FAKE_PANE_TEXT:-}" ;;
 esac
 exit 0
@@ -311,6 +312,61 @@ test_last_output_needs_real_activity() {
   pass "last output comes from terminal evidence, never .meta, .status, or .turn-ended"
 }
 
+test_leftover_terminal_marker_is_ignored() {
+  local home now
+  home=$(make_home leftover-marker)
+  now=$(date +%s)
+  printf 'abc' > "$home/state/.hash-fmtest_hb"
+  fm_touch_epoch "$(( now - 3600 ))" "$home/state/.hash-fmtest_hb"
+  set_spawn_gen "$home" "s$now.1.1"
+  publish "$home"
+  assert_ledger "$home" '.tasks[0].last_output_time.unknown == true' \
+    "a marker older than the spawn counted as output"
+  set_spawn_gen "$home" "s$(( now - 7200 )).1.1"
+  publish "$home"
+  assert_ledger "$home" '.tasks[0].last_output_time.source == "terminal"' \
+    "a marker written since the spawn was not read"
+  set_spawn_gen "$home" ""
+  publish "$home"
+  assert_ledger "$home" '.tasks[0].last_output_time.unknown == true' \
+    "a marker counted as output with no spawn epoch"
+  pass "a terminal marker older than the spawn, or with no spawn epoch, is not output"
+}
+
+test_secondmate_frozen_marker_is_ignored() {
+  local home script transcript now
+  home=$(make_home secondmate-marker)
+  script=$(canned_snapshot "$home")
+  now=$(date +%s)
+  jq --arg gen "s$(( now - 7200 )).1.1" '.tasks = [.tasks[0] + {kind:"secondmate",spawn_gen:$gen,endpoint:{target:"fmtest:sm",exists:false}}]' \
+    "$home/canned-snapshot.json" > "$home/secondmate.json"
+  mv "$home/secondmate.json" "$home/canned-snapshot.json"
+  printf 'abc' > "$home/state/.hash-fmtest_sm"
+  publish "$home" FM_HEARTBEAT_SNAPSHOT_SCRIPT="$script"
+  assert_ledger "$home" '.tasks[0].last_output_time.unknown == true' \
+    "a secondmate's frozen marker counted as output"
+  transcript=$(task_transcript "$home")
+  printf '%s\n' '{"type":"assistant","timestamp":"2026-10-30T11:59:00.123Z"}' > "$transcript"
+  publish "$home" FM_HEARTBEAT_SNAPSHOT_SCRIPT="$script"
+  assert_ledger "$home" '.tasks[0].last_output_time.source == "transcript"' \
+    "a secondmate's qualifying transcript was not read"
+  pass "a secondmate's marker is ignored and its transcript still qualifies"
+}
+
+test_missing_primary_endpoint_skips_pane_read() {
+  local home script
+  home=$(make_home primary-gone)
+  script=$(canned_snapshot "$home")
+  jq '.tasks = []' "$home/canned-snapshot.json" > "$home/empty.json"
+  mv "$home/empty.json" "$home/canned-snapshot.json"
+  publish "$home" FAKE_TMUX_MODE=gone FAKE_PANE_TEXT='12% until auto-compact' FM_HEARTBEAT_SNAPSHOT_SCRIPT="$script" \
+    FM_SUPERVISOR_BACKEND=tmux FM_SUPERVISOR_TARGET=%1
+  assert_ledger "$home" '.primary.terminal.present == false
+    and .primary.context_left.remaining.unknown == true' \
+    "a missing primary endpoint still had its pane read for context"
+  pass "a missing primary endpoint gets no pane context read"
+}
+
 test_last_push_names_the_local_ref() {
   local home sha
   home=$(make_home last-push)
@@ -527,6 +583,9 @@ test_leftover_transcript_in_a_reused_slot_is_ignored
 test_remaining_context_comes_from_pane_text
 test_ungated_repo_is_unknown_not_failure
 test_last_output_needs_real_activity
+test_leftover_terminal_marker_is_ignored
+test_secondmate_frozen_marker_is_ignored
+test_missing_primary_endpoint_skips_pane_read
 test_last_push_names_the_local_ref
 test_snapshot_failure_is_recorded
 test_unreadable_fields_report_unknown
@@ -539,4 +598,4 @@ test_stale_work_dir_is_swept
 test_watcher_poll_does_not_wait_for_heartbeat
 test_watcher_runs_one_heartbeat_at_a_time
 
-printf 'ok - %s tests passed\n' 19
+printf 'ok - %s tests passed\n' 22
