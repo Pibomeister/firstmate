@@ -84,8 +84,9 @@
 # shellcheck source=bin/fm-role-lib.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-role-lib.sh"
 
-# The one shared data file in this inheritance contract. There is deliberately
-# no shared learnings file.
+# The one shared data file in this inheritance contract. data/learnings.md stays
+# home-local; fleet-wide learnings ship in tracked
+# docs/learnings/overnight-learnings.md.
 FM_SHARED_CAPTAIN_FILE="captain-shared.md"
 FM_SHARED_CAPTAIN_REL="data/$FM_SHARED_CAPTAIN_FILE"
 FM_SHARED_CAPTAIN_MODE="444"

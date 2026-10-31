@@ -13,8 +13,8 @@
 # only: no phone channel exists; a quiet entry's says nothing is held) and the
 # read-back, which is informational and never waits for a go
 # (bin/fm-afk-contract.sh owns the record schema; the words are the whole
-# mandate and no script parses them). The record is the posture in every
-# harness.
+# mandate and no script parses them), then the AFK preflight
+# (bin/fm-afk-preflight.sh). The record is the posture in every harness.
 # On Pi and pi-signed the entry ENDS there: the away daemon is no longer launched
 # on Pi, the ordinary supervision session keeps running in both postures, and
 # `start` refuses on those harnesses. The same daemon refusal holds for away
@@ -78,7 +78,8 @@
 #                          [--expected-return <UTC ISO 8601>] [--spend <n>]
 #                              Write the away-posture record now, with no
 #                              separate confirmation, then print the entry
-#                              announcement and the read-back. With no words
+#                              announcement, the read-back, and the AFK
+#                              preflight. With no words
 #                              while away it is a refresh; new words replace
 #                              the mandate. On Pi this is the whole entry.
 #   fm-afk-launch.sh start     Capture the captain pane, then (unless the daemon
@@ -409,6 +410,7 @@ fm_afk_launch_enter() {
     esac
   fi
   "$FM_AFK_CONTRACT_CMD" enter "$@" || return
+  "$FM_AFK_LAUNCH_DIR/fm-afk-preflight.sh" 2>/dev/null || true
   fm_afk_launch_host_engine_note
   fm_afk_launch_checkpoint_note
 }

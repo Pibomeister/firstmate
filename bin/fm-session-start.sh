@@ -4,8 +4,9 @@
 # Collapses AGENTS.md sections 3 (bootstrap) and 5 (recovery) into ONE script
 # producing ONE ordered digest, so a session starts in one or two turns
 # instead of the six-plus separate reads the old docs required: run
-# fm-bootstrap.sh, then separately read data/projects.md, data/secondmates.md,
-# data/captain.md, data/captain-shared.md, data/learnings.md, then run
+# fm-bootstrap.sh, then separately read docs/learnings/overnight-learnings.md,
+# data/projects.md, data/secondmates.md, data/captain.md,
+# data/captain-shared.md, data/learnings.md, then run
 # fm-lock.sh, fm-wake-drain.sh, then read data/backlog.md, every state/*.meta,
 # and every state/*.status.
 # Every one of those reads is UNCONDITIONAL at every session start, so they
@@ -67,7 +68,8 @@
 #                       (bin/fm-dispatch-log.sh).
 #   7. network checks - the result of the deferred network stage started back at
 #                       step 1, harvested WITHOUT waiting for it.
-#   8. context digest - data/projects.md, data/secondmates.md, data/captain.md,
+#   8. context digest - docs/learnings/overnight-learnings.md, data/projects.md,
+#                       data/secondmates.md, data/captain.md,
 #                       data/captain-shared.md, data/learnings.md: read-only,
 #                       always safe, always runs.
 #   9. closing reminder - prints the context-specific watcher next step; this
@@ -685,7 +687,8 @@ if [ "$REEMIT" -eq 1 ]; then
   # CONTEXT prints last, so this cue is the part that must survive the spill.
   printf 'RE-EMIT CUE: if this output ends with "Output too large ... Full output saved to <path>",\n'
   printf 'read that whole file now, before acting. Otherwise read data/captain.md, data/captain-shared.md,\n'
-  printf 'and data/learnings.md under %s now if any of them is missing below.\n' "$DATA"
+  printf 'data/learnings.md under %s, and docs/learnings/overnight-learnings.md under the code root now if\n' "$DATA"
+  printf 'any of them is missing below.\n'
   section "SESSION START (CONTEXT RE-EMIT) - $FM_HOME"
   printf 'This session already took the helm at its own startup and has only lost its\n'
   printf 'context. Lock ownership is re-verified and the durable records below are\n'
@@ -907,7 +910,8 @@ cat <<'EOF'
 Everything below is printed in full for this session start: every state/*.meta,
 a compact data/backlog.md listing, a bounded tail of every state/*.status,
 data/projects.md, data/secondmates.md, data/captain.md, data/captain-shared.md,
-and data/learnings.md.
+and data/learnings.md, plus the tracked docs/learnings/overnight-learnings.md
+under the code root.
 Do NOT re-read any of them after reading this digest, and do NOT bulk-read
 data/backlog.md or state/*.status: re-reading everything defeats the entire
 point of this command.
@@ -925,7 +929,10 @@ Go to a source directly only when:
   - or a STARTUP TRUNCATED banner named the stage that would have printed it, in
     which case that stage's sources were never emitted and must be reconciled,
   - or a context re-emit opened with a read cue because the
-    harness cut the digest short.
+    harness cut the digest short,
+  - or CONTEXT omitted docs/learnings/overnight-learnings.md because the digest
+    tail was truncated, in which case read that file under the code root
+    (docs/learnings/overnight-learnings.md relative to the firstmate checkout).
 EOF
 
 # --- 6. fleet-state digest ---------------------------------------------
@@ -1078,6 +1085,7 @@ fi
 # take (see this file's ORDERING note).
 stage context
 section "CONTEXT"
+"$SCRIPT_DIR/fm-fleet-learnings.sh" 2>/dev/null || true
 print_file_or_absent "$DATA/projects.md" "data/projects.md"
 print_file_or_absent "$DATA/secondmates.md" "data/secondmates.md"
 print_file_or_absent "$DATA/captain.md" "data/captain.md"

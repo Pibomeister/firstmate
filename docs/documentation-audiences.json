@@ -457,6 +457,10 @@
       "audience": "operator-current"
     },
     {
+      "path": "docs/learnings/overnight-learnings.md",
+      "audience": "agent-runtime"
+    },
+    {
       "path": "docs/jev-guards.md",
       "audience": "maintainer-architecture"
     },
