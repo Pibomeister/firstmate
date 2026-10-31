@@ -32,6 +32,9 @@
 #   tasks[]           one row per snapshot task id, sorted by id
 #     id
 #     terminal          {backend, target, exists} from snapshot endpoint
+#                       (a remote task's worktree path names its own host, so it
+#                       is never read here: session has no transcript, and
+#                       last_commit, last_push and no_mistakes_run are unknown)
 #     session           {id} from the worktree's one Claude transcript written since
 #                       the spawn_gen epoch; unknown with no such transcript or epoch,
 #                       and "ambiguous transcript" when more than one qualifies, which
@@ -316,7 +319,7 @@ heartbeat_spawn_epoch() {  # <spawn-gen>
 # session in the same directory and must not be attributed to this mate.
 # shellcheck disable=SC2329 # Invoked through heartbeat_read.
 heartbeat_worktree_transcript() {  # <worktree> <spawn-gen>
-  local slug file m newest=0 found='' spawn_epoch count=0
+  local slug file m found='' spawn_epoch count=0
   spawn_epoch=$(heartbeat_spawn_epoch "$2") || return 1
   slug=$(printf '%s' "$1" | LC_ALL=C sed 's/[^A-Za-z0-9]/-/g')
   for file in "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/$slug"/*.jsonl; do
@@ -324,7 +327,7 @@ heartbeat_worktree_transcript() {  # <worktree> <spawn-gen>
     m=$(file_mtime "$file") || continue
     [ "$m" -ge "$spawn_epoch" ] || continue
     count=$((count + 1))
-    [ "$m" -le "$newest" ] || { newest=$m; found=$file; }
+    found=$file
   done
   [ "$count" -gt 1 ] && return 2
   [ -n "$found" ] || return 1
@@ -455,7 +458,7 @@ heartbeat_no_mistakes_json() {  # <id> <worktree> <branch> <reason the worktree 
 heartbeat_task_row() {  # <snapshot-task-json>
   local wt_branch wt_branch_rc branch_problem
   local task_json=$1 id wt branch backend target exists remote harness spawn_gen kind transcript=
-  local transcript_rc=0 ambiguous_transcript=''
+  local transcript_rc=0 ambiguous_transcript='' no_worktree='no worktree'
   local turn_json context_json output_json
   local pane_backend='' pane_target='' pane_label=''
   local session composer=unknown last_commit last_push nm_json sha
@@ -469,6 +472,10 @@ heartbeat_task_row() {  # <snapshot-task-json>
   harness=$(printf '%s' "$task_json" | jq -r '.harness // ""')
   spawn_gen=$(printf '%s' "$task_json" | jq -r '.spawn_gen // ""')
   kind=$(printf '%s' "$task_json" | jq -r '.kind // ""')
+  if [ -n "$remote" ]; then
+    wt=
+    no_worktree='worktree is on remote host'
+  fi
   if [ "$harness" = claude ] && [ -n "$wt" ]; then
     transcript=$(heartbeat_read "task $id transcript" heartbeat_worktree_transcript "$wt" "$spawn_gen") || transcript_rc=$?
     if [ "$transcript_rc" -eq 2 ]; then
@@ -499,9 +506,9 @@ heartbeat_task_row() {  # <snapshot-task-json>
   if [ -n "$ambiguous_transcript" ]; then
     context_json=$(printf '%s' "$context_json" | jq --arg reason "$ambiguous_transcript" '.used_tokens = {unknown:true,reason:$reason}')
   fi
-  last_commit=$(heartbeat_unknown "no worktree")
-  last_push=$(heartbeat_unknown "no worktree")
-  nm_json=$(heartbeat_unknown "no worktree")
+  last_commit=$(heartbeat_unknown "$no_worktree")
+  last_push=$(heartbeat_unknown "$no_worktree")
+  nm_json=$(heartbeat_unknown "$no_worktree")
   if [ -n "$wt" ] && [ -d "$wt" ]; then
     wt_branch_rc=0
     branch_problem=

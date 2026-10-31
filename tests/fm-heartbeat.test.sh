@@ -474,6 +474,33 @@ test_ambiguous_transcript_when_two_qualify() {
   pass "two Claude transcripts since spawn blank only transcript-derived fields"
 }
 
+test_remote_task_never_reads_a_local_worktree() {
+  local home transcript now script
+  home=$(make_home remote-task)
+  now=$(date +%s)
+  transcript=$(task_transcript "$home")
+  printf '%s\n' '{"type":"assistant","timestamp":"2026-10-30T12:00:00.123Z"}' > "$transcript"
+  fm_touch_epoch "$now" "$transcript"
+  script=$(canned_snapshot "$home")
+  jq --arg gen "s$(( now - 60 )).1.1" '.tasks[0] += {remote:{host:"host-b",root:"/remote/root"},kind:"secondmate",spawn_gen:$gen}
+    | .tasks[1] += {harness:"claude",spawn_gen:$gen}' \
+    "$home/canned-snapshot.json" > "$home/remote.json"
+  mv "$home/remote.json" "$home/canned-snapshot.json"
+  publish "$home" FAKE_NM_MODE=run FM_HEARTBEAT_SNAPSHOT_SCRIPT="$script"
+  assert_ledger "$home" '
+    (.tasks[] | select(.id == "task-a")) as $remote
+    | (.tasks[] | select(.id == "task-b")) as $local
+    | $remote.last_commit == {unknown:true,reason:"worktree is on remote host"}
+    and $remote.last_push == $remote.last_commit
+    and $remote.no_mistakes_run == $remote.last_commit
+    and $remote.session.unknown == true
+    and $remote.last_turn.unknown == true
+    and ($local.last_commit.sha | type) == "string"
+    and $local.session.id == "sess-task"
+  ' "a remote task published facts from a local directory at the same path"
+  pass "a remote task is unknown even when its worktree path exists locally"
+}
+
 test_remaining_context_comes_from_pane_text() {
   local home script
   home=$(make_home pane-context)
@@ -798,6 +825,7 @@ test_failed_status_is_unknown_not_no_run
 test_transcript_fields_with_fractional_timestamps
 test_leftover_transcript_in_a_reused_slot_is_ignored
 test_ambiguous_transcript_when_two_qualify
+test_remote_task_never_reads_a_local_worktree
 test_remaining_context_comes_from_pane_text
 test_ungated_repo_is_unknown_not_failure
 test_last_output_needs_real_activity
@@ -816,4 +844,4 @@ test_stale_work_dir_is_swept
 test_watcher_poll_does_not_wait_for_heartbeat
 test_watcher_runs_one_heartbeat_at_a_time
 
-printf 'ok - %s tests passed\n' 28
+printf 'ok - %s tests passed\n' 29
