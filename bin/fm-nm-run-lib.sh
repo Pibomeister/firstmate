@@ -3,8 +3,9 @@
 #
 # ONE owner for the no-mistakes run-attribution primitives used by
 # fm-crew-state.sh (read-only current-state reporting), fm-teardown.sh
-# (pre-teardown run abort, see its "Fix 1" header comment), and fm-dod-lib.sh
-# (the custody check a Gerrit no-mistakes ready report must pass). Crew-state binds
+# (pre-teardown run abort, see its "Fix 1" header comment), fm-dod-lib.sh
+# (the custody check a Gerrit no-mistakes ready report must pass), and
+# fm-heartbeat.sh (read-only fleet ledger). Crew-state binds
 # an EXECUTING run (pending, running, fixing or ci) on the task's branch
 # regardless of head (fm_nm_run_is_executing); every other run still needs
 # strict branch-and-head identity. Both callers then recognize a provable
@@ -109,6 +110,24 @@ fm_nm_run_checked() {  # <dir> <timeout_secs> <args...>
 
 fm_nm_run() {  # <dir> <timeout_secs> <args...>
   fm_nm_run_checked "$@" || true
+}
+
+# ONE bounded `daemon status` call answering `up`, `unanswered` (the bounded
+# call's own 124), or `down`. A clean stop also exits 0, with
+# "○ daemon not running".
+fm_nm_daemon_answer() {  # <dir> <timeout_secs>
+  local rc=0 daemon_status
+  daemon_status=$(fm_nm_run_checked "$1" "$2" daemon status) || rc=$?
+  case "$rc" in
+    0)
+      if printf '%s\n' "$daemon_status" | grep -Eq '(^|[[:space:]])daemon running([[:space:]]|$)'; then
+        printf 'up\n'
+      else
+        printf 'down\n'
+      fi ;;
+    124) printf 'unanswered\n' ;;
+    *)   printf 'down\n' ;;
+  esac
 }
 
 fm_nm_trim() {
