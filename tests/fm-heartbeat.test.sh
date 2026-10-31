@@ -487,6 +487,7 @@ test_remote_task_never_reads_a_local_worktree() {
     "$home/canned-snapshot.json" > "$home/remote.json"
   mv "$home/remote.json" "$home/canned-snapshot.json"
   publish "$home" FAKE_NM_MODE=run FM_HEARTBEAT_SNAPSHOT_SCRIPT="$script"
+  # shellcheck disable=SC2016 # $remote and $local are jq variables.
   assert_ledger "$home" '
     (.tasks[] | select(.id == "task-a")) as $remote
     | (.tasks[] | select(.id == "task-b")) as $local
