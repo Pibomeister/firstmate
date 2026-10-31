@@ -1,0 +1,40 @@
+--- [composer] real Claude pane with typed, unsent text
+{"g":"2026-10-31T10:35:19Z","f":null,"ship":{"exists":true,"composer_state":"pending","last_commit":{"sha":"3bf9f79ab421edf4552ceee45a118b43fc443516","branch":"fm/lab-ship"},"last_push":{"sha":"41f3eda5fd1620267cc7936700a1c5aac0b5e73d","ref":"origin/fm/lab-ship"},"no_mistakes_run":{"unknown":true,"reason":"repo has no gate"}}}
+❯ Reply with only the word ok. Use no tools.
+❯ : Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your 'lab-ship.inbox' steering inbox, read and act on each in numeric order, then mv each into its handled/.
+❯ draft not sent
+--- [composer] cleared
+{"g":"2026-10-31T10:35:47Z","f":{"reason":"task lab-ship composer timed out after 3s; task lab-ship no-mistakes status exit 124","count":2},"ship":{"exists":true,"composer_state":"unknown","last_commit":{"sha":"3bf9f79ab421edf4552ceee45a118b43fc443516","branch":"fm/lab-ship"},"last_push":{"sha":"41f3eda5fd1620267cc7936700a1c5aac0b5e73d","ref":"origin/fm/lab-ship"},"no_mistakes_run":{"unknown":true,"reason":"no-mistakes status read failed"}}}
+--- [push] mate commits and pushes
+(eval):8: no such file or directory: git -C /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.T27vmU/projects/hb -c user.name=lab -c user.email=l@l
+(eval):8: no such file or directory: git -C /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.T27vmU/projects/hb -c user.name=lab -c user.email=l@l
+(eval):8: no such file or directory: git -C /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.T27vmU/projects/hb -c user.name=lab -c user.email=l@l
+git HEAD:  origin: 41f3eda5fd1620267cc7936700a1c5aac0b5e73d
+{"g":"2026-10-31T10:36:22Z","f":null,"ship":{"exists":true,"composer_state":"empty","last_commit":{"sha":"3bf9f79ab421edf4552ceee45a118b43fc443516","branch":"fm/lab-ship"},"last_push":{"sha":"41f3eda5fd1620267cc7936700a1c5aac0b5e73d","ref":"origin/fm/lab-ship"},"no_mistakes_run":{"unknown":true,"reason":"repo has no gate"}}}
+--- [unpushed] mate commits, no push: last_commit moves, last_push must not
+(eval):9: no such file or directory: git -C /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.T27vmU/projects/hb -c user.name=lab -c user.email=l@l
+(eval):9: no such file or directory: git -C /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.T27vmU/projects/hb -c user.name=lab -c user.email=l@l
+git HEAD: 
+{"g":"2026-10-31T10:36:50Z","f":null,"ship":{"exists":true,"composer_state":"empty","last_commit":{"sha":"3bf9f79ab421edf4552ceee45a118b43fc443516","branch":"fm/lab-ship"},"last_push":{"sha":"41f3eda5fd1620267cc7936700a1c5aac0b5e73d","ref":"origin/fm/lab-ship"},"no_mistakes_run":{"unknown":true,"reason":"repo has no gate"}}}
+--- [ADVERSARIAL] mate leaves recorded branch, commits, pushes
+(eval):10: no such file or directory: git -C /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.T27vmU/projects/hb -c user.name=lab -c user.email=l@l
+(eval):10: no such file or directory: git -C /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.T27vmU/projects/hb -c user.name=lab -c user.email=l@l
+(eval):10: no such file or directory: git -C /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.T27vmU/projects/hb -c user.name=lab -c user.email=l@l
+(eval):10: no such file or directory: git -C /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.T27vmU/projects/hb -c user.name=lab -c user.email=l@l
+(eval):10: no such file or directory: git -C /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.T27vmU/projects/hb -c user.name=lab -c user.email=l@l
+worktree on:  HEAD: 
+{"g":"2026-10-31T10:37:42Z","f":null,"ship":{"exists":true,"composer_state":"empty","last_commit":{"sha":"3bf9f79ab421edf4552ceee45a118b43fc443516","branch":"fm/lab-ship"},"last_push":{"sha":"41f3eda5fd1620267cc7936700a1c5aac0b5e73d","ref":"origin/fm/lab-ship"},"no_mistakes_run":{"unknown":true,"reason":"repo has no gate"}}}
+--- [recover] back on recorded branch
+(eval):11: no such file or directory: git -C /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.T27vmU/projects/hb -c user.name=lab -c user.email=l@l
+{"g":"2026-10-31T10:38:07Z","f":null,"ship":{"exists":true,"composer_state":"empty","last_commit":{"sha":"3bf9f79ab421edf4552ceee45a118b43fc443516","branch":"fm/lab-ship"},"last_push":{"sha":"41f3eda5fd1620267cc7936700a1c5aac0b5e73d","ref":"origin/fm/lab-ship"},"no_mistakes_run":{"unknown":true,"reason":"repo has no gate"}}}
+--- [push] mate commits and pushes
+git HEAD: 106d755b080083413e503a0f9647428f8ef6ce7b origin: 106d755b080083413e503a0f9647428f8ef6ce7b
+{"g":"2026-10-31T10:39:07Z","f":{"reason":"task lab-ship composer timed out after 3s","count":1},"ship":{"composer_state":"unknown","last_commit":{"sha":"106d755b080083413e503a0f9647428f8ef6ce7b","branch":"fm/lab-ship"},"last_push":{"sha":"106d755b080083413e503a0f9647428f8ef6ce7b","ref":"origin/fm/lab-ship"},"no_mistakes_run":{"unknown":true,"reason":"repo has no gate"},"inbox":0}}
+--- [unpushed] mate commits, no push: last_commit moves, last_push must not
+git HEAD: a9b29412aed0840940f6ac70555c3a8fabcaafd6
+{"g":"2026-10-31T10:39:40Z","f":null,"ship":{"composer_state":"empty","last_commit":{"sha":"a9b29412aed0840940f6ac70555c3a8fabcaafd6","branch":"fm/lab-ship"},"last_push":{"sha":"106d755b080083413e503a0f9647428f8ef6ce7b","ref":"origin/fm/lab-ship"},"no_mistakes_run":{"unknown":true,"reason":"repo has no gate"},"inbox":0}}
+--- [ADVERSARIAL] mate leaves recorded branch, commits, pushes
+worktree on: fm/elsewhere2 HEAD: 9a0a1076f1f8ec095859790e9615a95961aec3b7
+{"g":"2026-10-31T10:40:06Z","f":null,"ship":{"composer_state":"empty","last_commit":{"sha":"9a0a1076f1f8ec095859790e9615a95961aec3b7","branch":{"unknown":true,"reason":"worktree is on branch fm/elsewhere2; task records fm/lab-ship"}},"last_push":{"unknown":true,"reason":"worktree is on branch fm/elsewhere2; task records fm/lab-ship"},"no_mistakes_run":{"unknown":true,"reason":"repo has no gate"},"inbox":0}}
+--- [recover] back on recorded branch
+{"g":"2026-10-31T10:41:12Z","f":null,"ship":{"composer_state":"empty","last_commit":{"sha":"a9b29412aed0840940f6ac70555c3a8fabcaafd6","branch":"fm/lab-ship"},"last_push":{"sha":"106d755b080083413e503a0f9647428f8ef6ce7b","ref":"origin/fm/lab-ship"},"no_mistakes_run":{"unknown":true,"reason":"repo has no gate"},"inbox":0}}

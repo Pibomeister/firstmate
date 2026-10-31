@@ -1,0 +1,16 @@
+t(utc) | watcher beat | ledger generated | snapshot.ok | in-flight heartbeats | hung sleeps
+10:42:12 | 04:41:23 | 2026-10-31T10:41:12Z | true | 0 | 0
+10:42:30 | 04:41:23 | 2026-10-31T10:41:12Z | true | 0 | 0
+10:42:46 | 04:41:23 | 2026-10-31T10:41:12Z | true | 0 | 0
+10:42:58 | 04:42:52 | 2026-10-31T10:41:12Z | true | 2 | 0
+10:43:25 | 04:42:52 | 2026-10-31T10:41:12Z | true | 1 | 0
+10:43:43 | 04:42:52 | 2026-10-31T10:41:12Z | true | 0 | 0
+10:43:57 | 04:43:50 | 2026-10-31T10:42:52Z | true | 1 | 0
+10:44:11 | 04:44:00 | 2026-10-31T10:43:50Z | true | 0 | 0
+10:44:27 | 04:44:13 | 2026-10-31T10:43:50Z | true | 1 | 0
+10:44:45 | 04:44:36 | 2026-10-31T10:43:50Z | true | 2 | 0
+10:45:02 | 04:44:58 | 2026-10-31T10:44:13Z | true | 2 | 0
+10:45:16 | 04:44:58 | 2026-10-31T10:44:13Z | true | 1 | 0
+10:45:37 | 04:44:58 | 2026-10-31T10:44:13Z | true | 4 | 0
+10:45:53 | 04:44:58 | 2026-10-31T10:44:58Z | true | 0 | 0
+{"snapshot":{"ok":true,"schema":"fm-fleet-snapshot.v1","generated":"2026-10-31T10:44:58Z","failure":null},"failure":{"reason":"task lab-self no-mistakes status exit 124; task lab-ship composer timed out after 3s","count":2},"tasks_len":2,"primary_terminal":{"backend":"tmux","target":"%0","present":true}}
