@@ -2915,11 +2915,12 @@ EOF
 }
 
 # Away decisions use the timed status fold, but require an explicit authority
-# record for council routing. Unknown authority is a captain page. The claim is
+# record for council routing. Without a council entrypoint, every class is a
+# captain page. The claim is
 # bound to task, key, opening epoch and away confirmation, so a repeat scan or
 # a new decision episode cannot silently inherit an earlier result. The
 # council adapter is deliberately absent until its documented entrypoint is
-# available; a routine wake is a pending request, never a claimed approval.
+# available; no classification can authorize an unattended decision yet.
 # config/decision-age-authority rows: task TAB key TAB opening-epoch TAB
 # routine|captain-only. Only a firstmate-owned configuration may grant routine.
 away_decision_claimed() {  # <claims-file> <task> <key> <opened>
@@ -2982,8 +2983,7 @@ away_decision_age_tick() {  # [now-epoch]
   local record="$STATE/.afk-contract" confirmed exclude f task open key verb opened note
   local due_task='' due_key='' due_opened='' due_class=unknown class_file
   local claim_file claim_lock class_now authority_changed=0
-  local claim_opened claim_confirmed page_result page_state current=0 reason
-  OPEN_AWAY_DECISION_WAKE=
+  local claim_opened claim_confirmed page_result page_state current=0
   away_record_present || return 0
   fm_afk_contract_validate "$record" || return 1
   case "$threshold" in ''|0*|*[!0-9]*) echo 'watcher: invalid away decision threshold' >&2; return 1 ;; esac
@@ -3066,24 +3066,13 @@ EOF
     printf '%s\t%s\t%s\t%s\tauthority-changed\n' \
       "$due_task" "$due_key" "$due_opened" "$confirmed" >> "$claim_file"
   fi
-  if [ "$due_class" = routine ]; then
-    reason="check: away decision council pending: $due_task key=$due_key age=$((now - due_opened))s"
-    if fm_wake_append check "away-decision:$due_task:$due_key:$due_opened" "$reason"; then
-      OPEN_AWAY_DECISION_WAKE=$reason
-      printf '%s\t%s\t%s\t%s\tcouncil-pending\n' "$due_task" "$due_key" "$due_opened" "$confirmed" >> "$claim_file"
-    else
-      printf '%s\t%s\t%s\t%s\twake-failed\n' "$due_task" "$due_key" "$due_opened" "$confirmed" >> "$claim_file"
-      return 1
-    fi
-  else
-    page_result=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG" \
-      bash "$SCRIPT_DIR/fm-supervise-daemon.sh" page \
-      "Away decision needs captain: $due_task key=$due_key" "$claim_file" 2>/dev/null) || true
-    page_state=${page_result#page: }
-    case "$page_state" in sent|failed|pending) ;; *) page_state=pending ;; esac
-    printf '%s\t%s\t%s\t%s\tpage-%s\t%s\n' \
-      "$due_task" "$due_key" "$due_opened" "$confirmed" "$page_state" "$now" >> "$claim_file"
-  fi
+  page_result=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG" \
+    bash "$SCRIPT_DIR/fm-supervise-daemon.sh" page \
+    "Away decision needs captain: $due_task key=$due_key" "$claim_file" 2>/dev/null) || true
+  page_state=${page_result#page: }
+  case "$page_state" in sent|failed|pending) ;; *) page_state=pending ;; esac
+  printf '%s\t%s\t%s\t%s\tpage-%s\t%s\n' \
+    "$due_task" "$due_key" "$due_opened" "$confirmed" "$page_state" "$now" >> "$claim_file"
 }
 
 # The identity a re-surface throttle is bound to: the task's whole status-log
@@ -4467,8 +4456,6 @@ while :; do
     echo 'watcher: away decision age check failed' >&2
     exit 1
   }
-  [ -z "$OPEN_AWAY_DECISION_WAKE" ] || wake "$OPEN_AWAY_DECISION_WAKE"
-
   # Endpoint liveness runs before queue observation: a positively dead or
   # missing secondmate endpoint is relaunched here on a bounded cadence, which
   # is also what unsticks that mate's foreign wake queue. The tick's single
