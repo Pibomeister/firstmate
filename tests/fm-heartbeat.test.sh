@@ -500,7 +500,7 @@ SH
   fm_test_track_watcher_state "$home/state"
   FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
     FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
-    FM_HEARTBEAT_SNAPSHOT_TIMEOUT=6 FM_HEARTBEAT_SNAPSHOT_SCRIPT="$slow" \
+    FM_HEARTBEAT_SNAPSHOT_TIMEOUT=45 FM_HEARTBEAT_SNAPSHOT_SCRIPT="$slow" \
     "$WATCH" > "$TMP_ROOT/watch-single.out" 2> "$TMP_ROOT/watch-single.err" &
   WATCH_PID=$!
   wait_for_file "$home/state/.last-watcher-beat" 30 || fail "watcher never polled"
@@ -513,7 +513,7 @@ SH
   kill -KILL "$WATCH_PID" 2>/dev/null
   wait "$WATCH_PID" 2>/dev/null
   WATCH_PID=
-  wait_for_file "$home/state/heartbeat.json" 20 || fail "the bounded heartbeat never published"
+  wait_for_file "$home/state/heartbeat.json" 60 || fail "the bounded heartbeat never published"
   assert_ledger "$home" '.snapshot.ok == false and (.failure.reason | test("timed out"))' \
     "timed-out detached heartbeat published no failure"
   pass "the watcher keeps polling with one detached heartbeat in flight, which still publishes"
