@@ -254,7 +254,7 @@ fi
 
 if INBOX_NAMES=$(sed -n 's/^checkpoint-inbox://p' "$OUT" 2>/dev/null) && [ -n "$INBOX_NAMES" ]; then
   [ ! -s "$ERR" ] || cat "$ERR" >&2
-  printf 'checkpoint: firstmate instruction waiting in the steering inbox:%s - read, act on and acknowledge each record now, then start the next checkpoint\n' "$INBOX_NAMES"
+  printf 'checkpoint: firstmate instruction waiting in the steering inbox:%s - read, act on and acknowledge each record now, then stop. Do not start another checkpoint.\n' "$INBOX_NAMES"
   exit 0
 fi
 

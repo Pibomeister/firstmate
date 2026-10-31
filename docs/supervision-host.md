@@ -72,7 +72,7 @@ The host's header owns the output contract they read.
 | OpenCode | the TUI plugin, `.opencode/plugins/fm-primary-watch-arm.js`, which restarts its own successor after each close | a `watcher` prompt through `ctx.session.prompt` |
 | omp | the watch extension, `.omp/extensions/fm-primary-omp-watch.ts`, which restarts its own successor after each close | the extension's `watcher` follow-up |
 | Grok | the model's tracked background call, rendered as `bin/fm-supervision-host.sh park` at session start | the background task's completion notification |
-| Codex | the foreground checkpoint, `bin/fm-watch-checkpoint.sh`, in the watcher's place | the checkpoint's own output |
+| Codex | an already-running `bin/fm-watch-checkpoint.sh` in the watcher's place, which the Stop hook does not start again | the checkpoint's own output |
 | Antigravity (`agy`) | the Stop-hook park, `bin/fm-turnend-guard-agy.sh` | the park's `watcher` follow-up |
 
 Hook, plugin, extension, and checkpoint owners pass their harness as the primary pin.
@@ -159,7 +159,7 @@ A captain message typed while an engine turn is already running reaches the engi
 A captain prompt whose hook write fails is not mirrored, so the engine may judge the next attended wake without it; Claude and Cursor have no later source for it.
 
 Claude and Cursor have writers, proven against the real harness to record the session's dialog from its first captain prompt, so only they run the attended posture.
-Codex has no writer yet: a supervising Codex main stays inside one turn across its foreground checkpoints, so a captain message typed then fires no prompt or Stop hook, and only a reader of its transcript could record it.
+Codex has no writer yet: a turn can end without a checkpoint still running, so a captain message typed during the turn fires no prompt or Stop hook the host can record, and only a reader of its transcript could record it.
 Grok and OpenCode have no writer, because their session takes the fleet lock during its first turn, so that turn's captain prompt could never be recorded.
 omp has no verified writer, because no omp was available to prove one against.
 

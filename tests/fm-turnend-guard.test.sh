@@ -2462,6 +2462,7 @@ test_codex_blocks_turn_end_while_own_checkpoint_runs() {
   expect_code 2 "$STATUS" "a Codex stop while this session's own checkpoint runs must block; nothing reads it after the turn ends: $OUT"
   assert_contains "$OUT" "foreground checkpoint is still running" "the block must name the running checkpoint"
   assert_contains "$OUT" "Poll its exec session with write_stdin" "the block must name the repair"
+  assert_not_contains "$OUT" "start the next checkpoint" "the block must not ask for another checkpoint"
   pass "fm-turnend-guard codex: blocks a turn end while its own checkpoint is still running"
 }
 
@@ -2528,53 +2529,109 @@ test_codex_allows_watcher_owned_by_another_session() {
   pass "fm-turnend-guard codex: a live watcher another session owns still allows the stop"
 }
 
-test_codex_ignored_repair_can_end_and_progress_keeps_holding() {
+test_codex_missing_watcher_allows_stop_without_a_checkpoint_loop() {
   local dir
   dir=$(make_primary_dir "$TMP_ROOT/codex-progress")
   : > "$dir/state/task1.meta"
   touch "$dir/state/.last-watcher-beat"
   run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
-  expect_code 2 "$STATUS" "a Codex stop with no watcher must block"
-  run_codex_hook "$dir" "$(codex_payload s1 t1 true)"
-  expect_code 0 "$STATUS" "a continuation that advanced nothing since the block must be allowed to end"
-  # The next beat lands in the same whole second as the beat the block recorded:
-  # full mtime precision must still see it as progress.
-  touch -d 2026-01-01T00:00:00.1 "$dir/state/.last-watcher-beat"
-  run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
-  expect_code 2 "$STATUS" "re-arming block"
+  expect_code 0 "$STATUS" "a Codex stop with no watcher must end instead of blocking: $OUT"
+  assert_contains "$OUT" "NO PERSISTENT WATCHER" "the allow must name the missing hold"
+  assert_not_contains "$OUT" "fm-watch-checkpoint.sh" "the allow must not name a checkpoint command"
+  assert_not_contains "$OUT" "start the next checkpoint" "the allow must not ask for another checkpoint"
+  # A finished checkpoint whose beacon or lock identity advanced must not re-block.
   touch -d 2026-01-01T00:00:00.6 "$dir/state/.last-watcher-beat"
   run_codex_hook "$dir" "$(codex_payload s1 t1 true)"
-  expect_code 2 "$STATUS" "a continuation that ran a watcher since the block must stay held: $OUT"
-  run_codex_hook "$dir" "$(codex_payload s1 t1 true)"
-  expect_code 0 "$STATUS" "after the progress re-block, an idle continuation may end"
-  pass "fm-turnend-guard codex: an ignored repair can end, while watcher progress keeps the turn held"
-}
-
-test_codex_new_watch_lock_identity_counts_as_progress() {
-  local dir
-  dir=$(make_primary_dir "$TMP_ROOT/codex-identity-progress")
-  : > "$dir/state/task1.meta"
-  run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
-  expect_code 2 "$STATUS" "a Codex stop with no watcher must block"
+  expect_code 0 "$STATUS" "a beacon advance must not re-block a continued stop: $OUT"
   record_watcher_lock "$dir" "$(nonexistent_pid)" "new cycle identity"
   run_codex_hook "$dir" "$(codex_payload s1 t1 true)"
-  expect_code 2 "$STATUS" "a new watch-lock identity since the block is progress even before a beat: $OUT"
-  pass "fm-turnend-guard codex: a new watch-lock identity counts as progress"
+  expect_code 0 "$STATUS" "a new watch-lock identity must not re-block a continued stop: $OUT"
+  pass "fm-turnend-guard codex: a missing watcher lets the turn end, and progress does not re-block it"
+}
+
+test_codex_detach_hold_allows_stop_when_the_watcher_is_healthy() {
+  local dir pid
+  dir=$(make_primary_dir "$TMP_ROOT/codex-detach-hold")
+  : > "$dir/state/task1.meta"
+  cat > "$dir/bin/fm-watch-arm.sh" <<'SH'
+#!/usr/bin/env bash
+set -m
+sleep 60 >/dev/null 2>&1 </dev/null &
+pid=$!
+disown "$pid" 2>/dev/null || true
+identity=$(FM_STATE_OVERRIDE="$FM_HOME/state" bash -c '. "$1"; fm_pid_identity "$2"' _ "$FM_HOME/bin/fm-wake-lib.sh" "$pid")
+mkdir -p "$FM_HOME/state/.watch.lock"
+printf '%s\n' "$pid" > "$FM_HOME/state/.watch.lock/pid"
+printf '%s\n' "$FM_HOME" > "$FM_HOME/state/.watch.lock/fm-home"
+printf '%s\n' "$FM_HOME/bin/fm-watch.sh" > "$FM_HOME/state/.watch.lock/watcher-path"
+printf '%s\n' "$identity" > "$FM_HOME/state/.watch.lock/pid-identity"
+touch "$FM_HOME/state/.last-watcher-beat"
+printf '%s\n' "$pid" > "$FM_HOME/state/detach-pid"
+exit 0
+SH
+  chmod +x "$dir/bin/fm-watch-arm.sh"
+  run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
+  pid=$(cat "$dir/state/detach-pid" 2>/dev/null || true)
+  [ -n "$pid" ] && kill "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  expect_code 0 "$STATUS" "a confirmed detached hold must allow the stop: $OUT"
+  [ -z "$OUT" ] || fail "a confirmed detached hold must be silent: $OUT"
+  [ -n "$pid" ] || fail "the detach stub did not record a watcher pid"
+  pass "fm-turnend-guard codex: a detached hold allows the stop without a checkpoint"
+}
+
+test_codex_host_selected_allows_stop_without_a_second_watcher() {
+  local dir
+  dir=$(make_primary_dir "$TMP_ROOT/codex-host-selected")
+  : > "$dir/state/task1.meta"
+  mkdir -p "$dir/config"
+  : > "$dir/config/supervision-host"
+  cat > "$dir/bin/fm-watch-arm.sh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' called > "$FM_HOME/state/arm-called"
+exit 0
+SH
+  chmod +x "$dir/bin/fm-watch-arm.sh"
+  run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
+  expect_code 0 "$STATUS" "a host-selected Codex home must allow the stop: $OUT"
+  assert_contains "$OUT" "selected the supervision host" "the allow must name the supervision host"
+  assert_not_contains "$OUT" "fm-watch-checkpoint.sh" "the allow must not name a checkpoint command"
+  [ ! -e "$dir/state/arm-called" ] || fail "a host-selected home must not start a second watcher"
+  pass "fm-turnend-guard codex: a selected supervision host does not get a second watcher"
 }
 
 test_codex_stale_or_foreign_block_record_is_judged_fresh() {
   local dir
   dir=$(make_primary_dir "$TMP_ROOT/codex-stale-record")
-  : > "$dir/state/task1.meta"
+  printf '1790000000 1 signal task1.status done\n' > "$dir/state/.wake-queue"
   run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
-  expect_code 2 "$STATUS" "a Codex stop with no watcher must block"
+  expect_code 2 "$STATUS" "a queued wake must block the first stop: $OUT"
   run_codex_hook "$dir" "$(codex_payload s1 t2 true)"
-  expect_code 2 "$STATUS" "a record from an earlier turn must not allow a later turn's continued stop: $OUT"
+  expect_code 2 "$STATUS" "a new turn must not inherit the previous turn's block budget: $OUT"
   run_codex_hook "$dir" "$(codex_payload s2 t2 true)"
   expect_code 2 "$STATUS" "another session's record must not allow this session's continued stop: $OUT"
   run_codex_hook "$dir" "$(codex_payload s1 t2 true)"
-  expect_code 0 "$STATUS" "each session keeps its own record: s1 t2 is now an idle continuation"
-  pass "fm-turnend-guard codex: block records are scoped to their own session and turn"
+  expect_code 2 "$STATUS" "the second block of the same turn must still hold a queued wake: $OUT"
+  run_codex_hook "$dir" "$(codex_payload s1 t2 true)"
+  expect_code 0 "$STATUS" "the third block of the same turn must allow the stop: $OUT"
+  assert_contains "$OUT" "BLOCK BUDGET" "the budget allow must name the bound"
+  assert_not_contains "$OUT" "fm-watch-checkpoint.sh" "the budget allow must not name a checkpoint command"
+  pass "fm-turnend-guard codex: block records stay on their own session and turn, then the budget allows the stop"
+}
+
+test_codex_queued_wake_budget_allows_stop() {
+  local dir
+  dir=$(make_primary_dir "$TMP_ROOT/codex-queue-budget")
+  printf '1790000000 1 signal task1.status done\n' > "$dir/state/.wake-queue"
+  run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
+  expect_code 2 "$STATUS" "the first queued stop must block: $OUT"
+  run_codex_hook "$dir" "$(codex_payload s1 t1 true)"
+  expect_code 2 "$STATUS" "the second queued stop must still block: $OUT"
+  run_codex_hook "$dir" "$(codex_payload s1 t1 true)"
+  expect_code 0 "$STATUS" "the third queued stop must allow the turn to end: $OUT"
+  assert_contains "$OUT" "BLOCK BUDGET" "the budget allow must name the bound"
+  assert_not_contains "$OUT" "start the next checkpoint" "the budget allow must not ask for another checkpoint"
+  pass "fm-turnend-guard codex: a queued wake cannot hold the turn past the block budget"
 }
 
 test_codex_foreign_lock_owner_gets_read_only_exit() {
@@ -2637,10 +2694,12 @@ test_secondmate_event_instructions_finish_turn() {
   out=$(FM_HOME="$dir" FM_TASK_INBOX="$dir/parent/state/sm-test-1.inbox" TMUX=fixture,1,0 TMUX_PANE=%27 "$dir/bin/fm-supervision-instructions.sh" --harness codex)
   assert_contains "$out" 'Mode: Secondmate event-driven turns.' "secondmate must receive the outside-turn protocol"
   assert_contains "$out" 'end this turn' "secondmate must finish its handling turn"
-  assert_contains "$out" 'If bin/fm-watch.sh --secondmate reports a failure, follow the default checkpoint protocol below instead.' "secondmate must keep the explicit checkpoint fallback"
-  assert_contains "$out" 'fm-watch-checkpoint.sh' "secondmate fallback must name the checkpoint loop"
-  out=$(FM_HOME="$dir" FM_TASK_INBOX="$dir/parent/state/sm-test-1.inbox" TMUX=fixture,1,0 TMUX_PANE=%27 "$dir/bin/fm-supervision-instructions.sh" --harness codex --repair-line)
-  assert_contains "$out" 'if it reports a failure, repair missing watcher supervision with a foreground checkpoint' "secondmate repair must fall back to the checkpoint loop"
+  assert_contains "$out" 'If bin/fm-watch.sh --secondmate reports a failure, run one bin/fm-watch-checkpoint.sh checkpoint, handle its wake, then stop. Do not start another checkpoint.' "secondmate must keep one checkpoint fallback"
+  assert_contains "$out" 'fm-watch-checkpoint.sh' "secondmate fallback must name the checkpoint"
+  out=$(FM_HOME="$dir" FM_CODEX_WATCH_CHECKPOINT=7 FM_TASK_INBOX="$dir/parent/state/sm-test-1.inbox" TMUX=fixture,1,0 TMUX_PANE=%27 "$dir/bin/fm-supervision-instructions.sh" --harness codex --repair-line)
+  assert_contains "$out" 'if it reports a failure, repair missing watcher supervision with a foreground checkpoint' "secondmate repair must fall back to one checkpoint"
+  assert_contains "$out" 'bin/fm-watch-checkpoint.sh --seconds 7' "secondmate repair must keep the checkpoint bound"
+  assert_contains "$out" 'Do not start another checkpoint.' "secondmate repair must not ask for a successor checkpoint"
   pass "secondmate instructions end the handling turn without model polling"
 }
 
@@ -2770,7 +2829,11 @@ try:
     (root/'config/supervision-host').touch()
     (root/'config/supervision-host-off').unlink(missing_ok=True)
     require(run(watch,'--secondmate-selected').returncode==1,'host ownership did not take precedence')
-    require(guard().returncode==2 and guard(True).returncode==0,'stale short-turn record forced an unsupported host into a permanent block')
+    stopped=guard()
+    text=stopped.stdout+stopped.stderr
+    require(stopped.returncode==0, 'selected supervision host still blocked the stop: '+text)
+    require('selected the supervision host' in text, 'host allow did not name the supervision host')
+    require('fm-watch-checkpoint.sh' not in text, 'host allow named a checkpoint')
     (root/'result.json').write_text(json.dumps({'passed': True, 'watcher_pid':pid}))
 except Exception as exc:
     (root/'result.json').write_text(json.dumps({'passed':False,'error':str(exc)}))
@@ -3127,9 +3190,11 @@ test_codex_reblocks_open_checkpoint_after_its_own_block
 test_codex_holds_own_checkpoint_then_ignored_repair_can_end
 test_codex_holds_own_checkpoint_then_ignored_repair_can_end 1 2
 test_codex_allows_watcher_owned_by_another_session
-test_codex_ignored_repair_can_end_and_progress_keeps_holding
-test_codex_new_watch_lock_identity_counts_as_progress
+test_codex_missing_watcher_allows_stop_without_a_checkpoint_loop
+test_codex_detach_hold_allows_stop_when_the_watcher_is_healthy
+test_codex_host_selected_allows_stop_without_a_second_watcher
 test_codex_stale_or_foreign_block_record_is_judged_fresh
+test_codex_queued_wake_budget_allows_stop
 test_codex_foreign_lock_owner_gets_read_only_exit
 test_codex_no_work_stays_silent
 test_codex_queued_wake_keeps_turn_open_after_last_task_clears

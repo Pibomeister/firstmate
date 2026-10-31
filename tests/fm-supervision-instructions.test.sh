@@ -32,10 +32,13 @@ test_selected_harness_block_only() {
   assert_contains "$out" "bin/fm-watch-checkpoint.sh" "codex checkpoint helper missing"
   # shellcheck disable=SC2016 # Backticks are literal protocol markup.
   assert_contains "$out" 'poll it with `write_stdin` (empty input) until it exits' "codex must read a yielded checkpoint to completion"
-  assert_contains "$out" "start exactly one successor checkpoint after the previous command exits" "codex must finish the current cycle before replacing it"
-  assert_contains "$out" "Keep the turn open while supervision is needed or wakes still need handling and acknowledgement" "codex must not end a turn with supervision work unresolved"
-  assert_contains "$out" "send each captain-facing reply as an interim (commentary) message" "codex must reply without ending the supervised turn"
-  assert_contains "$out" "Never send it as the turn's final answer" "codex must not end a supervised turn with a final answer"
+  assert_contains "$out" "The Stop hook re-arms a persistent watcher or allows this turn to end." "codex must re-arm or allow the turn to end"
+  assert_contains "$out" "Do not start another foreground checkpoint." "codex must not start a successor checkpoint"
+  assert_contains "$out" "Send a reply as an interim message only while a checkpoint of yours is still running." "codex interim replies stay inside a running checkpoint"
+  assert_contains "$out" "the final answer may end the turn" "codex may end the turn once the queue is drained"
+  assert_not_contains "$out" "start exactly one successor checkpoint" "codex must not ask for a successor checkpoint"
+  assert_not_contains "$out" "Never send it as the turn's final answer" "codex must not forbid the final answer after the checkpoint exits"
+  assert_not_contains "$out" "Keep the turn open while supervision is needed" "codex must not hold the turn open after the checkpoint exits"
   assert_not_contains "$out" "Mode: Claude Stop-hook-owned supervision." "renderer printed the claude snippet too"
   assert_not_contains "$out" "Mode: Pi extension background wake." "renderer printed the pi snippet too"
   pass "renderer prints exactly the selected harness block"
@@ -176,8 +179,9 @@ test_quiet_mode_stanzas() {
   assert_contains "$out" "- Away mode: active" "omitting --afk-mode did not default to away (regression)"
   assert_not_contains "$out" "Quiet mode" "omitting --afk-mode leaked quiet-mode text"
   scope="When this session owns supervision and no away daemon is active:"
-  assert_contains "${out#*"$scope"}" "it requires the turn to remain open" "codex turn-open rule missing from the no-away-daemon scope"
-  assert_not_contains "${out%%"$scope"*}" "it requires the turn to remain open" "codex turn-open rule rendered outside the no-away-daemon scope"
+  assert_contains "${out#*"$scope"}" "or allows this turn to end" "codex re-arm rule missing from the no-away-daemon scope"
+  assert_not_contains "${out%%"$scope"*}" "or allows this turn to end" "codex re-arm rule rendered outside the no-away-daemon scope"
+  assert_not_contains "$out" "it requires the turn to remain open" "codex no longer requires the turn to stay open"
 
   out=$(FM_HOME="$home" "$RENDER" --harness codex --afk 1 --afk-mode not-a-real-mode)
   assert_contains "$out" "- Away mode: active" "unrecognized --afk-mode value did not fall back to away"
@@ -192,10 +196,11 @@ test_repair_lines() {
   home="$TMP_ROOT/repair-home"
   mkdir -p "$home/state" "$home/config"
   out=$(FM_HOME="$home" FM_CODEX_WATCH_CHECKPOINT=7 "$RENDER" --harness codex --repair-line)
-  assert_contains "$out" "bin/fm-watch-checkpoint.sh --seconds 7" "codex repair line did not use checkpoint helper and env override"
-  assert_contains "$out" "send captain replies as interim messages, never as the turn's final answer" "codex repair line did not name the turn-ending final answer"
-  assert_contains "$out" "keep this turn open while supervision is needed" "codex repair line did not forbid ending the turn after a checkpoint"
-  assert_contains "$out" "a fresh beacon does not let you end the turn" "codex repair line let a fresh beacon read as a turn end"
+  assert_contains "$out" "The Stop hook re-arms a persistent watcher or allows this turn to end." "codex repair line did not re-arm or allow the turn"
+  assert_contains "$out" "do not start another foreground checkpoint" "codex repair line still asks for another checkpoint"
+  assert_not_contains "$out" "bin/fm-watch-checkpoint.sh" "codex repair line still names a checkpoint command"
+  assert_not_contains "$out" "keep this turn open" "codex repair line still forbids ending the turn"
+  assert_not_contains "$out" "a fresh beacon does not let you end the turn" "codex repair line still treats a fresh beacon as a reason to stay"
 
   out=$(FM_HOME="$home" "$RENDER" --harness claude --queue-pending 1 --repair-line)
   assert_contains "$out" "After draining queued wakes" "queue-pending prefix missing"
@@ -208,7 +213,7 @@ test_repair_lines() {
   : > "$home/config/x-mode.env"
   out=$(FM_HOME="$home" FM_CODEX_WATCH_CHECKPOINT=7 "$RENDER" --harness codex --x-mode 1 --repair-line)
   assert_contains "$out" "source '$home/config/x-mode.env' first" "x-mode repair line did not source the effective cadence config"
-  assert_contains "$out" "bin/fm-watch-checkpoint.sh --seconds 7" "x-mode codex repair line lost the checkpoint helper"
+  assert_contains "$out" "The Stop hook re-arms a persistent watcher or allows this turn to end." "x-mode codex repair line lost the re-arm rule"
 
   out=$(FM_HOME="$home" "$RENDER" --harness opencode --read-only 1 --repair-line)
   assert_contains "$out" "session holding the fleet lock" "read-only repair line missing"
@@ -313,12 +318,14 @@ test_cross_harness_ordinary_continuation_and_repair_matrix() {
 
   out=$("$RENDER" --harness codex)
   ordinary=$(printf '%s\n' "$out" | grep -F -- '- Ordinary wake:')
-  assert_contains "$ordinary" "next foreground" "codex ordinary-wake line lost its foreground checkpoint"
-  assert_contains "$ordinary" "bin/fm-watch-checkpoint.sh" "codex ordinary-wake line lost the checkpoint command"
+  assert_contains "$ordinary" "The Stop hook re-arms a persistent watcher" "codex ordinary-wake line lost the re-arm"
+  assert_contains "$ordinary" "Do not start another foreground checkpoint" "codex ordinary-wake line still asks for a checkpoint"
+  assert_not_contains "$ordinary" "bin/fm-watch-checkpoint.sh" "codex ordinary-wake line still names a checkpoint command"
   assert_not_contains "$ordinary" "bin/fm-watch-arm.sh" "codex ordinary-wake line incorrectly uses a background arm"
   out=$("$RENDER" --harness codex --repair-line)
-  assert_contains "$out" "foreground checkpoint" "codex recovery line lost its checkpoint repair"
-  assert_contains "$out" "bin/fm-watch-checkpoint.sh" "codex recovery line lost the checkpoint command"
+  assert_contains "$out" "do not start another foreground checkpoint" "codex recovery line still asks for a checkpoint"
+  assert_contains "$out" "The Stop hook re-arms a persistent watcher or allows this turn to end." "codex recovery line lost the re-arm rule"
+  assert_not_contains "$out" "bin/fm-watch-checkpoint.sh" "codex recovery line still names a checkpoint command"
 
   pass "renderer preserves every harness ordinary-continuation and missing-cycle repair path"
 }

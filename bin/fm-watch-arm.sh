@@ -16,6 +16,11 @@
 # "already running" off the dying process. That exact mistake silently took
 # supervision down for ~30 minutes.
 # FM_WATCH_GROK_CONTINUITY=1 opts this arm into the Grok continuity in docs/watcher-continuity.md.
+# --detach-hold is the one hook-owned exception. The Codex Stop hook calls it
+# and then returns. It uses the same detached --grok-hold successor as Grok
+# continuity (set -m, nohup, disown), refuses while state/.afk exists, attaches
+# when a healthy watcher already holds this home's lock, and exits after that
+# successor is confirmed. It is not a shell & from a model command.
 # FM_WATCH_MANAGED_HOLD=1 is the watchdog's foreground-owner variant: its
 # watcher remains this arm's child after a wake, with no detached successor.
 # On a harness with a PreToolUse-equivalent hook, bin/fm-arm-pretool-check.sh
@@ -701,8 +706,33 @@ case "${1:-}" in
     case "$handling_watcher_pid" in ''|*[!0-9]*) echo "watcher: invalid successor watcher pid" >&2; exit 2 ;; esac
     [ "$#" -eq 4 ] || { echo "watcher: unexpected handling delivery arguments" >&2; exit 2; }
     ;;
-  *) echo "usage: $(basename "$0") [--restart | --stop | --take-over ARM_PID | --handling-delivered GENERATION --watcher-pid PID]" >&2; exit 2 ;;
+  --detach-hold)
+    mode=detach-hold
+    [ "$#" -eq 1 ] || { echo "watcher: unexpected detach-hold arguments" >&2; exit 2; }
+    ;;
+  *) echo "usage: $(basename "$0") [--restart | --stop | --detach-hold | --take-over ARM_PID | --handling-delivered GENERATION --watcher-pid PID]" >&2; exit 2 ;;
 esac
+
+# Hook-owned detach. Confirm the hold, then return. Do not enter the tracked
+# attach loop: the caller is a turn-end hook that must exit.
+if [ "$mode" = detach-hold ]; then
+  if [ -e "$STATE/.afk" ]; then
+    echo "watcher: FAILED - away mode owns supervision" >&2
+    exit 1
+  fi
+  FM_WATCH_GROK_CONTINUITY=1
+  export FM_WATCH_GROK_CONTINUITY
+  if healthy_watcher; then
+    report_attached
+    exit 0
+  fi
+  if start_grok_continuity_successor; then
+    echo "watcher: started pid=$GROK_SUCCESSOR_PID"
+    exit 0
+  fi
+  echo "watcher: FAILED - no live watcher with a fresh beacon"
+  exit 1
+fi
 
 if [ "$mode" = handling-delivered ]; then
   fm_pid_alive "$handling_watcher_pid" \

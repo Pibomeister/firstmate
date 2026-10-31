@@ -122,6 +122,10 @@ case "$HARNESS" in
     fi
     ;;
 esac
+codex_continuity='The Stop hook re-arms a persistent watcher or allows this turn to end.'
+if [ -n "$HOST_SNIPPET" ]; then
+  codex_continuity='The supervision host owns the watcher on this home. The Stop hook does not start a second watcher, and it allows this turn to end once no checkpoint of yours is running.'
+fi
 
 checkpoint_seconds=${FM_CODEX_WATCH_CHECKPOINT:-180}
 SECONDMATE_MODE=0
@@ -183,6 +187,7 @@ render_snippet() {  # [snippet]
     line=${line//__FM_X_MODE_ENV__/$x_mode_env}
     line=${line//__FM_GROK_ARM_COMMAND__/$grok_arm_command}
     line=${line//__FM_GROK_ARM__/$grok_arm}
+    line=${line//__FM_CODEX_CONTINUITY__/$codex_continuity}
     printf '%s\n' "$line"
   done < "$snippet"
 }
@@ -216,9 +221,13 @@ repair_line() {
       printf '%s%s\n' "$prefix" 'watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.'
       ;;
     codex)
-      suffix=
-      [ "$SECONDMATE_MODE" -eq 1 ] || suffix="; keep this turn open while supervision is needed, because a returning checkpoint is a tool result, and a fresh beacon does not let you end the turn; send captain replies as interim messages, never as the turn's final answer"
-      printf '%s%s%s%s%s\n' "$prefix" 'repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds ' "$checkpoint_seconds" "$suffix" '.'
+      if [ "$SECONDMATE_MODE" -eq 1 ]; then
+        printf '%s%s%s%s\n' "$prefix" 'repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds ' "$checkpoint_seconds" '. Poll it until it exits, handle its wake, then stop. Do not start another checkpoint.'
+      elif [ -n "$HOST_SNIPPET" ]; then
+        printf '%s%s\n' "$prefix" 'do not start another foreground checkpoint. The supervision host owns the watcher. Poll a checkpoint only while it is still running, then stop.'
+      else
+        printf '%s%s\n' "$prefix" 'do not start another foreground checkpoint. The Stop hook re-arms a persistent watcher or allows this turn to end. Poll a checkpoint only while it is still running, then stop.'
+      fi
       ;;
     pi|pi-signed)
       printf '%s%s%s%s%s%s\n' "$prefix" 'repair a missing or failed watcher cycle with the Pi tool fm_watch_arm_pi, or restart Pi with -e ' "$pi_turnend_ext" ' -e ' "$pi_ext" ' if the extensions are not loaded.'
@@ -266,7 +275,11 @@ ordinary_wake_line() {
       printf '%s\n' '- Ordinary wake: the Stop-owned auto-arm (bin/fm-claude-stop-autoarm.sh) already owns watcher continuity; drain and handle the wake, and do not arm another cycle yourself.'
       ;;
     codex)
-      printf '%s\n' '- Ordinary wake: take the next foreground bin/fm-watch-checkpoint.sh checkpoint as directed below.'
+      if [ -n "$HOST_SNIPPET" ]; then
+        printf '%s\n' '- Ordinary wake: drain and acknowledge the wake, then end the turn. The supervision host owns the watcher. Do not start another foreground checkpoint.'
+      else
+        printf '%s\n' '- Ordinary wake: drain and acknowledge the wake, then end the turn. The Stop hook re-arms a persistent watcher. Do not start another foreground checkpoint.'
+      fi
       ;;
     pi|pi-signed)
       printf '%s\n' '- Ordinary wake: the Pi extension already owns watcher continuity; do not arm another cycle.'
@@ -336,7 +349,7 @@ Read and acknowledge the steering inbox, drain and handle durable watcher events
 Send resulting actions and parent-channel replies in this handling turn.
 Run bin/fm-watch.sh --secondmate once to verify the outside-turn watcher and notification route, then end this turn.
 Do not wait for crews or poll a tool session; an existing inbox doorbell starts the next handling turn when an actionable event arrives.
-If bin/fm-watch.sh --secondmate reports a failure, follow the default checkpoint protocol below instead.
+If bin/fm-watch.sh --secondmate reports a failure, run one bin/fm-watch-checkpoint.sh checkpoint, handle its wake, then stop. Do not start another checkpoint.
 EOF
 fi
 render_snippet
