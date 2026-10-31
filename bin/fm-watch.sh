@@ -649,21 +649,9 @@ window_label() {
   [ -n "$task" ] && printf 'fm-%s' "$task"
 }
 
-# The ONE derivation of a window's per-window marker key: `:`, `/` and `.` become
-# `_` so a window name is usable as a filename suffix. Every per-window file the
-# watcher keeps is named by it (.hash-, .count-, .stale-, .stale-since-,
-# .wedge-escalations-, .wedge-permanent-, .wedge-terminal-queued-,
-# .wedge-rollback-failed-, .paused-*, .writing-*, .validating-*,
-# .waiting-*), and live homes
-# hold those markers on disk under the current format, so the format lives here
-# alone: a second copy is how a future change to it silently orphans a window's
-# markers instead of clearing them. The helpers below take the derived key
-# rather than re-deriving it, so one poll of one window derives it once.
-window_key() {  # <window>
-  local key=${1//:/_}
-  key=${key//\//_}
-  printf '%s' "${key//./_}"
-}
+# window_key (bin/fm-classify-lib.sh) is the one derivation of the per-window
+# marker key. The helpers below take the derived key rather than re-deriving
+# it, so one poll of one window derives it once.
 
 inbox_steer_escalate_unavailable() {  # <window> <task> <record>
   local w=$1 task=$2 rec=$3 reason
