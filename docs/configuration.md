@@ -466,9 +466,9 @@ This feature does not set `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` or any other autocom
 
 A Claude primary session receives one instruction to write its full handoff when its context left before auto-compact falls to a set percentage.
 The instruction asks the session to persist its open work records, decisions, and durable knowledge, then report that it is ready to restart, so a session can restart from a handoff instead of compacting.
-It fires at most once per Claude session.
+It fires at most once per context cycle: a session that auto-compacts anyway is told again before its next auto-compact.
 
-The trigger is on by default at 15% context left.
+The trigger is on by default at 15% context left, wherever it can resolve the auto-compact point.
 The file is local to each home, is not inherited, and is read at every hook call, so a change needs no restart.
 It may hold these lines, each optional:
 
@@ -478,13 +478,22 @@ It may hold these lines, each optional:
 Blank lines and lines that start with `#` are ignored, and an unusable value keeps its default.
 
 Context left is measured against the auto-compact point, not the model's full window, because Claude Code's status-line `remaining_percentage` reads the full window and can still show most of it free when auto-compact fires.
-Without a pinned point, the trigger derives it from the `autoCompactWindow` in Claude's user and project settings, preferring a `modelSettings` entry for the session's model, and honors `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`.
-Without `autoCompactWindow` (or with `auto`), the point depends on the model's window, which hooks cannot read, so the trigger stays silent until the home pins `compact-at-tokens`.
+Without a pinned point, the trigger derives it the way Claude Code does.
+A usable `CLAUDE_CODE_AUTO_COMPACT_WINDOW` wins.
+Otherwise the trigger walks Claude's settings layers from highest precedence to lowest: the project's `.claude/settings.local.json`, its `.claude/settings.json`, then user settings.
+The first layer that sets either a `modelSettings` entry for the session's model or a top-level `autoCompactWindow` decides, and the entry wins inside its layer.
+Per-model keys match on the canonical model name, so dated and `[1m]` spellings are the same model.
+A settings value counts only as an integer from 100000 to 1000000, or `auto` in a `modelSettings` entry; any other value counts as unset.
+The trigger also honors `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`.
+
+With no `autoCompactWindow`, or with `auto`, the trigger stays silent: the point then depends on the model's window, which hooks cannot read.
+Pin `compact-at-tokens` to cover such a home.
+Claude also caps the configured window to the model's window, which the hook cannot see, so a home on a smaller-window model must pin `compact-at-tokens`.
 A window set only in managed settings or a `--settings` launch flag also needs that pin.
 
 The trigger runs only in a genuine primary home, including a marked secondmate home, and stays inert in worker worktrees and under other harnesses that load Claude's settings.
 It never writes the handoff, compacts, or restarts the session.
-`bin/fm-handoff-trigger.sh` owns the measurement and the once-per-session record, with coverage in [`tests/fm-handoff-trigger.test.sh`](../tests/fm-handoff-trigger.test.sh); [runtime-backends verification](verification/runtime-backends.md#claude-early-handoff-trigger) records the Claude Code evidence.
+`bin/fm-handoff-trigger.sh` owns the measurement and the once-per-cycle record, with coverage in [`tests/fm-handoff-trigger.test.sh`](../tests/fm-handoff-trigger.test.sh); [runtime-backends verification](verification/runtime-backends.md#claude-early-handoff-trigger) records the Claude Code evidence.
 
 ## Backlog backend (.tasks.toml / config/backlog-backend)
 

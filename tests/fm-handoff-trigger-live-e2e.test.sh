@@ -58,7 +58,7 @@ printf '# model reply: %s\n' "$result"
 
 markers=$(find "$HOME_DIR/state" -maxdepth 1 -name '.handoff-trigger.*' | wc -l | tr -d ' ')
 [ "$markers" -eq 1 ] || fail "expected one firing record, found $markers"
-marker="$HOME_DIR/state/.handoff-trigger.$session"
+marker="$HOME_DIR/state/.handoff-trigger.$session.0"
 [ -f "$marker" ] || fail "firing record is not bound to the session id $session"
 grep -q 'compact_at=87000$' "$marker" \
   || fail "compact point must derive from autoCompactWindow 120000 as 87000: $(cat "$marker")"
@@ -67,10 +67,10 @@ printf '# firing record: %s\n' "$(cat "$marker")"
 transcript=$(find "$HOME/.claude/projects" -name "$session.jsonl" -print -quit 2>/dev/null)
 [ -n "$transcript" ] || fail "could not find the transcript for session $session"
 delivered=$(jq -R -r 'fromjson? | select(.type == "attachment" and .attachment.type == "hook_additional_context")
-    | tostring | select(contains("This instruction fires once per session"))' "$transcript" | wc -l | tr -d ' ')
+    | tostring | select(contains("This instruction fires once per context cycle"))' "$transcript" | wc -l | tr -d ' ')
 [ "$delivered" -eq 1 ] || fail "the instruction must reach the session exactly once, found $delivered"
 tool_calls=$(jq -R -r 'fromjson? | select(.type == "assistant") | .message.content[]? | select(.type == "tool_use") | .name' "$transcript" | wc -l | tr -d ' ')
-[ "$tool_calls" -ge 2 ] || fail "the session must make at least two tool calls to prove fire-once, made $tool_calls"
+[ "$tool_calls" -ge 2 ] || fail "the session must make at least two tool calls to prove one firing per cycle, made $tool_calls"
 case "$result" in
   *HANDOFF-SEEN*) ;;
   *) fail "the model did not report the handoff instruction: $result" ;;

@@ -2,7 +2,7 @@
 # Behavior tests for the early handoff trigger (bin/fm-handoff-trigger.sh,
 # docs/configuration.md "Early handoff trigger"): the threshold, its
 # configuration, the auto-compact point derived from Claude's settings, the
-# fire-once guarantee (including concurrent hook calls), and the scope that
+# once-per-context-cycle guarantee (including concurrent hook calls), and the scope that
 # keeps worker worktrees and Cursor payloads inert. The hook runs for real
 # against synthetic Claude transcripts.
 set -u
@@ -35,6 +35,12 @@ transcript() {
   } > "$file"
 }
 
+# append_usage <file> <context-tokens>: one more assistant turn with that usage.
+append_usage() {
+  jq -nc --argjson t "$2" '{type: "assistant", message: {model: "claude-test-model",
+    usage: {input_tokens: 2, cache_read_input_tokens: ($t - 1002), cache_creation_input_tokens: 1000, output_tokens: 50}}}' >> "$1"
+}
+
 # run_hook <root> <session> <transcript> [event] [extra-payload-jq]: print the
 # hook's stdout for one payload, with Claude's settings isolated to the lab.
 run_hook() {
@@ -42,7 +48,7 @@ run_hook() {
   jq -nc --arg s "$session" --arg t "$file" --arg e "$event" \
     '{session_id: $s, transcript_path: $t, hook_event_name: $e, tool_name: "Bash"}' \
     | jq -c "$extra" \
-    | env -u CLAUDE_AUTOCOMPACT_PCT_OVERRIDE -u FM_HOME -u FM_STATE_OVERRIDE -u FM_CONFIG_OVERRIDE \
+    | env -u CLAUDE_AUTOCOMPACT_PCT_OVERRIDE -u CLAUDE_CODE_AUTO_COMPACT_WINDOW -u FM_HOME -u FM_STATE_OVERRIDE -u FM_CONFIG_OVERRIDE \
       FM_ROOT_OVERRIDE="$root" CLAUDE_CONFIG_DIR="$CLAUDE_HOME" CLAUDE_PROJECT_DIR="$root" \
       ${HOOK_ENV:+"$HOOK_ENV"} bash "$HOOK"
 }
@@ -68,7 +74,7 @@ test_threshold_default_15() {
   printf 'compact-at-tokens=100000\n' > "$PRIMARY/config/handoff-trigger"
   transcript "$TMP_ROOT/t-84" 84000
   expect_silent "$(run_hook "$PRIMARY" s-below "$TMP_ROOT/t-84")" "16% left is above the default threshold"
-  [ ! -e "$PRIMARY/state/.handoff-trigger.s-below" ] || fail "a silent call must not claim the session's firing"
+  [ ! -e "$PRIMARY/state/.handoff-trigger.s-below.0" ] || fail "a silent call must not claim the session's firing"
   transcript "$TMP_ROOT/t-85" 85000
   out=$(run_hook "$PRIMARY" s-at "$TMP_ROOT/t-85")
   expect_fire "$out" PostToolUse "15% left meets the default threshold"
@@ -92,7 +98,7 @@ test_threshold_configurable() {
   pass "threshold is configurable, 0 turns it off, and an unusable value keeps the default"
 }
 
-test_fires_once_per_session() {
+test_fires_once_per_context_cycle() {
   reset_lab
   printf 'compact-at-tokens=100000\n' > "$PRIMARY/config/handoff-trigger"
   transcript "$TMP_ROOT/t-90" 90000
@@ -102,7 +108,29 @@ test_fires_once_per_session() {
   transcript "$TMP_ROOT/t-99" 99000
   expect_silent "$(run_hook "$PRIMARY" s-once "$TMP_ROOT/t-99")" "deeper into the same session"
   expect_fire "$(run_hook "$PRIMARY" s-next "$TMP_ROOT/t-90" UserPromptSubmit)" UserPromptSubmit "a new session"
-  pass "fires once per session across tool calls and prompts, and again for a new session"
+  pass "fires once per cycle across tool calls and prompts, and again for a new session"
+}
+
+test_rearms_after_compaction() {
+  local t="$TMP_ROOT/t-cycle"
+  reset_lab
+  printf 'compact-at-tokens=100000\n' > "$PRIMARY/config/handoff-trigger"
+  transcript "$t" 90000
+  expect_fire "$(run_hook "$PRIMARY" s-cycle "$t")" PostToolUse "first cycle"
+  expect_silent "$(run_hook "$PRIMARY" s-cycle "$t")" "first cycle, second call"
+
+  printf '{"type":"system","subtype":"compact_boundary","content":"Conversation compacted"}\n' >> "$t"
+  expect_silent "$(run_hook "$PRIMARY" s-cycle "$t" UserPromptSubmit)" "pre-compaction usage must not fire in the new cycle"
+  append_usage "$t" 40000
+  expect_silent "$(run_hook "$PRIMARY" s-cycle "$t")" "new cycle below the threshold"
+  append_usage "$t" 88000
+  expect_fire "$(run_hook "$PRIMARY" s-cycle "$t")" PostToolUse "new cycle at the threshold"
+  expect_silent "$(run_hook "$PRIMARY" s-cycle "$t")" "new cycle, second call"
+
+  # Text that quotes a boundary is not a compaction.
+  jq -nc '{type: "user", message: {content: "{\"type\":\"system\",\"subtype\":\"compact_boundary\"}"}}' >> "$t"
+  expect_silent "$(run_hook "$PRIMARY" s-cycle "$t")" "a quoted boundary does not re-arm"
+  pass "a compaction re-arms the trigger for one more firing, and stale usage cannot spend it"
 }
 
 test_fires_once_under_concurrency() {
@@ -134,18 +162,7 @@ test_compact_point_from_claude_settings() {
   printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | test("185000 of 217000 tokens")' >/dev/null \
     || fail "compact point must derive from autoCompactWindow 250000 as 217000: $out"
 
-  # A project-local window beats the user window; a per-model entry beats both.
-  printf '{"autoCompactWindow":"300k"}\n' > "$PRIMARY/.claude/settings.local.json"
-  expect_silent "$(run_hook "$PRIMARY" s-w3 "$TMP_ROOT/t-185")" "project-local 300k window: 185000 of 267000"
-  printf '{"modelSettings":{"claude-test-model":{"autoCompactWindow":220000}}}\n' > "$PRIMARY/.claude/settings.json"
-  transcript "$TMP_ROOT/t-160" 160000
-  out=$(run_hook "$PRIMARY" s-w4 "$TMP_ROOT/t-160")
-  expect_fire "$out" PostToolUse "per-model 220000 window: 160000 of 187000"
-  printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | test("160000 of 187000 tokens")' >/dev/null \
-    || fail "a modelSettings entry for the session's model must win: $out"
-
   # CLAUDE_AUTOCOMPACT_PCT_OVERRIDE lowers the point to that share of the effective window.
-  rm -f "$PRIMARY/.claude/settings.json" "$PRIMARY/.claude/settings.local.json"
   transcript "$TMP_ROOT/t-100" 100000
   out=$(HOOK_ENV=CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=50 run_hook "$PRIMARY" s-w5 "$TMP_ROOT/t-100")
   expect_fire "$out" PostToolUse "50% override: 100000 of 115000"
@@ -156,6 +173,81 @@ test_compact_point_from_claude_settings() {
   printf 'compact-at-tokens=500000\n' > "$PRIMARY/config/handoff-trigger"
   expect_silent "$(run_hook "$PRIMARY" s-w6 "$TMP_ROOT/t-185")" "pinned compact-at-tokens overrides settings"
   pass "compact point derives from Claude's autoCompactWindow layers and override, and a pin wins"
+}
+
+# expect_point <session> <compact-point> <label> [model]: the hook fires at
+# 99% of the point and names it.
+expect_point() {
+  local tokens=$(($2 * 99 / 100)) out
+  transcript "$TMP_ROOT/t-point" "$tokens" "${4:-claude-test-model}"
+  out=$(run_hook "$PRIMARY" "$1" "$TMP_ROOT/t-point")
+  printf '%s' "$out" | jq -e --arg want "$tokens of $2 tokens" '.hookSpecificOutput.additionalContext | contains($want)' >/dev/null \
+    || fail "$3: expected the compact point $2, got: $out"
+}
+
+test_window_precedence_matches_claude() {
+  reset_lab
+  # The highest layer that sets either form decides.
+  printf '{"modelSettings":{"claude-test-model":{"autoCompactWindow":250000}}}\n' > "$CLAUDE_HOME/settings.json"
+  printf '{"autoCompactWindow":150000}\n' > "$PRIMARY/.claude/settings.local.json"
+  expect_point s-p1 117000 "a higher top-level value replaces a lower per-model entry"
+  printf '{"modelSettings":{"claude-test-model":{"autoCompactWindow":220000}}}\n' > "$PRIMARY/.claude/settings.json"
+  expect_point s-p2 117000 "project-local top-level beats project per-model"
+  rm -f "$PRIMARY/.claude/settings.local.json"
+  printf '{"autoCompactWindow":300000}\n' > "$CLAUDE_HOME/settings.json"
+  expect_point s-p3 187000 "a higher per-model entry beats a lower top-level value"
+  printf '{"autoCompactWindow":300000,"modelSettings":{"claude-test-model":{"autoCompactWindow":220000}}}\n' > "$PRIMARY/.claude/settings.json"
+  expect_point s-p4 187000 "a per-model entry beats top-level inside its layer"
+  printf '{"autoCompactWindow":300000,"modelSettings":{"another-model":{"autoCompactWindow":220000}}}\n' > "$PRIMARY/.claude/settings.json"
+  expect_point s-p5 267000 "another model's entry does not apply"
+
+  # Per-model "auto" decides, and silences; top-level "auto" counts as unset.
+  printf '{"modelSettings":{"claude-test-model":{"autoCompactWindow":"auto"}}}\n' > "$PRIMARY/.claude/settings.json"
+  transcript "$TMP_ROOT/t-990" 990000
+  expect_silent "$(run_hook "$PRIMARY" s-p6 "$TMP_ROOT/t-990")" "per-model auto at a higher layer"
+  printf '{"autoCompactWindow":"auto"}\n' > "$PRIMARY/.claude/settings.json"
+  expect_point s-p7 267000 "top-level auto leaves the lower layer in force"
+
+  # Canonical model names.
+  rm -f "$PRIMARY/.claude/settings.json"
+  printf '{"autoCompactWindow":300000,"modelSettings":{"claude-haiku-4-5":{"autoCompactWindow":220000}}}\n' > "$CLAUDE_HOME/settings.json"
+  expect_point s-p8 187000 "a canonical key matches a dated model" claude-haiku-4-5-20251001
+  printf '{"modelSettings":{"claude-opus-5-5[1m]":{"autoCompactWindow":220000}}}\n' > "$CLAUDE_HOME/settings.json"
+  expect_point s-p9 187000 "a [1m] key matches the canonical model" claude-opus-5-5
+  printf '{"modelSettings":{"claude-opus-5-5[1m]":{"autoCompactWindow":220000},"claude-opus-5-5":{"autoCompactWindow":300000}}}\n' > "$CLAUDE_HOME/settings.json"
+  expect_point s-p10 267000 "the canonical spelling wins over a variant in one layer" claude-opus-5-5
+  pass "the settings layers resolve the way Claude resolves them, on canonical model names"
+}
+
+test_window_values_claude_rejects_count_as_unset() {
+  local bad
+  reset_lab
+  transcript "$TMP_ROOT/t-990" 990000
+  for bad in '"300k"' 50000 2000000 250000.5 '"250000"'; do
+    printf '{"autoCompactWindow":%s}\n' "$bad" > "$CLAUDE_HOME/settings.json"
+    expect_silent "$(run_hook "$PRIMARY" "s-bad-$RANDOM" "$TMP_ROOT/t-990")" "autoCompactWindow $bad alone"
+  done
+  printf '{"autoCompactWindow":250000}\n' > "$CLAUDE_HOME/settings.json"
+  printf '{"autoCompactWindow":50000}\n' > "$PRIMARY/.claude/settings.local.json"
+  expect_point s-v1 217000 "an out-of-range value leaves the lower layer in force"
+  printf '{"autoCompactWindow":100000}\n' > "$PRIMARY/.claude/settings.local.json"
+  expect_point s-v2 67000 "100000 is in range"
+  printf '{"autoCompactWindow":1000000}\n' > "$PRIMARY/.claude/settings.local.json"
+  expect_point s-v3 967000 "1000000 is in range"
+  pass "only integers from 100000 to 1000000 count as a settings window"
+}
+
+test_window_env_override() {
+  reset_lab
+  printf '{"modelSettings":{"claude-test-model":{"autoCompactWindow":"auto"}}}\n' > "$CLAUDE_HOME/settings.json"
+  HOOK_ENV=CLAUDE_CODE_AUTO_COMPACT_WINDOW=200000 expect_point s-e1 167000 "env beats settings"
+  HOOK_ENV=CLAUDE_CODE_AUTO_COMPACT_WINDOW=300k expect_point s-e2 267000 "env accepts k"
+  HOOK_ENV=CLAUDE_CODE_AUTO_COMPACT_WINDOW=1m expect_point s-e3 967000 "env accepts m"
+  HOOK_ENV=CLAUDE_CODE_AUTO_COMPACT_WINDOW=200 expect_point s-e4 67000 "env below the minimum is the minimum"
+  HOOK_ENV=CLAUDE_CODE_AUTO_COMPACT_WINDOW=5m expect_point s-e5 967000 "env above the maximum is the maximum"
+  printf '{"autoCompactWindow":250000}\n' > "$CLAUDE_HOME/settings.json"
+  HOOK_ENV=CLAUDE_CODE_AUTO_COMPACT_WINDOW=soon expect_point s-e6 217000 "an unusable env value is ignored"
+  pass "CLAUDE_CODE_AUTO_COMPACT_WINDOW overrides settings the way Claude reads it"
 }
 
 test_unresolved_compact_point_is_silent() {
@@ -193,8 +285,12 @@ test_scope() {
 
 test_threshold_default_15
 test_threshold_configurable
-test_fires_once_per_session
+test_fires_once_per_context_cycle
+test_rearms_after_compaction
 test_fires_once_under_concurrency
 test_compact_point_from_claude_settings
+test_window_precedence_matches_claude
+test_window_values_claude_rejects_count_as_unset
+test_window_env_override
 test_unresolved_compact_point_is_silent
 test_scope

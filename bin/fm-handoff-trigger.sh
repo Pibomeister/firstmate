@@ -6,8 +6,9 @@
 # auto-compact falls to the configured percentage (default 15), the session
 # receives ONE instruction, as hook additionalContext, to write its full
 # handoff before auto-compact and report that it is ready to restart. It fires
-# at most once per Claude session id, so a session that keeps working past the
-# threshold is not nagged again.
+# at most once per context cycle, so a session that keeps working past the
+# threshold is not nagged again, and a session that auto-compacts anyway is told
+# again before its next auto-compact.
 #
 # CONTEXT LEFT. Claude Code does not hand hooks its own "% until auto-compact"
 # figure, and the status line's context_window.remaining_percentage measures
@@ -15,21 +16,30 @@
 # autoCompactWindow 250000 still reads about 78% remaining when it compacts).
 # This hook therefore derives the figure the way Claude Code 2.1.314 does:
 #   tokens      the last request's input + cache_read + cache_creation usage in
-#               the session transcript (fm_warm_compact_context_tokens)
+#               the session transcript (fm_warm_compact_context_tokens); none
+#               until the first request after a compaction
 #   compact-at  effective window minus Claude's 13000-token auto-compact buffer,
 #               where effective window = autoCompactWindow - 20000 (the output
 #               reserve); CLAUDE_AUTOCOMPACT_PCT_OVERRIDE, when set, lowers it
 #               to that percentage of the effective window
 #   left        (compact-at - tokens) * 100 / compact-at, floored, never < 0
-# autoCompactWindow is read from Claude's own settings layers (user settings
-# under CLAUDE_CONFIG_DIR or ~/.claude, then the project's .claude/settings.json
-# and .claude/settings.local.json), a modelSettings entry for the session's
-# model winning over the top-level value. Managed settings and a --settings
-# launch flag are not visible here; a home that sets the window there, or
-# wants a different point, pins compact-at-tokens in config/handoff-trigger.
-# When neither resolves (no autoCompactWindow, or the value "auto"), the
-# auto-compact point depends on the model's window, which no hook input names,
-# so the hook stays silent rather than guess.
+# The window resolves as Claude Code's own resolver does. A usable
+# CLAUDE_CODE_AUTO_COMPACT_WINDOW wins. Otherwise the settings layers are walked
+# from highest precedence to lowest (the project's .claude/settings.local.json,
+# its .claude/settings.json, then user settings under CLAUDE_CONFIG_DIR or
+# ~/.claude), and the first layer that sets a modelSettings entry for the
+# session's model or a top-level autoCompactWindow decides, the entry winning
+# inside its layer. Per-model keys match on the canonical name, so dated and
+# [1m] spellings are the same model. A settings value counts only as an integer
+# from 100000 to 1000000 (or "auto" in a modelSettings entry); any other value
+# counts as unset. Managed settings and a --settings launch flag are not visible
+# here; a home that sets the window there, or wants a different point, pins
+# compact-at-tokens in config/handoff-trigger.
+# When nothing resolves (no autoCompactWindow, or "auto"), the auto-compact point
+# depends on the model's window, which no hook input names, so the hook stays
+# silent rather than guess. Claude also caps a configured window to the model's
+# window, which the hook cannot see, so a home on a smaller-window model must pin
+# compact-at-tokens.
 # docs/verification/runtime-backends.md records the evidence.
 #
 # CONFIG (config/handoff-trigger, optional; docs/configuration.md "Early
@@ -47,10 +57,11 @@
 # Cursor load this Claude settings file too; Grok is excluded by the settings
 # entry and Cursor by its payload marker, because the trigger is Claude-only.
 #
-# FIRE ONCE. The first firing for a session creates
-# state/.handoff-trigger.<session-id> with an exclusive create, so concurrent
-# hook calls from parallel tool calls still fire once. A firing also removes
-# markers older than 30 days.
+# ONCE PER CONTEXT CYCLE. A cycle is one session id plus the count of compact
+# boundary records in its transcript, so a compaction re-arms the trigger. The
+# first firing in a cycle creates state/.handoff-trigger.<session-id>.<count>
+# with an exclusive create, so concurrent hook calls from parallel tool calls
+# still fire once. A firing also removes markers older than 30 days.
 #
 # Any failure to read the payload, transcript, or settings is silent: the hook
 # never blocks a tool call or prompt and never prints anything but the one
@@ -107,7 +118,13 @@ TRANSCRIPT=$(printf '%s' "$PAYLOAD" | jq -r '.transcript_path // empty | strings
 EVENT=$(printf '%s' "$PAYLOAD" | jq -r '.hook_event_name // empty | strings' 2>/dev/null)
 [ -n "$SESSION_ID" ] && [ -n "$TRANSCRIPT" ] || exit 0
 case "$EVENT" in PostToolUse | UserPromptSubmit) ;; *) exit 0 ;; esac
-MARKER="$STATE/.handoff-trigger.$(printf '%s' "$SESSION_ID" | tr -c 'A-Za-z0-9_-' '_')"
+
+# Count boundaries before reading tokens: a compaction landing between the two
+# reads then leaves no usage to measure instead of pre-compaction usage in the
+# new cycle.
+BOUNDARIES=$(LC_ALL=C grep -c '"subtype":"compact_boundary"' "$TRANSCRIPT" 2>/dev/null)
+case "$BOUNDARIES" in '' | *[!0-9]*) exit 0 ;; esac
+MARKER="$STATE/.handoff-trigger.$(printf '%s' "$SESSION_ID" | tr -c 'A-Za-z0-9_-' '_').$BOUNDARIES"
 [ -e "$MARKER" ] && exit 0
 
 # shellcheck source=bin/fm-warm-compact-lib.sh
@@ -115,31 +132,51 @@ MARKER="$STATE/.handoff-trigger.$(printf '%s' "$SESSION_ID" | tr -c 'A-Za-z0-9_-
 TOKENS=$(fm_warm_compact_context_tokens "$TRANSCRIPT") || exit 0
 case "$TOKENS" in '' | *[!0-9]*) exit 0 ;; esac
 
-# Print a settings window value in tokens: a positive integer, or "<n>k".
-window_tokens() {
-  case "$1" in
-    '' | 0* | *[!0-9kK]*) return 1 ;;
-    *[kK]) case "${1%?}" in '' | *[!0-9]*) return 1 ;; esac; printf '%s\n' "$((${1%?} * 1000))" ;;
-    *[!0-9]*) return 1 ;;
-    *) printf '%s\n' "$1" ;;
-  esac
+# Print the window CLAUDE_CODE_AUTO_COMPACT_WINDOW value $1 means in tokens,
+# clamped to Claude's limits; fail when Claude would ignore the value.
+env_window() {
+  awk -v raw="$1" 'BEGIN {
+    gsub(/^[ \t\r\n]+|[ \t\r\n]+$/, "", raw)
+    if (raw !~ /^[0-9]+(\.[0-9]+)?[kKmM]?$/) exit 1
+    n = raw + 0
+    unit = tolower(substr(raw, length(raw)))
+    if (unit == "m") n *= 1000000
+    else if (unit == "k") n *= 1000
+    if (n < 1) exit 1
+    if (n < 100000) n = 100000
+    if (n > 1000000) n = 1000000
+    printf "%d\n", n + 0.5
+  }'
 }
 
-# Print the autoCompactWindow Claude applies to model $1, from its settings
-# layers lowest to highest precedence; a modelSettings entry beats top-level.
+# Print the window Claude applies to model $1; fail when it is "auto" or unset.
 auto_compact_window() {
-  local model=$1 file per_model='' top='' value project
+  local model=$1 file value project
+  env_window "${CLAUDE_CODE_AUTO_COMPACT_WINDOW:-}" && return 0
   project=${CLAUDE_PROJECT_DIR:-$FM_ROOT}
-  for file in "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json" \
-    "$project/.claude/settings.json" "$project/.claude/settings.local.json"; do
+  for file in "$project/.claude/settings.local.json" "$project/.claude/settings.json" \
+    "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"; do
     [ -r "$file" ] || continue
     value=$(jq -r --arg m "$model" '
-        .modelSettings[$m].autoCompactWindow // empty | tostring
-      ' "$file" 2>/dev/null) && [ -n "$value" ] && per_model=$value
-    value=$(jq -r '.autoCompactWindow // empty | tostring' "$file" 2>/dev/null) \
-      && [ -n "$value" ] && top=$value
+        def canon: ascii_downcase | sub("\\[1m\\]$"; "") | sub("-[0-9]{8}$"; "");
+        def size: select(type == "number" and . == floor and . >= 100000 and . <= 1000000) | tostring;
+        def entry: if . == "auto" then . else size end;
+        ($m | canon) as $c
+        | first(
+            ([.modelSettings | objects | to_entries[]
+              | select(.key | canon == $c)
+              | {exact: (.key == $c), window: (.value | objects | .autoCompactWindow | entry)}]
+             | sort_by(.exact | not) | .[].window),
+            (.autoCompactWindow | size)
+          )
+      ' "$file" 2>/dev/null)
+    case "$value" in
+      '') ;;
+      auto) return 1 ;;
+      *) printf '%s\n' "$value"; return 0 ;;
+    esac
   done
-  window_tokens "${per_model:-$top}"
+  return 1
 }
 
 if [ -z "$COMPACT_AT" ]; then
@@ -164,10 +201,10 @@ LEFT=$(((COMPACT_AT - TOKENS) * 100 / COMPACT_AT))
 [ "$LEFT" -ge 0 ] || LEFT=0
 [ "$LEFT" -le "$PERCENT" ] || exit 0
 
-# Claim the one firing for this session; a concurrent call that loses exits.
+# Claim the one firing for this context cycle; a concurrent call that loses exits.
 ( set -o noclobber; printf '%s\n' "$(date +%s) tokens=$TOKENS compact_at=$COMPACT_AT" > "$MARKER" ) 2>/dev/null || exit 0
 find "$STATE" -maxdepth 1 -name '.handoff-trigger.*' -type f -mtime +30 -exec rm -f {} + 2>/dev/null
 
-MESSAGE="Firstmate early handoff trigger, from this home's tracked Claude hook: about ${LEFT}% of context is left before auto-compact (${TOKENS} of ${COMPACT_AT} tokens). Write your full session handoff now, before auto-compact: persist every open work record, decision, and piece of durable knowledge this session holds (the stow skill covers this), then report that this session is ready to restart. Do not run /compact. This instruction fires once per session."
+MESSAGE="Firstmate early handoff trigger, from this home's tracked Claude hook: about ${LEFT}% of context is left before auto-compact (${TOKENS} of ${COMPACT_AT} tokens). Write your full session handoff now, before auto-compact: persist every open work record, decision, and piece of durable knowledge this session holds (the stow skill covers this), then report that this session is ready to restart. Do not run /compact. This instruction fires once per context cycle."
 jq -n --arg event "$EVENT" --arg context "$MESSAGE" \
   '{hookSpecificOutput: {hookEventName: $event, additionalContext: $context}}'

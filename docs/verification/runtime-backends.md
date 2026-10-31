@@ -63,6 +63,15 @@ How Claude Code exposes context left, read from the installed 2.1.314 bundle:
   The TUI's "% until auto-compact" figure is `round((point - tokens) / point * 100)`.
 - A background summary starts earlier, at `min(0.8 W, W - 13000)` by default, and the swap happens at the point above.
 
+How Claude Code resolves the window and records a compaction, read from the installed 2.1.316 bundle:
+
+- A usable `CLAUDE_CODE_AUTO_COMPACT_WINDOW` beats settings. It accepts a `k` or `m` suffix, reads below 100000 as 100000 and above 1000000 as 1000000, and is ignored when it is not a size.
+- Settings layers resolve from highest precedence to lowest. The first layer that sets a `modelSettings` entry for the model or a top-level `autoCompactWindow` decides, and the entry wins inside its layer.
+- Per-model keys match on the canonical model name, which drops `[1m]` and a date suffix.
+- The settings schema takes an integer from 100000 to 1000000 and treats any other value as unset. Only a `modelSettings` entry also accepts `auto`.
+- The configured window is capped to the model's window, and no hook input names that window.
+- A compaction appends a `{"type":"system","subtype":"compact_boundary"}` record to the same session transcript. The trigger counts these records to re-arm once per context cycle, and it reads no usage from before the last one.
+
 So the status-line `remaining_percentage` is not context left before auto-compact.
 With a 1M-token model and `autoCompactWindow` 250000, compaction fires near 217000 tokens while the status line still reads about 78% remaining.
 Auto-compact records in transcripts written on such a session showed `trigger=auto` with `preTokens` between 216839 and 219170 across ten compactions, against the derived point of 217000.
