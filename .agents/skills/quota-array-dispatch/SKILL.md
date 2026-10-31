@@ -97,7 +97,7 @@ Malformed configuration is an actionable error, not a candidate to rank around.
 Keep only candidates that meet the required reasoning class for this task (a simple bug fix versus very-difficult design).
 Never use `spendPriority` or remaining quota to silently replace that class.
 When every remaining candidate is tight, dispatch inside the strongest-reasoning class if one of those candidates can proceed.
-If none in that class can proceed, reroute within the pool below, report the reroute and any reasoning-class drop plainly, and never pause or downgrade silently solely to spend or conserve quota.
+If none in that class can proceed, reroute to the strongest available class on another provider or account, disclose the downgrade, and never pause new work on a quota floor.
 The reroute pool, in order, is the matched profile array (including same provider or account candidates), the configured default profile set, then the static crewmate harness profile.
 A captain-restricted rule such as Claude-only stays restricted: when reroute would violate it, report that plainly and proceed with other work rather than overriding the rule.
 Within each pool step, prefer the strongest reasoning class and report any class drop.
@@ -131,7 +131,7 @@ Rank only from comparable known scalars.
 Never treat absent, `unknown`, or unmeasurable `spendPriority` as zero or as healthy; `0` means exact utilization, a different claim from unknown.
 An unknown `spendPriority` keeps the candidate eligible with disclosed uncertainty.
 Prefer known viable evidence when otherwise comparable.
-After the permitted TOON-to-JSON fallback, when no candidate has a rankable spendPriority or runway uncertainty prevents proving the feasibility floor, pick the best candidate on known evidence, disclose the uncertainty, and proceed rather than escalating or waiting.
+After the permitted TOON-to-JSON fallback, route to the best-evidenced eligible candidate, disclosing the uncertainty, and never hold work waiting for quota.
 If every candidate failed the runway feasibility floor, apply the greatest-known-usable-runway rule from gate 3 instead.
 Never resolve uncertainty by treating unknown as healthy.
 Show the scalar or the literal `unknown` in the rationale; do not hide it in a score.
@@ -140,8 +140,7 @@ Do not compare headroom against runway by hand.
 Do not use pace or signed reserve as a later tie-break layer.
 Do not read `aheadWindowIds`, `behindWindowIds`, `onPaceWindowIds`, `limitingWindowIds`, or other window-id lists to reconstruct what `spendPriority` already computed.
 
-Genuine ties on spendPriority: when two profiles share harness and model and differ only by effort, pick the higher effort and report it.
-Any remaining full tie picks at random, reports the draw plainly, and never uses array order, harness name, or identity ordering.
+Genuine ties on spendPriority: rank with stated evidence (prefer higher effort when harness and model match but effort differs), route to the chosen candidate, and report the criterion plainly without array order, harness name, or identity ordering.
 Report duplicate concrete profiles as a configuration error.
 
 Account for every candidate visibly before selecting, naming its catalog evidence, provider relation, applicable quota and authentication facts, remaining uncertainty, fit and reasoning class, `spendPriority`, and runway-versus-horizon result.
