@@ -32,7 +32,7 @@ cat > "$FAKEBIN/tmux" <<'SH'
 [ "${FAKE_TMUX_MODE:-}" != hang ] || sleep 30
 case "${1:-}" in
   display-message) printf '%1\n' ;;
-  capture-pane) printf 'fixture pane\n> \n' ;;
+  capture-pane) printf 'fixture pane\n%s\n> \n' "${FAKE_PANE_TEXT:-}" ;;
 esac
 exit 0
 SH
@@ -61,7 +61,11 @@ run:
     review,1m,now,123,1
 EOF
     ;;
-  fail) echo 'repo not initialized' >&2; exit 1 ;;
+  ungated)
+    printf "error: repo not initialized (run 'no-mistakes init' first)\n"
+    exit 1
+    ;;
+  fail) echo 'daemon unreachable' >&2; exit 1 ;;
   hang) sleep 30 ;;
 esac
 exit 0
@@ -89,7 +93,7 @@ EOF
     "harness=claude" \
     "kind=ship" \
     "branch=fm/hb-task" \
-    "spawn_gen=fm.hb123456"
+    "spawn_gen=s1000000000.1.1"
   printf 'working: fixture\n' > "$home/state/hb-task.status"
   printf '%s\n' "$home"
 }
@@ -130,6 +134,20 @@ cat "$home/canned-snapshot.json"
 SH
   chmod +x "$script"
   printf '%s\n' "$script"
+}
+
+set_spawn_gen() {  # <home> <value-or-empty>
+  local meta="$1/state/hb-task.meta"
+  grep -v '^spawn_gen=' "$meta" > "$meta.next"
+  [ -z "$2" ] || printf 'spawn_gen=%s\n' "$2" >> "$meta.next"
+  mv "$meta.next" "$meta"
+}
+
+task_transcript() {  # <home> -> transcript path for the fixture worktree
+  local slug
+  slug=$(printf '%s' "$1/projects/ship" | LC_ALL=C sed 's/[^A-Za-z0-9]/-/g')
+  mkdir -p "$CLAUDE_CONFIG_DIR/projects/$slug"
+  printf '%s\n' "$CLAUDE_CONFIG_DIR/projects/$slug/sess-task.jsonl"
 }
 
 wait_for_file() {  # <path> <seconds>
@@ -195,23 +213,21 @@ test_failed_status_is_unknown_not_no_run() {
 }
 
 test_transcript_fields_with_fractional_timestamps() {
-  local home project slug line
+  local home project line
   home=$(make_home transcript)
   line='{"type":"assistant","timestamp":"2026-10-30T11:59:00.123Z","message":{"usage":{"input_tokens":90000}}}'
   printf 'sess-primary\n' > "$home/state/.lock-session"
   project="$CLAUDE_CONFIG_DIR/projects/primary-project"
   mkdir -p "$project"
   printf '%s\n' "$line" > "$project/sess-primary.jsonl"
-  slug=$(printf '%s' "$home/projects/ship" | LC_ALL=C sed 's/[^A-Za-z0-9]/-/g')
-  mkdir -p "$CLAUDE_CONFIG_DIR/projects/$slug"
-  printf '%s\n' "$line" > "$CLAUDE_CONFIG_DIR/projects/$slug/sess-task.jsonl"
+  printf '%s\n' "$line" > "$(task_transcript "$home")"
   publish "$home" FM_HEARTBEAT_NOW=2026-10-30T12:00:00Z
   assert_ledger "$home" '
     .primary.session.trusted_id == "sess-primary"
     and .primary.last_turn.age_seconds == 60
     and .primary.last_turn.observed_at == "2026-10-30T11:59:00.123Z"
     and .primary.context_left.used_tokens == 90000
-    and .primary.context_left.remaining_tokens.unknown == true
+    and .primary.context_left.remaining.unknown == true
     and .tasks[0].session.id == "sess-task"
     and .tasks[0].last_turn.age_seconds == 60
     and .tasks[0].context_left.used_tokens == 90000
@@ -220,18 +236,79 @@ test_transcript_fields_with_fractional_timestamps() {
   pass "real fractional transcripts give last turn and used tokens, with remaining unknown"
 }
 
+test_leftover_transcript_in_a_reused_slot_is_ignored() {
+  local home transcript now
+  home=$(make_home reused-slot)
+  now=$(date +%s)
+  transcript=$(task_transcript "$home")
+  printf '%s\n' '{"type":"assistant","timestamp":"2026-10-30T11:59:00.123Z","message":{"usage":{"input_tokens":90000}}}' > "$transcript"
+  fm_touch_epoch "$(( now - 3600 ))" "$transcript"
+  set_spawn_gen "$home" "s$now.1.1"
+  publish "$home"
+  assert_ledger "$home" '.tasks[0].session.unknown == true
+    and .tasks[0].last_turn.unknown == true
+    and .tasks[0].context_left.used_tokens.unknown == true
+    and .tasks[0].last_output_time.unknown == true' \
+    "a transcript older than the spawn was attributed to this task"
+  set_spawn_gen "$home" "s$(( now - 7200 )).1.1"
+  publish "$home"
+  assert_ledger "$home" '.tasks[0].session.id == "sess-task"' \
+    "a transcript written since the spawn was not read"
+  set_spawn_gen "$home" ""
+  publish "$home"
+  assert_ledger "$home" '.tasks[0].session.unknown == true' \
+    "a transcript was attributed with no spawn epoch"
+  pass "a transcript older than the spawn, or with no spawn epoch, fills no field"
+}
+
+test_remaining_context_comes_from_pane_text() {
+  local home script
+  home=$(make_home pane-context)
+  script=$(canned_snapshot "$home")
+  jq '.tasks[0].endpoint = {target:"fmtest:hb",exists:true}' "$home/canned-snapshot.json" > "$home/live.json"
+  mv "$home/live.json" "$home/canned-snapshot.json"
+  publish "$home" FAKE_PANE_TEXT='  12% until auto-compact' FM_HEARTBEAT_SNAPSHOT_SCRIPT="$script" \
+    FM_SUPERVISOR_BACKEND=tmux FM_SUPERVISOR_TARGET=%1
+  assert_ledger "$home" '.primary.context_left.remaining == {percent:12,source:"terminal"}
+    and .tasks[0].context_left.remaining == {percent:12,source:"terminal"}
+    and .tasks[1].context_left.remaining.unknown == true' \
+    "pane context text was not read"
+  publish "$home" FAKE_PANE_TEXT='Context left until auto-compact: 7%' FM_HEARTBEAT_SNAPSHOT_SCRIPT="$script" \
+    FM_SUPERVISOR_BACKEND=tmux FM_SUPERVISOR_TARGET=%1
+  assert_ledger "$home" '.tasks[0].context_left.remaining.percent == 7' \
+    "the other harness wording was not read"
+  publish "$home" FM_HEARTBEAT_SNAPSHOT_SCRIPT="$script" FM_SUPERVISOR_BACKEND=tmux FM_SUPERVISOR_TARGET=%1
+  assert_ledger "$home" '.tasks[0].context_left.remaining.unknown == true' \
+    "a pane with no context text did not read as unknown"
+  publish "$home" FAKE_PANE_TEXT=$'a mate quoted 3% until auto-compact\none\ntwo\nthree\nfour' \
+    FM_HEARTBEAT_SNAPSHOT_SCRIPT="$script" FM_SUPERVISOR_BACKEND=tmux FM_SUPERVISOR_TARGET=%1
+  assert_ledger "$home" '.tasks[0].context_left.remaining.unknown == true' \
+    "text quoted above the harness status was read as context"
+  pass "remaining context comes from the harness's own pane text, else unknown"
+}
+
+test_ungated_repo_is_unknown_not_failure() {
+  local home script
+  home=$(make_home ungated)
+  script=$(canned_snapshot "$home")
+  publish "$home" FAKE_NM_MODE=ungated FM_HEARTBEAT_SNAPSHOT_SCRIPT="$script"
+  assert_ledger "$home" '.tasks[0].no_mistakes_run == {unknown:true,reason:"repo has no gate"}
+    and .failure == null' "an ungated repo was recorded as a failure"
+  pass "an ungated repo is unknown with no failure"
+}
+
 test_last_output_needs_real_activity() {
   local home
   home=$(make_home last-output)
-  touch "$home/state/hb-task.meta" "$home/state/hb-task.status"
+  touch "$home/state/hb-task.meta" "$home/state/hb-task.status" "$home/state/hb-task.turn-ended"
   publish "$home"
   assert_ledger "$home" '.tasks[0].last_output_time.unknown == true' \
-    "meta or status counted as output"
+    "meta, status, or turn-ended counted as output"
   printf 'abc' > "$home/state/.hash-fmtest_hb"
   publish "$home"
   assert_ledger "$home" '.tasks[0].last_output_time.source == "terminal"' \
     "the pane-change marker was not read as output"
-  pass "last output comes from terminal evidence, never .meta or .status"
+  pass "last output comes from terminal evidence, never .meta, .status, or .turn-ended"
 }
 
 test_last_push_names_the_local_ref() {
@@ -446,6 +523,9 @@ test_ledger_schema_and_clean_run
 test_no_mistakes_run_is_parsed_from_real_status
 test_failed_status_is_unknown_not_no_run
 test_transcript_fields_with_fractional_timestamps
+test_leftover_transcript_in_a_reused_slot_is_ignored
+test_remaining_context_comes_from_pane_text
+test_ungated_repo_is_unknown_not_failure
 test_last_output_needs_real_activity
 test_last_push_names_the_local_ref
 test_snapshot_failure_is_recorded
@@ -459,4 +539,4 @@ test_stale_work_dir_is_swept
 test_watcher_poll_does_not_wait_for_heartbeat
 test_watcher_runs_one_heartbeat_at_a_time
 
-printf 'ok - %s tests passed\n' 16
+printf 'ok - %s tests passed\n' 19

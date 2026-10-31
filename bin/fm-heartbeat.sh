@@ -26,12 +26,14 @@
 #     session           {trusted_id, anchor_pid, recorded}
 #     last_turn         {observed_at, age_seconds, source}
 #     composer_state    empty|pending|pending-unproven|unknown
-#     context_left      {used_tokens, remaining_tokens}; remaining stays unknown
-#                       until a real model window size is read
+#     context_left      {used_tokens, remaining}; remaining is {percent, source} from
+#                       the harness's own "N% until auto-compact" pane text, else
+#                       unknown; no window size is ever assumed
 #   tasks[]           one row per snapshot task id, sorted by id
 #     id
 #     terminal          {backend, target, exists} from snapshot endpoint
-#     session           {id} from the worktree's newest Claude transcript
+#     session           {id} from the worktree's newest Claude transcript, ignored
+#                       when older than the spawn_gen epoch or with no such epoch
 #     last_turn         as primary
 #     composer_state    as primary; read only for a live local endpoint
 #     context_left      as primary
@@ -41,9 +43,10 @@
 #                       never a network read
 #     pr_head           string; null when the task records no PR
 #     no_mistakes_run   {run_id, step, active}; null only on the CLI's explicit
-#                       runs_on_current_branch: 0
+#                       runs_on_current_branch: 0; unknown, not a failure, in a
+#                       repo with no gate
 #     last_output_time  {observed_at, age_seconds, source}: terminal (the watcher's
-#                       pane-change marker), transcript, or turn-ended
+#                       pane-change marker) or transcript
 #     open_asks         {decisions, inbox_unhandled}
 #   failure           null only on a clean run, else {reason, count} naming every
 #                     read that failed or timed out; absent evidence is not a failure
@@ -108,14 +111,9 @@ command -v jq >/dev/null 2>&1 || {
 . "$SCRIPT_DIR/fm-session-lock-lib.sh"
 
 HEARTBEAT_NOW=${FM_HEARTBEAT_NOW:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}
-if [ -n "${FM_HEARTBEAT_NOW_EPOCH:-}" ]; then
-  HEARTBEAT_EPOCH=$FM_HEARTBEAT_NOW_EPOCH
-else
-  HEARTBEAT_EPOCH=$(date -u -j -f '%Y-%m-%dT%H:%M:%SZ' "$HEARTBEAT_NOW" +%s 2>/dev/null \
-    || date -u -d "$HEARTBEAT_NOW" +%s 2>/dev/null \
-    || date +%s)
-fi
-case "$HEARTBEAT_EPOCH" in ''|*[!0-9]*) HEARTBEAT_EPOCH=$(date +%s) ;; esac
+HEARTBEAT_EPOCH=$(date -u -j -f '%Y-%m-%dT%H:%M:%SZ' "$HEARTBEAT_NOW" +%s 2>/dev/null \
+  || date -u -d "$HEARTBEAT_NOW" +%s 2>/dev/null \
+  || date +%s)
 
 file_mtime() {
   local m
@@ -196,14 +194,27 @@ heartbeat_turn_json() {  # <label> <transcript-or-empty>
     || heartbeat_unknown "transcript had no readable turn boundary"
 }
 
-heartbeat_context_json() {  # <label> <transcript-or-empty>
-  local tokens=
+# Only the pane's last lines, where the harness draws its status, so a mate
+# quoting the phrase higher up in its output is not read as its own context.
+heartbeat_pane_context_percent() {  # <backend> <target> [expected-label]
+  fm_backend_capture "$1" "$2" 5 ${3:+"$3"} 2>/dev/null \
+    | awk 'NF' | tail -n 5 \
+    | sed -n -E 's/.*[^0-9]([0-9]{1,3})% until auto-compact.*/\1/p; s/^([0-9]{1,3})% until auto-compact.*/\1/p; s/.*until auto-compact: ([0-9]{1,3})%.*/\1/p' \
+    | tail -n 1
+}
+
+heartbeat_context_json() {  # <label> <transcript-or-empty> [backend] [target] [expected-label]
+  local tokens='' percent=''
   [ -z "$2" ] || tokens=$(heartbeat_read "$1 context" fm_warm_compact_context_tokens "$2") || tokens=
-  jq -n --arg used "$tokens" '
+  if [ -n "${3:-}" ] && [ -n "${4:-}" ]; then
+    percent=$(heartbeat_read "$1 pane context" heartbeat_pane_context_percent "$3" "$4" "${5:-}") || percent=
+  fi
+  jq -n --arg used "$tokens" --arg percent "$percent" '
     def u(r): {unknown:true,reason:r};
     {
       used_tokens:(if ($used | test("^[0-9]+$")) then ($used | tonumber) else u("transcript had no token usage") end),
-      remaining_tokens:u("model context window not read")
+      remaining:(if $percent == "" then u("harness showed no context text in its pane")
+        else {percent:($percent | tonumber),source:"terminal"} end)
     }'
 }
 
@@ -229,7 +240,7 @@ heartbeat_primary_json() {
   transcript=
   [ -z "$session_id" ] || transcript=$(heartbeat_read "primary transcript" fm_warm_compact_engine_transcript "$session_id") || transcript=
   turn_json=$(heartbeat_turn_json primary "$transcript")
-  context_json=$(heartbeat_context_json primary "$transcript")
+  context_json=$(heartbeat_context_json primary "$transcript" "$backend" "$target")
   jq -n \
     --arg backend "$backend" \
     --arg target "$target" \
@@ -272,24 +283,30 @@ heartbeat_inbox_unhandled() {  # <task-id>
 
 # Claude keeps a worktree's transcripts in a directory named after its path,
 # with every non-alphanumeric byte replaced by a dash.
-heartbeat_worktree_transcript() {  # <worktree>
-  local slug file m newest=0 found=
+# Slots are reused and transcripts outlive them, so only one written since this
+# task's spawn belongs to it.
+heartbeat_worktree_transcript() {  # <worktree> <spawn-gen>
+  local slug file m newest=0 found='' spawn_epoch
+  case "$2" in s[0-9]*.*) ;; *) return 1 ;; esac
+  spawn_epoch=${2#s}
+  spawn_epoch=${spawn_epoch%%.*}
+  case "$spawn_epoch" in *[!0-9]*) return 1 ;; esac
   slug=$(printf '%s' "$1" | LC_ALL=C sed 's/[^A-Za-z0-9]/-/g')
   for file in "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/$slug"/*.jsonl; do
     [ -f "$file" ] || continue
     m=$(file_mtime "$file") || continue
     [ "$m" -le "$newest" ] || { newest=$m; found=$file; }
   done
-  [ -n "$found" ] || return 1
+  [ -n "$found" ] && [ "$newest" -ge "$spawn_epoch" ] || return 1
   printf '%s\n' "$found"
 }
 
-heartbeat_last_output_json() {  # <id> <target-or-empty> <transcript-or-empty>
-  local id=$1 target=$2 transcript=$3 key newest=0 source='' observed_iso age f m label pair
+heartbeat_last_output_json() {  # <target-or-empty> <transcript-or-empty>
+  local target=$1 transcript=$2 key newest=0 source='' observed_iso age f m label pair
   key=${target//:/_}
   key=${key//\//_}
   key=${key//./_}
-  for pair in "terminal|$STATE/.hash-$key" "transcript|$transcript" "turn-ended|$STATE/$id.turn-ended"; do
+  for pair in "terminal|$STATE/.hash-$key" "transcript|$transcript"; do
     label=${pair%%|*}
     f=${pair#*|}
     [ "$f" != "$STATE/.hash-" ] && [ -f "$f" ] || continue
@@ -329,6 +346,10 @@ heartbeat_last_push_json() {  # <id> <worktree> <branch>
 heartbeat_no_mistakes_json() {  # <id> <worktree> <branch>
   local id=$1 wt=$2 branch=$3 out rc=0 run_id run_branch step active=false
   out=$(fm_nm_run_checked "$wt" "$FM_HEARTBEAT_NM_TIMEOUT" axi status </dev/null) || rc=$?
+  if [ "$(fm_nm_strip_quotes "$(fm_nm_field "$out" error)")" = "repo not initialized (run 'no-mistakes init' first)" ]; then
+    heartbeat_unknown "repo has no gate"
+    return 0
+  fi
   if [ "$rc" -ne 0 ]; then
     heartbeat_note_failure "task $id no-mistakes status exit $rc"
     heartbeat_unknown "no-mistakes status read failed"
@@ -356,7 +377,8 @@ heartbeat_no_mistakes_json() {  # <id> <worktree> <branch>
 }
 
 heartbeat_task_row() {  # <snapshot-task-json>
-  local task_json=$1 id wt branch backend target exists remote harness transcript=
+  local task_json=$1 id wt branch backend target exists remote harness spawn_gen transcript=
+  local pane_backend='' pane_target='' pane_label=''
   local session composer=unknown last_commit last_push nm_json sha
   id=$(printf '%s' "$task_json" | jq -r '.id')
   wt=$(printf '%s' "$task_json" | jq -r '.paths.worktree.path // ""')
@@ -366,8 +388,9 @@ heartbeat_task_row() {  # <snapshot-task-json>
   exists=$(printf '%s' "$task_json" | jq -r '.endpoint.exists // ""')
   remote=$(printf '%s' "$task_json" | jq -r '.remote.host // ""')
   harness=$(printf '%s' "$task_json" | jq -r '.harness // ""')
+  spawn_gen=$(printf '%s' "$task_json" | jq -r '.spawn_gen // ""')
   if [ "$harness" = claude ] && [ -n "$wt" ]; then
-    transcript=$(heartbeat_read "task $id transcript" heartbeat_worktree_transcript "$wt") || transcript=
+    transcript=$(heartbeat_read "task $id transcript" heartbeat_worktree_transcript "$wt" "$spawn_gen") || transcript=
   fi
   if [ -n "$transcript" ]; then
     session=$(jq -n --arg id "$(basename "$transcript" .jsonl)" '{id:$id}')
@@ -376,6 +399,9 @@ heartbeat_task_row() {  # <snapshot-task-json>
   fi
   if [ "$exists" = true ] && [ -z "$remote" ] && [ -n "$backend" ] && [ -n "$target" ]; then
     composer=$(heartbeat_read "task $id composer" fm_backend_composer_state "$backend" "$target" "fm-$id") || composer=unknown
+    pane_backend=$backend
+    pane_target=$target
+    pane_label=fm-$id
   fi
   last_commit=$(heartbeat_unknown "no worktree")
   last_push=$(heartbeat_unknown "no worktree")
@@ -396,11 +422,11 @@ heartbeat_task_row() {  # <snapshot-task-json>
     --argjson session "$session" \
     --argjson last_turn "$(heartbeat_turn_json "task $id" "$transcript")" \
     --arg composer "${composer:-unknown}" \
-    --argjson context_left "$(heartbeat_context_json "task $id" "$transcript")" \
+    --argjson context_left "$(heartbeat_context_json "task $id" "$transcript" "$pane_backend" "$pane_target" "$pane_label")" \
     --argjson last_commit "$last_commit" \
     --argjson last_push "$last_push" \
     --argjson no_mistakes_run "$nm_json" \
-    --argjson last_output_time "$(heartbeat_last_output_json "$id" "$target" "$transcript")" \
+    --argjson last_output_time "$(heartbeat_last_output_json "$target" "$transcript")" \
     --argjson inbox "$(heartbeat_inbox_unhandled "$id")" '
     def u(r): {unknown:true,reason:r};
     {
