@@ -440,6 +440,7 @@ The file may be empty or hold these lines, each optional:
 
 Blank lines and lines that start with `#` are ignored, and an unusable value keeps its default.
 Context size is the last request's `input + cache_read + cache_creation` usage in the session's transcript.
+A session has no context size between a compaction and its next request, and it is not compacted then.
 
 A session is compacted when all of these hold:
 
