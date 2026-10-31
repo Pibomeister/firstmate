@@ -13,5 +13,5 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RULE='================================================================================'
 
 printf '\n%s\nAFK PREFLIGHT\n%s\n' "$RULE" "$RULE"
-"$SCRIPT_DIR/fm-fleet-learnings.sh" digest || true
+"$SCRIPT_DIR/fm-fleet-learnings.sh" || true
 exit 0

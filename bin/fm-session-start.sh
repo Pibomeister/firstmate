@@ -1085,7 +1085,7 @@ fi
 # take (see this file's ORDERING note).
 stage context
 section "CONTEXT"
-"$SCRIPT_DIR/fm-fleet-learnings.sh" digest 2>/dev/null || true
+"$SCRIPT_DIR/fm-fleet-learnings.sh" 2>/dev/null || true
 print_file_or_absent "$DATA/projects.md" "data/projects.md"
 print_file_or_absent "$DATA/secondmates.md" "data/secondmates.md"
 print_file_or_absent "$DATA/captain.md" "data/captain.md"

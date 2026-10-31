@@ -21,7 +21,7 @@ make_min_root() {
 
 test_digest_present_in_repo_root() {
   local out
-  out=$("$FLEET" digest)
+  out=$("$FLEET")
   assert_contains "$out" 'docs/learnings/overnight-learnings.md (tracked fleet learnings' \
     "digest did not label fleet learnings"
   assert_contains "$out" 'Preflight readiness was guessed' \
@@ -33,7 +33,7 @@ test_digest_absent_does_not_block() {
   local root=$TMP_ROOT/absent-root home=$TMP_ROOT/absent-home out status
   make_min_root "$root"
   mkdir -p "$home/state" "$home/data" "$home/config"
-  out=$(FM_ROOT_OVERRIDE="$root" "$FLEET" digest)
+  out=$(FM_ROOT_OVERRIDE="$root" "$FLEET")
   status=$?
   assert_contains "$out" 'ABSENT' "missing fleet learnings did not print ABSENT"
   [ "$status" -eq 0 ] || fail "missing fleet learnings digest exited $status"
