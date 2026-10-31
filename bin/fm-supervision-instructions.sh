@@ -199,6 +199,8 @@ repair_line() {
   if [ "$AFK" -eq 1 ]; then
     if [ "$AFK_MODE" = quiet ]; then
       printf '%s\n' 'Quiet mode owns watcher supervision; load /quiet and ensure the daemon is running instead of starting normal supervision directly.'
+    elif [ "$HARNESS" = codex ]; then
+      printf '%s\n' 'Away mode owns watcher supervision; the Stop hook does not re-arm a watcher here, so drain the queued wakes and then stop, and load /afk and ensure the daemon is running instead of starting normal supervision directly.'
     else
       printf '%s\n' 'Away mode owns watcher supervision; load /afk and ensure the daemon is running instead of starting normal supervision directly.'
     fi
