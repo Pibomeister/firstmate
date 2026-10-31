@@ -4200,7 +4200,7 @@ fleet_heartbeat_publish_detached() {
     FLEET_HEARTBEAT_PID=
   fi
   FM_HOME=$FM_HOME FM_ROOT_OVERRIDE=$FM_ROOT FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$CONFIG \
-    "$SCRIPT_DIR/fm-heartbeat.sh" --write </dev/null >/dev/null 2>&1 &
+    "${FM_HEARTBEAT_BIN:-$SCRIPT_DIR/fm-heartbeat.sh}" --write </dev/null >/dev/null 2>&1 &
   FLEET_HEARTBEAT_PID=$!
 }
 

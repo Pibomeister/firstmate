@@ -174,6 +174,7 @@ heartbeat_read_snapshot() {  # <dest-file>
   return 1
 }
 
+# shellcheck disable=SC2329 # Invoked through heartbeat_read.
 heartbeat_last_turn_from_transcript() {  # <transcript>
   local transcript=$1 line stamp ts age
   [ -r "$transcript" ] || return 1
@@ -202,6 +203,7 @@ heartbeat_turn_json() {  # <label> <transcript-or-empty>
 
 # Only the pane's last lines, where the harness draws its status, so a mate
 # quoting the phrase higher up in its output is not read as its own context.
+# shellcheck disable=SC2329 # Invoked through heartbeat_read.
 heartbeat_pane_context_percent() {  # <backend> <target> [expected-label]
   fm_backend_capture "$1" "$2" 5 ${3:+"$3"} 2>/dev/null \
     | awk 'NF' | tail -n 5 \
@@ -304,6 +306,7 @@ heartbeat_spawn_epoch() {  # <spawn-gen>
 # with every non-alphanumeric byte replaced by a dash.
 # Slots are reused and transcripts outlive them, so only one written since this
 # task's spawn belongs to it.
+# shellcheck disable=SC2329 # Invoked through heartbeat_read.
 heartbeat_worktree_transcript() {  # <worktree> <spawn-gen>
   local slug file m newest=0 found='' spawn_epoch
   spawn_epoch=$(heartbeat_spawn_epoch "$2") || return 1
@@ -593,6 +596,7 @@ heartbeat_publish() {
   echo "fm-heartbeat: could not write $LEDGER" >&2
 }
 
+# shellcheck disable=SC2329 # Registered by the signal trap below.
 heartbeat_on_signal() {
   trap '' TERM INT HUP
   heartbeat_note_failure "heartbeat stopped by a signal before every read finished"

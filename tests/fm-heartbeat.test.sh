@@ -22,7 +22,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-unset TMUX TMUX_PANE HERDR_ENV HERDR_PANE_ID HERDR_SESSION REX_SESSION REX_BLOCK TERM_PROGRAM \
+unset FM_HEARTBEAT_BIN TMUX TMUX_PANE HERDR_ENV HERDR_PANE_ID HERDR_SESSION REX_SESSION REX_BLOCK TERM_PROGRAM \
   FM_SUPERVISOR_TARGET FM_SUPERVISOR_BACKEND FM_BACKEND
 export PATH="$FAKEBIN:$PATH"
 export CLAUDE_CONFIG_DIR="$TMP_ROOT/claude"
@@ -222,7 +222,7 @@ test_ledger_schema_and_clean_run() {
     and .tasks[0].context_left.used_tokens.unknown == true
   ' "clean run ledger is wrong"
   assert_no_work_left "$home"
-  [ "$(stat -f %Lp "$(ledger "$home")" 2>/dev/null || stat -c %a "$(ledger "$home")")" = 600 ] \
+  [ "$(stat -c %a "$(ledger "$home")" 2>/dev/null || stat -f %Lp "$(ledger "$home")")" = 600 ] \
     || fail "ledger is not mode 600"
   pass "--write publishes every field atomically with a null failure on a clean run"
 }

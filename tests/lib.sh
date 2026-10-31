@@ -53,6 +53,12 @@ export FM_GATE_REFUSE_BYPASS=1
 # leaked harness pin alone stays inert outside a suite.
 export FM_TEST_SEAM=1
 
+# A real watcher publishes the heartbeat ledger detached on each poll, and that
+# run reads the same fake endpoints the watcher suites count. Keep those counts
+# to the watcher's own reads. tests/fm-heartbeat.test.sh unsets this to cover
+# the real publisher.
+export FM_HEARTBEAT_BIN=true
+
 # Clear the task-worker marker bin/fm-spawn.sh exports into ship and scout
 # panes. This suite builds git-init fixture repositories whose primary checkout
 # it runs a copied bin/fm-test-run.sh in, and that runner refuses the primary
