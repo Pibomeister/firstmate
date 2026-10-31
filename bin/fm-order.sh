@@ -94,7 +94,9 @@
 # as handing off. The record names the harness session that wrote it (the
 # verified-harness pids above the writer, bin/fm-session-lock-lib.sh); every
 # other session in the same home treats it as absent, and a record written
-# outside any harness session applies to every session. `handing-off` exits 0
+# outside any harness session applies to every session. A caller outside any
+# harness session (a restarting leash or sender) reads the record as the
+# captain's. `handing-off` exits 0
 # only when this session recorded a handoff. `gate` reads this session's
 # recorded document and exits 0 only when it names every open order id;
 # otherwise it exits 3 naming the missing ids, including when this session
@@ -725,15 +727,16 @@ load_session_pids() {
   SESSION_PIDS=$(fm_harness_ancestry_pids 2>/dev/null) || SESSION_PIDS=
 }
 
-# True when the handoff record exists and belongs to this session: its owner
-# shares a harness pid with this process, or it names no owner.
+# True when the handoff record exists and belongs to this caller: its owner
+# shares a harness pid with this process, it names no owner, or this process
+# runs outside any harness session.
 handoff_record_mine() {
   local owner pid
   [ -r "$HANDOFF_RECORD" ] || return 1
   owner=$(sed -n 's/^owner=//p' "$HANDOFF_RECORD" | head -n 1)
   [ -n "$owner" ] || return 0
   load_session_pids
-  [ -n "$SESSION_PIDS" ] || return 1
+  [ -n "$SESSION_PIDS" ] || return 0
   for pid in $owner; do
     fm_harness_pid_listed "$pid" "$SESSION_PIDS" && return 0
   done

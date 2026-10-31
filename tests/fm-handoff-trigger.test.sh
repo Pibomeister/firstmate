@@ -438,6 +438,110 @@ test_another_sessions_handoff_never_gates_this_stop() {
   pass "a handoff record gates only the session that wrote it, never another session's stop in the same home"
 }
 
+# outside_harness_order <output-file> <fm-order.sh args...>: run fm-order.sh in
+# a detached process and print its exit status. The process waits until its
+# parent has exited, so it is reparented away from the test runner and has no
+# harness in its ancestry, even when a real harness runs this suite. It reports
+# status 99 if the ancestry walk still finds a harness.
+outside_harness_order() {
+  local out=$1 rc_file n=0
+  shift
+  rc_file="$out.rc"
+  rm -f "$rc_file" "$rc_file.tmp"
+  # shellcheck disable=SC2016 # The detached shell expands these.
+  ( bash -c '
+      out=$1 rc_file=$2 root=$3 home=$4
+      shift 4
+      n=0
+      while [ "$(ps -o ppid= -p "$$" | tr -d " ")" = "$PPID" ] && [ "$n" -lt 100 ]; do sleep 0.1; n=$((n + 1)); done
+      . "$root/bin/fm-session-lock-lib.sh"
+      rc=0
+      if fm_harness_ancestry_pids >"$out" 2>/dev/null; then
+        rc=99
+      else
+        FM_HOME="$home" "$root/bin/fm-order.sh" "$@" >"$out" 2>&1 || rc=$?
+      fi
+      printf "%s\n" "$rc" >"$rc_file.tmp"
+      mv "$rc_file.tmp" "$rc_file"
+    ' _ "$out" "$rc_file" "$ROOT" "$PRIMARY" "$@" </dev/null >/dev/null 2>&1 & )
+  while [ ! -e "$rc_file" ] && [ "$n" -lt 300 ]; do sleep 0.1; n=$((n + 1)); done
+  [ -e "$rc_file" ] || fail "the detached caller outside any harness never finished"
+  cat "$rc_file"
+}
+
+# The captain session records a handoff, then a caller outside any harness
+# (a restarting leash or sender, run as a detached process) checks the gate: it
+# reads the captain's record. A second fake harness session still treats the
+# record as absent, so its stop stays ordinary.
+test_a_caller_outside_any_harness_reads_the_captains_handoff() {
+  local fakebin doc ready go a_pid rc err out newer
+  reset_lab
+  rm -rf "$PRIMARY/data/orders"
+  fakebin="$TMP_ROOT/fake-harness"
+  mkdir -p "$fakebin"
+  ln -sf /bin/bash "$fakebin/claude"
+  printf 'percent-left=0\n' > "$PRIMARY/config/handoff-trigger"
+  transcript "$TMP_ROOT/t-out" 10000
+  doc="$PRIMARY/data/outside-handoff.md"
+  ready="$TMP_ROOT/out.ready"
+  go="$TMP_ROOT/out.go"
+  out="$TMP_ROOT/out.gate"
+  rm -f "$ready" "$go"
+  printf '# Handoff\n' > "$doc"
+  FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" send --from test "order in the handoff" >/dev/null \
+    || fail "could not send the order fixture"
+  (
+    export PRIMARY ROOT doc ready go
+    # shellcheck disable=SC2016 # The fake harness shell expands these.
+    exec "$fakebin/claude" -c '
+      FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" handoff --doc "$doc" >/dev/null || exit 9
+      : > "$ready"
+      n=0
+      while [ ! -e "$go" ] && [ "$n" -lt 300 ]; do sleep 0.1; n=$((n + 1)); done'
+  ) &
+  a_pid=$!
+  n=0
+  while [ ! -e "$ready" ] && [ "$n" -lt 300 ]; do sleep 0.1; n=$((n + 1)); done
+  [ -e "$ready" ] || { kill "$a_pid" 2>/dev/null; fail "the captain session never recorded its handoff"; }
+  [ -n "$(sed -n 's/^owner=//p' "$PRIMARY/state/.order-handoff")" ] \
+    || fail "the record written in a harness session must name its owner"
+
+  rc=$(outside_harness_order "$out" gate)
+  assert_equals 0 "$rc" "a caller outside any harness clears the gate when the captain's handoff lists every order: $(cat "$out")"
+  assert_contains "$(cat "$out")" "gate: clear (1 open order(s)" "the outside caller gets the clear verdict"
+
+  sleep 1
+  FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" send --from test "order after the handoff" >/dev/null \
+    || fail "could not send the second order fixture"
+  newer=$(find "$PRIMARY/data/orders/pending" -name '*.order' | sed 's#.*/##; s/\.order$//' | sort | tail -n 1)
+  rc=$(outside_harness_order "$out" gate)
+  assert_equals 3 "$rc" "a newer order missing from the captain's handoff blocks the outside caller"
+  assert_contains "$(cat "$out")" "$newer" "the outside caller's block names the newer order"
+  assert_contains "$(cat "$out")" "does not list" "the outside caller reads the captain's recorded handoff"
+
+  rc=0
+  (
+    export PRIMARY ROOT
+    # shellcheck disable=SC2016 # The fake harness shell expands these.
+    exec "$fakebin/claude" -c 'FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" handing-off'
+  ) || rc=$?
+  assert_equals 1 "$rc" "a second harness session is not handing off"
+  err="$TMP_ROOT/out-other.err"
+  rc=0
+  (
+    export HOOK CLAUDE_HOME PRIMARY TMP_ROOT
+    export -f run_hook
+    # shellcheck disable=SC2016 # The fake harness shell expands these.
+    exec "$fakebin/claude" -c 'run_hook "$PRIMARY" s-out-other "$TMP_ROOT/t-out" Stop >/dev/null'
+  ) 2>"$err" || rc=$?
+  assert_equals 0 "$rc" "a second harness session's ordinary stop stays ungated: $(cat "$err")"
+
+  : > "$go"
+  wait "$a_pid" || true
+  rm -rf "$PRIMARY/data/orders" "$doc" "$PRIMARY/state/.order-handoff" "$PRIMARY/config/handoff-trigger" "$ready" "$go"
+  pass "a caller outside any harness reads the captain's handoff, and a second harness session does not"
+}
+
 test_threshold_default_15
 test_threshold_configurable
 test_fires_once_per_context_cycle
@@ -452,3 +556,4 @@ test_scope
 test_names_open_captain_orders_and_gates_the_stop
 test_a_recorded_handoff_gates_the_stop_without_the_trigger
 test_another_sessions_handoff_never_gates_this_stop
+test_a_caller_outside_any_harness_reads_the_captains_handoff
