@@ -174,6 +174,8 @@ Each home atomically publishes that bounded home summary with freshness epoch me
 The fleet snapshot and Bearings paths use the concurrent remote-ledger collection, cache, unreadable-home disclosure, and remote-liveness boundary owned by `bin/fm-fleet-snapshot.sh`'s header.
 `bin/fm-fleet-view.sh` renders that snapshot as Markdown for humans, while `bin/fm-bearings-snapshot.sh` provides the bounded bearings projection, so both views consume one structured contract instead of reparsing raw fleet files.
 The script header owns the exact JSON schema.
+Each watcher poll also starts `bin/fm-heartbeat.sh --write` detached and single-flight, so no read can hold a poll; it enriches that snapshot with git, no-mistakes, inbox, terminal, and transcript facts and atomically publishes `state/heartbeat.json`, reporting an unread field as unknown instead of guessing.
+That script's header owns the document and its bounds.
 
 On a Pi primary, supervision is default-on: the watcher extension can hand eligible task-local rows from an ordinary actionable wake, plus selected fleet-wide heartbeat reviews, to a persistent in-process supervision conversation while main-only rows remain on the captain-facing path.
 The branch handles those rows, stores the outcome durably, and merges it back into main.

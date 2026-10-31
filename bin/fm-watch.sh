@@ -4202,6 +4202,23 @@ lane_capacity_publish_detached() {
   LANE_CAPACITY_PID=$!
 }
 
+# Self-watching heartbeat ledger: publish state/heartbeat.json detached and
+# single-flight so no read can hold a poll. bin/fm-heartbeat.sh's header owns the
+# document and its bounds.
+FLEET_HEARTBEAT_PID=
+fleet_heartbeat_publish_detached() {
+  if [ -n "$FLEET_HEARTBEAT_PID" ]; then
+    if kill -0 "$FLEET_HEARTBEAT_PID" 2>/dev/null; then
+      return 0
+    fi
+    wait "$FLEET_HEARTBEAT_PID" 2>/dev/null || true
+    FLEET_HEARTBEAT_PID=
+  fi
+  FM_HOME=$FM_HOME FM_ROOT_OVERRIDE=$FM_ROOT FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$CONFIG \
+    "${FM_HEARTBEAT_BIN:-$SCRIPT_DIR/fm-heartbeat.sh}" --write </dev/null >/dev/null 2>&1 &
+  FLEET_HEARTBEAT_PID=$!
+}
+
 RECONCILE_REQUEST_PID=
 reconcile_requests_pending() {
   local request
@@ -4393,6 +4410,8 @@ while :; do
   # Liveness beacon for fm-guard.sh: a fresh mtime here means a watcher is
   # alive. Supervision scripts warn when this goes stale with tasks in flight.
   touch "$STATE/.last-watcher-beat"
+
+  fleet_heartbeat_publish_detached
 
   for budget_meta in "$STATE"/*.meta; do
     [ -f "$budget_meta" ] && [ ! -L "$budget_meta" ] || continue
