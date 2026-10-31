@@ -320,6 +320,28 @@ test_missing_council_entrypoint_pages() {
   pass 'real watcher pages the captain when council entrypoint is absent'
 }
 
+test_invalid_authority_config_still_pages() {
+  local dir="$TMP_ROOT/invalid-authority"
+  mkdir -p "$dir/state" "$dir/config"
+  fm_test_track_watcher_state "$dir/state"
+  printf 'needs-decision [at=1000] [key=api]: choose\n' > "$dir/state/worker.status"
+  printf 'worker\tapi\t1000\troutine\n' > "$dir/authority-target"
+  ln -s "$dir/authority-target" "$dir/config/decision-age-authority"
+  FM_HOME="$dir" FM_STATE_OVERRIDE="$dir/state" FM_CONFIG_OVERRIDE="$dir/config" \
+    FM_AFK_MODE=away bash "$ROOT/bin/fm-afk-contract.sh" enter --words 'away test' >/dev/null
+  FM_HOME="$dir" FM_STATE_OVERRIDE="$dir/state" FM_CONFIG_OVERRIDE="$dir/config" \
+    FM_WATCH_NOW=2800 FM_WATCH_ONCE=1 FM_WEDGE_ALARM_CHANNEL=off \
+    bash "$ROOT/bin/fm-watch.sh" > "$dir/out" 2> "$dir/err" \
+    || fail "real watcher failed on an invalid authority file: $(cat "$dir/err")"
+  grep -F $'worker\tapi\t1000\t' "$dir/state/.away-decision-age-claims" | grep -F $'page-pending\t' >/dev/null \
+    || fail 'invalid authority file stopped the captain page'
+  if [ -f "$dir/state/.wake-queue" ]; then
+    ! grep -F 'away-decision:worker:api:1000' "$dir/state/.wake-queue" >/dev/null \
+      || fail 'invalid authority file queued a council wake'
+  fi
+  pass 'real watcher still pages the captain with an invalid authority file'
+}
+
 test_away_page_retries_after_channel_configured() {
   reset_case
   printf 'needs-decision [at=1000] [key=approval]: choose\n' > "$STATE/worker.status"
@@ -342,4 +364,5 @@ fm_test_run test_disabled test_oldest_and_backoff test_numeric_keys_are_distinct
   test_invalid_settings test_timed_cursor_retirement test_watcher_loop \
   test_away_age_route test_away_age_page_and_staleness \
   test_away_confirmation_change_keeps_decision_open test_interrupted_claim_retries_page \
-  test_missing_council_entrypoint_pages test_away_page_retries_after_channel_configured
+  test_missing_council_entrypoint_pages test_invalid_authority_config_still_pages \
+  test_away_page_retries_after_channel_configured
