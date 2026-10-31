@@ -257,6 +257,7 @@ Judge for yourself what is important and which record each thing belongs to, and
 One bound holds: this covers the open work you are actually holding in context, not the records at large.
 It is not a reconciliation of durable records against repository or forge reality, cannot become one on input this volatile, and must never be reported as one.
 Where the right correction is a judgment you cannot make, leave the record alone and raise the question instead of guessing.
+Before a reset, run `bin/fm-order.sh handoff` and carry its block of open captain orders into the handoff; its header owns the restart gate that block satisfies.
 
 ## One-time migration of unmarked entries
 

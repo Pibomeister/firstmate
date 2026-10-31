@@ -206,5 +206,12 @@ LEFT=$(((COMPACT_AT - TOKENS) * 100 / COMPACT_AT))
 find "$STATE" -maxdepth 1 -name '.handoff-trigger.*' -type f -mtime +30 -exec rm -f {} + 2>/dev/null
 
 MESSAGE="Firstmate early handoff trigger, from this home's tracked Claude hook: about ${LEFT}% of context is left before auto-compact (${TOKENS} of ${COMPACT_AT} tokens). Write your full session handoff now, before auto-compact: persist every open work record, decision, and piece of durable knowledge this session holds (the stow skill covers this), then report that this session is ready to restart. Do not run /compact. This instruction fires once per context cycle."
+# Durable captain orders are part of the handoff: record the manifest the
+# restart gate checks, and name each open order (bin/fm-order.sh owns both).
+ORDERS=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-order.sh" handoff 2>/dev/null \
+  | awk '/^  [0-9]+-[0-9a-f]+ / { printf "%s%s (%s)", sep, $1, $2; sep = ", " }')
+if [ -n "$ORDERS" ]; then
+  MESSAGE="$MESSAGE Open captain orders that your handoff must list: ${ORDERS}. If an order arrives after this, run bin/fm-order.sh handoff again; bin/fm-order.sh gate must pass before restart."
+fi
 jq -n --arg event "$EVENT" --arg context "$MESSAGE" \
   '{hookSpecificOutput: {hookEventName: $event, additionalContext: $context}}'

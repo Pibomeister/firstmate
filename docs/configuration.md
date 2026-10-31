@@ -98,6 +98,7 @@ Each effective `FM_HOME` contains private operational directories.
 - Learnings, backlog, briefs, scout reports, optional task status archives, and the optional per-task no-mistakes pipeline-spend ledger.
 - Explicitly installed content-addressed extension packages under `data/extensions/packages/`.
 - Failure-class records under `data/failure-classes/` ([`claim-ledger.md`](claim-ledger.md)).
+- Durable captain orders under `data/orders/` (`bin/fm-order.sh`).
 
 `state/` holds runtime records:
 
@@ -111,8 +112,9 @@ Each effective `FM_HOME` contains private operational directories.
 - Per-task steering-inbox records under `state/<id>.inbox/` (`bin/fm-task-inbox-lib.sh`).
 - Parent-owned secondmate pending-reply records under `state/pending-replies/` (`bin/fm-pending-reply-lib.sh`).
 - Per-task claim ledgers, `state/<id>.claims.jsonl` ([`claim-ledger.md`](claim-ledger.md)).
+- The current captain handle, `state/captain-handle`, that order senders resolve at send time (`bin/fm-order.sh`).
 
-`config/` holds local gitignored operating choices, including explicit extension bindings under `config/extensions.d/`.
+`config/` holds local gitignored operating choices, including explicit extension bindings under `config/extensions.d/` and the optional `config/order-escalation-repo` for undelivered captain orders (`bin/fm-order.sh`).
 
 `projects/` holds local project clones.
 Firstmate reads these clones, but changes them only through the narrow guarded and concrete captain-approved exceptions in `AGENTS.md`.

@@ -283,6 +283,33 @@ test_scope() {
   pass "inert in a crew worktree, for Cursor payloads, other events, and a home without state; live in the primary"
 }
 
+# Open durable captain orders are part of the handoff: the firing names each
+# one and records the manifest bin/fm-order.sh gate checks before a restart.
+test_names_open_captain_orders() {
+  local order_id gate_rc=0
+  reset_lab
+  rm -rf "$PRIMARY/data/orders"
+  printf 'compact-at-tokens=100000\n' > "$PRIMARY/config/handoff-trigger"
+  transcript "$TMP_ROOT/t-90" 90000
+  out=$(run_hook "$PRIMARY" s-orders-none "$TMP_ROOT/t-90")
+  expect_fire "$out" PostToolUse "no open orders"
+  printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | test("captain orders") | not' >/dev/null \
+    || fail "with no open orders the instruction must not mention captain orders: $out"
+  FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" send --no-nudge --from test "order mid handoff" >/dev/null \
+    || fail "could not send the order fixture"
+  order_id=$(find "$PRIMARY/data/orders/pending" -name '*.order' | sed 's#.*/##; s/\.order$//')
+  FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" gate >/dev/null || gate_rc=$?
+  [ "$gate_rc" -eq 3 ] || fail "the gate must block before the handoff names the order (rc=$gate_rc)"
+  out=$(run_hook "$PRIMARY" s-orders "$TMP_ROOT/t-90")
+  expect_fire "$out" PostToolUse "one open order"
+  printf '%s' "$out" | jq -e --arg id "$order_id" '.hookSpecificOutput.additionalContext | contains("Open captain orders that your handoff must list: " + $id + " (pending)")' >/dev/null \
+    || fail "the instruction must name the open order $order_id: $out"
+  FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" gate >/dev/null \
+    || fail "the firing must record the manifest so the gate passes"
+  rm -rf "$PRIMARY/data/orders"
+  pass "a firing names every open captain order and records the restart-gate manifest"
+}
+
 test_threshold_default_15
 test_threshold_configurable
 test_fires_once_per_context_cycle
@@ -294,3 +321,4 @@ test_window_values_claude_rejects_count_as_unset
 test_window_env_override
 test_unresolved_compact_point_is_silent
 test_scope
+test_names_open_captain_orders

@@ -48,7 +48,10 @@
 #                       inactive-outcome startup scan runs in the deferred worker.
 #                       First, on every harness and away posture, it seeds the
 #                       outcome store's display tail copy when that is absent
-#                       (bin/fm-branch-outcome.sh seed-tail).
+#                       (bin/fm-branch-outcome.sh seed-tail). A locked first
+#                       start then records this session as the current captain
+#                       handle, and every start prints a CAPTAIN ORDERS section
+#                       when durable orders are open (bin/fm-order.sh).
 #   4. supervision-instructions - the one emitted operating block for the
 #                       detected primary harness.
 #   5. read-once contract - the do-not-re-read contract covering every source
@@ -835,6 +838,18 @@ else
   else
     printf '(no queued wakes)\n'
   fi
+  # A new captain session records its own terminal as the handle senders
+  # resolve at send time (bin/fm-order.sh owns the handle and order contract).
+  if [ "$REEMIT" -eq 0 ]; then
+    FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" "$SCRIPT_DIR/fm-order.sh" claim-handle >/dev/null 2>&1 || true
+  fi
+fi
+# Durable captain orders still open are this session's to pick up; the list is
+# read-only, so a read-only session sees it too (bin/fm-order.sh pickup).
+ORDERS_OUT=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" "$SCRIPT_DIR/fm-order.sh" pickup 2>&1) || ORDERS_OUT=
+if [ -n "$ORDERS_OUT" ]; then
+  subsection "CAPTAIN ORDERS"
+  printf '%s\n' "$ORDERS_OUT"
 fi
 
 # --- 4. supervision operating instructions ----------------------------------
