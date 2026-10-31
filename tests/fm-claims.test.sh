@@ -1257,6 +1257,19 @@ test_order_rule_outcomes() {
   assert_contains "$out" " order refuted line=$ln: broke an order rule - no-version-bump: the version field in Cargo.toml changed" \
     "a changed Cargo.toml version field breaks the rule"
 
+  setup_task rule-version-pushed local-only
+  printf '%s\n' "Do not bump a version." > "$DT/t1/brief.md"
+  commit_work a.txt >/dev/null
+  printf '0.2.0\n' > "$WT/VERSION"
+  git -C "$WT" add VERSION
+  GIT_COMMITTER_DATE="@$((T0 - 900)) +0000" GIT_AUTHOR_DATE="@$((T0 - 900)) +0000" git -C "$WT" commit -qm "version"
+  commit_work b.txt >/dev/null
+  git -C "$WT" push -q origin fm/t1:main 2>/dev/null || fail "fixture: push to the default branch by remote name failed"
+  status "done: ready"
+  out=$(claims "$T0" scan t1)
+  assert_contains "$out" " order refuted line=1: broke an order rule - no-version-bump: VERSION changed" \
+    "a bump the base ref already contains still breaks the rule"
+
   setup_task rule-positive local-only
   printf '%s\n' "Release task: bump a version in package.json." "You may push to the default branch for this hotfix." \
     "No tests needed. Push to the default branch when ready." > "$DT/t1/brief.md"

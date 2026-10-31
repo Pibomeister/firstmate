@@ -130,7 +130,8 @@
 #                   branch that contains HEAD is unverifiable while such a PR
 #                   cannot be read;
 #                 no-version-bump ("bump a version"): no version field or
-#                   VERSION file changed between the base and HEAD.
+#                   VERSION file changed between the base and HEAD, starting
+#                   before any task commit the base ref already contains.
 #               Any refuted rule refutes. Otherwise the claim is verified only
 #               with a current AgentKit verify gate at HEAD, for everything the
 #               rules cannot read.
@@ -234,6 +235,7 @@ export GH_PROMPT_DISABLED=1 GIT_TERMINAL_PROMPT=0 GH_NO_UPDATE_NOTIFIER=1
 
 CL_TMP=$(mktemp -d "${TMPDIR:-/tmp}/fm-claims.XXXXXX") || die "cannot create a temporary directory"
 CL_LOCK=
+# shellcheck disable=SC2329 # Invoked by the EXIT trap below.
 cl_cleanup() {
   [ -z "$CL_LOCK" ] || fm_lock_release "$CL_LOCK" || true
   rm -rf "$CL_TMP"
@@ -1181,6 +1183,25 @@ cl_rule_no_default_push() {  # <candidate-url>
   esac
 }
 
+# The commit to diff the task's work from: <merge-base>, moved before any
+# commit-family reflog entry of the branch that it already contains. A push to
+# the default branch, or a merged PR, moves the base ref onto the task's work.
+cl_work_start() {  # <repo> <head> <merge-base>
+  local repo=$1 head=$2 start=$3 log='' s subj parent
+  [ -z "$T_BRANCH" ] || log=$(git -C "$repo" log -g --format="%H$CL_US%gs" "refs/heads/$T_BRANCH" 2>/dev/null) || log=
+  while IFS=$CL_US read -r s subj; do
+    case "$subj" in
+      commit:*|'commit ('*|cherry-pick:*)
+        git -C "$repo" merge-base --is-ancestor "$s" "$head" 2>/dev/null || continue
+        git -C "$repo" merge-base --is-ancestor "$s" "$start" 2>/dev/null || continue
+        parent=$(git -C "$repo" rev-parse -q --verify "$s^" 2>/dev/null) && start=$parent ;;
+    esac
+  done <<EOF
+$log
+EOF
+  printf '%s' "$start"
+}
+
 cl_rule_no_version_bump() {
   local repo head base mb files f
   R_VERDICT=unverifiable R_REASON=
@@ -1193,6 +1214,7 @@ cl_rule_no_version_bump() {
     R_REASON="the base branch could not be resolved"
     return 0
   fi
+  mb=$(cl_work_start "$repo" "$head" "$mb")
   files=$(git -C "$repo" diff --name-only "$mb" "$head" 2>/dev/null) || { R_REASON="the diff could not be read"; return 0; }
   while IFS= read -r f; do
     case "${f##*/}" in
