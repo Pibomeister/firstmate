@@ -63,14 +63,17 @@
 # with an exclusive create, so concurrent hook calls from parallel tool calls
 # still fire once. A firing also removes markers older than 30 days.
 #
-# RESTART GATE (Stop). Once the trigger has fired in the current context cycle
-# the session is handing off, so on each Stop the hook runs
-# `bin/fm-order.sh gate`; when the handoff document does not name every open
-# captain order it blocks that stop (exit 2, the gate's verdict on stderr) so
-# the session writes the orders into its handoff before it reports ready to
-# restart. A stop that already follows a block (stop_hook_active) is allowed,
-# so the gate blocks at most once per turn and never wedges the session. It
-# cannot stop a human `/quit` or a crash; bin/fm-order.sh owns the gate.
+# RESTART GATE (Stop). A session is handing off once the trigger has fired in
+# its current context cycle, or once it ran `bin/fm-order.sh handoff --doc`
+# (stow, a restart, or a home with percent-left=0). On each Stop of a session
+# handing off, the hook runs `bin/fm-order.sh gate`; when the recorded handoff
+# document does not name every open captain order it blocks that stop (exit 2,
+# the gate's verdict on stderr) so the session writes the orders into its
+# handoff before it reports ready to restart. An ordinary stop is never gated.
+# A stop that already follows a block (stop_hook_active) is allowed, so the
+# gate blocks at most once per turn and never wedges the session. It cannot
+# stop a human `/quit` or a crash, and it does not run for a non-Claude
+# primary; bin/fm-order.sh owns the gate and its limits.
 #
 # Any failure to read the payload, transcript, or settings is silent: the hook
 # never blocks a tool call or prompt and never prints anything but the one
@@ -120,23 +123,30 @@ if [ -f "$CONFIG/handoff-trigger" ]; then
     esac
   done < "$CONFIG/handoff-trigger"
 fi
-[ "$PERCENT" -gt 0 ] || exit 0
 
 SESSION_ID=$(printf '%s' "$PAYLOAD" | jq -r '.session_id // empty | strings' 2>/dev/null)
 TRANSCRIPT=$(printf '%s' "$PAYLOAD" | jq -r '.transcript_path // empty | strings' 2>/dev/null)
 EVENT=$(printf '%s' "$PAYLOAD" | jq -r '.hook_event_name // empty | strings' 2>/dev/null)
-[ -n "$SESSION_ID" ] && [ -n "$TRANSCRIPT" ] || exit 0
 case "$EVENT" in PostToolUse | UserPromptSubmit | Stop) ;; *) exit 0 ;; esac
 
-# Count boundaries before reading tokens: a compaction landing between the two
-# reads then leaves no usage to measure instead of pre-compaction usage in the
-# new cycle.
-BOUNDARIES=$(LC_ALL=C grep -c '"subtype":"compact_boundary"' "$TRANSCRIPT" 2>/dev/null)
-case "$BOUNDARIES" in '' | *[!0-9]*) exit 0 ;; esac
-MARKER="$STATE/.handoff-trigger.$(printf '%s' "$SESSION_ID" | tr -c 'A-Za-z0-9_-' '_').$BOUNDARIES"
+# The trigger marker for this session's context cycle, or empty when the
+# transcript cannot say which cycle this is. Count boundaries before reading
+# tokens: a compaction landing between the two reads then leaves no usage to
+# measure instead of pre-compaction usage in the new cycle.
+MARKER=
+if [ -n "$SESSION_ID" ] && [ -n "$TRANSCRIPT" ]; then
+  BOUNDARIES=$(LC_ALL=C grep -c '"subtype":"compact_boundary"' "$TRANSCRIPT" 2>/dev/null)
+  case "$BOUNDARIES" in
+    '' | *[!0-9]*) ;;
+    *) MARKER="$STATE/.handoff-trigger.$(printf '%s' "$SESSION_ID" | tr -c 'A-Za-z0-9_-' '_').$BOUNDARIES" ;;
+  esac
+fi
 if [ "$EVENT" = Stop ]; then
-  # Enforce the restart gate only on a session that is handing off.
-  [ -e "$MARKER" ] || exit 0
+  # Enforce the restart gate only on a session that is handing off: the
+  # trigger fired in this cycle, or the session recorded a handoff document
+  # (state/.order-handoff, owned by bin/fm-order.sh), which also covers
+  # percent-left=0.
+  { [ -n "$MARKER" ] && [ -e "$MARKER" ]; } || [ -e "$STATE/.order-handoff" ] || exit 0
   [ "$(printf '%s' "$PAYLOAD" | jq -r '.stop_hook_active // false' 2>/dev/null)" != true ] || exit 0
   GATE_RC=0
   GATE_OUT=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-order.sh" gate 2>/dev/null) || GATE_RC=$?
@@ -146,6 +156,8 @@ if [ "$EVENT" = Stop ]; then
     "$(printf '%s' "$GATE_OUT" | tr '\n' ' ')" >&2
   exit 2
 fi
+[ "$PERCENT" -gt 0 ] || exit 0
+[ -n "$MARKER" ] || exit 0
 [ -e "$MARKER" ] && exit 0
 
 # shellcheck source=bin/fm-warm-compact-lib.sh

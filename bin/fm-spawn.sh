@@ -4461,6 +4461,35 @@ if [ "$KIND" = ship ]; then
   fi
 fi
 
+# Standing captain holds travel with every relayed order (bin/fm-order.sh owns
+# holds): the launch text carries this home's holds in force. A worker's
+# private launch brief gets the block appended; a secondmate launches from a
+# copy of its charter with the block, written to its home's state/, so the
+# charter itself is never changed. When holds may exist but cannot be read,
+# nothing is launched, because work without its limits is what holds prevent.
+if [ -d "$DATA/orders" ]; then
+  if ! SPAWN_HOLDS=$(FM_HOME="$FM_HOME" "$SCRIPT_DIR/fm-order.sh" holds --relay 2>/dev/null); then
+    echo "error: could not read this home's standing captain holds (bin/fm-order.sh holds --relay); $ID was not launched" >&2
+    exit 1
+  fi
+  if [ -n "$SPAWN_HOLDS" ]; then
+    if [ "$KIND" = secondmate ]; then
+      SPAWN_HELD_BRIEF="$PROJ_ABS/state/launch-charter.md"
+      if ! { mkdir -p "$PROJ_ABS/state" &&
+        { cat "$BRIEF" && printf '\n%s\n' "$SPAWN_HOLDS"; } >"$SPAWN_HELD_BRIEF.tmp.$$" &&
+        mv "$SPAWN_HELD_BRIEF.tmp.$$" "$SPAWN_HELD_BRIEF"; }; then
+        rm -f -- "$SPAWN_HELD_BRIEF.tmp.$$"
+        echo "error: could not write the charter launch copy with standing holds at $SPAWN_HELD_BRIEF; $ID was not launched" >&2
+        exit 1
+      fi
+      BRIEF=$SPAWN_HELD_BRIEF
+    elif ! printf '\n%s\n' "$SPAWN_HOLDS" >>"$BRIEF"; then
+      echo "error: could not add the standing holds to $BRIEF; $ID was not launched" >&2
+      exit 1
+    fi
+  fi
+fi
+
 BRIEF_DIR_REAL=$(cd "$(dirname "$BRIEF")" && pwd -P)
 BRIEF_REAL="$BRIEF_DIR_REAL/$(basename "$BRIEF")"
 

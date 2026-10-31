@@ -29,7 +29,8 @@
 #      no marker-only record and no pending-reply expectation.
 #  11. Standing captain holds travel with every recorded steer: the record
 #      carries the holds-in-force block after the steer, a lifted hold stops
-#      travelling, and a typed slash command carries no block.
+#      travelling, and a typed slash command carries no block. A typed send
+#      to an explicit backend target carries the block on one line.
 # Every case below that passes a literal `$...` message quotes it on purpose
 # (the point is sending an unexpanded `$` line), so SC2016 is disabled.
 # shellcheck disable=SC2016
@@ -537,6 +538,25 @@ test_standing_holds_travel_with_the_steer() {
   pass "fm-send holds: standing holds ride every recorded steer until lifted"
 }
 
+test_standing_holds_travel_to_an_explicit_target() {
+  local dir err hold typed
+  dir=$(setup_case holds-explicit)
+  err="$dir/send.err"
+  env -u FM_DATA_OVERRIDE -u FM_STATE_OVERRIDE FM_HOME="$dir/home" "$ROOT/bin/fm-order.sh" \
+    send --hold --no-nudge --from captain "close nothing" >/dev/null || fail "could not send the hold fixture"
+  hold=$(find "$dir/home/data/orders/pending" -name '*.order' | sed 's#.*/##; s/\.order$//')
+  run_send "$dir" "$err" -- sess:win "hello there" || fail "an explicit-target send with a hold should succeed"
+  typed=$(cat "$dir/send.log")
+  assert_contains "$typed" "hello there  Standing captain holds" "the typed text carries the holds after the steer"
+  assert_contains "$typed" "- hold $hold" "the typed text names the hold id"
+  assert_contains "$typed" "close nothing" "the typed text carries the hold text"
+  [ -z "$(find "$dir/home/state" -maxdepth 1 -name '*.inbox' -print 2>/dev/null)" ] ||
+    fail "an explicit target must still not grow an inbox"
+  run_send "$dir" "$err" -- sess:win "/no-mistakes" || fail "a slash send to an explicit target should succeed"
+  assert_not_contains "$(cat "$dir/send.log")" "close nothing" "a typed slash command carries no holds"
+  pass "fm-send holds: a typed send to an explicit target carries the holds on one line"
+}
+
 test_text_steer_rides_inbox
 test_deep_home_doorbell_stays_short
 test_multiline_steer_is_legal
@@ -554,3 +574,4 @@ test_meta_lock_contention_fails_bounded
 test_unwritable_inbox_fails_loudly
 test_empty_message_refused
 test_standing_holds_travel_with_the_steer
+test_standing_holds_travel_to_an_explicit_target

@@ -504,6 +504,34 @@ test_idempotent_write_dedups_exact_body() {
   pass "inbox: the idempotent enqueue dedups an exact re-run onto the same record, handled or not"
 }
 
+# A retried steer carries the standing holds in force at retry time, which can
+# differ from the first attempt's. The holds block never makes a retry a new
+# instruction, while a changed steer above the block still does.
+test_idempotent_write_ignores_the_holds_block() {
+  local state r1 r2 r3 r4 count
+  state="$TMP_ROOT/idem-holds/state"; mkdir -p "$state"
+  r1=$(inbox_lib "$state" fm_task_inbox_write_idempotent "$state" t1 \
+    $'reconcile the books\n\nStanding captain holds in force:\n- hold 1-aaaa: close nothing') \
+    || fail "idempotent write with a holds block failed"
+  [ "$r1" = "$state/t1.inbox/001.msg" ] || fail "the first write should create 001.msg, got $r1"
+  r2=$(inbox_lib "$state" fm_task_inbox_write_idempotent "$state" t1 \
+    $'reconcile the books\n\nStanding captain holds in force:\n- hold 2-bbbb: merge nothing') \
+    || fail "idempotent retry with a changed holds block failed"
+  [ "$r2" = "$r1" ] || fail "a retry whose holds changed must land on the first record, got $r2"
+  r3=$(inbox_lib "$state" fm_task_inbox_write_idempotent "$state" t1 "reconcile the books") \
+    || fail "idempotent retry after every hold lifted failed"
+  [ "$r3" = "$r1" ] || fail "a retry after the holds lifted must land on the first record, got $r3"
+  count=$(find "$state/t1.inbox" -maxdepth 1 -name '*.msg' | wc -l | tr -d ' ')
+  [ "$count" = 1 ] || fail "holds changes must not enqueue a duplicate, found $count records"
+  r4=$(inbox_lib "$state" fm_task_inbox_write_idempotent "$state" t1 \
+    $'reconcile the other books\n\nStanding captain holds in force:\n- hold 1-aaaa: close nothing') \
+    || fail "idempotent write of a different steer failed"
+  [ "$r4" = "$state/t1.inbox/002.msg" ] || fail "a different steer with the same holds is a new record, got $r4"
+  assert_contains "$(inbox_lib "$state" fm_task_inbox_body "$r1")" "close nothing" \
+    "the first record keeps the holds it was sent with"
+  pass "inbox: the idempotent enqueue compares steers without their standing holds block"
+}
+
 test_idempotent_write_follows_concurrent_ack() {
   local state rec result count text
   state="$TMP_ROOT/idem-ack-race/state"; mkdir -p "$state"
@@ -1586,6 +1614,7 @@ test_ring_submits_its_own_stuck_doorbell
 test_ring_submits_repeated_own_doorbells_only
 test_ring_submits_owned_doorbells_on_a_busy_codex_only
 test_idempotent_write_dedups_exact_body
+test_idempotent_write_ignores_the_holds_block
 test_idempotent_write_follows_concurrent_ack
 test_handled_mv_dedups_by_sequence
 test_concurrent_writers_never_clobber

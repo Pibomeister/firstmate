@@ -179,33 +179,34 @@ test_doorbell_defers_over_an_unproven_composer() {
 # --- restart gate -------------------------------------------------------------
 
 test_restart_gate_requires_every_open_order_in_the_handoff() {
-  local home rc=0 first second out doc older
+  local home rc=0 first second out doc
   home=$(make_home gate)
   run_order "$home" gate >/dev/null || fail "with no open orders the gate is clear"
   run_order "$home" send --no-nudge "first" >/dev/null
   first=$(only_id "$home" pending)
   out=$(run_order "$home" gate) || rc=$?
-  assert_equals 3 "$rc" "an open order with no handoff document blocks the gate"
-  assert_contains "$out" "no handoff document" "the gate says no handoff document exists"
-  out=$(run_order "$home" handoff)
-  assert_contains "$out" "$first pending" "the handoff block lists the open order"
+  assert_equals 3 "$rc" "an open order with no recorded handoff blocks the gate"
+  assert_contains "$out" "wrote no handoff" "the gate says this session wrote no handoff"
+  # A document that names the order but was not recorded by this session's
+  # handoff never satisfies the gate.
+  printf 'an earlier handoff that lists %s\n' "$first" >"$home/data/handoff-20261030-0900-captain-restart.md"
   rc=0
   run_order "$home" gate >/dev/null || rc=$?
-  assert_equals 3 "$rc" "printing the block without writing a document does not satisfy the gate"
+  assert_equals 3 "$rc" "an unrecorded handoff document does not satisfy the gate"
+  rc=0
+  run_order "$home" handoff >/dev/null 2>&1 || rc=$?
+  assert_equals 2 "$rc" "handoff without --doc is invalid use"
 
-  doc="$home/data/handoff-20261031-1200-captain-restart.md"
+  # Any document path works, not only data/handoff-*.md.
+  doc="$home/data/session-handoff.md"
   printf '# Handoff\n\nWork under way: none.\n' >"$doc"
   out=$(run_order "$home" handoff --doc "$doc")
   assert_contains "$out" "wrote 1 open order(s)" "handoff --doc reports what it wrote"
   assert_contains "$(cat "$doc")" "Work under way: none." "handoff --doc keeps the document's own text"
   assert_contains "$(cat "$doc")" "$first pending" "handoff --doc appends the open order"
-  out=$(run_order "$home" gate) || fail "the gate clears once the newest handoff lists every order"
+  out=$(run_order "$home" gate) || fail "the gate clears once the recorded handoff lists every order"
   assert_contains "$out" "gate: clear (1 open order(s)" "the gate reports a clear verdict"
 
-  older="$home/data/handoff-20261030-0900-captain-restart.md"
-  printf 'an older handoff that lists %s\n' "$first" >"$older"
-  touch -t 202610300900 "$older"
-  run_order "$home" gate >/dev/null || fail "an older handoff document never shadows the newest one"
   sleep 1
   run_order "$home" send --no-nudge "second, after the handoff" >/dev/null
   second=$(find "$home/data/orders/pending" -name '*.order' | sed 's#.*/##; s/\.order$//' | grep -v "$first")
@@ -214,12 +215,28 @@ test_restart_gate_requires_every_open_order_in_the_handoff() {
   assert_equals 3 "$rc" "an order that arrived after the handoff blocks the gate again"
   assert_contains "$out" "$second" "the gate names the missing order"
   assert_not_contains "$out" "$first" "the gate names only the missing order"
-  rc=0
-  run_order "$home" gate --doc "$older" >/dev/null || rc=$?
-  assert_equals 3 "$rc" "gate --doc checks the named document"
   run_order "$home" handoff --doc "$doc" >/dev/null
   run_order "$home" gate >/dev/null || fail "a fresh handoff --doc clears the gate again"
-  pass "the restart gate passes only while the newest handoff document lists every open order"
+
+  mv "$doc" "$doc.moved"
+  rc=0
+  out=$(run_order "$home" gate) || rc=$?
+  assert_equals 3 "$rc" "a recorded handoff document that is gone blocks the gate"
+  assert_contains "$out" "is gone" "the gate says the recorded document is gone"
+  mv "$doc.moved" "$doc"
+  run_order "$home" gate >/dev/null || fail "the restored document clears the gate"
+
+  # A new session start clears the record, so the old session's document
+  # never clears the new session's gate.
+  run_order "$home" claim-handle >/dev/null
+  rc=0
+  out=$(run_order "$home" gate) || rc=$?
+  assert_equals 3 "$rc" "after a new session start the previous handoff no longer counts"
+  assert_contains "$out" "wrote no handoff" "the new session has written no handoff yet"
+  rc=0
+  run_order "$home" gate --doc "$doc" >/dev/null 2>&1 || rc=$?
+  assert_equals 2 "$rc" "gate takes no document argument"
+  pass "the restart gate passes only while this session's recorded handoff lists every open order"
 }
 
 # --- holds ---------------------------------------------------------------------
@@ -365,6 +382,37 @@ test_watcher_poll_runs_the_sweep() {
   pass "the supervision watcher runs the order sweep while an order is pending"
 }
 
+# Two sweep runners (the watcher and an external leash) must never both read
+# the same re-delivery count: only one sweep runs at a time, and a lock left by
+# a dead sweep does not block the next one.
+test_one_sweep_runs_at_a_time() {
+  local home id lock ready holder out i=0
+  home=$(make_home sweep-lock)
+  run_order "$home" send --no-nudge "sweep me once" >/dev/null
+  id=$(only_id "$home" pending)
+  lock="$home/data/orders/.sweep.lock"
+  ready="$home/holder.ready"
+  FM_ROOT_OVERRIDE="$ROOT" STATE="$home/state" bash -c \
+    '. "$1/bin/fm-wake-lib.sh"; fm_lock_try_acquire "$2" || exit 1; : >"$3"; exec sleep 60' \
+    _ "$ROOT" "$lock" "$ready" &
+  holder=$!
+  while [ ! -e "$ready" ] && [ "$i" -lt 100 ]; do
+    sleep 0.1
+    i=$((i + 1))
+  done
+  [ -e "$ready" ] || fail "the test could not take the sweep lock"
+  out=$(ORDER_ENV="FM_ORDER_REDELIVER_SECS=0" run_order "$home" sweep)
+  assert_contains "$out" "another sweep is running" "a second sweep stands down"
+  assert_equals 0 "$(count_events "$home" redelivered)" "the standing-down sweep re-delivered nothing"
+  kill "$holder" 2>/dev/null || true
+  wait "$holder" 2>/dev/null || true
+  out=$(ORDER_ENV="FM_ORDER_REDELIVER_SECS=0" run_order "$home" sweep)
+  assert_contains "$out" "redelivered $id" "a lock left by a dead sweep does not block the next one"
+  assert_equals 1 "$(count_events "$home" redelivered)" "the next sweep re-delivered once"
+  [ ! -e "$lock" ] || fail "a finished sweep releases its lock"
+  pass "(e) one sweep runs at a time, so two runners never exceed the re-delivery cap"
+}
+
 test_status_flags_resend_due_for_the_sender_recheck() {
   local home json
   home=$(make_home recheck)
@@ -393,7 +441,7 @@ test_legacy_inbox_note_still_works() {
     FM_CONFIG_OVERRIDE="$home/config" "$INBOX_BIN" list)" "legacy: restart the nightly" "the legacy note is listed"
   assert_equals 1 "$(count_in "$home" pending)" "a legacy note never becomes or alters a durable order"
   assert_equals 0 "$(count_in "$home" acked)" "a legacy note acknowledges nothing"
-  run_order "$home" gate --doc /dev/null >/dev/null 2>&1 && fail "the durable order still gates a restart"
+  run_order "$home" gate >/dev/null 2>&1 && fail "the durable order still gates a restart"
   assert_not_contains "$(run_order "$home" pickup)" "legacy: restart the nightly" "pickup lists durable orders only"
   FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
     FM_CONFIG_OVERRIDE="$home/config" "$INBOX_BIN" drain --ack "$note_id" >/dev/null \
@@ -422,6 +470,7 @@ test_two_stage_ack_separates_receipt_from_completion
 test_handle_is_resolved_at_send_time
 test_doorbell_defers_over_an_unproven_composer
 test_restart_gate_requires_every_open_order_in_the_handoff
+test_one_sweep_runs_at_a_time
 test_hold_overrides_older_orders_and_travels_with_relays
 test_finish_frees_only_its_own_reservation
 test_sweep_redelivers_twice_then_escalates_once

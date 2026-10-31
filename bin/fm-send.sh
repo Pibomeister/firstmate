@@ -926,21 +926,32 @@ else
       esac
     fi
   fi
-  # Standing captain holds travel with every relayed order: a recorded steer
-  # carries this home's holds in force (bin/fm-order.sh owns holds). When holds
-  # may exist but cannot be read, nothing is sent, because relaying work
-  # without its limits is the failure holds exist to prevent.
-  if [ "$INBOX_PLANE" = 1 ] && [ -d "${FM_DATA_OVERRIDE:-$FM_HOME/data}/orders" ]; then
+  # Standing captain holds travel with every relayed order: a steer carries
+  # this home's holds in force (bin/fm-order.sh owns holds). A recorded steer
+  # carries the block as is; a typed send to an explicit target carries it on
+  # one line after the text; a parser command typed to the endpoint (a leading
+  # "/", or "$" to codex) carries none, because extra text would break it.
+  # When holds may exist but cannot be read, nothing is sent, because relaying
+  # work without its limits is the failure holds exist to prevent.
+  SEND_PARSER_TEXT=0
+  case "$RESOLVE_ANSWER_TEXT" in
+  /*) SEND_PARSER_TEXT=1 ;;
+  \$*) [ "$TARGET_HARNESS" != codex ] || SEND_PARSER_TEXT=1 ;;
+  esac
+  if { [ "$INBOX_PLANE" = 1 ] || [ "$SEND_PARSER_TEXT" = 0 ]; } &&
+    [ -d "${FM_DATA_OVERRIDE:-$FM_HOME/data}/orders" ]; then
     if ! HOLDS_BLOCK=$(FM_HOME="$FM_HOME" "$SCRIPT_DIR/fm-order.sh" holds --relay 2>/dev/null); then
       echo "error: could not read this home's standing captain holds (bin/fm-order.sh holds --relay); nothing was sent" >&2
       [ "${PENDING_REPLY_CREATED:-0}" != 1 ] ||
         fm_pending_reply_discard_undelivered "$STATE" "$PENDING_REPLY_CORR" || true
       exit 1
     fi
-    if [ -n "$HOLDS_BLOCK" ]; then
+    if [ -n "$HOLDS_BLOCK" ] && [ "$INBOX_PLANE" = 1 ]; then
       MESSAGE="$MESSAGE
 
 $HOLDS_BLOCK"
+    elif [ -n "$HOLDS_BLOCK" ]; then
+      MESSAGE="$MESSAGE  $(printf '%s' "$HOLDS_BLOCK" | tr '\n' ' ' | sed 's/ *$//')"
     fi
   fi
   if [ "$INBOX_PLANE" = 1 ] && [ "$TARGET_BACKEND" = remote ]; then

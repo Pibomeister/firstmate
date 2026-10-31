@@ -20,8 +20,8 @@
 #   fm-order.sh show <id>
 #   fm-order.sh finish <id> done|parked [--] <outcome>... | -
 #   fm-order.sh holds [--relay]
-#   fm-order.sh handoff [--doc <file>]
-#   fm-order.sh gate [--doc <file>]
+#   fm-order.sh handoff --doc <file>
+#   fm-order.sh gate
 #   fm-order.sh claim-handle
 #   fm-order.sh sweep
 #
@@ -46,10 +46,14 @@
 # `finish <id> done|parked <outcome>`. A hold overrides every OLDER order and
 # every council ruling: `ack` and `show` of an order list each hold in force
 # and mark the newer ones as overriding it, and `pickup` lists holds first.
-# Holds travel with every relayed order: bin/fm-send.sh appends the
-# `holds --relay` block to each text steer it records in a steering inbox, so a
-# worker always receives the limits with the work. A typed parser command (a
-# leading "/", or "$" to codex) is submitted as-is and carries no block.
+# Holds travel with every relayed order. The `holds --relay` block, which
+# starts with the line bin/fm-task-inbox-lib.sh names FM_TASK_INBOX_HOLDS_HEAD,
+# is appended by bin/fm-send.sh to every text steer (on one line for a typed
+# send to an explicit target) and by bin/fm-spawn.sh to every worker launch
+# brief and secondmate charter launch. A parser command (a leading "/", or "$"
+# to codex) typed straight to an endpoint carries no block. The idempotent
+# inbox write ignores the block, so a retried steer still matches its first
+# record after a hold changes.
 #
 # EVENT LOG. data/orders/log.tsv is append-only, one tab-separated row per
 # event: <UTC ISO> <epoch> <id> <event> <sha8> <detail>. Events:
@@ -86,20 +90,25 @@
 # the CAPTAIN ORDERS section, so a new captain's first digest names each one.
 #
 # RESTART GATE. The handoff document is the proof. `handoff --doc <file>`
-# appends the block of open orders to the session handoff document (without
-# --doc it only prints the block). `gate` reads the handoff document - --doc, or
-# else the newest data/handoff-*.md - and exits 0 only when that document names
-# every open order id; otherwise it exits 3 naming the missing ids, including
-# when no handoff document exists. Enforcement points:
+# appends the block of open orders to the session handoff document, at any
+# path, and records that path in state/.order-handoff, which marks this session
+# as handing off. `gate` reads the recorded document and exits 0 only when it
+# names every open order id; otherwise it exits 3 naming the missing ids,
+# including when this session recorded no handoff or the document is gone.
+# `claim-handle` at session start clears the record, so a document written by
+# an earlier session never satisfies a later session's gate. Enforcement:
 #   - bin/fm-handoff-trigger.sh, as a Claude Stop hook, runs `gate` once the
-#     early handoff trigger has fired in the session's context cycle and blocks
-#     the stop of a handoff turn whose document omits an open order (once per
-#     turn, so the session is never wedged).
-#   - a restarting leash or sender runs `gate` and refuses to restart the
-#     captain while it exits 3.
-# What the gate cannot stop: a human `/quit`, a crash, or a restart by a tool
-# that does not run `gate`. None of those loses an order, because the files stay
-# in pending/ or acked/ and the next session's pickup lists them.
+#     session is handing off - the early handoff trigger fired in its context
+#     cycle, or it ran `handoff --doc` (stow, a restart, or percent-left=0) -
+#     and blocks a stop whose document omits an open order (once per turn, so
+#     the session is never wedged). An ordinary stop is never gated.
+#   - the stow skill and a restarting leash or sender run `gate` and do not
+#     reset or restart the captain while it exits 3.
+# Limits: the Stop hook is Claude-only, so nothing gates a non-Claude primary,
+# a session that never runs `handoff --doc`, a human `/quit`, a crash, or a
+# restart by a tool that does not run `gate`. None of those loses an order,
+# because the files stay in pending/ or acked/ and the next session's digest
+# lists them.
 #
 # SENDER RE-CHECK AND LEASH. `status` prints, per order, its kind, state, age
 # since send, deliveries, re-deliveries against the cap, and `resend_due=yes`
@@ -108,7 +117,7 @@
 # `resend <id>` when it is still pending. `sweep` re-delivers an order still
 # pending FM_ORDER_REDELIVER_SECS (1800) after its last delivery or re-delivery
 # (a sender's `resend` does not reset that clock) to the newest handle, at most
-# FM_ORDER_REDELIVER_MAX (2) times; at the next due point after the last
+# twice; at the next due point after the last
 # re-delivery it is escalated ONCE through bin/fm-self-heal-issue.sh
 # (Pibomeister/firstmate, failure class captain-order-undelivered) and also
 # woken as a check. An escalation that fails is logged as escalate-failed and is
@@ -116,7 +125,10 @@
 # delivery counts, never the order body. FM_ORDER_SELF_HEAL_BIN replaces the
 # filing command (tests). The supervision watcher (bin/fm-watch.sh) runs
 # `sweep` in the background at most once a minute while any order is pending;
-# an external leash may run it as well.
+# an external leash may run it as well. One sweep runs at a time per home
+# (data/orders/.sweep.lock): a sweep that finds another running prints
+# `sweep: another sweep is running` and exits 0, so two runners never exceed
+# the cap or escalate twice.
 #
 # Exit status: 0 success; 1 failure; 2 invalid use; 3 `gate` blocked, or a
 # send/resend that saved the order but could not append its wake.
@@ -138,15 +150,20 @@ ORDERS="$DATA/orders"
 LOG="$ORDERS/log.tsv"
 SHA_DIR="$ORDERS/.sha"
 HANDLE_FILE="$STATE/captain-handle"
+HANDOFF_RECORD="$STATE/.order-handoff"
 STATES='pending acked done parked'
 ESCALATION_REPO=Pibomeister/firstmate
+# The relay block's first words; bin/fm-task-inbox-lib.sh's
+# FM_TASK_INBOX_HOLDS_HEAD must stay equal, because it finds the block by them.
+HOLDS_HEAD='Standing captain holds'
 
 num_or() {  # <value> <default>
   case "$1" in ''|*[!0-9]*) printf '%s\n' "$2" ;; *) printf '%s\n' "$1" ;; esac
 }
 RECHECK_SECS=$(num_or "${FM_ORDER_RECHECK_SECS:-}" 900)
 REDELIVER_SECS=$(num_or "${FM_ORDER_REDELIVER_SECS:-}" 1800)
-REDELIVER_MAX=$(num_or "${FM_ORDER_REDELIVER_MAX:-}" 2)
+REDELIVER_MAX=2
+NUDGE_BUDGET_SECS=20
 
 die() { printf 'fm-order: %s\n' "$*" >&2; exit 1; }
 usage_die() { printf 'fm-order: %s\n' "$*" >&2; exit 2; }
@@ -279,10 +296,12 @@ delivery_facts() {  # <id>
 
 # ---------------------------------------------------------------- handle
 
-# Record this process's captain terminal as the current handle. Run by
-# bin/fm-session-start.sh on a locked start, from inside the captain session.
+# Record this process's captain terminal as the current handle, and clear the
+# previous session's handoff record. Run by bin/fm-session-start.sh on a locked
+# start, from inside the captain session.
 cmd_claim_handle() {
   local backend target rc=0 tmp
+  rm -f "$HANDOFF_RECORD"
   # shellcheck source=bin/fm-supervisor-target-lib.sh
   . "$SELF_DIR/fm-supervisor-target-lib.sh"
   if [ -r "$SELF_DIR/fm-backend.sh" ]; then
@@ -350,7 +369,7 @@ nudge() {  # <id> <no-nudge 0|1>
   else
     # shellcheck source=bin/fm-timeout-lib.sh
     . "$SELF_DIR/fm-timeout-lib.sh"
-    fm_run_timed_fn "$(num_or "${FM_ORDER_NUDGE_BUDGET:-}" 20)" _ring_once "$backend" "$target" "$line" || rc=$?
+    fm_run_timed_fn "$NUDGE_BUDGET_SECS" _ring_once "$backend" "$target" "$line" || rc=$?
   fi
   case "$rc" in
     0) printf 'sent' ;;
@@ -504,7 +523,7 @@ cmd_holds() {
     return 0
   fi
   if [ "$relay" -eq 1 ]; then
-    printf 'Standing captain holds (newest first). Each overrides any older order or council ruling, including anything above that conflicts with it:\n'
+    printf '%s (newest first). Each overrides any older order or council ruling, including anything above that conflicts with it. Carry every hold into any instruction you relay:\n' "$HOLDS_HEAD"
     while read -r id state; do
       [ -n "$id" ] || continue
       file="$ORDERS/$state/$id.order"
@@ -732,45 +751,37 @@ sys.stdout.write("\n")
 
 # ---------------------------------------------------------------- restart gate
 
-# The newest session handoff document, or nothing.
-newest_handoff_doc() {
-  local f newest=''
-  for f in "$DATA"/handoff-*.md; do
-    [ -f "$f" ] || continue
-    if [ -z "$newest" ] || [ "$f" -nt "$newest" ]; then newest=$f; fi
-  done
-  [ -z "$newest" ] || printf '%s\n' "$newest"
+# The handoff document this session recorded with `handoff --doc`, or nothing.
+recorded_handoff_doc() {
+  [ -r "$HANDOFF_RECORD" ] || return 0
+  sed -n 's/^doc=//p' "$HANDOFF_RECORD" | head -n 1
 }
 
 cmd_handoff() {
-  local doc='' block n
-  case "${1:-}" in
-    --doc) [ "$#" -ge 2 ] && [ -n "$2" ] || usage_die "handoff: --doc needs a file"; doc=$2 ;;
-    '') ;;
-    *) usage_die "usage: fm-order.sh handoff [--doc <file>]" ;;
-  esac
+  local doc block n tmp dir
+  [ "$#" -eq 2 ] && [ "$1" = --doc ] && [ -n "$2" ] || usage_die "usage: fm-order.sh handoff --doc <file>"
+  doc=$2
   if [ -z "$(open_orders)" ]; then
     block='CAPTAIN ORDERS at handoff: none open.'
   else
     block=$(printf 'CAPTAIN ORDERS at handoff (%s):\n' "$(now_iso)"; cmd_pickup)
   fi
-  if [ -z "$doc" ]; then
-    printf '%s\n' "$block"
-    return 0
-  fi
   mkdir -p "$(dirname "$doc")"
+  dir=$(cd "$(dirname "$doc")" && pwd)
+  doc="$dir/${doc##*/}"
   printf '\n%s\n' "$block" >>"$doc"
+  mkdir -p "$STATE"
+  tmp=$(mktemp "$STATE/.order-handoff.XXXXXX")
+  printf 'doc=%s\nat=%s\n' "$doc" "$(now_epoch)" >"$tmp"
+  mv "$tmp" "$HANDOFF_RECORD"
   n=$(open_orders | awk 'NF { n++ } END { print n + 0 }')
   printf 'handoff: wrote %s open order(s) into %s\n' "$n" "$doc"
 }
 
 cmd_gate() {
-  local doc='' lines id state missing='' n=0
-  case "${1:-}" in
-    --doc) [ "$#" -ge 2 ] && [ -n "$2" ] || usage_die "gate: --doc needs a file"; doc=$2 ;;
-    '') doc=$(newest_handoff_doc) ;;
-    *) usage_die "usage: fm-order.sh gate [--doc <file>]" ;;
-  esac
+  local doc lines id state missing='' n=0
+  [ "$#" -eq 0 ] || usage_die "usage: fm-order.sh gate"
+  doc=$(recorded_handoff_doc)
   lines=$(open_orders)
   while read -r id state; do
     [ -n "$id" ] || continue
@@ -782,8 +793,10 @@ cmd_gate() {
 $lines
 EOF
   if [ -n "$missing" ]; then
-    if [ -z "$doc" ] || [ ! -f "$doc" ]; then
-      printf 'gate: blocked - no handoff document lists the open order(s):%s\n' "$missing"
+    if [ -z "$doc" ]; then
+      printf 'gate: blocked - this session wrote no handoff, so none lists the open order(s):%s\n' "$missing"
+    elif [ ! -f "$doc" ]; then
+      printf 'gate: blocked - the recorded handoff %s is gone; open order(s):%s\n' "$doc" "$missing"
     else
       printf 'gate: blocked - the handoff %s does not list open order(s):%s\n' "$doc" "$missing"
     fi
@@ -815,6 +828,18 @@ escalate() {  # <id> <age> <deliveries> <redeliveries>
 
 cmd_sweep() {
   local lines id state now facts d r last leash esc acted=0
+  # One sweep at a time per home, so two runners never both read the same
+  # re-delivery count and exceed the cap or escalate twice.
+  FM_ROOT_OVERRIDE=$FM_ROOT
+  # shellcheck source=bin/fm-wake-lib.sh
+  . "$SELF_DIR/fm-wake-lib.sh"
+  mkdir -p "$ORDERS"
+  SWEEP_LOCK="$ORDERS/.sweep.lock"
+  if ! fm_lock_try_acquire "$SWEEP_LOCK"; then
+    printf 'sweep: another sweep is running\n'
+    return 0
+  fi
+  trap 'fm_lock_release "$SWEEP_LOCK"' EXIT
   lines=$(open_orders)
   now=$(now_epoch)
   while read -r id state; do

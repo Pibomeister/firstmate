@@ -54,7 +54,7 @@ run_hook() {
 }
 
 reset_lab() {
-  rm -f "$PRIMARY"/state/.handoff-trigger.* "$PRIMARY/config/handoff-trigger" \
+  rm -f "$PRIMARY"/state/.handoff-trigger.* "$PRIMARY/state/.order-handoff" "$PRIMARY/config/handoff-trigger" \
     "$PRIMARY/.claude/settings.json" "$PRIMARY/.claude/settings.local.json" "$CLAUDE_HOME/settings.json"
 }
 
@@ -285,11 +285,11 @@ test_scope() {
 
 # Open durable captain orders are part of the handoff: the firing names each
 # one, and once it has fired the Stop hook blocks the handoff turn's stop until
-# the newest handoff document lists every open order (bin/fm-order.sh gate).
+# the recorded handoff document lists every open order (bin/fm-order.sh gate).
 test_names_open_captain_orders_and_gates_the_stop() {
   local order_id rc err doc
   reset_lab
-  rm -rf "$PRIMARY/data/orders" "$PRIMARY"/data/handoff-*.md
+  rm -rf "$PRIMARY/data/orders" "$PRIMARY"/data/handoff-*.md "$PRIMARY/state/.order-handoff"
   printf 'compact-at-tokens=100000\n' > "$PRIMARY/config/handoff-trigger"
   transcript "$TMP_ROOT/t-90" 90000
   out=$(run_hook "$PRIMARY" s-orders-none "$TMP_ROOT/t-90")
@@ -327,8 +327,45 @@ test_names_open_captain_orders_and_gates_the_stop() {
   rc=0
   run_hook "$PRIMARY" s-orders "$TMP_ROOT/t-90" Stop >/dev/null 2>&1 || rc=$?
   [ "$rc" -eq 0 ] || fail "once the handoff lists every open order the stop must pass (rc=$rc)"
-  rm -rf "$PRIMARY/data/orders" "$doc"
+  rm -rf "$PRIMARY/data/orders" "$doc" "$PRIMARY/state/.order-handoff"
   pass "a firing names every open captain order, and the stop is gated until the handoff lists them"
+}
+
+# A session that starts a handoff itself - stow or a restart - is gated even
+# when the trigger never fired, including with the trigger off
+# (percent-left=0). An ordinary stop with no handoff under way is never gated.
+test_a_recorded_handoff_gates_the_stop_without_the_trigger() {
+  local order_id rc err doc
+  reset_lab
+  rm -rf "$PRIMARY/data/orders" "$PRIMARY/state/.order-handoff"
+  printf 'percent-left=0\n' > "$PRIMARY/config/handoff-trigger"
+  transcript "$TMP_ROOT/t-stow" 10000
+  FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" send --no-nudge --from test "order before stow" >/dev/null \
+    || fail "could not send the order fixture"
+  order_id=$(find "$PRIMARY/data/orders/pending" -name '*.order' | sed 's#.*/##; s/\.order$//')
+  rc=0
+  run_hook "$PRIMARY" s-stow "$TMP_ROOT/t-stow" Stop >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 0 ] || fail "an ordinary stop with no handoff under way must not be gated (rc=$rc)"
+
+  doc="$PRIMARY/data/stow-handoff.md"
+  printf '# Handoff\n' > "$doc"
+  FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" handoff --doc "$doc" >/dev/null || fail "handoff --doc must succeed"
+  rc=0
+  run_hook "$PRIMARY" s-stow "$TMP_ROOT/t-stow" Stop >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 0 ] || fail "a recorded handoff that lists every open order lets the stop pass (rc=$rc)"
+  sleep 1
+  FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" send --no-nudge --from test "order after the stow handoff" >/dev/null \
+    || fail "could not send the second order fixture"
+  err="$TMP_ROOT/stow-stop.err"
+  rc=0
+  run_hook "$PRIMARY" s-stow "$TMP_ROOT/t-stow" Stop >/dev/null 2>"$err" || rc=$?
+  [ "$rc" -eq 2 ] || fail "with percent-left=0, a recorded handoff that omits an open order must block the stop (rc=$rc)"
+  assert_not_contains "$(cat "$err")" "$order_id" "the block names only the missing order"
+  rc=0
+  run_hook "$PRIMARY" s-stow "$TMP_ROOT/t-stow" Stop '. + {stop_hook_active: true}' >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 0 ] || fail "a stop already continued by this hook must not be blocked again (rc=$rc)"
+  rm -rf "$PRIMARY/data/orders" "$doc" "$PRIMARY/state/.order-handoff" "$PRIMARY/config/handoff-trigger"
+  pass "a recorded handoff gates the stop even with the trigger off, and an ordinary stop is never gated"
 }
 
 test_threshold_default_15
@@ -343,3 +380,4 @@ test_window_env_override
 test_unresolved_compact_point_is_silent
 test_scope
 test_names_open_captain_orders_and_gates_the_stop
+test_a_recorded_handoff_gates_the_stop_without_the_trigger

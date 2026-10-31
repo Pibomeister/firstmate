@@ -98,7 +98,7 @@ Each effective `FM_HOME` contains private operational directories.
 - Learnings, backlog, briefs, scout reports, optional task status archives, and the optional per-task no-mistakes pipeline-spend ledger.
 - Explicitly installed content-addressed extension packages under `data/extensions/packages/`.
 - Failure-class records under `data/failure-classes/` ([`claim-ledger.md`](claim-ledger.md)).
-- Durable captain orders and holds under `data/orders/`, and the session handoff documents `data/handoff-*.md` that the restart gate reads (`bin/fm-order.sh`).
+- Durable captain orders and holds under `data/orders/` (`bin/fm-order.sh`).
 
 `state/` holds runtime records:
 
@@ -112,7 +112,7 @@ Each effective `FM_HOME` contains private operational directories.
 - Per-task steering-inbox records under `state/<id>.inbox/` (`bin/fm-task-inbox-lib.sh`).
 - Parent-owned secondmate pending-reply records under `state/pending-replies/` (`bin/fm-pending-reply-lib.sh`).
 - Per-task claim ledgers, `state/<id>.claims.jsonl` ([`claim-ledger.md`](claim-ledger.md)).
-- The current captain handle, `state/captain-handle`, that order senders resolve at send time (`bin/fm-order.sh`).
+- The current captain handle, `state/captain-handle`, that order senders resolve at send time, and this session's handoff record, `state/.order-handoff`, that the restart gate reads (`bin/fm-order.sh`).
 
 `config/` holds local gitignored operating choices, including explicit extension bindings under `config/extensions.d/`.
 
@@ -498,6 +498,12 @@ A window set only in managed settings or a `--settings` launch flag also needs t
 
 The trigger runs only in a genuine primary home, including a marked secondmate home, and stays inert in worker worktrees and under other harnesses that load Claude's settings.
 It never writes the handoff, compacts, or restarts the session.
+
+The same hook enforces the captain-order restart gate at each Stop of a session that is handing off: the trigger fired in this context cycle, or the session ran `bin/fm-order.sh handoff --doc` (stow, a restart, or `percent-left=0`).
+It blocks such a stop once per turn while the recorded handoff document omits an open captain order, and it never gates an ordinary stop.
+The gate has limits: it runs only for a Claude primary, so a non-Claude primary, or a home with no resolvable auto-compact window that never runs `handoff --doc`, is not gated.
+Open orders there stay durable and appear in the next session's digest.
+`bin/fm-order.sh` owns the gate.
 `bin/fm-handoff-trigger.sh` owns the measurement and the once-per-cycle record, with coverage in [`tests/fm-handoff-trigger.test.sh`](../tests/fm-handoff-trigger.test.sh); [runtime-backends verification](verification/runtime-backends.md#claude-early-handoff-trigger) records the Claude Code evidence.
 
 ## Backlog backend (.tasks.toml / config/backlog-backend)
