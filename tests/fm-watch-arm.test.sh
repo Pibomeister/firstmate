@@ -2444,7 +2444,7 @@ SH
 }
 
 test_detach_hold_rings_a_plain_codex_pane() {
-  local dir primary socket i inbox pane= fake_codex
+  local dir primary socket i inbox pane='' fake_codex
   command -v tmux >/dev/null 2>&1 || { printf 'skip: tmux not found for the codex doorbell\n'; return; }
   dir=$(make_case detach-hold-ring)
   primary=$(make_grok_guard_primary "$dir")
