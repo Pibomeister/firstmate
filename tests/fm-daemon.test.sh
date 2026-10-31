@@ -3333,6 +3333,10 @@ printf '%s\n' "$*" >> "$FM_FAKE_ORCA_DIR/calls"
 [ "${4:-}" = term_captain ] || { printf '{"ok":false,"error":{"code":"terminal_not_found"}}\n'; exit 1; }
 case "${1:-} ${2:-}" in
   'terminal read') cat "$FM_FAKE_ORCA_DIR/screen.json" ;;
+  'terminal wait')
+    [ ! -e "$FM_FAKE_ORCA_DIR/turn-running" ] || { printf '{"ok":false,"error":{"code":"timeout"}}\n'; exit 1; }
+    printf '{"ok":true,"result":{"wait":{"condition":"tui-idle","satisfied":true}}}\n'
+    ;;
   'terminal send')
     [ "${5:-}" != --text ] || [ -z "${6:-}" ] || printf '%s\n' "$6" >> "$FM_FAKE_ORCA_DIR/sent.log"
     printf '{"ok":true,"result":{}}\n'
@@ -3370,6 +3374,36 @@ test_inject_msg_orca_busy_guard_defers() {
   assert_contains "$INJECT_LAST_FAILURE" "supervisor pane busy" "the Orca deferral must name the busy guard"
   [ ! -e "$ORCA_DIR/sent.log" ] || fail "a busy Orca terminal must receive no text: $(cat "$ORCA_DIR/sent.log")"
   pass "inject_msg: the rendered busy guard defers an Orca supervisor terminal before any send"
+}
+
+# Real Orca keeps reporting a live Claude turn as not tui-idle during the frames
+# that render no spinner row, so the idle screen here must not win.
+test_inject_msg_orca_defers_mid_turn_without_spinner() {
+  orca_supervisor_case inject-orca-native-busy "$ORCA_IDLE_SCREEN"
+  : > "$ORCA_DIR/turn-running"
+  if orca_inject; then
+    fail "inject_msg must defer while Orca reports the captain's turn as running"
+  fi
+  assert_contains "$INJECT_LAST_FAILURE" "supervisor pane busy" "the Orca deferral must name the busy guard"
+  [ ! -e "$ORCA_DIR/sent.log" ] || fail "a mid-turn Orca terminal must receive no text: $(cat "$ORCA_DIR/sent.log")"
+  pass "inject_msg: Orca's native turn signal defers a captain whose frame shows no spinner"
+}
+
+# Real Orca lifts typed text out of tail into result.terminal.draft, leaving the
+# rendered composer row bare, so the screen alone reads as empty.
+test_inject_msg_orca_composer_guard_defers_on_draft() {
+  orca_supervisor_case inject-orca-draft "$ORCA_IDLE_SCREEN"
+  jq '.result.terminal.draft = "half-typed captain words"' "$ORCA_DIR/screen.json" > "$ORCA_DIR/screen.next"
+  mv "$ORCA_DIR/screen.next" "$ORCA_DIR/screen.json"
+  if orca_inject; then
+    fail "inject_msg must defer while Orca reports a composer draft"
+  fi
+  assert_contains "$INJECT_LAST_FAILURE" "composer not confirmed-empty" "the Orca deferral must name the composer guard"
+  [ ! -e "$ORCA_DIR/sent.log" ] || fail "a drafted Orca composer must receive no text: $(cat "$ORCA_DIR/sent.log")"
+  # Draft also carries ghost suggestions, so the shared verdict other senders use stays empty.
+  [ "$(PATH="$ORCA_DIR/fakebin:$PATH" FM_FAKE_ORCA_DIR="$ORCA_DIR" fm_backend_composer_state orca term_captain)" = empty ] \
+    || fail "a draft must hold only the away daemon's pre-send guard, not the shared composer verdict"
+  pass "inject_msg: an Orca draft holds the alert back instead of merging into the captain's text"
 }
 
 test_inject_msg_orca_composer_guard_defers() {
@@ -3831,6 +3865,8 @@ test_inject_msg_herdr_pane_gone_defers
 test_inject_msg_herdr_submits_through_backend_dispatch
 test_inject_msg_orca_submits_into_idle_captain_terminal
 test_inject_msg_orca_busy_guard_defers
+test_inject_msg_orca_defers_mid_turn_without_spinner
+test_inject_msg_orca_composer_guard_defers_on_draft
 test_inject_msg_orca_composer_guard_defers
 test_inject_msg_orca_missing_terminal_defers
 test_inject_msg_defers_on_dead_shell_unknown

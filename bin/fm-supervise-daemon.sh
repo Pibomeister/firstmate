@@ -773,6 +773,9 @@ pane_is_busy() {  # <target> [backend]
     esac
     return 0
   fi
+  if [ "$backend" = orca ] && fm_backend_source orca && fm_backend_orca_turn_running "$target"; then
+    return 0
+  fi
   harness=$(fm_daemon_primary_harness)
   native=$(fm_backend_busy_state "$backend" "$target" 2>/dev/null)
   case "$native" in
@@ -1707,6 +1710,9 @@ inject_msg() {  # <message> [state] [exact] [request-id]
   #      no composer, so its adapter reports empty and the native turn path can
   #      proceed.
   composer=$(fm_backend_composer_state "$backend" "$target" 2>/dev/null)
+  if [ "$composer" = empty ] && [ "$backend" = orca ] && fm_backend_orca_draft_present "$target"; then
+    composer=pending-unproven
+  fi
   if [ "$composer" != empty ]; then
     case "$composer" in
       pending|pending-unproven) reason='unsubmitted text in the composer' ;;
