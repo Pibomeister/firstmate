@@ -3817,6 +3817,28 @@ EOF
 # surfaced when it wakes firstmate, this normally finds nothing and the heartbeat
 # is absorbed; it surfaces only an event the per-wake path absorbed by mistake -
 # the fail-safe backstop.
+# heartbeat_open_work: an attended primary home with an unresolved dispatch-log
+# goal, or an in-flight task not resting in a declared paused or captain-held
+# wait, gets the 15-minute heartbeat floor; held and paused waits keep their own
+# PAUSE_RESURFACE_SECS cadence and the HEARTBEAT_MAX backoff.
+heartbeat_open_work() {
+  local meta task last until
+  [ ! -e "$FM_HOME/.fm-secondmate-parent" ] || return 1
+  fm_sup_open_goal "$STATE" && return 0
+  for meta in "$STATE"/*.meta; do
+    [ -e "$meta" ] || continue
+    task=${meta##*/}; task=${task%.meta}
+    last=$(status_declared_wait_line "$STATE/$task.status")
+    status_is_captain_held "$last" && continue
+    if status_is_paused "$last" \
+      && { ! until=$(status_paused_until "$last") || [ "$(fm_watch_now)" -lt "$until" ]; }; then
+      continue
+    fi
+    return 0
+  done
+  return 1
+}
+
 heartbeat_scan_finds_actionable() {
   local f task record rest endpoint ident rc found=1 sig marker exclude
   # Same self-home exclusion as scan_signals: a remote mate's parent channel
@@ -5049,14 +5071,14 @@ EOF
   # no-change heartbeat (idle fleet) up to HEARTBEAT_MAX, and resets on any
   # surfaced non-heartbeat wake or actionable heartbeat backstop. Attended open
   # work caps the interval below 15 minutes, bounds the terminal wait, and
-  # makes an otherwise empty heartbeat actionable.
+  # surfaces a heartbeat the absorb branch would otherwise swallow.
   streak=$(cat "$STATE/.heartbeat-streak" 2>/dev/null || echo 0)
   [ "$streak" -gt 12 ] && streak=12
   hb=$(( HEARTBEAT * (1 << streak) ))
   [ "$hb" -gt "$HEARTBEAT_MAX" ] && hb=$HEARTBEAT_MAX
   open_work=0
   WATCH_WAIT_BUDGET=$POLL
-  if ! afk_present && fm_sup_open_work "$STATE"; then
+  if ! afk_present && heartbeat_open_work; then
     open_work=1
     [ "$hb" -le 885 ] || hb=885
     remaining=$((hb - $(age_of "$STATE/.last-heartbeat")))
@@ -5070,7 +5092,7 @@ EOF
     # no-change case (advance the schedule and back off exactly as wake() would,
     # without exiting); the away-mode daemon, when present, owns triage and wants
     # every heartbeat.
-    if afk_present || [ "$open_work" -eq 1 ]; then
+    if afk_present; then
       fm_wake_append heartbeat heartbeat heartbeat || exit 1
       touch "$STATE/.last-heartbeat"
       wake "heartbeat"
@@ -5084,7 +5106,7 @@ EOF
       mark_all_captain_relevant_surfaced || true
       wake "heartbeat" actionable
     else
-      if ! mark_all_captain_relevant_surfaced; then
+      if ! mark_all_captain_relevant_surfaced || [ "$open_work" -eq 1 ]; then
         fm_wake_append heartbeat heartbeat heartbeat || exit 1
         touch "$STATE/.last-heartbeat"
         wake "heartbeat"

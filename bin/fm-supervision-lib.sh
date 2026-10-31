@@ -32,15 +32,6 @@ fm_sup_open_goal() {  # <state-dir>
   ' "$state/dispatch-log.tsv"
 }
 
-fm_sup_open_work() {  # <state-dir>
-  local state=$1 home=${FM_HOME:-${1%/state}} meta
-  [ ! -e "$home/.fm-secondmate-parent" ] || return 1
-  for meta in "$state"/*.meta; do
-    [ -e "$meta" ] && return 0
-  done
-  fm_sup_open_goal "$state"
-}
-
 # fm_supervision_status <state-dir> [grace-seconds]
 # Populates, for the state dir at $1:
 #   FM_SUP_IN_FLIGHT      count of state/*.meta (in-flight tasks)
