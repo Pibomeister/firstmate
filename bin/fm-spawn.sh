@@ -7594,11 +7594,9 @@ case "$LAUNCH" in
     # The canonical doorbell already contains a unique record nonce. Bind its
     # exact initial message without changing classification or retaining text.
     budget_fingerprint=$(printf '%s' "$brief_doorbell" | python3 -c 'import hashlib,sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())') || exit 1
-    budget_meta="$STATE/$ID.meta"
-    [ "$RELAUNCH" -eq 0 ] || budget_meta=$SPAWN_META_TMP
     # Spawn still owns the task metadata lock; no reader or worker can observe
     # this incarnation before its fingerprint is complete.
-    printf 'budget_launch_fingerprint=%s\n' "$budget_fingerprint" >> "$budget_meta" || exit 1
+    printf 'budget_launch_fingerprint=%s\n' "$budget_fingerprint" >> "$STATE/$ID.meta" || exit 1
   fi
   LAUNCH=${LAUNCH//__BRIEFDOORBELL__/"$(shell_quote "$brief_doorbell")"}
   ;;
