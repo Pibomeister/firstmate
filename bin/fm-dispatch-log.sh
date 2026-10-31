@@ -57,9 +57,10 @@
 # already in the ledger exits 4, so a retry can tell "already logged" from a
 # mistake.
 # Tabs and newlines in free text are folded to spaces.
-# `show` with no id prints the ledger. `show <goal-id>` prints one state line,
+# `show` with no id prints the ledger, and an empty ledger exits 0 with no output.
+# `show <goal-id>` prints one state line,
 # `STATE <goal-id> event=<event> at=<iso> <detail>`, then that goal's ledger
-# lines. An id with no ledger line exits 1, unlike an empty ledger.
+# lines. An id with no ledger line exits 1, even when the ledger is empty.
 #
 # Environment: FM_HOME selects the home; FM_STATE_OVERRIDE overrides its state
 # directory (the ledger is <state>/dispatch-log.tsv); FM_DISPATCH_SLA_MINUTES
