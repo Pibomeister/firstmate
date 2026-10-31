@@ -2,21 +2,28 @@
 # Remove linked git worktrees whose pull request is merged or closed.
 #
 # One decision line per linked worktree, and one line for each main checkout
-# the scan sees. A main checkout is never removed. A worktree with a live
-# process whose working directory is inside it is skipped. When that scan
-# cannot be completed, the worktree is reported and left in place.
+# the scan sees. A main checkout is never removed. A worktree that a task record
+# (worktree= or home= in any local home's state/*.meta), a Treehouse pool, or
+# Orca owns is reported and left in place, so its owner stays responsible for
+# it. When task records or an installed Orca cannot be read, the worktree is
+# reported and left in place. A worktree with a live process whose working
+# directory is inside it is skipped. When that scan cannot be completed, the
+# worktree is reported and left in place.
 # Uncommitted tracked changes and non-ignored untracked files are reported
 # and left in place. Ignored files, including private .env, .work, and .omc
 # files, do not block removal. Decision lines name the worktree and the
 # reason. They never include file contents.
-# A worktree whose HEAD is not an ancestor of the pull request's head commit
-# is reported and left in place. No branch is deleted.
-# Removal is `git worktree remove` without --force. If Git refuses because it
-# still treats ignored files as dirt, and a fresh status proves there is no
-# tracked change and no non-ignored untracked file, removal is retried once
-# with a single --force. A locked worktree is never forced.
-# After at least one removal in a repository, `git worktree prune` runs once.
-# --dry-run prints the same decisions and does not remove or prune.
+# Only pull requests whose head repository owner is the base repository owner
+# count. With none open and at least one merged or closed, the highest-numbered
+# of those decides. A worktree whose HEAD is not an ancestor of that pull
+# request's head commit is reported and left in place. A head commit that is
+# missing locally is fetched from origin's refs/pull/<n>/head, and a worktree is
+# reported and left in place when that fetch does not produce it. No branch is
+# deleted.
+# Removal is `git worktree remove`, never with --force, followed by
+# `git worktree prune`. A refusal is reported.
+# --dry-run prints the same decisions and does not remove, prune, or move the
+# cursor. It can still fetch a missing pull request head.
 #
 # `scan` is the watcher entry. It appends the same decision lines to
 # state/worktree-cleanup.log and prints nothing, so a pass does not wake
@@ -24,9 +31,10 @@
 # the state directory exists. The log keeps its newest 2000 lines once it
 # passes 1 MiB.
 # Set FM_WORKTREE_CLEANUP=0 to make `scan` exit without looking. A direct run
-# still performs the requested pass. The scan stops after
-# FM_WORKTREE_CLEANUP_BUDGET seconds (default 20) and continues on a later
-# pass.
+# still performs the requested pass. A pass stops starting worktrees after 20
+# seconds. A pass with no project argument walks all worktrees in path order and
+# records each path in state/worktree-cleanup.cursor before it starts that
+# worktree. The next such pass resumes after that path and wraps around.
 #
 # With no project argument the pass covers this home's project clones
 # ($FM_HOME/projects, or $FM_PROJECTS_OVERRIDE). A directory that is not the
@@ -46,17 +54,21 @@ PROJECTS="${FM_PROJECTS_OVERRIDE:-$FM_HOME/projects}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 # shellcheck source=bin/fm-control-lib.sh
 . "$SCRIPT_DIR/fm-control-lib.sh"
+# shellcheck source=bin/fm-backend.sh
+. "$SCRIPT_DIR/fm-backend.sh"
+# shellcheck source=bin/fm-secondmate-registry-lib.sh
+. "$SCRIPT_DIR/fm-secondmate-registry-lib.sh"
+# shellcheck source=bin/fm-wake-lib.sh
+. "$SCRIPT_DIR/fm-wake-lib.sh"
 
 DRY=0
 SCAN=0
 TARGET=
-BUDGET=${FM_WORKTREE_CLEANUP_BUDGET:-20}
-case "$BUDGET" in
-  ''|*[!0-9]*|0) BUDGET=20 ;;
-esac
+BUDGET=20
 START=$(date +%s)
 BUDGET_LOGGED=0
 LOG_FILE=
+CURSOR_FILE=
 SCRATCH=
 
 usage() {
@@ -113,6 +125,11 @@ elif [ "$SCAN" -eq 1 ]; then
   echo "worktree-cleanup: state directory is unavailable" >&2
   exit 1
 fi
+if [ -n "$LOG_FILE" ] && [ -z "$TARGET" ]; then
+  CURSOR_FILE=$STATE/worktree-cleanup.cursor
+fi
+RECORDS=$SCRATCH/records
+: > "$RECORDS"
 
 emit() {
   local line=$1 size keep
@@ -236,7 +253,7 @@ pr_rows() {
   local wt=$1 branch=$2 json rows
   command -v gh >/dev/null 2>&1 || return 2
   command -v jq >/dev/null 2>&1 || return 2
-  json=$(cd "$wt" && gh pr list --json number,state,headRefOid,url --head "$branch" --state all --limit 20 2>/dev/null) || return 1
+  json=$(cd "$wt" && gh pr list --json number,state,headRefOid,url,headRepositoryOwner --head "$branch" --state all --limit 20 2>/dev/null) || return 1
   rows=$(printf '%s' "$json" | jq -r '
     if type != "array" then
       error("pull request list is not an array")
@@ -246,7 +263,8 @@ pr_rows() {
           (.number | tostring),
           (.state | tostring),
           (.headRefOid | tostring),
-          (.url | tostring)
+          (.url | tostring),
+          (.headRepositoryOwner.login // "" | tostring)
         ]
       | @tsv
     end' 2>/dev/null) || return 1
@@ -282,26 +300,81 @@ canonical_state() {
   esac
 }
 
+pr_owned_by_base_owner() {
+  local url=$1 head_owner=$2 base_owner
+  base_owner=${url#https://*/}
+  base_owner=${base_owner%%/*}
+  [ -n "$head_owner" ] || return 1
+  [ "$(printf '%s' "$head_owner" | tr '[:upper:]' '[:lower:]')" = "$(printf '%s' "$base_owner" | tr '[:upper:]' '[:lower:]')" ]
+}
+
+ensure_pr_head() {
+  local wt=$1 number=$2 head=$3
+  git -C "$wt" cat-file -e "${head}^{commit}" >/dev/null 2>&1 && return 0
+  git -C "$wt" fetch --quiet origin "refs/pull/$number/head" >/dev/null 2>&1 || return 1
+  git -C "$wt" cat-file -e "${head}^{commit}" >/dev/null 2>&1
+}
+
+load_task_paths() {
+  local out=$1 state_dir meta field value
+  fm_local_firstmate_state_dirs "$STATE" || return 1
+  : > "$out.new"
+  for state_dir in "${FM_LOCAL_FIRSTMATE_STATES[@]}"; do
+    for meta in "$state_dir"/*.meta; do
+      [ -f "$meta" ] || continue
+      for field in worktree home; do
+        value=$(fm_meta_get "$meta" "$field")
+        [ -z "$value" ] || printf '%s\n' "$value" >> "$out.new"
+      done
+    done
+  done
+  mv -f -- "$out.new" "$out"
+}
+
+load_orca_paths() {
+  local out=$1 json
+  if ! command -v orca >/dev/null 2>&1; then
+    : > "$out"
+    return 0
+  fi
+  command -v jq >/dev/null 2>&1 || return 1
+  json=$(orca worktree list --limit 100000 --json 2>/dev/null) || return 1
+  printf '%s' "$json" | jq -er '
+    if .ok == true and .result.truncated == false then
+      .result.worktrees | map(.path) | join("\n")
+    else
+      error("orca worktree list is incomplete")
+    end' > "$out.new" 2>/dev/null || return 1
+  mv -f -- "$out.new" "$out"
+}
+
+# 0 when the list names the worktree, 1 when it does not, 2 when the list cannot
+# be read. Each list loads at most once in a pass.
+owner_lists_path() {
+  local list=$SCRATCH/$1 loader=$2 wt=$3 path
+  if [ ! -e "$list" ] && [ ! -e "$list.failed" ]; then
+    "$loader" "$list" || : > "$list.failed"
+  fi
+  [ -e "$list" ] || return 2
+  while IFS= read -r path || [ -n "$path" ]; do
+    [ -n "$path" ] || continue
+    if [ "$path" -ef "$wt" ]; then
+      return 0
+    fi
+  done < "$list"
+  return 1
+}
+
 remove_worktree() {
-  local repo=$1 wt=$2 state=$3 url=$4 err kind
+  local repo=$1 wt=$2 state=$3 url=$4
   if [ "$DRY" -eq 1 ]; then
     emit "worktree-cleanup: dry-run $wt pull request $state $url"
     return 0
   fi
-  err=$SCRATCH/remove.err
-  : > "$err"
-  if git -C "$repo" worktree remove -- "$wt" 2>"$err"; then
+  if git -C "$repo" worktree remove -- "$wt" >/dev/null 2>&1; then
     emit "worktree-cleanup: remove $wt pull request $state $url"
-    REPO_REMOVED=1
+    git -C "$repo" worktree prune
     return 0
-  fi
-  if grep -q 'modified or untracked' "$err"; then
-    kind=$(dirt_kind "$wt") || kind=unknown
-    if [ "$kind" = clean ] && git -C "$repo" worktree remove --force -- "$wt" 2>"$err"; then
-      emit "worktree-cleanup: remove $wt pull request $state $url"
-      REPO_REMOVED=1
-      return 0
-    fi
   fi
   emit "worktree-cleanup: report $wt removal refused"
   return 0
@@ -309,13 +382,9 @@ remove_worktree() {
 
 consider_worktree() {
   local repo=$1 path=$2 branch=$3 detached=$4 locked=$5
-  local phys pids kind rows row number state head url main_rc=0
-  local open_count=0 terminal_count=0 chosen_state='' chosen_head='' chosen_url=''
+  local phys pids kind rows row number state head url head_owner main_rc=0 owner_rc
+  local open_count=0 terminal_count=0 chosen_number=0 chosen_state='' chosen_head='' chosen_url=''
   local current normalized
-  if budget_reached; then
-    note_budget
-    return 0
-  fi
   if [ ! -d "$path" ]; then
     emit "worktree-cleanup: report $path worktree directory is missing"
     return 0
@@ -336,14 +405,36 @@ consider_worktree() {
       return 0
       ;;
   esac
-  if ! pids=$(fm_control_pids_with_cwd_under "$phys"); then
-    emit "worktree-cleanup: report $phys cannot tell whether a process is using it"
+  if fm_treehouse_pool_slot "$repo" "$phys"; then
+    emit "worktree-cleanup: report $phys Treehouse pool owns it"
     return 0
   fi
-  if [ -n "$pids" ]; then
-    emit "worktree-cleanup: skip $phys live process"
-    return 0
-  fi
+  owner_rc=0
+  owner_lists_path task-paths load_task_paths "$phys" || owner_rc=$?
+  case "$owner_rc" in
+    0)
+      emit "worktree-cleanup: report $phys task record owns it"
+      return 0
+      ;;
+    1) ;;
+    *)
+      emit "worktree-cleanup: report $phys cannot read task records"
+      return 0
+      ;;
+  esac
+  owner_rc=0
+  owner_lists_path orca-paths load_orca_paths "$phys" || owner_rc=$?
+  case "$owner_rc" in
+    0)
+      emit "worktree-cleanup: report $phys Orca owns it"
+      return 0
+      ;;
+    1) ;;
+    *)
+      emit "worktree-cleanup: report $phys cannot tell whether Orca owns it"
+      return 0
+      ;;
+  esac
   if [ "$locked" -eq 1 ]; then
     emit "worktree-cleanup: report $phys worktree is locked"
     return 0
@@ -377,13 +468,14 @@ consider_worktree() {
   fi
   while IFS= read -r row; do
     [ -n "$row" ] || continue
-    IFS=$'\t' read -r number state head url <<EOF
+    IFS=$'\t' read -r number state head url head_owner <<EOF
 $row
 EOF
     if ! valid_pr_row "$number" "$state" "$head" "$url"; then
       emit "worktree-cleanup: report $phys pull request lookup failed"
       return 0
     fi
+    pr_owned_by_base_owner "$url" "$head_owner" || continue
     normalized=$(canonical_state "$state") || {
       emit "worktree-cleanup: report $phys pull request lookup failed"
       return 0
@@ -392,9 +484,12 @@ EOF
       OPEN) open_count=$((open_count + 1)) ;;
       MERGED|CLOSED)
         terminal_count=$((terminal_count + 1))
-        chosen_state=$normalized
-        chosen_head=$(printf '%s' "$head" | tr '[:upper:]' '[:lower:]')
-        chosen_url=$url
+        if [ "$number" -gt "$chosen_number" ]; then
+          chosen_number=$number
+          chosen_state=$normalized
+          chosen_head=$(printf '%s' "$head" | tr '[:upper:]' '[:lower:]')
+          chosen_url=$url
+        fi
         ;;
     esac
   done <<EOF
@@ -408,11 +503,7 @@ EOF
     emit "worktree-cleanup: skip $phys no pull request"
     return 0
   fi
-  if [ "$terminal_count" -ne 1 ]; then
-    emit "worktree-cleanup: report $phys more than one pull request"
-    return 0
-  fi
-  if ! git -C "$phys" cat-file -e "${chosen_head}^{commit}" >/dev/null 2>&1; then
+  if ! ensure_pr_head "$phys" "$chosen_number" "$chosen_head"; then
     emit "worktree-cleanup: report $phys pull request head is not in this repository"
     return 0
   fi
@@ -424,15 +515,23 @@ EOF
     emit "worktree-cleanup: report $phys commits not on PR head"
     return 0
   fi
+  if ! pids=$(fm_control_pids_with_cwd_under "$phys"); then
+    emit "worktree-cleanup: report $phys cannot tell whether a process is using it"
+    return 0
+  fi
+  if [ -n "$pids" ]; then
+    emit "worktree-cleanup: skip $phys live process"
+    return 0
+  fi
   remove_worktree "$repo" "$phys" "$chosen_state" "$chosen_url"
 }
 
-scan_repo() {
+collect_repo() {
   local repo=$1 line rec_path='' rec_branch='' rec_detached=0 rec_locked=0
-  REPO_REMOVED=0
   flush_record() {
     [ -n "$rec_path" ] || return 0
-    consider_worktree "$repo" "$rec_path" "$rec_branch" "$rec_detached" "$rec_locked"
+    printf '%s\037%s\037%s\037%s\037%s\n' \
+      "$rec_path" "$repo" "$rec_branch" "$rec_detached" "$rec_locked" >> "$RECORDS"
     rec_path=
     rec_branch=
     rec_detached=0
@@ -456,9 +555,30 @@ scan_repo() {
 $(git -C "$repo" -c core.quotePath=false worktree list --porcelain 2>/dev/null || true)
 PORCELAIN
   flush_record
-  if [ "$DRY" -eq 0 ] && [ "$REPO_REMOVED" -eq 1 ]; then
-    git -C "$repo" worktree prune
+}
+
+write_cursor() {
+  [ -n "$CURSOR_FILE" ] && [ "$DRY" -eq 0 ] || return 0
+  { printf '%s\n' "$1" > "$CURSOR_FILE.new" && mv -f -- "$CURSOR_FILE.new" "$CURSOR_FILE"; } 2>/dev/null || :
+}
+
+run_records() {
+  local cursor='' rotated=$SCRATCH/rotated path repo branch detached locked
+  if [ -n "$CURSOR_FILE" ] && [ -f "$CURSOR_FILE" ]; then
+    IFS= read -r cursor < "$CURSOR_FILE" || :
   fi
+  LC_ALL=C sort "$RECORDS" | LC_ALL=C CURSOR_PATH=$cursor awk -F $'\037' '
+    $1 > ENVIRON["CURSOR_PATH"] { print; next }
+    { wrapped[++count] = $0 }
+    END { for (i = 1; i <= count; i++) print wrapped[i] }' > "$rotated"
+  while IFS=$'\037' read -r path repo branch detached locked <&3; do
+    if budget_reached; then
+      note_budget
+      break
+    fi
+    write_cursor "$path"
+    consider_worktree "$repo" "$path" "$branch" "$detached" "$locked"
+  done 3< "$rotated"
 }
 
 run_target() {
@@ -471,23 +591,17 @@ run_target() {
     echo "worktree-cleanup: not a clone root: $raw" >&2
     exit 1
   }
-  scan_repo "$resolved"
+  collect_repo "$resolved"
 }
 
 if [ -n "$TARGET" ]; then
   run_target "$TARGET"
-  exit 0
-fi
-
-if [ -d "$PROJECTS" ] && [ ! -L "$PROJECTS" ]; then
+elif [ -d "$PROJECTS" ] && [ ! -L "$PROJECTS" ]; then
   for project_dir in "$PROJECTS"/*; do
     [ -d "$project_dir" ] || continue
-    if budget_reached; then
-      note_budget
-      break
-    fi
     if project_root=$(clone_root_path "$project_dir"); then
-      scan_repo "$project_root"
+      collect_repo "$project_root"
     fi
   done
 fi
+run_records
