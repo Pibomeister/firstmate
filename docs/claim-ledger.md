@@ -32,14 +32,14 @@ Every claim record carries these members:
 | Member | Meaning |
 | ------ | ------- |
 | `v` | Record format version, currently `1`. |
-| `id` | Claim id: 16 lowercase hex characters derived from the task, its launch generation, the status line's number and bytes, and the kind, so the same claim keeps the same id on every scan and a reused task id starts fresh. |
+| `id` | Claim id: 16 lowercase hex characters derived from the task, the first line of its status log, the status line's number and bytes, and the kind, so the same claim keeps the same id on every scan and a reused task id, which starts a fresh status log, gets new ids. |
 | `checked_at` | Unix time in seconds when this verdict was recorded. |
 | `task` | The task id whose status log holds the claim. |
 | `mate` | Who made the claim: the task id of the worker or second mate that writes that status log. |
 | `mate_kind` | `ship`, `scout`, `secondmate`, or `null` when the task metadata is gone. |
 | `harness` | The agent tool from the task metadata, or `null`. |
 | `model` | The requested model from the task metadata, or `null`. |
-| `spawn_gen` | The task's launch generation from its metadata, or `null`; it tells a reused task id's claims apart. |
+| `spawn_gen` | The task's launch generation from its metadata when the verdict was recorded, or `null`. |
 | `time` | Unix time the claim was made, from the status line's `[at=<epoch>]` stamp, or `null` when the line has none. |
 | `kind` | One of the claim kinds below. |
 | `claim` | The status line's text after its first colon, on one line, with secret-shaped tokens replaced by `[redacted]`, capped at 200 characters; `reason`, `subject.pr`, and every `observed` string get the same treatment. |
@@ -62,8 +62,7 @@ Readers must ignore members they do not recognize, so later versions can add mem
 A claim's current verdict is its newest record.
 `verified` and `refuted` are final for that claim id, except for `alive`.
 An `unverifiable` claim may be checked again later and gain a newer record, up to the attempt limit in `bin/fm-claims.sh`.
-An `alive` claim is judged again on every scan while its line is the newest mate line, and gains a record only when its verdict changes.
-A mate line is a `working:`, `paused:`, `done:`, `blocked:`, or `needs-decision:` line other than the verifier's own blockers.
+An `alive` claim is judged again on every scan while its line is the newest mate line.
 A trust score that treats `unverifiable` as a failure reads the newest record, so a later `verified` replaces an earlier `unverifiable`.
 
 ## Claim kinds
@@ -78,11 +77,7 @@ A trust score that treats `unverifiable` as a failure reads the newest record, s
 | `order` | It followed its orders. |
 | `alive` | It is working or deliberately waiting. |
 
-The header of [`bin/fm-claims.sh`](../bin/fm-claims.sh) owns which status lines carry each kind and how each kind is checked.
-`tests-green`, `pr-ready`, `order`, and `alive` describe the present, so they are judged only while their line is the newest line of that kind; for `alive`, the newest mate line.
-A superseded present-tense claim that was never judged is skipped rather than judged against later work.
-`committed`, `pushed`, and `pr-opened` describe facts that stay true, so they are judged whenever they are first seen.
-A line that hedges its claim - for example with `will`, `before`, `until`, `not`, or `pending` - yields no free-text claim.
+The header of [`bin/fm-claims.sh`](../bin/fm-claims.sh) owns which status lines carry each kind, how each kind is checked, which lines count as mate lines, when a claim is due, which hedged lines yield no claim, and how a failed blocker append is recovered.
 
 ## Refuted claims
 
@@ -97,8 +92,7 @@ The `claim-refuted-` key namespace is reserved to the claim verifier by the stat
 The reservation is a vocabulary rule, not authentication: a writer that copies the close words can still close the blocker.
 It closes when the task reports a new terminal result, which is itself a new claim the verifier checks; when firstmate answers it with `fm-send --resolve-key claim-refuted-<id>`; when firstmate runs `bin/fm-claims.sh clear`; or, for an `alive` claim, when a later scan reads the agent alive again.
 Closing the blocker leaves the refuted record in the ledger.
-When the task's status log no longer exists, or a newer mate `working:`, `paused:`, or `done:` line arrived while the claim was being judged, the reopen is skipped and the occurrence records that.
-When the blocker cannot be appended, the occurrence is withheld; every scan first finishes each refuted claim whose occurrence is missing.
+When the task's status log no longer exists, or a newer `done:` line arrived while the claim was being judged, the reopen is skipped and the occurrence records that.
 
 ## Failure-class records
 
