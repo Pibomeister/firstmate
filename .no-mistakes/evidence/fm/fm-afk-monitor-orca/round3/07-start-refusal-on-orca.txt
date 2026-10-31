@@ -1,0 +1,7 @@
+TERM_PROGRAM=Orca
+ORCA_TERMINAL_HANDLE=term_5bd36a35-05d1-441d-abd6-24bfad5f5160
+enter rc=0
+fm-afk-launch: no non-visible daemon-launch primitive for backend 'orca' yet (supported: herdr, tmux, rex)
+start rc=1
+ls: /tmp/fm-lab.9bGzj8/state/.supervise-daemon.pid: No such file or directory
+FIN

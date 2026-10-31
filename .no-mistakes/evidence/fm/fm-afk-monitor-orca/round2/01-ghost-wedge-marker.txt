@@ -1,0 +1,16 @@
+--- .subsuper-inject-wedged
+fm away-mode inject WEDGED: 302s undelivered as of 2026-10-31T02:48:37-0600
+Last delivery failure: deferred: supervisor composer not confirmed-empty (state=pending-unproven: unsubmitted text in the composer)
+The supervisor pane could not accept an escalation. Buffered items:
+orca-crew.status: done: PR https://example.test/pr/188
+--- errors
+[2026-10-31T02:48:37-0600] ERROR: away-mode escalation undelivered 302s; last delivery failure: deferred: supervisor composer not confirmed-empty (state=pending-unproven: unsubmitted text in the composer). Buffer + wake-queue preserved; alarm marker written.
+--- deferred count 39 inbox=       0
+--- buffer
+orca-crew.status: done: PR https://example.test/pr/188
+--- draft: check the daemon output
+--- at 03:10:35, event raised 02:43:02
+deferred=112 inbox=0 errors=5
+fm away-mode inject WEDGED: 1524s undelivered as of 2026-10-31T03:08:59-0600
+draft=check the daemon output
+tui-idle=idle

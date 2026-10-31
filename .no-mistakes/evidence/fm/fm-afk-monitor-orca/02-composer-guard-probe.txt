@@ -1,0 +1,14 @@
+Real Claude Code in a real Orca terminal, composer holds typed text not yet submitted.
+composer_state=empty  lines=20
+{
+  "source": "screen",
+  "draft": "probe half typed wordsX",
+  "last": [
+    "✻ Cooked for 10s · done 1:33 AM · 1 shell still running",
+    "[ Enhance ⌃E ]                                                                                                      [-]",
+    "────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
+    "❯",
+    "────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
+    "  ⏵⏵ auto mode on · 1 shell"
+  ]
+}

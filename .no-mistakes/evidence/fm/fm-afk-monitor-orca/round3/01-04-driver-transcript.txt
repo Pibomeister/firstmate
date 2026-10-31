@@ -1,0 +1,47 @@
+[2026-10-31T03:48:12-0600] daemon starting (pid 42799); target=term_55d4fd7e-213b-43c2-90a6-3b600a9a0fb8; target_source=ORCA_TERMINAL_HANDLE; backend=orca; backend_source=TERM_PROGRAM(Orca); afk=on; i
+fresh-after-daemon draft=[null]
+== S1 finished turns then ghost sampling
+03:49:13 draft=[null]
+03:49:25 draft=[null]
+03:49:35 draft=[null]
+03:49:44 draft=[null]
+03:50:17 draft=[null]
+03:50:37 draft=[null]
+03:50:56 draft=[null]
+03:51:14 draft=[null]
+03:51:50 draft=[null]
+03:51:59 draft=[null]
+03:52:08 draft=[null]
+03:52:21 draft=[null]
+== S1 delivery
+03:52:29 signalled
+delivered inbox=1 03:53:11
+== S2 typed draft
+draft=[half typed captain words]
+inbox before=1 now=1 draft=[half typed captain words]
+deferred-lines=5
+cleared draft=[null]
+delivered-after-clear inbox=2
+merged-count=0
+== S3 busy
+03:56:30 signalled
+03:56:30 tui-idle=timeout inbox=2 row=[  /tmp/fm-lab.r1jvVN/lab-build-step.sh . When it e]
+03:56:52 tui-idle=timeout inbox=2 row=[  /tmp/fm-lab.r1jvVN/lab-build-step.sh . When it e]
+03:57:14 tui-idle=timeout inbox=2 row=[  /tmp/fm-lab.r1jvVN/lab-build-step.sh . When it e]
+03:57:29 tui-idle=timeout inbox=2 row=[  /tmp/fm-lab.r1jvVN/lab-build-step.sh . When it e]
+03:57:45 tui-idle=timeout inbox=2 row=[  /tmp/fm-lab.r1jvVN/lab-build-step.sh . When it e]
+03:58:02 tui-idle=timeout inbox=2 row=[  /tmp/fm-lab.r1jvVN/lab-build-step.sh . When it e]
+03:58:20 tui-idle=timeout inbox=2 row=[⏺ FINISHED]
+03:58:35 tui-idle=idle inbox=2 row=[⏺ FINISHED]
+03:58:48 tui-idle=idle inbox=2 row=[⏺ FINISHED]
+03:58:58 tui-idle=idle inbox=2 row=[⏺ FINISHED]
+03:59:09 tui-idle=idle inbox=2 row=[⏺ FINISHED]
+03:59:19 tui-idle=idle inbox=2 row=[⏺ FINISHED]
+03:59:30 tui-idle=idle inbox=2 row=[⏺ FINISHED]
+03:59:42 tui-idle=idle inbox=2 row=[⏺ FINISHED]
+03:59:54 tui-idle=idle inbox=2 row=[⏺ FINISHED]
+04:00:04 tui-idle=idle inbox=2 row=[⏺ FINISHED]
+04:00:23 tui-idle=idle inbox=2 row=[⏺ FINISHED]
+04:00:32 tui-idle=idle inbox=2 row=[⏺ FINISHED]
+04:00:51 tui-idle=idle inbox=2 row=[⏺ FINISHED]
+04:01:08 tui-idle=idle inbox=2 row=[⏺ FINISHED]

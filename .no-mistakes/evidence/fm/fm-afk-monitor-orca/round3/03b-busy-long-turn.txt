@@ -1,0 +1,26 @@
+fm-afk-launch: away mode stopped; no daemon terminal was running, .afk cleared, and the posture reco
+04:17:35 signalled
+04:17:35 tui-idle=timeout inbox=0 row=[  #1 Run this lab build step with the Bash tool in the foreg]
+04:17:46 tui-idle=timeout inbox=0 row=[  #1 Run this lab build step with the Bash tool in the foreg]
+04:17:57 tui-idle=timeout inbox=0 row=[  #1 Run this lab build step with the Bash tool in the foreg]
+04:18:09 tui-idle=timeout inbox=0 row=[  #1 Run this lab build step with the Bash tool in the foreg]
+04:18:23 tui-idle=timeout inbox=0 row=[  #1 Run this lab build step with the Bash tool in the foreg]
+04:18:32 tui-idle=timeout inbox=0 row=[  #1 Run this lab build step with the Bash tool in the foreg]
+04:18:42 tui-idle=timeout inbox=0 row=[  #1 Run this lab build step with the Bash tool in the foreg]
+04:18:51 tui-idle=timeout inbox=0 row=[  #1 Run this lab build step with the Bash tool in the foreg]
+04:19:01 tui-idle=timeout inbox=0 row=[  #1 Run this lab build step with the Bash tool in the foreg]
+04:19:11 tui-idle=timeout inbox=0 row=[  #1 Run this lab build step with the Bash tool in the foreg]
+04:19:21 tui-idle=timeout inbox=0 row=[  #1 Run this lab build step with the Bash tool in the foreg]
+04:19:31 tui-idle=timeout inbox=0 row=[  #1 Run this lab build step with the Bash tool in the foreg]
+04:19:40 tui-idle=timeout inbox=0 row=[  #1 Run this lab build step with the Bash tool in the foreg]
+04:19:49 tui-idle=timeout inbox=0 row=[  #1 Run this lab build step with the Bash tool in the foreg]
+04:20:01 tui-idle=timeout inbox=0 row=[  #1 Run this lab build step with the Bash tool in the foreg]
+04:20:13 tui-idle=timeout inbox=0 row=[  #1 Run this lab build step with the Bash tool in the foreg]
+04:20:23 tui-idle=idle inbox=0 row=[  #1 Run this lab build step with the Bash tool in the foreg]
+04:20:34 tui-idle=idle inbox=0 row=[  #1 Run this lab build step with the Bash tool in the foreg]
+final inbox=1
+fm-afk-launch: away mode stopped; no daemon terminal was running, .afk cleared, and the posture reco
+true
+--- leftovers
+lab-terminals=3 daemons=0
+FIN

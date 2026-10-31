@@ -1,0 +1,25 @@
+  /tmp/fm-lab.Q0StXJ/lab-build-step.sh . When it ends, reply with the single word FINISHED.
+  Ran 1 shell command
+⏺ FINISHED
+✻ Churned for 3m 5s · done 4:20 AM
+❯ : Firstmate operational input waiting: read '/private/tmp/fm-lab.Q0StXJ/state/operational-inbox/1793442036-f2aa40eaefa0572e.msg'
+  and handle its contents as Firstmate operational input.
+  Read 1 file
+⏺ Skill(away-quiet-supervision)
+  ⎿  Successfully loaded skill
+⏺ Skill(afk)
+  ⎿  Successfully loaded skill
+  Ran 2 shell commands
+⏺ Captain, the away monitor's alert is genuine, and I am still in away mode. A worker in the lab reports that its work is done and
+  its PR is ready: https://example.test/pr/busy
+  I did not merge the PR. Your away instructions say only "lab", which does not call for a merge, so it waits for your return.
+  I could not confirm the report independently. The lab has no local record for this worker, so its current state reads as unknown.
+  The worker's own "done" line is the only evidence, and I did not check the PR's checks.
+  No other action is needed until you return, when the merge decision is yours.
+✻ Baked for 18s · done 4:21 AM
+  #1 Run this lab build step with the Bash tool in the foreground, not in the background, with a 300000 ms timeout: /tmp/fm-l…   [-]
+  ┃│
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle)

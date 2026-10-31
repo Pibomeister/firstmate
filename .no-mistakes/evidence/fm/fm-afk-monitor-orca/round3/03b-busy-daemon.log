@@ -1,0 +1,10 @@
+[2026-10-31T04:17:30-0600] daemon starting (pid 121); target=term_bc9d7ba9-f553-44af-a505-db65a7a356a2; target_source=FM_SUPERVISOR_TARGET; backend=orca; backend_source=FM_SUPERVISOR_BACKEND; afk=on; 
+[2026-10-31T04:18:22-0600] wake: signal: /tmp/fm-lab.Q0StXJ/state/crew-busy.status
+[2026-10-31T04:18:36-0600] escalate: signal: /tmp/fm-lab.Q0StXJ/state/crew-busy.status -> crew-busy.status: done: PR https://example.test/pr/busy
+[2026-10-31T04:18:41-0600] inject deferred: supervisor pane busy (agent mid-turn)
+[2026-10-31T04:18:49-0600] inject deferred: supervisor pane busy (agent mid-turn)
+[2026-10-31T04:19:07-0600] inject deferred: supervisor pane busy (agent mid-turn)
+[2026-10-31T04:19:22-0600] inject deferred: supervisor pane busy (agent mid-turn)
+[2026-10-31T04:19:38-0600] inject deferred: supervisor pane busy (agent mid-turn)
+[2026-10-31T04:19:55-0600] inject deferred: supervisor pane busy (agent mid-turn)
+[2026-10-31T04:20:10-0600] inject deferred: supervisor pane busy (agent mid-turn)

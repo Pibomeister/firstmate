@@ -1,0 +1,4 @@
+[2026-10-31T01:42:26-0600] daemon starting (pid 90651); target=term_260bf417-3b91-40f0-b9b8-17c502c822f9; target_source=FM_SUPERVISOR_TARGET; backend=orca; backend_source=FM_SUPERVISOR_BACKE
+[2026-10-31T01:42:48-0600] wake: signal: /tmp/orcalab.K0HhBz/fm4/state/crew-a.status
+[2026-10-31T01:43:07-0600] escalate: signal: /tmp/orcalab.K0HhBz/fm4/state/crew-a.status -> crew-a.status: done: PR https://example.test/pr/2001
+[2026-10-31T01:43:32-0600] inject failed at Enter confirmation: submit unconfirmed after 3 retries (verdict=unknown, bytes=189, text may be in composer)

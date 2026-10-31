@@ -1,0 +1,14 @@
+  entered: 2026-10-31T07:38:08Z
+  expected return: not given
+  spend cap: 4 concurrent workers
+  reach: hold-for-return only. No phone channel is configured; anything that needs you waits for your return.
+  your words (verbatim):
+    lab
+enter=0
+fm-afk-launch: no non-visible daemon-launch primitive for backend 'orca' yet (supported: herdr, tmux, rex)
+start=1
+0
+TERM_PROGRAM=Orca
+ORCA_TERMINAL_HANDLE=term_771977bd-01d7-417e-a9ce-7f700622b3b7
+start_native=0
+FIN

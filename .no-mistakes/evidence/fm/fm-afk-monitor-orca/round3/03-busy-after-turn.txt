@@ -1,0 +1,30 @@
+❯ Run this lab build step with the Bash tool in the foreground, not in the background, with a 300000 ms timeout:
+  /tmp/fm-lab.r1jvVN/lab-build-step.sh . When it ends, reply with the single word FINISHED.
+  Ran 1 shell command
+⏺ Background command "Start the lab daemon script in the background" completed (exit code 0)
+  Ran 2 shell commands
+⏺ FINISHED
+  Captain, one word doesn't cover this: your message counted as your return, so I ended away mode before running the build step,
+  which exited 0. A third PR is also ready and unmerged, and it appeared only in the return catch-up: https://example.test/pr/busy.
+  The merge calls on it, https://example.test/pr/one and https://example.test/pr/two are yours, and I haven't reviewed any of them or
+  checked their checks.
+✻ Cogitated for 2m 7s · done 3:58 AM
+❯ Run this lab build step with the Bash tool in the foreground, not in the background, with a 300000 ms timeout:
+  /tmp/fm-lab.r1jvVN/lab-build-step.sh . When it ends, reply with the single word FINISHED.
+  Ran 1 shell command
+⏺ FINISHED
+✻ Crunched for 1m 33s · done 4:03 AM
+❯ : Firstmate operational input waiting: read '/private/tmp/fm-lab.r1jvVN/state/operational-inbox/1793441046-abbb08f8811e6088.msg'
+  and handle its contents as Firstmate operational input.
+  Verifying the doorbell record, checking posture, and present queued notifications
+  ⎿  $ FM_HOME=/private/tmp/fm-lab.r1jvVN bin/fm-operational-input.sh open
+     '/private/tmp/fm-lab.r1jvVN/state/operational-inbox/1793441046-abbb08f8811e6088.msg'; echo; echo "exit=$?";
+     FM_HOME=/private/tmp/fm-lab.r1jvVN bin/fm-afk-contract.sh mode; echo "mode_exit=$?"; ls -a /private/tmp/fm-lab.r1jvVN/sta…
+✶ Clauding… (4s · ↓ 140 tokens)
+  ⎿  Tip: Share Claude Code and earn $10 in usage credits · /passes
+  #6 : Firstmate operational input waiting: read '/private/tmp/fm-lab.r1jvVN/state/operational-inbox/1793440546-acaed03549cd7…   [-]
+  │││││┃│││
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle)

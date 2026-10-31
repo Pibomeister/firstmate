@@ -1,0 +1,3 @@
+[2026-10-31T01:30:54-0600] daemon starting (pid 80947); target=term_d70f3543-3188-4ec5-bfa0-9f6dc25b94d5; target_source=ORCA_TERMINAL_HANDLE; backend=orca; backend_source=TERM_PROGRAM(Orca); afk=on; inject_skip='heartbeat'; stale_escalate=999999s; batch=0s
+[2026-10-31T01:31:25-0600] wake: signal: /tmp/orcalab.K0HhBz/fm/state/orca-crew.status
+[2026-10-31T01:31:32-0600] escalate: signal: /tmp/orcalab.K0HhBz/fm/state/orca-crew.status -> orca-crew.status: done: PR https://example.test/pr/188

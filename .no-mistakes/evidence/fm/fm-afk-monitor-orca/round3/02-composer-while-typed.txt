@@ -1,0 +1,12 @@
+  Ran 1 shell command
+⏺ Captain, the crew-one worker finished and its PR is ready for your review: https://example.test/pr/one
+  I verified that this notification came from Firstmate's away monitoring, so away mode stays on. I did not merge the PR, because
+  your recorded away instruction is only the word "lab" and does not call for a merge. I have not reviewed the PR or checked whether
+  its checks pass.
+  The merge decision waits for your return. No other decision is open from this notification.
+✻ Cogitated for 15s · done 3:53 AM · 1 shell still running
+[ Enhance ⌃E ]                                                                                                                   [-]
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on · 1 shell

@@ -1,0 +1,3 @@
+[2026-10-31T04:02:40-0600] daemon starting (pid 82678); target=term_55d4fd7e-213b-43c2-90a6-3b600a9a0fb8; target_source=FM_SUPERVISOR_TARGET; backend=orca; backend_source=FM_SUPERVISOR_BACKEND; afk=on
+[2026-10-31T04:03:40-0600] wake: signal: /tmp/fm-lab.r1jvVN/state/crew-busy.status
+[2026-10-31T04:03:57-0600] escalate: signal: /tmp/fm-lab.r1jvVN/state/crew-busy.status -> crew-busy.status: done: PR https://example.test/pr/busy

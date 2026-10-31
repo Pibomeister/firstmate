@@ -1,0 +1,33 @@
+    lab
+[2026-10-31T04:02:40-0600] daemon starting (pid 82678); target=term_55d4fd7e-213b-43c2-90a6-3b600a9a0fb8; target_source=FM_SUPERVISOR_TARGET; backend=orca; backend_source
+== S3 busy
+04:02:44 signalled inbox=2
+04:02:45 tui-idle=timeout inbox=2 row=[  /tmp/fm-lab.r1jvVN/lab-build-step.sh . When it e]
+04:02:58 tui-idle=timeout inbox=2 row=[  /tmp/fm-lab.r1jvVN/lab-build-step.sh . When it e]
+04:03:10 tui-idle=timeout inbox=2 row=[  /tmp/fm-lab.r1jvVN/lab-build-step.sh . When it e]
+04:03:23 tui-idle=timeout inbox=2 row=[  /tmp/fm-lab.r1jvVN/lab-build-step.sh . When it e]
+04:03:36 tui-idle=timeout inbox=2 row=[  /tmp/fm-lab.r1jvVN/lab-build-step.sh . When it e]
+04:03:53 tui-idle=timeout inbox=2 row=[⏺ FINISHED]
+04:04:07 tui-idle=idle inbox=3 row=[⏺ FINISHED]
+delivered-after-turn inbox=3 04:04:10
+== S4 repeat exact-once
+r1 inbox=4
+  settled inbox=4 draft=[null]
+r2 inbox=5
+  settled inbox=5 draft=[null]
+r3 inbox=6
+  settled inbox=6 draft=[null]
+r4 inbox=7
+  settled inbox=7 draft=[null]
+r5 inbox=8
+  settled inbox=8 draft=[null]
+unconfirmed=0 firstmate0=0
+   1 crew-busy.status
+   1 crew-one.status
+   1 crew-r1.status
+   1 crew-r2.status
+   1 crew-r3.status
+   1 crew-r4.status
+   1 crew-r5.status
+   1 crew-two.status
+FIN

@@ -1,0 +1,12 @@
+  and handle its contents as Firstmate operational input.
+  Read 1 file
+⏺ The inbox message reports that crew-one finished and opened a PR at https://example.test/pr/one. The message says no re-arm is
+  needed because the watcher daemon manages supervision.
+  I took no action on it. I did not merge the PR or touch any project. Reviewing and landing that PR needs your decision, Captain.
+  The background daemon I started earlier is still running, and I have not checked its output.
+✻ Worked for 4s · done 2:49 AM · 1 shell still running
+[ Enhance ⌃E ]                                                                                                                   [-]
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on · 1 shell

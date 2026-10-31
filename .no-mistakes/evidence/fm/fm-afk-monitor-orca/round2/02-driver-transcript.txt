@@ -1,0 +1,38 @@
+== S1 delivery
+delivered inbox=1
+== S2 draft
+draft=[half typed captain words]
+inbox before=1 now=1 draft=[half typed captain words]
+4
+cleared draft=[null]
+delivered-after-clear inbox=2
+merged-count=0
+== S3 busy
+02:52:40 wait: true satisfied
+  inbox=2 spinner=[  #1 Use the Bash tool with run_in_background set to true to run exact]
+02:52:58 wait: true satisfied
+  inbox=2 spinner=[  #1 Use the Bash tool with run_in_background set to true to run exact]
+02:53:17 wait: true satisfied
+  inbox=2 spinner=[  #1 Use the Bash tool with run_in_background set to true to run exact]
+02:53:32 wait: true satisfied
+  inbox=3 spinner=[  #2 : Firstmate operational input waiting: read '/private/tmp/fm-lab.]
+02:53:43 wait: true satisfied
+  inbox=3 spinner=[  #2 : Firstmate operational input waiting: read '/private/tmp/fm-lab.]
+02:53:56 wait: true satisfied
+  inbox=3 spinner=[  #2 : Firstmate operational input waiting: read '/private/tmp/fm-lab.]
+02:54:09 wait: true satisfied
+  inbox=3 spinner=[  #2 : Firstmate operational input waiting: read '/private/tmp/fm-lab.]
+02:54:22 wait: true satisfied
+  inbox=3 spinner=[  #2 : Firstmate operational input waiting: read '/private/tmp/fm-lab.]
+delivered-after-turn inbox=3
+== S4 repeat x4 exact-once
+r1 inbox=4
+  settled inbox=4
+r2 inbox=5
+  settled inbox=5
+r3 inbox=6
+  settled inbox=6
+r4 inbox=7
+  settled inbox=7
+unconfirmed=0
+FIN

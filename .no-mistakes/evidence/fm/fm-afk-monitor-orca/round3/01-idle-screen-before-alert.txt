@@ -1,0 +1,14 @@
+  covers the features and setup.
+✻ Baked for 3s · done 3:48 AM · 1 shell still running
+❯ Name one script in the bin directory; one line only.
+⏺ Captain, bin/fm-spawn.sh is one script in the bin directory.
+✻ Worked for 2s · done 3:49 AM · 1 shell still running
+❯ Suggest in one line what I should check next.
+⏺ Captain, check the output of the lab daemon I started in the background, because I have not seen any result from it yet.
+✻ Worked for 1s · done 3:51 AM · 1 shell still running
+  #1 Use the Bash tool with run_in_background set to true to run exactly: /tmp/fm-lab.r1jvVN/daemon.sh . Do nothing else. The…   [-]
+  ┃│││
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on · 1 shell

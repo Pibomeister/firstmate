@@ -1,0 +1,21 @@
+[2026-10-31T02:48:00-0600] daemon starting (pid 86204); target=term_ba20168e-e0f3-459d-af51-ff12b6aaffa8; target_source=ORCA_TERMINAL_HANDLE; backend=orca; backend_source=TERM_PROGRAM(Orca); afk=on; inject_skip='heartbea
+[2026-10-31T02:49:36-0600] wake: signal: /tmp/fm-lab.Uz6ce9/state/crew-one.status
+[2026-10-31T02:49:37-0600] escalate: signal: /tmp/fm-lab.Uz6ce9/state/crew-one.status -> crew-one.status: done: PR https://example.test/pr/one
+[2026-10-31T02:51:03-0600] wake: signal: /tmp/fm-lab.Uz6ce9/state/crew-two.status
+[2026-10-31T02:51:05-0600] escalate: signal: /tmp/fm-lab.Uz6ce9/state/crew-two.status -> crew-two.status: done: PR https://example.test/pr/two
+[2026-10-31T02:51:06-0600] inject deferred: supervisor composer not confirmed-empty (state=pending-unproven: unsubmitted text in the composer)
+[2026-10-31T02:51:08-0600] inject deferred: supervisor composer not confirmed-empty (state=pending-unproven: unsubmitted text in the composer)
+[2026-10-31T02:51:23-0600] inject deferred: supervisor composer not confirmed-empty (state=pending-unproven: unsubmitted text in the composer)
+[2026-10-31T02:51:39-0600] inject deferred: supervisor composer not confirmed-empty (state=pending-unproven: unsubmitted text in the composer)
+[2026-10-31T02:53:15-0600] wake: signal: /tmp/fm-lab.Uz6ce9/state/crew-three.status
+[2026-10-31T02:53:17-0600] self-handle: signal: /tmp/fm-lab.Uz6ce9/state/crew-three.status -> signal already escalated (catch-all scan): crew-three.status: done: PR https://example.test/pr/three
+[2026-10-31T02:55:29-0600] wake: signal: /tmp/fm-lab.Uz6ce9/state/crew-r1.status
+[2026-10-31T02:55:32-0600] escalate: signal: /tmp/fm-lab.Uz6ce9/state/crew-r1.status -> crew-r1.status: done: PR https://example.test/pr/r1
+[2026-10-31T02:56:45-0600] wake: signal: /tmp/fm-lab.Uz6ce9/state/crew-r2.status
+[2026-10-31T02:56:48-0600] escalate: signal: /tmp/fm-lab.Uz6ce9/state/crew-r2.status -> crew-r2.status: done: PR https://example.test/pr/r2
+[2026-10-31T02:58:01-0600] wake: signal: /tmp/fm-lab.Uz6ce9/state/crew-r3.status
+[2026-10-31T02:58:03-0600] escalate: signal: /tmp/fm-lab.Uz6ce9/state/crew-r3.status -> crew-r3.status: done: PR https://example.test/pr/r3
+[2026-10-31T02:58:11-0600] wake: heartbeat
+[2026-10-31T02:58:13-0600] wake force-self (FM_INJECT_SKIP): heartbeat
+[2026-10-31T02:59:21-0600] wake: signal: /tmp/fm-lab.Uz6ce9/state/crew-r4.status
+[2026-10-31T02:59:24-0600] escalate: signal: /tmp/fm-lab.Uz6ce9/state/crew-r4.status -> crew-r4.status: done: PR https://example.test/pr/r4

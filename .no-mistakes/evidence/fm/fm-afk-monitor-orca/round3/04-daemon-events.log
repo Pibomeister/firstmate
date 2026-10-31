@@ -1,0 +1,6 @@
+[2026-10-31T04:03:57-0600] escalate: signal: /tmp/fm-lab.r1jvVN/state/crew-busy.status -> crew-busy.status: done: PR https://example.test/pr/busy
+[2026-10-31T04:05:07-0600] escalate: signal: /tmp/fm-lab.r1jvVN/state/crew-r1.status -> crew-r1.status: done: PR https://example.test/pr/r1
+[2026-10-31T04:07:20-0600] escalate: signal: /tmp/fm-lab.r1jvVN/state/crew-r2.status -> crew-r2.status: done: PR https://example.test/pr/r2
+[2026-10-31T04:09:14-0600] escalate: signal: /tmp/fm-lab.r1jvVN/state/crew-r3.status -> crew-r3.status: done: PR https://example.test/pr/r3
+[2026-10-31T04:11:04-0600] escalate: signal: /tmp/fm-lab.r1jvVN/state/crew-r4.status -> crew-r4.status: done: PR https://example.test/pr/r4
+[2026-10-31T04:13:11-0600] escalate: signal: /tmp/fm-lab.r1jvVN/state/crew-r5.status -> crew-r5.status: done: PR https://example.test/pr/r5

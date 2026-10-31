@@ -1,0 +1,7 @@
+inbox before=       8 now=       8
+[2026-10-31T04:14:54-0600] wake: signal: /tmp/fm-lab.r1jvVN/state/crew-gone.status
+[2026-10-31T04:15:16-0600] escalate: signal: /tmp/fm-lab.r1jvVN/state/crew-gone.status -> crew-gone.status: done: PR x
+[2026-10-31T04:15:22-0600] inject deferred: supervisor composer not confirmed-empty (state=unknown: composer not proven empty or pending (unrecognized screen, or harness not idle))
+[2026-10-31T04:15:33-0600] inject deferred: supervisor composer not confirmed-empty (state=unknown: composer not proven empty or pending (unrecognized screen, or harness not idle))
+firstmate:0 mentions=0
+daemon alive 82678 13:03

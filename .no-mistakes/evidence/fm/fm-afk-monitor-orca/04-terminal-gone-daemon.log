@@ -1,0 +1,6 @@
+daemon-alive
+[2026-10-31T01:51:07-0600] daemon starting (pid 10563); target=term_853cf5e2-0816-4fff-a3f4-7143700d09e7; target_source=FM_SUPERVISOR_TARGET; backend=orca; backend_source=FM_SUPERVISOR_BACKEND; afk=on; inject_skip='heartbeat'; sta
+buffer:
+crew-b.status: done: PR https://example.test/pr/3002 (catch-all scan)
+wedged:
+firstmate0-mentions: 0

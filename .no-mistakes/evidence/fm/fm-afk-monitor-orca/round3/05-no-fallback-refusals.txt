@@ -1,0 +1,26 @@
+start-native rc=0
+--- case=env-orca rc=1
+error: away-mode daemon found no supervisor endpoint on this Orca home: backend orca is selected but this process runs in no Orca terminal (ORCA_TERMINAL_HANDLE is unset); start it from the captain's Orca terminal, or set FM_SUPER
+[2026-10-31T03:48:20-0600] startup failed: no Orca supervisor terminal (backend orca is selected but this process runs in no Orca terminal (ORCA_TERMINAL_HANDLE is unset))
+start-native rc=0
+--- case=config rc=1
+error: away-mode daemon found no supervisor endpoint on this Orca home: backend orca is selected but this process runs in no Orca terminal (ORCA_TERMINAL_HANDLE is unset); start it from the captain's Orca terminal, or set FM_SUPER
+[2026-10-31T03:48:42-0600] startup failed: no Orca supervisor terminal (backend orca is selected but this process runs in no Orca terminal (ORCA_TERMINAL_HANDLE is unset))
+start-native rc=0
+--- case=inherited-tern rc=1
+error: away-mode daemon found no supervisor endpoint on this Orca home: this process carries Orca terminal term_x but does not run directly in it (TERM_PROGRAM=tern); start it from the captain's Orca terminal, or set FM_SUPERVISOR
+[2026-10-31T03:48:48-0600] startup failed: no Orca supervisor terminal (this process carries Orca terminal term_x but does not run directly in it (TERM_PROGRAM=tern))
+start-native rc=0
+--- case=zellij-nested rc=1
+error: away-mode daemon found no supervisor endpoint on this Orca home: this process carries Orca terminal term_x but does not run directly in it (TERM_PROGRAM=Orca, inside Zellij); start it from the captain's Orca terminal, or se
+[2026-10-31T03:49:00-0600] startup failed: no Orca supervisor terminal (this process carries Orca terminal term_x but does not run directly in it (TERM_PROGRAM=Orca, inside Zellij))
+start-native rc=0
+--- case=override-no-target rc=1
+warn: could not auto-discover supervisor pane (no FM_SUPERVISOR_TARGET, TMUX_PANE, HERDR_ENV/HERDR_PANE_ID, Rex block, single live T3 thread in this home, or Orca terminal); falling back to 'firstmate:0' - verify this is firstmate
+error: supervisor target 'firstmate:0' does not resolve to a orca pane within 20s; set FM_SUPERVISOR_TARGET
+[2026-10-31T03:49:19-0600] startup failed: target 'firstmate:0' not found (backend=orca)
+start-native rc=0
+/Users/eduardopicazo/.no-mistakes/evidence/01M68C1YCBXXQQQ6N5DEHCT0X6/round2/drivers/refusals.sh: line 4: 62738 Alarm clock: 14         env -u TMUX -u TMUX_PANE -u ORCA_TERMINAL_HANDLE -u TERM_PROGRAM -u ZELLIJ FM_AFK_STATE_PREPARED=1 FM_HOME="$L" "$@" perl -e 'alarm 14; exec @ARGV' bin/fm-afk-start.sh > "$L/o" 2>&1
+--- case=control-non-orca rc=142
+warn: could not auto-discover supervisor pane (no FM_SUPERVISOR_TARGET, TMUX_PANE, HERDR_ENV/HERDR_PANE_ID, Rex block, single live T3 thread in this home, or Orca terminal); falling back to 'firstmate:0' - verify this is firstmate
+[2026-10-31T03:49:25-0600] daemon starting (pid 62738); target=firstmate:0; target_source=FALLBACK(firstmate:0); backend=tmux; backend_source=FALLBACK(tmux); afk=on; inject_skip='heartbeat'; stale_esc

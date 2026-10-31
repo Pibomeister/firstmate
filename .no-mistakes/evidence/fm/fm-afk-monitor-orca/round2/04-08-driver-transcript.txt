@@ -1,0 +1,14 @@
+== busy retry
+03:01:19 signalled
+03:01:19 tui-idle=idle inbox=7 row=[  Not FINISHED.]
+03:01:35 tui-idle=idle inbox=7 row=[  Not FINISHED.]
+03:01:49 tui-idle=idle inbox=7 row=[  Not FINISHED.]
+03:02:05 tui-idle=idle inbox=8 row=[  #8 : Firstmate operational input waiting: read '/private/t]
+final inbox before=7 now=8 at 03:02:11
+== terminal gone
+true
+03:02:49 signalled, pid=86204
+inbox before=8 now=8
+[2026-10-31T03:02:42-0600] daemon shutting down
+firstmate:0-mentions=0
+FIN

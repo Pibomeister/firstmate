@@ -1,0 +1,11 @@
+[2026-10-31T03:48:12-0600] daemon starting (pid 42799); target=term_55d4fd7e-213b-43c2-90a6-3b600a9a0fb8; target_source=ORCA_TERMINAL_HANDLE; backend=orca; backend_source=TERM_PROGRAM(Orca); afk=on; inject_skip='heartbea
+[2026-10-31T03:53:03-0600] wake: signal: /tmp/fm-lab.r1jvVN/state/crew-one.status
+[2026-10-31T03:53:06-0600] escalate: signal: /tmp/fm-lab.r1jvVN/state/crew-one.status -> crew-one.status: done: PR https://example.test/pr/one
+[2026-10-31T03:54:34-0600] wake: signal: /tmp/fm-lab.r1jvVN/state/crew-two.status
+[2026-10-31T03:54:36-0600] escalate: signal: /tmp/fm-lab.r1jvVN/state/crew-two.status -> crew-two.status: done: PR https://example.test/pr/two
+[2026-10-31T03:54:37-0600] inject deferred: supervisor composer not confirmed-empty (state=pending-unproven: unsubmitted text in the composer)
+[2026-10-31T03:54:45-0600] inject deferred: supervisor composer not confirmed-empty (state=pending-unproven: unsubmitted text in the composer)
+[2026-10-31T03:55:00-0600] inject deferred: supervisor composer not confirmed-empty (state=pending-unproven: unsubmitted text in the composer)
+[2026-10-31T03:55:16-0600] inject deferred: supervisor composer not confirmed-empty (state=pending-unproven: unsubmitted text in the composer)
+[2026-10-31T03:55:31-0600] inject deferred: supervisor composer not confirmed-empty (state=pending-unproven: unsubmitted text in the composer)
+[2026-10-31T03:56:33-0600] daemon shutting down

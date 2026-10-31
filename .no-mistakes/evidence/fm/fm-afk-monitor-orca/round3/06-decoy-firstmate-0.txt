@@ -1,0 +1,5 @@
+firstmate:0 pane=%0
+afk: starting supervise daemon in foreground; keep this command as a tracked background session
+error: away-mode daemon found no supervisor endpoint on this Orca home: backend orca is selected but this process runs in no Orca terminal (ORCA_TERMINAL_HANDLE is unset); start it from the captain's 
+daemon rc=1
+decoy pane content: []

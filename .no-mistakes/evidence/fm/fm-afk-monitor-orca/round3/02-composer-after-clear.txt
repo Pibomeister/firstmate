@@ -1,0 +1,30 @@
+❯ : Firstmate operational input waiting: read '/private/tmp/fm-lab.r1jvVN/state/operational-inbox/1793440389-a1ee79c399584691.msg'
+  and handle its contents as Firstmate operational input.
+  Read 1 file
+⏺ Skill(afk)
+  ⎿  Successfully loaded skill
+⏺ Skill(away-quiet-supervision)
+  ⎿  Successfully loaded skill
+  Ran 1 shell command
+⏺ Captain, the crew-one worker finished and its PR is ready for your review: https://example.test/pr/one
+  I verified that this notification came from Firstmate's away monitoring, so away mode stays on. I did not merge the PR, because
+  your recorded away instruction is only the word "lab" and does not call for a merge. I have not reviewed the PR or checked whether
+  its checks pass.
+  The merge decision waits for your return. No other decision is open from this notification.
+✻ Cogitated for 15s · done 3:53 AM · 1 shell still running
+❯ : Firstmate operational input waiting: read '/private/tmp/fm-lab.r1jvVN/state/operational-inbox/1793440546-acaed03549cd7d2b.msg'
+  and handle its contents as Firstmate operational input.
+  Ran 1 shell command
+⏺ Captain, the crew-two worker also finished, and its PR is ready for your review: https://example.test/pr/two
+  I verified this notification too, so away mode stays on. I did not merge this PR, for the same reason: your recorded away
+  instruction, "lab", does not call for a merge. I have not reviewed it or checked its checks.
+  Two merge decisions now wait for your return:
+  - https://example.test/pr/one
+  - https://example.test/pr/two
+✻ Crunched for 5s · done 3:55 AM · 1 shell still running
+  #4 Suggest in one line what I should check next.                                                                               [-]
+  │││┃││
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on · 1 shell
