@@ -296,7 +296,7 @@ test_names_open_captain_orders_and_gates_the_stop() {
   expect_fire "$out" PostToolUse "no open orders"
   printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | test("captain orders") | not' >/dev/null \
     || fail "with no open orders the instruction must not mention captain orders: $out"
-  FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" send --no-nudge --from test "order mid handoff" >/dev/null \
+  FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" send --from test "order mid handoff" >/dev/null \
     || fail "could not send the order fixture"
   order_id=$(find "$PRIMARY/data/orders/pending" -name '*.order' | sed 's#.*/##; s/\.order$//')
 
@@ -340,7 +340,7 @@ test_a_recorded_handoff_gates_the_stop_without_the_trigger() {
   rm -rf "$PRIMARY/data/orders" "$PRIMARY/state/.order-handoff"
   printf 'percent-left=0\n' > "$PRIMARY/config/handoff-trigger"
   transcript "$TMP_ROOT/t-stow" 10000
-  FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" send --no-nudge --from test "order before stow" >/dev/null \
+  FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" send --from test "order before stow" >/dev/null \
     || fail "could not send the order fixture"
   order_id=$(find "$PRIMARY/data/orders/pending" -name '*.order' | sed 's#.*/##; s/\.order$//')
   rc=0
@@ -354,7 +354,7 @@ test_a_recorded_handoff_gates_the_stop_without_the_trigger() {
   run_hook "$PRIMARY" s-stow "$TMP_ROOT/t-stow" Stop >/dev/null 2>&1 || rc=$?
   [ "$rc" -eq 0 ] || fail "a recorded handoff that lists every open order lets the stop pass (rc=$rc)"
   sleep 1
-  FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" send --no-nudge --from test "order after the stow handoff" >/dev/null \
+  FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" send --from test "order after the stow handoff" >/dev/null \
     || fail "could not send the second order fixture"
   err="$TMP_ROOT/stow-stop.err"
   rc=0

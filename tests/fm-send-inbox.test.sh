@@ -513,7 +513,7 @@ test_standing_holds_travel_with_the_steer() {
   dir=$(setup_case holds)
   err="$dir/send.err"
   order() { env -u FM_DATA_OVERRIDE -u FM_STATE_OVERRIDE FM_HOME="$dir/home" "$ROOT/bin/fm-order.sh" "$@"; }
-  order send --hold --no-nudge --from captain "close nothing" >/dev/null || fail "could not send the hold fixture"
+  order send --hold --from captain "close nothing" >/dev/null || fail "could not send the hold fixture"
   hold=$(find "$dir/home/data/orders/pending" -name '*.order' | sed 's#.*/##; s/\.order$//')
   run_send "$dir" "$err" -- t1 "triage the stale PRs" || fail "a steer with a hold in force should succeed"
   body=$(record_body _ "$dir/home/state/t1.inbox/001.msg")
@@ -543,7 +543,7 @@ test_standing_holds_travel_to_an_explicit_target() {
   dir=$(setup_case holds-explicit)
   err="$dir/send.err"
   env -u FM_DATA_OVERRIDE -u FM_STATE_OVERRIDE FM_HOME="$dir/home" "$ROOT/bin/fm-order.sh" \
-    send --hold --no-nudge --from captain "close nothing" >/dev/null || fail "could not send the hold fixture"
+    send --hold --from captain "close nothing" >/dev/null || fail "could not send the hold fixture"
   hold=$(find "$dir/home/data/orders/pending" -name '*.order' | sed 's#.*/##; s/\.order$//')
   run_send "$dir" "$err" -- sess:win "hello there" || fail "an explicit-target send with a hold should succeed"
   typed=$(cat "$dir/send.log")
@@ -554,6 +554,12 @@ test_standing_holds_travel_to_an_explicit_target() {
     fail "an explicit target must still not grow an inbox"
   run_send "$dir" "$err" -- sess:win "/no-mistakes" || fail "a slash send to an explicit target should succeed"
   assert_not_contains "$(cat "$dir/send.log")" "close nothing" "a typed slash command carries no holds"
+  run_send "$dir" "$err" -- sess:win '$ship-it' || fail "a dollar send to an explicit target should succeed"
+  typed=$(cat "$dir/send.log")
+  assert_contains "$typed" '$ship-it' "the dollar command reaches an endpoint of unknown harness"
+  assert_not_contains "$typed" "close nothing" "a dollar command to an unknown harness carries no holds"
+  run_send "$dir" "$err" -- sess:fm-t1 '$5 fee' || fail "a dollar send to a recorded claude endpoint should succeed"
+  assert_contains "$(cat "$dir/send.log")" "close nothing" "a dollar message to a known non-codex harness keeps its holds"
   pass "fm-send holds: a typed send to an explicit target carries the holds on one line"
 }
 

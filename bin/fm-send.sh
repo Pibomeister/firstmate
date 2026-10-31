@@ -930,13 +930,14 @@ else
   # this home's holds in force (bin/fm-order.sh owns holds). A recorded steer
   # carries the block as is; a typed send to an explicit target carries it on
   # one line after the text; a parser command typed to the endpoint (a leading
-  # "/", or "$" to codex) carries none, because extra text would break it.
+  # "/", or "$" to codex or to a harness no task record names) carries none,
+  # because extra text would break it.
   # When holds may exist but cannot be read, nothing is sent, because relaying
   # work without its limits is the failure holds exist to prevent.
   SEND_PARSER_TEXT=0
   case "$RESOLVE_ANSWER_TEXT" in
   /*) SEND_PARSER_TEXT=1 ;;
-  \$*) [ "$TARGET_HARNESS" != codex ] || SEND_PARSER_TEXT=1 ;;
+  \$*) case "$TARGET_HARNESS" in codex | '') SEND_PARSER_TEXT=1 ;; esac ;;
   esac
   if { [ "$INBOX_PLANE" = 1 ] || [ "$SEND_PARSER_TEXT" = 0 ]; } &&
     [ -d "${FM_DATA_OVERRIDE:-$FM_HOME/data}/orders" ]; then

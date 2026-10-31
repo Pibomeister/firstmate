@@ -12,9 +12,9 @@
 # captain acts on them as before; nothing here rejects or rewrites them.
 #
 # Usage:
-#   fm-order.sh send [--hold] [--from <sender>] [--no-nudge] [--] <text>... | -
-#   fm-order.sh resend [--no-nudge] <id>
-#   fm-order.sh status [--json] [<id>]
+#   fm-order.sh send [--hold] [--from <sender>] [--] <text>... | -
+#   fm-order.sh resend <id>
+#   fm-order.sh status [<id>]
 #   fm-order.sh pickup
 #   fm-order.sh ack <id>
 #   fm-order.sh show <id>
@@ -51,8 +51,8 @@
 # is appended by bin/fm-send.sh to every text steer (on one line for a typed
 # send to an explicit target) and by bin/fm-spawn.sh to every worker launch
 # brief and secondmate charter launch. A parser command (a leading "/", or "$"
-# to codex) typed straight to an endpoint carries no block. The idempotent
-# inbox write ignores the block, so a retried steer still matches its first
+# to codex or to an endpoint whose harness is unknown) typed straight to an
+# endpoint carries no block. The idempotent inbox write ignores the block, so a retried steer still matches its first
 # record after a hold changes.
 #
 # EVENT LOG. data/orders/log.tsv is append-only, one tab-separated row per
@@ -73,7 +73,7 @@
 #
 # NUDGE AND HANDLE. Every send, resend, and re-delivery appends one
 # `check: captain order <id>` wake to this home's wake queue (bin/fm-wake-lib.sh)
-# and, unless --no-nudge, types one constant doorbell line into the CURRENT
+# and types one constant doorbell line into the CURRENT
 # captain handle. The handle is read from state/captain-handle at send time,
 # never cached by a sender: each captain session records its own terminal there
 # at session start (`claim-handle`, run by bin/fm-session-start.sh on a locked
@@ -81,9 +81,7 @@
 # terminal is alive and its composer is proven empty; any other composer state
 # defers it, so a draft is never overwritten. The order file and the wake carry
 # the order either way. Nudge outcomes print as
-#   nudge=sent|deferred|dead|failed|none (none: no handle recorded or --no-nudge).
-# FM_ORDER_NUDGE_CMD, when set, replaces the terminal send: it runs as
-# `$FM_ORDER_NUDGE_CMD <backend> <target> <line>` (tests and custom transports).
+#   nudge=sent|deferred|dead|failed|none (none: no handle recorded).
 #
 # PICKUP. `pickup` prints every hold in force, then every open order, oldest
 # first, and the commands to act on them; bin/fm-session-start.sh prints it as
@@ -112,18 +110,17 @@
 #
 # SENDER RE-CHECK AND LEASH. `status` prints, per order, its kind, state, age
 # since send, deliveries, re-deliveries against the cap, and `resend_due=yes`
-# when it is still pending FM_ORDER_RECHECK_SECS (900) after its last delivery.
+# when it is still pending 15 minutes after its last delivery.
 # A sender re-checks its order about 15 minutes after sending and runs
 # `resend <id>` when it is still pending. `sweep` re-delivers an order still
-# pending FM_ORDER_REDELIVER_SECS (1800) after its last delivery or re-delivery
+# pending 30 minutes after its last delivery or re-delivery
 # (a sender's `resend` does not reset that clock) to the newest handle, at most
 # twice; at the next due point after the last
 # re-delivery it is escalated ONCE through bin/fm-self-heal-issue.sh
 # (Pibomeister/firstmate, failure class captain-order-undelivered) and also
 # woken as a check. An escalation that fails is logged as escalate-failed and is
 # not retried, so the sweep never loops. The issue carries the id, sha, age, and
-# delivery counts, never the order body. FM_ORDER_SELF_HEAL_BIN replaces the
-# filing command (tests). The supervision watcher (bin/fm-watch.sh) runs
+# delivery counts, never the order body. The supervision watcher (bin/fm-watch.sh) runs
 # `sweep` in the background at most once a minute while any order is pending;
 # an external leash may run it as well. One sweep runs at a time per home
 # (data/orders/.sweep.lock): a sweep that finds another running prints
@@ -157,11 +154,8 @@ ESCALATION_REPO=Pibomeister/firstmate
 # FM_TASK_INBOX_HOLDS_HEAD must stay equal, because it finds the block by them.
 HOLDS_HEAD='Standing captain holds'
 
-num_or() {  # <value> <default>
-  case "$1" in ''|*[!0-9]*) printf '%s\n' "$2" ;; *) printf '%s\n' "$1" ;; esac
-}
-RECHECK_SECS=$(num_or "${FM_ORDER_RECHECK_SECS:-}" 900)
-REDELIVER_SECS=$(num_or "${FM_ORDER_REDELIVER_SECS:-}" 1800)
+RECHECK_SECS=900
+REDELIVER_SECS=1800
 REDELIVER_MAX=2
 NUDGE_BUDGET_SECS=20
 
@@ -355,9 +349,9 @@ _ring_once() {  # <backend> <target> <line>
 }
 
 # Ring the current handle once, bounded. Prints the nudge outcome word.
-nudge() {  # <id> <no-nudge 0|1>
+nudge() {  # <id>
   local h backend target line rc=0
-  if [ "$2" -eq 1 ] || ! h=$(current_handle); then
+  if ! h=$(current_handle); then
     printf 'none'
     return 0
   fi
@@ -393,15 +387,15 @@ wake() {  # <id> <payload>
 }
 
 # Deliver <id> once: wake plus nudge, logged as <event>. Prints the outcome line.
-deliver() {  # <id> <event> <no-nudge> <outcome>
-  local id=$1 event=$2 no_nudge=$3 outcome=$4 file sha8 from kind summary woke=1 nudged rc=0
+deliver() {  # <id> <event> <outcome>
+  local id=$1 event=$2 outcome=$3 file sha8 from kind summary woke=1 nudged rc=0
   file=$(order_file "$id")
   sha8=${id##*-}
   from=$(header_get "$file" from)
   kind=$(order_kind "$file")
   summary=$(order_summary "$file")
   wake "$id" "check: captain $kind $id from ${from:-unknown} - $summary" || { woke=0; rc=3; }
-  nudged=$(nudge "$id" "$no_nudge")
+  nudged=$(nudge "$id")
   log_event "$id" "$event" "$sha8" "wake=$woke nudge=$nudged"
   printf '%s %s\n  kind=%s state=%s wake=%s nudge=%s\n' "$outcome" "$id" "$kind" "$(order_state "$id")" \
     "$([ "$woke" -eq 1 ] && printf ok || printf FAILED)" "$nudged"
@@ -412,17 +406,16 @@ deliver() {  # <id> <event> <no-nudge> <outcome>
 # ---------------------------------------------------------------- send
 
 cmd_send() {
-  local from=unknown kind=order no_nudge=0 bodyf sha sha8 id reserved existing state
+  local from=unknown kind=order bodyf sha sha8 id reserved existing state
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --from) [ "$#" -ge 2 ] || usage_die "send: --from needs a value"; from=$2; shift 2 ;;
       --hold) kind=hold; shift ;;
-      --no-nudge) no_nudge=1; shift ;;
       --) shift; break ;;
       *) break ;;
     esac
   done
-  [ "$#" -gt 0 ] || usage_die "usage: fm-order.sh send [--hold] [--from <sender>] [--no-nudge] [--] <text>... | -"
+  [ "$#" -gt 0 ] || usage_die "usage: fm-order.sh send [--hold] [--from <sender>] [--] <text>... | -"
   case "$from" in *[!A-Za-z0-9._:@/-]*|'') usage_die "send: --from takes A-Za-z0-9._:@/- only" ;; esac
   ensure_dirs
   bodyf=$(mktemp "$ORDERS/.body-XXXXXX")
@@ -445,7 +438,7 @@ cmd_send() {
       write_order "$ORDERS/pending" "$id" "$sha" "$from" "$kind" "$bodyf"
       rm -f "$bodyf"
       log_event "$id" sent "$sha8" "from=$from kind=$kind"
-      deliver "$id" delivered "$no_nudge" queued
+      deliver "$id" delivered queued
       return $?
     fi
     rm -f "$SHA_DIR/id-$id"
@@ -466,7 +459,7 @@ cmd_send() {
       write_order "$ORDERS/pending" "$existing" "$sha" "$from" "$kind" "$bodyf"
       rm -f "$bodyf"
       log_event "$existing" sent "$sha8" "from=$from kind=$kind recovered-reservation"
-      deliver "$existing" delivered "$no_nudge" queued
+      deliver "$existing" delivered queued
       return $?
     fi
     # A finished order left its reservation behind: the same text sent again is a new order.
@@ -477,21 +470,15 @@ cmd_send() {
 }
 
 cmd_resend() {
-  local no_nudge=0 id state
-  while [ "$#" -gt 0 ]; do
-    case "$1" in
-      --no-nudge) no_nudge=1; shift ;;
-      *) break ;;
-    esac
-  done
+  local id state
   id=${1:-}
-  valid_id "$id" || usage_die "usage: fm-order.sh resend [--no-nudge] <id>"
+  valid_id "$id" || usage_die "usage: fm-order.sh resend <id>"
   state=$(order_state "$id") || die "no such order: $id"
   if [ "$state" != pending ]; then
     printf '%s %s\n  already %s; nothing to resend\n' "$state" "$id" "$state"
     return 0
   fi
-  deliver "$id" resent "$no_nudge" resent
+  deliver "$id" resent resent
 }
 
 # ---------------------------------------------------------------- holds
@@ -685,13 +672,7 @@ EOF
 }
 
 cmd_status() {
-  local json=0 one='' lines id state file now facts d r last leash esc age due rows=''
-  while [ "$#" -gt 0 ]; do
-    case "$1" in
-      --json) json=1; shift ;;
-      *) one=$1; shift ;;
-    esac
-  done
+  local one=${1:-} lines id state file now facts d r last leash esc due
   now=$(now_epoch)
   if [ -n "$one" ]; then
     valid_id "$one" || usage_die "status: invalid order id"
@@ -699,6 +680,10 @@ cmd_status() {
     lines="$one $state"
   else
     lines=$(open_orders)
+  fi
+  if [ -z "$lines" ]; then
+    printf 'no open orders\n'
+    return 0
   fi
   while read -r id state; do
     [ -n "$id" ] || continue
@@ -708,45 +693,16 @@ cmd_status() {
 $facts
 EOF
     : "$leash"
-    age=$((now - ${id%-*}))
     due=no
     if [ "$state" = pending ] && [ "$last" -gt 0 ] && [ $((now - last)) -ge "$RECHECK_SECS" ]; then
       due=yes
     fi
-    rows="$rows$id	$state	$age	$d	$r	$esc	$due	$(header_get "$file" from)	$(order_kind "$file")	$(order_summary "$file")
-"
+    printf '%s %s kind=%s age=%s deliveries=%s redeliveries=%s/%s%s resend_due=%s from=%s :: %s\n' \
+      "$id" "$state" "$(order_kind "$file")" "$(age_text "$((now - ${id%-*}))")" "$d" "$r" "$REDELIVER_MAX" \
+      "$([ "$esc" = none ] || printf ' %s' "$esc")" "$due" "$(header_get "$file" from)" "$(order_summary "$file")"
   done <<EOF
 $lines
 EOF
-  if [ "$json" -eq 1 ]; then
-    printf '%s' "$rows" | python3 -c '
-import json, sys
-cap = int(sys.argv[1])
-out = []
-# A summary is cut at a byte or character boundary depending on the platform,
-# so decode leniently: one split multibyte character must never fail the call.
-for line in sys.stdin.buffer.read().decode("utf-8", "replace").splitlines():
-    f = line.split("\t")
-    if len(f) < 10:
-        continue
-    out.append({"id": f[0], "state": f[1], "kind": f[8], "age_secs": int(f[2]),
-                "deliveries": int(f[3]), "redeliveries": int(f[4]), "redelivery_cap": cap,
-                "escalation": None if f[5] == "none" else f[5],
-                "resend_due": f[6] == "yes", "from": f[7], "summary": f[9]})
-json.dump({"schema": "fm-order-status.v1", "orders": out}, sys.stdout, separators=(",", ":"))
-sys.stdout.write("\n")
-' "$REDELIVER_MAX"
-    return 0
-  fi
-  if [ -z "$rows" ]; then
-    printf 'no open orders\n'
-    return 0
-  fi
-  printf '%s' "$rows" | while IFS='	' read -r id state age d r esc due from kind summary; do
-    printf '%s %s kind=%s age=%s deliveries=%s redeliveries=%s/%s%s resend_due=%s from=%s :: %s\n' \
-      "$id" "$state" "$kind" "$(age_text "$age")" "$d" "$r" "$REDELIVER_MAX" \
-      "$([ "$esc" = none ] || printf ' %s' "$esc")" "$due" "$from" "$summary"
-  done
 }
 
 # ---------------------------------------------------------------- restart gate
@@ -852,7 +808,7 @@ EOF
     [ "$leash" -gt 0 ] || leash=${id%-*}
     [ $((now - leash)) -ge "$REDELIVER_SECS" ] || continue
     if [ "$r" -lt "$REDELIVER_MAX" ]; then
-      deliver "$id" redelivered 0 redelivered | head -n 1 || true
+      deliver "$id" redelivered redelivered | head -n 1 || true
       acted=1
     elif [ "$esc" = none ]; then
       escalate "$id" "$((now - ${id%-*}))" "$d" "$r"

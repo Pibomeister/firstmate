@@ -711,7 +711,7 @@ test_secondmate_standalone_clone_home_is_trusted() {
 # send_hold <home> <text>: record a standing captain hold in <home> and echo its id.
 send_hold() {
   env -u FM_DATA_OVERRIDE -u FM_STATE_OVERRIDE FM_HOME="$1" "$ROOT/bin/fm-order.sh" \
-    send --hold --no-nudge --from captain "$2" >/dev/null || return 1
+    send --hold --from captain "$2" >/dev/null || return 1
   find "$1/data/orders/pending" -name '*.order' | sed 's#.*/##; s/\.order$//'
 }
 
