@@ -96,7 +96,15 @@ Malformed configuration is an actionable error, not a candidate to rank around.
 
 Keep only candidates that meet the required reasoning class for this task (a simple bug fix versus very-difficult design).
 Never use `spendPriority` or remaining quota to silently replace that class.
-When every remaining candidate is tight, dispatch inside the strongest-reasoning class if one of those candidates can proceed, or stop and report that the strongest-class choice cannot proceed rather than downgrading it to spend or conserve quota.
+When every remaining candidate is tight, dispatch inside the strongest-reasoning class if one of those candidates can proceed.
+If none in that class can proceed, reroute through the pool below to the strongest available class, reaching another provider or account when needed, disclose the downgrade, and never pause new work on a quota floor.
+The reroute pool, in order, is the matched profile array (including same provider or account candidates), the configured default profile set, then the static crewmate harness profile.
+A rule's profile list alone is not a restriction: restricted means an explicit captain instruction recorded for that task or a captain-pinned account, and the pool then holds only the candidates that restriction permits.
+A rule with `approval: "captain"` still escalates: never wait on quota, but never reroute around a captain approval.
+When no pool candidate can proceed, whether because reroute would violate a restriction or because every candidate is `exhausted_now`, blocked, or known to be below an explicit captain floor, the item stays queued with the reason reported and other work proceeds; never poll-loop waiting for quota or authority.
+The strongest reasoning class wins across pool steps, and the earliest step breaks ties within a class.
+Within that step, rank eligible candidates under [Rank by spendPriority](#rank-by-spendpriority), break `spendPriority` ties by greater known runway, and never pick by array order.
+When only a weaker class is eligible, dispatch it and disclose the class drop, unless the captain required the stronger class in a restriction, which removes weaker candidates from the pool.
 
 ### 3. Runway feasibility floor
 
@@ -105,7 +113,11 @@ Read `runway` from the `quota[]` row: `through_reset` passes this generic feasib
 `exhausted_now` is zero, and `projected_exhaustion` uses the matching `exhaustion[]` row's `usableRunwaySeconds`.
 A high `spendPriority` on a nearly empty window that will exhaust soon must not route into a mid-task stall.
 Unknown or unmeasurable runway stays eligible with disclosed uncertainty and is never assumed to pass.
-Do not invent a generic percentage floor, and honor an explicit captain floor for a candidate when one exists.
+When every matched candidate fails this floor on known evidence, walk the reroute pool from gate 2 and dispatch an eligible candidate that does not fail this floor, choosing by gate 2's class and step order and disclosing the reroute and any class drop.
+Only when the pool has no such candidate, dispatch from the strongest eligible class in the pool, using the greatest known usable runway above zero only within that class, disclose the floor breach and any class drop, and never pause waiting for quota or authority.
+Do not invent a generic percentage floor.
+An explicit captain floor is a floor the captain recorded as an instruction for that task; a configured rule or profile `floor` stays a hint.
+An explicit captain floor outranks the greatest-runway rule: a candidate known to be below it is never dispatched, and gate 2's queued outcome applies when no other pool candidate can proceed.
 
 ## Rank by spendPriority
 
@@ -115,7 +127,7 @@ Within the already matched rule or default, restrict ranking to eligible candida
 Do not introduce other profiles, change a Claude-only rule, or override an explicit captain choice or approval requirement.
 Only concrete evidence that every matched preferred candidate is ineligible authorizes fallback to other families.
 Unknown quota, missing account evidence, and unrankable scalars do not establish ineligibility.
-If preferred candidates remain eligible but none can be ranked, escalate with that uncertainty instead of switching families.
+If preferred candidates remain eligible but none can be ranked, pick among those preferred candidates on known evidence, disclose the uncertainty, and proceed without switching families, escalating, or waiting.
 When no matched profile belongs to the preferred family, preserve the rule's candidate set.
 With the field absent, keep the existing candidate set unchanged.
 Print the preferred-family decision, including the reason for any fallback.
@@ -126,18 +138,18 @@ Rank only from comparable known scalars.
 Never treat absent, `unknown`, or unmeasurable `spendPriority` as zero or as healthy; `0` means exact utilization, a different claim from unknown.
 An unknown `spendPriority` keeps the candidate eligible with disclosed uncertainty.
 Prefer known viable evidence when otherwise comparable.
-After the permitted TOON-to-JSON fallback, escalate to Firstmate instead of routing if no candidate can be ranked or runway uncertainty prevents proving the feasibility floor for any candidate that could be selected.
-Never resolve that terminal uncertainty by treating unknown as healthy or by choosing arbitrarily.
+After the permitted TOON-to-JSON fallback, route to the best-evidenced eligible candidate, disclosing the uncertainty, and never hold work waiting for quota.
+If every candidate failed the runway feasibility floor, apply the all-fail rule from gate 3 instead.
+Never resolve uncertainty by treating unknown as healthy.
 Show the scalar or the literal `unknown` in the rationale; do not hide it in a score.
 
 Do not compare headroom against runway by hand.
 Do not use pace or signed reserve as a later tie-break layer.
 Do not read `aheadWindowIds`, `behindWindowIds`, `onPaceWindowIds`, `limitingWindowIds`, or other window-id lists to reconstruct what `spendPriority` already computed.
 
-Genuine ties: stop and report every tied candidate for captain choice.
-Do not select by array order, harness name, or another arbitrary identity ordering.
+Genuine ties on spendPriority: rank with stated evidence (prefer higher effort when harness and model match but effort differs), route to the chosen candidate, and report the criterion plainly without array order, harness name, or identity ordering.
 Report duplicate concrete profiles as a configuration error.
 
-Account for every candidate visibly before selecting or escalating, naming its catalog evidence, provider relation, applicable quota and authentication facts, remaining uncertainty, fit and reasoning class, `spendPriority`, and runway-versus-horizon result.
+Account for every candidate visibly before selecting, naming its catalog evidence, provider relation, applicable quota and authentication facts, remaining uncertainty, fit and reasoning class, `spendPriority`, and runway-versus-horizon result.
 A blocked credential report must name `harness`, `model`, authentication surface, and concrete failure evidence; never emit a bare `Grok unauthenticated` statement.
 Never conclude with an unexplained "best quota" label.
