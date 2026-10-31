@@ -51,6 +51,7 @@ config/lavish-axi-host  optional one-line per-machine Lavish server address; LOC
 config/brief-include.md  optional standing worker instructions appended verbatim as the last section of every ship and scout scaffold; LOCAL, gitignored, and not inherited; keep its text out of `## Firstmate spec`; see docs/configuration.md "Home brief include"
 config/herdr-lifecycle-spawn-guard  optional presence flag opting this home into the default-off spawn refusal of a ship or scout brief that names a Herdr lifecycle command without the Herdr isolation contract; LOCAL, gitignored, and not inherited; see docs/configuration.md "Herdr lifecycle spawn guard"
 config/fleet-ledger  optional presence flag opting this home in to the default-off fleet activity ledger state/fleet-ledger.jsonl that outside tools can follow; LOCAL, gitignored, and not inherited; see docs/fleet-ledger.md
+config/agentkit-gate  optional absolute path of AgentKit's ak-gate.mjs for the claim verifier; LOCAL, gitignored; see docs/configuration.md "Claim verifier AgentKit gate"
 config/firstmate-role  optional LOCAL, gitignored firstmate-repository publication role; see docs/configuration.md "Firstmate role" for operator opt-in and secondmate inheritance
 config/wait-no-turns  optional presence flag opting this home into default-off waiting-worker behavior (brief waiting section, pending-reply hold, one fire-and-forget retry ring); LOCAL, gitignored, and not inherited; see docs/configuration.md "Waiting worker spends no turns"
 config/pr-health-monitor  optional presence flag opting this home into the default-off monitor of its owned PRs, which wakes once per condition per latest commit on a definite merge conflict or a failing required check and never changes a PR; LOCAL, gitignored, and not inherited; see docs/configuration.md "PR health monitor"
@@ -83,9 +84,11 @@ data/                personal fleet records; LOCAL, gitignored as a whole
   <id>/report.md     scout task deliverable, written by the crewmate; survives teardown
   <id>/status.log <id>/status.<N>.log <id>/children/<child>/...  optional teardown archives; see docs/architecture.md "Task status archives"
   pipeline-spend.jsonl  optional per-task no-mistakes pipeline spend, written only when config/pipeline-spend is present; bin/fm-pipeline-spend.sh owns the schema
+  failure-classes/<key>.jsonl  append-only failure-class records from refuted claims, one file per class, shared by every task; docs/claim-ledger.md owns the schema
 projects/            cloned repos; gitignored; read-only except under hard rule 1's concrete captain-approved project operation exception
 state/               runtime records and signals; gitignored
   <id>.status        append-only wake events, not current-state truth; bin/fm-classify-lib.sh owns their syntax
+  <id>.claims.jsonl .claims-<id>.lock  append-only claim ledger, which survives teardown, and its scan lock; written only by bin/fm-claims.sh; docs/claim-ledger.md owns the schema
   <id>.turn-ended    touched by turn-end hooks
   <id>.progress      touched for observed native-harness activity inside one Pi turn; bin/fm-busy-event.sh owns its generation binding and bin/fm-watch.sh reads it beside turn-ended for the busy-age bound only, never as a completed turn
   <id>.busy-state <id>.busy-gen   semantic busy-state record (one line, atomically replaced) and its per-incarnation gen sidecar; bin/fm-busy-event.sh is the only writer and bin/fm-busy-lib.sh owns the record format and classification; arming again replaces the previous incarnation so late events carrying its gen are rejected as stale; removed by retire and teardown
