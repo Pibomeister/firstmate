@@ -13,7 +13,7 @@ Keep every entry general: no person, company, project, customer, host, account, 
 
 ### 2. Self-servable work was parked for the captain
 - Failure: a project missed its whole bar because a tool upgrade, a local runner setup, and work possible through an installed CLI were all parked as needing the captain, and supervision accepted those parks.
-- Rule (park challenge): before parking, try with the tools and authority you have and record what you tried. Installed CLIs, tool upgrades and installs on dev machines, local credentials, sockets and daemons a tool can create or start, opening PRs, reruns and reroutes are NOT sign-ins. Only true SSO/2FA sign-ins, new spend, releases and merges outside existing rules go to the captain. Supervisors challenge every park ("could this be self-served?"). Blocked for more than 1 h means a self-serve path or a reroute.
+- Rule (park challenge): before parking, try with the tools and authority you have and record what you tried. Installed CLIs, tool upgrades and installs on dev machines, local credentials, sockets and daemons a tool can create or start, opening PRs, reruns and reroutes are NOT sign-ins. True SSO/2FA sign-ins, credentials no tool can supply, new spend, releases, merges outside existing rules, and anything destructive, irreversible, or security-sensitive go to the captain; the captain escalation list in AGENTS.md still applies in full. Supervisors challenge every park ("could this be self-served?"). Blocked for more than 1 h means a self-serve path, a reroute, or an escalation to the captain.
 - Issues: https://github.com/Pibomeister/firstmate/issues/78 and https://github.com/Pibomeister/firstmate/issues/63
 
 ### 3. Captain context churn
@@ -33,7 +33,7 @@ Keep every entry general: no person, company, project, customer, host, account, 
 
 ### 6. Supervision gaps (heartbeat, stop verification, receipts)
 - Failure: a required supervisor seat sat empty for hours, a worker kept pushing after a stop order while its captain reported it stopped, and a change merged without receipts or a tag before a release.
-- Rules: required supervisor seats write heartbeats and the watcher alerts or relaunches when they go stale; verify a stop with gh (branch and PR heads unchanged) and process checks (pid gone) before reporting it done; no merge or publish without receipts for the exact head SHA and a matching tag. Never push to upstream remotes from a fork run.
+- Rules: required supervisor seats write heartbeats and the watcher alerts or relaunches when they go stale; verify a stop with gh (branch and PR heads unchanged) and process checks (pid gone) before reporting it done; no merge or publish without receipts for the exact head SHA; no release publish without a matching tag. Never push to upstream remotes from a fork run.
 - Issues: https://github.com/Pibomeister/firstmate/issues/81 , https://github.com/Pibomeister/firstmate/issues/82 , https://github.com/Pibomeister/firstmate/issues/72 and https://github.com/Pibomeister/firstmate/issues/74
 
 ### 7. Gate-lock serialization and unpushed commits
