@@ -1712,7 +1712,7 @@ inject_msg() {  # <message> [state] [exact] [request-id]
   #      proceed.
   composer=$(fm_backend_composer_state "$backend" "$target" 2>/dev/null)
   if [ "$composer" = empty ] && [ "$backend" = orca ] && fm_backend_orca_draft_present "$target"; then
-    composer=pending-unproven
+    composer="pending-unproven"
   fi
   if [ "$composer" != empty ]; then
     case "$composer" in
