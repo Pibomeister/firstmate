@@ -891,6 +891,12 @@ Publishing is best-effort and never changes what the watcher does; no spawn read
 No Firstmate script calls it.
 The script's header owns the report line, the published document's fields, the verdict, the beat freshness rules, the host-constraint thresholds, and the probe fallbacks.
 
+## Disk alarm
+
+`bin/fm-disk-alarm.sh` owns the free-space reading on `/System/Volumes/Data` and the launch gates that reading drives.
+Crew-dispatch prints that reading, and a fresh ship or scout launch refuses before it creates anything when the gate refuses.
+A refusal places the work on another host or cloud.
+
 ## PR-ready line after green (config/ready-after-green)
 
 The optional local, gitignored `config/ready-after-green` presence flag opts a secondmate home into publishing its child's PR-ready parent line only after the child has reported checks green.

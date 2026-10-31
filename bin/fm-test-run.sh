@@ -444,7 +444,7 @@ family_for_basename() {
       printf '%s\n' tern
       ;;
     fm-branch-supervision.test.sh|fm-busy-adapter-wiring.test.sh|\
-    fm-busy-state.test.sh|fm-capacity.test.sh|fm-classify-corr-token.test.sh|\
+    fm-busy-state.test.sh|fm-capacity.test.sh|fm-disk-alarm.test.sh|fm-classify-corr-token.test.sh|\
     fm-claude-stop-autoarm.test.sh|fm-cursor-harness.test.sh|\
     fm-dispatch-resolve.test.sh|\
     fm-extension-binding.test.sh|fm-gitignore-config.test.sh|\
@@ -786,6 +786,7 @@ tests/fm-cursor-primary.test.sh 71248
 tests/fm-daemon.test.sh 57469
 tests/fm-devin-harness.test.sh 4380
 tests/fm-devin-signals-live-e2e.test.sh 82
+tests/fm-disk-alarm.test.sh 8000
 tests/fm-dispatch-resolve.test.sh 12754
 tests/fm-documentation-audiences.test.sh 1474
 tests/fm-dod-lib.test.sh 3374
@@ -1664,6 +1665,9 @@ families_for_changed_path() {
       ;;
     bin/fm-capacity.sh)
       printf '%s\n' "__script__:fm-capacity.test.sh"
+      ;;
+    bin/fm-disk-alarm.sh)
+      printf '%s\n' "__script__:fm-disk-alarm.test.sh"
       ;;
     bin/fm-env-lib.sh)
       # The one .env accessor, sourced by bin/fm-x-lib.sh (Relay token) and
