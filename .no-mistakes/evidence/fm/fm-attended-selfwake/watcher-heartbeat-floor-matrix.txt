@@ -1,0 +1,44 @@
+# Real fm-watch.sh one-cycle matrix in a lab home: BASE=82d5cffe, HEAD=721313b1. Each row: .last-heartbeat age 901s, streak 2 (uncapped interval 2400s), attended.
+== S3 open goal, queued (non-final)
+[BASE] rc=0 stdout='' queue='' streak=2
+[HEAD] rc=0 stdout=heartbeat queue=$'1793464965\t4\theartbeat\theartbeat\theartbeat' streak=3
+== S4 goal closed via dispatched (no tasks)
+2026-10-31T16:42:45Z	1793464965	dispatched	lab-202610311040	task=lab-task
+FM_SUP_NEEDED=false
+[BASE] rc=0 stdout='' queue='' streak=2
+[HEAD] rc=0 stdout='' queue='' streak=2
+== S5 in-flight task, working status
+[BASE] rc=0 stdout='' queue='' streak=2
+[HEAD] rc=0 stdout=heartbeat queue=$'1793465003\t7\theartbeat\theartbeat\theartbeat' streak=3
+== S6 only task is captain-held
+first cycle surfaces the new status: check:\ rearm-resurface
+[BASE] rc=0 stdout=signal:\ $LAB/state/ship.status queue=$'1793465038\t8\tsignal\tship.status\tsignal: $LAB/state/ship.status\n1793465038\t9\tsignal\tship.status\tsignal: $LAB/state/ship.status' streak=0
+[HEAD] rc=0 stdout='' queue='' streak=2
+== S7 only task is paused
+first cycle surfaces the new status: signal:\ $LAB/state/ship.status
+[BASE] rc=0 stdout='' queue='' streak=2
+[HEAD] rc=0 stdout='' queue='' streak=2
+== S8 working task but AFK (away mode owns triage)
+[BASE] rc=0 stdout='' queue='' streak=2
+[HEAD] rc=0 stdout='' queue='' streak=2
+== S6 (re-run) only task is captain-held
+drain cycle 1: signal:\ $LAB/state/ship.status
+drain cycle 2: check:\ rearm-resurface
+drain cycle 3: check:\ rearm-resurface
+drain cycle 4: check:\ rearm-resurface
+[BASE] rc=0 stdout='' queue='' streak=2
+[HEAD] rc=0 stdout='' queue='' streak=2
+[HEAD-again] rc=0 stdout='' queue='' streak=2
+== S9 secondmate home with open goal + working task (floor must not apply)
+control (primary home):
+[HEAD] rc=0 stdout=heartbeat queue=$'1793465243\t18\theartbeat\theartbeat\theartbeat' streak=3
+secondmate-marked home:
+[HEAD] rc=0 stdout='' queue='' streak=2
+
+# fm-watch-arm.sh FM_POLL=120, streak=2, heartbeat age 875s at start (HEAD):
+watcher: started pid=64289 (beacon fresh)
+heartbeat
+elapsed=12s (wait budget bounded to the 885s floor, not the 120s poll)
+== S1 open goal (received via fm-dispatch-log.sh), attended, no tasks
+[BASE] rc=0 stdout='' queue='' streak=2
+[HEAD] rc=0 stdout=heartbeat queue=$'1793464915\t3\theartbeat\theartbeat\theartbeat' streak=3
