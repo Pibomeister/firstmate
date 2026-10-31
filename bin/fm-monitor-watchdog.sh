@@ -28,9 +28,9 @@ canonical_home() {
 }
 
 manager_name() {
-  local home sum ignored
+  local home sum _
   home=$(canonical_home) || return
-  read -r sum ignored <<EOF
+  read -r sum _ <<EOF
 $(printf '%s' "$home" | cksum)
 EOF
   printf 'firstmate-monitor-watchdog-%s\n' "$sum"

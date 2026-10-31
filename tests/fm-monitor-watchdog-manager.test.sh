@@ -3,7 +3,9 @@
 # restart the foreground owner without depending on a captain turn.
 set -eu
 
+# shellcheck source=tests/wake-helpers.sh
 . "$(dirname "${BASH_SOURCE[0]}")/wake-helpers.sh"
+# shellcheck disable=SC2034 # make_case in wake-helpers.sh reads this fixture root.
 TMP_ROOT=$(fm_test_tmproot fm-monitor-watchdog-manager-tests)
 SCRIPT="$ROOT/bin/fm-monitor-watchdog.sh"
 home=$(make_case manager)
