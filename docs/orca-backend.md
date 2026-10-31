@@ -74,6 +74,7 @@ A bare shell row is `unknown`, not an empty agent composer.
 The shared classifier owns plain-capture handling, including the exact per-glyph placeholder exception in `FM_COMPOSER_BARE_PLACEHOLDERS_DEFAULT`.
 Plain-text captures degrade a glyph row carrying trailing text to `unknown` rather than a false `pending`.
 The watcher has no native Orca busy signal, so each harness adapter's semantic lifecycle supplies worker state.
+The away-mode daemon can supervise the captain's own Orca terminal; [supervisor backend configuration](configuration.md#away-mode-supervisor-backend-fm_supervisor_backend--fm_supervisor_target) owns its detection, guards, and refusal.
 Grok alone retains its isolated rendered-tail fallback.
 
 Cleanup keeps all shared Firstmate safety checks.
