@@ -1,0 +1,155 @@
+=== C-1 decimal SLA
+-- FM_DISPATCH_SLA_MINUTES=08
+  +480s exit=0 
+  +481s exit=3 OVERDUE s age=8m received=2027-01-15T08:00:00Z summary=x
+  +600s exit=3 OVERDUE s age=10m received=2027-01-15T08:00:00Z summary=x
+  +601s exit=3 OVERDUE s age=10m received=2027-01-15T08:00:00Z summary=x
+-- FM_DISPATCH_SLA_MINUTES=010
+  +480s exit=0 
+  +481s exit=0 
+  +600s exit=0 
+  +601s exit=3 OVERDUE s age=10m received=2027-01-15T08:00:00Z summary=x
+-- FM_DISPATCH_SLA_MINUTES=0
+  +480s exit=3 OVERDUE s age=8m received=2027-01-15T08:00:00Z summary=x
+  +481s exit=3 OVERDUE s age=8m received=2027-01-15T08:00:00Z summary=x
+  +600s exit=3 OVERDUE s age=10m received=2027-01-15T08:00:00Z summary=x
+  +601s exit=3 OVERDUE s age=10m received=2027-01-15T08:00:00Z summary=x
+-- FM_DISPATCH_SLA_MINUTES=abc
+  +480s exit=1 fm-dispatch-log: FM_DISPATCH_SLA_MINUTES must be a whole number
+  +481s exit=1 fm-dispatch-log: FM_DISPATCH_SLA_MINUTES must be a whole number
+  +600s exit=1 fm-dispatch-log: FM_DISPATCH_SLA_MINUTES must be a whole number
+  +601s exit=1 fm-dispatch-log: FM_DISPATCH_SLA_MINUTES must be a whole number
+-- FM_DISPATCH_SLA_MINUTES=-5
+  +480s exit=1 fm-dispatch-log: FM_DISPATCH_SLA_MINUTES must be a whole number
+  +481s exit=1 fm-dispatch-log: FM_DISPATCH_SLA_MINUTES must be a whole number
+  +600s exit=1 fm-dispatch-log: FM_DISPATCH_SLA_MINUTES must be a whole number
+  +601s exit=1 fm-dispatch-log: FM_DISPATCH_SLA_MINUTES must be a whole number
+-- FM_DISPATCH_SLA_MINUTES=1.5
+  +480s exit=1 fm-dispatch-log: FM_DISPATCH_SLA_MINUTES must be a whole number
+  +481s exit=1 fm-dispatch-log: FM_DISPATCH_SLA_MINUTES must be a whole number
+  +600s exit=1 fm-dispatch-log: FM_DISPATCH_SLA_MINUTES must be a whole number
+  +601s exit=1 fm-dispatch-log: FM_DISPATCH_SLA_MINUTES must be a whole number
+$ SLA=08 dispatched at +481s (late mark expected at 8 min)
+2027-01-15T08:08:01Z dispatched s: task=t1 late=8m
+LATE s late=8m
+[exit 0]
+$ SLA=abc dispatched (refused, nothing written)
+fm-dispatch-log: FM_DISPATCH_SLA_MINUTES must be a whole number
+[exit 1]
+ledger lines: 1 (want 1)
+$ SLA=abc received does not read the SLA
+2026-10-31T22:30:37Z received s2: summary=ok
+[exit 0]
+
+=== C-2 blank values write nothing
+-- value=''
+  received exit=1 lines=0
+-- value=\ 
+  received exit=1 lines=0
+-- value=$'\t'
+  received exit=1 lines=0
+-- value=$'\n'
+  received exit=1 lines=0
+-- value=$' \t\r\n '
+  received exit=1 lines=0
+-- value=''
+  dispatched exit=1 lines=1
+  queued exit=1 lines=1
+  blocked exit=1 lines=1
+-- value=\ 
+  dispatched exit=1 lines=1
+  queued exit=1 lines=1
+  blocked exit=1 lines=1
+-- value=$'\t\n'
+  dispatched exit=1 lines=1
+  queued exit=1 lines=1
+  blocked exit=1 lines=1
+ledger lines after refusals: 1 (want 1)
+-- late-only values (recorded decision: task and reason refuse, summary accepts)
+  task ' late=5m' exit=1 lines=1
+  blocked reason ' late=5m' exit=1 lines=1
+  queued reason ' late=5m' exit=1 lines=1
+$ summary ' late=5m' accepted
+2027-01-15T08:00:00Z received g2: summary= late=5m
+[exit 0]
+$ tab/newline folded in real text
+2027-01-15T08:00:00Z received g3: summary=a b c
+[exit 0]
+
+=== PS-1 usage header and real overdue line
+42:`OVERDUE <goal-id> age=<m>m received=<iso>
+43-[project=<name> ]summary=<text>`, then every goal whose late final line was
+$ overdue with and without project
+OVERDUE p1 age=15m received=2027-01-15T08:00:00Z project=alpha summary=with project
+OVERDUE p2 age=15m received=2027-01-15T08:00:00Z summary=no project
+[exit 3]
+
+=== T-1 two goals at once
+$ overdue at +1000s
+OVERDUE open-1 age=16m received=2027-01-15T08:00:00Z summary=still open
+[exit 3]
+
+=== T-2 15-minute boundary
+$ at +900s
+[exit 0]
+$ at +901s
+OVERDUE b age=15m received=2027-01-15T08:00:00Z summary=x
+[exit 3]
+
+=== T-3 / AN-5 show
+$ bare show, no ledger file
+[exit 0]
+$ show unknown, no ledger file
+fm-dispatch-log: goal nope is not in the ledger
+[exit 1]
+$ bare show, empty ledger file
+[exit 0]
+$ show unknown, empty ledger file
+fm-dispatch-log: goal nope is not in the ledger
+[exit 1]
+$ bare show
+2027-01-15T08:00:00Z	1800000000	received	a	project=alpha summary=goal a
+2027-01-15T08:00:00Z	1800000000	received	b	summary=goal b
+2027-01-15T08:01:00Z	1800000060	queued	a	reason=busy
+2027-01-15T08:02:00Z	1800000120	dispatched	a	task=t1
+[exit 0]
+$ show a
+STATE a event=dispatched at=2027-01-15T08:02:00Z task=t1
+2027-01-15T08:00:00Z	1800000000	received	a	project=alpha summary=goal a
+2027-01-15T08:01:00Z	1800000060	queued	a	reason=busy
+2027-01-15T08:02:00Z	1800000120	dispatched	a	task=t1
+[exit 0]
+$ show b
+STATE b event=received at=2027-01-15T08:00:00Z summary=goal b
+2027-01-15T08:00:00Z	1800000000	received	b	summary=goal b
+[exit 0]
+$ show unknown
+fm-dispatch-log: goal nope is not in the ledger
+[exit 1]
+$ show regex-looking id must not match
+fm-dispatch-log: goal a.* is not in the ledger
+[exit 1]
+$ show extra arg
+fm-dispatch-log: unknown argument: extra
+[exit 1]
+
+=== AN-5 dash-leading flag values
+  received x --summary -bad -> exit=1 :: fm-dispatch-log: --summary value looks like a flag: -bad
+  received x --summary ok --project -bad -> exit=1 :: fm-dispatch-log: --project value looks like a flag: -bad
+  dispatched g --task -bad -> exit=1 :: fm-dispatch-log: --task value looks like a flag: -bad
+  dispatched g --task t --note -bad -> exit=1 :: fm-dispatch-log: --note value looks like a flag: -bad
+  queued g --reason -bad -> exit=1 :: fm-dispatch-log: --reason value looks like a flag: -bad
+  blocked g --reason --bad -> exit=1 :: fm-dispatch-log: --reason value looks like a flag: --bad
+ledger lines: 1 (want 1)
+
+=== M-1 FM_DISPATCH_LOG ignored
+exit=0 other_exists=no state_lines=1
+  STATE m event=received at=2026-10-31T22:30:53Z summary=x
+  2026-10-31T22:30:53Z	1793485853	received	m	summary=x
+
+=== Consumer: session start digest on the lab home (real clock)
+129:Dispatch ledger (fm-dispatch-log.sh overdue)
+130---------------------------------------------------------------------------------
+131-OVERDUE digest-1 age=18m received=2026-10-31T22:14:14Z project=alpha summary=old ask
+132-
+[pipe 0]
