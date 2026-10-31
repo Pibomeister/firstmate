@@ -35,7 +35,9 @@
 #     session           {id} from the worktree's one Claude transcript written since
 #                       the spawn_gen epoch; unknown with no such transcript or epoch,
 #                       and "ambiguous transcript" when more than one qualifies, which
-#                       also blanks last_turn and used_tokens but no terminal evidence
+#                       also blanks last_turn and used_tokens; context_left.remaining
+#                       and a terminal last_output_time stay, and last_output_time
+#                       reports the same reason only when no terminal marker qualifies
 #     last_turn         as primary
 #     composer_state    as primary; read only for a live local endpoint
 #     context_left      as primary
