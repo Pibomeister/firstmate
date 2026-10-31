@@ -316,9 +316,9 @@ case "$BRANCH_PREFIX" in
   *' '*) echo "error: --branch-prefix must not contain a space (got '$BRANCH_PREFIX')" >&2; exit 1 ;;
   -*) echo "error: --branch-prefix must not start with '-' (got '$BRANCH_PREFIX')" >&2; exit 1 ;;
 esac
+DESKTOP_RULE="Use agent-desktop for desktop-app E2E tests and computer use through the OS accessibility tree (\`agent-desktop skills get desktop\`); on macOS run \`agent-desktop permissions\` and escalate a denied grant to firstmate, never grant it yourself."
 # The forge is validated against the same closed set the renderers enforce, so a
 # typo or an impossible mode/forge pair stops here rather than reaching a worker.
-DESKTOP_RULE="Use agent-desktop for desktop-app E2E tests and computer use through the OS accessibility tree (\`agent-desktop skills get desktop\`); on macOS run \`agent-desktop permissions\` and escalate a denied grant to firstmate, never grant it yourself."
 if [ "$KIND" = ship ]; then
   fm_forge_valid_for_mode "$FORGE" "$MODE" "fm-brief.sh --forge" || exit 1
   fm_pr_text_valid "$PR_TEXT" "$MODE" "$FORGE" "fm-brief.sh --pr" || exit 1
