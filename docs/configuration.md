@@ -1009,7 +1009,9 @@ The flag is home-local and is not inherited by secondmate homes.
 The watcher checks unresolved keyed `needs-decision` and `blocked` records while
 `state/.afk-contract` validates as away. Present and quiet postures never route.
 `FM_AWAY_DECISION_OVERDUE_SECS` defaults to `1800` seconds; set a canonical
-positive integer of at most nine digits in `config/watch.env` to change it.
+positive integer of at most nine digits in `config/watch.env` to change it for
+watchers started through `bin/fm-watch-arm.sh`; the away-mode daemon's watcher
+uses the default.
 Source status lines need a valid `[at=<epoch>]`; deferred waits and captain-held
 tasks are excluded. A claim in `state/.away-decision-age-claims` binds each
 attempt to the task, key and opening epoch; the away confirmation is checked
