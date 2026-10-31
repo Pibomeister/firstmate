@@ -318,6 +318,7 @@ case "$BRANCH_PREFIX" in
 esac
 # The forge is validated against the same closed set the renderers enforce, so a
 # typo or an impossible mode/forge pair stops here rather than reaching a worker.
+DESKTOP_RULE="Use agent-desktop for desktop-app E2E tests and computer use through the OS accessibility tree (\`agent-desktop skills get desktop\`); on macOS run \`agent-desktop permissions\` and escalate a denied grant to firstmate, never grant it yourself."
 if [ "$KIND" = ship ]; then
   fm_forge_valid_for_mode "$FORGE" "$MODE" "fm-brief.sh --forge" || exit 1
   fm_pr_text_valid "$PR_TEXT" "$MODE" "$FORGE" "fm-brief.sh --pr" || exit 1
@@ -338,11 +339,11 @@ if [ "$KIND" = ship ]; then
   # forge-CLI rule names it instead of gh-axi; an external review tool has no
   # forge CLI at all; every other forge keeps gh-axi.
   if [ "$FORGE" = forgejo ]; then
-    FORGE_RULE_LINE="Use tea for Forgejo operations and chrome-devtools-axi for browser operations."
+    FORGE_RULE_LINE="Use tea for Forgejo operations and chrome-devtools-axi for browser operations. $DESKTOP_RULE"
   elif [ "$FORGE" = external ]; then
-    FORGE_RULE_LINE="Publish only through the review tool your Definition of done names, and use chrome-devtools-axi for browser operations."
+    FORGE_RULE_LINE="Publish only through the review tool your Definition of done names, and use chrome-devtools-axi for browser operations. $DESKTOP_RULE"
   else
-    FORGE_RULE_LINE="Use gh-axi for GitHub operations and chrome-devtools-axi for browser operations."
+    FORGE_RULE_LINE="Use gh-axi for GitHub operations and chrome-devtools-axi for browser operations. $DESKTOP_RULE"
   fi
 elif [ "$FORGE_SET" -eq 1 ] || [ "$SHAPE_SET" -eq 1 ] || [ "$PR_TEXT_SET" -eq 1 ]; then
   echo "error: --forge, --shape, and --pr apply only to ship briefs; a scout delivers a report and a secondmate charter is not a delivery contract" >&2
@@ -742,7 +743,7 @@ The report is the only thing that survives, so anything worth keeping must be in
 # Rules
 1. Never push to any remote and never open a PR.
 2. Stay inside this worktree; outside it, write only the report and status file below, except for the task's empty-inventory attestation through \`fm-captain-hold.sh complete --none\`, exactly as specified under Definition of done.
-3. Use gh-axi for GitHub operations and chrome-devtools-axi for browser operations.
+3. Use gh-axi for GitHub operations and chrome-devtools-axi for browser operations. $DESKTOP_RULE
 4. Report status by appending one line:
    \`$STATUS_APPEND\`
    States: working, needs-decision, blocked, $PAUSED_VERB, done, failed.
