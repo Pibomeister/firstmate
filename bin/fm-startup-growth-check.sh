@@ -16,9 +16,9 @@
 # model calls, repository refreshes, /stow, or full preference/learning
 # rereads.  The budget total, its verdict, and its secondmate exception come
 # from `bin/fm-startup-memory-budget.sh report`, the single owner of
-# config/startup-memory-budget, and are never re-derived here.  data/projects.md
-# and data/secondmates.md are printed in full by every session start too, so
-# they are watched for prompt growth without entering that budget total.
+# config/startup-memory-budget, and are never re-derived here.  data/projects.md,
+# data/secondmates.md, and docs/learnings/overnight-learnings.md are printed in
+# full by every session start too, so they are watched for prompt growth without entering that budget total.
 # The tracked set is the startup entrypoints session start executes directly
 # plus the agent instruction files, not every script and library the startup
 # path reaches; those bytes are code/instruction size, not LLM prompt cost.
@@ -293,6 +293,7 @@ run_check() {
   stat_surface tracked bin/fm-supervision-instructions.sh "$FM_ROOT/bin/fm-supervision-instructions.sh" no
   stat_surface printed-memory data/projects.md "$DATA_DIR/projects.md" yes
   stat_surface printed-memory data/secondmates.md "$DATA_DIR/secondmates.md" yes
+  stat_surface printed-memory docs/learnings/overnight-learnings.md "$FM_ROOT/docs/learnings/overnight-learnings.md" yes
   stat_surface memory data/captain.md "$DATA_DIR/captain.md" yes
   stat_surface memory data/captain-shared.md "$DATA_DIR/captain-shared.md" yes
   stat_surface memory data/learnings.md "$DATA_DIR/learnings.md" yes

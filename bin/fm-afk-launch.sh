@@ -409,6 +409,7 @@ fm_afk_launch_enter() {
     esac
   fi
   "$FM_AFK_CONTRACT_CMD" enter "$@" || return
+  "$FM_AFK_LAUNCH_DIR/fm-afk-preflight.sh" 2>/dev/null || true
   fm_afk_launch_host_engine_note
   fm_afk_launch_checkpoint_note
 }
