@@ -300,6 +300,80 @@ EOF
   pass "a stop refuses a new home before any lease"
 }
 
+seed_root() {
+  local root="$TMP_ROOT/seed-root"
+  if [ ! -d "$root/.git" ]; then
+    mkdir -p "$root"
+    printf 'fixture\n' > "$root/AGENTS.md"
+    cp -R "$ROOT/bin" "$root/bin"
+    git -C "$root" init --quiet
+    git -C "$root" add -A
+    git -C "$root" -c user.name=fixture -c user.email=fixture@example.com commit --quiet -m fixture
+  fi
+  printf '%s\n' "$root"
+}
+
+seed_at_level() {  # <home> <volume> <avail> <id> <requested-home>
+  local home=$1 volume=$2 avail=$3 id=$4 requested=$5 root
+  root=$(seed_root)
+  run_bounded 60 env \
+    FM_ROOT_OVERRIDE="$root" \
+    FM_HOME="$home" \
+    FM_TEST_SEAM=1 \
+    FM_SECONDMATE_CHARTER='disk alarm seed charter' \
+    FM_DISK_ALARM_VOLUME="$volume" \
+    FM_DF_FIXTURE_VOLUME="$volume" \
+    FM_DF_FIXTURE_MODE=number \
+    FM_DF_FIXTURE_AVAIL="$avail" \
+    PATH="$FAKE:$PATH" \
+    "$ROOT/bin/fm-home-seed.sh" "$id" "$requested" --no-projects 2>&1
+}
+
+test_home_seed_stop_does_not_clone_a_new_home() {
+  local home volume target out rc
+  home="$TMP_ROOT/clone-seed-home"
+  volume="$TMP_ROOT/clone-seed-volume"
+  target="$TMP_ROOT/clone-seed-target"
+  mkdir -p "$home" "$volume"
+  rc=0
+  out=$(seed_at_level "$home" "$volume" 4194304 disk-alarm "$target") || rc=$?
+  [ "$rc" = 1 ] || fail "stop clone seed: expected exit 1, got $rc"$'\n'"$out"
+  assert_contains "$out" "disk-alarm: STOP " "a stop must refuse a new local clone home"
+  assert_absent "$target" "a refused seed must not clone a home"
+  assert_absent "$home/data/secondmates.md" "a refused seed must not register a home"
+  rc=0
+  out=$(seed_at_level "$home" "$volume" 9437184 disk-alarm "$target") || rc=$?
+  [ "$rc" = 0 ] || fail "pause clone seed: expected exit 0, got $rc"$'\n'"$out"
+  [ -d "$target/.git" ] || [ -f "$target/.git" ] || fail "a pause must still clone a new home"
+  pass "a stop refuses a new local clone home before the clone, and a pause does not"
+}
+
+test_home_seed_stop_leaves_an_existing_home_alone() {
+  local home volume target out rc
+  home="$TMP_ROOT/existing-seed-home"
+  volume="$TMP_ROOT/existing-seed-volume"
+  target="$TMP_ROOT/existing-seed-target"
+  mkdir -p "$home" "$volume"
+  rc=0
+  out=$(seed_at_level "$home" "$volume" 15728640 disk-alarm "$target") || rc=$?
+  [ "$rc" = 0 ] || fail "ok seed: expected exit 0, got $rc"$'\n'"$out"
+  rc=0
+  out=$(seed_at_level "$home" "$volume" 4194304 disk-alarm "$target") || rc=$?
+  [ "$rc" = 0 ] || fail "stop reseed of an existing home: expected exit 0, got $rc"$'\n'"$out"
+  assert_not_contains "$out" "disk-alarm:" "an existing home must not read the alarm"
+  pass "a stop leaves an existing home unaffected"
+}
+
+test_suite_default_does_not_read_the_host_volume() {
+  local marker="$TMP_ROOT/default-df-called" out rc
+  rc=0
+  out=$(FM_DF_MARKER="$marker" PATH="$FAKE:$BASE_PATH" "$ALARM" --gate crew 2>&1) || rc=$?
+  [ "$rc" = 0 ] || fail "suite default: expected exit 0, got $rc"$'\n'"$out"
+  assert_contains "$out" "level=absent " "the suite default must read as absent"
+  assert_absent "$marker" "the suite default must not probe a volume"
+  pass "the suite default leaves the alarm off the host volume"
+}
+
 test_dispatch_resolve_prints_the_alarm_and_stays_off() {
   local home volume brief out rc
   home="$TMP_ROOT/dispatch-home"
@@ -345,5 +419,8 @@ fm_test_run \
   test_host_smoke \
   test_spawn_refuses_before_it_creates_anything \
   test_home_seed_stop_does_not_lease \
+  test_home_seed_stop_does_not_clone_a_new_home \
+  test_home_seed_stop_leaves_an_existing_home_alone \
+  test_suite_default_does_not_read_the_host_volume \
   test_dispatch_resolve_prints_the_alarm_and_stays_off \
   test_nm_driving_block_names_the_lane_gate

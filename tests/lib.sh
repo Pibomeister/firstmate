@@ -59,6 +59,11 @@ export FM_TEST_SEAM=1
 # the real publisher.
 export FM_HEARTBEAT_BIN=true
 
+# Keep bin/fm-disk-alarm.sh off the host's real volume, so a launch in a test
+# does not depend on free space on the machine running the suite. A path that
+# is not a directory reads as absent. A case that verifies a level sets its own.
+export FM_DISK_ALARM_VOLUME=/nonexistent/fm-test-disk-alarm-volume
+
 # Clear the task-worker marker bin/fm-spawn.sh exports into ship and scout
 # panes. This suite builds git-init fixture repositories whose primary checkout
 # it runs a copied bin/fm-test-run.sh in, and that runner refuses the primary
