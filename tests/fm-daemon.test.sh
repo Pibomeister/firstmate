@@ -3406,6 +3406,14 @@ test_inject_msg_orca_composer_guard_defers_on_draft() {
   pass "inject_msg: an Orca draft holds the alert back instead of merging into the captain's text"
 }
 
+# The draft hold above cannot tell a ghost suggestion from typed text, so a home
+# Claude captain must start with suggestions off or an idle captain wedges alerts.
+test_home_claude_settings_disable_prompt_suggestion() {
+  [ "$(jq -r '.env.CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION' "$ROOT/.claude/settings.json")" = false ] \
+    || fail "the home's Claude settings must turn prompt suggestions off for the captain"
+  pass "home Claude settings turn the captain's prompt suggestions off"
+}
+
 test_inject_msg_orca_composer_guard_defers() {
   local screen
   for screen in "$(printf '%s' "$ORCA_IDLE_SCREEN" | sed 's/^❯ $/❯ half-typed captain words/')" $'Last login: today\nuser@host ~ % '; do
@@ -3867,6 +3875,7 @@ test_inject_msg_orca_submits_into_idle_captain_terminal
 test_inject_msg_orca_busy_guard_defers
 test_inject_msg_orca_defers_mid_turn_without_spinner
 test_inject_msg_orca_composer_guard_defers_on_draft
+test_home_claude_settings_disable_prompt_suggestion
 test_inject_msg_orca_composer_guard_defers
 test_inject_msg_orca_missing_terminal_defers
 test_inject_msg_defers_on_dead_shell_unknown
