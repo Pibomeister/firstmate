@@ -90,7 +90,7 @@ A `refuted` verdict has three durable consequences, written in this order:
 
 The `claim-refuted-` key namespace is reserved to the claim verifier by the status fold in [`bin/fm-classify-lib.sh`](../bin/fm-classify-lib.sh), so a bare `resolved` line from the mate does not clear it.
 The reservation is a vocabulary rule, not authentication: a writer that copies the close words can still close the blocker.
-It closes when the task reports a new terminal result, which is itself a new claim the verifier checks; when firstmate answers it with `fm-send --resolve-key claim-refuted-<id>`; when firstmate runs `bin/fm-claims.sh clear`; or, for an `alive` claim, when a later scan reads the agent alive again.
+It closes when the task reports a new terminal result, which is itself a new claim the verifier checks; when firstmate answers it with `fm-send --resolve-key claim-refuted-<id>`; or, for an `alive` claim, when a later scan reads the agent alive again.
 Closing the blocker leaves the refuted record in the ledger.
 When the task's status log no longer exists, or a newer `done:` line arrived while the claim was being judged, the reopen is skipped and the occurrence records that.
 
@@ -127,6 +127,7 @@ Example:
 - The verifier runs when it is invoked; it starts no daemon, timer, or watcher of its own.
 - Every network read is bounded by a timeout, and a read that times out or fails yields `unverifiable`, never a hang or a guess.
 - Claim text comes from status lines, which should hold no secrets; the verifier still replaces secret-shaped tokens and stores no command output, but give the ledger the same trust you give `state/`.
+- A task promoted before `promoted_status_lines` was recorded may have a scout-time `done:` line read as a ship claim.
 - Free-text claim recognition is deliberately narrow: a claim the patterns do not recognize is simply not recorded.
 - An `order` check reads only the rules its patterns recognize; everything else needs a current AgentKit super-verify record at the head, or the claim stays `unverifiable`.
 - An AgentKit record that carries notes, such as a marker-only record, never counts as proof.

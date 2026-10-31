@@ -617,7 +617,7 @@ test_claim_refuted_keys_are_reserved() {
   printf '%s\n' 'resolved [key=claim-refuted-0123456789abcdef]: fixed it' >> "$f"
   open=$(status_open_decisions "$f" | cut -f1)
   assert_equals claim-refuted-0123456789abcdef "$open" "a bare resolve closed the refuted-claim blocker"
-  printf '%s\n' 'resolved [key=claim-refuted-0123456789abcdef]: claim-refuted-cleared: task=t1 claim=0123456789abcdef via=fm-claims-clear checked' >> "$f"
+  printf '%s\n' 'resolved [key=claim-refuted-0123456789abcdef]: claim-refuted-cleared: task=t1 claim=0123456789abcdef via=operator-resolve-key checked' >> "$f"
   [ -z "$(status_open_decisions "$f")" ] \
     || fail "the claim-refuted-cleared close did not close the blocker: $(status_open_decisions "$f")"
   pass "claim-refuted keys open and close only through their reserved vocabulary"

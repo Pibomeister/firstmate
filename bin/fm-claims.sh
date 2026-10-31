@@ -5,8 +5,6 @@
 # Usage:
 #   fm-claims.sh scan <task-id>...
 #   fm-claims.sh scan --all
-#   fm-claims.sh show <task-id>
-#   fm-claims.sh clear <task-id> <claim-id> --reason <text>
 #
 # docs/claim-ledger.md owns the ledger and failure-class record formats, the
 # claim kinds, and what each verdict means. This header owns the commands,
@@ -38,10 +36,7 @@
 #   ship done: in direct-PR mode -> pushed order, plus pr-ready when it names a PR
 #   ship done: in local-only mode -> committed order
 #   a done: line from a scout, or at or below the meta's promoted_status_lines
-#   (written while the task was a scout), yields no claim of any kind; without
-#   that key, a ship with data/<task>/ship-instructions.md (written only by a
-#   promotion) treats every line stamped at or before that file's time the
-#   same way
+#   (written while the task was a scout), yields no claim of any kind
 #   free text with no hedge word (not, never, will, before, until, unless,
 #   once, if, pending, waiting, n't, ...):
 #     "committed <sha>" or "committed as <sha>" -> committed;
@@ -80,7 +75,9 @@
 #               remote behind the commit, or without it, refutes; diverged is
 #               unverifiable. A GitHub 404 counts as no branch only when the
 #               repository itself reads; when the branch is gone and the
-#               task's PR merged, the PR head stands in. A free-text claim
+#               task's PR merged, the PR head stands in, and when a PR named by
+#               the claim or recorded for the task cannot be read as merged or
+#               not merged, the claim is unverifiable. A free-text claim
 #               that origin does not carry is unverifiable rather than refuted
 #               unless its note names origin, when it names another remote,
 #               the no-mistakes gate, Gerrit or refs/for, or the task delivers
@@ -111,11 +108,14 @@
 #               step refutes, passed-with-override never verifies; else a
 #               current AgentKit verify gate at HEAD verifies. A free-text
 #               claim is judged at the branch head at its [at=] stamp instead
-#               of HEAD (unreadable is unverifiable): PR checks count only
-#               while the PR is at that head, and failed checks or a failed ci
-#               step refute it only when it names CI, checks or a PR URL.
+#               of HEAD (unreadable is unverifiable). PR checks count only
+#               while the PR is at the claim's head. Failed checks or a failed
+#               ci step refute free text only when it names CI, checks or a PR
+#               URL.
 #   order       rules recognized in data/<task>/brief.md, each checked against
-#               the task's actions:
+#               the task's actions. A prohibition rule is recognized only when
+#               never, not, no or don't comes before its phrase on the same
+#               line, in the same sentence:
 #                 ship-branch ("ship branch"): the local copy is on the task branch;
 #                 clean-worktree ("worktree clean"): no uncommitted change, judged
 #                   only while the line is the newest mate line;
@@ -125,8 +125,10 @@
 #                 no-default-push ("push to the default branch"): when HEAD
 #                   carries a commit of the task's own (a commit-family entry
 #                   in the branch reflog, else any commit beyond the base) and
-#                   the task's PR is not merged, the remote default branch does
-#                   not contain HEAD;
+#                   no PR named by the done: or recorded for the task is merged,
+#                   the remote default branch does not contain HEAD; a default
+#                   branch that contains HEAD is unverifiable while such a PR
+#                   cannot be read;
 #                 no-version-bump ("bump a version"): no version field or
 #                   VERSION file changed between the base and HEAD.
 #               Any refuted rule refutes. Otherwise the claim is verified only
@@ -142,8 +144,8 @@
 #               whose working directory is in the local copy (an absolute,
 #               existing directory) verifies, and both measured stale and idle
 #               refutes. For paused:, a live endpoint or a process in the copy
-#               verifies. A verified alive closes every open blocker of a
-#               refuted alive claim, with the claim-refuted-cleared note and
+#               verifies. A verified alive closes every open blocker of an
+#               alive claim, with the claim-refuted-cleared note and
 #               via=fm-claims-scan.
 # The AgentKit gate is `node <ak-gate.mjs> check --gates verify --json
 # --project <local copy>`; it is current when it answers ok at HEAD with no
@@ -152,18 +154,15 @@
 # A refuted verdict, after its ledger record, appends the reopening blocker to
 # the status log, then a failure-class occurrence to
 # data/failure-classes/claim-refuted-<kind>.jsonl. Both use the words in
-# bin/fm-claims-lib.sh. The blocker is skipped when the log is gone or a mate
-# done: line arrived during the scan. A failed blocker
+# bin/fm-claims-lib.sh. Both are skipped when the claim's blocker is still open
+# (an alive claim can be refuted again). The blocker is skipped when the log is
+# gone or a mate done: line arrived during the scan. A failed blocker
 # append withholds the occurrence and fails the scan; every scan first
 # finishes each refuted claim that has no occurrence yet. Every append starts
 # on a fresh line.
 #
-# show prints each claim's current verdict, in first-recorded order:
-#   <claim-id>\t<verdict>\t<kind>\tline=<n>\tattempt=<a>\t<checker>\t<reason>
-# clear closes an open claim-refuted-<claim-id> blocker by appending a
-# `resolved` line with the claim-refuted-cleared note and via=fm-claims-clear,
-# self-announced like an fm-send close; it refuses when that blocker is not open. The refuted verdict stays.
-# fm-send --resolve-key claim-refuted-<claim-id> writes the same close.
+# fm-send --resolve-key claim-refuted-<claim-id> is the operator close of a
+# blocker. The refuted verdict stays.
 #
 # Refuses (exit 1) without jq, on a task id that is not path safe
 # (fm_task_id_path_safe), a named task with neither status log nor metadata,
@@ -250,10 +249,21 @@ def clean:
   | gsub("gh[pousr]_[A-Za-z0-9]{20,}"; "[redacted]")
   | gsub("github_pat_[A-Za-z0-9_]{20,}"; "[redacted]")
   | gsub("sk-[A-Za-z0-9_-]{16,}"; "[redacted]")
+  | gsub("[sr]k_(live|test)_[A-Za-z0-9]{8,}"; "[redacted]")
   | gsub("xox[abposr]-[A-Za-z0-9-]{10,}"; "[redacted]")
-  | gsub("AKIA[0-9A-Z]{16}"; "[redacted]")
+  | gsub("(AKIA|ASIA)[0-9A-Z]{16}"; "[redacted]")
+  | gsub("AIza[0-9A-Za-z_-]{16,}"; "[redacted]")
+  | gsub("glpat-[A-Za-z0-9_-]{8,}"; "[redacted]")
+  | gsub("npm_[A-Za-z0-9]{8,}"; "[redacted]")
+  | gsub("eyJ[A-Za-z0-9_-]{4,}\\.[A-Za-z0-9_-]{4,}(\\.[A-Za-z0-9_-]*)?"; "[redacted]")
+  | gsub("(?<h>hooks\\.slack\\.com/services/)\\S+"; "\(.h)[redacted]")
   | gsub("-----BEGIN [A-Z ]*PRIVATE KEY-----.*"; "[redacted]")
-  | gsub("(?<k>(password|passwd|secret|token|api[_-]?key)\\s*[=:]\\s*)\\S+"; "\(.k)[redacted]"; "i")
+  | gsub("(?<k>authorization\\s*[=:]\\s*)((bearer|basic|token)\\s+)?\\S+"; "\(.k)[redacted]"; "i")
+  | gsub("(?<k>bearer\\s+)\\S{8,}"; "\(.k)[redacted]"; "i")
+  | gsub("(?<k>Basic\\s+)(?=[A-Za-z0-9+/=]*[A-Z0-9=])[A-Za-z0-9+/=]{8,}"; "\(.k)[redacted]")
+  | gsub("(?<k>(password|passwd|pwd|secret|token|api[_-]?key|[_-]key)\\s*[=:]\\s*)\\S+"; "\(.k)[redacted]"; "i")
+  | gsub("(?<k>(password|passwd|pwd|secret|token|api[_-]?key)\\s+is\\s+)\\S+"; "\(.k)[redacted]"; "i")
+  | gsub("(?<k>\\b(password|passwd|pwd|secret|token)\\s+)(\\S{16,}|(?=\\S*[0-9])\\S{6,})"; "\(.k)[redacted]"; "i")
   | gsub("(?<s>://)[^/@\\s]+@"; "\(.s)[redacted]@")
   | if length > 200 then .[0:197] + "..." else . end;
 JQ
@@ -283,10 +293,6 @@ cl_sha256() {  # <text>
   else
     printf '%s' "$1" | sha256sum | awk '{print $1}'
   fi
-}
-
-cl_oneline() {  # <text>
-  printf '%s' "$1" | tr '\t\r\n' '   '
 }
 
 # The one-line, secret-free, bounded form of <text>.
@@ -344,8 +350,6 @@ cl_task_load() {  # <task-id>
   T_MODEL=$(fm_meta_get "$T_META" model)
   T_GEN=$(fm_meta_get "$T_META" spawn_gen)
   T_PROMOTED=$(fm_meta_get "$T_META" promoted_status_lines)
-  T_PROMOTED_RECORDED=1
-  [ -n "$T_PROMOTED" ] || T_PROMOTED_RECORDED=0
   cl_uint "$T_PROMOTED" || T_PROMOTED=0
   T_FORGE=$(fm_meta_get "$T_META" forge)
   T_BACKEND=$(fm_backend_of_meta "$T_META")
@@ -591,6 +595,33 @@ cl_pr_is_task() {  # <url>
   return 0
 }
 
+# 0 when <candidate-url> or the recorded PR reads as the task's merged PR, with
+# CL_PR_* holding it; 1 when every such PR read as not merged, or there is none;
+# 2 when one could not be read as either, with CL_PR_UNREAD naming it.
+cl_task_pr_merged() {  # <candidate-url>
+  local url rc=1
+  CL_PR_UNREAD=
+  for url in "$1" "$T_PR"; do
+    [ -n "$url" ] || continue
+    if cl_github_pr "$url"; then
+      cl_pr_view "$url"
+      case "$?" in
+        0) ;;
+        4) continue ;;
+        *) rc=2 CL_PR_UNREAD=$url; continue ;;
+      esac
+      cl_pr_is_task "$url"
+      case "$?" in
+        0) [ "$CL_PR_STATE" != MERGED ] || return 0 ;;
+        2) rc=2 CL_PR_UNREAD=$url ;;
+      esac
+    else
+      rc=2 CL_PR_UNREAD=$url
+    fi
+  done
+  return "$rc"
+}
+
 # --- no-mistakes and AgentKit reads -------------------------------------------
 
 # 0 when the task branch's no-mistakes run was read into CL_NM_OUT. One read
@@ -807,7 +838,7 @@ cl_push_elsewhere() {  # <note> <repo>
 # The line is cut to 4096 bytes before the custody gate reads it: no PR or
 # review URL is that long, and the gate's parsing slows sharply on a huge line.
 cl_check_pushed() {  # <sha> <origin> <line> <pr-url>
-  local sha=$1 origin=$2 line=${3:0:4096} url=${4:-$T_PR} dod_reason='' custody='' repo named rc src note
+  local sha=$1 origin=$2 line=${3:0:4096} url=${4:-} dod_reason='' custody='' repo named rc src note
   local elsewhere="; the push may have gone to the no-mistakes gate or a review server"
   note=$(status_line_note "$line")
   if [ "$origin" = "done" ] && [ "$T_MODE" != local-only ] \
@@ -848,11 +879,21 @@ cl_check_pushed() {  # <sha> <origin> <line> <pr-url>
   cl_remote_head "$repo" "$T_BRANCH"
   rc=$?
   src=$CL_RH_SRC
-  if [ "$rc" = 4 ] && cl_github_pr "$url" && cl_pr_view "$url" && cl_pr_is_task "$url" \
-    && [ "$CL_PR_STATE" = MERGED ] && fm_pr_head_valid "$CL_PR_HEAD"; then
-    CL_RH=$CL_PR_HEAD
-    src=gh-pr-view
-    rc=0
+  if [ "$rc" = 4 ]; then
+    cl_task_pr_merged "$url"
+    case "$?" in
+      0)
+        if ! fm_pr_head_valid "$CL_PR_HEAD"; then
+          cl_set unverifiable gh-pr-view "origin has no branch $T_BRANCH and the merged PR's head could not be read" sha "$named" custody "$custody"
+          return
+        fi
+        CL_RH=$CL_PR_HEAD
+        src=gh-pr-view
+        rc=0 ;;
+      2)
+        cl_set unverifiable "$src" "origin has no branch $T_BRANCH and whether PR $CL_PR_UNREAD merged could not be read" sha "$named" custody "$custody"
+        return ;;
+    esac
   fi
   case "$rc" in
     4)
@@ -950,13 +991,13 @@ cl_check_pr_ready() {  # <pr-url> <origin> <line>
 }
 
 # A ship done: is judged at HEAD. A free-text claim is judged at the branch
-# head at its [at=] stamp: PR checks count only while the PR is at that head,
-# and a no-mistakes run or AgentKit gate only at that head. Failed checks and
+# head at its [at=] stamp. PR checks, a no-mistakes run, and an AgentKit gate
+# count only at the claim's head. Failed checks and
 # a failed ci step refute free text only when it names CI, checks or a PR,
 # because a bare "tests pass" may describe a local run.
 cl_check_tests_green() {  # <pr-url> <origin> <line>
   local url=$1 origin=$2 out pass fail pending outcome nmhead pending_note='' ak test_st ci_st step
-  local note at_head='' ci_subject=1 repo head
+  local note at_head='' pr_want='' ci_subject=1 repo head
   if [ "$origin" != "done" ]; then
     note=$(status_line_note "$3")
     note=${note:0:$CL_NOTE_MAX}
@@ -967,6 +1008,9 @@ cl_check_tests_green() {  # <pr-url> <origin> <line>
       cl_set unverifiable gh-pr-checks "the branch head at the claim's time could not be read" pr "$url"
       return
     fi
+    pr_want=$at_head
+  elif cl_wt_ok; then
+    pr_want=$(cl_head) || pr_want=
   fi
   if [ -n "$url" ] && [ "$url" != "$T_PR" ]; then
     if ! cl_github_pr "$url" || ! cl_pr_view "$url"; then
@@ -981,8 +1025,8 @@ cl_check_tests_green() {  # <pr-url> <origin> <line>
   [ -n "$url" ] || url=$T_PR
   if ! cl_github_pr "$url" || ! command -v gh >/dev/null 2>&1; then
     :
-  elif [ -n "$at_head" ] && ! { cl_pr_view "$url" && [ "$CL_PR_HEAD" = "$at_head" ]; }; then
-    pending_note="PR $url is not at the claim's head ${at_head:0:12}"
+  elif [ -z "$pr_want" ] || ! cl_pr_view "$url" || [ "$CL_PR_HEAD" != "$pr_want" ]; then
+    pending_note="PR $url is not shown to be at the claim's head${pr_want:+ ${pr_want:0:12}}"
   else
     out=$(cl_net gh pr checks "$url" --json bucket \
       --jq '[.[].bucket] | [(map(select(. == "pass" or . == "skipping")) | length), (map(select(. == "fail" or . == "cancel")) | length), (map(select(. == "pending")) | length)] | @tsv' 2>"$CL_TMP/err") || true
@@ -1092,8 +1136,8 @@ cl_rule_commit_nothing_after_run() {
   fi
 }
 
-cl_rule_no_default_push() {
-  local repo head default own rc url=${T_PR:-}
+cl_rule_no_default_push() {  # <candidate-url>
+  local repo head default own rc merged
   R_VERDICT=skip R_REASON=
   if ! cl_wt_ok || ! head=$(cl_head); then
     R_VERDICT=unverifiable R_REASON="the local copy is gone"
@@ -1106,9 +1150,9 @@ cl_rule_no_default_push() {
     1) return 0 ;;
     2) R_VERDICT=unverifiable R_REASON="whether HEAD carries a commit of the task's own could not be read"; return 0 ;;
   esac
-  if cl_github_pr "$url" && cl_pr_view "$url" && [ "$CL_PR_STATE" = MERGED ]; then
-    return 0
-  fi
+  cl_task_pr_merged "$1"
+  merged=$?
+  [ "$merged" != 0 ] || return 0
   default=$(git -C "$repo" symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null) || default=
   default=${default#origin/}
   if [ -z "$default" ] && cl_github_origin "$repo"; then
@@ -1126,7 +1170,12 @@ cl_rule_no_default_push() {
   fi
   cl_contains "$repo" "$head" "$CL_RH"
   case "$?" in
-    0) R_VERDICT=refuted R_REASON="origin's default branch $default contains HEAD ${head:0:12} with no merged PR" ;;
+    0)
+      if [ "$merged" = 2 ]; then
+        R_VERDICT=unverifiable R_REASON="origin's default branch $default contains HEAD ${head:0:12}, and whether PR $CL_PR_UNREAD merged could not be read"
+      else
+        R_VERDICT=refuted R_REASON="origin's default branch $default contains HEAD ${head:0:12} with no merged PR"
+      fi ;;
     1|3) R_VERDICT=verified R_REASON="$default does not contain HEAD" ;;
     *) R_VERDICT=unverifiable R_REASON="whether $default contains HEAD could not be read" ;;
   esac
@@ -1163,8 +1212,14 @@ EOF
   R_VERDICT=verified R_REASON="no version field changed"
 }
 
-cl_check_order() {  # <line-number>
-  local ln=$1 brief="$DATA/$T_TASK/brief.md" text='' rule refuted='' unknown='' held='' ak
+# 0 when <brief> forbids <phrase>: a negation comes before it on the same line,
+# in the same sentence. Without that, the phrase may be an instruction to do it.
+cl_brief_forbids() {  # <brief> <phrase>
+  printf '%s\n' "$1" | grep -Eiq "(^|[^[:alnum:]_])(never|not|no|don't)[^[:alnum:]_]([^.;:]*[^[:alnum:]_])?$2"
+}
+
+cl_check_order() {  # <line-number> <candidate-url>
+  local ln=$1 url=$2 brief="$DATA/$T_TASK/brief.md" text='' rule refuted='' unknown='' held='' ak
   if [ -f "$brief" ] && [ ! -L "$brief" ]; then
     text=$(cat "$brief" 2>/dev/null) || text=
   fi
@@ -1173,8 +1228,8 @@ cl_check_order() {  # <line-number>
       ship-branch) printf '%s' "$text" | grep -qi 'ship branch' || continue; cl_rule_ship_branch ;;
       clean-worktree) printf '%s' "$text" | grep -qi 'worktree clean' || continue; cl_rule_clean_worktree "$ln" ;;
       commit-nothing-after-run) printf '%s' "$text" | grep -qi 'commit nothing after' || continue; cl_rule_commit_nothing_after_run ;;
-      no-default-push) printf '%s' "$text" | grep -qi 'push to the default branch' || continue; cl_rule_no_default_push ;;
-      no-version-bump) printf '%s' "$text" | grep -qi 'bump a version' || continue; cl_rule_no_version_bump ;;
+      no-default-push) cl_brief_forbids "$text" 'push to the default branch' || continue; cl_rule_no_default_push "$url" ;;
+      no-version-bump) cl_brief_forbids "$text" 'bump a version' || continue; cl_rule_no_version_bump ;;
     esac
     case "$R_VERDICT" in
       refuted) refuted="${refuted:+$refuted; }$rule: $R_REASON" ;;
@@ -1298,7 +1353,7 @@ cl_judge() {  # <kind> <line-number> <line> <sha> <pr> <origin>
     pr-opened) cl_check_pr_opened "$5" "$6" ;;
     pr-ready) cl_check_pr_ready "$5" "$6" "$3" ;;
     tests-green) cl_check_tests_green "$5" "$6" "$3" ;;
-    order) cl_check_order "$2" ;;
+    order) cl_check_order "$2" "$5" ;;
     alive) cl_check_alive "$6" ;;
   esac
 }
@@ -1359,7 +1414,7 @@ cl_freetext() {  # <line-number> <note> <origin> <kinds-already-taken>
   psha=$(cl_sha_after "$note" pushed) || psha=$csha
   if [[ $note =~ $CL_PUSHED_RE ]] && ! [[ $note =~ $CL_PUSH_VOID_RE ]] && [[ $have != *" pushed "* ]] \
     && { [ -n "$psha" ] || [[ $note =~ $CL_PUSH_CUE_RE ]] || { [ -n "$T_BRANCH" ] && [[ $note == *"$T_BRANCH"* ]]; }; }; then
-    cl_cand_add "$ln" pushed "$psha" "" "$origin-text"
+    cl_cand_add "$ln" pushed "$psha" "$url" "$origin-text"
   fi
   if [[ $note =~ $CL_TESTS_RE ]] && ! [[ $note =~ $CL_TESTS_CONTRARY_RE ]] && [[ $have != *" tests-green "* ]]; then
     cl_cand_add "$ln" tests-green "" "$url" "$origin-text"
@@ -1379,7 +1434,7 @@ cl_freetext() {  # <line-number> <note> <origin> <kinds-already-taken>
 # blockers), and fills CL_CAND with one "<line-number> <kind> <sha> <pr>
 # <origin>" row per claim (cl_cand_add).
 cl_extract() {
-  local line i verb note kinds k url newest_verb='' m at
+  local line i verb note kinds k url newest_verb=''
   CL_LINES=()
   CL_CAND=
   CL_NEWEST=0
@@ -1389,13 +1444,6 @@ cl_extract() {
     CL_LINES+=("$line")
   done < "$T_STATUS"
   CL_GEN=$(cl_sha256 "${CL_LINES[0]:-}")
-  if [ "$T_PROMOTED_RECORDED" = 0 ] && [ "$T_KIND" = ship ] && [ -f "$DATA/$T_TASK/ship-instructions.md" ] \
-    && m=$(fm_path_mtime "$DATA/$T_TASK/ship-instructions.md") && cl_uint "$m"; then
-    for ((i = 1; i <= ${#CL_LINES[@]}; i++)); do
-      at=$(status_line_at_epoch "${CL_LINES[$((i - 1))]}") || continue
-      ! cl_uint "$at" || [ "$at" -gt "$m" ] || T_PROMOTED=$i
-    done
-  fi
   for ((i = 1; i <= ${#CL_LINES[@]}; i++)); do
     line=${CL_LINES[$((i - 1))]}
     case "$line" in *:*) ;; *) continue ;; esac
@@ -1562,16 +1610,21 @@ EOF
 # this home's own bookkeeping, so it is appended the way fm-send --resolve-key
 # appends one: stamped, and self-announced so it does not wake the session
 # that wrote it (bin/fm-wake-lib.sh). 1 when the append fails.
-cl_close_blocker() {  # <claim-id> <via> [extra]
+cl_close_blocker() {  # <claim-id> <extra>
   local note
-  note=$(fm_claims_cleared_note "$T_TASK" "$1" "$2" "${3:-}")
+  note=$(fm_claims_cleared_note "$T_TASK" "$1" fm-claims-scan "$2")
   fm_cap_line_var "resolved [key=$(fm_claims_reopen_key "$1")]: $note" "$((FM_LINE_CAP_DEFAULT - $(status_stamp_width)))"
   cl_nl_guard "$T_STATUS"
   fm_wake_status_append_self_announced "$STATE" "$T_STATUS" "$FM_LINE_CAP_LINE"
   [ "$?" != 2 ]
 }
 
-# Closes every open blocker of a refuted alive claim once the agent reads alive
+# 0 when the blocker of <claim-id> is open in the status log.
+cl_blocker_open() {  # <claim-id>
+  status_open_decisions "$T_STATUS" 2>/dev/null | cut -f1 | grep -qxF "$(fm_claims_reopen_key "$1")"
+}
+
+# Closes every open blocker of an alive claim once the agent reads alive
 # again. Uses the ledger state read at scan start.
 cl_close_alive_blockers() {  # <extra>
   local open key rest id
@@ -1581,8 +1634,8 @@ cl_close_alive_blockers() {  # <extra>
     id=${key#claim-refuted-}
     fm_claims_id_valid "$id" || continue
     cl_state_lookup "$id"
-    [ "$S_KIND" = alive ] && [ "$S_VERDICT" = refuted ] || continue
-    cl_close_blocker "$id" fm-claims-scan "$1" || return 1
+    [ "$S_KIND" = alive ] || continue
+    cl_close_blocker "$id" "$1" || return 1
     printf '%s %s cleared\n' "$T_TASK" "$id"
   done <<EOF
 $open
@@ -1652,12 +1705,14 @@ cl_scan_task() {  # <task-id>
     fi
     printf '%s %s %s %s line=%s: %s\n' "$T_TASK" "$id" "$kind" "$CL_VERDICT" "$ln" "$CL_REASON"
     if [ "$CL_VERDICT" = refuted ]; then
-      if ! cl_reopen "$id" "$kind" "$ln"; then
-        echo "fm-claims: could not append the blocker to $T_STATUS" >&2
-        rc=1
-        continue
+      if ! cl_blocker_open "$id"; then
+        if ! cl_reopen "$id" "$kind" "$ln"; then
+          echo "fm-claims: could not append the blocker to $T_STATUS" >&2
+          rc=1
+          continue
+        fi
+        cl_failure_class "$id" "$kind" "$ln" || rc=1
       fi
-      cl_failure_class "$id" "$kind" "$ln" || rc=1
       [ "$rc" = 1 ] || rc=3
     fi
   done 3<<EOF
@@ -1698,49 +1753,10 @@ cmd_scan() {
   exit "$overall"
 }
 
-cmd_show() {
-  [ "$#" -eq 1 ] || { usage >&2; exit 2; }
-  command -v jq >/dev/null 2>&1 || die "jq is required"
-  cl_task_load "$1" || exit 1
-  [ -f "$T_STATUS" ] || [ -f "$T_META" ] || die "$T_TASK has neither a status log nor metadata"
-  [ -f "$T_LEDGER" ] || exit 0
-  jq -rR 'fromjson? // empty
-    | select(type == "object" and (.id | type) == "string")
-    | [.id, (.verdict // ""), (.kind // ""), "line=\(.evidence.line // "")", "attempt=\(.attempt // "")", (.checker // ""), (.reason // "")]
-    | map(tostring | gsub("[\t\n]"; " ")) | @tsv' "$T_LEDGER" 2>/dev/null \
-    | awk -F'\t' '!($1 in last) { order[++n] = $1 } { last[$1] = $0 } END { for (i = 1; i <= n; i++) print last[order[i]] }'
-}
-
-cmd_clear() {
-  local task claim reason='' key open
-  [ "$#" -ge 2 ] || { usage >&2; exit 2; }
-  task=$1 claim=$2
-  shift 2
-  while [ "$#" -gt 0 ]; do
-    case "$1" in
-      --reason) [ "$#" -ge 2 ] || { usage >&2; exit 2; }; reason=$2; shift 2 ;;
-      *) usage >&2; exit 2 ;;
-    esac
-  done
-  [ -n "$reason" ] || die "clear needs --reason <text>"
-  cl_task_load "$task" || exit 1
-  fm_claims_id_valid "$claim" || die "claim id '$claim' must be 16 lowercase hex characters"
-  [ -f "$T_STATUS" ] || die "no status log for $task"
-  key=$(fm_claims_reopen_key "$claim")
-  CL_LOCK="$STATE/.claims-$T_TASK.lock"
-  fm_state_lock_acquire "$CL_LOCK" || { CL_LOCK=; exit 1; }
-  open=$(status_open_decisions "$T_STATUS" | awk -F'\t' -v k="$key" '$1 == k')
-  [ -n "$open" ] || die "the blocker $key is not open in $task's status log"
-  cl_close_blocker "$claim" fm-claims-clear "$(cl_oneline "$reason")" || die "could not append to $T_STATUS"
-  printf '%s %s cleared\n' "$T_TASK" "$claim"
-}
-
 cmd=${1:-}
 [ "$#" -eq 0 ] || shift
 case "$cmd" in
   scan) cmd_scan "$@" ;;
-  show) cmd_show "$@" ;;
-  clear) cmd_clear "$@" ;;
   -h|--help|help) usage; exit 0 ;;
   *) usage >&2; exit 2 ;;
 esac

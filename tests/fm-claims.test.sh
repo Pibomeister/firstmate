@@ -246,31 +246,6 @@ test_refuted_claim_reopens_and_records_failure_class() {
   pass "a refuted claim is recorded, reopens the task, opens a failure-class occurrence, and is never judged twice"
 }
 
-test_clear_closes_only_an_open_blocker() {
-  local id out rc
-  setup_task clear local-only
-  status "working: committed deadbeef1 with the fix"
-  claims "$T0" scan t1 >/dev/null
-  id=$(rec committed .id)
-  status "resolved [key=claim-refuted-$id]: I fixed it"
-  decision_open "claim-refuted-$id" || fail "a bare mate resolution cleared the refuted-claim blocker"
-  out=$(claims "$T0" clear t1 "$id" 2>&1); rc=$?
-  expect_code 1 "$rc" "clear without a reason refuses"
-  out=$(claims "$T0" clear t1 "$id" --reason "checked by hand"); rc=$?
-  expect_code 0 "$rc" "clear of an open blocker succeeds"
-  assert_contains "$out" "t1 $id cleared" "clear reports the close"
-  grep -F "claim-refuted-cleared: task=t1 claim=$id via=fm-claims-clear checked by hand" "$ST/t1.status" >/dev/null \
-    || fail "clear did not write the close note: $(cat "$ST/t1.status")"
-  if decision_open "claim-refuted-$id"; then
-    fail "the blocker is still open after clear"
-  fi
-  assert_equals refuted "$(rec committed .verdict)" "clear leaves the refuted record"
-  out=$(claims "$T0" clear t1 "$id" --reason again 2>&1); rc=$?
-  expect_code 1 "$rc" "clearing a closed blocker refuses"
-  assert_contains "$out" "is not open" "the refusal names the cause"
-  pass "clear closes an open refuted-claim blocker that a bare mate resolution cannot, and refuses once it is closed"
-}
-
 test_hedges_tokens_and_verifier_lines() {
   local ln
   setup_task hedge local-only
@@ -557,7 +532,7 @@ test_tests_green_from_no_mistakes_and_agentkit() {
 }
 
 test_unverifiable_retries_and_timeouts() {
-  local out start elapsed id
+  local out start elapsed
   setup_task retry direct-PR
   commit_work a.txt >/dev/null
   meta_set pr https://github.com/o/r/pull/7
@@ -571,12 +546,6 @@ test_unverifiable_retries_and_timeouts() {
   assert_contains "$out" " pr-opened verified line=1:" "the retry after the interval records the new verdict"
   assert_equals 2 "$(rec pr-opened .attempt)" "the retry is attempt 2"
   [ "$(kind_count pr-opened)" = 2 ] || fail "the retry did not add exactly one record"
-  id=$(rec pr-opened .id)
-  out=$(claims $((T0 + 301)) show t1)
-  assert_contains "$out" "$id"$'\t'"verified"$'\t'"pr-opened"$'\t'"line=1"$'\t'"attempt=2"$'\t'"gh-pr-view" \
-    "show prints each claim's newest verdict"
-  assert_equals 1 "$(printf '%s\n' "$out" | grep -cF "$id")" "show prints one line per claim"
-  assert_not_contains "$(printf '%s\n' "$out" | grep -F "$id")" "attempt=1" "show printed a superseded verdict"
 
   setup_task timeout direct-PR
   status "working: opened https://github.com/o/r/pull/8"
@@ -765,6 +734,188 @@ test_secret_shaped_text_is_redacted() {
   pass "secret-shaped text is redacted in claim text, reasons, observed values, blockers, and stdout"
 }
 
+test_common_secret_shapes_are_redacted() {
+  local shape id
+  local -a shapes=(
+    'Authorization: Bearer seCRETvalue01'
+    'Authorization: Basic seCRETvalue02'
+    'curl -H "Bearer seCRETvalue03"'
+    'aws_secret_access_key=seCRETvalue04'
+    'STRIPE_KEY=sk_li''ve_seCRETvalue05'
+    'sk_li''ve_seCRETvalue06'
+    'eyJhbGciOiJI.eyJzdWIiOiIx.seCRETvalue07'
+    'glp''at-seCRETvalue08'
+    'np''m_seCRETvalue09'
+    'AI''zaSyseCRETvalue10abcdefgh'
+    'AS''IAABCDEFGHIJKLMNOP'
+    'password is seCRETvalue12'
+    'SECRET_KEY=seCRETvalue13'
+    'private_key=seCRETvalue14'
+    'hooks.slack.com/serv''ices/T000/B000/seCRETvalue15'
+    'pwd=seCRETvalue16'
+    'token seCRETvalue17'
+    'MY_TOKEN=seCRETvalue18'
+    'DEPLOY_SECRET: seCRETvalue19'
+  )
+  setup_task secret-shapes local-only
+  for shape in "${shapes[@]}"; do
+    status "working: committed deadbeef1 using $shape"
+  done
+  claims "$T0" scan t1 >/dev/null
+  assert_equals "${#shapes[@]}" "$(kind_count committed)" "each shape's line should give one claim"
+  if grep -rqE 'seCRETvalue|ABCDEFGHIJKLMNOP' "$ST/t1.claims.jsonl" "$DT/failure-classes"; then
+    fail "a secret shape reached a record: $(grep -rhE 'seCRETvalue|ABCDEFGHIJKLMNOP' "$ST/t1.claims.jsonl" "$DT/failure-classes" | head -n 3)"
+  fi
+  status "working: committed cafebabe2 with the token refresh and basic auth fixes"
+  claims "$T0" scan t1 >/dev/null
+  id=$(rec committed .claim)
+  assert_equals "committed cafebabe2 with the token refresh and basic auth fixes" "$id" "plain words were redacted"
+  pass "common secret shapes never reach a record, and plain words that share their names stay"
+}
+
+test_merge_state_not_read_is_never_refuted() {
+  local head url out ln gl
+  url=https://github.com/o/r/pull/7
+  gl=https://gitlab.com/o/r/-/merge_requests/7
+
+  setup_task merge-order-gl local-only
+  printf '%s\n' "Never push to the default branch." > "$DT/t1/brief.md"
+  commit_work a.txt >/dev/null
+  git -C "$WT" push -q origin fm/t1:main 2>/dev/null || fail "fixture: push to the default branch failed"
+  meta_set pr "$gl"
+  status "done: landed"
+  out=$(claims "$T0" scan t1)
+  assert_contains "$out" " order unverifiable line=1: no-default-push: origin's default branch main contains HEAD" \
+    "a recorded PR that is not on GitHub leaves the rule unverifiable"
+  assert_contains "$out" "whether PR $gl merged could not be read" "the reason names the unread PR"
+
+  setup_task merge-order-fail local-only
+  printf '%s\n' "Never push to the default branch." > "$DT/t1/brief.md"
+  commit_work a.txt >/dev/null
+  git -C "$WT" push -q origin fm/t1:main 2>/dev/null || fail "fixture: push to the default branch failed"
+  meta_set pr "$url"
+  status "done: landed"
+  out=$(claims "$T0" scan t1)
+  assert_contains "$out" " order unverifiable line=1: no-default-push: origin's default branch main contains HEAD" \
+    "a failed PR read leaves the rule unverifiable"
+
+  setup_task merge-order-unmerged local-only
+  printf '%s\n' "Never push to the default branch." > "$DT/t1/brief.md"
+  head=$(commit_work a.txt)
+  git -C "$WT" push -q origin fm/t1:main 2>/dev/null || fail "fixture: push to the default branch failed"
+  meta_set pr "$url"
+  printf 'OPEN\tfalse\t%s\tfm/t1\n' "$head" > "$FAKE/gh-pr-view"
+  status "done: landed"
+  out=$(claims "$T0" scan t1)
+  assert_contains "$out" " order refuted line=1: broke an order rule - no-default-push:" "a PR read as open still refutes"
+
+  setup_task merge-order-named local-only
+  printf '%s\n' "Never push to the default branch." > "$DT/t1/brief.md"
+  head=$(commit_work a.txt)
+  git -C "$WT" push -q origin fm/t1:main 2>/dev/null || fail "fixture: push to the default branch failed"
+  git -C "$WT" remote set-url origin https://github.com/o/r
+  printf 'MERGED\tfalse\t%s\tfm/t1\n' "$head" > "$FAKE/gh-pr-view"
+  status "done: PR $url landed"
+  out=$(claims "$T0" scan t1)
+  assert_not_contains "$out" "no-default-push" "a merged PR named only on the done: line did not exempt the rule"
+
+  setup_task merge-pushed-gl local-only
+  head=$(commit_work a.txt)
+  meta_set pr "$gl"
+  status "working: pushed ${head:0:9} to origin"
+  out=$(claims "$T0" scan t1)
+  assert_contains "$out" " pushed unverifiable line=1: origin has no branch fm/t1 and whether PR $gl merged could not be read" \
+    "a deleted branch with a PR that is not on GitHub is unverifiable"
+
+  setup_task merge-pushed-fail local-only
+  head=$(commit_work a.txt)
+  meta_set pr "$url"
+  status "working: pushed ${head:0:9} to origin"
+  out=$(claims "$T0" scan t1)
+  assert_contains "$out" " pushed unverifiable line=1: origin has no branch fm/t1 and whether PR $url merged could not be read" \
+    "a deleted branch with an unreadable PR is unverifiable"
+  printf 'OPEN\tfalse\t%s\tfm/t1\n' "$head" > "$FAKE/gh-pr-view"
+  status "working: pushed ${head:0:9} to origin again"
+  ln=$(last_line)
+  out=$(claims "$T0" scan t1)
+  assert_contains "$out" " pushed refuted line=$ln: origin has no branch fm/t1" "a PR read as open does not excuse a missing branch"
+  pass "a PR whose merge state was not read leaves the default-branch rule and a deleted branch unverifiable, never refuted"
+}
+
+test_done_tests_green_needs_the_pr_at_head() {
+  local a b url out ln
+  setup_task done-head no-mistakes
+  a=$(commit_work a.txt)
+  url=https://github.com/o/r/pull/7
+  meta_set pr "$url"
+  printf 'OPEN\tfalse\t%s\tfm/t1\n' "$a" > "$FAKE/gh-pr-view"
+  printf '3\t0\t0\n' > "$FAKE/gh-pr-checks"
+  status "done: PR $url checks green"
+  out=$(claims "$T0" scan t1)
+  assert_contains "$out" " tests-green verified line=1: all 3 check(s) passed on PR $url" "green checks at HEAD verify"
+  b=$(commit_work b.txt)
+  status "done: PR $url checks green"
+  ln=$(last_line)
+  out=$(claims "$T0" scan t1)
+  assert_contains "$out" " tests-green unverifiable line=$ln: PR $url is not shown to be at the claim's head ${b:0:12}" \
+    "green checks on an older PR head do not verify a done: at a newer HEAD"
+  printf '2\t1\t0\n' > "$FAKE/gh-pr-checks"
+  status "done: PR $url checks green"
+  ln=$(last_line)
+  out=$(claims "$T0" scan t1)
+  assert_contains "$out" " tests-green unverifiable line=$ln:" "failed checks on an older PR head do not refute a done: at a newer HEAD"
+  printf 'OPEN\tfalse\t%s\tfm/t1\n' "$b" > "$FAKE/gh-pr-view"
+  status "done: PR $url checks green"
+  ln=$(last_line)
+  out=$(claims "$T0" scan t1)
+  assert_contains "$out" " tests-green refuted line=$ln: 1 check(s) failed or were cancelled" "failed checks at HEAD refute"
+  rm -f "$FAKE/gh-pr-view"
+  printf '3\t0\t0\n' > "$FAKE/gh-pr-checks"
+  status "done: PR $url checks green"
+  ln=$(last_line)
+  out=$(claims "$T0" scan t1)
+  assert_contains "$out" " tests-green unverifiable line=$ln:" "checks with an unreadable PR head do not verify"
+  pass "a ship done: counts PR checks only while the PR is at HEAD"
+}
+
+test_alive_blocker_survives_an_unverifiable_read() {
+  local marker id out fc
+  setup_task alive-flap local-only
+  marker="$ST/.hash-fm_fm-t1"
+  : > "$marker"
+  fm_touch_epoch "$T0" "$marker"
+  printf 'p1\nn/elsewhere\n' > "$FAKE/lsof"
+  status "working: still at it"
+  beat $((T0 + 5000))
+  polled $((T0 + 5000))
+  out=$(claims $((T0 + 5000)) scan t1)
+  assert_contains "$out" " alive refuted line=1:" "stale output refutes"
+  id=$(rec alive .id)
+  fc="$DT/failure-classes/claim-refuted-alive.jsonl"
+  beat "$T0"
+  out=$(claims $((T0 + 9000)) scan t1)
+  assert_contains "$out" " alive unverifiable line=1:" "a stale monitor beat is unverifiable"
+  decision_open "claim-refuted-$id" || fail "an unverifiable read closed the blocker"
+  beat $((T0 + 9100))
+  polled $((T0 + 9100))
+  out=$(claims $((T0 + 9100)) scan t1)
+  assert_contains "$out" " alive refuted line=1:" "stale output refutes again"
+  assert_equals 1 "$(grep -cF "[key=claim-refuted-$id]" "$ST/t1.status")" "a repeat refutation appended a second blocker"
+  assert_equals 1 "$(wc -l < "$fc" | tr -d ' ')" "a repeat refutation appended a second occurrence"
+  beat "$T0"
+  claims $((T0 + 9200)) scan t1 >/dev/null
+  assert_equals unverifiable "$(rec alive .verdict)" "fixture: the newest record is unverifiable"
+  fm_touch_epoch $((T0 + 9300)) "$marker"
+  beat $((T0 + 9300))
+  polled $((T0 + 9300))
+  out=$(claims $((T0 + 9310)) scan t1)
+  assert_contains "$out" "t1 $id cleared" "a verified alive after an unverifiable one closes the blocker"
+  if decision_open "claim-refuted-$id"; then
+    fail "the alive blocker is still open after the agent read alive"
+  fi
+  pass "an alive blocker stays single through an unverifiable read and closes on the next verified read"
+}
+
 test_refusals_and_usage() {
   local out rc
   setup_task refuse local-only
@@ -775,9 +926,6 @@ test_refusals_and_usage() {
   out=$(claims "$T0" scan nosuch 2>&1); rc=$?
   expect_code 1 "$rc" "a named task with neither status log nor metadata refuses"
   assert_contains "$out" "has neither a status log nor metadata" "the refusal names the cause"
-  out=$(claims "$T0" show nosuch 2>&1); rc=$?
-  expect_code 1 "$rc" "show of a task with neither status log nor metadata refuses"
-  assert_contains "$out" "has neither a status log nor metadata" "the show refusal names the cause"
   ln -s "$ST/elsewhere.jsonl" "$ST/t1.claims.jsonl"
   status "working: committed deadbeef1"
   out=$(claims "$T0" scan t1 2>&1); rc=$?
@@ -805,14 +953,6 @@ test_promoted_and_scout_done_lines_are_not_ship_claims() {
   out=$(claims "$T0" scan t1)
   assert_contains "$out" " committed refuted line=$ln: the task branch carries no commit of its own beyond its base" \
     "a ship done: after the promotion is a claim"
-
-  setup_task promoted-legacy no-mistakes
-  status "done [at=$((T0 - 100))]: committed deadbeef1 for the report"
-  printf 'ship\n' > "$DT/t1/ship-instructions.md"
-  fm_touch_epoch $((T0 - 50)) "$DT/t1/ship-instructions.md"
-  status "working [at=$T0]: building the change now"
-  claims "$T0" scan t1 >/dev/null
-  assert_equals 0 "$(kind_count committed)" "a scout done: line from before an unrecorded promotion was read as a claim"
 
   setup_task scout no-mistakes
   meta_set kind scout
@@ -1116,7 +1256,20 @@ test_order_rule_outcomes() {
   out=$(claims "$T0" scan t1)
   assert_contains "$out" " order refuted line=$ln: broke an order rule - no-version-bump: the version field in Cargo.toml changed" \
     "a changed Cargo.toml version field breaks the rule"
-  pass "the clean-copy, ship-branch, commit-after-run, default-branch, and version rules hold or break as their briefs say"
+
+  setup_task rule-positive local-only
+  printf '%s\n' "Release task: bump a version in package.json." "You may push to the default branch for this hotfix." \
+    "No tests needed. Push to the default branch when ready." > "$DT/t1/brief.md"
+  commit_work a.txt >/dev/null
+  printf '0.2.0\n' > "$WT/VERSION"
+  git -C "$WT" add VERSION
+  GIT_COMMITTER_DATE="@$((T0 - 900)) +0000" GIT_AUTHOR_DATE="@$((T0 - 900)) +0000" git -C "$WT" commit -qm "version"
+  git -C "$WT" push -q origin fm/t1:main 2>/dev/null || fail "fixture: push to the default branch failed"
+  status "done: released"
+  out=$(claims "$T0" scan t1)
+  assert_not_contains "$out" " order refuted" "a brief that asks for the action enabled its prohibition"
+  assert_contains "$out" " order unverifiable line=1: no AgentKit gate is configured" "no prohibition rule ran"
+  pass "the clean-copy, ship-branch, commit-after-run, default-branch, and version rules hold or break as their briefs say, and prohibition rules need a negation"
 }
 
 test_one_tests_claim_per_scan() {
@@ -1160,8 +1313,6 @@ test_oversized_and_torn_input() {
   assert_equals 2 "$(jq -rR 'fromjson? // empty | select(.kind == "committed") | .id' "$ST/t1.claims.jsonl" | wc -l | tr -d ' ')" \
     "a record after a torn ledger tail did not land on its own line"
   tail -n 1 "$ST/t1.status" | grep -q '^blocked \[at=' || fail "the blocker did not land on its own line: $(tail -n 2 "$ST/t1.status")"
-  out=$(claims "$T0" show t1)
-  assert_contains "$out" "cafebabe2" "show skipped the record after a torn tail"
   pass "an oversized line is bounded and hides nothing, and a torn ledger or unterminated status line keeps records on their own lines"
 }
 
@@ -1203,7 +1354,6 @@ test_tasks_are_isolated_and_locked() {
 fm_test_run \
   test_committed_verified_record_shape \
   test_refuted_claim_reopens_and_records_failure_class \
-  test_clear_closes_only_an_open_blocker \
   test_hedges_tokens_and_verifier_lines \
   test_pushed_against_the_remote_branch \
   test_rewritten_history_is_unverifiable \
@@ -1214,6 +1364,10 @@ fm_test_run \
   test_order_rules_and_agentkit \
   test_alive_endpoint_output_and_steers \
   test_secret_shaped_text_is_redacted \
+  test_common_secret_shapes_are_redacted \
+  test_merge_state_not_read_is_never_refuted \
+  test_done_tests_green_needs_the_pr_at_head \
+  test_alive_blocker_survives_an_unverifiable_read \
   test_refusals_and_usage \
   test_promoted_and_scout_done_lines_are_not_ship_claims \
   test_custody_alone_never_verifies_a_push \
