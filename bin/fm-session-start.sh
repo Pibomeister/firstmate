@@ -48,9 +48,10 @@
 #                       inactive-outcome startup scan runs in the deferred worker.
 #                       First, on every harness and away posture, it seeds the
 #                       outcome store's display tail copy when that is absent
-#                       (bin/fm-branch-outcome.sh seed-tail). A locked first
-#                       start then records this session as the current captain
-#                       handle, and every start prints a CAPTAIN ORDERS section
+#                       (bin/fm-branch-outcome.sh seed-tail). Every locked
+#                       start, including a clear or compact, then records this
+#                       session as the current captain handle and clears the
+#                       handoff record, and every start prints a CAPTAIN ORDERS section
 #                       when durable orders are open (bin/fm-order.sh).
 #   4. supervision-instructions - the one emitted operating block for the
 #                       detected primary harness.

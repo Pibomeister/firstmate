@@ -22,6 +22,7 @@
 #   fm-order.sh holds [--relay]
 #   fm-order.sh handoff --doc <file>
 #   fm-order.sh gate
+#   fm-order.sh handing-off
 #   fm-order.sh claim-handle
 #   fm-order.sh sweep
 #
@@ -90,17 +91,23 @@
 # RESTART GATE. The handoff document is the proof. `handoff --doc <file>`
 # appends the block of open orders to the session handoff document, at any
 # path, and records that path in state/.order-handoff, which marks this session
-# as handing off. `gate` reads the recorded document and exits 0 only when it
-# names every open order id; otherwise it exits 3 naming the missing ids,
-# including when this session recorded no handoff or the document is gone.
+# as handing off. The record names the harness session that wrote it (the
+# verified-harness pids above the writer, bin/fm-session-lock-lib.sh); every
+# other session in the same home treats it as absent, and a record written
+# outside any harness session applies to every session. `handing-off` exits 0
+# only when this session recorded a handoff. `gate` reads this session's
+# recorded document and exits 0 only when it names every open order id;
+# otherwise it exits 3 naming the missing ids, including when this session
+# recorded no handoff or the document is gone.
 # `claim-handle` clears the record whenever the lock owner opens a new context
 # (startup, resume, clear, or compact), so a document written before it never
 # satisfies a later context's gate. Enforcement:
 #   - bin/fm-handoff-trigger.sh, as a Claude Stop hook, runs `gate` once the
 #     session is handing off - the early handoff trigger fired in its context
-#     cycle, or it ran `handoff --doc` (stow, a restart, or percent-left=0) -
-#     and blocks a stop whose document omits an open order (once per turn, so
-#     the session is never wedged). An ordinary stop is never gated.
+#     cycle, or `handing-off` says it ran `handoff --doc` (stow, a restart, or
+#     percent-left=0) - and blocks a stop whose document omits an open order
+#     (once per turn, so the session is never wedged). An ordinary stop is
+#     never gated, including another session's stop in the same home.
 #   - the stow skill and a restarting leash or sender run `gate` and do not
 #     reset or restart the captain while it exits 3.
 # Limits: the Stop hook is Claude-only, so nothing gates a non-Claude primary,
@@ -292,8 +299,9 @@ delivery_facts() {  # <id>
 # ---------------------------------------------------------------- handle
 
 # Record this process's captain terminal as the current handle, and clear the
-# previous session's handoff record. Run by bin/fm-session-start.sh on a locked
-# start, from inside the captain session.
+# handoff record. Run from inside the captain session whenever the lock owner
+# opens a new context: bin/fm-session-start.sh on every locked start, including
+# a clear or compact, and bin/fm-sessionstart-run.sh on a resume.
 cmd_claim_handle() {
   local backend target rc=0 tmp
   rm -f "$HANDOFF_RECORD"
@@ -708,10 +716,39 @@ EOF
 
 # ---------------------------------------------------------------- restart gate
 
+# Set SESSION_PIDS to the verified-harness pids this process runs under, one
+# per line, or to nothing outside a harness session.
+# bin/fm-session-lock-lib.sh owns the walk.
+load_session_pids() {
+  # shellcheck source=bin/fm-session-lock-lib.sh
+  . "$SELF_DIR/fm-session-lock-lib.sh"
+  SESSION_PIDS=$(fm_harness_ancestry_pids 2>/dev/null) || SESSION_PIDS=
+}
+
+# True when the handoff record exists and belongs to this session: its owner
+# shares a harness pid with this process, or it names no owner.
+handoff_record_mine() {
+  local owner pid
+  [ -r "$HANDOFF_RECORD" ] || return 1
+  owner=$(sed -n 's/^owner=//p' "$HANDOFF_RECORD" | head -n 1)
+  [ -n "$owner" ] || return 0
+  load_session_pids
+  [ -n "$SESSION_PIDS" ] || return 1
+  for pid in $owner; do
+    fm_harness_pid_listed "$pid" "$SESSION_PIDS" && return 0
+  done
+  return 1
+}
+
 # The handoff document this session recorded with `handoff --doc`, or nothing.
 recorded_handoff_doc() {
-  [ -r "$HANDOFF_RECORD" ] || return 0
+  handoff_record_mine || return 0
   sed -n 's/^doc=//p' "$HANDOFF_RECORD" | head -n 1
+}
+
+cmd_handing_off() {
+  [ "$#" -eq 0 ] || usage_die "usage: fm-order.sh handing-off"
+  handoff_record_mine
 }
 
 cmd_handoff() {
@@ -728,8 +765,9 @@ cmd_handoff() {
   doc="$dir/${doc##*/}"
   printf '\n%s\n' "$block" >>"$doc"
   mkdir -p "$STATE"
+  load_session_pids
   tmp=$(mktemp "$STATE/.order-handoff.XXXXXX")
-  printf 'doc=%s\nat=%s\n' "$doc" "$(now_epoch)" >"$tmp"
+  printf 'doc=%s\nat=%s\nowner=%s\n' "$doc" "$(now_epoch)" "$(printf '%s' "$SESSION_PIDS" | tr '\n' ' ')" >"$tmp"
   mv "$tmp" "$HANDOFF_RECORD"
   n=$(open_orders | awk 'NF { n++ } END { print n + 0 }')
   printf 'handoff: wrote %s open order(s) into %s\n' "$n" "$doc"
@@ -834,6 +872,7 @@ case "${1:-}" in
   holds) shift; cmd_holds "$@" ;;
   handoff) shift; cmd_handoff "$@" ;;
   gate) shift; cmd_gate "$@" ;;
+  handing-off) shift; cmd_handing_off "$@" ;;
   claim-handle) shift; cmd_claim_handle ;;
   sweep) shift; cmd_sweep ;;
   -h|--help|help) usage ;;

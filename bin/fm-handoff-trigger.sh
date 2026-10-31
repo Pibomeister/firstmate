@@ -143,10 +143,11 @@ if [ -n "$SESSION_ID" ] && [ -n "$TRANSCRIPT" ]; then
 fi
 if [ "$EVENT" = Stop ]; then
   # Enforce the restart gate only on a session that is handing off: the
-  # trigger fired in this cycle, or the session recorded a handoff document
-  # (state/.order-handoff, owned by bin/fm-order.sh), which also covers
-  # percent-left=0.
-  { [ -n "$MARKER" ] && [ -e "$MARKER" ]; } || [ -e "$STATE/.order-handoff" ] || exit 0
+  # trigger fired in this cycle, or this session recorded a handoff document
+  # (bin/fm-order.sh handing-off), which also covers percent-left=0. Another
+  # session's handoff record in the same home never gates this stop.
+  { [ -n "$MARKER" ] && [ -e "$MARKER" ]; } ||
+    FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-order.sh" handing-off 2>/dev/null || exit 0
   [ "$(printf '%s' "$PAYLOAD" | jq -r '.stop_hook_active // false' 2>/dev/null)" != true ] || exit 0
   GATE_RC=0
   GATE_OUT=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-order.sh" gate 2>/dev/null) || GATE_RC=$?

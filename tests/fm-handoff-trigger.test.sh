@@ -368,6 +368,76 @@ test_a_recorded_handoff_gates_the_stop_without_the_trigger() {
   pass "a recorded handoff gates the stop even with the trigger off, and an ordinary stop is never gated"
 }
 
+# Two harness sessions share one home: the lock owner records its handoff
+# (stow), a newer order arrives, and a second, read-only session in the same
+# home stops. Each session is a fake harness (a bash symlink named "claude"),
+# so bin/fm-session-lock-lib.sh's ancestry walk tells them apart. Only the
+# session that wrote the handoff is handing off; the other's stop stays
+# ordinary, while the writer's own stop is still gated.
+test_another_sessions_handoff_never_gates_this_stop() {
+  local fakebin doc ready go a_pid rc err order_id
+  reset_lab
+  rm -rf "$PRIMARY/data/orders"
+  fakebin="$TMP_ROOT/fake-harness"
+  mkdir -p "$fakebin"
+  ln -sf /bin/bash "$fakebin/claude"
+  printf 'percent-left=0\n' > "$PRIMARY/config/handoff-trigger"
+  transcript "$TMP_ROOT/t-two" 10000
+  doc="$PRIMARY/data/two-handoff.md"
+  ready="$TMP_ROOT/two.ready"
+  go="$TMP_ROOT/two.go"
+  rm -f "$ready" "$go"
+  printf '# Handoff\n' > "$doc"
+  FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" send --from test "order before the handoff" >/dev/null \
+    || fail "could not send the order fixture"
+  (
+    export HOOK CLAUDE_HOME PRIMARY ROOT doc ready go TMP_ROOT
+    export -f run_hook
+    # shellcheck disable=SC2016 # The fake harness shell expands these.
+    exec "$fakebin/claude" -c '
+      FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" handoff --doc "$doc" >/dev/null || exit 9
+      : > "$ready"
+      n=0
+      while [ ! -e "$go" ] && [ "$n" -lt 300 ]; do sleep 0.1; n=$((n + 1)); done
+      rc=0
+      run_hook "$PRIMARY" s-owner "$TMP_ROOT/t-two" Stop >/dev/null 2>"$TMP_ROOT/two-owner.err" || rc=$?
+      exit "$rc"'
+  ) &
+  a_pid=$!
+  n=0
+  while [ ! -e "$ready" ] && [ "$n" -lt 300 ]; do sleep 0.1; n=$((n + 1)); done
+  [ -e "$ready" ] || { kill "$a_pid" 2>/dev/null; fail "the handoff-writing session never recorded its handoff"; }
+  sleep 1
+  FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" send --from test "order after the handoff" >/dev/null \
+    || fail "could not send the second order fixture"
+  order_id=$(find "$PRIMARY/data/orders/pending" -name '*.order' | sed 's#.*/##; s/\.order$//' | sort | tail -n 1)
+
+  err="$TMP_ROOT/two-other.err"
+  rc=0
+  (
+    export HOOK CLAUDE_HOME PRIMARY ROOT TMP_ROOT
+    export -f run_hook
+    # shellcheck disable=SC2016 # The fake harness shell expands these.
+    exec "$fakebin/claude" -c 'run_hook "$PRIMARY" s-other "$TMP_ROOT/t-two" Stop >/dev/null'
+  ) 2>"$err" || rc=$?
+  [ "$rc" -eq 0 ] || fail "another session's handoff record must not gate this session's ordinary stop (rc=$rc): $(cat "$err")"
+  rc=0
+  (
+    export PRIMARY ROOT
+    # shellcheck disable=SC2016 # The fake harness shell expands these.
+    exec "$fakebin/claude" -c 'FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" handing-off'
+  ) || rc=$?
+  [ "$rc" -eq 1 ] || fail "a session that wrote no handoff is not handing off (rc=$rc)"
+
+  : > "$go"
+  rc=0
+  wait "$a_pid" || rc=$?
+  [ "$rc" -eq 2 ] || fail "the session that wrote the handoff must still have its stop gated for the newer order (rc=$rc)"
+  assert_contains "$(cat "$TMP_ROOT/two-owner.err")" "$order_id" "the writer's block names the newer order"
+  rm -rf "$PRIMARY/data/orders" "$doc" "$PRIMARY/state/.order-handoff" "$PRIMARY/config/handoff-trigger" "$ready" "$go"
+  pass "a handoff record gates only the session that wrote it, never another session's stop in the same home"
+}
+
 test_threshold_default_15
 test_threshold_configurable
 test_fires_once_per_context_cycle
@@ -381,3 +451,4 @@ test_unresolved_compact_point_is_silent
 test_scope
 test_names_open_captain_orders_and_gates_the_stop
 test_a_recorded_handoff_gates_the_stop_without_the_trigger
+test_another_sessions_handoff_never_gates_this_stop
