@@ -358,6 +358,9 @@ esac
 # and wake emission (secondmate_liveness_tick below).
 # shellcheck source=/dev/null # Analyzed separately as a canonical lint root.
 . "$SCRIPT_DIR/fm-secondmate-liveness-lib.sh"
+# The primary home's open-goal predicate is shared with watcher arming.
+# shellcheck source=bin/fm-supervision-lib.sh
+. "$SCRIPT_DIR/fm-supervision-lib.sh"
 
 WATCH_LOCK="$STATE/.watch.lock"
 WATCH_PATH="$SCRIPT_DIR/fm-watch.sh"
@@ -3814,6 +3817,28 @@ EOF
 # surfaced when it wakes firstmate, this normally finds nothing and the heartbeat
 # is absorbed; it surfaces only an event the per-wake path absorbed by mistake -
 # the fail-safe backstop.
+# heartbeat_open_work: an attended primary home with an unresolved dispatch-log
+# goal, or an in-flight task not resting in a declared paused or captain-held
+# wait, gets the 15-minute heartbeat floor; held and paused waits keep their own
+# PAUSE_RESURFACE_SECS cadence and the HEARTBEAT_MAX backoff.
+heartbeat_open_work() {
+  local meta task last until
+  [ ! -e "$FM_HOME/.fm-secondmate-parent" ] || return 1
+  fm_sup_open_goal "$STATE" && return 0
+  for meta in "$STATE"/*.meta; do
+    [ -e "$meta" ] || continue
+    task=${meta##*/}; task=${task%.meta}
+    last=$(status_declared_wait_line "$STATE/$task.status")
+    status_is_captain_held "$last" && continue
+    if status_is_paused "$last" \
+      && { ! until=$(status_paused_until "$last") || [ "$(fm_watch_now)" -lt "$until" ]; }; then
+      continue
+    fi
+    return 0
+  done
+  return 1
+}
+
 heartbeat_scan_finds_actionable() {
   local f task record rest endpoint ident rc found=1 sig marker exclude
   # Same self-home exclusion as scan_signals: a remote mate's parent channel
@@ -3844,7 +3869,7 @@ heartbeat_scan_finds_actionable() {
 
 # checkpoint_inbox_sleep: the cycle's wait inside a secondmate's foreground
 # checkpoint (bin/fm-watch-checkpoint.sh owns the contract and passes the
-# parent-owned inbox). It sleeps POLL in one-second steps and exits 0 with
+# parent-owned inbox). It sleeps the bounded poll budget in one-second steps and exits 0 with
 # "checkpoint-inbox: <names>" as soon as that inbox holds a record not yet
 # announced, once the announced names are recorded in
 # state/.checkpoint-inbox-seen; an unwritable record keeps it an ordinary wait.
@@ -3866,7 +3891,7 @@ EOF
       echo "checkpoint-inbox:$names"
       exit 0
     fi
-    [ "$i" -lt "$POLL" ] || return 0
+    [ "$i" -lt "${WATCH_WAIT_BUDGET:-$POLL}" ] || return 0
     sleep 1
     i=$((i + 1))
   done
@@ -3877,7 +3902,8 @@ EOF
 # bounded wait on the backend's native transition stream, so a crew going
 # `blocked` wakes the supervisor sub-second instead of after the stale-pane
 # wedge timer. For every other home - no push-capable window, backend not
-# capable, or the event path proven unreliable this process - it sleeps POLL,
+# capable, or the event path proven unreliable this process - it sleeps the
+# current poll budget,
 # byte-for-byte today's behavior. The poll loop above still runs every cycle, so
 # this only ever SHORTENS latency; it can never drop an escalation (the poll
 # loop is the permanent fail-closed backstop). This preserves the single live
@@ -3885,6 +3911,7 @@ EOF
 # a second watcher, so every guard/beacon/arm/turn-end mechanism is unchanged.
 event_wait_or_sleep() {
   local w b session first_backend="" first_session="" rec rc
+  local wait_seconds=${WATCH_WAIT_BUDGET:-$POLL}
   local windows=() t3_windows=()
   if [ "${FM_WATCH_FOREGROUND_CHECKPOINT:-0}" = 1 ] && [ -n "${FM_WATCH_CHECKPOINT_INBOX:-}" ]; then
     checkpoint_inbox_sleep
@@ -3921,7 +3948,7 @@ event_wait_or_sleep() {
   fi
 
   if [ "${#windows[@]}" -eq 0 ]; then
-    sleep "$POLL"
+    sleep "$wait_seconds"
     return
   fi
 
@@ -3937,7 +3964,7 @@ event_wait_or_sleep() {
     _event_cap_fails=0
   fi
   if [ "$_event_cap_ok" != 1 ]; then
-    sleep "$POLL"
+    sleep "$wait_seconds"
     return
   fi
 
@@ -3946,7 +3973,7 @@ event_wait_or_sleep() {
   fm_wait_tmp_cleanup
   WATCHER_WAIT_TMP=$(mktemp -d "${TMPDIR:-/tmp}/fm-watch-wait.XXXXXX") || WATCHER_WAIT_TMP=
   TMPDIR=${WATCHER_WAIT_TMP:-${TMPDIR:-/tmp}} FM_BACKEND_EVENTS_CAPABILITY_CONFIRMED=1 watcher_waited \
-    fm_backend_wait_transition "$first_backend" "$first_session" "$POLL" "$STATE" "${windows[@]}"
+    fm_backend_wait_transition "$first_backend" "$first_session" "$wait_seconds" "$STATE" "${windows[@]}"
   rc=$?
   rec=$WATCHER_CAPTURE
   fm_wait_tmp_cleanup
@@ -3961,7 +3988,7 @@ event_wait_or_sleep() {
       # pure polling for the rest of this watcher process.
       _event_cap_fails=$((_event_cap_fails + 1))
       [ "$_event_cap_fails" -ge "$EVENT_CAP_FAIL_MAX" ] && _event_cap_ok=0
-      sleep "$POLL"
+      sleep "$wait_seconds"
       ;;
     *)
       # 1: a clean full-budget wait with no actionable edge - the reader already
@@ -5042,11 +5069,23 @@ EOF
   # Heartbeat: the watcher runs a cheap fleet-scan at a regular cadence no matter
   # what. Time-based via .last-heartbeat mtime; interval doubles per consecutive
   # no-change heartbeat (idle fleet) up to HEARTBEAT_MAX, and resets on any
-  # surfaced non-heartbeat wake or actionable heartbeat backstop.
+  # surfaced non-heartbeat wake or actionable heartbeat backstop. Attended open
+  # work caps the interval below 15 minutes, bounds the terminal wait, and
+  # surfaces a heartbeat the absorb branch would otherwise swallow.
   streak=$(cat "$STATE/.heartbeat-streak" 2>/dev/null || echo 0)
   [ "$streak" -gt 12 ] && streak=12
   hb=$(( HEARTBEAT * (1 << streak) ))
   [ "$hb" -gt "$HEARTBEAT_MAX" ] && hb=$HEARTBEAT_MAX
+  open_work=0
+  WATCH_WAIT_BUDGET=$POLL
+  if ! afk_present && heartbeat_open_work; then
+    open_work=1
+    [ "$hb" -le 885 ] || hb=885
+    remaining=$((hb - $(age_of "$STATE/.last-heartbeat")))
+    if [ "$remaining" -gt 0 ] && [ "$WATCH_WAIT_BUDGET" -gt "$remaining" ]; then
+      WATCH_WAIT_BUDGET=$remaining
+    fi
+  fi
   if [ "$(age_of "$STATE/.last-heartbeat")" -ge "$hb" ]; then
     # Triage: in always-on mode a heartbeat is benign unless the cheap fleet-scan
     # turns up a captain-relevant status the per-wake path missed. Absorb the
@@ -5067,7 +5106,7 @@ EOF
       mark_all_captain_relevant_surfaced || true
       wake "heartbeat" actionable
     else
-      if ! mark_all_captain_relevant_surfaced; then
+      if ! mark_all_captain_relevant_surfaced || [ "$open_work" -eq 1 ]; then
         fm_wake_append heartbeat heartbeat heartbeat || exit 1
         touch "$STATE/.last-heartbeat"
         wake "heartbeat"
