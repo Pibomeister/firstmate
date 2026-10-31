@@ -44,7 +44,9 @@
 #     pr_head           string; null when the task records no PR
 #     no_mistakes_run   {run_id, step, active}; null only on the CLI's explicit
 #                       runs_on_current_branch: 0; unknown, not a failure, in a
-#                       repo with no gate
+#                       repo with no gate or for a run that fails the
+#                       fm-nm-run-lib.sh attribution rule; active is unknown
+#                       for an executing record whose daemon answered down
 #     last_output_time  {observed_at, age_seconds, source}: terminal (the watcher's
 #                       pane-change marker) or transcript, each only from since the
 #                       spawn_gen epoch; a secondmate's marker is never read, since
@@ -360,7 +362,7 @@ heartbeat_last_push_json() {  # <id> <worktree> <branch>
 }
 
 heartbeat_no_mistakes_json() {  # <id> <worktree> <branch>
-  local id=$1 wt=$2 branch=$3 out rc=0 run_id run_branch step active=false
+  local id=$1 wt=$2 branch=$3 out rc=0 run_id run_branch step active=false executing=false daemon=""
   out=$(fm_nm_run_checked "$wt" "$FM_HEARTBEAT_NM_TIMEOUT" axi status </dev/null) || rc=$?
   if [ "$(fm_nm_strip_quotes "$(fm_nm_field "$out" error)")" = "repo not initialized (run 'no-mistakes init' first)" ]; then
     heartbeat_unknown "repo has no gate"
@@ -386,8 +388,22 @@ heartbeat_no_mistakes_json() {  # <id> <worktree> <branch>
     heartbeat_unknown "no-mistakes status reported a run on another branch"
     return 0
   fi
+  if fm_nm_run_is_executing "$out"; then
+    executing=true
+    daemon=$(fm_nm_daemon_answer "$wt" "$FM_HEARTBEAT_NM_TIMEOUT" </dev/null)
+  fi
+  if ! fm_nm_head_matches_worktree "$wt" "$(fm_nm_strip_quotes "$(fm_nm_field "$out" head)")" \
+    && ! fm_nm_run_is_pipeline_owned_active "$out" \
+    && { [ "$executing" = false ] || [ "$daemon" = down ]; }; then
+    heartbeat_unknown "no-mistakes run code identity unverified"
+    return 0
+  fi
   step=$(fm_nm_table_column "$out" active_steps step | head -1)
-  if fm_nm_run_is_active "$out"; then active=true; fi
+  if [ "$daemon" = down ]; then
+    active=$(heartbeat_unknown "no-mistakes daemon down; run record unverified")
+  elif fm_nm_run_is_active "$out"; then
+    active=true
+  fi
   jq -n --arg run_id "$run_id" --arg step "$step" --argjson active "$active" \
     '{run_id:$run_id,step:(if $step == "" then null else $step end),active:$active}'
 }

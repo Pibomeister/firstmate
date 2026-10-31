@@ -40,6 +40,15 @@ SH
 cat > "$FAKEBIN/no-mistakes" <<'SH'
 #!/usr/bin/env bash
 [ -z "${FAKE_NM_MARKER:-}" ] || : > "$FAKE_NM_MARKER"
+if [ "${1:-}" = daemon ]; then
+  case "${FAKE_NM_DAEMON:-up}" in
+    up) printf '● daemon running\n' ;;
+    stopped) printf '○ daemon not running\n' ;;
+    refused) exit 1 ;;
+    hang) sleep 30 ;;
+  esac
+  exit 0
+fi
 case "${FAKE_NM_MODE:-none}" in
   none)
     printf 'current_branch: fm/hb-task\nruns_on_current_branch: 0\n'
@@ -52,7 +61,7 @@ run:
   id: "01RUN"
   branch: $branch
   status: running
-  head: "abc1234"
+  head: "${FAKE_NM_HEAD:-abc1234}"
   pr: ""
   findings: none
   steps[2]{step,status,findings,duration_ms}:
@@ -60,6 +69,20 @@ run:
     review,running,0,0
   active_steps[1]{step,active_for,last_activity,agent_pid,round}:
     review,1m,now,123,1
+EOF
+    [ -z "${FAKE_NM_SYNC:-}" ] || printf 'branch_sync:\n  state: %s\n' "$FAKE_NM_SYNC"
+    ;;
+  terminal|parked)
+    status=completed
+    [ "$FAKE_NM_MODE" = terminal ] || status=awaiting_approval
+    cat <<EOF
+run:
+  id: "01OLD"
+  branch: fm/hb-task
+  status: $status
+  head: "${FAKE_NM_HEAD:-abc1234}"
+  pr: ""
+  findings: none
 EOF
     ;;
   ungated)
@@ -196,6 +219,45 @@ test_no_mistakes_run_is_parsed_from_real_status() {
   assert_ledger "$home" '.tasks[0].no_mistakes_run.unknown == true' \
     "a run on another branch was attributed to this task"
   pass "no_mistakes_run reads the real status shape and refuses a sibling branch's run"
+}
+
+test_settled_run_binds_only_on_worktree_head() {
+  local home head mode
+  home=$(make_home nm-settled)
+  head=$(git -C "$home/projects/ship" rev-parse HEAD)
+  for mode in terminal parked; do
+    publish "$home" FAKE_NM_MODE=$mode
+    assert_ledger "$home" '.tasks[0].no_mistakes_run.unknown == true' \
+      "a stale $mode run on a reused branch was attributed"
+  done
+  publish "$home" FAKE_NM_MODE=terminal "FAKE_NM_HEAD=$head"
+  assert_ledger "$home" '.tasks[0].no_mistakes_run == {run_id:"01OLD",step:null,active:false}' \
+    "a terminal run at the worktree head was not published"
+  publish "$home" FAKE_NM_MODE=parked "FAKE_NM_HEAD=$head"
+  assert_ledger "$home" '.tasks[0].no_mistakes_run == {run_id:"01OLD",step:null,active:true}' \
+    "a parked run at the worktree head was not published"
+  pass "a terminal or parked run binds only through the worktree head"
+}
+
+test_daemon_answer_qualifies_executing_run() {
+  local home head answer
+  home=$(make_home nm-daemon)
+  head=$(git -C "$home/projects/ship" rev-parse HEAD)
+  for answer in stopped refused; do
+    publish "$home" FAKE_NM_MODE=run "FAKE_NM_DAEMON=$answer"
+    assert_ledger "$home" '.tasks[0].no_mistakes_run.unknown == true' \
+      "daemon $answer: a stale executing record was attributed"
+    publish "$home" FAKE_NM_MODE=run "FAKE_NM_DAEMON=$answer" "FAKE_NM_HEAD=$head"
+    assert_ledger "$home" '.tasks[0].no_mistakes_run | .run_id == "01RUN" and .active.unknown == true' \
+      "daemon $answer: a matching record claimed a live run"
+  done
+  publish "$home" FAKE_NM_MODE=run FAKE_NM_DAEMON=stopped FAKE_NM_SYNC=pipeline_owned
+  assert_ledger "$home" '.tasks[0].no_mistakes_run | .run_id == "01RUN" and .active.unknown == true' \
+    "a pipeline-owned run did not bind with an unknown live claim"
+  publish "$home" FAKE_NM_MODE=run FAKE_NM_DAEMON=hang FM_HEARTBEAT_NM_TIMEOUT=1
+  assert_ledger "$home" '.tasks[0].no_mistakes_run == {run_id:"01RUN",step:"review",active:true}' \
+    "an unanswered probe dropped a live run"
+  pass "only an answered daemon-down suppresses an executing run's live claim"
 }
 
 test_failed_status_is_unknown_not_no_run() {
@@ -577,6 +639,8 @@ SH
 
 test_ledger_schema_and_clean_run
 test_no_mistakes_run_is_parsed_from_real_status
+test_settled_run_binds_only_on_worktree_head
+test_daemon_answer_qualifies_executing_run
 test_failed_status_is_unknown_not_no_run
 test_transcript_fields_with_fractional_timestamps
 test_leftover_transcript_in_a_reused_slot_is_ignored
@@ -598,4 +662,4 @@ test_stale_work_dir_is_swept
 test_watcher_poll_does_not_wait_for_heartbeat
 test_watcher_runs_one_heartbeat_at_a_time
 
-printf 'ok - %s tests passed\n' 22
+printf 'ok - %s tests passed\n' 24

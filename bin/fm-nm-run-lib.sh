@@ -111,6 +111,24 @@ fm_nm_run() {  # <dir> <timeout_secs> <args...>
   fm_nm_run_checked "$@" || true
 }
 
+# ONE bounded `daemon status` call answering `up`, `unanswered` (the bounded
+# call's own 124), or `down`. A clean stop also exits 0, with
+# "○ daemon not running".
+fm_nm_daemon_answer() {  # <dir> <timeout_secs>
+  local rc=0 daemon_status
+  daemon_status=$(fm_nm_run_checked "$1" "$2" daemon status) || rc=$?
+  case "$rc" in
+    0)
+      if printf '%s\n' "$daemon_status" | grep -Eq '(^|[[:space:]])daemon running([[:space:]]|$)'; then
+        printf 'up\n'
+      else
+        printf 'down\n'
+      fi ;;
+    124) printf 'unanswered\n' ;;
+    *)   printf 'down\n' ;;
+  esac
+}
+
 fm_nm_trim() {
   local s=${1:-}
   s="${s#"${s%%[![:space:]]*}"}"
