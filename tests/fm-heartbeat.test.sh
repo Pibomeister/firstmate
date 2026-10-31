@@ -283,17 +283,21 @@ SH
 test_worktree_off_recorded_branch_is_unknown() {
   local home real_git fake script
   home=$(make_home nm-moved)
+  git -C "$home/projects/ship" update-ref refs/remotes/origin/fm/hb-task HEAD
   git -C "$home/projects/ship" checkout -q -b fm/hb-other
   publish "$home" FAKE_NM_MODE=sibling FAKE_NM_SIBLING=fm/hb-other
   assert_ledger "$home" '
     .tasks[0].no_mistakes_run.unknown == true
     and (.tasks[0].no_mistakes_run.reason | test("fm/hb-other") and test("fm/hb-task"))
-  ' "a moved worktree published a confident run value"
+    and (.tasks[0].last_commit.sha | type == "string")
+    and .tasks[0].last_commit.branch == .tasks[0].no_mistakes_run
+    and .tasks[0].last_push == .tasks[0].no_mistakes_run
+  ' "a moved worktree published a confident run, commit branch, or push value"
 
   home=$(make_home nm-detached)
   git -C "$home/projects/ship" checkout -q --detach
   publish "$home" FAKE_NM_MODE=run
-  assert_ledger "$home" '.tasks[0].no_mistakes_run == {run_id:"01RUN",step:"review",active:true} and .failure == null' \
+  assert_ledger "$home" '.tasks[0].no_mistakes_run == {run_id:"01RUN",step:"review",active:true} and .tasks[0].last_commit.branch == "fm/hb-task" and .failure == null' \
     "a detached worktree did not keep the selection path"
 
   real_git=$(command -v git)
@@ -315,12 +319,16 @@ SH
   publish "$home" FAKE_NM_MODE=run FM_HEARTBEAT_SNAPSHOT_SCRIPT="$script" "PATH=$fake:$PATH"
   assert_ledger "$home" '
     .tasks[0].no_mistakes_run == {unknown:true,reason:"worktree branch unread"}
+    and .tasks[0].last_push == .tasks[0].no_mistakes_run
+    and .tasks[0].last_commit.branch == .tasks[0].no_mistakes_run
     and (.failure.reason | test("worktree branch unreadable"))
   ' "a failed branch read was treated as a match"
   publish "$home" FAKE_NM_MODE=run FM_HEARTBEAT_SNAPSHOT_SCRIPT="$script" \
     FAKE_GIT_BRANCH=hang FM_HEARTBEAT_READ_TIMEOUT=1 "PATH=$fake:$PATH"
   assert_ledger "$home" '
     .tasks[0].no_mistakes_run == {unknown:true,reason:"worktree branch unread"}
+    and .tasks[0].last_push == .tasks[0].no_mistakes_run
+    and .tasks[0].last_commit.branch == .tasks[0].no_mistakes_run
     and (.failure.reason | test("worktree branch timed out"))
   ' "a hung branch read was treated as a match"
   pass "a worktree off its recorded branch or with an unread branch reads as unknown"
