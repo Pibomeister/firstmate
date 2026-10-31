@@ -4379,6 +4379,12 @@ while :; do
   # alive. Supervision scripts warn when this goes stale with tasks in flight.
   touch "$STATE/.last-watcher-beat"
 
+  # Self-watching heartbeat ledger: bin/fm-heartbeat.sh owns the document; bounded,
+  # best-effort, and never allowed to block this poll.
+  fm_run_timed "$WATCH_HELPER_BUDGET" env FM_HOME="$FM_HOME" FM_ROOT_OVERRIDE="$FM_ROOT" \
+    FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG" \
+    "$SCRIPT_DIR/fm-heartbeat.sh" --write >/dev/null 2>&1 || true
+
   for budget_meta in "$STATE"/*.meta; do
     [ -f "$budget_meta" ] && [ ! -L "$budget_meta" ] || continue
     grep -q '^budget_inclusive_hard=' "$budget_meta" || continue
