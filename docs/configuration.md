@@ -1793,6 +1793,8 @@ Set it high when a wrong pick is costly and low when the rule is a safe runner-u
 - A provider-only rule floor on an expanded provider binds to its `default` account row.
 - An absent or unknown row or unmeasured provider makes the floor unverifiable and escalates without authorizing default routing.
 - A known percentage below the floor makes the tool resolve among `default` profiles instead.
+- On Cursor, each candidate is judged against its own pool, as described under [Candidate eligibility and evidence](#typed-dispatch-resolution-env-fm_dispatch_provider-fm_dispatch_model).
+  A candidate below the floor is dropped alone, and the rule falls through only when no Cursor candidate clears the floor and none is unverifiable.
 
 **Provider identifiers and mappings**
 
@@ -1812,6 +1814,7 @@ This single-provider table is separate from the frozen legacy mapping used by `f
 
 - A profile `floor` contains only `scope` and `min_percent`, always uses that profile's provider and matched account, and makes that one candidate ineligible below `min_percent` on the named scope.
 - An absent or unknown named row also makes the candidate unrankable and is reported as an unverifiable floor, not as a known shortfall.
+- On Cursor, an `all_models` floor reads the candidate's own pool, and a `pool:auto`, `pool:api`, or `pool:grok` scope names a pool directly.
 
 **Model, effort, and fallback behavior**
 
@@ -1938,6 +1941,9 @@ No qualifying option, or two equally probable qualifying options, produces `ambi
 **Candidate eligibility and evidence**
 
 - Any applicable `exhausted_now` row or known zero bound makes that candidate ineligible, and a known profile-floor shortfall does the same before unrelated quota uncertainty is considered.
+- Cursor candidates are judged by pool, not by the collapsed `all_models` row: auto and composer models by `auto_usage` and `included_usage`, named API models by `api_usage`, and `grok-*` models by the API pool because no Cursor window is confirmed as billing them.
+  A real `pool:<name>` row from `quota-axi` overrides the row derived from those windows, an unrecognized model keeps `all_models`, and any model outside the auto pool also needs the 5% Cursor pool floor.
+  `quota_applicable` in [`bin/fm-quota-axi-lib.sh`](../bin/fm-quota-axi-lib.sh) owns this mapping.
 - Missing or nonnumeric `spendPriority` evidence is never ranked, and every candidate is printed beside its evidence or the reason it was not rankable, including on ambiguous and approval-gated outcomes that emit no profile.
 - On the opted-in path, duplicate concrete profiles with the same harness, model, and effort inside one rule or the default array are configuration errors rather than ties.
 

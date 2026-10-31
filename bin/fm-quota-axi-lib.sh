@@ -31,6 +31,38 @@ FM_QUOTA_PROVIDER_ID_RE='^[a-z0-9]+(-[a-z0-9]+)*\z'
 #   quota_row($snapshot; $provider; $lane)
 #                                  the one provider row the candidate binds to,
 #                                  or null; schema 5 ignores $lane.
+#   quota_applicable($provider_row; $model)
+#                                  the effective-availability rows that bound a
+#                                  model. Cursor splits its all_models minimum
+#                                  into pools (auto/composer by auto_usage and
+#                                  included_usage, named API models by
+#                                  api_usage) so api_usage does not bound auto.
+#                                  No Cursor window is confirmed as billing
+#                                  grok-* models (grok_bot is the separate Grok
+#                                  Bot meter), so grok-* takes the conservative
+#                                  api pool unless quota-axi emits pool:grok;
+#                                  an unrecognized model keeps the all_models
+#                                  minimum. A real pool:<name> row from
+#                                  quota-axi wins. Deriving a row from windows,
+#                                  ranked by its own remaining percent, is the
+#                                  fallback for quota-axi builds without pool
+#                                  rows, and needs a known all_models row so
+#                                  stale windows never read as capacity; the
+#                                  default TOON has no windows, so it stays
+#                                  collapsed until those builds are gone. A
+#                                  Cursor model outside the auto pool has
+#                                  poolFloor set on its pool or all_models row.
+#   quota_scope_rows($provider_row; $model; $scope)
+#                                  the rows a floor on $scope reads for a model:
+#                                  on Cursor, all_models means the model's pool
+#                                  and pool:<name> resolves real or derived.
+#   quota_provider_rows($provider_row)
+#                                  the rows a provider-wide reader judges with
+#                                  no model in hand: on Cursor, the rows that
+#                                  apply to its default model, so the other
+#                                  pools and grok_bot never judge it.
+#   quota_below_pool_floor($row)   true when a known row from quota_applicable
+#                                  sits under its poolFloor.
 # shellcheck disable=SC2016,SC2034  # jq program text, not shell expansion; read by the sourcing consumers
 FM_QUOTA_ROW_JQ='
   def quota_lane($harness; $model):
@@ -45,6 +77,64 @@ FM_QUOTA_ROW_JQ='
        ([$rows[] | select(.accountKey == "default")] | first) // null)
     else ($rows | first) // null
     end;
+  def cursor_pool($model):
+    ($model | sub("^model:"; "") | ascii_downcase) as $t |
+    if $t == "" or $t == "default" or $t == "auto" or $t == "composer" or ($t | startswith("composer-")) then "auto"
+    elif ($t | test("^(cursor-)?grok-")) then "grok"
+    elif ($t | test("^(claude|gpt|gemini|o[0-9])")) then "api"
+    else null end;
+  def cursor_api_pool_floor: 5;
+  def cursor_pool_row($p; $pool):
+    ([($p.quotaSemantics.effectiveAvailability // [])[]
+      | select(.scope == "pool:\($pool)")] | first) as $explicit |
+    if $explicit != null then $explicit
+    elif ([($p.quotaSemantics.effectiveAvailability // [])[]
+      | select(.scope == "all_models" and .status == "known")] | length) == 0 then null
+    elif $pool == "grok" then cursor_pool_row($p; "api")
+    else
+      ({auto: ["auto_usage", "included_usage"], api: ["api_usage"]}[$pool // ""] // []) as $ids |
+      [($p.windows // [])[] | select(.id as $id | $ids | index($id)) | select((.percentRemaining | type) == "number")] as $ws |
+      if ($ws | map(select(.id == $ids[0])) | length) == 0 then null
+      else ($ws | map(.percentRemaining) | min) as $min |
+        {scope: ("pool:" + $pool), status: "known", effectivePercentRemaining: $min,
+         selection: {spendPriority: ($min / 100)},
+         runway: {status: (if $min <= 0 then "exhausted_now" else "unknown" end)},
+         limitingWindowIds: ($ws | map(select(.percentRemaining == $min) | .id))}
+      end
+    end;
+  def quota_applicable($p; $model):
+    (($model // "") | sub("^model:"; "")) as $model_token |
+    [($p.quotaSemantics.effectiveAvailability // [])[] | select(.scope as $scope |
+      $scope == "all_models" or $scope == "all_products" or
+      ($model_token != "" and $model_token != "default" and
+       (($scope | startswith("model:")) or ($scope | startswith("product:"))) and
+       ($model_token == ($scope | sub("^(model|product):"; ""))))
+    )] as $base |
+    if $p.provider != "cursor" then $base
+    else cursor_pool($model_token) as $pool |
+      cursor_pool_row($p; $pool) as $pr |
+      (if $pr == null then $base
+       else ($base | map(select(.scope != "all_models"))) + [$pr]
+       end) |
+      if $pool == "auto" then .
+      else map(if .scope == "all_models" or (.scope | startswith("pool:"))
+               then . + {poolFloor: cursor_api_pool_floor} else . end)
+      end
+    end;
+  def quota_scope_rows($p; $model; $scope):
+    (if $p.provider != "cursor" then null
+     elif $scope == "all_models" then cursor_pool_row($p; cursor_pool($model))
+     elif ($scope | startswith("pool:")) then cursor_pool_row($p; $scope | ltrimstr("pool:"))
+     else null end) as $pr |
+    if $pr != null then [$pr]
+    else [($p.quotaSemantics.effectiveAvailability // [])[] | select(.scope == $scope)]
+    end;
+  def quota_provider_rows($p):
+    if $p.provider == "cursor" then quota_applicable($p; "default")
+    else $p.quotaSemantics.effectiveAvailability // []
+    end;
+  def quota_below_pool_floor($r):
+    $r.poolFloor != null and $r.status == "known" and $r.effectivePercentRemaining < $r.poolFloor;
 '
 
 # fm_quota_axi_version_compatible <version-output>

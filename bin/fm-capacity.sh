@@ -89,8 +89,8 @@
 #   captain not-configured|present|idle|away|unknown (captain-idle: away while
 #     an away record exists, else macOS HID idle time under the threshold is
 #     present and at or over it idle; anything unreadable is unknown),
-#   quota null | {provider, runway} (the all_models runway status from
-#     quota-axi --json --provider <p> --max-age 15m, bounded to 5 s; unknown
+#   quota null | {provider, runway} (the all_models runway status, or Cursor's
+#     default auto pool runway, from quota-axi --json --provider <p> --max-age 15m, bounded to 5 s; unknown
 #     when it cannot be read),
 #   limits {min_avail_gb, min_disk_gb, max_load1} (null when unset),
 #   verdict {admit, free_lanes, reasons[]}.
@@ -654,10 +654,12 @@ if [ -n "$quota_provider" ]; then
   if command -v quota-axi >/dev/null 2>&1; then
     # shellcheck source=bin/fm-timeout-lib.sh
     . "$SCRIPT_DIR/fm-timeout-lib.sh"
+    # shellcheck source=bin/fm-quota-axi-lib.sh
+    . "$SCRIPT_DIR/fm-quota-axi-lib.sh"
     qout=$(fm_run_timed "$QUOTA_TIMEOUT" quota-axi --json --provider "$quota_provider" --max-age 15m 2>/dev/null) || qout=
-    v=$(printf '%s' "$qout" | jq -r --arg p "$quota_provider" '
-      [.providers[]? | select(.provider == $p) | .quotaSemantics.effectiveAvailability[]?
-       | select(.scope == "all_models") | .runway.status | strings] | first // empty' 2>/dev/null) || v=
+    v=$(printf '%s' "$qout" | jq -r --arg p "$quota_provider" "$FM_QUOTA_ROW_JQ"'
+      [.providers[]? | select(.provider == $p) | quota_provider_rows(.)[]
+       | select(.scope == "all_models" or .scope == "pool:auto") | .runway.status | strings] | first // empty' 2>/dev/null) || v=
     case "$v" in ''|*[!a-z_]*) ;; *) runway=$v ;; esac
   fi
   quota_json=$(jq -cn --arg p "$quota_provider" --arg r "$runway" '{provider: $p, runway: $r}')
