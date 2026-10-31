@@ -3,8 +3,9 @@
 #
 # ONE owner for the no-mistakes run-attribution primitives used by
 # fm-crew-state.sh (read-only current-state reporting), fm-teardown.sh
-# (pre-teardown run abort, see its "Fix 1" header comment), and fm-dod-lib.sh
-# (the custody check a Gerrit no-mistakes ready report must pass). Crew-state binds
+# (pre-teardown run abort, see its "Fix 1" header comment), fm-dod-lib.sh
+# (the custody check a Gerrit no-mistakes ready report must pass), and
+# fm-heartbeat.sh (read-only fleet ledger). Crew-state binds
 # an EXECUTING run (pending, running, fixing or ci) on the task's branch
 # regardless of head (fm_nm_run_is_executing); every other run still needs
 # strict branch-and-head identity. Both callers then recognize a provable

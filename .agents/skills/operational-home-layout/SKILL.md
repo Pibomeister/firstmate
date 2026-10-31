@@ -158,6 +158,7 @@ state/               runtime records and signals; gitignored
   .secondmate-relaunch-<id> .secondmate-relaunch-bound-<id>   durable relaunch history and parked-bound state; never touch (bin/fm-secondmate-liveness-lib.sh owns the ledger contract)
   .watch-triage.log  watcher's absorbed-wake debug log (size-capped); never relied on, safe to delete
   lane-capacity.json  this home's published lane facts, refreshed only while config/lane-capacity exists; written only by bin/fm-capacity.sh --publish, whose header owns the document
+  heartbeat.json .heartbeat-work.*  this home's self-watching fleet ledger and its private temp directory; refreshed detached by the watcher each poll; written only by bin/fm-heartbeat.sh --write, whose header owns the document
   .last-watcher-beat watcher liveness beacon, touched every poll (including while absorbing benign wakes); guard scripts read it
   .watcher-stage .watcher-deferral.<name>   the watcher's current cycle stage and its record of work skipped behind a held lock; bin/fm-watch.sh writes both and bin/fm-guard.sh reads them; never touch
   .subsuper-* .supervise-daemon.*   sub-supervisor internals; never touch
