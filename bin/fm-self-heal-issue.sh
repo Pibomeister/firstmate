@@ -11,13 +11,15 @@
 # opens a new issue. Approved repositories are Pibomeister/firstmate,
 # Pibomeister/agent-kit, and (with --for-gate-project) the GitHub repository of
 # the registered project's origin remote, for gate-script root-cause filing.
+# Filing on Pibomeister/firstmate also requires this home's publication grant
+# from the bin/fm-role-lib.sh gate: the config/firstmate-role maintainer opt-in.
 #
 # Issue bodies include failure class, evidence lines, instance fix taken, and
 # proposed root fix. Refuses text that looks like a credential or secret.
 #
 # Environment:
-#   FM_HOME   operational home (for --for-gate-project lookup); defaults to
-#             FM_ROOT_OVERRIDE, then this checkout
+#   FM_HOME   operational home (for --for-gate-project lookup and the role
+#             file); defaults to FM_ROOT_OVERRIDE, then this checkout
 #
 # Requires gh. Exit 0 on success and prints `commented <n>` or
 # `created <n> <url>` to stdout.
@@ -27,7 +29,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=bin/fm-role-lib.sh
 . "$SCRIPT_DIR/fm-role-lib.sh"
 
-FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}}"
+FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
+CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 
 usage() {
   cat >&2 <<'USAGE'
@@ -77,6 +81,17 @@ fm_self_heal_repo_allowed() {
   target=$(fm_role_remote_identity "$url" "$proj_dir") || return 1
   [ -n "$target" ] || return 1
   [ "$norm" = "$target" ]
+}
+
+# fm_self_heal_require_firstmate_grant <norm> - die unless the gate authorizes
+# this home to publish to exactly <norm>.
+fm_self_heal_require_firstmate_grant() {
+  local norm=$1
+  if fm_role_gate_self_publish "$FM_HOME" "$CONFIG" "$FM_ROOT" "$FM_ROOT" \
+    && [ "$FM_ROLE_PUB_TARGET" = "$norm" ]; then
+    return 0
+  fi
+  die "refusing to publish to $norm: this home is missing the grant 'maintainer $norm' in $CONFIG/firstmate-role (${FM_ROLE_PUB_DENIAL:-the checkout at $FM_ROOT publishes to ${FM_ROLE_PUB_TARGET:-no firstmate repository}})"
 }
 
 fm_self_heal_key_valid() {
@@ -167,6 +182,7 @@ fm_self_heal_key_valid "$CLASS" || die 'failure-class key must be non-empty alph
 norm=$(fm_self_heal_repo_norm "$REPO") || die "invalid --repo (expected owner/name): $REPO"
 fm_self_heal_repo_allowed "$norm" "$GATE_PROJECT" \
   || die "repository $REPO is outside the approved self-heal targets"
+[ "$norm" != github.com/pibomeister/firstmate ] || fm_self_heal_require_firstmate_grant "$norm"
 fm_self_heal_refuse_secrets "$CLASS" "$TITLE" "$INSTANCE" "$PROPOSED" ${EVIDENCE[@]+"${EVIDENCE[@]}"}
 
 command -v gh >/dev/null 2>&1 || die 'gh is required'

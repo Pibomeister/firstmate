@@ -77,12 +77,16 @@ prep_home() {
   : > "$home/gh.log"
   : > "$home/labels.txt"
   make_fake_gh "$home/fakebin"
+  mkdir -p "$home/code" "$home/config"
+  git init -q "$home/code"
+  git -C "$home/code" remote add origin 'https://github.com/Pibomeister/firstmate.git'
+  printf 'maintainer github.com/pibomeister/firstmate\n' > "$home/config/firstmate-role"
 }
 
 run_script() {
   local home=$1
   shift
-  PATH="$home/fakebin:$PATH" FM_HOME="$home" \
+  PATH="$home/fakebin:$PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$home/code" \
     FM_FAKE_SELF_HEAL_GH_LOG="$home/gh.log" \
     FM_FAKE_SELF_HEAL_LABELS="$home/labels.txt" \
     FM_FAKE_SELF_HEAL_OPEN_LABEL="${FM_FAKE_SELF_HEAL_OPEN_LABEL:-}" \
@@ -322,6 +326,59 @@ test_fm_home_defaults_to_checkout() {
   pass "unset FM_HOME defaults to the checkout"
 }
 
+test_user_role_cannot_file_on_firstmate() {
+  local home out rc role
+  home="$TMP_ROOT/role-user"
+  prep_home "$home"
+  for role in user absent ; do
+    rm -f "$home/config/firstmate-role"
+    [ "$role" = absent ] || printf '%s\n' "$role" > "$home/config/firstmate-role"
+    rc=0
+    out=$(run_script "$home" --repo Pibomeister/firstmate --failure-class demo --title 't' --evidence 'e') || rc=$?
+    assert_equals 1 "$rc" "a $role role must exit 1"
+    assert_contains "$out" 'missing the grant' "a $role role must be refused"
+    assert_contains "$out" 'maintainer github.com/pibomeister/firstmate' "the refusal must name the grant"
+  done
+  assert_no_gh_calls "$home" "a home without the grant"
+  pass "a user role is refused on firstmate with no gh calls"
+}
+
+test_maintainer_role_files_on_firstmate() {
+  local home out
+  home="$TMP_ROOT/role-maintainer"
+  prep_home "$home"
+  out=$(run_script "$home" --repo Pibomeister/firstmate --failure-class demo --title 't' --evidence 'e')
+  assert_contains "$out" 'created 99' "a maintainer home should file on firstmate"
+  pass "a maintainer role files on firstmate"
+}
+
+test_other_scope_cannot_file_on_firstmate() {
+  local home out rc=0
+  home="$TMP_ROOT/role-fork"
+  prep_home "$home"
+  git -C "$home/code" remote set-url origin 'https://github.com/someone/firstmate.git'
+  printf 'maintainer github.com/someone/firstmate\n' > "$home/config/firstmate-role"
+  out=$(run_script "$home" --repo Pibomeister/firstmate --failure-class demo --title 't') || rc=$?
+  assert_equals 1 "$rc" "a grant for another repository must exit 1"
+  assert_contains "$out" 'missing the grant' "a grant for another repository must not authorize firstmate"
+  assert_no_gh_calls "$home" "a grant for another repository"
+  pass "a maintainer scope on a fork does not authorize firstmate"
+}
+
+test_user_role_files_on_other_repos() {
+  local home out
+  home="$TMP_ROOT/role-other-repos"
+  prep_home "$home"
+  printf 'user\n' > "$home/config/firstmate-role"
+  out=$(run_script "$home" --repo Pibomeister/agent-kit --failure-class demo --title 't' --evidence 'e')
+  assert_contains "$out" 'created 99' "agent-kit filing should not need a firstmate grant"
+  add_project "$home" casco 'https://github.com/Pibomeister/casco.git'
+  out=$(run_script "$home" --repo Pibomeister/casco --for-gate-project casco \
+    --failure-class gate --title 't' --evidence 'e')
+  assert_contains "$out" 'created 99' "project filing should not need a firstmate grant"
+  pass "other approved repositories do not need the firstmate grant"
+}
+
 test_missing_flag_value_is_usage_error() {
   local home out rc=0
   home="$TMP_ROOT/missing-value"
@@ -346,4 +403,8 @@ fm_test_run \
   test_gate_project_is_origin_only \
   test_gate_project_stays_in_registry \
   test_fm_home_defaults_to_checkout \
+  test_user_role_cannot_file_on_firstmate \
+  test_maintainer_role_files_on_firstmate \
+  test_other_scope_cannot_file_on_firstmate \
+  test_user_role_files_on_other_repos \
   test_missing_flag_value_is_usage_error
