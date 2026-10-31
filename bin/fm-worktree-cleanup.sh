@@ -40,12 +40,11 @@
 #
 # With no project argument the pass covers this home's project clones
 # ($FM_HOME/projects, or $FM_PROJECTS_OVERRIDE). A directory that is not the
-# root of its own work tree is skipped. An explicit project argument is a
-# clone path, a bare project name, or projects/<name>. Linked worktrees of
-# that clone are included wherever they live.
+# root of its own work tree is skipped. An explicit project argument is a clone
+# path. Linked worktrees of that clone are included wherever they live.
 #
 # Usage:
-#   fm-worktree-cleanup.sh [--dry-run] [scan] [<project-dir-or-name>]
+#   fm-worktree-cleanup.sh [--dry-run] [scan] [<clone-path>]
 #   fm-worktree-cleanup.sh --help
 set -eu
 
@@ -75,7 +74,7 @@ SCRATCH=
 
 usage() {
   cat <<'EOF'
-usage: fm-worktree-cleanup.sh [--dry-run] [scan] [<project-dir-or-name>]
+usage: fm-worktree-cleanup.sh [--dry-run] [scan] [<clone-path>]
        fm-worktree-cleanup.sh --help
 EOF
 }
@@ -159,37 +158,6 @@ note_budget() {
     emit "worktree-cleanup: stop budget reached"
     BUDGET_LOGGED=1
   fi
-}
-
-resolve_project_arg() {
-  local arg=$1 candidate
-  case "$arg" in
-    projects/*)
-      candidate="$PROJECTS/${arg#projects/}"
-      if [ -d "$candidate" ]; then
-        printf '%s\n' "$candidate"
-        return 0
-      fi
-      ;;
-    */*)
-      if [ -d "$arg" ]; then
-        printf '%s\n' "$arg"
-        return 0
-      fi
-      ;;
-    *)
-      candidate="$PROJECTS/$arg"
-      if [ -d "$candidate" ]; then
-        printf '%s\n' "$candidate"
-        return 0
-      fi
-      if [ -d "$arg" ]; then
-        printf '%s\n' "$arg"
-        return 0
-      fi
-      ;;
-  esac
-  return 1
 }
 
 # A clone root is the top of its own work tree. Git discovery walks upward, so
@@ -279,7 +247,7 @@ valid_pr_row() {
     ''|*[!0-9]*|0|0*) return 1 ;;
   esac
   case "$state" in
-    OPEN|open|MERGED|merged|CLOSED|closed) ;;
+    OPEN|MERGED|CLOSED) ;;
     *) return 1 ;;
   esac
   case "$head" in
@@ -289,15 +257,6 @@ valid_pr_row() {
   case "$url" in
     *[[:space:]]*) return 1 ;;
     https://*) [ "${#url}" -le 500 ] || return 1 ;;
-    *) return 1 ;;
-  esac
-}
-
-canonical_state() {
-  case "$1" in
-    OPEN|open) printf 'OPEN' ;;
-    MERGED|merged) printf 'MERGED' ;;
-    CLOSED|closed) printf 'CLOSED' ;;
     *) return 1 ;;
   esac
 }
@@ -414,7 +373,7 @@ consider_worktree() {
   local repo=$1 path=$2 branch=$3 detached=$4 locked=$5
   local phys pids kind rows row number state head url head_owner main_rc=0 owner_rc orca_listed=0
   local open_count=0 terminal_count=0 chosen_number=0 chosen_state='' chosen_head='' chosen_url=''
-  local current normalized
+  local current
   if [ ! -d "$path" ]; then
     emit "worktree-cleanup: report $path worktree directory is missing"
     return 0
@@ -520,17 +479,13 @@ EOF
       return 0
     fi
     pr_owned_by_base_owner "$url" "$head_owner" || continue
-    normalized=$(canonical_state "$state") || {
-      emit "worktree-cleanup: report $phys pull request lookup failed"
-      return 0
-    }
-    case "$normalized" in
+    case "$state" in
       OPEN) open_count=$((open_count + 1)) ;;
       MERGED|CLOSED)
         terminal_count=$((terminal_count + 1))
         if [ "$number" -gt "$chosen_number" ]; then
           chosen_number=$number
-          chosen_state=$normalized
+          chosen_state=$state
           chosen_head=$(printf '%s' "$head" | tr '[:upper:]' '[:lower:]')
           chosen_url=$url
         fi
@@ -627,11 +582,7 @@ run_records() {
 
 run_target() {
   local raw=$1 resolved
-  resolved=$(resolve_project_arg "$raw") || {
-    echo "worktree-cleanup: project not found: $raw" >&2
-    exit 1
-  }
-  resolved=$(clone_root_path "$resolved") || {
+  resolved=$(clone_root_path "$raw") || {
     echo "worktree-cleanup: not a clone root: $raw" >&2
     exit 1
   }

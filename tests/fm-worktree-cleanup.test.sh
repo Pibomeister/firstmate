@@ -721,6 +721,59 @@ test_budget_stops_rotate_through_every_worktree() {
   pass "budget stops rotate through every worktree, past a removed cursor path"
 }
 
+test_lowercase_pr_state_is_a_failed_lookup() {
+  local sha
+  begin_case lowerstate
+  sha=$(git -C "$CASE_WT" rev-parse HEAD) || fail "could not read the worktree head"
+  printf '[%s]\n' "$(pr_row 7 merged "$sha")" > "$CASE_DIR/pr.json"
+  capture_clean "$CASE_DIR"
+  assert_kept
+  assert_out "pull request lookup failed"
+  pass "a pull request state outside gh's uppercase set is a failed lookup"
+}
+
+test_bare_project_name_is_refused() {
+  local dir repo status=0
+  dir=$(make_case barename)
+  install_gh "$dir/bin"
+  install_orca "$dir"
+  repo="$dir/projects/repo"
+  fm_git_worktree "$repo" "$dir/linked" feature
+  pr_json "$dir/pr.json" MERGED "$(git -C "$repo" rev-parse HEAD)"
+  (cd "$dir" && run_clean "$dir" repo >"$dir/out" 2>"$dir/err") || status=$?
+  [ "$status" -ne 0 ] || fail "a bare project name was accepted"
+  [ -d "$dir/linked" ] || fail "a refused argument removed a worktree"
+  grep -F "not a clone root: repo" "$dir/err" >/dev/null || fail "refusal was not named: $(cat "$dir/err")"
+  pass "a bare project name is refused"
+}
+
+test_failed_pass_waits_for_the_next_check_interval() {
+  local dir repo marker status=0
+  dir=$(make_case watcher)
+  install_orca "$dir"
+  mkdir -p "$dir/config"
+  fm_test_track_watcher_state "$dir/state"
+  cat > "$dir/bin/gh" <<'SH'
+#!/usr/bin/env bash
+exec sleep 20
+SH
+  chmod +x "$dir/bin/gh"
+  repo="$dir/projects/repo"
+  fm_git_worktree "$repo" "$dir/linked" feature
+  marker="$dir/state/.last-worktree-cleanup"
+  PATH="$dir/bin:$PATH" \
+    FM_HOME="$dir" FM_STATE_OVERRIDE="$dir/state" FM_CONFIG_OVERRIDE="$dir/config" \
+    FM_PROJECTS_OVERRIDE="$dir/projects" FM_TEST_ORCA_JSON_FILE="$dir/orca.json" \
+    FM_WATCH_HELPER_BUDGET=1 FM_WATCH_ONCE=1 FM_WEDGE_ALARM_CHANNEL=off \
+    bash "$ROOT/bin/fm-watch.sh" >"$dir/out" 2>"$dir/err" || status=$?
+  [ "$status" -eq 0 ] || fail "watcher failed: $(cat "$dir/err")"
+  [ -f "$dir/state/worktree-cleanup.cursor" ] \
+    || fail "the watcher did not run the pass"
+  [ -f "$marker" ] || fail "a failed pass left the next pass due on the next cycle"
+  [ -d "$dir/linked" ] || fail "a failed pass removed the worktree"
+  pass "a failed pass waits for the next check interval"
+}
+
 fm_test_run \
   test_merged_pr_removes_worktree_keeps_branch_and_prunes \
   test_closed_pr_removes_worktree_keeps_branch \
@@ -753,4 +806,7 @@ fm_test_run \
   test_newest_terminal_pr_decides \
   test_commits_off_the_newest_terminal_head_are_reported \
   test_fork_pull_requests_do_not_count \
-  test_budget_stops_rotate_through_every_worktree
+  test_budget_stops_rotate_through_every_worktree \
+  test_lowercase_pr_state_is_a_failed_lookup \
+  test_bare_project_name_is_refused \
+  test_failed_pass_waits_for_the_next_check_interval

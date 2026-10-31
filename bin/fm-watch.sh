@@ -4504,12 +4504,11 @@ while :; do
   watch_stage worktree-cleanup
   if [ "${FM_WORKTREE_CLEANUP:-1}" != 0 ] \
     && [ "$(age_of "$STATE/.last-worktree-cleanup")" -ge "$CHECK_INTERVAL" ]; then
-    if fm_run_timed "$WATCH_HELPER_BUDGET" env FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
+    if ! fm_run_timed "$WATCH_HELPER_BUDGET" env FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
       "$SCRIPT_DIR/fm-worktree-cleanup.sh" scan; then
-      touch "$STATE/.last-worktree-cleanup"
-    else
       triage_log "worktree cleanup unavailable"
     fi
+    touch "$STATE/.last-worktree-cleanup"
   fi
 
   # Slow per-task checks (firstmate writes these, e.g. a merged-PR poll).
