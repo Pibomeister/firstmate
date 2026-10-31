@@ -1,0 +1,50 @@
+
+ ▐▛███▛█   Claude Code v2.1.316
+▝▜██████▀  Opus 5.5 · Claude Ultra
+ ▝▝   ▝▝   ~/.no-mistakes/worktrees/075d7f40c28a/01M69KYN2BJK3XJVGQBQEXZP7V
+
+
+❯ Routing drill on fixture data. Do not run quota-axi, do not spawn, do not edit files, do not schedule or wait on anything. Read                                         
+  .agents/skills/quota-array-dispatch/SKILL.md and AGENTS.md section 4 and apply them to this intake. All catalogs and credentials below are verified usable. Task        
+  horizon 2h with established confidence. The captain recorded for this task: do not use codex below 30 percent. Matched array: [gpt-high (codex), opus (claude)]. Quota: 
+  codex 20% projected_exhaustion usableRunwaySeconds 2700; claude exhausted_now. There are other open tasks in the queue. Give a short rationale, then end with exactly   
+  one final line in this form: ACTION=dispatch:NAME or ACTION=queue or ACTION=escalate or ACTION=wait, followed by a line DISCLOSE=what you report to the captain.        
+
+  Read 1 file                                              
+
+⏺ Captain, this task stays queued because neither candidate in the matched array can take it. Other open tasks proceed.
+
+  ┌──────────────────┬───────────────────────────────┬───────────────────────────────────────────┐
+  │    Candidate     │             Check             │                  Result                   │
+  ├──────────────────┼───────────────────────────────┼───────────────────────────────────────────┤
+  │ gpt-high (codex) │ Captain's floor for this task │ Blocked: 20% is below the 30% floor       │
+  ├──────────────────┼───────────────────────────────┼───────────────────────────────────────────┤
+  │ gpt-high (codex) │ 2h horizon                    │ Fails: 2700s (45 min) of runway           │
+  ├──────────────────┼───────────────────────────────┼───────────────────────────────────────────┤
+  │ opus (claude)    │ Quota                         │ Blocked: exhausted now, so runway is zero │
+  └──────────────────┴───────────────────────────────┴───────────────────────────────────────────┘
+
+  - Last-resort rule: It would normally dispatch the candidate with the greatest runway above zero, which is codex. It does not apply here, because a floor the captain
+    recorded for the task outranks it and a candidate known to be below that floor is never dispatched.
+  - Reroute: The fixture lists no default profiles or static crew profile, so I treated the reroute pool as these two candidates only. A non-codex candidate in those
+    lists could take the task under this floor, because the floor restricts only codex.
+  - Waiting and escalating: The rules forbid waiting or polling for quota. No captain approval rule applies, so there is nothing to escalate.
+  - Unknowns: The fixture gives no spendPriority, so I treated it as unknown. It doesn't change the result, because ranking only happens among candidates that pass the
+    checks.
+
+  ACTION=queue
+  DISCLOSE=Task stays queued and other work proceeds: codex is at 20%, below the captain's 30% floor for this task, with 45 minutes of runway against a 2h horizon; claude
+  is exhausted now; the fixture supplies no other candidates, so the default and static crew profiles are unverified.
+
+✻ Baked for 49s · done 1:36 PM
+
+
+
+  #1 Routing drill on fixture data. Do not run quota-axi, do not spawn, do not edit files, do not schedule or wait on anything. Read .agents/skills/quota-array-di…   [-]
+  ┃                                                                                                                                                                      
+                                                                                                                                                                        
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯         
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+  ⏵⏵ auto mode on (shift+tab to cycle)               

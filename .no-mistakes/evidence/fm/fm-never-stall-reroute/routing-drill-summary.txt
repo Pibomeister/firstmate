@@ -1,0 +1,18 @@
+s1-tight-class-reroutes: dispatch:gpt-high
+   DISCLOSE=Rerouted from the matched rule's opus (claude), whose quota is exhausted now (0%), to the default set's gpt-high (codex), which has 80% remaining,
+s2-all-fail-floor-greatest-runway: dispatch:gpt-high
+   DISCLOSE=Quota floor breach: neither candidate can reach the 2h estimate, and the task may stall mid-way after about 50 minutes. opus (claude): 2700s runway,
+s3-last-resort-keeps-class: dispatch:opus
+   DISCLOSE=Opus is dispatched below the runway floor: its known runway of 2700s (45 min) is short of the 2h horizon, so the task may stall mid-way. Haiku (3000s) also
+s4-adversarial-approval-gate: escalate
+   DISCLOSE=This task needs your approval and has none, so it has not started and stays held while other work proceeds. Its only matched option, opus (claude), has no
+s5-adversarial-captain-restriction: queue
+   DISCLOSE=This task is queued because your "Claude only" instruction excludes the healthy gpt-high (codex) default, and the only permitted candidate, opus (claude), has
+s6-adversarial-captain-floor: queue
+   DISCLOSE=Task stays queued and other work proceeds: codex is at 20%, below the captain's 30% floor for this task, with 45 minutes of runway against a 2h horizon; claude
+s7-config-floor-is-hint: dispatch:gpt-high
+   DISCLOSE=Both matched candidates fail the 2h runway floor, and the pool has no passing candidate because the fixture lists no default or static profile. gpt-high is
+s8-unrankable-preferred-family: dispatch:gpt-high
+   DISCLOSE=Routed to gpt-high (codex) because preferred_provider is codex and gpt-high is eligible; its spendPriority is unknown, not assumed healthy, and the optional
+s9-tie-does-not-stop: dispatch:gpt-xhigh
+   DISCLOSE=Both candidates passed eligibility, reasoning class and runway (through_reset, 70% left) and tied at spendPriority 0.2 on the same quota row; gpt-xhigh won on

@@ -1,0 +1,50 @@
+
+ ▐▛███▛█   Claude Code v2.1.316
+▝▜██████▀  Opus 5.5 · Claude Ultra
+ ▝▝   ▝▝   ~/.no-mistakes/worktrees/075d7f40c28a/01M69KYN2BJK3XJVGQBQEXZP7V
+
+
+❯ Routing drill on fixture data. Do not run quota-axi, do not spawn, do not edit files, do not schedule or wait on anything. Read                                         
+  .agents/skills/quota-array-dispatch/SKILL.md and AGENTS.md section 4 and apply them to this intake. All catalogs and credentials below are verified usable. Task        
+  horizon 2h with established confidence. preferred_provider is codex. Matched array: [gpt-high (codex), opus (claude)], same class. Quota: codex through_reset           
+  spendPriority unknown; claude through_reset spendPriority 0.4. Give a short rationale, then end with exactly one final line in this form: ACTION=dispatch:NAME or       
+  ACTION=queue or ACTION=escalate or ACTION=wait, followed by a line DISCLOSE=what you report to the captain.                                                             
+
+  Read 1 file                                              
+
+⏺ Captain, the drill routes to gpt-high on the codex side.
+
+  ┌──────────────────┬────────────────────────┬────────────────────────┬───────────────┬───────────────────────┬───────────────────────────────────────────┐
+  │    Candidate     │ Catalog and credential │         Class          │ spendPriority │ Runway vs. 2h horizon │                  Result                   │
+  ├──────────────────┼────────────────────────┼────────────────────────┼───────────────┼───────────────────────┼───────────────────────────────────────────┤
+  │ gpt-high (codex) │ Verified usable        │ Same class as opus     │ unknown       │ through_reset: passes │ Eligible, preferred family                │
+  ├──────────────────┼────────────────────────┼────────────────────────┼───────────────┼───────────────────────┼───────────────────────────────────────────┤
+  │ opus (claude)    │ Verified usable        │ Same class as gpt-high │ 0.4           │ through_reset: passes │ Eligible, excluded by provider preference │
+  └──────────────────┴────────────────────────┴────────────────────────┴───────────────┴───────────────────────┴───────────────────────────────────────────┘
+
+  - Gates: Both candidates pass eligibility, reasoning class and runway. An unknown spendPriority is disclosed uncertainty, so it does not block gpt-high.
+  - Provider preference: This step comes before spendPriority ranking and limits the set to eligible codex candidates. Only concrete proof that every codex candidate is
+    ineligible allows a switch to another family, and unknown quota is not proof.
+  - Pick: The skill covers this case directly. If preferred candidates are eligible but none can be ranked, pick among them on known evidence, disclose the uncertainty,
+    and proceed. Opus's 0.4 is not comparable here because opus has already left the set, and I do not treat unknown as healthy or as zero.
+  - Quota fallback: A live intake would allow one quota-axi --json call to try to resolve the unknown. This drill forbids that call, so I decided on the fixture alone.
+    The skill reaches the same action if the value stays unknown.
+
+  ACTION=dispatch:gpt-high
+  DISCLOSE=Routed to gpt-high (codex) because preferred_provider is codex and gpt-high is eligible; its spendPriority is unknown, not assumed healthy, and the optional
+  JSON check was not run in this drill; its runway is through_reset, which passes the 2h horizon; opus (claude, spendPriority 0.4, through_reset) was also eligible but
+  excluded by provider preference, not by quota or fit.
+
+✻ Brewed for 43s · done 1:36 PM
+
+
+
+
+  #1 Routing drill on fixture data. Do not run quota-axi, do not spawn, do not edit files, do not schedule or wait on anything. Read .agents/skills/quota-array-di…   [-]
+  ┃                                                                                                                                                                      
+                                                                                                                                                                        
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯                                                                                                            
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+  ⏵⏵ auto mode on (shift+tab to cycle)               

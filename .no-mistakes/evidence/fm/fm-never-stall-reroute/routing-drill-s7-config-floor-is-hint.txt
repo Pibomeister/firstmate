@@ -1,0 +1,50 @@
+
+ ▐▛███▛█   Claude Code v2.1.316
+▝▜██████▀  Opus 5.5 · Claude Ultra
+ ▝▝   ▝▝   ~/.no-mistakes/worktrees/075d7f40c28a/01M69KYN2BJK3XJVGQBQEXZP7V
+
+
+❯ Routing drill on fixture data. Do not run quota-axi, do not spawn, do not edit files, do not schedule or wait on anything. Read                                         
+  .agents/skills/quota-array-dispatch/SKILL.md and AGENTS.md section 4 and apply them to this intake. All catalogs and credentials below are verified usable. Task        
+  horizon 2h with established confidence. Config profile gpt-high has floor {scope: all_models, min_percent: 50}. No captain instruction on this task. Matched array:     
+  [gpt-high (codex), opus (claude)]. Quota: codex 20% projected_exhaustion usableRunwaySeconds 2700; claude exhausted_now. Give a short rationale, then end with exactly  
+  one final line in this form: ACTION=dispatch:NAME or ACTION=queue or ACTION=escalate or ACTION=wait, followed by a line DISCLOSE=what you report to the captain.        
+
+  Read 1 file                                              
+
+⏺ Captain, the drill routes to gpt-high, despite a known runway shortfall.
+
+  ┌──────────────────┬──────────────────┬───────────────────────────┬──────────────────────────┬─────────────────────────────────────┐
+  │    Candidate     │ Catalog and auth │           Quota           │      spendPriority       │    Runway vs 2h (7200s) horizon     │
+  ├──────────────────┼──────────────────┼───────────────────────────┼──────────────────────────┼─────────────────────────────────────┤
+  │ gpt-high (codex) │ Verified usable  │ 20%, projected_exhaustion │ unknown (not in fixture) │ 2700s: fails gate 3, short by 4500s │
+  ├──────────────────┼──────────────────┼───────────────────────────┼──────────────────────────┼─────────────────────────────────────┤
+  │ opus (claude)    │ Verified usable  │ exhausted_now             │ unknown (not in fixture) │ 0s: fails gate 3                    │
+  └──────────────────┴──────────────────┴───────────────────────────┴──────────────────────────┴─────────────────────────────────────┘
+
+  - Reasoning class: The fixture states no required class or class ranking, so I report no class drop.
+  - Reroute pool: Both matched candidates fail the runway floor, so the skill requires a walk of the reroute pool. The fixture lists no default profile set or static
+    crewmate profile, so I treat those steps as empty. No candidate passes the floor.
+  - Last resort: With no passing candidate, the skill says to dispatch from the strongest eligible class, using the greatest known runway above zero. It does not allow a
+    pause to wait for quota. Only gpt-high has runway above zero.
+  - Configured floor: The gpt-high floor of 50% is only a hint, because the captain did not record it for this task. At 20%, gpt-high is below that hint, but this does
+    not block dispatch. An explicit captain floor would block it, and the item would then stay queued.
+  - Other outcomes: Queueing needs every candidate exhausted, blocked or below an explicit captain floor, and gpt-high is none of these. Escalation needs a rule with
+    approval: "captain", and this rule has none. Waiting is never allowed.
+
+  ACTION=dispatch:gpt-high
+  DISCLOSE=Both matched candidates fail the 2h runway floor, and the pool has no passing candidate because the fixture lists no default or static profile. gpt-high is
+  dispatched as a known floor breach: about 45 minutes of runway against a 2h horizon, so it may stall mid-task. Quota is 20%, below the configured 50% hint, which is not
+  a captain floor. opus is rejected as exhausted now. spendPriority is unknown for both and was not used. No class drop is reported, because the fixture states no class.
+
+✻ Sautéed for 46s · done 1:36 PM
+
+
+  #1 Routing drill on fixture data. Do not run quota-axi, do not spawn, do not edit files, do not schedule or wait on anything. Read .agents/skills/quota-array-di…   [-]
+  ┃                                                                                                                                                                      
+                                                                                                                                                                        
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯                                                                                                                                                                 
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+  ⏵⏵ auto mode on (shift+tab to cycle)               
