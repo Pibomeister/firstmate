@@ -1004,7 +1004,7 @@ Pass them in the watcher's environment, or export them in `config/watch.env` for
 The flag is home-local and is not inherited by secondmate homes.
 `bin/fm-watch.sh`'s `open_decision_reminder_tick` owns the per-key schedule, which persists across watcher restarts.
 
-## Away decision age routing (config/decision-age-authority)
+## Away decision age routing
 
 The watcher checks unresolved keyed `needs-decision` and `blocked` records while
 `state/.afk-contract` validates as away. Present and quiet postures never route.
@@ -1013,14 +1013,13 @@ positive integer of at most nine digits in `config/watch.env` to change it.
 Source status lines need a valid `[at=<epoch>]`; deferred waits and captain-held
 tasks are excluded. A claim in `state/.away-decision-age-claims` binds each
 attempt to the task, key and opening epoch; the away confirmation is checked
-again before the route acts.
+again before the route acts, and a changed confirmation leaves the decision
+unclaimed for a later scan.
 
-`config/decision-age-authority` may contain tab-separated rows with task id,
-decision key, exact opening epoch, and `routine` or `captain-only`.
-Until the council entrypoint is wired, every classification leaves the decision open
-and enters the configured captain page path.
+Until the council entrypoint is wired, every overdue decision stays open and
+enters the configured captain page path; nothing decides it unattended.
 The claim records `page-sent`, `page-failed`, or `page-pending` from the notifier's actual result.
-Pending or failed pages retry after 60 seconds while that decision remains open.
+Pending or failed pages, and claims interrupted before their page result, retry after 60 seconds while that decision remains open.
 
 ## Validating-run deferral (config/wedge-defer-validating)
 

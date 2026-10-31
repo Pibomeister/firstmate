@@ -2914,35 +2914,20 @@ EOF
   fi
 }
 
-# Away decisions use the timed status fold, but require an explicit authority
-# record for council routing. Without a council entrypoint, every class is a
-# captain page. The claim is
-# bound to task, key, opening epoch and away confirmation, so a repeat scan or
-# a new decision episode cannot silently inherit an earlier result. The
-# council adapter is deliberately absent until its documented entrypoint is
-# available; no classification can authorize an unattended decision yet.
-# config/decision-age-authority rows: task TAB key TAB opening-epoch TAB
-# routine|captain-only. Only a firstmate-owned configuration may grant routine.
+# Away decisions use the timed status fold. Without a council entrypoint every
+# overdue decision is a captain page; nothing authorizes an unattended decision.
+# The claim covers task, key and opening epoch, so a repeat scan or a new away
+# session does not page the same decision generation twice, while a new
+# decision episode gets its own claim. The away confirmation is only rechecked
+# before acting.
 away_decision_claimed() {  # <claims-file> <task> <key> <opened>
-  local file=$1 task=$2 key=$3 opened=$4 row_task row_key row_opened row_confirmed result
+  local file=$1 task=$2 key=$3 opened=$4 row_task row_key row_opened
   [ -f "$file" ] || return 1
-  while IFS=$'\t' read -r row_task row_key row_opened row_confirmed result; do
+  while IFS=$'\t' read -r row_task row_key row_opened _; do
     [ "$row_task" = "$task" ] && [ "$row_key" = "$key" ] \
       && [ "$row_opened" = "$opened" ] && return 0
   done < "$file"
   return 1
-}
-
-away_decision_class() {  # <authority-file> <task> <key> <opened>
-  local file=$1 task=$2 key=$3 opened=$4 row_task row_key row_opened row_class
-  [ -f "$file" ] || { printf 'unknown\n'; return 0; }
-  while IFS=$'\t' read -r row_task row_key row_opened row_class; do
-    [ "$row_task" = "$task" ] && [ "$row_key" = "$key" ] \
-      && [ "$row_opened" = "$opened" ] || continue
-    case "$row_class" in routine|captain-only) printf '%s\n' "$row_class"; return 0 ;; esac
-    break
-  done < "$file"
-  printf 'unknown\n'
 }
 
 away_decision_retry_page() {  # <claim-file> <now-epoch>
@@ -2950,7 +2935,7 @@ away_decision_retry_page() {  # <claim-file> <now-epoch>
   [ -f "$file" ] || return 0
   candidates=$(awk -F '\t' '
     { k=$1 FS $2 FS $3; status[k]=$5; stamp[k]=$6; task[k]=$1; key[k]=$2; opened[k]=$3 }
-    END { for (k in status) if (status[k] == "page-pending" || status[k] == "page-failed")
+    END { for (k in status) if (status[k] == "claiming" || status[k] == "page-pending" || status[k] == "page-failed")
       print task[k] FS key[k] FS opened[k] FS status[k] FS stamp[k] }
   ' "$file") || return 1
   while IFS=$'\t' read -r task key opened result last; do
@@ -2981,19 +2966,14 @@ EOF
 away_decision_age_tick() {  # [now-epoch]
   local now=${1:-} threshold=${FM_AWAY_DECISION_OVERDUE_SECS:-1800}
   local record="$STATE/.afk-contract" confirmed exclude f task open key verb opened note
-  local due_task='' due_key='' due_opened='' due_class=unknown class_file
-  local claim_file claim_lock class_now authority_changed=0
-  local claim_opened claim_confirmed page_result page_state current=0
+  local due_task='' due_key='' due_opened='' claim_file claim_lock
+  local page_result page_state current=0
   away_record_present || return 0
   fm_afk_contract_validate "$record" || return 1
   case "$threshold" in ''|0*|*[!0-9]*) echo 'watcher: invalid away decision threshold' >&2; return 1 ;; esac
   [ "${#threshold}" -le 9 ] || return 1
   [ -n "$now" ] || fm_epoch_seconds_to now
   confirmed=$(fm_afk_contract_read_field "$record" confirmed_epoch)
-  class_file="$CONFIG/decision-age-authority"
-  if [ -e "$class_file" ] || [ -L "$class_file" ]; then
-    [ -f "$class_file" ] && [ -r "$class_file" ] && [ ! -L "$class_file" ] || return 1
-  fi
   claim_file="$STATE/.away-decision-age-claims"
   if [ -e "$claim_file" ] || [ -L "$claim_file" ]; then
     [ -f "$claim_file" ] && [ -r "$claim_file" ] && [ ! -L "$claim_file" ] || return 1
@@ -3021,7 +3001,6 @@ $open
 EOF
   done
   [ -n "$due_task" ] || return 0
-  due_class=$(away_decision_class "$class_file" "$due_task" "$due_key" "$due_opened")
   claim_lock="$STATE/.away-decision-age-claims.lock"
   fm_lock_try_acquire "$claim_lock" || return 0
   if away_decision_claimed "$claim_file" "$due_task" "$due_key" "$due_opened"; then
@@ -3035,37 +3014,30 @@ EOF
       fm_lock_release "$claim_lock"; return 1;
     }
   fi
-  if away_record_present && fm_afk_contract_validate "$record" \
-    && [ "$(fm_afk_contract_read_field "$record" confirmed_epoch)" = "$confirmed" ]; then
-    open=$(status_open_decisions_incremental "$STATE/$due_task.status" '' timed) || {
-      fm_lock_release "$claim_lock"; return 1;
-    }
-    while IFS=$'\t' read -r key verb opened note; do
-      [ "$key" = "$due_key" ] && [ "$opened" = "$due_opened" ] \
-        && case "$verb" in needs-decision|blocked) true ;; *) false ;; esac \
-        && current=1
-    done <<EOF
+  if ! away_record_present || ! fm_afk_contract_validate "$record" \
+    || [ "$(fm_afk_contract_read_field "$record" confirmed_epoch)" != "$confirmed" ]; then
+    fm_lock_release "$claim_lock"
+    return 0
+  fi
+  open=$(status_open_decisions_incremental "$STATE/$due_task.status" '' timed) || {
+    fm_lock_release "$claim_lock"; return 1;
+  }
+  while IFS=$'\t' read -r key verb opened note; do
+    [ "$key" = "$due_key" ] && [ "$opened" = "$due_opened" ] \
+      && case "$verb" in needs-decision|blocked) true ;; *) false ;; esac \
+      && current=1
+  done <<EOF
 $open
 EOF
-  fi
-  class_now=$(away_decision_class "$class_file" "$due_task" "$due_key" "$due_opened")
-  if [ "$class_now" != "$due_class" ]; then
-    authority_changed=1
-    due_class=unknown
-  fi
   if [ "$current" -ne 1 ]; then
     printf '%s\t%s\t%s\t%s\tstale\n' "$due_task" "$due_key" "$due_opened" "$confirmed" >> "$claim_file"
     fm_lock_release "$claim_lock"
     return 0
   fi
-  printf '%s\t%s\t%s\t%s\tclaiming\n' "$due_task" "$due_key" "$due_opened" "$confirmed" >> "$claim_file" || {
+  printf '%s\t%s\t%s\t%s\tclaiming\t%s\n' "$due_task" "$due_key" "$due_opened" "$confirmed" "$now" >> "$claim_file" || {
     fm_lock_release "$claim_lock"; return 1;
   }
   fm_lock_release "$claim_lock"
-  if [ "$authority_changed" -eq 1 ]; then
-    printf '%s\t%s\t%s\t%s\tauthority-changed\n' \
-      "$due_task" "$due_key" "$due_opened" "$confirmed" >> "$claim_file"
-  fi
   page_result=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG" \
     bash "$SCRIPT_DIR/fm-supervise-daemon.sh" page \
     "Away decision needs captain: $due_task key=$due_key" "$claim_file" 2>/dev/null) || true
