@@ -21,6 +21,10 @@
 # continuity (set -m, nohup, disown), refuses while state/.afk exists, attaches
 # when a healthy watcher already holds this home's lock, and exits after that
 # successor is confirmed. It is not a shell & from a model command.
+# A proven tmux or Herdr pane gives the hold the secondmate doorbell route.
+# It prints "watcher: no wake route" when no pane can be proven. A home that
+# selected the supervision host detaches a host park instead, and that park
+# rings the same doorbell when it exits for main.
 # FM_WATCH_MANAGED_HOLD=1 is the watchdog's foreground-owner variant: its
 # watcher remains this arm's child after a wake, with no detached successor.
 # On a harness with a PreToolUse-equivalent hook, bin/fm-arm-pretool-check.sh
@@ -720,14 +724,42 @@ if [ "$mode" = detach-hold ]; then
     echo "watcher: FAILED - away mode owns supervision" >&2
     exit 1
   fi
-  FM_WATCH_GROK_CONTINUITY=1
-  export FM_WATCH_GROK_CONTINUITY
   if healthy_watcher; then
     report_attached
     exit 0
   fi
+  route=1
+  "$WATCH" --codex-hold-bind >/dev/null 2>&1 || route=0
+  # shellcheck source=bin/fm-supervision-engine-lib.sh
+  . "$SCRIPT_DIR/fm-supervision-engine-lib.sh"
+  if fm_supervision_host_enabled "$CONFIG" codex; then
+    set -m 2>/dev/null || true
+    # shellcheck disable=SC2016 # The detached shell expands its own arguments.
+    FM_SUPERVISION_HOST_PRIMARY=codex nohup bash -c '
+      "$1" park >"$2" 2>&1
+      grep -q "^supervision-host stood down" "$2" || "$3" --codex-hold-ring
+    ' _ "$SCRIPT_DIR/fm-supervision-host.sh" "$STATE/.supervision-host-park.out" "$WATCH" >/dev/null 2>&1 </dev/null &
+    host_pid=$!
+    disown "$host_pid" 2>/dev/null || true
+    set +m 2>/dev/null || true
+    deadline=$(( $(date +%s) + CONFIRM_TIMEOUT + 1 ))
+    while [ "$(date +%s)" -lt "$deadline" ] && fm_pid_alive "$host_pid"; do
+      if healthy_watcher; then
+        echo "watcher: started pid=$HEALTHY_PID"
+        [ "$route" -eq 1 ] || echo "watcher: no wake route"
+        exit 0
+      fi
+      sleep 0.2
+    done
+    echo "watcher: FAILED - the supervision host did not confirm a watcher"
+    exit 1
+  fi
+  FM_WATCH_GROK_CONTINUITY=1
+  export FM_WATCH_GROK_CONTINUITY
+  [ "$route" -eq 0 ] || export FM_WATCH_CODEX_HOLD=1
   if start_grok_continuity_successor; then
     echo "watcher: started pid=$GROK_SUCCESSOR_PID"
+    [ "$route" -eq 1 ] || echo "watcher: no wake route"
     exit 0
   fi
   echo "watcher: FAILED - no live watcher with a fresh beacon"

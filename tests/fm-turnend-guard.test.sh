@@ -2588,16 +2588,15 @@ test_codex_host_selected_allows_stop_without_a_second_watcher() {
   : > "$dir/config/supervision-host"
   cat > "$dir/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
-printf '%s\n' called > "$FM_HOME/state/arm-called"
+printf '%s\n' "$1" > "$FM_HOME/state/arm-called"
 exit 0
 SH
   chmod +x "$dir/bin/fm-watch-arm.sh"
   run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
   expect_code 0 "$STATUS" "a host-selected Codex home must allow the stop: $OUT"
-  assert_contains "$OUT" "selected the supervision host" "the allow must name the supervision host"
   assert_not_contains "$OUT" "fm-watch-checkpoint.sh" "the allow must not name a checkpoint command"
-  [ ! -e "$dir/state/arm-called" ] || fail "a host-selected home must not start a second watcher"
-  pass "fm-turnend-guard codex: a selected supervision host does not get a second watcher"
+  [ "$(cat "$dir/state/arm-called" 2>/dev/null)" = --detach-hold ] || fail "a host-selected home must ask the arm to detach its owner"
+  pass "fm-turnend-guard codex: a selected supervision host gets a Stop-hook start path"
 }
 
 test_codex_stale_or_foreign_block_record_is_judged_fresh() {
@@ -2614,7 +2613,7 @@ test_codex_stale_or_foreign_block_record_is_judged_fresh() {
   expect_code 2 "$STATUS" "the second block of the same turn must still hold a queued wake: $OUT"
   run_codex_hook "$dir" "$(codex_payload s1 t2 true)"
   expect_code 0 "$STATUS" "the third block of the same turn must allow the stop: $OUT"
-  assert_contains "$OUT" "BLOCK BUDGET" "the budget allow must name the bound"
+  assert_contains "$OUT" "BLOCK BOUND" "the bound allow must name the bound"
   assert_not_contains "$OUT" "fm-watch-checkpoint.sh" "the budget allow must not name a checkpoint command"
   pass "fm-turnend-guard codex: block records stay on their own session and turn, then the budget allows the stop"
 }
@@ -2629,7 +2628,8 @@ test_codex_queued_wake_budget_allows_stop() {
   expect_code 2 "$STATUS" "the second queued stop must still block: $OUT"
   run_codex_hook "$dir" "$(codex_payload s1 t1 true)"
   expect_code 0 "$STATUS" "the third queued stop must allow the turn to end: $OUT"
-  assert_contains "$OUT" "BLOCK BUDGET" "the budget allow must name the bound"
+  assert_contains "$OUT" "BLOCK BOUND" "the bound allow must name the bound"
+  assert_contains "$OUT" "without a persistent watcher" "the bound allow must name the missing watcher"
   assert_not_contains "$OUT" "start the next checkpoint" "the budget allow must not ask for another checkpoint"
   pass "fm-turnend-guard codex: a queued wake cannot hold the turn past the block budget"
 }
@@ -2694,13 +2694,34 @@ test_secondmate_event_instructions_finish_turn() {
   out=$(FM_HOME="$dir" FM_TASK_INBOX="$dir/parent/state/sm-test-1.inbox" TMUX=fixture,1,0 TMUX_PANE=%27 "$dir/bin/fm-supervision-instructions.sh" --harness codex)
   assert_contains "$out" 'Mode: Secondmate event-driven turns.' "secondmate must receive the outside-turn protocol"
   assert_contains "$out" 'end this turn' "secondmate must finish its handling turn"
-  assert_contains "$out" 'If bin/fm-watch.sh --secondmate reports a failure, run one bin/fm-watch-checkpoint.sh checkpoint, handle its wake, then stop. Do not start another checkpoint.' "secondmate must keep one checkpoint fallback"
-  assert_contains "$out" 'fm-watch-checkpoint.sh' "secondmate fallback must name the checkpoint"
+  assert_contains "$out" 'If bin/fm-watch.sh --secondmate reports a failure, tell the parent that the outside-turn watcher failed, then stop.' "secondmate failure must end the turn"
+  assert_not_contains "$out" 'run one bin/fm-watch-checkpoint.sh' "secondmate fallback must not name a checkpoint run"
   out=$(FM_HOME="$dir" FM_CODEX_WATCH_CHECKPOINT=7 FM_TASK_INBOX="$dir/parent/state/sm-test-1.inbox" TMUX=fixture,1,0 TMUX_PANE=%27 "$dir/bin/fm-supervision-instructions.sh" --harness codex --repair-line)
-  assert_contains "$out" 'if it reports a failure, repair missing watcher supervision with a foreground checkpoint' "secondmate repair must fall back to one checkpoint"
-  assert_contains "$out" 'bin/fm-watch-checkpoint.sh --seconds 7' "secondmate repair must keep the checkpoint bound"
-  assert_contains "$out" 'Do not start another checkpoint.' "secondmate repair must not ask for a successor checkpoint"
+  assert_contains "$out" 'if it reports a failure, do not start a foreground checkpoint' "secondmate repair must not start a checkpoint"
+  assert_not_contains "$out" 'bin/fm-watch-checkpoint.sh' "secondmate repair must not print a checkpoint command"
   pass "secondmate instructions end the handling turn without model polling"
+}
+
+test_secondmate_block_bound_ends_a_checkpoint_loop() {
+  local dir
+  dir=$(make_secondmate_dir "$TMP_ROOT/sm-block-bound")
+  cp -R "$ROOT/bin/." "$dir/bin/"
+  mkdir -p "$dir/parent/state"
+  printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$dir/parent" > "$dir/.fm-secondmate-parent"
+  printf '1790000000 1 signal task1.status done\n' > "$dir/state/.wake-queue"
+  export FM_TASK_INBOX="$dir/parent/state/sm-test-1.inbox" TMUX=fixture,1,0 TMUX_PANE=%27
+  run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
+  expect_code 2 "$STATUS" "the first secondmate stop must block: $OUT"
+  assert_not_contains "$OUT" "fm-watch-checkpoint.sh" "the secondmate block must not print a checkpoint command"
+  touch -d 2026-01-01T00:00:00.6 "$dir/state/.last-watcher-beat"
+  run_codex_hook "$dir" "$(codex_payload s1 t1 true)"
+  expect_code 2 "$STATUS" "the second secondmate stop must block: $OUT"
+  touch -d 2026-01-02T00:00:00.6 "$dir/state/.last-watcher-beat"
+  run_codex_hook "$dir" "$(codex_payload s1 t1 true)"
+  unset FM_TASK_INBOX TMUX TMUX_PANE
+  expect_code 0 "$STATUS" "progress must not hold a secondmate past the block bound: $OUT"
+  assert_contains "$OUT" "BLOCK BOUND" "the allow must name the bound"
+  pass "fm-turnend-guard codex: a secondmate home cannot loop past the block bound"
 }
 
 test_secondmate_event_status_requires_notification_owner() {
@@ -2743,8 +2764,10 @@ def run(*args, input_text=None):
     return result
 def require(ok, message):
     if not ok: raise RuntimeError(message)
+turns=[0]
 def guard(active=False):
-    return run(str(root/'bin/fm-turnend-guard.sh'),input_text=json.dumps({'session_id':'sm-event','turn_id':'test','stop_hook_active':active}))
+    if not active: turns[0]+=1
+    return run(str(root/'bin/fm-turnend-guard.sh'),input_text=json.dumps({'session_id':'sm-event','turn_id':'test-'+str(turns[0]),'stop_hook_active':active}))
 def until(test, label):
     phase('condition-wait', label=label)
     for _ in range(400):
@@ -2832,7 +2855,6 @@ try:
     stopped=guard()
     text=stopped.stdout+stopped.stderr
     require(stopped.returncode==0, 'selected supervision host still blocked the stop: '+text)
-    require('selected the supervision host' in text, 'host allow did not name the supervision host')
     require('fm-watch-checkpoint.sh' not in text, 'host allow named a checkpoint')
     (root/'result.json').write_text(json.dumps({'passed': True, 'watcher_pid':pid}))
 except Exception as exc:
@@ -3090,6 +3112,7 @@ if [ "${FM_TEST_ONLY:-}" = secondmate-endturn ]; then
 fi
 
 test_secondmate_event_instructions_finish_turn
+test_secondmate_block_bound_ends_a_checkpoint_loop
 test_secondmate_event_status_requires_notification_owner
 test_secondmate_event_watcher_survives_and_notifies
 test_secondmate_event_scope_and_clock

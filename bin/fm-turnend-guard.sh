@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+echo "$$ start $(date +%T)" >>/tmp/fm-gx.log; trap 'echo "$$ exit rc=$? line=$LINENO $(date +%T)" >>/tmp/fm-gx.log' EXIT
 # Turn-end guard for any firstmate PRIMARY session: the main home OR a
 # secondmate's own home. A secondmate runs its own primary firstmate session and
 # is guarded exactly like the main primary; only child crew/scout worktrees are
@@ -69,12 +70,15 @@
 #      FM_CODEX_WATCH_CHECKPOINT, or the larger away-mode and supervision-host
 #      bounds bin/fm-watch-checkpoint.sh documents).
 #   2. When this session is not a secondmate, state/.afk is absent, and rule 1
-#      does not apply, the hook tries once to detach a persistent hold through
-#      bin/fm-watch-arm.sh --detach-hold, unless this home's supervision host is
-#      selected for codex. A healthy watcher that is not this session's own
-#      checkpoint then allows the stop when no wake is queued. If that hold
-#      cannot be confirmed and no wake is queued, the hook allows the stop and
-#      prints a loud downtime notice instead of naming a checkpoint.
+#      does not apply, the hook tries once to detach an owner through
+#      bin/fm-watch-arm.sh --detach-hold: the supervision host's park on a home
+#      that selected it, and a persistent hold otherwise. Either owner rings
+#      the steering-inbox doorbell when the pane route is proven. A healthy
+#      watcher that is not this session's own checkpoint then allows the stop
+#      when no wake is queued. If no owner can be confirmed and no wake is
+#      queued, the hook allows the stop and prints a loud downtime notice
+#      instead of naming a checkpoint. A hold with no provable pane allows the
+#      stop with a notice that wakes wait for the captain's next message.
 #   3. A stop following this guard's own block in the same session and turn is
 #      allowed only when rule 1 no longer applies, no wake is queued, and
 #      nothing advanced since that block - the watcher beacon at full mtime
@@ -82,16 +86,15 @@
 #      escape for a secondmate home and for a home where state/.afk is present.
 #      The non-secondmate path in rule 2 does not reach it. The per-session
 #      record lives in state/.turnend-codex-block.<session>.
-#   4. On the rule 2 path, when the checkpoint is closed,
-#      FM_CODEX_TURNEND_BLOCK_BUDGET (default 2) bounds further blocks in the
-#      same turn, including a turn that still has a queued wake. The count
-#      resets when the turn id changes. It is the blocks= line in the rule 3
-#      record. Open-checkpoint blocks do not consume it. A secondmate home and
-#      a home where state/.afk is present do not use this budget; rule 3 is
-#      their escape.
+#   4. When the checkpoint is closed and state/.afk is absent, at most 2 further
+#      blocks are allowed in the same turn, including a turn that still has a
+#      queued wake. The count resets when the turn id changes. It is the blocks=
+#      line in the rule 3 record. Open-checkpoint blocks do not consume it. A
+#      home where state/.afk is present does not use this bound; rule 3 is its
+#      escape.
 # A home whose session lock is held by another live session gets the read-only
 # diagnostic exit, exactly like --claude mode below.
-# On the rule 2 path, pending wakes hold the turn until the budget in rule 4
+# Pending wakes hold the turn until the bound in rule 4
 # allows it. Away daemon ownership retains its existing allow path and is not
 # a reason to detach a second watcher.
 #
@@ -286,12 +289,6 @@ codex_recorded_blocks() {
 codex_write_block() {  # <blocks>
   printf 'turn=%s\nprogress=%s\nblocks=%s\n' "$TURN_ID" "$(codex_progress)" "$1" > "$CODEX_BLOCK" 2>/dev/null || true
 }
-# 0 when this home runs the supervision host for a codex primary. A missing
-# query is treated as not selected so the detach path remains available.
-codex_host_selected() {
-  [ -f "$SCRIPT_DIR/fm-supervision-engine-lib.sh" ] || return 1
-  bash "$SCRIPT_DIR/fm-supervision-engine-lib.sh" enabled "$CONFIG" codex
-}
 budget_reset() {
   [ "$CLAUDE_MODE" -eq 1 ] || return 0
   fm_lock_try_acquire "$BUDGET_LOCK" || return 0
@@ -406,18 +403,19 @@ if [ "$(fm_path_age "$STATE/.last-watcher-beat")" -lt "$AFK_GRACE" ] \
 fi
 
 block_stop() {
-  local afk x_mode reason rule msg max_blocks cur_blocks budget blocks
+  local afk x_mode reason rule msg max_blocks cur_blocks blocks cause
   afk=0
   [ -e "$STATE/.afk" ] && afk=1
   x_mode=0
   [ -f "$CONFIG/x-mode.env" ] && x_mode=1
-  if [ "$CODEX_MODE" -eq 1 ] && [ "$CHECKPOINT_OPEN" -eq 0 ] \
-    && [ "$SECONDMATE_MODE" -eq 0 ] && [ "$afk" -eq 0 ]; then
-    budget=${FM_CODEX_TURNEND_BLOCK_BUDGET:-2}
-    case "$budget" in ''|*[!0-9]*|0) budget=2 ;; esac
+  if [ "$CODEX_MODE" -eq 1 ] && [ "$CHECKPOINT_OPEN" -eq 0 ] && [ "$afk" -eq 0 ]; then
     blocks=$(codex_recorded_blocks)
-    if [ "$blocks" -ge "$budget" ]; then
-      printf '%s\n' "{\"systemMessage\":\"FIRSTMATE SUPERVISION BLOCK BUDGET REACHED: this turn already blocked ${blocks} times without a persistent watcher. Allowing the turn to end so foreground checkpoints cannot loop. Drain any queued wakes on the next turn.\"}"
+    if [ "$blocks" -ge 2 ]; then
+      cause='without a persistent watcher'
+      if fm_watcher_healthy "$STATE" "$WATCH" "$GRACE" "$FM_HOME"; then
+        cause='with queued wakes still undrained'
+      fi
+      printf '%s\n' "{\"systemMessage\":\"FIRSTMATE SUPERVISION BLOCK BOUND REACHED: this turn already blocked ${blocks} times ${cause}. Allowing the turn to end so foreground checkpoints cannot loop. Queued wakes stay durable until a watcher doorbell or the captain's next message starts a turn.\"}"
       exit 0
     fi
   fi
@@ -442,7 +440,11 @@ block_stop() {
   rule='━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
   msg=$(
     printf '●%s\n' "$rule"
-    printf '●  TURN WOULD END BLIND - SUPERVISION IS OFF\n'
+    if [ "$CODEX_MODE" -eq 1 ] && [ "$CHECKPOINT_OPEN" -eq 0 ] && fm_watcher_healthy "$STATE" "$WATCH" "$GRACE" "$FM_HOME"; then
+      printf '●  TURN WOULD END WITH QUEUED WAKES UNHANDLED\n'
+    else
+      printf '●  TURN WOULD END BLIND - SUPERVISION IS OFF\n'
+    fi
     if [ "$CODEX_MODE" -eq 1 ] && [ "$FM_SUP_QUEUE_PENDING" = true ]; then
       printf '●  Queued wakes still need handling: drain, handle, and acknowledge them before ending the turn.\n'
     fi
@@ -467,7 +469,7 @@ block_stop() {
     printf '●%s\n' "$rule"
   )
   if [ "$CODEX_MODE" -eq 1 ]; then
-    if [ "$CHECKPOINT_OPEN" -eq 0 ] && [ "$SECONDMATE_MODE" -eq 0 ] && [ "$afk" -eq 0 ]; then
+    if [ "$CHECKPOINT_OPEN" -eq 0 ] && [ "$afk" -eq 0 ]; then
       blocks=$(codex_recorded_blocks)
       blocks=$((blocks + 1))
     else
@@ -495,26 +497,27 @@ if { [ "$CLAUDE_MODE" -eq 1 ] || [ "$CODEX_MODE" -eq 1 ]; } && fm_session_lock_f
   exit 0
 fi
 
-# Codex rule 2 (header): once this session's own checkpoint is closed, re-arm a
-# persistent hold or allow the stop. A secondmate home and a home with state/.afk
-# keep the rule 3 escape below instead.
+# Codex rule 2 (header): once this session's own checkpoint is closed, detach an
+# owner or allow the stop. A secondmate home and a home with state/.afk keep the
+# rule 3 escape below instead.
 if [ "$CODEX_MODE" -eq 1 ] && [ "$CHECKPOINT_OPEN" -eq 0 ] && [ "$SECONDMATE_MODE" -eq 0 ] \
   && [ ! -e "$STATE/.afk" ]; then
-  if ! codex_host_selected && [ -x "$SCRIPT_DIR/fm-watch-arm.sh" ] \
+  DETACH_OUT=
+  if [ -x "$SCRIPT_DIR/fm-watch-arm.sh" ] \
     && ! fm_watcher_healthy "$STATE" "$WATCH" "$GRACE" "$FM_HOME"; then
-    "$SCRIPT_DIR/fm-watch-arm.sh" --detach-hold >/dev/null 2>&1 || true
-  fi
-  if [ "$FM_SUP_QUEUE_PENDING" = false ] \
-    && fm_watcher_healthy "$STATE" "$WATCH" "$GRACE" "$FM_HOME" \
-    && ! own_checkpoint_holds_watcher "$(cat "$STATE/.watch.lock/pid" 2>/dev/null)"; then
-    allow_supervised_stop
+    DETACH_OUT=$("$SCRIPT_DIR/fm-watch-arm.sh" --detach-hold 2>/dev/null || true)
   fi
   if [ "$FM_SUP_QUEUE_PENDING" = false ]; then
-    if codex_host_selected; then
-      printf '%s\n' '{"systemMessage":"FIRSTMATE SUPERVISION HAS NO PERSISTENT WATCHER: this home selected the supervision host, so the Stop hook did not start a second watcher. Allowing this turn to end so it does not loop on foreground checkpoints."}'
-    else
-      printf '%s\n' '{"systemMessage":"FIRSTMATE SUPERVISION HAS NO PERSISTENT WATCHER: the Stop hook could not confirm a detached hold. Allowing this turn to end so it does not loop on foreground checkpoints. The next stop will try again."}'
+    if fm_watcher_healthy "$STATE" "$WATCH" "$GRACE" "$FM_HOME"; then
+      case "$DETACH_OUT" in
+        *'watcher: no wake route'*)
+          printf '%s\n' '{"systemMessage":"FIRSTMATE WATCHER HAS NO WAKE ROUTE: a detached watcher holds this home, but no tmux or Herdr pane is proven for its doorbell. Queued wakes wait for the next captain message."}'
+          exit 0
+          ;;
+      esac
+      allow_supervised_stop
     fi
+    printf '%s\n' '{"systemMessage":"FIRSTMATE SUPERVISION HAS NO PERSISTENT WATCHER: the Stop hook could not confirm a detached owner. Allowing this turn to end so it does not loop on foreground checkpoints. The next stop will try again."}'
     exit 0
   fi
 fi

@@ -6,6 +6,8 @@
 # Internal hold tags require their matching environment opt-in. The watchdog's
 # --managed-hold watcher remains the arm's child; --grok-hold is Grok-owned.
 # --secondmate starts and verifies a detached local Codex secondmate watcher;
+# --codex-hold-bind records a plain Codex primary's pane for its detached hold,
+# and --codex-hold-ring rings that primary's steering inbox once.
 # --secondmate-status is its read-only identity, route and beacon proof.
 # --secondmate-selected reads route eligibility. Ownership-mode selection is
 # documented in docs/turnend-guard.md, not configured by these interfaces.
@@ -253,7 +255,7 @@ if [ "${FM_WATCH_NOW+x}" ] && ! [[ $FM_WATCH_NOW =~ ^(0|[1-9][0-9]*)$ ]]; then
 fi
 if [ "${BASH_SOURCE[0]}" = "$0" ] && [ "$#" -gt 0 ]; then
   case "$1" in
-    --secondmate|--secondmate-status|--secondmate-selected|--secondmate-hold) [ "$#" -eq 1 ] || exit 2; SECONDMATE_MODE=$1 ;;
+    --secondmate|--secondmate-status|--secondmate-selected|--secondmate-hold|--codex-hold-bind|--codex-hold-ring) [ "$#" -eq 1 ] || exit 2; SECONDMATE_MODE=$1 ;;
     --managed-hold) [ "$#" -eq 1 ] && [ "${FM_WATCH_MANAGED_HOLD:-}" = 1 ] || exit 2 ;;
     *) [ "$#" -eq 1 ] && [ "$1" = --grok-hold ] && [ "${FM_WATCH_GROK_HOLD:-}" = 1 ] || exit 2 ;;
   esac
@@ -303,6 +305,8 @@ case "$SECONDMATE_MODE" in
     fm_secondmate_watch_status && { echo 'secondmate watcher: ready'; exit 0; }
     echo 'secondmate watcher: not ready'; exit 1 ;;
   --secondmate) fm_secondmate_watch_start; exit $? ;;
+  --codex-hold-bind) fm_codex_hold_bind; exit $? ;;
+  --codex-hold-ring) FM_WATCH_CODEX_HOLD=1 fm_secondmate_watch_notify; exit $? ;;
   --secondmate-hold)
     fm_secondmate_watch_binding_valid || exit 1
     export FM_WATCH_GROK_HOLD=1 FM_WATCH_SECONDMATE_HOLD=1 ;;
@@ -4361,8 +4365,8 @@ resurface_after_downtime() {
 }
 
 while :; do
-  if [ "${FM_WATCH_SECONDMATE_HOLD:-}" = 1 ]; then
-    if fm_secondmate_watch_binding_valid; then
+  if [ "${FM_WATCH_SECONDMATE_HOLD:-}" = 1 ] || [ "${FM_WATCH_CODEX_HOLD:-}" = 1 ]; then
+    if fm_hold_bell_binding_valid; then
       FM_SM_BINDING_MISSES=0
       [ "${FM_SM_NOTIFY_RETRY:-0}" -eq 0 ] || ! fm_secondmate_watch_notify || FM_SM_NOTIFY_RETRY=0
     else

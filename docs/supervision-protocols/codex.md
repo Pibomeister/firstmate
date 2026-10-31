@@ -9,6 +9,7 @@ In a secondmate home, apply the routed-work and return-channel rules in `data/ch
 When this session owns supervision and no away daemon is active:
 __FM_CODEX_CONTINUITY__
 A secondmate home keeps one outside-turn watcher instead of another checkpoint.
+A doorbell naming the `codex-primary.inbox` steering inbox means a watcher has work for you: read `state/codex-primary.inbox/*.msg` in numeric order, act on each, and `mv` each into `handled/`.
 1. Drain first with `bin/fm-wake-drain.sh`.
    After handling all emitted wakes and reconciling open decisions and unread status lines, run the exact `--ack-through` command printed as `WAKE_ACK_REQUIRED`.
    Until then the work remains durable for idempotent re-handling after interruption.

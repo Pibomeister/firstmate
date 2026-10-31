@@ -214,6 +214,9 @@ test_repair_lines() {
   out=$(FM_HOME="$home" FM_CODEX_WATCH_CHECKPOINT=7 "$RENDER" --harness codex --x-mode 1 --repair-line)
   assert_contains "$out" "source '$home/config/x-mode.env' first" "x-mode repair line did not source the effective cadence config"
   assert_contains "$out" "The Stop hook re-arms a persistent watcher or allows this turn to end." "x-mode codex repair line lost the re-arm rule"
+  out=$(FM_HOME="$ROOT" "$ROOT/bin/fm-supervision-instructions.sh" --harness codex --afk 1 --x-mode 0 --repair-line)
+  assert_contains "$out" "Away mode owns watcher supervision" "away codex repair line must name its owner"
+  assert_not_contains "$out" "The Stop hook re-arms" "away codex repair line must not claim a Stop-hook re-arm"
 
   out=$(FM_HOME="$home" "$RENDER" --harness opencode --read-only 1 --repair-line)
   assert_contains "$out" "session holding the fleet lock" "read-only repair line missing"

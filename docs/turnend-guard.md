@@ -311,8 +311,10 @@ Claude keeps its one-shot `stop_hook_active` allow.
 Codex mode is owned by the header of [`bin/fm-turnend-guard.sh`](../bin/fm-turnend-guard.sh).
 A running checkpoint this session started still blocks.
 Once it has exited, the hook detaches a persistent hold or allows the stop.
-`FM_CODEX_TURNEND_BLOCK_BUDGET` (default 2) bounds later blocks on that path.
-A secondmate home and a home with away mode active keep the no-progress escape instead.
+A fixed bound of 2 limits later blocks in a turn once no checkpoint runs, on a secondmate home too.
+A secondmate home and a home with away mode active also keep the no-progress escape.
+A detached hold on a proven tmux or Herdr pane rings the `codex-primary` steering inbox, so a queued wake starts the next turn.
+With no proven pane, the stop prints a notice, and wakes wait for the next captain message.
 
 ### Codex mode
 
@@ -329,9 +331,8 @@ A local tmux or Herdr Codex secondmate with a validated parent/inbox binding use
 `bin/fm-watch.sh`'s header owns its command interfaces.
 Its actionable events ring the existing durable steering inbox, while the watcher's ordinary triage absorbs no-change heartbeats and retains the actionable-status backstop.
 The Stop guard allows a supervised stop only with the live watcher, session/process identity and delivery route proven.
-Until that proof holds, one foreground checkpoint is the fallback.
-The hook does not ask for another.
-When `bin/fm-watch.sh --secondmate` reports a failure, the emitted protocol and repair line name that one checkpoint, then stop.
+Until that proof holds, no foreground checkpoint is the fallback.
+When `bin/fm-watch.sh --secondmate` reports a failure, the emitted protocol and repair line tell the model to tell the parent, then stop.
 A failed notification is retried on the next poll, and the watcher stops after three consecutive binding-check failures without acknowledging pending events.
 Away and quiet mode and supervision-host ownership take precedence.
 Unsupported combinations retain their existing protocol.
@@ -343,7 +344,7 @@ Existing native protocols remain authoritative outside the selected row.
 | --- | --- | --- | --- |
 | Codex | tmux or Herdr, validated local parent/inbox and foreground session | No other watcher/host/away owner | Persistent watcher with identity-bound doorbell; Stop requires its proof. |
 | Codex | Any | Away or quiet daemon | Existing daemon protocol; short-turn watcher stands down. |
-| Codex | Any | Supervision host selected | Existing host protocol; the Stop hook does not start a second watcher. |
+| Codex | Any | Supervision host selected | The Stop hook detaches the host's park, which rings the doorbell when it exits for main. |
 | Codex | tmux or Herdr, local | Other healthy watcher | Existing owner/protocol; no competing short-turn watcher. |
 | Codex | Other backend, or remote/unverified route | Any | The Stop hook detaches a persistent hold or allows the turn to end. |
 | Other supported harnesses | Their existing supported backends/routes | Native ownership | Existing native protocol, without a new Codex short-turn owner. |

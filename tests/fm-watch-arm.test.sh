@@ -2375,6 +2375,110 @@ test_grok_successor_holds_across_quiet_polls_after_a_process_event() {
   pass "grok: the real arm holds across quiet polls and the next tracked arm delivers fresh work"
 }
 
+run_detach_hold() {  # <primary> [env assignment...]
+  local primary=$1
+  shift
+  env -u TMUX -u TMUX_PANE -u HERDR_SESSION -u HERDR_PANE_ID "$@" \
+    FM_HOME="$primary" FM_STATE_OVERRIDE="$primary/state" FM_ROOT_OVERRIDE="$primary" \
+    FM_CONFIG_OVERRIDE="$primary/config" FM_ARM_CONFIRM_TIMEOUT="$REARM_CONFIRM_SECONDS" \
+    "$primary/bin/fm-watch-arm.sh" --detach-hold
+}
+
+test_detach_hold_leaves_a_hold_behind_the_arm() {
+  local dir primary out status pid
+  dir=$(make_case detach-hold-real)
+  primary=$(make_grok_guard_primary "$dir")
+  out=$(run_detach_hold "$primary" PATH="$dir/fakebin:$PATH" 2>&1); status=$?
+  expect_code 0 "$status" "detach-hold must confirm its hold: $out"
+  assert_contains "$out" "watcher: started pid=" "detach-hold must report the started hold"
+  assert_contains "$out" "watcher: no wake route" "detach-hold without a pane must name the missing route"
+  primary_watcher_healthy "$primary" || fail "no healthy watcher holds the lock after the arm exited"
+  pid=$(cat "$primary/state/.watch.lock/pid")
+  assert_contains "$(ps -o args= -p "$pid")" "--grok-hold" "the surviving watcher must be the detached hold"
+  out=$(run_detach_hold "$primary" PATH="$dir/fakebin:$PATH" 2>&1); status=$?
+  expect_code 0 "$status" "detach-hold must attach to a healthy watcher: $out"
+  assert_contains "$out" "watcher: attached pid=$pid" "detach-hold must report the attach"
+  stop_primary_watcher "$primary"
+  pass "detach-hold: the real arm exits 0, leaves a hold on the lock, and attaches on the next call"
+}
+
+test_detach_hold_refuses_away_mode_and_reports_failure() {
+  local dir primary out status
+  dir=$(make_case detach-hold-refuse)
+  primary=$(make_grok_guard_primary "$dir")
+  : > "$primary/state/.afk"
+  out=$(run_detach_hold "$primary" 2>&1); status=$?
+  expect_code 1 "$status" "detach-hold must refuse while state/.afk exists: $out"
+  [ ! -e "$primary/state/.watch.lock/pid" ] || fail "away-mode detach-hold started a watcher"
+  rm -f "$primary/state/.afk"
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$primary/bin/fm-watch.sh"
+  out=$(run_detach_hold "$primary" 2>&1); status=$?
+  expect_code 1 "$status" "detach-hold must fail when its watcher dies: $out"
+  assert_contains "$out" "watcher: FAILED" "detach-hold must print its typed failure"
+  pass "detach-hold: state/.afk refuses it, and a dead watcher exits with a FAILED line"
+}
+
+test_detach_hold_starts_the_selected_host() {
+  local dir primary out status i
+  dir=$(make_case detach-hold-host)
+  primary=$(make_grok_guard_primary "$dir")
+  mkdir -p "$primary/config"
+  : > "$primary/config/supervision-host"
+  cat > "$primary/bin/fm-supervision-host.sh" <<'SH'
+#!/usr/bin/env bash
+printf '%s %s\n' "$1" "$FM_SUPERVISION_HOST_PRIMARY" > "$FM_STATE_OVERRIDE/host-called"
+exec "$(dirname "$0")/fm-watch-arm.sh"
+SH
+  chmod +x "$primary/bin/fm-supervision-host.sh"
+  out=$(run_detach_hold "$primary" PATH="$dir/fakebin:$PATH" 2>&1); status=$?
+  expect_code 0 "$status" "detach-hold must start the selected host: $out"
+  [ "$(cat "$primary/state/host-called")" = "park codex" ] || fail "the host park did not run for codex"
+  primary_watcher_healthy "$primary" || fail "the host park left no healthy watcher"
+  stop_primary_watcher "$primary"
+  for ((i=0; i<100; i++)); do
+    [ -s "$primary/state/.supervision-host-park.out" ] && break
+    sleep 0.1
+  done
+  [ -e "$primary/state/.supervision-host-park.out" ] || fail "the detached park kept no output for the doorbell turn"
+  pass "detach-hold: a selected supervision host starts as a detached codex park"
+}
+
+test_detach_hold_rings_a_plain_codex_pane() {
+  local dir primary socket i inbox pane= fake_codex
+  command -v tmux >/dev/null 2>&1 || { printf 'skip: tmux not found for the codex doorbell\n'; return; }
+  dir=$(make_case detach-hold-ring)
+  primary=$(make_grok_guard_primary "$dir")
+  socket=$(mktemp -d /tmp/fm-hold-ring.XXXXXX)/s
+  fake_codex="$dir/codex"
+  ln -s "$BASH" "$fake_codex"
+  printf '#!/usr/bin/env bash\necho actionable\n' > "$primary/state/probe.check.sh"
+  chmod 700 "$primary/state/probe.check.sh"
+  cat > "$dir/pane.sh" <<SH
+printf '%s\n' "\$\$" > "$primary/state/.lock"
+export FM_HOME="$primary" FM_STATE_OVERRIDE="$primary/state" FM_ROOT_OVERRIDE="$primary" FM_CONFIG_OVERRIDE="$primary/config" FM_ARM_CONFIRM_TIMEOUT=$REARM_CONFIRM_SECONDS FM_POLL=1 FM_CHECK_INTERVAL=1
+"$primary/bin/fm-check-register.sh" probe > "$dir/register.out" 2>&1
+"$primary/bin/fm-watch-arm.sh" --detach-hold > "$dir/arm.out" 2>&1
+sleep 60
+SH
+  tmux -S "$socket" new-session -d -s ring -x 200 -y 50 "$fake_codex $dir/pane.sh" >/dev/null 2>&1 </dev/null
+  inbox="$primary/state/codex-primary.inbox"
+  for ((i=0; i<300; i++)); do
+    pane=$(tmux -S "$socket" capture-pane -pJ -t ring 2>/dev/null || true)
+    case "$pane" in *codex-primary.inbox*) break ;; esac
+    sleep 0.1
+  done
+  stop_primary_watcher "$primary"
+  tmux -S "$socket" kill-server 2>/dev/null || true
+  rm -rf "${socket%/*}"
+  compgen -G "$inbox/*.msg" >/dev/null || fail "the hold wrote no steering record: $(cat "$dir/arm.out")"
+  assert_contains "$pane" "codex-primary.inbox" "the hold did not ring the pane doorbell: $pane"
+  pass "detach-hold: a queued wake rings a plain Codex pane through the steering inbox"
+}
+
+test_detach_hold_leaves_a_hold_behind_the_arm
+test_detach_hold_refuses_away_mode_and_reports_failure
+test_detach_hold_starts_the_selected_host
+test_detach_hold_rings_a_plain_codex_pane
 test_grok_one_stale_notice_leaves_the_watcher_holding_the_lock
 test_grok_hold_survives_a_wake_after_a_process_event_wake
 test_grok_successor_holds_across_quiet_polls_after_a_process_event

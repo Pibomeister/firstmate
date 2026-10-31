@@ -362,7 +362,7 @@ fm_afk_launch_host_engine_note() {
 }
 
 # One line for the entry on a Codex home that runs the supervision host, where
-# away supervision exists only while a foreground checkpoint holds the watcher
+# away supervision exists only once the Stop hook has detached the host
 # (docs/supervision-protocols/codex.md): unless a healthy watcher already runs,
 # the record alone supervises nothing, and an interrupted turn leaves no cycle.
 fm_afk_launch_checkpoint_note() {
@@ -372,7 +372,7 @@ fm_afk_launch_checkpoint_note() {
   config=${FM_CONFIG_OVERRIDE:-$FM_HOME/config}
   fm_supervision_host_config "$config" codex || return 0
   fm_watcher_healthy "$FM_AFK_LAUNCH_STATE" "$FM_AFK_LAUNCH_DIR/fm-watch.sh" "${FM_GUARD_GRACE:-300}" "$FM_HOME" && return 0
-  printf 'Away supervision is not running yet: on this home it runs only inside a foreground checkpoint, so start bin/fm-watch-checkpoint.sh now and announce away mode only once it is running; a turn interrupted before then leaves the fleet unsupervised until the next message arrives.\n'
+  printf 'Away supervision is not running yet: on this home the Stop hook starts the supervision host when this turn ends, so end the turn now; a turn that does not reach its Stop hook leaves the fleet unsupervised until the next message arrives.\n'
 }
 
 fm_afk_launch_catchup_pending() {

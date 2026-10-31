@@ -124,7 +124,7 @@ case "$HARNESS" in
 esac
 codex_continuity='The Stop hook re-arms a persistent watcher or allows this turn to end.'
 if [ -n "$HOST_SNIPPET" ]; then
-  codex_continuity='The supervision host owns the watcher on this home. The Stop hook does not start a second watcher, and it allows this turn to end once no checkpoint of yours is running.'
+  codex_continuity='The Stop hook starts the supervision host on this home and allows this turn to end once no checkpoint of yours is running.'
 fi
 
 checkpoint_seconds=${FM_CODEX_WATCH_CHECKPOINT:-180}
@@ -222,9 +222,9 @@ repair_line() {
       ;;
     codex)
       if [ "$SECONDMATE_MODE" -eq 1 ]; then
-        printf '%s%s%s%s\n' "$prefix" 'repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds ' "$checkpoint_seconds" '. Poll it until it exits, handle its wake, then stop. Do not start another checkpoint.'
+        printf '%s%s\n' "$prefix" 'do not start a foreground checkpoint. Tell the parent that the outside-turn watcher failed, then stop. The Stop hook bounds repeated blocks.'
       elif [ -n "$HOST_SNIPPET" ]; then
-        printf '%s%s\n' "$prefix" 'do not start another foreground checkpoint. The supervision host owns the watcher. Poll a checkpoint only while it is still running, then stop.'
+        printf '%s%s\n' "$prefix" 'do not start another foreground checkpoint. The Stop hook starts the supervision host or allows this turn to end. Poll a checkpoint only while it is still running, then stop.'
       else
         printf '%s%s\n' "$prefix" 'do not start another foreground checkpoint. The Stop hook re-arms a persistent watcher or allows this turn to end. Poll a checkpoint only while it is still running, then stop.'
       fi
@@ -276,7 +276,7 @@ ordinary_wake_line() {
       ;;
     codex)
       if [ -n "$HOST_SNIPPET" ]; then
-        printf '%s\n' '- Ordinary wake: drain and acknowledge the wake, then end the turn. The supervision host owns the watcher. Do not start another foreground checkpoint.'
+        printf '%s\n' '- Ordinary wake: drain and acknowledge the wake, then end the turn. The Stop hook starts the supervision host if it is not running. Do not start another foreground checkpoint.'
       else
         printf '%s\n' '- Ordinary wake: drain and acknowledge the wake, then end the turn. The Stop hook re-arms a persistent watcher. Do not start another foreground checkpoint.'
       fi
@@ -349,7 +349,7 @@ Read and acknowledge the steering inbox, drain and handle durable watcher events
 Send resulting actions and parent-channel replies in this handling turn.
 Run bin/fm-watch.sh --secondmate once to verify the outside-turn watcher and notification route, then end this turn.
 Do not wait for crews or poll a tool session; an existing inbox doorbell starts the next handling turn when an actionable event arrives.
-If bin/fm-watch.sh --secondmate reports a failure, run one bin/fm-watch-checkpoint.sh checkpoint, handle its wake, then stop. Do not start another checkpoint.
+If bin/fm-watch.sh --secondmate reports a failure, tell the parent that the outside-turn watcher failed, then stop. Do not start a foreground checkpoint.
 EOF
 fi
 render_snippet
