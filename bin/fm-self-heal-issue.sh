@@ -20,6 +20,7 @@
 # Environment:
 #   FM_HOME   operational home (for --for-gate-project lookup and the role
 #             file); defaults to FM_ROOT_OVERRIDE, then this checkout
+#   FM_CONFIG_OVERRIDE  directory holding the role file; defaults to $FM_HOME/config
 #
 # Requires gh. Exit 0 on success and prints `commented <n>` or
 # `created <n> <url>` to stdout.
