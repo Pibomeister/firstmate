@@ -3,7 +3,8 @@
 # Budgeted ship/scout records are checked each ordinary poll, independently of
 # wake triage; bin/fm-task-budget.sh owns native usage, dry-run/enforce policy,
 # deduplication, and exact-task interrupt outcomes.
-# The internal --grok-hold tag requires FM_WATCH_GROK_HOLD=1.
+# Internal hold tags require their matching environment opt-in. The watchdog's
+# --managed-hold watcher remains the arm's child; --grok-hold is Grok-owned.
 # --secondmate starts and verifies a detached local Codex secondmate watcher;
 # --secondmate-status is its read-only identity, route and beacon proof.
 # --secondmate-selected reads route eligibility. Ownership-mode selection is
@@ -253,6 +254,7 @@ fi
 if [ "${BASH_SOURCE[0]}" = "$0" ] && [ "$#" -gt 0 ]; then
   case "$1" in
     --secondmate|--secondmate-status|--secondmate-selected|--secondmate-hold) [ "$#" -eq 1 ] || exit 2; SECONDMATE_MODE=$1 ;;
+    --managed-hold) [ "$#" -eq 1 ] && [ "${FM_WATCH_MANAGED_HOLD:-}" = 1 ] || exit 2 ;;
     *) [ "$#" -eq 1 ] && [ "$1" = --grok-hold ] && [ "${FM_WATCH_GROK_HOLD:-}" = 1 ] || exit 2 ;;
   esac
   shift
@@ -2912,6 +2914,144 @@ EOF
   fi
 }
 
+# Away decisions use the timed status fold. Without a council entrypoint every
+# overdue decision is a captain page; nothing authorizes an unattended decision.
+# The claim covers task, key and opening epoch, so a repeat scan or a new away
+# session does not page the same decision generation twice, while a new
+# decision episode gets its own claim. The away confirmation is only rechecked
+# before acting.
+away_decision_claimed() {  # <claims-file> <task> <key> <opened>
+  local file=$1 task=$2 key=$3 opened=$4 row_task row_key row_opened
+  [ -f "$file" ] || return 1
+  while IFS=$'\t' read -r row_task row_key row_opened _; do
+    [ "$row_task" = "$task" ] && [ "$row_key" = "$key" ] \
+      && [ "$row_opened" = "$opened" ] && return 0
+  done < "$file"
+  return 1
+}
+
+away_decision_retry_page() {  # <claim-file> <now-epoch>
+  local file=$1 now=$2 candidates task key opened result last open row_key verb row_opened note page_result page_state
+  [ -f "$file" ] || return 0
+  candidates=$(awk -F '\t' '
+    { k=$1 FS $2 FS $3; status[k]=$5; stamp[k]=$6; task[k]=$1; key[k]=$2; opened[k]=$3 }
+    END { for (k in status) if (status[k] == "claiming" || status[k] == "page-pending" || status[k] == "page-failed")
+      print task[k] FS key[k] FS opened[k] FS status[k] FS stamp[k] }
+  ' "$file") || return 1
+  while IFS=$'\t' read -r task key opened result last; do
+    [ -n "$task" ] || continue
+    case "$last" in ''|*[!0-9]*) last=0 ;; esac
+    [ "$now" -ge "$last" ] && [ "$((now - last))" -ge 60 ] || continue
+    open=$(status_open_decisions_incremental "$STATE/$task.status" '' timed) || return 1
+    while IFS=$'\t' read -r row_key verb row_opened note; do
+      [ "$row_key" = "$key" ] && [ "$row_opened" = "$opened" ] || continue
+      case "$verb" in needs-decision|blocked) ;; *) continue ;; esac
+      page_result=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG" \
+        bash "$SCRIPT_DIR/fm-supervise-daemon.sh" page \
+        "Away decision needs captain: $task key=$key" "$file" 2>/dev/null) || true
+      page_state=${page_result#page: }
+      case "$page_state" in sent|failed|pending) ;; *) page_state=pending ;; esac
+      printf '%s\t%s\t%s\t%s\tpage-%s\t%s\n' "$task" "$key" "$opened" \
+        "$(fm_afk_contract_read_field "$STATE/.afk-contract" confirmed_epoch)" \
+        "$page_state" "$now" >> "$file" || return 1
+      return 0
+    done <<EOF
+$open
+EOF
+  done <<EOF
+$candidates
+EOF
+}
+
+away_decision_age_tick() {  # [now-epoch]
+  local now=${1:-} threshold=${FM_AWAY_DECISION_OVERDUE_SECS:-1800}
+  local record="$STATE/.afk-contract" confirmed exclude f task open key verb opened note
+  local due_task='' due_key='' due_opened='' claim_file claim_lock
+  local page_result page_state current=0 record_error
+  away_record_present || return 0
+  if ! record_error=$(fm_afk_contract_validate "$record" 2>&1); then
+    # Archive may remove the record after the presence check above.
+    away_record_present || return 0
+    printf '%s\n' "$record_error" >&2
+    return 1
+  fi
+  case "$threshold" in ''|0*|*[!0-9]*) echo 'watcher: invalid away decision threshold' >&2; return 1 ;; esac
+  [ "${#threshold}" -le 9 ] || return 1
+  [ -n "$now" ] || fm_epoch_seconds_to now
+  confirmed=$(fm_afk_contract_read_field "$record" confirmed_epoch)
+  claim_file="$STATE/.away-decision-age-claims"
+  if [ -e "$claim_file" ] || [ -L "$claim_file" ]; then
+    [ -f "$claim_file" ] && [ -r "$claim_file" ] && [ ! -L "$claim_file" ] || return 1
+  fi
+  away_decision_retry_page "$claim_file" "$now" || return 1
+  exclude=$(status_scan_parent_channel_exclude "$STATE")
+  for f in "$STATE"/*.status; do
+    [ -f "$f" ] && [ -r "$f" ] && [ ! -L "$f" ] || continue
+    [ "$f" != "$exclude" ] || continue
+    status_is_paused_or_captain_held "$(status_declared_wait_line "$f")" && continue
+    task=${f##*/}; task=${task%.status}
+    task_captain_call_open "$task" && continue
+    open=$(status_open_decisions_incremental "$f" '' timed) || return 1
+    while IFS=$'\t' read -r key verb opened note; do
+      [ -n "$key" ] || continue
+      case "$verb" in needs-decision|blocked) ;; *) continue ;; esac
+      case "$opened" in ''|unknown|*[!0-9]*) continue ;; esac
+      [ "$now" -ge "$opened" ] && [ "$((now - opened))" -ge "$threshold" ] || continue
+      away_decision_claimed "$claim_file" "$task" "$key" "$opened" && continue
+      if [ -z "$due_opened" ] || [ "$opened" -lt "$due_opened" ]; then
+        due_task=$task; due_key=$key; due_opened=$opened
+      fi
+    done <<EOF
+$open
+EOF
+  done
+  [ -n "$due_task" ] || return 0
+  claim_lock="$STATE/.away-decision-age-claims.lock"
+  fm_lock_try_acquire "$claim_lock" || return 0
+  if away_decision_claimed "$claim_file" "$due_task" "$due_key" "$due_opened"; then
+    fm_lock_release "$claim_lock"
+    return 0
+  fi
+  # The test seam forces the same pre-invocation race as an external council
+  # result without allowing arbitrary hooks in production.
+  if [ "${FM_GATE_REFUSE_BYPASS:-}" = 1 ] && [ -n "${FM_TEST_DECISION_ROUTE_BEFORE_ACTION:-}" ]; then
+    FM_STATE_OVERRIDE="$STATE" bash "$FM_TEST_DECISION_ROUTE_BEFORE_ACTION" || {
+      fm_lock_release "$claim_lock"; return 1;
+    }
+  fi
+  if ! away_record_present || ! fm_afk_contract_validate "$record" \
+    || [ "$(fm_afk_contract_read_field "$record" confirmed_epoch)" != "$confirmed" ]; then
+    fm_lock_release "$claim_lock"
+    return 0
+  fi
+  open=$(status_open_decisions_incremental "$STATE/$due_task.status" '' timed) || {
+    fm_lock_release "$claim_lock"; return 1;
+  }
+  while IFS=$'\t' read -r key verb opened note; do
+    [ "$key" = "$due_key" ] && [ "$opened" = "$due_opened" ] \
+      && case "$verb" in needs-decision|blocked) true ;; *) false ;; esac \
+      && current=1
+  done <<EOF
+$open
+EOF
+  if [ "$current" -ne 1 ]; then
+    printf '%s\t%s\t%s\t%s\tstale\n' "$due_task" "$due_key" "$due_opened" "$confirmed" >> "$claim_file"
+    fm_lock_release "$claim_lock"
+    return 0
+  fi
+  printf '%s\t%s\t%s\t%s\tclaiming\t%s\n' "$due_task" "$due_key" "$due_opened" "$confirmed" "$now" >> "$claim_file" || {
+    fm_lock_release "$claim_lock"; return 1;
+  }
+  fm_lock_release "$claim_lock"
+  page_result=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG" \
+    bash "$SCRIPT_DIR/fm-supervise-daemon.sh" page \
+    "Away decision needs captain: $due_task key=$due_key" "$claim_file" 2>/dev/null) || true
+  page_state=${page_result#page: }
+  case "$page_state" in sent|failed|pending) ;; *) page_state=pending ;; esac
+  printf '%s\t%s\t%s\t%s\tpage-%s\t%s\n' \
+    "$due_task" "$due_key" "$due_opened" "$confirmed" "$page_state" "$now" >> "$claim_file"
+}
+
 # The identity a re-surface throttle is bound to: the task's whole status-log
 # signature. Any new status event - a replacement wait, a fresh delivery, a
 # blocker - changes it and so starts its own window instead of inheriting the
@@ -4136,6 +4276,16 @@ rerecord_device_shifted_pr_poll() {  # <id>
 }
 
 resurface_after_downtime() {
+  local managed_queue_rc=0
+  if [ "${FM_WATCH_MANAGED_HOLD:-}" = 1 ] \
+    && [ "${FM_MANAGED_WAKE_DELIVERED:-0}" = 1 ]; then
+    handling_successor_has_queued_row || managed_queue_rc=$?
+    case "$managed_queue_rc" in
+      0) return 0 ;; # The wake was delivered and still awaits acknowledgement.
+      1) FM_MANAGED_WAKE_DELIVERED=0 ;; # The queue drained; retire the episode below.
+      *) return 0 ;; # A contended queue cannot justify another delivery.
+    esac
+  fi
   # Handling successors already have a predecessor-delivered wake on the way.
   # Re-announcing from this cycle is what turned a lost handshake into an
   # unbounded recovery loop. A handled host turn explicitly settles its
@@ -4279,6 +4429,10 @@ while :; do
   }
   [ -z "$OPEN_DECISION_REMINDER" ] || wake "$OPEN_DECISION_REMINDER"
 
+  away_decision_age_tick || {
+    echo 'watcher: away decision age check failed' >&2
+    exit 1
+  }
   # Endpoint liveness runs before queue observation: a positively dead or
   # missing secondmate endpoint is relaunched here on a bounded cadence, which
   # is also what unsticks that mate's foreign wake queue. The tick's single

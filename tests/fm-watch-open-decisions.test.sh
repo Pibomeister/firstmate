@@ -17,6 +17,7 @@ FM_OPEN_DECISION_OVERDUE_SECS=100
 FM_OPEN_DECISION_BACKOFF_MAX_SECS=400
 
 reset_case() {
+  rm -rf -- "$STATE/afk-contracts"
   rm -f -- "$STATE"/* "$STATE"/.[!.]* "$CONFIG"/*
   OPEN_DECISION_REMINDER=
 }
@@ -212,7 +213,156 @@ test_watcher_loop() {
   pass "the actual watcher wakes and exits on an overdue key without any recorded pane"
 }
 
+test_away_age_route() {
+  reset_case
+  printf 'needs-decision [at=1000] [key=api]: choose\n' > "$STATE/worker.status"
+  away_decision_age_tick 2800
+  [ "$(count_wakes)" = 0 ] || fail 'present posture age-routed a decision'
+  FM_AFK_MODE=quiet bash "$ROOT/bin/fm-afk-contract.sh" enter --words 'quiet test' >/dev/null
+  away_decision_age_tick 2800
+  [ "$(count_wakes)" = 0 ] || fail 'quiet posture age-routed a decision'
+  FM_AFK_MODE=away bash "$ROOT/bin/fm-afk-contract.sh" enter --words 'away test' >/dev/null
+  away_decision_age_tick 2799
+  [ "$(count_wakes)" = 0 ] || fail 'away decision routed before default 30 minutes'
+  FM_WEDGE_ALARM_CHANNEL=off away_decision_age_tick 2800
+  grep -q 'page-pending' "$STATE/.away-decision-age-claims" || fail 'away decision did not retain a pending page at 30 minutes'
+  [ "$(count_wakes)" = 0 ] || fail 'absent council entrypoint queued a wake'
+  away_decision_age_tick 2801
+  [ "$(count_wakes)" = 0 ] || fail 'same decision generation queued a wake'
+  rm -f -- "$STATE/.afk-contract"
+  FM_AFK_MODE=away bash "$ROOT/bin/fm-afk-contract.sh" enter --words 'new away session' >/dev/null
+  away_decision_age_tick 2802
+  [ "$(count_wakes)" = 0 ] || fail 'same decision generation queued a wake in a new away session'
+  printf 'blocked [at=1050] [key=followup]: choose again\n' > "$STATE/second.status"
+  FM_WEDGE_ALARM_CHANNEL=off away_decision_age_tick 2850
+  [ "$(grep -c 'page-pending' "$STATE/.away-decision-age-claims")" = 2 ] \
+    || fail 'claimed oldest decision hid a later due decision'
+  [ "$(count_wakes)" = 0 ] || fail 'second decision queued a council wake'
+  pass 'only away posture routes one decision at the default age'
+}
+
+test_away_age_page_and_staleness() {
+  reset_case
+  printf 'blocked [at=1000] [key=ship]: needs approval\n' > "$STATE/worker.status"
+  FM_AFK_MODE=away bash "$ROOT/bin/fm-afk-contract.sh" enter --words 'away test' >/dev/null
+  FM_AWAY_DECISION_OVERDUE_SECS=60 away_decision_age_tick 1059
+  [ ! -e "$STATE/.away-decision-age-claims" ] || fail 'early decision was claimed'
+  FM_WEDGE_ALARM_CHANNEL=off FM_AWAY_DECISION_OVERDUE_SECS=60 away_decision_age_tick 1060
+  grep -q 'page-pending' "$STATE/.away-decision-age-claims" \
+    || fail 'overdue decision did not retain a pending page'
+  [ "$(count_wakes)" = 0 ] || fail 'overdue decision reached the council'
+  reset_case
+  printf 'needs-decision [at=1000] [key=api]: choose\n' > "$STATE/worker.status"
+  FM_AFK_MODE=away bash "$ROOT/bin/fm-afk-contract.sh" enter --words 'away test' >/dev/null
+  cat > "$STATE/resolve-before-action.sh" <<'SH'
+#!/usr/bin/env bash
+printf 'resolved [at=1100] [key=api]: answered\n' >> "$FM_STATE_OVERRIDE/worker.status"
+SH
+  chmod 0700 "$STATE/resolve-before-action.sh"
+  FM_TEST_DECISION_ROUTE_BEFORE_ACTION="$STATE/resolve-before-action.sh" \
+    FM_AWAY_DECISION_OVERDUE_SECS=60 away_decision_age_tick 1100
+  [ "$(count_wakes)" = 0 ] || fail 'stale decision generation reached the council'
+  grep -q 'stale' "$STATE/.away-decision-age-claims" || fail 'stale claim was not recorded'
+  pass 'overdue decision pages and stale generation refuses route'
+}
+
+test_away_confirmation_change_keeps_decision_open() {
+  reset_case
+  printf 'needs-decision [at=1000] [key=api]: choose\n' > "$STATE/worker.status"
+  FM_AFK_MODE=away bash "$ROOT/bin/fm-afk-contract.sh" enter --words 'away test' >/dev/null
+  cat > "$STATE/leave-away.sh" <<'SH'
+#!/usr/bin/env bash
+rm -f -- "$FM_STATE_OVERRIDE/.afk-contract"
+SH
+  chmod 0700 "$STATE/leave-away.sh"
+  FM_TEST_DECISION_ROUTE_BEFORE_ACTION="$STATE/leave-away.sh" \
+    FM_WEDGE_ALARM_CHANNEL=off FM_AWAY_DECISION_OVERDUE_SECS=60 away_decision_age_tick 1100
+  [ ! -s "$STATE/.away-decision-age-claims" ] || fail 'changed confirmation claimed an open decision'
+  FM_AFK_MODE=away bash "$ROOT/bin/fm-afk-contract.sh" enter --words 'away again' >/dev/null
+  FM_WEDGE_ALARM_CHANNEL=off FM_AWAY_DECISION_OVERDUE_SECS=60 away_decision_age_tick 1101
+  grep -q 'page-pending' "$STATE/.away-decision-age-claims" \
+    || fail 'open decision did not page after the confirmation changed'
+  pass 'changed away confirmation leaves the open decision to page later'
+}
+
+test_interrupted_claim_retries_page() {
+  reset_case
+  printf 'needs-decision [at=1000] [key=api]: choose\n' > "$STATE/worker.status"
+  FM_AFK_MODE=away bash "$ROOT/bin/fm-afk-contract.sh" enter --words 'away test' >/dev/null
+  printf 'worker\tapi\t1000\t1\tclaiming\t1100\n' > "$STATE/.away-decision-age-claims"
+  FM_WEDGE_ALARM_EXEC='' FM_WEDGE_ALARM_CHANNEL=command:true \
+    FM_AWAY_DECISION_OVERDUE_SECS=60 away_decision_age_tick 1159
+  ! grep -q 'page-' "$STATE/.away-decision-age-claims" || fail 'interrupted claim retried before retry bound'
+  FM_WEDGE_ALARM_EXEC='' FM_WEDGE_ALARM_CHANNEL=command:true \
+    FM_AWAY_DECISION_OVERDUE_SECS=60 away_decision_age_tick 1160
+  grep -q 'page-sent' "$STATE/.away-decision-age-claims" || fail 'interrupted claim never paged'
+  [ "$(count_wakes)" = 0 ] || fail 'interrupted claim retry sent a council wake'
+  pass 'claim interrupted before its page retries after the bound'
+}
+
+test_missing_council_entrypoint_pages() {
+  local dir="$TMP_ROOT/missing-council"
+  mkdir -p "$dir/state" "$dir/config"
+  fm_test_track_watcher_state "$dir/state"
+  printf 'needs-decision [at=1000] [key=api]: choose\n' > "$dir/state/worker.status"
+  FM_HOME="$dir" FM_STATE_OVERRIDE="$dir/state" FM_CONFIG_OVERRIDE="$dir/config" \
+    FM_AFK_MODE=away bash "$ROOT/bin/fm-afk-contract.sh" enter --words 'away test' >/dev/null
+  FM_HOME="$dir" FM_STATE_OVERRIDE="$dir/state" FM_CONFIG_OVERRIDE="$dir/config" \
+    FM_WATCH_NOW=2800 FM_WATCH_ONCE=1 FM_WEDGE_ALARM_CHANNEL=off \
+    bash "$ROOT/bin/fm-watch.sh" > "$dir/out" 2> "$dir/err" \
+    || fail "real watcher failed: $(cat "$dir/err")"
+  grep -F $'worker\tapi\t1000\t' "$dir/state/.away-decision-age-claims" | grep -F $'page-pending\t' >/dev/null \
+    || fail 'missing council entrypoint did not retain a pending captain page'
+  if [ -f "$dir/state/.wake-queue" ]; then
+    ! grep -F 'away-decision:worker:api:1000' "$dir/state/.wake-queue" >/dev/null \
+      || fail 'missing council entrypoint queued a council wake'
+  fi
+  pass 'real watcher pages the captain when council entrypoint is absent'
+}
+
+test_invalid_authority_config_still_pages() {
+  local dir="$TMP_ROOT/invalid-authority"
+  mkdir -p "$dir/state" "$dir/config"
+  fm_test_track_watcher_state "$dir/state"
+  printf 'needs-decision [at=1000] [key=api]: choose\n' > "$dir/state/worker.status"
+  printf 'worker\tapi\t1000\troutine\n' > "$dir/authority-target"
+  ln -s "$dir/authority-target" "$dir/config/decision-age-authority"
+  FM_HOME="$dir" FM_STATE_OVERRIDE="$dir/state" FM_CONFIG_OVERRIDE="$dir/config" \
+    FM_AFK_MODE=away bash "$ROOT/bin/fm-afk-contract.sh" enter --words 'away test' >/dev/null
+  FM_HOME="$dir" FM_STATE_OVERRIDE="$dir/state" FM_CONFIG_OVERRIDE="$dir/config" \
+    FM_WATCH_NOW=2800 FM_WATCH_ONCE=1 FM_WEDGE_ALARM_CHANNEL=off \
+    bash "$ROOT/bin/fm-watch.sh" > "$dir/out" 2> "$dir/err" \
+    || fail "real watcher failed on an invalid authority file: $(cat "$dir/err")"
+  grep -F $'worker\tapi\t1000\t' "$dir/state/.away-decision-age-claims" | grep -F $'page-pending\t' >/dev/null \
+    || fail 'invalid authority file stopped the captain page'
+  if [ -f "$dir/state/.wake-queue" ]; then
+    ! grep -F 'away-decision:worker:api:1000' "$dir/state/.wake-queue" >/dev/null \
+      || fail 'invalid authority file queued a council wake'
+  fi
+  pass 'real watcher still pages the captain with an invalid authority file'
+}
+
+test_away_page_retries_after_channel_configured() {
+  reset_case
+  printf 'needs-decision [at=1000] [key=approval]: choose\n' > "$STATE/worker.status"
+  FM_AFK_MODE=away bash "$ROOT/bin/fm-afk-contract.sh" enter --words 'away test' >/dev/null
+  FM_WEDGE_ALARM_CHANNEL=off FM_AWAY_DECISION_OVERDUE_SECS=60 away_decision_age_tick 1060
+  grep -q 'page-pending' "$STATE/.away-decision-age-claims" || fail 'missing channel was not pending'
+  FM_WEDGE_ALARM_EXEC='' FM_WEDGE_ALARM_CHANNEL=command:true \
+    FM_AWAY_DECISION_OVERDUE_SECS=60 away_decision_age_tick 1119
+  ! grep -q 'page-sent' "$STATE/.away-decision-age-claims" || fail 'page retried before retry bound'
+  FM_WEDGE_ALARM_EXEC='' FM_WEDGE_ALARM_CHANNEL=command:true \
+    FM_AWAY_DECISION_OVERDUE_SECS=60 away_decision_age_tick 1120
+  grep -q 'page-sent' "$STATE/.away-decision-age-claims" || fail 'configured channel did not retry pending page'
+  [ "$(count_wakes)" = 0 ] || fail 'page retry sent a council wake'
+  pass 'pending page retries when a channel becomes available'
+}
+
 fm_test_run test_disabled test_oldest_and_backoff test_numeric_keys_are_distinct \
   test_numeric_tasks_are_distinct test_resolution_and_reopen \
   test_wait_exemptions test_unknown_times_and_keyless test_timed_fold_is_incremental \
-  test_invalid_settings test_timed_cursor_retirement test_watcher_loop
+  test_invalid_settings test_timed_cursor_retirement test_watcher_loop \
+  test_away_age_route test_away_age_page_and_staleness \
+  test_away_confirmation_change_keeps_decision_open test_interrupted_claim_retries_page \
+  test_missing_council_entrypoint_pages test_invalid_authority_config_still_pages \
+  test_away_page_retries_after_channel_configured

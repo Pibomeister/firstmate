@@ -88,10 +88,11 @@ triage_log() {
   fi
 }
 
-# True only for the Grok hold opt-in, and never while away or quiet mode owns triage.
+# True for Grok's hold or the watchdog's owned-child hold, except while away
+# or quiet mode owns triage.
 # docs/watcher-continuity.md owns that continuity; this predicate is the flag check.
-fm_watch_grok_hold_active() {
-  [ "${FM_WATCH_GROK_HOLD:-}" = 1 ] || return 1
+fm_watch_hold_active() {
+  [ "${FM_WATCH_GROK_HOLD:-}" = 1 ] || [ "${FM_WATCH_MANAGED_HOLD:-}" = 1 ] || return 1
   if declare -F afk_present >/dev/null 2>&1; then
     afk_present && return 1
     return 0
@@ -216,7 +217,7 @@ fm_secondmate_watch_notify() {
 }
 
 # Exit after reporting one actionable wake. Tests override this callback.
-# FM_WATCH_GROK_HOLD=1 returns after the report so that watcher can keep the lock.
+# A hold opt-in returns after the report so the watcher can keep the lock.
 # An optional cadence kind lets actionable work retain heartbeat delivery while
 # resetting idle backoff; omitted kinds keep the wake reason's existing accounting.
 wake() {
@@ -232,6 +233,12 @@ wake() {
     watch_delivery_publish "$1" || true
     # shellcheck disable=SC2034 # Read by bin/fm-watch.sh's EXIT cleanup.
     FM_WATCH_DELIVERED_REASON=$1
+    # The managed owner keeps this watcher alive after delivery. Its recovery
+    # check must not re-announce the same still-queued wake on the next poll.
+    if [ "${FM_WATCH_MANAGED_HOLD:-}" = 1 ]; then
+      # shellcheck disable=SC2034 # Read by the sourcing fm-watch.sh after wake returns.
+      FM_MANAGED_WAKE_DELIVERED=1
+    fi
   else
     output_status=1
   fi
@@ -244,7 +251,7 @@ wake() {
     # shellcheck disable=SC2034 # Read by bin/fm-watch.sh's secondmate hold loop.
     fm_secondmate_watch_notify || FM_SM_NOTIFY_RETRY=1
   fi
-  if fm_watch_grok_hold_active; then
+  if fm_watch_hold_active; then
     if declare -F watcher_stop_signals >/dev/null 2>&1; then
       watcher_stop_signals
     else
