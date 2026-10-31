@@ -284,11 +284,12 @@ test_scope() {
 }
 
 # Open durable captain orders are part of the handoff: the firing names each
-# one and records the manifest bin/fm-order.sh gate checks before a restart.
-test_names_open_captain_orders() {
-  local order_id gate_rc=0
+# one, and once it has fired the Stop hook blocks the handoff turn's stop until
+# the newest handoff document lists every open order (bin/fm-order.sh gate).
+test_names_open_captain_orders_and_gates_the_stop() {
+  local order_id rc err doc
   reset_lab
-  rm -rf "$PRIMARY/data/orders"
+  rm -rf "$PRIMARY/data/orders" "$PRIMARY"/data/handoff-*.md
   printf 'compact-at-tokens=100000\n' > "$PRIMARY/config/handoff-trigger"
   transcript "$TMP_ROOT/t-90" 90000
   out=$(run_hook "$PRIMARY" s-orders-none "$TMP_ROOT/t-90")
@@ -298,16 +299,36 @@ test_names_open_captain_orders() {
   FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" send --no-nudge --from test "order mid handoff" >/dev/null \
     || fail "could not send the order fixture"
   order_id=$(find "$PRIMARY/data/orders/pending" -name '*.order' | sed 's#.*/##; s/\.order$//')
-  FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" gate >/dev/null || gate_rc=$?
-  [ "$gate_rc" -eq 3 ] || fail "the gate must block before the handoff names the order (rc=$gate_rc)"
+
+  # Before the trigger fires in this session, a stop is never gated.
+  rc=0
+  run_hook "$PRIMARY" s-orders "$TMP_ROOT/t-90" Stop >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 0 ] || fail "a stop before the handoff trigger fired must not be gated (rc=$rc)"
+
   out=$(run_hook "$PRIMARY" s-orders "$TMP_ROOT/t-90")
   expect_fire "$out" PostToolUse "one open order"
   printf '%s' "$out" | jq -e --arg id "$order_id" '.hookSpecificOutput.additionalContext | contains("Open captain orders that your handoff must list: " + $id + " (pending)")' >/dev/null \
     || fail "the instruction must name the open order $order_id: $out"
-  FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" gate >/dev/null \
-    || fail "the firing must record the manifest so the gate passes"
-  rm -rf "$PRIMARY/data/orders"
-  pass "a firing names every open captain order and records the restart-gate manifest"
+  printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | contains("bin/fm-order.sh handoff --doc")' >/dev/null \
+    || fail "the instruction must name the command that writes the orders into the handoff: $out"
+
+  err="$TMP_ROOT/stop.err"
+  rc=0
+  run_hook "$PRIMARY" s-orders "$TMP_ROOT/t-90" Stop >/dev/null 2>"$err" || rc=$?
+  [ "$rc" -eq 2 ] || fail "a handoff turn whose handoff omits an open order must be blocked (rc=$rc)"
+  assert_contains "$(cat "$err")" "$order_id" "the block names the missing order"
+  rc=0
+  run_hook "$PRIMARY" s-orders "$TMP_ROOT/t-90" Stop '. + {stop_hook_active: true}' >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 0 ] || fail "a stop already continued by this hook must not be blocked again (rc=$rc)"
+
+  doc="$PRIMARY/data/handoff-20261031-1200-captain-restart.md"
+  printf '# Handoff\n' > "$doc"
+  FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" handoff --doc "$doc" >/dev/null || fail "handoff --doc must succeed"
+  rc=0
+  run_hook "$PRIMARY" s-orders "$TMP_ROOT/t-90" Stop >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 0 ] || fail "once the handoff lists every open order the stop must pass (rc=$rc)"
+  rm -rf "$PRIMARY/data/orders" "$doc"
+  pass "a firing names every open captain order, and the stop is gated until the handoff lists them"
 }
 
 test_threshold_default_15
@@ -321,4 +342,4 @@ test_window_values_claude_rejects_count_as_unset
 test_window_env_override
 test_unresolved_compact_point_is_silent
 test_scope
-test_names_open_captain_orders
+test_names_open_captain_orders_and_gates_the_stop

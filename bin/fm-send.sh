@@ -11,6 +11,9 @@
 # before anything is marked, recorded, or submitted, because an empty marked
 # secondmate request delivers only marker and correlation bytes and leaves the
 # parent waiting on a reply to nothing.
+# Standing captain holds: a text steer recorded in a steering inbox carries
+# this home's holds in force as a trailing block (bin/fm-order.sh owns holds);
+# a typed parser command and --key never do.
 # Special keys instead of text: fm-send.sh <target> --key Enter
 # Key support is backend-specific: tmux/herdr support Escape, Enter, and C-c;
 # Orca delivers Enter and C-c, plus raw Escape and C-u bytes verified for Droid;
@@ -921,6 +924,23 @@ else
       \$*) [ "$TARGET_HARNESS" = codex ] || INBOX_PLANE=1 ;;
       *) INBOX_PLANE=1 ;;
       esac
+    fi
+  fi
+  # Standing captain holds travel with every relayed order: a recorded steer
+  # carries this home's holds in force (bin/fm-order.sh owns holds). When holds
+  # may exist but cannot be read, nothing is sent, because relaying work
+  # without its limits is the failure holds exist to prevent.
+  if [ "$INBOX_PLANE" = 1 ] && [ -d "${FM_DATA_OVERRIDE:-$FM_HOME/data}/orders" ]; then
+    if ! HOLDS_BLOCK=$(FM_HOME="$FM_HOME" "$SCRIPT_DIR/fm-order.sh" holds --relay 2>/dev/null); then
+      echo "error: could not read this home's standing captain holds (bin/fm-order.sh holds --relay); nothing was sent" >&2
+      [ "${PENDING_REPLY_CREATED:-0}" != 1 ] ||
+        fm_pending_reply_discard_undelivered "$STATE" "$PENDING_REPLY_CORR" || true
+      exit 1
+    fi
+    if [ -n "$HOLDS_BLOCK" ]; then
+      MESSAGE="$MESSAGE
+
+$HOLDS_BLOCK"
     fi
   fi
   if [ "$INBOX_PLANE" = 1 ] && [ "$TARGET_BACKEND" = remote ]; then

@@ -4,9 +4,11 @@
 # Covers idempotency (a sender retry and a resend never make or run a second
 # order, and concurrent acks yield exactly one reader), the two-stage ack
 # (acked on read, then done or parked with an outcome), the captain handle
-# resolved at send time, the restart gate, the leash sweep's re-delivery cap
-# and one-time escalation, and backward compatibility: a legacy inbox note
-# still works unchanged and can be recorded as a durable order.
+# resolved at send time and a doorbell that never rings over an unproven
+# composer, the restart gate read from the handoff document, standing holds
+# that override older orders, the leash sweep's re-delivery cap and one-time
+# escalation (a sender resend never starves it), and backward compatibility:
+# a legacy inbox note still works unchanged and is never rewritten.
 # The mid-restart pickup by a new captain session is covered in
 # tests/fm-session-start.test.sh, where the real session start runs.
 set -euo pipefail
@@ -114,13 +116,13 @@ test_two_stage_ack_separates_receipt_from_completion() {
   id=$(only_id "$home" pending)
   json=$(run_order "$home" status --json "$id")
   assert_contains "$json" '"state":"pending"' "an unread order reports pending"
-  if run_order "$home" finish "$id" done "too early" >/dev/null 2>&1; then
+  if run_order "$home" finish "$id" "done" "too early" >/dev/null 2>&1; then
     fail "an order cannot be finished before it is acknowledged"
   fi
   run_order "$home" ack "$id" >/dev/null
   json=$(run_order "$home" status --json "$id")
   assert_contains "$json" '"state":"acked"' "a read order reports acked (receipt)"
-  out=$(run_order "$home" finish "$id" done "logs rotated")
+  out=$(run_order "$home" finish "$id" "done" "logs rotated")
   assert_contains "$out" "done $id" "finish records completion"
   json=$(run_order "$home" status --json "$id")
   assert_contains "$json" '"state":"done"' "a finished order reports done (completion)"
@@ -152,26 +154,58 @@ test_handle_is_resolved_at_send_time() {
   assert_contains "$out" "nudge=sent" "a nudge reaches the recorded handle"
   assert_equals "orca term_old
 orca term_new" "$(cat "$NUDGE_LOG")" "each delivery resolves the newest handle at send time"
-  assert_equals "orca:term_new" "$(run_order "$home" handle)" "handle prints the current captain handle"
   out=$(FM_SUPERVISOR_TARGET=pane_7 FM_SUPERVISOR_BACKEND=tmux run_order "$home" claim-handle)
   assert_contains "$out" "handle: tmux:pane_7" "claim-handle records this session's terminal"
-  assert_equals "tmux:pane_7" "$(run_order "$home" handle)" "the newest claim wins"
+  : >"$NUDGE_LOG"
+  ORDER_ENV="FM_ORDER_NUDGE_CMD=$NUDGE_STUB" run_order "$home" resend "$id" >/dev/null
+  assert_equals "tmux pane_7" "$(cat "$NUDGE_LOG")" "the newest claim wins at the next send"
   pass "(c) one helper resolves the current captain handle at every send"
+}
+
+# The doorbell rings only into a composer proven empty. A terminal whose
+# composer state cannot be proven (here a backend this host cannot read) may
+# hold a draft, so the doorbell defers and the order stays durable.
+test_doorbell_defers_over_an_unproven_composer() {
+  local home out
+  home=$(make_home unproven-composer)
+  write_handle "$home" no-such-backend term_x
+  out=$(run_order "$home" send --from leash "do not type over my draft")
+  assert_contains "$out" "nudge=deferred" "an unproven composer defers the doorbell"
+  assert_equals 1 "$(count_in "$home" pending)" "the deferred order is still saved"
+  assert_equals 1 "$(order_wakes "$home")" "the deferred order still appends its wake"
+  pass "(c) the doorbell never rings over a composer it cannot prove empty"
 }
 
 # --- restart gate -------------------------------------------------------------
 
 test_restart_gate_requires_every_open_order_in_the_handoff() {
-  local home rc=0 first second out
+  local home rc=0 first second out doc older
   home=$(make_home gate)
   run_order "$home" gate >/dev/null || fail "with no open orders the gate is clear"
   run_order "$home" send --no-nudge "first" >/dev/null
   first=$(only_id "$home" pending)
-  run_order "$home" gate >/dev/null || rc=$?
-  assert_equals 3 "$rc" "an open order with no handoff blocks the gate"
+  out=$(run_order "$home" gate) || rc=$?
+  assert_equals 3 "$rc" "an open order with no handoff document blocks the gate"
+  assert_contains "$out" "no handoff document" "the gate says no handoff document exists"
   out=$(run_order "$home" handoff)
   assert_contains "$out" "$first pending" "the handoff block lists the open order"
-  run_order "$home" gate >/dev/null || fail "the gate clears once the handoff lists every order"
+  rc=0
+  run_order "$home" gate >/dev/null || rc=$?
+  assert_equals 3 "$rc" "printing the block without writing a document does not satisfy the gate"
+
+  doc="$home/data/handoff-20261031-1200-captain-restart.md"
+  printf '# Handoff\n\nWork under way: none.\n' >"$doc"
+  out=$(run_order "$home" handoff --doc "$doc")
+  assert_contains "$out" "wrote 1 open order(s)" "handoff --doc reports what it wrote"
+  assert_contains "$(cat "$doc")" "Work under way: none." "handoff --doc keeps the document's own text"
+  assert_contains "$(cat "$doc")" "$first pending" "handoff --doc appends the open order"
+  out=$(run_order "$home" gate) || fail "the gate clears once the newest handoff lists every order"
+  assert_contains "$out" "gate: clear (1 open order(s)" "the gate reports a clear verdict"
+
+  older="$home/data/handoff-20261030-0900-captain-restart.md"
+  printf 'an older handoff that lists %s\n' "$first" >"$older"
+  touch -t 202610300900 "$older"
+  run_order "$home" gate >/dev/null || fail "an older handoff document never shadows the newest one"
   sleep 1
   run_order "$home" send --no-nudge "second, after the handoff" >/dev/null
   second=$(find "$home/data/orders/pending" -name '*.order' | sed 's#.*/##; s/\.order$//' | grep -v "$first")
@@ -180,7 +214,79 @@ test_restart_gate_requires_every_open_order_in_the_handoff() {
   assert_equals 3 "$rc" "an order that arrived after the handoff blocks the gate again"
   assert_contains "$out" "$second" "the gate names the missing order"
   assert_not_contains "$out" "$first" "the gate names only the missing order"
-  pass "the restart gate passes only while the handoff lists every open order"
+  rc=0
+  run_order "$home" gate --doc "$older" >/dev/null || rc=$?
+  assert_equals 3 "$rc" "gate --doc checks the named document"
+  run_order "$home" handoff --doc "$doc" >/dev/null
+  run_order "$home" gate >/dev/null || fail "a fresh handoff --doc clears the gate again"
+  pass "the restart gate passes only while the newest handoff document lists every open order"
+}
+
+# --- holds ---------------------------------------------------------------------
+
+test_hold_overrides_older_orders_and_travels_with_relays() {
+  local home older hold newer out
+  home=$(make_home holds)
+  out=$(run_order "$home" holds --relay)
+  assert_equals "" "$out" "with no hold in force the relay block is empty"
+  assert_contains "$(run_order "$home" holds)" "no holds in force" "holds says when none is in force"
+  run_order "$home" send --no-nudge --from council "close the stale PRs" >/dev/null
+  older=$(only_id "$home" pending)
+  sleep 1
+  out=$(run_order "$home" send --hold --no-nudge --from captain "close nothing")
+  assert_contains "$out" "kind=hold" "a hold is sent as kind=hold"
+  hold=$(find "$home/data/orders/pending" -name '*.order' | sed 's#.*/##; s/\.order$//' | grep -v "$older")
+  out=$(run_order "$home" send --no-nudge --from captain "close nothing")
+  assert_contains "$out" "queued " "an order with a hold's text is a separate order, not a hold replay"
+  newer=$(find "$home/data/orders/pending" -name '*.order' | sed 's#.*/##; s/\.order$//' | grep -v "$older" | grep -v "$hold")
+  [ -n "$newer" ] && [ "$newer" != "$hold" ] || fail "an order with a hold's text must get its own id, got hold=$hold newer=$newer"
+  assert_equals 3 "$(count_in "$home" pending)" "the hold and the order with its text are both kept"
+  assert_contains "$(run_order "$home" send --hold --no-nudge "close nothing")" "replay $hold" "a hold retry replays the open hold"
+
+  out=$(run_order "$home" ack "$older")
+  assert_contains "$out" "$hold NEWER - overrides this order" "acking an older order names the newer hold over it"
+  out=$(run_order "$home" ack "$newer")
+  assert_contains "$out" "$hold older - still in force" "acking a newer order still lists the older hold"
+  out=$(run_order "$home" pickup)
+  case "$out" in
+    "Holds in force"*) ;;
+    *) fail "pickup must list holds first, got: $out" ;;
+  esac
+  assert_contains "$out" "$hold pending kind=hold" "pickup lists the hold as an open item too"
+  out=$(run_order "$home" holds --relay)
+  assert_contains "$out" "Standing captain holds" "the relay block opens with its heading"
+  assert_contains "$out" "- hold $hold" "the relay block names the hold id"
+  assert_contains "$out" "close nothing" "the relay block carries the hold text"
+  assert_not_contains "$out" "close the stale PRs" "the relay block carries holds only"
+
+  out=$(run_order "$home" ack "$hold")
+  assert_contains "$out" "stays in force until lifted" "an acked hold stays in force"
+  assert_contains "$(run_order "$home" holds --relay)" "$hold" "an acked hold still travels with relays"
+  run_order "$home" finish "$hold" "done" "lifted by the captain" >/dev/null
+  assert_equals "" "$(run_order "$home" holds --relay)" "a lifted hold no longer travels"
+  assert_not_contains "$(run_order "$home" show "$older")" "$hold" "a lifted hold no longer overrides"
+  pass "a hold overrides older orders, is listed first, and travels with every relay until lifted"
+}
+
+# Finishing an order frees its idempotency reservation only when that
+# reservation still names it, so a retry of another open order never duplicates.
+test_finish_frees_only_its_own_reservation() {
+  local home first second
+  home=$(make_home reservation)
+  run_order "$home" send --no-nudge "same text" >/dev/null
+  first=$(only_id "$home" pending)
+  run_order "$home" ack "$first" >/dev/null
+  run_order "$home" finish "$first" "done" "finished once" >/dev/null
+  sleep 1
+  run_order "$home" send --no-nudge "same text" >/dev/null
+  second=$(only_id "$home" pending)
+  [ "$second" != "$first" ] || fail "the same text after completion must be a new order"
+  # Re-finishing the old order is a no-op and must not free the new reservation.
+  run_order "$home" finish "$first" "done" "again" >/dev/null
+  assert_contains "$(run_order "$home" send --no-nudge "same text")" "replay $second" \
+    "a retry of the open order still replays after an old order was finished again"
+  assert_equals 1 "$(count_in "$home" pending)" "no duplicate order was created"
+  pass "finishing an order frees only the reservation that names it"
 }
 
 # --- (e) leash sweep cap -------------------------------------------------------
@@ -222,6 +328,43 @@ SH
   pass "(e) the sweep re-delivers at most twice, then escalates once and never loops"
 }
 
+# A sender's resend must not reset the leash clock: a sender that re-checks and
+# resends forever would otherwise keep the sweep from ever re-delivering.
+test_sender_resend_never_starves_the_sweep() {
+  local home id out
+  home=$(make_home starve)
+  run_order "$home" send --no-nudge "keep resending me" >/dev/null
+  id=$(only_id "$home" pending)
+  # Age the send: rewrite the delivered event 2 hours into the past.
+  awk -F '\t' -v OFS='\t' -v old=$(( $(date +%s) - 7200 )) '$4 == "delivered" || $4 == "sent" { $2 = old } { print }' \
+    "$home/data/orders/log.tsv" >"$home/data/orders/log.tsv.new"
+  mv "$home/data/orders/log.tsv.new" "$home/data/orders/log.tsv"
+  run_order "$home" resend --no-nudge "$id" >/dev/null
+  out=$(ORDER_ENV="FM_ORDER_REDELIVER_SECS=1800" run_order "$home" sweep)
+  assert_contains "$out" "redelivered $id" "a fresh sender resend does not hold back a due re-delivery"
+  assert_equals 1 "$(count_events "$home" redelivered)" "the sweep re-delivered once"
+  pass "(e) a sender's resend never resets the sweep's re-delivery clock"
+}
+
+# The supervision watcher runs the sweep on its own poll while an order is
+# pending, so re-delivery needs no separate leash process.
+test_watcher_poll_runs_the_sweep() {
+  local home i=0
+  home=$(make_home watcher-sweep)
+  run_order "$home" send --no-nudge "re-deliver me from the watcher" >/dev/null
+  rm -f "$home/state/.wake-queue"
+  env -u FM_DATA_OVERRIDE -u FM_STATE_OVERRIDE -u FM_CONFIG_OVERRIDE FM_HOME="$home" FM_WATCH_ONCE=1 \
+    FM_HEARTBEAT=999999 FM_CHECK_INTERVAL=999999 FM_POLL=1 FM_ORDER_REDELIVER_SECS=0 \
+    FM_ORDER_SELF_HEAL_BIN=/bin/false bash "$ROOT/bin/fm-watch.sh" >"$home/watch.out" 2>&1 || true
+  while [ "$(count_events "$home" redelivered)" -lt 1 ] && [ "$i" -lt 100 ]; do
+    sleep 0.1
+    i=$((i + 1))
+  done
+  assert_equals 1 "$(count_events "$home" redelivered)" "one watcher poll re-delivers the due order"
+  [ -e "$home/state/.order-sweep" ] || fail "the watcher records when it last ran the sweep"
+  pass "the supervision watcher runs the order sweep while an order is pending"
+}
+
 test_status_flags_resend_due_for_the_sender_recheck() {
   local home json
   home=$(make_home recheck)
@@ -236,7 +379,7 @@ test_status_flags_resend_due_for_the_sender_recheck() {
 # --- (f) backward compatibility ------------------------------------------------
 
 test_legacy_inbox_note_still_works() {
-  local home out note_id rec again
+  local home out note_id
   home=$(make_home legacy)
   run_order "$home" send --no-nudge "a durable order already open" >/dev/null
   out=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
@@ -248,17 +391,16 @@ test_legacy_inbox_note_still_works() {
   [ -f "$home/state/inbox/$note_id.note" ] || fail "a legacy note still writes its record"
   assert_contains "$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
     FM_CONFIG_OVERRIDE="$home/config" "$INBOX_BIN" list)" "legacy: restart the nightly" "the legacy note is listed"
-
-  rec=$(run_order "$home" record-legacy --source "inbox:$note_id" "legacy: restart the nightly")
-  assert_contains "$rec" "recorded " "the captain can give a legacy order an id"
-  assert_contains "$rec" " acked" "a recorded legacy order is acknowledged on read"
-  again=$(run_order "$home" record-legacy --source "inbox:$note_id" "legacy: restart the nightly")
-  assert_contains "$again" "replay " "recording the same legacy order twice replays it"
-  assert_equals 1 "$(count_in "$home" acked)" "a legacy order is recorded once"
-  assert_equals 1 "$(count_in "$home" pending)" "recording a legacy order leaves durable orders alone"
-  out=$(run_order "$home" record-legacy "typed straight into the captain terminal")
-  assert_contains "$out" "recorded " "a typed legacy order can be recorded without a source"
-  pass "(f) a legacy inbox note works unchanged and can become a durable order"
+  assert_equals 1 "$(count_in "$home" pending)" "a legacy note never becomes or alters a durable order"
+  assert_equals 0 "$(count_in "$home" acked)" "a legacy note acknowledges nothing"
+  run_order "$home" gate --doc /dev/null >/dev/null 2>&1 && fail "the durable order still gates a restart"
+  assert_not_contains "$(run_order "$home" pickup)" "legacy: restart the nightly" "pickup lists durable orders only"
+  FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    FM_CONFIG_OVERRIDE="$home/config" "$INBOX_BIN" drain --ack "$note_id" >/dev/null \
+    || fail "a legacy note is still acknowledged through fm-inbox"
+  assert_not_contains "$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    FM_CONFIG_OVERRIDE="$home/config" "$INBOX_BIN" list)" "legacy: restart the nightly" "an acknowledged legacy note leaves the list"
+  pass "(f) a legacy inbox note works unchanged beside durable orders"
 }
 
 test_invalid_use() {
@@ -278,8 +420,13 @@ test_invalid_use() {
 test_send_retry_and_resend_never_run_twice
 test_two_stage_ack_separates_receipt_from_completion
 test_handle_is_resolved_at_send_time
+test_doorbell_defers_over_an_unproven_composer
 test_restart_gate_requires_every_open_order_in_the_handoff
+test_hold_overrides_older_orders_and_travels_with_relays
+test_finish_frees_only_its_own_reservation
 test_sweep_redelivers_twice_then_escalates_once
+test_sender_resend_never_starves_the_sweep
+test_watcher_poll_runs_the_sweep
 test_status_flags_resend_due_for_the_sender_recheck
 test_legacy_inbox_note_still_works
 test_invalid_use

@@ -775,11 +775,11 @@ write_omp_loaded_markers() {
 # --- context digest: absent vs empty vs present -----------------------------
 
 # A captain order sent while the captain restarts reaches the new captain: the
-# old session's handoff predates it, so the restart gate blocks; the new
+# old session's handoff document predates it, so the restart gate blocks; the new
 # session's digest names it, the new session becomes the handle a sender's
 # re-check resolves, and the new captain reads it exactly once.
 test_order_sent_mid_restart_is_picked_up_by_the_new_captain() {
-  local rec root home fakebin out id rc=0 nudges stub
+  local rec root home fakebin out id rc=0 nudges stub doc
   rec=$(new_world captain-orders)
   IFS='|' read -r root home fakebin <<EOF
 $rec
@@ -792,11 +792,14 @@ EOF
   printf '#!/usr/bin/env bash\nprintf "%%s %%s\\n" "$1" "$2" >>"%s"\n' "$nudges" >"$stub"
   chmod +x "$stub"
   order() { env -u FM_DATA_OVERRIDE -u FM_STATE_OVERRIDE FM_HOME="$home" FM_ORDER_NUDGE_CMD="$stub" "$ROOT/bin/fm-order.sh" "$@"; }
+  handle() { printf '%s:%s' "$(sed -n 's/^backend=//p' "$home/state/captain-handle")" "$(sed -n 's/^target=//p' "$home/state/captain-handle")"; }
+  doc="$home/data/handoff-20261031-1200-captain-restart.md"
 
   out=$(FM_SUPERVISOR_TARGET=old-captain FM_SUPERVISOR_BACKEND=tmux run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
   assert_not_contains "$out" "CAPTAIN ORDERS" "with no open orders the digest prints no orders section"
-  assert_equals "tmux:old-captain" "$(order handle)" "the old captain's session start records its handle"
-  order handoff >/dev/null || fail "the old captain's handoff must succeed"
+  assert_equals "tmux:old-captain" "$(handle)" "the old captain's session start records its handle"
+  order handoff --doc "$doc" >/dev/null || fail "the old captain's handoff must succeed"
+  assert_contains "$(cat "$doc")" "none open" "the old captain's handoff document records that no order was open"
 
   order send --from nightly "nightly: start the goals" >/dev/null || fail "a mid-restart send must save the order"
   id=$(find "$home/data/orders/pending" -name '*.order' | sed 's#.*/##; s/\.order$//')
@@ -807,7 +810,7 @@ EOF
   out=$(FM_SUPERVISOR_TARGET=new-captain FM_SUPERVISOR_BACKEND=tmux run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
   assert_contains "$out" "CAPTAIN ORDERS" "the new captain's digest carries the orders section"
   assert_contains "$out" "$id pending" "the new captain's pickup names the mid-restart order"
-  assert_equals "tmux:new-captain" "$(order handle)" "the new session becomes the current handle"
+  assert_equals "tmux:new-captain" "$(handle)" "the new session becomes the current handle"
   order resend "$id" >/dev/null || fail "the sender's re-check resend must succeed"
   assert_equals "tmux old-captain
 tmux new-captain" "$(cat "$nudges")" "the re-check resend reaches the newest captain handle"

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # fm-handoff-trigger.sh - early handoff trigger for a Claude primary session.
 #
-# Registered in tracked .claude/settings.json as a PostToolUse and a
-# UserPromptSubmit command hook. When the session's context left before
+# Registered in tracked .claude/settings.json as a PostToolUse, a
+# UserPromptSubmit, and a Stop command hook. When the session's context left before
 # auto-compact falls to the configured percentage (default 15), the session
 # receives ONE instruction, as hook additionalContext, to write its full
 # handoff before auto-compact and report that it is ready to restart. It fires
@@ -63,6 +63,15 @@
 # with an exclusive create, so concurrent hook calls from parallel tool calls
 # still fire once. A firing also removes markers older than 30 days.
 #
+# RESTART GATE (Stop). Once the trigger has fired in the current context cycle
+# the session is handing off, so on each Stop the hook runs
+# `bin/fm-order.sh gate`; when the handoff document does not name every open
+# captain order it blocks that stop (exit 2, the gate's verdict on stderr) so
+# the session writes the orders into its handoff before it reports ready to
+# restart. A stop that already follows a block (stop_hook_active) is allowed,
+# so the gate blocks at most once per turn and never wedges the session. It
+# cannot stop a human `/quit` or a crash; bin/fm-order.sh owns the gate.
+#
 # Any failure to read the payload, transcript, or settings is silent: the hook
 # never blocks a tool call or prompt and never prints anything but the one
 # instruction.
@@ -117,7 +126,7 @@ SESSION_ID=$(printf '%s' "$PAYLOAD" | jq -r '.session_id // empty | strings' 2>/
 TRANSCRIPT=$(printf '%s' "$PAYLOAD" | jq -r '.transcript_path // empty | strings' 2>/dev/null)
 EVENT=$(printf '%s' "$PAYLOAD" | jq -r '.hook_event_name // empty | strings' 2>/dev/null)
 [ -n "$SESSION_ID" ] && [ -n "$TRANSCRIPT" ] || exit 0
-case "$EVENT" in PostToolUse | UserPromptSubmit) ;; *) exit 0 ;; esac
+case "$EVENT" in PostToolUse | UserPromptSubmit | Stop) ;; *) exit 0 ;; esac
 
 # Count boundaries before reading tokens: a compaction landing between the two
 # reads then leaves no usage to measure instead of pre-compaction usage in the
@@ -125,6 +134,18 @@ case "$EVENT" in PostToolUse | UserPromptSubmit) ;; *) exit 0 ;; esac
 BOUNDARIES=$(LC_ALL=C grep -c '"subtype":"compact_boundary"' "$TRANSCRIPT" 2>/dev/null)
 case "$BOUNDARIES" in '' | *[!0-9]*) exit 0 ;; esac
 MARKER="$STATE/.handoff-trigger.$(printf '%s' "$SESSION_ID" | tr -c 'A-Za-z0-9_-' '_').$BOUNDARIES"
+if [ "$EVENT" = Stop ]; then
+  # Enforce the restart gate only on a session that is handing off.
+  [ -e "$MARKER" ] || exit 0
+  [ "$(printf '%s' "$PAYLOAD" | jq -r '.stop_hook_active // false' 2>/dev/null)" != true ] || exit 0
+  GATE_RC=0
+  GATE_OUT=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-order.sh" gate 2>/dev/null) || GATE_RC=$?
+  [ "$GATE_RC" -eq 3 ] || exit 0
+  printf 'Firstmate restart gate: this session is handing off, but its handoff does not list every open captain order. %s
+' \
+    "$(printf '%s' "$GATE_OUT" | tr '\n' ' ')" >&2
+  exit 2
+fi
 [ -e "$MARKER" ] && exit 0
 
 # shellcheck source=bin/fm-warm-compact-lib.sh
@@ -206,12 +227,13 @@ LEFT=$(((COMPACT_AT - TOKENS) * 100 / COMPACT_AT))
 find "$STATE" -maxdepth 1 -name '.handoff-trigger.*' -type f -mtime +30 -exec rm -f {} + 2>/dev/null
 
 MESSAGE="Firstmate early handoff trigger, from this home's tracked Claude hook: about ${LEFT}% of context is left before auto-compact (${TOKENS} of ${COMPACT_AT} tokens). Write your full session handoff now, before auto-compact: persist every open work record, decision, and piece of durable knowledge this session holds (the stow skill covers this), then report that this session is ready to restart. Do not run /compact. This instruction fires once per context cycle."
-# Durable captain orders are part of the handoff: record the manifest the
-# restart gate checks, and name each open order (bin/fm-order.sh owns both).
-ORDERS=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-order.sh" handoff 2>/dev/null \
-  | awk '/^  [0-9]+-[0-9a-f]+ / { printf "%s%s (%s)", sep, $1, $2; sep = ", " }')
+# Durable captain orders are part of the handoff: name each open order and the
+# command that writes them into the handoff document (bin/fm-order.sh owns the
+# list and the restart gate this hook enforces on Stop).
+ORDERS=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-order.sh" pickup 2>/dev/null \
+  | awk '/^  [0-9]+-[0-9a-f]+ / && $3 ~ /^kind=/ { printf "%s%s (%s)", sep, $1, $2; sep = ", " }')
 if [ -n "$ORDERS" ]; then
-  MESSAGE="$MESSAGE Open captain orders that your handoff must list: ${ORDERS}. If an order arrives after this, run bin/fm-order.sh handoff again; bin/fm-order.sh gate must pass before restart."
+  MESSAGE="$MESSAGE Open captain orders that your handoff must list: ${ORDERS}. Write them into your handoff document with bin/fm-order.sh handoff --doc <handoff file>; this session cannot end its handoff turn until bin/fm-order.sh gate passes."
 fi
 jq -n --arg event "$EVENT" --arg context "$MESSAGE" \
   '{hookSpecificOutput: {hookEventName: $event, additionalContext: $context}}'

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# fm-order.sh - durable captain orders: the shared send, pickup, and leash helper.
+# fm-order.sh - durable captain orders and holds: the shared send, pickup, and leash helper.
 #
 # An order is work a sender (the box leash, a client-bot routine, a nightly job)
 # hands to this home's primary firstmate, the captain session. The order is a
@@ -9,22 +9,20 @@
 #
 # This is ONE way to send an order, not the only one. Typing straight into the
 # captain terminal and `bin/fm-inbox.sh note` keep working unchanged, and the
-# captain acts on them as before. `record-legacy` lets the captain give such a
-# legacy order an id when it reads one, which makes it durable from then on.
+# captain acts on them as before; nothing here rejects or rewrites them.
 #
 # Usage:
-#   fm-order.sh send [--from <sender>] [--no-nudge] [--json] [--] <text>... | -
-#   fm-order.sh resend [--no-nudge] [--json] <id>
+#   fm-order.sh send [--hold] [--from <sender>] [--no-nudge] [--] <text>... | -
+#   fm-order.sh resend [--no-nudge] <id>
 #   fm-order.sh status [--json] [<id>]
 #   fm-order.sh pickup
 #   fm-order.sh ack <id>
 #   fm-order.sh show <id>
 #   fm-order.sh finish <id> done|parked [--] <outcome>... | -
-#   fm-order.sh record-legacy [--source <key>] [--] <text>... | -
-#   fm-order.sh handoff
-#   fm-order.sh gate
+#   fm-order.sh holds [--relay]
+#   fm-order.sh handoff [--doc <file>]
+#   fm-order.sh gate [--doc <file>]
 #   fm-order.sh claim-handle
-#   fm-order.sh handle
 #   fm-order.sh sweep
 #
 # LIFECYCLE. An order lives in exactly one directory under data/orders/ and
@@ -37,23 +35,37 @@
 # the two apart (`status`). No acknowledgement means not delivered.
 #
 # ORDER FILE. key=value header lines, a `--` line, then the body bytes:
-#   id=<epoch>-<sha8>   sha256=<hex of body>   at=<UTC ISO time>   from=<sender>
-# The id is the send time plus the first 8 hex digits of the body's sha256.
+#   id=<epoch>-<sha8>  sha256=<hex of body>  at=<UTC ISO time>  from=<sender>
+#   kind=order|hold
+# The id is the send time plus the first 8 hex digits of the body's sha256;
+# when that id is already taken (an order and a hold with the same text in the
+# same second) the send time moves to the next free second.
+#
+# HOLDS. `send --hold` records a standing limit such as "close nothing". A hold
+# is in force from the moment it is sent until a captain session lifts it with
+# `finish <id> done|parked <outcome>`. A hold overrides every OLDER order and
+# every council ruling: `ack` and `show` of an order list each hold in force
+# and mark the newer ones as overriding it, and `pickup` lists holds first.
+# Holds travel with every relayed order: bin/fm-send.sh appends the
+# `holds --relay` block to each text steer it records in a steering inbox, so a
+# worker always receives the limits with the work. A typed parser command (a
+# leading "/", or "$" to codex) is submitted as-is and carries no block.
 #
 # EVENT LOG. data/orders/log.tsv is append-only, one tab-separated row per
 # event: <UTC ISO> <epoch> <id> <event> <sha8> <detail>. Events:
 #   sent, replay, delivered, resent, redelivered, acked (detail started=<UTC>),
-#   skip, done, parked, legacy-recorded, escalated, escalate-failed.
+#   skip, done, parked, escalated, escalate-failed.
 # Delivery counts, the last delivery time, and the escalation marker are read
 # from this log, so they survive any restart.
 #
-# IDEMPOTENCY. `send` of a body whose sha256 matches an order that is still
-# pending or acked prints `replay <id>` and creates nothing, so a sender retry
-# never makes a second order. `resend <id>` points at the same file and only
-# nudges again. `ack <id>` moves the file with one rename: of two sessions
-# acking at once, exactly one prints `acked`; every other attempt, and any ack
-# of an id already in acked/, done/, or parked/, prints `skip <id> <state>` and
-# exits 0. A captain that sees `skip` must not run the order again.
+# IDEMPOTENCY. `send` of a body whose sha256 matches an open (pending or
+# acked) order of the same kind prints `replay <id>` and creates nothing, so a
+# sender retry never makes a second order. `resend <id>` points at the same
+# file and only nudges again. `ack <id>` moves the file with one rename: of two
+# sessions acking at once, exactly one prints `acked`; every other attempt, and
+# any ack of an id already in acked/, done/, or parked/, prints
+# `skip <id> <state>` and exits 0. A captain that sees `skip` must not run the
+# order again.
 #
 # NUDGE AND HANDLE. Every send, resend, and re-delivery appends one
 # `check: captain order <id>` wake to this home's wake queue (bin/fm-wake-lib.sh)
@@ -61,48 +73,57 @@
 # captain handle. The handle is read from state/captain-handle at send time,
 # never cached by a sender: each captain session records its own terminal there
 # at session start (`claim-handle`, run by bin/fm-session-start.sh on a locked
-# start), so the newest captain always wins. The doorbell is skipped, never
-# forced, when the terminal is dead or its composer holds someone's draft; the
-# order file and the wake carry the order either way. Nudge outcomes print as
+# start), so the newest captain always wins. The doorbell rings only when the
+# terminal is alive and its composer is proven empty; any other composer state
+# defers it, so a draft is never overwritten. The order file and the wake carry
+# the order either way. Nudge outcomes print as
 #   nudge=sent|deferred|dead|failed|none (none: no handle recorded or --no-nudge).
 # FM_ORDER_NUDGE_CMD, when set, replaces the terminal send: it runs as
 # `$FM_ORDER_NUDGE_CMD <backend> <target> <line>` (tests and custom transports).
 #
-# PICKUP. `pickup` prints every open (pending or acked) order, oldest first,
-# and the commands to act on it; bin/fm-session-start.sh prints it as the
-# CAPTAIN ORDERS section, so a new captain's first digest names each one.
+# PICKUP. `pickup` prints every hold in force, then every open order, oldest
+# first, and the commands to act on them; bin/fm-session-start.sh prints it as
+# the CAPTAIN ORDERS section, so a new captain's first digest names each one.
 #
-# RESTART GATE. `handoff` writes data/orders/handoff, the manifest of every open
-# order at that moment, and prints the block to copy into the session handoff.
-# `gate` exits 0 when every open order is named in that manifest and 3, naming
-# the missing ids, when one is not. bin/fm-handoff-trigger.sh writes the
-# manifest when it fires. What the gate can and cannot stop: a restarting
-# sender or leash that runs `gate` first can refuse to restart a captain whose
-# handoff omits an order; nothing here can intercept a human `/quit` or a
-# crash. Neither of those loses an order, because the files stay in pending/
-# or acked/ and the next session's pickup lists them.
+# RESTART GATE. The handoff document is the proof. `handoff --doc <file>`
+# appends the block of open orders to the session handoff document (without
+# --doc it only prints the block). `gate` reads the handoff document - --doc, or
+# else the newest data/handoff-*.md - and exits 0 only when that document names
+# every open order id; otherwise it exits 3 naming the missing ids, including
+# when no handoff document exists. Enforcement points:
+#   - bin/fm-handoff-trigger.sh, as a Claude Stop hook, runs `gate` once the
+#     early handoff trigger has fired in the session's context cycle and blocks
+#     the stop of a handoff turn whose document omits an open order (once per
+#     turn, so the session is never wedged).
+#   - a restarting leash or sender runs `gate` and refuses to restart the
+#     captain while it exits 3.
+# What the gate cannot stop: a human `/quit`, a crash, or a restart by a tool
+# that does not run `gate`. None of those loses an order, because the files stay
+# in pending/ or acked/ and the next session's pickup lists them.
 #
-# SENDER RE-CHECK AND LEASH. `status` prints, per order, its state, age since
-# send, deliveries, re-deliveries against the cap, and `resend_due=yes` when it
-# is still pending FM_ORDER_RECHECK_SECS (900) after its last delivery. A sender
-# re-checks its order about 15 minutes after sending and runs `resend <id>` when
-# it is still pending. The leash runs `sweep` every few minutes: an order still
-# pending FM_ORDER_REDELIVER_SECS (1800) after its last delivery is re-delivered
-# to the newest handle, at most FM_ORDER_REDELIVER_MAX (2) times; at the next
-# due point after the last re-delivery it is escalated ONCE through
-# bin/fm-self-heal-issue.sh (failure class captain-order-undelivered, repository
-# from config/order-escalation-repo, else Pibomeister/firstmate) and also woken
-# as a check. An escalation that fails is logged as escalate-failed and is not
-# retried, so the sweep never loops. The issue carries the id, sha, age, and
+# SENDER RE-CHECK AND LEASH. `status` prints, per order, its kind, state, age
+# since send, deliveries, re-deliveries against the cap, and `resend_due=yes`
+# when it is still pending FM_ORDER_RECHECK_SECS (900) after its last delivery.
+# A sender re-checks its order about 15 minutes after sending and runs
+# `resend <id>` when it is still pending. `sweep` re-delivers an order still
+# pending FM_ORDER_REDELIVER_SECS (1800) after its last delivery or re-delivery
+# (a sender's `resend` does not reset that clock) to the newest handle, at most
+# FM_ORDER_REDELIVER_MAX (2) times; at the next due point after the last
+# re-delivery it is escalated ONCE through bin/fm-self-heal-issue.sh
+# (Pibomeister/firstmate, failure class captain-order-undelivered) and also
+# woken as a check. An escalation that fails is logged as escalate-failed and is
+# not retried, so the sweep never loops. The issue carries the id, sha, age, and
 # delivery counts, never the order body. FM_ORDER_SELF_HEAL_BIN replaces the
-# filing command (tests).
+# filing command (tests). The supervision watcher (bin/fm-watch.sh) runs
+# `sweep` in the background at most once a minute while any order is pending;
+# an external leash may run it as well.
 #
 # Exit status: 0 success; 1 failure; 2 invalid use; 3 `gate` blocked, or a
 # send/resend that saved the order but could not append its wake.
 #
 # Environment:
-#   FM_HOME              operational home whose data/, state/, config/ are used
-#   FM_DATA_OVERRIDE, FM_STATE_OVERRIDE, FM_CONFIG_OVERRIDE  directory overrides
+#   FM_HOME              operational home whose data/ and state/ are used
+#   FM_DATA_OVERRIDE, FM_STATE_OVERRIDE  directory overrides
 set -euo pipefail
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -113,14 +134,12 @@ FM_HOME="${FM_HOME:-$FM_ROOT}"
 export FM_HOME
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
-CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 ORDERS="$DATA/orders"
 LOG="$ORDERS/log.tsv"
-MANIFEST="$ORDERS/handoff"
 SHA_DIR="$ORDERS/.sha"
-LEGACY_DIR="$ORDERS/.legacy"
 HANDLE_FILE="$STATE/captain-handle"
 STATES='pending acked done parked'
+ESCALATION_REPO=Pibomeister/firstmate
 
 num_or() {  # <value> <default>
   case "$1" in ''|*[!0-9]*) printf '%s\n' "$2" ;; *) printf '%s\n' "$1" ;; esac
@@ -152,7 +171,7 @@ sha256_of_file() {  # <file>
 ensure_dirs() {
   local s
   for s in $STATES; do mkdir -p "$ORDERS/$s"; done
-  mkdir -p "$SHA_DIR" "$LEGACY_DIR"
+  mkdir -p "$SHA_DIR"
 }
 
 valid_id() {
@@ -193,12 +212,25 @@ header_get() {  # <file> <key>
   sed -n "/^--\$/q;s/^$2=//p" "$1" | head -n 1
 }
 
+order_kind() {  # <file>
+  case "$(header_get "$1" kind)" in hold) printf 'hold\n' ;; *) printf 'order\n' ;; esac
+}
+
 order_body() {  # <file>
   awk 'found { print; next } /^--$/ { found=1 }' "$1"
 }
 
+order_oneline() {  # <file>
+  order_body "$1" | tr '\n\t' '  ' | sed 's/[[:space:]]*$//'
+}
+
 order_summary() {  # <file>
-  order_body "$1" | tr '\n\t' '  ' | sed 's/[[:space:]]*$//' | cut -c1-100
+  order_oneline "$1" | cut -c1-100
+}
+
+# The idempotency reservation path for a body of <kind> with <sha256>.
+reservation() {  # <kind> <sha256>
+  if [ "$1" = hold ]; then printf '%s\n' "$SHA_DIR/hold-$2"; else printf '%s\n' "$SHA_DIR/$2"; fi
 }
 
 read_body_args() {  # <args...> -> body on stdout (a lone "-" reads stdin)
@@ -212,14 +244,15 @@ read_body_args() {  # <args...> -> body on stdout (a lone "-" reads stdin)
 }
 
 # Write an order file for <body> into <dest-dir>/<id>.order atomically.
-write_order() {  # <dest-dir> <id> <sha256> <from> <body-file>
-  local dir=$1 id=$2 sha=$3 from=$4 bodyf=$5 tmp
+write_order() {  # <dest-dir> <id> <sha256> <from> <kind> <body-file>
+  local dir=$1 id=$2 sha=$3 from=$4 kind=$5 bodyf=$6 tmp
   tmp=$(mktemp "$ORDERS/.staging-XXXXXX")
   {
     printf 'id=%s\n' "$id"
     printf 'sha256=%s\n' "$sha"
     printf 'at=%s\n' "$(now_iso)"
     printf 'from=%s\n' "$from"
+    printf 'kind=%s\n' "$kind"
     printf -- '--\n'
     cat "$bodyf"
     [ -z "$(tail -c 1 "$bodyf")" ] || printf '\n'
@@ -227,16 +260,20 @@ write_order() {  # <dest-dir> <id> <sha256> <from> <body-file>
   mv "$tmp" "$dir/$id.order"
 }
 
-# Log-derived delivery facts for <id>: "<deliveries> <redeliveries> <last-epoch> <escalation>".
+# Log-derived delivery facts for <id>:
+#   "<deliveries> <redeliveries> <last-any-delivery> <last-leash-delivery> <escalation>".
+# The leash clock counts only the original delivery and re-deliveries, so a
+# sender's resend never postpones a re-delivery or the escalation.
 delivery_facts() {  # <id>
-  [ -f "$LOG" ] || { printf '0 0 0 none\n'; return 0; }
+  [ -f "$LOG" ] || { printf '0 0 0 0 none\n'; return 0; }
   awk -F '\t' -v id="$1" '
     $3 == id {
       if ($4 == "delivered" || $4 == "resent" || $4 == "redelivered") { d++; last = $2 }
+      if ($4 == "delivered" || $4 == "redelivered") leash = $2
       if ($4 == "redelivered") r++
       if ($4 == "escalated" || $4 == "escalate-failed") esc = $4
     }
-    END { printf "%d %d %d %s\n", d, r, last + 0, (esc == "" ? "none" : esc) }
+    END { printf "%d %d %d %d %s\n", d, r, last + 0, leash + 0, (esc == "" ? "none" : esc) }
   ' "$LOG"
 }
 
@@ -277,16 +314,6 @@ current_handle() {
   printf '%s %s\n' "$backend" "$target"
 }
 
-cmd_handle() {
-  local h
-  if h=$(current_handle); then
-    printf '%s:%s\n' "${h%% *}" "${h#* }"
-  else
-    printf 'none\n'
-    return 1
-  fi
-}
-
 # ---------------------------------------------------------------- nudge
 
 doorbell_line() {  # <id>
@@ -300,9 +327,9 @@ _ring_once() {  # <backend> <target> <line>
   case "$(fm_backend_agent_state "$backend" "$target" 2>/dev/null || true)" in
     dead|missing) return 3 ;;
   esac
-  case "$(fm_backend_composer_state "$backend" "$target" 2>/dev/null || printf unknown)" in
-    pending) return 1 ;;
-  esac
+  # Ring only into a composer proven empty: pending, pending-unproven, and
+  # unknown may all hold someone's draft, so each defers the doorbell.
+  [ "$(fm_backend_composer_state "$backend" "$target" 2>/dev/null || printf unknown)" = empty ] || return 1
   verdict=$(fm_backend_send_text_submit "$backend" "$target" "$line" 2 0.4 0.3 2>/dev/null) || return 2
   [ "$verdict" != send-failed ] || return 2
   return 0
@@ -347,28 +374,18 @@ wake() {  # <id> <payload>
 }
 
 # Deliver <id> once: wake plus nudge, logged as <event>. Prints the outcome line.
-deliver() {  # <id> <event> <no-nudge> <json> <outcome>
-  local id=$1 event=$2 no_nudge=$3 json=$4 outcome=$5 file sha8 from summary woke=1 nudged rc=0
+deliver() {  # <id> <event> <no-nudge> <outcome>
+  local id=$1 event=$2 no_nudge=$3 outcome=$4 file sha8 from kind summary woke=1 nudged rc=0
   file=$(order_file "$id")
   sha8=${id##*-}
   from=$(header_get "$file" from)
+  kind=$(order_kind "$file")
   summary=$(order_summary "$file")
-  wake "$id" "check: captain order $id from ${from:-unknown} - $summary" || { woke=0; rc=3; }
+  wake "$id" "check: captain $kind $id from ${from:-unknown} - $summary" || { woke=0; rc=3; }
   nudged=$(nudge "$id" "$no_nudge")
   log_event "$id" "$event" "$sha8" "wake=$woke nudge=$nudged"
-  if [ "$json" -eq 1 ]; then
-    python3 - "$outcome" "$id" "$(order_state "$id")" "$woke" "$nudged" "$file" <<'PY'
-import json, sys
-outcome, oid, state, woke, nudged, path = sys.argv[1:7]
-json.dump({"schema": "fm-order-send.v1", "outcome": outcome, "id": oid,
-           "state": state, "woke": woke == "1", "nudge": nudged, "path": path},
-          sys.stdout, separators=(",", ":"))
-sys.stdout.write("\n")
-PY
-  else
-    printf '%s %s\n  state=%s wake=%s nudge=%s\n' "$outcome" "$id" "$(order_state "$id")" \
-      "$([ "$woke" -eq 1 ] && printf ok || printf FAILED)" "$nudged"
-  fi
+  printf '%s %s\n  kind=%s state=%s wake=%s nudge=%s\n' "$outcome" "$id" "$kind" "$(order_state "$id")" \
+    "$([ "$woke" -eq 1 ] && printf ok || printf FAILED)" "$nudged"
   [ "$woke" -eq 1 ] || printf 'fm-order: order %s is saved but its wake could not be appended\n' "$id" >&2
   return "$rc"
 }
@@ -376,17 +393,17 @@ PY
 # ---------------------------------------------------------------- send
 
 cmd_send() {
-  local from=${FM_ORDER_FROM:-unknown} no_nudge=0 json=0 body bodyf sha sha8 id reserved existing state
+  local from=unknown kind=order no_nudge=0 bodyf sha sha8 id reserved existing state
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --from) [ "$#" -ge 2 ] || usage_die "send: --from needs a value"; from=$2; shift 2 ;;
+      --hold) kind=hold; shift ;;
       --no-nudge) no_nudge=1; shift ;;
-      --json) json=1; shift ;;
       --) shift; break ;;
       *) break ;;
     esac
   done
-  [ "$#" -gt 0 ] || usage_die "usage: fm-order.sh send [--from <sender>] [--no-nudge] [--json] [--] <text>... | -"
+  [ "$#" -gt 0 ] || usage_die "usage: fm-order.sh send [--hold] [--from <sender>] [--no-nudge] [--] <text>... | -"
   case "$from" in *[!A-Za-z0-9._:@/-]*|'') usage_die "send: --from takes A-Za-z0-9._:@/- only" ;; esac
   ensure_dirs
   bodyf=$(mktemp "$ORDERS/.body-XXXXXX")
@@ -397,43 +414,40 @@ cmd_send() {
   fi
   sha=$(sha256_of_file "$bodyf")
   sha8=$(printf '%s' "$sha" | cut -c1-8)
-  reserved="$SHA_DIR/$sha"
-  local _attempt
+  reserved=$(reservation "$kind" "$sha")
+  local _attempt ts
   for _attempt in 1 2; do
-    id="$(now_epoch)-$sha8"
+    # An order and a hold with the same text share a sha8, so claim an id no
+    # other order has ever used; a taken second moves to the next one.
+    ts=$(now_epoch)
+    while ! ( set -C; : >"$SHA_DIR/id-$ts-$sha8" ) 2>/dev/null; do ts=$((ts + 1)); done
+    id="$ts-$sha8"
     if ( set -C; printf '%s\n' "$id" >"$reserved" ) 2>/dev/null; then
-      write_order "$ORDERS/pending" "$id" "$sha" "$from" "$bodyf"
+      write_order "$ORDERS/pending" "$id" "$sha" "$from" "$kind" "$bodyf"
       rm -f "$bodyf"
-      log_event "$id" sent "$sha8" "from=$from"
-      deliver "$id" delivered "$no_nudge" "$json" queued
+      log_event "$id" sent "$sha8" "from=$from kind=$kind"
+      deliver "$id" delivered "$no_nudge" queued
       return $?
     fi
+    rm -f "$SHA_DIR/id-$id"
     existing=$(head -n 1 "$reserved" 2>/dev/null || true)
     if valid_id "$existing" && state=$(order_state "$existing"); then
       case "$state" in
         pending|acked)
           rm -f "$bodyf"
           log_event "$existing" replay "$sha8" "from=$from"
-          if [ "$json" -eq 1 ]; then
-            python3 - "$existing" "$state" <<'PY'
-import json, sys
-json.dump({"schema": "fm-order-send.v1", "outcome": "replay", "id": sys.argv[1],
-           "state": sys.argv[2], "woke": None, "nudge": "none"}, sys.stdout, separators=(",", ":"))
-sys.stdout.write("\n")
-PY
-          else
-            printf 'replay %s\n  state=%s (the same order is already open; nothing new was created)\n' "$existing" "$state"
-          fi
+          printf 'replay %s\n  kind=%s state=%s (the same %s is already open; nothing new was created)\n' \
+            "$existing" "$kind" "$state" "$kind"
           return 0
           ;;
       esac
     elif valid_id "$existing" && [ "${existing##*-}" = "$sha8" ]; then
       # Reserved but never published (a crash between the two steps): publish
       # it now under the reserved id, which names these same body bytes.
-      write_order "$ORDERS/pending" "$existing" "$sha" "$from" "$bodyf"
+      write_order "$ORDERS/pending" "$existing" "$sha" "$from" "$kind" "$bodyf"
       rm -f "$bodyf"
-      log_event "$existing" sent "$sha8" "from=$from recovered-reservation"
-      deliver "$existing" delivered "$no_nudge" "$json" queued
+      log_event "$existing" sent "$sha8" "from=$from kind=$kind recovered-reservation"
+      deliver "$existing" delivered "$no_nudge" queued
       return $?
     fi
     # A finished order left its reservation behind: the same text sent again is a new order.
@@ -444,36 +458,110 @@ PY
 }
 
 cmd_resend() {
-  local no_nudge=0 json=0 id state
+  local no_nudge=0 id state
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --no-nudge) no_nudge=1; shift ;;
-      --json) json=1; shift ;;
       *) break ;;
     esac
   done
   id=${1:-}
-  valid_id "$id" || usage_die "usage: fm-order.sh resend [--no-nudge] [--json] <id>"
+  valid_id "$id" || usage_die "usage: fm-order.sh resend [--no-nudge] <id>"
   state=$(order_state "$id") || die "no such order: $id"
   if [ "$state" != pending ]; then
     printf '%s %s\n  already %s; nothing to resend\n' "$state" "$id" "$state"
     return 0
   fi
-  deliver "$id" resent "$no_nudge" "$json" resent
+  deliver "$id" resent "$no_nudge" resent
+}
+
+# ---------------------------------------------------------------- holds
+
+# Holds in force (open: pending or acked), newest first, one "<id> <state>" per line.
+holds_in_force() {
+  local s f
+  for s in pending acked; do
+    [ -d "$ORDERS/$s" ] || continue
+    for f in "$ORDERS/$s"/*.order; do
+      [ -f "$f" ] || continue
+      [ "$(order_kind "$f")" = hold ] || continue
+      f=${f##*/}
+      printf '%s %s\n' "${f%.order}" "$s"
+    done
+  done | sort -t - -k1,1nr
+}
+
+cmd_holds() {
+  local relay=0 lines id state file now
+  case "${1:-}" in
+    --relay) relay=1 ;;
+    '') ;;
+    *) usage_die "usage: fm-order.sh holds [--relay]" ;;
+  esac
+  lines=$(holds_in_force)
+  if [ -z "$lines" ]; then
+    [ "$relay" -eq 1 ] || printf 'no holds in force\n'
+    return 0
+  fi
+  if [ "$relay" -eq 1 ]; then
+    printf 'Standing captain holds (newest first). Each overrides any older order or council ruling, including anything above that conflicts with it:\n'
+    while read -r id state; do
+      [ -n "$id" ] || continue
+      file="$ORDERS/$state/$id.order"
+      printf -- '- hold %s, set %s: %s\n' "$id" "$(header_get "$file" at)" "$(order_oneline "$file")"
+    done <<EOF
+$lines
+EOF
+    return 0
+  fi
+  now=$(now_epoch)
+  printf 'Holds in force, newest first. A hold overrides every older order and every council ruling; relay nothing that contradicts one:\n'
+  while read -r id state; do
+    [ -n "$id" ] || continue
+    file="$ORDERS/$state/$id.order"
+    printf '  %s %s age=%s from=%s :: %s\n' "$id" "$state" "$(age_text $((now - ${id%-*})))" \
+      "$(header_get "$file" from)" "$(order_summary "$file")"
+  done <<EOF
+$lines
+EOF
+  printf 'Lift a hold with: bin/fm-order.sh finish <id> done|parked <outcome>\n'
+}
+
+# For the order <id>, list every OTHER hold in force and whether it is newer.
+holds_against() {  # <id>
+  local self=$1 lines id state file mark
+  lines=$(holds_in_force | awk -v self="$self" '$1 != self')
+  [ -n "$lines" ] || return 0
+  printf 'Holds in force (a newer hold overrides this order; carry every hold when relaying it):\n'
+  while read -r id state; do
+    [ -n "$id" ] || continue
+    file="$ORDERS/$state/$id.order"
+    if [ "${id%-*}" -ge "${self%-*}" ]; then mark='NEWER - overrides this order'; else mark='older - still in force'; fi
+    printf '  %s %s :: %s\n' "$id" "$mark" "$(order_summary "$file")"
+  done <<EOF
+$lines
+EOF
 }
 
 # ---------------------------------------------------------------- captain side
 
 cmd_ack() {
-  local id=${1:-} state file
+  local id=${1:-} state file kind
   valid_id "$id" || usage_die "usage: fm-order.sh ack <id>"
   ensure_dirs
   if mv "$ORDERS/pending/$id.order" "$ORDERS/acked/$id.order" 2>/dev/null; then
     log_event "$id" acked "${id##*-}" "started=$(now_iso)"
     file="$ORDERS/acked/$id.order"
-    printf 'acked %s\n  from=%s at=%s\n--\n' "$id" "$(header_get "$file" from)" "$(header_get "$file" at)"
+    kind=$(order_kind "$file")
+    printf 'acked %s\n  kind=%s from=%s at=%s\n--\n' "$id" "$kind" "$(header_get "$file" from)" "$(header_get "$file" at)"
     order_body "$file"
-    printf -- '--\nWhen finished: bin/fm-order.sh finish %s done|parked <outcome>\n' "$id"
+    printf -- '--\n'
+    holds_against "$id"
+    if [ "$kind" = hold ]; then
+      printf 'This hold stays in force until lifted: bin/fm-order.sh finish %s done|parked <outcome>\n' "$id"
+    else
+      printf 'When finished: bin/fm-order.sh finish %s done|parked <outcome>\n' "$id"
+    fi
     return 0
   fi
   state=$(order_state "$id") || die "no such order: $id"
@@ -484,20 +572,22 @@ cmd_ack() {
 }
 
 cmd_show() {
-  local id=${1:-} file
+  local id=${1:-} file state
   valid_id "$id" || usage_die "usage: fm-order.sh show <id>"
   file=$(order_file "$id") || die "no such order: $id"
+  state=$(order_state "$id")
   sed -n '/^--$/q;p' "$file"
-  printf 'state=%s\n--\n' "$(order_state "$id")"
+  printf 'state=%s\n--\n' "$state"
   order_body "$file"
   if [ -f "${file%.order}.outcome" ]; then
     printf -- '-- outcome\n'
     cat "${file%.order}.outcome"
   fi
+  case "$state" in pending|acked) holds_against "$id" ;; esac
 }
 
 cmd_finish() {
-  local id=${1:-} result=${2:-} state outcome sha
+  local id=${1:-} result=${2:-} state outcome sha file reserved
   valid_id "$id" || usage_die "usage: fm-order.sh finish <id> done|parked [--] <outcome>..."
   case "$result" in done|parked) ;; *) usage_die "finish: result must be done or parked" ;; esac
   shift 2
@@ -510,52 +600,19 @@ cmd_finish() {
     done|parked) printf 'already %s %s\n' "$state" "$id"; return 0 ;;
     pending) die "order $id is not acknowledged yet; run: bin/fm-order.sh ack $id" ;;
   esac
+  file="$ORDERS/acked/$id.order"
+  sha=$(header_get "$file" sha256)
+  reserved=
+  [ -z "$sha" ] || reserved=$(reservation "$(order_kind "$file")" "$sha")
   printf '%s\n' "$outcome" >"$ORDERS/$result/$id.outcome"
-  sha=$(header_get "$ORDERS/acked/$id.order" sha256)
-  mv "$ORDERS/acked/$id.order" "$ORDERS/$result/$id.order"
-  [ -z "$sha" ] || rm -f "$SHA_DIR/$sha"
+  mv "$file" "$ORDERS/$result/$id.order"
+  # Free the idempotency reservation only when it names this order, so
+  # finishing one order never lets a retry duplicate another open one.
+  if [ -n "$reserved" ] && [ "$(head -n 1 "$reserved" 2>/dev/null || true)" = "$id" ]; then
+    rm -f "$reserved"
+  fi
   log_event "$id" "$result" "${id##*-}" "$(printf '%s' "$outcome" | head -c 200)"
   printf '%s %s\n' "$result" "$id"
-}
-
-# A legacy order (typed into the terminal, or an inbox note) recorded as a
-# durable order that is acknowledged at once, because the captain is reading it.
-cmd_record_legacy() {
-  local source='' bodyf sha sha8 id key existing
-  while [ "$#" -gt 0 ]; do
-    case "$1" in
-      --source) [ "$#" -ge 2 ] || usage_die "record-legacy: --source needs a value"; source=$2; shift 2 ;;
-      --) shift; break ;;
-      *) break ;;
-    esac
-  done
-  [ "$#" -gt 0 ] || usage_die "usage: fm-order.sh record-legacy [--source <key>] [--] <text>... | -"
-  case "$source" in *[!A-Za-z0-9._:@-]*) usage_die "record-legacy: --source takes A-Za-z0-9._:@- only" ;; esac
-  ensure_dirs
-  if [ -n "$source" ]; then
-    key="$LEGACY_DIR/$source"
-    existing=$(head -n 1 "$key" 2>/dev/null || true)
-    if valid_id "$existing" && order_state "$existing" >/dev/null; then
-      printf 'replay %s %s\n' "$existing" "$(order_state "$existing")"
-      return 0
-    fi
-  fi
-  bodyf=$(mktemp "$ORDERS/.body-XXXXXX")
-  read_body_args "$@" >"$bodyf"
-  if [ -z "$(tr -d '[:space:]' <"$bodyf")" ]; then
-    rm -f "$bodyf"
-    usage_die "refusing to record an empty order"
-  fi
-  sha=$(sha256_of_file "$bodyf")
-  sha8=$(printf '%s' "$sha" | cut -c1-8)
-  id="$(now_epoch)-$sha8"
-  while order_state "$id" >/dev/null; do id="$(( ${id%-*} + 1 ))-$sha8"; done
-  write_order "$ORDERS/acked" "$id" "$sha" "legacy${source:+:$source}" "$bodyf"
-  rm -f "$bodyf"
-  [ -z "$source" ] || printf '%s\n' "$id" >"$key"
-  log_event "$id" legacy-recorded "$sha8" "source=${source:-terminal}"
-  log_event "$id" acked "$sha8" "started=$(now_iso)"
-  printf 'recorded %s acked\n  When finished: bin/fm-order.sh finish %s done|parked <outcome>\n' "$id" "$id"
 }
 
 # Open order ids, oldest first, one per line as "<id> <state>".
@@ -580,10 +637,11 @@ age_text() {  # <seconds>
 }
 
 cmd_pickup() {
-  local lines id state file now n=0
+  local lines id state file now n=0 label kind
   lines=$(open_orders)
   [ -n "$lines" ] || return 0
   now=$(now_epoch)
+  [ -z "$(holds_in_force)" ] || { cmd_holds; printf '\n'; }
   while read -r id state; do
     [ -n "$id" ] || continue
     n=$((n + 1))
@@ -594,13 +652,11 @@ EOF
   while read -r id state; do
     [ -n "$id" ] || continue
     file="$ORDERS/$state/$id.order"
-    if [ "$state" = acked ]; then
-      printf '  %s acked-unfinished age=%s from=%s :: %s\n' "$id" "$(age_text $((now - ${id%-*})))" \
-        "$(header_get "$file" from)" "$(order_summary "$file")"
-    else
-      printf '  %s pending age=%s from=%s :: %s\n' "$id" "$(age_text $((now - ${id%-*})))" \
-        "$(header_get "$file" from)" "$(order_summary "$file")"
-    fi
+    label=$state
+    [ "$state" != acked ] || label=acked-unfinished
+    kind=$(order_kind "$file")
+    printf '  %s %s kind=%s age=%s from=%s :: %s\n' "$id" "$label" "$kind" "$(age_text $((now - ${id%-*})))" \
+      "$(header_get "$file" from)" "$(order_summary "$file")"
   done <<EOF
 $lines
 EOF
@@ -610,7 +666,7 @@ EOF
 }
 
 cmd_status() {
-  local json=0 one='' lines id state file now facts d r last esc age due rows=''
+  local json=0 one='' lines id state file now facts d r last leash esc age due rows=''
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --json) json=1; shift ;;
@@ -629,15 +685,16 @@ cmd_status() {
     [ -n "$id" ] || continue
     file="$ORDERS/$state/$id.order"
     facts=$(delivery_facts "$id")
-    read -r d r last esc <<EOF
+    read -r d r last leash esc <<EOF
 $facts
 EOF
+    : "$leash"
     age=$((now - ${id%-*}))
     due=no
     if [ "$state" = pending ] && [ "$last" -gt 0 ] && [ $((now - last)) -ge "$RECHECK_SECS" ]; then
       due=yes
     fi
-    rows="$rows$id	$state	$age	$d	$r	$esc	$due	$(header_get "$file" from)	$(order_summary "$file")
+    rows="$rows$id	$state	$age	$d	$r	$esc	$due	$(header_get "$file" from)	$(order_kind "$file")	$(order_summary "$file")
 "
   done <<EOF
 $lines
@@ -647,14 +704,16 @@ EOF
 import json, sys
 cap = int(sys.argv[1])
 out = []
-for line in sys.stdin.read().splitlines():
+# A summary is cut at a byte or character boundary depending on the platform,
+# so decode leniently: one split multibyte character must never fail the call.
+for line in sys.stdin.buffer.read().decode("utf-8", "replace").splitlines():
     f = line.split("\t")
-    if len(f) < 9:
+    if len(f) < 10:
         continue
-    out.append({"id": f[0], "state": f[1], "age_secs": int(f[2]), "deliveries": int(f[3]),
-                "redeliveries": int(f[4]), "redelivery_cap": cap,
+    out.append({"id": f[0], "state": f[1], "kind": f[8], "age_secs": int(f[2]),
+                "deliveries": int(f[3]), "redeliveries": int(f[4]), "redelivery_cap": cap,
                 "escalation": None if f[5] == "none" else f[5],
-                "resend_due": f[6] == "yes", "from": f[7], "summary": f[8]})
+                "resend_due": f[6] == "yes", "from": f[7], "summary": f[9]})
 json.dump({"schema": "fm-order-status.v1", "orders": out}, sys.stdout, separators=(",", ":"))
 sys.stdout.write("\n")
 ' "$REDELIVER_MAX"
@@ -664,48 +723,71 @@ sys.stdout.write("\n")
     printf 'no open orders\n'
     return 0
   fi
-  printf '%s' "$rows" | while IFS='	' read -r id state age d r esc due from summary; do
-    printf '%s %s age=%s deliveries=%s redeliveries=%s/%s%s resend_due=%s from=%s :: %s\n' \
-      "$id" "$state" "$(age_text "$age")" "$d" "$r" "$REDELIVER_MAX" \
+  printf '%s' "$rows" | while IFS='	' read -r id state age d r esc due from kind summary; do
+    printf '%s %s kind=%s age=%s deliveries=%s redeliveries=%s/%s%s resend_due=%s from=%s :: %s\n' \
+      "$id" "$state" "$kind" "$(age_text "$age")" "$d" "$r" "$REDELIVER_MAX" \
       "$([ "$esc" = none ] || printf ' %s' "$esc")" "$due" "$from" "$summary"
   done
 }
 
 # ---------------------------------------------------------------- restart gate
 
+# The newest session handoff document, or nothing.
+newest_handoff_doc() {
+  local f newest=''
+  for f in "$DATA"/handoff-*.md; do
+    [ -f "$f" ] || continue
+    if [ -z "$newest" ] || [ "$f" -nt "$newest" ]; then newest=$f; fi
+  done
+  [ -z "$newest" ] || printf '%s\n' "$newest"
+}
+
 cmd_handoff() {
-  local lines tmp
-  mkdir -p "$ORDERS"
-  lines=$(open_orders)
-  tmp=$(mktemp "$ORDERS/.handoff-XXXXXX")
-  {
-    printf 'at=%s\n' "$(now_iso)"
-    printf '%s\n' "$lines" | sed '/^$/d'
-  } >"$tmp"
-  mv "$tmp" "$MANIFEST"
-  if [ -z "$lines" ]; then
-    printf 'CAPTAIN ORDERS for the handoff: none open.\n'
+  local doc='' block n
+  case "${1:-}" in
+    --doc) [ "$#" -ge 2 ] && [ -n "$2" ] || usage_die "handoff: --doc needs a file"; doc=$2 ;;
+    '') ;;
+    *) usage_die "usage: fm-order.sh handoff [--doc <file>]" ;;
+  esac
+  if [ -z "$(open_orders)" ]; then
+    block='CAPTAIN ORDERS at handoff: none open.'
+  else
+    block=$(printf 'CAPTAIN ORDERS at handoff (%s):\n' "$(now_iso)"; cmd_pickup)
+  fi
+  if [ -z "$doc" ]; then
+    printf '%s\n' "$block"
     return 0
   fi
-  printf 'CAPTAIN ORDERS for the handoff (copy this block into it):\n'
-  cmd_pickup | sed '1d'
+  mkdir -p "$(dirname "$doc")"
+  printf '\n%s\n' "$block" >>"$doc"
+  n=$(open_orders | awk 'NF { n++ } END { print n + 0 }')
+  printf 'handoff: wrote %s open order(s) into %s\n' "$n" "$doc"
 }
 
 cmd_gate() {
-  local lines id state missing='' n=0
+  local doc='' lines id state missing='' n=0
+  case "${1:-}" in
+    --doc) [ "$#" -ge 2 ] && [ -n "$2" ] || usage_die "gate: --doc needs a file"; doc=$2 ;;
+    '') doc=$(newest_handoff_doc) ;;
+    *) usage_die "usage: fm-order.sh gate [--doc <file>]" ;;
+  esac
   lines=$(open_orders)
   while read -r id state; do
     [ -n "$id" ] || continue
     n=$((n + 1))
-    if [ ! -f "$MANIFEST" ] || ! awk -v id="$id" '$1 == id { f = 1 } END { exit !f }' "$MANIFEST"; then
+    if [ -z "$doc" ] || [ ! -f "$doc" ] || ! grep -qF -- "$id" "$doc"; then
       missing="$missing $id"
     fi
   done <<EOF
 $lines
 EOF
   if [ -n "$missing" ]; then
-    printf 'gate: blocked - open order(s) not in the handoff:%s\n' "$missing"
-    printf '  The captain must run bin/fm-order.sh handoff and carry its block before restart.\n'
+    if [ -z "$doc" ] || [ ! -f "$doc" ]; then
+      printf 'gate: blocked - no handoff document lists the open order(s):%s\n' "$missing"
+    else
+      printf 'gate: blocked - the handoff %s does not list open order(s):%s\n' "$doc" "$missing"
+    fi
+    printf '  Run bin/fm-order.sh handoff --doc <handoff file> so the handoff names every open order before restart.\n'
     return 3
   fi
   printf 'gate: clear (%s open order(s), all in the handoff)\n' "$n"
@@ -714,14 +796,9 @@ EOF
 # ---------------------------------------------------------------- leash
 
 escalate() {  # <id> <age> <deliveries> <redeliveries>
-  local id=$1 repo bin out rc=0
-  repo=${FM_ORDER_ESCALATION_REPO:-}
-  if [ -z "$repo" ] && [ -r "$CONFIG/order-escalation-repo" ]; then
-    repo=$(sed -n '/^[[:space:]]*#/d;/[^[:space:]]/{p;q;}' "$CONFIG/order-escalation-repo" | tr -d '[:space:]')
-  fi
-  repo=${repo:-Pibomeister/firstmate}
+  local id=$1 bin out rc=0
   bin=${FM_ORDER_SELF_HEAL_BIN:-$SELF_DIR/fm-self-heal-issue.sh}
-  out=$("$bin" --repo "$repo" --failure-class captain-order-undelivered \
+  out=$("$bin" --repo "$ESCALATION_REPO" --failure-class captain-order-undelivered \
     --title "Captain order $id undelivered after $4 re-deliveries" \
     --instance-fix "Re-delivered $4 time(s) to the newest captain handle; the order stays durable in pending/." \
     --proposed-fix "Find why no captain session acknowledged the order: check the captain handle, the session start pickup, and the leash." \
@@ -737,19 +814,20 @@ escalate() {  # <id> <age> <deliveries> <redeliveries>
 }
 
 cmd_sweep() {
-  local lines id state now facts d r last esc acted=0
+  local lines id state now facts d r last leash esc acted=0
   lines=$(open_orders)
   now=$(now_epoch)
   while read -r id state; do
     [ -n "$id" ] && [ "$state" = pending ] || continue
     facts=$(delivery_facts "$id")
-    read -r d r last esc <<EOF
+    read -r d r last leash esc <<EOF
 $facts
 EOF
-    [ "$last" -gt 0 ] || last=${id%-*}
-    [ $((now - last)) -ge "$REDELIVER_SECS" ] || continue
+    : "$last"
+    [ "$leash" -gt 0 ] || leash=${id%-*}
+    [ $((now - leash)) -ge "$REDELIVER_SECS" ] || continue
     if [ "$r" -lt "$REDELIVER_MAX" ]; then
-      deliver "$id" redelivered 0 0 redelivered | head -n 1 || true
+      deliver "$id" redelivered 0 redelivered | head -n 1 || true
       acted=1
     elif [ "$esc" = none ]; then
       escalate "$id" "$((now - ${id%-*}))" "$d" "$r"
@@ -771,11 +849,10 @@ case "${1:-}" in
   ack) shift; cmd_ack "$@" ;;
   show) shift; cmd_show "$@" ;;
   finish) shift; cmd_finish "$@" ;;
-  record-legacy) shift; cmd_record_legacy "$@" ;;
-  handoff) shift; cmd_handoff ;;
-  gate) shift; cmd_gate ;;
+  holds) shift; cmd_holds "$@" ;;
+  handoff) shift; cmd_handoff "$@" ;;
+  gate) shift; cmd_gate "$@" ;;
   claim-handle) shift; cmd_claim_handle ;;
-  handle) shift; cmd_handle ;;
   sweep) shift; cmd_sweep ;;
   -h|--help|help) usage ;;
   *) usage >&2; exit 2 ;;

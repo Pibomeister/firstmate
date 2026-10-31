@@ -27,6 +27,9 @@
 #  10. An empty or whitespace-only text steer is refused before anything is
 #      marked, recorded, or typed - on the marked secondmate path that means
 #      no marker-only record and no pending-reply expectation.
+#  11. Standing captain holds travel with every recorded steer: the record
+#      carries the holds-in-force block after the steer, a lifted hold stops
+#      travelling, and a typed slash command carries no block.
 # Every case below that passes a literal `$...` message quotes it on purpose
 # (the point is sending an unexpanded `$` line), so SC2016 is disabled.
 # shellcheck disable=SC2016
@@ -504,6 +507,36 @@ test_empty_message_refused() {
   pass "fm-send: an empty or whitespace-only text steer refuses before marking, recording, or typing"
 }
 
+test_standing_holds_travel_with_the_steer() {
+  local dir err order hold body
+  dir=$(setup_case holds)
+  err="$dir/send.err"
+  order() { env -u FM_DATA_OVERRIDE -u FM_STATE_OVERRIDE FM_HOME="$dir/home" "$ROOT/bin/fm-order.sh" "$@"; }
+  order send --hold --no-nudge --from captain "close nothing" >/dev/null || fail "could not send the hold fixture"
+  hold=$(find "$dir/home/data/orders/pending" -name '*.order' | sed 's#.*/##; s/\.order$//')
+  run_send "$dir" "$err" -- t1 "triage the stale PRs" || fail "a steer with a hold in force should succeed"
+  body=$(record_body _ "$dir/home/state/t1.inbox/001.msg")
+  case "$body" in
+    "triage the stale PRs"*) ;;
+    *) fail "the steer must lead the record, got: $body" ;;
+  esac
+  assert_contains "$body" "Standing captain holds" "the record carries the holds block"
+  assert_contains "$body" "- hold $hold" "the record names the hold id"
+  assert_contains "$body" "close nothing" "the record carries the hold text"
+  case "$(cat "$dir/send.log")" in
+    *"close nothing"*) fail "the holds block must ride the record, never the terminal" ;;
+  esac
+  run_send "$dir" "$err" -- t1 "/no-mistakes" || fail "a slash send should succeed"
+  [ ! -f "$dir/home/state/t1.inbox/002.msg" ] || fail "a typed slash command must not create a record"
+  assert_not_contains "$(cat "$dir/send.log")" "close nothing" "a typed slash command carries no holds block"
+  order ack "$hold" >/dev/null
+  order finish "$hold" "done" "lifted" >/dev/null
+  run_send "$dir" "$err" -- t1 "carry on" || fail "a steer after the hold is lifted should succeed"
+  body=$(record_body _ "$dir/home/state/t1.inbox/002.msg")
+  [ "$body" = "carry on" ] || fail "a lifted hold must not travel, got: $body"
+  pass "fm-send holds: standing holds ride every recorded steer until lifted"
+}
+
 test_text_steer_rides_inbox
 test_deep_home_doorbell_stays_short
 test_multiline_steer_is_legal
@@ -520,3 +553,4 @@ test_post_enqueue_bookkeeping_failure_is_not_retryable
 test_meta_lock_contention_fails_bounded
 test_unwritable_inbox_fails_loudly
 test_empty_message_refused
+test_standing_holds_travel_with_the_steer
