@@ -115,6 +115,9 @@ command -v jq >/dev/null 2>&1 || {
 # shellcheck source=bin/fm-session-lock-lib.sh
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/fm-session-lock-lib.sh"
+# shellcheck source=bin/fm-classify-lib.sh
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/fm-classify-lib.sh"
 
 HEARTBEAT_NOW=${FM_HEARTBEAT_NOW:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}
 HEARTBEAT_EPOCH=$(date -u -j -f '%Y-%m-%dT%H:%M:%SZ' "$HEARTBEAT_NOW" +%s 2>/dev/null \
@@ -305,27 +308,29 @@ heartbeat_spawn_epoch() {  # <spawn-gen>
 # Claude keeps a worktree's transcripts in a directory named after its path,
 # with every non-alphanumeric byte replaced by a dash.
 # Slots are reused and transcripts outlive them, so only one written since this
-# task's spawn belongs to it.
+# task's spawn belongs to it. More than one qualifying file means another Claude
+# session in the same directory and must not be attributed to this mate.
 # shellcheck disable=SC2329 # Invoked through heartbeat_read.
 heartbeat_worktree_transcript() {  # <worktree> <spawn-gen>
-  local slug file m newest=0 found='' spawn_epoch
+  local slug file m newest=0 found='' spawn_epoch count=0
   spawn_epoch=$(heartbeat_spawn_epoch "$2") || return 1
   slug=$(printf '%s' "$1" | LC_ALL=C sed 's/[^A-Za-z0-9]/-/g')
   for file in "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/$slug"/*.jsonl; do
     [ -f "$file" ] || continue
     m=$(file_mtime "$file") || continue
+    [ "$m" -ge "$spawn_epoch" ] || continue
+    count=$((count + 1))
     [ "$m" -le "$newest" ] || { newest=$m; found=$file; }
   done
-  [ -n "$found" ] && [ "$newest" -ge "$spawn_epoch" ] || return 1
+  [ "$count" -gt 1 ] && return 2
+  [ -n "$found" ] || return 1
   printf '%s\n' "$found"
 }
 
 heartbeat_last_output_json() {  # <target-or-empty> <qualified-transcript-or-empty> <spawn-gen> <kind>
   local target=$1 transcript=$2 spawn_gen=$3 kind=$4 key marker='' spawn_epoch newest=0 source='' observed_iso age f m label pair
   if [ -n "$target" ] && [ "$kind" != secondmate ] && spawn_epoch=$(heartbeat_spawn_epoch "$spawn_gen"); then
-    key=${target//:/_}
-    key=${key//\//_}
-    key=${key//./_}
+    key=$(window_key "$target")
     m=$(file_mtime "$STATE/.hash-$key") || m=0
     [ "$m" -lt "$spawn_epoch" ] || marker=$STATE/.hash-$key
   fi
@@ -446,6 +451,8 @@ heartbeat_no_mistakes_json() {  # <id> <worktree> <branch> <reason the worktree 
 heartbeat_task_row() {  # <snapshot-task-json>
   local wt_branch wt_branch_rc branch_problem
   local task_json=$1 id wt branch backend target exists remote harness spawn_gen kind transcript=
+  local transcript_rc=0 ambiguous_transcript=''
+  local turn_json context_json output_json
   local pane_backend='' pane_target='' pane_label=''
   local session composer=unknown last_commit last_push nm_json sha
   id=$(printf '%s' "$task_json" | jq -r '.id')
@@ -459,18 +466,36 @@ heartbeat_task_row() {  # <snapshot-task-json>
   spawn_gen=$(printf '%s' "$task_json" | jq -r '.spawn_gen // ""')
   kind=$(printf '%s' "$task_json" | jq -r '.kind // ""')
   if [ "$harness" = claude ] && [ -n "$wt" ]; then
-    transcript=$(heartbeat_read "task $id transcript" heartbeat_worktree_transcript "$wt" "$spawn_gen") || transcript=
+    transcript=$(heartbeat_read "task $id transcript" heartbeat_worktree_transcript "$wt" "$spawn_gen") || transcript_rc=$?
+    if [ "$transcript_rc" -eq 2 ]; then
+      ambiguous_transcript='ambiguous transcript'
+      transcript=
+    fi
   fi
-  if [ -n "$transcript" ]; then
+  if [ -n "$ambiguous_transcript" ]; then
+    session=$(heartbeat_unknown "$ambiguous_transcript")
+    turn_json=$(heartbeat_unknown "$ambiguous_transcript")
+    context_json=$(heartbeat_unknown "$ambiguous_transcript")
+    output_json=$(heartbeat_unknown "$ambiguous_transcript")
+  elif [ -n "$transcript" ]; then
     session=$(jq -n --arg id "$(basename "$transcript" .jsonl)" '{id:$id}')
+    turn_json=$(heartbeat_turn_json "task $id" "$transcript")
+    context_json=$(heartbeat_context_json "task $id" "$transcript")
+    output_json=$(heartbeat_last_output_json "$target" "$transcript" "$spawn_gen" "$kind")
   else
     session=$(heartbeat_unknown "no readable session for this harness and worktree")
+    turn_json=$(heartbeat_turn_json "task $id" "$transcript")
+    context_json=$(heartbeat_context_json "task $id" "$transcript")
+    output_json=$(heartbeat_last_output_json "$target" "$transcript" "$spawn_gen" "$kind")
   fi
   if [ "$exists" = true ] && [ -z "$remote" ] && [ -n "$backend" ] && [ -n "$target" ]; then
     composer=$(heartbeat_read "task $id composer" fm_backend_composer_state "$backend" "$target" "fm-$id") || composer=unknown
     pane_backend=$backend
     pane_target=$target
     pane_label=fm-$id
+    if [ -n "$transcript" ] && [ -z "$ambiguous_transcript" ]; then
+      context_json=$(heartbeat_context_json "task $id" "$transcript" "$pane_backend" "$pane_target" "$pane_label")
+    fi
   fi
   last_commit=$(heartbeat_unknown "no worktree")
   last_push=$(heartbeat_unknown "no worktree")
@@ -508,13 +533,13 @@ heartbeat_task_row() {  # <snapshot-task-json>
   fi
   printf '%s' "$task_json" | jq -c \
     --argjson session "$session" \
-    --argjson last_turn "$(heartbeat_turn_json "task $id" "$transcript")" \
+    --argjson last_turn "$turn_json" \
     --arg composer "${composer:-unknown}" \
-    --argjson context_left "$(heartbeat_context_json "task $id" "$transcript" "$pane_backend" "$pane_target" "$pane_label")" \
+    --argjson context_left "$context_json" \
     --argjson last_commit "$last_commit" \
     --argjson last_push "$last_push" \
     --argjson no_mistakes_run "$nm_json" \
-    --argjson last_output_time "$(heartbeat_last_output_json "$target" "$transcript" "$spawn_gen" "$kind")" \
+    --argjson last_output_time "$output_json" \
     --argjson inbox "$(heartbeat_inbox_unhandled "$id")" '
     def u(r): {unknown:true,reason:r};
     {

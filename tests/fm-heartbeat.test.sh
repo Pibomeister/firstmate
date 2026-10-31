@@ -442,6 +442,27 @@ test_leftover_transcript_in_a_reused_slot_is_ignored() {
   pass "a transcript older than the spawn, or with no spawn epoch, fills no field"
 }
 
+test_ambiguous_transcript_when_two_qualify() {
+  local home transcript now other
+  home=$(make_home ambiguous-transcripts)
+  now=$(date +%s)
+  transcript=$(task_transcript "$home")
+  other="${transcript%.jsonl}-other.jsonl"
+  printf '%s\n' '{"type":"assistant","timestamp":"2026-10-30T12:00:00.123Z"}' > "$transcript"
+  printf '%s\n' '{"type":"assistant","timestamp":"2026-10-30T12:01:00.123Z"}' > "$other"
+  fm_touch_epoch "$now" "$transcript"
+  fm_touch_epoch "$(( now + 1 ))" "$other"
+  set_spawn_gen "$home" "s$(( now - 60 )).1.1"
+  publish "$home"
+  assert_ledger "$home" '.tasks[0].session.unknown == true
+    and .tasks[0].session.reason == "ambiguous transcript"
+    and .tasks[0].last_turn.reason == "ambiguous transcript"
+    and .tasks[0].context_left.used_tokens.reason == "ambiguous transcript"
+    and .tasks[0].last_output_time.reason == "ambiguous transcript"' \
+    "two qualifying transcripts were attributed to one mate"
+  pass "two Claude transcripts since spawn publish unknown, not a pick"
+}
+
 test_remaining_context_comes_from_pane_text() {
   local home script
   home=$(make_home pane-context)
@@ -765,6 +786,7 @@ test_daemon_answer_qualifies_executing_run
 test_failed_status_is_unknown_not_no_run
 test_transcript_fields_with_fractional_timestamps
 test_leftover_transcript_in_a_reused_slot_is_ignored
+test_ambiguous_transcript_when_two_qualify
 test_remaining_context_comes_from_pane_text
 test_ungated_repo_is_unknown_not_failure
 test_last_output_needs_real_activity

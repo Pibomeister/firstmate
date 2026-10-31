@@ -2214,6 +2214,21 @@ status_open_activities() {  # <status-file-or-dash>
   _fm_status_open_activities_stream < "$f"
 }
 
+# The ONE derivation of a window's per-window marker key: `:`, `/` and `.` become
+# `_` so a window name is usable as a filename suffix. Every per-window file the
+# watcher keeps is named by it (.hash-, .count-, .stale-, .stale-since-,
+# .wedge-escalations-, .wedge-permanent-, .wedge-terminal-queued-,
+# .wedge-rollback-failed-, .paused-*, .writing-*, .validating-*,
+# .waiting-*), and the claim verifier reads the .hash- marker's age
+# (bin/fm-claims.sh). Live homes hold those markers on disk under the current
+# format, so the format lives here alone: a second copy is how a future change
+# to it silently orphans a window's markers instead of clearing them.
+window_key() {  # <window>
+  local key=${1//:/_}
+  key=${key//\//_}
+  printf '%s' "${key//./_}"
+}
+
 # task id from a recorded window target, falling back to the tmux-shaped
 # "<session>:fm-<id>" form when no metadata state is available.
 window_to_task() {
