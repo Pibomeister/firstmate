@@ -97,6 +97,7 @@ Each effective `FM_HOME` contains private operational directories.
 - Captain preferences and optional shared captain preferences.
 - Learnings, backlog, briefs, scout reports, optional task status archives, and the optional per-task no-mistakes pipeline-spend ledger.
 - Explicitly installed content-addressed extension packages under `data/extensions/packages/`.
+- Failure-class records under `data/failure-classes/` ([`claim-ledger.md`](claim-ledger.md)).
 
 `state/` holds runtime records:
 
@@ -109,6 +110,7 @@ Each effective `FM_HOME` contains private operational directories.
 - Private secondmate config-reread generations with their retry and quarantine state.
 - Per-task steering-inbox records under `state/<id>.inbox/` (`bin/fm-task-inbox-lib.sh`).
 - Parent-owned secondmate pending-reply records under `state/pending-replies/` (`bin/fm-pending-reply-lib.sh`).
+- Per-task claim ledgers, `state/<id>.claims.jsonl` ([`claim-ledger.md`](claim-ledger.md)).
 
 `config/` holds local gitignored operating choices, including explicit extension bindings under `config/extensions.d/`.
 
@@ -718,6 +720,13 @@ See [`trace-context.md`](trace-context.md) for carrier semantics, supported rout
 ## Fleet activity ledger (config/fleet-ledger)
 
 See [`fleet-ledger.md`](fleet-ledger.md) for the opt-in setup, record contract, and limits.
+
+## Claim verifier AgentKit gate (config/agentkit-gate)
+
+The optional local, gitignored `config/agentkit-gate` file holds, on its first line, the absolute path of AgentKit's `ak-gate.mjs` script.
+The claim verifier runs that script to read whether a task's AgentKit verify gate is current at its head ([`claim-ledger.md`](claim-ledger.md)).
+When the file is absent, or names no existing file, the verifier's AgentKit checks cannot verify anything, so claims that rest on them stay `unverifiable`.
+`FM_CLAIMS_AK_GATE` overrides the file for one run; the [`bin/fm-claims.sh`](../bin/fm-claims.sh) header owns the exact use.
 
 ## Firstmate role (config/firstmate-role)
 
@@ -3175,6 +3184,7 @@ FM_SESSION_START_STATUS_TAIL=5   # state/*.status lines printed per task in the 
 FM_SESSION_START_QUEUED_LIMIT=20   # plain queued backlog rows in the session-start digest; in-flight, held, and blocked rows are never bounded and done rows are never listed
 FM_SESSION_START_ENDPOINT_TIMEOUT=10   # seconds bounding each per-task endpoint liveness read in the session-start digest (bin/fm-session-start.sh); nonpositive or invalid values fall back to 10; a read that hits the bound or dies becomes that task's own `endpoint: error` line and the digest continues
 FM_DISPATCH_SLA_MINUTES=15   # whole minutes of the captain-goal dispatch SLA; bin/fm-dispatch-log.sh owns the ledger contract
+FM_CLAIMS_NET_TIMEOUT=20   # seconds bounding each claim-verifier network read; a read that hits it is recorded unverifiable; bin/fm-claims.sh owns the other FM_CLAIMS_* tunables
 FM_BACKLOG_ROW_TIMEOUT_SECS=10   # seconds bounding each backlog row read (bin/fm-backlog-transition-lib.sh) and the tasks-axi replay of each captain-hold Done-archive row (bin/fm-captain-hold.sh, which stops with 124 on a replay timeout); the archive scan itself is not bounded; nonpositive or invalid values fall back to 10; the first backlog read bound hit latches the sweep so later reads return immediately, each still naming its own item
 FM_BOOTSTRAP_DETECT_ONLY=0   # internal/read-only session-start mode: skip bootstrap's mutating sweeps and print advisory TANGLE wording
 FM_BOOTSTRAP_NETWORK=all   # internal session-start phase split: all, skip (local steps only), or only (network steps only); see bin/fm-bootstrap.sh

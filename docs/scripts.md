@@ -179,6 +179,8 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-public-followup-collect.sh` | Read and retire the typed terminal results a remote work home staged for the home that owes the public reply |
 | `fm-inbox.sh`            | The captain's out-of-band capture surface: queue a note (optionally idempotent by request id), announce or repair its wake, record a durable primary reply, and emit bounded receipts and primary-readiness JSON |
 | `fm-dispatch-log.sh`     | Append-only captain-goal intake ledger: record each goal as received, dispatched, queued, or blocked, mark late resolutions, and list goals past the 15-minute dispatch SLA |
+| [`fm-claims.sh`](../bin/fm-claims.sh) | Check the claims in a task's status log against git, the forge, no-mistakes, AgentKit, and the terminal, record each verdict in its claim ledger, and reopen a task whose claim is refuted ([contract](claim-ledger.md)) |
+| `fm-claims-lib.sh`       | Shared words of the refuted-claim blocker, used by the claim verifier and `fm-send --resolve-key` |
 | `fm-mail.sh`             | General-purpose mail plane: read unseen IMAP mail, send one SMTP message, or surface new mail as a `check` wake via `poll` (configuration in the home's gitignored `.env`) |
 | `fm-mail.py`             | The IMAP/SMTP engine behind `fm-mail.sh` |
 | `fm-mail-check.sh`       | Standing received-mail poll: `arm` registers a watcher check that runs `fm-mail.sh poll` on the watcher cadence (new mail still wakes via the poll; the check's own line also wakes unless the poll is a proven no-op), `disarm` removes it |

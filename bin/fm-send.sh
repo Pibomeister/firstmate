@@ -163,9 +163,10 @@
 # worker writing a matching resolved line. For ordinary keys the payload is
 # "resolved [key=<key>]: answered: <capped excerpt>" before the emission-time
 # handling owned by bin/fm-classify-lib.sh. A reserved key
-# (pending-reply-* today; bin/fm-classify-lib.sh's reserved-key guard) is
-# closed with the owning library's vocabulary note
-# (fm_pending_reply_close_note_for_key / fm_pending_reply_resolved_note), so
+# (pending-reply-* or claim-refuted-*; bin/fm-classify-lib.sh's reserved-key
+# guard) is closed with the owning library's vocabulary note
+# (fm_pending_reply_close_note_for_key / fm_pending_reply_resolved_note, or
+# fm_claims_close_note_for_key in bin/fm-claims-lib.sh), so
 # the fold actually drops it; a bare answered: note is not a reserved-key
 # transition and is never written for those keys. If this send cannot produce
 # a note the guard will accept, or the structural key would be lost to the
@@ -266,6 +267,8 @@ fi
 . "$SCRIPT_DIR/fm-wake-lib.sh"
 # shellcheck source=bin/fm-task-inbox-lib.sh
 . "$SCRIPT_DIR/fm-task-inbox-lib.sh"
+# shellcheck source=bin/fm-claims-lib.sh
+. "$SCRIPT_DIR/fm-claims-lib.sh"
 
 FM_GUARD_CONTINUE_LINE='This is a supervision warning only; the requested message WILL still be sent.' "$SCRIPT_DIR/fm-guard.sh" || true
 
@@ -603,11 +606,16 @@ fm_send_hold_resolved_id() { # <task-id> <decision-key>
 }
 
 # Close-note body for --resolve-key. Ordinary keys keep answered: <excerpt>.
-# A pending-reply-* key uses the owning library's vocabulary so the reserved-key
-# fold actually closes it (fm_pending_reply_close_note_for_key).
+# A pending-reply-* or claim-refuted-* key uses the owning library's vocabulary
+# so the reserved-key fold actually closes it (fm_pending_reply_close_note_for_key,
+# fm_claims_close_note_for_key).
 fm_send_resolve_close_note() { # <key> <excerpt>
   local k=$1 excerpt=$2 owned
   if owned=$(fm_pending_reply_close_note_for_key "$k" "$RESOLVE_TASK_ID" operator-resolve-key "$excerpt"); then
+    printf '%s' "$owned"
+    return 0
+  fi
+  if owned=$(fm_claims_close_note_for_key "$k" "$RESOLVE_TASK_ID" operator-resolve-key "$excerpt"); then
     printf '%s' "$owned"
     return 0
   fi
