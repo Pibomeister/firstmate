@@ -1,0 +1,9 @@
+### Gate matrix, real volumes
+3g gate=crew exit=1
+3g gate=lane exit=1
+7g gate=crew exit=1
+7g gate=lane exit=0
+12g gate=crew exit=0
+12g gate=lane exit=0
+20g gate=crew exit=0
+20g gate=lane exit=0

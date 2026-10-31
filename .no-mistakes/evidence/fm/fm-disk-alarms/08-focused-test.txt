@@ -1,0 +1,16 @@
+1..14
+ok - help names the volume and threshold, and usage does not probe
+ok - levels nest at the 15, 10, and 5 GiB boundaries
+ok - a path that is not a directory leaves the alarm not in force
+ok - an unreadable volume refuses a crew launch and a new lane
+ok - the volume override is inert unless the test seam is armed
+ok - the host reading is a real probe or an absent volume
+ok - a fresh launch refuses before it creates anything, and a relaunch does not
+ok - a stop refuses a new home before any lease
+ok - a stop refuses a new local clone home before the clone, and a pause does not
+ok - a stop leaves an existing home unaffected
+ok - a stop refuses a new remote home before staging and leaves an existing home alone
+ok - the suite default leaves the alarm off the host volume
+ok - dispatch prints the alarm and still returns off
+ok - a no-mistakes worker is told to read the lane gate before starting a run
+FM_TEST_COMPLETE

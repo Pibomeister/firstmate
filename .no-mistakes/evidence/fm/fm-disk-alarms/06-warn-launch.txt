@@ -1,0 +1,37 @@
+=== real launch under WARN
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.8KXR6k
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  down 2s.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+disk-alarm: WARN free space on /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-dv.dJt0jX/m12 is under 15 GiB (11.8 GiB free); tell the captain. Launch may continue.
+spawned dv-warn harness=claude kind=ship mode=no-mistakes yolo=off window=firstmate:fm-dv-warn worktree=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.8KXR6k/treehouse/.treehouse/demo-33d0f2/1/demo
+exit=0
+--- windows
+firstmate:0: zsh* (1 panes) [80x24] 
+firstmate:1: fm-dv-sm2 (1 panes) [80x24] 
+firstmate:2: fm-dv-warn (1 panes) [80x24] 
+--- task record
+dv-sm2.busy-gen
+dv-sm2.busy-state
+dv-sm2.claude-settings.json
+dv-sm2.git-hooks
+dv-sm2.inbox
+dv-sm2.meta
+dv-warn.busy-gen
+dv-warn.busy-state
+dv-warn.git-hooks
+dv-warn.inbox
+dv-warn.meta
+home-summary.json
+operational-inbox
+/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.8KXR6k/projects/demo                            f1796fb [main]
+/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.8KXR6k/treehouse/.treehouse/demo-33d0f2/1/demo  f1796fb (detached HEAD)
+--- launch brief: lane-gate block
+117:Before starting a no-mistakes run, run `/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M69ZSFF6RCHCNTZKZ57TJAJ3/bin/fm-disk-alarm.sh --gate lane`.
+118-A non-zero result means do not start that run.
+119-Append a blocked status line carrying the script's own line, then stop, so the work can be placed on another host or cloud.

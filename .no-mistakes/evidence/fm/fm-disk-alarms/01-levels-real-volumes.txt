@@ -1,0 +1,68 @@
+### Real APFS images, real df (no fake df on PATH)
+Filesystem    1024-blocks  Used Available Capacity  Mounted on
+/dev/disk12s1    12378072    20  12343632     1%    /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-dv.dJt0jX/m12
+/dev/disk14s1    20766680    20  20714916     1%    /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-dv.dJt0jX/m20
+/dev/disk8s1      2940888    20   2928964     1%    /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-dv.dJt0jX/m3
+/dev/disk10s1     7135192    20   7111588     1%    /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-dv.dJt0jX/m7
+--- 3g []
+disk-alarm: level=stop free_kib=2928964 volume=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-dv.dJt0jX/m3
+disk-alarm: STOP free space on /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-dv.dJt0jX/m3 is under 5 GiB (2.8 GiB free); no new lane, worktree, or gate. Place this work on another host or cloud. Do not retry it on this host.
+exit=0
+--- 3g [--gate crew]
+usage: fm-disk-alarm.sh [--gate crew|lane|--help]
+exit=2
+--- 3g [--gate lane]
+usage: fm-disk-alarm.sh [--gate crew|lane|--help]
+exit=2
+--- 7g []
+disk-alarm: level=pause free_kib=7111588 volume=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-dv.dJt0jX/m7
+disk-alarm: PAUSE free space on /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-dv.dJt0jX/m7 is under 10 GiB (6.8 GiB free); no new crewmate launch. Place this work on another host or cloud. Do not retry it on this host.
+exit=0
+--- 7g [--gate crew]
+usage: fm-disk-alarm.sh [--gate crew|lane|--help]
+exit=2
+--- 7g [--gate lane]
+usage: fm-disk-alarm.sh [--gate crew|lane|--help]
+exit=2
+--- 12g []
+disk-alarm: level=warn free_kib=12343632 volume=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-dv.dJt0jX/m12
+disk-alarm: WARN free space on /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-dv.dJt0jX/m12 is under 15 GiB (11.8 GiB free); tell the captain. Launch may continue.
+exit=0
+--- 12g [--gate crew]
+usage: fm-disk-alarm.sh [--gate crew|lane|--help]
+exit=2
+--- 12g [--gate lane]
+usage: fm-disk-alarm.sh [--gate crew|lane|--help]
+exit=2
+--- 20g []
+disk-alarm: level=ok free_kib=20714916 volume=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-dv.dJt0jX/m20
+exit=0
+--- 20g [--gate crew]
+usage: fm-disk-alarm.sh [--gate crew|lane|--help]
+exit=2
+--- 20g [--gate lane]
+usage: fm-disk-alarm.sh [--gate crew|lane|--help]
+exit=2
+
+### Real host volume, no seam
+disk-alarm: level=ok free_kib=190510792 volume=/System/Volumes/Data
+exit=0
+/dev/disk3s5   971350180 758185844 190510348    80%    /System/Volumes/Data
+
+### Adversarial: override without seam must be ignored
+disk-alarm: level=ok free_kib=190511128 volume=/System/Volumes/Data
+exit=0
+
+### Adversarial: seam=0 with override
+disk-alarm: level=ok free_kib=190511100 volume=/System/Volumes/Data
+exit=0
+
+### Absent volume
+disk-alarm: level=absent free_kib=unknown volume=/nonexistent/x
+exit=0
+
+### Usage errors
+usage: fm-disk-alarm.sh [--gate crew|lane|--help]
+exit=2
+usage: fm-disk-alarm.sh [--gate crew|lane|--help]
+exit=2

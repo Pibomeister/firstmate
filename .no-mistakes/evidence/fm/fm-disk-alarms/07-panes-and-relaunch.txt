@@ -1,0 +1,31 @@
+=== worker pane launched under WARN
+❯ : Firstmate operational input waiting: read
+  '/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.8KXR6k/state
+  /operational-inbox/1793487624-35d3511ccd9572bc.msg' and handle its contents
+  as Firstmate operational input.
+  Creating branch, running doctor, inspecting file a
+  ⎿  $ git checkout -b fm/dv-warn -- && no-mistakes doctor; echo "doctor
+     exit=$?"; rtk proxy od -c a; git log --oneline -3; git check-ignore
+     .claude; git ls-files
+✶ Imagining… (17s · ↓ 475 tokens)
+  #1 : Firstmate operational input waiting: read '/private/var/folders/9…   [-]
+  ┃
+────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle)
+=== secondmate pane launched under PAUSE (no alarm line in spawn output)
+  #1 : Firstmate operational input waiting: read '/private/var/folders/9…   [-]
+  ┃
+────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle)
+=== relaunch existing worker under STOP: must not be gated
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.8KXR6k
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s; down 65s) - full banner already printed this episode.
+spawned dv-warn harness=claude kind=ship mode=no-mistakes yolo=off window=firstmate:fm-dv-warn worktree=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.8KXR6k/treehouse/.treehouse/demo-33d0f2/1/demo
+exit=0
+firstmate:0: zsh* (1 panes) [80x24] 
+firstmate:1: fm-dv-sm2 (1 panes) [80x24] 
+firstmate:2: fm-dv-warn (1 panes) [80x24] 

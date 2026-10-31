@@ -1,0 +1,31 @@
+=== fm-spawn.sh dv-pause projects/demo --mode no-mistakes --yolo off on m7
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.8KXR6k
+disk-alarm: PAUSE free space on /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-dv.dJt0jX/m7 is under 10 GiB (6.8 GiB free); no new crewmate launch. Place this work on another host or cloud. Do not retry it on this host.
+exit=1
+state diff: NONE
+=== fm-spawn.sh dv-pause projects/demo --mode no-mistakes --yolo off on m3
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.8KXR6k
+disk-alarm: STOP free space on /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-dv.dJt0jX/m3 is under 5 GiB (2.8 GiB free); no new lane, worktree, or gate. Place this work on another host or cloud. Do not retry it on this host.
+exit=1
+state diff: NONE
+=== fm-spawn.sh dv-scout projects/demo --scout on m7
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.8KXR6k
+disk-alarm: PAUSE free space on /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-dv.dJt0jX/m7 is under 10 GiB (6.8 GiB free); no new crewmate launch. Place this work on another host or cloud. Do not retry it on this host.
+exit=1
+state diff: NONE
+=== fm-spawn.sh dv-scout projects/demo --scout on m3
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.8KXR6k
+disk-alarm: STOP free space on /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-dv.dJt0jX/m3 is under 5 GiB (2.8 GiB free); no new lane, worktree, or gate. Place this work on another host or cloud. Do not retry it on this host.
+exit=1
+state diff: NONE
+=== batch pair under pause
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.8KXR6k
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.8KXR6k
+disk-alarm: PAUSE free space on /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-dv.dJt0jX/m7 is under 10 GiB (6.8 GiB free); no new crewmate launch. Place this work on another host or cloud. Do not retry it on this host.
+batch: FAILED to spawn dv-pause (demo)
+exit=1
+state diff: NONE
+=== relaunch under stop (missing task): alarm must not fire
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.8KXR6k
+error: --relaunch takes the task id only; its project or home comes from the task's own record
+exit=1

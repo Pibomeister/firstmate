@@ -1,0 +1,62 @@
+=== seed '-' under stop (no lease)
+disk-alarm: STOP free space on /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-dv.dJt0jX/m3 is under 5 GiB (2.8 GiB free); no new lane, worktree, or gate. Place this work on another host or cloud. Do not retry it on this host.
+exit=1
+treehouse root:        0 entries
+=== seed new path under stop
+disk-alarm: STOP free space on /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-dv.dJt0jX/m3 is under 5 GiB (2.8 GiB free); no new lane, worktree, or gate. Place this work on another host or cloud. Do not retry it on this host.
+exit=1
+ls: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-dv.dJt0jX/seedhomes/new: No such file or directory
+=== seed new path under pause (allowed)
+Turn off this advice by setting config variable advice.detachedHead to false
+
+scaffolded: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.8KXR6k/data/dv-sm2/brief.md (secondmate charter)
+home=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-dv.dJt0jX/seedhomes/new
+exit=0
+.
+..
+.agents
+.ci-evidence
+.claude
+=== reseed existing under stop (unaffected)
+home=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-dv.dJt0jX/seedhomes/new
+exit=0
+=== secondmate spawn under pause: alarm must not fire (exempt)
+grep-done
+=== remote provision new home, stop
+disk-alarm: STOP free space on /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-dv.dJt0jX/m3 is under 5 GiB (2.8 GiB free); no new lane, worktree, or gate. Place this work on another host or cloud. Do not retry it on this host.
+exit=1
+.
+..
+.firstmate-provision-locks
+=== remote provision new home, pause
+disk-alarm: PAUSE free space on /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-dv.dJt0jX/m7 is under 10 GiB (6.8 GiB free); no new crewmate launch. Place this work on another host or cloud. Do not retry it on this host.
+Note: switching to 'e443a84aefbb2b84a421ae592c548bdf03b2bdfb'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+provisioned: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-dv.dJt0jX/remote/home projects=0
+exit=0
+.
+..
+.firstmate-provision-locks
+home
+=== remote provision existing, stop
+provisioned: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-dv.dJt0jX/remote/home projects=0
+exit=0
+.
+..
+.firstmate-provision-locks
+home
