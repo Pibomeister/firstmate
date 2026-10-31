@@ -60,14 +60,18 @@ fm_warm_compact_config() {
 }
 
 # fm_warm_compact_context_tokens <transcript>: print the context size of the
-# transcript's last request, or nothing when it cannot be read.
+# transcript's last request, or nothing when it cannot be read or a compaction
+# followed it, because that request no longer describes the context.
 fm_warm_compact_context_tokens() {
   local transcript=$1
   [ -r "$transcript" ] || return 1
   tail -n 400 "$transcript" 2>/dev/null | jq -R -r '
-      fromjson? | select(.type == "assistant") | .message.usage // empty
-      | select(type == "object")
-      | (.input_tokens // 0) + (.cache_read_input_tokens // 0) + (.cache_creation_input_tokens // 0)
+      fromjson?
+      | if .type == "system" and .subtype == "compact_boundary" then ""
+        else select(.type == "assistant") | .message.usage // empty
+          | select(type == "object")
+          | (.input_tokens // 0) + (.cache_read_input_tokens // 0) + (.cache_creation_input_tokens // 0)
+        end
     ' 2>/dev/null | tail -n 1
 }
 

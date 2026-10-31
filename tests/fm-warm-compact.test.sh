@@ -62,7 +62,9 @@ submits() { wc -l < "$CALLS" | tr -d ' '; }
 test_context_size_is_the_last_request() {
   reset
   assert_equals 95010 "$(fm_warm_compact_context_tokens "$TMP_ROOT/t.jsonl")" 'context is input + cache_read + cache_creation of the last request'
-  pass 'context size comes from the last request'
+  printf '{"type":"system","subtype":"compact_boundary"}\n' >> "$TMP_ROOT/t.jsonl"
+  assert_equals '' "$(fm_warm_compact_context_tokens "$TMP_ROOT/t.jsonl")" 'a compaction voids the last request until the next one'
+  pass 'context size comes from the last request since any compaction'
 }
 
 test_due_primary_gets_one_compact_through_the_backend_primitive() {
