@@ -1,0 +1,6 @@
+$ bash tests/fm-procevent-quota.test.sh (fixed test on branch)
+ok - later slow version probe reports timeout not incompatible
+# all fm-procevent-quota tests passed
+after-fix rc=0
+$ same test on base 7cdb43c2 scripts
+not ok - cursor watch read the collapsed api bound as low: quota: quota-cursor

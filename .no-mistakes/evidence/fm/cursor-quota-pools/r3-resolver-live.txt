@@ -1,0 +1,49 @@
+##### bin
+--- three pools + unknown
+  status: clear
+  note: rule matched
+  candidate: cursor:claude-opus-5-thinking-high  provider=cursor  scope=pool:api  remaining=2%  spendPriority=-  runway=unknown  -> not eligible: pool:api below the Cursor pool floor 5%
+  candidate: cursor:grok-4.7-high  provider=cursor  scope=pool:api  remaining=2%  spendPriority=-  runway=unknown  -> not eligible: pool:api below the Cursor pool floor 5%
+  candidate: cursor:mystery-model-9  provider=cursor  scope=all_models  remaining=2%  spendPriority=-  runway=unknown  -> not eligible: all_models below the Cursor pool floor 5%
+  candidate: cursor:composer-2.5  provider=cursor  scope=pool:auto  remaining=90%  spendPriority=0.9  runway=unknown  -> eligible
+  profile: --harness 'cursor' --model 'composer-2.5'
+--- profile all_models floor 20 on composer
+  status: clear
+  note: rule matched
+  candidate: cursor:composer-2.5  provider=cursor  scope=pool:auto  remaining=90%  spendPriority=0.9  runway=unknown  -> eligible
+  profile: --harness 'cursor' --model 'composer-2.5'
+--- rule floor 20 on named model -> default
+  status: clear
+  note: rule rule_1 floor all_models below 20%: fall through to default
+  candidate: cursor:composer-2.5  provider=cursor  scope=pool:auto  remaining=90%  spendPriority=0.9  runway=unknown  -> eligible
+  profile: --harness 'cursor' --model 'composer-2.5'
+--- mixed rule, real pool rows auto 25 / api 10
+  status: clear
+  note: rule matched
+  candidate: cursor:composer-2.5  provider=cursor  scope=pool:auto  remaining=25%  spendPriority=0.1  runway=through_reset  -> eligible
+  candidate: cursor:claude-opus-5-thinking-high  provider=cursor  scope=pool:api  remaining=10%  spendPriority=-  runway=through_reset  -> not eligible: rule floor all_models below 20%
+  profile: --harness 'cursor' --model 'composer-2.5'
+##### BASE/base/bin
+--- three pools + unknown
+  status: escalate
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: cursor:claude-opus-5-thinking-high  provider=cursor  scope=all_models  remaining=2%  spendPriority=-  runway=unknown  -> eligible, unranked: spendPriority missing or non-numeric at all_models: not rankable: disclosed uncertainty
+  candidate: cursor:grok-4.7-high  provider=cursor  scope=all_models  remaining=2%  spendPriority=-  runway=unknown  -> eligible, unranked: spendPriority missing or non-numeric at all_models: not rankable: disclosed uncertainty
+  candidate: cursor:mystery-model-9  provider=cursor  scope=all_models  remaining=2%  spendPriority=-  runway=unknown  -> eligible, unranked: spendPriority missing or non-numeric at all_models: not rankable: disclosed uncertainty
+  candidate: cursor:composer-2.5  provider=cursor  scope=all_models  remaining=2%  spendPriority=-  runway=unknown  -> eligible, unranked: spendPriority missing or non-numeric at all_models: not rankable: disclosed uncertainty
+--- profile all_models floor 20 on composer
+  status: escalate
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: cursor:composer-2.5  provider=cursor  scope=all_models  remaining=2%  spendPriority=-  runway=unknown  -> not eligible: profile floor all_models below 20%
+--- rule floor 20 on named model -> default
+  status: escalate
+  reason: no rankable eligible candidate
+  note: rule rule_1 floor all_models below 20%: fall through to default
+  candidate: cursor:composer-2.5  provider=cursor  scope=all_models  remaining=2%  spendPriority=-  runway=unknown  -> eligible, unranked: spendPriority missing or non-numeric at all_models: not rankable: disclosed uncertainty
+--- mixed rule, real pool rows auto 25 / api 10
+  status: escalate
+  reason: no rankable eligible candidate
+  note: rule rule_1 floor all_models below 20%: fall through to default
+  candidate: claude:sonnet  provider=claude  scope=all_models  remaining=-%  spendPriority=-  runway=unknown  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty

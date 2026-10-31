@@ -1,0 +1,15 @@
+auto 0 (expect none)                                 composer-2.5                   -> none
+included 0 (expect none)                             composer-2.5                   -> none
+api 0, auto healthy (expect composer)                composer-2.5                   -> cursor composer-2.5
+api 4 (expect none)                                  gpt-5.6                        -> none
+api 5 boundary (expect pick)                         gpt-5.6                        -> cursor gpt-5.6
+api 50 (expect pick)                                 claude-opus-5-thinking-high    -> cursor claude-opus-5-thinking-high
+api 50 grok (expect pick)                            grok-4.7-high                  -> cursor grok-4.7-high
+grok_bot 100, api 2 (expect none)                    grok-4.7-high                  -> none
+stale all_models unknown, auto 93 (expect none)      composer-2.5                   -> none
+spend_limit null, all_models known (expect composer) composer-2.5                   -> cursor composer-2.5
+real pool:auto exhausted beats windows (expect none) composer-2.5                   -> none
+real pool:grok 50 wins (expect grok)                 grok-4.7-high                  -> cursor grok-4.7-high
+claude:sonnet head=claude sonnet base=claude sonnet
+codex:gpt-5.6-luna head=codex gpt-5.6-luna base=codex gpt-5.6-luna
+grok:grok-4 head=grok grok-4 base=grok grok-4

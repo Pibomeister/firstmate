@@ -1,0 +1,25 @@
+== real quota-axi snapshot: ["included_usage=90","auto_usage=93","api_usage=2","spend_limit=100","grok_bot=29"]
+composer-2.5                                 base=cursor composer-2.5 [0]                  head=cursor composer-2.5 [0] 
+auto                                         base=cursor auto [0]                          head=cursor auto [0] 
+default                                      base=cursor default [0]                       head=cursor default [0] 
+composer                                     base=cursor composer [0]                      head=cursor composer [0] 
+COMPOSER-2.5                                 base=cursor COMPOSER-2.5 [0]                  head=cursor COMPOSER-2.5 [0] 
+model:composer-2.5                           base=cursor model:composer-2.5 [0]            head=cursor model:composer-2.5 [0] 
+claude-opus-5-thinking-high                  base=cursor claude-opus-5-thinking-high [0]   head=none [1] 
+gpt-5.6                                      base=cursor gpt-5.6 [0]                       head=none [1] 
+gemini-3-pro                                 base=cursor gemini-3-pro [0]                  head=none [1] 
+o3-mini                                      base=cursor o3-mini [0]                       head=none [1] 
+grok-4.7-high                                base=cursor grok-4.7-high [0]                 head=none [1] 
+cursor-grok-4                                base=cursor cursor-grok-4 [0]                 head=none [1] 
+mystery-model-9                              base=cursor mystery-model-9 [0]               head=none [1] 
+composerx                                    base=cursor composerx [0]                     head=none [1] 
+sonnet-4.5                                   base=cursor sonnet-4.5 [0]                    head=none [1] 
+== ordered list [claude, grok, composer]
+cursor composer-2.5
+== stdin json
+cursor composer-2.5
+== default TOON from real quota-axi
+cursor composer-2.5
+exit=0
+cursor composer-2.5
+baseexit=0

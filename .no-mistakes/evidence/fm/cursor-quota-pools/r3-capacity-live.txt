@@ -1,0 +1,4 @@
+bin real: {"provider":"cursor","runway":"unknown"}
+BASE/base/bin real: {"provider":"cursor","runway":"unknown"}
+bin api exhausted, auto 93: {"provider":"cursor","runway":"unknown"}
+BASE/base/bin api exhausted, auto 93: {"provider":"cursor","runway":"exhausted_now"}

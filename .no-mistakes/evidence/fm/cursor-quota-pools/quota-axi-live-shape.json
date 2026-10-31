@@ -1,0 +1,131 @@
+{
+  "generatedAt": "2026-10-30T22:55:35.381Z",
+  "schemaVersion": 5,
+  "providers": [
+    {
+      "provider": "cursor",
+      "plan": "Pro",
+      "windows": [
+        {
+          "id": "included_usage",
+          "label": "included usage",
+          "kind": "monthly",
+          "resetsAt": "2026-11-12T22:55:20.000Z",
+          "percentRemaining": 90,
+          "pace": {
+            "status": "behind",
+            "reservePercentPoints": 48.0651,
+            "burnMultiple": 0.1722
+          }
+        },
+        {
+          "id": "auto_usage",
+          "label": "auto usage",
+          "kind": "monthly",
+          "resetsAt": "2026-11-12T22:55:20.000Z",
+          "percentRemaining": 93,
+          "pace": {
+            "status": "behind",
+            "reservePercentPoints": 51.0651,
+            "burnMultiple": 0.1206
+          }
+        },
+        {
+          "id": "api_usage",
+          "label": "API usage",
+          "kind": "monthly",
+          "resetsAt": "2026-11-12T22:55:20.000Z",
+          "percentRemaining": 2,
+          "pace": {
+            "status": "ahead",
+            "reservePercentPoints": -39.9349,
+            "burnMultiple": 1.6878
+          }
+        },
+        {
+          "id": "grok_bot",
+          "label": "Grok Bot",
+          "kind": "weekly",
+          "percentRemaining": 42,
+          "pace": {
+            "status": "unknown",
+            "reason": "missing_cycle"
+          }
+        }
+      ],
+      "state": {
+        "status": "fresh",
+        "stale": false
+      },
+      "quotaSemantics": {
+        "status": "known",
+        "effectiveAvailability": [
+          {
+            "scope": "all_models",
+            "status": "known",
+            "effectivePercentRemaining": 2,
+            "boundedBy": [
+              "included_usage",
+              "auto_usage",
+              "api_usage"
+            ],
+            "limitingWindowIds": [
+              "api_usage"
+            ],
+            "pace": {
+              "status": "mixed",
+              "aheadWindowIds": [
+                "api_usage"
+              ],
+              "worstReservePercentPoints": -39.9349,
+              "worstReserveWindowId": "api_usage"
+            },
+            "runway": {
+              "status": "projected_exhaustion",
+              "usableRunwaySeconds": 31739,
+              "projectedExhaustedAt": "2026-10-31T07:44:34.470Z",
+              "limitingWindowId": "api_usage",
+              "projectionConfidence": "established"
+            },
+            "selection": {
+              "status": "known",
+              "spendPriority": 0.8103
+            }
+          },
+          {
+            "scope": "grok_bot",
+            "status": "known",
+            "effectivePercentRemaining": 42,
+            "boundedBy": [
+              "grok_bot"
+            ],
+            "limitingWindowIds": [
+              "grok_bot"
+            ],
+            "pace": {
+              "status": "unknown",
+              "unknownWindowIds": [
+                "grok_bot"
+              ]
+            },
+            "runway": {
+              "status": "unknown",
+              "unmeasurableWindowIds": [
+                "grok_bot"
+              ]
+            },
+            "selection": {
+              "status": "unknown",
+              "unmeasurableWindowIds": [
+                "grok_bot"
+              ]
+            }
+          }
+        ]
+      },
+      "accountKeys": [
+        "default"
+      ]
+    }
+  ]
+}

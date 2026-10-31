@@ -1,0 +1,18 @@
+=== P1 procevent --provider cursor, auto 93 api 2, threshold 10, 25s bound, per-read timeout 20
+before
+quota: quota-cursor
+status: low
+detail: {"provider":"cursor","best":{"scope":"all_models","status":"known","effectivePercentRemaining":2,"boundedBy":["included_usage","auto_usage","api_usage","spend_lim
+condition_polls: 1
+exit=0 (142 = still healthy at the bound, no event)
+after
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-quota-lab.16P15Q/rest2.sh: line 3: 31833 Alarm clock: 14         perl -e 'alarm shift; exec @ARGV' "$@"
+exit=142 (142 = still healthy at the bound, no event)
+=== C1 capacity runway, auto 93 api 0
+before {"provider":"cursor","runway":"exhausted_now"}
+after  {"provider":"cursor","runway":"unknown"}
+=== S1 stale reading: cached auto 93, vendor down
+{"state":"stale","sem":"unknown","ea":[{"scope":"all_models","status":"unknown"},{"scope":"grok_bot","status":"unknown"}],"w":[{"id":"included_usage","percentRemaining":90},{"id":"auto_usage","percentRemaining":93},{"id":"api_usage","percentRemaining":2},{"id":"spend_limit","percentRemaining":100},{"id":"grok_bot","percentRemaining":42}]}
+composer -> none
+=== S2 stale-partial: semantics partial over the same stale reading
+composer -> none

@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 5,
+  "windows": [
+    {
+      "id": "included_usage",
+      "percentRemaining": 90
+    },
+    {
+      "id": "auto_usage",
+      "percentRemaining": 93
+    },
+    {
+      "id": "api_usage",
+      "percentRemaining": 2
+    },
+    {
+      "id": "spend_limit",
+      "percentRemaining": 100
+    },
+    {
+      "id": "grok_bot",
+      "percentRemaining": 29
+    }
+  ],
+  "effective": [
+    {
+      "scope": "all_models",
+      "status": "known",
+      "effectivePercentRemaining": 2,
+      "limitingWindowIds": [
+        "api_usage"
+      ]
+    },
+    {
+      "scope": "grok_bot",
+      "status": "known",
+      "effectivePercentRemaining": 29,
+      "limitingWindowIds": [
+        "grok_bot"
+      ]
+    }
+  ]
+}

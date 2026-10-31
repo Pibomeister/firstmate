@@ -1,0 +1,27 @@
+=== P1 procevent --provider cursor, auto 93 api 2 threshold 10
+[before]
+exit=142 (142 = still polling healthy, no event)
+[after]
+exit=142 (142 = still polling healthy, no event)
+=== P2 procevent, auto 5 api 50 fires
+quota: quota-cursor
+status: low
+detail: {"provider":"cursor","best":{"scope":"pool:auto","status":"known","effectivePercentRemaining":5,"selection":{"spendPriority":0.05},"runway":{"status":"unknown"},"limitingWindowIds":["auto_usage"]}}
+condition_polls: 1
+=== C1 capacity quota row, auto 93 api 0
+{"provider":"cursor","runway":"unknown"}
+{"provider":"cursor","runway":"unknown"}
+=== C2 capacity quota row, auto 0 api 50
+{"provider":"cursor","runway":"exhausted_now"}
+=== S1 stale reading (vendor down, cached reading)
+{"state":"stale","stale":true,"sem":"unknown","ea":[{"scope":"all_models","status":"unknown","pct":null},{"scope":"grok_bot","status":"unknown","pct":null}],"w":[{"id":"included_usage","percentRemaining":90},{"id":"auto_usage","percentRemaining":0},{"id":"api_usage","percentRemaining":50},{"id":"spend_limit","percentRemaining":100},{"id":"grok_bot","percentRemaining":42}]}
+composer -> none
+=== S2 stale-partial, jq-forced shape over real snapshot
+composer -> error: invalid quota-axi provider data
+=== S3 signed out (no state db)
+{"provider":"cursor","notSetUp":true,"sem":"unknown","w":0}
+composer -> none
+=== F1 future quota-axi pool rows layered on the real snapshot
+composer-2.5 -> cursor composer-2.5
+claude-opus-5 -> cursor claude-opus-5
+grok-4.7-high -> none

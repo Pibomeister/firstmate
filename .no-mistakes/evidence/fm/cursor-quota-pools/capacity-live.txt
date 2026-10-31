@@ -1,0 +1,2 @@
+head: {"quota":{"provider":"cursor","runway":"unknown"}}
+base: {"quota":{"provider":"cursor","runway":"unknown"}}

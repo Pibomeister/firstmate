@@ -1,0 +1,26 @@
+### HEAD real snapshot, 8s (expect no low; 124=still watching)
+exit=
+### BASE real snapshot
+quota: quota-cursor
+status: low
+detail: {"provider":"cursor","best":{"scope":"all_models","status":"known","effectivePercentRemaining":2,"boundedBy":["included_usage","auto_usage","api_usage","spend_limit"],"limitingWindowIds":["api_usage"],"
+condition_polls: 1
+exit=
+### HEAD grok_bot 3 only (expect no low)
+exit=
+### HEAD auto 5 (expect low on pool:auto)
+quota: quota-cursor
+status: low
+detail: {"provider":"cursor","best":{"scope":"pool:auto","status":"known","effectivePercentRemaining":5,"selection":{"spendPriority":0.05},"runway":{"status":"unknown"},"limitingWindowIds":["auto_usage"]}}
+condition_polls: 1
+exit=
+### HEAD included 5 (expect low on pool:auto)
+quota: quota-cursor
+status: low
+detail: {"provider":"cursor","best":{"scope":"pool:auto","status":"known","effectivePercentRemaining":5,"selection":{"spendPriority":0.05},"runway":{"status":"unknown"},"limitingWindowIds":["included_usage"]}}
+condition_polls: 1
+exit=
+### HEAD aggregate watch, real snapshot (no --provider): other providers still judged
+exit=
+### classify on a low cursor result
+unknown

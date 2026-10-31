@@ -1,0 +1,13 @@
+# real snapshot with only grok_bot lowered to 3%; auto 93, included 90; threshold 10
+### bin
+quota: quota-cursor
+status: low
+detail: {"provider":"cursor","best":{"scope":"grok_bot","status":"known","effectivePercentRemaining":3,"boundedBy":["grok_bot"],"limitingWindowIds":["grok_bot"],"pace":{"status":"ahead","aheadWindowIds":["grok_bot"],"wor
+condition_polls: 1
+### base
+quota: quota-cursor
+status: low
+detail: {"provider":"cursor","best":{"scope":"all_models","status":"known","effectivePercentRemaining":2,"boundedBy":["included_usage","auto_usage","api_usage","spend_limit"],"limitingWindowIds":["api_usage"],"pace":{"st
+condition_polls: 1
+### chooser composer
+cursor composer-2.5

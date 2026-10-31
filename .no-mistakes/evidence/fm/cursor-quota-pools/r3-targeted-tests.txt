@@ -1,0 +1,5 @@
+fm-quota-choose exit=0 fails=0 # all fm-quota-choose tests passed
+fm-procevent-quota exit=0 fails=0 # all fm-procevent-quota tests passed
+fm-capacity exit=0 fails=0 # all fm-capacity tests passed
+fm-dispatch-resolve exit=124 fails=0 ok - native Codex binds to codex-home before default, independently of Pi accounts and row order
+fm-dispatch-resolve (full, 590s limit) exit=0 ok=54 notok=0 last=# all fm-dispatch-resolve tests passed

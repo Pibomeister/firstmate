@@ -1,0 +1,17 @@
+auto_usage 0 (expect none)                                     composer-2.5                   -> none 
+included_usage 0 (expect none)                                 composer-2.5                   -> none 
+api_usage 0, auto healthy (expect composer)                    composer-2.5                   -> cursor composer-2.5 
+api_usage 50 (expect named)                                    claude-opus-5-thinking-high    -> cursor claude-opus-5-thinking-high 
+api_usage 50 (expect grok on api)                              grok-4.7-high                  -> cursor grok-4.7-high 
+api_usage 5, boundary (expect named)                           gpt-5.6                        -> cursor gpt-5.6 
+api_usage 4 (expect none)                                      gpt-5.6                        -> none 
+grok_bot 100 must not lift grok (expect none)                  grok-4.7-high                  -> none 
+spend_limit window null, all_models known (expect composer)    composer-2.5                   -> cursor composer-2.5 
+stale partial, all_models unknown, auto 93 (expect none)       composer-2.5                   -> none 
+no windows, collapsed 2% (fallback, base behaviour)            composer-2.5                   -> cursor composer-2.5 
+real pool:grok 50 wins (expect grok)                           grok-4.7-high                  -> cursor grok-4.7-high 
+real pool:auto exhausted beats windows 93 (expect none)        composer-2.5                   -> none 
+schema 6 row (expect composer)                                 composer-2.5                   -> cursor composer-2.5 
+claude:sonnet base=claude sonnet head=claude sonnet
+codex:gpt-5.6-luna base=codex gpt-5.6-luna head=codex gpt-5.6-luna
+grok:grok-4 base=grok grok-4 head=grok grok-4

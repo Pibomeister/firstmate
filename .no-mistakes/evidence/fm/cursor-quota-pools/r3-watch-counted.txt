@@ -1,0 +1,28 @@
+# Reads 1-2 keep the stated state on real quota-axi output; read 3+ also sets auto 5. condition_polls 3 proves reads 1-2 did not fire.
+### real snapshot: api 2, grok_bot real
+exit=0 reads=3
+quota: quota-cursor
+status: low
+detail: {"provider":"cursor","best":{"scope":"pool:auto","status":"known","effectivePercentRemaining":5,"selection":{"spendPriority":0.05},"runway":{"status":"unknown"},"limitingWindowIds":["auto_usag
+condition_polls: 3
+classify: low
+### grok_bot lowered to 3 only
+exit=0 reads=3
+quota: quota-cursor
+status: low
+detail: {"provider":"cursor","best":{"scope":"pool:auto","status":"known","effectivePercentRemaining":5,"selection":{"spendPriority":0.05},"runway":{"status":"unknown"},"limitingWindowIds":["auto_usag
+condition_polls: 3
+classify: low
+### grok_bot 3 and api 0
+exit=0 reads=3
+quota: quota-cursor
+status: low
+detail: {"provider":"cursor","best":{"scope":"pool:auto","status":"known","effectivePercentRemaining":5,"selection":{"spendPriority":0.05},"runway":{"status":"unknown"},"limitingWindowIds":["auto_usag
+condition_polls: 3
+classify: low
+### aggregate (no --provider), other providers still judged: 30s or low
+quota: quota
+status: low
+detail: {"provider":"aggregate","summary":[{"provider":"claude","best":null},{"provider":"codex","best":{"scope":"all_models","status":"known","effectivePercentRemaining":4,"boundedBy":["weekly"],"lim
+condition_polls: 1
+reads=1

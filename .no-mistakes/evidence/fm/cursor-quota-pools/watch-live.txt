@@ -1,0 +1,13 @@
+### bin threshold 10
+rc= (142=still healthy and watching when alarm fired)
+### base threshold 10
+quota: quota-cursor
+status: low
+detail: {"provider":"cursor","best":{"scope":"all_models","status":"known","effectivePercentRemaining":2,"boundedBy":["included_usage","auto_usage","api_usage","spend_limit"],"limitingWindowIds":["api_usage"],"pace":{"status":"mixed","aheadWindowIds":["api_usa
+condition_polls: 1
+rc= (142=still healthy and watching when alarm fired)
+### head threshold 95
+quota: quota-cursor
+status: low
+detail: {"provider":"cursor","best":{"scope":"grok_bot","status":"known","effectivePercentRemaining":29,"boundedBy":["grok_bot"],"limitingWindowIds":["grok_bot"],"pace":{"status":"ahead","aheadWindowIds":["grok_bot"],"worstReservePercentPoints":-42.7542,"worst
+condition_polls: 1

@@ -1,0 +1,46 @@
+=== R1 live shape, BEFORE
+  status: escalate
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: cursor:composer-2.5  provider=cursor  scope=all_models  remaining=2%  spendPriority=-  runway=unknown  -> eligible, unranked: spendPriority missing or non-numeric at all_models: not rankable: disclosed uncertainty
+  candidate: cursor:claude-opus-5-thinking-high  provider=cursor  scope=all_models  remaining=2%  spendPriority=-  runway=unknown  -> eligible, unranked: spendPriority missing or non-numeric at all_models: not rankable: disclosed uncertainty
+  candidate: cursor:grok-4.7-high  provider=cursor  scope=all_models  remaining=2%  spendPriority=-  runway=unknown  -> eligible, unranked: spendPriority missing or non-numeric at all_models: not rankable: disclosed uncertainty
+  candidate: cursor:mystery-model-9  provider=cursor  scope=all_models  remaining=2%  spendPriority=-  runway=unknown  -> eligible, unranked: spendPriority missing or non-numeric at all_models: not rankable: disclosed uncertainty
+=== R1 live shape, AFTER
+  status: clear
+  note: rule matched
+  candidate: cursor:composer-2.5  provider=cursor  scope=pool:auto  remaining=90%  spendPriority=0.9  runway=unknown  -> eligible
+  candidate: cursor:claude-opus-5-thinking-high  provider=cursor  scope=pool:api  remaining=2%  spendPriority=-  runway=unknown  -> not eligible: pool:api below the Cursor pool floor 5%
+  candidate: cursor:grok-4.7-high  provider=cursor  scope=pool:api  remaining=2%  spendPriority=-  runway=unknown  -> not eligible: pool:api below the Cursor pool floor 5%
+  candidate: cursor:mystery-model-9  provider=cursor  scope=all_models  remaining=2%  spendPriority=-  runway=unknown  -> not eligible: all_models below the Cursor pool floor 5%
+  profile: --harness 'cursor' --model 'composer-2.5'
+=== R2 only named candidate at api 2
+  status: escalate
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: cursor:claude-opus-5-thinking-high  provider=cursor  scope=pool:api  remaining=2%  spendPriority=-  runway=unknown  -> not eligible: pool:api below the Cursor pool floor 5%
+=== R3 profile all_models floor 20 on composer
+before:   status: escalate
+before:   reason: no rankable eligible candidate
+before:   note: rule matched
+before:   candidate: cursor:composer-2.5  provider=cursor  scope=all_models  remaining=2%  spendPriority=-  runway=unknown  -> not eligible: profile floor all_models below 20%
+  status: clear
+  note: rule matched
+  candidate: cursor:composer-2.5  provider=cursor  scope=pool:auto  remaining=90%  spendPriority=0.9  runway=unknown  -> eligible
+  profile: --harness 'cursor' --model 'composer-2.5'
+=== R4 profile pool:auto floor 95 rejects composer at 90
+  status: escalate
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: cursor:composer-2.5  provider=cursor  scope=pool:auto  remaining=90%  spendPriority=-  runway=unknown  -> not eligible: profile floor pool:auto below 95%
+=== R5 mixed rule floor 20: auto 90 api 10 drops named only
+  status: clear
+  note: rule matched
+  candidate: cursor:composer-2.5  provider=cursor  scope=pool:auto  remaining=90%  spendPriority=0.9  runway=unknown  -> eligible
+  candidate: cursor:claude-opus-5-thinking-high  provider=cursor  scope=pool:api  remaining=2%  spendPriority=-  runway=unknown  -> not eligible: pool:api below the Cursor pool floor 5%
+  profile: --harness 'cursor' --model 'composer-2.5'
+=== R6 mixed rule floor 20: auto 10 api 15 falls through
+  status: clear
+  note: rule rule_1 floor all_models below 20%: fall through to default
+  candidate: cursor:default  provider=cursor  scope=pool:auto  remaining=10%  spendPriority=0.1  runway=unknown  -> eligible
+  profile: --harness 'cursor' --model 'default'

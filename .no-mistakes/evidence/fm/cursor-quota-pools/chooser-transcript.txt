@@ -1,0 +1,55 @@
+### real quota-axi 0.1.69, vendor API disposable: included 90 auto 93 api 2 grok_bot 42 spend_limit 100
+[{"id":"included_usage","percentRemaining":90},{"id":"auto_usage","percentRemaining":93},{"id":"api_usage","percentRemaining":2},{"id":"spend_limit","percentRemaining":100},{"id":"grok_bot","percentRemaining":42}]
+[{"scope":"all_models","pct":2,"lim":["api_usage"]},{"scope":"grok_bot","pct":42,"lim":["grok_bot"]}]
+composer-2.5                   before: rc=0 [cursor composer-2.5]  after: rc=0 [cursor composer-2.5]
+auto                           before: rc=0 [cursor auto]  after: rc=0 [cursor auto]
+default                        before: rc=0 [cursor default]  after: rc=0 [cursor default]
+claude-opus-5-thinking-high    before: rc=0 [cursor claude-opus-5-thinking-high]  after: rc=1 [none]
+gpt-5.6-sol                    before: rc=0 [cursor gpt-5.6-sol]  after: rc=1 [none]
+gemini-3-pro                   before: rc=0 [cursor gemini-3-pro]  after: rc=1 [none]
+grok-4.7-high                  before: rc=0 [cursor grok-4.7-high]  after: rc=1 [none]
+mystery-model-9                before: rc=0 [cursor mystery-model-9]  after: rc=1 [none]
+--- included=93 auto=0 api=50 all_models=[0]
+  composer-2.5     -> none
+  claude-opus-5    -> cursor claude-opus-5
+  grok-4.7-high    -> cursor grok-4.7-high
+  mystery-9        -> none
+--- included=90 auto=93 api=5 all_models=[5]
+  composer-2.5     -> cursor composer-2.5
+  claude-opus-5    -> cursor claude-opus-5
+  grok-4.7-high    -> cursor grok-4.7-high
+  mystery-9        -> cursor mystery-9
+--- included=90 auto=93 api=4 all_models=[4]
+  composer-2.5     -> cursor composer-2.5
+  claude-opus-5    -> none
+  grok-4.7-high    -> none
+  mystery-9        -> none
+--- included=0 auto=93 api=50 all_models=[0]
+  composer-2.5     -> none
+  claude-opus-5    -> cursor claude-opus-5
+  grok-4.7-high    -> cursor grok-4.7-high
+  mystery-9        -> none
+--- included=90 auto=93 api=0 all_models=[0]
+  composer-2.5     -> cursor composer-2.5
+  claude-opus-5    -> none
+  grok-4.7-high    -> none
+  mystery-9        -> none
+--- included=50 auto=3 api=50 all_models=[3]
+  composer-2.5     -> cursor composer-2.5
+  claude-opus-5    -> cursor claude-opus-5
+  grok-4.7-high    -> cursor grok-4.7-high
+  mystery-9        -> none
+--- included=50 auto=50 api=50 all_models=[50]
+  composer-2.5     -> cursor composer-2.5
+  claude-opus-5    -> cursor claude-opus-5
+  grok-4.7-high    -> cursor grok-4.7-high
+  mystery-9        -> cursor mystery-9
+--- ranked list on live shape
+cursor composer-2.5
+--- spend_limit fully spent per vendor (used=limit), auto 93 api 50
+[0]
+[{"scope":"all_models","pct":0},{"scope":"grok_bot","pct":42}]
+composer -> cursor composer-2.5
+--- non-cursor provider with same shape must match base
+before: claude opus | after: claude opus
+api 0, composer: before=[none] after=[cursor composer-2.5]

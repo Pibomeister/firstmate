@@ -1,0 +1,11 @@
+# real quota-axi snapshot: {"included_usage":90,"auto_usage":93,"api_usage":2,"spend_limit":100,"grok_bot":28}; all_models=[2]
+composer-2.5                   HEAD[0] cursor composer-2.5                      BASE[0] cursor composer-2.5
+auto                           HEAD[0] cursor auto                              BASE[0] cursor auto
+default                        HEAD[0] cursor default                           BASE[0] cursor default
+claude-opus-5-thinking-high    HEAD[1] none                                     BASE[0] cursor claude-opus-5-thinking-high
+gpt-5.6                        HEAD[1] none                                     BASE[0] cursor gpt-5.6
+gemini-3                       HEAD[1] none                                     BASE[0] cursor gemini-3
+grok-4.7-high                  HEAD[1] none                                     BASE[0] cursor grok-4.7-high
+mystery-model-9                HEAD[1] none                                     BASE[0] cursor mystery-model-9
+# ordered fallback: named first, composer second
+cursor composer-2.5

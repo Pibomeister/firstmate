@@ -1,0 +1,5 @@
+toon bytes=    2773
+real default TOON composer-2.5 -> cursor composer-2.5
+real default TOON claude-opus-5-thinking-high -> none
+real default TOON grok-4.7-high -> none
+unmeasured spend limit, all_models unknown, composer -> none
