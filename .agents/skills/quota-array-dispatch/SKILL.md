@@ -97,9 +97,10 @@ Malformed configuration is an actionable error, not a candidate to rank around.
 Keep only candidates that meet the required reasoning class for this task (a simple bug fix versus very-difficult design).
 Never use `spendPriority` or remaining quota to silently replace that class.
 When every remaining candidate is tight, dispatch inside the strongest-reasoning class if one of those candidates can proceed.
-If none in that class can proceed, reroute to the strongest available class on another provider or account, disclose the downgrade, and never pause new work on a quota floor.
+If none in that class can proceed, reroute through the pool below to the strongest available class, reaching another provider or account when needed, disclose the downgrade, and never pause new work on a quota floor.
 The reroute pool, in order, is the matched profile array (including same provider or account candidates), the configured default profile set, then the static crewmate harness profile.
-A captain-restricted rule such as Claude-only stays restricted: when reroute would violate it, report that plainly and proceed with other work rather than overriding the rule.
+A rule's profile list alone is not a restriction: restricted means an explicit captain instruction recorded for that task or a captain-pinned account, and the pool then holds only the candidates that restriction permits.
+When no pool candidate can proceed, whether because reroute would violate a restriction or because every candidate is `exhausted_now` or blocked, the item stays queued with the reason reported and other work proceeds; never poll-loop waiting for quota or authority.
 Within each pool step, prefer the strongest reasoning class and report any class drop.
 
 ### 3. Runway feasibility floor
@@ -109,7 +110,8 @@ Read `runway` from the `quota[]` row: `through_reset` passes this generic feasib
 `exhausted_now` is zero, and `projected_exhaustion` uses the matching `exhaustion[]` row's `usableRunwaySeconds`.
 A high `spendPriority` on a nearly empty window that will exhaust soon must not route into a mid-task stall.
 Unknown or unmeasurable runway stays eligible with disclosed uncertainty and is never assumed to pass.
-When every candidate fails this floor on known evidence, dispatch the candidate with the greatest known usable runway anyway, disclose the floor breach, and never pause waiting for quota or authority.
+When every matched candidate fails this floor on known evidence, walk the reroute pool from gate 2 and dispatch its first eligible candidate that does not fail this floor, disclosing the reroute and any class drop.
+Only when the pool has no such candidate, dispatch the pool candidate with the greatest known usable runway above zero, disclose the floor breach, and never pause waiting for quota or authority.
 Do not invent a generic percentage floor, and honor an explicit captain floor for a candidate when one exists.
 
 ## Rank by spendPriority
@@ -117,7 +119,7 @@ Do not invent a generic percentage floor, and honor an explicit captain floor fo
 Among candidates that pass all three gates, first apply the optional top-level `preferred_provider` from `config/crew-dispatch.json`.
 Its schema is owned by [Crew dispatch profiles](../../../docs/configuration.md#crew-dispatch-profiles-configcrew-dispatchjson).
 Within the already matched rule or default, restrict ranking to eligible candidates of that family when any remain.
-Do not introduce other profiles, change a Claude-only rule, or override an explicit captain choice or approval requirement.
+This preference does not introduce other profiles, change a Claude-only rule, or override an explicit captain choice or approval requirement.
 Only concrete evidence that every matched preferred candidate is ineligible authorizes fallback to other families.
 Unknown quota, missing account evidence, and unrankable scalars do not establish ineligibility.
 If preferred candidates remain eligible but none can be ranked, pick the best candidate on known evidence, disclose the uncertainty, and proceed within permitted families instead of escalating or waiting.
@@ -132,7 +134,7 @@ Never treat absent, `unknown`, or unmeasurable `spendPriority` as zero or as hea
 An unknown `spendPriority` keeps the candidate eligible with disclosed uncertainty.
 Prefer known viable evidence when otherwise comparable.
 After the permitted TOON-to-JSON fallback, route to the best-evidenced eligible candidate, disclosing the uncertainty, and never hold work waiting for quota.
-If every candidate failed the runway feasibility floor, apply the greatest-known-usable-runway rule from gate 3 instead.
+If every candidate failed the runway feasibility floor, apply the all-fail rule from gate 3 instead.
 Never resolve uncertainty by treating unknown as healthy.
 Show the scalar or the literal `unknown` in the rationale; do not hide it in a score.
 
