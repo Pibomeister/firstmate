@@ -1,0 +1,28 @@
+$ FM_HOME=$LAB bin/fm-brief.sh ad-ship-gh some-proj --mode direct-PR
+scaffolded: /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.Dik8q6/data/ad-ship-gh/brief.md (ship, mode=direct-PR; replace {TASK} and {FIRSTMATE_SPEC})
+exit=
+$ FM_HOME=$LAB bin/fm-brief.sh ad-ship-forgejo some-proj --mode direct-PR --forge forgejo
+scaffolded: /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.Dik8q6/data/ad-ship-forgejo/brief.md (ship, mode=direct-PR forge=forgejo; replace {TASK} and {FIRSTMATE_SPEC})
+exit=
+$ FM_HOME=$LAB bin/fm-brief.sh ad-ship-ext some-proj --mode direct-PR --forge external
+error: forge=external needs /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.Dik8q6/config/external-review.md, the worker instructions for this home's review tool (docs/configuration.md "External review tool"); without it a worker has no way to publish except a push
+exit=
+$ FM_HOME=$LAB bin/fm-brief.sh ad-scout some-proj --scout
+scaffolded: /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.Dik8q6/data/ad-scout/brief.md (scout; replace {TASK} and {FIRSTMATE_SPEC})
+exit=
+=== ad-ship-gh rule line ===
+29:3. Use gh-axi for GitHub operations and chrome-devtools-axi for browser operations. Use agent-desktop for desktop-app E2E tests and computer use through the OS accessibility tree (`agent-desktop skills get desktop`); on macOS run `agent-desktop permissions` and escalate a denied grant to firstmate, never grant it yourself.
+count=1
+=== ad-ship-forgejo rule line ===
+29:3. Use tea for Forgejo operations and chrome-devtools-axi for browser operations. Use agent-desktop for desktop-app E2E tests and computer use through the OS accessibility tree (`agent-desktop skills get desktop`); on macOS run `agent-desktop permissions` and escalate a denied grant to firstmate, never grant it yourself.
+count=1
+=== ad-ship-ext rule line ===
+ugrep: warning: /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.Dik8q6/data/ad-ship-ext/brief.md: No such file or directory
+ugrep: warning: /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.Dik8q6/data/ad-ship-ext/brief.md: No such file or directory
+count=
+=== ad-scout rule line ===
+24:3. Use gh-axi for GitHub operations and chrome-devtools-axi for browser operations. Use agent-desktop for desktop-app E2E tests and computer use through the OS accessibility tree (`agent-desktop skills get desktop`); on macOS run `agent-desktop permissions` and escalate a denied grant to firstmate, never grant it yourself.
+count=1
+--- external forge (with disposable config/external-review.md) ---
+scaffolded: /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.Dik8q6/data/ad-ship-ext/brief.md (ship, mode=direct-PR forge=external; replace {TASK} and {FIRSTMATE_SPEC})
+29:3. Publish only through the review tool your Definition of done names, and use chrome-devtools-axi for browser operations. Use agent-desktop for desktop-app E2E tests and computer use through the OS accessibility tree (`agent-desktop skills get desktop`); on macOS run `agent-desktop permissions` and escalate a denied grant to firstmate, never grant it yourself.
