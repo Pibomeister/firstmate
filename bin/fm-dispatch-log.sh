@@ -47,8 +47,9 @@
 # exit 3 is a result to act on, not an error.
 #
 # Refuses, and writes nothing, when: the goal id is not [A-Za-z0-9._-]+; a
-# required flag is missing, empty, or only space after tab and newline folding
-# and late-mark removal; a flag value starts with `-`; an argument is unknown;
+# required flag is missing, empty, or only space after tab and newline folding;
+# `--task` or `--reason` is only a late mark, which that event would drop; a flag
+# value starts with `-`; an argument is unknown;
 # FM_DISPATCH_SLA_MINUTES is not a whole number and the subcommand reads the SLA
 # (`dispatched`, `queued`, `blocked`, `overdue`; `received` and `show` do not); or
 # `dispatched`/`queued`/`blocked` names a goal with no `received` line (all exit 1).
@@ -93,9 +94,7 @@ clean() { printf '%s' "$1" | tr '\t\r\n' '   '; }
 strip_late() { clean "$1" | sed -E 's/( late=[0-9]+m)+$//'; }
 
 has_text() {
-  local text
-  text=$(strip_late "$1")
-  case "$text" in *[![:space:]]*) return 0 ;; esac
+  case "$1" in *[![:space:]]*) return 0 ;; esac
   return 1
 }
 
@@ -205,13 +204,13 @@ case "$cmd" in
     append "$(now_epoch)" received "$goal" "$detail"
     ;;
   dispatched)
-    has_text "$task" || fail "dispatched needs --task"
+    has_text "$(strip_late "$task")" || fail "dispatched needs --task"
     detail="task=$task"
     [ -z "$note" ] || detail="$detail note=$note"
     resolve dispatched "$goal" "$detail"
     ;;
   queued|blocked)
-    has_text "$reason" || fail "$cmd needs --reason"
+    has_text "$(strip_late "$reason")" || fail "$cmd needs --reason"
     resolve "$cmd" "$goal" "reason=$reason"
     ;;
   overdue)

@@ -298,7 +298,12 @@ before=$(wc -l < "$LOG" | tr -d ' ')
 dl "$T0" dispatched g1 --task ' late=5m' >/dev/null 2>&1 && fail "a task of only a late mark was accepted"
 dl "$T0" blocked g2 --reason ' late=5m' >/dev/null 2>&1 && fail "a reason of only a late mark was accepted"
 [ "$(wc -l < "$LOG" | tr -d ' ')" = "$before" ] || fail "a late-mark-only value wrote to the ledger"
-pass "a required value of only a late mark is refused without writing"
+pass "a task or reason of only a late mark is refused without writing"
+
+dl "$T0" received late-summary --summary ' late=5m' >/dev/null || fail "a summary of only a late mark was refused"
+[ "$(dl 0 show late-summary | tail -n 1 | cut -f5)" = 'summary= late=5m' ] \
+  || fail "received changed a late mark in its summary: $(dl 0 show late-summary)"
+pass "received keeps a summary of only a late mark, since it never strips one"
 
 # Every ordering of up to three lines after `received`, with each line one minute
 # or 20 minutes after the one before, against the model the script header states.
