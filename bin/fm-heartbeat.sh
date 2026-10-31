@@ -36,6 +36,9 @@
 #     open_asks         {decisions[], inbox_unhandled}
 #   failure           null, or {reason} when the heartbeat itself failed partially
 #
+# FM_HEARTBEAT_SNAPSHOT_SCRIPT may name a replacement snapshot producer; tests
+# use it to simulate slow reads without touching the real fleet snapshot.
+#
 # bin/fm-watch.sh invokes --write once per poll under fm_run_timed; a failure
 # there must never block or kill the watcher poll.
 set -u
@@ -114,14 +117,15 @@ heartbeat_unknown() {  # <reason>
 }
 
 heartbeat_read_snapshot() {  # <dest-file>
-  local dest=$1 err rc
+  local dest=$1 err rc snapshot_sh
+  snapshot_sh="${FM_HEARTBEAT_SNAPSHOT_SCRIPT:-$SCRIPT_DIR/fm-fleet-snapshot.sh}"
   err=$(mktemp "${dest}.err.XXXXXX") || return 1
   if fm_run_timed "$FM_HEARTBEAT_SNAPSHOT_TIMEOUT" env \
     FM_ROOT_OVERRIDE="$FM_ROOT" FM_HOME="$FM_HOME" \
     FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" \
     FM_CONFIG_OVERRIDE="$CONFIG" FM_PROJECTS_OVERRIDE="$PROJECTS" \
     FM_SNAPSHOT_NOW="$HEARTBEAT_NOW" FM_SNAPSHOT_NOW_EPOCH="$HEARTBEAT_EPOCH" \
-    "$SCRIPT_DIR/fm-fleet-snapshot.sh" --json > "$dest" 2>"$err"; then
+    "$snapshot_sh" --json > "$dest" 2>"$err"; then
     rc=0
   else
     rc=$?
