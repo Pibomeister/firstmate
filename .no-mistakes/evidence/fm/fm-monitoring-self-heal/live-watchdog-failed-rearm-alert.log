@@ -1,0 +1,12 @@
+### Scenario: arm cannot start a watcher (gate refuses non-canonical FM_HOME alias /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.9uvR17) -> watchdog pages captain and persists alert
+config/wedge-alarm: command:cat >> /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.9uvR17/pages.log
+--- state/.monitor-watchdog-alert:
+at=1793408631 arm_exit=1 page=sent
+--- pages.log (captain channel):
+Firstmate watcher recovery failed for /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.9uvR17
+
+--- watchdog stderr (first line):
+watchdog: arm exited 1 without a healthy successor: watcher: FAILED - refusing to arm from a disposable validation checkout: /Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M67N3BPKRPD6ME0SSNGM24E0/bin
+--- fix: canonical home -> healthy watcher, alert retired
+watchdog: watcher healthy pid=73333
+alert present after recovery: no

@@ -1,0 +1,42 @@
+=== fm-watch-open-decisions
+1..18
+ok - absent flag emits nothing and does not fold status
+ok - oldest key surfaces once, and independent per-key backoff doubles up to its cap
+ok - keys 1 and 01 receive separate reminders and retain independent bounded backoff
+ok - tasks 1 and 01 receive separate reminders and retain independent bounded backoff
+ok - resolution stops reminders immediately and a later episode starts fresh
+ok - paused waits, verified transfers, and backlog captain holds are exempt
+ok - only explicitly keyed records with valid source timestamps are aged
+ok - quiet polls reuse the timed fold and only new status bytes are folded
+watcher: invalid open-decision reminder settings
+watcher: open-decision backoff cap is below threshold
+ok - invalid settings refuse the tick without queueing reminders
+ok - task retirement removes the timed cursor and ends reminders
+ok - the actual watcher wakes and exits on an overdue key without any recorded pane
+fm-afk-contract: quiet mode became the away posture; the quiet record is archived at /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-watch-open-decisions.coOJp1/state/afk-contracts/1793407610-superseded-1793407610.afk-contract
+ok - only away posture routes one decision at the default age
+ok - overdue decision pages and stale generation refuses route
+ok - changed away confirmation leaves the open decision to page later
+ok - claim interrupted before its page retries after the bound
+ok - real watcher pages the captain when council entrypoint is absent
+ok - real watcher still pages the captain with an invalid authority file
+ok - pending page retries when a channel becomes available
+FM_TEST_COMPLETE
+exit=0
+=== fm-monitor-watchdog
+ok - independent owner restores a stable watcher after actionable close without ack
+ok - unacknowledged actionable wake retains stable watcher coverage
+ok - independent owner reclaims a dead watch lock
+ok - healthy owner and healthy take-over retain one watcher
+ok - successful recovery retires the prior failure alert
+ok - independent owner restores watcher after TERM
+ok - missing page channel returns a typed pending result
+ok - failed rearm records pending page without claiming delivery
+ok - TERM recovery is confined to the affected home
+ok - stale beacon is replaced after the bounded stall check
+ok - configured notifier records actual success and failure
+ok - failed rearm retries a pending page after channel configuration
+exit=0
+=== fm-monitor-watchdog-manager
+ok - native manager render and uncovered status
+exit=0

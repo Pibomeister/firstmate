@@ -1,0 +1,98 @@
+### Scenario: watchdog CLI surfaces (native manager not installed in lab)
+$ fm-monitor-watchdog.sh manager-name
+firstmate-monitor-watchdog-38964752
+$ fm-monitor-watchdog.sh manager-status  (exit follows)
+manager: uncovered (unit not installed)
+exit=1
+$ render-launchd | plutil -lint -> OK
+$ fm-monitor-watchdog.sh status (before owner)
+watchdog: no live watcher with a fresh beacon
+exit=1
+
+### Scenario: watchdog restores a killed watcher
+owner pid=62871 first healthy watcher pid=63116
+$ fm-monitor-watchdog.sh status
+watchdog: watcher healthy pid=63116
+kill -KILL 63116
+restored healthy watcher pid=68168 (different from 63116)
+second owner refused: watchdog: another owner holds this home
+ exit=1
+
+### Scenario: away decision past threshold pages the captain (council entrypoint absent), never auto-decides
+away contract mode: none confirmed_epoch=1793408467
+wrote state/worker.status: needs-decision [at=1793408467] [key=api]: choose the API shape  (threshold FM_AWAY_DECISION_OVERDUE_SECS=20)
+after 10s (< threshold): claims=0 pages=0
+--- state/.away-decision-age-claims:
+worker	api	1793408467	1793408467	claiming	1793408488
+worker	api	1793408467	1793408467	page-sent	1793408488
+--- pages.log (what the captain's configured channel received):
+Away decision needs captain: worker key=api
+--- worker.status after page (decision still open, nothing appended):
+needs-decision [at=1793408467] [key=api]: choose the API shape
+away-decision council wakes in .wake-queue: 0
+0
+pages after 5 more seconds (no duplicate): 1
+
+### Scenario (adversarial): notification channel off -> page-pending, watcher survives
+--- state/.away-decision-age-claims:
+worker	api	1793408467	1793408467	claiming	1793408488
+worker	api	1793408467	1793408467	page-sent	1793408488
+a	ship	1793408468	1793408467	claiming	1793408497
+a	ship	1793408468	1793408467	page-pending	1793408497
+healthy watcher: 68168
+
+### Scenario (adversarial): failing notifier -> page-failed (not claimed sent)
+--- state/.away-decision-age-claims:
+worker	api	1793408467	1793408467	claiming	1793408488
+worker	api	1793408467	1793408467	page-sent	1793408488
+a	ship	1793408468	1793408467	claiming	1793408497
+a	ship	1793408468	1793408467	page-pending	1793408497
+b	db	1793408473	1793408467	claiming	1793408499
+b	db	1793408473	1793408467	page-failed	1793408499
+
+### Scenario (adversarial): invalid config/decision-age-authority symlink does not stop the watcher or paging
+--- state/.away-decision-age-claims:
+worker	api	1793408467	1793408467	claiming	1793408488
+worker	api	1793408467	1793408467	page-sent	1793408488
+a	ship	1793408468	1793408467	claiming	1793408497
+a	ship	1793408468	1793408467	page-pending	1793408497
+b	db	1793408473	1793408467	claiming	1793408499
+b	db	1793408473	1793408467	page-failed	1793408499
+c	x	1793408475	1793408467	claiming	1793408503
+c	x	1793408475	1793408467	page-sent	1793408503
+healthy watcher: 68168
+
+### Scenario: pending/failed pages retry after the 60s bound once a channel works
+--- state/.away-decision-age-claims:
+worker	api	1793408467	1793408467	claiming	1793408488
+worker	api	1793408467	1793408467	page-sent	1793408488
+a	ship	1793408468	1793408467	claiming	1793408497
+a	ship	1793408468	1793408467	page-pending	1793408497
+b	db	1793408473	1793408467	claiming	1793408499
+b	db	1793408473	1793408467	page-failed	1793408499
+c	x	1793408475	1793408467	claiming	1793408503
+c	x	1793408475	1793408467	page-sent	1793408503
+a	ship	1793408468	1793408467	page-sent	1793408558
+b	db	1793408473	1793408467	page-sent	1793408560
+--- pages.log:
+Away decision needs captain: worker key=api
+Away decision needs captain: c key=x
+Away decision needs captain: a key=ship
+Away decision needs captain: b key=db
+away-decision council wakes in .wake-queue: 0
+0
+--- open decisions remain in status files (none resolved by the router):
+==> /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.zi5ieR/state/a.status <==
+blocked [at=1793408468] [key=ship]: approve ship
+
+==> /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.zi5ieR/state/b.status <==
+needs-decision [at=1793408473] [key=db]: pick db
+
+==> /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.zi5ieR/state/c.status <==
+needs-decision [at=1793408475] [key=x]: choose x
+
+==> /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.zi5ieR/state/worker.status <==
+needs-decision [at=1793408467] [key=api]: choose the API shape
+
+owner stopped; healthy watcher after TERM: none
+--- watchdog.out:
