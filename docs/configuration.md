@@ -11,7 +11,7 @@ Start with the directory layout, then use the setting reference for the behavior
 | Task windows and worker tools | [Runtime backend](#runtime-backend-configbackend--fm_backend) and [harness support](#harness-support) |
 | Worker permissions, accounts, or environment | [Codex approval review](#codex-automatic-approval-review), [Claude permission mode](#claude-permission-mode-configclaude-permission-mode), [Codex permission mode](#codex-permission-mode-configcodex-permission-mode), [persistent managed-policy failover](#persistent-managed-policy-failover), [worker account pin](#worker-account-pin-configclaude-account-configpi-account), [worker tool exclusions](#worker-tool-exclusions-configcrew-exclude-tools), [worker launch environment](#worker-launch-environment-configlaunch-env-allowlist), and its [Orca environment source](#orca-environment-source-configlaunch-env-tmux-session) |
 | Backlog, preferences, and memory | [Backlog backend](#backlog-backend-taskstoml--configbacklog-backend), [captain preferences](#captain-preferences-datacaptainmd--datacaptain-sharedmd), [external memory tiers](#external-memory-tiers-memory-layering-section), [record export](#record-export-configrecord-export-root), and [startup memory budget](#startup-memory-budget-configstartup-memory-budget) |
-| Supervision and presentation | [Pi supervision branch](#pi-supervision-branch), [supervision host](#supervision-host-configsupervision-host), [warm-cache compaction](#warm-cache-compaction-configwarm-compact), [task budgets](#task-budget-enforcement-configbudget-enforcement), and [Calm preference](#calm-preference-configcalm) |
+| Supervision and presentation | [Pi supervision branch](#pi-supervision-branch), [supervision host](#supervision-host-configsupervision-host), [warm-cache compaction](#warm-cache-compaction-configwarm-compact), [early handoff trigger](#early-handoff-trigger-confighandoff-trigger), [task budgets](#task-budget-enforcement-configbudget-enforcement), and [Calm preference](#calm-preference-configcalm) |
 | Persistent secondmates | [Secondmate routes](#secondmate-routes-datasecondmatesmd) |
 | Machine-wide heavy test admission | [`fm-test-queue.sh` header](../bin/fm-test-queue.sh) |
 | Review bots on owned GitHub pull requests | [Contribution review bots](#contribution-review-bots-configcontribution-review-bots) |
@@ -97,6 +97,7 @@ Each effective `FM_HOME` contains private operational directories.
 - Captain preferences and optional shared captain preferences.
 - Learnings, backlog, briefs, scout reports, optional task status archives, and the optional per-task no-mistakes pipeline-spend ledger.
 - Explicitly installed content-addressed extension packages under `data/extensions/packages/`.
+- Failure-class records under `data/failure-classes/` ([`claim-ledger.md`](claim-ledger.md)).
 
 `state/` holds runtime records:
 
@@ -109,6 +110,7 @@ Each effective `FM_HOME` contains private operational directories.
 - Private secondmate config-reread generations with their retry and quarantine state.
 - Per-task steering-inbox records under `state/<id>.inbox/` (`bin/fm-task-inbox-lib.sh`).
 - Parent-owned secondmate pending-reply records under `state/pending-replies/` (`bin/fm-pending-reply-lib.sh`).
+- Per-task claim ledgers, `state/<id>.claims.jsonl` ([`claim-ledger.md`](claim-ledger.md)).
 
 `config/` holds local gitignored operating choices, including explicit extension bindings under `config/extensions.d/`.
 
@@ -440,6 +442,7 @@ The file may be empty or hold these lines, each optional:
 
 Blank lines and lines that start with `#` are ignored, and an unusable value keeps its default.
 Context size is the last request's `input + cache_read + cache_creation` usage in the session's transcript.
+A session has no context size between a compaction and its next request, and it is not compacted then.
 
 A session is compacted when all of these hold:
 
@@ -461,6 +464,39 @@ A compacted primary still picks up pending wakes and decisions from disk, becaus
 
 This feature does not set `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` or any other autocompact setting.
 `bin/fm-warm-compact-lib.sh` owns the guards, with coverage in [`tests/fm-warm-compact.test.sh`](../tests/fm-warm-compact.test.sh) and the opt-in live guard [`tests/fm-warm-compact-herdr-live-e2e.test.sh`](../tests/fm-warm-compact-herdr-live-e2e.test.sh).
+
+## Early handoff trigger (config/handoff-trigger)
+
+A Claude primary session receives one instruction to write its full handoff when its context left before auto-compact falls to a set percentage.
+The instruction asks the session to persist its open work records, decisions, and durable knowledge, then report that it is ready to restart, so a session can restart from a handoff instead of compacting.
+It fires at most once per context cycle: a session that auto-compacts anyway is told again before its next auto-compact.
+
+The trigger is on by default at 15% context left, wherever it can resolve the auto-compact point.
+The file is local to each home, is not inherited, and is read at every hook call, so a change needs no restart.
+It may hold these lines, each optional:
+
+- `percent-left=<n>` fires at or below `n`% context left (default 15); `0` turns the trigger off.
+- `compact-at-tokens=<n>` is the auto-compact point in tokens, used instead of the point derived from Claude's settings.
+
+Blank lines and lines that start with `#` are ignored, and an unusable value keeps its default.
+
+Context left is measured against the auto-compact point, not the model's full window, because Claude Code's status-line `remaining_percentage` reads the full window and can still show most of it free when auto-compact fires.
+Without a pinned point, the trigger derives it the way Claude Code does.
+A usable `CLAUDE_CODE_AUTO_COMPACT_WINDOW` wins.
+Otherwise the trigger walks Claude's settings layers from highest precedence to lowest: the project's `.claude/settings.local.json`, its `.claude/settings.json`, then user settings.
+The first layer that sets either a `modelSettings` entry for the session's model or a top-level `autoCompactWindow` decides, and the entry wins inside its layer.
+Per-model keys match on the canonical model name, so dated and `[1m]` spellings are the same model.
+A settings value counts only as an integer from 100000 to 1000000, or `auto` in a `modelSettings` entry; any other value counts as unset.
+The trigger also honors `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`.
+
+With no `autoCompactWindow`, or with `auto`, the trigger stays silent: the point then depends on the model's window, which hooks cannot read.
+Pin `compact-at-tokens` to cover such a home.
+Claude also caps the configured window to the model's window, which the hook cannot see, so a home on a smaller-window model must pin `compact-at-tokens`.
+A window set only in managed settings or a `--settings` launch flag also needs that pin.
+
+The trigger runs only in a genuine primary home, including a marked secondmate home, and stays inert in worker worktrees and under other harnesses that load Claude's settings.
+It never writes the handoff, compacts, or restarts the session.
+`bin/fm-handoff-trigger.sh` owns the measurement and the once-per-cycle record, with coverage in [`tests/fm-handoff-trigger.test.sh`](../tests/fm-handoff-trigger.test.sh); [runtime-backends verification](verification/runtime-backends.md#claude-early-handoff-trigger) records the Claude Code evidence.
 
 ## Backlog backend (.tasks.toml / config/backlog-backend)
 
@@ -681,18 +717,21 @@ Test cleanup must use the guarded path in [`docs/tern-backend.md`](tern-backend.
 ## Away-mode supervisor backend (FM_SUPERVISOR_BACKEND / FM_SUPERVISOR_TARGET)
 
 The `/afk` sub-supervisor injects escalation digests into firstmate's own endpoint independently of where new task endpoints are spawned.
-It supports `tmux`, `herdr`, and `rex` supervisor panes and `t3code` supervisor threads.
+It supports `tmux`, `herdr`, and `rex` supervisor panes, `orca` supervisor terminals, and `t3code` supervisor threads.
 
-Set `FM_SUPERVISOR_BACKEND=tmux|herdr|rex|t3code` and `FM_SUPERVISOR_TARGET=<target>` to override both axes explicitly.
+Set `FM_SUPERVISOR_BACKEND=tmux|herdr|rex|t3code|orca` and `FM_SUPERVISOR_TARGET=<target>` to override both axes explicitly.
 For tmux, accepted targets are `%pane-id`, `@window-id`, `session:@window-id`, a bare session, `session:window-name`, `session:index`, `session:index.pane-index`, and the supported `=session:=window` exact-marker forms; the `fm_backend_target_exists` header in `bin/fm-backend.sh` owns this grammar.
-For herdr, the target is `"<session>:<pane-id>"`; for Rex it is `<session-uuid>:<block-uuid>`, with both kind prefixes removed; and for t3code it is the thread id.
-Without overrides, backend detection uses `$TMUX_PANE` first, then `HERDR_ENV=1` with `HERDR_PANE_ID`, then `TERM_PROGRAM=rex` with both `REX_SESSION` and `REX_BLOCK`, then a cwd match over T3's live threads only when T3 Code is explicitly selected, then falls back to `tmux`.
+For herdr, the target is `"<session>:<pane-id>"`; for Rex it is `<session-uuid>:<block-uuid>`, with both kind prefixes removed; for t3code it is the thread id; and for Orca it is the `term_<uuid>` terminal handle.
+Without overrides, backend detection uses `$TMUX_PANE` first, then `HERDR_ENV=1` with `HERDR_PANE_ID`, then `TERM_PROGRAM=rex` with both `REX_SESSION` and `REX_BLOCK`, then a cwd match over T3's live threads only when T3 Code is explicitly selected, then `TERM_PROGRAM=Orca` with `ORCA_TERMINAL_HANDLE` outside Zellij, then falls back to `tmux`.
 T3 discovery requires explicit `FM_BACKEND=t3code` or `config/backend=t3code` and the `config/t3code-token` credential from the [T3 sign-in](t3code-backend.md#sign-in) under the effective config directory before making a T3 call.
 
 That keeps a nested tmux or Herdr pane on its own transport, matching the runtime backend's innermost-first rule.
-Target detection uses `FM_SUPERVISOR_TARGET`, then `$TMUX_PANE`, then `"${HERDR_SESSION:-default}:${HERDR_PANE_ID}"` under herdr, then the prefix-stripped `REX_SESSION` and `REX_BLOCK` under Rex, then the thread id from that T3 cwd match, then the legacy `firstmate:0` tmux fallback with a warning.
+Target detection uses `FM_SUPERVISOR_TARGET`, then `$TMUX_PANE`, then `"${HERDR_SESSION:-default}:${HERDR_PANE_ID}"` under herdr, then the prefix-stripped `REX_SESSION` and `REX_BLOCK` under Rex, then the thread id from that T3 cwd match, then `ORCA_TERMINAL_HANDLE` in an Orca terminal, then the legacy `firstmate:0` tmux fallback with a warning.
+An Orca home never takes that fallback: when Orca is explicitly selected, or an Orca terminal marker is inherited without Orca owning the screen, and no earlier rule resolves the endpoint, the daemon refuses at startup and names the reason.
+An Orca supervisor terminal has no native busy signal, so the daemon's busy guard reads the primary harness's rendered signature, and the shared composer guard still applies; [the Orca backend page](orca-backend.md) owns the two Orca-only holds the daemon adds to them.
+`bin/fm-afk-launch.sh start` has no non-visible Orca terminal launch, so on Orca the daemon runs as the captain harness's tracked background job through `start-native`.
 
-Selecting any other supervisor backend, including `zellij`, `orca`, `cmux`, or `tern`, refuses at daemon startup instead of trying tmux injection primitives against a non-tmux pane.
+Selecting any other supervisor backend, including `zellij`, `cmux`, or `tern`, refuses at daemon startup instead of trying tmux injection primitives against a non-tmux pane.
 
 ## Away-mode wedge alarm channels (config/wedge-alarm)
 
@@ -719,6 +758,13 @@ See [`trace-context.md`](trace-context.md) for carrier semantics, supported rout
 
 See [`fleet-ledger.md`](fleet-ledger.md) for the opt-in setup, record contract, and limits.
 
+## Claim verifier AgentKit gate (config/agentkit-gate)
+
+The optional local, gitignored `config/agentkit-gate` file holds, on its first line, the absolute path of AgentKit's `ak-gate.mjs` script.
+The claim verifier runs that script to read whether a task's AgentKit verify gate is current at its head ([`claim-ledger.md`](claim-ledger.md)).
+When the file is absent, or names no existing file, the verifier's AgentKit checks cannot verify anything, so claims that rest on them stay `unverifiable`.
+`FM_CLAIMS_AK_GATE` overrides the file for one run; the [`bin/fm-claims.sh`](../bin/fm-claims.sh) header owns the exact use.
+
 ## Firstmate role (config/firstmate-role)
 
 The optional local, gitignored `config/firstmate-role` declares this home's relationship to the firstmate repository itself.
@@ -742,7 +788,7 @@ Authority is also available for one task at a time: `--upstream-consent <host>/<
 Role is never inferred from GitHub identity, forge permissions, remotes, repository ownership, authentication state, environment, or CI.
 `bin/fm-role.sh report` prints the resolved role with no network call, and the session-start digest shows it in the HOME ROLE subsection.
 
-`bin/fm-role-lib.sh` owns the fail-closed parser, self-repository detection, and the gate that `bin/fm-brief.sh`, `bin/fm-spawn.sh`, and `bin/fm-promote.sh` apply.
+`bin/fm-role-lib.sh` owns the fail-closed parser, self-repository detection, and the gate that `bin/fm-brief.sh`, `bin/fm-spawn.sh`, `bin/fm-promote.sh`, and `bin/fm-self-heal-issue.sh` apply.
 The publication target is selected from the first configured remote whose `remote.<name>.gh-resolved` value is exactly `base`, including custom remote names, otherwise from the first configured remote in the order `upstream`, `github`, `origin`; selection is offline, and `bin/fm-role-lib.sh` owns URL and local-path normalization.
 An unreadable or URL-less marked remote is not replaced by a fallback remote, and an undeterminable target never authorizes a task, even under task consent.
 A task's project counts as the firstmate repository when it shares the code root's lineage - the same git common dir, or a root commit of the code root's history, which every fork, the parent, and any clone of either share - computed offline; undeterminable lineage (for example a shallow clone sharing no root commit) is refused, even under task consent.
@@ -3175,6 +3221,7 @@ FM_SESSION_START_STATUS_TAIL=5   # state/*.status lines printed per task in the 
 FM_SESSION_START_QUEUED_LIMIT=20   # plain queued backlog rows in the session-start digest; in-flight, held, and blocked rows are never bounded and done rows are never listed
 FM_SESSION_START_ENDPOINT_TIMEOUT=10   # seconds bounding each per-task endpoint liveness read in the session-start digest (bin/fm-session-start.sh); nonpositive or invalid values fall back to 10; a read that hits the bound or dies becomes that task's own `endpoint: error` line and the digest continues
 FM_DISPATCH_SLA_MINUTES=15   # whole minutes of the captain-goal dispatch SLA; bin/fm-dispatch-log.sh owns the ledger contract
+FM_CLAIMS_NET_TIMEOUT=20   # seconds bounding each claim-verifier network read; a read that hits it is recorded unverifiable; bin/fm-claims.sh owns the other FM_CLAIMS_* tunables
 FM_BACKLOG_ROW_TIMEOUT_SECS=10   # seconds bounding each backlog row read (bin/fm-backlog-transition-lib.sh) and the tasks-axi replay of each captain-hold Done-archive row (bin/fm-captain-hold.sh, which stops with 124 on a replay timeout); the archive scan itself is not bounded; nonpositive or invalid values fall back to 10; the first backlog read bound hit latches the sweep so later reads return immediately, each still naming its own item
 FM_BOOTSTRAP_DETECT_ONLY=0   # internal/read-only session-start mode: skip bootstrap's mutating sweeps and print advisory TANGLE wording
 FM_BOOTSTRAP_NETWORK=all   # internal session-start phase split: all, skip (local steps only), or only (network steps only); see bin/fm-bootstrap.sh
@@ -3196,7 +3243,7 @@ FM_SNAPSHOT_BUDGET=5                # one total seconds budget for all concurren
 FM_SNAPSHOT_CACHE_DIR=$FM_HOME/state/secondmate-summary-cache   # private parent-side cache of successfully fetched remote home ledgers
 FM_SNAPSHOT_UNDATED_HOLD_AGE_DAYS=14  # floored elapsed-day threshold at which an undated captain hold (no hold-until; age from its UTC hold-set timestamp, falling back to since for legacy unstamped holds) is projected as a Charted Next gate instead of a live Captain's Call; 0 applies once the computed age is non-negative
 FM_RECONCILE_REQUEST_MAX_BYTES=1048576   # maximum captured Bearings or fleet snapshot accepted for durable reconcile-notify request publication
-FM_HEARTBEAT=600        # base seconds between heartbeat scans; no-change heartbeats are absorbed while idle
+FM_HEARTBEAT=600        # base seconds between heartbeat scans; attended open work is capped at 15 minutes and wakes on no change
 FM_HEARTBEAT_MAX=7200   # heartbeat backoff cap
 FM_HEARTBEAT_SNAPSHOT_TIMEOUT=30   # seconds bounding the fleet snapshot read inside bin/fm-heartbeat.sh; invalid or zero values use 30
 FM_HEARTBEAT_READ_TIMEOUT=3        # seconds bounding each primary and per-task read inside bin/fm-heartbeat.sh; invalid or zero values use 3

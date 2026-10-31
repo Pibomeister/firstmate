@@ -449,6 +449,10 @@
       "audience": "operator-current"
     },
     {
+      "path": "docs/claim-ledger.md",
+      "audience": "operator-current"
+    },
+    {
       "path": "docs/herdr-backend.md",
       "audience": "operator-current"
     },

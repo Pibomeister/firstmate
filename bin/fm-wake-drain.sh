@@ -420,7 +420,7 @@ EOF
   fi
 }
 
-# Print still-unread informational status lines (note: answers and pending-reply
+# Print still-unread informational status lines (note: answers and reserved-key
 # resolutions) that the OPEN DECISIONS fold never carries. Uses the same
 # cursor-backed unread span as the annotation path, and runs on every drain -
 # including the empty-queue fast path - so a buried answer cannot be swallowed
@@ -457,7 +457,7 @@ EOF
 # fm-classify-lib.sh's status_open_decisions fold (via its cursor-backed
 # scan_open_decisions_incremental wrapper) rather than from the annotations
 # above, so a decision buried under later unrelated appends cannot be silently
-# missed. Informational `note:` lines and pending-reply resolutions are not
+# missed. Informational `note:` lines and reserved-key resolutions are not
 # decisions; print_unread_status_section owns their one-shot surface. Runs on
 # every drain - including the empty-queue fast path - because the decision can
 # still be open even when nothing new is queued for

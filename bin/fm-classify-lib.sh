@@ -784,7 +784,9 @@ EOF
 # into it verbatim. So without a rule here, any writer could claim a reserved
 # key with an unrelated note, take the key over in this fold, and permanently
 # block the owner's close - leaving a decision nothing will ever resolve - or
-# clear the owner's decision with a bare resolution.
+# clear the owner's decision with a bare resolution. The reserved namespaces are
+# `pending-reply-` (bin/fm-pending-reply-lib.sh) and `claim-refuted-`, the
+# blocker that reopens a task whose claim was refuted (bin/fm-claims-lib.sh).
 #
 # The rule is deliberately generic, so this fold needs no knowledge of any
 # particular owner: a reserved key may only be opened or closed by a line whose
@@ -794,7 +796,7 @@ EOF
 # consumer-side rule on purpose - it protects local and remote writers
 # identically, and it can never fail a whole delta or wedge a stream the way a
 # writer-side rejection would.
-FM_CLASSIFY_RESERVED_KEY_PREFIXES_DEFAULT='pending-reply-'
+FM_CLASSIFY_RESERVED_KEY_PREFIXES_DEFAULT='pending-reply- claim-refuted-'
 
 # 0 when <key> is not reserved, or is reserved and <note> speaks its vocabulary.
 _fm_decision_key_transition_allowed() {  # <key> <note>
@@ -940,8 +942,9 @@ EOF
 
 # The subset of status_open_decisions the task raised about its own work: a
 # reserved-namespace key is raised by a supervisor library about the task (a
-# pending-reply escalation), a `remote-reply-continuity-` key is the parent's
-# own blocker about a broken remote reply mirror
+# pending-reply escalation or a refuted-claim blocker), a
+# `remote-reply-continuity-` key is the parent's own blocker about a broken
+# remote reply mirror
 # (bin/fm-procevent-remote-reply.sh), and a `captain-hold-` key relays a child
 # decision a secondmate escalated to the captain (bin/fm-captain-hold.sh) while
 # it keeps working, so the task is not waiting on any of them. Pending-reply
@@ -1967,7 +1970,7 @@ EOF
 # prints nothing, so already-presented bytes are not replayed as new. Teardown
 # retires a task's manifest row with its status file, so reusing a task ID starts
 # the replacement log unread at byte 0. Informational `note:` lines and
-# reserved-key pending-reply resolutions are the fleet-wide unread surface;
+# reserved-key resolutions are the fleet-wide unread surface;
 # they are not open decisions and are not persisted in the folded open-set.
 
 # Read the legacy per-task open-decisions cursor used to seed the presentation
@@ -2074,8 +2077,9 @@ status_new_lines_since_cursor() {  # <status-file> [<captured-end-offset>]
 }
 
 # 0 when a status line is an informational `note:` or a reserved-key
-# pending-reply resolution. Those lines never fold into OPEN DECISIONS, so the
-# drain's unread-status surface is their only guaranteed presentation.
+# resolution, such as a pending-reply or refuted-claim close. Those lines never
+# fold into OPEN DECISIONS, so the drain's unread-status surface is their only
+# guaranteed presentation.
 status_line_is_unread_surface() {  # <status-line>
   local line=$1 verb key note resolve held prefix
   [ -n "$line" ] || return 1
@@ -2101,7 +2105,7 @@ status_line_is_unread_surface() {  # <status-line>
 }
 
 # Fleet-wide unread informational lines: one "<task>\t<status-line>" row per
-# still-unread `note:` or pending-reply resolution, in glob (task id) order.
+# still-unread `note:` or reserved-key resolution, in glob (task id) order.
 # Prints nothing when none are unread. Directory scan rejects status symlinks
 # the same way scan_open_decisions does.
 scan_unread_surface_lines() {  # <state>

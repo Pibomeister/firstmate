@@ -4528,6 +4528,62 @@ test_heartbeat_no_change_absorbed() {
   pass "a heartbeat with no captain-relevant change is absorbed and backs off the cadence"
 }
 
+test_attended_open_work_heartbeat_floor() {
+  local dir state fakebin out now mode
+  for mode in received queued task held paused closed secondmate; do
+    dir=$(make_case "attended-heartbeat-$mode")
+    state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"
+    now=$(date +%s)
+    touch "$state/.last-heartbeat"
+    set_mtime "$((now - 901))" "$state/.last-heartbeat"
+    printf '3\n' > "$state/.heartbeat-streak"
+    case "$mode" in
+      received|queued)
+        printf '2026-10-31T00:00:00Z\t%s\treceived\tgoal\tsummary=work\n' "$now" > "$state/dispatch-log.tsv"
+        [ "$mode" != queued ] || printf '2026-10-31T00:00:01Z\t%s\tqueued\tgoal\treason=waiting\n' "$now" >> "$state/dispatch-log.tsv"
+        ;;
+      task) touch "$state/ship.meta" ;;
+      held)
+        touch "$state/ship.meta"
+        printf 'captain-held: awaiting the captain on the release call\n' > "$state/ship.status"
+        printf '%s' "$(seen_sig "$state/ship.status")" > "$state/.seen-ship_status"
+        ;;
+      paused)
+        touch "$state/ship.meta"
+        printf 'paused: waiting on the upstream release\n' > "$state/ship.status"
+        printf '%s' "$(seen_sig "$state/ship.status")" > "$state/.seen-ship_status"
+        ;;
+      secondmate)
+        touch "$dir/.fm-secondmate-parent" "$state/ship.meta"
+        ;;
+      closed)
+        printf '2026-10-31T00:00:00Z\t%s\treceived\tgoal\tsummary=work\n' "$now" > "$state/dispatch-log.tsv"
+        printf '2026-10-31T00:00:01Z\t%s\tblocked\tgoal\treason=settled\n' "$now" >> "$state/dispatch-log.tsv"
+        ;;
+    esac
+    if [ "$mode" = closed ]; then
+      FM_HOME="$dir" bash -c '. "$1"; ! fm_supervision_needed "$2"' bash \
+        "$ROOT/bin/fm-supervision-lib.sh" "$state" || fail "closed goal kept supervision armed"
+    else
+      FM_HOME="$dir" bash -c '. "$1"; fm_supervision_needed "$2"' bash \
+        "$ROOT/bin/fm-supervision-lib.sh" "$state" || fail "open $mode did not need supervision"
+    fi
+    PATH="$fakebin:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$state" FM_WATCH_NOW="$now" FM_WATCH_ONCE=1 \
+      FM_POLL=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=600 "$WATCH" > "$out" \
+      || fail "watcher failed for attended heartbeat $mode"
+    case "$mode" in closed|secondmate|held|paused)
+      [ ! -s "$out" ] || fail "$mode home caused an extra heartbeat: $(cat "$out")"
+      [ ! -s "$state/.wake-queue" ] || fail "$mode home queued an extra heartbeat"
+      [ "$(cat "$state/.heartbeat-streak")" = 3 ] || fail "$mode home lost the heartbeat backoff"
+      continue ;;
+    esac
+    grep -Fx heartbeat "$out" >/dev/null || fail "open $mode did not surface heartbeat"
+    awk -F '\t' '$3 == "heartbeat" && $4 == "heartbeat" { found=1 } END { exit !found }' \
+      "$state/.wake-queue" || fail "open $mode did not queue a durable heartbeat"
+  done
+  pass "primary open goals and tasks arm and surface the heartbeat; closed, secondmate, held and paused homes retain cadence"
+}
+
 test_heartbeat_backstop_surfaces_a_masked_status() {
   local dir state fakebin out sig pid
   dir=$(make_case heartbeat-masked); state="$dir/state"; fakebin="$dir/fakebin"
@@ -5014,6 +5070,7 @@ fm_test_run \
   test_procevent_surface_crash_boundaries \
   test_procevent_marker_failure_exits_and_replays \
   test_heartbeat_no_change_absorbed \
+  test_attended_open_work_heartbeat_floor \
   test_heartbeat_backstop_surfaces_unsurfaced_status \
   test_heartbeat_backstop_surfaces_a_masked_status \
   test_afk_heartbeat_preserves_idle_accounting \

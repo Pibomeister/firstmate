@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # fm-supervisor-target-lib.sh - the single owner of supervisor-endpoint discovery.
 #
-# The away-mode daemon (bin/fm-supervise-daemon.sh) must know which pane (or,
-# on t3code, which T3 thread) runs firstmate itself, both to inject escalations
+# The away-mode daemon (bin/fm-supervise-daemon.sh) must know which pane (an
+# Orca terminal, or on t3code a T3 thread) runs firstmate itself, both to inject escalations
 # into it and, for the daemon, to validate that target at startup. The script-owned away launcher
 # (bin/fm-afk-launch.sh) must resolve the SAME captain pane BEFORE it creates a
 # separate, non-visible terminal for the daemon, so it can pass that pane in as
@@ -26,6 +26,36 @@ fm_supervisor_in_rex() {
   [ "${TERM_PROGRAM:-}" = rex ] && [ -n "${REX_SESSION:-}" ] && [ -n "${REX_BLOCK:-}" ]
 }
 
+# fm_supervisor_in_orca: this process runs directly inside an Orca terminal.
+# Orca puts TERM_PROGRAM=Orca and ORCA_TERMINAL_HANDLE, the same term_<uuid>
+# handle bin/backends/orca.sh records as a task target, into every terminal's
+# process tree. A Zellij session started in that terminal keeps both markers
+# while owning its screen, so its ZELLIJ marker disqualifies the rule.
+fm_supervisor_in_orca() {
+  [ "${TERM_PROGRAM:-}" = Orca ] && [ -n "${ORCA_TERMINAL_HANDLE:-}" ] && [ -z "${ZELLIJ:-}" ]
+}
+
+# fm_supervisor_orca_refusal: on an Orca home where no earlier rule and no Orca
+# terminal resolved the endpoint, print why and return 0, so both resolvers
+# refuse instead of handing back the tmux default, which on such a home names
+# some other tmux window or nothing. An Orca home is an explicit orca backend
+# selection (fm_backend_explicit_name) or an inherited Orca terminal marker.
+# Returns 1, printing nothing, on any other home.
+fm_supervisor_orca_refusal() {
+  local explicit=''
+  if command -v fm_backend_explicit_name >/dev/null 2>&1; then
+    explicit=$(fm_backend_explicit_name 2>/dev/null) || explicit=''
+  fi
+  if [ -n "${ORCA_TERMINAL_HANDLE:-}" ]; then
+    printf 'this process carries Orca terminal %s but does not run directly in it (TERM_PROGRAM=%s%s)' \
+      "$ORCA_TERMINAL_HANDLE" "${TERM_PROGRAM:-unset}" "${ZELLIJ:+, inside Zellij}"
+  elif [ "$explicit" = orca ]; then
+    printf 'backend orca is selected but this process runs in no Orca terminal (ORCA_TERMINAL_HANDLE is unset)'
+  else
+    return 1
+  fi
+}
+
 # discover_supervisor_target: resolve the endpoint running firstmate. Priority:
 #   1. FM_SUPERVISOR_TARGET env (explicit override) - uses the exact tmux target
 #      forms owned by bin/fm-backend.sh's fm_backend_target_exists header, a
@@ -47,7 +77,11 @@ fm_supervisor_in_rex() {
 #      - T3 puts nothing into the agent's environment, so this is a cwd match
 #      over T3's live threads, consulted only when t3code is explicitly
 #      selected and a T3 credential is configured.
-#   5. FM_SUPERVISOR_TARGET_DEFAULT - legacy tmux fallback (may not resolve if the
+#   4c. TERM_PROGRAM=Orca + $ORCA_TERMINAL_HANDLE (fm_supervisor_in_orca) - the
+#      captain's Orca terminal handle.
+#   5. On an Orca home (fm_supervisor_orca_refusal) - print nothing and return 3;
+#      the caller refuses with that function's reason.
+#   6. FM_SUPERVISOR_TARGET_DEFAULT - legacy tmux fallback (may not resolve if the
 #      session is named differently). Returns 1 so the caller can warn.
 discover_supervisor_target() {
   local t3_thread
@@ -71,6 +105,11 @@ discover_supervisor_target() {
     printf '%s' "$t3_thread"
     return 0
   fi
+  if fm_supervisor_in_orca; then
+    printf '%s' "$ORCA_TERMINAL_HANDLE"
+    return 0
+  fi
+  fm_supervisor_orca_refusal >/dev/null && return 3
   printf '%s' "$FM_SUPERVISOR_TARGET_DEFAULT"
   return 1
 }
@@ -93,7 +132,7 @@ discover_supervisor_t3code_thread() {
 
 # discover_supervisor_backend: resolve the supervisor endpoint's BACKEND, independent
 # of the target string so an explicit FM_SUPERVISOR_TARGET override still knows
-# which primitives (tmux, herdr, rex, or t3code) to dispatch through. Priority mirrors
+# which primitives (tmux, herdr, rex, t3code, or orca) to dispatch through. Priority mirrors
 # discover_supervisor_target and bin/fm-backend.sh's fm_backend_detect:
 #   1. FM_SUPERVISOR_BACKEND env (explicit override).
 #   2. $TMUX_PANE set - tmux.
@@ -101,7 +140,9 @@ discover_supervisor_t3code_thread() {
 #   4. TERM_PROGRAM=rex (with $REX_SESSION and $REX_BLOCK present) - rex.
 #   4b. A live T3 thread in this home - t3code (stderr quiet here; the target
 #      resolver reports an ambiguity once).
-#   5. FM_SUPERVISOR_BACKEND_DEFAULT (tmux) - matches the target fallback. Returns 1.
+#   4c. TERM_PROGRAM=Orca (with $ORCA_TERMINAL_HANDLE present) - orca.
+#   5. An Orca home - print nothing and return 3, matching the target resolver.
+#   6. FM_SUPERVISOR_BACKEND_DEFAULT (tmux) - matches the target fallback. Returns 1.
 discover_supervisor_backend() {
   if [ -n "${FM_SUPERVISOR_BACKEND:-}" ]; then
     printf '%s' "$FM_SUPERVISOR_BACKEND"
@@ -123,6 +164,11 @@ discover_supervisor_backend() {
     printf 't3code'
     return 0
   fi
+  if fm_supervisor_in_orca; then
+    printf 'orca'
+    return 0
+  fi
+  fm_supervisor_orca_refusal >/dev/null && return 3
   printf '%s' "$FM_SUPERVISOR_BACKEND_DEFAULT"
   return 1
 }

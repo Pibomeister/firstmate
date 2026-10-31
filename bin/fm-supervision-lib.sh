@@ -21,6 +21,17 @@ fm_sup_stat_mtime() {
   fi
 }
 
+# A primary with unresolved goal intake needs a watcher before any task exists.
+fm_sup_open_goal() {  # <state-dir>
+  local state=$1 home=${FM_HOME:-${1%/state}}
+  [ ! -e "$home/.fm-secondmate-parent" ] || return 1
+  [ -s "$state/dispatch-log.tsv" ] || return 1
+  awk -F '\t' '
+    $3 == "received" || $3 == "queued" || $3 == "dispatched" || $3 == "blocked" { latest[$4] = $3 }
+    END { for (goal in latest) if (latest[goal] == "received" || latest[goal] == "queued") exit 0; exit 1 }
+  ' "$state/dispatch-log.tsv"
+}
+
 # fm_supervision_status <state-dir> [grace-seconds]
 # Populates, for the state dir at $1:
 #   FM_SUP_IN_FLIGHT      count of state/*.meta (in-flight tasks)
@@ -35,7 +46,8 @@ fm_sup_stat_mtime() {
 #                         sweep's call at execution time, and a home whose check
 #                         no longer validates needs the watcher precisely so the
 #                         sweep can report the rejection instead of going quiet.
-#   FM_SUP_NEEDED         true/false - in-flight work, an X-mode relay poll, a
+#   FM_SUP_NEEDED         true/false - primary open goals, in-flight work,
+#                         an X-mode relay poll,
 #                         registered event source (a source is a wait on an
 #                         external process, not a task, so it has no metadata),
 #                         or a registered custom check
@@ -73,6 +85,7 @@ fm_supervision_status() {
     FM_SUP_CHECKS=$((FM_SUP_CHECKS + 1))
   done
   if [ "$FM_SUP_IN_FLIGHT" -gt 0 ] \
+    || fm_sup_open_goal "$state" \
     || [ -f "$state/x-watch.check.sh" ] \
     || [ "$FM_SUP_SOURCES" -gt 0 ] \
     || [ "$FM_SUP_CHECKS" -gt 0 ]; then

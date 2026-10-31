@@ -44,6 +44,7 @@ Hold-for-return is the default and the only reach profile this release records: 
    - **Every other harness** (codex, opencode, omp, and cursor on a home that does not run the supervision host, and kimi): run `bin/fm-afk-launch.sh start`.
      It is the single owner of the daemon terminal: on pane backends it creates a NON-VISIBLE tracked terminal and passes the captain endpoint as `FM_SUPERVISOR_TARGET` so the daemon injects into the captain, not its own new pane (docs/herdr-backend.md "Away-mode supervisor support").
      On the t3code backend there is no terminal to create, so `start` refuses and only the native path above works; a Codex captain hosted by T3 Code has no away daemon (docs/t3code-backend.md "Active limits").
+     On the Orca backend there is no non-visible terminal launch, so `start` also refuses and only the native path above works; a harness in this group has no away daemon on Orca (docs/configuration.md "Away-mode supervisor backend").
    Both daemon paths require the record `enter` wrote and share `bin/fm-afk-start.sh` as the daemon entry.
    The daemon is **presence-gated**: it injects escalations only while `state/.afk` exists, and stays quiet otherwise.
 3. **Announce, then read back after entry.**
@@ -133,6 +134,8 @@ for the supervisor's own backend (see [supervisor backend configuration](../../.
   Each adapter contributes only capture and capability facts to the fleet-wide screen classifier in `bin/fm-composer-lib.sh`, which owns every shape and verdict.
   It preserves proven idle composers as empty but requires a genuine container around shell glyphs; see `docs/herdr-backend.md` "Composer and injection safety" for the operator contract.
   `pane_input_pending` is the tested fail-closed predicate for callers that need to know whether the composer is unsafe: it treats every result except exact `empty` as pending.
+
+On Orca the daemon adds a turn hold and a draft hold to these checks; [`docs/orca-backend.md`](../../../docs/orca-backend.md) owns them.
 
 A busy primary pane, or any composer verdict other than `empty`, defers the injection; the buffered escalation survives in `state/.subsuper-escalations` and is retried on the next housekeeping tick.
 In afk mode the composer guard is belt-and-suspenders (no human is typing), but it protects against the race window between the captain returning and their message landing, a dead shell, and the daemon's own previous injection sitting unsent.
