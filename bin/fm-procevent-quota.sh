@@ -35,6 +35,8 @@
 # validator). Both watches read every matching account row independently,
 # without combining quotas. A --provider watch restricts those rows to the
 # requested provider; details preserve each row's accountKey when present.
+# A Cursor row is judged by its default model's rows (quota_provider_rows in
+# bin/fm-quota-axi-lib.sh), so a low API pool or grok_bot never fires the watch.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
