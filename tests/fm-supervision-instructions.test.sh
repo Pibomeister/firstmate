@@ -134,8 +134,11 @@ test_supervision_host_protocol_on_every_arm_owner() {
   assert_contains "$(FM_HOME="$home" FM_CONFIG_OVERRIDE="$config" "$RENDER" --harness grok --repair-line)" \
     'bin/fm-supervision-host.sh park as its own Grok tracked background task' "grok's repair line must name the host"
   hosted=$(FM_HOME="$home" FM_CONFIG_OVERRIDE="$config" "$RENDER" --harness codex)
-  assert_contains "$hosted" 'FM_CODEX_WATCH_CHECKPOINT_AWAY' "codex must learn that an away checkpoint holds longer"
-  assert_contains "$hosted" 'checkpoint: no actionable wake within' "codex must learn how the park boundary arrives"
+  assert_contains "$hosted" 'The Stop hook runs the supervision host as a detached park' "codex must learn that the Stop hook starts the host"
+  assert_contains "$hosted" 'supervision-host: cycle boundary' "codex must learn how the park boundary arrives"
+  assert_contains "$hosted" 'state/.supervision-host-park.out' "codex must learn where the park writes its close"
+  assert_not_contains "$hosted" 'FM_CODEX_WATCH_CHECKPOINT_AWAY' "codex host protocol must not send the model to an away checkpoint bound"
+  assert_not_contains "$hosted" 'Every foreground checkpoint runs the supervision host' "codex host protocol must not claim the checkpoint is the host start"
   pass "renderer gives each non-Pi arm owner the host protocol in its own terms, and grok arms the host"
 }
 
