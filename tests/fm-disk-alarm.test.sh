@@ -364,6 +364,50 @@ test_home_seed_stop_leaves_an_existing_home_alone() {
   pass "a stop leaves an existing home unaffected"
 }
 
+provision_at_level() {  # <new-home> <volume> <avail> <manifest>
+  local target=$1 volume=$2 avail=$3 manifest=$4 root
+  root=$(seed_root)
+  env \
+    FM_ROOT_OVERRIDE="$root" \
+    FM_HOME="$target" \
+    FM_TEST_SEAM=1 \
+    FM_DISK_ALARM_VOLUME="$volume" \
+    FM_DF_FIXTURE_VOLUME="$volume" \
+    FM_DF_FIXTURE_MODE=number \
+    FM_DF_FIXTURE_AVAIL="$avail" \
+    PATH="$FAKE:$PATH" \
+    "$ROOT/bin/fm-remote-home-provision.sh" < "$manifest" 2>&1
+}
+
+test_remote_provision_stop_gates_only_a_new_home() {
+  local parent volume target manifest out rc
+  parent="$TMP_ROOT/remote-parent"
+  volume="$TMP_ROOT/remote-volume"
+  target="$parent/home"
+  manifest="$TMP_ROOT/remote.manifest"
+  mkdir -p "$parent" "$volume"
+  printf 'schema=fm-remote-home-provision.v1\nid_b64=%s\ncharter_b64=%s\nparent_host_b64=%s\nproject_count=0\n' \
+    "$(printf disk-alarm | base64 | tr -d '\n')" \
+    "$(printf 'Disk alarm charter.\n' | base64 | tr -d '\n')" \
+    "$(printf parent-host | base64 | tr -d '\n')" > "$manifest"
+  rc=0
+  out=$(provision_at_level "$target" "$volume" 4194304 "$manifest") || rc=$?
+  [ "$rc" = 1 ] || fail "stop provision: expected exit 1, got $rc"$'\n'"$out"
+  assert_contains "$out" "disk-alarm: STOP " "a stop must refuse a new remote home"
+  assert_absent "$target" "a refused provision must not create a home"
+  [ -z "$(find "$parent" -mindepth 1 -maxdepth 1 -name '.fm-home-provisioning.*' -print -quit)" ] \
+    || fail "a refused provision must not leave a staging directory"
+  rc=0
+  out=$(provision_at_level "$target" "$volume" 9437184 "$manifest") || rc=$?
+  [ "$rc" = 0 ] || fail "pause provision: expected exit 0, got $rc"$'\n'"$out"
+  [ -f "$target/.fm-secondmate-home" ] || fail "a pause must still provision a new home"
+  rc=0
+  out=$(provision_at_level "$target" "$volume" 4194304 "$manifest") || rc=$?
+  [ "$rc" = 0 ] || fail "stop reprovision of an existing home: expected exit 0, got $rc"$'\n'"$out"
+  assert_not_contains "$out" "disk-alarm:" "an existing remote home must not read the alarm"
+  pass "a stop refuses a new remote home before staging and leaves an existing home alone"
+}
+
 test_suite_default_does_not_read_the_host_volume() {
   local marker="$TMP_ROOT/default-df-called" out rc
   rc=0
@@ -421,6 +465,7 @@ fm_test_run \
   test_home_seed_stop_does_not_lease \
   test_home_seed_stop_does_not_clone_a_new_home \
   test_home_seed_stop_leaves_an_existing_home_alone \
+  test_remote_provision_stop_gates_only_a_new_home \
   test_suite_default_does_not_read_the_host_volume \
   test_dispatch_resolve_prints_the_alarm_and_stays_off \
   test_nm_driving_block_names_the_lane_gate

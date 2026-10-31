@@ -896,6 +896,7 @@ The script's header owns the report line, the published document's fields, the v
 `bin/fm-disk-alarm.sh` owns the free-space reading on `/System/Volumes/Data` and the launch gates that reading drives.
 Crew-dispatch prints that reading, and a fresh ship or scout launch refuses before it creates anything when the gate refuses.
 `bin/fm-home-seed.sh` refuses a new treehouse lease or a new local clone home the same way, and an existing home is not gated.
+`bin/fm-remote-home-provision.sh` refuses a new home on the receiving host the same way, and an existing home is not gated.
 A refusal places the work on another host or cloud.
 
 ## PR-ready line after green (config/ready-after-green)
