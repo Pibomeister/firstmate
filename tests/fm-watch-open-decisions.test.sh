@@ -225,18 +225,21 @@ test_away_age_route() {
   FM_AFK_MODE=away bash "$ROOT/bin/fm-afk-contract.sh" enter --words 'away test' >/dev/null
   away_decision_age_tick 2799
   [ "$(count_wakes)" = 0 ] || fail 'away decision routed before default 30 minutes'
-  away_decision_age_tick 2800
-  [ "$(count_wakes)" = 1 ] || fail 'away decision did not route at 30 minutes'
+  FM_WEDGE_ALARM_CHANNEL=off away_decision_age_tick 2800
+  grep -q 'page-pending' "$STATE/.away-decision-age-claims" || fail 'away decision did not retain a pending page at 30 minutes'
+  [ "$(count_wakes)" = 0 ] || fail 'absent council entrypoint queued a wake'
   away_decision_age_tick 2801
-  [ "$(count_wakes)" = 1 ] || fail 'same decision generation routed twice'
+  [ "$(count_wakes)" = 0 ] || fail 'same decision generation queued a wake'
   rm -f -- "$STATE/.afk-contract"
   FM_AFK_MODE=away bash "$ROOT/bin/fm-afk-contract.sh" enter --words 'new away session' >/dev/null
   away_decision_age_tick 2802
-  [ "$(count_wakes)" = 1 ] || fail 'same decision generation rerouted in a new away session'
+  [ "$(count_wakes)" = 0 ] || fail 'same decision generation queued a wake in a new away session'
   printf 'blocked [at=1050] [key=followup]: choose again\n' > "$STATE/second.status"
   printf 'second\tfollowup\t1050\troutine\n' >> "$CONFIG/decision-age-authority"
-  away_decision_age_tick 2850
-  [ "$(count_wakes)" = 2 ] || fail 'claimed oldest decision hid a later due decision'
+  FM_WEDGE_ALARM_CHANNEL=off away_decision_age_tick 2850
+  [ "$(grep -c 'page-pending' "$STATE/.away-decision-age-claims")" = 2 ] \
+    || fail 'claimed oldest decision hid a later due decision'
+  [ "$(count_wakes)" = 0 ] || fail 'second decision queued a council wake'
   pass 'only away posture routes one decision at the default age'
 }
 
@@ -284,8 +287,8 @@ SH
   pass 'authority is rechecked before any route'
 }
 
-test_away_watcher_loop() {
-  local dir="$TMP_ROOT/away-watcher-loop" pid i=0
+test_missing_council_entrypoint_pages() {
+  local dir="$TMP_ROOT/missing-council"
   mkdir -p "$dir/state" "$dir/config"
   fm_test_track_watcher_state "$dir/state"
   printf 'needs-decision [at=1000] [key=api]: choose\n' > "$dir/state/worker.status"
@@ -293,18 +296,16 @@ test_away_watcher_loop() {
   FM_HOME="$dir" FM_STATE_OVERRIDE="$dir/state" FM_CONFIG_OVERRIDE="$dir/config" \
     FM_AFK_MODE=away bash "$ROOT/bin/fm-afk-contract.sh" enter --words 'away test' >/dev/null
   FM_HOME="$dir" FM_STATE_OVERRIDE="$dir/state" FM_CONFIG_OVERRIDE="$dir/config" \
-    FM_POLL=1 bash "$ROOT/bin/fm-watch.sh" > "$dir/out" 2> "$dir/err" &
-  pid=$!
-  while [ "$i" -lt 100 ] && kill -0 "$pid" 2>/dev/null; do sleep 0.1; i=$((i + 1)); done
-  if kill -0 "$pid" 2>/dev/null; then
-    kill "$pid" 2>/dev/null || true
-    wait "$pid" 2>/dev/null || true
-    fail 'real watcher did not route an aged away decision'
+    FM_WATCH_NOW=2800 FM_WATCH_ONCE=1 FM_WEDGE_ALARM_CHANNEL=off \
+    bash "$ROOT/bin/fm-watch.sh" > "$dir/out" 2> "$dir/err" \
+    || fail "real watcher failed: $(cat "$dir/err")"
+  grep -F $'worker\tapi\t1000\t' "$dir/state/.away-decision-age-claims" | grep -F $'page-pending\t' >/dev/null \
+    || fail 'missing council entrypoint did not retain a pending captain page'
+  if [ -f "$dir/state/.wake-queue" ]; then
+    ! grep -F 'away-decision:worker:api:1000' "$dir/state/.wake-queue" >/dev/null \
+      || fail 'missing council entrypoint queued a council wake'
   fi
-  wait "$pid" || fail "real away watcher failed: $(cat "$dir/err")"
-  grep -F 'check: away decision council pending: worker key=api age=' "$dir/out" >/dev/null \
-    || fail 'real watcher did not publish the away route'
-  pass 'real watcher publishes one pending away route'
+  pass 'real watcher pages on routine authority when council entrypoint is absent'
 }
 
 test_away_page_retries_after_channel_configured() {
@@ -328,5 +329,5 @@ fm_test_run test_disabled test_oldest_and_backoff test_numeric_keys_are_distinct
   test_wait_exemptions test_unknown_times_and_keyless test_timed_fold_is_incremental \
   test_invalid_settings test_timed_cursor_retirement test_watcher_loop \
   test_away_age_route test_away_age_page_and_staleness \
-  test_away_authority_change_refuses_route test_away_watcher_loop \
-  test_away_page_retries_after_channel_configured
+  test_away_authority_change_refuses_route \
+  test_missing_council_entrypoint_pages test_away_page_retries_after_channel_configured
