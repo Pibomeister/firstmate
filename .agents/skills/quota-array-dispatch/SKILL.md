@@ -100,6 +100,7 @@ When every remaining candidate is tight, dispatch inside the strongest-reasoning
 If none in that class can proceed, reroute through the pool below to the strongest available class, reaching another provider or account when needed, disclose the downgrade, and never pause new work on a quota floor.
 The reroute pool, in order, is the matched profile array (including same provider or account candidates), the configured default profile set, then the static crewmate harness profile.
 A rule's profile list alone is not a restriction: restricted means an explicit captain instruction recorded for that task or a captain-pinned account, and the pool then holds only the candidates that restriction permits.
+A rule with `approval: "captain"` still escalates: never wait on quota, but never reroute around a captain approval.
 When no pool candidate can proceed, whether because reroute would violate a restriction or because every candidate is `exhausted_now`, blocked, or known to be below an explicit captain floor, the item stays queued with the reason reported and other work proceeds; never poll-loop waiting for quota or authority.
 The strongest reasoning class wins across pool steps, and the earliest step breaks ties within a class.
 Within that step, rank eligible candidates under [Rank by spendPriority](#rank-by-spendpriority), break `spendPriority` ties by greater known runway, and never pick by array order.
@@ -113,7 +114,7 @@ Read `runway` from the `quota[]` row: `through_reset` passes this generic feasib
 A high `spendPriority` on a nearly empty window that will exhaust soon must not route into a mid-task stall.
 Unknown or unmeasurable runway stays eligible with disclosed uncertainty and is never assumed to pass.
 When every matched candidate fails this floor on known evidence, walk the reroute pool from gate 2 and dispatch an eligible candidate that does not fail this floor, choosing by gate 2's class and step order and disclosing the reroute and any class drop.
-Only when the pool has no such candidate, dispatch the eligible pool candidate with the greatest known usable runway above zero, disclose the floor breach, and never pause waiting for quota or authority.
+Only when the pool has no such candidate, dispatch from the strongest eligible class in the pool, using the greatest known usable runway above zero only within that class, disclose the floor breach and any class drop, and never pause waiting for quota or authority.
 Do not invent a generic percentage floor.
 An explicit captain floor is a floor the captain recorded as an instruction for that task; a configured rule or profile `floor` stays a hint.
 An explicit captain floor outranks the greatest-runway rule: a candidate known to be below it is never dispatched, and gate 2's queued outcome applies when no other pool candidate can proceed.
@@ -123,7 +124,7 @@ An explicit captain floor outranks the greatest-runway rule: a candidate known t
 Among candidates that pass all three gates, first apply the optional top-level `preferred_provider` from `config/crew-dispatch.json`.
 Its schema is owned by [Crew dispatch profiles](../../../docs/configuration.md#crew-dispatch-profiles-configcrew-dispatchjson).
 Within the already matched rule or default, restrict ranking to eligible candidates of that family when any remain.
-This preference does not introduce other profiles, change a Claude-only rule, or override an explicit captain choice or approval requirement.
+Do not introduce other profiles, change a Claude-only rule, or override an explicit captain choice or approval requirement.
 Only concrete evidence that every matched preferred candidate is ineligible authorizes fallback to other families.
 Unknown quota, missing account evidence, and unrankable scalars do not establish ineligibility.
 If preferred candidates remain eligible but none can be ranked, pick among those preferred candidates on known evidence, disclose the uncertainty, and proceed without switching families, escalating, or waiting.
