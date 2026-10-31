@@ -76,6 +76,12 @@ Plain-text captures degrade a glyph row carrying trailing text to `unknown` rath
 The watcher has no native Orca busy signal, so each harness adapter's semantic lifecycle supplies worker state.
 Grok alone retains its isolated rendered-tail fallback.
 
+The away-mode daemon can supervise the captain's own Orca terminal; [supervisor backend configuration](configuration.md#away-mode-supervisor-backend-fm_supervisor_backend--fm_supervisor_target) owns its detection and refusal.
+The daemon treats a `timeout` from `orca terminal wait --for tui-idle` as busy for the captain terminal, because a live Claude turn can render frames with no spinner row.
+The daemon also holds an alert while the read result has a non-empty `draft`, because Orca lifts typed text out of `tail` into that field.
+`draft` also carries Claude's ghost prompt suggestion, and Orca exposes nothing that separates the two, so the home's tracked `.claude/settings.json` sets `CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false` to keep a Claude captain's composer free of ghosts.
+Limitation: a captain session that started before that setting existed, or with suggestions forced back on by a higher-precedence setting, still holds alerts in the buffer until the captain acts or the wedge alarm fires.
+
 Cleanup keeps all shared Firstmate safety checks.
 A scout still requires its report and completed decision inventory.
 A ship still refuses dirty or unlanded work.
@@ -133,6 +139,7 @@ The [Orca environment source](configuration.md#orca-environment-source-configlau
 tests/fm-backend-orca.test.sh
 tests/fm-spawn-orca-worktree.test.sh
 tests/fm-control.test.sh
+tests/fm-daemon.test.sh
 tests/fm-backend.test.sh
 tests/fm-bootstrap.test.sh
 tests/fm-teardown-endpoint-safety.test.sh
