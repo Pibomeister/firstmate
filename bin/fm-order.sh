@@ -77,7 +77,7 @@
 # captain handle. The handle is read from state/captain-handle at send time,
 # never cached by a sender: each captain session records its own terminal there
 # at session start (`claim-handle`, run by bin/fm-session-start.sh on a locked
-# start), so the newest captain always wins. The doorbell rings only when the
+# start and by bin/fm-sessionstart-run.sh on a lock owner's resume), so the newest captain always wins. The doorbell rings only when the
 # terminal is alive and its composer is proven empty; any other composer state
 # defers it, so a draft is never overwritten. The order file and the wake carry
 # the order either way. Nudge outcomes print as
@@ -93,8 +93,9 @@
 # as handing off. `gate` reads the recorded document and exits 0 only when it
 # names every open order id; otherwise it exits 3 naming the missing ids,
 # including when this session recorded no handoff or the document is gone.
-# `claim-handle` at session start clears the record, so a document written by
-# an earlier session never satisfies a later session's gate. Enforcement:
+# `claim-handle` clears the record whenever the lock owner opens a new context
+# (startup, resume, clear, or compact), so a document written before it never
+# satisfies a later context's gate. Enforcement:
 #   - bin/fm-handoff-trigger.sh, as a Claude Stop hook, runs `gate` once the
 #     session is handing off - the early handoff trigger fired in its context
 #     cycle, or it ran `handoff --doc` (stow, a restart, or percent-left=0) -

@@ -839,10 +839,9 @@ else
     printf '(no queued wakes)\n'
   fi
   # A new captain session records its own terminal as the handle senders
-  # resolve at send time (bin/fm-order.sh owns the handle and order contract).
-  if [ "$REEMIT" -eq 0 ]; then
-    FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" "$SCRIPT_DIR/fm-order.sh" claim-handle >/dev/null 2>&1 || true
-  fi
+  # resolve at send time, and a clear or compact starts a new context that has
+  # written no handoff yet (bin/fm-order.sh owns the handle and order contract).
+  FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" "$SCRIPT_DIR/fm-order.sh" claim-handle >/dev/null 2>&1 || true
 fi
 # Durable captain orders still open are this session's to pick up; the list is
 # read-only, so a read-only session sees it too (bin/fm-order.sh pickup).
