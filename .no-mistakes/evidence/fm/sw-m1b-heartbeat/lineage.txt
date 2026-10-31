@@ -1,0 +1,6 @@
+99d8dd10 is ancestor of HEAD
+main 4b216ace is ancestor of HEAD
+c7db13d8 1c08e3b4 4b216ace merge: integrate origin/main into fm/sw-m1b-heartbeat (keep 99d8dd10 ancestry for no-mistakes)
+e29571d0 01214be6 9ab452ca Merge pull request #6 from Pibomeister/fix/firstmate-codex-supervision-fork
+f4061c74 edfdc461 38d6451b Merge pull request #9 from Pibomeister/fm/fm-fork-upstream-sync
+99d8dd10 fix(heartbeat): ambiguous transcript and shared window_key (AK P1)

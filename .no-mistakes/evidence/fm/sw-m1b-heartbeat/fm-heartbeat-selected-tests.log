@@ -1,0 +1,10 @@
+ok - two Claude transcripts since spawn blank only transcript-derived fields
+ok - a remote task is unknown even when its worktree path exists locally
+ok - a failed snapshot read sets failure without guessing task rows
+ok - a slow snapshot read is bounded and recorded as failure
+ok - a run past its deadline publishes unread tasks as unknown
+ok - TERM during a task read publishes the whole task list with unknown markers
+ok - the next run removes what a SIGKILLed run left
+ok - a watcher poll does not wait for a slow heartbeat
+ok - the watcher keeps polling with one detached heartbeat in flight, which still publishes
+exit=0
