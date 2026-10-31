@@ -1,0 +1,17 @@
+{"a":"{\"type\":\"hook_additional_context\",\"content\":[\"<EXTREMELY_IMPORTANT>\\nYou have superpowers.\\n\\n**Below is the full content of your 'superpowers:using-superpowers' skill - your introduction to using skills. For all other skills, use"}
+{"u":58098,"m":""}
+{"a":"{\"type\":\"hook_additional_context\",\"content\":[\"Firstmate early handoff trigger, from this home's tracked Claude hook: about 13% of context is left before auto-compact (58098 of 67000 tokens). Write your full session handoff now, be"}
+{"u":73930,"m":""}
+{"b":{"trigger":"auto","preTokens":80243,"postTokens":21014,"cumulativeDroppedTokens":59229,"durationMs":11917,"preservedSegment":{"headUuid":"f037ee14-e7de-431d-84ec-9a77421dc6fa","anchorUuid":"413c5fbb-f554-4e56-ab72-318b716e15ea","tailUuid":"0be74e74-900b-407c-b651-0c88069a8712"},"preservedMessages":{"anchorUuid":"413c5fbb-f554-4e56-ab72-318b716e15ea","uuids":["f037ee14-e7de-431d-84ec-9a77421dc6fa","a925690d-235b-4e49-8a0a-4577c9cafb64","28b83ced-ae4c-4de2-ac19-08b690948763","7d07f9d5-9879-45cf-98b0-0907bc923cee","fc66f7d9-2250-4da8-b20c-c5a66a2828d8","0be74e74-900b-407c-b651-0c88069a8712"],"allUuids":["f037ee14-e7de-431d-84ec-9a77421dc6fa","a925690d-235b-4e49-8a0a-4577c9cafb64","28b83ced-ae4c-4de2-ac19-08b690948763","3bb61f3e-c728-4081-91a2-3039d0bcdd52","7d07f9d5-9879-45cf-98b0-0907bc923cee","fc66f7d9-2250-4da8-b20c-c5a66a2828d8","dbf876a4-ff86-46a9-82cc-ac8340618cfc","0be74e74-900b-407c-b651-0c88069a8712"]}}}
+{"a":"{\"type\":\"hook_additional_context\",\"content\":[\"<EXTREMELY_IMPORTANT>\\nYou have superpowers.\\n\\n**Below is the full content of your 'superpowers:using-superpowers' skill - your introduction to using skills. For all other skills, use"}
+{"u":75524,"m":""}
+{"a":"{\"type\":\"hook_additional_context\",\"content\":[\"Firstmate early handoff trigger, from this home's tracked Claude hook: about 0% of context is left before auto-compact (75524 of 67000 tokens). Write your full session handoff now, bef"}
+{"b":{"trigger":"auto","preTokens":82293,"postTokens":15537,"cumulativeDroppedTokens":125985,"durationMs":19681}}
+{"a":"{\"type\":\"hook_additional_context\",\"content\":[\"<EXTREMELY_IMPORTANT>\\nYou have superpowers.\\n\\n**Below is the full content of your 'superpowers:using-superpowers' skill - your introduction to using skills. For all other skills, use"}
+{"u":60513,"m":""}
+{"a":"{\"type\":\"hook_additional_context\",\"content\":[\"Firstmate early handoff trigger, from this home's tracked Claude hook: about 9% of context is left before auto-compact (60513 of 67000 tokens). Write your full session handoff now, bef"}
+{"b":{"trigger":"auto","preTokens":67292,"postTokens":14959,"cumulativeDroppedTokens":178318,"durationMs":11707}}
+{"a":"{\"type\":\"hook_additional_context\",\"content\":[\"<EXTREMELY_IMPORTANT>\\nYou have superpowers.\\n\\n**Below is the full content of your 'superpowers:using-superpowers' skill - your introduction to using skills. For all other skills, use"}
+{"u":59774,"m":""}
+{"a":"{\"type\":\"hook_additional_context\",\"content\":[\"Firstmate early handoff trigger, from this home's tracked Claude hook: about 10% of context is left before auto-compact (59774 of 67000 tokens). Write your full session handoff now, be"}
+{"u":0,"m":""}

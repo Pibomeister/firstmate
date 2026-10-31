@@ -1,0 +1,8 @@
+silent15 rc=0 tools=2 last_tokens=58392 delivered=0 marker=[]
+pct99auto rc=0 tools=2 last_tokens=58371 delivered=0 marker=[]
+pct99key1m rc=0 tools=2 last_tokens=58980 delivered=1 marker=[1793444446 tokens=58051 compact_at=87000 ]
+pct99env rc=0 tools=2 last_tokens=58489 delivered=1 marker=[1793444447 tokens=58039 compact_at=97000 ]
+pct99k rc=0 tools=2 last_tokens=58413 delivered=1 marker=[1793444445 tokens=58036 compact_at=217000 ]
+pct0 rc=0 tools=2 last_tokens=58378 delivered=0 marker=[]
+pin rc=0 tools=2 last_tokens=59446 delivered=1 marker=[1793444455 tokens=58936 compact_at=500000 ]
+crewwt rc=0 tools=2 last_tokens=58632 delivered=0 marker=[]

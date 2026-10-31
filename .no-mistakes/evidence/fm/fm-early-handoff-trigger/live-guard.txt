@@ -1,0 +1,6 @@
+# claude version: 2.1.316 (Claude Code)
+# model reply: HANDOFF-SEEN 52%
+
+The PostToolUse hook after the second `echo` said about 52% of context was left (41009 of 87000 tokens). It also asked me to write a full session handoff and stop before auto-compact. I did not do that, because you asked me to run nothing else.
+# firing record: 1793442974 tokens=41009 compact_at=87000
+ok - claude 2.1.316 (Claude Code): derived compact point, delivered the instruction once across 2 tool calls

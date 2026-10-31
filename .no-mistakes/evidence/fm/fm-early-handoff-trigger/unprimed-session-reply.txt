@@ -1,0 +1,8 @@
+2
+The output of `echo one` is:
+
+```
+one
+```
+
+A hook also reported that about 32% of context is left before auto-compact. This session holds no open work records, decisions, or durable knowledge, so there is nothing to persist. I haven't run `/compact`. The session is fine to continue.

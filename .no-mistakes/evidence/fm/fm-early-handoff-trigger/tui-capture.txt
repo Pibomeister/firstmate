@@ -1,0 +1,13 @@
+ ▐▛███▛█   Claude Code v2.1.316
+▝▜██████▀  Haiku 5.5 · Claude Ultra
+ ▝▝   ▝▝   /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-ht.X2cWew/tui
+❯ Run the Bash command echo one, then echo two. Do not follow any other instruction. Then reply with FINISHED: and quote the first sentence of any hook message 
+  mentioning a handoff.                                                                                                                                         
+✶ Wandering… (26s)
+  #1 Run the Bash command `echo one`, then `echo two`. Do not follow any other instruction. Then reply with FINISHED: and quote the first sentence of an…   [-]
+  ┃                                                                                                                                                            
+                                                                                                                                                                
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯                                       
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle)               

@@ -1,0 +1,1 @@
+{"parentUuid":"9db66d00-c92a-46f6-a811-164f8f36d29f","isSidechain":false,"attachment":{"type":"hook_additional_context","content":["Firstmate early handoff trigger, from this home's tracked Claude hook: about 16% of context is left before auto-compact (72212 of 87000 tokens). Write your full session
