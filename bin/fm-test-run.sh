@@ -382,6 +382,7 @@ family_for_basename() {
     fm-pr-state-live-e2e.test.sh|\
     fm-sessionstart-hook-live-e2e.test.sh|fm-sessionstart-instruction-refresh-live-e2e.test.sh|\
     fm-task-budget-live-e2e.test.sh|\
+    fm-handoff-trigger-live-e2e.test.sh|\
     fm-supervision-host-live-e2e.test.sh|fm-supervision-host-attended-live-e2e.test.sh|\
     fm-host-mirror-live-e2e.test.sh|\
     fm-quota-array-dispatch-live-e2e.test.sh|fm-send-secondmate-marker-herdr-e2e.test.sh|\
@@ -1591,6 +1592,10 @@ families_for_changed_path() {
     bin/fm-task-budget.sh|bin/fm-task-budget.py)
       printf '%s\n' '__script__:fm-task-budget.test.sh'
       printf '%s\n' '__script__:fm-task-budget-live-e2e.test.sh'
+      ;;
+    bin/fm-handoff-trigger.sh)
+      printf '%s\n' '__script__:fm-handoff-trigger.test.sh'
+      printf '%s\n' '__script__:fm-handoff-trigger-live-e2e.test.sh'
       ;;
     bin/fm-watch*|bin/fm-classify-lib.sh)
       printf '%s\n' watcher-wake-lock

@@ -11,7 +11,7 @@ Start with the directory layout, then use the setting reference for the behavior
 | Task windows and worker tools | [Runtime backend](#runtime-backend-configbackend--fm_backend) and [harness support](#harness-support) |
 | Worker permissions, accounts, or environment | [Codex approval review](#codex-automatic-approval-review), [Claude permission mode](#claude-permission-mode-configclaude-permission-mode), [Codex permission mode](#codex-permission-mode-configcodex-permission-mode), [persistent managed-policy failover](#persistent-managed-policy-failover), [worker account pin](#worker-account-pin-configclaude-account-configpi-account), [worker tool exclusions](#worker-tool-exclusions-configcrew-exclude-tools), [worker launch environment](#worker-launch-environment-configlaunch-env-allowlist), and its [Orca environment source](#orca-environment-source-configlaunch-env-tmux-session) |
 | Backlog, preferences, and memory | [Backlog backend](#backlog-backend-taskstoml--configbacklog-backend), [captain preferences](#captain-preferences-datacaptainmd--datacaptain-sharedmd), [external memory tiers](#external-memory-tiers-memory-layering-section), [record export](#record-export-configrecord-export-root), and [startup memory budget](#startup-memory-budget-configstartup-memory-budget) |
-| Supervision and presentation | [Pi supervision branch](#pi-supervision-branch), [supervision host](#supervision-host-configsupervision-host), [warm-cache compaction](#warm-cache-compaction-configwarm-compact), [task budgets](#task-budget-enforcement-configbudget-enforcement), and [Calm preference](#calm-preference-configcalm) |
+| Supervision and presentation | [Pi supervision branch](#pi-supervision-branch), [supervision host](#supervision-host-configsupervision-host), [warm-cache compaction](#warm-cache-compaction-configwarm-compact), [early handoff trigger](#early-handoff-trigger-confighandoff-trigger), [task budgets](#task-budget-enforcement-configbudget-enforcement), and [Calm preference](#calm-preference-configcalm) |
 | Persistent secondmates | [Secondmate routes](#secondmate-routes-datasecondmatesmd) |
 | Machine-wide heavy test admission | [`fm-test-queue.sh` header](../bin/fm-test-queue.sh) |
 | Review bots on owned GitHub pull requests | [Contribution review bots](#contribution-review-bots-configcontribution-review-bots) |
@@ -461,6 +461,30 @@ A compacted primary still picks up pending wakes and decisions from disk, becaus
 
 This feature does not set `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` or any other autocompact setting.
 `bin/fm-warm-compact-lib.sh` owns the guards, with coverage in [`tests/fm-warm-compact.test.sh`](../tests/fm-warm-compact.test.sh) and the opt-in live guard [`tests/fm-warm-compact-herdr-live-e2e.test.sh`](../tests/fm-warm-compact-herdr-live-e2e.test.sh).
+
+## Early handoff trigger (config/handoff-trigger)
+
+A Claude primary session receives one instruction to write its full handoff when its context left before auto-compact falls to a set percentage.
+The instruction asks the session to persist its open work records, decisions, and durable knowledge, then report that it is ready to restart, so a session can restart from a handoff instead of compacting.
+It fires at most once per Claude session.
+
+The trigger is on by default at 15% context left.
+The file is local to each home, is not inherited, and is read at every hook call, so a change needs no restart.
+It may hold these lines, each optional:
+
+- `percent-left=<n>` fires at or below `n`% context left (default 15); `0` turns the trigger off.
+- `compact-at-tokens=<n>` is the auto-compact point in tokens, used instead of the point derived from Claude's settings.
+
+Blank lines and lines that start with `#` are ignored, and an unusable value keeps its default.
+
+Context left is measured against the auto-compact point, not the model's full window, because Claude Code's status-line `remaining_percentage` reads the full window and can still show most of it free when auto-compact fires.
+Without a pinned point, the trigger derives it from the `autoCompactWindow` in Claude's user and project settings, preferring a `modelSettings` entry for the session's model, and honors `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`.
+Without `autoCompactWindow` (or with `auto`), the point depends on the model's window, which hooks cannot read, so the trigger stays silent until the home pins `compact-at-tokens`.
+A window set only in managed settings or a `--settings` launch flag also needs that pin.
+
+The trigger runs only in a genuine primary home, including a marked secondmate home, and stays inert in worker worktrees and under other harnesses that load Claude's settings.
+It never writes the handoff, compacts, or restarts the session.
+`bin/fm-handoff-trigger.sh` owns the measurement and the once-per-session record, with coverage in [`tests/fm-handoff-trigger.test.sh`](../tests/fm-handoff-trigger.test.sh); [runtime-backends verification](verification/runtime-backends.md#claude-early-handoff-trigger) records the Claude Code evidence.
 
 ## Backlog backend (.tasks.toml / config/backlog-backend)
 

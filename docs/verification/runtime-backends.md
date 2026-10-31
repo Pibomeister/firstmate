@@ -50,6 +50,43 @@ The deliberately tiny test stop line proves the stop path, without establishing 
 This live evidence covers tmux; other runtime combinations retain the existing control plane's capability and proof limits.
 [`fm-task-budget.sh`](../../bin/fm-task-budget.sh) owns counter and state mechanics, and [the configuration reference](../configuration.md#task-budget-enforcement-configbudget-enforcement) owns operator mode selection.
 
+## Claude early handoff trigger
+
+Verified on 2026-10-31 on macOS arm64 with Claude Code 2.1.314, jq 1.7.1-apple, and Bash 5.3.
+These facts back `bin/fm-handoff-trigger.sh` and [its configuration](../configuration.md#early-handoff-trigger-confighandoff-trigger).
+
+How Claude Code exposes context left, read from the installed 2.1.314 bundle:
+
+- Hook payloads carry `session_id`, `transcript_path`, and `hook_event_name`, but no context-window field.
+- The status-line input carries `context_window` with `used_percentage` and `remaining_percentage`, computed as `round(tokens / context_window_size * 100)`, where `context_window_size` is the model's window and `autoCompactWindow` does not change it.
+- The auto-compact point is `W - 13000`, where `W = window - min(max output, 20000)` and `window` is `autoCompactWindow` when settings set it; `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` lowers it to that share of `W`.
+  The TUI's "% until auto-compact" figure is `round((point - tokens) / point * 100)`.
+- A background summary starts earlier, at `min(0.8 W, W - 13000)` by default, and the swap happens at the point above.
+
+So the status-line `remaining_percentage` is not context left before auto-compact.
+With a 1M-token model and `autoCompactWindow` 250000, compaction fires near 217000 tokens while the status line still reads about 78% remaining.
+Auto-compact records in transcripts written on such a session showed `trigger=auto` with `preTokens` between 216839 and 219170 across ten compactions, against the derived point of 217000.
+
+The opt-in live guard refreshes the end-to-end path:
+
+```sh
+FM_HANDOFF_TRIGGER_LIVE_E2E=1 bash tests/fm-handoff-trigger-live-e2e.test.sh
+```
+
+It runs one headless Haiku session with the hook on PostToolUse and UserPromptSubmit, `autoCompactWindow` 120000, and `percent-left=99`, and makes two tool calls.
+Selected output from the successful guard:
+
+```text
+# claude version: 2.1.314 (Claude Code)
+# model reply: HANDOFF-SEEN 52%
+# firing record: 1793426517 tokens=41046 compact_at=87000
+ok - claude 2.1.314 (Claude Code): derived compact point, delivered the instruction once across 2 tool calls
+```
+
+Claude records a delivered instruction as one `hook_additional_context` attachment, and the model can report its content.
+Primed by the guard's prompt to follow no other instruction, the model called the context tool-result content and did not act on it, so the instruction names its source.
+The guard does not prove that an unprimed session writes its handoff.
+
 ## Codex model catalog max validation
 
 Verified on 2026-10-27 with codex-cli 0.162.1 on macOS arm64.
