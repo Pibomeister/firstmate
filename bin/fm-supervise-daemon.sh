@@ -226,7 +226,8 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 # Supervisor backends this daemon knows how to inject into today. rex goes
 # through the same dispatcher primitives as herdr (bin/backends/rex.sh). orca
 # has no native busy primitive, so its terminal gets the rendered primary-harness
-# busy guard and the shared composer guard through bin/backends/orca.sh. zellij,
+# busy guard and the shared composer guard, plus the turn and draft holds in
+# bin/backends/orca.sh (docs/orca-backend.md owns why). zellij,
 # cmux, paseo, and tern are real backends elsewhere in firstmate
 # (bin/fm-backend.sh) but this daemon has no verified composer/busy primitives
 # wired up for them yet - see docs/herdr-backend.md and AGENTS.md section 4's

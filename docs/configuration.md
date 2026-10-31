@@ -692,7 +692,7 @@ T3 discovery requires explicit `FM_BACKEND=t3code` or `config/backend=t3code` an
 That keeps a nested tmux or Herdr pane on its own transport, matching the runtime backend's innermost-first rule.
 Target detection uses `FM_SUPERVISOR_TARGET`, then `$TMUX_PANE`, then `"${HERDR_SESSION:-default}:${HERDR_PANE_ID}"` under herdr, then the prefix-stripped `REX_SESSION` and `REX_BLOCK` under Rex, then the thread id from that T3 cwd match, then `ORCA_TERMINAL_HANDLE` in an Orca terminal, then the legacy `firstmate:0` tmux fallback with a warning.
 An Orca home never takes that fallback: when Orca is explicitly selected, or an Orca terminal marker is inherited without Orca owning the screen, and no earlier rule resolves the endpoint, the daemon refuses at startup and names the reason.
-An Orca supervisor terminal has no native busy signal, so the daemon's busy guard reads the primary harness's rendered signature, and the shared composer guard applies unchanged.
+An Orca supervisor terminal has no native busy signal, so the daemon's busy guard reads the primary harness's rendered signature, and the shared composer guard still applies; [the Orca backend page](orca-backend.md) owns the two Orca-only holds the daemon adds to them.
 `bin/fm-afk-launch.sh start` has no non-visible Orca terminal launch, so on Orca the daemon runs as the captain harness's tracked background job through `start-native`.
 
 Selecting any other supervisor backend, including `zellij`, `cmux`, or `tern`, refuses at daemon startup instead of trying tmux injection primitives against a non-tmux pane.
