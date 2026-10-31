@@ -49,19 +49,41 @@ if [ "${1:-}" = daemon ]; then
   esac
   exit 0
 fi
-case "${FAKE_NM_MODE:-none}" in
+head=${FAKE_NM_HEAD:-abc1234}
+if [ "$#" = 1 ] && [ "$1" = axi ]; then
+  [ -z "${FAKE_NM_OVERVIEW_FAIL:-}" ] || exit 1
+  case "${FAKE_NM_MODE:-none}" in
+    run) rows="01RUN,fm/hb-task,running,$head,\"\"" ;;
+    sibling) rows="01RUN,fm/older-sibling,running,$head,\"\"" ;;
+    terminal) rows="01OLD,fm/hb-task,completed,$head,\"\"" ;;
+    parked) rows="01OLD,fm/hb-task,running,$head,\"\"" ;;
+    newer-failed) rows="01NEW,fm/hb-task,failed,$head,\"\"
+01RUN,fm/hb-task,running,$head,\"\"" ;;
+    competing) rows="01NEW,fm/hb-task,running,$head,\"\"
+01RUN,fm/hb-task,running,$head,\"\"" ;;
+  esac
+  count=$(printf '%s\n' "$rows" | wc -l | tr -d ' ')
+  printf 'count: %s of %s total\nruns[%s]{id,branch,status,head,pr}:\n' "$count" "$count" "$count"
+  printf '%s\n' "$rows" | sed 's/^/  /'
+  exit 0
+fi
+detail_mode=${FAKE_NM_MODE:-none}
+case "$detail_mode" in newer-failed|competing) detail_mode=run ;; esac
+if [ "${4:-}" = 01NEW ]; then detail_mode=newer-detail; fi
+if [ "${3:-}" = --run ] && [ -n "${FAKE_NM_RUN_FAIL:-}" ]; then exit 1; fi
+case "$detail_mode" in
   none)
     printf 'current_branch: fm/hb-task\nruns_on_current_branch: 0\n'
     ;;
   run|sibling)
     branch=fm/hb-task
-    [ "$FAKE_NM_MODE" = run ] || branch=fm/older-sibling
+    [ "$detail_mode" = run ] || branch=fm/older-sibling
     cat <<EOF
 run:
   id: "01RUN"
   branch: $branch
   status: running
-  head: "${FAKE_NM_HEAD:-abc1234}"
+  head: "$head"
   pr: ""
   findings: none
   steps[2]{step,status,findings,duration_ms}:
@@ -72,18 +94,14 @@ run:
 EOF
     [ -z "${FAKE_NM_SYNC:-}" ] || printf 'branch_sync:\n  state: %s\n' "$FAKE_NM_SYNC"
     ;;
-  terminal|parked)
-    status=completed
-    [ "$FAKE_NM_MODE" = terminal ] || status=awaiting_approval
-    cat <<EOF
-run:
-  id: "01OLD"
-  branch: fm/hb-task
-  status: $status
-  head: "${FAKE_NM_HEAD:-abc1234}"
-  pr: ""
-  findings: none
-EOF
+  terminal)
+    printf 'run:\n  id: "01OLD"\n  branch: fm/hb-task\n  status: completed\n  head: "%s"\n' "$head"
+    ;;
+  parked)
+    printf 'run:\n  id: "01OLD"\n  branch: fm/hb-task\n  status: running\n  awaiting_agent: parked 1h\n  head: "%s"\n' "$head"
+    ;;
+  newer-detail)
+    printf 'run:\n  id: "01NEW"\n  branch: fm/hb-task\n  status: failed\n  head: "%s"\n' "$head"
     ;;
   ungated)
     printf "error: repo not initialized (run 'no-mistakes init' first)\n"
@@ -216,9 +234,50 @@ test_no_mistakes_run_is_parsed_from_real_status() {
   assert_ledger "$home" '.tasks[0].no_mistakes_run == {run_id:"01RUN",step:"review",active:true}' \
     "active run was not published"
   publish "$home" FAKE_NM_MODE=sibling
-  assert_ledger "$home" '.tasks[0].no_mistakes_run.unknown == true' \
+  assert_ledger "$home" '.tasks[0].no_mistakes_run == null' \
     "a run on another branch was attributed to this task"
   pass "no_mistakes_run reads the real status shape and refuses a sibling branch's run"
+}
+
+test_selection_owner_decides_the_run() {
+  local home head
+  home=$(make_home nm-select)
+  head=$(git -C "$home/projects/ship" rev-parse HEAD)
+  publish "$home" FAKE_NM_MODE=newer-failed "FAKE_NM_HEAD=$head"
+  assert_ledger "$home" '.tasks[0].no_mistakes_run == {run_id:"01NEW",step:null,active:false}' \
+    "an older live run hid a newer failure"
+  publish "$home" FAKE_NM_MODE=competing "FAKE_NM_HEAD=$head"
+  assert_ledger "$home" '
+    (.tasks[0].no_mistakes_run.reason | test("competing live runs"))
+    and (.failure.reason | test("competing live runs"))
+  ' "competing live runs were not reported as unknown"
+  publish "$home" FAKE_NM_MODE=run FAKE_NM_OVERVIEW_FAIL=1
+  assert_ledger "$home" '.tasks[0].no_mistakes_run.unknown == true and (.failure.reason | test("overview exit"))' \
+    "a failed overview read was not unknown with a failure"
+  publish "$home" FAKE_NM_MODE=run FAKE_NM_RUN_FAIL=1
+  assert_ledger "$home" '.tasks[0].no_mistakes_run.unknown == true and (.failure.reason | test("01RUN unreadable"))' \
+    "a failed selected-run read was not unknown with a failure"
+  pass "fm_nm_select_run chooses the run, and an unusable choice reads as unknown"
+}
+
+test_run_head_check_is_bounded() {
+  local home head real_git fake
+  home=$(make_home nm-head-bound)
+  head=$(git -C "$home/projects/ship" rev-parse HEAD)
+  git -C "$home/projects/ship" -c user.name=t -c user.email=t@example.invalid commit -q --allow-empty -m next
+  real_git=$(command -v git)
+  fake="$TMP_ROOT/hanging-git"
+  mkdir -p "$fake"
+  cat > "$fake/git" <<SH
+#!/usr/bin/env bash
+case "\$*" in *merge-base*) sleep 30 ;; esac
+exec "$real_git" "\$@"
+SH
+  chmod +x "$fake/git"
+  publish "$home" FAKE_NM_MODE=terminal "FAKE_NM_HEAD=$head" FM_HEARTBEAT_READ_TIMEOUT=1 "PATH=$fake:$PATH"
+  assert_ledger "$home" '.tasks[0].no_mistakes_run.unknown == true and (.failure.reason | test("run head timed out"))' \
+    "a hung head check was not bounded and recorded"
+  pass "a hung run head check is bounded, unknown, and sets failure"
 }
 
 test_settled_run_binds_only_on_worktree_head() {
@@ -255,9 +314,14 @@ test_daemon_answer_qualifies_executing_run() {
   assert_ledger "$home" '.tasks[0].no_mistakes_run | .run_id == "01RUN" and .active.unknown == true' \
     "a pipeline-owned run did not bind with an unknown live claim"
   publish "$home" FAKE_NM_MODE=run FAKE_NM_DAEMON=hang FM_HEARTBEAT_NM_TIMEOUT=1
-  assert_ledger "$home" '.tasks[0].no_mistakes_run == {run_id:"01RUN",step:"review",active:true}' \
-    "an unanswered probe dropped a live run"
-  pass "only an answered daemon-down suppresses an executing run's live claim"
+  assert_ledger "$home" '
+    .tasks[0].no_mistakes_run == {run_id:"01RUN",step:"review",active:true}
+    and (.failure.reason | test("daemon status timed out"))
+  ' "an unanswered probe dropped a live run or left failure null"
+  publish "$home" FAKE_NM_MODE=parked "FAKE_NM_HEAD=$head" FAKE_NM_DAEMON=stopped
+  assert_ledger "$home" '.tasks[0].no_mistakes_run | .run_id == "01OLD" and .active.unknown == true' \
+    "a parked run claimed to be live with its daemon down"
+  pass "only an answered daemon-down suppresses an active run's live claim"
 }
 
 test_failed_status_is_unknown_not_no_run() {
@@ -639,6 +703,8 @@ SH
 
 test_ledger_schema_and_clean_run
 test_no_mistakes_run_is_parsed_from_real_status
+test_selection_owner_decides_the_run
+test_run_head_check_is_bounded
 test_settled_run_binds_only_on_worktree_head
 test_daemon_answer_qualifies_executing_run
 test_failed_status_is_unknown_not_no_run
@@ -662,4 +728,4 @@ test_stale_work_dir_is_swept
 test_watcher_poll_does_not_wait_for_heartbeat
 test_watcher_runs_one_heartbeat_at_a_time
 
-printf 'ok - %s tests passed\n' 24
+printf 'ok - %s tests passed\n' 26
