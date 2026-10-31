@@ -96,7 +96,8 @@ Malformed configuration is an actionable error, not a candidate to rank around.
 
 Keep only candidates that meet the required reasoning class for this task (a simple bug fix versus very-difficult design).
 Never use `spendPriority` or remaining quota to silently replace that class.
-When every remaining candidate is tight, dispatch inside the strongest-reasoning class if one of those candidates can proceed, or stop and report that the strongest-class choice cannot proceed rather than downgrading it to spend or conserve quota.
+When every remaining candidate is tight, dispatch inside the strongest-reasoning class if one of those candidates can proceed.
+If none in that class can proceed, reroute to the best available candidate on another provider or account, report the reroute and any reasoning-class drop plainly, and never pause or downgrade silently solely to spend or conserve quota.
 
 ### 3. Runway feasibility floor
 
@@ -134,7 +135,8 @@ Do not compare headroom against runway by hand.
 Do not use pace or signed reserve as a later tie-break layer.
 Do not read `aheadWindowIds`, `behindWindowIds`, `onPaceWindowIds`, `limitingWindowIds`, or other window-id lists to reconstruct what `spendPriority` already computed.
 
-Genuine ties: stop and report every tied candidate for captain choice.
+Genuine ties on spendPriority: break them with stated evidence, preferring higher known usable runway and then higher known effectivePercentRemaining when runway still ties.
+Report the tie-break criterion and chosen candidate plainly.
 Do not select by array order, harness name, or another arbitrary identity ordering.
 Report duplicate concrete profiles as a configuration error.
 
