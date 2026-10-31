@@ -2967,9 +2967,14 @@ away_decision_age_tick() {  # [now-epoch]
   local now=${1:-} threshold=${FM_AWAY_DECISION_OVERDUE_SECS:-1800}
   local record="$STATE/.afk-contract" confirmed exclude f task open key verb opened note
   local due_task='' due_key='' due_opened='' claim_file claim_lock
-  local page_result page_state current=0
+  local page_result page_state current=0 record_error
   away_record_present || return 0
-  fm_afk_contract_validate "$record" || return 1
+  if ! record_error=$(fm_afk_contract_validate "$record" 2>&1); then
+    # Archive may remove the record after the presence check above.
+    away_record_present || return 0
+    printf '%s\n' "$record_error" >&2
+    return 1
+  fi
   case "$threshold" in ''|0*|*[!0-9]*) echo 'watcher: invalid away decision threshold' >&2; return 1 ;; esac
   [ "${#threshold}" -le 9 ] || return 1
   [ -n "$now" ] || fm_epoch_seconds_to now

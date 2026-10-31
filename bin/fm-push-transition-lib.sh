@@ -236,6 +236,7 @@ wake() {
     # The managed owner keeps this watcher alive after delivery. Its recovery
     # check must not re-announce the same still-queued wake on the next poll.
     if [ "${FM_WATCH_MANAGED_HOLD:-}" = 1 ]; then
+      # shellcheck disable=SC2034 # Read by the sourcing fm-watch.sh after wake returns.
       FM_MANAGED_WAKE_DELIVERED=1
     fi
   else
