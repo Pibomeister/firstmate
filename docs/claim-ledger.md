@@ -11,7 +11,8 @@ Claims are read only from the task's own status log, `state/<task>.status`.
 A line in another task's log never counts, even when it quotes or echoes this task's words.
 The verifier never reads a mate's chat or terminal text.
 When a line carries a `corr=<16 hex>` correlation token from a marked firstmate request, the token is kept as part of the claim's evidence, the same correlation rule [`bin/fm-pending-reply-lib.sh`](../bin/fm-pending-reply-lib.sh) applies to secondmate replies.
-A line whose text starts with a supervisor token, `pending-reply-` or `claim-refuted-`, is never a claim, and a scout's `done:` carries none.
+The verifier's own `claim-refuted-` blockers are never claims.
+A scout's `done:` carries none, and neither does a `done:` written before a scout was promoted to a ship.
 The evidence pointer names the status log as it was when the claim was judged; cleanup may later archive or remove that log, and `line_sha256` still identifies the exact line.
 
 ## Files
@@ -31,7 +32,7 @@ Every claim record carries these members:
 | Member | Meaning |
 | ------ | ------- |
 | `v` | Record format version, currently `1`. |
-| `id` | Claim id: 16 lowercase hex characters derived from the task, the status line's number and bytes, and the kind, so the same claim keeps the same id on every scan. |
+| `id` | Claim id: 16 lowercase hex characters derived from the task, its launch generation, the status line's number and bytes, and the kind, so the same claim keeps the same id on every scan and a reused task id starts fresh. |
 | `checked_at` | Unix time in seconds when this verdict was recorded. |
 | `task` | The task id whose status log holds the claim. |
 | `mate` | Who made the claim: the task id of the worker or second mate that writes that status log. |
@@ -41,7 +42,7 @@ Every claim record carries these members:
 | `spawn_gen` | The task's launch generation from its metadata, or `null`; it tells a reused task id's claims apart. |
 | `time` | Unix time the claim was made, from the status line's `[at=<epoch>]` stamp, or `null` when the line has none. |
 | `kind` | One of the claim kinds below. |
-| `claim` | The status line's text after its first colon, on one line, with secret-shaped tokens replaced by `[redacted]`, capped at 200 characters. |
+| `claim` | The status line's text after its first colon, on one line, with secret-shaped tokens replaced by `[redacted]`, capped at 200 characters; `reason`, `subject.pr`, and every `observed` string get the same treatment. |
 | `evidence` | Pointer to the claim: `{"source":"status","path":"state/<task>.status","line":<n>,"line_sha256":"<hex>","corr":<token or null>}`. |
 | `subject` | What the claim is about: `{"sha":<commit or null>,"branch":<name or null>,"pr":<URL or null>}`. |
 | `verdict` | `verified`, `refuted`, or `unverifiable`. |
@@ -61,22 +62,24 @@ Readers must ignore members they do not recognize, so later versions can add mem
 A claim's current verdict is its newest record.
 `verified` and `refuted` are final for that claim id, except for `alive`.
 An `unverifiable` claim may be checked again later and gain a newer record, up to the attempt limit in `bin/fm-claims.sh`.
-An `alive` claim is judged again on every scan while its line is the newest status line, and gains a record only when its verdict changes.
+An `alive` claim is judged again on every scan while its line is the newest mate line, and gains a record only when its verdict changes.
+A mate line is a `working:`, `paused:`, `done:`, `blocked:`, or `needs-decision:` line other than the verifier's own blockers.
 A trust score that treats `unverifiable` as a failure reads the newest record, so a later `verified` replaces an earlier `unverifiable`.
 
 ## Claim kinds
 
-| Kind | The mate claims | Carried by | Checked against |
-| ---- | --------------- | ---------- | --------------- |
-| `committed` | Its work is committed on its branch. | A ship `done:` that hands work over before any PR exists (the no-mistakes handoff, or local-only delivery), or a line saying `committed <sha>`. | `git` in the task's local copy, or its project clone once the copy is gone: the commit exists on the task branch; for a `done:`, the branch is ahead of its base and, while that line is the newest, the local copy is clean. |
-| `pushed` | Its commit is on the forge. | A ship `done:` that reports a PR or a published change, any direct-PR `done:`, or a line saying `pushed`. | The task's custody gate in [`bin/fm-dod-lib.sh`](../bin/fm-dod-lib.sh), then the forge's branch head through `gh api` (or `git ls-remote` off GitHub), which must contain the commit. |
-| `tests-green` | Its tests or CI pass. | A `done: PR <url> checks green`, or a line saying tests, checks, or CI passed. | `gh pr checks` for the PR, else the branch's no-mistakes run at the local copy's head through [`bin/fm-nm-run-lib.sh`](../bin/fm-nm-run-lib.sh), else a current AgentKit super-verify record at that head. |
-| `pr-opened` | It opened a PR. | A line naming a PR URL with `opened` or `created`. | `gh pr view`: the PR exists and its head branch is the task branch. |
-| `pr-ready` | Its PR is ready for review. | A PR-reporting `done:`, or a line naming a PR URL with `ready`. | `gh pr view`: open or merged, not a draft, on the task branch, and in direct-PR mode at the local copy's head. |
-| `order` | It followed its orders. | A ship `done:` that reports delivery. | The mechanical rules recognized in the task's instructions, checked against the task's actions, plus a current AgentKit super-verify record for everything the rules cannot read. |
-| `alive` | It is working or deliberately waiting. | The newest status line, when it is `working:` or `paused:`. | The agent endpoint, the age of the newest terminal output the monitor saw, CPU use by processes in the task's local copy, and the age of the oldest unread steering message. |
+| Kind | The mate claims |
+| ---- | --------------- |
+| `committed` | Its work is committed on its branch. |
+| `pushed` | Its commit is on the forge. |
+| `tests-green` | Its tests or CI pass. |
+| `pr-opened` | It opened a PR. |
+| `pr-ready` | Its PR is ready for review. |
+| `order` | It followed its orders. |
+| `alive` | It is working or deliberately waiting. |
 
-`tests-green`, `pr-ready`, `order`, and `alive` describe the present, so they are judged only while their line is the newest line of that kind; for `alive`, the newest status line.
+The header of [`bin/fm-claims.sh`](../bin/fm-claims.sh) owns which status lines carry each kind and how each kind is checked.
+`tests-green`, `pr-ready`, `order`, and `alive` describe the present, so they are judged only while their line is the newest line of that kind; for `alive`, the newest mate line.
 A superseded present-tense claim that was never judged is skipped rather than judged against later work.
 `committed`, `pushed`, and `pr-opened` describe facts that stay true, so they are judged whenever they are first seen.
 A line that hedges its claim - for example with `will`, `before`, `until`, `not`, or `pending` - yields no free-text claim.
@@ -91,9 +94,11 @@ A `refuted` verdict has three durable consequences, written in this order:
 3. A failure-class occurrence is appended to `data/failure-classes/claim-refuted-<kind>.jsonl`, recording whether the reopen happened.
 
 The `claim-refuted-` key namespace is reserved to the claim verifier by the status fold in [`bin/fm-classify-lib.sh`](../bin/fm-classify-lib.sh), so a bare `resolved` line from the mate does not clear it.
-It closes when the task reports a new terminal result, which is itself a new claim the verifier checks; when firstmate answers it with `fm-send --resolve-key claim-refuted-<id>`; or when firstmate runs `bin/fm-claims.sh clear`.
+The reservation is a vocabulary rule, not authentication: a writer that copies the close words can still close the blocker.
+It closes when the task reports a new terminal result, which is itself a new claim the verifier checks; when firstmate answers it with `fm-send --resolve-key claim-refuted-<id>`; when firstmate runs `bin/fm-claims.sh clear`; or, for an `alive` claim, when a later scan reads the agent alive again.
 Closing the blocker leaves the refuted record in the ledger.
-When the task's status log no longer exists, the reopen is skipped and the occurrence records that.
+When the task's status log no longer exists, or a newer mate `working:`, `paused:`, or `done:` line arrived while the claim was being judged, the reopen is skipped and the occurrence records that.
+When the blocker cannot be appended, the occurrence is withheld; every scan first finishes each refuted claim whose occurrence is missing.
 
 ## Failure-class records
 
@@ -130,5 +135,6 @@ Example:
 - Claim text comes from status lines, which should hold no secrets; the verifier still replaces secret-shaped tokens and stores no command output, but give the ledger the same trust you give `state/`.
 - Free-text claim recognition is deliberately narrow: a claim the patterns do not recognize is simply not recorded.
 - An `order` check reads only the rules its patterns recognize; everything else needs a current AgentKit super-verify record at the head, or the claim stays `unverifiable`.
+- An AgentKit record that carries notes, such as a marker-only record, never counts as proof.
 - The AgentKit checks run only when the home names its AgentKit gate script ([`docs/configuration.md`](configuration.md) owns `config/agentkit-gate`); without it they cannot verify anything.
 - Writes are plain appends under a per-task lock, with no forced flush to disk, so a machine crash can lose the newest records.

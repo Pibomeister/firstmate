@@ -8,7 +8,9 @@
 # (FM_CLASSIFY_RESERVED_KEY_PREFIXES_DEFAULT in bin/fm-classify-lib.sh): a line
 # keyed in it opens or closes the decision only when its note begins with a
 # `claim-refuted-...:` token, so a bare `resolved` from the mate cannot clear
-# it. Side-effect free: sourcing defines functions only.
+# it. The reservation is a vocabulary rule, not authentication: a writer that
+# copies these words can still close the blocker. Side-effect free: sourcing
+# defines functions only.
 
 # 0 when <claim-id> is a ledger claim id: 16 lowercase hex characters.
 fm_claims_id_valid() {  # <claim-id>

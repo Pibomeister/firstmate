@@ -1970,7 +1970,7 @@ EOF
 # prints nothing, so already-presented bytes are not replayed as new. Teardown
 # retires a task's manifest row with its status file, so reusing a task ID starts
 # the replacement log unread at byte 0. Informational `note:` lines and
-# reserved-key pending-reply resolutions are the fleet-wide unread surface;
+# reserved-key resolutions are the fleet-wide unread surface;
 # they are not open decisions and are not persisted in the folded open-set.
 
 # Read the legacy per-task open-decisions cursor used to seed the presentation
@@ -2105,7 +2105,7 @@ status_line_is_unread_surface() {  # <status-line>
 }
 
 # Fleet-wide unread informational lines: one "<task>\t<status-line>" row per
-# still-unread `note:` or pending-reply resolution, in glob (task id) order.
+# still-unread `note:` or reserved-key resolution, in glob (task id) order.
 # Prints nothing when none are unread. Directory scan rejects status symlinks
 # the same way scan_open_decisions does.
 scan_unread_surface_lines() {  # <state>

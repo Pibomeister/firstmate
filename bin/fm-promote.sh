@@ -29,6 +29,9 @@
 # is a project fact rather than a per-task decision, so promotion takes it from
 # there instead of asking firstmate to remember it.
 # no-mistakes-prod-only is a registry policy rather than a task mode and is refused.
+# The meta also records promoted_status_lines=, the status log's line count at
+# promotion, so the claim verifier (bin/fm-claims.sh) never reads a scout-time
+# done: line as a ship claim.
 # A scout spawned on a named base records base_branch= in its meta; promotion
 # keeps that base as the ship's starting point and pull-request target, and
 # refuses a mode that cannot carry one (bin/fm-dod-lib.sh fm_base_branch_valid).
@@ -399,9 +402,12 @@ fi
 BRIEF_REPLACEMENT=
 
 TMP="$STATE/.$ID.meta.promote.${BASHPID:-$$}"
-grep -v -e '^kind=' -e '^mode=' -e '^yolo=' -e '^branch=' -e '^upstream_consent=' "$META" > "$TMP"
+grep -v -e '^kind=' -e '^mode=' -e '^yolo=' -e '^branch=' -e '^upstream_consent=' -e '^promoted_status_lines=' "$META" > "$TMP"
+PROMOTED_STATUS_LINES=0
+[ ! -f "$STATE/$ID.status" ] || PROMOTED_STATUS_LINES=$(awk 'END { print NR }' "$STATE/$ID.status" 2>/dev/null) || PROMOTED_STATUS_LINES=0
 {
   echo "kind=ship"
+  echo "promoted_status_lines=${PROMOTED_STATUS_LINES:-0}"
   echo "mode=$MODE"
   echo "yolo=$YOLO"
   echo "branch=$BRANCH"
