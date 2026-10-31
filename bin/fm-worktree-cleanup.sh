@@ -3,12 +3,13 @@
 #
 # One decision line per linked worktree, and one line for each main checkout
 # the scan sees. A main checkout is never removed. A worktree that a task record
-# (worktree= or home= in any local home's state/*.meta), a Treehouse pool, or
-# Orca owns is reported and left in place, so its owner stays responsible for
-# it. When task records or an installed Orca cannot be read, the worktree is
-# reported and left in place. A worktree with a live process whose working
-# directory is inside it is skipped. When that scan cannot be completed, the
-# worktree is reported and left in place.
+# (worktree= or home= in any local home's state/*.meta) or a Treehouse pool owns,
+# or that has a live Orca terminal, is reported and left in place. So is a
+# worktree whose path contains another registered worktree, because removing it
+# would destroy that worktree before its own checks run. When task records or an
+# installed Orca cannot be read, the worktree is reported and left in place. A
+# worktree with a live process whose working directory is inside it is skipped.
+# When that scan cannot be completed, the worktree is reported and left in place.
 # Uncommitted tracked changes and non-ignored untracked files are reported
 # and left in place. Ignored files, including private .env, .work, and .omc
 # files, do not block removal. Decision lines name the worktree and the
@@ -18,10 +19,11 @@
 # of those decides. A worktree whose HEAD is not an ancestor of that pull
 # request's head commit is reported and left in place. A head commit that is
 # missing locally is fetched from origin's refs/pull/<n>/head, and a worktree is
-# reported and left in place when that fetch does not produce it. No branch is
-# deleted.
-# Removal is `git worktree remove`, never with --force, followed by
-# `git worktree prune`. A refusal is reported.
+# reported and left in place when that fetch does not produce it.
+# Removal is `git worktree remove`, or `orca worktree rm` for a worktree Orca
+# lists so that its list stays correct, never with --force, followed by
+# `git worktree prune`. A refusal is reported. This script deletes no branch.
+# `orca worktree rm` can delete a local branch that Orca proves is merged.
 # --dry-run prints the same decisions and does not remove, prune, or move the
 # cursor. It can still fetch a missing pull request head.
 #
@@ -331,21 +333,39 @@ load_task_paths() {
   mv -f -- "$out.new" "$out"
 }
 
-load_orca_paths() {
-  local out=$1 json
+orca_path_list() {
+  local out=$1 kind=$2 rows=$3 field=$4 json
   if ! command -v orca >/dev/null 2>&1; then
     : > "$out"
     return 0
   fi
   command -v jq >/dev/null 2>&1 || return 1
-  json=$(orca worktree list --limit 100000 --json 2>/dev/null) || return 1
-  printf '%s' "$json" | jq -er '
+  json=$(orca "$kind" list --limit 100000 --json 2>/dev/null) || return 1
+  printf '%s' "$json" | jq -er --arg rows "$rows" --arg field "$field" '
     if .ok == true and .result.truncated == false then
-      .result.worktrees | map(.path) | join("\n")
+      .result[$rows] | map(.[$field] // "") | join("\n")
     else
-      error("orca worktree list is incomplete")
+      error("orca list is incomplete")
     end' > "$out.new" 2>/dev/null || return 1
   mv -f -- "$out.new" "$out"
+}
+
+load_orca_worktrees() {
+  orca_path_list "$1" worktree worktrees path
+}
+
+load_orca_terminals() {
+  orca_path_list "$1" terminal terminals worktreePath
+}
+
+contains_registered_worktree() {
+  local path=$1 phys=$2 other rest
+  while IFS=$'\037' read -r other rest; do
+    case "$other" in
+      "$path"/*|"$phys"/*) return 0 ;;
+    esac
+  done < "$RECORDS"
+  return 1
 }
 
 # 0 when the list names the worktree, 1 when it does not, 2 when the list cannot
@@ -365,13 +385,23 @@ owner_lists_path() {
   return 1
 }
 
+remove_with_owner() {
+  local repo=$1 wt=$2 orca_listed=$3
+  if [ "$orca_listed" -eq 1 ]; then
+    orca worktree rm --worktree "path:$wt" --json >/dev/null 2>&1 || return 1
+    [ ! -e "$wt" ]
+  else
+    git -C "$repo" worktree remove -- "$wt" >/dev/null 2>&1
+  fi
+}
+
 remove_worktree() {
-  local repo=$1 wt=$2 state=$3 url=$4
+  local repo=$1 wt=$2 state=$3 url=$4 orca_listed=$5
   if [ "$DRY" -eq 1 ]; then
     emit "worktree-cleanup: dry-run $wt pull request $state $url"
     return 0
   fi
-  if git -C "$repo" worktree remove -- "$wt" >/dev/null 2>&1; then
+  if remove_with_owner "$repo" "$wt" "$orca_listed"; then
     emit "worktree-cleanup: remove $wt pull request $state $url"
     git -C "$repo" worktree prune
     return 0
@@ -382,7 +412,7 @@ remove_worktree() {
 
 consider_worktree() {
   local repo=$1 path=$2 branch=$3 detached=$4 locked=$5
-  local phys pids kind rows row number state head url head_owner main_rc=0 owner_rc
+  local phys pids kind rows row number state head url head_owner main_rc=0 owner_rc orca_listed=0
   local open_count=0 terminal_count=0 chosen_number=0 chosen_state='' chosen_head='' chosen_url=''
   local current normalized
   if [ ! -d "$path" ]; then
@@ -422,16 +452,30 @@ consider_worktree() {
       return 0
       ;;
   esac
+  if contains_registered_worktree "$path" "$phys"; then
+    emit "worktree-cleanup: report $phys contains another worktree"
+    return 0
+  fi
   owner_rc=0
-  owner_lists_path orca-paths load_orca_paths "$phys" || owner_rc=$?
+  owner_lists_path orca-terminals load_orca_terminals "$phys" || owner_rc=$?
   case "$owner_rc" in
     0)
-      emit "worktree-cleanup: report $phys Orca owns it"
+      emit "worktree-cleanup: report $phys Orca terminal is live"
       return 0
       ;;
     1) ;;
     *)
-      emit "worktree-cleanup: report $phys cannot tell whether Orca owns it"
+      emit "worktree-cleanup: report $phys cannot read Orca"
+      return 0
+      ;;
+  esac
+  owner_rc=0
+  owner_lists_path orca-worktrees load_orca_worktrees "$phys" || owner_rc=$?
+  case "$owner_rc" in
+    0) orca_listed=1 ;;
+    1) ;;
+    *)
+      emit "worktree-cleanup: report $phys cannot read Orca"
       return 0
       ;;
   esac
@@ -523,7 +567,7 @@ EOF
     emit "worktree-cleanup: skip $phys live process"
     return 0
   fi
-  remove_worktree "$repo" "$phys" "$chosen_state" "$chosen_url"
+  remove_worktree "$repo" "$phys" "$chosen_state" "$chosen_url" "$orca_listed"
 }
 
 collect_repo() {

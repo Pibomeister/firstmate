@@ -39,6 +39,14 @@ install_orca() {
 if [ "${FM_TEST_ORCA_RC:-0}" != 0 ]; then
   exit "$FM_TEST_ORCA_RC"
 fi
+case "$1 $2" in
+  'worktree rm')
+    printf '%s\n' "$*" >> "${FM_TEST_ORCA_JSON_FILE:?}.rm"
+    [ "${FM_TEST_ORCA_RM_RC:-0}" = 0 ] || exit "$FM_TEST_ORCA_RM_RC"
+    target=${4#path:}
+    exec git -C "$target" worktree remove "$target"
+    ;;
+esac
 cat "${FM_TEST_ORCA_JSON_FILE:?}"
 SH
   chmod +x "$dir/bin/orca"
@@ -46,14 +54,13 @@ SH
 }
 
 orca_json() {
-  local file=$1 truncated=$2 path=${3:-}
-  if [ -n "$path" ]; then
-    jq -n --arg path "$path" --argjson truncated "$truncated" \
-      '{ok: true, result: {worktrees: [{path: $path}], truncated: $truncated}}' > "$file"
-  else
-    jq -n --argjson truncated "$truncated" \
-      '{ok: true, result: {worktrees: [], truncated: $truncated}}' > "$file"
-  fi
+  local file=$1 truncated=$2 worktree=${3:-} terminal=${4:-}
+  jq -n --arg worktree "$worktree" --arg terminal "$terminal" --argjson truncated "$truncated" '
+    {ok: true, result: {
+      worktrees: (if $worktree == "" then [] else [{path: $worktree}] end),
+      terminals: (if $terminal == "" then [] else [{worktreePath: $terminal}] end),
+      truncated: $truncated
+    }}' > "$file"
 }
 
 # Time advances past the pass budget once the fake gh has run.
@@ -128,6 +135,7 @@ run_clean() {
     FM_TEST_GH_RC="${FM_TEST_GH_RC:-0}" \
     FM_TEST_ORCA_JSON_FILE="$dir/orca.json" \
     FM_TEST_ORCA_RC="${FM_TEST_ORCA_RC:-0}" \
+    FM_TEST_ORCA_RM_RC="${FM_TEST_ORCA_RM_RC:-0}" \
     FM_HOME="$dir" \
     FM_STATE_OVERRIDE="$dir/state" \
     FM_PROJECTS_OVERRIDE="$dir/projects" \
@@ -476,14 +484,67 @@ test_treehouse_pool_slot_is_reported() {
   pass "a Treehouse pool slot is reported"
 }
 
-test_orca_listed_worktree_is_reported() {
-  begin_case orcaowned
+test_orca_listed_worktree_is_removed_through_orca() {
+  begin_case orcalisted
   publish_pr MERGED
+  add_stale_worktree "$CASE_REPO" "$CASE_DIR"
+  orca_json "$CASE_DIR/orca.json" false "$CASE_WT"
+  capture_clean "$CASE_DIR"
+  assert_removed
+  grep -F "worktree rm --worktree path:" "$CASE_DIR/orca.json.rm" >/dev/null \
+    || fail "removal did not go through Orca"
+  if grep -F -- "--force" "$CASE_DIR/orca.json.rm" >/dev/null; then
+    fail "Orca removal was forced"
+  fi
+  if git -C "$CASE_REPO" worktree list --porcelain | grep -q 'stale-marker'; then
+    fail "stale worktree registration remained after Orca removal"
+  fi
+  assert_out "pull request MERGED $PR_URL"
+  pass "a worktree Orca lists is removed through Orca"
+}
+
+test_orca_listed_dirty_worktree_is_reported() {
+  begin_case orcadirty
+  publish_pr MERGED
+  printf 'note\n' > "$CASE_WT/notes.txt"
   orca_json "$CASE_DIR/orca.json" false "$CASE_WT"
   capture_clean "$CASE_DIR"
   assert_kept
-  assert_out "Orca owns it"
-  pass "a worktree Orca lists is reported"
+  [ ! -e "$CASE_DIR/orca.json.rm" ] || fail "Orca was asked to remove a dirty worktree"
+  assert_out "untracked files"
+  pass "a dirty worktree Orca lists is reported"
+}
+
+test_orca_dry_run_changes_nothing() {
+  begin_case orcadry
+  publish_pr MERGED
+  orca_json "$CASE_DIR/orca.json" false "$CASE_WT"
+  capture_clean "$CASE_DIR" --dry-run
+  assert_kept
+  [ ! -e "$CASE_DIR/orca.json.rm" ] || fail "dry-run asked Orca to remove the worktree"
+  assert_out "dry-run "
+  pass "dry-run does not ask Orca to remove a worktree"
+}
+
+test_orca_refusal_is_reported() {
+  begin_case orcarefuse
+  publish_pr MERGED
+  orca_json "$CASE_DIR/orca.json" false "$CASE_WT"
+  FM_TEST_ORCA_RM_RC=1 capture_clean "$CASE_DIR"
+  assert_kept
+  assert_out "removal refused"
+  pass "an Orca refusal is reported"
+}
+
+test_live_orca_terminal_keeps_the_worktree() {
+  begin_case orcaterminal
+  publish_pr MERGED
+  orca_json "$CASE_DIR/orca.json" false "$CASE_WT" "$CASE_WT"
+  capture_clean "$CASE_DIR"
+  assert_kept
+  [ ! -e "$CASE_DIR/orca.json.rm" ] || fail "Orca was asked to remove a worktree with a live terminal"
+  assert_out "Orca terminal is live"
+  pass "a live Orca terminal keeps the worktree"
 }
 
 test_unreadable_orca_list_keeps_the_worktree() {
@@ -491,7 +552,7 @@ test_unreadable_orca_list_keeps_the_worktree() {
   publish_pr MERGED
   FM_TEST_ORCA_RC=1 capture_clean "$CASE_DIR"
   assert_kept
-  assert_out "cannot tell whether Orca owns it"
+  assert_out "cannot read Orca"
   pass "a failed Orca lookup removes nothing"
 }
 
@@ -501,8 +562,30 @@ test_truncated_orca_list_keeps_the_worktree() {
   orca_json "$CASE_DIR/orca.json" true
   capture_clean "$CASE_DIR"
   assert_kept
-  assert_out "cannot tell whether Orca owns it"
+  assert_out "cannot read Orca"
   pass "a truncated Orca list removes nothing"
+}
+
+test_worktree_containing_a_dirty_worktree_is_kept() {
+  local child
+  begin_case nested
+  child="$CASE_WT/.worktrees/child"
+  printf '.worktrees\n' > "$CASE_WT/.gitignore"
+  git -C "$CASE_WT" add .gitignore
+  git -C "$CASE_WT" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit -qm 'ignore nested worktrees' \
+    || fail "could not commit the ignore rule"
+  git -C "$CASE_REPO" worktree add --quiet -b child "$child" || fail "could not add the nested worktree"
+  printf 'keep\n' > "$child/notes.txt"
+  [ -z "$(git -C "$CASE_WT" status --porcelain)" ] || fail "the parent is not clean"
+  publish_pr MERGED
+  capture_clean "$CASE_DIR"
+  assert_kept
+  [ -f "$child/notes.txt" ] || fail "the nested worktree lost its untracked file"
+  git -C "$CASE_REPO" worktree list --porcelain | grep -F "/.worktrees/child" >/dev/null \
+    || fail "the nested worktree registration was pruned"
+  assert_out "contains another worktree"
+  assert_out "untracked files"
+  pass "a worktree that contains another worktree is reported"
 }
 
 test_missing_pr_head_is_fetched_from_the_pull_ref() {
@@ -657,7 +740,12 @@ fm_test_run \
   test_task_record_keeps_the_worktree \
   test_unreadable_task_records_keep_the_worktree \
   test_treehouse_pool_slot_is_reported \
-  test_orca_listed_worktree_is_reported \
+  test_orca_listed_worktree_is_removed_through_orca \
+  test_orca_listed_dirty_worktree_is_reported \
+  test_orca_dry_run_changes_nothing \
+  test_orca_refusal_is_reported \
+  test_live_orca_terminal_keeps_the_worktree \
+  test_worktree_containing_a_dirty_worktree_is_kept \
   test_unreadable_orca_list_keeps_the_worktree \
   test_truncated_orca_list_keeps_the_worktree \
   test_missing_pr_head_is_fetched_from_the_pull_ref \
