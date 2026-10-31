@@ -127,7 +127,6 @@ if [ -n "$HOST_SNIPPET" ]; then
   codex_continuity='The Stop hook starts the supervision host on this home and allows this turn to end once no checkpoint of yours is running.'
 fi
 
-checkpoint_seconds=${FM_CODEX_WATCH_CHECKPOINT:-180}
 SECONDMATE_MODE=0
 if [ "$HARNESS" = codex ] && [ "$AFK" -eq 0 ] && [ -x "$SCRIPT_DIR/fm-watch.sh" ] \
   && "$SCRIPT_DIR/fm-watch.sh" --secondmate-selected >/dev/null 2>&1; then
