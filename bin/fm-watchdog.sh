@@ -250,8 +250,9 @@ wd_observe() {
   O_AFK=0 O_DAEMON=unknown O_PREV_COMPOSER='' O_PREV_SIG='' O_COMPOSER_TEXT='' O_COMPOSER_ABOVE='' O_DRAFT=''
   hb=$st/heartbeat.json
   hb_sid='' ctx=''
-  if [ -f "$hb" ] && row=$(jq -r '[.primary.terminal.backend // "-", .primary.terminal.target // "-",
-        .primary.session.trusted_id // "-", (.generated_epoch // 0 | tostring),
+  if [ -f "$hb" ] && row=$(jq -r 'def known: if type == "object" then "-" else . end;
+        [(.primary.terminal.backend // "-" | known), (.primary.terminal.target // "-" | known),
+        (.primary.session.trusted_id // "-" | known), (.generated_epoch // 0 | tostring),
         (.primary.context_left.remaining.percent // "-" | tostring)] | @tsv' "$hb" 2>/dev/null); then
     IFS=$'\t' read -r O_BACKEND O_TARGET hb_sid row ctx <<EOF
 $row
@@ -449,7 +450,9 @@ wd_judge_one() {  # <model> <purpose> <answer-ere> <prompt>  -> prints the answe
       # redirect inside the timed command rather than a pipe into the runner.
       printf '%s' "$prompt" > "$scratch/prompt.txt"
       # shellcheck disable=SC2016  # Expanded by the timed child shell.
-      out=$( (cd "$scratch" && CLAUDE_CONFIG_DIR=${acct:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}} \
+      # With no account set, the CLI's own default stays in force: naming the default
+      # directory explicitly makes the real CLI report that it is not logged in.
+      out=$( (cd "$scratch" && { [ -z "$acct" ] || export CLAUDE_CONFIG_DIR="$acct"; } && \
         fm_run_timed "$(cfgi judge-timeout-secs 120)" bash -c 'f=$1; shift; exec "$@" < "$f"' _ "$scratch/prompt.txt" \
         claude -p --model "$m" --output-format json --tools "" \
         --setting-sources "" --strict-mcp-config --no-session-persistence --max-budget-usd "$(cfg judge-call-max-usd 0.05)") 2>/dev/null) || rc=$?
@@ -1022,6 +1025,10 @@ wd_handle_subject() {
   if [ "$O_TR_AGE" = unknown ]; then
     wd_gap "no activity source; frozen, dead-holder, and low-context restarts are unavailable"
     WD_SYMPTOM=${symptom:-no-activity-source}
+  fi
+  if [ -z "$O_BACKEND" ] || [ -z "$O_TARGET" ]; then
+    wd_gap "no recorded terminal endpoint; the pane cannot be read or typed into"
+    WD_SYMPTOM=${symptom:-no-endpoint}
   fi
 }
 
