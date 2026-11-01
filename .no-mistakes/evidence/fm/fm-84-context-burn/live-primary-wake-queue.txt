@@ -1,0 +1,2 @@
+1793530092	1	check	context-burn-d13dbdba_4d74_4e67_b74a_25a09feb9e00	check: context burn session d13dbdba_4d74_4e67_b74a_25a09feb9e00 dropped from 57 to 17 in 74s turn captain
+1793530219	2	check	context-burn-d13dbdba_4d74_4e67_b74a_25a09feb9e00	check: context burn session d13dbdba_4d74_4e67_b74a_25a09feb9e00 dropped from 90 to 10 in 60s turn captain

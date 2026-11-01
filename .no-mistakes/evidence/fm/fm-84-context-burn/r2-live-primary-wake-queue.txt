@@ -1,0 +1,1 @@
+1793530776	1	check	context-burn-49e37fc7_84e8_4ee0_a974_1c3c20aac0bf	check: context burn session 49e37fc7_84e8_4ee0_a974_1c3c20aac0bf dropped from 57 to 22 in 46s turn captain

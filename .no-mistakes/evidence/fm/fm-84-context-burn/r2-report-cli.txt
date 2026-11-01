@@ -1,0 +1,19 @@
+$ fm-context-burn.sh report data/reports/park.md
+data/reports/park.md b3f1ad06c8a50277f39bdb04d6dcca343c4332a4fbd686b0c8fcadb039e77af1
+exit 0
+b3f1ad06c8a50277f39bdb04d6dcca343c4332a4fbd686b0c8fcadb039e77af1
+$ fm-context-burn.sh report <home>/outside.md
+fm-context-burn: report file is not a regular file under data/
+exit 1
+$ fm-context-burn.sh report data/link.md (symlink out of data)
+fm-context-burn: report file is not a regular file under data/
+exit 1
+$ fm-context-burn.sh report data/../outside.md
+fm-context-burn: report file is not a regular file under data/
+exit 1
+$ fm-context-burn.sh record --turn-type bogus
+fm-context-burn: --turn-type must be auto, startup, heartbeat, wake, captain, or turn
+exit 2
+$ fm-context-burn.sh record --turn-type wake --percent 101
+fm-context-burn: --percent must be an integer from 0 to 100
+exit 2

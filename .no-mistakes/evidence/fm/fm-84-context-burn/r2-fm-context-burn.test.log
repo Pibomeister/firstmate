@@ -1,0 +1,12 @@
+1..9
+ok - percent bounds and the closed turn-type set
+ok - transcript percent fills in when the pane footer is hidden
+ok - drop, window, and freshness
+ok - one alert until the drop clears, then another
+ok - unknown sessions record without alerting, and identical samples dedupe
+ok - auto turn type comes from the tailed transcript
+ok - report prints one path and sha under data and refuses the rest
+ok - the pane footer is read above the input box and its statusLine
+ok - an unmeasured record outside a primary home writes nothing
+FM_TEST_COMPLETE
+exit 0

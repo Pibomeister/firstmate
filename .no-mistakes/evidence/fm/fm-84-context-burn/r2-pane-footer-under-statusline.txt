@@ -1,0 +1,15 @@
+Transcribed from `tmux -L fm-lab capture-pane -p -t primary | grep -v '^\s*$' | tail -8` at 05:00, after the read turn
+(the scrollback was later cleared by /clear, so this is the agent's recorded capture output, not a raw file):
+
+⏺ read
+✻ Churned for 6s · done 5:00 AM
+                                                                                                                                                                                 9% until auto-compact
+────────────────────────────────────────────────────────────── (input box top rule)
+❯
+────────────────────────────────────────────────────────────── (input box bottom rule)
+  [OMC#4.15.0] -> 5.7.26 omc update | Model: Sonnet 5.5 | 5h:0% wk:98%(2d23h) | session:1m | ctx:13% | 🔧7
+  ⏵⏵ auto mode on (shift+tab to cycle) · ← 1 agent
+
+Pane-only probe right after (no payload, so the transcript fallback cannot supply a value):
+  07cf00ee bin/fm-context-burn.sh record --turn-type captain --session paneprobe_prefix -> exit 0, no row
+  c70e72d7 bin/fm-context-burn.sh record --turn-type captain --session paneprobe_fixed  -> exit 0, row "1793540010 paneprobe_fixed captain 9"

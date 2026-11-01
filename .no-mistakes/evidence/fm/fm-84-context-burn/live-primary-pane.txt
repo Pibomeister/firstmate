@@ -1,14 +1,50 @@
-❯ Reply with exactly the word PONG and nothing else. Do not run any tools.
-⏺ PONG
-✻ Cogitated for 7s · done 6:34 PM
-❯ Reply with exactly PONG. No tools.
-⏺ PONG
-✻ Baked for 2s · done 6:34 PM
-❯ check: fm-7 re-check requested. Reply with exactly PONG. No tools.
-⏺ PONG
-✻ Sautéed for 3s · done 6:34 PM
+
+✻ Cogitated for 3s · done 4:47 AM
+
+❯ heartbeat: lab probe, reply with only the word beat and run no tools
+
+⏺ beat
+
+✻ Crunched for 3s · done 4:47 AM
+
+❯ Use the Read tool on tests/fm-backend-herdr.test.sh four times: offset 1 limit 1000, offset 1001 limit 1000, offset 2001 limit 1000, offset 3001 limit 1000. Do not summarize. When all four reads
+  are done reply with only the word done.
+
+  Read 1 file
+
+⏺ All four reads failed on the token limit. You asked for these exact ranges, so I'll retry them with allow_large.
+
+  Read 1 file
+
+⏺ Not done, captain. Only two of the four reads went through.
+
+  - Offset 1, limit 1000: read, after retrying with allow_large.
+  - Offset 1001, limit 1000: read, after retrying with allow_large.
+  - Offset 2001, limit 1000: failed. The chunk is about 36.8k tokens, and allow_large can't fit it in the context left this turn.
+  - Offset 3001, limit 1000: failed for the same reason, at about 36.3k tokens.
+
+  The first attempt at all four also failed on the 25k-token cap.
+
+  I haven't retried the last two, since the same call would fail the same way. I can read them in smaller slices, such as 500 lines each, if that works for you. I can also stop here.
+
+✻ Churned for 25s · done 4:48 AM
+
+❯ Stop there. Reply with only the word stopped and run no tools.
+
+⏺ stopped
+
+✻ Churned for 3s · done 4:48 AM
+
+❯ Use the Read tool on tests/fm-backend-herdr.test.sh offset 2001 limit 500 and then offset 2501 limit 300. Do not summarize. Reply with only the word read.
+
+  Read 1 file
+
+⏺ read
+
+✻ Baked for 9s · done 4:48 AM
+                                                                                                                                                                                 0% until auto-compact
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 ❯ 
 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  [OMC#4.15.0] -> 5.7.22 omc update | Model: Opus 5.5 | 5h:0% wk:95%(3d10h) | thinking | session:0m | ctx:7%
+  [OMC#4.15.0] -> 5.7.26 omc update | Model: Sonnet 5.5 | 5h:0% wk:97%(3d0h) | session:3m | ctx:14% | 🔧18
   ⏵⏵ auto mode on (shift+tab to cycle) · ← 1 agent

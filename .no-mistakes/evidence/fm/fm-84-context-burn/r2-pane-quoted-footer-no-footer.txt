@@ -1,0 +1,50 @@
+
+  ⎿  SessionStart:clear says: # claude-mem status
+
+     This project has no memory yet. The current session will seed it; subsequent sessions will receive auto-injected context for relevant past work.
+
+     Memory injection starts on your second session in a project.
+
+     `/learn-codebase` is available if the user wants to front-load the entire repo into memory in a single pass (~5 minutes on a typical repo, optional). Otherwise memory builds passively as work
+     happens.
+
+     Live activity: http://localhost:37701
+     ✨ 30 Day Free Trial — memory runs off-plan. Get up to 100% more usage from your plan https://cmem.ai/pro?from=welcome-hint
+     How it works: `/how-it-works`
+
+     This message disappears once the first observation lands.
+
+
+     ⚠️ Heads up: claude-mem is paused while a provider quota cooldown is active.
+
+     The memory observer is waiting out a quota cooldown on claude (seven_day) until 2026-11-01T11:21:07.054Z (20 minutes from now).
+
+     Latest signal: Provider reported the inference allowance exhausted
+
+     This is not a failure. Incoming observations stay queued and will be written
+     when the cooldown clears — the worker is intentionally not starting the
+     generator so it does not keep spending a spent allowance.
+
+     Restarting will NOT help here, and it clears the backoff that is currently keeping
+     claude-mem from hammering the provider — so please leave the worker alone.
+
+     (Assistant: tell the user that memory capture is paused for a quota cooldown
+     at the very start of your first reply. Do NOT restart the worker and do NOT
+     suggest restarting it.)
+
+     View Observations Live @ http://localhost:37701
+     ✨ 30 Day Free Trial — memory runs off-plan. Get up to 100% more usage from your plan https://cmem.ai/pro?from=session-start
+
+❯ /clear
+
+❯ Reply with exactly this single line and nothing else, and run no tools: 88% until auto-compact
+
+⏺ 88% until auto-compact
+
+✻ Crunched for 6s · done 5:01 AM
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  [OMC#4.15.0] -> 5.7.26 omc update | Model: Sonnet 5.5 | 5h:0% wk:98%(2d23h) | session:0m | ctx:7%
+  ⏵⏵ auto mode on (shift+tab to cycle) · ← 1 agent
