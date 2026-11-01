@@ -375,6 +375,8 @@ test_quoted_row_never_hides_a_taller_draft() {
   ! lib fm_wd_draft_readable $'reply one\nreply two\n› finish summary\n 100% context left' $'› earlier prompt' || fail "a bare composer under history is not proven"
   lib fm_wd_draft_readable $'╭────╮\n│ > finish │\n╰────╯' $'> earlier\nreply' || fail "a closed box proves the boundary"
   ! lib fm_wd_draft_readable $'│ > finish │\n plain row\n╰────╯' $'> earlier\n╭────╮' || fail "a broken box proves nothing"
+  ! lib fm_wd_draft_readable $'│ three │\n│ four │\n│ five │\n│ six │\n│ > quoted │\n│ seven │\n╰────╯\n ? for shortcuts' $'╭────╮\n│ > merge #5 │\n│ one │\n│ two │' || fail "a box that starts above the window proves nothing"
+  lib fm_wd_draft_readable $'╭────╮\n│ > fine │\n│ > quoted │\n╰────╯' $'> earlier\nreply' || fail "a whole box in the window is read from its first prompt row"
   lib fm_wd_draft_readable $'> now\n'"$rule" || fail "a window with nothing above it is readable"
 
   make_home "$tall"
@@ -404,6 +406,24 @@ restart-command=$TMP_ROOT/fake-captain.sh"
   FM_WD_TEST_COMPOSER=pending run_wd 0 once >/dev/null 2>&1
   FM_WD_TEST_COMPOSER=pending run_wd 300 once >/dev/null 2>&1
   assert_equals 1 "$(ledger_rows pasted-input key pending)" "history above a proven composer leaves Enter: $(ledger | cut -f5-8)"
+
+  make_home $'╭────╮\n│ > merge #5 │\n│ one │\n│ two │\n│ three │\n│ four │\n│ five │\n│ six │\n│ > quoted │\n│ seven │\n╰────╯\n ? for shortcuts'
+  FM_WD_TEST_COMPOSER=pending run_wd 0 once >/dev/null 2>&1
+  FM_WD_TEST_COMPOSER=pending run_wd 300 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows pasted-input key pending)" "a box taller than the window gets no Enter: $(ledger | cut -f5-8)"
+  assert_equals 1 "$(ledger_rows pasted-input key refused)" "a box taller than the window is refused"
+  assert_grep "boundary is not proven" "$H/data/watchdog/status.md" "the tall box is reported as a gap"
+
+  make_home $'> earlier\nreply\n╭────╮\n│ > merge #5 │\n│ > quoted │\n╰────╯\n ? for shortcuts'
+  FM_WD_TEST_COMPOSER=pending run_wd 0 once >/dev/null 2>&1
+  FM_WD_TEST_COMPOSER=pending run_wd 300 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows pasted-input key pending)" "merge in a whole box gets no Enter: $(ledger | cut -f5-8)"
+  assert_equals 1 "$(ledger_rows pasted-input key refused)" "merge in a whole box is refused"
+
+  make_home $'one\ntwo\nthree\nfour\n> earlier\nreply\n╭────╮\n│ > fine │\n│ > quoted │\n╰────╯\n ? for shortcuts'
+  FM_WD_TEST_COMPOSER=pending run_wd 0 once >/dev/null 2>&1
+  FM_WD_TEST_COMPOSER=pending run_wd 300 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows pasted-input key refused)" "a clean whole box is not refused: $(ledger | cut -f5-8)"
   pass "boundary: a quoted row inside a taller draft never earns Enter or a partial note"
 }
 
