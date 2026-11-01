@@ -100,7 +100,7 @@ last_user_text() { # <transcript>
   local file=$1
   [ -f "$file" ] && [ ! -L "$file" ] || return 0
   command -v jq >/dev/null 2>&1 || return 0
-  tail -n 40 "$file" 2>/dev/null | jq -Rr '
+  tail -n 4000 "$file" 2>/dev/null | jq -Rr '
     fromjson?
     | select(.type? == "user")
     | .message.content? // empty

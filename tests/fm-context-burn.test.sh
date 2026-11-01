@@ -191,6 +191,19 @@ test_auto_turn_type_from_tailed_transcript() {
     FM_CONTEXT_BURN_NOW=6020 \
     "$BURN" record --turn-type auto --percent 68 --payload-file "$home/p.json" >/dev/null
   assert_equals $'6020\tsess1\tturn\t68' "$(last_row "$home")" "empty transcript is a turn"
+
+  {
+    printf '%s\n' '{"type":"user","message":{"content":"captain asks a question"}}'
+    printf '%s\n' '{"type":"user","message":{"content":[{"type":"text","text":"check: fleet"}]}}'
+    for _ in $(seq 1 60); do
+      printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t","name":"Bash","input":{}}]}}'
+      printf '%s\n' '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t","content":"pane table"}]}}'
+    done
+  } > "$home/t.jsonl"
+  FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    FM_CONTEXT_BURN_NOW=6030 \
+    "$BURN" record --turn-type auto --percent 67 --payload-file "$home/p.json" >/dev/null
+  assert_equals $'6030\tsess1\twake\t67' "$(last_row "$home")" "wake behind 120 tool lines"
   pass "auto turn type comes from the tailed transcript"
 }
 
