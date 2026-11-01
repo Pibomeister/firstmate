@@ -78,6 +78,15 @@ fm_supervision_host_enabled() {
   [ "${2-$(fm_supervision_host_primary)}" = claude ]
 }
 
+# Succeed when this home runs the host for <primary> and the successor arm a
+# pass-through recorded in .supervision-host-left still answers to its identity.
+fm_supervision_host_successor_left() {  # <state-dir> <config-dir> <primary>
+  local pid='' identity=''
+  fm_supervision_host_enabled "$2" "$3" && [ -f "$1/.supervision-host-left" ] || return 1
+  IFS="$(printf '\t')" read -r pid identity < "$1/.supervision-host-left" || true
+  fm_pid_alive "$pid" && [ -n "$identity" ] && [ "$(fm_pid_identity_line "$pid" || true)" = "$identity" ]
+}
+
 fm_supervision_engine_verified() {  # <engine>
   case " $FM_SUPERVISION_ENGINES_VERIFIED " in
     *" ${1:-} "*) return 0 ;;

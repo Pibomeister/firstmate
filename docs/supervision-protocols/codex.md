@@ -1,4 +1,4 @@
-Mode: Codex foreground checkpoint.
+Mode: Codex Stop hook.
 
 A bounded checkpoint is a tool call, not a conversation turn.
 When a checkpoint you already started is still running, poll it with `write_stdin` (empty input) until it exits, handle its wake, and do not end the turn while it runs.

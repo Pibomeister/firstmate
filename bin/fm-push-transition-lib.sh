@@ -242,13 +242,16 @@ fm_secondmate_watch_notify() {
     body=$(printf '%s\n' 'Read state/.supervision-host-park.out if it exists, run bin/fm-wake-drain.sh, handle and acknowledge the durable watcher events, send any resulting actions and parent replies, then end this turn.' | "$FM_PUSH_TRANSITION_LIB_DIR/fm-operational-input.sh" encode watcher) || return 1
     rec=$(fm_task_inbox_write "${FM_SM_INBOX%/*}" "$FM_SM_ID" "$body") || return 1
     printf '%s\n' "$rec" > "$STATE/.secondmate-watch-message" || return 1
-  else
+  elif [ "${FM_WATCH_CODEX_HOLD:-}" != 1 ] || [ "${FM_SM_NOTIFY_RETRY:-0}" -eq 0 ]; then
     return 0
   fi
   fm_hold_bell_binding_valid || return 1
   fm_task_inbox_ring "$FM_SM_BACKEND" "$FM_SM_TARGET" "$rec" "$FM_SM_ID" || ring_rc=$?
   case "$ring_rc" in
-    1|2) fm_task_inbox_mark_retry "${FM_SM_INBOX%/*}" "$FM_SM_ID" "$rec" ;;
+    1|2)
+      [ "${FM_WATCH_CODEX_HOLD:-}" != 1 ] || return 1
+      fm_task_inbox_mark_retry "${FM_SM_INBOX%/*}" "$FM_SM_ID" "$rec"
+      ;;
     3) return 1 ;;
   esac
 }

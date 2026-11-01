@@ -28,7 +28,7 @@ test_selected_harness_block_only() {
   local out
   out=$("$RENDER" --harness codex)
   assert_contains "$out" "SUPERVISION OPERATING INSTRUCTIONS - primary harness: codex" "codex heading missing"
-  assert_contains "$out" "Mode: Codex foreground checkpoint." "codex snippet missing"
+  assert_contains "$out" "Mode: Codex Stop hook." "codex snippet missing"
   assert_contains "$out" "bin/fm-watch-checkpoint.sh" "codex checkpoint helper missing"
   # shellcheck disable=SC2016 # Backticks are literal protocol markup.
   assert_contains "$out" 'poll it with `write_stdin` (empty input) until it exits' "codex must read a yielded checkpoint to completion"
@@ -160,7 +160,7 @@ test_conditional_stanzas() {
   assert_contains "$out" "- Away mode: active" "afk stanza missing"
   assert_contains "$out" "- X mode: active" "x-mode stanza missing"
   assert_contains "$out" "$config/x-mode.env" "x-mode stanza did not render the effective config path"
-  assert_contains "$out" 'Mode: Codex foreground checkpoint.' "codex snippet missing"
+  assert_contains "$out" 'Mode: Codex Stop hook.' "codex snippet missing"
   assert_not_contains "$out" "Source \`config/x-mode.env\`" "snippet kept the repo-relative x-mode config path"
   pass "renderer includes read-only, afk, and effective x-mode current-state stanzas"
 }

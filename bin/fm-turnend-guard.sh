@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-echo "$$ start $(date +%T)" >>/tmp/fm-gx.log; trap 'echo "$$ exit rc=$? line=$LINENO $(date +%T)" >>/tmp/fm-gx.log' EXIT
 # Turn-end guard for any firstmate PRIMARY session: the main home OR a
 # secondmate's own home. A secondmate runs its own primary firstmate session and
 # is guarded exactly like the main primary; only child crew/scout worktrees are
@@ -374,8 +373,16 @@ if [ "$CODEX_MODE" -eq 1 ] \
   && own_checkpoint_holds_watcher "$(cat "$STATE/.watch.lock/pid" 2>/dev/null)"; then
   CHECKPOINT_OPEN=1
 fi
+CODEX_SUCCESSOR_LEFT=0
+if [ "$CODEX_MODE" -eq 1 ] && [ "$SECONDMATE_MODE" -eq 0 ] && [ ! -e "$STATE/.afk" ]; then
+  # shellcheck source=bin/fm-supervision-engine-lib.sh
+  . "$SCRIPT_DIR/fm-supervision-engine-lib.sh"
+  if fm_supervision_host_successor_left "$STATE" "$CONFIG" codex; then
+    CODEX_SUCCESSOR_LEFT=1
+  fi
+fi
 if fm_watcher_healthy "$STATE" "$WATCH" "$GRACE" "$FM_HOME"; then
-  if [ "$CHECKPOINT_OPEN" -eq 0 ]; then
+  if [ "$CHECKPOINT_OPEN" -eq 0 ] && [ "$CODEX_SUCCESSOR_LEFT" -eq 0 ]; then
     if [ "$CODEX_MODE" -eq 0 ] || [ "$FM_SUP_QUEUE_PENDING" = false ]; then
       if [ "$SECONDMATE_MODE" -eq 0 ] || "$SCRIPT_DIR/fm-watch.sh" --secondmate-status >/dev/null 2>&1; then
         allow_supervised_stop
@@ -504,7 +511,7 @@ if [ "$CODEX_MODE" -eq 1 ] && [ "$CHECKPOINT_OPEN" -eq 0 ] && [ "$SECONDMATE_MOD
   && [ ! -e "$STATE/.afk" ]; then
   DETACH_OUT=
   if [ -x "$SCRIPT_DIR/fm-watch-arm.sh" ] \
-    && ! fm_watcher_healthy "$STATE" "$WATCH" "$GRACE" "$FM_HOME"; then
+    && { [ "$CODEX_SUCCESSOR_LEFT" -eq 1 ] || ! fm_watcher_healthy "$STATE" "$WATCH" "$GRACE" "$FM_HOME"; }; then
     DETACH_OUT=$("$SCRIPT_DIR/fm-watch-arm.sh" --detach-hold 2>/dev/null || true)
   fi
   if [ "$FM_SUP_QUEUE_PENDING" = false ]; then

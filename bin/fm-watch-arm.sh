@@ -724,14 +724,14 @@ if [ "$mode" = detach-hold ]; then
     echo "watcher: FAILED - away mode owns supervision" >&2
     exit 1
   fi
-  if healthy_watcher; then
+  # shellcheck source=bin/fm-supervision-engine-lib.sh
+  . "$SCRIPT_DIR/fm-supervision-engine-lib.sh"
+  if healthy_watcher && ! fm_supervision_host_successor_left "$STATE" "$CONFIG" codex; then
     report_attached
     exit 0
   fi
   route=1
   "$WATCH" --codex-hold-bind >/dev/null 2>&1 || route=0
-  # shellcheck source=bin/fm-supervision-engine-lib.sh
-  . "$SCRIPT_DIR/fm-supervision-engine-lib.sh"
   if fm_supervision_host_enabled "$CONFIG" codex; then
     set -m 2>/dev/null || true
     # shellcheck disable=SC2016 # The detached shell expands its own arguments.
@@ -744,7 +744,7 @@ if [ "$mode" = detach-hold ]; then
     set +m 2>/dev/null || true
     deadline=$(( $(date +%s) + CONFIRM_TIMEOUT + 1 ))
     while [ "$(date +%s)" -lt "$deadline" ] && fm_pid_alive "$host_pid"; do
-      if healthy_watcher; then
+      if healthy_watcher && ! fm_supervision_host_successor_left "$STATE" "$CONFIG" codex; then
         echo "watcher: started pid=$HEALTHY_PID"
         [ "$route" -eq 1 ] || echo "watcher: no wake route"
         exit 0

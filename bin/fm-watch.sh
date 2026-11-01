@@ -306,7 +306,7 @@ case "$SECONDMATE_MODE" in
     echo 'secondmate watcher: not ready'; exit 1 ;;
   --secondmate) fm_secondmate_watch_start; exit $? ;;
   --codex-hold-bind) fm_codex_hold_bind; exit $? ;;
-  --codex-hold-ring) FM_WATCH_CODEX_HOLD=1 fm_secondmate_watch_notify; exit $? ;;
+  --codex-hold-ring) FM_WATCH_CODEX_HOLD=1 FM_SM_NOTIFY_RETRY=1 fm_secondmate_watch_notify; exit $? ;;
   --secondmate-hold)
     fm_secondmate_watch_binding_valid || exit 1
     export FM_WATCH_GROK_HOLD=1 FM_WATCH_SECONDMATE_HOLD=1 ;;

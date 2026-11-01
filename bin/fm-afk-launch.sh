@@ -22,9 +22,9 @@
 # runs the supervision host (fm_supervision_host_enabled: by default on
 # Claude, by config/supervision-host elsewhere), where the host runs the away
 # session; `enter` there adds one line when the host has no
-# engine, because every away wake then reaches main. On Codex, it also names a
-# missing foreground checkpoint; docs/supervision-protocols/codex.md owns the
-# required checkpoint protocol. Every other harness still
+# engine, because every away wake then reaches main. On Codex, it also tells the
+# model to end the turn; docs/supervision-protocols/codex.md owns the Stop-hook
+# protocol. Every other harness still
 # runs the daemon for now, so `start` and `start-native` require the record
 # `enter` wrote before they launch the daemon.
 # QUIET MODE on a home that runs the supervision host needs nothing

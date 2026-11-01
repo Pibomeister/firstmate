@@ -2475,7 +2475,109 @@ SH
   pass "detach-hold: a queued wake rings a plain Codex pane through the steering inbox"
 }
 
+test_detach_hold_retries_a_failed_codex_ring() {
+  local dir primary socket i inbox pane='' fake_codex msgs
+  command -v tmux >/dev/null 2>&1 || { printf 'skip: tmux not found for the codex doorbell retry\n'; return; }
+  dir=$(make_case detach-hold-ring-retry)
+  primary=$(make_grok_guard_primary "$dir")
+  socket=$(mktemp -d /tmp/fm-hold-retry.XXXXXX)/s
+  fake_codex="$dir/codex"
+  ln -s "$BASH" "$fake_codex"
+  printf '#!/usr/bin/env bash\necho actionable\n' > "$primary/state/probe.check.sh"
+  chmod 700 "$primary/state/probe.check.sh"
+  cat > "$dir/pane.sh" <<SH
+printf '%s\n' "\$\$" > "$primary/state/.lock"
+export FM_HOME="$primary" FM_STATE_OVERRIDE="$primary/state" FM_ROOT_OVERRIDE="$primary" FM_CONFIG_OVERRIDE="$primary/config" FM_ARM_CONFIRM_TIMEOUT=$REARM_CONFIRM_SECONDS FM_POLL=1 FM_CHECK_INTERVAL=1
+"$primary/bin/fm-check-register.sh" probe > "$dir/register.out" 2>&1
+printf '\342\200\272 captain draft'
+"$primary/bin/fm-watch-arm.sh" --detach-hold > "$dir/arm.out" 2>&1
+while [ ! -e "$dir/clear-draft" ]; do sleep 0.1; done
+clear
+while [ ! -e "$dir/one-shot" ]; do sleep 0.1; done
+clear
+printf '\342\200\272 captain draft'
+"$primary/bin/fm-watch.sh" --codex-hold-ring > "$dir/ring1.out" 2>&1
+echo \$? > "$dir/ring1.rc"
+clear
+"$primary/bin/fm-watch.sh" --codex-hold-ring > "$dir/ring2.out" 2>&1
+echo \$? > "$dir/ring2.rc"
+sleep 60
+SH
+  tmux -S "$socket" new-session -d -s retry -x 200 -y 50 "$fake_codex $dir/pane.sh" >/dev/null 2>&1 </dev/null
+  inbox="$primary/state/codex-primary.inbox"
+  for ((i=0; i<300; i++)); do compgen -G "$inbox/*.msg" >/dev/null && break; sleep 0.1; done
+  sleep 2
+  pane=$(tmux -S "$socket" capture-pane -pJ -t retry 2>/dev/null || true)
+  assert_not_contains "$pane" "codex-primary.inbox" "a ring blocked by the captain's draft must not reach the pane"
+  : > "$dir/clear-draft"
+  for ((i=0; i<300; i++)); do
+    pane=$(tmux -S "$socket" capture-pane -pJ -t retry 2>/dev/null || true)
+    case "$pane" in *codex-primary.inbox*) break ;; esac
+    sleep 0.1
+  done
+  assert_contains "$pane" "codex-primary.inbox" "the hold poll did not re-ring the unacknowledged record: $(cat "$dir/arm.out")"
+  stop_primary_watcher "$primary"
+  : > "$dir/one-shot"
+  for ((i=0; i<300; i++)); do [ -e "$dir/ring2.rc" ] && break; sleep 0.1; done
+  pane=$(tmux -S "$socket" capture-pane -pJ -t retry 2>/dev/null || true)
+  msgs=$(compgen -G "$inbox/*.msg" | wc -l | tr -d ' ')
+  tmux -S "$socket" kill-server 2>/dev/null || true
+  rm -rf "${socket%/*}"
+  [ "$(cat "$dir/ring1.rc" 2>/dev/null)" = 1 ] || fail "a blocked one-shot ring must fail: $(cat "$dir/ring1.out" 2>/dev/null)"
+  [ "$(cat "$dir/ring2.rc" 2>/dev/null)" = 0 ] || fail "a later one-shot ring must succeed: $(cat "$dir/ring2.out" 2>/dev/null)"
+  assert_contains "$pane" "codex-primary.inbox" "the later one-shot ring did not reach the pane"
+  [ "$msgs" = 1 ] || fail "every retry must re-ring the same record, found $msgs"
+  pass "detach-hold: a failed Codex ring keeps its record, and the poll and one-shot retries ring that record"
+}
+
+test_detach_hold_second_wake_rings_after_a_pass_through() {
+  local dir primary socket i inbox pane='' fake_codex
+  command -v tmux >/dev/null 2>&1 || { printf 'skip: tmux not found for the host pass-through doorbell\n'; return; }
+  dir=$(make_case detach-hold-pass-through)
+  primary=$(make_grok_guard_primary "$dir")
+  mkdir -p "$primary/config"
+  printf 'claude\n' > "$primary/config/supervision-host"
+  socket=$(mktemp -d /tmp/fm-hold-pass.XXXXXX)/s
+  fake_codex="$dir/codex"
+  ln -s "$BASH" "$fake_codex"
+  printf '#!/usr/bin/env bash\nrm "%s/fire" 2>/dev/null && echo actionable\nexit 0\n' "$dir" > "$primary/state/probe.check.sh"
+  chmod 700 "$primary/state/probe.check.sh"
+  : > "$dir/fire"
+  cat > "$dir/pane.sh" <<SH
+printf '%s\n' "\$\$" > "$primary/state/.lock"
+export FM_HOME="$primary" FM_STATE_OVERRIDE="$primary/state" FM_ROOT_OVERRIDE="$primary" FM_CONFIG_OVERRIDE="$primary/config" FM_ARM_CONFIRM_TIMEOUT=$REARM_CONFIRM_SECONDS FM_POLL=1 FM_CHECK_INTERVAL=1
+"$primary/bin/fm-check-register.sh" probe > "$dir/register.out" 2>&1
+FM_SUPERVISION_HOST_PRIMARY=codex "$primary/bin/fm-supervision-host.sh" park > "$dir/park1.out" 2>&1
+while [ ! -e "$dir/second-stop" ]; do sleep 0.1; done
+"$primary/bin/fm-watch-arm.sh" --detach-hold > "$dir/arm2.out" 2>&1
+: > "$dir/arm2.done"
+sleep 60
+SH
+  tmux -S "$socket" new-session -d -s pass -x 200 -y 50 "$fake_codex $dir/pane.sh" >/dev/null 2>&1 </dev/null
+  inbox="$primary/state/codex-primary.inbox"
+  for ((i=0; i<450; i++)); do [ -e "$primary/state/.supervision-host-left" ] && break; sleep 0.1; done
+  [ -e "$primary/state/.supervision-host-left" ] \
+    || fail "the pass-through left no successor: $(cat "$dir/park1.out" "$primary/state/.supervision-host.log" 2>/dev/null)"
+  : > "$dir/second-stop"
+  for ((i=0; i<450; i++)); do [ -e "$dir/arm2.done" ] && break; sleep 0.1; done
+  : > "$dir/fire"
+  for ((i=0; i<450; i++)); do
+    pane=$(tmux -S "$socket" capture-pane -pJ -t pass 2>/dev/null || true)
+    case "$pane" in *codex-primary.inbox*) break ;; esac
+    sleep 0.1
+  done
+  stop_primary_watcher "$primary"
+  tmux -S "$socket" kill-server 2>/dev/null || true
+  rm -rf "${socket%/*}"
+  assert_contains "$(cat "$dir/arm2.out")" "watcher: started pid=" "the second stop must start a park, not attach to the successor"
+  assert_contains "$pane" "codex-primary.inbox" "the second wake did not ring the pane: $(cat "$primary/state/.supervision-host.log" 2>/dev/null)"
+  compgen -G "$inbox/*.msg" >/dev/null || fail "the second wake wrote no steering record"
+  pass "detach-hold: after a pass-through, the next park takes over the successor and the second wake rings"
+}
+
 test_detach_hold_leaves_a_hold_behind_the_arm
+test_detach_hold_retries_a_failed_codex_ring
+test_detach_hold_second_wake_rings_after_a_pass_through
 test_detach_hold_refuses_away_mode_and_reports_failure
 test_detach_hold_starts_the_selected_host
 test_detach_hold_rings_a_plain_codex_pane

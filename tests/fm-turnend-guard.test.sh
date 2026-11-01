@@ -2580,6 +2580,49 @@ SH
   pass "fm-turnend-guard codex: a detached hold allows the stop without a checkpoint"
 }
 
+test_codex_live_successor_record_reaches_the_arm_behind_a_healthy_watcher() {
+  local dir pid left identity
+  dir=$(make_primary_dir "$TMP_ROOT/codex-successor-left")
+  : > "$dir/state/task1.meta"
+  mkdir -p "$dir/config"
+  : > "$dir/config/supervision-host"
+  cat > "$dir/bin/fm-watch-arm.sh" <<'SH'
+#!/usr/bin/env bash
+echo "$1" >> "$FM_HOME/state/arm-calls"
+[ ! -e "$FM_HOME/state/detach-pid" ] || exit 0
+set -m
+sleep 60 >/dev/null 2>&1 </dev/null &
+pid=$!
+disown "$pid" 2>/dev/null || true
+identity=$(FM_STATE_OVERRIDE="$FM_HOME/state" bash -c '. "$1"; fm_pid_identity "$2"' _ "$FM_HOME/bin/fm-wake-lib.sh" "$pid")
+mkdir -p "$FM_HOME/state/.watch.lock"
+printf '%s\n' "$pid" > "$FM_HOME/state/.watch.lock/pid"
+printf '%s\n' "$FM_HOME" > "$FM_HOME/state/.watch.lock/fm-home"
+printf '%s\n' "$FM_HOME/bin/fm-watch.sh" > "$FM_HOME/state/.watch.lock/watcher-path"
+printf '%s\n' "$identity" > "$FM_HOME/state/.watch.lock/pid-identity"
+touch "$FM_HOME/state/.last-watcher-beat"
+printf '%s\n' "$pid" > "$FM_HOME/state/detach-pid"
+SH
+  chmod +x "$dir/bin/fm-watch-arm.sh"
+  run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
+  expect_code 0 "$STATUS" "the first stop must allow: $OUT"
+  pid=$(cat "$dir/state/detach-pid")
+  sleep 60 >/dev/null 2>&1 </dev/null &
+  left=$!
+  identity=$(FM_STATE_OVERRIDE="$dir/state" bash -c '. "$1"; fm_pid_identity_line "$2"' _ "$dir/bin/fm-wake-lib.sh" "$left")
+  printf '%s\t%s\n' "$left" "$identity" > "$dir/state/.supervision-host-left"
+  run_codex_hook "$dir" "$(codex_payload s1 t2 false)"
+  expect_code 0 "$STATUS" "a stop with a live successor record must allow: $OUT"
+  [ "$(wc -l < "$dir/state/arm-calls" | tr -d ' ')" = 2 ] || fail "a live successor record must reach the arm behind a healthy watcher"
+  kill "$left" 2>/dev/null || true
+  wait "$left" 2>/dev/null || true
+  run_codex_hook "$dir" "$(codex_payload s1 t3 false)"
+  expect_code 0 "$STATUS" "a stop with a dead successor record must allow: $OUT"
+  [ "$(wc -l < "$dir/state/arm-calls" | tr -d ' ')" = 2 ] || fail "a dead successor record must keep the healthy allow"
+  kill "$pid" 2>/dev/null || true
+  pass "fm-turnend-guard codex: a live successor record reaches the arm, and a dead one keeps the healthy allow"
+}
+
 test_codex_host_selected_allows_stop_without_a_second_watcher() {
   local dir
   dir=$(make_primary_dir "$TMP_ROOT/codex-host-selected")
@@ -3215,6 +3258,7 @@ test_codex_holds_own_checkpoint_then_ignored_repair_can_end 1 2
 test_codex_allows_watcher_owned_by_another_session
 test_codex_missing_watcher_allows_stop_without_a_checkpoint_loop
 test_codex_detach_hold_allows_stop_when_the_watcher_is_healthy
+test_codex_live_successor_record_reaches_the_arm_behind_a_healthy_watcher
 test_codex_host_selected_allows_stop_without_a_second_watcher
 test_codex_stale_or_foreign_block_record_is_judged_fresh
 test_codex_queued_wake_budget_allows_stop
