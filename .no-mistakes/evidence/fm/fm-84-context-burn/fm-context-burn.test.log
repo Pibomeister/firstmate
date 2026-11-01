@@ -1,0 +1,10 @@
+1..7
+ok - footer shapes and percent bounds
+ok - drop, window, and freshness
+ok - one alert until the drop clears, then another
+ok - unknown sessions record without alerting, and identical samples dedupe
+ok - auto turn type comes from the tailed transcript
+ok - report prints one path and sha under data and refuses the rest
+ok - an unmeasured record outside a primary home writes nothing
+FM_TEST_COMPLETE
+exit=0

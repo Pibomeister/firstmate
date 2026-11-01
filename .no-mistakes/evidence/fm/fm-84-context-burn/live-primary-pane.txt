@@ -1,0 +1,14 @@
+❯ Reply with exactly the word PONG and nothing else. Do not run any tools.
+⏺ PONG
+✻ Cogitated for 7s · done 6:34 PM
+❯ Reply with exactly PONG. No tools.
+⏺ PONG
+✻ Baked for 2s · done 6:34 PM
+❯ check: fm-7 re-check requested. Reply with exactly PONG. No tools.
+⏺ PONG
+✻ Sautéed for 3s · done 6:34 PM
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  [OMC#4.15.0] -> 5.7.22 omc update | Model: Opus 5.5 | 5h:0% wk:95%(3d10h) | thinking | session:0m | ctx:7%
+  ⏵⏵ auto mode on (shift+tab to cycle) · ← 1 agent

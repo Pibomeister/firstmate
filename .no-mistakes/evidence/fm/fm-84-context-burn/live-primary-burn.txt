@@ -1,0 +1,8 @@
+--- state/context-burn.tsv (written by real Claude Stop hook -> bin/fm-turnend-guard.sh):
+1793493245	19869790_5925_47eb_b707_638c01898d94	captain	12
+1793493264	19869790_5925_47eb_b707_638c01898d94	captain	80
+1793493272	19869790_5925_47eb_b707_638c01898d94	wake	45
+--- state/.wake-queue:
+1793493273	1	check	context-burn-19869790_5925_47eb_b707_638c01898d94	check: context burn session 19869790_5925_47eb_b707_638c01898d94 dropped from 80 to 45 in 8s turn wake
+--- alert markers:
+.context-burn-alert.19869790_5925_47eb_b707_638c01898d94

@@ -1,0 +1,6 @@
+10:- Captain-facing turn replies stay short and do not use tables.
+11:- A long report goes in a file under data/, and the reply is one line from bin/fm-context-burn.sh report with that path and its sha256.
+12:- A large read, including a triage table or a handoff, goes through a worker or a bounded head or search, not a full read into this session.
+13:- The auto-compact percentage is the external footer, never a self-estimate.
+14:- bin/fm-context-burn.sh records that footer each turn and alerts when a fresh session drops more than about 30 points in 15 minutes.
+18:In a secondmate home, apply the routed-work and return-channel rules in `data/charter.md` before the next supervision wait.

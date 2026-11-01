@@ -1,0 +1,93 @@
+## S1 footer text -> one row (external footer parsed)
+$ env FM_CONTEXT_BURN_NOW=1000 bin/fm-context-burn.sh record --turn-type startup --session S1 --footer-file /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.gvcIeQ/footer.txt
+[exit 0]
+1000	S1	startup	72
+
+## S2 no footer -> no row, exit 0 (no self-estimate invented)
+$ env FM_CONTEXT_BURN_NOW=1010 bin/fm-context-burn.sh record --turn-type captain --session S1 --footer-file /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.gvcIeQ/nofooter.txt
+[exit 0]
+       1
+
+## S3 auto turn type: multi-line Stop hook feedback behind 120 tool_result lines -> wake
+     121
+$ env FM_CONTEXT_BURN_NOW=1020 bin/fm-context-burn.sh record --turn-type auto --percent 70
+[exit 0]
+1020	S1	wake	70
+
+## S4 heartbeat and captain classification
+$ env FM_CONTEXT_BURN_NOW=1030 bin/fm-context-burn.sh record --turn-type auto --percent 69
+[exit 0]
+$ env FM_CONTEXT_BURN_NOW=1040 bin/fm-context-burn.sh record --turn-type auto --percent 68
+[exit 0]
+1030	S1	heartbeat	69
+1040	S1	captain	68
+
+## S5 fresh session drops 72->40 in <15m -> one alert + one queued check wake
+$ env FM_CONTEXT_BURN_NOW=1500 bin/fm-context-burn.sh record --turn-type wake --session S1 --percent 40
+alert: S1 dropped from 72 to 40 in 500s turn wake
+[exit 0]
+.context-burn-alert.S1
+.wake-queue
+.wake-queue.seq
+(eval):28: no matches found: /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.gvcIeQ/state/*wake*
+
+## S5b further drop does not repeat the wake
+$ env FM_CONTEXT_BURN_NOW=1600 bin/fm-context-burn.sh record --turn-type wake --session S1 --percent 35
+[exit 0]
+(eval):31: no matches found: /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.gvcIeQ/state/*wake*
+0
+
+## S6 adversarial: 29-point drop does not alert
+$ env FM_CONTEXT_BURN_NOW=5000 bin/fm-context-burn.sh record --turn-type startup --session S2 --percent 90
+[exit 0]
+$ env FM_CONTEXT_BURN_NOW=5600 bin/fm-context-burn.sh record --turn-type captain --session S2 --percent 61
+[exit 0]
+
+## S6b adversarial: same 40-point drop but session older than 2h (not fresh) -> no alert
+$ env FM_CONTEXT_BURN_NOW=10000 bin/fm-context-burn.sh record --turn-type startup --session S3 --percent 95
+[exit 0]
+$ env FM_CONTEXT_BURN_NOW=18000 bin/fm-context-burn.sh record --turn-type captain --session S3 --percent 90
+[exit 0]
+$ env FM_CONTEXT_BURN_NOW=18300 bin/fm-context-burn.sh record --turn-type captain --session S3 --percent 50
+[exit 0]
+
+## S6c adversarial: unknown session never alerts
+$ env FM_CONTEXT_BURN_NOW=20000 bin/fm-context-burn.sh record --turn-type startup --session unknown --percent 95
+[exit 0]
+$ env FM_CONTEXT_BURN_NOW=20100 bin/fm-context-burn.sh record --turn-type startup --session unknown --percent 20
+[exit 0]
+
+## S7 report: data/ file -> path + sha256; outside data refused
+$ bin/fm-context-burn.sh report data/park.md
+data/park.md 49c76e496e33704aec83005dbaa55c5a32964f572af34e40eb9c58a85e2ee586
+[exit 0]
+49c76e496e33704aec83005dbaa55c5a32964f572af34e40eb9c58a85e2ee586  /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.gvcIeQ/data/park.md
+$ bin/fm-context-burn.sh report /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.gvcIeQ/footer.txt
+fm-context-burn: report file is not a regular file under data/
+[exit 1]
+$ bin/fm-context-burn.sh report data/link.md
+fm-context-burn: report file is not a regular file under data/
+[exit 1]
+
+## S8 bad input refused
+$ bin/fm-context-burn.sh record --turn-type captain --session S1 --percent 150
+fm-context-burn: --percent must be an integer from 0 to 100
+[exit 2]
+$ bin/fm-context-burn.sh record --turn-type Bad;x --session S1 --percent 10
+fm-context-burn: --turn-type must be a short lowercase word
+[exit 2]
+
+## final log
+1000	S1	startup	72
+1020	S1	wake	70
+1030	S1	heartbeat	69
+1040	S1	captain	68
+1500	S1	wake	40
+1600	S1	wake	35
+5000	S2	startup	90
+5600	S2	captain	61
+10000	S3	startup	95
+18000	S3	captain	90
+18300	S3	captain	50
+20000	unknown	startup	95
+20100	unknown	startup	20

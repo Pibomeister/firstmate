@@ -1,0 +1,20 @@
+$ fm-context-burn.sh record --turn-type startup --session S1 --percent 72
+[exit 0]
+$ fm-context-burn.sh record --turn-type wake --session S1 --percent 40
+alert: S1 dropped from 72 to 40 in 500s turn wake
+[exit 0]
+--- .wake-queue after first drop:
+1793492977	1	check	context-burn-S1	check: context burn session S1 dropped from 72 to 40 in 500s turn wake
+$ fm-context-burn.sh record --turn-type wake --session S1 --percent 35
+[exit 0]
+$ fm-context-burn.sh record --turn-type captain --session S1 --percent 34
+[exit 0]
+--- context-burn wakes queued after 3 drop samples: 1
+--- recovery sample (no longer a drop: window passes) clears marker, then a new burn re-alerts:
+$ fm-context-burn.sh record --turn-type captain --session S1 --percent 33
+[exit 0]
+0
+$ fm-context-burn.sh record --turn-type wake --session S1 --percent 2
+alert: S1 dropped from 33 to 2 in 600s turn wake
+[exit 0]
+--- context-burn wakes queued now: 2
