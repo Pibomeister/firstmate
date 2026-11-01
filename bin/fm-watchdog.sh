@@ -203,6 +203,15 @@ wd_quota_floors() {  # <state> <now>
   done
 }
 
+wd_read_composer() {
+  if [ "${FM_TEST_SEAM:-}" = 1 ] && [ -n "${FM_WD_TEST_COMPOSER:-}" ]; then
+    O_COMPOSER=$FM_WD_TEST_COMPOSER
+  else
+    O_COMPOSER=$(fm_run_timed_fn 20 fm_backend_composer_state "$O_BACKEND" "$O_TARGET" 2>/dev/null) || O_COMPOSER=unknown
+  fi
+  [ -n "$O_COMPOSER" ] || O_COMPOSER=unknown
+}
+
 # wd_observe <home> <parent> <id>: fills the O_* globals for one subject and
 # saves the comparable parts to state/watchdog/subjects/<tag>.
 wd_observe() {
@@ -267,12 +276,7 @@ EOF
     O_SIG=$(wd_pane_sig "$O_PANE")
     if [ "$O_SIG" = "$p_sig" ] && [ -n "$p_since" ]; then O_PANE_STATIC=$((now - p_since)); else p_since=$now; fi
     O_DIALOG=$(fm_wd_pane_dialog "$(wd_view "$O_BACKEND" "$O_TARGET")") || O_DIALOG=''
-    if [ "${FM_TEST_SEAM:-}" = 1 ] && [ -n "${FM_WD_TEST_COMPOSER:-}" ]; then
-      O_COMPOSER=$FM_WD_TEST_COMPOSER
-    else
-      O_COMPOSER=$(fm_run_timed_fn 20 fm_backend_composer_state "$O_BACKEND" "$O_TARGET" 2>/dev/null) || O_COMPOSER=unknown
-    fi
-    [ -n "$O_COMPOSER" ] || O_COMPOSER=unknown
+    wd_read_composer
     O_TURN=$(wd_turn_running "$O_BACKEND" "$O_TARGET" "$O_PANE")
     O_COMPOSER_TEXT=$(printf '%s\n' "$O_PANE" | fm_wd_strip_ansi | awk 'NF { r[++n] = $0 } END { for (i = n - 7; i <= n; i++) if (i > 0) print r[i] }')
     if [ "$O_BACKEND" = orca ]; then
@@ -371,34 +375,35 @@ wd_nudge() {
     wd_rec "$id" "$symptom" nudge failed "doorbell submit failed (${verdict:-no verdict})"; return 0; }
 }
 
-# wd_key <symptom> <key-or-digit> <why>: one key, then verify the dialog left.
+# wd_key <symptom> <key-or-digit> <why>: one key, then verify its effect; returns 0
+# only when the key changed the pane. A dialog that left refreshes the observation.
 wd_key() {
   local symptom=$1 key=$2 why=$3 id after
-  wd_rate_open "$symptom" key "$(cfgi key-secs 120)" || return 0
+  wd_rate_open "$symptom" key "$(cfgi key-secs 120)" || return 1
   id=$(wd_id)
   # Two keys that did not clear a dialog within the hour stop the presses, so a
   # misread screen never keeps typing into the session.
   if [ "$symptom" = dialog ] && [ "$(fm_wd_count_since "$LEDGER" "$O_HOME" dialog key '^failed$' "$(( $(wd_now) - 3600 ))")" -ge 2 ]; then
     wd_gap "a $O_DIALOG dialog did not clear after two keys this hour; no more keys pressed"
-    return 0
+    return 1
   fi
-  if wd_do_not_touch "$O_HOME" "$O_TARGET"; then wd_rec "$id" "$symptom" key refused "endpoint is on do-not-touch"; return 0; fi
-  if [ "$(wd_mode)" != act ]; then wd_rec "$id" "$symptom" key dry-run "would press $key: $why"; return 0; fi
+  if wd_do_not_touch "$O_HOME" "$O_TARGET"; then wd_rec "$id" "$symptom" key refused "endpoint is on do-not-touch"; return 1; fi
+  if [ "$(wd_mode)" != act ]; then wd_rec "$id" "$symptom" key dry-run "would press $key: $why"; return 1; fi
   wd_rec "$id" "$symptom" key pending "press $key: $why"
   case "$O_BACKEND:$key" in
     orca:Escape) fm_run_timed 10 orca terminal send --terminal "$O_TARGET" --text "$(printf '\033')" --json >/dev/null 2>&1 ;;
     orca:[0-9]) fm_run_timed 10 orca terminal send --terminal "$O_TARGET" --text "$key" --json >/dev/null 2>&1 ;;
     tmux:[0-9]) fm_run_timed 10 tmux send-keys -t "$O_TARGET" -l "$key" >/dev/null 2>&1 ;;
     *) fm_run_timed_fn 10 fm_backend_send_key "$O_BACKEND" "$O_TARGET" "$key" >/dev/null 2>&1 ;;
-  esac || { wd_rec "$id" "$symptom" key failed "key delivery failed"; return 0; }
+  esac || { wd_rec "$id" "$symptom" key failed "key delivery failed"; return 1; }
   sleep "$(cfgi key-settle-secs 2)"
   case "$symptom" in
     dialog) after=$(wd_view "$O_BACKEND" "$O_TARGET") ;;
     *) after=$(wd_capture "$O_BACKEND" "$O_TARGET" 60) ;;
   esac
   case "$symptom" in
-    dialog) if [ -n "$after" ] && ! fm_wd_pane_dialog "$after" >/dev/null; then wd_rec "$id" "$symptom" key "done" "dialog left the pane"; else wd_rec "$id" "$symptom" key failed "dialog still showing"; fi ;;
-    *) if [ -n "$after" ] && [ "$(wd_pane_sig "$after")" != "$O_SIG" ]; then wd_rec "$id" "$symptom" key "done" "pane changed"; else wd_rec "$id" "$symptom" key failed "pane unchanged"; fi ;;
+    dialog) if [ -n "$after" ] && ! fm_wd_pane_dialog "$after" >/dev/null; then wd_rec "$id" "$symptom" key "done" "dialog left the pane"; O_DIALOG=''; wd_read_composer; else wd_rec "$id" "$symptom" key failed "dialog still showing"; return 1; fi ;;
+    *) if [ -n "$after" ] && [ "$(wd_pane_sig "$after")" != "$O_SIG" ]; then wd_rec "$id" "$symptom" key "done" "pane changed"; else wd_rec "$id" "$symptom" key failed "pane unchanged"; return 1; fi ;;
   esac
 }
 
@@ -532,11 +537,15 @@ wd_restart_gate() {  # <symptom> <kind>...  -> 0 to proceed; records the refusal
   fi
   count=$(fm_wd_count_since "$LEDGER" "$O_HOME" '*' restart '^pending$' "$((now - 86400))")
   last=$(fm_wd_last_epoch "$LEDGER" "$O_HOME" '*' restart '^pending$')
-  if [ "$count" -ge "$(cfgi max-restarts 2)" ] || { [ -n "$last" ] && [ $((now - last)) -lt 7200 ]; }; then
+  if [ "$count" -ge "$(cfgi max-restarts 2)" ]; then
     mkdir -p "$WD/escalated"
     printf '%s\n' "$now" > "$WD/escalated/$O_TAG"
     wd_rec "$id" "$symptom" restart escalated "restart loop: $count restarts in 24h"
     wd_self_heal "restart-loop" "Watchdog restart loop for $O_TAG" "symptom $symptom recurred after $count restarts in 24h"
+    return 1
+  fi
+  if [ -n "$last" ] && [ $((now - last)) -lt "$(cfgi restart-secs 7200)" ]; then
+    wd_gap "$symptom: restart held; last restart was $(((now - last) / 60))m ago"
     return 1
   fi
   if [ "$(cfg restart off)" != on ]; then wd_rec "$id" "$symptom" restart refused "restart is off; stall proven by $*"; return 1; fi
@@ -716,7 +725,8 @@ Pick the option that keeps work going on another model or account without buying
     question)
       text=$(fm_wd_dialog_text "$O_PANE")
       if fm_wd_reserved "$text"; then wd_gap "question dialog names an owner-reserved category; held"; return 0; fi
-      wd_key dialog Escape "close the question so the session can settle it by council"
+      wd_rate_open question nudge "$(cfgi nudge-secs 900)" || { wd_gap "question dialog held; a question nudge went out inside nudge-secs"; return 0; }
+      wd_key dialog Escape "close the question so the session can settle it by council" || return 0
       wd_nudge question "your question dialog was closed so work keeps moving. Settle it by council per the captain rules, record the ruling, and continue." ;;
   esac
 }
@@ -791,17 +801,29 @@ wd_handle_quota() {
   done
 }
 
+# Prints the epoch of the handoff nudge that counts for this low-context episode:
+# delivered, newer than the last restart, and younger than twice handoff-wait-secs.
+wd_handoff_nudge_epoch() {
+  local e last_r
+  e=$(awk -F'\t' -v h="$O_HOME" '$3 == h && $5 == "handoff-request" && $6 == "nudge" {
+      if ($7 ~ /^(pending|dry-run)$/) { id = $2; e = $1 }
+      else if ($7 == "failed" && $2 == id && $8 !~ /no transcript progress/) e = ""
+    } END { print e }' "$LEDGER" 2>/dev/null)
+  last_r=$(fm_wd_last_epoch "$LEDGER" "$O_HOME" '*' restart '^pending$')
+  [ -n "$e" ] && [ "$e" -ge "${last_r:-0}" ] && [ $(($(wd_now) - e)) -lt $((2 * $(cfgi handoff-wait-secs 600))) ] && printf '%s\n' "$e"
+  return 0
+}
+
 # Low context first asks for a full handoff and a request file; a nudge that gets
 # neither within handoff-wait-secs falls back to the lean handoff.
 wd_requested_restart() {  # <quiet-secs>
-  local quiet=$1 now nudged last_r wait latest timed_out
+  local quiet=$1 now nudged wait latest timed_out
   now=$(wd_now)
   wait=$(cfgi handoff-wait-secs 600)
-  nudged=$(fm_wd_last_epoch "$LEDGER" "$O_HOME" handoff-request nudge)
-  last_r=$(fm_wd_last_epoch "$LEDGER" "$O_HOME" '*' restart '^pending$')
-  if [ -n "$nudged" ] && [ "$nudged" -lt "${last_r:-0}" ]; then nudged=''; fi
+  nudged=$(wd_handoff_nudge_epoch)
   if [ -z "$nudged" ] && [ "$O_RESTART_REQ" != 1 ]; then
     wd_nudge handoff-request "context is low. Write a full handoff to data/handoff-<name>.md in your home, then create state/.watchdog-restart-request there. The watchdog then restarts this session, and the new session picks up from that handoff."
+    [ -n "$(wd_handoff_nudge_epoch)" ] || wd_gap "low context; the handoff nudge was not delivered; no restart yet"
     return 0
   fi
   if [ -n "$nudged" ]; then

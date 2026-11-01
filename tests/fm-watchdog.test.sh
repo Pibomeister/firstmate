@@ -541,6 +541,90 @@ restart-command=$TMP_ROOT/fake-captain.sh"
   pass "low context: the bounded wait ends in a lean restart and a recorded gap"
 }
 
+test_low_context_second_episode_asks_again() {
+  make_home $'Captain session\n> \n  7% until auto-compact' "restart=on
+restart-command=/bin/true"
+  transcript 3000 "Working." "Testing." "Green."
+  FM_WD_TEST_COMPOSER=empty run_wd 0 once >/dev/null 2>&1
+  FM_WD_TEST_COMPOSER=empty run_wd 1300 once >/dev/null 2>&1
+  assert_equals 2 "$(ledger_rows handoff-request nudge pending)" "a later low asks for a full handoff again"
+  assert_equals 0 "$(ledger_rows restart-requested restart pending)" "a later low does not restart on the old nudge: $(ledger | cut -f5-8)"
+  kill -0 "$LOCKPID" 2>/dev/null || fail "the session was stopped without being asked"
+  pass "low context: an old nudge does not count for a later low"
+}
+
+test_low_context_undelivered_nudge_starts_no_wait() {
+  make_home $'Captain session\n> draft\n  7% until auto-compact' "restart=on
+restart-command=/bin/true"
+  transcript 3000 "Working." "Testing." "Green."
+  FM_WD_TEST_COMPOSER=pending run_wd 0 once >/dev/null 2>&1
+  FM_WD_TEST_COMPOSER=pending run_wd 1000 once >/dev/null 2>&1
+  assert_equals 2 "$(ledger_rows handoff-request nudge refused)" "a refused nudge retries under the nudge rate limit"
+  assert_equals 0 "$(ledger_rows restart-requested restart pending)" "a refused nudge starts no wait: $(ledger | cut -f5-8)"
+  assert_grep "nudge was not delivered" "$H/data/watchdog/status.md" "the missing delivery is a reported gap"
+  kill -0 "$LOCKPID" 2>/dev/null || fail "the session with an unsent draft was stopped"
+  FM_WD_TEST_COMPOSER=empty run_wd 2000 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows handoff-request nudge pending)" "the nudge goes out once the composer is empty"
+  pass "low context: only a delivered nudge starts the handoff wait"
+}
+
+test_restart_interval_holds_without_escalating() {
+  make_home $'Captain session\n> ' "restart=on
+restart-command=$TMP_ROOT/fake-captain.sh"
+  write_fake_captain
+  transcript 3000 "Working." "Testing." "Green."
+  local home
+  home=$(cd -P "$H" && pwd -P)
+  mkdir -p "$H/state/watchdog"
+  printf '%s\tx1\t%s\thome\tfrozen\trestart\tpending\ttoken=ab old_pid=1\n%s\tx1\t%s\thome\tfrozen\trestart\tdone\tverified\n' \
+    "$((BASE - 1800))" "$home" "$((BASE - 1700))" "$home" > "$H/state/watchdog/actions.tsv"
+  : > "$H/state/.watchdog-restart-request"
+  fm_touch_epoch "$((BASE - 10))" "$H/state/.watchdog-restart-request"
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 10 once >/dev/null 2>&1
+  assert_absent "$H/state/watchdog/escalated/home$CASE_N" "one earlier restart is no loop: $(ledger | cut -f5-8)"
+  assert_equals 0 "$(ledger_rows restart-requested restart pending)" "the minimum interval holds a restart"
+  assert_grep "restart held" "$H/data/watchdog/status.md" "the hold is a reported gap"
+  run_wd 5500 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows restart-requested restart pending)" "the restart runs after restart-secs: $(ledger | cut -f5-8)"
+  wait_pickup || fail "the new captain never proved pickup"
+  LOCK_PIDS="$LOCK_PIDS $(cat "$H/state/.lock")"
+  pass "restart-secs holds a sooner restart across symptoms, and only max-restarts escalates"
+}
+
+# A question dialog that leaves the screen on the first key, then a live composer.
+question_agent() {
+  cat > "$H/agent.sh" <<SH
+#!/usr/bin/env bash
+printf 'Which plan should I follow?\n ❯ 1. Plan A\n   2. Plan B\n\nEnter to select · Esc to cancel\n'
+stty -echo raw
+dd bs=1 count=1 of=/dev/null 2>/dev/null
+stty sane -echo
+clear
+printf '> \n'
+stty raw
+exec cat >> "$H/typed.log"
+SH
+  "$REAL_TMUX" -f /dev/null -L "$SOCKET" respawn-pane -k -t "$T" "$H/agent.sh"
+  sleep 0.5
+}
+
+test_question_nudge_follows_a_cleared_dialog() {
+  make_home $'Captain session\n> '
+  question_agent
+  FM_WD_TEST_COMPOSER=empty run_wd 0 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows dialog key "done")" "the question dialog closed: $(ledger | cut -f5-8)"
+  assert_equals 1 "$(ledger_rows question nudge pending)" "the session is told to settle it: $(ledger | cut -f5-8)"
+  assert_equals 0 "$(ledger_rows question nudge refused)" "the cleared dialog does not refuse the nudge"
+  wait_typed ": fm-op " || wait_typed "operational-inbox" || fail "the nudge never reached the pane: $(cat "$H/typed.log")"
+
+  make_home $'Which plan should I follow?\n ❯ 1. Plan A\n   2. Plan B\n\nEnter to select · Esc to cancel'
+  FM_WD_TEST_COMPOSER=empty run_wd 0 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows dialog key failed)" "a dialog that stays records the failed key"
+  assert_equals 0 "$(ledger | awk -F'\t' '$5 == "question"' | wc -l | tr -d ' ')" "a failed key sends no nudge: $(ledger | cut -f5-8)"
+  pass "question dialog: the nudge follows a cleared dialog, and only a cleared one"
+}
+
 test_no_activity_source_is_not_reported_ok() {
   make_home $'Captain session\n> '
   run_wd 0 once >/dev/null 2>&1
@@ -686,6 +770,10 @@ fm_test_run \
   test_dead_holder_is_not_hidden_by_earlier_symptoms \
   test_low_context_waits_for_full_handoff_then_restarts \
   test_low_context_timeout_restarts_with_lean_handoff \
+  test_low_context_second_episode_asks_again \
+  test_low_context_undelivered_nudge_starts_no_wait \
+  test_restart_interval_holds_without_escalating \
+  test_question_nudge_follows_a_cleared_dialog \
   test_no_activity_source_is_not_reported_ok \
   test_tmux_restart_survives_a_closed_session \
   test_status_file_short_and_staleness_visible \
