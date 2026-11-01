@@ -780,6 +780,65 @@ test_homes_with_one_basename_keep_their_own_state() {
   pass "homes that share a basename keep separate state"
 }
 
+test_frozen_low_context_clean_draft_gets_one_enter_then_restarts() {
+  make_home $'Captain session\n> finish the summary\n  7% until auto-compact' 'restart=on
+restart-command=/bin/true'
+  transcript 8000 "Working." "Testing." "Green."
+  owe_input 8000
+  local off
+  for off in 0 1000 2000 3000 4000 5000 6000; do FM_WD_TEST_COMPOSER=pending run_wd "$off" once >/dev/null 2>&1; done
+  assert_equals 1 "$(ledger_rows pasted-input key pending)" "the frozen draft gets one Enter: $(ledger | cut -f5-8)"
+  assert_equals 1 "$(ledger_rows frozen restart pending)" "the frozen ladder reaches the restart: $(ledger | cut -f5-8)"
+  assert_equals 0 "$(ledger_rows handoff-request nudge pending)" "no handoff nudge goes onto the draft"
+
+  make_home $'Captain session\n> finish the summary'
+  transcript 100 "Working."
+  for off in 0 400 800 1200; do FM_WD_TEST_COMPOSER=pending run_wd "$off" once >/dev/null 2>&1; done
+  assert_equals 1 "$(ledger_rows pasted-input key pending)" "an idle draft gets one Enter: $(ledger | cut -f5-8)"
+  assert_grep "no second Enter" "$H/data/watchdog/status.md" "the spent Enter is a gap"
+  pass "unsent input: Enter goes once in two hours, and a frozen low-context draft reaches the restart"
+}
+
+test_restart_request_is_only_the_file() {
+  make_home $'Captain session\n> ' 'restart=on
+restart-command=/bin/true'
+  transcript 3000 "Working." "Quoting the phrase: RESTART REQUESTED"
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger | awk -F'\t' '$5 == "restart-requested"' | wc -l | tr -d ' ')" "assistant text requests nothing: $(ledger | cut -f5-8)"
+  pass "restart request: assistant text is not a channel"
+}
+
+test_blank_stripping_keeps_a_trailing_t() {
+  assert_equals "2	Add credit" "$(lib fm_wd_dialog_options $'Pick\n ❯ 1. Wait\n   2. Add credit\n\nEnter to confirm' | tail -n 1)" "an option keeps its last letter"
+
+  make_home $'You have hit your weekly limit for Opus.\n\n ❯ 1. Switch to Sonnet\n   2. Add credit\n\nEnter to confirm · Esc to cancel' 'models=claude:haiku'
+  fake_models "$H" ok:"OPTION 2" absent
+  transcript 100 "Working."
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows dialog key pending)" "a credit option ending in t is refused: $(ledger | cut -f5-8)"
+  assert_equals 1 "$(ledger_rows dialog key refused)" "the refusal is recorded"
+
+  local moved
+  make_home $'Captain session\n> '
+  moved="${H}t"; mv "$H" "$moved"; H=$moved
+  transcript 3000 "Working." "Testing." "Green."; owe_input 3000
+  sed -i.bak "s|^claude-config-dirs=.*|claude-config-dirs=$H/claude|" "$H/config/watchdog"
+  printf 'homes=%s\n' "$H" >> "$H/config/watchdog"
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 1000 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows frozen nudge pending)" "a home path ending in t is watched: $(ledger | cut -f3,5-8)"
+
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED T" ok:"PROCEED T"
+  transcript 100 "Working."
+  printf 'needs-decision [at=%s] [key=cache-layout]: T (recommended) flat keys or B nested keys?\n' "$((BASE - 9000))" > "$H/state/t1.status"
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 2000 once >/dev/null 2>&1
+  [ -f "$H/data/watchdog/rulings/$(home_key)-t1-cache-layout.md" ] || fail "a verdict ending in T read as failed: $(cat "$H/state/watchdog/model-calls.tsv")"
+  pass "sed blank classes keep a trailing t in options, homes, and verdicts"
+}
+
 test_low_context_submits_a_clean_draft_then_nudges() {
   make_home $'Captain session\n> finish the summary\n  7% until auto-compact' 'restart=on
 restart-command=/bin/true'
@@ -1135,7 +1194,9 @@ test_never_merges_deploys_or_messages_owner() {
 test_manager_units() {
   make_home $'x'
   local plist
+  rm -rf "$H/state/watchdog"
   plist=$(run_wd 0 render-launchd)
+  [ -d "$H/state/watchdog" ] || fail "render-launchd leaves the log directory missing"
   assert_contains "$plist" "<string>run</string>" "plist runs the loop"
   assert_contains "$plist" "<key>PATH</key>" "plist carries PATH"
   assert_contains "$plist" "$(cd -P "$H" && pwd -P)" "plist carries FM_HOME"
@@ -1184,6 +1245,9 @@ fm_test_run \
   test_homes_with_one_basename_keep_their_own_state \
   test_dialog_reserved_check_reads_only_dialog_rows \
   test_orca_draft_probe_failure_holds_the_nudge \
+  test_frozen_low_context_clean_draft_gets_one_enter_then_restarts \
+  test_restart_request_is_only_the_file \
+  test_blank_stripping_keeps_a_trailing_t \
   test_low_context_submits_a_clean_draft_then_nudges \
   test_stale_or_foreign_heartbeat_percent_is_ignored \
   test_orca_draft_is_never_typed_onto \

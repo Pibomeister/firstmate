@@ -180,7 +180,7 @@ _fm_wd_dialog_rows() {  # <screen> <own|all|options>
 }
 
 fm_wd_dialog_options() {  # <screen>
-  _fm_wd_dialog_rows "$1" options | LC_ALL=C sed -nE 's/^[^0-9]*(❯|›|>)?[ \t]*([0-9]+)[.)][ \t]+(.*[^ \t│┃|])[ \t│┃|]*$/\2	\3/p'
+  _fm_wd_dialog_rows "$1" options | LC_ALL=C sed -nE 's/^[^0-9]*(❯|›|>)?[[:blank:]]*([0-9]+)[.)][[:blank:]]+(.*[^[:blank:]│┃|])[[:blank:]│┃|]*$/\2	\3/p'
 }
 
 fm_wd_dialog_text() {  # <screen>

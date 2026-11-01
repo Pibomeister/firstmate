@@ -3931,3 +3931,8 @@ Across repeated act-mode passes the watchdog records exactly one refusal for tha
 The guard runs passes until the pane settles because Claude can repaint just after a draft lands, which changes the pane signature for one pass.
 Accepting the trust picker adds the disposable folder to the Claude config's trusted list.
 No running-turn signal, Orca or Herdr endpoint, or restart is exercised by this guard.
+
+The M4 captain was also validated live on Orca on 2026-11-01, 14:58-15:00Z, on code from before commit 4093b145; firstmate confirmed this run, and no guard in this repository repeats it.
+The watchdog ran a real Orca restart, the new session's pickup was verified, that session re-armed the away daemon, and act mode was then restored to off.
+Act mode stays off on every other machine until rollout.
+A repeat live test is owed, because later fixes change the restart paths.
