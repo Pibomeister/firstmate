@@ -745,7 +745,10 @@ fm_control_harness_wiring_paths() {  # <harness> <worktree> <state-dir> <id> [ki
     # the project, and nothing global is installed.
     gemini) printf '%s\n' "$state/$id.gemini-settings.json" ;;
     devin) printf '%s\n' "$state/$id.devin-config.json" ;;
-    droid) printf '%s\n' "$state/$id.droid-settings.json" "$state/$id.droid-session-end" ;;
+    # The SessionEnd marker is not wiring: it is the stop proof of the task
+    # record, so a relaunch retires it only when the replacement record is
+    # published (bin/fm-spawn.sh).
+    droid) printf '%s\n' "$state/$id.droid-settings.json" ;;
     # cortex's lifecycle hooks live in a firstmate-owned plugin directory the
     # launch reaches through --plugin-dir. Only its two files are retired here
     # (this table's consumer removes files); teardown removes the directory.

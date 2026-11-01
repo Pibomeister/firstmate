@@ -728,6 +728,62 @@ SH
   printf '%s\n' "$WT" > "$CASE_DIR/wt-path"
 }
 
+orca_droid_control_relaunch() {  # -> sets OUT and STATUS
+  STATUS=0
+  OUT=$(FM_ROOT_OVERRIDE='' FM_HOME="$HOME_DIR" HOME="$CASE_DIR/user-home" CLAUDE_CONFIG_DIR='' \
+    FM_STATE_OVERRIDE="$HOME_DIR/state" FM_DATA_OVERRIDE="$HOME_DIR/data" \
+    FM_PROJECTS_OVERRIDE="$HOME_DIR/projects" FM_CONFIG_OVERRIDE="$HOME_DIR/config" \
+    FM_SPAWN_NO_GUARD=1 FM_TEST_ORCA_DIR="$CASE_DIR" FM_TEST_ORCA_NEW_TERMINAL=term-new \
+    FM_TEST_ORCA_BOOT_EPOCH=2000 FM_DROID_POLL_INTERVAL=0.1 PATH="$FB:$PATH" \
+    "$ROOT/bin/fm-control.sh" "$TASK" relaunch --harness droid --note 'terminal closed' 2>&1) || STATUS=$?
+}
+
+test_orca_droid_aborted_rebind_keeps_its_stop_proof_for_a_retry() {
+  local gen new_gen before real_jq pane
+  real_jq=$(command -v jq) || fail "jq is required"
+  orca_relaunch_case droid-abort-retry
+  echo 'harness=droid' >> "$HOME_DIR/state/$TASK.meta"
+  gen=$("$ROOT/bin/fm-busy-event.sh" arm "$HOME_DIR/state" "$TASK")
+  echo "busy_gen=$gen" >> "$HOME_DIR/state/$TASK.meta"
+  printf '%s\n' "$gen" > "$HOME_DIR/state/$TASK.droid-session-end"
+  orca_relaunch_show false operator_close
+  orca_droid_pane
+  # Fails only the replacement's settings write, which runs after the new
+  # terminal exists and before the replacement record is published.
+  cat > "$FB/jq" <<SH
+#!/usr/bin/env bash
+case " \$* " in
+  *" --arg submit "*) [ ! -e "$CASE_DIR/settings-write-fails" ] || exit 1 ;;
+esac
+exec "$real_jq" "\$@"
+SH
+  chmod +x "$FB/jq"
+  touch "$CASE_DIR/settings-write-fails"
+  before=$(grep -E '^(terminal|busy_gen|harness)=' "$HOME_DIR/state/$TASK.meta")
+  orca_droid_control_relaunch
+  expect_code 1 "$STATUS" "a failed settings write must abort the rebind"$'\n'"$OUT"
+  [ -s "$CASE_DIR/terminal-create.log" ] || fail "the abort must come after the new terminal exists"$'\n'"$OUT"
+  [ -e "$CASE_DIR/terminal-closed" ] || fail "the abort must close the replacement terminal"$'\n'"$OUT"
+  [ "$(grep -E '^(terminal|busy_gen|harness)=' "$HOME_DIR/state/$TASK.meta")" = "$before" ] \
+    || fail "an aborted rebind must leave the published record unchanged"
+  [ "$(cat "$HOME_DIR/state/$TASK.droid-session-end")" = "$gen" ] \
+    || fail "an aborted rebind must keep the record's stop marker"
+  rm "$CASE_DIR/settings-write-fails"
+  orca_droid_control_relaunch
+  pane=$(cat "$CASE_DIR/pane.pid" 2>/dev/null || true)
+  expect_code 0 "$STATUS" "the retry must pass the original stop proof"$'\n'"$OUT"
+  [ "$(orca_meta_field terminal)" = term-new ] || fail "the retry must bind the replacement terminal"
+  [ "$(orca_meta_field harness)" = droid ] || fail "the retry must stay on Droid"
+  new_gen=$(orca_meta_field busy_gen)
+  [ -n "$new_gen" ] && [ "$new_gen" != "$gen" ] || fail "the retry must arm a new generation, got '$new_gen'"
+  [ ! -e "$HOME_DIR/state/$TASK.droid-session-end" ] || fail "the published replacement must retire the old marker"
+  if [ -n "$pane" ]; then
+    pkill -P "$pane" 2>/dev/null || true
+    kill "$pane" 2>/dev/null || true
+  fi
+  pass "an aborted Orca Droid rebind keeps its record and stop marker, and its retry reaches a new terminal"
+}
+
 test_orca_droid_relaunch_stays_on_droid_through_fm_control() {
   local variant gen new_gen settings pane rc=0 out
   for variant in closed stop-unverifiable; do
@@ -741,13 +797,9 @@ test_orca_droid_relaunch_stays_on_droid_through_fm_control() {
       printf '{"ok":true,"result":{"terminal":{"handle":"term-old","ptyId":"pty-old","connected":false,"writable":false,"exitCause":{"kind":"unknown","reason":"stop_unverified"},"executionHostId":"local","worktreePath":"%s"}}}\n' \
         "$WT" > "$CASE_DIR/show-term-old.json"
     orca_droid_pane
-    rc=0
-    out=$(FM_ROOT_OVERRIDE='' FM_HOME="$HOME_DIR" HOME="$CASE_DIR/user-home" CLAUDE_CONFIG_DIR='' \
-      FM_STATE_OVERRIDE="$HOME_DIR/state" FM_DATA_OVERRIDE="$HOME_DIR/data" \
-      FM_PROJECTS_OVERRIDE="$HOME_DIR/projects" FM_CONFIG_OVERRIDE="$HOME_DIR/config" \
-      FM_SPAWN_NO_GUARD=1 FM_TEST_ORCA_DIR="$CASE_DIR" FM_TEST_ORCA_NEW_TERMINAL=term-new \
-      FM_TEST_ORCA_BOOT_EPOCH=2000 FM_DROID_POLL_INTERVAL=0.1 PATH="$FB:$PATH" \
-      "$ROOT/bin/fm-control.sh" "$TASK" relaunch --harness droid --note 'terminal closed' 2>&1) || rc=$?
+    orca_droid_control_relaunch
+    rc=$STATUS
+    out=$OUT
     pane=$(cat "$CASE_DIR/pane.pid" 2>/dev/null || true)
     expect_code 0 "$rc" "fm-control must relaunch the $variant Droid task on Droid"$'\n'"$out"$'\n'"$(cat "$CASE_DIR/pane.out" 2>/dev/null)"
     assert_contains "$out" "relaunched $TASK harness=droid from=droid" "fm-control must report a Droid-to-Droid relaunch"
@@ -1519,6 +1571,7 @@ test_orca_source_preserves_values_without_utf8_locale
 test_orca_droid_relaunch_connected_shell_without_marker
 test_orca_droid_relaunch_rebinds_only_after_stop_and_terminal_proof
 test_orca_droid_relaunch_stays_on_droid_through_fm_control
+test_orca_droid_aborted_rebind_keeps_its_stop_proof_for_a_retry
 test_orca_launch_uses_controlled_tmux_environment
 test_orca_allowlist_without_source_warns
 test_orca_spawn_waits_for_a_slow_pane_before_a_later_failure
