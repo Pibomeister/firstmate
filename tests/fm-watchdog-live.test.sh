@@ -4,14 +4,16 @@
 #
 # It never submits a prompt: the watchdog runs with no judge models, every
 # model CLI it could reach is a logging fake, and the only text typed is a
-# `merge #12` draft the watchdog must refuse to submit. It proves the rendered
+# `merge #12` draft the watchdog must refuse to submit and a clean draft the guard
+# clears itself, with no watchdog pass over it. It proves the rendered
 # signals the watchdog reads from a real Claude pane: the folder-trust picker
 # is a permission dialog that gets no key, the composer verdict sees a draft,
-# and Enter is never pressed on merge text. Runs by default where claude, tmux,
+# Enter is never pressed on merge text, and a clean draft passes the boundary
+# proof. Runs by default where claude, tmux,
 # and jq are installed; FM_WATCHDOG_LIVE=0 or FM_LIVE=0 turns it off, and
 # FM_WATCHDOG_LIVE=1 makes an absent tool a failure.
-# Accepting the trust picker records the disposable folder in the Claude
-# config's trusted list; the folder itself is removed on exit.
+# Claude runs on a disposable config dir with a fake key and an unreachable API
+# URL, so accepting the trust picker touches no real Claude config.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -50,9 +52,14 @@ trap cleanup_live EXIT
 H="$TMP_ROOT/home"
 WORK="$TMP_ROOT/untrusted-folder"
 SID="22222222-2222-4222-8222-$(printf '%012d' "$$")"
-mkdir -p "$H/state" "$H/config" "$H/data" "$WORK"
+LAB_CONFIG="$TMP_ROOT/claude-config"
+LAB_KEY="sk-ant-fm-watchdog-live-guard-not-a-real-key"
+mkdir -p "$H/state" "$H/config" "$H/data" "$WORK" "$LAB_CONFIG"
+jq -n --arg k "${LAB_KEY: -20}" '{hasCompletedOnboarding:true, customApiKeyResponses:{approved:[$k], rejected:[]}}' > "$LAB_CONFIG/.claude.json"
 
-"$REAL_TMUX" -f /dev/null -L "$SOCKET" new-session -d -s wd -x 160 -y 45 -c "$WORK" "$REAL_CLAUDE" ||
+"$REAL_TMUX" -f /dev/null -L "$SOCKET" new-session -d -s wd -x 160 -y 45 -c "$WORK" \
+  env -u CLAUDE_CODE_OAUTH_TOKEN CLAUDE_CONFIG_DIR="$LAB_CONFIG" ANTHROPIC_API_KEY="$LAB_KEY" ANTHROPIC_BASE_URL=http://127.0.0.1:9 \
+  CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 "$REAL_CLAUDE" ||
   fail "claude $CLAUDE_VERSION: could not start in a private tmux socket"
 T=$("$REAL_TMUX" -L "$SOCKET" list-panes -t wd -F '#{pane_id}' | head -n 1)
 PANE_PID=$("$REAL_TMUX" -L "$SOCKET" list-panes -t wd -F '#{pane_pid}' | head -n 1)
@@ -136,3 +143,32 @@ screen | grep -Fq 'merge #12' || fail "claude $CLAUDE_VERSION: the merge draft l
 assert_equals pending "$(composer)" "claude $CLAUDE_VERSION: the merge draft is still unsent"
 assert_equals "" "$(cat "$CALLS_LOG")" "claude $CLAUDE_VERSION: no model, forge, or notifier CLI was called"
 pass "claude $CLAUDE_VERSION: a real merge draft is seen and never submitted, with no model call"
+
+# 4. A clean draft in the real composer passes the boundary proof on the same
+# window split as wd_read_composer. No watchdog pass runs, so nothing presses Enter.
+wait_composer() {  # <state>
+  for _ in $(seq 1 10); do
+    [ "$(composer)" = "$1" ] && return 0
+    sleep 1
+  done
+  return 1
+}
+"$REAL_TMUX" -L "$SOCKET" send-keys -t "$T" C-u
+wait_composer empty || fail "claude $CLAUDE_VERSION: the merge draft did not clear; last screen: $(screen | tail -n 6)"
+"$REAL_TMUX" -L "$SOCKET" send-keys -t "$T" -l 'finish the summary'
+wait_composer pending || fail "claude $CLAUDE_VERSION: the clean draft is not seen; last screen: $(screen | tail -n 6)"
+sleep 2
+rows=$(screen | lib fm_wd_strip_ansi | awk NF)
+window=$(printf '%s\n' "$rows" | tail -n 8)
+above=$(printf '%s\n' "$rows" | awk -v n="$(printf '%s\n' "$rows" | wc -l)" 'NR <= n - 8')
+lib fm_wd_draft_readable "$window" "$above" ||
+  fail "claude $CLAUDE_VERSION: the clean draft fails the boundary proof; window: $window"
+lib fm_wd_text_allowed "$(lib fm_wd_prompt_tail "$window")" ||
+  fail "claude $CLAUDE_VERSION: the clean draft fails the text guard; window: $window"
+lib fm_wd_draft_rows "$window" | grep -Fq 'finish the summary' ||
+  fail "claude $CLAUDE_VERSION: the proven draft is not in the note rows; window: $window"
+"$REAL_TMUX" -L "$SOCKET" send-keys -t "$T" C-u
+wait_composer empty || fail "claude $CLAUDE_VERSION: the clean draft did not clear; last screen: $(screen | tail -n 6)"
+assert_equals 0 "$(key_rows)" "claude $CLAUDE_VERSION: the watchdog sent no key"
+assert_equals "" "$(cat "$CALLS_LOG")" "claude $CLAUDE_VERSION: no model, forge, or notifier CLI was called"
+pass "claude $CLAUDE_VERSION: a real clean draft is proven whole, and the guard clears it unsent"

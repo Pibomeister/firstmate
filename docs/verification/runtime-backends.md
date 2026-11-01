@@ -3915,12 +3915,13 @@ A real `bin/fm-spawn.sh --scout --harness opencode --model opencode-go/deepseek-
 
 Verified on 2026-11-01 on macOS (Darwin 25.6.0, arm64) with Claude Code 2.1.316 and tmux 3.6a.
 The behavior contract is owned by [the watchdog page](../watchdog.md).
-The guard launches the installed Claude Code TUI in a new folder on a private tmux socket and never submits a prompt; the watchdog runs with no judge models, and its model, forge, and notifier CLIs are logging fakes.
+The guard launches the installed Claude Code TUI in a new folder on a private tmux socket, with a disposable `CLAUDE_CONFIG_DIR`, a fake API key, and an unreachable API URL, and never submits a prompt; the watchdog runs with no judge models, and its model, forge, and notifier CLIs are logging fakes.
 
 ```sh
 bash bin/fm-test-run.sh tests/fm-watchdog-live.test.sh
 ok - claude 2.1.316 (Claude Code): the folder-trust picker is left alone and reported
 ok - claude 2.1.316 (Claude Code): a real merge draft is seen and never submitted, with no model call
+ok - claude 2.1.316 (Claude Code): a real clean draft is proven whole, and the guard clears it unsent
 ```
 
 Claude Code 2.1.316 renders its folder-trust picker with unnumbered options (`❯ No, exit`, `Yes, I trust this folder`) above `Enter to confirm · Esc to cancel`.
@@ -3929,7 +3930,7 @@ After the guard accepts the trust picker itself, a second startup picker about b
 The tmux composer verdict reads `empty` on the idle composer and `pending` once `merge #12` is typed.
 Across repeated act-mode passes the watchdog records exactly one refusal for that draft per Enter window, presses nothing, and the draft stays unsent.
 The guard runs passes until the pane settles because Claude can repaint just after a draft lands, which changes the pane signature for one pass.
-Accepting the trust picker adds the disposable folder to the Claude config's trusted list.
+A clean draft in the same pane passes the draft-boundary proof on the watchdog's own window split, and the guard clears it by hand with no watchdog pass. Accepting the trust picker changes only the disposable config.
 No running-turn signal, Orca or Herdr endpoint, or restart is exercised by this guard.
 
 The M4 captain was also validated live on Orca on 2026-11-01, 14:58-15:00Z, on code from before commit 4093b145; firstmate confirmed this run, and no guard in this repository repeats it.
