@@ -135,17 +135,32 @@ fm_wd_paste_placeholder() {  # <composer-window>
 
 FM_WD_PROMPT_RE=$'^((│|┃|[|]) )?(❯|›|⟩|→|❭|>)( |\xC2\xA0|$)'
 
+# A bordered prompt row belongs to a draft only as far as its box is closed:
+# box_closed sets box_top and box_bottom around row g of the awk row array.
+FM_WD_BOX_AWK='
+  function bordered(r) { return r ~ /^(│|┃) / }
+  function box_closed(g) {
+    for (box_top = g - 1; box_top > 0 && bordered(row[box_top]); box_top--) ;
+    for (box_bottom = g + 1; box_bottom <= NR && bordered(row[box_bottom]); box_bottom++) ;
+    return row[box_top] ~ /^(╭|┌)/ && row[box_bottom] ~ /^(╰|└)/
+  }'
+
 fm_wd_prompt_tail() {  # <composer-window>
   printf '%s\n' "$1" | awk -v glyph="$FM_WD_PROMPT_RE" 'found || $0 ~ glyph { found = 1; print }'
 }
 
 fm_wd_draft_rows() {  # <composer-window>
-  printf '%s\n' "$1" | awk -v glyph="$FM_WD_PROMPT_RE" '
+  printf '%s\n' "$1" | awk -v glyph="$FM_WD_PROMPT_RE" "$FM_WD_BOX_AWK"'
     function is_rule(r, t) { t = r; gsub(/[ \t│┃|─━╭╮╰╯┌┐└┘-]/, "", t); return t == "" && (index(r, "─") || index(r, "━")) }
     { row[NR] = $0; if ($0 ~ glyph) g[NR] = 1 }
     END {
       for (i = NR; i > 0; i--) if (i in g) { last = i; break }
       if (!last) exit
+      if (bordered(row[last]) && box_closed(last)) {
+        for (i = box_top + 1; !(i in g); i++) ;
+        for (; i < box_bottom; i++) print row[i]
+        exit
+      }
       start = last
       for (i = last - 1; i > 0 && !is_rule(row[i]); i--) if (i in g) start = i
       stop = NR
@@ -155,28 +170,23 @@ fm_wd_draft_rows() {  # <composer-window>
     }'
 }
 
-# With a prompt row above the window, the draft top is proven only by a closed
-# box around the last prompt row that lies whole inside the window, or by a pair of equal rules of 40 or more
+# A bordered last prompt row needs a closed box whole inside the window. With a
+# plain one and a prompt row above the window, the draft top is proven only by a pair of equal rules of 40 or more
 # characters at column 0 around it. Draft rows sit indented under the prompt
 # glyph, so such a rule row is the harness's and not typed text.
 fm_wd_draft_readable() {  # <composer-window> [rows-above-the-window]
   local above=${2-} above_n=0
   fm_wd_paste_placeholder "$1" && return 1
   [ -z "$above" ] || above_n=$(printf '%s\n' "$above" | wc -l | tr -d ' ')
-  { [ -z "$above" ] || printf '%s\n' "$above"; printf '%s\n' "$1"; } | awk -v glyph="$FM_WD_PROMPT_RE" -v above_n="$above_n" '
+  { [ -z "$above" ] || printf '%s\n' "$above"; printf '%s\n' "$1"; } | awk -v glyph="$FM_WD_PROMPT_RE" -v above_n="$above_n" "$FM_WD_BOX_AWK"'
     function rule_len(r, t, n) { t = r; n = gsub(/─|━/, "", t); return (t ~ /^[ \t]*$/ && r !~ /^[ \t]/) ? n : 0 }
-    function bordered(r) { return r ~ /^(│|┃) / }
     { row[NR] = $0; if ($0 ~ glyph) { g = NR; if (NR <= above_n) seen = 1 } }
     END {
       if (g <= above_n) exit 1
+      if (bordered(row[g])) exit !(box_closed(g) && box_top > above_n)
       if (!seen) exit 0
       t = rule_len(row[g - 1])
       if (t >= 40) for (i = g + 1; i <= NR; i++) if (rule_len(row[i]) == t) exit 0
-      if (bordered(row[g])) {
-        for (i = g - 1; i > 0 && bordered(row[i]); i--) ;
-        for (j = g + 1; j <= NR && bordered(row[j]); j++) ;
-        if (i > above_n && row[i] ~ /^(╭|┌)/ && row[j] ~ /^(╰|└)/) exit 0
-      }
       exit 1
     }'
 }
