@@ -2,7 +2,7 @@
 # Host-local lifecycle control for the remote secondmate home selected by fm-on.
 #
 # Usage:
-#   fm-remote-secondmate-control.sh launch <id> <harness> <model|-> <effort|-> herdr [traceparent]
+#   fm-remote-secondmate-control.sh launch <id> <harness> <model|-> <effort|-> herdr [budget=<ih>:<is>:<fh>:<fs>] [traceparent]
 #   fm-remote-secondmate-control.sh relaunch <id> <harness> <model|default|-> <effort|default|->
 #   fm-remote-secondmate-control.sh state <id>
 #   fm-remote-secondmate-control.sh route <id>
@@ -171,8 +171,34 @@ cmd_route() {
 }
 
 cmd_launch() {
-  local id=$1 harness=$2 model=$3 effort=$4 selected_backend=$5 traceparent=${6:-}
+  local id=$1 harness=$2 model=$3 effort=$4 selected_backend=$5
+  shift 5
+  local budget='' traceparent='' token b_ih b_is b_fh b_fs extra=''
   local current meta out herdr_session
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      budget=*)
+        [ -z "$budget" ] || die "duplicate remote secondmate budget"
+        budget=${1#budget=}
+        ;;
+      *)
+        [ -z "$traceparent" ] || die "unexpected remote secondmate launch argument"
+        traceparent=$1
+        ;;
+    esac
+    shift
+  done
+  if [ -n "$budget" ]; then
+    IFS=: read -r b_ih b_is b_fh b_fs extra <<EOF
+$budget
+EOF
+    for token in "$b_ih" "$b_is" "$b_fh" "$b_fs"; do
+      case "$token" in
+        ''|*[!0-9]*|0*) die "remote secondmate budget must be four positive token counts" ;;
+      esac
+    done
+    [ -z "$extra" ] || die "remote secondmate budget must be four positive token counts"
+  fi
 
   validate_id "$id"
   validate_home "$id"
@@ -213,6 +239,9 @@ cmd_launch() {
   ARGS=("$id" "$TARGET_HOME" --secondmate --harness "$harness" --backend "$selected_backend")
   [ "$model" = - ] || ARGS+=(--model "$model")
   [ "$effort" = - ] || ARGS+=(--effort "$effort")
+  if [ -n "$budget" ]; then
+    ARGS+=(--budget-inclusive-hard "$b_ih" --budget-inclusive-stop "$b_is" --budget-fresh-hard "$b_fh" --budget-fresh-stop "$b_fs")
+  fi
   [ -z "$traceparent" ] || ARGS+=(--traceparent "$traceparent")
   if ! out=$(HERDR_SESSION="$REMOTE_HERDR_SESSION" FM_HOME="$FM_ROOT" FM_ROOT_OVERRIDE="$FM_ROOT" \
     FM_STATE_OVERRIDE="$CONTROL_STATE" FM_DATA_OVERRIDE="$CONTROL_DATA" \
@@ -456,7 +485,7 @@ cmd_retire() {
 }
 
 case "${1:-}" in
-  launch) shift; [ "$#" -ge 5 ] && [ "$#" -le 6 ] || usage; cmd_launch "$@" ;;
+  launch) shift; [ "$#" -ge 5 ] && [ "$#" -le 7 ] || usage; cmd_launch "$@" ;;
   relaunch) shift; [ "$#" -eq 4 ] || usage; cmd_relaunch "$@" ;;
   state) shift; [ "$#" -eq 1 ] || usage; validate_id "$1"; validate_home "$1"; state_value "$1" ;;
   route) shift; [ "$#" -eq 1 ] || usage; cmd_route "$1" ;;

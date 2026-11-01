@@ -122,6 +122,68 @@ assert_usage() {
     || fail 'native counter totals match the fixed fresh/inclusive definition'
 }
 
+# Seed a measurable secondmate lane, then drop the temporary task record so the
+# child walk cannot count the mate log a second time.
+prepare_measured_lane() {
+  local home=$1 istop=$2 fstop=$3 record
+  mkdir -p "$home/state" "$home/native/project" "$home/wt" "$home/config"
+  record=$("$TEST_BASH" "$ROOT/bin/fm-task-budget.sh" seed - claude "$home/wt" "$home/native" \
+    FM_BUDGET_LAUNCH_fixture1 40000000 "$istop" 1500000 "$fstop")
+  printf 'harness=claude\nkind=scout\nspawn_gen=s1\nworktree=%s\n%s\n' "$home/wt" "$record" \
+    > "$home/state/task.meta"
+  write_native "$home" claude
+  python3 - "$home" "$record" <<'PY'
+import os, pathlib, sys
+home = pathlib.Path(sys.argv[1])
+record = sys.argv[2]
+fields = dict(line.split("=", 1) for line in record.splitlines() if "=" in line)
+text = (
+    "kind=secondmate\n"
+    "harness=claude\n"
+    "worktree=" + fields["budget_worktree"] + "\n"
+    "home=" + os.path.realpath(home) + "\n"
+    "spawn_gen=s1\n"
+    + record.strip() + "\n"
+)
+(home / "state" / "lane-budget").write_text(text)
+PY
+  rm -f "$home/state/task.meta"
+}
+
+write_bound_child() {
+  local home=$1 id=$2 root=$3 marker=$4 record wt
+  mkdir -p "$root"
+  wt=$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$home/wt")
+  record=$("$TEST_BASH" "$ROOT/bin/fm-task-budget.sh" bind claude "$wt" "$root" "$marker" -)
+  printf 'harness=claude\nkind=scout\nspawn_gen=%s\nworktree=%s\n%s\n' "$id" "$wt" "$record" \
+    > "$home/state/$id.meta"
+}
+
+write_claude_log() {
+  python3 - "$1" "$2" "$3" <<'PY'
+import datetime, json, pathlib, sys
+dest, marker, cwd = sys.argv[1:]
+now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+def usage(mid, i, w, o, r):
+    return {
+        "type": "assistant", "sessionId": "main", "cwd": cwd, "isSidechain": False,
+        "timestamp": now,
+        "message": {"id": mid, "usage": {
+            "input_tokens": i, "cache_creation_input_tokens": w,
+            "output_tokens": o, "cache_read_input_tokens": r,
+        }},
+    }
+events = [{
+    "type": "user", "sessionId": "main", "cwd": cwd, "timestamp": now,
+    "message": {"role": "user", "content": marker},
+}]
+events += [usage("one", 11, 17, 5, 101), usage("one", 11, 17, 7, 101), usage("two", 3, 4, 2, 20)]
+path = pathlib.Path(dest)
+path.parent.mkdir(parents=True, exist_ok=True)
+path.write_text("".join(json.dumps(event) + "\n" for event in events))
+PY
+}
+
 test_native_counters_deduplicate() {
   local dir out harness
   for harness in claude codex; do
@@ -716,6 +778,209 @@ PY
   pass 'production Claude initial argv carries the marker and its valid record doorbell'
 }
 
+test_sidechain_tokens_join_the_session() {
+  local dir out
+  dir="$TMP_ROOT/side-claude"
+  make_counter_case "$dir" claude
+  write_native "$dir" claude
+  python3 - "$dir" <<'PY'
+import datetime, json, pathlib, sys
+d = pathlib.Path(sys.argv[1])
+meta = dict(line.split("=", 1) for line in (d / "state/task.meta").read_text().splitlines() if "=" in line)
+cwd = meta["budget_worktree"]
+now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+side = {
+    "type": "assistant", "sessionId": "main", "cwd": cwd, "isSidechain": True, "timestamp": now,
+    "message": {"id": "side", "usage": {
+        "input_tokens": 10, "cache_creation_input_tokens": 0,
+        "output_tokens": 5, "cache_read_input_tokens": 5,
+    }},
+}
+path = d / "native/project/subagents/child.jsonl"
+path.parent.mkdir(parents=True, exist_ok=True)
+path.write_text(json.dumps(side) + "\n")
+notes = dict(side, isSidechain=False)
+notes["message"] = {"id": "notes", "usage": {
+    "input_tokens": 1000, "cache_creation_input_tokens": 0,
+    "output_tokens": 1000, "cache_read_input_tokens": 0,
+}}
+(d / "native/project/notes.jsonl").write_text(json.dumps(notes) + "\n")
+PY
+  out=$("$TEST_BASH" "$ROOT/bin/fm-task-budget.sh" measure "$dir/state/task.meta")
+  assert_usage "$out" 185 59
+  dir="$TMP_ROOT/side-codex"
+  make_counter_case "$dir" codex
+  write_native "$dir" codex
+  python3 - "$dir" <<'PY'
+import datetime, json, pathlib, sys
+d = pathlib.Path(sys.argv[1])
+meta = dict(line.split("=", 1) for line in (d / "state/task.meta").read_text().splitlines() if "=" in line)
+now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+rows = [
+    {"type": "session_meta", "payload": {
+        "id": "side", "timestamp": now, "cwd": meta["budget_worktree"], "source": "cli",
+    }},
+    {"type": "event_msg", "payload": {"type": "token_count", "info": {"total_token_usage": {
+        "input_tokens": 100, "cached_input_tokens": 0, "output_tokens": 10, "total_tokens": 110,
+    }}}},
+]
+(d / "native/project/side.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows))
+PY
+  out=$("$TEST_BASH" "$ROOT/bin/fm-task-budget.sh" measure "$dir/state/task.meta")
+  assert_usage "$out" 2140 340
+  pass 'sidechain and subagent logs join the main session and unrelated copies do not'
+}
+
+test_prelaunch_refuses_at_either_stop() {
+  local dir code err
+  dir="$TMP_ROOT/pre-absent"
+  mkdir -p "$dir/state"
+  code=0
+  err=$("$TEST_BASH" "$ROOT/bin/fm-task-budget.sh" prelaunch "$dir" 2>&1) || code=$?
+  assert_equals 0 "$code" 'an absent lane does not refuse a launch'
+  assert_equals '' "$err" 'an absent lane stays silent'
+
+  dir="$TMP_ROOT/pre-inclusive"
+  prepare_measured_lane "$dir" 165 1200000
+  code=0
+  err=$("$TEST_BASH" "$ROOT/bin/fm-task-budget.sh" prelaunch "$dir" 2>&1) || code=$?
+  assert_equals 1 "$code" 'inclusive equality refuses before launch'
+  assert_contains "$err" 'budget-prelaunch refuse' 'the inclusive stop names the refusal'
+  assert_contains "$err" 'inclusive=165 stop=165' 'the inclusive stop reports the measured total'
+
+  dir="$TMP_ROOT/pre-fresh"
+  prepare_measured_lane "$dir" 1000000 44
+  code=0
+  err=$("$TEST_BASH" "$ROOT/bin/fm-task-budget.sh" prelaunch "$dir" 2>&1) || code=$?
+  assert_equals 1 "$code" 'fresh equality refuses before launch'
+  assert_contains "$err" 'fresh=44 stop=44' 'the fresh stop reports the measured total'
+
+  dir="$TMP_ROOT/pre-under"
+  prepare_measured_lane "$dir" 1000000 1200000
+  code=0
+  err=$("$TEST_BASH" "$ROOT/bin/fm-task-budget.sh" prelaunch "$dir" 2>&1) || code=$?
+  assert_equals 0 "$code" 'a lane under both stops allows the launch'
+  assert_contains "$err" 'budget-prelaunch allow' 'an allowed launch names the measured total'
+  assert_contains "$err" 'inclusive=165' 'an allowed launch still reports the lane total'
+  pass 'prelaunch refuses at either stop and allows a lane strictly under both'
+}
+
+test_pending_child_counts_as_zero_and_unbound_child_refuses() {
+  local dir code err
+  dir="$TMP_ROOT/pending-child"
+  prepare_measured_lane "$dir" 1000000 1200000
+  write_bound_child "$dir" kid "$dir/empty-native" FM_BUDGET_LAUNCH_pending1
+  code=0
+  err=$("$TEST_BASH" "$ROOT/bin/fm-task-budget.sh" prelaunch "$dir" 2>&1) || code=$?
+  assert_equals 0 "$code" 'a child with no recorded usage does not refuse the launch'
+  assert_contains "$err" 'children=kid=pending' 'a not-yet-recorded child is named pending'
+  assert_contains "$err" 'inclusive=165' 'a pending child adds nothing to the lane total'
+  assert_no_grep 'budget_inclusive_hard=' "$dir/state/kid.meta" 'a bound child has no four limits of its own'
+
+  dir="$TMP_ROOT/unbound-child"
+  prepare_measured_lane "$dir" 1000000 1200000
+  printf 'harness=claude\nkind=scout\nspawn_gen=u1\nworktree=%s\n' "$dir/wt" > "$dir/state/loose.meta"
+  code=0
+  err=$("$TEST_BASH" "$ROOT/bin/fm-task-budget.sh" prelaunch "$dir" 2>&1) || code=$?
+  assert_equals 1 "$code" 'a child with no launch marker refuses the launch'
+  assert_contains "$err" 'budget-prelaunch refuse unknown' 'an unbound child is unknown, not zero'
+  assert_contains "$err" 'loose has no native launch marker' 'the refusal names the unbound child'
+  pass 'a pending child counts as zero and an unbound child refuses the launch'
+}
+
+test_fold_away_keeps_a_child_total_once() {
+  local dir lane code err before marker wt
+  dir="$TMP_ROOT/fold-child"
+  prepare_measured_lane "$dir" 200 1200000
+  write_bound_child "$dir" kid "$dir/child-native" FM_BUDGET_LAUNCH_child1
+  marker=$(sed -n 's/^budget_launch_marker=//p' "$dir/state/kid.meta")
+  wt=$(sed -n 's/^worktree=//p' "$dir/state/kid.meta")
+  write_claude_log "$dir/child-native/project/main.jsonl" "$marker" "$wt"
+  lane="$dir/state/lane-budget"
+  code=0
+  err=$("$TEST_BASH" "$ROOT/bin/fm-task-budget.sh" prelaunch "$dir" 2>&1) || code=$?
+  assert_equals 1 "$code" 'a child already at the stop refuses the next launch'
+  assert_contains "$err" 'inclusive=330' 'the prelaunch total includes the live child'
+  assert_contains "$err" 'children=kid=measured' 'the live child is named in the refusal'
+
+  "$TEST_BASH" "$ROOT/bin/fm-task-budget.sh" fold-away "$lane" "$dir/state/kid.meta"
+  assert_grep 'budget_folded_inclusive=165' "$lane" 'fold-away keeps the child inclusive total'
+  assert_grep 'budget_folded_fresh=44' "$lane" 'fold-away keeps the child fresh total'
+  assert_grep 'budget_folded_children=kid' "$lane" 'fold-away records the child id once'
+  code=0
+  err=$("$TEST_BASH" "$ROOT/bin/fm-task-budget.sh" prelaunch "$dir" 2>&1) || code=$?
+  assert_equals 1 "$code" 'the folded total still refuses the next launch'
+  assert_contains "$err" 'inclusive=330' 'the folded child stays in the lane total'
+  assert_not_contains "$err" 'kid=' 'a folded child is not listed as a live child again'
+
+  before=$(grep '^budget_folded_' "$lane")
+  code=0
+  "$TEST_BASH" "$ROOT/bin/fm-task-budget.sh" fold-away "$lane" "$dir/state/kid.meta" || code=$?
+  assert_equals 0 "$code" 'folding the same child again exits cleanly'
+  assert_equals "$before" "$(grep '^budget_folded_' "$lane")" 'folding the same child again adds nothing'
+
+  write_bound_child "$dir" pal "$dir/pal-native" FM_BUDGET_LAUNCH_pending2
+  "$TEST_BASH" "$ROOT/bin/fm-task-budget.sh" fold-away "$lane" "$dir/state/pal.meta"
+  assert_grep 'budget_folded_inclusive=165' "$lane" 'a pending child folds as zero'
+  assert_grep 'budget_folded_fresh=44' "$lane" 'a pending child does not add fresh usage'
+  assert_grep 'budget_folded_children=kid,pal' "$lane" 'a pending child is still recorded as folded'
+
+  code=0
+  "$TEST_BASH" "$ROOT/bin/fm-task-budget.sh" fold-away "$dir/state/absent-lane" "$dir/state/kid.meta" || code=$?
+  assert_equals 0 "$code" 'fold-away of a missing lane is a no-op'
+  pass 'fold-away adds a torn-down child once and keeps that total in the lane'
+}
+
+test_spawn_refuses_a_capped_secondmate_lane_before_a_child_exists() {
+  local dir="$TMP_ROOT/capped-spawn" home proj wt fakebin out code=0
+  home="$dir/home"; proj="$dir/project"; wt="$dir/wt"
+  fm_test_spawn_home "$home" codex
+  fm_test_spawn_brief "$home" capped-child
+  fm_git_worktree "$proj" "$wt" capped-child-fixture
+  fakebin=$(fm_test_make_spawn_fakebin "$dir/fake" codex)
+  prepare_measured_lane "$home" 165 1200000
+  out=$(fm_test_run_spawn "$home" "$wt" "$fakebin" capped-child "$proj" --scout) || code=$?
+  [ "$code" -ne 0 ] || fail 'a capped lane must refuse the child spawn'
+  assert_contains "$out" 'budget-prelaunch refuse' 'the spawn refusal is the prelaunch stop'
+  assert_contains "$out" 'inclusive=165' 'the spawn refusal reports the measured lane total'
+  assert_absent "$home/state/capped-child.meta" 'a refused spawn publishes no child record'
+  pass 'a capped secondmate lane refuses a child before any child record exists'
+}
+
+test_child_spawn_under_the_stop_binds_without_its_own_limits() {
+  local dir="$TMP_ROOT/under-spawn" home proj wt fakebin out
+  home="$dir/home"; proj="$dir/project"; wt="$dir/wt"
+  fm_test_spawn_home "$home" codex
+  fm_test_spawn_brief "$home" bound-child
+  fm_git_worktree "$proj" "$wt" bound-child-fixture
+  fakebin=$(fm_test_make_spawn_fakebin "$dir/fake" codex)
+  prepare_measured_lane "$home" 1000000 1200000
+  out=$(fm_test_run_spawn "$home" "$wt" "$fakebin" bound-child "$proj" --scout) \
+    || fail "a child under the stop did not spawn: $out"
+  assert_contains "$out" 'budget-prelaunch allow' 'the spawn reports the lane is under the stop'
+  assert_grep 'budget_launch_marker=' "$home/state/bound-child.meta" 'the child receives a launch binding'
+  assert_no_grep 'budget_inclusive_hard=' "$home/state/bound-child.meta" \
+    'a child of a secondmate lane does not receive its own four limits'
+  pass 'a child under the stop binds to the lane without its own four limits'
+}
+
+test_fresh_secondmate_accepts_budget_flags() {
+  local dir="$TMP_ROOT/sm-budget" home wt fakebin out code=0
+  home="$dir/home"; wt="$dir/wt"
+  fm_test_spawn_home "$home" codex
+  mkdir -p "$wt"
+  fakebin=$(fm_test_make_spawn_fakebin "$dir/fake" codex)
+  out=$(fm_test_run_spawn "$home" "$wt" "$fakebin" sm-budget --secondmate \
+    --budget-inclusive-hard 40000000 --budget-inclusive-stop 32000000 \
+    --budget-fresh-hard 1500000 --budget-fresh-stop 1200000) || code=$?
+  [ "$code" -ne 0 ] || fail 'a secondmate without a home must not launch'
+  assert_not_contains "$out" 'budget options apply only to fresh ship/scout spawns' \
+    'fresh secondmate budget flags stay legal'
+  assert_contains "$out" 'no firstmate home supplied or registered' \
+    'the refusal is the missing secondmate home'
+  pass 'a fresh secondmate spawn accepts the four budget limits'
+}
+
 case "${FM_TEST_ONLY:-all}" in
   all|spawn) test_spawn_records_explicit_budget ;;
 esac
@@ -768,3 +1033,10 @@ case "${FM_TEST_ONLY:-all}" in all|recovery) test_claimed_attempt_survives_missi
 case "${FM_TEST_ONLY:-all}" in all|live-capability) test_live_guard_requires_stop_capability ;; esac
 case "${FM_TEST_ONLY:-all}" in all|context) test_native_context_precedes_launch ;; esac
 case "${FM_TEST_ONLY:-all}" in all|claude-carrier) test_claude_initial_carrier_has_marker ;; esac
+case "${FM_TEST_ONLY:-all}" in all|sidechain) test_sidechain_tokens_join_the_session ;; esac
+case "${FM_TEST_ONLY:-all}" in all|prelaunch) test_prelaunch_refuses_at_either_stop ;; esac
+case "${FM_TEST_ONLY:-all}" in all|pending-child) test_pending_child_counts_as_zero_and_unbound_child_refuses ;; esac
+case "${FM_TEST_ONLY:-all}" in all|fold) test_fold_away_keeps_a_child_total_once ;; esac
+case "${FM_TEST_ONLY:-all}" in all|capped-spawn) test_spawn_refuses_a_capped_secondmate_lane_before_a_child_exists ;; esac
+case "${FM_TEST_ONLY:-all}" in all|bound-spawn) test_child_spawn_under_the_stop_binds_without_its_own_limits ;; esac
+case "${FM_TEST_ONLY:-all}" in all|secondmate-budget) test_fresh_secondmate_accepts_budget_flags ;; esac

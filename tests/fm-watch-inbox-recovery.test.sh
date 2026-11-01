@@ -61,8 +61,11 @@ SH
 }
 
 recover_check() {  # <case-dir>  (RECOVER_CAPTURE replaces the idle pane)
+  # The age ceiling stays above these fixtures so an aged secondmate record still
+  # walks the recovery ladder. The product default is 300 seconds.
   PATH="$1/fakebin:$PATH" FM_STATE_OVERRIDE="$1/state" FM_SEND_LOG="$1/send.log" \
     FM_FAKE_TMUX_CAPTURE="${RECOVER_CAPTURE:-$(idle_capture "$1")}" FM_TASK_INBOX_GRACE_SECS=0 FM_TASK_INBOX_RING_MAX="${RECOVER_RING_MAX:-0}" \
+    FM_TASK_INBOX_SECONDMATE_ESCALATE_SECS=999999999 \
     FM_CONTROL_BIN="$1/fakebin/fm-control" FM_CONTROL_LOG="$1/control.log" FM_HOME="$1/home" \
     bash -c '. "$1" && inbox_steer_check sess:fm-t1 t1' _ "$WATCH" > "$1/check.out" 2>&1
 }
@@ -393,6 +396,61 @@ test_watcher_busy_bookkeeping_failure_never_recovers() {
   pass "watcher: a busy-bookkeeping failure alarms as bookkeeping and never triggers recovery"
 }
 
+# The product ceiling is 300s and fires before the recovery ladder. These cases
+# do not export the fixture opt-out.
+test_due_action_age_ceiling_leaves_a_young_record_on_the_ladder() {
+  local dir state rec out
+  dir=$(setup_watch_case due-young)
+  state="$dir/state"
+  fm_write_meta "$state/t1.meta" "window=sess:fm-t1" "kind=secondmate" "harness=grok"
+  rec=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "young steer")
+  age_by "$rec" 10
+  out=$(FM_TASK_INBOX_GRACE_SECS=0 inbox_lib "$state" fm_task_inbox_due_action "$state" t1)
+  case "$out" in
+    ring\ *) ;;
+    *) fail "a 10s secondmate record left the ring ladder: $out" ;;
+  esac
+
+  dir=$(setup_watch_case due-old)
+  state="$dir/state"
+  fm_write_meta "$state/t1.meta" "window=sess:fm-t1" "kind=secondmate" "harness=grok"
+  rec=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "old steer")
+  age_by "$rec" 310
+  out=$(FM_TASK_INBOX_GRACE_SECS=0 inbox_lib "$state" fm_task_inbox_due_action "$state" t1)
+  case "$out" in
+    escalate-age\ *) ;;
+    *) fail "a 310s secondmate record did not hit the age ceiling: $out" ;;
+  esac
+
+  dir=$(setup_watch_case due-ship)
+  state="$dir/state"
+  rec=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "ship steer")
+  age_path "$rec"
+  out=$(FM_TASK_INBOX_GRACE_SECS=0 inbox_lib "$state" fm_task_inbox_due_action "$state" t1)
+  case "$out" in
+    ring\ *) ;;
+    *) fail "a non-secondmate record hit the secondmate age ceiling: $out" ;;
+  esac
+  pass "due action escalates only an aged secondmate record and still rings a younger one"
+}
+
+test_secondmate_unread_age_ceiling_does_not_interrupt() {
+  local dir rec
+  dir=$(recover_case age-ceiling "kind=secondmate" "harness=codex")
+  rec=$(inbox_lib "$dir/state" fm_task_inbox_write "$dir/state" t1 "unread steer")
+  age_by "$rec" 310
+  PATH="$dir/fakebin:$PATH" FM_STATE_OVERRIDE="$dir/state" FM_SEND_LOG="$dir/send.log" \
+    FM_FAKE_TMUX_CAPTURE="$(idle_capture "$dir")" FM_TASK_INBOX_GRACE_SECS=0 \
+    FM_CONTROL_BIN="$dir/fakebin/fm-control" FM_CONTROL_LOG="$dir/control.log" FM_HOME="$dir/home" \
+    bash -c '. "$1" && inbox_steer_check sess:fm-t1 t1' _ "$WATCH" > "$dir/check.out" 2>&1 || true
+  grep -q 'without another interrupt' "$dir/state/.wake-queue" \
+    || fail "an aged unread instruction was not reported without another interrupt:"$'\n'"$(cat "$dir/state/.wake-queue" 2>/dev/null)"
+  [ "$(grep -c 'unread firstmate instruction' "$dir/state/.wake-queue")" = 1 ] \
+    || fail "the age ceiling did not report exactly one unread instruction:"$'\n'"$(cat "$dir/state/.wake-queue" 2>/dev/null)"
+  [ "$(recover_interrupts "$dir")" = 0 ] || fail "the age ceiling interrupted the secondmate:"$'\n'"$(cat "$dir/control.log" 2>/dev/null)"
+  pass "watcher: an unread secondmate instruction past 300s is reported without another interrupt"
+}
+
 test_watcher_busy_secondmate_is_recovered_before_alarm
 test_watcher_auto_recovers_a_secondmate_twice_then_alarms_once
 test_watcher_recovers_a_record_behind_an_escalated_one
@@ -406,3 +464,5 @@ test_watcher_failed_second_recovery_is_not_reported_spent
 test_watcher_recovery_doorbell_failure_alarms_at_once
 test_watcher_recovery_ladder_failure_spends_no_slot
 test_watcher_busy_bookkeeping_failure_never_recovers
+test_due_action_age_ceiling_leaves_a_young_record_on_the_ladder
+test_secondmate_unread_age_ceiling_does_not_interrupt

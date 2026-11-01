@@ -812,9 +812,13 @@ Dry-run records would-pause events without interrupting a worker or opening a bu
 Enforce asks the existing lifecycle control plane to interrupt a task once at its recorded stop line and opens one budget-stop decision with measured usage and the actual control result; later usage, including work after the decision is answered, is not interrupted again.
 The watcher checks allocations independently of ordinary busy, stale, paused, and away-mode triage.
 
-Only tasks launched with all four explicit budget flags in [`fm-spawn.sh`](../bin/fm-spawn.sh) have a recorded allocation; existing prose-only budgets are not parsed or retrofitted.
-Native counting supports Claude and Codex main sessions, preserves measured consumption across relaunch (an unmeasurable prior incarnation is reported and not carried), and excludes pipeline invocations, child sessions, and secondmate homes.
-Missing or ambiguous telemetry is visible as unknown rather than zero or an enforcement guarantee.
+A fresh ship, scout, or secondmate launched with all four explicit budget flags in [`fm-spawn.sh`](../bin/fm-spawn.sh) records an allocation, a secondmate records that allocation for its lane, and a child it starts receives a measurement binding without its own four limits.
+Existing prose-only budgets are not parsed or retrofitted.
+Native counting supports Claude and Codex, sums the secondmate with every child task and every sidechain or subagent log, preserves measured consumption across relaunch (an unmeasurable prior incarnation is reported and not carried), and excludes pipeline invocations.
+A launch from a capped secondmate home is refused at the recorded stop before any endpoint exists when the lane total is not strictly under that line.
+Missing or ambiguous telemetry stays unknown rather than zero, except a child whose session has not recorded usage yet, which counts as zero and is named pending.
+A mate session that is not yet identifiable refuses the launch rather than counting as zero.
+A torn-down child whose usage is still pending is folded as zero, and that undercount is accepted when usage appears only after teardown.
 Native counters arrive after charged work, so a stop can overshoot and an interrupt can remain unconfirmed.
 [`fm-task-budget.sh`'s header and help](../bin/fm-task-budget.sh) own counter definitions, executable interfaces, binding, attempt deduplication, and state mechanics.
 
@@ -3259,12 +3263,14 @@ FM_HEARTBEAT_MAX=7200   # heartbeat backoff cap
 FM_HEARTBEAT_SNAPSHOT_TIMEOUT=30   # seconds bounding the fleet snapshot read inside bin/fm-heartbeat.sh; invalid or zero values use 30
 FM_HEARTBEAT_READ_TIMEOUT=3        # seconds bounding each primary and per-task read inside bin/fm-heartbeat.sh; invalid or zero values use 3
 FM_HEARTBEAT_NM_TIMEOUT=2          # seconds bounding each no-mistakes query inside bin/fm-heartbeat.sh; invalid or zero values use 2
+FM_HEARTBEAT_QUOTA_TIMEOUT=2       # seconds bounding the one quota-axi read inside bin/fm-heartbeat.sh; invalid or zero values use 2
 FM_HEARTBEAT_DEADLINE=90           # seconds after which bin/fm-heartbeat.sh starts no new task reads and publishes unknown rows for the rest; invalid or zero values use 90
 FM_INACTIVE_RECONCILE_SECS=900  # 60..1800-second watcher cadence and inactivity threshold; locked session start also requests an immediate scan in the deferred worker
 FM_INACTIVE_RECONCILE_BUDGET_SECS=10  # 1..30-second scan deadline; wedged-scan kill backstop follows one second later
 FM_CHECK_INTERVAL=300   # seconds between slow checks (authenticated merge polls, custom checks, or Relay dispatch)
 FM_TASK_INBOX_GRACE_SECS=90   # seconds an unhandled steering-inbox message may sit before the watcher attempts doorbell delivery on an idle endpoint; also the minimum spacing between attempts
 FM_TASK_INBOX_RING_MAX=3      # watcher delivery attempts without an acknowledgement before the task surfaces as a stale wake for recovery
+FM_TASK_INBOX_SECONDMATE_ESCALATE_SECS=300   # seconds an unhandled firstmate instruction may sit for a secondmate before the watcher reports it stale without another interrupt; invalid or empty values use 300
 FM_TASK_INBOX_BUSY_MAX=2      # consecutive busy-deferred due polls before a stuck-busy stale wake; 1..999999999, at most 9 decimal digits, otherwise 2; policy: bin/fm-task-inbox-lib.sh
 FM_CHECK_TIMEOUT=30     # seconds allowed per slow check script
 FM_MAIL_CHECK_BUDGET=15   # seconds allowed for one standing mail poll; valid 5..25, cut to fit FM_CHECK_TIMEOUT

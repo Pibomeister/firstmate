@@ -32,6 +32,7 @@ FM_LIVE=1 bash bin/fm-test-run.sh tests/fm-task-budget-live-e2e.test.sh
 
 The Codex workload starts one bounded shell wait, records a dry-run observation, enables enforcement, and checks the native turn-aborted event after the existing lifecycle interrupt.
 Claude's generated initial launch argument, record doorbell, binding and counter totals have deterministic coverage in `tests/fm-task-budget.test.sh`.
+Child sessions and secondmate lane totals are covered by that portable test, not by this live guard.
 The live Claude launch path remains unverified because the disposable home has no login; this guard neither copies credentials nor starts a login.
 The complete guard requires Codex for interruption verification and refuses a counter-only installation.
 Selected output from the successful guard:

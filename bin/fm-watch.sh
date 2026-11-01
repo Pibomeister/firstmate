@@ -744,7 +744,7 @@ inbox_steer_busy() {  # <window> <backend> <task> <tail40>
 # Runs for secondmates too: their pane-staleness exemption is about quiet panes
 # being healthy, while an unacknowledged instruction can still be a stuck steer.
 inbox_steer_check() {  # <window> <task>
-  local w=$1 task=$2 action verb rec count tail40 reason='' ring_rc backend agent_state recover_rc=1 stuck_busy=0
+  local w=$1 task=$2 action verb rec count tail40 reason='' ring_rc backend agent_state recover_rc=1 stuck_busy=0 age
   action=$(fm_task_inbox_due_action "$STATE" "$task") || return 0
   verb=${action%% *}
   [ "$verb" != quiet ] || return 0
@@ -757,6 +757,22 @@ inbox_steer_check() {  # <window> <task>
     escalate)
       count=${rec##* }
       rec=${rec% *}
+      ;;
+    escalate-age)
+      age=${rec##* }
+      rec=${rec% *}
+      if [ ! -f "$rec" ]; then
+        fm_task_inbox_due_action "$STATE" "$task" >/dev/null || true
+        return 0
+      fi
+      reason="stale: $w (unread firstmate instruction: $rec is unhandled after ${age}s without another interrupt)"
+      fm_wake_append stale "$w" "$reason" || exit 1
+      if ! fm_task_inbox_record_escalated "$STATE" "$task" "$rec"; then
+        echo "error: stale wake was queued for $task but its inbox escalation marker could not be written" >&2
+        exit 1
+      fi
+      wake "$reason"
+      return 0
       ;;
   esac
   backend=$(window_backend "$w")
