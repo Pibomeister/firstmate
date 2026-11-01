@@ -172,6 +172,10 @@ test_dialog_detection() {
   composer=$'❯ fix the bug in the parser\n  ? for shortcuts'
   assert_equals feedback "$(lib fm_wd_pane_dialog "$feedback")" "feedback survey"
   assert_equals model-switch "$(lib fm_wd_pane_dialog "$model")" "model-switch dialog"
+  local limit
+  for limit in "You hit your weekly limit." "You've hit your session limit" "Claude usage limit reached" "You are out of credits" "Switch to another model?"; do
+    assert_equals model-switch "$(lib fm_wd_pane_dialog "$limit"$'\n ❯ 1. Wait\n   2. Stop\n\nEnter to confirm · Esc to cancel')" "limit picker: $limit"
+  done
   assert_equals question "$(lib fm_wd_pane_dialog "$question")" "question dialog"
   assert_equals permission "$(lib fm_wd_pane_dialog "$permission")" "permission dialog"
   assert_equals "" "$(lib fm_wd_pane_dialog "$plain")" "a numbered list in prose is no dialog"
@@ -204,6 +208,15 @@ test_stall_proof_and_text_guards() {
   ! lib fm_wd_text_allowed "merge #12" || fail "merge #12 must be refused"
   ! lib fm_wd_text_allowed "Deploy to prod" || fail "deploy must be refused"
   lib fm_wd_text_allowed "emerge from the wake queue" || fail "emerge is not merge"
+  local word
+  for word in "redeploy the staging service" "gh pr merge 5" "enable automerge on PR 5" "cut a prerelease" "republish the package" "REDEPLOY now" "remerge it" "premerge it" "undeploy it"; do
+    ! lib fm_wd_text_allowed "$word" || fail "text guard let through: $word"
+    lib fm_wd_reserved "$word" || fail "reserved check let through: $word"
+  done
+  for word in "handle the emergency" "submerge the raft" "re-emerge later"; do
+    lib fm_wd_text_allowed "$word" || fail "text guard over-refused: $word"
+    ! lib fm_wd_reserved "$word" || fail "reserved check over-refused: $word"
+  done
   lib fm_wd_reserved "spend \$40 on credits?" || fail "spend is owner-reserved"
   ! lib fm_wd_reserved "pick the cache layout" || fail "an ordinary decision is not reserved"
   pass "stall proof needs two signals and no veto; merge and deploy text is refused"
@@ -303,6 +316,17 @@ test_merge_autosuggestion_never_accepted() {
   assert_equals 0 "$(ledger_rows pasted-input key pending)" "a footer word cannot hide a merge word from Enter: $(ledger | cut -f5-8)"
   assert_equals 1 "$(ledger_rows pasted-input key refused)" "the draft is refused: $(ledger | cut -f5-8)"
   assert_grep "unsent draft names a merge" "$H/data/watchdog/status.md" "the draft refusal is a gap"
+
+  local draft
+  for draft in "redeploy the staging service" "gh pr merge 5" "enable automerge on PR 5" "cut a prerelease" "republish the package"; do
+    make_home "Captain session"$'\n'"> $draft"
+    FM_WD_TEST_COMPOSER=pending run_wd 0 once >/dev/null 2>&1
+    FM_WD_TEST_COMPOSER=pending run_wd 300 once >/dev/null 2>&1
+    assert_equals 1 "$(ledger_rows pasted-input key refused)" "the draft is refused: $draft: $(ledger | cut -f5-8)"
+    assert_equals 0 "$(ledger_rows pasted-input key pending)" "the draft gets no Enter: $draft"
+    sleep 1
+    assert_equals "" "$(cat "$H/typed.log")" "Enter was never pressed on: $draft"
+  done
 
   local window
   for window in \
@@ -1155,7 +1179,12 @@ test_dialog_kind_ignores_conversation_rows() {
   local screen
   for screen in \
     $'──────────\nShould the worker use Opus or Sonnet for the refactor?\n ❯ 1. Opus\n   2. Sonnet\n\nEnter to select · Esc to cancel' \
-    $'──────────\nThis task burns credits fast; split it in two?\n ❯ 1. Yes\n   2. No\n\nEnter to select · Esc to cancel'; do
+    $'──────────\nThis task burns credits fast; split it in two?\n ❯ 1. Yes\n   2. No\n\nEnter to select · Esc to cancel' \
+    $'──────────\nShould the API add a rate limit to this endpoint?\n ❯ 1. Yes\n   2. No\n\nEnter to select · Esc to cancel' \
+    $'──────────\nWhich usage limit should the plan page show?\n ❯ 1. 100\n   2. 200\n\nEnter to select · Esc to cancel' \
+    $'──────────\nWhat should the banner say once the limit resets or the limit reached state shows?\n ❯ 1. Short\n   2. Long\n\nEnter to select · Esc to cancel' \
+    $'──────────\nShould we warn when you hit your weekly limit?\n ❯ 1. Yes\n   2. No\n\nEnter to select · Esc to cancel' \
+    $'──────────\nShould we switch to another database?\n ❯ 1. Yes\n   2. No\n\nEnter to select · Esc to cancel'; do
     make_home "$screen" 'models=claude:haiku'
     fake_models "$H" ok:"OPTION 1" absent
     transcript 100 "Working."
