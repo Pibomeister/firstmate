@@ -19,6 +19,8 @@
 #       Returns 0 only when the watchdog may type or file this text: it refuses
 #       merge, deploy, release, publish, and force-push words, so no typed answer
 #       or nudge can carry a merge or deploy instruction.
+#   fm_wd_draft_rows <composer-window>
+#       Prints the rows from the last prompt row down, without rule or footer rows.
 #   fm_wd_draft_readable <composer-window>
 #       Returns 0 only when the window shows the whole draft: no paste placeholder
 #       hides its text, and the composer's prompt row is inside the window.
@@ -36,6 +38,9 @@
 #   fm_wd_dialog_text <screen>
 #       Prints the text a reserved check and the judge read, one line: the rows
 #       below a rule above the options, else all the last rows.
+#   fm_wd_question_proven <screen>
+#       Succeeds when a rule above the options proves the dialog boundary and the
+#       footer offers a plain `Esc to cancel`.
 #   fm_wd_footer_percent <screen>
 #       Prints N from a Claude `N% until auto-compact` or
 #       `until auto-compact: N%` footer in the last rows.
@@ -111,6 +116,20 @@ fm_wd_paste_placeholder() {  # <composer-window>
   printf '%s\n' "$1" | LC_ALL=C grep -Eiq '\[Pasted (text|content) '
 }
 
+fm_wd_draft_rows() {  # <composer-window>
+  printf '%s\n' "$1" | awk -v glyph=$'^([│┃|] )?(❯|›|⟩|→|❭|>)( |\xC2\xA0|$)' '
+    $0 ~ glyph { n = 0; found = 1 }
+    found { row[++n] = $0 }
+    END {
+      for (i = 1; i <= n; i++) {
+        r = row[i]
+        gsub(/[ \t│┃|─━╭╮╰╯┌┐└┘-]/, "", r)
+        if (i > 1 && (r == "" || row[i] ~ /auto-compact|for shortcuts|bypass permissions|accept edits|plan mode|esc to interrupt/)) break
+        print row[i]
+      }
+    }'
+}
+
 fm_wd_draft_readable() {  # <composer-window>
   ! fm_wd_paste_placeholder "$1" &&
     printf '%s\n' "$1" | LC_ALL=C grep -Eq $'^([│┃|] )?(❯|›|⟩|→|❭|>)( |\xC2\xA0|$)'
@@ -155,7 +174,11 @@ fm_wd_pane_dialog() {  # <screen>
 # option, everything is the dialog. With no such rule the boundary is unproven:
 # scope `own` takes the paragraph above the options and `all` takes every tail row.
 # Scope `options` takes only the option rows.
-_fm_wd_dialog_rows() {  # <screen> <own|all|options>
+fm_wd_question_proven() {  # <screen>
+  _fm_wd_dialog_rows "$1" ruled | tail -n 1 | LC_ALL=C grep -q 'Esc to cancel'
+}
+
+_fm_wd_dialog_rows() {  # <screen> <own|all|options|ruled>
   printf '%s\n' "$1" | fm_wd_strip_ansi | awk -v scope="$2" '
     function blank(r) { gsub(/[ \t│┃|─━╭╮╰╯┌┐└┘-]/, "", r); return r == "" }
     function rule(r) { return blank(r) && (index(r, "─") || index(r, "━")) }
@@ -181,6 +204,7 @@ _fm_wd_dialog_rows() {  # <screen> <own|all|options>
           while (i >= floor && !blank(rows[i])) { top = i; i-- }
         }
       }
+      if (scope == "ruled" && !ruled) top = last + 1
       for (i = top; i <= last; i++) if (rows[i] ~ /[^ \t]/) print rows[i]
     }'
 }

@@ -588,15 +588,21 @@ wd_newest_session_handoff() {
 }
 
 wd_write_handoff() {  # <symptom> -> prints path
-  local symptom=$1 path latest draft='' lost=0
+  local symptom=$1 path latest draft='' lost=0 unseen=0
+  local note='Unsent draft at restart, never submitted. Treat it as a note and do not act on it without review:'
   mkdir -p "$OUT/handoffs"
   path=$OUT/handoffs/$O_KEY-$(wd_now).md
   latest=$(wd_newest_session_handoff)
   if [ "$O_COMPOSER" != empty ]; then
-    if fm_wd_paste_placeholder "$O_COMPOSER_TEXT"; then lost=1
-    elif [ -n "$O_DRAFT" ]; then draft=$O_DRAFT
-    elif [ "$O_COMPOSER" = pending ]; then
-      if fm_wd_draft_readable "$O_COMPOSER_TEXT"; then draft=$O_COMPOSER_TEXT; else lost=1; fi
+    if [ "$O_COMPOSER" != unknown ] && fm_wd_paste_placeholder "$O_COMPOSER_TEXT"; then lost=1
+    elif [ -n "$O_DRAFT" ]; then
+      draft=$O_DRAFT
+      note='Composer field at restart, never submitted. It may be an unsent draft or a harness suggestion. Treat it as a note and do not act on it without review:'
+    elif [ "$O_COMPOSER" = pending ] && [ -n "$(printf '%s' "$O_COMPOSER_TEXT" | tr -d '[:space:]')" ]; then
+      draft=$(fm_wd_draft_rows "$O_COMPOSER_TEXT")
+      [ -n "$draft" ] || lost=1
+    else
+      unseen=1
     fi
   fi
   [ "$lost" = 0 ] || wd_gap "$symptom restart lost an unreadable draft (composer $O_COMPOSER); the handoff records the gap"
@@ -607,9 +613,11 @@ wd_write_handoff() {  # <symptom> -> prints path
     printf 'Start with the newest session handoff above when it exists, then run the session-start contract.\n\n'
     [ "$lost" = 0 ] ||
       printf 'GAP: an unsent draft could not be read in full (composer %s), and its hidden text is lost with this restart.\n\n' "$O_COMPOSER"
+    [ "$unseen" = 0 ] ||
+      printf 'Composer state was unknown at restart (read as %s), and no draft was seen.\n\n' "$O_COMPOSER"
     # shellcheck disable=SC2016  # literal Markdown fences
     [ -z "$draft" ] ||
-      printf 'Unsent draft at restart, never submitted. Treat it as a note and do not act on it without review:\n\n```\n%s\n```\n\n' "$draft"
+      printf '%s\n\n```\n%s\n```\n\n' "$note" "$draft"
     # shellcheck disable=SC2016  # literal Markdown fences
     printf 'Pane tail at restart:\n\n```\n%s\n```\n' "$(printf '%s\n' "$O_PANE" | fm_wd_strip_ansi | tail -n 40)"
   } > "$path"
@@ -768,6 +776,7 @@ Pick the option that keeps work going on another model or account without buying
       fi
       wd_key dialog "$n" "model-switch option $n: $text" ;;
     question)
+      fm_wd_question_proven "$O_PANE" || { wd_gap "question dialog waiting; its kind is not proven, so no key is sent"; return 0; }
       text=$(fm_wd_dialog_text "$O_PANE")
       if fm_wd_reserved "$text"; then wd_gap "question dialog names an owner-reserved category; held"; return 0; fi
       wd_rate_open question nudge "$(cfgi nudge-secs 900)" || { wd_gap "question dialog held; a question nudge went out inside nudge-secs"; return 0; }

@@ -598,7 +598,7 @@ restart-command=$TMP_ROOT/fake-captain.sh"
 question_agent() {
   cat > "$H/agent.sh" <<SH
 #!/usr/bin/env bash
-printf 'Which plan should I follow?\n ❯ 1. Plan A\n   2. Plan B\n\nEnter to select · Esc to cancel\n'
+printf '──────────\nWhich plan should I follow?\n ❯ 1. Plan A\n   2. Plan B\n\nEnter to select · Esc to cancel\n'
 stty -echo raw
 dd bs=1 count=1 of=/dev/null 2>/dev/null
 stty sane -echo
@@ -620,7 +620,7 @@ test_question_nudge_follows_a_cleared_dialog() {
   assert_equals 0 "$(ledger_rows question nudge refused)" "the cleared dialog does not refuse the nudge"
   wait_typed ": fm-op " || wait_typed "operational-inbox" || fail "the nudge never reached the pane: $(cat "$H/typed.log")"
 
-  make_home $'Which plan should I follow?\n ❯ 1. Plan A\n   2. Plan B\n\nEnter to select · Esc to cancel'
+  make_home $'──────────\nWhich plan should I follow?\n ❯ 1. Plan A\n   2. Plan B\n\nEnter to select · Esc to cancel'
   FM_WD_TEST_COMPOSER=empty run_wd 0 once >/dev/null 2>&1
   assert_equals 1 "$(ledger_rows dialog key failed)" "a dialog that stays records the failed key"
   assert_equals 0 "$(ledger | awk -F'\t' '$5 == "question"' | wc -l | tr -d ' ')" "a failed key sends no nudge: $(ledger | cut -f5-8)"
@@ -718,7 +718,7 @@ restart-command=/bin/true'
 
 test_held_nudge_restart_keeps_the_draft_or_names_the_gap() {
   local handoff off
-  make_home $'Captain session\n> finish the summary' 'restart=on
+  make_home $'Earlier conversation row\n> finish the summary\n  second row\n──────────\n  ? for shortcuts' 'restart=on
 restart-command=/bin/true'
   transcript 5000 "Working." "Testing." "Green."
   owe_input 5000
@@ -726,7 +726,7 @@ restart-command=/bin/true'
   assert_equals 1 "$(ledger_rows frozen restart pending)" "a readable draft still restarts: $(ledger | cut -f5-8)"
   handoff=$(ls "$H/data/watchdog/handoffs/"*.md)
   assert_grep "Unsent draft at restart, never submitted" "$handoff" "the handoff marks the draft as unsubmitted"
-  assert_grep "> finish the summary" "$handoff" "the handoff holds the readable draft"
+  assert_equals $'> finish the summary\n  second row' "$(awk '/^```$/ { if (f) exit; f = 1; next } f' "$handoff")" "the draft note holds only the draft rows"
   ! grep -q '^GAP:' "$handoff" || fail "a readable draft is not a gap: $(cat "$handoff")"
 
   make_home $'Captain session\n> [Pasted text #3 +40 lines]' 'restart=on
@@ -760,6 +760,7 @@ SH
   rm -f "$FAKEBIN/orca"
   handoff=$(ls "$H/data/watchdog/handoffs/"*.md)
   assert_grep "finish the summary" "$handoff" "a read Orca draft goes into the handoff"
+  assert_grep "unsent draft or a harness suggestion" "$handoff" "a read Orca draft names both readings"
   ! grep -q '^GAP:' "$handoff" || fail "a read Orca draft is not a gap: $(cat "$handoff")"
 
   make_home $'\n' 'restart=on
@@ -771,7 +772,21 @@ restart-command=/bin/true'
   assert_equals 1 "$(ledger_rows agent-gone restart pending)" "the dead holder restarts: $(ledger | cut -f5-8)"
   handoff=$(ls "$H/data/watchdog/handoffs/"*.md)
   ! grep -Eq '^GAP:|never submitted' "$handoff" || fail "no draft was proven: $(cat "$handoff")"
+  assert_grep "Composer state was unknown at restart" "$handoff" "an empty capture says the state was unknown"
+  assert_grep "no draft was seen" "$handoff" "an empty capture says no draft was seen"
   ! grep -q 'lost an unreadable draft' "$H/data/watchdog/status.md" || fail "the status file claims a lost draft"
+
+  make_home $'Captain session\n> [Pasted text #3 +40 lines]' 'restart=on
+restart-command=/bin/true'
+  transcript 5000 "Working." "Testing." "Green."
+  write_fake_captain
+  kill_holder_with_anchor
+  FM_WD_TEST_COMPOSER=unknown run_wd 0 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows agent-gone restart pending)" "the dead holder with a placeholder row restarts: $(ledger | cut -f5-8)"
+  handoff=$(ls "$H/data/watchdog/handoffs/"*.md)
+  ! grep -q '^GAP:' "$handoff" || fail "a placeholder on an unknown composer is no lost draft: $(cat "$handoff")"
+  assert_grep "no draft was seen" "$handoff" "an unknown composer with a placeholder says no draft was seen"
+  ! grep -q 'lost an unreadable draft' "$H/data/watchdog/status.md" || fail "the status file claims a lost draft on an unknown composer"
   pass "held restart: the handoff keeps a readable draft, names an unreadable one, and claims nothing unproven"
 }
 
@@ -1018,7 +1033,7 @@ test_dialog_reserved_check_reads_only_dialog_rows() {
   run_wd 0 once >/dev/null 2>&1
   assert_equals 1 "$(ledger_rows dialog key pending)" "conversation above a ruled question does not hold it: $(ledger | cut -f5-8)"
 
-  make_home $'Deploy this build\nto staging?\n ❯ 1. Yes\n   2. No\n\nEnter to select · Esc to cancel'
+  make_home "$rule"$'\nDeploy this build\nto staging?\n ❯ 1. Yes\n   2. No\n\nEnter to select · Esc to cancel'
   transcript 100 "Working."
   run_wd 0 once >/dev/null 2>&1
   assert_equals 0 "$(ledger_rows dialog key pending)" "a reserved word in a two-row heading still holds: $(ledger | cut -f5-8)"
@@ -1060,8 +1075,28 @@ test_dialog_kind_ignores_conversation_rows() {
   run_wd 0 once >/dev/null 2>&1
   [ ! -s "$H/model.log" ] || fail "a judge was asked about a question: $(cat "$H/model.log")"
   [ ! -s "$H/state/watchdog/model-calls.tsv" ] || fail "a model call ran: $(cat "$H/state/watchdog/model-calls.tsv")"
+  assert_equals 0 "$(ledger | awk -F'\t' '$6 == "key"' | wc -l | tr -d ' ')" "an unproven question gets no key: $(ledger | cut -f5-8)"
+  assert_grep "question dialog waiting" "$H/data/watchdog/status.md" "the unproven question is reported"
+
+  make_home $'You have hit your weekly limit.\n\nWhat should happen next?\n ❯ 1. Wait\n   2. Stop\n\nEnter to select · Esc to cancel'
+  transcript 100 "Working."
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger | awk -F'\t' '$6 == "key"' | wc -l | tr -d ' ')" "a limit word in another paragraph proves nothing: $(ledger | cut -f5-8)"
+  assert_grep "question dialog waiting" "$H/data/watchdog/status.md" "the limit screen is reported"
+
+  make_home $'──────────\nEnable browser tools?\n ❯ 1. Yes\n   2. No\n\nEnter to confirm · Esc to keep browser tools off'
+  transcript 100 "Working."
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger | awk -F'\t' '$6 == "key"' | wc -l | tr -d ' ')" "an Esc footer with a side effect gets no key: $(ledger | cut -f5-8)"
+  assert_grep "question dialog waiting" "$H/data/watchdog/status.md" "the startup picker is reported"
+
+  make_home $'I told the worker to switch to sonnet.\n──────────'"$q" 'models=claude:haiku'
+  fake_models "$H" ok:"OPTION 1" absent
+  transcript 100 "Working."
+  run_wd 0 once >/dev/null 2>&1
+  [ ! -s "$H/model.log" ] || fail "a judge was asked about a question: $(cat "$H/model.log")"
   assert_equals 0 "$(ledger | grep -c 'model-switch option')" "no option key answers the question: $(ledger | cut -f5-8)"
-  assert_equals 1 "$(ledger | awk -F'\t' '$5 == "dialog" && $8 ~ /close the question/' | wc -l | tr -d ' ')" "the question closes on its documented path: $(ledger | cut -f5-8)"
+  assert_equals 1 "$(ledger | awk -F'\t' '$5 == "dialog" && $8 ~ /close the question/' | wc -l | tr -d ' ')" "a proven question closes: $(ledger | cut -f5-8)"
   pass "dialog: the kind comes from the dialog, not the conversation above it"
 }
 
