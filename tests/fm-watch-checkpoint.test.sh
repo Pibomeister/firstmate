@@ -870,6 +870,7 @@ test_real_host_checkpoint_replaces_a_stop_hook_hold() {
     FM_WATCH_HANDLING_SUCCESSOR=1 FM_WATCH_GROK_HOLD=1 "$ROOT/bin/fm-watch.sh" --grok-hold >/dev/null 2>&1 &
   hold=$!
   wait_for_checkpoint_lock "$home" || fail "the hold never took the lock"
+  # shellcheck disable=SC2016 # the single-quoted script expands in the child shell.
   FM_GATE_REFUSE_BYPASS=1 FM_HOME="$home" FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$fakebin/codex" -c '
     printf "%s\n" "$$" > "$FM_HOME/state/.lock"
     "$0" --seconds 12
