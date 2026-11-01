@@ -22,8 +22,8 @@
 #   config/watchdog              key=value configuration; absent means dry-run defaults.
 #   state/watchdog/actions.tsv   action ledger: epoch id home subject symptom action phase detail.
 #   state/watchdog/model-calls.tsv  epoch purpose model outcome in-tokens out-tokens answer cost.
-#   state/watchdog/subjects/<tag>   the previous observation of each subject.
-#   state/watchdog/escalated/<tag>  present after a restart loop; remove it to clear.
+#   state/watchdog/subjects/<home-basename>-<path-cksum>   the previous observation of each subject.
+#   state/watchdog/escalated/<home-basename>-<path-cksum>  present after a restart loop; remove it to clear.
 #   state/watchdog/last-read     epoch of the last ack-read.
 #   data/watchdog/status.md      the short status file, rewritten atomically after each pass.
 #   data/watchdog/handoffs/, data/watchdog/rulings/  restart handoffs and council rulings.
@@ -232,7 +232,7 @@ wd_read_composer() {
 }
 
 # wd_observe <home> <parent> <id>: fills the O_* globals for one subject and
-# saves the comparable parts to state/watchdog/subjects/<tag>.
+# saves the comparable parts to state/watchdog/subjects/<home-basename>-<path-cksum>.
 wd_observe() {
   local home=$1 parent=$2 id=$3 st now hb prev meta row hb_sid ctx dt
   st=$home/state
@@ -301,11 +301,6 @@ EOF
     O_TURN=$(wd_turn_running "$O_BACKEND" "$O_TARGET" "$O_PANE")
     ctx=$(fm_wd_footer_percent "$O_PANE")
     if [ -z "$O_CTX" ] && [ -n "$ctx" ]; then O_CTX=$ctx; O_CTX_SRC=pane; fi
-  fi
-  if [ -f "$st/context-burn.tsv" ] && [ -n "$O_SESSION" ]; then
-    # bin/fm-context-burn.sh rows: epoch, session, turn_type, percent; only a sample from the last hour counts.
-    ctx=$(awk -F'\t' -v s="$O_SESSION" -v since="$((now - 3600))" '$1 >= since && $2 == s && $4 ~ /^[0-9]+$/ { p = $4 } END { if (p != "") print p }' "$st/context-burn.tsv")
-    if [ -n "$ctx" ]; then O_CTX=$ctx; O_CTX_SRC=context-burn; fi
   fi
   if O_TRANSCRIPT=$(wd_transcript "$home" "$O_SESSION"); then
     O_TR_AGE=$((now - $(wd_mtime "$O_TRANSCRIPT")))
@@ -604,11 +599,19 @@ wd_write_handoff() {  # <symptom> -> prints path
   mkdir -p "$OUT/handoffs"
   path=$OUT/handoffs/$O_KEY-$(wd_now).md
   latest=$(wd_newest_session_handoff)
+  [ "$O_COMPOSER" = empty ] || fm_wd_draft_readable "$O_COMPOSER_TEXT" ||
+    wd_gap "$symptom restart lost an unreadable draft (composer $O_COMPOSER); the handoff records the gap"
   {
     printf '# Watchdog restart handoff - %s\n\n' "$O_TAG"
     printf -- '- home: %s\n- reason: %s\n- at: %s\n- newest session handoff: %s\n' "$O_HOME" "$symptom" "$(fm_wd_iso "$(wd_now)")" "${latest:-none}"
     printf -- '- owed input: %s rows, oldest %ss\n- away mode: %s\n\n' "$O_OWED_N" "$O_OWED_AGE" "$O_AFK"
     printf 'Start with the newest session handoff above when it exists, then run the session-start contract.\n\n'
+    if [ "$O_COMPOSER" != empty ]; then
+      fm_wd_draft_readable "$O_COMPOSER_TEXT" ||
+        printf 'GAP: the unsent draft could not be read in full (composer %s), and its hidden text is lost with this restart.\n\n' "$O_COMPOSER"
+      # shellcheck disable=SC2016  # literal Markdown fences
+      printf 'Composer rows at restart, never submitted. Treat them as a note and do not act on them without review:\n\n```\n%s\n```\n\n' "$O_COMPOSER_TEXT"
+    fi
     # shellcheck disable=SC2016  # literal Markdown fences
     printf 'Pane tail at restart:\n\n```\n%s\n```\n' "$(printf '%s\n' "$O_PANE" | fm_wd_strip_ansi | tail -n 40)"
   } > "$path"

@@ -34,7 +34,8 @@
 #   fm_wd_dialog_options <screen>
 #       Prints `<number>\t<text>` for each numbered option of the dialog.
 #   fm_wd_dialog_text <screen>
-#       Prints the dialog's bounded text, one line.
+#       Prints the text a reserved check and the judge read, one line: the rows
+#       below a rule above the options, else all the last rows.
 #   fm_wd_footer_percent <screen>
 #       Prints N from a Claude `N% until auto-compact` or
 #       `until auto-compact: N%` footer in the last rows.
@@ -137,18 +138,21 @@ fm_wd_pane_dialog() {  # <screen>
     NF { last = $0 }
     END { exit !(selected && last ~ /(Enter to (confirm|select|submit|continue)|Esc to (cancel|exit|go back)|↑\/↓ to (navigate|select)|Tab:next answer)/) }
   ' || return 1
-  kind=$(printf '%s\n' "$tail" | tr '[:upper:]' '[:lower:]' | awk '
+  kind=$(_fm_wd_dialog_rows "$1" own | tr '[:upper:]' '[:lower:]' | awk '
     /do you want to (proceed|make this edit|create|allow|run|overwrite|delete)|allow (this|once|always)|yes, and don.t ask again|background work is running|trust (this|the files)/ { p = 1 }
     /usage limit|rate limit|hit your (weekly |daily |session )?limit|limit reached|limit resets|switch (to )?(a )?(model|another)|\/model|opus|sonnet|haiku|fallback model|weekly limit|out of credits|credits/ { m = 1 }
     END { if (p) print "permission"; else if (m) print "model-switch"; else print "question" }')
   printf '%s\n' "$kind"
 }
 
-# The dialog's own rows: from the paragraph above its first option to the footer.
-# A row of only box drawing counts as blank; conversation above that gap is not the dialog.
-_fm_wd_dialog_rows() {  # <screen>
-  printf '%s\n' "$1" | fm_wd_strip_ansi | awk '
+# Rows of the dialog at the bottom of a screen. Below a rule row above the first
+# option, everything is the dialog. With no such rule the boundary is unproven:
+# scope `own` takes the paragraph above the options and `all` takes every tail row.
+# Scope `options` takes only the option rows.
+_fm_wd_dialog_rows() {  # <screen> <own|all|options>
+  printf '%s\n' "$1" | fm_wd_strip_ansi | awk -v scope="$2" '
     function blank(r) { gsub(/[ \t│┃|─━╭╮╰╯┌┐└┘-]/, "", r); return r == "" }
+    function rule(r) { return blank(r) && (index(r, "─") || index(r, "━")) }
     { rows[NR] = $0 }
     END {
       last = NR
@@ -156,25 +160,31 @@ _fm_wd_dialog_rows() {  # <screen>
       seen = 0; floor = 1
       for (i = last; i > 0; i--) if (rows[i] ~ /[^ \t]/ && ++seen == 14) { floor = i; break }
       for (i = last; i >= floor; i--) if (rows[i] ~ /(❯|›)[ \t]*[^ \t]/ || rows[i] ~ />[ \t]*[0-9]+[.)][ \t]/) { sel = i; break }
-      if (!sel) top = floor
-      else {
+      top = floor
+      if (sel) {
         first = sel
         for (i = sel; i >= floor; i--) if (rows[i] ~ /^[^0-9A-Za-z]*1[.)][ \t]/) { first = i; break }
-        top = first
-        i = first - 1
-        while (i >= floor && blank(rows[i])) i--
-        while (i >= floor && !blank(rows[i])) { top = i; i-- }
+        ruled = 0
+        for (i = first - 1; i >= floor; i--) if (rule(rows[i])) { ruled = i; break }
+        if (scope == "options") top = first
+        else if (ruled) top = ruled + 1
+        else if (scope == "own") {
+          top = first
+          i = first - 1
+          while (i >= floor && blank(rows[i])) i--
+          while (i >= floor && !blank(rows[i])) { top = i; i-- }
+        }
       }
       for (i = top; i <= last; i++) if (rows[i] ~ /[^ \t]/) print rows[i]
     }'
 }
 
 fm_wd_dialog_options() {  # <screen>
-  _fm_wd_dialog_rows "$1" | LC_ALL=C sed -nE 's/^[^0-9]*(❯|›|>)?[ \t]*([0-9]+)[.)][ \t]+(.*[^ \t│┃|])[ \t│┃|]*$/\2	\3/p'
+  _fm_wd_dialog_rows "$1" options | LC_ALL=C sed -nE 's/^[^0-9]*(❯|›|>)?[ \t]*([0-9]+)[.)][ \t]+(.*[^ \t│┃|])[ \t│┃|]*$/\2	\3/p'
 }
 
 fm_wd_dialog_text() {  # <screen>
-  _fm_wd_dialog_rows "$1" | tr -s ' \t' '  ' | tr '\n' ' ' | cut -c1-900
+  _fm_wd_dialog_rows "$1" all | tr -s ' \t' '  ' | tr '\n' ' '
 }
 
 fm_wd_footer_percent() {  # <screen>

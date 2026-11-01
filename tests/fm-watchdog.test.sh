@@ -716,6 +716,41 @@ restart-command=/bin/true'
   pass "frozen: a held nudge counts toward the restart proof, and a clean draft gets Enter first"
 }
 
+test_held_nudge_restart_keeps_the_draft_or_names_the_gap() {
+  local handoff off
+  make_home $'Captain session\n> finish the summary' 'restart=on
+restart-command=/bin/true'
+  transcript 5000 "Working." "Testing." "Green."
+  owe_input 5000
+  for off in 0 1000 2000 3000; do FM_WD_TEST_COMPOSER=pending-unproven run_wd "$off" once >/dev/null 2>&1; done
+  assert_equals 1 "$(ledger_rows frozen restart pending)" "a readable draft still restarts: $(ledger | cut -f5-8)"
+  handoff=$(ls "$H/data/watchdog/handoffs/"*.md)
+  assert_grep "never submitted" "$handoff" "the handoff marks the draft as unsubmitted"
+  assert_grep "> finish the summary" "$handoff" "the handoff holds the readable draft"
+  ! grep -q '^GAP:' "$handoff" || fail "a readable draft is not a gap: $(cat "$handoff")"
+
+  make_home $'Captain session\n> [Pasted text #3 +40 lines]' 'restart=on
+restart-command=/bin/true'
+  transcript 5000 "Working." "Testing." "Green."
+  owe_input 5000
+  for off in 0 1000 2000 3000; do FM_WD_TEST_COMPOSER=pending-unproven run_wd "$off" once >/dev/null 2>&1; done
+  assert_equals 1 "$(ledger_rows frozen restart pending)" "a placeholder still restarts: $(ledger | cut -f5-8)"
+  assert_equals 0 "$(ledger_rows pasted-input key pending)" "a placeholder never gets Enter"
+  handoff=$(ls "$H/data/watchdog/handoffs/"*.md)
+  assert_grep "GAP: the unsent draft could not be read" "$handoff" "the handoff names the lost draft"
+  [ ! -s "$H/typed.log" ] || fail "text was typed on a placeholder: $(cat "$H/typed.log")"
+  pass "held restart: the handoff keeps a readable draft and names an unreadable one"
+}
+
+test_context_burn_file_is_not_a_context_source() {
+  make_home $'Captain session\n> '
+  transcript 100 "Working."
+  printf '%s\t%s\tuser\t5\n' "$BASE" "$SID" > "$H/state/context-burn.tsv"
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger | awk -F'\t' '$5 == "handoff-request" || $5 == "restart-requested"' | wc -l | tr -d ' ')" "a burn sample starts no low-context ladder: $(ledger | cut -f5-8)"
+  pass "context: state/context-burn.tsv is not read"
+}
+
 test_low_context_undeliverable_nudge_leaves_frozen_recovery() {
   make_home $'Captain session\n> \n  7% until auto-compact' 'restart=on
 restart-command=/bin/true'
@@ -879,24 +914,55 @@ test_second_mate_restart_ends_the_pass() {
 }
 
 test_dialog_reserved_check_reads_only_dialog_rows() {
-  make_home $'Merged PR #41, deleted the branch.\n\nYou have hit your weekly limit for Opus.\n\n ❯ 1. Switch to Sonnet\n   2. Buy more credits\n\nEnter to confirm · Esc to cancel' 'models=claude:haiku'
+  local rule='────────────────────'
+  make_home "Merged PR #41, deleted the branch."$'\n'"$rule"$'\nYou have hit your weekly limit for Opus.\n\n ❯ 1. Switch to Sonnet\n   2. Buy more credits\n\nEnter to confirm · Esc to cancel' 'models=claude:haiku'
   fake_models "$H" ok:"OPTION 1" absent
   transcript 100 "Working."
   run_wd 0 once >/dev/null 2>&1
-  assert_equals 1 "$(ledger_rows dialog key pending)" "conversation above a limit picker does not hold it: $(ledger | cut -f5-8)"
+  assert_equals 1 "$(ledger_rows dialog key pending)" "conversation above a ruled limit picker does not hold it: $(ledger | cut -f5-8)"
 
-  make_home $'Merged PR #41, deleted the branch.\n\nWhich plan should I follow?\n ❯ 1. Plan A\n   2. Plan B\n\nEnter to select · Esc to cancel'
+  make_home "Merged PR #41, deleted the branch."$'\n'"$rule"$'\nWhich plan should I follow?\n ❯ 1. Plan A\n   2. Plan B\n\nEnter to select · Esc to cancel'
   transcript 100 "Working."
   run_wd 0 once >/dev/null 2>&1
-  assert_equals 1 "$(ledger_rows dialog key pending)" "conversation above a question does not hold it: $(ledger | cut -f5-8)"
+  assert_equals 1 "$(ledger_rows dialog key pending)" "conversation above a ruled question does not hold it: $(ledger | cut -f5-8)"
 
   make_home $'Deploy this build\nto staging?\n ❯ 1. Yes\n   2. No\n\nEnter to select · Esc to cancel'
   transcript 100 "Working."
   run_wd 0 once >/dev/null 2>&1
   assert_equals 0 "$(ledger_rows dialog key pending)" "a reserved word in a two-row heading still holds: $(ledger | cut -f5-8)"
-  assert_equals "2	Plan B" "$(lib fm_wd_dialog_options $'1. Merged it\n2. Deleted it\n\nWhich?\n ❯ 1. Plan A\n   2. Plan B\n\nEnter to select' | tail -n 1)" "options come from the dialog"
-  assert_equals 2 "$(lib fm_wd_dialog_options $'1. Merged it\n2. Deleted it\n\nWhich?\n ❯ 1. Plan A\n   2. Plan B\n\nEnter to select' | wc -l | tr -d ' ')" "a numbered list above is not an option"
-  pass "dialog: reserved words count only in the dialog's own rows"
+
+  make_home $'Continuing bills your card and deletes the production data.\n\nContinue with Opus limit?\n ❯ 1. Yes\n   2. No\n\nEnter to confirm · Esc to cancel' 'models=claude:haiku'
+  fake_models "$H" ok:"OPTION 1" absent
+  transcript 100 "Working."
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows dialog key pending)" "a reserved paragraph with no proven boundary holds a picker: $(ledger | cut -f5-8)"
+  [ ! -s "$H/model.log" ] || fail "a model saw a reserved picker: $(cat "$H/model.log")"
+
+  make_home $'Deploy to production is the next step.\n\nShould I go ahead?\n ❯ 1. Yes\n   2. No\n\nEnter to select · Esc to cancel'
+  transcript 100 "Working."
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows dialog key pending)" "a reserved paragraph with no proven boundary holds a question: $(ledger | cut -f5-8)"
+
+  local list=$'1. Merged it\n2. Deleted it\n\nWhich?\n ❯ 1. Plan A\n   2. Plan B\n\nEnter to select'
+  assert_equals "2	Plan B" "$(lib fm_wd_dialog_options "$list" | tail -n 1)" "options come from the dialog"
+  assert_equals 2 "$(lib fm_wd_dialog_options "$list" | wc -l | tr -d ' ')" "a numbered list above is not an option"
+  pass "dialog: reserved words hold unless a rule proves they sit outside the dialog"
+}
+
+test_dialog_kind_ignores_conversation_rows() {
+  local q=$'\n\nWhich task first?\n ❯ 1. Task A\n   2. Task B\n\nEnter to select · Esc to cancel'
+  assert_equals question "$(lib fm_wd_pane_dialog "I told the worker to switch to sonnet.$q")" "a model name in conversation is no model switch"
+  assert_equals question "$(lib fm_wd_pane_dialog "It asked: do you want to proceed?$q")" "a permission phrase in conversation is no permission dialog"
+
+  make_home "I told the worker to switch to sonnet.$q" 'models=claude:haiku'
+  fake_models "$H" ok:"OPTION 1" absent
+  transcript 100 "Working."
+  run_wd 0 once >/dev/null 2>&1
+  [ ! -s "$H/model.log" ] || fail "a judge was asked about a question: $(cat "$H/model.log")"
+  [ ! -s "$H/state/watchdog/model-calls.tsv" ] || fail "a model call ran: $(cat "$H/state/watchdog/model-calls.tsv")"
+  assert_equals 0 "$(ledger | grep -c 'model-switch option')" "no option key answers the question: $(ledger | cut -f5-8)"
+  assert_equals 1 "$(ledger | awk -F'\t' '$5 == "dialog" && $8 ~ /close the question/' | wc -l | tr -d ' ')" "the question closes on its documented path: $(ledger | cut -f5-8)"
+  pass "dialog: the kind comes from the dialog, not the conversation above it"
 }
 
 test_reserved_model_switch_dialog_is_held() {
@@ -1111,6 +1177,9 @@ fm_test_run \
   test_low_context_asks_nothing_when_no_restart_can_run \
   test_restart_request_does_not_shadow_frozen_recovery \
   test_held_nudges_reach_the_restart_proof \
+  test_held_nudge_restart_keeps_the_draft_or_names_the_gap \
+  test_context_burn_file_is_not_a_context_source \
+  test_dialog_kind_ignores_conversation_rows \
   test_low_context_undeliverable_nudge_leaves_frozen_recovery \
   test_homes_with_one_basename_keep_their_own_state \
   test_dialog_reserved_check_reads_only_dialog_rows \
