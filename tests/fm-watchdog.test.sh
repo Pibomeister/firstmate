@@ -54,6 +54,10 @@ CASE_N=0
 fake_models() {
   local dir=$1 cm=$2 am=$3
   rm -f "$FAKEBIN/claude" "$FAKEBIN/agy"
+  # An absent model must also hide a real CLI further down PATH, so no case reaches
+  # a live model. It fails as a command that cannot run and logs nothing.
+  if [ "$cm" = absent ]; then printf '#!/usr/bin/env bash\nexit 127\n' > "$FAKEBIN/claude"; chmod +x "$FAKEBIN/claude"; fi
+  if [ "$am" = absent ]; then printf '#!/usr/bin/env bash\nexit 127\n' > "$FAKEBIN/agy"; chmod +x "$FAKEBIN/agy"; fi
   if [ "$cm" != absent ]; then
     cat > "$FAKEBIN/claude" <<SH
 #!/usr/bin/env bash
@@ -1557,6 +1561,51 @@ test_no_activity_source_is_not_reported_ok() {
   pass "a subject with no activity source reads as a gap, not ok"
 }
 
+test_claude_judge_keeps_the_default_login() {
+  make_home $'Captain session\n> ' 'models=claude:haiku'
+  fake_models "$H" ok:WORK absent
+  # The real CLI loses its login when CLAUDE_CONFIG_DIR names the default directory.
+  mv "$FAKEBIN/claude" "$FAKEBIN/claude.real"
+  cat > "$FAKEBIN/claude" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\${CLAUDE_CONFIG_DIR-unset}" >> "$H/config-dir.log"
+[ "\${CLAUDE_CONFIG_DIR:-}" != "\$HOME/.claude" ] || { printf '{"is_error":true,"result":"Not logged in"}\n'; exit 1; }
+exec "$FAKEBIN/claude.real" "\$@"
+SH
+  chmod +x "$FAKEBIN/claude"
+  out=$(printf 'is this a loop?' | env -u CLAUDE_CONFIG_DIR FM_TEST_SEAM=1 FM_WD_NOW="$BASE" FM_HOME="$H" bash "$WD" judge loop '(LOOP|WORK)') \
+    || fail "the Claude judge failed on the default setup"
+  assert_equals WORK "$out" "the judge answers with the default login"
+  assert_equals unset "$(tail -n 1 "$H/config-dir.log")" "no config directory is forced on the default setup"
+  out=$(printf 'is this a loop?' | CLAUDE_CONFIG_DIR="$H/inherited" FM_TEST_SEAM=1 FM_WD_NOW="$BASE" FM_HOME="$H" bash "$WD" judge loop '(LOOP|WORK)') \
+    || fail "the judge failed with an inherited config directory"
+  assert_equals "$H/inherited" "$(tail -n 1 "$H/config-dir.log")" "an inherited config directory is kept"
+  printf 'claude-config-dir=%s\n' "$H/account" >> "$H/config/watchdog"
+  out=$(printf 'is this a loop?' | CLAUDE_CONFIG_DIR="$H/inherited" FM_TEST_SEAM=1 FM_WD_NOW="$BASE" FM_HOME="$H" bash "$WD" judge loop '(LOOP|WORK)') \
+    || fail "the judge failed with a configured account"
+  assert_equals "$H/account" "$(tail -n 1 "$H/config-dir.log")" "a configured account wins"
+  rm -f "$FAKEBIN/claude" "$FAKEBIN/claude.real"
+  pass "the Claude judge keeps the default login unless an account directory is set"
+}
+
+test_unknown_heartbeat_endpoint_is_not_reported_ok() {
+  make_home $'Do you want to proceed?\n❯ 1. Yes\n  2. No\n'
+  transcript 100 "Working."
+  jq -n --arg s "$SID" --argjson e "$BASE" \
+    '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{
+       terminal:{backend:{unknown:true,reason:"no supervisor endpoint discovered"},target:{unknown:true,reason:"no supervisor endpoint discovered"},present:{unknown:true,reason:"no supervisor endpoint discovered"}},
+       session:{trusted_id:$s}, context_left:{remaining:{percent:42}}}}' > "$H/state/heartbeat.json"
+  run_wd 10 once >/dev/null 2>&1
+  assert_grep "NO-ENDPOINT" "$H/data/watchdog/status.md" "the health line does not read ok"
+  assert_no_grep ": ok" "$H/data/watchdog/status.md" "a home the watchdog cannot see never reads ok"
+  assert_grep "no recorded terminal endpoint" "$H/data/watchdog/status.md" "the limit is a reported gap"
+  assert_grep "ctx 42%" "$H/data/watchdog/status.md" "the rest of the heartbeat row is still read"
+  jq --argjson e "$((BASE - 2000))" '.generated_epoch = $e' "$H/state/heartbeat.json" > "$H/hb.tmp" && mv "$H/hb.tmp" "$H/state/heartbeat.json"
+  run_wd 10 once >/dev/null 2>&1
+  assert_grep "watcher heartbeat is 33m old" "$H/data/watchdog/status.md" "the stale watcher check still fires"
+  pass "a heartbeat with an unknown endpoint keeps its row and reads as a gap, not ok"
+}
+
 test_tmux_restart_survives_a_closed_session() {
   make_home $'Captain session\n> ' "restart=on
 max-nudges=0
@@ -1724,6 +1773,8 @@ fm_test_run \
   test_unknown_composer_guards_the_nudge \
   test_orca_turn_probe_keeps_errors_unknown \
   test_no_activity_source_is_not_reported_ok \
+  test_claude_judge_keeps_the_default_login \
+  test_unknown_heartbeat_endpoint_is_not_reported_ok \
   test_tmux_restart_survives_a_closed_session \
   test_status_file_short_and_staleness_visible \
   test_manager_units \

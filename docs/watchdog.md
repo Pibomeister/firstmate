@@ -61,6 +61,7 @@ A home whose restart awaits pickup gets no action at all until that restart clos
 
 The frozen, agent-gone, and restart paths need a session transcript, and only the Claude transcript layout is read.
 A subject with no readable transcript has no activity source, so those restarts are unavailable for it; its health line reads `NO-ACTIVITY-SOURCE` instead of `ok`, and the status file lists the gap.
+A subject with no recorded terminal endpoint, such as a heartbeat whose terminal fields are unknown, has no pane view; its health line reads `NO-ENDPOINT` instead of `ok`, and the status file lists the gap.
 
 These checks run on every pass as well:
 
@@ -145,7 +146,7 @@ An absent file means dry-run on the owner home alone.
 | `judge-call-max-usd` | `0.05` | Per-call Claude budget |
 | `judge-max-chars` | `6000` | Prompt size bound |
 | `judge-timeout-secs` | `120` | Per-call time bound |
-| `claude-config-dir` | the home's `config/claude-account` | Claude config directory for judge calls |
+| `claude-config-dir` | the home's `config/claude-account`, then the inherited environment and the CLI's own default | Claude config directory for judge calls |
 | `claude-config-dirs` | none | Extra Claude config directories searched for session transcripts |
 | `reserved-keys` | none | Comma-separated decision keys always held for the owner |
 | `reroute-candidates` | none | Comma-separated `harness:model` candidates for quota reroute nudges |
