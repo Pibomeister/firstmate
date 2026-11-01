@@ -1011,6 +1011,12 @@ test_nested_secondmate_subtree_joins_the_parent_lane() {
   assert_equals 1 "$code" 'a launch from the nested home is refused at the parent stop'
   assert_contains "$err" 'inclusive=495' 'the nested home refusal reports the parent lane total'
 
+  "$TEST_BASH" "$ROOT/bin/fm-task-budget.sh" fold-away "$nested/state/lane-budget" "$nested/state/grand.meta"
+  assert_grep 'budget_folded_inclusive=165' "$nested/state/lane-budget" 'a child torn down in the nested home folds into that home lane'
+  rm -f "$nested/state/grand.meta" "$nested/state/grand.budget"
+  code=0
+  err=$("$TEST_BASH" "$ROOT/bin/fm-task-budget.sh" prelaunch "$dir" 2>&1) || code=$?
+  assert_contains "$err" 'inclusive=495' 'a nested home fold still counts while the nested secondmate is unfolded'
   "$TEST_BASH" "$ROOT/bin/fm-task-budget.sh" fold-away "$dir/state/lane-budget" "$dir/state/mate2.meta"
   assert_grep 'budget_folded_inclusive=330' "$dir/state/lane-budget" 'nested secondmate teardown folds its whole subtree'
   rm -rf "$nested" "$dir/state/mate2.meta" "$dir/state/mate2.budget"

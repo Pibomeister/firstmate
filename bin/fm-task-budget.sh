@@ -35,8 +35,10 @@
 # and prelaunch refuses naming it. fold-away fails only when the lane cannot be
 # locked or written, and teardown then keeps the child record.
 # A nested secondmate launched from a capped home is a child of that lane: its
-# session and its own home's children and folds join the parent total, its
-# teardown folds that subtree before its home is cleaned up, and its home's lane
+# session and its own home's children and folds join the parent total. A child
+# torn down inside that home, forced cleanup included, folds into that home's
+# lane; the nested secondmate folds into the parent lane only after its endpoint
+# is confirmed gone and just before its home is removed. Its home's lane
 # records budget_parent_home so a launch there is also checked against the
 # parent's stop.
 # The operator switch is documented in docs/configuration.md (budget-enforcement).

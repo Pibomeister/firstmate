@@ -3467,6 +3467,7 @@ cleanup_firstmate_home_children() {
       [ -n "$child_home" ] || child_home=$child_wt
       if [ -n "$child_home" ] && [ -d "$child_home" ]; then
         cleanup_firstmate_home_children "$child_home" "$archive_parent/children/$child_id" || return $?
+        "$SCRIPT_DIR/fm-task-budget.sh" fold-away "$sub_state/lane-budget" "$child_meta" || return 1
         remove_firstmate_home "$child_home" "child firstmate home" "$child_id" "$child_backend" || return $?
       fi
     elif [ "$child_backend" = orca ]; then
@@ -3535,6 +3536,9 @@ cleanup_firstmate_home_children() {
     retire_busy_state "$sub_state" "$child_id" "$child_busy_gen" || return 1
     teardown_retire_status "$sub_state" "$child_id" "$archive_parent/children/$child_id" || return 1
     fm_wake_queue_prune_task "$sub_state" "$child_id" "$child_t" 2>/dev/null || true
+    if [ "$child_kind" != secondmate ]; then
+      "$SCRIPT_DIR/fm-task-budget.sh" fold-away "$sub_state/lane-budget" "$child_meta" || return 1
+    fi
     fm_backlog_atomic_transition remove "$sub_state/$child_id.meta" "task record" "$sub_state" || return 1
     rm -f "$sub_state/$child_id.turn-ended" "$sub_state/$child_id.progress" \
       "$(fm_wake_signal_seen_path "$sub_state" "$sub_state/$child_id.turn-ended")" \
@@ -3614,10 +3618,6 @@ fi
 
 if [ "$KIND" = secondmate ]; then
   preflight_firstmate_home_process_event_tree "$HOME_PATH" "secondmate home" || exit 1
-fi
-
-if [ "$KIND" = secondmate ]; then
-  "$SCRIPT_DIR/fm-task-budget.sh" fold-away "$STATE/lane-budget" "$STATE/$ID.meta" || exit 1
 fi
 
 if [ "$KIND" = secondmate ] && [ "$FORCE" = "--force" ]; then
@@ -4027,6 +4027,7 @@ fi
 teardown_export_records "$STATE" "$ID" || exit 1
 if [ "$KIND" = secondmate ]; then
   [ -n "$HOME_PATH" ] || HOME_PATH=$WT
+  "$SCRIPT_DIR/fm-task-budget.sh" fold-away "$STATE/lane-budget" "$STATE/$ID.meta" || exit 1
   handoff_wake_retire_stage \
     || { echo "error: receiver wake cleanup could not be staged; preserving the secondmate home and route" >&2; exit 1; }
   pending_replies_recovery_validate recheck \
