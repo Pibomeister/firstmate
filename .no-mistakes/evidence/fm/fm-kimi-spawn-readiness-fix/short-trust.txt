@@ -1,0 +1,7 @@
+Eduardos-MacBook-Pro-2:short eduardopicazo$ export COMPACT_ADVISER_DISABLE=1
+Eduardos-MacBook-Pro-2:short eduardopicazo$ export FM_TASK_ID=kimi-tui-short
+Eduardos-MacBook-Pro-2:short eduardopicazo$ . '/tmp/fm-kimi-tui-short+ca0f0e9be1
+06701daa113175edd474da1addf6a38e9fca91bb3b716af84ee9a6/launch.s1793522310.32964.
+27747.sh'
+  Trust this folder?
+  Enlarge terminal to review sources. Esc exit.

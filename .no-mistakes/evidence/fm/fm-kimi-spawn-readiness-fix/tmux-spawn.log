@@ -1,0 +1,4 @@
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M649GT90YA0AQX8YHNA4K4BZ/.test-kimi-lab/live/home
+error: kimi brief pointer delivery was not confirmed; inspect window firstmate:fm-kimi-live-tmux
+warning: leaving task kimi-live-tmux's slot claim on /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M649GT90YA0AQX8YHNA4K4BZ/.test-kimi-lab/live/treehouse/.treehouse/project-c6dcf0/1/project in place; the Treehouse project lock is no longer held, so the next spawn's claim replaces it
+spawn_exit=1

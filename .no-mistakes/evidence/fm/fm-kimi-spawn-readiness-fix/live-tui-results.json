@@ -1,0 +1,43 @@
+{
+  "normal": {
+    "spawn_exit": 1,
+    "captured_frames": 10,
+    "trust_records": [
+      {
+        "root": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M649GT90YA0AQX8YHNA4K4BZ/.test-kimi-lab/tui/pool/.treehouse/normal-185965/1/normal",
+        "trustedAt": 1793522196030
+      }
+    ],
+    "mcp_command_ran": false
+  },
+  "short": {
+    "spawn_exit": 1,
+    "captured_frames": 10,
+    "trust_records": [
+      {
+        "root": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M649GT90YA0AQX8YHNA4K4BZ/.test-kimi-lab/tui/pool/.treehouse/short-f1ca99/1/short",
+        "trustedAt": 1793522214612
+      },
+      {
+        "root": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M649GT90YA0AQX8YHNA4K4BZ/.test-kimi-lab/tui/pool/.treehouse/normal-185965/1/normal",
+        "trustedAt": 1793522196030
+      }
+    ],
+    "mcp_command_ran": false
+  },
+  "mcp": {
+    "spawn_exit": 1,
+    "captured_frames": 7,
+    "trust_records": [
+      {
+        "root": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M649GT90YA0AQX8YHNA4K4BZ/.test-kimi-lab/tui/pool/.treehouse/short-f1ca99/1/short",
+        "trustedAt": 1793522214612
+      },
+      {
+        "root": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M649GT90YA0AQX8YHNA4K4BZ/.test-kimi-lab/tui/pool/.treehouse/normal-185965/1/normal",
+        "trustedAt": 1793522196030
+      }
+    ],
+    "mcp_command_ran": false
+  }
+}

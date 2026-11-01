@@ -1,0 +1,24 @@
+ │  Directory: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M64…│
+ │  Session:                                                                  │
+ │  Model:     not set, run /login or /provider                               │
+ │  Version:   2.4.0                                                          │
+ │                                                                            │
+ ╰────────────────────────────────────────────────────────────────────────────╯
+
+ ✦ Kimi K3.1 Pro is ready - use the model in a fresh session for the best
+                          results
+   Standard: Plus/Moderato and above; Highspeed: Pro/Allegretto and above
+
+   No session yet — one will be created on your first message.
+   tmux extended-keys is off. Modified Enter keys may not work. Add `set -g
+ extended-keys on` to ~/.tmux.conf and restart tmux.
+   Error: LLM not set, send "/login" to login
+
+ ╭────────────────────────────────────────────────────────────────────────────╮
+ │ >                                                                          │
+ ╰────────────────────────────────────────────────────────────────────────────╯
+ Never Ask  …/short-4339ae/1/short                         /model: switch model
+                                                                    context: 0%
+
+
+

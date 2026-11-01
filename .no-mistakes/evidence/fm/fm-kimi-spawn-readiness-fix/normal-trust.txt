@@ -1,0 +1,24 @@
+takes/worktrees/075d7f40c28a/01M649GT90YA0AQX8YHNA4K4BZ/.test-kimi-lab/tui/pool/
+.treehouse/normal-185965/1/normal'
+Eduardos-MacBook-Pro-2:normal eduardopicazo$ export GOTMPDIR=/tmp/fm-kimi-tui-no
+rmal/gotmp
+Eduardos-MacBook-Pro-2:normal eduardopicazo$ export COMPACT_ADVISER_DISABLE=1
+Eduardos-MacBook-Pro-2:normal eduardopicazo$ export FM_TASK_ID=kimi-tui-normal
+Eduardos-MacBook-Pro-2:normal eduardopicazo$ . '/tmp/fm-kimi-tui-normal+dcfac5f7
+abb34f9b708852e459f5530cf67dfe52d51a69bb43b78158cd9de06b/launch.s1793522192.3916
+8.6551.sh'
+ ──────────────────────────────────────────────────────────────────────────────
+  Trust this folder?
+  ↑↓ navigate · Enter select · Esc exit
+
+  /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M649GT90YA0AQX8YHN
+  A4K4BZ/.test-kimi-lab/tui/pool/.treehouse/normal-185965/1/normal
+
+  No project integrations or instructions to activate.
+
+  Trust is remembered for this folder, including future project config changes.
+  Tool approvals follow your permission settings.
+
+   ❯ Trust and continue
+     Exit
+ ──────────────────────────────────────────────────────────────────────────────

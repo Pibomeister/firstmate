@@ -1,0 +1,37 @@
+[
+  {
+    "seconds": 1.69,
+    "pane": "%1",
+    "text": "\nThe default interactive shell is now zsh.\nTo update your account to use zsh, please run `chsh -s /bin/zsh`.\nFor more details, please visit https://support.apple.com/kb/HT208050.\nEduardos-MacBook-Pro-2:short eduardopicazo$ treehouse get\n🌳 Setting up worktree...\n\n"
+  },
+  {
+    "seconds": 2.15,
+    "pane": "%1",
+    "text": "01M649GT90YA0AQX8YHNA4K4BZ/.test-kimi-lab/tui-short-v3/pool/.treehouse/short-2a6\n68f/1/short. Type 'exit' to return.\n\nThe default interactive shell is now zsh.\nTo update your account to use zsh, please run `chsh -s /bin/zsh`.\nFor more details, please visit https://support.apple.com/kb/HT208050.\nEduardos-MacBook-Pro-2:short eduardopicazo$\n"
+  },
+  {
+    "seconds": 4.08,
+    "pane": "%1",
+    "text": "The default interactive shell is now zsh.\nTo update your account to use zsh, please run `chsh -s /bin/zsh`.\nFor more details, please visit https://support.apple.com/kb/HT208050.\nEduardos-MacBook-Pro-2:short eduardopicazo$ cd -- '/Users/eduardopicazo/.no-mist\nakes/worktrees/075d7f40c28a/01M649GT90YA0AQX8YHNA4K4BZ/.test-kimi-lab/tui-short-\nv3/pool/.treehouse/short-2a668f/1/short'\nEduardos-MacBook-Pro-2:short eduardopicazo$\n"
+  },
+  {
+    "seconds": 6.15,
+    "pane": "%1",
+    "text": "akes/worktrees/075d7f40c28a/01M649GT90YA0AQX8YHNA4K4BZ/.test-kimi-lab/tui-short-\nv3/pool/.treehouse/short-2a668f/1/short'\nEduardos-MacBook-Pro-2:short eduardopicazo$ export GOTMPDIR=/tmp/fm-kimi-tui-sho\nrt/gotmp\nEduardos-MacBook-Pro-2:short eduardopicazo$ export COMPACT_ADVISER_DISABLE=1\nEduardos-MacBook-Pro-2:short eduardopicazo$ export FM_TASK_ID=kimi-tui-short\nEduardos-MacBook-Pro-2:short eduardopicazo$\n"
+  },
+  {
+    "seconds": 6.58,
+    "pane": "%1",
+    "text": "Eduardos-MacBook-Pro-2:short eduardopicazo$ export GOTMPDIR=/tmp/fm-kimi-tui-sho\nrt/gotmp\nEduardos-MacBook-Pro-2:short eduardopicazo$ export COMPACT_ADVISER_DISABLE=1\nEduardos-MacBook-Pro-2:short eduardopicazo$ export FM_TASK_ID=kimi-tui-short\nEduardos-MacBook-Pro-2:short eduardopicazo$ . '/tmp/fm-kimi-tui-short+ca0f0e9be1\n06701daa113175edd474da1addf6a38e9fca91bb3b716af84ee9a6/launch.s1793522310.32964.\n27747.sh'\n"
+  },
+  {
+    "seconds": 6.98,
+    "pane": "%1",
+    "text": "rt/gotmp\nEduardos-MacBook-Pro-2:short eduardopicazo$ export COMPACT_ADVISER_DISABLE=1\nEduardos-MacBook-Pro-2:short eduardopicazo$ export FM_TASK_ID=kimi-tui-short\nEduardos-MacBook-Pro-2:short eduardopicazo$ . '/tmp/fm-kimi-tui-short+ca0f0e9be1\n06701daa113175edd474da1addf6a38e9fca91bb3b716af84ee9a6/launch.s1793522310.32964.\n27747.sh'\n\n"
+  },
+  {
+    "seconds": 8.82,
+    "pane": "%1",
+    "text": "Eduardos-MacBook-Pro-2:short eduardopicazo$ export COMPACT_ADVISER_DISABLE=1\nEduardos-MacBook-Pro-2:short eduardopicazo$ export FM_TASK_ID=kimi-tui-short\nEduardos-MacBook-Pro-2:short eduardopicazo$ . '/tmp/fm-kimi-tui-short+ca0f0e9be1\n06701daa113175edd474da1addf6a38e9fca91bb3b716af84ee9a6/launch.s1793522310.32964.\n27747.sh'\n  Trust this folder?\n  Enlarge terminal to review sources. Esc exit.\n"
+  }
+]

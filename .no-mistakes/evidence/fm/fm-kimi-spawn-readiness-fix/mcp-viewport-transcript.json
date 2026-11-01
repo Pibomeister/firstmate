@@ -1,0 +1,37 @@
+[
+  {
+    "seconds": 3.69,
+    "pane": "%3",
+    "text": "\nThe default interactive shell is now zsh.\nTo update your account to use zsh, please run `chsh -s /bin/zsh`.\nFor more details, please visit https://support.apple.com/kb/HT208050.\nEduardos-MacBook-Pro-2:mcp eduardopicazo$ treehouse get\nA new version of treehouse is available: v3.1.1 → v3.1.8\nRun \"treehouse update\" to update\n\n🌳 Setting up worktree...\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
+  },
+  {
+    "seconds": 4.06,
+    "pane": "%3",
+    "text": "\nThe default interactive shell is now zsh.\nTo update your account to use zsh, please run `chsh -s /bin/zsh`.\nFor more details, please visit https://support.apple.com/kb/HT208050.\nEduardos-MacBook-Pro-2:mcp eduardopicazo$ treehouse get\nA new version of treehouse is available: v3.1.1 → v3.1.8\nRun \"treehouse update\" to update\n\n🌳 Setting up worktree...\n🌳 Entered worktree at /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/\n01M649GT90YA0AQX8YHNA4K4BZ/.test-kimi-lab/tui/pool/.treehouse/mcp-69711e/1/mcp.\nType 'exit' to return.\n\nThe default interactive shell is now zsh.\nTo update your account to use zsh, please run `chsh -s /bin/zsh`.\nFor more details, please visit https://support.apple.com/kb/HT208050.\nEduardos-MacBook-Pro-2:mcp eduardopicazo$\n\n\n\n\n\n\n\n"
+  },
+  {
+    "seconds": 6.32,
+    "pane": "%3",
+    "text": "\nThe default interactive shell is now zsh.\nTo update your account to use zsh, please run `chsh -s /bin/zsh`.\nFor more details, please visit https://support.apple.com/kb/HT208050.\nEduardos-MacBook-Pro-2:mcp eduardopicazo$ treehouse get\nA new version of treehouse is available: v3.1.1 → v3.1.8\nRun \"treehouse update\" to update\n\n🌳 Setting up worktree...\n🌳 Entered worktree at /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/\n01M649GT90YA0AQX8YHNA4K4BZ/.test-kimi-lab/tui/pool/.treehouse/mcp-69711e/1/mcp.\nType 'exit' to return.\n\nThe default interactive shell is now zsh.\nTo update your account to use zsh, please run `chsh -s /bin/zsh`.\nFor more details, please visit https://support.apple.com/kb/HT208050.\nEduardos-MacBook-Pro-2:mcp eduardopicazo$ cd -- '/Users/eduardopicazo/.no-mistak\nes/worktrees/075d7f40c28a/01M649GT90YA0AQX8YHNA4K4BZ/.test-kimi-lab/tui/pool/.tr\neehouse/mcp-69711e/1/mcp'\nEduardos-MacBook-Pro-2:mcp eduardopicazo$\n\n\n\n\n"
+  },
+  {
+    "seconds": 7.93,
+    "pane": "%3",
+    "text": "\nThe default interactive shell is now zsh.\nTo update your account to use zsh, please run `chsh -s /bin/zsh`.\nFor more details, please visit https://support.apple.com/kb/HT208050.\nEduardos-MacBook-Pro-2:mcp eduardopicazo$ treehouse get\nA new version of treehouse is available: v3.1.1 → v3.1.8\nRun \"treehouse update\" to update\n\n🌳 Setting up worktree...\n🌳 Entered worktree at /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/\n01M649GT90YA0AQX8YHNA4K4BZ/.test-kimi-lab/tui/pool/.treehouse/mcp-69711e/1/mcp.\nType 'exit' to return.\n\nThe default interactive shell is now zsh.\nTo update your account to use zsh, please run `chsh -s /bin/zsh`.\nFor more details, please visit https://support.apple.com/kb/HT208050.\nEduardos-MacBook-Pro-2:mcp eduardopicazo$ cd -- '/Users/eduardopicazo/.no-mistak\nes/worktrees/075d7f40c28a/01M649GT90YA0AQX8YHNA4K4BZ/.test-kimi-lab/tui/pool/.tr\neehouse/mcp-69711e/1/mcp'\nEduardos-MacBook-Pro-2:mcp eduardopicazo$ export GOTMPDIR=/tmp/fm-kimi-tui-mcp/g\notmp\nEduardos-MacBook-Pro-2:mcp eduardopicazo$ export COMPACT_ADVISER_DISABLE=1\nEduardos-MacBook-Pro-2:mcp eduardopicazo$ export FM_TASK_ID=kimi-tui-mcp\nEduardos-MacBook-Pro-2:mcp eduardopicazo$\n"
+  },
+  {
+    "seconds": 8.36,
+    "pane": "%3",
+    "text": "To update your account to use zsh, please run `chsh -s /bin/zsh`.\nFor more details, please visit https://support.apple.com/kb/HT208050.\nEduardos-MacBook-Pro-2:mcp eduardopicazo$ treehouse get\nA new version of treehouse is available: v3.1.1 → v3.1.8\nRun \"treehouse update\" to update\n\n🌳 Setting up worktree...\n🌳 Entered worktree at /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/\n01M649GT90YA0AQX8YHNA4K4BZ/.test-kimi-lab/tui/pool/.treehouse/mcp-69711e/1/mcp.\nType 'exit' to return.\n\nThe default interactive shell is now zsh.\nTo update your account to use zsh, please run `chsh -s /bin/zsh`.\nFor more details, please visit https://support.apple.com/kb/HT208050.\nEduardos-MacBook-Pro-2:mcp eduardopicazo$ cd -- '/Users/eduardopicazo/.no-mistak\nes/worktrees/075d7f40c28a/01M649GT90YA0AQX8YHNA4K4BZ/.test-kimi-lab/tui/pool/.tr\neehouse/mcp-69711e/1/mcp'\nEduardos-MacBook-Pro-2:mcp eduardopicazo$ export GOTMPDIR=/tmp/fm-kimi-tui-mcp/g\notmp\nEduardos-MacBook-Pro-2:mcp eduardopicazo$ export COMPACT_ADVISER_DISABLE=1\nEduardos-MacBook-Pro-2:mcp eduardopicazo$ export FM_TASK_ID=kimi-tui-mcp\nEduardos-MacBook-Pro-2:mcp eduardopicazo$ . '/tmp/fm-kimi-tui-mcp+dcfac5f7abb34f\n9b708852e459f5530cf67dfe52d51a69bb43b78158cd9de06b/launch.s1793522231.57443.1529\n0.sh'\n"
+  },
+  {
+    "seconds": 8.87,
+    "pane": "%3",
+    "text": "For more details, please visit https://support.apple.com/kb/HT208050.\nEduardos-MacBook-Pro-2:mcp eduardopicazo$ treehouse get\nA new version of treehouse is available: v3.1.1 → v3.1.8\nRun \"treehouse update\" to update\n\n🌳 Setting up worktree...\n🌳 Entered worktree at /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/\n01M649GT90YA0AQX8YHNA4K4BZ/.test-kimi-lab/tui/pool/.treehouse/mcp-69711e/1/mcp.\nType 'exit' to return.\n\nThe default interactive shell is now zsh.\nTo update your account to use zsh, please run `chsh -s /bin/zsh`.\nFor more details, please visit https://support.apple.com/kb/HT208050.\nEduardos-MacBook-Pro-2:mcp eduardopicazo$ cd -- '/Users/eduardopicazo/.no-mistak\nes/worktrees/075d7f40c28a/01M649GT90YA0AQX8YHNA4K4BZ/.test-kimi-lab/tui/pool/.tr\neehouse/mcp-69711e/1/mcp'\nEduardos-MacBook-Pro-2:mcp eduardopicazo$ export GOTMPDIR=/tmp/fm-kimi-tui-mcp/g\notmp\nEduardos-MacBook-Pro-2:mcp eduardopicazo$ export COMPACT_ADVISER_DISABLE=1\nEduardos-MacBook-Pro-2:mcp eduardopicazo$ export FM_TASK_ID=kimi-tui-mcp\nEduardos-MacBook-Pro-2:mcp eduardopicazo$ . '/tmp/fm-kimi-tui-mcp+dcfac5f7abb34f\n9b708852e459f5530cf67dfe52d51a69bb43b78158cd9de06b/launch.s1793522231.57443.1529\n0.sh'\n\n"
+  },
+  {
+    "seconds": 9.58,
+    "pane": "%3",
+    "text": "eehouse/mcp-69711e/1/mcp'\nEduardos-MacBook-Pro-2:mcp eduardopicazo$ export GOTMPDIR=/tmp/fm-kimi-tui-mcp/g\notmp\nEduardos-MacBook-Pro-2:mcp eduardopicazo$ export COMPACT_ADVISER_DISABLE=1\nEduardos-MacBook-Pro-2:mcp eduardopicazo$ export FM_TASK_ID=kimi-tui-mcp\nEduardos-MacBook-Pro-2:mcp eduardopicazo$ . '/tmp/fm-kimi-tui-mcp+dcfac5f7abb34f\n9b708852e459f5530cf67dfe52d51a69bb43b78158cd9de06b/launch.s1793522231.57443.1529\n0.sh'\n ──────────────────────────────────────────────────────────────────────────────\n  Trust this folder?\n  ↑↓ navigate · Enter select · Esc exit\n\n  /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M649GT90YA0AQX8YHN\n  A4K4BZ/.test-kimi-lab/tui/pool/.treehouse/mcp-69711e/1/mcp\n\n  Start 1 MCP server automatically\n    Config: .mcp.json\n\n  Trust is remembered for this folder, including future project config changes.\n  Tool approvals follow your permission settings.\n\n   ❯ Trust and continue\n     Exit\n ──────────────────────────────────────────────────────────────────────────────\n"
+  }
+]

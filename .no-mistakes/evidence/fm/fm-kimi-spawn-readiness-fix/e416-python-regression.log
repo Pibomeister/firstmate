@@ -1,0 +1,4 @@
+fm-kimi-turnend-hook: refused: python3 with tomllib is required to validate config.toml.
+base_install_exit=1
+target_install_exit=0
+target_remove_exit=0; original config bytes restored
