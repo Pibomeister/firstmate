@@ -1920,8 +1920,6 @@ spawn_abort_cleanup() {
             SPAWN_FRESH_WIRING_PENDING=0
             clear_relaunch_harness_wiring "$HARNESS" "$WT" "$STATE_REAL" "$ID" "$KIND" ||
               echo "warning: could not remove $HARNESS wiring after the failed spawn of $ID" >&2
-            rm -f -- "$STATE_REAL/$ID.droid-session-end" ||
-              echo "warning: could not remove the Droid stop marker after the failed spawn of $ID" >&2
           fi
           if [ "$SPAWN_TASK_TMP_CREATED" = 1 ] && [ -n "${TASK_TMP:-}" ]; then
             SPAWN_TASK_TMP_CREATED=0
