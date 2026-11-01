@@ -53,11 +53,15 @@
 #       for assistant tool calls from the transcript tail.
 #   fm_wd_loop_verdict [rapid-secs]
 #       Filter over fm_wd_transcript_events output. Prints
-#       `<loop|rapid|near|none>\t<repeats>\t<sample>`. `loop` means at least three
+#       `<loop|rapid|near|none>\t<repeats>`. `loop` means at least three
 #       of the last five assistant texts are identical after case, digit, and
 #       whitespace normalization, with only timer tools between them. `rapid` is
 #       a loop whose repeats all fall inside rapid-secs. `near` means three share
 #       their first six words but are not identical; that goes to the judge.
+#   fm_wd_loop_evidence <max-chars>
+#       Filter over fm_wd_transcript_events output. Prints the events from the
+#       fifth-last assistant text on, newest last, one per row, as `assistant: <text>`
+#       or `tool: <name> <arg>`. Past max-chars the oldest rows are dropped.
 #   fm_wd_stall_proof <turn-running 0|1|unknown> <cpu-busy 0|1|unknown> <kind>...
 #       Returns 0 when no veto holds and at least two distinct source kinds
 #       (rendered, filesystem, kernel, records) are given. A running turn or a
@@ -296,22 +300,22 @@ fm_wd_loop_verdict() {  # [rapid-secs]  (stdin: fm_wd_transcript_events)
       return out }
     function head6(s,   a, k, out) { k = split(s, a, " "); out = ""; for (j = 1; j <= k && j <= 6; j++) out = out " " a[j]; return out }
     { n++; kind[n] = $1; at[n] = $2 + 0
-      if ($1 == "T") { txt[n] = norm($3); raw[n] = $3 }
+      if ($1 == "T") txt[n] = norm($3)
       else { tool[n] = $3; arg[n] = tolower($4) } }
     END {
       t = 0
       for (i = n; i >= 1 && t < 5; i--) if (kind[i] == "T" && txt[i] != "") { t++; ti[t] = i }
-      if (t < 3) { print "none\t0\t"; exit }
+      if (t < 3) { print "none\t0"; exit }
       best = ""; bc = 0; hb = ""; hc = 0
       for (a = 1; a <= t; a++) {
         c = 0; h = 0
         for (b = 1; b <= t; b++) { if (txt[ti[b]] == txt[ti[a]]) c++; if (head6(txt[ti[b]]) == head6(txt[ti[a]])) h++ }
-        if (c > bc) { bc = c; best = txt[ti[a]]; bi = ti[a] }
-        if (h > hc) { hc = h; hb = head6(txt[ti[a]]); hi = ti[a] }
+        if (c > bc) { bc = c; best = txt[ti[a]] }
+        if (h > hc) { hc = h; hb = head6(txt[ti[a]]) }
       }
-      if (bc >= 3) { verdict = "loop"; key = best; sample = raw[bi] }
-      else if (hc >= 3) { verdict = "near"; key = ""; sample = raw[hi] }
-      else { print "none\t" bc "\t"; exit }
+      if (bc >= 3) { verdict = "loop"; key = best }
+      else if (hc >= 3) { verdict = "near"; key = "" }
+      else { print "none\t" bc; exit }
       first = 0; lastat = 0; firstat = 0
       for (b = 1; b <= t; b++) {
         i = ti[b]
@@ -321,11 +325,22 @@ fm_wd_loop_verdict() {  # [rapid-secs]  (stdin: fm_wd_transcript_events)
       for (i = first; i <= n; i++) if (kind[i] == "U") {
         if (tool[i] ~ toolre) continue
         if (tool[i] == "Bash" && arg[i] ~ bashre) continue
-        print "none\t" bc "\twork-between"; exit
+        print "none\t" bc; exit
       }
       if (verdict == "loop" && firstat > 0 && lastat > 0 && lastat - firstat <= rapid) verdict = "rapid"
-      gsub(/\t/, " ", sample)
-      print verdict "\t" (verdict == "near" ? hc : bc) "\t" substr(sample, 1, 160)
+      print verdict "\t" (verdict == "near" ? hc : bc)
+    }'
+}
+
+fm_wd_loop_evidence() {  # <max-chars>  (stdin: fm_wd_transcript_events)
+  awk -F'\t' -v max="$1" '
+    { row[++n] = ($1 == "T") ? "assistant: " $3 : "tool: " $3 " " substr($4, 1, 80)
+      if ($1 == "T") at[++t] = n }
+    END {
+      first = (t > 5) ? at[t - 4] : 1
+      start = n + 1; used = 0
+      for (i = n; i >= first; i--) { used += length(row[i]) + 1; if (used > max) break; start = i }
+      for (i = start; i <= n; i++) print row[i]
     }'
 }
 
