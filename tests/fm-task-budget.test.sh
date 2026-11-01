@@ -1027,6 +1027,28 @@ test_nested_secondmate_subtree_joins_the_parent_lane() {
   pass 'a nested secondmate and its home children join the parent lane, gate both homes, and fold at teardown'
 }
 
+test_remote_secondmate_is_refused_from_a_lane_home() {
+  local dir="$TMP_ROOT/remote-lane" home wt fakebin out code=0 err
+  home="$dir/home"; wt="$dir/wt"
+  fm_test_spawn_home "$home" codex
+  mkdir -p "$wt" "$home/data"
+  fakebin=$(fm_test_make_spawn_fakebin "$dir/fake" codex)
+  prepare_measured_lane "$home" 1000000 1200000
+  printf -- '- far - remote helper (host: remote-mac; root: /srv/fm; home: /srv/fm/far; scope: all; projects: none; added 2026-11-01)\n' \
+    > "$home/data/secondmates.md"
+  out=$(fm_test_run_spawn "$home" "$wt" "$fakebin" far --secondmate) || code=$?
+  [ "$code" -ne 0 ] || fail 'a remote secondmate must not launch from a lane home'
+  assert_contains "$out" 'cannot launch from a home with a lane budget' 'the refusal names the lane budget'
+  assert_absent "$home/state/far.meta" 'a refused remote secondmate publishes no record'
+
+  printf 'harness=claude\nkind=secondmate\nspawn_gen=r1\nremote_host=remote-mac\n' > "$home/state/far.meta"
+  code=0
+  err=$("$TEST_BASH" "$ROOT/bin/fm-task-budget.sh" prelaunch "$home" 2>&1) || code=$?
+  assert_equals 1 "$code" 'an existing remote child makes the lane unknown'
+  assert_contains "$err" 'far is a remote secondmate on remote-mac' 'the unknown names the remote child and host'
+  pass 'a remote secondmate is refused from a lane home and an existing one is named as unmeasurable'
+}
+
 test_spawn_refuses_a_capped_secondmate_lane_before_a_child_exists() {
   local dir="$TMP_ROOT/capped-spawn" home proj wt fakebin out code=0
   home="$dir/home"; proj="$dir/project"; wt="$dir/wt"
@@ -1134,6 +1156,7 @@ case "${FM_TEST_ONLY:-all}" in all|prelaunch) test_prelaunch_refuses_at_either_s
 case "${FM_TEST_ONLY:-all}" in all|pending-child) test_pending_child_counts_as_zero_and_unbound_child_refuses ;; esac
 case "${FM_TEST_ONLY:-all}" in all|fold) test_fold_away_keeps_a_child_total_once ;; esac
 case "${FM_TEST_ONLY:-all}" in all|nested) test_nested_secondmate_subtree_joins_the_parent_lane ;; esac
+case "${FM_TEST_ONLY:-all}" in all|remote-lane) test_remote_secondmate_is_refused_from_a_lane_home ;; esac
 case "${FM_TEST_ONLY:-all}" in all|capped-spawn) test_spawn_refuses_a_capped_secondmate_lane_before_a_child_exists ;; esac
 case "${FM_TEST_ONLY:-all}" in all|bound-spawn) test_child_spawn_under_the_stop_binds_without_its_own_limits ;; esac
 case "${FM_TEST_ONLY:-all}" in all|secondmate-budget) test_fresh_secondmate_accepts_budget_flags ;; esac

@@ -344,6 +344,9 @@ def sum_lane_children(meta, path, folded_ids):
             continue
         child_meta = read_meta(child)
         child_id = child.stem
+        if child_meta.get("remote_host"):
+            raise ValueError("child " + child_id + " is a remote secondmate on "
+                             + child_meta["remote_host"] + " and its usage cannot be measured locally")
         if "budget_launch_marker" not in child_meta:
             raise ValueError("child " + child_id + " has no native launch marker")
         if child_id + "@" + child_meta["budget_launch_marker"] in folded_ids:

@@ -40,7 +40,8 @@
 # lane; the nested secondmate folds into the parent lane only after its endpoint
 # is confirmed gone and just before its home is removed. Its home's lane
 # records budget_parent_home so a launch there is also checked against the
-# parent's stop.
+# parent's stop. A remote secondmate cannot launch from a home with a lane
+# budget, and an existing remote child makes the lane unknown, naming its host.
 # The operator switch is documented in docs/configuration.md (budget-enforcement).
 set -eu
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
