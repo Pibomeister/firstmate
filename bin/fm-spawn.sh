@@ -4152,11 +4152,10 @@ if [ -n "$SPAWN_PROJECT_CAPACITY" ]; then
     exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
   fi
 fi
-# A secondmate home's lane total is the mate plus every child. Refuse a new
-# child before any endpoint exists when that total is already at a stop.
-if [ "$KIND" != secondmate ]; then
-  "$SCRIPT_DIR/fm-task-budget.sh" prelaunch "$FM_HOME" || exit 1
-fi
+# A secondmate home's lane total is the mate plus every child, nested
+# secondmates included. Refuse a new child before any endpoint exists when that
+# total is already at a stop.
+"$SCRIPT_DIR/fm-task-budget.sh" prelaunch "$FM_HOME" || exit 1
 [ -f "$BRIEF" ] || {
   echo "error: task $ID has no brief at inaccessible data path $BRIEF" >&2
   exit 1
@@ -7280,7 +7279,7 @@ if [ -n "$BUDGET_IH" ]; then
   esac
   SPAWN_BUDGET_RECORD=$("$SCRIPT_DIR/fm-task-budget.sh" seed "$BUDGET_PRIOR" "$HARNESS" "$WT" "$BUDGET_LOG_ROOT" \
     "$BUDGET_LAUNCH_MARKER" "$BUDGET_IH" "$BUDGET_IS" "$BUDGET_FH" "$BUDGET_FS") || exit 1
-elif [ "$KIND" != secondmate ] && [ -f "$STATE/lane-budget" ] && [ ! -L "$STATE/lane-budget" ]; then
+elif [ -f "$STATE/lane-budget" ] && [ ! -L "$STATE/lane-budget" ]; then
   if [ "$RELAUNCH" = 1 ] && [ -n "$(fm_meta_get "$RELAUNCH_META" budget_launch_marker)" ]; then
     BUDGET_PRIOR=$RELAUNCH_META
   fi
@@ -7330,6 +7329,9 @@ if [ "$KIND" = secondmate ] && [ -n "$SPAWN_BUDGET_RECORD" ]; then
     echo "worktree=$WT"
     echo "home=$PROJ_ABS"
     echo "spawn_gen=$SPAWN_GEN"
+    if [ -f "$STATE/lane-budget" ] && [ ! -L "$STATE/lane-budget" ]; then
+      echo "budget_parent_home=$FM_HOME"
+    fi
     printf '%s\n' "$SPAWN_BUDGET_RECORD"
     [ -z "$folded" ] || printf '%s\n' "$folded"
   } >"$lane_tmp" || {

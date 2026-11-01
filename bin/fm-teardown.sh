@@ -3616,6 +3616,10 @@ if [ "$KIND" = secondmate ]; then
   preflight_firstmate_home_process_event_tree "$HOME_PATH" "secondmate home" || exit 1
 fi
 
+if [ "$KIND" = secondmate ]; then
+  "$SCRIPT_DIR/fm-task-budget.sh" fold-away "$STATE/lane-budget" "$STATE/$ID.meta" || exit 1
+fi
+
 if [ "$KIND" = secondmate ] && [ "$FORCE" = "--force" ]; then
   cleanup_firstmate_home_children "$HOME_PATH" || exit $?
 fi

@@ -343,8 +343,6 @@ def sum_lane_children(meta, path, folded_ids):
         except OSError:
             continue
         child_meta = read_meta(child)
-        if child_meta.get("kind") == "secondmate":
-            continue
         child_id = child.stem
         if "budget_launch_marker" not in child_meta:
             raise ValueError("child " + child_id + " has no native launch marker")
@@ -354,7 +352,7 @@ def sum_lane_children(meta, path, folded_ids):
             rows.append(child_id + "=unmetered")
             continue
         try:
-            sample = measure(child, persist=True, include_lane=False)
+            sample = measure(child, persist=True)
         except (ValueError, KeyError, OSError, TypeError, AttributeError) as error:
             sample = {"status": "unknown", "reason": str(error)}
         if sample["status"] == "pending":
@@ -634,24 +632,32 @@ def budget_line(verb, sample, bounds, children):
     )
 
 
-def prelaunch(home):
+def prelaunch(home, seen=()):
     lane = Path(home) / "state" / "lane-budget"
     if not lane.is_file() or lane.is_symlink():
         return 0
     try:
-        sample = measure(lane)
-        if sample["status"] == "pending":
-            print(f"budget-prelaunch refuse pending: {sample['reason']}", file=sys.stderr)
-            return 1
-        if sample["status"] != "ok":
-            print(f"budget-prelaunch refuse unknown: {sample.get('reason', 'unknown')}", file=sys.stderr)
-            return 1
+        if os.path.realpath(home) in seen:
+            raise ValueError("lane parent homes form a cycle")
         meta = read_meta(lane)
-        bounds = limits([meta["budget_" + key] for key in LIMITS])
-        children = sample.get("children") or []
-        over = sample["inclusive"] >= bounds["inclusive_stop"] or sample["fresh"] >= bounds["fresh_stop"]
-        budget_line("refuse" if over else "allow", sample, bounds, children)
-        return 1 if over else 0
+        if meta.get("budget_inclusive_hard"):
+            sample = measure(lane)
+            if sample["status"] == "pending":
+                print(f"budget-prelaunch refuse pending: {sample['reason']}", file=sys.stderr)
+                return 1
+            if sample["status"] != "ok":
+                print(f"budget-prelaunch refuse unknown: {sample.get('reason', 'unknown')}", file=sys.stderr)
+                return 1
+            bounds = limits([meta["budget_" + key] for key in LIMITS])
+            children = sample.get("children") or []
+            over = sample["inclusive"] >= bounds["inclusive_stop"] or sample["fresh"] >= bounds["fresh_stop"]
+            budget_line("refuse" if over else "allow", sample, bounds, children)
+            if over:
+                return 1
+        parent = meta.get("budget_parent_home", "")
+        if not parent:
+            return 0
+        return prelaunch(parent, tuple(seen) + (os.path.realpath(home),))
     except (ValueError, KeyError, OSError, TypeError, AttributeError) as error:
         print(f"budget-prelaunch refuse unknown: {error}", file=sys.stderr)
         return 1
@@ -694,7 +700,7 @@ def fold_away(lane, child):
         sample = {"status": "pending"}
     else:
         try:
-            sample = measure(child, persist=True, include_lane=False)
+            sample = measure(child, persist=True)
         except (ValueError, KeyError, OSError, TypeError, AttributeError) as error:
             sample = {"status": "unknown", "reason": str(error)}
     if sample["status"] == "pending":

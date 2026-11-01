@@ -980,6 +980,47 @@ test_fold_away_keeps_a_child_total_once() {
   pass 'fold-away adds a torn-down child once and keeps that total in the lane'
 }
 
+test_nested_secondmate_subtree_joins_the_parent_lane() {
+  local dir nested wt code err record
+  dir="$TMP_ROOT/nested-lane"
+  nested="$dir/nested"
+  prepare_measured_lane "$dir" 400 1200000
+  mkdir -p "$nested/state"
+  wt=$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$dir/wt")
+  record=$("$TEST_BASH" "$ROOT/bin/fm-task-budget.sh" bind claude "$wt" "$dir/mate2-native" FM_BUDGET_LAUNCH_nested1 -)
+  printf 'harness=claude\nkind=secondmate\nspawn_gen=n1\nworktree=%s\nhome=%s\n%s\n' "$wt" "$nested" "$record" \
+    > "$dir/state/mate2.meta"
+  printf 'kind=secondmate\nharness=claude\nworktree=%s\nhome=%s\nspawn_gen=n1\nbudget_parent_home=%s\n%s\n' \
+    "$wt" "$nested" "$dir" "$record" > "$nested/state/lane-budget"
+  write_claude_log "$dir/mate2-native/project/main.jsonl" FM_BUDGET_LAUNCH_nested1 "$wt"
+  code=0
+  err=$("$TEST_BASH" "$ROOT/bin/fm-task-budget.sh" prelaunch "$dir" 2>&1) || code=$?
+  assert_equals 0 "$code" 'a lane with a nested secondmate under the stop allows a launch'
+  assert_contains "$err" 'inclusive=330' 'the nested secondmate session joins the parent lane total'
+  assert_contains "$err" 'mate2=measured' 'the nested secondmate is named in the parent lane'
+
+  write_bound_child "$nested" grand "$dir/grand-native" FM_BUDGET_LAUNCH_grand1
+  write_claude_log "$dir/grand-native/project/main.jsonl" FM_BUDGET_LAUNCH_grand1 \
+    "$(sed -n 's/^worktree=//p' "$nested/state/grand.meta")"
+  code=0
+  err=$("$TEST_BASH" "$ROOT/bin/fm-task-budget.sh" prelaunch "$dir" 2>&1) || code=$?
+  assert_equals 1 "$code" 'the nested home child pushes the parent lane to its stop'
+  assert_contains "$err" 'inclusive=495' 'a child of the nested secondmate joins the parent lane total'
+  code=0
+  err=$("$TEST_BASH" "$ROOT/bin/fm-task-budget.sh" prelaunch "$nested" 2>&1) || code=$?
+  assert_equals 1 "$code" 'a launch from the nested home is refused at the parent stop'
+  assert_contains "$err" 'inclusive=495' 'the nested home refusal reports the parent lane total'
+
+  "$TEST_BASH" "$ROOT/bin/fm-task-budget.sh" fold-away "$dir/state/lane-budget" "$dir/state/mate2.meta"
+  assert_grep 'budget_folded_inclusive=330' "$dir/state/lane-budget" 'nested secondmate teardown folds its whole subtree'
+  rm -rf "$nested" "$dir/state/mate2.meta" "$dir/state/mate2.budget"
+  code=0
+  err=$("$TEST_BASH" "$ROOT/bin/fm-task-budget.sh" prelaunch "$dir" 2>&1) || code=$?
+  assert_equals 1 "$code" 'the folded nested subtree still counts after its home is gone'
+  assert_contains "$err" 'inclusive=495' 'the folded nested subtree stays in the parent lane total'
+  pass 'a nested secondmate and its home children join the parent lane, gate both homes, and fold at teardown'
+}
+
 test_spawn_refuses_a_capped_secondmate_lane_before_a_child_exists() {
   local dir="$TMP_ROOT/capped-spawn" home proj wt fakebin out code=0
   home="$dir/home"; proj="$dir/project"; wt="$dir/wt"
@@ -1086,6 +1127,7 @@ case "${FM_TEST_ONLY:-all}" in all|sidechain) test_sidechain_tokens_join_the_ses
 case "${FM_TEST_ONLY:-all}" in all|prelaunch) test_prelaunch_refuses_at_either_stop ;; esac
 case "${FM_TEST_ONLY:-all}" in all|pending-child) test_pending_child_counts_as_zero_and_unbound_child_refuses ;; esac
 case "${FM_TEST_ONLY:-all}" in all|fold) test_fold_away_keeps_a_child_total_once ;; esac
+case "${FM_TEST_ONLY:-all}" in all|nested) test_nested_secondmate_subtree_joins_the_parent_lane ;; esac
 case "${FM_TEST_ONLY:-all}" in all|capped-spawn) test_spawn_refuses_a_capped_secondmate_lane_before_a_child_exists ;; esac
 case "${FM_TEST_ONLY:-all}" in all|bound-spawn) test_child_spawn_under_the_stop_binds_without_its_own_limits ;; esac
 case "${FM_TEST_ONLY:-all}" in all|secondmate-budget) test_fresh_secondmate_accepts_budget_flags ;; esac
