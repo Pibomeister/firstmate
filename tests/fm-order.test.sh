@@ -292,7 +292,7 @@ test_hold_overrides_older_orders_and_travels_with_relays() {
 # hold is in force, and senders would relay work without its limits.
 assert_holds_read_fails() {  # <home> <path> <mode> <label>
   local rc=0 before out
-  before=$(stat -f %Lp "$2" 2>/dev/null || stat -c %a "$2")
+  before=$(stat -c %a "$2" 2>/dev/null || stat -f %Lp "$2")
   chmod "$3" "$2"
   out=$(run_order "$1" holds --relay 2>/dev/null) || rc=$?
   chmod "$before" "$2"

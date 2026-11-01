@@ -776,8 +776,10 @@ cmd_handoff() {
   dir=$(cd "$(dirname "$doc")" && pwd)
   doc="$dir/${doc##*/}"
   printf '\n%s\n' "$block" >>"$doc"
+  # shellcheck disable=SC2031  # only wake()'s subshell sources the lib that sets this
   mkdir -p "$STATE"
   load_session_pids
+  # shellcheck disable=SC2031  # only wake()'s subshell sources the lib that sets this
   tmp=$(mktemp "$STATE/.order-handoff.XXXXXX")
   printf 'doc=%s\nat=%s\nowner=%s\n' "$doc" "$(now_epoch)" "$(printf '%s' "$SESSION_PIDS" | tr '\n' ' ')" >"$tmp"
   mv "$tmp" "$HANDOFF_RECORD"
@@ -837,6 +839,7 @@ cmd_sweep() {
   local lines id state now facts d r last leash esc acted=0
   # One sweep at a time per home, so two runners never both read the same
   # re-delivery count and exceed the cap or escalate twice.
+  # shellcheck disable=SC2031  # only wake()'s subshell sources the lib that sets this
   FM_ROOT_OVERRIDE=$FM_ROOT
   # shellcheck source=bin/fm-wake-lib.sh
   . "$SELF_DIR/fm-wake-lib.sh"

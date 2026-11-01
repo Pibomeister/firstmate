@@ -509,7 +509,7 @@ test_empty_message_refused() {
 }
 
 test_standing_holds_travel_with_the_steer() {
-  local dir err order hold body
+  local dir err hold body
   dir=$(setup_case holds)
   err="$dir/send.err"
   order() { env -u FM_DATA_OVERRIDE -u FM_STATE_OVERRIDE FM_HOME="$dir/home" "$ROOT/bin/fm-order.sh" "$@"; }

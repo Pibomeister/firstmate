@@ -841,6 +841,7 @@ tests/fm-on.test.sh 18308
 tests/fm-opencode-abs-cwd-rail-live-e2e.test.sh 68
 tests/fm-opencode-primary-live-e2e.test.sh 63
 tests/fm-operational-input.test.sh 2846
+tests/fm-order.test.sh 50000
 tests/fm-parent-channel-scan-exclusion.test.sh 3967
 tests/fm-peek-remote.test.sh 1340
 tests/fm-pending-reply.test.sh 61142
