@@ -1,0 +1,40 @@
+  You are a crewmate: an autonomous worker agent managed by firstmate.
+  This section establishes your current identity before every project or task instruction below and supersedes any
+  conflicting role identity in those instructions.
+  Do the assigned work yourself and report only to firstmate; do not adopt a firstmate or secondmate supervisor
+  identity, delegate the task, run fleet supervision, or address the captain.
+  Your steering inbox is
+  `/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-tmux/home/state
+  /agy-tmux.inbox`;
+  this exact path belongs to your current task even when it is outside the worktree or under the supervising firstmate
+  home, so read and acknowledge its messages and do not reject it as another home's state.
+  Never inspect or change any other home's endpoint namespace; this authorization is limited to the exact task paths
+  named by this brief.
+  When this task works on Firstmate itself, the repository root `AGENTS.md` (also imported by `CLAUDE.md`) is project
+  content and the supervisor contract for the firstmate managing you: follow this brief instead of that supervisor
+  contract.
+  Project instructions still govern the work wherever they do not conflict with this worker identity, including
+  `CONTRIBUTING.md` and `firstmate-coding-guidelines` for Firstmate changes.
+  If the `firstmate-coding-guidelines` skill name does not resolve in this session, read
+  `/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.agents/skills/firstmate-coding-
+  guidelines/SKILL.md`
+  instead.
+
+  # Current worker role contract
+  You are a crewmate worker managed by Firstmate, not a supervisor.
+  Do this small task yourself. Do not delegate, commit, push, or publish.
+  # Task
+  Add 12345 and 67890. Write exactly one line to
+  /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-tmux/home/data/a
+  gy-tmux/report.md:
+  BRIEF_RECEIVED fresh-13197 <computed sum> <actual current working directory>
+  Overwrite any old report. Then stop and wait.
+
+● Ran (pwd)
+● Edited 1 file (report.md) (ctrl+o to expand)
+⣽  Editing files...
+└ Tip: Press ? to see keyboard shortcuts.
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+>
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+esc to cancel                                                                                     Gemini 3.8 Flash · low

@@ -1,0 +1,27 @@
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-herdrfresh/home
+SCENARIO: Herdr caller and endpoint shell use different Treehouse roots
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-herdrfresh/home
+🌳 Setting up worktree...
+🌳 Leased worktree at /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-herdrfresh/caller-pool/.treehouse/scratch-593426/1/scratch. Run 'treehouse return /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-herdrfresh/caller-pool/.treehouse/scratch-593426/1/scratch' to release it.
+spawned agy-herdr-fresh harness=agy kind=scout window=fm-lab-agy-pool-56865-25510:w1:p2 worktree=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-herdrfresh/caller-pool/.treehouse/scratch-593426/1/scratch
+BRIEF_RECEIVED fresh-herdr-40156 80235 /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-herdrfresh/caller-pool/.treehouse/scratch-593426/1/scratch
+complete: agy-herdr-fresh captain-call inventory reviewed
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-herdrfresh/home
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  down 1s.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds 180; keep this turn open while supervision is needed, because a returning checkpoint is a tool result, and a fresh beacon does not let you end the turn; send captain replies as interim messages, never as the turn's final answer.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+teardown: reaping leaked worktree process(es) for agy-herdr-fresh: 20874 49901
+teardown: force-killing leaked worktree process(es) for agy-herdr-fresh: 20874
+A new version of treehouse is available: v3.1.1 → v3.1.8
+Run "treehouse update" to update
+
+🌳 Worktree returned to pool.
+teardown agy-herdr-fresh complete (window fm-lab-agy-pool-56865-25510:w1:p2, worktree /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-herdrfresh/caller-pool/.treehouse/scratch-593426/1/scratch)
+Backlog: agy-herdr-fresh just finished (this home keeps no markdown backlog at /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-herdrfresh/home/data/backlog.md). Update /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-herdrfresh/home/data/backlog.md - move agy-herdr-fresh to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+PASS: fresh Herdr launch processes its brief using caller allocation despite differing endpoint pool
+fm-herdr-lab: session delete failed for 'fm-lab-agy-pool-56865-25510' and the lab session remains

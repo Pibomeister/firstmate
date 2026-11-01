@@ -1,0 +1,300 @@
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-guard-cleanup/home
+SCENARIO: live guard stops its isolated tmux server when report wait fails
+🌳 Setting up worktree...
+🌳 Leased worktree at /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/tmp/fm-agy-spawn.4odLHD/pool/.treehouse/scratch-48e31f/1/scratch. Run 'treehouse return /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/tmp/fm-agy-spawn.4odLHD/pool/.treehouse/scratch-48e31f/1/scratch' to release it.
+spawned agy-live harness=agy kind=scout window=firstmate:fm-agy-live worktree=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/tmp/fm-agy-spawn.4odLHD/pool/.treehouse/scratch-48e31f/1/scratch
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+INJECTED: report not yet visible
+not ok - brief report did not appear within 120 seconds
+no server running on /private/tmp/tmux-501/fm-agy-spawn-3466
+fm-agy-spawn-3466 has-session
+fm-agy-spawn-3466 new-session
+fm-agy-spawn-3466 list-windows
+fm-agy-spawn-3466 new-window
+fm-agy-spawn-3466 set-window-option
+fm-agy-spawn-3466 set-window-option
+fm-agy-spawn-3466 send-keys
+fm-agy-spawn-3466 display-message
+fm-agy-spawn-3466 display-message
+fm-agy-spawn-3466 display-message
+fm-agy-spawn-3466 list-windows
+fm-agy-spawn-3466 list-windows
+fm-agy-spawn-3466 capture-pane
+fm-agy-spawn-3466 send-keys
+fm-agy-spawn-3466 send-keys
+fm-agy-spawn-3466 send-keys
+fm-agy-spawn-3466 send-keys
+fm-agy-spawn-3466 list-windows
+fm-agy-spawn-3466 send-keys
+fm-agy-spawn-3466 capture-pane
+fm-agy-spawn-3466 capture-pane
+fm-agy-spawn-3466 capture-pane
+fm-agy-spawn-3466 capture-pane
+fm-agy-spawn-3466 capture-pane
+fm-agy-spawn-3466 capture-pane
+fm-agy-spawn-3466 capture-pane
+fm-agy-spawn-3466 capture-pane
+fm-agy-spawn-3466 capture-pane
+fm-agy-spawn-3466 capture-pane
+fm-agy-spawn-3466 capture-pane
+fm-agy-spawn-3466 capture-pane
+fm-agy-spawn-3466 capture-pane
+fm-agy-spawn-3466 capture-pane
+fm-agy-spawn-3466 capture-pane
+fm-agy-spawn-3466 capture-pane
+fm-agy-spawn-3466 capture-pane
+fm-agy-spawn-3466 capture-pane
+fm-agy-spawn-3466 capture-pane
+fm-agy-spawn-3466 capture-pane
+fm-agy-spawn-3466 capture-pane
+fm-agy-spawn-3466 capture-pane
+fm-agy-spawn-3466 capture-pane
+fm-agy-spawn-3466 capture-pane
+fm-agy-spawn-3466 capture-pane
+fm-agy-spawn-3466 capture-pane
+fm-agy-spawn-3466 capture-pane
+fm-agy-spawn-3466 capture-pane
+fm-agy-spawn-3466 capture-pane
+fm-agy-spawn-3466 capture-pane
+fm-agy-spawn-3466 display-message
+fm-agy-spawn-3466 kill-server
+PASS: report-wait failure exited 1 and stopped isolated server fm-agy-spawn-3466
+CLEANUP: isolated server and lab removed

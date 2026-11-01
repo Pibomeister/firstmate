@@ -1,0 +1,78 @@
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-dirty/home
+SCENARIO: unpublished AGY allocation preserves dirty work and custody
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-dirty/home
+🌳 Setting up worktree...
+🌳 Leased worktree at /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-dirty/caller-pool/.treehouse/scratch-550013/1/scratch. Run 'treehouse return /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-dirty/caller-pool/.treehouse/scratch-550013/1/scratch' to release it.
+error: pooled worktree '/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-dirty/caller-pool/.treehouse/scratch-550013/1/scratch' is not clean; refusing to discard uncommitted work while refreshing its base
+warning: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-dirty/caller-pool/.treehouse/scratch-550013/1/scratch stays leased to agy-preserve-dirty because it is dirty or could not be inspected; preserve its work, then release it with 'treehouse return /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-dirty/caller-pool/.treehouse/scratch-550013/1/scratch --if-lease-holder agy-preserve-dirty --force' from /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-dirty/home/projects/scratch
+A new version of treehouse is available: v3.1.1 → v3.1.8
+Run "treehouse update" to update
+
+{
+  "name": "1",
+  "path": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-dirty/caller-pool/.treehouse/scratch-550013/1/scratch",
+  "status": "leased",
+  "branch": "",
+  "detached": true,
+  "flavor": "git",
+  "lease_id": "07df289c55c64a3050c8936b8b1a9657",
+  "lease_holder": "agy-preserve-dirty",
+  "leased_at": "2026-11-01T02:41:32.870906-06:00",
+  "processes": []
+}
+A new version of treehouse is available: v3.1.1 → v3.1.8
+Run "treehouse update" to update
+
+🌳 Setting up worktree...
+🌳 Leased worktree at /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-dirty/caller-pool/.treehouse/scratch-550013/2/scratch. Run 'treehouse return /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-dirty/caller-pool/.treehouse/scratch-550013/2/scratch' to release it.
+Staged bytes retained in /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-dirty/caller-pool/.treehouse/scratch-550013/1/scratch; adversarial dispatch obtained /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-dirty/caller-pool/.treehouse/scratch-550013/2/scratch
+A new version of treehouse is available: v3.1.1 → v3.1.8
+Run "treehouse update" to update
+
+🌳 Worktree returned to pool.
+A new version of treehouse is available: v3.1.1 → v3.1.8
+Run "treehouse update" to update
+
+🌳 Worktree returned to pool.
+PASS: dirty allocation preserved until explicit conditional return
+SCENARIO: unpublished AGY allocation preserves unreadable work and custody
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-dirty/home
+A new version of treehouse is available: v3.1.1 → v3.1.8
+Run "treehouse update" to update
+
+🌳 Setting up worktree...
+🌳 Leased worktree at /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-dirty/caller-pool/.treehouse/scratch-550013/1/scratch. Run 'treehouse return /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-dirty/caller-pool/.treehouse/scratch-550013/1/scratch' to release it.
+INJECTED: checkout status unavailable
+error: could not inspect pooled worktree '/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-dirty/caller-pool/.treehouse/scratch-550013/1/scratch' before refreshing its base
+warning: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-dirty/caller-pool/.treehouse/scratch-550013/1/scratch stays leased to agy-preserve-unreadable because it is dirty or could not be inspected; preserve its work, then release it with 'treehouse return /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-dirty/caller-pool/.treehouse/scratch-550013/1/scratch --if-lease-holder agy-preserve-unreadable --force' from /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-dirty/home/projects/scratch
+A new version of treehouse is available: v3.1.1 → v3.1.8
+Run "treehouse update" to update
+
+{
+  "name": "1",
+  "path": "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-dirty/caller-pool/.treehouse/scratch-550013/1/scratch",
+  "status": "leased",
+  "branch": "",
+  "detached": true,
+  "flavor": "git",
+  "lease_id": "131d3a9487e66c12126bf4ffe1653a44",
+  "lease_holder": "agy-preserve-unreadable",
+  "leased_at": "2026-11-01T02:41:51.836478-06:00",
+  "processes": []
+}
+A new version of treehouse is available: v3.1.1 → v3.1.8
+Run "treehouse update" to update
+
+🌳 Setting up worktree...
+🌳 Leased worktree at /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-dirty/caller-pool/.treehouse/scratch-550013/2/scratch. Run 'treehouse return /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-dirty/caller-pool/.treehouse/scratch-550013/2/scratch' to release it.
+Staged bytes retained in /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-dirty/caller-pool/.treehouse/scratch-550013/1/scratch; adversarial dispatch obtained /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-dirty/caller-pool/.treehouse/scratch-550013/2/scratch
+A new version of treehouse is available: v3.1.1 → v3.1.8
+Run "treehouse update" to update
+
+🌳 Worktree returned to pool.
+A new version of treehouse is available: v3.1.1 → v3.1.8
+Run "treehouse update" to update
+
+🌳 Worktree returned to pool.
+PASS: unreadable allocation preserved until explicit conditional return
+CLEANUP: isolated server and lab removed

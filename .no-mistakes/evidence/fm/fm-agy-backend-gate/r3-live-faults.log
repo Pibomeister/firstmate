@@ -1,0 +1,101 @@
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-faults/home
+SCENARIO: unsupported terminal backends refuse before allocation
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-faults/home
+error: agy launch readiness is live-verified on the tmux and herdr backends only; backend=zellij cannot prove the brief started. Select backend tmux or herdr.
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-faults/home
+error: agy launch readiness is live-verified on the tmux and herdr backends only; backend=cmux cannot prove the brief started. Select backend tmux or herdr.
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-faults/home
+error: agy launch readiness is live-verified on the tmux and herdr backends only; backend=paseo cannot prove the brief started. Select backend tmux or herdr.
+SCENARIO: pre-publication cwd failure returns its durable lease and closes endpoint
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-faults/home
+🌳 Setting up worktree...
+🌳 Leased worktree at /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-faults/caller-pool/.treehouse/scratch-8f54ed/1/scratch. Run 'treehouse return /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-faults/caller-pool/.treehouse/scratch-8f54ed/1/scratch' to release it.
+INJECTED: cwd transport failure
+error: task agy-unpublished's endpoint could not be moved into its recorded worktree '/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-faults/caller-pool/.treehouse/scratch-8f54ed/1/scratch'; refusing to launch outside the copy holding its work
+A new version of treehouse is available: v3.1.1 → v3.1.8
+Run "treehouse update" to update
+
+🌳 Worktree returned to pool.
+A new version of treehouse is available: v3.1.1 → v3.1.8
+Run "treehouse update" to update
+
+🌳 Setting up worktree...
+🌳 Leased worktree at /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-faults/caller-pool/.treehouse/scratch-8f54ed/1/scratch. Run 'treehouse return /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-faults/caller-pool/.treehouse/scratch-8f54ed/1/scratch' to release it.
+Returned unpublished slot is allocatable: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-faults/caller-pool/.treehouse/scratch-8f54ed/1/scratch
+A new version of treehouse is available: v3.1.1 → v3.1.8
+Run "treehouse update" to update
+
+[{"name":"1","path":"/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-faults/caller-pool/.treehouse/scratch-8f54ed/1/scratch","status":"leased","branch":"","detached":true,"flavor":"git","lease_id":"95b25445ef60896d5350431ab84ab1cd","lease_holder":"cleanup-probe","leased_at":"2026-11-01T02:41:02.496063-06:00","processes":[]}]
+A new version of treehouse is available: v3.1.1 → v3.1.8
+Run "treehouse update" to update
+
+🌳 Worktree returned to pool.
+SCENARIO: post-publication literal delivery failure retains a teardown-resolvable record
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-faults/home
+A new version of treehouse is available: v3.1.1 → v3.1.8
+Run "treehouse update" to update
+
+🌳 Setting up worktree...
+🌳 Leased worktree at /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-faults/caller-pool/.treehouse/scratch-8f54ed/1/scratch. Run 'treehouse return /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-faults/caller-pool/.treehouse/scratch-8f54ed/1/scratch' to release it.
+INJECTED: launch-text transport failure
+warning: keeping task agy-fail-literal's published AGY record and worktree for relaunch or teardown
+Kept agy-fail-literal worktree=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-faults/caller-pool/.treehouse/scratch-8f54ed/1/scratch
+complete: agy-fail-literal captain-call inventory reviewed
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-faults/home
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  down 1s.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds 180; keep this turn open while supervision is needed, because a returning checkpoint is a tool result, and a fresh beacon does not let you end the turn; send captain replies as interim messages, never as the turn's final answer.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+teardown: reaping leaked worktree process(es) for agy-fail-literal: 64448
+teardown: force-killing leaked worktree process(es) for agy-fail-literal: 64448
+A new version of treehouse is available: v3.1.1 → v3.1.8
+Run "treehouse update" to update
+
+🌳 Worktree returned to pool.
+teardown agy-fail-literal complete (window firstmate:fm-agy-fail-literal, worktree /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-faults/caller-pool/.treehouse/scratch-8f54ed/1/scratch)
+Backlog: agy-fail-literal just finished (this home keeps no markdown backlog at /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-faults/home/data/backlog.md). Update /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-faults/home/data/backlog.md - move agy-fail-literal to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+SCENARIO: post-publication enter delivery failure retains a teardown-resolvable record
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-faults/home
+A new version of treehouse is available: v3.1.1 → v3.1.8
+Run "treehouse update" to update
+
+🌳 Setting up worktree...
+🌳 Leased worktree at /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-faults/caller-pool/.treehouse/scratch-8f54ed/1/scratch. Run 'treehouse return /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-faults/caller-pool/.treehouse/scratch-8f54ed/1/scratch' to release it.
+INJECTED: launch-submit transport failure
+warning: keeping task agy-fail-enter's published AGY record and worktree for relaunch or teardown
+Kept agy-fail-enter worktree=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-faults/caller-pool/.treehouse/scratch-8f54ed/1/scratch
+complete: agy-fail-enter captain-call inventory reviewed
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-faults/home
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s; down 49s) - full banner already printed this episode.
+teardown: reaping leaked worktree process(es) for agy-fail-enter: 83070
+teardown: force-killing leaked worktree process(es) for agy-fail-enter: 83070
+A new version of treehouse is available: v3.1.1 → v3.1.8
+Run "treehouse update" to update
+
+🌳 Worktree returned to pool.
+teardown agy-fail-enter complete (window firstmate:fm-agy-fail-enter, worktree /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-faults/caller-pool/.treehouse/scratch-8f54ed/1/scratch)
+Backlog: agy-fail-enter just finished (this home keeps no markdown backlog at /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-faults/home/data/backlog.md). Update /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-faults/home/data/backlog.md - move agy-fail-enter to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+SCENARIO: termination during readiness retains published task
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-faults/home
+A new version of treehouse is available: v3.1.1 → v3.1.8
+Run "treehouse update" to update
+
+🌳 Setting up worktree...
+🌳 Leased worktree at /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-faults/caller-pool/.treehouse/scratch-8f54ed/1/scratch. Run 'treehouse return /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-faults/caller-pool/.treehouse/scratch-8f54ed/1/scratch' to release it.
+warning: keeping task agy-signal's published AGY record and worktree for relaunch or teardown
+Signal exit=143; task record preserved
+complete: agy-signal captain-call inventory reviewed
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-faults/home
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s; down 125s) - full banner already printed this episode.
+A new version of treehouse is available: v3.1.1 → v3.1.8
+Run "treehouse update" to update
+
+🌳 Worktree returned to pool.
+teardown agy-signal complete (window firstmate:fm-agy-signal, worktree /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-faults/caller-pool/.treehouse/scratch-8f54ed/1/scratch)
+Backlog: agy-signal just finished (this home keeps no markdown backlog at /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-faults/home/data/backlog.md). Update /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-faults/home/data/backlog.md - move agy-signal to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+PASS: post-publication delivery and signal failures keep recorded tasks; isolated fixtures removed with --force
+CLEANUP: isolated server and lab removed

@@ -1,0 +1,13 @@
+Revision: 9a51535617332ca115cdb9a44031b7d3eff7a3b6
+Real tools: AGY 1.4.12, Treehouse 3.1.1, tmux 3.6a, Codex CLI 0.163.0.
+Treehouse 2.0.1 was installed only under .phase-test/treehouse-2 using bin/fm-install-treehouse.sh and its pinned checksum.
+Live driver used marked disposable FM_HOME directories, isolated credential copies, private non-default tmux sockets with 120x40 panes, and real AGY/Codex CLIs. No production credential was edited. AGY's first-run preferences were created interactively inside the disposable home; Codex folder trust was accepted only for the disposable project.
+The Herdr adapter was routed through fm-herdr-lab.sh to named fm-lab-* sessions, with separate caller/endpoint pools. Both Herdr scenarios passed. Initial helper teardown attempts needed a later retry while the named server finished stopping; both retries succeeded and the helper verified its default-session tripwire.
+Faults were injected into individual tmux transport operations, backlog start, git status, or immediately after a real Treehouse allocation; real Firstmate, terminal servers, pools, and harness CLIs were used, without fake harness responses.
+
+Baseline tests:
+- TMPDIR=$PWD/.phase-test/tmp bash tests/fm-agy-harness.test.sh exercised changed AGY cases successfully, then hit an unrelated secondmate fixture restriction because TMPDIR was inside the firstmate repo. Its final two cases passed when run alone with TMPDIR=/tmp (the existing toolchain creates and removes its own ephemeral fixture).
+- TMPDIR=$PWD/.phase-test/tmp bash tests/fm-control-relaunch.test.sh passed AGY custody, capability and legacy-matrix cases, then reported exit 143 in the prefixed-harness case. That case passed on an isolated rerun. Neither whole-script run is claimed as a complete passing suite.
+- Focused reruns: r3-control-prefix.test.sh and r3-agy-secondmate.test.sh, extracted executable cases from their owning suites, exited 0.
+
+No rendered UI code changed. Reviewer evidence is the real CLI output and terminal pane text, including fresh-token worker reports. No screenshot is attached.

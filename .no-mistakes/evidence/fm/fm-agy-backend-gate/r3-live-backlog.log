@@ -1,0 +1,73 @@
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-backlog/home
+ok: added agy-backlog (ship) -> Queued
+task:
+  id: agy-backlog
+  title: AGY backlog failure lab
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: "-"
+  created: 2026-11-01
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+help[2]:
+  - Run `tasks-axi start agy-backlog --file=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-backlog/home/data/backlog.md` to move it to in flight
+  - Run `tasks-axi block agy-backlog --by <other> --file=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-backlog/home/data/backlog.md` to record a dependency
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-backlog/home
+warning: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-backlog/home/data/agy-backlog/launch-brief.md records no ship branch; defaulting to legacy branch fm/agy-backlog
+warning: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-backlog/home/data/agy-backlog/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+🌳 Setting up worktree...
+🌳 Leased worktree at /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-backlog/caller-pool/.treehouse/scratch-9ba627/1/scratch. Run 'treehouse return /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-backlog/caller-pool/.treehouse/scratch-9ba627/1/scratch' to release it.
+error: task agy-backlog's backlog item could not be moved to In flight (INJECTED: backlog start unavailable); its AGY record and worktree are preserved for recovery
+Failed backlog transition preserved task agy-backlog worktree=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-backlog/caller-pool/.treehouse/scratch-9ba627/1/scratch exit=1
+task:
+  id: agy-backlog
+  title: AGY backlog failure lab
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: "-"
+  created: 2026-11-01
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+A new version of treehouse is available: v3.1.1 → v3.1.8
+Run "treehouse update" to update
+
+[{"name":"1","path":"/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-backlog/caller-pool/.treehouse/scratch-9ba627/1/scratch","status":"leased","branch":"","detached":true,"flavor":"git","lease_id":"f5e752be0fc3a1a39a914ec3b93ab297","lease_holder":"agy-backlog","leased_at":"2026-11-01T02:41:55.760131-06:00","processes":[{"pid":15733,"name":"agy"},{"pid":83715,"name":"zsh"}]}]
+complete: agy-backlog captain-call inventory reviewed
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-backlog/home
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  down 2s.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds 180; keep this turn open while supervision is needed, because a returning checkpoint is a tool result, and a fresh beacon does not let you end the turn; send captain replies as interim messages, never as the turn's final answer.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+teardown: reaping leaked worktree process(es) for agy-backlog: 15733 83715 92537
+teardown: force-killing leaked worktree process(es) for agy-backlog: 83715
+A new version of treehouse is available: v3.1.1 → v3.1.8
+Run "treehouse update" to update
+
+🌳 Worktree returned to pool.
+scratch: skipped: no origin remote
+teardown agy-backlog complete (window firstmate:fm-agy-backlog, worktree /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-backlog/caller-pool/.treehouse/scratch-9ba627/1/scratch)
+Backlog: agy-backlog is closed in /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-backlog/home/data/backlog.md. Run bin/fm-tasks-axi.sh ready for dependency-cleared candidates, check date gates, and dispatch only work whose blockers are gone and date is due.
+PASS: post-launch backlog failure preserves a teardown-resolvable AGY record
+CLEANUP: isolated server and lab removed

@@ -1,0 +1,1 @@
+All disposable worktree labs, isolated credential copies, local tool downloads, and transient test drivers removed. Both named Herdr sessions are absent; guarded teardown verified the default-session tripwire. Private tmux servers stopped by EXIT cleanup.

@@ -1,0 +1,95 @@
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-tmux/home
+SCENARIO: unsupported Orca backend refuses without task or checkout
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-tmux/home
+error: backend=orca requires a ready Orca runtime (reachable=false, state=not_running)
+PASS: refusal before allocation
+SCENARIO: real tmux AGY receives brief
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-tmux/home
+🌳 Setting up worktree...
+🌳 Leased worktree at /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-tmux/caller-pool/.treehouse/scratch-337ac8/1/scratch. Run 'treehouse return /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-tmux/caller-pool/.treehouse/scratch-337ac8/1/scratch' to release it.
+spawned agy-tmux harness=agy kind=scout window=firstmate:fm-agy-tmux worktree=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-tmux/caller-pool/.treehouse/scratch-337ac8/1/scratch
+BRIEF_RECEIVED fresh-13197 80235 /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-tmux/caller-pool/.treehouse/scratch-337ac8/1/scratch
+SCENARIO: Treehouse 2.0.1 refuses before fresh endpoint creation and before stopping an existing AGY worker
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-tmux/home
+error: AGY custody requires 'treehouse lease --lease-holder'; installed Treehouse does not advertise this capability
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-tmux/home
+error: AGY custody requires 'treehouse lease --lease-holder'; installed Treehouse does not advertise this capability
+PASS: old Treehouse preflight kept existing pane process 83119 and created no endpoint
+SCENARIO: ownership mismatch refuses before stopping the existing AGY worker
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-tmux/home
+error: task agy-tmux cannot reclaim pool slot /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-tmux/caller-pool/.treehouse/scratch-337ac8/1/scratch: ownership=other claimant=another-task; refusing to touch another task's checkout
+PASS: slot ownership refusal preserved existing process
+complete: agy-tmux captain-call inventory reviewed
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-tmux/home
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  down 1s.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds 180; keep this turn open while supervision is needed, because a returning checkpoint is a tool result, and a fresh beacon does not let you end the turn; send captain replies as interim messages, never as the turn's final answer.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+teardown: reaping leaked worktree process(es) for agy-tmux: 83119 99787
+teardown: force-killing leaked worktree process(es) for agy-tmux: 83119
+A new version of treehouse is available: v3.1.1 → v3.1.8
+Run "treehouse update" to update
+
+🌳 Worktree returned to pool.
+teardown agy-tmux complete (window firstmate:fm-agy-tmux, worktree /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-tmux/caller-pool/.treehouse/scratch-337ac8/1/scratch)
+Backlog: agy-tmux just finished (this home keeps no markdown backlog at /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-tmux/home/data/backlog.md). Update /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-tmux/home/data/backlog.md - move agy-tmux to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+SCENARIO: failed readiness keeps record and lease, prevents steal, then relaunch executes fresh note
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-tmux/home
+A new version of treehouse is available: v3.1.1 → v3.1.8
+Run "treehouse update" to update
+
+🌳 Setting up worktree...
+🌳 Leased worktree at /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-tmux/caller-pool/.treehouse/scratch-337ac8/1/scratch. Run 'treehouse return /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-tmux/caller-pool/.treehouse/scratch-337ac8/1/scratch' to release it.
+error: agy did not start processing its brief in the pre-trusted worktree in window firstmate:fm-agy-recover; inspect window firstmate:fm-agy-recover
+warning: closed the endpoint firstmate:fm-agy-recover of this failed spawn and kept task agy-recover's record; recover it with 'bin/fm-control.sh agy-recover relaunch --note "<what happened>"' or clean it up with 'bin/fm-teardown.sh agy-recover'
+failed [at=1793522433]: agy did not start processing its brief in the pre-trusted worktree in window firstmate:fm-agy-recover
+task=agy-recover
+home=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-tmux/home
+A new version of treehouse is available: v3.1.1 → v3.1.8
+Run "treehouse update" to update
+
+[{"name":"1","path":"/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-tmux/caller-pool/.treehouse/scratch-337ac8/1/scratch","status":"leased","branch":"","detached":true,"flavor":"git","lease_id":"5871e8adf8fe3cd0a3509d1085ed027c","lease_holder":"agy-recover","leased_at":"2026-11-01T02:40:27.768458-06:00","processes":[]}]
+A new version of treehouse is available: v3.1.1 → v3.1.8
+Run "treehouse update" to update
+
+🌳 Setting up worktree...
+🌳 Leased worktree at /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-tmux/caller-pool/.treehouse/scratch-337ac8/2/scratch. Run 'treehouse return /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-tmux/caller-pool/.treehouse/scratch-337ac8/2/scratch' to release it.
+Second allocation=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-tmux/caller-pool/.treehouse/scratch-337ac8/2/scratch; preserved worktree=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-tmux/caller-pool/.treehouse/scratch-337ac8/1/scratch
+A new version of treehouse is available: v3.1.1 → v3.1.8
+Run "treehouse update" to update
+
+🌳 Worktree returned to pool.
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-tmux/home
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-tmux/home
+A new version of treehouse is available: v3.1.1 → v3.1.8
+Run "treehouse update" to update
+
+relaunched agy-recover harness=agy from=agy model=gemini-3.8-flash-low effort=low backend=tmux endpoint=firstmate:fm-agy-recover worktree=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-tmux/caller-pool/.treehouse/scratch-337ac8/1/scratch
+BRIEF_RECEIVED relaunch-13197-20335 80235 /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-tmux/caller-pool/.treehouse/scratch-337ac8/1/scratch
+complete: agy-recover captain-call inventory reviewed
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-tmux/home
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s; down 74s) - full banner already printed this episode.
+teardown: reaping leaked worktree process(es) for agy-recover: 16088 96910
+teardown: force-killing leaked worktree process(es) for agy-recover: 96910
+A new version of treehouse is available: v3.1.1 → v3.1.8
+Run "treehouse update" to update
+
+🌳 Worktree returned to pool.
+teardown agy-recover complete (window firstmate:fm-agy-recover, worktree /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-tmux/caller-pool/.treehouse/scratch-337ac8/1/scratch)
+Backlog: agy-recover just finished (this home keeps no markdown backlog at /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-tmux/home/data/backlog.md). Update /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-tmux/home/data/backlog.md - move agy-recover to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+PASS: real tmux launch and same-checkout recovery
+A new version of treehouse is available: v3.1.1 → v3.1.8
+Run "treehouse update" to update
+
+🌳 Setting up worktree...
+🌳 Leased worktree at /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-tmux/caller-pool/.treehouse/scratch-337ac8/1/scratch. Run 'treehouse return /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-tmux/caller-pool/.treehouse/scratch-337ac8/1/scratch' to release it.
+Teardown released preserved slot: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M653BBWZB0BAJGVK9G6EYEZE/.phase-test/live-tmux/caller-pool/.treehouse/scratch-337ac8/1/scratch
+A new version of treehouse is available: v3.1.1 → v3.1.8
+Run "treehouse update" to update
+
+🌳 Worktree returned to pool.
+CLEANUP: isolated server and lab removed
