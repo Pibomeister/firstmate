@@ -204,6 +204,12 @@ test_auto_turn_type_from_tailed_transcript() {
     FM_CONTEXT_BURN_NOW=6030 \
     "$BURN" record --turn-type auto --percent 67 --payload-file "$home/p.json" >/dev/null
   assert_equals $'6030\tsess1\twake\t67' "$(last_row "$home")" "wake behind 120 tool lines"
+
+  printf '%s\n' '{"type":"user","message":{"content":"Stop hook feedback:\nworkers still open\n●━━━━━━━━"}}' > "$home/t.jsonl"
+  FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    FM_CONTEXT_BURN_NOW=6040 \
+    "$BURN" record --turn-type auto --percent 66 --payload-file "$home/p.json" >/dev/null
+  assert_equals $'6040\tsess1\twake\t66' "$(last_row "$home")" "multi-line stop hook feedback"
   pass "auto turn type comes from the tailed transcript"
 }
 

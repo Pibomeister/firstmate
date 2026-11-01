@@ -107,6 +107,7 @@ last_user_text() { # <transcript>
     | if type == "string" then .
       elif type == "array" then [.[]? | select(.type? == "text") | .text? // empty] | join(" ")
       else empty end
+    | gsub("[\r\n]+"; " ")
   ' 2>/dev/null | awk 'NF { last=$0 } END { if (last != "") print last }' | cut -c1-2000
 }
 
