@@ -533,7 +533,7 @@ fm_backend_orca_kill() {  # <terminal-id>
 
 # fm_backend_orca_terminal_facts: one `orca terminal show` read of <terminal>,
 # printed as \x1f-separated fields so an empty field survives `read`:
-#   ok|stale  connected(true|false)  exit-cause-kind  execution-host  pty-id  worktree-path
+#   ok|stale  connected(true|false)  exit-cause-kind  execution-host  pty-id  worktree-path  writable(true|false|'')
 # `stale` is Orca's own terminal_handle_stale answer: it no longer recognizes
 # the handle at all. `false` needs both connected and writable false, the pair
 # Orca reports after the pty is gone. Other CLI failures, unparsable output, other
@@ -556,7 +556,7 @@ function emit(fields) {
 }
 if (data.ok === false) {
   if (data.error && data.error.code === "terminal_handle_stale") {
-    emit(["stale", "", "", "", "", ""]);
+    emit(["stale", "", "", "", "", "", ""]);
     process.exit(0);
   }
   process.exit(1);
@@ -569,7 +569,8 @@ if (t.connected === true) connected = "true";
 else if (t.connected === false && t.writable === false) connected = "false";
 else process.exit(1);
 const kind = t.exitCause && typeof t.exitCause === "object" ? str(t.exitCause.kind) : "";
-emit(["ok", connected, kind, str(t.executionHostId), str(t.ptyId), str(t.worktreePath)]);
+const writable = typeof t.writable === "boolean" ? String(t.writable) : "";
+emit(["ok", connected, kind, str(t.executionHostId), str(t.ptyId), str(t.worktreePath), writable]);
 ' "$terminal" "$rc"
 }
 
@@ -683,7 +684,7 @@ fm_backend_orca_agent_state() {  # <terminal-id>
   local terminal=${1:-} facts read connected kind host pty wtpath pid
   [ -n "$terminal" ] || { printf 'unreadable'; return 0; }
   facts=$(fm_backend_orca_terminal_facts "$terminal") || { printf 'unreadable'; return 0; }
-  IFS=$'\x1f' read -r read connected kind host pty wtpath <<FACTS
+  IFS=$'\x1f' read -r read connected kind host pty wtpath _ <<FACTS
 $facts
 FACTS
   [ "$read" = ok ] && [ "$host" = local ] || { printf 'unreadable'; return 0; }
@@ -827,7 +828,7 @@ fm_backend_orca_endpoint_absence_proof() {  # <terminal-id> <worktree> [<meta-fi
     || { printf 'unproven\tthe task record names no worktree, so a surviving agent in it cannot be ruled out'; return 0; }
   facts=$(fm_backend_orca_terminal_facts "$terminal") \
     || { printf 'unproven\tOrca could not describe terminal %s' "$terminal"; return 0; }
-  IFS=$'\x1f' read -r read connected kind host pty wtpath <<FACTS
+  IFS=$'\x1f' read -r read connected kind host pty wtpath _ <<FACTS
 $facts
 FACTS
   if [ "$read" = stale ]; then

@@ -2623,6 +2623,20 @@ The closed-terminal `gone` case needs a worktree with no agent, which this probe
 Those suites also cover stale-handle responses with CLI exit status 1, reboot recovery and its refusal conditions, including Droid admission without a shutdown marker and preservation of its non-reboot stop checks.
 The `lsof -nP -a -u <uid> -d cwd -Fpn` scan took 0.63 seconds on this host.
 
+Portable Droid relaunch terminal selection was verified on 2026-11-01 under Bash 3.2.57 with Orca responses stubbed and real isolated Git worktrees:
+
+```sh
+bash bin/fm-test-run.sh tests/fm-spawn-orca-worktree.test.sh --per-script-timeout-secs 300
+```
+
+```text
+ok - an Orca Droid relaunch adopts a connected owned shell without a marker, and refuses a wrong generation, a live worktree process, and a failed scan
+ok - a stopped Orca Droid task replaces only a proven closed or unwritable terminal and preserves unlanded work
+```
+
+The terminal-selection matrix includes a `stop_unverified` exit cause, a connected but unwritable terminal, stale and unreadable handles, remote terminals, mismatched worktrees, and unknown writability.
+This portable check does not refresh the live Orca or Droid version evidence above.
+
 ### Orca environment source
 
 The environment source was verified on 2026-10-14 on macOS 15.6.1 with tmux 3.6a, Bash 5.3.20, Bash 3.2.57, and zsh 5.9.

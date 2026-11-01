@@ -102,7 +102,27 @@ case "$1 $2" in
     touch "$DIR/terminal-closed"
     exit 0
     ;;
+  "terminal read")
+    printf '{"ok":true,"result":{"terminal":{"tail":["shell"]}}}\n'
+    exit 0
+    ;;
   "terminal send")
+    printf '%s\n' "$*" >> "$DIR/terminal-send.log"
+    # A closed or unwritable recorded endpoint remains readable in Orca,
+    # but cannot receive the relaunch's worktree-entry command.
+    prev=
+    handle=
+    for a in "$@"; do
+      [ "$prev" != --terminal ] || handle=$a
+      prev=$a
+    done
+    if [ -f "$DIR/show-$handle.json" ] && node -e '
+const t = JSON.parse(require("fs").readFileSync(process.argv[1])).result?.terminal;
+process.exit(t?.writable === false ? 0 : 1);
+' "$DIR/show-$handle.json"; then
+      printf '{"ok":false,"error":{"code":"terminal_not_writable"}}\n'
+      exit 1
+    fi
     if [ -n "${FM_TEST_ORCA_LOG:-}" ]; then
       prev=
       for a in "$@"; do
@@ -581,6 +601,73 @@ SH
     fi
   done
   pass "an Orca Droid relaunch adopts a connected owned shell without a marker, and refuses a wrong generation, a live worktree process, and a failed scan"
+}
+
+test_orca_droid_relaunch_rebinds_only_after_stop_and_terminal_proof() {
+  local variant gen before
+  for variant in closed stop-unverifiable unwritable wrong-gen live-scan scan-fails unreadable stale remote other-worktree unknown-writable; do
+    orca_relaunch_case "droid-stopped-$variant"
+    echo 'harness=droid' >> "$HOME_DIR/state/$TASK.meta"
+    gen=$("$ROOT/bin/fm-busy-event.sh" arm "$HOME_DIR/state" "$TASK")
+    echo "busy_gen=$gen" >> "$HOME_DIR/state/$TASK.meta"
+    printf '%s\n' "$gen" > "$HOME_DIR/state/$TASK.droid-session-end"
+    orca_relaunch_show false operator_close
+    case "$variant" in
+      stop-unverifiable)
+        printf '{"ok":true,"result":{"terminal":{"handle":"term-old","ptyId":"pty-old","connected":false,"writable":false,"exitCause":{"kind":"unknown","reason":"stop_unverified"},"executionHostId":"local","worktreePath":"%s"}}}\n' \
+          "$WT" > "$CASE_DIR/show-term-old.json"
+        ;;
+      unwritable)
+        printf '{"ok":true,"result":{"terminal":{"handle":"term-old","ptyId":"pty-old","connected":true,"writable":false,"exitCause":null,"executionHostId":"local","worktreePath":"%s"}}}\n' \
+          "$WT" > "$CASE_DIR/show-term-old.json"
+        ;;
+      wrong-gen) printf 'another-generation\n' > "$HOME_DIR/state/$TASK.droid-session-end" ;;
+      live-scan) printf 'p999\nn%s\n' "$WT" >> "$CASE_DIR/lsof.out" ;;
+      scan-fails)
+        printf '#!/usr/bin/env bash\nexit 2\n' > "$FB/lsof"
+        chmod +x "$FB/lsof"
+        ;;
+      unreadable) rm "$CASE_DIR/show-term-old.json" ;;
+      remote)
+        sed 's/"executionHostId":"local"/"executionHostId":"remote"/' "$CASE_DIR/show-term-old.json" > "$CASE_DIR/show-remote.json"
+        mv "$CASE_DIR/show-remote.json" "$CASE_DIR/show-term-old.json"
+        ;;
+      other-worktree) orca_relaunch_show false operator_close "$CASE_DIR/proj" ;;
+      unknown-writable)
+        printf '{"ok":true,"result":{"terminal":{"handle":"term-old","ptyId":"pty-old","connected":true,"executionHostId":"local","worktreePath":"%s"}}}\n' \
+          "$WT" > "$CASE_DIR/show-term-old.json"
+        ;;
+      stale)
+        orca_relaunch_boot
+        echo 'spawn_gen=s3000.4242.99' >> "$HOME_DIR/state/$TASK.meta"
+        printf '{"ok":false,"error":{"code":"terminal_handle_stale"}}\n' > "$CASE_DIR/show-term-old.json"
+        echo 1 > "$CASE_DIR/show-term-old.exit"
+        ;;
+    esac
+    printf 'uncommitted task work\n' > "$WT/keep.txt"
+    before=$(cat "$HOME_DIR/state/$TASK.meta")
+    orca_relaunch --harness claude
+    case "$variant" in
+      closed|stop-unverifiable|unwritable)
+        expect_code 0 "$STATUS" "a stopped Droid task with a proven $variant terminal must rebind"$'\n'"$OUT"
+        assert_contains "$(cat "$CASE_DIR/terminal-create.log")" "--worktree id:wt-1::$WT" \
+          "the replacement terminal must use the recorded worktree"
+        [ "$(orca_meta_field terminal)" = term-new ] || fail "the stopped Droid task must record the new endpoint"
+        [ "$(orca_meta_field worktree)" = "$WT" ] || fail "the stopped Droid task must keep its worktree"
+        assert_contains "$(cat "$CASE_DIR/terminal-send.log")" "cd -- '$WT'" \
+          "the replacement must enter the recorded worktree"
+        assert_not_contains "$(cat "$CASE_DIR/terminal-send.log")" '--terminal term-old' \
+          "a closed or unwritable terminal must receive no relaunch input"
+        ;;
+      *)
+        expect_code 1 "$STATUS" "a $variant Droid stop or terminal proof must refuse"$'\n'"$OUT"
+        [ ! -e "$CASE_DIR/terminal-create.log" ] || fail "an unproven relaunch must create no endpoint"
+        [ "$(cat "$HOME_DIR/state/$TASK.meta")" = "$before" ] || fail "a refused relaunch must preserve the task record"
+        ;;
+    esac
+    [ "$(cat "$WT/keep.txt")" = 'uncommitted task work' ] || fail "relaunch must preserve unlanded work"
+  done
+  pass "a stopped Orca Droid task replaces only a proven closed or unwritable terminal and preserves unlanded work"
 }
 
 test_orca_relaunch_refuses_without_proof_of_a_stopped_agent() {
@@ -1322,6 +1409,8 @@ PY
 }
 
 test_orca_source_preserves_values_without_utf8_locale
+test_orca_droid_relaunch_connected_shell_without_marker
+test_orca_droid_relaunch_rebinds_only_after_stop_and_terminal_proof
 test_orca_launch_uses_controlled_tmux_environment
 test_orca_allowlist_without_source_warns
 test_orca_spawn_waits_for_a_slow_pane_before_a_later_failure
@@ -1339,7 +1428,6 @@ test_orca_relaunch_rebinds_a_stale_terminal_after_reboot
 test_orca_droid_relaunch_keeps_non_reboot_prerequisites
 test_orca_relaunch_refuses_a_stale_terminal_with_a_surviving_agent_after_reboot
 test_orca_relaunch_adopts_a_dead_connected_terminal
-test_orca_droid_relaunch_connected_shell_without_marker
 test_orca_relaunch_refuses_without_proof_of_a_stopped_agent
 test_orca_relaunch_takes_values_from_the_scoped_source
 

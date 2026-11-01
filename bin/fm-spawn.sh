@@ -93,6 +93,8 @@
 #   ORCA proves it by still describing the recorded terminal as closed with no
 #   agent left working in the recorded worktree (a rebound Orca terminal is
 #   created inside the task's recorded Orca worktree).
+#   After Droid's separate stop proof, a closed or unwritable terminal also
+#   rebinds; only a connected, writable terminal is adopted.
 #   A tmux rebind re-creates the window on the recorded socket and refuses when
 #   this process addresses another tmux server. An endpoint that turns out
 #   to have survived refuses too. The worktree is reused untouched either way; a
@@ -2528,11 +2530,29 @@ if [ "$RELAUNCH" -eq 1 ]; then
       echo "error: Orca Droid relaunch has no current-generation SessionEnd proof or connected owned-shell absence proof with its process gone; refusing a duplicate agent" >&2
       exit 1
     }
-    fm_backend_target_exists orca "$RELAUNCH_TARGET" "fm-$ID" || {
+    # Readability does not prove usability: Orca can still read a closed
+    # terminal after terminal_stop_unverifiable, but sends to it fail.
+    RELAUNCH_DROID_FACTS=$(fm_backend_orca_terminal_facts "$RELAUNCH_TARGET") || {
       echo "error: Orca Droid's recorded terminal cannot be re-read after its absence proof; refusing to guess whether it can be adopted" >&2
       exit 1
     }
-    RELAUNCH_STATE=dead
+    IFS=$'\037' read -r RELAUNCH_DROID_READ RELAUNCH_DROID_CONNECTED _ RELAUNCH_DROID_HOST _ RELAUNCH_DROID_WT RELAUNCH_DROID_WRITABLE <<FACTS
+$RELAUNCH_DROID_FACTS
+FACTS
+    if [ "$RELAUNCH_DROID_READ" != ok ] || [ "$RELAUNCH_DROID_HOST" != local ] \
+       || [ -z "$RELAUNCH_DROID_WT" ] \
+       || [ "$(fm_backend_orca_physical_dir "$RELAUNCH_DROID_WT")" != "$(fm_backend_orca_physical_dir "$(fm_meta_get "$RELAUNCH_META" worktree)")" ]; then
+      echo "error: Orca Droid's recorded terminal is not proven local and bound to its worktree after its absence proof; refusing to rebind or adopt it" >&2
+      exit 1
+    fi
+    case "$RELAUNCH_DROID_CONNECTED:$RELAUNCH_DROID_WRITABLE" in
+      true:true) RELAUNCH_STATE=dead ;;
+      false:false|true:false) RELAUNCH_STATE=missing ;;
+      *)
+        echo "error: Orca Droid's recorded terminal has no proven writable state after its absence proof; refusing to rebind or adopt it" >&2
+        exit 1
+        ;;
+    esac
   fi
   case "$RELAUNCH_STATE" in
     dead) ;;
