@@ -1,155 +1,231 @@
 === C-1 decimal SLA
--- FM_DISPATCH_SLA_MINUTES=08
-  +480s exit=0 
-  +481s exit=3 OVERDUE s age=8m received=2027-01-15T08:00:00Z summary=x
-  +600s exit=3 OVERDUE s age=10m received=2027-01-15T08:00:00Z summary=x
-  +601s exit=3 OVERDUE s age=10m received=2027-01-15T08:00:00Z summary=x
--- FM_DISPATCH_SLA_MINUTES=010
-  +480s exit=0 
-  +481s exit=0 
-  +600s exit=0 
-  +601s exit=3 OVERDUE s age=10m received=2027-01-15T08:00:00Z summary=x
--- FM_DISPATCH_SLA_MINUTES=0
-  +480s exit=3 OVERDUE s age=8m received=2027-01-15T08:00:00Z summary=x
-  +481s exit=3 OVERDUE s age=8m received=2027-01-15T08:00:00Z summary=x
-  +600s exit=3 OVERDUE s age=10m received=2027-01-15T08:00:00Z summary=x
-  +601s exit=3 OVERDUE s age=10m received=2027-01-15T08:00:00Z summary=x
--- FM_DISPATCH_SLA_MINUTES=abc
-  +480s exit=1 fm-dispatch-log: FM_DISPATCH_SLA_MINUTES must be a whole number
-  +481s exit=1 fm-dispatch-log: FM_DISPATCH_SLA_MINUTES must be a whole number
-  +600s exit=1 fm-dispatch-log: FM_DISPATCH_SLA_MINUTES must be a whole number
-  +601s exit=1 fm-dispatch-log: FM_DISPATCH_SLA_MINUTES must be a whole number
--- FM_DISPATCH_SLA_MINUTES=-5
-  +480s exit=1 fm-dispatch-log: FM_DISPATCH_SLA_MINUTES must be a whole number
-  +481s exit=1 fm-dispatch-log: FM_DISPATCH_SLA_MINUTES must be a whole number
-  +600s exit=1 fm-dispatch-log: FM_DISPATCH_SLA_MINUTES must be a whole number
-  +601s exit=1 fm-dispatch-log: FM_DISPATCH_SLA_MINUTES must be a whole number
--- FM_DISPATCH_SLA_MINUTES=1.5
-  +480s exit=1 fm-dispatch-log: FM_DISPATCH_SLA_MINUTES must be a whole number
-  +481s exit=1 fm-dispatch-log: FM_DISPATCH_SLA_MINUTES must be a whole number
-  +600s exit=1 fm-dispatch-log: FM_DISPATCH_SLA_MINUTES must be a whole number
-  +601s exit=1 fm-dispatch-log: FM_DISPATCH_SLA_MINUTES must be a whole number
-$ SLA=08 dispatched at +481s (late mark expected at 8 min)
-2027-01-15T08:08:01Z dispatched s: task=t1 late=8m
-LATE s late=8m
-[exit 0]
-$ SLA=abc dispatched (refused, nothing written)
-fm-dispatch-log: FM_DISPATCH_SLA_MINUTES must be a whole number
-[exit 1]
-ledger lines: 1 (want 1)
-$ SLA=abc received does not read the SLA
-2026-10-31T22:30:37Z received s2: summary=ok
-[exit 0]
+$ FM_DISPATCH_SLA_MINUTES=08 NOW=T0+480 overdue (want exit 0)
+  [exit 0]
+$ FM_DISPATCH_SLA_MINUTES=08 NOW=T0+481 overdue (want exit 3)
+  OVERDUE a age=8m received=2027-01-15T08:00:00Z summary=s
+  [exit 3]
+$ FM_DISPATCH_SLA_MINUTES=010 NOW=T0+600 overdue (want exit 0)
+  [exit 0]
+$ FM_DISPATCH_SLA_MINUTES=010 NOW=T0+601 overdue (want exit 3)
+  OVERDUE a age=10m received=2027-01-15T08:00:00Z summary=s
+  [exit 3]
+$ FM_DISPATCH_SLA_MINUTES=010 NOW=T0+481 overdue (want exit 0)
+  [exit 0]
+$ FM_DISPATCH_SLA_MINUTES=15x NOW=T0+1 overdue (want exit 1)
+  fm-dispatch-log: FM_DISPATCH_SLA_MINUTES must be a whole number
+  [exit 1]
+$ FM_DISPATCH_SLA_MINUTES=-5 NOW=T0+1 overdue (want exit 1)
+  fm-dispatch-log: FM_DISPATCH_SLA_MINUTES must be a whole number
+  [exit 1]
+$ FM_DISPATCH_SLA_MINUTES=08 dispatched at T0+481 (late mark must use 8m SLA)
+  2027-01-15T08:08:01Z dispatched a: task=t1 late=8m
+  LATE a late=8m
+  [exit 0]
 
-=== C-2 blank values write nothing
--- value=''
-  received exit=1 lines=0
--- value=\ 
-  received exit=1 lines=0
--- value=$'\t'
-  received exit=1 lines=0
--- value=$'\n'
-  received exit=1 lines=0
--- value=$' \t\r\n '
-  received exit=1 lines=0
--- value=''
-  dispatched exit=1 lines=1
-  queued exit=1 lines=1
-  blocked exit=1 lines=1
--- value=\ 
-  dispatched exit=1 lines=1
-  queued exit=1 lines=1
-  blocked exit=1 lines=1
--- value=$'\t\n'
-  dispatched exit=1 lines=1
-  queued exit=1 lines=1
-  blocked exit=1 lines=1
-ledger lines after refusals: 1 (want 1)
--- late-only values (recorded decision: task and reason refuse, summary accepts)
-  task ' late=5m' exit=1 lines=1
-  blocked reason ' late=5m' exit=1 lines=1
-  queued reason ' late=5m' exit=1 lines=1
-$ summary ' late=5m' accepted
-2027-01-15T08:00:00Z received g2: summary= late=5m
-[exit 0]
-$ tab/newline folded in real text
-2027-01-15T08:00:00Z received g3: summary=a b c
-[exit 0]
+=== C-2 blank text writes nothing
+$ d received g --summary    
+  fm-dispatch-log: received needs --summary
+  [exit 1]
+  ledger=absent
+$ d received g --summary 	
+ 
+  fm-dispatch-log: received needs --summary
+  [exit 1]
+  ledger=absent
+  seeded ledger=1
+$ d dispatched g --task  	
+  fm-dispatch-log: dispatched needs --task
+  [exit 1]
+  ledger=1
+$ d queued g --reason 
 
-=== PS-1 usage header and real overdue line
-42:`OVERDUE <goal-id> age=<m>m received=<iso>
-43-[project=<name> ]summary=<text>`, then every goal whose late final line was
-$ overdue with and without project
-OVERDUE p1 age=15m received=2027-01-15T08:00:00Z project=alpha summary=with project
-OVERDUE p2 age=15m received=2027-01-15T08:00:00Z summary=no project
-[exit 3]
+
+  fm-dispatch-log: queued needs --reason
+  [exit 1]
+  ledger=1
+$ d blocked g --reason   
+  fm-dispatch-log: blocked needs --reason
+  [exit 1]
+  ledger=1
+-- recorded decision: late-mark-only refused for task/reason, not summary
+$ d dispatched g --task  late=5m
+  fm-dispatch-log: dispatched needs --task
+  [exit 1]
+  ledger=1
+$ d blocked g --reason  late=5m
+  fm-dispatch-log: blocked needs --reason
+  [exit 1]
+  ledger=1
+$ d received h --summary  late=5m
+  2026-10-31T23:59:42Z received h: summary= late=5m
+  [exit 0]
+  ledger=2
+$ d received i --summary two	word
+summary
+  2026-10-31T23:59:42Z received i: summary=two word summary
+  [exit 0]
+  tail: 2026-10-31T23:59:42Z	1793491182	received	i	summary=two word summary
+
+=== PS-1 overdue line with and without project; usage header
+$ d overdue
+  OVERDUE p1 age=16m received=2027-01-15T08:00:00Z project=alpha summary=with proj
+  OVERDUE p2 age=16m received=2027-01-15T08:00:00Z summary=no proj
+  [exit 3]
+$ bash -c '/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M6A3QYC7MZM6CKJA6D0KNQ0D/bin/fm-dispatch-log.sh' --help | grep -A1 'OVERDUE <goal-id>'
+  `OVERDUE <goal-id> age=<m>m received=<iso>
+  [project=<name> ]summary=<text>`, then every goal whose late final line was
+  [exit 0]
 
 === T-1 two goals at once
-$ overdue at +1000s
-OVERDUE open-1 age=16m received=2027-01-15T08:00:00Z summary=still open
-[exit 3]
+$ d overdue
+  OVERDUE open1 age=16m received=2027-01-15T08:00:00Z summary=o
+  [exit 3]
 
 === T-2 15-minute boundary
-$ at +900s
-[exit 0]
-$ at +901s
-OVERDUE b age=15m received=2027-01-15T08:00:00Z summary=x
-[exit 3]
+$ d overdue
+  [exit 0]
+$ d overdue
+  OVERDUE b age=15m received=2027-01-15T08:00:00Z summary=b
+  [exit 3]
 
-=== T-3 / AN-5 show
-$ bare show, no ledger file
-[exit 0]
-$ show unknown, no ledger file
-fm-dispatch-log: goal nope is not in the ledger
-[exit 1]
-$ bare show, empty ledger file
-[exit 0]
-$ show unknown, empty ledger file
-fm-dispatch-log: goal nope is not in the ledger
-[exit 1]
-$ bare show
-2027-01-15T08:00:00Z	1800000000	received	a	project=alpha summary=goal a
-2027-01-15T08:00:00Z	1800000000	received	b	summary=goal b
-2027-01-15T08:01:00Z	1800000060	queued	a	reason=busy
-2027-01-15T08:02:00Z	1800000120	dispatched	a	task=t1
-[exit 0]
-$ show a
-STATE a event=dispatched at=2027-01-15T08:02:00Z task=t1
-2027-01-15T08:00:00Z	1800000000	received	a	project=alpha summary=goal a
-2027-01-15T08:01:00Z	1800000060	queued	a	reason=busy
-2027-01-15T08:02:00Z	1800000120	dispatched	a	task=t1
-[exit 0]
-$ show b
-STATE b event=received at=2027-01-15T08:00:00Z summary=goal b
-2027-01-15T08:00:00Z	1800000000	received	b	summary=goal b
-[exit 0]
-$ show unknown
-fm-dispatch-log: goal nope is not in the ledger
-[exit 1]
-$ show regex-looking id must not match
-fm-dispatch-log: goal a.* is not in the ledger
-[exit 1]
-$ show extra arg
-fm-dispatch-log: unknown argument: extra
-[exit 1]
+=== T-3 bare show
+$ d show
+  [exit 0]
+$ d show
+  2027-01-15T08:00:00Z	1800000000	received	s1	summary=one
+  2027-01-15T08:00:05Z	1800000005	dispatched	s1	task=t1
+  [exit 0]
+  ledger bytes match: yes
 
-=== AN-5 dash-leading flag values
-  received x --summary -bad -> exit=1 :: fm-dispatch-log: --summary value looks like a flag: -bad
-  received x --summary ok --project -bad -> exit=1 :: fm-dispatch-log: --project value looks like a flag: -bad
-  dispatched g --task -bad -> exit=1 :: fm-dispatch-log: --task value looks like a flag: -bad
-  dispatched g --task t --note -bad -> exit=1 :: fm-dispatch-log: --note value looks like a flag: -bad
-  queued g --reason -bad -> exit=1 :: fm-dispatch-log: --reason value looks like a flag: -bad
-  blocked g --reason --bad -> exit=1 :: fm-dispatch-log: --reason value looks like a flag: --bad
-ledger lines: 1 (want 1)
+=== M-1 FM_DISPATCH_LOG ignored; state dir selects path
+  stray exists: no; state ledger=1
+  FM_STATE_OVERRIDE ledger: 1
 
-=== M-1 FM_DISPATCH_LOG ignored
-exit=0 other_exists=no state_lines=1
-  STATE m event=received at=2026-10-31T22:30:53Z summary=x
-  2026-10-31T22:30:53Z	1793485853	received	m	summary=x
+=== AN-5 show by id, unknown id, dash flag
+$ d show ghost
+  fm-dispatch-log: goal ghost is not in the ledger
+  [exit 1]
+$ d show
+  [exit 0]
+$ d show an
+  STATE an event=dispatched at=2027-01-15T08:00:30Z task=tk note=nn
+  2027-01-15T08:00:00Z	1800000000	received	an	project=pj summary=sum
+  2027-01-15T08:00:30Z	1800000030	dispatched	an	task=tk note=nn
+  [exit 0]
+$ d show ghost
+  fm-dispatch-log: goal ghost is not in the ledger
+  [exit 1]
+$ d received z --summary -x
+  fm-dispatch-log: --summary value looks like a flag: -x
+  [exit 1]
+  ledger=3
+$ d received z --summary s --project -p
+  fm-dispatch-log: --project value looks like a flag: -p
+  [exit 1]
+  ledger=3
+$ d dispatched an --task -t
+  fm-dispatch-log: --task value looks like a flag: -t
+  [exit 1]
+  ledger=3
+$ d dispatched an --task t --note -n
+  fm-dispatch-log: --note value looks like a flag: -n
+  [exit 1]
+  ledger=3
+$ d queued an --reason -r
+  fm-dispatch-log: --reason value looks like a flag: -r
+  [exit 1]
+  ledger=3
+$ d blocked an --reason --foo
+  fm-dispatch-log: --reason value looks like a flag: --foo
+  [exit 1]
+  ledger=3
 
-=== Consumer: session start digest on the lab home (real clock)
-129:Dispatch ledger (fm-dispatch-log.sh overdue)
-130---------------------------------------------------------------------------------
-131-OVERDUE digest-1 age=18m received=2026-10-31T22:14:14Z project=alpha summary=old ask
-132-
-[pipe 0]
+=== Regression: real clock, no test overrides
+$ d received live-1 --summary real clock
+  2026-10-31T23:59:46Z received live-1: summary=real clock
+  [exit 0]
+$ d overdue
+  OVERDUE live-1 age=0m received=2026-10-31T23:59:46Z summary=real clock
+  [exit 3]
+$ d dispatched live-1 --task tk
+  2026-10-31T23:59:49Z dispatched live-1: task=tk late=0m
+  LATE live-1 late=0m
+  [exit 0]
+$ d overdue
+  LATE live-1 late=0m event=dispatched
+  [exit 0]
+$ d received live-1 --summary dup
+  fm-dispatch-log: goal live-1 is already in the ledger
+  [exit 4]
+$ d nope
+  fm-dispatch-log.sh - timestamped captain-goal intake ledger with a dispatch SLA.
+  
+  Usage:
+    fm-dispatch-log.sh received   <goal-id> --summary <text> [--project <name>]
+    fm-dispatch-log.sh dispatched <goal-id> --task <task-id> [--note <text>]
+    fm-dispatch-log.sh queued     <goal-id> --reason <text>
+    fm-dispatch-log.sh blocked    <goal-id> --reason <text>
+    fm-dispatch-log.sh overdue
+    fm-dispatch-log.sh show       [<goal-id>]
+  
+  A goal is one new captain ask for work: a chat request, an inbox note, or an
+  away-mode ask. A follow-up that only amends a goal already in the ledger is
+  not a new goal. Its id is `<project-or-topic>-<yyyymmddHHMM>` from the moment
+  it was read (add `-2`, `-3` for more goals in the same minute) and must match
+  [A-Za-z0-9._-]+.
+  
+  Every new goal gets one `received` line the moment it is read, and then,
+  within the dispatch SLA (default 15 minutes), a `dispatched` line naming the
+  spawned task or a `blocked` line naming the concrete reason nothing can start.
+  Routing a goal to a secondmate is `dispatched --task secondmate:<id>`; the
+  secondmate logs the goal again in its own home's ledger.
+  `queued` records work waiting behind other work: it is not final, and the
+  goal still goes overdue until it is dispatched or blocked.
+  The ledger is append-only TSV:
+    <utc-iso>\t<epoch>\t<event>\t<goal-id>\t<detail>
+  A goal's current state is its newest line. `dispatched` and `blocked` are
+  final; a later `dispatched` supersedes a `blocked`.
+  The SLA is judged once, at the goal's first final line anywhere in its history:
+  if that line is past the SLA, its detail ends with ` late=<m>m` (minutes since
+  `received`) and it also prints `LATE <goal-id> late=<m>m`, so a late dispatch
+  stays on record for `show`. `queued` lines and lines after the first final line
+  never add a late mark. A trailing ` late=<m>m` in the free text of a
+  `dispatched`, `queued`, or `blocked` line is dropped, so only the script can
+  write the mark.
+  
+  A goal is overdue when its newest line is `received` or `queued` and the SLA
+  has passed since its clock start: `received` if it has never had a final line
+  (`queued` does not reset it), else its newest `queued` line. A re-queued goal
+  that goes overdue and is later dispatched gets no second late mark.
+  
+  `overdue` prints every overdue goal, with age counted from its clock start, as
+  `OVERDUE <goal-id> age=<m>m received=<iso>
+  [project=<name> ]summary=<text>`, then every goal whose late final line was
+  written in the last 24 hours, as `LATE <goal-id> late=<m>m event=<event>`; older
+  late marks stay in `show`. It exits 3 when any OVERDUE line exists and 0 otherwise;
+  exit 3 is a result to act on, not an error.
+  
+  Refuses, and writes nothing, when: the goal id is not [A-Za-z0-9._-]+; a
+  required flag is missing, empty, or only space after tab and newline folding;
+  `--task` or `--reason` is only a late mark, which that event would drop; a flag
+  value starts with `-`; an argument is unknown;
+  FM_DISPATCH_SLA_MINUTES is not a whole number and the subcommand reads the SLA
+  (`dispatched`, `queued`, `blocked`, `overdue`; `received` and `show` do not); or
+  `dispatched`/`queued`/`blocked` names a goal with no `received` line (all exit 1).
+  An unknown subcommand prints this usage and exits 2. `received` for an id
+  already in the ledger exits 4, so a retry can tell "already logged" from a
+  mistake.
+  Tabs and newlines in free text are folded to spaces.
+  `show` with no id prints the ledger, and an empty ledger exits 0 with no output.
+  `show <goal-id>` prints one state line,
+  `STATE <goal-id> event=<event> at=<iso> <detail>`, then that goal's ledger
+  lines. An id with no ledger line exits 1, even when the ledger is empty.
+  
+  Environment: FM_HOME selects the home; FM_STATE_OVERRIDE overrides its state
+  directory (the ledger is <state>/dispatch-log.tsv); FM_DISPATCH_SLA_MINUTES
+  overrides the default SLA as a decimal whole number (a leading zero does not
+  make it octal); FM_DISPATCH_NOW overrides the current epoch (tests only).
+  [exit 2]
+$ bash -c '/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M6A3QYC7MZM6CKJA6D0KNQ0D/bin/fm-dispatch-log.sh' received 'bad id' --summary s
+  fm-dispatch-log: goal id must match [A-Za-z0-9._-]+: 'bad id'
+  [exit 1]

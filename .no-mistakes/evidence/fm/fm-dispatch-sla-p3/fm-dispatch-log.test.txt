@@ -8,9 +8,16 @@ ok - whitespace-only summary, task, and reason are refused without writing
 ok - a value that starts with a dash is refused, including --summary --project p
 ok - tabs and newlines in free text are folded so every line stays five fields
 ok - a dispatched or blocked line written after the SLA records late=<m>m, and show and overdue surface it
+ok - a goal that met the SLA is never late, and free text cannot forge a late mark
+ok - overdue reports LATE for 24 hours after the late line, and show keeps the record
 ok - a duplicate received exits 4, distinct from other refusals
 ok - queued is a non-final state that still goes overdue, and a secondmate hand-off dispatches it
+ok - queued is not final, so lateness is measured through it until the first dispatched or blocked line
+ok - the SLA is judged once at the first final line, and a later queue never adds a late mark
+ok - the LATE window runs from the late final line, not from received or a later retry
 ok - overdue judges each of two goals by its own newest event
 ok - FM_DISPATCH_LOG does not select a second ledger
 ok - show names a goal's current state, and an unknown goal is not an empty ledger
 ok - bare show prints the ledger
+ok - a task or reason of only a late mark is refused without writing
+ok - received keeps a summary of only a late mark, since it never strips one
