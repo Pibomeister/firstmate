@@ -775,13 +775,7 @@ Pick the option that keeps work going on another model or account without buying
         return 0
       fi
       wd_key dialog "$n" "model-switch option $n: $text" ;;
-    question)
-      fm_wd_question_proven "$O_PANE" || { wd_gap "question dialog waiting; its kind is not proven, so no key is sent"; return 0; }
-      text=$(fm_wd_dialog_text "$O_PANE")
-      if fm_wd_reserved "$text"; then wd_gap "question dialog names an owner-reserved category; held"; return 0; fi
-      wd_rate_open question nudge "$(cfgi nudge-secs 900)" || { wd_gap "question dialog held; a question nudge went out inside nudge-secs"; return 0; }
-      wd_key dialog Escape "close the question so the session can settle it by council" || return 0
-      wd_nudge question "your question dialog was closed so work keeps moving. Settle it by council per the captain rules, record the ruling, and continue." ;;
+    question) wd_gap "question dialog waiting; its kind is not proven, so no key is sent" ;;
   esac
 }
 

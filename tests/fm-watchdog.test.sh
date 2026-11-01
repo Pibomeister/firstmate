@@ -594,37 +594,24 @@ restart-command=$TMP_ROOT/fake-captain.sh"
   pass "restart-secs holds a sooner restart across symptoms, and only max-restarts escalates"
 }
 
-# A question dialog that leaves the screen on the first key, then a live composer.
-question_agent() {
+test_cleared_dialog_records_the_key_as_done() {
+  make_home $'Captain session\n> '
   cat > "$H/agent.sh" <<SH
 #!/usr/bin/env bash
-printf '──────────\nWhich plan should I follow?\n ❯ 1. Plan A\n   2. Plan B\n\nEnter to select · Esc to cancel\n'
+printf 'work output\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss\n'
 stty -echo raw
 dd bs=1 count=1 of=/dev/null 2>/dev/null
 stty sane -echo
 clear
 printf '> \n'
-stty raw
 exec cat >> "$H/typed.log"
 SH
   "$REAL_TMUX" -f /dev/null -L "$SOCKET" respawn-pane -k -t "$T" "$H/agent.sh"
   sleep 0.5
-}
-
-test_question_nudge_follows_a_cleared_dialog() {
-  make_home $'Captain session\n> '
-  question_agent
   FM_WD_TEST_COMPOSER=empty run_wd 0 once >/dev/null 2>&1
-  assert_equals 1 "$(ledger_rows dialog key "done")" "the question dialog closed: $(ledger | cut -f5-8)"
-  assert_equals 1 "$(ledger_rows question nudge pending)" "the session is told to settle it: $(ledger | cut -f5-8)"
-  assert_equals 0 "$(ledger_rows question nudge refused)" "the cleared dialog does not refuse the nudge"
-  wait_typed ": fm-op " || wait_typed "operational-inbox" || fail "the nudge never reached the pane: $(cat "$H/typed.log")"
-
-  make_home $'──────────\nWhich plan should I follow?\n ❯ 1. Plan A\n   2. Plan B\n\nEnter to select · Esc to cancel'
-  FM_WD_TEST_COMPOSER=empty run_wd 0 once >/dev/null 2>&1
-  assert_equals 1 "$(ledger_rows dialog key failed)" "a dialog that stays records the failed key"
-  assert_equals 0 "$(ledger | awk -F'\t' '$5 == "question"' | wc -l | tr -d ' ')" "a failed key sends no nudge: $(ledger | cut -f5-8)"
-  pass "question dialog: the nudge follows a cleared dialog, and only a cleared one"
+  assert_equals 1 "$(ledger_rows dialog key "done")" "the dismissed survey records done: $(ledger | cut -f5-8)"
+  assert_equals 0 "$(ledger_rows dialog key failed)" "a cleared dialog is no failed key"
+  pass "dialog: a key that clears the dialog is recorded as done"
 }
 
 test_low_context_asks_nothing_when_no_restart_can_run() {
@@ -1031,24 +1018,15 @@ test_dialog_reserved_check_reads_only_dialog_rows() {
   make_home "Merged PR #41, deleted the branch."$'\n'"$rule"$'\nWhich plan should I follow?\n ❯ 1. Plan A\n   2. Plan B\n\nEnter to select · Esc to cancel'
   transcript 100 "Working."
   run_wd 0 once >/dev/null 2>&1
-  assert_equals 1 "$(ledger_rows dialog key pending)" "conversation above a ruled question does not hold it: $(ledger | cut -f5-8)"
+  assert_equals 0 "$(ledger | awk -F'\t' '$6 == "key"' | wc -l | tr -d ' ')" "a ruled question with an Esc footer gets no key: $(ledger | cut -f5-8)"
+  assert_grep "question dialog waiting" "$H/data/watchdog/status.md" "the ruled question is reported"
 
-  make_home "$rule"$'\nDeploy this build\nto staging?\n ❯ 1. Yes\n   2. No\n\nEnter to select · Esc to cancel'
-  transcript 100 "Working."
-  run_wd 0 once >/dev/null 2>&1
-  assert_equals 0 "$(ledger_rows dialog key pending)" "a reserved word in a two-row heading still holds: $(ledger | cut -f5-8)"
-
-  make_home $'Continuing bills your card and deletes the production data.\n\nContinue with Opus limit?\n ❯ 1. Yes\n   2. No\n\nEnter to confirm · Esc to cancel' 'models=claude:haiku'
+  make_home $'Continuing bills your card and deletes the production data.\n\nContinue after the weekly limit?\n ❯ 1. Yes\n   2. No\n\nEnter to confirm · Esc to cancel' 'models=claude:haiku'
   fake_models "$H" ok:"OPTION 1" absent
   transcript 100 "Working."
   run_wd 0 once >/dev/null 2>&1
   assert_equals 0 "$(ledger_rows dialog key pending)" "a reserved paragraph with no proven boundary holds a picker: $(ledger | cut -f5-8)"
   [ ! -s "$H/model.log" ] || fail "a model saw a reserved picker: $(cat "$H/model.log")"
-
-  make_home $'Deploy to production is the next step.\n\nShould I go ahead?\n ❯ 1. Yes\n   2. No\n\nEnter to select · Esc to cancel'
-  transcript 100 "Working."
-  run_wd 0 once >/dev/null 2>&1
-  assert_equals 0 "$(ledger_rows dialog key pending)" "a reserved paragraph with no proven boundary holds a question: $(ledger | cut -f5-8)"
 
   local list=$'1. Merged it\n2. Deleted it\n\nWhich?\n ❯ 1. Plan A\n   2. Plan B\n\nEnter to select'
   assert_equals "2	Plan B" "$(lib fm_wd_dialog_options "$list" | tail -n 1)" "options come from the dialog"
@@ -1090,18 +1068,29 @@ test_dialog_kind_ignores_conversation_rows() {
   assert_equals 0 "$(ledger | awk -F'\t' '$6 == "key"' | wc -l | tr -d ' ')" "an Esc footer with a side effect gets no key: $(ledger | cut -f5-8)"
   assert_grep "question dialog waiting" "$H/data/watchdog/status.md" "the startup picker is reported"
 
-  make_home $'I told the worker to switch to sonnet.\n──────────'"$q" 'models=claude:haiku'
-  fake_models "$H" ok:"OPTION 1" absent
+  make_home $'Do you trust the files in this folder?\n\n/some/path\n\nClaude Code may read files here.\n ❯ 1. Yes, proceed\n   2. No, exit\n\nEnter to confirm · Esc to cancel'
   transcript 100 "Working."
   run_wd 0 once >/dev/null 2>&1
-  [ ! -s "$H/model.log" ] || fail "a judge was asked about a question: $(cat "$H/model.log")"
-  assert_equals 0 "$(ledger | grep -c 'model-switch option')" "no option key answers the question: $(ledger | cut -f5-8)"
-  assert_equals 1 "$(ledger | awk -F'\t' '$5 == "dialog" && $8 ~ /close the question/' | wc -l | tr -d ' ')" "a proven question closes: $(ledger | cut -f5-8)"
+  assert_equals 0 "$(ledger | awk -F'\t' '$6 == "key"' | wc -l | tr -d ' ')" "a trust dialog gets no key: $(ledger | cut -f5-8)"
+  assert_grep "permission dialog waiting" "$H/data/watchdog/status.md" "the trust dialog is reported"
+
+  local screen
+  for screen in \
+    $'──────────\nShould the worker use Opus or Sonnet for the refactor?\n ❯ 1. Opus\n   2. Sonnet\n\nEnter to select · Esc to cancel' \
+    $'──────────\nThis task burns credits fast; split it in two?\n ❯ 1. Yes\n   2. No\n\nEnter to select · Esc to cancel'; do
+    make_home "$screen" 'models=claude:haiku'
+    fake_models "$H" ok:"OPTION 1" absent
+    transcript 100 "Working."
+    run_wd 0 once >/dev/null 2>&1
+    [ ! -s "$H/model.log" ] || fail "a judge was asked about an ordinary question: $(cat "$H/model.log")"
+    assert_equals 0 "$(ledger | awk -F'\t' '$6 == "key"' | wc -l | tr -d ' ')" "an ordinary question gets no digit: $(ledger | cut -f5-8)"
+    assert_grep "question dialog waiting" "$H/data/watchdog/status.md" "the ordinary question is reported"
+  done
   pass "dialog: the kind comes from the dialog, not the conversation above it"
 }
 
 test_reserved_model_switch_dialog_is_held() {
-  make_home $'Release the sonnet build to production?\n ❯ 1. Yes\n   2. No\n\nEnter to confirm · Esc to cancel' 'models=claude:haiku'
+  make_home $'You have hit your weekly limit; release the sonnet build to production?\n ❯ 1. Yes\n   2. No\n\nEnter to confirm · Esc to cancel' 'models=claude:haiku'
   fake_models "$H" ok:"OPTION 1" absent
   transcript 100 "Working."
   run_wd 0 once >/dev/null 2>&1
@@ -1310,7 +1299,7 @@ fm_test_run \
   test_low_context_second_episode_asks_again \
   test_low_context_undelivered_nudge_starts_no_wait \
   test_restart_interval_holds_without_escalating \
-  test_question_nudge_follows_a_cleared_dialog \
+  test_cleared_dialog_records_the_key_as_done \
   test_low_context_asks_nothing_when_no_restart_can_run \
   test_restart_request_does_not_shadow_frozen_recovery \
   test_held_nudges_reach_the_restart_proof \

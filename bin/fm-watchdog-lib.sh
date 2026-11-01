@@ -38,9 +38,6 @@
 #   fm_wd_dialog_text <screen>
 #       Prints the text a reserved check and the judge read, one line: the rows
 #       below a rule above the options, else all the last rows.
-#   fm_wd_question_proven <screen>
-#       Succeeds when a rule above the options proves the dialog boundary and the
-#       footer offers a plain `Esc to cancel`.
 #   fm_wd_footer_percent <screen>
 #       Prints N from a Claude `N% until auto-compact` or
 #       `until auto-compact: N%` footer in the last rows.
@@ -163,7 +160,7 @@ fm_wd_pane_dialog() {  # <screen>
   ' || return 1
   if _fm_wd_dialog_rows "$1" all | LC_ALL=C grep -Eiq "do you want to (proceed|make this edit|create|allow|run|overwrite|delete)|allow (this|once|always)|yes, and don.t ask again|background work is running|trust (this|the files)"; then
     printf 'permission\n'
-  elif _fm_wd_dialog_rows "$1" own | LC_ALL=C grep -Eiq "usage limit|rate limit|hit your (weekly |daily |session )?limit|limit reached|limit resets|switch (to )?(a )?(model|another)|/model|opus|sonnet|haiku|fallback model|weekly limit|out of credits|credits"; then
+  elif _fm_wd_dialog_rows "$1" own | LC_ALL=C grep -Eiq "usage limit|rate limit|hit your (weekly |daily |session )?limit|limit reached|limit resets|switch (to )?(a )?(model|another)|fallback model|weekly limit|out of credits"; then
     printf 'model-switch\n'
   else
     printf 'question\n'
@@ -174,11 +171,7 @@ fm_wd_pane_dialog() {  # <screen>
 # option, everything is the dialog. With no such rule the boundary is unproven:
 # scope `own` takes the paragraph above the options and `all` takes every tail row.
 # Scope `options` takes only the option rows.
-fm_wd_question_proven() {  # <screen>
-  _fm_wd_dialog_rows "$1" ruled | tail -n 1 | LC_ALL=C grep -q 'Esc to cancel'
-}
-
-_fm_wd_dialog_rows() {  # <screen> <own|all|options|ruled>
+_fm_wd_dialog_rows() {  # <screen> <own|all|options>
   printf '%s\n' "$1" | fm_wd_strip_ansi | awk -v scope="$2" '
     function blank(r) { gsub(/[ \t│┃|─━╭╮╰╯┌┐└┘-]/, "", r); return r == "" }
     function rule(r) { return blank(r) && (index(r, "─") || index(r, "━")) }
@@ -204,7 +197,6 @@ _fm_wd_dialog_rows() {  # <screen> <own|all|options|ruled>
           while (i >= floor && !blank(rows[i])) { top = i; i-- }
         }
       }
-      if (scope == "ruled" && !ruled) top = last + 1
       for (i = top; i <= last; i++) if (rows[i] ~ /[^ \t]/) print rows[i]
     }'
 }
