@@ -728,6 +728,14 @@ SH
   printf '%s\n' "$gen"
 }
 
+# With a `droid` on PATH, the fake Orca's missing --screen support is the first
+# refusal after fm-spawn --relaunch admits the task.
+ORCA_DROID_PAST_ADMISSION="requires 'orca terminal read --screen'"
+orca_droid_preflight_stops_after_admission() {  # <case-dir>
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$1/fakebin/droid"
+  chmod +x "$1/fakebin/droid"
+}
+
 test_orca_droid_second_exit_is_idempotent() {
   local dir out rc gen
   dir=$(new_case orca-droid-exit)
@@ -754,13 +762,16 @@ test_orca_droid_exit_then_relaunch_is_admitted() {
   out=$(run_control "$dir" t1 exit) \
     || fail "exit on Orca Droid should succeed"$'\n'"$out"
   : > "$dir/fake/orca.log"
+  printf '{"ok":true,"result":{"terminal":{"handle":"term-1","ptyId":"pty-1","connected":true,"writable":true,"exitCause":null,"executionHostId":"local","worktreePath":"%s"}}}\n' \
+    "$(cd "$dir/wt-t1" && pwd -P)" > "$dir/fake/orca-show"
+  orca_droid_preflight_stops_after_admission "$dir"
   out=$(run_control "$dir" t1 relaunch --harness droid --note x)
   assert_not_contains "$out" "SessionEnd proof" \
     "an exited Orca Droid must pass relaunch's stop proof"
   assert_not_contains "$out" "rather than a positively classified state" \
     "relaunch's exit step must see the stopped Orca Droid as stopped"
-  grep -qx 'terminal read --terminal term-1 --limit 1 --json' "$dir/fake/orca.log" \
-    || fail "fm-spawn --relaunch never reached the Orca terminal re-read after admission"$'\n'"$out"
+  assert_contains "$out" "$ORCA_DROID_PAST_ADMISSION" \
+    "fm-spawn --relaunch must get past its stop and terminal checks"
   pass "fm-control relaunch: an exited Orca Droid is admitted for a Droid replacement"
 }
 
@@ -796,6 +807,7 @@ test_orca_droid_live_exit_without_marker_preserves_relaunch_proof() {
       expect_code 0 "$rc" "a second marker-free exit must remain idempotent"$'\n'"$out"
       assert_contains "$out" "already-stopped" "the second exit must retain its stop proof"
     fi
+    orca_droid_preflight_stops_after_admission "$dir"
     out=$(run_control "$dir" t1 relaunch --harness droid --note x)
     kill "$shell_pid" 2>/dev/null || true
     wait "$shell_pid" 2>/dev/null || true
@@ -803,8 +815,8 @@ test_orca_droid_live_exit_without_marker_preserves_relaunch_proof() {
     [ ! -e "$dir/home/state/t1.droid-session-end" ] || fail "the marker-free exit must not synthesize a marker"
     assert_not_contains "$out" "has no current-generation SessionEnd proof" \
       "replacement admission must retain the marker-free stop proof ($flow)"
-    grep -qx 'terminal read --terminal term-1 --limit 1 --json' "$dir/fake/orca.log" \
-      || fail "replacement admission never reached the terminal re-read ($flow)"$'\n'"$out"
+    assert_contains "$out" "$ORCA_DROID_PAST_ADMISSION" \
+      "replacement admission must get past its stop and terminal checks ($flow)"
     [ "$(grep -c -- '--text /exit' "$dir/fake/orca.log")" = 1 ] \
       || fail "the stopped Droid must receive exactly one exit command ($flow)"
   done

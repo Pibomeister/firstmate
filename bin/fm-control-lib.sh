@@ -745,7 +745,10 @@ fm_control_harness_wiring_paths() {  # <harness> <worktree> <state-dir> <id> [ki
     # the project, and nothing global is installed.
     gemini) printf '%s\n' "$state/$id.gemini-settings.json" ;;
     devin) printf '%s\n' "$state/$id.devin-config.json" ;;
-    droid) printf '%s\n' "$state/$id.droid-settings.json" "$state/$id.droid-session-end" ;;
+    # The SessionEnd marker is not wiring: it is the stop proof of the task
+    # record, so a relaunch retires it only when the replacement record is
+    # published (bin/fm-spawn.sh).
+    droid) printf '%s\n' "$state/$id.droid-settings.json" ;;
     # cortex's lifecycle hooks live in a firstmate-owned plugin directory the
     # launch reaches through --plugin-dir. Only its two files are retired here
     # (this table's consumer removes files); teardown removes the directory.
@@ -918,7 +921,7 @@ fm_control_droid_agent_absent() {  # <state-dir> <id> <meta-file> <target>
   command -v fm_backend_orca_tree_state >/dev/null 2>&1 || return 1
   facts=$(fm_backend_orca_terminal_facts "$target" 2>/dev/null) || return 1
   [ -n "$facts" ] || return 1
-  IFS=$'\037' read -r f_read f_connected _ f_host f_pty f_wtpath <<FACTS
+  IFS=$'\037' read -r f_read f_connected _ f_host f_pty f_wtpath _ <<FACTS
 $facts
 FACTS
   [ "$f_read" = ok ] || return 1
