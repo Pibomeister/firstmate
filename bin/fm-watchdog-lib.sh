@@ -105,12 +105,28 @@ fm_wd_lower() {  # <text>
   printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
 }
 
+# The text as rows, then its rows joined with spaces and with nothing, so a
+# continued command, a soft wrap, or a split word still reads as one line.
+_fm_wd_guard_view() {  # <text>
+  local text rows
+  text=$(fm_wd_lower "$1")
+  rows=$(printf '%s\n' "$text" | LC_ALL=C sed -E \
+    -e $'s/^[[:space:]]*((│|┃|[|])[[:space:]]*)?((❯|›|⟩|→|❭|>)( |\xC2\xA0)*)?//' \
+    -e 's/[[:space:]]*(│|┃)?[[:space:]]*$//' -e 's/\\$//' \
+    -e '/^[│┃─━╭╮╰╯┌┐└┘|[:space:]-]*$/d')
+  printf '%s\n' "$text"
+  printf '%s\n' "$rows" | tr '\n' ' '
+  printf '\n'
+  printf '%s\n' "$rows" | tr -d '\n'
+  printf '\n'
+}
+
 fm_wd_reserved() {  # <text>
-  fm_wd_lower "$1" | LC_ALL=C grep -Eq "$FM_WD_RESERVED_RE"
+  _fm_wd_guard_view "$1" | LC_ALL=C grep -Eq "$FM_WD_RESERVED_RE"
 }
 
 fm_wd_text_allowed() {  # <text>
-  ! fm_wd_lower "$1" | LC_ALL=C grep -Eq "$FM_WD_REFUSED_TEXT_RE"
+  ! _fm_wd_guard_view "$1" | LC_ALL=C grep -Eq "$FM_WD_REFUSED_TEXT_RE"
 }
 
 fm_wd_paste_placeholder() {  # <composer-window>
@@ -139,18 +155,30 @@ fm_wd_draft_rows() {  # <composer-window>
     }'
 }
 
+# With a prompt row above the window, the draft top is proven only by a closed
+# box around the last prompt row, or by a pair of equal rules of 40 or more
+# characters at column 0 around it. Draft rows sit indented under the prompt
+# glyph, so such a rule row is the harness's and not typed text.
 fm_wd_draft_readable() {  # <composer-window> [rows-above-the-window]
   local above=${2-} above_n=0
   fm_wd_paste_placeholder "$1" && return 1
   [ -z "$above" ] || above_n=$(printf '%s\n' "$above" | wc -l | tr -d ' ')
   { [ -z "$above" ] || printf '%s\n' "$above"; printf '%s\n' "$1"; } | awk -v glyph="$FM_WD_PROMPT_RE" -v above_n="$above_n" '
-    function is_rule(r, t) { t = r; gsub(/[ \t│┃|─━╭╮╰╯┌┐└┘-]/, "", t); return t == "" && (index(r, "─") || index(r, "━")) }
-    $0 ~ glyph {
-      if (NR > above_n) { found = 1; hidden = seen && !prev_rule; exit }
-      seen = 1
-    }
-    { prev_rule = is_rule($0) }
-    END { exit !(found && !hidden) }'
+    function rule_len(r, t, n) { t = r; n = gsub(/─|━/, "", t); return (t ~ /^[ \t]*$/ && r !~ /^[ \t]/) ? n : 0 }
+    function bordered(r) { return r ~ /^(│|┃) / }
+    { row[NR] = $0; if ($0 ~ glyph) { g = NR; if (NR <= above_n) seen = 1 } }
+    END {
+      if (g <= above_n) exit 1
+      if (!seen) exit 0
+      t = rule_len(row[g - 1])
+      if (t >= 40) for (i = g + 1; i <= NR; i++) if (rule_len(row[i]) == t) exit 0
+      if (bordered(row[g])) {
+        for (i = g - 1; i > 0 && bordered(row[i]); i--) ;
+        for (j = g + 1; j <= NR && bordered(row[j]); j++) ;
+        if (row[i] ~ /^(╭|┌)/ && row[j] ~ /^(╰|└)/) exit 0
+      }
+      exit 1
+    }'
 }
 
 fm_wd_strip_ansi() {
