@@ -20,9 +20,11 @@
 #       merge, deploy, release, publish, and force-push words, so no typed answer
 #       or nudge can carry a merge or deploy instruction.
 #   fm_wd_draft_rows <composer-window>
-#       Prints the draft: from the first prompt row below the nearest rule above
-#       the last prompt row, down to the last rule below it. With no rule below, only
-#       trailing rows that start as a footer are dropped.
+#       Prints the draft for the handoff note: from the first prompt row below the
+#       nearest rule above the last prompt row, down to the end of the window, less
+#       trailing footer rows and one closing rule directly above them.
+#   fm_wd_prompt_tail <composer-window>
+#       Prints every row from the first prompt row to the end of the window.
 #   fm_wd_draft_readable <composer-window>
 #       Returns 0 only when the window shows the whole draft: no paste placeholder
 #       hides its text, and the composer's prompt row is inside the window.
@@ -115,8 +117,14 @@ fm_wd_paste_placeholder() {  # <composer-window>
   printf '%s\n' "$1" | LC_ALL=C grep -Eiq '\[Pasted (text|content) '
 }
 
+FM_WD_PROMPT_RE=$'^((│|┃|[|]) )?(❯|›|⟩|→|❭|>)( |\xC2\xA0|$)'
+
+fm_wd_prompt_tail() {  # <composer-window>
+  printf '%s\n' "$1" | awk -v glyph="$FM_WD_PROMPT_RE" 'found || $0 ~ glyph { found = 1; print }'
+}
+
 fm_wd_draft_rows() {  # <composer-window>
-  printf '%s\n' "$1" | awk -v glyph=$'^([│┃|] )?(❯|›|⟩|→|❭|>)( |\xC2\xA0|$)' '
+  printf '%s\n' "$1" | awk -v glyph="$FM_WD_PROMPT_RE" '
     function is_rule(r, t) { t = r; gsub(/[ \t│┃|─━╭╮╰╯┌┐└┘-]/, "", t); return t == "" && (index(r, "─") || index(r, "━")) }
     { row[NR] = $0; if ($0 ~ glyph) g[NR] = 1 }
     END {
@@ -125,16 +133,15 @@ fm_wd_draft_rows() {  # <composer-window>
       start = last
       for (i = last - 1; i > 0 && !is_rule(row[i]); i--) if (i in g) start = i
       stop = NR
-      ruled = 0
-      for (i = NR; i > last; i--) if (is_rule(row[i])) { stop = i - 1; ruled = 1; break }
-      if (!ruled) while (stop > last && row[stop] ~ /^[^A-Za-z0-9]*(for shortcuts|[0-9]+% until auto-compact|until auto-compact|(bypass permissions|accept edits|plan mode) on( \(|$)|esc to interrupt)/) stop--
+      while (stop > last && row[stop] ~ /^[^A-Za-z0-9]*(for shortcuts|[0-9]+% until auto-compact|until auto-compact|[0-9]+% context left|(bypass permissions|accept edits|plan mode) on( \(|$)|esc to interrupt)/) stop--
+      if (stop > last && is_rule(row[stop])) stop--
       for (i = start; i <= stop; i++) print row[i]
     }'
 }
 
 fm_wd_draft_readable() {  # <composer-window>
   ! fm_wd_paste_placeholder "$1" &&
-    printf '%s\n' "$1" | LC_ALL=C grep -Eq $'^([│┃|] )?(❯|›|⟩|→|❭|>)( |\xC2\xA0|$)'
+    printf '%s\n' "$1" | LC_ALL=C grep -Eq "$FM_WD_PROMPT_RE"
 }
 
 fm_wd_strip_ansi() {

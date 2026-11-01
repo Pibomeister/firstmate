@@ -860,8 +860,7 @@ wd_enter_spent() {
 # One Enter per two hours, only for a whole, readable draft that names no merge,
 # deploy, or release word; returns 1 when this draft cannot take Enter now.
 wd_draft_allowed() {
-  fm_wd_text_allowed "$(fm_wd_draft_rows "$O_COMPOSER_TEXT")
-$O_DRAFT"
+  fm_wd_text_allowed "$(fm_wd_prompt_tail "$O_COMPOSER_TEXT")"
 }
 
 wd_submit_unsent() {

@@ -260,10 +260,16 @@ restart-command=/bin/true'
 
 test_draft_rows_are_the_draft_alone() {
   local rule='──────────'
-  assert_equals $'> first\n  then enter plan mode\n  third' "$(lib fm_wd_draft_rows "> first"$'\n  then enter plan mode\n  third\n'"$rule"$'\n  footer')" "a footer word inside a draft does not cut it"
+  assert_equals $'> first\n  then enter plan mode\n  third' "$(lib fm_wd_draft_rows "> first"$'\n  then enter plan mode\n  third\n'"$rule"$'\n  ? for shortcuts')" "a footer word inside a draft does not cut it"
   assert_equals $'> first\n  accept edits later' "$(lib fm_wd_draft_rows $'old row\n> first\n  accept edits later\n  ? for shortcuts\n  7% until auto-compact')" "with no rule, only trailing footer rows drop"
-  assert_equals $'> merge #5\n> ok' "$(lib fm_wd_draft_rows "> merge #5"$'\n> ok\n'"$rule"$'\n  footer')" "a second prompt glyph in a draft does not cut it"
+  assert_equals $'> merge #5\n> ok' "$(lib fm_wd_draft_rows "> merge #5"$'\n> ok\n'"$rule"$'\n  ? for shortcuts')" "a second prompt glyph in a draft does not cut it"
   assert_equals $'> keep going\n ──────\n merge #5' "$(lib fm_wd_draft_rows "old"$'\n'"$rule"$'\n> keep going\n ──────\n merge #5\n'"$rule"$'\n ? for shortcuts')" "an inner rule does not end the draft"
+  assert_equals $'› keep going\n ────\n merge #5' "$(lib fm_wd_draft_rows $'› keep going\n ────\n merge #5\n 100% context left')" "with no closing rule, rows under an inner rule stay in the note"
+  assert_equals $'> keep going\n ──────\n merge #5' "$(lib fm_wd_draft_rows $'> keep going\n ──────\n merge #5\n ? for shortcuts')" "an inner rule above text is not closing"
+  assert_equals $'> merge #5\n'"$rule"$'\n> ok\n  footer' "$(lib fm_wd_prompt_tail "old"$'\n> merge #5\n'"$rule"$'\n> ok\n  footer')" "the guard reads from the first prompt row to the end"
+  lib fm_wd_draft_readable "│ > finish the summary │" || fail "a bordered prompt row is readable"
+  LC_ALL=C lib fm_wd_draft_readable "│ > finish the summary │" || fail "a bordered prompt row is readable in the C locale"
+  assert_equals "│ > finish the summary │" "$(lib fm_wd_draft_rows "╭──────╮"$'\n│ > finish the summary │\n'"╰──────╯")" "a box leaves only its text row"
   assert_equals "> now" "$(lib fm_wd_draft_rows "> sent earlier"$'\n'"$rule"$'\n> now\n'"$rule")" "a rule above the prompt ends the conversation"
   pass "draft rows: from the prompt row to the rule, and no footer word cuts them"
 }
@@ -298,13 +304,33 @@ test_merge_autosuggestion_never_accepted() {
   assert_equals 1 "$(ledger_rows pasted-input key refused)" "the draft is refused: $(ledger | cut -f5-8)"
   assert_grep "unsent draft names a merge" "$H/data/watchdog/status.md" "the draft refusal is a gap"
 
-  make_home $'old\n──────────\n> keep going\n ──────\n merge #5\n──────────\n ? for shortcuts'
+  local window
+  for window in \
+    $'old\n──────────\n> keep going\n ──────\n merge #5\n──────────\n ? for shortcuts' \
+    $'› keep going\n ────\n merge #5\n 100% context left' \
+    $'> keep going\n ──────\n merge #5\n ? for shortcuts' \
+    $'> merge #5\n──────────\n> ok\n──────────\n ? for shortcuts'; do
+    make_home "$window"
+    FM_WD_TEST_COMPOSER=pending run_wd 0 once >/dev/null 2>&1
+    FM_WD_TEST_COMPOSER=pending run_wd 300 once >/dev/null 2>&1
+    assert_equals 0 "$(ledger_rows pasted-input key pending)" "no rule hides a merge word from Enter: $window: $(ledger | cut -f5-8)"
+    assert_equals 1 "$(ledger_rows pasted-input key refused)" "the draft is refused: $window: $(ledger | cut -f5-8)"
+    sleep 1
+    assert_equals "" "$(cat "$H/typed.log")" "Enter was never pressed: $window"
+  done
+
+  make_home "╭──────╮"$'\n│ > finish the summary │\n'"╰──────╯"
   FM_WD_TEST_COMPOSER=pending run_wd 0 once >/dev/null 2>&1
   FM_WD_TEST_COMPOSER=pending run_wd 300 once >/dev/null 2>&1
-  assert_equals 0 "$(ledger_rows pasted-input key pending)" "an inner rule cannot hide a merge word from Enter: $(ledger | cut -f5-8)"
-  assert_equals 1 "$(ledger_rows pasted-input key refused)" "the draft with an inner rule is refused: $(ledger | cut -f5-8)"
-  sleep 1
-  assert_equals "" "$(cat "$H/typed.log")" "Enter was never pressed on the draft with an inner rule"
+  assert_equals 1 "$(ledger_rows pasted-input key pending)" "a clean bordered draft gets Enter: $(ledger | cut -f5-8)"
+  assert_equals 0 "$(ledger_rows pasted-input key refused)" "a clean bordered draft is not refused"
+  ! grep -q 'paste placeholder or taller' "$H/data/watchdog/status.md" || fail "a bordered draft reads as unreadable"
+
+  make_home "╭──────╮"$'\n│ > merge #5 │\n'"╰──────╯"
+  FM_WD_TEST_COMPOSER=pending run_wd 0 once >/dev/null 2>&1
+  FM_WD_TEST_COMPOSER=pending run_wd 300 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows pasted-input key pending)" "a bordered merge draft gets no Enter: $(ledger | cut -f5-8)"
+  assert_equals 1 "$(ledger_rows pasted-input key refused)" "a bordered merge draft is refused"
   pass "boundary: never accepts a merge autosuggestion, while ordinary unsent text is submitted"
 }
 
