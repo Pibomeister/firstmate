@@ -56,7 +56,7 @@
 #       Appends one ledger row; tabs and newlines in fields become spaces.
 #   fm_wd_last_epoch <ledger> <home> <symptom> <action> [phase-regex]
 #       Prints the newest epoch of a matching row whose phase is pending,
-#       dry-run, or refused (or the given regex), else nothing.
+#       dry-run, refused, or held (or the given regex), else nothing.
 #   fm_wd_rate_ok <ledger> <home> <symptom> <action> <secs> <now>
 #       Returns 0 when the last attempt is older than secs.
 #   fm_wd_count_since <ledger> <home> <symptom|*> <action|*> <phase-regex> <since>
@@ -144,12 +144,37 @@ fm_wd_pane_dialog() {  # <screen>
   printf '%s\n' "$kind"
 }
 
+# The dialog's own rows: from the paragraph above its first option to the footer.
+# A row of only box drawing counts as blank; conversation above that gap is not the dialog.
+_fm_wd_dialog_rows() {  # <screen>
+  printf '%s\n' "$1" | fm_wd_strip_ansi | awk '
+    function blank(r) { gsub(/[ \t│┃|─━╭╮╰╯┌┐└┘-]/, "", r); return r == "" }
+    { rows[NR] = $0 }
+    END {
+      last = NR
+      while (last > 0 && blank(rows[last])) last--
+      seen = 0; floor = 1
+      for (i = last; i > 0; i--) if (rows[i] ~ /[^ \t]/ && ++seen == 14) { floor = i; break }
+      for (i = last; i >= floor; i--) if (rows[i] ~ /(❯|›)[ \t]*[^ \t]/ || rows[i] ~ />[ \t]*[0-9]+[.)][ \t]/) { sel = i; break }
+      if (!sel) top = floor
+      else {
+        first = sel
+        for (i = sel; i >= floor; i--) if (rows[i] ~ /^[^0-9A-Za-z]*1[.)][ \t]/) { first = i; break }
+        top = first
+        i = first - 1
+        while (i >= floor && blank(rows[i])) i--
+        while (i >= floor && !blank(rows[i])) { top = i; i-- }
+      }
+      for (i = top; i <= last; i++) if (rows[i] ~ /[^ \t]/) print rows[i]
+    }'
+}
+
 fm_wd_dialog_options() {  # <screen>
-  _fm_wd_tail_rows "$1" 14 | LC_ALL=C sed -nE 's/^[^0-9]*(❯|›|>)?[ \t]*([0-9]+)[.)][ \t]+(.*[^ \t│┃|])[ \t│┃|]*$/\2	\3/p'
+  _fm_wd_dialog_rows "$1" | LC_ALL=C sed -nE 's/^[^0-9]*(❯|›|>)?[ \t]*([0-9]+)[.)][ \t]+(.*[^ \t│┃|])[ \t│┃|]*$/\2	\3/p'
 }
 
 fm_wd_dialog_text() {  # <screen>
-  _fm_wd_tail_rows "$1" 14 | tr -s ' \t' '  ' | tr '\n' ' ' | cut -c1-900
+  _fm_wd_dialog_rows "$1" | tr -s ' \t' '  ' | tr '\n' ' ' | cut -c1-900
 }
 
 fm_wd_footer_percent() {  # <screen>
@@ -242,7 +267,7 @@ fm_wd_record() {  # <ledger> <id> <home> <subject> <symptom> <action> <phase> <d
 
 fm_wd_last_epoch() {  # <ledger> <home> <symptom> <action> [phase-regex]
   [ -f "$1" ] || return 0
-  awk -F'\t' -v h="$2" -v s="$3" -v a="$4" -v p="${5:-^(pending|dry-run|refused)$}" '
+  awk -F'\t' -v h="$2" -v s="$3" -v a="$4" -v p="${5:-^(pending|dry-run|refused|held)$}" '
     $3 == h && ($5 == s || s == "*") && ($6 == a || a == "*") && $7 ~ p { last = $1 }
     END { if (last != "") print last }' "$1"
 }

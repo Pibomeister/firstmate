@@ -80,6 +80,9 @@ wd_mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null; }
 
 wd_tag() { basename "$1"; }
 
+# File names for one home's state: the basename can repeat across homes.
+wd_state_key() { printf '%s-%s' "$(basename "$1")" "$(printf '%s' "$1" | cksum | cut -d ' ' -f 1)"; }
+
 # A zombie answers kill -0 but has exited.
 wd_pid_alive() {  # <pid>
   [ -n "$1" ] && kill -0 "$1" 2>/dev/null || return 1
@@ -216,9 +219,11 @@ wd_read_composer() {
   fi
   [ -n "$O_COMPOSER" ] || O_COMPOSER=unknown
   if [ "$O_COMPOSER" = empty ] && [ "$O_BACKEND" = orca ]; then
-    if ! fm_backend_source orca >/dev/null 2>&1 || fm_run_timed_fn 10 fm_backend_orca_draft_present "$O_TARGET" >/dev/null 2>&1; then
-      O_COMPOSER=pending-unproven
+    local rc=0
+    if fm_backend_source orca >/dev/null 2>&1; then
+      fm_run_timed_fn 10 fm_backend_orca_draft_present "$O_TARGET" >/dev/null 2>&1 || rc=$?
     fi
+    [ "$rc" = 1 ] || O_COMPOSER=pending-unproven
   fi
   O_COMPOSER_TEXT=$(printf '%s\n' "$O_PANE" | fm_wd_strip_ansi | awk 'NF { r[++n] = $0 } END { for (i = n - 7; i <= n; i++) if (i > 0) print r[i] }')
   if [ "$O_BACKEND" = orca ]; then
@@ -232,7 +237,7 @@ wd_observe() {
   local home=$1 parent=$2 id=$3 st now hb prev meta row hb_sid ctx dt
   st=$home/state
   now=$(wd_now)
-  O_HOME=$home O_PARENT=$parent O_ID=$id O_TAG=$(wd_tag "$home")
+  O_HOME=$home O_PARENT=$parent O_ID=$id O_TAG=$(wd_tag "$home") O_KEY=$(wd_state_key "$home")
   O_BACKEND='' O_TARGET='' O_SESSION='' O_HB_AGE=unknown O_CTX='' O_CTX_SRC=''
   O_PANE='' O_SIG='' O_PANE_STATIC=0 O_DIALOG='' O_COMPOSER=unknown O_TURN=unknown
   O_LOCK_PID='' O_ALIVE=0 O_INSTANCE=unknown O_CPU_BUSY=unknown O_TRANSCRIPT='' O_TR_AGE=unknown
@@ -269,7 +274,7 @@ EOF
     O_BACKEND=$(fm_backend_of_meta "$meta" 2>/dev/null)
     O_TARGET=$(fm_backend_target_of_meta "$meta" 2>/dev/null)
   fi
-  prev=$WD/subjects/$O_TAG
+  prev=$WD/subjects/$O_KEY
   local p_sig='' p_since='' p_cpu='' p_at='' p_comp=''
   if [ -f "$prev" ]; then
     p_sig=$(fm_wd_conf_get "$prev" sig '') p_since=$(fm_wd_conf_get "$prev" since '')
@@ -382,7 +387,7 @@ wd_nudge() {
   if [ -z "$O_TARGET" ]; then wd_rec "$id" "$symptom" nudge refused "no recorded endpoint"; return 0; fi
   if [ "$(wd_mode)" != act ]; then wd_rec "$id" "$symptom" nudge dry-run "$body"; return 0; fi
   if [ -n "$O_DIALOG" ] || [ "$O_COMPOSER" != empty ]; then
-    wd_rec "$id" "$symptom" nudge refused "composer is $O_COMPOSER${O_DIALOG:+, dialog $O_DIALOG}; nothing typed"
+    wd_rec "$id" "$symptom" nudge held "composer is $O_COMPOSER${O_DIALOG:+, dialog $O_DIALOG}; nothing typed"
     return 0
   fi
   wd_rec "$id" "$symptom" nudge pending "$body"
@@ -526,7 +531,7 @@ Reply with exactly one line: PROCEED <label> or HOLD."
   rm -rf "$tmp"
   if [ "$unanimous" = 1 ]; then
     mkdir -p "$OUT/rulings"
-    ruling=$OUT/rulings/$O_TAG-$task-$key.md
+    ruling=$OUT/rulings/$O_KEY-$task-$key.md
     {
       printf '# Watchdog council ruling\n\n'
       printf -- '- home: %s\n- task: %s\n- key: %s\n- ruling: %s (unanimous, %s blind seats)\n- seats:%s\n- at: %s\n\n' \
@@ -546,7 +551,7 @@ wd_restart_gate() {  # <symptom> <kind>...  -> 0 to proceed; records the refusal
   shift
   id=$(wd_id) now=$(wd_now)
   wd_rate_open "$symptom" restart "$(cfgi restart-secs 7200)" || return 1
-  if [ -f "$WD/escalated/$O_TAG" ]; then wd_gap "RESTART LOOP escalated; clear $WD/escalated/$O_TAG after review"; return 1; fi
+  if [ -f "$WD/escalated/$O_KEY" ]; then wd_gap "RESTART LOOP escalated; clear $WD/escalated/$O_KEY after review"; return 1; fi
   if wd_do_not_touch "$O_HOME" "$O_TARGET"; then wd_rec "$id" "$symptom" restart refused "endpoint is on do-not-touch"; return 1; fi
   if ! fm_wd_stall_proof "$O_TURN" "$O_CPU_BUSY" "$@"; then
     wd_gap "$symptom: restart not proven (turn_running=$O_TURN cpu_busy=$O_CPU_BUSY signals=$*)"
@@ -556,7 +561,7 @@ wd_restart_gate() {  # <symptom> <kind>...  -> 0 to proceed; records the refusal
   last=$(fm_wd_last_epoch "$LEDGER" "$O_HOME" '*' restart '^pending$')
   if [ "$count" -ge "$(cfgi max-restarts 2)" ]; then
     mkdir -p "$WD/escalated"
-    printf '%s\n' "$now" > "$WD/escalated/$O_TAG"
+    printf '%s\n' "$now" > "$WD/escalated/$O_KEY"
     wd_rec "$id" "$symptom" restart escalated "restart loop: $count restarts in 24h"
     wd_self_heal "restart-loop" "Watchdog restart loop for $O_TAG" "symptom $symptom recurred after $count restarts in 24h"
     return 1
@@ -573,7 +578,15 @@ wd_restart_gate() {  # <symptom> <kind>...  -> 0 to proceed; records the refusal
 wd_restart_available() {
   local last
   if [ "$(cfg restart off)" != on ]; then wd_gap "restart requested or context low, but restart is off; no handoff is asked for"; return 1; fi
-  if [ -f "$WD/escalated/$O_TAG" ]; then wd_gap "restart requested or context low, but restarts are escalated; no handoff is asked for"; return 1; fi
+  if [ -f "$WD/escalated/$O_KEY" ]; then wd_gap "restart requested or context low, but restarts are escalated; no handoff is asked for"; return 1; fi
+  if wd_do_not_touch "$O_HOME" "$O_TARGET"; then wd_gap "restart requested or context low, but this endpoint is on do-not-touch; no handoff is asked for"; return 1; fi
+  if [ "$O_TR_AGE" = unknown ]; then wd_gap "restart requested or context low, but no activity source can prove quiet; no handoff is asked for"; return 1; fi
+  if [ "$O_PARENT" = - ]; then
+    if [ -z "$(cfg restart-command "")" ]; then wd_gap "restart requested or context low, but no restart-command is set; no handoff is asked for"; return 1; fi
+    case "$O_BACKEND" in orca|tmux) ;; *) wd_gap "restart requested or context low, but backend ${O_BACKEND:-none} has no restart launcher; no handoff is asked for"; return 1 ;; esac
+    if [ -z "$O_LOCK_PID" ]; then wd_gap "restart requested or context low, but no lock holder is recorded; no handoff is asked for"; return 1; fi
+    if [ "$O_ALIVE" = 1 ] && [ "$O_INSTANCE" != match ]; then wd_gap "restart requested or context low, but the lock anchor does not match; no handoff is asked for"; return 1; fi
+  fi
   last=$(fm_wd_last_epoch "$LEDGER" "$O_HOME" '*' restart '^pending$')
   if [ -n "$last" ] && [ $(($(wd_now) - last)) -lt "$(cfgi restart-secs 7200)" ]; then
     wd_gap "restart held; last restart was $((($(wd_now) - last) / 60))m ago, so no handoff is asked for"
@@ -589,7 +602,7 @@ wd_newest_session_handoff() {
 wd_write_handoff() {  # <symptom> -> prints path
   local symptom=$1 path latest
   mkdir -p "$OUT/handoffs"
-  path=$OUT/handoffs/$O_TAG-$(wd_now).md
+  path=$OUT/handoffs/$O_KEY-$(wd_now).md
   latest=$(wd_newest_session_handoff)
   {
     printf '# Watchdog restart handoff - %s\n\n' "$O_TAG"
@@ -721,7 +734,10 @@ wd_self_heal() {  # <class> <title> <evidence>
 wd_ladder_nudge_then_restart() {  # <symptom> <nudge-body> <kind>...
   local symptom=$1 body=$2 nudges
   shift 2
-  nudges=$(fm_wd_count_since "$LEDGER" "$O_HOME" "$symptom" nudge '^(pending|dry-run)$' "$(( $(wd_now) - 7200 ))")
+  if wd_unsent_is_stable && [ "$(fm_wd_count_since "$LEDGER" "$O_HOME" pasted-input key '^pending$' "$(( $(wd_now) - 7200 ))")" -eq 0 ]; then
+    wd_submit_unsent && return 0
+  fi
+  nudges=$(fm_wd_count_since "$LEDGER" "$O_HOME" "$symptom" nudge '^(pending|dry-run|held)$' "$(( $(wd_now) - 7200 ))")
   if [ "$nudges" -lt "$(cfgi max-nudges 2)" ]; then
     wd_nudge "$symptom" "$body"
   else
@@ -835,18 +851,31 @@ wd_unsent_is_stable() {
   [ "$O_COMPOSER" = pending ] && [ "$O_PREV_COMPOSER" = pending ] && [ "$O_SIG" = "$O_PREV_SIG" ] && [ "$O_TURN" = 0 ]
 }
 
-# Enter only for a whole, readable draft that names no merge, deploy, or release word.
+# Enter only for a whole, readable draft that names no merge, deploy, or release word;
+# returns 1 when the draft can never take Enter.
 wd_submit_unsent() {
   if ! fm_wd_draft_readable "$O_COMPOSER_TEXT"; then
     wd_gap "unsent input is a paste placeholder or taller than the read window; Enter not pressed"
     wd_rate_open pasted-input key "$(cfgi enter-secs 300)" &&
       wd_rec "$(wd_id)" pasted-input key refused "the whole draft cannot be read; never accepted"
+    return 1
   elif ! fm_wd_text_allowed "$O_COMPOSER_TEXT"; then
     wd_rate_open pasted-input key "$(cfgi enter-secs 300)" &&
       wd_rec "$(wd_id)" pasted-input key refused "pending text names a merge, deploy, or release word; never accepted"
-  else
-    wd_rate_open pasted-input key "$(cfgi enter-secs 300)" && wd_key pasted-input Enter "submit text left unsent"
+    return 1
   fi
+  wd_rate_open pasted-input key "$(cfgi enter-secs 300)" && wd_key pasted-input Enter "submit text left unsent"
+  return 0
+}
+
+# A low-context ask with no delivered nudge that no later pass can deliver either.
+wd_handoff_undeliverable() {
+  [ "$O_RESTART_REQ" != 1 ] && [ -z "$(wd_handoff_nudge_epoch)" ] || return 1
+  case "$O_COMPOSER" in
+    empty) return 1 ;;
+    pending) fm_wd_draft_readable "$O_COMPOSER_TEXT" && fm_wd_text_allowed "$O_COMPOSER_TEXT" && return 1 ;;
+  esac
+  wd_gap "low context, but composer is $O_COMPOSER, so the handoff nudge cannot be delivered"
   return 0
 }
 
@@ -916,7 +945,7 @@ wd_handle_subject() {
   elif [ -n "$O_DIALOG" ]; then
     symptom=dialog
     wd_handle_dialog
-  elif { [ "$O_RESTART_REQ" = 1 ] || { [ -n "$O_CTX" ] && [ "$O_CTX" -le "$(cfgi restart-at-percent 8)" ]; }; } && wd_restart_available; then
+  elif { [ "$O_RESTART_REQ" = 1 ] || { [ -n "$O_CTX" ] && [ "$O_CTX" -le "$(cfgi restart-at-percent 8)" ]; }; } && wd_restart_available && ! wd_handoff_undeliverable; then
     symptom=restart-requested
     wd_requested_restart "$quiet"
   elif [ "$O_LOOP" = rapid ] || { [ "$O_LOOP" = loop ] && [ "$O_OWED_N" -gt 0 ] && [ "$O_OWED_AGE" -ge "$owed" ]; }; then
