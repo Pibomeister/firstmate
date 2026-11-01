@@ -156,7 +156,7 @@ fm_wd_draft_rows() {  # <composer-window>
 }
 
 # With a prompt row above the window, the draft top is proven only by a closed
-# box around the last prompt row, or by a pair of equal rules of 40 or more
+# box around the last prompt row that lies whole inside the window, or by a pair of equal rules of 40 or more
 # characters at column 0 around it. Draft rows sit indented under the prompt
 # glyph, so such a rule row is the harness's and not typed text.
 fm_wd_draft_readable() {  # <composer-window> [rows-above-the-window]
@@ -175,7 +175,7 @@ fm_wd_draft_readable() {  # <composer-window> [rows-above-the-window]
       if (bordered(row[g])) {
         for (i = g - 1; i > 0 && bordered(row[i]); i--) ;
         for (j = g + 1; j <= NR && bordered(row[j]); j++) ;
-        if (row[i] ~ /^(╭|┌)/ && row[j] ~ /^(╰|└)/) exit 0
+        if (i > above_n && row[i] ~ /^(╭|┌)/ && row[j] ~ /^(╰|└)/) exit 0
       }
       exit 1
     }'
