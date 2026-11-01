@@ -32,7 +32,7 @@ cat > "$FAKEBIN/tmux" <<SH
 #!/usr/bin/env bash
 exec "$REAL_TMUX" -f /dev/null -L "$SOCKET" "\$@"
 SH
-for tool in claude agy cursor-agent gh gh-axi osascript; do
+for tool in claude agy gh gh-axi osascript; do
   cat > "$FAKEBIN/$tool" <<SH
 #!/usr/bin/env bash
 printf '%s %s\n' "$tool" "\$*" >> "$CALLS_LOG"

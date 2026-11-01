@@ -95,7 +95,7 @@ wd_id() { printf 'wd%s%s' "$(wd_now)" "$(od -An -N3 -tx1 /dev/urandom 2>/dev/nul
 # --- subjects ----------------------------------------------------------------
 
 wd_homes() {
-  cfg homes "$OWNER_HOME" | tr ',' '\n' | sed -e 's/^[ \t]*//' -e 's/[ \t]*$//' -e '/^$/d'
+  cfg homes "$OWNER_HOME" | tr ',' '\n' | sed -e 's/^[[:blank:]]*//' -e 's/[[:blank:]]*$//' -e '/^$/d'
 }
 
 # Prints home TAB parent TAB secondmate-id; the parent and id are `-` for a primary.
@@ -304,15 +304,11 @@ EOF
   fi
   if O_TRANSCRIPT=$(wd_transcript "$home" "$O_SESSION"); then
     O_TR_AGE=$((now - $(wd_mtime "$O_TRANSCRIPT")))
-    local ev last_restart
+    local ev
     ev=$(fm_wd_transcript_events "$O_TRANSCRIPT" 400)
     IFS=$'\t' read -r O_LOOP O_LOOP_N O_LOOP_SAMPLE <<EOF
 $(printf '%s\n' "$ev" | fm_wd_loop_verdict "$(cfgi rapid-loop-secs 180)")
 EOF
-    last_restart=$(fm_wd_last_epoch "$LEDGER" "$home" '*' restart '^(pending|dry-run)$')
-    if printf '%s\n' "$ev" | awk -F'\t' -v since="${last_restart:-0}" '$1 == "T" { n++; t[n] = $2; x[n] = $3 } END { for (i = n; i > n - 2 && i > 0; i--) if (t[i] > since && x[i] ~ /RESTART REQUESTED/) f = 1; exit !f }'; then
-      O_RESTART_REQ=1
-    fi
   else
     O_TRANSCRIPT=''
   fi
@@ -466,14 +462,9 @@ wd_judge_one() {  # <model> <purpose> <answer-ere> <prompt>  -> prints the answe
       tin=$(printf '%s' "$out" | jq -r '.usage.input_tokens // empty' 2>/dev/null)
       tout=$(printf '%s' "$out" | jq -r '.usage.output_tokens // empty' 2>/dev/null)
       cost=unmetered ;;
-    cursor)
-      command -v cursor-agent >/dev/null 2>&1 || return 4
-      out=$( (cd "$scratch" && fm_run_timed "$(cfgi judge-timeout-secs 120)" cursor-agent -p --model "$m" --output-format json "$prompt") 2>/dev/null) || rc=$?
-      ans=$(printf '%s' "$out" | jq -r '.result // empty' 2>/dev/null)
-      cost=unmetered ;;
     *) return 4 ;;
   esac
-  ans=$(printf '%s\n' "$ans" | sed -e 's/^[ \t`*]*//' -e 's/[ \t`*.]*$//' | LC_ALL=C grep -Ex "$re" | head -n 1)
+  ans=$(printf '%s\n' "$ans" | sed -e 's/^[[:blank:]`*]*//' -e 's/[[:blank:]`*.]*$//' | LC_ALL=C grep -Ex "$re" | head -n 1)
   if [ "$rc" -eq 0 ] && [ -n "$ans" ]; then
     printf '%s\t%s\t%s\tok\t%s\t%s\t%s\t%s\n' "$(wd_now)" "$purpose" "$model" "$tin" "$tout" "$(printf '%s' "$ans" | tr '\t' ' ')" "$cost" >> "$CALLS"
     printf '%s\n' "$ans"
@@ -737,9 +728,7 @@ wd_self_heal() {  # <class> <title> <evidence>
 wd_ladder_nudge_then_restart() {  # <symptom> <nudge-body> <kind>...
   local symptom=$1 body=$2 nudges
   shift 2
-  if wd_unsent_is_stable && [ "$(fm_wd_count_since "$LEDGER" "$O_HOME" pasted-input key '^pending$' "$(( $(wd_now) - 7200 ))")" -eq 0 ]; then
-    wd_submit_unsent && return 0
-  fi
+  if wd_unsent_is_stable; then wd_submit_unsent && return 0; fi
   nudges=$(fm_wd_count_since "$LEDGER" "$O_HOME" "$symptom" nudge '^(pending|dry-run|held)$' "$(( $(wd_now) - 7200 ))")
   if [ "$nudges" -lt "$(cfgi max-nudges 2)" ]; then
     wd_nudge "$symptom" "$body"
@@ -854,8 +843,12 @@ wd_unsent_is_stable() {
   [ "$O_COMPOSER" = pending ] && [ "$O_PREV_COMPOSER" = pending ] && [ "$O_SIG" = "$O_PREV_SIG" ] && [ "$O_TURN" = 0 ]
 }
 
-# Enter only for a whole, readable draft that names no merge, deploy, or release word;
-# returns 1 when the draft can never take Enter.
+wd_enter_spent() {
+  [ "$(fm_wd_count_since "$LEDGER" "$O_HOME" pasted-input key '^pending$' "$(( $(wd_now) - 7200 ))")" -gt 0 ]
+}
+
+# One Enter per two hours, only for a whole, readable draft that names no merge,
+# deploy, or release word; returns 1 when this draft cannot take Enter now.
 wd_submit_unsent() {
   if ! fm_wd_draft_readable "$O_COMPOSER_TEXT"; then
     wd_gap "unsent input is a paste placeholder or taller than the read window; Enter not pressed"
@@ -865,6 +858,9 @@ wd_submit_unsent() {
   elif ! fm_wd_text_allowed "$O_COMPOSER_TEXT"; then
     wd_rate_open pasted-input key "$(cfgi enter-secs 300)" &&
       wd_rec "$(wd_id)" pasted-input key refused "pending text names a merge, deploy, or release word; never accepted"
+    return 1
+  elif wd_enter_spent; then
+    wd_gap "unsent input is still there after Enter; no second Enter inside two hours"
     return 1
   fi
   wd_rate_open pasted-input key "$(cfgi enter-secs 300)" && wd_key pasted-input Enter "submit text left unsent"
@@ -876,7 +872,7 @@ wd_handoff_undeliverable() {
   [ "$O_RESTART_REQ" != 1 ] && [ -z "$(wd_handoff_nudge_epoch)" ] || return 1
   case "$O_COMPOSER" in
     empty) return 1 ;;
-    pending) fm_wd_draft_readable "$O_COMPOSER_TEXT" && fm_wd_text_allowed "$O_COMPOSER_TEXT" && return 1 ;;
+    pending) fm_wd_draft_readable "$O_COMPOSER_TEXT" && fm_wd_text_allowed "$O_COMPOSER_TEXT" && ! wd_enter_spent && return 1 ;;
   esac
   wd_gap "low context, but composer is $O_COMPOSER, so the handoff nudge cannot be delivered"
   return 0
@@ -1110,6 +1106,7 @@ xml_escape() { sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's/"/\
 
 render_launchd() {
   local home label script path
+  mkdir -p "$(canonical_home)/state/watchdog"
   home=$(canonical_home | xml_escape)
   label=$(manager_name)
   script=$(printf '%s' "$SCRIPT_DIR/fm-watchdog.sh" | xml_escape)

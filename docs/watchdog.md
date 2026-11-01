@@ -19,6 +19,7 @@ launchctl bootstrap "gui/$(id -u)" ~/Library/LaunchAgents/$(FM_HOME=<home> bin/f
 FM_HOME=<home> bin/fm-watchdog.sh manager-status
 ```
 
+`render-launchd` also creates `state/watchdog`, because launchd does not create the parent directory of its log file.
 The rendered unit captures the current `PATH`, so render it from a shell that can run `claude`, `agy`, `tmux`, `orca`, `herdr`, and `jq`.
 `run` holds a single-instance lock per owner home, so a second copy exits at once.
 `once` runs one pass, and `scan` prints what the watchdog sees without acting.
@@ -52,10 +53,10 @@ A home whose restart awaits pickup gets no action at all until that restart clos
 | --- | --- | --- |
 | Agent gone | Lock holder dead | Restart once the transcript has been quiet for `frozen-secs`. Nothing is typed into the endpoint of a dead holder, and the other checks wait until it is live again. |
 | Blocking dialog | Dialog structure on the visible screen | Feedback survey: press `0`. Model or limit picker: the judge picks an option that keeps work going without spending, signing in, or buying; a picker that names an owner-reserved category is held as a gap and no model sees it. Words count from the rows below a rule above the options, or from all the last rows when no rule proves the boundary, so a picker under conversation with such a word also holds. The dialog kind comes from those ruled rows, or else from the paragraph above the options. Question: close it and, once it has left the screen, nudge the session to settle it by council. Permission: never answered, reported as a gap. After two keys in an hour that leave the dialog showing, no more keys are pressed and the gap is reported. |
-| Restart requested | A `RESTART REQUESTED` line in the last assistant texts, `state/.watchdog-restart-request`, or context left at or below `restart-at-percent`. A heartbeat percent counts only for the current session and under `watcher-stale-secs`. | This applies only while a restart can run. Restart off, an escalated home, `do-not-touch`, no activity source, no `restart-command`, a backend with no launcher, a missing lock holder or mismatched anchor, or a time inside `restart-secs` is a gap, and the symptoms below still act. So is low context when the composer cannot take the nudge. A stable draft is handled as unsent input first, so the nudge can be delivered. Low context first nudges the session to write a full `data/handoff-*.md` and then `state/.watchdog-restart-request`. A handoff newer than the nudge plus the request file allows the restart after `restart-quiet-secs` of quiet. After `handoff-wait-secs` without both, the restart uses the lean handoff and the status file records the gap. A request with no earlier nudge restarts after the quiet time. The wait starts only when the nudge is delivered, and a nudge older than twice `handoff-wait-secs` no longer counts, so a later low asks again. |
+| Restart requested | `state/.watchdog-restart-request`, or context left at or below `restart-at-percent`. A heartbeat percent counts only for the current session and under `watcher-stale-secs`. | This applies only while a restart can run. Restart off, an escalated home, `do-not-touch`, no activity source, no `restart-command`, a backend with no launcher, a missing lock holder or mismatched anchor, or a time inside `restart-secs` is a gap, and the symptoms below still act. So is low context when the composer cannot take the nudge. A stable draft is handled as unsent input first, so the nudge can be delivered. Low context first nudges the session to write a full `data/handoff-*.md` and then `state/.watchdog-restart-request`. A handoff newer than the nudge plus the request file allows the restart after `restart-quiet-secs` of quiet. After `handoff-wait-secs` without both, the restart uses the lean handoff and the status file records the gap. A request with no earlier nudge restarts after the quiet time. The wait starts only when the nudge is delivered, and a nudge older than twice `handoff-wait-secs` no longer counts, so a later low asks again. |
 | Timer loop | Three of the last five assistant texts repeat with only timer tools between them, and either all repeats fall inside `rapid-loop-secs` or input has waited `owed-input-secs` | Nudge, then restart. Near repeats go to the judge first. |
 | Frozen | Pane and transcript unchanged for `frozen-secs` while input has waited as long | Nudge, then restart. A running turn holds instead. |
-| Unsent input | The composer holds the same pending text on two passes with no running turn | Press Enter, unless the text names a merge, deploy, release, publish, or force push. A paste placeholder or a draft taller than the read window hides its text, so Enter is not pressed and the gap is reported. |
+| Unsent input | The composer holds the same pending text on two passes with no running turn | Press Enter once per two hours, unless the text names a merge, deploy, release, publish, or force push. A paste placeholder or a draft taller than the read window hides its text, so Enter is not pressed and the gap is reported. |
 | Unread input | Input has waited `owed-input-secs` with no running turn | Nudge. |
 
 The frozen, agent-gone, and restart paths need a session transcript, and only the Claude transcript layout is read.
@@ -116,7 +117,6 @@ Dry-run and refused actions are recorded too.
 `models` is an ordered list of `harness:model` entries, tried in turn until one gives an answer in the expected form.
 `claude:<model>` runs `claude -p` with no tools, no settings, no MCP servers, and no saved session.
 `agy:<model>` runs `agy -p` with slash commands disabled.
-`cursor:<model>` runs `cursor-agent -p`.
 Every call is bounded by `judge-timeout-secs`, its prompt by `judge-max-chars`, and every call is logged in `state/watchdog/model-calls.tsv` with its tokens and cost when the CLI reports them.
 With no model available, the watchdog still takes every deterministic action and reports each skipped judgment as a gap.
 
@@ -164,7 +164,7 @@ An absent file means dry-run on the owner home alone.
 | `cpu-busy-pct` | `15` | CPU rate of the lock holder that counts as busy |
 | `nudge-secs` | `900` | Minimum time between nudges for one symptom |
 | `key-secs` | `120` | Minimum time between dialog keys |
-| `enter-secs` | `300` | Minimum time between Enter presses on unsent input |
+| `enter-secs` | `300` | Minimum time between recorded decisions on unsent input; a real Enter goes at most once in two hours |
 | `council-secs` | `21600` | Minimum time between councils on one decision |
 | `council-per-pass` | `1` | Councils per home per pass |
 | `quota-secs` | `600` | Quota park age before a reroute nudge |
