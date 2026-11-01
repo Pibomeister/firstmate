@@ -46,6 +46,7 @@ Other backends fall back to the last 60 captured rows.
 ## Symptoms and the action ladder
 
 Each home gets at most one symptom per pass, in this order.
+A home whose restart awaits pickup gets no action at all until that restart closes, and its health line reads `RESTART-AWAITING-PICKUP`.
 
 | Symptom | Proof | Action |
 | --- | --- | --- |
@@ -54,7 +55,7 @@ Each home gets at most one symptom per pass, in this order.
 | Timer loop | Three of the last five assistant texts repeat with only timer tools between them, and either all repeats fall inside `rapid-loop-secs` or input has waited `owed-input-secs` | Nudge, then restart. Near repeats go to the judge first. |
 | Frozen | Pane and transcript unchanged for `frozen-secs` while input has waited as long | Nudge, then restart. A running turn holds instead. |
 | Agent gone | Lock holder dead and transcript quiet for `frozen-secs` | Restart. |
-| Unsent input | The composer holds the same pending text on two passes with no running turn | Press Enter, unless the text names a merge, deploy, release, publish, or force push. |
+| Unsent input | The composer holds the same pending text on two passes with no running turn | Press Enter, unless the text names a merge, deploy, release, publish, or force push. A paste placeholder or a draft taller than the read window hides its text, so Enter is not pressed and the gap is reported. |
 | Unread input | Input has waited `owed-input-secs` with no running turn | Nudge. |
 
 These checks run on every pass as well:
@@ -77,10 +78,12 @@ A restart needs every one of these:
 - `restart=on` and `mode=act`;
 - a running-turn verdict of no and a measured CPU rate below `cpu-busy-pct`, where an unknown reading of either one holds;
 - at least two independent kinds of signal, from rendered, filesystem, kernel, and records;
+- a live lock holder that matches its recorded instance, or a dead holder, which gets no signal;
 - an endpoint that is not on `do-not-touch`;
 - fewer than `max-restarts` restarts for that home in the last day.
 
 A primary restart writes a lean handoff under `data/watchdog/handoffs/`, stops the old session process, and opens a new terminal on the same backend with `restart-command` and a prompt naming the handoff.
+On tmux the new window joins the old session; when that session closed with the old session process, a new session takes its place.
 The new session proves it took over by running the `pickup <token>` command from that prompt after it holds the session lock.
 The next pass marks the restart done only when that pickup record exists, a new live process holds the lock, and the away daemon runs again when the home is away.
 A second mate restart goes through its parent with `bin/fm-control.sh <id> relaunch --note-file <handoff>`, which owns checkpoint and rollback.

@@ -562,7 +562,7 @@ wd_write_handoff() {  # <symptom> -> prints path
 }
 
 wd_restart() {  # <symptom> <kind>...
-  local symptom=$1 id handoff token cmd prompt pid i
+  local symptom=$1 id handoff token cmd prompt pid i sess
   shift
   wd_restart_gate "$symptom" "$@" || return 0
   id=$(wd_id)
@@ -580,26 +580,34 @@ wd_restart() {  # <symptom> <kind>...
   cmd=$(cfg restart-command "")
   if [ -z "$cmd" ]; then wd_rec "$id" "$symptom" restart refused "no restart-command configured"; return 0; fi
   case "$O_BACKEND" in orca|tmux) ;; *) wd_rec "$id" "$symptom" restart refused "no restart launcher for backend $O_BACKEND"; return 0 ;; esac
-  if [ "$O_INSTANCE" != match ] || [ -z "$O_LOCK_PID" ]; then wd_rec "$id" "$symptom" restart refused "lock anchor does not match its recorded instance"; return 0; fi
+  if [ -z "$O_LOCK_PID" ]; then wd_rec "$id" "$symptom" restart refused "no lock holder recorded"; return 0; fi
+  if [ "$O_ALIVE" = 1 ] && [ "$O_INSTANCE" != match ]; then wd_rec "$id" "$symptom" restart refused "lock anchor does not match its recorded instance"; return 0; fi
+  if [ "$O_BACKEND" = tmux ]; then
+    sess=$(fm_run_timed 10 tmux display-message -p -t "$O_TARGET" '#{session_name}' 2>/dev/null) || sess=''
+    sess=${sess:-firstmate-$O_TAG}
+  fi
   token=$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')
   pid=$O_LOCK_PID
   wd_rec "$id" "$symptom" restart pending "token=$token old_pid=$pid handoff=$handoff"
   WD_RESTARTED=1
-  kill -TERM "$pid" 2>/dev/null || true
-  i=0
-  while wd_pid_alive "$pid" && [ "$i" -lt 30 ]; do sleep 1; i=$((i + 1)); done
-  if wd_pid_alive "$pid"; then
-    wd_rec "$id" "$symptom" restart failed "old session pid $pid did not stop on TERM; left running"
-    return 0
+  if [ "$O_ALIVE" = 1 ]; then
+    kill -TERM "$pid" 2>/dev/null || true
+    i=0
+    while wd_pid_alive "$pid" && [ "$i" -lt 30 ]; do sleep 1; i=$((i + 1)); done
+    if wd_pid_alive "$pid"; then
+      wd_rec "$id" "$symptom" restart failed "old session pid $pid did not stop on TERM; left running"
+      return 0
+    fi
   fi
   prompt="Watchdog restart of this firstmate home. Read $handoff first, then take over as the session-start contract says. After you hold the session lock, run: FM_HOME=$O_HOME $SCRIPT_DIR/fm-watchdog.sh pickup $token"
   case "$O_BACKEND" in
     orca) fm_run_timed 60 orca terminal create --worktree "path:$O_HOME" --title "firstmate captain" --command "$cmd $(printf '%q' "$prompt")" --json >/dev/null 2>&1 ;;
     tmux)
-      local sess
-      sess=$(fm_run_timed 10 tmux display-message -p -t "$O_TARGET" '#{session_name}' 2>/dev/null) || sess=''
-      [ -n "$sess" ] || { wd_rec "$id" "$symptom" restart failed "tmux session of $O_TARGET not found"; return 0; }
-      fm_run_timed 30 tmux new-window -d -t "$sess:" -c "$O_HOME" -n firstmate "$cmd $(printf '%q' "$prompt")" >/dev/null 2>&1 ;;
+      if fm_run_timed 10 tmux has-session -t "=$sess" >/dev/null 2>&1; then
+        fm_run_timed 30 tmux new-window -d -t "=$sess:" -c "$O_HOME" -n firstmate "$cmd $(printf '%q' "$prompt")" >/dev/null 2>&1
+      else
+        fm_run_timed 30 tmux new-session -d -s "$sess" -c "$O_HOME" -n firstmate "$cmd $(printf '%q' "$prompt")" >/dev/null 2>&1
+      fi ;;
   esac || { wd_rec "$id" "$symptom" restart failed "new terminal launch failed"; return 0; }
 }
 
@@ -625,7 +633,10 @@ wd_reconcile_pending() {
       restart)
         tok=$(awk -F'\t' -v i="$id" '$2 == i && $7 == "pending" { print $8 }' "$LEDGER" | sed -n 's/.*token=\([0-9a-f]*\).*/\1/p' | tail -n 1)
         old=$(awk -F'\t' -v i="$id" '$2 == i && $7 == "pending" { print $8 }' "$LEDGER" | sed -n 's/.*old_pid=\([0-9]*\).*/\1/p' | tail -n 1)
-        [ -n "$tok" ] || continue
+        if [ -z "$tok" ]; then
+          [ $((now - at)) -ge "$(cfgi relaunch-timeout-secs 900)" ] && FM_WD_NOW=$now fm_wd_record "$LEDGER" "$id" "$home" "$tag" "$symptom" restart failed "relaunch recorded no outcome"
+          continue
+        fi
         pick=$st/watchdog/pickups/$tok
         lockpid=$(head -n 1 "$st/.lock" 2>/dev/null | tr -cd '0-9')
         if [ -f "$pick" ] && [ -n "$lockpid" ] && [ "$lockpid" != "$old" ] && wd_pid_alive "$lockpid"; then
@@ -779,6 +790,10 @@ wd_handle_quota() {
 # wd_handle_subject: one symptom per pass, by precedence, then the side checks.
 wd_handle_subject() {
   local symptom='' quiet frozen owed
+  if fm_wd_open_pending "$LEDGER" | awk -F'\t' -v h="$O_HOME" '$2 == h && $4 == "restart" { f = 1 } END { exit !f }'; then
+    WD_SYMPTOM=restart-awaiting-pickup
+    return 0
+  fi
   frozen=$(cfgi frozen-secs 900)
   owed=$(cfgi owed-input-secs 900)
   quiet=$(cfgi restart-quiet-secs 120)
@@ -816,7 +831,11 @@ $(printf '%s\n' "$O_LOOP_SAMPLE")"); then
     O_TURN=0 O_CPU_BUSY=0 wd_restart agent-gone kernel filesystem
   elif [ "$O_COMPOSER" = pending ] && [ "$O_PREV_COMPOSER" = pending ] && [ "$O_SIG" = "$O_PREV_SIG" ] && [ "$O_TURN" = 0 ]; then
     symptom=pasted-input
-    if ! fm_wd_text_allowed "$O_COMPOSER_TEXT"; then
+    if ! fm_wd_draft_readable "$O_COMPOSER_TEXT"; then
+      wd_gap "unsent input is a paste placeholder or taller than the read window; Enter not pressed"
+      wd_rate_open pasted-input key "$(cfgi enter-secs 300)" &&
+        wd_rec "$(wd_id)" pasted-input key refused "the whole draft cannot be read; never accepted"
+    elif ! fm_wd_text_allowed "$O_COMPOSER_TEXT"; then
       wd_rate_open pasted-input key "$(cfgi enter-secs 300)" &&
         wd_rec "$(wd_id)" pasted-input key refused "pending text names a merge, deploy, or release word; never accepted"
     else
