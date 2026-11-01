@@ -25,6 +25,7 @@ A secondmate home keeps one outside-turn watcher instead of another checkpoint.
    Once the queue is drained and no checkpoint of yours is running, the final answer may end the turn.
 7. Never use shell `&` or Codex background tasks for firstmate watcher supervision.
 8. Do not run `bin/fm-watch-arm.sh` as Codex's normal supervision command.
+   A denied direct `bin/fm-watch.sh` names that arm for every harness; on Codex, end the turn instead, and the Stop hook runs it.
    If it is ever shelled anyway, a backgrounded, piped, or bundled anti-pattern is denied automatically by the PreToolUse seatbelt (`bin/fm-arm-pretool-check.sh`) registered in `.codex/hooks.json`.
 9. On a failure or a missing cycle, drain queued wakes, then end the turn so the Stop hook can re-arm or allow the stop.
    Do not start a fresh foreground checkpoint to keep the turn open.

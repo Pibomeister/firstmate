@@ -7,6 +7,7 @@ Supervision host: on for this home (`config/supervision-host-off` turns it off; 
 {grok} Your tracked background arm above runs the supervision host (`bin/fm-supervision-host.sh park`) in the plain arm's place, and everything above still holds with these additions:
 {codex} Every foreground checkpoint runs the supervision host in the watcher's place, and everything above still holds with these additions:
 {codex} The Stop hook does not start the host: only a checkpoint you start runs it, and `/afk` names when to start one.
+{codex} That checkpoint replaces a Stop-hook hold on the lock, so the host owns the watcher.
 {codex} Under an away record the Stop hook does not detach a watcher, so a stop with no checkpoint running ends with a loud notice, and away supervision is not running until the next checkpoint.
 {claude,cursor} 1. Attended (no away record, including a quiet-mode record; see [Postures](../supervision-host.md#postures)): a headless supervision session takes the wakes the supervision branch may take and never wakes you for a routine outcome, so fewer wakes reach you; check wakes, decision wakes, and whatever it cannot take still reach you exactly as above.
 {opencode,omp,grok,codex,agy} 1. Attended (no away record; see [Postures](../supervision-host.md#postures)): every wake reaches you exactly as above, because no verified dialog mirror feeds a supervision session from this harness yet.
