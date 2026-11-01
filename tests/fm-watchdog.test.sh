@@ -465,6 +465,94 @@ restart-command=$TMP_ROOT/fake-captain.sh"
   pass "agent gone: a dead lock holder with a recorded anchor still restarts"
 }
 
+test_dead_holder_is_not_hidden_by_earlier_symptoms() {
+  make_home $'work output\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss' "restart=on
+restart-command=$TMP_ROOT/fake-captain.sh"
+  write_fake_captain
+  transcript 3000 "Working." "Testing." "Green."
+  owe_input 3000
+  : > "$H/state/.afk"
+  printf 'needs-decision [at=%s] [key=cache-layout]: A or B?\n' "$((BASE - 9000))" > "$H/state/t1.status"
+  kill_holder_with_anchor
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows agent-gone restart pending)" "a dead holder restarts with input waiting and a stale dialog: $(ledger | cut -f5-8)"
+  wait_pickup || fail "the new captain never proved pickup"
+  LOCK_PIDS="$LOCK_PIDS $(cat "$H/state/.lock")"
+  assert_equals "" "$(cat "$H/typed.log")" "nothing is typed into the pane a dead holder left"
+  assert_equals 1 "$(ledger | wc -l | tr -d ' ')" "the restart is the only action: $(ledger | cut -f5-8)"
+
+  make_home $'Captain session\n> ' "restart=on
+restart-command=$TMP_ROOT/fake-captain.sh"
+  transcript 100 "Working." "Testing." "Green."
+  owe_input 3000
+  kill_holder_with_anchor
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals "" "$(ledger)" "a recently dead holder gets no action yet"
+  assert_grep "lock holder is dead" "$H/data/watchdog/status.md" "the wait is a reported gap"
+  sleep 1
+  assert_equals "" "$(cat "$H/typed.log")" "nothing is typed while the dead holder's quiet time runs"
+  pass "agent gone comes before every other symptom, and a dead holder's endpoint gets no typing"
+}
+
+test_low_context_waits_for_full_handoff_then_restarts() {
+  make_home $'Captain session\n> \n  7% until auto-compact' "restart=on
+restart-command=$TMP_ROOT/fake-captain.sh"
+  write_fake_captain
+  transcript 3000 "Working." "Testing." "Green."
+  FM_WD_TEST_COMPOSER=empty run_wd 0 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows handoff-request nudge pending)" "low context first asks for a full handoff"
+  assert_equals 0 "$(ledger_rows restart-requested restart pending)" "the nudge comes before any restart"
+  wait_typed ": fm-op " || wait_typed "operational-inbox" || fail "the handoff nudge never reached the pane: $(cat "$H/typed.log")"
+  grep -Fq '.watchdog-restart-request' "$H/state/operational-inbox/"*.msg || fail "the delivered nudge does not name the request file"
+  FM_WD_TEST_COMPOSER=empty run_wd 120 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows restart-requested restart pending)" "no restart inside the wait"
+  : > "$H/data/handoff-full.md"
+  fm_touch_epoch "$((BASE + 150))" "$H/data/handoff-full.md"
+  FM_WD_TEST_COMPOSER=empty run_wd 200 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows restart-requested restart pending)" "a handoff without the request file is not enough"
+  : > "$H/state/.watchdog-restart-request"
+  fm_touch_epoch "$((BASE + 210))" "$H/state/.watchdog-restart-request"
+  FM_WD_TEST_COMPOSER=empty run_wd 240 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows restart-requested restart pending)" "a newer handoff plus the request file allows the restart: $(ledger | cut -f5-8)"
+  assert_equals 0 "$(ledger_rows handoff-request nudge timed-out)" "a written handoff is no gap"
+  wait_pickup || fail "the new captain never proved pickup"
+  LOCK_PIDS="$LOCK_PIDS $(cat "$H/state/.lock")"
+  grep -Fq "$(cd -P "$H" && pwd -P)/data/handoff-full.md" "$H/data/watchdog/handoffs/"*.md || fail "the restart handoff does not name the full handoff"
+  pass "low context: nudge, wait, and restart only on a newer full handoff plus the request file"
+}
+
+test_low_context_timeout_restarts_with_lean_handoff() {
+  make_home $'Captain session\n> \n  7% until auto-compact' "restart=on
+handoff-wait-secs=600
+restart-command=$TMP_ROOT/fake-captain.sh"
+  write_fake_captain
+  transcript 3000 "Working." "Testing." "Green."
+  : > "$H/data/handoff-old.md"
+  fm_touch_epoch "$((BASE - 500))" "$H/data/handoff-old.md"
+  FM_WD_TEST_COMPOSER=empty run_wd 0 once >/dev/null 2>&1
+  FM_WD_TEST_COMPOSER=empty run_wd 599 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows restart-requested restart pending)" "an older handoff does not end the wait"
+  FM_WD_TEST_COMPOSER=empty run_wd 700 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows restart-requested restart pending)" "the timeout restarts: $(ledger | cut -f5-8)"
+  assert_equals 1 "$(ledger_rows handoff-request nudge timed-out)" "the missed handoff is recorded"
+  assert_grep "uses the lean handoff" "$H/data/watchdog/status.md" "the gap is in the status file"
+  wait_pickup || fail "the new captain never proved pickup"
+  LOCK_PIDS="$LOCK_PIDS $(cat "$H/state/.lock")"
+  pass "low context: the bounded wait ends in a lean restart and a recorded gap"
+}
+
+test_no_activity_source_is_not_reported_ok() {
+  make_home $'Captain session\n> '
+  run_wd 0 once >/dev/null 2>&1
+  assert_grep "NO-ACTIVITY-SOURCE" "$H/data/watchdog/status.md" "the health line does not read ok"
+  assert_no_grep ": ok" "$H/data/watchdog/status.md" "a subject with no activity source never reads ok"
+  assert_grep "no activity source" "$H/data/watchdog/status.md" "the limit is a reported gap"
+  transcript 100 "Working."
+  run_wd 10 once >/dev/null 2>&1
+  assert_grep ": ok" "$H/data/watchdog/status.md" "a subject with a transcript reads ok"
+  pass "a subject with no activity source reads as a gap, not ok"
+}
+
 test_tmux_restart_survives_a_closed_session() {
   make_home $'Captain session\n> ' "restart=on
 max-nudges=0
@@ -595,6 +683,10 @@ fm_test_run \
   test_restart_verified_pickup_and_loop_stop \
   test_no_action_while_restart_awaits_pickup \
   test_dead_captain_restarts_despite_its_anchor \
+  test_dead_holder_is_not_hidden_by_earlier_symptoms \
+  test_low_context_waits_for_full_handoff_then_restarts \
+  test_low_context_timeout_restarts_with_lean_handoff \
+  test_no_activity_source_is_not_reported_ok \
   test_tmux_restart_survives_a_closed_session \
   test_status_file_short_and_staleness_visible \
   test_manager_units \

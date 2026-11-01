@@ -544,12 +544,16 @@ wd_restart_gate() {  # <symptom> <kind>...  -> 0 to proceed; records the refusal
   return 0
 }
 
+wd_newest_session_handoff() {
+  # shellcheck disable=SC2012  # newest-first by mtime; handoff names are firstmate-written
+  ls -t "$O_HOME"/data/handoff-*.md 2>/dev/null | head -n 1
+}
+
 wd_write_handoff() {  # <symptom> -> prints path
   local symptom=$1 path latest
   mkdir -p "$OUT/handoffs"
   path=$OUT/handoffs/$O_TAG-$(wd_now).md
-  # shellcheck disable=SC2012  # newest-first by mtime; handoff names are firstmate-written
-  latest=$(ls -t "$O_HOME"/data/handoff-*.md 2>/dev/null | head -n 1)
+  latest=$(wd_newest_session_handoff)
   {
     printf '# Watchdog restart handoff - %s\n\n' "$O_TAG"
     printf -- '- home: %s\n- reason: %s\n- at: %s\n- newest session handoff: %s\n' "$O_HOME" "$symptom" "$(fm_wd_iso "$(wd_now)")" "${latest:-none}"
@@ -787,9 +791,41 @@ wd_handle_quota() {
   done
 }
 
+# Low context first asks for a full handoff and a request file; a nudge that gets
+# neither within handoff-wait-secs falls back to the lean handoff.
+wd_requested_restart() {  # <quiet-secs>
+  local quiet=$1 now nudged last_r wait latest timed_out
+  now=$(wd_now)
+  wait=$(cfgi handoff-wait-secs 600)
+  nudged=$(fm_wd_last_epoch "$LEDGER" "$O_HOME" handoff-request nudge)
+  last_r=$(fm_wd_last_epoch "$LEDGER" "$O_HOME" '*' restart '^pending$')
+  if [ -n "$nudged" ] && [ "$nudged" -lt "${last_r:-0}" ]; then nudged=''; fi
+  if [ -z "$nudged" ] && [ "$O_RESTART_REQ" != 1 ]; then
+    wd_nudge handoff-request "context is low. Write a full handoff to data/handoff-<name>.md in your home, then create state/.watchdog-restart-request there. The watchdog then restarts this session, and the new session picks up from that handoff."
+    return 0
+  fi
+  if [ -n "$nudged" ]; then
+    latest=$(wd_newest_session_handoff)
+    if [ "$O_RESTART_REQ" != 1 ] || [ -z "$latest" ] || [ "$(wd_mtime "$latest")" -le "$nudged" ]; then
+      if [ $((now - nudged)) -lt "$wait" ]; then
+        wd_gap "low context; waiting up to ${wait}s for a full handoff and a restart request"
+        return 0
+      fi
+      timed_out=$(fm_wd_last_epoch "$LEDGER" "$O_HOME" handoff-request nudge '^timed-out$')
+      [ "${timed_out:-0}" -ge "$nudged" ] || wd_rec "$(wd_id)" handoff-request nudge timed-out "no full handoff and request within ${wait}s"
+      wd_gap "no full handoff within ${wait}s; the restart uses the lean handoff"
+    fi
+  fi
+  if [ "$O_TR_AGE" != unknown ] && [ "$O_TR_AGE" -ge "$quiet" ]; then
+    wd_restart restart-requested filesystem records
+  else
+    wd_gap "restart requested; waiting for ${quiet}s of quiet"
+  fi
+}
+
 # wd_handle_subject: one symptom per pass, by precedence, then the side checks.
 wd_handle_subject() {
-  local symptom='' quiet frozen owed
+  local symptom='' quiet frozen owed dead=0
   if fm_wd_open_pending "$LEDGER" | awk -F'\t' -v h="$O_HOME" '$2 == h && $4 == "restart" { f = 1 } END { exit !f }'; then
     WD_SYMPTOM=restart-awaiting-pickup
     return 0
@@ -797,16 +833,20 @@ wd_handle_subject() {
   frozen=$(cfgi frozen-secs 900)
   owed=$(cfgi owed-input-secs 900)
   quiet=$(cfgi restart-quiet-secs 120)
-  if [ -n "$O_DIALOG" ]; then
+  if [ -n "$O_LOCK_PID" ] && [ "$O_ALIVE" = 0 ]; then dead=1; fi
+  if [ "$dead" = 1 ]; then
+    symptom=agent-gone
+    if [ "$O_TR_AGE" != unknown ] && [ "$O_TR_AGE" -ge "$frozen" ]; then
+      O_TURN=0 O_CPU_BUSY=0 wd_restart agent-gone kernel filesystem
+    else
+      wd_gap "lock holder is dead; restart needs ${frozen}s of transcript quiet; nothing typed"
+    fi
+  elif [ -n "$O_DIALOG" ]; then
     symptom=dialog
     wd_handle_dialog
   elif [ "$O_RESTART_REQ" = 1 ] || { [ -n "$O_CTX" ] && [ "$O_CTX" -le "$(cfgi restart-at-percent 8)" ]; }; then
     symptom=restart-requested
-    if [ "$O_TR_AGE" != unknown ] && [ "$O_TR_AGE" -ge "$quiet" ]; then
-      wd_restart restart-requested filesystem records
-    else
-      wd_gap "restart requested; waiting for ${quiet}s of quiet"
-    fi
+    wd_requested_restart "$quiet"
   elif [ "$O_LOOP" = rapid ] || { [ "$O_LOOP" = loop ] && [ "$O_OWED_N" -gt 0 ] && [ "$O_OWED_AGE" -ge "$owed" ]; }; then
     symptom=timer-loop
     wd_ladder_nudge_then_restart timer-loop "your last $O_LOOP_N replies repeat the same text with no work between them, and input is waiting. Stop re-arming, drain the wake queue, and act on what it shows." filesystem records
@@ -826,9 +866,6 @@ $(printf '%s\n' "$O_LOOP_SAMPLE")"); then
     else
       wd_ladder_nudge_then_restart frozen "nothing changed for $((O_PANE_STATIC / 60)) minutes while $O_OWED_N inputs wait. Drain the wake queue and act on it." rendered filesystem kernel
     fi
-  elif [ -n "$O_LOCK_PID" ] && [ "$O_ALIVE" = 0 ] && [ "$O_TR_AGE" != unknown ] && [ "$O_TR_AGE" -ge "$frozen" ]; then
-    symptom=agent-gone
-    O_TURN=0 O_CPU_BUSY=0 wd_restart agent-gone kernel filesystem
   elif [ "$O_COMPOSER" = pending ] && [ "$O_PREV_COMPOSER" = pending ] && [ "$O_SIG" = "$O_PREV_SIG" ] && [ "$O_TURN" = 0 ]; then
     symptom=pasted-input
     if ! fm_wd_draft_readable "$O_COMPOSER_TEXT"; then
@@ -847,20 +884,26 @@ $(printf '%s\n' "$O_LOOP_SAMPLE")"); then
   fi
   # A restart this pass stopped the recorded session, so its old endpoint gets nothing more.
   if [ "$WD_RESTARTED" = 1 ]; then WD_SYMPTOM=$symptom; return 0; fi
-  if [ "$O_AFK" = 1 ] && [ "$O_DAEMON" = 0 ]; then
+  if [ "$dead" = 0 ] && [ "$O_AFK" = 1 ] && [ "$O_DAEMON" = 0 ]; then
     [ -n "$symptom" ] || symptom=daemon-dead
     wd_nudge daemon-dead "away mode is on but the away daemon is not running. Re-arm it with bin/fm-afk-start.sh on this session's own terminal."
   fi
   if [ "$O_HB_AGE" != unknown ] && [ "$O_HB_AGE" -ge "$(cfgi watcher-stale-secs 900)" ]; then
     wd_gap "watcher heartbeat is $((O_HB_AGE / 60))m old"
   fi
-  [ "$O_TURN" = 1 ] || wd_handle_decisions
-  wd_handle_quota
+  if [ "$dead" = 0 ]; then
+    [ "$O_TURN" = 1 ] || wd_handle_decisions
+    wd_handle_quota
+  fi
   # Recurrence: three real or would-be actions on one symptom in a day files an issue.
   if [ -n "$symptom" ] && [ "$(fm_wd_count_since "$LEDGER" "$O_HOME" "$symptom" '*' '^(pending|dry-run)$' "$(( $(wd_now) - 86400 ))")" -ge 3 ]; then
     wd_self_heal "$symptom" "Watchdog: $symptom recurs on $O_TAG" "$symptom handled 3 or more times in 24h"
   fi
   WD_SYMPTOM=${symptom:-ok}
+  if [ "$O_TR_AGE" = unknown ]; then
+    wd_gap "no activity source; frozen, dead-holder, and low-context restarts are unavailable"
+    WD_SYMPTOM=${symptom:-no-activity-source}
+  fi
 }
 
 # --- status file -------------------------------------------------------------------

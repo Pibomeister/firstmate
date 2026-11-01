@@ -50,13 +50,16 @@ A home whose restart awaits pickup gets no action at all until that restart clos
 
 | Symptom | Proof | Action |
 | --- | --- | --- |
+| Agent gone | Lock holder dead | Restart once the transcript has been quiet for `frozen-secs`. Nothing is typed into the endpoint of a dead holder, and the other checks wait until it is live again. |
 | Blocking dialog | Dialog structure on the visible screen | Feedback survey: press `0`. Model or limit picker: the judge picks an option that keeps work going without spending, signing in, or buying. Question: close it and nudge the session to settle it by council. Permission: never answered, reported as a gap. After two keys in an hour that leave the dialog showing, no more keys are pressed and the gap is reported. |
-| Restart requested | A `RESTART REQUESTED` line in the last assistant texts, `state/.watchdog-restart-request`, or context left at or below `restart-at-percent` | Restart after `restart-quiet-secs` of quiet. |
+| Restart requested | A `RESTART REQUESTED` line in the last assistant texts, `state/.watchdog-restart-request`, or context left at or below `restart-at-percent` | Low context first nudges the session to write a full `data/handoff-*.md` and then `state/.watchdog-restart-request`. A handoff newer than the nudge plus the request file allows the restart after `restart-quiet-secs` of quiet. After `handoff-wait-secs` without both, the restart uses the lean handoff and the status file records the gap. A request with no earlier nudge restarts after the quiet time. |
 | Timer loop | Three of the last five assistant texts repeat with only timer tools between them, and either all repeats fall inside `rapid-loop-secs` or input has waited `owed-input-secs` | Nudge, then restart. Near repeats go to the judge first. |
 | Frozen | Pane and transcript unchanged for `frozen-secs` while input has waited as long | Nudge, then restart. A running turn holds instead. |
-| Agent gone | Lock holder dead and transcript quiet for `frozen-secs` | Restart. |
 | Unsent input | The composer holds the same pending text on two passes with no running turn | Press Enter, unless the text names a merge, deploy, release, publish, or force push. A paste placeholder or a draft taller than the read window hides its text, so Enter is not pressed and the gap is reported. |
 | Unread input | Input has waited `owed-input-secs` with no running turn | Nudge. |
+
+The frozen, agent-gone, and restart paths need a session transcript, and only the Claude transcript layout is read.
+A subject with no readable transcript has no activity source, so those restarts are unavailable for it; its health line reads `NO-ACTIVITY-SOURCE` instead of `ok`, and the status file lists the gap.
 
 These checks run on every pass as well:
 
@@ -87,6 +90,7 @@ On tmux the new window joins the old session; when that session closed with the 
 The new session proves it took over by running the `pickup <token>` command from that prompt after it holds the session lock.
 The next pass marks the restart done only when that pickup record exists, a new live process holds the lock, and the away daemon runs again when the home is away.
 A second mate restart goes through its parent with `bin/fm-control.sh <id> relaunch --note-file <handoff>`, which owns checkpoint and rollback.
+A captain quit on purpose leaves the same dead lock as a crash, so the watchdog restarts it. To stop a home from being restarted, list it in `do-not-touch`.
 Restarting `max-restarts` times in a day stops further restarts for that home, writes `state/watchdog/escalated/<home>`, and files a self-heal issue; remove that file after review to re-enable restarts.
 
 ## Hard boundaries
@@ -149,6 +153,7 @@ An absent file means dry-run on the owner home alone.
 | `rapid-loop-secs` | `180` | Span inside which repeats count as a rapid loop |
 | `restart-at-percent` | `8` | Context left that requests a restart |
 | `restart-quiet-secs` | `120` | Quiet time before a requested restart |
+| `handoff-wait-secs` | `600` | Time a low-context session has to write its full handoff and restart request |
 | `pickup-secs` | `600` | Time a restart has to prove its pickup |
 | `max-nudges` | `2` | Nudges for one symptom in two hours before a restart |
 | `max-restarts` | `2` | Restarts in a day before the loop stops and escalates |
