@@ -117,10 +117,11 @@ wd_subjects() {
 }
 
 wd_do_not_touch() {  # <home> <target>
-  local entry
-  for entry in $(cfg do-not-touch "" | tr ',' ' '); do
-    [ "$entry" = "$1" ] || [ "$entry" = "$2" ] || [ "$entry" = "$(wd_tag "$1")" ] && return 0
-  done
+  local entry canon
+  while IFS= read -r entry; do
+    canon=$( [ -d "$entry" ] && cd -P -- "$entry" && pwd -P )
+    [ "$canon" = "$1" ] || [ "$entry" = "$2" ] || [ "$entry" = "$(wd_tag "$1")" ] && return 0
+  done < <(cfg do-not-touch "" | tr ',' '\n' | sed -e 's/^[[:blank:]]*//' -e 's/[[:blank:]]*$//' -e '/^$/d')
   return 1
 }
 
@@ -406,7 +407,6 @@ wd_key() {
   if [ "$(wd_mode)" != act ]; then wd_rec "$id" "$symptom" key dry-run "would press $key: $why"; return 1; fi
   wd_rec "$id" "$symptom" key pending "press $key: $why"
   case "$O_BACKEND:$key" in
-    orca:Escape) fm_run_timed 10 orca terminal send --terminal "$O_TARGET" --text "$(printf '\033')" --json >/dev/null 2>&1 ;;
     orca:[0-9]) fm_run_timed 10 orca terminal send --terminal "$O_TARGET" --text "$key" --json >/dev/null 2>&1 ;;
     tmux:[0-9]) fm_run_timed 10 tmux send-keys -t "$O_TARGET" -l "$key" >/dev/null 2>&1 ;;
     *) fm_run_timed_fn 10 fm_backend_send_key "$O_BACKEND" "$O_TARGET" "$key" >/dev/null 2>&1 ;;

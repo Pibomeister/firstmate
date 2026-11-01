@@ -21,7 +21,7 @@
 #       or nudge can carry a merge or deploy instruction.
 #   fm_wd_draft_rows <composer-window>
 #       Prints the draft: from the first prompt row below the nearest rule above
-#       the last prompt row, down to the next rule. With no rule below, only
+#       the last prompt row, down to the last rule below it. With no rule below, only
 #       trailing rows that start as a footer are dropped.
 #   fm_wd_draft_readable <composer-window>
 #       Returns 0 only when the window shows the whole draft: no paste placeholder
@@ -126,7 +126,7 @@ fm_wd_draft_rows() {  # <composer-window>
       for (i = last - 1; i > 0 && !is_rule(row[i]); i--) if (i in g) start = i
       stop = NR
       ruled = 0
-      for (i = last + 1; i <= NR; i++) if (is_rule(row[i])) { stop = i - 1; ruled = 1; break }
+      for (i = NR; i > last; i--) if (is_rule(row[i])) { stop = i - 1; ruled = 1; break }
       if (!ruled) while (stop > last && row[stop] ~ /^[^A-Za-z0-9]*(for shortcuts|[0-9]+% until auto-compact|until auto-compact|(bypass permissions|accept edits|plan mode) on( \(|$)|esc to interrupt)/) stop--
       for (i = start; i <= stop; i++) print row[i]
     }'
