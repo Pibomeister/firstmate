@@ -7309,13 +7309,14 @@ if [ "$KIND" = secondmate ] && [ -n "$SPAWN_BUDGET_RECORD" ]; then
   folded=
   if [ -f "$lane" ]; then
     folded=$(awk -F= '
-      $1 == "budget_folded_inclusive" || $1 == "budget_folded_fresh" || $1 == "budget_folded_children" {
+      $1 == "budget_folded_inclusive" || $1 == "budget_folded_fresh" || $1 == "budget_folded_children" || $1 == "budget_folded_unknown" {
         kept[$1] = substr($0, index($0, "=") + 1)
       }
       END {
         if ("budget_folded_inclusive" in kept) print "budget_folded_inclusive=" kept["budget_folded_inclusive"]
         if ("budget_folded_fresh" in kept) print "budget_folded_fresh=" kept["budget_folded_fresh"]
         if ("budget_folded_children" in kept) print "budget_folded_children=" kept["budget_folded_children"]
+        if ("budget_folded_unknown" in kept) print "budget_folded_unknown=" kept["budget_folded_unknown"]
       }
     ' "$lane") || {
       fm_lock_release "$lane_lock" || true

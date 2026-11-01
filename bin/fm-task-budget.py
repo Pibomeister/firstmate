@@ -297,16 +297,31 @@ def folded_from_meta(meta):
     return inclusive, fresh, set(names)
 
 
-def lane_folded(meta, path):
+def folded_unknown(meta):
+    names = [part for part in meta.get("budget_folded_unknown", "").split(",") if part]
+    if any(not re.fullmatch(r"[A-Za-z0-9._-]+@FM_BUDGET_LAUNCH_[A-Za-z0-9]+", name) for name in names):
+        raise ValueError("invalid folded unknown child")
+    return names
+
+
+def lane_meta_of(meta, path):
     if path.name == "lane-budget":
-        return folded_from_meta(meta)
+        return meta
     home = meta.get("home", "")
     if not home:
         raise ValueError("secondmate lane has no home")
     lane = Path(home) / "state" / "lane-budget"
     if not lane.is_file() or lane.is_symlink():
-        return 0, 0, set()
-    return folded_from_meta(read_meta(lane))
+        return {}
+    return read_meta(lane)
+
+
+def lane_folded(meta, path):
+    lane_meta = lane_meta_of(meta, path)
+    unknown = folded_unknown(lane_meta)
+    if unknown:
+        raise ValueError("torn-down child usage unknown: " + ",".join(unknown))
+    return folded_from_meta(lane_meta)
 
 
 def sum_lane_children(meta, path, folded_ids):
@@ -334,6 +349,9 @@ def sum_lane_children(meta, path, folded_ids):
         if "budget_launch_marker" not in child_meta:
             raise ValueError("child " + child_id + " has no native launch marker")
         if child_id + "@" + child_meta["budget_launch_marker"] in folded_ids:
+            continue
+        if child_meta.get("harness") not in ("claude", "codex"):
+            rows.append(child_id + "=unmetered")
             continue
         try:
             sample = measure(child, persist=True, include_lane=False)
@@ -592,8 +610,6 @@ def bind(args):
     harness, worktree, root, marker, prior = args
     if not re.fullmatch(r"FM_BUDGET_LAUNCH_[A-Za-z0-9]+", marker):
         raise ValueError("invalid native launch marker")
-    if harness not in ("claude", "codex") or not root:
-        raise ValueError("harness " + harness + " cannot be measured against a lane budget")
     previous = carried_prior(prior)
     launch_at = str(time.time())
     record = {
@@ -671,13 +687,25 @@ def fold_away(lane, child):
         return 0
     fold_key = child.stem + "@" + child_meta["budget_launch_marker"]
     _, _, folded_ids = folded_from_meta(lane_meta)
-    if fold_key in folded_ids:
+    unknown = folded_unknown(lane_meta)
+    if fold_key in folded_ids or fold_key in unknown:
         return 0
-    sample = measure(child, persist=True, include_lane=False)
+    if child_meta.get("harness") not in ("claude", "codex"):
+        sample = {"status": "pending"}
+    else:
+        try:
+            sample = measure(child, persist=True, include_lane=False)
+        except (ValueError, KeyError, OSError, TypeError, AttributeError) as error:
+            sample = {"status": "unknown", "reason": str(error)}
     if sample["status"] == "pending":
         add_inclusive = add_fresh = 0
     elif sample["status"] != "ok":
-        raise ValueError(sample.get("reason", "unknown child usage"))
+        replace_budget_keys(lane, {"budget_folded_unknown": ",".join(unknown + [fold_key])})
+        print(
+            f"budget-unknown fold-away child={fold_key}: {sample.get('reason', 'unknown child usage')}",
+            file=sys.stderr,
+        )
+        return 0
     else:
         add_inclusive = sample["inclusive"]
         add_fresh = sample["fresh"]

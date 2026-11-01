@@ -866,7 +866,7 @@ test_prelaunch_refuses_at_either_stop() {
 }
 
 test_pending_child_counts_as_zero_and_unbound_child_refuses() {
-  local dir code err
+  local dir code err record
   dir="$TMP_ROOT/pending-child"
   prepare_measured_lane "$dir" 1000000 1200000
   write_bound_child "$dir" kid "$dir/empty-native" FM_BUDGET_LAUNCH_pending1
@@ -886,18 +886,20 @@ test_pending_child_counts_as_zero_and_unbound_child_refuses() {
   assert_contains "$err" 'budget-prelaunch refuse unknown' 'an unbound child is unknown, not zero'
   assert_contains "$err" 'loose has no native launch marker' 'the refusal names the unbound child'
 
-  dir="$TMP_ROOT/unmeasurable-child"
+  dir="$TMP_ROOT/unmetered-child"
   prepare_measured_lane "$dir" 1000000 1200000
-  code=0
-  err=$("$TEST_BASH" "$ROOT/bin/fm-task-budget.sh" bind grok "$dir/wt" '' FM_BUDGET_LAUNCH_grok1 - 2>&1) || code=$?
-  assert_equals 1 "$code" 'a lane child whose harness cannot be measured is refused at bind'
-  assert_contains "$err" 'harness grok cannot be measured' 'the bind refusal names the harness'
-  printf 'harness=grok\nkind=scout\nspawn_gen=g1\nworktree=%s\nbudget_launch_marker=FM_BUDGET_LAUNCH_grok1\nbudget_prior_inclusive=0\nbudget_prior_fresh=0\n' \
-    "$dir/wt" > "$dir/state/odd.meta"
+  record=$("$TEST_BASH" "$ROOT/bin/fm-task-budget.sh" bind grok "$dir/wt" '' FM_BUDGET_LAUNCH_grok1 -) \
+    || fail 'a lane child on an unmetered harness must still bind'
+  printf 'harness=grok\nkind=scout\nspawn_gen=g1\nworktree=%s\n%s\n' "$dir/wt" "$record" > "$dir/state/odd.meta"
   code=0
   err=$("$TEST_BASH" "$ROOT/bin/fm-task-budget.sh" prelaunch "$dir" 2>&1) || code=$?
-  assert_equals 1 "$code" 'an unmeasurable live child refuses the launch'
-  assert_contains "$err" 'child odd usage unknown' 'the refusal names the unmeasurable child'
+  assert_equals 0 "$code" 'an unmetered child does not refuse the launch'
+  assert_contains "$err" 'odd=unmetered' 'an unmetered child is named unmetered'
+  assert_contains "$err" 'inclusive=165' 'an unmetered child adds zero to the lane total'
+  "$TEST_BASH" "$ROOT/bin/fm-task-budget.sh" fold-away "$dir/state/lane-budget" "$dir/state/odd.meta" \
+    || fail 'an unmetered child must fold cleanly at teardown'
+  assert_grep 'budget_folded_children=odd@FM_BUDGET_LAUNCH_grok1' "$dir/state/lane-budget" 'an unmetered child folds as zero'
+  assert_no_grep 'budget_folded_unknown=' "$dir/state/lane-budget" 'an unmetered child is not an unknown'
   pass 'a pending child counts as zero and an unbound child refuses the launch'
 }
 
@@ -952,6 +954,29 @@ test_fold_away_keeps_a_child_total_once() {
   code=0
   "$TEST_BASH" "$ROOT/bin/fm-task-budget.sh" fold-away "$dir/state/absent-lane" "$dir/state/kid.meta" || code=$?
   assert_equals 0 "$code" 'fold-away of a missing lane is a no-op'
+
+  write_bound_child "$dir" bad "$dir/bad-native" FM_BUDGET_LAUNCH_bad1
+  sed -i.bak 's/^budget_prior_inclusive=.*/budget_prior_inclusive=corrupt/' "$dir/state/bad.meta"
+  before=$(grep '^budget_folded_inclusive=' "$lane")
+  code=0
+  err=$("$TEST_BASH" "$ROOT/bin/fm-task-budget.sh" fold-away "$lane" "$dir/state/bad.meta" 2>&1) || code=$?
+  assert_equals 0 "$code" 'a metered child with unknown usage still lets teardown finish'
+  assert_contains "$err" 'budget-unknown fold-away child=bad@FM_BUDGET_LAUNCH_bad1' 'the unknown fold names the child launch'
+  assert_grep 'budget_folded_unknown=bad@FM_BUDGET_LAUNCH_bad1' "$lane" 'the unknown child launch is recorded durably'
+  assert_equals "$before" "$(grep '^budget_folded_inclusive=' "$lane")" 'an unknown child adds no invented usage'
+  rm -f "$dir/state/bad.meta" "$dir/state/bad.meta.bak"
+  code=0
+  err=$("$TEST_BASH" "$ROOT/bin/fm-task-budget.sh" prelaunch "$dir" 2>&1) || code=$?
+  assert_equals 1 "$code" 'a folded unknown child refuses later launches after its record is gone'
+  assert_contains "$err" 'torn-down child usage unknown: bad@FM_BUDGET_LAUNCH_bad1' 'the refusal names the unknown child'
+
+  write_bound_child "$dir" ro "$dir/ro-native" FM_BUDGET_LAUNCH_ro1
+  printf 'budget_folded_fresh=corrupt\n' >> "$lane"
+  before=$(cat "$lane")
+  code=0
+  "$TEST_BASH" "$ROOT/bin/fm-task-budget.sh" fold-away "$lane" "$dir/state/ro.meta" 2>/dev/null || code=$?
+  assert_equals 1 "$code" 'fold-away fails closed when the lane cannot be updated'
+  assert_equals "$before" "$(cat "$lane")" 'a failed fold-away leaves the lane unchanged'
   pass 'fold-away adds a torn-down child once and keeps that total in the lane'
 }
 

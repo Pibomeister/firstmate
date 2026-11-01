@@ -4078,8 +4078,7 @@ retire_busy_state "$STATE" "$ID" "$BUSY_GEN" || exit 1
 teardown_retire_status "$STATE" "$ID" || exit 1
 fm_wake_queue_prune_task "$STATE" "$ID" "$T" 2>/dev/null || true
 if [ "$KIND" != secondmate ]; then
-  "$SCRIPT_DIR/fm-task-budget.sh" fold-away "$STATE/lane-budget" "$STATE/$ID.meta" \
-    || echo "warning: lane budget fold-away failed for $ID; its usage was not added to the lane total" >&2
+  "$SCRIPT_DIR/fm-task-budget.sh" fold-away "$STATE/lane-budget" "$STATE/$ID.meta" || exit 1
 fi
 rm -f "$STATE/$ID.turn-ended" "$STATE/$ID.progress" \
   "$(fm_wake_signal_seen_path "$STATE" "$STATE/$ID.turn-ended")" \

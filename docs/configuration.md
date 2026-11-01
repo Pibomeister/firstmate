@@ -819,6 +819,8 @@ A launch from a capped secondmate home is refused at the recorded stop before an
 Missing or ambiguous telemetry stays unknown rather than zero, except a child whose session has not recorded usage yet, which counts as zero and is named pending.
 A mate session that is not yet identifiable refuses the launch rather than counting as zero.
 A torn-down child whose usage is still pending is folded as zero, and that undercount is accepted when usage appears only after teardown.
+A child on a harness with no native meter is named unmetered and counts as zero.
+A Claude or Codex child whose usage is unknown at teardown is recorded as a folded unknown in the lane, and every later launch is refused naming it until an operator clears that entry; teardown keeps the child record only when the lane itself cannot be locked or written.
 Native counters arrive after charged work, so a stop can overshoot and an interrupt can remain unconfirmed.
 [`fm-task-budget.sh`'s header and help](../bin/fm-task-budget.sh) own counter definitions, executable interfaces, binding, attempt deduplication, and state mechanics.
 

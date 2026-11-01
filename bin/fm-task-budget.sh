@@ -29,7 +29,11 @@
 # A secondmate lane total adds that mate, its sidechain logs, every child task,
 # and usage folded when a child is torn down. prelaunch refuses a new child
 # when the lane total is already at a recorded stop. fold-away adds a torn-down
-# child's total once; a still-pending child is folded as zero.
+# child's total once; a still-pending child is folded as zero. A child on a
+# harness with no native meter is named unmetered and counts as zero. A metered
+# child whose usage is unknown at teardown is recorded in budget_folded_unknown,
+# and prelaunch refuses naming it. fold-away fails only when the lane cannot be
+# locked or written, and teardown then keeps the child record.
 # The operator switch is documented in docs/configuration.md (budget-enforcement).
 set -eu
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
