@@ -1,0 +1,29 @@
+› Reply with exactly the word SECOND. If a hook blocks, follow only what it says, then finish.
+• SECOND
+• Blocked by hook
+  └ ●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    ●  TURN WOULD END BLIND - SUPERVISION IS OFF
+    ●  1 task(s) in flight, but no live watcher holds this home lock (last beat: 215682921s ago).
+    ●  Away mode owns watcher supervision; the Stop hook does not re-arm a watcher here, so drain the queued wakes and then stop, and load /afk and ensure the
+daemon is running instead of starting normal supervision directly.
+    ●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Captain, I’ll follow the hook: load the away-mode instructions, drain queued wakes, and check the daemon.
+• Ran cat .agents/skills/afk/SKILL.md .agents/skills/away-quiet-supervision/SKILL.md .agents/skills/operational-home-layout/SKILL.md
+  └   .subsuper-* .supervise-daemon.*   sub-supervisor internals; never touch
+    .no-mistakes/        local validation state and evidence; gitignored
+    ```
+    + 455 lines (⌃t to expand)
+• Explored
+  └ Read SKILL.md (away-quiet-supervision skill), SKILL.md (operational-home-layout skill)
+    + Show details
+• Ran bin/fm-session-start.sh
+  └
+    The digest above is complete for this session start. The READ-ONCE CONTRACT
+    section near the top of it governs what may still be read from disk.
+    + 202 lines (⌃t to expand)
+• Captain, the lock check failed: error: cannot locate harness process in ancestry. The session is read-only, so I cannot drain wakes or start the daemon.
+• SECOND
+  Worked for 1m 4s • 7:56 AM
+› Ask Codex to do anything
+  GPT-6.1-Sol high · Context 94% left · 265K in · 430 out · weekly 0% left
+  ? for shortcuts                                                                                                                     ⚠ 4 warnings · f2 to view

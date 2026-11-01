@@ -1,0 +1,3 @@
+ok - checkpoint: a real host replaces a Stop-hook hold instead of attaching to it
+ok - checkpoint: the real host ends its park at the checkpoint bound as a quiet checkpoint
+ok - checkpoint: interrupted startup retains failed-cleanup evidence and returns nonzero

@@ -1,0 +1,27 @@
+› Reply FOURTH. Run no tools in this turn, even if a hook blocks you; just reply FOURTH again.
+• FOURTH
+• Blocked by hook
+  └ ●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    ●  TURN WOULD END WITH QUEUED WAKES UNHANDLED
+    ●  Queued wakes still need handling: drain, handle, and acknowledge them before ending the turn.
+    ●  A persistent watcher holds this home lock. Drain, handle, and acknowledge queued wakes before ending the turn.
+    ●  do not start another foreground checkpoint. The Stop hook re-arms a persistent watcher or allows this turn to end. Poll a checkpoint only while it is
+still running, then stop.
+    ●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• FOURTH
+• Blocked by hook
+  └ ●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    ●  TURN WOULD END WITH QUEUED WAKES UNHANDLED
+    ●  Queued wakes still need handling: drain, handle, and acknowledge them before ending the turn.
+    ●  A persistent watcher holds this home lock. Drain, handle, and acknowledge queued wakes before ending the turn.
+    ●  do not start another foreground checkpoint. The Stop hook re-arms a persistent watcher or allows this turn to end. Poll a checkpoint only while it is
+still running, then stop.
+    ●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• FOURTH
+↳ Hook · FIRSTMATE SUPERVISION BLOCK BOUND REACHED: this turn already blocked 2 times with queued wakes still undrained. Allowing the turn to end so foreground
+checkpoints cannot loop. Queued wakes stay durable until the captain's next message starts a turn.
+  └ Tip: Use /init to create an AGENTS.md with project-specific guidance.
+  Worked for 22s • 7:58 AM
+› Ask Codex to do anything
+  GPT-6.1-Sol high · Context 94% left · 763K in · 661 out · weekly 0% left
+  ? for shortcuts                                                                                                                     ⚠ 4 warnings · f2 to view

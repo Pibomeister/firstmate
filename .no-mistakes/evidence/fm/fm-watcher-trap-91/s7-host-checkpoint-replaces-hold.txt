@@ -1,0 +1,28 @@
+hold before checkpoint: 75773
+  PID  PPID ELAPSED ARGS
+75773     1   05:37 bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M6A6ESTNRMJEP700PD1ER3BF/bin/fm-watch.sh --grok-hold
+08:10:26 holder=75773 bash fm-watch.sh --grok-hold orig=alive
+• Ran bin/fm-wake-drain.sh
+  └ (no output)
+• KLAR
+• Blocked by hook
+  └ ●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    ●  TURN WOULD END WITH QUEUED WAKES UNHANDLED
+    ●  Queued wakes still need handling: drain, handle, and acknowledge them before ending
+the turn.
+    ●  A persistent watcher holds this home lock. Drain, handle, and acknowledge queued wakes
+before ending the turn.
+    ●  do not start another foreground checkpoint. The Stop hook re-arms a persistent
+watcher, except under an away record on this home, or allows this turn to end. Poll a
+checkpoint only while it is still running, then stop.
+    ●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+↳ Hook · JEV lint (advisory): error (input).
+• Captain, I’ll drain the queue again and run any printed acknowledgement.
+• Ran bin/fm-wake-drain.sh
+  └ (no output)
+• KLAR
+• Working (5m 26s • esc to interrupt) · Running hooks
+  └ Tip: Use /title to choose what appears in your terminal’s title.
+› Ask Codex to do anything
+  GPT-6.1-Sol high · Context 95% left · 1.31M in · 1.26K out · weekly 0% left
+  ? for shortcuts                                                  ⚠ 4 warnings · f2 to view

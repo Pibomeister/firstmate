@@ -1,0 +1,6 @@
+ok - secondmate instructions end the handling turn without model polling
+ok - fm-turnend-guard codex: a secondmate home cannot loop past the block bound
+ok - secondmate readiness fails closed without its watcher notification owner
+ok - secondmate selection excludes unsupported scopes and the test clock proves heartbeat absorption
+not ok - a hung Herdr process-info read held the binding proof for 13s
+rest rc=1

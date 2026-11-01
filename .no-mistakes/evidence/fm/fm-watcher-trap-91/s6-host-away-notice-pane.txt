@@ -1,0 +1,10 @@
+› Reply with exactly the word HOSTAWAY. Run no tools.
+• HOSTAWAY
+↳ Hook · FIRSTMATE AWAY SUPERVISION IS NOT RUNNING: this home runs the supervision host under
+an away record, and no checkpoint is running. Allowing this turn to end. Away supervision is
+not running until the next checkpoint.
+  Worked for 12s • 8:03 AM
+› Ask Codex to do anything
+  GPT-6.1-Sol high · Context 95% left · 103K in · 13 out · weekly 0% left
+  ? for shortcuts                                                  ⚠ 4 warnings · f2 to view
+--- hold unchanged: 53496 -> 

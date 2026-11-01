@@ -1,0 +1,4 @@
+ok - secondmate watcher survives wakes, deduplicates inbox notifications and stops on identity loss
+/private/tmp/nm-sm.Tah2Pb/fm-turnend-guard.prkQmN/codex-own-checkpoint-ends-1/ckpt/fm-watch-checkpoint.sh: line 12: 50910 Terminated: 15          sleep 30
+ok - fm-turnend-guard codex: holds the turn while its own checkpoint runs, then the no-progress escape applies
+rc=0

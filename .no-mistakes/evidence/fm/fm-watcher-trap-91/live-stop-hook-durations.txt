@@ -1,0 +1,5 @@
+stop rc=0 secs=16
+stop rc=0 secs=3
+stop rc=0 secs=3
+stop rc=0 secs=15
+stop rc=0 secs=5

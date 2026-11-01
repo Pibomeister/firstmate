@@ -1,0 +1,11 @@
+ok - secondmate instructions end the handling turn without model polling
+ok - fm-turnend-guard codex: a secondmate home cannot loop past the block bound
+ok - secondmate readiness fails closed without its watcher notification owner
+Traceback (most recent call last):
+  File "<stdin>", line 142, in <module>
+RuntimeError: Command '('/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-turnend-guard.2Ay0A6/sm-event-runtime/bin/fm-turnend-guard.sh',)' timed out after 25 seconds
+state={".secondmate-watch": "44718\nSun Nov  1 14:29:29 2026     /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-turnend-guard.2Ay0A6/codex-harness/codex -c /Applications/Xcode.app/Contents/Developer/usr/bin/python3 /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-turnend-guard.2Ay0A6/sm-event-runtime/session.py /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-turnend-guard.2Ay0A6/sm-event-runtime; :\n%0\n/tmp/fm-sm-event-fwpzq55i/socket\ntmux\n"}
+inbox=[]
+
+not ok - secondmate event watcher runtime failed
+bash tests/fm-turnend-guard.test.sh  0.97s user 2.43s system 2% cpu 2:17.77 total

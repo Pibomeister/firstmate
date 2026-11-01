@@ -1,0 +1,11 @@
+ok - detach-hold: the real arm exits 0, leaves a hold on the lock, and attaches on the next call
+ok - detach-hold: state/.afk refuses it, and a dead watcher exits with a FAILED line
+ok - watch-arm: handling successor delivers fresh new inbox work after-ack (intact counter) without consuming or looping
+ok - watch-arm: handling successor delivers fresh new inbox work before-ack (intact counter) without consuming or looping
+ok - watch-arm: handling successor delivers fresh new inbox work after-ack (missing counter) without consuming or looping
+ok - watch-arm: handling successor delivers fresh new inbox work before-ack (missing counter) without consuming or looping
+ok - watch-arm: handling successor delivers fresh new inbox work after-ack (malformed counter) without consuming or looping
+Terminated: 15
+Terminated: 15
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M6A6ESTNRMJEP700PD1ER3BF/bin/fm-wake-lib.sh: line 719: 83188 Terminated: 15          sleep "$wait_seconds"
+watcher: recovery state could not be persisted; retaining stale lock evidence
