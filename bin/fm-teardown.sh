@@ -3535,9 +3535,6 @@ cleanup_firstmate_home_children() {
     retire_busy_state "$sub_state" "$child_id" "$child_busy_gen" || return 1
     teardown_retire_status "$sub_state" "$child_id" "$archive_parent/children/$child_id" || return 1
     fm_wake_queue_prune_task "$sub_state" "$child_id" "$child_t" 2>/dev/null || true
-    if [ "$child_kind" != secondmate ]; then
-      "$SCRIPT_DIR/fm-task-budget.sh" fold-away "$sub_state/lane-budget" "$sub_state/$child_id.meta" || return 1
-    fi
     fm_backlog_atomic_transition remove "$sub_state/$child_id.meta" "task record" "$sub_state" || return 1
     rm -f "$sub_state/$child_id.turn-ended" "$sub_state/$child_id.progress" \
       "$(fm_wake_signal_seen_path "$sub_state" "$sub_state/$child_id.turn-ended")" \
@@ -4081,7 +4078,8 @@ retire_busy_state "$STATE" "$ID" "$BUSY_GEN" || exit 1
 teardown_retire_status "$STATE" "$ID" || exit 1
 fm_wake_queue_prune_task "$STATE" "$ID" "$T" 2>/dev/null || true
 if [ "$KIND" != secondmate ]; then
-  "$SCRIPT_DIR/fm-task-budget.sh" fold-away "$STATE/lane-budget" "$STATE/$ID.meta" || exit 1
+  "$SCRIPT_DIR/fm-task-budget.sh" fold-away "$STATE/lane-budget" "$STATE/$ID.meta" \
+    || echo "warning: lane budget fold-away failed for $ID; its usage was not added to the lane total" >&2
 fi
 rm -f "$STATE/$ID.turn-ended" "$STATE/$ID.progress" \
   "$(fm_wake_signal_seen_path "$STATE" "$STATE/$ID.turn-ended")" \

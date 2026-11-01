@@ -765,10 +765,10 @@ inbox_steer_check() {  # <window> <task>
         fm_task_inbox_due_action "$STATE" "$task" >/dev/null || true
         return 0
       fi
-      reason="stale: $w (unread firstmate instruction: $rec is unhandled after ${age}s without another interrupt)"
+      reason="stale: $w (unread firstmate instruction: $rec is unhandled after ${age}s; reported without another interrupt)"
       fm_wake_append stale "$w" "$reason" || exit 1
-      if ! fm_task_inbox_record_escalated "$STATE" "$task" "$rec"; then
-        echo "error: stale wake was queued for $task but its inbox escalation marker could not be written" >&2
+      if ! fm_task_inbox_record_age_escalated "$STATE" "$task" "$rec"; then
+        echo "error: stale wake was queued for $task but its inbox age-escalation marker could not be written" >&2
         exit 1
       fi
       wake "$reason"

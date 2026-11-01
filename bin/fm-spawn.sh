@@ -7302,7 +7302,7 @@ if [ "$KIND" = secondmate ] && [ -n "$SPAWN_BUDGET_RECORD" ]; then
     exit 1
   fi
   lane_lock="$PROJ_ABS/state/.lane-budget.lock"
-  if ! fm_lock_try_acquire "$lane_lock"; then
+  if ! fm_lock_acquire_wait_max "$lane_lock" 30; then
     echo "error: lane budget is locked" >&2
     exit 1
   fi
@@ -7704,7 +7704,15 @@ case "$LAUNCH" in
     # this incarnation before its fingerprint is complete.
     printf 'budget_launch_fingerprint=%s\n' "$budget_fingerprint" >> "$STATE/$ID.meta" || exit 1
     if [ "$KIND" = secondmate ] && [ -f "$PROJ_ABS/state/lane-budget" ] && [ ! -L "$PROJ_ABS/state/lane-budget" ]; then
-      printf 'budget_launch_fingerprint=%s\n' "$budget_fingerprint" >> "$PROJ_ABS/state/lane-budget" || exit 1
+      fm_lock_acquire_wait_max "$PROJ_ABS/state/.lane-budget.lock" 30 || {
+        echo "error: lane budget is locked" >&2
+        exit 1
+      }
+      printf 'budget_launch_fingerprint=%s\n' "$budget_fingerprint" >> "$PROJ_ABS/state/lane-budget" || {
+        fm_lock_release "$PROJ_ABS/state/.lane-budget.lock" || true
+        exit 1
+      }
+      fm_lock_release "$PROJ_ABS/state/.lane-budget.lock" || true
     fi
   fi
   LAUNCH=${LAUNCH//__BRIEFDOORBELL__/"$(shell_quote "$brief_doorbell")"}

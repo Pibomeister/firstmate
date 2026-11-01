@@ -885,6 +885,19 @@ test_pending_child_counts_as_zero_and_unbound_child_refuses() {
   assert_equals 1 "$code" 'a child with no launch marker refuses the launch'
   assert_contains "$err" 'budget-prelaunch refuse unknown' 'an unbound child is unknown, not zero'
   assert_contains "$err" 'loose has no native launch marker' 'the refusal names the unbound child'
+
+  dir="$TMP_ROOT/unmeasurable-child"
+  prepare_measured_lane "$dir" 1000000 1200000
+  code=0
+  err=$("$TEST_BASH" "$ROOT/bin/fm-task-budget.sh" bind grok "$dir/wt" '' FM_BUDGET_LAUNCH_grok1 - 2>&1) || code=$?
+  assert_equals 1 "$code" 'a lane child whose harness cannot be measured is refused at bind'
+  assert_contains "$err" 'harness grok cannot be measured' 'the bind refusal names the harness'
+  printf 'harness=grok\nkind=scout\nspawn_gen=g1\nworktree=%s\nbudget_launch_marker=FM_BUDGET_LAUNCH_grok1\nbudget_prior_inclusive=0\nbudget_prior_fresh=0\n' \
+    "$dir/wt" > "$dir/state/odd.meta"
+  code=0
+  err=$("$TEST_BASH" "$ROOT/bin/fm-task-budget.sh" prelaunch "$dir" 2>&1) || code=$?
+  assert_equals 1 "$code" 'an unmeasurable live child refuses the launch'
+  assert_contains "$err" 'child odd usage unknown' 'the refusal names the unmeasurable child'
   pass 'a pending child counts as zero and an unbound child refuses the launch'
 }
 
@@ -906,7 +919,7 @@ test_fold_away_keeps_a_child_total_once() {
   "$TEST_BASH" "$ROOT/bin/fm-task-budget.sh" fold-away "$lane" "$dir/state/kid.meta"
   assert_grep 'budget_folded_inclusive=165' "$lane" 'fold-away keeps the child inclusive total'
   assert_grep 'budget_folded_fresh=44' "$lane" 'fold-away keeps the child fresh total'
-  assert_grep 'budget_folded_children=kid' "$lane" 'fold-away records the child id once'
+  assert_grep 'budget_folded_children=kid@FM_BUDGET_LAUNCH_child1' "$lane" 'fold-away records the child incarnation once'
   code=0
   err=$("$TEST_BASH" "$ROOT/bin/fm-task-budget.sh" prelaunch "$dir" 2>&1) || code=$?
   assert_equals 1 "$code" 'the folded total still refuses the next launch'
@@ -923,7 +936,18 @@ test_fold_away_keeps_a_child_total_once() {
   "$TEST_BASH" "$ROOT/bin/fm-task-budget.sh" fold-away "$lane" "$dir/state/pal.meta"
   assert_grep 'budget_folded_inclusive=165' "$lane" 'a pending child folds as zero'
   assert_grep 'budget_folded_fresh=44' "$lane" 'a pending child does not add fresh usage'
-  assert_grep 'budget_folded_children=kid,pal' "$lane" 'a pending child is still recorded as folded'
+  assert_grep 'budget_folded_children=kid@FM_BUDGET_LAUNCH_child1,pal@FM_BUDGET_LAUNCH_pending2' "$lane" \
+    'a pending child is still recorded as folded'
+
+  rm -f "$dir/state/pal.meta" "$dir/state/kid.meta" "$dir/state/kid.budget" "$dir/state/kid.budget-diagnostic"
+  write_bound_child "$dir" kid "$dir/reused-native" FM_BUDGET_LAUNCH_child2
+  write_claude_log "$dir/reused-native/project/main.jsonl" FM_BUDGET_LAUNCH_child2 "$wt"
+  code=0
+  err=$("$TEST_BASH" "$ROOT/bin/fm-task-budget.sh" prelaunch "$dir" 2>&1) || code=$?
+  assert_contains "$err" 'children=kid=measured' 'a reused child id with a new launch is a live child again'
+  assert_contains "$err" 'inclusive=495' 'a reused child id adds its own usage to the folded total'
+  "$TEST_BASH" "$ROOT/bin/fm-task-budget.sh" fold-away "$lane" "$dir/state/kid.meta"
+  assert_grep 'budget_folded_inclusive=330' "$lane" 'a reused child id folds its own usage'
 
   code=0
   "$TEST_BASH" "$ROOT/bin/fm-task-budget.sh" fold-away "$dir/state/absent-lane" "$dir/state/kid.meta" || code=$?

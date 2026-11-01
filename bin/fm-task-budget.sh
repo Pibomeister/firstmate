@@ -54,9 +54,11 @@ if [ "$mode" = prelaunch ] || [ "$mode" = fold-away ]; then
   fi
   # shellcheck source=bin/fm-wake-lib.sh
   . "$SCRIPT_DIR/fm-wake-lib.sh"
-  if ! fm_lock_try_acquire "$lock"; then
+  if ! fm_lock_acquire_wait_max "$lock" 30; then
     if [ "$mode" = prelaunch ]; then
       echo "budget-prelaunch refuse unknown: lane budget is locked" >&2
+    else
+      echo "budget-unknown fold-away: lane budget is locked" >&2
     fi
     exit 1
   fi

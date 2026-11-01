@@ -292,7 +292,7 @@ def folded_from_meta(meta):
     if inclusive < fresh:
         raise ValueError("invalid folded native consumption")
     names = [part for part in meta.get("budget_folded_children", "").split(",") if part]
-    if any(not re.fullmatch(r"[A-Za-z0-9._-]+", name) for name in names) or len(names) != len(set(names)):
+    if any(not re.fullmatch(r"[A-Za-z0-9._-]+@FM_BUDGET_LAUNCH_[A-Za-z0-9]+", name) for name in names) or len(names) != len(set(names)):
         raise ValueError("invalid folded child id")
     return inclusive, fresh, set(names)
 
@@ -331,16 +331,19 @@ def sum_lane_children(meta, path, folded_ids):
         if child_meta.get("kind") == "secondmate":
             continue
         child_id = child.stem
-        if child_id in folded_ids:
-            continue
         if "budget_launch_marker" not in child_meta:
             raise ValueError("child " + child_id + " has no native launch marker")
-        sample = measure(child, persist=True, include_lane=False)
+        if child_id + "@" + child_meta["budget_launch_marker"] in folded_ids:
+            continue
+        try:
+            sample = measure(child, persist=True, include_lane=False)
+        except (ValueError, KeyError, OSError, TypeError, AttributeError) as error:
+            sample = {"status": "unknown", "reason": str(error)}
         if sample["status"] == "pending":
             rows.append(child_id + "=pending")
             continue
         if sample["status"] != "ok":
-            raise ValueError(sample.get("reason", "unknown child usage"))
+            raise ValueError("child " + child_id + " usage unknown: " + sample.get("reason", "unknown"))
         inclusive += sample["inclusive"]
         fresh += sample["fresh"]
         rows.append(child_id + "=measured")
@@ -589,6 +592,8 @@ def bind(args):
     harness, worktree, root, marker, prior = args
     if not re.fullmatch(r"FM_BUDGET_LAUNCH_[A-Za-z0-9]+", marker):
         raise ValueError("invalid native launch marker")
+    if harness not in ("claude", "codex") or not root:
+        raise ValueError("harness " + harness + " cannot be measured against a lane budget")
     previous = carried_prior(prior)
     launch_at = str(time.time())
     record = {
@@ -662,9 +667,11 @@ def fold_away(lane, child):
         raise ValueError("child metadata is missing")
     lane_meta = read_meta(lane)
     child_meta = read_meta(child)
-    child_id = child.stem
+    if "budget_launch_marker" not in child_meta:
+        return 0
+    fold_key = child.stem + "@" + child_meta["budget_launch_marker"]
     _, _, folded_ids = folded_from_meta(lane_meta)
-    if child_id in folded_ids or "budget_launch_marker" not in child_meta:
+    if fold_key in folded_ids:
         return 0
     sample = measure(child, persist=True, include_lane=False)
     if sample["status"] == "pending":
@@ -682,7 +689,7 @@ def fold_away(lane, child):
     replace_budget_keys(lane, {
         "budget_folded_inclusive": str(new_inclusive),
         "budget_folded_fresh": str(new_fresh),
-        "budget_folded_children": ",".join(sorted(folded_ids | {child_id})),
+        "budget_folded_children": ",".join(sorted(folded_ids | {fold_key})),
     })
     return 0
 
