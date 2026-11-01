@@ -859,15 +859,21 @@ wd_enter_spent() {
 
 # One Enter per two hours, only for a whole, readable draft that names no merge,
 # deploy, or release word; returns 1 when this draft cannot take Enter now.
+wd_draft_allowed() {
+  fm_wd_text_allowed "$(fm_wd_draft_rows "$O_COMPOSER_TEXT")
+$O_DRAFT"
+}
+
 wd_submit_unsent() {
   if ! fm_wd_draft_readable "$O_COMPOSER_TEXT"; then
     wd_gap "unsent input is a paste placeholder or taller than the read window; Enter not pressed"
     wd_rate_open pasted-input key "$(cfgi enter-secs 300)" &&
       wd_rec "$(wd_id)" pasted-input key refused "the whole draft cannot be read; never accepted"
     return 1
-  elif ! fm_wd_text_allowed "$O_COMPOSER_TEXT"; then
+  elif ! wd_draft_allowed; then
+    wd_gap "unsent draft names a merge, deploy, or release word; Enter not pressed"
     wd_rate_open pasted-input key "$(cfgi enter-secs 300)" &&
-      wd_rec "$(wd_id)" pasted-input key refused "pending text names a merge, deploy, or release word; never accepted"
+      wd_rec "$(wd_id)" pasted-input key refused "the draft names a merge, deploy, or release word; never accepted"
     return 1
   elif wd_enter_spent; then
     wd_gap "unsent input is still there after Enter; no second Enter inside two hours"
@@ -882,7 +888,7 @@ wd_handoff_undeliverable() {
   [ "$O_RESTART_REQ" != 1 ] && [ -z "$(wd_handoff_nudge_epoch)" ] || return 1
   case "$O_COMPOSER" in
     empty) return 1 ;;
-    pending) fm_wd_draft_readable "$O_COMPOSER_TEXT" && fm_wd_text_allowed "$O_COMPOSER_TEXT" && ! wd_enter_spent && return 1 ;;
+    pending) fm_wd_draft_readable "$O_COMPOSER_TEXT" && wd_draft_allowed && ! wd_enter_spent && return 1 ;;
   esac
   wd_gap "low context, but composer is $O_COMPOSER, so the handoff nudge cannot be delivered"
   return 0
