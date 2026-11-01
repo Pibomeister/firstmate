@@ -108,10 +108,13 @@
 #   positional harness arg still works for back-compat.
 #   --budget-inclusive-hard, --budget-inclusive-stop, --budget-fresh-hard, and
 #   --budget-fresh-stop each take a positive whole token count, exactly once and
-#   all together. Stops may not exceed hard caps. These ship/scout-only options
-#   publish budget_* metadata before launch; relaunch keeps the recorded budget.
-#   A budgeted relaunch folds final native usage before replacing its source
-#   binding; unknown prior usage is reported and not carried, never blocking launch.
+#   all together. Stops may not exceed hard caps. A fresh ship, scout, or
+#   secondmate may set them; relaunch keeps the recorded budget. A secondmate
+#   records the lane allocation and each child is measured against that lane
+#   without its own four limits. A child launch is refused before any endpoint
+#   exists when the lane total is not strictly under a recorded stop. A budgeted
+#   relaunch folds final native usage before replacing its source binding;
+#   unknown prior usage is reported and not carried, never blocking launch.
 #   Native usage and watcher enforcement are owned by bin/fm-task-budget.sh.
 #   --model <name> and --effort <low|medium|high|xhigh|max|ultra> are concrete profile
 #   axes chosen by firstmate at intake. They are only threaded into harnesses whose
@@ -1152,10 +1155,17 @@ done
   exit 1
 }
 if [ -n "$BUDGET_SEEN" ]; then
-  [ "$RELAUNCH" = 0 ] && [ "$KIND" != secondmate ] || {
+  if [ "$RELAUNCH" != 0 ]; then
     echo 'error: budget options apply only to fresh ship/scout spawns' >&2
     exit 1
-  }
+  fi
+  case "$KIND" in
+    ship|scout|secondmate) ;;
+    *)
+      echo 'error: budget options apply only to a fresh ship, scout, or secondmate' >&2
+      exit 1
+      ;;
+  esac
   "$SCRIPT_DIR/fm-task-budget.sh" validate "$BUDGET_IH" "$BUDGET_IS" "$BUDGET_FH" "$BUDGET_FS" || exit 1
 fi
 [ "$HARNESS_SET" -eq 0 ] || [ -n "$HARNESS_ARG" ] || {
@@ -1342,6 +1352,12 @@ spawn_remote_secondmate() {
     fm_lock_release "$SPAWN_TASK_LOCK" || true
     return 3
   fi
+  if [ -e "$STATE/lane-budget" ] || [ -L "$STATE/lane-budget" ]; then
+    fm_lock_release "$registry_lock" || true
+    fm_lock_release "$SPAWN_TASK_LOCK" || true
+    echo "error: remote secondmate $id cannot launch from a home with a lane budget; a local lane budget cannot meter remote host logs" >&2
+    return 1
+  fi
   host=$(secondmate_registry_field "$DATA/secondmates.md" "$id" host)
   root=$(secondmate_registry_field "$DATA/secondmates.md" "$id" root)
   home=$(secondmate_registry_field "$DATA/secondmates.md" "$id" home)
@@ -1508,6 +1524,9 @@ spawn_remote_secondmate() {
     remote_traceparent=$(FM_TRACE_CONTEXT=on fm_trace_context_resolve "$CONFIG" "$meta" || true)
   fi
   launch_args=("$id" "$harness" "$model" "$effort" "$backend")
+  if [ -n "$BUDGET_IH" ]; then
+    launch_args+=("budget=${BUDGET_IH}:${BUDGET_IS}:${BUDGET_FH}:${BUDGET_FS}")
+  fi
   [ -z "$remote_traceparent" ] || launch_args+=("$remote_traceparent")
   if out=$("$SCRIPT_DIR/fm-on.sh" "$id" fm-remote-secondmate-control.sh launch \
     "${launch_args[@]}" </dev/null 2>&1); then
@@ -4205,6 +4224,10 @@ if [ -n "$SPAWN_PROJECT_CAPACITY" ]; then
     exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
   fi
 fi
+# A secondmate home's lane total is the mate plus every child, nested
+# secondmates included. Refuse a new child before any endpoint exists when that
+# total is already at a stop.
+"$SCRIPT_DIR/fm-task-budget.sh" prelaunch "$FM_HOME" || exit 1
 [ -f "$BRIEF" ] || {
   echo "error: task $ID has no brief at inaccessible data path $BRIEF" >&2
   exit 1
@@ -4266,8 +4289,13 @@ if [ "$KIND" = ship ] || [ "$KIND" = scout ]; then
   SOURCE_BRIEF=$BRIEF
   BRIEF="$DATA/$ID/launch-brief.md"
   BRIEF_TMP="$DATA/$ID/.launch-brief.md.${BASHPID:-$$}"
-  if [ -n "$BUDGET_IH" ] || { [ "$RELAUNCH" -eq 1 ] && [ -n "$(fm_meta_get "$RELAUNCH_META" budget_inclusive_hard)" ]; }; then
-    BUDGET_LAUNCH_MARKER="FM_BUDGET_LAUNCH_$(python3 -c 'import secrets; print(secrets.token_hex(16))')" || exit 1
+  if [ -z "$BUDGET_LAUNCH_MARKER" ]; then
+    if [ -n "$BUDGET_IH" ] \
+      || { [ "$RELAUNCH" -eq 1 ] && [ -n "$(fm_meta_get "$RELAUNCH_META" budget_inclusive_hard)" ]; } \
+      || { [ "$RELAUNCH" -eq 1 ] && [ -n "$(fm_meta_get "$RELAUNCH_META" budget_launch_marker)" ]; } \
+      || { [ -f "$STATE/lane-budget" ] && [ ! -L "$STATE/lane-budget" ]; }; then
+      BUDGET_LAUNCH_MARKER="FM_BUDGET_LAUNCH_$(python3 -c 'import secrets; print(secrets.token_hex(16))')" || exit 1
+    fi
   fi
   {
     fm_brief_worker_role "$STATE" "$ID" "$FM_ROOT" &&
@@ -7356,7 +7384,7 @@ fi
 SPAWN_GEN="s$(date +%s).${BASHPID:-$$}.$RANDOM"
 SPAWN_BUDGET_RECORD=
 BUDGET_PRIOR=-
-if [ "$RELAUNCH" = 1 ] && [ "$KIND" != secondmate ]; then
+if [ "$RELAUNCH" = 1 ] && [ -z "$BUDGET_IH" ]; then
   BUDGET_IH=$(fm_meta_get "$RELAUNCH_META" budget_inclusive_hard)
   if [ -n "$BUDGET_IH" ]; then
     BUDGET_IS=$(fm_meta_get "$RELAUNCH_META" budget_inclusive_stop)
@@ -7366,6 +7394,9 @@ if [ "$RELAUNCH" = 1 ] && [ "$KIND" != secondmate ]; then
   fi
 fi
 if [ -n "$BUDGET_IH" ]; then
+  if [ -z "$BUDGET_LAUNCH_MARKER" ]; then
+    BUDGET_LAUNCH_MARKER="FM_BUDGET_LAUNCH_$(python3 -c 'import secrets; print(secrets.token_hex(16))')" || exit 1
+  fi
   BUDGET_LOG_ROOT=
   case "$HARNESS" in
     claude) BUDGET_LOG_ROOT=${CLAUDE_CONFIG_DIR:-${HOME:-}/.claude}/projects ;;
@@ -7373,6 +7404,70 @@ if [ -n "$BUDGET_IH" ]; then
   esac
   SPAWN_BUDGET_RECORD=$("$SCRIPT_DIR/fm-task-budget.sh" seed "$BUDGET_PRIOR" "$HARNESS" "$WT" "$BUDGET_LOG_ROOT" \
     "$BUDGET_LAUNCH_MARKER" "$BUDGET_IH" "$BUDGET_IS" "$BUDGET_FH" "$BUDGET_FS") || exit 1
+elif [ -f "$STATE/lane-budget" ] && [ ! -L "$STATE/lane-budget" ]; then
+  if [ "$RELAUNCH" = 1 ] && [ -n "$(fm_meta_get "$RELAUNCH_META" budget_launch_marker)" ]; then
+    BUDGET_PRIOR=$RELAUNCH_META
+  fi
+  if [ -z "$BUDGET_LAUNCH_MARKER" ]; then
+    BUDGET_LAUNCH_MARKER="FM_BUDGET_LAUNCH_$(python3 -c 'import secrets; print(secrets.token_hex(16))')" || exit 1
+  fi
+  BUDGET_LOG_ROOT=
+  case "$HARNESS" in
+    claude) BUDGET_LOG_ROOT=${CLAUDE_CONFIG_DIR:-${HOME:-}/.claude}/projects ;;
+    codex) BUDGET_LOG_ROOT=${CODEX_HOME:-${HOME:-}/.codex}/sessions ;;
+  esac
+  SPAWN_BUDGET_RECORD=$("$SCRIPT_DIR/fm-task-budget.sh" bind "$HARNESS" "$WT" "$BUDGET_LOG_ROOT" \
+    "$BUDGET_LAUNCH_MARKER" "$BUDGET_PRIOR") || exit 1
+fi
+if [ "$KIND" = secondmate ] && [ -n "$SPAWN_BUDGET_RECORD" ]; then
+  lane="$PROJ_ABS/state/lane-budget"
+  if [ -L "$lane" ]; then
+    echo "error: lane budget is a symlink" >&2
+    exit 1
+  fi
+  lane_lock="$PROJ_ABS/state/.lane-budget.lock"
+  if ! fm_lock_acquire_wait_max "$lane_lock" 30; then
+    echo "error: lane budget is locked" >&2
+    exit 1
+  fi
+  folded=
+  if [ -f "$lane" ]; then
+    folded=$(awk -F= '
+      $1 == "budget_folded_inclusive" || $1 == "budget_folded_fresh" || $1 == "budget_folded_children" || $1 == "budget_folded_unknown" {
+        kept[$1] = substr($0, index($0, "=") + 1)
+      }
+      END {
+        if ("budget_folded_inclusive" in kept) print "budget_folded_inclusive=" kept["budget_folded_inclusive"]
+        if ("budget_folded_fresh" in kept) print "budget_folded_fresh=" kept["budget_folded_fresh"]
+        if ("budget_folded_children" in kept) print "budget_folded_children=" kept["budget_folded_children"]
+        if ("budget_folded_unknown" in kept) print "budget_folded_unknown=" kept["budget_folded_unknown"]
+      }
+    ' "$lane") || {
+      fm_lock_release "$lane_lock" || true
+      exit 1
+    }
+  fi
+  lane_tmp="$PROJ_ABS/state/.lane-budget.${BASHPID:-$$}"
+  {
+    echo "kind=secondmate"
+    echo "harness=$HARNESS"
+    echo "worktree=$WT"
+    echo "home=$PROJ_ABS"
+    echo "spawn_gen=$SPAWN_GEN"
+    if [ -f "$STATE/lane-budget" ] && [ ! -L "$STATE/lane-budget" ]; then
+      echo "budget_parent_home=$FM_HOME"
+    fi
+    printf '%s\n' "$SPAWN_BUDGET_RECORD"
+    [ -z "$folded" ] || printf '%s\n' "$folded"
+  } >"$lane_tmp" || {
+    fm_lock_release "$lane_lock" || true
+    exit 1
+  }
+  mv -f "$lane_tmp" "$lane" || {
+    fm_lock_release "$lane_lock" || true
+    exit 1
+  }
+  fm_lock_release "$lane_lock" || true
 fi
 SPAWN_META_PATH="$STATE/$ID.meta"
 if [ "$SPAWN_META_LOCK_HELD" != 1 ]; then
@@ -7590,6 +7685,17 @@ fi
 "$SCRIPT_DIR/fm-home-summary-refresh.sh" --best-effort || true
 [ "$BACKEND" = orca ] && ORCA_ABORT_CLEANUP=0 && ORCA_REBIND_ABORT_CLOSE=0
 
+if [ "$KIND" = secondmate ] && [ -n "$BUDGET_LAUNCH_MARKER" ]; then
+  budget_brief="$STATE/.$ID.budget-launch-brief"
+  {
+    printf '%s\n\n' "$BUDGET_LAUNCH_MARKER"
+    cat "$BRIEF"
+  } >"$budget_brief" || {
+    echo "error: could not write the budget launch brief for $ID" >&2
+    exit 1
+  }
+  BRIEF=$budget_brief
+fi
 sq_brief=$(shell_quote "$BRIEF")
 sq_turnend=$(shell_quote "$TURNEND")
 sq_piext=$(shell_quote "$STATE/$ID.pi-ext.ts")
@@ -7725,6 +7831,17 @@ case "$LAUNCH" in
     # Spawn still owns the task metadata lock; no reader or worker can observe
     # this incarnation before its fingerprint is complete.
     printf 'budget_launch_fingerprint=%s\n' "$budget_fingerprint" >> "$STATE/$ID.meta" || exit 1
+    if [ "$KIND" = secondmate ] && [ -f "$PROJ_ABS/state/lane-budget" ] && [ ! -L "$PROJ_ABS/state/lane-budget" ]; then
+      fm_lock_acquire_wait_max "$PROJ_ABS/state/.lane-budget.lock" 30 || {
+        echo "error: lane budget is locked" >&2
+        exit 1
+      }
+      printf 'budget_launch_fingerprint=%s\n' "$budget_fingerprint" >> "$PROJ_ABS/state/lane-budget" || {
+        fm_lock_release "$PROJ_ABS/state/.lane-budget.lock" || true
+        exit 1
+      }
+      fm_lock_release "$PROJ_ABS/state/.lane-budget.lock" || true
+    fi
   fi
   LAUNCH=${LAUNCH//__BRIEFDOORBELL__/"$(shell_quote "$brief_doorbell")"}
   ;;

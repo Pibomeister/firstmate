@@ -32,6 +32,8 @@
 #   <task>.inbox/.escalated    names of records already surfaced as stale,
 #                              one per line, so later polls suppress another
 #                              escalation for them and move to the next record
+#   <task>.inbox/.age-escalated  names of secondmate records already reported
+#                              at the age ceiling; they stay on the ladder
 #   <task>.inbox/.retry-ring   name of a fire-and-forget record still owed its
 #                              one retry ring (fm_task_inbox_mark_retry)
 #   <task>.inbox/.recover-state  automatic secondmate recovery budget:
@@ -64,6 +66,13 @@
 # resets this budget. fm-busy-lib.sh owns the backend-specific delivery guard.
 # Fire-and-forget retries remain outside escalation. A positively
 # dead or missing endpoint skips delivery and the ladder and escalates directly.
+# A secondmate's oldest unescalated record at or past
+# FM_TASK_INBOX_SECONDMATE_ESCALATE_SECS (default 300) is due `escalate-age`
+# once, before grace and before the ring ladder, so the watcher surfaces it
+# without another interrupt. That report is recorded in .age-escalated, not
+# .escalated, so the record then continues on the ring ladder and automatic
+# recovery. Younger records and other kinds stay on the ladder.
+# Fire-and-forget retries stay outside that ceiling.
 # This library owns the schedule, durable budgets, and escalation marker.
 #
 # Automatic recovery (fm_task_inbox_recover_next): for a local secondmate the
@@ -111,6 +120,7 @@
 #   FM_TASK_INBOX_RING_MAX     default 3; delivery attempts before escalation
 #   FM_TASK_INBOX_BUSY_MAX     default 2; consecutive busy-deferred due polls before escalation
 #   FM_TASK_INBOX_RECOVER_AFTER  default 300; record age before automatic recovery
+#   FM_TASK_INBOX_SECONDMATE_ESCALATE_SECS  default 300; unread secondmate instruction age before a stale wake with no further interrupt
 
 _FM_TASK_INBOX_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Both dependencies are canonical lint roots in their own right. Keep them as
@@ -127,6 +137,7 @@ FM_TASK_INBOX_RING_MAX_DEFAULT=3
 FM_TASK_INBOX_BUSY_MAX_DEFAULT=2
 FM_TASK_INBOX_LOCK_WAIT_DEFAULT=5
 FM_TASK_INBOX_RECOVER_AFTER_DEFAULT=300
+FM_TASK_INBOX_SECONDMATE_ESCALATE_DEFAULT=300
 
 fm_task_inbox_grace_secs() {
   local g=${FM_TASK_INBOX_GRACE_SECS:-$FM_TASK_INBOX_GRACE_DEFAULT}
@@ -137,6 +148,12 @@ fm_task_inbox_grace_secs() {
 fm_task_inbox_recover_after() {
   local a=${FM_TASK_INBOX_RECOVER_AFTER:-$FM_TASK_INBOX_RECOVER_AFTER_DEFAULT}
   case "$a" in ''|*[!0-9]*) a=$FM_TASK_INBOX_RECOVER_AFTER_DEFAULT ;; esac
+  printf '%s' "$a"
+}
+
+fm_task_inbox_secondmate_escalate_secs() {
+  local a=${FM_TASK_INBOX_SECONDMATE_ESCALATE_SECS:-$FM_TASK_INBOX_SECONDMATE_ESCALATE_DEFAULT}
+  case "$a" in ''|*[!0-9]*) a=$FM_TASK_INBOX_SECONDMATE_ESCALATE_DEFAULT ;; esac
   printf '%s' "$a"
 }
 
@@ -569,14 +586,15 @@ fm_task_inbox_clear_retry() {  # <state-dir> <task-id> <record-path>
 #                             or every waiting record already escalated)
 #   ring <record-path>        one doorbell re-ring is due
 #   escalate <record-path> <count>   attempt budget spent; surface as stale
+#   escalate-age <record-path> <seconds>  secondmate age ceiling; report once, ladder continues
 #   retry <record-path>       a fire-and-forget record's one retry ring is due
 # An empty inbox also resets the ladder bookkeeping so the next message starts
 # a fresh ladder.
 fm_task_inbox_due_action() {  # <state-dir> <task-id>
-  local dir oldest base now grace max ladder rec_base count last
+  local dir oldest base now grace max ladder rec_base count last age bound
   dir=$(fm_task_inbox_dir "$1" "$2")
   if ! oldest=$(fm_task_inbox_oldest_unhandled "$1" "$2"); then
-    rm -f "$dir/.ring-state" "$dir/.escalated" "$dir/.busy-state" "$dir/.recover-state" 2>/dev/null || true
+    rm -f "$dir/.ring-state" "$dir/.escalated" "$dir/.age-escalated" "$dir/.busy-state" "$dir/.recover-state" 2>/dev/null || true
     # The one retry ring exists only while config/wait-no-turns is present.
     # Absent, a mark is left untouched and the inbox stays quiet, as before.
     if [ -e "${FM_CONFIG_OVERRIDE:-${FM_HOME:-}/config}/wait-no-turns" ]; then
@@ -599,6 +617,15 @@ fm_task_inbox_due_action() {  # <state-dir> <task-id>
     return 0
   fi
   base=${oldest##*/}
+  if [ "$(fm_meta_get "$1/$2.meta" kind)" = secondmate ] \
+    && ! grep -Fqx -- "$base" "$dir/.age-escalated" 2>/dev/null; then
+    age=$(fm_path_age "$oldest")
+    bound=$(fm_task_inbox_secondmate_escalate_secs)
+    if [ "$age" -ge "$bound" ]; then
+      printf 'escalate-age %s %s' "$oldest" "$age"
+      return 0
+    fi
+  fi
   grace=$(fm_task_inbox_grace_secs)
   if [ "$(fm_path_age "$oldest")" -lt "$grace" ]; then
     printf 'quiet'
@@ -721,6 +748,18 @@ fm_task_inbox_record_escalated() {  # <state-dir> <task-id> <record-path>
   dir=$(fm_task_inbox_dir "$1" "$2")
   [ -d "$dir" ] || return 0
   if ! { printf '%s\n' "${3##*/}" >> "$dir/.escalated"; } 2>/dev/null; then
+    [ -d "$dir" ] || return 0
+    return 1
+  fi
+}
+
+# Mark the record's age-ceiling report after its stale wake is queued. Unlike
+# fm_task_inbox_record_escalated it leaves the record on the ladder.
+fm_task_inbox_record_age_escalated() {  # <state-dir> <task-id> <record-path>
+  local dir
+  dir=$(fm_task_inbox_dir "$1" "$2")
+  [ -d "$dir" ] || return 0
+  if ! { printf '%s\n' "${3##*/}" >> "$dir/.age-escalated"; } 2>/dev/null; then
     [ -d "$dir" ] || return 0
     return 1
   fi

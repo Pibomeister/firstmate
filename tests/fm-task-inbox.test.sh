@@ -1252,10 +1252,11 @@ test_watcher_secondmate_unread_inbox_names_immediate_recovery() {
   rec=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "independent routed ask")
   age_path "$rec"
   # Automatic recovery already spent its two slots (tests/fm-watch-inbox-recovery.test.sh pins that).
+  # The age ceiling stays above this fixture so the spent ladder still interrupts.
   printf '001.msg\t2\t%s\t\n' "$(date +%s)" > "$state/t1.inbox/.recover-state"
   watch_bg "$state" "$dir/fakebin" "$out" \
     FM_SEND_LOG="$log" FM_FAKE_TMUX_CAPTURE="$(idle_capture "$dir")" \
-    FM_TASK_INBOX_RING_MAX=1
+    FM_TASK_INBOX_RING_MAX=1 FM_TASK_INBOX_SECONDMATE_ESCALATE_SECS=999999999
   pid=$!
   wait_watcher_gone "$pid" \
     || { kill "$pid" 2>/dev/null; fail "the watcher never escalated the secondmate's unread ask"; }

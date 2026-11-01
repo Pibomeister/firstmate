@@ -6,10 +6,12 @@
 #
 # Each run observes bin/fm-fleet-snapshot.sh --json under FM_HEARTBEAT_SNAPSHOT_TIMEOUT
 # (default 30 seconds, above the snapshot's own inner bounds), enriches that
-# snapshot with git, no-mistakes, inbox, terminal, and transcript facts, and never
+# snapshot with git, no-mistakes, inbox, terminal, and transcript facts, reads
+# weekly model allowance left once from quota-axi, and never
 # guesses: unread fields carry {unknown:true,reason}. Every primary and per-task
 # read has its own bound (FM_HEARTBEAT_READ_TIMEOUT, default 3 seconds, and
-# FM_HEARTBEAT_NM_TIMEOUT, default 2), and FM_HEARTBEAT_DEADLINE (default 90
+# FM_HEARTBEAT_NM_TIMEOUT, default 2). FM_HEARTBEAT_QUOTA_TIMEOUT (default 10
+# seconds) bounds that one quota-axi read. FM_HEARTBEAT_DEADLINE (default 90
 # seconds) stops starting new task reads. A deadline hit or a TERM, INT, or HUP
 # still publishes what was read, with unknown rows for the rest. A SIGKILL cannot
 # publish; the next run sweeps what it left. All temp files live in one private
@@ -61,6 +63,10 @@
 #                       spawn_gen epoch; a secondmate's marker is never read, since
 #                       the watcher does not refresh it for that kind
 #     open_asks         {decisions, inbox_unhandled}
+#   weekly_allowance  weekly model allowance left, not a trust score. No trust-score
+#                     owner exists. {status:"ok",windows:[{provider,id,
+#                     percent_remaining}]} when quota-axi names a weekly window,
+#                     otherwise {unknown:true,reason}. A miss is not a failure.
 #   failure           null only on a clean run, else {reason, count} naming every
 #                     read that failed or timed out; absent evidence is not a failure
 #
@@ -83,6 +89,7 @@ LEDGER="$STATE/heartbeat.json"
 FM_HEARTBEAT_SNAPSHOT_TIMEOUT=${FM_HEARTBEAT_SNAPSHOT_TIMEOUT:-30}
 FM_HEARTBEAT_READ_TIMEOUT=${FM_HEARTBEAT_READ_TIMEOUT:-3}
 FM_HEARTBEAT_NM_TIMEOUT=${FM_HEARTBEAT_NM_TIMEOUT:-2}
+FM_HEARTBEAT_QUOTA_TIMEOUT=${FM_HEARTBEAT_QUOTA_TIMEOUT:-10}
 FM_HEARTBEAT_DEADLINE=${FM_HEARTBEAT_DEADLINE:-90}
 
 case "${1:-}" in
@@ -97,6 +104,7 @@ esac
 case "$FM_HEARTBEAT_SNAPSHOT_TIMEOUT" in ''|*[!0-9]*|0) FM_HEARTBEAT_SNAPSHOT_TIMEOUT=30 ;; esac
 case "$FM_HEARTBEAT_READ_TIMEOUT" in ''|*[!0-9]*|0) FM_HEARTBEAT_READ_TIMEOUT=3 ;; esac
 case "$FM_HEARTBEAT_NM_TIMEOUT" in ''|*[!0-9]*|0) FM_HEARTBEAT_NM_TIMEOUT=2 ;; esac
+case "$FM_HEARTBEAT_QUOTA_TIMEOUT" in ''|*[!0-9]*|0) FM_HEARTBEAT_QUOTA_TIMEOUT=10 ;; esac
 case "$FM_HEARTBEAT_DEADLINE" in ''|*[!0-9]*|0) FM_HEARTBEAT_DEADLINE=90 ;; esac
 
 command -v jq >/dev/null 2>&1 || {
@@ -591,8 +599,54 @@ heartbeat_collect_tasks() {
 
 # Rows the run did not finish come from the snapshot with every read unknown, so
 # a stopped run still lists each task it was told about.
+# One quota-axi read. A miss stays unknown and is not a heartbeat failure.
+# The figure is weekly model allowance left. No trust-score owner exists.
+heartbeat_weekly_allowance() {
+  local raw status=0 parsed
+  raw=$(fm_run_timed "$FM_HEARTBEAT_QUOTA_TIMEOUT" quota-axi --json </dev/null 2>/dev/null) || status=$?
+  if [ "$status" -ne 0 ] || [ -z "$raw" ]; then
+    jq -nc '{unknown:true,reason:"quota-axi could not be read"}'
+    return 0
+  fi
+  parsed=$(printf '%s\n' "$raw" | jq -c '
+    if type != "object" then
+      {unknown:true, reason:"quota-axi output was not readable"}
+    else
+      ([.providers[]? as $p
+        | ($p.windows // [])[]?
+        | select((((.id // "") | ascii_downcase | test("week|seven_day"))
+            or ((.kind // "") == "weekly")))
+        | . as $w
+        | (if ($w.percentRemaining | type) == "number" then $w.percentRemaining
+           elif ($w.percent_remaining | type) == "number" then $w.percent_remaining
+           elif ($w.percentUsed | type) == "number" then (100 - $w.percentUsed)
+           else null end) as $left
+        | select($left != null)
+        | {provider: ($p.id // $p.name // $p.provider // "unknown"),
+           id: ($w.id // "unknown"),
+           percent_remaining: $left}
+      ]) as $windows
+      | if ($windows | length) == 0 then
+          {unknown:true, reason:"no weekly model allowance window"}
+        else
+          {status:"ok", windows:$windows}
+        end
+    end
+  ' 2>/dev/null) || parsed=
+  if [ -z "$parsed" ]; then
+    jq -nc '{unknown:true,reason:"quota-axi output was not readable"}'
+    return 0
+  fi
+  printf '%s\n' "$parsed"
+}
+
 heartbeat_publish() {
-  local snapshot_meta tmp=$HEARTBEAT_WORK/heartbeat.json
+  local snapshot_meta tmp=$HEARTBEAT_WORK/heartbeat.json weekly
+  weekly=$(heartbeat_weekly_allowance) || weekly='{"unknown":true,"reason":"quota-axi could not be read"}'
+  case "$weekly" in
+    '{'*'}') ;;
+    *) weekly='{"unknown":true,"reason":"quota-axi could not be read"}' ;;
+  esac
   if [ "$SNAPSHOT_OK" = true ]; then
     snapshot_meta=$(jq -c '{ok:true,schema:.schema,generated:(.generated // null),failure:null}' "$SNAPSHOT_FILE")
     jq -s --slurpfile snapshot "$SNAPSHOT_FILE" '
@@ -617,11 +671,12 @@ heartbeat_publish() {
     --arg fm_home "$FM_HOME" \
     --argjson snapshot "$snapshot_meta" \
     --argjson primary "$PRIMARY_JSON" \
+    --argjson weekly "$weekly" \
     --slurpfile tasks "$HEARTBEAT_WORK/tasks" \
     --rawfile failures "$HEARTBEAT_WORK/failures" \
     '($failures | split("\n") | map(select(. != ""))) as $f
     | {schema:"fm-heartbeat.v1",generated:$generated,generated_epoch:$generated_epoch,fm_home:$fm_home,
-       snapshot:$snapshot,primary:$primary,tasks:$tasks[0],
+       snapshot:$snapshot,primary:$primary,tasks:$tasks[0],weekly_allowance:$weekly,
        failure:(if ($f | length) == 0 then null else {reason:($f[:10] | join("; ")),count:($f | length)} end)}' > "$tmp" \
     && chmod 600 "$tmp" \
     && mv -f "$tmp" "$LEDGER"; then
