@@ -17,9 +17,12 @@
 # --turn-type auto classifies the turn from a hook payload on stdin, or from
 # --payload-file. The payload's transcript_path is tailed, not read whole.
 # Startup is tested first: the operating block also contains the other markers.
-#   startup     the last user text contains "SUPERVISION OPERATING INSTRUCTIONS"
-#   heartbeat   else it contains "heartbeat:"
-#   wake        else it contains "signal:", "stale:", "check:", or "Stop hook feedback"
+#   startup     a SessionStart attachment in the tail has no assistant record
+#               between it and the last user text, or that text contains
+#               "SUPERVISION OPERATING INSTRUCTIONS" anywhere in the text
+#   heartbeat   else the last user text contains "heartbeat:"
+#   wake        else a line of that text starts with "signal:", "stale:",
+#               "check:", or "Stop hook feedback"
 #   captain     any other user text
 #   turn        no transcript text
 # Any other --turn-type is stored as given when it matches [a-z][a-z0-9-]{0,31}.
@@ -85,34 +88,54 @@ sanitize_id() {
   esac
 }
 
-classify_text() {
-  local text=$1
-  case "$text" in
-    *'SUPERVISION OPERATING INSTRUCTIONS'*) printf 'startup\n' ;;
-    *'heartbeat:'*) printf 'heartbeat\n' ;;
-    *'signal:'*|*'stale:'*|*'check:'*|*'Stop hook feedback'*) printf 'wake\n' ;;
-    '') printf 'turn\n' ;;
-    *) printf 'captain\n' ;;
+classify_transcript() { # <transcript> -> startup|heartbeat|wake|captain|turn
+  local file=$1 token=''
+  [ -f "$file" ] && [ ! -L "$file" ] || { printf 'turn\n'; return 0; }
+  command -v jq >/dev/null 2>&1 || { printf 'turn\n'; return 0; }
+  token=$(tail -n 4000 "$file" 2>/dev/null | jq -nRr '
+    def user_text:
+      (.message.content? // null)
+      | if type == "string" then .
+        elif type == "array" then ([.[]? | select(.type? == "text") | .text? // empty] | join(" "))
+        else "" end;
+    def text_present($t):
+      ($t | gsub("[[:space:]]+"; "") | length) > 0;
+    def session_start:
+      .type? == "attachment"
+      and (
+        (.attachment.hookEvent? == "SessionStart")
+        or ((.attachment.hookName? // "") | startswith("SessionStart"))
+      );
+    def wake_line($t):
+      any(($t | split("\n")[] | sub("\r$"; "")); test("^(signal:|stale:|check:|Stop hook feedback)"));
+    reduce inputs as $line
+      ({start:-1, asst:-1, asst_before:-1, user:-1, i:0, last:null};
+        .i += 1
+        | ($line | try fromjson catch null) as $r
+        | if $r == null then .
+          elif ($r | session_start) then .start = .i
+          elif ($r.type? == "assistant") then .asst = .i
+          elif ($r.type? == "user") then
+            ($r | user_text) as $t
+            | if text_present($t) then .user = .i | .last = $t | .asst_before = .asst
+              else . end
+          else . end
+      )
+    | if .last == null then "turn"
+      elif ((.start >= 0 and .user > .start and .asst_before < .start)
+            or (.last | contains("SUPERVISION OPERATING INSTRUCTIONS"))) then "startup"
+      elif (.last | contains("heartbeat:")) then "heartbeat"
+      elif wake_line(.last) then "wake"
+      else "captain" end
+  ' 2>/dev/null || true)
+  case "$token" in
+    startup|heartbeat|wake|captain|turn) printf '%s\n' "$token" ;;
+    *) printf 'turn\n' ;;
   esac
 }
 
-last_user_text() { # <transcript>
-  local file=$1
-  [ -f "$file" ] && [ ! -L "$file" ] || return 0
-  command -v jq >/dev/null 2>&1 || return 0
-  tail -n 4000 "$file" 2>/dev/null | jq -Rr '
-    fromjson?
-    | select(.type? == "user")
-    | .message.content? // empty
-    | if type == "string" then .
-      elif type == "array" then [.[]? | select(.type? == "text") | .text? // empty] | join(" ")
-      else empty end
-    | gsub("[\r\n]+"; " ")
-  ' 2>/dev/null | awk 'NF { last=$0 } END { if (last != "") print last }' | cut -c1-2000
-}
-
 classify_payload() { # <json>
-  local json=$1 transcript='' text='' session_from_payload=''
+  local json=$1 transcript='' session_from_payload=''
   if [ -z "$json" ] || ! command -v jq >/dev/null 2>&1; then
     CLASSIFIED_TURN=turn
     return 0
@@ -123,9 +146,14 @@ classify_payload() { # <json>
     PAYLOAD_SESSION=$session_from_payload
   fi
   if [ -n "$transcript" ]; then
-    text=$(last_user_text "$transcript" || true)
+    CLASSIFIED_TURN=$(classify_transcript "$transcript" || true)
+  else
+    CLASSIFIED_TURN=turn
   fi
-  CLASSIFIED_TURN=$(classify_text "$text")
+  case "$CLASSIFIED_TURN" in
+    startup|heartbeat|wake|captain|turn) ;;
+    *) CLASSIFIED_TURN=turn ;;
+  esac
 }
 
 primary_scope_ok() {

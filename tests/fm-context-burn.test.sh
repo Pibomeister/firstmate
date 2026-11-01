@@ -210,6 +210,56 @@ test_auto_turn_type_from_tailed_transcript() {
     FM_CONTEXT_BURN_NOW=6040 \
     "$BURN" record --turn-type auto --percent 66 --payload-file "$home/p.json" >/dev/null
   assert_equals $'6040\tsess1\twake\t66' "$(last_row "$home")" "multi-line stop hook feedback"
+
+  printf '%s\n' '{"type":"user","message":{"content":"<task-notification>\nStop hook feedback:\nworkers still open"}}' > "$home/t.jsonl"
+  FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    FM_CONTEXT_BURN_NOW=6050 \
+    "$BURN" record --turn-type auto --percent 65 --payload-file "$home/p.json" >/dev/null
+  assert_equals $'6050\tsess1\twake\t65' "$(last_row "$home")" "stop hook feedback after a notification line"
+
+  local pad
+  pad=$(awk 'BEGIN { s = ""; while (length(s) < 2100) s = s "x"; printf "%s", s }')
+  printf '%s\n' \
+    "{\"type\":\"attachment\",\"attachment\":{\"type\":\"hook_success\",\"hookName\":\"SessionStart:startup\",\"hookEvent\":\"SessionStart\",\"content\":\"${pad} SUPERVISION OPERATING INSTRUCTIONS\"}}" \
+    '{"type":"user","message":{"content":"status please"}}' \
+    '{"type":"assistant","message":{"content":"noted"}}' \
+    > "$home/t.jsonl"
+  FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    FM_CONTEXT_BURN_NOW=6060 \
+    "$BURN" record --turn-type auto --percent 64 --payload-file "$home/p.json" >/dev/null
+  assert_equals $'6060\tsess1\tstartup\t64' "$(last_row "$home")" "SessionStart attachment classifies the opening turn"
+
+  printf '%s\n' "{\"type\":\"user\",\"message\":{\"content\":\"${pad} SUPERVISION OPERATING INSTRUCTIONS\"}}" > "$home/t.jsonl"
+  FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    FM_CONTEXT_BURN_NOW=6070 \
+    "$BURN" record --turn-type auto --percent 63 --payload-file "$home/p.json" >/dev/null
+  assert_equals $'6070\tsess1\tstartup\t63' "$(last_row "$home")" "supervision title past 2000 characters still starts up"
+
+  printf '%s\n' '{"type":"user","message":{"content":"ready signal: the branch is published"}}' > "$home/t.jsonl"
+  FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    FM_CONTEXT_BURN_NOW=6080 \
+    "$BURN" record --turn-type auto --percent 62 --payload-file "$home/p.json" >/dev/null
+  assert_equals $'6080\tsess1\tcaptain\t62' "$(last_row "$home")" "ready signal prose is not a wake"
+
+  printf '%s\n' \
+    '{"type":"assistant","message":{"content":"ok"}}' \
+    '{"type":"user","message":{"content":"ready signal: the branch is published"}}' \
+    > "$home/t.jsonl"
+  FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    FM_CONTEXT_BURN_NOW=6090 \
+    "$BURN" record --turn-type auto --percent 61 --payload-file "$home/p.json" >/dev/null
+  assert_equals $'6090\tsess1\tcaptain\t61' "$(last_row "$home")" "later ready signal prose stays an ordinary turn"
+
+  printf '%s\n' \
+    '{"type":"attachment","attachment":{"type":"hook_success","hookName":"SessionStart:startup","hookEvent":"SessionStart","content":"SUPERVISION OPERATING INSTRUCTIONS"}}' \
+    '{"type":"user","message":{"content":"status please"}}' \
+    '{"type":"assistant","message":{"content":"noted"}}' \
+    '{"type":"user","message":{"content":"ready signal: the branch is published"}}' \
+    > "$home/t.jsonl"
+  FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    FM_CONTEXT_BURN_NOW=6100 \
+    "$BURN" record --turn-type auto --percent 60 --payload-file "$home/p.json" >/dev/null
+  assert_equals $'6100\tsess1\tcaptain\t60' "$(last_row "$home")" "a later turn is not startup because the attachment remains in the tail"
   pass "auto turn type comes from the tailed transcript"
 }
 
