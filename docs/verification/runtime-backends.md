@@ -3925,7 +3925,7 @@ ok - claude 2.1.316 (Claude Code): a real merge draft is seen and never submitte
 
 Claude Code 2.1.316 renders its folder-trust picker with unnumbered options (`❯ No, exit`, `Yes, I trust this folder`) above `Enter to confirm · Esc to cancel`.
 The watchdog reads it as a permission dialog, sends no key, and reports it as a waiting gap.
-After the guard accepts the trust picker itself, a second startup picker about browser tools may appear with the footer `Enter to confirm · Esc to keep browser tools off`; the watchdog reads it as a question dialog.
+After the guard accepts the trust picker itself, a second startup picker about browser tools may appear with the footer `Enter to confirm · Esc to keep browser tools off`; the watchdog reads it as a question dialog, and because that footer is no plain `Esc to cancel`, it sends no key and reports a gap.
 The tmux composer verdict reads `empty` on the idle composer and `pending` once `merge #12` is typed.
 Across repeated act-mode passes the watchdog records exactly one refusal for that draft per Enter window, presses nothing, and the draft stays unsent.
 The guard runs passes until the pane settles because Claude can repaint just after a draft lands, which changes the pane signature for one pass.
