@@ -1,0 +1,14 @@
+### 1. real fm-control exit, Droid SessionEnd hook runs
+stopped live1 harness=droid backend=orca endpoint=term_8b3bc3c8-d5ae-4856-8616-174bce250bd3 worktree=/Users/eduardopicazo/orca/workspaces/livedemo/fm-live1
+exit=
+marker: cat: /private/tmp/orca-lab.LWPahk/fm/state/live1.droid-session-end: No such file or directory  busy_gen: busy_gen=g1793571825.20034.3674
+{'handle': 'term_8b3bc3c8-d5ae-4856-8616-174bce250bd3', 'connected': True, 'writable': True, 'executionHostId': 'local', 'worktreePath': '/Users/eduardopicazo/orca/workspaces/livedemo/fm-live1'}
+
+### 2. connected, writable shell: relaunch must ADOPT the same terminal, stay on Droid
+relaunched live1 harness=droid from=droid model=claude-opus-5-5 effort=default backend=orca endpoint=term_8b3bc3c8-d5ae-4856-8616-174bce250bd3 worktree=/Users/eduardopicazo/orca/workspaces/livedemo/fm-live1
+exit=
+harness=droid
+model=claude-opus-5-5
+busy_gen=g1793571960.94820.11192
+terminal=term_8b3bc3c8-d5ae-4856-8616-174bce250bd3
+RESULT: same terminal adopted

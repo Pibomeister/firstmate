@@ -1,0 +1,13 @@
+### abort: replacement settings write forced to fail after the new terminal exists
+before: [('term_8c552f3c-afa6-4265-b52d-6d02bc86bca6', True)]
+error: the replacement agent for live1 could not be launched on droid
+error: live1's agent was stopped but the replacement did not launch; no agent is running, and its work plus the recorded progress note are preserved at /Users/eduardopicazo/orca/workspaces/livedemo/fm-live1
+exit=1
+after: [('term_8c552f3c-afa6-4265-b52d-6d02bc86bca6', True)]
+harness=droid
+model=claude-opus-5-5
+busy_gen=g1793571960.94820.11192
+terminal=term_8b3bc3c8-d5ae-4856-8616-174bce250bd3
+RESULT: record unchanged
+marker: g1793571960.94820.11192
+RESULT: marker kept

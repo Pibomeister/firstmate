@@ -1,0 +1,21 @@
+### real Droid on live2 gets SIGTERM, then its shell exits on its own
+marker=cat: /private/tmp/orca-lab.LWPahk/fm/state/live2.droid-session-end: No such file or directory busy_gen=g1793572271.29337.25410
+       1
+{'handle': 'term_1dbcebf5-ed8d-437d-934b-f2aa757e4142', 'connected': True, 'writable': True, 'executionHostId': 'local', 'worktreePath': '/Users/eduardopicazo/orca/workspaces/livedemo/fm-live2'}
+### real Droid stopped, real SessionEnd marker, shell then exits on its own
+marker=g1793572271.29337.25410 busy_gen=g1793572271.29337.25410
+{'handle': 'term_1dbcebf5-ed8d-437d-934b-f2aa757e4142', 'connected': False, 'writable': False, 'exitCause': {'kind': 'unknown', 'reason': 'host_status_unavailable'}, 'executionHostId': 'local', 'worktreePath': '/Users/eduardopicazo/orca/workspaces/livedemo/fm-live2'}
+### fixed code relaunch
+relaunched live2 harness=droid from=droid model=claude-opus-5-5 effort=default backend=orca endpoint=term_22188779-0d67-4e82-8ca7-c08d73cd6a27 worktree=/Users/eduardopicazo/orca/workspaces/livedemo/fm-live2
+exit=0
+harness=droid
+model=claude-opus-5-5
+busy_gen=g1793572379.40144.19812
+terminal=term_22188779-0d67-4e82-8ca7-c08d73cd6a27
+{'handle': 'term_22188779-0d67-4e82-8ca7-c08d73cd6a27', 'connected': True, 'writable': True, 'executionHostId': 'local', 'worktreePath': '/Users/eduardopicazo/orca/workspaces/livedemo/fm-live2'}
+old marker: cat: /private/tmp/orca-lab.LWPahk/fm/state/live2.droid-session-end: No such file or directory
+v1 gen=g1793572379.40144.19812 seq=3 state=idle source=droid-hook event=stop ts=1793572422
+│ >                                                                                                                    │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+[⏱ 36s] 6 config issues — /diagnostics                                                                             IDE ◌
+firstmate

@@ -1,0 +1,22 @@
+### orca terminal close on a terminal with a live real Droid
+{
+  "id": "d0c184cf-8f46-4ec5-a1b4-558ac4dd470f",
+  "ok": true,
+  "result": {
+    "close": {
+      "handle": "term_8b3bc3c8-d5ae-4856-8616-174bce250bd3",
+      "tabId": "cb62cd4d-7361-4267-9cdc-97b1ab8be38b",
+      "ptyKilled": true
+    }
+  },
+  "_meta": {
+    "runtimeId": "51615bb2-4183-4e7b-9273-390f480bb3b7"
+  }
+}
+close rc=0
+{'connected': False, 'writable': False, 'exitCause': {'kind': 'operator_close'}, 'executionHostId': 'local'}
+marker=g1793571960.94820.11192
+busy_gen=g1793571960.94820.11192
+v1 gen=g1793571960.94820.11192 seq=4 state=idle source=droid-hook event=session-end ts=1793572020
+0
+0

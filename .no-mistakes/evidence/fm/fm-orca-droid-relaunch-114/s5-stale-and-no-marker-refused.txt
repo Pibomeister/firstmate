@@ -1,0 +1,24 @@
+### adversarial: stale-generation marker
+error: task live1's endpoint reads 'unknown' rather than a positively classified state; refusing to send a lifecycle command into an unattributed endpoint
+error: relaunch of live1 failed while stopping the old agent and its state is 'unknown', so it was not proven stopped; its original instructions were restored and the durable record was retained for recovery
+exit=1
+harness=droid
+model=claude-opus-5-5
+busy_gen=g1793571960.94820.11192
+terminal=term_8b3bc3c8-d5ae-4856-8616-174bce250bd3
+
+### pinned decision: closed terminal with no marker still refuses
+error: task live1's endpoint reads 'unknown' rather than a positively classified state; refusing to send a lifecycle command into an unattributed endpoint
+error: relaunch of live1 failed while stopping the old agent and its state is 'unknown', so it was not proven stopped; its original instructions were restored and the durable record was retained for recovery
+exit=1
+harness=droid
+model=claude-opus-5-5
+busy_gen=g1793571960.94820.11192
+terminal=term_8b3bc3c8-d5ae-4856-8616-174bce250bd3
+
+### real closed terminal with real no-marker state (Droid quit cleanly, shell exited)
+{'handle': 'term_916a6720-7406-4b4e-9510-e5865fd28d91', 'connected': False, 'writable': False, 'exitCause': {'kind': 'unknown', 'reason': 'host_status_unavailable'}, 'executionHostId': 'local', 'worktreePath': '/Users/eduardopicazo/orca/workspaces/livedemo/fm-live1'}
+error: task live1's endpoint reads 'unknown' rather than a positively classified state; refusing to send a lifecycle command into an unattributed endpoint
+error: relaunch of live1 failed while stopping the old agent and its state is 'unknown', so it was not proven stopped; its original instructions were restored and the durable record was retained for recovery
+exit=1
+terminal=term_916a6720-7406-4b4e-9510-e5865fd28d91

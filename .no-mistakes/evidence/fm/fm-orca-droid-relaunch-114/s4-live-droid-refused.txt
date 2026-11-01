@@ -1,0 +1,8 @@
+### adversarial: fm-spawn --relaunch against a live Droid worker
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/tmp/orca-lab.LWPahk/fm
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s; down 22s) - full banner already printed this episode.
+error: Orca Droid relaunch has no current-generation SessionEnd proof or connected owned-shell absence proof with its process gone; refusing a duplicate agent
+exit=1
+harness=droid
+busy_gen=g1793571825.20034.3674
+terminal=term_8b3bc3c8-d5ae-4856-8616-174bce250bd3

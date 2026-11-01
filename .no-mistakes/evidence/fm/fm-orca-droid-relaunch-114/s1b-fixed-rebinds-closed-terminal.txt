@@ -1,0 +1,27 @@
+
+### MAIN: fixed code relaunch on the closed Droid terminal (retry after abort)
+old exit cause:
+{'handle': 'term_8b3bc3c8-d5ae-4856-8616-174bce250bd3', 'connected': False, 'writable': False, 'exitCause': {'kind': 'operator_close'}, 'executionHostId': 'local', 'worktreePath': '/Users/eduardopicazo/orca/workspaces/livedemo/fm-live1'}
+relaunched live1 harness=droid from=droid model=claude-opus-5-5 effort=default backend=orca endpoint=term_916a6720-7406-4b4e-9510-e5865fd28d91 worktree=/Users/eduardopicazo/orca/workspaces/livedemo/fm-live1
+exit=0
+harness=droid
+model=claude-opus-5-5
+busy_gen=g1793572103.84438.28989
+terminal=term_916a6720-7406-4b4e-9510-e5865fd28d91
+{'handle': 'term_916a6720-7406-4b4e-9510-e5865fd28d91', 'connected': True, 'writable': True, 'executionHostId': 'local', 'worktreePath': '/Users/eduardopicazo/orca/workspaces/livedemo/fm-live1'}
+old marker: cat: /private/tmp/orca-lab.LWPahk/fm/state/live1.droid-session-end: No such file or directory
+busy-state: v1 gen=g1793572103.84438.28989 seq=3 state=idle source=droid-hook event=stop ts=1793572143
+   first. I followed the task and did not read it. The gate command was the one exception the brief explicitly
+   allowed.
+
+   Hooks Stop
+    ├─ '/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M6CG5TWHVZKYTHNPHT8... : Exit code 0
+    └─ if [ -f '/Users/eduardopicazo/.orca/agent-hooks/droid-hook.sh' ] (10s timeout) : Exit code 0
+       &...
+
+ Auto (High) · allow all commands                                                                 Opus 5.5 (Extra high)
+╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ >                                                                                                                    │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+[⏱ 31s] 6 config issues — /diagnostics                                                                             IDE ◌
+firstmate
