@@ -209,11 +209,11 @@ test_stall_proof_and_text_guards() {
   ! lib fm_wd_text_allowed "Deploy to prod" || fail "deploy must be refused"
   lib fm_wd_text_allowed "emerge from the wake queue" || fail "emerge is not merge"
   local word
-  for word in "redeploy the staging service" "gh pr merge 5" "enable automerge on PR 5" "cut a prerelease" "republish the package" "REDEPLOY now" "remerge it" "premerge it" "undeploy it"; do
+  for word in "redeploy the staging service" "gh pr merge 5" "enable automerge on PR 5" "cut a prerelease" "republish the package" "REDEPLOY now" "remerge it" "premerge it" "undeploy it" "git push --force origin main" "git push -f origin main" "git push origin main --force-with-lease" "git push -uf origin main"; do
     ! lib fm_wd_text_allowed "$word" || fail "text guard let through: $word"
     lib fm_wd_reserved "$word" || fail "reserved check let through: $word"
   done
-  for word in "handle the emergency" "submerge the raft" "re-emerge later"; do
+  for word in "handle the emergency" "submerge the raft" "re-emerge later" "git push -u origin fix-flag" "git push --follow-tags"; do
     lib fm_wd_text_allowed "$word" || fail "text guard over-refused: $word"
     ! lib fm_wd_reserved "$word" || fail "reserved check over-refused: $word"
   done
@@ -318,7 +318,7 @@ test_merge_autosuggestion_never_accepted() {
   assert_grep "unsent draft names a merge" "$H/data/watchdog/status.md" "the draft refusal is a gap"
 
   local draft
-  for draft in "redeploy the staging service" "gh pr merge 5" "enable automerge on PR 5" "cut a prerelease" "republish the package"; do
+  for draft in "redeploy the staging service" "gh pr merge 5" "enable automerge on PR 5" "cut a prerelease" "republish the package" "git push --force origin main" "git push -f origin main" "git push origin main --force-with-lease"; do
     make_home "Captain session"$'\n'"> $draft"
     FM_WD_TEST_COMPOSER=pending run_wd 0 once >/dev/null 2>&1
     FM_WD_TEST_COMPOSER=pending run_wd 300 once >/dev/null 2>&1
@@ -1184,7 +1184,13 @@ test_dialog_kind_ignores_conversation_rows() {
     $'──────────\nWhich usage limit should the plan page show?\n ❯ 1. 100\n   2. 200\n\nEnter to select · Esc to cancel' \
     $'──────────\nWhat should the banner say once the limit resets or the limit reached state shows?\n ❯ 1. Short\n   2. Long\n\nEnter to select · Esc to cancel' \
     $'──────────\nShould we warn when you hit your weekly limit?\n ❯ 1. Yes\n   2. No\n\nEnter to select · Esc to cancel' \
-    $'──────────\nShould we switch to another database?\n ❯ 1. Yes\n   2. No\n\nEnter to select · Esc to cancel'; do
+    $'──────────\nShould we switch to another database?\n ❯ 1. Yes\n   2. No\n\nEnter to select · Esc to cancel' \
+    $'──────────\nHow should the worker handle the refactor?\n ❯ 1. Switch to another model\n   2. Keep Sonnet\n\nEnter to select · Esc to cancel' \
+    $'──────────\nWhich approach for the parser?\n ❯ 1. Rewrite it\n   2. Switch model for this file\n\nEnter to select · Esc to cancel' \
+    $'What should the banner say?\n ❯ 1. Out of credits\n   2. Try again\n\nEnter to select · Esc to cancel' \
+    $'──────────\nWhat is the copy for the 429 page?\n ❯ 1. Usage limit reached\n   2. Slow down\n\nEnter to select · Esc to cancel' \
+    $'Should the API add a rate limit to this endpoint?\n ❯ 1. Yes\n   2. No\n\nEnter to select · Esc to cancel' \
+    $'Which usage limit should the plan page show?\n ❯ 1. 100\n   2. 200\n\nEnter to select · Esc to cancel'; do
     make_home "$screen" 'models=claude:haiku'
     fake_models "$H" ok:"OPTION 1" absent
     transcript 100 "Working."
@@ -1193,6 +1199,12 @@ test_dialog_kind_ignores_conversation_rows() {
     assert_equals 0 "$(ledger | awk -F'\t' '$6 == "key"' | wc -l | tr -d ' ')" "an ordinary question gets no digit: $(ledger | cut -f5-8)"
     assert_grep "question dialog waiting" "$H/data/watchdog/status.md" "the ordinary question is reported"
   done
+  make_home $'You have hit your weekly limit.\n ❯ 1. git push -f origin main\n   2. Wait\n\nEnter to confirm · Esc to cancel' 'models=claude:haiku'
+  fake_models "$H" ok:"OPTION 1" absent
+  transcript 100 "Working."
+  run_wd 0 once >/dev/null 2>&1
+  [ ! -s "$H/model.log" ] || fail "a judge saw a force-push option: $(cat "$H/model.log")"
+  assert_equals 0 "$(ledger_rows dialog key pending)" "a force-push option gets no key: $(ledger | cut -f5-8)"
   pass "dialog: the kind comes from the dialog, not the conversation above it"
 }
 

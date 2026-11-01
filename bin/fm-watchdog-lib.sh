@@ -75,7 +75,7 @@
 #   fm_wd_iso <epoch>
 #       Prints the UTC ISO-8601 time.
 
-FM_WD_REFUSED_TEXT_RE='(^|[^be])merg|[rd]emerg|deploy|releas|publish|(^|[^a-z])force.?push'
+FM_WD_REFUSED_TEXT_RE='(^|[^be])merg|[rd]emerg|deploy|releas|publish|(^|[^a-z])force.?push|push.*[[:space:]](--force|-[a-z]*f[a-z]*)([^a-z]|$)'
 FM_WD_RESERVED_RE="$FM_WD_REFUSED_TEXT_RE"'|(^|[^a-z])(spend|spent|money|budget|billing|invoice|payment|sign-?in|log-?in|login|credential|secret|password|api.?key|security|production|pii|delet|destroy|wipe)'
 FM_WD_TIMER_TOOL_RE='^(ScheduleWakeup|CronCreate|CronList|CronDelete|Monitor|TaskOutput|BashOutput|Wait)$'
 FM_WD_TIMER_BASH_RE='(^|[^a-z])(sleep|fm-watch|fm-wake|wake|timer|until)([^a-z]|$)'
@@ -182,6 +182,7 @@ fm_wd_pane_dialog() {  # <screen>
 # Rows of the dialog at the bottom of a screen. Below a rule row above the first
 # option, everything is the dialog. With no such rule the boundary is unproven:
 # scope `own` takes the paragraph above the options and `all` takes every tail row.
+# Scope `own` always stops above the first option row, so a label proves nothing.
 # Scope `options` takes only the option rows.
 _fm_wd_dialog_rows() {  # <screen> <own|all|options>
   printf '%s\n' "$1" | fm_wd_strip_ansi | awk -v scope="$2" '
@@ -195,11 +196,13 @@ _fm_wd_dialog_rows() {  # <screen> <own|all|options>
       for (i = last; i > 0; i--) if (rows[i] ~ /[^ \t]/ && ++seen == 14) { floor = i; break }
       for (i = last; i >= floor; i--) if (rows[i] ~ /(❯|›)[ \t]*[^ \t]/ || rows[i] ~ />[ \t]*[0-9]+[.)][ \t]/) { sel = i; break }
       top = floor
+      stop = last
       if (sel) {
         first = sel
         for (i = sel; i >= floor; i--) if (rows[i] ~ /^[^0-9A-Za-z]*1[.)][ \t]/) { first = i; break }
         ruled = 0
         for (i = first - 1; i >= floor; i--) if (rule(rows[i])) { ruled = i; break }
+        if (scope == "own") stop = first - 1
         if (scope == "options") top = first
         else if (ruled) top = ruled + 1
         else if (scope == "own") {
@@ -209,7 +212,7 @@ _fm_wd_dialog_rows() {  # <screen> <own|all|options>
           while (i >= floor && !blank(rows[i])) { top = i; i-- }
         }
       }
-      for (i = top; i <= last; i++) if (rows[i] ~ /[^ \t]/) print rows[i]
+      for (i = top; i <= stop; i++) if (rows[i] ~ /[^ \t]/) print rows[i]
     }'
 }
 
