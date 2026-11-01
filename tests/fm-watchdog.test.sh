@@ -255,6 +255,23 @@ test_merge_autosuggestion_never_accepted() {
   pass "boundary: never accepts a merge autosuggestion, while ordinary unsent text is submitted"
 }
 
+test_unreadable_draft_never_gets_enter() {
+  make_home $'Captain session\n> [Pasted text #1 +40 lines]'
+  FM_WD_TEST_COMPOSER=pending run_wd 0 once >/dev/null 2>&1
+  FM_WD_TEST_COMPOSER=pending run_wd 300 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows pasted-input key refused)" "a paste placeholder is refused"
+  assert_grep "Enter not pressed" "$H/data/watchdog/status.md" "the placeholder is a reported gap"
+  sleep 1
+  assert_equals "" "$(cat "$H/typed.log")" "Enter was never pressed on a paste placeholder"
+  make_home $'> merge PR #5\n  a\n  b\n  c\n  d\n  e\n  f\n  g\n  h\n  i'
+  FM_WD_TEST_COMPOSER=pending run_wd 0 once >/dev/null 2>&1
+  FM_WD_TEST_COMPOSER=pending run_wd 300 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows pasted-input key refused)" "a draft taller than the window is refused"
+  sleep 1
+  assert_equals "" "$(cat "$H/typed.log")" "Enter was never pressed on a draft taller than the window"
+  pass "boundary: a draft whose whole text cannot be read never gets Enter"
+}
+
 test_owner_reserved_holds_stay_held_and_council_settles_the_rest() {
   make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
 council-seats=claude:haiku,agy:flash'
@@ -386,6 +403,94 @@ SH
   pass "restart: lean handoff, new terminal, verified pickup with lock takeover; a loop stops and escalates"
 }
 
+# write_fake_captain: a restart-command that takes the lock and proves pickup.
+write_fake_captain() {
+  cat > "$TMP_ROOT/fake-captain.sh" <<'SH'
+#!/usr/bin/env bash
+p="$*"
+printf '%s\n' "$$" > "$PWD/state/.lock"
+eval "${p##*run: }" > "$PWD/pickup.out" 2>&1
+exec sleep 100000
+SH
+  chmod +x "$TMP_ROOT/fake-captain.sh"
+}
+
+wait_pickup() {
+  local i
+  for i in $(seq 1 50); do [ -s "$H/pickup.out" ] && return 0; sleep 0.2; done
+  return 1
+}
+
+# End the lock holder, then stamp the anchor a real bin/fm-lock.sh writes for it.
+kill_holder_with_anchor() {
+  printf '%s\nanchor_pid=%s\nanchor_start=Sat Nov  1 02:00:00 2026\n' "$SID" "$LOCKPID" > "$H/state/.lock-session"
+  kill "$LOCKPID" 2>/dev/null
+  while kill -0 "$LOCKPID" 2>/dev/null; do sleep 0.1; done
+}
+
+test_no_action_while_restart_awaits_pickup() {
+  make_home $'Captain session\n> ' "restart=on
+max-nudges=0
+pickup-secs=600
+restart-command=/bin/true"
+  transcript 3000 "Working." "Testing." "Green."
+  owe_input 3000
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 1000 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows frozen restart pending)" "the proven stall restarts"
+  local before
+  before=$(ledger | wc -l | tr -d ' ')
+  # With the input drained, the stopped holder alone would read as a dead agent.
+  rm -f "$H/state/.wake-queue"
+  run_wd 1120 once >/dev/null 2>&1
+  assert_equals "$before" "$(ledger | wc -l | tr -d ' ')" "nothing is recorded or done while the restart awaits pickup: $(ledger | cut -f1,5-7)"
+  assert_absent "$H/state/watchdog/escalated/home$CASE_N" "a normal restart is no restart loop"
+  assert_grep "RESTART-AWAITING-PICKUP" "$H/data/watchdog/status.md" "the hold is visible in the health line"
+  run_wd 1600 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows frozen restart failed)" "the pickup window still closes the restart"
+  pass "boundary: a home whose restart awaits pickup gets no action until the restart closes"
+}
+
+test_dead_captain_restarts_despite_its_anchor() {
+  make_home $'Captain session\n> ' "restart=on
+restart-command=$TMP_ROOT/fake-captain.sh"
+  write_fake_captain
+  transcript 3000 "Working." "Testing." "Green."
+  kill_holder_with_anchor
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows agent-gone restart pending)" "a dead captain with a real anchor restarts: $(ledger | cut -f5-8)"
+  wait_pickup || fail "the new captain never proved pickup: $(ledger | cut -f5-8)"
+  LOCK_PIDS="$LOCK_PIDS $(cat "$H/state/.lock")"
+  assert_equals 2 "$("$REAL_TMUX" -f /dev/null -L "$SOCKET" list-windows -t "=wd$CASE_N" | wc -l | tr -d ' ')" "the new window joins the old session"
+  pass "agent gone: a dead lock holder with a recorded anchor still restarts"
+}
+
+test_tmux_restart_survives_a_closed_session() {
+  make_home $'Captain session\n> ' "restart=on
+max-nudges=0
+restart-command=$TMP_ROOT/fake-captain.sh"
+  write_fake_captain
+  local sess="wd$CASE_N"
+  "$REAL_TMUX" -f /dev/null -L "$SOCKET" list-panes -t "=$sess" -F '#{pane_pid}' | head -n 1 > "$H/state/.lock"
+  transcript 3000 "Working." "Testing." "Green."
+  owe_input 3000
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 1000 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows frozen restart pending)" "the captain that is its pane's own command restarts: $(ledger | cut -f5-8)"
+  wait_pickup || fail "no new captain after its session closed: $(ledger | cut -f5-8)"
+  "$REAL_TMUX" -f /dev/null -L "$SOCKET" has-session -t "=$sess" || fail "the old session name was not reused"
+
+  make_home $'Captain session\n> ' "restart=on
+restart-command=$TMP_ROOT/fake-captain.sh"
+  transcript 3000 "Working." "Testing." "Green."
+  "$REAL_TMUX" -f /dev/null -L "$SOCKET" kill-session -t "=wd$CASE_N"
+  kill_holder_with_anchor
+  run_wd 0 once >/dev/null 2>&1
+  wait_pickup || fail "no new captain after its pane was already gone: $(ledger | cut -f5-8)"
+  "$REAL_TMUX" -f /dev/null -L "$SOCKET" has-session -t "=firstmate-home$CASE_N" || fail "no session opened for a captain whose pane was gone"
+  pass "tmux restart: resolves the session before the stop and opens one when the old session closed"
+}
+
 test_dismissed_dialog_in_scrollback_is_not_showing() {
   make_home $'Captain session\n> '
   # The survey was answered and the screen cleared; tmux keeps it in history.
@@ -480,6 +585,7 @@ fm_test_run \
   test_frozen_pane_nudges_once_then_rate_limits \
   test_do_not_touch_never_typed \
   test_merge_autosuggestion_never_accepted \
+  test_unreadable_draft_never_gets_enter \
   test_owner_reserved_holds_stay_held_and_council_settles_the_rest \
   test_split_council_gives_no_ruling \
   test_judge_fallback_and_spend_cap \
@@ -487,6 +593,9 @@ fm_test_run \
   test_timer_loop_needs_owed_input \
   test_restart_vetoed_by_running_turn \
   test_restart_verified_pickup_and_loop_stop \
+  test_no_action_while_restart_awaits_pickup \
+  test_dead_captain_restarts_despite_its_anchor \
+  test_tmux_restart_survives_a_closed_session \
   test_status_file_short_and_staleness_visible \
   test_manager_units \
   test_never_merges_deploys_or_messages_owner

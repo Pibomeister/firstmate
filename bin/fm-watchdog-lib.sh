@@ -19,6 +19,9 @@
 #       Returns 0 only when the watchdog may type or file this text: it refuses
 #       merge, deploy, release, publish, and force-push words, so no typed answer
 #       or nudge can carry a merge or deploy instruction.
+#   fm_wd_draft_readable <composer-window>
+#       Returns 0 only when the window shows the whole draft: no paste placeholder
+#       hides its text, and the composer's prompt row is inside the window.
 #   fm_wd_strip_ansi
 #       Filter: removes ANSI escape sequences and carriage returns.
 #   fm_wd_pane_dialog <screen>
@@ -101,6 +104,11 @@ fm_wd_reserved() {  # <text>
 
 fm_wd_text_allowed() {  # <text>
   ! fm_wd_lower "$1" | LC_ALL=C grep -Eq "$FM_WD_REFUSED_TEXT_RE"
+}
+
+fm_wd_draft_readable() {  # <composer-window>
+  ! printf '%s\n' "$1" | LC_ALL=C grep -Eiq '\[Pasted (text|content) ' &&
+    printf '%s\n' "$1" | LC_ALL=C grep -Eq $'^([│┃|] )?(❯|›|⟩|→|❭|>)( |\xC2\xA0|$)'
 }
 
 fm_wd_strip_ansi() {
