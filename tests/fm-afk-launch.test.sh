@@ -1075,6 +1075,7 @@ unit_supervision_host_other_harnesses_run_no_away_daemon() {
     || fail "codex: entry must not fabricate a watcher or host record"
   afk_hold_fixture() {  # <args for the stand-in watcher>
     bash -c 'sleep 30; :' _ "$@" >/dev/null 2>&1 &
+    # shellcheck disable=SC2031 # The background PID is captured immediately in this shell.
     hold_pid=$!
     mkdir -p "$st/state/.watch.lock"
     printf '%s\n' "$hold_pid" > "$st/state/.watch.lock/pid"
