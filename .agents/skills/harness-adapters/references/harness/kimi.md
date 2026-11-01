@@ -2,7 +2,7 @@
 
 Verified on 2026-09-17 with Kimi Code CLI 2.0.0.
 The folder prompt was recorded again on 2026-10-23 with Kimi Code CLI 2.3.0 and 2.3.1, which reworded it; `tests/fm-kimi-trust-prompt-live-e2e.test.sh` refreshes that evidence against the installed binary.
-The folder-trust dialog was also re-verified live on 2026-10-29 with Kimi Code CLI 2.4.0 through a tmux spawn.
+[Runtime backend verification](../../../../../docs/verification/runtime-backends.md#2026-10-29-kimi-code-cli-240-trust-dialog-and-installer-python-through-tmux) owns the Kimi Code CLI 2.4.0 tmux trust-dialog and installer evidence.
 
 ## Operating facts
 

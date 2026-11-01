@@ -1093,7 +1093,7 @@ user@host project % . '/tmp/fm-<id>+<hash>/launch.s<stamp>.sh'
  ──────────────────────────────────────────────────────────────────────────────
 ```
 
-`kimi_trust_dialog_missing` in [fm-spawn.sh](../../bin/fm-spawn.sh) finds every required element in that capture, so it is the complete dialog that spawn answers.
+`kimi_trust_dialog_missing` in [fm-kimi-trust-lib.sh](../../bin/fm-kimi-trust-lib.sh) finds every required element in that capture, so it is the complete dialog that spawn answers.
 For a readiness refusal, compare the saved capture with the recognition code that actually ran; `kimi_ready_refusal` in [fm-spawn.sh](../../bin/fm-spawn.sh) owns the evidence record, and the failure detail reports whether it could be written.
 
 The end-to-end proof ran one real scout spawn with the default `PATH`, from a scratch `FM_HOME` and a scratch git project whose worktree path Kimi had never seen:
@@ -1122,7 +1122,8 @@ fm-kimi-turnend-hook: install Python 3.11 or newer (for example "uv python insta
 
 [`fm-kimi-turnend-hook.sh --help`](../../bin/fm-kimi-turnend-hook.sh) owns the search order.
 `tests/fm-kimi-harness.test.sh` pins this capture shape below its preamble, the refusal record with its missing elements and last capture, and the interpreter search order and refusal.
-No live guard drives the trust dialog yet, so rerun the scout spawn above after a Kimi upgrade to refresh this entry.
+The [Kimi folder-prompt live guard](#kimi-folder-prompt) refreshes trust-dialog recognition after a Kimi upgrade without model tokens or credentials.
+Rerun the scout spawn above to refresh the complete spawn and installer evidence.
 
 ### 2026-10-14 opencode 1.19.0 de-emphasised mode/footer row in the left-bar composer
 
