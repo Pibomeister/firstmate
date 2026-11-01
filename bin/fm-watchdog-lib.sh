@@ -75,7 +75,7 @@
 #   fm_wd_iso <epoch>
 #       Prints the UTC ISO-8601 time.
 
-FM_WD_REFUSED_TEXT_RE='(^|[^be])merg|[rd]emerg|deploy|releas|publish|(^|[^a-z])force.?push|push.*[[:space:]](--force|-[a-z]*f[a-z]*)([^a-z]|$)'
+FM_WD_REFUSED_TEXT_RE='(^|[^be])merg|[rd]emerg|deploy|releas|publish|(^|[^a-z])force.?push|push.*[[:space:]]["'"'"']?((--force|-[a-z]*f[a-z]*)([^a-z]|$)|\+[^[:space:]])'
 FM_WD_RESERVED_RE="$FM_WD_REFUSED_TEXT_RE"'|(^|[^a-z])(spend|spent|money|budget|billing|invoice|payment|sign-?in|log-?in|login|credential|secret|password|api.?key|security|production|pii|delet|destroy|wipe)'
 FM_WD_TIMER_TOOL_RE='^(ScheduleWakeup|CronCreate|CronList|CronDelete|Monitor|TaskOutput|BashOutput|Wait)$'
 FM_WD_TIMER_BASH_RE='(^|[^a-z])(sleep|fm-watch|fm-wake|wake|timer|until)([^a-z]|$)'
@@ -139,9 +139,18 @@ fm_wd_draft_rows() {  # <composer-window>
     }'
 }
 
-fm_wd_draft_readable() {  # <composer-window>
-  ! fm_wd_paste_placeholder "$1" &&
-    printf '%s\n' "$1" | LC_ALL=C grep -Eq "$FM_WD_PROMPT_RE"
+fm_wd_draft_readable() {  # <composer-window> [rows-above-the-window]
+  local above=${2-} above_n=0
+  fm_wd_paste_placeholder "$1" && return 1
+  [ -z "$above" ] || above_n=$(printf '%s\n' "$above" | wc -l | tr -d ' ')
+  { [ -z "$above" ] || printf '%s\n' "$above"; printf '%s\n' "$1"; } | awk -v glyph="$FM_WD_PROMPT_RE" -v above_n="$above_n" '
+    function is_rule(r, t) { t = r; gsub(/[ \t│┃|─━╭╮╰╯┌┐└┘-]/, "", t); return t == "" && (index(r, "─") || index(r, "━")) }
+    $0 ~ glyph {
+      if (NR > above_n) { found = 1; hidden = seen && !prev_rule; exit }
+      seen = 1
+    }
+    { prev_rule = is_rule($0) }
+    END { exit !(found && !hidden) }'
 }
 
 fm_wd_strip_ansi() {

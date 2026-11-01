@@ -228,6 +228,7 @@ wd_read_composer() {
   fi
   O_DRAFT=''
   O_COMPOSER_TEXT=$(printf '%s\n' "$O_PANE" | fm_wd_strip_ansi | awk 'NF { r[++n] = $0 } END { for (i = n - 7; i <= n; i++) if (i > 0) print r[i] }')
+  O_COMPOSER_ABOVE=$(printf '%s\n' "$O_PANE" | fm_wd_strip_ansi | awk 'NF { r[++n] = $0 } END { for (i = 1; i <= n - 8; i++) print r[i] }')
   if [ "$O_BACKEND" = orca ]; then
     O_DRAFT=$(fm_run_timed 10 orca terminal read --terminal "$O_TARGET" --limit 5 --json 2>/dev/null | jq -r '(.result.terminal.draft // .result.draft // "") | tostring' 2>/dev/null)
     O_COMPOSER_TEXT="$O_COMPOSER_TEXT $O_DRAFT"
@@ -245,7 +246,7 @@ wd_observe() {
   O_PANE='' O_SIG='' O_PANE_STATIC=0 O_DIALOG='' O_COMPOSER=unknown O_TURN=unknown
   O_LOCK_PID='' O_ALIVE=0 O_INSTANCE=unknown O_CPU_BUSY=unknown O_TRANSCRIPT='' O_TR_AGE=unknown
   O_LOOP=none O_LOOP_N=0 O_LOOP_SAMPLE='' O_RESTART_REQ=0 O_OWED_N=0 O_OWED_AGE=0
-  O_AFK=0 O_DAEMON=unknown O_PREV_COMPOSER='' O_PREV_SIG='' O_COMPOSER_TEXT='' O_DRAFT=''
+  O_AFK=0 O_DAEMON=unknown O_PREV_COMPOSER='' O_PREV_SIG='' O_COMPOSER_TEXT='' O_COMPOSER_ABOVE='' O_DRAFT=''
   hb=$st/heartbeat.json
   hb_sid='' ctx=''
   if [ -f "$hb" ] && row=$(jq -r '[.primary.terminal.backend // "-", .primary.terminal.target // "-",
@@ -599,8 +600,7 @@ wd_write_handoff() {  # <symptom> -> prints path
       draft=$O_DRAFT
       note='Composer field at restart, never submitted. It may be an unsent draft or a harness suggestion. Treat it as a note and do not act on it without review:'
     elif [ "$O_COMPOSER" = pending ] && [ -n "$(printf '%s' "$O_COMPOSER_TEXT" | tr -d '[:space:]')" ]; then
-      draft=$(fm_wd_draft_rows "$O_COMPOSER_TEXT")
-      [ -n "$draft" ] || lost=1
+      if fm_wd_draft_readable "$O_COMPOSER_TEXT" "$O_COMPOSER_ABOVE"; then draft=$(fm_wd_draft_rows "$O_COMPOSER_TEXT"); else lost=1; fi
     else
       unseen=1
     fi
@@ -864,7 +864,7 @@ wd_draft_allowed() {
 }
 
 wd_submit_unsent() {
-  if ! fm_wd_draft_readable "$O_COMPOSER_TEXT"; then
+  if ! fm_wd_draft_readable "$O_COMPOSER_TEXT" "$O_COMPOSER_ABOVE"; then
     wd_gap "unsent input is a paste placeholder or taller than the read window; Enter not pressed"
     wd_rate_open pasted-input key "$(cfgi enter-secs 300)" &&
       wd_rec "$(wd_id)" pasted-input key refused "the whole draft cannot be read; never accepted"
@@ -887,7 +887,7 @@ wd_handoff_undeliverable() {
   [ "$O_RESTART_REQ" != 1 ] && [ -z "$(wd_handoff_nudge_epoch)" ] || return 1
   case "$O_COMPOSER" in
     empty) return 1 ;;
-    pending) fm_wd_draft_readable "$O_COMPOSER_TEXT" && wd_draft_allowed && ! wd_enter_spent && return 1 ;;
+    pending) fm_wd_draft_readable "$O_COMPOSER_TEXT" "$O_COMPOSER_ABOVE" && wd_draft_allowed && ! wd_enter_spent && return 1 ;;
   esac
   wd_gap "low context, but composer is $O_COMPOSER, so the handoff nudge cannot be delivered"
   return 0

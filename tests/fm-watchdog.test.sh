@@ -209,11 +209,11 @@ test_stall_proof_and_text_guards() {
   ! lib fm_wd_text_allowed "Deploy to prod" || fail "deploy must be refused"
   lib fm_wd_text_allowed "emerge from the wake queue" || fail "emerge is not merge"
   local word
-  for word in "redeploy the staging service" "gh pr merge 5" "enable automerge on PR 5" "cut a prerelease" "republish the package" "REDEPLOY now" "remerge it" "premerge it" "undeploy it" "git push --force origin main" "git push -f origin main" "git push origin main --force-with-lease" "git push -uf origin main"; do
+  for word in "redeploy the staging service" "gh pr merge 5" "enable automerge on PR 5" "cut a prerelease" "republish the package" "REDEPLOY now" "remerge it" "premerge it" "undeploy it" "git push --force origin main" "git push -f origin main" "git push origin main --force-with-lease" "git push -uf origin main" "git push origin +main" "git push origin +main:main" "git push origin +HEAD:refs/heads/main" 'git push origin "+main"'; do
     ! lib fm_wd_text_allowed "$word" || fail "text guard let through: $word"
     lib fm_wd_reserved "$word" || fail "reserved check let through: $word"
   done
-  for word in "handle the emergency" "submerge the raft" "re-emerge later" "git push -u origin fix-flag" "git push --follow-tags"; do
+  for word in "handle the emergency" "submerge the raft" "re-emerge later" "git push -u origin fix-flag" "git push --follow-tags" "push 2 + 3 rows"; do
     lib fm_wd_text_allowed "$word" || fail "text guard over-refused: $word"
     ! lib fm_wd_reserved "$word" || fail "reserved check over-refused: $word"
   done
@@ -318,7 +318,7 @@ test_merge_autosuggestion_never_accepted() {
   assert_grep "unsent draft names a merge" "$H/data/watchdog/status.md" "the draft refusal is a gap"
 
   local draft
-  for draft in "redeploy the staging service" "gh pr merge 5" "enable automerge on PR 5" "cut a prerelease" "republish the package" "git push --force origin main" "git push -f origin main" "git push origin main --force-with-lease"; do
+  for draft in "redeploy the staging service" "gh pr merge 5" "enable automerge on PR 5" "cut a prerelease" "republish the package" "git push --force origin main" "git push -f origin main" "git push origin main --force-with-lease" "git push origin +main" "git push origin +main:main"; do
     make_home "Captain session"$'\n'"> $draft"
     FM_WD_TEST_COMPOSER=pending run_wd 0 once >/dev/null 2>&1
     FM_WD_TEST_COMPOSER=pending run_wd 300 once >/dev/null 2>&1
@@ -356,6 +356,99 @@ test_merge_autosuggestion_never_accepted() {
   assert_equals 0 "$(ledger_rows pasted-input key pending)" "a bordered merge draft gets no Enter: $(ledger | cut -f5-8)"
   assert_equals 1 "$(ledger_rows pasted-input key refused)" "a bordered merge draft is refused"
   pass "boundary: never accepts a merge autosuggestion, while ordinary unsent text is submitted"
+}
+
+test_quoted_row_never_hides_a_taller_draft() {
+  local rule='──────────' tall
+  tall=$'Captain session\n> merge #5\n one\n two\n three\n four\n> quoted\n six\n seven\n'"$rule"$'\n ? for shortcuts'
+  ! lib fm_wd_draft_readable $' two\n three\n four\n> quoted\n six\n seven\n'"$rule"$'\n ? for shortcuts' $'Captain session\n> merge #5\n one' || fail "a prompt row above the window hides the draft top"
+  lib fm_wd_draft_readable $'> now\n'"$rule" $'> sent earlier\nreply\n'"$rule" || fail "a rule directly above the prompt proves the boundary"
+  lib fm_wd_draft_readable $'> now\n'"$rule" || fail "a window with nothing above it is readable"
+
+  make_home "$tall"
+  FM_WD_TEST_COMPOSER=pending run_wd 0 once >/dev/null 2>&1
+  FM_WD_TEST_COMPOSER=pending run_wd 300 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows pasted-input key refused)" "the taller draft is refused: $(ledger | cut -f5-8)"
+  assert_equals 0 "$(ledger_rows pasted-input key pending)" "the taller draft gets no Enter"
+  sleep 1
+  assert_equals "" "$(cat "$H/typed.log")" "Enter was never pressed on the taller draft"
+
+  make_home "$tall" "restart=on
+restart-command=$TMP_ROOT/fake-captain.sh"
+  write_fake_captain
+  transcript 3000 "Working." "Testing." "Green."
+  kill_holder_with_anchor
+  FM_WD_TEST_COMPOSER=pending run_wd 0 once >/dev/null 2>&1
+  assert_grep "lost an unreadable draft" "$H/data/watchdog/status.md" "the partial draft is reported as a gap"
+  wait_pickup && LOCK_PIDS="$LOCK_PIDS $(cat "$H/state/.lock")"
+  pass "boundary: a quoted row inside a taller draft never earns Enter or a partial note"
+}
+
+test_terminal_service_loss_is_agent_gone() {
+  local idle=$'Captain session\n> ' working=$'Captain session\n✻ Working… (esc to interrupt)' screen
+  for screen in "$idle" "$working"; do
+    make_home "$screen" "restart=on
+restart-command=$TMP_ROOT/fake-captain.sh"
+    write_fake_captain
+    transcript 3000 "Working." "Testing." "Green."
+    kill_holder_with_anchor
+    run_wd 0 once >/dev/null 2>&1
+    assert_equals 1 "$(ledger_rows agent-gone restart pending)" "a pane with no agent process restarts: $(ledger | cut -f5-8)"
+    wait_pickup || fail "the new captain never proved pickup: $(ledger | cut -f5-8)"
+    LOCK_PIDS="$LOCK_PIDS $(cat "$H/state/.lock")"
+    assert_equals "" "$(cat "$H/typed.log")" "nothing is typed into a pane with no agent process"
+
+    make_home "$screen" "restart=on
+restart-command=$TMP_ROOT/fake-captain.sh"
+    transcript 100 "Working." "Testing." "Green."
+    kill_holder_with_anchor
+    run_wd 0 once >/dev/null 2>&1
+    assert_equals "" "$(ledger)" "one signal is no restart proof"
+    assert_grep "lock holder is dead" "$H/data/watchdog/status.md" "the wait for a second signal is a gap"
+
+    make_home "$screen" "restart=off
+restart-command=$TMP_ROOT/fake-captain.sh"
+    transcript 3000 "Working." "Testing." "Green."
+    kill_holder_with_anchor
+    run_wd 0 once >/dev/null 2>&1
+    assert_equals 1 "$(ledger_rows agent-gone restart refused)" "restart off refuses: $(ledger | cut -f5-8)"
+    assert_equals 0 "$(ledger_rows agent-gone restart pending)" "restart off starts nothing"
+
+    make_home "$screen" "restart=on
+restart-command=$TMP_ROOT/fake-captain.sh"
+    printf 'do-not-touch=%s\n' "$T" >> "$H/config/watchdog"
+    transcript 3000 "Working." "Testing." "Green."
+    kill_holder_with_anchor
+    run_wd 0 once >/dev/null 2>&1
+    assert_equals 1 "$(ledger_rows agent-gone restart refused)" "do-not-touch refuses: $(ledger | cut -f5-8)"
+    assert_equals 0 "$(ledger_rows agent-gone restart pending)" "do-not-touch starts nothing"
+
+    make_home "$screen" "restart=on
+models=claude:haiku
+restart-command=$TMP_ROOT/fake-captain.sh"
+    write_fake_captain
+    fake_models "$H" ok:"RULING A" absent
+    transcript 3000 "Working." "Testing." "Green."
+    printf 'needs-decision [at=%s] [key=captain-hold-cut]: A or B?\n' "$((BASE - 9000))" > "$H/state/t1.status"
+    kill_holder_with_anchor
+    run_wd 0 once >/dev/null 2>&1
+    wait_pickup && LOCK_PIDS="$LOCK_PIDS $(cat "$H/state/.lock")"
+    [ ! -s "$H/model.log" ] || fail "a model saw an owner hold: $(cat "$H/model.log")"
+    assert_grep "captain-hold-cut" "$H/state/t1.status" "the owner hold stays open"
+    assert_equals "" "$(cat "$H/typed.log")" "the owner hold is never answered"
+  done
+
+  make_home "$working" "restart=on
+max-nudges=0
+restart-command=$TMP_ROOT/fake-captain.sh"
+  transcript 3000 "Working." "Testing." "Green."
+  owe_input 3000
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 1000 once >/dev/null 2>&1
+  kill -0 "$LOCKPID" 2>/dev/null || fail "a live long tool call was stopped"
+  ledger | grep -q restart && fail "a live long tool call must not restart: $(ledger)"
+  assert_grep "treated as busy" "$H/data/watchdog/status.md" "the live tool call is protected"
+  pass "terminal service loss: no agent process overrides drawn Working; a live tool call stays protected"
 }
 
 test_unreadable_draft_never_gets_enter() {
@@ -1404,6 +1497,8 @@ fm_test_run \
   test_draft_rows_are_the_draft_alone \
   test_merge_autosuggestion_never_accepted \
   test_unreadable_draft_never_gets_enter \
+  test_quoted_row_never_hides_a_taller_draft \
+  test_terminal_service_loss_is_agent_gone \
   test_owner_reserved_holds_stay_held_and_council_settles_the_rest \
   test_split_council_gives_no_ruling \
   test_judge_fallback_and_spend_cap \
