@@ -285,8 +285,10 @@ test_draft_rows_are_the_draft_alone() {
   assert_equals $'› keep going\n ────\n merge #5' "$(lib fm_wd_draft_rows $'› keep going\n ────\n merge #5\n 100% context left')" "with no closing rule, rows under an inner rule stay in the note"
   assert_equals $'> keep going\n ──────\n merge #5' "$(lib fm_wd_draft_rows $'> keep going\n ──────\n merge #5\n ? for shortcuts')" "an inner rule above text is not closing"
   assert_equals $'> merge #5\n'"$rule"$'\n> ok\n  footer' "$(lib fm_wd_prompt_tail "old"$'\n> merge #5\n'"$rule"$'\n> ok\n  footer')" "the guard reads from the first prompt row to the end"
-  lib fm_wd_draft_readable "│ > finish the summary │" || fail "a bordered prompt row is readable"
-  LC_ALL=C lib fm_wd_draft_readable "│ > finish the summary │" || fail "a bordered prompt row is readable in the C locale"
+  lib fm_wd_draft_readable "╭──╮"$'\n│ > finish the summary │\n'"╰──╯" || fail "a bordered prompt row in a box is readable"
+  LC_ALL=C lib fm_wd_draft_readable "╭──╮"$'\n│ > finish the summary │\n'"╰──╯" || fail "a bordered prompt row in a box is readable in the C locale"
+  ! lib fm_wd_draft_readable "│ > finish the summary │" || fail "a bordered row with no box proves nothing"
+  assert_equals $'│ > merge #5 │\n│ ──── │\n│ > quoted │' "$(lib fm_wd_draft_rows $'╭──╮\n│ > merge #5 │\n│ ──── │\n│ > quoted │\n╰──╯\n ? for shortcuts')" "an inner rule does not cut a box's note"
   assert_equals "│ > finish the summary │" "$(lib fm_wd_draft_rows "╭──────╮"$'\n│ > finish the summary │\n'"╰──────╯")" "a box leaves only its text row"
   assert_equals "> now" "$(lib fm_wd_draft_rows "> sent earlier"$'\n'"$rule"$'\n> now\n'"$rule")" "a rule above the prompt ends the conversation"
   pass "draft rows: from the prompt row to the rule, and no footer word cuts them"
@@ -376,6 +378,12 @@ test_quoted_row_never_hides_a_taller_draft() {
   lib fm_wd_draft_readable $'╭────╮\n│ > finish │\n╰────╯' $'> earlier\nreply' || fail "a closed box proves the boundary"
   ! lib fm_wd_draft_readable $'│ > finish │\n plain row\n╰────╯' $'> earlier\n╭────╮' || fail "a broken box proves nothing"
   ! lib fm_wd_draft_readable $'│ three │\n│ four │\n│ five │\n│ six │\n│ > quoted │\n│ seven │\n╰────╯\n ? for shortcuts' $'╭────╮\n│ > merge #5 │\n│ one │\n│ two │' || fail "a box that starts above the window proves nothing"
+  local hidden_rows i
+  hidden_rows='│ row0 │'
+  for i in $(seq 1 52); do hidden_rows="$hidden_rows"$'\n'"│ row$i │"; done
+  ! lib fm_wd_draft_readable $'│ a │\n│ b │\n│ > quoted │\n│ c │\n╰──╯\n ? for shortcuts' "$hidden_rows" || fail "a box with its top beyond the capture proves nothing"
+  ! lib fm_wd_draft_readable $'│ a │\n│ > quoted │\n╰──╯' || fail "a box with no top proves nothing"
+  ! lib fm_wd_draft_readable $'│ > quoted │\n╰──╯' $'╭──╮' || fail "a top just above the window proves nothing"
   lib fm_wd_draft_readable $'╭────╮\n│ > fine │\n│ > quoted │\n╰────╯' $'> earlier\nreply' || fail "a whole box in the window is read from its first prompt row"
   lib fm_wd_draft_readable $'> now\n'"$rule" || fail "a window with nothing above it is readable"
 
@@ -424,6 +432,26 @@ restart-command=$TMP_ROOT/fake-captain.sh"
   FM_WD_TEST_COMPOSER=pending run_wd 0 once >/dev/null 2>&1
   FM_WD_TEST_COMPOSER=pending run_wd 300 once >/dev/null 2>&1
   assert_equals 0 "$(ledger_rows pasted-input key refused)" "a clean whole box is not refused: $(ledger | cut -f5-8)"
+  assert_equals 1 "$(ledger_rows pasted-input key pending)" "a clean whole box leaves Enter: $(ledger | cut -f5-8)"
+
+  make_home $'│ merge #5 │\n│ one │\n│ two │\n│ three │\n│ four │\n│ five │\n│ six │\n│ > quoted │\n│ seven │\n╰────╯\n ? for shortcuts'
+  FM_WD_TEST_COMPOSER=pending run_wd 0 once >/dev/null 2>&1
+  FM_WD_TEST_COMPOSER=pending run_wd 300 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows pasted-input key pending)" "a box with no visible top gets no Enter: $(ledger | cut -f5-8)"
+  assert_equals 1 "$(ledger_rows pasted-input key refused)" "a box with no visible top is refused"
+  assert_grep "boundary is not proven" "$H/data/watchdog/status.md" "the box with no visible top is reported as a gap"
+
+  make_home $'╭──╮\n│ > keep top row │\n│ ──── │\n│ > quoted │\n╰──╯\n ? for shortcuts' "restart=on
+restart-command=$TMP_ROOT/fake-captain.sh"
+  write_fake_captain
+  transcript 3000 "Working." "Testing." "Green."
+  kill_holder_with_anchor
+  FM_WD_TEST_COMPOSER=pending run_wd 0 once >/dev/null 2>&1
+  wait_pickup && LOCK_PIDS="$LOCK_PIDS $(cat "$H/state/.lock")"
+  local box_note
+  box_note=$(awk '/never submitted/ { on = 1; next } on && /^```/ { if (seen) exit; seen = 1; next } seen { print }' "$H/data/watchdog/handoffs/"*.md)
+  assert_equals $'│ > keep top row │\n│ ──── │\n│ > quoted │' "$box_note" "the handoff note holds the whole box draft: $(cat "$H/data/watchdog/handoffs/"*.md)"
+  ! grep -q "lost an unreadable draft" "$H/data/watchdog/status.md" || fail "a whole box draft is not a lost draft"
   pass "boundary: a quoted row inside a taller draft never earns Enter or a partial note"
 }
 
