@@ -239,6 +239,15 @@ test_do_not_touch_never_typed() {
   pass "boundary: never types into a pane on the do-not-touch list"
 }
 
+test_draft_rows_are_the_draft_alone() {
+  local rule='──────────'
+  assert_equals $'> first\n  then enter plan mode\n  third' "$(lib fm_wd_draft_rows "> first"$'\n  then enter plan mode\n  third\n'"$rule"$'\n  footer')" "a footer word inside a draft does not cut it"
+  assert_equals $'> first\n  accept edits later' "$(lib fm_wd_draft_rows $'old row\n> first\n  accept edits later\n  ? for shortcuts\n  7% until auto-compact')" "with no rule, only trailing footer rows drop"
+  assert_equals $'> merge #5\n> ok' "$(lib fm_wd_draft_rows "> merge #5"$'\n> ok\n'"$rule"$'\n  footer')" "a second prompt glyph in a draft does not cut it"
+  assert_equals "> now" "$(lib fm_wd_draft_rows "> sent earlier"$'\n'"$rule"$'\n> now\n'"$rule")" "a rule above the prompt ends the conversation"
+  pass "draft rows: from the prompt row to the rule, and no footer word cuts them"
+}
+
 test_merge_autosuggestion_never_accepted() {
   make_home $'Captain session\n> merge #12'
   FM_WD_TEST_COMPOSER=pending run_wd 0 once >/dev/null 2>&1
@@ -247,12 +256,27 @@ test_merge_autosuggestion_never_accepted() {
   assert_equals 1 "$(ledger_rows pasted-input key refused)" "pending merge text is refused once per window"
   sleep 1
   assert_equals "" "$(cat "$H/typed.log")" "Enter was never pressed on merge #12"
+  local HOLD_STATUS="$H/status.merge"
+  cp "$H/data/watchdog/status.md" "$HOLD_STATUS"
   make_home $'Captain session\n> continue with the plan'
   FM_WD_TEST_COMPOSER=pending run_wd 0 once >/dev/null 2>&1
   FM_WD_TEST_COMPOSER=pending run_wd 300 once >/dev/null 2>&1
   assert_equals 1 "$(ledger_rows pasted-input key pending)" "ordinary unsent text gets Enter"
   for _ in $(seq 1 25); do [ -s "$H/typed.log" ] && break; sleep 0.2; done
   [ -s "$H/typed.log" ] || fail "Enter never reached the pane"
+  assert_grep "unsent draft names a merge" "$HOLD_STATUS" "the refusal is reported as a gap"
+
+  make_home $'PR #41 merged and the release went out.\n> finish the summary'
+  FM_WD_TEST_COMPOSER=pending run_wd 0 once >/dev/null 2>&1
+  FM_WD_TEST_COMPOSER=pending run_wd 300 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows pasted-input key pending)" "a merge word in conversation does not block the draft: $(ledger | cut -f5-8)"
+
+  make_home $'Captain session\n> first row\n  then enter plan mode\n  merge #5\n──────────\n  ? for shortcuts'
+  FM_WD_TEST_COMPOSER=pending run_wd 0 once >/dev/null 2>&1
+  FM_WD_TEST_COMPOSER=pending run_wd 300 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows pasted-input key pending)" "a footer word cannot hide a merge word from Enter: $(ledger | cut -f5-8)"
+  assert_equals 1 "$(ledger_rows pasted-input key refused)" "the draft is refused: $(ledger | cut -f5-8)"
+  assert_grep "unsent draft names a merge" "$H/data/watchdog/status.md" "the draft refusal is a gap"
   pass "boundary: never accepts a merge autosuggestion, while ordinary unsent text is submitted"
 }
 
@@ -1282,6 +1306,7 @@ fm_test_run \
   test_stall_proof_and_text_guards \
   test_frozen_pane_nudges_once_then_rate_limits \
   test_do_not_touch_never_typed \
+  test_draft_rows_are_the_draft_alone \
   test_merge_autosuggestion_never_accepted \
   test_unreadable_draft_never_gets_enter \
   test_owner_reserved_holds_stay_held_and_council_settles_the_rest \

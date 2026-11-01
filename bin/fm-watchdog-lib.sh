@@ -20,7 +20,9 @@
 #       merge, deploy, release, publish, and force-push words, so no typed answer
 #       or nudge can carry a merge or deploy instruction.
 #   fm_wd_draft_rows <composer-window>
-#       Prints the rows from the last prompt row down, without rule or footer rows.
+#       Prints the draft: from the first prompt row below the nearest rule above
+#       the last prompt row, down to the next rule. With no rule below, only
+#       trailing rows that start as a footer are dropped.
 #   fm_wd_draft_readable <composer-window>
 #       Returns 0 only when the window shows the whole draft: no paste placeholder
 #       hides its text, and the composer's prompt row is inside the window.
@@ -115,15 +117,18 @@ fm_wd_paste_placeholder() {  # <composer-window>
 
 fm_wd_draft_rows() {  # <composer-window>
   printf '%s\n' "$1" | awk -v glyph=$'^([│┃|] )?(❯|›|⟩|→|❭|>)( |\xC2\xA0|$)' '
-    $0 ~ glyph { n = 0; found = 1 }
-    found { row[++n] = $0 }
+    function is_rule(r, t) { t = r; gsub(/[ \t│┃|─━╭╮╰╯┌┐└┘-]/, "", t); return t == "" && (index(r, "─") || index(r, "━")) }
+    { row[NR] = $0; if ($0 ~ glyph) g[NR] = 1 }
     END {
-      for (i = 1; i <= n; i++) {
-        r = row[i]
-        gsub(/[ \t│┃|─━╭╮╰╯┌┐└┘-]/, "", r)
-        if (i > 1 && (r == "" || row[i] ~ /auto-compact|for shortcuts|bypass permissions|accept edits|plan mode|esc to interrupt/)) break
-        print row[i]
-      }
+      for (i = NR; i > 0; i--) if (i in g) { last = i; break }
+      if (!last) exit
+      start = last
+      for (i = last - 1; i > 0 && !is_rule(row[i]); i--) if (i in g) start = i
+      stop = NR
+      ruled = 0
+      for (i = last + 1; i <= NR; i++) if (is_rule(row[i])) { stop = i - 1; ruled = 1; break }
+      if (!ruled) while (stop > last && row[stop] ~ /^[^A-Za-z0-9]*(for shortcuts|[0-9]+% until auto-compact|until auto-compact|(bypass permissions|accept edits|plan mode) on( \(|$)|esc to interrupt)/) stop--
+      for (i = start; i <= stop; i++) print row[i]
     }'
 }
 
