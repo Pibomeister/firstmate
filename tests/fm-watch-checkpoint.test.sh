@@ -859,6 +859,45 @@ test_real_host_secondmate_park_ignores_the_inbox() {
   pass "checkpoint: a secondmate's host park never runs the plain path's inbox exit"
 }
 
+test_real_host_checkpoint_replaces_a_stop_hook_hold() {
+  local home fakebin hold holder replaced status cp_pid
+  home=$(make_home host-real-hold)
+  : > "$home/config/supervision-host"
+  fakebin="$TMP_ROOT/host-real-hold-bin"
+  mkdir -p "$fakebin"
+  ln -s /bin/bash "$fakebin/codex"
+  FM_HOME="$home" FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    FM_WATCH_HANDLING_SUCCESSOR=1 FM_WATCH_GROK_HOLD=1 "$ROOT/bin/fm-watch.sh" --grok-hold >/dev/null 2>&1 &
+  hold=$!
+  wait_for_checkpoint_lock "$home" || fail "the hold never took the lock"
+  # shellcheck disable=SC2016 # the single-quoted script expands in the child shell.
+  FM_GATE_REFUSE_BYPASS=1 FM_HOME="$home" FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$fakebin/codex" -c '
+    printf "%s\n" "$$" > "$FM_HOME/state/.lock"
+    "$0" --seconds 12
+  ' "$CHECKPOINT" >"$home/out.txt" 2>"$home/err.txt" &
+  cp_pid=$!
+  replaced=0
+  while kill -0 "$cp_pid" 2>/dev/null; do
+    holder=$(cat "$home/state/.watch.lock/pid" 2>/dev/null)
+    if [ -n "$holder" ] && [ "$holder" != "$hold" ]; then
+      replaced=1
+      break
+    fi
+    sleep 0.2
+  done
+  if [ "$replaced" -ne 1 ]; then
+    kill "$hold" 2>/dev/null
+    wait "$cp_pid" 2>/dev/null
+    fail "the host attached to the hold instead of replacing it"
+  fi
+  status=0
+  wait "$cp_pid" || status=$?
+  wait "$hold" 2>/dev/null
+  expect_code 0 "$status" "the checkpoint over a hold: $(cat "$home/out.txt" "$home/err.txt")"
+  assert_contains "$(cat "$home/out.txt")" "checkpoint: no actionable wake within 12s" "the host park did not end as the quiet line"
+  pass "checkpoint: a real host replaces a Stop-hook hold instead of attaching to it"
+}
+
 # A secondmate's capped bound is also the real host's turn limit: an away close
 # whose engine turn could outlast it is handed to the secondmate at once rather
 # than holding its turn for the engine's own bound, and the checkpoint leaves
@@ -1743,5 +1782,6 @@ test_stop_preserves_foreign_process_identity_guards
 test_real_host_retirement_preserves_cleanup_failures
 test_real_host_startup_failures_stay_nonzero
 test_real_host_secondmate_park_ignores_the_inbox
+test_real_host_checkpoint_replaces_a_stop_hook_hold
 test_real_host_secondmate_turn_never_outlives_the_cap
 test_real_host_checkpoint_ends_quietly_at_its_bound

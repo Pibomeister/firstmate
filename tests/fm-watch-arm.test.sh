@@ -2375,6 +2375,50 @@ test_grok_successor_holds_across_quiet_polls_after_a_process_event() {
   pass "grok: the real arm holds across quiet polls and the next tracked arm delivers fresh work"
 }
 
+run_detach_hold() {  # <primary> [env assignment...]
+  local primary=$1
+  shift
+  env -u TMUX -u TMUX_PANE -u HERDR_SESSION -u HERDR_PANE_ID "$@" \
+    FM_HOME="$primary" FM_STATE_OVERRIDE="$primary/state" FM_ROOT_OVERRIDE="$primary" \
+    FM_CONFIG_OVERRIDE="$primary/config" FM_ARM_CONFIRM_TIMEOUT="$REARM_CONFIRM_SECONDS" \
+    "$primary/bin/fm-watch-arm.sh" --detach-hold
+}
+
+test_detach_hold_leaves_a_hold_behind_the_arm() {
+  local dir primary out status pid
+  dir=$(make_case detach-hold-real)
+  primary=$(make_grok_guard_primary "$dir")
+  out=$(run_detach_hold "$primary" PATH="$dir/fakebin:$PATH" 2>&1); status=$?
+  expect_code 0 "$status" "detach-hold must confirm its hold: $out"
+  assert_contains "$out" "watcher: started pid=" "detach-hold must report the started hold"
+  primary_watcher_healthy "$primary" || fail "no healthy watcher holds the lock after the arm exited"
+  pid=$(cat "$primary/state/.watch.lock/pid")
+  assert_contains "$(ps -o args= -p "$pid")" "--grok-hold" "the surviving watcher must be the detached hold"
+  out=$(run_detach_hold "$primary" PATH="$dir/fakebin:$PATH" 2>&1); status=$?
+  expect_code 0 "$status" "detach-hold must attach to a healthy watcher: $out"
+  assert_contains "$out" "watcher: attached pid=$pid" "detach-hold must report the attach"
+  stop_primary_watcher "$primary"
+  pass "detach-hold: the real arm exits 0, leaves a hold on the lock, and attaches on the next call"
+}
+
+test_detach_hold_refuses_away_mode_and_reports_failure() {
+  local dir primary out status
+  dir=$(make_case detach-hold-refuse)
+  primary=$(make_grok_guard_primary "$dir")
+  : > "$primary/state/.afk"
+  out=$(run_detach_hold "$primary" 2>&1); status=$?
+  expect_code 1 "$status" "detach-hold must refuse while state/.afk exists: $out"
+  [ ! -e "$primary/state/.watch.lock/pid" ] || fail "away-mode detach-hold started a watcher"
+  rm -f "$primary/state/.afk"
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$primary/bin/fm-watch.sh"
+  out=$(run_detach_hold "$primary" 2>&1); status=$?
+  expect_code 1 "$status" "detach-hold must fail when its watcher dies: $out"
+  assert_contains "$out" "watcher: FAILED" "detach-hold must print its typed failure"
+  pass "detach-hold: state/.afk refuses it, and a dead watcher exits with a FAILED line"
+}
+
+test_detach_hold_leaves_a_hold_behind_the_arm
+test_detach_hold_refuses_away_mode_and_reports_failure
 test_grok_one_stale_notice_leaves_the_watcher_holding_the_lock
 test_grok_hold_survives_a_wake_after_a_process_event_wake
 test_grok_successor_holds_across_quiet_polls_after_a_process_event

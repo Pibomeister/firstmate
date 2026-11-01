@@ -221,6 +221,17 @@ fm_watcher_lock_unheld() {
 }
 
 FM_WATCHER_MATCHED_IDENTITY=
+fm_grok_holding_watcher() {  # <pid>
+  local pid=$1 proc_root=${FM_PROC_ROOT_OVERRIDE:-/proc} args
+  if [ -r "$proc_root/$pid/cmdline" ]; then
+    [ "$(tr '\000' '\n' < "$proc_root/$pid/cmdline" | tail -n 1)" = --grok-hold ]
+  else
+    args=$(ps -ww -o args= -p "$pid" 2>/dev/null) || return 1
+    case "$args" in *' --grok-hold') return 0 ;; esac
+    return 1
+  fi
+}
+
 fm_watcher_lock_matches_pid() {
   local state=$1 watch_path=$2 pid=$3 home=${4:-$FM_HOME} lockdir lock_home lock_path lock_identity current_identity
   FM_WATCHER_MATCHED_IDENTITY=

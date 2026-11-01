@@ -206,7 +206,7 @@ When the host instead hands the accepted close back to main and leaves that succ
 - No PreToolUse hook denies fleet commands based on watcher status.
 - A genuine auto-arm failure describes the automatic mechanism as broken and never directs a routine manual background arm.
 - Terminal arm-output classification (`started`, `attached`, or `FAILED`) remains defense in depth for the manual recovery path.
-- Codex retains its bounded foreground checkpoint protocol by default; [`turnend-guard.md`](turnend-guard.md#codex-mode) owns the local tmux or Herdr secondmate exception.
+- Codex lets the Stop hook re-arm a persistent watcher or end the turn, and [`turnend-guard.md`](turnend-guard.md#codex-mode) owns that rule, including the local tmux or Herdr secondmate exception.
 - Grok retains its tracked background-task notification protocol.
 - Its plain arm exports FM_WATCH_GROK_CONTINUITY=1 and detaches a handling successor that holds the lock before the arm returns an actionable wake, unless state/.afk is present.
 - That successor retains the lock across quiet polls and later notices until the owner stops or restarts it; away and quiet mode keep wakes one-shot.
@@ -573,6 +573,6 @@ The other harnesses rely on these mechanisms:
   The host's opt-in [acknowledged hand-back](supervision-host.md#acknowledged-hand-back) adds guarded tmux retries when that continuation is lost.
 - Cursor depends on its awaited stop-hook park.
 - Grok retains native background-completion notifications.
-- Codex retains bounded foreground checkpoints by default.
+- Codex lets the Stop hook re-arm a persistent watcher or end the turn, and [`turnend-guard.md`](turnend-guard.md#codex-mode) owns the rule.
 
 [`verification/supervision.md`](verification/supervision.md#watcher-continuity) records the current cross-harness live evidence, the dated Stop-owned Claude auto-arm results, and exact opt-in commands.

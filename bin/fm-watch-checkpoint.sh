@@ -14,7 +14,9 @@
 # so a parked main is not woken every few minutes; an engine turn that starts
 # before the bound may finish after it. A close that carries a wake or a
 # "supervision-host:" line other than the park boundary passes through as a
-# wake; the boundary alone is the ordinary quiet checkpoint. On a home that
+# wake; the boundary alone is the ordinary quiet checkpoint. A Stop-hook
+# --grok-hold on the lock is replaced with park --restart, because an arm that
+# attaches to a hold takes none of its wakes. On a home that
 # does not run the host nothing below changes.
 #
 # SECONDMATE HOME. In a genuine local secondmate home the bound, on either
@@ -211,11 +213,16 @@ if fm_supervision_host_enabled "$CONFIG" codex; then
   LIMIT=$BOUND
   [ -n "$SECONDMATE_MAX" ] \
     || LIMIT=$(( BOUND + $(positive_or "${FM_SUPERVISION_HOST_TURN_TIMEOUT:-}" 1200) + $(positive_or "${FM_SUPERVISION_ENGINE_GRACE:-}" 30) ))
+  PARK_RESTART=
+  # shellcheck source=bin/fm-wake-lib.sh
+  if ( . "$SCRIPT_DIR/fm-wake-lib.sh"; fm_grok_holding_watcher "$(cat "$STATE/.watch.lock/pid" 2>/dev/null)" ); then
+    PARK_RESTART=--restart
+  fi
   set +e
   # The host ends its own park; the outer bound only catches a host that
   # outlived every one of its own bounds.
   FM_SUPERVISION_HOST_PRIMARY=codex FM_SUPERVISION_HOST_PARK_SECONDS=$BOUND FM_SUPERVISION_HOST_PARK_LIMIT=$LIMIT \
-    run_bounded $((LIMIT + 120)) TERM 0 "$SCRIPT_DIR/fm-supervision-host.sh" park >"$OUT" 2>"$ERR"
+    run_bounded $((LIMIT + 120)) TERM 0 "$SCRIPT_DIR/fm-supervision-host.sh" park ${PARK_RESTART:+"$PARK_RESTART"} >"$OUT" 2>"$ERR"
   RC=$?
   set -e
   require_clean_shutdown
@@ -254,7 +261,7 @@ fi
 
 if INBOX_NAMES=$(sed -n 's/^checkpoint-inbox://p' "$OUT" 2>/dev/null) && [ -n "$INBOX_NAMES" ]; then
   [ ! -s "$ERR" ] || cat "$ERR" >&2
-  printf 'checkpoint: firstmate instruction waiting in the steering inbox:%s - read, act on and acknowledge each record now, then start the next checkpoint\n' "$INBOX_NAMES"
+  printf 'checkpoint: firstmate instruction waiting in the steering inbox:%s - read, act on and acknowledge each record now, then stop. Do not start another checkpoint.\n' "$INBOX_NAMES"
   exit 0
 fi
 

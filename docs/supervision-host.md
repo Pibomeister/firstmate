@@ -159,7 +159,7 @@ A captain message typed while an engine turn is already running reaches the engi
 A captain prompt whose hook write fails is not mirrored, so the engine may judge the next attended wake without it; Claude and Cursor have no later source for it.
 
 Claude and Cursor have writers, proven against the real harness to record the session's dialog from its first captain prompt, so only they run the attended posture.
-Codex has no writer yet: a supervising Codex main stays inside one turn across its foreground checkpoints, so a captain message typed then fires no prompt or Stop hook, and only a reader of its transcript could record it.
+Codex has no writer yet: a turn can end without a checkpoint still running, so a captain message typed during the turn fires no prompt or Stop hook the host can record, and only a reader of its transcript could record it.
 Grok and OpenCode have no writer, because their session takes the fleet lock during its first turn, so that turn's captain prompt could never be recorded.
 omp has no verified writer, because no omp was available to prove one against.
 
@@ -305,7 +305,8 @@ So it never stops the owner's host or watcher or releases its leases.
 ### A host that dies without a close
 
 The host's owner retries it.
-Grok's model and Codex's checkpoint see it as a failed cycle and start the next one.
+Grok's model sees it as a failed cycle and starts the next one.
+Codex's checkpoint reports a failed cycle, the model drains, and the Stop hook detaches a hold or allows the stop.
 Before it arms, the next host does two things:
 
 - It stops, by recorded identity, whatever its predecessor left running, including the engine descendants a killed turn recorded.

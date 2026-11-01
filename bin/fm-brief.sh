@@ -550,7 +550,7 @@ Do not invent a second delegation system.
 Never do investigation, coding, review, or long waits in your own turn; delegate them to your own crews so you can always answer new messages.
 Keep each of your own foreground waits and polls to 60 seconds or less, and never wait on a crew inside your own turn: once the emitted supervision protocol proves an outside-turn watcher, end the turn and let its doorbell start the next one.
 After handling inputs, sending actions and parent replies, and acknowledging handled events, end the turn when the emitted supervision protocol proves an outside-turn watcher and notification route.
-On a foreground-only fallback the emitted protocol keeps the turn open instead, so follow its checkpoint rather than ending the turn.
+If the outside-turn watcher cannot start, tell the parent and end the turn; do not open a foreground checkpoint.
 Read, acknowledge, and dispatch each new routed work request in the same handling turn, alongside existing crews unless a true technical dependency requires ordering.
 Acknowledge each steering record by moving it to \`handled/\` as soon as its dispatch or established answer and its correlated parent line exist, before any other in-turn work, and never leave a waiting record unacknowledged for more than 5 minutes because of in-turn work.
 Never treat existing crew work as a reason to queue an independent request.
