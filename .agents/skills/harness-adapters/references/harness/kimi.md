@@ -2,6 +2,7 @@
 
 Verified on 2026-09-17 with Kimi Code CLI 2.0.0.
 The folder prompt was recorded again on 2026-10-23 with Kimi Code CLI 2.3.0 and 2.3.1, which reworded it; `tests/fm-kimi-trust-prompt-live-e2e.test.sh` refreshes that evidence against the installed binary.
+[Runtime backend verification](../../../../../docs/verification/runtime-backends.md#2026-10-29-kimi-code-cli-240-trust-dialog-and-installer-python-through-tmux) owns the Kimi Code CLI 2.4.0 tmux trust-dialog and installer evidence.
 
 ## Operating facts
 
@@ -27,7 +28,14 @@ The folder prompt was recorded again on 2026-10-23 with Kimi Code CLI 2.3.0 and 
 Kimi 2.3.0 reads a root `.mcp.json` at the git worktree root as a project MCP declaration in addition to `.kimi-code/mcp.json`, while its documentation names only the latter; the prompt names whichever file declared the servers on its `Config:` line, which is why the refusal reads the prompt rather than any file.
 Every trust predicate reads `fm_backend_visible_capture` - the viewport with no scrollback - never the 120-line history read the delivery gate uses: the dialog is a TUI frame, and a history-backed capture would keep reporting it after Kimi redrew past it, storming Enter into a live composer and then failing an already trusted spawn.
 `FM_BACKEND_VISIBLE_CAPTURE` in `bin/fm-backend.sh` is the authoritative capability list; [`docs/rex-backend.md`](../../../../../docs/rex-backend.md#current-operation-and-safety) explains Rex's derived viewport.
-Orca has only a history read; cmux's `read-screen` without `--scrollback` plausibly reads just the viewport but has not been live-verified. A Kimi spawn on either is therefore refused at preflight, before the worktree or pane exists, naming the backend and the missing verified viewport capability, pending that verification for cmux. There is no fallback to the scrollback read. A viewport read that exits nonzero fails readiness immediately with the backend named, rather than being mistaken for a blank screen. A successful but blank viewport read is absence of evidence, not evidence of a cleared dialog: it costs that poll, restarts the two-capture ready count below, and leaves the trust diagnostics where they were. The trust answer is retried until the dialog clears - Kimi swallows keypresses during its startup window, so a single Enter can be dropped - and the re-send is gated on the complete dialog still being on that visible pane, so it cannot fire once the dialog cleared. Trust is accepted only after a later visible-pane capture proves that the dialog cleared; a stuck dialog fails with the observed dialog signals and the answer count in the diagnostic.
+Orca now exposes a viewport, but Kimi readiness and typed submission have not been live-verified there; cmux lacks a verified viewport.
+Spawn refuses Kimi on Orca and cmux before creating a worktree or pane.
+A failed viewport read ends readiness with the backend named, and a blank successful read restarts the two-capture ready count without claiming a cleared dialog.
+Kimi's trust answer can be retried only while the complete dialog remains on the live viewport, since the CLI can swallow an Enter during startup.
+Trust is accepted only after a later viewport capture proves that the dialog cleared; a stuck dialog reports the observed signals and answer count.
+Before cleanup can close the pane, a readiness refusal attempts to save evidence at the path named in its failure detail; if that write fails, the detail reports the failure.
+`kimi_ready_refusal` in [fm-spawn.sh](../../../../../bin/fm-spawn.sh) owns that record's format.
+Start a readiness diagnosis from the saved capture, when available, and compare it against the predicate in the Firstmate code root that actually ran the spawn; a secondmate home may run a different revision.
 Any single marker of the dialog on that visible pane - `Trust this folder`, `Trust and continue`, or the negative `Don't trust` option - withholds the ready verdict, because a capture caught mid-redraw and a capture that has painted only the box title both miss the complete dialog while the banner above it would otherwise read as ready. The banner also prints before the dialog paints at all, which no single capture can distinguish from a ready pane, so the verdict additionally requires two consecutive captures that are each ready and free of dialog text; a capture that is not ready, and a blank one, restarts that count, which is what keeps the pre-banner boot captures and redraw frames from spending it.
 `spawn_gate_endpoint_cleanup` in [fm-spawn.sh](../../../../../bin/fm-spawn.sh) owns failed-gate endpoint cleanup and provisional-record retention.
 This launch-then-send shape is mandatory because Kimi rejects positional instructions as an unknown command.
@@ -48,6 +56,7 @@ The delivery-only spinner match covers the full moon-phase glyph set but remains
 ## Crew turn-end hook and primary limit
 
 Kimi is outside the primary turn-end guard scope.
+[Configuration](../../../../../docs/configuration.md#installed-hooks-and-launch-details) owns the Kimi installer prerequisites and links to the interpreter search contract.
 `../../../docs/turnend-guard.md` owns its separate global hook surface and captain-approved crew wake integration.
 
 `../../../bin/fm-spawn.sh` installs one marker-delimited Firstmate entry in `$HOME/.kimi-code/config.toml`, one silent always-zero hook script, and one private token registry under `$HOME/.kimi-code/fm-turn-end.d/`.

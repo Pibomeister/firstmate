@@ -5558,16 +5558,46 @@ kimi_ready_signal_is_present() { # <plain-pane-capture>
   kimi_composer_is_empty
 }
 
+# Failed-gate cleanup can close the endpoint, so preserve readiness evidence
+# before returning: the Kimi version, the poll counts, each missing element,
+# and the last non-empty visible capture, in the task's data directory.
+# The refusal detail names that record's path and reports a failed write.
+kimi_ready_refusal() { # <missing-lines> <last-pane> <last-poll> <polls> <max> <trust-enters>
+  local record="$DATA/$ID/kimi-readiness-refusal.txt" version=''
+  [ -z "${KIMI_BIN:-}" ] ||
+    version=$(fm_run_timed 5 "$KIMI_BIN" --version </dev/null 2>/dev/null | head -n 1) || version=''
+  if mkdir -p "$DATA/$ID" 2>/dev/null && {
+    printf 'kimi readiness refusal at=%s\n' "$(date +%s)"
+    printf 'kimi=%s version=%s\n' "${KIMI_BIN:-unknown}" "${version:-unknown}"
+    printf 'backend=%s target=%s\n' "$BACKEND" "$T"
+    printf 'polls=%s of %s, trust_enters=%s\n' "$4" "$5" "$6"
+    printf 'detail=%s\n' "$KIMI_READY_FAILURE_DETAIL"
+    printf 'missing:\n'
+    printf '%s\n' "$1" | sed '/^$/d; s/^/- /'
+    if [ -n "$2" ]; then
+      printf 'last visible capture (poll %s):\n%s\n' "$3" "$2"
+    else
+      printf 'last visible capture: none (every poll read an empty viewport)\n'
+    fi
+  } >"$record" 2>/dev/null; then
+    KIMI_READY_FAILURE_DETAIL="$KIMI_READY_FAILURE_DETAIL; last visible capture and missing elements recorded at $record"
+  else
+    KIMI_READY_FAILURE_DETAIL="$KIMI_READY_FAILURE_DETAIL; the last visible capture could not be recorded at $record"
+  fi
+}
+
 kimi_wait_for_ready() {
   local pane capture_rc i=0 max=${FM_KIMI_READY_POLLS:-60} interval=${FM_KIMI_POLL_INTERVAL:-0.5}
   local trust_enters=0 trust_seen=0 trust_still_visible=0 trust_markers_pending=0
-  local ready_captures=0
+  local ready_captures=0 last_pane='' last_poll=0 missing
+  local ready_signal="verified ready signal: the 'Welcome to Kimi Code!' banner or an empty composer on two consecutive captures free of trust dialog text"
   KIMI_READY_FAILURE_DETAIL='kimi did not show a verified ready signal before brief delivery'
   while [ "$i" -lt "$max" ]; do
     capture_rc=0
     pane=$(kimi_visible_capture) || capture_rc=$?
     if [ "$capture_rc" -ne 0 ]; then
       KIMI_READY_FAILURE_DETAIL="kimi readiness could not read the visible viewport of backend '$BACKEND' (viewport capture exited $capture_rc), so the trust dialog could neither be answered nor ruled out"
+      kimi_ready_refusal "readable visible viewport (capture exited $capture_rc)" "$last_pane" "$last_poll" "$((i + 1))" "$max" "$trust_enters"
       return 1
     fi
     if [ -z "$pane" ]; then
@@ -5576,15 +5606,19 @@ kimi_wait_for_ready() {
       [ "$i" -ge "$max" ] || sleep "$interval"
       continue
     fi
+    last_pane=$pane
+    last_poll=$((i + 1))
     # Both refusals come before the complete-dialog test on purpose: the
     # announcing prompt and the paged prompt are complete dialogs, and the
     # only thing that keeps Enter off them is deciding here first.
     if kimi_pane_announces_project_mcp_servers "$pane"; then
       KIMI_READY_FAILURE_DETAIL="kimi's folder prompt announces project MCP servers, so Firstmate did not answer it and did not send the brief; answering would start those servers without a consent decision that covers them. Remove the project MCP servers this directory declares (the prompt's Config line names the file), or wait for a later consent design."
+      kimi_ready_refusal "folder prompt without project MCP servers" "$last_pane" "$last_poll" "$((i + 1))" "$max" "$trust_enters"
       return 1
     fi
     if kimi_trust_prompt_is_paged "$pane"; then
       KIMI_READY_FAILURE_DETAIL="kimi's folder prompt pages what trusting would activate, so Firstmate could not read all of it and did not answer it; give the worker pane more rows and relaunch."
+      kimi_ready_refusal "unpaged folder prompt disclosure" "$last_pane" "$last_poll" "$((i + 1))" "$max" "$trust_enters"
       return 1
     fi
     if kimi_trust_dialog_is_visible "$pane"; then
@@ -5599,6 +5633,7 @@ kimi_wait_for_ready() {
       # once it clears, this branch cannot fire again.
       if ! spawn_send_key "$T" Enter; then
         KIMI_READY_FAILURE_DETAIL="kimi trust dialog was seen but the affirmative selection could not be submitted"
+        kimi_ready_refusal "accepted Enter key for the complete trust dialog" "$last_pane" "$last_poll" "$((i + 1))" "$max" "$trust_enters"
         return 1
       fi
       trust_enters=$((trust_enters + 1))
@@ -5624,13 +5659,17 @@ kimi_wait_for_ready() {
     i=$((i + 1))
     [ "$i" -ge "$max" ] || sleep "$interval"
   done
+  missing=$ready_signal
   if [ "$trust_still_visible" -eq 1 ]; then
     KIMI_READY_FAILURE_DETAIL="kimi trust dialog did not clear after submitting the affirmative selection on $trust_enters poll(s); saw 'Trust this folder?', the navigation hint, a selected affirmative option, and a negative option"
+    missing="trust dialog dismissal after $trust_enters Enter key(s)"
   elif [ "$trust_seen" -eq 1 ]; then
     KIMI_READY_FAILURE_DETAIL="kimi trust dialog was answered but the pane never advanced to a verified ready signal; saw 'Trust this folder?', the navigation hint, a selected affirmative option, and a negative option"
   elif [ "$trust_markers_pending" -eq 1 ]; then
-    KIMI_READY_FAILURE_DETAIL="kimi did not show a verified ready signal before brief delivery; trust dialog text stayed on screen without the complete dialog, so the pane was never safe to answer or to treat as ready"
+    missing=$(kimi_trust_dialog_missing "$last_pane")
+    KIMI_READY_FAILURE_DETAIL="kimi did not show a verified ready signal before brief delivery; trust dialog text stayed on screen without the complete dialog (missing: ${missing//$'\n'/; }), so the pane was never safe to answer or to treat as ready"
   fi
+  kimi_ready_refusal "$missing" "$last_pane" "$last_poll" "$i" "$max" "$trust_enters"
   return 1
 }
 
