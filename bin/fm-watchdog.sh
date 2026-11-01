@@ -154,8 +154,13 @@ wd_turn_running() {  # <backend> <target> <screen> -> 1|0|unknown
   fi
   case "$b" in
     orca)
-      fm_backend_source orca >/dev/null 2>&1 || { printf 'unknown\n'; return 0; }
-      if fm_run_timed_fn 10 fm_backend_orca_turn_running "$t" >/dev/null 2>&1; then printf '1\n'; else printf '0\n'; fi ;;
+      if v=$(fm_run_timed 10 orca terminal wait --terminal "$t" --for tui-idle --timeout-ms 500 --json 2>/dev/null); then
+        printf '0\n'
+      elif printf '%s' "$v" | jq -e '.ok == false and .error.code == "timeout"' >/dev/null 2>&1; then
+        printf '1\n'
+      else
+        printf 'unknown\n'
+      fi ;;
     herdr|rex|t3code|tern)
       v=$(fm_run_timed_fn 10 fm_backend_busy_state "$b" "$t" 2>/dev/null)
       case "$v" in busy|working) printf '1\n' ;; idle|done) printf '0\n' ;; *) printf 'unknown\n' ;; esac ;;
@@ -210,6 +215,10 @@ wd_read_composer() {
     O_COMPOSER=$(fm_run_timed_fn 20 fm_backend_composer_state "$O_BACKEND" "$O_TARGET" 2>/dev/null) || O_COMPOSER=unknown
   fi
   [ -n "$O_COMPOSER" ] || O_COMPOSER=unknown
+  O_COMPOSER_TEXT=$(printf '%s\n' "$O_PANE" | fm_wd_strip_ansi | awk 'NF { r[++n] = $0 } END { for (i = n - 7; i <= n; i++) if (i > 0) print r[i] }')
+  if [ "$O_BACKEND" = orca ]; then
+    O_COMPOSER_TEXT="$O_COMPOSER_TEXT $(fm_run_timed 10 orca terminal read --terminal "$O_TARGET" --limit 5 --json 2>/dev/null | jq -r '(.result.terminal.draft // .result.draft // "") | tostring' 2>/dev/null)"
+  fi
 }
 
 # wd_observe <home> <parent> <id>: fills the O_* globals for one subject and
@@ -278,10 +287,6 @@ EOF
     O_DIALOG=$(fm_wd_pane_dialog "$(wd_view "$O_BACKEND" "$O_TARGET")") || O_DIALOG=''
     wd_read_composer
     O_TURN=$(wd_turn_running "$O_BACKEND" "$O_TARGET" "$O_PANE")
-    O_COMPOSER_TEXT=$(printf '%s\n' "$O_PANE" | fm_wd_strip_ansi | awk 'NF { r[++n] = $0 } END { for (i = n - 7; i <= n; i++) if (i > 0) print r[i] }')
-    if [ "$O_BACKEND" = orca ]; then
-      O_COMPOSER_TEXT="$O_COMPOSER_TEXT $(fm_run_timed 10 orca terminal read --terminal "$O_TARGET" --limit 5 --json 2>/dev/null | jq -r '(.result.terminal.draft // .result.draft // "") | tostring' 2>/dev/null)"
-    fi
     ctx=$(fm_wd_footer_percent "$O_PANE")
     if [ -z "$O_CTX" ] && [ -n "$ctx" ]; then O_CTX=$ctx; O_CTX_SRC=pane; fi
   fi
@@ -358,14 +363,22 @@ wd_rec() {  # <id> <symptom> <action> <phase> <detail>
 # wd_nudge <symptom> <body>: a record-backed doorbell into the subject's own pane.
 wd_nudge() {
   local symptom=$1 body="Watchdog (automated, not the captain or the owner): $2" id doorbell verdict
+  if ! fm_wd_text_allowed "$body"; then
+    wd_gap "$symptom held; its nudge names a merge, deploy, or release word"
+    wd_rate_open "$symptom" nudge "$(cfgi nudge-secs 900)" && wd_rec "$(wd_id)" "$symptom" nudge refused "text names a merge, deploy, or release word"
+    return 0
+  fi
   wd_rate_open "$symptom" nudge "$(cfgi nudge-secs 900)" || return 0
   id=$(wd_id)
-  if ! fm_wd_text_allowed "$body"; then wd_rec "$id" "$symptom" nudge refused "text names a merge, deploy, or release word"; return 0; fi
   if wd_do_not_touch "$O_HOME" "$O_TARGET"; then wd_rec "$id" "$symptom" nudge refused "endpoint is on do-not-touch"; return 0; fi
   if [ -z "$O_TARGET" ]; then wd_rec "$id" "$symptom" nudge refused "no recorded endpoint"; return 0; fi
   if [ "$(wd_mode)" != act ]; then wd_rec "$id" "$symptom" nudge dry-run "$body"; return 0; fi
   if [ -n "$O_DIALOG" ] || { [ "$O_COMPOSER" != empty ] && [ "$O_COMPOSER" != unknown ]; }; then
     wd_rec "$id" "$symptom" nudge refused "composer is $O_COMPOSER${O_DIALOG:+, dialog $O_DIALOG}; nothing typed"
+    return 0
+  fi
+  if [ "$O_COMPOSER" = unknown ] && { ! fm_wd_draft_readable "$O_COMPOSER_TEXT" || ! fm_wd_text_allowed "$O_COMPOSER_TEXT"; }; then
+    wd_rec "$id" "$symptom" nudge refused "composer is unknown and its visible text is unreadable or names a merge, deploy, or release word; nothing typed"
     return 0
   fi
   wd_rec "$id" "$symptom" nudge pending "$body"
@@ -402,7 +415,7 @@ wd_key() {
     *) after=$(wd_capture "$O_BACKEND" "$O_TARGET" 60) ;;
   esac
   case "$symptom" in
-    dialog) if [ -n "$after" ] && ! fm_wd_pane_dialog "$after" >/dev/null; then wd_rec "$id" "$symptom" key "done" "dialog left the pane"; O_DIALOG=''; wd_read_composer; else wd_rec "$id" "$symptom" key failed "dialog still showing"; return 1; fi ;;
+    dialog) if [ -n "$after" ] && ! fm_wd_pane_dialog "$after" >/dev/null; then wd_rec "$id" "$symptom" key "done" "dialog left the pane"; O_DIALOG='' O_PANE=$after; wd_read_composer; else wd_rec "$id" "$symptom" key failed "dialog still showing"; return 1; fi ;;
     *) if [ -n "$after" ] && [ "$(wd_pane_sig "$after")" != "$O_SIG" ]; then wd_rec "$id" "$symptom" key "done" "pane changed"; else wd_rec "$id" "$symptom" key failed "pane unchanged"; return 1; fi ;;
   esac
 }
@@ -582,6 +595,7 @@ wd_restart() {  # <symptom> <kind>...
   handoff=$(wd_write_handoff "$symptom")
   if [ "$O_PARENT" != - ]; then
     wd_rec "$id" "$symptom" restart pending "second mate relaunch through its parent; handoff=$handoff"
+    WD_RESTARTED=1
     if FM_HOME=$O_PARENT fm_run_timed "$(cfgi relaunch-timeout-secs 900)" "$SCRIPT_DIR/fm-control.sh" "$O_ID" relaunch --note-file "$handoff" >/dev/null 2>&1; then
       wd_rec "$id" "$symptom" restart "done" "relaunched through fm-control"
     else
@@ -708,6 +722,7 @@ wd_handle_dialog() {
     model-switch)
       opts=$(fm_wd_dialog_options "$O_PANE")
       text=$(fm_wd_dialog_text "$O_PANE")
+      if fm_wd_reserved "$text"; then wd_gap "model-switch dialog names an owner-reserved category; held"; return 0; fi
       pick=$(wd_judge dialog '(OPTION [0-9]{1,2}|NONE)' "A coding agent's terminal shows this dialog about models or usage limits:
 $text
 Options:
@@ -744,7 +759,7 @@ wd_handle_decisions() {
   while IFS=$'\t' read -r task key verb age summary; do
     [ -n "$key" ] || continue
     [ "$age" -ge "$secs" ] || continue
-    if case "$key" in captain-hold-*) true ;; *) false ;; esac || fm_wd_reserved "$summary" ||
+    if case "$key" in captain-hold-*) true ;; *) false ;; esac || fm_wd_reserved "$task $key $summary" ||
        printf ',%s,' "$(cfg reserved-keys '')" | grep -Fq ",$key,"; then
       held=$((held + 1))
       [ "$held" -gt 3 ] || held_keys="$held_keys${held_keys:+, }$task/$key"

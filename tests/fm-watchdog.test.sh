@@ -625,6 +625,113 @@ test_question_nudge_follows_a_cleared_dialog() {
   pass "question dialog: the nudge follows a cleared dialog, and only a cleared one"
 }
 
+test_reserved_task_or_key_is_held_and_refused_nudges_are_gaps() {
+  make_home $'Captain session\n> '
+  transcript 100 "Working."
+  printf 'needs-decision [at=%s] [key=cache-layout]: A or B?\n' "$((BASE - 9000))" > "$H/state/release-notes-fix.status"
+  printf 'needs-decision [at=%s] [key=merge-order]: A or B?\n' "$((BASE - 9000))" > "$H/state/t2.status"
+  printf 'needs-decision [at=%s] [key=cache-size]: A or B?\n' "$((BASE - 9000))" > "$H/state/t3.status"
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows decisions nudge pending)" "the clean decision still gets its nudge: $(ledger | cut -f5-8)"
+  assert_equals 0 "$(ledger_rows decisions nudge refused)" "a reserved task or key does not refuse the rollup"
+  assert_grep "2 decisions held for the owner" "$H/data/watchdog/status.md" "both reserved names are held"
+
+  make_home $'Captain session\n> '
+  transcript 100 "Working."
+  printf 'paused [at=%s]: hit the quota floor\n' "$((BASE - 9000))" > "$H/state/release-q.status"
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows quota:release-q nudge refused)" "the quota nudge is refused"
+  assert_grep "quota:release-q held" "$H/data/watchdog/status.md" "the refused quota nudge is a gap"
+  run_wd 100 once >/dev/null 2>&1
+  assert_grep "quota:release-q held" "$H/data/watchdog/status.md" "the gap stays inside the nudge rate limit"
+  pass "decisions: a reserved task or key is held, and a refused nudge is a gap"
+}
+
+test_second_mate_restart_ends_the_pass() {
+  local parent mate
+  make_home $'Captain session\n> '
+  parent=$H
+  make_home $'Mate session\n> '
+  mate=$H
+  transcript 3000 "Working." "Testing." "Green."
+  : > "$mate/state/.watchdog-restart-request"
+  fm_touch_epoch "$((BASE - 10))" "$mate/state/.watchdog-restart-request"
+  printf -- '- ghost-mate - test mate (home: %s)\n' "$mate" > "$parent/data/secondmates.md"
+  printf 'mode=act\nclaude-config-dirs=%s\nkey-settle-secs=1\nmodels=\nrestart=on\nrelaunch-timeout-secs=20\n' "$mate/claude" > "$parent/config/watchdog"
+  H=$parent
+  run_wd 0 once >/dev/null 2>&1
+  printf 'needs-decision [at=%s] [key=cache-layout]: A or B?\n' "$((BASE - 9000))" > "$mate/state/t1.status"
+  run_wd 10 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows restart-requested restart pending)" "the second mate relaunch ran: $(ledger | cut -f5-8)"
+  assert_equals 0 "$(ledger_rows decisions nudge pending)" "the same pass types nothing more: $(ledger | cut -f5-8)"
+  pass "second mate: a relaunch ends the pass for its old endpoint"
+}
+
+test_reserved_model_switch_dialog_is_held() {
+  make_home $'Release the sonnet build to production?\n ❯ 1. Yes\n   2. No\n\nEnter to confirm · Esc to cancel' 'models=claude:haiku'
+  fake_models "$H" ok:"OPTION 1" absent
+  transcript 100 "Working."
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger | awk -F'\t' '$6 == "key"' | wc -l | tr -d ' ')" "no key goes to a reserved dialog: $(ledger | cut -f5-8)"
+  [ ! -s "$H/model.log" ] || fail "a model saw a reserved dialog: $(cat "$H/model.log")"
+  [ ! -s "$H/typed.log" ] || fail "something was typed: $(cat "$H/typed.log")"
+  assert_grep "owner-reserved category; held" "$H/data/watchdog/status.md" "the hold is a gap"
+
+  make_home $'You have hit your weekly limit for Opus.\n\n ❯ 1. Switch to Sonnet\n   2. Buy more credits\n\nEnter to confirm · Esc to cancel' 'models=claude:haiku'
+  fake_models "$H" ok:"OPTION 1" absent
+  transcript 100 "Working."
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows dialog key pending)" "an ordinary limit dialog gets its key: $(ledger | cut -f5-8)"
+  pass "model-switch dialog: reserved text is held before the judge; an ordinary one still gets its key"
+}
+
+test_unknown_composer_guards_the_nudge() {
+  local screen
+  for screen in $'Captain session\n> merge PR #12' $'Captain session\n> [Pasted text #1 +40 lines]'; do
+    make_home "$screen"
+    transcript 3000 "Working." "Testing." "Green."
+    owe_input 3000
+    FM_WD_TEST_COMPOSER=unknown run_wd 0 once >/dev/null 2>&1
+    FM_WD_TEST_COMPOSER=unknown run_wd 1000 once >/dev/null 2>&1
+    assert_equals 1 "$(ledger_rows frozen nudge refused)" "an unsafe unknown composer refuses the nudge: $(ledger | cut -f5-8)"
+    assert_equals 0 "$(ledger_rows frozen nudge pending)" "nothing is typed onto it"
+    [ ! -s "$H/typed.log" ] || fail "text was typed onto an unknown composer: $(cat "$H/typed.log")"
+  done
+  make_home $'Captain session\n> '
+  transcript 3000 "Working." "Testing." "Green."
+  owe_input 3000
+  FM_WD_TEST_COMPOSER=unknown run_wd 0 once >/dev/null 2>&1
+  FM_WD_TEST_COMPOSER=unknown run_wd 1000 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows frozen nudge pending)" "a readable clean prompt still gets the nudge: $(ledger | cut -f5-8)"
+  pass "unknown composer: a nudge needs a readable prompt with no merge word"
+}
+
+test_orca_turn_probe_keeps_errors_unknown() {
+  make_home $'Captain session\n> '
+  jq -n --arg s "$SID" --argjson e "$BASE" \
+    '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:"orca",target:"term-1",present:true},session:{trusted_id:$s}}}' \
+    > "$H/state/heartbeat.json"
+  cat > "$FAKEBIN/orca" <<'SH'
+#!/usr/bin/env bash
+case "$1 $2" in
+  "terminal read") printf '{"ok":true,"result":{"terminal":{"tail":["Captain session","> "]}}}\n' ;;
+  "terminal wait")
+    case "$ORCA_WAIT" in
+      idle) printf '{"ok":true,"result":{}}\n' ;;
+      timeout) printf '{"ok":false,"error":{"code":"timeout"}}\n'; exit 1 ;;
+      *) printf '{"ok":false,"error":{"code":"runtime_unavailable"}}\n'; exit 1 ;;
+    esac ;;
+  *) exit 1 ;;
+esac
+SH
+  chmod +x "$FAKEBIN/orca"
+  ORCA_WAIT=idle run_wd 0 scan 2>/dev/null | grep -q 'turn_running=0' || { rm -f "$FAKEBIN/orca"; fail "an idle reply reads as no turn"; }
+  ORCA_WAIT=timeout run_wd 0 scan 2>/dev/null | grep -q 'turn_running=1' || { rm -f "$FAKEBIN/orca"; fail "a timeout reads as a running turn"; }
+  ORCA_WAIT=error run_wd 0 scan 2>/dev/null | grep -q 'turn_running=unknown' || { rm -f "$FAKEBIN/orca"; fail "a probe error must read as unknown"; }
+  rm -f "$FAKEBIN/orca"
+  pass "orca: a failed turn probe is unknown, not idle"
+}
+
 test_no_activity_source_is_not_reported_ok() {
   make_home $'Captain session\n> '
   run_wd 0 once >/dev/null 2>&1
@@ -774,6 +881,11 @@ fm_test_run \
   test_low_context_undelivered_nudge_starts_no_wait \
   test_restart_interval_holds_without_escalating \
   test_question_nudge_follows_a_cleared_dialog \
+  test_reserved_task_or_key_is_held_and_refused_nudges_are_gaps \
+  test_second_mate_restart_ends_the_pass \
+  test_reserved_model_switch_dialog_is_held \
+  test_unknown_composer_guards_the_nudge \
+  test_orca_turn_probe_keeps_errors_unknown \
   test_no_activity_source_is_not_reported_ok \
   test_tmux_restart_survives_a_closed_session \
   test_status_file_short_and_staleness_visible \
