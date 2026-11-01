@@ -16,7 +16,7 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-fleet-sync.sh`       | Refresh project clones with safe fast-forwards, self-heals, `STUCK:` reports, branch pruning, and bounded recovery from an orphaned `.git/packed-refs.lock` |
 | `fm-fleet-snapshot.sh`   | Print structured fleet snapshot JSON and refresh only its parent-side remote-ledger cache (schema `fm-fleet-snapshot.v1`) |
 | `fm-heartbeat.sh`        | Atomically publish the bounded self-watching ledger `state/heartbeat.json` (schema `fm-heartbeat.v1`); unread fields report unknown |
-| `fm-context-burn.sh`     | Record each turn's external auto-compact footer and name a long report by path and sha256 |
+| `fm-context-burn.sh`     | Record each turn's external until-auto-compact percent, from the pane footer or else the transcript formula, and name a long report by path and sha256 |
 | `fm-context-footer-lib.sh` | Parse the external auto-compact footer percent shared by the heartbeat ledger and the context-burn recorder |
 | `fm-home-summary-refresh.sh` | Atomically publish this home's structured summary ledger                         |
 | `fm-fleet-ledger.sh`     | Append the opt-in fleet activity ledger's records ([contract](fleet-ledger.md))      |
@@ -156,6 +156,7 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-tool-update-check.sh` | Report watched tooling with an update available, and updates installed but left inert by PATH order |
 | `fm-startup-growth-check.sh` | Daily metadata-only growth check for startup memory and tracked startup/instruction surfaces |
 | `fm-usage-warner.sh`     | Opt-in macOS threshold warner that notifies once when a configured Claude usage window crosses its percentage |
+| `fm-compact-point-lib.sh` | Compute a Claude session's percent left before auto-compact, shared by the handoff trigger and the context-burn recorder |
 | `fm-handoff-trigger.sh` | Claude hook that tells a primary session once per context cycle to write its handoff when context left before auto-compact reaches the threshold |
 | `fm-pr-lib.sh`           | Own canonical task and PR validation, the branch-to-PR lookup shared by teardown and the PR health monitor, plus private atomic PR-poll publication, merge-notification identity, and retirement |
 | `fm-pr-poll.sh`          | Provide the byte-static watcher program for validated pull-request, merge-request, and Gerrit-change poll sidecars |

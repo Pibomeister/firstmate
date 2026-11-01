@@ -392,6 +392,7 @@ test_context_burn_reply_contract() {
   assert_contains "$out" "not a full read into this session." "bounded read rule missing"
   assert_contains "$out" "external footer, never a self-estimate." "footer measurement rule missing"
   assert_contains "$out" "more than about 30 points in 15 minutes." "burn alert rule missing"
+  assert_contains "$out" "otherwise from the transcript with the handoff trigger formula" "burn fallback source missing"
   repair=$(FM_HOME="$home" "$RENDER" --harness claude --repair-line)
   assert_not_contains "$repair" "fm-context-burn.sh" "repair line gained the context-burn contract"
   pass "renderer states the short-reply and context-burn contract outside the repair line"

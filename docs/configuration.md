@@ -476,7 +476,7 @@ The file is local to each home, is not inherited, and is read at every hook call
 It may hold these lines, each optional:
 
 - `percent-left=<n>` fires at or below `n`% context left (default 15); `0` turns the trigger off.
-- `compact-at-tokens=<n>` is the auto-compact point in tokens, used instead of the point derived from Claude's settings.
+- `compact-at-tokens=<n>` is the auto-compact point in tokens, used instead of the point derived from Claude's settings. `bin/fm-context-burn.sh` uses the same point when the pane footer is not shown.
 
 Blank lines and lines that start with `#` are ignored, and an unusable value keeps its default.
 

@@ -38,46 +38,9 @@ wake_count() { # <home> <key>
   awk -F '\t' -v key="$2" '$4 == key { n++ } END { print n + 0 }' "$1/state/.wake-queue"
 }
 
-test_footer_shapes_and_percent_bounds() {
-  local home=$TMP_ROOT/shapes out status
+test_percent_bounds_and_turn_types() {
+  local home=$TMP_ROOT/bounds out status
   prepare "$home"
-  printf '%s\n' 'mate said 3% until auto-compact' '12% until auto-compact' > "$home/plain.txt"
-  out=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
-    FM_CONTEXT_BURN_NOW=1000 \
-    "$BURN" record --turn-type captain --session s1 --footer-file "$home/plain.txt")
-  status=$?
-  expect_code 0 "$status" "plain footer"
-  assert_equals $'1000\ts1\tcaptain\t12' "$(last_row "$home")" "plain footer row"
-
-  printf '%s\n' 'context 44% until auto-compact now' > "$home/mid.txt"
-  FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
-    FM_CONTEXT_BURN_NOW=1001 \
-    "$BURN" record --turn-type captain --session s1 --footer-file "$home/mid.txt" >/dev/null
-  assert_equals $'1001\ts1\tcaptain\t44' "$(last_row "$home")" "embedded footer row"
-
-  printf '%s\n' 'Context left until auto-compact: 7%' > "$home/colon.txt"
-  FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
-    FM_CONTEXT_BURN_NOW=1002 \
-    "$BURN" record --turn-type captain --session s1 --footer-file "$home/colon.txt" >/dev/null
-  assert_equals $'1002\ts1\tcaptain\t7' "$(last_row "$home")" "colon footer row"
-
-  printf '%s\n' '101% until auto-compact' > "$home/over.txt"
-  out=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
-    FM_CONTEXT_BURN_NOW=1003 \
-    "$BURN" record --turn-type captain --session s1 --footer-file "$home/over.txt")
-  status=$?
-  expect_code 0 "$status" "over-range footer"
-  assert_equals 3 "$(row_count "$home")" "over-range footer wrote a sample"
-  assert_equals '' "$out" "over-range footer printed output"
-
-  printf '%s\n' 'no footer here' > "$home/none.txt"
-  out=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
-    FM_CONTEXT_BURN_NOW=1004 \
-    "$BURN" record --turn-type captain --session s1 --footer-file "$home/none.txt")
-  status=$?
-  expect_code 0 "$status" "missing footer"
-  assert_equals 3 "$(row_count "$home")" "missing footer wrote a sample"
-
   out=$(record_at "$home" 1005 captain s1 100)
   status=$?
   expect_code 0 "$status" "percent 100"
@@ -86,9 +49,72 @@ test_footer_shapes_and_percent_bounds() {
   out=$(record_at "$home" 1006 captain s1 101 2>&1)
   status=$?
   expect_code 2 "$status" "percent 101"
-  assert_equals 4 "$(row_count "$home")" "percent 101 wrote a sample"
+  assert_equals 1 "$(row_count "$home")" "percent 101 wrote a sample"
   assert_contains "$out" "0 to 100" "percent 101 did not name the bound"
-  pass "footer shapes and percent bounds"
+
+  out=$(record_at "$home" 1007 review s1 50 2>&1)
+  status=$?
+  expect_code 2 "$status" "unclassified turn type"
+  assert_equals 1 "$(row_count "$home")" "unclassified turn type wrote a sample"
+  assert_contains "$out" "auto, startup, heartbeat, wake, captain, or turn" "turn type error did not name the types"
+
+  out=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    FM_CONTEXT_BURN_NOW=1008 \
+    "$BURN" record --turn-type captain --session s1 --footer-file "$home/x.txt" 2>&1)
+  status=$?
+  expect_code 2 "$status" "footer file option"
+  assert_equals 1 "$(row_count "$home")" "footer file option wrote a sample"
+  pass "percent bounds and the closed turn-type set"
+}
+
+usage_line() { # <tokens>
+  printf '{"type":"assistant","message":{"model":"claude-opus-5-5","usage":{"input_tokens":0,"cache_read_input_tokens":%s,"cache_creation_input_tokens":0},"content":"ok"}}\n' "$1"
+}
+
+record_from_transcript() { # <home> <now> <payload-file>
+  FM_HOME="$1" FM_STATE_OVERRIDE="$1/state" FM_DATA_OVERRIDE="$1/data" \
+    FM_CONFIG_OVERRIDE="$1/config" CLAUDE_PROJECT_DIR="$1" CLAUDE_CONFIG_DIR="$1/claude" \
+    CLAUDE_CODE_AUTO_COMPACT_WINDOW=200000 FM_CONTEXT_BURN_NOW="$2" \
+    "$BURN" record --turn-type auto --payload-file "$3"
+}
+
+test_transcript_percent_when_footer_hidden() {
+  local home=$TMP_ROOT/transcript out
+  prepare "$home"
+  printf '%s\n' "{\"session_id\":\"fresh1\",\"transcript_path\":\"$home/t.jsonl\"}" > "$home/p.json"
+  {
+    printf '%s\n' '{"type":"user","message":{"content":"captain asks a question"}}'
+    usage_line 16700
+  } > "$home/t.jsonl"
+  out=$(record_from_transcript "$home" 20000 "$home/p.json")
+  assert_equals $'20000\tfresh1\tcaptain\t90' "$(last_row "$home")" "transcript percent at 90"
+  assert_not_contains "$out" "alert:" "first transcript sample alerted"
+
+  {
+    printf '%s\n' '{"type":"user","message":{"content":"check: fleet"}}'
+    usage_line 66800
+  } > "$home/t.jsonl"
+  out=$(record_from_transcript "$home" 20600 "$home/p.json")
+  assert_equals $'20600\tfresh1\twake\t60' "$(last_row "$home")" "transcript percent at 60"
+  assert_contains "$out" "alert: fresh1 dropped from 90 to 60 in 600s turn wake" "transcript drop did not alert"
+
+  mkdir -p "$home/config"
+  printf 'compact-at-tokens=100000\n' > "$home/config/handoff-trigger"
+  out=$(record_from_transcript "$home" 20700 "$home/p.json")
+  assert_equals $'20700\tfresh1\twake\t33' "$(last_row "$home")" "pinned compact point"
+
+  {
+    printf '%s\n' '{"type":"user","message":{"content":"captain asks"}}'
+    printf '%s\n' '{"type":"system","subtype":"compact_boundary"}'
+  } > "$home/t.jsonl"
+  record_from_transcript "$home" 20800 "$home/p.json" >/dev/null
+  assert_equals 3 "$(row_count "$home")" "no usage after compaction wrote a sample"
+
+  usage_line 16700 > "$home/t.jsonl"
+  printf '%s\n' "{\"session_id\":\"cur1\",\"cursor_version\":\"1\",\"transcript_path\":\"$home/t.jsonl\"}" > "$home/cursor.json"
+  record_from_transcript "$home" 20900 "$home/cursor.json" >/dev/null
+  assert_equals 3 "$(row_count "$home")" "a Cursor payload used the Claude formula"
+  pass "transcript percent fills in when the pane footer is hidden"
 }
 
 test_drop_window_and_freshness() {
@@ -301,7 +327,8 @@ test_unmeasured_non_primary_writes_nothing() {
 }
 
 fm_test_run \
-  test_footer_shapes_and_percent_bounds \
+  test_percent_bounds_and_turn_types \
+  test_transcript_percent_when_footer_hidden \
   test_drop_window_and_freshness \
   test_alert_once_then_again_after_recovery \
   test_unknown_session_and_dedupe \

@@ -3,16 +3,20 @@
 #
 # Usage:
 #   fm-context-burn.sh record --turn-type <type> [--percent <0-100>] [--session <id>]
-#                              [--footer-file <path>] [--payload-file <path>]
+#                              [--payload-file <path>]
 #   fm-context-burn.sh report <file-under-data>
 #
 # record appends one sample to state/context-burn.tsv:
 #   epoch, session, turn_type, percent
-# The percent is the external footer ("N% until auto-compact"), never a model's
-# self-estimate. Pass --percent or --footer-file only for footer text already
-# read from that pane. With neither, record reads the supervisor pane the same
-# way bin/fm-heartbeat.sh does, and only inside a genuine primary home.
-# No footer means no sample and exit 0. Nothing is invented.
+# The percent is the external "N% until auto-compact" figure, never a model's
+# self-estimate. Pass --percent only for a footer already read from the pane.
+# Without it, and only inside a genuine primary home, record reads the
+# supervisor pane footer the same way bin/fm-heartbeat.sh does. Claude Code
+# draws that footer only in the last 20000 tokens before auto-compact, so when
+# the pane shows none, record computes the same figure from the hook payload's
+# transcript and the auto-compact window with bin/fm-compact-point-lib.sh, the
+# formula bin/fm-handoff-trigger.sh uses. A Cursor payload skips that Claude
+# formula. Neither source means no sample and exit 0. Nothing is invented.
 #
 # --turn-type auto classifies the turn from a hook payload on stdin, or from
 # --payload-file. The payload's transcript_path is tailed, not read whole.
@@ -25,20 +29,19 @@
 #               "check:", or "Stop hook feedback"
 #   captain     any other user text
 #   turn        no transcript text
-# Any other --turn-type is stored as given when it matches [a-z][a-z0-9-]{0,31}.
+# --turn-type also accepts one of those five types as given.
 #
-# A fresh session is one whose first sample is at most FM_CONTEXT_BURN_FRESH
-# seconds old (default 7200). When the newest sample in the last
-# FM_CONTEXT_BURN_WINDOW seconds (default 900) is at least FM_CONTEXT_BURN_DROP
-# points (default 30) below the highest earlier sample in that window, record
+# A fresh session is one whose first sample is at most 7200 seconds old. When
+# the newest sample in the last 900 seconds is at least 30 points below the
+# highest earlier sample in that window, record
 # prints one alert line and queues one check wake. That 30 is the concrete
 # reading of "more than about 30 points". The wake is not repeated for that
 # session until a later sample is no longer such a drop. A session id of
 # "unknown" is recorded and never alerts. An identical session, turn type, and
-# percent within FM_CONTEXT_BURN_DEDUPE seconds (default 2) is not written again.
+# percent within 2 seconds is not written again.
 #
-# FM_CONTEXT_BURN_NOW overrides the clock. Pane capture is skipped when
-# FM_TEST_SEAM=1 unless FM_CONTEXT_BURN_CAPTURE=1.
+# FM_CONTEXT_BURN_NOW overrides the clock. Under FM_TEST_SEAM=1, pane capture
+# and the primary-home check are skipped unless FM_CONTEXT_BURN_CAPTURE=1.
 #
 # report prints one line, "<home-relative-path> <sha256>", for a regular file
 # under data/. That is the pane line for a long report.
@@ -70,10 +73,10 @@ int_or() { # <value> <default>
   esac
 }
 
-WINDOW=$(int_or "${FM_CONTEXT_BURN_WINDOW:-}" 900)
-DROP=$(int_or "${FM_CONTEXT_BURN_DROP:-}" 30)
-FRESH=$(int_or "${FM_CONTEXT_BURN_FRESH:-}" 7200)
-DEDUPE=$(int_or "${FM_CONTEXT_BURN_DEDUPE:-}" 2)
+WINDOW=900
+DROP=30
+FRESH=7200
+DEDUPE=2
 NOW=$(int_or "${FM_CONTEXT_BURN_NOW:-}" 0)
 if [ "$NOW" -eq 0 ]; then
   NOW=$(date +%s)
@@ -145,6 +148,7 @@ classify_payload() { # <json>
   if [ -n "$session_from_payload" ]; then
     PAYLOAD_SESSION=$session_from_payload
   fi
+  PAYLOAD_TRANSCRIPT=$transcript
   if [ -n "$transcript" ]; then
     CLASSIFIED_TURN=$(classify_transcript "$transcript" || true)
   else
@@ -173,6 +177,22 @@ capture_pane_percent() {
   [ -n "$backend" ] && [ -n "$target" ] || return 0
   fm_backend_capture "$backend" "$target" 5 2>/dev/null \
     | awk 'NF' | tail -n 5 | fm_context_footer_percent_from_text || true
+}
+
+transcript_percent() { # <payload>
+  local tokens at
+  [ -n "$PAYLOAD_TRANSCRIPT" ] && [ -f "$PAYLOAD_TRANSCRIPT" ] || return 0
+  # shellcheck source=bin/fm-hook-host-lib.sh
+  . "$SCRIPT_DIR/fm-hook-host-lib.sh"
+  fm_hook_payload_is_foreign_host "$1" && return 0
+  # shellcheck source=bin/fm-warm-compact-lib.sh
+  . "$SCRIPT_DIR/fm-warm-compact-lib.sh"
+  # shellcheck source=bin/fm-compact-point-lib.sh
+  . "$SCRIPT_DIR/fm-compact-point-lib.sh"
+  tokens=$(fm_warm_compact_context_tokens "$PAYLOAD_TRANSCRIPT") || return 0
+  case "$tokens" in '' | *[!0-9]*) return 0 ;; esac
+  at=$(fm_compact_at_tokens "$PAYLOAD_TRANSCRIPT" "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/handoff-trigger") || return 0
+  fm_compact_left_percent "$tokens" "$at"
 }
 
 read_session_lock() {
@@ -252,7 +272,7 @@ clear_alert_marker() { # <safe>
 }
 
 cmd_record() {
-  local turn_type='' session='' percent='' footer_file='' payload_file='' payload=''
+  local turn_type='' session='' percent='' payload_file='' payload=''
   local safe='' last_epoch='' last_session='' last_type='' last_percent=''
   PAYLOAD_SESSION=
   while [ "$#" -gt 0 ]; do
@@ -272,11 +292,6 @@ cmd_record() {
         percent=$2
         shift 2
         ;;
-      --footer-file)
-        [ "$#" -gt 1 ] || { echo 'fm-context-burn: --footer-file requires a value' >&2; exit 2; }
-        footer_file=$2
-        shift 2
-        ;;
       --payload-file)
         [ "$#" -gt 1 ] || { echo 'fm-context-burn: --payload-file requires a value' >&2; exit 2; }
         payload_file=$2
@@ -288,7 +303,11 @@ cmd_record() {
         ;;
     esac
   done
-  [ -n "$turn_type" ] || { echo 'fm-context-burn: --turn-type is required' >&2; exit 2; }
+  case "$turn_type" in
+    auto|startup|heartbeat|wake|captain|turn) ;;
+    '') echo 'fm-context-burn: --turn-type is required' >&2; exit 2 ;;
+    *) echo 'fm-context-burn: --turn-type must be auto, startup, heartbeat, wake, captain, or turn' >&2; exit 2 ;;
+  esac
 
   payload=
   if [ -n "$payload_file" ]; then
@@ -298,20 +317,9 @@ cmd_record() {
     payload=$(cat 2>/dev/null || true)
   fi
 
+  classify_payload "$payload"
   if [ "$turn_type" = auto ]; then
-    classify_payload "$payload"
     turn_type=$CLASSIFIED_TURN
-  fi
-  case "$turn_type" in
-    [a-z]*) ;;
-    *) echo 'fm-context-burn: --turn-type must be a short lowercase word' >&2; exit 2 ;;
-  esac
-  case "$turn_type" in
-    *[!a-z0-9-]*) echo 'fm-context-burn: --turn-type must be a short lowercase word' >&2; exit 2 ;;
-  esac
-  if [ "${#turn_type}" -gt 32 ]; then
-    echo 'fm-context-burn: --turn-type must be a short lowercase word' >&2
-    exit 2
   fi
 
   if [ -z "$session" ] && [ -n "${PAYLOAD_SESSION:-}" ]; then
@@ -335,15 +343,13 @@ cmd_record() {
       echo 'fm-context-burn: --percent must be an integer from 0 to 100' >&2
       exit 2
     fi
-  elif [ -n "$footer_file" ]; then
-    [ -f "$footer_file" ] && [ ! -L "$footer_file" ] || { echo 'fm-context-burn: footer file is not readable' >&2; exit 2; }
-    percent=$(fm_context_footer_percent_from_text < "$footer_file" || true)
   elif [ "${FM_TEST_SEAM:-}" = 1 ] && [ "${FM_CONTEXT_BURN_CAPTURE:-}" != 1 ]; then
-    percent=
+    percent=$(transcript_percent "$payload" || true)
   elif primary_scope_ok; then
     # shellcheck source=bin/fm-timeout-lib.sh
     . "$SCRIPT_DIR/fm-timeout-lib.sh"
     percent=$(fm_run_timed_fn 2 capture_pane_percent 2>/dev/null || true)
+    [ -n "$percent" ] || percent=$(transcript_percent "$payload" || true)
   else
     exit 0
   fi
@@ -411,6 +417,7 @@ cmd_report() {
 }
 
 PAYLOAD_SESSION=
+PAYLOAD_TRANSCRIPT=
 ALERT_HIGH=
 ALERT_LOW=
 ALERT_SECONDS=
