@@ -517,6 +517,10 @@ case "${1:-}" in
           fi
           ;;
         'cd -- '*)
+          if [ "${FM_FAKE_AGY_FAIL:-}" = dirty-cd ]; then
+            printf 'keep this local work\n' > "$FM_FAKE_PANE_PATH/preserved.txt"
+            exit 1
+          fi
           [ "${FM_FAKE_AGY_FAIL:-}" != cd ] || exit 1
           bash -c "$arg && pwd" > "$FM_FAKE_AGY_STATE.cwd" || exit 1
           ;;
@@ -732,6 +736,68 @@ test_agy_unpublished_allocation_is_returned() {
   [ "$next" = "$WT_DIR" ] || fail "unpublished allocation retained its durable lease"
   "$FAKEBIN_DIR/treehouse" return "$next" --force || fail "could not return cleanup probe"
   pass "AGY returns an unpublished allocation and closes its endpoint after a failed cwd handoff"
+}
+
+test_agy_unpublished_work_is_preserved() {
+  local id rec mode out rc before branch next real_git
+  real_git=$(command -v git) || fail "test needs git"
+  for mode in untracked tracked staged unreadable cd; do
+    id="agy-preserve-$mode-$$"
+    rec=$(make_agy_spawn_case "preserve-$mode" "$id")
+    read_agy_spawn_record "$rec"
+    if [ "$mode" = tracked ] || [ "$mode" = staged ]; then
+      printf 'baseline\n' > "$WT_DIR/preserved.txt"
+      git -C "$WT_DIR" add preserved.txt
+      git -C "$WT_DIR" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit -qm baseline
+    fi
+    [ "$mode" = cd ] || printf 'keep this local work\n' > "$WT_DIR/preserved.txt"
+    [ "$mode" != staged ] || git -C "$WT_DIR" add preserved.txt
+    before=$(git -C "$WT_DIR" rev-parse HEAD)
+    branch=$(git -C "$WT_DIR" symbolic-ref HEAD)
+    if [ "$mode" = unreadable ]; then
+      cat > "$FAKEBIN_DIR/git" <<SH
+#!/usr/bin/env bash
+if [ "\${1:-}" = -C ] && [ "\${2:-}" = '$WT_DIR' ]; then
+  for arg in "\$@"; do
+    [ "\$arg" != status ] || exit 128
+  done
+fi
+exec '$real_git' "\$@"
+SH
+      chmod +x "$FAKEBIN_DIR/git"
+    fi
+    rc=0
+    if [ "$mode" = cd ]; then
+      out=$(FM_FAKE_AGY_FAIL='dirty-cd' run_agy_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id") || rc=$?
+      assert_contains "$out" 'endpoint could not be moved' "dirty handoff did not reach the expected refusal: $out"
+    else
+      out=$(run_agy_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id") || rc=$?
+      if [ "$mode" = unreadable ]; then
+        assert_contains "$out" 'could not inspect pooled worktree' "unreadable checkout failed before freshness inspection: $out"
+      else
+        assert_contains "$out" 'is not clean' "dirty checkout failed before freshness inspection: $out"
+      fi
+    fi
+    [ "$rc" -ne 0 ] || fail "$mode unexpectedly launched"
+    [ "$(cat "$WT_DIR/preserved.txt")" = 'keep this local work' ] || fail "$mode discarded work"
+    [ "$(git -C "$WT_DIR" rev-parse HEAD)" = "$before" ] || fail "$mode moved HEAD"
+    [ "$(git -C "$WT_DIR" symbolic-ref HEAD)" = "$branch" ] || fail "$mode changed branch"
+    if [ "$mode" = staged ]; then
+      [ "$(git -C "$WT_DIR" show :preserved.txt)" = 'keep this local work' ] || fail "abort discarded staged work"
+    fi
+    assert_contains "$out" "stays leased to $id" "$mode did not explain retained custody: $out"
+    assert_contains "$out" "treehouse return $WT_DIR --if-lease-holder $id --force" "$mode omitted recovery instructions: $out"
+    [ ! -s "$CASE_DIR/launch.log" ] || fail "$mode launched an agent"
+    assert_absent "$HOME_DIR/state/$id.meta" "$mode published an unlaunched task"
+    assert_contains "$(cat "$CASE_DIR/tmux-calls.log")" 'kill-window' "$mode left its endpoint open"
+    node -e 'const row=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")).find(row=>row.path===process.argv[2]);process.exit(row&&row.lease_id&&row.lease_holder===process.argv[3]?0:1)' \
+      "$CASE_DIR/pool/treehouse-state.json" "$WT_DIR" "$id" || fail "$mode released its reservation"
+    assert_grep "task=$id" "$(dirname "$WT_DIR")/.fm-slot-owner" "$mode released its slot claim"
+    next=$("$FAKEBIN_DIR/treehouse" get --lease) || fail "$mode could not allocate another checkout"
+    [ "$next" != "$WT_DIR" ] || fail "$mode allowed the reserved checkout to be reused"
+    "$FAKEBIN_DIR/treehouse" return "$next" --force || fail "$mode could not return the second checkout"
+  done
+  pass "AGY retains unpublished dirty or unreadable work and its reservation on every abort path"
 }
 
 test_agy_post_publication_failures_keep_records() {
@@ -1253,6 +1319,7 @@ test_agy_spawn_arms_no_busy_wiring() {
 }
 
 test_agy_unpublished_allocation_is_returned
+test_agy_unpublished_work_is_preserved
 test_agy_allocation_uses_the_custody_pool
 test_agy_ancestry_detects_the_native_command_name
 test_agy_ancestry_rejects_unrelated_mentions

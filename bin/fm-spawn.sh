@@ -1919,7 +1919,11 @@ spawn_abort_cleanup() {
     fm_treehouse_pool_slot "$PROJ_ABS" "$WT"; then
     SPAWN_SLOT_CLAIMED=0
     if [ "$SPAWN_TREEHOUSE_PROJECT_LOCK_HELD" = 1 ]; then
-      if [ "$SPAWN_SLOT_RESERVED" = 0 ] ||
+      local abort_slot_status
+      if [ "$SPAWN_SLOT_RESERVED" = 1 ] &&
+        { ! abort_slot_status=$(git -C "$WT" status --porcelain 2>/dev/null) || [ -n "$abort_slot_status" ]; }; then
+        echo "warning: $WT stays leased to $ID because it is dirty or could not be inspected; preserve its work, then release it with 'treehouse return $WT --if-lease-holder $ID --force' from $PROJ_ABS" >&2
+      elif [ "$SPAWN_SLOT_RESERVED" = 0 ] ||
         (cd "$PROJ_ABS" && treehouse return "$WT" --if-lease-holder "$ID" --force); then
         fm_treehouse_slot_owner_release "$WT" "$ID" || true
       else
