@@ -75,8 +75,8 @@
 #   fm_wd_iso <epoch>
 #       Prints the UTC ISO-8601 time.
 
-FM_WD_RESERVED_RE='(^|[^a-z])(merg|releas|deploy|publish|spend|spent|money|budget|billing|invoice|payment|sign-?in|log-?in|login|credential|secret|password|api.?key|security|production|pii|delet|destroy|wipe|force.?push)'
-FM_WD_REFUSED_TEXT_RE='(^|[^a-z])(merg|deploy|releas|publish|force.?push)'
+FM_WD_REFUSED_TEXT_RE='(^|[^be])merg|[rd]emerg|deploy|releas|publish|(^|[^a-z])force.?push'
+FM_WD_RESERVED_RE="$FM_WD_REFUSED_TEXT_RE"'|(^|[^a-z])(spend|spent|money|budget|billing|invoice|payment|sign-?in|log-?in|login|credential|secret|password|api.?key|security|production|pii|delet|destroy|wipe)'
 FM_WD_TIMER_TOOL_RE='^(ScheduleWakeup|CronCreate|CronList|CronDelete|Monitor|TaskOutput|BashOutput|Wait)$'
 FM_WD_TIMER_BASH_RE='(^|[^a-z])(sleep|fm-watch|fm-wake|wake|timer|until)([^a-z]|$)'
 
@@ -172,7 +172,7 @@ fm_wd_pane_dialog() {  # <screen>
   ' || return 1
   if _fm_wd_dialog_rows "$1" all | LC_ALL=C grep -Eiq "do you want to (proceed|make this edit|create|allow|run|overwrite|delete)|allow (this|once|always)|yes, and don.t ask again|background work is running|trust (this|the files)"; then
     printf 'permission\n'
-  elif _fm_wd_dialog_rows "$1" own | LC_ALL=C grep -Eiq "usage limit|rate limit|hit your (weekly |daily |session )?limit|limit reached|limit resets|switch (to )?(a )?(model|another)|fallback model|weekly limit|out of credits"; then
+  elif _fm_wd_dialog_rows "$1" own | LC_ALL=C grep -Eiq '^[^a-z]*(you( have|.{1,3}ve)? hit your ([a-z0-9-]+ ){0,2}limit|([a-z0-9-]+ )?(usage|rate) limit (hit|reached)|(you( are|.{1,3}re) )?out of credits|switch (to )?((a|another) )?model|switch to another account)'; then
     printf 'model-switch\n'
   else
     printf 'question\n'
