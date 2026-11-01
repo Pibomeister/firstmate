@@ -225,9 +225,11 @@ wd_read_composer() {
     fi
     [ "$rc" = 1 ] || O_COMPOSER=pending-unproven
   fi
+  O_DRAFT=''
   O_COMPOSER_TEXT=$(printf '%s\n' "$O_PANE" | fm_wd_strip_ansi | awk 'NF { r[++n] = $0 } END { for (i = n - 7; i <= n; i++) if (i > 0) print r[i] }')
   if [ "$O_BACKEND" = orca ]; then
-    O_COMPOSER_TEXT="$O_COMPOSER_TEXT $(fm_run_timed 10 orca terminal read --terminal "$O_TARGET" --limit 5 --json 2>/dev/null | jq -r '(.result.terminal.draft // .result.draft // "") | tostring' 2>/dev/null)"
+    O_DRAFT=$(fm_run_timed 10 orca terminal read --terminal "$O_TARGET" --limit 5 --json 2>/dev/null | jq -r '(.result.terminal.draft // .result.draft // "") | tostring' 2>/dev/null)
+    O_COMPOSER_TEXT="$O_COMPOSER_TEXT $O_DRAFT"
   fi
 }
 
@@ -242,7 +244,7 @@ wd_observe() {
   O_PANE='' O_SIG='' O_PANE_STATIC=0 O_DIALOG='' O_COMPOSER=unknown O_TURN=unknown
   O_LOCK_PID='' O_ALIVE=0 O_INSTANCE=unknown O_CPU_BUSY=unknown O_TRANSCRIPT='' O_TR_AGE=unknown
   O_LOOP=none O_LOOP_N=0 O_LOOP_SAMPLE='' O_RESTART_REQ=0 O_OWED_N=0 O_OWED_AGE=0
-  O_AFK=0 O_DAEMON=unknown O_PREV_COMPOSER='' O_PREV_SIG='' O_COMPOSER_TEXT=''
+  O_AFK=0 O_DAEMON=unknown O_PREV_COMPOSER='' O_PREV_SIG='' O_COMPOSER_TEXT='' O_DRAFT=''
   hb=$st/heartbeat.json
   hb_sid='' ctx=''
   if [ -f "$hb" ] && row=$(jq -r '[.primary.terminal.backend // "-", .primary.terminal.target // "-",
@@ -586,23 +588,28 @@ wd_newest_session_handoff() {
 }
 
 wd_write_handoff() {  # <symptom> -> prints path
-  local symptom=$1 path latest
+  local symptom=$1 path latest draft='' lost=0
   mkdir -p "$OUT/handoffs"
   path=$OUT/handoffs/$O_KEY-$(wd_now).md
   latest=$(wd_newest_session_handoff)
-  [ "$O_COMPOSER" = empty ] || fm_wd_draft_readable "$O_COMPOSER_TEXT" ||
-    wd_gap "$symptom restart lost an unreadable draft (composer $O_COMPOSER); the handoff records the gap"
+  if [ "$O_COMPOSER" != empty ]; then
+    if fm_wd_paste_placeholder "$O_COMPOSER_TEXT"; then lost=1
+    elif [ -n "$O_DRAFT" ]; then draft=$O_DRAFT
+    elif [ "$O_COMPOSER" = pending ]; then
+      if fm_wd_draft_readable "$O_COMPOSER_TEXT"; then draft=$O_COMPOSER_TEXT; else lost=1; fi
+    fi
+  fi
+  [ "$lost" = 0 ] || wd_gap "$symptom restart lost an unreadable draft (composer $O_COMPOSER); the handoff records the gap"
   {
     printf '# Watchdog restart handoff - %s\n\n' "$O_TAG"
     printf -- '- home: %s\n- reason: %s\n- at: %s\n- newest session handoff: %s\n' "$O_HOME" "$symptom" "$(fm_wd_iso "$(wd_now)")" "${latest:-none}"
     printf -- '- owed input: %s rows, oldest %ss\n- away mode: %s\n\n' "$O_OWED_N" "$O_OWED_AGE" "$O_AFK"
     printf 'Start with the newest session handoff above when it exists, then run the session-start contract.\n\n'
-    if [ "$O_COMPOSER" != empty ]; then
-      fm_wd_draft_readable "$O_COMPOSER_TEXT" ||
-        printf 'GAP: the unsent draft could not be read in full (composer %s), and its hidden text is lost with this restart.\n\n' "$O_COMPOSER"
-      # shellcheck disable=SC2016  # literal Markdown fences
-      printf 'Composer rows at restart, never submitted. Treat them as a note and do not act on them without review:\n\n```\n%s\n```\n\n' "$O_COMPOSER_TEXT"
-    fi
+    [ "$lost" = 0 ] ||
+      printf 'GAP: an unsent draft could not be read in full (composer %s), and its hidden text is lost with this restart.\n\n' "$O_COMPOSER"
+    # shellcheck disable=SC2016  # literal Markdown fences
+    [ -z "$draft" ] ||
+      printf 'Unsent draft at restart, never submitted. Treat it as a note and do not act on it without review:\n\n```\n%s\n```\n\n' "$draft"
     # shellcheck disable=SC2016  # literal Markdown fences
     printf 'Pane tail at restart:\n\n```\n%s\n```\n' "$(printf '%s\n' "$O_PANE" | fm_wd_strip_ansi | tail -n 40)"
   } > "$path"

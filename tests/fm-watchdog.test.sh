@@ -722,10 +722,10 @@ test_held_nudge_restart_keeps_the_draft_or_names_the_gap() {
 restart-command=/bin/true'
   transcript 5000 "Working." "Testing." "Green."
   owe_input 5000
-  for off in 0 1000 2000 3000; do FM_WD_TEST_COMPOSER=pending-unproven run_wd "$off" once >/dev/null 2>&1; done
+  for off in 0 1000 2000 3000 4000; do FM_WD_TEST_COMPOSER=pending run_wd "$off" once >/dev/null 2>&1; done
   assert_equals 1 "$(ledger_rows frozen restart pending)" "a readable draft still restarts: $(ledger | cut -f5-8)"
   handoff=$(ls "$H/data/watchdog/handoffs/"*.md)
-  assert_grep "never submitted" "$handoff" "the handoff marks the draft as unsubmitted"
+  assert_grep "Unsent draft at restart, never submitted" "$handoff" "the handoff marks the draft as unsubmitted"
   assert_grep "> finish the summary" "$handoff" "the handoff holds the readable draft"
   ! grep -q '^GAP:' "$handoff" || fail "a readable draft is not a gap: $(cat "$handoff")"
 
@@ -737,9 +737,42 @@ restart-command=/bin/true'
   assert_equals 1 "$(ledger_rows frozen restart pending)" "a placeholder still restarts: $(ledger | cut -f5-8)"
   assert_equals 0 "$(ledger_rows pasted-input key pending)" "a placeholder never gets Enter"
   handoff=$(ls "$H/data/watchdog/handoffs/"*.md)
-  assert_grep "GAP: the unsent draft could not be read" "$handoff" "the handoff names the lost draft"
+  assert_grep "GAP: an unsent draft could not be read" "$handoff" "the handoff names the lost draft"
   [ ! -s "$H/typed.log" ] || fail "text was typed on a placeholder: $(cat "$H/typed.log")"
-  pass "held restart: the handoff keeps a readable draft and names an unreadable one"
+
+  make_home $'Captain session\n> ' 'restart=on
+restart-command=/bin/true'
+  transcript 5000 "Working." "Testing." "Green."
+  owe_input 5000
+  jq -n --arg s "$SID" --argjson e "$BASE" \
+    '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:"orca",target:"term-1",present:true},session:{trusted_id:$s}}}' \
+    > "$H/state/heartbeat.json"
+  cat > "$FAKEBIN/orca" <<SH
+#!/usr/bin/env bash
+case "\$1 \$2" in
+  "terminal read") printf '{"ok":true,"result":{"terminal":{"tail":["Captain session","status row"],"draft":"finish the summary"}}}\n' ;;
+  "terminal wait") printf '{"ok":true,"result":{}}\n' ;;
+  *) exit 1 ;;
+esac
+SH
+  chmod +x "$FAKEBIN/orca"
+  for off in 0 1000 2000 3000; do FM_WD_TEST_COMPOSER=empty run_wd "$off" once >/dev/null 2>&1; done
+  rm -f "$FAKEBIN/orca"
+  handoff=$(ls "$H/data/watchdog/handoffs/"*.md)
+  assert_grep "finish the summary" "$handoff" "a read Orca draft goes into the handoff"
+  ! grep -q '^GAP:' "$handoff" || fail "a read Orca draft is not a gap: $(cat "$handoff")"
+
+  make_home $'\n' 'restart=on
+restart-command=/bin/true'
+  transcript 5000 "Working." "Testing." "Green."
+  write_fake_captain
+  kill_holder_with_anchor
+  FM_WD_TEST_COMPOSER=unknown run_wd 0 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows agent-gone restart pending)" "the dead holder restarts: $(ledger | cut -f5-8)"
+  handoff=$(ls "$H/data/watchdog/handoffs/"*.md)
+  ! grep -Eq '^GAP:|never submitted' "$handoff" || fail "no draft was proven: $(cat "$handoff")"
+  ! grep -q 'lost an unreadable draft' "$H/data/watchdog/status.md" || fail "the status file claims a lost draft"
+  pass "held restart: the handoff keeps a readable draft, names an unreadable one, and claims nothing unproven"
 }
 
 test_context_burn_file_is_not_a_context_source() {
@@ -1011,7 +1044,15 @@ test_dialog_reserved_check_reads_only_dialog_rows() {
 test_dialog_kind_ignores_conversation_rows() {
   local q=$'\n\nWhich task first?\n ❯ 1. Task A\n   2. Task B\n\nEnter to select · Esc to cancel'
   assert_equals question "$(lib fm_wd_pane_dialog "I told the worker to switch to sonnet.$q")" "a model name in conversation is no model switch"
-  assert_equals question "$(lib fm_wd_pane_dialog "It asked: do you want to proceed?$q")" "a permission phrase in conversation is no permission dialog"
+  assert_equals permission "$(lib fm_wd_pane_dialog "It asked: do you want to proceed?$q")" "a permission phrase with no proven boundary holds"
+  assert_equals question "$(lib fm_wd_pane_dialog $'It asked: do you want to proceed?\n──────────'"$q")" "a rule proves a permission phrase is conversation"
+  assert_equals permission "$(lib fm_wd_pane_dialog $'Do you trust the files in this folder?\n\n/some/path\n\nClaude Code may read files here.\n ❯ 1. Yes, proceed\n   2. No, exit\n\nEnter to confirm · Esc to cancel')" "a trust phrase above a detail paragraph is permission"
+
+  make_home $'Do you want to proceed?\n\ndetail row\n ❯ 1. Yes\n   2. No\n\nEnter to confirm · Esc to cancel'
+  transcript 100 "Working."
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger | awk -F'\t' '$6 == "key"' | wc -l | tr -d ' ')" "an unproven dialog gets no Escape: $(ledger | cut -f5-8)"
+  assert_grep "permission dialog waiting" "$H/data/watchdog/status.md" "the dialog left alone is reported"
 
   make_home "I told the worker to switch to sonnet.$q" 'models=claude:haiku'
   fake_models "$H" ok:"OPTION 1" absent

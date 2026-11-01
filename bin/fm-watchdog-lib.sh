@@ -107,8 +107,12 @@ fm_wd_text_allowed() {  # <text>
   ! fm_wd_lower "$1" | LC_ALL=C grep -Eq "$FM_WD_REFUSED_TEXT_RE"
 }
 
+fm_wd_paste_placeholder() {  # <composer-window>
+  printf '%s\n' "$1" | LC_ALL=C grep -Eiq '\[Pasted (text|content) '
+}
+
 fm_wd_draft_readable() {  # <composer-window>
-  ! printf '%s\n' "$1" | LC_ALL=C grep -Eiq '\[Pasted (text|content) ' &&
+  ! fm_wd_paste_placeholder "$1" &&
     printf '%s\n' "$1" | LC_ALL=C grep -Eq $'^([│┃|] )?(❯|›|⟩|→|❭|>)( |\xC2\xA0|$)'
 }
 
@@ -122,7 +126,7 @@ _fm_wd_tail_rows() {  # <screen> <n>
 }
 
 fm_wd_pane_dialog() {  # <screen>
-  local tail kind
+  local tail
   [ -n "${1-}" ] || return 1
   tail=$(_fm_wd_tail_rows "$1" 14)
   if printf '%s\n' "$tail" | LC_ALL=C grep -Eq 'How is Claude doing' \
@@ -138,11 +142,13 @@ fm_wd_pane_dialog() {  # <screen>
     NF { last = $0 }
     END { exit !(selected && last ~ /(Enter to (confirm|select|submit|continue)|Esc to (cancel|exit|go back)|↑\/↓ to (navigate|select)|Tab:next answer)/) }
   ' || return 1
-  kind=$(_fm_wd_dialog_rows "$1" own | tr '[:upper:]' '[:lower:]' | awk '
-    /do you want to (proceed|make this edit|create|allow|run|overwrite|delete)|allow (this|once|always)|yes, and don.t ask again|background work is running|trust (this|the files)/ { p = 1 }
-    /usage limit|rate limit|hit your (weekly |daily |session )?limit|limit reached|limit resets|switch (to )?(a )?(model|another)|\/model|opus|sonnet|haiku|fallback model|weekly limit|out of credits|credits/ { m = 1 }
-    END { if (p) print "permission"; else if (m) print "model-switch"; else print "question" }')
-  printf '%s\n' "$kind"
+  if _fm_wd_dialog_rows "$1" all | LC_ALL=C grep -Eiq "do you want to (proceed|make this edit|create|allow|run|overwrite|delete)|allow (this|once|always)|yes, and don.t ask again|background work is running|trust (this|the files)"; then
+    printf 'permission\n'
+  elif _fm_wd_dialog_rows "$1" own | LC_ALL=C grep -Eiq "usage limit|rate limit|hit your (weekly |daily |session )?limit|limit reached|limit resets|switch (to )?(a )?(model|another)|/model|opus|sonnet|haiku|fallback model|weekly limit|out of credits|credits"; then
+    printf 'model-switch\n'
+  else
+    printf 'question\n'
+  fi
 }
 
 # Rows of the dialog at the bottom of a screen. Below a rule row above the first
