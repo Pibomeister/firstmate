@@ -1,0 +1,8 @@
+Cross-check of recorded percent vs transcript usage (window 200000 -> compact-at 167000):
+{"ctx_tokens":70722,"pct_left":57}
+{"ctx_tokens":70859,"pct_left":57}
+{"ctx_tokens":70933,"pct_left":57}
+{"ctx_tokens":120612,"pct_left":27}
+{"ctx_tokens":140114,"pct_left":16}
+{"ctx_tokens":140138,"pct_left":16}
+{"ctx_tokens":140166,"pct_left":16}

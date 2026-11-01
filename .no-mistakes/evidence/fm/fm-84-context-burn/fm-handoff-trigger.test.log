@@ -1,0 +1,11 @@
+ok - default threshold: silent at 16% left, fires at 15% left before auto-compact
+ok - threshold is configurable, 0 turns it off, and an unusable value keeps the default
+ok - fires once per cycle across tool calls and prompts, and again for a new session
+ok - a compaction re-arms the trigger for one more firing, and stale usage cannot spend it
+ok - eight concurrent hook calls for one session fire exactly once
+ok - compact point derives from Claude's autoCompactWindow layers and override, and a pin wins
+ok - the settings layers resolve the way Claude resolves them, on canonical model names
+ok - only integers from 100000 to 1000000 count as a settings window
+ok - CLAUDE_CODE_AUTO_COMPACT_WINDOW overrides settings the way Claude reads it
+ok - an unresolvable compact point or unreadable usage stays silent rather than guessing
+ok - inert in a crew worktree, for Cursor payloads, other events, and a home without state; live in the primary

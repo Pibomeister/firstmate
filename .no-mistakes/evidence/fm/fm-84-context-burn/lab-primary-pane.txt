@@ -1,0 +1,22 @@
+     generator so it does not keep spending a spent allowance.
+❯ Lab test only: reply with the single word OK and do not run any tools.
+⏺ OK
+✻ Brewed for 12s · done 3:36 AM
+❯ check: lab probe wake, reply OK only, no tools
+⏺ OK
+✻ Baked for 4s · done 3:37 AM
+❯ Lab burn test: use the Read tool to read docs/architecture.md in full (all of it, in as many chunks as needed), then docs/herdr-backend.md in full, then reply DONE. No summary.
+  Read 2 files
+⏺ DONE
+✻ Sautéed for 14s · done 3:37 AM
+❯ Lab test: reply OK only, no tools.
+⏺ OK
+✻ Worked for 3s · done 3:39 AM
+❯ heartbeat: lab probe, reply OK only, no tools
+⏺ OK
+✻ Churned for 4s · done 3:40 AM
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  [OMC#4.15.0] -> 5.7.26 omc update | Model: Opus 5.5 | 5h:0% wk:96%(3d1h) | session:3m | ctx:14% | 🔧3
+  ⏵⏵ auto mode on (shift+tab to cycle) · ← 1 agent
