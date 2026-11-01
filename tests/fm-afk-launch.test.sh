@@ -1073,6 +1073,28 @@ unit_supervision_host_other_harnesses_run_no_away_daemon() {
     || fail "codex: a record without a watcher must name the missing checkpoint: $out"
   [ ! -e "$st/state/.watch.lock" ] && [ ! -e "$st/state/.supervision-host" ] \
     || fail "codex: entry must not fabricate a watcher or host record"
+  afk_hold_fixture() {  # <args for the stand-in watcher>
+    bash -c 'sleep 30; :' _ "$@" >/dev/null 2>&1 &
+    hold_pid=$!
+    mkdir -p "$st/state/.watch.lock"
+    printf '%s\n' "$hold_pid" > "$st/state/.watch.lock/pid"
+    printf '%s\n' "$st" > "$st/state/.watch.lock/fm-home"
+    printf '%s\n' "$(dirname "$LAUNCH")/fm-watch.sh" > "$st/state/.watch.lock/watcher-path"
+    FM_STATE_OVERRIDE="$st/state" bash -c '. "$1"; fm_pid_identity "$2"' _ "$(dirname "$LAUNCH")/fm-wake-lib.sh" "$hold_pid" > "$st/state/.watch.lock/pid-identity"
+    touch "$st/state/.last-watcher-beat"
+  }
+  afk_hold_fixture --grok-hold
+  out=$(enter_with codex claude)
+  kill "$hold_pid" 2>/dev/null; wait "$hold_pid" 2>/dev/null
+  printf '%s' "$out" | grep -F 'Away supervision is not running yet:' >/dev/null \
+    || fail "codex: a Stop-hook hold must not hide the missing checkpoint: $out"
+  rm -rf "$st/state/.watch.lock"
+  afk_hold_fixture
+  out=$(enter_with codex claude)
+  kill "$hold_pid" 2>/dev/null; wait "$hold_pid" 2>/dev/null
+  printf '%s' "$out" | grep -F 'Away supervision is not running yet:' >/dev/null \
+    && fail "codex: a running non-hold watcher must keep the entry quiet: $out"
+  rm -rf "$st/state/.watch.lock"
   pass "codex: a recorded away posture names the missing foreground checkpoint without fabricating readiness"
   rm -rf "$st"
 }

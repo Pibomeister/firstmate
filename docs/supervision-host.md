@@ -305,7 +305,8 @@ So it never stops the owner's host or watcher or releases its leases.
 ### A host that dies without a close
 
 The host's owner retries it.
-Grok's model and Codex's checkpoint see it as a failed cycle and start the next one.
+Grok's model sees it as a failed cycle and starts the next one.
+Codex's checkpoint reports a failed cycle, the model drains, and the Stop hook detaches a hold or allows the stop.
 Before it arms, the next host does two things:
 
 - It stops, by recorded identity, whatever its predecessor left running, including the engine descendants a killed turn recorded.

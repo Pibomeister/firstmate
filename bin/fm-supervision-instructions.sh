@@ -219,6 +219,8 @@ repair_line() {
     codex)
       if [ "$SECONDMATE_MODE" -eq 1 ]; then
         printf '%s%s\n' "$prefix" 'do not start a foreground checkpoint. Tell the parent that the outside-turn watcher failed, then stop. The Stop hook bounds repeated blocks.'
+      elif [ -n "$HOST_SNIPPET" ]; then
+        printf '%s%s\n' "$prefix" 'do not start another foreground checkpoint. The Stop hook re-arms a persistent watcher, except under an away record on this home, or allows this turn to end. Poll a checkpoint only while it is still running, then stop.'
       else
         printf '%s%s\n' "$prefix" 'do not start another foreground checkpoint. The Stop hook re-arms a persistent watcher or allows this turn to end. Poll a checkpoint only while it is still running, then stop.'
       fi

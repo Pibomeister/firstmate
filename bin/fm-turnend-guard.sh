@@ -75,7 +75,10 @@
 #      stop when no wake is queued. The hold has no doorbell, so a new hold's
 #      allow carries a notice that wakes wait for the captain's next message. If
 #      no owner can be confirmed and no wake is queued, the hook allows the stop
-#      and prints a loud downtime notice instead of naming a checkpoint.
+#      and prints a loud downtime notice instead of naming a checkpoint. A home
+#      that runs the supervision host under an away record skips the detach: with
+#      no wake queued and no watcher other than a hold, the stop is allowed with
+#      a loud notice that away supervision is not running until the next checkpoint.
 #   3. A stop following this guard's own block in the same session and turn is
 #      allowed only when rule 1 no longer applies, no wake is queued, and
 #      nothing advanced since that block - the watcher beacon at full mtime
@@ -371,6 +374,22 @@ if [ "$CODEX_MODE" -eq 1 ] \
   && own_checkpoint_holds_watcher "$(cat "$STATE/.watch.lock/pid" 2>/dev/null)"; then
   CHECKPOINT_OPEN=1
 fi
+CODEX_HOST_AWAY=0
+if [ "$CODEX_MODE" -eq 1 ] && [ "$CHECKPOINT_OPEN" -eq 0 ] && [ "$SECONDMATE_MODE" -eq 0 ] \
+  && [ ! -e "$STATE/.afk" ] && [ -f "$STATE/.afk-contract" ] \
+  && [ "$(FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-afk-contract.sh" mode 2>/dev/null)" != quiet ]; then
+  # shellcheck source=bin/fm-supervision-engine-lib.sh
+  . "$SCRIPT_DIR/fm-supervision-engine-lib.sh"
+  if fm_supervision_host_enabled "$CONFIG" codex; then
+    CODEX_HOST_AWAY=1
+  fi
+fi
+if [ "$CODEX_HOST_AWAY" -eq 1 ] && [ "$FM_SUP_QUEUE_PENDING" = false ] \
+  && { ! fm_watcher_healthy "$STATE" "$WATCH" "$GRACE" "$FM_HOME" \
+    || fm_grok_holding_watcher "$(cat "$STATE/.watch.lock/pid" 2>/dev/null)"; }; then
+  printf '%s\n' '{"systemMessage":"FIRSTMATE AWAY SUPERVISION IS NOT RUNNING: this home runs the supervision host under an away record, and no checkpoint is running. Allowing this turn to end. Away supervision is not running until the next checkpoint."}'
+  exit 0
+fi
 if fm_watcher_healthy "$STATE" "$WATCH" "$GRACE" "$FM_HOME"; then
   if [ "$CHECKPOINT_OPEN" -eq 0 ]; then
     if [ "$CODEX_MODE" -eq 0 ] || [ "$FM_SUP_QUEUE_PENDING" = false ]; then
@@ -498,7 +517,7 @@ fi
 # owner or allow the stop. A secondmate home and a home with state/.afk keep the
 # rule 3 escape below instead.
 if [ "$CODEX_MODE" -eq 1 ] && [ "$CHECKPOINT_OPEN" -eq 0 ] && [ "$SECONDMATE_MODE" -eq 0 ] \
-  && [ ! -e "$STATE/.afk" ]; then
+  && [ ! -e "$STATE/.afk" ] && [ "$CODEX_HOST_AWAY" -eq 0 ]; then
   DETACH_OUT=
   if [ -x "$SCRIPT_DIR/fm-watch-arm.sh" ] \
     && ! fm_watcher_healthy "$STATE" "$WATCH" "$GRACE" "$FM_HOME"; then

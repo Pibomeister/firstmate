@@ -481,18 +481,6 @@ attached_holder_live() {
   [ "$FM_WATCHER_MATCHED_IDENTITY" = "$cycle_watcher_identity" ]
 }
 
-# Bind queued-wake delivery to a persistent holder, not an ordinary one-shot watcher.
-grok_holding_watcher() {  # <pid>
-  local pid=$1 proc_root=${FM_PROC_ROOT_OVERRIDE:-/proc} args
-  if [ -r "$proc_root/$pid/cmdline" ]; then
-    [ "$(tr '\000' '\n' < "$proc_root/$pid/cmdline" | tail -n 1)" = --grok-hold ]
-  else
-    args=$(ps -ww -o args= -p "$pid" 2>/dev/null) || return 1
-    case "$args" in *' --grok-hold') return 0 ;; esac
-    return 1
-  fi
-}
-
 
 # Grok arms can report queued work while their tagged holding watcher stays live.
 # Stay alive across identity-matched healthy holders. If one cycle ends, attach
@@ -528,7 +516,7 @@ attach_and_wait() {
         report_attached
       fi
       if [ "${FM_WATCH_GROK_CONTINUITY:-}" = 1 ] && [ ! -e "$STATE/.afk" ] \
-        && grok_holding_watcher "$attached_pid" \
+        && fm_grok_holding_watcher "$attached_pid" \
         && [ "$(fm_wake_actor_pending_count "$actor")" -gt 0 ]; then
         cycle_log_append 0 none attached-delivered-wake "attached:$attached_pid"
         printf '%s\n' 'check: rearm-resurface'

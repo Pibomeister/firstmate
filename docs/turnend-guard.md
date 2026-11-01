@@ -343,7 +343,7 @@ Existing native protocols remain authoritative outside the selected row.
 | --- | --- | --- | --- |
 | Codex | tmux or Herdr, validated local parent/inbox and foreground session | No other watcher/host/away owner | Persistent watcher with identity-bound doorbell; Stop requires its proof. |
 | Codex | Any | Away or quiet daemon | Existing daemon protocol; short-turn watcher stands down. |
-| Codex | Any | Supervision host selected | A foreground checkpoint runs the host; with none running, the Stop hook detaches a persistent hold or allows the turn to end. |
+| Codex | Any | Supervision host selected | A foreground checkpoint runs the host; with none running, the Stop hook detaches a persistent hold or allows the turn to end. Under an away record it skips the detach and allows the stop with a loud notice that away supervision is not running until the next checkpoint. |
 | Codex | tmux or Herdr, local | Other healthy watcher | Existing owner/protocol; no competing short-turn watcher. |
 | Codex | Other backend, or remote/unverified route | Any | The Stop hook detaches a persistent hold or allows the turn to end. |
 | Other supported harnesses | Their existing supported backends/routes | Native ownership | Existing native protocol, without a new Codex short-turn owner. |

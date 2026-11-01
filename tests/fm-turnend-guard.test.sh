@@ -2567,6 +2567,7 @@ printf '%s\n' "$FM_HOME/bin/fm-watch.sh" > "$FM_HOME/state/.watch.lock/watcher-p
 printf '%s\n' "$identity" > "$FM_HOME/state/.watch.lock/pid-identity"
 touch "$FM_HOME/state/.last-watcher-beat"
 printf '%s\n' "$pid" > "$FM_HOME/state/detach-pid"
+echo "watcher: ${FM_TEST_ARM_VERB:-started} pid=$pid"
 exit 0
 SH
   chmod +x "$dir/bin/fm-watch-arm.sh"
@@ -2575,9 +2576,51 @@ SH
   [ -n "$pid" ] && kill "$pid" 2>/dev/null || true
   wait "$pid" 2>/dev/null || true
   expect_code 0 "$STATUS" "a confirmed detached hold must allow the stop: $OUT"
-  [ -z "$OUT" ] || fail "a confirmed detached hold must be silent: $OUT"
+  assert_contains "$OUT" "FIRSTMATE WATCHER RE-ARMED" "a started hold must carry the re-arm notice"
   [ -n "$pid" ] || fail "the detach stub did not record a watcher pid"
-  pass "fm-turnend-guard codex: a detached hold allows the stop without a checkpoint"
+  rm -rf "$dir/state/.watch.lock" "$dir/state/detach-pid"
+  export FM_TEST_ARM_VERB=attached
+  run_codex_hook "$dir" "$(codex_payload s1 t2 false)"
+  unset FM_TEST_ARM_VERB
+  pid=$(cat "$dir/state/detach-pid" 2>/dev/null || true)
+  [ -n "$pid" ] && kill "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  expect_code 0 "$STATUS" "an attached watcher must allow the stop: $OUT"
+  [ -z "$OUT" ] || fail "an attached watcher must be silent: $OUT"
+  pass "fm-turnend-guard codex: a started hold allows the stop with its notice, and an attached watcher stays silent"
+}
+
+test_codex_host_away_skips_the_detach_with_a_notice() {
+  local dir pid identity
+  dir=$(make_primary_dir "$TMP_ROOT/codex-host-away")
+  : > "$dir/state/task1.meta"
+  mkdir -p "$dir/config"
+  : > "$dir/config/supervision-host"
+  : > "$dir/state/.afk-contract"
+  cat > "$dir/bin/fm-watch-arm.sh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$1" > "$FM_HOME/state/arm-called"
+SH
+  chmod +x "$dir/bin/fm-watch-arm.sh"
+  run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
+  expect_code 0 "$STATUS" "a host home under an away record must allow the stop: $OUT"
+  assert_contains "$OUT" "not running until the next checkpoint" "the allow must say away supervision is off"
+  [ ! -e "$dir/state/arm-called" ] || fail "a host home under an away record must not detach a hold"
+  bash -c 'sleep 30; :' _ --grok-hold >/dev/null 2>&1 &
+  pid=$!
+  identity=$(FM_STATE_OVERRIDE="$dir/state" bash -c '. "$1"; fm_pid_identity "$2"' _ "$dir/bin/fm-wake-lib.sh" "$pid")
+  mkdir -p "$dir/state/.watch.lock"
+  printf '%s\n' "$pid" > "$dir/state/.watch.lock/pid"
+  printf '%s\n' "$dir" > "$dir/state/.watch.lock/fm-home"
+  printf '%s\n' "$dir/bin/fm-watch.sh" > "$dir/state/.watch.lock/watcher-path"
+  printf '%s\n' "$identity" > "$dir/state/.watch.lock/pid-identity"
+  touch "$dir/state/.last-watcher-beat"
+  run_codex_hook "$dir" "$(codex_payload s1 t2 false)"
+  kill "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  expect_code 0 "$STATUS" "a hold under an away record must allow the stop: $OUT"
+  assert_contains "$OUT" "not running until the next checkpoint" "a hold must not read as away supervision"
+  pass "fm-turnend-guard codex: a host home under an away record skips the detach and reports the gap"
 }
 
 test_codex_host_selected_allows_stop_without_a_second_watcher() {
@@ -3216,6 +3259,7 @@ test_codex_allows_watcher_owned_by_another_session
 test_codex_missing_watcher_allows_stop_without_a_checkpoint_loop
 test_codex_detach_hold_allows_stop_when_the_watcher_is_healthy
 test_codex_host_selected_allows_stop_without_a_second_watcher
+test_codex_host_away_skips_the_detach_with_a_notice
 test_codex_stale_or_foreign_block_record_is_judged_fresh
 test_codex_queued_wake_budget_allows_stop
 test_codex_foreign_lock_owner_gets_read_only_exit

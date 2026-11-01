@@ -9,6 +9,7 @@ In a secondmate home, apply the routed-work and return-channel rules in `data/ch
 When this session owns supervision and no away daemon is active:
 The Stop hook re-arms a persistent watcher or allows this turn to end.
 That watcher has no doorbell, so its wakes wait for the captain's next message.
+On a home that runs the supervision host, an away record stops the re-arm: the turn ends with a loud notice that away supervision is not running until the next checkpoint.
 A secondmate home keeps one outside-turn watcher instead of another checkpoint.
 1. Drain first with `bin/fm-wake-drain.sh`.
    After handling all emitted wakes and reconciling open decisions and unread status lines, run the exact `--ack-through` command printed as `WAKE_ACK_REQUIRED`.
