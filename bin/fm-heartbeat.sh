@@ -10,7 +10,7 @@
 # weekly model allowance left once from quota-axi, and never
 # guesses: unread fields carry {unknown:true,reason}. Every primary and per-task
 # read has its own bound (FM_HEARTBEAT_READ_TIMEOUT, default 3 seconds, and
-# FM_HEARTBEAT_NM_TIMEOUT, default 2). FM_HEARTBEAT_QUOTA_TIMEOUT (default 2
+# FM_HEARTBEAT_NM_TIMEOUT, default 2). FM_HEARTBEAT_QUOTA_TIMEOUT (default 10
 # seconds) bounds that one quota-axi read. FM_HEARTBEAT_DEADLINE (default 90
 # seconds) stops starting new task reads. A deadline hit or a TERM, INT, or HUP
 # still publishes what was read, with unknown rows for the rest. A SIGKILL cannot
@@ -89,7 +89,7 @@ LEDGER="$STATE/heartbeat.json"
 FM_HEARTBEAT_SNAPSHOT_TIMEOUT=${FM_HEARTBEAT_SNAPSHOT_TIMEOUT:-30}
 FM_HEARTBEAT_READ_TIMEOUT=${FM_HEARTBEAT_READ_TIMEOUT:-3}
 FM_HEARTBEAT_NM_TIMEOUT=${FM_HEARTBEAT_NM_TIMEOUT:-2}
-FM_HEARTBEAT_QUOTA_TIMEOUT=${FM_HEARTBEAT_QUOTA_TIMEOUT:-2}
+FM_HEARTBEAT_QUOTA_TIMEOUT=${FM_HEARTBEAT_QUOTA_TIMEOUT:-10}
 FM_HEARTBEAT_DEADLINE=${FM_HEARTBEAT_DEADLINE:-90}
 
 case "${1:-}" in
@@ -104,7 +104,7 @@ esac
 case "$FM_HEARTBEAT_SNAPSHOT_TIMEOUT" in ''|*[!0-9]*|0) FM_HEARTBEAT_SNAPSHOT_TIMEOUT=30 ;; esac
 case "$FM_HEARTBEAT_READ_TIMEOUT" in ''|*[!0-9]*|0) FM_HEARTBEAT_READ_TIMEOUT=3 ;; esac
 case "$FM_HEARTBEAT_NM_TIMEOUT" in ''|*[!0-9]*|0) FM_HEARTBEAT_NM_TIMEOUT=2 ;; esac
-case "$FM_HEARTBEAT_QUOTA_TIMEOUT" in ''|*[!0-9]*|0) FM_HEARTBEAT_QUOTA_TIMEOUT=2 ;; esac
+case "$FM_HEARTBEAT_QUOTA_TIMEOUT" in ''|*[!0-9]*|0) FM_HEARTBEAT_QUOTA_TIMEOUT=10 ;; esac
 case "$FM_HEARTBEAT_DEADLINE" in ''|*[!0-9]*|0) FM_HEARTBEAT_DEADLINE=90 ;; esac
 
 command -v jq >/dev/null 2>&1 || {

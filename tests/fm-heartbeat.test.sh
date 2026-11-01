@@ -114,6 +114,7 @@ exit 0
 SH
 cat > "$FAKEBIN/quota-axi" <<'SH'
 #!/usr/bin/env bash
+[ -z "${FAKE_QUOTA_DELAY:-}" ] || sleep "$FAKE_QUOTA_DELAY"
 if [ -n "${FAKE_QUOTA_JSON:-}" ]; then
   printf '%s\n' "$FAKE_QUOTA_JSON"
   exit 0
@@ -868,6 +869,10 @@ test_weekly_allowance_reports_model_allowance_left() {
     and .weekly_allowance.windows[1] == {provider:"openai",id:"weekly",percent_remaining:40}
     and ([.weekly_allowance.windows[].id] | index("five_hour")) == null
   ' "weekly model allowance was not published"
+  # quota-axi --json takes up to ~4s on a real host; the default bound must wait for it.
+  publish "$home" "FAKE_QUOTA_JSON=$quota" FAKE_QUOTA_DELAY=3
+  assert_ledger "$home" '.failure == null and .weekly_allowance.status == "ok"' \
+    "a 3-second quota-axi read was cut off by the default timeout"
   publish "$home" FAKE_QUOTA_JSON='{"providers":[{"id":"anthropic","windows":[{"id":"five_hour","percentUsed":10}]}]}'
   assert_ledger "$home" '.failure == null and .weekly_allowance.unknown == true and .weekly_allowance.reason == "no weekly model allowance window"' \
     "a snapshot with no weekly window was treated as readable allowance"
