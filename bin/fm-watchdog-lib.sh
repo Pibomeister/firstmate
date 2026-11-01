@@ -135,56 +135,51 @@ fm_wd_paste_placeholder() {  # <composer-window>
 
 FM_WD_PROMPT_RE=$'^((│|┃|[|]) )?(❯|›|⟩|→|❭|>)( |\xC2\xA0|$)'
 
-# A bordered prompt row belongs to a draft only as far as its box is closed:
-# box_closed sets box_top and box_bottom around row g of the awk row array.
-FM_WD_BOX_AWK='
+# The two shapes that prove a draft's boundary. box_closed sets box_top and
+# box_bottom around row g of the awk row array; rule_len measures a column-0 rule.
+FM_WD_BOUNDARY_AWK='
   function bordered(r) { return r ~ /^(│|┃) / }
   function box_closed(g) {
     for (box_top = g - 1; box_top > 0 && bordered(row[box_top]); box_top--) ;
     for (box_bottom = g + 1; box_bottom <= NR && bordered(row[box_bottom]); box_bottom++) ;
     return row[box_top] ~ /^(╭|┌)/ && row[box_bottom] ~ /^(╰|└)/
-  }'
+  }
+  function rule_len(r, t, n) { t = r; n = gsub(/─|━/, "", t); return (t ~ /^[ \t]*$/ && r !~ /^[ \t]/) ? n : 0 }'
 
 fm_wd_prompt_tail() {  # <composer-window>
   printf '%s\n' "$1" | awk -v glyph="$FM_WD_PROMPT_RE" 'found || $0 ~ glyph { found = 1; print }'
 }
 
+# The rows of a draft fm_wd_draft_readable proved: a box's body from its first
+# prompt row, or the rows from the prompt row down to the last long rule.
 fm_wd_draft_rows() {  # <composer-window>
-  printf '%s\n' "$1" | awk -v glyph="$FM_WD_PROMPT_RE" "$FM_WD_BOX_AWK"'
-    function is_rule(r, t) { t = r; gsub(/[ \t│┃|─━╭╮╰╯┌┐└┘-]/, "", t); return t == "" && (index(r, "─") || index(r, "━")) }
-    { row[NR] = $0; if ($0 ~ glyph) g[NR] = 1 }
+  printf '%s\n' "$1" | awk -v glyph="$FM_WD_PROMPT_RE" "$FM_WD_BOUNDARY_AWK"'
+    { row[NR] = $0; if ($0 ~ glyph) last = NR }
     END {
-      for (i = NR; i > 0; i--) if (i in g) { last = i; break }
       if (!last) exit
       if (bordered(row[last]) && box_closed(last)) {
-        for (i = box_top + 1; !(i in g); i++) ;
+        for (i = box_top + 1; row[i] !~ glyph; i++) ;
         for (; i < box_bottom; i++) print row[i]
         exit
       }
-      start = last
-      for (i = last - 1; i > 0 && !is_rule(row[i]); i--) if (i in g) start = i
-      stop = NR
-      while (stop > last && row[stop] ~ /^[^A-Za-z0-9]*(for shortcuts|[0-9]+% until auto-compact|until auto-compact|[0-9]+% context left|(bypass permissions|accept edits|plan mode) on( \(|$)|esc to interrupt)/) stop--
-      if (stop > last && is_rule(row[stop])) stop--
-      for (i = start; i <= stop; i++) print row[i]
+      for (stop = NR; stop > last && rule_len(row[stop]) < 40; stop--) ;
+      for (i = last; i < stop; i++) print row[i]
     }'
 }
 
-# A bordered last prompt row needs a closed box whole inside the window. With a
-# plain one and a prompt row above the window, the draft top is proven only by a pair of equal rules of 40 or more
-# characters at column 0 around it. Draft rows sit indented under the prompt
+# Enter needs the whole draft proven. A bordered last prompt row needs a closed
+# box whole inside the window. A plain one needs a pair of equal rules of 40 or
+# more characters at column 0 around it: draft rows sit indented under the prompt
 # glyph, so such a rule row is the harness's and not typed text.
 fm_wd_draft_readable() {  # <composer-window> [rows-above-the-window]
   local above=${2-} above_n=0
   fm_wd_paste_placeholder "$1" && return 1
   [ -z "$above" ] || above_n=$(printf '%s\n' "$above" | wc -l | tr -d ' ')
-  { [ -z "$above" ] || printf '%s\n' "$above"; printf '%s\n' "$1"; } | awk -v glyph="$FM_WD_PROMPT_RE" -v above_n="$above_n" "$FM_WD_BOX_AWK"'
-    function rule_len(r, t, n) { t = r; n = gsub(/─|━/, "", t); return (t ~ /^[ \t]*$/ && r !~ /^[ \t]/) ? n : 0 }
-    { row[NR] = $0; if ($0 ~ glyph) { g = NR; if (NR <= above_n) seen = 1 } }
+  { [ -z "$above" ] || printf '%s\n' "$above"; printf '%s\n' "$1"; } | awk -v glyph="$FM_WD_PROMPT_RE" -v above_n="$above_n" "$FM_WD_BOUNDARY_AWK"'
+    { row[NR] = $0; if ($0 ~ glyph) g = NR }
     END {
       if (g <= above_n) exit 1
       if (bordered(row[g])) exit !(box_closed(g) && box_top > above_n)
-      if (!seen) exit 0
       t = rule_len(row[g - 1])
       if (t >= 40) for (i = g + 1; i <= NR; i++) if (rule_len(row[i]) == t) exit 0
       exit 1

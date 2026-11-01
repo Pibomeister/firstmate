@@ -864,15 +864,15 @@ wd_draft_allowed() {
 }
 
 wd_submit_unsent() {
-  if ! fm_wd_draft_readable "$O_COMPOSER_TEXT" "$O_COMPOSER_ABOVE"; then
-    wd_gap "unsent input is a paste placeholder, or its whole draft boundary is not proven; Enter not pressed"
-    wd_rate_open pasted-input key "$(cfgi enter-secs 300)" &&
-      wd_rec "$(wd_id)" pasted-input key refused "the whole draft cannot be read; never accepted"
-    return 1
-  elif ! wd_draft_allowed; then
+  if ! wd_draft_allowed; then
     wd_gap "unsent draft names a merge, deploy, or release word; Enter not pressed"
     wd_rate_open pasted-input key "$(cfgi enter-secs 300)" &&
       wd_rec "$(wd_id)" pasted-input key refused "the draft names a merge, deploy, or release word; never accepted"
+    return 1
+  elif ! fm_wd_draft_readable "$O_COMPOSER_TEXT" "$O_COMPOSER_ABOVE"; then
+    wd_gap "unsent input is a paste placeholder, or its whole draft boundary is not proven; Enter not pressed"
+    wd_rate_open pasted-input key "$(cfgi enter-secs 300)" &&
+      wd_rec "$(wd_id)" pasted-input key refused "the whole draft cannot be read; never accepted"
     return 1
   elif wd_enter_spent; then
     wd_gap "unsent input is still there after Enter; no second Enter inside two hours"

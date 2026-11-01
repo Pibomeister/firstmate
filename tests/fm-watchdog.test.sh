@@ -276,21 +276,26 @@ restart-command=/bin/true'
   pass "boundary: never types into a pane on the do-not-touch list"
 }
 
+WD_RULE='────────────────────────────────────────────────────────────'
+# A proven plain composer: its prompt row between two long column-0 rules.
+ruled() {  # <draft-rows> [rows-under-the-closing-rule]
+  printf '%s\n%s\n%s' "$WD_RULE" "$1" "$WD_RULE"
+  [ -z "${2:-}" ] || printf '\n%s' "$2"
+}
+
 test_draft_rows_are_the_draft_alone() {
   local rule='──────────'
-  assert_equals $'> first\n  then enter plan mode\n  third' "$(lib fm_wd_draft_rows "> first"$'\n  then enter plan mode\n  third\n'"$rule"$'\n  ? for shortcuts')" "a footer word inside a draft does not cut it"
-  assert_equals $'> first\n  accept edits later' "$(lib fm_wd_draft_rows $'old row\n> first\n  accept edits later\n  ? for shortcuts\n  7% until auto-compact')" "with no rule, only trailing footer rows drop"
-  assert_equals $'> merge #5\n> ok' "$(lib fm_wd_draft_rows "> merge #5"$'\n> ok\n'"$rule"$'\n  ? for shortcuts')" "a second prompt glyph in a draft does not cut it"
-  assert_equals $'> keep going\n ──────\n merge #5' "$(lib fm_wd_draft_rows "old"$'\n'"$rule"$'\n> keep going\n ──────\n merge #5\n'"$rule"$'\n ? for shortcuts')" "an inner rule does not end the draft"
-  assert_equals $'› keep going\n ────\n merge #5' "$(lib fm_wd_draft_rows $'› keep going\n ────\n merge #5\n 100% context left')" "with no closing rule, rows under an inner rule stay in the note"
-  assert_equals $'> keep going\n ──────\n merge #5' "$(lib fm_wd_draft_rows $'> keep going\n ──────\n merge #5\n ? for shortcuts')" "an inner rule above text is not closing"
+  assert_equals $'> first\n  then enter plan mode\n  third' "$(lib fm_wd_draft_rows "$(ruled $'> first\n  then enter plan mode\n  third' '  ? for shortcuts')")" "a footer word inside a draft does not cut it"
+  assert_equals $'> keep going\n ──────\n merge #5' "$(lib fm_wd_draft_rows "$(ruled $'> keep going\n ──────\n merge #5' ' ? for shortcuts')")" "an inner rule does not end the draft"
+  assert_equals $'> keep\n'"$WD_RULE"$'\n merge #5' "$(lib fm_wd_draft_rows "$WD_RULE"$'\n> keep\n'"$WD_RULE"$'\n merge #5\n'"$WD_RULE")" "the note runs to the last long rule"
+  assert_equals "" "$(lib fm_wd_draft_rows $'› keep going\n merge #5\n 100% context left')" "an unproven draft has no note"
   assert_equals $'> merge #5\n'"$rule"$'\n> ok\n  footer' "$(lib fm_wd_prompt_tail "old"$'\n> merge #5\n'"$rule"$'\n> ok\n  footer')" "the guard reads from the first prompt row to the end"
   lib fm_wd_draft_readable "╭──╮"$'\n│ > finish the summary │\n'"╰──╯" || fail "a bordered prompt row in a box is readable"
   LC_ALL=C lib fm_wd_draft_readable "╭──╮"$'\n│ > finish the summary │\n'"╰──╯" || fail "a bordered prompt row in a box is readable in the C locale"
   ! lib fm_wd_draft_readable "│ > finish the summary │" || fail "a bordered row with no box proves nothing"
   assert_equals $'│ > merge #5 │\n│ ──── │\n│ > quoted │' "$(lib fm_wd_draft_rows $'╭──╮\n│ > merge #5 │\n│ ──── │\n│ > quoted │\n╰──╯\n ? for shortcuts')" "an inner rule does not cut a box's note"
   assert_equals "│ > finish the summary │" "$(lib fm_wd_draft_rows "╭──────╮"$'\n│ > finish the summary │\n'"╰──────╯")" "a box leaves only its text row"
-  assert_equals "> now" "$(lib fm_wd_draft_rows "> sent earlier"$'\n'"$rule"$'\n> now\n'"$rule")" "a rule above the prompt ends the conversation"
+  assert_equals "> now" "$(lib fm_wd_draft_rows "$(printf '> sent earlier\n%s\n> now\n%s' "$WD_RULE" "$WD_RULE")")" "a rule above the prompt ends the conversation"
   pass "draft rows: from the prompt row to the rule, and no footer word cuts them"
 }
 
@@ -304,7 +309,7 @@ test_merge_autosuggestion_never_accepted() {
   assert_equals "" "$(cat "$H/typed.log")" "Enter was never pressed on merge #12"
   local HOLD_STATUS="$H/status.merge"
   cp "$H/data/watchdog/status.md" "$HOLD_STATUS"
-  make_home $'Captain session\n> continue with the plan'
+  make_home "Captain session"$'\n'"$(ruled '> continue with the plan')"
   FM_WD_TEST_COMPOSER=pending run_wd 0 once >/dev/null 2>&1
   FM_WD_TEST_COMPOSER=pending run_wd 300 once >/dev/null 2>&1
   assert_equals 1 "$(ledger_rows pasted-input key pending)" "ordinary unsent text gets Enter"
@@ -312,7 +317,7 @@ test_merge_autosuggestion_never_accepted() {
   [ -s "$H/typed.log" ] || fail "Enter never reached the pane"
   assert_grep "unsent draft names a merge" "$HOLD_STATUS" "the refusal is reported as a gap"
 
-  make_home $'PR #41 merged and the release went out.\n> finish the summary'
+  make_home "PR #41 merged and the release went out."$'\n'"$(ruled '> finish the summary')"
   FM_WD_TEST_COMPOSER=pending run_wd 0 once >/dev/null 2>&1
   FM_WD_TEST_COMPOSER=pending run_wd 300 once >/dev/null 2>&1
   assert_equals 1 "$(ledger_rows pasted-input key pending)" "a merge word in conversation does not block the draft: $(ledger | cut -f5-8)"
@@ -385,7 +390,12 @@ test_quoted_row_never_hides_a_taller_draft() {
   ! lib fm_wd_draft_readable $'│ a │\n│ > quoted │\n╰──╯' || fail "a box with no top proves nothing"
   ! lib fm_wd_draft_readable $'│ > quoted │\n╰──╯' $'╭──╮' || fail "a top just above the window proves nothing"
   lib fm_wd_draft_readable $'╭────╮\n│ > fine │\n│ > quoted │\n╰────╯' $'> earlier\nreply' || fail "a whole box in the window is read from its first prompt row"
-  lib fm_wd_draft_readable $'> now\n'"$rule" || fail "a window with nothing above it is readable"
+  ! lib fm_wd_draft_readable $'> now\n'"$rule" || fail "a short rule proves nothing, with nothing above"
+  ! lib fm_wd_draft_readable '> now' || fail "a lone plain prompt row proves nothing"
+  ! lib fm_wd_draft_readable $' a\n b\n> quoted\n c\n'"$rule" || fail "a plain draft beyond the capture proves nothing"
+  ! lib fm_wd_draft_readable $' a\n b\n> quoted\n c\n'"$long" || fail "a closing rule alone proves nothing"
+  ! lib fm_wd_draft_readable " │ ❯ finish"$'\n'" ╰──╯" || fail "an indented composer is not supported"
+  lib fm_wd_draft_readable "$(ruled '> now')" || fail "a ruled prompt row with nothing above is readable"
 
   make_home "$tall"
   FM_WD_TEST_COMPOSER=pending run_wd 0 once >/dev/null 2>&1
@@ -536,6 +546,37 @@ test_unreadable_draft_never_gets_enter() {
   assert_equals 1 "$(ledger_rows pasted-input key refused)" "a draft taller than the window is refused"
   sleep 1
   assert_equals "" "$(cat "$H/typed.log")" "Enter was never pressed on a draft taller than the window"
+
+  local unproven
+  for unproven in '> finish the summary' $'reply\n› finish summary\n 100% context left' $' a\n b\n> quoted\n c\n──────────\n ? for shortcuts' $' │ ❯ finish the summary\n ╰──╯' $'┃ > finish the summary'; do
+    make_home "$unproven"
+    FM_WD_TEST_COMPOSER=pending run_wd 0 once >/dev/null 2>&1
+    FM_WD_TEST_COMPOSER=pending run_wd 300 once >/dev/null 2>&1
+    assert_equals 1 "$(ledger_rows pasted-input key refused)" "an unproven draft is refused: $unproven: $(ledger | cut -f5-8)"
+    assert_equals 0 "$(ledger_rows pasted-input key pending)" "an unproven draft gets no Enter: $unproven"
+    assert_grep "boundary is not proven" "$H/data/watchdog/status.md" "the unproven draft is a reported gap: $unproven"
+    sleep 1
+    assert_equals "" "$(cat "$H/typed.log")" "Enter was never pressed: $unproven"
+  done
+
+  make_home '> finish the summary' 'restart=on
+restart-command=/bin/true'
+  transcript 5000 "Working." "Testing." "Green."
+  owe_input 5000
+  local off handoff
+  for off in 0 1000 2000 3000 4000; do FM_WD_TEST_COMPOSER=pending run_wd "$off" once >/dev/null 2>&1; done
+  assert_equals 0 "$(ledger_rows pasted-input key pending)" "a plain draft on the restart path gets no Enter: $(ledger | cut -f5-8)"
+  assert_equals 1 "$(ledger_rows frozen restart pending)" "a plain draft still reaches the restart: $(ledger | cut -f5-8)"
+  handoff=$(ls "$H/data/watchdog/handoffs/"*.md)
+  assert_grep "GAP: an unsent draft could not be read" "$handoff" "the handoff names the unproven draft"
+
+  make_home $'> finish the summary\n  7% until auto-compact' 'restart=on
+restart-command=/bin/true'
+  transcript 3000 "Working." "Testing." "Green."
+  FM_WD_TEST_COMPOSER=pending run_wd 0 once >/dev/null 2>&1
+  FM_WD_TEST_COMPOSER=pending run_wd 1000 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger | awk -F'\t' '$5 == "handoff-request"' | wc -l | tr -d ' ')" "no handoff nudge goes onto a plain draft"
+  assert_grep "handoff nudge cannot be delivered" "$H/data/watchdog/status.md" "the low-context hold is a reported gap"
   pass "boundary: a draft whose whole text cannot be read never gets Enter"
 }
 
@@ -959,7 +1000,7 @@ restart-command=/bin/true'
     [ ! -s "$H/typed.log" ] || fail "text was typed on a $state composer: $(cat "$H/typed.log")"
   done
 
-  make_home $'Captain session\n> finish the summary' 'restart=on
+  make_home "Captain session"$'\n'"$(ruled '> finish the summary')" 'restart=on
 restart-command=/bin/true'
   transcript 6000 "Working." "Testing." "Green."
   owe_input 6000
@@ -971,7 +1012,7 @@ restart-command=/bin/true'
 
 test_held_nudge_restart_keeps_the_draft_or_names_the_gap() {
   local handoff off
-  make_home $'Earlier conversation row\n> finish the summary\n  second row\n──────────\n  ? for shortcuts' 'restart=on
+  make_home "Earlier conversation row"$'\n'"$(ruled $'> finish the summary\n  second row' '  ? for shortcuts')" 'restart=on
 restart-command=/bin/true'
   transcript 5000 "Working." "Testing." "Green."
   owe_input 5000
@@ -1082,7 +1123,7 @@ test_homes_with_one_basename_keep_their_own_state() {
 }
 
 test_frozen_low_context_clean_draft_gets_one_enter_then_restarts() {
-  make_home $'Captain session\n> finish the summary\n  7% until auto-compact' 'restart=on
+  make_home "Captain session"$'\n'"$(ruled '> finish the summary' '  7% until auto-compact')" 'restart=on
 restart-command=/bin/true'
   transcript 8000 "Working." "Testing." "Green."
   owe_input 8000
@@ -1092,7 +1133,7 @@ restart-command=/bin/true'
   assert_equals 1 "$(ledger_rows frozen restart pending)" "the frozen ladder reaches the restart: $(ledger | cut -f5-8)"
   assert_equals 0 "$(ledger_rows handoff-request nudge pending)" "no handoff nudge goes onto the draft"
 
-  make_home $'Captain session\n> finish the summary'
+  make_home "Captain session"$'\n'"$(ruled '> finish the summary')"
   transcript 100 "Working."
   for off in 0 400 800 1200; do FM_WD_TEST_COMPOSER=pending run_wd "$off" once >/dev/null 2>&1; done
   assert_equals 1 "$(ledger_rows pasted-input key pending)" "an idle draft gets one Enter: $(ledger | cut -f5-8)"
@@ -1141,7 +1182,7 @@ council-seats=claude:haiku,agy:flash'
 }
 
 test_low_context_submits_a_clean_draft_then_nudges() {
-  make_home $'Captain session\n> finish the summary\n  7% until auto-compact' 'restart=on
+  make_home "Captain session"$'\n'"$(ruled '> finish the summary' '  7% until auto-compact')" 'restart=on
 restart-command=/bin/true'
   transcript 3000 "Working." "Testing." "Green."
   FM_WD_TEST_COMPOSER=pending run_wd 0 once >/dev/null 2>&1
