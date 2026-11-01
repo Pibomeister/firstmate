@@ -13,6 +13,7 @@ Start with the directory layout, then use the setting reference for the behavior
 | Backlog, preferences, and memory | [Backlog backend](#backlog-backend-taskstoml--configbacklog-backend), [captain preferences](#captain-preferences-datacaptainmd--datacaptain-sharedmd), [external memory tiers](#external-memory-tiers-memory-layering-section), [record export](#record-export-configrecord-export-root), and [startup memory budget](#startup-memory-budget-configstartup-memory-budget) |
 | Supervision and presentation | [Pi supervision branch](#pi-supervision-branch), [supervision host](#supervision-host-configsupervision-host), [warm-cache compaction](#warm-cache-compaction-configwarm-compact), [early handoff trigger](#early-handoff-trigger-confighandoff-trigger), [task budgets](#task-budget-enforcement-configbudget-enforcement), and [Calm preference](#calm-preference-configcalm) |
 | Persistent secondmates | [Secondmate routes](#secondmate-routes-datasecondmatesmd) |
+| Unattended stall recovery for firstmates and second mates | [Assistant watchdog](#assistant-watchdog-configwatchdog) |
 | Machine-wide heavy test admission | [`fm-test-queue.sh` header](../bin/fm-test-queue.sh) |
 | Review bots on owned GitHub pull requests | [Contribution review bots](#contribution-review-bots-configcontribution-review-bots) |
 | Per-run overrides and tuning | [Environment variables](#environment-variables) |
@@ -736,6 +737,10 @@ Selecting any other supervisor backend, including `zellij`, `cmux`, or `tern`, r
 ## Away-mode wedge alarm channels (config/wedge-alarm)
 
 See [`wedge-alarm.md`](wedge-alarm.md) for away and quiet alert behavior, channels, overrides, defaults, failure handling, verification, and a copyable config.
+
+## Assistant watchdog (config/watchdog)
+
+See [`watchdog.md`](watchdog.md) for the watched homes, symptoms, action ladder, restart proof, hard boundaries, model fallback, status file, and every `config/watchdog` key.
 
 ## Trace context propagation (config/trace-context / FM_TRACE_CONTEXT)
 

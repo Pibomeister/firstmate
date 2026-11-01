@@ -3910,3 +3910,24 @@ The full run's native Ahoy cases depend on the model's own choices and failed wi
 
 A real `bin/fm-spawn.sh --scout --harness opencode --model opencode-go/deepseek-v4.1-flash` in a private tmux server recorded `opencode_version=1.18.20` (and `1.18.31` on the second release), launched the worker as `opencode --model opencode-go/deepseek-v4.1-flash --prompt <brief>` with no `--standalone`, and the worker answered its brief.
 `bin/fm-control.sh <task> exit` then resolved the typed `/exit` from that recorded major and returned both panes to the shell.
+
+## Assistant watchdog rendered signals
+
+Verified on 2026-11-01 on macOS (Darwin 25.6.0, arm64) with Claude Code 2.1.316 and tmux 3.6a.
+The behavior contract is owned by [the watchdog page](../watchdog.md).
+The guard launches the installed Claude Code TUI in a new folder on a private tmux socket and never submits a prompt; the watchdog runs with no judge models, and its model, forge, and notifier CLIs are logging fakes.
+
+```sh
+bash bin/fm-test-run.sh tests/fm-watchdog-live.test.sh
+ok - claude 2.1.316 (Claude Code): the folder-trust picker is left alone and reported
+ok - claude 2.1.316 (Claude Code): a real merge draft is seen and never submitted, with no model call
+```
+
+Claude Code 2.1.316 renders its folder-trust picker with unnumbered options (`❯ No, exit`, `Yes, I trust this folder`) above `Enter to confirm · Esc to cancel`.
+The watchdog reads it as a permission dialog, sends no key, and reports it as a waiting gap.
+After the guard accepts the trust picker itself, a second startup picker about browser tools may appear with the footer `Enter to confirm · Esc to keep browser tools off`; the watchdog reads it as a question dialog.
+The tmux composer verdict reads `empty` on the idle composer and `pending` once `merge #12` is typed.
+Across repeated act-mode passes the watchdog records exactly one refusal for that draft per Enter window, presses nothing, and the draft stays unsent.
+The guard runs passes until the pane settles because Claude can repaint just after a draft lands, which changes the pane signature for one pass.
+Accepting the trust picker adds the disposable folder to the Claude config's trusted list.
+No running-turn signal, Orca or Herdr endpoint, or restart is exercised by this guard.

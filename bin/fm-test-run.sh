@@ -392,7 +392,8 @@ family_for_basename() {
     fm-calm-pi-queue-retention-live-e2e.test.sh|\
     fm-herdr-submit-confirm-live-e2e.test.sh|\
     fm-backend-rex-composer-live-e2e.test.sh|\
-    fm-watch-wedge-cap-live.test.sh|fm-read-repetition-live.test.sh)
+    fm-watch-wedge-cap-live.test.sh|fm-read-repetition-live.test.sh|\
+    fm-watchdog-live.test.sh)
       printf '%s\n' live-harness-optin
       ;;
     fm-backend-herdr.test.sh|fm-backend-tmux-smoke.test.sh|fm-backend.test.sh|\
@@ -971,6 +972,8 @@ tests/fm-watch-triage.test.sh 592950
 tests/fm-watch-wedge-cap-live.test.sh 74
 tests/fm-watch-wedge-cap-unconfigured-parity.test.sh 27763
 tests/fm-watch-wedge-cap.test.sh 374225
+tests/fm-watchdog-live.test.sh 100
+tests/fm-watchdog.test.sh 120000
 tests/fm-watcher-lock.test.sh 66869
 tests/fm-worker-account-live-e2e.test.sh 3654
 tests/fm-worker-account.test.sh 44499
