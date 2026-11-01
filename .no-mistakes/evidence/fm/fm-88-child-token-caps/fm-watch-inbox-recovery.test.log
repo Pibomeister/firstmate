@@ -1,0 +1,16 @@
+ok - watcher: a stuck-busy local secondmate is interrupted and redirected before any alarm
+ok - watcher: a local secondmate's unacked record is interrupted and redirected twice, then alarms exactly once
+ok - watcher: an fm-send redirect behind an escalated record is rung, then interrupted and redirected on its own ladder
+ok - watcher: only a proven post-enqueue answer makes the first recovery ring-only, and it consumes a slot
+ok - watcher: each recovery restarts the ladder before the next recovery
+ok - watcher: crewmates and remote secondmates keep one alarm, a relaunch resets the budget, and unwritable bookkeeping alarms without interrupting
+ok - watcher: automatic recovery of a spent ladder waits until the record is 300 s old
+ok - watcher: automatic recovery of a stuck-busy Claude, Pi or Grok secondmate waits until the record is 300 s old
+ok - watcher: a failed or timed-out recovery interrupt rings nothing and alarms once at once, within the interrupt bound
+ok - watcher: a failed second recovery interrupt is not reported as a spent interrupt-and-redirect budget
+ok - watcher: a recovery doorbell that cannot be typed after a successful interrupt alarms at once and leaves the composer draft alone
+ok - watcher: a ladder that cannot be restarted spends no recovery slot, sends no interrupt and alarms naming it
+ok - watcher: a busy-bookkeeping failure alarms as bookkeeping and never triggers recovery
+ok - due action escalates only an aged secondmate record and still rings a younger one
+ok - watcher: an unread secondmate instruction past 300s is reported once, then still recovered automatically
+exit=0

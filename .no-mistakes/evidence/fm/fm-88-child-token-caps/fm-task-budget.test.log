@@ -1,0 +1,37 @@
+ok - spawn records all four explicit budget limits
+ok - budgeted Claude relaunch publishes its fingerprint and preserves limits
+ok - claude native usage is normalized and deduplicated
+ok - codex native usage is normalized and deduplicated
+ok - default dry-run and opt-in enforcement are durable and deduplicated
+ok - native allocation consumption survives a harness switch
+ok - relaunch never strands a task on unmeasurable prior usage
+ok - bound native logs fold appended records into retained totals
+ok - a deferred interrupt retries and its one decision records the delivered outcome
+ok - teardown retires budget state and a reused task id starts a clean allocation
+ok - ordinary watcher cycle runs the native budget check
+ok - invalid prior consumption never becomes a smaller known total
+ok - malformed native shapes and counter resets are explicit unknowns
+ok - Codex native thread-token records use cumulative thread totals once
+ok - public measurement respects the existing task metadata lock
+ok - unknown telemetry is attributed and logged once without interruption
+ok - fresh stop, historical exclusion, retained binding, and partial records are handled
+ok - ambiguous native session discovery stays unknown
+tests/fm-task-budget.test.sh: line 462: 63542 Killed: 9                  "$TEST_BASH" "$dir/bin/fm-task-budget.sh" tick "$dir/state/task.meta" "$dir/config" "$dir" > "$dir/killed.out" 2>&1
+ok - crash uncertainty is preserved and one stop-line episode interrupts at most once
+ok - invalid and duplicate numeric limits refuse before provisioning
+ok - post-launch observer sessions cannot capture the worker binding
+ok - native binding requires a nonempty string session id
+ok - claimed attempts reconcile once even when native telemetry disappears or corrupts
+ok - live guard refuses a counter-only installation without stop verification
+ok - native repository context can precede the initial worker launch prompt
+ok - production Claude initial argv carries the marker and its valid record doorbell
+ok - sidechain and subagent logs join the main session and unrelated copies do not
+ok - prelaunch refuses at either stop and allows a lane strictly under both
+ok - a pending child counts as zero and an unbound child refuses the launch
+ok - fold-away adds a torn-down child once and keeps that total in the lane
+ok - a nested secondmate and its home children join the parent lane, gate both homes, and fold at teardown
+ok - a remote secondmate is refused from a lane home and an existing one is named as unmeasurable
+ok - a capped secondmate lane refuses a child before any child record exists
+ok - a child under the stop binds to the lane without its own four limits
+ok - a fresh secondmate spawn accepts the four budget limits
+exit=0

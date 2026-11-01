@@ -1,0 +1,8 @@
+## S1 baseline vs fix: the same lab lane (real codex mate session + real codex child session)
+### base 46b75bae: bin/fm-task-budget.sh measure <mate record>  (the only figure the old cap check saw)
+{"status": "ok", "harness": "codex", "session": "01a196a4-0f80-71b1-ad1e-dae68764615b", "source": "/Users/eduardopicazo/.codex/sessions/2026/11/01/rollout-2026-11-01T04-24-56-01a196a4-0f80-71b1-ad1e-dae68764615b.jsonl", "inclusive": 38190, "fresh": 38190, "observed_at": "2026-11-01T10:25:33.725997+00:00"}
+### child alone (target 3024268d): bin/fm-task-budget.sh measure state/kid.meta
+{"status": "ok", "harness": "codex", "session": "01a196a4-0ea8-7b00-9593-827709596dc7", "source": "/Users/eduardopicazo/.codex/sessions/2026/11/01/rollout-2026-11-01T04-24-56-01a196a4-0ea8-7b00-9593-827709596dc7.jsonl", "inclusive": 38190, "fresh": 38190, "observed_at": "2026-11-01T10:25:33.900917+00:00"}
+### target 3024268d: bin/fm-task-budget.sh prelaunch <lab home>  (lane total = mate + every child)
+budget-prelaunch allow inclusive=76380 stop=32000000 hard=40000000 fresh=76380 stop=1200000 hard=1500000 children=kid=measured
+exit=0

@@ -1,0 +1,14 @@
+## S4 a measured child's tokens survive its teardown (fold-away = the call fm-teardown.sh makes, then the child record is removed as teardown does)
+### before
+budget-prelaunch allow inclusive=76380 stop=32000000 hard=40000000 fresh=76380 stop=1200000 hard=1500000 children=kid=measured
+fold-away exit=0
+### lane-budget folded keys
+budget_folded_inclusive=38190
+budget_folded_fresh=38190
+budget_folded_children=kid2@FM_BUDGET_LAUNCH_454282067904f96ce33a2c168ff44267,kid@FM_BUDGET_LAUNCH_kidlab88
+### after kid.meta removed
+budget-prelaunch allow inclusive=76380 stop=32000000 hard=40000000 fresh=76380 stop=1200000 hard=1500000 children=
+### fold again is idempotent
+task-budget: child metadata is missing
+exit=1
+budget_folded_inclusive=38190

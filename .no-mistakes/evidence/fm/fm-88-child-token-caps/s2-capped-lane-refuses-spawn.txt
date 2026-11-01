@@ -1,0 +1,22 @@
+## S2 lane at its stop refuses a new child (lane inclusive stop set to 60000: mate alone 38190 is under it, mate+child 76380 is over it)
+### base 46b75bae: measure <mate record> vs the same stop (old check: 38190 < 60000, would allow)
+{"status": "ok", "harness": "codex", "session": "01a196a4-0f80-71b1-ad1e-dae68764615b", "source": "/Users/eduardopicazo/.codex/sessions/2026/11/01/rollout-2026-11-01T04-24-56-01a196a4-0f80-71b1-ad1e-dae68764615b.jsonl", "inclusive": 38190, "fresh": 38190, "observed_at": "2026-11-01T10:26:05.019720+00:00"}
+### target: bin/fm-task-budget.sh prelaunch <lab home>
+budget-prelaunch refuse inclusive=76380 stop=60000 hard=40000000 fresh=76380 stop=1200000 hard=1500000 children=kid=measured
+exit=1
+### target: real bin/fm-spawn.sh kid2 <project> --scout --harness codex from the capped lab home
+exit=1
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.Vk7RKM
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  down 0s.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+budget-prelaunch refuse inclusive=76380 stop=60000 hard=40000000 fresh=76380 stop=1200000 hard=1500000 children=kid=measured
+### after the refusal: kid2 records in state/ and lab tmux windows
+(no kid2 records)
+lab:mate
+lab:kid

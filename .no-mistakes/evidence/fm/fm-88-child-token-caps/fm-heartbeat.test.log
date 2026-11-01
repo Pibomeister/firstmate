@@ -1,0 +1,32 @@
+ok - --write publishes every field atomically with a null failure on a clean run
+ok - no_mistakes_run reads the real status shape and refuses a sibling branch's run
+ok - fm_nm_select_run chooses the run, and an unusable choice reads as unknown
+ok - a hung run head check is bounded, unknown, and sets failure
+ok - a worktree off its recorded branch or with an unread branch reads as unknown
+ok - a terminal or parked run binds only through the worktree head
+ok - only an answered daemon-down suppresses an active run's live claim
+ok - a failed no-mistakes read is unknown and sets failure
+ok - real fractional transcripts give last turn and used tokens, with remaining unknown
+ok - a transcript older than the spawn, or with no spawn epoch, fills no field
+ok - two Claude transcripts since spawn blank only transcript-derived fields
+ok - a remote task is unknown even when its worktree path exists locally
+ok - remaining context comes from the harness's own pane text, else unknown
+ok - an ungated repo is unknown with no failure
+ok - last output comes from terminal evidence, never .meta, .status, or .turn-ended
+ok - a terminal marker older than the spawn, or with no spawn epoch, is not output
+ok - a secondmate's marker is ignored and its transcript still qualifies
+ok - a missing primary endpoint gets no pane context read
+ok - last_push reads local gate and origin refs and names the source
+ok - a failed snapshot read sets failure without guessing task rows
+ok - unreadable task and primary fields stay explicitly unknown
+ok - a slow snapshot read is bounded and recorded as failure
+ok - each hung primary read has its own bound and sets failure
+ok - a run past its deadline publishes unread tasks as unknown
+ok - TERM during the snapshot read publishes unknown markers and leaks no temp files
+ok - TERM during a task read publishes the whole task list with unknown markers
+ok - the next run removes what a SIGKILLed run left
+ok - a watcher poll does not wait for a slow heartbeat
+ok - the watcher keeps polling with one detached heartbeat in flight, which still publishes
+ok - heartbeat publishes weekly model allowance left and leaves a miss unknown
+ok - 30 tests passed
+exit=0

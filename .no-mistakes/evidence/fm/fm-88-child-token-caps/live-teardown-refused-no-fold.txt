@@ -1,0 +1,8 @@
+## after refused teardown (no report)
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.nDlWnB
+REFUSED: scout task kid1 has no report at /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.nDlWnB/data/kid1/report.md.
+The report is the work product. Have the crewmate write it, or use --force after explicit discard approval.
+exit=1
+folded keys:
+(none)
+budget-prelaunch refuse inclusive=158659 stop=100000 hard=40000000 fresh=96513 stop=12000000 hard=15000000 children=kid1=measured

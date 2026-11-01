@@ -1,0 +1,26 @@
+## S3 real fm-spawn.sh under the stop launches, binds the child to the lane without its own four limits, counts it pending, and real fm-teardown.sh folds it
+### fm-spawn.sh kid2 <proj> --scout --harness codex (stop raised back to 32000000)
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.Vk7RKM
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s; down 16s) - full banner already printed this episode.
+budget-prelaunch allow inclusive=76380 stop=32000000 hard=40000000 fresh=76380 stop=1200000 hard=1500000 children=kid=measured
+spawned kid2 harness=codex kind=scout window=firstmate:fm-kid2 worktree=/Users/eduardopicazo/.treehouse/proj-982017/1/proj
+### kid2.meta budget fields after spawn (no budget_inclusive_hard etc.)
+worktree=/Users/eduardopicazo/.treehouse/proj-982017/1/proj
+budget_launch_marker=FM_BUDGET_LAUNCH_454282067904f96ce33a2c168ff44267 (budget_launch_at/worktree/log_root/prior/started_at only)
+### prelaunch while kid2's codex sat at the trust prompt (no native usage yet)
+budget-prelaunch allow inclusive=76380 stop=32000000 hard=40000000 fresh=76380 stop=1200000 hard=1500000 children=kid=measured,kid2=pending
+### fm-teardown.sh kid2
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.Vk7RKM
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s; down 84s) - full banner already printed this episode.
+teardown: reaping leaked worktree process(es) for kid2: 5533
+teardown: force-killing leaked worktree process(es) for kid2: 5533
+A new version of treehouse is available: v2.3.0 → v3.1.8
+Run "treehouse update" to update
+
+🌳 Worktree returned to pool.
+teardown kid2 complete (window firstmate:fm-kid2, worktree /Users/eduardopicazo/.treehouse/proj-982017/1/proj)
+Backlog: kid2 just finished (this home keeps no markdown backlog at /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.Vk7RKM/data/backlog.md). Update /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.Vk7RKM/data/backlog.md - move kid2 to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+### lane-budget folded keys after teardown
+budget_folded_inclusive=0
+budget_folded_fresh=0
+budget_folded_children=kid2@FM_BUDGET_LAUNCH_454282067904f96ce33a2c168ff44267

@@ -1,0 +1,10 @@
+## S6 a remote secondmate cannot launch from a capped lane home (real fm-spawn.sh far --secondmate; host is a non-resolvable .invalid name)
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.Vk7RKM
+error: remote secondmate far cannot launch from a home with a lane budget; a local lane budget cannot meter remote host logs
+exit=
+### far records in state/
+(none)
+### an existing remote child record makes the lane unknown, naming the host
+budget-prelaunch refuse unknown: child far is a remote secondmate on lab-remote-nonexistent.invalid and its usage cannot be measured locally
+exit=1
+remote spawn exit=1

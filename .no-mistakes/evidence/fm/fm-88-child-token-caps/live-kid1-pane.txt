@@ -1,0 +1,50 @@
+
+     Memory injection starts on your second session in a project.
+
+     `/learn-codebase` is available if the user wants to front-load the entire repo into memory in a single pass (~5 minutes on a typical repo, optional). Otherwise memory builds passively as work
+     happens.
+
+     Live activity: http://localhost:37701
+     ✨ 30 Day Free Trial — memory runs off-plan. Get up to 100% more usage from your plan https://cmem.ai/pro?from=welcome-hint
+     How it works: `/how-it-works`
+
+     This message disappears once the first observation lands.
+
+
+     ⚠️ Heads up: claude-mem can't save memories right now.
+
+     The memory observer's allowance on claude is used up (since 2026-11-01T08:49:42.038Z).
+
+     Latest error: Provider reported the inference allowance exhausted
+
+     Until the allowance resets or you add capacity, nothing from this session — or any
+     other — will be remembered.
+
+     Restarting will NOT help here, and it clears the backoff that is currently keeping
+     claude-mem from hammering the provider — so please leave the worker alone.
+     Switch the observer to another provider in ~/.claude-mem/settings.json if you need
+     memory capture before the allowance resets.
+
+     (Assistant: tell the user about this outage at the very start of your first reply,
+     quoting the error above. Do NOT restart the worker and do NOT suggest restarting it.)
+
+     View Observations Live @ http://localhost:37701
+     ✨ 30 Day Free Trial — memory runs off-plan. Get up to 100% more usage from your plan https://cmem.ai/pro?from=session-start
+
+❯ : Firstmate operational input waiting: read '/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.nDlWnB/state/operational-inbox/1793529796-d57371d3f436c791.msg' and handle its contents
+  as Firstmate operational input.
+
+  Read 2 files, listed 1 directory, ran 1 shell command
+
+⏺ claude-mem can't save memories right now: the observer's allowance is used up (Provider reported the inference allowance exhausted, since 2026-11-01T08:49:42Z), so nothing from this session will be
+  remembered until it resets. I left the worker alone.
+
+  The single word in README.md is "hi". I made no edits. The steering inbox (kid1.inbox) had no pending messages at the top level, only a handled/ directory, so there was nothing else to acknowledge.
+
+✻ Churned for 20s · done 4:43 AM
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  [OMC#4.15.0] -> 5.7.26 omc update | Model: Haiku 5.5 | 5h:0% wk:97%(3d0h) | thinking | session:0m | ctx:6% | 🔧5
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← 1 agent

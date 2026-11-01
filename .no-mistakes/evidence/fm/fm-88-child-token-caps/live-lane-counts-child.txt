@@ -1,0 +1,5 @@
+## child kid1 measured alone
+{"status": "ok", "harness": "claude", "session": "9e54b011-a444-4cde-86ad-cf109a38609c", "source": "/Users/eduardopicazo/.claude/projects/-Users-eduardopicazo--treehouse-proj-cf378e-1-proj/9e54b011-a444-4cde-86ad-cf109a38609c.jsonl", "inclusive": 143134, "fresh": 80988, "observed_at": "2026-11-01T10:44:29.054310+00:00"}
+
+## lane before stop change
+budget-prelaunch allow inclusive=158659 stop=32000000 hard=40000000 fresh=96513 stop=12000000 hard=15000000 children=kid1=measured

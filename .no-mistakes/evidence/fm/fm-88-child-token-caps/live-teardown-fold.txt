@@ -1,0 +1,18 @@
+## teardown kid1
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.nDlWnB
+teardown: reaping leaked worktree process(es) for kid1: 2329 19555 21412 21425 21438 26923
+teardown: force-killing leaked worktree process(es) for kid1: 2329
+A new version of treehouse is available: v2.3.0 → v3.1.8
+Run "treehouse update" to update
+
+🌳 Worktree returned to pool.
+teardown kid1 complete (window primary:fm-kid1, worktree /Users/eduardopicazo/.treehouse/proj-cf378e/1/proj)
+Backlog: kid1 just finished (this home keeps no markdown backlog at /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.nDlWnB/data/backlog.md). Update /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.nDlWnB/data/backlog.md - move kid1 to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+exit=0
+## lane-budget folded keys after teardown
+budget_folded_inclusive=143134
+budget_folded_fresh=80988
+budget_folded_children=kid1@FM_BUDGET_LAUNCH_363cc660a7e88b27b294f1614e86c01b
+(no kid1 state left)
+## prelaunch after fold
+budget-prelaunch refuse inclusive=158659 stop=100000 hard=40000000 fresh=96513 stop=12000000 hard=15000000 children=

@@ -1,0 +1,64 @@
+## S7 real fm-heartbeat.sh --write in the lab home publishes weekly model allowance from the machine's quota-axi
+{
+  "schema": "fm-heartbeat.v1",
+  "weekly_allowance": {
+    "unknown": true,
+    "reason": "quota-axi could not be read"
+  },
+  "failure": null
+}
+
+### same run with FM_HEARTBEAT_QUOTA_TIMEOUT=15 (quota-axi --json measured at 1.9-4.0s wall on this machine, straddling the 2s default; the default-timeout run above came back unknown)
+{
+  "weekly_allowance": {
+    "status": "ok",
+    "windows": [
+      {
+        "provider": "claude",
+        "id": "seven_day",
+        "percent_remaining": 3
+      },
+      {
+        "provider": "codex",
+        "id": "weekly",
+        "percent_remaining": 5
+      },
+      {
+        "provider": "cursor",
+        "id": "grok_bot",
+        "percent_remaining": 0
+      },
+      {
+        "provider": "grok",
+        "id": "credits",
+        "percent_remaining": 0
+      },
+      {
+        "provider": "grok",
+        "id": "product:grok_build",
+        "percent_remaining": 1
+      },
+      {
+        "provider": "grok",
+        "id": "product:chat",
+        "percent_remaining": 99
+      },
+      {
+        "provider": "agy",
+        "id": "gemini_weekly",
+        "percent_remaining": 100
+      },
+      {
+        "provider": "agy",
+        "id": "gemini_weekly",
+        "percent_remaining": 18
+      },
+      {
+        "provider": "agy",
+        "id": "claude_gpt_weekly",
+        "percent_remaining": 10
+      }
+    ]
+  },
+  "failure": null
+}

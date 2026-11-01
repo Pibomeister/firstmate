@@ -1,0 +1,20 @@
+## S5 adversarial: a metered (codex) child whose bound native log is truncated before teardown is never dropped
+### before: kid3 measured 38197 inclusive / 7477 fresh (real codex session); lane:
+budget-prelaunch allow inclusive=114577 stop=32000000 hard=40000000 fresh=83857 stop=1200000 hard=1500000 children=kid3=measured
+### truncate kid3's own lab rollout log to its first line (simulates a replaced/truncated log)
+### measure kid3
+{"status": "unknown", "reason": "bound native session identity changed"}
+### prelaunch while kid3 is still alive (record present)
+budget-prelaunch refuse unknown: child kid3 usage unknown: bound native session identity changed
+exit=1
+### fold-away at teardown
+budget-unknown fold-away child=kid3@FM_BUDGET_LAUNCH_kid3lab88: bound native session identity changed
+fold-away exit=0 (0 = teardown may proceed)
+### lane-budget folded keys
+budget_folded_inclusive=38190
+budget_folded_fresh=38190
+budget_folded_children=kid2@FM_BUDGET_LAUNCH_454282067904f96ce33a2c168ff44267,kid@FM_BUDGET_LAUNCH_kidlab88
+budget_folded_unknown=kid3@FM_BUDGET_LAUNCH_kid3lab88
+### prelaunch after kid3's record is gone
+budget-prelaunch refuse unknown: torn-down child usage unknown: kid3@FM_BUDGET_LAUNCH_kid3lab88
+exit=1

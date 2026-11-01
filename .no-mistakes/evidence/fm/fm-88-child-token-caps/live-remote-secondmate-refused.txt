@@ -1,0 +1,7 @@
+## lane under stop:
+budget-prelaunch allow inclusive=158659 stop=32000000 hard=40000000 fresh=96513 stop=12000000 hard=15000000 children=
+## fm-spawn.sh far --secondmate (remote host)
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.nDlWnB
+error: remote secondmate far cannot launch from a home with a lane budget; a local lane budget cannot meter remote host logs
+exit=1
+ls: /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.nDlWnB/state/far.meta: No such file or directory

@@ -1,0 +1,4 @@
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-lab.nDlWnB
+budget-prelaunch allow inclusive=15525 stop=32000000 hard=40000000 fresh=15525 stop=12000000 hard=15000000 children=
+spawned kid1 harness=claude kind=scout window=primary:fm-kid1 worktree=/Users/eduardopicazo/.treehouse/proj-cf378e/1/proj
+exit=0
