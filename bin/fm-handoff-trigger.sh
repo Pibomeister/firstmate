@@ -82,8 +82,6 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 
 FM_HANDOFF_PERCENT_DEFAULT=15
-FM_HANDOFF_OUTPUT_RESERVE=20000
-FM_HANDOFF_COMPACT_BUFFER=13000
 
 command -v jq >/dev/null 2>&1 || exit 0
 PAYLOAD=$(cat 2>/dev/null) || exit 0
@@ -97,9 +95,8 @@ fm_hook_payload_is_foreign_host "$PAYLOAD" && exit 0
 . "$SCRIPT_DIR/fm-primary-scope-lib.sh"
 fm_primary_scope_matches "$FM_ROOT" "$STATE" || exit 0
 
-# Read the threshold and any pinned compact point from config/handoff-trigger.
+# Read the threshold from config/handoff-trigger.
 PERCENT=$FM_HANDOFF_PERCENT_DEFAULT
-COMPACT_AT=
 if [ -f "$CONFIG/handoff-trigger" ]; then
   while IFS= read -r line || [ -n "$line" ]; do
     key=${line%%=*}
@@ -107,7 +104,6 @@ if [ -f "$CONFIG/handoff-trigger" ]; then
     case "$value" in '' | *[!0-9]*) continue ;; esac
     case "$key" in
       percent-left) [ "${#value}" -le 2 ] && PERCENT=$((10#$value)) ;;
-      compact-at-tokens) case "$value" in 0*) ;; *) COMPACT_AT=$value ;; esac ;;
     esac
   done < "$CONFIG/handoff-trigger"
 fi
@@ -132,73 +128,11 @@ MARKER="$STATE/.handoff-trigger.$(printf '%s' "$SESSION_ID" | tr -c 'A-Za-z0-9_-
 TOKENS=$(fm_warm_compact_context_tokens "$TRANSCRIPT") || exit 0
 case "$TOKENS" in '' | *[!0-9]*) exit 0 ;; esac
 
-# Print the window CLAUDE_CODE_AUTO_COMPACT_WINDOW value $1 means in tokens,
-# clamped to Claude's limits; fail when Claude would ignore the value.
-env_window() {
-  awk -v raw="$1" 'BEGIN {
-    gsub(/^[ \t\r\n]+|[ \t\r\n]+$/, "", raw)
-    if (raw !~ /^[0-9]+(\.[0-9]+)?[kKmM]?$/) exit 1
-    n = raw + 0
-    unit = tolower(substr(raw, length(raw)))
-    if (unit == "m") n *= 1000000
-    else if (unit == "k") n *= 1000
-    if (n < 1) exit 1
-    if (n < 100000) n = 100000
-    if (n > 1000000) n = 1000000
-    printf "%d\n", n + 0.5
-  }'
-}
+# shellcheck source=bin/fm-compact-point-lib.sh
+. "$SCRIPT_DIR/fm-compact-point-lib.sh"
+COMPACT_AT=$(fm_compact_at_tokens "$TRANSCRIPT" "$CONFIG/handoff-trigger") || exit 0
 
-# Print the window Claude applies to model $1; fail when it is "auto" or unset.
-auto_compact_window() {
-  local model=$1 file value project
-  env_window "${CLAUDE_CODE_AUTO_COMPACT_WINDOW:-}" && return 0
-  project=${CLAUDE_PROJECT_DIR:-$FM_ROOT}
-  for file in "$project/.claude/settings.local.json" "$project/.claude/settings.json" \
-    "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"; do
-    [ -r "$file" ] || continue
-    value=$(jq -r --arg m "$model" '
-        def canon: ascii_downcase | sub("\\[1m\\]$"; "") | sub("-[0-9]{8}$"; "");
-        def size: select(type == "number" and . == floor and . >= 100000 and . <= 1000000) | tostring;
-        def entry: if . == "auto" then . else size end;
-        ($m | canon) as $c
-        | first(
-            ([.modelSettings | objects | to_entries[]
-              | select(.key | canon == $c)
-              | {exact: (.key == $c), window: (.value | objects | .autoCompactWindow | entry)}]
-             | sort_by(.exact | not) | .[].window),
-            (.autoCompactWindow | size)
-          )
-      ' "$file" 2>/dev/null)
-    case "$value" in
-      '') ;;
-      auto) return 1 ;;
-      *) printf '%s\n' "$value"; return 0 ;;
-    esac
-  done
-  return 1
-}
-
-if [ -z "$COMPACT_AT" ]; then
-  MODEL=$(tail -n 400 "$TRANSCRIPT" 2>/dev/null | jq -R -r '
-      fromjson? | select(.type == "assistant") | .message.model // empty | strings
-    ' 2>/dev/null | tail -n 1)
-  WINDOW=$(auto_compact_window "$MODEL") || exit 0
-  EFFECTIVE=$((WINDOW - FM_HANDOFF_OUTPUT_RESERVE))
-  COMPACT_AT=$((EFFECTIVE - FM_HANDOFF_COMPACT_BUFFER))
-  pct=${CLAUDE_AUTOCOMPACT_PCT_OVERRIDE:-}
-  case "$pct" in
-    '' | *[!0-9.]* | *.*.*) ;;
-    *)
-      pct_at=$(awk -v w="$EFFECTIVE" -v p="$pct" 'BEGIN { if (p > 0 && p <= 100) printf "%d", w * p / 100 }')
-      [ -n "$pct_at" ] && [ "$pct_at" -lt "$COMPACT_AT" ] && COMPACT_AT=$pct_at
-      ;;
-  esac
-fi
-[ "$COMPACT_AT" -gt 0 ] || exit 0
-
-LEFT=$(((COMPACT_AT - TOKENS) * 100 / COMPACT_AT))
-[ "$LEFT" -ge 0 ] || LEFT=0
+LEFT=$(fm_compact_left_percent "$TOKENS" "$COMPACT_AT")
 [ "$LEFT" -le "$PERCENT" ] || exit 0
 
 # Claim the one firing for this context cycle; a concurrent call that loses exits.

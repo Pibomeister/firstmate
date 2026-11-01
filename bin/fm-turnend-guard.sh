@@ -230,6 +230,11 @@ fi
 # so this exempts them while guarding every real secondmate home.
 fm_primary_scope_matches "$FM_ROOT" "$STATE" || allow_exit
 
+# External auto-compact footer for this turn. A missing script or footer stays silent.
+if [ "${FM_TEST_SEAM:-}" != 1 ] && [ -x "$SCRIPT_DIR/fm-context-burn.sh" ]; then
+  printf '%s' "$PAYLOAD" | "$SCRIPT_DIR/fm-context-burn.sh" record --turn-type auto >/dev/null 2>&1 || true
+fi
+
 # --- the actual predicate ----------------------------------------------------
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"

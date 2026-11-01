@@ -125,6 +125,9 @@ command -v jq >/dev/null 2>&1 || {
 # shellcheck source=bin/fm-classify-lib.sh
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/fm-classify-lib.sh"
+# shellcheck source=bin/fm-context-footer-lib.sh
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/fm-context-footer-lib.sh"
 
 HEARTBEAT_NOW=${FM_HEARTBEAT_NOW:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}
 HEARTBEAT_EPOCH=$(date -u -j -f '%Y-%m-%dT%H:%M:%SZ' "$HEARTBEAT_NOW" +%s 2>/dev/null \
@@ -213,12 +216,12 @@ heartbeat_turn_json() {  # <label> <transcript-or-empty>
 
 # Only the pane's last lines, where the harness draws its status, so a mate
 # quoting the phrase higher up in its output is not read as its own context.
+# The percent parse is fm_context_footer_percent_from_text.
 # shellcheck disable=SC2329 # Invoked through heartbeat_read.
 heartbeat_pane_context_percent() {  # <backend> <target> [expected-label]
   fm_backend_capture "$1" "$2" 5 ${3:+"$3"} 2>/dev/null \
     | awk 'NF' | tail -n 5 \
-    | sed -n -E 's/.*[^0-9]([0-9]{1,3})% until auto-compact.*/\1/p; s/^([0-9]{1,3})% until auto-compact.*/\1/p; s/.*until auto-compact: ([0-9]{1,3})%.*/\1/p' \
-    | tail -n 1
+    | fm_context_footer_percent_from_text || true
 }
 
 heartbeat_context_json() {  # <label> <transcript-or-empty> [backend] [target] [expected-label]

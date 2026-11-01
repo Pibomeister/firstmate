@@ -328,6 +328,11 @@ if [ -n "$HOST_SNIPPET" ]; then
   printf '%s\n' '- Supervision host: on; it takes away-posture wakes and, where the dialog mirror is verified, eligible attended wakes itself, and hands the rest to you (protocol at the end of this block).'
 fi
 ordinary_wake_line
+printf '%s\n' '- Captain-facing turn replies stay short and do not use tables.'
+printf '%s\n' '- A long report goes in a file under data/, and the reply is one line from bin/fm-context-burn.sh report with that path and its sha256.'
+printf '%s\n' '- A large read, including a triage table or a handoff, goes through a worker or a bounded head or search, not a full read into this session.'
+printf '%s\n' '- The auto-compact percentage is the external footer, never a self-estimate.'
+printf '%s\n' '- bin/fm-context-burn.sh records that percentage each turn, from the footer when shown and otherwise from the transcript with the handoff trigger formula, and alerts when a fresh session drops more than about 30 points in 15 minutes.'
 printf '\n'
 if [ "$SECONDMATE_MODE" -eq 1 ]; then
   cat <<'EOF'

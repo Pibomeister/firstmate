@@ -382,6 +382,22 @@ test_pi_snippet_uses_effective_extension_path() {
   pass "pi supervision snippet renders the effective extension path"
 }
 
+test_context_burn_reply_contract() {
+  local home out repair
+  home="$TMP_ROOT/burn-home"
+  mkdir -p "$home/state"
+  out=$(FM_HOME="$home" "$RENDER" --harness claude)
+  assert_contains "$out" "Captain-facing turn replies stay short and do not use tables." "short reply rule missing"
+  assert_contains "$out" "bin/fm-context-burn.sh report" "report command missing"
+  assert_contains "$out" "not a full read into this session." "bounded read rule missing"
+  assert_contains "$out" "external footer, never a self-estimate." "footer measurement rule missing"
+  assert_contains "$out" "more than about 30 points in 15 minutes." "burn alert rule missing"
+  assert_contains "$out" "otherwise from the transcript with the handoff trigger formula" "burn fallback source missing"
+  repair=$(FM_HOME="$home" "$RENDER" --harness claude --repair-line)
+  assert_not_contains "$repair" "fm-context-burn.sh" "repair line gained the context-burn contract"
+  pass "renderer states the short-reply and context-burn contract outside the repair line"
+}
+
 test_supervision_host_protocol_on_a_claude_home_unless_off
 test_supervision_host_protocol_on_every_arm_owner
 test_muse_primary_block
@@ -397,3 +413,4 @@ test_pi_signed_preserves_identity_with_pi_supervision_protocol
 test_grok_is_background_notify
 test_grok_command_sources_effective_config
 test_pi_snippet_uses_effective_extension_path
+test_context_burn_reply_contract
