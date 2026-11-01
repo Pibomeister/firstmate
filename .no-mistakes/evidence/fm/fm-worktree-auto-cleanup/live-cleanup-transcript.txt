@@ -1,0 +1,25 @@
+### before
+ahead closed ignored liveproc locked merged nopr open parent taskrec tracked untracked 
+      14
+### DRY RUN
+worktree-cleanup: skip /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.PcqS4R/projects/firstmate main checkout
+worktree-cleanup: report /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.PcqS4R/wt/ahead commits not on PR head
+worktree-cleanup: dry-run /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.PcqS4R/wt/closed pull request CLOSED https://github.com/Pibomeister/firstmate/pull/60
+worktree-cleanup: stop budget reached
+exit=0
+### after dry run
+ahead closed ignored liveproc locked merged nopr open parent taskrec tracked untracked 
+      14
+0
+### REAL PASS 1
+worktree-cleanup: skip /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.PcqS4R/projects/firstmate main checkout
+worktree-cleanup: report /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.PcqS4R/wt/ahead commits not on PR head
+worktree-cleanup: remove /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.PcqS4R/wt/closed pull request CLOSED https://github.com/Pibomeister/firstmate/pull/60
+worktree-cleanup: stop budget reached
+exit=0
+### after pass 1
+ahead ignored liveproc locked merged nopr open parent taskrec tracked untracked 
+      13
+branch kept fm/fm-learnings-load
+branch kept fm/fm-monitoring-self-heal
+branch kept fm/fm-never-stall-reroute

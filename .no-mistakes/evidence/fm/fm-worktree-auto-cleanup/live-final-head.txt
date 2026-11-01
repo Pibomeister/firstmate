@@ -1,0 +1,238 @@
+### isolated Orca ready, worktrees=0
+fixture m_merged -> PR #95 fm/fm-learnings-load
+fixture c_closed -> PR #60 fm/fm-monitoring-self-heal
+fixture open -> PR #97 fm/fm-disk-alarms
+fixture tracked -> PR #94 fm/fm-never-stall-reroute
+fixture untracked -> PR #87 fm/fm-attended-selfwake
+fixture i_ignored -> PR #76 fm/sw-m1d-issue-filing
+fixture ahead -> PR #75 fm/fm-early-handoff-trigger
+fixture liveproc -> PR #73 fm/sw-m1b-heartbeat
+fixture tmuxpane -> PR #71 fm/fm-afk-monitor-orca
+fixture parent -> PR #69 fm/sw-m1a-claim-ledger
+fixture taskrec -> PR #61 fm/fm-monitoring-self-heal-ci-closeout
+fixture locked -> PR #59 fm/cursor-quota-pools
+
+### 1. BEFORE
+ahead c_closed i_ignored liveproc locked m_merged nopr open parent taskrec tmuxpane tracked untracked 
+$OH/lab/projects/firstmate          5d7ff0a [main]
+$OH/lab/wt/ahead                    e443109 [fm/fm-early-handoff-trigger]
+$OH/lab/wt/c_closed                 a5b1ab3 [fm/fm-monitoring-self-heal]
+$OH/lab/wt/i_ignored                bb84517 [fm/sw-m1d-issue-filing]
+$OH/lab/wt/liveproc                 eb66451 [fm/sw-m1b-heartbeat]
+$OH/lab/wt/locked                   8512055 [fm/cursor-quota-pools] locked
+$OH/lab/wt/m_merged                 7b04a1c [fm/fm-learnings-load]
+$OH/lab/wt/nopr                     5d7ff0a [lab/no-pr-branch]
+$OH/lab/wt/open                     28f5102 [fm/fm-disk-alarms]
+$OH/lab/wt/parent                   2644759 [fm/sw-m1a-claim-ledger]
+$OH/lab/wt/parent/.worktrees/child  5d7ff0a [lab-nested-child]
+$OH/lab/wt/taskrec                  10e3621 [fm/fm-monitoring-self-heal-ci-closeout]
+$OH/lab/wt/tmuxpane                 62c8efe [fm/fm-afk-monitor-orca]
+$OH/lab/wt/tracked                  62e2d94 [fm/fm-never-stall-reroute]
+$OH/lab/wt/untracked                149c03b [fm/fm-attended-selfwake]
+
+### 2. DRY RUN (several passes cannot move a cursor; one pass, then compare)
+worktree-cleanup: skip $OH/lab/projects/firstmate main checkout
+worktree-cleanup: report $OH/lab/wt/ahead commits not on PR head
+worktree-cleanup: dry-run $OH/lab/wt/c_closed pull request CLOSED https://github.com/Pibomeister/firstmate/pull/60
+worktree-cleanup: dry-run $OH/lab/wt/i_ignored pull request MERGED https://github.com/Pibomeister/firstmate/pull/76
+worktree-cleanup: skip $OH/lab/wt/liveproc live process
+worktree-cleanup: report $OH/lab/wt/locked worktree is locked
+worktree-cleanup: dry-run $OH/lab/wt/m_merged pull request MERGED https://github.com/Pibomeister/firstmate/pull/95
+worktree-cleanup: skip $OH/lab/wt/nopr no pull request
+worktree-cleanup: skip $OH/lab/wt/open pull request is open
+worktree-cleanup: report $OH/lab/wt/parent contains another worktree
+worktree-cleanup: report $OH/lab/wt/parent/.worktrees/child untracked files
+worktree-cleanup: report $OH/lab/wt/taskrec task record owns it
+worktree-cleanup: skip $OH/lab/wt/tmuxpane live process
+worktree-cleanup: report $OH/lab/wt/tracked uncommitted tracked changes
+worktree-cleanup: report $OH/lab/wt/untracked untracked files
+worktree list unchanged: yes  cursor written: no
+
+### 3. REAL PASSES, driven until two full rotations
+--- pass 1
+worktree-cleanup: skip $OH/lab/projects/firstmate main checkout
+worktree-cleanup: report $OH/lab/wt/ahead commits not on PR head
+worktree-cleanup: remove $OH/lab/wt/c_closed pull request CLOSED https://github.com/Pibomeister/firstmate/pull/60
+worktree-cleanup: remove $OH/lab/wt/i_ignored pull request MERGED https://github.com/Pibomeister/firstmate/pull/76
+worktree-cleanup: skip $OH/lab/wt/liveproc live process
+worktree-cleanup: report $OH/lab/wt/locked worktree is locked
+worktree-cleanup: remove $OH/lab/wt/m_merged pull request MERGED https://github.com/Pibomeister/firstmate/pull/95
+worktree-cleanup: skip $OH/lab/wt/nopr no pull request
+worktree-cleanup: skip $OH/lab/wt/open pull request is open
+worktree-cleanup: report $OH/lab/wt/parent contains another worktree
+worktree-cleanup: report $OH/lab/wt/parent/.worktrees/child untracked files
+worktree-cleanup: report $OH/lab/wt/taskrec task record owns it
+worktree-cleanup: skip $OH/lab/wt/tmuxpane live process
+worktree-cleanup: report $OH/lab/wt/tracked uncommitted tracked changes
+worktree-cleanup: report $OH/lab/wt/untracked untracked files
+(pass took 13s, rc=0)
+--- pass 2
+worktree-cleanup: skip $OH/lab/projects/firstmate main checkout
+worktree-cleanup: report $OH/lab/wt/ahead commits not on PR head
+worktree-cleanup: skip $OH/lab/wt/liveproc live process
+worktree-cleanup: report $OH/lab/wt/locked worktree is locked
+worktree-cleanup: skip $OH/lab/wt/nopr no pull request
+worktree-cleanup: skip $OH/lab/wt/open pull request is open
+worktree-cleanup: report $OH/lab/wt/parent contains another worktree
+worktree-cleanup: report $OH/lab/wt/parent/.worktrees/child untracked files
+worktree-cleanup: report $OH/lab/wt/taskrec task record owns it
+worktree-cleanup: skip $OH/lab/wt/tmuxpane live process
+worktree-cleanup: report $OH/lab/wt/tracked uncommitted tracked changes
+worktree-cleanup: report $OH/lab/wt/untracked untracked files
+(pass took 6s, rc=0)
+--- pass 3
+worktree-cleanup: skip $OH/lab/projects/firstmate main checkout
+worktree-cleanup: report $OH/lab/wt/ahead commits not on PR head
+worktree-cleanup: skip $OH/lab/wt/liveproc live process
+worktree-cleanup: report $OH/lab/wt/locked worktree is locked
+worktree-cleanup: skip $OH/lab/wt/nopr no pull request
+worktree-cleanup: skip $OH/lab/wt/open pull request is open
+worktree-cleanup: report $OH/lab/wt/parent contains another worktree
+worktree-cleanup: report $OH/lab/wt/parent/.worktrees/child untracked files
+worktree-cleanup: report $OH/lab/wt/taskrec task record owns it
+worktree-cleanup: skip $OH/lab/wt/tmuxpane live process
+worktree-cleanup: report $OH/lab/wt/tracked uncommitted tracked changes
+worktree-cleanup: report $OH/lab/wt/untracked untracked files
+(pass took 6s, rc=0)
+--- pass 4
+worktree-cleanup: skip $OH/lab/projects/firstmate main checkout
+worktree-cleanup: report $OH/lab/wt/ahead commits not on PR head
+worktree-cleanup: skip $OH/lab/wt/liveproc live process
+worktree-cleanup: report $OH/lab/wt/locked worktree is locked
+worktree-cleanup: skip $OH/lab/wt/nopr no pull request
+worktree-cleanup: skip $OH/lab/wt/open pull request is open
+worktree-cleanup: report $OH/lab/wt/parent contains another worktree
+worktree-cleanup: report $OH/lab/wt/parent/.worktrees/child untracked files
+worktree-cleanup: report $OH/lab/wt/taskrec task record owns it
+worktree-cleanup: skip $OH/lab/wt/tmuxpane live process
+worktree-cleanup: report $OH/lab/wt/tracked uncommitted tracked changes
+worktree-cleanup: report $OH/lab/wt/untracked untracked files
+(pass took 7s, rc=0)
+--- pass 5
+worktree-cleanup: skip $OH/lab/projects/firstmate main checkout
+worktree-cleanup: report $OH/lab/wt/ahead commits not on PR head
+worktree-cleanup: skip $OH/lab/wt/liveproc live process
+worktree-cleanup: report $OH/lab/wt/locked worktree is locked
+worktree-cleanup: skip $OH/lab/wt/nopr no pull request
+worktree-cleanup: skip $OH/lab/wt/open pull request is open
+worktree-cleanup: report $OH/lab/wt/parent contains another worktree
+worktree-cleanup: report $OH/lab/wt/parent/.worktrees/child untracked files
+worktree-cleanup: report $OH/lab/wt/taskrec task record owns it
+worktree-cleanup: skip $OH/lab/wt/tmuxpane live process
+worktree-cleanup: report $OH/lab/wt/tracked uncommitted tracked changes
+worktree-cleanup: report $OH/lab/wt/untracked untracked files
+(pass took 7s, rc=0)
+--- pass 6
+worktree-cleanup: skip $OH/lab/projects/firstmate main checkout
+worktree-cleanup: report $OH/lab/wt/ahead commits not on PR head
+worktree-cleanup: skip $OH/lab/wt/liveproc live process
+worktree-cleanup: report $OH/lab/wt/locked worktree is locked
+worktree-cleanup: skip $OH/lab/wt/nopr no pull request
+worktree-cleanup: skip $OH/lab/wt/open pull request is open
+worktree-cleanup: report $OH/lab/wt/parent contains another worktree
+worktree-cleanup: report $OH/lab/wt/parent/.worktrees/child untracked files
+worktree-cleanup: report $OH/lab/wt/taskrec task record owns it
+worktree-cleanup: skip $OH/lab/wt/tmuxpane live process
+worktree-cleanup: report $OH/lab/wt/tracked uncommitted tracked changes
+worktree-cleanup: report $OH/lab/wt/untracked untracked files
+(pass took 7s, rc=0)
+
+### 4. STATE AFTER
+m_merged                   removed
+c_closed                   removed
+i_ignored                  removed
+open                       KEPT
+tracked                    KEPT
+untracked                  KEPT
+ahead                      KEPT
+liveproc                   KEPT
+tmuxpane                   KEPT
+parent                     KEPT
+parent/.worktrees/child    KEPT
+taskrec                    KEPT
+locked                     KEPT
+nopr                       KEPT
+tracked edit survives:  M README.md
+untracked survives: keep
+nested child file survives: childdirt
+local branches kept: m_merged c_closed i_ignored 
+15
+prunable registrations: 0
+secret in any decision output: 0
+secret in state log: 0
+log line per decision sample:
+   7 worktree-cleanup: skip $OH/lab/wt/tmuxpane live process
+   7 worktree-cleanup: skip $OH/lab/wt/open pull request is open
+   7 worktree-cleanup: skip $OH/lab/wt/nopr no pull request
+   7 worktree-cleanup: skip $OH/lab/wt/liveproc live process
+   7 worktree-cleanup: skip $OH/lab/projects/firstmate main checkout
+   7 worktree-cleanup: report $OH/lab/wt/untracked untracked files
+   7 worktree-cleanup: report $OH/lab/wt/tracked uncommitted tracked changes
+   7 worktree-cleanup: report $OH/lab/wt/taskrec task record owns it
+   7 worktree-cleanup: report $OH/lab/wt/parent/.worktrees/child untracked files
+   7 worktree-cleanup: report $OH/lab/wt/parent contains another worktree
+   7 worktree-cleanup: report $OH/lab/wt/locked worktree is locked
+   7 worktree-cleanup: report $OH/lab/wt/ahead commits not on PR head
+   1 worktree-cleanup: remove $OH/lab/wt/m_merged pull request MERGED https://github.com/Pibomeister/firstmate/pull/95
+   1 worktree-cleanup: remove $OH/lab/wt/i_ignored pull request MERGED https://github.com/Pibomeister/firstmate/pull/76
+   1 worktree-cleanup: remove $OH/lab/wt/c_closed pull request CLOSED https://github.com/Pibomeister/firstmate/pull/60
+   1 worktree-cleanup: dry-run $OH/lab/wt/m_merged pull request MERGED https://github.com/Pibomeister/firstmate/pull/95
+   1 worktree-cleanup: dry-run $OH/lab/wt/i_ignored pull request MERGED https://github.com/Pibomeister/firstmate/pull/76
+   1 worktree-cleanup: dry-run $OH/lab/wt/c_closed pull request CLOSED https://github.com/Pibomeister/firstmate/pull/60
+
+### 5. WATCHER: real fm-watch.sh one-shot cycles
+fixture z_watcher -> PR #58 fm/fm-claude-budget-relaunch
+cycle 1: rc=0 bytes_printed=0 secs=10 new_log_lines=13 stamped=yes
+z_watcher: removed
+worktree-cleanup: remove $OH/lab/wt/z_watcher pull request MERGED https://github.com/Pibomeister/firstmate/pull/58
+fresh stamp, next cycle: rc=0 bytes_printed=0 secs=1 new_log_lines=0
+kill switch FM_WORKTREE_CLEANUP=0: rc=0 bytes_printed=0 new_log_lines=0 stamped=no
+failed pass, FM_WATCH_HELPER_BUDGET=1: rc=0 bytes_printed=0 stamped=yes
+[2026-10-31T18:45:42-0600] worktree cleanup unavailable
+next cycle after failed pass: rc=0 bytes_printed=0 new_log_lines=0
+
+### 6. PR HEAD ABSENT LOCALLY: fetch from the pull ref
+PR #33 head present locally: yes
+--- fetch blocked (git https transport disabled)
+worktree-cleanup: skip $OH/lab/other/full main checkout
+worktree-cleanup: remove $OH/lab/other/fw pull request CLOSED https://github.com/Pibomeister/firstmate/pull/33
+worktree: removed
+--- fetch allowed
+worktree-cleanup: skip $OH/lab/other/full main checkout
+head present: yes  worktree: removed
+
+### 7. ORCA: isolated real runtime, target clone only
+{"repo_added":true}
+{"created":"o1","ok":true,"e":null}
+orca worktree: $OH/orca/workspaces/oc/o1
+--- live Orca terminal
+[true]
+worktree-cleanup: skip $OH/lab/other/oc main checkout
+worktree-cleanup: report $OH/orca/workspaces/oc/o1 Orca terminal is live
+worktree-cleanup: skip $OH/lab/other/oc main checkout
+worktree-cleanup: report $OH/orca/workspaces/oc/o1 Orca terminal is live
+dir: KEPT
+--- no terminal, dirty
+worktree-cleanup: skip $OH/lab/other/oc main checkout
+worktree-cleanup: report $OH/orca/workspaces/oc/o1 uncommitted tracked changes
+dir: KEPT
+--- no terminal, dry run
+worktree-cleanup: skip $OH/lab/other/oc main checkout
+worktree-cleanup: dry-run $OH/orca/workspaces/oc/o1 pull request MERGED https://github.com/Pibomeister/firstmate/pull/57
+dir: KEPT
+--- no terminal, clean, ignored .env inside: the regression
+worktree-cleanup: skip $OH/lab/other/oc main checkout
+worktree-cleanup: remove $OH/orca/workspaces/oc/o1 pull request MERGED https://github.com/Pibomeister/firstmate/pull/57
+pass took 2s; right after the pass dir: removed
+git registrations: 1  prunable: 0  orca lists: ["$OH/lab/other/oc"]
+secret in output: 0
+--- second pass, no stale line
+worktree-cleanup: skip $OH/lab/other/oc main checkout
+--- runtime stopped: cannot read Orca, nothing removed
+worktree-cleanup: skip $OH/lab/other/oc main checkout
+worktree-cleanup: report $OH/lab/other/odown cannot read Orca
+dir: KEPT
+/Users/eduardopicazo/.no-mistakes/evidence/01M69ZSRRAE8RDNJDEDWD07ZRZ/drive-final-head.sh: line 106: 80822 Terminated: 15          ( sleep 150; kill $RP 2> /dev/null; echo "watchdog stopped the pass" )
+### DONE
+/Users/eduardopicazo/.no-mistakes/evidence/01M69ZSRRAE8RDNJDEDWD07ZRZ/drive-final-head.sh: line 17: 96085 Terminated: 15          ( cd "$W/liveproc" && exec sleep 900 )
+### isolated Orca stopped, lab removed: yes

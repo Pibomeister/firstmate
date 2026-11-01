@@ -1,0 +1,37 @@
+runtime ready=1 after 3 polls; worktrees=0
+{"ok":true}
+{"ok":true,"e":null}
+linked: /orca/workspaces/repo/iso60
+a5b1ab3
+fm/fm-monitoring-self-heal
+orca terminals now: ["$OH/orca/workspaces/repo/iso60"]
+### live Orca terminal
+{"ok":true,"h":"term_85235912-1a77-439f-a8c8-b9ef9e2555ea","e":null}
+orca terminals now: ["$OH/orca/workspaces/repo/iso60","$OH/orca/workspaces/repo/iso60"]
+worktree-cleanup: skip $OH/lab/projects/repo main checkout
+worktree-cleanup: report $OH/orca/workspaces/repo/iso60 Orca terminal is live
+terminal state: [{"connected":true,"orphaned":false},{"connected":true,"orphaned":false}]
+{"closed":true}
+{"closed":true}
+### after terminal closed, dirty
+worktree-cleanup: skip $OH/lab/projects/repo main checkout
+worktree-cleanup: report $OH/orca/workspaces/repo/iso60 uncommitted tracked changes
+kept: yes
+### direct: same command the script runs, three separate trials
+trial 1 rc=0 took=0s out={"ok":true,"e":null,"w":null}
+  +0s dir=present contents=29 gitlist=2 orca=1 branch=1
+  +10s dir=gone contents=0 gitlist=1 orca=1 branch=0
+  +30s dir=gone contents=0 gitlist=1 orca=1 branch=0
+  +60s dir=gone contents=0 gitlist=1 orca=1 branch=0
+### through the script, wait, then second pass
+worktree-cleanup: skip $OH/lab/projects/repo main checkout
+worktree-cleanup: report $OH/orca/workspaces/repo/iso4 removal refused
+dir now: KEPT
+after 30s dir: removed orca=["$OH/lab/projects/repo"]
+worktree $OH/lab/projects/repo
+--- second pass
+worktree-cleanup: skip $OH/lab/projects/repo main checkout
+dir: removed
+worktree $OH/lab/projects/repo
+branch: 
+isolated Orca stopped, home removed

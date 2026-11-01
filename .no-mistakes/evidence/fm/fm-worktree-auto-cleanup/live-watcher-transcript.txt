@@ -1,0 +1,94 @@
+### real fm-watch.sh cycle 1 rc=0 secs=59 stdout+stderr_bytes=0 stamped=yes cursor=/wt/liveproc
+### real fm-watch.sh cycle 2 rc=0 secs=29 stdout+stderr_bytes=0 stamped=yes cursor=/wt/open
+### real fm-watch.sh cycle 3 rc=0 secs=32 stdout+stderr_bytes=0 stamped=yes cursor=/wt/liveproc
+### real fm-watch.sh cycle 4 rc=0 secs=29 stdout+stderr_bytes=0 stamped=yes cursor=/wt/liveproc
+### real fm-watch.sh cycle 5 rc=0 secs=25 stdout+stderr_bytes=0 stamped=yes cursor=/wt/liveproc
+### real fm-watch.sh cycle 6 rc=0 secs=20 stdout+stderr_bytes=0 stamped=yes cursor=/wt/liveproc
+### real fm-watch.sh cycle 7 rc=0 secs=12 stdout+stderr_bytes=0 stamped=yes cursor=/wt/liveproc
+### state/worktree-cleanup.log
+worktree-cleanup: skip $LAB/projects/firstmate main checkout
+worktree-cleanup: report $LAB/wt/ahead commits not on PR head
+worktree-cleanup: remove $LAB/wt/ignored pull request MERGED https://github.com/Pibomeister/firstmate/pull/94
+worktree-cleanup: skip $LAB/wt/liveproc live process
+worktree-cleanup: stop budget reached
+worktree-cleanup: report $LAB/wt/locked worktree is locked
+worktree-cleanup: report $LAB/wt/merged commits not on PR head
+worktree-cleanup: skip $LAB/wt/nopr no pull request
+worktree-cleanup: skip $LAB/wt/open pull request is open
+worktree-cleanup: stop budget reached
+worktree-cleanup: report $LAB/wt/parent contains another worktree
+worktree-cleanup: report $LAB/wt/parent/.worktrees/child untracked files
+worktree-cleanup: report $LAB/wt/taskrec task record owns it
+worktree-cleanup: report $LAB/wt/tracked uncommitted tracked changes
+worktree-cleanup: report $LAB/wt/untracked untracked files
+worktree-cleanup: skip $LAB/projects/firstmate main checkout
+worktree-cleanup: report $LAB/wt/ahead commits not on PR head
+worktree-cleanup: skip $LAB/wt/liveproc live process
+worktree-cleanup: stop budget reached
+worktree-cleanup: report $LAB/wt/locked worktree is locked
+worktree-cleanup: report $LAB/wt/merged commits not on PR head
+worktree-cleanup: skip $LAB/wt/nopr no pull request
+worktree-cleanup: skip $LAB/wt/open pull request is open
+worktree-cleanup: report $LAB/wt/parent contains another worktree
+worktree-cleanup: report $LAB/wt/parent/.worktrees/child untracked files
+worktree-cleanup: report $LAB/wt/taskrec task record owns it
+worktree-cleanup: report $LAB/wt/tracked uncommitted tracked changes
+worktree-cleanup: report $LAB/wt/untracked untracked files
+worktree-cleanup: skip $LAB/projects/firstmate main checkout
+worktree-cleanup: report $LAB/wt/ahead commits not on PR head
+worktree-cleanup: skip $LAB/wt/liveproc live process
+worktree-cleanup: report $LAB/wt/locked worktree is locked
+worktree-cleanup: report $LAB/wt/merged commits not on PR head
+worktree-cleanup: skip $LAB/wt/nopr no pull request
+worktree-cleanup: skip $LAB/wt/open pull request is open
+worktree-cleanup: report $LAB/wt/parent contains another worktree
+worktree-cleanup: report $LAB/wt/parent/.worktrees/child untracked files
+worktree-cleanup: report $LAB/wt/taskrec task record owns it
+worktree-cleanup: report $LAB/wt/tracked uncommitted tracked changes
+worktree-cleanup: report $LAB/wt/untracked untracked files
+worktree-cleanup: skip $LAB/projects/firstmate main checkout
+worktree-cleanup: report $LAB/wt/ahead commits not on PR head
+worktree-cleanup: skip $LAB/wt/liveproc live process
+worktree-cleanup: report $LAB/wt/locked worktree is locked
+worktree-cleanup: report $LAB/wt/merged commits not on PR head
+worktree-cleanup: skip $LAB/wt/nopr no pull request
+worktree-cleanup: skip $LAB/wt/open pull request is open
+worktree-cleanup: report $LAB/wt/parent contains another worktree
+worktree-cleanup: report $LAB/wt/parent/.worktrees/child untracked files
+worktree-cleanup: report $LAB/wt/taskrec task record owns it
+worktree-cleanup: report $LAB/wt/tracked uncommitted tracked changes
+worktree-cleanup: report $LAB/wt/untracked untracked files
+worktree-cleanup: skip $LAB/projects/firstmate main checkout
+worktree-cleanup: report $LAB/wt/ahead commits not on PR head
+worktree-cleanup: skip $LAB/wt/liveproc live process
+worktree-cleanup: report $LAB/wt/locked worktree is locked
+worktree-cleanup: report $LAB/wt/merged commits not on PR head
+worktree-cleanup: skip $LAB/wt/nopr no pull request
+worktree-cleanup: skip $LAB/wt/open pull request is open
+worktree-cleanup: report $LAB/wt/parent contains another worktree
+worktree-cleanup: report $LAB/wt/parent/.worktrees/child untracked files
+worktree-cleanup: report $LAB/wt/taskrec task record owns it
+worktree-cleanup: report $LAB/wt/tracked uncommitted tracked changes
+worktree-cleanup: report $LAB/wt/untracked untracked files
+worktree-cleanup: skip $LAB/projects/firstmate main checkout
+worktree-cleanup: report $LAB/wt/ahead commits not on PR head
+worktree-cleanup: skip $LAB/wt/liveproc live process
+### surviving worktrees
+ahead liveproc locked merged nopr open parent taskrec tracked untracked 
+child
+$LAB/projects/firstmate          5d7ff0a0 [main]
+$LAB/wt/ahead                    fc925257 [fm/sw-m1b-heartbeat]
+$LAB/wt/liveproc                 a8b608b4 [fm/fm-early-handoff-trigger]
+$LAB/wt/locked                   e6aa6dc3 [fm/cursor-quota-pools] locked
+$LAB/wt/merged                   28562dae [fm/fm-learnings-load]
+$LAB/wt/nopr                     5d7ff0a0 [lab/no-pr-branch]
+$LAB/wt/open                     5d7ff0a0 [fm/fm-disk-alarms]
+$LAB/wt/parent                   a8b608b4 [fm/sw-m1a-claim-ledger]
+$LAB/wt/parent/.worktrees/child  7cdb43c2 [fm/fm-dispatch-sla-pr]
+$LAB/wt/taskrec                  a8b608b4 [fm/fm-afk-monitor-orca]
+$LAB/wt/tracked                  82d5cffe [fm/fm-attended-selfwake]
+$LAB/wt/untracked                a8b608b4 [fm/sw-m1d-issue-filing]
+### preserved dirt
+new
+childdirt
+ M README.md

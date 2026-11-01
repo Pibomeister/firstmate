@@ -1,0 +1,122 @@
+### status before
+$LAB/projects/firstmate          5d7ff0a [main]
+$LAB/wt/ahead                    fb9d6f0 [fm/sw-m1b-heartbeat]
+$LAB/wt/closed                   a5b1ab3 [fm/fm-monitoring-self-heal]
+$LAB/wt/dirty                    149c03b [fm/fm-attended-selfwake]
+$LAB/wt/ignored                  dc70d01 [fm/fm-early-handoff-trigger]
+$LAB/wt/livep                    a98bb0b [fm/fm-main-park-test-fix]
+$LAB/wt/merged                   62e2d94 [fm/fm-never-stall-reroute]
+$LAB/wt/nested                   84609d2 [fm/fm-quiet-recovery]
+$LAB/wt/nested/.worktrees/child  5d7ff0a [nested-child]
+$LAB/wt/open                     2effa8b [fm/fm-disk-alarms]
+$LAB/wt/owned                    7b04a1c [fm/fm-learnings-load]
+$LAB/wt/tmuxw                    6477d9f [fm/fm-bash53-fix]
+$LAB/wt/untracked                bb84517 [fm/sw-m1d-issue-filing]
+
+### 1. DRY RUN
+worktree-cleanup: skip $LAB/projects/firstmate main checkout
+worktree-cleanup: report $LAB/wt/ahead commits not on PR head
+worktree-cleanup: dry-run $LAB/wt/closed pull request CLOSED https://github.com/Pibomeister/firstmate/pull/60
+worktree-cleanup: stop budget reached
+worktrees still registered after dry run: 13
+cursor written by dry run: no
+
+### 2. REAL RUN
+--- pass 1
+worktree-cleanup: skip $LAB/projects/firstmate main checkout
+worktree-cleanup: report $LAB/wt/ahead commits not on PR head
+worktree-cleanup: remove $LAB/wt/closed pull request CLOSED https://github.com/Pibomeister/firstmate/pull/60
+worktree-cleanup: stop budget reached
+(pass took 37s)
+--- pass 2
+worktree-cleanup: report $LAB/wt/dirty uncommitted tracked changes
+worktree-cleanup: remove $LAB/wt/ignored pull request MERGED https://github.com/Pibomeister/firstmate/pull/75
+worktree-cleanup: stop budget reached
+(pass took 58s)
+--- pass 3
+worktree-cleanup: skip $LAB/wt/livep live process
+worktree-cleanup: stop budget reached
+(pass took 21s)
+--- pass 4
+worktree-cleanup: remove $LAB/wt/merged pull request MERGED https://github.com/Pibomeister/firstmate/pull/94
+worktree-cleanup: report $LAB/wt/nested contains another worktree
+worktree-cleanup: report $LAB/wt/nested/.worktrees/child untracked files
+worktree-cleanup: skip $LAB/wt/open pull request is open
+worktree-cleanup: stop budget reached
+(pass took 23s)
+--- pass 5
+worktree-cleanup: report $LAB/wt/owned task record owns it
+worktree-cleanup: skip $LAB/wt/tmuxw live process
+worktree-cleanup: stop budget reached
+(pass took 20s)
+--- pass 6
+worktree-cleanup: report $LAB/wt/untracked untracked files
+worktree-cleanup: skip $LAB/projects/firstmate main checkout
+worktree-cleanup: report $LAB/wt/ahead commits not on PR head
+worktree-cleanup: stop budget reached
+(pass took 22s)
+--- pass 7
+worktree-cleanup: report $LAB/wt/dirty uncommitted tracked changes
+worktree-cleanup: skip $LAB/wt/livep live process
+worktree-cleanup: stop budget reached
+(pass took 31s)
+--- pass 8
+worktree-cleanup: report $LAB/wt/nested contains another worktree
+worktree-cleanup: report $LAB/wt/nested/.worktrees/child untracked files
+worktree-cleanup: skip $LAB/wt/open pull request is open
+worktree-cleanup: report $LAB/wt/owned task record owns it
+worktree-cleanup: skip $LAB/wt/tmuxw live process
+worktree-cleanup: stop budget reached
+(pass took 21s)
+
+### 3. STATE AFTER
+merged                     removed
+closed                     removed
+open                       KEPT
+dirty                      KEPT
+untracked                  KEPT
+ignored                    removed
+ahead                      KEPT
+livep                      KEPT
+tmuxw                      KEPT
+nested                     KEPT
+nested/.worktrees/child    KEPT
+owned                      KEPT
+dirty edit survives:  M README.md
+untracked survives: x
+child file survives: x
+branches kept:  fm/fm-early-handoff-trigger fm/fm-monitoring-self-heal fm/fm-never-stall-reroute 
+registered after prune:
+worktree $LAB/projects/firstmate
+worktree $LAB/wt/ahead
+worktree $LAB/wt/dirty
+worktree $LAB/wt/livep
+worktree $LAB/wt/nested
+worktree $LAB/wt/nested/.worktrees/child
+worktree $LAB/wt/open
+worktree $LAB/wt/owned
+worktree $LAB/wt/tmuxw
+worktree $LAB/wt/untracked
+prunable leftovers: 0
+secret leaks in stdout or log: 0
+log lines: 34
+
+### 4. LIVE-WORKER RELEASE: stop the process and terminal, run again
+worktree-cleanup: remove $LAB/wt/livep pull request CLOSED https://github.com/Pibomeister/firstmate/pull/33
+worktree-cleanup: remove $LAB/wt/tmuxw pull request CLOSED https://github.com/Pibomeister/firstmate/pull/12
+
+### 5. FETCH: single-branch clone, worktree at PR 60 base, PR head absent locally
+head present before: yes
+worktree-cleanup: skip $LAB/projects/second main checkout
+worktree-cleanup: remove $LAB/wt/fetchme pull request CLOSED https://github.com/Pibomeister/firstmate/pull/60
+worktree: removed
+
+### 6. WATCHER: real fm-watch.sh one cycle, FM_WORKTREE_CLEANUP=0 then enabled
+disabled exit=0 worktree: KEPT stamp: no
+enabled exit=0 worktree: removed stamp: yes
+watcher stdout mentions cleanup: 0
+worktree-cleanup: skip $LAB/projects/third main checkout
+worktree-cleanup: remove $LAB/wt/watched pull request MERGED https://github.com/Pibomeister/firstmate/pull/94
+worktree $LAB/projects/third
+
+lab removed: yes

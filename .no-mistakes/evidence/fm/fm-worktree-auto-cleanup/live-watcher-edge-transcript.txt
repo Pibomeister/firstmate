@@ -1,0 +1,18 @@
+### was #94 head fetched from the pull ref? (clone is main-only)
+commit
+#94 head on main rc=1
+### wt/merged HEAD vs #95 head
+commit
+base-is-ancestor rc=1
+### kill switch: FM_WORKTREE_CLEANUP=0 through the real watcher
+new log lines=0 stamped=no
+### failed pass: pass killed at FM_WATCH_HELPER_BUDGET=1
+rc=0 stamped=yes
+$LAB/state/.watch-triage.log
+[2026-10-31T18:31:34-0600] worktree cleanup unavailable
+### merged PR, HEAD exactly at PR head, through the real watcher
+worktree-cleanup: remove $LAB/wt/merged pull request MERGED https://github.com/Pibomeister/firstmate/pull/95
+worktree-cleanup: stop budget reached
+merged dir removed
+0
+branch kept

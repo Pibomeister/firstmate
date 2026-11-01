@@ -1,0 +1,29 @@
+runtime ready=1 after 6 polls; worktrees=0
+{"ok":true}
+{"ok":true,"e":null}
+linked: /orca/workspaces/repo/iso60
+a5b1ab3
+fm/fm-monitoring-self-heal
+orca terminals now: ["$OH/orca/workspaces/repo/iso60"]
+### live Orca terminal
+{"ok":true,"h":"term_6b2dd38a-7a69-48e1-bbcd-55e8cf0b3646","e":null}
+orca terminals now: ["$OH/orca/workspaces/repo/iso60","$OH/orca/workspaces/repo/iso60"]
+worktree-cleanup: skip $OH/lab/projects/repo main checkout
+worktree-cleanup: report $OH/orca/workspaces/repo/iso60 Orca terminal is live
+terminal state: [{"connected":true,"orphaned":false},{"connected":true,"orphaned":false}]
+{"closed":true}
+{"closed":true}
+### after terminal closed, dirty
+worktree-cleanup: skip $OH/lab/projects/repo main checkout
+worktree-cleanup: report $OH/orca/workspaces/repo/iso60 uncommitted tracked changes
+kept: yes
+### clean, real removal
+worktree-cleanup: skip $OH/lab/projects/repo main checkout
+worktree-cleanup: report $OH/orca/workspaces/repo/iso60 removal refused
+directory: KEPT
+git list:
+worktree $OH/lab/projects/repo
+worktree $OH/orca/workspaces/repo/iso60
+orca list: ["$OH/lab/projects/repo"]
+branch: fm/fm-monitoring-self-heal
+isolated Orca stopped, home removed

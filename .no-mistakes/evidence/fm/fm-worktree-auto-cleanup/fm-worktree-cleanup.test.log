@@ -1,0 +1,40 @@
+1..35
+ok - merged pull request removes the worktree, keeps the branch, and prunes
+ok - closed pull request removes the worktree and keeps the branch
+ok - uncommitted tracked changes are reported
+ok - non-ignored untracked files are reported
+ok - ignored private files do not block removal
+ok - dry-run records the removal and changes nothing
+ok - a main checkout is skipped
+ok - a live process keeps the worktree
+ok - commits that are not on the pull request head are reported
+ok - an open pull request keeps the worktree
+ok - an unknown process scan removes nothing
+ok - scan is silent and logs the removal
+ok - a failed pull request lookup removes nothing
+ok - a locked worktree is not removed
+ok - a disabled scan leaves the worktree
+ok - a worktree a task record names is reported
+ok - unreadable task records remove nothing
+ok - a Treehouse pool slot is reported
+ok - a worktree Orca lists is removed through Orca
+ok - a dirty worktree Orca lists is reported
+ok - dry-run does not ask Orca to remove a worktree
+ok - an Orca refusal is reported
+ok - a live Orca terminal keeps the worktree
+ok - a worktree that contains another worktree is reported
+ok - a failed Orca lookup removes nothing
+ok - a truncated Orca list removes nothing
+ok - a pipeline head that is missing locally is fetched
+ok - a failed head fetch removes nothing
+ok - the newest of several terminal pull requests decides removal
+ok - commits that are not on the newest terminal head are reported
+ok - pull requests from another owner do not count
+worktree-cleanup: skip /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-worktree-cleanup.Z4ASOj/rotate/wt-c pull request is open
+worktree-cleanup: stop budget reached
+ok - budget stops rotate through every worktree, past a removed cursor path
+ok - a pull request state outside gh's uppercase set is a failed lookup
+ok - a bare project name is refused
+ok - a failed pass waits for the next check interval
+FM_TEST_COMPLETE
+bash tests/fm-worktree-cleanup.test.sh  11.71s user 23.05s system 10% cpu 5:30.88 total

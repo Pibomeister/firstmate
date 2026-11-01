@@ -1,0 +1,9 @@
+PR #60 head present locally: no
+### A. fetch blocked
+worktree-cleanup: report $LAB/fw pull request head is not in this repository
+worktree-cleanup: skip $LAB/projects/full main checkout
+worktree: KEPT
+### B. fetch allowed
+worktree-cleanup: remove $LAB/fw pull request CLOSED https://github.com/Pibomeister/firstmate/pull/60
+worktree-cleanup: skip $LAB/projects/full main checkout
+head present: yes  worktree: removed

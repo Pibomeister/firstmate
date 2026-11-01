@@ -1,0 +1,11 @@
+### A. FETCH FAILS: git https transport blocked, PR head absent
+head present: no
+worktree-cleanup: report $LAB/fw pull request head is not in this repository
+worktree-cleanup: skip $LAB/projects/full main checkout
+worktree: KEPT
+### B. FETCH WORKS: same worktree, normal transport
+worktree-cleanup: remove $LAB/fw pull request CLOSED https://github.com/Pibomeister/firstmate/pull/60
+worktree-cleanup: stop budget reached
+head present: yes
+worktree: removed
+lab removed
