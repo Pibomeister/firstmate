@@ -865,7 +865,7 @@ wd_draft_allowed() {
 
 wd_submit_unsent() {
   if ! fm_wd_draft_readable "$O_COMPOSER_TEXT" "$O_COMPOSER_ABOVE"; then
-    wd_gap "unsent input is a paste placeholder or taller than the read window; Enter not pressed"
+    wd_gap "unsent input is a paste placeholder, or its whole draft boundary is not proven; Enter not pressed"
     wd_rate_open pasted-input key "$(cfgi enter-secs 300)" &&
       wd_rec "$(wd_id)" pasted-input key refused "the whole draft cannot be read; never accepted"
     return 1

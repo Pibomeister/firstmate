@@ -213,6 +213,11 @@ test_stall_proof_and_text_guards() {
     ! lib fm_wd_text_allowed "$word" || fail "text guard let through: $word"
     lib fm_wd_reserved "$word" || fail "reserved check let through: $word"
   done
+  for word in $'git push origin main \\\n --force' $'git push origin main \\\n -f' $'> git push origin long-branch\n> --force-with-lease' $'force\n push it' $'git push origin \\\n +main' $'git push origin \\\n "+main"' $'│ git push origin │\n│ --force │' $'please mer\nge it' $'force\n──────\npush it'; do
+    ! lib fm_wd_text_allowed "$word" || fail "text guard let through: $word"
+    lib fm_wd_reserved "$word" || fail "reserved check let through: $word"
+  done
+  lib fm_wd_text_allowed $'> finish the summary\n ? for shortcuts' || fail "a clean draft with its footer is allowed"
   for word in "handle the emergency" "submerge the raft" "re-emerge later" "git push -u origin fix-flag" "git push --follow-tags" "push 2 + 3 rows"; do
     lib fm_wd_text_allowed "$word" || fail "text guard over-refused: $word"
     ! lib fm_wd_reserved "$word" || fail "reserved check over-refused: $word"
@@ -318,7 +323,7 @@ test_merge_autosuggestion_never_accepted() {
   assert_grep "unsent draft names a merge" "$H/data/watchdog/status.md" "the draft refusal is a gap"
 
   local draft
-  for draft in "redeploy the staging service" "gh pr merge 5" "enable automerge on PR 5" "cut a prerelease" "republish the package" "git push --force origin main" "git push -f origin main" "git push origin main --force-with-lease" "git push origin +main" "git push origin +main:main"; do
+  for draft in "redeploy the staging service" "gh pr merge 5" "enable automerge on PR 5" "cut a prerelease" "republish the package" "git push --force origin main" "git push -f origin main" "git push origin main --force-with-lease" "git push origin +main" "git push origin +main:main" $'git push origin main \\\n --force' $'git push origin feature/some-long-branch\n --force-with-lease' $'force\n push it' $'git push origin \\\n "+main"' $'please mer\nge it'; do
     make_home "Captain session"$'\n'"> $draft"
     FM_WD_TEST_COMPOSER=pending run_wd 0 once >/dev/null 2>&1
     FM_WD_TEST_COMPOSER=pending run_wd 300 once >/dev/null 2>&1
@@ -362,7 +367,14 @@ test_quoted_row_never_hides_a_taller_draft() {
   local rule='──────────' tall
   tall=$'Captain session\n> merge #5\n one\n two\n three\n four\n> quoted\n six\n seven\n'"$rule"$'\n ? for shortcuts'
   ! lib fm_wd_draft_readable $' two\n three\n four\n> quoted\n six\n seven\n'"$rule"$'\n ? for shortcuts' $'Captain session\n> merge #5\n one' || fail "a prompt row above the window hides the draft top"
-  lib fm_wd_draft_readable $'> now\n'"$rule" $'> sent earlier\nreply\n'"$rule" || fail "a rule directly above the prompt proves the boundary"
+  local long='────────────────────────────────────────────────────────────'
+  lib fm_wd_draft_readable $'> now\n'"$long" $'> sent earlier\nreply\n'"$long" || fail "a closed pair of column-0 rules proves the boundary"
+  ! lib fm_wd_draft_readable $' two\n'"$rule"$'\n> quoted\n six\n'"$rule"$'\n ? for shortcuts' $'> merge #5\n one' || fail "a short nested rule proves nothing"
+  ! lib fm_wd_draft_readable $' two\n '"$long"$'\n> quoted\n six\n '"$long"$'\n ? for shortcuts' $'> merge #5\n one' || fail "an indented rule is draft text"
+  ! lib fm_wd_draft_readable $' two\n'"$long"$'\n> quoted\n six\n ? for shortcuts' $'> merge #5\n one' || fail "an unclosed rule proves nothing"
+  ! lib fm_wd_draft_readable $'reply one\nreply two\n› finish summary\n 100% context left' $'› earlier prompt' || fail "a bare composer under history is not proven"
+  lib fm_wd_draft_readable $'╭────╮\n│ > finish │\n╰────╯' $'> earlier\nreply' || fail "a closed box proves the boundary"
+  ! lib fm_wd_draft_readable $'│ > finish │\n plain row\n╰────╯' $'> earlier\n╭────╮' || fail "a broken box proves nothing"
   lib fm_wd_draft_readable $'> now\n'"$rule" || fail "a window with nothing above it is readable"
 
   make_home "$tall"
@@ -381,6 +393,17 @@ restart-command=$TMP_ROOT/fake-captain.sh"
   FM_WD_TEST_COMPOSER=pending run_wd 0 once >/dev/null 2>&1
   assert_grep "lost an unreadable draft" "$H/data/watchdog/status.md" "the partial draft is reported as a gap"
   wait_pickup && LOCK_PIDS="$LOCK_PIDS $(cat "$H/state/.lock")"
+
+  make_home "Captain session"$'\n> merge #5\n one\n two\n'"$rule"$'\n> quoted\n six\n'"$rule"$'\n ? for shortcuts\n status\n status two\n status three'
+  FM_WD_TEST_COMPOSER=pending run_wd 0 once >/dev/null 2>&1
+  FM_WD_TEST_COMPOSER=pending run_wd 300 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows pasted-input key pending)" "a nested rule gets no Enter: $(ledger | cut -f5-8)"
+  assert_equals 1 "$(ledger_rows pasted-input key refused)" "the nested rule draft is refused"
+
+  make_home $'> earlier\nreply text\n> fix the bug\nDone.\n'"$long"$'\n> finish summary\n'"$long"$'\n ? for shortcuts\n status'
+  FM_WD_TEST_COMPOSER=pending run_wd 0 once >/dev/null 2>&1
+  FM_WD_TEST_COMPOSER=pending run_wd 300 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows pasted-input key pending)" "history above a proven composer leaves Enter: $(ledger | cut -f5-8)"
   pass "boundary: a quoted row inside a taller draft never earns Enter or a partial note"
 }
 
