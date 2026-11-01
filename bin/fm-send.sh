@@ -11,6 +11,8 @@
 # before anything is marked, recorded, or submitted, because an empty marked
 # secondmate request delivers only marker and correlation bytes and leaves the
 # parent waiting on a reply to nothing.
+# Standing captain holds: a text steer carries this home's holds in force
+# (bin/fm-order.sh owns holds); a typed parser command and --key never do.
 # Special keys instead of text: fm-send.sh <target> --key Enter
 # Key support is backend-specific: tmux/herdr support Escape, Enter, and C-c;
 # Orca delivers Enter and C-c, plus raw Escape and C-u bytes verified for Droid;
@@ -921,6 +923,35 @@ else
       \$*) [ "$TARGET_HARNESS" = codex ] || INBOX_PLANE=1 ;;
       *) INBOX_PLANE=1 ;;
       esac
+    fi
+  fi
+  # Standing captain holds travel with every relayed order: a steer carries
+  # this home's holds in force (bin/fm-order.sh owns holds). A recorded steer
+  # carries the block as is; a typed send to an explicit target carries it on
+  # one line after the text; a parser command typed to the endpoint (a leading
+  # "/", or "$" to codex or to a harness no task record names) carries none,
+  # because extra text would break it.
+  # When holds may exist but cannot be read, nothing is sent, because relaying
+  # work without its limits is the failure holds exist to prevent.
+  SEND_PARSER_TEXT=0
+  case "$RESOLVE_ANSWER_TEXT" in
+  /*) SEND_PARSER_TEXT=1 ;;
+  \$*) case "$TARGET_HARNESS" in codex | '') SEND_PARSER_TEXT=1 ;; esac ;;
+  esac
+  if { [ "$INBOX_PLANE" = 1 ] || [ "$SEND_PARSER_TEXT" = 0 ]; } &&
+    [ -d "${FM_DATA_OVERRIDE:-$FM_HOME/data}/orders" ]; then
+    if ! HOLDS_BLOCK=$(FM_HOME="$FM_HOME" "$SCRIPT_DIR/fm-order.sh" holds --relay 2>/dev/null); then
+      echo "error: could not read this home's standing captain holds (bin/fm-order.sh holds --relay); nothing was sent" >&2
+      fm_send_known_undelivered_cleanup ||
+        echo "error: known-undelivered pending-reply state could not be reset for $TARGET_TASK_ID" >&2
+      exit 1
+    fi
+    if [ -n "$HOLDS_BLOCK" ] && [ "$INBOX_PLANE" = 1 ]; then
+      MESSAGE="$MESSAGE
+
+$HOLDS_BLOCK"
+    elif [ -n "$HOLDS_BLOCK" ]; then
+      MESSAGE="$MESSAGE  $(printf '%s' "$HOLDS_BLOCK" | tr '\n' ' ' | sed 's/ *$//')"
     fi
   fi
   if [ "$INBOX_PLANE" = 1 ] && [ "$TARGET_BACKEND" = remote ]; then

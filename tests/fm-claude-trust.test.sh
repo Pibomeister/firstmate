@@ -708,6 +708,63 @@ test_secondmate_standalone_clone_home_is_trusted() {
   pass "fm-spawn.sh: a claude secondmate spawn pre-trusts a standalone-clone home"
 }
 
+# send_hold <home> <text>: record a standing captain hold in <home> and echo its id.
+send_hold() {
+  env -u FM_DATA_OVERRIDE -u FM_STATE_OVERRIDE FM_HOME="$1" "$ROOT/bin/fm-order.sh" \
+    send --hold --from captain "$2" >/dev/null || return 1
+  find "$1/data/orders/pending" -name '*.order' | sed 's#.*/##; s/\.order$//'
+}
+
+# Standing captain holds travel with every relayed order, and a launch is the
+# first order a worker or secondmate gets: the record it opens carries the
+# holds in force. A secondmate's charter itself stays unchanged.
+test_spawn_launch_carries_standing_holds() {
+  local case_dir home proj wt fakebin out doorbell record hold opened
+  case_dir="$TMP_ROOT/spawn-holds"
+  home="$case_dir/home"
+  proj="$case_dir/project"
+  wt="$case_dir/wt"
+  mkdir -p "$case_dir/claude-config"
+  fakebin=$(make_spawn_fakebin "$case_dir/fake" claude)
+  fm_test_spawn_home "$home" claude
+  fm_git_worktree "$proj" "$wt" wt-holds
+  fm_test_spawn_brief "$home" holdspawn
+  hold=$(send_hold "$home" "close nothing") || fail "could not send the hold fixture"
+  out=$(FM_TEST_CLAUDE_CONFIG_DIR="$case_dir/claude-config" FM_FAKE_LAUNCH_LOG="$case_dir/launch.log" \
+    fm_test_run_spawn "$home" "$wt" "$fakebin" holdspawn "$proj" claude \
+    --mode no-mistakes --yolo off)
+  expect_code 0 $? "a claude spawn with a hold in force must succeed: $out"
+  doorbell=$(claude_launch_doorbell "$(cat "$case_dir/launch.log")")
+  record=$(printf '%s' "$doorbell" | sed -n "s/.*: Firstmate operational input waiting: read '\([^']*\)'.*/\1/p")
+  [ -n "$record" ] || fail "the launch command did not carry a brief doorbell"
+  opened=$(printf '%s' "$doorbell" | FM_STATE_OVERRIDE="$home/state" "$ROOT/bin/fm-operational-input.sh" open "$record")
+  assert_contains "$opened" "Standing captain holds" "the worker's launch record carries the holds block"
+  assert_contains "$opened" "- hold $hold" "the worker's launch record names the hold"
+  assert_contains "$opened" "close nothing" "the worker's launch record carries the hold text"
+  assert_contains "$(cat "$home/data/holdspawn/launch-brief.md")" "close nothing" \
+    "the worker's launch brief carries the hold text"
+
+  case_dir="$TMP_ROOT/sm-spawn-holds"
+  home="$case_dir/fm-homes/holds-n1"
+  seed_secondmate_home "$home" holds-n1 clone
+  fm_test_spawn_home "$case_dir/primary" claude
+  hold=$(send_hold "$case_dir/primary" "merge nothing") || fail "could not send the secondmate hold fixture"
+  out=$(spawn_secondmate_claude "$case_dir" "$home" holds-n1)
+  expect_code 0 $? "a claude secondmate spawn with a hold in force must succeed: $out"
+  doorbell=$(claude_launch_doorbell "$(cat "$case_dir/launch.log")")
+  record=$(printf '%s' "$doorbell" | sed -n "s/.*: Firstmate operational input waiting: read '\([^']*\)'.*/\1/p")
+  [ -n "$record" ] || fail "the secondmate launch command did not carry a brief doorbell"
+  opened=$(printf '%s' "$doorbell" | FM_STATE_OVERRIDE="$home/state" "$ROOT/bin/fm-operational-input.sh" open "$record")
+  case "$opened" in
+    charter*) ;;
+    *) fail "the secondmate's launch record must lead with its charter, got: $opened" ;;
+  esac
+  assert_contains "$opened" "- hold $hold" "the secondmate's launch record names the hold"
+  assert_contains "$opened" "merge nothing" "the secondmate's launch record carries the hold text"
+  [ "$(cat "$home/data/charter.md")" = charter ] || fail "the secondmate's charter itself must stay unchanged"
+  pass "fm-spawn.sh: a worker or secondmate launch carries the standing holds, and the charter stays unchanged"
+}
+
 # The other seeded shape, a treehouse-leased linked worktree. It must be trusted
 # through the same seed evidence rather than incidentally, so the registration
 # does not depend on which shape the home happens to have.
@@ -865,6 +922,7 @@ test_scope_refusal_stays_fail_closed_without_node
 test_claude_spawn_pretrusts_its_worktree_and_reaches_the_brief
 test_refused_spawn_leaves_no_task_state
 test_secondmate_standalone_clone_home_is_trusted
+test_spawn_launch_carries_standing_holds
 test_secondmate_leased_worktree_home_is_trusted
 test_secondmate_home_trust_refuses_everything_unseeded
 test_worktree_mode_still_refuses_a_secondmate_home

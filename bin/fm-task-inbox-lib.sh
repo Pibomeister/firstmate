@@ -48,6 +48,9 @@
 #   --
 #   <exact message text; newlines are legal; a marked secondmate request keeps
 #    its from-firstmate marker and corr token verbatim in this body>
+# A body may end with the standing captain holds block bin/fm-send.sh appends:
+# a blank line, then a line starting with FM_TASK_INBOX_HOLDS_HEAD, to the end
+# (bin/fm-order.sh owns holds). The idempotent dedup ignores that block.
 #
 # Sequence numbers are never reused within a task: allocation scans both the
 # inbox root and handled/, so a message is processed at most once per worker
@@ -282,9 +285,26 @@ fm_task_inbox_write() {  # <state-dir> <task-id> <text> [delivery-mode]
   printf '%s' "$rec"
 }
 
+# The first words of the holds block; bin/fm-order.sh's HOLDS_HEAD must match.
+FM_TASK_INBOX_HOLDS_HEAD='Standing captain holds'
+
+# Rewrite <file> without a trailing standing-holds block, so a retried steer
+# still matches its first record after a hold was sent or lifted.
+_fm_task_inbox_strip_holds() {  # <file>
+  local text
+  text=$(cat "$1"; printf .) || return 1
+  text=${text%.}
+  case "$text" in
+    *$'\n\n'"$FM_TASK_INBOX_HOLDS_HEAD"*) ;;
+    *) return 0 ;;
+  esac
+  printf '%s' "${text%$'\n\n'"$FM_TASK_INBOX_HOLDS_HEAD"*}" > "$1"
+}
+
 # Durably enqueue one steer at most once: when a record with the exact same
 # body already exists - unhandled or already acknowledged in handled/ - no new
-# record is written and the existing record's path is printed instead.
+# record is written and the existing record's path is printed instead. Bodies
+# compare without their standing-holds block, which can change between retries.
 # This is the enqueue primitive for a transport that can fail with completion
 # unknown (the remote steer leg over ssh): the caller's safe recovery is to run
 # the same enqueue again, and this dedup is what makes the re-run land on the
@@ -300,7 +320,7 @@ fm_task_inbox_write_idempotent() {  # <state-dir> <task-id> <text> [delivery-mod
   lock="$dir/.seq.lock"
   fm_task_inbox_lock_acquire "$lock" || return 1
   if want=$(mktemp "$dir/.dedup.XXXXXX") && have=$(mktemp "$dir/.dedup.XXXXXX"); then
-    if printf '%s' "$text" > "$want"; then
+    if printf '%s' "$text" > "$want" && _fm_task_inbox_strip_holds "$want"; then
       for f in "$dir"/*.msg "$dir/handled"/*.msg; do
         if [ ! -e "$f" ]; then
           case "$f" in
@@ -325,6 +345,7 @@ fm_task_inbox_write_idempotent() {  # <state-dir> <task-id> <text> [delivery-mod
             *) continue ;;
           esac
         fi
+        _fm_task_inbox_strip_holds "$have" || continue
         cmp -s "$want" "$have" || continue
         [ ! -e "$dir/handled/${f##*/}" ] || f="$dir/handled/${f##*/}"
         rec=$f
