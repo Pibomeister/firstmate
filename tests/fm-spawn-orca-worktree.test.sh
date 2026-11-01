@@ -672,6 +672,111 @@ test_orca_droid_relaunch_rebinds_only_after_stop_and_terminal_proof() {
   pass "a stopped Orca Droid task replaces only a proven closed terminal, refuses a connected unwritable one, and preserves unlanded work"
 }
 
+# orca_droid_pane: turns the fake Orca into a replacement terminal whose pane
+# really sources the staged launch, runs the generated Droid UserPromptSubmit
+# hook through a `droid` stand-in, stays up, and shows Droid's captured idle screen.
+orca_droid_pane() {
+  node -e 'const fs = require("fs");
+process.stdout.write(JSON.stringify({ ok: true, result: { terminal: {
+  source: "screen", tail: fs.readFileSync(process.argv[1], "utf8").replace(/\n$/, "").split("\n") } } }));' \
+    "$ROOT/tests/fixtures/droid/idle-orca-0.230.0.txt" > "$CASE_DIR/screen.json"
+  printf '{"ok":true,"result":{"terminal":{"handle":"term-new","ptyId":"pty-new","connected":true,"writable":true,"exitCause":null,"executionHostId":"local","worktreePath":"%s"}}}\n' \
+    "$WT" > "$CASE_DIR/show-term-new.json"
+  cat > "$FB/droid" <<'SH'
+#!/usr/bin/env bash
+pwd -P > "$FM_TEST_ORCA_DIR/droid-cwd"
+prev=
+for a in "$@"; do
+  [ "$prev" != --settings ] || settings=$a
+  prev=$a
+done
+printf '%s\n' "$settings" > "$FM_TEST_ORCA_DIR/droid-settings-path"
+jq -r '.hooks.UserPromptSubmit[0].hooks[0].command' "$settings" > "$FM_TEST_ORCA_DIR/submit-hook"
+printf '{"hook_event_name":"UserPromptSubmit","prompt":"brief"}' | bash "$FM_TEST_ORCA_DIR/submit-hook"
+exec sleep 120
+SH
+  chmod +x "$FB/droid"
+  mv "$FB/orca" "$FB/orca-base"
+  cat > "$FB/orca" <<'SH'
+#!/usr/bin/env bash
+DIR=$FM_TEST_ORCA_DIR
+case "$*" in
+  "terminal read --help"*)
+    echo '--screen'
+    exit 0
+    ;;
+  "terminal read --terminal term-new --screen"*)
+    cat "$DIR/screen.json"
+    exit 0
+    ;;
+  "terminal send --terminal term-new --text "*/launch.*)
+    "$(dirname "$0")/orca-base" "$@" || exit
+    text=$6
+    f=${text#*"'"}
+    f=${f%%"'"*}
+    # shellcheck disable=SC2016 # The pane shell expands its own argument.
+    (cd "$(cat "$DIR/wt-path")" && exec bash -c '. "$1"' _ "$f") </dev/null >"$DIR/pane.out" 2>&1 &
+    pid=$!
+    printf '%s\n' "$pid" > "$DIR/pane.pid"
+    printf '{"ok":true,"result":{"worktrees":[{"sessions":[{"sessionId":"pty-new","pid":%s}]}]}}\n' "$pid" > "$DIR/memory.json"
+    exit 0
+    ;;
+esac
+exec "$(dirname "$0")/orca-base" "$@"
+SH
+  chmod +x "$FB/orca"
+  printf '%s\n' "$WT" > "$CASE_DIR/wt-path"
+}
+
+test_orca_droid_relaunch_stays_on_droid_through_fm_control() {
+  local variant gen new_gen settings pane rc=0 out
+  for variant in closed stop-unverifiable; do
+    orca_relaunch_case "droid-to-droid-$variant"
+    echo 'harness=droid' >> "$HOME_DIR/state/$TASK.meta"
+    gen=$("$ROOT/bin/fm-busy-event.sh" arm "$HOME_DIR/state" "$TASK")
+    echo "busy_gen=$gen" >> "$HOME_DIR/state/$TASK.meta"
+    printf '%s\n' "$gen" > "$HOME_DIR/state/$TASK.droid-session-end"
+    orca_relaunch_show false operator_close
+    [ "$variant" != stop-unverifiable ] || \
+      printf '{"ok":true,"result":{"terminal":{"handle":"term-old","ptyId":"pty-old","connected":false,"writable":false,"exitCause":{"kind":"unknown","reason":"stop_unverified"},"executionHostId":"local","worktreePath":"%s"}}}\n' \
+        "$WT" > "$CASE_DIR/show-term-old.json"
+    orca_droid_pane
+    rc=0
+    out=$(FM_ROOT_OVERRIDE='' FM_HOME="$HOME_DIR" HOME="$CASE_DIR/user-home" CLAUDE_CONFIG_DIR='' \
+      FM_STATE_OVERRIDE="$HOME_DIR/state" FM_DATA_OVERRIDE="$HOME_DIR/data" \
+      FM_PROJECTS_OVERRIDE="$HOME_DIR/projects" FM_CONFIG_OVERRIDE="$HOME_DIR/config" \
+      FM_SPAWN_NO_GUARD=1 FM_TEST_ORCA_DIR="$CASE_DIR" FM_TEST_ORCA_NEW_TERMINAL=term-new \
+      FM_TEST_ORCA_BOOT_EPOCH=2000 FM_DROID_POLL_INTERVAL=0.1 PATH="$FB:$PATH" \
+      "$ROOT/bin/fm-control.sh" "$TASK" relaunch --harness droid --note 'terminal closed' 2>&1) || rc=$?
+    pane=$(cat "$CASE_DIR/pane.pid" 2>/dev/null || true)
+    expect_code 0 "$rc" "fm-control must relaunch the $variant Droid task on Droid"$'\n'"$out"$'\n'"$(cat "$CASE_DIR/pane.out" 2>/dev/null)"
+    assert_contains "$out" "relaunched $TASK harness=droid from=droid" "fm-control must report a Droid-to-Droid relaunch"
+    [ "$(orca_meta_field harness)" = droid ] || fail "the $variant task must stay on Droid"
+    [ "$(orca_meta_field terminal)" = term-new ] || fail "the $variant task must bind the replacement terminal"
+    [ "$(orca_meta_field worktree)" = "$WT" ] || fail "the $variant task must keep its worktree"
+    [ "$(cat "$CASE_DIR/droid-cwd")" = "$WT" ] || fail "the replacement Droid must start in the recorded worktree"
+    assert_not_contains "$(cat "$CASE_DIR/terminal-send.log")" '--terminal term-old' \
+      "the closed terminal must receive no relaunch input"
+    new_gen=$(orca_meta_field busy_gen)
+    [ -n "$new_gen" ] && [ "$new_gen" != "$gen" ] || fail "the replacement must arm a new busy generation, got '$new_gen'"
+    assert_contains "$(cat "$HOME_DIR/state/$TASK.busy-state")" "gen=$new_gen" \
+      "the replacement's hook must write the current generation"
+    assert_contains "$(cat "$HOME_DIR/state/$TASK.busy-state")" 'state=busy source=droid-hook event=user-prompt-submit' \
+      "readiness must rest on the replacement's prompt hook"
+    [ ! -e "$HOME_DIR/state/$TASK.droid-session-end" ] || fail "the old SessionEnd marker must not survive into the replacement"
+    settings=$(cat "$CASE_DIR/droid-settings-path")
+    jq -r '.hooks.SessionEnd[0].hooks[0].command' "$settings" > "$CASE_DIR/end-hook"
+    printf '{"reason":"other"}' | bash "$CASE_DIR/end-hook"
+    [ "$(cat "$HOME_DIR/state/$TASK.droid-session-end")" = "$new_gen" ] \
+      || fail "the replacement's re-armed SessionEnd hook must mark the current generation"
+    if [ -n "$pane" ]; then
+      pkill -P "$pane" 2>/dev/null || true
+      kill "$pane" 2>/dev/null || true
+    fi
+  done
+  pass "fm-control relaunches a closed or stop-unverifiable Orca Droid task on Droid in a new terminal with re-armed hooks"
+}
+
 test_orca_relaunch_refuses_without_proof_of_a_stopped_agent() {
   local name agent='' standin
   standin=$(fm_agent_standin "$TMP_ROOT/relaunch-standin") || standin=
@@ -1413,6 +1518,7 @@ PY
 test_orca_source_preserves_values_without_utf8_locale
 test_orca_droid_relaunch_connected_shell_without_marker
 test_orca_droid_relaunch_rebinds_only_after_stop_and_terminal_proof
+test_orca_droid_relaunch_stays_on_droid_through_fm_control
 test_orca_launch_uses_controlled_tmux_environment
 test_orca_allowlist_without_source_warns
 test_orca_spawn_waits_for_a_slow_pane_before_a_later_failure
