@@ -177,8 +177,18 @@ capture_pane_percent() {
   backend=$(discover_supervisor_backend 2>/dev/null || true)
   target=$(discover_supervisor_target 2>/dev/null || true)
   [ -n "$backend" ] && [ -n "$target" ] || return 0
-  fm_backend_capture "$backend" "$target" 5 2>/dev/null \
-    | awk 'NF' | tail -n 5 | fm_context_footer_percent_from_text || true
+  # Claude draws the footer on the line just above its input box. A statusLine
+  # below the box pushes the footer out of the last 5 lines, so anchor on the
+  # box's top rule. With no box, read the last 5 lines as before.
+  fm_backend_capture "$backend" "$target" 20 2>/dev/null \
+    | awk 'NF' | tail -n 20 \
+    | awk '{ line[NR] = $0 }
+      /^ *(─)+ *$/ { top = bottom; bottom = NR }
+      END {
+        if (top > 1) { print line[top - 1]; exit }
+        for (i = NR - 4; i <= NR; i++) if (i > 0) print line[i]
+      }' \
+    | fm_context_footer_percent_from_text || true
 }
 
 transcript_percent() { # <payload>

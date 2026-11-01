@@ -353,6 +353,43 @@ test_report_line() {
   pass "report prints one path and sha under data and refuses the rest"
 }
 
+test_pane_footer_above_statusline() {
+  local home=$TMP_ROOT/pane root fakebin rule
+  prepare "$home"
+  root=$home/root
+  fakebin=$home/fakebin
+  mkdir -p "$root/bin" "$fakebin"
+  : > "$root/AGENTS.md"
+  git -C "$root" init -q
+  printf '#!/usr/bin/env bash\ncat "%s"\n' "$home/pane.txt" > "$fakebin/tmux"
+  chmod +x "$fakebin/tmux"
+  rule='────────────────────────────────────────'
+  {
+    printf '%s\n' '⏺ read' '' '✻ Baked for 9s · done 4:48 AM'
+    printf '%s\n' '                                  7% until auto-compact'
+    printf '%s\n' "$rule" '❯ ' "$rule"
+    printf '%s\n' '  [OMC#4.15.0] | Model: Sonnet 5.5 | ctx:93%'
+    printf '%s\n' '  ⏵⏵ auto mode on (shift+tab to cycle)'
+  } > "$home/pane.txt"
+  pane_record() { # <now>
+    PATH="$fakebin:$PATH" FM_CONTEXT_BURN_CAPTURE=1 FM_ROOT_OVERRIDE="$root" \
+      FM_SUPERVISOR_BACKEND=tmux FM_SUPERVISOR_TARGET=%0 \
+      FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+      FM_CONTEXT_BURN_NOW="$1" "$BURN" record --turn-type captain --session p1 >/dev/null
+  }
+  pane_record 30000
+  assert_equals $'30000\tp1\tcaptain\t7' "$(last_row "$home")" "footer above a statusLine"
+
+  {
+    printf '%s\n' 'mate says: 40% until auto-compact' '✻ Baked for 9s'
+    printf '%s\n' "$rule" '❯ ' "$rule"
+    printf '%s\n' '  [OMC#4.15.0] | Model: Sonnet 5.5' '  ⏵⏵ auto mode on'
+  } > "$home/pane.txt"
+  pane_record 30100
+  assert_equals 1 "$(row_count "$home")" "quoted footer above a hidden footer was recorded"
+  pass "the pane footer is read above the input box and its statusLine"
+}
+
 test_unmeasured_non_primary_writes_nothing() {
   local home=$TMP_ROOT/scope out status
   prepare "$home"
@@ -375,4 +412,5 @@ fm_test_run \
   test_unknown_session_and_dedupe \
   test_auto_turn_type_from_tailed_transcript \
   test_report_line \
+  test_pane_footer_above_statusline \
   test_unmeasured_non_primary_writes_nothing
