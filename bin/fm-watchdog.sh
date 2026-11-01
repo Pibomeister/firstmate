@@ -215,6 +215,11 @@ wd_read_composer() {
     O_COMPOSER=$(fm_run_timed_fn 20 fm_backend_composer_state "$O_BACKEND" "$O_TARGET" 2>/dev/null) || O_COMPOSER=unknown
   fi
   [ -n "$O_COMPOSER" ] || O_COMPOSER=unknown
+  if [ "$O_COMPOSER" = empty ] && [ "$O_BACKEND" = orca ]; then
+    if ! fm_backend_source orca >/dev/null 2>&1 || fm_run_timed_fn 10 fm_backend_orca_draft_present "$O_TARGET" >/dev/null 2>&1; then
+      O_COMPOSER=pending-unproven
+    fi
+  fi
   O_COMPOSER_TEXT=$(printf '%s\n' "$O_PANE" | fm_wd_strip_ansi | awk 'NF { r[++n] = $0 } END { for (i = n - 7; i <= n; i++) if (i > 0) print r[i] }')
   if [ "$O_BACKEND" = orca ]; then
     O_COMPOSER_TEXT="$O_COMPOSER_TEXT $(fm_run_timed 10 orca terminal read --terminal "$O_TARGET" --limit 5 --json 2>/dev/null | jq -r '(.result.terminal.draft // .result.draft // "") | tostring' 2>/dev/null)"
@@ -234,7 +239,7 @@ wd_observe() {
   O_LOOP=none O_LOOP_N=0 O_LOOP_SAMPLE='' O_RESTART_REQ=0 O_OWED_N=0 O_OWED_AGE=0
   O_AFK=0 O_DAEMON=unknown O_PREV_COMPOSER='' O_PREV_SIG='' O_COMPOSER_TEXT=''
   hb=$st/heartbeat.json
-  hb_sid=''
+  hb_sid='' ctx=''
   if [ -f "$hb" ] && row=$(jq -r '[.primary.terminal.backend // "-", .primary.terminal.target // "-",
         .primary.session.trusted_id // "-", (.generated_epoch // 0 | tostring),
         (.primary.context_left.remaining.percent // "-" | tostring)] | @tsv' "$hb" 2>/dev/null); then
@@ -246,7 +251,6 @@ EOF
     [ "$hb_sid" != - ] || hb_sid=''
     [ "$row" -gt 0 ] 2>/dev/null || row=$(wd_mtime "$hb")
     O_HB_AGE=$((now - row))
-    if [ "$ctx" != - ] && [ -n "$ctx" ]; then O_CTX=${ctx%%.*}; O_CTX_SRC=heartbeat; fi
   fi
   if [ -f "$st/.lock" ]; then
     O_LOCK_PID=$(head -n 1 "$st/.lock" 2>/dev/null | tr -cd '0-9')
@@ -254,6 +258,9 @@ EOF
     if fm_session_lock_anchor_instance_matches "$st" 2>/dev/null; then O_INSTANCE=match; else O_INSTANCE=mismatch; fi
   fi
   O_SESSION=$(fm_session_lock_recorded_session_id "$st" 2>/dev/null) || O_SESSION=$hb_sid
+  if [ "$ctx" != - ] && [ -n "$ctx" ] && [ "$hb_sid" = "$O_SESSION" ] && [ "$O_HB_AGE" != unknown ] && [ "$O_HB_AGE" -lt "$(cfgi watcher-stale-secs 900)" ]; then
+    O_CTX=${ctx%%.*}; O_CTX_SRC=heartbeat
+  fi
   # A second mate whose own heartbeat names another session, or none, uses the
   # parent's recorded endpoint for it.
   meta=''
@@ -368,17 +375,14 @@ wd_nudge() {
     wd_rate_open "$symptom" nudge "$(cfgi nudge-secs 900)" && wd_rec "$(wd_id)" "$symptom" nudge refused "text names a merge, deploy, or release word"
     return 0
   fi
+  if [ "$(wd_mode)" = act ] && [ "$O_COMPOSER" != empty ]; then wd_gap "$symptom held; composer is $O_COMPOSER, so nothing is typed"; fi
   wd_rate_open "$symptom" nudge "$(cfgi nudge-secs 900)" || return 0
   id=$(wd_id)
   if wd_do_not_touch "$O_HOME" "$O_TARGET"; then wd_rec "$id" "$symptom" nudge refused "endpoint is on do-not-touch"; return 0; fi
   if [ -z "$O_TARGET" ]; then wd_rec "$id" "$symptom" nudge refused "no recorded endpoint"; return 0; fi
   if [ "$(wd_mode)" != act ]; then wd_rec "$id" "$symptom" nudge dry-run "$body"; return 0; fi
-  if [ -n "$O_DIALOG" ] || { [ "$O_COMPOSER" != empty ] && [ "$O_COMPOSER" != unknown ]; }; then
+  if [ -n "$O_DIALOG" ] || [ "$O_COMPOSER" != empty ]; then
     wd_rec "$id" "$symptom" nudge refused "composer is $O_COMPOSER${O_DIALOG:+, dialog $O_DIALOG}; nothing typed"
-    return 0
-  fi
-  if [ "$O_COMPOSER" = unknown ] && { ! fm_wd_draft_readable "$O_COMPOSER_TEXT" || ! fm_wd_text_allowed "$O_COMPOSER_TEXT"; }; then
-    wd_rec "$id" "$symptom" nudge refused "composer is unknown and its visible text is unreadable or names a merge, deploy, or release word; nothing typed"
     return 0
   fi
   wd_rec "$id" "$symptom" nudge pending "$body"
@@ -564,6 +568,17 @@ wd_restart_gate() {  # <symptom> <kind>...  -> 0 to proceed; records the refusal
   if [ "$(cfg restart off)" != on ]; then wd_rec "$id" "$symptom" restart refused "restart is off; stall proven by $*"; return 1; fi
   if [ "$(wd_mode)" != act ]; then wd_rec "$id" "$symptom" restart dry-run "would restart; stall proven by $*"; return 1; fi
   return 0
+}
+
+wd_restart_available() {
+  local last
+  if [ "$(cfg restart off)" != on ]; then wd_gap "restart requested or context low, but restart is off; no handoff is asked for"; return 1; fi
+  if [ -f "$WD/escalated/$O_TAG" ]; then wd_gap "restart requested or context low, but restarts are escalated; no handoff is asked for"; return 1; fi
+  last=$(fm_wd_last_epoch "$LEDGER" "$O_HOME" '*' restart '^pending$')
+  if [ -n "$last" ] && [ $(($(wd_now) - last)) -lt "$(cfgi restart-secs 7200)" ]; then
+    wd_gap "restart held; last restart was $((($(wd_now) - last) / 60))m ago, so no handoff is asked for"
+    return 1
+  fi
 }
 
 wd_newest_session_handoff() {
@@ -816,6 +831,25 @@ wd_handle_quota() {
   done
 }
 
+wd_unsent_is_stable() {
+  [ "$O_COMPOSER" = pending ] && [ "$O_PREV_COMPOSER" = pending ] && [ "$O_SIG" = "$O_PREV_SIG" ] && [ "$O_TURN" = 0 ]
+}
+
+# Enter only for a whole, readable draft that names no merge, deploy, or release word.
+wd_submit_unsent() {
+  if ! fm_wd_draft_readable "$O_COMPOSER_TEXT"; then
+    wd_gap "unsent input is a paste placeholder or taller than the read window; Enter not pressed"
+    wd_rate_open pasted-input key "$(cfgi enter-secs 300)" &&
+      wd_rec "$(wd_id)" pasted-input key refused "the whole draft cannot be read; never accepted"
+  elif ! fm_wd_text_allowed "$O_COMPOSER_TEXT"; then
+    wd_rate_open pasted-input key "$(cfgi enter-secs 300)" &&
+      wd_rec "$(wd_id)" pasted-input key refused "pending text names a merge, deploy, or release word; never accepted"
+  else
+    wd_rate_open pasted-input key "$(cfgi enter-secs 300)" && wd_key pasted-input Enter "submit text left unsent"
+  fi
+  return 0
+}
+
 # Prints the epoch of the handoff nudge that counts for this low-context episode:
 # delivered, newer than the last restart, and younger than twice handoff-wait-secs.
 wd_handoff_nudge_epoch() {
@@ -837,6 +871,7 @@ wd_requested_restart() {  # <quiet-secs>
   wait=$(cfgi handoff-wait-secs 600)
   nudged=$(wd_handoff_nudge_epoch)
   if [ -z "$nudged" ] && [ "$O_RESTART_REQ" != 1 ]; then
+    if wd_unsent_is_stable; then wd_submit_unsent; return 0; fi
     wd_nudge handoff-request "context is low. Write a full handoff to data/handoff-<name>.md in your home, then create state/.watchdog-restart-request there. The watchdog then restarts this session, and the new session picks up from that handoff."
     [ -n "$(wd_handoff_nudge_epoch)" ] || wd_gap "low context; the handoff nudge was not delivered; no restart yet"
     return 0
@@ -881,7 +916,7 @@ wd_handle_subject() {
   elif [ -n "$O_DIALOG" ]; then
     symptom=dialog
     wd_handle_dialog
-  elif [ "$O_RESTART_REQ" = 1 ] || { [ -n "$O_CTX" ] && [ "$O_CTX" -le "$(cfgi restart-at-percent 8)" ]; }; then
+  elif { [ "$O_RESTART_REQ" = 1 ] || { [ -n "$O_CTX" ] && [ "$O_CTX" -le "$(cfgi restart-at-percent 8)" ]; }; } && wd_restart_available; then
     symptom=restart-requested
     wd_requested_restart "$quiet"
   elif [ "$O_LOOP" = rapid ] || { [ "$O_LOOP" = loop ] && [ "$O_OWED_N" -gt 0 ] && [ "$O_OWED_AGE" -ge "$owed" ]; }; then
@@ -903,18 +938,9 @@ $(printf '%s\n' "$O_LOOP_SAMPLE")"); then
     else
       wd_ladder_nudge_then_restart frozen "nothing changed for $((O_PANE_STATIC / 60)) minutes while $O_OWED_N inputs wait. Drain the wake queue and act on it." rendered filesystem kernel
     fi
-  elif [ "$O_COMPOSER" = pending ] && [ "$O_PREV_COMPOSER" = pending ] && [ "$O_SIG" = "$O_PREV_SIG" ] && [ "$O_TURN" = 0 ]; then
+  elif wd_unsent_is_stable; then
     symptom=pasted-input
-    if ! fm_wd_draft_readable "$O_COMPOSER_TEXT"; then
-      wd_gap "unsent input is a paste placeholder or taller than the read window; Enter not pressed"
-      wd_rate_open pasted-input key "$(cfgi enter-secs 300)" &&
-        wd_rec "$(wd_id)" pasted-input key refused "the whole draft cannot be read; never accepted"
-    elif ! fm_wd_text_allowed "$O_COMPOSER_TEXT"; then
-      wd_rate_open pasted-input key "$(cfgi enter-secs 300)" &&
-        wd_rec "$(wd_id)" pasted-input key refused "pending text names a merge, deploy, or release word; never accepted"
-    else
-      wd_rate_open pasted-input key "$(cfgi enter-secs 300)" && wd_key pasted-input Enter "submit text left unsent"
-    fi
+    wd_submit_unsent
   elif [ "$O_OWED_N" -gt 0 ] && [ "$O_OWED_AGE" -ge "$owed" ] && [ "$O_TURN" != 1 ]; then
     symptom=unread-input
     wd_nudge unread-input "$O_OWED_N inputs have waited $((O_OWED_AGE / 60)) minutes. Drain the wake queue and act on it."

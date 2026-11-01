@@ -139,7 +139,7 @@ owe_input() {  # <age-secs>
 run_wd() {  # <offset-secs> <args>...
   local off=$1
   shift
-  FM_TEST_SEAM=1 FM_WD_NOW=$((BASE + off)) FM_HOME="$H" bash "$WD" "$@"
+  FM_TEST_SEAM=1 FM_WD_TEST_COMPOSER="${FM_WD_TEST_COMPOSER:-empty}" FM_WD_NOW=$((BASE + off)) FM_HOME="$H" bash "$WD" "$@"
 }
 
 ledger() { cat "$H/state/watchdog/actions.tsv" 2>/dev/null; }
@@ -554,14 +554,15 @@ restart-command=/bin/true"
 }
 
 test_low_context_undelivered_nudge_starts_no_wait() {
-  make_home $'Captain session\n> draft\n  7% until auto-compact' "restart=on
+  make_home $'Captain session\n> [Pasted text #1 +40 lines]\n  7% until auto-compact' "restart=on
 restart-command=/bin/true"
   transcript 3000 "Working." "Testing." "Green."
   FM_WD_TEST_COMPOSER=pending run_wd 0 once >/dev/null 2>&1
   FM_WD_TEST_COMPOSER=pending run_wd 1000 once >/dev/null 2>&1
-  assert_equals 2 "$(ledger_rows handoff-request nudge refused)" "a refused nudge retries under the nudge rate limit"
+  assert_equals 1 "$(ledger_rows handoff-request nudge refused)" "the first nudge is refused onto the draft"
+  assert_equals 1 "$(ledger_rows pasted-input key refused)" "an unreadable draft gets no Enter: $(ledger | cut -f5-8)"
   assert_equals 0 "$(ledger_rows restart-requested restart pending)" "a refused nudge starts no wait: $(ledger | cut -f5-8)"
-  assert_grep "nudge was not delivered" "$H/data/watchdog/status.md" "the missing delivery is a reported gap"
+  assert_grep "Enter not pressed" "$H/data/watchdog/status.md" "the held draft is a reported gap"
   kill -0 "$LOCKPID" 2>/dev/null || fail "the session with an unsent draft was stopped"
   FM_WD_TEST_COMPOSER=empty run_wd 2000 once >/dev/null 2>&1
   assert_equals 1 "$(ledger_rows handoff-request nudge pending)" "the nudge goes out once the composer is empty"
@@ -623,6 +624,96 @@ test_question_nudge_follows_a_cleared_dialog() {
   assert_equals 1 "$(ledger_rows dialog key failed)" "a dialog that stays records the failed key"
   assert_equals 0 "$(ledger | awk -F'\t' '$5 == "question"' | wc -l | tr -d ' ')" "a failed key sends no nudge: $(ledger | cut -f5-8)"
   pass "question dialog: the nudge follows a cleared dialog, and only a cleared one"
+}
+
+test_low_context_asks_nothing_when_no_restart_can_run() {
+  make_home $'Captain session\n> \n  7% until auto-compact'
+  transcript 3000 "Working." "Testing." "Green."
+  FM_WD_TEST_COMPOSER=empty run_wd 0 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger | awk -F'\t' '$5 == "handoff-request"' | wc -l | tr -d ' ')" "restart off asks for no handoff: $(ledger | cut -f5-8)"
+  assert_grep "restart is off" "$H/data/watchdog/status.md" "restart off is a gap"
+
+  make_home $'Captain session\n> \n  7% until auto-compact' 'restart=on
+restart-command=/bin/true'
+  transcript 3000 "Working." "Testing." "Green."
+  mkdir -p "$H/state/watchdog/escalated"
+  printf '%s\n' "$BASE" > "$H/state/watchdog/escalated/home$CASE_N"
+  FM_WD_TEST_COMPOSER=empty run_wd 0 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger | awk -F'\t' '$5 == "handoff-request"' | wc -l | tr -d ' ')" "an escalated home asks for no handoff"
+  assert_grep "escalated" "$H/data/watchdog/status.md" "escalation is a gap"
+  pass "low context: no handoff is asked for when no restart can run"
+}
+
+test_restart_request_does_not_shadow_frozen_recovery() {
+  make_home $'Captain session\n> '
+  transcript 3000 "Working." "Testing." "Green."
+  owe_input 3000
+  : > "$H/state/.watchdog-restart-request"
+  fm_touch_epoch "$((BASE - 10))" "$H/state/.watchdog-restart-request"
+  FM_WD_TEST_COMPOSER=empty run_wd 0 once >/dev/null 2>&1
+  FM_WD_TEST_COMPOSER=empty run_wd 1000 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows frozen nudge pending)" "the frozen nudge still goes out: $(ledger | cut -f5-8)"
+  pass "a restart request that cannot run leaves frozen recovery in place"
+}
+
+test_low_context_submits_a_clean_draft_then_nudges() {
+  make_home $'Captain session\n> finish the summary\n  7% until auto-compact' 'restart=on
+restart-command=/bin/true'
+  transcript 3000 "Working." "Testing." "Green."
+  FM_WD_TEST_COMPOSER=pending run_wd 0 once >/dev/null 2>&1
+  FM_WD_TEST_COMPOSER=pending run_wd 1000 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows pasted-input key pending)" "the clean draft gets Enter: $(ledger | cut -f5-8)"
+  FM_WD_TEST_COMPOSER=empty run_wd 2000 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows handoff-request nudge pending)" "the nudge follows the submitted draft: $(ledger | cut -f5-8)"
+  pass "low context: a clean draft is submitted so the handoff nudge can follow"
+}
+
+test_stale_or_foreign_heartbeat_percent_is_ignored() {
+  local case_sid age
+  for case_sid in old other; do
+    make_home $'Captain session\n> ' 'restart=on
+restart-command=/bin/true'
+    transcript 3000 "Working." "Testing." "Green."
+    age=0
+    [ "$case_sid" = old ] && age=2000
+    jq -n --arg t "$T" --arg s "$([ "$case_sid" = other ] && printf 'another-session' || printf '%s' "$SID")" --argjson e "$((BASE - age))" \
+      '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:"tmux",target:$t,present:true},session:{trusted_id:$s},context_left:{remaining:{percent:7}}}}' \
+      > "$H/state/heartbeat.json"
+    FM_WD_TEST_COMPOSER=empty run_wd 0 once >/dev/null 2>&1
+    assert_equals 0 "$(ledger_rows handoff-request nudge pending)" "$case_sid heartbeat percent starts nothing: $(ledger | cut -f5-8)"
+  done
+  jq -n --arg t "$T" --arg s "$SID" --argjson e "$BASE" \
+    '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:"tmux",target:$t,present:true},session:{trusted_id:$s},context_left:{remaining:{percent:7}}}}' \
+    > "$H/state/heartbeat.json"
+  FM_WD_TEST_COMPOSER=empty run_wd 0 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows handoff-request nudge pending)" "a fresh percent for this session counts: $(ledger | cut -f5-8)"
+  pass "heartbeat percent counts only when fresh and for the current session"
+}
+
+test_orca_draft_is_never_typed_onto() {
+  make_home $'Captain session\n> '
+  transcript 3000 "Working." "Testing." "Green."
+  owe_input 3000
+  jq -n --arg s "$SID" --argjson e "$BASE" \
+    '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:"orca",target:"term-1",present:true},session:{trusted_id:$s}}}' \
+    > "$H/state/heartbeat.json"
+  cat > "$FAKEBIN/orca" <<SH
+#!/usr/bin/env bash
+case "\$1 \$2" in
+  "terminal read") printf '{"ok":true,"result":{"terminal":{"tail":["Captain session","> "],"draft":"merge PR #12"}}}\n' ;;
+  "terminal wait") printf '{"ok":true,"result":{}}\n' ;;
+  "terminal send") printf 'send\n' >> "$H/orca-sends.log" ;;
+  *) exit 1 ;;
+esac
+SH
+  chmod +x "$FAKEBIN/orca"
+  FM_WD_TEST_COMPOSER=empty run_wd 0 once >/dev/null 2>&1
+  FM_WD_TEST_COMPOSER=empty run_wd 1000 once >/dev/null 2>&1
+  rm -f "$FAKEBIN/orca"
+  assert_equals 0 "$(ledger_rows frozen nudge pending)" "an Orca draft takes no nudge: $(ledger | cut -f5-8)"
+  [ ! -s "$H/orca-sends.log" ] || fail "text was sent onto an Orca draft"
+  assert_grep "composer is pending-unproven" "$H/data/watchdog/status.md" "the hold is a gap"
+  pass "orca: a draft holds the nudge and is never submitted"
 }
 
 test_reserved_task_or_key_is_held_and_refused_nudges_are_gaps() {
@@ -687,7 +778,7 @@ test_reserved_model_switch_dialog_is_held() {
 
 test_unknown_composer_guards_the_nudge() {
   local screen
-  for screen in $'Captain session\n> merge PR #12' $'Captain session\n> [Pasted text #1 +40 lines]'; do
+  for screen in $'Captain session\n> merge PR #12' $'Captain session\n> [Pasted text #1 +40 lines]' $'Captain session\n> finish the summary' $'Captain session\n> '; do
     make_home "$screen"
     transcript 3000 "Working." "Testing." "Green."
     owe_input 3000
@@ -696,14 +787,9 @@ test_unknown_composer_guards_the_nudge() {
     assert_equals 1 "$(ledger_rows frozen nudge refused)" "an unsafe unknown composer refuses the nudge: $(ledger | cut -f5-8)"
     assert_equals 0 "$(ledger_rows frozen nudge pending)" "nothing is typed onto it"
     [ ! -s "$H/typed.log" ] || fail "text was typed onto an unknown composer: $(cat "$H/typed.log")"
+    assert_grep "composer is unknown" "$H/data/watchdog/status.md" "the hold is a gap"
   done
-  make_home $'Captain session\n> '
-  transcript 3000 "Working." "Testing." "Green."
-  owe_input 3000
-  FM_WD_TEST_COMPOSER=unknown run_wd 0 once >/dev/null 2>&1
-  FM_WD_TEST_COMPOSER=unknown run_wd 1000 once >/dev/null 2>&1
-  assert_equals 1 "$(ledger_rows frozen nudge pending)" "a readable clean prompt still gets the nudge: $(ledger | cut -f5-8)"
-  pass "unknown composer: a nudge needs a readable prompt with no merge word"
+  pass "unknown composer: a nudge types only on a composer proven empty"
 }
 
 test_orca_turn_probe_keeps_errors_unknown() {
@@ -881,6 +967,11 @@ fm_test_run \
   test_low_context_undelivered_nudge_starts_no_wait \
   test_restart_interval_holds_without_escalating \
   test_question_nudge_follows_a_cleared_dialog \
+  test_low_context_asks_nothing_when_no_restart_can_run \
+  test_restart_request_does_not_shadow_frozen_recovery \
+  test_low_context_submits_a_clean_draft_then_nudges \
+  test_stale_or_foreign_heartbeat_percent_is_ignored \
+  test_orca_draft_is_never_typed_onto \
   test_reserved_task_or_key_is_held_and_refused_nudges_are_gaps \
   test_second_mate_restart_ends_the_pass \
   test_reserved_model_switch_dialog_is_held \
