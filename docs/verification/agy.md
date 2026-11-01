@@ -202,7 +202,8 @@ The current guard probes a second allocation to reject reuse of the kept slot, t
 On tmux, `bin/fm-control.sh <id> exit` refuses to type `/quit` because the composer reads `unknown` (see [Composer](#composer-unknown-by-design)), so the guard retires each task with `bin/fm-teardown.sh`, which closes the window.
 
 The portable regression coverage for custody is in `tests/fm-agy-harness.test.sh` and `tests/fm-control-relaunch.test.sh`, using the self-contained Treehouse model in `tests/treehouse-helpers.sh` rather than a real Treehouse installation.
-The cases cover slot reuse prevention, original-worktree relaunch, ownership refusal, post-publication send/signal/backlog failures, unpublished allocation cleanup, and capability refusal before endpoint creation or stopping the old worker.
+The cases cover slot reuse prevention, original-worktree relaunch, ownership refusal, post-publication send/signal/backlog failures, and capability refusal before endpoint creation or stopping the old worker.
+The unpublished-allocation cases cover clean return and preservation of dirty or unreadable work, including tracked, staged, untracked, and failed-cwd-handoff cases; the [spawn header](../../bin/fm-spawn.sh) owns that cleanup contract.
 The relaunch matrix also covers legacy Claude/Codex transitions without owner claims and with the project lock held.
 The live-guard fixture rejects stale reports and incorrect tokens, sums, or worktrees, and checks that EXIT cleanup stops the isolated tmux server on success and failure, including report-wait failure.
 

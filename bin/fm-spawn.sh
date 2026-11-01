@@ -221,7 +221,8 @@
 #   owns the claim and bin/fm-teardown.sh owns what it protects. A slot that
 #   cannot be claimed refuses the spawn rather than launching a worker whose slot
 #   could later be released out from under its successor. A spawn that aborts
-#   while it still holds the allocation lock drops its own claim; an abort after
+#   while it still holds the allocation lock drops its own claim, except for
+#   AGY's retained custody described below; an abort after
 #   metadata publication has released that lock leaves the claim in place, and
 #   the next spawn's claim replaces it. A fresh polytoken spawn that fails and
 #   leaves no task record restores the pool as it found it: it retakes that lock
@@ -239,7 +240,11 @@
 #   return --if-lease-holder before endpoint creation. A pooled relaunch from
 #   or to AGY repeats that preflight before reserving its recorded checkout;
 #   fm-control.sh also runs it before stopping the old worker. Before metadata
-#   publication, an abort returns that lease and closes the unused endpoint.
+#   publication, an abort closes the unused endpoint and returns the lease only
+#   when the checkout is provably clean. Dirty or uninspectable work keeps its
+#   lease and claim, with a warning to preserve the work before manual return.
+#   A failed return also retains the claim. tests/fm-agy-harness.test.sh covers
+#   unpublished cleanup and preservation, including staged and untracked work.
 #   Project capacity: when this machine declares how many workers a project
 #   admits at once (config/project-capacity; bin/fm-project-capacity-lib.sh owns
 #   the declaration, what holds a place, and the race argument), a fresh ship or
@@ -1856,13 +1861,11 @@ spawn_abort_cleanup() {
     SPAWN_META_LOCK_HELD=0
     fm_lock_release "$SPAWN_META_LOCK" || true
   fi
-  # A fresh AGY or polytoken spawn that fails and leaves no record must leave the pool
-  # as it found it. Before its launch is delivered, the endpoint holds only a
-  # shell. Closing it releases polytoken's process lease; AGY's durable lease
-  # is returned below. Neither leaves a window or tab for a retry to trip over; the
-  # Firstmate wiring, task temp root, and staged launch file it wrote go with it.
+  # Before launch delivery, an unpublished AGY or polytoken endpoint holds only
+  # a shell, so closing it cannot interrupt a worker. AGY's lease handling
+  # follows the custody contract in the header, independently of endpoint close.
   # Once a launch was delivered into an endpoint still open, a worker may be
-  # running there, so those stay for the operator, as the refusal says.
+  # running there, so its wiring and task files stay for the operator.
   if [ "$status" -ne 0 ] && { [ "${HARNESS:-}" = polytoken ] || [ "${HARNESS:-}" = agy ]; } &&
     { [ "$SPAWN_FRESH_ENDPOINT_OPENED" = 1 ] || [ "$SPAWN_FRESH_WIRING_PENDING" = 1 ] ||
       [ "$SPAWN_TASK_TMP_CREATED" = 1 ] || [ -n "$SPAWN_STAGED_LAUNCH_FILE" ]; } &&
@@ -1906,9 +1909,8 @@ spawn_abort_cleanup() {
       fi
     fi
   fi
-  # A spawn that aborts after allocating or claiming its slot but before its record survives
-  # must not leave an unpublished lease or claim. The claim release is a
-  # read-then-remove, so it runs only while the project lock that wrote the
+  # An unpublished slot claim is released under the header's custody contract.
+  # The claim release is a read-then-remove, so it runs only while the project lock that wrote the
   # claim is still held (aborts before metadata publication); a later abort has
   # already released that lock and leaves the claim for the next spawn's
   # atomic replacement rather than racing it. A polytoken spawn instead retakes
