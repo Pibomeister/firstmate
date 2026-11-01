@@ -584,6 +584,7 @@ wd_restart() {  # <symptom> <kind>...
   token=$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')
   pid=$O_LOCK_PID
   wd_rec "$id" "$symptom" restart pending "token=$token old_pid=$pid handoff=$handoff"
+  WD_RESTARTED=1
   kill -TERM "$pid" 2>/dev/null || true
   i=0
   while wd_pid_alive "$pid" && [ "$i" -lt 30 ]; do sleep 1; i=$((i + 1)); done
@@ -825,6 +826,8 @@ $(printf '%s\n' "$O_LOOP_SAMPLE")"); then
     symptom=unread-input
     wd_nudge unread-input "$O_OWED_N inputs have waited $((O_OWED_AGE / 60)) minutes. Drain the wake queue and act on it."
   fi
+  # A restart this pass stopped the recorded session, so its old endpoint gets nothing more.
+  if [ "$WD_RESTARTED" = 1 ]; then WD_SYMPTOM=$symptom; return 0; fi
   if [ "$O_AFK" = 1 ] && [ "$O_DAEMON" = 0 ]; then
     [ -n "$symptom" ] || symptom=daemon-dead
     wd_nudge daemon-dead "away mode is on but the away daemon is not running. Re-arm it with bin/fm-afk-start.sh on this session's own terminal."
@@ -896,7 +899,7 @@ wd_once() {  # [home-filter]
   wd_subjects | while IFS=$'\t' read -r home parent id; do
     [ -z "$filter" ] || [ "$home" = "$filter" ] || continue
     wd_observe "$home" "$parent" "$id"
-    WD_SYMPTOM=ok
+    WD_SYMPTOM=ok WD_RESTARTED=0
     wd_handle_subject
     wd_health_line >> "$health"
   done

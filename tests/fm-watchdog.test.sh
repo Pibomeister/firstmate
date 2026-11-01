@@ -353,6 +353,7 @@ restart-command=$TMP_ROOT/fake-captain.sh"
 #!/usr/bin/env bash
 p="$*"
 printf '%s\n' "$$" > "$PWD/state/.lock"
+( sleep 100000 > /dev/null 2>&1 & printf '%s\n' "$!" > "$PWD/state/.supervise-daemon.pid" )
 eval "${p##*run: }" > "$PWD/pickup.out" 2>&1
 exec sleep 100000
 SH
@@ -360,15 +361,21 @@ SH
   printf 'unlanded\n' > "$H/data/unlanded-work.txt"
   transcript 3000 "Working." "Testing." "Green."
   owe_input 3000
+  # Away mode with a dead away daemon is due a nudge on both passes unless the restart stops it.
+  : > "$H/state/.afk"
+  printf '999999\n' > "$H/state/.supervise-daemon.pid"
   run_wd 0 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows daemon-dead nudge pending)" "the dead away daemon is nudged before any restart"
   run_wd 1000 once >/dev/null 2>&1
   assert_equals 1 "$(ledger_rows frozen restart pending)" "a proven stall after the nudge budget restarts"
+  assert_equals 0 "$(awk -F'\t' -v t="$((BASE + 1000))" '$1 == t && $6 != "restart" && $7 == "pending"' "$H/state/watchdog/actions.tsv" | wc -l | tr -d ' ')" \
+    "after a restart, the stopped session's old endpoint gets nothing more that pass: $(ledger | cut -f1,5-7)"
   for _ in $(seq 1 50); do [ -s "$H/pickup.out" ] && break; sleep 0.2; done
   kill -0 "$LOCKPID" 2>/dev/null && fail "the old session still runs"
-  LOCK_PIDS="$LOCK_PIDS $(cat "$H/state/.lock")"
+  LOCK_PIDS="$LOCK_PIDS $(cat "$H/state/.lock") $(cat "$H/state/.supervise-daemon.pid")"
   ls "$H/data/watchdog/handoffs/"*.md >/dev/null 2>&1 || fail "no restart handoff written"
   run_wd 1100 once >/dev/null 2>&1
-  assert_equals 1 "$(ledger_rows frozen restart "done")" "the pickup was verified: $(ledger | grep restart)"
+  assert_equals 1 "$(ledger_rows frozen restart "done")" "the pickup was verified with a live away daemon: $(ledger | grep restart)"
   assert_present "$H/data/unlanded-work.txt" "a restart never tears down work"
   # Two restarts inside a day is a loop: the next proven stall escalates instead.
   printf '%s\tx1\t%s\thome\tfrozen\trestart\tpending\told\n' "$((BASE - 20000))" "$(cd -P "$H" && pwd -P)" >> "$H/state/watchdog/actions.tsv"
