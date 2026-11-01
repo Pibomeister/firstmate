@@ -1107,7 +1107,7 @@ spawned kimi-proof-1 harness=kimi kind=scout window=firstmate:fm-kimi-proof-1 wo
 Kimi's own folder-trust registry listed that worktree only after spawn had answered the dialog, and nothing was pre-registered in `config.toml`.
 The worker read its instructions, wrote the one-line report `OK kimi seated`, and appended `done`; `bin/fm-teardown.sh kimi-proof-1` then cleaned it up.
 
-That `PATH` resolves `python3` to `/usr/bin/python3` 3.9.6, which has no `tomllib`, and `python3.11` to a version-manager shim that does not run, so the turn-end hook installer selected the newest uv-managed CPython, 3.13.9.
+That `PATH` resolves `python3` to `/usr/bin/python3` 3.9.6, which has no `tomllib`, and `python3.11` to a version-manager shim that does not run, so the turn-end hook installer selected uv-managed CPython 3.13.9.
 With no qualifying interpreter, the installer refuses before any config write and names each candidate (temporary `HOME`, `/bin/bash` 3.2.57):
 
 ```text

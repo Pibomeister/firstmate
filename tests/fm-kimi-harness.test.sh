@@ -697,7 +697,7 @@ kimi_python_case() { # <name>: prints "<home>|<fakebin>"
 
 run_kimi_hook_python() { # <home> <fakebin> <prefixes> <action>
   env -u XDG_DATA_HOME -u UV_PYTHON_INSTALL_DIR HOME="$1" PATH="$2" \
-    FM_KIMI_PYTHON_PREFIXES="$3" "$KIMI_HOOK" "$4" 2>&1
+    LC_ALL=C FM_TEST_KIMI_PYTHON_PREFIXES="$3" "$KIMI_HOOK" "$4" 2>&1
 }
 
 test_kimi_hook_install_selects_a_tomllib_python_deterministically() {
@@ -706,6 +706,8 @@ test_kimi_hook_install_selects_a_tomllib_python_deterministically() {
   home=${rec%%|*}
   fakebin=${rec#*|}
   uv="$home/.local/share/uv/python"
+  make_kimi_python "$uv/cpython-3.10.0-macos-aarch64-none/bin/python3" old
+  make_kimi_python "$uv/cpython-3.11.0-macos-aarch64-none/bin/python3" broken
   make_kimi_python "$uv/cpython-3.9.6-macos-aarch64-none/bin/python3" old
   make_kimi_python "$uv/cpython-3.12.4-macos-aarch64-none/bin/python3" real "$home/logs/uv-3.12.4"
   make_kimi_python "$uv/cpython-3.13.9-macos-aarch64-none/bin/python3" real "$home/logs/uv-3.13.9"
@@ -714,10 +716,15 @@ test_kimi_hook_install_selects_a_tomllib_python_deterministically() {
   out=$(run_kimi_hook_python "$home" "$fakebin" '' install) || rc=$?
   expect_code 0 "$rc" "Kimi hook install should select a uv-managed Python past a tomllib-less python3: $out"
   assert_present "$home/.kimi-code/fm-turn-end.sh" "Kimi hook install through uv Python wrote no hook script"
-  grep -Fxq -- - "$home/logs/uv-3.13.10" \
-    || fail "Kimi hook install did not run on the newest uv-managed Python"
-  assert_absent "$home/logs/uv-3.13.9" "Kimi hook install ordered uv versions as text rather than numbers"
-  assert_absent "$home/logs/uv-3.12.4" "Kimi hook install tried an older uv Python before the newest"
+  grep -Fxq -- - "$home/logs/uv-3.12.4" \
+    || fail "Kimi hook install did not run on the first compatible uv-managed Python"
+  assert_absent "$home/logs/uv-3.13.10" "Kimi hook install preferred a newer uv Python over the first compatible candidate"
+  assert_absent "$home/logs/uv-3.13.9" "Kimi hook install continued searching after finding a compatible uv Python"
+  rc=0
+  out=$(run_kimi_hook_python "$home" "$fakebin" '' remove) || rc=$?
+  expect_code 0 "$rc" "Kimi hook remove should select the same uv-managed Python: $out"
+  cmp -s "$home/config-before.toml" "$home/.kimi-code/config.toml" \
+    || fail "Kimi hook remove through uv Python did not restore config bytes"
 
   rec=$(kimi_python_case brew)
   home=${rec%%|*}
@@ -737,6 +744,29 @@ test_kimi_hook_install_selects_a_tomllib_python_deterministically() {
   cmp -s "$home/config-before.toml" "$home/.kimi-code/config.toml" \
     || fail "Kimi hook remove through the selected Python did not restore config bytes"
   pass "Kimi hook install selects a tomllib Python in its documented order"
+}
+
+test_kimi_hook_python_prefix_override_requires_test_seam() {
+  local rec home fakebin out rc
+  rec=$(kimi_python_case unarmed-prefix)
+  home=${rec%%|*}
+  fakebin=${rec#*|}
+  make_kimi_python "$home/brew/bin/python3" real "$home/logs/brew"
+  make_kimi_python "$home/.local/share/uv/python/cpython-3.12.4-macos-aarch64-none/bin/python3" real "$home/logs/uv"
+  rc=0
+  out=$(FM_TEST_SEAM=0 FM_KIMI_PYTHON_PREFIXES="$home/brew" \
+    run_kimi_hook_python "$home" "$fakebin" "$home/brew" install) || rc=$?
+  expect_code 0 "$rc" "Kimi hook install should find a production Python with test overrides disabled: $out"
+  assert_present "$home/.kimi-code/fm-turn-end.sh" "Kimi hook install with test overrides disabled wrote no hook script"
+  assert_absent "$home/logs/brew" "Kimi hook install used a Homebrew prefix override outside the test seam"
+  rc=0
+  out=$(FM_TEST_SEAM=0 FM_KIMI_PYTHON_PREFIXES="$home/brew" \
+    run_kimi_hook_python "$home" "$fakebin" "$home/brew" remove) || rc=$?
+  expect_code 0 "$rc" "Kimi hook remove should ignore prefix overrides outside the test seam: $out"
+  cmp -s "$home/config-before.toml" "$home/.kimi-code/config.toml" \
+    || fail "Kimi hook remove with test overrides disabled did not restore config bytes"
+  assert_absent "$home/logs/brew" "Kimi hook remove used a Homebrew prefix override outside the test seam"
+  pass "Kimi hook Python prefix overrides stay inside the test seam"
 }
 
 test_kimi_hook_install_refusal_names_every_searched_python() {
@@ -1723,6 +1753,7 @@ test_kimi_hook_remove_preserves_owned_newline_boundary
 test_kimi_hook_fails_closed_on_missing_malformed_or_partial_config
 test_kimi_hook_install_refuses_without_jq
 test_kimi_hook_install_selects_a_tomllib_python_deterministically
+test_kimi_hook_python_prefix_override_requires_test_seam
 test_kimi_hook_install_refusal_names_every_searched_python
 test_kimi_launch_then_send_is_verified
 test_kimi_spawn_refuses_shared_task_temp_root

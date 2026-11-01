@@ -17,9 +17,8 @@
 # the first one that imports tomllib runs install or remove:
 #   1. python3, then python3.14 down to python3.11, on PATH
 #   2. bin/python3, then bin/python3.14 down to bin/python3.11, under each
-#      Homebrew prefix in FM_KIMI_PYTHON_PREFIXES (default: /opt/homebrew
-#      /usr/local)
-#   3. uv-managed CPython, newest version first, under UV_PYTHON_INSTALL_DIR
+#      Homebrew prefix: /opt/homebrew, then /usr/local
+#   3. uv-managed CPython, in glob order, under UV_PYTHON_INSTALL_DIR
 #      (default: ${XDG_DATA_HOME:-$HOME/.local/share}/uv/python)
 # When none qualifies, the refusal names every searched interpreter and why it
 # did not qualify, before any config write.
@@ -34,7 +33,7 @@ set -u
 case "${1:-}" in
   install|remove) ACTION=$1 ;;
   -h|--help)
-    sed -n '2,29{s/^# \{0,1\}//;p;}' "$0"
+    sed -n '2,28{s/^# \{0,1\}//;p;}' "$0"
     exit 0
     ;;
   *)
@@ -79,50 +78,10 @@ $1
   return 1
 }
 
-# Try uv-managed CPython installs under <root>, highest version first.
-kimi_python_try_uv() { # <root>
-  local candidate rest major minor patch key best best_key i n round
-  local -a paths keys
-  paths=()
-  keys=()
-  for candidate in "$1"/cpython-3.*/bin/python3; do
-    [ -x "$candidate" ] || continue
-    rest=${candidate##*/cpython-}
-    major=${rest%%.*}
-    rest=${rest#*.}
-    minor=${rest%%.*}
-    rest=${rest#*.}
-    patch=${rest%%[!0-9]*}
-    case "$major$minor" in '' | *[!0-9]*) continue ;; esac
-    key=$((10#$major * 1000000 + 10#$minor * 1000 + 10#${patch:-0}))
-    paths+=("$candidate")
-    keys+=("$key")
-  done
-  n=${#paths[@]}
-  if [ "$n" -eq 0 ]; then
-    kimi_python_note "$1/cpython-3.*/bin/python3 (uv-managed): none installed"
-    return 1
-  fi
-  # Each round tries the highest remaining version, then retires its key.
-  for ((round = 0; round < n; round++)); do
-    best=0
-    best_key=-1
-    for ((i = 0; i < n; i++)); do
-      if [ "${keys[i]}" -gt "$best_key" ]; then
-        best=$i
-        best_key=${keys[i]}
-      fi
-    done
-    kimi_python_try "${paths[best]}" uv-managed && return 0
-    keys[best]=-1
-  done
-  return 1
-}
-
 # The search order this header documents; the first qualifying interpreter
 # wins, so the same machine always selects the same one.
 kimi_python_select() {
-  local name path prefix missing=''
+  local name path prefix candidate uv_root found_uv=0 missing='' prefixes='/opt/homebrew /usr/local'
   for name in python3 python3.14 python3.13 python3.12 python3.11; do
     if path=$(command -v "$name" 2>/dev/null) && [ -n "$path" ]; then
       kimi_python_try "$path" "$name on PATH" && return 0
@@ -131,7 +90,10 @@ kimi_python_select() {
     fi
   done
   [ -z "$missing" ] || kimi_python_note "not on PATH:$missing"
-  for prefix in ${FM_KIMI_PYTHON_PREFIXES-/opt/homebrew /usr/local}; do
+  if [ "${FM_TEST_SEAM:-}" = 1 ]; then
+    prefixes=${FM_TEST_KIMI_PYTHON_PREFIXES-$prefixes}
+  fi
+  for prefix in $prefixes; do
     missing=''
     for name in python3 python3.14 python3.13 python3.12 python3.11; do
       if [ -x "$prefix/bin/$name" ]; then
@@ -142,7 +104,14 @@ kimi_python_select() {
     done
     [ -z "$missing" ] || kimi_python_note "not in $prefix/bin:$missing"
   done
-  kimi_python_try_uv "${UV_PYTHON_INSTALL_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/uv/python}"
+  uv_root=${UV_PYTHON_INSTALL_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/uv/python}
+  for candidate in "$uv_root"/cpython-3.*/bin/python3; do
+    [ -x "$candidate" ] || continue
+    found_uv=1
+    kimi_python_try "$candidate" uv-managed && return 0
+  done
+  [ "$found_uv" -ne 0 ] || kimi_python_note "$uv_root/cpython-3.*/bin/python3 (uv-managed): none installed"
+  return 1
 }
 
 if ! kimi_python_select; then
