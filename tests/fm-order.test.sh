@@ -288,6 +288,38 @@ test_hold_overrides_older_orders_and_travels_with_relays() {
   pass "a hold overrides older orders, is listed first, and travels with every relay until lifted"
 }
 
+# An unreadable order store must fail the holds read: an empty answer means no
+# hold is in force, and senders would relay work without its limits.
+assert_holds_read_fails() {  # <home> <path> <mode> <label>
+  local rc=0 before out
+  before=$(stat -f %Lp "$2" 2>/dev/null || stat -c %a "$2")
+  chmod "$3" "$2"
+  out=$(run_order "$1" holds --relay 2>/dev/null) || rc=$?
+  chmod "$before" "$2"
+  [ "$rc" -ne 0 ] || fail "holds --relay must fail when $4, got rc=0 out=[$out]"
+  assert_equals "" "$out" "a failed holds read prints no block when $4"
+}
+
+test_holds_read_fails_when_the_store_is_unreadable() {
+  local home hold orders
+  if [ "$(id -u)" = 0 ]; then
+    pass "SKIP unreadable holds read: root ignores file modes"
+    return 0
+  fi
+  home=$(make_home holds-unreadable)
+  orders="$home/data/orders"
+  run_order "$home" send --hold --from captain "close nothing" >/dev/null
+  hold=$(only_id "$home" pending)
+  assert_holds_read_fails "$home" "$orders/pending" 000 "pending has no permissions"
+  assert_holds_read_fails "$home" "$orders/pending" 300 "pending cannot be listed"
+  assert_holds_read_fails "$home" "$orders/pending" 600 "pending cannot be searched"
+  assert_holds_read_fails "$home" "$orders/acked" 000 "acked is unreadable"
+  assert_holds_read_fails "$home" "$orders" 000 "the orders directory is unreadable"
+  assert_holds_read_fails "$home" "$orders/pending/$hold.order" 000 "an order file is unreadable"
+  assert_contains "$(run_order "$home" holds --relay)" "- hold $hold" "a readable store relays the hold again"
+  pass "holds --relay fails when an order directory or file cannot be read"
+}
+
 # Finishing an order frees its idempotency reservation only when that
 # reservation still names it, so a retry of another open order never duplicates.
 test_finish_frees_only_its_own_reservation() {
@@ -479,6 +511,7 @@ test_doorbell_defers_over_an_unproven_composer
 test_restart_gate_requires_every_open_order_in_the_handoff
 test_one_sweep_runs_at_a_time
 test_hold_overrides_older_orders_and_travels_with_relays
+test_holds_read_fails_when_the_store_is_unreadable
 test_finish_frees_only_its_own_reservation
 test_sweep_redelivers_twice_then_escalates_once
 test_sender_resend_never_starves_the_sweep

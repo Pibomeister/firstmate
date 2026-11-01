@@ -495,12 +495,19 @@ cmd_resend() {
 # ---------------------------------------------------------------- holds
 
 # Holds in force (open: pending or acked), newest first, one "<id> <state>" per line.
+# Fails when an order directory or file cannot be read, because an empty answer
+# means no hold is in force. A file a concurrent ack or finish moved away is not
+# a failure: pending is listed before acked, so an acked hold is still found.
 holds_in_force() {
-  local s f
+  local s f d
+  for d in "$ORDERS" "$ORDERS/pending" "$ORDERS/acked"; do
+    [ ! -d "$d" ] || { [ -r "$d" ] && [ -x "$d" ]; } || die "cannot read $d"
+  done
   for s in pending acked; do
     [ -d "$ORDERS/$s" ] || continue
     for f in "$ORDERS/$s"/*.order; do
       [ -f "$f" ] || continue
+      [ -r "$f" ] || [ ! -e "$f" ] || die "cannot read $f"
       [ "$(order_kind "$f")" = hold ] || continue
       f=${f##*/}
       printf '%s %s\n' "${f%.order}" "$s"

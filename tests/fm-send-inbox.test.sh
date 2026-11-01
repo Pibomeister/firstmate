@@ -602,6 +602,30 @@ SH
   pass "fm-send holds: a failed holds read leaves a reused correlation resendable"
 }
 
+test_unreadable_holds_store_sends_nothing() {
+  local dir err rc=0 pending
+  if [ "$(id -u)" = 0 ]; then
+    pass "SKIP fm-send unreadable holds: root ignores file modes"
+    return 0
+  fi
+  dir=$(setup_case holds-unreadable)
+  err="$dir/send.err"
+  env -u FM_DATA_OVERRIDE -u FM_STATE_OVERRIDE FM_HOME="$dir/home" "$ROOT/bin/fm-order.sh" \
+    send --hold --from captain "close nothing" >/dev/null || fail "could not send the hold fixture"
+  pending="$dir/home/data/orders/pending"
+  chmod 000 "$pending"
+  run_send "$dir" "$err" -- t1 "triage the stale PRs" || rc=$?
+  chmod 755 "$pending"
+  [ "$rc" -ne 0 ] || fail "a send must stop when the pending orders cannot be read"
+  assert_contains "$(cat "$err")" "nothing was sent" "the refusal says nothing was sent"
+  [ ! -e "$dir/home/state/t1.inbox/001.msg" ] || fail "an unreadable holds store must not record the steer"
+  assert_not_contains "$(cat "$dir/send.log")" "triage the stale PRs" "an unreadable holds store must not type the steer"
+  assert_not_contains "$(cat "$dir/send.log")" "inbox" "an unreadable holds store must not ring the doorbell"
+  run_send "$dir" "$err" -- t1 "triage the stale PRs" || fail "a send must work once the store is readable: $(cat "$err")"
+  assert_contains "$(record_body _ "$dir/home/state/t1.inbox/001.msg")" "close nothing" "the resend carries the hold"
+  pass "fm-send holds: an unreadable holds store refuses the send and sends nothing"
+}
+
 test_explicit_target_stays_typed
 test_key_path_never_touches_inbox
 test_secondmate_marker_and_enqueue_delivery
@@ -612,3 +636,4 @@ test_empty_message_refused
 test_standing_holds_travel_with_the_steer
 test_standing_holds_travel_to_an_explicit_target
 test_holds_read_failure_leaves_reused_correlation_resendable
+test_unreadable_holds_store_sends_nothing
