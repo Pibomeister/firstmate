@@ -54,8 +54,8 @@ The Stop payload includes `cwd`, but the tracked hook does not use it to choose 
 Codex runs the Stop command with process PWD set to the hook-loaded project root, while no `CODEX_PROJECT_DIR`, `CODEX_WORKSPACE_ROOT`, or `CODEX_CWD` root variable is set.
 The tracked hook anchors to `pwd -P`, verifies that root is Firstmate-shaped and hook-bearing, and then invokes the guard with the original payload.
 
-Codex's primary watcher owner is the Stop hook: it detaches the supervision host park when the home has one, otherwise the continuity watcher, and the turn ends.
+Codex's primary watcher owner is the Stop hook: it detaches a persistent watcher or lets the turn end.
 The local tmux or Herdr secondmate exception uses an identity-bound watcher outside the turn; [`turnend-guard.md`](../../../../../docs/turnend-guard.md#codex-mode) owns that handoff and its supported ownership modes.
 Poll a checkpoint only while one this session already started is still running.
-In a home with `config/supervision-host` and no `config/supervision-host-off` the Stop hook's park runs the supervision host instead of the watcher, with Claude's print mode as its headless engine; [`supervision-host.md`](../../../../../docs/supervision-host.md) owns the host and that bound.
+In a home with `config/supervision-host` and no `config/supervision-host-off` a foreground `../../../bin/fm-watch-checkpoint.sh` runs the supervision host instead of the watcher, with Claude's print mode as its headless engine, and holds for at least an hour while away; [`supervision-host.md`](../../../../../docs/supervision-host.md) owns the host and that bound.
 Codex's PreToolUse watcher-arm seatbelt blocks directly through its project hook.

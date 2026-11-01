@@ -122,10 +122,6 @@ case "$HARNESS" in
     fi
     ;;
 esac
-codex_continuity='The Stop hook re-arms a persistent watcher or allows this turn to end.'
-if [ -n "$HOST_SNIPPET" ]; then
-  codex_continuity='The Stop hook starts the supervision host on this home and allows this turn to end once no checkpoint of yours is running.'
-fi
 
 SECONDMATE_MODE=0
 if [ "$HARNESS" = codex ] && [ "$AFK" -eq 0 ] && [ -x "$SCRIPT_DIR/fm-watch.sh" ] \
@@ -186,7 +182,6 @@ render_snippet() {  # [snippet]
     line=${line//__FM_X_MODE_ENV__/$x_mode_env}
     line=${line//__FM_GROK_ARM_COMMAND__/$grok_arm_command}
     line=${line//__FM_GROK_ARM__/$grok_arm}
-    line=${line//__FM_CODEX_CONTINUITY__/$codex_continuity}
     printf '%s\n' "$line"
   done < "$snippet"
 }
@@ -224,8 +219,6 @@ repair_line() {
     codex)
       if [ "$SECONDMATE_MODE" -eq 1 ]; then
         printf '%s%s\n' "$prefix" 'do not start a foreground checkpoint. Tell the parent that the outside-turn watcher failed, then stop. The Stop hook bounds repeated blocks.'
-      elif [ -n "$HOST_SNIPPET" ]; then
-        printf '%s%s\n' "$prefix" 'do not start another foreground checkpoint. The Stop hook starts the supervision host or allows this turn to end. Poll a checkpoint only while it is still running, then stop.'
       else
         printf '%s%s\n' "$prefix" 'do not start another foreground checkpoint. The Stop hook re-arms a persistent watcher or allows this turn to end. Poll a checkpoint only while it is still running, then stop.'
       fi
@@ -276,11 +269,7 @@ ordinary_wake_line() {
       printf '%s\n' '- Ordinary wake: the Stop-owned auto-arm (bin/fm-claude-stop-autoarm.sh) already owns watcher continuity; drain and handle the wake, and do not arm another cycle yourself.'
       ;;
     codex)
-      if [ -n "$HOST_SNIPPET" ]; then
-        printf '%s\n' '- Ordinary wake: drain and acknowledge the wake, then end the turn. The Stop hook starts the supervision host if it is not running. Do not start another foreground checkpoint.'
-      else
-        printf '%s\n' '- Ordinary wake: drain and acknowledge the wake, then end the turn. The Stop hook re-arms a persistent watcher. Do not start another foreground checkpoint.'
-      fi
+      printf '%s\n' '- Ordinary wake: drain and acknowledge the wake, then end the turn. The Stop hook re-arms a persistent watcher. Do not start another foreground checkpoint.'
       ;;
     pi|pi-signed)
       printf '%s\n' '- Ordinary wake: the Pi extension already owns watcher continuity; do not arm another cycle.'

@@ -1070,10 +1070,10 @@ unit_supervision_host_other_harnesses_run_no_away_daemon() {
   [ "$rc" -eq 0 ] && [ -f "$st/state/.afk-contract" ] \
     || fail "codex: the entry must record the posture without claiming a supervisor: $out"
   printf '%s' "$out" | grep -F 'Away supervision is not running yet:' >/dev/null \
-    || fail "codex: a record without a watcher must name the missing owner: $out"
+    || fail "codex: a record without a watcher must name the missing checkpoint: $out"
   [ ! -e "$st/state/.watch.lock" ] && [ ! -e "$st/state/.supervision-host" ] \
     || fail "codex: entry must not fabricate a watcher or host record"
-  pass "codex: a recorded away posture names the missing Stop-hook owner without fabricating readiness"
+  pass "codex: a recorded away posture names the missing foreground checkpoint without fabricating readiness"
   rm -rf "$st"
 }
 

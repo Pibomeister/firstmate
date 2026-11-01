@@ -101,18 +101,6 @@ fm_watch_hold_active() {
   return 0
 }
 
-# The pane environment only names the candidate endpoint, tmux first as in
-# fm_backend_detect; fm_watch_pane_binding_proved owns its proof.
-fm_watch_pane_candidate() {
-  if [ -n "${TMUX_PANE:-}" ] && [ -n "${TMUX:-}" ]; then
-    FM_SM_BACKEND=tmux FM_SM_TARGET=$TMUX_PANE FM_SM_ROUTE=${TMUX%%,*}
-  elif [ -n "${HERDR_SESSION:-}" ] && [ -n "${HERDR_PANE_ID:-}" ]; then
-    FM_SM_BACKEND=herdr FM_SM_TARGET=$HERDR_SESSION:$HERDR_PANE_ID FM_SM_ROUTE=$HERDR_SESSION
-  else
-    return 1
-  fi
-}
-
 # Local Codex secondmates keep the existing watcher, not a model tool session,
 # alive. The parent binding supplies the existing steering inbox and doorbell.
 fm_secondmate_watch_selected() {
@@ -122,7 +110,15 @@ fm_secondmate_watch_selected() {
   # shellcheck source=bin/fm-supervision-engine-lib.sh
   . "$FM_PUSH_TRANSITION_LIB_DIR/fm-supervision-engine-lib.sh"
   fm_root_is_secondmate_home "$FM_HOME" || return 1
-  fm_watch_pane_candidate || return 1
+  # The pane environment only names the candidate endpoint, tmux first as in
+  # fm_backend_detect; fm_secondmate_watch_binding_valid owns its proof.
+  if [ -n "${TMUX_PANE:-}" ] && [ -n "${TMUX:-}" ]; then
+    FM_SM_BACKEND=tmux FM_SM_TARGET=$TMUX_PANE FM_SM_ROUTE=${TMUX%%,*}
+  elif [ -n "${HERDR_SESSION:-}" ] && [ -n "${HERDR_PANE_ID:-}" ]; then
+    FM_SM_BACKEND=herdr FM_SM_TARGET=$HERDR_SESSION:$HERDR_PANE_ID FM_SM_ROUTE=$HERDR_SESSION
+  else
+    return 1
+  fi
   # shellcheck disable=SC2153 # CONFIG is set by bin/fm-watch.sh.
   [ ! -e "$STATE/.afk" ] && ! fm_supervision_host_enabled "$CONFIG" codex || return 1
   FM_SM_INBOX=$(fm_secondmate_home_inbox "$FM_HOME") && [ "${FM_TASK_INBOX:-}" = "$FM_SM_INBOX" ] || return 1
@@ -139,44 +135,8 @@ fm_secondmate_watch_selected() {
 # backend; a file without the fifth line is a tmux binding. The owner must
 # descend from the pane's shell and sit in its foreground group.
 fm_secondmate_watch_binding_valid() {
-  fm_secondmate_watch_selected || return 1
-  fm_watch_pane_binding_proved
-}
-
-# A plain Codex primary's detached hold rings its own steering inbox over the
-# same binding file, doorbell and record route as a secondmate hold.
-fm_codex_hold_binding_valid() {
-  [ ! -e "$STATE/.afk" ] && fm_watch_pane_candidate || return 1
-  FM_SM_ID=codex-primary
-  FM_SM_INBOX=$STATE/$FM_SM_ID.inbox
-  fm_watch_pane_binding_proved
-}
-
-fm_hold_bell_binding_valid() {
-  if [ "${FM_WATCH_CODEX_HOLD:-}" = 1 ]; then
-    fm_codex_hold_binding_valid
-  else
-    fm_secondmate_watch_binding_valid
-  fi
-}
-
-fm_watch_pane_binding_write() {
-  local pid identity tmp
-  pid=$(cat "$STATE/.lock")
-  identity=$(fm_pid_identity "$pid") || return 1
-  tmp=$(mktemp "$STATE/.secondmate-watch.XXXXXX") || return 1
-  printf '%s\n' "$pid" "$identity" "$FM_SM_TARGET" "$FM_SM_ROUTE" "$FM_SM_BACKEND" > "$tmp" && mv "$tmp" "$STATE/.secondmate-watch"
-}
-
-fm_codex_hold_bind() {
-  # shellcheck source=bin/fm-session-lock-lib.sh
-  . "$FM_PUSH_TRANSITION_LIB_DIR/fm-session-lock-lib.sh"
-  fm_watch_pane_candidate && fm_session_lock_owned_by_self "$STATE" || return 1
-  fm_watch_pane_binding_write && fm_codex_hold_binding_valid
-}
-
-fm_watch_pane_binding_proved() {
   local target route backend pane_pid fg
+  fm_secondmate_watch_selected || return 1
   [ ! -L "$STATE/.secondmate-watch" ] && [ -f "$STATE/.secondmate-watch" ] || return 1
   {
     IFS= read -r FM_SM_PID && IFS= read -r FM_SM_IDENTITY && IFS= read -r target && IFS= read -r route \
@@ -208,7 +168,7 @@ fm_secondmate_watch_status() {
 }
 
 fm_secondmate_watch_start() {
-  local deadline monitor=0
+  local pid identity tmp deadline monitor=0
   fm_secondmate_watch_selected || { echo 'secondmate watcher: unsupported home, route or ownership mode' >&2; return 1; }
   fm_secondmate_watch_status && return 0
   [ "$("$FM_PUSH_TRANSITION_LIB_DIR/fm-harness.sh")" = codex ] || { echo 'secondmate watcher: caller is not Codex' >&2; return 1; }
@@ -216,7 +176,10 @@ fm_secondmate_watch_start() {
   . "$FM_PUSH_TRANSITION_LIB_DIR/fm-session-lock-lib.sh"
   fm_session_lock_owned_by_self "$STATE" || { echo 'secondmate watcher: session lock is not owned by this caller' >&2; return 1; }
   fm_watcher_healthy "$STATE" "$FM_PUSH_TRANSITION_LIB_DIR/fm-watch.sh" "${FM_GUARD_GRACE:-300}" "$FM_HOME" && { echo 'secondmate watcher: an existing watcher owns supervision' >&2; return 1; }
-  fm_watch_pane_binding_write || return 1
+  pid=$(cat "$STATE/.lock")
+  identity=$(fm_pid_identity "$pid") || return 1
+  tmp=$(mktemp "$STATE/.secondmate-watch.XXXXXX") || return 1
+  printf '%s\n' "$pid" "$identity" "$FM_SM_TARGET" "$FM_SM_ROUTE" "$FM_SM_BACKEND" > "$tmp" && mv "$tmp" "$STATE/.secondmate-watch" || return 1
   fm_secondmate_watch_binding_valid || return 1
   case $- in *m*) monitor=1 ;; esac
   set -m
@@ -233,25 +196,22 @@ fm_secondmate_watch_start() {
 
 fm_secondmate_watch_notify() {
   local rec body ring_rc=0
-  fm_hold_bell_binding_valid || return 1
+  fm_secondmate_watch_binding_valid || return 1
   # shellcheck source=bin/fm-task-inbox-lib.sh
   . "$FM_PUSH_TRANSITION_LIB_DIR/fm-task-inbox-lib.sh"
   [ ! -L "$STATE/.secondmate-watch-message" ] || return 1
   rec=$(cat "$STATE/.secondmate-watch-message" 2>/dev/null || true)
-  if [ "${rec%/*}" != "$FM_SM_INBOX" ] || [ ! -f "$rec" ]; then
-    body=$(printf '%s\n' 'Read state/.supervision-host-park.out if it exists, run bin/fm-wake-drain.sh, handle and acknowledge the durable watcher events, send any resulting actions and parent replies, then end this turn.' | "$FM_PUSH_TRANSITION_LIB_DIR/fm-operational-input.sh" encode watcher) || return 1
+  if [ "${rec%/*}" != "$FM_TASK_INBOX" ] || [ ! -f "$rec" ]; then
+    body=$(printf '%s\n' 'Run bin/fm-wake-drain.sh, handle and acknowledge the durable watcher events, send any resulting actions and parent replies, then end this turn.' | "$FM_PUSH_TRANSITION_LIB_DIR/fm-operational-input.sh" encode watcher) || return 1
     rec=$(fm_task_inbox_write "${FM_SM_INBOX%/*}" "$FM_SM_ID" "$body") || return 1
     printf '%s\n' "$rec" > "$STATE/.secondmate-watch-message" || return 1
-  elif [ "${FM_WATCH_CODEX_HOLD:-}" != 1 ] || [ "${FM_SM_NOTIFY_RETRY:-0}" -eq 0 ]; then
+  else
     return 0
   fi
-  fm_hold_bell_binding_valid || return 1
+  fm_secondmate_watch_binding_valid || return 1
   fm_task_inbox_ring "$FM_SM_BACKEND" "$FM_SM_TARGET" "$rec" "$FM_SM_ID" || ring_rc=$?
   case "$ring_rc" in
-    1|2)
-      [ "${FM_WATCH_CODEX_HOLD:-}" != 1 ] || return 1
-      fm_task_inbox_mark_retry "${FM_SM_INBOX%/*}" "$FM_SM_ID" "$rec"
-      ;;
+    1|2) fm_task_inbox_mark_retry "${FM_SM_INBOX%/*}" "$FM_SM_ID" "$rec" ;;
     3) return 1 ;;
   esac
 }
@@ -287,8 +247,8 @@ wake() {
     FM_WAKE_POST_OUTPUT_ACTION=
   fi
   [ "$output_status" -eq 0 ] || exit "$output_status"
-  if [ "${FM_WATCH_SECONDMATE_HOLD:-}" = 1 ] || [ "${FM_WATCH_CODEX_HOLD:-}" = 1 ]; then
-    # shellcheck disable=SC2034 # Read by bin/fm-watch.sh's hold loop.
+  if [ "${FM_WATCH_SECONDMATE_HOLD:-}" = 1 ]; then
+    # shellcheck disable=SC2034 # Read by bin/fm-watch.sh's secondmate hold loop.
     fm_secondmate_watch_notify || FM_SM_NOTIFY_RETRY=1
   fi
   if fm_watch_hold_active; then

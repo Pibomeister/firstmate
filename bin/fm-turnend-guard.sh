@@ -70,14 +70,12 @@
 #      bounds bin/fm-watch-checkpoint.sh documents).
 #   2. When this session is not a secondmate, state/.afk is absent, and rule 1
 #      does not apply, the hook tries once to detach an owner through
-#      bin/fm-watch-arm.sh --detach-hold: the supervision host's park on a home
-#      that selected it, and a persistent hold otherwise. Either owner rings
-#      the steering-inbox doorbell when the pane route is proven. A healthy
-#      watcher that is not this session's own checkpoint then allows the stop
-#      when no wake is queued. If no owner can be confirmed and no wake is
-#      queued, the hook allows the stop and prints a loud downtime notice
-#      instead of naming a checkpoint. A hold with no provable pane allows the
-#      stop with a notice that wakes wait for the captain's next message.
+#      bin/fm-watch-arm.sh --detach-hold, which leaves a persistent hold. A
+#      healthy watcher that is not this session's own checkpoint then allows the
+#      stop when no wake is queued. The hold has no doorbell, so a new hold's
+#      allow carries a notice that wakes wait for the captain's next message. If
+#      no owner can be confirmed and no wake is queued, the hook allows the stop
+#      and prints a loud downtime notice instead of naming a checkpoint.
 #   3. A stop following this guard's own block in the same session and turn is
 #      allowed only when rule 1 no longer applies, no wake is queued, and
 #      nothing advanced since that block - the watcher beacon at full mtime
@@ -373,16 +371,8 @@ if [ "$CODEX_MODE" -eq 1 ] \
   && own_checkpoint_holds_watcher "$(cat "$STATE/.watch.lock/pid" 2>/dev/null)"; then
   CHECKPOINT_OPEN=1
 fi
-CODEX_SUCCESSOR_LEFT=0
-if [ "$CODEX_MODE" -eq 1 ] && [ "$SECONDMATE_MODE" -eq 0 ] && [ ! -e "$STATE/.afk" ]; then
-  # shellcheck source=bin/fm-supervision-engine-lib.sh
-  . "$SCRIPT_DIR/fm-supervision-engine-lib.sh"
-  if fm_supervision_host_successor_left "$STATE" "$CONFIG" codex; then
-    CODEX_SUCCESSOR_LEFT=1
-  fi
-fi
 if fm_watcher_healthy "$STATE" "$WATCH" "$GRACE" "$FM_HOME"; then
-  if [ "$CHECKPOINT_OPEN" -eq 0 ] && [ "$CODEX_SUCCESSOR_LEFT" -eq 0 ]; then
+  if [ "$CHECKPOINT_OPEN" -eq 0 ]; then
     if [ "$CODEX_MODE" -eq 0 ] || [ "$FM_SUP_QUEUE_PENDING" = false ]; then
       if [ "$SECONDMATE_MODE" -eq 0 ] || "$SCRIPT_DIR/fm-watch.sh" --secondmate-status >/dev/null 2>&1; then
         allow_supervised_stop
@@ -422,7 +412,7 @@ block_stop() {
       if fm_watcher_healthy "$STATE" "$WATCH" "$GRACE" "$FM_HOME"; then
         cause='with queued wakes still undrained'
       fi
-      printf '%s\n' "{\"systemMessage\":\"FIRSTMATE SUPERVISION BLOCK BOUND REACHED: this turn already blocked ${blocks} times ${cause}. Allowing the turn to end so foreground checkpoints cannot loop. Queued wakes stay durable until a watcher doorbell or the captain's next message starts a turn.\"}"
+      printf '%s\n' "{\"systemMessage\":\"FIRSTMATE SUPERVISION BLOCK BOUND REACHED: this turn already blocked ${blocks} times ${cause}. Allowing the turn to end so foreground checkpoints cannot loop. Queued wakes stay durable until the captain's next message starts a turn.\"}"
       exit 0
     fi
   fi
@@ -511,14 +501,14 @@ if [ "$CODEX_MODE" -eq 1 ] && [ "$CHECKPOINT_OPEN" -eq 0 ] && [ "$SECONDMATE_MOD
   && [ ! -e "$STATE/.afk" ]; then
   DETACH_OUT=
   if [ -x "$SCRIPT_DIR/fm-watch-arm.sh" ] \
-    && { [ "$CODEX_SUCCESSOR_LEFT" -eq 1 ] || ! fm_watcher_healthy "$STATE" "$WATCH" "$GRACE" "$FM_HOME"; }; then
+    && ! fm_watcher_healthy "$STATE" "$WATCH" "$GRACE" "$FM_HOME"; then
     DETACH_OUT=$("$SCRIPT_DIR/fm-watch-arm.sh" --detach-hold 2>/dev/null || true)
   fi
   if [ "$FM_SUP_QUEUE_PENDING" = false ]; then
     if fm_watcher_healthy "$STATE" "$WATCH" "$GRACE" "$FM_HOME"; then
       case "$DETACH_OUT" in
-        *'watcher: no wake route'*)
-          printf '%s\n' '{"systemMessage":"FIRSTMATE WATCHER HAS NO WAKE ROUTE: a detached watcher holds this home, but no tmux or Herdr pane is proven for its doorbell. Queued wakes wait for the next captain message."}'
+        *'watcher: started'*)
+          printf '%s\n' '{"systemMessage":"FIRSTMATE WATCHER RE-ARMED: a detached watcher now holds this home. It has no doorbell, so queued wakes wait for the next captain message."}'
           exit 0
           ;;
       esac

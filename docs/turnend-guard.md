@@ -313,8 +313,7 @@ A running checkpoint this session started still blocks.
 Once it has exited, the hook detaches a persistent hold or allows the stop.
 A fixed bound of 2 limits later blocks in a turn once no checkpoint runs, on a secondmate home too.
 A secondmate home and a home with away mode active also keep the no-progress escape.
-A detached hold on a proven tmux or Herdr pane rings the `codex-primary` steering inbox, so a queued wake starts the next turn.
-With no proven pane, the stop prints a notice, and wakes wait for the next captain message.
+A detached hold has no doorbell, so the stop that starts it prints a notice, and wakes wait for the next captain message.
 
 ### Codex mode
 
@@ -344,7 +343,7 @@ Existing native protocols remain authoritative outside the selected row.
 | --- | --- | --- | --- |
 | Codex | tmux or Herdr, validated local parent/inbox and foreground session | No other watcher/host/away owner | Persistent watcher with identity-bound doorbell; Stop requires its proof. |
 | Codex | Any | Away or quiet daemon | Existing daemon protocol; short-turn watcher stands down. |
-| Codex | Any | Supervision host selected | The Stop hook detaches the host's park, which rings the doorbell when it exits for main. |
+| Codex | Any | Supervision host selected | A foreground checkpoint runs the host; with none running, the Stop hook detaches a persistent hold or allows the turn to end. |
 | Codex | tmux or Herdr, local | Other healthy watcher | Existing owner/protocol; no competing short-turn watcher. |
 | Codex | Other backend, or remote/unverified route | Any | The Stop hook detaches a persistent hold or allows the turn to end. |
 | Other supported harnesses | Their existing supported backends/routes | Native ownership | Existing native protocol, without a new Codex short-turn owner. |
