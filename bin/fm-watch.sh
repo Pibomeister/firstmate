@@ -4518,6 +4518,18 @@ while :; do
     triage_log "inactive-outcome reconciliation unavailable"
   fi
 
+  # Linked-worktree cleanup. bin/fm-worktree-cleanup.sh owns each decision
+  # and the log. The pass prints nothing, so it does not wake supervision.
+  watch_stage worktree-cleanup
+  if [ "${FM_WORKTREE_CLEANUP:-1}" != 0 ] \
+    && [ "$(age_of "$STATE/.last-worktree-cleanup")" -ge "$CHECK_INTERVAL" ]; then
+    if ! fm_run_timed "$WATCH_HELPER_BUDGET" env FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
+      "$SCRIPT_DIR/fm-worktree-cleanup.sh" scan; then
+      triage_log "worktree cleanup unavailable"
+    fi
+    touch "$STATE/.last-worktree-cleanup"
+  fi
+
   # Slow per-task checks (firstmate writes these, e.g. a merged-PR poll).
   # Time-based via .last-check mtime so the cadence survives watcher restarts.
   # Evaluated BEFORE the signal scan: wake() exits the cycle, so a check placed
