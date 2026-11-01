@@ -286,6 +286,47 @@ test_auto_turn_type_from_tailed_transcript() {
     FM_CONTEXT_BURN_NOW=6100 \
     "$BURN" record --turn-type auto --percent 60 --payload-file "$home/p.json" >/dev/null
   assert_equals $'6100\tsess1\tcaptain\t60' "$(last_row "$home")" "a later turn is not startup because the attachment remains in the tail"
+
+  printf '%s\n' \
+    '{"type":"attachment","attachment":{"type":"hook_success","hookName":"SessionStart:startup","hookEvent":"SessionStart","content":"hook stdout"}}' \
+    '{"type":"user","message":{"content":"status please"}}' \
+    '{"type":"attachment","attachment":{"type":"hook_success","hookName":"SessionStart:startup","hookEvent":"SessionStart","content":"hook stdout again"}}' \
+    '{"type":"assistant","message":{"content":"noted"}}' \
+    > "$home/t.jsonl"
+  FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    FM_CONTEXT_BURN_NOW=6110 \
+    "$BURN" record --turn-type auto --percent 59 --payload-file "$home/p.json" >/dev/null
+  assert_equals $'6110\tsess1\tstartup\t59' "$(last_row "$home")" "a SessionStart after the opening user text stays startup"
+
+  printf '%s\n' \
+    '{"type":"attachment","attachment":{"type":"hook_success","hookName":"SessionStart:startup","hookEvent":"SessionStart","content":"hook stdout"}}' \
+    '{"type":"user","message":{"content":"status please"}}' \
+    '{"type":"assistant","message":{"content":"noted"}}' \
+    '{"type":"user","message":{"content":"ready signal: the branch is published"}}' \
+    '{"type":"attachment","attachment":{"type":"hook_success","hookName":"SessionStart:startup","hookEvent":"SessionStart","content":"hook stdout again"}}' \
+    > "$home/t.jsonl"
+  FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    FM_CONTEXT_BURN_NOW=6120 \
+    "$BURN" record --turn-type auto --percent 58 --payload-file "$home/p.json" >/dev/null
+  assert_equals $'6120\tsess1\tcaptain\t58' "$(last_row "$home")" "a SessionStart after a later user stays an ordinary turn"
+
+  printf '%s\n' '{"type":"user","message":{"content":"heartbeat: fleet"}}' > "$home/t.jsonl"
+  FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    FM_CONTEXT_BURN_NOW=6130 \
+    "$BURN" record --turn-type auto --percent 57 --payload-file "$home/p.json" >/dev/null
+  assert_equals $'6130\tsess1\theartbeat\t57' "$(last_row "$home")" "heartbeat at line start"
+
+  printf '%s\n' '{"type":"user","message":{"content":"please note heartbeat: soon"}}' > "$home/t.jsonl"
+  FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    FM_CONTEXT_BURN_NOW=6140 \
+    "$BURN" record --turn-type auto --percent 56 --payload-file "$home/p.json" >/dev/null
+  assert_equals $'6140\tsess1\tcaptain\t56' "$(last_row "$home")" "heartbeat mid-line is an ordinary turn"
+
+  printf '%s\n' '{"type":"user","message":{"content":[{"type":"text","text":"note"},{"type":"text","text":"check: fleet"}]}}' > "$home/t.jsonl"
+  FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    FM_CONTEXT_BURN_NOW=6150 \
+    "$BURN" record --turn-type auto --percent 55 --payload-file "$home/p.json" >/dev/null
+  assert_equals $'6150\tsess1\twake\t55' "$(last_row "$home")" "a wake token in a later text block stays at line start"
   pass "auto turn type comes from the tailed transcript"
 }
 

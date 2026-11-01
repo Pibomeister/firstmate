@@ -21,10 +21,10 @@
 # --turn-type auto classifies the turn from a hook payload on stdin, or from
 # --payload-file. The payload's transcript_path is tailed, not read whole.
 # Startup is tested first: the operating block also contains the other markers.
-#   startup     a SessionStart attachment in the tail has no assistant record
-#               between it and the last user text, or that text contains
-#               "SUPERVISION OPERATING INSTRUCTIONS" anywhere in the text
-#   heartbeat   else the last user text contains "heartbeat:"
+#   startup     the SessionStart attachment already seen when the last user
+#               text arrived is after any earlier assistant, or that text
+#               contains "SUPERVISION OPERATING INSTRUCTIONS" anywhere
+#   heartbeat   else a line of that text starts with "heartbeat:"
 #   wake        else a line of that text starts with "signal:", "stale:",
 #               "check:", or "Stop hook feedback"
 #   captain     any other user text
@@ -99,7 +99,7 @@ classify_transcript() { # <transcript> -> startup|heartbeat|wake|captain|turn
     def user_text:
       (.message.content? // null)
       | if type == "string" then .
-        elif type == "array" then ([.[]? | select(.type? == "text") | .text? // empty] | join(" "))
+        elif type == "array" then ([.[]? | select(.type? == "text") | .text? // empty] | join("\n"))
         else "" end;
     def text_present($t):
       ($t | gsub("[[:space:]]+"; "") | length) > 0;
@@ -111,8 +111,10 @@ classify_transcript() { # <transcript> -> startup|heartbeat|wake|captain|turn
       );
     def wake_line($t):
       any(($t | split("\n")[] | sub("\r$"; "")); test("^(signal:|stale:|check:|Stop hook feedback)"));
+    def heartbeat_line($t):
+      any(($t | split("\n")[] | sub("\r$"; "")); test("^(heartbeat:)"));
     reduce inputs as $line
-      ({start:-1, asst:-1, asst_before:-1, user:-1, i:0, last:null};
+      ({start:-1, asst:-1, asst_before:-1, user:-1, user_start:-1, i:0, last:null};
         .i += 1
         | ($line | try fromjson catch null) as $r
         | if $r == null then .
@@ -120,14 +122,14 @@ classify_transcript() { # <transcript> -> startup|heartbeat|wake|captain|turn
           elif ($r.type? == "assistant") then .asst = .i
           elif ($r.type? == "user") then
             ($r | user_text) as $t
-            | if text_present($t) then .user = .i | .last = $t | .asst_before = .asst
+            | if text_present($t) then .user = .i | .last = $t | .asst_before = .asst | .user_start = .start
               else . end
           else . end
       )
     | if .last == null then "turn"
-      elif ((.start >= 0 and .user > .start and .asst_before < .start)
+      elif ((.user_start > .asst_before)
             or (.last | contains("SUPERVISION OPERATING INSTRUCTIONS"))) then "startup"
-      elif (.last | contains("heartbeat:")) then "heartbeat"
+      elif heartbeat_line(.last) then "heartbeat"
       elif wake_line(.last) then "wake"
       else "captain" end
   ' 2>/dev/null || true)
