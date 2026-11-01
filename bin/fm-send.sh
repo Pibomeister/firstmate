@@ -11,9 +11,8 @@
 # before anything is marked, recorded, or submitted, because an empty marked
 # secondmate request delivers only marker and correlation bytes and leaves the
 # parent waiting on a reply to nothing.
-# Standing captain holds: a text steer recorded in a steering inbox carries
-# this home's holds in force as a trailing block (bin/fm-order.sh owns holds);
-# a typed parser command and --key never do.
+# Standing captain holds: a text steer carries this home's holds in force
+# (bin/fm-order.sh owns holds); a typed parser command and --key never do.
 # Special keys instead of text: fm-send.sh <target> --key Enter
 # Key support is backend-specific: tmux/herdr support Escape, Enter, and C-c;
 # Orca delivers Enter and C-c, plus raw Escape and C-u bytes verified for Droid;

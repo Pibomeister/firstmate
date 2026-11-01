@@ -54,7 +54,9 @@
 # brief and secondmate charter launch. A parser command (a leading "/", or "$"
 # to codex or to an endpoint whose harness is unknown) typed straight to an
 # endpoint carries no block. The idempotent inbox write ignores the block, so a retried steer still matches its first
-# record after a hold changes.
+# record after a hold changes. `holds` and `holds --relay` exit 1 when an existing
+# orders, pending, or acked directory or an open order file cannot be read, so holds never read as
+# absent; bin/fm-send.sh then sends nothing and bin/fm-spawn.sh launches nothing.
 #
 # EVENT LOG. data/orders/log.tsv is append-only, one tab-separated row per
 # event: <UTC ISO> <epoch> <id> <event> <sha8> <detail>. Events:
