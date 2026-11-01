@@ -23,6 +23,7 @@
 #   state/watchdog/actions.tsv   action ledger: epoch id home subject symptom action phase detail.
 #   state/watchdog/model-calls.tsv  epoch purpose model outcome in-tokens out-tokens answer cost.
 #   state/watchdog/subjects/<home-basename>-<path-cksum>   the previous observation of each subject.
+#   state/watchdog/near-loop/<home-basename>-<path-cksum>  epoch, evidence cksum, and answer of the last near-loop judgment.
 #   state/watchdog/escalated/<home-basename>-<path-cksum>  present after a restart loop; remove it to clear.
 #   state/watchdog/last-read     epoch of the last ack-read.
 #   data/watchdog/status.md      the short status file, rewritten atomically after each pass.
@@ -245,7 +246,7 @@ wd_observe() {
   O_BACKEND='' O_TARGET='' O_SESSION='' O_HB_AGE=unknown O_CTX='' O_CTX_SRC=''
   O_PANE='' O_SIG='' O_PANE_STATIC=0 O_DIALOG='' O_COMPOSER=unknown O_TURN=unknown
   O_LOCK_PID='' O_ALIVE=0 O_INSTANCE=unknown O_CPU_BUSY=unknown O_TRANSCRIPT='' O_TR_AGE=unknown
-  O_LOOP=none O_LOOP_N=0 O_LOOP_SAMPLE='' O_RESTART_REQ=0 O_OWED_N=0 O_OWED_AGE=0
+  O_LOOP=none O_LOOP_N=0 O_EVENTS='' O_RESTART_REQ=0 O_OWED_N=0 O_OWED_AGE=0
   O_AFK=0 O_DAEMON=unknown O_PREV_COMPOSER='' O_PREV_SIG='' O_COMPOSER_TEXT='' O_COMPOSER_ABOVE='' O_DRAFT=''
   hb=$st/heartbeat.json
   hb_sid='' ctx=''
@@ -308,10 +309,9 @@ EOF
   fi
   if O_TRANSCRIPT=$(wd_transcript "$home" "$O_SESSION"); then
     O_TR_AGE=$((now - $(wd_mtime "$O_TRANSCRIPT")))
-    local ev
-    ev=$(fm_wd_transcript_events "$O_TRANSCRIPT" 400)
-    IFS=$'\t' read -r O_LOOP O_LOOP_N O_LOOP_SAMPLE <<EOF
-$(printf '%s\n' "$ev" | fm_wd_loop_verdict "$(cfgi rapid-loop-secs 180)")
+    O_EVENTS=$(fm_wd_transcript_events "$O_TRANSCRIPT" 400)
+    IFS=$'\t' read -r O_LOOP O_LOOP_N <<EOF
+$(printf '%s\n' "$O_EVENTS" | fm_wd_loop_verdict "$(cfgi rapid-loop-secs 180)")
 EOF
   else
     O_TRANSCRIPT=''
@@ -938,6 +938,24 @@ wd_requested_restart() {  # <quiet-secs>
   fi
 }
 
+# wd_near_loop_confirmed: true only on a LOOP answer. An answer stands for
+# owed-input-secs, and after that for as long as the evidence stays the same.
+wd_near_loop_confirmed() {
+  local f=$WD/near-loop/$O_KEY at='' sum='' ans='' evidence new now
+  evidence=$(printf '%s\n' "$O_EVENTS" | fm_wd_loop_evidence "$(( $(cfgi judge-max-chars 6000) - 200 ))")
+  new=$(printf '%s' "$evidence" | cksum | cut -d ' ' -f 1)
+  now=$(wd_now)
+  if [ -f "$f" ]; then IFS=$'\t' read -r at sum ans < "$f" || true; fi
+  if [ -z "$at" ] || { [ $((now - at)) -ge "$(cfgi owed-input-secs 900)" ] && { [ "$sum" != "$new" ] || [ -z "$ans" ]; }; }; then
+    ans=$(wd_judge loop '(LOOP|WORK)' "Recent events from a supervisor agent, newest last. Does it repeat itself without doing new work (LOOP), or is it doing real work (WORK)? Reply with exactly one word.
+$evidence") || ans=''
+    mkdir -p "$WD/near-loop"
+    printf '%s\t%s\t%s\n' "$now" "$new" "$ans" > "$f"
+  fi
+  [ -n "$ans" ] || wd_gap "possible loop; no judge answer, so it stays unconfirmed"
+  [ "$ans" = LOOP ]
+}
+
 # wd_handle_subject: one symptom per pass, by precedence, then the side checks.
 wd_handle_subject() {
   local symptom='' quiet frozen owed dead=0
@@ -965,14 +983,9 @@ wd_handle_subject() {
   elif [ "$O_LOOP" = rapid ] || { [ "$O_LOOP" = loop ] && [ "$O_OWED_N" -gt 0 ] && [ "$O_OWED_AGE" -ge "$owed" ]; }; then
     symptom=timer-loop
     wd_ladder_nudge_then_restart timer-loop "your last $O_LOOP_N replies repeat the same text with no work between them, and input is waiting. Stop re-arming, drain the wake queue, and act on what it shows." filesystem records
-  elif [ "$O_LOOP" = near ] && [ "$O_OWED_N" -gt 0 ] && [ "$O_OWED_AGE" -ge "$owed" ]; then
-    local v
-    if v=$(wd_judge loop '(LOOP|WORK)' "Recent assistant messages from a supervisor agent, newest last. Does it repeat itself without doing new work (LOOP), or is it doing real work (WORK)? Reply with exactly one word.
-$(printf '%s\n' "$O_LOOP_SAMPLE")"); then
-      [ "$v" = LOOP ] && { symptom=timer-loop; wd_ladder_nudge_then_restart timer-loop "your recent replies repeat without new work while input waits. Stop re-arming, drain the wake queue, and act on it." filesystem records; }
-    else
-      wd_gap "possible loop; no model available to judge it"
-    fi
+  elif [ "$O_LOOP" = near ] && [ "$O_OWED_N" -gt 0 ] && [ "$O_OWED_AGE" -ge "$owed" ] && wd_near_loop_confirmed; then
+    symptom=timer-loop
+    wd_ladder_nudge_then_restart timer-loop "your recent replies repeat without new work while input waits. Stop re-arming, drain the wake queue, and act on it." filesystem records
   elif [ "$O_PANE_STATIC" -ge "$frozen" ] && [ "$O_TR_AGE" != unknown ] && [ "$O_TR_AGE" -ge "$frozen" ] \
        && [ "$O_OWED_N" -gt 0 ] && [ "$O_OWED_AGE" -ge "$frozen" ]; then
     symptom=frozen

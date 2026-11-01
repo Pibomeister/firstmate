@@ -58,7 +58,9 @@ fake_models() {
     cat > "$FAKEBIN/claude" <<SH
 #!/usr/bin/env bash
 # A real claude -p reads its prompt from stdin; an empty prompt is a failure.
-[ -n "\$(cat)" ] || exit 1
+prompt=\$(cat)
+[ -n "\$prompt" ] || exit 1
+printf '%s\n' "\$prompt" >> "$dir/prompt.log"
 printf 'claude %s\n' "\$*" >> "$dir/model.log"
 case "$cm" in
   ok:*) printf '{"result":"%s","total_cost_usd":0.0012,"usage":{"input_tokens":50,"output_tokens":3}}\n' "${cm#ok:}" ;;
@@ -654,6 +656,75 @@ test_timer_loop_needs_owed_input() {
   run_wd 10 once >/dev/null 2>&1
   assert_equals 1 "$(ledger_rows timer-loop nudge pending)" "the same loop with aged owed input is nudged"
   pass "timer loop fires only with aged owed input, never on idle heartbeats"
+}
+
+near_loop_home() {  # <extra-config>
+  make_home $'Captain session\n> ' "$1"
+  transcript 3000 "still waiting on the timer armed alpha" "still waiting on the timer armed beta" "still waiting on the timer armed gamma"
+  owe_input 3000
+}
+
+test_near_loop_never_masks_frozen_or_input_recovery() {
+  local case
+  for case in no-model work malformed cap; do
+    near_loop_home 'models=claude:haiku
+daily-max-usd=0.01'
+    case "$case" in
+      no-model) fake_models "$H" absent absent ;;
+      work) fake_models "$H" ok:WORK absent ;;
+      malformed) fake_models "$H" ok:MAYBE absent ;;
+      cap)
+        fake_models "$H" ok:LOOP absent
+        mkdir -p "$H/state/watchdog"
+        printf '%s\tloop\tclaude:haiku\tok\t1\t1\tLOOP\t0.02\n' "$BASE" >> "$H/state/watchdog/model-calls.tsv" ;;
+    esac
+    run_wd 0 once >/dev/null 2>&1 || fail "$case: first pass failed"
+    assert_equals 1 "$(ledger_rows unread-input nudge pending)" "$case: owed input is still nudged"
+    run_wd 1000 once >/dev/null 2>&1 || fail "$case: second pass failed"
+    assert_equals 1 "$(ledger_rows frozen nudge pending)" "$case: a frozen pane is still nudged"
+    assert_equals 0 "$(ledger | grep -c timer-loop)" "$case: an unconfirmed near repeat is no loop"
+    assert_absent "$H/state/watchdog/escalated/$(home_key)" "$case: an unconfirmed near repeat does not escalate"
+    if [ "$case" != work ]; then
+      assert_grep "possible loop; no judge answer" "$H/data/watchdog/status.md" "$case: the missing answer is a gap"
+    fi
+  done
+  pass "near loop: no model, the daily cap, WORK, and a bad answer all leave frozen and input recovery running"
+}
+
+test_near_loop_judge_sees_the_sequence_and_is_rate_limited() {
+  local pass_at
+  near_loop_home 'models=claude:haiku'
+  fake_models "$H" ok:WORK absent
+  for pass_at in 0 120 240 360 480 3000; do
+    run_wd "$pass_at" once >/dev/null 2>&1 || fail "pass at $pass_at failed"
+  done
+  assert_equals 1 "$(grep -c '^claude' "$H/model.log")" "unchanged evidence is judged once across six passes"
+  assert_equals 1 "$(grep -c '^assistant: .*alpha$' "$H/prompt.log")" "the judge sees the oldest reply"
+  assert_equals 1 "$(grep -c '^assistant: .*beta$' "$H/prompt.log")" "the judge sees the middle reply"
+  assert_equals 1 "$(grep -c '^assistant: .*gamma$' "$H/prompt.log")" "the judge sees the newest reply"
+  assert_equals 3 "$(grep -c '^tool: ScheduleWakeup' "$H/prompt.log")" "the judge sees the tool call after each reply"
+  [ "$(grep -n 'alpha$' "$H/prompt.log" | cut -d: -f1)" -lt "$(grep -n 'gamma$' "$H/prompt.log" | cut -d: -f1)" ] || fail "the newest reply is not last"
+  transcript 10 "still waiting on the timer armed delta" "still waiting on the timer armed epsilon" "still waiting on the timer armed zeta"
+  run_wd 3060 once >/dev/null 2>&1 || fail "pass with new evidence failed"
+  assert_equals 2 "$(grep -c '^claude' "$H/model.log")" "new evidence after the interval is judged again"
+  transcript 10 "still waiting on the timer armed eta" "still waiting on the timer armed theta" "still waiting on the timer armed iota"
+  run_wd 3120 once >/dev/null 2>&1 || fail "pass with newer evidence failed"
+  assert_equals 2 "$(grep -c '^claude' "$H/model.log")" "newer evidence waits for the interval"
+  run_wd 4000 once >/dev/null 2>&1 || fail "pass after the interval failed"
+  assert_equals 3 "$(grep -c '^claude' "$H/model.log")" "newer evidence is judged once the interval passes"
+  pass "near loop: the judge sees the recent sequence, newest last, and repeats only for new evidence after the interval"
+}
+
+test_near_loop_confirmed_uses_the_ladder() {
+  near_loop_home 'models=claude:haiku'
+  fake_models "$H" ok:LOOP absent
+  run_wd 0 once >/dev/null 2>&1 || fail "first pass failed"
+  assert_equals 1 "$(ledger_rows timer-loop nudge pending)" "a LOOP answer takes the timer-loop ladder"
+  assert_equals 0 "$(ledger_rows unread-input nudge pending)" "a confirmed loop is the one symptom this pass"
+  run_wd 120 once >/dev/null 2>&1 || fail "second pass failed"
+  assert_equals 1 "$(ledger_rows timer-loop nudge pending)" "the standing answer keeps the ladder's rate limit"
+  assert_equals 1 "$(grep -c '^claude' "$H/model.log")" "the standing answer costs no second call"
+  pass "near loop: a LOOP answer alone takes the existing ladder"
 }
 
 test_restart_vetoed_by_running_turn() {
@@ -1617,6 +1688,9 @@ fm_test_run \
   test_judge_fallback_and_spend_cap \
   test_no_model_still_acts_and_reports_gap \
   test_timer_loop_needs_owed_input \
+  test_near_loop_never_masks_frozen_or_input_recovery \
+  test_near_loop_judge_sees_the_sequence_and_is_rate_limited \
+  test_near_loop_confirmed_uses_the_ladder \
   test_restart_vetoed_by_running_turn \
   test_restart_verified_pickup_and_loop_stop \
   test_no_action_while_restart_awaits_pickup \
