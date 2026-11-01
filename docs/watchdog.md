@@ -51,8 +51,8 @@ A home whose restart awaits pickup gets no action at all until that restart clos
 | Symptom | Proof | Action |
 | --- | --- | --- |
 | Agent gone | Lock holder dead | Restart once the transcript has been quiet for `frozen-secs`. Nothing is typed into the endpoint of a dead holder, and the other checks wait until it is live again. |
-| Blocking dialog | Dialog structure on the visible screen | Feedback survey: press `0`. Model or limit picker: the judge picks an option that keeps work going without spending, signing in, or buying. Question: close it and nudge the session to settle it by council. Permission: never answered, reported as a gap. After two keys in an hour that leave the dialog showing, no more keys are pressed and the gap is reported. |
-| Restart requested | A `RESTART REQUESTED` line in the last assistant texts, `state/.watchdog-restart-request`, or context left at or below `restart-at-percent` | Low context first nudges the session to write a full `data/handoff-*.md` and then `state/.watchdog-restart-request`. A handoff newer than the nudge plus the request file allows the restart after `restart-quiet-secs` of quiet. After `handoff-wait-secs` without both, the restart uses the lean handoff and the status file records the gap. A request with no earlier nudge restarts after the quiet time. |
+| Blocking dialog | Dialog structure on the visible screen | Feedback survey: press `0`. Model or limit picker: the judge picks an option that keeps work going without spending, signing in, or buying. Question: close it and, once it has left the screen, nudge the session to settle it by council. Permission: never answered, reported as a gap. After two keys in an hour that leave the dialog showing, no more keys are pressed and the gap is reported. |
+| Restart requested | A `RESTART REQUESTED` line in the last assistant texts, `state/.watchdog-restart-request`, or context left at or below `restart-at-percent` | Low context first nudges the session to write a full `data/handoff-*.md` and then `state/.watchdog-restart-request`. A handoff newer than the nudge plus the request file allows the restart after `restart-quiet-secs` of quiet. After `handoff-wait-secs` without both, the restart uses the lean handoff and the status file records the gap. A request with no earlier nudge restarts after the quiet time. The wait starts only when the nudge is delivered, and a nudge older than twice `handoff-wait-secs` no longer counts, so a later low asks again. |
 | Timer loop | Three of the last five assistant texts repeat with only timer tools between them, and either all repeats fall inside `rapid-loop-secs` or input has waited `owed-input-secs` | Nudge, then restart. Near repeats go to the judge first. |
 | Frozen | Pane and transcript unchanged for `frozen-secs` while input has waited as long | Nudge, then restart. A running turn holds instead. |
 | Unsent input | The composer holds the same pending text on two passes with no running turn | Press Enter, unless the text names a merge, deploy, release, publish, or force push. A paste placeholder or a draft taller than the read window hides its text, so Enter is not pressed and the gap is reported. |
@@ -83,7 +83,8 @@ A restart needs every one of these:
 - at least two independent kinds of signal, from rendered, filesystem, kernel, and records;
 - a live lock holder that matches its recorded instance, or a dead holder, which gets no signal;
 - an endpoint that is not on `do-not-touch`;
-- fewer than `max-restarts` restarts for that home in the last day.
+- fewer than `max-restarts` restarts for that home in the last day;
+- at least `restart-secs` since the last restart of that home, for any symptom; a sooner restart holds and is reported as a gap.
 
 A primary restart writes a lean handoff under `data/watchdog/handoffs/`, stops the old session process, and opens a new terminal on the same backend with `restart-command` and a prompt naming the handoff.
 On tmux the new window joins the old session; when that session closed with the old session process, a new session takes its place.
