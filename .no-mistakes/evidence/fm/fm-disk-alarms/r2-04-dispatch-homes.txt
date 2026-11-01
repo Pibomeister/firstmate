@@ -1,0 +1,65 @@
+=== dispatch-resolve at each level: stdout and stderr separately
+--- 3g exit=0
+stdout: []
+stderr:
+disk-alarm: STOP free space on $W/m3 is under 5 GiB (2.8 GiB free); no new lane, worktree, or gate. Place this work on another host or cloud. Do not retry it on this host.
+dispatch-resolve: off (TYPESAFE_API_KEY absent from the environment and $LAB/.env)
+--- 7g exit=0
+stdout: []
+stderr:
+disk-alarm: PAUSE free space on $W/m7 is under 10 GiB (6.8 GiB free); no new crewmate launch. Place this work on another host or cloud. Do not retry it on this host.
+dispatch-resolve: off (TYPESAFE_API_KEY absent from the environment and $LAB/.env)
+--- 12g exit=0
+stdout: []
+stderr:
+disk-alarm: WARN free space on $W/m12 is under 15 GiB (11.8 GiB free); tell the captain. Launch may continue.
+dispatch-resolve: off (TYPESAFE_API_KEY absent from the environment and $LAB/.env)
+--- 20g exit=0
+stdout: []
+stderr:
+dispatch-resolve: off (TYPESAFE_API_KEY absent from the environment and $LAB/.env)
+=== seed '-' under STOP: no lease
+treehouse entries: 0
+disk-alarm: STOP free space on $W/m3 is under 5 GiB (2.8 GiB free); no new lane, worktree, or gate. Place this work on another host or cloud. Do not retry it on this host.
+exit=1
+treehouse entries: 0
+=== seed new path under STOP: no clone
+disk-alarm: STOP free space on $W/m3 is under 5 GiB (2.8 GiB free); no new lane, worktree, or gate. Place this work on another host or cloud. Do not retry it on this host.
+exit=1
+ls: $W/seedhomes/new: No such file or directory
+=== seed new path under PAUSE: allowed
+disk-alarm: PAUSE free space on $W/m7 is under 10 GiB (6.8 GiB free); no new crewmate launch. Place this work on another host or cloud. Do not retry it on this host.
+
+
+
+
+
+
+
+scaffolded: $LAB/data/r2-sm2/brief.md (secondmate charter)
+home=$W/seedhomes/new
+exit=0
+. .. .agents .ci-evidence .claude .codex .cursor .fm-secondmate-home 
+=== re-seed that existing home under STOP: unaffected
+home=$W/seedhomes/new
+exit=0
+=== remote provision new home under STOP
+disk-alarm: STOP free space on $W/m3 is under 5 GiB (2.8 GiB free); no new lane, worktree, or gate. Place this work on another host or cloud. Do not retry it on this host.
+exit=1
+parent contents:
+.firstmate-provision-locks
+=== remote provision new home under PAUSE: allowed
+disk-alarm: PAUSE free space on $W/m7 is under 10 GiB (6.8 GiB free); no new crewmate launch. Place this work on another host or cloud. Do not retry it on this host.
+
+
+
+
+
+
+
+provisioned: $W/remote/home projects=0
+exit=0
+.agents .ci-evidence .claude .codex .cursor .fm-secondmate-home 
+=== remote provision existing home under STOP: unaffected
+provisioned: $W/remote/home projects=0
+exit=0

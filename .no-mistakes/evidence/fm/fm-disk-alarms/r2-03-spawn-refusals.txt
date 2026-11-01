@@ -1,0 +1,27 @@
+=== ship under PAUSE  (volume=m7)  fm-spawn.sh r2-warn /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.ioXY6q/projects/demo --mode no-mistakes --yolo off --harness claude
+disk-alarm: PAUSE free space on $W/m7 is under 10 GiB (6.8 GiB free); no new crewmate launch. Place this work on another host or cloud. Do not retry it on this host.
+exit=1
+state diff: NONE
+=== ship under STOP  (volume=m3)  fm-spawn.sh r2-warn /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.ioXY6q/projects/demo --mode no-mistakes --yolo off --harness claude
+disk-alarm: STOP free space on $W/m3 is under 5 GiB (2.8 GiB free); no new lane, worktree, or gate. Place this work on another host or cloud. Do not retry it on this host.
+exit=1
+state diff: NONE
+=== scout under PAUSE  (volume=m7)  fm-spawn.sh r2-scout /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.ioXY6q/projects/demo --scout --harness claude
+disk-alarm: PAUSE free space on $W/m7 is under 10 GiB (6.8 GiB free); no new crewmate launch. Place this work on another host or cloud. Do not retry it on this host.
+exit=1
+state diff: NONE
+=== scout under STOP  (volume=m3)  fm-spawn.sh r2-scout /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.ioXY6q/projects/demo --scout --harness claude
+disk-alarm: STOP free space on $W/m3 is under 5 GiB (2.8 GiB free); no new lane, worktree, or gate. Place this work on another host or cloud. Do not retry it on this host.
+exit=1
+state diff: NONE
+=== batch under PAUSE  (volume=m7)  fm-spawn.sh r2-warn=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.ioXY6q/projects/demo r2-scout=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.ioXY6q/projects/demo --mode no-mistakes --yolo off --harness claude
+disk-alarm: PAUSE free space on $W/m7 is under 10 GiB (6.8 GiB free); no new crewmate launch. Place this work on another host or cloud. Do not retry it on this host.
+batch: FAILED to spawn r2-warn (/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.ioXY6q/projects/demo)
+disk-alarm: PAUSE free space on $W/m7 is under 10 GiB (6.8 GiB free); no new crewmate launch. Place this work on another host or cloud. Do not retry it on this host.
+batch: FAILED to spawn r2-scout (/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.ioXY6q/projects/demo)
+exit=1
+state diff: NONE
+=== tmux windows after all refusals
+error connecting to /tmp/fml.qWag3S/tmux-501/default (No such file or directory)
+=== worktrees
+/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.ioXY6q/projects/demo  01d8912 [main]

@@ -1,0 +1,8 @@
+3g --gate crew -> exit=1  disk-alarm: level=stop
+3g --gate lane -> exit=1  disk-alarm: level=stop
+7g --gate crew -> exit=1  disk-alarm: level=pause
+7g --gate lane -> exit=0  disk-alarm: level=pause
+12g --gate crew -> exit=0  disk-alarm: level=warn
+12g --gate lane -> exit=0  disk-alarm: level=warn
+20g --gate crew -> exit=0  disk-alarm: level=ok
+20g --gate lane -> exit=0  disk-alarm: level=ok
