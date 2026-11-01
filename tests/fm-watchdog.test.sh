@@ -548,13 +548,14 @@ test_unreadable_draft_never_gets_enter() {
   assert_equals "" "$(cat "$H/typed.log")" "Enter was never pressed on a draft taller than the window"
 
   local unproven
-  for unproven in '> finish the summary' $'reply\n› finish summary\n 100% context left' $' a\n b\n> quoted\n c\n──────────\n ? for shortcuts' $' │ ❯ finish the summary\n ╰──╯' $'┃ > finish the summary'; do
+  for unproven in '> finish the summary' $'reply\n› finish summary\n 100% context left' $' a\n b\n> quoted\n c\n──────────\n ? for shortcuts' $' │ ❯ finish the summary\n ╰──╯' $'┃ > finish the summary' "─────── Andrew ─"$'\n❯ finish the summary\n'"$WD_RULE"$'\n ? for shortcuts'; do
     make_home "$unproven"
     FM_WD_TEST_COMPOSER=pending run_wd 0 once >/dev/null 2>&1
     FM_WD_TEST_COMPOSER=pending run_wd 300 once >/dev/null 2>&1
     assert_equals 1 "$(ledger_rows pasted-input key refused)" "an unproven draft is refused: $unproven: $(ledger | cut -f5-8)"
     assert_equals 0 "$(ledger_rows pasted-input key pending)" "an unproven draft gets no Enter: $unproven"
     assert_grep "boundary is not proven" "$H/data/watchdog/status.md" "the unproven draft is a reported gap: $unproven"
+    assert_grep "titled composers are unsupported" "$H/data/watchdog/status.md" "the gap names the unsupported shapes: $unproven"
     sleep 1
     assert_equals "" "$(cat "$H/typed.log")" "Enter was never pressed: $unproven"
   done

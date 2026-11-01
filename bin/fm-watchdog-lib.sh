@@ -20,14 +20,17 @@
 #       merge, deploy, release, publish, and force-push words, so no typed answer
 #       or nudge can carry a merge or deploy instruction.
 #   fm_wd_draft_rows <composer-window>
-#       Prints the draft for the handoff note: from the first prompt row below the
-#       nearest rule above the last prompt row, down to the end of the window, less
-#       trailing footer rows and one closing rule directly above them.
+#       Prints the draft fm_wd_draft_readable proved, for the handoff note: a
+#       closed box's body from its first prompt row, or the rows from the last
+#       prompt row down to the last long rule. An unproven draft prints nothing.
 #   fm_wd_prompt_tail <composer-window>
 #       Prints every row from the first prompt row to the end of the window.
-#   fm_wd_draft_readable <composer-window>
-#       Returns 0 only when the window shows the whole draft: no paste placeholder
-#       hides its text, and the composer's prompt row is inside the window.
+#   fm_wd_draft_readable <composer-window> [rows-above-the-window]
+#       Returns 0 only when the whole draft boundary is proven: no paste placeholder
+#       hides its text, the last prompt row is inside the window, and that row sits
+#       in a closed box whole inside the window, or between two equal rules of 40
+#       or more characters at column 0. Plain, indented, left-bar, and titled-rule
+#       composers are not proven.
 #   fm_wd_strip_ansi
 #       Filter: removes ANSI escape sequences and carriage returns.
 #   fm_wd_pane_dialog <screen>

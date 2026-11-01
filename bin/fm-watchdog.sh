@@ -870,7 +870,7 @@ wd_submit_unsent() {
       wd_rec "$(wd_id)" pasted-input key refused "the draft names a merge, deploy, or release word; never accepted"
     return 1
   elif ! fm_wd_draft_readable "$O_COMPOSER_TEXT" "$O_COMPOSER_ABOVE"; then
-    wd_gap "unsent input is a paste placeholder, or its whole draft boundary is not proven; Enter not pressed"
+    wd_gap "unsent input is a paste placeholder, or its whole draft boundary is not proven (plain, indented, left-bar, and titled composers are unsupported); Enter not pressed"
     wd_rate_open pasted-input key "$(cfgi enter-secs 300)" &&
       wd_rec "$(wd_id)" pasted-input key refused "the whole draft cannot be read; never accepted"
     return 1
