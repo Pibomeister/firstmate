@@ -11,7 +11,8 @@
 # The percent is the external "N% until auto-compact" figure, never a model's
 # self-estimate. Pass --percent only for a footer already read from the pane.
 # Without it, and only inside a genuine primary home, record reads the
-# supervisor pane footer the same way bin/fm-heartbeat.sh does. Claude Code
+# supervisor pane footer with the parser bin/fm-heartbeat.sh uses, taking the
+# line above the input box when one is drawn. Claude Code
 # draws that footer only in the last 20000 tokens before auto-compact, so when
 # the pane shows none, record computes the same figure from the hook payload's
 # transcript and the auto-compact window with bin/fm-compact-point-lib.sh, the
