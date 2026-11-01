@@ -33,6 +33,12 @@ pass "received appends one timestamped TSV line with project and summary"
 
 dl $((T0 + 600)) overdue >/dev/null; rc=$?
 [ "$rc" = 0 ] || fail "a 10-minute-old goal was reported overdue (rc=$rc)"
+dl $((T0 + 900)) overdue >/dev/null; rc=$?
+[ "$rc" = 0 ] || fail "a goal at exactly 900s was reported overdue (rc=$rc)"
+out=$(dl $((T0 + 901)) overdue); rc=$?
+[ "$rc" = 3 ] || fail "a goal at 901s did not exit 3 (rc=$rc)"
+case "$out" in 'OVERDUE g1 age=15m received=2027-01-15T08:00:00Z project=shipcontent-v2 summary=polished V2 video') ;;
+  *) fail "unexpected overdue line at 901s: $out" ;; esac
 out=$(dl $((T0 + 16 * 60)) overdue); rc=$?
 [ "$rc" = 3 ] || fail "a 16-minute-old undispatched goal did not exit 3 (rc=$rc)"
 case "$out" in 'OVERDUE g1 age=16m received=2027-01-15T08:00:00Z project=shipcontent-v2 summary=polished V2 video') ;;
@@ -43,7 +49,11 @@ out=$(FM_DISPATCH_SLA_MINUTES=30 dl $((T0 + 16 * 60)) overdue); rc=$?
 [ "$rc" = 0 ] && [ -z "$out" ] || fail "FM_DISPATCH_SLA_MINUTES=30 did not widen the SLA"
 out=$(FM_DISPATCH_SLA_MINUTES=5 FM_STATE_OVERRIDE="$STATE" FM_DISPATCH_NOW=$((T0 + 6 * 60)) bash "$DL" overdue); rc=$?
 [ "$rc" = 3 ] || fail "FM_DISPATCH_SLA_MINUTES=5 did not tighten the SLA"
-pass "FM_DISPATCH_SLA_MINUTES widens and tightens the SLA"
+out=$(FM_DISPATCH_SLA_MINUTES=08 dl $((T0 + 9 * 60)) overdue); rc=$?
+[ "$rc" = 3 ] || fail "FM_DISPATCH_SLA_MINUTES=08 was not eight decimal minutes (rc=$rc)"
+out=$(FM_DISPATCH_SLA_MINUTES=010 dl $((T0 + 9 * 60)) overdue); rc=$?
+[ "$rc" = 0 ] && [ -z "$out" ] || fail "FM_DISPATCH_SLA_MINUTES=010 was not ten decimal minutes (rc=$rc out=$out)"
+pass "FM_DISPATCH_SLA_MINUTES widens and tightens the SLA, and a leading zero stays decimal"
 
 dl $((T0 + 700)) dispatched g1 --task shipcontent-polished-first-video >/dev/null \
   || fail "dispatched refused a received goal"
@@ -74,6 +84,23 @@ FM_DISPATCH_SLA_MINUTES=x dl "$T0" overdue >/dev/null 2>&1 && fail "a non-numeri
 dl "$T0" overdue --minutes 30 >/dev/null 2>&1 && fail "the removed --minutes flag was accepted"
 [ "$(wc -l < "$LOG" | tr -d ' ')" = "$before" ] || fail "a refused request wrote to the ledger"
 pass "malformed, duplicate, and orphan requests are refused without writing"
+
+before=$(wc -l < "$LOG" | tr -d ' ')
+dl "$T0" received g-blank --summary ' ' >/dev/null 2>&1 && fail "a whitespace-only summary was accepted"
+dl "$T0" received g-blank --summary $'\t' >/dev/null 2>&1 && fail "a tab-only summary was accepted"
+dl "$T0" dispatched g1 --task ' ' >/dev/null 2>&1 && fail "a whitespace-only task was accepted"
+dl "$T0" blocked g2 --reason '   ' >/dev/null 2>&1 && fail "a whitespace-only reason was accepted"
+dl "$T0" queued g2 --reason $' \t' >/dev/null 2>&1 && fail "a whitespace-only queued reason was accepted"
+[ "$(wc -l < "$LOG" | tr -d ' ')" = "$before" ] || fail "a whitespace-only value wrote to the ledger"
+pass "whitespace-only summary, task, and reason are refused without writing"
+
+before=$(wc -l < "$LOG" | tr -d ' ')
+dl "$T0" received g-flag --summary --project >/dev/null 2>&1 && fail "a flag-looking summary was accepted"
+dl "$T0" received g-flag --summary --project p >/dev/null 2>&1 && fail "--summary --project p was accepted"
+dl "$T0" dispatched g1 --task --note >/dev/null 2>&1 && fail "a flag-looking task was accepted"
+dl "$T0" blocked g2 --reason --because >/dev/null 2>&1 && fail "a flag-looking reason was accepted"
+[ "$(wc -l < "$LOG" | tr -d ' ')" = "$before" ] || fail "a flag-looking value wrote to the ledger"
+pass "a value that starts with a dash is refused, including --summary --project p"
 
 dl "$T0" received g4 --summary $'two\tfields\nand lines' >/dev/null || fail "free text with tabs refused"
 [ "$(tail -n 1 "$LOG" | awk -F '\t' '{ print NF }')" = 5 ] || fail "free text broke the TSV shape"
@@ -228,6 +255,55 @@ dl $((T0 + 26 * 3600)) dispatched weekend --task t-weekend-retry >/dev/null || f
 out=$(dl $((T0 + 49 * 3600 + 1)) overdue)
 case "$out" in *'LATE weekend'*) fail "a later retry extended the LATE window: $out" ;; esac
 pass "the LATE window runs from the late final line, not from received or a later retry"
+
+STATE="$TMP_ROOT/two-goal"
+dl "$T0" received both-open --summary 'still open' >/dev/null || fail "both-open refused"
+dl "$T0" received both-done --summary 'already dispatched' >/dev/null || fail "both-done refused"
+dl $((T0 + 60)) dispatched both-done --task t-both >/dev/null || fail "both-done dispatch refused"
+out=$(dl $((T0 + 16 * 60)) overdue); rc=$?
+[ "$rc" = 3 ] || fail "two-goal overdue exited $rc: $out"
+case "$out" in *'OVERDUE both-open age=16m'*) ;; *) fail "open goal missing from overdue: $out" ;; esac
+case "$out" in *'OVERDUE both-done'*) fail "dispatched goal was listed overdue: $out" ;; esac
+overdue_n=$(printf '%s\n' "$out" | grep -c '^OVERDUE ' || true)
+[ "$overdue_n" = 1 ] || fail "overdue listed $overdue_n goals, expected only both-open: $out"
+pass "overdue judges each of two goals by its own newest event"
+STATE="$TMP_ROOT/state"
+
+other="$TMP_ROOT/other-ledger.tsv"
+FM_DISPATCH_LOG="$other" dl "$T0" received m1 --summary 'stays in state' >/dev/null \
+  || fail "received refused while FM_DISPATCH_LOG was set"
+[ ! -e "$other" ] || fail "FM_DISPATCH_LOG created a second ledger"
+case "$(tail -n 1 "$LOG")" in *'summary=stays in state'*) ;; *) fail "the goal was not written to the state ledger: $(tail -n 1 "$LOG")" ;; esac
+pass "FM_DISPATCH_LOG does not select a second ledger"
+
+state=$(dl 0 show g1 | head -n 1)
+case "$state" in 'STATE g1 event=dispatched at='*' task=shipcontent-polished-first-video') ;;
+  *) fail "show did not lead with the goal state: $state" ;; esac
+err=$(FM_STATE_OVERRIDE="$STATE" FM_DISPATCH_NOW=0 bash "$DL" show missing-goal 2>&1) || rc=$?
+[ "$rc" = 1 ] || fail "show of an unknown goal exited $rc"
+case "$err" in *missing-goal*) ;; *) fail "unknown show said: $err" ;; esac
+empty="$TMP_ROOT/empty-state"
+mkdir -p "$empty"
+out=$(FM_STATE_OVERRIDE="$empty" FM_DISPATCH_NOW=0 bash "$DL" show); rc=$?
+[ "$rc" = 0 ] && [ -z "$out" ] || fail "show of an empty ledger exited $rc out=$out"
+FM_STATE_OVERRIDE="$empty" FM_DISPATCH_NOW=0 bash "$DL" show missing-goal >/dev/null 2>&1; rc=$?
+[ "$rc" = 1 ] || fail "show of an unknown goal on an empty ledger exited $rc"
+pass "show names a goal's current state, and an unknown goal is not an empty ledger"
+
+dl 0 show > "$TMP_ROOT/show-all"
+cmp -s "$LOG" "$TMP_ROOT/show-all" || fail "bare show did not equal the ledger"
+pass "bare show prints the ledger"
+
+before=$(wc -l < "$LOG" | tr -d ' ')
+dl "$T0" dispatched g1 --task ' late=5m' >/dev/null 2>&1 && fail "a task of only a late mark was accepted"
+dl "$T0" blocked g2 --reason ' late=5m' >/dev/null 2>&1 && fail "a reason of only a late mark was accepted"
+[ "$(wc -l < "$LOG" | tr -d ' ')" = "$before" ] || fail "a late-mark-only value wrote to the ledger"
+pass "a task or reason of only a late mark is refused without writing"
+
+dl "$T0" received late-summary --summary ' late=5m' >/dev/null || fail "a summary of only a late mark was refused"
+[ "$(dl 0 show late-summary | tail -n 1 | cut -f5)" = 'summary= late=5m' ] \
+  || fail "received changed a late mark in its summary: $(dl 0 show late-summary)"
+pass "received keeps a summary of only a late mark, since it never strips one"
 
 # Every ordering of up to three lines after `received`, with each line one minute
 # or 20 minutes after the one before, against the model the script header states.
