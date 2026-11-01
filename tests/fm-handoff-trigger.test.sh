@@ -424,8 +424,10 @@ test_another_sessions_handoff_never_gates_this_stop() {
   rc=0
   (
     export PRIMARY ROOT
+    # The trailing exit keeps bash from exec-ing the one command, which would
+    # replace the fake harness and leave the caller outside any harness.
     # shellcheck disable=SC2016 # The fake harness shell expands these.
-    exec "$fakebin/claude" -c 'FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" handing-off'
+    exec "$fakebin/claude" -c 'FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" handing-off; exit $?'
   ) || rc=$?
   [ "$rc" -eq 1 ] || fail "a session that wrote no handoff is not handing off (rc=$rc)"
 
@@ -522,8 +524,10 @@ test_a_caller_outside_any_harness_reads_the_captains_handoff() {
   rc=0
   (
     export PRIMARY ROOT
+    # The trailing exit keeps bash from exec-ing the one command, which would
+    # replace the fake harness and leave the caller outside any harness.
     # shellcheck disable=SC2016 # The fake harness shell expands these.
-    exec "$fakebin/claude" -c 'FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" handing-off'
+    exec "$fakebin/claude" -c 'FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" handing-off; exit $?'
   ) || rc=$?
   assert_equals 1 "$rc" "a second harness session is not handing off"
   err="$TMP_ROOT/out-other.err"
