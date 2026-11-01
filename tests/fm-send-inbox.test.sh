@@ -572,6 +572,36 @@ test_failed_ring_is_still_sent
 test_fire_and_forget_unlanded_ring_owes_one_retry
 test_fire_and_forget_retry_stays_off_without_the_flag
 test_harness_invocations_stay_typed
+test_holds_read_failure_leaves_reused_correlation_resendable() {
+  local dir err corr real_sort body
+  dir=$(setup_case holds-read-failure)
+  err="$dir/send.err"
+  fm_write_secondmate_meta "$dir/home/state/domain.meta" "$dir/home" "sess:fm-domain"
+  mkdir -p "$dir/home/data/orders"
+  corr=$(bash -c '. "$1"; fm_pending_reply_create "$2" "$3" domain "first request"' _ \
+    "$ROOT/bin/fm-pending-reply-lib.sh" "$dir/home" "$dir/home/state") ||
+    fail "could not create the reused correlation fixture"
+  real_sort=$(command -v sort)
+  cat >"$dir/fakebin/sort" <<SH
+#!/usr/bin/env bash
+case " \$* " in *" -k1,1nr "*) [ "\${FM_FAKE_HOLDS_SORT_FAIL:-0}" = 1 ] && exit 1 ;; esac
+exec "$real_sort" "\$@"
+SH
+  chmod +x "$dir/fakebin/sort"
+  if run_send "$dir" "$err" FM_FAKE_HOLDS_SORT_FAIL=1 FM_PENDING_REPLY_EXISTING_CORR="$corr" -- \
+    fm-domain "please retry"; then
+    fail "a send must stop when the holds cannot be read"
+  fi
+  assert_contains "$(cat "$err")" "nothing was sent" "the holds read failure says nothing was sent"
+  [ ! -e "$dir/home/state/domain.inbox/001.msg" ] || fail "a failed holds read must not record the steer"
+  [ -f "$dir/home/state/pending-replies/$corr" ] || fail "a reused correlation must keep its expectation"
+  run_send "$dir" "$err" FM_PENDING_REPLY_EXISTING_CORR="$corr" -- fm-domain "please retry" ||
+    fail "the resend after a failed holds read was refused: $(cat "$err")"
+  body=$(record_body _ "$dir/home/state/domain.inbox/001.msg")
+  assert_contains "$body" "corr=$corr" "the resend reuses the same correlation"
+  pass "fm-send holds: a failed holds read leaves a reused correlation resendable"
+}
+
 test_explicit_target_stays_typed
 test_key_path_never_touches_inbox
 test_secondmate_marker_and_enqueue_delivery
@@ -581,3 +611,4 @@ test_unwritable_inbox_fails_loudly
 test_empty_message_refused
 test_standing_holds_travel_with_the_steer
 test_standing_holds_travel_to_an_explicit_target
+test_holds_read_failure_leaves_reused_correlation_resendable

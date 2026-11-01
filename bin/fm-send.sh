@@ -943,8 +943,8 @@ else
     [ -d "${FM_DATA_OVERRIDE:-$FM_HOME/data}/orders" ]; then
     if ! HOLDS_BLOCK=$(FM_HOME="$FM_HOME" "$SCRIPT_DIR/fm-order.sh" holds --relay 2>/dev/null); then
       echo "error: could not read this home's standing captain holds (bin/fm-order.sh holds --relay); nothing was sent" >&2
-      [ "${PENDING_REPLY_CREATED:-0}" != 1 ] ||
-        fm_pending_reply_discard_undelivered "$STATE" "$PENDING_REPLY_CORR" || true
+      fm_send_known_undelivered_cleanup ||
+        echo "error: known-undelivered pending-reply state could not be reset for $TARGET_TASK_ID" >&2
       exit 1
     fi
     if [ -n "$HOLDS_BLOCK" ] && [ "$INBOX_PLANE" = 1 ]; then
