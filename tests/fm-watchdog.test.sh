@@ -236,6 +236,25 @@ test_do_not_touch_never_typed() {
   assert_equals 1 "$(ledger_rows frozen nudge refused)" "a do-not-touch endpoint records a refusal"
   sleep 1
   assert_equals "" "$(cat "$H/typed.log")" "nothing is typed into a do-not-touch pane"
+  local entry link off
+  for entry in link 'link home' slash; do
+    make_home $'Captain session\n> ' 'restart=on
+restart-command=/bin/true'
+    link="$(dirname "$H")/$entry-$$"
+    rm -f "$link"
+    ln -s "$H" "$link"
+    [ "$entry" != slash ] || link="$H/"
+    printf 'do-not-touch=%s\n' "$link" >> "$H/config/watchdog"
+    transcript 5000 "Working." "Testing." "Green."
+    owe_input 5000
+    for off in 0 1000 2000 3000 4000; do run_wd "$off" once >/dev/null 2>&1; done
+    assert_equals 0 "$(ledger | awk -F'\t' '$6 == "nudge" && $7 == "pending"' | wc -l | tr -d ' ')" "no nudge goes out for $entry: $(ledger | cut -f5-8)"
+    assert_equals 0 "$(ledger_rows frozen restart pending)" "no restart runs for $entry: $(ledger | cut -f5-8)"
+    [ "$(ledger | awk -F'\t' '$7 == "refused" && $8 ~ /do-not-touch/' | wc -l | tr -d ' ')" -ge 1 ] || fail "the refusal is not recorded for $entry: $(ledger | cut -f5-8)"
+    sleep 1
+    assert_equals "" "$(cat "$H/typed.log")" "nothing is typed for $entry"
+    rm -f "$(dirname "$H")/$entry-$$"
+  done
   pass "boundary: never types into a pane on the do-not-touch list"
 }
 
@@ -244,6 +263,7 @@ test_draft_rows_are_the_draft_alone() {
   assert_equals $'> first\n  then enter plan mode\n  third' "$(lib fm_wd_draft_rows "> first"$'\n  then enter plan mode\n  third\n'"$rule"$'\n  footer')" "a footer word inside a draft does not cut it"
   assert_equals $'> first\n  accept edits later' "$(lib fm_wd_draft_rows $'old row\n> first\n  accept edits later\n  ? for shortcuts\n  7% until auto-compact')" "with no rule, only trailing footer rows drop"
   assert_equals $'> merge #5\n> ok' "$(lib fm_wd_draft_rows "> merge #5"$'\n> ok\n'"$rule"$'\n  footer')" "a second prompt glyph in a draft does not cut it"
+  assert_equals $'> keep going\n ──────\n merge #5' "$(lib fm_wd_draft_rows "old"$'\n'"$rule"$'\n> keep going\n ──────\n merge #5\n'"$rule"$'\n ? for shortcuts')" "an inner rule does not end the draft"
   assert_equals "> now" "$(lib fm_wd_draft_rows "> sent earlier"$'\n'"$rule"$'\n> now\n'"$rule")" "a rule above the prompt ends the conversation"
   pass "draft rows: from the prompt row to the rule, and no footer word cuts them"
 }
@@ -277,6 +297,14 @@ test_merge_autosuggestion_never_accepted() {
   assert_equals 0 "$(ledger_rows pasted-input key pending)" "a footer word cannot hide a merge word from Enter: $(ledger | cut -f5-8)"
   assert_equals 1 "$(ledger_rows pasted-input key refused)" "the draft is refused: $(ledger | cut -f5-8)"
   assert_grep "unsent draft names a merge" "$H/data/watchdog/status.md" "the draft refusal is a gap"
+
+  make_home $'old\n──────────\n> keep going\n ──────\n merge #5\n──────────\n ? for shortcuts'
+  FM_WD_TEST_COMPOSER=pending run_wd 0 once >/dev/null 2>&1
+  FM_WD_TEST_COMPOSER=pending run_wd 300 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows pasted-input key pending)" "an inner rule cannot hide a merge word from Enter: $(ledger | cut -f5-8)"
+  assert_equals 1 "$(ledger_rows pasted-input key refused)" "the draft with an inner rule is refused: $(ledger | cut -f5-8)"
+  sleep 1
+  assert_equals "" "$(cat "$H/typed.log")" "Enter was never pressed on the draft with an inner rule"
   pass "boundary: never accepts a merge autosuggestion, while ordinary unsent text is submitted"
 }
 
