@@ -43,8 +43,11 @@ case "$1 $2" in
   'worktree rm')
     printf '%s\n' "$*" >> "${FM_TEST_ORCA_JSON_FILE:?}.rm"
     [ "${FM_TEST_ORCA_RM_RC:-0}" = 0 ] || exit "$FM_TEST_ORCA_RM_RC"
+    [ "${FM_TEST_ORCA_RM_STALL:-0}" = 0 ] || exit 0
+    # Real Orca answers success at once and removes the directory afterward.
     target=${4#path:}
-    exec git -C "$target" worktree remove "$target"
+    (sleep 2; git -C "$target" worktree remove "$target") >/dev/null 2>&1 &
+    exit 0
     ;;
 esac
 cat "${FM_TEST_ORCA_JSON_FILE:?}"
@@ -136,6 +139,7 @@ run_clean() {
     FM_TEST_ORCA_JSON_FILE="$dir/orca.json" \
     FM_TEST_ORCA_RC="${FM_TEST_ORCA_RC:-0}" \
     FM_TEST_ORCA_RM_RC="${FM_TEST_ORCA_RM_RC:-0}" \
+    FM_TEST_ORCA_RM_STALL="${FM_TEST_ORCA_RM_STALL:-0}" \
     FM_HOME="$dir" \
     FM_STATE_OVERRIDE="$dir/state" \
     FM_PROJECTS_OVERRIDE="$dir/projects" \
@@ -536,6 +540,22 @@ test_orca_refusal_is_reported() {
   pass "an Orca refusal is reported"
 }
 
+test_unfinished_orca_removal_is_reported() {
+  begin_case orcastall
+  publish_pr MERGED
+  orca_json "$CASE_DIR/orca.json" false "$CASE_WT"
+  # Removes the wait, so the bounded poll ends at once.
+  printf '#!/bin/sh\nexit 0\n' > "$CASE_DIR/bin/sleep"
+  chmod +x "$CASE_DIR/bin/sleep"
+  FM_TEST_ORCA_RM_STALL=1 capture_clean "$CASE_DIR"
+  assert_kept
+  assert_out "Orca removal did not finish"
+  if printf '%s\n' "$CAP_OUT" | grep -F "worktree-cleanup: remove " >/dev/null; then
+    fail "an unfinished Orca removal was logged as removed"
+  fi
+  pass "an unfinished Orca removal is reported"
+}
+
 test_live_orca_terminal_keeps_the_worktree() {
   begin_case orcaterminal
   publish_pr MERGED
@@ -797,6 +817,7 @@ fm_test_run \
   test_orca_listed_dirty_worktree_is_reported \
   test_orca_dry_run_changes_nothing \
   test_orca_refusal_is_reported \
+  test_unfinished_orca_removal_is_reported \
   test_live_orca_terminal_keeps_the_worktree \
   test_worktree_containing_a_dirty_worktree_is_kept \
   test_unreadable_orca_list_keeps_the_worktree \

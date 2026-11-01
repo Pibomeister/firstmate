@@ -22,7 +22,9 @@
 # reported and left in place when that fetch does not produce it.
 # Removal is `git worktree remove`, or `orca worktree rm` for a worktree Orca
 # lists so that its list stays correct, never with --force, followed by
-# `git worktree prune`. A refusal is reported. This script deletes no branch.
+# `git worktree prune`. A refusal is reported. Orca removes the directory after
+# it answers, so the pass waits up to 60 seconds for the directory to go, and
+# reports the worktree when it stays. This script deletes no branch.
 # `orca worktree rm` can delete a local branch that Orca proves is merged.
 # --dry-run prints the same decisions and does not remove, prune, or move the
 # cursor. It can still fetch a missing pull request head.
@@ -66,6 +68,7 @@ DRY=0
 SCAN=0
 TARGET=
 BUDGET=20
+ORCA_REMOVE_WAIT=60
 START=$(date +%s)
 BUDGET_LOGGED=0
 LOG_FILE=
@@ -344,28 +347,38 @@ owner_lists_path() {
   return 1
 }
 
+# 0 when the directory is gone, 1 when removal is refused, 2 when Orca accepted
+# the removal and the directory is still there at the end of the wait. Orca
+# answers success at once and removes the directory afterward.
 remove_with_owner() {
-  local repo=$1 wt=$2 orca_listed=$3
+  local repo=$1 wt=$2 orca_listed=$3 waited=0
   if [ "$orca_listed" -eq 1 ]; then
     orca worktree rm --worktree "path:$wt" --json >/dev/null 2>&1 || return 1
-    [ ! -e "$wt" ]
+    while [ -e "$wt" ]; do
+      [ "$waited" -lt "$ORCA_REMOVE_WAIT" ] || return 2
+      sleep 1
+      waited=$((waited + 1))
+    done
   else
     git -C "$repo" worktree remove -- "$wt" >/dev/null 2>&1
   fi
 }
 
 remove_worktree() {
-  local repo=$1 wt=$2 state=$3 url=$4 orca_listed=$5
+  local repo=$1 wt=$2 state=$3 url=$4 orca_listed=$5 rc=0
   if [ "$DRY" -eq 1 ]; then
     emit "worktree-cleanup: dry-run $wt pull request $state $url"
     return 0
   fi
-  if remove_with_owner "$repo" "$wt" "$orca_listed"; then
-    emit "worktree-cleanup: remove $wt pull request $state $url"
-    git -C "$repo" worktree prune
-    return 0
-  fi
-  emit "worktree-cleanup: report $wt removal refused"
+  remove_with_owner "$repo" "$wt" "$orca_listed" || rc=$?
+  case "$rc" in
+    0)
+      emit "worktree-cleanup: remove $wt pull request $state $url"
+      git -C "$repo" worktree prune
+      ;;
+    2) emit "worktree-cleanup: report $wt Orca removal did not finish" ;;
+    *) emit "worktree-cleanup: report $wt removal refused" ;;
+  esac
   return 0
 }
 
