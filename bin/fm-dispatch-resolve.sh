@@ -70,6 +70,10 @@
 #   existing unreadable rules file, malformed rules, missing jq, an unknown
 #   provider, a selected non-typesafe provider without a model, or systemone
 #   without a valid base URL), which is actionable, never selected around.
+#   Disk alarm: before resolving, and before the off return, it runs
+#   bin/fm-disk-alarm.sh. That script's human line stays on stderr. The machine
+#   line is discarded. This tool's exit status is unchanged. bin/fm-disk-alarm.sh
+#   owns the reading.
 #
 # Environment:
 #   FM_DISPATCH_PROVIDER, FM_DISPATCH_MODEL, FM_DISPATCH_BASE_URL,
@@ -144,6 +148,10 @@ while [ $# -gt 0 ]; do
     *) [ -z "$BRIEF" ] || die "one brief file only"; BRIEF=$1; shift ;;
   esac
 done
+
+# The reading is before every return below, including off. Stdout stays the
+# dispatch block; the human line, when there is one, stays on stderr.
+"$SCRIPT_DIR/fm-disk-alarm.sh" >/dev/null || true
 
 # ---- opt-in gate ---------------------------------------------------------------
 DISPATCH_PROVIDER=${FM_DISPATCH_PROVIDER:-}

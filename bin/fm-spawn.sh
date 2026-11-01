@@ -246,6 +246,12 @@
 #   A batch reports such a pair as `batch: DEFERRED` and exits 75 when nothing
 #   else failed. A relaunch and a --secondmate spawn are never counted against
 #   capacity.
+#   Disk alarm: before any lock, brief, endpoint, worktree, record, or backlog
+#   move, a fresh ship or scout runs bin/fm-disk-alarm.sh --gate crew. The human
+#   line stays on stderr and the machine line is discarded. A refusal exits 1
+#   and does not stay queued. A relaunch and a --secondmate spawn are not new
+#   crewmate launches. A refused batch pair is FAILED. bin/fm-disk-alarm.sh owns
+#   the reading and the levels.
 #   With no harness arg, a crewmate/scout spawn resolves the CREW harness only when
 #   config/crew-dispatch.json is absent. When that file exists, crewmate/scout
 #   spawns require an explicit harness so firstmate cannot silently skip dispatch
@@ -2100,6 +2106,9 @@ fm_task_id_creation_valid "$ID" || {
   echo "error: invalid task id" >&2
   exit 2
 }
+if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ]; then
+  "$SCRIPT_DIR/fm-disk-alarm.sh" --gate crew >/dev/null || exit $?
+fi
 if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" = ship ]; then
   BRANCH="$BRANCH_PREFIX$ID"
   if ! git check-ref-format --branch "$BRANCH" >/dev/null 2>&1; then

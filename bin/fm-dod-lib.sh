@@ -454,6 +454,10 @@ Never replay an old \`respond\` on redelivery: if a response may already have be
 Resolve the paused wait when handling is durable; re-arm and declare the next wait only when external pipeline work is underway.
 An elapsed or interrupted drive attachment is not evidence the daemon died; the listener reattaches routine elapsed holds, while errors and unknown returns wake you for recovery."
   cat <<EOF
+Before starting a no-mistakes run, run \`$script_dir/fm-disk-alarm.sh --gate lane\`.
+A non-zero result means do not start that run.
+Append a blocked status line carrying the script's own line, then stop, so the work can be placed on another host or cloud.
+
 You drive no-mistakes by responding to its gates, not by implementing fixes.
 Follow the guidance no-mistakes itself provides for the mechanics: it loads when you invoke /no-mistakes, and \`no-mistakes axi run --help\` plus the \`help\` lines in each \`axi\` response are authoritative and version-matched to the installed binary.
 When starting no-mistakes, pass \`--intent\` as only this brief's \`## Captain's intent\` subsection body, not its heading, plus any later words the captain actually said.

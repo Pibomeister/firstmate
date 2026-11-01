@@ -7,7 +7,10 @@
 #       a fresh firstmate worktree via "treehouse get --lease", which durably
 #       leases the worktree under the secondmate <id> so the home survives with
 #       no live process and is never recycled until the lease is released with
-#       "treehouse return". Projects are cloned
+#       "treehouse return". A requested home of "-" or a path that does not exist
+#       yet is refused before that lease or clone when bin/fm-disk-alarm.sh --gate
+#       lane refuses, so neither treehouse get nor git clone runs. An existing
+#       home is not gated. bin/fm-disk-alarm.sh owns that reading. Projects are cloned
 #       from the active home into the secondmate home's projects/ directory.
 #       That project list is non-exclusive provisioning data. Pass --no-projects
 #       instead of a project list to seed a project-less home for a domain whose
@@ -896,6 +899,7 @@ seed_home() {
   fi
 
   if [ "$requested_home" = "-" ]; then
+    "$SCRIPT_DIR/fm-disk-alarm.sh" --gate lane >/dev/null || return 1
     SEED_HOME_ACQUIRED=1
     home=$(acquire_treehouse_home "$id")
     SEED_HOME="$home"
@@ -904,6 +908,9 @@ seed_home() {
     requested_abs=$(abs_path_for_new "$requested_home")
     refuse_active_home_path "$requested_abs" || return 1
     validate_home_assignment "$id" "$requested_abs" || return 1
+    if [ ! -e "$requested_abs" ]; then
+      "$SCRIPT_DIR/fm-disk-alarm.sh" --gate lane >/dev/null || return 1
+    fi
     SEED_HOME="$requested_abs"
     [ -e "$requested_abs" ] || SEED_HOME_CREATED=1
     home=$(ensure_home "$id" "$requested_abs")
