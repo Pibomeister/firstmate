@@ -93,8 +93,8 @@
 #   ORCA proves it by still describing the recorded terminal as closed with no
 #   agent left working in the recorded worktree (a rebound Orca terminal is
 #   created inside the task's recorded Orca worktree).
-#   After Droid's separate stop proof, a closed or unwritable terminal also
-#   rebinds; only a connected, writable terminal is adopted.
+#   After Droid's separate stop proof, a closed terminal also rebinds; only a
+#   connected, writable terminal is adopted, and any other terminal refuses.
 #   A tmux rebind re-creates the window on the recorded socket and refuses when
 #   this process addresses another tmux server. An endpoint that turns out
 #   to have survived refuses too. The worktree is reused untouched either way; a
@@ -2547,9 +2547,9 @@ FACTS
     fi
     case "$RELAUNCH_DROID_CONNECTED:$RELAUNCH_DROID_WRITABLE" in
       true:true) RELAUNCH_STATE=dead ;;
-      false:false|true:false) RELAUNCH_STATE=missing ;;
+      false:false) RELAUNCH_STATE=missing ;;
       *)
-        echo "error: Orca Droid's recorded terminal has no proven writable state after its absence proof; refusing to rebind or adopt it" >&2
+        echo "error: Orca Droid's recorded terminal is not proven writable or closed after its absence proof; refusing to rebind or adopt it" >&2
         exit 1
         ;;
     esac

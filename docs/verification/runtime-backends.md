@@ -2631,10 +2631,10 @@ bash bin/fm-test-run.sh tests/fm-spawn-orca-worktree.test.sh --per-script-timeou
 
 ```text
 ok - an Orca Droid relaunch adopts a connected owned shell without a marker, and refuses a wrong generation, a live worktree process, and a failed scan
-ok - a stopped Orca Droid task replaces only a proven closed or unwritable terminal and preserves unlanded work
+ok - a stopped Orca Droid task replaces only a proven closed terminal, refuses a connected unwritable one, and preserves unlanded work
 ```
 
-The terminal-selection matrix includes a `stop_unverified` exit cause, a connected but unwritable terminal, stale and unreadable handles, remote terminals, mismatched worktrees, and unknown writability.
+The terminal-selection matrix includes a `stop_unverified` exit cause, a refused connected but unwritable terminal, stale and unreadable handles, remote terminals, mismatched worktrees, and unknown writability.
 This portable check does not refresh the live Orca or Droid version evidence above.
 
 ### Orca environment source

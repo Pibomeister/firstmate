@@ -108,7 +108,7 @@ case "$1 $2" in
     ;;
   "terminal send")
     printf '%s\n' "$*" >> "$DIR/terminal-send.log"
-    # A closed or unwritable recorded endpoint remains readable in Orca,
+    # An unwritable recorded endpoint remains readable in Orca,
     # but cannot receive the relaunch's worktree-entry command.
     prev=
     handle=
@@ -648,7 +648,7 @@ test_orca_droid_relaunch_rebinds_only_after_stop_and_terminal_proof() {
     before=$(cat "$HOME_DIR/state/$TASK.meta")
     orca_relaunch --harness claude
     case "$variant" in
-      closed|stop-unverifiable|unwritable)
+      closed|stop-unverifiable)
         expect_code 0 "$STATUS" "a stopped Droid task with a proven $variant terminal must rebind"$'\n'"$OUT"
         assert_contains "$(cat "$CASE_DIR/terminal-create.log")" "--worktree id:wt-1::$WT" \
           "the replacement terminal must use the recorded worktree"
@@ -657,17 +657,19 @@ test_orca_droid_relaunch_rebinds_only_after_stop_and_terminal_proof() {
         assert_contains "$(cat "$CASE_DIR/terminal-send.log")" "cd -- '$WT'" \
           "the replacement must enter the recorded worktree"
         assert_not_contains "$(cat "$CASE_DIR/terminal-send.log")" '--terminal term-old' \
-          "a closed or unwritable terminal must receive no relaunch input"
+          "a closed terminal must receive no relaunch input"
         ;;
       *)
         expect_code 1 "$STATUS" "a $variant Droid stop or terminal proof must refuse"$'\n'"$OUT"
+        [ "$variant" != unwritable ] || assert_contains "$OUT" "not proven writable or closed" \
+          "a connected unwritable terminal must refuse at the terminal check"
         [ ! -e "$CASE_DIR/terminal-create.log" ] || fail "an unproven relaunch must create no endpoint"
         [ "$(cat "$HOME_DIR/state/$TASK.meta")" = "$before" ] || fail "a refused relaunch must preserve the task record"
         ;;
     esac
     [ "$(cat "$WT/keep.txt")" = 'uncommitted task work' ] || fail "relaunch must preserve unlanded work"
   done
-  pass "a stopped Orca Droid task replaces only a proven closed or unwritable terminal and preserves unlanded work"
+  pass "a stopped Orca Droid task replaces only a proven closed terminal, refuses a connected unwritable one, and preserves unlanded work"
 }
 
 test_orca_relaunch_refuses_without_proof_of_a_stopped_agent() {
