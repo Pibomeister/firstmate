@@ -1194,7 +1194,7 @@ test_homes_with_one_basename_keep_their_own_state() {
   run_wd 0 once >/dev/null 2>&1
   run_wd 1000 once >/dev/null 2>&1
   assert_equals 2 "$(ledger_rows frozen nudge pending)" "each home keeps its own pane record: $(ledger | cut -f3,5-8)"
-  assert_equals 2 "$(ls "$one/state/watchdog/subjects" | wc -l | tr -d ' ')" "one subject record per home"
+  assert_equals 2 "$(find "$one/state/watchdog/subjects" -mindepth 1 -maxdepth 1 ! -name ".*" | wc -l | tr -d ' ')" "one subject record per home"
   pass "homes that share a basename keep separate state"
 }
 
