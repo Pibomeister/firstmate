@@ -410,12 +410,6 @@ wd_key() {
   local symptom=$1 key=$2 why=$3 id after
   wd_rate_open "$symptom" key "$(cfgi key-secs 120)" || return 1
   id=$(wd_id)
-  # Two keys that did not clear a dialog within the hour stop the presses, so a
-  # misread screen never keeps typing into the session.
-  if [ "$symptom" = dialog ] && [ "$(fm_wd_count_since "$LEDGER" "$O_HOME" dialog key '^failed$' "$(( $(wd_now) - 3600 ))")" -ge 2 ]; then
-    wd_gap "a $O_DIALOG dialog did not clear after two keys this hour; no more keys pressed"
-    return 1
-  fi
   if wd_do_not_touch "$O_HOME" "$O_TARGET"; then wd_rec "$id" "$symptom" key refused "endpoint is on do-not-touch"; return 1; fi
   if [ "$(wd_mode)" != act ]; then wd_rec "$id" "$symptom" key dry-run "would press $key: $why"; return 1; fi
   wd_rec "$id" "$symptom" key pending "press $key: $why"
@@ -776,6 +770,15 @@ wd_ladder_nudge_then_restart() {  # <symptom> <nudge-body> <kind>...
 
 wd_handle_dialog() {
   local opts pick n text
+  # Two keys that did not clear a dialog within the hour stop the presses, so a
+  # misread screen never keeps typing into the session and no model is asked.
+  case "$O_DIALOG" in
+    feedback|model-switch)
+      if [ "$(fm_wd_count_since "$LEDGER" "$O_HOME" dialog key '^failed$' "$(( $(wd_now) - 3600 ))")" -ge 2 ]; then
+        wd_gap "a $O_DIALOG dialog did not clear after two keys this hour; no more keys pressed"
+        return 0
+      fi ;;
+  esac
   case "$O_DIALOG" in
     feedback) wd_key dialog 0 "dismiss the feedback survey" ;;
     permission) wd_gap "permission dialog waiting; the watchdog never answers permission prompts" ;;
@@ -784,6 +787,8 @@ wd_handle_dialog() {
       text=$(fm_wd_dialog_text "$O_PANE")
       if fm_wd_reserved "$text"; then wd_gap "model-switch dialog names an owner-reserved category; held"; return 0; fi
       if fm_secret_like "$text"; then wd_gap "model-switch dialog text looks like a secret; held"; return 0; fi
+      if ! wd_rate_open dialog judge "$(cfgi nudge-secs 900)"; then wd_gap "model-switch dialog waiting; the next judge call waits for nudge-secs"; return 0; fi
+      wd_rec "$(wd_id)" dialog judge held "model-switch judge call"
       pick=$(wd_judge dialog '(OPTION [0-9]{1,2}|NONE)' "A coding agent's terminal shows this dialog about models or usage limits:
 $text
 Options:

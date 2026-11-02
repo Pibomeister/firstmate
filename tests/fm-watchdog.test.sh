@@ -643,6 +643,55 @@ council-seats=claude:haiku,agy:flash'
   pass "boundary: owner-reserved holds stay held; an ordinary decision is settled by a unanimous blind council"
 }
 
+judge_calls() { grep -c '^claude -p' "$H/model.log" 2>/dev/null || true; }
+
+test_model_switch_judge_is_rate_limited() {
+  local stuck=$'You have hit your weekly limit for Opus.\n\n ❯ 1. Wait\n   2. Buy more credits\n\nEnter to confirm · Esc to cancel'
+  local off
+
+  make_home "$stuck" 'models=claude:haiku'
+  fake_models "$H" ok:"NONE" absent
+  transcript 100 "Working."
+  for off in 0 120 240; do run_wd "$off" once >/dev/null 2>&1 || fail "NONE: pass $off failed"; done
+  assert_equals 1 "$(judge_calls)" "NONE: one judge call inside the window"
+  assert_grep "next judge call waits" "$H/data/watchdog/status.md" "NONE: the waiting picker is still a gap"
+  run_wd 900 once >/dev/null 2>&1 || fail "NONE: pass 900 failed"
+  assert_equals 2 "$(judge_calls)" "NONE: the judge is asked again once the window opens"
+  assert_equals 0 "$(ledger | awk -F'\t' '$6 == "key"' | wc -l | tr -d ' ')" "NONE: no key row"
+  [ ! -s "$H/typed.log" ] || fail "NONE: something was typed: $(cat "$H/typed.log")"
+
+  make_home "$stuck" 'models=claude:haiku'
+  fake_models "$H" ok:"OPTION 2" absent
+  transcript 100 "Working."
+  for off in 0 120 240; do run_wd "$off" once >/dev/null 2>&1 || fail "refused: pass $off failed"; done
+  assert_equals 1 "$(judge_calls)" "refused: one judge call inside the window"
+  assert_equals 1 "$(ledger_rows dialog key refused)" "refused: one refusal row inside the window"
+  [ ! -s "$H/typed.log" ] || fail "refused: a buy-credits option was pressed: $(cat "$H/typed.log")"
+
+  make_home "$stuck" 'models=claude:haiku
+mode=dry-run'
+  fake_models "$H" ok:"OPTION 1" absent
+  transcript 100 "Working."
+  for off in 0 120 240; do run_wd "$off" once >/dev/null 2>&1 || fail "dry-run: pass $off failed"; done
+  assert_equals 1 "$(judge_calls)" "dry-run: one judge call inside the window"
+  assert_equals 1 "$(ledger_rows dialog key dry-run)" "dry-run: one recorded key"
+  [ ! -s "$H/typed.log" ] || fail "dry-run: something was typed: $(cat "$H/typed.log")"
+
+  make_home "$stuck" 'models=claude:haiku'
+  fake_models "$H" ok:"OPTION 1" absent
+  transcript 100 "Working."
+  run_wd 0 once >/dev/null 2>&1 || fail "spent: pass 0 failed"
+  run_wd 900 once >/dev/null 2>&1 || fail "spent: pass 900 failed"
+  assert_equals 2 "$(ledger_rows dialog key failed)" "spent: two keys left the picker showing: $(ledger | cut -f5-8)"
+  assert_equals 2 "$(judge_calls)" "spent: each key had its own judge call"
+  run_wd 1800 once >/dev/null 2>&1 || fail "spent: pass 1800 failed"
+  assert_equals 2 "$(judge_calls)" "spent: no judge call after two failed keys"
+  assert_grep "no more keys pressed" "$H/data/watchdog/status.md" "spent: the stuck picker is reported"
+  run_wd 4600 once >/dev/null 2>&1 || fail "spent: pass 4600 failed"
+  assert_equals 3 "$(judge_calls)" "spent: the judge returns once the failed keys age out of the hour"
+  pass "model-switch dialog: the judge and its refusals are rate-limited in every mode and stop after two failed keys"
+}
+
 test_secret_looking_decision_reaches_no_council() {
   local sentinel=FAKESENTINEL42 rec_dirs
   make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
@@ -1999,6 +2048,7 @@ fm_test_run \
   test_reserved_model_switch_dialog_is_held \
   test_secret_looking_decision_reaches_no_council \
   test_secret_looking_model_switch_dialog_is_held \
+  test_model_switch_judge_is_rate_limited \
   test_unknown_composer_guards_the_nudge \
   test_orca_turn_probe_keeps_errors_unknown \
   test_no_activity_source_is_not_reported_ok \
