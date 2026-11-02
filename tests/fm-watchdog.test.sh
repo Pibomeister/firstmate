@@ -839,6 +839,38 @@ test_primary_ignores_another_sessions_endpoint() {
   pass "primary endpoint: another session's heartbeat is never typed into, and a match restores it"
 }
 
+test_primary_without_lock_identity_never_trusts_heartbeat_endpoint() {
+  local state out
+  for state in empty missing both-missing; do
+    make_home $'Captain session\n> '
+    transcript 3000 "Working." "Testing." "Green."
+    owe_input 3000
+    if [ "$state" = empty ]; then
+      printf '\n' > "$H/state/.lock-session"
+    else
+      rm "$H/state/.lock-session"
+    fi
+    if [ "$state" = both-missing ]; then
+      jq 'del(.primary.session.trusted_id)' "$H/state/heartbeat.json" > "$H/heartbeat.tmp"
+      mv "$H/heartbeat.tmp" "$H/state/heartbeat.json"
+    fi
+    run_wd 0 once >/dev/null 2>&1 || fail "$state: untrusted pass failed"
+    assert_equals "" "$(cat "$H/typed.log")" "$state: an unproven session's pane gets no text"
+    assert_equals 0 "$(ledger_rows unread-input nudge pending)" "$state: no nudge is delivered"
+    assert_grep 'no recorded terminal endpoint' "$H/data/watchdog/status.md" "$state: missing identity is reported"
+    out=$(run_wd 1 scan 2>&1) || fail "$state: scan failed: $out"
+    assert_contains "$out" 'endpoint=none:none session=none' "$state: heartbeat cannot supply its own identity proof"
+
+    printf '%s\n' "$SID" > "$H/state/.lock-session"
+    jq --arg sid "$SID" '.primary.session.trusted_id = $sid' "$H/state/heartbeat.json" > "$H/heartbeat.tmp"
+    mv "$H/heartbeat.tmp" "$H/state/heartbeat.json"
+    # A refused nudge also occupies the 900s rate window.
+    run_wd 1000 once >/dev/null 2>&1 || fail "$state: matching pass failed"
+    assert_equals 1 "$(ledger_rows unread-input nudge pending)" "$state: a proven matching identity restores delivery"
+  done
+  pass "primary identity: an absent lock id never authenticates a heartbeat, and a recorded match restores delivery"
+}
+
 test_restart_vetoed_by_running_turn() {
   make_home $'Captain session\n✻ Running tool… (esc to interrupt)' 'restart=on
 max-nudges=0
@@ -1870,6 +1902,7 @@ fm_test_run \
   test_near_loop_evidence_is_withheld_from_every_model \
   test_old_rapid_burst_leaves_an_idle_session_alone \
   test_primary_ignores_another_sessions_endpoint \
+  test_primary_without_lock_identity_never_trusts_heartbeat_endpoint \
   test_restart_vetoed_by_running_turn \
   test_restart_verified_pickup_and_loop_stop \
   test_no_action_while_restart_awaits_pickup \

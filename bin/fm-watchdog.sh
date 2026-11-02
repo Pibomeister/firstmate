@@ -277,18 +277,18 @@ EOF
     if wd_pid_alive "$O_LOCK_PID"; then O_ALIVE=1; fi
     if fm_session_lock_anchor_instance_matches "$st" 2>/dev/null; then O_INSTANCE=match; else O_INSTANCE=mismatch; fi
   fi
-  O_SESSION=$(fm_session_lock_recorded_session_id "$st" 2>/dev/null) || O_SESSION=$hb_sid
-  if [ "$ctx" != - ] && [ -n "$ctx" ] && [ "$hb_sid" = "$O_SESSION" ] && [ "$O_HB_AGE" != unknown ] && [ "$O_HB_AGE" -lt "$(cfgi watcher-stale-secs 900)" ]; then
+  O_SESSION=$(fm_session_lock_recorded_session_id "$st" 2>/dev/null) || O_SESSION=''
+  if [ -n "$O_SESSION" ] && [ "$ctx" != - ] && [ -n "$ctx" ] && [ "$hb_sid" = "$O_SESSION" ] && [ "$O_HB_AGE" != unknown ] && [ "$O_HB_AGE" -lt "$(cfgi watcher-stale-secs 900)" ]; then
     O_CTX=${ctx%%.*}; O_CTX_SRC=heartbeat
   fi
   # A second mate whose own heartbeat names another session, or none, uses the
   # parent's recorded endpoint for it.
   meta=''
   [ "$parent" = - ] || meta=$parent/state/$id.meta
-  if [ -n "$meta" ] && [ -f "$meta" ] && { [ -z "$O_TARGET" ] || [ "$hb_sid" != "$O_SESSION" ]; }; then
+  if [ -n "$meta" ] && [ -f "$meta" ] && { [ -z "$O_TARGET" ] || [ -z "$O_SESSION" ] || [ "$hb_sid" != "$O_SESSION" ]; }; then
     O_BACKEND=$(fm_backend_of_meta "$meta" 2>/dev/null)
     O_TARGET=$(fm_backend_target_of_meta "$meta" 2>/dev/null)
-  elif [ "$hb_sid" != "$O_SESSION" ]; then
+  elif [ -z "$O_SESSION" ] || [ "$hb_sid" != "$O_SESSION" ]; then
     O_BACKEND='' O_TARGET=''
   fi
   prev=$WD/subjects/$O_KEY
