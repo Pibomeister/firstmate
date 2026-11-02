@@ -48,6 +48,10 @@ CALLS=$WD/model-calls.tsv
 
 # shellcheck source=bin/fm-watchdog-lib.sh
 . "$SCRIPT_DIR/fm-watchdog-lib.sh"
+# shellcheck source=bin/fm-secret-lib.sh
+. "$SCRIPT_DIR/fm-secret-lib.sh"
+# shellcheck source=bin/fm-worker-account-lib.sh
+. "$SCRIPT_DIR/fm-worker-account-lib.sh"
 # shellcheck source=bin/fm-timeout-lib.sh
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
 # shellcheck source=bin/fm-wake-lib.sh
@@ -279,6 +283,8 @@ EOF
   if [ -n "$meta" ] && [ -f "$meta" ] && { [ -z "$O_TARGET" ] || [ "$hb_sid" != "$O_SESSION" ]; }; then
     O_BACKEND=$(fm_backend_of_meta "$meta" 2>/dev/null)
     O_TARGET=$(fm_backend_target_of_meta "$meta" 2>/dev/null)
+  elif [ "$hb_sid" != "$O_SESSION" ]; then
+    O_BACKEND='' O_TARGET=''
   fi
   prev=$WD/subjects/$O_KEY
   local p_sig='' p_since='' p_cpu='' p_at='' p_comp=''
@@ -431,7 +437,7 @@ wd_gap() {  # <text>
 # --- cheap model judge ---------------------------------------------------------
 
 wd_judge_one() {  # <model> <purpose> <answer-ere> <prompt>  -> prints the answer
-  local model=$1 purpose=$2 re=$3 prompt=$4 h m out ans cost='' tin='' tout='' rc=0 spent cap scratch acct
+  local model=$1 purpose=$2 re=$3 prompt=$4 h m out ans cost='' tin='' tout='' rc=0 spent cap scratch acct pin
   h=${model%%:*} m=${model#*:}
   spent=$(fm_wd_spent_since "$CALLS" "$(( $(wd_now) - 86400 ))")
   cap=$(cfg daily-max-usd 1.00)
@@ -445,14 +451,22 @@ wd_judge_one() {  # <model> <purpose> <answer-ere> <prompt>  -> prints the answe
   case "$h" in
     claude)
       command -v claude >/dev/null 2>&1 || return 4
-      acct=$(cfg claude-config-dir "$(head -n 1 "$OWNER_HOME/config/claude-account" 2>/dev/null)")
+      acct=$(cfg claude-config-dir '')
+      if [ -z "$acct" ]; then
+        if ! pin=$(fm_worker_account_resolve claude "$OWNER_HOME/config" config/claude-account 2>/dev/null); then
+          printf '%s\t%s\t%s\tfailed account\t\t\t\t\n' "$(wd_now)" "$purpose" "$model" >> "$CALLS"
+          return 4
+        fi
+        acct=${pin%%$'\t'*}
+      fi
       # The timed runner detaches stdin, so the prompt reaches claude through a
       # redirect inside the timed command rather than a pipe into the runner.
       printf '%s' "$prompt" > "$scratch/prompt.txt"
       # shellcheck disable=SC2016  # Expanded by the timed child shell.
       # With no account set, the CLI's own default stays in force: naming the default
       # directory explicitly makes the real CLI report that it is not logged in.
-      out=$( (cd "$scratch" && { [ -z "$acct" ] || export CLAUDE_CONFIG_DIR="$acct"; } && \
+      # An ordinary account means the variable is unset.
+      out=$( (cd "$scratch" && { if [ "$acct" = ordinary ]; then unset CLAUDE_CONFIG_DIR; elif [ -n "$acct" ]; then export CLAUDE_CONFIG_DIR="$acct"; fi; } && \
         fm_run_timed "$(cfgi judge-timeout-secs 120)" bash -c 'f=$1; shift; exec "$@" < "$f"' _ "$scratch/prompt.txt" \
         claude -p --model "$m" --output-format json --tools "" \
         --setting-sources "" --strict-mcp-config --no-session-persistence --max-budget-usd "$(cfg judge-call-max-usd 0.05)") 2>/dev/null) || rc=$?
@@ -946,6 +960,10 @@ wd_requested_restart() {  # <quiet-secs>
 wd_near_loop_confirmed() {
   local f=$WD/near-loop/$O_KEY at='' sum='' ans='' evidence new now
   evidence=$(printf '%s\n' "$O_EVENTS" | fm_wd_loop_evidence "$(( $(cfgi judge-max-chars 6000) - 200 ))")
+  if fm_secret_like "$evidence" || fm_wd_reserved "$evidence"; then
+    wd_gap "possible loop; its evidence is withheld from the judge, so it stays unconfirmed"
+    return 1
+  fi
   new=$(printf '%s' "$evidence" | cksum | cut -d ' ' -f 1)
   now=$(wd_now)
   if [ -f "$f" ]; then IFS=$'\t' read -r at sum ans < "$f" || true; fi
@@ -983,7 +1001,8 @@ wd_handle_subject() {
   elif { [ "$O_RESTART_REQ" = 1 ] || { [ -n "$O_CTX" ] && [ "$O_CTX" -le "$(cfgi restart-at-percent 8)" ]; }; } && wd_restart_available && ! wd_handoff_undeliverable; then
     symptom=restart-requested
     wd_requested_restart "$quiet"
-  elif [ "$O_LOOP" = rapid ] || { [ "$O_LOOP" = loop ] && [ "$O_OWED_N" -gt 0 ] && [ "$O_OWED_AGE" -ge "$owed" ]; }; then
+  elif [ "$O_OWED_N" -gt 0 ] && { { { [ "$O_LOOP" = loop ] || [ "$O_LOOP" = rapid ]; } && [ "$O_OWED_AGE" -ge "$owed" ]; } \
+       || { [ "$O_LOOP" = rapid ] && [ "$O_TR_AGE" != unknown ] && [ "$O_TR_AGE" -le "$(cfgi rapid-loop-secs 180)" ]; }; }; then
     symptom=timer-loop
     wd_ladder_nudge_then_restart timer-loop "your last $O_LOOP_N replies repeat the same text with no work between them, and input is waiting. Stop re-arming, drain the wake queue, and act on what it shows." filesystem records
   elif [ "$O_LOOP" = near ] && [ "$O_OWED_N" -gt 0 ] && [ "$O_OWED_AGE" -ge "$owed" ] && wd_near_loop_confirmed; then

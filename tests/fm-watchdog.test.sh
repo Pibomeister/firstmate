@@ -731,6 +731,81 @@ test_near_loop_confirmed_uses_the_ladder() {
   pass "near loop: a LOOP answer alone takes the existing ladder"
 }
 
+test_near_loop_evidence_is_withheld_from_every_model() {
+  local case sentinel=FAKESENTINEL42 f
+  for case in secret-text reserved-text secret-tool; do
+    near_loop_home 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+    fake_models "$H" ok:LOOP ok:LOOP
+    case "$case" in
+      secret-text) transcript 3000 "still waiting on the timer armed alpha" "still waiting on the timer armed beta" "still waiting on the timer armed token=$sentinel" ;;
+      reserved-text) transcript 3000 "still waiting on the timer armed alpha" "still waiting on the timer armed beta" "still waiting on the timer armed deploy $sentinel" ;;
+      secret-tool)
+        f="$H/claude/projects/p/$SID.jsonl"
+        jq -cn --arg a "password=$sentinel" '{type:"assistant",timestamp:"2026-01-01T00:00:00Z",message:{content:[{type:"tool_use",name:"ScheduleWakeup",input:{prompt:$a}}]}}' >> "$f"
+        fm_touch_epoch "$((BASE - 3000))" "$f" ;;
+    esac
+    run_wd 0 once >/dev/null 2>&1 || fail "$case: first pass failed"
+    assert_equals 1 "$(ledger_rows unread-input nudge pending)" "$case: unread input is still nudged"
+    run_wd 1000 once >/dev/null 2>&1 || fail "$case: second pass failed"
+    assert_equals 1 "$(ledger_rows frozen nudge pending)" "$case: a frozen pane is still nudged"
+    assert_equals 0 "$(ledger | grep -c timer-loop)" "$case: withheld evidence is unconfirmed"
+    [ ! -s "$H/model.log" ] || fail "$case: a model was called: $(cat "$H/model.log")"
+    assert_absent "$H/prompt.log" "$case: no prompt was built for any model"
+    assert_grep "evidence is withheld from the judge" "$H/data/watchdog/status.md" "$case: the withheld evidence is a gap"
+    grep -rFq "$sentinel" "$H/state/watchdog" "$H/data/watchdog" && fail "$case: the withheld text reached watchdog records"
+  done
+  pass "near loop: evidence with a secret or reserved word reaches no model or record, and recovery still runs"
+}
+
+test_old_rapid_burst_leaves_an_idle_session_alone() {
+  make_home $'Captain session\n> ' 'restart=on
+restart-command=/bin/true'
+  GAP=30 transcript 3000 "No action needed." "No action needed." "No action needed."
+  local at
+  for at in 0 2000 4000 6000; do
+    run_wd "$at" once >/dev/null 2>&1 || fail "pass at $at failed"
+  done
+  assert_equals 0 "$(ledger | grep -c timer-loop)" "an old burst with no waiting input is no loop"
+  assert_equals 0 "$(ledger_rows timer-loop restart pending)" "an idle session is not restarted"
+  assert_equals "" "$(cat "$H/typed.log")" "an idle session gets no text"
+
+  make_home $'Captain session\n> '
+  GAP=30 transcript 10 "No action needed." "No action needed." "No action needed."
+  run_wd 0 once >/dev/null 2>&1 || fail "fresh burst pass failed"
+  assert_equals 0 "$(ledger | grep -c timer-loop)" "a fresh burst with no waiting input is no loop"
+
+  make_home $'Captain session\n> '
+  GAP=30 transcript 10 "No action needed." "No action needed." "No action needed."
+  owe_input 60
+  run_wd 0 once >/dev/null 2>&1 || fail "live burst pass failed"
+  assert_equals 1 "$(ledger_rows timer-loop nudge pending)" "a moving burst with waiting input is nudged"
+
+  make_home $'Captain session\n> '
+  GAP=30 transcript 3000 "No action needed." "No action needed." "No action needed."
+  owe_input 3000
+  run_wd 0 once >/dev/null 2>&1 || fail "aged input pass failed"
+  assert_equals 1 "$(ledger_rows timer-loop nudge pending)" "an old burst with aged input is nudged"
+  pass "rapid loop: needs waiting input, and an old burst needs that input aged"
+}
+
+test_primary_ignores_another_sessions_endpoint() {
+  make_home $'Captain session\n> '
+  transcript 3000 "Working on the fix." "Now testing it." "Tests are green."
+  owe_input 3000
+  printf '00000000-0000-4000-8000-0000000000ff\n' > "$H/state/.lock-session"
+  run_wd 0 once >/dev/null 2>&1 || fail "first pass failed"
+  run_wd 1000 once >/dev/null 2>&1 || fail "second pass failed"
+  assert_equals "" "$(cat "$H/typed.log")" "another session's pane gets no text"
+  assert_equals 0 "$(ledger | awk -F'\t' '$6 == "nudge" && $7 != "refused"' | wc -l | tr -d ' ')" "no nudge goes out to another session's pane: $(ledger | cut -f5-8)"
+  assert_grep "no recorded terminal endpoint" "$H/data/watchdog/status.md" "the unproven endpoint is reported"
+  printf '%s\n' "$SID" > "$H/state/.lock-session"
+  run_wd 1100 once >/dev/null 2>&1 || fail "matching pass failed"
+  run_wd 2200 once >/dev/null 2>&1 || fail "second matching pass failed"
+  assert_equals 1 "$(ledger_rows frozen nudge pending)" "the matching endpoint is used again"
+  pass "primary endpoint: another session's heartbeat is never typed into, and a match restores it"
+}
+
 test_restart_vetoed_by_running_turn() {
   make_home $'Captain session\n✻ Running tool… (esc to interrupt)' 'restart=on
 max-nudges=0
@@ -1580,6 +1655,19 @@ SH
   out=$(printf 'is this a loop?' | CLAUDE_CONFIG_DIR="$H/inherited" FM_TEST_SEAM=1 FM_WD_NOW="$BASE" FM_HOME="$H" bash "$WD" judge loop '(LOOP|WORK)') \
     || fail "the judge failed with an inherited config directory"
   assert_equals "$H/inherited" "$(tail -n 1 "$H/config-dir.log")" "an inherited config directory is kept"
+  printf 'ordinary\n' > "$H/config/claude-account"
+  out=$(printf 'is this a loop?' | CLAUDE_CONFIG_DIR="$H/inherited" FM_TEST_SEAM=1 FM_WD_NOW="$BASE" FM_HOME="$H" bash "$WD" judge loop '(LOOP|WORK)') \
+    || fail "the judge failed with an ordinary account"
+  assert_equals unset "$(tail -n 1 "$H/config-dir.log")" "an ordinary account leaves the variable unset"
+  mkdir -p "$H/pinned"
+  printf '%s\n' "$H/pinned" > "$H/config/claude-account"
+  out=$(printf 'is this a loop?' | CLAUDE_CONFIG_DIR="$H/inherited" FM_TEST_SEAM=1 FM_WD_NOW="$BASE" FM_HOME="$H" bash "$WD" judge loop '(LOOP|WORK)') \
+    || fail "the judge failed with a pinned account"
+  assert_equals "$H/pinned" "$(tail -n 1 "$H/config-dir.log")" "a pinned account is used"
+  printf 'relative-path\n' > "$H/config/claude-account"
+  printf 'is this a loop?' | FM_TEST_SEAM=1 FM_WD_NOW="$BASE" FM_HOME="$H" bash "$WD" judge loop '(LOOP|WORK)' >/dev/null 2>&1 \
+    && fail "an invalid pin still reached the judge"
+  assert_equals "$H/pinned" "$(tail -n 1 "$H/config-dir.log")" "an invalid pin calls no model"
   printf 'claude-config-dir=%s\n' "$H/account" >> "$H/config/watchdog"
   out=$(printf 'is this a loop?' | CLAUDE_CONFIG_DIR="$H/inherited" FM_TEST_SEAM=1 FM_WD_NOW="$BASE" FM_HOME="$H" bash "$WD" judge loop '(LOOP|WORK)') \
     || fail "the judge failed with a configured account"
@@ -1740,6 +1828,9 @@ fm_test_run \
   test_near_loop_never_masks_frozen_or_input_recovery \
   test_near_loop_judge_sees_the_sequence_and_is_rate_limited \
   test_near_loop_confirmed_uses_the_ladder \
+  test_near_loop_evidence_is_withheld_from_every_model \
+  test_old_rapid_burst_leaves_an_idle_session_alone \
+  test_primary_ignores_another_sessions_endpoint \
   test_restart_vetoed_by_running_turn \
   test_restart_verified_pickup_and_loop_stop \
   test_no_action_while_restart_awaits_pickup \
