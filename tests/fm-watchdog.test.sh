@@ -1899,12 +1899,15 @@ restart-command=$TMP_ROOT/fake-captain.sh"
 
 test_dismissed_dialog_in_scrollback_is_not_showing() {
   make_home $'Captain session\n> '
-  # The survey was answered and the screen cleared; tmux keeps it in history.
+  # The survey was answered and blank rows pushed it past the 40-row pane; tmux
+  # keeps it in history. Blank rows keep it among a scrollback read's last text.
+  # clear(1) would not do: where its terminfo has E3, as on Linux, it also erases
+  # the history.
   cat > "$H/agent.sh" <<SH
 #!/usr/bin/env bash
 printf 'work output\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss\n'
 sleep 0.3
-clear
+printf '\n%.0s' {1..45}
 printf 'work output\n> \n'
 exec sleep 100000
 SH
