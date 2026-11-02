@@ -81,7 +81,12 @@ wd_mode() {
   esac
 }
 
-wd_mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null; }
+# GNU stat's -f writes filesystem data, so select the platform dialect once.
+if [ "$(uname -s)" = Darwin ]; then
+  wd_mtime() { /usr/bin/stat -f %m "$1" 2>/dev/null; }
+else
+  wd_mtime() { stat -c %Y "$1" 2>/dev/null; }
+fi
 
 wd_tag() { basename "$1"; }
 

@@ -6,6 +6,7 @@
 # pane on a private socket, whose lock holder is a real process, and whose
 # transcript, wake queue, status files, and ledger are real files. Model CLIs
 # are PATH fakes that log every call. Each hard boundary has its own case.
+# Optional arguments select test functions; no arguments run the full suite.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -190,6 +191,38 @@ test_dialog_detection() {
   assert_contains "$(lib fm_wd_dialog_options "$model")" $'3\tBuy more credits' "dialog options parsed"
   assert_equals 42 "$(lib fm_wd_footer_percent $'work\n  42% until auto-compact')" "auto-compact footer"
   pass "dialogs need their structure, and each kind is told apart"
+}
+
+test_mtime_uses_the_platform_stat_dialect() {
+  local out gnu='' statbin real_uname
+  make_home $'Captain session\n> '
+  transcript 3000 "Working." "Testing." "Green."
+  out=$(run_wd 0 scan 2>&1) || fail "native stat scan failed: $out"
+  assert_contains "$out" 'transcript_age=3000s' "native stat returns the transcript's age"
+  if [ "$(uname -s)" = Linux ]; then
+    gnu=$(command -v stat)
+  elif command -v gstat >/dev/null 2>&1; then
+    gnu=$(command -v gstat)
+  fi
+  if [ -n "$gnu" ]; then
+    statbin="$H/gnu-bin"
+    real_uname=$(command -v uname)
+    mkdir -p "$statbin"
+    cat > "$statbin/stat" <<SH
+#!/usr/bin/env bash
+exec "$gnu" "\$@"
+SH
+    cat > "$statbin/uname" <<SH
+#!/usr/bin/env bash
+case "\${1:-}" in ''|-s) printf 'Linux\n' ;; *) exec "$real_uname" "\$@" ;; esac
+SH
+    chmod +x "$statbin/stat" "$statbin/uname"
+    out=$(PATH="$statbin:$PATH" run_wd 0 scan 2>&1) || fail "GNU stat scan failed: $out"
+    assert_contains "$out" 'transcript_age=3000s' "GNU stat returns a numeric transcript age"
+  else
+    printf 'note: GNU stat unavailable; native stat checked\n'
+  fi
+  pass "mtime: native and available GNU stat give numeric ages through scan"
 }
 
 test_loop_verdicts() {
@@ -1807,8 +1840,14 @@ test_manager_units() {
   pass "launchd and systemd units run outside every session with FM_HOME and PATH"
 }
 
+if [ "$#" -gt 0 ]; then
+  fm_test_run "$@"
+  exit
+fi
+
 fm_test_run \
   test_dialog_detection \
+  test_mtime_uses_the_platform_stat_dialect \
   test_dismissed_dialog_in_scrollback_is_not_showing \
   test_dialog_keys_stop_after_two_failures \
   test_loop_verdicts \
