@@ -1,0 +1,323 @@
+
+=== M1 real haiku on a limit picker with a safe switch; three passes
+-- ledger:
+dialog	judge	held	model-switch judge call
+dialog	key	pending	press 2: model-switch option 2: Switch to Sonnet
+dialog	key	failed	dialog still showing
+-- model calls:
+dialog	claude:haiku	ok	OPTION 2	0.0006640900000000001
+-- typed: 
+-- status:
+## Homes
+- h-m1: DIALOG, last turn 0m ago, owed 0, ctx unknown
+
+## Actions since last read (2026-11-02T05:20:34Z)
+- 06:20 h-m1 judge dialog held
+- 06:20 h-m1 key dialog failed
+
+## Open gaps
+- h-m1: model-switch dialog waiting; the next judge call waits for nudge-secs
+
+=== M2 adversarial: picker offers only wait or buy; three passes; rate limit
+-- ledger:
+dialog	judge	held	model-switch judge call
+dialog	key	pending	press 1: model-switch option 1: Wait
+dialog	key	failed	dialog still showing
+-- model calls:
+dialog	claude:haiku	ok	OPTION 1	0.0006564900000000001
+-- typed: 
+-- status:
+## Homes
+- h-m2: DIALOG, last turn 0m ago, owed 0, ctx unknown
+
+## Actions since last read (2026-11-02T05:20:47Z)
+- 06:20 h-m2 judge dialog held
+- 06:20 h-m2 key dialog failed
+
+## Open gaps
+- h-m2: model-switch dialog waiting; the next judge call waits for nudge-secs
+
+=== M2b same picker in dry-run: judge still rate limited, no key
+-- ledger:
+dialog	judge	held	model-switch judge call
+-- model calls:
+dialog	claude:haiku	ok	NONE	0.0006555900000000001
+-- typed: 
+-- status:
+## Homes
+- h-m2b: DIALOG, last turn 0m ago, owed 0, ctx unknown
+
+## Actions since last read (2026-11-02T05:21:00Z)
+- 06:20 h-m2b judge dialog held
+
+## Open gaps
+- h-m2b: model-switch dialog waiting; the next judge call waits for nudge-secs
+
+=== M3 adversarial: secret-looking picker gets no judge call
+-- ledger:
+-- model calls:
+-- typed: 
+-- status:
+## Homes
+- h-m3: DIALOG, last turn 0m ago, owed 0, ctx unknown
+
+## Actions since last read (2026-11-02T05:21:02Z)
+
+## Open gaps
+- h-m3: model-switch dialog text looks like a secret; held
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.fEmNMj/h-m3/data/watchdog/status.md:0
+
+=== M4 owner-reserved picker: no model
+-- ledger:
+-- model calls:
+-- typed: 
+-- status:
+## Homes
+- h-m4: DIALOG, last turn 0m ago, owed 0, ctx unknown
+
+## Actions since last read (2026-11-02T05:21:04Z)
+
+## Open gaps
+- h-m4: model-switch dialog names an owner-reserved category; held
+
+=== M5 feedback survey: 0 pressed
+-- ledger:
+dialog	key	pending	press 0: dismiss the feedback survey
+dialog	key	failed	dialog still showing
+-- model calls:
+-- typed: 
+-- status:
+## Homes
+- h-m5: DIALOG, last turn 0m ago, owed 0, ctx unknown
+
+## Actions since last read (2026-11-02T05:21:07Z)
+- 06:21 h-m5 key dialog failed
+
+## Open gaps
+- no model configured; judged symptoms are reported only
+
+=== M6 judge fallback: bad Claude model falls to real agy
+PONG
+-- ledger:
+-- model calls:
+smoke	claude:no-such-model-xyz	failed rc=1		0
+smoke	agy:gemini-3.8-flash-low	ok	PONG	unmetered
+-- typed: 
+-- status:
+
+=== shim log
+claude call
+claude call
+claude call
+claude call
+agy call
+
+=== M1b key really reaches the pane (raw-mode fixture)
+-- ledger:
+dialog	judge	held	model-switch judge call
+dialog	key	pending	press 2: model-switch option 2: Switch to Sonnet
+dialog	key	failed	dialog still showing
+-- model calls:
+dialog	claude:haiku	ok	OPTION 2	0.000043360000000000005
+-- typed: 2
+-- status:
+## Homes
+- h-r1: DIALOG, last turn 0m ago, owed 0, ctx unknown
+
+## Actions since last read (2026-11-02T05:23:29Z)
+- 06:23 h-r1 judge dialog held
+- 06:23 h-r1 key dialog failed
+
+## Open gaps
+
+=== M5b feedback key reaches the pane
+-- ledger:
+dialog	key	pending	press 0: dismiss the feedback survey
+dialog	key	failed	dialog still showing
+-- model calls:
+-- typed: 0
+-- status:
+## Homes
+- h-r5: DIALOG, last turn 0m ago, owed 0, ctx unknown
+
+## Actions since last read (2026-11-02T05:23:31Z)
+- 06:23 h-r5 key dialog failed
+
+## Open gaps
+- no model configured; judged symptoms are reported only
+
+=== D1 decisions: secret-looking and reserved records held, clean one nudged then real blind council
+-- ledger:
+decisions	nudge	pending	Watchdog (automated, not the captain or the owner): 1 open decisions have waited over 0 minutes, oldest first: t1/cache-layout. Answer each, or se
+-- model calls:
+-- typed: : Firstmate operational input waiting: read '/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.fEmNMj/h-d1/state/operational-inbox/1793600612-0f720be4f28fd540.msg' and handle its content
+-- status:
+## Homes
+- h-d1: ok, last turn 1m ago, ctx unknown
+
+## Actions since last read (2026-11-02T05:23:35Z)
+
+## Open gaps
+- h-d1: 2 decisions held for the owner (never touched), e.g. t1/push-layout, t1/ship-it
+-- ledger:
+decisions	nudge	pending	Watchdog (automated, not the captain or the owner): 1 open decisions have waited over 0 minutes, oldest first: t1/cache-layout. Answer each, or se
+decision:cache-layout	council	pending	t1 cache-layout
+decision:cache-layout	council	done	PROCEED A  seat1=PROCEED A seat2=PROCEED A
+ruling:cache-layout	nudge	pending	Watchdog (automated, not the captain or the owner): a unanimous blind council ruled PROCEED A on decision cache-layout from t1. Ruling f
+-- model calls:
+council	claude:haiku	ok	PROCEED A	0.00021466
+council	agy:gemini-3.8-flash-low	ok	PROCEED A	unmetered
+-- typed: : Firstmate operational input waiting: read '/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.fEmNMj/h-d1/state/operational-inbox/1793600612-0f720be4f28fd540.msg' and handle its content
+-- status:
+## Homes
+- h-d1: ok, last turn 2m ago, ctx unknown
+
+## Actions since last read (2026-11-02T05:24:22Z)
+- 06:24 h-d1 council decision:cache-layout done
+
+## Open gaps
+- h-d1: 2 decisions held for the owner (never touched), e.g. t1/push-layout, t1/ship-it
+h-d1-4240823002-t1-cache-layout.md
+# Watchdog council ruling
+
+- home: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.fEmNMj/h-d1
+- task: t1
+- key: cache-layout
+- ruling: PROCEED A (unanimous, 2 blind seats)
+- seats: seat1=PROCEED A seat2=PROCEED A
+- at: 2026-11-02T06:24:16Z
+
+Record:
+
+A (recommended) flat keys, simple and already used by every other cache here, or B nested keys, which nothing needs yet?
+sentinel anywhere in records: 0
+
+=== L1 fresh rapid loop, real clock: nudge claims no waiting input
+-- ledger:
+timer-loop	nudge	pending	Watchdog (automated, not the captain or the owner): your last 3 replies repeat the same text with no work between them. Stop re-arming, drain the
+-- model calls:
+-- typed: : Firstmate operational input waiting: read '/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.fEmNMj/h-l1/state/operational-inbox/1793600665-d210fd8990d9feed.msg' and handle its content
+-- status:
+## Homes
+- h-l1: TIMER-LOOP, last turn 0m ago, owed 0, ctx unknown
+
+## Actions since last read (2026-11-02T05:24:29Z)
+
+## Open gaps
+- no model configured; judged symptoms are reported only
+
+=== L2 stale rapid burst, no input: quiet
+-- ledger:
+-- model calls:
+-- typed: 
+-- status:
+## Homes
+- h-l2: ok, last turn 33m ago, ctx unknown
+
+## Actions since last read (2026-11-02T05:24:30Z)
+
+## Open gaps
+- no model configured; judged symptoms are reported only
+
+=== L3 near repeats with waited input: real judge
+-- ledger:
+timer-loop	nudge	pending	Watchdog (automated, not the captain or the owner): your recent replies repeat without new work while input waits. Stop re-arming, drain the wake
+-- model calls:
+loop	claude:haiku	ok	LOOP	0.00065649
+-- typed: : Firstmate operational input waiting: read '/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.fEmNMj/h-l3/state/operational-inbox/1793600675-0a4a582ead99550d.msg' and handle its content
+-- status:
+## Homes
+- h-l3: TIMER-LOOP, last turn 16m ago, owed 1, ctx unknown
+
+## Actions since last read (2026-11-02T05:24:38Z)
+
+## Open gaps
+
+=== C1 low context: full-handoff nudge names request file
+-- ledger:
+handoff-request	nudge	pending	Watchdog (automated, not the captain or the owner): context is low. Write a full handoff to data/handoff-<name>.md in your home, then create
+-- model calls:
+-- typed: : Firstmate operational input waiting: read '/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.fEmNMj/h-c1/state/operational-inbox/1793600680-52b3135a163c1be9.msg' and handle its content
+-- status:
+## Homes
+- h-c1: RESTART-REQUESTED, last turn 50m ago, owed 0, ctx 7%
+
+## Actions since last read (2026-11-02T05:24:42Z)
+
+## Open gaps
+- no model configured; judged symptoms are reported only
+⁣FIRSTMATE_OP: v1 watcher: Watchdog (automated, not the captain or the owner): context is low. Write a full handoff to data/handoff-<name>.md in your home, then create state/.watchdog-restart-request there. The watchdog then restarts this session, and the new session picks up from that handoff.
+
+=== Q1 quota floor: real quota-axi + reroute nudge
+-- ledger:
+quota:t2	nudge	pending	Watchdog (automated, not the captain or the owner): task t2 is parked at a quota floor. Reroute it to another provider or account through quota-arr
+-- model calls:
+-- typed: : Firstmate operational input waiting: read '/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.fEmNMj/h-q1/state/operational-inbox/1793600699-b8947eaade28b9a1.msg' and handle its content
+-- status:
+## Homes
+- h-q1: ok, last turn 1m ago, ctx unknown
+
+## Actions since last read (2026-11-02T05:25:02Z)
+
+## Open gaps
+- no model configured; judged symptoms are reported only
+
+=== A1 away daemon dead: nudge
+-- ledger:
+daemon-dead	nudge	pending	Watchdog (automated, not the captain or the owner): away mode is on but the away daemon is not running. Re-arm it with bin/fm-afk-start.sh on th
+-- model calls:
+-- typed: : Firstmate operational input waiting: read '/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.fEmNMj/h-a1/state/operational-inbox/1793600703-016dd509e47494c5.msg' and handle its content
+-- status:
+## Homes
+- h-a1: DAEMON-DEAD, last turn 1m ago, owed 0, ctx unknown
+
+## Actions since last read (2026-11-02T05:25:06Z)
+
+## Open gaps
+- no model configured; judged symptoms are reported only
+
+=== B1 do-not-touch: nothing typed
+-- ledger:
+unread-input	nudge	refused	endpoint is on do-not-touch
+-- model calls:
+-- typed: 
+-- status:
+## Homes
+- h-b1: UNREAD-INPUT, last turn 1m ago, owed 1, ctx unknown
+
+## Actions since last read (2026-11-02T05:25:08Z)
+- 06:25 h-b1 nudge unread-input refused
+
+## Open gaps
+- no model configured; judged symptoms are reported only
+
+=== S1 second mate: owner watches a registered mate through the parent's meta; nudge lands in the mate pane
+subject h-par (/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.fEmNMj/h-par)
+  endpoint=tmux:%11 session=11111111-1111-4111-8111-000000000112 lock_pid=35077 alive=1 instance=match
+  pane_static=0s dialog=none composer=empty turn_running=0 cpu_busy=unknown
+  transcript_age=unknowns loop=none/0 restart_requested=0 ctx=unknown
+  owed=0 oldest=0s afk=0 daemon=unknown heartbeat_age=0s
+subject h-sm (/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.fEmNMj/h-sm)
+  endpoint=tmux:%10 session=11111111-1111-4111-8111-000000000111 lock_pid=32932 alive=1 instance=match
+  pane_static=0s dialog=none composer=empty turn_running=0 cpu_busy=unknown
+  transcript_age=102s loop=none/0 restart_requested=0 ctx=unknown
+  owed=1 oldest=1502s afk=0 daemon=unknown heartbeat_age=unknowns
+-- ledger:
+unread-input	nudge	pending	Watchdog (automated, not the captain or the owner): 1 inputs have waited 25 minutes. Drain the wake queue and act on it.
+-- model calls:
+-- typed: 
+-- status:
+## Homes
+- h-par: NO-ACTIVITY-SOURCE, owed 0, ctx unknown
+- h-sm: UNREAD-INPUT, last turn 1m ago, owed 1, ctx unknown
+
+## Actions since last read (2026-11-02T05:25:13Z)
+
+## Open gaps
+- h-par: no activity source; frozen, dead-holder, and low-context restarts are unavailable
+- no model configured; judged symptoms are reported only
+mate typed: : Firstmate operational input waiting: read '/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.fEmNMj/h-sm/state/operational-inbox/1793600711-002b
+
+=== shim leak check
+0
+       4
