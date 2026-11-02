@@ -791,6 +791,21 @@ council-seats=claude:haiku,agy:flash'
   pass "near loop: evidence with a secret or reserved word reaches no model or record, and recovery still runs"
 }
 
+test_fresh_rapid_loop_recovers_without_owed_input() {
+  local body
+  make_home $'Captain session\n> '
+  GAP=30 transcript 10 "Re-arming the timer." "Re-arming the timer." "Re-arming the timer."
+  run_wd 0 once >/dev/null 2>&1 || fail "fresh rapid pass failed"
+  assert_equals 1 "$(ledger_rows timer-loop nudge pending)" "a fresh rapid loop is recovered without owed input"
+  [ -s "$H/typed.log" ] || fail "the live pane received no doorbell"
+  body=$(ledger | awk -F'\t' '$5 == "timer-loop" && $6 == "nudge" && $7 == "pending" { print $8 }')
+  case "$body" in *'input is waiting'*) fail "the nudge falsely claims waiting input" ;; esac
+  run_wd 1000 once >/dev/null 2>&1 || fail "stale rapid pass failed"
+  assert_equals 1 "$(ledger_rows timer-loop nudge pending)" "the aged burst is not nudged again without input"
+  assert_equals 0 "$(ledger_rows timer-loop restart pending)" "the aged burst is not restarted"
+  pass "rapid loop: a fresh burst is nudged without invented input, and its aged tail stays quiet"
+}
+
 test_old_rapid_burst_leaves_an_idle_session_alone() {
   make_home $'Captain session\n> ' 'restart=on
 restart-command=/bin/true'
@@ -806,7 +821,7 @@ restart-command=/bin/true'
   make_home $'Captain session\n> '
   GAP=30 transcript 10 "No action needed." "No action needed." "No action needed."
   run_wd 0 once >/dev/null 2>&1 || fail "fresh burst pass failed"
-  assert_equals 0 "$(ledger | grep -c timer-loop)" "a fresh burst with no waiting input is no loop"
+  assert_equals 1 "$(ledger_rows timer-loop nudge pending)" "a fresh burst is recovered even with no waiting input"
 
   make_home $'Captain session\n> '
   GAP=30 transcript 10 "No action needed." "No action needed." "No action needed."
@@ -819,7 +834,7 @@ restart-command=/bin/true'
   owe_input 3000
   run_wd 0 once >/dev/null 2>&1 || fail "aged input pass failed"
   assert_equals 1 "$(ledger_rows timer-loop nudge pending)" "an old burst with aged input is nudged"
-  pass "rapid loop: needs waiting input, and an old burst needs that input aged"
+  pass "rapid loop: a fresh burst is recovered, and an old burst needs aged input"
 }
 
 test_primary_ignores_another_sessions_endpoint() {
@@ -1901,6 +1916,7 @@ fm_test_run \
   test_near_loop_confirmed_uses_the_ladder \
   test_near_loop_evidence_is_withheld_from_every_model \
   test_old_rapid_burst_leaves_an_idle_session_alone \
+  test_fresh_rapid_loop_recovers_without_owed_input \
   test_primary_ignores_another_sessions_endpoint \
   test_primary_without_lock_identity_never_trusts_heartbeat_endpoint \
   test_restart_vetoed_by_running_turn \

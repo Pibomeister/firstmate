@@ -1006,10 +1006,10 @@ wd_handle_subject() {
   elif { [ "$O_RESTART_REQ" = 1 ] || { [ -n "$O_CTX" ] && [ "$O_CTX" -le "$(cfgi restart-at-percent 8)" ]; }; } && wd_restart_available && ! wd_handoff_undeliverable; then
     symptom=restart-requested
     wd_requested_restart "$quiet"
-  elif [ "$O_OWED_N" -gt 0 ] && { { { [ "$O_LOOP" = loop ] || [ "$O_LOOP" = rapid ]; } && [ "$O_OWED_AGE" -ge "$owed" ]; } \
-       || { [ "$O_LOOP" = rapid ] && [ "$O_TR_AGE" != unknown ] && [ "$O_TR_AGE" -le "$(cfgi rapid-loop-secs 180)" ]; }; }; then
+  elif { [ "$O_LOOP" = rapid ] && [ "$O_TR_AGE" != unknown ] && [ "$O_TR_AGE" -le "$(cfgi rapid-loop-secs 180)" ]; } \
+       || { { [ "$O_LOOP" = loop ] || [ "$O_LOOP" = rapid ]; } && [ "$O_OWED_N" -gt 0 ] && [ "$O_OWED_AGE" -ge "$owed" ]; }; then
     symptom=timer-loop
-    wd_ladder_nudge_then_restart timer-loop "your last $O_LOOP_N replies repeat the same text with no work between them, and input is waiting. Stop re-arming, drain the wake queue, and act on what it shows." filesystem records
+    wd_ladder_nudge_then_restart timer-loop "your last $O_LOOP_N replies repeat the same text with no work between them. Stop re-arming, drain the wake queue, and act on what it shows." filesystem records
   elif [ "$O_LOOP" = near ] && [ "$O_OWED_N" -gt 0 ] && [ "$O_OWED_AGE" -ge "$owed" ] && wd_near_loop_confirmed; then
     symptom=timer-loop
     wd_ladder_nudge_then_restart timer-loop "your recent replies repeat without new work while input waits. Stop re-arming, drain the wake queue, and act on it." filesystem records
