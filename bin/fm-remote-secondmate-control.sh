@@ -2,11 +2,12 @@
 # Host-local lifecycle control for the remote secondmate home selected by fm-on.
 #
 # Usage:
-#   fm-remote-secondmate-control.sh launch <id> <harness> <model|-> <effort|-> herdr [traceparent]
+#   fm-remote-secondmate-control.sh launch <id> <harness> <model|-> <effort|-> herdr [budget=<ih>:<is>:<fh>:<fs>] [traceparent]
 #   fm-remote-secondmate-control.sh relaunch <id> <harness> <model|default|-> <effort|default|->
 #   fm-remote-secondmate-control.sh state <id>
 #   fm-remote-secondmate-control.sh route <id>
 #   fm-remote-secondmate-control.sh send <id> <message> [fire-and-forget]
+#   fm-remote-secondmate-control.sh send-stdin <id> [fire-and-forget]  # message on stdin
 #   fm-remote-secondmate-control.sh key <id> <key>
 #   fm-remote-secondmate-control.sh capture <id> [lines]
 #   fm-remote-secondmate-control.sh observe <id>
@@ -61,6 +62,21 @@ CONTROL_STATE="$TARGET_HOME/state/parent-route"
 CONTROL_DATA="$TARGET_HOME/data/.parent-route"
 REMOTE_HERDR_SESSION=fm-remote
 
+die() { printf 'error: %s\n' "$1" >&2; exit 1; }
+usage() { sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+validate_id() { case "$1" in ''|*[!A-Za-z0-9._-]*) die "invalid secondmate id: $1" ;; esac; }
+
+# Sourcing fm-wake-lib.sh through the libraries below creates "$FM_HOME/state",
+# so recognize an already-retired home before loading them rather than
+# fabricating an unseeded home that every later retirement then refuses.
+# The accepted arguments match the retire dispatcher's.
+if [ "${1:-}" = retire ] && [ ! -e "$TARGET_HOME" ] && [ ! -L "$TARGET_HOME" ]; then
+  case "$#:${3:-}" in
+    2:|3:|3:--force) validate_id "$2"; printf 'already-retired: %s\n' "$2"; exit 0 ;;
+    *) usage ;;
+  esac
+fi
+
 # shellcheck source=bin/fm-backend.sh
 . "$SCRIPT_DIR/fm-backend.sh"
 # shellcheck source=bin/fm-ff-lib.sh
@@ -70,13 +86,8 @@ REMOTE_HERDR_SESSION=fm-remote
 # shellcheck source=bin/fm-task-inbox-lib.sh
 . "$SCRIPT_DIR/fm-task-inbox-lib.sh"
 
-die() { printf 'error: %s\n' "$1" >&2; exit 1; }
-usage() { sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
-validate_id() { case "$1" in ''|*[!A-Za-z0-9._-]*) die "invalid secondmate id: $1" ;; esac; }
-
-validate_home() { # <id> [allow-absent]
-  local id=$1 allow_absent=${2:-no} marker
-  if [ ! -e "$TARGET_HOME" ] && [ ! -L "$TARGET_HOME" ] && [ "$allow_absent" = yes ]; then return 2; fi
+validate_home() { # <id>
+  local id=$1 marker
   [ -d "$TARGET_HOME" ] && [ ! -L "$TARGET_HOME" ] || die "remote secondmate home is unavailable or unsafe"
   [ -f "$TARGET_HOME/.fm-secondmate-home" ] && [ ! -L "$TARGET_HOME/.fm-secondmate-home" ] \
     || die "remote home is not a seeded secondmate home"
@@ -160,8 +171,34 @@ cmd_route() {
 }
 
 cmd_launch() {
-  local id=$1 harness=$2 model=$3 effort=$4 selected_backend=$5 traceparent=${6:-}
+  local id=$1 harness=$2 model=$3 effort=$4 selected_backend=$5
+  shift 5
+  local budget='' traceparent='' token b_ih b_is b_fh b_fs extra=''
   local current meta out herdr_session
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      budget=*)
+        [ -z "$budget" ] || die "duplicate remote secondmate budget"
+        budget=${1#budget=}
+        ;;
+      *)
+        [ -z "$traceparent" ] || die "unexpected remote secondmate launch argument"
+        traceparent=$1
+        ;;
+    esac
+    shift
+  done
+  if [ -n "$budget" ]; then
+    IFS=: read -r b_ih b_is b_fh b_fs extra <<EOF
+$budget
+EOF
+    for token in "$b_ih" "$b_is" "$b_fh" "$b_fs"; do
+      case "$token" in
+        ''|*[!0-9]*|0*) die "remote secondmate budget must be four positive token counts" ;;
+      esac
+    done
+    [ -z "$extra" ] || die "remote secondmate budget must be four positive token counts"
+  fi
 
   validate_id "$id"
   validate_home "$id"
@@ -202,6 +239,9 @@ cmd_launch() {
   ARGS=("$id" "$TARGET_HOME" --secondmate --harness "$harness" --backend "$selected_backend")
   [ "$model" = - ] || ARGS+=(--model "$model")
   [ "$effort" = - ] || ARGS+=(--effort "$effort")
+  if [ -n "$budget" ]; then
+    ARGS+=(--budget-inclusive-hard "$b_ih" --budget-inclusive-stop "$b_is" --budget-fresh-hard "$b_fh" --budget-fresh-stop "$b_fs")
+  fi
   [ -z "$traceparent" ] || ARGS+=(--traceparent "$traceparent")
   if ! out=$(HERDR_SESSION="$REMOTE_HERDR_SESSION" FM_HOME="$FM_ROOT" FM_ROOT_OVERRIDE="$FM_ROOT" \
     FM_STATE_OVERRIDE="$CONTROL_STATE" FM_DATA_OVERRIDE="$CONTROL_DATA" \
@@ -268,7 +308,7 @@ cmd_relaunch() {
   print_route "$id"
 }
 
-cmd_send() {
+cmd_send_body() {
   local id=$1 message=$2 delivery_mode=${3:-} rec ring_rc=0 meta meta_lock
   validate_id "$id"
   [ -z "$delivery_mode" ] || [ "$delivery_mode" = fire-and-forget ] || die "invalid send delivery mode"
@@ -281,9 +321,9 @@ cmd_send() {
     fm_lock_release "$meta_lock"
     die "$REMOTE_ENDPOINT_ERROR"
   fi
-  # A remote steer is delivered by durable record, never by typing its payload
-  # into the pane: write it into this secondmate's host-local steering inbox,
-  # then ring the constant self-describing doorbell into the recorded pane,
+  # A remote steer is delivered by durable record, never by submitting its payload
+  # directly: write it into this secondmate's host-local steering inbox, then ring
+  # the constant self-describing doorbell through the recorded backend endpoint,
   # best-effort (bin/fm-task-inbox-lib.sh owns the record and doorbell). The
   # write is idempotent - re-running the same request after an ambiguous
   # transport failure lands on the existing record instead of a duplicate - so
@@ -309,6 +349,20 @@ cmd_send() {
     2) printf 'notice: doorbell did not reach %s; the steer is durably recorded at %s\n' "$REMOTE_ENDPOINT_TARGET" "$rec" >&2 ;;
     3) printf 'notice: doorbell not typed because the agent in %s has exited; the steer is durably recorded at %s for recovery\n' "$REMOTE_ENDPOINT_TARGET" "$rec" >&2 ;;
   esac
+}
+
+cmd_send() {
+  local id=$1 message=$2 delivery_mode=${3:-}
+  [ "$#" -ge 2 ] && [ "$#" -le 3 ] || usage
+  cmd_send_body "$id" "$message" "$delivery_mode"
+}
+
+cmd_send_stdin() {
+  local id=$1 delivery_mode=${2:-} message
+  [ "$#" -ge 1 ] && [ "$#" -le 2 ] || usage
+  IFS= read -r -d '' message < /dev/stdin || :
+  [ -n "${message//[[:space:]]/}" ] || die "remote steer message must be nonempty"
+  cmd_send_body "$id" "$message" "$delivery_mode"
 }
 
 cmd_key() {
@@ -410,13 +464,9 @@ cmd_update() {
 }
 
 cmd_retire() {
-  local id=$1 force=${2:-} rc
+  local id=$1 force=${2:-}
   validate_id "$id"
-  validate_home "$id" yes || rc=$?
-  if [ "${rc:-0}" -eq 2 ]; then
-    printf 'already-retired: %s\n' "$id"
-    return 0
-  fi
+  validate_home "$id"
   [ -z "$force" ] || [ "$force" = --force ] || usage
   remote_endpoint_require "$id"
   FM_HOME="$TARGET_HOME" FM_ROOT_OVERRIDE="$FM_ROOT" FM_STATE_OVERRIDE="$TARGET_HOME/state" \
@@ -435,11 +485,12 @@ cmd_retire() {
 }
 
 case "${1:-}" in
-  launch) shift; [ "$#" -ge 5 ] && [ "$#" -le 6 ] || usage; cmd_launch "$@" ;;
+  launch) shift; [ "$#" -ge 5 ] && [ "$#" -le 7 ] || usage; cmd_launch "$@" ;;
   relaunch) shift; [ "$#" -eq 4 ] || usage; cmd_relaunch "$@" ;;
   state) shift; [ "$#" -eq 1 ] || usage; validate_id "$1"; validate_home "$1"; state_value "$1" ;;
   route) shift; [ "$#" -eq 1 ] || usage; cmd_route "$1" ;;
   send) shift; [ "$#" -ge 2 ] && [ "$#" -le 3 ] || usage; cmd_send "$@" ;;
+  send-stdin) shift; [ "$#" -ge 1 ] && [ "$#" -le 2 ] || usage; cmd_send_stdin "$@" ;;
   key) shift; [ "$#" -eq 2 ] || usage; cmd_key "$@" ;;
   capture) shift; [ "$#" -ge 1 ] && [ "$#" -le 2 ] || usage; cmd_capture "$@" ;;
   observe) shift; [ "$#" -eq 1 ] || usage; cmd_observe "$@" ;;

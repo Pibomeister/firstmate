@@ -300,6 +300,36 @@ test_run_rebuild_forwards_source_to_drifted_instruction_refresh() {
   pass "run wrapper forwards only stale-cache rebuild sources to immutable-baseline instruction refresh"
 }
 
+# A handoff recorded before a new context opened never satisfies that context's
+# restart gate, and never gates its ordinary stops.
+test_run_new_context_clears_the_order_handoff_record() {
+  local root="$TMP_ROOT/run-order-handoff" source out holder saved_lock
+  make_run_primary "$root"
+  run_hook_pi "$root" --source startup </dev/null >/dev/null
+  for source in clear compact resume; do
+    FM_HOME="$root" "$ROOT/bin/fm-order.sh" handoff --doc "$root/handoff.md" >/dev/null
+    assert_present "$root/state/.order-handoff" "handoff --doc did not record the document"
+    out=$(run_hook_pi "$root" --source "$source" </dev/null)
+    case "$source" in
+      resume) [ -z "$out" ] || fail "an already-owned resume should stay silent" ;;
+      *) assert_contains "$out" "CONTEXT RE-EMIT" "$source did not take the re-emit path" ;;
+    esac
+    [ ! -e "$root/state/.order-handoff" ] || fail "a $source left the earlier handoff record in place"
+  done
+
+  FM_HOME="$root" "$ROOT/bin/fm-order.sh" handoff --doc "$root/handoff.md" >/dev/null
+  sleep 60 &
+  holder=$!
+  saved_lock=$(cat "$root/state/.lock")
+  printf '%s\n' "$holder" >"$root/state/.lock"
+  run_hook_pi "$root" --source resume </dev/null >/dev/null
+  printf '%s\n' "$saved_lock" >"$root/state/.lock"
+  kill "$holder" 2>/dev/null || true
+  wait "$holder" 2>/dev/null || true
+  assert_present "$root/state/.order-handoff" "a session that does not own the lock must keep the owner's record"
+  pass "run wrapper: a lock owner's clear, compact, or resume clears the earlier order handoff record"
+}
+
 test_run_compact_without_completion_refreshes_before_finishing_startup() {
   local root="$TMP_ROOT/run-compact-incomplete" out status=0 refresh_line bootstrap_line
   make_run_primary "$root"
@@ -1108,6 +1138,7 @@ test_opencode_plugin_delivers_exact_nudge_once
 test_run_startup_runs_the_full_digest
 test_run_clear_and_compact_reemit
 test_run_rebuild_forwards_source_to_drifted_instruction_refresh
+test_run_new_context_clears_the_order_handoff_record
 test_run_compact_without_completion_refreshes_before_finishing_startup
 test_run_clear_without_completion_finishes_startup
 test_run_clear_rejects_previous_owner_completion

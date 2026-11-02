@@ -14,8 +14,25 @@
 # so a parked main is not woken every few minutes; an engine turn that starts
 # before the bound may finish after it. A close that carries a wake or a
 # "supervision-host:" line other than the park boundary passes through as a
-# wake; the boundary alone is the ordinary quiet checkpoint. On a home that
+# wake; the boundary alone is the ordinary quiet checkpoint. A Stop-hook
+# --grok-hold on the lock is replaced with park --restart, because an arm that
+# attaches to a hold takes none of its wakes. On a home that
 # does not run the host nothing below changes.
+#
+# SECONDMATE HOME. In a genuine local secondmate home the bound, on either
+# path, is capped at FM_SECONDMATE_CHECKPOINT_MAX (default 60) and the away
+# raise never lifts it above that, so the secondmate's turn returns to its
+# parent-owned steering inbox regularly; on the host path that bound is also
+# the host's turn limit, so an away close whose engine turn could outlast it
+# is handed to the secondmate rather than run. A primary's bound is unchanged. On the
+# plain path only (the inbox is passed to that watcher alone, never exported to
+# the host's), the watcher also ends the checkpoint within a few seconds of a
+# record in that inbox it has not yet announced, and this script prints
+# "checkpoint: firstmate instruction waiting in the steering inbox: <names>".
+# Each record is announced once, so one the model cannot acknowledge yet
+# never turns checkpoints into a tight loop; when the announce-once record
+# cannot be written the wait stays an ordinary bounded one. The inbox path
+# comes from the home's own marker and parent record (fm_secondmate_home_inbox).
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -113,6 +130,22 @@ run_with_perl_timeout() {  # <seconds> <signal> <kill-after-seconds> <command...
   ' "$@"
 }
 
+TIMEOUT_COMMAND=''
+
+# Only GNU coreutils timeout is trusted with --signal/--kill-after; another
+# implementation named timeout (for example uutils) falls through to perl.
+find_gnu_timeout() {
+  local candidate
+  for candidate in timeout gtimeout; do
+    if command -v "$candidate" >/dev/null 2>&1 \
+      && "$candidate" --version 2>/dev/null | grep -q 'GNU coreutils'; then
+      TIMEOUT_COMMAND=$candidate
+      return
+    fi
+  done
+  TIMEOUT_COMMAND=perl
+}
+
 run_bounded() {  # <seconds> <signal> <kill-after-seconds> <command...>
   local seconds=$1 signal=$2 kill_after=$3 cleanup_lock_bound
   shift 3
@@ -126,26 +159,30 @@ run_bounded() {  # <seconds> <signal> <kill-after-seconds> <command...>
     [ "$cleanup_lock_bound" -gt "$kill_after" ] || cleanup_lock_bound=$kill_after
     kill_after=$cleanup_lock_bound
   fi
-  if command -v timeout >/dev/null 2>&1; then
-    if [ "$kill_after" -gt 0 ]; then
-      timeout --signal="$signal" --kill-after="${kill_after}s" "$seconds" "$@"
-    else
-      timeout --signal="$signal" "$seconds" "$@"
-    fi
-  elif command -v gtimeout >/dev/null 2>&1; then
-    if [ "$kill_after" -gt 0 ]; then
-      gtimeout --signal="$signal" --kill-after="${kill_after}s" "$seconds" "$@"
-    else
-      gtimeout --signal="$signal" "$seconds" "$@"
-    fi
-  else
+  [ -n "$TIMEOUT_COMMAND" ] || find_gnu_timeout
+  if [ "$TIMEOUT_COMMAND" = perl ]; then
     run_with_perl_timeout "$seconds" "$signal" "$kill_after" "$@"
+  elif [ "$kill_after" -gt 0 ]; then
+    "$TIMEOUT_COMMAND" --signal="$signal" --kill-after="${kill_after}s" "$seconds" "$@"
+  else
+    "$TIMEOUT_COMMAND" --signal="$signal" "$seconds" "$@"
   fi
 }
 
 positive_or() {  # <value> <default>
   case "$1" in ''|0*|*[!0-9]*) printf '%s\n' "$2" ;; *) printf '%s\n' "$1" ;; esac
 }
+# shellcheck source=bin/fm-primary-scope-lib.sh
+. "$SCRIPT_DIR/fm-primary-scope-lib.sh"
+SECONDMATE_MAX=
+SECONDMATE_INBOX=
+# Only the plain path's own watcher receives the inbox (passed inline below);
+# the supervision host's watchers never see it.
+unset FM_WATCH_CHECKPOINT_INBOX
+if SECONDMATE_INBOX=$(fm_secondmate_home_inbox "$FM_HOME" 2>/dev/null); then
+  SECONDMATE_MAX=$(positive_or "${FM_SECONDMATE_CHECKPOINT_MAX:-}" 60)
+  [ "$SECONDS_ARG" -le "$SECONDMATE_MAX" ] || SECONDS_ARG=$SECONDMATE_MAX
+fi
 
 require_clean_shutdown() {
   if [ "$RC" -eq 137 ]; then
@@ -170,14 +207,22 @@ if fm_supervision_host_enabled "$CONFIG" codex; then
     AWAY_BOUND=$(positive_or "${FM_CODEX_WATCH_CHECKPOINT_AWAY:-}" 3600)
     [ "$AWAY_BOUND" -le "$BOUND" ] 2>/dev/null || BOUND=$AWAY_BOUND
   fi
+  [ -z "$SECONDMATE_MAX" ] || [ "$BOUND" -le "$SECONDMATE_MAX" ] || BOUND=$SECONDMATE_MAX
   # The host's park boundary stays below the 28800-second registration.
   [ "$BOUND" -lt 27000 ] 2>/dev/null || BOUND=27000
-  LIMIT=$(( BOUND + $(positive_or "${FM_SUPERVISION_HOST_TURN_TIMEOUT:-}" 1200) + $(positive_or "${FM_SUPERVISION_ENGINE_GRACE:-}" 30) ))
+  LIMIT=$BOUND
+  [ -n "$SECONDMATE_MAX" ] \
+    || LIMIT=$(( BOUND + $(positive_or "${FM_SUPERVISION_HOST_TURN_TIMEOUT:-}" 1200) + $(positive_or "${FM_SUPERVISION_ENGINE_GRACE:-}" 30) ))
+  PARK_RESTART=
+  # shellcheck source=bin/fm-wake-lib.sh
+  if ( . "$SCRIPT_DIR/fm-wake-lib.sh"; fm_grok_holding_watcher "$(cat "$STATE/.watch.lock/pid" 2>/dev/null)" ); then
+    PARK_RESTART=--restart
+  fi
   set +e
   # The host ends its own park; the outer bound only catches a host that
   # outlived every one of its own bounds.
   FM_SUPERVISION_HOST_PRIMARY=codex FM_SUPERVISION_HOST_PARK_SECONDS=$BOUND FM_SUPERVISION_HOST_PARK_LIMIT=$LIMIT \
-    run_bounded $((LIMIT + 120)) TERM 0 "$SCRIPT_DIR/fm-supervision-host.sh" park >"$OUT" 2>"$ERR"
+    run_bounded $((LIMIT + 120)) TERM 0 "$SCRIPT_DIR/fm-supervision-host.sh" park ${PARK_RESTART:+"$PARK_RESTART"} >"$OUT" 2>"$ERR"
   RC=$?
   set -e
   require_clean_shutdown
@@ -203,7 +248,7 @@ fi
 
 set +e
 # Interrupt the checkpoint's active check group so the watcher's native EXIT cleanup can release its lock; ordinary watcher shutdown still uses TERM.
-run_bounded "$SECONDS_ARG" INT 5 "$SCRIPT_DIR/fm-watch.sh" >"$OUT" 2>"$ERR"
+FM_WATCH_CHECKPOINT_INBOX=$SECONDMATE_INBOX run_bounded "$SECONDS_ARG" INT 5 "$SCRIPT_DIR/fm-watch.sh" >"$OUT" 2>"$ERR"
 RC=$?
 set -e
 require_clean_shutdown
@@ -211,6 +256,12 @@ require_clean_shutdown
 if grep -E '^(signal:|stale:|check:|heartbeat($|:))' "$OUT" >/dev/null 2>&1; then
   cat "$OUT"
   [ ! -s "$ERR" ] || cat "$ERR" >&2
+  exit 0
+fi
+
+if INBOX_NAMES=$(sed -n 's/^checkpoint-inbox://p' "$OUT" 2>/dev/null) && [ -n "$INBOX_NAMES" ]; then
+  [ ! -s "$ERR" ] || cat "$ERR" >&2
+  printf 'checkpoint: firstmate instruction waiting in the steering inbox:%s - read, act on and acknowledge each record now, then stop. Do not start another checkpoint.\n' "$INBOX_NAMES"
   exit 0
 fi
 

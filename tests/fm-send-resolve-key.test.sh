@@ -29,7 +29,9 @@
 #   8. A reserved pending-reply-* decision actually closes through --resolve-key
 #      (the operator path the OPEN DECISIONS hint names), while an unrelated
 #      writer's answered: note still cannot hijack or clear that key. A reserved
-#      key this send cannot close refuses before anything is sent.
+#      key this send cannot close refuses before anything is sent. A reserved
+#      claim-refuted-* blocker closes the same way with the claim verifier's
+#      vocabulary, and a bare mate resolution cannot clear it.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -674,6 +676,34 @@ test_reserved_pending_reply_key_closes_through_resolve_key() {
   pass "fm-send --resolve-key: a reserved pending-reply key actually closes through the operator path"
 }
 
+test_reserved_claim_refuted_key_closes_through_resolve_key() {
+  local dir fb log home rc out key id
+  dir="$TMP_ROOT/claim-close"; mkdir -p "$dir"
+  fb=$(make_stubs "$dir"); log="$dir/send.log"
+  home=$(setup_home claim-close)
+  id=0123456789abcdef
+  key="claim-refuted-$id"
+  fm_write_meta "$home/state/mate.meta" "window=sess:fm-mate" "kind=ship"
+  {
+    printf 'blocked [key=%s]: claim-refuted-reopen: pushed claim at line 2 is false: origin has no branch fm/mate (ledger state/mate.claims.jsonl)\n' "$key"
+    printf 'resolved [key=%s]: fixed it, trust me\n' "$key"
+  } > "$home/state/mate.status"
+
+  out=$(drain_out "$home")
+  printf '%s' "$out" | grep -F "[key=$key]" >/dev/null \
+    || fail "a bare resolved line from the mate cleared a refuted-claim blocker: $out"
+
+  run_send "$fb" "$home" "$log" mate --resolve-key "$key" "push the branch, then report again"; rc=$?
+  expect_code 0 "$rc" "closing a refuted-claim key via --resolve-key should succeed"
+  grep -F "claim-refuted-cleared: task=mate claim=$id via=operator-resolve-key" "$home/state/mate.status" >/dev/null \
+    || fail "the operator close did not write the claim verifier's close note:"$'\n'"$(cat "$home/state/mate.status")"
+  out=$(drain_out "$home")
+  if printf '%s' "$out" | grep -F 'OPEN DECISIONS' >/dev/null; then
+    fail "the refuted-claim blocker still lists as open after --resolve-key: $out"
+  fi
+  pass "fm-send --resolve-key: a refuted-claim blocker ignores a bare mate resolution and closes through the operator path"
+}
+
 test_unrelated_writer_cannot_close_or_hijack_reserved_key() {
   local dir fb log home rc out key corr
   dir="$TMP_ROOT/reserved-guard"; mkdir -p "$dir"
@@ -922,6 +952,7 @@ test_remote_reply_corr_tag_does_not_block_resolve_key
 test_remote_transport_failure_does_not_close
 test_flag_misuse_refuses
 test_reserved_pending_reply_key_closes_through_resolve_key
+test_reserved_claim_refuted_key_closes_through_resolve_key
 test_unrelated_writer_cannot_close_or_hijack_reserved_key
 test_unclosable_reserved_key_refuses_before_send
 test_long_decision_key_refuses_before_send

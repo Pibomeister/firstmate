@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Render the primary-harness supervision operating block for session start and
 # the short repair line used by guards and turn-end hooks. On a non-Pi primary
-# with a supervision protocol (claude, cursor, opencode, omp, grok, codex) whose
+# with a supervision protocol (claude, cursor, opencode, omp, grok, codex, agy) whose
 # home runs the supervision host (fm_supervision_host_enabled in
 # bin/fm-supervision-engine-lib.sh: by default on Claude, by
 # config/supervision-host elsewhere, never with config/supervision-host-off), the block
@@ -103,7 +103,7 @@ if [ -z "$HARNESS" ]; then
 fi
 
 case "$HARNESS" in
-  claude|codex|opencode|pi|grok|cursor|omp|muse) SNIPPET="$DOC_DIR/$HARNESS.md" ;;
+  claude|codex|opencode|pi|grok|cursor|omp|muse|agy) SNIPPET="$DOC_DIR/$HARNESS.md" ;;
   pi-signed) SNIPPET="$DOC_DIR/pi.md" ;;
   *) HARNESS=unknown; SNIPPET="$DOC_DIR/unknown.md" ;;
 esac
@@ -112,7 +112,7 @@ HOST_SNIPPET=
 grok_arm='bin/fm-watch-arm.sh'
 grok_arm_command='export FM_WATCH_GROK_CONTINUITY=1; exec bin/fm-watch-arm.sh'
 case "$HARNESS" in
-  claude|cursor|opencode|omp|grok|codex)
+  claude|cursor|opencode|omp|grok|codex|agy)
     # shellcheck source=bin/fm-supervision-engine-lib.sh
     . "$SCRIPT_DIR/fm-supervision-engine-lib.sh"
     if fm_supervision_host_enabled "$CONFIG" "$HARNESS"; then
@@ -123,7 +123,6 @@ case "$HARNESS" in
     ;;
 esac
 
-checkpoint_seconds=${FM_CODEX_WATCH_CHECKPOINT:-180}
 SECONDMATE_MODE=0
 if [ "$HARNESS" = codex ] && [ "$AFK" -eq 0 ] && [ -x "$SCRIPT_DIR/fm-watch.sh" ] \
   && "$SCRIPT_DIR/fm-watch.sh" --secondmate-selected >/dev/null 2>&1; then
@@ -195,6 +194,8 @@ repair_line() {
   if [ "$AFK" -eq 1 ]; then
     if [ "$AFK_MODE" = quiet ]; then
       printf '%s\n' 'Quiet mode owns watcher supervision; load /quiet and ensure the daemon is running instead of starting normal supervision directly.'
+    elif [ "$HARNESS" = codex ]; then
+      printf '%s\n' 'Away mode owns watcher supervision; the Stop hook does not re-arm a watcher here, so drain the queued wakes and then stop, and load /afk and ensure the daemon is running instead of starting normal supervision directly.'
     else
       printf '%s\n' 'Away mode owns watcher supervision; load /afk and ensure the daemon is running instead of starting normal supervision directly.'
     fi
@@ -216,9 +217,13 @@ repair_line() {
       printf '%s%s\n' "$prefix" 'watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.'
       ;;
     codex)
-      suffix=
-      [ "$SECONDMATE_MODE" -eq 1 ] || suffix="; send captain replies as interim messages, never as the turn's final answer, while supervision is needed"
-      printf '%s%s%s%s%s\n' "$prefix" 'repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds ' "$checkpoint_seconds" "$suffix" '.'
+      if [ "$SECONDMATE_MODE" -eq 1 ]; then
+        printf '%s%s\n' "$prefix" 'do not start a foreground checkpoint. Tell the parent that the outside-turn watcher failed, then stop. The Stop hook bounds repeated blocks.'
+      elif [ -n "$HOST_SNIPPET" ]; then
+        printf '%s%s\n' "$prefix" 'do not start another foreground checkpoint. The Stop hook re-arms a persistent watcher, except under an away record on this home, or allows this turn to end. Poll a checkpoint only while it is still running, then stop.'
+      else
+        printf '%s%s\n' "$prefix" 'do not start another foreground checkpoint. The Stop hook re-arms a persistent watcher or allows this turn to end. Poll a checkpoint only while it is still running, then stop.'
+      fi
       ;;
     pi|pi-signed)
       printf '%s%s%s%s%s%s\n' "$prefix" 'repair a missing or failed watcher cycle with the Pi tool fm_watch_arm_pi, or restart Pi with -e ' "$pi_turnend_ext" ' -e ' "$pi_ext" ' if the extensions are not loaded.'
@@ -243,6 +248,13 @@ repair_line() {
     muse)
       printf '%s%s\n' "$prefix" 'repair missing watcher supervision with bin/fm-watch-arm.sh as its own Muse tracked background task, never shell & or a foreground wait.'
       ;;
+    agy)
+      if [ -n "$HOST_SNIPPET" ]; then
+        printf '%s%s\n' "$prefix" 'supervision is owned by the Stop-hook park (.agents/hooks.json -> bin/fm-turnend-guard-agy.sh running the supervision host); inspect the hook registration and supervision host startup path before ending the turn.'
+      else
+        printf '%s%s\n' "$prefix" 'watcher supervision is owned by the Stop-hook park (.agents/hooks.json -> bin/fm-turnend-guard-agy.sh); inspect the hook registration and watcher startup path before ending the turn.'
+      fi
+      ;;
     *)
       printf '%s%s\n' "$prefix" 'repair missing watcher supervision according to the session-start block for this harness; do not use shell &.'
       ;;
@@ -259,7 +271,7 @@ ordinary_wake_line() {
       printf '%s\n' '- Ordinary wake: the Stop-owned auto-arm (bin/fm-claude-stop-autoarm.sh) already owns watcher continuity; drain and handle the wake, and do not arm another cycle yourself.'
       ;;
     codex)
-      printf '%s\n' '- Ordinary wake: take the next foreground bin/fm-watch-checkpoint.sh checkpoint as directed below.'
+      printf '%s\n' '- Ordinary wake: drain and acknowledge the wake, then end the turn. The Stop hook re-arms a persistent watcher. Do not start another foreground checkpoint.'
       ;;
     pi|pi-signed)
       printf '%s\n' '- Ordinary wake: the Pi extension already owns watcher continuity; do not arm another cycle.'
@@ -278,6 +290,9 @@ ordinary_wake_line() {
       ;;
     muse)
       printf '%s\n' '- Ordinary wake: re-arm exactly one bin/fm-watch-arm.sh Muse tracked background task as directed below.'
+      ;;
+    agy)
+      printf '%s\n' '- Ordinary wake: the Stop-hook park (bin/fm-turnend-guard-agy.sh) already owns watcher continuity; drain and handle the wake, and do not arm another cycle yourself.'
       ;;
     *)
       printf '%s\n' '- Ordinary wake: follow the continuation in the harness protocol below; do not use shell &.'
@@ -326,7 +341,7 @@ Read and acknowledge the steering inbox, drain and handle durable watcher events
 Send resulting actions and parent-channel replies in this handling turn.
 Run bin/fm-watch.sh --secondmate once to verify the outside-turn watcher and notification route, then end this turn.
 Do not wait for crews or poll a tool session; an existing inbox doorbell starts the next handling turn when an actionable event arrives.
-If bin/fm-watch.sh --secondmate reports a failure, follow the default checkpoint protocol below instead.
+If bin/fm-watch.sh --secondmate reports a failure, tell the parent that the outside-turn watcher failed, then stop. Do not start a foreground checkpoint.
 EOF
 fi
 render_snippet

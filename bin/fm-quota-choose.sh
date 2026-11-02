@@ -11,8 +11,11 @@
 # family, then applies the matched row's provider-wide scopes and exact model
 # or product scopes for <model>. A candidate is eligible only when no
 # applicable runway is `exhausted_now` and its known
-# effective percent remaining is greater than zero. The first eligible
-# candidate is printed as "<harness> <model>" and the script exits 0.
+# effective percent remaining is greater than zero. On Cursor, those rows are
+# the model's pool, and a model outside the auto pool also needs at least the
+# Cursor pool floor; quota_applicable in bin/fm-quota-axi-lib.sh owns both.
+# The first eligible candidate is printed as "<harness> <model>" and the script
+# exits 0.
 # If no candidate is quota-eligible, it prints "none" and exits 1.
 #
 # Candidates are accepted as `--candidate <harness:model>` or as positional
@@ -338,13 +341,7 @@ effective_for_provider_model() {
     ($model | sub("^model:"; "")) as $model_token |
     quota_row(.; $provider; $lane) as $p |
     if ($p // null) == null then {status: "unknown"}
-    else ($p.quotaSemantics.effectiveAvailability // []) |
-    map(select(.scope as $scope |
-      $scope == "all_models" or $scope == "all_products" or
-      ($model_token != "" and $model_token != "default" and
-       (($scope | startswith("model:")) or ($scope | startswith("product:"))) and
-       ($model_token == ($scope | sub("^(model|product):"; ""))))
-    )) as $applicable |
+    else quota_applicable($p; $model_token) as $applicable |
     ($applicable | map(select(.status == "known"))) as $known |
     if ($applicable | length) == 0 then {status: "unknown"}
     elif any($applicable[]; (.runway.status // "") == "exhausted_now") then
@@ -352,6 +349,8 @@ effective_for_provider_model() {
     elif ($known | length) == 0 then {status: "unknown"}
     elif any($known[]; .effectivePercentRemaining == 0) then
       ($known | map(select(.effectivePercentRemaining == 0)) | first)
+    elif any($known[]; quota_below_pool_floor(.)) then
+      ($known | map(select(quota_below_pool_floor(.))) | first)
     else ($known | min_by(.effectivePercentRemaining))
     end
     end
@@ -383,9 +382,10 @@ for c in "${CANDIDATES[@]}"; do
   if [ -z "$effective" ] || [ "$effective" = "null" ]; then
     continue
   fi
-  if printf '%s\n' "$effective" | jq -e '
+  if printf '%s\n' "$effective" | jq -e "$FM_QUOTA_ROW_JQ"'
     if (.runway.status // "") == "exhausted_now" then false
     elif .status == "unknown" then false
+    elif quota_below_pool_floor(.) then false
     else
       .effectivePercentRemaining as $remaining |
       (($remaining | type) == "number") and

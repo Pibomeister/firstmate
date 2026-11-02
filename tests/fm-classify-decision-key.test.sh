@@ -603,4 +603,25 @@ test_recorded_line_stays_recorded_across_a_resolve() {
   pass "a recorded line stays recorded across a later resolve"
 }
 
+# The claim ledger's refuted-claim keys are reserved like pending-reply keys:
+# a claim-refuted-<id> line opens or closes only with a claim-refuted- token
+# leading its note, so a bare mate line with the key does neither.
+test_claim_refuted_keys_are_reserved() {
+  local dir f open
+  dir=$(case_dir claim-refuted)
+  f="$dir/task.status"
+  printf '%s\n' 'blocked [key=claim-refuted-fedcba9876543210]: the mate copied the key' > "$f"
+  [ -z "$(status_open_decisions "$f")" ] \
+    || fail "a claim-refuted key without the token opened a decision: $(status_open_decisions "$f")"
+  printf '%s\n' 'blocked [key=claim-refuted-0123456789abcdef]: claim-refuted-reopen: committed claim at line 1 is false: commit deadbeef1 does not exist (ledger state/t1.claims.jsonl)' >> "$f"
+  printf '%s\n' 'resolved [key=claim-refuted-0123456789abcdef]: fixed it' >> "$f"
+  open=$(status_open_decisions "$f" | cut -f1)
+  assert_equals claim-refuted-0123456789abcdef "$open" "a bare resolve closed the refuted-claim blocker"
+  printf '%s\n' 'resolved [key=claim-refuted-0123456789abcdef]: claim-refuted-cleared: task=t1 claim=0123456789abcdef via=operator-resolve-key checked' >> "$f"
+  [ -z "$(status_open_decisions "$f")" ] \
+    || fail "the claim-refuted-cleared close did not close the blocker: $(status_open_decisions "$f")"
+  pass "claim-refuted keys open and close only through their reserved vocabulary"
+}
+
 test_recorded_line_stays_recorded_across_a_resolve
+test_claim_refuted_keys_are_reserved

@@ -897,7 +897,8 @@ test_tracked_claude_entries_inert_under_grok() {
   dir="$TMP_ROOT/claude-entries-grok-inert"
   mkdir -p "$dir/bin"
   for script in fm-turnend-guard.sh fm-claude-stop-autoarm.sh fm-sessionstart-run.sh \
-    fm-arm-pretool-check.sh fm-cd-pretool-check.sh fm-subagent-pretool-check.sh fm-host-mirror.sh; do
+    fm-arm-pretool-check.sh fm-cd-pretool-check.sh fm-subagent-pretool-check.sh fm-host-mirror.sh \
+    fm-handoff-trigger.sh; do
     printf '#!/usr/bin/env bash\nprintf ran >> %q\n' "$dir/invoked" > "$dir/bin/$script"
     chmod +x "$dir/bin/$script"
   done
@@ -938,7 +939,7 @@ test_tracked_claude_entries_inert_under_grok() {
       || fail "tracked entry for $target ran under a legacy GROK_AGENT environment"
   done < <(jq -r '.hooks[][].hooks[].command' "$ROOT/.claude/settings.json")
 
-  [ "$guarded" -eq 7 ] || fail "expected 7 grok-guarded tracked entries, saw $guarded"
+  [ "$guarded" -eq 10 ] || fail "expected 10 grok-guarded tracked entries, saw $guarded"
   [ "$unguarded" -eq 1 ] || fail "expected 1 documented unguarded tracked entry, saw $unguarded"
   pass "tracked .claude/settings.json entries: $guarded inert under grok, the documented subagent exception still armed, all live under Claude"
 }
@@ -1283,6 +1284,80 @@ EOF
     [ -z "$out" ] || fail "Pi turn-end marker guard '$marker_case' case printed output: $out"
   done
   pass ".pi primary extension: a nested load keeps the live session's turn-end marker"
+}
+
+# On Windows the session lock may hold a tagged win:<pid> (bin/fm-session-lock-lib.sh),
+# and native Node sees that Windows pid directly. The extension records its marker
+# for an owned or dead tagged holder and never for a live other one, while a
+# malformed tag, and any tag off Windows, stays no identity at all. The platform is
+# set per case so every host exercises both sides.
+test_pi_extension_reads_a_windows_tagged_session_lock() {
+  local repo home ext out status
+  repo="$TMP_ROOT/pi-tagged-lock-root"
+  home="$TMP_ROOT/pi-tagged-lock-home"
+  ext="$repo/.pi/extensions/fm-primary-turnend-guard.ts"
+  mkdir -p "$repo/.pi/extensions/lib" "$repo/bin" "$home/state"
+  cp "$ROOT/.pi/extensions/fm-primary-turnend-guard.ts" "$ext"
+  cp "$ROOT/.pi/extensions/lib/fm-operational-input.ts" "$repo/.pi/extensions/lib/fm-operational-input.ts"
+  cp "$ROOT/bin/fm-operational-input.sh" "$repo/bin/fm-operational-input.sh"
+  out=$(PLUGIN="$ext" FM_HOME="$home" node --input-type=module 2>&1 <<'EOF'
+import { spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+
+const marker = `${process.env.FM_HOME}/state/.pi-turnend-extension-loaded`;
+const lock = `${process.env.FM_HOME}/state/.lock`;
+const version = `sha256:${createHash("sha256").update(readFileSync(process.env.PLUGIN)).digest("hex")}`;
+const platform = Object.getOwnPropertyDescriptor(process, "platform");
+let loads = 0;
+async function loadOn(name) {
+  rmSync(marker, { force: true });
+  Object.defineProperty(process, "platform", { ...platform, value: name });
+  try {
+    const mod = await import(`${pathToFileURL(process.env.PLUGIN).href}?tagged=${(loads += 1)}`);
+    mod.default({ on() {}, async sendUserMessage() {} });
+  } finally {
+    Object.defineProperty(process, "platform", platform);
+  }
+}
+
+const dead = spawnSync(process.execPath, ["-e", "0"], { stdio: "ignore" }).pid;
+const other = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+try {
+  const cases = [
+    ["win32", `win:${process.pid}`, true, "an owned tagged lock"],
+    ["win32", `win:${dead}`, true, "a dead tagged holder"],
+    ["win32", `win:${other.pid}`, false, "a live other tagged holder"],
+    ["win32", `${process.pid}`, true, "an owned local lock"],
+    ["win32", "win:", false, "a bare tag"],
+    ["win32", `win:${process.pid}x`, false, "a tag with trailing junk"],
+    ["win32", `WIN:${process.pid}`, false, "a differently cased tag"],
+    ["win32", "win:1", false, "a tagged pid 1"],
+    ["linux", `win:${process.pid}`, false, "a tagged lock off Windows"],
+    ["linux", `${process.pid}`, true, "an owned local lock off Windows"],
+  ];
+  for (const [name, value, expectMarker, label] of cases) {
+    writeFileSync(lock, `${value}\n`);
+    await loadOn(name);
+    if (!expectMarker) {
+      if (existsSync(marker)) throw new Error(`${label} (${name}) recorded a marker: ${readFileSync(marker, "utf8")}`);
+      continue;
+    }
+    const content = existsSync(marker) ? readFileSync(marker, "utf8") : "";
+    if (content !== `${version}\n${process.pid}\n`) {
+      throw new Error(`${label} (${name}) did not record this process's marker: ${JSON.stringify(content)}`);
+    }
+  }
+} finally {
+  other.kill("SIGTERM");
+}
+EOF
+)
+  status=$?
+  [ "$status" = 0 ] || fail "Pi turn-end guard misread a Windows-tagged session lock (exit $status): $out"
+  [ -z "$out" ] || fail "Pi turn-end tagged-lock case printed output: $out"
+  pass ".pi primary extension: the turn-end guard reads a Windows-tagged session lock only on Windows"
 }
 
 # --- --claude cooperative mode -----------------------------------------------
@@ -2387,6 +2462,7 @@ test_codex_blocks_turn_end_while_own_checkpoint_runs() {
   expect_code 2 "$STATUS" "a Codex stop while this session's own checkpoint runs must block; nothing reads it after the turn ends: $OUT"
   assert_contains "$OUT" "foreground checkpoint is still running" "the block must name the running checkpoint"
   assert_contains "$OUT" "Poll its exec session with write_stdin" "the block must name the repair"
+  assert_not_contains "$OUT" "start the next checkpoint" "the block must not ask for another checkpoint"
   pass "fm-turnend-guard codex: blocks a turn end while its own checkpoint is still running"
 }
 
@@ -2453,53 +2529,152 @@ test_codex_allows_watcher_owned_by_another_session() {
   pass "fm-turnend-guard codex: a live watcher another session owns still allows the stop"
 }
 
-test_codex_ignored_repair_can_end_and_progress_keeps_holding() {
+test_codex_missing_watcher_allows_stop_without_a_checkpoint_loop() {
   local dir
   dir=$(make_primary_dir "$TMP_ROOT/codex-progress")
   : > "$dir/state/task1.meta"
   touch "$dir/state/.last-watcher-beat"
   run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
-  expect_code 2 "$STATUS" "a Codex stop with no watcher must block"
-  run_codex_hook "$dir" "$(codex_payload s1 t1 true)"
-  expect_code 0 "$STATUS" "a continuation that advanced nothing since the block must be allowed to end"
-  # The next beat lands in the same whole second as the beat the block recorded:
-  # full mtime precision must still see it as progress.
-  touch -d 2026-01-01T00:00:00.1 "$dir/state/.last-watcher-beat"
-  run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
-  expect_code 2 "$STATUS" "re-arming block"
+  expect_code 0 "$STATUS" "a Codex stop with no watcher must end instead of blocking: $OUT"
+  assert_contains "$OUT" "NO PERSISTENT WATCHER" "the allow must name the missing hold"
+  assert_not_contains "$OUT" "fm-watch-checkpoint.sh" "the allow must not name a checkpoint command"
+  assert_not_contains "$OUT" "start the next checkpoint" "the allow must not ask for another checkpoint"
+  # A finished checkpoint whose beacon or lock identity advanced must not re-block.
   touch -d 2026-01-01T00:00:00.6 "$dir/state/.last-watcher-beat"
   run_codex_hook "$dir" "$(codex_payload s1 t1 true)"
-  expect_code 2 "$STATUS" "a continuation that ran a watcher since the block must stay held: $OUT"
-  run_codex_hook "$dir" "$(codex_payload s1 t1 true)"
-  expect_code 0 "$STATUS" "after the progress re-block, an idle continuation may end"
-  pass "fm-turnend-guard codex: an ignored repair can end, while watcher progress keeps the turn held"
-}
-
-test_codex_new_watch_lock_identity_counts_as_progress() {
-  local dir
-  dir=$(make_primary_dir "$TMP_ROOT/codex-identity-progress")
-  : > "$dir/state/task1.meta"
-  run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
-  expect_code 2 "$STATUS" "a Codex stop with no watcher must block"
+  expect_code 0 "$STATUS" "a beacon advance must not re-block a continued stop: $OUT"
   record_watcher_lock "$dir" "$(nonexistent_pid)" "new cycle identity"
   run_codex_hook "$dir" "$(codex_payload s1 t1 true)"
-  expect_code 2 "$STATUS" "a new watch-lock identity since the block is progress even before a beat: $OUT"
-  pass "fm-turnend-guard codex: a new watch-lock identity counts as progress"
+  expect_code 0 "$STATUS" "a new watch-lock identity must not re-block a continued stop: $OUT"
+  pass "fm-turnend-guard codex: a missing watcher lets the turn end, and progress does not re-block it"
+}
+
+test_codex_detach_hold_allows_stop_when_the_watcher_is_healthy() {
+  local dir pid
+  dir=$(make_primary_dir "$TMP_ROOT/codex-detach-hold")
+  : > "$dir/state/task1.meta"
+  cat > "$dir/bin/fm-watch-arm.sh" <<'SH'
+#!/usr/bin/env bash
+set -m
+sleep 60 >/dev/null 2>&1 </dev/null &
+pid=$!
+disown "$pid" 2>/dev/null || true
+identity=$(FM_STATE_OVERRIDE="$FM_HOME/state" bash -c '. "$1"; fm_pid_identity "$2"' _ "$FM_HOME/bin/fm-wake-lib.sh" "$pid")
+mkdir -p "$FM_HOME/state/.watch.lock"
+printf '%s\n' "$pid" > "$FM_HOME/state/.watch.lock/pid"
+printf '%s\n' "$FM_HOME" > "$FM_HOME/state/.watch.lock/fm-home"
+printf '%s\n' "$FM_HOME/bin/fm-watch.sh" > "$FM_HOME/state/.watch.lock/watcher-path"
+printf '%s\n' "$identity" > "$FM_HOME/state/.watch.lock/pid-identity"
+touch "$FM_HOME/state/.last-watcher-beat"
+printf '%s\n' "$pid" > "$FM_HOME/state/detach-pid"
+echo "watcher: ${FM_TEST_ARM_VERB:-started} pid=$pid"
+exit 0
+SH
+  chmod +x "$dir/bin/fm-watch-arm.sh"
+  run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
+  pid=$(cat "$dir/state/detach-pid" 2>/dev/null || true)
+  [ -n "$pid" ] && kill "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  expect_code 0 "$STATUS" "a confirmed detached hold must allow the stop: $OUT"
+  assert_contains "$OUT" "FIRSTMATE WATCHER RE-ARMED" "a started hold must carry the re-arm notice"
+  [ -n "$pid" ] || fail "the detach stub did not record a watcher pid"
+  rm -rf "$dir/state/.watch.lock" "$dir/state/detach-pid"
+  export FM_TEST_ARM_VERB=attached
+  run_codex_hook "$dir" "$(codex_payload s1 t2 false)"
+  unset FM_TEST_ARM_VERB
+  pid=$(cat "$dir/state/detach-pid" 2>/dev/null || true)
+  [ -n "$pid" ] && kill "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  expect_code 0 "$STATUS" "an attached watcher must allow the stop: $OUT"
+  [ -z "$OUT" ] || fail "an attached watcher must be silent: $OUT"
+  pass "fm-turnend-guard codex: a started hold allows the stop with its notice, and an attached watcher stays silent"
+}
+
+test_codex_host_away_skips_the_detach_with_a_notice() {
+  local dir pid identity
+  dir=$(make_primary_dir "$TMP_ROOT/codex-host-away")
+  : > "$dir/state/task1.meta"
+  mkdir -p "$dir/config"
+  : > "$dir/config/supervision-host"
+  : > "$dir/state/.afk-contract"
+  cat > "$dir/bin/fm-watch-arm.sh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$1" > "$FM_HOME/state/arm-called"
+SH
+  chmod +x "$dir/bin/fm-watch-arm.sh"
+  run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
+  expect_code 0 "$STATUS" "a host home under an away record must allow the stop: $OUT"
+  assert_contains "$OUT" "not running until the next checkpoint" "the allow must say away supervision is off"
+  [ ! -e "$dir/state/arm-called" ] || fail "a host home under an away record must not detach a hold"
+  bash -c 'sleep 30; :' _ --grok-hold >/dev/null 2>&1 &
+  pid=$!
+  identity=$(FM_STATE_OVERRIDE="$dir/state" bash -c '. "$1"; fm_pid_identity "$2"' _ "$dir/bin/fm-wake-lib.sh" "$pid")
+  mkdir -p "$dir/state/.watch.lock"
+  printf '%s\n' "$pid" > "$dir/state/.watch.lock/pid"
+  printf '%s\n' "$dir" > "$dir/state/.watch.lock/fm-home"
+  printf '%s\n' "$dir/bin/fm-watch.sh" > "$dir/state/.watch.lock/watcher-path"
+  printf '%s\n' "$identity" > "$dir/state/.watch.lock/pid-identity"
+  touch "$dir/state/.last-watcher-beat"
+  run_codex_hook "$dir" "$(codex_payload s1 t2 false)"
+  kill "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  expect_code 0 "$STATUS" "a hold under an away record must allow the stop: $OUT"
+  assert_contains "$OUT" "not running until the next checkpoint" "a hold must not read as away supervision"
+  pass "fm-turnend-guard codex: a host home under an away record skips the detach and reports the gap"
+}
+
+test_codex_host_selected_allows_stop_without_a_second_watcher() {
+  local dir
+  dir=$(make_primary_dir "$TMP_ROOT/codex-host-selected")
+  : > "$dir/state/task1.meta"
+  mkdir -p "$dir/config"
+  : > "$dir/config/supervision-host"
+  cat > "$dir/bin/fm-watch-arm.sh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$1" > "$FM_HOME/state/arm-called"
+exit 0
+SH
+  chmod +x "$dir/bin/fm-watch-arm.sh"
+  run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
+  expect_code 0 "$STATUS" "a host-selected Codex home must allow the stop: $OUT"
+  assert_not_contains "$OUT" "fm-watch-checkpoint.sh" "the allow must not name a checkpoint command"
+  [ "$(cat "$dir/state/arm-called" 2>/dev/null)" = --detach-hold ] || fail "a host-selected home must still ask the arm for a watcher"
+  pass "fm-turnend-guard codex: a selected supervision host home still lets the stop end through the arm"
 }
 
 test_codex_stale_or_foreign_block_record_is_judged_fresh() {
   local dir
   dir=$(make_primary_dir "$TMP_ROOT/codex-stale-record")
-  : > "$dir/state/task1.meta"
+  printf '1790000000 1 signal task1.status done\n' > "$dir/state/.wake-queue"
   run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
-  expect_code 2 "$STATUS" "a Codex stop with no watcher must block"
+  expect_code 2 "$STATUS" "a queued wake must block the first stop: $OUT"
   run_codex_hook "$dir" "$(codex_payload s1 t2 true)"
-  expect_code 2 "$STATUS" "a record from an earlier turn must not allow a later turn's continued stop: $OUT"
+  expect_code 2 "$STATUS" "a new turn must not inherit the previous turn's block budget: $OUT"
   run_codex_hook "$dir" "$(codex_payload s2 t2 true)"
   expect_code 2 "$STATUS" "another session's record must not allow this session's continued stop: $OUT"
   run_codex_hook "$dir" "$(codex_payload s1 t2 true)"
-  expect_code 0 "$STATUS" "each session keeps its own record: s1 t2 is now an idle continuation"
-  pass "fm-turnend-guard codex: block records are scoped to their own session and turn"
+  expect_code 2 "$STATUS" "the second block of the same turn must still hold a queued wake: $OUT"
+  run_codex_hook "$dir" "$(codex_payload s1 t2 true)"
+  expect_code 0 "$STATUS" "the third block of the same turn must allow the stop: $OUT"
+  assert_contains "$OUT" "BLOCK BOUND" "the bound allow must name the bound"
+  assert_not_contains "$OUT" "fm-watch-checkpoint.sh" "the budget allow must not name a checkpoint command"
+  pass "fm-turnend-guard codex: block records stay on their own session and turn, then the budget allows the stop"
+}
+
+test_codex_queued_wake_budget_allows_stop() {
+  local dir
+  dir=$(make_primary_dir "$TMP_ROOT/codex-queue-budget")
+  printf '1790000000 1 signal task1.status done\n' > "$dir/state/.wake-queue"
+  run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
+  expect_code 2 "$STATUS" "the first queued stop must block: $OUT"
+  run_codex_hook "$dir" "$(codex_payload s1 t1 true)"
+  expect_code 2 "$STATUS" "the second queued stop must still block: $OUT"
+  run_codex_hook "$dir" "$(codex_payload s1 t1 true)"
+  expect_code 0 "$STATUS" "the third queued stop must allow the turn to end: $OUT"
+  assert_contains "$OUT" "BLOCK BOUND" "the bound allow must name the bound"
+  assert_contains "$OUT" "without a persistent watcher" "the bound allow must name the missing watcher"
+  assert_not_contains "$OUT" "start the next checkpoint" "the budget allow must not ask for another checkpoint"
+  pass "fm-turnend-guard codex: a queued wake cannot hold the turn past the block budget"
 }
 
 test_codex_foreign_lock_owner_gets_read_only_exit() {
@@ -2562,11 +2737,34 @@ test_secondmate_event_instructions_finish_turn() {
   out=$(FM_HOME="$dir" FM_TASK_INBOX="$dir/parent/state/sm-test-1.inbox" TMUX=fixture,1,0 TMUX_PANE=%27 "$dir/bin/fm-supervision-instructions.sh" --harness codex)
   assert_contains "$out" 'Mode: Secondmate event-driven turns.' "secondmate must receive the outside-turn protocol"
   assert_contains "$out" 'end this turn' "secondmate must finish its handling turn"
-  assert_contains "$out" 'If bin/fm-watch.sh --secondmate reports a failure, follow the default checkpoint protocol below instead.' "secondmate must keep the explicit checkpoint fallback"
-  assert_contains "$out" 'fm-watch-checkpoint.sh' "secondmate fallback must name the checkpoint loop"
-  out=$(FM_HOME="$dir" FM_TASK_INBOX="$dir/parent/state/sm-test-1.inbox" TMUX=fixture,1,0 TMUX_PANE=%27 "$dir/bin/fm-supervision-instructions.sh" --harness codex --repair-line)
-  assert_contains "$out" 'if it reports a failure, repair missing watcher supervision with a foreground checkpoint' "secondmate repair must fall back to the checkpoint loop"
+  assert_contains "$out" 'If bin/fm-watch.sh --secondmate reports a failure, tell the parent that the outside-turn watcher failed, then stop.' "secondmate failure must end the turn"
+  assert_not_contains "$out" 'run one bin/fm-watch-checkpoint.sh' "secondmate fallback must not name a checkpoint run"
+  out=$(FM_HOME="$dir" FM_CODEX_WATCH_CHECKPOINT=7 FM_TASK_INBOX="$dir/parent/state/sm-test-1.inbox" TMUX=fixture,1,0 TMUX_PANE=%27 "$dir/bin/fm-supervision-instructions.sh" --harness codex --repair-line)
+  assert_contains "$out" 'if it reports a failure, do not start a foreground checkpoint' "secondmate repair must not start a checkpoint"
+  assert_not_contains "$out" 'bin/fm-watch-checkpoint.sh' "secondmate repair must not print a checkpoint command"
   pass "secondmate instructions end the handling turn without model polling"
+}
+
+test_secondmate_block_bound_ends_a_checkpoint_loop() {
+  local dir
+  dir=$(make_secondmate_dir "$TMP_ROOT/sm-block-bound")
+  cp -R "$ROOT/bin/." "$dir/bin/"
+  mkdir -p "$dir/parent/state"
+  printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$dir/parent" > "$dir/.fm-secondmate-parent"
+  printf '1790000000 1 signal task1.status done\n' > "$dir/state/.wake-queue"
+  export FM_TASK_INBOX="$dir/parent/state/sm-test-1.inbox" TMUX=fixture,1,0 TMUX_PANE=%27
+  run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
+  expect_code 2 "$STATUS" "the first secondmate stop must block: $OUT"
+  assert_not_contains "$OUT" "fm-watch-checkpoint.sh" "the secondmate block must not print a checkpoint command"
+  touch -d 2026-01-01T00:00:00.6 "$dir/state/.last-watcher-beat"
+  run_codex_hook "$dir" "$(codex_payload s1 t1 true)"
+  expect_code 2 "$STATUS" "the second secondmate stop must block: $OUT"
+  touch -d 2026-01-02T00:00:00.6 "$dir/state/.last-watcher-beat"
+  run_codex_hook "$dir" "$(codex_payload s1 t1 true)"
+  unset FM_TASK_INBOX TMUX TMUX_PANE
+  expect_code 0 "$STATUS" "progress must not hold a secondmate past the block bound: $OUT"
+  assert_contains "$OUT" "BLOCK BOUND" "the allow must name the bound"
+  pass "fm-turnend-guard codex: a secondmate home cannot loop past the block bound"
 }
 
 test_secondmate_event_status_requires_notification_owner() {
@@ -2609,8 +2807,10 @@ def run(*args, input_text=None):
     return result
 def require(ok, message):
     if not ok: raise RuntimeError(message)
+turns=[0]
 def guard(active=False):
-    return run(str(root/'bin/fm-turnend-guard.sh'),input_text=json.dumps({'session_id':'sm-event','turn_id':'test','stop_hook_active':active}))
+    if not active: turns[0]+=1
+    return run(str(root/'bin/fm-turnend-guard.sh'),input_text=json.dumps({'session_id':'sm-event','turn_id':'test-'+str(turns[0]),'stop_hook_active':active}))
 def until(test, label):
     phase('condition-wait', label=label)
     for _ in range(400):
@@ -2695,7 +2895,10 @@ try:
     (root/'config/supervision-host').touch()
     (root/'config/supervision-host-off').unlink(missing_ok=True)
     require(run(watch,'--secondmate-selected').returncode==1,'host ownership did not take precedence')
-    require(guard().returncode==2 and guard(True).returncode==0,'stale short-turn record forced an unsupported host into a permanent block')
+    stopped=guard()
+    text=stopped.stdout+stopped.stderr
+    require(stopped.returncode==0, 'selected supervision host still blocked the stop: '+text)
+    require('fm-watch-checkpoint.sh' not in text, 'host allow named a checkpoint')
     (root/'result.json').write_text(json.dumps({'passed': True, 'watcher_pid':pid}))
 except Exception as exc:
     (root/'result.json').write_text(json.dumps({'passed':False,'error':str(exc)}))
@@ -2779,18 +2982,184 @@ PY
   pass "secondmate selection excludes unsupported scopes and the test clock proves heartbeat absorption"
 }
 
+# A Herdr pane only names the binding candidate. Real processes stand in for the
+# pane shell, its session-lock-owning child and an unrelated stranger; a fake
+# herdr reports process-info about them and a fake tty foreground serves tmux.
+test_secondmate_event_herdr_binding() {
+  local dir shell owner stranger identity real_ps out rc i watcher start elapsed
+  local -a herdr_env=(HERDR_SESSION=lab HERDR_PANE_ID=w1:p1) tmux_env=("TMUX=/tmp/fm-fake-tmux-socket,1,0" TMUX_PANE=%27)
+  dir=$(make_secondmate_dir "$TMP_ROOT/sm-event-herdr")
+  cp -R "$ROOT/bin/." "$dir/bin/"
+  mkdir -p "$dir/parent/state" "$dir/fakebin"
+  printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$dir/parent" > "$dir/.fm-secondmate-parent"
+  cat > "$dir/fakebin/herdr" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$FM_T_HERDR_LOG"
+case "${1:-} ${2:-}" in
+  "pane process-info") [ ! -e "$FM_T_HERDR_HANG" ] || sleep 30; cat "$FM_T_HERDR_INFO" ;;
+  "status --json") printf '{"client":{"version":"0.7.4","protocol":14},"server":{"running":true}}\n' ;;
+  "agent get") printf '{"result":{"agent":{"agent":"codex","agent_status":"idle"}}}\n' ;;
+  "pane read")
+    printf '  >_ OpenAI Codex (v0.162.1)\n\n'
+    if [ -s "$FM_T_HERDR_COMPOSER" ]; then
+      fold -w 48 "$FM_T_HERDR_COMPOSER" | awk 'NR == 1 { print "› " $0; next } { print "  " $0 }'
+    else
+      printf '› \n'
+    fi
+    printf '\n  GPT-6-Sol medium · main · 100%% context left\n' ;;
+  "pane send-text") printf '%s' "$4" >> "$FM_T_HERDR_COMPOSER" ;;
+  "pane send-keys") [ "$4" != Enter ] || : > "$FM_T_HERDR_COMPOSER" ;;
+esac
+exit 0
+SH
+  cat > "$dir/fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+case "$*" in
+  *pane_pid*) printf '%s\n' "$FM_T_SHELL" ;;
+  *pane_tty*) printf '/dev/ttys-fm-fake\n' ;;
+  *) exit 1 ;;
+esac
+SH
+  cat > "$dir/fakebin/ps" <<'SH'
+#!/usr/bin/env bash
+[ "${1:-}" != -t ] || { printf '%s %s %s sleep\n' "$FM_T_OWNER" "$FM_T_OWNER" "$FM_T_OWNER"; exit 0; }
+exec "$FM_T_REAL_PS" "$@"
+SH
+  real_ps=$(command -v ps)
+  chmod +x "$dir/fakebin/herdr" "$dir/fakebin/tmux" "$dir/fakebin/ps"
+  # The lock owner is a Codex-named session below the pane shell. Told to, it
+  # runs the production fm_secondmate_watch_start, so the binding under test
+  # is the one production writes; it then stays up as the lock owner for at
+  # most two minutes, so a failed run leaves nothing behind for long.
+  cat > "$dir/owner.sh" <<'SH'
+printf '%s\n' "$$" > "$FM_HOME/state/.lock"
+printf '%s\n' "$$" > "$FM_T_DIR/owner.pid"
+i=0
+while [ ! -e "$FM_T_DIR/start" ] && [ "$i" -lt 1200 ]; do sleep 0.05; i=$((i + 1)); done
+rc=0
+. "$FM_HOME/bin/fm-push-transition-lib.sh" && fm_secondmate_watch_start > "$FM_T_DIR/start.out" 2>&1 || rc=$?
+printf '%s\n' "$rc" > "$FM_T_DIR/start.rc"
+i=0
+while [ "$i" -lt 120 ]; do sleep 1; i=$((i + 1)); done
+SH
+  # shellcheck disable=SC2016 # positional params expand in the child shell.
+  env -u TMUX -u TMUX_PANE FM_HOME="$dir" STATE="$dir/state" CONFIG="$dir/config" FM_T_DIR="$dir" \
+    FM_TASK_INBOX="$dir/parent/state/sm-test-1.inbox" PATH="$dir/fakebin:$PATH" FM_T_REAL_PS="$real_ps" \
+    FM_T_HERDR_INFO="$dir/process-info.json" FM_T_HERDR_LOG="$dir/herdr.log" FM_T_HERDR_COMPOSER="$dir/composer" \
+    FM_T_HERDR_HANG="$dir/hang" FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 FM_POLL=1 "${herdr_env[@]}" \
+    "$BASH" -c '"$1" "$2" & wait' _ "$CODEX_BIN" "$dir/owner.sh" >/dev/null 2>&1 &
+  shell=$!
+  sleep 60 >/dev/null 2>&1 &
+  stranger=$!
+  i=0
+  while [ ! -s "$dir/owner.pid" ] && [ "$i" -lt 200 ]; do sleep 0.05; i=$((i + 1)); done
+  [ -s "$dir/owner.pid" ] || { kill "$shell" "$stranger" 2>/dev/null; fail "the fixture's lock owner never started"; }
+  owner=$(cat "$dir/owner.pid")
+
+  sm_call() {  # [VAR=value...] <function> [args...]: one route function in this home
+    local -a envs=()
+    while [ "$#" -gt 0 ] && [[ $1 == *=* ]]; do envs+=("$1"); shift; done
+    # shellcheck disable=SC2016 # positional params expand in the child shell.
+    env -u TMUX -u TMUX_PANE -u HERDR_SESSION -u HERDR_PANE_ID FM_HOME="$dir" STATE="$dir/state" CONFIG="$dir/config" \
+      FM_TASK_INBOX="$dir/parent/state/sm-test-1.inbox" PATH="$dir/fakebin:$PATH" FM_T_REAL_PS="$real_ps" FM_T_SHELL="$shell" FM_T_OWNER="$owner" \
+      FM_T_HERDR_INFO="$dir/process-info.json" FM_T_HERDR_LOG="$dir/herdr.log" FM_T_HERDR_COMPOSER="$dir/composer" \
+      FM_T_HERDR_HANG="$dir/hang" FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 ${envs[@]+"${envs[@]}"} \
+      "$BASH" -c '. "$FM_HOME/bin/fm-push-transition-lib.sh" && "$@"' _ "$@"
+  }
+  herdr_info() {  # <pane-id> <shell-pid> <foreground-pid>
+    printf '{"result":{"type":"pane_process_info","process_info":{"pane_id":"%s","shell_pid":%s,"foreground_process_group_id":%s,"foreground_processes":[{"pid":%s,"name":"codex","argv0":"codex"}]}}}\n' \
+      "$1" "$2" "$3" "$3" > "$dir/process-info.json"
+  }
+  binding() {  # <line>...: replace the binding file
+    printf '%s\n' "$@" > "$dir/state/.secondmate-watch"
+  }
+  expect_binding() {  # <expected-exit> <label> [VAR=value...]
+    local expected=$1 label=$2 status=0
+    shift 2
+    sm_call "$@" fm_secondmate_watch_binding_valid >/dev/null 2>&1 || status=$?
+    expect_code "$expected" "$status" "$label"
+  }
+
+  rc=0; env -u TMUX -u TMUX_PANE FM_HOME="$dir" FM_TASK_INBOX="$dir/parent/state/sm-test-1.inbox" "${herdr_env[@]}" \
+    "$dir/bin/fm-watch.sh" --secondmate-selected || rc=$?
+  expect_code 0 "$rc" "a local Codex secondmate in a Herdr pane was not selected"
+  rc=0; env -u TMUX -u TMUX_PANE FM_HOME="$dir" FM_TASK_INBOX="$dir/parent/state/sm-test-1.inbox" HERDR_SESSION=lab \
+    "$dir/bin/fm-watch.sh" --secondmate-selected || rc=$?
+  expect_code 1 "$rc" "a Herdr session without HERDR_PANE_ID was selected"
+  rc=0; env -u TMUX -u TMUX_PANE FM_HOME="$dir" FM_TASK_INBOX="$dir/parent/state/sm-test-1.inbox" HERDR_PANE_ID=w1:p1 \
+    "$dir/bin/fm-watch.sh" --secondmate-selected || rc=$?
+  expect_code 1 "$rc" "a Herdr pane without HERDR_SESSION was selected"
+
+  identity=$(sm_call fm_pid_identity "$owner") || fail "could not read the lock owner's identity"
+  herdr_info w1:p1 "$shell" "$owner"
+  expect_binding 1 "a missing binding file validated" "${herdr_env[@]}"
+  : > "$dir/start"
+  i=0
+  while [ ! -s "$dir/start.rc" ] && [ "$i" -lt 400 ]; do sleep 0.05; i=$((i + 1)); done
+  [ -s "$dir/start.rc" ] || fail "the production watcher start never returned"
+  out=$(cat "$dir/state/.secondmate-watch" 2>/dev/null || true)
+  expect_binding 0 "the binding the production start wrote did not validate" "${herdr_env[@]}"
+  watcher=$(cat "$dir/state/.watch.lock/pid" 2>/dev/null || true)
+  if [ -n "$watcher" ] && ps -o args= -p "$watcher" 2>/dev/null | grep -Fq -- "$dir/bin/fm-watch.sh --secondmate-hold"; then
+    kill "$watcher" 2>/dev/null || true
+  fi
+  [ "$(printf '%s\n' "$out" | sed -n 5p)" = herdr ] \
+    || fail "the production start did not record a Herdr binding:"$'\n'"$out"$'\n'"$(cat "$dir/start.out" 2>/dev/null)"
+  [ "$(printf '%s\n' "$out" | sed -n 3,4p | tr '\n' ' ')" = 'lab:w1:p1 lab ' ] \
+    || fail "the production start recorded the wrong Herdr target or route: $out"
+  : > "$dir/hang"
+  start=$(date +%s)
+  expect_binding 1 "a hung Herdr process-info read validated" "${herdr_env[@]}"
+  elapsed=$(( $(date +%s) - start ))
+  rm -f "$dir/hang"
+  [ "$elapsed" -le 9 ] || fail "a hung Herdr process-info read held the binding proof for ${elapsed}s"
+  binding "$owner" "$identity" lab:w1:p1 lab herdr
+  expect_binding 0 "a proven Herdr binding did not validate" "${herdr_env[@]}"
+  expect_binding 1 "a Herdr binding validated without HERDR_PANE_ID" HERDR_SESSION=lab
+  herdr_info w2:p2 "$shell" "$owner"
+  expect_binding 1 "a binding recorded for another pane validated" HERDR_SESSION=lab HERDR_PANE_ID=w2:p2
+  expect_binding 1 "process-info describing a different pane validated" "${herdr_env[@]}"
+  herdr_info w1:p1 "$stranger" "$owner"
+  expect_binding 1 "a lock owner outside the pane's process tree validated" "${herdr_env[@]}"
+  herdr_info w1:p1 "$shell" "$stranger"
+  expect_binding 1 "a lock owner outside the foreground group validated" "${herdr_env[@]}"
+  herdr_info w1:p1 "$shell" "$owner"
+  binding "$owner" mismatched-process-identity lab:w1:p1 lab herdr
+  expect_binding 1 "a changed lock-owner identity validated" "${herdr_env[@]}"
+  binding "$owner" "$identity" lab:w1:p1 lab herdr
+  printf '%s\n' "$stranger" > "$dir/state/.lock"
+  expect_binding 1 "a binding for a replaced lock owner validated" "${herdr_env[@]}"
+  printf '%s\n' "$owner" > "$dir/state/.lock"
+  expect_binding 0 "the restored Herdr binding did not validate" "${herdr_env[@]}"
+
+  out=$(sm_call "${herdr_env[@]}" fm_secondmate_watch_notify 2>&1) || fail "Herdr notification failed: $out"
+  [ -n "$(ls "$dir/parent/state/sm-test-1.inbox/"*.msg 2>/dev/null)" ] || fail "Herdr notification wrote no parent inbox record"
+  grep -F 'pane send-text w1:p1 ' "$dir/herdr.log" | grep -Fq -- '--session lab' \
+    || fail "Herdr notification did not ring the recorded target:"$'\n'"$(cat "$dir/herdr.log")"
+
+  binding "$owner" "$identity" %27 /tmp/fm-fake-tmux-socket
+  expect_binding 0 "a legacy four-line tmux binding stopped validating" "${tmux_env[@]}"
+  expect_binding 1 "a tmux binding validated inside a Herdr pane" "${herdr_env[@]}"
+  kill "$shell" "$owner" "$stranger" 2>/dev/null || true
+  wait "$shell" "$stranger" 2>/dev/null || true
+  pass "secondmate Herdr binding is proven from the lock owner and rings its recorded target; legacy tmux bindings still validate"
+}
+
 if [ "${FM_TEST_ONLY:-}" = secondmate-endturn ]; then
   test_secondmate_event_instructions_finish_turn
   test_secondmate_event_status_requires_notification_owner
   test_secondmate_event_watcher_survives_and_notifies
   test_secondmate_event_scope_and_clock
+  test_secondmate_event_herdr_binding
   exit 0
 fi
 
 test_secondmate_event_instructions_finish_turn
+test_secondmate_block_bound_ends_a_checkpoint_loop
 test_secondmate_event_status_requires_notification_owner
 test_secondmate_event_watcher_survives_and_notifies
 test_secondmate_event_scope_and_clock
+test_secondmate_event_herdr_binding
 test_predicate_healthy_no_inflight
 test_predicate_unhealthy_no_beacon
 test_predicate_unhealthy_stale_beacon
@@ -2844,6 +3213,7 @@ test_opencode_plugin_anchors_guard_to_worktree
 test_pi_extension_injects_once_per_logical_agent_run
 test_pi_extension_retries_after_followup_delivery_failure
 test_pi_extension_keeps_marker_of_live_ancestor_session
+test_pi_extension_reads_a_windows_tagged_session_lock
 test_hook_claude_mode_reblocks_stop_hook_active_when_unhealthy
 test_hook_claude_mode_reblocks_x_mode_without_tasks
 test_hook_claude_mode_allows_when_autoarm_owner_alive
@@ -2886,9 +3256,12 @@ test_codex_reblocks_open_checkpoint_after_its_own_block
 test_codex_holds_own_checkpoint_then_ignored_repair_can_end
 test_codex_holds_own_checkpoint_then_ignored_repair_can_end 1 2
 test_codex_allows_watcher_owned_by_another_session
-test_codex_ignored_repair_can_end_and_progress_keeps_holding
-test_codex_new_watch_lock_identity_counts_as_progress
+test_codex_missing_watcher_allows_stop_without_a_checkpoint_loop
+test_codex_detach_hold_allows_stop_when_the_watcher_is_healthy
+test_codex_host_selected_allows_stop_without_a_second_watcher
+test_codex_host_away_skips_the_detach_with_a_notice
 test_codex_stale_or_foreign_block_record_is_judged_fresh
+test_codex_queued_wake_budget_allows_stop
 test_codex_foreign_lock_owner_gets_read_only_exit
 test_codex_no_work_stays_silent
 test_codex_queued_wake_keeps_turn_open_after_last_task_clears

@@ -88,10 +88,11 @@ triage_log() {
   fi
 }
 
-# True only for the Grok hold opt-in, and never while away or quiet mode owns triage.
+# True for Grok's hold or the watchdog's owned-child hold, except while away
+# or quiet mode owns triage.
 # docs/watcher-continuity.md owns that continuity; this predicate is the flag check.
-fm_watch_grok_hold_active() {
-  [ "${FM_WATCH_GROK_HOLD:-}" = 1 ] || return 1
+fm_watch_hold_active() {
+  [ "${FM_WATCH_GROK_HOLD:-}" = 1 ] || [ "${FM_WATCH_MANAGED_HOLD:-}" = 1 ] || return 1
   if declare -F afk_present >/dev/null 2>&1; then
     afk_present && return 1
     return 0
@@ -106,38 +107,56 @@ fm_secondmate_watch_selected() {
   local watcher_pid
   # shellcheck source=bin/fm-primary-scope-lib.sh
   . "$FM_PUSH_TRANSITION_LIB_DIR/fm-primary-scope-lib.sh"
-  # shellcheck source=bin/fm-secondmate-parent-lib.sh
-  . "$FM_PUSH_TRANSITION_LIB_DIR/fm-secondmate-parent-lib.sh"
   # shellcheck source=bin/fm-supervision-engine-lib.sh
   . "$FM_PUSH_TRANSITION_LIB_DIR/fm-supervision-engine-lib.sh"
-  fm_root_is_secondmate_home "$FM_HOME" && [ -n "${TMUX_PANE:-}" ] && [ -n "${TMUX:-}" ] || return 1
+  fm_root_is_secondmate_home "$FM_HOME" || return 1
+  # The pane environment only names the candidate endpoint, tmux first as in
+  # fm_backend_detect; fm_secondmate_watch_binding_valid owns its proof.
+  if [ -n "${TMUX_PANE:-}" ] && [ -n "${TMUX:-}" ]; then
+    FM_SM_BACKEND=tmux FM_SM_TARGET=$TMUX_PANE FM_SM_ROUTE=${TMUX%%,*}
+  elif [ -n "${HERDR_SESSION:-}" ] && [ -n "${HERDR_PANE_ID:-}" ]; then
+    FM_SM_BACKEND=herdr FM_SM_TARGET=$HERDR_SESSION:$HERDR_PANE_ID FM_SM_ROUTE=$HERDR_SESSION
+  else
+    return 1
+  fi
   # shellcheck disable=SC2153 # CONFIG is set by bin/fm-watch.sh.
   [ ! -e "$STATE/.afk" ] && ! fm_supervision_host_enabled "$CONFIG" codex || return 1
-  fm_secondmate_parent_record_parse "$FM_HOME/.fm-secondmate-parent" || return 1
-  [ "$FM_SECONDMATE_PARENT_ROUTE" = local ] || return 1
-  FM_SM_ID=$(head -n 1 "$FM_HOME/.fm-secondmate-home")
-  FM_SM_ID=${FM_SM_ID//[[:space:]]/}
-  [ "${FM_TASK_INBOX:-}" = "$FM_SECONDMATE_PARENT_HOME/state/$FM_SM_ID.inbox" ] || return 1
+  FM_SM_INBOX=$(fm_secondmate_home_inbox "$FM_HOME") && [ "${FM_TASK_INBOX:-}" = "$FM_SM_INBOX" ] || return 1
+  FM_SM_ID=${FM_SM_INBOX##*/}
+  FM_SM_ID=${FM_SM_ID%.inbox}
   if fm_watcher_healthy "$STATE" "$FM_PUSH_TRANSITION_LIB_DIR/fm-watch.sh" "${FM_GUARD_GRACE:-300}" "$FM_HOME"; then
     watcher_pid=$(cat "$STATE/.watch.lock/pid")
     case "$(ps -o args= -p "$watcher_pid" 2>/dev/null)" in *'/fm-watch.sh --secondmate-hold'*) ;; *) return 1 ;; esac
   fi
 }
 
+# The binding file records the session-lock owner pid, its fm_pid_identity,
+# the ring target, the server route (tmux socket or Herdr session) and the
+# backend; a file without the fifth line is a tmux binding. The owner must
+# descend from the pane's shell and sit in its foreground group.
 fm_secondmate_watch_binding_valid() {
-  local pane_pid
+  local target route backend pane_pid fg
   fm_secondmate_watch_selected || return 1
   [ ! -L "$STATE/.secondmate-watch" ] && [ -f "$STATE/.secondmate-watch" ] || return 1
   {
-    IFS= read -r FM_SM_PID && IFS= read -r FM_SM_IDENTITY && IFS= read -r FM_SM_PANE && IFS= read -r FM_SM_SOCKET
+    IFS= read -r FM_SM_PID && IFS= read -r FM_SM_IDENTITY && IFS= read -r target && IFS= read -r route \
+      && { IFS= read -r backend || :; }
   } < "$STATE/.secondmate-watch" || return 1
   [ "$FM_SM_PID" = "$(cat "$STATE/.lock" 2>/dev/null)" ] || return 1
   [ -n "$FM_SM_IDENTITY" ] && [ "$FM_SM_IDENTITY" = "$(fm_pid_identity "$FM_SM_PID" 2>/dev/null)" ] || return 1
-  [ "$FM_SM_PANE" = "$TMUX_PANE" ] && [ "$FM_SM_SOCKET" = "${TMUX%%,*}" ] || return 1
-  pane_pid=$(tmux -S "$FM_SM_SOCKET" display-message -p -t "$FM_SM_PANE" '#{pane_pid}') || return 1
+  [ "${backend:-tmux}" = "$FM_SM_BACKEND" ] && [ "$target" = "$FM_SM_TARGET" ] && [ "$route" = "$FM_SM_ROUTE" ] || return 1
+  fm_backend_source "$FM_SM_BACKEND" || return 1
+  if [ "$FM_SM_BACKEND" = herdr ]; then
+    fm_backend_herdr_parse_target "$FM_SM_TARGET" || return 1
+    fg=$(fm_backend_herdr_pane_process_pids "$FM_BACKEND_HERDR_SESSION" "$FM_BACKEND_HERDR_PANE") || return 1
+    pane_pid=${fg%%$'\n'*}
+    fg=${fg#"$pane_pid"}
+  else
+    pane_pid=$(tmux -S "$FM_SM_ROUTE" display-message -p -t "$FM_SM_TARGET" '#{pane_pid}') || return 1
+    fg=$(fm_backend_tmux_foreground_pids "$FM_SM_TARGET")
+  fi
   fm_pid_descends_from "$FM_SM_PID" "$pane_pid" || return 1
-  fm_backend_source tmux || return 1
-  fm_backend_tmux_foreground_pids "$FM_SM_PANE" | grep -Fx "$FM_SM_PID" >/dev/null
+  printf '%s\n' "$fg" | grep -Fx "$FM_SM_PID" >/dev/null
 }
 
 fm_secondmate_watch_status() {
@@ -160,7 +179,7 @@ fm_secondmate_watch_start() {
   pid=$(cat "$STATE/.lock")
   identity=$(fm_pid_identity "$pid") || return 1
   tmp=$(mktemp "$STATE/.secondmate-watch.XXXXXX") || return 1
-  printf '%s\n' "$pid" "$identity" "$TMUX_PANE" "${TMUX%%,*}" > "$tmp" && mv "$tmp" "$STATE/.secondmate-watch" || return 1
+  printf '%s\n' "$pid" "$identity" "$FM_SM_TARGET" "$FM_SM_ROUTE" "$FM_SM_BACKEND" > "$tmp" && mv "$tmp" "$STATE/.secondmate-watch" || return 1
   fm_secondmate_watch_binding_valid || return 1
   case $- in *m*) monitor=1 ;; esac
   set -m
@@ -184,24 +203,26 @@ fm_secondmate_watch_notify() {
   rec=$(cat "$STATE/.secondmate-watch-message" 2>/dev/null || true)
   if [ "${rec%/*}" != "$FM_TASK_INBOX" ] || [ ! -f "$rec" ]; then
     body=$(printf '%s\n' 'Run bin/fm-wake-drain.sh, handle and acknowledge the durable watcher events, send any resulting actions and parent replies, then end this turn.' | "$FM_PUSH_TRANSITION_LIB_DIR/fm-operational-input.sh" encode watcher) || return 1
-    rec=$(fm_task_inbox_write "$FM_SECONDMATE_PARENT_HOME/state" "$FM_SM_ID" "$body") || return 1
+    rec=$(fm_task_inbox_write "${FM_SM_INBOX%/*}" "$FM_SM_ID" "$body") || return 1
     printf '%s\n' "$rec" > "$STATE/.secondmate-watch-message" || return 1
   else
     return 0
   fi
   fm_secondmate_watch_binding_valid || return 1
-  fm_task_inbox_ring tmux "$FM_SM_PANE" "$rec" "$FM_SM_ID" || ring_rc=$?
+  fm_task_inbox_ring "$FM_SM_BACKEND" "$FM_SM_TARGET" "$rec" "$FM_SM_ID" || ring_rc=$?
   case "$ring_rc" in
-    1|2) fm_task_inbox_mark_retry "$FM_SECONDMATE_PARENT_HOME/state" "$FM_SM_ID" "$rec" ;;
+    1|2) fm_task_inbox_mark_retry "${FM_SM_INBOX%/*}" "$FM_SM_ID" "$rec" ;;
     3) return 1 ;;
   esac
 }
 
 # Exit after reporting one actionable wake. Tests override this callback.
-# FM_WATCH_GROK_HOLD=1 returns after the report so that watcher can keep the lock.
+# A hold opt-in returns after the report so the watcher can keep the lock.
+# An optional cadence kind lets actionable work retain heartbeat delivery while
+# resetting idle backoff; omitted kinds keep the wake reason's existing accounting.
 wake() {
   local output_status=0
-  case "$1" in
+  case "${2:-$1}" in
     heartbeat*) echo $(( $(cat "$STATE/.heartbeat-streak" 2>/dev/null || echo 0) + 1 )) > "$STATE/.heartbeat-streak" ;;
     *) echo 0 > "$STATE/.heartbeat-streak" ;;
   esac
@@ -212,6 +233,12 @@ wake() {
     watch_delivery_publish "$1" || true
     # shellcheck disable=SC2034 # Read by bin/fm-watch.sh's EXIT cleanup.
     FM_WATCH_DELIVERED_REASON=$1
+    # The managed owner keeps this watcher alive after delivery. Its recovery
+    # check must not re-announce the same still-queued wake on the next poll.
+    if [ "${FM_WATCH_MANAGED_HOLD:-}" = 1 ]; then
+      # shellcheck disable=SC2034 # Read by the sourcing fm-watch.sh after wake returns.
+      FM_MANAGED_WAKE_DELIVERED=1
+    fi
   else
     output_status=1
   fi
@@ -224,7 +251,7 @@ wake() {
     # shellcheck disable=SC2034 # Read by bin/fm-watch.sh's secondmate hold loop.
     fm_secondmate_watch_notify || FM_SM_NOTIFY_RETRY=1
   fi
-  if fm_watch_grok_hold_active; then
+  if fm_watch_hold_active; then
     if declare -F watcher_stop_signals >/dev/null 2>&1; then
       watcher_stop_signals
     else
@@ -268,11 +295,12 @@ mark_surface_reported() {  # <status-file> <reported-signature>
 
 # Act on a fresh actionable transition from a push-capable backend.
 handle_push_transition() {  # <backend> <session> <record>
-  local backend=$1 session=$2 record=$3 pane_id to window task reason span_record rest surface_end='' surface_ident=''
+  local backend=$1 session=$2 record=$3 pane_id to detail window task reason span_record rest surface_end='' surface_ident='' note
   pane_id=$(fm_transition_pane_id "$record")
   to=$(fm_transition_to_status "$record")
+  detail=$(fm_transition_detail "$record")
   [ -n "$pane_id" ] || { sleep 1; return; }
-  window="$session:$pane_id"
+  window=$(fm_backend_transition_target "$backend" "$session" "$pane_id")
   task=$(window_to_task "$window" "$STATE")
   # A declared wait already names the human this transition would report: an
   # external dependency, or the captain a verified hold transferred the work to.
@@ -288,7 +316,8 @@ handle_push_transition() {  # <backend> <session> <record>
   case $? in
     0|1) surface_end=${span_record%%$'\t'*}; rest=${span_record#*$'\t'}; surface_ident=${rest%%$'\t'*} ;;
   esac
-  reason="stale: $window (herdr: agent $to - waiting on human, escalated immediately, not via wedge timer)"
+  note=$(fm_backend_transition_note "$backend" "$record" 2>/dev/null || true)
+  reason="stale: $window ($backend: agent $to${detail:+ ($detail)} - waiting on human${note:+: $note}, escalated immediately, not via wedge timer)"
   fm_wake_append stale "$window" "$reason" || exit 1
   fm_backend_commit_transition "$backend" "$STATE" "$session" "$record" || exit 1
   mark_surfaced "$STATE/$task.status" "$surface_end" "$surface_ident"

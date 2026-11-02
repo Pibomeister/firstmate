@@ -69,6 +69,63 @@ test_afk_start_ignores_stale_pidfile_without_lock() {
   pass "fm-afk-start.sh ignores stale pidfile-only live pids"
 }
 
+test_afk_start_refuses_tern_supervisor_backend() {
+  local dir state out status
+  dir=$(make_supercase afk-start-tern-unsupported)
+  state="$dir/state"
+
+  out=$(FM_STATE_OVERRIDE="$state" FM_SUPERVISOR_BACKEND=tern "$AFK_START" 2>&1)
+  status=$?
+
+  [ "$status" -ne 0 ] || fail "fm-afk-start.sh should refuse a tern supervisor backend (away mode supports only tmux, herdr, and rex)"
+  case "$out" in
+    *"does not support supervisor backend 'tern'"*|*"no non-visible daemon-launch primitive for backend 'tern'"*) : ;;
+    *) fail "away mode did not name tern as an unsupported supervisor backend: $out" ;;
+  esac
+  pass "fm-afk-start.sh refuses tern as an away-mode supervisor backend (unsupported; documented in docs/tern-backend.md)"
+}
+
+# On an Orca home the daemon must refuse at startup with a named reason rather
+# than fall back to tmux firstmate:0, which there names an unrelated tmux window
+# or nothing. The bound turns a daemon that starts anyway into a failure rather
+# than a hung suite.
+test_afk_start_refuses_orca_home_without_terminal() {
+  local dir state out status
+  dir=$(make_supercase afk-start-orca-no-terminal)
+  state="$dir/state"
+
+  out=$(fm_run_timed 30 env PATH="$dir/fakebin:$PATH" FM_FAKE_TMUX_PANE_ALIVE=0 FM_STATE_OVERRIDE="$state" FM_BACKEND=orca \
+    FM_SUPERVISOR_BACKEND='' FM_SUPERVISOR_TARGET='' TMUX_PANE='' HERDR_ENV='' HERDR_PANE_ID='' TERM_PROGRAM='' \
+    "$AFK_START" 2>&1)
+  status=$?
+
+  [ "$status" -ne 124 ] || fail "daemon startup on an Orca home with no Orca terminal kept running instead of refusing"
+  [ "$status" -ne 0 ] || fail "an Orca home with no Orca terminal must refuse daemon startup"
+  assert_contains "$out" "found no supervisor endpoint on this Orca home: backend orca is selected but this process runs in no Orca terminal" "daemon startup did not name the Orca refusal: $out"
+  assert_not_contains "$out" "firstmate:0" "an Orca home must not fall back to the tmux default target"
+  assert_not_contains "$(cat "$state/.supervise-daemon.log" 2>/dev/null)" "daemon starting" "the daemon must not start on a refused Orca home"
+  pass "fm-afk-start.sh refuses an Orca home with no Orca terminal instead of falling back to firstmate:0"
+}
+
+test_afk_start_refuses_inherited_orca_terminal_marker() {
+  local dir state out status
+  dir=$(make_supercase afk-start-orca-nested)
+  state="$dir/state"
+  mkdir -p "$dir/config"
+
+  out=$(fm_run_timed 30 env PATH="$dir/fakebin:$PATH" FM_FAKE_TMUX_PANE_ALIVE=0 FM_STATE_OVERRIDE="$state" FM_BACKEND='' FM_BACKEND_CONFIG_DIR="$dir/config" \
+    FM_SUPERVISOR_BACKEND='' FM_SUPERVISOR_TARGET='' TMUX_PANE='' HERDR_ENV='' HERDR_PANE_ID='' \
+    TERM_PROGRAM=Orca ORCA_TERMINAL_HANDLE=term_captain ZELLIJ=0 \
+    "$AFK_START" 2>&1)
+  status=$?
+
+  [ "$status" -ne 124 ] || fail "daemon startup with an inherited Orca marker kept running instead of refusing"
+  [ "$status" -ne 0 ] || fail "an inherited Orca marker with no direct Orca terminal must refuse daemon startup"
+  assert_contains "$out" "this process carries Orca terminal term_captain but does not run directly in it (TERM_PROGRAM=Orca, inside Zellij)" "daemon startup did not name the nested-terminal refusal: $out"
+  assert_not_contains "$out" "firstmate:0" "an inherited Orca marker must not fall back to the tmux default target"
+  pass "fm-afk-start.sh refuses an inherited Orca terminal marker instead of falling back to firstmate:0"
+}
+
 test_afk_start_reclaims_stale_daemon_lock_reused_pid() {
   local dir state out status lock
   dir=$(make_supercase afk-start-stale-lock-reused-pid)
@@ -2488,6 +2545,35 @@ test_max_defer_pending_composer_alarms_without_typing() {
   pass "max-defer on a pending composer alarms without typing"
 }
 
+test_composer_deferral_names_pending_text_or_unrecognized_shape() {
+  # A deferral must say WHICH refusal it was: real unsubmitted text is a
+  # human's draft, while an unproven composer points at the classifier, the
+  # pane, a dead shell, or a busy harness - the case a titled claude rule once
+  # hid for hours.
+  local dir state fakebin sent log
+  dir=$(make_bordered_case composer-deferral-reason)
+  state="$dir/state"; fakebin="$dir/fakebin"; log="$dir/daemon.log"
+  sent="$dir/sent.log"; : > "$sent"
+  afk_enter "$state"
+  printf '╭─────────────────╮\n│ > human draft   │\n╰─────────────────╯\n' > "$dir/composer"
+  if LOG="$log" PATH="$fakebin:$PATH" FM_FAKE_COMPOSER="$dir/composer" FM_FAKE_SENT="$sent" \
+    inject_msg "needs-decision: pick B" "$state"; then
+    fail "inject_msg typed into a pending composer"
+  fi
+  grep -F 'inject deferred: supervisor composer not confirmed-empty (state=pending: unsubmitted text in the composer)' "$log" >/dev/null \
+    || fail "a pending composer deferral does not name the unsubmitted text: $(cat "$log")"
+  : > "$log"
+  printf 'build output\nplain transcript line\n' > "$dir/composer"
+  if LOG="$log" PATH="$fakebin:$PATH" FM_FAKE_COMPOSER="$dir/composer" FM_FAKE_SENT="$sent" \
+    inject_msg "needs-decision: pick B" "$state"; then
+    fail "inject_msg typed into a screen with no recognized composer"
+  fi
+  grep -F 'inject deferred: supervisor composer not confirmed-empty (state=unknown: composer not proven empty or pending (unrecognized screen, or harness not idle))' "$log" >/dev/null \
+    || fail "an unrecognized screen deferral does not say the composer was not proven empty or pending: $(cat "$log")"
+  [ ! -s "$sent" ] || fail "a deferred inject typed text"
+  pass "a composer deferral names pending text apart from an unproven composer"
+}
+
 test_normal_flush_clears_stale_wedge_marker() {
   local dir state fakebin sent
   dir=$(make_bordered_case normal-clears-wedge)
@@ -2812,6 +2898,27 @@ test_wedge_alarm_herdr_channel_selected() {
   pass "herdr channel routes through the notifier seam with the summary (never a real notification)"
 }
 
+test_wedge_alarm_rex_channel_selected() {
+  local dir log
+  dir=$(make_wedge_case wedge-rex); log="$dir/alert.log"
+  FM_WEDGE_ALARM_LOG="$log" FM_WEDGE_ALARM_CHANNEL=rex FM_SUPERVISOR_BACKEND=rex \
+    wedge_alarm_notify "away-mode escalations WEDGED 700s undelivered - see /s/.marker" "/s/.marker"
+  grep -F 'rex' "$log" >/dev/null || fail "rex channel not routed through the notifier seam: $(cat "$log")"
+  grep -F 'WEDGED 700s undelivered' "$log" >/dev/null || fail "rex channel did not carry the summary"
+  grep -F 'osascript' "$log" >/dev/null && fail "rex-only config also selected osascript"
+  pass "rex channel routes through the notifier seam with the summary (never a real pane write)"
+}
+
+test_wedge_alarm_auto_never_selects_rex() {
+  local dir log
+  dir=$(make_wedge_case wedge-auto-rex); log="$dir/alert.log"
+  PATH="$dir/fakebin:$PATH" FM_WEDGE_ALARM_LOG="$log" FM_FAKE_UNAME=Darwin FM_WEDGE_ALARM_CHANNEL=auto \
+    FM_SUPERVISOR_BACKEND=rex wedge_alarm_notify "away-mode WEDGED 900s" "/s/.marker"
+  grep -F 'osascript' "$log" >/dev/null || fail "auto on Darwin did not select osascript: $(cat "$log")"
+  grep -E '^rex' "$log" >/dev/null && fail "auto selected the opt-in rex channel on a Rex supervisor: $(cat "$log")"
+  pass "auto never adds the opt-in rex channel, even on a Rex supervisor pane"
+}
+
 test_wedge_alarm_command_channel_receives_summary() {
   local dir out_argv out_stdin chan
   dir=$(make_wedge_case wedge-command)
@@ -3105,8 +3212,11 @@ test_discover_supervisor_backend_precedence() {
   out=$(FM_SUPERVISOR_BACKEND='' TMUX_PANE='' HERDR_ENV=1 HERDR_PANE_ID=w1:p1 discover_supervisor_backend)
   [ "$out" = herdr ] || fail "HERDR_ENV=1 with HERDR_PANE_ID present should resolve to herdr: $out"
 
-  if out=$(FM_SUPERVISOR_BACKEND='' TMUX_PANE='' HERDR_ENV='' HERDR_PANE_ID='' discover_supervisor_backend); then
-    fail "bare fallback (no override, no TMUX_PANE, no HERDR_ENV) should return non-zero"
+  # The adapter reads its bearer from FM_BACKEND_CONFIG_DIR (pinned when
+  # fm-backend.sh was sourced); pointing it at no bearer keeps the t3code rule
+  # closed whatever T3 state this dev box carries.
+  if out=$(FM_SUPERVISOR_BACKEND='' TMUX_PANE='' HERDR_ENV='' HERDR_PANE_ID='' FM_BACKEND_CONFIG_DIR="$TMP_ROOT/no-t3" discover_supervisor_backend); then
+    fail "bare fallback (no override, no TMUX_PANE, no HERDR_ENV, no T3 bearer) should return non-zero"
   fi
   [ "$out" = tmux ] || fail "bare fallback should still print tmux: $out"
 
@@ -3127,12 +3237,320 @@ test_discover_supervisor_target_herdr() {
   out=$(FM_SUPERVISOR_TARGET='' TMUX_PANE='' HERDR_ENV=1 HERDR_PANE_ID=w1:p9 HERDR_SESSION=iso1 discover_supervisor_target)
   [ "$out" = "iso1:w1:p9" ] || fail "herdr target should use an explicit HERDR_SESSION: $out"
 
-  if out=$(FM_SUPERVISOR_TARGET='' TMUX_PANE='' HERDR_ENV='' HERDR_PANE_ID='' discover_supervisor_target); then
+  if out=$(FM_SUPERVISOR_TARGET='' TMUX_PANE='' HERDR_ENV='' HERDR_PANE_ID='' FM_BACKEND_CONFIG_DIR="$TMP_ROOT/no-t3" discover_supervisor_target); then
     fail "bare fallback should return non-zero"
   fi
   [ "$out" = "firstmate:0" ] || fail "bare fallback should still print firstmate:0: $out"
 
   pass "discover_supervisor_target: override > TMUX_PANE > herdr '<session>:<pane-id>' composition > firstmate:0 fallback"
+}
+
+# --- orca supervisor discovery ----------------------------------------------
+# The captain's Orca terminal resolves from TERM_PROGRAM=Orca plus
+# ORCA_TERMINAL_HANDLE after every earlier rule; an Orca home that resolves no
+# endpoint returns 3 with nothing printed instead of the tmux default.
+orca_discovery_cases() {  # <case-dir>; run with the neutral discovery env prefixed
+  local dir=$1 out rc
+  out=$(TERM_PROGRAM=Orca ORCA_TERMINAL_HANDLE=term_captain discover_supervisor_target) \
+    || fail "an Orca terminal must resolve the target cleanly"
+  [ "$out" = term_captain ] || fail "the target should be the Orca terminal handle, got '$out'"
+  out=$(TERM_PROGRAM=Orca ORCA_TERMINAL_HANDLE=term_captain discover_supervisor_backend) \
+    || fail "an Orca terminal must resolve the backend cleanly"
+  [ "$out" = orca ] || fail "the backend should be orca, got '$out'"
+
+  out=$(TERM_PROGRAM=Orca ORCA_TERMINAL_HANDLE=term_captain TMUX_PANE='%3' discover_supervisor_target)
+  [ "$out" = '%3' ] || fail "TMUX_PANE must win over an Orca terminal (tmux nested in Orca): $out"
+  out=$(TERM_PROGRAM=Orca ORCA_TERMINAL_HANDLE=term_captain TMUX_PANE='%3' discover_supervisor_backend)
+  [ "$out" = tmux ] || fail "TMUX_PANE must resolve tmux ahead of orca: $out"
+  out=$(TERM_PROGRAM=Orca ORCA_TERMINAL_HANDLE=term_captain HERDR_ENV=1 HERDR_PANE_ID=w1:p9 HERDR_SESSION='' discover_supervisor_target)
+  [ "$out" = default:w1:p9 ] || fail "herdr markers must win over an Orca terminal: $out"
+  out=$(TERM_PROGRAM=Orca ORCA_TERMINAL_HANDLE=term_captain FM_SUPERVISOR_TARGET=explicit:target discover_supervisor_target)
+  [ "$out" = explicit:target ] || fail "an explicit FM_SUPERVISOR_TARGET must win over an Orca terminal: $out"
+  out=$(TERM_PROGRAM=Orca ORCA_TERMINAL_HANDLE=term_captain FM_SUPERVISOR_BACKEND=herdr discover_supervisor_backend)
+  [ "$out" = herdr ] || fail "an explicit FM_SUPERVISOR_BACKEND must win over an Orca terminal: $out"
+
+  # An inherited marker without the Orca terminal owning the screen refuses.
+  rc=0
+  out=$(TERM_PROGRAM=tern ORCA_TERMINAL_HANDLE=term_captain discover_supervisor_target) || rc=$?
+  [ "$rc" = 3 ] && [ -z "$out" ] || fail "an inherited Orca marker under tern must refuse with status 3 and no target, got $rc '$out'"
+  rc=0
+  out=$(TERM_PROGRAM=tern ORCA_TERMINAL_HANDLE=term_captain discover_supervisor_backend) || rc=$?
+  [ "$rc" = 3 ] && [ -z "$out" ] || fail "an inherited Orca marker under tern must refuse the backend with status 3, got $rc '$out'"
+  rc=0
+  out=$(TERM_PROGRAM=Orca ORCA_TERMINAL_HANDLE=term_captain ZELLIJ=0 discover_supervisor_target) || rc=$?
+  [ "$rc" = 3 ] && [ -z "$out" ] || fail "Zellij inside an Orca terminal must refuse with status 3 and no target, got $rc '$out'"
+  rc=0
+  out=$(TERM_PROGRAM=Orca ORCA_TERMINAL_HANDLE=term_captain ZELLIJ=0 discover_supervisor_backend) || rc=$?
+  [ "$rc" = 3 ] && [ -z "$out" ] || fail "Zellij inside an Orca terminal must refuse the backend with status 3, got $rc '$out'"
+
+  # Explicit orca selection with no Orca terminal refuses too, from env or config.
+  for selection in env config; do
+    rc=0
+    if [ "$selection" = env ]; then
+      out=$(FM_BACKEND=orca TERM_PROGRAM='' discover_supervisor_target) || rc=$?
+    else
+      printf 'orca\n' > "$dir/config/backend"
+      out=$(TERM_PROGRAM='' discover_supervisor_target) || rc=$?
+      rm -f "$dir/config/backend"
+    fi
+    [ "$rc" = 3 ] || fail "an explicit orca selection ($selection) without an Orca terminal must refuse with status 3, got $rc"
+    [ -z "$out" ] || fail "an explicit orca selection ($selection) must print no target, got '$out'"
+  done
+  assert_contains "$(FM_BACKEND=orca TERM_PROGRAM='' fm_supervisor_orca_refusal)" "backend orca is selected but this process runs in no Orca terminal" \
+    "the refusal must name the missing Orca terminal"
+
+  # Any other home keeps the legacy tmux default with its warning status.
+  rc=0
+  out=$(TERM_PROGRAM='' discover_supervisor_target) || rc=$?
+  [ "$rc" = 1 ] && [ "$out" = firstmate:0 ] || fail "a non-Orca home must keep the firstmate:0 fallback with status 1, got $rc '$out'"
+  if fm_supervisor_orca_refusal >/dev/null; then
+    fail "a non-Orca home must not report an Orca refusal"
+  fi
+}
+
+test_discover_supervisor_orca_terminal() {
+  local dir
+  dir=$(make_supercase discover-orca)
+  mkdir -p "$dir/config"
+  FM_HOME="$dir" FM_BACKEND_CONFIG_DIR="$dir/config" FM_BACKEND='' ZELLIJ='' \
+    FM_SUPERVISOR_TARGET='' FM_SUPERVISOR_BACKEND='' TMUX_PANE='' HERDR_ENV='' HERDR_PANE_ID='' \
+    orca_discovery_cases "$dir"
+  pass "discover_supervisor_*: an Orca terminal resolves after env, tmux, herdr, rex, and T3; an Orca home without one refuses instead of falling back to firstmate:0"
+}
+
+# --- orca supervisor injection through the real adapter ---------------------
+# A fake orca CLI answers `terminal read` with a fixed screen and records sends,
+# so the busy guard, composer guard, and submit all run through
+# bin/fm-backend.sh and bin/backends/orca.sh unchanged.
+orca_supervisor_case() {  # <name> <screen-text> -> sets ORCA_DIR ORCA_STATE
+  ORCA_DIR=$(make_supercase "$1")
+  ORCA_STATE="$ORCA_DIR/state"
+  printf '%s' "$2" | jq -Rs '{ok:true,result:{terminal:{tail:split("\n")}}}' > "$ORCA_DIR/screen.json"
+  cat > "$ORCA_DIR/fakebin/orca" <<'SH'
+#!/usr/bin/env bash
+set -u
+printf '%s\n' "$*" >> "$FM_FAKE_ORCA_DIR/calls"
+[ "${4:-}" = term_captain ] || { printf '{"ok":false,"error":{"code":"terminal_not_found"}}\n'; exit 1; }
+case "${1:-} ${2:-}" in
+  'terminal read') cat "$FM_FAKE_ORCA_DIR/screen.json" ;;
+  'terminal wait')
+    [ ! -e "$FM_FAKE_ORCA_DIR/turn-running" ] || { printf '{"ok":false,"error":{"code":"timeout"}}\n'; exit 1; }
+    printf '{"ok":true,"result":{"wait":{"condition":"tui-idle","satisfied":true}}}\n'
+    ;;
+  'terminal send')
+    [ "${5:-}" != --text ] || [ -z "${6:-}" ] || printf '%s\n' "$6" >> "$FM_FAKE_ORCA_DIR/sent.log"
+    printf '{"ok":true,"result":{}}\n'
+    ;;
+  *) exit 1 ;;
+esac
+SH
+  chmod +x "$ORCA_DIR/fakebin/orca"
+  afk_enter "$ORCA_STATE"
+}
+
+ORCA_IDLE_SCREEN=$'some earlier output\n──────────────────────────────\n❯ \n──────────────────────────────\n  ⏵⏵ bypass permissions on (shift+tab to cycle)'
+
+orca_inject() {  # -> status of inject_msg into the fake captain terminal
+  PATH="$ORCA_DIR/fakebin:$PATH" FM_FAKE_ORCA_DIR="$ORCA_DIR" FM_DAEMON_PRIMARY_HARNESS=claude \
+    FM_SUPERVISOR_BACKEND=orca FM_SUPERVISOR_TARGET=term_captain FM_INJECT_CONFIRM_SLEEP=0 \
+    inject_msg "orca escalation" "$ORCA_STATE"
+}
+
+test_inject_msg_orca_submits_into_idle_captain_terminal() {
+  orca_supervisor_case inject-orca-submit "$ORCA_IDLE_SCREEN"
+  orca_inject || fail "inject_msg should submit into an idle, empty Orca composer: ${INJECT_LAST_FAILURE:-}"
+  delivered_digest "$ORCA_DIR/sent.log" | grep -F 'orca escalation' >/dev/null \
+    || fail "the digest did not reach the Orca terminal: $(cat "$ORCA_DIR/sent.log" 2>/dev/null)"
+  grep -F 'terminal send --terminal term_captain --text  --enter --json' "$ORCA_DIR/calls" >/dev/null \
+    || fail "the submit did not press Enter in the captain terminal: $(cat "$ORCA_DIR/calls")"
+  pass "inject_msg: an Orca supervisor terminal receives the digest through the shared composer-confirmed submit"
+}
+
+test_inject_msg_orca_busy_guard_defers() {
+  orca_supervisor_case inject-orca-busy "$(printf '%s\n%s' '✢ Incubating… (2m 33s · ↓ 12.4k tokens)' "$ORCA_IDLE_SCREEN")"
+  if orca_inject; then
+    fail "inject_msg must defer while the Orca captain terminal renders a busy Claude turn"
+  fi
+  assert_contains "$INJECT_LAST_FAILURE" "supervisor pane busy" "the Orca deferral must name the busy guard"
+  [ ! -e "$ORCA_DIR/sent.log" ] || fail "a busy Orca terminal must receive no text: $(cat "$ORCA_DIR/sent.log")"
+  pass "inject_msg: the rendered busy guard defers an Orca supervisor terminal before any send"
+}
+
+# Real Orca keeps reporting a live Claude turn as not tui-idle during the frames
+# that render no spinner row, so the idle screen here must not win.
+test_inject_msg_orca_defers_mid_turn_without_spinner() {
+  orca_supervisor_case inject-orca-native-busy "$ORCA_IDLE_SCREEN"
+  : > "$ORCA_DIR/turn-running"
+  if orca_inject; then
+    fail "inject_msg must defer while Orca reports the captain's turn as running"
+  fi
+  assert_contains "$INJECT_LAST_FAILURE" "supervisor pane busy" "the Orca deferral must name the busy guard"
+  [ ! -e "$ORCA_DIR/sent.log" ] || fail "a mid-turn Orca terminal must receive no text: $(cat "$ORCA_DIR/sent.log")"
+  pass "inject_msg: Orca's native turn signal defers a captain whose frame shows no spinner"
+}
+
+# Real Orca lifts typed text out of tail into result.terminal.draft, leaving the
+# rendered composer row bare, so the screen alone reads as empty.
+test_inject_msg_orca_composer_guard_defers_on_draft() {
+  orca_supervisor_case inject-orca-draft "$ORCA_IDLE_SCREEN"
+  jq '.result.terminal.draft = "half-typed captain words"' "$ORCA_DIR/screen.json" > "$ORCA_DIR/screen.next"
+  mv "$ORCA_DIR/screen.next" "$ORCA_DIR/screen.json"
+  if orca_inject; then
+    fail "inject_msg must defer while Orca reports a composer draft"
+  fi
+  assert_contains "$INJECT_LAST_FAILURE" "composer not confirmed-empty" "the Orca deferral must name the composer guard"
+  [ ! -e "$ORCA_DIR/sent.log" ] || fail "a drafted Orca composer must receive no text: $(cat "$ORCA_DIR/sent.log")"
+  # Draft also carries ghost suggestions, so the shared verdict other senders use stays empty.
+  [ "$(PATH="$ORCA_DIR/fakebin:$PATH" FM_FAKE_ORCA_DIR="$ORCA_DIR" fm_backend_composer_state orca term_captain)" = empty ] \
+    || fail "a draft must hold only the away daemon's pre-send guard, not the shared composer verdict"
+  pass "inject_msg: an Orca draft holds the alert back instead of merging into the captain's text"
+}
+
+# The draft hold above cannot tell a ghost suggestion from typed text, so a home
+# Claude captain must start with suggestions off or an idle captain wedges alerts.
+test_home_claude_settings_disable_prompt_suggestion() {
+  [ "$(jq -r '.env.CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION' "$ROOT/.claude/settings.json")" = false ] \
+    || fail "the home's Claude settings must turn prompt suggestions off for the captain"
+  pass "home Claude settings turn the captain's prompt suggestions off"
+}
+
+test_inject_msg_orca_composer_guard_defers() {
+  local screen
+  for screen in "$(printf '%s' "$ORCA_IDLE_SCREEN" | sed 's/^❯ $/❯ half-typed captain words/')" $'Last login: today\nuser@host ~ % '; do
+    orca_supervisor_case inject-orca-composer "$screen"
+    if orca_inject; then
+      fail "inject_msg must defer when the Orca composer is not proven empty: $screen"
+    fi
+    assert_contains "$INJECT_LAST_FAILURE" "composer not confirmed-empty" "the Orca deferral must name the composer guard"
+    [ ! -e "$ORCA_DIR/sent.log" ] || fail "an unproven Orca composer must receive no text: $(cat "$ORCA_DIR/sent.log")"
+    rm -rf "$ORCA_DIR"
+  done
+  pass "inject_msg: the composer guard defers an Orca supervisor terminal holding typed text or a bare shell"
+}
+
+test_inject_msg_orca_missing_terminal_defers() {
+  orca_supervisor_case inject-orca-gone "$ORCA_IDLE_SCREEN"
+  if PATH="$ORCA_DIR/fakebin:$PATH" FM_FAKE_ORCA_DIR="$ORCA_DIR" FM_DAEMON_PRIMARY_HARNESS=claude \
+    FM_SUPERVISOR_BACKEND=orca FM_SUPERVISOR_TARGET=term_gone inject_msg "orca escalation" "$ORCA_STATE"; then
+    fail "inject_msg must defer when the Orca supervisor terminal is gone"
+  fi
+  assert_contains "$INJECT_LAST_FAILURE" "supervisor target term_gone not found on orca" "the Orca deferral must name the missing terminal"
+  pass "inject_msg: a missing Orca supervisor terminal defers before any guard or send"
+}
+
+# --- t3code supervisor discovery and busy verdict --------------------------
+# The real adapter is sourced once so fm_backend_source's sourced flag keeps it
+# from re-sourcing over the stub; the stub records every home it is asked about
+# and answers from FM_FAKE_T3_THREAD (empty: no live thread, `ambiguous`: the
+# adapter's two-threads error, anything else: that thread id).
+t3_discovery_stub() {
+  fm_backend_source t3code || fail "could not source the t3code adapter"
+  fm_backend_t3code_thread_for_home() {
+    printf '%s\n' "$1" >> "${FM_FAKE_T3_CALLS:?}"
+    case "${FM_FAKE_T3_THREAD:-}" in
+      '') return 1 ;;
+      ambiguous) echo "error: 2 live T3 threads run in $1 (t-a, t-b); set FM_SUPERVISOR_TARGET to the captain thread id" >&2; return 2 ;;
+      *) printf '%s' "$FM_FAKE_T3_THREAD" ;;
+    esac
+  }
+}
+
+test_discover_supervisor_t3code_after_env_tmux_and_herdr() {
+  local dir
+  dir=$(make_supercase discover-t3code)
+  mkdir -p "$dir/config"
+  printf 'tok\n' > "$dir/config/t3code-token"
+  (
+    t3_discovery_stub
+    export FM_FAKE_T3_CALLS="$dir/calls" FM_FAKE_T3_THREAD=thread-captain
+    export FM_HOME="$dir" FM_BACKEND_CONFIG_DIR="$dir/config" FM_T3CODE_ORIGIN=http://127.0.0.1:9 FM_BACKEND=
+    local out
+    if out=$(FM_SUPERVISOR_TARGET='' FM_SUPERVISOR_BACKEND='' TMUX_PANE='' HERDR_ENV='' HERDR_PANE_ID='' discover_supervisor_target); then
+      fail "T3 supervisor discovery must require explicit backend selection"
+    fi
+    [ "$out" = firstmate:0 ] || fail "without explicit T3 selection the tmux fallback must stand"
+    [ ! -s "$dir/calls" ] || fail "without explicit T3 selection the adapter must not be consulted"
+    printf '\n t3code \n' > "$dir/config/backend"
+    [ "$(fm_backend_name)" = t3code ] || fail "spawns must read the padded config/backend as t3code"
+    out=$(FM_SUPERVISOR_TARGET='' FM_SUPERVISOR_BACKEND='' TMUX_PANE='' HERDR_ENV='' HERDR_PANE_ID='' discover_supervisor_target) \
+      || fail "one live T3 thread in the home must resolve the target cleanly"
+    [ "$out" = thread-captain ] || fail "the target should be the live thread id, got '$out'"
+    if out=$(FM_BACKEND=tmux FM_SUPERVISOR_TARGET='' FM_SUPERVISOR_BACKEND='' TMUX_PANE='' HERDR_ENV='' HERDR_PANE_ID='' discover_supervisor_target); then
+      fail "FM_BACKEND=tmux must override config/backend for T3 supervisor discovery"
+    fi
+    [ "$out" = firstmate:0 ] || fail "FM_BACKEND=tmux must leave the tmux fallback, got '$out'"
+    out=$(FM_SUPERVISOR_TARGET='' FM_SUPERVISOR_BACKEND='' TMUX_PANE='' HERDR_ENV='' HERDR_PANE_ID='' discover_supervisor_backend) \
+      || fail "one live T3 thread in the home must resolve the backend cleanly"
+    [ "$out" = t3code ] || fail "the backend should be t3code, got '$out'"
+    [ "$(sort -u "$dir/calls")" = "$dir" ] || fail "the adapter must be asked about this home only, got '$(cat "$dir/calls")'"
+
+    : > "$dir/calls"
+    out=$(FM_SUPERVISOR_TARGET=explicit:target FM_SUPERVISOR_BACKEND=herdr TMUX_PANE='' HERDR_ENV='' HERDR_PANE_ID='' discover_supervisor_target)
+    [ "$out" = explicit:target ] || fail "explicit FM_SUPERVISOR_TARGET must win over a live T3 thread: $out"
+    out=$(FM_SUPERVISOR_TARGET='' FM_SUPERVISOR_BACKEND=herdr TMUX_PANE='' HERDR_ENV='' HERDR_PANE_ID='' discover_supervisor_backend)
+    [ "$out" = herdr ] || fail "explicit FM_SUPERVISOR_BACKEND must win over a live T3 thread: $out"
+    out=$(FM_SUPERVISOR_TARGET='' FM_SUPERVISOR_BACKEND='' TMUX_PANE='%3' HERDR_ENV='' HERDR_PANE_ID='' discover_supervisor_target)
+    [ "$out" = '%3' ] || fail "TMUX_PANE must win over a live T3 thread: $out"
+    out=$(FM_SUPERVISOR_TARGET='' FM_SUPERVISOR_BACKEND='' TMUX_PANE='%3' HERDR_ENV='' HERDR_PANE_ID='' discover_supervisor_backend)
+    [ "$out" = tmux ] || fail "TMUX_PANE must resolve tmux ahead of t3code: $out"
+    out=$(FM_SUPERVISOR_TARGET='' FM_SUPERVISOR_BACKEND='' TMUX_PANE='' HERDR_ENV=1 HERDR_PANE_ID=w1:p9 HERDR_SESSION='' discover_supervisor_target)
+    [ "$out" = default:w1:p9 ] || fail "herdr markers must win over a live T3 thread: $out"
+    out=$(FM_SUPERVISOR_TARGET='' FM_SUPERVISOR_BACKEND='' TMUX_PANE='' HERDR_ENV=1 HERDR_PANE_ID=w1:p9 discover_supervisor_backend)
+    [ "$out" = herdr ] || fail "herdr markers must resolve herdr ahead of t3code: $out"
+    [ ! -s "$dir/calls" ] || fail "the explicit env, tmux, and herdr rules must win before the adapter is consulted"
+
+    export FM_FAKE_T3_THREAD=
+    if out=$(FM_SUPERVISOR_TARGET='' FM_SUPERVISOR_BACKEND='' TMUX_PANE='' HERDR_ENV='' HERDR_PANE_ID='' discover_supervisor_target); then
+      fail "no live T3 thread must fall through to the default with a non-zero status"
+    fi
+    [ "$out" = firstmate:0 ] || fail "no live T3 thread should still print the tmux default target: $out"
+    if out=$(FM_SUPERVISOR_TARGET='' FM_SUPERVISOR_BACKEND='' TMUX_PANE='' HERDR_ENV='' HERDR_PANE_ID='' discover_supervisor_backend); then
+      fail "no live T3 thread must fall through to the default backend with a non-zero status"
+    fi
+    [ "$out" = tmux ] || fail "no live T3 thread should still print the tmux default backend: $out"
+
+    export FM_FAKE_T3_THREAD=ambiguous
+    if out=$(FM_SUPERVISOR_TARGET='' FM_SUPERVISOR_BACKEND='' TMUX_PANE='' HERDR_ENV='' HERDR_PANE_ID='' discover_supervisor_target 2>"$dir/ambiguous.err"); then
+      fail "two live T3 threads must not resolve a target"
+    fi
+    [ "$out" = firstmate:0 ] || fail "an ambiguous home falls through to the default target: $out"
+    assert_contains "$(cat "$dir/ambiguous.err")" "error: 2 live T3 threads run in $dir (t-a, t-b)" "discovery must pass the adapter's ambiguity error through to stderr"
+
+    : > "$dir/calls"
+    export FM_FAKE_T3_THREAD=thread-captain
+    rm -f "$dir/config/t3code-token"
+    if out=$(FM_SUPERVISOR_TARGET='' FM_SUPERVISOR_BACKEND='' TMUX_PANE='' HERDR_ENV='' HERDR_PANE_ID='' discover_supervisor_target); then
+      fail "without a bearer the t3code rule must stay closed"
+    fi
+    [ "$out" = firstmate:0 ] || fail "without a bearer the default target stands: $out"
+    [ ! -s "$dir/calls" ] || fail "without a bearer the adapter must not be consulted"
+  ) || fail "t3code discovery subshell failed"
+  pass "discover_supervisor_*: t3code resolves from the home's live thread after env, TMUX_PANE, and herdr; zero, ambiguous, and no-bearer fall through"
+}
+
+test_pane_is_busy_t3code_trusts_native_verdict_without_capture() {
+  local dir row
+  dir=$(make_supercase primary-t3code-busy)
+  (
+    fm_backend_source t3code || fail "could not source the t3code adapter"
+    fm_backend_capture() { : > "$dir/capture-called"; }
+    fm_backend_t3code_probe() {
+      [ "$1" = thread-captain ] || : > "$dir/unexpected-probe"
+      printf '%s' "${FM_FAKE_T3_ROW:?}"
+    }
+    for row in running starting blocked error http-failure http-404 archived closing; do
+      FM_FAKE_T3_ROW=$row FM_STATE_OVERRIDE="$dir/state" FM_DAEMON_PRIMARY_HARNESS=claude pane_is_busy thread-captain t3code \
+        || fail "a T3 supervisor thread reading $row must defer injection"
+    done
+    for row in idle ready interrupted; do
+      if FM_FAKE_T3_ROW=$row FM_STATE_OVERRIDE="$dir/state" FM_DAEMON_PRIMARY_HARNESS=claude pane_is_busy thread-captain t3code; then
+        fail "a settled T3 supervisor thread reading $row must accept injection without a rendered-tail fallback"
+      fi
+    done
+  ) || fail "t3code pane_is_busy subshell failed"
+  [ ! -e "$dir/capture-called" ] || fail "capture must never be consulted for a t3code supervisor"
+  [ ! -e "$dir/unexpected-probe" ] || fail "pane_is_busy must probe the supervisor thread it was given"
+  pass "pane_is_busy: t3code accepts only a settled thread with no pending request and never reads a rendered tail"
 }
 
 test_pane_is_busy_herdr_native_busy_state() {
@@ -3302,6 +3720,9 @@ test_inject_msg_defers_on_unrecognized_composer_state() {
 
 test_afk_start_refuses_when_flag_cannot_be_written
 test_afk_start_ignores_stale_pidfile_without_lock
+test_afk_start_refuses_tern_supervisor_backend
+test_afk_start_refuses_orca_home_without_terminal
+test_afk_start_refuses_inherited_orca_terminal_marker
 test_afk_start_reclaims_stale_daemon_lock_reused_pid
 test_daemon_state_root_uses_fm_home
 test_classify_routine_signal_self
@@ -3403,6 +3824,7 @@ test_submit_ack_reports_pending_on_persistent_swallow
 test_max_defer_empty_swallow_types_once_and_alarms
 test_max_defer_flushes_empty_idle_pane
 test_max_defer_pending_composer_alarms_without_typing
+test_composer_deferral_names_pending_text_or_unrecognized_shape
 test_normal_flush_clears_stale_wedge_marker
 test_oversized_digest_is_bounded_and_kept_durable
 test_digest_budget_counts_omitted_events
@@ -3417,6 +3839,8 @@ test_wedge_alarm_discard_seam_fires_nothing
 test_wedge_alarm_direct_notifiers_honor_discard_seam
 test_wedge_alarm_osascript_channel_selected
 test_wedge_alarm_herdr_channel_selected
+test_wedge_alarm_rex_channel_selected
+test_wedge_alarm_auto_never_selects_rex
 test_wedge_alarm_command_channel_receives_summary
 test_wedge_alarm_command_failure_hides_configured_command
 test_wedge_alarm_unknown_channel_hides_configured_directive
@@ -3436,6 +3860,9 @@ test_fm_send_exits_nonzero_on_initial_send_failure
 test_fm_send_exits_nonzero_on_unproven_submit
 test_discover_supervisor_backend_precedence
 test_discover_supervisor_target_herdr
+test_discover_supervisor_t3code_after_env_tmux_and_herdr
+test_discover_supervisor_orca_terminal
+test_pane_is_busy_t3code_trusts_native_verdict_without_capture
 test_pane_is_busy_herdr_native_busy_state
 test_primary_busy_guard_is_harness_scoped
 test_pane_is_busy_defaults_to_tmux_when_backend_omitted
@@ -3444,6 +3871,13 @@ test_inject_msg_herdr_busy_guard_defers
 test_inject_msg_herdr_composer_guard_defers
 test_inject_msg_herdr_pane_gone_defers
 test_inject_msg_herdr_submits_through_backend_dispatch
+test_inject_msg_orca_submits_into_idle_captain_terminal
+test_inject_msg_orca_busy_guard_defers
+test_inject_msg_orca_defers_mid_turn_without_spinner
+test_inject_msg_orca_composer_guard_defers_on_draft
+test_home_claude_settings_disable_prompt_suggestion
+test_inject_msg_orca_composer_guard_defers
+test_inject_msg_orca_missing_terminal_defers
 test_inject_msg_defers_on_dead_shell_unknown
 test_inject_msg_defers_on_unrecognized_composer_state
 

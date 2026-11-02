@@ -106,7 +106,7 @@ session_start_completed() {
   fm_session_lock_owned_by_self "$STATE" || return 1
   lock_pid=$(cat "$STATE/.lock" 2>/dev/null) || return 1
   completion_pid=$(cat "$COMPLETION_FILE" 2>/dev/null) || return 1
-  case "$lock_pid" in ''|*[!0-9]*) return 1 ;; esac
+  fm_session_pid_valid "$lock_pid" || return 1
   [ "$completion_pid" = "$lock_pid" ]
 }
 
@@ -139,6 +139,9 @@ fi
 
 case "$SOURCE" in
   resume|reload|fork)
+    if fm_session_lock_owned_by_self "$STATE"; then
+      FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-order.sh" claim-handle >/dev/null 2>&1 || true
+    fi
     exec "$SCRIPT_DIR/fm-sessionstart-nudge.sh"
     ;;
   clear|compact)

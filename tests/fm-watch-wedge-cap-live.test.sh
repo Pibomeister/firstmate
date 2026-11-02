@@ -197,8 +197,8 @@ printf 'working: implementing\n' > "$STATE/$TASK.status"
 FM_HOME="$LAB_HOME" bash -c '. "$1"; fm_wake_status_mark_current "$2" "$3"' \
   _ "$ROOT/bin/fm-wake-lib.sh" "$LAB_HOME" "$TASK.status"
 
-# The watcher's ONE derivation of a window's marker key (bin/fm-watch.sh
-# window_key): `:`, `/` and `.` become `_`, every other character is kept. This
+# The watcher's ONE derivation of a window's marker key (window_key in
+# bin/fm-classify-lib.sh): `:`, `/` and `.` become `_`, every other character is kept. This
 # copy has to agree with it byte for byte or the first sight seeded below is
 # orphaned; assert_derived_key_matches_watcher proves the agreement against a
 # real poll instead of trusting it.

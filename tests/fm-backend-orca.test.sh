@@ -1776,6 +1776,7 @@ card_site() {  # <pr|merge|local> [extra environment assignments]
     ' _ "$ROOT" "$CARD_HOME" "$CARD_STATE" "$CARD_ID" "$CARD_URL" ;;
     local)
       git -C "$CARD_WT" -c user.name=Tests -c user.email=tests@example.invalid commit --allow-empty -qm local-landing
+      printf 'local_done_head=%s\n' "$(git -C "$CARD_WT" rev-parse HEAD)" >> "$CARD_STATE/$CARD_ID.meta"
       card_env env "$@" "$ROOT/bin/fm-merge-local.sh" "$CARD_ID" ;;
   esac
 }

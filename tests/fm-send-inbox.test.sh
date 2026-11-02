@@ -27,6 +27,10 @@
 #  10. An empty or whitespace-only text steer is refused before anything is
 #      marked, recorded, or typed - on the marked secondmate path that means
 #      no marker-only record and no pending-reply expectation.
+#  11. Standing captain holds travel with every recorded steer: the record
+#      carries the holds-in-force block after the steer, a lifted hold stops
+#      travelling, and a typed slash command carries no block. A typed send
+#      to an explicit backend target carries the block on one line.
 # Every case below that passes a literal `$...` message quotes it on purpose
 # (the point is sending an unexpanded `$` line), so SC2016 is disabled.
 # shellcheck disable=SC2016
@@ -504,6 +508,61 @@ test_empty_message_refused() {
   pass "fm-send: an empty or whitespace-only text steer refuses before marking, recording, or typing"
 }
 
+test_standing_holds_travel_with_the_steer() {
+  local dir err hold body
+  dir=$(setup_case holds)
+  err="$dir/send.err"
+  order() { env -u FM_DATA_OVERRIDE -u FM_STATE_OVERRIDE FM_HOME="$dir/home" "$ROOT/bin/fm-order.sh" "$@"; }
+  order send --hold --from captain "close nothing" >/dev/null || fail "could not send the hold fixture"
+  hold=$(find "$dir/home/data/orders/pending" -name '*.order' | sed 's#.*/##; s/\.order$//')
+  run_send "$dir" "$err" -- t1 "triage the stale PRs" || fail "a steer with a hold in force should succeed"
+  body=$(record_body _ "$dir/home/state/t1.inbox/001.msg")
+  case "$body" in
+    "triage the stale PRs"*) ;;
+    *) fail "the steer must lead the record, got: $body" ;;
+  esac
+  assert_contains "$body" "Standing captain holds" "the record carries the holds block"
+  assert_contains "$body" "- hold $hold" "the record names the hold id"
+  assert_contains "$body" "close nothing" "the record carries the hold text"
+  case "$(cat "$dir/send.log")" in
+    *"close nothing"*) fail "the holds block must ride the record, never the terminal" ;;
+  esac
+  run_send "$dir" "$err" -- t1 "/no-mistakes" || fail "a slash send should succeed"
+  [ ! -f "$dir/home/state/t1.inbox/002.msg" ] || fail "a typed slash command must not create a record"
+  assert_not_contains "$(cat "$dir/send.log")" "close nothing" "a typed slash command carries no holds block"
+  order ack "$hold" >/dev/null
+  order finish "$hold" "done" "lifted" >/dev/null
+  run_send "$dir" "$err" -- t1 "carry on" || fail "a steer after the hold is lifted should succeed"
+  body=$(record_body _ "$dir/home/state/t1.inbox/002.msg")
+  [ "$body" = "carry on" ] || fail "a lifted hold must not travel, got: $body"
+  pass "fm-send holds: standing holds ride every recorded steer until lifted"
+}
+
+test_standing_holds_travel_to_an_explicit_target() {
+  local dir err hold typed
+  dir=$(setup_case holds-explicit)
+  err="$dir/send.err"
+  env -u FM_DATA_OVERRIDE -u FM_STATE_OVERRIDE FM_HOME="$dir/home" "$ROOT/bin/fm-order.sh" \
+    send --hold --from captain "close nothing" >/dev/null || fail "could not send the hold fixture"
+  hold=$(find "$dir/home/data/orders/pending" -name '*.order' | sed 's#.*/##; s/\.order$//')
+  run_send "$dir" "$err" -- sess:win "hello there" || fail "an explicit-target send with a hold should succeed"
+  typed=$(cat "$dir/send.log")
+  assert_contains "$typed" "hello there  Standing captain holds" "the typed text carries the holds after the steer"
+  assert_contains "$typed" "- hold $hold" "the typed text names the hold id"
+  assert_contains "$typed" "close nothing" "the typed text carries the hold text"
+  [ -z "$(find "$dir/home/state" -maxdepth 1 -name '*.inbox' -print 2>/dev/null)" ] ||
+    fail "an explicit target must still not grow an inbox"
+  run_send "$dir" "$err" -- sess:win "/no-mistakes" || fail "a slash send to an explicit target should succeed"
+  assert_not_contains "$(cat "$dir/send.log")" "close nothing" "a typed slash command carries no holds"
+  run_send "$dir" "$err" -- sess:win '$ship-it' || fail "a dollar send to an explicit target should succeed"
+  typed=$(cat "$dir/send.log")
+  assert_contains "$typed" '$ship-it' "the dollar command reaches an endpoint of unknown harness"
+  assert_not_contains "$typed" "close nothing" "a dollar command to an unknown harness carries no holds"
+  run_send "$dir" "$err" -- sess:fm-t1 '$5 fee' || fail "a dollar send to a recorded claude endpoint should succeed"
+  assert_contains "$(cat "$dir/send.log")" "close nothing" "a dollar message to a known non-codex harness keeps its holds"
+  pass "fm-send holds: a typed send to an explicit target carries the holds on one line"
+}
+
 test_text_steer_rides_inbox
 test_deep_home_doorbell_stays_short
 test_multiline_steer_is_legal
@@ -513,6 +572,60 @@ test_failed_ring_is_still_sent
 test_fire_and_forget_unlanded_ring_owes_one_retry
 test_fire_and_forget_retry_stays_off_without_the_flag
 test_harness_invocations_stay_typed
+test_holds_read_failure_leaves_reused_correlation_resendable() {
+  local dir err corr real_sort body
+  dir=$(setup_case holds-read-failure)
+  err="$dir/send.err"
+  fm_write_secondmate_meta "$dir/home/state/domain.meta" "$dir/home" "sess:fm-domain"
+  mkdir -p "$dir/home/data/orders"
+  corr=$(bash -c '. "$1"; fm_pending_reply_create "$2" "$3" domain "first request"' _ \
+    "$ROOT/bin/fm-pending-reply-lib.sh" "$dir/home" "$dir/home/state") ||
+    fail "could not create the reused correlation fixture"
+  real_sort=$(command -v sort)
+  cat >"$dir/fakebin/sort" <<SH
+#!/usr/bin/env bash
+case " \$* " in *" -k1,1nr "*) [ "\${FM_FAKE_HOLDS_SORT_FAIL:-0}" = 1 ] && exit 1 ;; esac
+exec "$real_sort" "\$@"
+SH
+  chmod +x "$dir/fakebin/sort"
+  if run_send "$dir" "$err" FM_FAKE_HOLDS_SORT_FAIL=1 FM_PENDING_REPLY_EXISTING_CORR="$corr" -- \
+    fm-domain "please retry"; then
+    fail "a send must stop when the holds cannot be read"
+  fi
+  assert_contains "$(cat "$err")" "nothing was sent" "the holds read failure says nothing was sent"
+  [ ! -e "$dir/home/state/domain.inbox/001.msg" ] || fail "a failed holds read must not record the steer"
+  [ -f "$dir/home/state/pending-replies/$corr" ] || fail "a reused correlation must keep its expectation"
+  run_send "$dir" "$err" FM_PENDING_REPLY_EXISTING_CORR="$corr" -- fm-domain "please retry" ||
+    fail "the resend after a failed holds read was refused: $(cat "$err")"
+  body=$(record_body _ "$dir/home/state/domain.inbox/001.msg")
+  assert_contains "$body" "corr=$corr" "the resend reuses the same correlation"
+  pass "fm-send holds: a failed holds read leaves a reused correlation resendable"
+}
+
+test_unreadable_holds_store_sends_nothing() {
+  local dir err rc=0 pending
+  if [ "$(id -u)" = 0 ]; then
+    pass "SKIP fm-send unreadable holds: root ignores file modes"
+    return 0
+  fi
+  dir=$(setup_case holds-unreadable)
+  err="$dir/send.err"
+  env -u FM_DATA_OVERRIDE -u FM_STATE_OVERRIDE FM_HOME="$dir/home" "$ROOT/bin/fm-order.sh" \
+    send --hold --from captain "close nothing" >/dev/null || fail "could not send the hold fixture"
+  pending="$dir/home/data/orders/pending"
+  chmod 000 "$pending"
+  run_send "$dir" "$err" -- t1 "triage the stale PRs" || rc=$?
+  chmod 755 "$pending"
+  [ "$rc" -ne 0 ] || fail "a send must stop when the pending orders cannot be read"
+  assert_contains "$(cat "$err")" "nothing was sent" "the refusal says nothing was sent"
+  [ ! -e "$dir/home/state/t1.inbox/001.msg" ] || fail "an unreadable holds store must not record the steer"
+  assert_not_contains "$(cat "$dir/send.log")" "triage the stale PRs" "an unreadable holds store must not type the steer"
+  assert_not_contains "$(cat "$dir/send.log")" "inbox" "an unreadable holds store must not ring the doorbell"
+  run_send "$dir" "$err" -- t1 "triage the stale PRs" || fail "a send must work once the store is readable: $(cat "$err")"
+  assert_contains "$(record_body _ "$dir/home/state/t1.inbox/001.msg")" "close nothing" "the resend carries the hold"
+  pass "fm-send holds: an unreadable holds store refuses the send and sends nothing"
+}
+
 test_explicit_target_stays_typed
 test_key_path_never_touches_inbox
 test_secondmate_marker_and_enqueue_delivery
@@ -520,3 +633,7 @@ test_post_enqueue_bookkeeping_failure_is_not_retryable
 test_meta_lock_contention_fails_bounded
 test_unwritable_inbox_fails_loudly
 test_empty_message_refused
+test_standing_holds_travel_with_the_steer
+test_standing_holds_travel_to_an_explicit_target
+test_holds_read_failure_leaves_reused_correlation_resendable
+test_unreadable_holds_store_sends_nothing

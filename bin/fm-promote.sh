@@ -29,9 +29,17 @@
 # is a project fact rather than a per-task decision, so promotion takes it from
 # there instead of asking firstmate to remember it.
 # no-mistakes-prod-only is a registry policy rather than a task mode and is refused.
+# The meta also records promoted_status_lines=, the status log's line count at
+# promotion, so the claim verifier (bin/fm-claims.sh) never reads a scout-time
+# done: line as a ship claim.
 # A scout spawned on a named base records base_branch= in its meta; promotion
 # keeps that base as the ship's starting point and pull-request target, and
 # refuses a mode that cannot carry one (bin/fm-dod-lib.sh fm_base_branch_valid).
+# In a home with config/spawn-base-primary-checkout, which can start a scout from
+# the primary checkout's default branch, a publishing mode without a named base
+# on a project with an origin remote is told to return to origin's default
+# branch instead, so commits origin has never received cannot ride along in
+# what it publishes.
 # There is no --forge flag here: the binding comes from the registry, and for a
 # task record naming no project it is none. bin/fm-brief.sh takes --forge instead
 # because that script has no registry access at all, and bin/fm-spawn.sh checks
@@ -39,6 +47,10 @@
 # binding and bin/fm-dod-lib.sh owns what it changes for the worker, including
 # the refusal of a forge on local-only. A forge=external project is refused
 # outright, because its push guard is installed only by a ship spawn.
+# The project's pr=manual binding is read the same way and applies to a promoted
+# no-mistakes mode only (bin/fm-project-mode.sh --pr; bin/fm-dod-lib.sh's
+# fm_pr_text_valid owns where it is accepted); the ship's Definition of done then
+# carries it.
 # Usage: fm-promote.sh <task-id> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--branch-prefix <prefix>|--pr-branch <branch>] [--upstream-consent <host>/<owner>/<repo>]
 # --pr-branch promotes the scout into continuing that existing published branch:
 # bin/fm-pr-resync.sh runs in the scout's recorded worktree before the task record
@@ -85,6 +97,7 @@ PR_BRANCH_SET=0
 MODE_SET=0
 YOLO_SET=0
 FORGE=none
+PR_TEXT=auto
 UPSTREAM_CONSENT=
 UPSTREAM_CONSENT_SET=0
 POS=()
@@ -246,6 +259,11 @@ if [ -n "$PROMOTE_PROJECT" ]; then
   fi
   FORGE=${PROMOTE_STANDING_FORGE:-none}
   refuse_impossible_forge_posture || exit 1
+  if ! PROMOTE_STANDING_PR=$("$FM_ROOT/bin/fm-project-mode.sh" --pr "$PROMOTE_PROJECT_NAME"); then
+    echo "error: $ID cannot promote: the registry entry for $PROMOTE_PROJECT_NAME does not resolve to a delivery posture (see the refusal above); correct data/projects.md and promote again" >&2
+    exit 1
+  fi
+  [ "$MODE" != no-mistakes ] || PR_TEXT=${PROMOTE_STANDING_PR:-auto}
 fi
 BASE_BRANCH=$(sed -n 's/^base_branch=//p' "$META" | head -n 1)
 fm_base_branch_valid "$BASE_BRANCH" "$MODE" "$FORGE" "fm-promote.sh $ID" || exit 1
@@ -266,11 +284,22 @@ if [ "$MODE" != local-only ] && [ -n "$PROMOTE_PROJECT" ]; then
 fi
 PROMOTE_BASE_WORDS='default-branch base'
 [ -z "$BASE_BRANCH" ] || PROMOTE_BASE_WORDS="copy of the base branch \`$BASE_BRANCH\`"
+# A home with config/spawn-base-primary-checkout may have started this scout from
+# the primary checkout's default branch (bin/fm-spawn.sh's header owns that
+# rule), so a publishing mode is told which default branch to return to. Spawn
+# applies that rule only to a project with an origin remote, so a project
+# without one keeps the wording above.
+if [ -z "$BASE_BRANCH" ] && fm_mode_publishes "$MODE" && [ -e "$CONFIG/spawn-base-primary-checkout" ] \
+  && [ -n "$PROMOTE_PROJECT" ] && git -C "$PROMOTE_PROJECT" remote get-url origin >/dev/null 2>&1; then
+  PROMOTE_BASE_WORDS="copy of origin's default branch rather than the primary checkout's, which can carry commits origin has never received"
+fi
 PROMOTE_BRANCH_STEP="3. Return to a clean $PROMOTE_BASE_WORDS, then create your branch: \`git checkout -b $BRANCH_Q --\`."
 [ "$PR_BRANCH_SET" -eq 0 ] || PROMOTE_BRANCH_STEP="3. Promotion already put this worktree on \`$BRANCH_Q\` at its verified published head (or ahead of it by unpublished local commits); keep your scratch state out of it and do not create a branch."
 # An unbound project keeps the exact wording it always had.
 PROMOTE_FORGE_WORDS=
 [ "$FORGE" = none ] || PROMOTE_FORGE_WORDS=" forge=$FORGE"
+PROMOTE_PR_WORDS=
+[ "$PR_TEXT" = auto ] || PROMOTE_PR_WORDS=" pr=$PR_TEXT"
 PROMOTE_CONSENT_WORDS=
 [ -z "$UPSTREAM_CONSENT" ] || PROMOTE_CONSENT_WORDS=" upstream-consent=$UPSTREAM_CONSENT"
 
@@ -321,7 +350,7 @@ EOF
 promote_delivery_contract() {
   cat <<EOF
 # Current delivery mode contract
-This task is now kind=ship with mode=$MODE$PROMOTE_FORGE_WORDS$PROMOTE_CONSENT_WORDS.
+This task is now kind=ship with mode=$MODE$PROMOTE_FORGE_WORDS$PROMOTE_PR_WORDS$PROMOTE_CONSENT_WORDS.
 This section supersedes every earlier brief instruction about delivery mode.
 These current ship instructions supersede the scout delivery rules and report-based Definition of done.
 Any earlier "Never push" or scout-only delivery language in this file is superseded.
@@ -339,7 +368,7 @@ EOF
     printf '%s\n' "$PROMOTION_ASK_USER_BLOCK"
   fi
   printf '\n'
-  fm_dod_block "$MODE" "$ID" "$BRANCH" "$FORGE" "$BASE_BRANCH" "$UPSTREAM_CONSENT"
+  fm_dod_block "$MODE" "$ID" "$BRANCH" "$FORGE" "$BASE_BRANCH" "$UPSTREAM_CONSENT" "$PR_TEXT"
 }
 mkdir -p "$DATA/$ID"
 [ ! -d "$INSTRUCTIONS" ] || { echo "error: ship instructions path is a directory: $INSTRUCTIONS" >&2; exit 1; }
@@ -401,9 +430,12 @@ fi
 BRIEF_REPLACEMENT=
 
 TMP="$STATE/.$ID.meta.promote.${BASHPID:-$$}"
-grep -v -e '^kind=' -e '^mode=' -e '^yolo=' -e '^branch=' -e '^upstream_consent=' "$META" > "$TMP"
+grep -v -e '^kind=' -e '^mode=' -e '^yolo=' -e '^branch=' -e '^upstream_consent=' -e '^promoted_status_lines=' "$META" > "$TMP"
+PROMOTED_STATUS_LINES=0
+[ ! -f "$STATE/$ID.status" ] || PROMOTED_STATUS_LINES=$(awk 'END { print NR }' "$STATE/$ID.status" 2>/dev/null) || PROMOTED_STATUS_LINES=0
 {
   echo "kind=ship"
+  echo "promoted_status_lines=${PROMOTED_STATUS_LINES:-0}"
   echo "mode=$MODE"
   echo "yolo=$YOLO"
   echo "branch=$BRANCH"
@@ -423,8 +455,8 @@ META_LOCK_HELD=0
 
 HOME_Q=$(printf '%q' "$FM_HOME")
 INSTRUCTIONS_Q=$(printf '%q' "$INSTRUCTIONS")
-echo "promoted $ID to ship mode=$MODE yolo=$YOLO$PROMOTE_FORGE_WORDS (teardown protection restored)"
-echo "wrote ship instructions for mode=$MODE$PROMOTE_FORGE_WORDS: $INSTRUCTIONS"
+echo "promoted $ID to ship mode=$MODE yolo=$YOLO$PROMOTE_FORGE_WORDS$PROMOTE_PR_WORDS (teardown protection restored)"
+echo "wrote ship instructions for mode=$MODE$PROMOTE_FORGE_WORDS$PROMOTE_PR_WORDS: $INSTRUCTIONS"
 echo "next: FM_HOME=$HOME_Q bin/fm-send.sh fm-$ID \"\$(cat $INSTRUCTIONS_Q)\""
 
 promote_print_rechain_hint() {

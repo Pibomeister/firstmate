@@ -43,6 +43,85 @@ test_quiet_checkpoint_exits_0_cleanly() {
   pass "quiet checkpoint exits 0 with a clean checkpoint line, no wake, and no live lock"
 }
 
+# A seeded local secondmate home: identity marker plus a parent record whose
+# home owns the steering inbox the checkpoint watches.
+make_secondmate_home() {  # <name> -> echoes the secondmate home
+  local home parent
+  home=$(make_home "$1")
+  parent="$TMP_ROOT/$1-parent"
+  mkdir -p "$parent/state/sm1.inbox/handled"
+  printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$parent" > "$home/.fm-secondmate-parent"
+  printf 'sm1\n' > "$home/.fm-secondmate-home"
+  printf '%s\n' "$home"
+}
+
+run_secondmate_checkpoint() {  # <home> <seconds> [max]; sets STATUS and ELAPSED
+  local start
+  start=$(date +%s)
+  STATUS=0
+  FM_HOME="$1" FM_POLL=2 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    FM_SECONDMATE_CHECKPOINT_MAX="${3:-60}" \
+    "$CHECKPOINT" --seconds "$2" >"$1/out.txt" 2>"$1/err.txt" || STATUS=$?
+  ELAPSED=$(( $(date +%s) - start ))
+}
+
+# A secondmate's own checkpoint is capped (60 s by default) while a primary's
+# requested bound is unchanged.
+test_secondmate_checkpoint_bound_is_capped() {
+  local home
+  home=$(make_secondmate_home sm-cap)
+  run_secondmate_checkpoint "$home" 180 2
+  expect_code 0 "$STATUS" "secondmate quiet checkpoint: $(cat "$home/err.txt")"
+  assert_contains "$(cat "$home/out.txt")" "checkpoint: no actionable wake within 2s" "the secondmate bound was not capped"
+  [ "$ELAPSED" -le 15 ] || fail "a capped secondmate checkpoint ran ${ELAPSED}s"
+  home=$(make_home primary-uncapped)
+  run_secondmate_checkpoint "$home" 3 2
+  assert_contains "$(cat "$home/out.txt")" "checkpoint: no actionable wake within 3s" "a primary's bound was capped"
+  pass "checkpoint: a secondmate's own checkpoint is capped and a primary's bound is unchanged"
+}
+
+# A record arriving in the parent-owned inbox ends the secondmate checkpoint
+# within a few seconds, once per record, so an unacknowledgeable record can
+# never turn checkpoints into a tight loop.
+test_secondmate_checkpoint_returns_for_a_waiting_record() {
+  local home inbox
+  home=$(make_secondmate_home sm-inbox)
+  inbox="$TMP_ROOT/sm-inbox-parent/state/sm1.inbox"
+  ( sleep 2; printf 'schema=fm-task-inbox.v1\nat=x\n--\nroute this\n' > "$inbox/001.msg" ) &
+  run_secondmate_checkpoint "$home" 40
+  wait
+  expect_code 0 "$STATUS" "inbox checkpoint: $(cat "$home/err.txt")"
+  assert_contains "$(cat "$home/out.txt")" "checkpoint: firstmate instruction waiting in the steering inbox: 001.msg" "the waiting record was not announced"
+  [ "$ELAPSED" -le 12 ] || fail "the checkpoint took ${ELAPSED}s to return for a waiting record"
+  ! grep -qF 'route this' "$home/out.txt" "$home/err.txt" || fail "the checkpoint printed a record body"
+  assert_absent "$home/state/.watch.lock/pid" "watch lock pid survived the inbox return"
+  run_secondmate_checkpoint "$home" 3
+  assert_contains "$(cat "$home/out.txt")" "checkpoint: no actionable wake within 3s" "an announced record returned the checkpoint again"
+  printf 'schema=fm-task-inbox.v1\nat=x\n--\nnext\n' > "$inbox/002.msg"
+  run_secondmate_checkpoint "$home" 40
+  assert_contains "$(cat "$home/out.txt")" "steering inbox: 002.msg" "a new record behind an announced one was not announced"
+  [ "$ELAPSED" -le 12 ] || fail "a record waiting at start took ${ELAPSED}s to return"
+  pass "checkpoint: a secondmate returns within seconds for each new parent inbox record, once per record"
+}
+
+# The announce-once record is what keeps an unacknowledgeable record from
+# looping checkpoints, so when it cannot be written the checkpoint is an
+# ordinary bounded wait rather than an immediate announcement every time.
+test_secondmate_checkpoint_unwritable_marker_is_a_plain_wait() {
+  local home inbox n
+  home=$(make_secondmate_home sm-marker)
+  inbox="$TMP_ROOT/sm-marker-parent/state/sm1.inbox"
+  printf 'schema=fm-task-inbox.v1\nat=x\n--\nroute this\n' > "$inbox/001.msg"
+  mkdir "$home/state/.checkpoint-inbox-seen"
+  for n in 1 2; do
+    run_secondmate_checkpoint "$home" 3
+    expect_code 0 "$STATUS" "checkpoint $n beside an unwritable marker: $(cat "$home/err.txt")"
+    assert_contains "$(cat "$home/out.txt")" "checkpoint: no actionable wake within 3s" "checkpoint $n announced a record it could not record as announced"
+    [ "$ELAPSED" -ge 3 ] || fail "checkpoint $n returned after ${ELAPSED}s instead of waiting its bound"
+  done
+  pass "checkpoint: an unwritable announce-once marker leaves the secondmate checkpoint an ordinary bounded wait"
+}
+
 test_cleanup_persistence_failure_is_not_a_quiet_checkpoint() {
   local home holder status
   home=$(make_home cleanup-persistence-failure)
@@ -220,27 +299,102 @@ SH
   pass "preconfirmation predecessor retirement reports cleanup failure using the verified post-exec identity"
 }
 
-test_perl_timeout_fallback_honors_cleanup_bound_before_escalating() {
-  local home fallback_bin tool tool_path status watcher_pid
-  home=$(make_home perl-fallback)
-  fallback_bin="$home/fallback-bin"
-  mkdir -p "$home/root/bin" "$fallback_bin"
+# Copy the checkpoint into <home>/root/bin and build <home>/fixture-bin, a
+# PATH holding only the named host tools, so stubs decide which timeout runs.
+make_isolated_checkpoint() {  # <home> <tool...>
+  local home=$1 tool tool_path
+  shift
+  mkdir -p "$home/root/bin" "$home/fixture-bin"
   cp "$CHECKPOINT" "$home/root/bin/fm-watch-checkpoint.sh"
   cp "$ROOT/bin/fm-supervision-engine-lib.sh" "$home/root/bin/fm-supervision-engine-lib.sh"
   cp "$ROOT/bin/fm-bash-compat-lib.sh" "$home/root/bin/fm-bash-compat-lib.sh"
-  for tool in bash dirname mktemp rm perl grep cat; do
-    tool_path=$(command -v "$tool") || fail "could not locate $tool for the Perl fallback fixture"
-    ln -s "$tool_path" "$fallback_bin/$tool"
+  for tool in "$@"; do
+    tool_path=$(command -v "$tool") || fail "could not locate $tool for the isolated checkpoint fixture"
+    ln -s "$tool_path" "$home/fixture-bin/$tool"
   done
+}
+
+write_non_gnu_timeout_stub() {  # <path>
+  cat > "$1" <<'SH'
+#!/bin/bash
+if [ "${1:-}" = --version ]; then
+  printf '%s\n' 'uutils 0.12.0'
+  exit 0
+fi
+exit 137
+SH
+  chmod +x "$1"
+}
+
+# A GNU stub records its name and arguments, then reports a timeout.
+write_gnu_timeout_stub() {  # <path>
+  cat > "$1" <<'SH'
+#!/bin/bash
+if [ "${1:-}" = --version ]; then
+  printf '%s\n' 'timeout (GNU coreutils) 9.5'
+  exit 0
+fi
+printf '%s' "${0##*/}" >> "$FM_HOME/timeout-calls"
+printf ' %s' "$@" >> "$FM_HOME/timeout-calls"
+printf '\n' >> "$FM_HOME/timeout-calls"
+exit 124
+SH
+  chmod +x "$1"
+}
+
+expect_gnu_timeout_call() {  # <home> <command-name> <label>
+  local home=$1 name=$2 label=$3 status
+  status=0
+  PATH="$home/fixture-bin" FM_HOME="$home" FM_SIGNAL_GRACE=1 \
+    "$home/root/bin/fm-watch-checkpoint.sh" --seconds 1 >"$home/out.txt" 2>"$home/err.txt" || status=$?
+  expect_code 0 "$status" "$label checkpoint exit"
+  assert_contains "$(cat "$home/out.txt")" "checkpoint: no actionable wake within 1s" \
+    "$label did not return a quiet checkpoint"
+  [ "$(cat "$home/timeout-calls" 2>/dev/null)" = "$name --signal=INT --kill-after=5s 1 $home/root/bin/fm-watch.sh" ] \
+    || fail "$label did not run $name with the watcher bound: $(cat "$home/timeout-calls" 2>/dev/null)"
+}
+
+test_gnu_timeout_runs_the_watcher_bound() {
+  local home
+  home=$(make_home gnu-timeout)
+  make_isolated_checkpoint "$home" bash dirname mktemp rm grep cat
+  write_gnu_timeout_stub "$home/fixture-bin/timeout"
+  write_gnu_timeout_stub "$home/fixture-bin/gtimeout"
+  expect_gnu_timeout_call "$home" timeout "GNU timeout"
+  pass "GNU timeout runs the watcher with the INT signal and kill-after bound"
+}
+
+test_non_gnu_timeout_uses_gnu_gtimeout() {
+  local home
+  home=$(make_home non-gnu-timeout-gtimeout)
+  make_isolated_checkpoint "$home" bash dirname mktemp rm grep cat
+  write_non_gnu_timeout_stub "$home/fixture-bin/timeout"
+  write_gnu_timeout_stub "$home/fixture-bin/gtimeout"
+  expect_gnu_timeout_call "$home" gtimeout "GNU gtimeout"
+  pass "non-GNU timeout yields to GNU gtimeout with the INT signal and kill-after bound"
+}
+
+test_non_gnu_timeout_falls_back_to_perl_before_escalating() {
+  local home fallback_bin status watcher_pid
+  home=$(make_home non-gnu-timeout)
+  fallback_bin="$home/fixture-bin"
+  make_isolated_checkpoint "$home" bash dirname mktemp rm perl grep cat
+  write_non_gnu_timeout_stub "$fallback_bin/timeout"
   cat > "$home/root/bin/fm-watch.sh" <<'PL'
 #!/usr/bin/env perl
 use strict;
 use warnings;
-$SIG{INT} = 'IGNORE';
+$SIG{INT} = sub {
+  open my $int_file, '>', "$ENV{FM_HOME}/int-received" or die "open INT marker: $!";
+  close $int_file;
+};
 open my $pid_file, '>', "$ENV{FM_HOME}/watcher.pid" or die "open pid file: $!";
 printf {$pid_file} "%s\n", $$;
 close $pid_file;
-sleep 7;
+my $cleanup_deadline = time + 7;
+while ((my $left = $cleanup_deadline - time) > 0) {
+  sleep $left;
+}
 open my $cleanup_file, '>', "$ENV{FM_HOME}/cleanup-reached" or die "open cleanup marker: $!";
 print {$cleanup_file} "reached\n";
 close $cleanup_file;
@@ -261,14 +415,15 @@ PL
   assert_not_contains "$(cat "$home/out.txt")" "checkpoint: no actionable wake" \
     "Perl fallback reported a forced shutdown as quiet success"
   assert_contains "$(cat "$home/err.txt")" "forced KILL" "Perl fallback hid its forced shutdown"
+  [ -e "$home/int-received" ] || fail "the Perl fallback did not deliver INT to the watcher"
   [ -e "$home/cleanup-reached" ] || fail "the Perl fallback killed the watcher before its 8-second cleanup bound"
-  [ ! -e "$home/natural-exit" ] || fail "the INT-ignoring watcher exited naturally instead of being killed"
-  [ -s "$home/watcher.pid" ] || fail "the INT-ignoring watcher did not start"
+  [ ! -e "$home/natural-exit" ] || fail "the INT-surviving watcher exited naturally instead of being killed"
+  [ -s "$home/watcher.pid" ] || fail "the INT-surviving watcher did not start"
   watcher_pid=$(cat "$home/watcher.pid")
   if kill -0 "$watcher_pid" 2>/dev/null; then
-    fail "the INT-ignoring watcher survived the Perl fallback escalation"
+    fail "the watcher survived the Perl fallback KILL escalation"
   fi
-  pass "Perl fallback honors the cleanup bound before escalating an INT-ignoring direct watcher"
+  pass "non-GNU timeout falls back to Perl and honors the cleanup bound before escalating"
 }
 
 run_real_perl_shutdown() {
@@ -585,12 +740,17 @@ test_existing_singleton_watcher_is_not_success() {
 # a fixture code root: the stub records the bound it was given, then closes
 # the way $FM_HOME/host-kind says.
 make_host_home() {  # <name>
-  local home
+  local home f
   home=$(make_home "$1")
   mkdir -p "$home/root/bin"
   cp "$CHECKPOINT" "$home/root/bin/fm-watch-checkpoint.sh"
   cp "$ROOT/bin/fm-supervision-engine-lib.sh" "$home/root/bin/fm-supervision-engine-lib.sh"
   cp "$ROOT/bin/fm-bash-compat-lib.sh" "$home/root/bin/fm-bash-compat-lib.sh"
+  # The secondmate-home check and the parent inbox path it reads.
+  for f in fm-primary-scope-lib.sh fm-secondmate-parent-lib.sh fm-task-inbox-lib.sh fm-wake-lib.sh fm-backend.sh \
+    fm-path-lib.sh fm-classify-lib.sh fm-timeout-lib.sh fm-session-lock-lib.sh; do
+    cp "$ROOT/bin/$f" "$home/root/bin/$f"
+  done
   cat > "$home/root/bin/fm-supervision-host.sh" <<'SH'
 #!/usr/bin/env bash
 printf 'args=%s\nprimary=%s\npark=%s\nlimit=%s\n' "$*" "${FM_SUPERVISION_HOST_PRIMARY:-}" \
@@ -651,6 +811,141 @@ test_host_checkpoint_bounds_the_park_by_posture() {
   expect_code 0 "$STATUS" "a park beside a quiet record that reached its bound is a quiet checkpoint"
   assert_contains "$(cat "$home/host-env")" 'park=5' "beside a quiet record the host must park for the attended bound"
   pass "checkpoint: an opted-in home runs the host for the checkpoint's bound, raised only while away"
+}
+
+# A secondmate home that opted into the host gets the same 60 s cap: an
+# attended long checkpoint and the away raise both park for at most 60 s.
+test_host_checkpoint_caps_a_secondmate_park() {
+  local home
+  home=$(make_host_home host-secondmate)
+  mkdir -p "$TMP_ROOT/host-secondmate-parent/state/sm1.inbox/handled"
+  printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$TMP_ROOT/host-secondmate-parent" > "$home/.fm-secondmate-parent"
+  printf 'sm1\n' > "$home/.fm-secondmate-home"
+  run_host_checkpoint "$home" boundary --seconds 1000
+  expect_code 0 "$STATUS" "an attended secondmate host park: $(cat "$home/err.txt")"
+  assert_contains "$(cat "$home/host-env")" 'park=60' "an attended secondmate host park was not capped at 60 s"
+  : > "$home/state/.afk-contract"
+  FM_CODEX_WATCH_CHECKPOINT_AWAY=900 run_host_checkpoint "$home" boundary --seconds 5
+  assert_contains "$(cat "$home/host-env")" 'park=60' "the away raise lifted a secondmate host park above 60 s"
+  pass "checkpoint: a secondmate home's host park is capped at 60 s, attended and away"
+}
+
+# The inbox early exit belongs to the plain path alone: the host's watchers
+# never inherit it, so a parent record arriving mid-park in a secondmate home
+# that runs the real host leaves an ordinary quiet checkpoint, not a failed
+# one, and is not marked announced.
+# shellcheck disable=SC2016
+test_real_host_secondmate_park_ignores_the_inbox() {
+  local home fakebin status
+  home=$(make_secondmate_home host-real-sm)
+  : > "$home/config/supervision-host"
+  fakebin="$TMP_ROOT/host-real-sm-bin"
+  mkdir -p "$fakebin"
+  ln -s /bin/bash "$fakebin/codex"
+  ( sleep 1; printf 'schema=fm-task-inbox.v1\nat=x\n--\nroute this\n' > "$TMP_ROOT/host-real-sm-parent/state/sm1.inbox/001.msg" ) &
+  status=0
+  FM_HOME="$home" FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$fakebin/codex" -c '
+    printf "%s\n" "$$" > "$FM_HOME/state/.lock"
+    "$0" --seconds 4
+  ' "$CHECKPOINT" >"$home/out.txt" 2>"$home/err.txt" || status=$?
+  wait
+  expect_code 0 "$status" "a secondmate host checkpoint with a new parent record: $(cat "$home/out.txt" "$home/err.txt")"
+  assert_contains "$(cat "$home/out.txt")" "checkpoint: no actionable wake within 4s" "the host park did not end as the quiet line"
+  assert_not_contains "$(cat "$home/out.txt" "$home/err.txt")" 'FAILED' "the host's watcher failed on the parent record"
+  assert_absent "$home/state/.checkpoint-inbox-seen" "the host's watcher announced the record the plain path owns"
+  if [ -e "$home/state/.watch.lock/pid" ] && kill -0 "$(cat "$home/state/.watch.lock/pid")" 2>/dev/null; then
+    fail "a secondmate host checkpoint left its watcher running"
+  fi
+  pass "checkpoint: a secondmate's host park never runs the plain path's inbox exit"
+}
+
+test_real_host_checkpoint_replaces_a_stop_hook_hold() {
+  local home fakebin hold holder replaced status cp_pid
+  home=$(make_home host-real-hold)
+  : > "$home/config/supervision-host"
+  fakebin="$TMP_ROOT/host-real-hold-bin"
+  mkdir -p "$fakebin"
+  ln -s /bin/bash "$fakebin/codex"
+  FM_HOME="$home" FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    FM_WATCH_HANDLING_SUCCESSOR=1 FM_WATCH_GROK_HOLD=1 "$ROOT/bin/fm-watch.sh" --grok-hold >/dev/null 2>&1 &
+  hold=$!
+  wait_for_checkpoint_lock "$home" || fail "the hold never took the lock"
+  # shellcheck disable=SC2016 # the single-quoted script expands in the child shell.
+  FM_GATE_REFUSE_BYPASS=1 FM_HOME="$home" FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$fakebin/codex" -c '
+    printf "%s\n" "$$" > "$FM_HOME/state/.lock"
+    "$0" --seconds 12
+  ' "$CHECKPOINT" >"$home/out.txt" 2>"$home/err.txt" &
+  cp_pid=$!
+  replaced=0
+  while kill -0 "$cp_pid" 2>/dev/null; do
+    holder=$(cat "$home/state/.watch.lock/pid" 2>/dev/null)
+    if [ -n "$holder" ] && [ "$holder" != "$hold" ]; then
+      replaced=1
+      break
+    fi
+    sleep 0.2
+  done
+  if [ "$replaced" -ne 1 ]; then
+    kill "$hold" 2>/dev/null
+    wait "$cp_pid" 2>/dev/null
+    fail "the host attached to the hold instead of replacing it"
+  fi
+  status=0
+  wait "$cp_pid" || status=$?
+  wait "$hold" 2>/dev/null
+  expect_code 0 "$status" "the checkpoint over a hold: $(cat "$home/out.txt" "$home/err.txt")"
+  assert_contains "$(cat "$home/out.txt")" "checkpoint: no actionable wake within 12s" "the host park did not end as the quiet line"
+  pass "checkpoint: a real host replaces a Stop-hook hold instead of attaching to it"
+}
+
+# A secondmate's capped bound is also the real host's turn limit: an away close
+# whose engine turn could outlast it is handed to the secondmate at once rather
+# than holding its turn for the engine's own bound, and the checkpoint leaves
+# no host, engine or watcher behind.
+# shellcheck disable=SC2016
+test_real_host_secondmate_turn_never_outlives_the_cap() {
+  local home fakebin start elapsed status pid
+  home=$(make_secondmate_home host-real-sm-turn)
+  printf 'claude\n' > "$home/config/supervision-host"
+  printf 'project=demo\nwindow=fm-demo\nharness=claude\n' > "$home/state/demo.meta"
+  FM_HOME="$home" "$ROOT/bin/fm-afk-contract.sh" enter --words 'watch the fleet; merge nothing' >/dev/null 2>&1 \
+    || fail "fixture: could not record the away posture"
+  fakebin="$TMP_ROOT/host-real-sm-turn-bin"
+  mkdir -p "$fakebin"
+  ln -s /bin/bash "$fakebin/codex"
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$fakebin/tmux"
+  printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$$" >> "%s/engine-calls"\nexec sleep 40\n' "$home" > "$fakebin/engine"
+  chmod +x "$fakebin/tmux" "$fakebin/engine"
+  make_fake_crew_state "$fakebin" >/dev/null
+  (
+    i=0
+    while [ "$i" -lt 150 ] && [ ! -s "$home/state/.watch.lock/pid" ]; do sleep 0.1; i=$((i + 1)); done
+    sleep 1
+    printf 'working [at=%s]: one close\n' "$(date +%s)" >> "$home/state/demo.status"
+  ) &
+  start=$(date +%s)
+  status=0
+  FM_HOME="$home" PATH="$fakebin:$PATH" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" \
+    FM_SUPERVISION_ENGINE_CLAUDE_BIN="$fakebin/engine" FM_SUPERVISION_HOST_TURN_TIMEOUT=25 FM_SUPERVISION_ENGINE_GRACE=1 \
+    FM_SECONDMATE_CHECKPOINT_MAX=15 FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    "$fakebin/codex" -c '
+      printf "%s\n" "$$" > "$FM_HOME/state/.lock"
+      "$0" --seconds 60
+    ' "$CHECKPOINT" >"$home/out.txt" 2>"$home/err.txt" || status=$?
+  elapsed=$(( $(date +%s) - start ))
+  wait
+  expect_code 0 "$status" "a secondmate host checkpoint with an away close: $(cat "$home/out.txt" "$home/err.txt")"
+  [ "$elapsed" -le 20 ] || fail "a secondmate host checkpoint capped at 15s ran ${elapsed}s: $(cat "$home/out.txt" "$home/err.txt")"
+  assert_contains "$(cat "$home/out.txt")" "signal: $home/state/demo.status" "the close was not handed to the secondmate"
+  assert_absent "$home/engine-calls" "the host ran an engine turn that could outlast the secondmate's cap"
+  pid=$(awk -F '\t' '$1 == "host" { print $2; exit }' "$home/state/.supervision-host" 2>/dev/null)
+  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+    fail "a secondmate host checkpoint left its host running"
+  fi
+  if [ -e "$home/state/.watch.lock/pid" ] && kill -0 "$(cat "$home/state/.watch.lock/pid")" 2>/dev/null; then
+    fail "a secondmate host checkpoint left its watcher running"
+  fi
+  pass "checkpoint: a secondmate's host park never runs an engine turn past its capped bound"
 }
 
 test_host_checkpoint_does_not_mask_cleanup_failure() {
@@ -1458,8 +1753,13 @@ test_real_host_checkpoint_ends_quietly_at_its_bound() {
 test_interrupted_startup_reports_failed_cleanup
 test_preconfirmation_predecessor_retirement_uses_verified_identity
 test_quiet_checkpoint_exits_0_cleanly
+test_secondmate_checkpoint_bound_is_capped
+test_secondmate_checkpoint_returns_for_a_waiting_record
+test_secondmate_checkpoint_unwritable_marker_is_a_plain_wait
 test_cleanup_persistence_failure_is_not_a_quiet_checkpoint
-test_perl_timeout_fallback_honors_cleanup_bound_before_escalating
+test_gnu_timeout_runs_the_watcher_bound
+test_non_gnu_timeout_uses_gnu_gtimeout
+test_non_gnu_timeout_falls_back_to_perl_before_escalating
 test_real_perl_shutdown_classification
 test_announced_recovery_is_not_reannounced_by_next_checkpoint
 test_never_announced_recovery_is_announced_once
@@ -1468,6 +1768,7 @@ test_signal_passes_through_and_exits_zero
 test_registered_check_uses_preserved_watcher_environment
 test_existing_singleton_watcher_is_not_success
 test_host_checkpoint_bounds_the_park_by_posture
+test_host_checkpoint_caps_a_secondmate_park
 test_host_checkpoint_does_not_mask_cleanup_failure
 test_host_checkpoint_passes_a_handback_and_reports_a_stand_down
 test_host_checkpoint_needs_the_file_and_honors_off
@@ -1480,4 +1781,7 @@ test_real_attached_host_cleanup
 test_stop_preserves_foreign_process_identity_guards
 test_real_host_retirement_preserves_cleanup_failures
 test_real_host_startup_failures_stay_nonzero
+test_real_host_secondmate_park_ignores_the_inbox
+test_real_host_checkpoint_replaces_a_stop_hook_hold
+test_real_host_secondmate_turn_never_outlives_the_cap
 test_real_host_checkpoint_ends_quietly_at_its_bound

@@ -392,6 +392,40 @@ fm_backend_orca_composer_capture() {  # <terminal-id> [expected-label]
   fm_backend_orca_capture "$1" "$FM_COMPOSER_CAPTURE_LINES"
 }
 
+# fm_backend_orca_draft_present: Orca lifts the text on the cursor's prompt row
+# out of tail into draft, so the rendered row alone reads as empty while someone
+# is mid-sentence. Draft also carries a harness's ghost suggestion, and the read
+# exposes nothing that separates the two, so this is a pre-send hold only. It
+# stays out of composer_state: typing replaces a ghost, so worker sends need no
+# hold, and a post-Enter retry on a ghost could submit that suggestion.
+# A failed read proves nothing, so it holds too.
+fm_backend_orca_draft_present() {  # <terminal-id>
+  local out
+  out=$(orca terminal read --terminal "$1" --limit "$FM_COMPOSER_CAPTURE_LINES" --json 2>/dev/null) || return 0
+  printf '%s' "$out" | node -e '
+let data;
+try { data = JSON.parse(require("fs").readFileSync(0, "utf8")); } catch (err) { process.exit(0); }
+if (!data || data.ok === false) process.exit(0);
+const r = data.result || {};
+process.exit((r.terminal || r).draft ? 0 : 1);
+'
+}
+
+# fm_backend_orca_turn_running: Orca's own verdict that the agent in <terminal>
+# is mid-turn. Claude frames during a live turn can render no spinner row, so
+# the rendered busy signature alone misses them. Only Orca's timeout answer
+# counts; any other failure proves nothing and leaves the rendered read to decide.
+fm_backend_orca_turn_running() {  # <terminal-id>
+  local out
+  fm_backend_orca_tool_check 2>/dev/null || return 1
+  out=$(orca terminal wait --terminal "$1" --for tui-idle --timeout-ms 500 --json 2>/dev/null) && return 1
+  printf '%s' "$out" | node -e '
+let data = {};
+try { data = JSON.parse(require("fs").readFileSync(0, "utf8")); } catch (err) { process.exit(1); }
+process.exit(data.ok === false && data.error && data.error.code === "timeout" ? 0 : 1);
+'
+}
+
 # fm_backend_orca_composer_caps: static capability facts, not logic (see the
 # capability model in bin/fm-composer-lib.sh). Orca's live terminal
 # read returned plain text, so styled stays 0 - the conservative degradation.
@@ -499,7 +533,7 @@ fm_backend_orca_kill() {  # <terminal-id>
 
 # fm_backend_orca_terminal_facts: one `orca terminal show` read of <terminal>,
 # printed as \x1f-separated fields so an empty field survives `read`:
-#   ok|stale  connected(true|false)  exit-cause-kind  execution-host  pty-id  worktree-path
+#   ok|stale  connected(true|false)  exit-cause-kind  execution-host  pty-id  worktree-path  writable(true|false|'')
 # `stale` is Orca's own terminal_handle_stale answer: it no longer recognizes
 # the handle at all. `false` needs both connected and writable false, the pair
 # Orca reports after the pty is gone. Other CLI failures, unparsable output, other
@@ -522,7 +556,7 @@ function emit(fields) {
 }
 if (data.ok === false) {
   if (data.error && data.error.code === "terminal_handle_stale") {
-    emit(["stale", "", "", "", "", ""]);
+    emit(["stale", "", "", "", "", "", ""]);
     process.exit(0);
   }
   process.exit(1);
@@ -535,7 +569,8 @@ if (t.connected === true) connected = "true";
 else if (t.connected === false && t.writable === false) connected = "false";
 else process.exit(1);
 const kind = t.exitCause && typeof t.exitCause === "object" ? str(t.exitCause.kind) : "";
-emit(["ok", connected, kind, str(t.executionHostId), str(t.ptyId), str(t.worktreePath)]);
+const writable = typeof t.writable === "boolean" ? String(t.writable) : "";
+emit(["ok", connected, kind, str(t.executionHostId), str(t.ptyId), str(t.worktreePath), writable]);
 ' "$terminal" "$rc"
 }
 
@@ -649,7 +684,7 @@ fm_backend_orca_agent_state() {  # <terminal-id>
   local terminal=${1:-} facts read connected kind host pty wtpath pid
   [ -n "$terminal" ] || { printf 'unreadable'; return 0; }
   facts=$(fm_backend_orca_terminal_facts "$terminal") || { printf 'unreadable'; return 0; }
-  IFS=$'\x1f' read -r read connected kind host pty wtpath <<FACTS
+  IFS=$'\x1f' read -r read connected kind host pty wtpath _ <<FACTS
 $facts
 FACTS
   [ "$read" = ok ] && [ "$host" = local ] || { printf 'unreadable'; return 0; }
@@ -793,7 +828,7 @@ fm_backend_orca_endpoint_absence_proof() {  # <terminal-id> <worktree> [<meta-fi
     || { printf 'unproven\tthe task record names no worktree, so a surviving agent in it cannot be ruled out'; return 0; }
   facts=$(fm_backend_orca_terminal_facts "$terminal") \
     || { printf 'unproven\tOrca could not describe terminal %s' "$terminal"; return 0; }
-  IFS=$'\x1f' read -r read connected kind host pty wtpath <<FACTS
+  IFS=$'\x1f' read -r read connected kind host pty wtpath _ <<FACTS
 $facts
 FACTS
   if [ "$read" = stale ]; then

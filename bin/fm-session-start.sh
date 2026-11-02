@@ -4,8 +4,9 @@
 # Collapses AGENTS.md sections 3 (bootstrap) and 5 (recovery) into ONE script
 # producing ONE ordered digest, so a session starts in one or two turns
 # instead of the six-plus separate reads the old docs required: run
-# fm-bootstrap.sh, then separately read data/projects.md, data/secondmates.md,
-# data/captain.md, data/captain-shared.md, data/learnings.md, then run
+# fm-bootstrap.sh, then separately read docs/learnings/overnight-learnings.md,
+# data/projects.md, data/secondmates.md, data/captain.md,
+# data/captain-shared.md, data/learnings.md, then run
 # fm-lock.sh, fm-wake-drain.sh, then read data/backlog.md, every state/*.meta,
 # and every state/*.status.
 # Every one of those reads is UNCONDITIONAL at every session start, so they
@@ -47,7 +48,11 @@
 #                       inactive-outcome startup scan runs in the deferred worker.
 #                       First, on every harness and away posture, it seeds the
 #                       outcome store's display tail copy when that is absent
-#                       (bin/fm-branch-outcome.sh seed-tail).
+#                       (bin/fm-branch-outcome.sh seed-tail). Every locked
+#                       start, including a clear or compact, then records this
+#                       session as the current captain handle and clears the
+#                       handoff record, and every start prints a CAPTAIN ORDERS section
+#                       when durable orders are open (bin/fm-order.sh).
 #   4. supervision-instructions - the one emitted operating block for the
 #                       detected primary harness.
 #   5. read-once contract - the do-not-re-read contract covering every source
@@ -62,10 +67,13 @@
 #                       run serially, so with a wedged backend the stage's
 #                       ceiling is tasks x the per-read bound
 #                       (FM_SESSION_START_ENDPOINT_TIMEOUT, default 10s) and
-#                       can itself reach the digest's runtime bound.
+#                       can itself reach the digest's runtime bound. It ends
+#                       with the dispatch ledger's `overdue` lines, when any
+#                       (bin/fm-dispatch-log.sh).
 #   7. network checks - the result of the deferred network stage started back at
 #                       step 1, harvested WITHOUT waiting for it.
-#   8. context digest - data/projects.md, data/secondmates.md, data/captain.md,
+#   8. context digest - docs/learnings/overnight-learnings.md, data/projects.md,
+#                       data/secondmates.md, data/captain.md,
 #                       data/captain-shared.md, data/learnings.md: read-only,
 #                       always safe, always runs.
 #   9. closing reminder - prints the context-specific watcher next step; this
@@ -385,11 +393,14 @@ PRIMARY_HARNESS=$("$SCRIPT_DIR/fm-harness.sh" 2>/dev/null || printf unknown)
 # One tasks-axi compatibility verdict per session start. The probe costs three
 # tasks-axi subprocesses and this digest needs the same answer twice - here for
 # the backlog listing and again inside the fm-bootstrap.sh child, which reports
-# an incompatible build as MISSING. Computing it once and handing it to that
-# child collapses six subprocesses to three. fm-tasks-axi-lib.sh owns both reuse
-# layers and the one-hop consumption rule that keeps the verdict out of any
-# agent's environment.
+# an incompatible build as OUTDATED. Computing it once and handing it, with the
+# reason behind it, to that child collapses six subprocesses to three; the reason
+# travels too so the child's OUTDATED requirement text names a missing capability
+# without running the child's own `--help` probes over again. fm-tasks-axi-lib.sh
+# owns both reuse layers and the one-hop consumption rule that keeps them out of
+# any agent's environment.
 if fm_tasks_axi_compatible; then TASKS_AXI_COMPATIBLE=1; else TASKS_AXI_COMPATIBLE=0; fi
+TASKS_AXI_CHECK_REASON=$(fm_tasks_axi_check_reason)
 
 STATUS_TAIL=${FM_SESSION_START_STATUS_TAIL:-5}
 case "$STATUS_TAIL" in ''|*[!0-9]*) STATUS_TAIL=5 ;; esac
@@ -680,7 +691,8 @@ if [ "$REEMIT" -eq 1 ]; then
   # CONTEXT prints last, so this cue is the part that must survive the spill.
   printf 'RE-EMIT CUE: if this output ends with "Output too large ... Full output saved to <path>",\n'
   printf 'read that whole file now, before acting. Otherwise read data/captain.md, data/captain-shared.md,\n'
-  printf 'and data/learnings.md under %s now if any of them is missing below.\n' "$DATA"
+  printf 'data/learnings.md under %s, and docs/learnings/overnight-learnings.md under the code root now if\n' "$DATA"
+  printf 'any of them is missing below.\n'
   section "SESSION START (CONTEXT RE-EMIT) - $FM_HOME"
   printf 'This session already took the helm at its own startup and has only lost its\n'
   printf 'context. Lock ownership is re-verified and the durable records below are\n'
@@ -764,14 +776,17 @@ stage bootstrap
 subsection "BOOTSTRAP"
 if [ "$READ_ONLY" -eq 1 ]; then
   BOOT_OUT=$(FM_BOOTSTRAP_DETECT_ONLY=1 FM_BOOTSTRAP_NETWORK=skip \
-    FM_TASKS_AXI_COMPATIBLE="$TASKS_AXI_COMPATIBLE" "$SCRIPT_DIR/fm-bootstrap.sh" 2>&1)
+    FM_TASKS_AXI_COMPATIBLE="$TASKS_AXI_COMPATIBLE" \
+    FM_TASKS_AXI_CHECK_REASON="$TASKS_AXI_CHECK_REASON" "$SCRIPT_DIR/fm-bootstrap.sh" 2>&1)
 elif [ "$REEMIT" -eq 1 ]; then
   BOOT_OUT=$(FM_BOOTSTRAP_DETECT_ONLY=1 FM_BOOTSTRAP_LOCKED=1 FM_BOOTSTRAP_NETWORK=skip \
-    FM_TASKS_AXI_COMPATIBLE="$TASKS_AXI_COMPATIBLE" "$SCRIPT_DIR/fm-bootstrap.sh" 2>&1)
+    FM_TASKS_AXI_COMPATIBLE="$TASKS_AXI_COMPATIBLE" \
+    FM_TASKS_AXI_CHECK_REASON="$TASKS_AXI_CHECK_REASON" "$SCRIPT_DIR/fm-bootstrap.sh" 2>&1)
 else
   BOOT_OUT=$(
     "$SCRIPT_DIR/fm-herdr-session-cleanup.sh" 2>&1 || true
     FM_BOOTSTRAP_NETWORK=skip FM_TASKS_AXI_COMPATIBLE="$TASKS_AXI_COMPATIBLE" \
+      FM_TASKS_AXI_CHECK_REASON="$TASKS_AXI_CHECK_REASON" \
       "$SCRIPT_DIR/fm-bootstrap.sh" 2>&1
   )
 fi
@@ -824,6 +839,17 @@ else
   else
     printf '(no queued wakes)\n'
   fi
+  # A new captain session records its own terminal as the handle senders
+  # resolve at send time, and a clear or compact starts a new context that has
+  # written no handoff yet (bin/fm-order.sh owns the handle and order contract).
+  FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" "$SCRIPT_DIR/fm-order.sh" claim-handle >/dev/null 2>&1 || true
+fi
+# Durable captain orders still open are this session's to pick up; the list is
+# read-only, so a read-only session sees it too (bin/fm-order.sh pickup).
+ORDERS_OUT=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" "$SCRIPT_DIR/fm-order.sh" pickup 2>&1) || ORDERS_OUT=
+if [ -n "$ORDERS_OUT" ]; then
+  subsection "CAPTAIN ORDERS"
+  printf '%s\n' "$ORDERS_OUT"
 fi
 
 # --- 4. supervision operating instructions ----------------------------------
@@ -899,7 +925,8 @@ cat <<'EOF'
 Everything below is printed in full for this session start: every state/*.meta,
 a compact data/backlog.md listing, a bounded tail of every state/*.status,
 data/projects.md, data/secondmates.md, data/captain.md, data/captain-shared.md,
-and data/learnings.md.
+and data/learnings.md, plus the tracked docs/learnings/overnight-learnings.md
+under the code root.
 Do NOT re-read any of them after reading this digest, and do NOT bulk-read
 data/backlog.md or state/*.status: re-reading everything defeats the entire
 point of this command.
@@ -917,7 +944,10 @@ Go to a source directly only when:
   - or a STARTUP TRUNCATED banner named the stage that would have printed it, in
     which case that stage's sources were never emitted and must be reconciled,
   - or a context re-emit opened with a read cue because the
-    harness cut the digest short.
+    harness cut the digest short,
+  - or CONTEXT omitted docs/learnings/overnight-learnings.md because the digest
+    tail was truncated, in which case read that file under the code root
+    (docs/learnings/overnight-learnings.md relative to the firstmate checkout).
 EOF
 
 # --- 6. fleet-state digest ---------------------------------------------
@@ -1028,6 +1058,22 @@ if fm_pf_relay_active "$FM_HOME" \
   fi
 fi
 
+# Captain goals past the dispatch SLA (bin/fm-dispatch-log.sh owns the ledger).
+# A read-only `overdue` call, so it runs for lock-refused sessions too; a home
+# with no ledger prints nothing.
+if [ -f "$STATE/dispatch-log.tsv" ]; then
+  DISPATCH_OVERDUE=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-dispatch-log.sh" overdue 2>&1) || true
+  if [ -n "$DISPATCH_OVERDUE" ]; then
+    subsection "Dispatch ledger (fm-dispatch-log.sh overdue)"
+    printf '%s\n' "$DISPATCH_OVERDUE"
+    if [ "$READ_ONLY" -eq 1 ]; then
+      printf '\nInformation only: the session holding the lock owns these goals.\n'
+    else
+      printf '\nDispatch or block each OVERDUE goal this turn and report it to the captain, because it still needs action. Each LATE goal is already resolved: include it in the next batched update or morning report rather than on each heartbeat.\n'
+    fi
+  fi
+fi
+
 # --- 7. network checks ------------------------------------------------------
 # Deliberately here and not later: these lines are actionable (a stuck clone, a
 # secondmate that could not be relaunched, broken GitHub auth), and the section
@@ -1054,6 +1100,7 @@ fi
 # take (see this file's ORDERING note).
 stage context
 section "CONTEXT"
+"$SCRIPT_DIR/fm-fleet-learnings.sh" 2>/dev/null || true
 print_file_or_absent "$DATA/projects.md" "data/projects.md"
 print_file_or_absent "$DATA/secondmates.md" "data/secondmates.md"
 print_file_or_absent "$DATA/captain.md" "data/captain.md"
@@ -1107,9 +1154,7 @@ EOF
 if [ "$READ_ONLY" -eq 0 ] && [ "$REEMIT" -eq 0 ]; then
   COMPLETION_RECORDED=0
   COMPLETION_PID=$(cat "$STATE/.lock" 2>/dev/null || true)
-  case "$COMPLETION_PID" in
-    ''|*[!0-9]*) COMPLETION_PID= ;;
-  esac
+  fm_session_pid_valid "$COMPLETION_PID" || COMPLETION_PID=
   COMPLETION_TMP=$(mktemp "$STATE/.session-start-complete.XXXXXX" 2>/dev/null || true)
   if [ -n "$COMPLETION_PID" ] && [ -n "$COMPLETION_TMP" ] \
     && printf '%s\n' "$COMPLETION_PID" > "$COMPLETION_TMP" 2>/dev/null \

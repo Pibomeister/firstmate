@@ -100,6 +100,10 @@ SH
   # Ordinary teardown reports any final ledger outcome before removing records.
   ln -s "$ROOT/bin/fm-inactive-reconcile.sh" "$fake/bin/fm-inactive-reconcile.sh"
   ln -s "$ROOT/bin/fm-parent-channel-lib.sh" "$fake/bin/fm-parent-channel-lib.sh"
+  # Teardown folds the task into any lane budget; with no state/lane-budget the
+  # real helper exits 0 without touching anything.
+  ln -s "$ROOT/bin/fm-task-budget.sh" "$fake/bin/fm-task-budget.sh"
+  ln -s "$ROOT/bin/fm-task-budget.py" "$fake/bin/fm-task-budget.py"
   # fm-guard.sh: stub (teardown calls it with `|| true`).
   cat > "$fake/bin/fm-guard.sh" <<'SH'
 #!/usr/bin/env bash
@@ -204,6 +208,10 @@ SH
   ln -s "$ROOT/bin/fm-operational-input.sh" "$fake/bin/fm-operational-input.sh"
   ln -s "$ROOT/bin/fm-inactive-reconcile.sh" "$fake/bin/fm-inactive-reconcile.sh"
   ln -s "$ROOT/bin/fm-parent-channel-lib.sh" "$fake/bin/fm-parent-channel-lib.sh"
+  # Teardown folds the task into any lane budget; with no state/lane-budget the
+  # real helper exits 0 without touching anything.
+  ln -s "$ROOT/bin/fm-task-budget.sh" "$fake/bin/fm-task-budget.sh"
+  ln -s "$ROOT/bin/fm-task-budget.py" "$fake/bin/fm-task-budget.py"
   cat > "$fake/bin/fm-guard.sh" <<'SH'
 #!/usr/bin/env bash
 exit 0

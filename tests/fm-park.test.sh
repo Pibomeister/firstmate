@@ -3,7 +3,7 @@
 # wait that the shared paused vocabulary (bin/fm-classify-lib.sh) reads as the
 # task's current wait with its until time, ends when a later event lands, and
 # refuses every malformed request without writing. The watcher-side absorb of a
-# parked pane is pinned in tests/fm-watch-triage-d.test.sh.
+# parked pane is pinned in tests/fm-watch-triage.test.sh.
 set -u
 
 # shellcheck source=tests/lib.sh

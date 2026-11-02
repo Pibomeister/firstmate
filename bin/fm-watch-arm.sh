@@ -16,6 +16,14 @@
 # "already running" off the dying process. That exact mistake silently took
 # supervision down for ~30 minutes.
 # FM_WATCH_GROK_CONTINUITY=1 opts this arm into the Grok continuity in docs/watcher-continuity.md.
+# --detach-hold is the one hook-owned exception. The Codex Stop hook calls it
+# and then returns. It uses the same detached --grok-hold successor as Grok
+# continuity (set -m, nohup, disown), refuses while state/.afk exists, attaches
+# when a healthy watcher already holds this home's lock, and exits after that
+# successor is confirmed. It is not a shell & from a model command. The hold has
+# no doorbell: its wakes stay queued until the next captain message starts a turn.
+# FM_WATCH_MANAGED_HOLD=1 is the watchdog's foreground-owner variant: its
+# watcher remains this arm's child after a wake, with no detached successor.
 # On a harness with a PreToolUse-equivalent hook, bin/fm-arm-pretool-check.sh
 # applies the command-position policy before the command runs; see
 # docs/arm-pretool-check.md for the blessed tree and deny reason codes. It is a
@@ -92,6 +100,17 @@
 # watcher is also printed. It exits 1 when the watcher outlived the stop or
 # its matching stale lock shows that recovery cleanup failed.
 #
+# An arm whose ground is removed under it exits instead of polling on: when its
+# own script file, the state directory, or an FM_HOME that existed at start no
+# longer exists, it prints
+# "watcher: FAILED - arm ground removed: <path> no longer exists" and exits 1.
+# The check runs on every confirmation, successor, and attached poll, so the
+# bound is one poll interval plus a 0.2s recheck that keeps a transient rename
+# (a self-update rewriting this file) from counting as a removal. Sourcing
+# bin/fm-wake-lib.sh creates a not-yet-existing state directory first, so only a
+# deletion after start can trip it. The watcher's own home-gone exit
+# (bin/fm-watch.sh) covers the cycle this arm waits on.
+#
 # A copy of this script living under a disposable no-mistakes validation
 # checkout (a path containing /.no-mistakes/worktrees/) refuses every mode
 # outside a marked lab with
@@ -138,6 +157,9 @@ CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 [ -f "$CONFIG/x-mode.env" ] && . "$CONFIG/x-mode.env"
 
 WATCH="$SCRIPT_DIR/fm-watch.sh"
+ARM_SCRIPT="$SCRIPT_DIR/${BASH_SOURCE[0]##*/}"
+ARM_HOME_EXISTED=0
+[ ! -d "$FM_HOME" ] || ARM_HOME_EXISTED=1
 WATCH_LOCK="$STATE/.watch.lock"
 BEAT="$STATE/.last-watcher-beat"
 # "Fresh" reuses the guard's threshold so there is one definition of liveness.
@@ -334,6 +356,33 @@ report_attached() {
   echo "watcher: attached pid=$HEALTHY_PID (beacon ${age}s)"
 }
 
+# Header, "arm ground removed". Sets ARM_GROUND_MISSING to the first missing
+# path and succeeds only when it is still missing after the 0.2s recheck.
+ARM_GROUND_MISSING=
+arm_ground_missing_now() {
+  ARM_GROUND_MISSING=
+  if [ ! -e "$ARM_SCRIPT" ]; then
+    ARM_GROUND_MISSING=$ARM_SCRIPT
+  elif [ ! -d "$STATE" ]; then
+    ARM_GROUND_MISSING=$STATE
+  elif [ "$ARM_HOME_EXISTED" -eq 1 ] && [ ! -d "$FM_HOME" ]; then
+    ARM_GROUND_MISSING=$FM_HOME
+  fi
+  [ -n "$ARM_GROUND_MISSING" ]
+}
+
+arm_ground_gone() {
+  arm_ground_missing_now || return 1
+  sleep 0.2
+  arm_ground_missing_now
+}
+
+fail_arm_ground_gone() {
+  cycle_log_append unknown unknown arm-ground-removed none
+  echo "watcher: FAILED - arm ground removed: $ARM_GROUND_MISSING no longer exists"
+  return 1
+}
+
 # Give a successor the same bounded confirmation window used for a fresh child.
 # Adapter-owned continuations normally win immediately, but the bound avoids a
 # false failure when process-close delivery and lock publication cross briefly.
@@ -344,6 +393,7 @@ wait_for_healthy_successor() {
   deadline=$(( $(date +%s) + CONFIRM_TIMEOUT + 1 ))
   while :; do
     healthy_watcher && return 0
+    arm_ground_gone && return 1
     [ "$(date +%s)" -ge "$deadline" ] && return 1
     sleep 0.2
   done
@@ -431,18 +481,6 @@ attached_holder_live() {
   [ "$FM_WATCHER_MATCHED_IDENTITY" = "$cycle_watcher_identity" ]
 }
 
-# Bind queued-wake delivery to a persistent holder, not an ordinary one-shot watcher.
-grok_holding_watcher() {  # <pid>
-  local pid=$1 proc_root=${FM_PROC_ROOT_OVERRIDE:-/proc} args
-  if [ -r "$proc_root/$pid/cmdline" ]; then
-    [ "$(tr '\000' '\n' < "$proc_root/$pid/cmdline" | tail -n 1)" = --grok-hold ]
-  else
-    args=$(ps -ww -o args= -p "$pid" 2>/dev/null) || return 1
-    case "$args" in *' --grok-hold') return 0 ;; esac
-    return 1
-  fi
-}
-
 
 # Grok arms can report queued work while their tagged holding watcher stays live.
 # Stay alive across identity-matched healthy holders. If one cycle ends, attach
@@ -466,6 +504,10 @@ attach_and_wait() {
     actor=$(fm_lease_actor 2>/dev/null) || actor=main
   fi
   while :; do
+    if arm_ground_gone; then
+      fail_arm_ground_gone
+      return 1
+    fi
     if healthy_watcher; then
       if [ "$HEALTHY_PID" != "$attached_pid" ] || [ "$HEALTHY_IDENTITY" != "$cycle_watcher_identity" ]; then
         cycle_log_append unknown unknown lock-replaced "attached:$HEALTHY_PID"
@@ -474,7 +516,7 @@ attach_and_wait() {
         report_attached
       fi
       if [ "${FM_WATCH_GROK_CONTINUITY:-}" = 1 ] && [ ! -e "$STATE/.afk" ] \
-        && grok_holding_watcher "$attached_pid" \
+        && fm_grok_holding_watcher "$attached_pid" \
         && [ "$(fm_wake_actor_pending_count "$actor")" -gt 0 ]; then
         cycle_log_append 0 none attached-delivered-wake "attached:$attached_pid"
         printf '%s\n' 'check: rearm-resurface'
@@ -506,6 +548,10 @@ attach_and_wait() {
       report_attached
       continue
     fi
+    if [ -n "$ARM_GROUND_MISSING" ]; then
+      fail_arm_ground_gone
+      return 1
+    fi
     if close_unobserved_cycle; then
       successor=none
       if start_grok_continuity_successor; then
@@ -525,6 +571,9 @@ handle_attached_signal() {
   trap '' HUP TERM INT
   # An interrupted handover snapshot may still own locks its watcher needs
   # for cleanup, including a lock just transferred by the bounded helper.
+  # That helper keeps running in the background, so it can still hand a lock
+  # over after this release; the wait below releases again on every poll, and
+  # fm_lock_release only ever removes a lock this arm owns.
   fm_lock_release "$STATE/.watcher-down.lock"
   fm_lock_release "$FM_WAKE_QUEUE_LOCK"
   cycle_log_append "$rc" "$signal" arm-interrupted none
@@ -535,6 +584,8 @@ handle_attached_signal() {
     while fm_pid_alive "$cycle_watcher_pid" \
       && [ "$(fm_pid_identity "$cycle_watcher_pid" 2>/dev/null)" = "$cycle_watcher_identity" ]; do
       sleep 0.1
+      fm_lock_release "$STATE/.watcher-down.lock"
+      fm_lock_release "$FM_WAKE_QUEUE_LOCK"
     done
     watcher_cleanup_complete "$cycle_watcher_pid" "$cycle_watcher_identity" || true
     consume_cycle_delivery || true
@@ -644,8 +695,33 @@ case "${1:-}" in
     case "$handling_watcher_pid" in ''|*[!0-9]*) echo "watcher: invalid successor watcher pid" >&2; exit 2 ;; esac
     [ "$#" -eq 4 ] || { echo "watcher: unexpected handling delivery arguments" >&2; exit 2; }
     ;;
-  *) echo "usage: $(basename "$0") [--restart | --stop | --take-over ARM_PID | --handling-delivered GENERATION --watcher-pid PID]" >&2; exit 2 ;;
+  --detach-hold)
+    mode=detach-hold
+    [ "$#" -eq 1 ] || { echo "watcher: unexpected detach-hold arguments" >&2; exit 2; }
+    ;;
+  *) echo "usage: $(basename "$0") [--restart | --stop | --detach-hold | --take-over ARM_PID | --handling-delivered GENERATION --watcher-pid PID]" >&2; exit 2 ;;
 esac
+
+# Hook-owned detach. Confirm the hold, then return. Do not enter the tracked
+# attach loop: the caller is a turn-end hook that must exit.
+if [ "$mode" = detach-hold ]; then
+  if [ -e "$STATE/.afk" ]; then
+    echo "watcher: FAILED - away mode owns supervision" >&2
+    exit 1
+  fi
+  if healthy_watcher; then
+    report_attached
+    exit 0
+  fi
+  FM_WATCH_GROK_CONTINUITY=1
+  export FM_WATCH_GROK_CONTINUITY
+  if start_grok_continuity_successor; then
+    echo "watcher: started pid=$GROK_SUCCESSOR_PID"
+    exit 0
+  fi
+  echo "watcher: FAILED - no live watcher with a fresh beacon"
+  exit 1
+fi
 
 if [ "$mode" = handling-delivered ]; then
   fm_pid_alive "$handling_watcher_pid" \
@@ -835,7 +911,9 @@ child_out=$(mktemp "$STATE/.watch-arm-output.XXXXXX") || {
 # date(1) exposes whole seconds. Keep the configured confirmation budget from
 # collapsing when startup begins just before the next second boundary.
 deadline=$(( $(date +%s) + CONFIRM_TIMEOUT + 1 ))
-if [ -n "${FM_WATCH_PREDECESSOR_ARM_PID:-}" ]; then
+if [ "${FM_WATCH_MANAGED_HOLD:-}" = 1 ]; then
+  FM_WATCH_MANAGED_HOLD=1 "$WATCH" --managed-hold >"$child_out" &
+elif [ -n "${FM_WATCH_PREDECESSOR_ARM_PID:-}" ]; then
   FM_WATCH_HANDLING_SUCCESSOR=1 "$WATCH" >"$child_out" &
 else
   "$WATCH" >"$child_out" &
@@ -876,6 +954,11 @@ owned_child_finished() {
     fi
     consume_child_output
     child=
+    child_out=
+    if [ -n "$ARM_GROUND_MISSING" ]; then
+      fail_arm_ground_gone
+      return 1
+    fi
     if close_unobserved_cycle; then
       cycle_log_append "$rc" "$signal" clean-exit-delivered-wake none
       return 0
@@ -977,6 +1060,12 @@ while :; do
     child_done=1
     owned_child_finished "$rc"
     exit $?
+  fi
+  if arm_ground_gone; then
+    cleanup_child
+    wait "$child" 2>/dev/null || true
+    fail_arm_ground_gone
+    exit 1
   fi
   [ "$(date +%s)" -ge "$deadline" ] && break
   sleep 0.2

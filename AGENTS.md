@@ -43,7 +43,7 @@ Hard rules, in priority order:
    If work failed, say so plainly with the evidence.
 
 You may maintain this repo's private operational state directly.
-Shared tracked material is `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, `.tasks.toml`, `.github/workflows/`, `bin/`, `.agents/skills/`, and public `skills/`.
+Shared tracked material is `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, `.tasks.toml`, `.github/workflows/`, `bin/`, `.agents/skills/`, `docs/learnings/`, and public `skills/`.
 When any crewmate is live, delegate changes to shared tracked material rather than competing with supervision; when the fleet is empty, firstmate may change it directly.
 This repo is a shared template, while `.env`, `data/`, `state/`, `config/`, `projects/`, and `.no-mistakes/` are captain-private and gitignored.
 Ship shared tracked changes through this repo's no-mistakes pipeline and PR path, with the same merge authority as any other project.
@@ -51,7 +51,7 @@ This home's relationship to this repository is a declared local role, never an i
 Publishing to this repository's upstream requires `config/firstmate-role`'s maintainer opt-in or a captain-approved one-task consent recorded at dispatch (`docs/configuration.md` "Firstmate role"; the gate is `bin/fm-role-lib.sh`), and is never granted by gh identity, forge permissions, remotes, repository ownership, authentication state, environment, or CI.
 Load `firstmate-self-repo` before dispatching, promoting, or delivering work that targets this repository, when a firstmate bug or improvement idea surfaces in ordinary use, and before granting or revoking upstream publication authority.
 Never add an agent name as a commit co-author.
-Use `gh-axi` for GitHub, `chrome-devtools-axi` for browser work, and compatible `lavish-axi` for visual decisions or reports; consult current help rather than memorizing flags.
+Use `gh-axi` for GitHub, `chrome-devtools-axi` for browser work, `agent-desktop` for desktop-app E2E tests and computer use through the OS accessibility tree (`agent-desktop skills get desktop`; on macOS run `agent-desktop permissions` and escalate a denied grant), and compatible `lavish-axi` for visual decisions or reports; consult current help rather than memorizing flags.
 
 ## 2. Layout and state
 
@@ -89,21 +89,23 @@ Load `session-start-recovery` when the digest reports unfinished checks, actiona
 ## 4. Harness and runtime dispatch
 
 - Load `harness-adapters` before every spawn or recovery and before trust handling, skill invocation, interrupt, exit, resume, or adapter verification.
-- The verified harnesses are `claude`, `codex`, `opencode`, `pi`, `pi-signed`, `grok`, `kimi`, `cursor`, `omp`, and `muse` (primary verified on Muse 1.4.13; secondmate on `muse` remains unverified and refused), plus `gemini`, `rovo`, `agy`, `devin`, `droid`, `commandcode` (Command Code), and `polytoken` for crewmates and scouts only; never dispatch on an unverified adapter.
+- The verified harnesses are `claude`, `codex`, `opencode`, `pi`, `pi-signed`, `grok`, `kimi`, `cursor`, `omp`, `agy`, and `muse` (primary verified on Muse 1.4.13; secondmate on `muse` remains unverified and refused), plus `gemini`, `rovo`, `devin`, `commandcode` (Command Code), `droid`, `polytoken`, and `cortex` for crewmates and scouts only; never dispatch on an unverified adapter.
 - If static `config/crew-harness` or `config/secondmate-harness` names an unverified adapter, report it and fall back only to a verified adapter rather than launching it.
 - Only the captain chooses or changes a worker account pin (`config/claude-account`, `config/pi-account`), so on a pin refusal report the needed login and never edit or remove the file to unblock a spawn.
 
 `docs/configuration.md` owns dispatch-profile and runtime-backend schemas, `bin/fm-harness.sh` owns static resolution, and `bin/fm-spawn.sh` owns launch flags and fail-closed validation.
 When dispatch profiles exist, consult them at every crewmate or scout intake and pass the resolved concrete profile required by `fm-spawn`.
 Routing precedence is an explicit per-task captain override, then the best-fit configured rule, then the configured default, then the static crewmate harness.
-Firstmate alone resolves a matched profile array: begin with `quota-axi`'s default TOON at that intake, using the skill's narrow TOON-then-`--json` fallback only for genuine ambiguity, evaluate every configured candidate against that current output, and choose with inspectable `spendPriority` as the one quota-perspective ranker after the skill's eligibility, reasoning-class, and runway-feasibility gates.
+Firstmate alone resolves a matched profile array: begin with `quota-axi`'s default TOON at that intake, using the skill's narrow TOON-then-`--json` fallback only for genuine ambiguity, evaluate every configured candidate against that current output, and choose under the skill's `preferred_provider` procedure with inspectable `spendPriority` as the one quota-perspective ranker after its eligibility, reasoning-class, and runway-feasibility gates.
 Account for every candidate with the catalog evidence, provider relationship, applicable quota and authentication facts, remaining uncertainty, fit and reasoning class, and the spendPriority and runway evidence used in selection; never omit a candidate, guess, fall back silently, or call the result quota-informed without them.
 Establish model support and provider family from that harness's own authoritative catalog, then apply the [account and scope matching rules in `quota-array-dispatch`](.agents/skills/quota-array-dispatch/SKILL.md#1-eligibility).
 Missing model-level quota, a missing authentication source, unmeasurable headroom, or unmodeled authentication is disclosed uncertainty that keeps a candidate eligible, never a credential or login escalation.
 Only concrete contradictory evidence blocks a candidate, such as an authoritative catalog proving the model unsupported or proof that the credential selected for that surface is unusable; never infer a credential store, provider family, or quota mapping from a harness, model, or source name, and never launch another harness's CLI to judge a candidate.
 Preserve malformed profile configuration as an actionable error rather than selecting around it.
-When every candidate is tight, preserve the captain's strongest-reasoning class rather than silently downgrading it solely to conserve quota; stop and report the tight choice if that class cannot proceed.
-Break genuine evidence ties without array-order or harness bias.
+When every candidate is tight, preserve the captain's strongest-reasoning class rather than silently downgrading it solely to conserve quota; if that class cannot proceed, reroute through the `quota-array-dispatch` pool to the strongest available class across its steps, reaching another provider or account when needed, disclose the downgrade, and never pause new work on a quota floor.
+Runway or spendPriority uncertainty no longer stops dispatch: pick the best candidate on known evidence, disclose the uncertainty, and proceed; when every matched candidate fails the runway floor, reroute through that pool first, and only if no eligible pool candidate passes that floor dispatch from the strongest eligible class, using the greatest known usable runway above zero only within that class, reporting the breach and any class drop plainly.
+A rule's profile list alone is not a restriction; only an explicit captain instruction recorded for that task or a captain-pinned account restricts reroute, a rule with `approval: "captain"` still escalates because reroute never goes around a captain approval, a floor the captain recorded for that task outranks the greatest-runway rule while configured `floor` fields stay hints, a weaker class dispatches with disclosure unless the captain required the stronger class, and when no permitted candidate can proceed the item stays queued with the reason reported while other work proceeds.
+Break genuine evidence ties without array-order or harness bias: rank with stated evidence, route to the chosen candidate, and report the criterion plainly.
 `quota-axi` owns how model or product windows relate to bounding account windows and remains data-only.
 Load `quota-array-dispatch` before choosing among a matched profile array; that skill is the single owner of the TOON-first spendPriority selection procedure.
 Run `bin/fm-dispatch-resolve.sh` directly on the written brief in the same turn, with no preflight, and on `clear` pass its `profile:` line to `fm-spawn` unless you state a reason to override; `ambiguous`, `escalate`, `error`, and off all mean the intake above, unchanged (contract: `docs/configuration.md` "Typed dispatch resolution").
@@ -169,6 +171,8 @@ The delivery lifecycle is an always-loaded operational contract; referenced scri
 ### Intake and authority
 
 Resolve the project independently for every request.
+Record every new captain goal - a chat ask, inbox note, or away-mode ask for work, not a follow-up that only amends a logged goal - with `bin/fm-dispatch-log.sh received` the moment you read it, and within 15 minutes either spawn it (`dispatched --task`, or `--task secondmate:<id>` when routed to a secondmate) or record the concrete reason nothing can start (`blocked --reason`).
+Work waiting behind other work is `queued --reason`, which stays overdue until dispatched or blocked; the script header owns goal ids, exit codes, and the ledger at `state/dispatch-log.tsv`.
 An explicit project wins, a clear follow-up inherits its referent, and otherwise match the request against the registry, work under way, and project code or README.
 Proceed on one confident match while naming the project in plain language; ask one concise question when multiple or no projects plausibly match.
 
@@ -204,6 +208,9 @@ Record the resulting mode, `yolo` merge posture, and the one-line reason for any
 
 Treat file or subsystem overlap as a risk signal rather than an automatic reason to wait, and dispatch isolated work immediately with no concurrency cap when each change can be independently implemented and validated and the selected delivery path can reconcile ordinary rebases or conflicts.
 A project's declared machine capacity (`config/project-capacity`) still bounds that dispatch: a spawn beyond it exits 75 without launching, and its item stays queued rather than blocked.
+`bin/fm-spawn.sh` reads `bin/fm-disk-alarm.sh` before every fresh crewmate or scout launch, including when crew-dispatch resolution runs first.
+Tell the captain when that reading warns.
+A refusal is not retried on this host, so place the work on another host or cloud.
 Serialize only for a true semantic dependency, shared mutable external state, incompatible concurrent migration, or another concrete condition that makes independent progress or reconciliation unsafe; same-file editing alone is insufficient, and genuine blockers remain durable.
 Write the task-specific brief under section 11 before spawning.
 Fill the task subsections according to section 11.
@@ -287,7 +294,9 @@ Handle actionable wakes as follows:
 3. For `check:`, act on the named poll result, including merges, contribution signals, Relay events, process-to-event source results, and captain inbox notes; a handled inbox note is also acknowledged with `bin/fm-inbox.sh drain --ack <id>`, or it stays counted as still waiting for firstmate.
    A `check: secondmate <id> auto-relaunched` wake records a recovery that already completed - reconcile the mate's current state rather than relaunching again, and treat a repeat or a paused-bound wake as the signal to investigate why the mate keeps exiting.
    When the note needs a durable answer the submitter can read, publish it with `bin/fm-inbox.sh reply <id>` (the script header owns the reply contract) rather than leaving the answer only in this transcript.
+   A `check: captain order <id>` or `check: captain hold <id>` wake or a session-start `CAPTAIN ORDERS` section names durable captain orders: ack each with `bin/fm-order.sh ack <id>` before acting, never run one it reports as `skip`, and finish it as done or parked; a hold in force overrides every older order and council ruling until lifted, so never relay work that contradicts one; that script's header owns the order and hold contract, and legacy orders by terminal or inbox note stay fully accepted.
 4. For `heartbeat:`, review the whole fleet from the structured fleet view, reconcile suspicious tasks and PR state, update the backlog, and never report an unchanged fleet as progress.
+5. The session-start digest shows the dispatch ledger's overdue goals; on every heartbeat and wake-handling turn, run `bin/fm-dispatch-log.sh overdue`, where exit 3 means `OVERDUE` lines to act on, not an error, and dispatch or block each `OVERDUE` goal in that same turn, report each `OVERDUE` goal to the captain whenever it is listed because it still needs action, and include each `LATE` goal, already resolved, in the next batched update or morning report rather than on each heartbeat; a secondmate tells the captain only through its parent channel.
 
 Load `bearings` on a contributions check wake or when filing work linked to an upstream issue; its contribution-follow-up section owns triage and exact signal acknowledgement.
 
@@ -407,7 +416,8 @@ The scaffold is a safety contract, not a suggestion.
 ## 12. Self-update
 
 Firstmate's shared instruction surface reaches running homes only after it lands on the default branch and those homes fast-forward.
-Only `AGENTS.md`, `bin/`, and `.agents/skills/` are loaded by a running firstmate; public `skills/` is an installer-facing surface.
+Only `AGENTS.md`, `bin/`, and `.agents/skills/` are a running firstmate instruction surface; public `skills/` is an installer-facing surface.
+`docs/learnings/` is outside that surface: session start and each AFK preflight print it from disk, so a change to it needs no re-read.
 When the captain invokes `/updatefirstmate` or asks to update firstmate, load the `/updatefirstmate` skill.
 The skill owns the guarded fleet update and restart procedure; it never touches anything under `projects/`.
 

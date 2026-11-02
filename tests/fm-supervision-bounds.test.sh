@@ -227,10 +227,12 @@ test_watcher_defers_work_behind_a_held_wake_queue_lock() {
   out="$dir/watch.out"
   # The holder takes the queue lock after the watcher's first beat and, while
   # holding it, queues a process-event result the watcher will try to surface.
+  # The watcher takes the same lock on its own beats, so the holder retries
+  # briefly instead of giving up when it lands inside one of them.
   holder="$dir/fm-fake-queue-holder.sh"
   # shellcheck disable=SC2016 # expanded by the holder script
   printf '%s\n' '#!/usr/bin/env bash' 'export STATE="$2" FM_WAKE_QUEUE="$2/.wake-queue" FM_WAKE_QUEUE_LOCK="$3"' \
-    '. "$1"' 'fm_lock_try_acquire "$3" || exit 1' \
+    '. "$1"' 'n=0; until fm_lock_try_acquire "$3"; do n=$((n + 1)); [ "$n" -lt 100 ] || exit 1; sleep 0.05; done' \
     'fm_wake_append_locked check "procevent:fake:src:1" "check: process-event fake src 1" || exit 1' 'sleep 120 >/dev/null 2>&1 &' 'trap "kill $! 2>/dev/null; exit 0" TERM' 'wait $!' > "$holder"
   chmod +x "$holder"
   watch_start "$state" "$fakebin" "$out" FM_WATCH_HANDLING_SUCCESSOR=1 FM_WAKE_QUEUE_LOCK_WAIT=2 FM_WATCHER_STALL_BOUND=600

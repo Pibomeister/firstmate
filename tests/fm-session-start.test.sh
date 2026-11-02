@@ -774,6 +774,92 @@ write_omp_loaded_markers() {
 
 # --- context digest: absent vs empty vs present -----------------------------
 
+# A captain order sent while the captain restarts reaches the new captain: the
+# old session's handoff document predates it, so the restart gate blocks; the new
+# session's digest names it, the new session becomes the handle a sender's
+# re-check resolves, and the new captain reads it exactly once.
+test_order_sent_mid_restart_is_picked_up_by_the_new_captain() {
+  local rec root home fakebin out id rc=0 nudges stub doc
+  rec=$(new_world captain-orders)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  nudges="$home/nudges.log"
+  stub="$fakebin/order-nudge"
+  # shellcheck disable=SC2016 # the stub expands its own arguments when it runs
+  printf '#!/usr/bin/env bash\nprintf "%%s %%s\\n" "$1" "$2" >>"%s"\n' "$nudges" >"$stub"
+  chmod +x "$stub"
+  order() { env -u FM_DATA_OVERRIDE -u FM_STATE_OVERRIDE FM_HOME="$home" FM_ORDER_NUDGE_CMD="$stub" "$ROOT/bin/fm-order.sh" "$@"; }
+  handle() { printf '%s:%s' "$(sed -n 's/^backend=//p' "$home/state/captain-handle")" "$(sed -n 's/^target=//p' "$home/state/captain-handle")"; }
+  doc="$home/data/handoff-20261031-1200-captain-restart.md"
+
+  out=$(FM_SUPERVISOR_TARGET=old-captain FM_SUPERVISOR_BACKEND=tmux run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  assert_not_contains "$out" "CAPTAIN ORDERS" "with no open orders the digest prints no orders section"
+  assert_equals "tmux:old-captain" "$(handle)" "the old captain's session start records its handle"
+  order handoff --doc "$doc" >/dev/null || fail "the old captain's handoff must succeed"
+  assert_contains "$(cat "$doc")" "none open" "the old captain's handoff document records that no order was open"
+
+  order send --from nightly "nightly: start the goals" >/dev/null || fail "a mid-restart send must save the order"
+  id=$(find "$home/data/orders/pending" -name '*.order' | sed 's#.*/##; s/\.order$//')
+  [ -n "$id" ] || fail "the mid-restart order must be in pending/"
+  order gate >/dev/null || rc=$?
+  assert_equals 3 "$rc" "the restart gate must block: the handoff predates the order"
+
+  out=$(FM_SUPERVISOR_TARGET=new-captain FM_SUPERVISOR_BACKEND=tmux run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  assert_contains "$out" "CAPTAIN ORDERS" "the new captain's digest carries the orders section"
+  assert_contains "$out" "$id pending" "the new captain's pickup names the mid-restart order"
+  assert_equals "tmux:new-captain" "$(handle)" "the new session becomes the current handle"
+  order resend "$id" >/dev/null || fail "the sender's re-check resend must succeed"
+  assert_equals "tmux old-captain
+tmux new-captain" "$(cat "$nudges")" "the re-check resend reaches the newest captain handle"
+  assert_contains "$(order ack "$id")" "acked $id" "the new captain reads the order"
+  assert_contains "$(order ack "$id")" "skip $id" "a second read is skipped, never run twice"
+  out=$(FM_SUPERVISOR_TARGET=new-captain FM_SUPERVISOR_BACKEND=tmux run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  assert_contains "$out" "$id acked-unfinished" "a restart before completion still names the acknowledged order"
+  order finish "$id" "done" "goals started" >/dev/null || fail "the new captain must finish the order"
+  out=$(FM_SUPERVISOR_TARGET=new-captain FM_SUPERVISOR_BACKEND=tmux run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  assert_not_contains "$out" "CAPTAIN ORDERS" "a finished order leaves the digest"
+  pass "an order sent mid-restart is named by the new captain's session start and read once"
+}
+
+test_dispatch_ledger_overdue_in_digest() {
+  local rec root home fakebin holder_pid out
+  rec=$(new_world dispatch-ledger)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  case "$out" in *"Dispatch ledger"*) fail "a home with no dispatch ledger printed a ledger section" ;; esac
+  printf '%s\t%s\treceived\tlate-goal\tsummary=still waiting\n' 2020-01-01T00:00:00Z 1577836800 > "$home/state/dispatch-log.tsv"
+  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  assert_contains "$out" "Dispatch ledger" "session start must show the dispatch ledger section when goals are overdue"
+  assert_contains "$out" "OVERDUE late-goal" "session start must list the overdue goal"
+  assert_contains "$out" "Dispatch or block each OVERDUE goal this turn" "a lock-holding session must be told to act on overdue goals"
+
+  rec=$(new_world dispatch-ledger-read-only)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  printf '%s\t%s\treceived\tlate-goal\tsummary=still waiting\n' 2020-01-01T00:00:00Z 1577836800 > "$home/state/dispatch-log.tsv"
+  sleep 300 &
+  holder_pid=$!
+  printf '%s\n' "$holder_pid" > "$home/state/.lock"
+  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  kill "$holder_pid" 2>/dev/null || true
+  wait "$holder_pid" 2>/dev/null || true
+  assert_contains "$out" "READ-ONLY SESSION" "a held lock must make the session read-only"
+  assert_contains "$out" "OVERDUE late-goal" "a read-only session must still list the overdue goal"
+  assert_contains "$out" "the session holding the lock owns these goals" "a read-only session must say who owns the overdue goals"
+  assert_not_contains "$out" "Dispatch or block each OVERDUE goal" "a read-only session must not be told to dispatch or block goals"
+  pass "session start lists overdue goals, and only a lock-holding session is told to act on them"
+}
+
 test_affected_bash_warning_comes_first_and_once() {
   local rec root home fakebin out before_lock
   rec=$(new_world affected-bash-warning)
@@ -824,11 +910,11 @@ EOF
   assert_contains "$out" "data/secondmates.md" "digest did not label the secondmates.md section"
   assert_contains "$out" "data/learnings.md" "digest did not label the learnings.md section"
 
-  # Exactly four context ABSENT markers (secondmates.md, captain-shared.md,
-  # learnings.md; backlog.md is covered by its own test) - and the
-  # present-but-empty captain.md must NOT print ABSENT.
+  # Exactly five context ABSENT markers (secondmates.md, captain-shared.md,
+  # learnings.md, tracked fleet learnings; backlog.md is covered by its own test)
+  # - and the present-but-empty captain.md must NOT print ABSENT.
   absent_count=$(printf '%s\n' "$out" | grep -c '^ABSENT$')
-  [ "$absent_count" -eq 4 ] || fail "expected 4 ABSENT markers (secondmates.md, captain-shared.md, learnings.md, backlog.md), got $absent_count: $out"
+  [ "$absent_count" -eq 5 ] || fail "expected 5 ABSENT markers (secondmates.md, captain-shared.md, learnings.md, fleet learnings, backlog.md), got $absent_count: $out"
 
   cap_section=$(printf '%s\n' "$out" | awk '/^data\/captain\.md$/{flag=1;next}/^data\//{flag=0}flag')
   assert_contains "$cap_section" "(present, empty)" "empty-but-present captain.md was not distinguished from ABSENT"
@@ -960,8 +1046,32 @@ EOF
   pass "locked session start freezes trace context and lock refusal leaves it unchanged"
 }
 
+# Wait until <dir> holds <count> entries. Forty workers poll this at once, so
+# the count is a builtin glob rather than a find pipeline (no process per
+# poll), and the wait ends early once the directory is gone, the suite has
+# died, or FM_TEST_STUB_MAX_BLOCK_SECONDS has passed with no new entry, so an
+# interrupted run cannot leave forty pollers spinning under init. Any new entry
+# restarts that limit: on a loaded machine the workers can need longer than one
+# limit in total, and a winner that stopped waiting would die and hand a later
+# worker a legitimately stale lock.
+lock_concurrency_barrier() {  # <dir> <count>
+  local dir=$1 want=$2 start=$SECONDS entries seen=0
+  while [ -d "$dir" ] && kill -0 "$FM_TEST_SUITE_PID" 2>/dev/null \
+    && [ $((SECONDS - start)) -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do
+    entries=("$dir"/*)
+    [ -e "${entries[0]}" ] || entries=()
+    [ "${#entries[@]}" -lt "$want" ] || return 0
+    if [ "${#entries[@]}" -gt "$seen" ]; then
+      seen=${#entries[@]}
+      start=$SECONDS
+    fi
+    sleep 0.05
+  done
+  return 1
+}
+
 test_session_lock_concurrent_single_winner() {
-  local rec root home fakebin ready completed winners pids i pid count
+  local rec root home fakebin ready completed winners stalled pids i pid count
   rec=$(new_world lock-concurrency)
   IFS='|' read -r root home fakebin <<EOF
 $rec
@@ -969,6 +1079,7 @@ EOF
   ready="$home/ready"
   completed="$home/done"
   winners="$home/winners"
+  stalled="$home/barrier-stalled"
   mkdir -p "$ready" "$completed"
   : > "$winners"
   cat > "$fakebin/ps" <<'SH'
@@ -1008,18 +1119,14 @@ SH
       harness_pid=$(sh -c 'printf "%s\n" "$PPID"')
       : > "$home/state/harness-$harness_pid"
       : > "$ready/$i"
-      while [ "$(find "$ready" -type f | wc -l | tr -d ' ')" -lt 40 ]; do
-        sleep 0.01
-      done
+      lock_concurrency_barrier "$ready" 40 || : > "$stalled"
       if FM_HOME="$home" FM_FAKE_LOCK_STATE="$home/state" \
         FM_FAKE_HARNESS_PID="$harness_pid" PATH="$fakebin:$BASE_PATH" \
         "$ROOT/bin/fm-lock.sh" >/dev/null 2>&1; then
         printf '%s\n' "$harness_pid" >> "$winners"
       fi
       : > "$completed/$i"
-      while [ "$(find "$completed" -type f | wc -l | tr -d ' ')" -lt 40 ]; do
-        sleep 0.01
-      done
+      lock_concurrency_barrier "$completed" 40 || : > "$stalled"
     ) &
     pids="$pids $!"
     i=$((i + 1))
@@ -1027,6 +1134,9 @@ SH
   for pid in $pids; do
     wait "$pid" 2>/dev/null || true
   done
+  # A stalled barrier let a winner exit, so its winner count says nothing about
+  # the lock.
+  [ ! -e "$stalled" ] || fail "lock concurrency workers stalled past the barrier limit; winner count is not evidence"
   count=$(awk 'NF { count++ } END { print count + 0 }' "$winners")
   [ "$count" -eq 1 ] || fail "concurrent session-lock acquisition produced $count winners"
 
@@ -3173,5 +3283,8 @@ test_codex_unreachable_reset_sources_do_not_claim_instruction_refresh
 test_agents_baseline_requires_sha256_and_successful_completion
 test_reemit_keeps_repair_ownership_with_the_lock_holder
 test_affected_bash_warning_comes_first_and_once
+test_dispatch_ledger_overdue_in_digest
+
+test_order_sent_mid_restart_is_picked_up_by_the_new_captain
 
 echo "# fm-session-start.test.sh: all assertions passed"

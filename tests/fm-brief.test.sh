@@ -238,6 +238,14 @@ test_forge_selection_renders_correct_cli() {
   brief="$home/data/brief-forge-default/brief.md"
   assert_grep "3. Use gh-axi for GitHub operations and chrome-devtools-axi for browser operations." "$brief" \
     "a brief with no --forge must render the exact pre-existing gh-axi Rule 3 line"
+  assert_grep "browser operations. Use agent-desktop for desktop-app E2E tests" "$brief" \
+    "a ship brief's Rule 3 must name agent-desktop for desktop-app E2E"
+  assert_grep "escalate a denied grant to firstmate, never grant it yourself." "$brief" \
+    "a ship brief's Rule 3 must escalate a denied macOS permission"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-forge-scout some-proj --scout >/dev/null 2>&1 \
+    || fail "a scout brief should scaffold"
+  assert_grep "3. Use gh-axi for GitHub operations and chrome-devtools-axi for browser operations. Use agent-desktop for desktop-app E2E tests" "$home/data/brief-forge-scout/brief.md" \
+    "a scout brief's Rule 3 must name agent-desktop for desktop-app E2E"
   # shellcheck disable=SC2016 # Backticks are literal generated brief text.
   assert_grep 'open a PR with `gh-axi`' "$brief" \
     "a direct-PR brief with no --forge must still tell the worker to open the PR with gh-axi"
@@ -249,6 +257,8 @@ test_forge_selection_renders_correct_cli() {
   brief="$home/data/brief-forge-forgejo/brief.md"
   assert_grep "3. Use tea for Forgejo operations and chrome-devtools-axi for browser operations." "$brief" \
     "--forge forgejo must render the tea Rule 3 line"
+  assert_grep "browser operations. Use agent-desktop for desktop-app E2E tests" "$brief" \
+    "--forge forgejo's Rule 3 must name agent-desktop for desktop-app E2E"
   # shellcheck disable=SC2016 # Backticks are literal generated brief text.
   assert_grep 'open a PR with `tea`' "$brief" \
     "--forge forgejo's direct-PR DOD must tell the worker to open the PR with tea"
@@ -787,6 +797,12 @@ test_secondmate_no_projects_charter() {
     "secondmate charter did not close a quietly ended routed-work phase"
   assert_grep 'use the same key on its later' "$brief" \
     "secondmate charter did not supersede working phases with later states"
+  assert_grep 'as soon as its dispatch or established answer and its correlated parent line exist' "$brief" \
+    "secondmate charter lost the acknowledge-on-dispatch rule"
+  assert_grep 'never leave a waiting record unacknowledged for more than 5 minutes' "$brief" \
+    "secondmate charter lost the acknowledgement bound"
+  assert_grep 'Keep each of your own foreground waits and polls to 60 seconds or less' "$brief" \
+    "secondmate charter lost the own-wait bound"
   if grep -nE '^-[[:space:]]*$' "$brief" >/dev/null; then
     fail "project-less charter left a stray empty project bullet"
   fi
@@ -1079,6 +1095,8 @@ test_ship_and_scout_teach_validation_round_pause() {
       "$kind brief's Waiting section does not declare the validation round once and then hold it"
     assert_no_grep "is not a \`paused:\` wait" "$brief" \
       "$kind brief still tells workers never to declare a wait they hold in a command"
+    assert_no_grep "heavy-test slot" "$brief" \
+      "$kind brief names a heavy-test slot that nothing defines"
     assert_grep "your own validation round" "$brief" \
       "$kind brief did not teach workers to declare their validation-round wait"
     assert_grep 'Before ending your turn with your own background shell or monitor still running' "$brief" \
@@ -1110,6 +1128,29 @@ test_scout_and_secondmate_load_decision_hold_policy() {
   assert_grep "load \`captain-hold-lifecycle\`" "$charter" \
     "secondmate charter did not load the shared captain-call policy for detailed investigations"
   pass "fm-brief.sh: investigation and visual-review completions load the shared decision policy"
+}
+
+test_scout_completion_write_exception_is_task_scoped() {
+  local home id brief command
+  home="$TMP_ROOT/scout completion home"
+  mkdir -p "$home/data"
+  for id in inventory-alpha inventory-beta; do
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" sample --scout >/dev/null \
+      || fail "scout completion scaffold failed"
+    brief="$home/data/$id/brief.md"
+    command="FM_HOME='$home' bash '$ROOT/bin/fm-captain-hold.sh' complete '$id' --none"
+    assert_grep "except for the task's empty-inventory attestation through \`fm-captain-hold.sh complete --none\`, exactly as specified under Definition of done." "$brief" \
+      "scout outside-write rule did not name its exact completion gate"
+    assert_grep "Only when the reviewed inventory is empty, run \`$command\`." "$brief" \
+      "scout did not receive the empty-inventory command for its own task and home"
+    assert_grep 'This exception permits only that command, not direct metadata edits, another task, or any backlog write.' "$brief" \
+      "scout completion exception granted broader write authority"
+    assert_grep 'If any captain call remains, ask firstmate to register the inventory and attest completion before you report done.' "$brief" \
+      "scout was instructed to write a non-empty inventory itself"
+    assert_grep 'If the command refuses, report the refusal to firstmate and stop rather than bypassing the completion gate.' "$brief" \
+      "scout was allowed to bypass a refused completion"
+  done
+  pass "fm-brief.sh: scouts may attest only their own empty inventory through the guarded command"
 }
 
 # A scout brief offers the Lavish review loop for every compatible board version,
@@ -1310,6 +1351,35 @@ test_no_mistakes_brief_reads_run_status_before_a_wait() {
   assert_no_grep 'a run parked at a gate is waiting on you' "$home/data/brief-parked-run-direct/brief.md" \
     "a direct-PR brief, which drives no run, carried the parked-run rule"
   pass "fm-brief: a no-mistakes worker reads its run's status before declaring a wait and answers a parked gate instead of pausing"
+}
+
+test_inbox_guidance_explains_marked_body_terminator() {
+  local home brief kind id
+  home="$TMP_ROOT/inbox-guidance"
+  for kind in no-mistakes scout secondmate; do
+    id="inbox-$kind"
+    case "$kind" in
+      no-mistakes)
+        FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode no-mistakes >/dev/null \
+          || fail "ship scaffold failed"
+        ;;
+      scout)
+        FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --scout >/dev/null \
+          || fail "scout scaffold failed"
+        ;;
+      secondmate)
+        FM_HOME="$home" FM_SECONDMATE_CHARTER='Supervise assigned work.' \
+          "$ROOT/bin/fm-brief.sh" "$id" --secondmate --no-projects >/dev/null \
+          || fail "secondmate scaffold failed"
+        ;;
+    esac
+    brief="$home/data/$id/brief.md"
+    assert_grep 'fm_task_inbox_body' "$brief" "$kind scaffold omitted the format-aware inbox reader"
+    assert_grep 'body-terminator=1' "$brief" "$kind scaffold omitted the body terminator marker"
+    assert_grep 'not part of the logical message body' "$brief" "$kind scaffold omitted the synthetic terminator meaning"
+    assert_grep 'preserve any intentional trailing newlines' "$brief" "$kind scaffold omitted trailing-newline preservation"
+  done
+  pass "fm-brief: inbox guidance explains marked synthetic terminators in every scaffold"
 }
 
 test_worker_role_scope() {
@@ -1845,12 +1915,14 @@ test_secondmate_directory_paths_are_absolute_and_output_is_stable
 test_pause_verb_override_renders_all_brief_scaffolds
 test_ship_and_scout_teach_validation_round_pause
 test_scout_and_secondmate_load_decision_hold_policy
+test_scout_completion_write_exception_is_task_scoped
 test_scout_and_secondmate_scaffold
 test_scout_lavish_line_follows_presentation_floor
 test_inbox_listing_command_is_safe_on_empty_inbox
 test_workers_wait_without_spending_turns
 test_wait_no_turns_absent_keeps_the_previous_brief
 test_no_mistakes_brief_reads_run_status_before_a_wait
+test_inbox_guidance_explains_marked_body_terminator
 test_home_brief_include_is_appended_last
 test_base_branch_is_rendered_and_bounded
 test_pr_and_from_branch_are_rendered_and_bounded

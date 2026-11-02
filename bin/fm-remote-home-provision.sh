@@ -17,6 +17,9 @@
 # reply promise, which the subsystem can only carry on the parent's own
 # filesystem, is never mistaken for one this child could hold - and the
 # .fm-secondmate-home marker commits the complete seed last.
+# A home that does not exist yet is refused before staging or cloning when
+# bin/fm-disk-alarm.sh --gate lane refuses on this host. An existing home is not
+# gated. bin/fm-disk-alarm.sh owns that reading.
 # A newly created home is removed on failure. An existing matching seeded home
 # is converged only through guarded ordinary-file updates and new project clones.
 set -eu
@@ -177,6 +180,7 @@ if [ -e "$FM_HOME" ] || [ -L "$FM_HOME" ]; then
     die "unmarked existing remote home contains operational data"
   fi
 else
+  "$SCRIPT_DIR/fm-disk-alarm.sh" --gate lane >/dev/null || exit 1
   # Clone into a staging path this attempt owns, then publish by rename: a
   # competing cleanup or rollback aimed at the absent public home cannot
   # remove a directory a live clone is still writing. Verify the sentinel

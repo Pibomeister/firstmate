@@ -14,7 +14,7 @@ This skill is the single owner of the completion-aware profile-array selection p
 `harness-adapters` owns harness verification, model/provider discovery, and effort fallback.
 `quota-axi` remains data-only: it publishes `spendPriority` as a comparable scalar and never recommends, selects, ranks, or infers a route.
 Do not add a daemon, opaque composite score, routing wrapper, hard-coded model-specific policy, or producer-side route recommendation.
-The [worker helper](../../../bin/fm-quota-choose.sh) and [typed resolver](../../../docs/configuration.md#typed-dispatch-resolution-env-typesafe_api_key) own their deterministic mapping boundaries.
+The [worker helper](../../../bin/fm-quota-choose.sh) and [typed resolver](../../../docs/configuration.md#typed-dispatch-resolution-env-fm_dispatch_provider-fm_dispatch_model) own their deterministic mapping boundaries.
 
 ## Worker-side quota helper
 
@@ -30,7 +30,7 @@ Authoritative multi-provider routing - including provider discovery from the har
 Use it only when the brief already fixed the candidate order and every candidate's provider is the harness's primary family.
 It does not replace the reasoning-class, runway-feasibility, or authentication gates above.
 Firstmate can optionally arm `bin/fm-procevent-quota.sh` for a recurring mid-task check that wakes when the tracked provider drops below its configured threshold or its runway becomes `exhausted_now`.
-The opt-in [typed resolver](../../../docs/configuration.md#typed-dispatch-resolution-env-typesafe_api_key) has its own documented gates.
+The opt-in [typed resolver](../../../docs/configuration.md#typed-dispatch-resolution-env-fm_dispatch_provider-fm_dispatch_model) has its own documented gates.
 It never removes this skill's authority, and its `ambiguous`, `escalate`, and `error` outcomes return here.
 
 ## Read the default TOON
@@ -46,13 +46,13 @@ Do not read `--json` on the normal path, and do not reach for `--full` to rebuil
 After reading the TOON, fall back to one `quota-axi --json` call only when that TOON is genuinely ambiguous for the decision, or when the installed quota-axi is somehow below the floor so its TOON lacks `spendPriority`.
 Ambiguous means a candidate's `spendPriority` is the literal `unknown` or unmeasurable, a real tie still needs extra evidence, or a candidate's eligibility is unclear from `quota[]` plus `attention[]`.
 The fallback therefore has an explicit TOON-then-JSON call sequence; reuse its JSON result and do not take any further quota snapshots.
-Below-floor is rare: bootstrap enforces `FM_QUOTA_AXI_MIN` and normally reports `MISSING` before dispatch; if an intake somehow reaches an older build whose TOON lacks `spendPriority`, use the defensive `--json` fallback rather than treating the missing scalar as healthy.
+Below-floor is rare: bootstrap enforces `FM_QUOTA_AXI_MIN` and normally reports `OUTDATED` before dispatch; if an intake somehow reaches an older build whose TOON lacks `spendPriority`, use the defensive `--json` fallback rather than treating the missing scalar as healthy.
 `--json` is a defensive belt, not a habit; never reach for it because it feels more complete.
 Read `quota-axi auth --json` only when a candidate's credential surface is in question.
 
 For each candidate, preserve explicit `harness`, `model`, and `provider`; `harness-adapters` owns identity, and model/provider never infer harness.
 
-## Three gates, then spendPriority
+## Three gates, then provider preference and spendPriority
 
 Apply the three cheap orthogonal gates first.
 `spendPriority` ranks only among candidates that pass all three.
@@ -67,6 +67,7 @@ Confirm the catalog lists the candidate's model and record the provider family i
 A model the catalog does not list is concrete contradictory evidence: block that candidate and quote the catalog result.
 Apply quota at the granularity the vendor actually supplies.
 A provider-level or `all_models`/`all_products` scope bounds every model you established in that family within the candidate's matched account, including one with no window of its own.
+Cursor is the exception: read its candidate by pool, because the `all_models` minimum can reflect a pool that does not bill that model; `quota_applicable` in `bin/fm-quota-axi-lib.sh` owns the pool mapping and floor.
 A named-model or named-product scope is an additional bound for that model alone.
 Match the candidate to its `quota[]` row by that established provider, its `accountKey` when the snapshot is schema 6 (a Pi lane's auth provider id such as `openai-codex-work`, or `codex-home` for native Codex including Pi's `codex-native/` adapter, then the `default` row, else unmeasured; never a row picked by position, never rows summed across accounts), and scope; a stale, auth-required, or unmeasurable scope is named in `attention[]` instead of a fabricated number.
 
@@ -95,7 +96,15 @@ Malformed configuration is an actionable error, not a candidate to rank around.
 
 Keep only candidates that meet the required reasoning class for this task (a simple bug fix versus very-difficult design).
 Never use `spendPriority` or remaining quota to silently replace that class.
-When every remaining candidate is tight, dispatch inside the strongest-reasoning class if one of those candidates can proceed, or stop and report that the strongest-class choice cannot proceed rather than downgrading it to spend or conserve quota.
+When every remaining candidate is tight, dispatch inside the strongest-reasoning class if one of those candidates can proceed.
+If none in that class can proceed, reroute through the pool below to the strongest available class, reaching another provider or account when needed, disclose the downgrade, and never pause new work on a quota floor.
+The reroute pool, in order, is the matched profile array (including same provider or account candidates), the configured default profile set, then the static crewmate harness profile.
+A rule's profile list alone is not a restriction: restricted means an explicit captain instruction recorded for that task or a captain-pinned account, and the pool then holds only the candidates that restriction permits.
+A rule with `approval: "captain"` still escalates: never wait on quota, but never reroute around a captain approval.
+When no pool candidate can proceed, whether because reroute would violate a restriction or because every candidate is `exhausted_now`, blocked, or known to be below an explicit captain floor, the item stays queued with the reason reported and other work proceeds; never poll-loop waiting for quota or authority.
+The strongest reasoning class wins across pool steps, and the earliest step breaks ties within a class.
+Within that step, rank eligible candidates under [Rank by spendPriority](#rank-by-spendpriority), break `spendPriority` ties by greater known runway, and never pick by array order.
+When only a weaker class is eligible, dispatch it and disclose the class drop, unless the captain required the stronger class in a restriction, which removes weaker candidates from the pool.
 
 ### 3. Runway feasibility floor
 
@@ -104,28 +113,43 @@ Read `runway` from the `quota[]` row: `through_reset` passes this generic feasib
 `exhausted_now` is zero, and `projected_exhaustion` uses the matching `exhaustion[]` row's `usableRunwaySeconds`.
 A high `spendPriority` on a nearly empty window that will exhaust soon must not route into a mid-task stall.
 Unknown or unmeasurable runway stays eligible with disclosed uncertainty and is never assumed to pass.
-Do not invent a generic percentage floor, and honor an explicit captain floor for a candidate when one exists.
+When every matched candidate fails this floor on known evidence, walk the reroute pool from gate 2 and dispatch an eligible candidate that does not fail this floor, choosing by gate 2's class and step order and disclosing the reroute and any class drop.
+Only when the pool has no such candidate, dispatch from the strongest eligible class in the pool, using the greatest known usable runway above zero only within that class, disclose the floor breach and any class drop, and never pause waiting for quota or authority.
+Do not invent a generic percentage floor.
+An explicit captain floor is a floor the captain recorded as an instruction for that task; a configured rule or profile `floor` stays a hint.
+An explicit captain floor outranks the greatest-runway rule: a candidate known to be below it is never dispatched, and gate 2's queued outcome applies when no other pool candidate can proceed.
 
 ## Rank by spendPriority
 
-Among candidates that pass all three gates, pick the highest known `spendPriority`.
+Among candidates that pass all three gates, first apply the optional top-level `preferred_provider` from `config/crew-dispatch.json`.
+Its schema is owned by [Crew dispatch profiles](../../../docs/configuration.md#crew-dispatch-profiles-configcrew-dispatchjson).
+Within the already matched rule or default, restrict ranking to eligible candidates of that family when any remain.
+Do not introduce other profiles, change a Claude-only rule, or override an explicit captain choice or approval requirement.
+Only concrete evidence that every matched preferred candidate is ineligible authorizes fallback to other families.
+Unknown quota, missing account evidence, and unrankable scalars do not establish ineligibility.
+If preferred candidates remain eligible but none can be ranked, pick among those preferred candidates on known evidence, disclose the uncertainty, and proceed without switching families, escalating, or waiting.
+When no matched profile belongs to the preferred family, preserve the rule's candidate set.
+With the field absent, keep the existing candidate set unchanged.
+Print the preferred-family decision, including the reason for any fallback.
+
+Within the resulting candidate set, pick the highest known `spendPriority`.
 A higher known scalar is better: positive means paid allowance is on track to reach reset unused, `0` is exact utilization, and negative means overdrawn against the reset clock.
 Rank only from comparable known scalars.
 Never treat absent, `unknown`, or unmeasurable `spendPriority` as zero or as healthy; `0` means exact utilization, a different claim from unknown.
 An unknown `spendPriority` keeps the candidate eligible with disclosed uncertainty.
 Prefer known viable evidence when otherwise comparable.
-After the permitted TOON-to-JSON fallback, escalate to Firstmate instead of routing if no candidate can be ranked or runway uncertainty prevents proving the feasibility floor for any candidate that could be selected.
-Never resolve that terminal uncertainty by treating unknown as healthy or by choosing arbitrarily.
+After the permitted TOON-to-JSON fallback, route to the best-evidenced eligible candidate, disclosing the uncertainty, and never hold work waiting for quota.
+If every candidate failed the runway feasibility floor, apply the all-fail rule from gate 3 instead.
+Never resolve uncertainty by treating unknown as healthy.
 Show the scalar or the literal `unknown` in the rationale; do not hide it in a score.
 
 Do not compare headroom against runway by hand.
 Do not use pace or signed reserve as a later tie-break layer.
 Do not read `aheadWindowIds`, `behindWindowIds`, `onPaceWindowIds`, `limitingWindowIds`, or other window-id lists to reconstruct what `spendPriority` already computed.
 
-Genuine ties: stop and report every tied candidate for captain choice.
-Do not select by array order, harness name, or another arbitrary identity ordering.
+Genuine ties on spendPriority: rank with stated evidence (prefer higher effort when harness and model match but effort differs), route to the chosen candidate, and report the criterion plainly without array order, harness name, or identity ordering.
 Report duplicate concrete profiles as a configuration error.
 
-Account for every candidate visibly before selecting or escalating, naming its catalog evidence, provider relation, applicable quota and authentication facts, remaining uncertainty, fit and reasoning class, `spendPriority`, and runway-versus-horizon result.
+Account for every candidate visibly before selecting, naming its catalog evidence, provider relation, applicable quota and authentication facts, remaining uncertainty, fit and reasoning class, `spendPriority`, and runway-versus-horizon result.
 A blocked credential report must name `harness`, `model`, authentication surface, and concrete failure evidence; never emit a bare `Grok unauthenticated` statement.
 Never conclude with an unexplained "best quota" label.
