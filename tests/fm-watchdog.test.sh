@@ -643,6 +643,54 @@ council-seats=claude:haiku,agy:flash'
   pass "boundary: owner-reserved holds stay held; an ordinary decision is settled by a unanimous blind council"
 }
 
+test_secret_looking_decision_reaches_no_council() {
+  local sentinel=FAKESENTINEL42 rec_dirs
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  transcript 100 "Working."
+  {
+    printf 'needs-decision [at=%s] [key=push-layout]: push failed for https://x-access-token:%s@example.invalid/o/r; pick A or B\n' "$((BASE - 9900))" "$sentinel"
+    printf 'needs-decision [at=%s] [key=ghp_%s]: A or B?\n' "$((BASE - 9800))" "$sentinel"
+    printf 'needs-decision [at=%s] [key=cache-layout]: A (recommended) flat keys or B nested keys?\n' "$((BASE - 9000))"
+  } > "$H/state/t1.status"
+  run_wd 0 once >/dev/null 2>&1 || fail "first pass failed"
+  assert_grep "2 decisions held for the owner" "$H/data/watchdog/status.md" "secret-looking decisions are held gaps"
+  assert_equals 1 "$(ledger_rows decisions nudge pending)" "the clean decision still gets its nudge"
+  run_wd 2000 once >/dev/null 2>&1 || fail "second pass failed"
+  assert_equals 1 "$(ledger_rows decision:cache-layout council "done")" "the clean decision still reaches council"
+  assert_equals 0 "$(ledger | grep -c 'decision:push-layout')" "a secret-looking record gets no council"
+  assert_equals 2 "$(grep -cE '^(claude|agy) -p' "$H/model.log")" "each seat was called once, for the clean decision"
+  assert_equals 1 "$(find "$H/data/watchdog/rulings" -type f | wc -l | tr -d ' ')" "only the clean decision has a ruling file"
+  assert_grep "cache-layout" "$H/prompt.log" "a seat saw the clean decision"
+  rec_dirs="$H/state/watchdog $H/data/watchdog $H/model.log $H/prompt.log $H/typed.log"
+  # shellcheck disable=SC2086
+  if grep -rFq "$sentinel" $rec_dirs 2>/dev/null; then fail "the withheld text reached a model, a gap, a ruling, or a nudge"; fi
+  pass "decisions: secret-looking text reaches no council seat, ruling, gap, or nudge; a clean decision still settles"
+}
+
+test_secret_looking_model_switch_dialog_is_held() {
+  local sentinel=FAKESENTINEL42
+  make_home "curl run with Bearer $sentinel"$'\n\nYou have hit your weekly limit for Opus.\n\n ❯ 1. Switch to Sonnet\n   2. Buy more credits\n\nEnter to confirm · Esc to cancel' 'models=claude:haiku,agy:flash'
+  fake_models "$H" fail ok:"OPTION 1"
+  transcript 100 "Working."
+  run_wd 0 once >/dev/null 2>&1 || fail "pass failed on the secret dialog"
+  assert_equals 0 "$(ledger | awk -F'\t' '$6 == "key"' | wc -l | tr -d ' ')" "no key goes to a secret-looking dialog: $(ledger | cut -f5-8)"
+  [ ! -s "$H/model.log" ] || fail "a model saw a secret-looking dialog: $(cat "$H/model.log")"
+  assert_absent "$H/prompt.log" "no prompt was built for any model"
+  [ ! -s "$H/typed.log" ] || fail "something was typed: $(cat "$H/typed.log")"
+  assert_grep "looks like a secret; held" "$H/data/watchdog/status.md" "the hold is a gap"
+  if grep -rFq "$sentinel" "$H/state/watchdog" "$H/data/watchdog"; then fail "the withheld text reached watchdog records"; fi
+
+  make_home $'You have hit your weekly limit for Opus.\n\n ❯ 1. Switch to Sonnet\n   2. Buy more credits\n\nEnter to confirm · Esc to cancel' 'models=claude:haiku,agy:flash'
+  fake_models "$H" fail ok:"OPTION 1"
+  transcript 100 "Working."
+  run_wd 0 once >/dev/null 2>&1 || fail "pass failed on the ordinary dialog"
+  assert_grep "agy -p" "$H/model.log" "the fallback model judges an ordinary dialog"
+  assert_equals 1 "$(ledger_rows dialog key pending)" "an ordinary dialog still gets its key: $(ledger | cut -f5-8)"
+  pass "model-switch dialog: secret-looking text reaches no model on any fallback; an ordinary one still gets its key"
+}
+
 test_split_council_gives_no_ruling() {
   make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
 council-seats=claude:haiku,agy:flash'
@@ -1949,6 +1997,8 @@ fm_test_run \
   test_reserved_task_or_key_is_held_and_refused_nudges_are_gaps \
   test_second_mate_restart_ends_the_pass \
   test_reserved_model_switch_dialog_is_held \
+  test_secret_looking_decision_reaches_no_council \
+  test_secret_looking_model_switch_dialog_is_held \
   test_unknown_composer_guards_the_nudge \
   test_orca_turn_probe_keeps_errors_unknown \
   test_no_activity_source_is_not_reported_ok \

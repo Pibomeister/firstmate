@@ -783,6 +783,7 @@ wd_handle_dialog() {
       opts=$(fm_wd_dialog_options "$O_PANE")
       text=$(fm_wd_dialog_text "$O_PANE")
       if fm_wd_reserved "$text"; then wd_gap "model-switch dialog names an owner-reserved category; held"; return 0; fi
+      if fm_secret_like "$text"; then wd_gap "model-switch dialog text looks like a secret; held"; return 0; fi
       pick=$(wd_judge dialog '(OPTION [0-9]{1,2}|NONE)' "A coding agent's terminal shows this dialog about models or usage limits:
 $text
 Options:
@@ -815,16 +816,17 @@ wd_handle_decisions() {
     [ -n "$key" ] || continue
     [ "$age" -ge "$secs" ] || continue
     if case "$key" in captain-hold-*) true ;; *) false ;; esac || fm_wd_reserved "$task $key $summary" ||
+       fm_secret_like "$task $key $summary" ||
        printf ',%s,' "$(cfg reserved-keys '')" | grep -Fq ",$key,"; then
       held=$((held + 1))
-      [ "$held" -gt 3 ] || held_keys="$held_keys${held_keys:+, }$task/$key"
+      [ "$held" -gt 3 ] || fm_secret_like "$task/$key" || held_keys="$held_keys${held_keys:+, }$task/$key"
       continue
     fi
     aged=$((aged + 1))
     [ "$aged" -gt 5 ] || keys="$keys${keys:+, }$task/$key"
     printf '%s\t%s\t%s\n' "$task" "$key" "$summary" >> "$WD/.decisions-aged"
   done < "$WD/.decisions"
-  [ "$held" -eq 0 ] || wd_gap "$held decisions held for the owner (never touched), e.g. $held_keys"
+  [ "$held" -eq 0 ] || wd_gap "$held decisions held for the owner (never touched)${held_keys:+, e.g. $held_keys}"
   [ "$aged" -gt 0 ] || return 0
   [ "$O_TURN" = 1 ] && return 0
   nudged=$(fm_wd_last_epoch "$LEDGER" "$O_HOME" decisions nudge '^(pending|dry-run)$')
