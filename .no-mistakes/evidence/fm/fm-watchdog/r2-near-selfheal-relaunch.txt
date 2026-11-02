@@ -1,0 +1,61 @@
+
+=== S10b adversarial: no model; near loop + static pane reaches frozen recovery
+  scan 1 static=0s
+  scan 2 static=5s
+  scan 3 static=0s
+  scan 4 static=5s
+  scan 5 static=0s
+  scan 6 static=5s
+  scan 7 static=9s
+frozen	nudge	pending	Watchdog (automated, not the captain or the owner): nothing changed for 0 minutes while 1 inputs wait. Drain the wake queue and a
+## Homes
+- nl9: FROZEN, last turn 50m ago, owed 1, ctx unknown
+- nl9: possible loop; no judge answer, so it stays unconfirmed
+pane shows doorbell: 2
+
+=== S10c near repeats showing real progress, real haiku
+  scan 1 static=0s
+  scan 2 static=5s
+  scan 3 static=0s
+  scan 4 static=0s
+  scan 5 static=6s
+frozen	nudge	pending	Watchdog (automated, not the captain or the owner): nothing changed for 0 minutes while 1 inputs wait. Drain the wake queue and a
+loop	claude:haiku	ok	2	230	WORK	0.0007748900000000001
+## Homes
+- nl10: FROZEN, last turn 50m ago, owed 1, ctx unknown
+pane shows doorbell: 2
+
+=== S15 recurrence files a self-heal issue through the real script; gh is a logging shim on PATH, nothing is published
+unread-input	nudge	pending	Watchdog (automated, not the captain or the owner): 1 inputs have waited 50 minutes. Drain th
+unread-input	nudge	pending	Watchdog (automated, not the captain or the owner): 1 inputs have waited 50 minutes. Drain th
+unread-input	nudge	pending	Watchdog (automated, not the captain or the owner): 1 inputs have waited 50 minutes. Drain th
+watchdog-unread-input	self-heal	pending	Watchdog: unread-input recurs on sh7
+watchdog-unread-input	self-heal	done	created 1 https://example.invalid/issues/1
+frozen	nudge	pending	Watchdog (automated, not the captain or the owner): nothing changed for 0 minutes while 1 inputs wa
+gh issue list --repo pibomeister/agent-kit --label failure-class:watchdog-unread-input --state open --json number --jq .[0].number // empty
+gh issue create --repo pibomeister/agent-kit --title Watchdog: unread-input recurs on sh7 --label self-heal --label failure-class:watchdog-unread-input --body ## Failure 
+
+=== S15b no issue-repo: recurrence becomes a gap, nothing filed
+-- pass 1: 1 nudges; gaps: 
+-- pass 2: 2 nudges; gaps: 
+-- pass 3: 3 nudges; gaps: - sh8: self-heal issue not filed for watchdog-unread-input: no issue-repo configured
+-- pass 4: 4 nudges; gaps: 
+0
+
+=== S16b second mate frozen: restart goes through the parent's real fm-control relaunch
+  scan 1 static=0s
+  scan 2 static=0s
+  scan 3 static=6s
+frozen	restart	pending	second mate relaunch through its parent; handoff=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.aSXHcV/homes/par6/dat
+frozen	restart	failed	fm-control relaunch refused or failed
+## Homes
+- par6: ok, last turn 1m ago, ctx unknown
+- sm6: FROZEN, last turn 50m ago, owed 1, ctx unknown
+
+## Actions since last read (2026-11-01T22:56:21Z)
+- 23:56 sm6 restart frozen failed
+
+## Open gaps
+- no model configured; judged symptoms are reported only
+- sm6: self-heal issue not filed for watchdog-frozen: no issue-repo configured
+  pane_static=0s dialog=none composer=empty turn_running=0 cpu_busy=0

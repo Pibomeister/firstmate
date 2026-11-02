@@ -1,0 +1,48 @@
+revision: e7bb05cac4da93972bf2198be58440a08bc00bbc; date: 2026-11-02T00:37:58Z
+
+=== P0 start a real logged-in Claude primary in the lab home; it runs its own session start
+  ┃
+                                                                    tmux focus-events off · add 'set -g focus-events on' to ~/.tmux.conf and reattach for focus 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle)
+{"backend":"tmux","target":"%0","present":true}
+"fce6a8a0-d2ba-4e55-85af-691a25d1552d"
+subject fm-lab.vua2yL (/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.vua2yL)
+  endpoint=tmux:%0 session=fce6a8a0-d2ba-4e55-85af-691a25d1552d lock_pid=66960 alive=1 instance=match
+  pane_static=0s dialog=none composer=empty turn_running=0 cpu_busy=unknown
+  transcript_age=3s loop=none/0 restart_requested=0 ctx=unknown
+  owed=0 oldest=0s afk=0 daemon=unknown heartbeat_age=8s
+
+=== P1 clean unsent draft on the real composer: one Enter, session answers
+  pane_static=3s dialog=none composer=pending turn_running=0 cpu_busy=0
+pasted-input	key	pending	press Enter: submit text left unsent
+pasted-input	key	done	pane changed
+  ┃│
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle)
+
+=== P2 adversarial: merge draft stays unsent on the real composer
+pasted-input	key	refused	the draft names a merge, deploy, or release word; never accepted
+- fm-lab.vua2yL: unsent draft names a merge, deploy, or release word; Enter not pressed
+[ Enhance ⌃E ]                                                                                                                                                  
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ merge #12 now please
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle)
+
+=== P-end status
+## Homes
+- fm-lab.vua2yL: PASTED-INPUT, last turn 0m ago, owed 0, ctx unknown
+
+## Actions since last read (2026-11-01T23:38:44Z)
+- 00:38 fm-lab.vua2yL key pasted-input done
+- 00:38 fm-lab.vua2yL key pasted-input refused
+- 00:38 fm-lab.vua2yL key pasted-input refused
+
+## Open gaps
+- fm-lab.vua2yL: unsent draft names a merge, deploy, or release word; Enter not pressed
+- no model configured; judged symptoms are reported only

@@ -1,0 +1,57 @@
+old lock pid 79064, transcript session 27f0ec1f-f5ce-4316-ad5b-b78bfcc2e0fd
+--- pass 1 16:48:55 lock=79064
+- fm-lab.qHagTO: RESTART-REQUESTED, last turn 0m ago, owed 0, ctx 5%
+1793573332 handoff-request nudge pending Watchdog (automated, not the captain or the owner): context is low. Write a full handoff to data/handoff-<name>.md in your home, then create
+--- pass 2 16:49:11 lock=79064
+- fm-lab.qHagTO: RESTART-REQUESTED, last turn 0m ago, owed 0, ctx 5%
+1793573350 handoff-request nudge done transcript advanced
+--- pass 3 16:49:29 lock=79064
+- fm-lab.qHagTO: RESTART-REQUESTED, last turn 0m ago, owed 0, ctx 5%
+1793573368 restart-requested restart pending token=6a0ee5608db3331d old_pid=79064 handoff=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.qHagTO/data/watchdog/handoffs/f
+--- pass 4 16:49:45 lock=6554
+- fm-lab.qHagTO: RESTART-AWAITING-PICKUP, last turn 0m ago, owed 0, ctx unknown
+1793573368 restart-requested restart pending token=6a0ee5608db3331d old_pid=79064 handoff=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.qHagTO/data/watchdog/handoffs/f
+--- pass 5 16:50:01 lock=6554
+- fm-lab.qHagTO: ok, last turn 0m ago, ctx unknown
+1793573400 restart-requested restart done pickup verified; new lock pid 6554
+
+1793573182 pasted-input key pending press Enter: submit text left unsent
+1793573184 pasted-input key done pane changed
+1793573286 unread-input nudge pending Watchdog (automated, not the captain or the owner): 1 inputs have waited 33 minutes. Drain the wake queue and act on it.
+1793573318 unread-input nudge done transcript advanced
+1793573332 handoff-request nudge pending Watchdog (automated, not the captain or the owner): context is low. Write a full handoff to data/handoff-<name>.md in your home, then create
+1793573350 handoff-request nudge done transcript advanced
+1793573368 restart-requested restart pending token=6a0ee5608db3331d old_pid=79064 handoff=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.qHagTO/data/watchdog/handoffs/f
+1793573400 restart-requested restart done pickup verified; new lock pid 6554
+
+-rw-r--r--@ 1 eduardopicazo  staff  1267 Nov  1 16:49 /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.qHagTO/data/handoff-firstmate.md
+
+/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.qHagTO/data/watchdog/handoffs:
+total 8
+drwxr-xr-x@ 3 eduardopicazo  staff    96 Nov  1 16:49 .
+drwxr-xr-x@ 4 eduardopicazo  staff   128 Nov  1 16:50 ..
+-rw-r--r--@ 1 eduardopicazo  staff  3261 Nov  1 16:49 fm-lab.qHagTO-1237056640-1793573368.md
+
+/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.qHagTO/state/watchdog/pickups:
+total 8
+drwxr-xr-x@ 3 eduardopicazo  staff   96 Nov  1 16:49 .
+drwxr-xr-x@ 5 eduardopicazo  staff  160 Nov  1 16:50 ..
+-rw-r--r--@ 1 eduardopicazo  staff   28 Nov  1 16:49 6a0ee5608db3331d
+-rw-r--r--@ 1 eduardopicazo  staff  0 Nov  1 16:49 /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.qHagTO/state/.watchdog-restart-request
+primary:0: firstmate* (1 panes) [80x24] 
+# Firstmate watchdog - Eduardos-MacBook-Pro-2
+updated 2026-11-01T22:50:01Z, scan every 120s, mode act, restart on
+STALE IF NOT UPDATED BY 2026-11-01T23:01:01Z (watchdog may be down)
+models: none; spent 24h $0 of $1.00
+
+## Homes
+- fm-lab.qHagTO: ok, last turn 0m ago, ctx unknown
+
+## Actions since last read (2026-11-01T21:50:01Z)
+- 22:46 fm-lab.qHagTO key pasted-input done
+- 22:48 fm-lab.qHagTO nudge unread-input done
+- 22:49 fm-lab.qHagTO nudge handoff-request done
+- 22:50 fm-lab.qHagTO restart restart-requested done
+
+## Open gaps
+- no model configured; judged symptoms are reported only

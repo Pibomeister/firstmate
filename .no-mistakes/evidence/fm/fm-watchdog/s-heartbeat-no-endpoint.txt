@@ -1,0 +1,37 @@
+
+=== heartbeat written outside a pane: terminal fields are objects; blocking permission dialog in the real pane
+subject blind (/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.qHagTO/homes/blind)
+  endpoint=none:none session=c7613639-4180-4806-a961-71e40b8aad8a lock_pid=34062 alive=1 instance=match
+  pane_static=0s dialog=none composer=unknown turn_running=unknown cpu_busy=unknown
+  transcript_age=101s loop=none/0 restart_requested=0 ctx=unknown
+  owed=0 oldest=0s afk=0 daemon=unknown heartbeat_age=unknowns
+## Homes
+- blind: ok, last turn 1m ago, ctx unknown
+
+## Actions since last read (2026-11-01T22:04:24Z)
+
+## Open gaps
+- no model configured; judged symptoms are reported only
+bin/fm-watch.sh:4222:# single-flight so no read can hold a poll. bin/fm-heartbeat.sh's header owns the
+bin/fm-watch.sh:4234:    "${FM_HEARTBEAT_BIN:-$SCRIPT_DIR/fm-heartbeat.sh}" --write </dev/null >/dev/null 2>&1 &
+    context_json=$(heartbeat_context_json primary "$transcript" "$backend" "$target")
+  else
+    context_json=$(heartbeat_context_json primary "$transcript")
+  fi
+  jq -n \
+    --arg backend "$backend" \
+    --arg target "$target" \
+    --argjson present "$present" \
+    --arg composer "$composer" \
+    --arg trusted "$session_id" \
+    --arg anchor "$anchor_pid" \
+    --argjson last_turn "$turn_json" \
+    --argjson context_left "$context_json" \
+    'def u(r): {unknown:true,reason:r};
+    {
+      terminal:{
+        backend:(if $backend == "" then u("no supervisor backend discovered") else $backend end),
+        target:(if $target == "" then u("no supervisor target discovered") else $target end),
+        present:$present
+      },
+      session:{

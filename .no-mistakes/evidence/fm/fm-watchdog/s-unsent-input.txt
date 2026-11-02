@@ -1,0 +1,69 @@
+=== clean draft: one Enter on a real Claude composer
+  pane_static=1s dialog=none composer=pending turn_running=0 cpu_busy=0
+  pane_static=0s dialog=none composer=empty turn_running=0 cpu_busy=0
+❯ Reply with exactly the word DRAFTOK and nothing else.
+⏺ DRAFTOK
+✻ Churned for 1s · done 4:46 PM
+  #1 This is a disposable lab test. Run bin/fm-session-start.sh once, then echo $FM_HOME, then reply with just READY. Do not do anything else.    [-]
+  ┃││
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle)
+1793573182 pasted-input key pending press Enter: submit text left unsent
+1793573184 pasted-input key done pane changed
+
+=== adversarial: merge draft stays unsent
+[ Enhance ⌃E ]                                                                                                                                    [-]
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ please merge PR 5 now
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle)
+1793573182 pasted-input key pending press Enter: submit text left unsent
+1793573184 pasted-input key done pane changed
+## Open gaps
+- fm-lab.qHagTO: unsent draft names a merge, deploy, or release word; Enter not pressed
+- no model configured; judged symptoms are reported only
+
+=== adversarial: large paste with merge text renders a placeholder
+  ┃││
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ [Pasted text #1 +31 lines]
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  paste again to expand
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ [Pasted text #1 +31 lines]
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle)
+1793573182 pasted-input key pending press Enter: submit text left unsent
+1793573184 pasted-input key done pane changed
+## Open gaps
+- no model configured; judged symptoms are reported only
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle)
+=== paste placeholder, more passes
+  pane_static=23s dialog=none composer=pending turn_running=0 cpu_busy=0
+## Open gaps
+- fm-lab.qHagTO: unsent input is a paste placeholder, or its whole draft boundary is not proven (plain, indented, left-bar, and titled composers are unsupported); Enter not pressed
+  pane_static=27s dialog=none composer=pending turn_running=0 cpu_busy=0
+## Open gaps
+- fm-lab.qHagTO: unsent input is a paste placeholder, or its whole draft boundary is not proven (plain, indented, left-bar, and titled composers are unsupported); Enter not pressed
+  pane_static=31s dialog=none composer=pending turn_running=0 cpu_busy=0
+## Open gaps
+- fm-lab.qHagTO: unsent input is a paste placeholder, or its whole draft boundary is not proven (plain, indented, left-bar, and titled composers are unsupported); Enter not pressed
+  pane_static=36s dialog=none composer=pending turn_running=0 cpu_busy=0
+## Open gaps
+- fm-lab.qHagTO: unsent input is a paste placeholder, or its whole draft boundary is not proven (plain, indented, left-bar, and titled composers are unsupported); Enter not pressed
+  pane_static=41s dialog=none composer=pending turn_running=0 cpu_busy=0
+## Open gaps
+- fm-lab.qHagTO: unsent input is a paste placeholder, or its whole draft boundary is not proven (plain, indented, left-bar, and titled composers are unsupported); Enter not pressed
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ [Pasted text #2 +31 lines]
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle)
+1793573182 pasted-input key pending press Enter: submit text left unsent
+1793573184 pasted-input key done pane changed
+      91 /Users/eduardopicazo/.claude/projects/-Users-eduardopicazo--no-mistakes-worktrees-075d7f40c28a-01M6BXD59WG48Z7A563RGTYE3S/27f0ec1f-f5ce-4316-ad5b-b78bfcc2e0fd.jsonl
+0

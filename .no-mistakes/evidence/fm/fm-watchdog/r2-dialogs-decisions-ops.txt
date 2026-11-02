@@ -1,0 +1,110 @@
+
+=== S6 feedback survey: key 0 clears it
+dialog	key	pending	press 0: dismiss the feedback survey
+dialog	key	done	dialog left the pane
+pane shows doorbell: 0
+
+=== S7 model picker: real haiku picks a non-spending option; digit reaches the pane
+dialog	key	pending	press 2: model-switch option 2: Switch to Sonnet
+dialog	key	done	dialog left the pane
+dialog	claude:haiku	ok	2	8	OPTION 2	0.0006618900000000002
+pane shows doorbell: 0
+
+=== S8 reserved picker: held, no model call, no key
+- pickr: model-switch dialog names an owner-reserved category; held
+pane shows doorbell: 0
+
+=== S9 unproven question dialog: no key, gap
+- q: question dialog waiting; its kind is not proven, so no key is sent
+pane shows doorbell: 0
+
+=== S10 near loop, real haiku: reworded re-arms and only timer tools -> LOOP -> ladder nudge
+  transcript_age=3000s loop=none/1 restart_requested=0 ctx=unknown
+unread-input	nudge	pending	Watchdog (automated, not the captain or the owner): 1 inputs have waited 50 minutes. Drain the wake queue and act on it.
+pane shows doorbell: 2
+## Homes
+- nl: UNREAD-INPUT, last turn 50m ago, owed 1, ctx unknown
+
+=== S10b adversarial: no model; near loop plus frozen pane still reaches frozen recovery
+unread-input	nudge	pending	Watchdog (automated, not the captain or the owner): 1 inputs have waited 50 minutes. Drain the wake queue and act on it.
+## Homes
+- nl2: ok, last turn 50m ago, ctx unknown
+pane shows doorbell: 2
+
+=== S11 decisions: nudge first, then real two-seat council on a benign choice; reserved ones held with no model
+decisions	nudge	pending	Watchdog (automated, not the captain or the owner): 1 open decisions have waited over 0 minutes, oldest first: t1/cache-size. 
+decisions	nudge	pending	Watchdog (automated, not the captain or the owner): 1 open decisions have waited over 0 minutes, oldest first: t1/cache-size. 
+pane shows doorbell: 2
+
+=== S12 quota floor and dead away daemon get nudges
+daemon-dead	nudge	pending	Watchdog (automated, not the captain or the owner): away mode is on but the away daemon is not running. Re-arm it with bin/f
+quota:t9	nudge	pending	Watchdog (automated, not the captain or the owner): task t9 is parked at a quota floor. Reroute it to another provider or accou
+## Homes
+- qa: DAEMON-DEAD, last turn 1m ago, owed 0, ctx unknown
+pane shows doorbell: 4
+       2
+
+=== S13 do-not-touch: frozen + owed; nothing typed, refusal recorded
+unread-input	nudge	refused	endpoint is on do-not-touch
+unread-input	nudge	refused	endpoint is on do-not-touch
+unread-input	nudge	refused	endpoint is on do-not-touch
+pane shows doorbell: 0
+holder alive
+
+=== S14 stale watcher reported; stale heartbeat percent ignored
+- st: watcher heartbeat is 50m old
+
+=== S15 recurrence files a self-heal issue through the real script; gh is a logging shim on PATH, nothing is published
+unread-input	nudge	pending	Watchdog (automated, not the captain or the owner): 1 inputs have waited 50 minutes. Drain the wake queue and act on it.
+
+=== S15b no issue-repo: recurrence becomes a gap, nothing filed
+
+=== S16 second mate: nudged on the parent's recorded endpoint
+subject par (/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.aSXHcV/homes/par)
+  endpoint=tmux:%28 session=00000024-0000-4000-8000-000000021946 lock_pid=81036 alive=1 instance=match
+  pane_static=0s dialog=none composer=unknown turn_running=0 cpu_busy=unknown
+  transcript_age=100s loop=none/0 restart_requested=0 ctx=unknown
+  owed=0 oldest=0s afk=0 daemon=unknown heartbeat_age=1s
+subject sm (/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.aSXHcV/homes/sm)
+  endpoint=tmux:%27 session=00000023-0000-4000-8000-000000021946 lock_pid=64569 alive=1 instance=match
+  pane_static=0s dialog=none composer=empty turn_running=0 cpu_busy=unknown
+  transcript_age=3001s loop=none/0 restart_requested=0 ctx=unknown
+  owed=1 oldest=3001s afk=0 daemon=unknown heartbeat_age=unknowns
+unread-input	nudge	pending	Watchdog (automated, not the captain or the owner): 1 inputs have waited 50 minutes. Drain the wake queue and act on it.
+## Homes
+- par: ok, last turn 1m ago, ctx unknown
+- sm: UNREAD-INPUT, last turn 50m ago, owed 1, ctx unknown
+
+mate 1
+       1
+
+=== S17 status reader contract and single instance
+      12
+# Firstmate watchdog - Eduardos-MacBook-Pro-2
+updated 2026-11-01T23:42:24Z, scan every 120s, mode act, restart off
+STALE IF NOT UPDATED BY 2026-11-01T23:53:24Z (watchdog may be down)
+models: none; spent 24h $0 of $1.00
+
+## Actions since last read (2026-11-01T23:43:47Z)
+- 23:43 qa nudge daemon-dead held
+- 23:43 qa nudge quota:t9 held
+
+## Open gaps
+fm-watchdog: another watchdog already runs for /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.aSXHcV/homes/qa
+second run rc=0
+status advanced: 6s
+firstmate-watchdog-1763069318
+manager: uncovered (unit not installed)
+[Unit]
+Description=Firstmate assistant watchdog (firstmate-watchdog-1763069318)
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+Environment="FM_HOME=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.aSXHcV/homes/qa"
+Environment="PATH=/Users/eduardopicazo/.local/bin:/opt/homebrew/opt/openjdk@17/bin:/Users/eduardopicazo/Library/Android/sdk/platform-tools:/Users/eduardopicazo/Library/Android/sdk/emulator:/Users/eduardopicazo/.grok/bin:/Users/eduardopicazo/.kimi-code/bin:/Users/eduardopicazo/Library/pnpm:/Users/eduardopicazo/.bun/bin:/Users/eduardopicazo/Library/Python/3.9/bin:/Library/TeX/texbin:/Users/eduardopicazo/.local/bin:/opt/homebrew/opt/node@24/bin:/Users/eduardopicazo/.antigravity/antigravity/bin:/opt/homebrew/opt/node@24/bin:/Users/eduardopicazo/.local/bin:/opt/homebrew/opt/openjdk@17/bin:/Users/eduardopicazo/Library/Android/sdk/platform-tools:/Users/eduardopicazo/Library/Android/sdk/emulator:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/pkg/env/global/bin:/Library/Apple/usr/bin:/Library/TeX/texbin:/opt/homebrew/bin:/Users/eduardopicazo/go/bin:/Users/eduardopicazo/.local/bin:/Users/eduardopicazo/.cargo/bin:/Users/eduardopicazo/bin:/opt/homebrew/sbin:/usr/local/sbin:/Users/eduardopicazo/.orbstack/bin:/Users/eduardopicazo/.lmstudio/bin:/Users/eduardopicazo/.claude/plugins/cache/agent-kit/ak/0.1.74/bin"
+ExecStart=/bin/bash "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M6BXD59WG48Z7A563RGTYE3S/bin/fm-watchdog.sh" run
+Restart=always
+RestartSec=30s
+
+ OK

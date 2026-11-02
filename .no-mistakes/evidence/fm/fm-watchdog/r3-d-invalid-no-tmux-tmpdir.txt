@@ -1,0 +1,19 @@
+revision: e7bb05cac4da93972bf2198be58440a08bc00bbc; date: 2026-11-02T00:36:02Z
+
+=== J4 default seats council on a real Claude TUI pane: no models key, rendered unit env, real claude + real agy seats
+decisions	nudge	held	composer is unknown; nothing typed
+decisions	nudge	held	composer is unknown; nothing typed
+## Homes
+- dec4: ok, last turn 2m ago, ctx unknown
+
+## Actions since last read (2026-11-01T23:36:48Z)
+- 00:36 dec4 nudge decisions held
+- 00:36 dec4 nudge decisions held
+
+## Open gaps
+- dec4: decisions held; composer is unknown, so nothing is typed
+
+=== N3 detail: what the daily-cap row is
+loop	claude:haiku	cap-reached				
+437:  cap=$(cfg daily-max-usd 1.00)
+1054:  cap=$(cfg daily-max-usd 1.00)

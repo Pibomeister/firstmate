@@ -1,0 +1,68 @@
+
+=== S1 judge on default config: no config file, no account dir, CLAUDE_CONFIG_DIR unset, launchd-like env
+WORK
+judge rc=0
+test	claude:haiku	failed rc=1	0	0		0
+test	agy:gemini-3.8-flash-low	ok	6884	1	WORK	unmetered
+
+=== S1b rendered launchd unit's own environment (PLIST EnvironmentVariables only)
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.aSXHcV/homes/j1/unit.plist: OK
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.aSXHcV/homes/j1/state/watchdog
+LOOP
+judge rc=0
+test	claude:haiku	failed rc=1	0	0		0
+test	agy:gemini-3.8-flash-low	ok	6884	1	WORK	unmetered
+test	claude:haiku	failed rc=1	0	0		0
+test	agy:gemini-3.8-flash-low	ok	6886	1	LOOP	unmetered
+
+=== S1c account dir with no login: claude fails visibly and the real agy seat answers
+WORK
+judge rc=0
+test	claude:haiku	failed rc=1	0	0		0
+test	agy:gemini-3.8-flash-low	ok	6886	1	WORK	unmetered
+backups
+plugins
+projects
+
+=== S2 heartbeat written by real fm-heartbeat outside a pane; permission dialog on the pane
+heartbeat rc=0
+{"backend":{"unknown":true,"reason":"no supervisor backend discovered"},"target":{"unknown":true,"reason":"no supervisor target discovered"},"present":{"unknown":true,"reason":"no supervisor endpoint discovered"}}
+subject hb (/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.aSXHcV/homes/hb)
+  endpoint=none:none session=00000003-0000-4000-8000-000000082071 lock_pid=43965 alive=1 instance=match
+  pane_static=0s dialog=none composer=unknown turn_running=unknown cpu_busy=unknown
+  transcript_age=106s loop=none/0 restart_requested=0 ctx=unknown
+  owed=0 oldest=0s afk=0 daemon=unknown heartbeat_age=6s
+## Homes
+- hb: NO-ENDPOINT, last turn 1m ago, owed 0, ctx unknown
+
+## Actions since last read (2026-11-01T22:36:46Z)
+
+## Open gaps
+- hb: no recorded terminal endpoint; the pane cannot be read or typed into
+- no model configured; judged symptoms are reported only
+typed: []
+
+=== S2b same, owed input aged: the nudge is refused, not sent
+unread-input	nudge	refused	no recorded endpoint
+## Homes
+- hb: UNREAD-INPUT, last turn 1m ago, owed 1, ctx unknown
+
+typed: []
+
+=== S2c contrast: a good heartbeat on the same pane reads the dialog, permission gets no key
+  pane_static=1s dialog=permission composer=unknown turn_running=1 cpu_busy=0
+## Homes
+- hb2: DIALOG, last turn 1m ago, owed 0, ctx unknown
+
+## Actions since last read (2026-11-01T22:36:49Z)
+
+## Open gaps
+- hb2: permission dialog waiting; the watchdog never answers permission prompts
+- no model configured; judged symptoms are reported only
+typed: []
+
+=== S1 corrected: launchd-like env (HOME USER LOGNAME SHELL TMPDIR + plist PATH and FM_HOME); no config file, no account dir, CLAUDE_CONFIG_DIR unset
+note: the first S1 above used env -i with no USER; the keychain login then reads as Not logged in. That is the harness, not the product.
+WORK
+judge rc=0
+test	claude:haiku	ok	2	5	WORK	0.0006119900000000001

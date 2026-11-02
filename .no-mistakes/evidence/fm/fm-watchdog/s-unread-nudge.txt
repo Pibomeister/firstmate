@@ -1,0 +1,30 @@
+=== unread input nudges a real session through a record-backed doorbell
+  owed=1 oldest=2000s afk=0 daemon=unknown heartbeat_age=167s
+⏺ I read the operational input and drained the wake queue. The watchdog reported one input waiting 33 minutes.
+  The queue held one check: inbox wake, "captain note waiting". I checked the captain inbox, and it is empty (fm-inbox.sh list and drain both report
+  no notes). So the wake had no note behind it, probably a stale one. I then acknowledged wake sequence 1 with the printed --ack-through command, and
+  it returned no error.
+  Nothing needs your decision. If the watchdog fires again with the inbox still empty, that points to a wake-writing problem and is worth a look.
+✻ Cooked for 10s · done 4:48 PM
+  #1 This is a disposable lab test. Run bin/fm-session-start.sh once, then echo $FM_HOME, then reply with just READY. Do not do anything else.    [-]
+  ┃│││
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle)
+1793573286-253ee1d3e4303a0a.msg
+⁣FIRSTMATE_OP: v1 watcher: Watchdog (automated, not the captain or the owner): 1 inputs have waited 33 minutes. Drain the wake queue and act on it.
+1793573182 pasted-input key pending press Enter: submit text left unsent
+1793573184 pasted-input key done pane changed
+1793573286 unread-input nudge pending Watchdog (automated, not the captain or the owner): 1 inputs have waited 33 minutes. Drain the wake queue and act on it.
+1793573318 unread-input nudge done transcript advanced
+       0
+## Homes
+- fm-lab.qHagTO: ok, last turn 0m ago, ctx unknown
+
+## Actions since last read (2026-11-01T21:48:40Z)
+- 22:46 fm-lab.qHagTO key pasted-input done
+- 22:48 fm-lab.qHagTO nudge unread-input done
+
+## Open gaps
+- no model configured; judged symptoms are reported only

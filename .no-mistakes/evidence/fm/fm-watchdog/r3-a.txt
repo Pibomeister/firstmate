@@ -1,0 +1,76 @@
+revision: e7bb05cac4da93972bf2198be58440a08bc00bbc; worktree dirty lines: 0; date: 2026-11-02T00:24:52Z
+
+=== J1 judge on the default setup: rendered unit env, no config file, no account dir, CLAUDE_CONFIG_DIR unset, real claude
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.vdDaIe/homes/j1/unit.plist: OK
+WORK
+judge rc=0
+test	claude:haiku	ok	2	5	WORK	0.0006119900000000001
+
+=== J2 models=claude:haiku alone on the default setup: claude itself must answer
+LOOP
+judge rc=0
+test	claude:haiku	ok	2	6	LOOP	0.00061269
+
+=== J3 adversarial: explicit account dir with no login still fails visibly; inherited dir is honored; agy seat answers
+WORK
+judge rc=0
+test	claude:haiku	failed rc=1	0	0		0
+test	agy:gemini-3.8-flash-low	ok	6890	1	WORK	unmetered
+account dir populated: 4 entries
+inherited-empty judge rc=1
+test	claude:haiku	failed rc=1	0	0		0
+inherited dir populated: 4 entries
+
+=== J4 default seats council: no models key, rendered unit env; a benign decision gets a unanimous blind ruling
+decisions	nudge	held	composer is unknown; nothing typed
+decisions	nudge	held	composer is unknown; nothing typed
+status.md
+## Homes
+- dec: ok, last turn 1m ago, ctx unknown
+
+## Actions since last read (2026-11-01T23:25:15Z)
+- 00:25 dec nudge decisions held
+- 00:25 dec nudge decisions held
+
+## Open gaps
+- dec: decisions held; composer is unknown, so nothing is typed
+
+=== E1 real fm-heartbeat outside a pane + permission dialog: status must not read ok, stale check live, nothing typed
+heartbeat rc=0
+{"backend":{"unknown":true,"reason":"no supervisor backend discovered"},"target":{"unknown":true,"reason":"no supervisor target discovered"},"present":{"unknown":true,"reason":"no supervisor endpoint discovered"}}
+  endpoint=none:none session=00000006-0000-4000-8000-000000076616 lock_pid=62951 alive=1 instance=match
+## Homes
+- hb: NO-ENDPOINT, last turn 1m ago, owed 0, ctx unknown
+
+## Actions since last read (2026-11-01T23:25:22Z)
+
+## Open gaps
+- hb: no recorded terminal endpoint; the pane cannot be read or typed into
+- no model configured; judged symptoms are reported only
+pane shows doorbell: 0
+-- generated_epoch aged 2000s, row must survive
+- hb: NO-ENDPOINT, last turn 1m ago, owed 0, ctx unknown
+- hb: watcher heartbeat is 33m old
+
+=== E2 adversarial: owed input on the unknown endpoint: refused, not typed
+unread-input	nudge	refused	no recorded endpoint
+## Homes
+- hb: UNREAD-INPUT, last turn 1m ago, owed 1, ctx unknown
+pane shows doorbell: 0
+
+=== E3 adversarial: one field unknown (backend known, target object) with context present: still not ok, percent still read
+## Homes
+- hb3: NO-ENDPOINT, last turn 1m ago, owed 0, ctx 37%
+
+## Actions since last read (2026-11-01T23:25:27Z)
+
+## Open gaps
+- hb3: no recorded terminal endpoint; the pane cannot be read or typed into
+- no model configured; judged symptoms are reported only
+pane shows doorbell: 0
+
+=== E4 contrast: a good heartbeat on the same pane reads the dialog; no key
+  pane_static=1s dialog=permission composer=unknown turn_running=1 cpu_busy=0
+## Homes
+- hb2: DIALOG, last turn 1m ago, owed 0, ctx unknown
+pane shows doorbell: 0

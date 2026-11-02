@@ -1,0 +1,39 @@
+=== Below, a PATH shim only unsets CLAUDE_CONFIG_DIR before the real claude, to reach the real-model paths past the defect above. Flags and model are unchanged.
+WORK
+judge rc=0
+1793574052	test	claude:haiku	ok	2	5	WORK	0.00061139
+
+=== near loop: real haiku says LOOP -> timer-loop nudge
+timer-loop nudge pending Watchdog (automated, not the captain or the owner): your recent replies repeat without new work
+1793574054	2023938721	LOOP
+loop	claude:haiku	ok	2	6	LOOP	0.0006470900000000001
+## Homes
+- nearA: TIMER-LOOP, last turn 50m ago, owed 1, ctx unknown
+
+## Open gaps
+second pass within window: no second model call
+       1
+
+=== model picker: real haiku picks a non-spending option; digit reaches the pane
+  pane_static=0s dialog=model-switch composer=empty turn_running=1 cpu_busy=unknown
+dialog key pending press 2: model-switch option 2: Switch to Sonnet
+dialog key failed dialog still showing
+dialog	claude:haiku	ok	2	8	OPTION 2
+
+=== feedback survey gets 0; permission gets nothing; reserved picker held with no model call
+dialog key pending press 0: dismiss the feedback survey
+dialog key failed dialog still showing
+## Homes
+- perm: DIALOG, owed 0, ctx unknown
+
+## Open gaps
+- perm: no activity source; frozen, dead-holder, and low-context restarts are unavailable
+- perm: permission dialog waiting; the watchdog never answers permission prompts
+  pane_static=0s dialog=model-switch composer=empty turn_running=1 cpu_busy=unknown
+ls: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T
+## Homes
+- rsv: DIALOG, owed 0, ctx unknown
+
+## Open gaps
+- rsv: model-switch dialog names an owner-reserved category; held
+- rsv: no activity source; frozen, dead-holder, and low-context restarts are unavailable

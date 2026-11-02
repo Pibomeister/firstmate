@@ -1,0 +1,31 @@
+revision: e7bb05cac4da93972bf2198be58440a08bc00bbc; date: 2026-11-02T00:25:29Z
+
+=== N1 near loop, real haiku, real Claude TUI pane: LOOP, ladder nudge, no second model call for the same evidence
+  transcript_age=3000s loop=near/3 restart_requested=0 ctx=unknown
+timer-loop	nudge	pending	Watchdog (automated, not the captain or the owner): your recent replies repeat without new work while input waits. 
+loop	claude:haiku	ok	2	6	LOOP	0.00065709
+pane shows doorbell: 2
+## Homes
+- n1: TIMER-LOOP, last turn 50m ago, owed 1, ctx unknown
+model calls now: 1
+
+=== N2 adversarial: no model; near loop + static pane reaches frozen recovery
+frozen	nudge	pending	Watchdog (automated, not the captain or the owner): nothing changed for 0 minutes while 1 inputs wait. Drain the wake q
+## Homes
+- n2: FROZEN, last turn 50m ago, owed 1, ctx unknown
+- n2: possible loop; no judge answer, so it stays unconfirmed
+pane shows doorbell: 2
+
+=== N3 adversarial: daily cap spent; near loop + static pane reaches frozen recovery, no call spends
+frozen	nudge	pending	Watchdog (automated, not the captain or the owner): nothing changed for 0 minutes while 1 inputs wait. Drain the wake q
+model call rows: 1
+## Homes
+- n3: FROZEN, last turn 50m ago, owed 1, ctx unknown
+pane shows doorbell: 2
+
+=== N4 near repeats showing real progress, real haiku says WORK; deterministic recovery still runs
+frozen	nudge	pending	Watchdog (automated, not the captain or the owner): nothing changed for 0 minutes while 1 inputs wait. Drain the wake q
+loop	claude:haiku	ok	2	136	WORK	0.00072729
+## Homes
+- n4: FROZEN, last turn 50m ago, owed 1, ctx unknown
+pane shows doorbell: 2

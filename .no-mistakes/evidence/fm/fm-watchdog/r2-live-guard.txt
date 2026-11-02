@@ -1,0 +1,3 @@
+ok - claude 2.1.316 (Claude Code): the folder-trust picker is left alone and reported
+ok - claude 2.1.316 (Claude Code): a real merge draft is seen and never submitted, with no model call
+ok - claude 2.1.316 (Claude Code): a real clean draft is proven whole, and the guard clears it unsent

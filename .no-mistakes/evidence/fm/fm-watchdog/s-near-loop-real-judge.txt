@@ -1,0 +1,26 @@
+=== near loop, real haiku judge, real Claude TUI endpoint
+  transcript_age=3000s loop=near/3 restart_requested=0 ctx=unknown
+unread-input nudge pending Watchdog (automated, not the captain or the owner): 1 inputs have waited 50 minutes. Drain the wake que
+1793573976	loop	claude:haiku	failed rc=1	0	0		0
+1793573975	2023938721	
+## Homes
+- near: UNREAD-INPUT, last turn 50m ago, owed 1, ctx unknown
+
+## Open gaps
+- near: possible loop; no judge answer, so it stays unconfirmed
+: Firstmate operational input waiting: read '/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.qHagTO/home
+
+=== adversarial: no model, near loop plus frozen pane reaches frozen recovery
+unread-input nudge pending Watchdog (automated, not the captain or the owner): 1 inputs have waited 50 minutes. Drain the wake que
+frozen nudge pending Watchdog (automated, not the captain or the owner): nothing changed for 0 minutes while 1 inputs wait. Drain 
+## Homes
+- near2: FROZEN, last turn 50m ago, owed 1, ctx unknown
+
+## Open gaps
+- near2: possible loop; no judge answer, so it stays unconfirmed
+- no model configured; judged symptoms are reported only
+: Firstmate operational input waiting: read '/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/
+: Firstmate operational input waiting: read '/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/
+
+=== real judge command against real haiku, evidence of real work
+1793573995	test	claude:haiku	failed rc=1	0	0		0

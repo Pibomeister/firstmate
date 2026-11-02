@@ -1,0 +1,174 @@
+=== feedback survey dismissed with 0
+fm-lab-home: refusing '/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.qHagTO/homes/fb': a lab marker is only ever stamped on a fresh empty dir
+dialog key pending press 0: dismiss the feedback survey
+dialog key failed dialog still showing
+pane got: []
+=== model picker, real haiku avoids the buy option
+fm-lab-home: refusing '/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.qHagTO/homes/pick': a lab marker is only ever stamped on a fresh empty dir
+dialog key pending press 2: model-switch option 2: Switch to Sonnet
+dialog key failed dialog still showing
+pane got: []
+dialog	claude:haiku	ok	2	8	OPTION 2
+dialog	claude:haiku	ok	2	8	OPTION 2
+
+=== decisions: benign goes nudge then real two-seat council; reserved ones held, no model
+decisions nudge pending Watchdog (automated, not the captain or the owner): 1 open decisions have waited over 0 minutes, oldest fi
+## Homes
+- dec: NO-ACTIVITY-SOURCE, owed 0, ctx unknown
+
+## Open gaps
+- dec: 2 decisions held for the owner (never touched), e.g. t1/captain-hold-pricing, t1/ship-it
+- dec: no activity source; frozen, dead-holder, and low-context restarts are unavailable
+decisions nudge pending Watchdog (automated, not the captain or the owner): 1 open decisions have waited over 0 minutes, oldest first: t1/cache-layout
+decision:cache-layout council pending t1 cache-layout
+decision:cache-layout council done no ruling; seat1=HOLD seat2=PROCEED A
+council	claude:haiku	ok	2	6	HOLD
+council	claude:haiku	ok	2	8	PROCEED A
+(eval):14: no matches found: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.qHagTO/homes/dec/data/watchdog/rulings/*.md
+## Homes
+- dec: NO-ACTIVITY-SOURCE, owed 0, ctx unknown
+
+## Open gaps
+- dec: 2 decisions held for the owner (never touched), e.g. t1/captain-hold-pricing, t1/ship-it
+- dec: council gave no ruling on t1 cache-layout; held
+- dec: no activity source; frozen, dead-holder, and low-context restarts are unavailable
+0
+
+=== quota floor and dead away daemon nudge a real Claude composer (token-free)
+  owed=0 oldest=0s afk=1 daemon=0 heartbeat_age=0s
+daemon-dead nudge held composer is pending, dialog question; nothing typed
+quota:t9 nudge held composer is pending, dialog question; nothing typed
+## Homes
+- ops: DIALOG, last turn 1m ago, owed 0, ctx unknown
+
+## Open gaps
+- no model configured; judged symptoms are reported only
+- ops: daemon-dead held; composer is pending, so nothing is typed
+- ops: question dialog waiting; its kind is not proven, so no key is sent
+- ops: quota:t9 held; composer is pending, so nothing is typed
+ls: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.qHagTO/homes/ops/state/operational-inbox: No such file or directory
+       0
+       0
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Detected a custom API key in your environment
+  ANTHROPIC_API_KEY: sk-ant-...guard-not-a-real-key
+  Do you want to use this API key?
+    Yes
+  ❯ No (recommended)
+  Enter to confirm · Esc to cancel
+
+=== do-not-touch: nothing typed into a real pane
+unread-input nudge refused endpoint is on do-not-touch
+typed bytes:        0
+
+=== reader contract: ack-read trims actions; STALE line present; line count under 40
+# Firstmate watchdog - Eduardos-MacBook-Pro-2
+updated 2026-11-01T22:51:50Z, scan every 120s, mode act, restart on
+STALE IF NOT UPDATED BY 2026-11-01T23:02:50Z (watchdog may be down)
+      19
+1
+0
+
+=== run loop, one instance; launchd plist parses; no bootstrap
+fm-watchdog: another watchdog already runs for /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.qHagTO/homes/runh
+second copy rc=0
+status rewrote: 1793574143 -> 1793574151
+stopped-on-TERM
+/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.qHagTO/homes/runh/u.plist: OK
+/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.qHagTO/homes/runh/state/watchdog
+run
+
+manager: uncovered (unit not installed)
+manager rc=1
+
+##### RERUN with reacting panes
+dialog key pending press 0: dismiss the feedback survey
+dialog key done dialog left the pane
+pane got: [0]
+dialog key pending press 2: model-switch option 2: Switch to Sonnet
+dialog key done dialog left the pane
+pane got: [2]
+dialog	claude:haiku	ok	2	8	OPTION 2
+
+=== council: try real unanimous PROCEED on a low-risk choice
+decisions nudge pending Watchdog (automated, not the captain or the owner): 1 open decisions have waited over 0 minutes, oldest first: t1/name-style. Answer each, or sett
+decision:name-style council pending t1 name-style
+decision:name-style council done PROCEED A  seat1=PROCEED A seat2=PROCEED A
+ruling:name-style nudge pending Watchdog (automated, not the captain or the owner): a unanimous blind council ruled PROCEED A on decision name-style from t1. Ruling file:
+council	claude:haiku	ok	2	55	PROCEED A
+council	claude:haiku	ok	2	66	PROCEED A
+# Watchdog council ruling
+
+- home: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.qHagTO/homes/dec2
+- task: t1
+- key: name-style
+- ruling: PROCEED A (unanimous, 2 blind seats)
+- seats: seat1=PROCEED A seat2=PROCEED A
+- at: 2026-11-01T23:03:30Z
+
+Record:
+
+Option A (recommended and safest): keep the existing test file naming. Option B: rename every test file.
+ead '/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.qHagTO/homes/dec2/state/operational-inbox/1793574210-ec619a3520cfcfc7.msg' and handle its contents as Firstmate operational input.
+## Homes
+- dec2: NO-ACTIVITY-SOURCE, owed 0, ctx unknown
+
+## Open gaps
+- dec2: no activity source; frozen, dead-holder, and low-context restarts are unavailable
+
+=== quota floor and dead daemon on a real Claude composer
+  pane_static=0s dialog=none composer=empty turn_running=0 cpu_busy=unknown
+daemon-dead nudge pending Watchdog (automated, not the captain or the owner): away mode is on but the away daemon is not running. Re-arm it with bin/fm-afk-start.sh on this se
+quota:t9 nudge pending Watchdog (automated, not the captain or the owner): task t9 is parked at a quota floor. Reroute it to another provider or account through quota-array-di
+## Homes
+- ops2: DAEMON-DEAD, last turn 1m ago, owed 0, ctx unknown
+
+## Open gaps
+- no model configured; judged symptoms are reported only
+⁣FIRSTMATE_OP: v1 watcher: Watchdog (automated, not the captain or the owner): away mode is on but the away daemon is not running. Re-arm it with bin/fm-afk-start.sh on t
+⁣FIRSTMATE_OP: v1 watcher: Watchdog (automated, not the captain or the owner): task t9 is parked at a quota floor. Reroute it to another provider or account through quota
+inbox notes:        0
+  #1 : Firstmate operational input waiting: read '/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-
+  ┃│
+                                                   tmux detected · scroll with PgUp/PgDn · or add 'set -g mous
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ Press up to edit queued messages
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle)
+
+=== heartbeat written outside a pane: terminal fields are objects; blocking permission dialog in the real pane
+subject blind (/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.qHagTO/homes/blind)
+  endpoint=none:none session=c7613639-4180-4806-a961-71e40b8aad8a lock_pid=34062 alive=1 instance=match
+  pane_static=0s dialog=none composer=unknown turn_running=unknown cpu_busy=unknown
+  transcript_age=101s loop=none/0 restart_requested=0 ctx=unknown
+  owed=0 oldest=0s afk=0 daemon=unknown heartbeat_age=unknowns
+## Homes
+- blind: ok, last turn 1m ago, ctx unknown
+
+## Actions since last read (2026-11-01T22:04:24Z)
+
+## Open gaps
+- no model configured; judged symptoms are reported only
+bin/fm-watch.sh:4222:# single-flight so no read can hold a poll. bin/fm-heartbeat.sh's header owns the
+bin/fm-watch.sh:4234:    "${FM_HEARTBEAT_BIN:-$SCRIPT_DIR/fm-heartbeat.sh}" --write </dev/null >/dev/null 2>&1 &
+    context_json=$(heartbeat_context_json primary "$transcript" "$backend" "$target")
+  else
+    context_json=$(heartbeat_context_json primary "$transcript")
+  fi
+  jq -n \
+    --arg backend "$backend" \
+    --arg target "$target" \
+    --argjson present "$present" \
+    --arg composer "$composer" \
+    --arg trusted "$session_id" \
+    --arg anchor "$anchor_pid" \
+    --argjson last_turn "$turn_json" \
+    --argjson context_left "$context_json" \
+    'def u(r): {unknown:true,reason:r};
+    {
+      terminal:{
+        backend:(if $backend == "" then u("no supervisor backend discovered") else $backend end),
+        target:(if $target == "" then u("no supervisor target discovered") else $target end),
+        present:$present
+      },
+      session:{

@@ -1,0 +1,63 @@
+
+=== S10 near loop, real haiku on a real TUI pane: LOOP -> ladder nudge; no second model call in the window
+  transcript_age=3000s loop=near/3 restart_requested=0 ctx=unknown
+timer-loop	nudge	pending	Watchdog (automated, not the captain or the owner): your recent replies repeat without new work while input waits. Stop re-ar
+loop	claude:haiku	ok	2	6	LOOP	0.00065769
+pane shows doorbell: 2
+## Homes
+- nl6: TIMER-LOOP, last turn 50m ago, owed 1, ctx unknown
+model calls now:        1
+
+=== S10b adversarial: no model; near loop + static pane reaches frozen recovery
+  pane_static=0s dialog=none composer=empty turn_running=0 cpu_busy=0
+  transcript_age=3010s loop=near/3 restart_requested=0 ctx=unknown
+unread-input	nudge	pending	Watchdog (automated, not the captain or the owner): 1 inputs have waited 50 minutes. Drain the wake queue and act on it.
+## Homes
+- nl7: UNREAD-INPUT, last turn 50m ago, owed 1, ctx unknown
+- nl7: possible loop; no judge answer, so it stays unconfirmed
+pane shows doorbell: 2
+
+=== S10c real-work near repeats: real haiku says WORK; symptoms below still run
+  transcript_age=3000s loop=near/3 restart_requested=0 ctx=unknown
+timer-loop	nudge	pending	Watchdog (automated, not the captain or the owner): your recent replies repeat without new work while input waits. Stop re-ar
+loop	claude:haiku	ok	2	6	LOOP	0.00067929
+## Homes
+- nl8: TIMER-LOOP, last turn 50m ago, owed 1, ctx unknown
+
+=== S11b unanimous council ruling reaches the session once the composer is empty
+decisions	nudge	pending	Watchdog (automated, not the captain or the owner): 1 open decisions have waited over 0 minutes, oldest fi
+decision:cache-size	council	pending	t1 cache-size
+decision:cache-size	council	done	PROCEED A  seat1=PROCEED A seat2=PROCEED A
+ruling:cache-size	nudge	pending	Watchdog (automated, not the captain or the owner): a unanimous blind council ruled PROCEED A on d
+council	claude:haiku	ok	2	8	PROCEED A	0.0006762900000000001
+council	claude:haiku	ok	2	8	PROCEED A	0.0006762900000000001
+⁣FIRSTMATE_OP: v1 watcher: Watchdog (automated, not the captain or the owner): 1 open decisions have waited over 0 minutes, oldest first: t1/cache-size. Answer each, or settle it by council per the captain rule
+⁣FIRSTMATE_OP: v1 watcher: Watchdog (automated, not the captain or the owner): a unanimous blind council ruled PROCEED A on decision cache-size from t1. Ruling file: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000
+
+=== S15 recurrence files a self-heal issue through the real script; gh is a logging shim on PATH, nothing is published
+unread-input	nudge	pending	Watchdog (automated, not the captain or the owner): 1 inputs have waited 50 minutes. Drain th
+unread-input	nudge	pending	Watchdog (automated, not the captain or the owner): 1 inputs have waited 50 minutes. Drain th
+unread-input	nudge	pending	Watchdog (automated, not the captain or the owner): 1 inputs have waited 50 minutes. Drain th
+watchdog-unread-input	self-heal	pending	Watchdog: unread-input recurs on sh5
+watchdog-unread-input	self-heal	failed	fm-self-heal-issue: unexpected issue search result: []
+frozen	nudge	pending	Watchdog (automated, not the captain or the owner): nothing changed for 0 minutes while 1 inputs wa
+gh label list --repo pibomeister/agent-kit --limit 500 --json name --jq .[].name
+gh label create self-heal --repo pibomeister/agent-kit --color B60205 --force
+gh label list --repo pibomeister/agent-kit --limit 500 --json name --jq .[].name
+gh label create failure-class:watchdog-unread-input --repo pibomeister/agent-kit --color 5319E7 --force
+gh issue list --repo pibomeister/agent-kit --label failure-class:watchdog-unread-input --state open --json number --jq .[0].number // empty
+
+=== S15b no issue-repo: recurrence becomes a gap, nothing filed
+4
+
+=== S16b second mate frozen: restart goes through the parent's real fm-control relaunch
+  pane_static=7s dialog=none composer=empty turn_running=0 cpu_busy=0
+unread-input	nudge	pending	Watchdog (automated, not the captain or the owner): 1 inputs have waited 50 minutes. Drain the wake queue and act on it.
+## Homes
+- par5: ok, last turn 1m ago, ctx unknown
+- sm5: UNREAD-INPUT, last turn 50m ago, owed 1, ctx unknown
+
+## Actions since last read (2026-11-01T22:52:32Z)
+
+## Open gaps
+- no model configured; judged symptoms are reported only

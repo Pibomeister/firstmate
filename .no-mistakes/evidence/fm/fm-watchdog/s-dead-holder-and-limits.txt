@@ -1,0 +1,85 @@
+=== new session after the low-context restart
+  - Pickup: fm-watchdog.sh pickup 6a0ee5608db3331d returned "pickup recorded"
+    and exit 0.
+  Nothing needs your decision. Two notes:
+  - The lab home's backlog, projects, secondmates, captain and learnings files
+    were all absent at session start. I did not rebuild them, because the fleet
+    is empty and nothing depends on them yet.
+  - The Claude GitHub MCP server returned a 502 and the Linear MCP server
+    returned a 404. Neither affects this home's supervision, which uses the
+    gh-axi and bin/ tools.
+✻ Cooked for 26s · done 4:49 PM
+  #1 Watchdog restart of this firstmate home. Read /private/var/folders/…   [-]
+  ┃
+────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle)
+(eval):kill:3: kill 79064 failed: no such process
+  PID COMMAND
+ 6554 claude --model haiku --dangerously-skip-permissions Watchdog restart of this firstmate home. Read /priva
+# Firstmate handoff
+
+## Why this handoff
+Watchdog reported low context and asked for a full handoff before a restart.
+
+## Session state
+- Session start ran once (`bin/fm-session-start.sh`). Lock acquired. Role: user (default).
+- Home (`FM_HOME`): /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.qHagTO
+- Fleet: no work under way, no orphan status logs, no queued backlog. data/backlog.md, projects.md, secondmates.md, captain.md, captain-shared.md and learnings.md were ABSENT at start. AFK is absent.
+- Network checks: finished with no problems.
+- Heartbeat written once with `bin/fm-heartbeat.sh --write`.
+
+# Watchdog restart handoff - fm-lab.qHagTO
+
+- home: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.qHagTO
+- reason: restart-requested
+- at: 2026-11-01T22:49:28Z
+- newest session handoff: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.qHagTO/data/handoff-firstmate.md
+- owed input: 0 rows, oldest 0s
+- away mode: 0
+
+Start with the newest session handoff above when it exists, then run the session-start contract.
+
+Pane tail at restart:
+
+```
+
+=== no second restart from the same request file
+1793573400 restart-requested restart done pickup verified; new lock pid 6554
+
+=== kill -9 the holder; quiet too short: nothing typed; then rate limit holds
+## Homes
+- fm-lab.qHagTO: AGENT-GONE, last turn 0m ago, owed 0, ctx unknown
+
+## Open gaps
+- fm-lab.qHagTO: lock holder is dead; restart needs 25s of transcript quiet; nothing typed
+- no model configured; judged symptoms are reported only
+  endpoint=tmux:%0 session=9aac59c3-b094-4b82-b7b8-93ea83f21e45 lock_pid=6554 alive=0 instance=mismatch
+## Open gaps
+- fm-lab.qHagTO: agent-gone: restart held; last restart was 1m ago
+- no model configured; judged symptoms are reported only
+1793573400 restart-requested restart done pickup verified; new lock pid 6554
+holder-dead
+
+=== restart-secs lowered: agent-gone restart, verified pickup
+1793573451 agent-gone restart pending token=ded92a87334259ce old_pid=6554 handoff=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.qHagTO/data/watchdog/handoffs/fm
+1793573400 restart-requested restart done pickup verified; new lock pid 6554
+1793573451 agent-gone restart pending token=ded92a87334259ce old_pid=6554 handoff=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.qHag
+1793573476 agent-gone restart done pickup verified; new lock pid 39728
+firstmate-fm-lab_qHagTO:0: firstmate* (1 panes) [80x24] 
+
+=== third restart: max-restarts escalates, no restart
+1793573476 agent-gone restart done pickup verified; new lock pid 39728
+1793573509 agent-gone restart escalated restart loop: 2 restarts in 24h
+fm-lab.qHagTO-1237056640
+## Homes
+- fm-lab.qHagTO: AGENT-GONE, last turn 0m ago, owed 0, ctx unknown
+
+## Open gaps
+- fm-lab.qHagTO: self-heal issue not filed for watchdog-restart-loop: no issue-repo configured
+- no model configured; judged symptoms are reported only
+1793573509 agent-gone restart escalated restart loop: 2 restarts in 24h
+## Open gaps
+- fm-lab.qHagTO: RESTART LOOP escalated; clear /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.qHagTO/state/watchdog/escalated/fm-lab.qHagTO-1237056640 after review
+- no model configured; judged symptoms are reported only

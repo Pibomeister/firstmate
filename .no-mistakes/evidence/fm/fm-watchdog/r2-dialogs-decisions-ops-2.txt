@@ -1,0 +1,102 @@
+
+=== S6 feedback survey: key 0 clears it
+dialog	key	pending	press 0: dismiss the feedback survey
+dialog	key	done	dialog left the pane
+keys reaching pane: [0]
+
+=== S7 model picker: real haiku avoids the buy option; only that digit reaches the pane
+dialog	key	pending	press 2: model-switch option 2: Switch to Sonnet
+dialog	key	done	dialog left the pane
+dialog	claude:haiku	ok	2	8	OPTION 2	0.0006624900000000002
+keys reaching pane: [2]
+
+=== S8 reserved picker: held, no model call, no key
+ledger rows:        0  model calls:        0
+- pickr2: model-switch dialog names an owner-reserved category; held
+keys reaching pane: []
+
+=== S9 unproven question: no key, gap
+ledger rows:        0  model calls:        0
+- q2: question dialog waiting; its kind is not proven, so no key is sent
+keys reaching pane: []
+
+=== S10 near loop, real haiku on a real TUI pane: LOOP -> ladder nudge; no second model call in the same window
+  transcript_age=3001s loop=loop/3 restart_requested=0 ctx=unknown
+timer-loop	nudge	pending	Watchdog (automated, not the captain or the owner): your last 3 replies repeat the same text with no work between them, and i
+pane shows doorbell: 2
+## Homes
+- nl3: TIMER-LOOP, last turn 50m ago, owed 1, ctx unknown
+model calls now:        0
+
+=== S10b adversarial: no model; near loop + static pane still reaches frozen recovery
+  pane_static=0s dialog=none composer=empty turn_running=1 cpu_busy=0
+  transcript_age=3010s loop=loop/3 restart_requested=0 ctx=unknown
+timer-loop	nudge	pending	Watchdog (automated, not the captain or the owner): your last 3 replies repeat the same text with no work between them, and i
+timer-loop	nudge	pending	Watchdog (automated, not the captain or the owner): your last 3 replies repeat the same text with no work between them, and i
+## Homes
+- nl4: TIMER-LOOP, last turn 50m ago, owed 1, ctx unknown
+pane shows doorbell: 4
+
+=== S10c near repeats with real work between them, real haiku: WORK, no timer-loop
+  transcript_age=3001s loop=none/3 restart_requested=0 ctx=unknown
+unread-input	nudge	pending	Watchdog (automated, not the captain or the owner): 1 inputs have waited 50 minutes. Drain the wake queue and act on it.
+## Homes
+- nl5: UNREAD-INPUT, last turn 50m ago, owed 1, ctx unknown
+
+=== S11 decisions: nudge, then after the window a real two-seat council; reserved held and never sent to a model
+decisions	nudge	pending	Watchdog (automated, not the captain or the owner): 1 open decisions have waited over 0 minutes, oldest first: t1/cache-size. 
+- dec2: 2 decisions held for the owner (never touched), e.g. t1/captain-hold-pricing, t1/ship-it
+-- after window
+decisions	nudge	pending	Watchdog (automated, not the captain or the owner): 1 open decisions have waited over 0 minutes, oldest first: t1/cache-size. 
+decision:cache-size	council	pending	t1 cache-size
+decision:cache-size	council	done	PROCEED A  seat1=PROCEED A seat2=PROCEED A
+ruling:cache-size	nudge	held	composer is pending; nothing typed
+council	claude:haiku	ok	2	8	PROCEED A	0.0006762900000000001
+council	claude:haiku	ok	2	82	PROCEED A	0.00071329
+dec2-2513940717-t1-cache-size.md
+# Watchdog council ruling
+
+- home: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.aSXHcV/homes/dec2
+- task: t1
+- key: cache-size
+- ruling: PROCEED A (unanimous, 2 blind seats)
+- seats: seat1=PROCEED A seat2=PROCEED A
+- at: 2026-11-01T23:46:44Z
+
+Record:
+
+A (recommended, the existing default and fully reversible) keep the local test cache at 64 MB, or B use 128 MB. Both are fine.
+- 23:46 dec2 council decision:cache-size done
+- 23:46 dec2 nudge ruling:cache-size held
+- dec2: 2 decisions held for the owner (never touched), e.g. t1/captain-hold-pricing, t1/ship-it
+- dec2: ruling:cache-size held; composer is pending, so nothing is typed
+0
+reserved keys in ledger action rows:
+0
+
+=== S13 do-not-touch on real TUI: frozen + owed
+  pane_static=8s dialog=none composer=empty turn_running=0 cpu_busy=0
+unread-input	nudge	refused	endpoint is on do-not-touch
+frozen	restart	refused	endpoint is on do-not-touch
+unread-input	nudge	refused	endpoint is on do-not-touch
+pane shows doorbell: 0
+holder alive
+
+=== S15 recurrence files a self-heal issue through the real script; gh is a logging shim on PATH, nothing is published
+unread-input	nudge	pending	Watchdog (automated, not the captain or the owner): 1 inputs have waited 50 minutes. Drain the wake queue and act
+unread-input	nudge	held	composer is pending; nothing typed
+unread-input	nudge	held	composer is pending; nothing typed
+
+=== S15b no issue-repo: recurrence becomes a gap, nothing filed
+0
+
+=== S16b second mate frozen: restart goes through its parent's real fm-control relaunch
+unread-input	nudge	pending	Watchdog (automated, not the captain or the owner): 1 inputs have waited 50 minutes. Drain the wake queue and act on it.
+## Homes
+- par3: ok, last turn 1m ago, ctx unknown
+- sm3: ok, last turn 50m ago, ctx unknown
+
+## Actions since last read (2026-11-01T22:48:25Z)
+
+## Open gaps
+- no model configured; judged symptoms are reported only

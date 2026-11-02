@@ -1,0 +1,79 @@
+
+=== P0 start a real logged-in Claude primary in the lab home; it runs its own session start
+  #1 You are in a disposable lab home. Run bin/fm-session-start.sh once, then bin/fm-heartbeat.sh --write. Do nothing else. Reply in one sentence.              
+  ┃
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle)
+{"backend":"tmux","target":"%0","present":true}
+"2d215ac8-c310-469c-8db0-ebb06cef749e"
+subject fm-lab.NnFhLD (/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.NnFhLD)
+  endpoint=tmux:%0 session=2d215ac8-c310-469c-8db0-ebb06cef749e lock_pid=88855 alive=1 instance=match
+  pane_static=0s dialog=none composer=empty turn_running=0 cpu_busy=unknown
+  transcript_age=3s loop=none/0 restart_requested=0 ctx=unknown
+  owed=0 oldest=0s afk=0 daemon=unknown heartbeat_age=15s
+
+=== P4 unread input: a real session gets a record-backed doorbell and drains the wake queue
+  owed=1 oldest=1000s afk=0 daemon=unknown heartbeat_age=17s
+unread-input	nudge	pending	Watchdog (automated, not the captain or the owner): 1 inputs have waited 16 minutes. Drain the wake queue and act on it.
+1793577908-7d0ae9dd1aafcfb1.msg
+✻ Pontificating… (20s · ↓ 647 tokens)
+  ⎿  Tip: Did you know you can drag and drop image files into your terminal?
+  #1 You are in a disposable lab home. Run bin/fm-session-start.sh once, then bin/fm-heartbeat.sh --write. Do nothing else. Reply in one sentence.              
+  ┃│
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle)
+  owed=0 oldest=0s afk=0 daemon=unknown heartbeat_age=46s
+
+=== P5 low context: nudge, session writes a full handoff and the request file; restart; new session proves pickup
+  transcript_age=-4s loop=none/0 restart_requested=0 ctx=5 (heartbeat)
+handoff-request	nudge	pending	Watchdog (automated, not the captain or the owner): context is low. Write a full handoff to data/handoff-<name>.md in yo
+-rw-r--r--@ 1 eduardopicazo  staff  1750 Nov  1 18:06 /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.NnFhLD/data/handoff-primary.md
+-rw-r--r--@ 1 eduardopicazo  staff     0 Nov  1 18:06 /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.NnFhLD/state/.watchdog-restart-request
+old lock 88855
+handoff-request	nudge	done	transcript advanced
+restart-requested	restart	pending	token=a5f99a655dc89b30 old_pid=88855 handoff=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.NnFhLD/
+## Homes
+- fm-lab.NnFhLD: RESTART-REQUESTED, last turn 0m ago, owed 0, ctx 5%
+
+handoff-request	nudge	done	transcript advanced
+restart-requested	restart	pending	token=a5f99a655dc89b30 old_pid=88855 handoff=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.NnFhLD/
+old holder stopped
+primary:0 2.1.316
+-- status while the new session shows its trust picker (lab home is untrusted; the driver accepts it, the watchdog does not)
+new pane shows trust picker; accepted by driver
+a5f99a655dc89b30
+restart-requested	restart	pending	token=a5f99a655dc89b30 old_pid=88855 handoff=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.NnFhLD/
+restart-requested	restart	done	pickup verified; new lock pid 32949
+new lock 32949
+32949 claude
+    it. I did not investigate the cause, because your scope for this home was
+    "do nothing else".
+  - lavish-axi version: Startup again reported an older version. Board replies
+    still use the legacy path until it is upgraded, so a board can be handed
+    back before its reply is accepted. I did not upgrade it, because of the same
+    scope.
+  I started no new work.
+✻ Cogitated for 31s · done 6:07 PM
+  #1 Watchdog restart of this firstmate home. Read /private/var/folders/…   [-]
+  ┃
+────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle)
+
+=== P6 no second restart from the same request file
+1
+## Homes
+- fm-lab.NnFhLD: ok, last turn 0m ago, ctx unknown
+
+## Actions since last read (2026-11-01T23:07:36Z)
+- 00:05 fm-lab.NnFhLD nudge unread-input done
+- 00:06 fm-lab.NnFhLD nudge handoff-request done
+- 00:07 fm-lab.NnFhLD restart restart-requested done
+
+## Open gaps
+- no model configured; judged symptoms are reported only

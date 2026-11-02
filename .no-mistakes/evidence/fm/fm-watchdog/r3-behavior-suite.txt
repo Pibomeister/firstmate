@@ -1,0 +1,66 @@
+revision: e7bb05cac4da93972bf2198be58440a08bc00bbc
+command: /Users/eduardopicazo/orca/projects/firstmate/bin/fm-test-queue.sh run --label fm-watchdog-head -- bash tests/fm-watchdog.test.sh
+fm-test-queue: ticket 434, position 1: all 1 slot(s) busy
+fm-test-queue: ticket 434 served
+1..59
+ok - dialogs need their structure, and each kind is told apart
+ok - a dismissed dialog that only remains in scrollback is not read as showing
+ok - dialog keys stop after two failures in an hour, so a misread screen is never typed into repeatedly
+ok - loop verdicts: loop, rapid, near, and work-between
+ok - stall proof needs two signals and no veto; merge and deploy text is refused
+ok - frozen pane: proven by records, nudged once with a record-backed doorbell, then rate-limited
+ok - boundary: never types into a pane on the do-not-touch list
+ok - draft rows: from the prompt row to the rule, and no footer word cuts them
+ok - boundary: never accepts a merge autosuggestion, while ordinary unsent text is submitted
+ok - boundary: a draft whose whole text cannot be read never gets Enter
+ok - boundary: a quoted row inside a taller draft never earns Enter or a partial note
+ok - terminal service loss: no agent process overrides drawn Working; a live tool call stays protected
+ok - boundary: owner-reserved holds stay held; an ordinary decision is settled by a unanimous blind council
+ok - council needs unanimity; a split vote holds
+ok - boundary: judge falls back across models, logs every call, and never spends past the daily cap
+ok - with no model available, deterministic actions still run and the gap is reported
+ok - timer loop fires only with aged owed input, never on idle heartbeats
+ok - near loop: no model, the daily cap, WORK, and a bad answer all leave frozen and input recovery running
+ok - near loop: the judge sees the recent sequence, newest last, and repeats only for new evidence after the interval
+ok - near loop: a LOOP answer alone takes the existing ladder
+ok - boundary: a long running turn is not a stall and is never restarted
+ok - restart: lean handoff, new terminal, verified pickup with lock takeover; a loop stops and escalates
+ok - boundary: a home whose restart awaits pickup gets no action until the restart closes
+ok - agent gone: a dead lock holder with a recorded anchor still restarts
+ok - agent gone comes before every other symptom, and a dead holder's endpoint gets no typing
+ok - low context: nudge, wait, and restart only on a newer full handoff plus the request file
+ok - low context: the bounded wait ends in a lean restart and a recorded gap
+ok - low context: an old nudge does not count for a later low
+ok - low context: only a delivered nudge starts the handoff wait
+ok - restart-secs holds a sooner restart across symptoms, and only max-restarts escalates
+ok - dialog: a key that clears the dialog is recorded as done
+ok - low context: no handoff is asked for when no restart can run
+ok - a restart request that cannot run leaves frozen recovery in place
+ok - frozen: a held nudge counts toward the restart proof, and a clean draft gets Enter first
+ok - held restart: the handoff keeps a readable draft, names an unreadable one, and claims nothing unproven
+ok - context: state/context-burn.tsv is not read
+ok - dialog: the kind comes from the dialog, not the conversation above it
+ok - low context: a nudge that cannot be delivered does not hide frozen recovery
+ok - homes that share a basename keep separate state
+ok - dialog: reserved words hold unless a rule proves they sit outside the dialog
+ok - orca: a draft read that hangs holds the nudge
+ok - unsent input: Enter goes once in two hours, and a frozen low-context draft reaches the restart
+ok - restart request: assistant text is not a channel
+ok - sed blank classes keep a trailing t in options, homes, and verdicts
+ok - low context: a clean draft is submitted so the handoff nudge can follow
+ok - heartbeat percent counts only when fresh and for the current session
+ok - orca: a draft holds the nudge and is never submitted
+ok - decisions: a reserved task or key is held, and a refused nudge is a gap
+ok - second mate: a relaunch ends the pass for its old endpoint
+ok - model-switch dialog: reserved text is held before the judge; an ordinary one still gets its key
+ok - unknown composer: a nudge types only on a composer proven empty
+ok - orca: a failed turn probe is unknown, not idle
+ok - a subject with no activity source reads as a gap, not ok
+ok - the Claude judge keeps the default login unless an account directory is set
+ok - a heartbeat with an unknown endpoint keeps its row and reads as a gap, not ok
+ok - tmux restart: resolves the session before the stop and opens one when the old session closed
+ok - status file stays under 40 lines with timestamp, health, actions since last read, gaps, and a staleness line
+ok - launchd and systemd units run outside every session with FM_HOME and PATH
+ok - boundary: across every act-mode case, no merge, deploy, owner notification, or captain note
+FM_TEST_COMPLETE
+exit status: 0

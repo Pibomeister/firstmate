@@ -1,0 +1,62 @@
+
+=== S3 2026-11-01 incident replay on a real Claude TUI pane: exact re-arm loop, aged owed input, no model. Ladder: nudge, then restart, then pickup
+  pane_static=0s dialog=none composer=empty turn_running=0 cpu_busy=unknown
+  transcript_age=3000s loop=loop/4 restart_requested=0 ctx=unknown
+  owed=1 oldest=3000s afk=0 daemon=unknown heartbeat_age=7s
+-- pass 1 (real typed nudge)
+timer-loop	nudge	pending	Watchdog (automated, not the captain or the owner): your last 4 replies repeat the same text with no work between them, and i
+pane shows doorbell: 2
+1793576382-05e439e7962b3a2a.msg
+⁣FIRSTMATE_OP: v1 watcher: Watchdog (automated, not the captain or the owner): your last 4 replies repeat the same text with no work between them, and input is waiting. Stop re-arming, drain the wake 
+ ▝▝   ▝▝   /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.aSXHcV/homes/inc2/work
+▎ Auto mode is now Claude Code's default permission mode.
+▎ Auto mode lets Claude handle permission prompts automatically. Claude checks each tool call for risky actions and prompt injection before executing,
+▎ ones it assesses as lower-risk, and blocks the rest.
+▎ https://code.claude.com/docs/en/permission-modes
+❯ : Firstmate operational input waiting: read
+  '/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.aSXHcV/homes/inc2/state/operational-inbox/1793576382-05e439e7962b3a2a.msg' and hand
+  contents as Firstmate operational input.
+✻ Connection refused — a firewall or proxy may be blocking it (ECONNREFUSED) · Retrying in 5s · attempt 4/10
+                                                                                                                                            ◐ medium ·
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle) · esc to interrupt · ← for agents
+-- after nudge ignored
+timer-loop	nudge	pending	Watchdog (automated, not the captain or the owner): your last 4 replies repeat the same text with no work between them, and i
+timer-loop	restart	pending	token=503dc48bfefe8b39 old_pid=70590 handoff=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.aSXHcV/homes/inc2/dat
+timer-loop	restart	done	pickup verified; new lock pid 50329
+pasted-input	key	pending	press Enter: submit text left unsent
+pasted-input	key	done	pane changed
+## Homes
+- inc2: NO-ACTIVITY-SOURCE, owed 1, ctx unknown
+
+Watchdog restart of this firstmate home. Read /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.aSXHcV/homes/inc2/data/watchdog/handoffs/inc2-609909121-1793576398.md first, then take over as th
+old holder stopped
+0 2.1.316
+1 sleep
+
+=== S5 dead holder (kill -9), quiet transcript: nothing typed, restart, verified pickup; second death restarts; third escalates
+doorbell on dead holder pane: pane shows doorbell: 0
+agent-gone	restart	pending	token=d46a6eb990ae248f old_pid=4438 handoff=/var/folders/93/6w1
+agent-gone	restart	done	pickup verified; new lock pid 46086
+unread-input	nudge	pending	Watchdog (automated, not the captain or the owner): 1 inputs ha
+-- final
+agent-gone	restart	pending	token=d46a6eb990ae248f old_pid=4438 handoff=/var/folders/93/6w1
+agent-gone	restart	done	pickup verified; new lock pid 46086
+unread-input	nudge	pending	Watchdog (automated, not the captain or the owner): 1 inputs ha
+agent-gone	restart	pending	token=361d4cc6a64cbf2a old_pid=46086 handoff=/var/folders/93/6w
+agent-gone	restart	done	pickup verified; new lock pid 84201
+agent-gone	restart	escalated	restart loop: 2 restarts in 24h
+## Homes
+- dead2: AGENT-GONE, last turn 50m ago, owed 1, ctx unknown
+
+## Actions since last read (2026-11-01T22:40:57Z)
+- 23:40 dead2 restart agent-gone done
+- 23:40 dead2 restart agent-gone done
+- 23:40 dead2 restart agent-gone escalated
+
+## Open gaps
+- dead2: RESTART LOOP escalated; clear /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.aSXHcV/homes/dead2/state/watchdog/escalated/dead2-3857465877 after review
+- no model configured; judged symptoms are reported only
+dead2-3857465877

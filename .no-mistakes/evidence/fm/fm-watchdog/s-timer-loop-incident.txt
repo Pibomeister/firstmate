@@ -1,0 +1,106 @@
+=== 2026-11-01 incident replay: re-arm loop with owed input and a frozen pane; real Claude TUI, no model
+──────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+──────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle) · ← for agents
+  pane_static=0s dialog=none composer=empty turn_running=0 cpu_busy=unknown
+  transcript_age=3000s loop=loop/3 restart_requested=0 ctx=unknown
+  owed=1 oldest=3000s afk=0 daemon=unknown heartbeat_age=0s
+--- pass 1
+timer-loop nudge pending Watchdog (automated, not the captain or the owner): your last 3 replies repeat the same text with no work between them, and input is waiting. Stop re-arming, drain the wa
+--- pass 2
+timer-loop nudge pending Watchdog (automated, not the captain or the owner): your last 3 replies repeat the same text with no work between them, and input is waiting. Stop re-arming, drain the wa
+--- pass 3
+timer-loop nudge pending Watchdog (automated, not the captain or the owner): your last 3 replies repeat the same text with no work between them, and input is waiting. Stop re-arming, drain the wa
+--- pass 4
+timer-loop nudge failed no transcript progress
+  handle its contents as Firstmate operational input.
+❯ : Firstmate operational input waiting: read
+  '/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.qHagTO/homes/loop/state/operational-inbox/1793573574-b3e2d36c85
+  handle its contents as Firstmate operational input.
+  ctrl+x ctrl+s to send now
+✻ Connection refused — a firewall or proxy may be blocking it (ECONNREFUSED) · Retrying in 2s · attempt 5/10
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ Press up to edit queued messages
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle) · esc to interrupt
+timer-loop nudge failed no transcript progress
+timer-loop nudge failed no transcript progress
+## Homes
+- loop: TIMER-LOOP, last turn 50m ago, owed 1, ctx unknown
+
+## Open gaps
+- loop: timer-loop: restart not proven (turn_running=1 cpu_busy=0 signals=filesystem records)
+- no model configured; judged symptoms are reported only
+0: 2.1.316* (1 panes) [150x45] [layout bfbd,150x45,0,0,0] @0 (active)
+loop: 1 windows (created Sun Nov  1 16:52:30 2026)
+      15
+FM_TEST_END 2026-11-01T22:51:57Z tests/fm-watchdog.test.sh exit=0 duration_ms=579137 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=579223
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=579137 failed=0
+rc=0
+57
+0
+idle after 300s
+  handle its contents as Firstmate operational input.
+✻ Connection refused — a firewall or proxy may be blocking it (ECONNREFUSED) · Retrying in 7s · attempt 10/10
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle) · esc to interrupt
+=== running turn no longer shown: restart proof runs
+  pane_static=0s dialog=none composer=empty turn_running=1 cpu_busy=0
+timer-loop nudge failed no transcript progress
+timer-loop nudge failed no transcript progress
+## Homes
+- loop: TIMER-LOOP, last turn 55m ago, owed 1, ctx unknown
+
+## Open gaps
+- loop: timer-loop: restart not proven (turn_running=1 cpu_busy=0 signals=filesystem records)
+- no model configured; judged symptoms are reported only
+0: 2.1.316* (1 panes) [150x45] [layout bfbd,150x45,0,0,0] @0
+=== no pickup inside pickup-secs: restart recorded failed, not done
+timer-loop nudge failed no transcript progress
+timer-loop restart pending token=38980155605ae01d old_pid=10734 handoff=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.qHagTO/homes/loop/data/watchdog/handoffs/loop-3217108722-1793
+## Homes
+- loop: TIMER-LOOP, last turn 56m ago, owed 1, ctx unknown
+
+## Open gaps
+- no model configured; judged symptoms are reported only
+old-holder-stopped
+timer-loop restart failed no verified pickup within the window
+agent-gone restart pending token=6a968820bd48bfc7 old_pid=10734 handoff=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw
+## Homes
+- loop: AGENT-GONE, last turn 56m ago, owed 1, ctx unknown
+
+## Open gaps
+- loop: self-heal issue not filed for watchdog-timer-loop: no issue-repo configured
+- no model configured; judged symptoms are reported only
+no server running on /tmp/fml.kgQx1B/tmux-501/default
+no server running on /tmp/fml.kgQx1B/tmux-501/default
+=== near loop, real haiku judge, real Claude TUI endpoint
+  transcript_age=3000s loop=near/3 restart_requested=0 ctx=unknown
+unread-input nudge pending Watchdog (automated, not the captain or the owner): 1 inputs have waited 50 minutes. Drain the wake que
+1793573976	loop	claude:haiku	failed rc=1	0	0		0
+1793573975	2023938721	
+## Homes
+- near: UNREAD-INPUT, last turn 50m ago, owed 1, ctx unknown
+
+## Open gaps
+- near: possible loop; no judge answer, so it stays unconfirmed
+: Firstmate operational input waiting: read '/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.qHagTO/home
+
+=== adversarial: no model, near loop plus frozen pane reaches frozen recovery
+unread-input nudge pending Watchdog (automated, not the captain or the owner): 1 inputs have waited 50 minutes. Drain the wake que
+frozen nudge pending Watchdog (automated, not the captain or the owner): nothing changed for 0 minutes while 1 inputs wait. Drain 
+## Homes
+- near2: FROZEN, last turn 50m ago, owed 1, ctx unknown
+
+## Open gaps
+- near2: possible loop; no judge answer, so it stays unconfirmed
+- no model configured; judged symptoms are reported only
+: Firstmate operational input waiting: read '/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/
+: Firstmate operational input waiting: read '/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/
+
+=== real judge command against real haiku, evidence of real work
+1793573995	test	claude:haiku	failed rc=1	0	0		0
