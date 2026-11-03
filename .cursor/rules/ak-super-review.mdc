@@ -1,0 +1,9 @@
+---
+description: Start agent-kit super-review and seat the code-review panel on a Cursor Cloud Agent or IDE agent.
+alwaysApply: false
+---
+
+When a branch or pull request needs agent-kit review, invoke `/super-review`.
+Seat each reviewer as a subagent from `.cursor/agents/` so the seat starts with a clean context.
+The parent still briefs the seat; Cursor does not attest that the reviewer never saw the author's narrative.
+Do not sit the author or spec approver on a reviewer seat (ruling `missing-supervisor-never-implementer`).

@@ -1,0 +1,321 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-kit.local/schemas/catalog.schema.json",
+  "title": "Catalog",
+  "description": "The shape of catalog.yaml, the single source of truth. catalog.d/<name>.yaml fragments may add entries to it and validate against #/$defs/fragment instead; catalog.yaml validates on its own, without them. Nothing is installable, packageable or referenceable unless it is declared here or in a fragment, and `ak validate` fails on an entry with no directory and on a directory with no entry. Every entry carries a batch and a status; skills, packs, protocols, roles and references additionally carry a provenance origin, because the question 'is there a donor file behind it' has an answer for authored content and not for a schema or a profile. 'invocation' is U or M and nothing else (AGENTS.md, 'The invocation law'); 'status' moves contract -> authored; 'provenance_origin' is donor or conversation, where conversation means a G:L locator rather than a fabricated source path (plan 1.4). Profiles are install sets and adapters are host contracts: neither may name anything about which agent fills a seat.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "package",
+    "skills",
+    "packs",
+    "protocols",
+    "roles",
+    "references",
+    "schemas",
+    "policies",
+    "profiles",
+    "adapters"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "package": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "version", "namespace", "default_profile"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/kebab_id" },
+        "name": { "$ref": "common.schema.json#/$defs/kebab_id" },
+        "version": { "$ref": "common.schema.json#/$defs/semver" },
+        "namespace": {
+          "description": "The canonical explicit-start namespace, e.g. '/ak:'. Source validation uses this form; host adapters render it into native invocation syntax when packaging (ADR-0011).",
+          "type": "string",
+          "pattern": "^/[a-z0-9]+(-[a-z0-9]+)*:$"
+        },
+        "default_profile": { "$ref": "common.schema.json#/$defs/kebab_id" },
+        "description": {
+          "description": "The host-facing description, emitted into every bundle's manifest. Not package.json's description and not required to agree with it: package.json describes the npm package, this describes what the host installs. adapters/codex/CONTRACT.md section 5.2 states which identity fields are compared against package.json and which are not.",
+          "type": "string",
+          "minLength": 1
+        },
+        "author": {
+          "description": "Who the host manifests name as the package's author. Emitted into every bundle's manifest as {\"name\": <this>}, so it is stated once here rather than per host. Not a kebab_id: it is a display name and carries spaces.",
+          "type": "string",
+          "minLength": 1
+        },
+        "license": {
+          "description": "The package's SPDX licence identifier, emitted into every bundle's manifest. Must agree with package.json and with the LICENSE file the bundle carries; adapters/codex/CONTRACT.md section 5 makes that disagreement release-blocking.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "skills": {
+      "description": "Public entrypoints. A user-invoked skill may call model-invoked skills and may never call another user-invoked skill; where a public entrypoint and a delegated phase operation both exist, they are declared as separate entrypoints rather than as an exception to the law (AGENTS.md, plan 7.1).",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "kind", "invocation", "profiles", "batch", "provenance_origin", "status", "summary"],
+        "properties": {
+          "id": { "$ref": "common.schema.json#/$defs/skill_id" },
+          "kind": { "enum": ["lifecycle", "supervisor", "standalone", "primitive", "operational"] },
+          "invocation": { "$ref": "#/$defs/invocation" },
+          "entrypoints": {
+            "description": "Present when the skill exposes more than one way in. Each names its authority from common#/$defs/authority and whether a human or a delegated controller may start it.",
+            "type": "object",
+            "minProperties": 1,
+            "propertyNames": { "$ref": "common.schema.json#/$defs/kebab_id" },
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["authority", "invocation"],
+              "properties": {
+                "authority": { "$ref": "common.schema.json#/$defs/authority" },
+                "invocation": { "$ref": "#/$defs/invocation" },
+                "summary": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+              }
+            }
+          },
+          "profiles": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": { "$ref": "common.schema.json#/$defs/kebab_id" }
+          },
+          "batch": { "$ref": "#/$defs/batch" },
+          "provenance_origin": { "$ref": "#/$defs/provenance_origin" },
+          "status": { "$ref": "#/$defs/status" },
+          "summary": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+        }
+      },
+      "x-validator-rule": "catalog.invocation-graph-user-invoked-never-calls-user-invoked"
+    },
+    "packs": {
+      "description": "Domain packs. They attach constraints and review lenses by artifact and semantics; they never start a lifecycle phase (plan 3).",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "batch", "provenance_origin", "status", "activation", "summary"],
+        "properties": {
+          "id": { "$ref": "common.schema.json#/$defs/pack_id" },
+          "batch": { "$ref": "#/$defs/batch" },
+          "provenance_origin": { "$ref": "#/$defs/provenance_origin" },
+          "status": { "$ref": "#/$defs/status" },
+          "activation": {
+            "description": "The artifacts and semantics that attach the pack, in prose here and as machine-checkable rules in the pack's own manifest (pack.schema.json). Never a file extension alone.",
+            "$ref": "common.schema.json#/$defs/nonempty_string"
+          },
+          "summary": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+        }
+      }
+    },
+    "protocols": {
+      "description": "Shared phase logic, invoked by skills and never by humans.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/authored_entry" }
+    },
+    "roles": {
+      "description": "Role prompts, never individually invocable. 'tier' is the activation tier of a review lane, not a ladder of any other kind.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "batch", "provenance_origin", "status", "summary"],
+        "properties": {
+          "id": { "$ref": "common.schema.json#/$defs/role_id" },
+          "batch": { "$ref": "#/$defs/batch" },
+          "provenance_origin": { "$ref": "#/$defs/provenance_origin" },
+          "status": { "$ref": "#/$defs/status" },
+          "tier": {
+            "enum": ["always-on", "standards-gate", "generic-conditional", "conditional", "stack-conditional"]
+          },
+          "summary": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+        }
+      }
+    },
+    "references": {
+      "description": "Loaded on demand, never exposed as slash commands. 'loaded_by' names the skills that may load each one, which is what keeps progressive disclosure checkable (plan 4).",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "batch", "provenance_origin", "status", "loaded_by", "summary"],
+        "properties": {
+          "id": { "$ref": "common.schema.json#/$defs/kebab_id" },
+          "batch": { "$ref": "#/$defs/batch" },
+          "provenance_origin": { "$ref": "#/$defs/provenance_origin" },
+          "status": { "$ref": "#/$defs/status" },
+          "loaded_by": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": { "$ref": "common.schema.json#/$defs/skill_id" }
+          },
+          "summary": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+        }
+      },
+      "x-validator-rule": "catalog.reference-loaded-by-names-a-declared-skill"
+    },
+    "schemas": {
+      "description": "The catalog's JSON Schemas. 'common' holds the shared $defs and validates no document itself; artifact schemas are exactly common#/$defs/schema_id, catalog, skill, pack, case, rulings, install, firstmate-binding, tracker-binding, kb-binding and constitution-article validate configuration rather than run artifacts, review-event, review-pattern, episode, memory-run and learn-state validate the learning runtime's ledger records, and guard-policy validates the guard runtime's policy data, which is why none of those carry an envelope. Schema entries have no provenance origin: they are original contracts, not adapted donor files.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "batch", "status", "summary"],
+        "properties": {
+          "id": {
+            "enum": [
+              "common",
+              "catalog",
+              "skill",
+              "pack",
+              "case",
+              "rulings",
+              "install",
+              "firstmate-binding",
+              "tracker-binding",
+              "kb-binding",
+              "project",
+              "ticket",
+              "dossier",
+              "finding",
+              "review",
+              "verification",
+              "verification-recipe",
+              "charter",
+              "decision",
+              "event",
+              "lesson",
+              "handoff-record",
+              "evaluation",
+              "map",
+              "plan-record",
+              "ship-evidence",
+              "run-ledger",
+              "trail",
+              "trail-audit",
+              "review-event",
+              "review-pattern",
+              "episode",
+              "memory-run",
+              "learn-state",
+              "learn-span",
+              "guard-policy",
+              "constitution-article"
+            ]
+          },
+          "batch": { "$ref": "#/$defs/batch" },
+          "status": { "$ref": "#/$defs/status" },
+          "summary": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+        }
+      },
+      "x-validator-rule": "catalog.schema-entry-has-a-file-and-every-file-has-an-entry"
+    },
+    "policies": {
+      "description": "Machine-referenceable rulings. Citing a ruling is mandatory wherever a skill touches one (AGENTS.md, authoring rule 4).",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/declared_entry" }
+    },
+    "profiles": {
+      "description": "Install sets. A profile selects which entries are installed and never names anything about which agent fills a seat (AGENTS.md).",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "batch", "status", "summary"],
+        "properties": {
+          "id": { "$ref": "common.schema.json#/$defs/kebab_id" },
+          "batch": { "$ref": "#/$defs/batch" },
+          "status": { "$ref": "#/$defs/status" },
+          "default": {
+            "description": "Exactly one profile carries this, and it is the package's default_profile.",
+            "const": true
+          },
+          "summary": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+        }
+      },
+      "x-validator-rule": "catalog.exactly-one-default-profile-matching-package-default-profile"
+    },
+    "adapters": {
+      "description": "Host contracts. An adapter states precisely which restrictions its host actually enforces; a declaration is not enforcement (plan 1.2, 1.3).",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/declared_entry" }
+    }
+  },
+  "$defs": {
+    "fragment": {
+      "description": "One catalog.d/<name>.yaml. A fragment adds entries to catalog.yaml's sections and does nothing else: each section it declares has exactly the entry shape catalog.yaml's does, an id catalog.yaml or another fragment already declares in the same section is catalog.duplicate-id rather than an override, and there is no package block, because package identity is catalog.yaml's alone. A schema entry can name only an id the schemas enum already lists, which catalog.yaml declares, so a new schema is a change to this file and to catalog.yaml rather than a fragment. docs/decisions/0010-catalog-fragments.md records the decision.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version"],
+      "properties": {
+        "schema_version": { "const": 1 },
+        "skills": { "$ref": "#/properties/skills" },
+        "packs": { "$ref": "#/properties/packs" },
+        "protocols": { "$ref": "#/properties/protocols" },
+        "roles": { "$ref": "#/properties/roles" },
+        "references": { "$ref": "#/properties/references" },
+        "schemas": { "$ref": "#/properties/schemas" },
+        "policies": { "$ref": "#/properties/policies" },
+        "profiles": { "$ref": "#/properties/profiles" },
+        "adapters": { "$ref": "#/properties/adapters" }
+      }
+    },
+    "invocation": {
+      "description": "U = user-invoked, only a human starts it, and the packager emits the host's manual-only key for it. M = model-invoked. There is no third value (AGENTS.md, 'The invocation law').",
+      "enum": ["U", "M"]
+    },
+    "status": {
+      "description": "A contract entry is declared and not yet written; an authored entry has its body. The batch that writes the body sets it to authored.",
+      "enum": ["contract", "authored"]
+    },
+    "provenance_origin": {
+      "description": "donor = adapted from at least one pinned donor file, each with a provenance/adaptations.yaml row donor@commit:path that exists at the pin. conversation = no donor implements it and it carries a G:L locator instead. This field answers only 'is there a donor file behind it'; mechanism-level origin lives in provenance/conversation-map.yaml (plan 1.4).",
+      "enum": ["donor", "conversation"]
+    },
+    "batch": {
+      "description": "Authoring batch. The order is deliberate and git is the resume point.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "authored_entry": {
+      "description": "An entry whose body is authored content adapted from a donor or written from the conversation.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "batch", "provenance_origin", "status", "summary"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/kebab_id" },
+        "batch": { "$ref": "#/$defs/batch" },
+        "provenance_origin": { "$ref": "#/$defs/provenance_origin" },
+        "status": { "$ref": "#/$defs/status" },
+        "summary": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+      }
+    },
+    "declared_entry": {
+      "description": "An entry that declares a contract of this repository's own making, so it has no donor origin to record.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "batch", "status", "summary"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/kebab_id" },
+        "batch": { "$ref": "#/$defs/batch" },
+        "status": { "$ref": "#/$defs/status" },
+        "summary": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+      }
+    }
+  },
+  "x-validator-rule": "catalog.ids-unique-across-all-sections-and-every-entry-has-a-directory"
+}

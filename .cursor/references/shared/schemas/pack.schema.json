@@ -1,0 +1,245 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-kit.local/schemas/pack.schema.json",
+  "title": "Domain pack",
+  "description": "Plan 3. A pack manifest: activation evidence, constraints, reviewer guidance and tests. Packs attach by artifact and semantics, never by file extension alone, so 'activation' requires both an artifact kind and a semantic signal and a glob can only narrow a rule that already has them. Security, API and data facts are never dropped because a classifier was uncertain; the lookup path stays usable without one. A pack adds constraints and review lenses and never starts a lifecycle phase. Every attachment is recorded as an attachment_record ($defs/attachment_record) carrying the rationale for the selection. A pack manifest is configuration, not a durable run artifact, so it does not carry common's envelope.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "version", "summary", "activation", "constraints", "reviewer_guidance", "provenance", "tests"],
+  "properties": {
+    "id": { "$ref": "common.schema.json#/$defs/pack_id" },
+    "version": { "$ref": "common.schema.json#/$defs/semver" },
+    "summary": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+    "project_scoped": {
+      "description": "Always false for the eight generic packs. Project facts (one client's tenancy model, integration boundaries or migration practice) belong to that project's KB rules and are never hardcoded into a globally shared pack (plan 3).",
+      "const": false
+    },
+    "starts_phase": {
+      "description": "A pack never starts a lifecycle phase (plan 2.5, plan 3).",
+      "const": false
+    },
+    "activation": {
+      "description": "Deterministic selection input. 'rules' each carry a stable id so an attachment_record can cite exactly which rule matched.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rules", "examples"],
+      "properties": {
+        "rules": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/activation_rule" }
+        },
+        "examples": {
+          "description": "Positive and negative activation evidence. Both directions are required: an example that must attach and an example that must not (plan 10, release scenario 1).",
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["artifact", "attaches", "why"],
+            "properties": {
+              "artifact": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+              "attaches": { "type": "boolean" },
+              "why": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+              "rule": { "$ref": "common.schema.json#/$defs/kebab_id" }
+            }
+          },
+          "allOf": [
+            { "contains": { "properties": { "attaches": { "const": true } }, "required": ["attaches"] } },
+            { "contains": { "properties": { "attaches": { "const": false } }, "required": ["attaches"] } }
+          ]
+        },
+        "classifier_optional": {
+          "description": "True for every pack: the deterministic lookup path works with no classifier present, and an uncertain classifier never suppresses a match (plan 3).",
+          "const": true
+        }
+      }
+    },
+    "constraints": {
+      "description": "What the pack adds to the work it attaches to. Each constraint cites the rule it comes from so a reviewer can check it rather than infer it.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "requirement"],
+        "properties": {
+          "id": { "$ref": "common.schema.json#/$defs/kebab_id" },
+          "requirement": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+          "kind": { "enum": ["must", "must-not", "evidence-required", "authorization-required"] },
+          "authorization": {
+            "description": "A sensitive action this pack's work needs before it may proceed, e.g. dependency-add for pack-deps or public-contract-change for pack-api (plan 3, plan 7.2). Never granted by default.",
+            "$ref": "common.schema.json#/$defs/sensitive_action"
+          },
+          "source": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+        }
+      }
+    },
+    "reviewer_guidance": {
+      "description": "Which review lanes this pack sharpens and what it asks each one to look at. Guidance, not a new persona catalog: the pack never adds a seat that the review policy did not already permit (plan 6.1).",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["lane", "guidance"],
+        "properties": {
+          "lane": { "$ref": "common.schema.json#/$defs/role_id" },
+          "guidance": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+          "required_when_attached": {
+            "description": "True when attaching this pack makes the lane required, so its absence becomes an unavailable lane rather than a silent skip (plan 6.1, release scenario 3).",
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "kb_rules": {
+      "description": "Where a project's own facts are read from, rather than embedded here (plan 3).",
+      "type": "array",
+      "items": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+    },
+    "provenance": { "$ref": "#/$defs/provenance" },
+    "tests": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "kind", "given", "expect"],
+        "properties": {
+          "id": { "$ref": "common.schema.json#/$defs/kebab_id" },
+          "kind": { "enum": ["positive", "negative", "adversarial"] },
+          "given": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+          "expect": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+          "fixture": { "$ref": "common.schema.json#/$defs/repo_path" }
+        }
+      },
+      "allOf": [
+        { "contains": { "properties": { "kind": { "const": "positive" } }, "required": ["kind"] } },
+        { "contains": { "properties": { "kind": { "const": "negative" } }, "required": ["kind"] } }
+      ]
+    }
+  },
+  "$defs": {
+    "activation_rule": {
+      "description": "One activation rule. 'artifact_kinds' and 'semantics' are both required and both non-empty: a rule that could fire on a file extension alone is not expressible (plan 3). 'paths' may only narrow a rule that already matches on artifact and semantics.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "artifact_kinds", "semantics"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/kebab_id" },
+        "artifact_kinds": {
+          "description": "What the change is, e.g. 'public-interface', 'migration', 'lockfile', 'ui-component', 'removal'.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+        },
+        "semantics": {
+          "description": "What the change means, e.g. 'observable response shape changes', 'a trust boundary is crossed', 'a stated performance budget exists'.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+        },
+        "paths": {
+          "description": "Optional narrowing only. Never sufficient on its own.",
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/glob" }
+        },
+        "evidence_required": {
+          "description": "What the selector must actually observe before the rule fires, so a guess cannot stand in for the artifact.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+        }
+      },
+      "x-validator-rule": "pack.activation-requires-artifact-and-semantics"
+    },
+    "attachment_record": {
+      "description": "What the attach-pack protocol writes when a pack attaches. Plan 3 requires the reason to be recorded, not reconstructable: 'rationale' and at least one matched rule id are mandatory, and 'rejected' keeps the packs that were considered and not attached so a later reader can see the selection was deliberate. A record never carries a grant; attaching a pack authorizes nothing (plan 2.5).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pack", "matched_rules", "rationale", "evidence", "attached_at"],
+      "properties": {
+        "pack": { "$ref": "common.schema.json#/$defs/pack_id" },
+        "pack_version": { "$ref": "common.schema.json#/$defs/semver" },
+        "matched_rules": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "common.schema.json#/$defs/kebab_id" }
+        },
+        "rationale": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "evidence": {
+          "description": "The artifacts and locations that satisfied the matched rules.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "common.schema.json#/$defs/evidence_ref" }
+        },
+        "attached_at": { "$ref": "common.schema.json#/$defs/timestamp" },
+        "attached_by": { "$ref": "common.schema.json#/$defs/creator" },
+        "target": {
+          "description": "The ticket, review or run the pack attached to.",
+          "$ref": "common.schema.json#/$defs/artifact_ref"
+        },
+        "classifier_used": {
+          "description": "Recorded for transparency. A classifier's uncertainty is never a reason to drop a deterministic match (plan 3).",
+          "type": "boolean"
+        },
+        "rejected": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["pack", "why"],
+            "properties": {
+              "pack": { "$ref": "common.schema.json#/$defs/pack_id" },
+              "why": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+            }
+          }
+        }
+      },
+      "x-validator-rule": "pack.attachment-records-rationale-and-matched-rule"
+    },
+    "provenance": {
+      "description": "AGENTS.md, authoring rule 3. 'donor' means at least one adapted file with a provenance/adaptations.yaml row donor@commit:path that exists at the pin; 'conversation' carries a G:L locator instead of a fabricated source path (plan 1.4).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["origin"],
+      "properties": {
+        "origin": { "enum": ["donor", "conversation"] },
+        "donor_sources": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["donor", "commit", "path"],
+            "properties": {
+              "donor": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+              "commit": { "$ref": "common.schema.json#/$defs/revision" },
+              "path": { "$ref": "common.schema.json#/$defs/repo_path" },
+              "license": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+              "adaptation": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+            }
+          }
+        },
+        "conversation_locators": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "common.schema.json#/$defs/g_locator" }
+        },
+        "resolved_conflicts": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/kebab_id" }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "origin": { "const": "donor" } }, "required": ["origin"] },
+          "then": { "required": ["donor_sources"] },
+          "else": { "required": ["conversation_locators"] }
+        }
+      ],
+      "x-validator-rule": "pack.provenance-donor-path-exists-at-pin"
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-kit.local/schemas/tracker-backends/linear-linearis.schema.json",
+  "title": "Tracker binding: linear-linearis",
+  "description": "What adapters/tracker/backends/linear-linearis.md reads from ak.tracker.yaml, applied by `ak tracker check` after the generic schemas/tracker-binding.schema.json has passed. A team key is required, a project is optional, and no other default is read. Kept out of the generic schema so that removing this binding removes this file and nothing else.",
+  "type": "object",
+  "required": ["defaults"],
+  "properties": {
+    "defaults": {
+      "type": "object",
+      "required": ["team"],
+      "propertyNames": { "enum": ["team", "project"] }
+    }
+  }
+}

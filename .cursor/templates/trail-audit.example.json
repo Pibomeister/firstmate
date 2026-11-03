@@ -1,0 +1,102 @@
+{
+  "schema": "trail-audit",
+  "schema_version": 1,
+  "id": "example-trail-audit-1",
+  "project": {
+    "id": "example-project",
+    "repo": "example-org/example-service"
+  },
+  "run_id": "example-run-1",
+  "created_by": {
+    "role": "trail-auditor"
+  },
+  "inputs": [
+    {
+      "id": "example-ticket-1",
+      "schema": "ticket",
+      "hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "id": "example-trail-1",
+      "schema": "trail",
+      "hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  ],
+  "source_revision": {
+    "repo": "example-org/example-service",
+    "revision": "2222222222222222222222222222222222222222"
+  },
+  "created_at": "2026-09-19T11:00:00Z",
+  "status": "complete",
+  "ticket": {
+    "id": "example-ticket-1",
+    "schema": "ticket",
+    "hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "auditor_seat": {
+    "id": "example-trail-auditor-1",
+    "implementer_seats": ["example-implementer-1"],
+    "isolation": "host-unattested",
+    "attestation": null
+  },
+  "stretches": [
+    {
+      "id": "example-trail-1",
+      "state": "published",
+      "content_hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  ],
+  "other_material": [
+    {
+      "ref": "example-ticket-1",
+      "hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "ref": "example-verification-1",
+      "hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    {
+      "ref": "example-implementer-report-1",
+      "hash": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    },
+    {
+      "commit": "2222222222222222222222222222222222222222"
+    }
+  ],
+  "transcript": "not-supplied",
+  "result": "items-to-look-at",
+  "attention_list": [
+    {
+      "where": "src/loader/index.ts:44, a pointer of entry return-list-after-loop",
+      "reason": "The pointer names line 44, and src/loader/index.ts at commit 2222222 has 38 lines.",
+      "comparison": "pointer-does-not-resolve",
+      "stretch": "example-trail-1",
+      "entry": "return-list-after-loop"
+    },
+    {
+      "where": "src/loader/config.ts",
+      "reason": "Commit 2222222 changes the default source list in this file, and no entry of the stretch records that change.",
+      "comparison": "change-has-no-entry"
+    }
+  ],
+  "inspected": {
+    "material": [
+      "the stretch example-trail-1",
+      "the ticket example-ticket-1",
+      "the diff of commit 2222222 against 1111111",
+      "the receipt example-verification-1",
+      "the implementer report example-implementer-report-1"
+    ],
+    "sensitive_notes": [
+      {
+        "where": "the output log of receipt example-verification-1, line 12"
+      }
+    ]
+  },
+  "not_inspected": [
+    {
+      "what": "the CI log of commit 2222222",
+      "why": "The run left no CI log for this commit."
+    }
+  ]
+}

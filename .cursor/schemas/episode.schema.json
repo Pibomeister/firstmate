@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-kit.local/schemas/episode.schema.json",
+  "title": "Episode",
+  "description": "The latest snapshot of an ended session, derived deterministically from the observation source (ruling learning-runtime-is-host-adapter). A session that later gains observations refreshes its episode and returns to the nightly queue. 'priority' is the runtime's weighted sum of correction, failure, review, token, novelty and age signals and decides which episodes the consolidator sees first; no judge sets it (ruling learning-judge-is-runner-bound).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "sid",
+    "platform",
+    "started",
+    "ended",
+    "prompts",
+    "obs",
+    "tokens",
+    "files_modified",
+    "request",
+    "completed",
+    "failure_signals",
+    "corrections",
+    "review_events",
+    "priority"
+  ],
+  "properties": {
+    "sid": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+    "platform": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+    "started": { "description": "Epoch milliseconds.", "type": "integer", "minimum": 0 },
+    "ended": { "description": "Epoch milliseconds.", "type": "integer", "minimum": 0 },
+    "prompts": { "type": "integer", "minimum": 0 },
+    "obs": { "type": "integer", "minimum": 0 },
+    "tokens": { "type": "integer", "minimum": 0 },
+    "files_modified": { "type": "array", "items": { "type": "string" } },
+    "request": { "type": ["string", "null"] },
+    "completed": { "type": "boolean" },
+    "failure_signals": { "type": "integer", "minimum": 0 },
+    "corrections": { "type": "integer", "minimum": 0 },
+    "review_events": { "type": "integer", "minimum": 0 },
+    "priority": { "type": "number", "minimum": 0 },
+    "shown": {
+      "description": "The guardrail and lesson ids the session-start block showed this session, joined from its hook.session-start spans (schemas/learn-span.schema.json) by a salted key of the host's session id. Ids only, never a guardrail's or a lesson's text. Empty when a start was recorded and showed none; absent when no start was recorded for the session.",
+      "type": "array",
+      "items": { "type": "string", "pattern": "^(rp|ls)-[0-9]{1,6}$" }
+    },
+    "consolidated_run": {
+      "description": "The run id of the consolidation that included this episode.",
+      "type": "string"
+    }
+  }
+}

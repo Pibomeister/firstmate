@@ -1,0 +1,573 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-kit.local/schemas/common.schema.json",
+  "title": "Shared definitions",
+  "description": "Identifiers, closed vocabularies, the revision-bound artifact envelope (plan 5.2), the shared escalation shape (plan 7.4) and the phase-operation result. Other schemas reference these $defs; this file validates no document on its own.",
+  "$defs": {
+    "nonempty_string": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "string_list": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/nonempty_string" }
+    },
+    "kebab_id": {
+      "description": "Lowercase words joined by single hyphens.",
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "maxLength": 64
+    },
+    "skill_id": {
+      "description": "Agent Skills name rules: 1-64 chars, a-z 0-9 and single hyphens, no leading or trailing hyphen. Never contains a slash.",
+      "$ref": "#/$defs/kebab_id"
+    },
+    "pack_id": {
+      "type": "string",
+      "pattern": "^pack-[a-z0-9]+(-[a-z0-9]+)*$"
+    },
+    "role_id": {
+      "description": "Role path below roles/ without the file suffix: 'supervisor', 'plan-review/critic', 'code-review/security', 'code-review/index'.",
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*(/[a-z0-9]+(-[a-z0-9]+)*)?$"
+    },
+    "actor_role": {
+      "description": "Who created or acted on an artifact: a catalog role id, or one of the reserved actors human, runner, orchestrator.",
+      "anyOf": [{ "enum": ["human", "runner", "orchestrator"] }, { "$ref": "#/$defs/role_id" }]
+    },
+    "operation_id": {
+      "description": "Phase operation id, '<domain>.<action>', e.g. 'review.delta'.",
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*\\.[a-z0-9]+(-[a-z0-9]+)*$"
+    },
+    "artifact_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "kb_kind": {
+      "description": "The nine knowledgebase document kinds (docs/decisions/0001-kb-document-vocabulary.md §2, adapters/knowledgebase/CONTRACT.md `KBDocumentType`). A KB document is a curated page and not a schema-bound run artifact; agent-kit adds no tenth kind.",
+      "enum": ["adr", "concept", "foundation", "gotcha", "pattern", "prd", "process", "sop", "system"]
+    },
+    "schema_id": {
+      "description": "Artifact schemas that carry the envelope.",
+      "enum": [
+        "project",
+        "ticket",
+        "dossier",
+        "finding",
+        "review",
+        "verification",
+        "verification-recipe",
+        "charter",
+        "decision",
+        "event",
+        "lesson",
+        "handoff-record",
+        "evaluation",
+        "map",
+        "plan-record",
+        "ship-evidence",
+        "run-ledger",
+        "trail",
+        "trail-audit"
+      ]
+    },
+    "hash": {
+      "description": "Content digest. For an artifact: sha256 over its canonical JSON form (keys sorted, no insignificant whitespace) with the 'approvals' member removed.",
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "revision": {
+      "description": "A full version-control object id (SHA-1 or SHA-256).",
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+    },
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "date": {
+      "type": "string",
+      "format": "date"
+    },
+    "repo_path": {
+      "description": "Repository-relative POSIX path: no leading slash, no '..' segment.",
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(^|/)\\.\\.(/|$))[^\\s].*$"
+    },
+    "glob": {
+      "description": "Repository-relative glob. Supports *, **, ? and {a,b}.",
+      "$ref": "#/$defs/repo_path"
+    },
+    "g_locator": {
+      "description": "Line locator into the design conversation (local source 'conversation'): G:L<start> or G:L<start>-<end>, both within 1..2265. ak validate also checks start <= end. 2265, not the 2264 `wc -l` reports: the transcript has no trailing newline, so `wc -l` undercounts it by one and that figure rejects a valid G:L2265.",
+      "type": "string",
+      "pattern": "^G:L([1-9][0-9]{0,2}|1[0-9]{3}|2[01][0-9]{2}|22[0-5][0-9]|226[0-5])(-([1-9][0-9]{0,2}|1[0-9]{3}|2[01][0-9]{2}|22[0-5][0-9]|226[0-5]))?$"
+    },
+    "line_range": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start", "end"],
+      "properties": {
+        "start": { "type": "integer", "minimum": 1 },
+        "end": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "project_ref": {
+      "description": "Project and repository identity (plan 5.2).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": {
+        "id": { "$ref": "#/$defs/kebab_id" },
+        "repo": {
+          "description": "Repository identity, e.g. 'owner/name'. Omit only for project-wide artifacts not tied to one repository.",
+          "$ref": "#/$defs/nonempty_string"
+        }
+      }
+    },
+    "revision_ref": {
+      "description": "A source snapshot: the repository, the committed revision, and optionally the digest of the working-tree diff over that revision. A revision alone names the committed tree; a worker that verifies or reviews before committing is describing that revision plus a diff, and binding only the revision would let an uncommitted edit inherit the receipt. Where 'diff_hash' is present, evidence bound to this snapshot is stale when either the revision or the diff hash changes (ruling `closure-requires-independent-verification`). Absent, the snapshot claims a clean tree at 'revision'.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repo", "revision"],
+      "properties": {
+        "repo": { "$ref": "#/$defs/nonempty_string" },
+        "revision": { "$ref": "#/$defs/revision" },
+        "diff_hash": {
+          "description": "sha256 over the binary `git diff --no-ext-diff --binary <revision>` output of the tracked working tree, untracked files included as intent-to-add. The digest of an empty diff is a valid value and means the tree is clean.",
+          "$ref": "#/$defs/hash"
+        }
+      }
+    },
+    "artifact_ref": {
+      "description": "A reference that binds to content, not to a filename (plan 5.2).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "hash"],
+      "properties": {
+        "id": { "$ref": "#/$defs/artifact_id" },
+        "schema": { "$ref": "#/$defs/schema_id" },
+        "hash": { "$ref": "#/$defs/hash" },
+        "revision": { "$ref": "#/$defs/revision" }
+      }
+    },
+    "evidence_ref": {
+      "description": "Pointer to supporting evidence: an artifact, a KB fact or an external URL, with a digest when the content can change.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref"],
+      "properties": {
+        "ref": { "$ref": "#/$defs/nonempty_string" },
+        "kind": { "enum": ["artifact", "kb-fact", "code", "receipt", "url", "transcript"] },
+        "hash": { "$ref": "#/$defs/hash" },
+        "note": { "type": "string" }
+      }
+    },
+    "code_location": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["revision", "path"],
+      "properties": {
+        "repo": { "$ref": "#/$defs/nonempty_string" },
+        "revision": { "$ref": "#/$defs/revision" },
+        "path": { "$ref": "#/$defs/repo_path" },
+        "symbol": { "type": ["string", "null"] },
+        "line_range": { "$ref": "#/$defs/line_range" }
+      }
+    },
+    "creator": {
+      "description": "Creator role plus the skill, entrypoint or phase operation that produced the artifact.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role"],
+      "properties": {
+        "role": { "$ref": "#/$defs/actor_role" },
+        "skill": { "$ref": "#/$defs/skill_id" },
+        "entrypoint": { "$ref": "#/$defs/kebab_id" },
+        "operation": { "$ref": "#/$defs/operation_id" }
+      }
+    },
+    "authority": {
+      "description": "explicit: a human asked for it in this session (for a user-only skill, only the slash command counts). explicit-or-standing: only autopilot, started by the human's slash command or by Firstmate after the runner validates a standing grant bound to the approved charter. explicit-or-delegated: explicit, or a runner-validated phase grant covers it. delegated-grant: only under a runner-validated phase grant. active-review-run: only inside a review run that is already open. model: the model or a parent skill may start it when its description matches.",
+      "enum": [
+        "explicit",
+        "explicit-or-standing",
+        "explicit-or-delegated",
+        "delegated-grant",
+        "active-review-run",
+        "model"
+      ]
+    },
+    "standing_grant_ref": {
+      "description": "Firstmate may start only autopilot for this approved run. The runner checks this ref against the immutable charter's standing_grants entry and explicit human approval; a worker cannot mint it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["charter_hash", "covers", "controller", "run_id"],
+      "properties": {
+        "charter_hash": { "$ref": "#/$defs/hash" },
+        "covers": { "const": "autopilot.start" },
+        "controller": { "const": "firstmate" },
+        "run_id": { "$ref": "#/$defs/artifact_id" }
+      }
+    },
+    "grant_ref": {
+      "description": "A runner-issued grant: the charter hash plus the checkpoint category or grantable action it covers. Skills never issue grants.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["charter_hash", "covers"],
+      "properties": {
+        "charter_hash": { "$ref": "#/$defs/hash" },
+        "covers": {
+          "anyOf": [
+            { "$ref": "#/$defs/checkpoint_category" },
+            { "$ref": "#/$defs/grantable_action" },
+            { "$ref": "#/$defs/sensitive_action" }
+          ]
+        },
+        "decision": { "$ref": "#/$defs/artifact_id" }
+      }
+    },
+    "approval": {
+      "description": "An approval binds to the artifact hash it approved. A changed artifact does not inherit it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact_hash", "by", "authority", "at"],
+      "properties": {
+        "artifact_hash": { "$ref": "#/$defs/hash" },
+        "by": { "$ref": "#/$defs/actor_role" },
+        "authority": { "enum": ["explicit", "delegated-grant"] },
+        "grant": { "$ref": "#/$defs/grant_ref" },
+        "at": { "$ref": "#/$defs/timestamp" },
+        "note": { "type": "string" }
+      },
+      "if": { "properties": { "authority": { "const": "delegated-grant" } } },
+      "then": { "required": ["grant"] }
+    },
+    "envelope": {
+      "description": "Plan 5.2: schema version, project/repo identity, run ID, creator role, input artifact IDs and hashes, source revision, timestamp and status. Each artifact schema narrows 'status'.",
+      "type": "object",
+      "required": [
+        "schema",
+        "schema_version",
+        "id",
+        "project",
+        "run_id",
+        "created_by",
+        "inputs",
+        "source_revision",
+        "created_at",
+        "status"
+      ],
+      "properties": {
+        "schema": { "$ref": "#/$defs/schema_id" },
+        "schema_version": { "const": 1 },
+        "id": { "$ref": "#/$defs/artifact_id" },
+        "project": { "$ref": "#/$defs/project_ref" },
+        "run_id": {
+          "description": "Null only when a human wrote the artifact outside any run.",
+          "anyOf": [{ "$ref": "#/$defs/artifact_id" }, { "type": "null" }]
+        },
+        "created_by": { "$ref": "#/$defs/creator" },
+        "inputs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/artifact_ref" }
+        },
+        "source_revision": {
+          "description": "The code revision the artifact describes. Null only when no code revision applies, such as a product decision taken before code exists.",
+          "anyOf": [{ "$ref": "#/$defs/revision_ref" }, { "type": "null" }]
+        },
+        "created_at": { "$ref": "#/$defs/timestamp" },
+        "updated_at": { "$ref": "#/$defs/timestamp" },
+        "status": { "type": "string" },
+        "supersedes": { "$ref": "#/$defs/artifact_ref" },
+        "approvals": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/approval" }
+        },
+        "tracker": {
+          "description": "Link to the authoritative record when another system owns it (plan 8).",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["system", "id"],
+          "properties": {
+            "system": { "$ref": "#/$defs/nonempty_string" },
+            "id": { "$ref": "#/$defs/nonempty_string" },
+            "url": { "type": "string", "format": "uri" }
+          }
+        }
+      }
+    },
+    "capability": {
+      "description": "Host capabilities a skill requires (skill.yaml 'requires').",
+      "enum": [
+        "repository-read",
+        "repository-write",
+        "isolated-worktree",
+        "isolated-review-context",
+        "independent-context",
+        "process-exec",
+        "network-fetch",
+        "kb-read",
+        "kb-write",
+        "vcs-local",
+        "vcs-remote",
+        "tracker-access",
+        "event-delivery",
+        "human-channel",
+        "runner-grants",
+        "trusted-evidence",
+        "artifact-write",
+        "firstmate-supervision"
+      ]
+    },
+    "skill_section": {
+      "description": "A SKILL.md section. Every authored skill carries the same ten, so this is the whole space an obligation can land in. when-to-use: the conditions under which the skill applies. not-for: a case it declines to handle at all. authority: who may invoke, approve or grant. inputs: what it consumes. workflow: an ordering or step obligation. hard-gates: a condition under which it refuses to continue and says so -- a rule that changes what it does next is not a gate, a gate is the absence of a next. outputs: what it emits or records. side-effects: what it is permitted to do. stop-conditions: where the run ends or halts, a terminal state rather than a refusal to proceed past a check. limits: a bound on a count, size, round or budget. The enum is statable here; what is not is the requirement that every row of policies/resolved-conflicts.yaml declare a non-empty list of these, because that file is not a schema target. src/validation/rulings.ts reads this enum and enforces it there.",
+      "enum": [
+        "when-to-use",
+        "not-for",
+        "authority",
+        "inputs",
+        "workflow",
+        "hard-gates",
+        "outputs",
+        "side-effects",
+        "stop-conditions",
+        "limits"
+      ],
+      "x-validator-rule": "common.ruling-declares-a-discharging-skill-section"
+    },
+    "side_effect": {
+      "description": "Closed side-effect vocabulary. Remote effects (remote-push, pr-open, pr-comment, pr-thread-resolve, kb-publish, tracker-write) require an idempotency key plus read-back.",
+      "enum": [
+        "workspace-write",
+        "branch-create",
+        "local-commit",
+        "remote-push",
+        "pr-open",
+        "pr-comment",
+        "pr-thread-resolve",
+        "kb-draft",
+        "kb-publish",
+        "artifact-write",
+        "process-exec",
+        "scratch-write",
+        "tracker-write",
+        "external-fetch",
+        "skill-source-write"
+      ]
+    },
+    "remote_side_effect": {
+      "enum": ["remote-push", "pr-open", "pr-comment", "pr-thread-resolve", "kb-publish", "tracker-write"]
+    },
+    "grantable_action": {
+      "description": "Actions a charter may allow (plan 7.2 defaults).",
+      "enum": [
+        "answer-alignment-question",
+        "approve-spec",
+        "approve-ticket",
+        "start-implementation-ticket",
+        "adjudicate-finding",
+        "local-commit",
+        "push-branch",
+        "open-pr",
+        "reply-pr-comment",
+        "resolve-pr-thread",
+        "ci-repair",
+        "publish-lesson"
+      ]
+    },
+    "sensitive_action": {
+      "description": "Actions never granted by default (plan 7.2). A charter may allow one only through a sensitive_grants entry a human approved.",
+      "enum": [
+        "merge",
+        "deploy",
+        "production-credentials",
+        "destructive-data",
+        "money-movement",
+        "dependency-add",
+        "public-contract-change",
+        "trust-boundary-change",
+        "scope-expansion",
+        "force-push",
+        "history-rewrite"
+      ]
+    },
+    "checkpoint_category": {
+      "description": "Checkpoints a supervisor pair may decide when the charter lists them (plan 7.2, 7.3).",
+      "enum": [
+        "align-answer",
+        "spec-approval",
+        "ticket-approval",
+        "build-go",
+        "finding-adjudication",
+        "delta-closure",
+        "ship-pr",
+        "ci-repair",
+        "lesson-publication",
+        "plan-conflict-ruling"
+      ]
+    },
+    "run_state": {
+      "description": "Plan 7.4 host-neutral run states. The last four are terminal-or-blocked results reachable from any state.",
+      "enum": [
+        "created",
+        "grounding",
+        "alignment",
+        "planning",
+        "building",
+        "verifying",
+        "reviewing",
+        "repairing",
+        "ready-to-ship",
+        "pr-open",
+        "complete",
+        "needs-input",
+        "cap-reached",
+        "failed",
+        "cancelled"
+      ]
+    },
+    "operation_status": {
+      "description": "Closed result set for every phase operation. 'complete' ends the operation, not the run.",
+      "enum": ["complete", "needs-input", "cap-reached", "failed", "cancelled"]
+    },
+    "child": {
+      "description": "A task-local child: a helper a worker starts inside its own task, under its own ownership, as opposed to a fleet task a supervisor dispatches (ruling `task-local-child-not-fleet-task`). It is depth 1 by construction: a child starts no child. Its scope is a subset of the parent's, it writes only to its artifact destination, and what it spends is counted against the parent's persistent budget rather than a fresh one. It never spawns fleet work, merges, pushes or contacts a human. These are declarations; which of them a host enforces is stated per host in adapters/firstmate/CONTRACT.md §5.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "parent_run_id",
+        "child_id",
+        "role",
+        "scope",
+        "permissions",
+        "artifact_destination",
+        "budget",
+        "depth"
+      ],
+      "properties": {
+        "parent_run_id": { "$ref": "#/$defs/artifact_id" },
+        "child_id": { "$ref": "#/$defs/artifact_id" },
+        "role": { "$ref": "#/$defs/role_id" },
+        "scope": {
+          "description": "The paths the child may read and, for a writing role, change. Must be a subset of the parent's bound scope; the parent checks that before it starts the child.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/glob" }
+        },
+        "permissions": {
+          "description": "The side effects the child may perform. Remote effects, merges and fleet dispatch are not expressible here, because a child may never hold them.",
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": ["workspace-write", "artifact-write", "process-exec", "scratch-write"] }
+        },
+        "artifact_destination": {
+          "description": "The one location the child writes its output to. Everything else it produces is discarded with its context.",
+          "$ref": "#/$defs/repo_path"
+        },
+        "budget": {
+          "description": "The share of the parent's persistent budget this child may draw. Its spend is charged to the parent; a child never receives a budget of its own.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["charged_to"],
+          "properties": {
+            "charged_to": { "$ref": "#/$defs/artifact_id" },
+            "max_turns": { "type": "integer", "minimum": 1 },
+            "max_wall_seconds": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "depth": { "type": "integer", "minimum": 1, "maximum": 1 }
+      }
+    },
+    "evidence_kind": {
+      "description": "Runtime evidence vocabulary selected by a project recipe and required per ticket check. It is not a universal instruction to collect every kind.",
+      "enum": ["rendered-screenshot", "user-path-trial", "trace", "log", "api-response", "dry-run", "smoke-test"]
+    },
+    "surface": {
+      "description": "The observable surface an acceptance criterion exercises. none keeps non-runtime and compatibility criteria explicit.",
+      "enum": ["frontend", "backend", "none"]
+    },
+    "option": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "summary"],
+      "properties": {
+        "id": { "$ref": "#/$defs/kebab_id" },
+        "summary": { "$ref": "#/$defs/nonempty_string" },
+        "consequence": { "type": "string" }
+      }
+    },
+    "escalation": {
+      "description": "Plan 7.4 escalation: the one decision needed, bounded options, evidence already gathered, recommended default, triggering charter or policy rule, and the blocked ticket or finding. ak validate checks that 'default' names one of the options.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["need", "options", "tried", "default", "charter_rule", "blocked"],
+      "properties": {
+        "need": { "$ref": "#/$defs/nonempty_string" },
+        "options": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 6,
+          "items": { "$ref": "#/$defs/option" }
+        },
+        "tried": {
+          "description": "Evidence already gathered.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/evidence_ref" }
+        },
+        "default": { "$ref": "#/$defs/kebab_id" },
+        "operation": { "$ref": "#/$defs/nonempty_string" },
+        "approve": { "$ref": "#/$defs/kebab_id" },
+        "charter_rule": {
+          "description": "The charter or policy rule that triggered this, e.g. 'charter:sensitive_actions/merge' or 'policy:limits/fix_cycles'.",
+          "$ref": "#/$defs/nonempty_string"
+        },
+        "blocked": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/artifact_id" }
+        }
+      }
+    },
+    "operation_result": {
+      "description": "What a phase operation returns. needs-input carries an escalation; cap-reached names the limit; failed names the error.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operation", "status", "next_permitted_action"],
+      "properties": {
+        "operation": { "$ref": "#/$defs/operation_id" },
+        "status": { "$ref": "#/$defs/operation_status" },
+        "next_permitted_action": {
+          "description": "Stored so a restart resumes without repeating side effects. Null when nothing further is permitted.",
+          "anyOf": [{ "$ref": "#/$defs/nonempty_string" }, { "type": "null" }]
+        },
+        "outputs": { "type": "array", "items": { "$ref": "#/$defs/artifact_ref" } },
+        "idempotency_key": { "$ref": "#/$defs/nonempty_string" },
+        "escalation": { "$ref": "#/$defs/escalation" },
+        "cap": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["limit", "value"],
+          "properties": {
+            "limit": { "$ref": "#/$defs/kebab_id" },
+            "value": { "type": "number" }
+          }
+        },
+        "error": { "$ref": "#/$defs/nonempty_string" }
+      },
+      "allOf": [
+        { "if": { "properties": { "status": { "const": "needs-input" } } }, "then": { "required": ["escalation"] } },
+        { "if": { "properties": { "status": { "const": "cap-reached" } } }, "then": { "required": ["cap"] } },
+        { "if": { "properties": { "status": { "const": "failed" } } }, "then": { "required": ["error"] } }
+      ]
+    }
+  }
+}

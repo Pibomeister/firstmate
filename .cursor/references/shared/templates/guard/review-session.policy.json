@@ -1,0 +1,15 @@
+{
+  "schema": "guard-policy",
+  "version": "0.1.0",
+  "protected_paths": [],
+  "destructive_commands": [],
+  "secret_paths": [
+    {
+      "id": "secret.claude-session-store",
+      "globs": ["**/.claude/projects/**"],
+      "reason": "Claude Code stores session transcripts under .claude/projects; a review seat must not read the author's session"
+    }
+  ],
+  "path_tiers": [],
+  "governed_paths": []
+}

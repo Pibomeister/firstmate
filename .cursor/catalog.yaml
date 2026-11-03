@@ -1,0 +1,1298 @@
+# agent-kit catalog — the single source of truth.
+#
+# `ak validate` fails on an entry with no directory and on a directory with no entry.
+# Nothing is installable, packageable or referenceable unless it is declared here or in a
+# catalog.d/<name>.yaml fragment. A fragment only adds entries: it never overrides one declared
+# here and never carries package:, and this repository carries none. It is how a fork declares
+# its own entries without editing this file (docs/decisions/0010-catalog-fragments.md).
+#
+# Field notes
+#   invocation        U = user-invoked, human-started save the standing exceptions (held by the
+#                     skill's authority step; no host flag, see docs/decisions/0003-model-invocation.md).
+#                     M = model-invoked.
+#                     See AGENTS.md, "The invocation law", for the exceptions.
+#   profiles          Which install profiles include it. Never model names.
+#   batch             Authoring batch (Phase 4). Order is deliberate; git is the resume point.
+#   provenance_origin donor      = adapted from at least one pinned donor file; every such file
+#                                  has a provenance/adaptations.yaml row `donor@commit:path`.
+#                     conversation = no donor implements it; carries a G:L locator instead.
+#                     Mechanism-level origin is tracked in provenance/conversation-map.yaml,
+#                     not here. This field answers only "is there a donor file behind it".
+#   status            contract -> authored. Set to authored by the batch that writes the body.
+
+schema_version: 1
+
+package:
+  id: ak
+  name: agent-kit
+  version: 0.1.82
+  # Canonical explicit-start namespace. Host adapters render this plus a skill
+  # id into the host's native form when packaging (ADR-0011).
+  namespace: "/ak:"
+  default_profile: core
+  # The host-facing description, emitted into both manifests. Deliberately not
+  # package.json's description, which names the npm package: the two are
+  # different texts about different objects, and adapters/codex/CONTRACT.md §5.2
+  # is what keeps them from being forced to agree. Stated verbatim by
+  # adapters/claude-code/CONTRACT.md §1.
+  description: "One engineering lifecycle, amalgamated from eleven donors: ten MIT, one Apache-2.0."
+  # Emitted into both host manifests from here, so the two cannot drift apart or
+  # drift from the catalog. Both values are specified verbatim by
+  # adapters/claude-code/CONTRACT.md §1 and are not chosen here.
+  author: agent-kit maintainers
+  license: MIT
+
+# ---------------------------------------------------------------------------
+# Skills — 36 public entrypoints
+# ---------------------------------------------------------------------------
+skills:
+
+  # --- Lifecycle: the seven supers (arch 2.1) -------------------------------
+  - id: super-align
+    kind: lifecycle
+    invocation: U
+    profiles: [core]
+    batch: 3
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      Grill the request, establish shared vocabulary, reach approved direction or an explicit
+      unresolved decision. Hard gate: nothing is implemented before a human approves.
+
+  - id: super-bound
+    kind: lifecycle
+    invocation: U
+    profiles: [core]
+    batch: 3
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      Requirements/spec, implementation plan, dependency DAG, ownership boundaries, acceptance
+      criteria and verification commands, with evidenced readiness, assumptions and delegation per
+      ticket. Decision tickets are never implementation tickets.
+
+  - id: super-scout
+    kind: lifecycle
+    invocation: M
+    profiles: [core]
+    batch: 4
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      Bounded read-only exploration into a revision-bound evidence dossier with coverage limits
+      and unknowns. Never returns an architectural verdict.
+
+  - id: super-build
+    kind: lifecycle
+    invocation: M
+    profiles: [core]
+    batch: 4
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      Execute one approved ticket under TDD in an owned worktree. No self-approval, no silent
+      scope expansion.
+
+  - id: super-verify
+    kind: lifecycle
+    invocation: M
+    profiles: [core]
+    batch: 4
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      Acceptance-to-evidence matrix with command, exit status, code revision and environment
+      identity. An agent's description of green tests is not a receipt.
+
+  - id: super-review
+    kind: lifecycle
+    invocation: M
+    entrypoints:
+      full:
+        authority: model
+        invocation: M
+      delta:
+        authority: active-review-run
+        invocation: M
+      readiness:
+        authority: model
+        invocation: M
+    profiles: [core]
+    batch: 5
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      Specialist panel over an immutable snapshot (full), two-axis delta over a fix (delta), or
+      the two-lane readiness gate. Reviewers cannot edit. A required-lane failure is unavailable,
+      which blocks approval and never falls back to self-review.
+
+  - id: super-ship
+    kind: lifecycle
+    invocation: U
+    profiles: [core]
+    batch: 5
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      Release checks, sensitive-data scan, PR preparation and the linked KB change. Merge and
+      deploy are separate capabilities, never included.
+
+  # --- Supervisor (arch 2.2) -----------------------------------------------
+  - id: autopilot
+    kind: supervisor
+    invocation: U
+    entrypoints:
+      run:
+        authority: explicit-or-standing
+        invocation: U
+    profiles: [autonomy]
+    batch: 10
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      A human-started or Firstmate standing-grant-started supervisor pair exercising delegated checkpoint authority over
+      the same lifecycle skills. Immutable charter; supervisors never implement. Agreement is not
+      authority.
+
+  # --- Standalone supporting skills (arch 2.3) ------------------------------
+  - id: codebase-design
+    kind: standalone
+    invocation: M
+    profiles: [core]
+    batch: 12
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      Shared vocabulary and principles for deep-module design. Answers a bounded design question,
+      or states the vocabulary and stops when no question is supplied; it never invents a process.
+
+  - id: verify
+    kind: standalone
+    invocation: U
+    profiles: [core]
+    batch: 12
+    provenance_origin: conversation
+    status: authored
+    summary: >-
+      Build, run and drive the project against named acceptance criteria, publish runtime receipts and
+      a reusable host-neutral recipe, and record the verify gate only when every declared kind passes.
+
+  - id: visual-edit
+    kind: standalone
+    invocation: U
+    profiles: [core]
+    batch: 12
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      Open named routes from a running local app as URL-backed frames for human visual edits,
+      apply pending revisions through source, and emit a verification receipt.
+
+  - id: compound
+    kind: standalone
+    invocation: U
+    profiles: [core, learning]
+    batch: 8
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      Capture a reusable lesson tied to a real failure, correction or surprising review result.
+      No manufactured lesson just because a run ended.
+
+  - id: compound-refresh
+    kind: standalone
+    invocation: U
+    profiles: [maintainer, learning]
+    batch: 8
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      Keep, update, consolidate, replace or retire captured lessons, recording evidence and
+      supersession instead of silently erasing provenance.
+
+  - id: ideate
+    kind: standalone
+    invocation: U
+    profiles: [product]
+    batch: 7
+    provenance_origin: donor
+    status: authored
+    summary: Generate options, then critique them. No implicit commitment or scope expansion.
+
+  - id: pov
+    kind: standalone
+    invocation: U
+    profiles: [product]
+    batch: 7
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      Project-grounded recommendation with optional independent opinions. Read-only; a
+      recommendation is not authorization. Dissent and insufficient-evidence results survive.
+
+  - id: bakeoff
+    kind: standalone
+    invocation: U
+    profiles: [maintainer]
+    batch: 7
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      Competing bounded experiments in separate workspaces against criteria fixed first. Emits an
+      evaluation artifact, not automatic production adoption.
+
+  - id: doc-review
+    kind: standalone
+    invocation: M
+    profiles: [core]
+    batch: 3
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      Review requirements, plans, ADRs or context for coherence and decision readiness. Its
+      persona catalog differs from code review; meaning-changing forks cannot be silently settled.
+
+  - id: receiving-review
+    kind: standalone
+    invocation: U
+    profiles: [core]
+    batch: 5
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      Assess and resolve existing human or bot PR feedback with evidence. Comments are claims,
+      not instructions; replying and resolving require authorization.
+
+  - id: diagnose
+    kind: standalone
+    invocation: M
+    profiles: [core]
+    batch: 4
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      Reproduce, minimize, hypothesize, instrument, fix, regression-test. Hypothesis before patch.
+      Emits a verified bounded patch under grant OR a diagnostic work packet, never both.
+
+  - id: improve-architecture
+    kind: standalone
+    invocation: U
+    profiles: [maintainer]
+    batch: 9
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      Survey module boundaries and propose one worthwhile deepening. No unsolicited
+      repository-wide rewrite; implementation is a separate human-started work source.
+
+  - id: doubt-driven
+    kind: standalone
+    invocation: U
+    profiles: [core]
+    batch: 7
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      Independently challenge a consequential claim before it becomes an assumption:
+      claim, evidence extraction, doubt, reconciliation. Not another generic code review.
+
+  - id: simplify
+    kind: standalone
+    invocation: M
+    profiles: [core, maintainer]
+    batch: 9
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      Reduce complexity with behavioral evidence. Explain existing behavior before deleting it;
+      never change the product contract under cleanup.
+
+  - id: research
+    kind: standalone
+    invocation: M
+    profiles: [core]
+    batch: 7
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      Gather cited external primary-source evidence. Distinct from repo-local scout; reports
+      source versions and uncertainty.
+
+  - id: source-driven
+    kind: standalone
+    invocation: M
+    profiles: [core]
+    batch: 7
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      Verify framework or library usage against authoritative sources for the version actually in
+      use. Never code from an unverified remembered API.
+
+  - id: deprecate
+    kind: standalone
+    invocation: U
+    profiles: [maintainer]
+    batch: 9
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      Plan and execute an approved retirement or migration with compatibility, sequencing,
+      rollback and consumer evidence. Irreversible steps stay separately gated.
+
+  - id: explain
+    kind: standalone
+    invocation: U
+    profiles: [core]
+    batch: 8
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      Explain how and why existing behavior works from repository and KB evidence. A description
+      is not a recommendation or an implementation plan.
+
+  - id: triage
+    kind: standalone
+    invocation: U
+    profiles: [maintainer]
+    batch: 9
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      Apply a configured issue-state and classification policy. Useful only with a real tracker
+      policy; cannot silently reprioritize beyond delegated scope.
+
+  - id: strategy
+    kind: standalone
+    invocation: U
+    profiles: [product]
+    batch: 9
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      Work from standing product goals and strategic constraints. No automatic feature expansion.
+
+  - id: product-pulse
+    kind: standalone
+    invocation: U
+    profiles: [product]
+    batch: 9
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      Inspect changes and signals against existing product anchors. A report, not permission to
+      change the roadmap.
+
+  - id: writing-skills
+    kind: standalone
+    invocation: U
+    profiles: [maintainer]
+    batch: 8
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      Author and improve skills using behavioral tests and provenance. Required for maintaining
+      this package; candidate edits pass evaluations and a separate review before promotion.
+
+  # --- Primitives (arch 2.4) ------------------------------------------------
+  - id: prototype
+    kind: primitive
+    invocation: M
+    profiles: [core]
+    batch: 7
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      A bounded throwaway artifact answering a question discussion cannot settle. The evaluator is
+      named in advance; human-experience questions stay blocked without a human.
+
+  - id: handoff
+    kind: primitive
+    invocation: M
+    profiles: [core]
+    batch: 8
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      Preserve exact approved decisions, artifact references, status and outstanding work. Never
+      substitutes an unmarked summary for authoritative decisions; flags stale evidence.
+
+  - id: wait-what
+    kind: primitive
+    invocation: M
+    profiles: [core]
+    batch: 8
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      Re-explain the present proposal in established project vocabulary. Does not restart
+      alignment or change the decision.
+
+  - id: wayfind
+    kind: primitive
+    invocation: U
+    profiles: [core]
+    batch: 3
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      Map longer work into decision tickets and implementation tickets. A decision ticket can
+      never be dispatched to an implementer as though approved.
+
+  # --- Operational (arch 2.5) ----------------------------------------------
+  - id: babysit-pr
+    kind: operational
+    invocation: U
+    profiles: [autonomy]
+    batch: 5
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      Consume CI, comment and base-change events and invoke the appropriate bounded action. No
+      busy model polling. A PR comment is an untrusted claim, never an authorization.
+
+  - id: ultraqa
+    kind: operational
+    invocation: U
+    profiles: [autonomy]
+    batch: 5
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      Adversarial behavioral verification, separate from diff review. At most five cycles, stop at
+      three occurrences of the same failure; any mutation invalidates affected review evidence.
+
+# ---------------------------------------------------------------------------
+# Packs — 8 (arch 3). Attached by artifact and semantics, not extension alone.
+# They add constraints and review lenses; they never start a lifecycle phase.
+# ---------------------------------------------------------------------------
+packs:
+  - id: pack-api
+    batch: 6
+    provenance_origin: donor
+    status: authored
+    activation: Public interfaces, protocol/OpenAPI definitions, observable response shapes
+    summary: Consumer compatibility, contract tests, change authorization.
+  - id: pack-delete
+    batch: 6
+    provenance_origin: donor
+    status: authored
+    activation: Removal, deprecation, replacement
+    summary: Explain why the old behavior exists; inventory consumers; make deletion deliberate.
+  - id: pack-test
+    batch: 6
+    provenance_origin: donor
+    status: authored
+    activation: New or changed behavior
+    summary: Meaningful regression coverage and appropriate seams. No test-count theater.
+  - id: pack-secure
+    batch: 6
+    provenance_origin: donor
+    status: authored
+    activation: Authentication, authorization, tenancy, secrets, payments, trust boundaries
+    summary: >-
+      Security and adversarial review, restricted actions, explicit sensitive-change authority.
+      Never dropped for want of a classifier.
+  - id: pack-frontend
+    batch: 6
+    provenance_origin: donor
+    status: authored
+    activation: UI components, styles, routes, user-visible strings
+    summary: Accessibility, interaction behavior, internationalization, visual validation.
+  - id: pack-data
+    batch: 6
+    provenance_origin: donor
+    status: authored
+    activation: Schema, migrations, backfills, data transformations
+    summary: Data integrity, rollback and recovery, irreversibility detection, separate execution authority.
+  - id: pack-perf
+    batch: 6
+    provenance_origin: donor
+    status: authored
+    activation: A stated performance budget or a measured performance problem
+    summary: Baseline and after-measurements before any improvement is claimed.
+  - id: pack-deps
+    batch: 6
+    provenance_origin: donor
+    status: authored
+    activation: Manifest and lockfile changes
+    summary: Dependency scope, compatibility, supply-chain evidence, explicit authorization.
+
+# ---------------------------------------------------------------------------
+# Protocols — 9. Shared phase logic, invoked by skills, never by humans.
+# ---------------------------------------------------------------------------
+protocols:
+  - id: phase-operations
+    batch: 1
+    provenance_origin: conversation
+    status: authored
+    summary: >-
+      The split that satisfies the invocation law: a public entrypoint a human starts, and a phase
+      operation a delegated controller may start only under a runner-validated grant. Where a host
+      cannot validate a grant, stop for explicit invocation.
+  - id: consensus-plan-gate
+    batch: 1
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      Planner snapshot, then architect, then critic on the same fixed snapshot without seeing each
+      other's analysis, then synthesis. Five rounds maximum. Invoked for genuine architectural
+      disagreement or a review-driven replan, not on every bound.
+  - id: tdd
+    batch: 1
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      Red, green, refactor evidence for behavior changes. Non-testable work requires a recorded
+      alternative verification plan, not an exemption.
+  - id: apply-findings
+    batch: 1
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      Apply only accepted, sufficiently specified findings under authorization. A smell is never an
+      automatic fixer ticket. Independent verification closes them.
+  - id: review-delta
+    batch: 1
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      Two-axis delta over a fix, bounded by affected behavior rather than changed lines, with
+      novelty evidence required. At most two fix cycles.
+  - id: worktree-ownership
+    batch: 1
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      Ownership-aware scheduling with an explicit integration owner and no overlapping writers.
+      Dependency edges alone do not make parallelism safe.
+  - id: attach-pack
+    batch: 1
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      Deterministic pack selection by artifact and semantics with recorded rationale. Attaches
+      constraints and lenses; never starts a phase.
+  - id: evidence-gate
+    batch: 9
+    provenance_origin: conversation
+    status: authored
+    summary: >-
+      What the learning runtime may admit from a judge: cited ids must be in the input, a pattern
+      is active and promoted only at counted thresholds from distinct sources, a lesson is
+      confirmed only across sessions, and a degenerate rewrite is rejected whole. The runtime
+      counts; the judge never does.
+  - id: work-trail
+    batch: 15
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      The implementer's account of its working decisions on a ticket, one stretch per seat written
+      as each decision is made with evidence as pointers, and an independent audit of the trail at
+      the committed revision, both published by reference. Never evidence, never a gate, and never
+      shown to a seat that judges the change.
+
+# ---------------------------------------------------------------------------
+# Roles — 38. Role prompts, not skills. Never individually invocable.
+# ---------------------------------------------------------------------------
+roles:
+  # Core (6)
+  - id: supervisor
+    batch: 1
+    provenance_origin: conversation
+    status: authored
+    summary: >-
+      Judges one decision card against the charter. Two seats, declared independent. Never
+      implements. Agreement is not authority.
+  - id: implementer
+    batch: 1
+    provenance_origin: donor
+    status: authored
+    summary: Executes one approved implementation ticket. May not approve or close its own work.
+  - id: verifier
+    batch: 13
+    provenance_origin: conversation
+    status: authored
+    summary: >-
+      Executes a frozen verification recipe in an independently assigned seat and returns receipts,
+      an acceptance-to-evidence matrix and, after successful discovery, a host-neutral recipe artifact.
+  - id: reviewer-spec
+    batch: 1
+    provenance_origin: donor
+    status: authored
+    summary: Checks whether accepted findings and ticket obligations were actually addressed.
+  - id: reviewer-standards
+    batch: 1
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      Checks fixes against the project's own designated rules, cited rule by rule. Absent
+      standards return empty; they never become invented preferences.
+  - id: trail-auditor
+    batch: 15
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      Compares an implementer's trail with what the run left behind and returns a trail audit with
+      an attention list. Never evidence, never a verdict, and never the implementer or its lineage.
+
+  # Plan review (3)
+  - id: plan-review/planner
+    batch: 1
+    provenance_origin: donor
+    status: authored
+    summary: Produces the fixed plan snapshot the other two seats inspect.
+  - id: plan-review/architect
+    batch: 1
+    provenance_origin: donor
+    status: authored
+    summary: Structural judgment on the snapshot, without seeing the critic's analysis.
+  - id: plan-review/critic
+    batch: 1
+    provenance_origin: donor
+    status: authored
+    summary: Adversarial judgment on the same snapshot, without seeing the architect's analysis.
+
+  # Code review (15) — arch 6.1 keeps the CE panel. Donor names that encode a person
+  # are given functional ids here; adaptations.yaml holds the donor path for each.
+  - id: code-review/correctness
+    batch: 2
+    provenance_origin: donor
+    status: authored
+    tier: always-on
+    summary: Logic errors, edge cases, state bugs, error propagation, intent-vs-implementation.
+  - id: code-review/project-standards
+    batch: 2
+    provenance_origin: donor
+    status: authored
+    tier: standards-gate
+    summary: >-
+      Compliance with the project's designated criteria files, cited rule by rule. Runs when
+      discovery is uncertain so an error never becomes a silent skip.
+  - id: code-review/testing
+    batch: 2
+    provenance_origin: donor
+    status: authored
+    tier: generic-conditional
+    summary: Coverage gaps, weak assertions, brittle implementation-coupled tests.
+  - id: code-review/maintainability
+    batch: 2
+    provenance_origin: donor
+    status: authored
+    tier: generic-conditional
+    summary: Premature abstraction, needless indirection, dead code, coupling, obscuring names.
+  - id: code-review/agent-native
+    batch: 2
+    provenance_origin: donor
+    status: authored
+    tier: generic-conditional
+    summary: Any action a user can take, an agent can also take.
+  - id: code-review/learnings
+    batch: 2
+    provenance_origin: donor
+    status: authored
+    tier: generic-conditional
+    summary: Checks the change against the captured-lesson corpus for prior art.
+  - id: code-review/security
+    batch: 2
+    provenance_origin: donor
+    status: authored
+    tier: conditional
+    summary: >-
+      Exploitable vulnerabilities at auth, public endpoints, input handling, permission and
+      entitlement gates, secrets. Low-confidence findings are adjudicated, never filtered.
+  - id: code-review/performance
+    batch: 2
+    provenance_origin: donor
+    status: authored
+    tier: conditional
+    summary: Query shape, algorithmic complexity, batching and cache policy with material impact.
+  - id: code-review/api-contract
+    batch: 2
+    provenance_origin: donor
+    status: authored
+    tier: conditional
+    summary: Breaking changes at an externally consumed boundary with evidenced downstream callers.
+  - id: code-review/data-migration
+    batch: 2
+    provenance_origin: donor
+    status: authored
+    tier: conditional
+    summary: Migration and schema artifacts only, not model- or query-only changes.
+  - id: code-review/reliability
+    batch: 2
+    provenance_origin: donor
+    status: authored
+    tier: conditional
+    summary: Error handling, retries, breakers, timeouts, background jobs, health checks.
+  - id: code-review/adversarial
+    batch: 2
+    provenance_origin: donor
+    status: authored
+    tier: conditional
+    summary: Constructs failure scenarios rather than checking known patterns.
+  - id: code-review/previous-comments
+    batch: 2
+    provenance_origin: donor
+    status: authored
+    tier: conditional
+    summary: >-
+      Whether prior review feedback was addressed. PR-only and comment-gated; skipped entirely
+      when no prior comments exist.
+  - id: code-review/frontend-races
+    batch: 2
+    provenance_origin: donor
+    status: authored
+    tier: stack-conditional
+    summary: DOM event wiring, timers, async UI flows and state transitions with race potential.
+  - id: code-review/swift-ios
+    batch: 2
+    provenance_origin: donor
+    status: authored
+    tier: stack-conditional
+    summary: SwiftUI state, concurrency, Core Data threading, entitlements, accessibility.
+
+  # Doc review (7) — arch 6.5, a different catalog from code review.
+  - id: doc-review/coherence
+    batch: 2
+    provenance_origin: donor
+    status: authored
+    tier: always-on
+    summary: Contradictions, terminology drift, structure, ambiguity where readers would diverge.
+  - id: doc-review/feasibility
+    batch: 2
+    provenance_origin: donor
+    status: authored
+    tier: always-on
+    summary: Whether the approach survives contact with the codebase it will land in.
+  - id: doc-review/product-lens
+    batch: 2
+    provenance_origin: donor
+    status: authored
+    tier: conditional
+    summary: >-
+      Unsettled product positions and strategic weight. Domain-agnostic about who the users are.
+  - id: doc-review/design-lens
+    batch: 2
+    provenance_origin: donor
+    status: authored
+    tier: conditional
+    summary: Information architecture, interaction states, user flows, missing design decisions.
+  - id: doc-review/security-lens
+    batch: 2
+    provenance_origin: donor
+    status: authored
+    tier: conditional
+    summary: >-
+      Plan-level auth assumptions, data exposure, API surface and missing threat-model elements.
+      Ordinary data handling is not a trigger.
+  - id: doc-review/scope-guardian
+    batch: 2
+    provenance_origin: donor
+    status: authored
+    tier: conditional
+    summary: Scope alignment and unjustified complexity; premature frameworks and abstractions.
+  - id: doc-review/adversarial-document
+    batch: 2
+    provenance_origin: donor
+    status: authored
+    tier: conditional
+    summary: >-
+      Challenges premises and stress-tests decisions rather than evaluating document quality.
+      Not activated on a routine in-scope plan with validated upstream provenance.
+
+  # Learn (5) — judgement prompts for the opt-in learning runtime. `ak learn` reads each body
+  # verbatim and appends the output contract and the inputs; the judge that fills the seat is
+  # bound by the runner (ruling `learning-judge-is-runner-bound`).
+  - id: learn/pattern-maintainer
+    batch: 9
+    provenance_origin: conversation
+    status: authored
+    summary: >-
+      Classifies review findings, resolutions and user corrections into reusable pattern pages,
+      matching before creating. Never sets a count or a status.
+  - id: learn/reflector
+    batch: 9
+    provenance_origin: conversation
+    status: authored
+    summary: >-
+      Rewrites one project's working memory from new observations into six fixed sections, every
+      bullet ending in evidence ids copied from the input.
+  - id: learn/consolidator
+    batch: 9
+    provenance_origin: conversation
+    status: authored
+    summary: >-
+      Turns a night's high-signal sessions into at most a handful of short lessons that would have
+      changed a decision, each citing the sessions it came from.
+  - id: learn/lesson-merger
+    batch: 9
+    provenance_origin: conversation
+    status: authored
+    summary: >-
+      Merges only lessons that say the same thing about the same subject and names the pairs that
+      cannot both be true. A shared theme is not a merge.
+  - id: learn/skill-scout
+    batch: 9
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      Finds requests repeated across sessions that no installed skill serves and drafts a skill
+      candidate for each. Repeated corrections become guardrails, not skills.
+  - id: learn/session-scorer
+    batch: 9
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      Labels one condensed session on efficiency, code quality, procedure compliance and verbosity,
+      with a reason that cites the transcript. The runtime turns the labels into scores.
+  - id: learn/skill-doctor
+    batch: 9
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      Traces the failed sessions of a scored run to instruction gaps in installed skills and drafts
+      the smallest edit for each. Most runs propose none.
+
+# ---------------------------------------------------------------------------
+# References — 11. Loaded on demand. Never exposed as slash commands.
+# ---------------------------------------------------------------------------
+references:
+  - id: codebase-design-vocabulary
+    batch: 3
+    provenance_origin: donor
+    status: authored
+    loaded_by: [codebase-design, super-align, improve-architecture]
+    summary: Deep-module vocabulary for interface design and where a seam goes.
+  - id: domain-modeling
+    batch: 3
+    provenance_origin: donor
+    status: authored
+    loaded_by: [super-align, super-bound]
+    summary: Modelling the domain before modelling the storage.
+  - id: engineering-principles
+    batch: 6
+    provenance_origin: donor
+    status: authored
+    loaded_by: [super-build, super-review, simplify]
+    summary: >-
+      Hyrum, fence, pyramid and liability constraints. The ~100-line PR target and the 80/15/5
+      pyramid are configurable guidance, not gates.
+  - id: prose-quality
+    batch: 6
+    provenance_origin: donor
+    status: authored
+    loaded_by: [doc-review, compound, explain, writing-skills]
+    summary: >-
+      Wording cleanup for document-producing skills, kept separate from substantive document
+      decisions and from code simplification.
+  - id: tracker-of-record
+    batch: 5
+    provenance_origin: conversation
+    status: authored
+    loaded_by: [wayfind]
+    summary: >-
+      Which ticket system is the record, the rules every tracker binding obeys, and the
+      linear-linearis setup and guarded invocation, shipped inside the plugin.
+  - id: delegation
+    batch: 11
+    provenance_origin: conversation
+    status: authored
+    loaded_by: [super-bound]
+    summary: >-
+      Evidence-backed delegation classes, sensitive floors, ticket and merge assessments, and
+      the records lifecycle skills consume without recomputing the scorer.
+  - id: structural-checks
+    batch: 11
+    provenance_origin: conversation
+    status: contract
+    loaded_by: [super-verify]
+    summary: >-
+      Project-declared diff-scoped commands and receipt semantics for structural and test-strength
+      evidence, blocking only through named mandatory constraints.
+  - id: verification-evidence
+    batch: 13
+    provenance_origin: conversation
+    status: authored
+    loaded_by: [super-align, super-bound, super-build, super-verify, super-review, super-ship]
+    summary: >-
+      Host-neutral recipe semantics, surface evidence kinds, receipt representation, verifier-seat
+      lineage and the criterion coverage predicate shared across the lifecycle.
+  - id: knowledgebase-binding
+    batch: 14
+    provenance_origin: conversation
+    status: authored
+    loaded_by: [super-align, super-bound, super-build, super-verify, super-scout, diagnose]
+    summary: >-
+      How a checkout reaches the project's knowledgebase: the binding check and what unconfigured
+      means, and the read and publish commands with what each result obliges, shipped inside the
+      plugin.
+  - id: read-economy
+    batch: 15
+    provenance_origin: conversation
+    status: authored
+    loaded_by: [super-scout, super-build]
+    summary: >-
+      Guidance for the loading agent's own reads: batch independent reads, take targeted excerpts,
+      bound tool output and avoid re-reading what is already in context, while a required full read
+      stays full.
+  - id: unattended-lifecycle
+    batch: 15
+    provenance_origin: conversation
+    status: authored
+    loaded_by: [super-align, super-bound, super-scout, super-build, super-verify, super-review, super-ship]
+    summary: >-
+      The opt-in unattended policy: starting phases with no human or grant, recording each gate with
+      the evidence commands the gate tool runs, the advances that replace waits, the live merge-gate
+      read before ship and the operator setup it rests on.
+
+# ---------------------------------------------------------------------------
+# Schemas — 37. `common` holds shared $defs and validates no document itself.
+# ---------------------------------------------------------------------------
+schemas:
+  - id: common
+    batch: 1
+    status: authored
+    summary: Shared $defs, the revision-bound envelope, escalation and phase-operation result.
+  - id: catalog
+    batch: 1
+    status: authored
+    summary: This file's own shape.
+  - id: skill
+    batch: 1
+    status: authored
+    summary: The per-skill execution contract (skill.yaml).
+  - id: pack
+    batch: 1
+    status: authored
+    summary: Pack manifest, activation evidence and recorded selection rationale.
+  - id: case
+    batch: 4
+    status: authored
+    summary: >-
+      One executable behavioral case (evals/<skill-id>/<case-id>/case.yaml). Says a case is
+      well-formed, never that it is covered: this package does not run the corpus.
+  - id: rulings
+    batch: 5
+    status: authored
+    summary: >-
+      The resolved-conflicts policy (policies/resolved-conflicts.yaml), whose ids every skill
+      body cites. States shape only; the cross-references stay in src/validation/rulings.ts.
+  - id: project
+    batch: 1
+    status: authored
+    summary: Project identity, standards paths, configured limits and tracker system of record.
+  - id: ticket
+    batch: 1
+    status: authored
+    summary: One ticket, type decision or implementation. A decision ticket is never executable.
+  - id: dossier
+    batch: 1
+    status: authored
+    summary: Scout evidence. Structured hits, coverage limits, unknowns. Never a verdict.
+  - id: finding
+    batch: 1
+    status: authored
+    summary: >-
+      P0-P3 severity, confidence anchor, spec quality, difficulty, autofix class, fingerprint,
+      authorization ref, closure receipt.
+  - id: review
+    batch: 1
+    status: authored
+    summary: >-
+      A review run distinguishing comparison base, reviewed head and last head verified in the
+      delta loop, with per-lane coverage and unavailability.
+  - id: verification
+    batch: 1
+    status: authored
+    summary: >-
+      Receipts: command or probe, exit status, output digest, revision, environment, criteria
+      supported. passed / failed / not-run / not-applicable / inconclusive tracked separately.
+  - id: verification-recipe
+    batch: 13
+    status: authored
+    summary: >-
+      A host-neutral setup, build, launch, readiness, drive and cleanup path with declared surfaces
+      and evidence kinds, published only after the complete path succeeds.
+  - id: charter
+    batch: 1
+    status: authored
+    summary: The immutable autopilot charter, identified by hash, outside worker-writable scope.
+  - id: decision
+    batch: 1
+    status: authored
+    summary: A decision card with bounded options and two independent supervisor judgments.
+  - id: event
+    batch: 1
+    status: authored
+    summary: An inbound repository or CI event with an idempotency key.
+  - id: lesson
+    batch: 1
+    status: authored
+    summary: A captured lesson with supersession, tied to real evidence.
+  - id: handoff-record
+    batch: 8
+    status: authored
+    summary: >-
+      A continuity record: decisions with their source marked, references pointed at rather than
+      pasted, status per piece, and evidence not re-verified at the anchor marked stale.
+  - id: evaluation
+    batch: 8
+    status: authored
+    summary: >-
+      A bake-off's comparison and independent judgment, or a prototype's question, evaluator and
+      answer. A recommendation, never adoption; a human-experience question is settled by a human.
+  - id: map
+    batch: 8
+    status: authored
+    summary: >-
+      A wayfinding map: destination, notes, decisions so far, not yet specified, out of scope, and
+      the ticket set by id. An index, not a store.
+  - id: plan-record
+    batch: 10
+    status: authored
+    summary: >-
+      super-bound's plan: the decision-level specification, its test seams, the slicing into
+      tickets by reference and the dependency graph. Approval binds to its hash.
+  - id: ship-evidence
+    batch: 10
+    status: authored
+    summary: >-
+      super-ship's record of one ship: the pull-request payload, the pre-flight checks against the
+      head, and each remote effect with its idempotency key and read-backs. A dry run has none.
+  - id: run-ledger
+    batch: 10
+    status: authored
+    summary: >-
+      autopilot's ledger: one entry per checkpoint pointing at its decision record, with the ruling
+      or the escalation. At most one escalation is open.
+  - id: trail
+    batch: 15
+    status: authored
+    summary: >-
+      One stretch of an implementer's working decisions on a ticket: entries in the order written,
+      each with what was decided, the alternatives, why, evidence pointers and the result. Empty
+      only with a stated reason.
+  - id: trail-audit
+    batch: 15
+    status: authored
+    summary: >-
+      The auditor's comparison of a ticket's trail with what the run left behind, with no transcript:
+      every stretch by state, the material read, one result and an attention list.
+  - id: install
+    batch: 5
+    status: authored
+    summary: >-
+      The local, uncommitted ak.install.yaml: which adapters one install attaches. Absent, every
+      adapter that supplies a capability and fails closed on it is attached.
+  - id: firstmate-binding
+    batch: 5
+    status: authored
+    summary: >-
+      What ak firstmate bind writes outside the worker's reach: task and run ids, the source
+      snapshot, the pinned skill bundle, the charter, required gates, child budget, evidence store
+      and the delivery the worker may perform. Never merge.
+  - id: tracker-binding
+    batch: 5
+    status: authored
+    summary: >-
+      A project folder's ak.tracker.yaml: which tracker binding this checkout uses, where its
+      gitignored secret is, and the backend defaults. Never the system-of-record decision.
+  - id: kb-binding
+    batch: 14
+    status: authored
+    summary: >-
+      A project folder's ak.kb.yaml: which knowledgebase backend this project uses, the project id
+      its records are filed under, and the backend's locator. Committed; never a machine path.
+  - id: review-event
+    batch: 9
+    status: authored
+    summary: >-
+      One line of the review ledger's raw log: a review finding, a resolution replying to one, or a
+      user correction, keyed by a stable hash so re-ingesting is a no-op.
+  - id: review-pattern
+    batch: 9
+    status: authored
+    summary: >-
+      The frontmatter of one pattern page in the review ledger. Counts, sources and status are the
+      runtime's, recomputed from events; a promoted pattern becomes a guardrail draft.
+  - id: episode
+    batch: 9
+    status: authored
+    summary: >-
+      One ended session as the memory ledger sees it: size, outcome and signal counts, and the
+      priority the runtime derives from them for consolidation.
+  - id: memory-run
+    batch: 9
+    status: authored
+    summary: >-
+      One line of the memory ledger's run log: which job ran, whether it was accepted, rejected or
+      failed, and what the evidence gate dropped.
+  - id: learn-state
+    batch: 9
+    status: authored
+    summary: >-
+      The memory ledger's watermarks and schedule marks, so a job resumes from the last evidence it
+      consumed instead of replaying or skipping any.
+  - id: learn-span
+    batch: 9
+    status: authored
+    summary: >-
+      One line of the learning runtime's span log: one finished review, memory, skills or hook unit
+      with its trace ids, duration, status and judge totals. Closed, so it holds ids, enums, numbers
+      and hashes only.
+  - id: guard-policy
+    batch: 13
+    status: authored
+    summary: >-
+      The guard runtime's policy data: protected paths, destructive command patterns, secret path
+      patterns, a path-to-tier map and the governed paths with their article ids. Hand-written until
+      the constitution compiler generates it.
+  - id: constitution-article
+    batch: 13
+    status: authored
+    summary: >-
+      One registered constitution article: source span, tier, exceptions, related articles, triggers
+      and the checks that cover it, each naming the exact predicate it verifies. Registries live in an
+      overlay; this package holds only the shape and invented fixtures.
+
+# ---------------------------------------------------------------------------
+# Policies — 5. Machine-referenceable rulings.
+# ---------------------------------------------------------------------------
+policies:
+  - id: invocation
+    batch: 1
+    status: authored
+    summary: Which skills are U or M, and which phase operations exist behind which entrypoints.
+  - id: review
+    batch: 1
+    status: authored
+    summary: Panel composition, required lanes, unavailability, synthesis and closure rules.
+  - id: authority-defaults
+    batch: 1
+    status: authored
+    summary: Default grants and the sensitive actions never granted by default.
+  - id: limits
+    batch: 1
+    status: authored
+    summary: Fix cycles, review rounds, scout turns, ultraqa cycles. Budgets come from the runner.
+  - id: resolved-conflicts
+    batch: 1
+    status: authored
+    summary: >-
+      Arch 11 plus the 6.3 and 6.4 overrides, each row carrying the tension, the ruling, the
+      entries it binds and the release scenario that tests it. Citing a ruling is mandatory
+      wherever a skill touches one.
+
+# ---------------------------------------------------------------------------
+# Profiles — 5. Install sets. Never model names.
+# ---------------------------------------------------------------------------
+profiles:
+  - id: core
+    batch: 1
+    status: authored
+    default: true
+    summary: >-
+      The default install and the useful first operational release: the seven supers, the
+      primitives they depend on, and the everyday standalone skills.
+  - id: autonomy
+    batch: 1
+    status: authored
+    summary: Adds autopilot and the operational loops. Requires runner-validated grants.
+  - id: product
+    batch: 1
+    status: authored
+    summary: Adds product judgment skills. Optional; off in ordinary implementation contexts.
+  - id: maintainer
+    batch: 1
+    status: authored
+    summary: Adds catalog and codebase maintenance skills.
+  - id: learning
+    batch: 9
+    status: authored
+    summary: >-
+      Opt-in. Installs the `ak learn` runtime's hooks and scheduler and lets compound and
+      compound-refresh read its ledgers. Never required: every skill works without it.
+
+# ---------------------------------------------------------------------------
+# Adapters — 12. Host and evidence-source contracts.
+# Arch 4 also sketched issue-tracker and repository-events directories. repository-events is
+# folded into runner-contract, which owns the event-delivery capability
+# (schemas/common.schema.json#/$defs/capability); splitting it out would create an adapter with no
+# independent contract. issue-tracker is the tracker adapter: the ticket operations and the
+# system-of-record chain are a contract of their own that must hold across trackers, which the
+# runner contract never stated (ruling tracker-of-record-falls-back-to-kb).
+# observation-source and review-source are not that split reopened. They deliver nothing to a run:
+# they are the read-only evidence the opt-in learning runtime consumes after the fact, and no skill
+# requires either (ruling `learning-runtime-is-host-adapter`).
+# ---------------------------------------------------------------------------
+adapters:
+  - id: claude-code
+    batch: 1
+    status: authored
+    summary: >-
+      Plugin manifest, generated host frontmatter keys, and an honest statement of which
+      restrictions this host actually enforces. allowed-tools is pre-approval, not a sandbox.
+  - id: codex
+    batch: 1
+    status: authored
+    summary: The parallel host bundle; the multi-host manifest pattern.
+  - id: kimi
+    batch: 1
+    status: authored
+    summary: Native Kimi plugin over shared skills, with portable explicit-start authority.
+  - id: droid
+    batch: 1
+    status: authored
+    summary: Native Factory plugin packaging with explicit human starts and separate acceptance per served binding.
+  - id: cursor
+    batch: 1
+    status: authored
+    summary: >-
+      Cursor IDE and Cloud Agent bundle: project skills under .cursor/skills, reviewer
+      subagents under .cursor/agents, and an explicit-start /<id> gate. Isolation is partial.
+  - id: runner-contract
+    batch: 1
+    status: authored
+    summary: >-
+      Grant validation, trusted evidence outside worker-writable scope, seat independence, budgets,
+      idempotency keys, event delivery and tracker credentials. Skills never issue their own grants.
+  - id: grok
+    batch: 1
+    status: authored
+    summary: >-
+      Claude-compatible generated bundle with native explicit-start markers and independently
+      declared host restrictions. Installation evidence does not establish lifecycle parity.
+  - id: knowledgebase
+    batch: 1
+    status: authored
+    summary: >-
+      readContext, recordDecision, publishArtifact, linkCodeEvidence, requestImpactAnalysis,
+      linkPullRequests, proposeLesson, and the binding by which a project folder reaches a
+      knowledgebase. The local-git backend carries readContext and publishArtifact; the other five
+      operations refuse.
+  - id: firstmate
+    batch: 5
+    status: authored
+    summary: >-
+      Firstmate supervises, agent-kit judges inside the worker, no-mistakes delivers. The
+      ownership boundary, the task-local child contract, the deprecated legacy upstream patch and
+      the status lines it may write.
+  - id: tracker
+    batch: 1
+    status: authored
+    summary: >-
+      Backend-agnostic ticket operations over one system of record: a configured tracker, else the
+      knowledgebase's ticket records, else a refusal. Contract only; names no vendor.
+  - id: observation-source
+    batch: 9
+    status: authored
+    summary: >-
+      Read-only access to recorded session observations for the learning runtime. claude-mem is
+      the first binding; the database is opened read-only and never written.
+  - id: review-source
+    batch: 9
+    status: authored
+    summary: >-
+      Pull-request review threads as review events: findings, the resolutions that reply to them,
+      and severity where the text carries one. Read-only.

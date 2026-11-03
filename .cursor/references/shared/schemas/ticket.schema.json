@@ -1,0 +1,307 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-kit.local/schemas/ticket.schema.json",
+  "title": "Ticket",
+  "description": "Plan 5.3. One ticket artifact with type 'decision' or 'implementation'. A decision ticket resolves a question; it can never be executed as implementation work (release scenario 11). Parallel safety comes from write_ownership, not from dependency edges alone (scenario 13).",
+  "type": "object",
+  "required": [
+    "type",
+    "work_source",
+    "goal",
+    "non_goals",
+    "acceptance_criteria",
+    "prerequisites",
+    "stop_conditions",
+    "kb_refs"
+  ],
+  "properties": {
+    "schema": { "const": "ticket" },
+    "status": {
+      "enum": ["draft", "approved", "in-progress", "blocked", "done", "cancelled"]
+    },
+    "type": { "enum": ["decision", "implementation"] },
+    "title": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+    "work_source": {
+      "description": "The approved work this ticket derives from. A bug with a reproduction enters through diagnosis rather than directly: only a diagnosed result is a work source for the build lane, and a packet that already carried a verified bounded patch is never re-implemented from here (ruling `diagnose-patch-or-packet-never-both`). The referenced artifact is a separate document, so the never-both half is a check across the two rather than a shape this one can carry.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "ref"],
+      "properties": {
+        "kind": { "enum": ["requirements", "plan", "decision", "finding", "charter", "issue", "map"] },
+        "ref": { "$ref": "common.schema.json#/$defs/artifact_ref" }
+      }
+    },
+    "goal": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+    "non_goals": { "$ref": "common.schema.json#/$defs/string_list" },
+    "acceptance_criteria": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "text"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^AC-[0-9]+$" },
+          "text": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+          "surface": { "$ref": "common.schema.json#/$defs/surface" }
+        }
+      }
+    },
+    "prerequisites": {
+      "description": "Dependency edges and other things that must hold before work starts.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "ref"],
+        "properties": {
+          "kind": { "enum": ["ticket", "decision", "artifact", "capability", "environment"] },
+          "ref": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+          "satisfied": { "type": "boolean" }
+        }
+      }
+    },
+    "allowed_changes": {
+      "description": "Files and symbols the implementer may change.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["files"],
+      "properties": {
+        "files": { "type": "array", "minItems": 1, "items": { "$ref": "common.schema.json#/$defs/glob" } },
+        "symbols": { "$ref": "common.schema.json#/$defs/string_list" }
+      }
+    },
+    "read_dependencies": {
+      "description": "Likely read dependencies. Follow-up reads stay allowed.",
+      "type": "array",
+      "items": { "$ref": "common.schema.json#/$defs/glob" }
+    },
+    "verification": {
+      "description": "Named verification: each check says which acceptance criteria it supports.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "check", "supports"],
+        "properties": {
+          "id": { "$ref": "common.schema.json#/$defs/kebab_id" },
+          "check": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+          "kind": { "enum": ["command", "probe", "manual"] },
+          "recipe": { "$ref": "common.schema.json#/$defs/artifact_ref" },
+          "evidence_required": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": { "$ref": "common.schema.json#/$defs/evidence_kind" }
+          },
+          "supports": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "pattern": "^AC-[0-9]+$" }
+          }
+        },
+        "dependentRequired": {
+          "recipe": ["evidence_required"],
+          "evidence_required": ["recipe"]
+        }
+      }
+    },
+    "stop_conditions": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+    },
+    "kb_refs": {
+      "description": "References to the KB facts this ticket relies on.",
+      "type": "array",
+      "items": { "$ref": "common.schema.json#/$defs/evidence_ref" }
+    },
+    "integration_owner": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+    "write_ownership": {
+      "description": "What this ticket writes. Two tickets whose ownership overlaps are serialized even with no dependency edge between them.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["paths", "generated_artifacts", "migration_sequence", "interfaces"],
+      "properties": {
+        "paths": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/glob" } },
+        "generated_artifacts": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/glob" } },
+        "migration_sequence": {
+          "description": "Claimed global migration number or sequence name, or null.",
+          "type": ["string", "null"]
+        },
+        "interfaces": {
+          "description": "Interfaces this ticket defines or consumes.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "role"],
+            "properties": {
+              "name": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+              "role": { "enum": ["defines", "consumes", "changes"] }
+            }
+          }
+        }
+      }
+    },
+    "delegation": {
+      "description": "The evidenced delegation assessment at ticket time or merge time. The class governs which checkpoints a charter may delegate; it is not a finding. Numeric guidance may raise it, while only a named human may lower it and no lowering may cross the sensitive-surface floor (rulings `delegation-class-is-authority-not-finding` and `sensitive-surface-sets-the-floor`).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["class", "stage", "floor", "factors", "lowered_by"],
+      "properties": {
+        "class": { "enum": ["green", "yellow-agent", "yellow-owner", "red"] },
+        "stage": { "enum": ["ticket", "merge"] },
+        "floor": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["packs", "sensitive_actions"],
+          "properties": {
+            "packs": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": { "$ref": "common.schema.json#/$defs/pack_id" }
+            },
+            "sensitive_actions": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": { "$ref": "common.schema.json#/$defs/sensitive_action" }
+            }
+          }
+        },
+        "factors": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["reversibility", "size", "complexity", "spec", "verification"],
+          "properties": {
+            "reversibility": { "$ref": "#/$defs/delegation_factor" },
+            "size": { "$ref": "#/$defs/delegation_factor" },
+            "complexity": { "$ref": "#/$defs/delegation_factor" },
+            "spec": { "$ref": "#/$defs/delegation_factor" },
+            "verification": { "$ref": "#/$defs/delegation_factor" }
+          }
+        },
+        "lowered_by": {
+          "description": "Null unless a person lowered the otherwise computed class. The person's name, reason and timestamp make the lowering auditable. `from` is the class computed when the person lowered it: the lowering holds only while a later computed class is not above it, and `superseded` marks a lowering a later assessment has outgrown (ruling `delegation-class-is-authority-not-finding`).",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["human", "reason", "at", "from"],
+              "properties": {
+                "from": { "enum": ["green", "yellow-agent", "yellow-owner", "red"] },
+                "superseded": { "const": true },
+                "human": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+                "reason": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+                "at": { "$ref": "common.schema.json#/$defs/timestamp" }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "readiness": {
+      "description": "Six specification-readiness criteria, each with its own evidence, plus the deterministic vague-term pass. Scores are project guidance and never findings by themselves.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "acceptance_criteria",
+        "interfaces",
+        "examples",
+        "non_goals",
+        "existing_pattern",
+        "verification_path",
+        "vague_terms"
+      ],
+      "properties": {
+        "acceptance_criteria": { "$ref": "#/$defs/readiness_criterion" },
+        "interfaces": { "$ref": "#/$defs/readiness_criterion" },
+        "examples": { "$ref": "#/$defs/readiness_criterion" },
+        "non_goals": { "$ref": "#/$defs/readiness_criterion" },
+        "existing_pattern": { "$ref": "#/$defs/readiness_criterion" },
+        "verification_path": { "$ref": "#/$defs/readiness_criterion" },
+        "vague_terms": { "$ref": "common.schema.json#/$defs/string_list" }
+      }
+    },
+    "assumptions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["text", "resolved_as"],
+        "properties": {
+          "text": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+          "resolved_as": { "enum": ["criterion", "non-goal", "open"] }
+        }
+      }
+    },
+    "decision": {
+      "description": "Present only on decision tickets.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["question", "subtype", "mode"],
+      "properties": {
+        "question": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "subtype": { "enum": ["grilling", "prototype", "research", "task"] },
+        "mode": {
+          "description": "hitl tickets resolve only through a live exchange with a human. A prototype whose question is about human experience is an 'hitl' ticket: the evaluator is named in advance, and an unattended run stops and escalates rather than substituting an automated verdict for the experience the prototype exists to produce. A prototype answering a technical question may be 'afk' with automated acceptance criteria (ruling `prototype-human-experience-needs-human`, release scenario 4).",
+          "enum": ["hitl", "afk"]
+        },
+        "answer": {
+          "description": "Recorded on resolution.",
+          "type": ["string", "null"]
+        }
+      }
+    }
+  },
+  "$defs": {
+    "delegation_factor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["score", "evidence"],
+      "properties": {
+        "score": { "type": "integer", "minimum": 0, "maximum": 3 },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+        }
+      }
+    },
+    "readiness_criterion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["score", "evidence"],
+      "properties": {
+        "score": { "type": "integer", "minimum": 0, "maximum": 2 },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+        }
+      }
+    }
+  },
+  "unevaluatedProperties": false,
+  "allOf": [
+    { "$ref": "common.schema.json#/$defs/envelope" },
+    {
+      "description": "Release scenario 11: a decision ticket resolves a question and can never be executed as implementation work, so it carries no write scope, and an implementation ticket carries no decision. The implementation branch is also the work-packet shape: acceptance criteria, named verification bound to those criteria, a bounded write scope and an integration owner are all required, so a hand-off is specified enough to be implemented once rather than guessed at by a second implementer (ruling `diagnose-patch-or-packet-never-both`, release scenario 6).",
+      "if": { "properties": { "type": { "const": "decision" } } },
+      "then": {
+        "required": ["decision"],
+        "not": {
+          "anyOf": [{ "required": ["allowed_changes"] }, { "required": ["write_ownership"] }]
+        }
+      },
+      "else": {
+        "required": ["allowed_changes", "read_dependencies", "verification", "integration_owner", "write_ownership"],
+        "properties": {
+          "verification": { "minItems": 1 }
+        },
+        "not": { "required": ["decision"] }
+      }
+    }
+  ]
+}

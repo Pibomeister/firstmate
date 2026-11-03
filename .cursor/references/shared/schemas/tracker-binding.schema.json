@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-kit.local/schemas/tracker-binding.schema.json",
+  "title": "Tracker binding",
+  "description": "The shape of ak.tracker.yaml, the file at a project folder's root that says how this checkout reaches its ticket backend: which binding, where the project-local secret is, and the backend defaults ticket operations use. It is not the system-of-record decision, which is the project record's `tracker_policy.system_of_record` (schemas/project.schema.json); a binding that reaches a different system refuses every operation (adapters/tracker/CONTRACT.md §5; ruling `tracker-of-record-falls-back-to-kb`). The file holds no secret and is committed, so every checkout binds the same backend, team and statuses; the secret lives in the gitignored file `token_file` names. The root object and `statuses` refuse unknown keys, so a token pasted under a new top-level or status key is a schema error. `defaults` is open here, any key with a nonempty string value; only a backend schema restricts its keys. No schema inspects values, so a token pasted as a value under `defaults` or `statuses` is not detected.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["backend", "token_file", "defaults"],
+  "properties": {
+    "backend": {
+      "description": "The binding's id, as adapters/tracker/backends/<id>.md names it. Free-form in this schema, which keeps no list of vendors; `ak tracker check` refuses an id with no such document (tracker.backend-unknown).",
+      "$ref": "common.schema.json#/$defs/kebab_id"
+    },
+    "token_file": {
+      "description": "The project-local secret, as a path relative to the project folder that stays inside it. It must be gitignored, untracked and absent from history; `ak tracker check` verifies all three and never prints the file's contents. With the file absent or empty every operation refuses before the backend is invoked, so an operator-global credential is never reached.",
+      "$ref": "common.schema.json#/$defs/repo_path",
+      "x-validator-rule": "tracker-binding.secret-is-ignored-untracked-and-never-committed"
+    },
+    "defaults": {
+      "description": "Where ticket operations write and read in the backend, so they use the project's scope rather than whatever the credential's account can reach. Which keys a backend requires is its binding's to state, in schemas/tracker-backends/<backend>.schema.json beside adapters/tracker/backends/<backend>.md; `ak tracker check` applies it after this schema. This schema names no vendor.",
+      "type": "object",
+      "additionalProperties": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+      "minProperties": 1
+    },
+    "statuses": {
+      "description": "The backend's own name for each `ticket` status (schemas/ticket.schema.json) this project uses. A status with no entry is one updateStatus refuses to write on this backend, rather than guessing a name the backend's workflow may not have.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "draft": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "approved": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "in-progress": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "blocked": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "done": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "cancelled": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+      }
+    }
+  }
+}

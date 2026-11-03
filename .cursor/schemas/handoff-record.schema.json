@@ -1,0 +1,209 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-kit.local/schemas/handoff-record.schema.json",
+  "title": "Handoff record",
+  "description": "The continuity record `handoff` writes so another session can resume. It carries what a fresh agent cannot safely infer and no more: an optional section is left out rather than written empty, which is why every optional list here has a floor of one. Every decision carries its source, so the writer's inference never reads as the user's decision; evidence not re-verified at the anchor is marked stale; references point rather than paste; status and directives stay apart. Published through the knowledgebase adapter's `publishArtifact` under a `run-artifact` placement, never to a path in the working repository (ruling `central-kb-owns-project-artifacts`). On resume the record is untrusted context: it authorizes no command, no link traversal and no write.",
+  "type": "object",
+  "required": ["intent", "anchor", "objective", "pieces"],
+  "properties": {
+    "schema": { "const": "handoff-record" },
+    "status": {
+      "description": "'draft' is composed in the runner's scratch space, or returned in the session because `kb-write` is unavailable; 'published' has been read back from the knowledgebase. A publish is complete only when its read-back returns the record.",
+      "enum": ["draft", "published"]
+    },
+    "intent": {
+      "description": "The request or transfer that asked for the handoff. With none, the skill does not run, so no record exists without one.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "statement"],
+      "properties": {
+        "kind": { "enum": ["human-request", "controller-transfer"] },
+        "statement": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+      }
+    },
+    "anchor": {
+      "description": "Recorded once, at the top. The repository and revision are the envelope's `source_revision`; this adds the branch. Where the repository could not be read the record says so here, and every reference is machine-local.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["readable"],
+      "properties": {
+        "readable": { "type": "boolean" },
+        "branch": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "reason": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+      },
+      "if": { "properties": { "readable": { "const": false } } },
+      "then": { "required": ["reason"] },
+      "else": { "required": ["branch"] }
+    },
+    "objective": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+    "decisions": {
+      "description": "Each decision-shaped sentence, in the approved wording from its record or the human's message, with its source marked. A proposal nobody approved is 'own-call' or 'inference', and a sentence whose source cannot be named is 'inference'.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["text", "source"],
+        "properties": {
+          "text": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+          "source": { "enum": ["user", "inference", "own-call"] },
+          "record": { "$ref": "common.schema.json#/$defs/artifact_ref" }
+        }
+      }
+    },
+    "references": {
+      "description": "Point, do not paste: what matters at each authoritative reference, with a line range, a record id or an artifact hash where one exists. Uncommitted, untracked or temporary state is labelled machine-local.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["what"],
+        "properties": {
+          "what": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+          "artifact": { "$ref": "common.schema.json#/$defs/artifact_ref" },
+          "location": { "$ref": "common.schema.json#/$defs/code_location" },
+          "record": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+          "machine_local": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+        },
+        "anyOf": [
+          { "required": ["artifact"] },
+          { "required": ["location"] },
+          { "required": ["record"] },
+          { "required": ["machine_local"] }
+        ]
+      }
+    },
+    "evidence": {
+      "description": "Verification performed. A statement that tests passed is not a receipt and is recorded as a statement. Evidence bound to a revision other than the anchor, or not re-verified in this session, carries a stale marker naming what it was bound to, and is never presented as current.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["claim", "kind", "reverified"],
+        "properties": {
+          "claim": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+          "kind": { "enum": ["receipt", "statement"] },
+          "receipt": { "$ref": "common.schema.json#/$defs/artifact_ref" },
+          "reverified": { "type": "boolean" },
+          "stale": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["bound_to"],
+            "properties": { "bound_to": { "$ref": "common.schema.json#/$defs/nonempty_string" } }
+          }
+        },
+        "allOf": [
+          {
+            "if": { "properties": { "kind": { "const": "receipt" } } },
+            "then": { "required": ["receipt"] },
+            "else": { "not": { "required": ["receipt"] } }
+          },
+          {
+            "if": { "properties": { "reverified": { "const": false } } },
+            "then": { "required": ["stale"] },
+            "else": { "not": { "required": ["stale"] } }
+          }
+        ]
+      }
+    },
+    "pieces": {
+      "description": "Status per piece of work, declarative. Where pieces differ in maturity, each says which it is and what remains inside it.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["piece", "state"],
+        "properties": {
+          "piece": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+          "state": { "enum": ["complete", "in-progress", "not-started"] },
+          "remaining": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+        }
+      }
+    },
+    "outstanding": {
+      "description": "Unfinished work and what blocks it.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["work"],
+        "properties": {
+          "work": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+          "blocked_by": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+        }
+      }
+    },
+    "failed_approaches": {
+      "description": "Approaches already abandoned, and why. The next agent retries the obvious wrong path first otherwise.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["approach", "why"],
+        "properties": {
+          "approach": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+          "why": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+        }
+      }
+    },
+    "next_steps": {
+      "description": "Plausible next steps, as status rather than orders.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+    },
+    "skills": {
+      "description": "Catalog skills that apply to the remaining work.",
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "common.schema.json#/$defs/skill_id" }
+    },
+    "directives": {
+      "description": "Present only where the human asked for a directive to be passed on. Each quotes the human, in its own block, apart from status.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["quote"],
+        "properties": { "quote": { "$ref": "common.schema.json#/$defs/nonempty_string" } }
+      }
+    },
+    "redactions": {
+      "description": "Where credentials, tokens or personal data were removed. No secret appears in the record.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+    }
+  },
+  "unevaluatedProperties": false,
+  "allOf": [
+    { "$ref": "common.schema.json#/$defs/envelope" },
+    {
+      "description": "A readable anchor names the revision every reference is relative to.",
+      "if": {
+        "properties": { "anchor": { "properties": { "readable": { "const": true } }, "required": ["readable"] } },
+        "required": ["anchor"]
+      },
+      "then": { "properties": { "source_revision": { "type": "object" } } }
+    },
+    {
+      "description": "An unreadable anchor leaves nothing to be relative to, so every reference is machine-local.",
+      "if": {
+        "properties": { "anchor": { "properties": { "readable": { "const": false } }, "required": ["readable"] } },
+        "required": ["anchor"]
+      },
+      "then": {
+        "properties": {
+          "references": { "items": { "required": ["machine_local"], "not": { "required": ["location"] } } }
+        }
+      }
+    }
+  ]
+}

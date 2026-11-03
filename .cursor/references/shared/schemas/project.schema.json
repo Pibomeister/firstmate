@@ -1,0 +1,412 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-kit.local/schemas/project.schema.json",
+  "title": "Project",
+  "description": "Plan 8 and plan 11. Project identity, the repositories in scope, the standards files the review lanes must cite, the configured limits, and the single ticket system of record. This is also where the numeric heuristics live: the ~100-line PR target and the 80/15/5 test pyramid are configurable guidance with recorded exceptions and are never gates (plan 3, plan 11), which the schema enforces by pinning their enforcement to 'advisory'. Project-derived material is owned by the central knowledgebase; a project artifact points at the KB root and never sanctions an application-local docs tree (release scenario 21).",
+  "type": "object",
+  "required": ["identity", "kb", "standards", "limits", "guidance", "tracker_policy"],
+  "properties": {
+    "schema": { "const": "project" },
+    "status": { "enum": ["draft", "active", "archived"] },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "repos"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/kebab_id" },
+        "name": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "repos": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["repo", "role", "default_branch"],
+            "properties": {
+              "repo": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+              "role": { "enum": ["application", "knowledgebase", "infrastructure", "package"] },
+              "default_branch": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+              "kb_locator": {
+                "description": "The small pointer an application repo keeps to its KB project (plan 1.2). It is a locator, not a copy of the KB.",
+                "$ref": "common.schema.json#/$defs/repo_path"
+              }
+            }
+          }
+        }
+      }
+    },
+    "kb": {
+      "description": "Plan 8. Directory names are configurable; central ownership is not. 'ownership' is pinned to 'central' so a configuration cannot relocate project artifacts into an application repository (release scenario 21).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ownership", "root", "project_path"],
+      "properties": {
+        "ownership": { "const": "central" },
+        "root": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "project_path": {
+          "description": "Path below the KB root for this project, e.g. 'projects/<project-id>'.",
+          "$ref": "common.schema.json#/$defs/repo_path"
+        },
+        "directories": {
+          "description": "Configurable names for context, standards, decisions, requirements, plans, tickets, reviews, solutions and runs.",
+          "type": "object",
+          "propertyNames": { "$ref": "common.schema.json#/$defs/kebab_id" },
+          "additionalProperties": { "$ref": "common.schema.json#/$defs/repo_path" }
+        },
+        "paired_pr": {
+          "description": "Plan 8. A source PR links to its KB PR and a source merge activates the existing KB merge coordinator. This is not an atomic cross-repository merge: a blocked KB merge stays visible and retryable rather than being reported complete (release scenario 22).",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["required"],
+          "properties": {
+            "required": { "type": "boolean" },
+            "coordinator": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+            "atomic": {
+              "description": "Always false. Cross-repository merge atomicity is not claimed.",
+              "const": false
+            }
+          }
+        },
+        "adapter_operations": {
+          "description": "The narrow KB adapter surface this project uses (plan 8). Names describe proposed operations, not existing APIs.",
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "readContext",
+              "recordDecision",
+              "publishArtifact",
+              "linkCodeEvidence",
+              "requestImpactAnalysis",
+              "linkPullRequests",
+              "proposeLesson"
+            ]
+          }
+        }
+      },
+      "x-validator-rule": "project.kb-root-is-not-an-application-local-docs-tree"
+    },
+    "standards": {
+      "description": "The project's own designated rule files. The standards lane cites these rule by rule; an empty list returns an empty lane and never becomes an invented preference (plan 6.1). Present but empty is a valid, meaningful configuration.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "path", "applies_to"],
+        "properties": {
+          "id": { "$ref": "common.schema.json#/$defs/kebab_id" },
+          "path": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+          "applies_to": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "$ref": "common.schema.json#/$defs/glob" }
+          },
+          "lane": { "$ref": "common.schema.json#/$defs/role_id" },
+          "revision": { "$ref": "common.schema.json#/$defs/revision" }
+        }
+      },
+      "x-validator-rule": "project.standards-path-resolves-or-lane-returns-empty"
+    },
+    "limits": {
+      "description": "Configured limits. The maxima come from the plan and cannot be raised by configuration: two fix/verify cycles (plan 6.3, release scenario 18), five consensus rounds (plan 2.5), five ultraqa cycles stopping at three occurrences of the same failure (plan 2.5), three bounded CI-repair attempts (plan 7.2), and a four-turn scout default (plan 5.4). Consumption budgets are handed in by the runner and are not configured here.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fix_cycles", "consensus_rounds", "scout_turns"],
+      "properties": {
+        "fix_cycles": { "type": "integer", "minimum": 0, "maximum": 2 },
+        "consensus_rounds": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "scout_turns": { "type": "integer", "minimum": 1, "default": 4 },
+        "ultraqa_cycles": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "same_failure_occurrences": { "type": "integer", "minimum": 1, "maximum": 3 },
+        "ci_repair_attempts": { "type": "integer", "minimum": 0, "maximum": 3 },
+        "review_lanes_max": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "guidance": {
+      "description": "Plan 3 and plan 11. Advisory starting points, never universal hard limits (rulings `numeric-heuristics-are-guidance` and `delegation-class-is-authority-not-finding`). Each guidance block pins enforcement to advisory, so no configuration can promote a heuristic into a finding or gate; a named mandatory constraint is the separate blocking route.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pr_size", "test_pyramid", "exceptions"],
+      "properties": {
+        "pr_size": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["target_changed_lines", "enforcement"],
+          "properties": {
+            "target_changed_lines": { "type": "integer", "minimum": 1, "default": 100 },
+            "enforcement": { "const": "advisory" }
+          }
+        },
+        "test_pyramid": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["unit_percent", "integration_percent", "end_to_end_percent", "enforcement"],
+          "properties": {
+            "unit_percent": { "type": "integer", "minimum": 0, "maximum": 100, "default": 80 },
+            "integration_percent": { "type": "integer", "minimum": 0, "maximum": 100, "default": 15 },
+            "end_to_end_percent": { "type": "integer", "minimum": 0, "maximum": 100, "default": 5 },
+            "enforcement": { "const": "advisory" }
+          },
+          "x-validator-rule": "project.test-pyramid-percentages-sum-to-100"
+        },
+        "delegation": {
+          "description": "Project-calibrated factor weights and the inclusive lower bounds for the three raised classes. Green is every score below yellow_agent. Verification strength retains its central inverse semantics: its weighted contribution is three minus the recorded factor score.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["weights", "cut_points", "enforcement"],
+          "properties": {
+            "weights": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["reversibility", "size", "complexity", "spec", "verification"],
+              "properties": {
+                "reversibility": { "type": "number", "minimum": 0 },
+                "size": { "type": "number", "minimum": 0 },
+                "complexity": { "type": "number", "minimum": 0 },
+                "spec": { "type": "number", "minimum": 0 },
+                "verification": { "type": "number", "minimum": 0 }
+              }
+            },
+            "cut_points": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["yellow_agent", "yellow_owner", "red"],
+              "properties": {
+                "yellow_agent": { "type": "number", "minimum": 0 },
+                "yellow_owner": { "type": "number", "minimum": 0 },
+                "red": { "type": "number", "minimum": 0 }
+              }
+            },
+            "enforcement": { "const": "advisory" }
+          }
+        },
+        "exceptions": {
+          "description": "Recorded departures from the guidance. Recording is the required response; the run is not blocked by one (plan 3).",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["guidance", "reason", "recorded_at"],
+            "properties": {
+              "guidance": { "enum": ["pr_size", "test_pyramid", "delegation", "checks", "protected_tests"] },
+              "reason": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+              "recorded_at": { "$ref": "common.schema.json#/$defs/timestamp" },
+              "scope": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+              "evidence": {
+                "type": "array",
+                "items": { "$ref": "common.schema.json#/$defs/evidence_ref" }
+              }
+            }
+          }
+        }
+      },
+      "x-validator-rule": "project.numeric-guidance-never-becomes-a-gate"
+    },
+    "verification_recipes": {
+      "description": "Project-declared runtime facilities. Each declaration names a content-addressed recipe, the scopes and surfaces it covers, its available evidence kinds and every permitted lifecycle step. An absent facility stays absent; bodies never infer one from a framework convention.",
+      "type": "array",
+      "items": { "$ref": "verification-recipe.schema.json#/$defs/project_declaration" }
+    },
+    "checks": {
+      "description": "Project-declared diff-scoped structural and test-strength commands. Their receipts are evidence; a check blocks only when a mandatory constraint separately names it (ruling `project-checks-block-only-as-constraints`).",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "kind", "scope", "command"],
+        "properties": {
+          "id": { "$ref": "common.schema.json#/$defs/kebab_id" },
+          "kind": {
+            "enum": ["complexity", "duplication", "dead-code", "boundaries", "mutation", "diff-coverage"]
+          },
+          "scope": { "const": "diff" },
+          "command": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["argv"],
+            "properties": {
+              "argv": {
+                "type": "array",
+                "minItems": 1,
+                "items": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+              },
+              "cwd": { "$ref": "common.schema.json#/$defs/repo_path" }
+            }
+          }
+        }
+      }
+    },
+    "protected_tests": {
+      "description": "Critical acceptance and end-to-end tests the implementer may not change without a recorded decision when work ships without human code review (ruling `unreviewed-work-needs-independent-oracle`).",
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "common.schema.json#/$defs/glob" }
+    },
+    "mandatory_constraints": {
+      "description": "The project's actual hard constraints, established per project (plan 3). These, unlike 'guidance', may block. Each one names the evidence that shows it was met, so a constraint cannot be satisfied by assertion.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "requirement", "evidence_required"],
+        "properties": {
+          "id": { "$ref": "common.schema.json#/$defs/kebab_id" },
+          "requirement": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+          "evidence_required": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+          },
+          "blocks": { "enum": ["build", "review", "ship"] }
+        }
+      }
+    },
+    "tracker_policy": {
+      "description": "Plan 8. One ticket system of record; every other representation is a projection of it, never a second independent status. 'role' admits only 'projection' for mirrors, so a second authoritative tracker is not expressible. Named 'tracker_policy' rather than 'tracker' because the envelope's own 'tracker' member (common#/$defs/envelope) is a different thing: the link from this one artifact to its authoritative record. This field states the project-wide policy those links must follow.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["system_of_record"],
+      "properties": {
+        "system_of_record": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["system"],
+          "properties": {
+            "system": {
+              "description": "The system of record's id, compared exactly -- no case folding, no aliases -- with the `Reaches system` a bound backend's document states (adapters/tracker/CONTRACT.md §2). `knowledgebase` is reserved: it names the knowledgebase's own `ticket` records, and no backend may state it as the system it reaches (ruling `tracker-of-record-falls-back-to-kb`).",
+              "$ref": "common.schema.json#/$defs/kebab_id"
+            },
+            "url": { "type": "string", "format": "uri" },
+            "id_pattern": { "type": "string" }
+          }
+        },
+        "mirrors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["system", "role"],
+            "properties": {
+              "system": {
+                "description": "Same id shape as the system of record's, so the exact comparison in `project.single-tracker-system-of-record` cannot be dodged by spelling.",
+                "$ref": "common.schema.json#/$defs/kebab_id"
+              },
+              "role": { "const": "projection" },
+              "url": { "type": "string", "format": "uri" }
+            }
+          }
+        },
+        "policy": {
+          "description": "The issue-state and classification policy 'triage' applies. Without one, triage has nothing to apply (plan 2.3).",
+          "$ref": "common.schema.json#/$defs/nonempty_string"
+        }
+      },
+      "x-validator-rule": "project.single-tracker-system-of-record"
+    },
+    "profiles": {
+      "description": "Install profiles active for this project. Profiles are install sets and never name anything about which agent fills a seat (AGENTS.md).",
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "common.schema.json#/$defs/kebab_id" }
+    },
+    "autonomy": {
+      "description": "Project opt-in for selecting the autonomy install profile when no explicit profile is requested. This never grants an action or bypasses a missing live runner capability.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["default"],
+      "properties": { "default": { "type": "boolean" } }
+    },
+    "packs": {
+      "description": "Packs enabled for this project. An enabled pack still attaches only when its activation rules match (plan 3).",
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "common.schema.json#/$defs/pack_id" }
+    },
+    "environments": {
+      "description": "Verification environments a receipt may cite (plan 5.6). Test execution belongs in an isolated environment and repository test code does not get production secrets by default, so a production-credentialed environment needs an explicit human approval recorded against it.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "isolated", "secrets_policy"],
+        "properties": {
+          "id": { "$ref": "common.schema.json#/$defs/kebab_id" },
+          "description": { "type": "string" },
+          "isolated": { "type": "boolean", "default": true },
+          "secrets_policy": { "enum": ["none", "test-only", "production-approved"] },
+          "approval": { "$ref": "common.schema.json#/$defs/approval" },
+          "toolchain": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "version"],
+              "properties": {
+                "name": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+                "version": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+              }
+            }
+          }
+        },
+        "allOf": [
+          {
+            "description": "Production credentials are a sensitive action (common#/$defs/sensitive_action) and are never available by default (plan 7.2).",
+            "if": {
+              "properties": { "secrets_policy": { "const": "production-approved" } },
+              "required": ["secrets_policy"]
+            },
+            "then": {
+              "required": ["approval"],
+              "properties": { "approval": { "properties": { "authority": { "const": "explicit" } } } }
+            }
+          }
+        ]
+      }
+    },
+    "constitution": {
+      "description": "ADR-0009. Where the project's constitution registry lives. The registry is an overlay this package reads only through the path or package named here: its root holds one article per file under 'articles/', each valid against constitution-article.schema.json. Absent, nothing about constitutions runs for this project.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["registry"],
+      "properties": {
+        "registry": {
+          "oneOf": [
+            {
+              "description": "An overlay path: the registry root as a path inside one of the project's repositories, by default the knowledgebase repository this record lives in.",
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["path"],
+              "properties": {
+                "path": { "$ref": "common.schema.json#/$defs/repo_path" },
+                "repo": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+              }
+            },
+            {
+              "description": "A package pinned to an exact version, so an amendment reaches the project as a deliberate upgrade. 'path' is the registry root inside the package, by default its root.",
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["package", "version"],
+              "properties": {
+                "package": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+                "version": { "$ref": "common.schema.json#/$defs/semver" },
+                "path": { "$ref": "common.schema.json#/$defs/repo_path" }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "documentation_policy": {
+      "description": "Plan 8. Required-documentation and indexing status joins ship evidence, but a mechanical fix with no decision records the applicable existing decision or an explicit no-new-decision result instead of a manufactured ADR.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "required_on_ship": { "type": "boolean" },
+        "allow_no_new_decision": { "const": true },
+        "indexing_required": { "type": "boolean" }
+      }
+    }
+  },
+  "unevaluatedProperties": false,
+  "allOf": [{ "$ref": "common.schema.json#/$defs/envelope" }]
+}

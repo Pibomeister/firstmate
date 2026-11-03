@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-kit.local/schemas/kb-backends/local-git.schema.json",
+  "title": "Knowledgebase binding: local-git",
+  "description": "What adapters/knowledgebase/backends/local-git.md reads from ak.kb.yaml, applied by `ak kb check` after the generic schemas/kb-binding.schema.json has passed. The locator names one registered knowledgebase by id and nothing else: the path of its checkout is the operator's registration, never a committed value. Kept out of the generic schema so that removing this binding removes this file and nothing else.",
+  "type": "object",
+  "required": ["locator"],
+  "properties": {
+    "locator": {
+      "type": "object",
+      "required": ["knowledgebase"],
+      "propertyNames": { "enum": ["knowledgebase"] },
+      "properties": {
+        "knowledgebase": { "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$" }
+      }
+    }
+  }
+}

@@ -1,0 +1,228 @@
+# policies/limits.yaml — the caps this repository enforces, and the ones it deliberately does not.
+#
+# Authority: plan §6.3 (two fix cycles), §2.5 (consensus rounds, ultraqa cycles), §5.4 (scout
+# turn budget), §7.2 (CI repair attempts and runner-supplied budgets), §3 and §11 (numeric
+# heuristics are configurable guidance, not gates).
+#
+# Machine-read by `ak validate` and by the runner. Two identifiers per limit:
+#   key      the policy path used in escalation.charter_rule, e.g. `policy:limits/fix_cycles`
+#   cap_id   the kebab-case id used in operation_result.cap.limit (common#/$defs/kebab_id)
+# On reaching a cap the operation returns `cap-reached` with that cap object, never a silent
+# continuation and never a quietly relaxed bound.
+#
+# No cost, token, provider or routing value appears in this file. See `runner_supplied`.
+
+schema_version: 1
+policy: limits
+
+configuration:
+  rule: >-
+    A project may configure a value at or below the maximum in `enforced`. Configuration can
+    lower a cap and can never raise one. The project record carries the configured values in
+    schemas/project.schema.json `limits`; exceeding a maximum is a schema failure, not a policy
+    exception.
+  recorded_exception: >-
+    Where a project must exceed a value in `not_gates`, the exception is recorded in the project
+    record rather than answered with an artificial file split or a meaningless test.
+
+enforced:
+
+  fix_cycles:
+    cap_id: fix-cycles
+    value: 2
+    unit: cycles
+    applies_to:
+      skills: [super-review, ultraqa, autopilot]
+      protocols: [review-delta, apply-findings]
+      operations: [review.delta]
+    meaning: >-
+      At most two fix-and-verify cycles follow a review's first pass. The third stops with an
+      explicit blocked-or-replan decision; anything still open is reported, not looped. A
+      cycle a human authorizes after that decision is recorded in the review's
+      `fix_cycles.extensions` with `authorized_by: human` and when, and is reviewed as a delta over
+      the new commits that may approve, never as a new full scope. A cycle past the cap with no
+      extension entry, or one authorized by anyone but a human, is refused. The operator attests
+      the human authorization; the record does not prove it.
+    on_reach:
+      status: cap-reached
+      cap: {limit: fix-cycles, value: 2}
+      next: blocked-or-replan decision, with the open findings attached
+      only_p3_open: >-
+        recommend merge, with the open P3 findings filed as follow-ups; the review may approve when
+        every open finding is a P3 listed in follow_ups
+      same_theme_reopened: a design decision naming the theme, not another fix cycle
+    ruling: two-fix-cycles-then-stop
+    scenario: 18
+    source: plan §6.3; G:L1041; G:L1915
+
+  review_rounds:
+    cap_id: review-rounds
+    value: 3
+    unit: rounds
+    derivation: one pass-1 panel plus at most `fix_cycles` delta passes
+    applies_to:
+      skills: [super-review]
+      operations: [review.full, review.delta]
+    meaning: >-
+      A review run reviews at most three heads: the first snapshot and the head produced by each
+      permitted fix cycle. A materially changed comparison base, requirement set or affected
+      surface is a new review scope with its own baseline, not a fourth round. Each cycle a human
+      authorizes after the fix-cycles decision, recorded in `fix_cycles.extensions`, adds one delta
+      head beyond the three, never a new first snapshot; no head beyond them is reviewed without
+      that entry.
+    ruling: delta-baseline-reset-not-third-loop
+    scenario: 10
+    source: plan §6.3
+
+  consensus_rounds:
+    cap_id: consensus-rounds
+    value: 5
+    unit: rounds
+    applies_to:
+      protocols: [consensus-plan-gate]
+      skills: [super-bound]
+    meaning: >-
+      The plan gate runs at most five planner-snapshot, architect, critic, synthesis rounds.
+      Each round after the first re-runs the architect before the critic; the critic never
+      reviews a plan the architect has not seen.
+    on_reach:
+      status: cap-reached
+      cap: {limit: consensus-rounds, value: 5}
+      next: escalate the unresolved architectural question as a plan-conflict-ruling checkpoint
+    source: plan §2.5, §6.5; G:L456
+
+  scout_turns:
+    cap_id: scout-turns
+    value: 4
+    unit: turns
+    configurable: true
+    configured_in: schemas/project.schema.json `limits.scout_turns`
+    applies_to:
+      skills: [super-scout]
+    meaning: >-
+      Four serial turns by default, with multiple independent reads per turn where the host
+      permits it. Exhausting the budget yields a dossier with documented coverage limits and
+      unknowns, never a fabricated complete impact map and never an architectural verdict.
+    on_reach:
+      status: complete
+      output: dossier with coverage limits and unknowns recorded
+    scenario: 14
+    source: plan §5.4; G:L1252
+
+  ultraqa_cycles:
+    cap_id: ultraqa-cycles
+    value: 5
+    unit: cycles
+    applies_to:
+      skills: [ultraqa]
+      operations: [qa.cycle]
+    meaning: At most five adversarial behavioral-verification cycles per run.
+    on_reach:
+      status: cap-reached
+      cap: {limit: ultraqa-cycles, value: 5}
+    source: plan §2.5; G:L450
+
+  same_failure_occurrences:
+    cap_id: same-failure-occurrences
+    value: 3
+    unit: occurrences
+    applies_to:
+      skills: [ultraqa]
+      operations: [qa.cycle]
+    meaning: >-
+      Stop at the third occurrence of the same failure, before the cycle cap. Three identical
+      failures mean the approach is wrong, not that a detail was missed.
+    on_reach:
+      status: cap-reached
+      cap: {limit: same-failure-occurrences, value: 3}
+      next: escalate to diagnose or replan, not another cycle
+    source: plan §2.5; G:L450; G:L494
+
+  ci_repair_attempts:
+    cap_id: ci-repair-attempts
+    value: 3
+    unit: attempts
+    applies_to:
+      skills: [babysit-pr]
+      operations: [ci.repair]
+    meaning: >-
+      Three bounded repair attempts against a failing required check. The cap bounds the number
+      of attempts; it never relaxes what a repair may do.
+    never_relaxes:
+      - skipping a check
+      - weakening an assertion
+      - lowering a threshold
+      - removing coverage
+    on_reach:
+      status: cap-reached
+      cap: {limit: ci-repair-attempts, value: 3}
+      next: diagnose, a bounded patch, new verification, affected delta review
+    ruling: ci-repair-restricts-purpose-not-permission
+    scenario: 19
+    source: plan §7.2, §7.5; G:L2201
+
+# ---------------------------------------------------------------------------
+# Budgets the runner owns. The repository enforces only the cap it was handed.
+# ---------------------------------------------------------------------------
+runner_supplied:
+  rule: >-
+    Budgets are passed in by the runner. This repository declares no cost cap, no token cap, no
+    spend accounting and no resource ladder of its own. A skill enforces the numeric cap the
+    runner handed it, reports `cap-reached` when it is hit, and never invents, raises or
+    recalculates one.
+  passed_in:
+    - id: alignment-budget
+      description: How many alignment exchanges or questions a run may spend.
+    - id: ticket-budget
+      description: How many implementation tickets a run may start.
+    - id: elapsed-time
+      description: Wall-clock bound on the run.
+    - id: host-resource-consumption
+      description: >-
+        Whatever consumption measure the host exposes. Cost accounting, when available, is
+        supplied by the runner and recorded, never computed here.
+    - id: stage-and-loop-limits
+      description: >-
+        Any additional per-stage or per-loop bound the charter carries beyond the caps in
+        `enforced`.
+  not_in_this_repository:
+    - provider cost tables
+    - token or context-window budgets
+    - effort or escalation ladders
+    - any rule that selects who does the work
+  contract:
+    on_missing_budget: >-
+      A cap the runner did not supply is not enforced and not guessed. The skill records that
+      the budget was absent rather than substituting a number.
+    on_reach: return `cap-reached` with the cap object; do not continue under a relaxed bound
+
+# ---------------------------------------------------------------------------
+# Guidance that is deliberately not a gate here.
+# ---------------------------------------------------------------------------
+not_gates:
+  rule: >-
+    These are configurable starting points, established per project. They are carried in the
+    project record and explained in a reference pack; they are not validated, not enforced and
+    not grounds for a finding on their own. Exceptions are recorded rather than forcing
+    artificial file splits or meaningless tests.
+  items:
+    - id: pr-size-target
+      guidance: a change of roughly one hundred lines where that is natural
+      lives_in:
+        configured: schemas/project.schema.json `guidance.pr_size`
+        explained: references/engineering-principles
+      used_by:
+        - policies/review.yaml pass_1 seats, as one input to activating the adversarial seat
+          when the project's own configured guidance was exceeded and the exception recorded
+        - policies/review.yaml proportionality.lean_panel, as the line below which a pass-1
+          review seats the lean panel
+    - id: test-pyramid
+      guidance: a rough 80 / 15 / 5 split across unit, integration and end-to-end tests
+      lives_in:
+        configured: schemas/project.schema.json `guidance.test_pyramid`
+        explained: references/engineering-principles
+      used_by:
+        - packs/pack-test, as a starting shape for meaningful coverage, never as a count to hit
+  ruling: numeric-heuristics-are-guidance
+  scenario: 2
+  source: plan §3, §11; G:L1706

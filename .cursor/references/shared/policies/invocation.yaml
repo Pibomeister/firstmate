@@ -1,0 +1,515 @@
+# policies/invocation.yaml — the invocation law in machine form.
+#
+# Authority: plan §7.1 (public entrypoint vs shared phase operation), plan §2.1–§2.5
+# (which capability is a public entrypoint at all), the source law at G:L1672-1676,
+# ADR-0007's later standing-start amendment for autopilot alone, ADR-0008's bypass start
+# for one task, and ADR-0013's model start for super-review full and readiness.
+#
+# Machine-read by `ak validate`, which builds the invocation graph from this file and fails on:
+#   - a skill whose `invocation` here disagrees with catalog.yaml
+#   - a U -> U call edge that is not carried by a phase operation declared below
+#   - an operation whose `exposed_by` skill is not in catalog.yaml
+#   - an `authority` value outside schemas/common.schema.json#/$defs/authority
+#   - an operation id that does not match common#/$defs/operation_id
+#
+# This file names no model, provider, tier or routing rule. `authority: model` is the enum value
+# from common#/$defs/authority meaning "the model or a parent skill may start it", not a selection.
+
+schema_version: 1
+policy: invocation
+
+# ---------------------------------------------------------------------------
+# The law. Five statements, each independently checkable.
+# ---------------------------------------------------------------------------
+law:
+  source: G:L1672-1676
+  restated_in: AGENTS.md "The invocation law"
+  statements:
+    - id: user-invoked-are-human-started
+      rule: >-
+        A user-invoked (U) skill is started by a human's slash command. Autopilot alone may also
+        be started by Firstmate under a runner-validated standing grant bound to a captain-approved
+        immutable charter (ADR-0007). A worker prompt or phase grant is never a start. The other
+        standing exception is `bypass` below: a supervisor-held grant stands in for the typed
+        command of the lifecycle phases it names, for one task, and starts them only (ADR-0008).
+        The third is `unattended` below: where the operator opts in, super-align, super-bound and
+        super-ship start with no typed command and no grant, bounded by the live merge-gate read
+        (ADR-0014).
+      enforced_by: >-
+        the skill's own text, which `ak validate` checks (`human-start`): the description names
+        the typed command and the class, and the first workflow step names the command and stops;
+        autopilot also names Firstmate's standing grant and runner validation; no host flag is
+        emitted (docs/decisions/0003-model-invocation.md, ADR-0007). A bypass start is checked by
+        the bundle's `ak-gate.mjs bypass check` (src/lifecycle/gate.ts), an unattended start by its
+        `ak-gate.mjs unattended check` (src/lifecycle/gate.ts)
+    - id: u-may-call-m
+      rule: A user-invoked skill may call model-invoked (M) skills directly.
+    - id: u-may-not-call-u
+      rule: >-
+        A user-invoked skill may not call another user-invoked skill. The only permitted path
+        between two U skills is a phase operation declared in `operations` below, invoked by a
+        delegated controller under a runner-validated grant.
+    - id: packs-never-start-a-phase
+      rule: >-
+        Domain packs auto-attach by artifact and semantics. They add constraints and review
+        lenses. They never start a lifecycle phase and are never entrypoints.
+    - id: protocols-and-roles-are-not-entrypoints
+      rule: >-
+        Protocols are shared phase logic invoked by skills; roles are prompts filled by the
+        runner. Neither is human-invocable and neither appears in a host command surface.
+
+# ---------------------------------------------------------------------------
+# Entrypoints. Must agree entry-for-entry with catalog.yaml `skills[].invocation`.
+# ---------------------------------------------------------------------------
+entrypoints:
+  user_invoked:
+    count: 23
+    authority: explicit
+    skills:
+      - super-align
+      - super-bound
+      - super-ship
+      - verify
+      - visual-edit
+      - autopilot
+      - compound
+      - compound-refresh
+      - ideate
+      - pov
+      - bakeoff
+      - receiving-review
+      - improve-architecture
+      - doubt-driven
+      - deprecate
+      - explain
+      - triage
+      - strategy
+      - product-pulse
+      - writing-skills
+      - wayfind
+      - babysit-pr
+      - ultraqa
+
+  model_invoked:
+    count: 13
+    authority: model
+    skills:
+      - codebase-design
+      - super-scout
+      - super-build
+      - super-verify
+      - super-review
+      - doc-review
+      - diagnose
+      - simplify
+      - research
+      - source-driven
+      - prototype
+      - handoff
+      - wait-what
+
+  # super-review is the one skill with named entrypoints (catalog.yaml `entrypoints`).
+  # These values are authoritative and must match the catalog.
+  per_entrypoint:
+    autopilot:
+      run:
+        invocation: U
+        authority: explicit-or-standing
+    super-review:
+      full:
+        invocation: M
+        authority: model
+      delta:
+        invocation: M
+        authority: active-review-run
+      readiness:
+        invocation: M
+        authority: model
+
+# ---------------------------------------------------------------------------
+# Phase operations. The split that satisfies the law (plan §7.1, protocol `phase-operations`).
+#
+# An operation is not a command. It has no host command surface, no description a model matches
+# against, and no path to a human. It exists so that a delegated controller can advance a phase
+# that a human would otherwise have to start, and only when the runner can validate a grant that
+# covers it.
+#
+# Field contract:
+#   exposed_by   the catalog skill whose phase logic this operation runs
+#   entrypoint   the named entrypoint on that skill, when it has more than one
+#   authority    a value of common#/$defs/authority
+#   grant.covers a checkpoint_category, grantable_action or sensitive_action from `common`
+#   callable_by  the catalog skills that may invoke it as controllers; nothing else may
+#   side_effects a subset of common#/$defs/side_effect
+#   on_unvalidatable_grant  always `stop-for-explicit-invocation` (see `no_side_door` below)
+# ---------------------------------------------------------------------------
+operations:
+
+  - id: align.run
+    exposed_by: super-align
+    authority: delegated-grant
+    grant:
+      covers: align-answer
+    callable_by: [autopilot]
+    purpose: >-
+      Advance the alignment phase and reach either an approved direction or a recorded
+      unresolved decision, under a charter that names the alignment checkpoint.
+    preconditions:
+      - charter lists checkpoint category `align-answer`
+      - the alignment question is bounded and inside the charter work source
+    hard_gates:
+      - no implementation file is written in this operation
+      - an unbounded or out-of-charter question returns needs-input, never a decided answer
+    side_effects: [artifact-write, scratch-write]
+    on_unvalidatable_grant: stop-for-explicit-invocation
+
+  - id: bound.run
+    exposed_by: super-bound
+    authority: delegated-grant
+    grant:
+      covers: spec-approval
+    also_requires:
+      - covers: ticket-approval
+        when: the operation emits implementation tickets
+    callable_by: [autopilot]
+    purpose: >-
+      Produce requirements, plan, dependency DAG, ownership boundaries, acceptance criteria and
+      verification commands, and take the spec/ticket approval checkpoints the charter names.
+    preconditions:
+      - an approved alignment result exists and binds to the current source revision
+    hard_gates:
+      - a decision ticket is never emitted as executable work
+      - approval binds to the specification's hash; a changed spec does not inherit the old approval
+    side_effects: [artifact-write, scratch-write, kb-draft]
+    on_unvalidatable_grant: stop-for-explicit-invocation
+
+  - id: wayfind.map
+    exposed_by: wayfind
+    authority: delegated-grant
+    grant:
+      covers: ticket-approval
+    callable_by: [autopilot]
+    purpose: Map longer work into decision tickets and implementation tickets.
+    hard_gates:
+      - a decision ticket can never be dispatched to an implementer as though approved
+    side_effects: [artifact-write]
+    on_unvalidatable_grant: stop-for-explicit-invocation
+
+  - id: review.full
+    exposed_by: super-review
+    entrypoint: full
+    authority: delegated-grant
+    grant:
+      covers: finding-adjudication
+    callable_by: [autopilot, babysit-pr]
+    purpose: >-
+      Run pass 1 of the specialist panel over an immutable snapshot and open a review run that
+      later delta operations attach to.
+    preconditions:
+      - an immutable snapshot exists with a recorded comparison base and reviewed head
+    hard_gates:
+      - reviewers cannot edit source
+      - a required-lane failure is `unavailable` and blocks approval (policies/review.yaml)
+    side_effects: [artifact-write]
+    on_unvalidatable_grant: stop-for-explicit-invocation
+
+  - id: review.delta
+    exposed_by: super-review
+    entrypoint: delta
+    authority: active-review-run
+    grant:
+      covers: delta-closure
+      required: false
+      note: >-
+        No new grant is needed to run the delta pass inside an already-open review run; a grant
+        is needed only to close a finding on a supervisor decision rather than on independent
+        verification evidence.
+    callable_by: [super-review, autopilot, babysit-pr]
+    purpose: Two-axis delta over an accepted fix, inside a review run that is already open.
+    preconditions:
+      - a review run opened by `review.full` (or an explicit super-review invocation) is open
+      - the persisted finding list, input hashes and dispositions are available
+    hard_gates:
+      - scope is bounded by affected behavior, not changed lines (ruling `delta-scope-affected-behavior`)
+      - at most two fix cycles; the third stops (policies/limits.yaml `fix_cycles`)
+    side_effects: [artifact-write]
+    on_unvalidatable_grant: stop-for-explicit-invocation
+    note: >-
+      Where no review run is open, this operation does not open one. It returns needs-input
+      naming `super-review full` as the next permitted action.
+
+  - id: review.readiness
+    exposed_by: super-review
+    entrypoint: readiness
+    authority: delegated-grant
+    grant:
+      covers: finding-adjudication
+    callable_by: [autopilot]
+    purpose: The two-lane readiness gate over a change that is otherwise ready to ship.
+    hard_gates:
+      - the two lanes are independent; a missing lane is `unavailable`, never self-review
+      - a blocking lane result vetoes approval
+    side_effects: [artifact-write]
+    on_unvalidatable_grant: stop-for-explicit-invocation
+
+  - id: ship.prepare
+    exposed_by: super-ship
+    authority: delegated-grant
+    grant:
+      covers: ship-pr
+    callable_by: [autopilot]
+    purpose: >-
+      Release checks, sensitive-data scan, PR preparation and the linked knowledgebase change,
+      up to and including opening a pull request when the charter grants it.
+    preconditions:
+      - in the autonomous form, super-ship step 7's `ak-gate.mjs check` requires `trusted-evidence`, except under the unattended policy (ADR-0014), whose worker-attested evidence is bounded by the live merge-gate read
+      - verification receipts bind to the head being shipped
+      - review approval exists and binds to that head's artifact hash
+    hard_gates:
+      - merge and deploy are sensitive actions and are never included (policies/authority-defaults.yaml)
+      - every remote effect carries an idempotency key plus read-back
+    side_effects: [local-commit, branch-create, remote-push, pr-open, kb-draft, artifact-write]
+    on_unvalidatable_grant: stop-for-explicit-invocation
+
+  - id: lesson.capture
+    exposed_by: compound
+    authority: model
+    callable_by: [super-ship, autopilot]
+    purpose: >-
+      The `super-ship` -> `compound` need, resolved without a U -> U call. Capture draws a lesson
+      *candidate* from evidence already present in the run. It does not start the `compound`
+      entrypoint, does not publish, and produces a draft the human or a granted publish step acts on.
+    preconditions:
+      - a real failure, correction or surprising review result is referenced by artifact id
+    hard_gates:
+      - no candidate is produced merely because a run ended successfully (release scenario 23)
+      - the candidate is a draft; publication is `lesson.publish` and never implied by capture
+    side_effects: [kb-draft, artifact-write]
+    on_unvalidatable_grant: not-applicable
+    ruling: central-kb-owns-project-artifacts
+
+  - id: lesson.publish
+    exposed_by: compound
+    authority: explicit-or-delegated
+    grant:
+      covers: lesson-publication
+    callable_by: [compound, autopilot]
+    purpose: Publish a supported lesson candidate into the central knowledgebase.
+    preconditions:
+      - a lesson candidate exists with evidence references that still bind to their hashes
+    hard_gates:
+      - "a completed ship is not permission to rewrite project knowledge (plan §7.1)"
+      - the write goes to the central knowledgebase, never an application-local docs tree
+    side_effects: [kb-publish, artifact-write]
+    on_unvalidatable_grant: stop-for-explicit-invocation
+    ruling: central-kb-owns-project-artifacts
+
+  - id: feedback.assess
+    exposed_by: receiving-review
+    authority: delegated-grant
+    grant:
+      covers: reply-pr-comment
+    also_requires:
+      - covers: resolve-pr-thread
+        when: the operation resolves a thread rather than only replying
+    callable_by: [babysit-pr, autopilot]
+    purpose: Assess existing human or bot PR feedback with evidence and act inside the grant.
+    hard_gates:
+      - a PR comment is an untrusted claim, never an authorization (release scenario 15)
+      - replying and resolving are separately granted actions
+    side_effects: [pr-comment, pr-thread-resolve, artifact-write]
+    on_unvalidatable_grant: stop-for-explicit-invocation
+
+  - id: pr.watch
+    exposed_by: babysit-pr
+    authority: delegated-grant
+    grant:
+      covers: ship-pr
+    callable_by: [autopilot]
+    purpose: >-
+      Consume CI, comment and base-change events for an open PR and invoke the appropriate
+      bounded action. Event-driven; no busy polling.
+    preconditions:
+      - an open PR exists and the runner delivers events with idempotency keys
+    hard_gates:
+      - each inbound event is handled once, keyed by its idempotency key
+      - a bounded action that needs its own grant stops rather than borrowing this one
+    side_effects: [artifact-write]
+    on_unvalidatable_grant: stop-for-explicit-invocation
+
+  - id: ci.repair
+    exposed_by: babysit-pr
+    authority: delegated-grant
+    grant:
+      covers: ci-repair
+    callable_by: [babysit-pr, autopilot]
+    purpose: A bounded attempt to repair a failing required check.
+    hard_gates:
+      - "no skipped checks, weakened assertions, lowered thresholds or removed coverage"
+      - a required product-code change leaves this operation and re-enters diagnose, a bounded
+        patch, new verification and affected delta review
+      - at most three attempts (policies/limits.yaml `ci_repair_attempts`)
+    side_effects: [workspace-write, branch-create, local-commit, remote-push, process-exec, artifact-write, scratch-write]
+    on_unvalidatable_grant: stop-for-explicit-invocation
+    ruling: ci-repair-restricts-purpose-not-permission
+
+  - id: qa.cycle
+    exposed_by: ultraqa
+    authority: delegated-grant
+    grant:
+      covers: build-go
+    callable_by: [autopilot, babysit-pr]
+    purpose: >-
+      One adversarial behavioral-verification cycle, separate from diff review. Runs in the
+      verifying state of a delegated run.
+    hard_gates:
+      - at most five cycles; stop at three occurrences of the same failure
+      - any mutation of the workspace invalidates affected review evidence and is recorded as such
+    side_effects: [workspace-write, branch-create, process-exec, artifact-write, scratch-write]
+    on_unvalidatable_grant: stop-for-explicit-invocation
+
+# ---------------------------------------------------------------------------
+# The closure. Everything not declared above is closed.
+# ---------------------------------------------------------------------------
+no_operation_exposed:
+  rule: >-
+    These user-invoked skills expose no phase operation. No controller, grant or charter entry
+    can start them. A controller that needs their effect stops and names the slash command.
+  note: >-
+    This list covers user-invoked skills only, and is complete for them. The thirteen skills in
+    `entrypoints.model_invoked` are absent by construction rather than by omission: a controller
+    already invokes a model-invoked skill directly, which is what the M mode means, so there is
+    no forbidden edge for a closure to withhold. A phase operation on a user-invoked skill exists
+    where a human entrypoint would otherwise be the only way in. super-review is model-invoked and
+    still exposes review.full, review.delta and review.readiness, so a delegated controller keeps
+    a grant-checked path. Read together, the two lists account for every skill in catalog.yaml:
+    23 user-invoked, of which these 15 expose no operation and the rest do, plus 13 model-invoked
+    that this closure does not list.
+  skills:
+    - autopilot
+    - compound-refresh
+    - ideate
+    - pov
+    - bakeoff
+    - improve-architecture
+    - doubt-driven
+    - deprecate
+    - explain
+    - triage
+    - strategy
+    - product-pulse
+    - writing-skills
+    - verify
+    - visual-edit
+
+no_side_door:
+  rule: >-
+    Where the host cannot validate a grant, the skill stops for explicit invocation rather than
+    reproducing a forbidden command's effect through an alternate path.
+  forbidden_substitutes:
+    - re-implementing the operation's steps inline under the caller's own authority
+    - invoking a model-invoked skill chain that reproduces the operation's side effects
+    - asking a supervisor pair to approve an action the charter does not list
+    - treating a prior grant for a different operation as covering this one
+  required_result:
+    status: needs-input
+    escalation:
+      charter_rule: policy:invocation/no_side_door
+      need: names the entrypoint a human must invoke
+    next_permitted_action: >-
+      The exact public entrypoint and arguments a human would use, stored so that the run
+      resumes without repeating side effects.
+  ruling: entrypoint-phase-operation-split
+
+# ---------------------------------------------------------------------------
+# Bypass. A supervisor-held grant that starts the lifecycle phases for one task (ADR-0008).
+# Must agree entry-for-entry with BYPASS_PHASES in src/lifecycle/gate.ts.
+# ---------------------------------------------------------------------------
+bypass:
+  rule: >-
+    A bypass grant stands in for the typed command of the phases listed here, for one task and
+    one repository, until it expires. A supervisor (Firstmate or a human) writes it from outside
+    the repository with `node <agent-kit bundle>/bin/ak-gate.mjs bypass grant`, run from its own
+    home and never through bun from a project directory; the worker runs that script's `bypass
+    check --task <id>` before each phase, and exit 0 is the start. The task id comes from the brief and
+    must equal the grant's, and the check must run from inside the task's worktree the grant
+    names; `--project` cannot substitute for that. A grant holds in each run of its task while
+    that run is its branch's current run (super-build's `open --ticket` opens a new one), until it
+    expires at most 12 hours after it was issued, so a run other than the branch's current run is
+    refused, and `--run .` or `--run ..` is refused. The phase runs as
+    its explicit form. It is not a phase operation, not a delegated grant and not
+    trusted evidence.
+  phases: [super-align, super-bound, "super-review:full", "super-review:readiness", super-ship]
+  start_only: >-
+    The grant starts phases and nothing else. Every approval inside a phase stops with
+    needs-decision for the supervisor: super-align's explicit yes, super-bound's specification
+    and ticket approvals, and any remote effect of super-ship. A worker never approves its own
+    work under bypass.
+  never: [merge, deploy, autopilot, scope-expansion]
+  attribution: >-
+    Each phase check leaves a use record under `<evidence>/<run>/bypass/`, and a gate recorded with
+    `--bypass <file> --task <id>` carries `authority.mode: bypass` with the grant's id, path,
+    sha256, task, worktree and who authorized it. A check or `record --bypass` writes the run's use
+    record for the phase, and a phase started there continues in exactly two ways: a fresh grant
+    that passes the check for the same task and worktree, whose record names the grant it
+    supersedes in `superseded_grant_id`, or a typed record without `--bypass`, which records
+    `authority: {mode: explicit, superseded_grant_id}` and ends the bypass for that phase in that
+    run: the grants it ended are refused there until a fresh grant for the same task re-starts it.
+    The end is per run; another run is a fresh start under the same grant. The use records are
+    worker-writable, so the end guards against accidents, not a determined worker; nothing is
+    written to the ledger. A grant for another task or worktree, an expired one, one issued for
+    longer than 12 hours, or the grant a typed record ended in that run is refused; re-recording a hand-recorded snapshot with `--bypass` is refused; `--bypass`
+    on a gate no bypass phase records is refused.
+  trust: >-
+    The grant lives outside every worktree and the git directory of its repository, and its real
+    path and sha256 are registered in a ledger under the account's home directory, with the
+    issuing directory, host and Firstmate home recorded for audit. The check judges the bytes it
+    opened once, from the registered inode. A same-user worker can still issue one from outside
+    the repository: on a single-user install this guards against accidents and shortcuts, not a
+    determined worker. Firstmate accepted that limit on the captain's behalf on 2026-10-01; an
+    issuer outside the worker's account (the runner, or a separate uid) is the follow-up.
+  ruling: entrypoint-phase-operation-split
+
+# ADR-0014. A third standing exception to "only a human starts these", for any runner.
+unattended:
+  rule: >-
+    Where the operator opts in, by `AK_LIFECYCLE_POLICY=unattended` in the runner's environment or by
+    `ak.lifecycle.json` naming the policy on the repository's default branch, super-align,
+    super-bound and super-ship start when `ak-gate.mjs unattended check --phase <phase>` exits 0,
+    with no typed command and no grant, an exception for this policy only to the ordinary-workers clause of ruling `entrypoint-phase-operation-split`.
+    Absent both opt-ins nothing here applies. A typed command
+    still starts a phase, and a bypass grant is refused under the policy.
+  phases: [super-align, super-bound, super-ship]
+  advance: >-
+    A wait for a human answer or approval proceeds with the skill's own recommendation, recorded as
+    an unattended advance and never as an approval. A ticket whose class makes a human the author is
+    implemented by the agent with its true class, floor and author kind recorded, an exception to ruling `delegation-class-is-authority-not-finding` whose boundary is the live merge-gate read.
+    Every other stop still stops, every sensitive action included.
+  never: [merge, deploy, scope-expansion]
+  evidence: >-
+    Every gate records the policy and the evidence commands the gate tool ran; align, bound and scout
+    gain gates under the policy. The evidence is worker-attested, and a host-unattested verifier is a
+    recorded note rather than a refusal, an exception to ruling `closure-requires-independent-verification` whose boundary is the live merge-gate read.
+  trust: >-
+    The boundary is the merge. ship-preflight reads the target's default branch live and read-only
+    and refuses unless code-owner review by designated human reviewers, required CI and the
+    independent review check pinned to a dedicated app are enforced with no bypass, and the runner is
+    a non-admin, non-designated user. Final ship success validates the posted review at the pull
+    request's exact head; its reviewer identity must be a canonical model different from every
+    configured author model.
+
+packs:
+  rule: >-
+    Packs are attached by the `attach-pack` protocol from artifact and semantics with a recorded
+    rationale. They are never entrypoints, never operations, and never start a phase.
+  entries: [pack-api, pack-delete, pack-test, pack-secure, pack-frontend, pack-data, pack-perf, pack-deps]
+
+protocols:
+  rule: Shared phase logic, invoked by skills and operations. Never human-invocable.
+  entries: [phase-operations, consensus-plan-gate, tdd, apply-findings, review-delta, worktree-ownership, attach-pack]
+
+roles:
+  rule: >-
+    Role prompts filled by the runner inside a skill or operation. Never individually invocable,
+    never exposed in a host command surface. Seat independence is a runner-enforced constraint
+    (policies/authority-defaults.yaml).

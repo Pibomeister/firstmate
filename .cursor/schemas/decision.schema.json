@@ -1,0 +1,263 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-kit.local/schemas/decision.schema.json",
+  "title": "Decision card",
+  "description": "Plan 7.3. A frozen checkpoint decision: the question, two to six bounded options, the evidence references, the affected artifact hashes, two independent supervisor judgments, a deterministic authority check and the ruling. Agreement is not authority, and the schema says so structurally: a 'decided' ruling requires the authority check to have passed with the charter permitting the action, the required evidence present and the seats independent — matching judgments alone never satisfy it (release scenario 16). There is no third judgment: 'judgments' is capped at two, because adding a tie-breaking supervisor to avoid asking the human is exactly what plan 7.3 forbids, and a missing supervisor blocks rather than being replaced by the implementer (release scenario 17). Disagreement, missing evidence, a supervisor failure or an out-of-charter action blocks the checkpoint and emits one escalation.",
+  "type": "object",
+  "required": ["checkpoint", "question", "options", "evidence", "affected_artifacts", "charter", "seats"],
+  "properties": {
+    "schema": { "const": "decision" },
+    "status": { "enum": ["open", "dispatched", "ruled", "blocked", "escalated", "superseded"] },
+    "checkpoint": {
+      "description": "The checkpoint category being decided. It must be one the charter lists; a category outside the charter is not theirs to decide (plan 7.2, 7.3).",
+      "$ref": "common.schema.json#/$defs/checkpoint_category"
+    },
+    "question": {
+      "description": "The one question this card settles. A card with two questions is two cards.",
+      "$ref": "common.schema.json#/$defs/nonempty_string"
+    },
+    "options": {
+      "description": "Bounded options, two to six. Reusing common#/$defs/option keeps a decision card and an escalation speaking the same vocabulary (plan 7.4).",
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 6,
+      "items": { "$ref": "common.schema.json#/$defs/option" }
+    },
+    "evidence": {
+      "description": "The evidence references the judgments are made on. Required evidence being present is a precondition of authority, not a courtesy (plan 7.3).",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "common.schema.json#/$defs/evidence_ref" }
+    },
+    "required_evidence": {
+      "description": "What this checkpoint category needs before it can be decided at all. Fail closed when required evidence is absent (AGENTS.md). Where the evaluator named in advance is a human — a prototype whose question is about human experience is the case plan 11 names — that human's judgment is required evidence: absent, 'required_evidence_present' is false, the authority check fails, and the checkpoint blocks with one escalation rather than an automated verdict standing in for the experience the prototype exists to produce (ruling `prototype-human-experience-needs-human`, release scenario 4). Which questions are about human experience is not decidable from this document; naming the evaluator in advance is what makes it checkable.",
+      "type": "array",
+      "items": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+    },
+    "affected_artifacts": {
+      "description": "The artifacts this decision binds, by id and hash. Freezing the hashes is what stops a decision drifting onto a changed artifact (plan 5.2, 7.3).",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "common.schema.json#/$defs/artifact_ref" }
+    },
+    "charter": {
+      "description": "The charter this decision is taken under, bound by hash, plus the rule that makes the checkpoint decidable.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["hash"],
+      "properties": {
+        "hash": { "$ref": "common.schema.json#/$defs/hash" },
+        "rule": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "grant": { "$ref": "common.schema.json#/$defs/grant_ref" }
+      }
+    },
+    "seats": {
+      "description": "Exactly two supervisor seats, declared independent. Independence is a structural constraint on the seating that the runner enforces; it is never a property of who or what fills a seat. Neither seat may be the implementer or the approver of the work under decision (plan 7.3). A seat that cannot be filled independently is unavailable and blocks the checkpoint; it is never backfilled by the implementer, the author, the spec approver or a seat already on the panel (ruling `missing-supervisor-never-implementer`, release scenario 17).",
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "filled_by", "independent"],
+        "properties": {
+          "id": { "$ref": "common.schema.json#/$defs/kebab_id" },
+          "filled_by": { "$ref": "common.schema.json#/$defs/actor_role" },
+          "independent": { "const": true },
+          "may_implement": { "const": false }
+        }
+      },
+      "x-validator-rule": "decision.seats-declared-independent-and-not-the-implementer"
+    },
+    "judgments": {
+      "description": "One judgment per seat, at most two in total. Each returns a choice, a concise rationale, the assumptions it could not resolve, and an escalation flag (plan 7.3). A missing judgment is a blocked checkpoint, never a seat filled by someone else (release scenario 17).",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["seat", "by", "choice", "rationale", "unresolved_assumptions", "escalate"],
+        "properties": {
+          "seat": { "$ref": "common.schema.json#/$defs/kebab_id" },
+          "by": { "$ref": "common.schema.json#/$defs/actor_role" },
+          "choice": {
+            "description": "The id of one of the bounded options. A judgment cannot invent an option.",
+            "$ref": "common.schema.json#/$defs/kebab_id"
+          },
+          "rationale": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+          "unresolved_assumptions": {
+            "description": "Present but empty means the seat resolved everything it needed. Absent would mean the seat was never asked.",
+            "type": "array",
+            "items": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+          },
+          "escalate": { "type": "boolean" },
+          "at": { "$ref": "common.schema.json#/$defs/timestamp" },
+          "saw_other_judgment": {
+            "description": "Always false: independence comes from isolated evidence packets, not from sequential scheduling (plan 6.5, 7.3).",
+            "const": false
+          }
+        }
+      },
+      "x-validator-rule": "decision.judgment-choice-names-a-declared-option"
+    },
+    "agreement": {
+      "description": "Whether the two judgments chose the same option. Recorded as a fact and never as a source of authority: agreement is necessary and never sufficient, and it supports a decision only when the authority check below also passes (plan 7.3, release scenario 16, ruling `supervisor-agreement-is-not-authority`). Confidence is off the authority path entirely; the charter and the evidence carry it.",
+      "type": "boolean",
+      "x-validator-rule": "decision.agreement-matches-the-recorded-judgments"
+    },
+    "authority_check": {
+      "description": "The deterministic policy check (plan 7.3). It is performed by policy against artifact evidence, not by a judgment, and every component is recorded so a failure names itself. Confidence alone cannot grant authority; absent required evidence fails closed. 'charter_permits' and 'checkpoint_in_charter' are what make a sensitive action decidable at all: the charter entry a human approved up front, naming the action and its scope, is the permission, and the pair may never enlarge its own authority mid-run (ruling `sensitive-actions-need-approved-charter-entry`, release scenario 5).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "deterministic",
+        "charter_permits",
+        "required_evidence_present",
+        "seats_independent",
+        "checkpoint_in_charter",
+        "result"
+      ],
+      "properties": {
+        "deterministic": { "const": true },
+        "charter_permits": { "type": "boolean" },
+        "required_evidence_present": { "type": "boolean" },
+        "seats_independent": { "type": "boolean" },
+        "checkpoint_in_charter": { "type": "boolean" },
+        "both_judgments_returned": { "type": "boolean" },
+        "result": { "enum": ["pass", "fail"] },
+        "failed_checks": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+        }
+      },
+      "allOf": [
+        {
+          "description": "A passing authority check is a conjunction, not a summary: every component holds or the result is 'fail'.",
+          "if": { "properties": { "result": { "const": "pass" } }, "required": ["result"] },
+          "then": {
+            "properties": {
+              "charter_permits": { "const": true },
+              "required_evidence_present": { "const": true },
+              "seats_independent": { "const": true },
+              "checkpoint_in_charter": { "const": true }
+            }
+          },
+          "else": { "required": ["failed_checks"], "properties": { "failed_checks": { "minItems": 1 } } }
+        }
+      ],
+      "x-validator-rule": "decision.authority-check-recomputed-from-charter-and-evidence"
+    },
+    "ruling": {
+      "description": "The outcome. 'decided' requires the authority check to have passed; 'blocked' is the result for disagreement, missing evidence, a supervisor failure or an out-of-charter action, and it carries one escalation rather than another round of internal debate (plan 7.3, release scenario 16).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["outcome", "at", "recorded_by"],
+      "properties": {
+        "outcome": { "enum": ["decided", "blocked"] },
+        "chosen_option": {
+          "description": "The option id that was decided, or null when blocked.",
+          "anyOf": [{ "$ref": "common.schema.json#/$defs/kebab_id" }, { "type": "null" }]
+        },
+        "at": { "$ref": "common.schema.json#/$defs/timestamp" },
+        "recorded_by": {
+          "description": "Who recorded the outcome. The enum admits only the policy check and the runner: accepting a decision record is not an authority a skill has (ruling `central-kb-owns-project-artifacts`, docs/decisions/0001-kb-document-vocabulary.md). The decision is project-derived material the central knowledgebase owns; this artifact carries the ruling, and no skill makes a repository-local documentation tree its home instead.",
+          "enum": ["policy", "runner"]
+        },
+        "note": { "type": "string" }
+      }
+    },
+    "escalation": {
+      "description": "One escalation, emitted once. Plan 7.4's shape: the single decision needed, the bounded options, the evidence already gathered, the recommended default, the triggering charter rule and the blocked ticket or finding.",
+      "$ref": "common.schema.json#/$defs/escalation"
+    },
+    "grants_issued": {
+      "description": "Grants that follow from a 'decided' ruling. Skills never issue grants; the runner does, and each one binds to the charter hash (common#/$defs/grant_ref, AGENTS.md).",
+      "type": "array",
+      "items": { "$ref": "common.schema.json#/$defs/grant_ref" }
+    },
+    "result": { "$ref": "common.schema.json#/$defs/operation_result" }
+  },
+  "unevaluatedProperties": false,
+  "allOf": [
+    { "$ref": "common.schema.json#/$defs/envelope" },
+    {
+      "description": "Agreement is not authority. A decided ruling requires both judgments returned and the deterministic authority check passed on every component; two seats choosing the same option is necessary and by itself never sufficient (plan 7.3, release scenario 16).",
+      "if": {
+        "required": ["ruling"],
+        "properties": { "ruling": { "properties": { "outcome": { "const": "decided" } }, "required": ["outcome"] } }
+      },
+      "then": {
+        "required": ["authority_check", "judgments", "agreement"],
+        "properties": {
+          "authority_check": {
+            "required": ["result"],
+            "properties": {
+              "result": { "const": "pass" },
+              "charter_permits": { "const": true },
+              "required_evidence_present": { "const": true },
+              "seats_independent": { "const": true },
+              "checkpoint_in_charter": { "const": true }
+            }
+          },
+          "judgments": { "minItems": 2 },
+          "agreement": { "const": true },
+          "ruling": {
+            "properties": { "chosen_option": { "$ref": "common.schema.json#/$defs/kebab_id" } },
+            "required": ["chosen_option"]
+          }
+        }
+      },
+      "x-validator-rule": "decision.ruling-requires-a-passed-authority-check-not-mere-agreement"
+    },
+    {
+      "description": "A blocked ruling carries exactly one escalation and no chosen option. One escalation, not repeated internal debate and not a third seat (plan 7.3, release scenarios 16 and 17).",
+      "if": {
+        "required": ["ruling"],
+        "properties": { "ruling": { "properties": { "outcome": { "const": "blocked" } }, "required": ["outcome"] } }
+      },
+      "then": {
+        "required": ["escalation"],
+        "properties": { "ruling": { "properties": { "chosen_option": { "type": "null" } } } }
+      }
+    },
+    {
+      "description": "Disagreement blocks. There is no tie-break and no further round (plan 7.3).",
+      "if": { "properties": { "agreement": { "const": false } }, "required": ["agreement"] },
+      "then": {
+        "properties": { "ruling": { "properties": { "outcome": { "const": "blocked" } } } }
+      }
+    },
+    {
+      "description": "A seat that failed to return blocks the checkpoint. It is not filled by the implementer, and it is not covered by the seat that did return (release scenario 17).",
+      "if": {
+        "required": ["judgments", "ruling"],
+        "properties": { "judgments": { "maxItems": 1 } }
+      },
+      "then": {
+        "required": ["escalation"],
+        "properties": { "ruling": { "properties": { "outcome": { "const": "blocked" } } } }
+      }
+    },
+    {
+      "description": "A judgment raising the escalation flag stops the checkpoint rather than being outvoted (plan 7.3).",
+      "if": {
+        "required": ["judgments"],
+        "properties": {
+          "judgments": { "contains": { "properties": { "escalate": { "const": true } }, "required": ["escalate"] } }
+        }
+      },
+      "then": {
+        "properties": { "ruling": { "properties": { "outcome": { "const": "blocked" } } } }
+      }
+    },
+    {
+      "description": "Grants follow only from a decided ruling. A blocked checkpoint issues nothing (plan 7.1, 7.3).",
+      "if": { "required": ["grants_issued"], "properties": { "grants_issued": { "minItems": 1 } } },
+      "then": {
+        "required": ["ruling"],
+        "properties": { "ruling": { "properties": { "outcome": { "const": "decided" } }, "required": ["outcome"] } }
+      }
+    }
+  ]
+}

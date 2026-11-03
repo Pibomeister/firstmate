@@ -1,0 +1,234 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-kit.local/schemas/trail-audit.schema.json",
+  "title": "Work trail audit",
+  "description": "The auditor's comparison of a ticket's trail with what the run left behind: the stretches, the ticket, the diff, the commits, the receipts and the implementer's report. No transcript is read. It names the run, the ticket and the audited revision, the auditor's seat, every stretch of the ticket and the other material read, and states one result. An attention-list item says where to look, why, and which of four comparisons produced it. The record also says what was inspected and what could not be. It does not check that an attention item's stretch or entry exists.",
+  "type": "object",
+  "required": [
+    "ticket",
+    "auditor_seat",
+    "stretches",
+    "other_material",
+    "transcript",
+    "result",
+    "attention_list",
+    "inspected",
+    "not_inspected"
+  ],
+  "properties": {
+    "schema": { "const": "trail-audit" },
+    "status": {
+      "description": "'complete' is the only state: an audit is written once, when it is done.",
+      "enum": ["complete"]
+    },
+    "run_id": {
+      "description": "The build run the audit belongs to, never null.",
+      "$ref": "common.schema.json#/$defs/artifact_id"
+    },
+    "source_revision": {
+      "description": "The audited revision, never null and with no 'diff_hash': an audit reads one committed revision.",
+      "$ref": "common.schema.json#/$defs/revision_ref",
+      "not": { "required": ["diff_hash"] }
+    },
+    "ticket": {
+      "description": "The ticket whose trail is audited.",
+      "$ref": "common.schema.json#/$defs/artifact_ref"
+    },
+    "auditor_seat": {
+      "description": "The seat that wrote the audit and how its isolation is known.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "implementer_seats", "isolation", "attestation"],
+      "properties": {
+        "id": {
+          "description": "The auditor's seat.",
+          "$ref": "common.schema.json#/$defs/artifact_id"
+        },
+        "implementer_seats": {
+          "description": "The seat of every implementer of the ticket.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "common.schema.json#/$defs/artifact_id" }
+        },
+        "isolation": {
+          "description": "'runner-attested' when a runner attested the seat's isolation; 'host-unattested' when the host left it unattested.",
+          "enum": ["runner-attested", "host-unattested"]
+        },
+        "attestation": {
+          "description": "The runner's attestation when 'isolation' is 'runner-attested'; null when it is 'host-unattested'."
+        }
+      },
+      "if": {
+        "required": ["isolation"],
+        "properties": { "isolation": { "const": "runner-attested" } }
+      },
+      "then": {
+        "properties": { "attestation": { "$ref": "common.schema.json#/$defs/artifact_ref" } }
+      },
+      "else": {
+        "properties": { "attestation": { "type": "null" } }
+      }
+    },
+    "stretches": {
+      "description": "Every stretch of the ticket, by reference.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/stretch" }
+    },
+    "other_material": {
+      "description": "The other material read: each item by its hash, a commit by its own id.",
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["ref", "hash"],
+            "properties": {
+              "ref": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+              "hash": { "$ref": "common.schema.json#/$defs/hash" }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["commit"],
+            "properties": {
+              "commit": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+            }
+          }
+        ]
+      }
+    },
+    "transcript": {
+      "description": "No transcript is supplied to the audit, and no other value is admitted.",
+      "const": "not-supplied"
+    },
+    "result": {
+      "description": "'items-to-look-at' when the attention list holds an item; 'nothing-to-flag' when the material inspected raised none; 'no-material-to-assess' when there was nothing to compare.",
+      "enum": ["items-to-look-at", "nothing-to-flag", "no-material-to-assess"]
+    },
+    "attention_list": {
+      "description": "Always present. At least one item when the result is 'items-to-look-at', and none otherwise.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/attention_item" }
+    },
+    "no_material_reason": {
+      "description": "Why there was no material to assess. Required when the result is 'no-material-to-assess' and forbidden otherwise.",
+      "enum": ["every-stretch-missing", "nothing-to-compare"]
+    },
+    "inspected": {
+      "description": "What was inspected.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["material"],
+      "properties": {
+        "material": { "$ref": "common.schema.json#/$defs/string_list" },
+        "sensitive_notes": {
+          "description": "Where something read holds a secret, a credential, a token or personal data. A note names where, never the value.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["where"],
+            "properties": {
+              "where": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+            }
+          }
+        }
+      }
+    },
+    "not_inspected": {
+      "description": "What could not be inspected, and why.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["what", "why"],
+        "properties": {
+          "what": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+          "why": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "stretch": {
+      "description": "One stretch of the ticket's trail. 'published' when the knowledgebase holds the record; 'unpublished' when the implementer wrote to its record and the knowledgebase does not hold it; 'missing' when the implementer left nothing. 'content_hash' is the hash of the content read, present exactly when the stretch is published or unpublished.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "state"],
+      "properties": {
+        "id": {
+          "description": "The stretch record's id.",
+          "$ref": "common.schema.json#/$defs/artifact_id"
+        },
+        "state": { "enum": ["published", "unpublished", "missing"] },
+        "content_hash": { "$ref": "common.schema.json#/$defs/hash" }
+      },
+      "if": {
+        "required": ["state"],
+        "properties": { "state": { "const": "missing" } }
+      },
+      "then": { "not": { "required": ["content_hash"] } },
+      "else": { "required": ["content_hash"] }
+    },
+    "attention_item": {
+      "description": "One thing for a person to look at. 'comparison' names which of the four comparisons produced it. An item about an entry names the entry and its stretch.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["where", "reason", "comparison"],
+      "properties": {
+        "where": {
+          "description": "Where to look.",
+          "$ref": "common.schema.json#/$defs/nonempty_string"
+        },
+        "reason": {
+          "description": "Why it is worth a look.",
+          "$ref": "common.schema.json#/$defs/nonempty_string"
+        },
+        "comparison": {
+          "description": "'pointer-does-not-resolve': an entry's evidence pointer is absent or does not resolve. 'claimed-check-has-no-receipt': a check the trail claims has no receipt. 'change-has-no-entry': a visible change has no entry. 'trail-and-report-disagree': the trail and the implementer's report disagree.",
+          "enum": [
+            "pointer-does-not-resolve",
+            "claimed-check-has-no-receipt",
+            "change-has-no-entry",
+            "trail-and-report-disagree"
+          ]
+        },
+        "stretch": {
+          "description": "The stretch the item is about.",
+          "$ref": "common.schema.json#/$defs/artifact_id"
+        },
+        "entry": {
+          "description": "The entry the item is about. Allowed only with 'stretch'.",
+          "$ref": "common.schema.json#/$defs/kebab_id"
+        }
+      },
+      "dependentRequired": { "entry": ["stretch"] }
+    }
+  },
+  "unevaluatedProperties": false,
+  "allOf": [
+    { "$ref": "common.schema.json#/$defs/envelope" },
+    {
+      "description": "The attention list holds at least one item exactly when the result is 'items-to-look-at'.",
+      "if": {
+        "required": ["result"],
+        "properties": { "result": { "const": "items-to-look-at" } }
+      },
+      "then": { "properties": { "attention_list": { "minItems": 1 } } },
+      "else": { "properties": { "attention_list": { "maxItems": 0 } } }
+    },
+    {
+      "description": "A reason for having no material is given exactly when the result is 'no-material-to-assess'.",
+      "if": {
+        "required": ["result"],
+        "properties": { "result": { "const": "no-material-to-assess" } }
+      },
+      "then": { "required": ["no_material_reason"] },
+      "else": { "not": { "required": ["no_material_reason"] } }
+    }
+  ]
+}

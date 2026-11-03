@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-kit.local/schemas/rulings.schema.json",
+  "title": "Resolved conflicts",
+  "description": "The shape of policies/resolved-conflicts.yaml, the one file every skill body cites and the last artifact in this package whose shape nobody declared. Its ids are the vocabulary of AUTHORING.md §6: renaming one is a breaking change to every body that cites it, which is why the file needed a contract more than most and had one less. This schema states shape. It does not restate the cross-references src/validation/rulings.ts already resolves -- that a `binds` kind is a real catalog section, that a `scenario` names one of the numbered release scenarios, that `rows` equals the length of `conflicts`, that an id is unique -- because a second copy of a rule is the copy that disagrees, and none of those are questions a document schema can answer anyway. Where no code reads a field at all, this file is its only authority and says the whole shape.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "policy", "conflicts"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "policy": {
+      "description": "The policy's own id, matching its catalog entry and its filename.",
+      "const": "resolved-conflicts"
+    },
+    "rows": {
+      "description": "The number of rows, carried for readers that want the count without parsing the list. Optional, because `rulings.row-count-mismatch` says in as many words that the choice is to keep it equal or drop it -- and the agreement it has to keep is a relation between two fields, which is exactly what a document schema cannot check. An integer here, the equality there.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "conflicts": {
+      "description": "The rows. `conflicts`, not `rulings`: the list is named for what was in tension and each row's `ruling` is what this repository decided about it.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "tension", "ruling", "binds", "scenario", "coverage", "note", "source"],
+        "properties": {
+          "id": {
+            "description": "Cited verbatim from skill bodies, so it is the one field here that is an interface. Unconstrained here, and measured: `rulings.malformed-id` already rejects a missing id and a non-kebab one, `rulings.duplicate-id` rejects a repeat, and the loop skips a row whose id it could not read -- so the check cannot be dropped in favour of a schema keyword, and every keyword this schema could add reported a second time on a defect already named. A schema also sees one row at a time and can say nothing about uniqueness, which is the half that matters most for a field every body cites.",
+            "$comment": "Intentionally unconstrained; see the description. Absent from `required` for the same reason."
+          },
+          "tension": {
+            "description": "What the sources actually disagreed about. A row whose tension is absent is a ruling with nothing to rule on.",
+            "$ref": "common.schema.json#/$defs/nonempty_string"
+          },
+          "ruling": {
+            "description": "What this repository does. The restatement scan measures bodies against this prose, so it is load-bearing text rather than a summary of it.",
+            "$ref": "common.schema.json#/$defs/nonempty_string"
+          },
+          "discharged_in": {
+            "description": "The SKILL.md sections in which a bound skill may legitimately discharge this row, derived from the row's own tension and ruling rather than from where the bodies cite it. A list rather than one section: a row binds several skills and the same obligation lands in a different section in each, so a refusal condition for one skill is a scope exclusion for another. The vocabulary is `$defs/skill_section`, resolved rather than restated -- src/validation/rulings.ts reads the same enum out of the same file, so the two cannot part. There is deliberately no `maxItems`: a cap chosen after reading the declarations would be a constraint derived from the data it constrains, and breadth is reported by the check rather than capped here, since every declared section must be cited by at least one bound authored skill and an extra value is therefore an extra obligation rather than a free pass.",
+            "$comment": "Absent from this object's `required` on purpose. `rulings.missing-discharged-in` owns presence and cannot be dropped -- rulings.ts needs the value for its own `RulingRow.dischargedIn` -- so requiring it here would report a second time on a defect already named, measured at two errors per defect. The shape constraints above are stated by ruling and do carry that cost for an empty or out-of-vocabulary value; presence is the one class where it was avoidable.",
+            "type": "array",
+            "minItems": 1,
+            "items": { "$ref": "common.schema.json#/$defs/skill_section" }
+          },
+          "note": {
+            "description": "Why this row reads the way it does: the runner-up `discharged_in` and why it lost, or what an `indirect` coverage exercises instead. Required because every row carries one -- a row that needed no note would be a row nobody had to think about.",
+            "$ref": "common.schema.json#/$defs/nonempty_string"
+          },
+          "binds": {
+            "description": "The entries this row governs, grouped by kind. A mapping of kind to id list, not a list -- two independent parses have been lost to reading it as one. The keys are deliberately unenumerated here: `rulings.unknown-binds-kind` reads `ALL_SECTIONS` from src/catalog/layout.ts, and spelling the catalog's sections into a schema file would put a copy where nothing would notice it parting from the one the code uses. `doctrine` is the key that is not a catalog kind at all; its members are repo-relative paths to §12.3 markdown no entry claims, and `rulings.binds-unknown-doctrine-file` refuses a path that is not actually loose.",
+            "type": "object",
+            "minProperties": 1,
+            "additionalProperties": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+            }
+          },
+          "universal": {
+            "description": "The kinds this row governs entirely -- a claim about every entry of the kind, including ones not yet written, rather than a census of today's. `binds` still enumerates them and `ak validate` holds the pair. Only the two keywords `rulings.malformed-universal` does not cover are stated, and the omission of `type: array` is deliberate rather than an oversight: that check already refuses a non-array and a non-string member, and under JSON Schema a list keyword applies only to a value that is already a list, so `universal: roles` falls through to it and is reported once, by the check whose message explains why a bare string enumerates one letter per kind. What that check does not refuse is an empty list or a repeated kind -- a row claiming to govern a whole section and naming none, or naming one twice -- and those two are refused here.",
+            "minItems": 1,
+            "uniqueItems": true
+          },
+          "scenario": {
+            "description": "The numbered release scenario from plan §10 that tests this row. An integer, with the range left to `rulings.unknown-scenario`, which reads the count from one place and names it in the message a reader needs.",
+            "type": "integer",
+            "minimum": 1
+          },
+          "coverage": {
+            "description": "How the scenario tests this row: `direct` when it tests the ruling head-on, `indirect` when it exercises the same structure on a neighbouring case. Closed here because nothing in src/ reads this field -- there is no second authority to disagree with, so an open vocabulary would mean a typo silently becomes a third kind of coverage.",
+            "enum": ["direct", "indirect"]
+          },
+          "source": {
+            "description": "Where the position came from. `plan` always, since every row traces to a numbered section; `locator` where the design conversation is the source; `adr` where a decision record is.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["plan"],
+            "properties": {
+              "plan": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+              "locator": { "$ref": "common.schema.json#/$defs/g_locator" },
+              "adr": { "$ref": "common.schema.json#/$defs/repo_path" }
+            }
+          },
+          "overrides": {
+            "description": "Present only where a source position was deliberately overruled. Absence means the sources were reconciled, not that the field is missing -- which is why this is optional and why every member of it is required once it appears: a half-filled override records that something was overruled without recording what or why.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["source", "locator", "position", "reason"],
+            "properties": {
+              "source": {
+                "description": "Which source held the overruled position. Spelled here rather than referenced from catalog.schema.json#/$defs/provenance_origin, which carries the same two words for a different question -- that field answers 'is there a donor file behind this entry', and coupling the two would make a change to either break the other.",
+                "enum": ["conversation", "donor"]
+              },
+              "locator": {
+                "description": "Where the overruled position is stated. Its form follows `source`, which is why the two are constrained together below rather than here.",
+                "$ref": "common.schema.json#/$defs/nonempty_string"
+              },
+              "position": {
+                "description": "The overruled position in its own terms, so the row can be read without opening the source.",
+                "$ref": "common.schema.json#/$defs/nonempty_string"
+              },
+              "reason": {
+                "description": "Why this repository decided otherwise.",
+                "$ref": "common.schema.json#/$defs/nonempty_string"
+              }
+            },
+            "allOf": [
+              {
+                "description": "An overruled conversation position is located in the conversation, so the locator is a G:L. Constrained here rather than on the field, because the same field takes a different form under the other source.",
+                "if": { "properties": { "source": { "const": "conversation" } }, "required": ["source"] },
+                "then": { "properties": { "locator": { "$ref": "common.schema.json#/$defs/g_locator" } } }
+              }
+            ]
+          },
+          "also_recorded_in": {
+            "description": "A second place this ruling is written down, where one exists. A pointer, not a duplicate: the row remains the authority.",
+            "$ref": "common.schema.json#/$defs/nonempty_string"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,405 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-kit.local/schemas/evaluation.schema.json",
+  "title": "Evaluation record",
+  "description": "What an evaluation found, for the two skills whose work is to evaluate: `bakeoff`, which compares independent candidates against criteria fixed first and has them judged independently, and `prototype`, which builds one throwaway artifact and hands it to an evaluator named before anything is built. 'kind' says which, and each kind's members are refused on the other. The record never replaces candidate substance with labels or a score total, and it is not adoption: a selected approach is a recommendation to the caller, and a recommendation is not authorization. A human-experience question is settled by a human and never by an automated verdict (ruling `prototype-human-experience-needs-human`). Published through the knowledgebase adapter's `publishArtifact` under a `run-artifact` placement, never to a path in the working repository (ruling `central-kb-owns-project-artifacts`).",
+  "type": "object",
+  "required": ["kind"],
+  "properties": {
+    "schema": { "const": "evaluation" },
+    "status": {
+      "description": "The outcome. A bake-off is 'selected', 'unresolved' or 'incomplete'. A prototype is 'settled' when its named evaluator settled the question, or 'stopped' when the run stopped with what was learned.",
+      "enum": ["selected", "unresolved", "incomplete", "settled", "stopped"]
+    },
+    "kind": { "enum": ["bakeoff", "prototype"] },
+    "brief": {
+      "description": "Bake-off. The brief exactly as fixed before any candidate started.",
+      "$ref": "common.schema.json#/$defs/nonempty_string"
+    },
+    "criteria": {
+      "description": "Bake-off. The criteria exactly as fixed before any candidate started, never revised to favour an entry. A hard-constraint violation cannot be outweighed.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["text"],
+        "properties": {
+          "text": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+          "hard_constraint": { "type": "boolean" }
+        }
+      }
+    },
+    "candidates": {
+      "description": "Bake-off. Participation and dropouts, under neutral labels. Only a candidate that returned a usable artifact counts; one recovery candidate may target the unexplored dimension.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["label", "usable"],
+        "properties": {
+          "label": { "$ref": "#/$defs/candidate_label" },
+          "usable": { "type": "boolean" },
+          "recovery": { "type": "boolean" },
+          "artifact": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+          "dropout": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+        },
+        "if": { "properties": { "usable": { "const": true } } },
+        "then": { "required": ["artifact"] },
+        "else": { "required": ["dropout"] }
+      }
+    },
+    "comparison": {
+      "description": "Bake-off. The actual comparison against the fixed criteria.",
+      "$ref": "common.schema.json#/$defs/nonempty_string"
+    },
+    "selected": {
+      "description": "Bake-off. The strongest viable base and where its artifact lives.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["candidate", "artifact"],
+      "properties": {
+        "candidate": { "$ref": "#/$defs/candidate_label" },
+        "artifact": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+      }
+    },
+    "decisive_reasons": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+    },
+    "contributions": {
+      "description": "Bake-off. Contributions incorporated from other candidates, each with its origin.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["what", "from"],
+        "properties": {
+          "what": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+          "from": { "$ref": "#/$defs/candidate_label" }
+        }
+      }
+    },
+    "rejections": {
+      "description": "Bake-off. Material rejections, each keeping its reason.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["what", "reason"],
+        "properties": {
+          "what": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+          "reason": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+        }
+      }
+    },
+    "premises": {
+      "description": "Bake-off. The decision-critical premises. One left without evidence inspected during this run makes the result 'unresolved'.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["premise", "evidence"],
+        "properties": {
+          "premise": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+          "evidence": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/evidence_ref" } }
+        }
+      }
+    },
+    "counterexample": {
+      "description": "Bake-off. The concrete case that would break a required guarantee or overturn the choice, worked through on the final artifact, including anything added after judging.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["case", "check", "result"],
+      "properties": {
+        "case": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "check": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "result": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+      }
+    },
+    "verification": {
+      "description": "Bake-off. The verification performed.",
+      "type": "array",
+      "items": { "$ref": "common.schema.json#/$defs/evidence_ref" }
+    },
+    "evidence_needed": {
+      "description": "Bake-off. The evidence still needed.",
+      "$ref": "common.schema.json#/$defs/string_list"
+    },
+    "budget_used": {
+      "description": "Bake-off. The budget used, against the limits the runner passed in.",
+      "type": "object",
+      "minProperties": 1
+    },
+    "judge": {
+      "description": "Bake-off. The independent judge's return, part of this evaluation and not a `pov` artifact. Per candidate exactly one grade; a position across the set, or a named Blocked result in its place where a floor failed; verified evidence kept apart from assumptions; and an attestation about its own context (skills/bakeoff/references/judging.md).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["grades", "evidence", "independence"],
+      "properties": {
+        "grades": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["candidate", "grade"],
+            "properties": {
+              "candidate": { "$ref": "#/$defs/candidate_label" },
+              "grade": { "enum": ["adopt", "trial", "hold", "reject"] },
+              "reason": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+            }
+          }
+        },
+        "position": {
+          "description": "The candidate it would take and why, or 'either_viable' where the evidence gives no real basis to choose. Never a scorecard or a count of advantages.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["why"],
+          "properties": {
+            "take": { "$ref": "#/$defs/candidate_label" },
+            "either_viable": { "const": true },
+            "why": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+            "trade_offs": { "$ref": "common.schema.json#/$defs/string_list" },
+            "conditions": {
+              "description": "What would change the position.",
+              "$ref": "common.schema.json#/$defs/string_list"
+            }
+          },
+          "oneOf": [{ "required": ["take"] }, { "required": ["either_viable"] }]
+        },
+        "blocked": {
+          "description": "A floor failed. An open evidence need, not an endorsement, with a numbered list of exactly what would make the floor passable.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["floor", "needed"],
+          "properties": {
+            "floor": { "enum": ["insufficient-project-grounding", "external-evidence-unavailable"] },
+            "needed": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+            }
+          }
+        },
+        "evidence": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["verified", "assumptions"],
+          "properties": {
+            "verified": { "$ref": "common.schema.json#/$defs/string_list" },
+            "assumptions": { "$ref": "common.schema.json#/$defs/string_list" }
+          }
+        },
+        "independence": {
+          "description": "The judge's attestation about its own context. Only true counts as an independent judgment.",
+          "enum": [true, false, "unverified"]
+        }
+      },
+      "oneOf": [{ "required": ["position"] }, { "required": ["blocked"] }]
+    },
+    "reconciliation": {
+      "description": "Bake-off. How a consequential disagreement between the judge and the coordinator was resolved, by checking sources and never by counting agreement.",
+      "$ref": "common.schema.json#/$defs/nonempty_string"
+    },
+    "question": {
+      "description": "Prototype. The one question, stated in one paragraph. A second question is a second prototype.",
+      "$ref": "common.schema.json#/$defs/nonempty_string"
+    },
+    "question_kind": {
+      "description": "Prototype. A technical question may be evaluated by automated acceptance criteria and run unattended; a human-experience question is evaluated by a named human (ruling `prototype-human-experience-needs-human`).",
+      "enum": ["technical", "human-experience"]
+    },
+    "evaluator": {
+      "description": "Prototype. Named before anything was built. Only this evaluator settles the question; the builder's own view is not a verdict.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": { "enum": ["automated-criteria", "human"] },
+        "criteria": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+        },
+        "human": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+      },
+      "if": { "properties": { "kind": { "const": "human" } } },
+      "then": { "required": ["human"], "not": { "required": ["criteria"] } },
+      "else": { "required": ["criteria"], "not": { "required": ["human"] } }
+    },
+    "built": {
+      "description": "Prototype. What was built and the workspace it lives in. The code stays there and is never merged as-is.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["what", "where", "branch"],
+      "properties": {
+        "what": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "where": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "branch": { "enum": ["logic", "ui"] },
+        "assumption": {
+          "description": "The branch assumption, where the choice was ambiguous and there was no one to ask.",
+          "$ref": "common.schema.json#/$defs/nonempty_string"
+        }
+      }
+    },
+    "options": {
+      "description": "Prototype. The options shown. UI variants differ in structure, hierarchy or primary affordance, and there are never more than five.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 5,
+      "items": { "$ref": "common.schema.json#/$defs/option" }
+    },
+    "choice": {
+      "description": "Prototype. The option the evaluator chose, and any adjustments they attached.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["option"],
+      "properties": {
+        "option": { "$ref": "common.schema.json#/$defs/kebab_id" },
+        "adjustments": { "$ref": "common.schema.json#/$defs/string_list" }
+      }
+    },
+    "acceptance_results": {
+      "description": "Prototype. The results of running the acceptance criteria, for a technical question.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "common.schema.json#/$defs/evidence_ref" }
+    },
+    "answer": {
+      "description": "Prototype. What the prototype answered. Only the validated decision moves on.",
+      "$ref": "common.schema.json#/$defs/nonempty_string"
+    },
+    "settled_by": {
+      "description": "Prototype. Who settled the question: the named human, who experienced the prototype, or the automated criteria.",
+      "enum": ["human", "automated-criteria"]
+    },
+    "open": {
+      "description": "Prototype. What remains open.",
+      "$ref": "common.schema.json#/$defs/string_list"
+    },
+    "stop": {
+      "description": "Prototype. Why the run stopped, and what was learned before it did. With no human present for a human-experience question the run escalates; a question that moved is handed back rather than built for.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reason", "learned"],
+      "properties": {
+        "reason": { "enum": ["no-human-present", "question-moved"] },
+        "learned": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+      }
+    }
+  },
+  "unevaluatedProperties": false,
+  "$defs": {
+    "candidate_label": {
+      "description": "Neutral label. A judge sees candidates only under these.",
+      "type": "string",
+      "pattern": "^Candidate [A-Z]$"
+    }
+  },
+  "allOf": [
+    { "$ref": "common.schema.json#/$defs/envelope" },
+    {
+      "description": "A bake-off records its fixed contract and who took part, and nothing from the prototype branch.",
+      "if": { "properties": { "kind": { "const": "bakeoff" } }, "required": ["kind"] },
+      "then": {
+        "required": ["brief", "criteria", "candidates"],
+        "properties": { "status": { "enum": ["selected", "unresolved", "incomplete"] } },
+        "not": {
+          "anyOf": [
+            { "required": ["question"] },
+            { "required": ["question_kind"] },
+            { "required": ["evaluator"] },
+            { "required": ["built"] },
+            { "required": ["options"] },
+            { "required": ["choice"] },
+            { "required": ["acceptance_results"] },
+            { "required": ["answer"] },
+            { "required": ["settled_by"] },
+            { "required": ["open"] },
+            { "required": ["stop"] }
+          ]
+        }
+      }
+    },
+    {
+      "description": "A prototype records its question and its evaluator, named in advance, and nothing from the bake-off branch.",
+      "if": { "properties": { "kind": { "const": "prototype" } }, "required": ["kind"] },
+      "then": {
+        "required": ["question", "question_kind", "evaluator"],
+        "properties": { "status": { "enum": ["settled", "stopped"] } },
+        "not": {
+          "anyOf": [
+            { "required": ["brief"] },
+            { "required": ["criteria"] },
+            { "required": ["candidates"] },
+            { "required": ["comparison"] },
+            { "required": ["selected"] },
+            { "required": ["decisive_reasons"] },
+            { "required": ["contributions"] },
+            { "required": ["rejections"] },
+            { "required": ["premises"] },
+            { "required": ["counterexample"] },
+            { "required": ["verification"] },
+            { "required": ["evidence_needed"] },
+            { "required": ["budget_used"] },
+            { "required": ["judge"] },
+            { "required": ["reconciliation"] }
+          ]
+        }
+      }
+    },
+    {
+      "description": "A bake-off that got past 'incomplete' had a completed independent judgment. An attestation of false or unverified is not one, and same-context self-review never substitutes.",
+      "if": { "properties": { "status": { "enum": ["selected", "unresolved"] } }, "required": ["status"] },
+      "then": {
+        "required": ["judge"],
+        "properties": { "judge": { "properties": { "independence": { "const": true } } } }
+      }
+    },
+    {
+      "description": "'selected' names its base and its reasons, shows the counterexample check, rests on an affirmative judgment rather than a Blocked one, and has evidence for every decision-critical premise.",
+      "if": { "properties": { "status": { "const": "selected" } }, "required": ["status"] },
+      "then": {
+        "required": ["selected", "comparison", "decisive_reasons", "counterexample"],
+        "properties": {
+          "judge": { "required": ["position"] },
+          "premises": { "items": { "properties": { "evidence": { "minItems": 1 } } } }
+        }
+      }
+    },
+    {
+      "description": "A human-experience question is evaluated by a named human (ruling `prototype-human-experience-needs-human`).",
+      "if": { "properties": { "question_kind": { "const": "human-experience" } }, "required": ["question_kind"] },
+      "then": { "properties": { "evaluator": { "properties": { "kind": { "const": "human" } } } } }
+    },
+    {
+      "description": "A settled prototype says what was built, what it answered and who settled it, and only the named evaluator settles it: a human-experience question is never settled by an automated verdict.",
+      "if": { "properties": { "status": { "const": "settled" } }, "required": ["status"] },
+      "then": {
+        "required": ["built", "answer", "settled_by"],
+        "not": { "required": ["stop"] },
+        "allOf": [
+          {
+            "if": { "properties": { "evaluator": { "properties": { "kind": { "const": "human" } } } } },
+            "then": { "properties": { "settled_by": { "const": "human" } } },
+            "else": {
+              "properties": { "settled_by": { "const": "automated-criteria" } },
+              "required": ["acceptance_results"]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "description": "A stopped prototype says why and what was learned, and claims no settlement.",
+      "if": { "properties": { "status": { "const": "stopped" } }, "required": ["status"] },
+      "then": {
+        "required": ["stop"],
+        "not": { "anyOf": [{ "required": ["settled_by"] }, { "required": ["choice"] }] }
+      }
+    }
+  ]
+}

@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-kit.local/schemas/trail.schema.json",
+  "title": "Work trail stretch",
+  "description": "One stretch of an implementer's working decisions on one ticket: the ticket, the seat that wrote it, its place among the ticket's stretches and its entries in the order written. An entry says what was decided, what else was considered, why, where the evidence is and the result. A wrong call is not edited; a later entry supersedes it. The record has no member for a phase. The shape does not check when an entry was written, that a pointer resolves, that entry ids are unique in the stretch or that a superseded entry exists.",
+  "type": "object",
+  "required": ["ticket", "implementer_seat", "order", "entries"],
+  "properties": {
+    "schema": { "const": "trail" },
+    "status": {
+      "description": "'recorded' is the only state. A correction is a later entry that supersedes the wrong one, not a change of status.",
+      "enum": ["recorded"]
+    },
+    "source_revision": {
+      "description": "The revision the stretch began on, never null. 'diff_hash' is allowed because a stretch can begin on uncommitted work it inherited.",
+      "$ref": "common.schema.json#/$defs/revision_ref"
+    },
+    "ticket": {
+      "description": "The ticket the stretch belongs to.",
+      "$ref": "common.schema.json#/$defs/artifact_ref"
+    },
+    "implementer_seat": {
+      "description": "The seat that wrote the stretch.",
+      "$ref": "common.schema.json#/$defs/artifact_id"
+    },
+    "order": {
+      "description": "The stretch's place among the ticket's stretches, starting at 1.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "entries": {
+      "description": "The entries in the order written. Empty only with 'empty_reason'.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/entry" }
+    },
+    "empty_reason": {
+      "description": "Why the stretch holds no entry. Required when 'entries' is empty and forbidden otherwise.",
+      "$ref": "common.schema.json#/$defs/nonempty_string"
+    }
+  },
+  "$defs": {
+    "entry": {
+      "description": "One working decision, in the implementer's words.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "written_at", "decision", "alternatives", "why", "pointers", "result"],
+      "properties": {
+        "id": {
+          "description": "The entry's id within its stretch.",
+          "$ref": "common.schema.json#/$defs/kebab_id"
+        },
+        "written_at": {
+          "description": "When the implementer says it wrote the entry. Nothing here proves it.",
+          "$ref": "common.schema.json#/$defs/timestamp"
+        },
+        "decision": {
+          "description": "What was decided.",
+          "$ref": "common.schema.json#/$defs/nonempty_string"
+        },
+        "alternatives": {
+          "description": "What else was considered. May be empty.",
+          "$ref": "common.schema.json#/$defs/string_list"
+        },
+        "why": {
+          "description": "The reason, in plain words.",
+          "$ref": "common.schema.json#/$defs/nonempty_string"
+        },
+        "pointers": {
+          "description": "Pointers to the evidence. May be empty. A pointer is meant to name a file of the ticket's commit or a line of one (a repository-relative path with no leading slash and no '..' segment), a commit of the ticket's branch, or a receipt of the run. The schema never resolves a pointer, so one that names anything else passes here, and the trail audit lists it as not resolving.",
+          "$ref": "common.schema.json#/$defs/string_list"
+        },
+        "result": {
+          "description": "How it came out.",
+          "$ref": "common.schema.json#/$defs/nonempty_string"
+        },
+        "supersedes": {
+          "description": "The id of an earlier entry this one replaces. That the entry exists is not checked here.",
+          "$ref": "common.schema.json#/$defs/kebab_id"
+        }
+      }
+    }
+  },
+  "unevaluatedProperties": false,
+  "allOf": [
+    { "$ref": "common.schema.json#/$defs/envelope" },
+    {
+      "description": "A stretch holds at least one entry, or none and a stated reason for being empty.",
+      "if": {
+        "required": ["entries"],
+        "properties": { "entries": { "maxItems": 0 } }
+      },
+      "then": { "required": ["empty_reason"] },
+      "else": { "not": { "required": ["empty_reason"] } }
+    }
+  ]
+}

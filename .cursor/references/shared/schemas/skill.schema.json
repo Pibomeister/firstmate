@@ -1,0 +1,462 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-kit.local/schemas/skill.schema.json",
+  "title": "Skill execution contract",
+  "description": "Plan 5.1. The companion 'skill.yaml' that sits beside a canonical SKILL.md and states trigger, non-triggers, invocation authority, prerequisites, inputs, outputs, allowed side effects, required capabilities, child operations, hard gates, budget, failure outcomes, provenance and tests. This file is package metadata, not a promise that a host recognises these keys (plan 5.1); adapters and the validator interpret it. A skill.yaml is configuration, not a durable run artifact, so it does not carry common's envelope and is absent from common.schema.json#/$defs/schema_id.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "version",
+    "kind",
+    "invocation",
+    "summary",
+    "triggers",
+    "non_triggers",
+    "entrypoints",
+    "requires",
+    "inputs",
+    "outputs",
+    "side_effects",
+    "hard_gates",
+    "stop_conditions",
+    "failure_outcomes",
+    "budget",
+    "packaging",
+    "provenance",
+    "tests"
+  ],
+  "properties": {
+    "id": {
+      "description": "Equals the skill directory name and the catalog entry id (AGENTS.md, authoring rule 1).",
+      "$ref": "common.schema.json#/$defs/skill_id"
+    },
+    "version": { "$ref": "common.schema.json#/$defs/semver" },
+    "kind": {
+      "description": "Catalog kind. Matches catalog.yaml's skills[].kind.",
+      "enum": ["lifecycle", "supervisor", "standalone", "primitive", "operational"]
+    },
+    "invocation": {
+      "description": "U = user-invoked, only a human starts it; M = model-invoked (AGENTS.md, 'The invocation law'). A user-invoked skill may call model-invoked skills; it may never call another user-invoked skill.",
+      "enum": ["U", "M"]
+    },
+    "summary": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+    "triggers": {
+      "description": "Concrete situations that should start this skill.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+    },
+    "non_triggers": {
+      "description": "Concrete situations that must not start this skill. Plan 10 requires a negative-activation case for every skill, so this is never empty.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+    },
+    "prerequisites": {
+      "description": "What must already hold before the skill runs: an approved artifact, an open review run, a configured tracker.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "ref"],
+        "properties": {
+          "kind": { "enum": ["artifact", "approval", "capability", "environment", "policy", "run-state"] },
+          "ref": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+          "optional": { "type": "boolean" }
+        }
+      }
+    },
+    "entrypoints": {
+      "description": "Named entrypoints. A public entrypoint is started by a human; a phase operation is started by a delegated controller only under a runner-validated grant (plan 7.1, AGENTS.md). Where the host cannot validate a grant, the entrypoint stops for explicit invocation rather than reproducing a forbidden command's effect.",
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "$ref": "common.schema.json#/$defs/kebab_id" },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["authority", "invocation"],
+        "properties": {
+          "authority": { "$ref": "common.schema.json#/$defs/authority" },
+          "invocation": { "enum": ["U", "M"] },
+          "operation": {
+            "description": "The shared phase operation this entrypoint runs, when one exists.",
+            "$ref": "common.schema.json#/$defs/operation_id"
+          },
+          "summary": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+          "requires": {
+            "description": "Capabilities needed by this entrypoint beyond the skill-level 'requires'.",
+            "type": "array",
+            "items": { "$ref": "common.schema.json#/$defs/capability" }
+          },
+          "side_effects": {
+            "type": "array",
+            "items": { "$ref": "common.schema.json#/$defs/side_effect" }
+          },
+          "stops_without_grant": {
+            "description": "True when the host cannot validate the required grant and the entrypoint must stop for explicit invocation (plan 7.1).",
+            "type": "boolean"
+          }
+        },
+        "allOf": [
+          {
+            "description": "A user-startable entrypoint cannot run on a grant alone; a grant-only entrypoint cannot be offered as a slash command.",
+            "if": { "properties": { "invocation": { "const": "U" } }, "required": ["invocation"] },
+            "then": {
+              "properties": { "authority": { "enum": ["explicit", "explicit-or-standing", "explicit-or-delegated"] } }
+            },
+            "else": {
+              "properties": {
+                "authority": { "enum": ["explicit-or-delegated", "delegated-grant", "active-review-run", "model"] }
+              }
+            }
+          },
+          {
+            "description": "An entrypoint that may run under delegation names the shared phase operation it runs, so the public wrapper and the controller use one protocol rather than two pipelines (plan 7.1).",
+            "if": {
+              "properties": {
+                "authority": { "enum": ["explicit-or-delegated", "delegated-grant", "active-review-run"] }
+              },
+              "required": ["authority"]
+            },
+            "then": { "required": ["operation"] }
+          }
+        ]
+      }
+    },
+    "requires": {
+      "description": "Host capabilities this skill cannot run without. A host that cannot supply one exposes the skill in guided mode rather than silently weakening the contract (plan 1.2).",
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "common.schema.json#/$defs/capability" }
+    },
+    "inputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "required"],
+        "properties": {
+          "id": { "$ref": "common.schema.json#/$defs/kebab_id" },
+          "schema": { "$ref": "common.schema.json#/$defs/schema_id" },
+          "required": { "type": "boolean" },
+          "summary": { "type": "string" }
+        }
+      }
+    },
+    "outputs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id"],
+        "properties": {
+          "id": { "$ref": "common.schema.json#/$defs/kebab_id" },
+          "schema": {
+            "description": "The artifact schema this output validates against, when the output is a durable artifact.",
+            "$ref": "common.schema.json#/$defs/schema_id"
+          },
+          "summary": { "type": "string" },
+          "placement": {
+            "description": "Marks an output that is a knowledgebase document page: published through the knowledgebase adapter's `publishArtifact` under a `kb-document` placement (adapters/knowledgebase/CONTRACT.md). Run artifacts are marked by `schema` instead, so no other value is needed here.",
+            "const": "kb-document"
+          },
+          "kb_kind": {
+            "description": "The kind a `kb-document` output is published as. One of the knowledgebase's nine kinds; ADR-0001 §3 fixes which kinds each skill may write.",
+            "$ref": "common.schema.json#/$defs/kb_kind"
+          }
+        },
+        "dependentRequired": { "placement": ["kb_kind"], "kb_kind": ["placement"] },
+        "if": { "required": ["placement"] },
+        "then": {
+          "description": "A KB document is a curated page, not a schema-bound run artifact (docs/decisions/0001-kb-document-vocabulary.md §2).",
+          "not": { "required": ["schema"] }
+        }
+      }
+    },
+    "side_effects": {
+      "description": "Every effect this skill may cause. An effect absent here is a contract violation, not an omission.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "common.schema.json#/$defs/side_effect" }
+    },
+    "child_operations": {
+      "description": "Phase operations this skill may start under a runner-validated grant (plan 7.1).",
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "common.schema.json#/$defs/operation_id" }
+    },
+    "model_operations": {
+      "description": "Model-authority phase operations this skill may start (policies/invocation.yaml, authority: model). They run on no grant, so they are kept apart from child_operations, whose entries must be runner-delegable. Each must name this skill in its callable_by.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "common.schema.json#/$defs/operation_id" },
+      "x-validator-rule": "skill.model-operation-is-model-authority-and-callable"
+    },
+    "child_skills": {
+      "description": "Skills this skill may start directly. A user-invoked skill may list only model-invoked skills here; the check is an invocation-graph walk because the child's own invocation lives in the child's file (AGENTS.md, 'The invocation law').",
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "common.schema.json#/$defs/skill_id" },
+      "x-validator-rule": "skill.user-invoked-never-starts-user-invoked"
+    },
+    "packs": {
+      "description": "Packs that may attach while this skill runs. A pack adds constraints and review lenses; it never starts a phase (plan 3).",
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "common.schema.json#/$defs/pack_id" }
+    },
+    "references": {
+      "description": "On-demand reference packs. Progressive disclosure is the mechanism that keeps the body under the line budget (AGENTS.md, authoring rule 2).",
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "common.schema.json#/$defs/kebab_id" }
+    },
+    "roles": {
+      "description": "Role prompts this skill seats. Roles are never individually invocable.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "common.schema.json#/$defs/role_id" }
+    },
+    "constraints": {
+      "description": "Named boolean constraints the skill asserts, e.g. reviewers-may-edit-source: false, author-may-approve-own-change: false (plan 5.1). A constraint is a contract the validator and the adapter check, not prose.",
+      "type": "object",
+      "propertyNames": { "$ref": "common.schema.json#/$defs/kebab_id" },
+      "additionalProperties": { "type": "boolean" }
+    },
+    "limits": {
+      "description": "Caps this skill enforces itself, e.g. fix-cycles: 2, rounds: 5, turns: 4. Values are counts, never currency and never a consumption ladder.",
+      "type": "object",
+      "propertyNames": { "$ref": "common.schema.json#/$defs/kebab_id" },
+      "additionalProperties": { "type": "integer", "minimum": 0 }
+    },
+    "budget": {
+      "description": "Budgets are handed in by the runner; this package enforces only the cap it was handed (plan 7.2, AGENTS.md). The skill declares which of its limits it enforces and never computes or names a provider cost.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provided_by", "enforces"],
+      "properties": {
+        "provided_by": { "const": "runner" },
+        "enforces": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/kebab_id" }
+        }
+      },
+      "x-validator-rule": "skill.budget-enforces-only-declared-limits"
+    },
+    "hard_gates": {
+      "description": "Conditions that stop the skill outright rather than degrading it, e.g. 'nothing is implemented before a human approves the direction'.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+    },
+    "stop_conditions": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+    },
+    "failure_outcomes": {
+      "description": "How the skill ends when it does not complete. Every status in common's operation_status that the skill can return must appear here with its meaning.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["status", "meaning"],
+        "properties": {
+          "status": { "$ref": "common.schema.json#/$defs/operation_status" },
+          "meaning": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+          "next_permitted_action": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "packaging": {
+      "description": "What the packager generates for a host bundle. Canonical SKILL.md frontmatter carries only Agent Skills spec keys (name, description, optionally license and metadata); the host keys below are GENERATED from this file and hand-writing one into a canonical SKILL.md is a validation failure (AGENTS.md, authoring rule 1). Declaring the intent here is the reason the packager can emit them at all.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["generated_frontmatter"],
+      "properties": {
+        "generated_frontmatter": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "disable-model-invocation": {
+              "description": "Emitted true for a user-invoked skill. Not portable across hosts (plan 1.3); an adapter that cannot express it must expose the skill in guided mode.",
+              "type": "boolean"
+            },
+            "argument-hint": { "type": "string" },
+            "allowed-tools": {
+              "description": "Pre-approval, not a restrictive sandbox (plan 1.3, primary sources S1 and S2). It never stands in for a capability the host does not enforce.",
+              "type": "array",
+              "items": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+            }
+          }
+        },
+        "hosts": {
+          "description": "Adapters that can carry this skill, and the semantics each one cannot enforce.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["adapter"],
+            "properties": {
+              "adapter": { "$ref": "common.schema.json#/$defs/kebab_id" },
+              "unsupported": { "$ref": "common.schema.json#/$defs/string_list" },
+              "mode": { "enum": ["autonomous", "guided", "manual"] }
+            }
+          }
+        }
+      },
+      "x-validator-rule": "skill.host-frontmatter-generated-never-authored"
+    },
+    "provenance": {
+      "$ref": "#/$defs/provenance"
+    },
+    "tests": {
+      "description": "Behavioral cases (plan 4, plan 10). Every skill carries at least one positive activation case and one negative activation case; a folder with no behavioral test is not a capability.",
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "kind", "given", "expect"],
+        "properties": {
+          "id": { "$ref": "common.schema.json#/$defs/kebab_id" },
+          "kind": { "enum": ["positive", "negative", "adversarial", "resumability", "missing-tools"] },
+          "given": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+          "expect": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+          "fixture": { "$ref": "common.schema.json#/$defs/repo_path" }
+        }
+      },
+      "allOf": [
+        { "contains": { "properties": { "kind": { "const": "positive" } }, "required": ["kind"] } },
+        { "contains": { "properties": { "kind": { "const": "negative" } }, "required": ["kind"] } }
+      ]
+    },
+    "body": {
+      "description": "Line budget for the canonical SKILL.md: 150 lines, hard cap 300 (AGENTS.md, authoring rule 2). Longer material goes behind references/.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "line_budget": { "type": "integer", "minimum": 1, "maximum": 150 },
+        "hard_cap": { "const": 300 }
+      },
+      "x-validator-rule": "skill.body-within-line-budget"
+    }
+  },
+  "allOf": [
+    {
+      "description": "ADR-0007 reserves standing-start authority for autopilot alone.",
+      "if": { "properties": { "id": { "const": "autopilot" } }, "required": ["id"] },
+      "else": {
+        "properties": {
+          "entrypoints": {
+            "additionalProperties": {
+              "not": { "properties": { "authority": { "const": "explicit-or-standing" } }, "required": ["authority"] }
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "A user-invoked skill declares disable-model-invocation: true as the record of its class; a model-invoked skill never does (catalog.yaml field notes, AGENTS.md). The declaration is not emitted on any host (docs/decisions/0003-model-invocation.md).",
+      "if": { "properties": { "invocation": { "const": "U" } }, "required": ["invocation"] },
+      "then": {
+        "properties": {
+          "packaging": {
+            "properties": {
+              "generated_frontmatter": {
+                "required": ["disable-model-invocation"],
+                "properties": { "disable-model-invocation": { "const": true } }
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "packaging": {
+            "properties": {
+              "generated_frontmatter": {
+                "properties": { "disable-model-invocation": { "const": false } }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "A user-invoked skill exposes at least one entrypoint a human can start, so the slash command is the real way in rather than a side door (AGENTS.md, 'The invocation law').",
+      "if": { "properties": { "invocation": { "const": "U" } }, "required": ["invocation"] },
+      "then": {
+        "properties": {
+          "entrypoints": {
+            "not": {
+              "description": "Fails when every entrypoint is model-invoked, which would leave a user-invoked skill with no human way in.",
+              "additionalProperties": { "properties": { "invocation": { "const": "M" } }, "required": ["invocation"] }
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "A skill that writes outside the workspace declares the matching capability, so an adapter that cannot supply it refuses the skill instead of running it half-enforced (plan 1.2).",
+      "if": {
+        "properties": { "side_effects": { "contains": { "$ref": "common.schema.json#/$defs/remote_side_effect" } } },
+        "required": ["side_effects"]
+      },
+      "then": {
+        "properties": {
+          "requires": { "contains": { "enum": ["vcs-remote", "tracker-access", "kb-write"] } }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "provenance": {
+      "description": "AGENTS.md, authoring rule 3. 'donor' means at least one adapted file with a provenance/adaptations.yaml row of the form donor@commit:path that exists at the pin. 'conversation' means no donor implements it and carries a G:L locator instead; a fabricated source path is never acceptable (plan 1.4).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["origin"],
+      "properties": {
+        "origin": { "enum": ["donor", "conversation"] },
+        "donor_sources": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["donor", "commit", "path"],
+            "properties": {
+              "donor": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+              "commit": { "$ref": "common.schema.json#/$defs/revision" },
+              "path": { "$ref": "common.schema.json#/$defs/repo_path" },
+              "license": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+              "adaptation": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+            }
+          }
+        },
+        "conversation_locators": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "common.schema.json#/$defs/g_locator" }
+        },
+        "resolved_conflicts": {
+          "description": "Rows of policies/resolved-conflicts.yaml this file touches. Citing the ruling is mandatory wherever a skill touches one (AGENTS.md, authoring rule 4).",
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/kebab_id" }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "origin": { "const": "donor" } }, "required": ["origin"] },
+          "then": { "required": ["donor_sources"] },
+          "else": { "required": ["conversation_locators"] }
+        }
+      ],
+      "x-validator-rule": "skill.provenance-donor-path-exists-at-pin"
+    }
+  }
+}

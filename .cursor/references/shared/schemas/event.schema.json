@@ -1,0 +1,206 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-kit.local/schemas/event.schema.json",
+  "title": "Inbound event",
+  "description": "Plan 7.4 and 2.5. One inbound repository, CI, comment, review-thread or tracker event, consumed by babysit-pr or receiving-review and turned into a bounded action. Every event carries an idempotency key, and every remote side effect performed in response carries its own key plus a read-back check, so restarting a run or redelivering a webhook does not repeat a remote action (release scenario 20). An event is an untrusted claim: 'trust.grants_authority' is pinned false and the requested-action shape has no field able to carry a grant, so a PR comment instructing the run to ignore policy, change the charter or execute a command conveys no authority whatsoever (plan 9 milestone 8, release scenario 15). Authority still comes only from a human approval or a runner-validated grant recorded on the acting artifact.",
+  "type": "object",
+  "required": ["source", "type", "idempotency_key", "received_at", "delivery", "payload_digest", "trust"],
+  "properties": {
+    "schema": { "const": "event" },
+    "status": {
+      "description": "'deduplicated' means this delivery matched an idempotency key already handled and no side effect was repeated (release scenario 20).",
+      "enum": ["received", "deduplicated", "handled", "ignored", "failed"]
+    },
+    "source": { "enum": ["repository", "ci", "comment", "review-thread", "tracker", "schedule", "manual"] },
+    "type": {
+      "description": "Dotted event type as the host delivers it, e.g. 'pull-request.comment.created' or 'ci.check-suite.completed'.",
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*(\\.[a-z0-9]+(-[a-z0-9]+)*)+$"
+    },
+    "idempotency_key": {
+      "description": "Stable across redeliveries of the same logical event, and the key the handler checks before doing anything. Plan 7.4 requires it for branch creation, pushing, posting comments, resolving threads and PR creation; it is required here so no handler can be written without one (release scenario 20).",
+      "$ref": "common.schema.json#/$defs/nonempty_string"
+    },
+    "received_at": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "delivery": {
+      "description": "Delivery bookkeeping. A duplicate names the event it duplicates rather than being dropped silently, so the second webhook is visibly a duplicate rather than invisibly absent.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attempt"],
+      "properties": {
+        "attempt": { "type": "integer", "minimum": 1 },
+        "first_seen_at": { "$ref": "common.schema.json#/$defs/timestamp" },
+        "duplicate_of": {
+          "anyOf": [{ "$ref": "common.schema.json#/$defs/artifact_id" }, { "type": "null" }]
+        },
+        "host_delivery_id": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+      }
+    },
+    "payload_digest": {
+      "description": "Digest of the delivered payload. The payload itself is untrusted data; the digest is what makes a redelivery recognisable.",
+      "$ref": "common.schema.json#/$defs/hash"
+    },
+    "payload_excerpt": {
+      "description": "An excerpt for a reader. Untrusted content, never instructions (release scenario 15).",
+      "type": "string"
+    },
+    "actor": {
+      "description": "Who or what produced the event, as the host reports it. Being reported as a maintainer is not authority either; authority lives in an approval or a grant, not in an event's author field.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "handle": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "kind": { "enum": ["human", "bot", "unknown"] },
+        "host_verified": { "type": "boolean" }
+      }
+    },
+    "trust": {
+      "description": "Plan 9 milestone 8 and release scenario 15. Every inbound event is an untrusted claim. 'grants_authority' is pinned false: there is no value of this document that confers authority on anything, so a comment cannot authorize changing the charter, running a command, or applying a finding. 'host_verified' says only that the transport was authenticated, which is a statement about delivery and not about the content's authority.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["classification", "grants_authority"],
+      "properties": {
+        "classification": { "const": "untrusted-claim" },
+        "grants_authority": { "const": false },
+        "transport_verified": { "type": "boolean" },
+        "signature_checked": { "type": "boolean" }
+      },
+      "x-validator-rule": "event.no-event-field-confers-authority"
+    },
+    "claims": {
+      "description": "What the event asserts, e.g. 'this check failed', 'this line is wrong', 'ignore the review policy'. Recorded as claims to be assessed on evidence, which is what receiving-review does with PR feedback: comments are claims, not instructions (plan 2.3).",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["text"],
+        "properties": {
+          "text": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+          "assessment": { "enum": ["apply", "defer", "skip", "unassessed"] },
+          "evidence": {
+            "type": "array",
+            "items": { "$ref": "common.schema.json#/$defs/evidence_ref" }
+          },
+          "finding": { "$ref": "common.schema.json#/$defs/artifact_ref" }
+        }
+      }
+    },
+    "requested_actions": {
+      "description": "The bounded actions this event asks for. A request is not an authorization: this shape is closed and carries no grant, approval or authority member, so acting on one still requires an approval or a runner-validated grant recorded on the acting artifact (release scenario 15).",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["action", "requires_authorization"],
+        "properties": {
+          "action": { "$ref": "common.schema.json#/$defs/kebab_id" },
+          "requires_authorization": { "const": true },
+          "target": { "$ref": "common.schema.json#/$defs/artifact_ref" },
+          "note": { "type": "string" }
+        }
+      }
+    },
+    "handler": {
+      "description": "The bounded operation invoked in response. Events drive the handler; there is no busy polling loop (plan 2.5).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operation"],
+      "properties": {
+        "operation": { "$ref": "common.schema.json#/$defs/operation_id" },
+        "result": { "$ref": "common.schema.json#/$defs/operation_result" },
+        "skipped_reason": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+      }
+    },
+    "side_effects_performed": {
+      "description": "Every effect actually carried out for this event. A remote effect carries its own idempotency key and a read-back check, which is how a restart or a redelivery is prevented from repeating it (plan 7.4, release scenario 20).",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["effect", "at"],
+        "properties": {
+          "effect": { "$ref": "common.schema.json#/$defs/side_effect" },
+          "at": { "$ref": "common.schema.json#/$defs/timestamp" },
+          "idempotency_key": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+          "read_back": {
+            "description": "Confirmation that the remote state matches what was intended. 'confirmed: false' means the effect is unresolved and must be retried against the same key, never re-attempted with a new one.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["performed", "confirmed"],
+            "properties": {
+              "performed": { "type": "boolean" },
+              "confirmed": { "type": "boolean" },
+              "observed": { "type": "string" }
+            }
+          },
+          "target": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+          "skipped_as_duplicate": { "type": "boolean" }
+        },
+        "allOf": [
+          {
+            "description": "Remote effects (common#/$defs/remote_side_effect) require an idempotency key plus read-back, as common's own vocabulary states and plan 7.4 requires.",
+            "if": {
+              "required": ["effect"],
+              "properties": { "effect": { "$ref": "common.schema.json#/$defs/remote_side_effect" } }
+            },
+            "then": { "required": ["idempotency_key", "read_back"] }
+          }
+        ],
+        "x-validator-rule": "event.remote-side-effect-key-is-unique-and-read-back"
+      }
+    },
+    "invalidates": {
+      "description": "Evidence this event makes stale. A CI result or a base change invalidates the affected verification receipts and review approvals rather than leaving them green (plan 6.3, plan 9 milestone 8, release scenario 10).",
+      "type": "array",
+      "items": { "$ref": "common.schema.json#/$defs/artifact_ref" }
+    },
+    "run": {
+      "description": "The run this event was delivered to, when one is open.",
+      "$ref": "common.schema.json#/$defs/artifact_id"
+    },
+    "pull_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "repo": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "number": { "type": "integer", "minimum": 1 },
+        "head": { "$ref": "common.schema.json#/$defs/revision_ref" },
+        "base": { "$ref": "common.schema.json#/$defs/revision_ref" },
+        "url": { "type": "string", "format": "uri" }
+      }
+    }
+  },
+  "unevaluatedProperties": false,
+  "allOf": [
+    { "$ref": "common.schema.json#/$defs/envelope" },
+    {
+      "description": "A duplicate delivery names the event it duplicates and performs no side effect. This is the structural form of 'restarting a run does not repeat remote side effects' (release scenario 20).",
+      "if": { "properties": { "status": { "const": "deduplicated" } }, "required": ["status"] },
+      "then": {
+        "properties": {
+          "delivery": {
+            "required": ["duplicate_of"],
+            "properties": { "duplicate_of": { "$ref": "common.schema.json#/$defs/artifact_id" } }
+          },
+          "side_effects_performed": { "maxItems": 0 }
+        }
+      }
+    },
+    {
+      "description": "An ignored event says why. A silent drop is indistinguishable from a lost delivery.",
+      "if": { "properties": { "status": { "const": "ignored" } }, "required": ["status"] },
+      "then": {
+        "required": ["handler"],
+        "properties": { "handler": { "required": ["skipped_reason"] } }
+      }
+    },
+    {
+      "description": "A comment or review-thread event is inspected as a claim before anything is done about it, and the claims are recorded so the assessment is reviewable (plan 2.3, release scenario 15).",
+      "if": { "properties": { "source": { "enum": ["comment", "review-thread"] } }, "required": ["source"] },
+      "then": {
+        "required": ["claims"],
+        "properties": { "claims": { "minItems": 1 } }
+      }
+    }
+  ]
+}

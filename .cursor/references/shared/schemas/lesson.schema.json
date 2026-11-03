@@ -1,0 +1,202 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-kit.local/schemas/lesson.schema.json",
+  "title": "Captured lesson",
+  "description": "Plan 2.3 and 8. A reusable lesson tied to a real failure, a real correction or a surprising review result. The trigger vocabulary admits only those three, and both the trigger and the lesson carry mandatory evidence, so a run that simply ended cannot produce one: no manufactured lesson just because a run finished (release scenario 23). Supersession is recorded rather than overwritten — 'supersedes' on the envelope and 'superseded_by' here keep the chain readable in both directions, and a retired lesson keeps its history (plan 2.3, 8). Publication is a separate act from capture: ship may create a candidate, but publishing needs explicit authorization or a charter grant for KB publication and never treats 'ship happened' as permission to rewrite project knowledge (plan 7.1). The opt-in learning runtime reaches this artifact only as a candidate draft, whatever its ledger calls the lesson (ruling learning-drafts-not-publishes). Rolling back a skill revision leaves this artifact and its evidence untouched (release scenario 24).",
+  "type": "object",
+  "required": ["title", "statement", "trigger", "evidence", "applies_to"],
+  "properties": {
+    "schema": { "const": "lesson" },
+    "status": {
+      "description": "'candidate' is captured but unpublished; 'published' is in the KB; 'superseded' has been replaced and says by what; 'retired' no longer applies and says why. None of these deletes anything.",
+      "enum": ["candidate", "published", "superseded", "retired"]
+    },
+    "title": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+    "statement": {
+      "description": "The reusable lesson, stated so it can be applied to a future change rather than only recognised in this one.",
+      "$ref": "common.schema.json#/$defs/nonempty_string"
+    },
+    "trigger": {
+      "description": "Plan 2.3: a lesson exists because something went wrong, was corrected, or surprised a reviewer. There is no 'run-completed' member, and 'occurrence' binds the lesson to the artifact where it actually happened (release scenario 23).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "occurrence"],
+      "properties": {
+        "kind": { "enum": ["failure", "correction", "surprising-review-result"] },
+        "occurrence": {
+          "description": "The finding, verification, review, event or ticket where it happened, bound by hash.",
+          "$ref": "common.schema.json#/$defs/artifact_ref"
+        },
+        "summary": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "at": { "$ref": "common.schema.json#/$defs/timestamp" }
+      }
+    },
+    "evidence": {
+      "description": "Revision-bound evidence for the lesson: the code, the receipt, the finding or the transcript that shows it is real. A lesson with no evidence is an opinion (plan 2.3).",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "common.schema.json#/$defs/evidence_ref" }
+    },
+    "applies_to": {
+      "description": "Where the lesson is relevant. Both fields are searchable by the learnings review lane, which is how an existing lesson gets reused instead of duplicated (plan 9 milestone 5).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["domains"],
+      "properties": {
+        "domains": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+        },
+        "paths": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/glob" }
+        },
+        "packs": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/pack_id" }
+        },
+        "skills": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/skill_id" }
+        }
+      }
+    },
+    "guidance": {
+      "description": "What to do differently next time, concrete enough to act on.",
+      "type": "array",
+      "items": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+    },
+    "counter_examples": {
+      "description": "Where the lesson does not apply. Kept so a lesson does not grow into a universal rule it was never evidence for.",
+      "type": "array",
+      "items": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+    },
+    "superseded_by": {
+      "description": "The lesson that replaces this one. The replacement's envelope 'supersedes' points back, so the chain reads in both directions and no provenance is silently erased (plan 2.3).",
+      "$ref": "common.schema.json#/$defs/artifact_ref"
+    },
+    "supersession": {
+      "description": "Why the change happened. compound-refresh keeps, updates, consolidates, replaces or retires a lesson, and records the evidence for whichever it did (plan 2.3).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action", "reason", "at"],
+      "properties": {
+        "action": { "enum": ["keep", "update", "consolidate", "replace", "retire"] },
+        "reason": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "at": { "$ref": "common.schema.json#/$defs/timestamp" },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "common.schema.json#/$defs/evidence_ref" }
+        },
+        "consolidated_from": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/artifact_ref" }
+        }
+      }
+    },
+    "related": {
+      "description": "Existing lessons on the same ground. Checked before capture so an existing lesson is reused rather than duplicated (plan 9 milestone 5).",
+      "type": "array",
+      "items": { "$ref": "common.schema.json#/$defs/artifact_ref" },
+      "x-validator-rule": "lesson.duplicate-of-an-existing-lesson-is-refused"
+    },
+    "publication": {
+      "description": "Plan 7.1 and 8. Publishing to the KB is authorized separately from capturing: either a human asked for it, or a charter grant covers KB publication. A completed ship is not itself permission, and it is not permission to rewrite project knowledge (ruling `central-kb-owns-project-artifacts`). The central knowledgebase owns this artifact: `kb_ref` is deliberately a free locator rather than common#/$defs/repo_path, so a published lesson cannot name an application-local documentation tree as its home. Directory names under the knowledgebase root are configurable; the central ownership is not.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["authorization"],
+      "properties": {
+        "authorization": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": {
+            "kind": { "enum": ["explicit", "delegated-grant"] },
+            "approval": { "$ref": "common.schema.json#/$defs/approval" },
+            "grant": { "$ref": "common.schema.json#/$defs/grant_ref" }
+          },
+          "allOf": [
+            {
+              "if": { "properties": { "kind": { "const": "delegated-grant" } }, "required": ["kind"] },
+              "then": {
+                "required": ["grant"],
+                "properties": {
+                  "grant": { "properties": { "covers": { "const": "publish-lesson" } }, "required": ["covers"] }
+                }
+              },
+              "else": { "required": ["approval"] }
+            }
+          ]
+        },
+        "kb_ref": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "published_at": { "$ref": "common.schema.json#/$defs/timestamp" }
+      }
+    },
+    "skill_changes": {
+      "description": "Skill revisions this lesson motivated. writing-skills can turn a supported lesson into a candidate skill change, but promotion requires evaluation and a separate review (plan 8). A rolled-back skill revision does not roll back the lesson: this artifact, its evidence and its supersession chain survive the rollback intact (release scenario 24), which is why 'rolled_back' is recorded here rather than expressed by deleting anything.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["skill", "state"],
+        "properties": {
+          "skill": { "$ref": "common.schema.json#/$defs/skill_id" },
+          "state": { "enum": ["candidate", "evaluated", "reviewed", "promoted", "rolled-back", "rejected"] },
+          "change_ref": { "$ref": "common.schema.json#/$defs/artifact_ref" },
+          "evaluation": { "$ref": "common.schema.json#/$defs/artifact_ref" },
+          "review": { "$ref": "common.schema.json#/$defs/artifact_ref" },
+          "at": { "$ref": "common.schema.json#/$defs/timestamp" }
+        },
+        "allOf": [
+          {
+            "description": "Promotion requires both the evaluation and the separate review (plan 8).",
+            "if": { "properties": { "state": { "const": "promoted" } }, "required": ["state"] },
+            "then": { "required": ["evaluation", "review"] }
+          }
+        ]
+      },
+      "x-validator-rule": "lesson.skill-rollback-preserves-lesson-and-evidence-history"
+    }
+  },
+  "unevaluatedProperties": false,
+  "allOf": [
+    { "$ref": "common.schema.json#/$defs/envelope" },
+    {
+      "description": "A published lesson carries its publication authorization. Capture alone never publishes (plan 7.1).",
+      "if": { "properties": { "status": { "const": "published" } }, "required": ["status"] },
+      "then": { "required": ["publication"] }
+    },
+    {
+      "description": "A superseded lesson names its replacement and records why. Silently erasing provenance is the failure this prevents (plan 2.3).",
+      "if": { "properties": { "status": { "const": "superseded" } }, "required": ["status"] },
+      "then": { "required": ["superseded_by", "supersession"] }
+    },
+    {
+      "description": "A retired lesson records the retirement and its evidence. Retirement is a recorded state, not a deletion (plan 2.3, release scenario 24).",
+      "if": { "properties": { "status": { "const": "retired" } }, "required": ["status"] },
+      "then": {
+        "required": ["supersession"],
+        "properties": { "supersession": { "properties": { "action": { "const": "retire" } }, "required": ["action"] } }
+      }
+    },
+    {
+      "description": "A consolidation names the lessons it absorbed, so the originals stay findable (plan 2.3).",
+      "if": {
+        "required": ["supersession"],
+        "properties": {
+          "supersession": { "properties": { "action": { "const": "consolidate" } }, "required": ["action"] }
+        }
+      },
+      "then": {
+        "properties": {
+          "supersession": {
+            "required": ["consolidated_from"],
+            "properties": { "consolidated_from": { "minItems": 1 } }
+          }
+        }
+      }
+    }
+  ]
+}

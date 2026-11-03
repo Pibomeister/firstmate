@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-kit.local/schemas/memory-run.schema.json",
+  "title": "Memory run",
+  "description": "One line of the memory ledger's run log, runs.jsonl. Every job records one, including a rejected or failed one, so an empty memory can be told apart from a memory whose rewrite was refused (protocol evidence-gate). 'dropped_by_provenance' is how many claims the evidence gate removed because they cited no id the judge was shown; 'dropped_by_redaction' is how many the quarantine removed, citing a quarantined observation or carrying wording only it held. 'security_notes' is how many observations the reflector flagged, 'security_inferred' how many more a bullet describing an attack quarantined, and 'quarantined' their ids, which the one runtime security bullet cites and which nightly consolidation and review ingest read back to drop those observations from their input. Jobs may add fields of their own, so the object stays open.",
+  "type": "object",
+  "required": ["ts", "job", "status"],
+  "properties": {
+    "ts": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "job": { "enum": ["reflect", "backfill", "nightly", "weekly", "episodes"] },
+    "status": {
+      "description": "'ok' was written; 'rejected' passed parsing but failed the gate and left the previous state in place; 'failed' produced nothing usable.",
+      "enum": ["ok", "rejected", "failed"]
+    },
+    "reason": { "type": "string" },
+    "trigger": { "type": "string" },
+    "id": { "type": "string" },
+    "dropped_by_provenance": { "type": "integer", "minimum": 0 },
+    "dropped_by_redaction": { "type": "integer", "minimum": 0 },
+    "security_notes": { "type": "integer", "minimum": 0 },
+    "security_inferred": { "type": "integer", "minimum": 0 },
+    "security_notes_rejected": { "type": "integer", "minimum": 0 },
+    "quarantined": { "type": "array", "items": { "type": "string", "pattern": "^obs:[0-9]+$" } },
+    "tokens_in": { "type": "integer", "minimum": 0 },
+    "tokens_out": { "type": "integer", "minimum": 0 },
+    "min_obs_id": {
+      "description": "The lowest observation id shown to this reflect run. Together with max_obs_id on an accepted run, this is the exact range screened for downstream learning; an accepted reflect run without it screened nothing downstream learning relies on.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "max_obs_id": {
+      "description": "The highest observation id shown to this reflect run.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "obs_ids": {
+      "description": "The exact observation ids shown to a reflect or backfill run. On an accepted run these ids, and no id between them, are screened for downstream learning.",
+      "type": "array",
+      "items": { "type": "integer", "minimum": 0 }
+    },
+    "episodes": { "type": "integer", "minimum": 0 },
+    "selected": { "type": "integer", "minimum": 0 },
+    "compacted_pages": { "type": "integer", "minimum": 0 },
+    "stale_lessons": { "type": "integer", "minimum": 0 },
+    "new": { "type": "integer", "minimum": 0 },
+    "worker_observations": { "type": "integer", "minimum": 0 }
+  }
+}

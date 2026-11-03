@@ -1,0 +1,298 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-kit.local/schemas/charter.schema.json",
+  "title": "Autopilot charter",
+  "description": "Plan 7.2. The charter a human fixes before an autopilot run: work source, repositories and branches, artifact destinations, allowed capabilities, denied actions, budgets, stage and loop limits, and the exact checkpoint categories the supervisor pair may decide. It is immutable and identified by its hash, and it lives outside worker-writable scope — both are pinned here rather than left to convention, so a run cannot enlarge its own authority. Default grants are drawn from common#/$defs/grantable_action, which structurally cannot contain a sensitive action; a sensitive action becomes available only through a 'sensitive_grants' entry carrying an explicit human approval. Changing a charter produces a new charter with a new hash that supersedes the old one; there is no in-place amendment.",
+  "type": "object",
+  "required": [
+    "immutability",
+    "work_source",
+    "repos",
+    "artifact_destinations",
+    "allowed_capabilities",
+    "default_grants",
+    "denied_actions",
+    "checkpoints",
+    "limits",
+    "budgets",
+    "supervisors"
+  ],
+  "properties": {
+    "schema": { "const": "charter" },
+    "status": { "enum": ["draft", "active", "superseded", "revoked"] },
+    "immutability": {
+      "description": "Plan 7.2: fixed outside worker-writable scope and identified by a hash. 'immutable' and 'worker_writable' are pinned, so a charter that a worker could edit is not expressible. 'hash' is the charter's own content digest as defined in common#/$defs/hash; grants reference it (common#/$defs/grant_ref.charter_hash), which is what binds a grant to one exact charter rather than to a filename.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["immutable", "worker_writable", "hash", "location"],
+      "properties": {
+        "immutable": { "const": true },
+        "worker_writable": { "const": false },
+        "hash": { "$ref": "common.schema.json#/$defs/hash" },
+        "location": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+      },
+      "x-validator-rule": "charter.hash-matches-content-and-location-is-not-worker-writable"
+    },
+    "work_source": {
+      "description": "The approved work this run exists to carry out. A run cannot invent its own work source.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "ref"],
+      "properties": {
+        "kind": { "enum": ["requirements", "plan", "decision", "ticket", "finding", "issue", "map"] },
+        "ref": { "$ref": "common.schema.json#/$defs/artifact_ref" },
+        "summary": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+      }
+    },
+    "repos": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["repo", "base_branch"],
+        "properties": {
+          "repo": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+          "base_branch": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+          "work_branch_prefix": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+          "paths": {
+            "description": "The only paths this run may write. Anything outside is scope expansion, which is a sensitive action (plan 7.2).",
+            "type": "array",
+            "items": { "$ref": "common.schema.json#/$defs/glob" }
+          }
+        }
+      }
+    },
+    "artifact_destinations": {
+      "description": "Where the run's durable artifacts go. Project-derived material is owned by the central KB (plan 8, release scenario 21).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kb_root", "runs_path"],
+      "properties": {
+        "kb_root": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "runs_path": { "$ref": "common.schema.json#/$defs/repo_path" },
+        "project": { "$ref": "common.schema.json#/$defs/kebab_id" }
+      }
+    },
+    "allowed_capabilities": {
+      "description": "Host capabilities the run may use. A host that cannot enforce a required restriction rejects autonomous mode rather than running with a weaker contract (plan 1.2, plan 9 milestone 6).",
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "common.schema.json#/$defs/capability" }
+    },
+    "default_grants": {
+      "description": "Plan 7.2 defaults: answer bounded alignment questions, approve eligible spec and ticket artifacts, start approved implementation tickets, adjudicate eligible findings, commit, push, open a PR, reply to and resolve PR threads, repair CI within its bounds, and publish a supported lesson when granted. The item type is common#/$defs/grantable_action, so a sensitive action cannot appear in this list at all: `never granted by default` is unrepresentable here rather than merely disallowed (ruling `sensitive-actions-need-approved-charter-entry`).",
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "common.schema.json#/$defs/grantable_action" }
+    },
+    "standing_grants": {
+      "description": "ADR-0007: the one standing start a captain may approve with this charter. The charter's active human approval binds this entry to its content hash. It starts no phase and grants no sensitive action.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["covers", "controller"],
+        "properties": {
+          "covers": { "const": "autopilot.start" },
+          "controller": { "const": "firstmate" }
+        }
+      }
+    },
+    "denied_actions": {
+      "description": "Plan 7.2: merge, deployment, production credentials, destructive data operations, new dependencies, public-contract redesign, sensitive trust-boundary changes, scope expansion, force-push and history rewriting are not granted by default. Listing one here is a restatement of the default, not the thing that creates it.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "common.schema.json#/$defs/sensitive_action" }
+    },
+    "sensitive_grants": {
+      "description": "The only route to a sensitive action, and deliberately a narrow one (plan 7.2, ruling `sensitive-actions-need-approved-charter-entry`, release scenario 5). Every entry names the action, states exactly what is permitted, and carries an explicit human approval bound to this charter's hash, with any expiry or single-use bound. More autonomy is a more specific capability a human approved up front, never the supervisor pair enlarging its own authority mid-run.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["action", "scope", "approval"],
+        "properties": {
+          "action": { "$ref": "common.schema.json#/$defs/sensitive_action" },
+          "scope": {
+            "description": "Exactly what is permitted. A scope that restates the action name is not a scope.",
+            "$ref": "common.schema.json#/$defs/nonempty_string"
+          },
+          "approval": {
+            "allOf": [
+              { "$ref": "common.schema.json#/$defs/approval" },
+              {
+                "description": "A sensitive grant cannot itself be delegated: only an explicit human approval creates one (plan 7.2).",
+                "properties": {
+                  "authority": { "const": "explicit" },
+                  "by": { "const": "human" }
+                },
+                "required": ["authority", "by"]
+              }
+            ]
+          },
+          "expires_at": { "$ref": "common.schema.json#/$defs/timestamp" },
+          "single_use": { "type": "boolean" }
+        }
+      },
+      "x-validator-rule": "charter.sensitive-grant-requires-explicit-human-approval-bound-to-this-hash"
+    },
+    "checkpoints": {
+      "description": "The exact checkpoint categories the supervisor pair may decide (plan 7.2, 7.3). A checkpoint absent from this list is not theirs to decide, and reaching it escalates. The deterministic authority check reads this list, which is how the charter and the evidence carry the permission rather than the pair's agreement (ruling `supervisor-agreement-is-not-authority`).",
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "common.schema.json#/$defs/checkpoint_category" }
+    },
+    "limits": {
+      "description": "Plan 7.2 defaults: two fix cycles, three bounded CI-repair attempts, and explicit caps for alignment questions, tickets, elapsed time and host-provided resource consumption. The maxima on fix cycles and CI repair come from the plan and cannot be raised by writing a larger number.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fix_cycles", "ci_repair_attempts", "alignment_questions", "tickets", "elapsed_minutes"],
+      "properties": {
+        "fix_cycles": { "type": "integer", "minimum": 0, "maximum": 2 },
+        "ci_repair_attempts": { "type": "integer", "minimum": 0, "maximum": 3 },
+        "alignment_questions": { "type": "integer", "minimum": 0 },
+        "tickets": { "type": "integer", "minimum": 1 },
+        "elapsed_minutes": { "type": "integer", "minimum": 1 },
+        "resource_units": {
+          "description": "A host-provided consumption cap, in the runner's own units. This package enforces the number it was handed and computes nothing (plan 7.2).",
+          "type": "integer",
+          "minimum": 1
+        },
+        "review_rounds": { "type": "integer", "minimum": 1, "maximum": 5 }
+      }
+    },
+    "audit_cadence_seconds": {
+      "description": "Supervisor audit cadence supplied by the charter. Required for unattended mode; absence keeps the run guided.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "budgets": {
+      "description": "Plan 7.2: cost accounting, when available, is passed in by the runner. 'provided_by' is pinned so a charter cannot become the place where consumption is calculated; the charter records only the cap it was handed and which limits it enforces.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provided_by"],
+      "properties": {
+        "provided_by": { "const": "runner" },
+        "enforces": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/kebab_id" }
+        },
+        "on_exhaustion": { "const": "cap-reached" }
+      }
+    },
+    "supervisors": {
+      "description": "Plan 7.3. Exactly two seats, declared independent, neither of which implements. Independence is a structural constraint on the seating that the runner enforces; it is never a property of who or what fills a seat. There is no third seat: 'maxItems' is 2 and 'tie_breaker_allowed' is pinned false, because adding a tie-breaker to avoid asking the human is exactly what plan 7.3 forbids — a tie goes to the human (ruling `supervisor-agreement-is-not-authority`, release scenario 16). 'may_implement' is pinned false because the pair never implements and never approves a patch it produced (ruling `missing-supervisor-never-implementer`, release scenario 17).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["seats", "independence", "tie_breaker_allowed", "may_implement"],
+      "properties": {
+        "seats": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id"],
+            "properties": {
+              "id": { "$ref": "common.schema.json#/$defs/kebab_id" },
+              "role": { "const": "supervisor" },
+              "filled_by": { "$ref": "common.schema.json#/$defs/actor_role" }
+            }
+          }
+        },
+        "independence": { "const": "declared-independent" },
+        "tie_breaker_allowed": { "const": false },
+        "may_implement": { "const": false },
+        "on_missing_seat": {
+          "description": "A seat that cannot be filled independently is unavailable, and unavailability blocks the checkpoint. It is never backfilled by the implementer, the author, the spec approver or a seat already sitting on the panel (ruling `missing-supervisor-never-implementer`, release scenario 17).",
+          "const": "block-and-escalate"
+        }
+      },
+      "x-validator-rule": "charter.supervisor-seats-independent-and-not-the-implementer"
+    },
+    "council": {
+      "description": "Opt-in blind veto (docs/decisions/0015-council-blind-veto.md). With 'blind_veto' set to 'required', an approval the two supervisor seats agree on stands only when a third, blind veto seat also approves the same frozen packet. The veto is a refusal-only side record: it is not a third supervisor seat and not a third judgment, it never breaks a tie and it never approves alone. A missing, unavailable, non-independent or non-approving veto turns the pair's approval into one escalation. Who fills the veto seat lives in the operator's private council configuration, never in the charter.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["blind_veto"],
+      "properties": {
+        "blind_veto": { "const": "required" }
+      }
+    },
+    "ci_repair": {
+      "description": "Plan 7.5. The repair's purpose is limited to test failures; that is a limit on purpose, not permission to edit tests until they pass. No skipped check, weakened assertion, lowered threshold or removed coverage without a separate decision, and a required product-code change goes back through diagnosis, a bounded patch, new verification and affected delta review (release scenario 19).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["may_weaken_checks"],
+      "properties": {
+        "may_weaken_checks": { "const": false },
+        "attempts": { "type": "integer", "minimum": 0, "maximum": 3 },
+        "product_code_changes": { "const": "re-enter-normal-evidence-path" }
+      }
+    },
+    "escalation_policy": {
+      "description": "Plan 7.4. On escalation, new writes and shipping stop; explicitly permitted read-only work may continue within budget; the state is persisted and control returns to the runner rather than an agent polling forever.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "stop_writes": { "const": true },
+        "stop_shipping": { "const": true },
+        "permitted_readonly": { "$ref": "common.schema.json#/$defs/string_list" },
+        "return_control_to": { "const": "runner" }
+      }
+    },
+    "cancellation": {
+      "description": "How a run is cancelled and what survives it.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cancellable_by": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/actor_role" }
+        },
+        "on_cancel": { "enum": ["preserve-artifacts", "preserve-artifacts-and-branch"] }
+      }
+    }
+  },
+  "unevaluatedProperties": false,
+  "allOf": [
+    { "$ref": "common.schema.json#/$defs/envelope" },
+    {
+      "description": "An active charter carries the explicit human approval that created it. A charter no human approved authorizes nothing (plan 7.2).",
+      "if": { "properties": { "status": { "const": "active" } }, "required": ["status"] },
+      "then": {
+        "required": ["approvals"],
+        "properties": {
+          "approvals": {
+            "minItems": 1,
+            "contains": {
+              "properties": { "authority": { "const": "explicit" }, "by": { "const": "human" } },
+              "required": ["authority", "by"]
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "A charter is never edited in place. A change produces a new charter, with a new hash, whose envelope 'supersedes' names the old one; grants bound to the old hash do not carry over (plan 5.2, 7.2). That is a relationship between two documents and this schema sees one, so it is stated here and checked by ak validate, which can hold both. The constraint this entry used to carry required 'supersedes' on a charter whose status was 'superseded' -- binding the field to the old charter, where the sentence above puts it on the new one. A charter could then only be retired if it had retired something first, so a project's first charter became unrepresentable the moment it was amended. A single-document schema writing about a two-document relationship will bind it to whichever document is in front of it, which is how that happened; the enforcement belongs one layer up and the annotation below is the pointer to it.",
+      "x-validator-rule": "charter.amendment-creates-a-new-hash-and-invalidates-old-grants"
+    },
+    {
+      "description": "A checkpoint the supervisors may decide needs the matching authority to exist. Naming 'lesson-publication' as a checkpoint without 'publish-lesson' among the default grants leaves the pair able to decide something it may not carry out (plan 7.1, 7.2).",
+      "if": {
+        "required": ["checkpoints"],
+        "properties": { "checkpoints": { "contains": { "const": "lesson-publication" } } }
+      },
+      "then": {
+        "properties": { "default_grants": { "contains": { "const": "publish-lesson" } } },
+        "required": ["default_grants"]
+      }
+    }
+  ]
+}

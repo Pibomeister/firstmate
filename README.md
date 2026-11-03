@@ -205,15 +205,18 @@ Bearings invocation examples:
 
 Agent-only reference skills live under `.agents/skills/` and are loaded by firstmate at the trigger points named in [`AGENTS.md`](AGENTS.md).
 
-### Two-tier skill layout
+### Skill layout
 
-Firstmate's skills live in two separate places with different audiences:
+Firstmate's own skills live in two separate places with different audiences, and this repository also vendors a Cursor Cloud Agent overlay:
 
 - `.agents/skills/` - agent-loaded skills (this section's table, plus firstmate's agent-only reference skills). Every one of these assumes a live firstmate home and is meaningless, or actively misleading, installed anywhere else, so each carries `metadata.internal: true` in its frontmatter. That flag hides them from installer discovery (tools like the [skills.sh](https://skills.sh) `npx skills add` installer) without affecting how firstmate itself loads them - frontmatter metadata is inert to the agent's own skill loader.
 - `skills/` - public, installer-facing skills meant to be installed standalone into any project, independent of firstmate.
   Each one is a self-contained skill with no dependency on firstmate's paths, tools, or vocabulary.
   Today that is `skills/stow`, a generic session-knowledge-sweep skill that routes findings by explicit instruction first, then existing local conventions, then a private `.stow-notes.md` fallback, and curates tiered entries through decay, local archival, and user-approved on-demand offload proposals.
   It intentionally shares no code with the firstmate-internal `.agents/skills/stow` it is named after, so the two can evolve independently.
+- `.cursor/skills/` - vendored [agent-kit](https://github.com/Pibomeister/agent-kit) overlay so Cursor Cloud Agents load catalog skills, custom subagents, and `/super-review`.
+  The pin and refresh steps live in [`.cursor/agent-kit.md`](.cursor/agent-kit.md).
+  Reviewer isolation on Cursor is still `partial` upstream.
 
 ## Documentation
 
@@ -249,6 +252,7 @@ Firstmate's skills live in two separate places with different audiences:
 - [docs/scripts.md](docs/scripts.md) - the `bin/` toolbelt reference.
 - [docs/documentation-audiences.md](docs/documentation-audiences.md) - documentation audiences and the machine-checked placement boundary.
 - [`AGENTS.md`](AGENTS.md) - the supervisor contract, role boundary, and routing index for conditional procedures.
+- [`.cursor/agent-kit.md`](.cursor/agent-kit.md) - the vendored agent-kit overlay pin for Cursor Cloud Agents.
 - [CONTRIBUTING.md](CONTRIBUTING.md) - how to contribute, including the dev/test commands.
 
 ## Contributing

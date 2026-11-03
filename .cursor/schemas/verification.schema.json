@@ -1,0 +1,357 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-kit.local/schemas/verification.schema.json",
+  "title": "Verification receipt",
+  "description": "Plan 5.6. One receipt: the command or probe, its exit status, the relevant output or artifact digest, the code revision, the environment identity, and the acceptance criteria it supports or, where none were supplied, a statement saying so. The five outcomes are tracked as distinct members of 'status' — 'passed', 'failed', 'not-run', 'not-applicable' and 'inconclusive' — so an unproven result never collapses into a pass. An agent's prose description of green tests is not a receipt: 'notes' is explicitly non-authoritative, a passing command receipt must carry exit status 0 together with an output digest, and no free-text field can stand in for either (release scenario 10). A receipt is bound to a revision, so a later code change leaves it visibly stale rather than silently green.",
+  "type": "object",
+  "required": ["kind", "environment"],
+  "properties": {
+    "schema": { "const": "verification" },
+    "status": {
+      "description": "The outcome, tracked separately for each case. 'not-run' means it did not execute; 'not-applicable' means it does not apply to this change; 'inconclusive' means it ran and settled nothing. None of the last three is a pass, and none may be reported as one (plan 5.6).",
+      "enum": ["passed", "failed", "not-run", "not-applicable", "inconclusive"]
+    },
+    "kind": { "enum": ["command", "probe", "manual"] },
+    "check": {
+      "description": "The ticket verification id this receipt executed. Optional for compatibility; the evidence-bearing lifecycle gate requires it and refuses an id the ticket does not declare.",
+      "$ref": "common.schema.json#/$defs/kebab_id"
+    },
+    "recipe": {
+      "description": "The content-addressed verification recipe executed for this receipt. A changed id or hash makes the receipt stale for a ticket check bound to the earlier recipe.",
+      "$ref": "common.schema.json#/$defs/artifact_ref"
+    },
+    "evidence_kind": { "$ref": "common.schema.json#/$defs/evidence_kind" },
+    "verifier_seat": {
+      "description": "The independently assigned seat lineage for gate-eligible runtime evidence. Host-only freshness is recorded honestly and is not a runner attestation.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "implementer_seat", "isolation", "attestation"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/artifact_id" },
+        "implementer_seat": { "$ref": "common.schema.json#/$defs/artifact_id" },
+        "isolation": { "enum": ["runner-attested", "host-unattested"] },
+        "attestation": {
+          "oneOf": [{ "$ref": "common.schema.json#/$defs/artifact_ref" }, { "type": "null" }]
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "isolation": { "const": "runner-attested" } }, "required": ["isolation"] },
+          "then": { "properties": { "attestation": { "$ref": "common.schema.json#/$defs/artifact_ref" } } },
+          "else": { "properties": { "attestation": { "type": "null" } } }
+        }
+      ]
+    },
+    "api_response": {
+      "description": "The observed backend response. The body digest binds the complete response body; an excerpt does not replace it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "body_digest"],
+      "properties": {
+        "status": { "type": "integer", "minimum": 100, "maximum": 599 },
+        "body_digest": { "$ref": "common.schema.json#/$defs/hash" }
+      }
+    },
+    "command": {
+      "description": "The command as executed. Recorded as an argument vector so it is reproducible rather than paraphrased.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["argv"],
+      "properties": {
+        "argv": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+        },
+        "cwd": { "$ref": "common.schema.json#/$defs/repo_path" },
+        "started_at": { "$ref": "common.schema.json#/$defs/timestamp" },
+        "duration_ms": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "probe": {
+      "description": "A non-command check: an assertion against a running system, an inspection, a measurement.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "target"],
+      "properties": {
+        "name": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "target": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "parameters": { "type": "object" },
+        "observed": { "type": "string" }
+      }
+    },
+    "manual": {
+      "description": "A human check. It still carries a human's identity and what they did, because 'someone looked at it' is not evidence either (plan 5.6). A manual receipt cannot be produced by an agent on a human's behalf.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["performed_by", "procedure"],
+      "properties": {
+        "performed_by": { "const": "human" },
+        "procedure": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "observed": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "at": { "$ref": "common.schema.json#/$defs/timestamp" }
+      }
+    },
+    "exit_status": {
+      "description": "The process exit status. This is the receipt for a command check; nothing narrative substitutes for it (plan 5.6, release scenario 10).",
+      "type": "integer"
+    },
+    "exit_disagreement": {
+      "description": "Records the one case where the process exit and the behavioral verdict disagree: a command exited 0 while its digested output conclusively reports failure. The verdict comes from that output, whose relevant quote is retained here; exit_status remains the raw observation.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["verdict_from", "output_reports"],
+      "properties": {
+        "verdict_from": { "const": "output" },
+        "output_reports": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+      }
+    },
+    "output_digest": {
+      "description": "Digest of the relevant output or produced artifact. Required for every outcome that actually ran, so a result can be re-checked rather than believed.",
+      "$ref": "common.schema.json#/$defs/hash"
+    },
+    "output_excerpt": {
+      "description": "An excerpt for a reader's convenience. Never the evidence; the digest is.",
+      "type": "string"
+    },
+    "artifacts": {
+      "description": "Files produced by the check, each with its digest.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "digest"],
+        "properties": {
+          "path": { "$ref": "common.schema.json#/$defs/repo_path" },
+          "digest": { "$ref": "common.schema.json#/$defs/hash" },
+          "kind": { "enum": ["log", "report", "coverage", "artifact", "screenshot", "trace", "response"] }
+        }
+      }
+    },
+    "source_revision": {
+      "description": "Narrowed from the envelope: a receipt always names the code revision it describes, and null is not admissible. A receipt whose revision is no longer the head is stale evidence, which is how a code change invalidates older green results (plan 5.2, release scenario 10).",
+      "$ref": "common.schema.json#/$defs/revision_ref"
+    },
+    "environment": {
+      "description": "Environment and configuration identity (plan 5.6). Test execution belongs in the appropriate isolated environment, and repository test code does not get production secrets by default: a production-credentialed run carries an explicit human approval.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "isolated", "secrets_policy"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/kebab_id" },
+        "isolated": { "type": "boolean" },
+        "secrets_policy": { "enum": ["none", "test-only", "production-approved"] },
+        "approval": { "$ref": "common.schema.json#/$defs/approval" },
+        "image_digest": { "$ref": "common.schema.json#/$defs/hash" },
+        "toolchain": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "version"],
+            "properties": {
+              "name": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+              "version": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+            }
+          }
+        },
+        "config_digest": { "$ref": "common.schema.json#/$defs/hash" }
+      },
+      "allOf": [
+        {
+          "description": "Production credentials are a sensitive action and are never available by default (plan 7.2).",
+          "if": {
+            "properties": { "secrets_policy": { "const": "production-approved" } },
+            "required": ["secrets_policy"]
+          },
+          "then": {
+            "required": ["approval"],
+            "properties": { "approval": { "properties": { "authority": { "const": "explicit" } } } }
+          }
+        }
+      ]
+    },
+    "supports": {
+      "description": "The acceptance criteria this receipt supports, by ticket AC id. A receipt that supports nothing is not part of the acceptance-to-evidence matrix (plan 2.1, 5.6).",
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "pattern": "^AC-[0-9]+$" }
+    },
+    "no_criteria": {
+      "description": "Carried in place of 'supports' when the check was run with no acceptance criteria supplied. It says so and names what was verified instead. Such a receipt is still bound to its revision and environment, and it is outside the acceptance-to-evidence matrix: it supports no criterion and no gate may count it toward one.",
+      "$ref": "common.schema.json#/$defs/nonempty_string"
+    },
+    "ticket": { "$ref": "common.schema.json#/$defs/artifact_ref" },
+    "finding": {
+      "description": "Set when the receipt exists to close a finding. Closure is a property of this evidence plus a policy rule saying the evidence suffices for that finding, never of a reviewer's confidence or a classifier's output, and the closer is never the author of the change (plan 5.5, ruling `closure-requires-independent-verification`, release scenario 3). A changed patch does not inherit this receipt: 'source_revision' binds it and 'invalidation' records when it stops applying.",
+      "$ref": "common.schema.json#/$defs/artifact_ref"
+    },
+    "reason": {
+      "description": "Why the check did not produce a result. Mandatory for 'not-run', 'not-applicable' and 'inconclusive': these are recorded outcomes, not gaps to be read past (plan 5.6).",
+      "$ref": "common.schema.json#/$defs/nonempty_string"
+    },
+    "invalidation": {
+      "description": "Recorded when this receipt stops describing the current state: the code changed, the environment changed, or a QA mutation invalidated it (plan 8, release scenarios 10 and 19). The receipt is not rewritten; it is marked and superseded by a new one at the new revision. 'base-changed' is the verification half of a deliberate baseline reset: when architecture, requirements, the comparison base or the affected surface moves materially, the receipts bound to the old base are invalidated along with the approvals they supported and re-earned in the new scope's own first pass, rather than carried into an unbounded third delta loop (ruling `delta-baseline-reset-not-third-loop`).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reason", "at"],
+      "properties": {
+        "reason": { "enum": ["code-changed", "environment-changed", "dependency-changed", "mutation", "base-changed"] },
+        "at": { "$ref": "common.schema.json#/$defs/timestamp" },
+        "superseding_revision": { "$ref": "common.schema.json#/$defs/revision_ref" },
+        "evidence": { "$ref": "common.schema.json#/$defs/evidence_ref" }
+      },
+      "x-validator-rule": "verification.receipt-stale-when-revision-differs-from-head"
+    },
+    "notes": {
+      "description": "Narrative only, and explicitly not evidence. An agent's description of a green run is not a receipt: a receipt carries the command or probe, its exit status, the output digest, the revision and the environment identity, which is what the required members and the branches below pin down (plan 5.6, release scenario 10, ruling `closure-requires-independent-verification`). No policy may read this field.",
+      "type": "string",
+      "x-validator-rule": "verification.prose-never-substitutes-for-exit-status-and-digest"
+    },
+    "weakened_checks": {
+      "description": "Plan 7.5. Recorded when a check was skipped, an assertion weakened, a threshold lowered or coverage removed. This is never something CI repair may do on its own: each entry requires a separate decision, and a passing check obtained by deleting an assertion is a failure of the run, not a pass (release scenario 19).",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["what", "decision"],
+        "properties": {
+          "what": { "enum": ["check-skipped", "assertion-weakened", "threshold-lowered", "coverage-removed"] },
+          "detail": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+          "decision": {
+            "description": "The decision artifact that authorized it. There is no unauthorized form of this entry.",
+            "$ref": "common.schema.json#/$defs/artifact_ref"
+          }
+        }
+      },
+      "x-validator-rule": "verification.weakened-check-requires-its-own-decision"
+    }
+  },
+  "unevaluatedProperties": false,
+  "allOf": [
+    { "$ref": "common.schema.json#/$defs/envelope" },
+    {
+      "description": "A receipt names the criteria it supports, or states that none were supplied. It never does both and never does neither.",
+      "oneOf": [{ "required": ["supports"] }, { "required": ["no_criteria"] }]
+    },
+    {
+      "description": "A command check records the command it ran.",
+      "if": { "properties": { "kind": { "const": "command" } }, "required": ["kind"] },
+      "then": { "required": ["command"] }
+    },
+    {
+      "description": "A probe check records the probe.",
+      "if": { "properties": { "kind": { "const": "probe" } }, "required": ["kind"] },
+      "then": { "required": ["probe"] }
+    },
+    {
+      "description": "A manual check records who performed it and how.",
+      "if": { "properties": { "kind": { "const": "manual" } }, "required": ["kind"] },
+      "then": { "required": ["manual"] }
+    },
+    {
+      "description": "A check that ran carries a digest of its relevant output. This is the half of the receipt that survives the session (plan 5.6).",
+      "if": { "properties": { "status": { "enum": ["passed", "failed", "inconclusive"] } }, "required": ["status"] },
+      "then": { "required": ["output_digest"] }
+    },
+    {
+      "description": "A passing command receipt carries exit status 0. This is the structural form of 'a classifier cannot turn missing proof into passed' (plan 5.6, release scenario 10).",
+      "if": {
+        "properties": { "kind": { "const": "command" }, "status": { "const": "passed" } },
+        "required": ["kind", "status"]
+      },
+      "then": {
+        "required": ["exit_status"],
+        "properties": { "exit_status": { "const": 0 } }
+      }
+    },
+    {
+      "description": "A failing command receipt carries the status it actually exited with. When that status is zero, the receipt also records that its behavioral verdict comes from output that reports failure.",
+      "if": {
+        "properties": { "kind": { "const": "command" }, "status": { "const": "failed" } },
+        "required": ["kind", "status"]
+      },
+      "then": {
+        "required": ["exit_status"],
+        "if": { "properties": { "exit_status": { "const": 0 } }, "required": ["exit_status"] },
+        "then": { "required": ["exit_disagreement"] }
+      }
+    },
+    {
+      "description": "Nothing ran, so there is no exit status and no output digest to report. Claiming either would be manufacturing evidence; the reason is what the receipt carries instead (plan 5.6).",
+      "if": { "properties": { "status": { "enum": ["not-run", "not-applicable"] } }, "required": ["status"] },
+      "then": {
+        "required": ["reason"],
+        "not": {
+          "anyOf": [{ "required": ["exit_status"] }, { "required": ["output_digest"] }]
+        }
+      }
+    },
+    {
+      "description": "An inconclusive check ran and settled nothing. It says so, and it is never counted toward acceptance (plan 5.6).",
+      "if": { "properties": { "status": { "const": "inconclusive" } }, "required": ["status"] },
+      "then": { "required": ["reason"] }
+    },
+    {
+      "description": "An exit disagreement is only meaningful for a failed command whose raw exit status was zero.",
+      "if": { "required": ["exit_disagreement"] },
+      "then": {
+        "required": ["kind", "status", "exit_status"],
+        "properties": {
+          "kind": { "const": "command" },
+          "status": { "const": "failed" },
+          "exit_status": { "const": 0 }
+        }
+      }
+    },
+    {
+      "description": "Surface evidence is emitted by the verifier role and binds both its recipe and seat lineage. Older receipts without an evidence kind remain compatible for tickets that declare no surface requirement.",
+      "if": { "required": ["evidence_kind"] },
+      "then": {
+        "required": ["recipe", "verifier_seat"],
+        "properties": {
+          "created_by": {
+            "properties": { "role": { "const": "verifier" } },
+            "required": ["role"]
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "evidence_kind": { "const": "api-response" } }, "required": ["evidence_kind"] },
+      "then": {
+        "required": ["api_response", "artifacts"],
+        "properties": {
+          "artifacts": { "contains": { "properties": { "kind": { "const": "response" } }, "required": ["kind"] } }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "evidence_kind": { "const": "rendered-screenshot" } }, "required": ["evidence_kind"] },
+      "then": {
+        "required": ["artifacts"],
+        "properties": {
+          "artifacts": { "contains": { "properties": { "kind": { "const": "screenshot" } }, "required": ["kind"] } }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "evidence_kind": { "const": "trace" } }, "required": ["evidence_kind"] },
+      "then": {
+        "required": ["artifacts"],
+        "properties": {
+          "artifacts": { "contains": { "properties": { "kind": { "const": "trace" } }, "required": ["kind"] } }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "evidence_kind": { "const": "log" } }, "required": ["evidence_kind"] },
+      "then": {
+        "required": ["artifacts"],
+        "properties": {
+          "artifacts": { "contains": { "properties": { "kind": { "const": "log" } }, "required": ["kind"] } }
+        }
+      }
+    }
+  ]
+}
