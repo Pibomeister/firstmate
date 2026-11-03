@@ -482,6 +482,9 @@ fm_control_absence_recheck_applies() {  # <backend> <raw-state>
 #     worktree (bin/backends/orca.sh's
 #     fm_backend_orca_endpoint_absence_proof owns the reads;
 #     docs/orca-backend.md "Agent stop proof" owns the evidence).
+#     A terminal Orca still calls connected is proven gone only when the
+#     session root its sweep names is absent from the process table, under
+#     the same worktree standards.
 #     A handle Orca no longer recognizes at all is proven gone only through
 #     that same function's reboot case, which additionally needs the task's
 #     record file as the fourth argument here. The same documentation owner
@@ -867,10 +870,11 @@ fm_control_droid_session_ended() {  # <state-dir> <id> <meta-file>
 #      terminal that belongs to the exact recorded worktree and to this
 #      task's recorded terminal, its recorded session process tree
 #      classifies `dead` (only shells beside Orca's `login` root, which is
-#      the owned idle shell), the task's busy record is the current
-#      generation's idle `droid-hook` record, and one successful scan shows
-#      no `droid` process whose working directory is the exact recorded
-#      worktree or under it.
+#      the owned idle shell) or its session root is absent from a complete
+#      process table (fm_backend_orca_pid_absent), the task's busy record is
+#      the current generation's idle `droid-hook` record, and one successful
+#      scan shows no `droid` process whose working directory is the exact
+#      recorded worktree or under it.
 # A marker file that exists but names another generation, is a symlink, or
 # cannot be read refuses on both routes rather than falling through to the
 # shell route: it is evidence about a different incarnation. A live Droid
@@ -883,7 +887,7 @@ fm_control_droid_session_ended() {  # <state-dir> <id> <meta-file>
 fm_control_droid_agent_absent() {  # <state-dir> <id> <meta-file> <target>
   local state=${1-} id=${2-} meta=${3-} target=${4-}
   local gen marker ended wt recorded harness current record facts
-  local f_read f_connected f_host f_pty f_wtpath pid tree wt_phys term_phys
+  local f_read f_connected f_host f_pty f_wtpath pid tree wt_phys term_phys rc
   [ -n "$state" ] && [ -n "$id" ] && [ -n "$meta" ] && [ -n "$target" ] || return 1
   harness=$(fm_meta_get "$meta" harness) || return 1
   [ -n "$harness" ] || return 1
@@ -937,8 +941,17 @@ FACTS
   [ "$term_phys" = "$wt_phys" ] || return 1
   pid=$(fm_backend_orca_session_pid "$f_pty" 2>/dev/null) || return 1
   [ -n "$pid" ] || return 1
-  tree=$(fm_backend_orca_tree_state "$pid" 2>/dev/null) || return 1
-  [ "$tree" = dead ] || return 1
+  command -v fm_backend_orca_pid_absent >/dev/null 2>&1 || return 1
+  rc=0
+  fm_backend_orca_pid_absent "$pid" || rc=$?
+  case "$rc" in
+    0) ;;
+    1)
+      tree=$(fm_backend_orca_tree_state "$pid" 2>/dev/null) || return 1
+      [ "$tree" = dead ] || return 1
+      ;;
+    *) return 1 ;;
+  esac
   fm_control_droid_worktree_no_droid "$wt_phys"
 }
 

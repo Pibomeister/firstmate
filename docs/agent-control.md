@@ -110,7 +110,7 @@ The task's worktree, branch, commits, and uncommitted changes all survive that; 
 
 **Reclaim covers Herdr, Rex, tmux, and Orca.**
 A tmux task can be reclaimed only when its record carries the server identity a tmux spawn now records; an older record still refuses, with the reason stated rather than guessed past.
-An Orca task is reclaimed only when its closed terminal or stale handle passes the [Orca agent stop proof](orca-backend.md#agent-stop-proof).
+An Orca task is reclaimed only when its closed terminal, its connected terminal whose session process exited, or its stale handle passes the [Orca agent stop proof](orca-backend.md#agent-stop-proof).
 
 Two endpoint verdicts are agent-free, and both license a relaunch:
 

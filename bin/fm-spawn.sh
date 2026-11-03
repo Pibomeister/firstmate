@@ -2495,6 +2495,8 @@ if [ "$RELAUNCH" -eq 1 ]; then
   #           so a closed terminal is told apart from an unreachable one; the
   #           proof then requires Orca's process sweep to have dropped the
   #           session and no agent to be working in the recorded worktree.
+  #           A terminal Orca still calls connected whose session root
+  #           process is gone reads `missing` and is proven the same way.
   #           A stale handle after a host reboot reads `unreadable` here and
   #           takes that same proof; docs/orca-backend.md "Agent stop proof"
   #           owns the reboot evidence requirements.
@@ -2546,7 +2548,16 @@ FACTS
       exit 1
     fi
     case "$RELAUNCH_DROID_CONNECTED:$RELAUNCH_DROID_WRITABLE" in
-      true:true) RELAUNCH_STATE=dead ;;
+      true:true)
+        # A connected terminal whose session root process is gone reads
+        # `missing`: input typed into it reaches no process, so it is
+        # replaced in the recorded worktree rather than adopted.
+        if [ "$(fm_backend_orca_agent_state "$RELAUNCH_TARGET")" = missing ]; then
+          RELAUNCH_STATE=missing
+        else
+          RELAUNCH_STATE=dead
+        fi
+        ;;
       false:false) RELAUNCH_STATE=missing ;;
       *)
         echo "error: Orca Droid's recorded terminal is not proven writable or closed after its absence proof; refusing to rebind or adopt it" >&2

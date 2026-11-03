@@ -2395,6 +2395,123 @@ test_orca_absence_proof_reclassifies_a_connected_terminal() {
   pass "fm_backend_orca_endpoint_absence_proof: a still-connected terminal re-classifies as dead or alive"
 }
 
+# orca_exited_pid: the pid of a real process that has exited and been reaped,
+# so the process table no longer lists it. Orca 1.4.244 was observed sweeping
+# such pids as the session root of terminals it still calls connected.
+orca_exited_pid() {
+  local pid
+  sleep 0 &
+  pid=$!
+  wait "$pid" 2>/dev/null || true
+  printf '%s' "$pid"
+}
+
+# orca_connected_case: a connected, writable terminal of $CASE_DIR/wt whose
+# session root, as Orca's sweep names it, is <pid>. The proof reads show, then
+# the classifier reads show and the sweep.
+orca_connected_case() {  # <name> <pid>
+  orca_proof_case "$1"
+  orca_show_json term-1 true true '' local pty-1 "$CASE_DIR/wt" > "$RESP/1.out"
+  cp "$RESP/1.out" "$RESP/2.out"
+  orca_memory_json pty-1 "$2" > "$RESP/3.out"
+}
+
+# orca_connected_state_case: the same terminal read by the classifier alone,
+# which reads show and then the sweep.
+orca_connected_state_case() {  # <name> <pid>
+  orca_connected_case "$1" "$2"
+  orca_memory_json pty-1 "$2" > "$RESP/2.out"
+}
+
+test_orca_connected_terminal_with_an_exited_session_root() {
+  local pid out agent=''
+  pid=$(orca_exited_pid)
+  # The divergence this case rests on: Orca calls the terminal connected, yet
+  # the kernel no longer lists the root its own sweep names.
+  [ -z "$(ps -p "$pid" -o pid= 2>/dev/null)" ] || fail "fixture pid $pid must be absent from the process table"
+
+  orca_connected_state_case state-connected-dead "$pid"
+  out=$(orca_run 'fm_backend_orca_agent_state term-1')
+  [ "$out" = missing ] || fail "a connected terminal whose session root has exited must read missing, got '$out'"
+
+  orca_connected_case proof-connected-dead "$pid"
+  out=$(orca_proof)
+  [ "$out" = $'gone\t' ] || fail "a connected terminal with an exited root and no agent in its worktree must prove gone, got '$out'"
+
+  orca_connected_case proof-connected-dead-other "$pid"
+  mkdir -p "$CASE_DIR/elsewhere"
+  orca_show_json term-1 true true '' local pty-1 "$CASE_DIR/elsewhere" > "$RESP/1.out"
+  cp "$RESP/1.out" "$RESP/2.out"
+  out=$(orca_proof)
+  case "$out" in unproven$'\t'*'not the recorded'*) ;; *) fail "an exited root in another worktree must stay unproven, got '$out'" ;; esac
+
+  orca_connected_case proof-connected-dead-scan-fails "$pid"
+  out=$(orca_proof FM_FAKE_LSOF_EXIT=1)
+  case "$out" in unproven$'\t'*) ;; *) fail "an exited root whose worktree scan fails must stay unproven, got '$out'" ;; esac
+
+  if [ -n "$ORCA_STANDIN" ]; then
+    mkdir -p "$TMP_ROOT/tree-bin"
+    ln -sf "$ORCA_STANDIN" "$TMP_ROOT/tree-bin/claude"
+    "$TMP_ROOT/tree-bin/claude" 600 >/dev/null 2>&1 &
+    agent=$!
+    ORCA_TREE_PIDS+=("$agent")
+    orca_connected_case proof-connected-dead-agent "$pid"
+    printf 'p%s\nn%s/sub\n' "$agent" "$CASE_DIR/wt" >> "$CASE_DIR/lsof.out"
+    out=$(orca_proof)
+    orca_tree_cleanup
+    case "$out" in unproven$'\t'*'agent process still runs in'*) ;; *) fail "an exited root with an agent still in the worktree must stay unproven, got '$out'" ;; esac
+  else
+    pass "SKIP: connected exited-root agent-in-worktree case (no agent stand-in survives here)"
+  fi
+  pass "fm_backend_orca: a connected terminal whose session root has exited reads missing and proves gone only under the worktree standards"
+}
+
+test_orca_connected_terminal_with_a_live_agent_stays_alive() {
+  local root out
+  [ -n "$ORCA_STANDIN" ] || { pass "SKIP: connected live-agent case (no agent stand-in survives here)"; return 0; }
+  orca_tree agent
+  root=$ORCA_TREE_ROOT
+  [ -n "$(ps -p "$root" -o pid= 2>/dev/null)" ] || { orca_tree_cleanup; fail "fixture root $root must be listed in the process table"; }
+  orca_connected_state_case state-connected-live "$root"
+  out=$(orca_run 'fm_backend_orca_agent_state term-1')
+  [ "$out" = alive ] || { orca_tree_cleanup; fail "a connected terminal with a live agent must read alive, got '$out'"; }
+  orca_connected_case proof-connected-live "$root"
+  out=$(orca_proof)
+  orca_tree_cleanup
+  [ "$out" = $'alive\t' ] || fail "a connected terminal with a live agent must never prove gone, got '$out'"
+  pass "fm_backend_orca: a connected terminal with a live agent reads alive and never proves gone"
+}
+
+# orca_fake_ps: replace ps in this case's fake bin with one that fails or
+# prints a table without the reading shell.
+orca_fake_ps() {  # <fails|partial>
+  case "$1" in
+    fails) printf '#!/usr/bin/env bash\nexit 1\n' > "$FB/ps" ;;
+    partial) printf '#!/usr/bin/env bash\nprintf "    1\\n"\n' > "$FB/ps" ;;
+  esac
+  chmod +x "$FB/ps"
+}
+
+test_orca_connected_terminal_with_an_unreadable_process_table() {
+  local mode out pid
+  pid=$(orca_exited_pid)
+  # A table that omits the reading shell is not trusted as complete.
+  for mode in fails partial; do
+    orca_connected_state_case "state-connected-ps-$mode" "$pid"
+    orca_fake_ps "$mode"
+    out=$(orca_run 'fm_backend_orca_agent_state term-1')
+    [ "$out" = unreadable ] || fail "a connected terminal read through a '$mode' process table must read unreadable, got '$out'"
+    orca_connected_case "proof-connected-ps-$mode" "$pid"
+    orca_fake_ps "$mode"
+    out=$(orca_proof)
+    case "$out" in
+      unproven$'\t'*'reads unreadable'*) ;;
+      *) fail "a connected terminal read through a '$mode' process table must stay unproven, got '$out'" ;;
+    esac
+  done
+  pass "fm_backend_orca: a connected terminal whose process table cannot be read completely stays unreadable and unproven"
+}
+
 # orca_reboot_case: a stale (unrecognized) handle whose record carries a
 # pre-boot spawn generation, with a readable sweep and only a shell in the
 # recorded worktree.
@@ -2576,6 +2693,9 @@ test_orca_agent_state_unprovable_reads_are_unreadable
 test_orca_absence_proof_is_gone_for_a_closed_clean_terminal
 test_orca_absence_proof_refuses_without_every_fact
 test_orca_absence_proof_reclassifies_a_connected_terminal
+test_orca_connected_terminal_with_an_exited_session_root
+test_orca_connected_terminal_with_a_live_agent_stays_alive
+test_orca_connected_terminal_with_an_unreadable_process_table
 test_orca_absence_proof_reboot_stale_handle_is_gone
 test_orca_absence_proof_ignores_a_forged_boot_override
 test_orca_absence_proof_reboot_stale_handle_refuses_a_surviving_agent

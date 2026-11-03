@@ -551,6 +551,76 @@ test_orca_relaunch_adopts_a_dead_connected_terminal() {
   pass "an Orca relaunch adopts a connected terminal whose agent is proven stopped"
 }
 
+# orca_exited_root: point the recorded terminal's sweep entry at a real process
+# that has exited and been reaped, while Orca still calls the terminal
+# connected and writable (observed on Orca 1.4.244).
+orca_exited_root() {
+  local pid
+  sleep 0 &
+  pid=$!
+  wait "$pid" 2>/dev/null || true
+  [ -z "$(ps -p "$pid" -o pid= 2>/dev/null)" ] || fail "fixture pid $pid must be absent from the process table"
+  orca_relaunch_show true ''
+  printf '{"ok":true,"result":{"worktrees":[{"sessions":[{"sessionId":"pty-old","pid":%s}]}]}}\n' "$pid" > "$CASE_DIR/memory.json"
+}
+
+orca_expect_rebind() {  # <what>
+  expect_code 0 "$STATUS" "$1 should rebind"$'\n'"$OUT"
+  assert_contains "$(cat "$CASE_DIR/terminal-create.log" 2>/dev/null)" "--worktree id:wt-1::$WT" \
+    "$1 must be replaced in the recorded worktree"
+  [ "$(orca_meta_field terminal)" = term-new ] || fail "$1 must record the new terminal, got '$(orca_meta_field terminal)'"
+  assert_not_contains "$(cat "$CASE_DIR/terminal-send.log" 2>/dev/null)" '--terminal term-old' \
+    "$1 must send no input to the old terminal"
+}
+
+orca_expect_refusal() {  # <what> <before-meta>
+  expect_code 1 "$STATUS" "$1 must refuse"$'\n'"$OUT"
+  [ ! -e "$CASE_DIR/terminal-create.log" ] || fail "$1 must create no terminal"$'\n'"$OUT"
+  [ "$(cat "$HOME_DIR/state/$TASK.meta")" = "$2" ] || fail "$1 must leave the task record unchanged"
+}
+
+test_orca_relaunch_rebinds_a_connected_terminal_whose_session_root_exited() {
+  local variant gen before standin agent
+  standin=$(fm_agent_standin "$TMP_ROOT/exited-root-standin") || standin=
+  for variant in codex codex-live-agent droid droid-wrong-gen droid-live-scan; do
+    if [ "$variant" = codex-live-agent ] && [ -z "$standin" ]; then
+      pass "SKIP: connected exited-root live-agent relaunch (no agent stand-in survives here)"
+      continue
+    fi
+    orca_relaunch_case "exited-root-$variant"
+    case "$variant" in
+      droid*)
+        echo 'harness=droid' >> "$HOME_DIR/state/$TASK.meta"
+        gen=$("$ROOT/bin/fm-busy-event.sh" arm "$HOME_DIR/state" "$TASK")
+        "$ROOT/bin/fm-busy-event.sh" apply "$HOME_DIR/state" "$TASK" idle \
+          --gen "$gen" --source droid-hook --event session-end >/dev/null
+        echo "busy_gen=$gen" >> "$HOME_DIR/state/$TASK.meta"
+        ;;
+    esac
+    agent=
+    case "$variant" in
+      codex-live-agent)
+        # The worktree scan classifies a real process named like an agent.
+        ln -sf "$standin" "$CASE_DIR/codex"
+        "$CASE_DIR/codex" 600 >/dev/null 2>&1 &
+        agent=$!
+        printf 'p%s\nn%s\n' "$agent" "$WT" >> "$CASE_DIR/lsof.out"
+        ;;
+      droid-live-scan) printf 'p999\nn%s\n' "$WT" >> "$CASE_DIR/lsof.out" ;;
+      droid-wrong-gen) printf 'g-other-generation\n' > "$HOME_DIR/state/$TASK.droid-session-end" ;;
+    esac
+    orca_exited_root
+    before=$(cat "$HOME_DIR/state/$TASK.meta")
+    orca_relaunch --harness claude
+    [ -z "$agent" ] || kill "$agent" 2>/dev/null || true
+    case "$variant" in
+      codex|droid) orca_expect_rebind "a connected $variant terminal whose session root exited" ;;
+      *) orca_expect_refusal "the '$variant' connected exited-root relaunch" "$before" ;;
+    esac
+  done
+  pass "an Orca relaunch replaces a connected terminal whose session root exited, and refuses a live worktree agent or a wrong Droid generation"
+}
+
 test_orca_droid_relaunch_connected_shell_without_marker() {
   local variant shell_pid fifo gen
   for variant in positive wrong-gen live-scan scan-fails; do
@@ -1589,6 +1659,7 @@ test_orca_relaunch_rebinds_a_stale_terminal_after_reboot
 test_orca_droid_relaunch_keeps_non_reboot_prerequisites
 test_orca_relaunch_refuses_a_stale_terminal_with_a_surviving_agent_after_reboot
 test_orca_relaunch_adopts_a_dead_connected_terminal
+test_orca_relaunch_rebinds_a_connected_terminal_whose_session_root_exited
 test_orca_relaunch_refuses_without_proof_of_a_stopped_agent
 test_orca_relaunch_takes_values_from_the_scoped_source
 

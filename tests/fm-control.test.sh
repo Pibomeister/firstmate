@@ -1309,6 +1309,42 @@ orca_connected_shell_run() {  # <case-dir> -> sets out and rc
   wait "$shell_pid" 2>/dev/null || true
 }
 
+# orca_exited_root_memory: Orca's sweep names, as the session root of pty-1, a
+# real process that has exited and been reaped, while the terminal is still
+# reported connected (observed on Orca 1.4.244).
+orca_exited_root_memory() {  # <case-dir>
+  local pid
+  sleep 0 &
+  pid=$!
+  wait "$pid" 2>/dev/null || true
+  [ -z "$(ps -p "$pid" -o pid= 2>/dev/null)" ] || fail "fixture pid $pid must be absent from the process table"
+  printf '{"ok":true,"result":{"worktrees":[{"sessions":[{"sessionId":"pty-1","pid":%s}]}]}}\n' \
+    "$pid" > "$1/fake/orca-memory"
+}
+
+test_connected_orca_terminal_with_an_exited_root_exit_reports_stopped() {
+  local dir out rc wt harness want
+  for harness in codex droid; do
+    dir=$(new_case "orca-exited-root-$harness")
+    if [ "$harness" = droid ]; then
+      add_orca_connected_shell_task "$dir" t1
+      want=already-stopped
+    else
+      add_orca_closed_task "$dir" t1 codex
+      wt=$(grep '^worktree=' "$dir/home/state/t1.meta" | cut -d= -f2-)
+      printf '{"ok":true,"result":{"terminal":{"handle":"term-1","ptyId":"pty-1","connected":true,"writable":true,"exitCause":null,"executionHostId":"local","worktreePath":"%s"}}}\n' \
+        "$(cd -P "$wt" && pwd -P)" > "$dir/fake/orca-show"
+      want=endpoint-gone
+    fi
+    orca_exited_root_memory "$dir"
+    out=$(run_control "$dir" t1 exit); rc=$?
+    expect_code 0 "$rc" "exit on a connected $harness terminal whose session root exited should succeed"$'\n'"$out"
+    assert_contains "$out" "$want" "a connected $harness terminal whose session root exited should report $want"
+    [ -z "$(literals "$dir")" ] || fail "a connected $harness terminal whose session root exited must not be sent an exit command"
+  done
+  pass "fm-control exit: a connected Orca terminal whose session root exited reports the agent stopped and sends nothing"
+}
+
 test_connected_orca_droid_shell_exit_reports_already_stopped() {
   local dir out rc wt
   dir=$(new_case orca-droid-connected-shell)
@@ -1761,6 +1797,7 @@ test_closed_orca_terminal_exit_reports_endpoint_gone
 test_closed_orca_terminal_exit_refuses_without_the_worktree_scan
 test_closed_orca_droid_exit_requires_session_end
 test_connected_orca_droid_shell_exit_reports_already_stopped
+test_connected_orca_terminal_with_an_exited_root_exit_reports_stopped
 test_connected_orca_droid_shell_exit_refuses_wrong_generation_and_live_scan
 test_stale_orca_terminal_exit_reports_endpoint_gone_after_reboot
 test_stale_orca_terminal_exit_refuses_a_surviving_agent_after_reboot

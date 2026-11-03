@@ -2640,6 +2640,34 @@ The terminal-selection matrix includes a `stop_unverified` exit cause, a refused
 The Droid-to-Droid case uses a `droid` stand-in that runs the generated hooks.
 This portable check does not refresh the live Orca or Droid version evidence above.
 
+Connected terminals whose session process exited were observed on 2026-11-02 on macOS 26.6.2 with `/Applications/Orca.app` and the `orca` CLI both reporting version 1.4.244, read under Bash 3.2.57.
+Orca still reported such a terminal as `connected=true`, `writable=true`, and `orphaned=true`, with no exit cause, while the session root its own sweep named was absent from the process table:
+
+```sh
+orca terminal show --terminal <handle> --json
+bash -c '. bin/backends/orca.sh; pid=$(fm_backend_orca_session_pid <ptyId>); ps -p "$pid" -o pid= || echo absent; fm_backend_orca_agent_state <handle>; fm_backend_orca_endpoint_absence_proof <handle> <worktree>'
+```
+
+```text
+connected=true writable=true orphaned=true exitCause=undefined executionHostId="local"
+sweep pid=15551
+ps -p: absent
+before this rule: state=unreadable  proof=unproven|terminal <handle> is still connected and its agent state reads unreadable
+after this rule:  state=missing     proof=gone|
+```
+
+The same host's sweep listed many such sessions:
+
+```sh
+orca diagnostics memory --json  # each result.worktrees[].sessions[].pid, checked against ps -axo pid=
+```
+
+```text
+sweep sessions: live=52 absent=242
+```
+
+`tests/fm-backend-orca.test.sh`, `tests/fm-spawn-orca-worktree.test.sh`, and `tests/fm-control.test.sh` pin the rule with a real exited and reaped process as the swept root: such a terminal reads `missing`, is proven gone only with a matching worktree and a clean agent scan, and is replaced rather than adopted; a live agent tree stays `alive`, and a process table that fails or omits the reading shell stays `unreadable`.
+
 ### Orca environment source
 
 The environment source was verified on 2026-10-14 on macOS 15.6.1 with tmux 3.6a, Bash 5.3.20, Bash 3.2.57, and zsh 5.9.
