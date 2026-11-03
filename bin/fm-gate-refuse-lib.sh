@@ -9,10 +9,12 @@
 # "delegate" and "reconcile" the shared worktree. It has real capability because
 # those entrypoints self-locate their home and never knew a gate context existed.
 #
-# no-mistakes owns the authority-removal half (it neutralizes the project
-# instructions and stamps NO_MISTAKES_GATE into the gate agent's environment).
+# THIS library plus no-mistakes' HEAD-continuity guard are the authority
+# boundary. no-mistakes stamps NO_MISTAKES_GATE into the gate agent's
+# environment; this repo does not set disable_project_settings (see
+# docs/architecture.md "No-mistakes gate authority boundary").
 # THIS is the firstmate capability boundary: an enforceable script check,
-# not a prose rule the neutralized agent would never read. It is sourced by the
+# not a prose rule a gate agent would never read. It is sourced by the
 # four fleet-lifecycle entrypoints and called before their fleet mutation, so
 # a gate agent that reaches for the real fleet is stopped cold.
 #
@@ -49,8 +51,9 @@
 #
 # The gate-context backstop mirrors the unspoofable-marker precedent in
 # bin/fm-marker-lib.sh; the lab-home marker is deliberately not unspoofable.
-# This boundary layers above no-mistakes' separately-shipping HEAD-continuity
-# guard, which remains the adversarial/residual backstop.
+# This library and no-mistakes' separately-shipping HEAD-continuity
+# guard are now the full authority boundary; the HEAD-continuity guard
+# remains the adversarial/residual backstop.
 #
 # TEST-HARNESS ESCAPE HATCH (FM_GATE_REFUSE_BYPASS=1): firstmate's own test suite
 # must exercise the real fleet entrypoints, but the no-mistakes gate
