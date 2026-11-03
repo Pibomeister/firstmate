@@ -719,7 +719,10 @@
 # unheld, unblocked Queued or In flight item for the id; a transition that fails
 # after publication removes the record it just wrote rather than leaving a
 # worker the backlog does not own. A relaunch re-reads the row instead of
-# re-running the transition, so an eligible In-flight item is left untouched.
+# re-running the transition, so an eligible In-flight item is left untouched;
+# it also admits a held In-flight item and leaves that hold in place, while a
+# fresh dispatch of a held item still refuses
+# (fm_backlog_row_relaunchable owns the rule).
 # The transition is
 # skipped entirely for --secondmate spawns (persistent agents are not work
 # items), on a config/backlog-backend=manual home, and in a markdown home that
@@ -4910,6 +4913,11 @@ if fm_backlog_transition_applies "$CONFIG" "$DATA" "$KIND"; then
       echo "error: spawn refused - the supervision branch under the away-posture record may dispatch only queued unblocked work (already queued, or filed by the branch from the captain's away words); task $ID has no dispatchable backlog item in this home" >&2
       exit 1
     fi
+  elif [ "$RELAUNCH" -eq 1 ]; then
+    if ! fm_backlog_row_relaunchable "$BACKLOG_ROW_STATE"; then
+      echo "error: this home's backlog item $ID cannot take a relaunched worker in state $BACKLOG_ROW_STATE; refusing before creating its endpoint or local copy" >&2
+      exit 1
+    fi
   elif ! fm_backlog_row_dispatchable "$BACKLOG_ROW_STATE"; then
     echo "error: this home's backlog item $ID is not dispatchable in state $BACKLOG_ROW_STATE; refusing before creating its endpoint or local copy" >&2
     exit 1
@@ -7663,7 +7671,11 @@ spawn_commit_backlog_transition() {
   # the ordinary error plumbing (bin/fm-backlog-transition-lib.sh's
   # fm_tasks_axi) instead of holding that lock open ended.
   FM_TASKS_AXI_TIMEOUT=${FM_TASKS_AXI_TIMEOUT:-30}
-  fm_backlog_atomic_transition dispatch "$STATE/$ID.meta" "$DATA" "$ID" "$STATE"
+  if [ "$RELAUNCH" -eq 1 ]; then
+    fm_backlog_atomic_transition dispatch "$STATE/$ID.meta" "$DATA" "$ID" "$STATE" relaunch
+  else
+    fm_backlog_atomic_transition dispatch "$STATE/$ID.meta" "$DATA" "$ID" "$STATE"
+  fi
 }
 
 # The deferred-signal exit path's preservation report. A claim about preserved
@@ -7689,6 +7701,10 @@ spawn_report_preserved_state() {
   fi
   if [ "$FM_BACKLOG_ROW_STATE" = "in_flight no no" ]; then
     SPAWN_PRESERVED_CLAIM="verified preserved: its paired task record is present and its backlog item is In flight"
+    return 0
+  fi
+  if [ "$RELAUNCH" -eq 1 ] && [ "$FM_BACKLOG_ROW_STATE" = "in_flight yes no" ]; then
+    SPAWN_PRESERVED_CLAIM="verified preserved: its paired task record is present and its backlog item is In flight, still held"
     return 0
   fi
   # The commit reported success, but the row does not read back In flight:

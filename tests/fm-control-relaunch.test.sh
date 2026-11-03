@@ -382,6 +382,37 @@ backlog_state() {  # <case-dir> <id>
     sed -n 's/^  state: *//p' | head -1
 }
 
+# Hold <id>'s backlog item the way a captain hold does.
+hold_backlog_item() {  # <case-dir> <id>
+  tasks-axi hold "$2" --reason "captain owns publication and merge" --kind captain \
+    --file "$1/home/data/backlog.md" >/dev/null
+}
+
+backlog_field() {  # <case-dir> <id> <field>
+  tasks-axi show "$2" --file "$1/home/data/backlog.md" 2>/dev/null |
+    sed -n "s/^  $3: *//p" | head -1
+}
+
+# Shadow tasks-axi so every verb that could move or release a row fails and is
+# logged, while reads stay real. A relaunch that leaves the hold in force never
+# calls one of them.
+guard_tasks_axi_mutations() {  # <case-dir>
+  local dir=$1 real
+  real=$(command -v tasks-axi)
+  cat > "$dir/fakebin/tasks-axi" <<SH
+#!/usr/bin/env bash
+case "\${1:-}" in
+  start|unhold|hold|reopen|done|block|unblock)
+    printf '%s\n' "\$1" >> "$dir/fake/tasks-axi-mutations"
+    echo 'error: "mutation refused by test guard"' >&2
+    exit 1
+    ;;
+esac
+exec "$real" "\$@"
+SH
+  chmod +x "$dir/fakebin/tasks-axi"
+}
+
 # Shadow tasks-axi so every `start` fails and every other verb is real. A
 # relaunch that re-reads the row before acting never calls it; one that assumes
 # it must re-run the transition trips over it.
@@ -3203,6 +3234,96 @@ test_away_branch_relaunch_accepts_existing_dispatchable_items() {
   pass "away supervision relaunches existing In-flight and queued items under the saturated fresh-spawn spend cap"
 }
 
+test_relaunch_keeps_a_held_in_flight_item_held() {
+  local dir out rc=0
+  command -v tasks-axi >/dev/null 2>&1 || {
+    pass "skipped: tasks-axi is not installed, so the backlog transition is inert"
+    return 0
+  }
+  fm_tasks_axi_compatible || {
+    pass "skipped: installed tasks-axi predates ${FM_TASKS_AXI_MIN}, so dispatch refuses automatic backlog transitions"
+    return 0
+  }
+  dir=$(new_case held-relaunch rl43)
+  add_ship_task "$dir" rl43 claude
+  seed_backlog "$dir" rl43 in_flight
+  hold_backlog_item "$dir" rl43
+  guard_tasks_axi_mutations "$dir"
+
+  out=$(run_control "$dir" rl43 relaunch --note "replace the dead worker") || rc=$?
+  expect_code 0 "$rc" "a relaunch of a held In-flight item must replace its worker"$'\n'"$out"
+  assert_contains "$out" "relaunched rl43" "the held task's relaunch did not complete"
+  [ "$(meta_field "$dir" rl43 worktree)" = "$dir/wt" ] \
+    || fail "the held task's relaunch did not reuse its recorded local copy"
+  [ "$(backlog_state "$dir" rl43)" = in_flight ] \
+    || fail "a held relaunch moved its item to $(backlog_state "$dir" rl43)"
+  [ "$(backlog_field "$dir" rl43 held)" = yes ] \
+    || fail "a relaunch released the item's hold"
+  [ "$(backlog_field "$dir" rl43 hold_kind)" = captain ] \
+    || fail "a relaunch changed the hold kind to $(backlog_field "$dir" rl43 hold_kind)"
+  [ "$(backlog_field "$dir" rl43 hold_reason)" = "captain owns publication and merge" ] \
+    || fail "a relaunch changed the hold reason to $(backlog_field "$dir" rl43 hold_reason)"
+  [ ! -s "$dir/fake/tasks-axi-mutations" ] \
+    || fail "a held relaunch ran backlog mutations: $(tr '\n' ' ' < "$dir/fake/tasks-axi-mutations")"
+  pass "relaunch replaces the worker of a held In-flight item and leaves the hold in force"
+}
+
+test_spawn_relaunch_admits_a_held_in_flight_item_with_a_dead_agent() {
+  local dir out rc=0
+  command -v tasks-axi >/dev/null 2>&1 || {
+    pass "skipped: tasks-axi is not installed, so the backlog transition is inert"
+    return 0
+  }
+  fm_tasks_axi_compatible || {
+    pass "skipped: installed tasks-axi predates ${FM_TASKS_AXI_MIN}, so dispatch refuses automatic backlog transitions"
+    return 0
+  }
+  dir=$(new_case held-spawn-relaunch rl44)
+  add_ship_task "$dir" rl44 claude
+  seed_backlog "$dir" rl44 in_flight
+  hold_backlog_item "$dir" rl44
+  guard_tasks_axi_mutations "$dir"
+  printf 'zsh' > "$dir/fake/command"
+
+  out=$(run_spawn "$dir" rl44 --relaunch) || rc=$?
+  expect_code 0 "$rc" "fm-spawn --relaunch must admit a held In-flight item"$'\n'"$out"
+  assert_contains "$out" "spawned rl44" "the held task's replacement was not launched"
+  assert_contains "$out" "worktree=$dir/wt" "the replacement did not reuse the recorded local copy"
+  [ "$(backlog_state "$dir" rl44)" = in_flight ] && [ "$(backlog_field "$dir" rl44 held)" = yes ] \
+    || fail "fm-spawn --relaunch changed the held item to $(backlog_state "$dir" rl44) held=$(backlog_field "$dir" rl44 held)"
+  [ ! -s "$dir/fake/tasks-axi-mutations" ] \
+    || fail "fm-spawn --relaunch ran backlog mutations: $(tr '\n' ' ' < "$dir/fake/tasks-axi-mutations")"
+  pass "fm-spawn --relaunch replaces a stopped worker of a held In-flight item without touching the hold"
+}
+
+test_relaunch_refuses_a_held_queued_item_before_stopping_the_agent() {
+  local dir out rc=0 before after
+  command -v tasks-axi >/dev/null 2>&1 || {
+    pass "skipped: tasks-axi is not installed, so the backlog transition is inert"
+    return 0
+  }
+  fm_tasks_axi_compatible || {
+    pass "skipped: installed tasks-axi predates ${FM_TASKS_AXI_MIN}, so dispatch refuses automatic backlog transitions"
+    return 0
+  }
+  dir=$(new_case held-queued-relaunch rl45)
+  add_ship_task "$dir" rl45 claude
+  seed_backlog "$dir" rl45 queued
+  hold_backlog_item "$dir" rl45
+  before=$(cat "$dir/home/state/rl45.meta")
+
+  out=$(run_control "$dir" rl45 relaunch --note "replace the worker") || rc=$?
+  expect_code 1 "$rc" "a relaunch of a held Queued item must refuse"$'\n'"$out"
+  assert_contains "$out" "state queued yes no" "the refusal did not name the row's actual state"
+  assert_contains "$out" "the running agent was not touched" "the refusal did not happen before the agent stopped"
+  [ "$(cat "$dir/fake/command")" = claude ] || fail "a refused held relaunch stopped the running agent"
+  after=$(cat "$dir/home/state/rl45.meta")
+  [ "$before" = "$after" ] || fail "a refused held relaunch changed the durable record"
+  [ "$(backlog_state "$dir" rl45)" = queued ] && [ "$(backlog_field "$dir" rl45 held)" = yes ] \
+    || fail "a refused held relaunch changed the item to $(backlog_state "$dir" rl45) held=$(backlog_field "$dir" rl45 held)"
+  pass "relaunch refuses a held Queued item before the running agent is touched"
+}
+
 test_exit_and_relaunch_remove_the_dialog_file() {
   local dir out rc
   dir=$(new_case dialog-file-exit rl70)
@@ -3345,3 +3466,6 @@ test_herdr_rebind_failure_from_a_plain_shell_names_the_real_cause
 test_relaunch_reverifies_an_already_in_flight_item_instead_of_rewriting_it
 test_relaunch_moves_a_drifted_item_back_in_flight
 test_away_branch_relaunch_accepts_existing_dispatchable_items
+test_relaunch_keeps_a_held_in_flight_item_held
+test_spawn_relaunch_admits_a_held_in_flight_item_with_a_dead_agent
+test_relaunch_refuses_a_held_queued_item_before_stopping_the_agent
