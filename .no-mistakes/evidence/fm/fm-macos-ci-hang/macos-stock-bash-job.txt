@@ -1,0 +1,4 @@
+macos-15-intel
+30
+- actions/checkout@v6
+- Run snapshot consumers with stock Bash
