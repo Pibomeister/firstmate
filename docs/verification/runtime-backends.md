@@ -32,6 +32,7 @@ FM_LIVE=1 bash bin/fm-test-run.sh tests/fm-task-budget-live-e2e.test.sh
 
 The Codex workload starts one bounded shell wait, records a dry-run observation, enables enforcement, and checks the native turn-aborted event after the existing lifecycle interrupt.
 Claude's generated initial launch argument, record doorbell, binding and counter totals have deterministic coverage in `tests/fm-task-budget.test.sh`.
+Child sessions and secondmate lane totals are covered by that portable test, not by this live guard.
 The live Claude launch path remains unverified because the disposable home has no login; this guard neither copies credentials nor starts a login.
 The complete guard requires Codex for interruption verification and refuses a counter-only installation.
 Selected output from the successful guard:
@@ -1114,6 +1115,62 @@ Those guard runs' claude, codex, opencode, and grok arms failed on machine-local
 `test_matrix_kimi_status_bar_below_box` in `tests/fm-composer-lib.test.sh` carries the captured 2.1.1 frames verbatim (plain and ANSI bytes) and pins the divergences: a varying status row (including 2.0.0's own shape) completes the pair, while the status row or the context cell alone below the box, the swapped pair, a dead shell below the footer, and unclaimed activity without the anchor all stay refused.
 `tests/fm-kimi-harness.test.sh` pins the failure-path cleanup: the unconfirmed-delivery and readiness failures close the launched window and roll the provisional record back, an unproven close keeps that record so the surviving worker stays named, and the verified spawn closes nothing.
 The same suite drives the extracted cleanup across the backend matrix: a cmux, zellij, or orca close status can never mark the endpoint closed (their kept records warn and move the backlog item to In flight), only tmux's meaningful status and herdr's confirmed-gone read roll a failed spawn's record back, a kept record's row moves to In flight or the mismatch is named, a relaunch's already-In-flight row is never re-dispatched, and the row move carries the commit point's tasks-axi bound while an operator's own bound is preserved.
+
+### 2026-10-29 Kimi Code CLI 2.4.0 trust dialog and installer Python through tmux
+
+Verified on 2026-10-29 on macOS 26.6.2 arm64 against Kimi Code CLI 2.4.0 (`kimi --version` prints `2.4.0`) in a private tmux 3.6a server, with treehouse v3.1.1 allocating the worktree.
+A folder new to Kimi shows this complete dialog on the 80x24 visible viewport, directly below the wrapped shell preamble that typed the launch line (user, host, and paths vary):
+
+```text
+user@host project % . '/tmp/fm-<id>+<hash>/launch.s<stamp>.sh'
+ ──────────────────────────────────────────────────────────────────────────────
+  Trust this folder?
+  ↑↓ navigate · Enter select · Esc exit
+
+  /Users/<user>/.treehouse/<pool>/1/<project>
+
+  Load project instructions
+    Check: AGENTS.md · .agents/skills/
+
+  Trust is remembered for this folder, including future project config changes.
+  Tool approvals follow your permission settings.
+
+   ❯ Trust and continue
+     Exit
+ ──────────────────────────────────────────────────────────────────────────────
+```
+
+`kimi_trust_dialog_missing` in [fm-kimi-trust-lib.sh](../../bin/fm-kimi-trust-lib.sh) finds every required element in that capture, so it is the complete dialog that spawn answers.
+For a readiness refusal, compare the saved capture with the recognition code that actually ran; `kimi_ready_refusal` in [fm-spawn.sh](../../bin/fm-spawn.sh) owns the evidence record, and the failure detail reports whether it could be written.
+
+The end-to-end proof ran one real scout spawn with the default `PATH`, from a scratch `FM_HOME` and a scratch git project whose worktree path Kimi had never seen:
+
+```text
+$ FM_HOME=<scratch-home> bin/fm-brief.sh kimi-proof-1 kimiproof --scout
+$ TMUX=<private-server> FM_HOME=<scratch-home> FM_SPAWN_NO_GUARD=1 bin/fm-spawn.sh kimi-proof-1 <scratch-project> --scout --harness kimi
+spawned kimi-proof-1 harness=kimi kind=scout window=firstmate:fm-kimi-proof-1 worktree=/Users/<user>/.treehouse/kimiproof-775286/1/kimiproof
+```
+
+Kimi's own folder-trust registry listed that worktree only after spawn had answered the dialog, and nothing was pre-registered in `config.toml`.
+The worker read its instructions, wrote the one-line report `OK kimi seated`, and appended `done`; `bin/fm-teardown.sh kimi-proof-1` then cleaned it up.
+
+That `PATH` resolves `python3` to `/usr/bin/python3` 3.9.6, which has no `tomllib`, and `python3.11` to a version-manager shim that does not run, so the turn-end hook installer selected uv-managed CPython 3.13.9.
+With no qualifying interpreter, the installer refuses before any config write and names each candidate (temporary `HOME`, `/bin/bash` 3.2.57):
+
+```text
+fm-kimi-turnend-hook: refused: no Python 3.11 or newer with tomllib was found to validate config.toml; searched interpreters:
+  /usr/bin/python3 (python3 on PATH): Python 3.9.6, no tomllib
+  not on PATH: python3.14 python3.13 python3.12 python3.11
+  not in /opt/homebrew/bin: python3 python3.14 python3.13 python3.12 python3.11
+  not in /usr/local/bin: python3 python3.14 python3.13 python3.12 python3.11
+  <HOME>/.local/share/uv/python/cpython-3.*/bin/python3 (uv-managed): none installed
+fm-kimi-turnend-hook: install Python 3.11 or newer (for example "uv python install 3.12" or "brew install python"), then retry.
+```
+
+[`fm-kimi-turnend-hook.sh --help`](../../bin/fm-kimi-turnend-hook.sh) owns the search order.
+`tests/fm-kimi-harness.test.sh` pins this capture shape below its preamble, the refusal record with its missing elements and last capture, and the interpreter search order and refusal.
+The [Kimi folder-prompt live guard](#kimi-folder-prompt) refreshes trust-dialog recognition after a Kimi upgrade without model tokens or credentials.
+Rerun the scout spawn above to refresh the complete spawn and installer evidence.
 
 ### 2026-10-14 opencode 1.19.0 de-emphasised mode/footer row in the left-bar composer
 
@@ -2566,6 +2623,23 @@ The closed-terminal `gone` case needs a worktree with no agent, which this probe
 Those suites also cover stale-handle responses with CLI exit status 1, reboot recovery and its refusal conditions, including Droid admission without a shutdown marker and preservation of its non-reboot stop checks.
 The `lsof -nP -a -u <uid> -d cwd -Fpn` scan took 0.63 seconds on this host.
 
+Portable Droid relaunch terminal selection was verified on 2026-11-01 under Bash 3.2.57 with Orca responses stubbed and real isolated Git worktrees:
+
+```sh
+bash bin/fm-test-run.sh tests/fm-spawn-orca-worktree.test.sh --per-script-timeout-secs 300
+```
+
+```text
+ok - an Orca Droid relaunch adopts a connected owned shell without a marker, and refuses a wrong generation, a live worktree process, and a failed scan
+ok - a stopped Orca Droid task replaces only a proven closed terminal, refuses a connected unwritable one, and preserves unlanded work
+ok - fm-control relaunches a closed or stop-unverifiable Orca Droid task on Droid in a new terminal with re-armed hooks
+ok - an aborted Orca Droid rebind keeps its record and stop marker, and its retry reaches a new terminal
+```
+
+The terminal-selection matrix includes a `stop_unverified` exit cause, a refused connected but unwritable terminal, stale and unreadable handles, remote terminals, mismatched worktrees, and unknown writability.
+The Droid-to-Droid case uses a `droid` stand-in that runs the generated hooks.
+This portable check does not refresh the live Orca or Droid version evidence above.
+
 ### Orca environment source
 
 The environment source was verified on 2026-10-14 on macOS 15.6.1 with tmux 3.6a, Bash 5.3.20, Bash 3.2.57, and zsh 5.9.
@@ -3853,3 +3927,30 @@ The full run's native Ahoy cases depend on the model's own choices and failed wi
 
 A real `bin/fm-spawn.sh --scout --harness opencode --model opencode-go/deepseek-v4.1-flash` in a private tmux server recorded `opencode_version=1.18.20` (and `1.18.31` on the second release), launched the worker as `opencode --model opencode-go/deepseek-v4.1-flash --prompt <brief>` with no `--standalone`, and the worker answered its brief.
 `bin/fm-control.sh <task> exit` then resolved the typed `/exit` from that recorded major and returned both panes to the shell.
+
+## Assistant watchdog rendered signals
+
+Verified on 2026-11-01 on macOS (Darwin 25.6.0, arm64) with Claude Code 2.1.316 and tmux 3.6a.
+The behavior contract is owned by [the watchdog page](../watchdog.md).
+The guard launches the installed Claude Code TUI in a new folder on a private tmux socket, with a disposable `CLAUDE_CONFIG_DIR`, a fake API key, and an unreachable API URL, and never submits a prompt; the watchdog runs with no judge models, and its model, forge, and notifier CLIs are logging fakes.
+
+```sh
+bash bin/fm-test-run.sh tests/fm-watchdog-live.test.sh
+ok - claude 2.1.316 (Claude Code): the folder-trust picker is left alone and reported
+ok - claude 2.1.316 (Claude Code): a real merge draft is seen and never submitted, with no model call
+ok - claude 2.1.316 (Claude Code): a real clean draft is proven whole, and the guard clears it unsent
+```
+
+Claude Code 2.1.316 renders its folder-trust picker with unnumbered options (`❯ No, exit`, `Yes, I trust this folder`) above `Enter to confirm · Esc to cancel`.
+The watchdog reads it as a permission dialog, sends no key, and reports it as a waiting gap.
+After the guard accepts the trust picker itself, a second startup picker about browser tools may appear with the footer `Enter to confirm · Esc to keep browser tools off`; the watchdog reads it as an unproven question dialog, sends no key, and reports a gap.
+The tmux composer verdict reads `empty` on the idle composer and `pending` once `merge #12` is typed.
+Across repeated act-mode passes the watchdog records exactly one refusal for that draft per Enter window, presses nothing, and the draft stays unsent.
+The guard runs passes until the pane settles because Claude can repaint just after a draft lands, which changes the pane signature for one pass.
+A clean draft in the same pane passes the draft-boundary proof on the watchdog's own window split, and the guard clears it by hand with no watchdog pass. Accepting the trust picker changes only the disposable config.
+No running-turn signal, Orca or Herdr endpoint, or restart is exercised by this guard.
+
+The M4 captain was also validated live on Orca on 2026-11-01, 14:58-15:00Z, on code from before commit 4093b145; firstmate confirmed this run, and no guard in this repository repeats it.
+The watchdog ran a real Orca restart, the new session's pickup was verified, that session re-armed the away daemon, and act mode was then restored to off.
+Act mode stays off on every other machine until rollout.
+A repeat live test is owed, because later fixes change the restart paths.

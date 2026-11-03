@@ -100,10 +100,13 @@ idle_capture() {  # <dir>
 }
 
 # A fresh process for each check proves the busy budget survives watcher restarts.
+# The age ceiling stays above these fixtures so an aged secondmate record still
+# walks the recovery ladder. The product default is 300 seconds.
 busy_steer_check() {  # <case-dir> [capture] [busy-max]
   PATH="$1/fakebin:$PATH" FM_STATE_OVERRIDE="$1/state" FM_SEND_LOG="$1/send.log" \
     FM_FAKE_TMUX_CAPTURE="${2:-$1/busy.capture}" FM_BUSY_REGEX=BUSYTOKEN \
     FM_TASK_INBOX_GRACE_SECS=0 FM_TASK_INBOX_BUSY_MAX="${3-2}" \
+    FM_TASK_INBOX_SECONDMATE_ESCALATE_SECS=999999999 \
     bash -c '. "$1" && inbox_steer_check sess:fm-t1 t1' _ "$WATCH" > "$1/check.out" 2>&1
 }
 

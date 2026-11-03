@@ -21,6 +21,8 @@ set -u
 
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+# shellcheck source=tests/treehouse-helpers.sh
+. "$ROOT/tests/treehouse-helpers.sh"
 # shellcheck source=/dev/null
 . "$ROOT/bin/fm-control-lib.sh"
 # shellcheck source=/dev/null
@@ -253,6 +255,17 @@ EOF
   TASK_TMPS+=("/tmp/fm-$id")
 }
 
+add_pooled_ship_task() {
+  local dir=$1 id=$2 harness=$3 wt
+  add_ship_task "$dir" "$id" "$harness"
+  fm_test_fake_treehouse "$dir/fakebin" "$dir/proj" "$dir/pool"
+  wt=$("$dir/fakebin/treehouse" get --lease --no-fetch) || fail "could not allocate the relaunch fixture slot"
+  "$dir/fakebin/treehouse" return "$wt" --force || fail "could not return the relaunch fixture slot"
+  sed "s|^worktree=.*|worktree=$wt|" "$dir/home/state/$id.meta" > "$dir/pooled.meta"
+  mv "$dir/pooled.meta" "$dir/home/state/$id.meta"
+  printf '%s' "$wt" > "$dir/fake/cwd"
+}
+
 run_control() {  # <case-dir> <args...>
   local dir=$1; shift
   # A claude spawn pre-registers workspace trust in the launching user's own
@@ -369,6 +382,37 @@ backlog_state() {  # <case-dir> <id>
     sed -n 's/^  state: *//p' | head -1
 }
 
+# Hold <id>'s backlog item the way a captain hold does.
+hold_backlog_item() {  # <case-dir> <id>
+  tasks-axi hold "$2" --reason "captain owns publication and merge" --kind captain \
+    --file "$1/home/data/backlog.md" >/dev/null
+}
+
+backlog_field() {  # <case-dir> <id> <field>
+  tasks-axi show "$2" --file "$1/home/data/backlog.md" 2>/dev/null |
+    sed -n "s/^  $3: *//p" | head -1
+}
+
+# Shadow tasks-axi so every verb that could move or release a row fails and is
+# logged, while reads stay real. A relaunch that leaves the hold in force never
+# calls one of them.
+guard_tasks_axi_mutations() {  # <case-dir>
+  local dir=$1 real
+  real=$(command -v tasks-axi)
+  cat > "$dir/fakebin/tasks-axi" <<SH
+#!/usr/bin/env bash
+case "\${1:-}" in
+  start|unhold|hold|reopen|done|block|unblock)
+    printf '%s\n' "\$1" >> "$dir/fake/tasks-axi-mutations"
+    echo 'error: "mutation refused by test guard"' >&2
+    exit 1
+    ;;
+esac
+exec "$real" "\$@"
+SH
+  chmod +x "$dir/fakebin/tasks-axi"
+}
+
 # Shadow tasks-axi so every `start` fails and every other verb is real. A
 # relaunch that re-reads the row before acting never calls it; one that assumes
 # it must re-run the transition trips over it.
@@ -432,6 +476,86 @@ SH
     'TEST_CREDENTIAL=keep')" ] \
     || fail "relaunch inherited foreign FM variables or lost task values: $worker_env"
   pass "fm-control relaunch: a same-harness relaunch replaces the agent in the same endpoint and worktree"
+}
+
+test_pooled_relaunch_custody_is_agy_only() {
+  local dir prior target entry wt lock out rc harness
+  . "$ROOT/bin/fm-wake-lib.sh"
+  for entry in control spawn; do
+    for prior in claude codex agy; do
+      for target in claude codex agy; do
+        dir=$(new_case "pool-$entry-$prior-$target" rl-pool)
+        add_pooled_ship_task "$dir" rl-pool "$prior"
+        wt=$(meta_field "$dir" rl-pool worktree)
+        printf '%s' "$prior" > "$dir/fake/command"
+        printf '%s' "$target" > "$dir/fake/becomes"
+        for harness in claude codex agy; do
+          printf '#!/usr/bin/env bash\nexit 0\n' > "$dir/fakebin/$harness"
+          chmod +x "$dir/fakebin/$harness"
+        done
+        fm_treehouse_pool_slot "$dir/proj" "$wt" || fail "the fixture is not a pooled checkout"
+        [ ! -e "$(dirname "$wt")/.fm-slot-owner" ] || fail "the legacy fixture has an owner claim"
+        lock=$(FM_HOME="$dir/home" fm_treehouse_project_lock_path "$dir/proj") || fail "could not resolve project lock"
+        if [ "$prior" != agy ] && [ "$target" != agy ]; then
+          fm_lock_try_acquire "$lock" || fail "could not hold the project lock"
+        fi
+        rc=0
+        if [ "$entry" = control ]; then
+          out=$(run_control "$dir" rl-pool relaunch --harness "$target" --note "recover the pooled task") || rc=$?
+        else
+          printf 'zsh' > "$dir/fake/command"
+          out=$(run_spawn "$dir" rl-pool --relaunch --harness "$target") || rc=$?
+        fi
+        if [ "$prior" = agy ] || [ "$target" = agy ]; then
+          expect_code 1 "$rc" "$entry must refuse an AGY transition without custody: $out"
+          assert_contains "$out" 'ownership=absent' "$entry did not check AGY custody: $out"
+          [ -z "$(cat "$dir/fake/literal")" ] || fail "an AGY custody refusal sent lifecycle bytes"
+        else
+          fm_lock_release "$lock"
+          expect_code 0 "$rc" "$entry broke the legacy $prior to $target relaunch: $out"
+          [ "$(meta_field "$dir" rl-pool worktree)" = "$wt" ] || fail "legacy relaunch changed checkout"
+          [ "$(meta_field "$dir" rl-pool harness)" = "$target" ] || fail "legacy relaunch lost the replacement harness"
+          [ "$(cat "$dir/fake/command")" = "$target" ] || fail "legacy replacement did not launch"
+        fi
+      done
+    done
+  done
+  pass "pooled relaunches preserve legacy compatibility and require custody for either AGY harness"
+}
+
+test_agy_relaunch_requires_treehouse_capabilities_before_stopping() {
+  local dir entry capability expected prior target before out rc
+  for entry in control spawn; do
+    while IFS='|' read -r capability expected prior target; do
+      dir=$(new_case "capability-$entry-${capability//:/-}-$prior" rl-capability)
+      add_pooled_ship_task "$dir" rl-capability "$prior"
+      printf '#!/usr/bin/env bash\nexit 0\n' > "$dir/fakebin/agy"
+      chmod +x "$dir/fakebin/agy"
+      printf '%s\n' "$capability" > "$dir/fakebin/treehouse.missing"
+      before=$(cat "$dir/home/state/rl-capability.meta")
+      rc=0
+      if [ "$entry" = control ]; then
+        printf '%s' "$prior" > "$dir/fake/command"
+        out=$(run_control "$dir" rl-capability relaunch --harness "$target" --note "recover the pooled task") || rc=$?
+        [ "$(cat "$dir/fake/command")" = "$prior" ] || fail "capability refusal stopped the old worker"
+      else
+        printf 'zsh' > "$dir/fake/command"
+        out=$(run_spawn "$dir" rl-capability --relaunch --harness "$target") || rc=$?
+      fi
+      expect_code 1 "$rc" "$entry accepted missing Treehouse $expected: $out"
+      assert_contains "$out" "AGY custody requires 'treehouse $expected'" "$entry lost the capability refusal: $out"
+      [ -z "$(cat "$dir/fake/literal")$(cat "$dir/fake/keys")" ] || fail "capability refusal sent lifecycle bytes"
+      [ "$(cat "$dir/home/state/rl-capability.meta")" = "$before" ] || fail "capability refusal changed task metadata"
+      assert_absent "$dir/home/state/rl-capability.control-relaunch" "capability refusal opened a relaunch transaction"
+    done <<'EOF'
+lease|lease --lease-holder|claude|agy
+status:json|status --json|claude|agy
+return:if-lease-holder|return --if-lease-holder|claude|agy
+status:json|status --json|agy|claude
+status:json|status --json|agy|agy
+EOF
+  done
+  pass "AGY relaunch checks Treehouse capabilities before stopping or replacing a worker"
 }
 
 test_relaunch_refuses_before_exit_when_the_composer_holds_pending_text() {
@@ -3110,6 +3234,96 @@ test_away_branch_relaunch_accepts_existing_dispatchable_items() {
   pass "away supervision relaunches existing In-flight and queued items under the saturated fresh-spawn spend cap"
 }
 
+test_relaunch_keeps_a_held_in_flight_item_held() {
+  local dir out rc=0
+  command -v tasks-axi >/dev/null 2>&1 || {
+    pass "skipped: tasks-axi is not installed, so the backlog transition is inert"
+    return 0
+  }
+  fm_tasks_axi_compatible || {
+    pass "skipped: installed tasks-axi predates ${FM_TASKS_AXI_MIN}, so dispatch refuses automatic backlog transitions"
+    return 0
+  }
+  dir=$(new_case held-relaunch rl43)
+  add_ship_task "$dir" rl43 claude
+  seed_backlog "$dir" rl43 in_flight
+  hold_backlog_item "$dir" rl43
+  guard_tasks_axi_mutations "$dir"
+
+  out=$(run_control "$dir" rl43 relaunch --note "replace the dead worker") || rc=$?
+  expect_code 0 "$rc" "a relaunch of a held In-flight item must replace its worker"$'\n'"$out"
+  assert_contains "$out" "relaunched rl43" "the held task's relaunch did not complete"
+  [ "$(meta_field "$dir" rl43 worktree)" = "$dir/wt" ] \
+    || fail "the held task's relaunch did not reuse its recorded local copy"
+  [ "$(backlog_state "$dir" rl43)" = in_flight ] \
+    || fail "a held relaunch moved its item to $(backlog_state "$dir" rl43)"
+  [ "$(backlog_field "$dir" rl43 held)" = yes ] \
+    || fail "a relaunch released the item's hold"
+  [ "$(backlog_field "$dir" rl43 hold_kind)" = captain ] \
+    || fail "a relaunch changed the hold kind to $(backlog_field "$dir" rl43 hold_kind)"
+  [ "$(backlog_field "$dir" rl43 hold_reason)" = "captain owns publication and merge" ] \
+    || fail "a relaunch changed the hold reason to $(backlog_field "$dir" rl43 hold_reason)"
+  [ ! -s "$dir/fake/tasks-axi-mutations" ] \
+    || fail "a held relaunch ran backlog mutations: $(tr '\n' ' ' < "$dir/fake/tasks-axi-mutations")"
+  pass "relaunch replaces the worker of a held In-flight item and leaves the hold in force"
+}
+
+test_spawn_relaunch_admits_a_held_in_flight_item_with_a_dead_agent() {
+  local dir out rc=0
+  command -v tasks-axi >/dev/null 2>&1 || {
+    pass "skipped: tasks-axi is not installed, so the backlog transition is inert"
+    return 0
+  }
+  fm_tasks_axi_compatible || {
+    pass "skipped: installed tasks-axi predates ${FM_TASKS_AXI_MIN}, so dispatch refuses automatic backlog transitions"
+    return 0
+  }
+  dir=$(new_case held-spawn-relaunch rl44)
+  add_ship_task "$dir" rl44 claude
+  seed_backlog "$dir" rl44 in_flight
+  hold_backlog_item "$dir" rl44
+  guard_tasks_axi_mutations "$dir"
+  printf 'zsh' > "$dir/fake/command"
+
+  out=$(run_spawn "$dir" rl44 --relaunch) || rc=$?
+  expect_code 0 "$rc" "fm-spawn --relaunch must admit a held In-flight item"$'\n'"$out"
+  assert_contains "$out" "spawned rl44" "the held task's replacement was not launched"
+  assert_contains "$out" "worktree=$dir/wt" "the replacement did not reuse the recorded local copy"
+  [ "$(backlog_state "$dir" rl44)" = in_flight ] && [ "$(backlog_field "$dir" rl44 held)" = yes ] \
+    || fail "fm-spawn --relaunch changed the held item to $(backlog_state "$dir" rl44) held=$(backlog_field "$dir" rl44 held)"
+  [ ! -s "$dir/fake/tasks-axi-mutations" ] \
+    || fail "fm-spawn --relaunch ran backlog mutations: $(tr '\n' ' ' < "$dir/fake/tasks-axi-mutations")"
+  pass "fm-spawn --relaunch replaces a stopped worker of a held In-flight item without touching the hold"
+}
+
+test_relaunch_refuses_a_held_queued_item_before_stopping_the_agent() {
+  local dir out rc=0 before after
+  command -v tasks-axi >/dev/null 2>&1 || {
+    pass "skipped: tasks-axi is not installed, so the backlog transition is inert"
+    return 0
+  }
+  fm_tasks_axi_compatible || {
+    pass "skipped: installed tasks-axi predates ${FM_TASKS_AXI_MIN}, so dispatch refuses automatic backlog transitions"
+    return 0
+  }
+  dir=$(new_case held-queued-relaunch rl45)
+  add_ship_task "$dir" rl45 claude
+  seed_backlog "$dir" rl45 queued
+  hold_backlog_item "$dir" rl45
+  before=$(cat "$dir/home/state/rl45.meta")
+
+  out=$(run_control "$dir" rl45 relaunch --note "replace the worker") || rc=$?
+  expect_code 1 "$rc" "a relaunch of a held Queued item must refuse"$'\n'"$out"
+  assert_contains "$out" "state queued yes no" "the refusal did not name the row's actual state"
+  assert_contains "$out" "the running agent was not touched" "the refusal did not happen before the agent stopped"
+  [ "$(cat "$dir/fake/command")" = claude ] || fail "a refused held relaunch stopped the running agent"
+  after=$(cat "$dir/home/state/rl45.meta")
+  [ "$before" = "$after" ] || fail "a refused held relaunch changed the durable record"
+  [ "$(backlog_state "$dir" rl45)" = queued ] && [ "$(backlog_field "$dir" rl45 held)" = yes ] \
+    || fail "a refused held relaunch changed the item to $(backlog_state "$dir" rl45) held=$(backlog_field "$dir" rl45 held)"
+  pass "relaunch refuses a held Queued item before the running agent is touched"
+}
+
 test_exit_and_relaunch_remove_the_dialog_file() {
   local dir out rc
   dir=$(new_case dialog-file-exit rl70)
@@ -3163,6 +3377,8 @@ test_relaunch_off_opencode_removes_tracked_wiring
 test_exit_and_relaunch_remove_the_dialog_file
 test_exit_removes_the_dialog_file_before_releasing_the_lock
 test_same_harness_relaunch_keeps_identity_and_reuses_the_endpoint
+test_pooled_relaunch_custody_is_agy_only
+test_agy_relaunch_requires_treehouse_capabilities_before_stopping
 test_relaunch_refuses_before_exit_when_the_composer_holds_pending_text
 test_relaunch_refuses_before_exit_when_the_composer_state_is_unproven
 test_relaunch_from_linked_home_preserves_recorded_worktree
@@ -3250,3 +3466,6 @@ test_herdr_rebind_failure_from_a_plain_shell_names_the_real_cause
 test_relaunch_reverifies_an_already_in_flight_item_instead_of_rewriting_it
 test_relaunch_moves_a_drifted_item_back_in_flight
 test_away_branch_relaunch_accepts_existing_dispatchable_items
+test_relaunch_keeps_a_held_in_flight_item_held
+test_spawn_relaunch_admits_a_held_in_flight_item_with_a_dead_agent
+test_relaunch_refuses_a_held_queued_item_before_stopping_the_agent

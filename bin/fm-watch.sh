@@ -744,7 +744,7 @@ inbox_steer_busy() {  # <window> <backend> <task> <tail40>
 # Runs for secondmates too: their pane-staleness exemption is about quiet panes
 # being healthy, while an unacknowledged instruction can still be a stuck steer.
 inbox_steer_check() {  # <window> <task>
-  local w=$1 task=$2 action verb rec count tail40 reason='' ring_rc backend agent_state recover_rc=1 stuck_busy=0
+  local w=$1 task=$2 action verb rec count tail40 reason='' ring_rc backend agent_state recover_rc=1 stuck_busy=0 age
   action=$(fm_task_inbox_due_action "$STATE" "$task") || return 0
   verb=${action%% *}
   [ "$verb" != quiet ] || return 0
@@ -757,6 +757,22 @@ inbox_steer_check() {  # <window> <task>
     escalate)
       count=${rec##* }
       rec=${rec% *}
+      ;;
+    escalate-age)
+      age=${rec##* }
+      rec=${rec% *}
+      if [ ! -f "$rec" ]; then
+        fm_task_inbox_due_action "$STATE" "$task" >/dev/null || true
+        return 0
+      fi
+      reason="stale: $w (unread firstmate instruction: $rec is unhandled after ${age}s; reported without another interrupt)"
+      fm_wake_append stale "$w" "$reason" || exit 1
+      if ! fm_task_inbox_record_age_escalated "$STATE" "$task" "$rec"; then
+        echo "error: stale wake was queued for $task but its inbox age-escalation marker could not be written" >&2
+        exit 1
+      fi
+      wake "$reason"
+      return 0
       ;;
   esac
   backend=$(window_backend "$w")
@@ -4219,6 +4235,33 @@ fleet_heartbeat_publish_detached() {
   FLEET_HEARTBEAT_PID=$!
 }
 
+# Durable captain orders (bin/fm-order.sh owns the contract): re-deliver or
+# escalate an order still pending past its leash clock. Detached, because a
+# re-delivery may ring a terminal and an escalation may file an issue, and
+# throttled to once a minute while any order is pending.
+ORDER_SWEEP_PID=
+ORDER_SWEEP_STAMP="$STATE/.order-sweep"
+orders_pending() {
+  local f
+  for f in "${FM_DATA_OVERRIDE:-$FM_HOME/data}/orders/pending"/*.order; do
+    [ -f "$f" ] && return 0
+  done
+  return 1
+}
+order_sweep_detached() {
+  if [ -n "$ORDER_SWEEP_PID" ]; then
+    if kill -0 "$ORDER_SWEEP_PID" 2>/dev/null; then
+      return 0
+    fi
+    wait "$ORDER_SWEEP_PID" 2>/dev/null || true
+    ORDER_SWEEP_PID=
+  fi
+  touch "$ORDER_SWEEP_STAMP" 2>/dev/null || true
+  FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE \
+    "$SCRIPT_DIR/fm-order.sh" sweep </dev/null >/dev/null 2>&1 &
+  ORDER_SWEEP_PID=$!
+}
+
 RECONCILE_REQUEST_PID=
 reconcile_requests_pending() {
   local request
@@ -4441,6 +4484,11 @@ while :; do
   # Opt-in lane capacity facts: off costs one file test.
   if [ -e "$CONFIG/lane-capacity" ] && [ "$(age_of "$STATE/lane-capacity.json")" -ge 30 ]; then
     lane_capacity_publish_detached
+  fi
+
+  # Durable captain orders: off (no pending order) costs one glob.
+  if orders_pending && [ "$(age_of "$ORDER_SWEEP_STAMP")" -ge 60 ]; then
+    order_sweep_detached
   fi
 
   # Bearings publishes reconcile asks as local one-shot request files and

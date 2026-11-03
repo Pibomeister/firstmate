@@ -13,6 +13,7 @@ Start with the directory layout, then use the setting reference for the behavior
 | Backlog, preferences, and memory | [Backlog backend](#backlog-backend-taskstoml--configbacklog-backend), [captain preferences](#captain-preferences-datacaptainmd--datacaptain-sharedmd), [external memory tiers](#external-memory-tiers-memory-layering-section), [record export](#record-export-configrecord-export-root), and [startup memory budget](#startup-memory-budget-configstartup-memory-budget) |
 | Supervision and presentation | [Pi supervision branch](#pi-supervision-branch), [supervision host](#supervision-host-configsupervision-host), [warm-cache compaction](#warm-cache-compaction-configwarm-compact), [early handoff trigger](#early-handoff-trigger-confighandoff-trigger), [task budgets](#task-budget-enforcement-configbudget-enforcement), and [Calm preference](#calm-preference-configcalm) |
 | Persistent secondmates | [Secondmate routes](#secondmate-routes-datasecondmatesmd) |
+| Unattended stall recovery for firstmates and second mates | [Assistant watchdog](#assistant-watchdog-configwatchdog) |
 | Machine-wide heavy test admission | [`fm-test-queue.sh` header](../bin/fm-test-queue.sh) |
 | Review bots on owned GitHub pull requests | [Contribution review bots](#contribution-review-bots-configcontribution-review-bots) |
 | Per-run overrides and tuning | [Environment variables](#environment-variables) |
@@ -98,6 +99,7 @@ Each effective `FM_HOME` contains private operational directories.
 - Learnings, backlog, briefs, scout reports, optional task status archives, and the optional per-task no-mistakes pipeline-spend ledger.
 - Explicitly installed content-addressed extension packages under `data/extensions/packages/`.
 - Failure-class records under `data/failure-classes/` ([`claim-ledger.md`](claim-ledger.md)).
+- Durable captain orders and holds under `data/orders/` (`bin/fm-order.sh`).
 
 `state/` holds runtime records:
 
@@ -111,6 +113,7 @@ Each effective `FM_HOME` contains private operational directories.
 - Per-task steering-inbox records under `state/<id>.inbox/` (`bin/fm-task-inbox-lib.sh`).
 - Parent-owned secondmate pending-reply records under `state/pending-replies/` (`bin/fm-pending-reply-lib.sh`).
 - Per-task claim ledgers, `state/<id>.claims.jsonl` ([`claim-ledger.md`](claim-ledger.md)).
+- The current captain handle, `state/captain-handle`, that order senders resolve at send time, and this session's handoff record, `state/.order-handoff`, that the restart gate reads (`bin/fm-order.sh`).
 
 `config/` holds local gitignored operating choices, including explicit extension bindings under `config/extensions.d/`.
 
@@ -496,6 +499,15 @@ A window set only in managed settings or a `--settings` launch flag also needs t
 
 The trigger runs only in a genuine primary home, including a marked secondmate home, and stays inert in worker worktrees and under other harnesses that load Claude's settings.
 It never writes the handoff, compacts, or restarts the session.
+
+The same hook enforces the captain-order restart gate at each Stop of a session that is handing off: the trigger fired in this context cycle, or the session ran `bin/fm-order.sh handoff --doc` (stow, a restart, or `percent-left=0`).
+It blocks such a stop once per turn while the recorded handoff document omits an open captain order, and it never gates an ordinary stop.
+The handoff record belongs to the session that wrote it, so another session's stop in the same home is never gated by it.
+A caller outside any harness session, such as a restarting leash or sender, reads the record as the captain's, so its `bin/fm-order.sh gate` check clears when the captain's handoff lists every open order.
+The gate has limits: it runs only for a Claude primary, so a non-Claude primary, or a home with no resolvable auto-compact window that never runs `handoff --doc`, is not gated.
+Open orders there stay durable and appear in the next session's digest.
+A new context (startup, resume, clear, or compact) clears the recorded handoff, so the gate never reads a document written before that context opened.
+`bin/fm-order.sh` owns the gate.
 `bin/fm-handoff-trigger.sh` owns the measurement and the once-per-cycle record, with coverage in [`tests/fm-handoff-trigger.test.sh`](../tests/fm-handoff-trigger.test.sh); [runtime-backends verification](verification/runtime-backends.md#claude-early-handoff-trigger) records the Claude Code evidence.
 
 ## Backlog backend (.tasks.toml / config/backlog-backend)
@@ -515,6 +527,7 @@ Do not register a Beads `types.custom` `captain` type for this: captain is a hol
 When the automatic transition gate applies, dispatch and completion each move the work item in the same run that creates or removes its task record.
 The ordinary successful path therefore keeps the backlog and live task set in sync ([`bin/fm-backlog-transition-lib.sh`](../bin/fm-backlog-transition-lib.sh)).
 Under that gate, dispatch accepts only an unheld, unblocked Queued or In flight item in this home; a missing, Done, held, or dependency-blocked item is refused before any endpoint or local copy is created.
+A relaunch of an existing task also accepts its held In flight item, reuses the recorded local copy, and leaves the hold in force; `bin/fm-control.sh relaunch` checks this before it stops the old agent.
 
 [`bin/fm-tasks-axi.sh`](../bin/fm-tasks-axi.sh) refuses `add --start` and its `create --start` alias.
 Either would place a row In flight without a task record, status file, or inbox, counting it as live work that nobody is doing.
@@ -737,6 +750,10 @@ Selecting any other supervisor backend, including `zellij`, `cmux`, or `tern`, r
 
 See [`wedge-alarm.md`](wedge-alarm.md) for away and quiet alert behavior, channels, overrides, defaults, failure handling, verification, and a copyable config.
 
+## Assistant watchdog (config/watchdog)
+
+See [`watchdog.md`](watchdog.md) for the watched homes, symptoms, action ladder, restart proof, hard boundaries, model fallback, status file, and every `config/watchdog` key.
+
 ## Trace context propagation (config/trace-context / FM_TRACE_CONTEXT)
 
 The optional local, gitignored `config/trace-context` presence flag enables default-off native W3C trace-context propagation.
@@ -812,9 +829,17 @@ Dry-run records would-pause events without interrupting a worker or opening a bu
 Enforce asks the existing lifecycle control plane to interrupt a task once at its recorded stop line and opens one budget-stop decision with measured usage and the actual control result; later usage, including work after the decision is answered, is not interrupted again.
 The watcher checks allocations independently of ordinary busy, stale, paused, and away-mode triage.
 
-Only tasks launched with all four explicit budget flags in [`fm-spawn.sh`](../bin/fm-spawn.sh) have a recorded allocation; existing prose-only budgets are not parsed or retrofitted.
-Native counting supports Claude and Codex main sessions, preserves measured consumption across relaunch (an unmeasurable prior incarnation is reported and not carried), and excludes pipeline invocations, child sessions, and secondmate homes.
-Missing or ambiguous telemetry is visible as unknown rather than zero or an enforcement guarantee.
+A fresh ship, scout, or secondmate launched with all four explicit budget flags in [`fm-spawn.sh`](../bin/fm-spawn.sh) records an allocation, a secondmate records that allocation for its lane, and a child it starts receives a measurement binding without its own four limits.
+Existing prose-only budgets are not parsed or retrofitted.
+Native counting supports Claude and Codex, sums the secondmate with every child task and every sidechain or subagent log, preserves measured consumption across relaunch (an unmeasurable prior incarnation is reported and not carried), and excludes pipeline invocations.
+A launch from a capped secondmate home is refused at the recorded stop before any endpoint exists when the lane total is not strictly under that line.
+Missing or ambiguous telemetry stays unknown rather than zero, except a child whose session has not recorded usage yet, which counts as zero and is named pending.
+A mate session that is not yet identifiable refuses the launch rather than counting as zero.
+A torn-down child whose usage is still pending is folded as zero, and that undercount is accepted when usage appears only after teardown.
+A child on a harness with no native meter is named unmetered and counts as zero.
+A secondmate launched from a capped secondmate home is gated, bound and counted like any other child, together with every child and fold in its own home, and a launch from its home is also checked against the parent lane's stop.
+A remote secondmate is refused from a home with a lane budget, because a local lane cannot meter remote host logs.
+A Claude or Codex child whose usage is unknown at teardown is recorded as a folded unknown in the lane, and every later launch is refused naming it until an operator clears that entry; teardown keeps the child record only when the lane itself cannot be locked or written.
 Native counters arrive after charged work, so a stop can overshoot and an interrupt can remain unconfirmed.
 [`fm-task-budget.sh`'s header and help](../bin/fm-task-budget.sh) own counter definitions, executable interfaces, binding, attempt deduplication, and state mechanics.
 
@@ -1297,6 +1322,7 @@ gemini is likewise refused for secondmates because it has no primary supervision
 rovo is likewise verified for crewmate and scout launches ONLY, refused for a secondmate for the same reason - no turn-end hook and no primary supervision protocol; [`docs/verification/rovo.md`](verification/rovo.md) owns that evidence, including the OAuth token's silent background refresh from a stored refresh token and both tmux and herdr pane liveness (herdr placement is verified live, with a Herdr-side agent-detection gap left open for recovery classification).
 
 An agy secondmate or primary runs the tracked project-scope `.agents/hooks.json` in its own home, and `bin/fm-spawn.sh` pre-registers a secondmate home in agy's workspace trust store through `bin/fm-agy-trust.sh`; [`docs/supervision-protocols/agy.md`](supervision-protocols/agy.md) owns its supervision protocol and [`docs/verification/agy.md`](verification/agy.md) owns the evidence.
+For AGY's supported task kinds, backends, Treehouse requirements, and recovery rules, use the [AGY adapter reference](../.agents/skills/harness-adapters/references/harness/agy.md).
 devin is verified for crewmate and scout launches only; a secondmate is refused because Devin has no verified primary supervision protocol.
 
 Its private worker config disables Claude Code imports (including the captain's hooks) and, unless the home sets `config/keep-ai-trailers` (see "Commit attribution"), Devin commit attribution without editing user or project config; [`fm-devin-config.sh`](../bin/fm-devin-config.sh) owns these enforced settings and [Devin verification](verification/devin.md) owns the live evidence and observed model availability.
@@ -1332,7 +1358,7 @@ Enabled primary-session turn-end guard integrations are tracked as repo-level ho
 Kimi remains outside the primary turn-end guard integrations; [`docs/turnend-guard.md`](turnend-guard.md#compatibility-limits) owns its separate captain-approved crew wake hook.
 Primary-session watcher wake protocols are rendered at session start by [`bin/fm-supervision-instructions.sh`](../bin/fm-supervision-instructions.sh) from [`docs/supervision-protocols/`](supervision-protocols/).
 
-Claude's Stop `asyncRewake` hook owns tokenless re-arm cycles, Cursor's stop hook parks on the watcher, Grok uses background-notify cycles, Codex uses bounded foreground checkpoints, Pi and pi-signed use the same two tracked primary extensions, omp uses its own two tracked `.omp/extensions/` files with a blocking `session_stop` turn-end hook, and OpenCode uses its TUI plugin.
+Claude's Stop `asyncRewake` hook owns tokenless re-arm cycles, Cursor's stop hook parks on the watcher, Grok uses background-notify cycles, Codex lets the Stop hook re-arm a persistent watcher or end the turn, Pi and pi-signed use the same two tracked primary extensions, omp uses its own two tracked `.omp/extensions/` files with a blocking `session_stop` turn-end hook, and OpenCode uses its TUI plugin.
 
 ### Choose the worker harness
 
@@ -1393,7 +1419,8 @@ For grok, `fm-spawn.sh` installs one firstmate-owned global turn-end hook under 
 For Kimi crews, `fm-spawn.sh` runs `fm-kimi-turnend-hook.sh install`, drops a per-task `.fm-kimi-turnend` pointer in the worktree, and records the matching private registry token for teardown.
 
 Kimi continues to use the captain's normal Kimi home, including the existing config, skills, and memory; Firstmate does not create an isolated Kimi home.
-The Kimi installer requires an existing regular non-symlink `~/.kimi-code/config.toml`, `python3` with `tomllib`, and `jq`; it validates but never serializes the captain's TOML and refuses before writing when the config is missing, malformed, or surprising or when either tool requirement is unavailable.
+The Kimi installer requires an existing regular non-symlink `~/.kimi-code/config.toml`, a Python 3.11 or newer with `tomllib`, and `jq`; it validates but never serializes the captain's TOML and refuses before writing when the config is missing, malformed, or surprising or when either tool requirement is unavailable.
+[`fm-kimi-turnend-hook.sh --help`](../bin/fm-kimi-turnend-hook.sh) owns which interpreters it searches, in which order, when the default `python3` lacks `tomllib`.
 
 Its `remove` action excises only the marker-delimited Firstmate region and removes Firstmate's hook files.
 For Pi and pi-signed secondmate launches, `fm-spawn.sh` starts the selected executable with `-e` pointed at the secondmate home's own tracked `.pi/extensions/fm-primary-pi-watch.ts` and `.pi/extensions/fm-primary-turnend-guard.ts`, both already present from the secondmate home's git worktree, plus the parent home's `state/<id>.pi-ext.ts` busy extension.
@@ -3259,12 +3286,14 @@ FM_HEARTBEAT_MAX=7200   # heartbeat backoff cap
 FM_HEARTBEAT_SNAPSHOT_TIMEOUT=30   # seconds bounding the fleet snapshot read inside bin/fm-heartbeat.sh; invalid or zero values use 30
 FM_HEARTBEAT_READ_TIMEOUT=3        # seconds bounding each primary and per-task read inside bin/fm-heartbeat.sh; invalid or zero values use 3
 FM_HEARTBEAT_NM_TIMEOUT=2          # seconds bounding each no-mistakes query inside bin/fm-heartbeat.sh; invalid or zero values use 2
+FM_HEARTBEAT_QUOTA_TIMEOUT=10      # seconds bounding the one quota-axi read inside bin/fm-heartbeat.sh; invalid or zero values use 10
 FM_HEARTBEAT_DEADLINE=90           # seconds after which bin/fm-heartbeat.sh starts no new task reads and publishes unknown rows for the rest; invalid or zero values use 90
 FM_INACTIVE_RECONCILE_SECS=900  # 60..1800-second watcher cadence and inactivity threshold; locked session start also requests an immediate scan in the deferred worker
 FM_INACTIVE_RECONCILE_BUDGET_SECS=10  # 1..30-second scan deadline; wedged-scan kill backstop follows one second later
 FM_CHECK_INTERVAL=300   # seconds between slow checks (authenticated merge polls, custom checks, or Relay dispatch)
 FM_TASK_INBOX_GRACE_SECS=90   # seconds an unhandled steering-inbox message may sit before the watcher attempts doorbell delivery on an idle endpoint; also the minimum spacing between attempts
 FM_TASK_INBOX_RING_MAX=3      # watcher delivery attempts without an acknowledgement before the task surfaces as a stale wake for recovery
+FM_TASK_INBOX_SECONDMATE_ESCALATE_SECS=300   # seconds an unhandled firstmate instruction may sit for a secondmate before the watcher reports it stale once without another interrupt (the record stays on the doorbell ladder and automatic recovery); invalid or empty values use 300
 FM_TASK_INBOX_BUSY_MAX=2      # consecutive busy-deferred due polls before a stuck-busy stale wake; 1..999999999, at most 9 decimal digits, otherwise 2; policy: bin/fm-task-inbox-lib.sh
 FM_CHECK_TIMEOUT=30     # seconds allowed per slow check script
 FM_MAIL_CHECK_BUDGET=15   # seconds allowed for one standing mail poll; valid 5..25, cut to fit FM_CHECK_TIMEOUT

@@ -84,6 +84,7 @@ data/                personal fleet records; LOCAL, gitignored as a whole
   <id>/report.md     scout task deliverable, written by the crewmate; survives teardown
   <id>/status.log <id>/status.<N>.log <id>/children/<child>/...  optional teardown archives; see docs/architecture.md "Task status archives"
   pipeline-spend.jsonl  optional per-task no-mistakes pipeline spend, written only when config/pipeline-spend is present; bin/fm-pipeline-spend.sh owns the schema
+  orders/            durable captain orders and holds, their event log, and the sweep lock; bin/fm-order.sh owns the lifecycle
   failure-classes/<key>.jsonl  append-only failure-class records from refuted claims, one file per class, shared by every task; docs/claim-ledger.md owns the schema
 projects/            cloned repos; gitignored; read-only except under hard rule 1's concrete captain-approved project operation exception
 state/               runtime records and signals; gitignored
@@ -103,9 +104,12 @@ state/               runtime records and signals; gitignored
   <id>.git-hooks/    per-task git hooksPath that strips AI commit trailers at the commit object unless config/keep-ai-trailers is present; written by fm-spawn, removed by teardown (bin/fm-git-strip-ai-trailers.sh)
   <id>.reconcile-nudged  epoch second of the last inventory-reconcile nudge sent to this secondmate; bin/fm-secondmate-reconcile.sh owns its per-home cooldown window
   <id>.backlog-close  the exact backlog transition a teardown recorded before removing the task's record, so an interrupted cleanup can still be finished at the next session start; bin/fm-backlog-transition-lib.sh owns its format and replay, and a landed transition removes it
+  captain-handle .order-handoff .order-sweep  the current captain terminal that order senders resolve at send time, the recorded handoff the restart gate reads, and the watcher's order-sweep throttle stamp; bin/fm-order.sh owns the handle and record
+  launch-charter.md  a secondmate home's launch copy of its charter with the standing captain holds appended; written by bin/fm-spawn.sh, so the charter itself never changes
   <id>.inbox/          durable steering inbox: sequenced firstmate instruction records the worker acknowledges by moving them into its handled/ subdirectory; written by fm-send, with ordinary records re-rung and escalated by the watcher while explicit fire-and-forget records are excluded from that ladder, and removed by teardown (bin/fm-task-inbox-lib.sh)
   <id>.meta          task metadata; each producer script's header owns its exact fields and mutation contract, with docs/configuration.md routing operator-facing backend and trace-context details
   <id>.budget <id>.budget-diagnostic  native task-budget binding, counters, stop-line episode and interrupt attempt, plus the deduplicated unknown-telemetry note; written only by bin/fm-task-budget.sh, which owns their format; removed by teardown
+  lane-budget .lane-budget.lock  a budgeted secondmate home's lane allocation, torn-down child folds and folded-unknown children, plus its lock; written by fm-spawn and bin/fm-task-budget.sh, which owns the format
   .rex-mark-<id> .rex-progress-<id> .rex-tint-<id>  opt-in Rex attention-mark, validation-progress, and tint caches written by bin/fm-rex-marks.sh so a sync writes only on change; never task or endpoint authority; see docs/rex-backend.md "Attention marks"
   <id>.herdr-presentation  quarantinable attempt and restart-binding journal for Herdr's optional visual projection; never task or endpoint authority; see docs/herdr-backend.md "Presentation spaces"
   <id>.check.sh      authenticated slow poll; the watcher dispatches validated PR data and the byte-identified Relay shim through trusted repository scripts, runs registered custom checks from hash-validated private snapshots, and rejects every other state check without execution

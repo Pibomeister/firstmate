@@ -48,14 +48,14 @@ This is why `$no-mistakes` reaches a Codex worker instead of being consumed by t
 
 The primary integration was verified on 2026-07-08 with codex-cli 0.142.1.
 The firstmate primary's `.codex/hooks.json` registers a Stop hook that pipes Codex's payload to `../../../bin/fm-turnend-guard.sh`.
-Codex Stop hooks preserve exit status 2 and stderr to block; the guard runs in Codex mode, whose held-checkpoint loop rules [`turnend-guard.md`](../../../../../docs/turnend-guard.md#codex-mode) owns.
+Codex Stop hooks preserve exit status 2 and stderr to block; the guard runs in Codex mode, whose stop rules [`turnend-guard.md`](../../../../../docs/turnend-guard.md#codex-mode) owns.
 
 The Stop payload includes `cwd`, but the tracked hook does not use it to choose the guard executable.
 Codex runs the Stop command with process PWD set to the hook-loaded project root, while no `CODEX_PROJECT_DIR`, `CODEX_WORKSPACE_ROOT`, or `CODEX_CWD` root variable is set.
 The tracked hook anchors to `pwd -P`, verifies that root is Firstmate-shaped and hook-bearing, and then invokes the guard with the original payload.
 
-Codex's default primary watcher protocol is `../../../bin/fm-watch-checkpoint.sh --seconds "${FM_CODEX_WATCH_CHECKPOINT:-180}"`, not `../../../bin/fm-watch-arm.sh`.
+Codex's primary watcher owner is the Stop hook: it detaches a persistent watcher or lets the turn end.
 The local tmux or Herdr secondmate exception uses an identity-bound watcher outside the turn; [`turnend-guard.md`](../../../../../docs/turnend-guard.md#codex-mode) owns that handoff and its supported ownership modes.
-Codex cannot reason while a foreground tool call is running, so the checkpoint is deliberately foreground and bounded to return control regularly for user messages and queued notifications.
-In a home with `config/supervision-host` and no `config/supervision-host-off` the checkpoint runs the supervision host instead of the watcher, with Claude's print mode as its headless engine, and holds for at least an hour while away; [`supervision-host.md`](../../../../../docs/supervision-host.md) owns the host and that bound.
+Poll a checkpoint only while one this session already started is still running.
+In a home with `config/supervision-host` and no `config/supervision-host-off` a foreground `../../../bin/fm-watch-checkpoint.sh` runs the supervision host instead of the watcher, with Claude's print mode as its headless engine, and holds for at least an hour while away; [`supervision-host.md`](../../../../../docs/supervision-host.md) owns the host and that bound.
 Codex's PreToolUse watcher-arm seatbelt blocks directly through its project hook.

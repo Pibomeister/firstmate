@@ -93,6 +93,8 @@
 #   ORCA proves it by still describing the recorded terminal as closed with no
 #   agent left working in the recorded worktree (a rebound Orca terminal is
 #   created inside the task's recorded Orca worktree).
+#   After Droid's separate stop proof, a closed terminal also rebinds; only a
+#   connected, writable terminal is adopted, and any other terminal refuses.
 #   A tmux rebind re-creates the window on the recorded socket and refuses when
 #   this process addresses another tmux server. An endpoint that turns out
 #   to have survived refuses too. The worktree is reused untouched either way; a
@@ -108,10 +110,13 @@
 #   positional harness arg still works for back-compat.
 #   --budget-inclusive-hard, --budget-inclusive-stop, --budget-fresh-hard, and
 #   --budget-fresh-stop each take a positive whole token count, exactly once and
-#   all together. Stops may not exceed hard caps. These ship/scout-only options
-#   publish budget_* metadata before launch; relaunch keeps the recorded budget.
-#   A budgeted relaunch folds final native usage before replacing its source
-#   binding; unknown prior usage is reported and not carried, never blocking launch.
+#   all together. Stops may not exceed hard caps. A fresh ship, scout, or
+#   secondmate may set them; relaunch keeps the recorded budget. A secondmate
+#   records the lane allocation and each child is measured against that lane
+#   without its own four limits. A child launch is refused before any endpoint
+#   exists when the lane total is not strictly under a recorded stop. A budgeted
+#   relaunch folds final native usage before replacing its source binding;
+#   unknown prior usage is reported and not carried, never blocking launch.
 #   Native usage and watcher enforcement are owned by bin/fm-task-budget.sh.
 #   --model <name> and --effort <low|medium|high|xhigh|max|ultra> are concrete profile
 #   axes chosen by firstmate at intake. They are only threaded into harnesses whose
@@ -221,7 +226,8 @@
 #   owns the claim and bin/fm-teardown.sh owns what it protects. A slot that
 #   cannot be claimed refuses the spawn rather than launching a worker whose slot
 #   could later be released out from under its successor. A spawn that aborts
-#   while it still holds the allocation lock drops its own claim; an abort after
+#   while it still holds the allocation lock drops its own claim, except for
+#   AGY's retained custody described below; an abort after
 #   metadata publication has released that lock leaves the claim in place, and
 #   the next spawn's claim replaces it. A fresh polytoken spawn that fails and
 #   leaves no task record restores the pool as it found it: it retakes that lock
@@ -232,6 +238,18 @@
 #   fm_firstmate_root_home resolves, so a home seeded from another machine anchors
 #   that lock itself rather than failing to resolve one;
 #   contention refuses rather than waits.
+#   AGY acquires a durable task lease in the spawning process, so allocation,
+#   custody, and return resolve the same Treehouse pool even when the endpoint
+#   shell has another HOME or TREEHOUSE_ROOT. Its capability preflight requires
+#   get --lease --lease-holder, lease --lease-holder, status --json, and
+#   return --if-lease-holder before endpoint creation. A pooled relaunch from
+#   or to AGY repeats that preflight before reserving its recorded checkout;
+#   fm-control.sh also runs it before stopping the old worker. Before metadata
+#   publication, an abort closes the unused endpoint and returns the lease only
+#   when the checkout is provably clean. Dirty or uninspectable work keeps its
+#   lease and claim, with a warning to preserve the work before manual return.
+#   A failed return also retains the claim. tests/fm-agy-harness.test.sh covers
+#   unpublished cleanup and preservation, including staged and untracked work.
 #   Project capacity: when this machine declares how many workers a project
 #   admits at once (config/project-capacity; bin/fm-project-capacity-lib.sh owns
 #   the declaration, what holds a place, and the race argument), a fresh ship or
@@ -635,6 +653,9 @@
 # screen-scrape fallback like grok and rovo, while an agy SECONDMATE runs the
 # tracked project-scope .agents/hooks.json in its own home, whose stop-hook park
 # owns that home's supervision (docs/supervision-protocols/agy.md).
+# The readiness gate is proven only on tmux and Herdr, so every other backend
+# is refused before anything launches. The AGY adapter reference owns published-record
+# recovery and custody rules (.agents/skills/harness-adapters/references/harness/agy.md).
 # cursor installs no per-task hook either: it writes state/<id>.cursor-session to
 # bind the pane to cursor's own conversation transcript (projects root, the exact
 # workspace path cursor records in .workspace-trusted, and the conversations that
@@ -698,7 +719,10 @@
 # unheld, unblocked Queued or In flight item for the id; a transition that fails
 # after publication removes the record it just wrote rather than leaving a
 # worker the backlog does not own. A relaunch re-reads the row instead of
-# re-running the transition, so an eligible In-flight item is left untouched.
+# re-running the transition, so an eligible In-flight item is left untouched;
+# it also admits a held In-flight item and leaves that hold in place, while a
+# fresh dispatch of a held item still refuses
+# (fm_backlog_row_relaunchable owns the rule).
 # The transition is
 # skipped entirely for --secondmate spawns (persistent agents are not work
 # items), on a config/backlog-backend=manual home, and in a markdown home that
@@ -1136,10 +1160,17 @@ done
   exit 1
 }
 if [ -n "$BUDGET_SEEN" ]; then
-  [ "$RELAUNCH" = 0 ] && [ "$KIND" != secondmate ] || {
+  if [ "$RELAUNCH" != 0 ]; then
     echo 'error: budget options apply only to fresh ship/scout spawns' >&2
     exit 1
-  }
+  fi
+  case "$KIND" in
+    ship|scout|secondmate) ;;
+    *)
+      echo 'error: budget options apply only to a fresh ship, scout, or secondmate' >&2
+      exit 1
+      ;;
+  esac
   "$SCRIPT_DIR/fm-task-budget.sh" validate "$BUDGET_IH" "$BUDGET_IS" "$BUDGET_FH" "$BUDGET_FS" || exit 1
 fi
 [ "$HARNESS_SET" -eq 0 ] || [ -n "$HARNESS_ARG" ] || {
@@ -1326,6 +1357,12 @@ spawn_remote_secondmate() {
     fm_lock_release "$SPAWN_TASK_LOCK" || true
     return 3
   fi
+  if [ -e "$STATE/lane-budget" ] || [ -L "$STATE/lane-budget" ]; then
+    fm_lock_release "$registry_lock" || true
+    fm_lock_release "$SPAWN_TASK_LOCK" || true
+    echo "error: remote secondmate $id cannot launch from a home with a lane budget; a local lane budget cannot meter remote host logs" >&2
+    return 1
+  fi
   host=$(secondmate_registry_field "$DATA/secondmates.md" "$id" host)
   root=$(secondmate_registry_field "$DATA/secondmates.md" "$id" root)
   home=$(secondmate_registry_field "$DATA/secondmates.md" "$id" home)
@@ -1492,6 +1529,9 @@ spawn_remote_secondmate() {
     remote_traceparent=$(FM_TRACE_CONTEXT=on fm_trace_context_resolve "$CONFIG" "$meta" || true)
   fi
   launch_args=("$id" "$harness" "$model" "$effort" "$backend")
+  if [ -n "$BUDGET_IH" ]; then
+    launch_args+=("budget=${BUDGET_IH}:${BUDGET_IS}:${BUDGET_FH}:${BUDGET_FS}")
+  fi
   [ -z "$remote_traceparent" ] || launch_args+=("$remote_traceparent")
   if out=$("$SCRIPT_DIR/fm-on.sh" "$id" fm-remote-secondmate-control.sh launch \
     "${launch_args[@]}" </dev/null 2>&1); then
@@ -1627,6 +1667,7 @@ SPAWN_TASK_SET_LOCK_HELD=0
 SPAWN_TREEHOUSE_PROJECT_LOCK=
 SPAWN_TREEHOUSE_PROJECT_LOCK_HELD=0
 SPAWN_SLOT_CLAIMED=0
+SPAWN_SLOT_RESERVED=0
 SPAWN_FRESH_ENDPOINT_OPENED=0
 SPAWN_FRESH_WIRING_PENDING=0
 SPAWN_TASK_TMP_CREATED=0
@@ -1643,6 +1684,14 @@ SPAWN_ENDPOINT_CLOSED=0
 SPAWN_STAGED_LAUNCH_FILE=
 
 spawn_fresh_commit_rollback() {
+  if [ "${HARNESS:-}" = agy ] && [ -f "$STATE/$ID.meta" ] && [ ! -L "$STATE/$ID.meta" ]; then
+    SPAWN_FRESH_COMMIT_PENDING=0
+    if declare -F spawn_commit_backlog_transition >/dev/null && ! spawn_commit_backlog_transition; then
+      echo "warning: the kept AGY record's backlog item could not be moved to In flight ($FM_BACKLOG_TRANSITION_ERROR)" >&2
+    fi
+    echo "warning: keeping task $ID's published AGY record and worktree for relaunch or teardown" >&2
+    return 0
+  fi
   if fm_backlog_atomic_transition rollback "$STATE/$ID.meta" \
     "$FM_ROOT/bin/fm-busy-event.sh" "$STATE" "$ID" "${BUSY_GEN:-}"; then
     SPAWN_FRESH_COMMIT_PENDING=0
@@ -1842,14 +1891,12 @@ spawn_abort_cleanup() {
     SPAWN_META_LOCK_HELD=0
     fm_lock_release "$SPAWN_META_LOCK" || true
   fi
-  # A fresh polytoken spawn that fails and leaves no record must leave the pool
-  # as it found it. Before its launch is delivered, the endpoint it opened holds nothing but
-  # the shell whose `treehouse get` leases the slot, so closing it returns the
-  # slot to the pool and leaves no window or tab for a retry to trip over; the
-  # Firstmate wiring, task temp root, and staged launch file it wrote go with it.
+  # Before launch delivery, an unpublished AGY or polytoken endpoint holds only
+  # a shell, so closing it cannot interrupt a worker. AGY's lease handling
+  # follows the custody contract in the header, independently of endpoint close.
   # Once a launch was delivered into an endpoint still open, a worker may be
-  # running there, so those stay for the operator, as the refusal says.
-  if [ "$status" -ne 0 ] && [ "${HARNESS:-}" = polytoken ] &&
+  # running there, so its wiring and task files stay for the operator.
+  if [ "$status" -ne 0 ] && { [ "${HARNESS:-}" = polytoken ] || [ "${HARNESS:-}" = agy ]; } &&
     { [ "$SPAWN_FRESH_ENDPOINT_OPENED" = 1 ] || [ "$SPAWN_FRESH_WIRING_PENDING" = 1 ] ||
       [ "$SPAWN_TASK_TMP_CREATED" = 1 ] || [ -n "$SPAWN_STAGED_LAUNCH_FILE" ]; } &&
     [ "$RELAUNCH" -eq 0 ] &&
@@ -1892,20 +1939,28 @@ spawn_abort_cleanup() {
       fi
     fi
   fi
-  # A spawn that aborts after claiming its slot but before its record survives
-  # must not leave a claim naming a task no record describes. The release is a
-  # read-then-remove, so it runs only while the project lock that wrote the
+  # An unpublished slot claim is released under the header's custody contract.
+  # The claim release is a read-then-remove, so it runs only while the project lock that wrote the
   # claim is still held (aborts before metadata publication); a later abort has
   # already released that lock and leaves the claim for the next spawn's
   # atomic replacement rather than racing it. A polytoken spawn instead retakes
   # that lock once for a later failure whose record was rolled back. The
   # release itself never removes another task's claim.
-  if [ "$SPAWN_SLOT_CLAIMED" = 1 ] && [ -n "${WT:-}" ] &&
+  if { [ "$SPAWN_SLOT_CLAIMED" = 1 ] || [ "$SPAWN_SLOT_RESERVED" = 1 ]; } && [ -n "${WT:-}" ] &&
     [ ! -e "$STATE/$ID.meta" ] && [ ! -L "$STATE/$ID.meta" ] &&
     fm_treehouse_pool_slot "$PROJ_ABS" "$WT"; then
     SPAWN_SLOT_CLAIMED=0
     if [ "$SPAWN_TREEHOUSE_PROJECT_LOCK_HELD" = 1 ]; then
-      fm_treehouse_slot_owner_release "$WT" "$ID" || true
+      local abort_slot_status
+      if [ "$SPAWN_SLOT_RESERVED" = 1 ] &&
+        { ! abort_slot_status=$(git -C "$WT" status --porcelain 2>/dev/null) || [ -n "$abort_slot_status" ]; }; then
+        echo "warning: $WT stays leased to $ID because it is dirty or could not be inspected; preserve its work, then release it with 'treehouse return $WT --if-lease-holder $ID --force' from $PROJ_ABS" >&2
+      elif [ "$SPAWN_SLOT_RESERVED" = 0 ] ||
+        (cd "$PROJ_ABS" && treehouse return "$WT" --if-lease-holder "$ID" --force); then
+        fm_treehouse_slot_owner_release "$WT" "$ID" || true
+      else
+        echo "warning: could not return unpublished task $ID's reserved slot $WT; its claim is retained" >&2
+      fi
     elif [ "${HARNESS:-}" = polytoken ] && [ -n "$SPAWN_TREEHOUSE_PROJECT_LOCK" ] &&
       fm_lock_try_acquire "$SPAWN_TREEHOUSE_PROJECT_LOCK"; then
       fm_treehouse_slot_owner_release "$WT" "$ID" || true
@@ -2478,11 +2533,29 @@ if [ "$RELAUNCH" -eq 1 ]; then
       echo "error: Orca Droid relaunch has no current-generation SessionEnd proof or connected owned-shell absence proof with its process gone; refusing a duplicate agent" >&2
       exit 1
     }
-    fm_backend_target_exists orca "$RELAUNCH_TARGET" "fm-$ID" || {
+    # Readability does not prove usability: Orca can still read a closed
+    # terminal after terminal_stop_unverifiable, but sends to it fail.
+    RELAUNCH_DROID_FACTS=$(fm_backend_orca_terminal_facts "$RELAUNCH_TARGET") || {
       echo "error: Orca Droid's recorded terminal cannot be re-read after its absence proof; refusing to guess whether it can be adopted" >&2
       exit 1
     }
-    RELAUNCH_STATE=dead
+    IFS=$'\037' read -r RELAUNCH_DROID_READ RELAUNCH_DROID_CONNECTED _ RELAUNCH_DROID_HOST _ RELAUNCH_DROID_WT RELAUNCH_DROID_WRITABLE <<FACTS
+$RELAUNCH_DROID_FACTS
+FACTS
+    if [ "$RELAUNCH_DROID_READ" != ok ] || [ "$RELAUNCH_DROID_HOST" != local ] \
+       || [ -z "$RELAUNCH_DROID_WT" ] \
+       || [ "$(fm_backend_orca_physical_dir "$RELAUNCH_DROID_WT")" != "$(fm_backend_orca_physical_dir "$(fm_meta_get "$RELAUNCH_META" worktree)")" ]; then
+      echo "error: Orca Droid's recorded terminal is not proven local and bound to its worktree after its absence proof; refusing to rebind or adopt it" >&2
+      exit 1
+    fi
+    case "$RELAUNCH_DROID_CONNECTED:$RELAUNCH_DROID_WRITABLE" in
+      true:true) RELAUNCH_STATE=dead ;;
+      false:false) RELAUNCH_STATE=missing ;;
+      *)
+        echo "error: Orca Droid's recorded terminal is not proven writable or closed after its absence proof; refusing to rebind or adopt it" >&2
+        exit 1
+        ;;
+    esac
   fi
   case "$RELAUNCH_STATE" in
     dead) ;;
@@ -3181,6 +3254,25 @@ fi
 if [ "$HARNESS" = cortex ] && [ "$BACKEND" != tmux ] && [ "$BACKEND" != herdr ]; then
   echo "error: cortex is verified on the tmux and herdr backends only; backend=$BACKEND cannot prove its composer empty. Select backend tmux or herdr." >&2
   exit 1
+fi
+
+# agy's launch readiness gate (agy_wait_for_working) reads the trust dialog and
+# the pinned busy row from the backend's pane capture, which is proven per
+# backend rather than assumed (docs/verification/agy.md owns the evidence).
+# Orca's stream read never showed agy 1.4.10 busy while it was working, so the
+# gate timed out on a live worker. Refuse an unproven backend here, before any
+# worktree, endpoint, task record, or remote model fetch exists.
+if [ "$HARNESS" = agy ] && [ "$BACKEND" != tmux ] && [ "$BACKEND" != herdr ]; then
+  echo "error: agy launch readiness is live-verified on the tmux and herdr backends only; backend=$BACKEND cannot prove the brief started. Select backend tmux or herdr." >&2
+  exit 1
+fi
+if [ "$HARNESS" = agy ]; then
+  if [ "$RELAUNCH" -eq 0 ]; then
+    fm_treehouse_require_agy_custody || exit 1
+  fi
+  trap 'exit 129' HUP
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
 fi
 
 # config/crew-exclude-tools (header above): refuse before worker provisioning
@@ -4129,6 +4221,22 @@ if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ] &&
   fi
   SPAWN_TREEHOUSE_PROJECT_LOCK_HELD=1
 fi
+if [ "$RELAUNCH" -eq 1 ] && [ "$KIND" != secondmate ] &&
+  { [ "$HARNESS" = agy ] || [ "$RELAUNCH_PRIOR_HARNESS" = agy ]; } &&
+  fm_treehouse_pool_slot "$PROJ_ABS" "$RELAUNCH_WT"; then
+  fm_treehouse_require_agy_custody || exit 1
+  SPAWN_TREEHOUSE_PROJECT_LOCK=$(fm_treehouse_project_lock_path "$PROJ_ABS") || exit 1
+  fm_lock_try_acquire "$SPAWN_TREEHOUSE_PROJECT_LOCK" || {
+    echo "error: another Treehouse slot allocation or return is in progress for $PROJ_ABS; refusing to race it" >&2
+    exit 1
+  }
+  SPAWN_TREEHOUSE_PROJECT_LOCK_HELD=1
+  fm_treehouse_slot_require_owner "$RELAUNCH_WT" "$ID" || exit 1
+  fm_treehouse_slot_reserve "$PROJ_ABS" "$RELAUNCH_WT" "$ID" || {
+    echo "error: could not reserve task $ID's pool slot $RELAUNCH_WT; refusing to relaunch without durable custody" >&2
+    exit 1
+  }
+fi
 if [ -n "$SPAWN_PROJECT_CAPACITY" ]; then
   if ! fm_project_capacity_occupants "$SPAWN_TREEHOUSE_PROJECT_LOCK" "$PROJ_ABS" "$STATE" "$ID"; then
     echo "error: spawn refused: project $(basename "$PROJ_ABS") declares a capacity of $SPAWN_PROJECT_CAPACITY, but this machine's task records cannot all be read to count it ($FM_PROJECT_CAPACITY_ERROR)" >&2
@@ -4139,6 +4247,10 @@ if [ -n "$SPAWN_PROJECT_CAPACITY" ]; then
     exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
   fi
 fi
+# A secondmate home's lane total is the mate plus every child, nested
+# secondmates included. Refuse a new child before any endpoint exists when that
+# total is already at a stop.
+"$SCRIPT_DIR/fm-task-budget.sh" prelaunch "$FM_HOME" || exit 1
 [ -f "$BRIEF" ] || {
   echo "error: task $ID has no brief at inaccessible data path $BRIEF" >&2
   exit 1
@@ -4200,8 +4312,13 @@ if [ "$KIND" = ship ] || [ "$KIND" = scout ]; then
   SOURCE_BRIEF=$BRIEF
   BRIEF="$DATA/$ID/launch-brief.md"
   BRIEF_TMP="$DATA/$ID/.launch-brief.md.${BASHPID:-$$}"
-  if [ -n "$BUDGET_IH" ] || { [ "$RELAUNCH" -eq 1 ] && [ -n "$(fm_meta_get "$RELAUNCH_META" budget_inclusive_hard)" ]; }; then
-    BUDGET_LAUNCH_MARKER="FM_BUDGET_LAUNCH_$(python3 -c 'import secrets; print(secrets.token_hex(16))')" || exit 1
+  if [ -z "$BUDGET_LAUNCH_MARKER" ]; then
+    if [ -n "$BUDGET_IH" ] \
+      || { [ "$RELAUNCH" -eq 1 ] && [ -n "$(fm_meta_get "$RELAUNCH_META" budget_inclusive_hard)" ]; } \
+      || { [ "$RELAUNCH" -eq 1 ] && [ -n "$(fm_meta_get "$RELAUNCH_META" budget_launch_marker)" ]; } \
+      || { [ -f "$STATE/lane-budget" ] && [ ! -L "$STATE/lane-budget" ]; }; then
+      BUDGET_LAUNCH_MARKER="FM_BUDGET_LAUNCH_$(python3 -c 'import secrets; print(secrets.token_hex(16))')" || exit 1
+    fi
   fi
   {
     fm_brief_worker_role "$STATE" "$ID" "$FM_ROOT" &&
@@ -4395,6 +4512,35 @@ if [ "$KIND" = ship ]; then
   fi
 fi
 
+# Standing captain holds travel with every relayed order (bin/fm-order.sh owns
+# holds): the launch text carries this home's holds in force. A worker's
+# private launch brief gets the block appended; a secondmate launches from a
+# copy of its charter with the block, written to its home's state/, so the
+# charter itself is never changed. When holds may exist but cannot be read,
+# nothing is launched, because work without its limits is what holds prevent.
+if [ -d "$DATA/orders" ]; then
+  if ! SPAWN_HOLDS=$(FM_HOME="$FM_HOME" "$SCRIPT_DIR/fm-order.sh" holds --relay 2>/dev/null); then
+    echo "error: could not read this home's standing captain holds (bin/fm-order.sh holds --relay); $ID was not launched" >&2
+    exit 1
+  fi
+  if [ -n "$SPAWN_HOLDS" ]; then
+    if [ "$KIND" = secondmate ]; then
+      SPAWN_HELD_BRIEF="$PROJ_ABS/state/launch-charter.md"
+      if ! { mkdir -p "$PROJ_ABS/state" &&
+        { cat "$BRIEF" && printf '\n%s\n' "$SPAWN_HOLDS"; } >"$SPAWN_HELD_BRIEF.tmp.$$" &&
+        mv "$SPAWN_HELD_BRIEF.tmp.$$" "$SPAWN_HELD_BRIEF"; }; then
+        rm -f -- "$SPAWN_HELD_BRIEF.tmp.$$"
+        echo "error: could not write the charter launch copy with standing holds at $SPAWN_HELD_BRIEF; $ID was not launched" >&2
+        exit 1
+      fi
+      BRIEF=$SPAWN_HELD_BRIEF
+    elif ! printf '\n%s\n' "$SPAWN_HOLDS" >>"$BRIEF"; then
+      echo "error: could not add the standing holds to $BRIEF; $ID was not launched" >&2
+      exit 1
+    fi
+  fi
+fi
+
 BRIEF_DIR_REAL=$(cd "$(dirname "$BRIEF")" && pwd -P)
 BRIEF_REAL="$BRIEF_DIR_REAL/$(basename "$BRIEF")"
 
@@ -4497,7 +4643,7 @@ spawn_worktree_isolated() { # <path>
 }
 
 # spawn_endpoint_hint: the operator pointer for a pre-launch refusal. Only a
-# fresh polytoken spawn closes its endpoint on abort, so only it points away
+# fresh AGY or polytoken spawn closes its endpoint on abort, so only those point away
 # from the window; every other harness keeps the plain inspect pointer.
 spawn_endpoint_closes_on_abort() {
   [ "$SPAWN_FRESH_ENDPOINT_OPENED" = 1 ] && [ "$SPAWN_LAUNCH_SENT" = 0 ]
@@ -4765,6 +4911,11 @@ if fm_backlog_transition_applies "$CONFIG" "$DATA" "$KIND"; then
   if [ "$RELAUNCH" -ne 1 ] && [ "$spawn_preflight_actor" = branch ] && fm_lease_away_relocated; then
     if [ "$BACKLOG_ROW_STATE" != "queued no no" ]; then
       echo "error: spawn refused - the supervision branch under the away-posture record may dispatch only queued unblocked work (already queued, or filed by the branch from the captain's away words); task $ID has no dispatchable backlog item in this home" >&2
+      exit 1
+    fi
+  elif [ "$RELAUNCH" -eq 1 ]; then
+    if ! fm_backlog_row_relaunchable "$BACKLOG_ROW_STATE"; then
+      echo "error: this home's backlog item $ID cannot take a relaunched worker in state $BACKLOG_ROW_STATE; refusing before creating its endpoint or local copy" >&2
       exit 1
     fi
   elif ! fm_backlog_row_dispatchable "$BACKLOG_ROW_STATE"; then
@@ -5343,9 +5494,10 @@ EOF
     ;;
   esac
   # Orca and the Herdr projection own their own abort cleanup above; every other
-  # endpoint a fresh polytoken spawn opened is closed by spawn_abort_cleanup when
+  # endpoint a fresh AGY or polytoken spawn opened is closed by spawn_abort_cleanup when
   # the spawn ends with no record before its launch is delivered.
-  if [ "$HARNESS" = polytoken ] && [ "$BACKEND" != orca ] && [ "${HERDR_PROJECTED:-0}" -ne 1 ]; then
+  if { [ "$HARNESS" = polytoken ] || [ "$HARNESS" = agy ]; } &&
+    [ "$BACKEND" != orca ] && [ "${HERDR_PROJECTED:-0}" -ne 1 ]; then
     SPAWN_FRESH_ENDPOINT_OPENED=1
   fi
 fi
@@ -5491,16 +5643,46 @@ kimi_ready_signal_is_present() { # <plain-pane-capture>
   kimi_composer_is_empty
 }
 
+# Failed-gate cleanup can close the endpoint, so preserve readiness evidence
+# before returning: the Kimi version, the poll counts, each missing element,
+# and the last non-empty visible capture, in the task's data directory.
+# The refusal detail names that record's path and reports a failed write.
+kimi_ready_refusal() { # <missing-lines> <last-pane> <last-poll> <polls> <max> <trust-enters>
+  local record="$DATA/$ID/kimi-readiness-refusal.txt" version=''
+  [ -z "${KIMI_BIN:-}" ] ||
+    version=$(fm_run_timed 5 "$KIMI_BIN" --version </dev/null 2>/dev/null | head -n 1) || version=''
+  if mkdir -p "$DATA/$ID" 2>/dev/null && {
+    printf 'kimi readiness refusal at=%s\n' "$(date +%s)"
+    printf 'kimi=%s version=%s\n' "${KIMI_BIN:-unknown}" "${version:-unknown}"
+    printf 'backend=%s target=%s\n' "$BACKEND" "$T"
+    printf 'polls=%s of %s, trust_enters=%s\n' "$4" "$5" "$6"
+    printf 'detail=%s\n' "$KIMI_READY_FAILURE_DETAIL"
+    printf 'missing:\n'
+    printf '%s\n' "$1" | sed '/^$/d; s/^/- /'
+    if [ -n "$2" ]; then
+      printf 'last visible capture (poll %s):\n%s\n' "$3" "$2"
+    else
+      printf 'last visible capture: none (every poll read an empty viewport)\n'
+    fi
+  } >"$record" 2>/dev/null; then
+    KIMI_READY_FAILURE_DETAIL="$KIMI_READY_FAILURE_DETAIL; last visible capture and missing elements recorded at $record"
+  else
+    KIMI_READY_FAILURE_DETAIL="$KIMI_READY_FAILURE_DETAIL; the last visible capture could not be recorded at $record"
+  fi
+}
+
 kimi_wait_for_ready() {
   local pane capture_rc i=0 max=${FM_KIMI_READY_POLLS:-60} interval=${FM_KIMI_POLL_INTERVAL:-0.5}
   local trust_enters=0 trust_seen=0 trust_still_visible=0 trust_markers_pending=0
-  local ready_captures=0
+  local ready_captures=0 last_pane='' last_poll=0 missing
+  local ready_signal="verified ready signal: the 'Welcome to Kimi Code!' banner or an empty composer on two consecutive captures free of trust dialog text"
   KIMI_READY_FAILURE_DETAIL='kimi did not show a verified ready signal before brief delivery'
   while [ "$i" -lt "$max" ]; do
     capture_rc=0
     pane=$(kimi_visible_capture) || capture_rc=$?
     if [ "$capture_rc" -ne 0 ]; then
       KIMI_READY_FAILURE_DETAIL="kimi readiness could not read the visible viewport of backend '$BACKEND' (viewport capture exited $capture_rc), so the trust dialog could neither be answered nor ruled out"
+      kimi_ready_refusal "readable visible viewport (capture exited $capture_rc)" "$last_pane" "$last_poll" "$((i + 1))" "$max" "$trust_enters"
       return 1
     fi
     if [ -z "$pane" ]; then
@@ -5509,15 +5691,19 @@ kimi_wait_for_ready() {
       [ "$i" -ge "$max" ] || sleep "$interval"
       continue
     fi
+    last_pane=$pane
+    last_poll=$((i + 1))
     # Both refusals come before the complete-dialog test on purpose: the
     # announcing prompt and the paged prompt are complete dialogs, and the
     # only thing that keeps Enter off them is deciding here first.
     if kimi_pane_announces_project_mcp_servers "$pane"; then
       KIMI_READY_FAILURE_DETAIL="kimi's folder prompt announces project MCP servers, so Firstmate did not answer it and did not send the brief; answering would start those servers without a consent decision that covers them. Remove the project MCP servers this directory declares (the prompt's Config line names the file), or wait for a later consent design."
+      kimi_ready_refusal "folder prompt without project MCP servers" "$last_pane" "$last_poll" "$((i + 1))" "$max" "$trust_enters"
       return 1
     fi
     if kimi_trust_prompt_is_paged "$pane"; then
       KIMI_READY_FAILURE_DETAIL="kimi's folder prompt pages what trusting would activate, so Firstmate could not read all of it and did not answer it; give the worker pane more rows and relaunch."
+      kimi_ready_refusal "unpaged folder prompt disclosure" "$last_pane" "$last_poll" "$((i + 1))" "$max" "$trust_enters"
       return 1
     fi
     if kimi_trust_dialog_is_visible "$pane"; then
@@ -5532,6 +5718,7 @@ kimi_wait_for_ready() {
       # once it clears, this branch cannot fire again.
       if ! spawn_send_key "$T" Enter; then
         KIMI_READY_FAILURE_DETAIL="kimi trust dialog was seen but the affirmative selection could not be submitted"
+        kimi_ready_refusal "accepted Enter key for the complete trust dialog" "$last_pane" "$last_poll" "$((i + 1))" "$max" "$trust_enters"
         return 1
       fi
       trust_enters=$((trust_enters + 1))
@@ -5557,13 +5744,17 @@ kimi_wait_for_ready() {
     i=$((i + 1))
     [ "$i" -ge "$max" ] || sleep "$interval"
   done
+  missing=$ready_signal
   if [ "$trust_still_visible" -eq 1 ]; then
     KIMI_READY_FAILURE_DETAIL="kimi trust dialog did not clear after submitting the affirmative selection on $trust_enters poll(s); saw 'Trust this folder?', the navigation hint, a selected affirmative option, and a negative option"
+    missing="trust dialog dismissal after $trust_enters Enter key(s)"
   elif [ "$trust_seen" -eq 1 ]; then
     KIMI_READY_FAILURE_DETAIL="kimi trust dialog was answered but the pane never advanced to a verified ready signal; saw 'Trust this folder?', the navigation hint, a selected affirmative option, and a negative option"
   elif [ "$trust_markers_pending" -eq 1 ]; then
-    KIMI_READY_FAILURE_DETAIL="kimi did not show a verified ready signal before brief delivery; trust dialog text stayed on screen without the complete dialog, so the pane was never safe to answer or to treat as ready"
+    missing=$(kimi_trust_dialog_missing "$last_pane")
+    KIMI_READY_FAILURE_DETAIL="kimi did not show a verified ready signal before brief delivery; trust dialog text stayed on screen without the complete dialog (missing: ${missing//$'\n'/; }), so the pane was never safe to answer or to treat as ready"
   fi
+  kimi_ready_refusal "$missing" "$last_pane" "$last_poll" "$i" "$max" "$trust_enters"
   return 1
 }
 
@@ -5674,8 +5865,8 @@ rovo_spawn_fail() { # <detail>
 # cleared and neither the abort trap nor a teardown owns this endpoint yet,
 # so a gate failure must
 # close the launched process here or it keeps running as an orphaned
-# autonomous agent outside task control: the rollback that follows a failed
-# spawn removes the only durable record that names it. Mirrors
+# autonomous agent outside task control: for harnesses other than AGY, the
+# rollback after a proven close removes the durable record that names it. Mirrors
 # fm-teardown.sh's own generic kill call. On orca only the exact terminal is
 # closed: that stops the CLI while its worktree stays for the record's own
 # teardown, which owns worktree deletion.
@@ -5687,6 +5878,8 @@ rovo_spawn_fail() { # <detail>
 # for a close command that failed after being accepted, and orca reports
 # failure only for a close its missing CLI never attempted, so no status of
 # theirs can prove the endpoint gone: their close stays unproven either way.
+# AGY retains its record even after a proven close; its adapter reference owns
+# that recovery rule.
 # When the close stays unproven the rollback must NOT run: keeping the
 # provisional task record keeps the possibly surviving worker named for
 # recovery, the same accountability the orca abort path keeps through its
@@ -5717,13 +5910,17 @@ spawn_gate_endpoint_cleanup() {
       kill_unproven=1
       ;;
   esac
-  [ "$kill_unproven" -eq 0 ] && return 0
+  [ "$kill_unproven" -eq 0 ] && [ "$HARNESS" != agy ] && return 0
   SPAWN_FRESH_COMMIT_PENDING=0
   if [ "$RELAUNCH" -eq 0 ] && [ "$BACKLOG_TRANSITION" = 1 ] &&
     ! spawn_commit_backlog_transition; then
     echo "warning: the kept record's backlog item could not be moved to In flight ($FM_BACKLOG_TRANSITION_ERROR), so its row still reads Queued while its record stays - reconcile the record and its backlog item by hand" >&2
   fi
-  echo "warning: the endpoint $T of this failed spawn could not be proven closed; keeping its provisional task record so a possibly surviving worker stays named for recovery" >&2
+  if [ "$kill_unproven" -eq 1 ]; then
+    echo "warning: the endpoint $T of this failed spawn could not be proven closed; keeping its provisional task record so a possibly surviving worker stays named for recovery" >&2
+  else
+    echo "warning: closed the endpoint $T of this failed spawn and kept task $ID's record; recover it with 'bin/fm-control.sh $ID relaunch --note \"<what happened>\"' or clean it up with 'bin/fm-teardown.sh $ID'" >&2
+  fi
 }
 
 # OpenCode 2 takes its brief on the launch command (--prompt), but some 2.x
@@ -6139,7 +6336,13 @@ elif [ "$RELAUNCH" -eq 1 ]; then
   [ "$KIND" = secondmate ] || validate_spawn_worktree "relaunch" "$T"
 elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
   # A t3code slot was leased and validated in its target branch above.
-  if [ "$BACKEND" != t3code ]; then
+  if [ "$HARNESS" = agy ]; then
+    WT=$(cd "$PROJ_ABS" && treehouse get --lease --lease-holder "$ID") || {
+      echo "error: could not acquire a durable Treehouse worktree for task $ID; refusing to launch" >&2
+      exit 1
+    }
+    SPAWN_SLOT_RESERVED=1
+  elif [ "$BACKEND" != t3code ]; then
     spawn_send_text_line "$WT_TARGET" 'treehouse get'
 
     # Wait for the treehouse subshell: the pane's cwd moves from the project to the worktree.
@@ -6199,6 +6402,9 @@ elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
       exit 1
     fi
 
+  fi
+
+  if [ "$BACKEND" != t3code ]; then
     if spawn_endpoint_closes_on_abort; then
       validate_spawn_worktree "treehouse get" "$WT ($(spawn_endpoint_hint))"
     else
@@ -6206,10 +6412,8 @@ elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
     fi
   fi
 
-  # Claim the pool slot for this task. The interactive `treehouse get` sent to
-  # the pane above records only a process lease (Treehouse's durable
-  # `get --lease --lease-holder`, which bin/fm-home-seed.sh uses for secondmate
-  # homes, is not this path), so Treehouse cannot say which task a slot belongs
+  # Claim the pool slot for this task. A non-AGY interactive `treehouse get` sent to
+  # the pane above records only a process lease, so Treehouse cannot say which task a slot belongs
   # to once that task's worker exits - and that is exactly when the slot is
   # handed on and this task's worktree= line goes stale. The claim is what lets
   # bin/fm-teardown.sh leave a slot that has since been reassigned untouched, so
@@ -7237,7 +7441,7 @@ fi
 SPAWN_GEN="s$(date +%s).${BASHPID:-$$}.$RANDOM"
 SPAWN_BUDGET_RECORD=
 BUDGET_PRIOR=-
-if [ "$RELAUNCH" = 1 ] && [ "$KIND" != secondmate ]; then
+if [ "$RELAUNCH" = 1 ] && [ -z "$BUDGET_IH" ]; then
   BUDGET_IH=$(fm_meta_get "$RELAUNCH_META" budget_inclusive_hard)
   if [ -n "$BUDGET_IH" ]; then
     BUDGET_IS=$(fm_meta_get "$RELAUNCH_META" budget_inclusive_stop)
@@ -7247,6 +7451,9 @@ if [ "$RELAUNCH" = 1 ] && [ "$KIND" != secondmate ]; then
   fi
 fi
 if [ -n "$BUDGET_IH" ]; then
+  if [ -z "$BUDGET_LAUNCH_MARKER" ]; then
+    BUDGET_LAUNCH_MARKER="FM_BUDGET_LAUNCH_$(python3 -c 'import secrets; print(secrets.token_hex(16))')" || exit 1
+  fi
   BUDGET_LOG_ROOT=
   case "$HARNESS" in
     claude) BUDGET_LOG_ROOT=${CLAUDE_CONFIG_DIR:-${HOME:-}/.claude}/projects ;;
@@ -7254,6 +7461,70 @@ if [ -n "$BUDGET_IH" ]; then
   esac
   SPAWN_BUDGET_RECORD=$("$SCRIPT_DIR/fm-task-budget.sh" seed "$BUDGET_PRIOR" "$HARNESS" "$WT" "$BUDGET_LOG_ROOT" \
     "$BUDGET_LAUNCH_MARKER" "$BUDGET_IH" "$BUDGET_IS" "$BUDGET_FH" "$BUDGET_FS") || exit 1
+elif [ -f "$STATE/lane-budget" ] && [ ! -L "$STATE/lane-budget" ]; then
+  if [ "$RELAUNCH" = 1 ] && [ -n "$(fm_meta_get "$RELAUNCH_META" budget_launch_marker)" ]; then
+    BUDGET_PRIOR=$RELAUNCH_META
+  fi
+  if [ -z "$BUDGET_LAUNCH_MARKER" ]; then
+    BUDGET_LAUNCH_MARKER="FM_BUDGET_LAUNCH_$(python3 -c 'import secrets; print(secrets.token_hex(16))')" || exit 1
+  fi
+  BUDGET_LOG_ROOT=
+  case "$HARNESS" in
+    claude) BUDGET_LOG_ROOT=${CLAUDE_CONFIG_DIR:-${HOME:-}/.claude}/projects ;;
+    codex) BUDGET_LOG_ROOT=${CODEX_HOME:-${HOME:-}/.codex}/sessions ;;
+  esac
+  SPAWN_BUDGET_RECORD=$("$SCRIPT_DIR/fm-task-budget.sh" bind "$HARNESS" "$WT" "$BUDGET_LOG_ROOT" \
+    "$BUDGET_LAUNCH_MARKER" "$BUDGET_PRIOR") || exit 1
+fi
+if [ "$KIND" = secondmate ] && [ -n "$SPAWN_BUDGET_RECORD" ]; then
+  lane="$PROJ_ABS/state/lane-budget"
+  if [ -L "$lane" ]; then
+    echo "error: lane budget is a symlink" >&2
+    exit 1
+  fi
+  lane_lock="$PROJ_ABS/state/.lane-budget.lock"
+  if ! fm_lock_acquire_wait_max "$lane_lock" 30; then
+    echo "error: lane budget is locked" >&2
+    exit 1
+  fi
+  folded=
+  if [ -f "$lane" ]; then
+    folded=$(awk -F= '
+      $1 == "budget_folded_inclusive" || $1 == "budget_folded_fresh" || $1 == "budget_folded_children" || $1 == "budget_folded_unknown" {
+        kept[$1] = substr($0, index($0, "=") + 1)
+      }
+      END {
+        if ("budget_folded_inclusive" in kept) print "budget_folded_inclusive=" kept["budget_folded_inclusive"]
+        if ("budget_folded_fresh" in kept) print "budget_folded_fresh=" kept["budget_folded_fresh"]
+        if ("budget_folded_children" in kept) print "budget_folded_children=" kept["budget_folded_children"]
+        if ("budget_folded_unknown" in kept) print "budget_folded_unknown=" kept["budget_folded_unknown"]
+      }
+    ' "$lane") || {
+      fm_lock_release "$lane_lock" || true
+      exit 1
+    }
+  fi
+  lane_tmp="$PROJ_ABS/state/.lane-budget.${BASHPID:-$$}"
+  {
+    echo "kind=secondmate"
+    echo "harness=$HARNESS"
+    echo "worktree=$WT"
+    echo "home=$PROJ_ABS"
+    echo "spawn_gen=$SPAWN_GEN"
+    if [ -f "$STATE/lane-budget" ] && [ ! -L "$STATE/lane-budget" ]; then
+      echo "budget_parent_home=$FM_HOME"
+    fi
+    printf '%s\n' "$SPAWN_BUDGET_RECORD"
+    [ -z "$folded" ] || printf '%s\n' "$folded"
+  } >"$lane_tmp" || {
+    fm_lock_release "$lane_lock" || true
+    exit 1
+  }
+  mv -f "$lane_tmp" "$lane" || {
+    fm_lock_release "$lane_lock" || true
+    exit 1
+  }
+  fm_lock_release "$lane_lock" || true
 fi
 SPAWN_META_PATH="$STATE/$ID.meta"
 if [ "$SPAWN_META_LOCK_HELD" != 1 ]; then
@@ -7400,7 +7671,11 @@ spawn_commit_backlog_transition() {
   # the ordinary error plumbing (bin/fm-backlog-transition-lib.sh's
   # fm_tasks_axi) instead of holding that lock open ended.
   FM_TASKS_AXI_TIMEOUT=${FM_TASKS_AXI_TIMEOUT:-30}
-  fm_backlog_atomic_transition dispatch "$STATE/$ID.meta" "$DATA" "$ID" "$STATE"
+  if [ "$RELAUNCH" -eq 1 ]; then
+    fm_backlog_atomic_transition dispatch "$STATE/$ID.meta" "$DATA" "$ID" "$STATE" relaunch
+  else
+    fm_backlog_atomic_transition dispatch "$STATE/$ID.meta" "$DATA" "$ID" "$STATE"
+  fi
 }
 
 # The deferred-signal exit path's preservation report. A claim about preserved
@@ -7428,6 +7703,10 @@ spawn_report_preserved_state() {
     SPAWN_PRESERVED_CLAIM="verified preserved: its paired task record is present and its backlog item is In flight"
     return 0
   fi
+  if [ "$RELAUNCH" -eq 1 ] && [ "$FM_BACKLOG_ROW_STATE" = "in_flight yes no" ]; then
+    SPAWN_PRESERVED_CLAIM="verified preserved: its paired task record is present and its backlog item is In flight, still held"
+    return 0
+  fi
   # The commit reported success, but the row does not read back In flight:
   # move it now under the same lock and verify the result before naming it.
   fm_backlog_start "$DATA" "$ID" || repair_error=$FM_BACKLOG_TRANSITION_ERROR
@@ -7450,6 +7729,8 @@ if [ "$RELAUNCH" -eq 1 ]; then
   RELAUNCH_REPLACEMENT_PENDING=0
   SPAWN_META_PUBLISH_STARTED=0
   SPAWN_META_TMP=
+  rm -f -- "$STATE_REAL/$ID.droid-session-end" ||
+    echo "warning: could not retire the prior Droid stop marker of $ID; it names a retired generation, so it proves nothing about the replacement" >&2
 fi
 # A dispatch or relaunch keeps the per-task meta lock through launch delivery.
 # The backlog mutation is deliberately the final fallible commit below, so
@@ -7471,6 +7752,17 @@ fi
 "$SCRIPT_DIR/fm-home-summary-refresh.sh" --best-effort || true
 [ "$BACKEND" = orca ] && ORCA_ABORT_CLEANUP=0 && ORCA_REBIND_ABORT_CLOSE=0
 
+if [ "$KIND" = secondmate ] && [ -n "$BUDGET_LAUNCH_MARKER" ]; then
+  budget_brief="$STATE/.$ID.budget-launch-brief"
+  {
+    printf '%s\n\n' "$BUDGET_LAUNCH_MARKER"
+    cat "$BRIEF"
+  } >"$budget_brief" || {
+    echo "error: could not write the budget launch brief for $ID" >&2
+    exit 1
+  }
+  BRIEF=$budget_brief
+fi
 sq_brief=$(shell_quote "$BRIEF")
 sq_turnend=$(shell_quote "$TURNEND")
 sq_piext=$(shell_quote "$STATE/$ID.pi-ext.ts")
@@ -7606,6 +7898,17 @@ case "$LAUNCH" in
     # Spawn still owns the task metadata lock; no reader or worker can observe
     # this incarnation before its fingerprint is complete.
     printf 'budget_launch_fingerprint=%s\n' "$budget_fingerprint" >> "$STATE/$ID.meta" || exit 1
+    if [ "$KIND" = secondmate ] && [ -f "$PROJ_ABS/state/lane-budget" ] && [ ! -L "$PROJ_ABS/state/lane-budget" ]; then
+      fm_lock_acquire_wait_max "$PROJ_ABS/state/.lane-budget.lock" 30 || {
+        echo "error: lane budget is locked" >&2
+        exit 1
+      }
+      printf 'budget_launch_fingerprint=%s\n' "$budget_fingerprint" >> "$PROJ_ABS/state/lane-budget" || {
+        fm_lock_release "$PROJ_ABS/state/.lane-budget.lock" || true
+        exit 1
+      }
+      fm_lock_release "$PROJ_ABS/state/.lane-budget.lock" || true
+    fi
   fi
   LAUNCH=${LAUNCH//__BRIEFDOORBELL__/"$(shell_quote "$brief_doorbell")"}
   ;;
@@ -8158,7 +8461,10 @@ else
 fi
 if [ "$SPAWN_BACKLOG_COMMIT_STATUS" -ne 0 ]; then
   if [ "$RELAUNCH" -eq 0 ]; then
-    if spawn_fresh_commit_rollback; then
+    if [ "$HARNESS" = agy ]; then
+      SPAWN_FRESH_COMMIT_PENDING=0
+      echo "error: task $ID's backlog item could not be moved to In flight ($FM_BACKLOG_TRANSITION_ERROR); its AGY record and worktree are preserved for recovery" >&2
+    elif spawn_fresh_commit_rollback; then
       echo "error: task $ID's backlog item could not be moved to In flight ($FM_BACKLOG_TRANSITION_ERROR); its record was removed so no worker is left that the backlog does not own - close out endpoint $T and local copy $WT by hand, then re-run the spawn" >&2
     else
       echo "error: task $ID's backlog item could not be moved to In flight ($FM_BACKLOG_TRANSITION_ERROR), and failed-dispatch cleanup is incomplete; the provisional record may remain at $STATE/$ID.meta - close out endpoint $T and local copy $WT by hand, then remove the record and busy state before retrying" >&2

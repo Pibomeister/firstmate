@@ -174,7 +174,8 @@ Each home atomically publishes that bounded home summary with freshness epoch me
 The fleet snapshot and Bearings paths use the concurrent remote-ledger collection, cache, unreadable-home disclosure, and remote-liveness boundary owned by `bin/fm-fleet-snapshot.sh`'s header.
 `bin/fm-fleet-view.sh` renders that snapshot as Markdown for humans, while `bin/fm-bearings-snapshot.sh` provides the bounded bearings projection, so both views consume one structured contract instead of reparsing raw fleet files.
 The script header owns the exact JSON schema.
-Each watcher poll also starts `bin/fm-heartbeat.sh --write` detached and single-flight, so no read can hold a poll; it enriches that snapshot with git, no-mistakes, inbox, terminal, and transcript facts and atomically publishes `state/heartbeat.json`, reporting an unread field as unknown instead of guessing.
+Each watcher poll also starts `bin/fm-heartbeat.sh --write` detached and single-flight, so no read can hold a poll; it enriches that snapshot with git, no-mistakes, inbox, terminal, and transcript facts and with weekly model allowance left, and atomically publishes `state/heartbeat.json`, reporting an unread field as unknown instead of guessing.
+That allowance is model allowance left, and no trust-score owner exists.
 That script's header owns the document and its bounds.
 
 On a Pi primary, supervision is default-on: the watcher extension can hand eligible task-local rows from an ordinary actionable wake, plus selected fleet-wide heartbeat reviews, to a persistent in-process supervision conversation while main-only rows remain on the captain-facing path.
@@ -197,7 +198,7 @@ Live GitHub enrichment exists only behind the bearings `--include-prs` opt-in.
 Optional Relay integrates with the watcher only after explicit opt-in; [configuration.md](configuration.md#relay-env) owns its generated-artifact and dispatch mechanics.
 
 At session start, `bin/fm-session-start.sh` emits exactly one primary-harness supervision block rendered by `bin/fm-supervision-instructions.sh` from `docs/supervision-protocols/`.
-That block owns the live wait shape for the running primary harness: Claude's Stop `asyncRewake` hook owns tokenless re-arm cycles, Cursor's stop hook parks on the watcher, Grok uses background-notify cycles, Codex uses bounded foreground checkpoints except for the local tmux or Herdr secondmate route [`turnend-guard.md`](turnend-guard.md#codex-mode) owns, Pi and pi-signed use the same two tracked primary extensions, omp uses its own two tracked `.omp/extensions/` files, OpenCode uses its TUI plugin, and [Muse has a tracked background-task protocol](supervision-protocols/muse.md).
+That block owns the live wait shape for the running primary harness: Claude's Stop `asyncRewake` hook owns tokenless re-arm cycles, Cursor's stop hook parks on the watcher, Grok uses background-notify cycles, Codex lets the Stop hook re-arm a persistent watcher or end the turn (the local tmux or Herdr secondmate route is the exception [`turnend-guard.md`](turnend-guard.md#codex-mode) owns), Pi and pi-signed use the same two tracked primary extensions, omp uses its own two tracked `.omp/extensions/` files, OpenCode uses its TUI plugin, and [Muse has a tracked background-task protocol](supervision-protocols/muse.md).
 `bin/fm-watch-arm.sh` remains the verified arm wrapper for protocols that call it; it forks the watcher as a tracked child, verifies it is genuinely alive with a fresh liveness beacon, and prints an honest `started`, `attached`, or nonzero `FAILED` status.
 [`watcher-continuity.md`](watcher-continuity.md#arm-layer-cycle-contract) owns the arm layer's successor, terminal-delivery, re-arm recovery, and typed clean-close failure contract.
 The arm layer records one bounded lifecycle row per observed cycle in `state/.watch-cycle-exits.log`; `state/.watch-triage.log` remains exclusively the absorbed-wake debug log.
@@ -357,10 +358,13 @@ Placement is proven only at launch, so `bin/fm-spawn.sh` also delivers the task 
 ## No-mistakes gate authority boundary
 
 Firstmate's own no-mistakes gate runs agents inside a checkout that also contains the fleet-captain identity in `AGENTS.md`, so gate execution needs an authority boundary separate from ordinary crewmate worktree isolation.
-The tracked `.no-mistakes.yaml` sets `disable_project_settings: true`; no-mistakes honors that setting only from the trusted default-branch copy, so a pushed branch cannot enable its own project instructions during validation.
-Independently, the fleet lifecycle entrypoints use `bin/fm-gate-refuse-lib.sh` to refuse gate calls against the real fleet, while permitting validation against a disposable lab home minted by `bin/fm-lab-home.sh`.
+`bin/fm-gate-refuse-lib.sh` only refuses the fleet-lifecycle entrypoints (`fm-spawn`, `fm-send`, `fm-teardown`, and similar) when `NO_MISTAKES_GATE` is set or the path is a gate repo, while permitting validation against a disposable lab home minted by `bin/fm-lab-home.sh`.
+No-mistakes' HEAD-continuity guard only catches HEAD/branch drift.
+Anything else a gate agent does after reading `AGENTS.md` (`gh`, `git`, other non-lifecycle commands) is no longer contained, and the captain accepted that trade-off.
 A normal primary checkout or crewmate worktree remains unaffected.
-The refusal library's header owns the gate detection, lab-home exception, test-harness bypass, and relationship to no-mistakes' HEAD-continuity guard; the lab helper's header owns its usage.
+The refusal library's header owns the gate detection, lab-home exception, test-harness bypass, and exact caller list; the lab helper's header owns its usage.
+Removing `disable_project_settings` was the captain's deliberate choice to allow the Cursor (`acp:cursor`, Composer) gate agent, so gate agents now load `AGENTS.md`.
+Do not re-add that setting without switching the gate agent to codex, claude, pi, or acp:omp; otherwise it blocks the Cursor gate.
 
 ## Two task shapes
 

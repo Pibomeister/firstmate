@@ -238,6 +238,14 @@ test_forge_selection_renders_correct_cli() {
   brief="$home/data/brief-forge-default/brief.md"
   assert_grep "3. Use gh-axi for GitHub operations and chrome-devtools-axi for browser operations." "$brief" \
     "a brief with no --forge must render the exact pre-existing gh-axi Rule 3 line"
+  assert_grep "browser operations. Use agent-desktop for desktop-app E2E tests" "$brief" \
+    "a ship brief's Rule 3 must name agent-desktop for desktop-app E2E"
+  assert_grep "escalate a denied grant to firstmate, never grant it yourself." "$brief" \
+    "a ship brief's Rule 3 must escalate a denied macOS permission"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-forge-scout some-proj --scout >/dev/null 2>&1 \
+    || fail "a scout brief should scaffold"
+  assert_grep "3. Use gh-axi for GitHub operations and chrome-devtools-axi for browser operations. Use agent-desktop for desktop-app E2E tests" "$home/data/brief-forge-scout/brief.md" \
+    "a scout brief's Rule 3 must name agent-desktop for desktop-app E2E"
   # shellcheck disable=SC2016 # Backticks are literal generated brief text.
   assert_grep 'open a PR with `gh-axi`' "$brief" \
     "a direct-PR brief with no --forge must still tell the worker to open the PR with gh-axi"
@@ -249,6 +257,8 @@ test_forge_selection_renders_correct_cli() {
   brief="$home/data/brief-forge-forgejo/brief.md"
   assert_grep "3. Use tea for Forgejo operations and chrome-devtools-axi for browser operations." "$brief" \
     "--forge forgejo must render the tea Rule 3 line"
+  assert_grep "browser operations. Use agent-desktop for desktop-app E2E tests" "$brief" \
+    "--forge forgejo's Rule 3 must name agent-desktop for desktop-app E2E"
   # shellcheck disable=SC2016 # Backticks are literal generated brief text.
   assert_grep 'open a PR with `tea`' "$brief" \
     "--forge forgejo's direct-PR DOD must tell the worker to open the PR with tea"

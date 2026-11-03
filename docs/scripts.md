@@ -15,7 +15,7 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-startup-network.sh`  | Run session start's network checks and inactive-outcome scan off its blocking path, retaining reports and durable findings |
 | `fm-fleet-sync.sh`       | Refresh project clones with safe fast-forwards, self-heals, `STUCK:` reports, branch pruning, and bounded recovery from an orphaned `.git/packed-refs.lock` |
 | `fm-fleet-snapshot.sh`   | Print structured fleet snapshot JSON and refresh only its parent-side remote-ledger cache (schema `fm-fleet-snapshot.v1`) |
-| `fm-heartbeat.sh`        | Atomically publish the bounded self-watching ledger `state/heartbeat.json` (schema `fm-heartbeat.v1`); unread fields report unknown |
+| `fm-heartbeat.sh`        | Atomically publish the bounded self-watching ledger `state/heartbeat.json` (schema `fm-heartbeat.v1`); unread fields report unknown, including weekly model allowance when quota-axi cannot be read |
 | `fm-context-burn.sh`     | Record each turn's external until-auto-compact percent, from the pane footer or else the transcript formula, and name a long report by path and sha256 |
 | `fm-context-footer-lib.sh` | Parse the external auto-compact footer percent shared by the heartbeat ledger and the context-burn recorder |
 | `fm-home-summary-refresh.sh` | Atomically publish this home's structured summary ledger                         |
@@ -156,8 +156,10 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-tool-update-check.sh` | Report watched tooling with an update available, and updates installed but left inert by PATH order |
 | `fm-startup-growth-check.sh` | Daily metadata-only growth check for startup memory and tracked startup/instruction surfaces |
 | `fm-usage-warner.sh`     | Opt-in macOS threshold warner that notifies once when a configured Claude usage window crosses its percentage |
+| `fm-watchdog.sh`         | Opt-in per-machine assistant outside every session that detects stalled firstmates and second mates and nudges, settles, or restarts them within hard boundaries ([behavior](watchdog.md)) |
+| `fm-watchdog-lib.sh`     | Pure watchdog detectors for dialogs, timer loops, stall proof, guarded text, and the action ledger |
 | `fm-compact-point-lib.sh` | Compute a Claude session's percent left before auto-compact, shared by the handoff trigger and the context-burn recorder |
-| `fm-handoff-trigger.sh` | Claude hook that tells a primary session once per context cycle to write its handoff when context left before auto-compact reaches the threshold |
+| `fm-handoff-trigger.sh` | Claude hook that tells a primary session once per context cycle to write its handoff when context left before auto-compact reaches the threshold, and enforces the captain-order restart gate when that session stops |
 | `fm-pr-lib.sh`           | Own canonical task and PR validation, the branch-to-PR lookup shared by teardown and the PR health monitor, plus private atomic PR-poll publication, merge-notification identity, and retirement |
 | `fm-pr-poll.sh`          | Provide the byte-static watcher program for validated pull-request, merge-request, and Gerrit-change poll sidecars |
 | `fm-contributions.sh`    | Observe owned publications, retain exact-head judgments, measure required actors, and wake on maintainer or configured review-bot signals |
@@ -169,6 +171,7 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-pr-state.sh`         | Read-only: print one line per GitHub pull-request blocker it can see, reporting on checks that have reported rather than verdicting merge-readiness |
 | `fm-pr-reviewers.sh`     | Read-only: suggest reviewers from GitHub's own author mapping of recent commits on a pull request's changed files, never requesting one |
 | `fm-self-heal-issue.sh`  | Label and file a failure-class root-cause issue on an approved repository, or comment with new evidence on the open issue for that class |
+| `fm-secret-lib.sh`       | Shared credential-pattern detection for self-heal issue input and watchdog judge evidence |
 | `fm-merge-outcome-lib.sh` | Publish a confirmed merge's durable, role-routed supervision outcome                 |
 | `fm-merge-authority-lib.sh` | Resolve merge authority at the gate, persist it against the accepted canonical PR, and identity-check its later poll consumption |
 | `fm-parent-channel-lib.sh` | Resolve a secondmate home's parent channel and append a captain-facing outcome line to it at most once |
@@ -187,6 +190,7 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-public-followup.sh`  | Brief, reconcile, and deliver typed public commitments, surface refusals, then rechain or retire retained loops |
 | `fm-public-followup-emit.sh` | Validate and report one typed terminal work result into its owning home, or stage it when that home is remote |
 | `fm-public-followup-collect.sh` | Read and retire the typed terminal results a remote work home staged for the home that owes the public reply |
+| `fm-order.sh`            | Durable captain orders and holds: send, status, ack, finish, the handoff restart gate, and bounded re-delivery with escalation |
 | `fm-inbox.sh`            | The captain's out-of-band capture surface: queue a note (optionally idempotent by request id), announce or repair its wake, record a durable primary reply, and emit bounded receipts and primary-readiness JSON |
 | `fm-dispatch-log.sh`     | Append-only captain-goal intake ledger: record each goal as received, dispatched, queued, or blocked, mark late resolutions, and list goals past the 15-minute dispatch SLA |
 | [`fm-claims.sh`](../bin/fm-claims.sh) | Check the claims in a task's status log against git, the forge, no-mistakes, AgentKit, and the terminal, record each verdict in its claim ledger, and reopen a task whose claim is refuted ([contract](claim-ledger.md)) |

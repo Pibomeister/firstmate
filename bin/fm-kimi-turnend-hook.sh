@@ -12,6 +12,17 @@
 # touches a task turn-end marker only when the pointer names a Firstmate-created
 # token in $HOME/.kimi-code/fm-turn-end.d/.
 #
+# Validation needs Python 3.11 or newer for tomllib, which the default macOS
+# python3 (3.9) lacks, so the interpreter is searched in this fixed order and
+# the first one that imports tomllib runs install or remove:
+#   1. python3, then python3.14 down to python3.11, on PATH
+#   2. bin/python3, then bin/python3.14 down to bin/python3.11, under each
+#      Homebrew prefix: /opt/homebrew, then /usr/local
+#   3. uv-managed CPython, in glob order, under UV_PYTHON_INSTALL_DIR
+#      (default: ${XDG_DATA_HOME:-$HOME/.local/share}/uv/python)
+# When none qualifies, the refusal names every searched interpreter and why it
+# did not qualify, before any config write.
+#
 # Usage:
 #   fm-kimi-turnend-hook.sh install
 #   fm-kimi-turnend-hook.sh remove
@@ -22,7 +33,7 @@ set -u
 case "${1:-}" in
   install|remove) ACTION=$1 ;;
   -h|--help)
-    sed -n '2,18{s/^# \{0,1\}//;p;}' "$0"
+    sed -n '2,28{s/^# \{0,1\}//;p;}' "$0"
     exit 0
     ;;
   *)
@@ -35,8 +46,77 @@ if [ -z "${HOME:-}" ]; then
   printf 'fm-kimi-turnend-hook: refused: HOME is unset.\n' >&2
   exit 1
 fi
-if ! command -v python3 >/dev/null 2>&1; then
-  printf 'fm-kimi-turnend-hook: refused: python3 with tomllib is required to validate config.toml.\n' >&2
+KIMI_PYTHON=
+KIMI_PYTHON_TRIED=
+KIMI_PYTHON_REPORT=
+
+# Record one searched location's outcome for the refusal.
+kimi_python_note() { # <line>
+  KIMI_PYTHON_REPORT="$KIMI_PYTHON_REPORT  $1
+"
+}
+
+# Select <path> when it imports tomllib; otherwise record why it did not.
+kimi_python_try() { # <path> <label>
+  local version
+  case "
+$KIMI_PYTHON_TRIED" in *"
+$1
+"*) return 1 ;; esac
+  KIMI_PYTHON_TRIED="$KIMI_PYTHON_TRIED$1
+"
+  if "$1" -c 'import tomllib' >/dev/null 2>&1; then
+    KIMI_PYTHON=$1
+    return 0
+  fi
+  if version=$("$1" -c 'import sys; print("%d.%d.%d" % sys.version_info[:3])' 2>/dev/null) &&
+    [ -n "$version" ]; then
+    kimi_python_note "$1 ($2): Python $version, no tomllib"
+  else
+    kimi_python_note "$1 ($2): did not run"
+  fi
+  return 1
+}
+
+# The search order this header documents; the first qualifying interpreter
+# wins, so the same machine always selects the same one.
+kimi_python_select() {
+  local name path prefix candidate uv_root found_uv=0 missing='' prefixes='/opt/homebrew /usr/local'
+  for name in python3 python3.14 python3.13 python3.12 python3.11; do
+    if path=$(command -v "$name" 2>/dev/null) && [ -n "$path" ]; then
+      kimi_python_try "$path" "$name on PATH" && return 0
+    else
+      missing="$missing $name"
+    fi
+  done
+  [ -z "$missing" ] || kimi_python_note "not on PATH:$missing"
+  if [ "${FM_TEST_SEAM:-}" = 1 ]; then
+    prefixes=${FM_TEST_KIMI_PYTHON_PREFIXES-$prefixes}
+  fi
+  for prefix in $prefixes; do
+    missing=''
+    for name in python3 python3.14 python3.13 python3.12 python3.11; do
+      if [ -x "$prefix/bin/$name" ]; then
+        kimi_python_try "$prefix/bin/$name" Homebrew && return 0
+      else
+        missing="$missing $name"
+      fi
+    done
+    [ -z "$missing" ] || kimi_python_note "not in $prefix/bin:$missing"
+  done
+  uv_root=${UV_PYTHON_INSTALL_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/uv/python}
+  for candidate in "$uv_root"/cpython-3.*/bin/python3; do
+    [ -x "$candidate" ] || continue
+    found_uv=1
+    kimi_python_try "$candidate" uv-managed && return 0
+  done
+  [ "$found_uv" -ne 0 ] || kimi_python_note "$uv_root/cpython-3.*/bin/python3 (uv-managed): none installed"
+  return 1
+}
+
+if ! kimi_python_select; then
+  printf 'fm-kimi-turnend-hook: refused: no Python 3.11 or newer with tomllib was found to validate config.toml; searched interpreters:\n%s' "$KIMI_PYTHON_REPORT" >&2
+  printf '%s\n' "fm-kimi-turnend-hook: install Python 3.11 or newer (for example \"uv python install 3.12\" or \"brew install python\"), then retry." >&2
   exit 1
 fi
 if [ "$ACTION" = install ] && ! command -v jq >/dev/null 2>&1; then
@@ -44,7 +124,7 @@ if [ "$ACTION" = install ] && ! command -v jq >/dev/null 2>&1; then
   exit 1
 fi
 
-python3 - "$ACTION" "$HOME/.kimi-code" <<'PY'
+"$KIMI_PYTHON" - "$ACTION" "$HOME/.kimi-code" <<'PY'
 import os
 import re
 import shutil

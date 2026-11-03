@@ -4,6 +4,9 @@
 #   fm-task-budget.sh seed <prior-meta-or-dash> <harness> <worktree> <native-log-root> <launch-marker> <four-limits>
 #   fm-task-budget.sh measure <task-meta>  # JSON: ok totals, pending, or unknown with reason
 #   fm-task-budget.sh tick <task-meta> <config-dir> <home>
+#   fm-task-budget.sh prelaunch <home>
+#   fm-task-budget.sh fold-away <lane-budget> <child-meta>
+#   fm-task-budget.sh bind <harness> <worktree> <native-log-root> <launch-marker> <prior-meta-or-dash>
 # validate performs no writes; seed carries measured prior-incarnation usage
 # (or warns and carries none when it is unknown) and prints a fragment for
 # atomic task metadata publication.
@@ -19,7 +22,26 @@
 # Bind the main native session to its initial user-message launch marker,
 # canonical worktree and launch boundary;
 # Claude's canonical record doorbell instead binds by its SHA-256 fingerprint.
-# ambiguous, unsupported, corrupt, or missing telemetry is unknown, never zero.
+# ambiguous, unsupported, corrupt, or missing telemetry is unknown, never zero,
+# except a child whose session has not recorded usage yet, which counts as zero
+# and is named pending. A mate session that is not yet identifiable refuses a
+# launch rather than counting as zero.
+# A secondmate lane total adds that mate, its sidechain logs, every child task,
+# and usage folded when a child is torn down. prelaunch refuses a new child
+# when the lane total is already at a recorded stop. fold-away adds a torn-down
+# child's total once; a still-pending child is folded as zero. A child on a
+# harness with no native meter is named unmetered and counts as zero. A metered
+# child whose usage is unknown at teardown is recorded in budget_folded_unknown,
+# and prelaunch refuses naming it. fold-away fails only when the lane cannot be
+# locked or written, and teardown then keeps the child record.
+# A nested secondmate launched from a capped home is a child of that lane: its
+# session and its own home's children and folds join the parent total. A child
+# torn down inside that home, forced cleanup included, folds into that home's
+# lane; the nested secondmate folds into the parent lane only after its endpoint
+# is confirmed gone and just before its home is removed. Its home's lane
+# records budget_parent_home so a launch there is also checked against the
+# parent's stop. A remote secondmate cannot launch from a home with a lane
+# budget, and an existing remote child makes the lane unknown, naming its host.
 # The operator switch is documented in docs/configuration.md (budget-enforcement).
 set -eu
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -27,6 +49,40 @@ mode=${1:-}
 case "$mode" in
   -h|--help) sed -n '2,${/^#/!q;p;}' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
 esac
+if [ "$mode" = prelaunch ] || [ "$mode" = fold-away ]; then
+  if [ "$mode" = prelaunch ]; then
+    [ "$#" = 2 ] || exit 2
+    home=$2
+    lane="$home/state/lane-budget"
+    lock="$home/state/.lane-budget.lock"
+  else
+    [ "$#" = 3 ] || exit 2
+    lane=$2
+    child=$3
+    lock="$(dirname "$lane")/.lane-budget.lock"
+  fi
+  if [ ! -f "$lane" ] || [ -L "$lane" ]; then
+    exit 0
+  fi
+  # shellcheck source=bin/fm-wake-lib.sh
+  . "$SCRIPT_DIR/fm-wake-lib.sh"
+  if ! fm_lock_acquire_wait_max "$lock" 30; then
+    if [ "$mode" = prelaunch ]; then
+      echo "budget-prelaunch refuse unknown: lane budget is locked" >&2
+    else
+      echo "budget-unknown fold-away: lane budget is locked" >&2
+    fi
+    exit 1
+  fi
+  trap 'fm_lock_release "$lock"' EXIT
+  code=0
+  if [ "$mode" = prelaunch ]; then
+    python3 "$SCRIPT_DIR/fm-task-budget.py" prelaunch "$home" || code=$?
+  else
+    python3 "$SCRIPT_DIR/fm-task-budget.py" fold-away "$lane" "$child" || code=$?
+  fi
+  exit "$code"
+fi
 if [ "$mode" = tick ] || [ "$mode" = measure ]; then
   if [ "$mode" = tick ]; then
     [ "$#" = 4 ] || exit 2

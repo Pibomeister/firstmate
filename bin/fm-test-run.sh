@@ -369,7 +369,7 @@ family_for_basename() {
     fm-grok-stop-live-e2e.test.sh|fm-harness-adapter-instructions-live-e2e.test.sh|\
     fm-harness-liveness-drift-live-e2e.test.sh|\
     fm-kimi-trust-prompt-live-e2e.test.sh|\
-    fm-devin-signals-live-e2e.test.sh|fm-commandcode-signals-live-e2e.test.sh|fm-cortex-signals-live-e2e.test.sh|fm-muse-signals-live-e2e.test.sh|fm-rovo-signals-live-e2e.test.sh|fm-agy-signals-live-e2e.test.sh|fm-droid-signals-live-e2e.test.sh|fm-droid-orca-signals-live-e2e.test.sh|fm-polytoken-signals-live-e2e.test.sh|\
+    fm-devin-signals-live-e2e.test.sh|fm-commandcode-signals-live-e2e.test.sh|fm-cortex-signals-live-e2e.test.sh|fm-muse-signals-live-e2e.test.sh|fm-rovo-signals-live-e2e.test.sh|fm-agy-signals-live-e2e.test.sh|fm-agy-spawn-live-e2e.test.sh|fm-droid-signals-live-e2e.test.sh|fm-droid-orca-signals-live-e2e.test.sh|fm-polytoken-signals-live-e2e.test.sh|\
     fm-launch-prompt-signals-live-e2e.test.sh|fm-backend-t3code-live-e2e.test.sh|\
     fm-backend-t3code-pr-tools-live-e2e.test.sh|\
     fm-pi-seeded-home-trust-live-e2e.test.sh|\
@@ -392,7 +392,8 @@ family_for_basename() {
     fm-calm-pi-queue-retention-live-e2e.test.sh|\
     fm-herdr-submit-confirm-live-e2e.test.sh|\
     fm-backend-rex-composer-live-e2e.test.sh|\
-    fm-watch-wedge-cap-live.test.sh|fm-read-repetition-live.test.sh)
+    fm-watch-wedge-cap-live.test.sh|fm-read-repetition-live.test.sh|\
+    fm-watchdog-live.test.sh)
       printf '%s\n' live-harness-optin
       ;;
     fm-backend-herdr.test.sh|fm-backend-tmux-smoke.test.sh|fm-backend.test.sh|\
@@ -841,6 +842,7 @@ tests/fm-on.test.sh 18308
 tests/fm-opencode-abs-cwd-rail-live-e2e.test.sh 68
 tests/fm-opencode-primary-live-e2e.test.sh 63
 tests/fm-operational-input.test.sh 2846
+tests/fm-order.test.sh 50000
 tests/fm-parent-channel-scan-exclusion.test.sh 3967
 tests/fm-peek-remote.test.sh 1340
 tests/fm-pending-reply.test.sh 61142
@@ -971,6 +973,8 @@ tests/fm-watch-triage.test.sh 592950
 tests/fm-watch-wedge-cap-live.test.sh 74
 tests/fm-watch-wedge-cap-unconfigured-parity.test.sh 27763
 tests/fm-watch-wedge-cap.test.sh 374225
+tests/fm-watchdog-live.test.sh 100
+tests/fm-watchdog.test.sh 522316
 tests/fm-watcher-lock.test.sh 66869
 tests/fm-worker-account-live-e2e.test.sh 3654
 tests/fm-worker-account.test.sh 44499

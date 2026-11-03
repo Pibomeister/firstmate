@@ -16,6 +16,12 @@
 # "already running" off the dying process. That exact mistake silently took
 # supervision down for ~30 minutes.
 # FM_WATCH_GROK_CONTINUITY=1 opts this arm into the Grok continuity in docs/watcher-continuity.md.
+# --detach-hold is the one hook-owned exception. The Codex Stop hook calls it
+# and then returns. It uses the same detached --grok-hold successor as Grok
+# continuity (set -m, nohup, disown), refuses while state/.afk exists, attaches
+# when a healthy watcher already holds this home's lock, and exits after that
+# successor is confirmed. It is not a shell & from a model command. The hold has
+# no doorbell: its wakes stay queued until the next captain message starts a turn.
 # FM_WATCH_MANAGED_HOLD=1 is the watchdog's foreground-owner variant: its
 # watcher remains this arm's child after a wake, with no detached successor.
 # On a harness with a PreToolUse-equivalent hook, bin/fm-arm-pretool-check.sh
@@ -475,18 +481,6 @@ attached_holder_live() {
   [ "$FM_WATCHER_MATCHED_IDENTITY" = "$cycle_watcher_identity" ]
 }
 
-# Bind queued-wake delivery to a persistent holder, not an ordinary one-shot watcher.
-grok_holding_watcher() {  # <pid>
-  local pid=$1 proc_root=${FM_PROC_ROOT_OVERRIDE:-/proc} args
-  if [ -r "$proc_root/$pid/cmdline" ]; then
-    [ "$(tr '\000' '\n' < "$proc_root/$pid/cmdline" | tail -n 1)" = --grok-hold ]
-  else
-    args=$(ps -ww -o args= -p "$pid" 2>/dev/null) || return 1
-    case "$args" in *' --grok-hold') return 0 ;; esac
-    return 1
-  fi
-}
-
 
 # Grok arms can report queued work while their tagged holding watcher stays live.
 # Stay alive across identity-matched healthy holders. If one cycle ends, attach
@@ -522,7 +516,7 @@ attach_and_wait() {
         report_attached
       fi
       if [ "${FM_WATCH_GROK_CONTINUITY:-}" = 1 ] && [ ! -e "$STATE/.afk" ] \
-        && grok_holding_watcher "$attached_pid" \
+        && fm_grok_holding_watcher "$attached_pid" \
         && [ "$(fm_wake_actor_pending_count "$actor")" -gt 0 ]; then
         cycle_log_append 0 none attached-delivered-wake "attached:$attached_pid"
         printf '%s\n' 'check: rearm-resurface'
@@ -701,8 +695,33 @@ case "${1:-}" in
     case "$handling_watcher_pid" in ''|*[!0-9]*) echo "watcher: invalid successor watcher pid" >&2; exit 2 ;; esac
     [ "$#" -eq 4 ] || { echo "watcher: unexpected handling delivery arguments" >&2; exit 2; }
     ;;
-  *) echo "usage: $(basename "$0") [--restart | --stop | --take-over ARM_PID | --handling-delivered GENERATION --watcher-pid PID]" >&2; exit 2 ;;
+  --detach-hold)
+    mode=detach-hold
+    [ "$#" -eq 1 ] || { echo "watcher: unexpected detach-hold arguments" >&2; exit 2; }
+    ;;
+  *) echo "usage: $(basename "$0") [--restart | --stop | --detach-hold | --take-over ARM_PID | --handling-delivered GENERATION --watcher-pid PID]" >&2; exit 2 ;;
 esac
+
+# Hook-owned detach. Confirm the hold, then return. Do not enter the tracked
+# attach loop: the caller is a turn-end hook that must exit.
+if [ "$mode" = detach-hold ]; then
+  if [ -e "$STATE/.afk" ]; then
+    echo "watcher: FAILED - away mode owns supervision" >&2
+    exit 1
+  fi
+  if healthy_watcher; then
+    report_attached
+    exit 0
+  fi
+  FM_WATCH_GROK_CONTINUITY=1
+  export FM_WATCH_GROK_CONTINUITY
+  if start_grok_continuity_successor; then
+    echo "watcher: started pid=$GROK_SUCCESSOR_PID"
+    exit 0
+  fi
+  echo "watcher: FAILED - no live watcher with a fresh beacon"
+  exit 1
+fi
 
 if [ "$mode" = handling-delivered ]; then
   fm_pid_alive "$handling_watcher_pid" \

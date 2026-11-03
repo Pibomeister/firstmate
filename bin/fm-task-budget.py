@@ -23,7 +23,10 @@ def read_meta(path):
             if key.startswith("budget_") and key in result:
                 raise ValueError("duplicate budget metadata")
             result[key] = value
-    limits([result.get("budget_" + key, "") for key in LIMITS])
+    present = [result.get("budget_" + key, "") for key in LIMITS]
+    # A child measured against a lane has bindings and no four limits of its own.
+    if any(present):
+        limits(present)
     return result
 
 
@@ -184,7 +187,189 @@ def fold(path, harness, cache):
     return None
 
 
-def measure(path, persist=True):
+def same_file(left, right):
+    try:
+        return os.path.samefile(left, right)
+    except OSError:
+        return False
+
+
+def claude_sidechain_belongs(path, session, worktree):
+    if session in path.parts:
+        return True
+    try:
+        for _, row in records(path):
+            if row.get("sessionId") == session:
+                return True
+            cwd = row.get("cwd")
+            if isinstance(cwd, str) and cwd and os.path.realpath(cwd) == worktree:
+                return True
+    except (ValueError, KeyError, OSError, TypeError, AttributeError):
+        return False
+    return False
+
+
+def file_started_at(path, harness):
+    for _, row in records(path):
+        if harness == "claude":
+            if row.get("timestamp"):
+                return timestamp(row["timestamp"])
+            continue
+        if row.get("type") == "session_meta":
+            return timestamp(mapping(row.get("payload"))["timestamp"])
+        return None
+    return None
+
+
+def codex_related_belongs(path, session, worktree, boundary):
+    try:
+        first = None
+        for _, row in records(path):
+            first = row
+            break
+        if not first or first.get("type") != "session_meta":
+            return False
+        meta = mapping(first.get("payload"))
+        if meta.get("source") not in ("cli", "exec"):
+            return False
+        other = meta.get("id")
+        if not isinstance(other, str) or not other or other == session:
+            return False
+        cwd = meta.get("cwd")
+        if not isinstance(cwd, str) or not cwd or os.path.realpath(cwd) != worktree:
+            return False
+        return timestamp(meta["timestamp"]) >= boundary
+    except (ValueError, KeyError, OSError, TypeError, AttributeError):
+        return False
+
+
+def usage_pair(path, harness):
+    found = fold(path, harness, {})
+    if found is None:
+        return 0, 0
+    return found
+
+
+def sum_sidechain(root, harness, main_log, session, worktree, boundary):
+    inclusive = fresh = 0
+    for log in root.rglob("*.jsonl"):
+        if log.is_symlink() or same_file(log, main_log):
+            continue
+        try:
+            if log.stat().st_mtime < boundary:
+                continue
+            parts = log.relative_to(root).parts
+        except (OSError, ValueError):
+            continue
+        if harness == "claude":
+            if "subagents" not in parts:
+                continue
+            if session not in log.parts and not claude_sidechain_belongs(log, session, worktree):
+                continue
+            started = file_started_at(log, harness)
+            if started is not None and started < boundary:
+                continue
+        elif not codex_related_belongs(log, session, worktree, boundary):
+            continue
+        extra_inclusive, extra_fresh = usage_pair(log, harness)
+        inclusive += extra_inclusive
+        fresh += extra_fresh
+    return inclusive, fresh
+
+
+def decimal_total(value, label):
+    if not re.fullmatch(r"0|[1-9][0-9]*", str(value)):
+        raise ValueError("invalid " + label)
+    return int(value)
+
+
+def folded_from_meta(meta):
+    keys = ("budget_folded_inclusive", "budget_folded_fresh", "budget_folded_children")
+    if not any(key in meta for key in keys):
+        return 0, 0, set()
+    inclusive = decimal_total(meta.get("budget_folded_inclusive", "0"), "folded native consumption")
+    fresh = decimal_total(meta.get("budget_folded_fresh", "0"), "folded native consumption")
+    if inclusive < fresh:
+        raise ValueError("invalid folded native consumption")
+    names = [part for part in meta.get("budget_folded_children", "").split(",") if part]
+    if any(not re.fullmatch(r"[A-Za-z0-9._-]+@FM_BUDGET_LAUNCH_[A-Za-z0-9]+", name) for name in names) or len(names) != len(set(names)):
+        raise ValueError("invalid folded child id")
+    return inclusive, fresh, set(names)
+
+
+def folded_unknown(meta):
+    names = [part for part in meta.get("budget_folded_unknown", "").split(",") if part]
+    if any(not re.fullmatch(r"[A-Za-z0-9._-]+@FM_BUDGET_LAUNCH_[A-Za-z0-9]+", name) for name in names):
+        raise ValueError("invalid folded unknown child")
+    return names
+
+
+def lane_meta_of(meta, path):
+    if path.name == "lane-budget":
+        return meta
+    home = meta.get("home", "")
+    if not home:
+        raise ValueError("secondmate lane has no home")
+    lane = Path(home) / "state" / "lane-budget"
+    if not lane.is_file() or lane.is_symlink():
+        return {}
+    return read_meta(lane)
+
+
+def lane_folded(meta, path):
+    lane_meta = lane_meta_of(meta, path)
+    unknown = folded_unknown(lane_meta)
+    if unknown:
+        raise ValueError("torn-down child usage unknown: " + ",".join(unknown))
+    return folded_from_meta(lane_meta)
+
+
+def sum_lane_children(meta, path, folded_ids):
+    home = meta.get("home", "")
+    if not home:
+        raise ValueError("secondmate lane has no home")
+    state = Path(home) / "state"
+    if not state.is_dir():
+        return 0, 0, []
+    inclusive = fresh = 0
+    rows = []
+    self_path = path.resolve()
+    for child in sorted(state.glob("*.meta")):
+        if child.is_symlink():
+            continue
+        try:
+            if child.resolve() == self_path:
+                continue
+        except OSError:
+            continue
+        child_meta = read_meta(child)
+        child_id = child.stem
+        if child_meta.get("remote_host"):
+            raise ValueError("child " + child_id + " is a remote secondmate on "
+                             + child_meta["remote_host"] + " and its usage cannot be measured locally")
+        if "budget_launch_marker" not in child_meta:
+            raise ValueError("child " + child_id + " has no native launch marker")
+        if child_id + "@" + child_meta["budget_launch_marker"] in folded_ids:
+            continue
+        if child_meta.get("harness") not in ("claude", "codex"):
+            rows.append(child_id + "=unmetered")
+            continue
+        try:
+            sample = measure(child, persist=True)
+        except (ValueError, KeyError, OSError, TypeError, AttributeError) as error:
+            sample = {"status": "unknown", "reason": str(error)}
+        if sample["status"] == "pending":
+            rows.append(child_id + "=pending")
+            continue
+        if sample["status"] != "ok":
+            raise ValueError("child " + child_id + " usage unknown: " + sample.get("reason", "unknown"))
+        inclusive += sample["inclusive"]
+        fresh += sample["fresh"]
+        rows.append(child_id + "=measured")
+    return inclusive, fresh, rows
+
+
+def measure(path, persist=True, include_lane=True):
     path = Path(path)
     meta = read_meta(path)
     prior_inclusive = int(meta["budget_prior_inclusive"])
@@ -254,12 +439,28 @@ def measure(path, persist=True):
         save_state(state_path, state)
     if "inclusive" not in cache:
         return {"status": "pending", "reason": "native usage not yet recorded"}
-    return {
+    side_inclusive, side_fresh = sum_sidechain(
+        root, harness, log, cache["session"], worktree, boundary
+    )
+    inclusive = cache["inclusive"] + prior_inclusive + side_inclusive
+    fresh = cache["fresh"] + prior_fresh + side_fresh
+    children = []
+    if include_lane and meta.get("kind") == "secondmate":
+        fold_inclusive, fold_fresh, folded_ids = lane_folded(meta, path)
+        child_inclusive, child_fresh, children = sum_lane_children(meta, path, folded_ids)
+        inclusive += fold_inclusive + child_inclusive
+        fresh += fold_fresh + child_fresh
+    if fresh < 0 or inclusive < fresh:
+        raise ValueError("invalid lane native consumption")
+    result = {
         "status": "ok", "harness": harness, "session": cache["session"], "source": cache["log"],
-        "inclusive": cache["inclusive"] + prior_inclusive,
-        "fresh": cache["fresh"] + prior_fresh,
+        "inclusive": inclusive,
+        "fresh": fresh,
         "observed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
     }
+    if children:
+        result["children"] = children
+    return result
 
 
 def limits(values):
@@ -281,7 +482,7 @@ def seed(args):
     previous = None
     if prior != "-":
         try:
-            previous = measure(prior, persist=False)
+            previous = measure(prior, persist=False, include_lane=False)
             if previous["status"] != "ok":
                 raise ValueError(previous["reason"])
         except (ValueError, KeyError, OSError, TypeError, AttributeError) as error:
@@ -330,8 +531,6 @@ def prepare(path, config):
     try:
         meta = read_meta(path)
         harness = meta.get("harness", "unknown")
-        if meta.get("kind") == "secondmate":
-            return "none"
         values = [int(meta["budget_" + key]) for key in LIMITS]
         allocation = [meta["budget_started_at"], values]
         episode = read_state(path.with_suffix(".budget")).get("episode", {})
@@ -384,6 +583,154 @@ def prepare(path, config):
         return "none"
 
 
+def carried_prior(prior):
+    if prior == "-":
+        return None
+    try:
+        previous = measure(prior, persist=False, include_lane=False)
+        if previous["status"] != "ok":
+            raise ValueError(previous["reason"])
+        return previous
+    except (ValueError, KeyError, OSError, TypeError, AttributeError) as error:
+        print(
+            f"budget-unknown task={Path(prior).stem} prior incarnation usage not carried over: {error}",
+            file=sys.stderr,
+        )
+        return None
+
+
+def print_record(record):
+    for value in record.values():
+        if "\n" in str(value) or "\r" in str(value):
+            raise ValueError("budget source identity must be one line")
+    for key, value in record.items():
+        print(f"{key}={value}")
+
+
+def bind(args):
+    harness, worktree, root, marker, prior = args
+    if not re.fullmatch(r"FM_BUDGET_LAUNCH_[A-Za-z0-9]+", marker):
+        raise ValueError("invalid native launch marker")
+    previous = carried_prior(prior)
+    launch_at = str(time.time())
+    record = {
+        "budget_launch_at": launch_at,
+        "budget_worktree": os.path.realpath(worktree),
+        "budget_log_root": os.path.abspath(root) if root else "",
+        "budget_launch_marker": marker,
+        "budget_prior_inclusive": previous["inclusive"] if previous else 0,
+        "budget_prior_fresh": previous["fresh"] if previous else 0,
+        "budget_started_at": read_meta(prior)["budget_started_at"] if previous else launch_at,
+    }
+    print_record(record)
+
+
+def budget_line(verb, sample, bounds, children):
+    child_text = ",".join(children)
+    print(
+        f"budget-prelaunch {verb} inclusive={sample['inclusive']} stop={bounds['inclusive_stop']} "
+        f"hard={bounds['inclusive_hard']} fresh={sample['fresh']} stop={bounds['fresh_stop']} "
+        f"hard={bounds['fresh_hard']} children={child_text}",
+        file=sys.stderr,
+    )
+
+
+def prelaunch(home, seen=()):
+    lane = Path(home) / "state" / "lane-budget"
+    if not lane.is_file() or lane.is_symlink():
+        return 0
+    try:
+        if os.path.realpath(home) in seen:
+            raise ValueError("lane parent homes form a cycle")
+        meta = read_meta(lane)
+        if meta.get("budget_inclusive_hard"):
+            sample = measure(lane)
+            if sample["status"] == "pending":
+                print(f"budget-prelaunch refuse pending: {sample['reason']}", file=sys.stderr)
+                return 1
+            if sample["status"] != "ok":
+                print(f"budget-prelaunch refuse unknown: {sample.get('reason', 'unknown')}", file=sys.stderr)
+                return 1
+            bounds = limits([meta["budget_" + key] for key in LIMITS])
+            children = sample.get("children") or []
+            over = sample["inclusive"] >= bounds["inclusive_stop"] or sample["fresh"] >= bounds["fresh_stop"]
+            budget_line("refuse" if over else "allow", sample, bounds, children)
+            if over:
+                return 1
+        parent = meta.get("budget_parent_home", "")
+        if not parent:
+            return 0
+        return prelaunch(parent, tuple(seen) + (os.path.realpath(home),))
+    except (ValueError, KeyError, OSError, TypeError, AttributeError) as error:
+        print(f"budget-prelaunch refuse unknown: {error}", file=sys.stderr)
+        return 1
+
+
+def replace_budget_keys(path, updates):
+    lines = Path(path).read_text().splitlines()
+    kept = [line for line in lines if line.partition("=")[0] not in updates]
+    for key, value in updates.items():
+        if "\n" in str(value) or "\r" in str(value):
+            raise ValueError("budget source identity must be one line")
+        kept.append(f"{key}={value}")
+    descriptor, staging = tempfile.mkstemp(prefix="." + path.name + ".", dir=str(path.parent))
+    try:
+        with os.fdopen(descriptor, "w") as stream:
+            stream.write("\n".join(kept) + "\n")
+        os.replace(staging, path)
+    finally:
+        if os.path.exists(staging):
+            os.unlink(staging)
+
+
+def fold_away(lane, child):
+    lane = Path(lane)
+    child = Path(child)
+    if not lane.is_file() or lane.is_symlink():
+        return 0
+    if not child.is_file() or child.is_symlink():
+        raise ValueError("child metadata is missing")
+    lane_meta = read_meta(lane)
+    child_meta = read_meta(child)
+    if "budget_launch_marker" not in child_meta:
+        return 0
+    fold_key = child.stem + "@" + child_meta["budget_launch_marker"]
+    _, _, folded_ids = folded_from_meta(lane_meta)
+    unknown = folded_unknown(lane_meta)
+    if fold_key in folded_ids or fold_key in unknown:
+        return 0
+    if child_meta.get("harness") not in ("claude", "codex"):
+        sample = {"status": "pending"}
+    else:
+        try:
+            sample = measure(child, persist=True)
+        except (ValueError, KeyError, OSError, TypeError, AttributeError) as error:
+            sample = {"status": "unknown", "reason": str(error)}
+    if sample["status"] == "pending":
+        add_inclusive = add_fresh = 0
+    elif sample["status"] != "ok":
+        replace_budget_keys(lane, {"budget_folded_unknown": ",".join(unknown + [fold_key])})
+        print(
+            f"budget-unknown fold-away child={fold_key}: {sample.get('reason', 'unknown child usage')}",
+            file=sys.stderr,
+        )
+        return 0
+    else:
+        add_inclusive = sample["inclusive"]
+        add_fresh = sample["fresh"]
+    base_inclusive, base_fresh, _ = folded_from_meta(lane_meta)
+    new_inclusive = base_inclusive + add_inclusive
+    new_fresh = base_fresh + add_fresh
+    if new_fresh < 0 or new_inclusive < new_fresh:
+        raise ValueError("invalid folded native consumption")
+    replace_budget_keys(lane, {
+        "budget_folded_inclusive": str(new_inclusive),
+        "budget_folded_fresh": str(new_fresh),
+        "budget_folded_children": ",".join(sorted(folded_ids | {fold_key})),
+    })
+    return 0
+
+
 def finish(path, code, output):
     path = Path(path)
     state = read_state(path.with_suffix(".budget"))
@@ -411,6 +758,16 @@ def main():
         print(prepare(*args))
     elif mode == "finish":
         finish(*args)
+    elif mode == "bind":
+        bind(args)
+    elif mode == "prelaunch":
+        if len(args) != 1:
+            raise ValueError("prelaunch expects a home")
+        sys.exit(prelaunch(args[0]))
+    elif mode == "fold-away":
+        if len(args) != 2:
+            raise ValueError("fold-away expects a lane file and a child record")
+        sys.exit(fold_away(args[0], args[1]))
     else:
         raise ValueError("unknown task-budget command")
 

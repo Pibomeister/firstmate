@@ -6,7 +6,8 @@
 # screen", and "does the prompt announce project MCP servers" for every
 # supported wording.
 #
-# Every function takes one plain pane capture as $1 and prints nothing.
+# Every function takes one plain pane capture as $1.
+# Only kimi_trust_dialog_missing prints output: one line per missing element.
 # The wordings recognized here were recorded from the real CLI:
 #   2.0.0 (2026-09-17): the options read `❯ Trust this folder` and
 #     `Don't trust`.
@@ -21,6 +22,23 @@
 # Pane text is matched with case patterns rather than regexes because the
 # captures carry multibyte glyphs that bash patterns compare byte for byte.
 
+# kimi_trust_dialog_missing <plain-pane-capture>
+# Print each required dialog element the capture lacks; print nothing when complete.
+kimi_trust_dialog_missing() { # <plain-pane-capture>
+  local pane=$1
+  case "$pane" in *'Trust this folder?'*) ;; *) printf '%s\n' "title 'Trust this folder?'" ;; esac
+  case "$pane" in *'↑↓ navigate'*) ;; *) printf '%s\n' "navigation hint '↑↓ navigate'" ;; esac
+  case "$pane" in *'Enter select'*) ;; *) printf '%s\n' "navigation hint 'Enter select'" ;; esac
+  if [ "${pane#*'❯ Trust and continue'}" != "$pane" ]; then
+    printf '%s\n' "$pane" | grep -Eq '^[[:space:]]*Exit[[:space:]]*$' ||
+      printf '%s\n' "negative option 'Exit' on its own line beside selected 'Trust and continue'"
+  elif [ "${pane#*'❯ Trust this folder'}" != "$pane" ]; then
+    case "$pane" in *"Don't trust"*) ;; *) printf '%s\n' "negative option \"Don't trust\" beside selected 'Trust this folder'" ;; esac
+  else
+    printf '%s\n' "selected affirmative option ('❯ Trust and continue' or '❯ Trust this folder')"
+  fi
+}
+
 # kimi_trust_dialog_is_visible <plain-pane-capture>
 # True only for the complete prompt: its title, both navigation-hint tokens
 # (matched separately, so a hint wrapped in a narrow pane still counts), and
@@ -32,9 +50,7 @@ kimi_trust_dialog_is_visible() {
   local pane=$1
   KIMI_TRUST_AFFIRMATIVE=''
   KIMI_TRUST_NEGATIVE=''
-  case "$pane" in *'Trust this folder?'*) ;; *) return 1 ;; esac
-  case "$pane" in *'↑↓ navigate'*) ;; *) return 1 ;; esac
-  case "$pane" in *'Enter select'*) ;; *) return 1 ;; esac
+  [ -z "$(kimi_trust_dialog_missing "$pane")" ] || return 1
   case "$pane" in
     *'❯ Trust this folder'*"Don't trust"*)
       KIMI_TRUST_AFFIRMATIVE='Trust this folder'

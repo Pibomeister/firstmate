@@ -316,6 +316,7 @@ case "$BRANCH_PREFIX" in
   *' '*) echo "error: --branch-prefix must not contain a space (got '$BRANCH_PREFIX')" >&2; exit 1 ;;
   -*) echo "error: --branch-prefix must not start with '-' (got '$BRANCH_PREFIX')" >&2; exit 1 ;;
 esac
+DESKTOP_RULE="Use agent-desktop for desktop-app E2E tests and computer use through the OS accessibility tree (\`agent-desktop skills get desktop\`); on macOS run \`agent-desktop permissions\` and escalate a denied grant to firstmate, never grant it yourself."
 # The forge is validated against the same closed set the renderers enforce, so a
 # typo or an impossible mode/forge pair stops here rather than reaching a worker.
 if [ "$KIND" = ship ]; then
@@ -338,11 +339,11 @@ if [ "$KIND" = ship ]; then
   # forge-CLI rule names it instead of gh-axi; an external review tool has no
   # forge CLI at all; every other forge keeps gh-axi.
   if [ "$FORGE" = forgejo ]; then
-    FORGE_RULE_LINE="Use tea for Forgejo operations and chrome-devtools-axi for browser operations."
+    FORGE_RULE_LINE="Use tea for Forgejo operations and chrome-devtools-axi for browser operations. $DESKTOP_RULE"
   elif [ "$FORGE" = external ]; then
-    FORGE_RULE_LINE="Publish only through the review tool your Definition of done names, and use chrome-devtools-axi for browser operations."
+    FORGE_RULE_LINE="Publish only through the review tool your Definition of done names, and use chrome-devtools-axi for browser operations. $DESKTOP_RULE"
   else
-    FORGE_RULE_LINE="Use gh-axi for GitHub operations and chrome-devtools-axi for browser operations."
+    FORGE_RULE_LINE="Use gh-axi for GitHub operations and chrome-devtools-axi for browser operations. $DESKTOP_RULE"
   fi
 elif [ "$FORGE_SET" -eq 1 ] || [ "$SHAPE_SET" -eq 1 ] || [ "$PR_TEXT_SET" -eq 1 ]; then
   echo "error: --forge, --shape, and --pr apply only to ship briefs; a scout delivers a report and a secondmate charter is not a delivery contract" >&2
@@ -550,7 +551,7 @@ Do not invent a second delegation system.
 Never do investigation, coding, review, or long waits in your own turn; delegate them to your own crews so you can always answer new messages.
 Keep each of your own foreground waits and polls to 60 seconds or less, and never wait on a crew inside your own turn: once the emitted supervision protocol proves an outside-turn watcher, end the turn and let its doorbell start the next one.
 After handling inputs, sending actions and parent replies, and acknowledging handled events, end the turn when the emitted supervision protocol proves an outside-turn watcher and notification route.
-On a foreground-only fallback the emitted protocol keeps the turn open instead, so follow its checkpoint rather than ending the turn.
+If the outside-turn watcher cannot start, tell the parent and end the turn; do not open a foreground checkpoint.
 Read, acknowledge, and dispatch each new routed work request in the same handling turn, alongside existing crews unless a true technical dependency requires ordering.
 Acknowledge each steering record by moving it to \`handled/\` as soon as its dispatch or established answer and its correlated parent line exist, before any other in-turn work, and never leave a waiting record unacknowledged for more than 5 minutes because of in-turn work.
 Never treat existing crew work as a reason to queue an independent request.
@@ -742,7 +743,7 @@ The report is the only thing that survives, so anything worth keeping must be in
 # Rules
 1. Never push to any remote and never open a PR.
 2. Stay inside this worktree; outside it, write only the report and status file below, except for the task's empty-inventory attestation through \`fm-captain-hold.sh complete --none\`, exactly as specified under Definition of done.
-3. Use gh-axi for GitHub operations and chrome-devtools-axi for browser operations.
+3. Use gh-axi for GitHub operations and chrome-devtools-axi for browser operations. $DESKTOP_RULE
 4. Report status by appending one line:
    \`$STATUS_APPEND\`
    States: working, needs-decision, blocked, $PAUSED_VERB, done, failed.

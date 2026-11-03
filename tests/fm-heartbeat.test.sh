@@ -112,7 +112,16 @@ EOF
 esac
 exit 0
 SH
-chmod +x "$FAKEBIN/tmux" "$FAKEBIN/no-mistakes"
+cat > "$FAKEBIN/quota-axi" <<'SH'
+#!/usr/bin/env bash
+[ -z "${FAKE_QUOTA_DELAY:-}" ] || sleep "$FAKE_QUOTA_DELAY"
+if [ -n "${FAKE_QUOTA_JSON:-}" ]; then
+  printf '%s\n' "$FAKE_QUOTA_JSON"
+  exit 0
+fi
+exit 1
+SH
+chmod +x "$FAKEBIN/tmux" "$FAKEBIN/no-mistakes" "$FAKEBIN/quota-axi"
 
 make_home() {
   local home="$TMP_ROOT/$1"
@@ -220,6 +229,8 @@ test_ledger_schema_and_clean_run() {
     and .tasks[0].session.unknown == true
     and .tasks[0].last_turn.unknown == true
     and .tasks[0].context_left.used_tokens.unknown == true
+    and .weekly_allowance.unknown == true
+    and .weekly_allowance.reason == "quota-axi could not be read"
   ' "clean run ledger is wrong"
   assert_no_work_left "$home"
   [ "$(stat -c %a "$(ledger "$home")" 2>/dev/null || stat -f %Lp "$(ledger "$home")")" = 600 ] \
@@ -845,4 +856,32 @@ test_stale_work_dir_is_swept
 test_watcher_poll_does_not_wait_for_heartbeat
 test_watcher_runs_one_heartbeat_at_a_time
 
-printf 'ok - %s tests passed\n' 29
+test_weekly_allowance_reports_model_allowance_left() {
+  local home quota
+  home=$(make_home weekly)
+  quota='{"providers":[{"id":"anthropic","windows":[{"id":"five_hour","percentUsed":10},{"id":"seven_day","percentUsed":92}]},{"id":"openai","windows":[{"id":"weekly","kind":"weekly","percentRemaining":40}]}]}'
+  publish "$home" "FAKE_QUOTA_JSON=$quota"
+  assert_ledger "$home" '
+    .failure == null
+    and .weekly_allowance.status == "ok"
+    and (.weekly_allowance.windows | length) == 2
+    and .weekly_allowance.windows[0] == {provider:"anthropic",id:"seven_day",percent_remaining:8}
+    and .weekly_allowance.windows[1] == {provider:"openai",id:"weekly",percent_remaining:40}
+    and ([.weekly_allowance.windows[].id] | index("five_hour")) == null
+  ' "weekly model allowance was not published"
+  # quota-axi --json takes up to ~4s on a real host; the default bound must wait for it.
+  publish "$home" "FAKE_QUOTA_JSON=$quota" FAKE_QUOTA_DELAY=3
+  assert_ledger "$home" '.failure == null and .weekly_allowance.status == "ok"' \
+    "a 3-second quota-axi read was cut off by the default timeout"
+  publish "$home" FAKE_QUOTA_JSON='{"providers":[{"id":"anthropic","windows":[{"id":"five_hour","percentUsed":10}]}]}'
+  assert_ledger "$home" '.failure == null and .weekly_allowance.unknown == true and .weekly_allowance.reason == "no weekly model allowance window"' \
+    "a snapshot with no weekly window was treated as readable allowance"
+  publish "$home" FAKE_QUOTA_JSON='not-json'
+  assert_ledger "$home" '.failure == null and .weekly_allowance.unknown == true and .weekly_allowance.reason == "quota-axi output was not readable"' \
+    "unreadable quota output became a heartbeat failure or a guessed allowance"
+  pass "heartbeat publishes weekly model allowance left and leaves a miss unknown"
+}
+
+test_weekly_allowance_reports_model_allowance_left
+
+printf 'ok - %s tests passed\n' 30
