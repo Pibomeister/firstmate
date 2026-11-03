@@ -130,6 +130,11 @@ if [ "${PI_CODING_AGENT:-}" = "true" ] \
   exit 0
 fi
 
+# External auto-compact footer for this turn. A missing script or footer stays silent.
+if [ "${FM_TEST_SEAM:-}" != 1 ] && [ -x "$SCRIPT_DIR/fm-context-burn.sh" ]; then
+  printf '%s' "$PAYLOAD" | "$SCRIPT_DIR/fm-context-burn.sh" record --turn-type auto >/dev/null 2>&1 || true
+fi
+
 lock_acquire_bounded() {  # <lock>
   local lock=$1 attempt=0
   while [ "$attempt" -lt "$LOCK_ATTEMPTS" ]; do

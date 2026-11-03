@@ -79,6 +79,11 @@ command -v jq >/dev/null 2>&1 || allow_stop
 
 fm_primary_scope_matches "$FM_ROOT" "$STATE" || allow_stop
 
+# External auto-compact footer for this turn. A missing script or footer stays silent.
+if [ "${FM_TEST_SEAM:-}" != 1 ] && [ -x "$SCRIPT_DIR/fm-context-burn.sh" ]; then
+  printf '%s' "$PAYLOAD" | "$SCRIPT_DIR/fm-context-burn.sh" record --turn-type auto >/dev/null 2>&1 || true
+fi
+
 TERM_REASON=$(printf '%s' "$PAYLOAD" | jq -r '.terminationReason // empty' 2>/dev/null || true)
 if [ -n "$TERM_REASON" ] && [ "$TERM_REASON" != "NO_TOOL_CALL" ]; then
   allow_stop
