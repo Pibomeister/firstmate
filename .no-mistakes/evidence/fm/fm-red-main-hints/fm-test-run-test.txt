@@ -1,4 +1,3 @@
-FM_TEST_BEGIN 2026-11-03T15:17:14Z tests/fm-test-run.test.sh family=pure-contract-unit expected_gate_skip=none
 ok - exact suite coverage: --all lists every tests/*.test.sh once
 ok - family selection returns a proper subset of the suite
 ok - single-script selection lists exactly that path
@@ -33,3 +32,40 @@ ok - serial packing accepts the exact budget and refuses one millisecond above i
 ok - a lone indivisible script over the packing budget is reported, not refused
 ok - portable serial shard lanes refuse mismatched, out-of-range, and countless names
 ok - --jobs refuses non-proven / stateful selections
+not ok - --jobs on a proven family must be admitted, got 1:  FM_TEST_BEGIN 2026-11-03T19:34:14Z tests/fm-session-lock-ancestry.test.sh family=watcher-wake-lock expected_gate_skip=none
+FM_TEST_BEGIN 2026-11-03T19:34:14Z tests/fm-supervision-events.test.sh family=watcher-wake-lock expected_gate_skip=none
+ok - handle_push_transition: a blocked crew enqueues a stale wake naming its window and wakes the supervisor
+ok - handle_push_transition: a rex blocked edge's wake names the backend and carries Rex's blocked kind and message
+ok - handle_push_transition: enqueue failure cannot commit the Herdr dedupe marker
+ok - handle_push_transition: a declared-pause crew is absorbed (no fast wake), left to the poll loop's long cadence
+ok - handle_push_transition: a captain-held crew is absorbed (no fast wake), left to the poll loop's long cadence
+ok - event_wait_or_sleep: herdr windows go on the event pane list, but kind=secondmate endpoints are excluded
+ok - event_wait_or_sleep: herdr keeps the push wait in a mixed home; T3's wait runs only without another push backend
+ok - event_wait_or_sleep: one cached capability probe owns validation across bounded waits
+ok - event_wait_or_sleep: a home with no push-capable window is inert (sleeps POLL, never touches the event path)
+ok - event_wait_or_sleep: consecutive event-path failures disable the fast-path and revert to pure polling (fail-closed)
+# fm-supervision-events.test.sh: all assertions passed
+FM_TEST_END 2026-11-03T19:34:18Z tests/fm-supervision-events.test.sh exit=0 duration_ms=3657 gate_skip=false
+ok - session-lock: Stop binds checkpoint descendants and rejects foreign or absent thread identity
+ok - session-lock: a version-named Claude Code session is identified from its install path and argv[0]
+ok - session-lock: a version-suffixed muse session is identified, and substring decoys are not
+ok - session-lock: a harness that is pid 1 of its own namespace is examined, not skipped
+ok - session-lock: ordinary script paths under a harness directory are not harness processes
+ok - session-lock: ownership stops at the first non-harness gap above the contiguous run
+ok - session-lock: a live version-named session holding the lock is not mistaken for a stale owner
+ok - session-lock: a trusted same-session id keeps owning a recycled background chain, and nothing weaker does
+ok - session-lock: a trusted id anchors the lock on the model-loop process, anything else on the outermost pid
+ok - session-lock: a daemon-parented Codex tool shell anchors off the daemon and owns by thread id
+ok - session-lock: a direct Codex TUI launch anchors on the TUI, directly or through its code-mode host
+ok - session-lock: two Codex sessions sharing one daemon never cross-own each other's locks
+ok - session-lock: a Codex thread id is trusted only inside a Codex session, and only when its published ids agree
+ok - session-lock: real argv and separate environment fields bind only their own thread
+ok - session-lock: a mismatched kernel start time cannot inherit ownership or leases
+not ok - daemon fixture never produced the initial daemon acquisition
+FM_TEST_END 2026-11-03T19:47:15Z tests/fm-session-lock-ancestry.test.sh exit=1 duration_ms=781064 gate_skip=false
+FM_TEST_SUMMARY total=2 failed=1 skipped_gate=0 duration_ms=782027
+FM_TEST_SUMMARY_FAMILY family=watcher-wake-lock count=2 duration_ms=784721 failed=1
+FM_TEST_SLOWEST rank=1 script=tests/fm-session-lock-ancestry.test.sh duration_ms=781064
+FM_TEST_SLOWEST rank=2 script=tests/fm-supervision-events.test.sh duration_ms=3657
+bash tests/fm-test-run.test.sh  82.06s user 140.51s system 21% cpu 17:13.77 total
+exit=1

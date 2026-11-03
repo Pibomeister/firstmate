@@ -1,0 +1,74 @@
+== AFTER (this branch) test file, live inventory has 60 unhinted serial scripts ==
+ok - portable shard union and disjointness hold
+ok - portable parallel lanes are fully hinted and packed within 5% of each other
+ok - coverage guard bounds the unmeasured share and serial packing within twenty minutes
+ok - serial packing accepts the exact budget and refuses one millisecond above it
+exit=0
+
+== BEFORE (base 58d03216) test file, same polluted inventory ==
+fm-test-run: coverage guard: 60 of 363 portable serial scripts have no measured duration hint (max 15%)
+fm-test-run: refresh the hints from a green run's timing artifacts: docs/fm-test-portable-shards.md
+tests/zz-unhinted-1.test.sh
+tests/zz-unhinted-10.test.sh
+tests/zz-unhinted-11.test.sh
+tests/zz-unhinted-12.test.sh
+tests/zz-unhinted-13.test.sh
+tests/zz-unhinted-14.test.sh
+tests/zz-unhinted-15.test.sh
+tests/zz-unhinted-16.test.sh
+tests/zz-unhinted-17.test.sh
+tests/zz-unhinted-18.test.sh
+tests/zz-unhinted-19.test.sh
+tests/zz-unhinted-2.test.sh
+tests/zz-unhinted-20.test.sh
+tests/zz-unhinted-21.test.sh
+tests/zz-unhinted-22.test.sh
+tests/zz-unhinted-23.test.sh
+tests/zz-unhinted-24.test.sh
+tests/zz-unhinted-25.test.sh
+tests/zz-unhinted-26.test.sh
+tests/zz-unhinted-27.test.sh
+tests/zz-unhinted-28.test.sh
+tests/zz-unhinted-29.test.sh
+tests/zz-unhinted-3.test.sh
+tests/zz-unhinted-30.test.sh
+tests/zz-unhinted-31.test.sh
+tests/zz-unhinted-32.test.sh
+tests/zz-unhinted-33.test.sh
+tests/zz-unhinted-34.test.sh
+tests/zz-unhinted-35.test.sh
+tests/zz-unhinted-36.test.sh
+tests/zz-unhinted-37.test.sh
+tests/zz-unhinted-38.test.sh
+tests/zz-unhinted-39.test.sh
+tests/zz-unhinted-4.test.sh
+tests/zz-unhinted-40.test.sh
+tests/zz-unhinted-41.test.sh
+tests/zz-unhinted-42.test.sh
+tests/zz-unhinted-43.test.sh
+tests/zz-unhinted-44.test.sh
+tests/zz-unhinted-45.test.sh
+tests/zz-unhinted-46.test.sh
+tests/zz-unhinted-47.test.sh
+tests/zz-unhinted-48.test.sh
+tests/zz-unhinted-49.test.sh
+tests/zz-unhinted-5.test.sh
+tests/zz-unhinted-50.test.sh
+tests/zz-unhinted-51.test.sh
+tests/zz-unhinted-52.test.sh
+tests/zz-unhinted-53.test.sh
+tests/zz-unhinted-54.test.sh
+tests/zz-unhinted-55.test.sh
+tests/zz-unhinted-56.test.sh
+tests/zz-unhinted-57.test.sh
+tests/zz-unhinted-58.test.sh
+tests/zz-unhinted-59.test.sh
+tests/zz-unhinted-6.test.sh
+tests/zz-unhinted-60.test.sh
+tests/zz-unhinted-7.test.sh
+tests/zz-unhinted-8.test.sh
+tests/zz-unhinted-9.test.sh
+not ok - coverage guard success marker (missing: 'FM_TEST_COVERAGE ok')
+--- output ---
+
+exit=1
