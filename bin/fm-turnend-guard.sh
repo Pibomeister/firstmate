@@ -225,7 +225,12 @@ STOP_HOOK_ACTIVE=$(printf '%s' "$PAYLOAD" | jq -r '
   else false
   end
 ' 2>/dev/null) || allow_exit
-if [ "$CLAUDE_MODE" -eq 0 ] && [ "$AGY_MODE" -eq 0 ] && [ "$STOP_HOOK_ACTIVE" = "true" ]; then
+CODEX_MODE=0
+if [ "$CLAUDE_MODE" -eq 0 ] && [ "$CURSOR_MODE" -eq 0 ] \
+  && [ "$("$SCRIPT_DIR/fm-harness.sh" 2>/dev/null)" = codex ]; then
+  CODEX_MODE=1
+fi
+if [ "$CLAUDE_MODE" -eq 0 ] && [ "$CODEX_MODE" -eq 0 ] && [ "$AGY_MODE" -eq 0 ] && [ "$STOP_HOOK_ACTIVE" = "true" ]; then
   allow_exit
 fi
 

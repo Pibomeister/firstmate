@@ -765,10 +765,14 @@ fm_session_lock_same_session() {  # <state> [<ancestry-pids>]
 # session's run is its tagged CLAUDE_PID alone, so it records that tagged pid.
 fm_session_lock_anchor_pid() {
   local pids
-  pids=$(fm_harness_ancestry_pids) || return 1
-  if fm_session_lock_trusted_session_id "$pids" >/dev/null \
-    && fm_harness_pid_listed "$CLAUDE_PID" "$pids"; then
-    printf '%s\n' "$CLAUDE_PID"
+  pids=$(fm_harness_ancestry_pids) || pids=''
+  if [ -n "$pids" ]; then
+    if fm_session_lock_trusted_session_id "$pids" >/dev/null \
+      && fm_harness_pid_listed "$CLAUDE_PID" "$pids"; then
+      printf '%s\n' "$CLAUDE_PID"
+      return 0
+    fi
+    _fm_harness_outermost_pid "$pids"
     return 0
   fi
   if fm_session_lock_trusted_codex_session_id >/dev/null; then

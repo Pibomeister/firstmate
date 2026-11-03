@@ -865,37 +865,46 @@ test_unverified_state_backends_refuse_stop_verbs() {
   pass "fm-control: a backend that cannot prove an agent stopped refuses exit and relaunch"
 }
 
-# bin/fm-spawn.sh refuses a Command Code launch off tmux and herdr, but only
-# after a relaunch has stopped the old agent, so fm-control must refuse a
-# relaunch onto commandcode there while the running agent is untouched.
-test_commandcode_relaunch_off_tmux_and_herdr_refuses_before_stopping() {
-  local dir out rc backend meta_before
+test_backend_restricted_relaunch_off_tmux_and_herdr_refuses_before_stopping() {
+  local dir out rc backend meta_before target
+  for target in commandcode agy; do
   for backend in zellij cmux orca tern; do
-    dir=$(new_case "cc-relaunch-$backend")
+    dir=$(new_case "$target-relaunch-$backend")
     case "$backend" in
       zellij)
         add_task "$dir" t1 claude ship zellij "sess:7"
-        printf 'zellij_session=sess\nzellij_tab_id=1\nzellij_pane_id=7\n' >> "$dir/home/state/t1.meta"
+        printf 'zellij_session=sess
+zellij_tab_id=1
+zellij_pane_id=7
+' >> "$dir/home/state/t1.meta"
         ;;
       cmux)
         add_task "$dir" t1 claude ship cmux "ws1:surface1"
-        printf 'cmux_workspace_id=ws1\ncmux_surface_id=surface1\n' >> "$dir/home/state/t1.meta"
+        printf 'cmux_workspace_id=ws1
+cmux_surface_id=surface1
+' >> "$dir/home/state/t1.meta"
         ;;
       tern)
         add_task "$dir" t1 claude ship tern "9007199254740993:9223372036854775807"
-        printf 'tern_session_id=9007199254740993\ntern_tab_id=9007199254740995\ntern_block_id=9223372036854775807\n' >> "$dir/home/state/t1.meta"
+        printf 'tern_session_id=9007199254740993
+tern_tab_id=9007199254740995
+tern_block_id=9223372036854775807
+' >> "$dir/home/state/t1.meta"
         ;;
       orca)
         add_task "$dir" t1 claude ship orca "term-1"
         sed 's|^window=.*|window=fm-t1|' "$dir/home/state/t1.meta" > "$dir/home/state/t1.meta.new"
-        printf 'terminal=term-1\norca_worktree_id=wt-1::/orca/wt-1\n' >> "$dir/home/state/t1.meta.new"
+        printf 'terminal=term-1
+orca_worktree_id=wt-1::/orca/wt-1
+' >> "$dir/home/state/t1.meta.new"
         mv "$dir/home/state/t1.meta.new" "$dir/home/state/t1.meta"
         ;;
     esac
     alive_as "$dir" claude
     meta_before=$(cat "$dir/home/state/t1.meta")
     out=$(run_control "$dir" t1 relaunch --harness "$target" --note x); rc=$?
-    expect_code 1 "$rc" "a $target relaunch on $backend should refuse"$'\n'"$out"
+    expect_code 1 "$rc" "a $target relaunch on $backend should refuse"$'
+'"$out"
     # zellij and cmux refuse every relaunch earlier, for want of a stop proof.
     [ "$backend" != orca ] || assert_contains "$out" "verified on the tmux and herdr backends only; relaunching onto '$target'" \
       "the $target relaunch refusal on $backend should name the verified backends"
@@ -911,6 +920,7 @@ test_commandcode_relaunch_off_tmux_and_herdr_refuses_before_stopping() {
   done
   pass "fm-control relaunch: commandcode and agy off tmux and herdr are refused before the running agent is stopped"
 }
+
 
 test_hermes_profile_refusals_preserve_running_worker() {
   local dir out rc before
@@ -934,12 +944,14 @@ test_hermes_profile_refusals_preserve_running_worker() {
   pass 'fm-control relaunch: Hermes profile model and gateway refusals preserve the current worker'
 }
 
-test_state_verified_backends_are_exactly_tmux_herdr_and_rex() {
+test_state_verified_backends_are_exactly_tmux_herdr_orca_rex_and_t3code() {
   fm_control_backend_state_verified tmux || fail "tmux has a recovery-grade classifier"
   fm_control_backend_state_verified herdr || fail "herdr has a recovery-grade classifier"
+  fm_control_backend_state_verified orca || fail "orca has a recovery-grade classifier"
   fm_control_backend_state_verified rex || fail "rex has a recovery-grade classifier"
+  fm_control_backend_state_verified t3code || fail "t3code has a recovery-grade classifier"
   local backend
-  for backend in zellij orca cmux paseo tern; do
+  for backend in zellij cmux paseo tern; do
     fm_control_backend_state_verified "$backend" \
       && fail "$backend has no recovery-grade classifier and must not claim one"
   done
@@ -1817,9 +1829,9 @@ test_orca_droid_second_exit_is_idempotent
 test_orca_droid_exit_then_relaunch_is_admitted
 test_orca_droid_live_exit_without_marker_preserves_relaunch_proof
 test_unverified_state_backends_refuse_stop_verbs
-test_commandcode_relaunch_off_tmux_and_herdr_refuses_before_stopping
+test_backend_restricted_relaunch_off_tmux_and_herdr_refuses_before_stopping
 test_hermes_profile_refusals_preserve_running_worker
-test_state_verified_backends_are_exactly_tmux_herdr_and_rex
+test_state_verified_backends_are_exactly_tmux_herdr_orca_rex_and_t3code
 test_window_label_is_refused_with_the_exact_id
 test_explicit_endpoint_is_refused
 test_unknown_task_is_refused

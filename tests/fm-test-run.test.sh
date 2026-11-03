@@ -1207,49 +1207,28 @@ test_portable_serial_hint_coverage_is_reported_and_bounded() {
   pass "coverage guard bounds the unmeasured share and serial packing within twenty minutes"
 }
 
-test_portable_serial_packing_budget_boundary() {
-  local tmp repo script weight out rc
-  tmp=$(fm_test_tmproot fm-test-run-packing-boundary)
-  repo="$tmp/repo"
-  mkdir -p "$repo/bin" "$repo/tests"
-  # Preserve the real inventory and packing policy without executing suites.
-  # Give every inventory member a fixture hint so an unmeasured real script
-  # cannot take the default weight and join the at-budget shard.
-  while IFS= read -r script; do
-    printf '#!/usr/bin/env bash\nexit 0\n' >"$repo/$script"
-  done < <("$RUNNER" --list --all)
-
-  for weight in 1200000 1200001; do
-    cp "$RUNNER" "$repo/bin/fm-test-run.sh"
-    python3 - "$repo/bin/fm-test-run.sh" "$weight" <<'PY' \
-      || fail "could not seed the fixture's measured timing input"
+seed_serial_packing_fixture() {  # <repo> <shards> <path> <ms> [<path> <ms>...]
+  local repo=$1 shards=$2
+  shift 2
+  cp "$RUNNER" "$repo/bin/fm-test-run.sh"
+  python3 - "$repo/bin/fm-test-run.sh" "$shards" "$@" <<'PY' \
+    || fail "could not seed the fixture's measured timing input"
 from pathlib import Path
 import re, sys
 runner = Path(sys.argv[1])
-weight = sys.argv[2]
+shards = sys.argv[2]
+weights = dict(zip(sys.argv[3::2], sys.argv[4::2]))
 text = runner.read_text()
-scripts = sorted(
-    f"tests/{path.name}" for path in (runner.parent.parent / "tests").glob("*.test.sh")
-)
-if "tests/fm-watch-triage.test.sh" not in scripts:
-    sys.exit("fixture inventory lost tests/fm-watch-triage.test.sh")
-# Longest real serial member stays at the budget boundary; every other script
-# gets 1ms so longest-processing-time packing cannot fill that shard.
-lines = [
-    f"{script} {weight if script == 'tests/fm-watch-triage.test.sh' else '1'}"
-    for script in scripts
-]
-table = "\n".join(lines)
-new, n = re.subn(
-    r"(portable_serial_weight_hints\(\) \{\n  cat <<'EOF'\n).*?(\nEOF\n)",
-    lambda match: match.group(1) + table + match.group(2),
-    text,
-    count=1,
-    flags=re.S,
-)
-if n != 1:
-    sys.exit("serial hint table not found")
-runner.write_text(new)
+text = re.sub(r"(?m)^PORTABLE_SERIAL_SHARDS=[0-9]+$", f"PORTABLE_SERIAL_SHARDS={shards}", text)
+text = re.sub(r"(?m)^PORTABLE_SERIAL_DEFAULT_WEIGHT_MS=[0-9]+$", "PORTABLE_SERIAL_DEFAULT_WEIGHT_MS=0", text)
+def table(m):
+    rows = [line.split()[0] for line in m.group(2).splitlines() if line]
+    body = "".join(f"{row} {weights.get(row, 0)}\n" for row in rows)
+    return m.group(1) + body + m.group(3)
+text, n = re.subn(r"(portable_serial_weight_hints\(\) \{\n  cat <<'EOF'\n)(.*?)(^EOF\n)",
+                  table, text, count=1, flags=re.S | re.M)
+assert n == 1
+runner.write_text(text)
 PY
 }
 

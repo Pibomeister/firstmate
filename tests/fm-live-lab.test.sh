@@ -26,7 +26,7 @@ live_lab_cleanup() {
   while read -r dir; do
     [ -n "$dir" ] || continue
     [ -d "$dir" ] || continue
-    env -u TMUX TMUX_TMPDIR="$dir" tmux kill-server 2>/dev/null
+    env -u TMUX -u TMUX_PANE tmux -S "$dir/tmux-$(id -u)/default" kill-server 2>/dev/null
     case "$dir" in /tmp/fml.*) rm -rf "$dir" ;; esac
   done < "$TMP_ROOT/tmux-dirs"
   rm -rf "/tmp/fm-labt$$-mate" "/tmp/fm-labt$$-worker" "/tmp/fm-labt$$-other" /tmp/fm-labt"$$"-*+*

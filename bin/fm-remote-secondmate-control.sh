@@ -83,21 +83,6 @@ if [ "${1:-}" = retire ] && [ ! -e "$TARGET_HOME" ] && [ ! -L "$TARGET_HOME" ]; 
   esac
 fi
 
-die() { printf 'error: %s\n' "$1" >&2; exit 1; }
-usage() { sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
-validate_id() { case "$1" in ''|*[!A-Za-z0-9._-]*) die "invalid secondmate id: $1" ;; esac; }
-
-# Sourcing fm-wake-lib.sh through the libraries below creates "$FM_HOME/state",
-# so recognize an already-retired home before loading them rather than
-# fabricating an unseeded home that every later retirement then refuses.
-# The accepted arguments match the retire dispatcher's.
-if [ "${1:-}" = retire ] && [ ! -e "$TARGET_HOME" ] && [ ! -L "$TARGET_HOME" ]; then
-  case "$#:${3:-}" in
-    2:|3:|3:--force) validate_id "$2"; printf 'already-retired: %s\n' "$2"; exit 0 ;;
-    *) usage ;;
-  esac
-fi
-
 # shellcheck source=bin/fm-backend.sh
 . "$SCRIPT_DIR/fm-backend.sh"
 # shellcheck source=bin/fm-ff-lib.sh
@@ -244,9 +229,35 @@ cmd_route() {
 }
 
 cmd_launch() {
-  local id=$1 harness=$2 model=$3 effort=$4 selected_backend=$5 traceparent=${6:-}
+  local id=$1 harness=$2 model=$3 effort=$4 selected_backend=$5
+  shift 5
+  local budget='' traceparent='' token b_ih b_is b_fh b_fs extra=''
   local current meta out
   local -a launch_env
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      budget=*)
+        [ -z "$budget" ] || die "duplicate remote secondmate budget"
+        budget=${1#budget=}
+        ;;
+      *)
+        [ -z "$traceparent" ] || die "unexpected remote secondmate launch argument"
+        traceparent=$1
+        ;;
+    esac
+    shift
+  done
+  if [ -n "$budget" ]; then
+    IFS=: read -r b_ih b_is b_fh b_fs extra <<EOF
+$budget
+EOF
+    for token in "$b_ih" "$b_is" "$b_fh" "$b_fs"; do
+      case "$token" in
+        ''|*[!0-9]*|0*) die "remote secondmate budget must be four positive token counts" ;;
+      esac
+    done
+    [ -z "$extra" ] || die "remote secondmate budget must be four positive token counts"
+  fi
 
   validate_id "$id"
   validate_home "$id"

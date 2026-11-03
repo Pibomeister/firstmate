@@ -92,6 +92,7 @@ USE_CURRENT_GEN=0
 TURN_ENDED=0
 SOURCE=
 EVENT=
+PROMPT_SHA256=
 STREAM_OP=
 REQUEST=
 if [ "$CMD" = apply ]; then
@@ -113,6 +114,7 @@ while [ $# -gt 0 ]; do
     --source) SOURCE=${2:-}; shift 2 || usage ;;
     --event) EVENT=${2:-}; shift 2 || usage ;;
     --turn-ended) [ "$CMD" = apply ] || usage; TURN_ENDED=1; shift ;;
+    --prompt-sha256) PROMPT_SHA256=${2:-}; shift 2 || usage ;;
     --request) REQUEST=${2:-}; shift 2 || usage ;;
     *) usage ;;
   esac
@@ -341,6 +343,15 @@ write_record "$GEN" "$NEXT_SEQ" || {
   echo "error: record write failed for $ID" >&2
   exit 1
 }
+if [ -n "$PROMPT_SHA256" ]; then
+  printf 'v1 gen=%s seq=%s sha256=%s\n' "$GEN" "$NEXT_SEQ" "$PROMPT_SHA256" \
+    >> "$(fm_busy_prompt_receipts_path "$STATE" "$ID")" || {
+      lock_release
+      umask "$old_umask"
+      echo "error: prompt receipt write failed for $ID" >&2
+      exit 1
+    }
+fi
 if [ "$NEW_STATE" != busy ]; then
   clear_stream || { lock_release; exit 1; }
 fi

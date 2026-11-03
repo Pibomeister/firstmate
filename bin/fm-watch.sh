@@ -4096,7 +4096,12 @@ EOF
 # a second watcher, so every guard/beacon/arm/turn-end mechanism is unchanged.
 event_wait_or_sleep() {
   local w b session first_backend="" first_session="" rec rc
+  local wait_seconds=${WATCH_WAIT_BUDGET:-$POLL}
   local windows=() t3_windows=()
+  if [ "${FM_WATCH_FOREGROUND_CHECKPOINT:-0}" = 1 ] && [ -n "${FM_WATCH_CHECKPOINT_INBOX:-}" ]; then
+    checkpoint_inbox_sleep
+    return
+  fi
   while IFS= read -r w; do
     b=$(window_backend "$w")
     fm_backend_has_push "$b" || continue
@@ -4219,53 +4224,6 @@ evict_stalled_holder() {
   ! fm_pid_alive "$pid"
 }
 
-# Cleanup must exist before singleton PID publication and recovery startup.
-# A checkpoint can interrupt either while the recovery lock is contended.
-# Use the main shell PID that fm_lock_claim publishes, without a subshell.
-WATCHER_PID=${BASHPID:-$$}
-WATCHER_STARTUP_RETAIN_LOCK=0
-PR_POLL_CONTROL_LOCK=
-PR_POLL_PUBLISH_LOCK=
-
-pr_poll_control_release() {
-  [ -z "$PR_POLL_CONTROL_LOCK" ] || fm_lock_release "$PR_POLL_CONTROL_LOCK" || return 1
-  PR_POLL_CONTROL_LOCK=
-}
-
-pr_poll_publish_release() {
-  [ -z "$PR_POLL_PUBLISH_LOCK" ] || fm_lock_release "$PR_POLL_PUBLISH_LOCK" || return 1
-  PR_POLL_PUBLISH_LOCK=
-}
-
-watcher_cleanup() {
-  local cleanup_status=0 owns_lock=0 transition=release-lock
-  pr_poll_publish_release || cleanup_status=1
-  pr_poll_control_release || cleanup_status=1
-  if [ "$(cat "$WATCH_LOCK/pid" 2>/dev/null || true)" = "${WATCHER_PID:-}" ]; then
-    owns_lock=1
-    if [ "${WATCHER_RECOVERY_PENDING:-0}" -eq 1 ] \
-      && [ "${FM_WATCH_DELIVERED_REASON:-}" = "check: rearm-resurface" ]; then
-      transition=release-lock-existing
-    fi
-  fi
-  # Quietly: a stop usually lands inside the waited event wait, and bash would
-  # report the group it kills here as a "Terminated" job line on stderr.
-  fm_active_check_stop 2>/dev/null || cleanup_status=1
-  fm_check_output_cleanup
-  fm_capture_output_cleanup
-  fm_wait_tmp_cleanup
-  fm_custom_check_snapshot_cleanup
-  if [ "$owns_lock" -eq 1 ] && [ "$WATCHER_STARTUP_RETAIN_LOCK" -eq 0 ] \
-    && ! fm_recovery_transition "$WATCHER_DOWNTIME_MARKER" "$transition" "$WATCH_LOCK" \
-      downtime "$CLEANUP_LOCK_BOUND"; then
-    echo "watcher: recovery state could not be persisted; retaining stale lock evidence" >&2
-    cleanup_status=1
-  fi
-  return "$cleanup_status"
-}
-trap watcher_cleanup EXIT
-watcher_stop_signals
-
 EVICTED_PID=
 EVICTED_BEAT_AGE=
 BEAT="$STATE/.last-watcher-beat"
@@ -4337,23 +4295,6 @@ WATCHER_PID=${BASHPID:-$$}
 # Scope every staged owner to this watcher, including paths not yet returned
 # by mktemp when a stop arrives. Do not export this to detached workers.
 FM_LOCK_OWNER_SCOPE="$WATCHER_PID.$RANDOM.$RANDOM"
-
-# Opt-in lane capacity facts (docs/configuration.md "Lane capacity"): publish
-# state/lane-capacity.json detached for the same beacon-freshness reason as the
-# home summary above. bin/fm-capacity.sh's header owns the document.
-LANE_CAPACITY_PID=
-lane_capacity_publish_detached() {
-  if [ -n "$LANE_CAPACITY_PID" ]; then
-    if kill -0 "$LANE_CAPACITY_PID" 2>/dev/null; then
-      return 0
-    fi
-    wait "$LANE_CAPACITY_PID" 2>/dev/null || true
-    LANE_CAPACITY_PID=
-  fi
-  FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$CONFIG \
-    "$SCRIPT_DIR/fm-capacity.sh" --publish </dev/null >/dev/null 2>&1 &
-  LANE_CAPACITY_PID=$!
-}
 
 # Self-watching heartbeat ledger: publish state/heartbeat.json detached and
 # single-flight so no read can hold a poll. bin/fm-heartbeat.sh's header owns the
@@ -4497,6 +4438,15 @@ if [ -z "$FM_WATCH_DELIVERY_IDENTITY" ] \
   echo "watcher: FAILED - could not publish watcher identity in $WATCH_LOCK"
   exit 1
 fi
+# 0 when a row is queued, 1 when none is, and 124 when a live holder keeps the
+# queue lock past its bound.
+handling_successor_has_queued_row() {
+  local queued=1
+  fm_wake_queue_lock_acquire || return $?
+  [ ! -s "$FM_WAKE_QUEUE" ] || queued=0
+  fm_lock_release "$FM_WAKE_QUEUE_LOCK"
+  return "$queued"
+}
 
 # A bounded startup recovery-lock failure reports the typed line the arm relays; a
 # transient or dead holder keeps the legacy stderr diagnostic.
@@ -4648,16 +4598,12 @@ resurface_after_downtime() {
   # handoff after consuming the predecessor's rows, making any row left for
   # main a recoverable downtime episode.
   if [ "${FM_WATCH_HANDLING_SUCCESSOR:-0}" = 1 ]; then
-    if ! fm_recovery_marker_arm_check "$WATCHER_DOWNTIME_MARKER"; then
-      echo "watcher: recovery state could not be consumed safely" >&2
-      exit 1
-    fi
-    [ "$FM_RECOVERY_MARKER_ACTION" = recover ] || return 0
-    [ "$FM_RECOVERY_MARKER_QUEUED" = 1 ] || return 0
-    wake "check: rearm-resurface"
-  fi
-  if [ "$WATCHER_RECOVERY_PENDING" -ne 1 ]; then
-    if ! fm_recovery_marker_arm_check "$WATCHER_DOWNTIME_MARKER"; then
+    local successor_rc=0
+    fm_recovery_marker_arm_check "$WATCHER_DOWNTIME_MARKER" || successor_rc=$?
+    if [ "$successor_rc" -eq 124 ]; then
+      watch_lock_deferred wake-queue "${FM_LOCK_HELD_PID:-}"
+      return 0
+    elif [ "$successor_rc" -ne 0 ]; then
       echo "watcher: recovery state could not be consumed safely" >&2
       exit 1
     fi
@@ -4697,6 +4643,15 @@ while :; do
       || [ "$(fm_pid_identity "$FM_CODEX_PARK_OWNER_PID" 2>/dev/null)" != "${FM_CODEX_PARK_OWNER_IDENTITY:-}" ]; }; then
     echo 'watcher: exiting - native Codex park owner is gone' >&2
     exit 1
+  fi
+  if [ "${FM_WATCH_SECONDMATE_HOLD:-}" = 1 ]; then
+    if fm_secondmate_watch_binding_valid; then
+      FM_SM_BINDING_MISSES=0
+      [ "${FM_SM_NOTIFY_RETRY:-0}" -eq 0 ] || ! fm_secondmate_watch_notify || FM_SM_NOTIFY_RETRY=0
+    else
+      FM_SM_BINDING_MISSES=$(( ${FM_SM_BINDING_MISSES:-0} + 1 ))
+      [ "$FM_SM_BINDING_MISSES" -lt 3 ] || exit 1
+    fi
   fi
   # Home-gone exit: a deleted home, state directory, or code root means this
   # watcher's world is gone (a torn-down temporary home or a discarded

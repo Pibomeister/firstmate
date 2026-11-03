@@ -4391,8 +4391,6 @@ test_complete_refuses_an_entry_held_for_another_origin() {
   pass "complete refuses an entry held for another origin and flags one with none recorded"
 }
 
-test_hold_origins_follow_backend_holds() {
-  local home phase timing failure id shown origin out parent channel occurrence until_args=()
 # A report can inventory a question that is already held for a different
 # origin. `complete --cross-origin` attests that existing call without a second
 # registration, refuses unknown, closed, and same-origin ids, never changes the
@@ -4504,8 +4502,8 @@ test_complete_accepts_an_existing_call_held_for_another_origin() {
   pass "complete attests an existing call held for another origin without re-registering it"
 }
 
-test_hold_origins_precede_backend_holds() {
-  local home phase timing failure id shown origin until_args=()
+test_hold_origins_follow_backend_holds() {
+  local home phase timing failure id shown origin out parent channel occurrence until_args=()
   for phase in new active released; do
     for timing in plain dated; do
       home=$(make_home "origin-failure-$phase-$timing")

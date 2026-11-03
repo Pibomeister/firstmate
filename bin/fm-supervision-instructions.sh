@@ -109,7 +109,7 @@ case "$HARNESS" in
   hermes)
     echo 'error: hermes is a crewmate/scout adapter only; primary supervision is unsupported' >&2
     exit 1 ;;
-  claude|codex|opencode|pi|grok|cursor|omp|agy) SNIPPET="$DOC_DIR/$HARNESS.md" ;;
+  claude|codex|opencode|pi|grok|cursor|omp|muse|agy) SNIPPET="$DOC_DIR/$HARNESS.md" ;;
   pi-signed) SNIPPET="$DOC_DIR/pi.md" ;;
   *) HARNESS=unknown; SNIPPET="$DOC_DIR/unknown.md" ;;
 esac
@@ -136,6 +136,8 @@ case "$HARNESS" in
     fi
     ;;
 esac
+
+checkpoint_seconds=${FM_CODEX_WATCH_CHECKPOINT:-180}
 
 SECONDMATE_MODE=0
 if [ "$HARNESS" = codex ] && [ "$AFK" -eq 0 ] && [ -x "$SCRIPT_DIR/fm-watch.sh" ] \
@@ -238,8 +240,12 @@ repair_line() {
     codex)
       if [ "$CODEX_PARK" -eq 1 ]; then
         printf '%s%s\n' "$prefix" 'watcher supervision is owned by the Codex asynchronous Stop park; inspect state/.codex-park.json and the native hook registration before ending blind.'
+      elif [ "$SECONDMATE_MODE" -eq 1 ]; then
+        printf '%s%s\n' "$prefix" 'do not start a foreground checkpoint. Tell the parent that the outside-turn watcher failed, then stop. The Stop hook bounds repeated blocks.'
+      elif [ -n "$HOST_SNIPPET" ]; then
+        printf '%s%s\n' "$prefix" 'do not start another foreground checkpoint. The Stop hook re-arms a persistent watcher, except under an away record on this home, or allows this turn to end. Poll a checkpoint only while it is still running, then stop.'
       else
-        printf '%s%s%s%s\n' "$prefix" 'repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds ' "$checkpoint_seconds" '.'
+        printf '%s%s\n' "$prefix" 'do not start another foreground checkpoint. The Stop hook re-arms a persistent watcher or allows this turn to end. Poll a checkpoint only while it is still running, then stop.'
       fi
       ;;
     pi|pi-signed)

@@ -440,12 +440,14 @@ test_literal_paths_in_rendered_snippets() {
           assert_contains "$out" "$home/.omp/extensions/fm-primary-turnend-guard.ts" "omp turn-end path changed"
           ;;
         grok)
-          assert_contains "$out" "[ -f $quoted_config ] && . $quoted_config; exec bin/fm-watch-arm.sh" "quoted config path changed"
+          assert_contains "$out" "[ -f $quoted_config ] && . $quoted_config; export FM_WATCH_GROK_CONTINUITY=1; exec bin/fm-watch-arm.sh" "quoted config path changed"
           ;;
       esac
     done
   done
   pass "snippets preserve literal ampersands, quotes and spaces in paths across primary harnesses"
+}
+
 test_context_burn_reply_contract() {
   local home out repair
   home="$TMP_ROOT/burn-home"
