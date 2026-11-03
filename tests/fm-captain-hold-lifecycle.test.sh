@@ -4240,6 +4240,110 @@ test_complete_refuses_an_entry_held_for_another_origin() {
   pass "complete refuses an entry held for another origin and flags one with none recorded"
 }
 
+# A report can inventory a question that is already held for a different
+# origin. `complete --cross-origin` attests that existing call without a second
+# registration, refuses unknown, closed, and same-origin ids, never changes the
+# call's origin, and keeps `verify` refusing once that origin changes.
+test_complete_accepts_an_existing_call_held_for_another_origin() {
+  local home audit resume other o out shown lines
+  home=$(make_home cross-origin)
+  audit=sample-unattended-audit
+  resume=sample-resume-council
+  other=sample-third-review
+  for o in "$audit" "$resume" "$other"; do
+    mkdir -p "$home/data/$o"
+    tasks_in "$home" add "$o" "Investigate $o" --kind scout --repo sample --start >/dev/null \
+      || fail "could not create the $o fixture"
+    write_origin_meta "$home" "$o"
+    printf 'done: report complete\n' > "$home/state/$o.status"
+  done
+  run_captain "$home" hold sample-operator-setup --title "Operator setup call" \
+    --reason "captain must choose the operator setup" --repo sample --origin "$audit" >/dev/null \
+    || fail "could not hold the audit's call"
+
+  if run_captain "$home" complete "$resume" sample-operator-setup >/dev/null 2> "$home/plain.err"; then
+    fail "an ordinary entry held for another origin was accepted"
+  fi
+  assert_grep "--cross-origin sample-operator-setup" "$home/plain.err" \
+    "the origin refusal does not name the supported cross-origin path"
+
+  out=$(run_captain "$home" complete "$resume" --cross-origin sample-operator-setup) \
+    || fail "complete refused an existing call held for another origin"
+  assert_contains "$out" "existing calls held for other origins: sample-operator-setup=$audit" \
+    "the cross-origin attestation was not named"
+  assert_equals "decision_keys=sample-operator-setup" "$(grep '^decision_keys=' "$home/state/$resume.meta" | tail -1)" \
+    "the cross-origin call did not join the inventory"
+  assert_grep "cross_origin_keys=sample-operator-setup=$audit" "$home/state/$resume.meta" \
+    "the cross-origin call's origin was not pinned"
+  shown=$(tasks_in "$home" show sample-operator-setup --full)
+  assert_contains "$shown" "Captain hold origin: $audit" "the attestation changed the call's origin"
+  run_captain "$home" verify "$resume" >/dev/null || fail "verify refused the cross-origin inventory"
+  lines=$(wc -l < "$home/state/$resume.meta")
+  run_captain "$home" complete "$resume" --cross-origin sample-operator-setup >/dev/null \
+    || fail "a repeated cross-origin completion was refused"
+  run_captain "$home" complete "$resume" sample-operator-setup >/dev/null \
+    || fail "a pinned entry listed again without the flag was refused"
+  assert_equals "$lines" "$(wc -l < "$home/state/$resume.meta")" "a repeated completion rewrote the inventory"
+
+  # Refusals leave no attestation behind.
+  if run_captain "$home" complete "$other" --cross-origin sample-no-such-call >/dev/null 2> "$home/unknown.err"; then
+    fail "complete accepted an unknown cross-origin id"
+  fi
+  assert_grep "no captain call sample-no-such-call exists" "$home/unknown.err" "the unknown id was not named"
+  run_captain "$home" hold sample-closed-call --title "Closed call" \
+    --reason "captain must decide" --repo sample --origin "$audit" >/dev/null \
+    || fail "could not hold the call to close"
+  printf 'Go with the first option.\n' > "$home/closed.decision"
+  run_captain "$home" answer sample-closed-call --decision-file "$home/closed.decision" >/dev/null \
+    || fail "could not answer the call to close"
+  if run_captain "$home" complete "$other" --cross-origin sample-closed-call >/dev/null 2> "$home/closed.err"; then
+    fail "complete accepted a closed cross-origin call"
+  fi
+  assert_grep "is closed or no longer held for the captain" "$home/closed.err" "the closed call was not named"
+  run_captain "$home" hold sample-own-call --title "Own call" \
+    --reason "captain must decide" --repo sample --origin "$other" >/dev/null \
+    || fail "could not hold the third review's own call"
+  if run_captain "$home" complete "$other" --cross-origin sample-own-call >/dev/null 2> "$home/own.err"; then
+    fail "complete accepted its own call as cross-origin"
+  fi
+  assert_grep "list it without --cross-origin" "$home/own.err" "the same-origin refusal was not explained"
+  if run_captain "$home" complete "$other" --cross-origin "$other" >/dev/null 2> "$home/self.err"; then
+    fail "complete accepted the origin itself as cross-origin"
+  fi
+  assert_no_grep "decisions_reviewed=1" "$home/state/$other.meta" \
+    "a refused cross-origin completion recorded an attestation"
+
+  # An ordinary entry of this origin cannot later be re-labelled cross-origin.
+  run_captain "$home" complete "$other" sample-own-call >/dev/null \
+    || fail "could not attest the third review's own call"
+  if run_captain "$home" complete "$other" --cross-origin sample-own-call >/dev/null 2> "$home/relabel.err"; then
+    fail "an ordinary entry was re-attested as cross-origin"
+  fi
+  assert_grep "already attested as a call held for $other" "$home/relabel.err" "the re-label refusal was not named"
+
+  # An answer recorded later keeps the gate green; an origin change does not.
+  printf 'Use the managed setup.\n' > "$home/setup.decision"
+  run_captain "$home" answer sample-operator-setup --decision-file "$home/setup.decision" >/dev/null \
+    || fail "could not answer the cross-origin call"
+  run_captain "$home" verify "$resume" >/dev/null \
+    || fail "verify refused a cross-origin call answered after attestation"
+  run_captain "$home" hold sample-moved-call --title "Moved call" \
+    --reason "captain must decide" --repo sample --origin "$audit" >/dev/null \
+    || fail "could not hold the call to move"
+  run_captain "$home" complete "$resume" --cross-origin sample-moved-call >/dev/null \
+    || fail "could not attest the call to move"
+  run_captain "$home" hold sample-moved-call --reason "captain must decide" --origin "$other" >/dev/null \
+    || fail "could not move the call to another origin"
+  if run_captain "$home" verify "$resume" >/dev/null 2> "$home/moved.err"; then
+    fail "verify accepted a pinned call whose origin changed"
+  fi
+  assert_grep "recorded origin is now $other" "$home/moved.err" "the origin change was not named"
+  if run_captain "$home" complete "$resume" --cross-origin sample-moved-call >/dev/null 2> "$home/moved-complete.err"; then
+    fail "complete accepted a pinned call whose origin changed"
+  fi
+  pass "complete attests an existing call held for another origin without re-registering it"
+}
+
 test_hold_origins_precede_backend_holds() {
   local home phase timing failure id shown origin until_args=()
   for phase in new active released; do
@@ -4773,6 +4877,7 @@ test_historical_self_inventory_has_workable_repair
 test_inventory_compares_backend_identities
 test_origin_is_never_its_own_inventory_entry
 test_complete_refuses_an_entry_held_for_another_origin
+test_complete_accepts_an_existing_call_held_for_another_origin
 test_uninventoried_report_decision_refuses_completion
 test_hold_decodes_a_bare_scalar_body_without_the_nonref_default
 test_retained_body_keeps_its_utf8_bytes
