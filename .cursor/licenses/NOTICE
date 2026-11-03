@@ -1,23 +1,40 @@
 agent-kit
 Copyright (c) 2026 Eduardo Picazo
 
-The installable catalog adapts material from the following eleven donors: ten under
+The installable catalog adapts material from eleven catalog donors: ten under
 the MIT License and one, claude-mem, under the Apache License 2.0. Each adapted
 file is recorded in provenance/adaptations.yaml with its exact donor@commit:path
-source and a note of what was changed. Full license texts are in
-provenance/licenses/.
+source and a note of what was changed. Full license texts that accompany this copy
+are:
 
-The optional source-checkout semantic hook also adapts client and hook mechanics
+provenance/licenses/BayramAnnakov_claude-reflect.LICENSE
+provenance/licenses/BuilderIO_skills.LICENSE
+provenance/licenses/EveryInc_compound-engineering-plugin.LICENSE
+provenance/licenses/Yeachan-Heo_oh-my-claudecode.LICENSE
+provenance/licenses/Yeachan-Heo_oh-my-codex.LICENSE
+provenance/licenses/addyosmani_agent-skills.LICENSE
+provenance/licenses/cursor_plugins.LICENSE
+provenance/licenses/google_elephant-goldfish-model.LICENSE
+provenance/licenses/mattpocock_skills.LICENSE
+provenance/licenses/mizchi_jev-lint.LICENSE
+provenance/licenses/obra_superpowers.LICENSE
+provenance/licenses/thedotmack_claude-mem.LICENSE
+provenance/licenses/thedotmack_claude-mem.NOTICE
+provenance/licenses/warpdotdev_common-skills.LICENSE
+
+The optional source-checkout semantic hook adapts client and hook mechanics
 from mizchi, Copyright (c) 2026 mizchi<Kotaro Chikuba>, under the MIT License.
-Its donor pin, exact source paths and full license are recorded in provenance/.
-It is separate from the catalog donors listed below and is not bundled.
+bin/ak inlines that hook (tools/hooks/semantic-lint.ts and src/semantic-lint/).
+The license text is provenance/licenses/mizchi_jev-lint.LICENSE. It is not one
+of the catalog donors listed below.
 
-The review-isolation probe also adapts child-session joining and spawn-argument
+The review-isolation probe adapts child-session joining and spawn-argument
 inspection from google/elephant-goldfish-model, Copyright 2026 Google LLC, under
 the Apache License 2.0. The files were modified; provenance/adaptations.yaml
-states the change for each. The license text is
-provenance/licenses/google_elephant-goldfish-model.LICENSE. It is a research pin
-and is not one of the catalog donors listed below.
+states the change for each. bin/ak carries that probe (src/review-isolation-probe/
+and the doctor host-version check that imports it). The license text is
+provenance/licenses/google_elephant-goldfish-model.LICENSE. It is not one of the
+catalog donors listed below.
 
 - compound-engineering-plugin — Copyright (c) 2025 Every
   https://github.com/EveryInc/compound-engineering-plugin @ 05c42da94fd318fa081f29d17bf947762aa477b1
@@ -45,8 +62,8 @@ and is not one of the catalog donors listed below.
   learning runtime's skill doctor.
 
 The above copyright notices and the MIT permission notice apply to the
-substantial portions adapted from each MIT project among the eleven donors:
-the ten listed above.
+substantial portions adapted from each MIT project among those eleven catalog
+donors: the ten listed above.
 
 - claude-mem — Copyright 2026 Alex Newman — Apache License 2.0
   https://github.com/thedotmack/claude-mem @ 02cd0c9c47e38a849e764477290c571e84dfa043
@@ -110,3 +127,13 @@ package built into dist/:
   Stylistic contributors, MIT License,
   https://github.com/eslint-stylistic/eslint-stylistic @ 435c3ea0fd26a5fef9042c4b36b6e165fbbf8d08 —
   whose license is tools/oxlint/anti-slop/vendor/eslint-stylistic/LICENSE.
+
+Not bundled. Licence texts held in this repository and not copied into dist/:
+
+Research pins with no file in the installable catalog or in bin/ak derived from
+them. They stay in provenance/licenses/ for the pin record.
+
+provenance/licenses/caveman-ai_blocks.LICENSE
+provenance/licenses/caveman-ai_blocks.NOTICE
+provenance/licenses/tester-army_e2e.LICENSE
+provenance/licenses/tester-army_e2e.NOTICE

@@ -362,8 +362,25 @@
           "type": "array",
           "items": { "$ref": "common.schema.json#/$defs/artifact_ref" }
         },
+        "paraphrase": {
+          "description": "The comprehension seat's restatement of the document under two headings, stored with this lane's raw_output hash so synthesis cannot replace it. Required only when the lane role is doc-review/comprehension and the lane is covered. Other lanes omit it. Not yet backed by live probe evidence (phase 1b, GS-004g).",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["proposes", "existing_system"],
+          "properties": {
+            "proposes": {
+              "description": "What this document proposes, in two to five sentences.",
+              "$ref": "common.schema.json#/$defs/nonempty_string"
+            },
+            "existing_system": {
+              "description": "How the existing system works, per this document, in two to five sentences.",
+              "$ref": "common.schema.json#/$defs/nonempty_string"
+            }
+          },
+          "x-validator-rule": "review.comprehension-paraphrase-stored-by-hash"
+        },
         "raw_output": {
-          "description": "The seat's own output exactly as it returned, stored as a run artifact and referenced by hash before synthesis reads it. Synthesis deduplicates and never rewrites a severity, and this is what lets anyone check that it did: a finding the synthesized review carries is traceable to the raw output it came from, and one it dropped is visible there with its reason. Required on a covered lane, because a covered lane with no preserved output is a claim of coverage nobody can re-read.",
+          "description": "The seat's own output exactly as it returned, stored as a run artifact and referenced by hash before synthesis reads it. Synthesis deduplicates and never rewrites a severity, and this is what lets anyone check that it did: a finding the synthesized review carries is traceable to the raw output it came from, and one it dropped is visible there with its reason. Required on a covered lane, because a covered lane with no preserved output is a claim of coverage nobody can re-read. Skipped and unavailable lanes omit it: they produced no stored output, and requiring a hash there would reject existing review documents.",
           "$ref": "common.schema.json#/$defs/artifact_ref"
         },
         "standards_cited": {
@@ -389,6 +406,18 @@
             "required": ["reason"],
             "properties": { "verdict": { "enum": ["no-opinion", "block"] } }
           }
+        },
+        {
+          "description": "A covered comprehension lane carries both paraphrase headings and the hash of the stored raw output. Other lanes stay valid without paraphrase, so existing review documents remain valid. Not yet backed by live probe evidence (phase 1b, GS-004g).",
+          "if": {
+            "properties": {
+              "role": { "const": "doc-review/comprehension" },
+              "state": { "const": "covered" }
+            },
+            "required": ["role", "state"]
+          },
+          "then": { "required": ["paraphrase", "raw_output"] },
+          "x-validator-rule": "review.comprehension-paraphrase-stored-by-hash"
         }
       ]
     },

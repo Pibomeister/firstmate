@@ -5,23 +5,40 @@
 // agent-kit
 // Copyright (c) 2026 Eduardo Picazo
 //
-// The installable catalog adapts material from the following eleven donors: ten under
+// The installable catalog adapts material from eleven catalog donors: ten under
 // the MIT License and one, claude-mem, under the Apache License 2.0. Each adapted
 // file is recorded in provenance/adaptations.yaml with its exact donor@commit:path
-// source and a note of what was changed. Full license texts are in
-// provenance/licenses/.
+// source and a note of what was changed. Full license texts that accompany this copy
+// are:
 //
-// The optional source-checkout semantic hook also adapts client and hook mechanics
+// provenance/licenses/BayramAnnakov_claude-reflect.LICENSE
+// provenance/licenses/BuilderIO_skills.LICENSE
+// provenance/licenses/EveryInc_compound-engineering-plugin.LICENSE
+// provenance/licenses/Yeachan-Heo_oh-my-claudecode.LICENSE
+// provenance/licenses/Yeachan-Heo_oh-my-codex.LICENSE
+// provenance/licenses/addyosmani_agent-skills.LICENSE
+// provenance/licenses/cursor_plugins.LICENSE
+// provenance/licenses/google_elephant-goldfish-model.LICENSE
+// provenance/licenses/mattpocock_skills.LICENSE
+// provenance/licenses/mizchi_jev-lint.LICENSE
+// provenance/licenses/obra_superpowers.LICENSE
+// provenance/licenses/thedotmack_claude-mem.LICENSE
+// provenance/licenses/thedotmack_claude-mem.NOTICE
+// provenance/licenses/warpdotdev_common-skills.LICENSE
+//
+// The optional source-checkout semantic hook adapts client and hook mechanics
 // from mizchi, Copyright (c) 2026 mizchi<Kotaro Chikuba>, under the MIT License.
-// Its donor pin, exact source paths and full license are recorded in provenance/.
-// It is separate from the catalog donors listed below and is not bundled.
+// bin/ak inlines that hook (tools/hooks/semantic-lint.ts and src/semantic-lint/).
+// The license text is provenance/licenses/mizchi_jev-lint.LICENSE. It is not one
+// of the catalog donors listed below.
 //
-// The review-isolation probe also adapts child-session joining and spawn-argument
+// The review-isolation probe adapts child-session joining and spawn-argument
 // inspection from google/elephant-goldfish-model, Copyright 2026 Google LLC, under
 // the Apache License 2.0. The files were modified; provenance/adaptations.yaml
-// states the change for each. The license text is
-// provenance/licenses/google_elephant-goldfish-model.LICENSE. It is a research pin
-// and is not one of the catalog donors listed below.
+// states the change for each. bin/ak carries that probe (src/review-isolation-probe/
+// and the doctor host-version check that imports it). The license text is
+// provenance/licenses/google_elephant-goldfish-model.LICENSE. It is not one of the
+// catalog donors listed below.
 //
 // - compound-engineering-plugin — Copyright (c) 2025 Every
 //   https://github.com/EveryInc/compound-engineering-plugin @ 05c42da94fd318fa081f29d17bf947762aa477b1
@@ -49,8 +66,8 @@
 //   learning runtime's skill doctor.
 //
 // The above copyright notices and the MIT permission notice apply to the
-// substantial portions adapted from each MIT project among the eleven donors:
-// the ten listed above.
+// substantial portions adapted from each MIT project among those eleven catalog
+// donors: the ten listed above.
 //
 // - claude-mem — Copyright 2026 Alex Newman — Apache License 2.0
 //   https://github.com/thedotmack/claude-mem @ 02cd0c9c47e38a849e764477290c571e84dfa043
@@ -114,10 +131,42 @@
 //   Stylistic contributors, MIT License,
 //   https://github.com/eslint-stylistic/eslint-stylistic @ 435c3ea0fd26a5fef9042c4b36b6e165fbbf8d08 —
 //   whose license is tools/oxlint/anti-slop/vendor/eslint-stylistic/LICENSE.
+//
+// Not bundled. Licence texts held in this repository and not copied into dist/:
+//
+// Research pins with no file in the installable catalog or in bin/ak derived from
+// them. They stay in provenance/licenses/ for the pin record.
+//
+// provenance/licenses/caveman-ai_blocks.LICENSE
+// provenance/licenses/caveman-ai_blocks.NOTICE
+// provenance/licenses/tester-army_e2e.LICENSE
+// provenance/licenses/tester-army_e2e.NOTICE
 // --- LICENSE ---
 // MIT License
 //
 // Copyright (c) 2026 Eduardo Picazo
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+// --- LICENSES/ajv-formats.LICENSE ---
+// MIT License
+//
+// Copyright (c) 2020 Evgeny Poberezkin
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -159,28 +208,6 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 //
-// --- LICENSES/ajv-formats.LICENSE ---
-// MIT License
-//
-// Copyright (c) 2020 Evgeny Poberezkin
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in all
-// copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
 // --- LICENSES/fast-deep-equal.LICENSE ---
 // MIT License
 //
@@ -270,6 +297,429 @@
 // OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
 // TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 // THIS SOFTWARE.
+// --- provenance/licenses/BayramAnnakov_claude-reflect.LICENSE ---
+// MIT License
+//
+// Copyright (c) 2025 Bayram Annakov
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+// --- provenance/licenses/BuilderIO_skills.LICENSE ---
+// MIT License
+//
+// Copyright (c) 2026 Builder.io
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+// --- provenance/licenses/EveryInc_compound-engineering-plugin.LICENSE ---
+// MIT License
+//
+// Copyright (c) 2025 Every
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+// --- provenance/licenses/Yeachan-Heo_oh-my-claudecode.LICENSE ---
+// MIT License
+//
+// Copyright (c) 2025 Yeachan Heo
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+// --- provenance/licenses/Yeachan-Heo_oh-my-codex.LICENSE ---
+// MIT License
+//
+// Copyright (c) 2026 Yeachan-Heo
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+// --- provenance/licenses/addyosmani_agent-skills.LICENSE ---
+// MIT License
+//
+// Copyright (c) 2025 Addy Osmani
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+// --- provenance/licenses/cursor_plugins.LICENSE ---
+// MIT License
+//
+// Copyright (c) 2026 Lauren Tan
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+// --- provenance/licenses/google_elephant-goldfish-model.LICENSE ---
+//
+//                                  Apache License
+//                            Version 2.0, January 2004
+//                         http://www.apache.org/licenses/
+//
+//    TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
+//
+//    1. Definitions.
+//
+//       "License" shall mean the terms and conditions for use, reproduction,
+//       and distribution as defined by Sections 1 through 9 of this document.
+//
+//       "Licensor" shall mean the copyright owner or entity authorized by
+//       the copyright owner that is granting the License.
+//
+//       "Legal Entity" shall mean the union of the acting entity and all
+//       other entities that control, are controlled by, or are under common
+//       control with that entity. For the purposes of this definition,
+//       "control" means (i) the power, direct or indirect, to cause the
+//       direction or management of such entity, whether by contract or
+//       otherwise, or (ii) ownership of fifty percent (50%) or more of the
+//       outstanding shares, or (iii) beneficial ownership of such entity.
+//
+//       "You" (or "Your") shall mean an individual or Legal Entity
+//       exercising permissions granted by this License.
+//
+//       "Source" form shall mean the preferred form for making modifications,
+//       including but not limited to software source code, documentation
+//       source, and configuration files.
+//
+//       "Object" form shall mean any form resulting from mechanical
+//       transformation or translation of a Source form, including but
+//       not limited to compiled object code, generated documentation,
+//       and conversions to other media types.
+//
+//       "Work" shall mean the work of authorship, whether in Source or
+//       Object form, made available under the License, as indicated by a
+//       copyright notice that is included in or attached to the work
+//       (an example is provided in the Appendix below).
+//
+//       "Derivative Works" shall mean any work, whether in Source or Object
+//       form, that is based on (or derived from) the Work and for which the
+//       editorial revisions, annotations, elaborations, or other modifications
+//       represent, as a whole, an original work of authorship. For the purposes
+//       of this License, Derivative Works shall not include works that remain
+//       separable from, or merely link (or bind by name) to the interfaces of,
+//       the Work and Derivative Works thereof.
+//
+//       "Contribution" shall mean any work of authorship, including
+//       the original version of the Work and any modifications or additions
+//       to that Work or Derivative Works thereof, that is intentionally
+//       submitted to Licensor for inclusion in the Work by the copyright owner
+//       or by an individual or Legal Entity authorized to submit on behalf of
+//       the copyright owner. For the purposes of this definition, "submitted"
+//       means any form of electronic, verbal, or written communication sent
+//       to the Licensor or its representatives, including but not limited to
+//       communication on electronic mailing lists, source code control systems,
+//       and issue tracking systems that are managed by, or on behalf of, the
+//       Licensor for the purpose of discussing and improving the Work, but
+//       excluding communication that is conspicuously marked or otherwise
+//       designated in writing by the copyright owner as "Not a Contribution."
+//
+//       "Contributor" shall mean Licensor and any individual or Legal Entity
+//       on behalf of whom a Contribution has been received by Licensor and
+//       subsequently incorporated within the Work.
+//
+//    2. Grant of Copyright License. Subject to the terms and conditions of
+//       this License, each Contributor hereby grants to You a perpetual,
+//       worldwide, non-exclusive, no-charge, royalty-free, irrevocable
+//       copyright license to reproduce, prepare Derivative Works of,
+//       publicly display, publicly perform, sublicense, and distribute the
+//       Work and such Derivative Works in Source or Object form.
+//
+//    3. Grant of Patent License. Subject to the terms and conditions of
+//       this License, each Contributor hereby grants to You a perpetual,
+//       worldwide, non-exclusive, no-charge, royalty-free, irrevocable
+//       (except as stated in this section) patent license to make, have made,
+//       use, offer to sell, sell, import, and otherwise transfer the Work,
+//       where such license applies only to those patent claims licensable
+//       by such Contributor that are necessarily infringed by their
+//       Contribution(s) alone or by combination of their Contribution(s)
+//       with the Work to which such Contribution(s) was submitted. If You
+//       institute patent litigation against any entity (including a
+//       cross-claim or counterclaim in a lawsuit) alleging that the Work
+//       or a Contribution incorporated within the Work constitutes direct
+//       or contributory patent infringement, then any patent licenses
+//       granted to You under this License for that Work shall terminate
+//       as of the date such litigation is filed.
+//
+//    4. Redistribution. You may reproduce and distribute copies of the
+//       Work or Derivative Works thereof in any medium, with or without
+//       modifications, and in Source or Object form, provided that You
+//       meet the following conditions:
+//
+//       (a) You must give any other recipients of the Work or
+//           Derivative Works a copy of this License; and
+//
+//       (b) You must cause any modified files to carry prominent notices
+//           stating that You changed the files; and
+//
+//       (c) You must retain, in the Source form of any Derivative Works
+//           that You distribute, all copyright, patent, trademark, and
+//           attribution notices from the Source form of the Work,
+//           excluding those notices that do not pertain to any part of
+//           the Derivative Works; and
+//
+//       (d) If the Work includes a "NOTICE" text file as part of its
+//           distribution, then any Derivative Works that You distribute must
+//           include a readable copy of the attribution notices contained
+//           within such NOTICE file, excluding those notices that do not
+//           pertain to any part of the Derivative Works, in at least one
+//           of the following places: within a NOTICE text file distributed
+//           as part of the Derivative Works; within the Source form or
+//           documentation, if provided along with the Derivative Works; or,
+//           within a display generated by the Derivative Works, if and
+//           wherever such third-party notices normally appear. The contents
+//           of the NOTICE file are for informational purposes only and
+//           do not modify the License. You may add Your own attribution
+//           notices within Derivative Works that You distribute, alongside
+//           or as an addendum to the NOTICE text from the Work, provided
+//           that such additional attribution notices cannot be construed
+//           as modifying the License.
+//
+//       You may add Your own copyright statement to Your modifications and
+//       may provide additional or different license terms and conditions
+//       for use, reproduction, or distribution of Your modifications, or
+//       for any such Derivative Works as a whole, provided Your use,
+//       reproduction, and distribution of the Work otherwise complies with
+//       the conditions stated in this License.
+//
+//    5. Submission of Contributions. Unless You explicitly state otherwise,
+//       any Contribution intentionally submitted for inclusion in the Work
+//       by You to the Licensor shall be under the terms and conditions of
+//       this License, without any additional terms or conditions.
+//       Notwithstanding the above, nothing herein shall supersede or modify
+//       the terms of any separate license agreement you may have executed
+//       with Licensor regarding such Contributions.
+//
+//    6. Trademarks. This License does not grant permission to use the trade
+//       names, trademarks, service marks, or product names of the Licensor,
+//       except as required for reasonable and customary use in describing the
+//       origin of the Work and reproducing the content of the NOTICE file.
+//
+//    7. Disclaimer of Warranty. Unless required by applicable law or
+//       agreed to in writing, Licensor provides the Work (and each
+//       Contributor provides its Contributions) on an "AS IS" BASIS,
+//       WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+//       implied, including, without limitation, any warranties or conditions
+//       of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
+//       PARTICULAR PURPOSE. You are solely responsible for determining the
+//       appropriateness of using or redistributing the Work and assume any
+//       risks associated with Your exercise of permissions under this License.
+//
+//    8. Limitation of Liability. In no event and under no legal theory,
+//       whether in tort (including negligence), contract, or otherwise,
+//       unless required by applicable law (such as deliberate and grossly
+//       negligent acts) or agreed to in writing, shall any Contributor be
+//       liable to You for damages, including any direct, indirect, special,
+//       incidental, or consequential damages of any character arising as a
+//       result of this License or out of the use or inability to use the
+//       Work (including but not limited to damages for loss of goodwill,
+//       work stoppage, computer failure or malfunction, or any and all
+//       other commercial damages or losses), even if such Contributor
+//       has been advised of the possibility of such damages.
+//
+//    9. Accepting Warranty or Additional Liability. While redistributing
+//       the Work or Derivative Works thereof, You may choose to offer,
+//       and charge a fee for, acceptance of support, warranty, indemnity,
+//       or other liability obligations and/or rights consistent with this
+//       License. However, in accepting such obligations, You may act only
+//       on Your own behalf and on Your sole responsibility, not on behalf
+//       of any other Contributor, and only if You agree to indemnify,
+//       defend, and hold each Contributor harmless for any liability
+//       incurred by, or claims asserted against, such Contributor by reason
+//       of your accepting any such warranty or additional liability.
+//
+//    END OF TERMS AND CONDITIONS
+//
+//    APPENDIX: How to apply the Apache License to your work.
+//
+//       To apply the Apache License to your work, attach the following
+//       boilerplate notice, with the fields enclosed by brackets "[]"
+//       replaced with your own identifying information. (Don't include
+//       the brackets!)  The text should be enclosed in the appropriate
+//       comment syntax for the file format. We also recommend that a
+//       file or class name and description of purpose be included on the
+//       same "printed page" as the copyright notice for easier
+//       identification within third-party archives.
+//
+//    Copyright [yyyy] [name of copyright owner]
+//
+//    Licensed under the Apache License, Version 2.0 (the "License");
+//    you may not use this file except in compliance with the License.
+//    You may obtain a copy of the License at
+//
+//        http://www.apache.org/licenses/LICENSE-2.0
+//
+//    Unless required by applicable law or agreed to in writing, software
+//    distributed under the License is distributed on an "AS IS" BASIS,
+//    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//    See the License for the specific language governing permissions and
+//    limitations under the License.
+// --- provenance/licenses/mattpocock_skills.LICENSE ---
+// MIT License
+//
+// Copyright (c) 2026 Matt Pocock
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+// --- provenance/licenses/mizchi_jev-lint.LICENSE ---
+// MIT License
+//
+// Copyright (c) 2026 mizchi<Kotaro Chikuba>
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+// --- provenance/licenses/obra_superpowers.LICENSE ---
+// MIT License
+//
+// Copyright (c) 2025 Jesse Vincent
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
 // --- provenance/licenses/thedotmack_claude-mem.LICENSE ---
 //
 //                                  Apache License
@@ -482,6 +932,28 @@
 // Licensed under the Apache License, Version 2.0.
 //
 // If other attributions are required by dependencies or included code, add them here.
+// --- provenance/licenses/warpdotdev_common-skills.LICENSE ---
+// MIT License
+//
+// Copyright (c) 2026 Denver Technologies, Inc.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
 // @bun
 var __create = Object.create;
 var __getProtoOf = Object.getPrototypeOf;
@@ -7969,6 +8441,7 @@ var init_common_schema = __esm(() => {
           "dossier",
           "finding",
           "review",
+          "cold-read",
           "verification",
           "verification-recipe",
           "charter",
@@ -16525,6 +16998,23 @@ var init_project_schema = __esm(() => {
           allow_no_new_decision: { const: true },
           indexing_required: { type: "boolean" }
         }
+      },
+      review: {
+        description: "Per-project settings for the comprehension seat and the independent ticket cold read. Each key is off, shadow or on, and defaults to off. A missing review object, or a missing key inside one, is the same as off: neither seat runs, nothing is stored, and no ticket is required to cite a cold read. Shadow records output without changing a verdict or delegation class. On is the form that can block. These settings are not yet backed by live probe evidence (phase 1b, GS-004g).",
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          comprehension: {
+            description: "Whether doc-review seats a comprehension reader. off: the seat does not run. shadow: it runs, its output is stored and printed, and its findings do not enter the other buckets or change the verdict. on: its findings follow the ordinary buckets. Default off. Not yet backed by live probe evidence (phase 1b, GS-004g).",
+            enum: ["off", "shadow", "on"],
+            default: "off"
+          },
+          cold_read: {
+            description: "Whether super-bound dispatches an independent cold read of each implementation ticket. off: no read. shadow: the read runs and is stored, and listed decisions are printed, but nothing reclassifies the ticket or reaches delegation evidence. on: every implementation ticket requires a cold_read_ref whose cited read has status complete or unavailable. An unavailable read still satisfies that requirement. A draft or missing status does not. Raising the class on an unavailable read is a later phase (GS-004k). A ticket whose project record is not indexed, or that names no project, is treated as off, so the gate does not hold against a ticket that edits its own project field. Hardening is follow-up GS-004l. A light-route exemption is a later follow-up. Default off. Not yet backed by live probe evidence (phase 1b, GS-004g).",
+            enum: ["off", "shadow", "on"],
+            default: "off"
+          }
+        }
       }
     },
     unevaluatedProperties: false,
@@ -16772,6 +17262,17 @@ var init_ticket_schema = __esm(() => {
             resolved_as: { enum: ["criterion", "non-goal", "open"] }
           }
         }
+      },
+      cold_read_ref: {
+        description: "Hash-bound pointer to the independent cold-read artifact for this implementation ticket. Required when the project record's review.cold_read is on and the ticket type is implementation. Off, shadow, a missing review object, and a decision ticket do not require it. A ticket whose project record is not indexed, or that names no project, is treated as off, so the gate does not hold against a ticket that edits its own project field. Hardening is follow-up GS-004l. A light-route exemption is a later follow-up. Not yet backed by live probe evidence (phase 1b, GS-004g).",
+        allOf: [
+          { $ref: "common.schema.json#/$defs/artifact_ref" },
+          {
+            required: ["schema"],
+            properties: { schema: { const: "cold-read" } }
+          }
+        ],
+        "x-validator-rule": "ticket.cold-read-ref-required-when-on"
       },
       decision: {
         description: "Present only on decision tickets.",
@@ -17589,6 +18090,166 @@ var init_charter_schema = __esm(() => {
           properties: { default_grants: { contains: { const: "publish-lesson" } } },
           required: ["default_grants"]
         }
+      }
+    ]
+  };
+});
+
+// schemas/cold-read.schema.json
+var cold_read_schema_default;
+var init_cold_read_schema = __esm(() => {
+  cold_read_schema_default = {
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    $id: "https://agent-kit.local/schemas/cold-read.schema.json",
+    title: "Ticket cold read",
+    description: "An independent read of one implementation ticket: what the reader would build, every decision the ticket leaves open, terms it could not resolve, codebase claims marked already present or proposed by the ticket, and whether each readiness criterion's named evidence was found. A path or name the ticket proposes is not a defect for being absent at the stated revision. The record is a run artifact cited from the ticket when the project setting is on. A cited read satisfies review.cold_read on only when status is complete or unavailable. A draft or missing status does not. Raising the class on an unavailable read is a later phase (GS-004k). Not yet backed by live probe evidence (phase 1b, GS-004g).",
+    type: "object",
+    required: ["ticket", "state"],
+    properties: {
+      schema: { const: "cold-read" },
+      status: {
+        description: "draft while the read is in flight; complete once stored; unavailable when the host could not give the reader a separate context.",
+        enum: ["draft", "complete", "unavailable"]
+      },
+      ticket: {
+        description: "The implementation ticket that was read, bound by hash.",
+        $ref: "common.schema.json#/$defs/artifact_ref"
+      },
+      paraphrase: {
+        description: "What the reader would build from the ticket alone.",
+        $ref: "common.schema.json#/$defs/nonempty_string"
+      },
+      decisions: {
+        description: "Every decision the reader would have to make that the ticket does not settle. Each listed decision is an unsettled design choice, never the absence of a proposed path.",
+        type: "array",
+        items: { $ref: "#/$defs/decision" }
+      },
+      unresolved_terms: {
+        description: "Terms the reader could not resolve from the ticket and the checkout it was given.",
+        $ref: "common.schema.json#/$defs/string_list"
+      },
+      claims: {
+        description: "Each claim the reader makes about the codebase, labelled exists or proposed. A proposed claim whose target is absent at the stated revision is not a finding.",
+        type: "array",
+        items: { $ref: "#/$defs/claim" },
+        "x-validator-rule": "cold-read.proposed-absent-is-not-a-finding"
+      },
+      readiness: {
+        description: "One observation per specification-readiness criterion: whether the reader found the evidence that criterion names, and where.",
+        type: "object",
+        additionalProperties: false,
+        required: [
+          "acceptance_criteria",
+          "interfaces",
+          "examples",
+          "non_goals",
+          "existing_pattern",
+          "verification_path"
+        ],
+        properties: {
+          acceptance_criteria: { $ref: "#/$defs/readiness_observation" },
+          interfaces: { $ref: "#/$defs/readiness_observation" },
+          examples: { $ref: "#/$defs/readiness_observation" },
+          non_goals: { $ref: "#/$defs/readiness_observation" },
+          existing_pattern: { $ref: "#/$defs/readiness_observation" },
+          verification_path: { $ref: "#/$defs/readiness_observation" }
+        }
+      },
+      state: {
+        description: "covered when the reader returned; unavailable when the host could not provide a separate context. Unavailable with reason is a result, not an empty pass.",
+        enum: ["covered", "unavailable"]
+      },
+      reason: {
+        description: "Why the read is unavailable. Required in that state.",
+        $ref: "common.schema.json#/$defs/nonempty_string"
+      }
+    },
+    $defs: {
+      decision: {
+        type: "object",
+        additionalProperties: false,
+        required: ["text"],
+        properties: {
+          text: {
+            description: "The unsettled choice, in the reader's words.",
+            $ref: "common.schema.json#/$defs/nonempty_string"
+          },
+          claim: {
+            description: "When this decision is about a recorded claim, the claim's id. A proposed claim must not be cited here as absent.",
+            $ref: "common.schema.json#/$defs/kebab_id"
+          },
+          kind: {
+            description: "unsettled is a design choice the ticket does not settle. absent names a missing existing helper. unresolved-term is a name the reader could not resolve. absent on a proposed claim is refused.",
+            enum: ["unsettled", "absent", "unresolved-term"]
+          }
+        }
+      },
+      claim: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "target", "kind"],
+        properties: {
+          id: { $ref: "common.schema.json#/$defs/kebab_id" },
+          target: {
+            description: "The path, glob or symbol the claim is about.",
+            $ref: "common.schema.json#/$defs/nonempty_string"
+          },
+          kind: {
+            description: "exists: the ticket treats this as already in the tree. proposed: the ticket lists it as something the work produces, or it is a path in allowed_changes that is not at the stated revision.",
+            enum: ["exists", "proposed"]
+          },
+          observed: {
+            description: "Whether the target was present at the stated revision. proposed and absent together are valid and are not a finding.",
+            enum: ["present", "absent"]
+          }
+        }
+      },
+      readiness_observation: {
+        type: "object",
+        additionalProperties: false,
+        required: ["found"],
+        properties: {
+          found: { type: "boolean" },
+          where: {
+            description: "Where the reader found the evidence the criterion names. Required when found is true.",
+            $ref: "common.schema.json#/$defs/nonempty_string"
+          }
+        },
+        allOf: [
+          {
+            if: { properties: { found: { const: true } }, required: ["found"] },
+            then: { required: ["where"] }
+          }
+        ]
+      }
+    },
+    unevaluatedProperties: false,
+    allOf: [
+      { $ref: "common.schema.json#/$defs/envelope" },
+      {
+        description: "A covered read returns the paraphrase, the claim list, the decision list, unresolved terms and one observation per readiness criterion.",
+        if: { properties: { state: { const: "covered" } }, required: ["state"] },
+        then: { required: ["paraphrase", "decisions", "unresolved_terms", "claims", "readiness"] }
+      },
+      {
+        description: "An unavailable read states why, and cannot be read as coverage.",
+        if: { properties: { state: { const: "unavailable" } }, required: ["state"] },
+        then: { required: ["reason"] }
+      },
+      {
+        description: "status unavailable if and only if state is unavailable.",
+        if: { properties: { status: { const: "unavailable" } }, required: ["status"] },
+        then: { properties: { state: { const: "unavailable" } }, required: ["state"] }
+      },
+      {
+        description: "state unavailable if and only if status is unavailable.",
+        if: { properties: { state: { const: "unavailable" } }, required: ["state"] },
+        then: { properties: { status: { const: "unavailable" } }, required: ["status"] }
+      },
+      {
+        description: "status complete requires state covered.",
+        if: { properties: { status: { const: "complete" } }, required: ["status"] },
+        then: { properties: { state: { const: "covered" } }, required: ["state"] }
       }
     ]
   };
@@ -20589,8 +21250,25 @@ var init_review_schema = __esm(() => {
             type: "array",
             items: { $ref: "common.schema.json#/$defs/artifact_ref" }
           },
+          paraphrase: {
+            description: "The comprehension seat's restatement of the document under two headings, stored with this lane's raw_output hash so synthesis cannot replace it. Required only when the lane role is doc-review/comprehension and the lane is covered. Other lanes omit it. Not yet backed by live probe evidence (phase 1b, GS-004g).",
+            type: "object",
+            additionalProperties: false,
+            required: ["proposes", "existing_system"],
+            properties: {
+              proposes: {
+                description: "What this document proposes, in two to five sentences.",
+                $ref: "common.schema.json#/$defs/nonempty_string"
+              },
+              existing_system: {
+                description: "How the existing system works, per this document, in two to five sentences.",
+                $ref: "common.schema.json#/$defs/nonempty_string"
+              }
+            },
+            "x-validator-rule": "review.comprehension-paraphrase-stored-by-hash"
+          },
           raw_output: {
-            description: "The seat's own output exactly as it returned, stored as a run artifact and referenced by hash before synthesis reads it. Synthesis deduplicates and never rewrites a severity, and this is what lets anyone check that it did: a finding the synthesized review carries is traceable to the raw output it came from, and one it dropped is visible there with its reason. Required on a covered lane, because a covered lane with no preserved output is a claim of coverage nobody can re-read.",
+            description: "The seat's own output exactly as it returned, stored as a run artifact and referenced by hash before synthesis reads it. Synthesis deduplicates and never rewrites a severity, and this is what lets anyone check that it did: a finding the synthesized review carries is traceable to the raw output it came from, and one it dropped is visible there with its reason. Required on a covered lane, because a covered lane with no preserved output is a claim of coverage nobody can re-read. Skipped and unavailable lanes omit it: they produced no stored output, and requiring a hash there would reject existing review documents.",
             $ref: "common.schema.json#/$defs/artifact_ref"
           },
           standards_cited: {
@@ -20616,6 +21294,18 @@ var init_review_schema = __esm(() => {
               required: ["reason"],
               properties: { verdict: { enum: ["no-opinion", "block"] } }
             }
+          },
+          {
+            description: "A covered comprehension lane carries both paraphrase headings and the hash of the stored raw output. Other lanes stay valid without paraphrase, so existing review documents remain valid. Not yet backed by live probe evidence (phase 1b, GS-004g).",
+            if: {
+              properties: {
+                role: { const: "doc-review/comprehension" },
+                state: { const: "covered" }
+              },
+              required: ["role", "state"]
+            },
+            then: { required: ["paraphrase", "raw_output"] },
+            "x-validator-rule": "review.comprehension-paraphrase-stored-by-hash"
           }
         ]
       },
@@ -21652,6 +22342,7 @@ function checkRunArtifact(text) {
 var import__20205, import_ajv_formats3, ARTIFACT_SCHEMAS, ARTIFACT_SCHEMA_IDS, compiled = null, validHeader;
 var init_artifacts = __esm(() => {
   init_charter_schema();
+  init_cold_read_schema();
   init_common_schema();
   init_decision_schema();
   init_dossier_schema();
@@ -21676,6 +22367,7 @@ var init_artifacts = __esm(() => {
   import_ajv_formats3 = __toESM(require_dist(), 1);
   ARTIFACT_SCHEMAS = {
     charter: charter_schema_default,
+    "cold-read": cold_read_schema_default,
     decision: decision_schema_default,
     dossier: dossier_schema_default,
     evaluation: evaluation_schema_default,
@@ -35812,10 +36504,10 @@ var init_cli5 = __esm(() => {
 init_common_schema();
 var import_ajv16 = __toESM(require_ajv(), 1);
 var import__202012 = __toESM(require__2020(), 1);
-import { spawnSync as spawnSync5 } from "child_process";
-import { existsSync as existsSync40, readFileSync as readFileSync38, realpathSync as realpathSync17 } from "fs";
+import { spawnSync as spawnSync6 } from "child_process";
+import { existsSync as existsSync40, readFileSync as readFileSync39, realpathSync as realpathSync17 } from "fs";
 import { homedir as homedir6 } from "os";
-import { basename as basename21, isAbsolute as isAbsolute18, join as join48, relative as relative15 } from "path";
+import { basename as basename21, isAbsolute as isAbsolute18, join as join50, relative as relative15 } from "path";
 // schemas/tracker-binding.schema.json
 var tracker_binding_schema_default = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
@@ -39266,6 +39958,14 @@ import { createHash as createHash11 } from "crypto";
 import { existsSync as existsSync38, mkdirSync as mkdirSync24, readFileSync as readFileSync31, realpathSync as realpathSync11, renameSync as renameSync5, writeFileSync as writeFileSync15 } from "fs";
 import { basename as basename19, dirname as dirname21, isAbsolute as isAbsolute14, join as join43, relative as relative11, resolve as resolve16 } from "path";
 
+// src/lifecycle/design-report.ts
+function isNonArrayObject(value) {
+  return !Array.isArray(value) && Object(value) === value;
+}
+function isDesignReport(value) {
+  return isNonArrayObject(value) && "schema" in value && value.schema === "review";
+}
+
 // src/runner/evidence.ts
 import { mkdirSync as mkdirSync23, readFileSync as readFileSync29, realpathSync as realpathSync8, writeFileSync as writeFileSync14 } from "fs";
 import { isAbsolute as isAbsolute11, join as join41, relative as relative8 } from "path";
@@ -39796,6 +40496,13 @@ var ID = /^[a-z0-9][a-z0-9-]*$/;
 var EVENT_KEY = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/;
 var HUMAN_REFUSAL = "no";
 var HUMAN_RETRY = "retry";
+function isDesignReportBytes(bytes) {
+  try {
+    return isDesignReport(JSON.parse(bytes.toString()));
+  } catch {
+    return false;
+  }
+}
 var EFFECTS = new Set([
   "remote-push",
   "pr-open",
@@ -40619,8 +41326,16 @@ class Runner {
       return found === undefined || found.revision !== run.revision || found.diff_hash !== run.diff_hash || digest(this.evidenceStore.read(found.ref)) !== found.hash;
     }))
       return this.refuse(run, card, "runner:trusted-evidence", "Required trusted evidence is missing or stale");
-    if (card.operation === "ship.prepare" && !card.evidence.some((e) => run.evidence[e]?.kind === "verify"))
-      return this.refuse(run, card, "runner:trusted-evidence", "Ship requires runner-collected verification evidence");
+    if (card.operation === "ship.prepare") {
+      const verifyEvidence = card.evidence.flatMap((evidenceId) => {
+        const found = run.evidence[evidenceId];
+        return found?.kind === "verify" ? [found] : [];
+      });
+      if (verifyEvidence.length === 0)
+        return this.refuse(run, card, "runner:trusted-evidence", "Ship requires runner-collected verification evidence");
+      if (verifyEvidence.every((found) => isDesignReportBytes(this.evidenceStore.read(found.ref))))
+        return this.refuse(run, card, "runner:design-report", "A design report is not a verifier receipt");
+    }
     const reached = this.capReached(run, step);
     if (reached !== null)
       return this.cap(run, card, reached.limit, reached.value);
@@ -42388,6 +43103,222 @@ var isHookDoc = ajv9.compile({
 var isCommand = ajv9.compile({ type: "string" });
 if (false) {}
 
+// src/maintenance/host-probe-version.ts
+import { readdirSync as readdirSync13, readFileSync as readFileSync38 } from "fs";
+import { join as join49 } from "path";
+
+// src/review-isolation-probe/host-cli.ts
+import { spawnSync as spawnSync5 } from "child_process";
+import { accessSync as accessSync2, constants as constants2 } from "fs";
+import { join as join48 } from "path";
+var VERSION_TIMEOUT_MS = 5000;
+var HOST_VERSION_NOT_ON_PATH = "not on PATH";
+var HOST_VERSION_FIXTURE = "fixture (host CLI not invoked)";
+var NO_OUTPUT_SUFFIX = " (no version output)";
+function hostVersionNoOutput(bin) {
+  return `${bin}${NO_OUTPUT_SUFFIX}`;
+}
+function isHostVersionPlaceholder(value) {
+  return value === HOST_VERSION_NOT_ON_PATH || value === HOST_VERSION_FIXTURE || value.endsWith(NO_OUTPUT_SUFFIX);
+}
+function isExecutable(path) {
+  try {
+    accessSync2(path, constants2.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+function which(names, pathEnv) {
+  const path = pathEnv ?? "";
+  for (const name of names) {
+    if (name.includes("/")) {
+      if (isExecutable(name))
+        return name;
+      continue;
+    }
+    for (const dir of path.split(":")) {
+      if (dir === "")
+        continue;
+      const candidate = join48(dir, name);
+      if (isExecutable(candidate))
+        return candidate;
+    }
+  }
+  return null;
+}
+function spawnTimedOut(error) {
+  if (error === undefined)
+    return false;
+  return error.code === "ETIMEDOUT";
+}
+function captureHostVersion(binaries, versionArgs, options) {
+  const env = options.env;
+  const timeoutMs = options.timeoutMs ?? VERSION_TIMEOUT_MS;
+  const bin = which(binaries, env.PATH);
+  if (bin === null)
+    return HOST_VERSION_NOT_ON_PATH;
+  const result = spawnSync5(bin, [...versionArgs], {
+    encoding: "utf8",
+    timeout: timeoutMs,
+    killSignal: "SIGKILL",
+    env
+  });
+  if (options.requireZeroExit && (spawnTimedOut(result.error) || result.status !== 0)) {
+    return hostVersionNoOutput(bin);
+  }
+  const text = (result.stdout ?? "").trim() || (result.stderr ?? "").trim();
+  return text === "" ? hostVersionNoOutput(bin) : text.split(`
+`)[0] ?? text;
+}
+
+// src/review-isolation-probe/hosts.ts
+var HOST_PROFILES = {
+  "claude-code": {
+    id: "claude-code",
+    binaries: ["claude"],
+    versionArgs: ["--version"],
+    exposes: "Child sessions under $CLAUDE_CONFIG_DIR/projects/<encoded-workspace>/<session>/subagents/agent-*.jsonl, joined on the Agent/Task id in the parent trace. Init events list plugins, skills and memory_paths. Freshness is the absence of resume/fork in the Agent input, not a positive attestation.",
+    channels: {
+      "parent-turn": "child jsonl under projects/<workspace>/<session>/subagents/, joined on the Agent/Task id; freshness is the absence of resume/fork in the Agent input, not a positive attestation",
+      "hooks-and-memory": "SessionStart hook planted in the probe temp settings; memory-plugin half is unobservable (this probe does not write ~/.claude)",
+      "auto-loaded-instructions": "system/init memory_paths and names of CLAUDE.md / AGENTS.md in the child trace",
+      "transcript-on-disk": "child Read of workspace/.claude/projects/** ; R3.5 PreToolUse guard in the arm's temp settings",
+      "role-file-denied": "child Read tool_result is_error against the role file"
+    }
+  },
+  codex: {
+    id: "codex",
+    binaries: ["codex"],
+    versionArgs: ["--version"],
+    exposes: "Child threads as $CODEX_HOME/sessions/**/*<thread_id>.jsonl, joined from SubAgentActivity started events. spawn_agent arguments (fork_context / fork_turns) are the launch configuration. File reads appear as CommandExecution, not a Read tool. The package guard does not cover this host (CS-12), so the transcript-on-disk channel is observed only as a child command, never as a denied hook.",
+    channels: {
+      "parent-turn": "child session jsonl and spawn_agent arguments",
+      "hooks-and-memory": "unobservable: Codex has no SessionStart plant in the probe temp workspace, and this probe does not write ~/.codex",
+      "auto-loaded-instructions": "AGENTS.md in the child trace or prompt-input; unobservable when those events are absent",
+      "transcript-on-disk": "unobservable: the R3.5 PreToolUse guard is not plantable on this host (CS-12); child CommandExecution of the parent session path is recorded but not scored as pass or fail",
+      "role-file-denied": "child CommandExecution of the role file; this host has no per-read deny in the dispatch used here, so the arm is unobservable unless the transcript already shows a denial"
+    }
+  },
+  mastracode: {
+    id: "mastracode",
+    binaries: ["mastracode", "mastra"],
+    versionArgs: ["--version"],
+    exposes: "No adapter and no CLI dispatch path in this package. Review seats would be read-only custom subagents (createMastraCode({ subagents })), or AcpAgent with persistSession false if observational memory is shared. Child transcripts are not a documented session-store path here; arms stay unobservable until a fixture or an operator-supplied child transcript is provided.",
+    channels: {
+      "parent-turn": "unobservable unless a child transcript is supplied",
+      "hooks-and-memory": "the arm to watch (observational memory); unobservable without a child transcript that shows injection",
+      "auto-loaded-instructions": "unobservable without a child transcript or launch config naming those files",
+      "transcript-on-disk": "unobservable; no session-store path is documented for this host in the package",
+      "role-file-denied": "unobservable without a child transcript that records a denied role-file read"
+    }
+  }
+};
+function profileFor(host) {
+  return HOST_PROFILES[host];
+}
+
+// src/review-isolation-probe/types.ts
+var HOSTS2 = ["claude-code", "codex", "mastracode"];
+
+// src/maintenance/host-probe-version.ts
+var DOCTOR_PROBE_HOSTS = [...HOSTS2, "cursor"];
+var DATE_DIR = /^\d{4}-\d{2}-\d{2}$/;
+var HOST_VERSION_ROW = /^\| Host version \| (.*) \|$/m;
+var CURSOR_BINARIES = ["cursor-agent"];
+var CURSOR_VERSION_ARGS = ["--version"];
+function binariesFor(host) {
+  if (host === "cursor")
+    return CURSOR_BINARIES;
+  return profileFor(host).binaries;
+}
+function versionArgsFor(host) {
+  if (host === "cursor")
+    return CURSOR_VERSION_ARGS;
+  return profileFor(host).versionArgs;
+}
+function checkName(host) {
+  return `${host} isolation probe`;
+}
+function parseProbedHostVersion(note) {
+  const match = HOST_VERSION_ROW.exec(note.replaceAll(`\r
+`, `
+`));
+  const raw = match?.[1]?.trim();
+  if (raw === undefined || raw === "")
+    return null;
+  const version = raw.replaceAll("\\|", "|");
+  return isHostVersionPlaceholder(version) ? null : version;
+}
+function readLatestProbedHostVersion(factsRoot, host) {
+  const dates = [];
+  try {
+    for (const entry of readdirSync13(factsRoot, { withFileTypes: true })) {
+      if (entry.isDirectory() && DATE_DIR.test(entry.name))
+        dates.push(entry.name);
+    }
+  } catch {
+    return null;
+  }
+  for (const date of dates.toSorted().toReversed()) {
+    const path = join49(factsRoot, date, `review-isolation-${host}.md`);
+    try {
+      const version = parseProbedHostVersion(readFileSync38(path, "utf8"));
+      if (version !== null)
+        return { date, version, path };
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+function checkProbedHostVersion(host, installed, probedVersion, probedDate) {
+  const check = checkName(host);
+  const when = ` (${probedDate})`;
+  if (installed === probedVersion) {
+    return {
+      level: "PASS",
+      check,
+      detail: `installed ${installed} matches last probed ${probedVersion}${when}`,
+      remedy: "No action needed."
+    };
+  }
+  const remedy = host === "cursor" ? "Re-probe Cursor's review isolation and record a new research/host-facts/<date>/review-isolation-cursor.md note for this version. Probe results apply only to the version they recorded." : `Re-run scripts/review-isolation-probe.sh ${host} on this host version. Probe results apply only to the version they recorded.`;
+  return {
+    level: "WARN",
+    check,
+    detail: `installed ${installed} differs from last probed ${probedVersion}${when}`,
+    remedy
+  };
+}
+function hostsToCheck(factsRoot) {
+  const pairs = [];
+  for (const host of DOCTOR_PROBE_HOSTS) {
+    const probed = readLatestProbedHostVersion(factsRoot, host);
+    if (probed !== null)
+      pairs.push({ host, probed });
+  }
+  return pairs;
+}
+function probedHostVersionFindings(factsRoot, readInstalled) {
+  const items = [];
+  for (const { host, probed } of hostsToCheck(factsRoot)) {
+    const installed = readInstalled(host);
+    if (installed === null)
+      continue;
+    items.push(checkProbedHostVersion(host, installed, probed.version, probed.date));
+  }
+  return items;
+}
+function readInstalledHostVersion(host, env = process.env, timeoutMs = VERSION_TIMEOUT_MS) {
+  const captured = captureHostVersion(binariesFor(host), versionArgsFor(host), {
+    requireZeroExit: true,
+    env,
+    timeoutMs
+  });
+  return isHostVersionPlaceholder(captured) ? null : captured;
+}
+
 // src/maintenance/cli.ts
 var ajv10 = new import_ajv16.default;
 var pluginSchema = {
@@ -42467,7 +43398,7 @@ function finding(level, check, detail, remedy) {
 }
 function command(binary, args, cwd = process.cwd(), env = process.env, timeoutMs = COMMAND_TIMEOUT_MS) {
   const safeEnv = binary === "git" ? Object.fromEntries(Object.entries(env).filter(([key]) => !key.startsWith("GIT_"))) : env;
-  const run = spawnSync5(binary, args, { cwd, encoding: "utf8", env: safeEnv, timeout: timeoutMs });
+  const run = spawnSync6(binary, args, { cwd, encoding: "utf8", env: safeEnv, timeout: timeoutMs });
   return { ok: run.status === 0, output: (run.stdout || run.stderr || run.error?.message || "").trim() };
 }
 function parseJson3(source, validate) {
@@ -42517,9 +43448,9 @@ function isCodexSource(source, ref) {
   return ref === "published" && (source === "Pibomeister/agent-kit" || source === "https://github.com/Pibomeister/agent-kit.git" || source === "https://github.com/Pibomeister/agent-kit");
 }
 function codexSourceConfigured() {
-  const file = join48(process.env.CODEX_HOME ?? join48(homedir6(), ".codex"), "config.toml");
+  const file = join50(process.env.CODEX_HOME ?? join50(homedir6(), ".codex"), "config.toml");
   try {
-    const value = Bun.TOML.parse(readFileSync38(file, "utf8"));
+    const value = Bun.TOML.parse(readFileSync39(file, "utf8"));
     if (!validCodexConfig(value))
       return false;
     const source = value.marketplaces?.["agent-kit"];
@@ -42558,10 +43489,10 @@ function checkSource(host, published, configured = true, failure) {
 }
 function checkProjectEnablement(project) {
   const top = command("git", ["rev-parse", "--show-toplevel"], project);
-  const file = join48(top.ok ? top.output : project, ".claude", "settings.json");
+  const file = join50(top.ok ? top.output : project, ".claude", "settings.json");
   let settings;
   try {
-    settings = parseJson3(readFileSync38(file, "utf8"), validSettings);
+    settings = parseJson3(readFileSync39(file, "utf8"), validSettings);
   } catch {
     return finding("WARN", "project enablement", "no readable .claude/settings.json", `Set enabledPlugins["${ID2}"] to true in ${file}.`);
   }
@@ -42572,7 +43503,7 @@ function checkProjectEnablement(project) {
 }
 function findBindingRoot(start) {
   const root = findProjectRoot(start);
-  return existsSync40(join48(root, BINDING_FILE)) ? root : null;
+  return existsSync40(join50(root, BINDING_FILE)) ? root : null;
 }
 function parseBinding(root) {
   if (!root)
@@ -42584,7 +43515,7 @@ function parseBinding(root) {
   if (loaded.binding === null) {
     const issue = loaded.issues[0];
     return {
-      finding: finding("FAIL", "tracker binding", issue?.message ?? "invalid binding", `Repair ${join48(root, BINDING_FILE)}, then run ak tracker check.`),
+      finding: finding("FAIL", "tracker binding", issue?.message ?? "invalid binding", `Repair ${join50(root, BINDING_FILE)}, then run ak tracker check.`),
       binding: null
     };
   }
@@ -42627,11 +43558,11 @@ function checkLinearis(root, backend) {
   const topResult = command("git", ["rev-parse", "--show-toplevel"], root);
   const top = topResult.ok ? realpathSync17(topResult.output) : realpathSync17(root);
   for (const base of new Set([root, top])) {
-    const binary = join48(base, "node_modules", ".bin", "linearis");
+    const binary = join50(base, "node_modules", ".bin", "linearis");
     if (!existsSync40(binary))
       continue;
     const target = realpathSync17(binary);
-    if ([root, top].every((folder) => relative15(join48(realpathSync17(folder), "node_modules"), target).startsWith("..")))
+    if ([root, top].every((folder) => relative15(join50(realpathSync17(folder), "node_modules"), target).startsWith("..")))
       return finding("FAIL", "linearis", "project binary resolves outside the dependency tree", "Install linearis in this project's node_modules.");
     const version = command(binary, ["--version"], root, { ...process.env, NO_UPDATE_NOTIFIER: "1" });
     if (version.ok && version.output === "2026.8.0")
@@ -42644,7 +43575,7 @@ async function manifest(host, root = ROOT, timeoutMs = FETCH_TIMEOUT_MS) {
   const suffix = `dist/${host}/.${host === "codex" ? "codex" : "claude"}-plugin/plugin.json`;
   try {
     if (isAbsolute18(root)) {
-      const value = parseJson3(readFileSync38(join48(root, suffix), "utf8"), validManifest);
+      const value = parseJson3(readFileSync39(join50(root, suffix), "utf8"), validManifest);
       return { value, failure: value ? undefined : { reason: "invalid" } };
     } else {
       const response = await fetch(`${root}/${suffix}`, { signal: AbortSignal.timeout(timeoutMs) });
@@ -42696,12 +43627,13 @@ async function doctor2(json = false) {
     hasCodex || codexConfigured ? checkSource("Codex", codexSource.value, codexConfigured, codexSource.failure) : finding("WARN", "Codex marketplace source", "not configured", "Add Pibomeister/agent-kit --ref published."),
     checkPlugin("Claude Code", claude, claudeSource.value?.version ?? null),
     checkPlugin("Codex", codex, codexSource.value?.version ?? null),
+    ...probedHostVersionFindings(join50(hostRoot, "research/host-facts"), (host) => readInstalledHostVersion(host, process.env)),
     checkProjectEnablement(process.cwd()),
     binding.finding,
     checkToken(root, binding.binding),
     checkLinearis(root, binding.binding?.backend ?? null),
     checkKnowledgebase(process.cwd()),
-    checkSemanticLint(join48(homedir6(), semantic_lint_default.key_file), process.env.AK_JEV_ENABLED)
+    checkSemanticLint(join50(homedir6(), semantic_lint_default.key_file), process.env.AK_JEV_ENABLED)
   ];
   if (!hasClaude && !hasCodex) {
     items.push(finding("FAIL", "installation", "ak is absent from both hosts", "Install ak from the published marketplace in Claude Code or Codex."));
@@ -42718,8 +43650,8 @@ async function maintenanceCommandNotice() {
   if (!path || basename21(path) !== "ak")
     return null;
   try {
-    const current = readFileSync38(path, "utf8");
-    const published = isAbsolute18(ROOT) ? readFileSync38(join48(ROOT, "dist/claude-code/bin/ak"), "utf8") : await (async () => {
+    const current = readFileSync39(path, "utf8");
+    const published = isAbsolute18(ROOT) ? readFileSync39(join50(ROOT, "dist/claude-code/bin/ak"), "utf8") : await (async () => {
       const response = await fetch(`${ROOT}/dist/claude-code/bin/ak`, {
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
       });

@@ -25,7 +25,7 @@ schema_version: 1
 package:
   id: ak
   name: agent-kit
-  version: 0.1.86
+  version: 0.1.92
   # Canonical explicit-start namespace. Host adapters render this plus a skill
   # id into the host's native form when packaging (ADR-0011).
   namespace: "/ak:"
@@ -947,7 +947,7 @@ references:
       read before ship and the operator setup it rests on.
 
 # ---------------------------------------------------------------------------
-# Schemas — 37. `common` holds shared $defs and validates no document itself.
+# Schemas — 38. `common` holds shared $defs and validates no document itself.
 # ---------------------------------------------------------------------------
 schemas:
   - id: common
@@ -1002,6 +1002,12 @@ schemas:
     summary: >-
       A review run distinguishing comparison base, reviewed head and last head verified in the
       delta loop, with per-lane coverage and unavailability.
+  - id: cold-read
+    batch: 16
+    status: authored
+    summary: >-
+      An independent read of one implementation ticket: the reader's paraphrase, open decisions,
+      unresolved terms, exists-or-proposed claims, and one observation per readiness criterion.
   - id: verification
     batch: 1
     status: authored

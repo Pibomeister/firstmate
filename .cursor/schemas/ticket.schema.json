@@ -236,6 +236,17 @@
         }
       }
     },
+    "cold_read_ref": {
+      "description": "Hash-bound pointer to the independent cold-read artifact for this implementation ticket. Required when the project record's review.cold_read is on and the ticket type is implementation. Off, shadow, a missing review object, and a decision ticket do not require it. A ticket whose project record is not indexed, or that names no project, is treated as off, so the gate does not hold against a ticket that edits its own project field. Hardening is follow-up GS-004l. A light-route exemption is a later follow-up. Not yet backed by live probe evidence (phase 1b, GS-004g).",
+      "allOf": [
+        { "$ref": "common.schema.json#/$defs/artifact_ref" },
+        {
+          "required": ["schema"],
+          "properties": { "schema": { "const": "cold-read" } }
+        }
+      ],
+      "x-validator-rule": "ticket.cold-read-ref-required-when-on"
+    },
     "decision": {
       "description": "Present only on decision tickets.",
       "type": "object",

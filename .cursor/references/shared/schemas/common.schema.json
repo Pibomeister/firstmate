@@ -57,6 +57,7 @@
         "dossier",
         "finding",
         "review",
+        "cold-read",
         "verification",
         "verification-recipe",
         "charter",

@@ -405,6 +405,23 @@
         "allow_no_new_decision": { "const": true },
         "indexing_required": { "type": "boolean" }
       }
+    },
+    "review": {
+      "description": "Per-project settings for the comprehension seat and the independent ticket cold read. Each key is off, shadow or on, and defaults to off. A missing review object, or a missing key inside one, is the same as off: neither seat runs, nothing is stored, and no ticket is required to cite a cold read. Shadow records output without changing a verdict or delegation class. On is the form that can block. These settings are not yet backed by live probe evidence (phase 1b, GS-004g).",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "comprehension": {
+          "description": "Whether doc-review seats a comprehension reader. off: the seat does not run. shadow: it runs, its output is stored and printed, and its findings do not enter the other buckets or change the verdict. on: its findings follow the ordinary buckets. Default off. Not yet backed by live probe evidence (phase 1b, GS-004g).",
+          "enum": ["off", "shadow", "on"],
+          "default": "off"
+        },
+        "cold_read": {
+          "description": "Whether super-bound dispatches an independent cold read of each implementation ticket. off: no read. shadow: the read runs and is stored, and listed decisions are printed, but nothing reclassifies the ticket or reaches delegation evidence. on: every implementation ticket requires a cold_read_ref whose cited read has status complete or unavailable. An unavailable read still satisfies that requirement. A draft or missing status does not. Raising the class on an unavailable read is a later phase (GS-004k). A ticket whose project record is not indexed, or that names no project, is treated as off, so the gate does not hold against a ticket that edits its own project field. Hardening is follow-up GS-004l. A light-route exemption is a later follow-up. Default off. Not yet backed by live probe evidence (phase 1b, GS-004g).",
+          "enum": ["off", "shadow", "on"],
+          "default": "off"
+        }
+      }
     }
   },
   "unevaluatedProperties": false,
