@@ -233,10 +233,10 @@ The live-guard fixture rejects stale reports and incorrect tokens, sums, or work
 ## Keychain: the real HOME on macOS
 
 agy keeps its sign-in in the macOS login keychain, and macOS finds that keychain through `HOME`.
-Under a `HOME` with no `Library/Keychains/login.keychain-db`, agy runs signed out, and saving a sign-in makes macOS show "A keychain cannot be found to store 'antigravity'".
+Under a `HOME` with neither `Library/Keychains/login.keychain-db` nor the legacy `login.keychain`, agy runs signed out, and saving a sign-in makes macOS show "A keychain cannot be found to store 'antigravity'".
 The keychain itself was healthy; only the substituted `HOME` hid it.
 `bin/fm-spawn.sh` refuses an agy launch on macOS under such a `HOME` before anything launches, and names the cause.
-`tests/fm-agy-harness.test.sh` pins the refusal with a fake `uname` that reports Darwin.
+`tests/fm-agy-harness.test.sh` pins the refusal with a fake `uname` that reports Darwin, and accepts a HOME that has only the legacy `login.keychain`.
 Never press "Reset To Defaults" on that dialog; it does not apply to this cause.
 
 ## What is still unproven

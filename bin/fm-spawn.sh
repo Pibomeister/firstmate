@@ -3436,13 +3436,16 @@ if [ "${BACKEND_SPAWN_CHECKS_PENDING:-0}" = 1 ]; then
   spawn_backend_admit "$BACKEND" || exit 1
 fi
 # On macOS agy keeps its sign-in in the login keychain, which the Security
-# framework finds through $HOME. Under a HOME with no login keychain (a
-# substituted test HOME, some sandboxes) agy cannot read the sign-in, and
-# saving one raises macOS's modal "A keychain cannot be found" dialog on the
-# captain's screen. Refuse that HOME here, before anything launches.
+# framework finds through $HOME. Current accounts use login.keychain-db;
+# older or migrated accounts may still have only the legacy login.keychain.
+# Under a HOME with neither (a substituted test HOME, some sandboxes) agy
+# cannot read the sign-in, and saving one raises macOS's modal "A keychain
+# cannot be found" dialog on the captain's screen. Refuse that HOME here,
+# before anything launches.
 if [ "$HARNESS" = agy ] && [ "$(uname -s 2>/dev/null)" = Darwin ] \
-   && [ ! -e "$HOME/Library/Keychains/login.keychain-db" ]; then
-  echo "error: HOME=$HOME has no macOS login keychain (Library/Keychains/login.keychain-db), where agy keeps its sign-in; agy would run signed out and macOS would show a 'keychain cannot be found' dialog. Launch from the account's real HOME." >&2
+   && [ ! -e "$HOME/Library/Keychains/login.keychain-db" ] \
+   && [ ! -e "$HOME/Library/Keychains/login.keychain" ]; then
+  echo "error: HOME=$HOME has no macOS login keychain (Library/Keychains/login.keychain-db or Library/Keychains/login.keychain), where agy keeps its sign-in; agy would run signed out and macOS would show a 'keychain cannot be found' dialog. Launch from the account's real HOME." >&2
   exit 1
 fi
 if [ "$HARNESS" = agy ]; then

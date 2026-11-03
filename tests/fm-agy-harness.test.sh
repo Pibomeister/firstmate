@@ -1461,9 +1461,33 @@ test_agy_macos_home_without_login_keychain_refuses() {
     --model gemini-3.8-flash-low) || rc=$?
   [ "$rc" -ne 0 ] || fail "agy under a macOS HOME with no login keychain was accepted"
   assert_contains "$out" "has no macOS login keychain" "the keychain refusal lacked its concrete cause: $out"
+  assert_contains "$out" "Library/Keychains/login.keychain-db or Library/Keychains/login.keychain" \
+    "the keychain refusal did not name both current and legacy files: $out"
   [ -s "$CASE_DIR/launch.log" ] && fail "the keychain refusal still launched agy" || true
   assert_absent "$HOME_DIR/state/$id.meta" "the keychain refusal left a task record"
   pass "fm-spawn: agy refuses a macOS HOME with no login keychain before anything launches"
+}
+
+# Older or migrated macOS accounts may have only the pre-.keychain-db login
+# file. A Darwin HOME that holds that legacy name is valid, same as the
+# current login.keychain-db stand-in the relaunch suite uses.
+test_agy_macos_home_with_legacy_login_keychain_is_accepted() {
+  local id rec out rc
+  id="agy-legacykeychain-z27-$$"
+  rec=$(make_agy_spawn_case legacykeychain "$id")
+  read_agy_spawn_record "$rec"
+  rm -f "$HOME_DIR/Library/Keychains/login.keychain-db"
+  : > "$HOME_DIR/Library/Keychains/login.keychain"
+  printf '#!/bin/sh\necho Darwin\n' > "$FAKEBIN_DIR/uname"
+  chmod +x "$FAKEBIN_DIR/uname"
+  rc=0
+  out=$(run_agy_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" \
+    --model gemini-3.8-flash-low) || rc=$?
+  expect_code 0 "$rc" "agy under a macOS HOME with only the legacy login.keychain should spawn: $out"
+  assert_not_contains "$out" "has no macOS login keychain" \
+    "the legacy login.keychain HOME was refused: $out"
+  [ -s "$CASE_DIR/launch.log" ] || fail "the legacy login.keychain HOME produced no launch command"
+  pass "fm-spawn: agy accepts a macOS HOME that has only the legacy login.keychain"
 }
 
 # An Orca that is configured but not running is no reason to refuse agy: the
@@ -1698,6 +1722,7 @@ test_agy_configured_orca_that_is_down_still_falls_back
 test_agy_configured_t3code_falls_back_without_its_runtime_check
 test_agy_configured_rex_falls_back_without_its_server_check
 test_agy_macos_home_without_login_keychain_refuses
+test_agy_macos_home_with_legacy_login_keychain_is_accepted
 test_agy_missing_binary_refuses_before_pane_creation
 test_agy_secondmate_launch_pre_trusts_home_and_records_meta
 test_agy_spawn_arms_no_busy_wiring

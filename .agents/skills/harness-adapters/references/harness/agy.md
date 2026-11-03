@@ -44,7 +44,7 @@ Never steer into a pane still showing the dialog; a spawn that reported success 
 
 A verified agy worker ran under a signed-in Google account with no key export and no dialog.
 On macOS the sign-in lives in the login keychain, which macOS finds through `HOME`.
-Under a `HOME` with no `Library/Keychains/login.keychain-db`, agy runs signed out and saving a sign-in makes macOS show its modal "A keychain cannot be found" dialog, so `../../../../../bin/fm-spawn.sh` refuses that `HOME` before anything launches.
+Under a `HOME` with neither `Library/Keychains/login.keychain-db` nor the legacy `login.keychain`, agy runs signed out and saving a sign-in makes macOS show its modal "A keychain cannot be found" dialog, so `../../../../../bin/fm-spawn.sh` refuses that `HOME` before anything launches.
 Launch agy from the account's real `HOME`; never substitute a throwaway one on macOS.
 A signed-out agy answers `agy models` with an empty catalog, and the spawn refuses with the sign-in step.
 Treat that refusal, and any auth prompt, as a credential blocker under `../../../../../AGENTS.md` section 9: the captain runs `agy` once in a normal terminal and signs in.
