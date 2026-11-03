@@ -1019,6 +1019,8 @@ test_agy_effort_xhigh_is_recorded_but_omitted() {
   expect_code 0 "$rc" "agy spawn with an unsupported effort should still succeed"
   launch=$(cat "$CASE_DIR/launch.log")
   assert_not_contains "$launch" "--effort" "agy launch passed a known-bad effort value"
+  assert_contains "$out" "agy --effort xhigh is not listed in this build's --help; recording it and omitting it from the launch" \
+    "omitting xhigh did not print its notice: $out"
   meta="$HOME_DIR/state/$id.meta"
   assert_grep 'effort=xhigh' "$meta" "agy meta did not retain the unsupported effort axis"
   pass "fm-spawn: agy omits xhigh from the launch but records it in task metadata"
@@ -1038,6 +1040,8 @@ test_agy_effort_xhigh_and_max_pass_when_help_lists_them() {
     expect_code 0 "$rc" "agy spawn with a listed $level effort should succeed: $out"
     launch=$(cat "$CASE_DIR/launch.log")
     assert_contains "$launch" "--effort '$level'" "agy launch dropped the $level effort its help lists"
+    assert_not_contains "$out" "is not listed in this build's --help" \
+      "a listed $level effort still printed the omit notice: $out"
   done
   pass "fm-spawn: agy passes xhigh and max through when its help lists them"
 }
@@ -1068,6 +1072,23 @@ test_agy_unreachable_listing_launches_unvalidated() {
   [ -s "$CASE_DIR/launch.log" ] || fail "an unreachable listing produced no launch command"
   assert_contains "$out" "listing is unreachable" "an unreachable listing launched without its notice"
   pass "fm-spawn: an unreachable agy listing establishes nothing and launches"
+}
+
+# The sign-in probe still runs with no --model; an unreachable listing then
+# names the default-model case instead of a blank --model id.
+test_agy_unreachable_listing_without_model_names_the_default() {
+  local id rec out rc
+  id="agy-nolisting-default-z24-$$"
+  rec=$(make_agy_spawn_case nolisting-default "$id")
+  read_agy_spawn_record "$rec"
+  rc=0
+  out=$(FM_FAKE_AGY_MODELS_FAIL=1 run_agy_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" \
+    "$FAKEBIN_DIR" "$id") || rc=$?
+  expect_code 0 "$rc" "an unreachable listing with no --model must not block the spawn"
+  assert_contains "$out" "listing is unreachable (exit 3); launching with agy's default model without a sign-in check" \
+    "the no-model unreachable listing notice was wrong: $out"
+  [ -s "$CASE_DIR/launch.log" ] || fail "an unreachable listing with no --model produced no launch command"
+  pass "fm-spawn: an unreachable agy listing with no --model names the default-model sign-in check"
 }
 
 # A signed-out agy answers `agy models` with an empty catalog and exit 0 (its
@@ -1447,6 +1468,54 @@ test_agy_macos_home_without_login_keychain_refuses() {
 
 # An Orca that is configured but not running is no reason to refuse agy: the
 # fallback decides first, and the Orca runtime check runs only if Orca stays.
+test_agy_configured_t3code_falls_back_without_its_runtime_check() {
+  local id rec out rc
+  id="agy-fallback-t3code-z25-$$"
+  rec=$(make_agy_spawn_case fallback-t3code "$id")
+  read_agy_spawn_record "$rec"
+  # Log every node argv. T3's runtime check calls bin/fm-t3-mcp.mjs; agy
+  # trust parsing also uses node, so the pin is the helper name, not "node ran".
+  cat > "$FAKEBIN_DIR/node" <<EOF
+#!/bin/sh
+printf '%s\n' "\$*" >> "$CASE_DIR/node-calls.log"
+exec $(printf '%q' "$NODE_BIN") "\$@"
+EOF
+  chmod +x "$FAKEBIN_DIR/node"
+  printf 't3code\n' > "$HOME_DIR/config/backend"
+  rc=0
+  out=$(run_agy_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" \
+    --model gemini-3.8-flash-low) || rc=$?
+  expect_code 0 "$rc" "agy on configured t3code should fall back: $out"
+  assert_contains "$out" "this agy task runs on backend=tmux" \
+    "agy on configured t3code did not announce its fallback: $out"
+  if [ -s "$CASE_DIR/node-calls.log" ] && grep -Fqe 'fm-t3-mcp.mjs' "$CASE_DIR/node-calls.log"; then
+    fail "agy fallback still ran the t3code runtime check: $(cat "$CASE_DIR/node-calls.log")"
+  fi
+  pass "fm-spawn: agy on configured t3code falls back without running t3code's runtime check"
+}
+
+test_agy_configured_rex_falls_back_without_its_server_check() {
+  local id rec out rc
+  id="agy-fallback-rex-z26-$$"
+  rec=$(make_agy_spawn_case fallback-rex "$id")
+  read_agy_spawn_record "$rec"
+  cat > "$FAKEBIN_DIR/rex" <<EOF
+#!/bin/sh
+printf '%s\n' "\$*" >> "$CASE_DIR/rex-calls.log"
+exit 1
+EOF
+  chmod +x "$FAKEBIN_DIR/rex"
+  printf 'rex\n' > "$HOME_DIR/config/backend"
+  rc=0
+  out=$(run_agy_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" \
+    --model gemini-3.8-flash-low) || rc=$?
+  expect_code 0 "$rc" "agy on configured rex should fall back: $out"
+  assert_contains "$out" "this agy task runs on backend=tmux" \
+    "agy on configured rex did not announce its fallback: $out"
+  [ -s "$CASE_DIR/rex-calls.log" ] && fail "agy fallback still ran a rex CLI check: $(cat "$CASE_DIR/rex-calls.log")"
+  pass "fm-spawn: agy on configured rex falls back without running rex's server check"
+}
+
 test_agy_configured_orca_that_is_down_still_falls_back() {
   local id rec out rc
   id="agy-orca-down-z23-$$"
@@ -1604,6 +1673,7 @@ test_agy_effort_xhigh_is_recorded_but_omitted
 test_agy_effort_xhigh_and_max_pass_when_help_lists_them
 test_agy_unlisted_model_refuses_before_pane_creation
 test_agy_unreachable_listing_launches_unvalidated
+test_agy_unreachable_listing_without_model_names_the_default
 test_agy_empty_listing_refuses_as_signed_out
 test_agy_hung_listing_is_cut_off_and_launches
 test_agy_zero_model_timeout_is_clamped_to_the_default_bound
@@ -1625,6 +1695,8 @@ test_agy_configured_orca_prefers_herdr_when_available
 test_agy_fallback_refuses_when_no_verified_backend_is_available
 test_agy_env_backend_refuses_instead_of_falling_back
 test_agy_configured_orca_that_is_down_still_falls_back
+test_agy_configured_t3code_falls_back_without_its_runtime_check
+test_agy_configured_rex_falls_back_without_its_server_check
 test_agy_macos_home_without_login_keychain_refuses
 test_agy_missing_binary_refuses_before_pane_creation
 test_agy_secondmate_launch_pre_trusts_home_and_records_meta

@@ -22,7 +22,7 @@ Verified as a full Firstmate harness (Primary, Secondmate, and Crewmate/Scout).
 | Marker | None; a live TUI carries no `AGY_*` or `ANTIGRAVITY_*` variable. |
 | Resume | `--continue` and `--conversation` exist but carry no verified pane-resume contract; use deterministic relaunch. |
 | Model | `--model <id>` with the bare catalog id from `agy models` (for example `gemini-4-argon-high`); `bin/fm-spawn.sh` refuses a requested id a reachable listing omits. The listing is a remote fetch, so the probe runs stdin-detached under the shared hard bound and a failed or hung listing launches unvalidated with a notice. An empty catalog with exit 0 is how a signed-out agy answers, so it refuses with the sign-in step even when no model is requested. |
-| Effort | `--effort low\|medium\|high` always; `xhigh` and `max` pass only when the build's own `--effort` help line lists them (agy 1.4.10 does; it prints help on stderr), and otherwise stay in task metadata under the record-and-omit contract. |
+| Effort | `--effort low\|medium\|high` always; `xhigh` and `max` pass only when the build's own `--effort` help line lists them (agy 1.4.10 does; it prints help on stderr), and otherwise stay in task metadata under the record-and-omit contract with a spawn notice. |
 | Composer | A `>` prompt row between two full-width rules, with `? for shortcuts` on the row below: the separated shape pi and polytoken share. The shared classifier reads it only under an identified agy owner (the tmux process probe or Herdr's native `agy`): text after `>` is `pending`, the idle footer proves `empty`, and a busy row or any other footer stays `unknown`. agy's native status is not trusted for `empty`. |
 
 ## Trust, and where the decision persists
