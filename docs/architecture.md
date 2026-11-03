@@ -358,11 +358,13 @@ Placement is proven only at launch, so `bin/fm-spawn.sh` also delivers the task 
 ## No-mistakes gate authority boundary
 
 Firstmate's own no-mistakes gate runs agents inside a checkout that also contains the fleet-captain identity in `AGENTS.md`, so gate execution needs an authority boundary separate from ordinary crewmate worktree isolation.
-That boundary is `bin/fm-gate-refuse-lib.sh` plus no-mistakes' HEAD-continuity guard.
-The fleet lifecycle entrypoints use the refusal library to refuse gate calls against the real fleet, while permitting validation against a disposable lab home minted by `bin/fm-lab-home.sh`.
+`bin/fm-gate-refuse-lib.sh` only refuses the fleet-lifecycle entrypoints (`fm-spawn`, `fm-send`, `fm-teardown`, and similar) when `NO_MISTAKES_GATE` is set or the path is a gate repo, while permitting validation against a disposable lab home minted by `bin/fm-lab-home.sh`.
+No-mistakes' HEAD-continuity guard only catches HEAD/branch drift.
+Anything else a gate agent does after reading `AGENTS.md` (`gh`, `git`, other non-lifecycle commands) is no longer contained, and the captain accepted that trade-off.
 A normal primary checkout or crewmate worktree remains unaffected.
-The refusal library's header owns the gate detection, lab-home exception, test-harness bypass, and relationship to the HEAD-continuity guard; the lab helper's header owns its usage.
-The tracked `.no-mistakes.yaml` does not set `disable_project_settings`, because Cursor (`acp:cursor`) has no verified neutralization knob for `AGENTS.md`/`CLAUDE.md`; only codex, claude, pi, and acp:omp do.
+The refusal library's header owns the gate detection, lab-home exception, test-harness bypass, and exact caller list; the lab helper's header owns its usage.
+Removing `disable_project_settings` was the captain's deliberate choice to allow the Cursor (`acp:cursor`, Composer) gate agent, so gate agents now load `AGENTS.md`.
+Do not re-add that setting without switching the gate agent to codex, claude, pi, or acp:omp; otherwise it blocks the Cursor gate.
 
 ## Two task shapes
 
