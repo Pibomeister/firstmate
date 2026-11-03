@@ -29,6 +29,8 @@ set -u
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=bin/fm-role-lib.sh
 . "$SCRIPT_DIR/fm-role-lib.sh"
+# shellcheck source=bin/fm-secret-lib.sh
+. "$SCRIPT_DIR/fm-secret-lib.sh"
 
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
@@ -102,26 +104,11 @@ fm_self_heal_key_valid() {
   return 0
 }
 
-fm_self_heal_secret_p() {
-  LC_ALL=C grep -Eiq \
-    -e '(^|[^a-z0-9])(gh[pousr]_|github_pat_)[a-z0-9_]' \
-    -e 'x-access-token' \
-    -e 'authorization[[:space:]]*:' \
-    -e '(^|[^a-z0-9])bearer[[:space:]]+[^[:space:]]' \
-    -e 'https?://[^/[:space:]@]+@' \
-    -e '://[^/[:space:]@]+:[^/[:space:]@]*@' \
-    -e '(^|[^a-z0-9])sk-[a-z0-9_-]{8,}' \
-    -e '(^|[^a-z0-9])(akia|asia)[a-z0-9]{16}' \
-    -e '(token|password|passwd|pwd|secret|secret[_-]?key|api[_-]?key|access[_-]?key)["'"'"']?[[:space:]]*[=:][[:space:]]*[^[:space:]]' \
-    -e '-----BEGIN [a-z ]*PRIVATE KEY' \
-    <<< "$1"
-}
-
 fm_self_heal_refuse_secrets() {
   local part
   for part in "$@"; do
     [ -n "$part" ] || continue
-    if fm_self_heal_secret_p "$part"; then
+    if fm_secret_like "$part"; then
       die 'refusing input that looks like a secret; redact before filing'
     fi
   done

@@ -807,8 +807,54 @@ fm_backlog_row_dispatchable() {
   esac
 }
 
+# A relaunch replaces the worker of a task that already owns its In-flight row,
+# so it also admits that row while it is held: a hold stops new dispatch and
+# keeps the captain's publication and merge calls, and it does not decide
+# whether an existing task keeps a live worker. Admission never edits the hold.
+# A held Queued row, and any blocked row, still refuse.
+fm_backlog_row_relaunchable() {
+  case "$1" in
+    in_flight\ yes\ no) return 0 ;;
+    *) fm_backlog_row_dispatchable "$1" ;;
+  esac
+}
+
+# The relaunch admission check, readable before the old worker is touched
+# (bin/fm-control.sh relaunch runs it before it stops the agent). Returns 0
+# when the row admits a relaunch or the backlog transition does not apply, and
+# 1 or 2 with FM_BACKLOG_TRANSITION_ERROR naming the refusal otherwise.
+fm_backlog_relaunch_admission() {  # <config-dir> <data-dir> <kind> <id>
+  local config=$1 data=$2 kind=$3 id=$4 applies=0
+  FM_BACKLOG_TRANSITION_ERROR=
+  fm_backlog_transition_applies "$config" "$data" "$kind" || applies=$?
+  case "$applies" in
+    0) ;;
+    1) return 0 ;;
+    *)
+      FM_BACKLOG_TRANSITION_ERROR="the backlog data directory is inaccessible: $data (${FM_BACKLOG_TRANSITION_ERROR:-no error recorded})"
+      return 2
+      ;;
+  esac
+  if ! fm_backlog_row_probe "$data" "$id"; then
+    if [ "$FM_BACKLOG_ROW_RESULT" = not_found ]; then
+      FM_BACKLOG_TRANSITION_ERROR="task $id has no backlog item in this home"
+    else
+      FM_BACKLOG_TRANSITION_ERROR="task $id's backlog item could not be read (${FM_BACKLOG_ROW_ERROR:-no error recorded})"
+    fi
+    return 1
+  fi
+  if ! fm_backlog_row_relaunchable "$FM_BACKLOG_ROW_STATE"; then
+    FM_BACKLOG_TRANSITION_ERROR="this home's backlog item $id cannot take a relaunched worker in state $FM_BACKLOG_ROW_STATE"
+    return 1
+  fi
+  return 0
+}
+
+# <mode> is `relaunch` for a replacement worker, which admits a held In-flight
+# row without moving or releasing it (fm_backlog_row_relaunchable); any other
+# value, or none, is a fresh dispatch.
 fm_backlog_dispatch_transition() {
-  local meta=$1 data=$2 id=$3 state=$4 row row_status
+  local meta=$1 data=$2 id=$3 state=$4 mode=${5:-dispatch} row row_status
   fm_backlog_record_present "$meta" "task record" "$state" || return 1
   fm_backlog_row_probe "$data" "$id"
   row_status=$?
@@ -821,12 +867,17 @@ fm_backlog_dispatch_transition() {
     return "$row_status"
   fi
   row=$FM_BACKLOG_ROW_STATE
-  if ! fm_backlog_row_dispatchable "$row"; then
+  if [ "$mode" = relaunch ]; then
+    if ! fm_backlog_row_relaunchable "$row"; then
+      FM_BACKLOG_TRANSITION_ERROR="backlog item $id cannot take a relaunched worker in state $row"
+      return 1
+    fi
+  elif ! fm_backlog_row_dispatchable "$row"; then
     FM_BACKLOG_TRANSITION_ERROR="backlog item $id is not dispatchable in state $row"
     return 1
   fi
   case "$row" in
-    in_flight\ no\ no) return 0 ;;
+    in_flight\ no\ no|in_flight\ yes\ no) return 0 ;;
     queued\ no\ no) fm_backlog_start "$data" "$id" ;;
   esac
 }

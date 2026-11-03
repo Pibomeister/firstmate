@@ -3,8 +3,9 @@
 #
 # A confused no-mistakes gate agent runs inside a firstmate checkout, adopts the
 # captain identity from AGENTS.md, and reaches for fm-spawn/fm-send/fm-teardown.
-# bin/fm-gate-refuse-lib.sh is the firstmate capability-removal half: sourced at
-# the top of those three entrypoints and called before any fleet mutation, it
+# bin/fm-gate-refuse-lib.sh is sourced at the top of the five fleet-lifecycle
+# entrypoints (fm-spawn, fm-send, fm-teardown, fm-control, and
+# fm-approval-failover) and called before any fleet mutation; it
 # fails closed on either of two independent signals:
 #   1. NO_MISTAKES_GATE set in the environment (the marker no-mistakes stamps);
 #   2. the current worktree's git-common-dir resolves under a no-mistakes gate
@@ -29,9 +30,9 @@
 # when it is itself executed inside the real no-mistakes gate (whose process has
 # NO_MISTAKES_GATE=1 and a gate-worktree cwd).
 #
-# Finally, assert firstmate's TRACKED .no-mistakes.yaml parses and sets
-# disable_project_settings: true (the trusted-only opt-out that neutralizes gate
-# agents' project instructions on the no-mistakes side).
+# This suite exercises spawn, send, and teardown. The library only refuses
+# the five lifecycle entrypoints named above; see docs/architecture.md
+# "No-mistakes gate authority boundary".
 set -u
 
 # shellcheck source=tests/fixtures.sh

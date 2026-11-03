@@ -28,7 +28,7 @@
 #   fm-captain-hold.sh bind <source-id> [<legacy-origin> | --any-origin]
 #   fm-captain-hold.sh unbind <source-id>
 #   fm-captain-hold.sh binding <source-id>
-#   fm-captain-hold.sh complete <origin-id> (--none | <task-id>...)
+#   fm-captain-hold.sh complete <origin-id> (--none | (<task-id> | --cross-origin <task-id>)...)
 #   fm-captain-hold.sh verify <origin-id>
 #   fm-captain-hold.sh open <task-id> [--identity] [--distinguish-absent]
 #   fm-captain-hold.sh diverged
@@ -145,7 +145,18 @@
 # the inventory is unioned idempotently into the metadata, and every still-open
 # keyed status decision is transferred to its durable owner with a
 # `captain-held [key=...]` status close naming the inventory. Later review
-# passes may add ids. A post-teardown visual review can complete against the
+# passes may add ids.
+# `--cross-origin <task-id>` lists a question already held for a DIFFERENT
+# origin, so the same question is never registered twice. It accepts only an
+# exact task id that is still an open captain call (not closed, still held for
+# the captain), records a different origin than this one, and is not this
+# origin; it never changes the call or its recorded origin. The entry joins
+# `decision_keys=`, and a `cross_origin_keys=<task-id>,...` line records that it
+# is cross-origin. From then on `complete` and `verify` check that entry with the
+# ordinary durability check and do not compare its recorded origin to this one,
+# so a later answer or a later move of the call to another origin keeps the gate
+# green. An ordinary entry whose call moved to another origin can be listed again
+# through `--cross-origin`. A post-teardown visual review can complete against the
 # surviving report and tasks without recreating task state.
 # `verify` is read-only and is called by scout teardown, so teardown cannot
 # erase a source before this gate has succeeded: every recorded inventory
@@ -992,9 +1003,10 @@ archived_entry() {  # <origin-or-empty> <entry>; prints the archived id
 # status - its stderr already named the entry; 124 means the backend never
 # answered, which is not the same as an unknown entry and must not be spent
 # as absence. The result carries the attestation evidence and whether an
-# origin was recorded, so completion can disclose the legacy fallback.
-verify_entry_durable() {  # <origin-or-empty> <entry>; prints "<id> <how> <origin-state>"
-  local origin=$1 entry=$2 resolved resolve_status=0 id how stored origin_state=unrecorded origin_id stored_id resolve_err archived archived_status
+# origin was recorded, so completion can disclose the legacy fallback. An entry
+# named in <cross-origin-keys> skips the comparison with <origin>.
+verify_entry_durable() {  # <origin-or-empty> <entry> [<cross-origin-keys>]; prints "<id> <how> <origin-state>"
+  local origin=$1 entry=$2 cross_keys=${3:-} resolved resolve_status=0 id how stored origin_state=unrecorded origin_id stored_id resolve_err archived archived_status
   # The origin task is never its own captain-call inventory: it is the work the
   # calls were found in, so accepting it would let a refused hold look recorded.
   if [ -n "$origin" ] && [ "$origin" != "$BINDING_ANY" ] && [ "$entry" = "$origin" ]; then
@@ -1036,10 +1048,10 @@ verify_entry_durable() {  # <origin-or-empty> <entry>; prints "<id> <how> <origi
     [ "$id" != "$origin_id" ] || refuse_self_inventory "$origin" "$entry"
   fi
   if [ -n "$stored" ]; then
-    if [ -n "$origin" ] && [ "$origin" != "$BINDING_ANY" ]; then
+    if [ -n "$origin" ] && [ "$origin" != "$BINDING_ANY" ] && ! list_has_key "$cross_keys" "$entry"; then
       stored_id=$(task_identity "$stored") || exit $?
       if [ "$stored_id" != "$origin_id" ]; then
-        fail "captain-held task $id was held for origin $stored, not $origin; hold a task for $origin or list the right one"
+        fail "captain-held task $id was held for origin $stored, not $origin; list an existing call from another origin with --cross-origin $entry, hold a task for $origin, or list the right one"
       fi
     fi
     origin_state=recorded
@@ -1876,9 +1888,39 @@ reconcile_note() {
   printf 'still-open: %s\n' "$id"
 }
 
+# Attest one existing call held for ANOTHER origin as part of <origin>'s
+# inventory, without registering the same question a second time. Only an
+# exact, still-open captain call whose recorded origin is a different task
+# qualifies; nothing about the call is changed.
+attest_cross_origin_entry() {  # <origin-id> <entry>
+  local origin=$1 entry=$2 id state hold_kind stored origin_id stored_id status=0
+  [ "$entry" != "$origin" ] || refuse_self_inventory "$origin" "$entry"
+  task_show "$entry" || status=$?
+  if [ "$status" -ne 0 ]; then
+    [ "$status" -ne 124 ] || fail "the backlog backend exceeded its read bound reading $entry"
+    fail "no captain call $entry exists in this home's configured backlog (data directory $DATA); --cross-origin lists only an existing call held for another origin"
+  fi
+  id=$(show_field_value "$TASK_SHOW_OUTPUT" id)
+  validate_slug backend-task-id "$id"
+  state=$(show_field "$TASK_SHOW_OUTPUT" state)
+  hold_kind=$(show_field_value "$TASK_SHOW_OUTPUT" hold_kind)
+  stored=$(body_hold_origin "$(decode_shown_value "$(show_field "$TASK_SHOW_OUTPUT" body)")")
+  origin_id=$(task_identity "$origin") || exit $?
+  [ "$id" != "$origin_id" ] || refuse_self_inventory "$origin" "$entry"
+  if [ "$state" = "done" ] || [ "$hold_kind" != captain ]; then
+    fail "captain call $id is closed or no longer held for the captain; --cross-origin inventories only a call that is still open"
+  fi
+  [ -n "$stored" ] \
+    || fail "captain call $id records no origin; list it without --cross-origin"
+  stored_id=$(task_identity "$stored") || exit $?
+  [ "$stored_id" != "$origin_id" ] \
+    || fail "captain call $id is held for $origin itself; list it without --cross-origin"
+}
+
 command_complete() {
   local origin=${1:-} meta previous='' supplied='' keys='' entry key status_file open has_meta=0 transfer_rc transfers=() resolved
   local resolved_how attested_by_prefix='' origin_state unrecorded_origin=''
+  local cross='' previous_cross='' new_cross='' cross_keys=''
   [ "$#" -ge 2 ] || { usage >&2; exit 2; }
   validate_slug origin-id "$origin"
   shift
@@ -1897,19 +1939,33 @@ command_complete() {
   else
     while [ "$#" -gt 0 ]; do
       [ "$1" != --none ] || fail "--none cannot be combined with task ids"
-      validate_slug task-id "$1"
+      if [ "$1" = --cross-origin ]; then
+        [ "$#" -ge 2 ] || { usage >&2; exit 2; }
+        shift
+        validate_slug task-id "$1"
+        cross="${cross}${cross:+ }$1"
+      else
+        validate_slug task-id "$1"
+      fi
       supplied="${supplied}${supplied:+ }$1"
       shift
     done
   fi
   if [ "$has_meta" = 1 ]; then
     previous=$(meta_value "$meta" decision_keys)
+    previous_cross=$(meta_value "$meta" cross_origin_keys)
   fi
+  for entry in $cross; do
+    ! list_has_key "$previous_cross" "$entry" || continue
+    attest_cross_origin_entry "$origin" "$entry"
+    new_cross="${new_cross}${new_cross:+ }$entry"
+  done
+  cross_keys=$(sorted_key_union "$previous_cross" "$new_cross")
   keys=$(sorted_key_union "$previous" "$supplied")
   if [ -n "$keys" ]; then
     while IFS= read -r entry; do
       [ -n "$entry" ] || continue
-      resolved=$(verify_entry_durable "$origin" "$entry") || exit $?
+      resolved=$(verify_entry_durable "$origin" "$entry" "$cross_keys") || exit $?
       origin_state=${resolved##* }
       resolved=${resolved% *}
       resolved_how=${resolved##* }
@@ -1932,8 +1988,12 @@ EOF
   fi
 
   if [ "$has_meta" = 1 ]; then
-    if [ "$(meta_value "$meta" decisions_reviewed)" != 1 ] || [ "$previous" != "$keys" ]; then
-      printf 'decisions_reviewed=1\ndecision_keys=%s\n' "$keys" >> "$meta"
+    if [ "$(meta_value "$meta" decisions_reviewed)" != 1 ] || [ "$previous" != "$keys" ] \
+      || [ "$previous_cross" != "$cross_keys" ]; then
+      {
+        printf 'decisions_reviewed=1\ndecision_keys=%s\n' "$keys"
+        [ -z "$cross_keys" ] || printf 'cross_origin_keys=%s\n' "$cross_keys"
+      } >> "$meta"
     fi
     fm_lock_release "$CAPTAIN_META_LOCK"
     CAPTAIN_META_LOCK_HELD=0
@@ -1958,13 +2018,14 @@ EOF
       fi
     fi
   fi
-  printf 'complete: %s captain-call inventory reviewed%s%s%s\n' "$origin" "${keys:+ ($keys)}" \
+  printf 'complete: %s captain-call inventory reviewed%s%s%s%s\n' "$origin" "${keys:+ ($keys)}" \
     "${attested_by_prefix:+ [attested through the configured prefix: $attested_by_prefix]}" \
-    "${unrecorded_origin:+ [no recorded origin on: $unrecorded_origin; not checked against $origin]}"
+    "${unrecorded_origin:+ [no recorded origin on: $unrecorded_origin; not checked against $origin]}" \
+    "${cross_keys:+ [existing calls held for other origins: ${cross_keys//,/ }]}"
 }
 
 command_verify() {
-  local origin=${1:-} meta reviewed keys entry key open resolved
+  local origin=${1:-} meta reviewed keys cross_keys entry key open resolved
   [ "$#" -eq 1 ] || { usage >&2; exit 2; }
   validate_slug origin-id "$origin"
   meta="$STATE/$origin.meta"
@@ -1973,10 +2034,11 @@ command_verify() {
   reviewed=$(meta_value "$meta" decisions_reviewed)
   [ "$reviewed" = 1 ] || fail "origin $origin has no completed captain-call inventory"
   keys=$(meta_value "$meta" decision_keys)
+  cross_keys=$(meta_value "$meta" cross_origin_keys)
   if [ -n "$keys" ]; then
     while IFS= read -r entry; do
       [ -n "$entry" ] || continue
-      verify_entry_durable "$origin" "$entry" >/dev/null
+      verify_entry_durable "$origin" "$entry" "$cross_keys" >/dev/null
     done <<EOF
 $(printf '%s\n' "$keys" | tr ',' '\n')
 EOF
