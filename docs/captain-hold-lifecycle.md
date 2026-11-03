@@ -113,7 +113,8 @@ Before recording completion, `complete` verifies every listed task against tasks
 An answered entry that markdown Done retention moved into the configured Done archive still counts, while an archived close with no recorded answer does not.
 The origin is never its own inventory entry, so a hold that failed cannot be vouched for by the origin row.
 For a historical inventory that names its own origin, hold a separate captain task with `--origin`, replace only the invalid entry in the final `decision_keys=` line of the origin metadata with that task id while preserving all other entries, and re-run `complete`.
-An entry whose recorded origin differs from the one being completed is refused unless it is listed through `--cross-origin`, which accepts only an existing, still-open call held for another origin and pins that origin so a later origin change is refused.
+An entry whose recorded origin differs from the one being completed is refused unless it is listed through `--cross-origin`, which accepts only an existing, still-open call held for another origin, records the entry in `cross_origin_keys=`, and never changes the call.
+Later `complete` and `verify` passes check a cross-origin entry for durability alone, so a later answer or a supported move of the call to another origin does not break them.
 An entry with no recorded origin, such as a hold made before origins were recorded or without `--origin`, is accepted on the durability check alone and named in the output.
 
 With a non-empty inventory, `complete` appends a `captain-held [key=<key>]` transfer event for every still-open keyed status decision.
