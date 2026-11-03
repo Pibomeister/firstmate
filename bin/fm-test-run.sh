@@ -716,6 +716,8 @@ list_portable_serial() {
 # artifacts recorded in docs/fm-test-portable-shards.md. Each value is the
 # slowest successful sample in the referenced complete/partial CI runs, with
 # the native-Windows exception documented there.
+# Supervision-host split hints are maxima from runs 41583791860, 41572453952,
+# 41319546728, and 41409020680.
 # These are balance hints only: the shard
 # partition stays complete and disjoint whatever they say, so a stale hint costs
 # balance rather than coverage. That doc owns the refresh procedure.

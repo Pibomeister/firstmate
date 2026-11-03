@@ -25,8 +25,8 @@ In particular, run 36664663190's serial 5 finished in 22m15s with an assertion f
 Collect successful per-script measurements for every member before calculating a split.
 
 The supervision-host suite is four serial members so no one file occupies a whole CI shard: `tests/fm-supervision-host-drain.test.sh` (report, dispatch, BRANCH OUTCOMES; hint 37062 ms), `tests/fm-supervision-host-hook.test.sh` (Claude Stop-hook re-arm and hand-back; hint 276183 ms), `tests/fm-supervision-host.test.sh` (host loop wakes, closes, mirror, return; hint 889727 ms), and `tests/fm-supervision-host-park.test.sh` (latch, park boundary, compaction, lock ownership; hint 351454 ms).
-Those packing weights are Ubuntu timing-artifact maxima from the 2026-11-03 refresh, replacing the earlier local-scaled estimates.
-`tests/fm-supervision-host-fork.test.sh` carries this fork's cases that upstream's split does not (cleanup ordering, lease-lock startup, Orca stale rows, attended pass-through successors, stalled-arm retirement, park readiness); its hint is the 144424 ms Ubuntu maximum from that same refresh.
+Those packing weights are the slowest successful Ubuntu samples from runs [41583791860](https://github.com/Pibomeister/firstmate/actions/runs/41583791860), [41572453952](https://github.com/Pibomeister/firstmate/actions/runs/41572453952), [41319546728](https://github.com/Pibomeister/firstmate/actions/runs/41319546728), and [41409020680](https://github.com/Pibomeister/firstmate/actions/runs/41409020680).
+`tests/fm-supervision-host-fork.test.sh` carries this fork's cases that upstream's split does not (cleanup ordering, lease-lock startup, Orca stale rows, attended pass-through successors, stalled-arm retirement, park readiness); its hint is the 144424 ms Ubuntu maximum from those same four runs.
 The native-Windows-only `tests/fm-pi-windows-shell-invocation.test.sh` retains its separate 5121 ms measurement from 2026-09-06T21:02Z instead of a portable capability skip.
 Former provisional local hints for polytoken, approval-failover, Kimi live-guard skip, tap-verify, read-repetition, Antigravity primary, worktree-cleanup, order, and watchdog-live now use Ubuntu timing-artifact maxima from the 2026-11-03 refresh.
 `tests/fm-watchdog.test.sh` is 527813 ms from that refresh.
@@ -82,7 +82,7 @@ Its header and `--help` own the modeled-budget check and output fields; read the
 The watch-triage suite is three serial members so no one file occupies a whole CI shard: `tests/fm-watch-triage.test.sh` (classifier, signal/turn-end absorb, wedge ladder, gone endpoints, TERM, busy-pane age, timer repair, procevent, heartbeat/afk hand-off, exit picker; hint 736368 ms), `tests/fm-watch-triage-pause.test.sh` (declared waits, captain-call holds, pause transitions, away/quiet holds, paused-until and background-job waits; hint 543517 ms), and `tests/fm-watch-triage-wedge-defer.test.sh` (wedge-threshold deferrals; hint 661765 ms).
 Those packing weights are Ubuntu timing-artifact maxima from the 2026-11-03 refresh.
 The estimates use per-file maxima from different runs, not measured rebalanced jobs or an end-to-end latency guarantee.
-Even so, maxima from five runs do not establish a P95 or guarantee future headroom.
+Even so, maxima from four runs do not establish a P95 or guarantee future headroom.
 Job timeouts remain hang tripwires under the policy in [Timeouts](#timeouts) below; they are not the desired healthy duration.
 `tests/fm-ci-workflow.test.sh` compares the parsed CI matrix to the executable runner lanes, and the runner rejects parallel `--jobs` on a serial lane even when that shard has only one member.
 
