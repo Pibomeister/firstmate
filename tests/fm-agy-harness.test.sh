@@ -191,6 +191,64 @@ test_agy_busy_signatures_are_harness_scoped() {
   pass "fm-composer-lib: agy delivery signatures never cross harnesses"
 }
 
+# agy's composer is a `>` prompt row between two full-width rules, with the
+# `? for shortcuts` idle footer below (verified live, agy 1.4.10 on tmux). Only
+# that footer under an identified agy owner proves the composer empty, so
+# fm-control can type /quit; typed text reads pending, and a busy row, a missing
+# footer, or a missing owner keeps the strict unknown.
+AGY_RULE=$(printf '%.0s─' $(seq 1 24))
+AGY_CAPS_TMUX=$'styled=1\ncursor=1\nidentity=1\nrows=0'
+AGY_CAPS_HERDR=$'styled=1\ncursor=0\nidentity=1'
+
+agy_screen() {  # <composer-row> <footer-row>
+  printf 'reply landed\n\n%s\n%s\n%s\n%s' "$AGY_RULE" "$1" "$AGY_RULE" "$2"
+}
+
+test_agy_composer_reads_its_own_prompt_row_and_idle_footer() {
+  local idle_footer busy_footer agy_idle out
+  idle_footer='? for shortcuts                                   Gemini 4 Argon · high'
+  busy_footer='esc to cancel                                     Gemini 4 Argon · high'
+  agy_idle=$(printf 'agy\tidle')
+  out=$(fm_composer_classify_screen "$AGY_CAPS_TMUX" "$(agy_screen '>' "$idle_footer")" 3 "$agy_idle")
+  [ "$out" = empty ] || fail "an idle agy prompt row must read empty on tmux, got '$out'"
+  out=$(fm_composer_classify_screen "$AGY_CAPS_HERDR" "$(agy_screen '> ' "$idle_footer")" '' "$(printf 'agy\tdone')")
+  [ "$out" = empty ] || fail "an idle agy prompt row must read empty on herdr, got '$out'"
+  out=$(fm_composer_classify_screen "$AGY_CAPS_TMUX" "$(agy_screen '> half a thought' "$idle_footer")" 3 "$agy_idle")
+  [ "$out" = pending ] || fail "typed text after the agy prompt must read pending, got '$out'"
+  out=$(fm_composer_classify_screen "$AGY_CAPS_TMUX" "$(agy_screen '>' "$busy_footer")" 3 "$(printf 'agy\tworking')")
+  [ "$out" = unknown ] || fail "a busy agy footer must keep the strict unknown, got '$out'"
+  out=$(fm_composer_classify_screen "$AGY_CAPS_TMUX" "$(agy_screen '>' '')" 3 "$agy_idle")
+  [ "$out" = unknown ] || fail "an agy composer without its idle footer must read unknown, got '$out'"
+  out=$(fm_composer_classify_screen "$AGY_CAPS_TMUX" "$(agy_screen '>' "$idle_footer")" 3 probe-absent)
+  [ "$out" = unknown ] || fail "an agy shape with no live owner must read unknown, got '$out'"
+  out=$(fm_composer_classify_screen "$AGY_CAPS_TMUX" "$(agy_screen '' "$idle_footer")" 3 "$agy_idle")
+  [ "$out" = unknown ] || fail "an agy composer without its prompt glyph must read unknown, got '$out'"
+  pass "fm-composer-lib: the agy composer reads empty, pending, and unknown exactly"
+}
+
+test_agy_tmux_identity_names_the_agy_process() {
+  local dir fakebin out
+  dir="$TMP_ROOT/agy-identity"; mkdir -p "$dir"
+  fakebin=$(fm_fakebin "$dir")
+  cat > "$fakebin/tmux" <<'EOF'
+#!/bin/sh
+case "$*" in
+  *pane_tty*) echo /dev/ttys999 ;;
+  *pane_current_command*) echo agy ;;
+  *capture-pane*) printf 'reply landed\n? for shortcuts   Gemini 4 Argon · high\n' ;;
+esac
+EOF
+  cat > "$fakebin/ps" <<'EOF'
+#!/bin/sh
+echo "  100   100   200 -zsh"
+echo "  200   200   200 /Users/someone/.local/bin/agy"
+EOF
+  chmod +x "$fakebin/tmux" "$fakebin/ps"
+  out=$(PATH="$fakebin:$PATH" bash -c '. "$1/bin/fm-backend.sh"; fm_backend_source tmux; fm_tmux_composer_identity fake:win' _ "$ROOT")
+  [ "$out" = "$(printf 'agy\tidle')" ] || fail "the tmux identity probe must name an idle agy pane, got '$out'"
+  pass "fm-tmux-lib: the composer identity probe names the agy process"
+}
+
 test_agy_classify_reports_unknown_when_the_marker_scrolls_out() {
   local statedir busy idle
   statedir="$TMP_ROOT/classify"; mkdir -p "$statedir"
@@ -594,6 +652,7 @@ set -u
 if [ "${1:-}" = models ]; then
   [ -z "${FM_FAKE_AGY_MODELS_LOG:-}" ] || printf 'models\n' >> "$FM_FAKE_AGY_MODELS_LOG"
   if [ "${FM_FAKE_AGY_MODELS_FAIL:-0}" = 1 ]; then exit 3; fi
+  if [ "${FM_FAKE_AGY_MODELS_EMPTY:-0}" = 1 ]; then exit 0; fi
   if [ "${FM_FAKE_AGY_MODELS_HANG:-0}" = 1 ]; then
     cat > /dev/null
     sleep 30
@@ -603,6 +662,12 @@ if [ "${1:-}" = models ]; then
   printf 'gemini-3.8-flash-high\tGemini 3.8 Flash (High)\n'
   printf 'gemini-3.8-flash-medium\tGemini 3.8 Flash (Medium)\n'
   printf 'gemini-3.8-flash-low\tGemini 3.8 Flash (Low)\n'
+  exit 0
+fi
+# agy prints its help on stderr (1.4.10).
+if [ "${1:-}" = --help ]; then
+  printf '  --effort                        Reasoning effort for the current CLI session (%s)\n' \
+    "${FM_FAKE_AGY_HELP_EFFORTS:-low|medium|high}" >&2
   exit 0
 fi
 echo "fake agy must never execute" >&2
@@ -633,6 +698,10 @@ EOF
   mkdir -p "$home/.gemini/antigravity-cli"
   printf '%s\n' '{"model":"Gemini 3.8 Flash (High)","trustedWorkspaces":["/home/someone/elsewhere"]}' \
     > "$home/.gemini/antigravity-cli/settings.json"
+  # On macOS agy keeps its sign-in in the login keychain under $HOME, and the
+  # spawn refuses a HOME without one; give the fake HOME one.
+  mkdir -p "$home/Library/Keychains"
+  : > "$home/Library/Keychains/login.keychain-db"
   fm_git_worktree "$proj" "$wt" "wt-$name"
   fm_test_fake_treehouse "$fakebin" "$proj" "$case_dir/pool" "$wt"
   touch "$home/state/.last-watcher-beat"
@@ -670,6 +739,8 @@ run_agy_spawn() {
     FM_FAKE_AGY_STATE="$case_dir/agy.state" \
     FM_FAKE_AGY_SETTINGS="$home/.gemini/antigravity-cli/settings.json" \
     FM_FAKE_AGY_MODELS_FAIL="${FM_FAKE_AGY_MODELS_FAIL:-0}" \
+    FM_FAKE_AGY_MODELS_EMPTY="${FM_FAKE_AGY_MODELS_EMPTY:-0}" \
+    FM_FAKE_AGY_HELP_EFFORTS="${FM_FAKE_AGY_HELP_EFFORTS:-}" \
     FM_FAKE_AGY_MODELS_HANG="${FM_FAKE_AGY_MODELS_HANG:-0}" \
     FM_FAKE_AGY_MODELS_FINISHED="${FM_FAKE_AGY_MODELS_FINISHED:-}" \
     FM_FAKE_AGY_IGNORE_TRUST="${FM_FAKE_AGY_IGNORE_TRUST:-0}" \
@@ -953,6 +1024,24 @@ test_agy_effort_xhigh_is_recorded_but_omitted() {
   pass "fm-spawn: agy omits xhigh from the launch but records it in task metadata"
 }
 
+# agy 1.4.10 lists low|medium|high|xhigh|max for --effort; a build whose help
+# lists xhigh and max gets them, and an older build keeps record-and-omit.
+test_agy_effort_xhigh_and_max_pass_when_help_lists_them() {
+  local level id rec out rc launch
+  for level in xhigh max; do
+    id="agy-$level-z21-$$"
+    rec=$(make_agy_spawn_case "help-$level" "$id")
+    read_agy_spawn_record "$rec"
+    out=$(FM_FAKE_AGY_HELP_EFFORTS='low|medium|high|xhigh|max' run_agy_spawn "$CASE_DIR" "$HOME_DIR" \
+      "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" --model gemini-3.8-flash-low --effort "$level")
+    rc=$?
+    expect_code 0 "$rc" "agy spawn with a listed $level effort should succeed: $out"
+    launch=$(cat "$CASE_DIR/launch.log")
+    assert_contains "$launch" "--effort '$level'" "agy launch dropped the $level effort its help lists"
+  done
+  pass "fm-spawn: agy passes xhigh and max through when its help lists them"
+}
+
 test_agy_unlisted_model_refuses_before_pane_creation() {
   local id rec out rc
   id="agy-badmodel-z3-$$"
@@ -979,6 +1068,31 @@ test_agy_unreachable_listing_launches_unvalidated() {
   [ -s "$CASE_DIR/launch.log" ] || fail "an unreachable listing produced no launch command"
   assert_contains "$out" "listing is unreachable" "an unreachable listing launched without its notice"
   pass "fm-spawn: an unreachable agy listing establishes nothing and launches"
+}
+
+# A signed-out agy answers `agy models` with an empty catalog and exit 0 (its
+# own log: "Auth mode is unspecified, skipping fetchAvailableModels and
+# returning empty response"). That is sign-in evidence, not an unreachable
+# listing, so the spawn refuses with the sign-in step instead of launching a
+# worker that can never start its brief.
+# The sign-in probe runs whether or not a model is requested, because the
+# operator's default model needs a signed-in agy just as much.
+test_agy_empty_listing_refuses_as_signed_out() {
+  local id rec out rc model_args
+  for model_args in '--model gemini-3.8-flash-low' ''; do
+    id="agy-signedout-z20-${model_args:+m}$$"
+    rec=$(make_agy_spawn_case "signedout${model_args:+-model}" "$id")
+    read_agy_spawn_record "$rec"
+    rc=0
+    # shellcheck disable=SC2086 # model_args is either empty or two words
+    out=$(FM_FAKE_AGY_MODELS_EMPTY=1 run_agy_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" \
+      "$FAKEBIN_DIR" "$id" $model_args) || rc=$?
+    [ "$rc" -ne 0 ] || fail "an empty agy model catalog was accepted (args: ${model_args:-none})"
+    assert_contains "$out" "agy is not signed in" "the empty catalog refusal did not name the sign-in cause: $out"
+    assert_not_contains "$out" "is not listed by" "the empty catalog refusal blamed the model id"
+    [ -s "$CASE_DIR/launch.log" ] && fail "a signed-out agy still launched (args: ${model_args:-none})" || true
+  done
+  pass "fm-spawn: an empty agy model catalog refuses as signed out, with or without --model"
 }
 
 test_agy_hung_listing_is_cut_off_and_launches() {
@@ -1252,6 +1366,155 @@ EOF
   pass "fm-spawn: agy is refused on orca, zellij, cmux, and paseo before anything launches"
 }
 
+# A configured (not explicit) backend that cannot prove agy readiness falls
+# back to a verified one, herdr before tmux, and says so; the record names the
+# backend the task really runs on.
+write_agy_fake_orca() {  # <fakebin>
+  cat > "$1/orca" <<'EOF'
+#!/bin/sh
+printf '%s\n' '{"ok":true,"result":{"runtime":{"reachable":true,"state":"ready"}}}'
+EOF
+  chmod +x "$1/orca"
+}
+
+test_agy_configured_orca_falls_back_to_tmux_without_herdr() {
+  local id rec out rc meta
+  id="agy-fallback-tmux-z16-$$"
+  rec=$(make_agy_spawn_case fallback-tmux "$id")
+  read_agy_spawn_record "$rec"
+  write_agy_fake_orca "$FAKEBIN_DIR"
+  printf 'orca\n' > "$HOME_DIR/config/backend"
+  rc=0
+  out=$(run_agy_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" \
+    --model gemini-3.8-flash-low) || rc=$?
+  expect_code 0 "$rc" "agy on a configured orca backend should fall back, got: $out"
+  assert_contains "$out" "notice: agy launch readiness is not verified on the configured backend=orca; this agy task runs on backend=tmux" \
+    "the agy fallback did not announce the backend it chose: $out"
+  [ -s "$CASE_DIR/launch.log" ] || fail "the agy fallback never launched agy in tmux"
+  meta="$HOME_DIR/state/$id.meta"
+  # A tmux record carries no backend line (fm_backend_of_meta defaults it).
+  grep -Eq '^backend=' "$meta" && ! grep -qx 'backend=tmux' "$meta" \
+    && fail "the agy fallback recorded a backend other than tmux: $(grep '^backend=' "$meta")" || true
+  assert_grep "window=firstmate:fm-$id" "$meta" "the agy fallback record has no tmux window: $(cat "$meta")"
+  pass "fm-spawn: agy on a configured orca backend falls back to tmux when herdr is unavailable"
+}
+
+test_agy_configured_orca_prefers_herdr_when_available() {
+  local id rec out rc
+  id="agy-fallback-herdr-z17-$$"
+  rec=$(make_agy_spawn_case fallback-herdr "$id")
+  read_agy_spawn_record "$rec"
+  write_agy_fake_orca "$FAKEBIN_DIR"
+  # A herdr client that passes the version check; every later herdr call
+  # fails, so the spawn stops after choosing herdr and never reaches tmux.
+  cat > "$FAKEBIN_DIR/herdr" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$*" >> "$FM_FAKE_HERDR_CALL_LOG"
+case "$*" in
+  "status --json") printf '%s\n' '{"client":{"protocol":99,"version":"9.9.9"}}'; exit 0 ;;
+esac
+exit 1
+EOF
+  chmod +x "$FAKEBIN_DIR/herdr"
+  printf 'orca\n' > "$HOME_DIR/config/backend"
+  : > "$CASE_DIR/herdr-calls.log"
+  rc=0
+  out=$(FM_FAKE_HERDR_CALL_LOG="$CASE_DIR/herdr-calls.log" run_agy_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" \
+    "$FAKEBIN_DIR" "$id" --model gemini-3.8-flash-low) || rc=$?
+  assert_contains "$out" "this agy task runs on backend=herdr" \
+    "the agy fallback did not prefer an available herdr: $out"
+  [ -s "$CASE_DIR/launch.log" ] && fail "the agy fallback launched in tmux although herdr was chosen" || true
+  pass "fm-spawn: agy on a configured orca backend prefers herdr over tmux"
+}
+
+test_agy_macos_home_without_login_keychain_refuses() {
+  local id rec out rc
+  id="agy-nokeychain-z19-$$"
+  rec=$(make_agy_spawn_case nokeychain "$id")
+  read_agy_spawn_record "$rec"
+  rm -f "$HOME_DIR/Library/Keychains/login.keychain-db"
+  printf '#!/bin/sh\necho Darwin\n' > "$FAKEBIN_DIR/uname"
+  chmod +x "$FAKEBIN_DIR/uname"
+  rc=0
+  out=$(run_agy_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" \
+    --model gemini-3.8-flash-low) || rc=$?
+  [ "$rc" -ne 0 ] || fail "agy under a macOS HOME with no login keychain was accepted"
+  assert_contains "$out" "has no macOS login keychain" "the keychain refusal lacked its concrete cause: $out"
+  [ -s "$CASE_DIR/launch.log" ] && fail "the keychain refusal still launched agy" || true
+  assert_absent "$HOME_DIR/state/$id.meta" "the keychain refusal left a task record"
+  pass "fm-spawn: agy refuses a macOS HOME with no login keychain before anything launches"
+}
+
+# An Orca that is configured but not running is no reason to refuse agy: the
+# fallback decides first, and the Orca runtime check runs only if Orca stays.
+test_agy_configured_orca_that_is_down_still_falls_back() {
+  local id rec out rc
+  id="agy-orca-down-z23-$$"
+  rec=$(make_agy_spawn_case orca-down "$id")
+  read_agy_spawn_record "$rec"
+  cat > "$FAKEBIN_DIR/orca" <<'EOF'
+#!/bin/sh
+printf '%s\n' '{"ok":true,"result":{"runtime":{"reachable":false,"state":"stopped"}}}'
+EOF
+  chmod +x "$FAKEBIN_DIR/orca"
+  printf 'orca\n' > "$HOME_DIR/config/backend"
+  rc=0
+  out=$(run_agy_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" \
+    --model gemini-3.8-flash-low) || rc=$?
+  expect_code 0 "$rc" "agy on a configured but stopped orca should fall back: $out"
+  assert_contains "$out" "this agy task runs on backend=tmux" "agy on a stopped orca did not announce its fallback: $out"
+  pass "fm-spawn: agy on a configured but stopped orca still falls back to tmux"
+}
+
+# FM_BACKEND is an explicit choice like --backend, so it is refused, never
+# silently replaced by the fallback.
+test_agy_env_backend_refuses_instead_of_falling_back() {
+  local id rec out rc
+  id="agy-env-backend-z22-$$"
+  rec=$(make_agy_spawn_case env-backend "$id")
+  read_agy_spawn_record "$rec"
+  write_agy_fake_orca "$FAKEBIN_DIR"
+  rc=0
+  out=$(FM_BACKEND=orca FM_FAKE_AGY_MODELS_LOG="$CASE_DIR/models.log" run_agy_spawn "$CASE_DIR" "$HOME_DIR" \
+    "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" --model gemini-3.8-flash-low) || rc=$?
+  [ "$rc" -ne 0 ] || fail "an agy spawn with FM_BACKEND=orca fell back instead of refusing: $out"
+  assert_contains "$out" "agy launch readiness is live-verified on the tmux and herdr backends only; backend=orca" \
+    "wrong refusal for agy with FM_BACKEND=orca: $out"
+  [ -s "$CASE_DIR/launch.log" ] && fail "agy launched with FM_BACKEND=orca" || true
+  assert_absent "$HOME_DIR/state/$id.meta" "a refused FM_BACKEND=orca agy spawn left a task record"
+  pass "fm-spawn: agy refuses an FM_BACKEND choice it cannot verify instead of falling back"
+}
+
+test_agy_fallback_refuses_when_no_verified_backend_is_available() {
+  local id rec out rc dir tool
+  id="agy-fallback-none-z18-$$"
+  rec=$(make_agy_spawn_case fallback-none "$id")
+  read_agy_spawn_record "$rec"
+  write_agy_fake_orca "$FAKEBIN_DIR"
+  rm -f "$FAKEBIN_DIR/tmux"
+  # A runner's own tmux (apt puts it in /usr/bin) must not count as available:
+  # mirror BASE_PATH into one directory without it.
+  local base_dirs
+  IFS=: read -r -a base_dirs <<< "$BASE_PATH"
+  local BASE_PATH="$CASE_DIR/base-without-tmux"
+  mkdir -p "$BASE_PATH"
+  for dir in "${base_dirs[@]}"; do
+    for tool in "$dir"/*; do
+      [ -x "$tool" ] && [ "${tool##*/}" != tmux ] && [ ! -e "$BASE_PATH/${tool##*/}" ] || continue
+      ln -s "$tool" "$BASE_PATH/${tool##*/}"
+    done
+  done
+  printf 'orca\n' > "$HOME_DIR/config/backend"
+  rc=0
+  out=$(run_agy_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" \
+    --model gemini-3.8-flash-low) || rc=$?
+  [ "$rc" -ne 0 ] || fail "agy with no verified backend available was accepted"
+  assert_contains "$out" "no verified agy backend (herdr, tmux) is available" \
+    "the agy fallback refusal lacked its concrete reason: $out"
+  assert_absent "$HOME_DIR/state/$id.meta" "a refused agy fallback left a task record"
+  pass "fm-spawn: agy refuses when neither herdr nor tmux is available"
+}
+
 test_agy_missing_binary_refuses_before_pane_creation() {
   local id rec out rc
   id="agy-missing-z5-$$"
@@ -1327,6 +1590,8 @@ test_agy_claims_no_inherited_launcher_marker
 test_agy_control_mechanics_are_the_verified_ones
 test_agy_busy_tail_needs_the_pinned_status_row
 test_agy_busy_signatures_are_harness_scoped
+test_agy_composer_reads_its_own_prompt_row_and_idle_footer
+test_agy_tmux_identity_names_the_agy_process
 test_agy_classify_reports_unknown_when_the_marker_scrolls_out
 test_agy_tmux_names_the_native_binary_an_agent
 test_herdr_done_with_live_registry_stays_live
@@ -1336,8 +1601,10 @@ test_herdr_lone_unregistered_pane_is_agent_free
 test_herdr_malformed_and_failed_reads_stay_unknown
 test_agy_launch_carries_the_brief_with_model_effort_and_autonomy
 test_agy_effort_xhigh_is_recorded_but_omitted
+test_agy_effort_xhigh_and_max_pass_when_help_lists_them
 test_agy_unlisted_model_refuses_before_pane_creation
 test_agy_unreachable_listing_launches_unvalidated
+test_agy_empty_listing_refuses_as_signed_out
 test_agy_hung_listing_is_cut_off_and_launches
 test_agy_zero_model_timeout_is_clamped_to_the_default_bound
 test_agy_trust_registers_the_logical_and_resolved_worktree_paths
@@ -1353,6 +1620,12 @@ test_agy_post_publication_failures_keep_records
 test_agy_live_guard_always_stops_server
 test_agy_missing_treehouse_capability_refuses_before_launch
 test_agy_unverified_backend_refuses_before_anything_launches
+test_agy_configured_orca_falls_back_to_tmux_without_herdr
+test_agy_configured_orca_prefers_herdr_when_available
+test_agy_fallback_refuses_when_no_verified_backend_is_available
+test_agy_env_backend_refuses_instead_of_falling_back
+test_agy_configured_orca_that_is_down_still_falls_back
+test_agy_macos_home_without_login_keychain_refuses
 test_agy_missing_binary_refuses_before_pane_creation
 test_agy_secondmate_launch_pre_trusts_home_and_records_meta
 test_agy_spawn_arms_no_busy_wiring

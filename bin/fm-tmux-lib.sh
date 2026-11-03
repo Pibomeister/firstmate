@@ -112,7 +112,7 @@ fm_tmux_composer_caps() {
 # bare `❯` row between the same two rules, and its placeholder needs the
 # identity-scoped ghost ceiling in bin/fm-composer-lib.sh.
 # Prints "<owner><TAB>idle" or "<owner><TAB>working" for owner pi,
-# polytoken, or commandcode; exits 1 when the pane is not a live shape owner.
+# polytoken, commandcode, or agy; exits 1 when the pane is not a live shape owner.
 fm_tmux_composer_identity() {  # <target>
   local target=$1 tty pgid tpgid comm owner='' status
   tty=$(tmux display-message -p -t "$target" '#{pane_tty}' 2>/dev/null) || tty=
@@ -125,6 +125,7 @@ fm_tmux_composer_identity() {  # <target>
           pi|pi-signed|pi-launcher|Pi) owner=pi ;;
           polytoken) owner=polytoken ;;
           command-code) owner=commandcode ;;
+          agy) owner=agy ;;
         esac
         [ -n "$owner" ] && break
       done <<EOF
@@ -137,6 +138,7 @@ EOF
     case "${comm##*/}" in
       pi|pi-signed|pi-launcher) owner=pi ;;
       polytoken) owner=polytoken ;;
+      agy) owner=agy ;;
     esac
   fi
   [ -n "$owner" ] || return 1
