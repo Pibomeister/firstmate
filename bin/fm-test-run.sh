@@ -1734,15 +1734,11 @@ families_for_changed_path() {
     .cursor/agent-kit.md|.cursor/bin/ak|.cursor/bin/ak-gate.mjs|bin/fm-agent-kit-pin.sh)
       printf '%s\n' "__script__:fm-agent-kit-pin.test.sh"
       ;;
-    .cursor/*)
+    .cursor/skills/*|.cursor/agents/*|.cursor/rules/*|.cursor/roles/*|\
+    .cursor/references/*|.cursor/schemas/*|.cursor/templates/*|\
+    .cursor/LICENSES/*|.cursor/catalog.yaml)
       # Vendored overlay content has no Firstmate behavior test of its own.
-      # hooks.json keeps the implicit reference-scan mapping used before this arm.
-      case "$path" in
-        .cursor/hooks.json)
-          families_for_test_reference "$path" \
-            || printf '%s\n' "__unmapped__:$path"
-          ;;
-      esac
+      # Any other .cursor path falls through to the reference-scan catch-all.
       ;;
     .agents/hooks.json|bin/fm-sessionstart-agy.sh)
       printf '%s\n' session-bootstrap

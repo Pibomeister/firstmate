@@ -428,6 +428,53 @@ test_changed_dependency_selection_and_unmapped_failure() {
   pass "changed selection covers dependents, fails closed for live unmapped source, and accepts retired unconsumed source"
 }
 
+# Vendored .cursor overlay trees are empty-mapped; any other .cursor path keeps
+# the catch-all reference scan (or refuses as unmapped) so the coverage guard
+# still sees a firstmate-owned file.
+test_changed_cursor_overlay_mapping_is_narrow() {
+  local tmp repo listed rc
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-cursor.XXXXXX")
+  repo="$tmp/repo"
+  init_changed_fixture_repo "$repo"
+
+  printf '# .cursor/hooks.json\n' >>"$repo/tests/fm-cd-pretool-check.test.sh"
+  git -C "$repo" add tests/fm-cd-pretool-check.test.sh
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid \
+    commit -qm seed-cursor-reader
+
+  mkdir -p "$repo/.cursor/skills/example"
+  : >"$repo/.cursor/skills/example/SKILL.md"
+  rc=0
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD) || rc=$?
+  [ "$rc" -eq 0 ] || fail "vendored .cursor overlay must not refuse, got $rc"
+  [ -z "$listed" ] || fail "vendored .cursor overlay selected tests: $listed"
+  git -C "$repo" add .cursor/skills
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid \
+    commit -qm vendored-cursor-skill
+
+  : >"$repo/.cursor/hooks.json"
+  rc=0
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD) || rc=$?
+  [ "$rc" -eq 0 ] || fail "referenced firstmate-owned .cursor path must not refuse, got $rc"
+  assert_contains "$listed" "tests/fm-cd-pretool-check.test.sh" \
+    "a referenced firstmate-owned .cursor path must select its reader"
+  git -C "$repo" add .cursor/hooks.json
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid \
+    commit -qm firstmate-cursor-hooks
+
+  : >"$repo/.cursor/environment.json"
+  rc=0
+  (cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD) \
+    >"$tmp/out" 2>"$tmp/err" || rc=$?
+  [ "$rc" -eq 2 ] || fail "unmapped .cursor path must fail with exit 2, got $rc"
+  grep -Fq 'no changed-test mapping for source path: .cursor/environment.json' \
+    "$tmp/err" \
+    || fail "unmapped .cursor path failure is not actionable: $(cat "$tmp/err")"
+
+  rm -rf "$tmp"
+  pass "vendored .cursor overlay is empty-mapped; other .cursor paths keep the catch-all"
+}
+
 # A direct test reference is per-script evidence. Widening it to the referencing
 # test's whole family is what turned a one-line change to a shared helper into
 # every real-Herdr E2E, including scripts with no dependency on it at all.
@@ -1956,6 +2003,7 @@ test_task_marker_refuses_the_primary_checkout
 test_changed_runner_surfaces_select_their_family
 test_shell_line_ending_policy_selects_runner_contract
 test_changed_dependency_selection_and_unmapped_failure
+test_changed_cursor_overlay_mapping_is_narrow
 test_changed_bin_reference_selects_per_script_not_per_family
 test_changed_uses_bounded_automatic_concurrency
 test_windows_posix_mode_emulation_does_not_fail_parallel_runs

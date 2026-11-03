@@ -23,7 +23,7 @@ $gate_line
 EOF
 }
 
-digest_text() {  # writes stdin file via arg
+digest_text() {  # hashes the file named in $1
   if command -v shasum >/dev/null 2>&1; then
     shasum -a 256 "$1" | awk '{print $1}'
   else
@@ -61,10 +61,8 @@ test_mismatched_ak_is_refused() {
   write_pin_fixture "$repo" "ak-bytes" "gate-bytes" \
     "0000000000000000000000000000000000000000000000000000000000000000  .cursor/bin/ak" \
     "$gate_hash  .cursor/bin/ak-gate.mjs"
-  set +e
-  out=$("$PIN" --root "$repo" 2>&1)
-  rc=$?
-  set -e
+  rc=0
+  out=$("$PIN" --root "$repo" 2>&1) || rc=$?
   expect_code 1 "$rc" "a drifted .cursor/bin/ak digest must fail"
   assert_contains "$out" "$ak_hash" "refusal did not name the actual ak digest"
   pass "a drifted .cursor/bin/ak digest is refused"
@@ -80,10 +78,8 @@ test_missing_bin_is_refused() {
     "$ak_hash  .cursor/bin/ak" \
     "$gate_hash  .cursor/bin/ak-gate.mjs"
   rm -f "$repo/.cursor/bin/ak-gate.mjs"
-  set +e
-  out=$("$PIN" --root "$repo" 2>&1)
-  rc=$?
-  set -e
+  rc=0
+  out=$("$PIN" --root "$repo" 2>&1) || rc=$?
   expect_code 1 "$rc" "a missing ak-gate.mjs must fail"
   assert_contains "$out" "missing .cursor/bin/ak-gate.mjs" "refusal did not name the missing gate file"
   pass "a missing vendored bin file is refused"
@@ -102,10 +98,8 @@ $ak_hash  .cursor/bin/ak
 $ak_hash  .cursor/bin/ak
 $gate_hash  .cursor/bin/ak-gate.mjs
 EOF
-  set +e
-  out=$("$PIN" --root "$repo" 2>&1)
-  rc=$?
-  set -e
+  rc=0
+  out=$("$PIN" --root "$repo" 2>&1) || rc=$?
   expect_code 1 "$rc" "duplicate recorded ak digest lines must fail"
   assert_contains "$out" "exactly one recorded digest for .cursor/bin/ak" \
     "refusal did not name the duplicate ak digest"
