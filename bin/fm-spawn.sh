@@ -2496,7 +2496,10 @@ if [ "$RELAUNCH" -eq 1 ]; then
   #           proof then requires Orca's process sweep to have dropped the
   #           session and no agent to be working in the recorded worktree.
   #           A terminal Orca still calls connected whose session root
-  #           process is gone reads `missing` and is proven the same way.
+  #           process is gone reads `missing` and is proven the same way; for
+  #           Droid that is fm_control_droid_connected_gone, which adds the
+  #           Droid worktree scan, while a closed Droid terminal keeps its
+  #           SessionEnd marker requirement.
   #           A stale handle after a host reboot reads `unreadable` here and
   #           takes that same proof; docs/orca-backend.md "Agent stop proof"
   #           owns the reboot evidence requirements.
@@ -2506,7 +2509,20 @@ if [ "$RELAUNCH" -eq 1 ]; then
   # control plane - fm_control_endpoint_absence_verdict - so `exit` and
   # `relaunch` cannot reach two different answers about one endpoint.
   RELAUNCH_ABSENCE=
-  if fm_control_absence_recheck_applies "$BACKEND" "$RELAUNCH_STATE" \
+  if [ "$BACKEND" = orca ] && [ "$RELAUNCH_PRIOR_HARNESS" = droid ]; then
+    RELAUNCH_DROID_GONE=0
+    RELAUNCH_ABSENCE=$(fm_control_droid_connected_gone "$RELAUNCH_TARGET" \
+      "$(fm_meta_get "$RELAUNCH_META" worktree)" "$RELAUNCH_META") || RELAUNCH_DROID_GONE=$?
+    case "$RELAUNCH_DROID_GONE" in
+      0) RELAUNCH_STATE=missing ;;
+      1) RELAUNCH_ABSENCE= ;;
+      *)
+        echo "error: task $ID's recorded Orca terminal $RELAUNCH_TARGET is still connected but its session root exited, and ${RELAUNCH_ABSENCE#*$'\t'}; refusing rather than launching a second agent into its worktree" >&2
+        exit 1
+        ;;
+    esac
+  fi
+  if [ -z "$RELAUNCH_ABSENCE" ] && fm_control_absence_recheck_applies "$BACKEND" "$RELAUNCH_STATE" \
      && ! { [ "$BACKEND" = orca ] && [ "$RELAUNCH_PRIOR_HARNESS" = droid ] && [ "$RELAUNCH_STATE" = missing ]; }; then
     if [ "$BACKEND" = orca ]; then
       RELAUNCH_ABSENCE=$(fm_control_endpoint_absence_verdict "$BACKEND" "$RELAUNCH_TARGET" \
@@ -2548,16 +2564,7 @@ FACTS
       exit 1
     fi
     case "$RELAUNCH_DROID_CONNECTED:$RELAUNCH_DROID_WRITABLE" in
-      true:true)
-        # A connected terminal whose session root process is gone reads
-        # `missing`: input typed into it reaches no process, so it is
-        # replaced in the recorded worktree rather than adopted.
-        if [ "$(fm_backend_orca_agent_state "$RELAUNCH_TARGET")" = missing ]; then
-          RELAUNCH_STATE=missing
-        else
-          RELAUNCH_STATE=dead
-        fi
-        ;;
+      true:true) RELAUNCH_STATE=dead ;;
       false:false) RELAUNCH_STATE=missing ;;
       *)
         echo "error: Orca Droid's recorded terminal is not proven writable or closed after its absence proof; refusing to rebind or adopt it" >&2

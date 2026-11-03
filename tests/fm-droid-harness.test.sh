@@ -761,7 +761,7 @@ SH
     'harness=droid' 'backend=orca' "worktree=$ABSENT_WT" \
     'terminal=term-1' "busy_gen=$ABSENT_GEN"
   export FM_STUB_LSOF_FILE="$ABSENT_CASE/scan-clean" FM_STUB_LSOF_EXIT=0
-  export FM_STUB_FACTS=ok FM_STUB_TREE=dead FM_STUB_SESSION=ok FM_STUB_ROOT=present
+  export FM_STUB_FACTS=ok FM_STUB_TREE=dead FM_STUB_SESSION=ok
 }
 
 droid_absent_run() {  # [target]
@@ -784,14 +784,6 @@ droid_absent_run() {  # [target]
       case "${FM_STUB_SESSION:-ok}" in
         ok) printf '4242' ;;
         missing) return 1 ;;
-        *) return 2 ;;
-      esac
-    }
-    # shellcheck disable=SC2329 # Invoked indirectly by fm_control_droid_agent_absent.
-    fm_backend_orca_pid_absent() {
-      case "${FM_STUB_ROOT:-present}" in
-        absent) return 0 ;;
-        present) return 1 ;;
         *) return 2 ;;
       esac
     }
@@ -837,11 +829,6 @@ test_droid_connected_shell_absence_proof() {
   FM_STUB_FACTS=remote expect_present "an endpoint on another execution host"
   FM_STUB_SESSION=missing expect_present "a session the sweep no longer lists"
   FM_STUB_SESSION=unreadable expect_present "a session the sweep cannot read"
-
-  make_absent_case exited-root
-  FM_STUB_ROOT=absent FM_STUB_TREE=unreadable expect_absent "a connected terminal whose session root exited, with a clean scan"
-  FM_STUB_ROOT=absent FM_STUB_LSOF_FILE="$ABSENT_CASE/scan-in-wt" expect_present "an exited session root with a live Droid process in the worktree"
-  FM_STUB_ROOT=unreadable FM_STUB_TREE=dead expect_present "a session root whose process table cannot be read completely"
 
   make_absent_case scan
   FM_STUB_LSOF_EXIT=2 expect_present "a failed process scan"

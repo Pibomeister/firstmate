@@ -582,7 +582,7 @@ orca_expect_refusal() {  # <what> <before-meta>
 test_orca_relaunch_rebinds_a_connected_terminal_whose_session_root_exited() {
   local variant gen before standin agent
   standin=$(fm_agent_standin "$TMP_ROOT/exited-root-standin") || standin=
-  for variant in codex codex-live-agent droid droid-wrong-gen droid-live-scan; do
+  for variant in codex codex-live-agent droid droid-busy droid-wrong-gen droid-live-scan; do
     if [ "$variant" = codex-live-agent ] && [ -z "$standin" ]; then
       pass "SKIP: connected exited-root live-agent relaunch (no agent stand-in survives here)"
       continue
@@ -606,6 +606,11 @@ test_orca_relaunch_rebinds_a_connected_terminal_whose_session_root_exited() {
         agent=$!
         printf 'p%s\nn%s\n' "$agent" "$WT" >> "$CASE_DIR/lsof.out"
         ;;
+      droid-busy)
+        # A Droid that died mid-turn: its last record is the prompt's busy one.
+        "$ROOT/bin/fm-busy-event.sh" apply "$HOME_DIR/state" "$TASK" busy \
+          --gen "$gen" --source droid-hook --event user-prompt-submit >/dev/null
+        ;;
       droid-live-scan) printf 'p999\nn%s\n' "$WT" >> "$CASE_DIR/lsof.out" ;;
       droid-wrong-gen) printf 'g-other-generation\n' > "$HOME_DIR/state/$TASK.droid-session-end" ;;
     esac
@@ -614,11 +619,11 @@ test_orca_relaunch_rebinds_a_connected_terminal_whose_session_root_exited() {
     orca_relaunch --harness claude
     [ -z "$agent" ] || kill "$agent" 2>/dev/null || true
     case "$variant" in
-      codex|droid) orca_expect_rebind "a connected $variant terminal whose session root exited" ;;
+      codex|droid|droid-busy|droid-wrong-gen) orca_expect_rebind "a connected $variant terminal whose session root exited" ;;
       *) orca_expect_refusal "the '$variant' connected exited-root relaunch" "$before" ;;
     esac
   done
-  pass "an Orca relaunch replaces a connected terminal whose session root exited, and refuses a live worktree agent or a wrong Droid generation"
+  pass "an Orca relaunch replaces a connected terminal whose session root exited, including a Droid that died mid-turn, and refuses a live worktree agent or Droid"
 }
 
 test_orca_droid_relaunch_connected_shell_without_marker() {

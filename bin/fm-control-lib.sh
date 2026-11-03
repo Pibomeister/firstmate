@@ -870,11 +870,12 @@ fm_control_droid_session_ended() {  # <state-dir> <id> <meta-file>
 #      terminal that belongs to the exact recorded worktree and to this
 #      task's recorded terminal, its recorded session process tree
 #      classifies `dead` (only shells beside Orca's `login` root, which is
-#      the owned idle shell) or its session root is absent from a complete
-#      process table (fm_backend_orca_pid_absent), the task's busy record is
-#      the current generation's idle `droid-hook` record, and one successful
-#      scan shows no `droid` process whose working directory is the exact
-#      recorded worktree or under it.
+#      the owned idle shell), the task's busy record is the current
+#      generation's idle `droid-hook` record, and one successful scan shows
+#      no `droid` process whose working directory is the exact recorded
+#      worktree or under it.
+# A connected terminal whose session root has exited is not this proof's
+# case: fm_control_droid_connected_gone below owns it.
 # A marker file that exists but names another generation, is a symlink, or
 # cannot be read refuses on both routes rather than falling through to the
 # shell route: it is evidence about a different incarnation. A live Droid
@@ -887,7 +888,7 @@ fm_control_droid_session_ended() {  # <state-dir> <id> <meta-file>
 fm_control_droid_agent_absent() {  # <state-dir> <id> <meta-file> <target>
   local state=${1-} id=${2-} meta=${3-} target=${4-}
   local gen marker ended wt recorded harness current record facts
-  local f_read f_connected f_host f_pty f_wtpath pid tree wt_phys term_phys rc
+  local f_read f_connected f_host f_pty f_wtpath pid tree wt_phys term_phys
   [ -n "$state" ] && [ -n "$id" ] && [ -n "$meta" ] && [ -n "$target" ] || return 1
   harness=$(fm_meta_get "$meta" harness) || return 1
   [ -n "$harness" ] || return 1
@@ -941,18 +942,45 @@ FACTS
   [ "$term_phys" = "$wt_phys" ] || return 1
   pid=$(fm_backend_orca_session_pid "$f_pty" 2>/dev/null) || return 1
   [ -n "$pid" ] || return 1
-  command -v fm_backend_orca_pid_absent >/dev/null 2>&1 || return 1
-  rc=0
-  fm_backend_orca_pid_absent "$pid" || rc=$?
-  case "$rc" in
-    0) ;;
-    1)
-      tree=$(fm_backend_orca_tree_state "$pid" 2>/dev/null) || return 1
-      [ "$tree" = dead ] || return 1
-      ;;
-    *) return 1 ;;
-  esac
+  tree=$(fm_backend_orca_tree_state "$pid" 2>/dev/null) || return 1
+  [ "$tree" = dead ] || return 1
   fm_control_droid_worktree_no_droid "$wt_phys"
+}
+
+# fm_control_droid_connected_gone: the ONE shared Orca Droid route for a
+# terminal Orca still calls connected while the session root its sweep names
+# has exited (fm_backend_orca_agent_state reads it `missing`). That is a Droid
+# that died with its terminal, including one that died mid-turn and so never
+# recorded an idle stop. It needs no SessionEnd marker and no busy record:
+# the general Orca endpoint-absence proof (fm_control_endpoint_absence_verdict)
+# must read `gone` for the exact recorded worktree, and one successful Droid
+# scan must show no `droid` process working in it. A closed terminal never
+# takes this route, so it keeps its SessionEnd marker requirement.
+# Returns 0 and prints `gone<TAB>` when proven; 1 with no output when the
+# terminal is not a connected one whose session root exited (the caller keeps
+# its other routes); 2 and prints `unproven<TAB><reason>` when it is, but the
+# proof does not settle it (the caller refuses).
+fm_control_droid_connected_gone() {  # <target> <worktree> <meta-file>
+  local target=${1-} wt=${2-} meta=${3-} facts f_read f_connected verdict wt_phys
+  [ -n "$target" ] && [ -n "$wt" ] && [ -n "$meta" ] || return 1
+  fm_backend_source orca >/dev/null 2>&1 || return 1
+  facts=$(fm_backend_orca_terminal_facts "$target" 2>/dev/null) || return 1
+  IFS=$'\037' read -r f_read f_connected _ <<FACTS
+$facts
+FACTS
+  [ "$f_read" = ok ] && [ "$f_connected" = true ] || return 1
+  [ "$(fm_backend_orca_agent_state "$target")" = missing ] || return 1
+  verdict=$(fm_control_endpoint_absence_verdict orca "$target" "$wt" "$meta")
+  if [ "${verdict%%$'\t'*}" != gone ]; then
+    printf '%s' "$verdict"
+    return 2
+  fi
+  wt_phys=$(cd "$wt" 2>/dev/null && pwd -P) || wt_phys=
+  if [ -z "$wt_phys" ] || ! fm_control_droid_worktree_no_droid "$wt_phys"; then
+    printf 'unproven\ta droid process working in %s could not be ruled out' "$wt"
+    return 2
+  fi
+  printf 'gone\t'
 }
 
 # The firstmate-owned global turn-end registry entry a harness mints per task.
