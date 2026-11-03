@@ -1736,7 +1736,7 @@ families_for_changed_path() {
       ;;
     .cursor/skills/*|.cursor/agents/*|.cursor/rules/*|.cursor/roles/*|\
     .cursor/references/*|.cursor/schemas/*|.cursor/templates/*|\
-    .cursor/LICENSES/*|.cursor/catalog.yaml)
+    .cursor/licenses/*|.cursor/catalog.yaml)
       # Vendored overlay content has no Firstmate behavior test of its own.
       # Any other .cursor path falls through to the reference-scan catch-all.
       ;;

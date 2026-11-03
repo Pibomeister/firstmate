@@ -1,3 +1,486 @@
+// Licence texts for this file and the third-party code inlined into it.
+// Each block is also copied into the plugin bundles at the path in its heading.
+// --- NOTICE ---
+// agent-kit
+// Copyright (c) 2026 Eduardo Picazo
+//
+// The installable catalog adapts material from the following eleven donors: ten under
+// the MIT License and one, claude-mem, under the Apache License 2.0. Each adapted
+// file is recorded in provenance/adaptations.yaml with its exact donor@commit:path
+// source and a note of what was changed. Full license texts are in
+// provenance/licenses/.
+//
+// The optional source-checkout semantic hook also adapts client and hook mechanics
+// from mizchi, Copyright (c) 2026 mizchi<Kotaro Chikuba>, under the MIT License.
+// Its donor pin, exact source paths and full license are recorded in provenance/.
+// It is separate from the catalog donors listed below and is not bundled.
+//
+// The review-isolation probe also adapts child-session joining and spawn-argument
+// inspection from google/elephant-goldfish-model, Copyright 2026 Google LLC, under
+// the Apache License 2.0. The files were modified; provenance/adaptations.yaml
+// states the change for each. The license text is
+// provenance/licenses/google_elephant-goldfish-model.LICENSE. It is a research pin
+// and is not one of the catalog donors listed below.
+//
+// - compound-engineering-plugin — Copyright (c) 2025 Every
+//   https://github.com/EveryInc/compound-engineering-plugin @ 05c42da94fd318fa081f29d17bf947762aa477b1
+// - superpowers — Copyright (c) 2025 Jesse Vincent
+//   https://github.com/obra/superpowers @ b36e0829c6d0140e93cfef2ca599b1b07d4a7797
+// - mattpocock/skills — Copyright (c) 2026 Matt Pocock
+//   https://github.com/mattpocock/skills @ c55ee46073ed923f86ce59a5eb3b6d895095d1b7
+// - addyosmani/agent-skills — Copyright (c) 2025 Addy Osmani
+//   https://github.com/addyosmani/agent-skills @ c004a74784a08295d52749b04cda634125b9a581
+// - oh-my-claudecode — Copyright (c) 2025 Yeachan Heo
+//   https://github.com/Yeachan-Heo/oh-my-claudecode @ 5281b19e0d64f8e6dc6767f2130299a88af2dc71
+// - oh-my-codex — Copyright (c) 2026 Yeachan-Heo
+//   https://github.com/Yeachan-Heo/oh-my-codex @ cb955b0d5becbef76d2c1f0096b6e1f238e1e7f7
+// - claude-reflect — Copyright (c) 2025 Bayram Annakov
+//   https://github.com/BayramAnnakov/claude-reflect @ 2c892cab8fe1285d8116216ec18b6b7b44bcd394
+// - BuilderIO/skills — Copyright (c) 2026 Builder.io
+//   https://github.com/BuilderIO/skills @ eb07be67e6d924b958445f706f5ac386243df6b4
+// - pstack — Copyright (c) 2026 Lauren Tan — MIT License
+//   https://github.com/cursor/plugins @ e43c7ee26e0038c6c1fa8380dd34ce86ff94cb2a
+//   Only the repository's pstack/ directory is used. Its license is
+//   pstack/LICENSE, copied to provenance/licenses/cursor_plugins.LICENSE.
+// - common-skills — Copyright (c) 2026 Denver Technologies, Inc. — MIT License
+//   https://github.com/warpdotdev/common-skills @ 8792394ff1b655e0af451b8fabb68ef0cfcbd208
+//   Only the .agents/skills/skill-doctor/ directory is used, by the opt-in
+//   learning runtime's skill doctor.
+//
+// The above copyright notices and the MIT permission notice apply to the
+// substantial portions adapted from each MIT project among the eleven donors:
+// the ten listed above.
+//
+// - claude-mem — Copyright 2026 Alex Newman — Apache License 2.0
+//   https://github.com/thedotmack/claude-mem @ 02cd0c9c47e38a849e764477290c571e84dfa043
+//   The files adapted from claude-mem were modified; provenance/adaptations.yaml
+//   states the change for each. The license text is
+//   provenance/licenses/thedotmack_claude-mem.LICENSE. claude-mem's NOTICE reads:
+//
+//     Claude-Mem
+//     Copyright 2026 Alex Newman
+//
+//     This product includes software developed for the Claude-Mem project.
+//
+//     Licensed under the Apache License, Version 2.0.
+//
+//     If other attributions are required by dependencies or included code, add them here.
+//
+// Runtime dependencies bundled into bin/ak-gate.mjs, whose license texts ship
+// with every bundle under LICENSES/:
+//
+// - ajv 8.20.0 — Copyright (c) 2015-2021 Evgeny Poberezkin — MIT License
+//   https://github.com/ajv-validator/ajv
+//   LICENSES/ajv.LICENSE
+// - ajv-formats 3.0.1 — Copyright (c) 2020 Evgeny Poberezkin — MIT License
+//   https://github.com/ajv-validator/ajv-formats
+//   LICENSES/ajv-formats.LICENSE
+//
+// bin/ak is built as one file. It is the command in each plugin bundle and the
+// file a curl install downloads on its own. The build inlines the components
+// below, and the generated file does not keep their copyright comments, so each
+// licence text is copied into this bundle at the path named here and included
+// inside bin/ak.
+//
+// - ajv — MIT License — Copyright (c) 2015-2021 Evgeny Poberezkin
+//   LICENSES/ajv.LICENSE
+// - ajv-formats — MIT License — Copyright (c) 2020 Evgeny Poberezkin
+//   LICENSES/ajv-formats.LICENSE
+// - fast-deep-equal — MIT License — Copyright (c) 2017 Evgeny Poberezkin
+//   LICENSES/fast-deep-equal.LICENSE
+// - fast-uri — BSD-3-Clause — Copyright (c) 2011-2021 Gary Court and
+//   Copyright (c) 2021-present The Fastify team
+//   LICENSES/fast-uri.LICENSE
+// - json-schema-traverse — MIT License — Copyright (c) 2017 Evgeny Poberezkin
+//   LICENSES/json-schema-traverse.LICENSE
+// - yaml — ISC License — Copyright Eemeli Aro
+//   LICENSES/yaml.LICENSE
+//
+// claude-mem's licence text and the NOTICE quoted above are copied into this
+// bundle at provenance/licenses/thedotmack_claude-mem.LICENSE and
+// provenance/licenses/thedotmack_claude-mem.NOTICE, and both are included
+// inside bin/ak.
+//
+// Development tooling, used to lint this repository and not part of any
+// package built into dist/:
+//
+// - anti-slop — Copyright (c) 2026 Dillon Mulroy — MIT License
+//   https://github.com/dmmulroy/anti-slop @ c44ef22ca116d0ba62a3ff663a0bd13a3f3fa40b
+//   Copied unmodified to tools/oxlint/anti-slop/, with its LICENSE and an
+//   UPSTREAM.md recording the source. It carries an adapted copy of ESLint
+//   Stylistic's padding-line-between-statements rule — Copyright OpenJS
+//   Foundation and other contributors, and Copyright (c) 2023-PRESENT ESLint
+//   Stylistic contributors, MIT License,
+//   https://github.com/eslint-stylistic/eslint-stylistic @ 435c3ea0fd26a5fef9042c4b36b6e165fbbf8d08 —
+//   whose license is tools/oxlint/anti-slop/vendor/eslint-stylistic/LICENSE.
+// --- LICENSE ---
+// MIT License
+//
+// Copyright (c) 2026 Eduardo Picazo
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+// --- LICENSES/ajv.LICENSE ---
+// The MIT License (MIT)
+//
+// Copyright (c) 2015-2021 Evgeny Poberezkin
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+//
+// --- LICENSES/ajv-formats.LICENSE ---
+// MIT License
+//
+// Copyright (c) 2020 Evgeny Poberezkin
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+// --- LICENSES/fast-deep-equal.LICENSE ---
+// MIT License
+//
+// Copyright (c) 2017 Evgeny Poberezkin
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+// --- LICENSES/fast-uri.LICENSE ---
+// Copyright (c) 2011-2021, Gary Court until https://github.com/garycourt/uri-js/commit/a1acf730b4bba3f1097c9f52e7d9d3aba8cdcaae
+// Copyright (c) 2021-present The Fastify team <https://github.com/fastify/fastify#team>
+// All rights reserved.
+//
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
+//     * Redistributions of source code must retain the above copyright
+//       notice, this list of conditions and the following disclaimer.
+//     * Redistributions in binary form must reproduce the above copyright
+//       notice, this list of conditions and the following disclaimer in the
+//       documentation and/or other materials provided with the distribution.
+//     * The names of any contributors may not be used to endorse or promote
+//       products derived from this software without specific prior written
+//       permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+// ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+// WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS AND CONTRIBUTORS BE LIABLE FOR ANY
+// DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+// (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+// LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+// ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+// SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+//
+//                                   *   *   *
+//
+// The complete list of contributors can be found at:
+// - https://github.com/garycourt/uri-js/graphs/contributors
+// --- LICENSES/json-schema-traverse.LICENSE ---
+// MIT License
+//
+// Copyright (c) 2017 Evgeny Poberezkin
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+// --- LICENSES/yaml.LICENSE ---
+// Copyright Eemeli Aro <eemeli@gmail.com>
+//
+// Permission to use, copy, modify, and/or distribute this software for any purpose
+// with or without fee is hereby granted, provided that the above copyright notice
+// and this permission notice appear in all copies.
+//
+// THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+// REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
+// FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+// INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
+// OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+// TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
+// THIS SOFTWARE.
+// --- provenance/licenses/thedotmack_claude-mem.LICENSE ---
+//
+//                                  Apache License
+//                            Version 2.0, January 2004
+//                         http://www.apache.org/licenses/
+//
+//    TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
+//
+//    1. Definitions.
+//
+//       "License" shall mean the terms and conditions for use, reproduction,
+//       and distribution as defined by Sections 1 through 9 of this document.
+//
+//       "Licensor" shall mean the copyright owner or entity authorized by
+//       the copyright owner that is granting the License.
+//
+//       "Legal Entity" shall mean the union of the acting entity and all
+//       other entities that control, are controlled by, or are under common
+//       control with that entity. For the purposes of this definition,
+//       "control" means (i) the power, direct or indirect, to cause the
+//       direction or management of such entity, whether by contract or
+//       otherwise, or (ii) ownership of fifty percent (50%) or more of the
+//       outstanding shares, or (iii) beneficial ownership of such entity.
+//
+//       "You" (or "Your") shall mean an individual or Legal Entity
+//       exercising permissions granted by this License.
+//
+//       "Source" form shall mean the preferred form for making modifications,
+//       including but not limited to software source code, documentation
+//       source, and configuration files.
+//
+//       "Object" form shall mean any form resulting from mechanical
+//       transformation or translation of a Source form, including but
+//       not limited to compiled object code, generated documentation,
+//       and conversions to other media types.
+//
+//       "Work" shall mean the work of authorship, whether in Source or
+//       Object form, made available under the License, as indicated by a
+//       copyright notice that is included in or attached to the work
+//       (an example is provided in the Appendix below).
+//
+//       "Derivative Works" shall mean any work, whether in Source or Object
+//       form, that is based on (or derived from) the Work and for which the
+//       editorial revisions, annotations, elaborations, or other modifications
+//       represent, as a whole, an original work of authorship. For the purposes
+//       of this License, Derivative Works shall not include works that remain
+//       separable from, or merely link (or bind by name) to the interfaces of,
+//       the Work and Derivative Works thereof.
+//
+//       "Contribution" shall mean any work of authorship, including
+//       the original version of the Work and any modifications or additions
+//       to that Work or Derivative Works thereof, that is intentionally
+//       submitted to Licensor for inclusion in the Work by the copyright owner
+//       or by an individual or Legal Entity authorized to submit on behalf of
+//       the copyright owner. For the purposes of this definition, "submitted"
+//       means any form of electronic, verbal, or written communication sent
+//       to the Licensor or its representatives, including but not limited to
+//       communication on electronic mailing lists, source code control systems,
+//       and issue tracking systems that are managed by, or on behalf of, the
+//       Licensor for the purpose of discussing and improving the Work, but
+//       excluding communication that is conspicuously marked or otherwise
+//       designated in writing by the copyright owner as "Not a Contribution."
+//
+//       "Contributor" shall mean Licensor and any individual or Legal Entity
+//       on behalf of whom a Contribution has been received by Licensor and
+//       subsequently incorporated within the Work.
+//
+//    2. Grant of Copyright License. Subject to the terms and conditions of
+//       this License, each Contributor hereby grants to You a perpetual,
+//       worldwide, non-exclusive, no-charge, royalty-free, irrevocable
+//       copyright license to reproduce, prepare Derivative Works of,
+//       publicly display, publicly perform, sublicense, and distribute the
+//       Work and such Derivative Works in Source or Object form.
+//
+//    3. Grant of Patent License. Subject to the terms and conditions of
+//       this License, each Contributor hereby grants to You a perpetual,
+//       worldwide, non-exclusive, no-charge, royalty-free, irrevocable
+//       (except as stated in this section) patent license to make, have made,
+//       use, offer to sell, sell, import, and otherwise transfer the Work,
+//       where such license applies only to those patent claims licensable
+//       by such Contributor that are necessarily infringed by their
+//       Contribution(s) alone or by combination of their Contribution(s)
+//       with the Work to which such Contribution(s) was submitted. If You
+//       institute patent litigation against any entity (including a
+//       cross-claim or counterclaim in a lawsuit) alleging that the Work
+//       or a Contribution incorporated within the Work constitutes direct
+//       or contributory patent infringement, then any patent licenses
+//       granted to You under this License for that Work shall terminate
+//       as of the date such litigation is filed.
+//
+//    4. Redistribution. You may reproduce and distribute copies of the
+//       Work or Derivative Works thereof in any medium, with or without
+//       modifications, and in Source or Object form, provided that You
+//       meet the following conditions:
+//
+//       (a) You must give any other recipients of the Work or
+//           Derivative Works a copy of this License; and
+//
+//       (b) You must cause any modified files to carry prominent notices
+//           stating that You changed the files; and
+//
+//       (c) You must retain, in the Source form of any Derivative Works
+//           that You distribute, all copyright, patent, trademark, and
+//           attribution notices from the Source form of the Work,
+//           excluding those notices that do not pertain to any part of
+//           the Derivative Works; and
+//
+//       (d) If the Work includes a "NOTICE" text file as part of its
+//           distribution, then any Derivative Works that You distribute must
+//           include a readable copy of the attribution notices contained
+//           within such NOTICE file, excluding those notices that do not
+//           pertain to any part of the Derivative Works, in at least one
+//           of the following places: within a NOTICE text file distributed
+//           as part of the Derivative Works; within the Source form or
+//           documentation, if provided along with the Derivative Works; or,
+//           within a display generated by the Derivative Works, if and
+//           wherever such third-party notices normally appear. The contents
+//           of the NOTICE file are for informational purposes only and
+//           do not modify the License. You may add Your own attribution
+//           notices within Derivative Works that You distribute, alongside
+//           or as an addendum to the NOTICE text from the Work, provided
+//           that such additional attribution notices cannot be construed
+//           as modifying the License.
+//
+//       You may add Your own copyright statement to Your modifications and
+//       may provide additional or different license terms and conditions
+//       for use, reproduction, or distribution of Your modifications, or
+//       for any such Derivative Works as a whole, provided Your use,
+//       reproduction, and distribution of the Work otherwise complies with
+//       the conditions stated in this License.
+//
+//    5. Submission of Contributions. Unless You explicitly state otherwise,
+//       any Contribution intentionally submitted for inclusion in the Work
+//       by You to the Licensor shall be under the terms and conditions of
+//       this License, without any additional terms or conditions.
+//       Notwithstanding the above, nothing herein shall supersede or modify
+//       the terms of any separate license agreement you may have executed
+//       with Licensor regarding such Contributions.
+//
+//    6. Trademarks. This License does not grant permission to use the trade
+//       names, trademarks, service marks, or product names of the Licensor,
+//       except as required for reasonable and customary use in describing the
+//       origin of the Work and reproducing the content of the NOTICE file.
+//
+//    7. Disclaimer of Warranty. Unless required by applicable law or
+//       agreed to in writing, Licensor provides the Work (and each
+//       Contributor provides its Contributions) on an "AS IS" BASIS,
+//       WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+//       implied, including, without limitation, any warranties or conditions
+//       of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
+//       PARTICULAR PURPOSE. You are solely responsible for determining the
+//       appropriateness of using or redistributing the Work and assume any
+//       risks associated with Your exercise of permissions under this License.
+//
+//    8. Limitation of Liability. In no event and under no legal theory,
+//       whether in tort (including negligence), contract, or otherwise,
+//       unless required by applicable law (such as deliberate and grossly
+//       negligent acts) or agreed to in writing, shall any Contributor be
+//       liable to You for damages, including any direct, indirect, special,
+//       incidental, or consequential damages of any character arising as a
+//       result of this License or out of the use or inability to use the
+//       Work (including but not limited to damages for loss of goodwill,
+//       work stoppage, computer failure or malfunction, or any and all
+//       other commercial damages or losses), even if such Contributor
+//       has been advised of the possibility of such damages.
+//
+//    9. Accepting Warranty or Additional Liability. While redistributing
+//       the Work or Derivative Works thereof, You may choose to offer,
+//       and charge a fee for, acceptance of support, warranty, indemnity,
+//       or other liability obligations and/or rights consistent with this
+//       License. However, in accepting such obligations, You may act only
+//       on Your own behalf and on Your sole responsibility, not on behalf
+//       of any other Contributor, and only if You agree to indemnify,
+//       defend, and hold each Contributor harmless for any liability
+//       incurred by, or claims asserted against, such Contributor by reason
+//       of your accepting any such warranty or additional liability.
+//
+//    END OF TERMS AND CONDITIONS
+//
+//    APPENDIX: How to apply the Apache License to your work.
+//
+//       To apply the Apache License to your work, attach the following
+//       boilerplate notice, with the fields enclosed by brackets "[]"
+//       replaced with your own identifying information. (Don't include
+//       the brackets!)  The text should be enclosed in the appropriate
+//       comment syntax for the file format. We also recommend that a
+//       file or class name and description of purpose be included on the
+//       same "printed page" as the copyright notice for easier
+//       identification within third-party archives.
+//
+//    Copyright [yyyy] [name of copyright owner]
+//
+//    Licensed under the Apache License, Version 2.0 (the "License");
+//    you may not use this file except in compliance with the License.
+//    You may obtain a copy of the License at
+//
+//        http://www.apache.org/licenses/LICENSE-2.0
+//
+//    Unless required by applicable law or agreed to in writing, software
+//    distributed under the License is distributed on an "AS IS" BASIS,
+//    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//    See the License for the specific language governing permissions and
+//    limitations under the License.
+// --- provenance/licenses/thedotmack_claude-mem.NOTICE ---
+// Claude-Mem
+// Copyright 2026 Alex Newman
+//
+// This product includes software developed for the Claude-Mem project.
+//
+// Licensed under the Apache License, Version 2.0.
+//
+// If other attributions are required by dependencies or included code, add them here.
 // Generated by ak build from src/lifecycle/gate.ts. Do not edit. Run it with no arguments for usage.
 var __commonJS=(cb,mod)=>()=>(mod||cb((mod={exports:{}}).exports,mod),mod.exports);var require_ucs2length=__commonJS(function(exports){Object.defineProperty(exports,"__esModule",{value:true});function ucs2length(str){const len=str.length;let length=0;let pos=0;let value;while(pos<len){length++;value=str.charCodeAt(pos++);if(value>=55296&&value<=56319&&pos<len){value=str.charCodeAt(pos);if((value&64512)===56320)pos++}}return length}exports.default=ucs2length;ucs2length.code='require("ajv/dist/runtime/ucs2length").default'});var require_formats=__commonJS(function(exports){Object.defineProperty(exports,"__esModule",{value:true});exports.formatNames=exports.fastFormats=exports.fullFormats=undefined;function fmtDef(validate,compare){return{validate,compare}}exports.fullFormats={date:fmtDef(date,compareDate),time:fmtDef(getTime(true),compareTime),"date-time":fmtDef(getDateTime(true),compareDateTime),"iso-time":fmtDef(getTime(),compareIsoTime),"iso-date-time":fmtDef(getDateTime(),compareIsoDateTime),duration:/^P(?!$)((\d+Y)?(\d+M)?(\d+D)?(T(?=\d)(\d+H)?(\d+M)?(\d+S)?)?|(\d+W)?)$/,uri,"uri-reference":/^(?:[a-z][a-z0-9+\-.]*:)?(?:\/?\/(?:(?:[a-z0-9\-._~!$&'()*+,;=:]|%[0-9a-f]{2})*@)?(?:\[(?:(?:(?:(?:[0-9a-f]{1,4}:){6}|::(?:[0-9a-f]{1,4}:){5}|(?:[0-9a-f]{1,4})?::(?:[0-9a-f]{1,4}:){4}|(?:(?:[0-9a-f]{1,4}:){0,1}[0-9a-f]{1,4})?::(?:[0-9a-f]{1,4}:){3}|(?:(?:[0-9a-f]{1,4}:){0,2}[0-9a-f]{1,4})?::(?:[0-9a-f]{1,4}:){2}|(?:(?:[0-9a-f]{1,4}:){0,3}[0-9a-f]{1,4})?::[0-9a-f]{1,4}:|(?:(?:[0-9a-f]{1,4}:){0,4}[0-9a-f]{1,4})?::)(?:[0-9a-f]{1,4}:[0-9a-f]{1,4}|(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?))|(?:(?:[0-9a-f]{1,4}:){0,5}[0-9a-f]{1,4})?::[0-9a-f]{1,4}|(?:(?:[0-9a-f]{1,4}:){0,6}[0-9a-f]{1,4})?::)|[Vv][0-9a-f]+\.[a-z0-9\-._~!$&'()*+,;=:]+)\]|(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)|(?:[a-z0-9\-._~!$&'"()*+,;=]|%[0-9a-f]{2})*)(?::\d*)?(?:\/(?:[a-z0-9\-._~!$&'"()*+,;=:@]|%[0-9a-f]{2})*)*|\/(?:(?:[a-z0-9\-._~!$&'"()*+,;=:@]|%[0-9a-f]{2})+(?:\/(?:[a-z0-9\-._~!$&'"()*+,;=:@]|%[0-9a-f]{2})*)*)?|(?:[a-z0-9\-._~!$&'"()*+,;=:@]|%[0-9a-f]{2})+(?:\/(?:[a-z0-9\-._~!$&'"()*+,;=:@]|%[0-9a-f]{2})*)*)?(?:\?(?:[a-z0-9\-._~!$&'"()*+,;=:@/?]|%[0-9a-f]{2})*)?(?:#(?:[a-z0-9\-._~!$&'"()*+,;=:@/?]|%[0-9a-f]{2})*)?$/i,"uri-template":/^(?:(?:[^\x00-\x20"'<>%\\^`{|}]|%[0-9a-f]{2})|\{[+#./;?&=,!@|]?(?:[a-z0-9_]|%[0-9a-f]{2})+(?::[1-9][0-9]{0,3}|\*)?(?:,(?:[a-z0-9_]|%[0-9a-f]{2})+(?::[1-9][0-9]{0,3}|\*)?)*\})*$/i,url:/^(?:https?|ftp):\/\/(?:\S+(?::\S*)?@)?(?:(?!(?:10|127)(?:\.\d{1,3}){3})(?!(?:169\.254|192\.168)(?:\.\d{1,3}){2})(?!172\.(?:1[6-9]|2\d|3[0-1])(?:\.\d{1,3}){2})(?:[1-9]\d?|1\d\d|2[01]\d|22[0-3])(?:\.(?:1?\d{1,2}|2[0-4]\d|25[0-5])){2}(?:\.(?:[1-9]\d?|1\d\d|2[0-4]\d|25[0-4]))|(?:(?:[a-z0-9\u{00a1}-\u{ffff}]+-)*[a-z0-9\u{00a1}-\u{ffff}]+)(?:\.(?:[a-z0-9\u{00a1}-\u{ffff}]+-)*[a-z0-9\u{00a1}-\u{ffff}]+)*(?:\.(?:[a-z\u{00a1}-\u{ffff}]{2,})))(?::\d{2,5})?(?:\/[^\s]*)?$/iu,email:/^[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*@(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i,hostname:/^(?=.{1,253}\.?$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[-0-9a-z]{0,61}[0-9a-z])?)*\.?$/i,ipv4:/^(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$/,ipv6:/^((([0-9a-f]{1,4}:){7}([0-9a-f]{1,4}|:))|(([0-9a-f]{1,4}:){6}(:[0-9a-f]{1,4}|((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3})|:))|(([0-9a-f]{1,4}:){5}(((:[0-9a-f]{1,4}){1,2})|:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3})|:))|(([0-9a-f]{1,4}:){4}(((:[0-9a-f]{1,4}){1,3})|((:[0-9a-f]{1,4})?:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:))|(([0-9a-f]{1,4}:){3}(((:[0-9a-f]{1,4}){1,4})|((:[0-9a-f]{1,4}){0,2}:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:))|(([0-9a-f]{1,4}:){2}(((:[0-9a-f]{1,4}){1,5})|((:[0-9a-f]{1,4}){0,3}:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:))|(([0-9a-f]{1,4}:){1}(((:[0-9a-f]{1,4}){1,6})|((:[0-9a-f]{1,4}){0,4}:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:))|(:(((:[0-9a-f]{1,4}){1,7})|((:[0-9a-f]{1,4}){0,5}:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:)))$/i,regex,uuid:/^(?:urn:uuid:)?[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i,"json-pointer":/^(?:\/(?:[^~/]|~0|~1)*)*$/,"json-pointer-uri-fragment":/^#(?:\/(?:[a-z0-9_\-.!$&'()*+,;:=@]|%[0-9a-f]{2}|~0|~1)*)*$/i,"relative-json-pointer":/^(?:0|[1-9][0-9]*)(?:#|(?:\/(?:[^~/]|~0|~1)*)*)$/,byte,int32:{type:"number",validate:validateInt32},int64:{type:"number",validate:validateInt64},float:{type:"number",validate:validateNumber},double:{type:"number",validate:validateNumber},password:true,binary:true};exports.fastFormats={...exports.fullFormats,date:fmtDef(/^\d\d\d\d-[0-1]\d-[0-3]\d$/,compareDate),time:fmtDef(/^(?:[0-2]\d:[0-5]\d:[0-5]\d|23:59:60)(?:\.\d+)?(?:z|[+-]\d\d(?::?\d\d)?)$/i,compareTime),"date-time":fmtDef(/^\d\d\d\d-[0-1]\d-[0-3]\dt(?:[0-2]\d:[0-5]\d:[0-5]\d|23:59:60)(?:\.\d+)?(?:z|[+-]\d\d(?::?\d\d)?)$/i,compareDateTime),"iso-time":fmtDef(/^(?:[0-2]\d:[0-5]\d:[0-5]\d|23:59:60)(?:\.\d+)?(?:z|[+-]\d\d(?::?\d\d)?)?$/i,compareIsoTime),"iso-date-time":fmtDef(/^\d\d\d\d-[0-1]\d-[0-3]\d[t\s](?:[0-2]\d:[0-5]\d:[0-5]\d|23:59:60)(?:\.\d+)?(?:z|[+-]\d\d(?::?\d\d)?)?$/i,compareIsoDateTime),uri:/^(?:[a-z][a-z0-9+\-.]*:)(?:\/?\/)?[^\s]*$/i,"uri-reference":/^(?:(?:[a-z][a-z0-9+\-.]*:)?\/?\/)?(?:[^\\\s#][^\s#]*)?(?:#[^\\\s]*)?$/i,email:/^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/i};exports.formatNames=Object.keys(exports.fullFormats);function isLeapYear(year){return year%4===0&&(year%100!==0||year%400===0)}var DATE=/^(\d\d\d\d)-(\d\d)-(\d\d)$/;var DAYS=[0,31,28,31,30,31,30,31,31,30,31,30,31];function date(str){const matches=DATE.exec(str);if(!matches)return false;const year=+matches[1];const month=+matches[2];const day=+matches[3];return month>=1&&month<=12&&day>=1&&day<=(month===2&&isLeapYear(year)?29:DAYS[month])}function compareDate(d1,d2){if(!(d1&&d2))return;if(d1>d2)return 1;if(d1<d2)return-1;return 0}var TIME=/^(\d\d):(\d\d):(\d\d(?:\.\d+)?)(z|([+-])(\d\d)(?::?(\d\d))?)?$/i;function getTime(strictTimeZone){return function time(str){const matches=TIME.exec(str);if(!matches)return false;const hr=+matches[1];const min=+matches[2];const sec=+matches[3];const tz=matches[4];const tzSign=matches[5]==="-"?-1:1;const tzH=+(matches[6]||0);const tzM=+(matches[7]||0);if(tzH>23||tzM>59||strictTimeZone&&!tz)return false;if(hr<=23&&min<=59&&sec<60)return true;const utcMin=min-tzM*tzSign;const utcHr=hr-tzH*tzSign-(utcMin<0?1:0);return(utcHr===23||utcHr===-1)&&(utcMin===59||utcMin===-1)&&sec<61}}function compareTime(s1,s2){if(!(s1&&s2))return;const t1=new Date("2020-01-01T"+s1).valueOf();const t2=new Date("2020-01-01T"+s2).valueOf();if(!(t1&&t2))return;return t1-t2}function compareIsoTime(t1,t2){if(!(t1&&t2))return;const a1=TIME.exec(t1);const a2=TIME.exec(t2);if(!(a1&&a2))return;t1=a1[1]+a1[2]+a1[3];t2=a2[1]+a2[2]+a2[3];if(t1>t2)return 1;if(t1<t2)return-1;return 0}var DATE_TIME_SEPARATOR=/t|\s/i;function getDateTime(strictTimeZone){const time=getTime(strictTimeZone);return function date_time(str){const dateTime=str.split(DATE_TIME_SEPARATOR);return dateTime.length===2&&date(dateTime[0])&&time(dateTime[1])}}function compareDateTime(dt1,dt2){if(!(dt1&&dt2))return;const d1=new Date(dt1).valueOf();const d2=new Date(dt2).valueOf();if(!(d1&&d2))return;return d1-d2}function compareIsoDateTime(dt1,dt2){if(!(dt1&&dt2))return;const[d1,t1]=dt1.split(DATE_TIME_SEPARATOR);const[d2,t2]=dt2.split(DATE_TIME_SEPARATOR);const res=compareDate(d1,d2);if(res===undefined)return;return res||compareTime(t1,t2)}var NOT_URI_FRAGMENT=/\/|:/;var URI=/^(?:[a-z][a-z0-9+\-.]*:)(?:\/?\/(?:(?:[a-z0-9\-._~!$&'()*+,;=:]|%[0-9a-f]{2})*@)?(?:\[(?:(?:(?:(?:[0-9a-f]{1,4}:){6}|::(?:[0-9a-f]{1,4}:){5}|(?:[0-9a-f]{1,4})?::(?:[0-9a-f]{1,4}:){4}|(?:(?:[0-9a-f]{1,4}:){0,1}[0-9a-f]{1,4})?::(?:[0-9a-f]{1,4}:){3}|(?:(?:[0-9a-f]{1,4}:){0,2}[0-9a-f]{1,4})?::(?:[0-9a-f]{1,4}:){2}|(?:(?:[0-9a-f]{1,4}:){0,3}[0-9a-f]{1,4})?::[0-9a-f]{1,4}:|(?:(?:[0-9a-f]{1,4}:){0,4}[0-9a-f]{1,4})?::)(?:[0-9a-f]{1,4}:[0-9a-f]{1,4}|(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?))|(?:(?:[0-9a-f]{1,4}:){0,5}[0-9a-f]{1,4})?::[0-9a-f]{1,4}|(?:(?:[0-9a-f]{1,4}:){0,6}[0-9a-f]{1,4})?::)|[Vv][0-9a-f]+\.[a-z0-9\-._~!$&'()*+,;=:]+)\]|(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)|(?:[a-z0-9\-._~!$&'()*+,;=]|%[0-9a-f]{2})*)(?::\d*)?(?:\/(?:[a-z0-9\-._~!$&'()*+,;=:@]|%[0-9a-f]{2})*)*|\/(?:(?:[a-z0-9\-._~!$&'()*+,;=:@]|%[0-9a-f]{2})+(?:\/(?:[a-z0-9\-._~!$&'()*+,;=:@]|%[0-9a-f]{2})*)*)?|(?:[a-z0-9\-._~!$&'()*+,;=:@]|%[0-9a-f]{2})+(?:\/(?:[a-z0-9\-._~!$&'()*+,;=:@]|%[0-9a-f]{2})*)*)(?:\?(?:[a-z0-9\-._~!$&'()*+,;=:@/?]|%[0-9a-f]{2})*)?(?:#(?:[a-z0-9\-._~!$&'()*+,;=:@/?]|%[0-9a-f]{2})*)?$/i;function uri(str){return NOT_URI_FRAGMENT.test(str)&&URI.test(str)}var BYTE=/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/gm;function byte(str){BYTE.lastIndex=0;return BYTE.test(str)}var MIN_INT32=-(2**31);var MAX_INT32=2**31-1;function validateInt32(value){return Number.isInteger(value)&&value<=MAX_INT32&&value>=MIN_INT32}function validateInt64(value){return Number.isInteger(value)}function validateNumber(){return true}var Z_ANCHOR=/[^\\]\\Z/;function regex(str){if(Z_ANCHOR.test(str))return false;try{new RegExp(str);return true}catch(e){return false}}});import{spawnSync as spawnSync3}from"node:child_process";import{createHash as createHash3,randomBytes}from"node:crypto";import{closeSync,copyFileSync,existsSync as existsSync2,fstatSync,mkdirSync,mkdtempSync,openSync,readdirSync,readFileSync as readFileSync2,realpathSync,renameSync,rmSync,statSync,utimesSync,writeFileSync}from"node:fs";import{hostname,tmpdir,userInfo as userInfo2}from"node:os";import{basename,dirname as dirname2,isAbsolute as isAbsolute2,join as join2,relative,resolve as resolve2}from"node:path";import{fileURLToPath,pathToFileURL}from"node:url";import{createHash}from"node:crypto";function canonicalJson(value){if(value===null||typeof value!=="object")return JSON.stringify(value)??"null";if(Array.isArray(value))return`[${value.map(canonicalJson).join(",")}]`;const entries=Object.entries(value).filter(([,v])=>v!==undefined).sort(([a],[b])=>a<b?-1:a>b?1:0);return`{${entries.map(([k,v])=>`${JSON.stringify(k)}:${canonicalJson(v)}`).join(",")}}`}function sha256Hex(text){return createHash("sha256").update(text,"utf8").digest("hex")}function artifactHash(artifact){const subject=artifact!==null&&typeof artifact==="object"&&!Array.isArray(artifact)?Object.fromEntries(Object.entries(artifact).filter(([k])=>k!=="approvals")):artifact;return`sha256:${sha256Hex(canonicalJson(subject))}`}import{spawnSync}from"node:child_process";import{existsSync,readFileSync}from"node:fs";import{userInfo}from"node:os";import{dirname,isAbsolute,join,resolve}from"node:path";var INSTRUCTION_WORDS=8;function defaultMarkersPath(env=process.env){return env.AK_PUBLISH_MARKERS??join(userInfo().homedir,".agent-kit","publish-markers")}var words=(text)=>text.toLowerCase().match(/[\p{L}\p{N}]+/gu)??[];function wordRuns(text){const all=words(text);const runs=[];for(let i=0;i+INSTRUCTION_WORDS<=all.length;i+=1)runs.push(all.slice(i,i+INSTRUCTION_WORDS).join(" "));return runs}var TRAILER_VALUE_MAX=120;var TRAILER_KEYS=new Set(["co-authored-by","signed-off-by","reviewed-by","acked-by","tested-by","reported-by","suggested-by","helped-by"]);var FOOTER=/^\W*generated (with|by) (\[[^\]]+\]\([^)\s]+\)|\S+( \S+)?)\s*$/i;function isTrailer(line){const colon=line.indexOf(": ");const value=line.slice(colon+2).trim();return colon>0&&TRAILER_KEYS.has(line.slice(0,colon).toLowerCase())&&value!==""&&value.length<TRAILER_VALUE_MAX}function matchable(text,commit,allow){const lines=text.split(`
 `);if(commit){let end=lines.length;while(end>0&&lines[end-1]?.trim()==="")end-=1;let start=end;while(start>0&&isTrailer(lines[start-1]??""))start-=1;if(start<end&&start>0&&lines[start-1]?.trim()==="")lines.splice(start,end-start)}let kept=` ${lines.map((line)=>FOOTER.test(line)?`

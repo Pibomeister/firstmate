@@ -16,6 +16,13 @@
 // Its donor pin, exact source paths and full license are recorded in provenance/.
 // It is separate from the catalog donors listed below and is not bundled.
 //
+// The review-isolation probe also adapts child-session joining and spawn-argument
+// inspection from google/elephant-goldfish-model, Copyright 2026 Google LLC, under
+// the Apache License 2.0. The files were modified; provenance/adaptations.yaml
+// states the change for each. The license text is
+// provenance/licenses/google_elephant-goldfish-model.LICENSE. It is a research pin
+// and is not one of the catalog donors listed below.
+//
 // - compound-engineering-plugin — Copyright (c) 2025 Every
 //   https://github.com/EveryInc/compound-engineering-plugin @ 05c42da94fd318fa081f29d17bf947762aa477b1
 // - superpowers — Copyright (c) 2025 Jesse Vincent

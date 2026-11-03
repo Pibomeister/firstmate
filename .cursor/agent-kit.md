@@ -10,9 +10,9 @@ This overlay does not replace Firstmate's supervisor contract in the repository-
 
 ## Pin
 
-- Package: agent-kit `0.1.82`
+- Package: agent-kit `0.1.86`
 - Source: https://github.com/Pibomeister/agent-kit
-- Commit: `fb56d42d45dae453cb1dd76540b5b2d6ebc88ee0` (merge of PR #204, the Cursor host adapter)
+- Commit: `ebb7f5f0de8d0ea247769e8649512cbe20f67cf2` (merge of PR #207)
 - Host: `cursor`
 - Profile: `core`
 
@@ -24,14 +24,15 @@ Recorded with `sha256sum .cursor/bin/ak .cursor/bin/ak-gate.mjs` at that commit.
 `bin/fm-agent-kit-pin.sh` checks these two lines against the files on disk.
 
 ```
-27b1bdc459ffd50cf62f21b2f2473f9d08f8935c6b63adb8fe33c0ffa9f1d1f3  .cursor/bin/ak
-eaee112a741a085c9f6daa0eca4d6c161d65b694e36799a3b227fd04f1d51e79  .cursor/bin/ak-gate.mjs
+14ab6372ce2ee5d78bae94cffe2a9270b78b9ea963e959d92c599e859762f89d  .cursor/bin/ak
+2311241a91dfa68c7cd5f838e248f0da776bcb001fbb0a033884f9d897cfc58b  .cursor/bin/ak-gate.mjs
 ```
 
 ## Licenses
 
-The bundle's top-level `LICENSE`, `NOTICE`, `LICENSES/`, and `provenance/licenses/` live under [`.cursor/LICENSES/agent-kit/`](LICENSES/agent-kit/).
+Licence and attribution files ship at [`.cursor/licenses/`](licenses/) under their original paths: `LICENSE`, `NOTICE`, `LICENSES/*`, and `provenance/licenses/*`.
 That tree includes the Apache-2.0 `thedotmack_claude-mem` license and notice.
+Vendor steps never write this repository's root `LICENSE`, `NOTICE`, or `LICENSES/`.
 
 ## super-review on a branch or pull request
 
@@ -62,11 +63,9 @@ bun run ak build --host cursor --out /tmp/ak-cursor
 ```
 
 `--out` refuses a directory that already holds non-bundle files.
-Copy the overlay trees with `rsync -a` as `adapters/cursor/CONTRACT.md` specifies: `skills/`, `agents/`, `rules/`, `roles/`, `references/`, `schemas/`, and `bin/`.
-Also copy `templates/`: the Cursor host contract's rsync list omits it, but `.cursor/agents/trail-auditor.md` and `.cursor/roles/trail-auditor/ROLE.md` link to `.cursor/templates/trail-audit.example.json`.
+Copy the overlay trees with `rsync -a` as `adapters/cursor/README.md` specifies (identical to CONTRACT §5): `skills/`, `agents/`, `rules/`, `roles/`, `references/`, `schemas/`, `templates/`, `bin/`, and `licenses/`.
 Do not copy `.cursor/adapters/`; nothing in the vendored discovery trees links into that extra root.
-Copy `catalog.yaml` with `cp -n` so an existing catalog is not overwritten.
-Copy the bundle's top-level `LICENSE`, `NOTICE`, `LICENSES/`, and `provenance/licenses/` into `.cursor/LICENSES/agent-kit/`, keeping `NOTICE` alongside `LICENSE` and `provenance/licenses/` for the claude-mem texts.
+The documented `cp -n` of `.cursor/catalog.yaml` will not replace an existing catalog; overwrite `.cursor/catalog.yaml` with the upstream file so the recorded version is not left stale.
 Refresh the two `sha256sum` lines in this file from `.cursor/bin/ak` and `.cursor/bin/ak-gate.mjs`, then run `bin/fm-agent-kit-pin.sh`.
 Merge a newly generated root `AGENTS.md` section rather than replacing Firstmate's supervisor contract.
 Keep that overlay section a short pointer: it does not replace the supervisor contract, reviewer isolation is `partial`, and super-review runs as `/super-review full|readiness|delta`.
