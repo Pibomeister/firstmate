@@ -672,9 +672,15 @@
 # screen-scrape fallback like grok and rovo, while an agy SECONDMATE runs the
 # tracked project-scope .agents/hooks.json in its own home, whose stop-hook park
 # owns that home's supervision (docs/supervision-protocols/agy.md).
-# The readiness gate is proven only on tmux and Herdr, so every other backend
-# is refused before anything launches. The AGY adapter reference owns published-record
-# recovery and custody rules (.agents/skills/harness-adapters/references/harness/agy.md).
+# The readiness gate is proven only on tmux and Herdr. An explicit --backend,
+# FM_BACKEND, or relaunch onto any other backend is refused before anything
+# launches. A backend that came only from config/backend or runtime detection
+# instead moves that one agy task to Herdr if its tools pass, else tmux, and
+# prints a notice naming both. orca, t3code, and rex admission wait until
+# after that choice so their runtime checks cannot abort (or start a Rex
+# server for) a task that will not run there. The AGY adapter reference owns
+# published-record recovery and custody rules
+# (.agents/skills/harness-adapters/references/harness/agy.md).
 # cursor installs no per-task hook either: it writes state/<id>.cursor-session to
 # bind the pane to cursor's own conversation transcript (projects root, the exact
 # workspace path cursor records in .workspace-trusted, and the conversations that
@@ -2426,6 +2432,38 @@ resolve_orca_launch_env_source() {
   fi
 }
 
+# Secondmate support is about the configured backend itself, not about whether
+# an agy task will later move to herdr/tmux. Refuse the unsupported backends
+# at backend selection so a --secondmate spawn never proceeds into home
+# mutation or a later "no firstmate home" error on cmux, paseo, orca, or tern.
+spawn_backend_secondmate_guard() {  # <backend>
+  if [ "$KIND" = secondmate ]; then
+    case "$1" in
+      orca|cmux|paseo|tern)
+        echo "error: backend=$1 does not support --secondmate spawns yet" >&2
+        return 1
+        ;;
+    esac
+  fi
+}
+
+# Admit the backend the task will actually use: secondmate support, API
+# runtime checks, Orca launch-env, and Rex locality. An agy task may leave a
+# configured orca, t3code, or rex backend for herdr/tmux, so runtime and
+# locality checks defer until after that decision rather than aborting (or
+# starting a Rex server) for a task that will not run there.
+spawn_backend_admit() {  # <backend>
+  local backend=$1
+  spawn_backend_secondmate_guard "$backend" || return 1
+  fm_backend_runtime_check "$backend" || return 1
+  if [ "$backend" = orca ]; then
+    resolve_orca_launch_env_source || return 1
+  fi
+  if [ "$backend" = rex ]; then
+    fm_backend_rex_local_server_ensure || return 1
+  fi
+}
+
 if [ "$RELAUNCH" -eq 0 ]; then
   if [ "$BACKEND_SET" -eq 1 ]; then
     BACKEND=$BACKEND_ARG
@@ -2434,28 +2472,16 @@ if [ "$RELAUNCH" -eq 0 ]; then
   fi
   fm_backend_validate_spawn "$BACKEND" || exit 1
   fm_backend_source "$BACKEND" || exit 1
-  if [ "$BACKEND" = orca ] && [ "$KIND" = secondmate ]; then
-    echo "error: backend=orca does not support --secondmate spawns yet" >&2
-    exit 1
-  fi
-  if [ "$BACKEND" = cmux ] && [ "$KIND" = secondmate ]; then
-    echo "error: backend=cmux does not support --secondmate spawns yet" >&2
-    exit 1
-  fi
-  if [ "$BACKEND" = paseo ] && [ "$KIND" = secondmate ]; then
-    echo "error: backend=paseo does not support --secondmate spawns yet" >&2
-    exit 1
-  fi
-  if [ "$BACKEND" = tern ] && [ "$KIND" = secondmate ]; then
-    echo "error: backend=tern does not support --secondmate spawns yet" >&2
-    exit 1
-  fi
-  fm_backend_runtime_check "$BACKEND" || exit 1
-  if [ "$BACKEND" = rex ]; then
-    fm_backend_rex_local_server_ensure || exit 1
-  fi
-  if [ "$BACKEND" = orca ]; then
-    resolve_orca_launch_env_source
+  # The harness is not resolved yet, and an agy task may leave this backend
+  # for herdr/tmux. Secondmate support still refuses here. Herdr and tmux
+  # are already verified for agy, so they admit here. Every other backend
+  # defers runtime and locality checks until after that decision (below the
+  # agy gate), still before any terminal exists.
+  spawn_backend_secondmate_guard "$BACKEND" || exit 1
+  if [ "$BACKEND" = tmux ] || [ "$BACKEND" = herdr ]; then
+    spawn_backend_admit "$BACKEND" || exit 1
+  else
+    BACKEND_SPAWN_CHECKS_PENDING=1
   fi
 fi
 SPAWN_TASK_LOCK="$STATE/.spawn-$ID.lock"
@@ -2836,25 +2862,52 @@ omp_model_validate() { # <omp-bin> <model> [<profile>]
 # bound (bin/fm-timeout-lib.sh) with stdin detached: a stalled fetch or a
 # sign-in prompt can never block the spawn before any pane exists. An
 # unreachable listing establishes nothing (harness-adapters
-# model-and-effort.md) and launches unvalidated with a notice.
-agy_model_validate() {  # <agy-bin> <model>
-  local bin=$1 model=$2 listing rc=0 bound=${FM_AGY_MODELS_TIMEOUT:-15}
+# model-and-effort.md) and launches unvalidated with a notice. A signed-out
+# agy instead exits 0 with an empty catalog (its log: "Auth mode is
+# unspecified, skipping fetchAvailableModels and returning empty response"),
+# and that refuses with the sign-in step rather than blaming the model id.
+# The listing doubles as the sign-in probe, so it runs even when no model
+# is requested; only the catalog check below needs a requested id.
+agy_models_timeout() {  # validated FM_AGY_MODELS_TIMEOUT, default 15
+  local bound=${FM_AGY_MODELS_TIMEOUT:-15}
   case "$bound" in ''|*[!0-9]*|0*) bound=15 ;; esac
-  [ -n "$model" ] && [ "$model" != default ] || return 0
+  printf '%s' "$bound"
+}
+agy_model_validate() {  # <agy-bin> <model>
+  local bin=$1 model=$2 listing rc=0 bound
+  bound=$(agy_models_timeout)
   listing=$(fm_run_timed "$bound" "$bin" models 2>/dev/null < /dev/null) || rc=$?
-  if [ "$rc" -ne 0 ] || [ -z "$listing" ]; then
+  if [ "$rc" -eq 0 ] && [ -z "$(printf '%s' "$listing" | tr -d '[:space:]')" ]; then
+    echo "error: agy is not signed in: 'agy models' returned an empty catalog, which is how a signed-out agy answers; run 'agy' once in a normal terminal on this account, sign in, then retry" >&2
+    return 1
+  fi
+  if [ "$rc" -ne 0 ]; then
+    local what="--model '$model' unvalidated"
+    [ -n "$model" ] && [ "$model" != default ] || what="agy's default model without a sign-in check"
     if [ "$rc" -eq 124 ]; then
-      echo "notice: 'agy models' did not answer within ${bound}s; launching with --model '$model' unvalidated" >&2
+      echo "notice: 'agy models' did not answer within ${bound}s; launching with $what" >&2
     else
-      echo "notice: 'agy models' listing is unreachable (exit $rc); launching with --model '$model' unvalidated" >&2
+      echo "notice: 'agy models' listing is unreachable (exit $rc); launching with $what" >&2
     fi
     return 0
   fi
+  [ -n "$model" ] && [ "$model" != default ] || return 0
   if printf '%s\n' "$listing" | awk '{print $1}' | grep -qxF -- "$model"; then
     return 0
   fi
   echo "error: agy model '$model' is not listed by 'agy models'; choose a listed id or omit --model" >&2
   return 1
+}
+
+# agy's --effort set is read from its own help line, "(low|medium|high|xhigh|max)"
+# on agy 1.4.10 and "(low|medium|high)" on 1.2.0, under the same validated
+# FM_AGY_MODELS_TIMEOUT bound as the model listing, with stdin detached. An
+# unreadable help lists nothing, which keeps record-and-omit for the
+# build-dependent levels and prints a notice rather than dropping them
+# silently. agy prints its help on stderr (1.4.10), so both streams are read.
+agy_effort_levels() {  # <agy-bin> -> pipe-separated levels or nothing
+  fm_run_timed "$(agy_models_timeout)" "$1" --help 2>&1 < /dev/null \
+    | sed -n 's/^[[:space:]]*--effort[[:space:]].*(\([a-z|]*\)).*/\1/p' | head -n 1
 }
 
 # Droid's exec help is its model-specific effort catalog. Interactive Droid
@@ -3049,7 +3102,8 @@ launch_template() {
   # command (verified: a multi-line brief submitted itself with no extra Enter,
   # agy 1.2.0). --model takes the bare catalog id from `agy models`
   # (gemini-3.8-flash-high, never the unlisted bare gemini-3.8-flash).
-  # --effort takes low|medium|high. --dangerously-skip-permissions
+  # --effort takes low|medium|high on every build; xhigh and max pass only
+  # when the build's own help lists them. --dangerously-skip-permissions
   # auto-approves every tool call, which an unattended crewmate needs.
   # Every task worktree is a fresh path, so agy would show a folder-trust
   # dialog ("Do you trust the contents of this project?") and no launch flag
@@ -3346,10 +3400,62 @@ fi
 # the pinned busy row from the backend's pane capture, which is proven per
 # backend rather than assumed (docs/verification/agy.md owns the evidence).
 # Orca's stream read never showed agy 1.4.10 busy while it was working, so the
-# gate timed out on a live worker. Refuse an unproven backend here, before any
-# worktree, endpoint, task record, or remote model fetch exists.
+# gate timed out on a live worker. An explicit --backend, FM_BACKEND, or a
+# relaunch onto an unproven backend is refused here, before any worktree,
+# endpoint, task record, or remote model fetch exists. A backend that only
+# came from config/backend or runtime detection instead moves this one task
+# to the first verified backend whose tools are present, herdr before tmux,
+# and says so; the task record names where it runs.
+agy_fallback_backend() {
+  local candidate tool
+  for candidate in herdr tmux; do
+    # shellcheck disable=SC2046 # required-tools is a space-separated word list
+    for tool in $(fm_backend_required_tools "$candidate"); do
+      command -v "$tool" >/dev/null 2>&1 || continue 2
+    done
+    if [ "$candidate" = herdr ]; then
+      # Probe in a subshell so a herdr that is present but unusable does not
+      # load the herdr adapter into a spawn that will run on tmux.
+      ( fm_backend_source herdr >/dev/null 2>&1 && fm_backend_herdr_version_check >/dev/null 2>&1 ) || continue
+    fi
+    printf '%s' "$candidate"
+    return 0
+  done
+  return 1
+}
 if [ "$HARNESS" = agy ] && [ "$BACKEND" != tmux ] && [ "$BACKEND" != herdr ]; then
-  echo "error: agy launch readiness is live-verified on the tmux and herdr backends only; backend=$BACKEND cannot prove the brief started. Select backend tmux or herdr." >&2
+  # --backend and FM_BACKEND are explicit choices; only config/backend or
+  # runtime auto-detection may be replaced by the fallback below.
+  if [ "$RELAUNCH" -eq 1 ] || [ "$BACKEND_SET" -eq 1 ] || [ -n "${FM_BACKEND:-}" ]; then
+    echo "error: agy launch readiness is live-verified on the tmux and herdr backends only; backend=$BACKEND cannot prove the brief started. Select backend tmux or herdr." >&2
+    exit 1
+  fi
+  AGY_CONFIGURED_BACKEND=$BACKEND
+  BACKEND=$(agy_fallback_backend) || {
+    echo "error: agy launch readiness is live-verified on the tmux and herdr backends only, the configured backend=$AGY_CONFIGURED_BACKEND is neither, and no verified agy backend (herdr, tmux) is available; install one of them" >&2
+    exit 1
+  }
+  fm_backend_validate_spawn "$BACKEND" || exit 1
+  fm_backend_source "$BACKEND" || exit 1
+  echo "notice: agy launch readiness is not verified on the configured backend=$AGY_CONFIGURED_BACKEND; this agy task runs on backend=$BACKEND" >&2
+  spawn_backend_admit "$BACKEND" || exit 1
+  fm_backend_validate_harness "$BACKEND" "$HARNESS" || exit 1
+  BACKEND_SPAWN_CHECKS_PENDING=0
+fi
+if [ "${BACKEND_SPAWN_CHECKS_PENDING:-0}" = 1 ]; then
+  spawn_backend_admit "$BACKEND" || exit 1
+fi
+# On macOS agy keeps its sign-in in the login keychain, which the Security
+# framework finds through $HOME. Current accounts use login.keychain-db;
+# older or migrated accounts may still have only the legacy login.keychain.
+# Under a HOME with neither (a substituted test HOME, some sandboxes) agy
+# cannot read the sign-in, and saving one raises macOS's modal "A keychain
+# cannot be found" dialog on the captain's screen. Refuse that HOME here,
+# before anything launches.
+if [ "$HARNESS" = agy ] && [ "$(uname -s 2>/dev/null)" = Darwin ] \
+   && [ ! -e "$HOME/Library/Keychains/login.keychain-db" ] \
+   && [ ! -e "$HOME/Library/Keychains/login.keychain" ]; then
+  echo "error: HOME=$HOME has no macOS login keychain (Library/Keychains/login.keychain-db or Library/Keychains/login.keychain), where agy keeps its sign-in; agy would run signed out and macOS would show a 'keychain cannot be found' dialog. Launch from the account's real HOME." >&2
   exit 1
 fi
 if [ "$HARNESS" = agy ]; then
@@ -3558,6 +3664,18 @@ if [ "$HARNESS" = omp ]; then
 fi
 if [ "$HARNESS" = agy ]; then
   agy_model_validate "$AGY_BIN" "$MODEL" || exit 1
+  # Only xhigh and max depend on the build, so only they pay the help probe.
+  case "$EFFORT" in
+    xhigh | max)
+      AGY_EFFORT_LEVELS=$(agy_effort_levels "$AGY_BIN")
+      case "|${AGY_EFFORT_LEVELS:-}|" in
+        *"|$EFFORT|"*) ;;
+        *)
+          echo "notice: agy --effort $EFFORT is not listed in this build's --help; recording it and omitting it from the launch" >&2
+          ;;
+      esac
+      ;;
+  esac
 fi
 # polytoken's model validation composes firstmate's model and effort axes into
 # the launch model reference (bin/fm-polytoken-lib.sh owns the reasoning): the
@@ -3841,10 +3959,17 @@ effort_flag_for_harness() {
     esac
     ;;
   agy)
-    # agy 1.2.0 --effort accepts exactly low|medium|high, so xhigh and max are
-    # omitted rather than passed as known-bad values (record-and-omit).
+    # Every agy build accepts low|medium|high. xhigh and max pass only when
+    # the build's own help lists them (agy 1.4.10 does, 1.2.0 does not), and
+    # are otherwise omitted rather than passed as known-bad values
+    # (record-and-omit).
     case "$effort" in
     low | medium | high) printf -- '--effort %s ' "$(shell_quote "$effort")" ;;
+    xhigh | max)
+      case "|${AGY_EFFORT_LEVELS:-}|" in
+      *"|$effort|"*) printf -- '--effort %s ' "$(shell_quote "$effort")" ;;
+      esac
+      ;;
     esac
     ;;
   commandcode)
