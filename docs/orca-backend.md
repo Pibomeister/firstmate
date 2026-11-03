@@ -110,12 +110,18 @@ Orca's terminal API never names the processes behind a terminal, so the verdict 
 - The process table under that root is classified by the shared harness-process classifier in `bin/fm-agent-process-lib.sh`.
 
 A connected terminal is `alive` when any process in its session tree is a verified harness, `dead` when the tree holds only shells besides the `login` root, and `ambiguous` otherwise.
-A disconnected terminal with a recorded exit cause is `missing`, and the absence proof then decides whether it is gone.
-That proof also requires that Orca's sweep no longer lists the session and that no process of this user that classifies as an agent has its working directory in the recorded worktree, read with `lsof`.
+A connected terminal is `missing` when the session root its sweep names is absent from a complete read of the process table.
+Orca can keep reporting such a terminal connected and writable after its session process exited, and input typed into it reaches no process.
+A process table that cannot be read, or that does not list the reading shell, is not complete, so the terminal reads `unreadable`.
+A disconnected terminal with a recorded exit cause is also `missing`, and the absence proof then decides whether either kind is gone.
+For a disconnected terminal that proof requires that Orca's sweep no longer lists the session.
+For both kinds it requires that no process of this user that classifies as an agent has its working directory in the recorded worktree, read with `lsof`.
 The working-directory read exists because an agent can outlive the terminal it started in; such a survivor returns `unproven` and refuses the relaunch, since lifecycle commands cannot reach it through the recorded terminal.
 A remote execution host, a missing exit cause, a worktree mismatch, or any failed read refuses rather than proving absence.
 For a Droid task, [`fm_control_droid_agent_absent` in `bin/fm-control-lib.sh`](../bin/fm-control-lib.sh) owns the shared marker and connected owned-shell stop proofs, including their refusal conditions, for `fm-control` and `fm-spawn --relaunch`.
-After that proof, [`fm-spawn.sh`'s relaunch contract](../bin/fm-spawn.sh) requires terminal usability for adoption, replaces a closed terminal in the recorded worktree, and refuses a connected terminal that is not writable.
+A Droid terminal Orca still calls connected whose session root exited instead takes `fm_control_droid_connected_gone` in the same file: the proof above plus a clean Droid scan of the worktree, with no SessionEnd marker or idle record required, so a Droid that died mid-turn is recoverable.
+A closed Droid terminal keeps its SessionEnd marker requirement.
+After those proofs, [`fm-spawn.sh`'s relaunch contract](../bin/fm-spawn.sh) requires terminal usability for adoption, replaces a closed terminal or a connected terminal whose session root exited in the recorded worktree, and refuses a connected terminal that is not writable.
 A relaunch keeps the old SessionEnd marker until the replacement record is published, so a retry after an aborted rebind can still pass the same stop proof.
 A stale handle reads `unreadable`; only Orca's exact `ok:false` response with `error.code=terminal_handle_stale` is accepted as stale evidence, including when the CLI exits nonzero.
 It proves absence only after a host reboot: the boot time read from the kernel must postdate the handle's recorded evidence (the record's spawn generation, or its mtime without one), Orca's process sweep must be readable from the post-boot runtime, and no agent process may be working in the recorded worktree.

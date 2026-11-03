@@ -600,6 +600,21 @@ process.stdout.write(String(pids[0]));
 ' "$pty"
 }
 
+# fm_backend_orca_pid_absent: whether <pid> is absent from one complete read of
+# the process table. Exit 0 means the table was read, lists this shell, and
+# does not list <pid>; exit 1 means it lists <pid>; exit 2 means no complete
+# table could be read. A table that does not list this shell is not trusted as
+# complete, so a partial or filtered read can never prove a process gone.
+fm_backend_orca_pid_absent() {  # <pid>
+  local pid=${1:-} table
+  case "$pid" in ''|*[!0-9]*) return 2 ;; esac
+  table=$(LC_ALL=C ps -axo pid= 2>/dev/null) || return 2
+  printf '%s\n' "$table" | awk -v me="$$" -v want="$pid" '
+    $1 == me { seen = 1 }
+    $1 == want { hit = 1 }
+    END { if (!seen) exit 2; exit hit ? 1 : 0 }'
+}
+
 # fm_backend_orca_process_tree: <root-pid> and every descendant, one
 # `pid<TAB>comm` line each, root first. Returns 1 when the process table
 # cannot be read or no longer holds the root.
@@ -677,11 +692,14 @@ TREE
 # classified from its session's process tree. A disconnected terminal for which
 # Orca recorded an exit cause is `missing`: its pty is gone, which is evidence
 # about the terminal and not yet proof that no agent survived it - only
-# fm_backend_orca_endpoint_absence_proof below can establish that. A stale
-# handle, a terminal on another execution host, or any unreadable fact is
-# `unreadable`.
+# fm_backend_orca_endpoint_absence_proof below can establish that. A terminal
+# Orca still reports connected is also `missing` when the one process Orca's
+# sweep names as its session root is absent from a complete process table:
+# that session has exited, whatever Orca's connection flag says, with the same
+# caveat that a child may have outlived it. A stale handle, a terminal on
+# another execution host, or any unreadable fact is `unreadable`.
 fm_backend_orca_agent_state() {  # <terminal-id>
-  local terminal=${1:-} facts read connected kind host pty wtpath pid
+  local terminal=${1:-} facts read connected kind host pty wtpath pid rc
   [ -n "$terminal" ] || { printf 'unreadable'; return 0; }
   facts=$(fm_backend_orca_terminal_facts "$terminal") || { printf 'unreadable'; return 0; }
   IFS=$'\x1f' read -r read connected kind host pty wtpath _ <<FACTS
@@ -697,6 +715,13 @@ FACTS
     *) printf 'unreadable'; return 0 ;;
   esac
   pid=$(fm_backend_orca_session_pid "$pty") || { printf 'unreadable'; return 0; }
+  rc=0
+  fm_backend_orca_pid_absent "$pid" || rc=$?
+  case "$rc" in
+    0) printf 'missing'; return 0 ;;
+    1) ;;
+    *) printf 'unreadable'; return 0 ;;
+  esac
   fm_backend_orca_tree_state "$pid"
 }
 
@@ -805,7 +830,13 @@ if (!data || data.ok === false || !data.result || !Array.isArray(data.result.wor
 #   - no process of this user that classifies as an agent has its working
 #     directory in the recorded worktree.
 # A terminal that turns out to be connected is re-classified, so a stopped
-# agent in a live terminal reads `dead` and a live one `alive`. Everything else
+# agent in a live terminal reads `dead` and a live one `alive`. A connected
+# terminal whose classifier reads `missing` - the session root Orca's sweep
+# names is absent from a complete process table - takes the first route's last
+# two standards instead of the exit-cause and sweep-drop ones: it must belong to
+# the recorded worktree, and no agent may work there. Its session is gone even
+# though Orca still reports it connected, so it is `gone` rather than an
+# adoptable `dead`: input typed into it reaches no process. Everything else
 # is `unproven`, with the fact that could not be established as the reason. An
 # agent found in the worktree is deliberately `unproven` rather than `alive`:
 # it is not in the recorded terminal, so no lifecycle command could reach it.
@@ -858,22 +889,25 @@ FACTS
   if [ "$connected" = true ]; then
     state=$(fm_backend_orca_agent_state "$terminal")
     case "$state" in
-      dead|alive) printf '%s\t' "$state" ;;
-      *) printf 'unproven\tterminal %s is still connected and its agent state reads %s' "$terminal" "$state" ;;
+      dead|alive) printf '%s\t' "$state"; return 0 ;;
+      missing) ;;
+      *) printf 'unproven\tterminal %s is still connected and its agent state reads %s' "$terminal" "$state"; return 0 ;;
     esac
-    return 0
+  else
+    [ -n "$kind" ] \
+      || { printf 'unproven\tterminal %s is disconnected but Orca recorded no exit cause for it' "$terminal"; return 0; }
   fi
-  [ -n "$kind" ] \
-    || { printf 'unproven\tterminal %s is disconnected but Orca recorded no exit cause for it' "$terminal"; return 0; }
   [ -n "$wtpath" ] && [ "$(fm_backend_orca_physical_dir "$wtpath")" = "$(fm_backend_orca_physical_dir "$worktree")" ] \
     || { printf 'unproven\tterminal %s belonged to worktree %s, not the recorded %s' "$terminal" "${wtpath:-unknown}" "$worktree"; return 0; }
-  rc=0
-  fm_backend_orca_session_pid "$pty" >/dev/null || rc=$?
-  case "$rc" in
-    1) ;;
-    0) printf 'unproven\tOrca still lists a live process for the session of terminal %s' "$terminal"; return 0 ;;
-    *) printf 'unproven\tOrca process sweep could not be read'; return 0 ;;
-  esac
+  if [ "$connected" != true ]; then
+    rc=0
+    fm_backend_orca_session_pid "$pty" >/dev/null || rc=$?
+    case "$rc" in
+      1) ;;
+      0) printf 'unproven\tOrca still lists a live process for the session of terminal %s' "$terminal"; return 0 ;;
+      *) printf 'unproven\tOrca process sweep could not be read'; return 0 ;;
+    esac
+  fi
   pids=$(fm_backend_orca_worktree_agent_pids "$worktree") \
     || { printf 'unproven\tthe working directories of local processes could not be read, so a surviving agent in %s cannot be ruled out' "$worktree"; return 0; }
   if [ -n "$pids" ]; then

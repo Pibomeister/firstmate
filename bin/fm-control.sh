@@ -751,16 +751,27 @@ retire_busy_incarnation() {
 # do_exit: stop the running agent, preserving endpoint and worktree. Prints
 # `already-stopped`, `endpoint-gone`, or `stopped`.
 do_exit() {
-  local state cmd hazard verdict composer_state cancel absence='' interrupt_result=not-needed dialog
+  local state cmd hazard verdict composer_state cancel absence='' interrupt_result=not-needed dialog connected_gone
   require_state_verified_backend exit
   fm_control_backend_exit_supported "$BACKEND" \
     || die "task $ID runs on the $BACKEND backend, whose T3 Orchestrator V2 tools have no session stop, so 'exit' cannot stop its agent; 'interrupt' ends the running turn and teardown archives the thread"
-  if [ "$BACKEND" = orca ] && [ "$HARNESS" = droid ] \
-    && [ "$(fm_control_agent_state "$BACKEND" "$T")" = unreadable ]; then
-    absence=$(fm_control_endpoint_absence_verdict "$BACKEND" "$T" "$WT" "$META")
-    if [ "${absence%%$'\t'*}" = gone ]; then
-      printf 'endpoint-gone'
-      return 0
+  if [ "$BACKEND" = orca ] && [ "$HARNESS" = droid ]; then
+    # A connected terminal whose session root exited takes the shared Droid
+    # route (fm_control_droid_connected_gone); anything else keeps its
+    # marker and owned-shell proofs below.
+    connected_gone=0
+    absence=$(fm_control_droid_connected_gone "$T" "$WT" "$META") || connected_gone=$?
+    case "$connected_gone" in
+      0) printf 'endpoint-gone'; return 0 ;;
+      1) absence= ;;
+      *) die "task $ID's endpoint $T is still connected but its session root exited, and ${absence#*$'\t'}; exit cannot prove the agent stopped" ;;
+    esac
+    if [ "$(fm_control_agent_state "$BACKEND" "$T")" = unreadable ]; then
+      absence=$(fm_control_endpoint_absence_verdict "$BACKEND" "$T" "$WT" "$META")
+      if [ "${absence%%$'\t'*}" = gone ]; then
+        printf 'endpoint-gone'
+        return 0
+      fi
     fi
   fi
   state=$(agent_state)

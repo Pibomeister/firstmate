@@ -1309,6 +1309,59 @@ orca_connected_shell_run() {  # <case-dir> -> sets out and rc
   wait "$shell_pid" 2>/dev/null || true
 }
 
+# orca_exited_root_memory: Orca's sweep names, as the session root of pty-1, a
+# real process that has exited and been reaped, while the terminal is still
+# reported connected (observed on Orca 1.4.244).
+orca_exited_root_memory() {  # <case-dir>
+  local pid
+  sleep 0 &
+  pid=$!
+  wait "$pid" 2>/dev/null || true
+  [ -z "$(ps -p "$pid" -o pid= 2>/dev/null)" ] || fail "fixture pid $pid must be absent from the process table"
+  printf '{"ok":true,"result":{"worktrees":[{"sessions":[{"sessionId":"pty-1","pid":%s}]}]}}\n' \
+    "$pid" > "$1/fake/orca-memory"
+}
+
+test_connected_orca_terminal_with_an_exited_root_exit_reports_stopped() {
+  local dir out rc wt variant
+  for variant in codex droid-idle droid-busy droid-live-scan; do
+    dir=$(new_case "orca-exited-root-$variant")
+    case "$variant" in
+      droid*)
+        add_orca_connected_shell_task "$dir" t1
+        wt=$(grep '^worktree=' "$dir/home/state/t1.meta" | cut -d= -f2-)
+        ;;
+      *)
+        add_orca_closed_task "$dir" t1 codex
+        wt=$(grep '^worktree=' "$dir/home/state/t1.meta" | cut -d= -f2-)
+        printf '{"ok":true,"result":{"terminal":{"handle":"term-1","ptyId":"pty-1","connected":true,"writable":true,"exitCause":null,"executionHostId":"local","worktreePath":"%s"}}}\n' \
+          "$(cd -P "$wt" && pwd -P)" > "$dir/fake/orca-show"
+        ;;
+    esac
+    case "$variant" in
+      droid-busy)
+        # A Droid that died mid-turn: its last record is the prompt's busy one.
+        "$ROOT/bin/fm-busy-event.sh" apply "$dir/home/state" t1 busy \
+          --gen "$(cat "$dir/fake/connected-gen")" --source droid-hook --event user-prompt-submit >/dev/null
+        ;;
+      droid-live-scan) printf 'p999\nn%s\n' "$(cd -P "$wt" && pwd -P)" >> "$dir/fake/lsof" ;;
+    esac
+    orca_exited_root_memory "$dir"
+    out=$(run_control "$dir" t1 exit); rc=$?
+    [ -z "$(literals "$dir")" ] || fail "a connected $variant terminal whose session root exited must not be sent an exit command"
+    if [ "$variant" = droid-live-scan ]; then
+      expect_code 1 "$rc" "exit must refuse while a Droid process works in the worktree"$'\n'"$out"
+      assert_not_contains "$out" "endpoint-gone" "exit must not report a stop it could not prove"
+      assert_contains "$out" "a droid process working in" "the refusal should name the Droid scan"
+      continue
+    fi
+    expect_code 0 "$rc" "exit on a connected $variant terminal whose session root exited should succeed"$'\n'"$out"
+    assert_contains "$out" endpoint-gone "a connected $variant terminal whose session root exited should report endpoint-gone"
+    [ ! -e "$dir/home/state/t1.droid-session-end" ] || fail "the absence proof must not synthesize a SessionEnd marker"
+  done
+  pass "fm-control exit: a connected Orca terminal whose session root exited reports endpoint-gone without a Droid idle record, refuses a live Droid in the worktree, and sends nothing"
+}
+
 test_connected_orca_droid_shell_exit_reports_already_stopped() {
   local dir out rc wt
   dir=$(new_case orca-droid-connected-shell)
@@ -1761,6 +1814,7 @@ test_closed_orca_terminal_exit_reports_endpoint_gone
 test_closed_orca_terminal_exit_refuses_without_the_worktree_scan
 test_closed_orca_droid_exit_requires_session_end
 test_connected_orca_droid_shell_exit_reports_already_stopped
+test_connected_orca_terminal_with_an_exited_root_exit_reports_stopped
 test_connected_orca_droid_shell_exit_refuses_wrong_generation_and_live_scan
 test_stale_orca_terminal_exit_reports_endpoint_gone_after_reboot
 test_stale_orca_terminal_exit_refuses_a_surviving_agent_after_reboot
