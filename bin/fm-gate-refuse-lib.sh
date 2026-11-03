@@ -9,12 +9,19 @@
 # "delegate" and "reconcile" the shared worktree. It has real capability because
 # those entrypoints self-locate their home and never knew a gate context existed.
 #
-# no-mistakes owns the authority-removal half (it neutralizes the project
-# instructions and stamps NO_MISTAKES_GATE into the gate agent's environment).
-# THIS is the firstmate capability boundary: an enforceable script check,
-# not a prose rule the neutralized agent would never read. It is sourced by the
-# four fleet-lifecycle entrypoints and called before their fleet mutation, so
-# a gate agent that reaches for the real fleet is stopped cold.
+# This library refuses the fleet-lifecycle entrypoints (fm-spawn, fm-send,
+# fm-teardown, fm-control, and fm-approval-failover) when NO_MISTAKES_GATE is
+# set or the path is a gate repo. no-mistakes' HEAD-continuity guard only
+# catches HEAD/branch drift. Anything else a gate agent does after reading
+# AGENTS.md (gh, git, other non-lifecycle commands) is no longer contained,
+# and the captain accepted that trade-off (see docs/architecture.md
+# "No-mistakes gate authority boundary").
+# no-mistakes stamps NO_MISTAKES_GATE into the gate agent's environment;
+# this repo does not set disable_project_settings.
+# THIS is the firstmate capability check: an enforceable script check that
+# holds whether or not the agent reads or obeys prose instructions. It is
+# sourced by those five fleet-lifecycle entrypoints and called before their
+# fleet mutation, so a gate agent that reaches for them is stopped cold.
 #
 # Two independent gate-context signals, either of which triggers the check:
 #
@@ -49,8 +56,12 @@
 #
 # The gate-context backstop mirrors the unspoofable-marker precedent in
 # bin/fm-marker-lib.sh; the lab-home marker is deliberately not unspoofable.
-# This boundary layers above no-mistakes' separately-shipping HEAD-continuity
-# guard, which remains the adversarial/residual backstop.
+# This library's refusal is limited to those five fleet-lifecycle entrypoints.
+# no-mistakes' separately-shipping HEAD-continuity guard only catches
+# HEAD/branch drift and remains the adversarial/residual backstop for that
+# class of tampering. Anything else a gate agent does after reading AGENTS.md
+# (gh, git, other non-lifecycle commands) is no longer contained, and the
+# captain accepted that trade-off.
 #
 # TEST-HARNESS ESCAPE HATCH (FM_GATE_REFUSE_BYPASS=1): firstmate's own test suite
 # must exercise the real fleet entrypoints, but the no-mistakes gate
