@@ -1,0 +1,6 @@
+term_f7ccecfc-6dc2-4ddd-82a3-fd121fe06145 /Users/eduardopicazo/orca/workspaces/agent-kit/fm-ak-full-auto-enablement worktree= (another terminal in this worktree runs a live agent)
+  state: missing
+  proof: unproven|an agent process still runs in /Users/eduardopicazo/orca/workspaces/agent-kit/fm-ak-full-auto-enablement (59135 /opt/homebrew/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex,96651 /opt/homebrew/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex-code-mode-host)
+term_fedc7cd7-c283-4ef1-9350-04b2acc7e7a5 /Users/eduardopicazo/orca/workspaces/PersonaSim/fm-personasim-stageshow-bento worktree= (another terminal in this worktree runs a live agent)
+  state: missing
+  proof: unproven|an agent process still runs in /Users/eduardopicazo/orca/workspaces/PersonaSim/fm-personasim-stageshow-bento (13499 /opt/homebrew/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex,38670 /opt/homebrew/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex-code-mode-host)

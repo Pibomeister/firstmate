@@ -1,0 +1,28 @@
+term_fe98d11e-4fa8-4a78-bf77-4d1cfae1fefd class=missing worktree=/Users/eduardopicazo/orca/projects/Abaco
+  before: unproven|terminal term_fe98d11e-4fa8-4a78-bf77-4d1cfae1fefd is still connected and its agent state reads unreadable
+  after:  gone|
+  after, wrong worktree /tmp: unproven|terminal term_fe98d11e-4fa8-4a78-bf77-4d1cfae1fefd belonged to worktree /Users/eduardopicazo/orca/projects/Abaco, not the recorded /tmp
+term_e95ff243-6e67-4139-a7ed-36d51eca888a class=missing worktree=/Users/eduardopicazo/orca/projects/Abaco
+  before: unproven|terminal term_e95ff243-6e67-4139-a7ed-36d51eca888a is still connected and its agent state reads unreadable
+  after:  gone|
+  after, wrong worktree /tmp: unproven|terminal term_e95ff243-6e67-4139-a7ed-36d51eca888a belonged to worktree /Users/eduardopicazo/orca/projects/Abaco, not the recorded /tmp
+term_3cf4a99c-ac77-4613-a034-42c58a75021d class=missing worktree=/Users/eduardopicazo/orca/projects/Abaco
+  before: unproven|terminal term_3cf4a99c-ac77-4613-a034-42c58a75021d is still connected and its agent state reads unreadable
+  after:  gone|
+  after, wrong worktree /tmp: unproven|terminal term_3cf4a99c-ac77-4613-a034-42c58a75021d belonged to worktree /Users/eduardopicazo/orca/projects/Abaco, not the recorded /tmp
+term_914fc422-3b7f-44cc-bc12-337b3da95551 class=missing worktree=/Users/eduardopicazo/orca/projects/Abaco
+  before: unproven|terminal term_914fc422-3b7f-44cc-bc12-337b3da95551 is still connected and its agent state reads unreadable
+  after:  gone|
+  after, wrong worktree /tmp: unproven|terminal term_914fc422-3b7f-44cc-bc12-337b3da95551 belonged to worktree /Users/eduardopicazo/orca/projects/Abaco, not the recorded /tmp
+term_7055b83d-b747-44fb-bb9f-2233a81e7cfd class=alive worktree=/Users/eduardopicazo/orca/projects/firstmate
+  before: alive|
+  after:  alive|
+  after, wrong worktree /tmp: alive|
+term_4930b4a2-c61b-43cd-b215-1538a990d88a class=alive worktree=/Users/eduardopicazo/orca/workspaces/agent-kit/fm-ak-runner-zero-main-verbs
+  before: alive|
+  after:  alive|
+  after, wrong worktree /tmp: alive|
+term_cd1ce082-324a-4910-a01e-93de10be6a07 class=dead worktree=/Users/eduardopicazo/orca/workspaces/casco-platform/fm-casco-endpoints-delivery-169
+  before: dead|
+  after:  dead|
+  after, wrong worktree /tmp: dead|
