@@ -294,7 +294,7 @@ family_for_basename() {
     fm-classify-decision-key.test.sh|\
     fm-composer-ghost.test.sh|fm-composer-lib.test.sh|\
     fm-crew-state.test.sh|fm-captain-hold-lifecycle.test.sh|\
-    fm-documentation-audiences.test.sh|fm-ensure-agents-md.test.sh|fm-forge-detect.test.sh|fm-grok-harness.test.sh|\
+    fm-agent-kit-pin.test.sh|fm-documentation-audiences.test.sh|fm-ensure-agents-md.test.sh|fm-forge-detect.test.sh|fm-grok-harness.test.sh|\
     fm-fork-free-helpers.test.sh|\
     fm-harness-precedence.test.sh|\
     fm-kimi-harness.test.sh|fm-devin-harness.test.sh|fm-commandcode-harness.test.sh|fm-cortex-harness.test.sh|fm-muse-harness.test.sh|fm-rovo-harness.test.sh|fm-agy-harness.test.sh|fm-omp-harness.test.sh|fm-droid-harness.test.sh|fm-polytoken-harness.test.sh|fm-herdr-lab.test.sh|fm-lint.test.sh|\
@@ -726,6 +726,7 @@ tests/fm-afk-contract.test.sh 16148
 tests/fm-afk-inject-e2e.test.sh 42410
 tests/fm-afk-pi-herdr-return-e2e.test.sh 110
 tests/fm-afk-return.test.sh 66288
+tests/fm-agent-kit-pin.test.sh 1000
 tests/fm-agy-harness.test.sh 57202
 tests/fm-agy-primary-live-e2e.test.sh 75
 tests/fm-agy-primary.test.sh 45000
@@ -1729,6 +1730,19 @@ families_for_changed_path() {
       printf '%s\n' __script__:fm-calm-pi-extension.test.sh
       printf '%s\n' __script__:fm-pi-primary-types.test.sh
       printf '%s\n' live-harness-optin
+      ;;
+    .cursor/agent-kit.md|.cursor/bin/ak|.cursor/bin/ak-gate.mjs|bin/fm-agent-kit-pin.sh)
+      printf '%s\n' "__script__:fm-agent-kit-pin.test.sh"
+      ;;
+    .cursor/*)
+      # Vendored overlay content has no Firstmate behavior test of its own.
+      # hooks.json keeps the implicit reference-scan mapping used before this arm.
+      case "$path" in
+        .cursor/hooks.json)
+          families_for_test_reference "$path" \
+            || printf '%s\n' "__unmapped__:$path"
+          ;;
+      esac
       ;;
     .agents/hooks.json|bin/fm-sessionstart-agy.sh)
       printf '%s\n' session-bootstrap

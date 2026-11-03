@@ -1,0 +1,105 @@
+agent-kit
+Copyright (c) 2026 Eduardo Picazo
+
+The installable catalog adapts material from the following eleven donors: ten under
+the MIT License and one, claude-mem, under the Apache License 2.0. Each adapted
+file is recorded in provenance/adaptations.yaml with its exact donor@commit:path
+source and a note of what was changed. Full license texts are in
+provenance/licenses/.
+
+The optional source-checkout semantic hook also adapts client and hook mechanics
+from mizchi, Copyright (c) 2026 mizchi<Kotaro Chikuba>, under the MIT License.
+Its donor pin, exact source paths and full license are recorded in provenance/.
+It is separate from the catalog donors listed below and is not bundled.
+
+- compound-engineering-plugin — Copyright (c) 2025 Every
+  https://github.com/EveryInc/compound-engineering-plugin @ 05c42da94fd318fa081f29d17bf947762aa477b1
+- superpowers — Copyright (c) 2025 Jesse Vincent
+  https://github.com/obra/superpowers @ b36e0829c6d0140e93cfef2ca599b1b07d4a7797
+- mattpocock/skills — Copyright (c) 2026 Matt Pocock
+  https://github.com/mattpocock/skills @ c55ee46073ed923f86ce59a5eb3b6d895095d1b7
+- addyosmani/agent-skills — Copyright (c) 2025 Addy Osmani
+  https://github.com/addyosmani/agent-skills @ c004a74784a08295d52749b04cda634125b9a581
+- oh-my-claudecode — Copyright (c) 2025 Yeachan Heo
+  https://github.com/Yeachan-Heo/oh-my-claudecode @ 5281b19e0d64f8e6dc6767f2130299a88af2dc71
+- oh-my-codex — Copyright (c) 2026 Yeachan-Heo
+  https://github.com/Yeachan-Heo/oh-my-codex @ cb955b0d5becbef76d2c1f0096b6e1f238e1e7f7
+- claude-reflect — Copyright (c) 2025 Bayram Annakov
+  https://github.com/BayramAnnakov/claude-reflect @ 2c892cab8fe1285d8116216ec18b6b7b44bcd394
+- BuilderIO/skills — Copyright (c) 2026 Builder.io
+  https://github.com/BuilderIO/skills @ eb07be67e6d924b958445f706f5ac386243df6b4
+- pstack — Copyright (c) 2026 Lauren Tan — MIT License
+  https://github.com/cursor/plugins @ e43c7ee26e0038c6c1fa8380dd34ce86ff94cb2a
+  Only the repository's pstack/ directory is used. Its license is
+  pstack/LICENSE, copied to provenance/licenses/cursor_plugins.LICENSE.
+- common-skills — Copyright (c) 2026 Denver Technologies, Inc. — MIT License
+  https://github.com/warpdotdev/common-skills @ 8792394ff1b655e0af451b8fabb68ef0cfcbd208
+  Only the .agents/skills/skill-doctor/ directory is used, by the opt-in
+  learning runtime's skill doctor.
+
+The above copyright notices and the MIT permission notice apply to the
+substantial portions adapted from each MIT project among the eleven donors:
+the ten listed above.
+
+- claude-mem — Copyright 2026 Alex Newman — Apache License 2.0
+  https://github.com/thedotmack/claude-mem @ 02cd0c9c47e38a849e764477290c571e84dfa043
+  The files adapted from claude-mem were modified; provenance/adaptations.yaml
+  states the change for each. The license text is
+  provenance/licenses/thedotmack_claude-mem.LICENSE. claude-mem's NOTICE reads:
+
+    Claude-Mem
+    Copyright 2026 Alex Newman
+
+    This product includes software developed for the Claude-Mem project.
+
+    Licensed under the Apache License, Version 2.0.
+
+    If other attributions are required by dependencies or included code, add them here.
+
+Runtime dependencies bundled into bin/ak-gate.mjs, whose license texts ship
+with every bundle under LICENSES/:
+
+- ajv 8.20.0 — Copyright (c) 2015-2021 Evgeny Poberezkin — MIT License
+  https://github.com/ajv-validator/ajv
+  LICENSES/ajv.LICENSE
+- ajv-formats 3.0.1 — Copyright (c) 2020 Evgeny Poberezkin — MIT License
+  https://github.com/ajv-validator/ajv-formats
+  LICENSES/ajv-formats.LICENSE
+
+bin/ak is built as one file. It is the command in each plugin bundle and the
+file a curl install downloads on its own. The build inlines the components
+below, and the generated file does not keep their copyright comments, so each
+licence text is copied into this bundle at the path named here and included
+inside bin/ak.
+
+- ajv — MIT License — Copyright (c) 2015-2021 Evgeny Poberezkin
+  LICENSES/ajv.LICENSE
+- ajv-formats — MIT License — Copyright (c) 2020 Evgeny Poberezkin
+  LICENSES/ajv-formats.LICENSE
+- fast-deep-equal — MIT License — Copyright (c) 2017 Evgeny Poberezkin
+  LICENSES/fast-deep-equal.LICENSE
+- fast-uri — BSD-3-Clause — Copyright (c) 2011-2021 Gary Court and
+  Copyright (c) 2021-present The Fastify team
+  LICENSES/fast-uri.LICENSE
+- json-schema-traverse — MIT License — Copyright (c) 2017 Evgeny Poberezkin
+  LICENSES/json-schema-traverse.LICENSE
+- yaml — ISC License — Copyright Eemeli Aro
+  LICENSES/yaml.LICENSE
+
+claude-mem's licence text and the NOTICE quoted above are copied into this
+bundle at provenance/licenses/thedotmack_claude-mem.LICENSE and
+provenance/licenses/thedotmack_claude-mem.NOTICE, and both are included
+inside bin/ak.
+
+Development tooling, used to lint this repository and not part of any
+package built into dist/:
+
+- anti-slop — Copyright (c) 2026 Dillon Mulroy — MIT License
+  https://github.com/dmmulroy/anti-slop @ c44ef22ca116d0ba62a3ff663a0bd13a3f3fa40b
+  Copied unmodified to tools/oxlint/anti-slop/, with its LICENSE and an
+  UPSTREAM.md recording the source. It carries an adapted copy of ESLint
+  Stylistic's padding-line-between-statements rule — Copyright OpenJS
+  Foundation and other contributors, and Copyright (c) 2023-PRESENT ESLint
+  Stylistic contributors, MIT License,
+  https://github.com/eslint-stylistic/eslint-stylistic @ 435c3ea0fd26a5fef9042c4b36b6e165fbbf8d08 —
+  whose license is tools/oxlint/anti-slop/vendor/eslint-stylistic/LICENSE.

@@ -528,6 +528,8 @@ jobs:
             printf '%s\n' "$tracked"
             exit 1
           fi
+      - name: Agent-kit Cursor bin pin must match
+        run: bin/fm-agent-kit-pin.sh
 
   # The Full suite verdict: one check that fails until an outside PR has the
   # full-ci go-ahead and otherwise fails when any lane failed or was cancelled.
