@@ -12,6 +12,9 @@
 # unchanged.
 set -eu
 
+# Template replacements must stay literal on Bash 5.2+ and stock macOS Bash.
+shopt -u patsub_replacement 2>/dev/null || true
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=bin/fm-bash-compat-lib.sh
 . "$SCRIPT_DIR/fm-bash-compat-lib.sh"
@@ -103,11 +106,22 @@ if [ -z "$HARNESS" ]; then
 fi
 
 case "$HARNESS" in
-  claude|codex|opencode|pi|grok|cursor|omp|muse|agy) SNIPPET="$DOC_DIR/$HARNESS.md" ;;
+  hermes)
+    echo 'error: hermes is a crewmate/scout adapter only; primary supervision is unsupported' >&2
+    exit 1 ;;
+  claude|codex|opencode|pi|grok|cursor|omp|agy) SNIPPET="$DOC_DIR/$HARNESS.md" ;;
   pi-signed) SNIPPET="$DOC_DIR/pi.md" ;;
   *) HARNESS=unknown; SNIPPET="$DOC_DIR/unknown.md" ;;
 esac
 [ -f "$SNIPPET" ] || SNIPPET="$DOC_DIR/unknown.md"
+CODEX_PARK=0
+if [ "$HARNESS" = codex ]; then
+  if [ -x "$SCRIPT_DIR/fm-codex-stop-park.sh" ] && "$SCRIPT_DIR/fm-codex-stop-park.sh" --capable; then
+    CODEX_PARK=1
+  else
+    SNIPPET="$DOC_DIR/codex-checkpoint.md"
+  fi
+fi
 HOST_SNIPPET=
 grok_arm='bin/fm-watch-arm.sh'
 grok_arm_command='export FM_WATCH_GROK_CONTINUITY=1; exec bin/fm-watch-arm.sh'
@@ -162,13 +176,18 @@ if [ "$X_MODE" -eq 0 ] && [ -f "$x_mode_env" ]; then
 fi
 
 render_snippet() {  # [snippet]
-  local line tags snippet=${1:-$SNIPPET}
+  local line tags snippet=${1:-$SNIPPET} codex_tag=codex-checkpoint
+  [ "$CODEX_PARK" -eq 0 ] || codex_tag=codex-park
   while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in
       '{'*'} '*)
         tags=${line%%\} *}
         tags=${tags#\{}
-        case ",$tags," in *",$HARNESS,"*) ;; *) continue ;; esac
+        case ",$tags," in
+          *",$HARNESS,"*) ;;
+          *",$codex_tag,"*) [ "$HARNESS" = codex ] || continue ;;
+          *) continue ;;
+        esac
         line=${line#*\} }
         ;;
     esac
@@ -217,12 +236,10 @@ repair_line() {
       printf '%s%s\n' "$prefix" 'watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.'
       ;;
     codex)
-      if [ "$SECONDMATE_MODE" -eq 1 ]; then
-        printf '%s%s\n' "$prefix" 'do not start a foreground checkpoint. Tell the parent that the outside-turn watcher failed, then stop. The Stop hook bounds repeated blocks.'
-      elif [ -n "$HOST_SNIPPET" ]; then
-        printf '%s%s\n' "$prefix" 'do not start another foreground checkpoint. The Stop hook re-arms a persistent watcher, except under an away record on this home, or allows this turn to end. Poll a checkpoint only while it is still running, then stop.'
+      if [ "$CODEX_PARK" -eq 1 ]; then
+        printf '%s%s\n' "$prefix" 'watcher supervision is owned by the Codex asynchronous Stop park; inspect state/.codex-park.json and the native hook registration before ending blind.'
       else
-        printf '%s%s\n' "$prefix" 'do not start another foreground checkpoint. The Stop hook re-arms a persistent watcher or allows this turn to end. Poll a checkpoint only while it is still running, then stop.'
+        printf '%s%s%s%s\n' "$prefix" 'repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds ' "$checkpoint_seconds" '.'
       fi
       ;;
     pi|pi-signed)
@@ -271,7 +288,11 @@ ordinary_wake_line() {
       printf '%s\n' '- Ordinary wake: the Stop-owned auto-arm (bin/fm-claude-stop-autoarm.sh) already owns watcher continuity; drain and handle the wake, and do not arm another cycle yourself.'
       ;;
     codex)
-      printf '%s\n' '- Ordinary wake: drain and acknowledge the wake, then end the turn. The Stop hook re-arms a persistent watcher. Do not start another foreground checkpoint.'
+      if [ "$CODEX_PARK" -eq 1 ]; then
+        printf '%s\n' '- Ordinary wake: the Codex Stop hook (bin/fm-codex-stop-park.sh) already owns watcher continuity; drain and handle the wake, and do not arm another cycle yourself.'
+      else
+        printf '%s\n' '- Ordinary wake: take the next foreground bin/fm-watch-checkpoint.sh checkpoint as directed below.'
+      fi
       ;;
     pi|pi-signed)
       printf '%s\n' '- Ordinary wake: the Pi extension already owns watcher continuity; do not arm another cycle.'

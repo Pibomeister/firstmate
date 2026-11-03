@@ -26,23 +26,23 @@
 #     supervision host's engine environment), not by agent memory. Any other
 #     value is refused loudly - an unknown actor is a wiring bug, not a third
 #     role.
-#   - Staleness: the recorded pid must equal the current state/.lock anchor,
-#     and fm_session_lock_recorded_owner_live in bin/fm-session-lock-lib.sh
-#     must prove that lock's owner live. A dead acquiring pid alone does not
-#     expire a daemon-served Codex session's leases. Every caller uses this
-#     same record test; a stale lease is cleared at the next claim, guard,
-#     or sweep. An unmarked main honors a live branch lease on every harness.
-#     A same-session re-anchor moves existing leases with lock line 1 through
-#     fm_lease_rekey_holder; foreign replacement retires old leases in
-#     bin/fm-lock.sh. A host also releases branch leases at conversation
-#     activation (Pi) or after every engine turn (the supervision host), so
-#     an abandoned branch conversation cannot retain its leases indefinitely.
-#   - Claim pins: FM_LEASE_HOLDER_SESSION must match the verified owner key
-#     before a pinned claim resolves to the current anchor. Without a session
-#     key, FM_LEASE_HOLDER_PID requires current-session ownership and a live
-#     owner, or an equal live pid on a legacy lock without a sidecar. An
-#     unverified pin refuses before publication instead of writing a stale
-#     lease. Unpinned claims use the current numeric lock anchor.
+#   - Staleness: the recorded pid is the long-lived supervising process (the
+#     session-lock holder, or FM_LEASE_HOLDER_PID - see bin/fm-lease.sh), so a
+#     dead recorded pid means the supervising session died; the lease is
+#     cleared at the next claim, guard, or sweep. Liveness is the pure record
+#     test, identical in every calling context: the recorded pid is alive and
+#     IS the current state/.lock holder. So a lease left by an exited session
+#     goes stale for every reader, whichever harness now owns the home, and an
+#     unmarked main honors a live branch lease exactly as a Pi main does. A
+#     same-session re-anchor that moves lock line 1 off a live pid
+#     (bin/fm-lock.sh) moves the leases recorded against that pid with it
+#     (fm_lease_rekey_holder), so they stay live. The one residual is a
+#     recorded pid recycled onto the next session-lock holder itself; the
+#     host that owns a branch conversation releases that actor's leases when
+#     it activates a new one (the Pi branch extension's
+#     generation-activation cleanup; the supervision host also releases them
+#     after every engine turn), which also recovers a lease held by the live
+#     session but an abandoned branch conversation.
 #
 # THREAT MODEL (deliberate, captain-decided): these guards are
 # CONFUSED-AGENT-GRADE, the same grade bin/fm-gate-refuse-lib.sh documents
@@ -279,6 +279,7 @@ fm_lease_live() {
       return
       ;;
   esac
+  kill -0 "$FM_LEASE_PID" 2>/dev/null || return 1
   case "$lock_pid" in ''|0|1|*[!0-9]*) return 1 ;; esac
   [ "$FM_LEASE_PID" = "$lock_pid" ] || return 1
   # shellcheck source=/dev/null
@@ -295,6 +296,28 @@ fm_lease_rekey_holder() {
   local old=$1 new=$2 lease task tmp rc=0
   for lease in "$STATE"/.lease-*; do
     [ -e "$lease" ] || continue
+    task=${lease##*/.lease-}
+    fm_lease_valid_id "$task" || continue
+    fm_lease_read "$task" || continue
+    [ -n "$FM_LEASE_ACTOR" ] && [ "$FM_LEASE_PID" = "$old" ] || continue
+    tmp=$(mktemp "$STATE/.fm-lease-tmp.XXXXXX" 2>/dev/null) || { rc=1; continue; }
+    if ! { printf '%s\t%s\t%s\n' "$FM_LEASE_ACTOR" "$new" "$FM_LEASE_EPOCH" > "$tmp" && mv -f -- "$tmp" "$lease"; } 2>/dev/null; then
+      rm -f -- "$tmp"
+      rc=1
+    fi
+  done
+  return "$rc"
+}
+
+# fm_lease_rekey_holder <old-pid> <new-pid>: rewrite every lease recorded
+# against <old-pid> to <new-pid>, keeping its actor and epoch. The caller holds
+# the lease-command lock. Returns 1 when any matching lease could not be
+# rewritten.
+fm_lease_rekey_holder() {
+  local old=$1 new=$2 lease task tmp rc=0
+  for lease in "$STATE"/.lease-*; do
+    [ -e "$lease" ] || continue
+    case "$lease" in *.lock) continue ;; esac
     task=${lease##*/.lease-}
     fm_lease_valid_id "$task" || continue
     fm_lease_read "$task" || continue

@@ -865,14 +865,13 @@ test_unverified_state_backends_refuse_stop_verbs() {
   pass "fm-control: a backend that cannot prove an agent stopped refuses exit and relaunch"
 }
 
-# bin/fm-spawn.sh refuses a Command Code or agy launch off tmux and herdr, but
-# only after a relaunch has stopped the old agent, so fm-control must refuse a
-# relaunch onto either there while the running agent is untouched.
-test_backend_restricted_relaunch_off_tmux_and_herdr_refuses_before_stopping() {
-  local dir out rc backend meta_before target
-  for target in commandcode agy; do
+# bin/fm-spawn.sh refuses a Command Code launch off tmux and herdr, but only
+# after a relaunch has stopped the old agent, so fm-control must refuse a
+# relaunch onto commandcode there while the running agent is untouched.
+test_commandcode_relaunch_off_tmux_and_herdr_refuses_before_stopping() {
+  local dir out rc backend meta_before
   for backend in zellij cmux orca tern; do
-    dir=$(new_case "$target-relaunch-$backend")
+    dir=$(new_case "cc-relaunch-$backend")
     case "$backend" in
       zellij)
         add_task "$dir" t1 claude ship zellij "sess:7"
@@ -913,13 +912,34 @@ test_backend_restricted_relaunch_off_tmux_and_herdr_refuses_before_stopping() {
   pass "fm-control relaunch: commandcode and agy off tmux and herdr are refused before the running agent is stopped"
 }
 
-test_state_verified_backends_are_exactly_tmux_herdr_orca_and_rex() {
+test_hermes_profile_refusals_preserve_running_worker() {
+  local dir out rc before
+  dir=$(new_case hermes-preflight)
+  add_task "$dir" t1 claude
+  alive_as "$dir" claude
+  before=$(cat "$dir/home/state/t1.meta")
+  out=$(run_control "$dir" t1 relaunch --harness hermes --model unsupported --note x); rc=$?
+  expect_code 1 "$rc" "Hermes must refuse a model override before stopping: $out"
+  assert_contains "$out" 'profile-owned' 'Hermes model diagnostic missing'
+  [ -z "$(literals "$dir")$(keys_sent "$dir")" ] || fail 'invalid Hermes model stopped the current worker'
+  mkdir -p "$dir/profile"
+  printf '#!/bin/sh\nprintf "%%s\\n" "%s/config.yaml"\n' "$dir/profile" > "$dir/fakebin/hermes"
+  chmod +x "$dir/fakebin/hermes"
+  printf '{"pid":%s,"gateway_state":"running","restart_requested":false,"active_agents":1,"updated_at":"%s"}\n' "$$" "$(date -u +%Y-%m-%dT%H:%M:%S+00:00)" > "$dir/profile/gateway_state.json"
+  out=$(run_control "$dir" t1 relaunch --harness hermes --note x); rc=$?
+  expect_code 1 "$rc" "Hermes must refuse a mid-turn gateway before stopping: $out"
+  assert_contains "$out" 'gateway' 'Hermes gateway diagnostic missing'
+  [ -z "$(literals "$dir")$(keys_sent "$dir")" ] || fail 'Hermes gateway refusal stopped the current worker'
+  [ "$(cat "$dir/home/state/t1.meta")" = "$before" ] || fail 'Hermes preflight changed task metadata'
+  pass 'fm-control relaunch: Hermes profile model and gateway refusals preserve the current worker'
+}
+
+test_state_verified_backends_are_exactly_tmux_herdr_and_rex() {
   fm_control_backend_state_verified tmux || fail "tmux has a recovery-grade classifier"
   fm_control_backend_state_verified herdr || fail "herdr has a recovery-grade classifier"
-  fm_control_backend_state_verified orca || fail "orca has a recovery-grade classifier"
   fm_control_backend_state_verified rex || fail "rex has a recovery-grade classifier"
   local backend
-  for backend in zellij cmux paseo tern; do
+  for backend in zellij orca cmux paseo tern; do
     fm_control_backend_state_verified "$backend" \
       && fail "$backend has no recovery-grade classifier and must not claim one"
   done
@@ -1797,8 +1817,9 @@ test_orca_droid_second_exit_is_idempotent
 test_orca_droid_exit_then_relaunch_is_admitted
 test_orca_droid_live_exit_without_marker_preserves_relaunch_proof
 test_unverified_state_backends_refuse_stop_verbs
-test_backend_restricted_relaunch_off_tmux_and_herdr_refuses_before_stopping
-test_state_verified_backends_are_exactly_tmux_herdr_orca_and_rex
+test_commandcode_relaunch_off_tmux_and_herdr_refuses_before_stopping
+test_hermes_profile_refusals_preserve_running_worker
+test_state_verified_backends_are_exactly_tmux_herdr_and_rex
 test_window_label_is_refused_with_the_exact_id
 test_explicit_endpoint_is_refused
 test_unknown_task_is_refused

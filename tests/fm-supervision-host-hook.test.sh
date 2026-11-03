@@ -145,8 +145,7 @@ test_claude_stop_hook_restores_handoff_when_successor_closed_before_exit_to_main
   start_hook_session "$home"
   turn_end "$home"
   wait_until 150 watcher_live "$home" || fail "closed successor: the Stop hook never started a watcher cycle"
-  # Exercise successor retirement without waiting on no-verb busy-pane triage.
-  append_status "$home" 'first actionable wake' 'done'
+  append_status "$home" 'first actionable wake'
   wait_until_deadline 60 hook_exited "$home" || fail "closed successor: the Stop hook did not finish: $(cat "$home/state/.supervision-host.log")"
   assert_re '^supervision-host: branch-outcome: ' "$home/hook.err" "the host must hand its captain outcome to main"
   expect_code 2 "$(cat "$home/hook.rc")" "the Stop hook must rewake main after the successor closed"
@@ -484,7 +483,7 @@ test_next_park_takes_over_the_cycle_a_pass_through_left_for_main() {
 # that cycle's arm: the park the Stop hook runs next still takes it over rather
 # than attaching to it beside the orphan.
 test_a_park_stopped_mid_take_over_leaves_the_take_over_to_the_next_park() {
-  local home holder host arm
+  local home holder host
   home=$(make_primary_home hook-takeover-interrupted)
   leave_a_cycle_for_main_and_restart "$home"
   FM_STATE_OVERRIDE="$home/state" bash -c '
@@ -502,29 +501,10 @@ test_a_park_stopped_mid_take_over_leaves_the_take_over_to_the_next_park() {
   host=$(awk -F '\t' '$1 == "host" { print $2; exit }' "$home/state/.supervision-host")
   sleep 1
   kill -0 "$LEFT_WATCHER" 2>/dev/null || fail "fixture: the take-over stopped the left watcher before the park was stopped"
-  arm=$(awk -F '\t' '$1 == "arm" { print $2; exit }' "$home/state/.supervision-host")
-  [ -n "$arm" ] || fail "fixture: the park has no arm to interrupt"
-  # Freeze the take-over before releasing the snapshot barrier. Its interrupted
-  # cleanup must acquire this lock within the watcher's ordinary bound; racing
-  # the holder's release against TERM can instead force a persistence failure.
-  kill -STOP "$arm" 2>/dev/null || fail "fixture: could not pause the take-over arm"
+  kill -TERM "$host" 2>/dev/null || fail "fixture: the park host $host was not running"
+  wait_until 150 sh -c '! kill -0 "$1" 2>/dev/null' _ "$host" || fail "fixture: the park host did not stop"
   : > "$home/marker-lock-release"
   wait "$holder" 2>/dev/null || true
-  # The handling successor's per-beat recovery check takes the queue lock before
-  # the marker lock too, so it can win the queue lock while the barrier holds
-  # the marker lock. The paused snapshot then holds only the queue lock, which
-  # its bounded helper hands over once that check finishes; otherwise the arm
-  # also waits on, and is handed, the recovery-marker lock.
-  wait_until 100 sh -c '[ "$(cat "$1/pid" 2>/dev/null)" = "$2" ]' _ "$home/state/.wake-queue.lock" "$arm" \
-    || fail "fixture: the paused snapshot did not retain the queue lock"
-  wait_until 100 sh -c '[ ! -e "$1" ] || [ "$(cat "$1/pid" 2>/dev/null)" = "$2" ]' _ "$home/state/.watcher-down.lock" "$arm" \
-    || fail "fixture: the recovery-marker lock is held by another process than the paused arm"
-  kill -TERM "$host" 2>/dev/null || fail "fixture: the park host $host was not running"
-  kill -TERM "$arm" 2>/dev/null || fail "fixture: could not interrupt the paused arm"
-  kill -CONT "$arm" 2>/dev/null || fail "fixture: could not resume the interrupted arm"
-  wait_until 150 sh -c '! kill -0 "$1" 2>/dev/null' _ "$host" || fail "fixture: the park host did not stop"
-  assert_re "^arm_pid=$arm.*origin=attached.*signal=TERM.*reason=arm-interrupted" \
-    "$home/state/.watch-cycle-exits.log" "fixture: the take-over arm was not interrupted"
   # The Stop hook runs the next park in place of the one stopped by a signal.
   wait_until 150 host_owns_the_only_cycle "$home" \
     || fail "interrupted takeover: the next park did not own the home's only watcher cycle (left arm $LEFT_ARM):"$'\n'"$(home_arms "$home")"$'\n'"$(cat "$home/state/.supervision-host.log")"

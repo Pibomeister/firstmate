@@ -58,7 +58,7 @@ make_fake_root() {
 fm_backend_tmux_kill() { return 0; }
 SH
   ln -s "$ROOT/bin/fm-tmux-lib.sh" "$fake/bin/fm-tmux-lib.sh"
-  ln -s "$ROOT/bin/fm-bash-compat-lib.sh" "$fake/bin/fm-bash-compat-lib.sh"
+  ln -s "$ROOT/bin/fm-hermes-process-lib.sh" "$fake/bin/fm-hermes-process-lib.sh"
   ln -s "$ROOT/bin/fm-session-lock-lib.sh" "$fake/bin/fm-session-lock-lib.sh"
   ln -s "$ROOT/bin/fm-session-process.py" "$fake/bin/fm-session-process.py"
   ln -s "$ROOT/bin/fm-agent-process-lib.sh" "$fake/bin/fm-agent-process-lib.sh"
@@ -172,7 +172,7 @@ test_teardown_skips_gracefully_without_tasktmp() {
 fm_backend_tmux_kill() { return 0; }
 SH
   ln -s "$ROOT/bin/fm-tmux-lib.sh" "$fake/bin/fm-tmux-lib.sh"
-  ln -s "$ROOT/bin/fm-bash-compat-lib.sh" "$fake/bin/fm-bash-compat-lib.sh"
+  ln -s "$ROOT/bin/fm-hermes-process-lib.sh" "$fake/bin/fm-hermes-process-lib.sh"
   ln -s "$ROOT/bin/fm-session-lock-lib.sh" "$fake/bin/fm-session-lock-lib.sh"
   ln -s "$ROOT/bin/fm-session-process.py" "$fake/bin/fm-session-process.py"
   ln -s "$ROOT/bin/fm-agent-process-lib.sh" "$fake/bin/fm-agent-process-lib.sh"

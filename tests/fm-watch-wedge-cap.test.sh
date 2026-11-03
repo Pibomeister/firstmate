@@ -101,11 +101,8 @@ mark_status_seen() {
   ' _ "$ROOT/bin/fm-wake-lib.sh" "$1" "$2"
 }
 
-# Setup/reset cycles use FM_WATCH_ONCE and wait for normal cleanup before
-# acknowledging recovery. A beacon advance starts the next poll, so stopping a
-# continuous watcher there races that poll's work and its shutdown recovery state.
-# prime_and_ack: run one complete cycle with a long STALE_ESCALATE_SECS, then
-# acknowledge its shutdown recovery before the wedge rounds.
+# prime_and_ack: run the watcher once on a long STALE_ESCALATE_SECS so it
+# reaches the wedge path, drain the resulting wake, and return the state dir.
 prime_and_ack() {
   local dir=$1 max=$2
   local state fakebin out capture_file window key sig pid
@@ -119,11 +116,12 @@ prime_and_ack() {
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" \
     FM_STALE_ESCALATE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 FM_WEDGE_MAX_ESCALATIONS=$max \
-    FM_WATCH_ONCE=1 "$WATCH" > "$out" &
+    "$WATCH" > "$out" &
   pid=$!
-  if ! wait_for_exit "$pid" 100; then
+  if ! wait_poll_cycle "$state" "$pid"; then
     reap "$pid"; fail "priming watch failed: $(cat "$out")"
   fi
+  reap "$pid"
   ack_stopped_cycle "$state" || fail "priming ack failed"
 }
 
@@ -280,11 +278,12 @@ test_wedge_cap_disabled_by_default() {
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" \
     FM_STALE_ESCALATE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
-    FM_WATCH_ONCE=1 "$WATCH" > "$out" &
+    "$WATCH" > "$out" &
   pid=$!
-  if ! wait_for_exit "$pid" 100; then
+  if ! wait_poll_cycle "$state" "$pid"; then
     reap "$pid"; fail "priming watch failed (default-config cap path): $(cat "$out")"
   fi
+  reap "$pid"
   ack_stopped_cycle "$state" || fail "priming ack failed"
   n=1
   while [ "$n" -le 5 ]; do
@@ -422,11 +421,12 @@ test_wedge_cap_window_marker_silences_hash_churning_busy_pane() {
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" \
     FM_STALE_ESCALATE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 FM_WEDGE_MAX_ESCALATIONS=3 \
-    FM_WATCH_ONCE=1 "$WATCH" > "$out" &
+    "$WATCH" > "$out" &
   pid=$!
-  if ! wait_for_exit "$pid" 100; then
+  if ! wait_poll_cycle "$state" "$pid"; then
     reap "$pid"; fail "priming watch failed (churning pane): $(cat "$out")"
   fi
+  reap "$pid"
   ack_stopped_cycle "$state" || fail "priming ack failed"
   local n max
   n=1; max=3
@@ -677,12 +677,13 @@ test_wedge_cap_validates_invalid_overrides() {
     FM_STALE_ESCALATE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_WEDGE_MAX_ESCALATIONS=garbage FM_CAP_HORIZON_SECS=86400 FM_ROLLBACK_SENTINEL_TTL_SECS=3600 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
-    FM_WATCH_ONCE=1 "$WATCH" > "$out" &
+    "$WATCH" > "$out" &
   local pid
   pid=$!
-  if ! wait_for_exit "$pid" 100; then
+  if ! wait_poll_cycle "$state" "$pid"; then
     reap "$pid"; fail "priming watch (garbage override) failed"
   fi
+  reap "$pid"
   ack_stopped_cycle "$state" || fail "priming ack failed"
   local n
   n=1
@@ -1139,11 +1140,12 @@ test_wedge_cap_releases_after_genuine_recovery() {
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" \
     FM_STALE_ESCALATE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 FM_WEDGE_MAX_ESCALATIONS=$max \
-    FM_WATCH_ONCE=1 "$WATCH" > "$out" &
+    "$WATCH" > "$out" &
   pid=$!
-  if ! wait_for_exit "$pid" 100; then
+  if ! wait_poll_cycle "$state" "$pid"; then
     reap "$pid"; fail "resume poll failed: $(cat "$out")"
   fi
+  reap "$pid"
   ack_stopped_cycle "$state" || fail "resume ack failed"
   [ ! -e "$state/.wedge-permanent-$key" ] \
     || fail "the window-scoped cap marker survived a genuine recovery; a re-wedging pane would stay silent until the horizon"
@@ -1268,11 +1270,12 @@ test_wedge_cap_releases_after_declared_wait() {
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" \
     FM_STALE_ESCALATE_SECS=999 FM_PAUSE_RESURFACE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 FM_WEDGE_MAX_ESCALATIONS=$max \
-    FM_WATCH_ONCE=1 "$WATCH" > "$out" &
+    "$WATCH" > "$out" &
   pid=$!
-  if ! wait_for_exit "$pid" 100; then
+  if ! wait_poll_cycle "$state" "$pid"; then
     reap "$pid"; fail "declared-wait poll failed: $(cat "$out")"
   fi
+  reap "$pid"
   ack_stopped_cycle "$state" || fail "declared-wait ack failed"
   [ -e "$state/.paused-$key" ] || fail "the declared wait was not absorbed on the pause cadence"
   [ ! -e "$state/.wedge-permanent-$key" ] \
@@ -1288,11 +1291,12 @@ test_wedge_cap_releases_after_declared_wait() {
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" \
     FM_STALE_ESCALATE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 FM_WEDGE_MAX_ESCALATIONS=$max \
-    FM_WATCH_ONCE=1 "$WATCH" > "$out" &
+    "$WATCH" > "$out" &
   pid=$!
-  if ! wait_for_exit "$pid" 100; then
+  if ! wait_poll_cycle "$state" "$pid"; then
     reap "$pid"; fail "wait-lift poll failed: $(cat "$out")"
   fi
+  reap "$pid"
   ack_stopped_cycle "$state" || fail "wait-lift ack failed"
 
   # The crew wedges again: the escalation must reach the supervisor off a fresh

@@ -38,20 +38,17 @@ _FM_SESSION_LOCK_LIB_DIR=${BASH_SOURCE[0]%/*}
 FM_SESSION_PROCESS_READER="${_FM_SESSION_LOCK_LIB_DIR:-/}/fm-session-process.py"
 unset _FM_SESSION_LOCK_LIB_DIR
 
-# Known harness command names; extend when a new adapter is verified. omp is
-# anchored exactly like pi: its process name is the bare word `omp` (verified,
-# omp 18.1.11), and a substring match would claim ompd or comp. muse is
-# anchored the same way bin/fm-harness.sh anchors it: the launcher execs a
-# version-suffixed `muse-bin-<version>`, so only the bare name or that prefix
-# matches, never a substring such as amuse or musescore.
-# agy is anchored exactly too: its process name is the bare word `agy`.
-FM_HARNESS_RE='claude|codex|opencode|grok|kimi|^pi$|^pi-signed$|^omp$|^muse$|^muse-bin-|^agy$'
+# Known harness command names; extend when a new adapter is verified. omp and
+# agy are anchored exactly like pi: their process names are the bare words `omp`
+# (verified, omp 18.1.11) and `agy`, and a substring match would claim ompd or
+# comp.
+FM_HARNESS_RE='claude|codex|opencode|grok|kimi|^pi$|^pi-signed$|^omp$|^agy$'
 
 # The same harnesses as exact executable names. Keep in sync with
 # FM_HARNESS_RE. Used only for the stricter path evidence below, where the
 # loose regex would also match ordinary firstmate paths such as
 # bin/fm-claude-stop-autoarm.sh.
-FM_HARNESS_NAMES=(claude codex opencode grok kimi pi-signed pi omp muse agy)
+FM_HARNESS_NAMES=(claude codex opencode grok kimi pi-signed pi omp agy)
 
 # Print the exact harness name carried by executable path $1 - its own basename
 # or any directory component - or return 1.
@@ -383,16 +380,7 @@ fm_harness_ancestry_pids() {
   for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do
     comm=$(fm_ps_comm "$pid") || break
     args=$(fm_ps_args "$pid")
-    # The shared Codex app-server daemon parents tool shells for sessions
-    # other than the one that launched it, so the walk stops at it: no
-    # process above it can be this session's process. The code-mode host
-    # needs no special case here - it never matches as a session process,
-    # so the walk climbs through it to the session process above it.
-    if fm_codex_process_shaped "$comm" "$args" \
-      && [ "$(fm_codex_process_class "$pid")" = daemon ]; then
-      break
-    fi
-    if fm_harness_process_matches "$comm" "$args" "$pid"; then
+    if fm_harness_process_matches "$comm" "$args"; then
       printf '%s\n' "$pid"
       printed=1
       [ "$FM_HARNESS_IS_CLAUDE" -eq 1 ] || break
@@ -467,7 +455,7 @@ fm_harness_pid_alive() {
   kill -0 "$pid" 2>/dev/null || return 1
   comm=$(fm_ps_comm "$pid") || return 1
   args=$(fm_ps_args "$pid")
-  fm_harness_process_matches "$comm" "$args" "$pid"
+  fm_harness_process_matches "$comm" "$args"
 }
 
 # Liveness and identity of a session-lock pid for readers outside this file:
@@ -541,7 +529,7 @@ fm_session_lock_trusted_claude_session_id() {  # [<ancestry-pids>]
       "$claude_pid")
         comm=$(ps -o comm= -p "$pid" 2>/dev/null) || return 1
         args=$(ps -o args= -p "$pid" 2>/dev/null)
-        fm_harness_process_matches "$comm" "$args" "$pid" || return 1
+        fm_harness_process_matches "$comm" "$args" || return 1
         ;;
       "$FM_WIN_PID_PREFIX$claude_pid")
         fm_harness_pid_alive "$pid" || return 1
@@ -772,26 +760,15 @@ fm_session_lock_same_session() {  # <state> [<ancestry-pids>]
 # session, so "recorded pid dead" keeps meaning "session gone" instead of
 # wedging a home behind a live daemon whose session died. A replaced background
 # helper leaves a dead pid that its own session's next hook reclaims, because
-# the sidecar still names that session. Every other session with a session
-# process in its ancestry records the outermost pid of its contiguous run,
-# exactly as before - for a Codex TUI that is the TUI process itself, reached
-# directly or through its code-mode host, never the shared app-server daemon
-# above it. A Codex session served only by that daemon has no session pid in
-# its ancestry: line 1 then records the acquiring process and carries no
-# liveness meaning at all, because the trusted thread id in the sidecar is
-# that session's ownership proof (fm_session_lock_owned_by_self).
-# A trusted Windows session's run is its tagged CLAUDE_PID alone, so it
-# records that tagged pid.
+# the sidecar still names that session. Every other session records the
+# outermost pid of its contiguous run, exactly as before; a trusted Windows
+# session's run is its tagged CLAUDE_PID alone, so it records that tagged pid.
 fm_session_lock_anchor_pid() {
   local pids
-  pids=$(fm_harness_ancestry_pids) || pids=''
-  if [ -n "$pids" ]; then
-    if fm_session_lock_trusted_claude_session_id "$pids" >/dev/null \
-      && fm_harness_pid_listed "$CLAUDE_PID" "$pids"; then
-      printf '%s\n' "$CLAUDE_PID"
-      return 0
-    fi
-    _fm_harness_outermost_pid "$pids"
+  pids=$(fm_harness_ancestry_pids) || return 1
+  if fm_session_lock_trusted_session_id "$pids" >/dev/null \
+    && fm_harness_pid_listed "$CLAUDE_PID" "$pids"; then
+    printf '%s\n' "$CLAUDE_PID"
     return 0
   fi
   if fm_session_lock_trusted_codex_session_id >/dev/null; then
@@ -814,11 +791,8 @@ fm_session_lock_owned_by_self() {
   local state=$1 lock_pid pids
   lock_pid=$(cat "$state/.lock" 2>/dev/null || true)
   fm_session_pid_valid "$lock_pid" || return 1
-  pids=$(fm_harness_ancestry_pids) || pids=''
-  if [ -n "$pids" ] && fm_harness_pid_listed "$lock_pid" "$pids" \
-    && fm_session_lock_anchor_instance_matches "$state"; then
-    return 0
-  fi
+  pids=$(fm_harness_ancestry_pids) || return 1
+  fm_harness_pid_listed "$lock_pid" "$pids" && return 0
   fm_session_lock_same_session "$state" "$pids" || return 1
   if fm_session_lock_anchor_instance_matches "$state" && fm_harness_pid_alive "$lock_pid"; then
     return 0
@@ -838,12 +812,9 @@ fm_session_lock_foreign_owner_live() {
   [ -f "$state/.lock" ] && [ ! -L "$state/.lock" ] || return 1
   lock_pid=$(cat "$state/.lock" 2>/dev/null || true)
   fm_session_pid_valid "$lock_pid" || return 1
-  fm_session_lock_recorded_owner_live "$state" || return 1
-  pids=$(fm_harness_ancestry_pids) || pids=''
-  if [ -n "$pids" ] && fm_harness_pid_listed "$lock_pid" "$pids" \
-    && fm_session_lock_anchor_instance_matches "$state"; then
-    return 1
-  fi
+  fm_harness_pid_alive "$lock_pid" || return 1
+  pids=$(fm_harness_ancestry_pids) || return 1
+  fm_harness_pid_listed "$lock_pid" "$pids" && return 1
   fm_session_lock_same_session "$state" "$pids" && return 1
   # shellcheck disable=SC2034 # Output global, read by the sourcing guard caller.
   FM_SESSION_LOCK_FOREIGN_OWNER_PID=$lock_pid
@@ -906,6 +877,23 @@ fm_session_lock_inspect() {  # <state>
   fm_session_pid_valid "$pid" || return 0
   if winpid=$(fm_win_untag_pid "$pid"); then
     # The same verdicts as a local pid below, read from the Windows table.
+    if fm_harness_pid_alive "$pid"; then
+      FM_LOCK_INSPECT_STATE=held
+      FM_LOCK_INSPECT_LIVE_HARNESS=true
+      return 0
+    fi
+    win_rc=0
+    fm_win_command "$winpid" >/dev/null || win_rc=$?
+    case "$win_rc" in
+      0) FM_LOCK_INSPECT_LIVE_HARNESS=false ;;
+      1)
+        FM_LOCK_INSPECT_STATE=stale
+        FM_LOCK_INSPECT_LIVE_HARNESS=false
+        ;;
+    esac
+    return 0
+  fi
+  if kill -0 "$pid" 2>/dev/null; then
     if fm_harness_pid_alive "$pid"; then
       FM_LOCK_INSPECT_STATE=held
       FM_LOCK_INSPECT_LIVE_HARNESS=true

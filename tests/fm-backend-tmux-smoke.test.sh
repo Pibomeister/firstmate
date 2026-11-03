@@ -83,10 +83,12 @@ pass "real tmux: server creation drops task-scoped FM variables and retains tuni
 
 "$REAL_TMUX" -f /dev/null -L "$SOCKET" new-session -d -s "$SESSION" -x 200 -y 50 \
   || fail "real tmux: new-session failed"
-"$REAL_TMUX" -f /dev/null -L "$SOCKET" new-session -d -s "$OTHER_SESSION" -x 200 -y 50 \
+tmux new-session -d -s "$OTHER_SESSION" -x 200 -y 50 \
   || fail "real tmux: second new-session failed"
-"$REAL_TMUX" -f /dev/null -L "$SOCKET" new-session -d -s "$PREFIX_SESSION" -n "$WINDOW" -x 200 -y 50 \
+tmux new-session -d -s "$PREFIX_SESSION" -n "$WINDOW" -x 200 -y 50 \
   || fail "real tmux: prefix-sharing session failed"
+tmux new-session -d -s firstmate -n supervisor -x 200 -y 50 \
+  || fail "real tmux: default supervisor session failed"
 fm_backend_tmux_create_task "$SESSION" "$WINDOW" "$HOME" \
   || fail "fm_backend_tmux_create_task failed to create the task window"
 tmux list-windows -t "$SESSION" -F '#{window_name}' | grep -qx "$WINDOW" \
@@ -302,7 +304,7 @@ pass "real tmux: kill removes the window and the readable session inventory auth
 # session of firstmate's own pane.
 OWN_SID=$(tmux display-message -p -t "$SESSION" '#{session_id}')
 OWN_SID=${OWN_SID#\$}
-"$REAL_TMUX" -f /dev/null -L "$SOCKET" new-session -d -s smoke-viewer -t "$SESSION" \
+tmux new-session -d -s smoke-viewer -t "$SESSION" \
   || fail "real tmux: grouped viewer session failed"
 tmux select-window -t smoke-viewer:0 >/dev/null 2>&1 || true
 got=$(TMUX="/fake,0,$OWN_SID" fm_backend_tmux_container_ensure)
@@ -316,7 +318,7 @@ pass "real tmux: container_ensure names the pane's own session, not a more recen
 VIEWER_SID=$(tmux display-message -p -t smoke-viewer '#{session_id}')
 VIEWER_SID=${VIEWER_SID#\$}
 OWN_PANE=$(tmux display-message -p -t "$SESSION:0" '#{pane_id}')
-"$REAL_TMUX" -f /dev/null -L "$SOCKET" kill-session -t smoke-viewer || fail "real tmux: killing the grouped viewer session failed"
+tmux kill-session -t smoke-viewer || fail "real tmux: killing the grouped viewer session failed"
 got=$(TMUX="/fake,0,$VIEWER_SID" TMUX_PANE="$OWN_PANE" fm_backend_tmux_container_ensure)
 [ "$got" = "$SESSION" ] \
   || fail "container_ensure chose '$got' instead of the pane's surviving session '$SESSION' for a stale \$TMUX session id"

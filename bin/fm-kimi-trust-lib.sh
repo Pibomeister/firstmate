@@ -6,8 +6,7 @@
 # screen", and "does the prompt announce project MCP servers" for every
 # supported wording.
 #
-# Every function takes one plain pane capture as $1.
-# Only kimi_trust_dialog_missing prints output: one line per missing element.
+# Every function takes one plain pane capture as $1 and prints nothing.
 # The wordings recognized here were recorded from the real CLI:
 #   2.0.0 (2026-09-17): the options read `❯ Trust this folder` and
 #     `Don't trust`.
@@ -50,7 +49,9 @@ kimi_trust_dialog_is_visible() {
   local pane=$1
   KIMI_TRUST_AFFIRMATIVE=''
   KIMI_TRUST_NEGATIVE=''
-  [ -z "$(kimi_trust_dialog_missing "$pane")" ] || return 1
+  case "$pane" in *'Trust this folder?'*) ;; *) return 1 ;; esac
+  case "$pane" in *'↑↓ navigate'*) ;; *) return 1 ;; esac
+  case "$pane" in *'Enter select'*) ;; *) return 1 ;; esac
   case "$pane" in
     *'❯ Trust this folder'*"Don't trust"*)
       KIMI_TRUST_AFFIRMATIVE='Trust this folder'

@@ -54,15 +54,15 @@ run_under_agy() {
 install_scripts() {
   local dir=$1 f
   mkdir -p "$dir/bin" "$dir/docs" "$dir/.agents"
-  for f in fm-bash-compat-lib.sh fm-sessionstart-agy.sh fm-turnend-guard-agy.sh \
+  for f in fm-sessionstart-agy.sh fm-turnend-guard-agy.sh \
            fm-turnend-guard.sh fm-sessionstart-run.sh fm-sessionstart-nudge.sh \
            fm-arm-pretool-check.sh fm-cd-pretool-check.sh fm-subagent-pretool-check.sh \
            fm-claude-stop-autoarm.sh fm-hook-host-lib.sh \
            fm-primary-scope-lib.sh fm-supervision-lib.sh fm-wake-lib.sh fm-path-lib.sh \
-           fm-session-lock-lib.sh fm-cursor-lib.sh fm-gemini-lib.sh fm-operational-input.sh \
+           fm-session-lock-lib.sh fm-cursor-lib.sh fm-gemini-lib.sh fm-hermes-process-lib.sh fm-operational-input.sh \
            fm-supervision-instructions.sh fm-harness.sh fm-lock.sh \
            fm-gate-refuse-lib.sh fm-afk-contract.sh fm-classify-lib.sh fm-timeout-lib.sh \
-           fm-supervision-engine-lib.sh fm-lease-lib.sh fm-session-process.py; do
+           fm-supervision-engine-lib.sh fm-lease-lib.sh; do
     if [ -f "$ROOT/bin/$f" ]; then
       cp "$ROOT/bin/$f" "$dir/bin/$f"
       chmod +x "$dir/bin/$f"

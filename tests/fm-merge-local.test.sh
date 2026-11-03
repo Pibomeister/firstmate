@@ -161,21 +161,21 @@ test_snapshot_cannot_pin_a_replacement_task() {
   FM_HOME="$HOME_DIR" fm_dod_accept_ship_done ship local-only "$WT" "$PROJ" \
     'done: ready' "$HOME_DIR/state" local-task "$captured" >/dev/null 2>&1 \
     && fail 'a stale snapshot pinned a replacement task'
-  assert_no_grep '^local_done_head=' "$META" 'stale snapshot changed live readiness'
+  assert_no_regex '^local_done_head=' "$META" 'stale snapshot changed live readiness'
   pass 'captured metadata cannot pin a replacement task generation'
 }
 
 test_done_recording_preserves_caller_locks() {
-  local lock_caller
-  for lock_caller in ledger teardown; do
-    make_case "locked-$lock_caller"
+  local caller
+  for caller in ledger teardown; do
+    make_case "locked-$caller"
     (
       local FM_HOME="$HOME_DIR" FM_STATE_OVERRIDE="$HOME_DIR/state"
       # shellcheck source=bin/fm-wake-lib.sh
       . "$ROOT/bin/fm-wake-lib.sh"
       local lock control='' owner
       lock=$(fm_meta_lock_path "$META") || exit 1
-      if [ "$lock_caller" = teardown ]; then
+      if [ "$caller" = teardown ]; then
         control="$HOME_DIR/state/.control-local-task.lock"
         fm_lock_try_acquire "$control" || exit 1
       fi
@@ -195,7 +195,7 @@ test_done_recording_preserves_caller_locks() {
       [ "$(fm_dod_local_done_head "$META")" = "$X" ] || exit 1
       [ "$(cat "$lock/pid")" = "$owner" ] || exit 1
       [ -z "$control" ] || [ "$(cat "$control/pid")" = "$owner" ] || exit 1
-    ) || fail "$lock_caller: done recording failed or changed the caller's locks"
+    ) || fail "$caller: done recording failed or changed the caller's locks"
   done
   pass 'ledger and teardown record the first done head without reacquiring or releasing caller locks'
 }

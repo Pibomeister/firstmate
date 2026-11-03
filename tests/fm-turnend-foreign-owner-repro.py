@@ -262,7 +262,7 @@ try:
     require(same_owner.poll() is None, "the original owner exited, so the re-anchor proves nothing over a live line 1")
     require(accepted_pid != same_lock_owner, "the same-session acquisition ran as the original owner")
     require(session_lock_text(same_lock) == accepted_pid, "a same-session confirmation outside the owner's ancestry did not re-anchor line 1 onto its own CLAUDE_PID")
-    require((same / "state/.lock-session").read_text().splitlines()[0] == "synthetic-same", "a same-session confirmation changed the recorded id")
+    require((same / "state/.lock-session").read_text().strip() == "synthetic-same", "a same-session confirmation changed the recorded id")
     refused = run(
         same_env | {"CLAUDE_CODE_SESSION_ID": "synthetic-other"},
         'export CLAUDE_PID=$$; "$FM_ROOT_OVERRIDE/bin/fm-lock.sh"; rc=$?; printf "lock_rc=%s\\n" "$rc"; true',

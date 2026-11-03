@@ -185,12 +185,10 @@ export FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999
 # Keep the real engine watchdog/reaping path, but not its production grace in fixtures.
 export FM_SUPERVISION_ENGINE_GRACE=1
 export FM_ARM_CONFIRM_TIMEOUT=30
-unset FM_SUPERVISION_ACTOR FM_BRANCH_REPORT_TURN FM_LEASE_HOLDER_PID FM_LEASE_HOLDER_SESSION PI_CODING_AGENT
+unset FM_SUPERVISION_ACTOR FM_BRANCH_REPORT_TURN FM_LEASE_HOLDER_PID PI_CODING_AGENT
 
 # Homes are registered in a file: make_home runs in a command substitution,
 # whose variables never reach this shell.
-LEFT_WATCHER=
-LEFT_ARM=
 HOMES_FILE="$TMP_ROOT/homes"
 # Stop whatever a case left running, by the exact pids its home recorded.
 stop_home_processes() {  # <home>
@@ -214,20 +212,19 @@ stop_home_processes() {  # <home>
     kill -TERM "$pid" 2>/dev/null || true
   done
   pid=$(cat "$home/state/.watch.lock/pid" 2>/dev/null || true)
-  if [ -n "$pid" ]; then
-    kill -TERM "$pid" 2>/dev/null || true
-    wait_for_exit "$pid" 100 >/dev/null 2>&1 || true
-  fi
-  if [ -e "$home/session.stop" ]; then
-    while IFS= read -r pid; do
-      wait_for_exit "$pid" 100 >/dev/null 2>&1 || true
-    done < <(cat "$home/claude-pids" 2>/dev/null)
-  fi
+  [ -z "$pid" ] || kill -TERM "$pid" 2>/dev/null || true
+  while IFS= read -r pid; do
+    if [ -e "$home/session.stop" ]; then
+      wait "$pid" 2>/dev/null || true
+    else
+      kill -TERM "$pid" 2>/dev/null || true
+    fi
+  done < <(cat "$home/claude-pids" 2>/dev/null)
   while IFS= read -r pid; do
     kill -TERM "$pid" 2>/dev/null || true
   done < <(cat "$home/orphan-pid" 2>/dev/null)
 }
-stop_registered_homes() {
+suite_cleanup() {
   local home
   while IFS= read -r home; do
     [ -n "$home" ] && stop_home_processes "$home"
@@ -385,10 +382,10 @@ dump_host_handback_diagnostics() {  # <home> [wait-name]
 }
 
 
-watcher_live() {  # <home> [previous-watcher-pid]
+watcher_live() {  # <home>
   local pid
   pid=$(cat "$1/state/.watch.lock/pid" 2>/dev/null) || return 1
-  [ -n "$pid" ] && [ "$pid" != "${2:-}" ] && kill -0 "$pid" 2>/dev/null
+  [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null
 }
 host_exited() { [ -s "$1/host.rc" ]; }
 # The recovery marker's episode kind (downtime or handling), read through its
@@ -899,13 +896,9 @@ start_session() {  # <home>
 
 
 park_again() {  # <home>
-  local previous
-  previous=$(cat "$1/state/.watch.lock/pid" 2>/dev/null || true)
   rm -f "$1/host.rc"
   : > "$1/park.go"
-  # An attended pass-through leaves a live successor. Its takeover must finish
-  # before the caller appends a status, or that old cycle can deliver it first.
-  wait_until 150 watcher_live "$1" "$previous" \
+  wait_until 150 watcher_live "$1" \
     || fail "the next park never started a watcher cycle: $(cat "$1/host.out"; tail -n 5 "$1/state/.supervision-host.log" 2>/dev/null)"
 }
 

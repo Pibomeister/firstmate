@@ -92,7 +92,7 @@ unset _fm_classify_nounset
 # classification below.
 FM_CLASSIFY_CAPTAIN_RE_DEFAULT='done:|needs-decision:|blocked:|failed:|PR ready|checks green|ready in branch|merged'
 
-# The declared-wait verb. A crew (or firstmate, through bin/fm-park.sh) appends
+# The declared-wait verb. A crew (or firstmate steering it) appends
 #   paused: <reason>
 # to declare a known wait expected to clear on its own. The legacy "external
 # wait" name and "awaiting external" reason also cover the worker's own work;
@@ -417,8 +417,7 @@ _fm_status_declared_wait_scan() {  # <resolve-verb> <legacy-captain-re>
 
 # A condition-aware declared wait: a `paused:` line may say WHEN it expects to
 # clear with `until <YYYY-MM-DDTHH:MM[:SS]Z>` anywhere in its text (UTC only, so
-# no local-zone guess is ever recorded). The last matching token wins, whether
-# it uses minute or seconds precision. Prints that time as epoch seconds so a
+# no local-zone guess is ever recorded). Prints that time as epoch seconds so a
 # supervisor rechecks the wait when the worker said it would clear instead of on
 # the flat cadence; returns 1 when the line is not a pause or declares no time,
 # or the time is malformed, so a bad token falls back to the cadence rather than
@@ -427,7 +426,8 @@ status_paused_until() {  # <status-line> -> epoch on stdout
   local line=$1 token
   status_is_paused "$line" || return 1
   token=$(printf '%s' "$line" \
-    | sed -n 's/.*[[:space:]][Uu][Nn][Tt][Ii][Ll][[:space:]]\{1,\}\([0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]\(:[0-9][0-9]\)\{0,1\}Z\).*/\1/p')
+    | sed -n 's/.*[[:space:]][Uu][Nn][Tt][Ii][Ll][[:space:]]\{1,\}\([0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]Z\).*/\1/p; s/.*[[:space:]][Uu][Nn][Tt][Ii][Ll][[:space:]]\{1,\}\([0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z\).*/\1/p' \
+    | head -1)
   [ -n "$token" ] || return 1
   fm_utc_iso_to_epoch "$token"
 }
@@ -784,9 +784,7 @@ EOF
 # into it verbatim. So without a rule here, any writer could claim a reserved
 # key with an unrelated note, take the key over in this fold, and permanently
 # block the owner's close - leaving a decision nothing will ever resolve - or
-# clear the owner's decision with a bare resolution. The reserved namespaces are
-# `pending-reply-` (bin/fm-pending-reply-lib.sh) and `claim-refuted-`, the
-# blocker that reopens a task whose claim was refuted (bin/fm-claims-lib.sh).
+# clear the owner's decision with a bare resolution.
 #
 # The rule is deliberately generic, so this fold needs no knowledge of any
 # particular owner: a reserved key may only be opened or closed by a line whose
@@ -796,7 +794,7 @@ EOF
 # consumer-side rule on purpose - it protects local and remote writers
 # identically, and it can never fail a whole delta or wedge a stream the way a
 # writer-side rejection would.
-FM_CLASSIFY_RESERVED_KEY_PREFIXES_DEFAULT='pending-reply- claim-refuted-'
+FM_CLASSIFY_RESERVED_KEY_PREFIXES_DEFAULT='pending-reply-'
 
 # 0 when <key> is not reserved, or is reserved and <note> speaks its vocabulary.
 _fm_decision_key_transition_allowed() {  # <key> <note>
@@ -817,7 +815,7 @@ _fm_decision_key_transition_allowed() {  # <key> <note>
 _fm_is_pending_reply_escalation() {  # <key> <note>
   case "$1" in pending-reply-*) ;; *) return 1 ;; esac
   case "$2" in
-    pending-reply-missed:*|pending-reply-delivery-unknown:*|pending-reply-recovery-delivery-failed:*|pending-reply-recovery-delivery-unknown:*|pending-reply-recovery-busy:*) return 0 ;;
+    pending-reply-missed:*|pending-reply-delivery-unknown:*|pending-reply-recovery-delivery-failed:*|pending-reply-recovery-delivery-unknown:*) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -942,9 +940,8 @@ EOF
 
 # The subset of status_open_decisions the task raised about its own work: a
 # reserved-namespace key is raised by a supervisor library about the task (a
-# pending-reply escalation or a refuted-claim blocker), a
-# `remote-reply-continuity-` key is the parent's own blocker about a broken
-# remote reply mirror
+# pending-reply escalation), a `remote-reply-continuity-` key is the parent's
+# own blocker about a broken remote reply mirror
 # (bin/fm-procevent-remote-reply.sh), and a `captain-hold-` key relays a child
 # decision a secondmate escalated to the captain (bin/fm-captain-hold.sh) while
 # it keeps working, so the task is not waiting on any of them. Pending-reply
@@ -994,12 +991,17 @@ EOF
 # is a line of that verb that the worker wrote and that is still open: its key
 # must hold that verb in status_own_open_decisions, so a supervisor-reserved key
 # never counts. Only the newest event is read, so any later line ends it - a
-# resolved line for any key included. A steering-inbox record does not end it
-# here: a steer the worker acknowledged may as easily be "keep waiting" as the
-# answer, so a caller that bounds repeated alarms reads this and lets the
-# worker's own next line, or its next busy turn, end the wait.
+# resolved line for any key included - and so does a steering-inbox record the
+# worker acknowledged that was written after it (bin/fm-task-inbox-lib.sh owns
+# that handled/ layout), which is an answer that arrived without a closing
+# resolved line.
+
+# Fork alias: callers that still use the pre-rename name.
 status_worker_open_wait_verb() {  # <status-file>
-  local f=$1 last verb key own
+  status_worker_wait_verb "$@"
+}
+status_worker_wait_verb() {  # <status-file>
+  local f=$1 last verb key own rec
   last=$(last_status_line "$f")
   [ -n "$last" ] || return 1
   status_line_verb "$last" verb
@@ -1010,16 +1012,6 @@ status_worker_open_wait_verb() {  # <status-file>
     "$key"$'\t'"$verb"$'\t'*|*$'\n'"$key"$'\t'"$verb"$'\t'*) ;;
     *) return 1 ;;
   esac
-  printf '%s' "$verb"
-}
-
-# status_worker_open_wait_verb, also ended by a steering-inbox record the worker
-# acknowledged that was written after the line (bin/fm-task-inbox-lib.sh owns
-# that handled/ layout), which is an answer that arrived without a closing
-# resolved line.
-status_worker_wait_verb() {  # <status-file>
-  local f=$1 verb rec
-  verb=$(status_worker_open_wait_verb "$f") || return 1
   for rec in "${f%.status}.inbox/handled"/*.msg; do
     [ "$rec" -nt "$f" ] && return 1
   done
@@ -1255,17 +1247,41 @@ _fm_open_decisions_file_ident() {  # <file> -> strongest available identity
     "$FM_STATUS_IDENTITY_READER" "$f"
     return
   fi
+  _fm_status_stat_fields "$f" || return 1
+  printf '%s' "$_FM_STAT_IDENTITY"
+}
+
+# One stat exec sets _FM_STAT_IDENTITY and _FM_STAT_SIZE for <file>, because
+# the drain reads identity and size of every status file several times and
+# each exec is slow on a loaded host.
+_fm_status_stat_fields() {  # <file>
+  local out dev_ino epoch birth rest
   if [ "$_FM_CLASSIFY_UNAME_S" = Darwin ]; then
-    ident=$(LC_ALL=C /usr/bin/stat -f '%d:%i' "$f" 2>/dev/null) || return 1
-    epoch=$(LC_ALL=C /usr/bin/stat -f '%B' "$f" 2>/dev/null) || epoch=0
-    if [ "$epoch" != 0 ]; then birth=$(LC_ALL=C /usr/bin/stat -f '%FB' "$f" 2>/dev/null) || birth=''; else birth=''; fi
+    out=$(LC_ALL=C /usr/bin/stat -f '%d:%i%t%z%t%B%t%FB' "$1" 2>/dev/null) || return 1
   else
-    ident=$(LC_ALL=C stat -c '%d:%i' "$f" 2>/dev/null) || return 1
-    epoch=$(LC_ALL=C stat -c '%W' "$f" 2>/dev/null) || epoch=0
-    if [ "$epoch" != 0 ]; then birth=$(LC_ALL=C stat -c '%w' "$f" 2>/dev/null) || birth=''; else birth=''; fi
+    out=$(LC_ALL=C stat -c $'%d:%i\t%s\t%W\t%w' "$1" 2>/dev/null) || return 1
   fi
-  case "$ident$birth" in *$'\t'*|*$'\n'*|'') return 1 ;; esac
-  if [ -n "$birth" ]; then printf 'strong:%s:%s' "$ident" "$birth"; else printf 'weak:%s' "$ident"; fi
+  dev_ino=${out%%$'\t'*}; rest=${out#*$'\t'}
+  _FM_STAT_SIZE=${rest%%$'\t'*}; rest=${rest#*$'\t'}
+  epoch=${rest%%$'\t'*}; birth=${rest#*$'\t'}
+  [ "$epoch" != 0 ] || birth=''
+  case "$dev_ino$birth" in *$'\t'*|*$'\n'*|'') return 1 ;; esac
+  if [ -n "$birth" ]; then
+    _FM_STAT_IDENTITY="strong:$dev_ino:$birth"
+  else
+    _FM_STAT_IDENTITY="weak:$dev_ino"
+  fi
+}
+
+# Set _FM_STAT_IDENTITY and _FM_STAT_SIZE for one status file with one stat
+# exec. Injected test readers are honored, identity first and size second.
+_fm_status_read_ident_size() {  # <status-file>
+  if [ -n "${FM_STATUS_IDENTITY_READER:-}" ] || [ -n "${FM_STATUS_SIZE_READER:-}" ]; then
+    _FM_STAT_IDENTITY=$(_fm_open_decisions_file_ident "$1") || return 1
+    _FM_STAT_SIZE=$(_fm_status_file_size "$1") || return 1
+    return 0
+  fi
+  _fm_status_stat_fields "$1"
 }
 
 _fm_status_file_size() {  # <status-file>
@@ -1376,10 +1392,9 @@ status_open_decisions_incremental() {  # <status-file> [<captured-end-offset>] [
   # A stat/size-read failure is a genuine I/O error, not "the file is empty" -
   # report the already-trusted persisted set unchanged rather than risking a
   # silent invalidation that would wipe it.
-  cur_ident=$(_fm_open_decisions_file_ident "$f") || { printf '%s' "$trusted_open"; return 0; }
+  _fm_status_read_ident_size "$f" || { printf '%s' "$trusted_open"; return 0; }
+  cur_ident=$_FM_STAT_IDENTITY actual_size=$_FM_STAT_SIZE
   [ -n "$cur_ident" ] || { printf '%s' "$trusted_open"; return 0; }
-  actual_size=$(_fm_status_file_size "$f") \
-    || { printf '%s' "$trusted_open"; return 0; }
   actual_size=${actual_size//[[:space:]]/}
   case "$actual_size" in ''|*[!0-9]*) printf '%s' "$trusted_open"; return 0 ;; esac
   if [ -n "$captured_end" ]; then
@@ -1588,9 +1603,8 @@ EOF
     offset=0
     ident=$(_fm_open_decisions_file_ident "$f") || return 1
   fi
-  cur_ident=$(_fm_open_decisions_file_ident "$f") || return 1
-  size=$(_fm_status_file_size "$f") || return 1
-  size=${size//[[:space:]]/}
+  _fm_status_read_ident_size "$f" || return 1
+  cur_ident=$_FM_STAT_IDENTITY size=${_FM_STAT_SIZE//[[:space:]]/}
   case "$size:$offset" in *[!0-9:]*) return 1 ;; esac
   if [ "$ident" != "$cur_ident" ] || [ "$offset" -gt "$size" ]; then offset=0; fi
   printf '%s' "$offset"
@@ -1612,9 +1626,8 @@ status_outcome_backstop_cursor_offset() {  # <status-file>
     case "$presented:$row_backstop" in *[!0-9:]*) return 1 ;; esac
     [ -n "$presented" ] && [ -n "$ident" ] || return 1
     if [ "$row_task" = "$task" ]; then
-      current=$(_fm_open_decisions_file_ident "$f") || return 1
-      size=$(_fm_status_file_size "$f") || return 1
-      size=${size//[[:space:]]/}
+      _fm_status_read_ident_size "$f" || return 1
+      current=$_FM_STAT_IDENTITY size=${_FM_STAT_SIZE//[[:space:]]/}
       case "$size" in ''|*[!0-9]*) return 1 ;; esac
       [ "$ident" = "$current" ] || { printf '0'; return 0; }
       backstop=${row_backstop:-0}
@@ -1912,9 +1925,8 @@ status_commit_presentation_snapshot() {  # <state> <snapshot>
     [ -n "$ident" ] || { rm -f "$tmp"; return 1; }
     f="$state/$task.status"
     [ -f "$f" ] && [ -r "$f" ] && [ ! -L "$f" ] || { rm -f "$tmp"; return 1; }
-    cur_ident=$(_fm_open_decisions_file_ident "$f") || { rm -f "$tmp"; return 1; }
-    size=$(_fm_status_file_size "$f") || { rm -f "$tmp"; return 1; }
-    size=${size//[[:space:]]/}
+    _fm_status_read_ident_size "$f" || { rm -f "$tmp"; return 1; }
+    cur_ident=$_FM_STAT_IDENTITY size=${_FM_STAT_SIZE//[[:space:]]/}
     case "$size" in ''|*[!0-9]*) rm -f "$tmp"; return 1 ;; esac
     [ "$cur_ident" = "$ident" ] && [ "$endpoint" -le "$size" ] \
       || { rm -f "$tmp"; return 1; }
@@ -1970,7 +1982,7 @@ EOF
 # prints nothing, so already-presented bytes are not replayed as new. Teardown
 # retires a task's manifest row with its status file, so reusing a task ID starts
 # the replacement log unread at byte 0. Informational `note:` lines and
-# reserved-key resolutions are the fleet-wide unread surface;
+# reserved-key pending-reply resolutions are the fleet-wide unread surface;
 # they are not open decisions and are not persisted in the folded open-set.
 
 # Read the legacy per-task open-decisions cursor used to seed the presentation
@@ -2022,10 +2034,9 @@ status_open_decisions_cursor_offset() {  # <status-file>
       return 1
     fi
   fi
-  cur_ident=$(_fm_open_decisions_file_ident "$f") || return 1
+  _fm_status_read_ident_size "$f" || return 1
+  cur_ident=$_FM_STAT_IDENTITY size=${_FM_STAT_SIZE//[[:space:]]/}
   [ -n "$cur_ident" ] || return 1
-  size=$(_fm_status_file_size "$f") || return 1
-  size=${size//[[:space:]]/}
   case "$size" in ''|*[!0-9]*) return 1 ;; esac
   if [ -z "$version" ] || [ -z "$ident" ] || [ "$ident" != "$cur_ident" ] || [ "$offset" -gt "$size" ]; then
     offset=0
@@ -2077,9 +2088,8 @@ status_new_lines_since_cursor() {  # <status-file> [<captured-end-offset>]
 }
 
 # 0 when a status line is an informational `note:` or a reserved-key
-# resolution, such as a pending-reply or refuted-claim close. Those lines never
-# fold into OPEN DECISIONS, so the drain's unread-status surface is their only
-# guaranteed presentation.
+# pending-reply resolution. Those lines never fold into OPEN DECISIONS, so the
+# drain's unread-status surface is their only guaranteed presentation.
 status_line_is_unread_surface() {  # <status-line>
   local line=$1 verb key note resolve held prefix
   [ -n "$line" ] || return 1
@@ -2105,7 +2115,7 @@ status_line_is_unread_surface() {  # <status-line>
 }
 
 # Fleet-wide unread informational lines: one "<task>\t<status-line>" row per
-# still-unread `note:` or reserved-key resolution, in glob (task id) order.
+# still-unread `note:` or pending-reply resolution, in glob (task id) order.
 # Prints nothing when none are unread. Directory scan rejects status symlinks
 # the same way scan_open_decisions does.
 scan_unread_surface_lines() {  # <state>
@@ -2216,21 +2226,6 @@ status_open_activities() {  # <status-file-or-dash>
   fi
   [ -f "$f" ] || return 0
   _fm_status_open_activities_stream < "$f"
-}
-
-# The ONE derivation of a window's per-window marker key: `:`, `/` and `.` become
-# `_` so a window name is usable as a filename suffix. Every per-window file the
-# watcher keeps is named by it (.hash-, .count-, .stale-, .stale-since-,
-# .wedge-escalations-, .wedge-permanent-, .wedge-terminal-queued-,
-# .wedge-rollback-failed-, .paused-*, .writing-*, .validating-*,
-# .waiting-*), and the claim verifier reads the .hash- marker's age
-# (bin/fm-claims.sh). Live homes hold those markers on disk under the current
-# format, so the format lives here alone: a second copy is how a future change
-# to it silently orphans a window's markers instead of clearing them.
-window_key() {  # <window>
-  local key=${1//:/_}
-  key=${key//\//_}
-  printf '%s' "${key//./_}"
 }
 
 # task id from a recorded window target, falling back to the tmux-shaped
@@ -2590,23 +2585,10 @@ status_span_has_actionable() {  # <status-file> <start-offset>
 # NOT a pure read: fm-crew-state.sh may make a bounded no-mistakes call, so callers
 # run it only on no-verb signal and first-sighting stale paths, never every wake.
 # FM_CREW_STATE_BIN lets tests stub the verdict.
-# The read and the decision are separate functions so a caller that needs more
-# than the token from the same sighting (crew_line_parked_gate below) pays for
-# one read: crew_state_line is the read, crew_line_absorb_class the pure decision.
-# A <bound> in seconds hard-limits the read through fm_run_timed, for a caller
-# that must not wait on a no-mistakes that stops answering; a read past it is
-# killed and reads as empty, exactly like an unreadable one.
-crew_state_line() {  # <id> [<bound>] -> the fm-crew-state.sh line, empty when unreadable
-  [ -n "${1:-}" ] || return 0
-  if [ -n "${2:-}" ]; then
-    fm_run_timed "$2" "$FM_CREW_STATE_BIN" "$1" 2>/dev/null || true
-  else
-    "$FM_CREW_STATE_BIN" "$1" 2>/dev/null || true
-  fi
-}
-
-crew_line_absorb_class() {  # <crew-state-line>
-  local line=$1 state src
+crew_absorb_class() {  # <id>
+  local id=$1 line state src
+  [ -n "$id" ] || { printf 'none'; return; }
+  line=$("$FM_CREW_STATE_BIN" "$id" 2>/dev/null) || true
   case "$line" in state:*) ;; *) printf 'none'; return ;; esac
   state=${line#state: }; state=${state%% *}
   if [ "$state" = paused ]; then printf 'paused'; return; fi
@@ -2615,10 +2597,6 @@ crew_line_absorb_class() {  # <crew-state-line>
     case "$src" in run-step|pane) printf 'working'; return ;; esac
   fi
   printf 'none'
-}
-
-crew_absorb_class() {  # <id>
-  crew_line_absorb_class "$(crew_state_line "${1:-}")"
 }
 
 # 0 if crew <id> shows POSITIVE evidence it is still working (crew_absorb_class
@@ -2645,24 +2623,34 @@ crew_is_paused() {  # <id>
 # The one spelling of the verdict component that says a parked gate's answer is
 # owed by a HUMAN. bin/fm-crew-state.sh mints it (nm_gate_awaits_human_decision
 # owns the derivation: the findings table's `action` column, read by position);
-# crew_line_parked_gate below is its only reader.
+# crew_gate_awaits_human_decision below is its only consumer.
 FM_GATE_HUMAN_DECISION='ask-user: authority decision'
 
-# Pure: read ONE fm-crew-state.sh line as a no-mistakes run parked at a gate.
-# Returns 1 for every other verdict. On success prints "<owner>\t<run-id>":
-#   owner  - `human` when the line carries the minted component above as a whole
-#            ` · ` component, else `worker`: the gate waits on the crewmate
-#            itself. The whole component is compared for equality rather than
-#            searched for, so a gate name or a reconciliation note that happens
-#            to contain the words cannot mint it downstream.
-#   run-id - the line's whole `run: <id>` component, empty when the line carries
-#            none or the id holds whitespace.
-# `parked` alone cannot say who owes the answer: the gate's shape
-# (awaiting_approval, fix_review, awaiting_agent) is reported parked in every
-# case, and only a findings row whose `action` column is exactly `ask-user`
-# mints the human component.
-crew_line_parked_gate() {  # <crew-state-line> -> "<owner>\t<run-id>" on stdout
-  local line=$1 state src rest part owner=worker run=''
+# 0 if crew <id>'s authoritative current state is a no-mistakes gate whose answer
+# is owed by a human rather than by the crewmate itself.
+#
+# `parked` alone cannot answer this: the gate's shape (awaiting_approval,
+# fix_review, awaiting_agent) is reported parked in every case and does not by
+# itself say who owes the answer; only a findings row whose `action` column is
+# exactly `ask-user` does. A crewmate that goes quiet before answering its OWN
+# gate is precisely the wedge the escalation ladder exists to catch, so only the
+# minted component above - never the parked verdict, the gate name, or the
+# finding text - admits a lane here.
+#
+# The whole component is compared for equality rather than searched for, so a
+# gate name or a reconciliation note that happens to contain the words cannot
+# mint it downstream either.
+# On success it prints the reported run id, read from the line's whole
+# `run: <id>` component, so the caller can bind the gate to the decision that
+# names that run; a line carrying no run id is not evidence, since nothing could
+# then tie a decision to this gate.
+# Same cost and the same caveat as crew_absorb_class: one fm-crew-state.sh read,
+# which may make a bounded no-mistakes call, so callers take it only where they
+# already accept that cost.
+crew_gate_awaits_human_decision() {  # <id> -> <run-id> on stdout
+  local id=$1 line state src rest part human='' run=''
+  [ -n "$id" ] || return 1
+  line=$("$FM_CREW_STATE_BIN" "$id" 2>/dev/null) || true
   case "$line" in state:*) ;; *) return 1 ;; esac
   state=${line#state: }; state=${state%% *}
   [ "$state" = parked ] || return 1
@@ -2672,33 +2660,11 @@ crew_line_parked_gate() {  # <crew-state-line> -> "<owner>\t<run-id>" on stdout
   while [ -n "$rest" ]; do
     part=${rest%% · *}
     rest=${rest#* · }
-    [ "$part" = "$FM_GATE_HUMAN_DECISION" ] && owner=human
+    [ "$part" = "$FM_GATE_HUMAN_DECISION" ] && human=1
     case "$part" in "run: "?*) run=${part#run: } ;; esac
   done
-  case "$run" in *[[:space:]]*) run='' ;; esac
-  printf '%s\t%s\n' "$owner" "$run"
-}
-
-# 0 if crew <id>'s authoritative current state is a no-mistakes gate whose answer
-# is owed by a human rather than by the crewmate itself.
-#
-# A crewmate that goes quiet before answering its OWN gate is precisely the wedge
-# the escalation ladder exists to catch, so only crew_line_parked_gate's `human`
-# owner - never the parked verdict, the gate name, or the finding text - admits a
-# lane here.
-# On success it prints the reported run id so the caller can bind the gate to the
-# decision that names that run; a line carrying no run id is not evidence, since
-# nothing could then tie a decision to this gate.
-# Same cost and the same caveat as crew_absorb_class: one fm-crew-state.sh read,
-# which may make a bounded no-mistakes call, so callers take it only where they
-# already accept that cost.
-crew_gate_awaits_human_decision() {  # <id> -> <run-id> on stdout
-  local id=$1 gate run
-  [ -n "$id" ] || return 1
-  gate=$(crew_line_parked_gate "$(crew_state_line "$id")") || return 1
-  [ "${gate%%$'\t'*}" = human ] || return 1
-  run=${gate#*$'\t'}
-  [ -n "$run" ] || return 1
+  [ -n "$human" ] && [ -n "$run" ] || return 1
+  case "$run" in *[[:space:]]*) return 1 ;; esac
   printf '%s\n' "$run"
 }
 

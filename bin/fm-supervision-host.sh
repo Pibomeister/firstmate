@@ -14,7 +14,8 @@
 # (bin/fm-turnend-guard-cursor.sh), the OpenCode TUI plugin
 # (.opencode/plugins/fm-primary-watch-arm.js), the omp watch extension
 # (.omp/extensions/fm-primary-omp-watch.ts), Grok's model-owned background arm
-# (docs/supervision-protocols/grok.md), and Codex's foreground checkpoint
+# (docs/supervision-protocols/grok.md), Codex's opt-in native Stop park
+# (bin/fm-codex-stop-park.sh), and Codex's foreground checkpoint
 # (bin/fm-watch-checkpoint.sh). To that owner it IS an arm: it prints the
 # arm's own lines and exits only when main is needed, and stays parked across
 # every close it handled itself. Each owner passes its harness as
@@ -52,10 +53,9 @@
 #     so main-only classes (check triggers, decision-owned triggers, a scan
 #     that is unsafe or holds nothing for the branch) stay main's. That
 #     pass-through starts the successor watcher cycle and leaves it running
-#     before the close is printed when the home still runs the host, this host
-#     still owns supervision, the main session is identified, and the park
-#     boundary has not arrived. It confirms no handling handoff and republishes
-#     the recovery marker as downtime, even over handling an earlier engine turn
+#     before the close is printed, so supervision continues when the session
+#     drops the handoff. It confirms no handling handoff and republishes the
+#     recovery marker as downtime, even over handling an earlier engine turn
 #     left, so the re-arm owner delivers the close to main; a failed publish
 #     prints a watcher FAILED line instead of the close. The host records that successor's arm before relinquishing it
 #     (detach_successor owns the persistence check and failure path). The
@@ -124,7 +124,10 @@
 # 27000, under the tracked 28800-second registration) it stops this home's
 # watcher and exits with one "supervision-host: cycle boundary" line, which the
 # owner delivers as an ordinary wake; main drains, acknowledges, and ends its
-# turn, and that turn end starts the next park. The boundary is checked on
+# turn, and that turn end starts the next park. The verified Codex asynchronous owner sets
+# FM_CODEX_MODEL_FREE_PARK=1: its boundary resets the quiet timer while keeping
+# the watcher and recovery generation alive, with no output to the model.
+# All other owners keep the bounded lifecycle. The boundary is checked on
 # every loop pass, however many closes are already waiting, and an away close
 # whose engine turn could still be running at the turn limit (the turn bound
 # plus the engine grace), judged when the close arrives and again just before
@@ -436,7 +439,7 @@ activate() {
     case "$ledger" in *.pids|*.next) continue ;; esac
     [ -f "$ledger" ] && fm_reap_ledger "$ledger"
   done
-  rm -f "$STATE"/.supervision-host-warm.* "$STATE"/.supervision-host-descendants.* "$STATE"/.supervision-host-result.* \
+  rm -f "$STATE"/.supervision-host-arm.* "$STATE"/.supervision-host-warm.* "$STATE"/.supervision-host-descendants.* "$STATE"/.supervision-host-result.* \
     "$STATE"/.supervision-host-errors.* "$STATE"/.supervision-host-readback.* "$TURN_FILE" "$MIRROR_FEED" 2>/dev/null || true
   # The successor a pass-through left for main: the first cycle takes it over
   # while it still answers to its recorded identity, and its record goes only
@@ -591,12 +594,24 @@ park_elapsed() {  # Sets PARK_ELAPSED without a production clock/helper fork.
 
 boundary_reached() {
   park_elapsed
+  # The verified Codex async owner has no short hook deadline. Its quiet
+  # checkpoint keeps the same watcher alive; stopping it would create a real
+  # downtime generation and force an otherwise empty model turn.
+  if [ "$PRIMARY" = codex ] && [ "${FM_CODEX_MODEL_FREE_PARK:-0}" = 1 ] \
+    && [ "$PARK_ELAPSED" -ge "$PARK_SECONDS" ]; then
+    log_line "quiet-boundary\tafter ${PARK_ELAPSED}s; watcher retained"
+    HOST_STARTED_SECONDS=$SECONDS
+    PARK_ELAPSED=0
+    WARM_COMPACT_LAST_TICK=-1
+    return 1
+  fi
   [ "$PARK_ELAPSED" -ge "$PARK_SECONDS" ]
 }
 
 # True when an engine turn started now could still be running at the turn
 # limit (the boundary unless the owner set a later one).
 turn_crosses_boundary() {
+  if [ "$PRIMARY" = codex ] && [ "${FM_CODEX_MODEL_FREE_PARK:-0}" = 1 ]; then return 1; fi
   park_elapsed
   [ $((PARK_ELAPSED + TURN_TIMEOUT + ENGINE_GRACE)) -ge "$PARK_LIMIT" ]
 }
@@ -608,21 +623,13 @@ boundary_exit() {
   park_elapsed
   log_line "boundary	after ${PARK_ELAPSED}s"
   acknowledged_handback 'supervision-host: cycle boundary - the host ended its park at its bound; drain, acknowledge, and end the turn'
-  local rc=0 stop_output
-  retire_arm "$ARM_PID" "$ARM_OUT" || rc=1
-  retire_arm "$SUCCESSOR_PID" "$SUCCESSOR_OUT" || rc=1
+  retire_arm "$ARM_PID" "$ARM_OUT"
+  retire_arm "$SUCCESSOR_PID" "$SUCCESSOR_OUT"
   ARM_PID=
   ARM_OUT=
   SUCCESSOR_PID=
   SUCCESSOR_OUT=
-  if [ "$rc" -eq 0 ]; then
-    if ! stop_output=$("$SCRIPT_DIR/fm-watch-arm.sh" --stop 2>&1); then
-      printf '%s\nsupervision-host: watcher stop failed after arm retirement\n' "$stop_output"
-      rc=1
-    elif printf '%s\n' "$stop_output" | grep -Eq '^(signal:|stale:|check:|heartbeat($|:))'; then
-      printf '%s\n' "$stop_output" | grep -E '^(signal:|stale:|check:|heartbeat($|:))'
-    fi
-  fi
+  "$SCRIPT_DIR/fm-watch-arm.sh" --stop >/dev/null 2>&1 || true
   emit 'supervision-host: cycle boundary - the host ended its park at its bound; drain, acknowledge, and end the turn, and the next park starts on its own'
   exit "$rc"
 }
@@ -1386,10 +1393,7 @@ while :; do
     if ! attended_acceptor "$(printf '%s\n' "$REASON" | head -n 1)"; then
       log_line "pass-through	attended	$ATTENDED_WHY	$(printf '%s\n' "$REASON" | head -n 1)"
       acknowledged_handback
-      if fm_supervision_host_enabled "$CONFIG" "$PRIMARY" \
-        && host_still_owner \
-        && fm_supervision_host_main_key "$STATE" >/dev/null \
-        && ! boundary_reached; then
+      if [ "$ATTENDED_WHY" = main-only ]; then
         leave_successor_for_main
         PASS_THROUGH_RC=$?
         if [ "$PASS_THROUGH_RC" -eq 2 ]; then

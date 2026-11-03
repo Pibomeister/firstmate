@@ -1049,13 +1049,10 @@ EOF
 # Wait until <dir> holds <count> entries. Forty workers poll this at once, so
 # the count is a builtin glob rather than a find pipeline (no process per
 # poll), and the wait ends early once the directory is gone, the suite has
-# died, or FM_TEST_STUB_MAX_BLOCK_SECONDS has passed with no new entry, so an
-# interrupted run cannot leave forty pollers spinning under init. Any new entry
-# restarts that limit: on a loaded machine the workers can need longer than one
-# limit in total, and a winner that stopped waiting would die and hand a later
-# worker a legitimately stale lock.
+# died, or FM_TEST_STUB_MAX_BLOCK_SECONDS has passed, so an interrupted run
+# cannot leave forty pollers spinning under init.
 lock_concurrency_barrier() {  # <dir> <count>
-  local dir=$1 want=$2 start=$SECONDS entries seen=0
+  local dir=$1 want=$2 start=$SECONDS entries
   while [ -d "$dir" ] && kill -0 "$FM_TEST_SUITE_PID" 2>/dev/null \
     && [ $((SECONDS - start)) -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do
     entries=("$dir"/*)
@@ -1119,14 +1116,14 @@ SH
       harness_pid=$(sh -c 'printf "%s\n" "$PPID"')
       : > "$home/state/harness-$harness_pid"
       : > "$ready/$i"
-      lock_concurrency_barrier "$ready" 40 || : > "$stalled"
+      lock_concurrency_barrier "$ready" 40
       if FM_HOME="$home" FM_FAKE_LOCK_STATE="$home/state" \
         FM_FAKE_HARNESS_PID="$harness_pid" PATH="$fakebin:$BASE_PATH" \
         "$ROOT/bin/fm-lock.sh" >/dev/null 2>&1; then
         printf '%s\n' "$harness_pid" >> "$winners"
       fi
       : > "$completed/$i"
-      lock_concurrency_barrier "$completed" 40 || : > "$stalled"
+      lock_concurrency_barrier "$completed" 40
     ) &
     pids="$pids $!"
     i=$((i + 1))

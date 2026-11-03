@@ -87,26 +87,21 @@
 #                                   under tmux, "<session>:<pane-id>" from
 #                                   $HERDR_PANE_ID under herdr,
 #                                   "<session-uuid>:<block-uuid>" from
-#                                   $REX_SESSION/$REX_BLOCK under rex, the
-#                                   home's one live T3 thread, or
-#                                   $ORCA_TERMINAL_HANDLE in an Orca terminal -
-#                                   then firstmate:0 fallback, except on an Orca
-#                                   home, which refuses at startup instead).
-#                                   Accepts a tmux target, a herdr
-#                                   "<session>:<pane-id>", a rex target, a T3
-#                                   thread id, or an Orca terminal handle; which
-#                                   one it's read as is decided by
-#                                   FM_SUPERVISOR_BACKEND (below), independently.
-#          FM_SUPERVISOR_BACKEND    supervisor endpoint BACKEND
-#                                   (tmux|herdr|rex|t3code|orca; override;
-#                                   otherwise resolved by
+#                                   $REX_SESSION/$REX_BLOCK under rex, or the
+#                                   home's one live T3 thread - then firstmate:0
+#                                   fallback). Accepts a tmux target, a herdr
+#                                   "<session>:<pane-id>", a rex target, or a T3
+#                                   thread id; which one it's read as is decided
+#                                   by FM_SUPERVISOR_BACKEND (below),
+#                                   independently.
+#          FM_SUPERVISOR_BACKEND    supervisor endpoint BACKEND (tmux|herdr|rex|t3code;
+#                                   override; otherwise resolved by
 #                                   bin/fm-supervisor-target-lib.sh - $TMUX_PANE
 #                                   selects tmux, $HERDR_ENV=1 selects herdr,
 #                                   TERM_PROGRAM=rex selects rex, then T3
-#                                   discovery behind its explicit-selection gate,
-#                                   then TERM_PROGRAM=Orca selects orca - falling
-#                                   back to tmux).
-#                                   zellij, cmux, paseo, and tern are not yet
+#                                   discovery behind its explicit-selection gate
+#                                   - falling back to tmux).
+#                                   zellij, orca, cmux, paseo, and tern are not yet
 #                                   supported as supervisor backends; the daemon
 #                                   refuses loudly at startup rather than trying
 #                                   tmux primitives against an unsupported endpoint.
@@ -224,18 +219,15 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 
 # --- tunables ---------------------------------------------------------------
 # Supervisor backends this daemon knows how to inject into today. rex goes
-# through the same dispatcher primitives as herdr (bin/backends/rex.sh). orca
-# has no native busy primitive, so its terminal gets the rendered primary-harness
-# busy guard and the shared composer guard, plus the turn and draft holds in
-# bin/backends/orca.sh (docs/orca-backend.md owns why). zellij,
-# cmux, paseo, and tern are real backends elsewhere in firstmate
+# through the same dispatcher primitives as herdr (bin/backends/rex.sh). zellij,
+# orca, cmux, paseo, and tern are real backends elsewhere in firstmate
 # (bin/fm-backend.sh) but this daemon has no verified composer/busy primitives
 # wired up for them yet - see docs/herdr-backend.md and AGENTS.md section 4's
 # harness-verification discipline. Selecting one refuses loudly at startup
 # instead of silently running tmux primitives against a pane that is not a tmux
 # pane. t3code injects through the adapter's t3_thread_send, with its
 # thread status table as the busy verdict.
-FM_SUPERVISOR_SUPPORTED_BACKENDS="tmux herdr rex t3code orca"
+FM_SUPERVISOR_SUPPORTED_BACKENDS="tmux herdr rex t3code"
 INJECT_SKIP_DEFAULT="heartbeat"
 STALE_ESCALATE_SECS_DEFAULT=240
 ESCALATE_BATCH_SECS_DEFAULT=90
@@ -1296,12 +1288,8 @@ wedge_alarm_notify() {  # <summary> <marker> [strict]
     case "$ch" in auto|default) ch=$(wedge_alarm_platform_default) ;; esac
     case "$ch" in
       '') log "wedge alarm: no OS-level alert channel on $(uname); durable marker $marker is the only signal - set config/wedge-alarm (e.g. a command: directive)" ;;
-      osascript|herdr|rex)
-        attempted=1
-        wedge_alarm_emit "$ch" "$summary" && delivered=1 ;;
-      command:*)
-        attempted=1
-        wedge_alarm_emit command "$summary" "${ch#command:}" && delivered=1 ;;
+      osascript|herdr|rex) wedge_alarm_emit "$ch" "$summary" || true ;;
+      command:*) wedge_alarm_emit command "$summary" "${ch#command:}" || true ;;
       *) log "wedge alarm: unrecognized active-alert channel directive (redacted); marker still written" ;;
     esac
   done
@@ -2075,27 +2063,17 @@ fm_super_main() {
     log "warn: could not record this daemon's process identity; the turn-end guard cannot recognize away-mode supervision"
   fi
 
-  # --- auto-discover the supervisor BACKEND (tmux, herdr, rex, t3code, or orca)
+  # --- auto-discover the supervisor BACKEND (tmux, herdr, or t3code) first --
   # Priority: FM_SUPERVISOR_BACKEND override > $TMUX_PANE (tmux) > $HERDR_ENV=1
   # (herdr) > TERM_PROGRAM=rex (rex) > a live T3 thread in this home (t3code) >
-  # TERM_PROGRAM=Orca (orca) > refusal on an Orca home > tmux fallback. Resolved before the target below, since target discovery
+  # tmux fallback. Resolved before the target below, since target discovery
   # composes a herdr "<session>:<pane-id>" string using the same
   # $HERDR_PANE_ID/$HERDR_SESSION markers this checks. Exporting the result
   # into FM_SUPERVISOR_BACKEND makes inject_msg/pane_is_busy/pane_input_pending
   # (which read that env var) dispatch through the right backend without an
   # extra global thread-through.
-  local discovered_backend backend_source backend_rc=0 orca_refusal
-  discovered_backend=$(discover_supervisor_backend) || backend_rc=$?
-  # An Orca home with no Orca terminal to resolve refuses here: the tmux
-  # fallback would aim every escalation at some unrelated firstmate:0 window.
-  if [ "$backend_rc" = 3 ]; then
-    orca_refusal=$(fm_supervisor_orca_refusal)
-    echo "error: away-mode daemon found no supervisor endpoint on this Orca home: $orca_refusal; start it from the captain's Orca terminal, or set FM_SUPERVISOR_BACKEND=orca and FM_SUPERVISOR_TARGET=<the captain's Orca terminal handle>" >&2
-    log "startup failed: no Orca supervisor terminal ($orca_refusal)"
-    fm_lock_release "$LOCK" 2>/dev/null || true
-    rm -f "$PIDFILE" 2>/dev/null || true
-    exit 1
-  fi
+  local discovered_backend backend_source
+  discovered_backend=$(discover_supervisor_backend) || true
   backend_source="FM_SUPERVISOR_BACKEND"
   if [ -z "${FM_SUPERVISOR_BACKEND:-}" ]; then
     if [ -n "${TMUX_PANE:-}" ]; then
@@ -2116,13 +2094,13 @@ fm_super_main() {
   local BACKEND="$FM_SUPERVISOR_BACKEND"
 
   # --- refuse an unsupported supervisor backend loudly, before ever trying a
-  # tmux/herdr-specific call against it (zellij, cmux, paseo, and tern
+  # tmux/herdr-specific call against it (zellij, orca, cmux, paseo, and tern
   # have no verified composer/busy primitives wired up for this daemon yet -
   # AGENTS.md section 4 harness-verification discipline). This is the clear
   # refusal the task calls for, instead of a confusing "does not resolve to a
   # tmux pane" error.
   if ! fm_backend_list_contains "$FM_SUPERVISOR_SUPPORTED_BACKENDS" "$BACKEND"; then
-    echo "error: away-mode daemon does not support supervisor backend '$BACKEND' yet (supported: $FM_SUPERVISOR_SUPPORTED_BACKENDS); set FM_SUPERVISOR_BACKEND=tmux|herdr|rex|t3code|orca and FM_SUPERVISOR_TARGET to run firstmate's own pane under a supported backend" >&2
+    echo "error: away-mode daemon does not support supervisor backend '$BACKEND' yet (supported: $FM_SUPERVISOR_SUPPORTED_BACKENDS); set FM_SUPERVISOR_BACKEND=tmux|herdr|rex|t3code and FM_SUPERVISOR_TARGET to run firstmate's own pane under a supported backend" >&2
     log "startup failed: unsupported supervisor backend '$BACKEND' (source=$backend_source)"
     fm_lock_release "$LOCK" 2>/dev/null || true
     rm -f "$PIDFILE" 2>/dev/null || true
@@ -2134,22 +2112,11 @@ fm_super_main() {
   # the pane that launched the daemon, normally firstmate's own) >
   # $HERDR_PANE_ID (herdr, composed into "<session>:<pane-id>") >
   # $REX_SESSION/$REX_BLOCK (rex, composed into "<session-uuid>:<block-uuid>") >
-  # the live T3 thread in this home (t3code) > $ORCA_TERMINAL_HANDLE (orca) >
-  # refusal on an Orca home > firstmate:0 fallback. Exporting
+  # the live T3 thread in this home (t3code) > firstmate:0 fallback. Exporting
   # the result into FM_SUPERVISOR_TARGET makes inject_msg (which reads that env
   # var) use the discovered endpoint without an extra global.
-  local discovered target_source resolved=1 target_rc=0
-  discovered=$(discover_supervisor_target) || { target_rc=$?; resolved=0; }
-  # Backend discovery refused an Orca home above unless an override named the
-  # backend, so an override without a target still refuses here.
-  if [ "$target_rc" = 3 ]; then
-    orca_refusal=$(fm_supervisor_orca_refusal)
-    echo "error: away-mode daemon found no supervisor endpoint on this Orca home: $orca_refusal; set FM_SUPERVISOR_TARGET to the captain's endpoint" >&2
-    log "startup failed: no supervisor target on an Orca home ($orca_refusal)"
-    fm_lock_release "$LOCK" 2>/dev/null || true
-    rm -f "$PIDFILE" 2>/dev/null || true
-    exit 1
-  fi
+  local discovered target_source resolved=1
+  discovered=$(discover_supervisor_target) || resolved=0
   target_source="FM_SUPERVISOR_TARGET"
   if [ -z "${FM_SUPERVISOR_TARGET:-}" ]; then
     if [ -n "${TMUX_PANE:-}" ]; then
@@ -2167,7 +2134,7 @@ fm_super_main() {
     fi
   fi
   if [ "$resolved" != 1 ]; then
-    echo "warn: could not auto-discover supervisor pane (no FM_SUPERVISOR_TARGET, TMUX_PANE, HERDR_ENV/HERDR_PANE_ID, Rex block, single live T3 thread in this home, or Orca terminal); falling back to '$discovered' - verify this is firstmate's pane" >&2
+    echo "warn: could not auto-discover supervisor pane (no FM_SUPERVISOR_TARGET, TMUX_PANE, HERDR_ENV/HERDR_PANE_ID, Rex block, or single live T3 thread in this home); falling back to '$discovered' - verify this is firstmate's pane" >&2
   fi
   FM_SUPERVISOR_TARGET="$discovered"
   local TARGET="$FM_SUPERVISOR_TARGET"
@@ -2175,8 +2142,8 @@ fm_super_main() {
   # --- validate supervisor target at startup (a missing target is a typo) ---
   # Dispatch through bin/fm-backend.sh so each supervisor pane or T3 thread is checked by
   # its backend.
-  if ! fm_run_timed_fn "$DAEMON_PROBE_BUDGET" fm_backend_target_exists "$BACKEND" "$TARGET"; then
-    echo "error: supervisor target '$TARGET' does not resolve to a $BACKEND pane within ${DAEMON_PROBE_BUDGET}s; set FM_SUPERVISOR_TARGET" >&2
+  if ! fm_backend_target_exists "$BACKEND" "$TARGET"; then
+    echo "error: supervisor target '$TARGET' does not resolve to a $BACKEND pane; set FM_SUPERVISOR_TARGET" >&2
     log "startup failed: target '$TARGET' not found (backend=$BACKEND)"
     fm_lock_release "$LOCK" 2>/dev/null || true
     rm -f "$PIDFILE" 2>/dev/null || true

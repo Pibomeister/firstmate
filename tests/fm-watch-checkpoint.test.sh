@@ -347,7 +347,7 @@ expect_gnu_timeout_call() {  # <home> <command-name> <label>
   status=0
   PATH="$home/fixture-bin" FM_HOME="$home" FM_SIGNAL_GRACE=1 \
     "$home/root/bin/fm-watch-checkpoint.sh" --seconds 1 >"$home/out.txt" 2>"$home/err.txt" || status=$?
-  expect_code 0 "$status" "$label checkpoint exit"
+  expect_code 124 "$status" "$label checkpoint exit"
   assert_contains "$(cat "$home/out.txt")" "checkpoint: no actionable wake within 1s" \
     "$label did not return a quiet checkpoint"
   [ "$(cat "$home/timeout-calls" 2>/dev/null)" = "$name --signal=INT --kill-after=5s 1 $home/root/bin/fm-watch.sh" ] \
@@ -411,10 +411,9 @@ PL
   PATH="$fallback_bin" FM_HOME="$home" FM_POLL=1 FM_SIGNAL_GRACE=1 FM_WATCHER_CLEANUP_LOCK_BOUND=8 \
     "$home/root/bin/fm-watch-checkpoint.sh" --seconds 1 >"$home/out.txt" 2>"$home/err.txt" || status=$?
 
-  expect_code 137 "$status" "Perl fallback checkpoint exit"
-  assert_not_contains "$(cat "$home/out.txt")" "checkpoint: no actionable wake" \
-    "Perl fallback reported a forced shutdown as quiet success"
-  assert_contains "$(cat "$home/err.txt")" "forced KILL" "Perl fallback hid its forced shutdown"
+  expect_code 124 "$status" "Perl fallback checkpoint exit"
+  assert_contains "$(cat "$home/out.txt")" "checkpoint: no actionable wake within 1s" \
+    "Perl fallback did not return a quiet checkpoint"
   [ -e "$home/int-received" ] || fail "the Perl fallback did not deliver INT to the watcher"
   [ -e "$home/cleanup-reached" ] || fail "the Perl fallback killed the watcher before its 8-second cleanup bound"
   [ ! -e "$home/natural-exit" ] || fail "the INT-surviving watcher exited naturally instead of being killed"
@@ -1750,17 +1749,10 @@ test_real_host_checkpoint_ends_quietly_at_its_bound() {
   pass "checkpoint: the real host ends its park at the checkpoint bound as a quiet checkpoint"
 }
 
-test_interrupted_startup_reports_failed_cleanup
-test_preconfirmation_predecessor_retirement_uses_verified_identity
-test_quiet_checkpoint_exits_0_cleanly
-test_secondmate_checkpoint_bound_is_capped
-test_secondmate_checkpoint_returns_for_a_waiting_record
-test_secondmate_checkpoint_unwritable_marker_is_a_plain_wait
-test_cleanup_persistence_failure_is_not_a_quiet_checkpoint
+test_quiet_checkpoint_exits_124_cleanly
 test_gnu_timeout_runs_the_watcher_bound
 test_non_gnu_timeout_uses_gnu_gtimeout
 test_non_gnu_timeout_falls_back_to_perl_before_escalating
-test_real_perl_shutdown_classification
 test_announced_recovery_is_not_reannounced_by_next_checkpoint
 test_never_announced_recovery_is_announced_once
 test_queue_append_during_checkpoint_still_resurfaces

@@ -55,10 +55,11 @@
 #              `already-stopped`, because the endpoint this verb normally
 #              preserves did not survive; a pane that turns out to be there and
 #              idle is the ordinary `already-stopped`; one whose agent is back
-#              takes the ordinary interrupt-then-exit path. A tmux record
-#              without that server identity still REFUSES: this verb cannot
-#              tell a destroyed window from one on a tmux server it cannot
-#              address, and it will not claim a stop it cannot see.
+#              takes the ordinary interrupt-then-exit path. A tmux `missing`
+#              always REFUSES: a task record carries no socket identity for its
+#              endpoint, so this verb cannot tell a destroyed window from one on
+#              a tmux server it cannot address, and it will not claim a stop it
+#              cannot see.
 #              Refused on t3code before anything is sent: T3's `/mcp` tools
 #              have no session stop (bin/fm-control-lib.sh
 #              fm_control_backend_exit_supported); interrupt ends its turn.
@@ -71,14 +72,12 @@
 #              session gone with its server - the launch owner re-creates one in
 #              that worktree, in the herdr session the record names (Rex: the
 #              recorded session while it survives, otherwise the ordinary Rex
-#              placement; Orca: the recorded Orca worktree when a closed terminal
-#              is proven), and the task's record rebinds to it; that is how a task
+#              placement), and the task's record rebinds to it; that is how a task
 #              whose terminal was destroyed is reclaimed by the home that owns
 #              it, rather than being stranded with a parked approval nobody can
-#              answer. Reclaim covers HERDR and REX, a tmux record that carries its
-#              server identity (re-created on that server only), and an Orca record
-#              (re-created inside the recorded Orca worktree), each under the proof
-#              `exit` describes above.
+#              answer. Reclaim is HERDR- and REX-ONLY for the reason `exit` gives above:
+#              a tmux `missing` cannot be proven absent from a task record, so
+#              it refuses.
 #              An explicit `default` model or effort clears that
 #              axis for the replacement. With no explicit axis, a secondmate
 #              re-resolves its durable config/secondmate-harness pin (harness
@@ -139,6 +138,16 @@
 # Fail-closed boundaries:
 #   - An unverified harness, or a harness whose control mechanics are unknown,
 #     is refused rather than guessed at.
+#   - A backend that cannot deliver the harness's interrupt key is refused
+#     (Orca's terminal API has no Escape).
+#   - `exit` and `relaunch` require a backend with a recovery-grade agent-state
+#     classifier (tmux, herdr, rex, or t3code), because without one the "the
+#     agent stopped" postcondition cannot be proven. Relaunch also requires
+#     replacement support, which t3code lacks. zellij, orca, cmux, paseo, and tern are
+#     refused rather than reported as successful blind.
+#   - An ambiguous or unreadable endpoint state refuses; only a positively
+#     classified state acts (a Rex `unreadable` first goes through the absence
+#     proof `exit` describes, and refuses unless that proof settles it).
 #   - A backend that cannot deliver the harness's interrupt key is refused;
 #     Orca's raw Escape and Ctrl+U control is verified for Droid only.
 #   - `exit` and `relaunch` require a recovery-grade agent-state classifier
@@ -413,6 +422,10 @@ HARNESS=$(fm_control_harness_family "$RECORDED_HARNESS") \
   || die "task $ID records harness '${RECORDED_HARNESS:-none}', which has no verified control mechanics; fm-control refuses to guess an interrupt key or exit command"
 fm_control_harness_supported "$HARNESS" \
   || die "task $ID records harness '${RECORDED_HARNESS:-none}', which has no verified control mechanics; fm-control refuses to guess an interrupt key or exit command"
+# The recorded harness scopes the kiro-only composer rules for every composer
+# read this control action makes (fm_composer_kiro_scope in bin/fm-composer-lib.sh).
+# shellcheck disable=SC2034
+FM_COMPOSER_HARNESS=$HARNESS
 
 fm_backend_validate "$BACKEND" || exit 1
 if [ "$BACKEND" = t3code ]; then
@@ -536,6 +549,9 @@ dismiss_interrupt_hazard() {  # <key> <ere>
 # further press is sent. Its hazard surface is then closed before returning.
 send_interrupt_keys() {
   local key repeat clear arm hazard gap i=0
+  if [ "$HARNESS" = hermes ] && [ "$(fm_backend_composer_state "$BACKEND" "$T")" != empty ]; then
+    die 'Hermes double-Escape clears an unsent draft; interrupt requires a proven empty composer'
+  fi
   key=$(fm_control_interrupt_key "$HARNESS")
   repeat=$(fm_control_interrupt_repeat "$HARNESS")
   clear=$(fm_control_interrupt_clear_key "$HARNESS")
@@ -785,22 +801,13 @@ do_exit() {
       ;;
     alive) ;;
     *)
-      if ! { [ "$state" = unreadable ] && [ "$BACKEND" = orca ]; }; then
-        fm_control_absence_recheck_applies "$BACKEND" "$state" \
-          || die "task $ID's endpoint reads '$state' rather than a positively classified state; refusing to send a lifecycle command into an unattributed endpoint"
-      fi
+      fm_control_absence_recheck_applies "$BACKEND" "$state" \
+        || die "task $ID's endpoint reads '$state' rather than a positively classified state; refusing to send a lifecycle command into an unattributed endpoint"
       # `missing` on its own is not a finding about the endpoint: it conflates
-      # "destroyed" with "unreachable from this seat". An Orca `unreadable`
-      # can likewise be a handle the post-reboot runtime no longer
-      # recognizes. Route both through the control plane's one absence proof
-      # - the same one the relaunch gate uses - and report what that proof
-      # actually established, never more. Other backends keep refusing an
-      # unreadable endpoint outright.
-      if [ "$BACKEND" = orca ]; then
-        absence=$(fm_control_endpoint_absence_verdict "$BACKEND" "$T" "$WT" "$META")
-      else
-        absence=$(fm_control_endpoint_absence_verdict "$BACKEND" "$T" "$META")
-      fi
+      # "destroyed" with "unreachable from this seat". Route it through the
+      # control plane's one absence proof - the same one the relaunch gate uses
+      # - and report what that proof actually established, never more.
+      absence=$(fm_control_endpoint_absence_verdict "$BACKEND" "$T" "$META")
       case "${absence%%$'\t'*}" in
         gone)
           # Proven gone, so the agent that lived in it went with it: exit's
@@ -874,10 +881,10 @@ do_exit() {
   # The submit verdict is NOT the postcondition here: a successful exit command
   # destroys the composer the verdict is read from, so a post-exit read can
   # legitimately report anything. Only a hard transport failure aborts; the
-  # authoritative proof is the agent-state wait or Herdr absence proof below.
-  # The retried Enter still matters: a slash command can open a completion
-  # popup that swallows the first Enter on some TUIs. OpenCode 2 exits from an
-  # empty composer on a single Ctrl-C (verified on 2.0.11, 2.0.21, and 2.0.22); typing /exit also
+  # authoritative proof is the agent-state wait below. The retried Enter still
+  # matters, because a slash command opens a completion popup on some TUIs that
+  # swallows the first Enter. OpenCode 2 exits from an empty composer on a
+  # single Ctrl-C (verified on 2.0.11, 2.0.21, and 2.0.22); typing /exit also
   # exits but opens a completion popup, so the raw key plane avoids that popup
   # interacting with the typed submit verification. A Ctrl-C over leftover
   # composer text only clears it, so Ctrl-U clears the composer first and one
@@ -1143,6 +1150,27 @@ resolve_relaunch_profile() {
     TARGET_EFFORT=$PRIOR_EFFORT
   else
     TARGET_EFFORT=default
+  fi
+  if [ "$TARGET_EFFORT" = ultra ]; then
+    "$SCRIPT_DIR/fm-harness.sh" validate-native-effort "$TARGET_HARNESS" "$TARGET_MODEL" "$TARGET_EFFORT" || return 1
+  fi
+  if [ "$TARGET_HARNESS" = hermes ]; then
+    [ "$BACKEND" = tmux ] || die 'Hermes is verified on tmux only; refusing before the current worker stops'
+    [ "$TARGET_MODEL" = default ] || die 'Hermes models are profile-owned; relaunch requires the default model axis'
+    # shellcheck source=bin/fm-hermes-lib.sh
+    . "$SCRIPT_DIR/fm-hermes-lib.sh"
+    fm_hermes_managed_check || return 1
+    local hermes_bin hermes_home hermes_profile
+    hermes_bin=$(command -v hermes) || die 'hermes executable not found on PATH'
+    hermes_profile=
+    if [ "$PRIOR_HARNESS" = hermes ]; then
+      hermes_home=$(fm_meta_get "$META" hermes_home)
+      hermes_profile=$(fm_meta_get "$META" hermes_profile)
+    else
+      hermes_home=$(fm_hermes_profile_home "$hermes_bin" '') || return 1
+    fi
+    [ -n "$hermes_home" ] || die 'recorded Hermes profile home is missing; refusing an unbound replacement'
+    fm_hermes_gateway_check "$hermes_home" "$hermes_profile" || return 1
   fi
   # The launch owner applies this home's worker account pin too, but only after
   # the old agent has been stopped, so a pin that no longer resolves or is

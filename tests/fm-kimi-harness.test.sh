@@ -102,6 +102,18 @@ fake_screen() {
       rule=' ──────────────────────────────────────────────────────────────────────────────'
       printf 'export FM_TASK_ID=fake-task\nuser@host wt %% export COMPACT_ADVISER_DIS\nABLE=1\nexport FM_TASK_ID=fake-task\nuser@host wt %% export FM_TASK_ID=fake-tas\nk\nuser@host wt %% . '"'"'/tmp/fm-fake-task+0123456789abcdef0123456789abcdef0123456789ab\ncdef/launch.s1793266373.29604.14955.sh'"'"'\n%s\n  Trust this folder?\n  ↑↓ navigate · Enter select · Esc exit\n\n  %s\n\n  Load project instructions\n    Check: AGENTS.md · .agents/skills/\n\n  Trust is remembered for this folder, including future project config changes.\n  Tool approvals follow your permission settings.\n\n   ❯ Trust and continue\n     %s\n%s\n' "$rule" "$FM_FAKE_PANE_PATH" "$negative" "$rule"
       ;;
+    trust-230|trust-230-rootmcp|trust-230-kimimcp|trust-230-small|trust-230-paged)
+      # Recorded from Kimi Code CLI 2.3.0; tests/captures/kimi-code-2.3.0/README.md
+      # owns the provenance. The directory line becomes the fake pane's path.
+      case "$state" in
+        trust-230) capture=plain.pane ;;
+        trust-230-rootmcp) capture=root-mcp-json.pane ;;
+        trust-230-kimimcp) capture=kimi-code-mcp-json.pane ;;
+        trust-230-small) capture=small-terminal.pane ;;
+        trust-230-paged) capture=paged.pane ;;
+      esac
+      sed "s|{WORKDIR}|$FM_FAKE_PANE_PATH|g" "$FM_FAKE_KIMI_CAPTURES/$capture"
+      ;;
     pointer-typed)
       printf 'context: 0%% (0/256k)\n╭────────────────────────────────╮\n│ > Read the brief and follow it │\n│                                │\n╰────────────────────────────────╯\n'
       ;;
@@ -148,13 +160,7 @@ case "${1:-}" in
     done
     printf '%s\n' "$name" > "$FM_FAKE_KIMI_STATE.window"
     exit 0 ;;
-  kill-window)
-    if [ "${FM_FAKE_KILL_SURVIVES:-no}" = yes ]; then
-      : > "$FM_FAKE_KILL_ATTEMPTED"
-      exit 1
-    fi
-    : > "$FM_FAKE_KIMI_STATE.window"
-    exit 0 ;;
+  kill-window) : > "$FM_FAKE_KIMI_STATE.window"; exit 0 ;;
   has-session|new-session) exit 0 ;;
   send-keys)
     prev=
@@ -175,7 +181,7 @@ case "${1:-}" in
         *)
           printf '%s\n' "$literal" >> "$FM_FAKE_POINTER_LOG"
           case "$state" in
-            trust|trust-wrapped|trust-partial|trust-decoy|trust-230|trust-230-rootmcp|trust-230-kimimcp|trust-230-small|trust-230-paged|trust-preamble|trust-renamed|booting|banner-only|banner-first|blank-frame) ;;
+            trust|trust-wrapped|trust-partial|trust-decoy|trust-230|trust-230-rootmcp|trust-230-kimimcp|trust-230-small|trust-230-paged|booting|banner-only|banner-first|blank-frame) ;;
             *) printf 'pointer-typed\n' > "$FM_FAKE_KIMI_STATE" ;;
           esac
           ;;
@@ -206,7 +212,7 @@ case "${1:-}" in
               esac
             fi
             ;;
-          trust|trust-wrapped|trust-legacy|trust-230|trust-preamble|trust-renamed)
+          trust|trust-wrapped|trust-230)
             printf 'enter\n' >> "$FM_FAKE_KIMI_TRUST_ENTER_LOG"
             trust_enters=$(wc -l < "$FM_FAKE_KIMI_TRUST_ENTER_LOG" | tr -d ' ')
             case "${FM_FAKE_KIMI_TRUST_CLEARS:-yes}" in

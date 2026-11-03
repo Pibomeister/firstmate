@@ -1,34 +1,24 @@
-Mode: Codex Stop hook.
+Mode: Codex asynchronous Stop-hook-owned supervision.
 
-A bounded checkpoint is a tool call, not a conversation turn.
-When a checkpoint you already started is still running, poll it with `write_stdin` (empty input) until it exits, handle its wake, and do not end the turn while it runs.
-Do not start another `bin/fm-watch-checkpoint.sh` after it exits.
+This mode is selected only in a home that opts in with `config/codex-stop-park`, for the native session registered by `bin/fm-codex-stop-park.sh` on a verified Codex CLI version.
+Other sessions retain [the foreground checkpoint protocol](codex-checkpoint.md) unchanged.
 
-In a secondmate home, apply the routed-work and return-channel rules in `data/charter.md` before the next supervision wait.
-
-When this session owns supervision and no away daemon is active:
-The Stop hook re-arms a persistent watcher or allows this turn to end.
-That watcher has no doorbell, so its wakes wait for the captain's next message.
-On a home that runs the supervision host, an away record stops the re-arm: the turn ends with a loud notice that away supervision is not running until the next checkpoint.
-A secondmate home keeps one outside-turn watcher instead of another checkpoint.
+When this session owns supervision:
 1. Drain first with `bin/fm-wake-drain.sh`.
-   After handling all emitted wakes and reconciling open decisions and unread status lines, run the exact `--ack-through` command printed as `WAKE_ACK_REQUIRED`.
-   Until then the work remains durable for idempotent re-handling after interruption.
-2. Source `__FM_X_MODE_ENV__` first when Relay is active.
-3. Poll a checkpoint only while it is still running.
-   When the call returns a still-running exec session, poll it with `write_stdin` (empty input) until it exits.
-4. Ordinary wake: if a running checkpoint prints `signal:`, `stale:`, `check:`, or `heartbeat`, drain queued wakes, handle that wake, acknowledge it, then end the turn.
-   Do not start another foreground checkpoint.
-5. If the checkpoint exits 0 and prints `checkpoint: no actionable wake`, drain queued wakes anyway, process any queued user message now visible to Codex, then end the turn.
-   In a secondmate home, `checkpoint: firstmate instruction waiting in the steering inbox` names records to read, act on and acknowledge now, then stop.
-6. Send a reply as an interim message only while a checkpoint of yours is still running.
-   Once the queue is drained and no checkpoint of yours is running, the final answer may end the turn.
-7. Never use shell `&` or Codex background tasks for firstmate watcher supervision.
-8. Do not run `bin/fm-watch-arm.sh` as Codex's normal supervision command.
-   A denied direct `bin/fm-watch.sh` names that arm for every harness; on Codex, end the turn instead, and the Stop hook runs it.
-   If it is ever shelled anyway, a backgrounded, piped, or bundled anti-pattern is denied automatically by the PreToolUse seatbelt (`bin/fm-arm-pretool-check.sh`) registered in `.codex/hooks.json`.
-9. On a failure or a missing cycle, drain queued wakes, then end the turn so the Stop hook can re-arm or allow the stop.
-   Do not start a fresh foreground checkpoint to keep the turn open.
+   Handle every presented wake, open decision and unread status, then run the exact `WAKE_ACK_REQUIRED` acknowledgement command.
+2. End the turn when handling is complete.
+   The asynchronous Stop hook owns one home-scoped watcher arm outside the model; never poll or manually re-arm a healthy park.
+3. A real event arrives through Codex's native thread queue as a `Firstmate watcher wake` message.
+   Drain first, handle the event and acknowledge it; the next Stop re-arms automatically.
+   Quiet watcher polls and supervision-host cycle boundaries remain inside the hook and cost no model calls.
+   When the last supervision source finishes with a final result still queued, the hook delivers that result once more with a message saying supervision has ended; drain, handle and acknowledge it, and do not run a foreground checkpoint.
+4. New user input runs immediately while the asynchronous hook stays parked.
+   The single-flight claim and watcher's existing singleton prevent a second watcher when that turn ends.
+5. A park recovery or failure message is actionable: drain and inspect `state/.codex-park.json`.
+   One failed arm is retried automatically; a repeated failure or failed queue delivery selects the existing foreground checkpoint protocol for the rest of this session.
+   The synchronous turn-end guard reports a missing owner or failed delivery, including on the next turn after the parked process dies.
+6. Away and quiet daemons retain supervision while `state/.afk` exists.
+   On a supervision-host home, the same hook parks on that host and preserves its existing posture and wake-routing decisions.
 
-Codex cannot reason while a foreground tool call is running.
-The bounded checkpoint returns control so a checkpoint that is already running can be polled.
+The hook never consumes or acknowledges a durable wake record.
+`bin/fm-codex-stop-park.sh` owns capability selection, native queue delivery, single-flight identity and bounded failure behavior.
