@@ -1,0 +1,4 @@
+ok - portable shard union and disjointness hold
+ok - portable parallel lanes are fully hinted and packed within 5% of each other
+ok - coverage guard bounds the unmeasured share and serial packing within twenty minutes
+rc=0

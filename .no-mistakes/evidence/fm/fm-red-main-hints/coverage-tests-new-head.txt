@@ -1,0 +1,6 @@
+ok - portable shard union and disjointness hold
+ok - portable parallel lanes are fully hinted and packed within 5% of each other
+ok - coverage guard bounds the unmeasured share and serial packing within twenty minutes
+ok - serial packing accepts the exact budget and refuses one millisecond above it
+ok - a lone indivisible script over the packing budget is reported, not refused
+ok - portable serial shard lanes refuse mismatched, out-of-range, and countless names

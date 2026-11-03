@@ -1,0 +1,2 @@
+FM_TEST_COVERAGE ok total=345 parallel=26 parallel_max_ms=814249 parallel_imbalance_ms=552 parallel_unhinted=0 serial=303 serial_shards=15 serial_unhinted=0 serial_max_ms=1141247 serial_budget_ms=1200000 serial_oversized=0 herdr=16
+bin/fm-test-run.sh --check-coverage  24.42s user 42.97s system 54% cpu 2:03.52 total

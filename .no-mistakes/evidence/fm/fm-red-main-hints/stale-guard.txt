@@ -1,0 +1,5 @@
+== stale-hint repo copy (46 of 303 serial hints removed): live coverage guard ==
+tests/fm-calm-claude-mod.test.sh
+tests/fm-calm-pi-extension.test.sh
+tests/fm-calm-pi-queue-retention-live-e2e.test.sh
+guard_exit=1

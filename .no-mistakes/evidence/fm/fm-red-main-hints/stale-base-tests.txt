@@ -1,0 +1,13 @@
+== stale-hint repo copy: BASE (50638cac) coverage tests, one per run ==
+-- test_portable_shard_union_and_coverage_guard
+fm-test-run: coverage guard: 46 of 303 portable serial scripts have no measured duration hint (max 15%)
+not ok - coverage guard success marker (missing: 'FM_TEST_COVERAGE ok')
+exit=1
+-- test_portable_parallel_lanes_stay_duration_balanced
+fm-test-run: coverage guard: 46 of 303 portable serial scripts have no measured duration hint (max 15%)
+not ok - coverage guard success marker (missing: 'FM_TEST_COVERAGE ok')
+exit=1
+-- test_portable_serial_hint_coverage_is_reported_and_bounded
+fm-test-run: coverage guard: 46 of 303 portable serial scripts have no measured duration hint (max 15%)
+not ok - coverage guard success marker (missing: 'FM_TEST_COVERAGE ok')
+exit=1

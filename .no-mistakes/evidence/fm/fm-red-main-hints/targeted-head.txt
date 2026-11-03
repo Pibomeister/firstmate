@@ -1,0 +1,7 @@
+ok - portable shard union and disjointness hold
+ok - portable parallel lanes are fully hinted and packed within 5% of each other
+ok - coverage guard bounds the unmeasured share and serial packing within twenty minutes
+ok - serial packing accepts the exact budget and refuses one millisecond above it
+ok - a lone indivisible script over the packing budget is reported, not refused
+bash tests/.fmtr-targeted.sh  6.71s user 11.92s system 24% cpu 1:17.07 total
+rc=0
