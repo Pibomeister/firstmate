@@ -21,6 +21,7 @@ The worker then follows `branch_sync.next_action` from structured axi status: us
 Custody recovery settles branch ownership, not content: the worker must replace the obsolete work from the correct pre-invalidation base rather than building on top of the recovered-but-obsolete head, keeping the obsolete run's own pipeline-fix commits out of what gets validated and shipped.
 Apart from that single supported abort, do not hand-edit, commit, restart, or start a second validation run while the obsolete run still owns the branch.
 Once ownership is settled, validate exactly once against that final head so no obsolete or intermediate head is ever treated as authoritative.
+Outside that supersession sequence, `bin/fm-pr-resync.sh <task-id> <worktree> <branch>` is the one owner for a branch stale or diverged against the pipeline's published head; steer the worker to it and never relay hand-run archive, reset, or sync steps.
 
 An ask-user finding returns as `needs-decision`; firstmate loads `ask-user-authority` and either decides or escalates per that skill.
 Send the same worker one exact decision naming the decision key, step, action, affected finding IDs, instructions where needed, and exact response command, passing `--resolve-key` so the worker's open decision record closes at answer time.

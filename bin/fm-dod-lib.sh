@@ -265,12 +265,12 @@ fm_base_branch_valid() {  # <base> <mode> <forge> <caller>
 }
 
 # Print the value of every "Base branch: <name>" line that directly follows the
-# base-variant Setup sentence bin/fm-brief.sh writes; return 1 when there is
-# none. Any other "Base branch:" line is prose and ignored.
+# base-variant or PR-continuation Setup sentence bin/fm-brief.sh writes;
+# return 1 when there is none. Any other "Base branch:" line is prose and ignored.
 fm_brief_base_branches() {  # <brief>
   awk '
     setup && sub(/^Base branch: /, "") { print; n++ }
-    { setup = /^You are in a disposable git worktree of .*, at a detached HEAD on a clean copy of its base branch\.$/ }
+    { setup = /^You are in a disposable git worktree of .*, at a detached HEAD on a clean copy of its base branch\.$/ || /^You are in a disposable git worktree of .*, already on branch .*, which contains its verified published pull-request head: equal to it, or ahead of it by the unpublished local commits the launch reported\.$/ }
     END { exit !n }
   ' "$1"
 }
@@ -434,7 +434,7 @@ EOF
 # answered rather than waited on. parked_gate_notice in bin/fm-watch.sh is the
 # supervisor half, which rings a worker whose declared wait outlived its run.
 fm_nm_driving_block() {  # <forge|no-ci> <task-id>
-  local pr_return_line='' drive_block script_dir home_q adapter_q task_q
+  local pr_return_line='' drive_block script_dir home_q adapter_q task_q resync_q branch_q
   if [ "$1" != gerrit ] && [ "$1" != no-ci ]; then
     pr_return_line="Only a drive call's return reports the green PR: \`no-mistakes axi status\` shows progress but never reports \`checks-passed\` while the ci step is still monitoring the PR for merge, so never wait on a status poll for the next gate or outcome.
 "
@@ -443,6 +443,10 @@ fm_nm_driving_block() {  # <forge|no-ci> <task-id>
   printf -v home_q '%q' "${FM_HOME:-${FM_ROOT_OVERRIDE:-$script_dir/..}}"
   printf -v adapter_q '%q' "$script_dir/fm-procevent-no-mistakes.sh"
   printf -v task_q '%q' "$2"
+  printf -v resync_q '%q' "$script_dir/fm-pr-resync.sh"
+  # The ship branch is the caller's `branch` local (fm_dod_block /
+  # fm_dod_manual_pr_block). This function's signature stays <forge|no-ci> <task-id>.
+  printf -v branch_q '%q' "${branch:-}"
   drive_block="Start the run or answer a gate with \`--wait 1s\` so the call returns promptly; handle any gate or outcome it already returned.
 When the run is still working, arm its completion listener with \`FM_HOME=$home_q $adapter_q arm $task_q\`.
 Only after the listener confirms it is armed, declare one paused wait naming the run and the next gate or outcome, then end your turn.
@@ -469,6 +473,7 @@ The \`--intent\` string you pass must be self-sufficient: that string plus the c
 When the captain's intent refers to a report, decision, or PR ("do items 1, 2, 3, and 7 of the report"), write the substance of the referenced items into \`--intent\` in the captain's terms, not only the pointer; that substance is the captain's ask by reference, while Firstmate's build instructions and your own decisions still stay out.
 This replaces the no-mistakes skill's advice to enrich \`--intent\` with decisions and tradeoffs; that advice does not apply to Firstmate-dispatched work.
 Do not hand-edit, commit, or fix findings yourself while a run is active - the pipeline applies every fix.
+When \`branch_sync\` reports this branch diverged from or rewritten against the pipeline's published head, never archive, reset, or sync it by hand: run \`$resync_q $task_q "\$(git rev-parse --show-toplevel)" $branch_q\`; on exit 3 follow its monitoring-only lines, and on any other nonzero exit report a blocker with its output.
 
 $drive_block
 That declared wait is true only while the run is still working: a run parked at a gate is waiting on you, not you on it.
