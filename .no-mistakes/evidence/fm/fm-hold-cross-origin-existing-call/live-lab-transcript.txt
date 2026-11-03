@@ -1,0 +1,116 @@
+## Setup: the audit holds the operator-setup call
+$ fm-captain-hold.sh hold agent-kit-unattended-operator-setup --title Operator setup call --reason captain must choose the unattended operator setup --repo agent-kit --origin agent-kit-unattended-audit
+agent-kit-unattended-operator-setup
+[exit 0]
+
+## S1 resume report lists it as an ordinary entry (the original failure)
+$ fm-captain-hold.sh complete ak-resume-council-20261102 agent-kit-unattended-operator-setup
+fm-captain-hold: captain-held task agent-kit-unattended-operator-setup was held for origin agent-kit-unattended-audit, not ak-resume-council-20261102; list an existing call from another origin with --cross-origin agent-kit-unattended-operator-setup, hold a task for ak-resume-council-20261102, or list the right one
+[exit 1]
+
+## S2 resume report lists it as --cross-origin
+$ fm-captain-hold.sh complete ak-resume-council-20261102 --cross-origin agent-kit-unattended-operator-setup
+complete: ak-resume-council-20261102 captain-call inventory reviewed (agent-kit-unattended-operator-setup) [existing calls held for other origins: agent-kit-unattended-operator-setup]
+[exit 0]
+
+--- resume meta tail
+decisions_reviewed=1
+decision_keys=agent-kit-unattended-operator-setup
+cross_origin_keys=agent-kit-unattended-operator-setup
+--- call origin unchanged:
+  body: "Captain hold set: 2026-11-03T02:22:06Z\nCaptain hold origin: agent-kit-unattended-audit\n\nOrigin: agent-kit-unattended-audit"
+--- backlog count of operator-setup rows:
+1
+$ fm-captain-hold.sh verify ak-resume-council-20261102
+verified: ak-resume-council-20261102 captain-call inventory
+[exit 0]
+
+## S3 adversarial refusals
+$ fm-captain-hold.sh complete agent-kit-third-review --cross-origin agent-kit-no-such-call
+fm-captain-hold: no captain call agent-kit-no-such-call exists in this home's configured backlog (data directory /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.ivFp2c/data); --cross-origin lists only an existing call held for another origin
+[exit 1]
+
+$ fm-captain-hold.sh hold ak-own-call --title Own --reason captain must decide --repo agent-kit --origin agent-kit-third-review
+ak-own-call
+[exit 0]
+
+$ fm-captain-hold.sh complete agent-kit-third-review --cross-origin ak-own-call
+fm-captain-hold: captain call ak-own-call is held for agent-kit-third-review itself; list it without --cross-origin
+[exit 1]
+
+$ fm-captain-hold.sh complete agent-kit-third-review --cross-origin agent-kit-third-review
+fm-captain-hold: origin agent-kit-third-review cannot be its own captain-call inventory entry; hold a separate captain task for the call and list that task
+[exit 1]
+
+$ fm-captain-hold.sh hold ak-noorigin --title No origin --reason captain must decide --repo agent-kit
+ak-noorigin
+[exit 0]
+
+$ fm-captain-hold.sh complete agent-kit-third-review --cross-origin ak-noorigin
+fm-captain-hold: captain call ak-noorigin records no origin; list it without --cross-origin
+[exit 1]
+
+$ fm-captain-hold.sh hold ak-closed --title Closed --reason captain must decide --repo agent-kit --origin agent-kit-unattended-audit
+ak-closed
+[exit 0]
+
+$ fm-captain-hold.sh answer ak-closed --decision-file /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.ivFp2c/d1
+answered: ak-closed
+[exit 0]
+
+$ fm-captain-hold.sh complete agent-kit-third-review --cross-origin ak-closed
+fm-captain-hold: captain call ak-closed is closed or no longer held for the captain; --cross-origin inventories only a call that is still open
+[exit 1]
+
+--- third-review meta has no attestation:
+0
+## S4 call moves to another origin, then is answered; resume gate stays green
+$ fm-captain-hold.sh hold agent-kit-unattended-operator-setup --reason captain must choose the unattended operator setup --origin agent-kit-third-review
+agent-kit-unattended-operator-setup
+[exit 0]
+
+$ fm-captain-hold.sh verify ak-resume-council-20261102
+verified: ak-resume-council-20261102 captain-call inventory
+[exit 0]
+
+$ fm-captain-hold.sh complete ak-resume-council-20261102 --cross-origin agent-kit-unattended-operator-setup
+complete: ak-resume-council-20261102 captain-call inventory reviewed (agent-kit-unattended-operator-setup) [existing calls held for other origins: agent-kit-unattended-operator-setup]
+[exit 0]
+
+  body: "Captain hold set: 2026-11-03T02:22:06Z\nCaptain hold origin: agent-kit-third-review\n\nOrigin: agent-kit-unattended-audit"
+$ fm-captain-hold.sh answer agent-kit-unattended-operator-setup --decision-file /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.ivFp2c/d2
+answered: agent-kit-unattended-operator-setup
+[exit 0]
+
+$ fm-captain-hold.sh verify ak-resume-council-20261102
+verified: ak-resume-council-20261102 captain-call inventory
+[exit 0]
+
+## S5 ordinary entry whose call moved is repaired via --cross-origin
+$ fm-captain-hold.sh hold ak-resume-own --title Resume own --reason captain must decide --repo agent-kit --origin ak-resume-council-20261102
+ak-resume-own
+[exit 0]
+
+$ fm-captain-hold.sh complete ak-resume-council-20261102 ak-resume-own
+complete: ak-resume-council-20261102 captain-call inventory reviewed (agent-kit-unattended-operator-setup,ak-resume-own) [existing calls held for other origins: agent-kit-unattended-operator-setup]
+[exit 0]
+
+$ fm-captain-hold.sh hold ak-resume-own --reason captain must decide --origin agent-kit-unattended-audit
+ak-resume-own
+[exit 0]
+
+$ fm-captain-hold.sh verify ak-resume-council-20261102
+fm-captain-hold: captain-held task ak-resume-own was held for origin agent-kit-unattended-audit, not ak-resume-council-20261102; list an existing call from another origin with --cross-origin ak-resume-own, hold a task for ak-resume-council-20261102, or list the right one
+[exit 1]
+
+$ fm-captain-hold.sh complete ak-resume-council-20261102 --cross-origin ak-resume-own
+complete: ak-resume-council-20261102 captain-call inventory reviewed (agent-kit-unattended-operator-setup,ak-resume-own) [existing calls held for other origins: agent-kit-unattended-operator-setup ak-resume-own]
+[exit 0]
+
+$ fm-captain-hold.sh verify ak-resume-council-20261102
+verified: ak-resume-council-20261102 captain-call inventory
+[exit 0]
+
+decisions_reviewed=1
+decision_keys=agent-kit-unattended-operator-setup,ak-resume-own
+cross_origin_keys=agent-kit-unattended-operator-setup,ak-resume-own
