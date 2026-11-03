@@ -1067,7 +1067,7 @@ test_list_scheduled_non_lane_selections_use_serial_weights() {
 }
 
 test_portable_shard_union_and_coverage_guard() {
-  local s1 s2 proven serial herdr all_count union_count overlap out lane
+  local s1 s2 proven serial herdr all_count union_count overlap lane
   s1=$("$RUNNER" --list --lane portable-parallel-1)
   s2=$("$RUNNER" --list --lane portable-parallel-2)
   proven=$("$RUNNER" --list --proven-isolated)
@@ -1086,8 +1086,6 @@ test_portable_shard_union_and_coverage_guard() {
     && fail "portable lanes must not include real-herdr-gated smoke"
   printf '%s\n' "$herdr" | grep -Fq 'tests/fm-backend-herdr-smoke.test.sh' \
     || fail "herdr family must include smoke"
-  out=$("$RUNNER" --check-coverage)
-  assert_contains "$out" "FM_TEST_COVERAGE ok" "coverage guard success marker"
   all_count=$("$RUNNER" --list --all | wc -l | tr -d ' ')
   union_count=$(printf '%s\n' "$s1" "$s2" "$serial" "$herdr" | LC_ALL=C sort -u | wc -l | tr -d ' ')
   [ "$union_count" = "$all_count" ] \
@@ -1102,7 +1100,7 @@ test_portable_shard_union_and_coverage_guard() {
     [ "$("$RUNNER" --list --lane "$lane")" = "$("$RUNNER" --list-scheduled --lane "$lane")" ] \
       || fail "$lane membership must be stored longest-measured-first"
   done
-  pass "portable shard union, disjointness, and coverage guard hold"
+  pass "portable shard union and disjointness hold"
 }
 
 # The two parallel lanes are only "duration-balanced" while every member has a
@@ -1110,8 +1108,13 @@ test_portable_shard_union_and_coverage_guard() {
 # unchecked until one lane grew past its CI job cap and was cancelled on every
 # run, so assert them through the guard's own reported numbers.
 test_portable_parallel_lanes_stay_duration_balanced() {
-  local out max imbalance unhinted
-  out=$("$RUNNER" --check-coverage)
+  local tmp repo out max imbalance unhinted
+  tmp=$(fm_test_tmproot fm-test-run-parallel-balance)
+  repo="$tmp/repo"
+  seed_serial_packing_inventory "$repo"
+  seed_serial_packing_fixture "$repo" 1
+  out=$(bash "$repo/bin/fm-test-run.sh" --check-coverage) \
+    || fail "coverage guard failed with controlled serial hints"
   unhinted=$(printf '%s\n' "$out" | sed -n 's/.*parallel_unhinted=\([0-9]*\).*/\1/p')
   max=$(printf '%s\n' "$out" | sed -n 's/.*parallel_max_ms=\([0-9]*\).*/\1/p')
   imbalance=$(printf '%s\n' "$out" | sed -n 's/.*parallel_imbalance_ms=\([0-9]*\).*/\1/p')
@@ -1174,27 +1177,23 @@ test_portable_serial_shards_partition_the_serial_lane() {
 }
 
 test_portable_serial_hint_coverage_is_reported_and_bounded() {
-  local out serial unhinted max budget
-  # Shards are packed from measured duration hints, so an unmeasured script is
-  # placed on a guess. Enough of them and the partition still looks balanced by
-  # script count while one shard carries far more real work than another and
-  # reaches its CI job cap. The coverage guard therefore reports the unmeasured
-  # share and refuses past its bound; assert that contract is live rather than
-  # trusting the hint table to stay fresh on its own.
-  out=$("$RUNNER" --check-coverage)
+  local tmp repo out serial unhinted max budget rc
+  tmp=$(fm_test_tmproot fm-test-run-hint-coverage)
+  repo="$tmp/repo"
+  seed_serial_packing_inventory "$repo"
+  # Exactly three of twenty serial members are unhinted: the 15% boundary.
+  # Keep live inventory and timing maintenance in CI's coverage-guard job.
+  seed_serial_packing_fixture "$repo" 1 tests/fm-watch-triage.test.sh 1000 \
+    tests/serial-1.test.sh - tests/serial-2.test.sh - tests/serial-3.test.sh -
+  out=$(bash "$repo/bin/fm-test-run.sh" --check-coverage) \
+    || fail "coverage guard must accept exactly 15% unhinted"
   assert_contains "$out" "serial_unhinted=" "coverage guard must report the unmeasured serial share"
   serial=$(printf '%s\n' "$out" | sed -n 's/.*[^_]serial=\([0-9][0-9]*\).*/\1/p')
   unhinted=$(printf '%s\n' "$out" | sed -n 's/.*serial_unhinted=\([0-9][0-9]*\).*/\1/p')
   [ -n "$serial" ] && [ -n "$unhinted" ] \
     || fail "coverage summary must carry numeric serial counts: $out"
-  [ "$serial" -gt 0 ] || fail "portable serial lane must be non-empty, got $serial"
-  [ "$unhinted" -le "$serial" ] \
-    || fail "unmeasured count $unhinted exceeds the serial lane size $serial"
-  # 15% is the guard's own bound; staying well inside it is what keeps the
-  # balance evidence-based. Refresh from a green run's timing artifacts when
-  # this trips (docs/fm-test-portable-shards.md).
-  [ "$((unhinted * 100))" -le "$((serial * 15))" ] \
-    || fail "$unhinted of $serial portable serial scripts lack a measured hint; refresh them"
+  [ "$serial" -eq 20 ] && [ "$unhinted" -eq 3 ] \
+    || fail "coverage summary must report three unhinted of twenty serial members: $out"
   # A complete partition can still overflow a CI job. Assert the runner's
   # modeled packing target through its executable interface, not source hints.
   max=$(printf '%s\n' "$out" | sed -n 's/.*serial_max_ms=\([0-9][0-9]*\).*/\1/p')
@@ -1204,11 +1203,19 @@ test_portable_serial_hint_coverage_is_reported_and_bounded() {
   [ "$budget" -eq 1200000 ] || fail "packing must leave ten minutes of the normal CI tier"
   [ "$max" -gt 0 ] && [ "$max" -le "$budget" ] \
     || fail "largest serial shard packs ${max}ms above the ${budget}ms target"
+  seed_serial_packing_fixture "$repo" 1 tests/fm-watch-triage.test.sh 1000 \
+    tests/serial-1.test.sh - tests/serial-2.test.sh - tests/serial-3.test.sh - tests/serial-4.test.sh -
+  out=$(bash "$repo/bin/fm-test-run.sh" --check-coverage 2>&1) && rc=0 || rc=$?
+  expect_code 1 "$rc" "coverage guard must refuse more than 15% unhinted"
+  assert_contains "$out" "4 of 20 portable serial scripts have no measured duration hint" \
+    "unhinted refusal must report the measured share"
+  assert_contains "$out" "tests/serial-4.test.sh" "unhinted refusal must name missing measurements"
+  assert_not_contains "$out" "FM_TEST_COVERAGE ok" "unhinted refusal must not report success"
   pass "coverage guard bounds the unmeasured share and serial packing within twenty minutes"
 }
 
 # Fixture runner whose serial hints are all zero except the "<path> <ms>"
-# pairs given, packed into <shards> shards. Every other packing input stays real.
+# pairs given, packed into <shards> shards. A '-' omits a hint.
 seed_serial_packing_fixture() {  # <repo> <shards> <path> <ms> [<path> <ms>...]
   local repo=$1 shards=$2
   shift 2
@@ -1224,8 +1231,10 @@ text = runner.read_text()
 text = re.sub(r"(?m)^PORTABLE_SERIAL_SHARDS=[0-9]+$", f"PORTABLE_SERIAL_SHARDS={shards}", text)
 text = re.sub(r"(?m)^PORTABLE_SERIAL_DEFAULT_WEIGHT_MS=[0-9]+$", "PORTABLE_SERIAL_DEFAULT_WEIGHT_MS=0", text)
 def table(m):
-    rows = [line.split()[0] for line in m.group(2).splitlines() if line]
-    body = "".join(f"{row} {weights.get(row, 0)}\n" for row in rows)
+    rows = sorted(p.relative_to(runner.parent.parent).as_posix()
+                  for p in (runner.parent.parent / "tests").glob("*.test.sh"))
+    body = "".join(f"{row} {weights.get(row, 0)}\n" for row in rows
+                   if weights.get(row) != "-")
     return m.group(1) + body + m.group(3)
 text, n = re.subn(r"(portable_serial_weight_hints\(\) \{\n  cat <<'EOF'\n)(.*?)(^EOF\n)",
                   table, text, count=1, flags=re.S | re.M)
@@ -1235,12 +1244,19 @@ PY
 }
 
 seed_serial_packing_inventory() {  # <repo>
-  local script
+  local script i
   mkdir -p "$1/bin" "$1/tests"
-  # Preserve the real inventory and packing policy without executing suites.
+  # Keep the real parallel membership and policy, with twenty controlled
+  # serial members and one Herdr member. No suite is executed here.
   while IFS= read -r script; do
     printf '#!/usr/bin/env bash\nexit 0\n' >"$1/$script"
-  done < <("$RUNNER" --list --all)
+  done < <("$RUNNER" --list --proven-isolated)
+  for script in fm-watch-triage fm-supervision-host fm-backend-herdr-smoke; do
+    printf '#!/usr/bin/env bash\nexit 0\n' >"$1/tests/$script.test.sh"
+  done
+  for ((i=1; i<=18; i++)); do
+    printf '#!/usr/bin/env bash\nexit 0\n' >"$1/tests/serial-$i.test.sh"
+  done
 }
 
 test_portable_serial_packing_budget_boundary() {
