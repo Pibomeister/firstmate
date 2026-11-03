@@ -34,6 +34,8 @@ printf "FM_TEST_COMPLETE\n"
   assert_contains "$out" "ok - good" "the helper hid the suite's ok line"
   assert_contains "$out" "1 planned, 1 ok, complete, exit 0" \
     "the helper did not confirm a matching plan"
+  assert_contains "$out" "FM_TEST_BEGIN " "the helper did not timestamp the suite start"
+  assert_contains "$out" "FM_TEST_END " "the helper did not timestamp the suite end"
   assert_not_contains "$out" "::error::" \
     "a passing suite must not print ::error::: $out"
   pass "a complete matching suite passes"
@@ -155,6 +157,41 @@ test_failure_prints_error_annotation() {
   pass "a completeness failure prints an error annotation"
 }
 
+test_hung_suite_is_bounded_and_replays_partial_output() {
+  local suite out rc=0
+  suite="$TMP_ROOT/hung.sh"
+  write_suite "$suite" '
+printf "1..1\n"
+printf "diagnostic before stall\n"
+sleep 3
+printf "ok - too late\nFM_TEST_COMPLETE\n"
+'
+  out=$(FM_TEST_TAP_TIMEOUT_SECS=1 run_verify "$suite") || rc=$?
+  [ "$rc" -ne 0 ] || fail "a suite exceeding its deadline passed: $out"
+  assert_contains "$out" "diagnostic before stall" "timeout hid the suite partial output"
+  assert_contains "$out" "exited 124" "timeout did not report status 124: $out"
+  assert_contains "$out" "timeout_secs=1" "start did not name the deadline: $out"
+  assert_contains "$out" "FM_TEST_END " "timeout did not timestamp its end: $out"
+  assert_not_contains "$out" "ok - too late" "timed-out suite continued to completion: $out"
+  pass "a hung suite fails at its deadline with partial output and timestamps"
+}
+
+test_invalid_deadline_refuses_before_running_suite() {
+  local suite out value rc
+  suite="$TMP_ROOT/invalid-bound.sh"
+  write_suite "$suite" 'printf "suite ran\n"'
+  for value in 0 invalid; do
+    rc=0
+    out=$(FM_TEST_TAP_TIMEOUT_SECS=$value run_verify "$suite") || rc=$?
+    [ "$rc" -ne 0 ] || fail "invalid deadline $value passed: $out"
+    assert_contains "$out" "must be a positive whole number" "invalid deadline was not explained: $out"
+    assert_not_contains "$out" "suite ran" "invalid deadline ran the suite: $out"
+  done
+  pass "invalid deadlines refuse before running the suite"
+}
+
+test_hung_suite_is_bounded_and_replays_partial_output
+test_invalid_deadline_refuses_before_running_suite
 test_correct_suite_passes
 test_early_exit_zero_fails
 test_not_ok_fails_even_with_exit_zero

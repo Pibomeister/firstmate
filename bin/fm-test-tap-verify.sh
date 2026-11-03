@@ -29,9 +29,15 @@
 #   fm-test-tap-verify.sh TEST_SCRIPT
 #   fm-test-tap-verify.sh -h|--help
 #
-# The suite's stdout and stderr are replayed unchanged, then a one-line
-# summary is printed. Non-zero exit means the completeness check failed.
+# Each suite has a hard process-group deadline, FM_TEST_TAP_TIMEOUT_SECS
+# (default 600, a positive whole number). Timestamped FM_TEST_BEGIN/END lines
+# identify the active consumer even while its output is buffered. The suite's
+# stdout and stderr, including partial output on timeout, are replayed unchanged,
+# then a one-line summary is printed. Non-zero exit means verification failed.
 set -eu
+
+# shellcheck source=bin/fm-timeout-lib.sh
+. "$(dirname "${BASH_SOURCE[0]}")/fm-timeout-lib.sh"
 
 usage() {
   cat <<'EOF'
@@ -41,6 +47,9 @@ Usage: fm-test-tap-verify.sh TEST_SCRIPT
 Run TEST_SCRIPT under the Bash running this helper and require a TAP
 plan 1..N, N `ok - ` lines, zero `not ok` lines, FM_TEST_COMPLETE, and
 exit status 0.
+
+FM_TEST_TAP_TIMEOUT_SECS sets the hard suite deadline (default 600 seconds).
+Timestamped start/end records name the suite and its exit status.
 EOF
 }
 
@@ -69,14 +78,24 @@ fi
 
 SCRIPT=$1
 [ -f "$SCRIPT" ] || fail_verify "not a file: $SCRIPT"
+TIMEOUT_SECS=${FM_TEST_TAP_TIMEOUT_SECS:-600}
+case "$TIMEOUT_SECS" in
+  ''|*[!0-9]*) fail_verify 'FM_TEST_TAP_TIMEOUT_SECS must be a positive whole number' ;;
+esac
+[ "$TIMEOUT_SECS" -gt 0 ] || fail_verify 'FM_TEST_TAP_TIMEOUT_SECS must be a positive whole number'
 
 OUT=$(mktemp "${TMPDIR:-/tmp}/fm-test-tap-verify.XXXXXX") || exit 1
 trap 'rm -f "$OUT"' EXIT
 
+STARTED=$(date +%s)
+printf 'FM_TEST_BEGIN %s %s timeout_secs=%s\n' \
+  "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$SCRIPT" "$TIMEOUT_SECS"
 set +e
-"$BASH" "$SCRIPT" >"$OUT" 2>&1
+fm_run_timed "$TIMEOUT_SECS" "$BASH" "$SCRIPT" >"$OUT" 2>&1
 STATUS=$?
 set -e
+printf 'FM_TEST_END %s %s exit=%s duration_secs=%s\n' \
+  "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$SCRIPT" "$STATUS" "$(( $(date +%s) - STARTED ))"
 
 cat "$OUT"
 
