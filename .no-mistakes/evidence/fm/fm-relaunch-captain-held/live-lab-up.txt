@@ -1,0 +1,15 @@
+lab: /private/tmp/fmlab.heldrl (tear down with: bin/fm-live-lab.sh down /private/tmp/fmlab.heldrl)
+tree: 3237472836ccda025d28014f32c247d9b5f90017 from /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M6FK4XM4W1JBVT8MW3423XQD
+spawned labc9a999eb9c6f-worker harness=claude kind=ship mode=local-only yolo=on window=firstmate:fm-labc9a999eb9c6f-worker worktree=/private/tmp/fmlab.heldrl/treehouse/.treehouse/notes-a499d4/1/notes
+gate: /private/tmp/fmlab.heldrl/home/data/labc9a999eb9c6f-worker/gate (touch, then message the worker to resume)
+primary: claude --setting-sources project,local --model sonnet --effort medium --permission-mode auto
+ok primary: claude pid 58528 in /private/tmp/fmlab.heldrl/home
+ok probe: the primary answered LABREADY-c9a999eb9c6f
+ok trust: /private/tmp/fmlab.heldrl/home is trusted in the Claude store
+ok mirror: verified writer, check passed, captain=1 main=1
+ok host: supervision host pid 1643
+ok watcher: live watcher with a fresh beacon
+ok worker: labc9a999eb9c6f-worker parked on /private/tmp/fmlab.heldrl/home/data/labc9a999eb9c6f-worker/gate
+ok treehouse: ~/.treehouse unchanged
+ready: /private/tmp/fmlab.heldrl
+exit=0

@@ -1,0 +1,11 @@
+ok - fm-spawn --relaunch: tracked opencode wiring is retired as on main
+ok - fm-control removes the dialog file after exit and after relaunch
+ok - fm-control exit removes the dialog file before it releases the control lock
+ok - relaunch re-reads the backlog item instead of blindly re-running the transition
+not ok - a relaunch of a held In-flight item must replace its worker
+warning: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-control-relaunch.ZkHXLX/held-relaunch-13579/home/data/rl43/launch-brief.md records no ship branch; defaulting to legacy branch fm/rl43
+warning: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-control-relaunch.ZkHXLX/held-relaunch-13579/home/data/rl43/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+error: this home's backlog item rl43 is not dispatchable in state in_flight yes no; refusing before creating its endpoint or local copy
+error: the replacement agent for rl43 could not be launched on claude
+error: rl43's agent was stopped but the replacement did not launch; no agent is running, and its work plus the recorded progress note are preserved at /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-control-relaunch.ZkHXLX/held-relaunch-13579/wt: expected exit 0, got 1
+exit=1

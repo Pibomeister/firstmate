@@ -1,0 +1,111 @@
+## 1. Captain hold on the In-flight item (publication and merge authority)
+$ bin/fm-captain-hold.sh hold labc9a999eb9c6f-worker --reason 'captain owns publication and merge'
+labc9a999eb9c6f-worker
+exit=0
+  state: in_flight
+  held: yes
+  hold_reason: "fm-hold-v1:Y2FwdGFpbiBvd25zIHB1YmxpY2F0aW9uIGFuZCBtZXJnZQ=="
+  hold_kind: captain
+  hold_until: "-"
+
+## 2. Worker before relaunch
+window=firstmate:fm-labc9a999eb9c6f-worker
+worktree=/private/tmp/fmlab.heldrl/treehouse/.treehouse/notes-a499d4/1/notes
+harness=claude
+spawn_gen=s1793672638.82528.31997
+lab pid=69563 cmd=zsh
+fm-labc9a999eb9c6f-worker pid=14837 cmd=2.1.317
+main pid=58528 cmd=2.1.317
+
+## 3. Relaunch the held task's worker
+$ bin/fm-control.sh labc9a999eb9c6f-worker relaunch --note 'replace the worker; hold stays for captain'
+NOTICE: wake rows held by the live supervision branch - it presents and acknowledges them; do not drain them from here.
+relaunched labc9a999eb9c6f-worker harness=claude from=claude model=sonnet effort=low backend=tmux endpoint=firstmate:fm-labc9a999eb9c6f-worker worktree=/private/tmp/fmlab.heldrl/treehouse/.treehouse/notes-a499d4/1/notes
+exit=0
+
+## 4. After relaunch
+  state: in_flight
+  held: yes
+  hold_reason: "fm-hold-v1:Y2FwdGFpbiBvd25zIHB1YmxpY2F0aW9uIGFuZCBtZXJnZQ=="
+  hold_kind: captain
+  hold_until: "-"
+window=firstmate:fm-labc9a999eb9c6f-worker
+worktree=/private/tmp/fmlab.heldrl/treehouse/.treehouse/notes-a499d4/1/notes
+harness=claude
+spawn_gen=s1793672796.71795.28206
+lab pid=69563 cmd=zsh
+fm-labc9a999eb9c6f-worker pid=14837 cmd=2.1.317
+main pid=58528 cmd=2.1.317
+
+## 5. Worker pane after relaunch (children of pane shell 14837)
+15801 treehouse
+--- pane tail ---
+ ▐▛███▛█   Claude Code v2.1.317
+▝▜██████▀  Sonnet 5.5 with low effort · Claude Ultra
+ ▝▝   ▝▝   /private/tmp/fmlab.heldrl/treehouse/.treehouse/notes-a499d4/1/notes
+❯ : Firstmate operational input waiting: read '/private/tmp/fmlab.heldrl/home/state/operational-inbox/1793672799-431a16fd8aa8210a.msg' and handle its contents as Firstmate operational input.
+✻ Meandering…
+  #1 : Firstmate operational input waiting: read '/private/tmp/fmlab.heldrl/home/state/operational-inbox/1793672799-431a16fd8aa8210a.msg' and handle its contents as Firstmate operational input.                       [-]
+  ┃
+                                                                                                                         tmux detected · scroll with PgUp/PgDn · or add 'set -g mouse on' to ~/.tmux.conf for wheel scroll
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle)
+
+## 6. Kill the worker's Claude process (dead worker, pane shell stays)
+$ kill 21478
+worker process 21478 gone
+lab pid=69563 cmd=zsh
+fm-labc9a999eb9c6f-worker pid=14837 cmd=zsh
+main pid=58528 cmd=2.1.317
+
+## 7. Relaunch the dead worker of the held task
+$ bin/fm-control.sh labc9a999eb9c6f-worker relaunch --note 'worker died; replace it, hold stays'
+relaunched labc9a999eb9c6f-worker harness=claude from=claude model=sonnet effort=low backend=tmux endpoint=firstmate:fm-labc9a999eb9c6f-worker worktree=/private/tmp/fmlab.heldrl/treehouse/.treehouse/notes-a499d4/1/notes
+exit=0
+
+## 8. After dead-worker relaunch
+  state: in_flight
+  held: yes
+  hold_reason: "fm-hold-v1:Y2FwdGFpbiBvd25zIHB1YmxpY2F0aW9uIGFuZCBtZXJnZQ=="
+  hold_kind: captain
+  hold_until: "-"
+worktree=/private/tmp/fmlab.heldrl/treehouse/.treehouse/notes-a499d4/1/notes
+spawn_gen=s1793672842.45639.12058
+lab pid=69563 cmd=zsh
+fm-labc9a999eb9c6f-worker pid=14837 cmd=2.1.317
+main pid=58528 cmd=2.1.317
+15801 treehouse
+
+## 9. Adversarial: held AND dependency-blocked In-flight item must still refuse, before the worker is touched
+worker claude pid before: 80812
+  state: in_flight
+  blocked: yes
+  blocked_by: lab-dep-x
+  held: yes
+  deps: "blocked-by:lab-dep-x"
+$ bin/fm-control.sh labc9a999eb9c6f-worker relaunch --note 'should refuse'
+error: this home's backlog item labc9a999eb9c6f-worker cannot take a relaunched worker in state in_flight yes yes; refusing to relaunch, and the running agent was not touched
+exit=1
+worker claude pid 80812 still alive
+task record unchanged
+  state: in_flight
+  blocked: yes
+  held: yes
+  hold_kind: captain
+
+## 10. Adversarial: a fresh dispatch of a held Queued item still refuses (hold blocks new dispatch)
+  state: queued
+  held: yes
+  hold_kind: captain
+$ bin/fm-spawn.sh labc9a999eb9c6f-fresh projects/notes --mode local-only --yolo on --harness claude
+error: this home's backlog item labc9a999eb9c6f-fresh is not dispatchable in state queued yes no; refusing before creating its endpoint or local copy
+exit=
+no task record created
+lab
+fm-labc9a999eb9c6f-worker
+main
+  state: queued
+  held: yes
+(note: section 10 exit= is blank because the evidence shell is zsh; the refusal line and the absent task record are the result)

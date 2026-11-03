@@ -1,0 +1,5 @@
+stopped: lab tmux server and lab processes
+removed: task temp /tmp/fm-labc9a999eb9c6f-worker+4330888c2a627beb95a33dadbc4df5b018689206841fc911b2e7f83968405a60
+removed: task temp /tmp/fm-labc9a999eb9c6f-worker
+removed: 3 Claude project entries under /private/tmp/fmlab.heldrl
+removed: /private/tmp/fmlab.heldrl

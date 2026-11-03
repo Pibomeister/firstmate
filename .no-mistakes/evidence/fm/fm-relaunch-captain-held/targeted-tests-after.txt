@@ -1,0 +1,7 @@
+ok - fm-spawn --relaunch: tracked opencode wiring is retired as on main
+ok - fm-control removes the dialog file after exit and after relaunch
+ok - fm-control exit removes the dialog file before it releases the control lock
+ok - relaunch re-reads the backlog item instead of blindly re-running the transition
+ok - relaunch replaces the worker of a held In-flight item and leaves the hold in force
+ok - fm-spawn --relaunch replaces a stopped worker of a held In-flight item without touching the hold
+ok - relaunch refuses a held Queued item before the running agent is touched
