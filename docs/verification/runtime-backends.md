@@ -3927,3 +3927,30 @@ The full run's native Ahoy cases depend on the model's own choices and failed wi
 
 A real `bin/fm-spawn.sh --scout --harness opencode --model opencode-go/deepseek-v4.1-flash` in a private tmux server recorded `opencode_version=1.18.20` (and `1.18.31` on the second release), launched the worker as `opencode --model opencode-go/deepseek-v4.1-flash --prompt <brief>` with no `--standalone`, and the worker answered its brief.
 `bin/fm-control.sh <task> exit` then resolved the typed `/exit` from that recorded major and returned both panes to the shell.
+
+## Assistant watchdog rendered signals
+
+Verified on 2026-11-01 on macOS (Darwin 25.6.0, arm64) with Claude Code 2.1.316 and tmux 3.6a.
+The behavior contract is owned by [the watchdog page](../watchdog.md).
+The guard launches the installed Claude Code TUI in a new folder on a private tmux socket, with a disposable `CLAUDE_CONFIG_DIR`, a fake API key, and an unreachable API URL, and never submits a prompt; the watchdog runs with no judge models, and its model, forge, and notifier CLIs are logging fakes.
+
+```sh
+bash bin/fm-test-run.sh tests/fm-watchdog-live.test.sh
+ok - claude 2.1.316 (Claude Code): the folder-trust picker is left alone and reported
+ok - claude 2.1.316 (Claude Code): a real merge draft is seen and never submitted, with no model call
+ok - claude 2.1.316 (Claude Code): a real clean draft is proven whole, and the guard clears it unsent
+```
+
+Claude Code 2.1.316 renders its folder-trust picker with unnumbered options (`❯ No, exit`, `Yes, I trust this folder`) above `Enter to confirm · Esc to cancel`.
+The watchdog reads it as a permission dialog, sends no key, and reports it as a waiting gap.
+After the guard accepts the trust picker itself, a second startup picker about browser tools may appear with the footer `Enter to confirm · Esc to keep browser tools off`; the watchdog reads it as an unproven question dialog, sends no key, and reports a gap.
+The tmux composer verdict reads `empty` on the idle composer and `pending` once `merge #12` is typed.
+Across repeated act-mode passes the watchdog records exactly one refusal for that draft per Enter window, presses nothing, and the draft stays unsent.
+The guard runs passes until the pane settles because Claude can repaint just after a draft lands, which changes the pane signature for one pass.
+A clean draft in the same pane passes the draft-boundary proof on the watchdog's own window split, and the guard clears it by hand with no watchdog pass. Accepting the trust picker changes only the disposable config.
+No running-turn signal, Orca or Herdr endpoint, or restart is exercised by this guard.
+
+The M4 captain was also validated live on Orca on 2026-11-01, 14:58-15:00Z, on code from before commit 4093b145; firstmate confirmed this run, and no guard in this repository repeats it.
+The watchdog ran a real Orca restart, the new session's pickup was verified, that session re-armed the away daemon, and act mode was then restored to off.
+Act mode stays off on every other machine until rollout.
+A repeat live test is owed, because later fixes change the restart paths.

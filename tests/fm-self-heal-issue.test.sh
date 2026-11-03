@@ -315,7 +315,7 @@ test_fm_home_defaults_to_checkout() {
   checkout="$TMP_ROOT/default-home"
   prep_home "$checkout"
   mkdir -p "$checkout/bin"
-  cp "$ROOT"/bin/fm-self-heal-issue.sh "$ROOT"/bin/fm-role-lib.sh "$ROOT"/bin/fm-bash-compat-lib.sh "$checkout/bin/"
+  cp "$ROOT"/bin/fm-self-heal-issue.sh "$ROOT"/bin/fm-role-lib.sh "$ROOT"/bin/fm-secret-lib.sh "$ROOT"/bin/fm-bash-compat-lib.sh "$checkout/bin/"
   add_project "$checkout" casco 'git@github.com:Pibomeister/casco.git'
   out=$(env -u FM_HOME -u FM_ROOT_OVERRIDE PATH="$checkout/fakebin:$PATH" \
     FM_FAKE_SELF_HEAL_GH_LOG="$checkout/gh.log" FM_FAKE_SELF_HEAL_LABELS="$checkout/labels.txt" \
