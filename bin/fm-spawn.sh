@@ -2432,21 +2432,29 @@ resolve_orca_launch_env_source() {
   fi
 }
 
-# Admit the backend the task will actually use: secondmate support, API
-# runtime checks, Orca launch-env, and Rex locality. An agy task may leave a
-# configured orca, t3code, or rex backend for herdr/tmux, so those backends
-# defer this until after that decision rather than aborting (or starting a
-# Rex server) for a task that will not run there.
-spawn_backend_admit() {  # <backend>
-  local backend=$1
+# Secondmate support is about the configured backend itself, not about whether
+# an agy task will later move to herdr/tmux. Refuse the unsupported backends
+# at backend selection so a --secondmate spawn never proceeds into home
+# mutation or a later "no firstmate home" error on cmux, paseo, orca, or tern.
+spawn_backend_secondmate_guard() {  # <backend>
   if [ "$KIND" = secondmate ]; then
-    case "$backend" in
+    case "$1" in
       orca|cmux|paseo|tern)
-        echo "error: backend=$backend does not support --secondmate spawns yet" >&2
+        echo "error: backend=$1 does not support --secondmate spawns yet" >&2
         return 1
         ;;
     esac
   fi
+}
+
+# Admit the backend the task will actually use: secondmate support, API
+# runtime checks, Orca launch-env, and Rex locality. An agy task may leave a
+# configured orca, t3code, or rex backend for herdr/tmux, so runtime and
+# locality checks defer until after that decision rather than aborting (or
+# starting a Rex server) for a task that will not run there.
+spawn_backend_admit() {  # <backend>
+  local backend=$1
+  spawn_backend_secondmate_guard "$backend" || return 1
   fm_backend_runtime_check "$backend" || return 1
   if [ "$backend" = orca ]; then
     resolve_orca_launch_env_source || return 1
@@ -2465,9 +2473,11 @@ if [ "$RELAUNCH" -eq 0 ]; then
   fm_backend_validate_spawn "$BACKEND" || exit 1
   fm_backend_source "$BACKEND" || exit 1
   # The harness is not resolved yet, and an agy task may leave this backend
-  # for herdr/tmux. Herdr and tmux are already verified for agy, so they
-  # admit here. Every other backend defers admission until after that
-  # decision (below the agy gate), still before any terminal exists.
+  # for herdr/tmux. Secondmate support still refuses here. Herdr and tmux
+  # are already verified for agy, so they admit here. Every other backend
+  # defers runtime and locality checks until after that decision (below the
+  # agy gate), still before any terminal exists.
+  spawn_backend_secondmate_guard "$BACKEND" || exit 1
   if [ "$BACKEND" = tmux ] || [ "$BACKEND" = herdr ]; then
     spawn_backend_admit "$BACKEND" || exit 1
   else
