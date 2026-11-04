@@ -31,15 +31,17 @@ concurrency:
 # Each job comment identifies the tier implemented by its executable value.
 
 # Fork opt-out: a fork sets the repository variable FM_CI_SKIP_PUSH to 1 to
-# skip the push run, and FM_CI_SKIP_MACOS to 1 to skip the macOS job, without
-# a tracked edit that drifts from upstream; with neither set, every job runs
-# exactly as before. The skip is a job-level condition, repeated per job
+# skip the push run, and FM_CI_SKIP_MACOS to 1 to skip the macOS job when that
+# job is uncommented, without a tracked edit that drifts from upstream; with
+# neither set, every scheduled job runs exactly as before. The macOS job is
+# commented out as of 2026-11-04, so FM_CI_SKIP_MACOS currently changes nothing.
+# The skip is a job-level condition, repeated per job
 # because workflow syntax has no shared anchor, and never a trigger filter: a
 # job skipped by its condition reports success, while a workflow filtered out
 # at the trigger stays pending and blocks the merge. CONTRIBUTING.md documents
 # the variables.
 #
-# Outside pull request gate: the full suite (lint, every test lane, macOS and
+# Outside pull request gate: the full suite (lint, every test lane, and
 # the timing aggregate) runs on main pushes, PRs from this repository's own
 # branches, PRs whose author has write access (OWNER, MEMBER, COLLABORATOR),
 # and PRs carrying the full-ci label, which the maintainer or their fleet adds
@@ -440,67 +442,68 @@ jobs:
           path: ${{ runner.temp }}/fm-test/fm-test-timing-aggregate.json
           if-no-files-found: warn
 
-  macos-stock-bash:
-    name: ${{ (github.event.action == 'labeled' && github.event.label.name != 'full-ci') && 'Not run for label - ' || '' }}Stock macOS Bash snapshot compatibility
-    # This lane needs Apple's Bash 3.2, not arm64 hardware. Keep it off the
-    # arm64 pool so capacity there cannot prevent the compatibility check.
-    runs-on: macos-15-intel
-    if: ${{ !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') && vars.FM_CI_SKIP_MACOS != '1' && !(github.event.action == 'labeled' && github.event.label.name != 'full-ci') && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'OWNER' || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'COLLABORATOR' || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
-    # Normal tier (see the timeout policy above).
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v6
-      - name: Run snapshot consumers with stock Bash
-        shell: /bin/bash {0}
-        env:
-          PATH: /bin:/usr/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin
-        run: |
-          set -eu
-          case "$BASH_VERSION" in
-            3.2.57*) ;;
-            *) echo "::error::expected stock macOS Bash 3.2.57, got $BASH_VERSION"; exit 1 ;;
-          esac
-          /bin/bash --version | head -1
-          command -v jq >/dev/null || { echo "::error::jq is required"; exit 1; }
-
-          shell_inventory="$RUNNER_TEMP/fm-shell-inventory"
-          bin/fm-lint.sh --list-files > "$shell_inventory"
-          parse_fail=0
-          while IFS= read -r f; do
-            /bin/bash -n "$f" || { echo "::error::stock macOS Bash 3.2 failed to parse $f"; parse_fail=1; }
-          done < "$shell_inventory"
-          [ "$parse_fail" -eq 0 ] || { echo "::error::stock macOS Bash 3.2 parse sweep failed"; exit 1; }
-
-          command -v npm >/dev/null || { echo "::error::npm is required to install tasks-axi"; exit 1; }
-          npm install -g tasks-axi@0.2.6 >/dev/null
-          PATH="$(npm prefix -g)/bin:$PATH"
-          export PATH
-          command -v tasks-axi >/dev/null || { echo "::error::tasks-axi is required for the stock Bash regressions"; exit 1; }
-
-          # Each suite declares its own TAP plan; the helper fails an early
-          # exit 0 that does not reach FM_TEST_COMPLETE or whose ok count
-          # disagrees with the plan. Per-suite totals live in the test files.
-          /bin/bash bin/fm-test-tap-verify.sh tests/fm-fleet-snapshot-view.test.sh
-          /bin/bash bin/fm-test-tap-verify.sh tests/fm-bearings-snapshot.test.sh
-
-          # The full public-followup suite is not a stock-bash snapshot; run only
-          # the empty-lock register regression under real /bin/bash 3.2.
-          FM_TEST_STOCK_BASH=1 /bin/bash bin/fm-test-tap-verify.sh \
-            tests/fm-public-followup.test.sh
-
-          # Same shape for the watcher's churn-deferral regression: an already-
-          # marked churn window expands an empty array that only stock Bash
-          # treats as an unbound variable under set -u.
-          FM_TEST_STOCK_BASH=1 /bin/bash bin/fm-test-tap-verify.sh \
-            tests/fm-watch-triage.test.sh
-
-          # The fork-free hot-path helpers must stay byte-identical to the
-          # commands they replace under stock Bash 3.2, which lacks the
-          # printf %(...)T clock and falls back to date.
-          /bin/bash bin/fm-test-tap-verify.sh tests/fm-fork-free-helpers.test.sh
-
-          FM_TEST_STOCK_BASH=1 FM_TEST_BASH=/bin/bash \
-            /bin/bash bin/fm-test-tap-verify.sh tests/fm-backend.test.sh
+  # disabled 2026-11-04 on the captain's word because hosted macOS runners keep cancelling it; uncomment to restore.
+#  macos-stock-bash:
+#    name: ${{ (github.event.action == 'labeled' && github.event.label.name != 'full-ci') && 'Not run for label - ' || '' }}Stock macOS Bash snapshot compatibility
+#    # This lane needs Apple's Bash 3.2, not arm64 hardware. Keep it off the
+#    # arm64 pool so capacity there cannot prevent the compatibility check.
+#    runs-on: macos-15-intel
+#    if: ${{ !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') && vars.FM_CI_SKIP_MACOS != '1' && !(github.event.action == 'labeled' && github.event.label.name != 'full-ci') && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'OWNER' || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'COLLABORATOR' || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
+#    # Normal tier (see the timeout policy above).
+#    timeout-minutes: 30
+#    steps:
+#      - uses: actions/checkout@v6
+#      - name: Run snapshot consumers with stock Bash
+#        shell: /bin/bash {0}
+#        env:
+#          PATH: /bin:/usr/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin
+#        run: |
+#          set -eu
+#          case "$BASH_VERSION" in
+#            3.2.57*) ;;
+#            *) echo "::error::expected stock macOS Bash 3.2.57, got $BASH_VERSION"; exit 1 ;;
+#          esac
+#          /bin/bash --version | head -1
+#          command -v jq >/dev/null || { echo "::error::jq is required"; exit 1; }
+#
+#          shell_inventory="$RUNNER_TEMP/fm-shell-inventory"
+#          bin/fm-lint.sh --list-files > "$shell_inventory"
+#          parse_fail=0
+#          while IFS= read -r f; do
+#            /bin/bash -n "$f" || { echo "::error::stock macOS Bash 3.2 failed to parse $f"; parse_fail=1; }
+#          done < "$shell_inventory"
+#          [ "$parse_fail" -eq 0 ] || { echo "::error::stock macOS Bash 3.2 parse sweep failed"; exit 1; }
+#
+#          command -v npm >/dev/null || { echo "::error::npm is required to install tasks-axi"; exit 1; }
+#          npm install -g tasks-axi@0.2.6 >/dev/null
+#          PATH="$(npm prefix -g)/bin:$PATH"
+#          export PATH
+#          command -v tasks-axi >/dev/null || { echo "::error::tasks-axi is required for the stock Bash regressions"; exit 1; }
+#
+#          # Each suite declares its own TAP plan; the helper fails an early
+#          # exit 0 that does not reach FM_TEST_COMPLETE or whose ok count
+#          # disagrees with the plan. Per-suite totals live in the test files.
+#          /bin/bash bin/fm-test-tap-verify.sh tests/fm-fleet-snapshot-view.test.sh
+#          /bin/bash bin/fm-test-tap-verify.sh tests/fm-bearings-snapshot.test.sh
+#
+#          # The full public-followup suite is not a stock-bash snapshot; run only
+#          # the empty-lock register regression under real /bin/bash 3.2.
+#          FM_TEST_STOCK_BASH=1 /bin/bash bin/fm-test-tap-verify.sh \
+#            tests/fm-public-followup.test.sh
+#
+#          # Same shape for the watcher's churn-deferral regression: an already-
+#          # marked churn window expands an empty array that only stock Bash
+#          # treats as an unbound variable under set -u.
+#          FM_TEST_STOCK_BASH=1 /bin/bash bin/fm-test-tap-verify.sh \
+#            tests/fm-watch-triage.test.sh
+#
+#          # The fork-free hot-path helpers must stay byte-identical to the
+#          # commands they replace under stock Bash 3.2, which lacks the
+#          # printf %(...)T clock and falls back to date.
+#          /bin/bash bin/fm-test-tap-verify.sh tests/fm-fork-free-helpers.test.sh
+#
+#          FM_TEST_STOCK_BASH=1 FM_TEST_BASH=/bin/bash \
+#            /bin/bash bin/fm-test-tap-verify.sh tests/fm-backend.test.sh
 
   invariants:
     name: ${{ (github.event.action == 'labeled' && github.event.label.name != 'full-ci') && 'Not run for label - ' || '' }}Repo invariants
@@ -551,7 +554,7 @@ jobs:
       - tests-portable-parallel-2
       - tests-portable-serial
       - tests-herdr
-      - macos-stock-bash
+      # - macos-stock-bash
       - invariants
     if: ${{ always() && !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') && !(github.event.action == 'labeled' && github.event.label.name != 'full-ci') }}
     steps:

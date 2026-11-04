@@ -18,7 +18,8 @@ Task chronology and delivery evidence stay outside this record.
 ## Environment
 
 Recorded 2026-09-01 on Darwin 25.5.0 (arm64) with GNU bash 5.3.9, tasks-axi 0.2.5, jq 1.8.1, and ShellCheck 0.11.0 (the version `bin/fm-lint.sh` pins).
-The stock macOS compatibility lane additionally runs the focused first-registration regression with `/bin/bash` 3.2.57 and a real `tasks-axi` installation.
+The stock macOS compatibility lane in [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) is commented out as of 2026-11-04.
+Uncommenting it restores the focused first-registration regression with `/bin/bash` 3.2.57 and a real `tasks-axi` installation.
 The relay is a fakebin `curl` in every case, so no public post is ever made; `tasks-axi` and `jq` are the real tools, because stubbing the obligation state machine would verify nothing.
 The remote-route cases fake only the SSH binary at the `FM_SSH_BIN` process seam and then run the real tracked `fm-remote-entrypoint.sh` against a local checkout standing in for the remote one, so the work that has to reach the remote home actually runs there; no host and no network are involved.
 The failed-result regression was refreshed separately on 2026-09-22 in the same environment with tasks-axi 0.2.6.
@@ -127,7 +128,8 @@ It delivers a `report-ready` promised-final, asserts the registration is retaine
 `retire --reason` records its private receipt before removal and is the only close; replayed registration cannot reopen that retired loop.
 The concurrency and interrupted-bind cases verify that one delivered source cannot fork and that retry converges on the same destination obligation.
 A pre-change on-disk record (no `state=`, no `request_context_b64`) is an open loop and un-rechainable rather than a crash.
-The stock macOS Bash lane in [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) sets `FM_TEST_STOCK_BASH=1` and runs `tests/fm-public-followup.test.sh` through `bin/fm-test-tap-verify.sh` under real `/bin/bash` 3.2, proving the first `register` path is safe when its registry lock list starts empty.
+The stock macOS Bash lane in [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) is commented out as of 2026-11-04.
+Uncommenting it restores the lane that sets `FM_TEST_STOCK_BASH=1` and runs `tests/fm-public-followup.test.sh` through `bin/fm-test-tap-verify.sh` under real `/bin/bash` 3.2, proving the first `register` path is safe when its registry lock list starts empty.
 
 The eight remote-route cases are the proof of guarantee 5.
 A remote secondmate home exists only on its own machine, so its registration records no local path, and every close that must first clear the bound legacy Relay link had nothing local to act on.

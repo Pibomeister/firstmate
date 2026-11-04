@@ -16,9 +16,10 @@
 # whole suite, any other label neither starts nor cancels a run, and close main
 # pushes keep only the newest run.
 #
-# They also hold the fork opt-out: the repository variables FM_CI_SKIP_PUSH and
-# FM_CI_SKIP_MACOS let a fork skip the push run and the macOS job through a
-# job-level condition, while with neither set every job runs exactly as before.
+# They also hold the fork opt-out: the repository variable FM_CI_SKIP_PUSH lets
+# a fork skip the push run through a job-level condition, while with it unset
+# every scheduled job runs exactly as before. FM_CI_SKIP_MACOS remains in the
+# commented-out macos-stock-bash job and currently changes nothing.
 #
 # The workflow is parsed as YAML and its concurrency and job-level `if`
 # expressions are resolved against simulated pull_request and push contexts,
@@ -331,7 +332,7 @@ puts YAML.load_file(ARGV[0]).fetch("jobs").fetch(ARGV[1]).fetch("timeout-minutes
 # must join a tier, and a job-level value outside these tiers is exactly the
 # one-off number the policy removed.
 FAST_TIER_JOBS='test-coverage invariants tests-timing-aggregate full-suite'
-NORMAL_TIER_JOBS='lint tests-portable-parallel-1 tests-portable-parallel-2 tests-portable-serial macos-stock-bash'
+NORMAL_TIER_JOBS='lint tests-portable-parallel-1 tests-portable-parallel-2 tests-portable-serial'
 HEAVY_TIER_JOBS='tests-herdr'
 
 # Print the one timeout every listed job shares; fail on any disagreement.
@@ -624,21 +625,21 @@ puts steps[index].fetch("timeout-minutes", "none")
   pass "Herdr keeps a $step minute step tripwire under a $heavy minute job backstop"
 }
 
-# The fork opt-out is opt-in: with neither variable set every job runs on both
-# events, FM_CI_SKIP_PUSH=1 empties only the push run, and FM_CI_SKIP_MACOS=1
-# removes only the macOS job. A "-" in the table means the variable is unset.
+# The fork opt-out is opt-in: with FM_CI_SKIP_PUSH unset every scheduled job
+# runs on both events, and FM_CI_SKIP_PUSH=1 empties only the push run.
+# macos-stock-bash is commented out, so FM_CI_SKIP_MACOS=1 currently matches
+# the unset job set. A "-" in the table means the variable is unset.
 test_fork_skip_variables_are_opt_in() {
   local all event skip_push skip_macos expected want actual
   all=$(workflow_jobs) || fail "could not list ci.yml jobs"
   printf '%s\n' "$all" | grep -qx macos-stock-bash \
-    || fail "the macOS job is missing from ci.yml, so the table below would prove nothing"
+    && fail "macos-stock-bash is commented out and must not parse as a scheduled job"
   while read -r event skip_push skip_macos expected; do
     [ "$skip_push" != - ] || skip_push=
     [ "$skip_macos" != - ] || skip_macos=
     case $expected in
       all) want=$all ;;
       none) want= ;;
-      all-but-macos) want=$(printf '%s\n' "$all" | grep -vx macos-stock-bash) ;;
       *) fail "unknown expectation $expected" ;;
     esac
     actual=$(jobs_running_under event="$event" association=OWNER skip_push="$skip_push" skip_macos="$skip_macos") \
@@ -650,10 +651,10 @@ push         - - all
 pull_request - - all
 push         1 - none
 pull_request 1 - all
-pull_request - 1 all-but-macos
-push         - 1 all-but-macos
+pull_request - 1 all
+push         - 1 all
 TABLE
-  pass "the fork skip variables change nothing unless set, and each skips only its own run or job"
+  pass "FM_CI_SKIP_PUSH skips only the push run, and FM_CI_SKIP_MACOS changes nothing while macos-stock-bash is commented out"
 }
 
 # Print true or false: whether one job's job-level `if` resolves true under

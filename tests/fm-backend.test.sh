@@ -1398,8 +1398,9 @@ test_spawn_autodetect_nesting_resolves_tmux_silently() {
   pass "fm-spawn.sh: auto-detect resolves nested tmux-in-herdr to tmux and stays silent end to end"
 }
 
-# CI's stock macOS Bash lane sets FM_TEST_STOCK_BASH=1 to run just the adapter
-# precheck pair. Adding another stock-bash case means adding it to this list,
+# CI's stock macOS Bash lane, commented out until restored, sets
+# FM_TEST_STOCK_BASH=1 to run just the adapter precheck pair. Adding another
+# stock-bash case means adding it to this list,
 # not to ci.yml.
 if [ -n "${FM_TEST_STOCK_BASH:-}" ]; then
   fm_test_run \
