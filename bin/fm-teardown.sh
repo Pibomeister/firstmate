@@ -54,11 +54,15 @@
 # its base branch instead of the default branch.
 # Squash merges collapse the branch's commits, so per-commit patch ids against main
 # no longer match, and a pipeline rebase can leave the local worktree diverged from
-# the PR head. A diverged copy is not treated as landed: path-set coverage, git
+# the PR head. Path-set coverage alone is not proof of landing: git
 # cherry, and merge-tree containment each fail to prove content landed without also
 # accepting unlanded edits to the same paths. Teardown still accepts a merged PR
 # whose head contains the current local work (ancestor or whitespace-exact patch ids),
-# or a clean content-in-default tree match. Anything else refuses.
+# or a clean content-in-default tree match. A recorded merged PR also permits a
+# completely clean copy when every path touched by every unpushed commit has
+# identical blobs and modes at HEAD and the freshly fetched PR target branch.
+# That proof resolves the remote by the PR URL's repository identity, not its
+# name, and prints the remote, branch, and fetched revision. Anything else refuses.
 # The PR itself is resolved from the task's recorded pr= when present, or - when
 # no pr= was ever recorded (e.g. a yolo-authorized merge on a repo with no PR CI,
 # where the usual "checks green" fm-pr-check.sh trigger never fires) - by looking
@@ -384,6 +388,7 @@ for _teardown_source in \
   fm-classify-lib.sh \
   fm-gate-refuse-lib.sh \
   fm-pr-lib.sh \
+  fm-role-lib.sh \
   fm-public-followup-lib.sh \
   fm-x-lib.sh \
   fm-env-lib.sh \
@@ -420,6 +425,8 @@ unset _teardown_source
 . "$SCRIPT_DIR/fm-gate-refuse-lib.sh"
 # shellcheck source=bin/fm-pr-lib.sh
 . "$SCRIPT_DIR/fm-pr-lib.sh"
+# shellcheck source=bin/fm-role-lib.sh
+. "$SCRIPT_DIR/fm-role-lib.sh"
 # shellcheck source=bin/fm-public-followup-lib.sh
 . "$SCRIPT_DIR/fm-public-followup-lib.sh"
 # shellcheck source=bin/fm-secondmate-registry-lib.sh
@@ -1783,15 +1790,88 @@ content_in_default() {
   [ "$merged_tree" = "$default_tree" ]
 }
 
+# A recorded merged PR can prove a stale local copy landed even when rebasing
+# changed the PR head. Compare every path from every unpushed commit, including
+# deleted paths, rename sources, and all merge parents. NUL delimiters and literal
+# pathspecs preserve unusual filenames. Git's tree-to-tree diff compares object
+# identities and modes without worktree filters, text conversion, or external diff.
+content_matches_recorded_pr_target() {
+  local dirty unpushed view state base remote remotes url identity wanted
+  local ref target current paths commit path matched=0
+  [ -n "$PR_URL" ] || return 1
+  fm_pr_url_parse "$PR_URL" || return 1
+  wanted=$(fm_role_scope_norm "$FM_PR_HOST/$FM_PR_PATH")
+  case "$FM_PR_PROVIDER" in
+    github)
+      view=$(cd "$WT" && gh pr view "$PR_URL" --json state,baseRefName \
+        -q '.state + "\t" + .baseRefName' 2>/dev/null) || return 1
+      state=${view%%$'\t'*}
+      [ "$state" != "$view" ] && [ "$state" = MERGED ] || return 1
+      base=${view#*$'\t'}
+      ;;
+    forgejo)
+      fm_pr_forgejo_read_record "$FM_PR_HOST" "$FM_PR_PATH" "$FM_PR_NUMBER" || return 1
+      [ "$FM_PR_RECORD_MERGED" = true ] || return 1
+      base=$FM_PR_RECORD_BASE
+      ;;
+    *) return 1 ;;
+  esac
+  git check-ref-format "refs/heads/$base" >/dev/null 2>&1 || return 1
+  dirty=$(git -C "$WT" status --porcelain --untracked-files=all 2>/dev/null) || return 1
+  [ -z "$dirty" ] || return 1
+  current=$(git -C "$WT" rev-parse --verify HEAD 2>/dev/null) || return 1
+  unpushed=$(git -C "$WT" rev-list HEAD --not --remotes -- 2>/dev/null) || return 1
+  [ -n "$unpushed" ] || return 1
+  remotes=$(git -C "$WT" remote 2>/dev/null) || return 1
+  while IFS= read -r remote; do
+    [ -n "$remote" ] || continue
+    url=$(git -C "$WT" remote get-url "$remote" 2>/dev/null) || continue
+    identity=$(fm_role_remote_identity "$url" "$WT") || continue
+    [ "$identity" = "$wanted" ] || continue
+    matched=1
+    break
+  done <<< "$remotes"
+  [ "$matched" = 1 ] || return 1
+  ref="refs/remotes/$remote/$base"
+  git -C "$WT" fetch --quiet --no-tags "$remote" "+refs/heads/$base:$ref" >/dev/null 2>&1 || return 1
+  target=$(git -C "$WT" rev-parse --verify "$ref^{commit}" 2>/dev/null) || return 1
+  paths=$(mktemp "${TMPDIR:-/tmp}/fm-teardown-paths.XXXXXX") || return 1
+  while IFS= read -r commit; do
+    if ! git -C "$WT" diff-tree --root -m -r --no-commit-id --no-renames --name-only -z \
+        "$commit" -- >> "$paths" 2>/dev/null; then
+      rm -f "$paths"
+      return 1
+    fi
+  done <<< "$unpushed"
+  matched=1
+  while IFS= read -r -d '' path; do
+    if ! GIT_LITERAL_PATHSPECS=1 git -C "$WT" diff --quiet --no-ext-diff --no-textconv \
+        --ignore-submodules=none "$current" "$target" -- "$path"; then
+      matched=0
+      break
+    fi
+  done < "$paths"
+  rm -f "$paths"
+  [ "$matched" = 1 ] || return 1
+  printf 'Landed proof: recorded merged PR %s; blob equality for every unpushed touched path at %s/%s (%s).\n' \
+    "$PR_URL" "$remote" "$base" "$target"
+}
+
 # Has the worktree's committed work actually LANDED, though its commits are not
 # reachable from any remote-tracking branch? True when a merged PR proves the
 # current local work is contained in the PR head, OR the content is already in the
-# default branch (fallback, which also covers the no-PR and gh-error paths). False
+# default branch (fallback, which also covers the no-PR and gh-error paths), or
+# matches the recorded merged PR's target on all unpushed touched paths. False
 # when neither proof establishes that the work landed.
 work_is_landed() {
   local branch=$1
-  pr_is_merged "$branch" && return 0
-  content_in_default
+  if pr_is_merged "$branch"; then
+    printf 'Landed proof: merged PR %s contains the local work in its head.\n' "$PR_URL"
+    return 0
+  fi
+  content_matches_recorded_pr_target && return 0
+  content_in_default || return 1
+  printf 'Landed proof: content already present in the fetched base/default branch.\n'
 }
 
 # The completion links this teardown already holds locally. A scout's

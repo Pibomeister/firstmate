@@ -1179,10 +1179,11 @@ fm_pr_forgejo_login() {  # <host>
 # types is accepted; anything else returns 1 for an honest unknown.
 fm_pr_forgejo_read_record() {  # <host> <path> <number>
   local host=$1 path=$2 number=$3 login json fields line
-  local total=0 named=0 state='' merged='' head=''
+  local total=0 named=0 state='' merged='' head='' base=''
   FM_PR_RECORD_STATE=
   FM_PR_RECORD_MERGED=
   FM_PR_RECORD_HEAD=
+  FM_PR_RECORD_BASE=
   command -v jq >/dev/null 2>&1 || return 1
   case "$number" in
     ''|*[!0-9]*) return 1 ;;
@@ -1199,7 +1200,8 @@ fm_pr_forgejo_read_record() {  # <host> <path> <number>
       then
         "state=" + .state,
         "merged=" + (.merged | tostring),
-        "head=" + .head.sha
+        "head=" + .head.sha,
+        "base=" + (if (.base.ref | type) == "string" then .base.ref else "" end)
       else
         error("invalid pull request record")
       end' 2>/dev/null); then
@@ -1211,13 +1213,14 @@ fm_pr_forgejo_read_record() {  # <host> <path> <number>
       state=*) state=${line#state=} ;;
       merged=*) merged=${line#merged=} ;;
       head=*) head=${line#head=} ;;
+      base=*) base=${line#base=} ;;
       *) continue ;;
     esac
     named=$((named + 1))
   done <<FIELDS
 $fields
 FIELDS
-  if [ "$named" -ne 3 ] || [ "$total" -ne 3 ] || [ -z "$state" ] \
+  if [ "$named" -ne 4 ] || [ "$total" -ne 4 ] || [ -z "$state" ] \
     || { [ "$merged" != true ] && [ "$merged" != false ]; }; then
     return 1
   fi
@@ -1231,6 +1234,9 @@ FIELDS
   # Consumed by bin/fm-teardown.sh pr_is_merged.
   # shellcheck disable=SC2034
   FM_PR_RECORD_HEAD=$head
+  # Optional for older records; teardown's target-branch proof requires it.
+  # shellcheck disable=SC2034
+  FM_PR_RECORD_BASE=$base
 }
 
 # gerrit-axi resolves its server from the current directory's origin remote
