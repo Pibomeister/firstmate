@@ -1,0 +1,46 @@
+Setup: real clone of github.com/Pibomeister/quota-axi; remotes 'fork' (that repo) + 'no-mistakes' (local gate); no origin; local main=963cb9d (pre-merge). Each copy carries one unpushed commit setting 6 kimi files; PR #8 squash-merged as 52ec95d on fork/main. gh and git are real; only no-mistakes/treehouse are no-op stubs.
+
+===== [BEFORE fix (cd6c5dee)] fm-teardown.sh kimi-baseline
+unpushed: 56e7f66 fix(kimi): local stale commit (same); status: 
+REFUSED: worktree /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.HUZfsI/wt-kimi-baseline has work not on any remote and not landed.
+unpushed commits:
+56e7f66 fix(kimi): local stale commit (same)
+Push the branch, land its PR, or get the captain's explicit OK to discard, then --force.
+exit=0
+task record present after: yes
+
+===== [AFTER fix (28d05102) identical content] fm-teardown.sh kimi-landed
+unpushed: 172989f fix(kimi): local stale commit (same); status: 
+Landed proof: recorded merged PR https://github.com/Pibomeister/quota-axi/pull/8; blob equality for every unpushed touched path at fork/main (52ec95d38bcaaa4528088d42b94a632ce31b5b32).
+quota-axi: skipped: no origin remote
+teardown kimi-landed complete (window fm-lab:fm-kimi-landed, worktree /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.HUZfsI/wt-kimi-landed)
+exit=0
+task record present after: no
+
+===== [AFTER fix: src/types.ts has unlanded edit] fm-teardown.sh kimi-differ
+unpushed: af7567b fix(kimi): local stale commit (differ); status: 
+REFUSED: worktree /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.HUZfsI/wt-kimi-differ has work not on any remote and not landed.
+unpushed commits:
+af7567b fix(kimi): local stale commit (differ)
+Push the branch, land its PR, or get the captain's explicit OK to discard, then --force.
+exit=0
+task record present after: yes
+
+===== [AFTER fix: only worker wiring files untracked] fm-teardown.sh kimi-wiring
+unpushed: 16c4c29 fix(kimi): local stale commit (wiring); status: ?? .fm-kimi-turnend 
+Landed proof: recorded merged PR https://github.com/Pibomeister/quota-axi/pull/8; blob equality for every unpushed touched path at fork/main (52ec95d38bcaaa4528088d42b94a632ce31b5b32).
+quota-axi: skipped: no origin remote
+teardown kimi-wiring complete (window fm-lab:fm-kimi-wiring, worktree /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.HUZfsI/wt-kimi-wiring)
+exit=0
+task record present after: no
+
+===== [AFTER fix: a real untracked file] fm-teardown.sh kimi-untracked
+unpushed: 2d5e33e fix(kimi): local stale commit (untracked); status: ?? scratch-notes.txt 
+REFUSED: worktree /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.HUZfsI/wt-kimi-untracked has uncommitted changes.
+uncommitted changes present (untracked-only leftovers)
+untracked paths (up to 10):
+  scratch-notes.txt
+Commit them (or get the captain's explicit OK to discard, then --force).
+exit=0
+task record present after: yes
+
