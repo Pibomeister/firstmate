@@ -1056,7 +1056,7 @@ test_no_mistakes_truly_unpushed_refuses() {
 # content proof plus the recorded merged PR may authorize this fallback.
 test_recorded_merged_pr_target_blobs() {
   local case_dir scenario rc expected head target remote_url base
-  for scenario in identical target-branch forgejo-identical forgejo-open differing earlier-path-diff dirty untracked exempt-untracked open closed forge-error wrong-remote fetch-error missing-pr; do
+  for scenario in identical target-branch differing earlier-path-diff dirty untracked exempt-untracked wiring-and-untracked open closed forge-error wrong-remote fetch-error missing-pr; do
     case_dir=$(make_case "pr-target-$scenario")
     write_meta "$case_dir" no-mistakes ship
     wt_commit_file "$case_dir" feature.txt intermediate
@@ -1079,7 +1079,6 @@ test_recorded_merged_pr_target_blobs() {
     fi
     git -C "$case_dir/project" remote rename origin fork
     remote_url=git@github.com:example/repo.git
-    case "$scenario" in forgejo-*) remote_url=git@git.example.org:example/repo.git ;; esac
     git -C "$case_dir/project" remote set-url fork "$remote_url"
     git -C "$case_dir/project" remote add no-mistakes http://127.0.0.1:1/proxy
     # Keep remote identity realistic, but route real Git fetches to the local
@@ -1110,14 +1109,6 @@ esac
 SH
     chmod +x "$case_dir/fakebin/gh"
     case "$scenario" in
-      forgejo-*)
-        printf 'pr=https://git.example.org/example/repo/pulls/7\n' >> "$case_dir/state/task-x1.meta"
-        if [ "$scenario" = forgejo-identical ]; then
-          add_tea_pull_for_head "$case_dir" true "$target" main
-        else
-          add_tea_pull_for_head "$case_dir" false "$target" main
-        fi
-        ;;
       missing-pr) ;;
       *) append_pr_meta_url "$case_dir" ;;
     esac
@@ -1125,14 +1116,19 @@ SH
       differing) wt_commit_file "$case_dir" feature.txt unlanded ;;
       dirty) printf 'uncommitted\n' > "$case_dir/wt/feature.txt" ;;
       untracked) printf 'untracked\n' > "$case_dir/wt/local.txt" ;;
-      exempt-untracked) mkdir -p "$case_dir/wt/.claude"; printf 'local\n' > "$case_dir/wt/.claude/local.txt" ;;
+      exempt-untracked)
+        mkdir -p "$case_dir/wt/.claude"; printf 'local\n' > "$case_dir/wt/.claude/local.txt"
+        printf 'x\n' > "$case_dir/wt/.fm-kimi-turnend" ;;
+      wiring-and-untracked)
+        mkdir -p "$case_dir/wt/.claude"; printf 'local\n' > "$case_dir/wt/.claude/local.txt"
+        printf 'untracked\n' > "$case_dir/wt/local.txt" ;;
       wrong-remote) git -C "$case_dir/project" remote set-url fork git@github.com:other/repo.git ;;
     esac
     head=$(git -C "$case_dir/wt" rev-parse HEAD)
     rc=0
     run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
     expected=1
-    case "$scenario" in identical|target-branch|forgejo-identical) expected=0 ;; esac
+    case "$scenario" in identical|target-branch|exempt-untracked) expected=0 ;; esac
     expect_code "$expected" "$rc" "PR target $scenario"$'\n'"$(cat "$case_dir/stderr")"
     if [ "$expected" = 0 ]; then
       assert_contains "$(cat "$case_dir/stdout")" 'blob equality' 'teardown must name the landing proof'
@@ -1345,7 +1341,7 @@ test_squash_merged_rebased_branch_allows() {
 # Override tea to answer one login for git.example.org and a pull request
 # read through "tea api" with the supplied merged flag and head.
 add_tea_pull_for_head() {
-  local case_dir=$1 merged=$2 head=$3 base=${4:-}
+  local case_dir=$1 merged=$2 head=$3
   cat > "$case_dir/fakebin/tea" <<SH
 #!/usr/bin/env bash
 printf '%s\n' "\$*" >> "$case_dir/tea.log"
@@ -1354,7 +1350,7 @@ if [ "\${1:-} \${2:-}" = "login list" ]; then
   exit 0
 fi
 [ "\${1:-}" = api ] || exit 1
-printf '{"state":"closed","merged":%s,"head":{"sha":"%s"},"base":{"ref":"%s"}}\n' '$merged' '$head' '$base'
+printf '{"state":"closed","merged":%s,"head":{"sha":"%s"}}\n' '$merged' '$head'
 SH
   chmod +x "$case_dir/fakebin/tea"
 }

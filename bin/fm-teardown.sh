@@ -1790,6 +1790,11 @@ content_in_default() {
   [ "$merged_tree" = "$default_tree" ]
 }
 
+# Untracked worker wiring that teardown removes itself is not work to preserve.
+strip_exempt_untracked() {
+  grep -vE '^\?\? (\.claude/|\.fm-(grok|kimi)-turnend$)' || true
+}
+
 # A recorded merged PR can prove a stale local copy landed even when rebasing
 # changed the PR head. Compare every path from every unpushed commit, including
 # deleted paths, rename sources, and all merge parents. NUL delimiters and literal
@@ -1801,23 +1806,15 @@ content_matches_recorded_pr_target() {
   [ -n "$PR_URL" ] || return 1
   fm_pr_url_parse "$PR_URL" || return 1
   wanted=$(fm_role_scope_norm "$FM_PR_HOST/$FM_PR_PATH")
-  case "$FM_PR_PROVIDER" in
-    github)
-      view=$(cd "$WT" && gh pr view "$PR_URL" --json state,baseRefName \
-        -q '.state + "\t" + .baseRefName' 2>/dev/null) || return 1
-      state=${view%%$'\t'*}
-      [ "$state" != "$view" ] && [ "$state" = MERGED ] || return 1
-      base=${view#*$'\t'}
-      ;;
-    forgejo)
-      fm_pr_forgejo_read_record "$FM_PR_HOST" "$FM_PR_PATH" "$FM_PR_NUMBER" || return 1
-      [ "$FM_PR_RECORD_MERGED" = true ] || return 1
-      base=$FM_PR_RECORD_BASE
-      ;;
-    *) return 1 ;;
-  esac
+  [ "$FM_PR_PROVIDER" = github ] || return 1
+  view=$(cd "$WT" && gh pr view "$PR_URL" --json state,baseRefName \
+    -q '.state + "\t" + .baseRefName' 2>/dev/null) || return 1
+  state=${view%%$'\t'*}
+  [ "$state" != "$view" ] && [ "$state" = MERGED ] || return 1
+  base=${view#*$'\t'}
   git check-ref-format "refs/heads/$base" >/dev/null 2>&1 || return 1
   dirty=$(git -C "$WT" status --porcelain --untracked-files=all 2>/dev/null) || return 1
+  dirty=$(printf '%s\n' "$dirty" | strip_exempt_untracked)
   [ -z "$dirty" ] || return 1
   current=$(git -C "$WT" rev-parse --verify HEAD 2>/dev/null) || return 1
   unpushed=$(git -C "$WT" rev-list HEAD --not --remotes -- 2>/dev/null) || return 1
@@ -2201,7 +2198,7 @@ validate_worktree_teardown_safety() {
     echo "Restore the git index state, or get the captain's explicit OK to discard, then --force." >&2
     return 1
   fi
-  dirty=$(printf '%s\n' "$dirty_raw" | grep -vE '^\?\? (\.claude/|\.fm-(grok|kimi)-turnend$)' || true)
+  dirty=$(printf '%s\n' "$dirty_raw" | strip_exempt_untracked)
 
   if ! unpushed_raw=$(git -C "$WT" log --oneline HEAD --not --remotes -- 2>/dev/null); then
     if worktree_safety_blocked_by_lock "commits not on a remote"; then
