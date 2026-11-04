@@ -1,0 +1,7 @@
+$ fm-agent-kit-pin.sh --root <untampered copy>
+fm-agent-kit-pin: ok ak=aff80a908c5d2d0d25339db41fdf959fcaf3d73fded8c49933d8cd7ec9cc15c6 ak-gate.mjs=8fc4777b2f3683b4a5fb527431f4e5a403f7b87a78b02dc6a39f7a8043edc4d7
+exit=0
+# tamper: append a byte to .cursor/bin/ak in the copy
+$ fm-agent-kit-pin.sh --root <tampered copy>
+fm-agent-kit-pin: .cursor/bin/ak digest be6ca43f9324e680e163603236217bf689fc7b04e0b437950ac088b33c568934 does not match recorded aff80a908c5d2d0d25339db41fdf959fcaf3d73fded8c49933d8cd7ec9cc15c6
+exit=1

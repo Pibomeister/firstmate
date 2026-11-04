@@ -1,0 +1,19 @@
+$ bin/fm-agent-kit-pin.sh
+fm-agent-kit-pin: ok ak=aff80a908c5d2d0d25339db41fdf959fcaf3d73fded8c49933d8cd7ec9cc15c6 ak-gate.mjs=8fc4777b2f3683b4a5fb527431f4e5a403f7b87a78b02dc6a39f7a8043edc4d7
+exit=0
+
+$ .cursor/bin/ak --help (head)
+Usage: ak doctor [--json] | ak update | ak delegation <ticket> --project <path> | ak learn … | ak guard hook <event> … | ak kb … | ak runner serve|call … | ak semantic-lint hook [--host codex]
+exit=
+
+$ node .cursor/bin/ak-gate.mjs --help (head)
+ak lifecycle: unknown subcommand '--help'; nearest of 8: check, open, record
+ak lifecycle — the gate records each lifecycle phase leaves, and the check super-ship runs first
+From an installed bundle run each command as `node <bundle>/bin/ak-gate.mjs <subcommand> …`; `ak lifecycle`
+exists only in an agent-kit checkout (the `ak` on PATH is the maintenance CLI).
+
+  ak lifecycle open --ticket <file> [--binding <file>] [--dir <dir>] [--project <dir>]
+  ak lifecycle record --gate <gate> [--receipt <file> ...] [--verdict <verdict>] [--class <class> --author-kind <kind> --host <id> [--seat-id <id>]] [--bypass <file> --task <id>] [--run <id>] [--dir <dir>] [--project <dir>]
+  ak lifecycle check [--evidence] [--gates <g,g>] [--run <id>] [--dir <dir>] [--project <dir>] [--json]
+  ak lifecycle bypass grant --task <id> --by <who> --reason <why> --out <file> --project <dir> --worktree <dir> [--hours <n>]
+  ak lifecycle bypass check --grant <file> --task <id> [--phase <phase>] [--run <id>] [--project <dir>]
