@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-kit.local/schemas/learn-state.schema.json",
+  "title": "Learning ledger state",
+  "description": "The memory ledger's .state.json: the watermarks of the last observations reflected, the schedule marks of each job, and the mute switch. A watermark advances only when a reflection is accepted, so a rejected rewrite is retried on the same evidence rather than skipping it (protocol evidence-gate). The file lives in the runtime's ledger directory, never inside a project repository (ruling learning-runtime-is-host-adapter).",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "last_obs_id_reflected": { "type": "integer", "minimum": 0 },
+    "last_worker_obs_id_reflected": {
+      "description": "Highest runtime-owned offline worker observation accepted by reflection.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "last_reflect": { "description": "Epoch milliseconds.", "type": "integer", "minimum": 0 },
+    "last_reflect_attempt": {
+      "description": "Epoch milliseconds of the latest failed or rejected reflection.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "reflect_stalled_since": {
+      "description": "Epoch milliseconds of the first failed or rejected reflection since the last accepted reflection. Retries preserve this time; acceptance clears it. Review ingest uses it for the staleness window in adapters/observation-source/CONTRACT.md.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "reflect_process_failure": {
+      "description": "Authentication failure or timeout from the latest reflect or backfill judge call. Absent after a call without either failure or an accepted reflection. Backfill hold timing is defined in adapters/observation-source/CONTRACT.md.",
+      "enum": ["auth", "timeout"]
+    },
+    "reflect_failures": {
+      "description": "Consecutive failed or rejected reflections.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "last_nightly": {
+      "description": "Local calendar date of the last nightly run.",
+      "$ref": "common.schema.json#/$defs/date"
+    },
+    "last_nightly_attempt": {
+      "description": "Epoch milliseconds of the latest failed nightly run.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "nightly_failures": {
+      "description": "Consecutive failed nightly runs.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "last_weekly": { "description": "Epoch milliseconds.", "type": "integer", "minimum": 0 },
+    "muted": { "type": "boolean" }
+  }
+}

@@ -711,6 +711,702 @@
     {
       "path": ".agents/skills/validation-supervision/SKILL.md",
       "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/agent-kit.md",
+      "audience": "operator-current"
+    },
+    {
+      "path": ".cursor/agents/code-review-adversarial.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/agents/code-review-agent-native.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/agents/code-review-api-contract.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/agents/code-review-correctness.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/agents/code-review-data-migration.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/agents/code-review-frontend-races.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/agents/code-review-learnings.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/agents/code-review-maintainability.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/agents/code-review-performance.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/agents/code-review-previous-comments.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/agents/code-review-project-standards.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/agents/code-review-reliability.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/agents/code-review-security.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/agents/code-review-swift-ios.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/agents/code-review-testing.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/agents/doc-review-adversarial-document.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/agents/doc-review-coherence.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/agents/doc-review-design-lens.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/agents/doc-review-feasibility.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/agents/doc-review-product-lens.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/agents/doc-review-scope-guardian.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/agents/doc-review-security-lens.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/agents/implementer.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/agents/learn-consolidator.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/agents/learn-lesson-merger.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/agents/learn-pattern-maintainer.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/agents/learn-reflector.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/agents/learn-session-scorer.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/agents/learn-skill-doctor.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/agents/learn-skill-scout.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/agents/plan-review-architect.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/agents/plan-review-critic.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/agents/plan-review-planner.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/agents/reviewer-spec.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/agents/reviewer-standards.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/agents/supervisor.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/agents/trail-auditor.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/agents/verifier.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/adapters/claude-code/CONTRACT.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/adapters/codex/CONTRACT.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/adapters/firstmate/CONTRACT.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/adapters/knowledgebase/CONTRACT.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/adapters/knowledgebase/backends/local-git.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/adapters/runner-contract/CONTRACT.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/adapters/tracker/CONTRACT.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/adapters/tracker/backends/linear-linearis.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/docs/decisions/0013-model-starts-super-review.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/docs/decisions/0014-unattended-lifecycle-policy.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/protocols/apply-findings/PROTOCOL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/protocols/attach-pack/PROTOCOL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/protocols/consensus-plan-gate/PROTOCOL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/protocols/evidence-gate/PROTOCOL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/protocols/invocation-authority.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/protocols/phase-operations/PROTOCOL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/protocols/tdd/PROTOCOL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/protocols/work-trail/PROTOCOL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/protocols/worktree-ownership/PROTOCOL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/references/codebase-design-vocabulary/DEEPENING.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/references/codebase-design-vocabulary/DESIGN-IT-TWICE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/references/codebase-design-vocabulary/REFERENCE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/references/delegation/REFERENCE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/references/domain-modeling/REFERENCE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/references/engineering-principles/REFERENCE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/references/knowledgebase-binding/REFERENCE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/references/prose-quality/REFERENCE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/references/read-economy/REFERENCE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/references/tracker-of-record/REFERENCE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/references/unattended-lifecycle/REFERENCE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/references/verification-evidence/REFERENCE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/roles/code-review/adversarial/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/roles/code-review/agent-native/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/roles/code-review/api-contract/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/roles/code-review/correctness/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/roles/code-review/data-migration/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/roles/code-review/frontend-races/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/roles/code-review/learnings/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/roles/code-review/maintainability/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/roles/code-review/performance/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/roles/code-review/previous-comments/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/roles/code-review/project-standards/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/roles/code-review/reliability/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/roles/code-review/security/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/roles/code-review/swift-ios/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/roles/code-review/testing/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/roles/doc-review/adversarial-document/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/roles/doc-review/coherence/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/roles/doc-review/design-lens/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/roles/doc-review/feasibility/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/roles/doc-review/product-lens/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/roles/doc-review/scope-guardian/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/roles/doc-review/security-lens/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/roles/implementer/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/roles/plan-review/architect/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/roles/plan-review/critic/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/roles/plan-review/planner/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/roles/reviewer-spec/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/roles/reviewer-standards/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/roles/supervisor/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/roles/trail-auditor/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/roles/verifier/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/roles/code-review/adversarial/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/roles/code-review/agent-native/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/roles/code-review/api-contract/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/roles/code-review/correctness/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/roles/code-review/data-migration/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/roles/code-review/frontend-races/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/roles/code-review/learnings/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/roles/code-review/maintainability/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/roles/code-review/performance/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/roles/code-review/previous-comments/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/roles/code-review/project-standards/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/roles/code-review/reliability/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/roles/code-review/security/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/roles/code-review/swift-ios/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/roles/code-review/testing/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/roles/doc-review/adversarial-document/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/roles/doc-review/coherence/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/roles/doc-review/design-lens/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/roles/doc-review/feasibility/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/roles/doc-review/product-lens/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/roles/doc-review/scope-guardian/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/roles/doc-review/security-lens/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/roles/implementer/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/roles/learn/consolidator/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/roles/learn/lesson-merger/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/roles/learn/pattern-maintainer/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/roles/learn/reflector/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/roles/learn/session-scorer/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/roles/learn/skill-doctor/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/roles/learn/skill-scout/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/roles/plan-review/architect/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/roles/plan-review/critic/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/roles/plan-review/planner/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/roles/reviewer-spec/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/roles/reviewer-standards/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/roles/supervisor/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/roles/trail-auditor/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/roles/verifier/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/skills/codebase-design/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/skills/compound/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/skills/diagnose/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/skills/diagnose/references/feedback-loops.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/skills/doc-review/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/skills/doubt-driven/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/skills/explain/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/skills/handoff/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/skills/prototype/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/skills/prototype/references/logic.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/skills/prototype/references/ui.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/skills/receiving-review/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/skills/research/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/skills/simplify/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/skills/simplify/references/personas/code-quality.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/skills/simplify/references/personas/code-reuse.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/skills/simplify/references/personas/efficiency.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/skills/source-driven/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/skills/source-driven/references/citation-formats.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/skills/super-align/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/skills/super-bound/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/skills/super-build/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/skills/super-review/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/skills/super-review/references/delta.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/skills/super-review/references/panel.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/skills/super-scout/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/skills/super-ship/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/skills/super-ship/references/transport-direct.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/skills/super-ship/references/transport-no-mistakes.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/skills/super-verify/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/skills/verify/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/skills/visual-edit/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/skills/visual-edit/references/receipt.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/skills/wait-what/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/skills/wayfind/SKILL.md",
+      "audience": "agent-runtime"
     }
   ]
 }

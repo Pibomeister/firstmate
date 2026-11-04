@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-kit.local/schemas/run-ledger.schema.json",
+  "title": "Run ledger",
+  "description": "The ledger `autopilot` keeps for one run: one entry per checkpoint, in the order reached, each pointing at the `decision` record that carries the frozen card, both judgments and the authority check, and stating the ruling or the escalation. The decision records are the evidence; this is the index a reader follows from the run report the runner holds. Every ruling is ledgered, and at most one escalation is open at a time. A run artifact the runner holds, never a repository path, and this skill makes no knowledgebase call of its own (docs/decisions/0001-kb-document-vocabulary.md §3).",
+  "type": "object",
+  "required": ["entries"],
+  "properties": {
+    "schema": { "const": "run-ledger" },
+    "status": {
+      "description": "The run's state when the ledger was last written.",
+      "$ref": "common.schema.json#/$defs/run_state"
+    },
+    "cancellation": {
+      "description": "Who cancelled the run, why and when; null before cancellation.",
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["by", "rationale", "at"],
+      "properties": {
+        "by": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "rationale": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "at": { "$ref": "common.schema.json#/$defs/timestamp" }
+      }
+    },
+    "charter": {
+      "description": "The charter the run is under, by the hash recomputed at load. The charter is immutable for the run: a changed hash is a new charter, and this run does not adopt it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["hash"],
+      "properties": { "hash": { "$ref": "common.schema.json#/$defs/hash" } }
+    },
+    "entries": {
+      "description": "One per checkpoint. An empty list says no checkpoint was reached.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["checkpoint", "decision", "outcome"],
+        "properties": {
+          "checkpoint": { "$ref": "common.schema.json#/$defs/checkpoint_category" },
+          "decision": {
+            "description": "The decision record for this checkpoint.",
+            "$ref": "common.schema.json#/$defs/artifact_ref"
+          },
+          "outcome": {
+            "description": "'ruling' when every check held and the two choices agreed; 'escalation' otherwise, carried on the blocked card's decision record.",
+            "enum": ["ruling", "escalation"]
+          },
+          "ruling": {
+            "description": "Reads `Ruling: <what> — <why> — <what it costs if wrong>`.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["what", "why", "cost_if_wrong"],
+            "properties": {
+              "what": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+              "why": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+              "cost_if_wrong": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+            }
+          },
+          "answered": {
+            "description": "Whether the human has answered the escalation. The answer settles the card; it is not re-dispatched.",
+            "type": "boolean"
+          },
+          "answer": {
+            "description": "The ruling that settled an answered escalation: the option chosen, who chose it, why, and when.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["choice", "by", "rationale", "at"],
+            "properties": {
+              "choice": { "$ref": "common.schema.json#/$defs/kebab_id" },
+              "by": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+              "rationale": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+              "at": { "$ref": "common.schema.json#/$defs/timestamp" }
+            }
+          }
+        },
+        "allOf": [
+          {
+            "if": { "required": ["answer"] },
+            "then": { "required": ["answered"], "properties": { "answered": { "const": true } } }
+          },
+          {
+            "if": { "properties": { "outcome": { "const": "ruling" } }, "required": ["outcome"] },
+            "then": { "required": ["ruling"], "not": { "required": ["answered"] } },
+            "else": { "required": ["answered"], "not": { "required": ["ruling"] } }
+          }
+        ]
+      },
+      "contains": {
+        "properties": { "outcome": { "const": "escalation" }, "answered": { "const": false } },
+        "required": ["outcome", "answered"]
+      },
+      "minContains": 0,
+      "maxContains": 1
+    }
+  },
+  "unevaluatedProperties": false,
+  "allOf": [{ "$ref": "common.schema.json#/$defs/envelope" }]
+}

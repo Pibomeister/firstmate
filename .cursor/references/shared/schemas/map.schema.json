@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-kit.local/schemas/map.schema.json",
+  "title": "Wayfinding map",
+  "description": "The shared map `wayfind` charts for an effort too large for one session: five sections and the ticket set. The map is an index, not a store. A decision lives in its ticket (`schemas/ticket.schema.json`, `type: decision`), which also carries its subtype and its blocking edges, and the map gists it and links by ticket id, so a ticket can be claimed, resolved and closed without the map restating it. The ids are links rather than hash-bound references because a ticket changes as it is worked and the map would go stale on every claim. A map written to an external tracker takes that tracker's form; this schema is the form published through the knowledgebase adapter's `publishArtifact` under a `run-artifact` placement, never a path in the working repository (ruling `central-kb-owns-project-artifacts`).",
+  "type": "object",
+  "required": ["destination", "notes", "decisions_so_far", "not_yet_specified", "out_of_scope", "tickets"],
+  "properties": {
+    "schema": { "const": "map" },
+    "status": {
+      "description": "'open' while anything is left to decide; 'complete' when the way to the destination is clear. Which tickets are still on the frontier is a fact about the tickets, not the map, so this schema holds only the half it can see: a complete map has nothing left in Not yet specified.",
+      "enum": ["open", "complete"]
+    },
+    "destination": {
+      "description": "The specification, decision or change the effort is finding its way to, as one sentence a reader could hold the whole effort against. Settled first, because it fixes the scope.",
+      "$ref": "common.schema.json#/$defs/nonempty_string"
+    },
+    "notes": {
+      "description": "Orientation a session needs before choosing a ticket.",
+      "$ref": "common.schema.json#/$defs/string_list"
+    },
+    "decisions_so_far": {
+      "description": "One line per resolved ticket: the gist and the link, referred to by name. Empty at charting.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["gist", "ticket"],
+        "properties": {
+          "gist": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+          "ticket": { "$ref": "common.schema.json#/$defs/artifact_id" }
+        }
+      }
+    },
+    "not_yet_specified": {
+      "description": "Fog that cannot yet be phrased as a sharp question. A patch graduates into tickets when the frontier reaches it and is cleared from here, so it lives in one place only.",
+      "$ref": "common.schema.json#/$defs/string_list"
+    },
+    "out_of_scope": {
+      "description": "Work ruled past the destination. Each entry carries its gist and the reason, and links the closed ticket where one existed. Out-of-scope work never graduates; it returns only if the destination is redrawn, and then as a fresh effort.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["gist", "reason"],
+        "properties": {
+          "gist": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+          "reason": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+          "ticket": { "$ref": "common.schema.json#/$defs/artifact_id" }
+        }
+      }
+    },
+    "tickets": {
+      "description": "The ticket set, by id (shape `map-<effort>-<question>`). Every ticket this skill cuts is a decision ticket; implementation tickets that later hang off these decisions come from `super-bound` and are not listed here.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "common.schema.json#/$defs/artifact_id" }
+    }
+  },
+  "unevaluatedProperties": false,
+  "allOf": [
+    { "$ref": "common.schema.json#/$defs/envelope" },
+    {
+      "description": "A complete map has no fog left in it.",
+      "if": { "properties": { "status": { "const": "complete" } }, "required": ["status"] },
+      "then": { "properties": { "not_yet_specified": { "maxItems": 0 } } }
+    }
+  ]
+}

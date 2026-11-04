@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-kit.local/schemas/kb-binding.schema.json",
+  "title": "Knowledgebase binding",
+  "description": "The shape of ak.kb.yaml, the file at a project folder's root that says how this checkout reaches its central knowledgebase: which backend, which project record in it, and the backend's own locator (adapters/knowledgebase/CONTRACT.md §7; ruling `kb-binding-is-a-locator`). It is the small KB locator plan §1.2 lets a working repository hold: a pointer, never a copy of the knowledgebase and never a place project artifacts are written. The file holds no secret and no machine path and is committed, so every checkout and every task copy of the project binds the same knowledgebase and project. Where that knowledgebase lives on one machine is the operator's registration outside every checkout, which `ak kb check` resolves. The root object refuses unknown keys. `locator` is open here, any key with a nonempty string value; only a backend schema restricts its keys.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["backend", "project", "locator"],
+  "properties": {
+    "backend": {
+      "description": "The binding's id, as adapters/knowledgebase/backends/<id>.md names it. Free-form in this schema, which keeps no list of implementations; `ak kb check` refuses an id with no such document (kb.backend-unknown).",
+      "$ref": "common.schema.json#/$defs/kebab_id"
+    },
+    "project": {
+      "description": "This project's id in the knowledgebase, the `id` of `common#/$defs/project_ref`. Every operation reads and writes under it, and a run artifact naming another project is refused.",
+      "$ref": "common.schema.json#/$defs/kebab_id"
+    },
+    "locator": {
+      "description": "What the backend needs to find the knowledgebase, without a machine path. Which keys a backend requires is its binding's to state, in schemas/kb-backends/<backend>.schema.json beside adapters/knowledgebase/backends/<backend>.md; `ak kb check` applies it after this schema. This schema names no implementation.",
+      "type": "object",
+      "additionalProperties": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+      "minProperties": 1
+    }
+  }
+}

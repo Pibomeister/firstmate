@@ -1,0 +1,64 @@
+{
+  "schema": "trail",
+  "schema_version": 1,
+  "id": "example-trail-1",
+  "project": {
+    "id": "example-project",
+    "repo": "example-org/example-service"
+  },
+  "run_id": "example-run-1",
+  "created_by": {
+    "role": "implementer",
+    "skill": "super-build"
+  },
+  "inputs": [
+    {
+      "id": "example-ticket-1",
+      "schema": "ticket",
+      "hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ],
+  "source_revision": {
+    "repo": "example-org/example-service",
+    "revision": "1111111111111111111111111111111111111111"
+  },
+  "created_at": "2026-09-19T09:00:00Z",
+  "status": "recorded",
+  "ticket": {
+    "id": "example-ticket-1",
+    "schema": "ticket",
+    "hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "implementer_seat": "example-implementer-1",
+  "order": 1,
+  "entries": [
+    {
+      "id": "yield-from-loop",
+      "written_at": "2026-09-19T09:12:00Z",
+      "decision": "Make the loader a generator that yields each configured source as it reads it.",
+      "alternatives": ["Collect every source into a list and return the list after the loop ends."],
+      "why": "A generator holds one source in memory at a time.",
+      "pointers": ["src/loader/index.ts"],
+      "result": "Written, and not yet run against the loader suite."
+    },
+    {
+      "id": "return-list-after-loop",
+      "written_at": "2026-09-19T09:31:00Z",
+      "decision": "Collect every configured source into a list and return the list after the loop ends.",
+      "alternatives": ["Keep the generator and change each caller to iterate it."],
+      "why": "Three callers index the result and read its length, so a generator breaks them, and the ticket's allowed changes do not include the callers.",
+      "pointers": ["src/loader/index.ts:44", "2222222222222222222222222222222222222222", "example-verification-1"],
+      "result": "The loader suite passes, 14 tests.",
+      "supersedes": "yield-from-loop"
+    },
+    {
+      "id": "keep-signature",
+      "written_at": "2026-09-19T09:40:00Z",
+      "decision": "Keep the loader's exported signature as it is.",
+      "alternatives": [],
+      "why": "No caller needs a new argument, so a change would only widen the diff.",
+      "pointers": [],
+      "result": "No caller changed."
+    }
+  ]
+}

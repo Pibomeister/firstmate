@@ -1,0 +1,156 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-kit.local/schemas/ship-evidence.schema.json",
+  "title": "Ship evidence",
+  "description": "What `super-ship` records about one ship of one head: the pull-request payload, the pre-flight record and, in `publish`, the ship record of each remote effect with its idempotency key and read-backs. It is evidence about the ship, not the verdict on the change: the receipts and the review verdict it rests on are referenced, never restated. The sensitive actions this run declined are `decision` artifacts and the lesson candidate is a `lesson` draft; neither lives here. Written as a run artifact and never to a repository path (ruling `central-kb-owns-project-artifacts`, docs/decisions/0001-kb-document-vocabulary.md §3).",
+  "type": "object",
+  "required": ["mode"],
+  "properties": {
+    "schema": { "const": "ship-evidence" },
+    "status": {
+      "description": "The skill's stop condition. There is no cap-reached: remote effects are bounded by the idempotency key, not by counting attempts.",
+      "enum": ["complete", "needs-input", "failed", "cancelled"]
+    },
+    "mode": {
+      "description": "'dry-run' and 'publish' follow the same steps up to the first remote call; 'dry-run' stops there and makes none.",
+      "enum": ["dry-run", "publish"]
+    },
+    "payload": {
+      "description": "The pull-request payload. In 'dry-run' the record holds this payload and the pre-flight record, and no remote effect; the report says what would have been sent and to where.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "description", "branch", "receipts", "review"],
+      "properties": {
+        "title": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "description": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "branch": {
+          "description": "The branch the pull request is, or would be, opened from.",
+          "$ref": "common.schema.json#/$defs/nonempty_string"
+        },
+        "ticket": { "$ref": "common.schema.json#/$defs/artifact_ref" },
+        "receipts": {
+          "description": "The verification receipts bound to the shipped head that the payload rests on.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "common.schema.json#/$defs/artifact_ref" }
+        },
+        "review": {
+          "description": "The review verdict bound to the shipped head's artifact hash.",
+          "$ref": "common.schema.json#/$defs/artifact_ref"
+        }
+      }
+    },
+    "preflight": {
+      "description": "The sensitive-data scan, the dependency-audit triage and each of the project's own release checks, each with its outcome against this head. A check that did not run is recorded as not run, with the reason.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["check", "outcome"],
+        "properties": {
+          "check": { "enum": ["sensitive-data-scan", "dependency-audit", "release-check"] },
+          "name": {
+            "description": "The project release check's own name, as discovered from the project.",
+            "$ref": "common.schema.json#/$defs/nonempty_string"
+          },
+          "outcome": { "enum": ["passed", "failed", "not-run"] },
+          "reason": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+        },
+        "allOf": [
+          {
+            "if": { "properties": { "outcome": { "const": "not-run" } }, "required": ["outcome"] },
+            "then": { "required": ["reason"] }
+          },
+          {
+            "if": { "properties": { "check": { "const": "release-check" } }, "required": ["check"] },
+            "then": { "required": ["name"] }
+          }
+        ]
+      }
+    },
+    "effects": {
+      "description": "The ship record: each remote effect performed, the idempotency key it carried and the read-back result before and after. The key derives from the run id, the operation id, the target identity and the input artifact hash, so a resumed direct publication returns the existing branch or pull request rather than creating a second (adapters/runner-contract/CONTRACT.md §5). Under no-mistakes delivery, super-ship ends at a committed handoff and performs no remote effect (ruling `no-mistakes-as-ship-transport`). No merge is among them.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["effect", "target", "idempotency_key", "read_back"],
+        "properties": {
+          "effect": { "enum": ["remote-push", "pr-open"] },
+          "target": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+          "idempotency_key": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+          "read_back": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["before", "after"],
+            "properties": {
+              "before": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+              "after": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+            }
+          }
+        }
+      }
+    },
+    "grant_record": {
+      "description": "Under a Firstmate binding, the record `ak firstmate grant` printed when it granted `ship.prepare` (ADR-0004).",
+      "$ref": "common.schema.json#/$defs/nonempty_string"
+    },
+    "reason": {
+      "description": "What the run needs, or why it failed: the missing or mis-bound input, the unnamed mode, the uncovered sensitive action, the candidate secret, the failed release check or the unknown pull-request lookup.",
+      "$ref": "common.schema.json#/$defs/nonempty_string"
+    }
+  },
+  "unevaluatedProperties": false,
+  "allOf": [
+    { "$ref": "common.schema.json#/$defs/envelope" },
+    {
+      "description": "The envelope's source_revision is the head being shipped, and the receipts and the review verdict must bind to it. Only a run that stopped with needs-input, which is where an unnamed head ends, may leave it null.",
+      "if": { "not": { "properties": { "status": { "const": "needs-input" } }, "required": ["status"] } },
+      "then": { "properties": { "source_revision": { "$ref": "common.schema.json#/$defs/revision_ref" } } }
+    },
+    {
+      "description": "A dry run makes no remote call. Not a reduced one, not a single harmless one: none.",
+      "if": { "properties": { "mode": { "const": "dry-run" } }, "required": ["mode"] },
+      "then": { "properties": { "effects": { "maxItems": 0 } } }
+    },
+    {
+      "description": "A complete ship has emitted the payload and a pre-flight record that holds the sensitive-data scan and the dependency-audit triage.",
+      "if": { "properties": { "status": { "const": "complete" } }, "required": ["status"] },
+      "then": {
+        "required": ["payload", "preflight"],
+        "properties": {
+          "preflight": {
+            "allOf": [
+              { "contains": { "properties": { "check": { "const": "sensitive-data-scan" } }, "required": ["check"] } },
+              { "contains": { "properties": { "check": { "const": "dependency-audit" } }, "required": ["check"] } }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "description": "A complete publish has the branch and the pull request, each with its read-backs recorded.",
+      "if": {
+        "properties": { "status": { "const": "complete" }, "mode": { "const": "publish" } },
+        "required": ["status", "mode"]
+      },
+      "then": {
+        "required": ["effects"],
+        "properties": {
+          "effects": {
+            "allOf": [
+              { "contains": { "properties": { "effect": { "const": "remote-push" } }, "required": ["effect"] } },
+              { "contains": { "properties": { "effect": { "const": "pr-open" } }, "required": ["effect"] } }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "description": "A run that stops short names what it needs or why it failed.",
+      "if": { "properties": { "status": { "enum": ["needs-input", "failed"] } }, "required": ["status"] },
+      "then": { "required": ["reason"] }
+    }
+  ]
+}

@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-kit.local/schemas/plan-record.schema.json",
+  "title": "Plan record",
+  "description": "The record `super-bound` writes once the specification is reviewed and sliced: the specification at decision level, the seams it is verified across, the slicing into tickets and the dependency graph between them. It is a run artifact published through the knowledgebase adapter's `publishArtifact` under a `run-artifact` placement and linked from the `prd` page, never a file in the working repository (ruling `central-kb-owns-project-artifacts`, docs/decisions/0001-kb-document-vocabulary.md §3). The tickets themselves are `ticket` artifacts; this record points at them rather than repeating them. The specification is approved before it is sliced, so its approval cannot bind to this record's own hash, which also covers the slices, and it is not an entry in the envelope's `approvals`, which bind to that hash: it is `specification_approval`, bound to `specification_hash`. An edited specification is a new hash and does not inherit the old approval; re-slicing an unchanged specification leaves its approval standing.",
+  "type": "object",
+  "required": ["specification", "specification_hash", "slices", "dependency_graph"],
+  "properties": {
+    "schema": { "const": "plan-record" },
+    "status": {
+      "description": "'draft' is what the `bound.run` phase operation writes: it drafts to the knowledgebase and does not publish. 'published' has been published at the public entrypoint and read back.",
+      "enum": ["draft", "published"]
+    },
+    "capability_map": {
+      "description": "Drawn first when the approved direction spans more than one module, and reviewed by a human before any module's specification is written. Absent when the direction covers one module.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "responsibility", "depends_on"],
+        "properties": {
+          "id": {
+            "description": "A stable kebab-case module id.",
+            "$ref": "common.schema.json#/$defs/kebab_id"
+          },
+          "responsibility": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+          "depends_on": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": { "$ref": "common.schema.json#/$defs/kebab_id" }
+          }
+        }
+      }
+    },
+    "specification": {
+      "description": "Written at decision level: no file paths and no code, except a fragment a prototype already settled exactly. Every section is present; a section with nothing in it is an empty list rather than an omission, so a reader can tell 'no non-goals' from 'non-goals never considered'.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "problem",
+        "solution",
+        "non_goals",
+        "acceptance_criteria",
+        "test_seams",
+        "verification_commands",
+        "out_of_scope"
+      ],
+      "properties": {
+        "problem": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "solution": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "non_goals": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+        },
+        "acceptance_criteria": {
+          "description": "The criteria the tickets cover. Uses the ticket's AC id shape so a ticket's criteria can be traced back here.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "text"],
+            "properties": {
+              "id": { "type": "string", "pattern": "^AC-[0-9]+$" },
+              "text": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+            }
+          }
+        },
+        "test_seams": {
+          "description": "Chosen before the slices. As few as the feature allows, ideally one, each named with why it is the highest seam available. How many is guidance, not a gate (ruling `numeric-heuristics-are-guidance`), so no upper bound is set here.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["seam", "why"],
+            "properties": {
+              "seam": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+              "why": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+            }
+          }
+        },
+        "verification_commands": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+        },
+        "out_of_scope": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+        }
+      }
+    },
+    "specification_hash": {
+      "description": "sha256 over the canonical JSON form of `specification` alone (keys sorted, no insignificant whitespace).",
+      "$ref": "common.schema.json#/$defs/hash"
+    },
+    "specification_approval": {
+      "description": "The specification approval. Its `artifact_hash` is `specification_hash`, so slicing afterwards does not void it and an edited specification does not inherit it. Required once published; a `bound.run` draft may await it.",
+      "$ref": "common.schema.json#/$defs/approval",
+      "x-validator-rule": "plan-record.specification-approval-binds-to-the-specification-hash"
+    },
+    "slices": {
+      "description": "The tickets the specification was sliced into, by reference. A slice that failed the zero-context check is a 'decision' ticket in place of the implementation ticket that could not be written; it is never executable work.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ticket", "type"],
+        "properties": {
+          "ticket": { "$ref": "common.schema.json#/$defs/artifact_ref" },
+          "type": { "enum": ["implementation", "decision"] }
+        }
+      }
+    },
+    "dependency_graph": {
+      "description": "The blocking edges, and what the edges do not cover. Two tickets with no edge between them are still unsafe in parallel when they write the same file, which is why each ticket's exclusive file ownership lives on the ticket (`write_ownership`) and the shared generated artifacts and migration numbering are declared here.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["edges"],
+      "properties": {
+        "edges": {
+          "description": "One entry per blocking edge. An empty list is a claim that no slice waits on another.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["ticket", "blocked_by"],
+            "properties": {
+              "ticket": { "$ref": "common.schema.json#/$defs/artifact_id" },
+              "blocked_by": { "$ref": "common.schema.json#/$defs/artifact_id" }
+            }
+          }
+        },
+        "shared_generated_artifacts": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+        },
+        "migration_numbering": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+      }
+    }
+  },
+  "unevaluatedProperties": false,
+  "allOf": [
+    { "$ref": "common.schema.json#/$defs/envelope" },
+    {
+      "description": "A published plan was sliced, and slicing waits on the specification approval.",
+      "if": { "properties": { "status": { "const": "published" } }, "required": ["status"] },
+      "then": { "required": ["specification_approval"] }
+    }
+  ]
+}

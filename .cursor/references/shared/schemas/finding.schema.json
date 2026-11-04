@@ -1,0 +1,559 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-kit.local/schemas/finding.schema.json",
+  "title": "Finding",
+  "description": "Plan 5.5. One review finding, with its axes kept separate: P0-P3 severity is the canonical risk scale, the confidence anchor is an evidence anchor rather than a calibrated probability, specification quality and difficulty describe the solution rather than the risk, and the autofix class describes what may be done without a human. Two rulings are enforced structurally: a 'smell' has a null difficulty, because inventing a difficulty before the solution class is known is exactly what plan 5.5 forbids; and a 'smell' can never be dispatched to an automatic fixer (release scenario 6). The identity fingerprint is built from rule/cause, location or symbol and evidence, and deliberately admits no line-number input, so moving a line neither duplicates nor suppresses a finding (release scenario 9). A low-confidence security finding stays visible and is adjudicated; no generic threshold filters it away (plan 6.1).",
+  "type": "object",
+  "required": [
+    "title",
+    "lane",
+    "fingerprint",
+    "severity",
+    "confidence_anchor",
+    "spec_quality",
+    "difficulty",
+    "autofix_class",
+    "evidence",
+    "verification"
+  ],
+  "properties": {
+    "schema": {
+      "const": "finding"
+    },
+    "status": {
+      "description": "Plan 5.5. 'accepted' is a disposition, not a fix; 'awaiting-verification' is not 'resolved'; only independent verification evidence and policy close a finding, and a classifier's output stays advisory (plan 11).",
+      "enum": [
+        "open",
+        "accepted",
+        "in-progress",
+        "awaiting-verification",
+        "resolved",
+        "deferred",
+        "rejected",
+        "reopened"
+      ]
+    },
+    "title": {
+      "$ref": "common.schema.json#/$defs/nonempty_string"
+    },
+    "detail": {
+      "type": "string"
+    },
+    "lane": {
+      "description": "The review role that raised it. Findings from different lanes are not merged into one voice; conflicting evidence is retained (plan 5.5).",
+      "$ref": "common.schema.json#/$defs/role_id"
+    },
+    "fingerprint": {
+      "description": "Identity candidate across fixes (plan 5.5). 'inputs' is closed and has no line-number member: rule or cause, the symbol or path, and a digest of the evidence are the only things identity may depend on. A finding whose line moved keeps its fingerprint; a genuinely different cause at the same line gets a different one (release scenario 9). The fingerprint plus the evidence digest is also what a continuing seat retains and what a replacement seat receives in its prior-finding packet, so a later closure pass sees the old finding rather than starting from zero (ruling `reviewer-continuity-not-amnesia`).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "inputs"],
+      "properties": {
+        "value": {
+          "$ref": "common.schema.json#/$defs/hash"
+        },
+        "inputs": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["rule", "symbol_or_path", "evidence_digest"],
+          "properties": {
+            "rule": {
+              "description": "The rule or the cause, e.g. a cited standards rule id or a named failure mode.",
+              "$ref": "common.schema.json#/$defs/nonempty_string"
+            },
+            "symbol_or_path": {
+              "$ref": "common.schema.json#/$defs/nonempty_string"
+            },
+            "evidence_digest": {
+              "description": "A digest over the members of each evidence entry that `x-digest-domain` below names, and never over where in the file the entry sat. This is the input the closure of `inputs` above depends on and the one place a line number can re-enter identity through the back door: `location.line_range` lives inside `evidence`, so a digest taken over the evidence array whole carries the position, and the same defect after an edit above it produces different inputs. That is not a weaker guarantee but the opposite one. `finding.fingerprint-stable-across-line-moves` requires two findings with different identity inputs to have different values, so under that reading keeping the fingerprint across a moved line is refused and changing it is accepted -- exactly what release scenario 9 exists to forbid, enforced backwards. Both readings were run against the shipped rule in research/probes/fingerprint-line-move.ts and they are mirror images. The domain is named in data rather than only in this paragraph because the check that enforces it cannot read prose, and because a paragraph and a check are two places to say one thing, which is one more than can be kept true.",
+              "x-digest-domain": {
+                "description": "The domain of `evidence_digest`: sha256 over the canonical JSON of the array named by `over`, each entry projected onto `fields` and nothing else. Entry order is part of the digest; key order is not, since canonical JSON sorts it. `finding.evidence-digest-domain` reads this object and recomputes, so a line-bearing member added here inverts release scenario 9 loudly instead of quietly. The list is every member an evidence entry can carry -- both objects are closed -- less the two that say where rather than what: `location.revision`, which changes at every commit and would make identity survive nothing, and `location.line_range`, which is the whole of what scenario 9 forbids. Named rather than excluded on purpose: under an exclusion list a position member added to `code_location` later would join this digest silently, and that is the failure this field exists to prevent. The cost is the other direction, a new content member omitted until someone adds it here, which `ak validate` cannot see -- it is the reason both objects are closed. `excerpt` is optional and absent from every example shipped here, so a digest over it and the path alone would be a digest over paths, which `symbol_or_path` already carries; `observation` is required on every entry and is what one evidence entry has that another at the same path does not.",
+                "over": "evidence",
+                "fields": ["excerpt", "observation", "supports", "location.repo", "location.path", "location.symbol"]
+              },
+              "x-validator-rule": "finding.evidence-digest-domain",
+              "$ref": "common.schema.json#/$defs/hash"
+            }
+          }
+        }
+      },
+      "x-validator-rule": "finding.fingerprint-stable-across-line-moves"
+    },
+    "severity": {
+      "description": "Canonical impact scale, preserved across presentation (plan 5.5).",
+      "enum": ["P0", "P1", "P2", "P3"]
+    },
+    "presentation_label": {
+      "description": "A presentation or disposition label only. It never replaces or reorders 'severity', and it is never the field a policy reads. Reviewer agreement is not itself a reason to raise a nit's severity (plan 5.5).",
+      "enum": ["Critical", "Important", "Nit", "FYI"],
+      "x-validator-rule": "finding.presentation-label-never-substitutes-for-severity"
+    },
+    "confidence_anchor": {
+      "description": "An evidence anchor on a fixed 0/25/50/75/100 scale, not a calibrated probability and not a score to threshold on (plan 5.5). A low anchor means thin evidence, which is a reason to adjudicate, not to discard. 75 and 100 are gated: a seat claiming either has to have quoted the line that makes the finding true, which the branch below enforces. 50 is the anchor for a finding whose motivating line the seat could not quote \u2014 a recorded anchor, not a suppressed finding.",
+      "enum": [0, 25, 50, 75, 100]
+    },
+    "spec_quality": {
+      "description": "How completely the remedy is specified. The mapping is fixed so two vocabularies do not coexist (plan 5.5): specified -> patch, bounded -> sketch, open -> smell. 'patch' is a concrete change; 'sketch' bounds the solution without fixing it; 'smell' names a problem whose solution space is still open.",
+      "enum": ["patch", "sketch", "smell"]
+    },
+    "difficulty": {
+      "description": "Null when the solution class is not yet known. Plan 5.5 forbids inventing a difficulty before then, which is why 'smell' forces null below.",
+      "enum": ["mechanical", "local-judgment", "cross-cutting", null]
+    },
+    "autofix_class": {
+      "description": "What may happen without a human: 'safe_auto' applies unattended, 'gated_auto' applies under an authorization, 'manual' needs a person to write the change, 'advisory' is information only. These four are the canonical vocabulary of plan 5.5 and this schema is their authority; each donor's enum is a proper subset and neither cuts this one (ruling `safe-auto-restricted-per-seat`). The enum is deliberately not narrowed per lane: the restriction is on emission by a seat, never on the vocabulary, so which seats may emit 'safe_auto' is a review-policy property of the seat and not a shape this document can carry. A synthesis or intake step that receives 'safe_auto' from a peer lane remaps it to 'gated_auto'; it never drops the finding, because discarding a finding for its action class loses a real finding on a property that is not about whether the finding is true.",
+      "enum": ["safe_auto", "gated_auto", "manual", "advisory"]
+    },
+    "evidence": {
+      "description": "Revision-bound locations and the observation made at each one (plan 5.5, 5.2). Conflicting evidence is retained rather than reconciled away.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["location", "observation"],
+        "properties": {
+          "location": {
+            "$ref": "common.schema.json#/$defs/code_location"
+          },
+          "observation": {
+            "$ref": "common.schema.json#/$defs/nonempty_string"
+          },
+          "excerpt": {
+            "type": "string"
+          },
+          "supports": {
+            "description": "Which way this entry cuts. Absent means it supports the finding, which is what the array is for; 'counter-evidence' is the only way to say otherwise, and it is retained rather than dropped. The quote-the-line gate below reads this field: a counter-evidence quote does not ground the finding it argues against.",
+            "enum": ["finding", "counter-evidence"]
+          }
+        }
+      }
+    },
+    "conflicting_evidence": {
+      "description": "Evidence against the finding, kept rather than dropped during synthesis (plan 5.5).",
+      "type": "array",
+      "items": {
+        "$ref": "common.schema.json#/$defs/evidence_ref"
+      }
+    },
+    "suggested_fix": {
+      "description": "A proposed remedy, not authorization (plan 5.5). Applying it still requires 'authorization_ref'.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["summary"],
+      "properties": {
+        "summary": {
+          "$ref": "common.schema.json#/$defs/nonempty_string"
+        },
+        "diff": {
+          "type": "string"
+        },
+        "affected": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/glob"
+          }
+        }
+      }
+    },
+    "verification": {
+      "description": "What would demonstrate closure. Named before the fix, so closure is not defined by whoever wrote the fix.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["check"],
+        "properties": {
+          "check": {
+            "$ref": "common.schema.json#/$defs/nonempty_string"
+          },
+          "kind": {
+            "enum": ["command", "probe", "manual"]
+          },
+          "supports": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^AC-[0-9]+$"
+            }
+          }
+        }
+      }
+    },
+    "authorization_ref": {
+      "description": "Authority to apply a change or accept a disposition (plan 5.5). A finding does not carry its own authority: it points at a human approval, a runner-validated grant, or a decision artifact.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "enum": ["explicit", "delegated-grant", "decision"]
+        },
+        "approval": {
+          "$ref": "common.schema.json#/$defs/approval"
+        },
+        "grant": {
+          "$ref": "common.schema.json#/$defs/grant_ref"
+        },
+        "decision": {
+          "$ref": "common.schema.json#/$defs/artifact_ref"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "delegated-grant"
+              }
+            },
+            "required": ["kind"]
+          },
+          "then": {
+            "required": ["grant"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "decision"
+              }
+            },
+            "required": ["kind"]
+          },
+          "then": {
+            "required": ["decision"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "explicit"
+              }
+            },
+            "required": ["kind"]
+          },
+          "then": {
+            "required": ["approval"]
+          }
+        }
+      ]
+    },
+    "adjudication": {
+      "description": "The recorded ruling on a finding that a threshold would otherwise have swallowed. Required for a low-anchor security finding (plan 6.1): the concern stays visible and someone with authority decides, rather than a generic filter deciding silently.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["by", "outcome", "rationale", "at"],
+      "properties": {
+        "by": {
+          "$ref": "common.schema.json#/$defs/actor_role"
+        },
+        "outcome": {
+          "enum": ["accepted", "rejected", "deferred", "escalated"]
+        },
+        "rationale": {
+          "$ref": "common.schema.json#/$defs/nonempty_string"
+        },
+        "at": {
+          "$ref": "common.schema.json#/$defs/timestamp"
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/evidence_ref"
+          }
+        }
+      }
+    },
+    "dispatch": {
+      "description": "Where the finding was sent, and to exactly one place: 'kind' is single-valued, so a finding is sharpened, diagnosed, escalated or handed to a fixer, never two of those at once and never re-implemented after a packet already carried the work (ruling `diagnose-patch-or-packet-never-both`). A 'smell' may be sharpened, diagnosed or escalated, never handed to a fixer; a hand-off has to be specified enough to be implemented once rather than guessed at by a second implementer (release scenario 6, plan 2.5 apply-findings).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "enum": ["fixer", "sharpen", "diagnose", "escalate"]
+        },
+        "ticket": {
+          "$ref": "common.schema.json#/$defs/artifact_ref"
+        },
+        "at": {
+          "$ref": "common.schema.json#/$defs/timestamp"
+        }
+      }
+    },
+    "closure_receipt": {
+      "description": "Independent evidence supporting resolution (plan 5.5). Only independent verification evidence, plus a policy rule saying that evidence is sufficient for this finding, closes it; reviewer confidence and classifier output stay advisory and are recorded as such (ruling `closure-requires-independent-verification`, release scenario 3). 'independent' is pinned true and the closer is recorded, because an author closing its own finding is one of the invalid transitions the validator must refuse (plan 9, milestone 2). 'revision' binds the receipt, so a changed patch does not inherit it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["verification", "closed_by", "independent", "at"],
+      "properties": {
+        "verification": {
+          "description": "The verification artifact that demonstrates closure. A description of green tests is not one (plan 5.6, release scenario 10).",
+          "$ref": "common.schema.json#/$defs/artifact_ref"
+        },
+        "closed_by": {
+          "$ref": "common.schema.json#/$defs/actor_role"
+        },
+        "independent": {
+          "const": true
+        },
+        "at": {
+          "$ref": "common.schema.json#/$defs/timestamp"
+        },
+        "revision": {
+          "$ref": "common.schema.json#/$defs/revision_ref"
+        }
+      },
+      "x-validator-rule": "finding.closer-is-not-the-author-of-the-change"
+    },
+    "synthesis": {
+      "description": "Recorded when a synthesis pass changed the originating specialist's grading. Synthesis may conservatively downgrade specification quality or raise difficulty; it may never make a finding easier, more specified, more autofixable, less severe, or more authorized (plan 5.5). The comparison is between two documents, so the validator enforces the direction of every change listed here.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["of", "changes", "rationale"],
+      "properties": {
+        "of": {
+          "description": "The specialist's original finding, bound by hash.",
+          "$ref": "common.schema.json#/$defs/artifact_ref"
+        },
+        "changes": {
+          "description": "Each grading change, with the direction the validator enforces. Reviewer agreement is not evidence: synthesis may not raise a nit's severity because several seats happened to agree on it, so a severity change cites what it found, never a count of agreeing seats (ruling `low-confidence-security-adjudicated`).",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["field", "from", "to"],
+            "properties": {
+              "field": {
+                "enum": ["severity", "spec_quality", "difficulty", "autofix_class", "confidence_anchor"]
+              },
+              "from": {
+                "type": ["string", "integer", "null"]
+              },
+              "to": {
+                "type": ["string", "integer", "null"]
+              }
+            }
+          }
+        },
+        "rationale": {
+          "$ref": "common.schema.json#/$defs/nonempty_string"
+        }
+      },
+      "x-validator-rule": "finding.synthesis-may-only-worsen-a-grade"
+    },
+    "review": {
+      "description": "The review run that raised it.",
+      "$ref": "common.schema.json#/$defs/artifact_ref"
+    },
+    "novelty_evidence": {
+      "description": "Required when this finding first appears during a delta review: what new evidence or regression makes it new (plan 6.3, release scenario 8). A serious newly discovered issue in an untouched but affected caller stays reportable; this field is how it earns its place, not a reason to suppress it.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "common.schema.json#/$defs/evidence_ref"
+      }
+    },
+    "first_seen": {
+      "description": "The revision where the finding was first raised. Kept so a reopened finding is recognisably the same finding.",
+      "$ref": "common.schema.json#/$defs/revision_ref"
+    }
+  },
+  "unevaluatedProperties": false,
+  "allOf": [
+    {
+      "$ref": "common.schema.json#/$defs/envelope"
+    },
+    {
+      "description": "Plan 5.5: a 'smell' is an open solution space. Difficulty must be null, the autofix class cannot be automatic, and the dispatch cannot be a fixer ticket. Sharpen the finding, diagnose it, or escalate it (release scenario 6).",
+      "if": {
+        "properties": {
+          "spec_quality": {
+            "const": "smell"
+          }
+        },
+        "required": ["spec_quality"]
+      },
+      "then": {
+        "properties": {
+          "difficulty": {
+            "type": "null"
+          },
+          "autofix_class": {
+            "enum": ["manual", "advisory"]
+          },
+          "dispatch": {
+            "properties": {
+              "kind": {
+                "enum": ["sharpen", "diagnose", "escalate"]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "An automatically appliable finding is a fully specified one. 'safe_auto' requires a 'patch', a mechanical difficulty and a suggested fix; nothing weaker may run unattended (plan 5.5, plan 2.5 apply-findings). This is the structural gate a seat that does routinely emit 'safe_auto' still has to clear; it is the floor, and the per-seat restriction sits on top of it (ruling `safe-auto-restricted-per-seat`).",
+      "if": {
+        "properties": {
+          "autofix_class": {
+            "const": "safe_auto"
+          }
+        },
+        "required": ["autofix_class"]
+      },
+      "then": {
+        "required": ["suggested_fix"],
+        "properties": {
+          "spec_quality": {
+            "const": "patch"
+          },
+          "difficulty": {
+            "const": "mechanical"
+          }
+        }
+      }
+    },
+    {
+      "description": "'gated_auto' applies under an authorization, and the half of that a shape can carry is this: a class that gates the application of a change requires the change to exist, so a suggested fix is required (plan 5.5). The authorization is deliberately not required here. It does not exist when the class is assigned, because a seat grades a finding before anyone has approved anything, and requiring it would contradict the rule that a synthesis or intake step remaps an inbound 'safe_auto' to 'gated_auto' and keeps the finding (ruling `safe-auto-restricted-per-seat`) \u2014 that remap would produce a document this schema rejects unless the step invented an authorization it has no authority to issue. The authority is recorded where it is exercised instead: the disposition branch below requires it to accept, defer, reject or resolve, and the fixer-dispatch branch requires it to hand the work to an implementer. 'suggested_fix' states the same boundary from the other side \u2014 a proposed remedy is not authorization.",
+      "if": {
+        "properties": {
+          "autofix_class": {
+            "const": "gated_auto"
+          }
+        },
+        "required": ["autofix_class"]
+      },
+      "then": {
+        "required": ["suggested_fix"]
+      }
+    },
+    {
+      "description": "A disposition is an exercise of authority and is recorded as one (plan 5.5).",
+      "if": {
+        "properties": {
+          "status": {
+            "enum": ["accepted", "in-progress", "deferred", "rejected", "resolved"]
+          }
+        },
+        "required": ["status"]
+      },
+      "then": {
+        "required": ["authorization_ref"]
+      }
+    },
+    {
+      "description": "Only independent verification evidence closes a finding (plan 11). A resolved finding without a closure receipt is an invalid transition, not an optimistic one.",
+      "if": {
+        "properties": {
+          "status": {
+            "const": "resolved"
+          }
+        },
+        "required": ["status"]
+      },
+      "then": {
+        "required": ["closure_receipt"]
+      }
+    },
+    {
+      "description": "A reopened finding says why it came back.",
+      "if": {
+        "properties": {
+          "status": {
+            "const": "reopened"
+          }
+        },
+        "required": ["status"]
+      },
+      "then": {
+        "required": ["novelty_evidence"]
+      }
+    },
+    {
+      "description": "A low-confidence security concern remains visible and gets adjudicated at the finding adjudication checkpoint; it is never silently discarded by a generic filtering threshold, and the security or adversarial seat is never skipped because a classifier was uncertain about the artifact (plan 6.1, release scenario 3, ruling `low-confidence-security-adjudicated`). Confidence is an evidence anchor recorded on the finding, not a gate in front of it.",
+      "if": {
+        "properties": {
+          "lane": {
+            "const": "code-review/security"
+          },
+          "confidence_anchor": {
+            "enum": [0, 25, 50]
+          }
+        },
+        "required": ["lane", "confidence_anchor"]
+      },
+      "then": {
+        "required": ["adjudication"],
+        "properties": {
+          "status": {
+            "not": {
+              "const": "open"
+            }
+          }
+        }
+      },
+      "x-validator-rule": "finding.low-confidence-security-is-adjudicated-not-filtered"
+    },
+    {
+      "description": "A fixer dispatch needs a sufficiently specified finding and a recorded authorization; apply-findings applies only accepted, sufficiently specified findings (plan 2.5).",
+      "if": {
+        "required": ["dispatch"],
+        "properties": {
+          "dispatch": {
+            "properties": {
+              "kind": {
+                "const": "fixer"
+              }
+            },
+            "required": ["kind"]
+          }
+        }
+      },
+      "then": {
+        "required": ["authorization_ref"],
+        "properties": {
+          "spec_quality": {
+            "enum": ["patch", "sketch"]
+          }
+        }
+      }
+    },
+    {
+      "description": "The quote-the-line gate. A seat claiming a 75 or 100 anchor must have quoted the line that makes the finding true: at least one evidence entry that supports the finding carries a non-empty 'excerpt'. This kills the 'field or symbol does not exist' false-positive class, whose failure mode is a seat confidently describing code it never read. The gate never forces a quote to exist: a seat that cannot quote the motivating line anchors at 50 instead, which is a recorded anchor and not a discarded finding, so satisfying this check by fabricating an excerpt is strictly worse than the honest alternative the vocabulary already provides. Counter-evidence is excluded because a quote arguing against a finding does not ground it. Which excerpt is the motivating line, and whether quoting a generating meta-construct grounds a symbol the framework generates rather than the source, are both semantic and live in policies/review.yaml. Donor: compound-engineering@05c42da94fd318fa081f29d17bf947762aa477b1:skills/ce-code-review/references/subagent-template.md, recorded at research/dossiers/review-personas.md:598.",
+      "if": {
+        "required": ["confidence_anchor"],
+        "properties": {
+          "confidence_anchor": {
+            "enum": [75, 100]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "evidence": {
+            "contains": {
+              "description": "An entry that grounds the finding in quoted source.",
+              "required": ["excerpt"],
+              "properties": {
+                "excerpt": {
+                  "minLength": 1
+                },
+                "supports": {
+                  "not": {
+                    "const": "counter-evidence"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

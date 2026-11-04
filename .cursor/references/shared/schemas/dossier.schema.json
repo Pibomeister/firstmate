@@ -1,0 +1,265 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-kit.local/schemas/dossier.schema.json",
+  "title": "Scout dossier",
+  "description": "Plan 5.4. Bounded read-only exploration recorded as evidence: structured hits with repo, revision, path, symbol, line range, excerpt, relationship type, confirmed/assumed status and index revision where applicable, plus the searches attempted, the coverage limits, the unknowns, the files not to touch, and a recommendation for further inspection. There is deliberately no field capable of carrying an architectural verdict, assessment, conclusion or impact map: 'recommendation' names what should be inspected next, and the object is closed so a verdict cannot be added as an extra key (plan 2.1, plan 5.4). Lexical search is the baseline and 'searches' must contain at least one lexical search; graph providers are optional evidence sources, and a stale or unavailable graph is required to produce a documented coverage limitation rather than a fabricated complete impact map (release scenario 14). Default budget is four turns.",
+  "type": "object",
+  "required": ["question", "budget", "searches", "hits", "coverage_limits", "unknowns", "recommendation"],
+  "properties": {
+    "schema": { "const": "dossier" },
+    "status": {
+      "description": "'limited' means the coverage limits materially restrict what the dossier can support; it is a result, not a failure.",
+      "enum": ["draft", "complete", "limited", "superseded"]
+    },
+    "question": {
+      "description": "The bounded question this exploration was asked. Scope is set before searching, not after.",
+      "$ref": "common.schema.json#/$defs/nonempty_string"
+    },
+    "budget": {
+      "description": "Plan 5.4: a four-turn default, with multiple independent reads per turn where the host permits it. Exhausting the budget is a coverage limit, not a licence to guess.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["turns_allowed", "turns_used"],
+      "properties": {
+        "turns_allowed": { "type": "integer", "minimum": 1, "default": 4 },
+        "turns_used": { "type": "integer", "minimum": 0 },
+        "exhausted": { "type": "boolean" },
+        "reads_per_turn_parallel": { "type": "boolean" }
+      },
+      "x-validator-rule": "dossier.turns-used-within-turns-allowed"
+    },
+    "searches": {
+      "description": "Every search attempted, including the ones that returned nothing. A search with no results is coverage evidence.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "tool", "query", "result_count"],
+        "properties": {
+          "id": { "$ref": "common.schema.json#/$defs/kebab_id" },
+          "tool": { "enum": ["lexical", "path", "symbol-index", "graph", "manual-read"] },
+          "provider": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+          "query": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+          "scope": {
+            "type": "array",
+            "items": { "$ref": "common.schema.json#/$defs/glob" }
+          },
+          "result_count": { "type": "integer", "minimum": 0 },
+          "turn": { "type": "integer", "minimum": 1 }
+        }
+      },
+      "contains": {
+        "description": "Lexical search is the baseline; a dossier built only from graph output has no baseline to fall back on (plan 5.4).",
+        "properties": { "tool": { "const": "lexical" } },
+        "required": ["tool"]
+      },
+      "x-validator-rule": "dossier.lexical-baseline-present"
+    },
+    "hits": {
+      "description": "Structured, revision-bound findings of fact. A hit is where something is and how it relates, never whether it is right.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "location", "excerpt", "relationship", "confirmation", "discovered_by"],
+        "properties": {
+          "id": { "$ref": "common.schema.json#/$defs/kebab_id" },
+          "location": {
+            "description": "Repo, revision, path, symbol and line range. Binding to a revision is what makes the hit re-checkable later (plan 5.2).",
+            "$ref": "common.schema.json#/$defs/code_location"
+          },
+          "excerpt": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+          "relationship": {
+            "enum": [
+              "defines",
+              "implements",
+              "calls",
+              "called-by",
+              "reads",
+              "writes",
+              "imports",
+              "imported-by",
+              "configures",
+              "tests",
+              "documents",
+              "references"
+            ]
+          },
+          "confirmation": {
+            "description": "'confirmed' means the relationship was read in the source at this revision. 'assumed' means it was inferred, e.g. from an index, and has not been read back.",
+            "enum": ["confirmed", "assumed"]
+          },
+          "discovered_by": { "enum": ["lexical", "path", "symbol-index", "graph", "manual-read"] },
+          "index": {
+            "description": "Required for a graph-discovered hit: which index produced it, at what revision, and how fresh it is (plan 5.4).",
+            "$ref": "#/$defs/index_ref"
+          },
+          "search": { "$ref": "common.schema.json#/$defs/kebab_id" },
+          "note": { "type": "string" }
+        },
+        "allOf": [
+          {
+            "description": "Graph results need freshness and provenance (plan 5.4).",
+            "if": { "properties": { "discovered_by": { "const": "graph" } }, "required": ["discovered_by"] },
+            "then": { "required": ["index"] }
+          },
+          {
+            "description": "An unread inference is 'assumed'. Only a hit read in the source at this revision is 'confirmed'.",
+            "if": {
+              "properties": { "discovered_by": { "const": "graph" }, "confirmation": { "const": "confirmed" } },
+              "required": ["discovered_by", "confirmation"]
+            },
+            "then": { "required": ["excerpt"] }
+          }
+        ]
+      }
+    },
+    "graph_providers": {
+      "description": "Optional evidence providers, never prerequisites for installing the pack (plan 5.4). Declaring one that is unavailable or stale forces a coverage limitation below.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "available"],
+        "properties": {
+          "name": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+          "available": { "type": "boolean" },
+          "index": { "$ref": "#/$defs/index_ref" },
+          "unavailable_reason": { "type": "string" }
+        }
+      }
+    },
+    "coverage_limits": {
+      "description": "What this exploration could not see and what that costs the reader. Present but empty is valid only when nothing limited the search.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["area", "why", "consequence"],
+        "properties": {
+          "area": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+          "why": {
+            "enum": [
+              "budget-exhausted",
+              "index-stale",
+              "index-unavailable",
+              "access-denied",
+              "out-of-scope",
+              "generated-code",
+              "binary-or-opaque",
+              "not-searched"
+            ]
+          },
+          "consequence": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+          "provider": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+        }
+      }
+    },
+    "unknowns": {
+      "description": "Questions this dossier did not answer, stated as questions. An unknown is a result; it is never rounded to an assumption.",
+      "type": "array",
+      "items": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+    },
+    "do_not_touch": {
+      "description": "Files the implementer should not change, with the reason (plan 2.1).",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "reason"],
+        "properties": {
+          "path": { "$ref": "common.schema.json#/$defs/glob" },
+          "reason": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+        }
+      }
+    },
+    "recommendation": {
+      "description": "A recommendation for additional inspection and nothing else (plan 5.4). It names where to look next and why the evidence so far does not settle it. It does not say what the architecture should be, whether a change is safe, or whether the work should proceed; those are judgments for the lanes that hold that authority.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["further_inspection"],
+      "properties": {
+        "further_inspection": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["what", "why"],
+            "properties": {
+              "what": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+              "why": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+              "suggested_tool": {
+                "enum": ["lexical", "path", "symbol-index", "graph", "manual-read", "prototype", "diagnose"]
+              }
+            }
+          }
+        },
+        "priority_order": { "$ref": "common.schema.json#/$defs/string_list" }
+      }
+    }
+  },
+  "unevaluatedProperties": false,
+  "allOf": [
+    { "$ref": "common.schema.json#/$defs/envelope" },
+    {
+      "description": "A stale, unknown-freshness or unavailable graph provider must produce at least one documented coverage limitation. The alternative — reporting a complete impact map from an index that cannot support one — is exactly what release scenario 14 forbids.",
+      "if": {
+        "required": ["graph_providers"],
+        "properties": {
+          "graph_providers": {
+            "contains": {
+              "anyOf": [
+                { "properties": { "available": { "const": false } }, "required": ["available"] },
+                {
+                  "properties": {
+                    "index": {
+                      "properties": { "freshness": { "enum": ["stale", "unknown"] } },
+                      "required": ["freshness"]
+                    }
+                  },
+                  "required": ["index"]
+                }
+              ]
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": { "coverage_limits": { "minItems": 1 } },
+        "required": ["coverage_limits"]
+      },
+      "x-validator-rule": "dossier.stale-or-absent-graph-documents-a-limitation"
+    },
+    {
+      "description": "No architectural verdict. The object is closed, and these key names are additionally refused so that relaxing the closure later does not quietly reopen the door (plan 2.1, plan 5.4).",
+      "not": {
+        "anyOf": [
+          { "required": ["verdict"] },
+          { "required": ["assessment"] },
+          { "required": ["conclusion"] },
+          { "required": ["judgment"] },
+          { "required": ["impact_map"] },
+          { "required": ["approval"] },
+          { "required": ["risk_rating"] }
+        ]
+      },
+      "x-validator-rule": "dossier.no-architectural-verdict"
+    }
+  ],
+  "$defs": {
+    "index_ref": {
+      "description": "Which index answered, at what revision, and how fresh it is relative to the dossier's source revision.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "freshness"],
+      "properties": {
+        "provider": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "index_revision": { "$ref": "common.schema.json#/$defs/revision" },
+        "indexed_at": { "$ref": "common.schema.json#/$defs/timestamp" },
+        "freshness": { "enum": ["fresh", "stale", "unknown"] }
+      },
+      "x-validator-rule": "dossier.index-revision-compared-to-source-revision"
+    }
+  }
+}

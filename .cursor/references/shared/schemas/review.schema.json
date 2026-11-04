@@ -1,0 +1,440 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-kit.local/schemas/review.schema.json",
+  "title": "Review run",
+  "description": "Plan 5.2, 6.1-6.4. One review run in mode 'full', 'delta' or 'readiness', matching super-review's three entrypoints in catalog.yaml. The three revisions plan 5.2 requires are separate fields and stay separate: 'comparison_base' is what the change is measured against, 'reviewed_head' is the revision actually inspected, and 'last_head_verified' is the head the previous delta pass verified. Per-lane coverage carries an explicit 'unavailable' state; a required lane that is unavailable blocks approval and never degrades into the author reviewing their own change (plan 6.1, release scenario 4). At most two fix/verify cycles; a third is refused and the run goes to an explicit blocked or replan result (plan 6.3, release scenario 18). Delta scope is bounded by affected behavior rather than changed lines, and a finding new in a delta pass carries novelty evidence (plan 6.3, release scenario 8).",
+  "type": "object",
+  "required": ["mode", "comparison_base", "reviewed_head", "snapshot", "authorship", "lanes", "verdict", "fix_cycles"],
+  "properties": {
+    "schema": { "const": "review" },
+    "status": { "enum": ["draft", "in-progress", "complete", "blocked", "cancelled", "superseded"] },
+    "mode": {
+      "description": "'full' is the specialist panel over an immutable snapshot; 'delta' is the narrow two-axis pass over a fix; 'readiness' is the two-lane gate. These are super-review's entrypoints, not three pipelines: each runs the shared phase operation (plan 7.1).",
+      "enum": ["full", "delta", "readiness"]
+    },
+    "comparison_base": {
+      "description": "The revision the change is measured against (plan 5.2).",
+      "$ref": "common.schema.json#/$defs/revision_ref"
+    },
+    "reviewed_head": {
+      "description": "The revision actually inspected. A verdict belongs to this revision and no other (plan 2.1).",
+      "$ref": "common.schema.json#/$defs/revision_ref"
+    },
+    "last_head_verified": {
+      "description": "The head the previous delta pass verified. Required in delta mode; keeping it distinct from 'comparison_base' and 'reviewed_head' is what stops the three being conflated and what makes a stale closure check detectable (plan 5.2, 6.3, ruling `delta-baseline-reset-not-third-loop`).",
+      "$ref": "common.schema.json#/$defs/revision_ref"
+    },
+    "snapshot": {
+      "description": "The immutable patch snapshot every seat receives. Each seat gets the same snapshot plus its relevant requirements, standards, tests and dependency context, and never the implementer's narrative or another reviewer's judgment (plan 6.1, 6.2). Reviewers cannot edit source, which is pinned here rather than left to the prose.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["hash", "immutable", "reviewers_may_edit_source"],
+      "properties": {
+        "hash": { "$ref": "common.schema.json#/$defs/hash" },
+        "immutable": { "const": true },
+        "reviewers_may_edit_source": { "const": false },
+        "includes": {
+          "description": "What was packaged with the snapshot for the seats.",
+          "type": "array",
+          "items": {
+            "enum": [
+              "diff",
+              "requirements",
+              "standards",
+              "tests",
+              "dependency-context",
+              "prior-findings",
+              "verification-receipts"
+            ]
+          }
+        },
+        "excludes": {
+          "description": "What is deliberately withheld from every seat.",
+          "type": "array",
+          "items": { "enum": ["implementer-narrative", "other-reviewer-judgments", "approval-context"] }
+        }
+      }
+    },
+    "authorship": {
+      "description": "Who wrote and who approved the change under review. Recorded so lane independence is checkable rather than asserted: no seat may be filled by the implementer, and the security seat may additionally not be filled by the spec approver (AGENTS.md, plan 7.3).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["implementer"],
+      "properties": {
+        "implementer": { "$ref": "common.schema.json#/$defs/actor_role" },
+        "spec_approver": { "$ref": "common.schema.json#/$defs/actor_role" },
+        "tickets": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/artifact_ref" }
+        }
+      },
+      "x-validator-rule": "review.security-seat-not-filled-by-implementer-or-spec-approver"
+    },
+    "lanes": {
+      "description": "Per-lane coverage. 'covered' means the seat ran and returned; 'skipped' means the lane's activation conditions were not met and says why; 'unavailable' means the lane was required and failed to produce a result, which is an incomplete review, not a pass (plan 6.1, release scenario 4).",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/lane" }
+    },
+    "packs_attached": {
+      "description": "Packs that attached to this review, each with the rationale that selected it (plan 3).",
+      "type": "array",
+      "items": { "$ref": "pack.schema.json#/$defs/attachment_record" }
+    },
+    "findings": {
+      "description": "Findings raised or carried by this run, bound by hash.",
+      "type": "array",
+      "items": { "$ref": "common.schema.json#/$defs/artifact_ref" }
+    },
+    "new_findings": {
+      "description": "Findings first raised in this pass. In delta mode each one carries novelty evidence: what new evidence or regression makes it new (plan 6.3). A serious newly discovered issue in an affected but untouched caller stays reportable; scope discipline is not a reason to suppress relevant evidence (release scenario 8).",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["finding", "novelty_evidence"],
+        "properties": {
+          "finding": { "$ref": "common.schema.json#/$defs/artifact_ref" },
+          "novelty_evidence": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "$ref": "common.schema.json#/$defs/evidence_ref" }
+          },
+          "in_untouched_caller": { "type": "boolean" }
+        }
+      }
+    },
+    "delta_scope": {
+      "description": "Plan 6.3, as amended by its safety refinement. 'boundary' admits only 'affected-behavior': a changed-lines boundary is not expressible, because it would suppress a serious issue in an untouched caller (release scenario 8).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["boundary", "affected_behavior"],
+      "properties": {
+        "boundary": { "const": "affected-behavior" },
+        "affected_behavior": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+        },
+        "touched_dependencies": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+        },
+        "affected_surface": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/code_location" }
+        },
+        "excluded": {
+          "description": "What was deliberately out of scope for this pass and why. Unrelated low-priority issues do not restart discovery (plan 6.3).",
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+        }
+      },
+      "x-validator-rule": "review.delta-scope-bounded-by-affected-behavior"
+    },
+    "packet": {
+      "description": "The delta packet (plan 6.3): the original findings, the latest fix diff, the touched dependencies and the verification receipts. Persisted so a later pass does not reconstruct it from memory.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["prior_review", "original_findings", "fix_diff"],
+      "properties": {
+        "prior_review": { "$ref": "common.schema.json#/$defs/artifact_ref" },
+        "original_findings": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "common.schema.json#/$defs/artifact_ref" }
+        },
+        "fix_diff": { "$ref": "common.schema.json#/$defs/hash" },
+        "input_hashes": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/hash" }
+        },
+        "dispositions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["finding", "disposition"],
+            "properties": {
+              "finding": { "$ref": "common.schema.json#/$defs/artifact_ref" },
+              "disposition": { "enum": ["accepted", "deferred", "rejected", "resolved", "reopened"] },
+              "evidence": {
+                "type": "array",
+                "items": { "$ref": "common.schema.json#/$defs/evidence_ref" }
+              }
+            }
+          }
+        },
+        "verification_receipts": {
+          "description": "The receipts the previous pass closed findings on, carried forward as evidence rather than as a conclusion. Each is bound to its own revision and to 'fix_diff': a changed patch does not inherit a stale receipt, and a description of a green run was never one (plan 5.6, ruling `closure-requires-independent-verification`).",
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/artifact_ref" }
+        }
+      }
+    },
+    "continuity": {
+      "description": "Plan 6.4. 'Fresh reviewer' means independent of the author, never ignorant of prior findings (ruling `reviewer-continuity-not-amnesia`, release scenario 9). Either the same seat continues with its earlier finding context, or a replacement receives the durable prior-review packet; either way the seat sees the old finding, its fingerprint and its evidence, and the new revision. Independence from the author is mandatory; amnesia is not, and closure checks are not reset to zero.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode"],
+      "properties": {
+        "mode": { "enum": ["same-seat", "replacement-with-packet"] },
+        "prior_findings_packet": { "$ref": "common.schema.json#/$defs/artifact_ref" },
+        "independent_of_author": { "const": true }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "mode": { "const": "replacement-with-packet" } }, "required": ["mode"] },
+          "then": { "required": ["prior_findings_packet"] }
+        }
+      ]
+    },
+    "fix_cycles": {
+      "description": "Plan 6.3: at most two fix/verify cycles. The third stops and the run returns an explicit blocked or replan result rather than looping (release scenario 18). 'allowed' cannot exceed two, so no configuration buys a third pass; only a human-authorized entry in 'extensions' does. 'merge-with-follow-ups' is the recommendation when only P3 findings remain, listed in 'follow_ups', and it may carry an approved verdict when every open finding is such a P3; 'design-decision' is the result when two consecutive cycles reopened the same finding theme (ruling `two-fix-cycles-then-stop`).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["allowed", "used"],
+      "properties": {
+        "allowed": { "type": "integer", "minimum": 0, "maximum": 2 },
+        "used": {
+          "description": "Cycles taken. Above 'allowed' only by the cycles in 'extensions'.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "exhausted_action": { "enum": ["blocked", "replan", "merge-with-follow-ups", "design-decision"] },
+        "follow_ups": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/artifact_ref" }
+        },
+        "extensions": {
+          "description": "One entry per cycle a human authorized after the cap decision. Each is reviewed as a delta and may approve; a cycle above 'allowed' with no entry here is refused. 'authorized_by' must be the reserved actor 'human'; the operator attests that, and the record does not prove it.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["authorized_by", "authorized_at"],
+            "properties": {
+              "authorized_by": { "$ref": "common.schema.json#/$defs/actor_role" },
+              "authorized_at": { "$ref": "common.schema.json#/$defs/timestamp" }
+            }
+          }
+        }
+      },
+      "x-validator-rule": "review.third-fix-cycle-stops"
+    },
+    "verdict": {
+      "description": "The result for the inspected revision. 'unavailable' is a distinct outcome from 'changes-requested': it says the review could not be completed, which is why it cannot be read as an approval (plan 6.1).",
+      "enum": ["approved", "changes-requested", "blocked", "unavailable"]
+    },
+    "blocked_reasons": {
+      "type": "array",
+      "items": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+    },
+    "unresolved_blockers": {
+      "type": "array",
+      "items": { "$ref": "common.schema.json#/$defs/artifact_ref" }
+    },
+    "baseline_reset": {
+      "description": "Plan 6.3. When architecture, requirements, the comparison base or the affected surface changes materially, the affected approvals are invalidated and a new baseline is deliberately established. That is a new review scope with its own first pass, not an unbounded third delta loop (ruling `delta-baseline-reset-not-third-loop`, release scenario 10).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reason", "invalidated_approvals", "new_scope"],
+      "properties": {
+        "reason": {
+          "enum": [
+            "architecture-changed",
+            "requirements-changed",
+            "comparison-base-changed",
+            "affected-surface-changed"
+          ]
+        },
+        "invalidated_approvals": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/artifact_ref" }
+        },
+        "new_scope": { "const": true },
+        "note": { "type": "string" }
+      },
+      "x-validator-rule": "review.material-change-establishes-a-new-baseline"
+    },
+    "escalation": { "$ref": "common.schema.json#/$defs/escalation" },
+    "result": { "$ref": "common.schema.json#/$defs/operation_result" }
+  },
+  "unevaluatedProperties": false,
+  "allOf": [
+    { "$ref": "common.schema.json#/$defs/envelope" },
+    {
+      "description": "A required lane in the 'unavailable' state blocks an unqualified approval. A lane that could not run, could not be given its required context, or failed returns 'unavailable', which is a result and not an absence: it is never downgraded to an empty result and never backfilled by the author, the implementer, another seat or the synthesis step. The review names the lane and why, and stays resumable (plan 6.1, release scenario 4, ruling `required-lane-failure-is-unavailable`).",
+      "if": {
+        "required": ["lanes"],
+        "properties": {
+          "lanes": {
+            "contains": {
+              "allOf": [
+                { "properties": { "required": { "const": true } }, "required": ["required"] },
+                { "properties": { "state": { "const": "unavailable" } }, "required": ["state"] }
+              ]
+            }
+          }
+        }
+      },
+      "then": {
+        "required": ["blocked_reasons"],
+        "properties": {
+          "verdict": { "enum": ["blocked", "changes-requested", "unavailable"] },
+          "blocked_reasons": { "minItems": 1 }
+        }
+      },
+      "x-validator-rule": "review.unavailable-required-lane-blocks-approval"
+    },
+    {
+      "description": "A lane veto is a veto. Any lane returning 'block' or 'request-changes' prevents an approved verdict; this is the two-lane readiness gate's rule and it holds in every mode (plan 2.5, 6.1).",
+      "if": {
+        "required": ["lanes"],
+        "properties": {
+          "lanes": {
+            "contains": {
+              "properties": { "verdict": { "enum": ["block", "request-changes"] } },
+              "required": ["verdict"]
+            }
+          }
+        }
+      },
+      "then": { "properties": { "verdict": { "not": { "const": "approved" } } } }
+    },
+    {
+      "description": "Delta mode is a narrow pass over an existing review: it needs the head the last pass verified, the prior packet, the affected-behavior scope, and the seat continuity that lets a closure check see the old finding and the new revision (plan 6.3, 6.4).",
+      "if": { "properties": { "mode": { "const": "delta" } }, "required": ["mode"] },
+      "then": { "required": ["last_head_verified", "packet", "delta_scope", "continuity"] }
+    },
+    {
+      "description": "Readiness is the two-lane gate: two independent lanes, both recorded, neither able to stand in for the other (plan 2.5).",
+      "if": { "properties": { "mode": { "const": "readiness" } }, "required": ["mode"] },
+      "then": { "properties": { "lanes": { "minItems": 2 } } }
+    },
+    {
+      "description": "A full panel is the first thorough pass and does not consume a delta packet.",
+      "if": { "properties": { "mode": { "const": "full" } }, "required": ["mode"] },
+      "then": { "not": { "required": ["packet"] } }
+    },
+    {
+      "description": "An approved verdict means every required lane was covered by an independent seat and nothing was left unavailable (plan 6.1).",
+      "if": { "properties": { "verdict": { "const": "approved" } }, "required": ["verdict"] },
+      "then": {
+        "properties": {
+          "lanes": {
+            "not": {
+              "contains": {
+                "allOf": [
+                  { "properties": { "required": { "const": true } }, "required": ["required"] },
+                  { "properties": { "state": { "not": { "const": "covered" } } }, "required": ["state"] }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "lane": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "required", "state"],
+      "properties": {
+        "role": { "$ref": "common.schema.json#/$defs/role_id" },
+        "required": {
+          "description": "True when the review policy or an attached pack makes this lane mandatory for this change (plan 6.1, plan 3).",
+          "type": "boolean"
+        },
+        "tier": {
+          "description": "Activation tier from catalog.yaml's roles entries. A conditional lane that does not activate is 'skipped' with a reason, never silently missing.",
+          "enum": ["always-on", "standards-gate", "generic-conditional", "conditional", "stack-conditional"]
+        },
+        "state": { "enum": ["covered", "skipped", "unavailable"] },
+        "reason": {
+          "description": "Why the lane was skipped, or what made it unavailable. Mandatory for both states: an unexplained gap is indistinguishable from an error (plan 6.1). On a covered lane it is optional and keeps the seat's own result where the seat returned `empty`, because its axis did not apply (skills/super-review/references/panel.md).",
+          "$ref": "common.schema.json#/$defs/nonempty_string"
+        },
+        "seat": { "$ref": "#/$defs/seat" },
+        "verdict": { "enum": ["approve", "request-changes", "block", "no-opinion"] },
+        "findings": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/artifact_ref" }
+        },
+        "paraphrase": {
+          "description": "The comprehension seat's restatement of the document under two headings, stored with this lane's raw_output hash so synthesis cannot replace it. Required only when the lane role is doc-review/comprehension and the lane is covered. Other lanes omit it. Not yet backed by live probe evidence (phase 1b, GS-004g).",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["proposes", "existing_system"],
+          "properties": {
+            "proposes": {
+              "description": "What this document proposes, in two to five sentences.",
+              "$ref": "common.schema.json#/$defs/nonempty_string"
+            },
+            "existing_system": {
+              "description": "How the existing system works, per this document, in two to five sentences.",
+              "$ref": "common.schema.json#/$defs/nonempty_string"
+            }
+          },
+          "x-validator-rule": "review.comprehension-paraphrase-stored-by-hash"
+        },
+        "raw_output": {
+          "description": "The seat's own output exactly as it returned, stored as a run artifact and referenced by hash before synthesis reads it. Synthesis deduplicates and never rewrites a severity, and this is what lets anyone check that it did: a finding the synthesized review carries is traceable to the raw output it came from, and one it dropped is visible there with its reason. Required on a covered lane, because a covered lane with no preserved output is a claim of coverage nobody can re-read. Skipped and unavailable lanes omit it: they produced no stored output, and requiring a hash there would reject existing review documents.",
+          "$ref": "common.schema.json#/$defs/artifact_ref"
+        },
+        "standards_cited": {
+          "description": "The project standards rules this lane cited, rule by rule. An empty list from a lane with no configured standards is a valid, honest result; an invented preference is not (plan 6.1).",
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+        },
+        "evidence": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/evidence_ref" }
+        }
+      },
+      "allOf": [
+        {
+          "description": "A covered lane has a seat, a verdict and its preserved raw output; the first two distinguish it from an unavailable one, and the third makes the coverage re-readable.",
+          "if": { "properties": { "state": { "const": "covered" } }, "required": ["state"] },
+          "then": { "required": ["seat", "verdict", "raw_output"] }
+        },
+        {
+          "description": "A skipped or unavailable lane states why, and cannot carry a verdict that would read as coverage (plan 6.1, release scenario 4).",
+          "if": { "properties": { "state": { "enum": ["skipped", "unavailable"] } }, "required": ["state"] },
+          "then": {
+            "required": ["reason"],
+            "properties": { "verdict": { "enum": ["no-opinion", "block"] } }
+          }
+        },
+        {
+          "description": "A covered comprehension lane carries both paraphrase headings and the hash of the stored raw output. Other lanes stay valid without paraphrase, so existing review documents remain valid. Not yet backed by live probe evidence (phase 1b, GS-004g).",
+          "if": {
+            "properties": {
+              "role": { "const": "doc-review/comprehension" },
+              "state": { "const": "covered" }
+            },
+            "required": ["role", "state"]
+          },
+          "then": { "required": ["paraphrase", "raw_output"] },
+          "x-validator-rule": "review.comprehension-paraphrase-stored-by-hash"
+        }
+      ]
+    },
+    "seat": {
+      "description": "Who filled the lane. 'independent_of_author' is pinned true: a seat the author could fill is not a review, and there is no self-review fallback when a seat cannot be filled (plan 6.1, 6.4, release scenario 4). Read from the closure side it is the same constraint: an author may never close their own finding (ruling `closure-requires-independent-verification`). Independence is a structural property of the seating, declared and enforced by the runner.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["filled_by", "independent_of_author"],
+      "properties": {
+        "filled_by": { "$ref": "common.schema.json#/$defs/actor_role" },
+        "independent_of_author": { "const": true },
+        "context_isolated": {
+          "description": "True when the seat received only the snapshot and its own context, with no other reviewer's judgment and no approval context (plan 6.1, 6.2).",
+          "type": "boolean"
+        }
+      },
+      "x-validator-rule": "review.seat-filled-by-someone-other-than-the-author"
+    }
+  }
+}

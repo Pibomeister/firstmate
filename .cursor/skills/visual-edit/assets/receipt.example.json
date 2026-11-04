@@ -1,0 +1,48 @@
+{
+  "schema": "verification",
+  "schema_version": 1,
+  "id": "example-visual-edit-receipt-1",
+  "project": {
+    "id": "example-project",
+    "repo": "example-org/example-app"
+  },
+  "run_id": "example-visual-edit-run-1",
+  "created_by": {
+    "role": "orchestrator",
+    "skill": "visual-edit",
+    "entrypoint": "visual-edit"
+  },
+  "inputs": [],
+  "source_revision": {
+    "repo": "example-org/example-app",
+    "revision": "1111111111111111111111111111111111111111",
+    "diff_hash": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+  },
+  "created_at": "2026-10-02T09:00:00Z",
+  "status": "passed",
+  "kind": "probe",
+  "probe": {
+    "name": "dev-server-shows-applied-edit",
+    "target": "http://127.0.0.1:3000/account",
+    "parameters": {
+      "route": "/account",
+      "viewport": "desktop",
+      "revision": "example-revision-1"
+    },
+    "observed": "GET /account returned 200 and the primary button carries class 'primary-action spacious'."
+  },
+  "output_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+  "artifacts": [
+    {
+      "path": "src/account.jsx",
+      "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+      "kind": "artifact"
+    }
+  ],
+  "environment": {
+    "id": "example-local-dev-server",
+    "isolated": true,
+    "secrets_policy": "none"
+  },
+  "no_criteria": "No acceptance criteria were supplied; the running app showed the applied edit."
+}

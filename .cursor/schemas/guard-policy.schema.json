@@ -1,0 +1,163 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-kit.local/schemas/guard-policy.schema.json",
+  "title": "Guard policy",
+  "description": "The data the guard runtime's evaluator judges a tool call against: protected paths, destructive command patterns, secret path patterns, a path-to-tier map and the governed paths with their article ids (docs/decisions/0009-constitution-support.md, Decision 2). Hand-written until the constitution compiler generates it; the values belong to the adopting project, and this package holds only the shape and invented fixtures. The guard is feedback in front of the boundaries and never one of them: it denies what it judges a violation and what it cannot judge, and a missing, slow or crashing guard allows the call on both hosts (research/host-facts/2026-10-03, claude-code-1 and codex-4). The evaluator judges the command text and the paths a host reports, never the programs a command runs. Its known gaps: a script file an interpreter runs (`python tool.py`, `node build.js`) is not read; inline interpreter code that builds a path at run time (`'te' + 'sts/'`) is not resolved; a patch file applied by a command (`git apply`, `patch`) is not read; a recursive delete of a directory is matched against a pattern only through the pattern's literal directory prefix, so `rm -r src` passes a pattern that begins with `**`; and a symlink is not resolved, so a host decoder that wants a link judged at its target adds the resolved path to the action. Rule ids under `guard.` are the evaluator's own and are refused here. Every rule id is unique across the file, which the loader (src/guard/policy.ts) checks because a schema cannot.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "protected_paths", "destructive_commands", "secret_paths", "path_tiers", "governed_paths"],
+  "properties": {
+    "schema": {
+      "description": "Optional marker so a copy under templates/ declares the catalog schema it validates against. A project-owned policy file omits it; the loader still accepts that file.",
+      "const": "guard-policy"
+    },
+    "version": {
+      "description": "The policy's own version, so a deny can be traced to the policy that produced it.",
+      "$ref": "common.schema.json#/$defs/semver"
+    },
+    "protected_paths": {
+      "description": "Paths a tool call may not write: a write, a patch, a shell redirection, or a shell command that changes, moves, links or removes them. An interpreter whose inline code names one is denied too, read or write, because the code is not executed to find out. A `tests` entry is lifted for a path the ticket scope names (the evaluation context's `scope.files`); no other category is.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "category", "globs", "reason"],
+        "properties": {
+          "id": { "$ref": "#/$defs/rule_id" },
+          "category": {
+            "description": "What the paths hold. The first eight are the protected kinds the constitution-support brief names; `other` is the project's own.",
+            "enum": [
+              "tests",
+              "ci-config",
+              "lint-config",
+              "architecture-config",
+              "baselines",
+              "codeowners",
+              "hook-config",
+              "registry",
+              "other"
+            ]
+          },
+          "globs": { "$ref": "#/$defs/globs" },
+          "reason": { "$ref": "#/$defs/reason" }
+        }
+      }
+    },
+    "destructive_commands": {
+      "description": "Command patterns the guard denies. A pattern matches a simple command after the shell is parsed and wrappers such as `env`, `sudo`, `timeout` and `xargs` are stripped, so quoting, chaining and a leading assignment do not hide it. `--no-verify` on any git subcommand is the evaluator's own rule (`guard.git-no-verify`) and needs no entry here.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "program", "reason"],
+        "properties": {
+          "id": { "$ref": "#/$defs/rule_id" },
+          "program": {
+            "description": "The program's base name, compared after any directory is removed: `rm` matches `/bin/rm`.",
+            "type": "string",
+            "pattern": "^[^/\\s]+$"
+          },
+          "subcommand": {
+            "description": "The first operand that is not an option. For git it is read after the global options (`-C`, `-c`, `--git-dir`, `--work-tree`, `--namespace` and the rest) are skipped, so `git -C . push` has the subcommand `push`.",
+            "$ref": "common.schema.json#/$defs/nonempty_string"
+          },
+          "all_of": {
+            "description": "Option groups that must all be present. A group is satisfied by any one of its options. A short option also matches inside a cluster (`-f` matches `-rf`), a long option also matches its `=value` form (`--force` matches `--force=true`), and nothing after `--` is an option. Absent, the program and subcommand alone match.",
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "type": "string", "pattern": "^-[^\\s=]+$" }
+            }
+          },
+          "reason": { "$ref": "#/$defs/reason" }
+        }
+      }
+    },
+    "secret_paths": {
+      "description": "Paths a tool call may not read. A read action, a shell argument or input redirection that names one, or inline interpreter code that names one is denied. A recursive read is also denied when a pattern could match a descendant of the searched path, without checking which files exist. Patterns that begin with `**` also match outside the workspace, which is how a home-directory credential is listed.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "globs", "reason"],
+        "properties": {
+          "id": { "$ref": "#/$defs/rule_id" },
+          "globs": { "$ref": "#/$defs/globs" },
+          "reason": { "$ref": "#/$defs/reason" }
+        }
+      }
+    },
+    "path_tiers": {
+      "description": "The path-to-tier map. `never` and `ask-first` are the two most restrictive tiers (ADR-0009, decision 4), and a path no entry maps carries neither. A write to a `never` path is denied. A write to an `ask-first` path is denied until a grant covers it; this evaluator reads no grant, so it denies every one and its reason says a grant is needed. Where entries overlap, the more restrictive tier wins.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "tier", "globs", "reason"],
+        "properties": {
+          "id": { "$ref": "#/$defs/rule_id" },
+          "tier": { "enum": ["never", "ask-first"] },
+          "globs": { "$ref": "#/$defs/globs" },
+          "reason": { "$ref": "#/$defs/reason" }
+        }
+      }
+    },
+    "governed_paths": {
+      "description": "Paths with the constitution articles that govern them, for the first-write notice: the first write to one in a session is denied once with the articles as the reason, because context added on an allow reaches the model a call late (claude-code-2). Which write is the first is per-session state the stateless evaluator does not hold, so it does not deny on these entries; the runtime that keeps the session state does.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "globs", "articles"],
+        "properties": {
+          "id": { "$ref": "#/$defs/rule_id" },
+          "globs": { "$ref": "#/$defs/globs" },
+          "articles": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "version", "rule"],
+              "properties": {
+                "id": {
+                  "description": "The article's id as its registry assigns it. Its form is the registry's choice, a themed prefix and a number or otherwise (ADR-0009, decision 2).",
+                  "$ref": "common.schema.json#/$defs/artifact_id"
+                },
+                "version": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+                "rule": {
+                  "description": "The article's rule in one line, as the deny reason quotes it.",
+                  "$ref": "#/$defs/reason"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "rule_id": {
+      "description": "The id a deny names. Dotted kebab words, at least two, such as `protected.ci-config`. The `guard.` prefix is reserved for the evaluator's own rules.",
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*(\\.[a-z0-9]+(-[a-z0-9]+)*)+$",
+      "not": { "pattern": "^guard\\." },
+      "maxLength": 96
+    },
+    "globs": {
+      "description": "Workspace-relative globs. `*` and `?` stay inside one path segment, `**` crosses segments and `{a,b}` is an alternation.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "common.schema.json#/$defs/glob" }
+    },
+    "reason": {
+      "description": "One line the deny reason carries.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 300,
+      "pattern": "^[^\\n]*\\S[^\\n]*$"
+    }
+  }
+}

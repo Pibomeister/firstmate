@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-kit.local/schemas/verification-recipe.schema.json",
+  "title": "Verification recipe",
+  "description": "A host-neutral, content-addressed setup, build, launch, readiness, drive and cleanup recipe. A project declares permitted facilities with the same body; a recipe artifact is published only after the complete path succeeds.",
+  "type": "object",
+  "required": ["scope", "surfaces", "evidence_kinds", "environment", "steps"],
+  "properties": {
+    "schema": { "const": "verification-recipe" },
+    "scope": { "$ref": "#/$defs/scope" },
+    "surfaces": { "$ref": "#/$defs/surfaces" },
+    "evidence_kinds": { "$ref": "#/$defs/evidence_kinds" },
+    "environment": { "$ref": "common.schema.json#/$defs/kebab_id" },
+    "steps": { "$ref": "#/$defs/steps" }
+  },
+  "$defs": {
+    "scope": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "common.schema.json#/$defs/glob" }
+    },
+    "surfaces": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "common.schema.json#/$defs/surface" }
+    },
+    "evidence_kinds": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "common.schema.json#/$defs/evidence_kind" }
+    },
+    "step": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "argv"],
+          "properties": {
+            "kind": { "const": "command" },
+            "argv": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+            },
+            "cwd": { "$ref": "common.schema.json#/$defs/repo_path" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "name", "target"],
+          "properties": {
+            "kind": { "const": "probe" },
+            "name": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+            "target": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+            "parameters": { "type": "object" }
+          }
+        }
+      ]
+    },
+    "steps": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["setup", "build", "launch", "readiness", "drive", "cleanup"],
+      "properties": {
+        "setup": { "type": "array", "items": { "$ref": "#/$defs/step" } },
+        "build": { "type": "array", "items": { "$ref": "#/$defs/step" } },
+        "launch": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/step" } },
+        "readiness": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/step" } },
+        "drive": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/step" } },
+        "cleanup": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/step" } }
+      }
+    },
+    "project_declaration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "hash", "scope", "surfaces", "evidence_kinds", "environment", "steps"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/artifact_id" },
+        "hash": { "$ref": "common.schema.json#/$defs/hash" },
+        "scope": { "$ref": "#/$defs/scope" },
+        "surfaces": { "$ref": "#/$defs/surfaces" },
+        "evidence_kinds": { "$ref": "#/$defs/evidence_kinds" },
+        "environment": { "$ref": "common.schema.json#/$defs/kebab_id" },
+        "steps": { "$ref": "#/$defs/steps" }
+      }
+    }
+  },
+  "unevaluatedProperties": false,
+  "allOf": [{ "$ref": "common.schema.json#/$defs/envelope" }]
+}

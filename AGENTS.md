@@ -445,3 +445,11 @@ Keep this file for knowledge useful to almost every future agent session in this
 Do not repeat what the codebase already shows; point to the authoritative file, skill, command, or doc.
 Prefer rewriting or pruning existing entries over appending new ones.
 When updating this file, preserve every safety boundary and keep the always-loaded contract concise.
+
+## Agent-kit Cursor overlay
+
+This repository vendors an [agent-kit](https://github.com/Pibomeister/agent-kit) Cursor host overlay.
+It does not replace the Firstmate supervisor contract above.
+Reviewer isolation on Cursor is `partial` upstream.
+Start review with `/super-review` and a mode of `full`, `readiness`, or `delta`.
+Pin, licenses, refresh steps, and capability honesty live in [`.cursor/agent-kit.md`](.cursor/agent-kit.md).

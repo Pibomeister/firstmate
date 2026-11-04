@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-kit.local/schemas/install.schema.json",
+  "title": "Install configuration",
+  "description": "The shape of ak.install.yaml, the local and uncommitted file at the tree root that says which adapters one install attaches. `ak build` and `ak validate` read it; a `git archive` extract never carries it, so a figure measured there is the default's. Absent, every adapter whose contract states a capability it supplies and fails closed on is attached, which is the default ruling `fail-closed-adapter-lifts-ceiling` sets. Present, exactly the listed adapters are attached, and `attached: []` is the host alone; an optional `tracker:` names the ticket backend. This schema states shape. Which ids an install may attach is read out of each adapter contract's §1 by src/packaging/install.ts (`loadAdapterSupplies`), and restating that list here would be a copy that parts from the contracts the first time one of them gains a row.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["attached"],
+  "properties": {
+    "attached": {
+      "description": "The adapters this install attaches, by catalog id. An adapter attached here lifts a skill's mode ceiling for the capabilities its contract supplies and fails closed on; one left out caps every skill requiring them at `guided`, reported as `packaging.mode-capped`. An empty list is legal and meaningful: it is the host alone, as `adapters/claude-code/CONTRACT.md` §3 states it.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "common.schema.json#/$defs/kebab_id" },
+      "x-validator-rule": "install.attached-names-an-attachable-adapter"
+    },
+    "tracker": {
+      "description": "That this install runs against a ticket backend (adapters/tracker/CONTRACT.md §1), which lifts `tracker-access` without borrowing the knowledgebase's refusal. A packaging statement only: which backend a checkout reaches, and whether it is the system of record, are that project folder's ak.tracker.yaml and its project record (§2, §5; ruling `tracker-of-record-falls-back-to-kb`). Credentials and endpoint are the operator's and never appear here.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["backend"],
+      "properties": {
+        "backend": {
+          "description": "Which backend binding the operator's environment supplies, as a kebab-case id. Free-form on purpose: the package names no vendors and keeps no list of them, so any tracker the operator binds is legal here. Naming a backend while attached: leaves out `tracker` is an error, because nothing would reach it.",
+          "$ref": "common.schema.json#/$defs/kebab_id",
+          "x-validator-rule": "install.backend-names-an-attached-adapter"
+        }
+      }
+    }
+  }
+}

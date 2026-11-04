@@ -118,6 +118,7 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-afk-return.sh`       | Own receipted quiet exit and deterministic away return shutdown, brief, catch-up evidence, and blocker gate |
 | `fm-supervisor-target-lib.sh` | Resolve the shared supervisor target and backend for the daemon and launcher       |
 | `fm-supervise-daemon.sh` | Presence-gated away-mode sub-supervisor: self-handle routine wakes, guard injection by the detected primary harness, escalate batched digests, alert on failed delivery |
+| `fm-agent-kit-pin.sh`    | Prove the vendored Cursor agent-kit bin files match the sha256 pin in `.cursor/agent-kit.md` |
 | `fm-crew-state.sh`       | Print one deterministic current-state line for a crew                                |
 | `fm-nm-run-lib.sh`       | Single owner of shared no-mistakes run-attribution primitives and rules             |
 | `fm-pipeline-spend.sh`   | Attribute a task's no-mistakes pipeline spend to the task and keep it in the private spend ledger |

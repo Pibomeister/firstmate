@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-kit.local/schemas/review-pattern.schema.json",
+  "title": "Review pattern",
+  "description": "The frontmatter of one pattern page in the review ledger: a recurring class of problem reviewers keep raising, not a single bug. The judge supplies only prose (title, problem, root cause, fix) and which events match; every field here that is a count, a list of sources, a status or an id is computed by the runtime from the events the evidence gate kept (ruling learning-judge-is-runner-bound; protocol evidence-gate). Activation follows protocols/evidence-gate/PROTOCOL.md, step 4, which treats kb-finding as a primary family and allows corroboration across two distinct sessions from claude-mem, learn-memory and kb-finding to meet its witness condition; the configured count threshold must also be met. 'Retired' is sticky and only a human sets or clears it. Promotion at the promote threshold writes a guardrail draft, never published knowledge (ruling learning-drafts-not-publishes).",
+  "type": "object",
+  "required": ["id", "title", "status", "count", "first_seen", "sources", "prs", "reviewers"],
+  "properties": {
+    "id": { "type": "string", "pattern": "^rp-[0-9]{3,}$" },
+    "title": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+    "status": { "enum": ["candidate", "active", "retired"] },
+    "count": {
+      "description": "Events counted against this page. An event is counted once however often it is replayed.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "first_seen": { "$ref": "common.schema.json#/$defs/date" },
+    "last_seen": {
+      "description": "Empty until the first event is counted.",
+      "anyOf": [{ "$ref": "common.schema.json#/$defs/date" }, { "const": "" }]
+    },
+    "sources": { "type": "array", "uniqueItems": true, "items": { "type": "string" } },
+    "prs": { "type": "array", "uniqueItems": true, "items": { "type": "string", "pattern": "^[0-9]+$" } },
+    "reviewers": { "type": "array", "uniqueItems": true, "items": { "type": "string" } },
+    "promoted_to": {
+      "description": "'guardrails' once promoted to a guardrail draft; empty otherwise. Rollback of a promotion clears it.",
+      "enum": ["", "guardrails"]
+    },
+    "promoted_count": { "type": "integer", "minimum": 0 },
+    "team_target": {
+      "description": "A repository-relative path of a tracked team file the rule belongs in, proposed by the judge and offered to a human as a draft. The runtime never writes it.",
+      "anyOf": [{ "$ref": "common.schema.json#/$defs/repo_path" }, { "type": "null" }, { "const": "" }]
+    }
+  }
+}

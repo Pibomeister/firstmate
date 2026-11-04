@@ -1,0 +1,180 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-kit.local/schemas/firstmate-binding.schema.json",
+  "title": "Firstmate task binding",
+  "description": "What `ak firstmate bind` writes into a Firstmate home's data/<task-id>/ before a worker in delivery mode agent-kit is launched: which task and run this is, what it was asked, the source snapshot it starts from, the exact skill bundle it runs, the charter it answers to, the gates it must pass, the children it may start, where its evidence goes and what delivery it may perform. The file lives outside anything the worker can write, so a worker cannot widen its own binding (adapters/firstmate/CONTRACT.md §2). It validates configuration, not a run artifact, which is why it carries no envelope. The bundle is pinned by content hash, so upgrading the kit never changes a running task's instructions (ruling `firstmate-outer-loop-agent-kit-inner`).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "schema_version",
+    "task_id",
+    "run_id",
+    "project",
+    "work_source",
+    "source_snapshot",
+    "skill_bundle",
+    "charter",
+    "required_gates",
+    "child_budget",
+    "evidence",
+    "delivery",
+    "upstream",
+    "created_at"
+  ],
+  "properties": {
+    "schema": { "const": "firstmate-binding" },
+    "schema_version": { "const": 1 },
+    "task_id": {
+      "description": "Firstmate's task id, verbatim. Firstmate owns it; agent-kit never mints one.",
+      "$ref": "common.schema.json#/$defs/artifact_id"
+    },
+    "run_id": {
+      "description": "The agent-kit run this task executes. Derived from the task id and the binding inputs, so re-binding the same task with the same inputs yields the same run id (adapters/runner-contract/CONTRACT.md §5).",
+      "$ref": "common.schema.json#/$defs/artifact_id"
+    },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "path"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/kebab_id" },
+        "repo": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "path": {
+          "description": "The absolute path of the project checkout Firstmate named at bind time.",
+          "$ref": "common.schema.json#/$defs/nonempty_string"
+        },
+        "workspace": {
+          "description": "The worker's worktree, where it is known at bind time. Firstmate creates it at spawn, after the brief, so a fresh bind leaves it out.",
+          "$ref": "common.schema.json#/$defs/nonempty_string"
+        }
+      }
+    },
+    "work_source": {
+      "description": "What the task was asked. A ticket or a prompt exists at bind time and is bound by hash here. A Firstmate brief does not: Firstmate writes the request into data/<task-id>/brief.md after the binding is rendered into it, so the binding names the brief by 'ref' and the worker records the brief's hash on its first receipt. The brief lives outside the worktree, so the worker cannot rewrite what it was asked. The captain's intent and Firstmate's spec are separate inputs and stay separate: only the first feeds the ship transport's --intent.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "firstmate-brief" } }, "required": ["kind"] },
+          "then": { "required": ["ref"] },
+          "else": { "required": ["hash"] }
+        }
+      ],
+      "properties": {
+        "kind": { "enum": ["firstmate-brief", "ticket", "prompt"] },
+        "ref": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "hash": { "$ref": "common.schema.json#/$defs/hash" }
+      }
+    },
+    "source_snapshot": {
+      "description": "The revision and working-tree diff the run starts from. Evidence bound to a later snapshot is what the run ships on; evidence bound to this one is stale once either member moves.",
+      "$ref": "common.schema.json#/$defs/revision_ref"
+    },
+    "skill_bundle": {
+      "description": "The built bundle this task runs, pinned content-addressed. The worker reads its skills from 'path' and nowhere else.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "host", "hash", "path"],
+      "properties": {
+        "version": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "host": { "enum": ["claude-code", "codex"] },
+        "hash": { "$ref": "common.schema.json#/$defs/hash" },
+        "path": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+      }
+    },
+    "charter": {
+      "description": "The charter this run answers to, by hash, or null for a run with no sensitive-action authority. A null charter grants nothing, and the run does not acquire any by running (ruling `sensitive-actions-need-approved-charter-entry`).",
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ref", "hash"],
+          "properties": {
+            "ref": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+            "hash": { "$ref": "common.schema.json#/$defs/hash" }
+          }
+        },
+        { "type": "null" }
+      ]
+    },
+    "required_gates": {
+      "description": "The lifecycle gates the worker must pass before super-ship will publish, each proved by a gate record (src/lifecycle/gate.ts) that `ak firstmate status complete` checks. Order is the lifecycle's, not this list's.",
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": ["build-checks", "verify", "review-full", "review-delta", "review-readiness", "ship-preflight"]
+      }
+    },
+    "packs": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "common.schema.json#/$defs/pack_id" }
+    },
+    "child_budget": {
+      "description": "The task-local children the worker may start (ruling `task-local-child-not-fleet-task`). Depth is fixed at 1. Each child's spend is charged to 'charged_to', the parent run, and never to a budget of its own (common#/$defs/child).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_children", "max_concurrent", "max_depth", "charged_to", "roles"],
+      "properties": {
+        "max_children": { "type": "integer", "minimum": 0 },
+        "max_concurrent": { "type": "integer", "minimum": 0 },
+        "max_depth": { "const": 1 },
+        "charged_to": { "$ref": "common.schema.json#/$defs/artifact_id" },
+        "roles": {
+          "description": "The child roles this task may start, from adapters/firstmate/CHILD-ROLES.md.",
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "common.schema.json#/$defs/role_id" }
+        }
+      }
+    },
+    "evidence": {
+      "description": "Where receipts, reviews, raw seat outputs and the ship record go. 'kb' is the knowledgebase adapter and fails closed: the Firstmate adapter does not publish to a knowledgebase (adapters/firstmate/CONTRACT.md §1). 'mock' is a labeled fixture store for demonstrations; a binding carrying it can never publish, because delivery.action is then forced to dry-run.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["store", "location"],
+      "properties": {
+        "store": { "enum": ["kb", "mock"] },
+        "location": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "label": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+      }
+    },
+    "delivery": {
+      "description": "What the worker may do at the end. It never includes merge: merge authority stays with Firstmate's configured merge authority (ruling `no-mistakes-as-ship-transport`).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action", "transport", "skip", "merge"],
+      "properties": {
+        "action": { "enum": ["publish", "dry-run"] },
+        "transport": { "const": "no-mistakes" },
+        "skip": {
+          "description": "The no-mistakes steps skipped on every push. Review because agent-kit owns review judgment; document and rebase because they are the pipeline steps that create commits on their own, and an unreviewed commit is what this mode exists to prevent.",
+          "type": "array",
+          "const": ["review", "document", "rebase"]
+        },
+        "merge": { "const": false }
+      }
+    },
+    "upstream": {
+      "description": "The Firstmate this binding was made against: the upstream commit and the agent-kit patch applied to it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commit", "patch"],
+      "properties": {
+        "commit": { "type": "string", "pattern": "^[0-9a-f]{7,40}$" },
+        "patch": { "const": "0001-agent-kit-mode" }
+      }
+    },
+    "created_at": { "$ref": "common.schema.json#/$defs/timestamp" }
+  },
+  "allOf": [
+    {
+      "description": "A mock evidence store cannot back a publish.",
+      "if": { "properties": { "evidence": { "properties": { "store": { "const": "mock" } } } } },
+      "then": { "properties": { "delivery": { "properties": { "action": { "const": "dry-run" } } } } }
+    }
+  ]
+}

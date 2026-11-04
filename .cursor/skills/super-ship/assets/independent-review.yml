@@ -1,0 +1,121 @@
+# agent-kit independent review: a required check posted from outside the change under review.
+#
+# A template. Copy it to .github/workflows/ on the repository's default branch and follow the operator
+# setup in the unattended-lifecycle reference (references/unattended-lifecycle/REFERENCE.md). Shipping
+# this file is not evidence that a review was installed or ran.
+#
+# Two jobs. `review` reads only the head-bound diff, as data, and holds no deployment environment. Text
+# in the diff can steer the reviewer, so that job holds nothing a steered reviewer could use to post a
+# check. `post` holds the review app's key in a deployment environment restricted to the default branch,
+# stamps the reviewer identity from the default branch's ak.lifecycle.json and the provider's reported
+# call metadata (never from the verdict text) and posts the check run on the exact head.
+name: agent-kit independent review
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions: {}
+
+concurrency:
+  group: agent-kit-independent-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      AK_REVIEW_COMMAND: ${{ vars.AK_REVIEW_COMMAND }}
+      AK_REVIEW_PROVIDER_TOKEN: ${{ secrets.AK_REVIEW_PROVIDER_TOKEN }}
+    steps:
+      - name: Fetch the head-bound diff as data
+        run: |
+          gh api --method GET -H "Accept: application/vnd.github.diff" "repos/$REPO/compare/$BASE_SHA...$HEAD_SHA" > diff.patch
+      - name: Review the diff
+        # Contract: the reviewer command reads the diff on standard input only and writes its verdict JSON
+        # ({"verdict": "approve" | "changes-requested", "findings": [...]}) to standard output. Its harness,
+        # not the model, writes {"provider_model": "<provider>/<model>"} from the provider's response to
+        # $AK_REVIEW_METADATA_FILE. The model gets no shell or file tools.
+        env:
+          AK_REVIEW_METADATA_FILE: ${{ runner.temp }}/metadata.json
+        run: |
+          bash -c "$AK_REVIEW_COMMAND" < diff.patch > verdict.json
+          cp "$AK_REVIEW_METADATA_FILE" metadata.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: review
+          path: |
+            verdict.json
+            metadata.json
+          retention-days: 7
+
+  post:
+    needs: review
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: ${{ vars.AK_REVIEW_ENVIRONMENT }}
+    permissions:
+      contents: read
+    env:
+      REPO: ${{ github.repository }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        continue-on-error: true
+        with:
+          name: review
+          path: review
+      - id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ vars.AK_REVIEW_APP_ID }}
+          private-key: ${{ secrets.AK_REVIEW_APP_KEY }}
+      - name: Stamp the reviewer identity and post the check on the exact head
+        env:
+          READ_TOKEN: ${{ github.token }}
+          APP_TOKEN: ${{ steps.app.outputs.token }}
+        # The review files are untrusted data: read only with jq, never expanded into this script.
+        run: |
+          set -euo pipefail
+          config=$(GH_TOKEN="$READ_TOKEN" gh api --method GET "repos/$REPO/contents/ak.lifecycle.json?ref=$DEFAULT_BRANCH" --jq .content | base64 -d)
+          diff_sha256="sha256:$(GH_TOKEN="$READ_TOKEN" gh api --method GET -H "Accept: application/vnd.github.diff" "repos/$REPO/compare/$BASE_SHA...$HEAD_SHA" | sha256sum | cut -d' ' -f1)"
+          check=$(jq -r '.independent_review.check' <<<"$config")
+          reviewer_model=$(jq -r '.independent_review.reviewer_model' <<<"$config")
+          canon() { jq -r --arg id "$1" '(.independent_review.model_aliases // {}) as $a
+            | ($id | ascii_downcase | gsub("^\\s+|\\s+$"; "")) as $k
+            | ([$a | to_entries[] | select((.key | ascii_downcase | gsub("^\\s+|\\s+$"; "")) == $k) | .value][0] // $k)
+            | ascii_downcase | gsub("^\\s+|\\s+$"; "")' <<<"$config"; }
+          native_metadata=$(jq -r '.provider_model // empty | strings' review/metadata.json 2>/dev/null || true)
+          verdict=$(jq -r 'if .verdict == "approve" then "approve" else "changes-requested" end' review/verdict.json 2>/dev/null || echo unavailable)
+          findings=$(jq -c '.findings // [] | if type == "array" then . else [] end' review/verdict.json 2>/dev/null || echo '[]')
+          problems=""
+          [ -n "$native_metadata" ] || problems="$problems native call metadata is absent;"
+          if [ -n "$native_metadata" ] && [ "$(canon "$native_metadata")" != "$(canon "$reviewer_model")" ]; then
+            problems="$problems native metadata disagrees with reviewer_model;"
+          fi
+          while IFS= read -r author; do
+            [ "$(canon "$author")" != "$(canon "$reviewer_model")" ] || problems="$problems reviewer_model is an author model;"
+          done < <(jq -r '.independent_review.author_models[]' <<<"$config")
+          conclusion=success
+          if [ -n "$problems" ] || [ "$verdict" != approve ]; then conclusion=failure; fi
+          if [ -n "$problems" ]; then verdict=unavailable; fi
+          result=$(jq -n --arg head "$HEAD_SHA" --arg base "$BASE_SHA" --arg digest "$diff_sha256" \
+            --arg configured "$reviewer_model" --arg native "$native_metadata" --arg verdict "$verdict" --argjson findings "$findings" \
+            '{schema: "independent-review", schema_version: 1, head_sha: $head, base_sha: $base, diff_sha256: $digest,
+              input: "diff-only", reviewer: {model: $configured, sources: {configuration: $configured, native_metadata: $native}},
+              verdict: $verdict, findings: $findings}')
+          jq -n --arg name "$check" --arg head "$HEAD_SHA" --arg conclusion "$conclusion" --arg text "$result" --arg problems "$problems" \
+            '{name: $name, head_sha: $head, status: "completed", conclusion: $conclusion,
+              output: {title: "agent-kit independent review", summary: ("Diff-only review of " + $head + ". " + $problems), text: $text}}' > check.json
+          GH_TOKEN="$APP_TOKEN" gh api --method POST "repos/$REPO/check-runs" --input check.json > /dev/null

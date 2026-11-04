@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-kit.local/schemas/learn-span.schema.json",
+  "title": "Learn span",
+  "description": "One line of the learning runtime's spans.jsonl: one finished unit of work (a review run or stage, a memory tick or job, a skill-learn step, a hook). Rows are shaped like trace spans so a later exporter is a pure mapping. Redaction is by construction: every object is closed and every string is an id, a hash, a timestamp or an enum member, so no field can carry prose, a path or a name. 'project_key' is a salted HMAC of the project root, never the root. The 'session' attribute is a salted HMAC of the id the host gives the session, never the id; the episode builder derives the same key to join what a session was shown ('shown') to its episode row. 'judge' sums the judge calls made inside the span and its children; 'cost_known' is false when any call reported no cost. The writer validates each row against this schema and drops one that fails.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v",
+    "trace_id",
+    "span_id",
+    "parent_span_id",
+    "name",
+    "loop",
+    "project_key",
+    "trigger",
+    "start",
+    "duration_ms",
+    "status",
+    "reason",
+    "judge",
+    "attrs",
+    "commit"
+  ],
+  "properties": {
+    "v": { "const": 1 },
+    "trace_id": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
+    "span_id": { "$ref": "#/$defs/span_id" },
+    "parent_span_id": { "anyOf": [{ "$ref": "#/$defs/span_id" }, { "type": "null" }] },
+    "name": {
+      "enum": [
+        "review.run",
+        "review.ingest",
+        "review.maintain",
+        "review.propose",
+        "memory.tick",
+        "memory.episodes",
+        "memory.reflect",
+        "memory.backfill",
+        "memory.nightly",
+        "memory.weekly",
+        "skills.run",
+        "skills.discover",
+        "skills.uses",
+        "hook.session-start",
+        "hook.stop",
+        "hook.prompt"
+      ]
+    },
+    "loop": { "enum": ["review", "memory", "skills", "hook"] },
+    "project_key": { "anyOf": [{ "type": "string", "pattern": "^[0-9a-f]{12}$" }, { "type": "null" }] },
+    "trigger": { "enum": ["hook", "tick", "force", "cli"] },
+    "start": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$" },
+    "duration_ms": { "type": "integer", "minimum": 0 },
+    "status": { "enum": ["ok", "nothing", "rejected", "failed", "locked", "skipped", "dry-run"] },
+    "reason": {
+      "anyOf": [
+        {
+          "enum": ["error", "lock-held", "no-judge-output", "gate-rejected", "debounced", "not-a-repo", "no-source"]
+        },
+        { "type": "null" }
+      ]
+    },
+    "judge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["calls", "failures", "cost_usd", "cost_known", "input_tokens", "output_tokens"],
+      "properties": {
+        "calls": { "$ref": "#/$defs/count" },
+        "failures": { "$ref": "#/$defs/count" },
+        "cost_usd": { "type": "number", "minimum": 0 },
+        "cost_known": { "type": "boolean" },
+        "input_tokens": { "$ref": "#/$defs/count" },
+        "output_tokens": { "$ref": "#/$defs/count" }
+      }
+    },
+    "attrs": {
+      "description": "The union of every span name's allowlist; the writer also drops a key outside the allowlist of the row's own name.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "events": { "$ref": "#/$defs/count" },
+        "fresh": { "$ref": "#/$defs/count" },
+        "deferred": { "$ref": "#/$defs/count" },
+        "unavailable": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": ["github", "claude-mem", "claude-reflect"] }
+        },
+        "batches": { "$ref": "#/$defs/count" },
+        "unusable": { "$ref": "#/$defs/count" },
+        "findings": { "$ref": "#/$defs/count" },
+        "repeats": { "$ref": "#/$defs/count" },
+        "new_patterns": { "$ref": "#/$defs/count" },
+        "rejected_parts": { "$ref": "#/$defs/count" },
+        "promoted": { "type": "array", "items": { "type": "string", "pattern": "^rp-[0-9]{1,6}$" } },
+        "projects": { "$ref": "#/$defs/count" },
+        "episodes": { "$ref": "#/$defs/count" },
+        "dropped_by_provenance": { "$ref": "#/$defs/count" },
+        "dropped_by_redaction": { "$ref": "#/$defs/count" },
+        "security_notes": { "$ref": "#/$defs/count" },
+        "quarantined": { "$ref": "#/$defs/count" },
+        "tokens_in": { "$ref": "#/$defs/count" },
+        "tokens_out": { "$ref": "#/$defs/count" },
+        "lessons_created": { "$ref": "#/$defs/count" },
+        "lessons_superseded": { "$ref": "#/$defs/count" },
+        "proposals": { "$ref": "#/$defs/count" },
+        "sessions": { "$ref": "#/$defs/count" },
+        "proposed": { "$ref": "#/$defs/count" },
+        "kept": { "$ref": "#/$defs/count" },
+        "changed": { "$ref": "#/$defs/count" },
+        "pending": { "$ref": "#/$defs/count" },
+        "block_tokens": { "$ref": "#/$defs/count" },
+        "guardrails": { "$ref": "#/$defs/count" },
+        "lessons": { "$ref": "#/$defs/count" },
+        "shown": { "type": "array", "items": { "type": "string", "pattern": "^(rp|ls)-[0-9]{1,6}$" } },
+        "session": { "type": "string", "pattern": "^[0-9a-f]{16}$" },
+        "spawned": { "type": "boolean" },
+        "detection": { "enum": ["explicit", "guardrail", "positive", "auto", "none"] },
+        "captured": { "type": "boolean" }
+      }
+    },
+    "commit": { "anyOf": [{ "type": "string", "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$" }, { "type": "null" }] }
+  },
+  "$defs": {
+    "span_id": { "type": "string", "pattern": "^[0-9a-f]{16}$" },
+    "count": { "type": "integer", "minimum": 0 }
+  }
+}
