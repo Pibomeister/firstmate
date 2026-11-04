@@ -1051,6 +1051,96 @@ test_no_mistakes_truly_unpushed_refuses() {
   pass "no-mistakes worktree with genuinely unlanded work is refused (safety preserved)"
 }
 
+# A stale copy can differ from the final PR head after a pipeline rebase, yet
+# every path it changed can match the merged target exactly. Only that complete
+# content proof plus the recorded merged PR may authorize this fallback.
+test_recorded_merged_pr_target_blobs() {
+  local case_dir scenario rc expected head target remote_url base
+  for scenario in identical target-branch differing earlier-path-diff dirty untracked exempt-untracked wiring-and-untracked open closed forge-error wrong-remote fetch-error missing-pr; do
+    case_dir=$(make_case "pr-target-$scenario")
+    write_meta "$case_dir" no-mistakes ship
+    wt_commit_file "$case_dir" feature.txt intermediate
+    wt_commit_file "$case_dir" feature.txt landed
+    wt_commit_file "$case_dir" 'old [name].txt' removed
+    GIT_LITERAL_PATHSPECS=1 git -C "$case_dir/wt" rm -q -- 'old [name].txt'
+    git -C "$case_dir/wt" -c user.email=t@t -c user.name=t commit -q -m delete
+    head=$(git -C "$case_dir/wt" rev-parse HEAD)
+    # The PR head is deliberately unrelated to the local work. The old PR-head
+    # proof cannot pass, and there is no origin remote for the old fallback.
+    target=$(git -C "$case_dir/wt" rev-parse main)
+    land_on_origin_main "$case_dir" feature.txt landed
+    if [ "$scenario" = earlier-path-diff ]; then
+      land_on_origin_main "$case_dir" 'old [name].txt' remote-only
+    fi
+    base=main
+    if [ "$scenario" = target-branch ]; then
+      base=release
+      git -C "$case_dir/origin.git" branch release main
+    fi
+    git -C "$case_dir/project" remote rename origin fork
+    remote_url=git@github.com:example/repo.git
+    git -C "$case_dir/project" remote set-url fork "$remote_url"
+    git -C "$case_dir/project" remote add no-mistakes http://127.0.0.1:1/proxy
+    # Keep remote identity realistic, but route real Git fetches to the local
+    # bare fixture so neither networking nor Git's content checks are mocked.
+    cat > "$case_dir/fakebin/git" <<SH
+#!/usr/bin/env bash
+if [ "\${3:-}" = fetch ]; then
+  [ '$scenario' != fetch-error ] || exit 1
+  exec '$REAL_GIT_FOR_TEST' -c 'url.$case_dir/origin.git.insteadOf=$remote_url' "\$@"
+fi
+exec '$REAL_GIT_FOR_TEST' "\$@"
+SH
+    chmod +x "$case_dir/fakebin/git"
+    add_gh_pr_merged_for_head "$case_dir" "$target"
+    cat > "$case_dir/fakebin/gh" <<SH
+#!/usr/bin/env bash
+[ "\${1:-} \${2:-}" = 'pr view' ] || exit 1
+case " \$* " in
+  *'state,baseRefName'*)
+    [ '$scenario' != forge-error ] || exit 1
+    state=MERGED
+    [ '$scenario' != open ] || state=OPEN
+    [ '$scenario' != closed ] || state=CLOSED
+    printf '%s\t%s\n' "\$state" '$base' ;;
+  *'state,headRefOid,url'*) printf 'MERGED\t%s\thttps://github.com/example/repo/pull/7\n' '$target' ;;
+  *) exit 1 ;;
+esac
+SH
+    chmod +x "$case_dir/fakebin/gh"
+    case "$scenario" in
+      missing-pr) ;;
+      *) append_pr_meta_url "$case_dir" ;;
+    esac
+    case "$scenario" in
+      differing) wt_commit_file "$case_dir" feature.txt unlanded ;;
+      dirty) printf 'uncommitted\n' > "$case_dir/wt/feature.txt" ;;
+      untracked) printf 'untracked\n' > "$case_dir/wt/local.txt" ;;
+      exempt-untracked)
+        mkdir -p "$case_dir/wt/.claude"; printf 'local\n' > "$case_dir/wt/.claude/local.txt"
+        printf 'x\n' > "$case_dir/wt/.fm-kimi-turnend" ;;
+      wiring-and-untracked)
+        mkdir -p "$case_dir/wt/.claude"; printf 'local\n' > "$case_dir/wt/.claude/local.txt"
+        printf 'untracked\n' > "$case_dir/wt/local.txt" ;;
+      wrong-remote) git -C "$case_dir/project" remote set-url fork git@github.com:other/repo.git ;;
+    esac
+    head=$(git -C "$case_dir/wt" rev-parse HEAD)
+    rc=0
+    run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+    expected=1
+    case "$scenario" in identical|target-branch|exempt-untracked) expected=0 ;; esac
+    expect_code "$expected" "$rc" "PR target $scenario"$'\n'"$(cat "$case_dir/stderr")"
+    if [ "$expected" = 0 ]; then
+      assert_contains "$(cat "$case_dir/stdout")" 'blob equality' 'teardown must name the landing proof'
+      assert_contains "$(cat "$case_dir/stdout")" "fork/$base" 'proof must use the PR-hosting remote and target branch'
+      assert_absent "$case_dir/state/task-x1.meta" 'landed task record must be retired'
+    else
+      assert_refusal_retained_task_state "$case_dir" "$scenario" "$head"
+    fi
+  done
+  pass "recorded merged PR accepts only clean copies with all touched paths equal on its hosting remote"
+}
+
 test_squash_merged_branch_deleted_allows() {
   local case_dir rc pr_head
   case_dir=$(make_case squash-merged)
@@ -6119,6 +6209,7 @@ test_teardown_retains_journal_bound_to_another_pane
 test_teardown_retires_v1_journal_when_projected_workspace_gone
 test_teardown_retains_v1_journal_when_projected_workspace_present
 test_teardown_retains_v1_journal_when_workspace_query_ambiguous
+test_recorded_merged_pr_target_blobs
 test_squash_merged_branch_deleted_allows
 test_squash_merged_pr_allows_when_head_ancestor_of_pr_head
 test_no_pr_recorded_discovers_merged_pr_by_branch_allows

@@ -12,7 +12,8 @@
 # Pibomeister/agent-kit, and (with --for-gate-project) the GitHub repository of
 # the registered project's origin remote, for gate-script root-cause filing.
 # Filing on Pibomeister/firstmate also requires this home's publication grant
-# from the bin/fm-role-lib.sh gate: the config/firstmate-role maintainer opt-in.
+# from the bin/fm-role-lib.sh gate: the config/firstmate-role maintainer opt-in
+# for the requested --repo, regardless of the home's preferred upstream remote.
 #
 # Issue bodies include failure class, evidence lines, instance fix taken, and
 # proposed root fix. Refuses text that looks like a credential or secret.
@@ -90,7 +91,7 @@ fm_self_heal_repo_allowed() {
 # this home to publish to exactly <norm>.
 fm_self_heal_require_firstmate_grant() {
   local norm=$1
-  if fm_role_gate_self_publish "$FM_HOME" "$CONFIG" "$FM_ROOT" "$FM_ROOT" \
+  if fm_role_gate_self_publish "$FM_HOME" "$CONFIG" "$FM_ROOT" "$FM_ROOT" '' "$norm" \
     && [ "$FM_ROLE_PUB_TARGET" = "$norm" ]; then
     return 0
   fi

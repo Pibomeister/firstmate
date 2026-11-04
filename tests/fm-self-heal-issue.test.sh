@@ -330,6 +330,7 @@ test_user_role_cannot_file_on_firstmate() {
   local home out rc role
   home="$TMP_ROOT/role-user"
   prep_home "$home"
+  git -C "$home/code" remote add upstream 'https://github.com/kunchenguid/firstmate.git'
   for role in user absent ; do
     rm -f "$home/config/firstmate-role"
     [ "$role" = absent ] || printf '%s\n' "$role" > "$home/config/firstmate-role"
@@ -344,10 +345,12 @@ test_user_role_cannot_file_on_firstmate() {
 }
 
 test_maintainer_role_files_on_firstmate() {
-  local home out
+  local home out rc=0
   home="$TMP_ROOT/role-maintainer"
   prep_home "$home"
-  out=$(run_script "$home" --repo Pibomeister/firstmate --failure-class demo --title 't' --evidence 'e')
+  git -C "$home/code" remote add upstream 'https://github.com/kunchenguid/firstmate.git'
+  out=$(run_script "$home" --repo PiBoMeIsTeR/FIRSTMATE --failure-class demo --title 't' --evidence 'e') || rc=$?
+  assert_equals 0 "$rc" "the requested repository grant must win over upstream: $out"
   assert_contains "$out" 'created 99' "a maintainer home should file on firstmate"
   pass "a maintainer role files on firstmate"
 }
@@ -356,6 +359,7 @@ test_other_scope_cannot_file_on_firstmate() {
   local home out rc=0
   home="$TMP_ROOT/role-fork"
   prep_home "$home"
+  git -C "$home/code" remote add upstream 'https://github.com/kunchenguid/firstmate.git'
   git -C "$home/code" remote set-url origin 'https://github.com/someone/firstmate.git'
   printf 'maintainer github.com/someone/firstmate\n' > "$home/config/firstmate-role"
   out=$(run_script "$home" --repo Pibomeister/firstmate --failure-class demo --title 't') || rc=$?

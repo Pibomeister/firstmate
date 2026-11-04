@@ -37,7 +37,8 @@
 # of the code root's history covers any fork, the parent, and any clone of
 # either. Lineage that cannot be determined (no code root history, or a shallow
 # side sharing no root) refuses rather than permits. The publication target is
-# compared only against a maintainer scope or task consent: the first remote
+# compared only against a maintainer scope or task consent: an explicit target
+# supplied by a caller that names its publication repository, or the first remote
 # whose remote.<name>.gh-resolved is base, otherwise the first remote named
 # upstream, github, or origin, reduced to lowercase host/owner/repo; a local-path remote
 # is resolved one hop through that repository's own origin, and left as
@@ -54,7 +55,7 @@
 #   fm_role_resolve <home> <config-dir>  - effective role; adds FM_ROLE_SOURCE
 #   fm_role_inherit_payload <home> <config-dir> <out-file>
 #                                        - stage the resolved role a parent publishes
-#   fm_role_gate_self_publish <home> <config> <project> <root> [consent]
+#   fm_role_gate_self_publish <home> <config> <project> <root> [consent] [target]
 #                                        - 0 authorized, 1 refused, 2 not self-repo
 #
 # Global outputs: FM_ROLE (user|maintainer), FM_ROLE_SCOPE (maintainer scope),
@@ -492,15 +493,16 @@ fm_role_inherit_payload() (
   printf 'maintainer %s\n' "$FM_ROLE_SCOPE" >"$3"
 )
 
-# fm_role_gate_self_publish <home> <config-dir> <project-dir> <code-root> [consent]
+# fm_role_gate_self_publish <home> <config-dir> <project-dir> <code-root> [consent] [target]
 # Evaluate whether this home may run a publication contract for a task on
 # firstmate's own repository. rc 0 authorized (FM_ROLE_PUB_AUTHORITY names the
 # source: maintainer scope or task consent); rc 1 refused (FM_ROLE_PUB_DENIAL
 # names the narrow reason); rc 2 the task is not on this firstmate repository
 # and the boundary does not apply. FM_ROLE_PUB_TARGET is the normalized
-# publication target when determinable.
+# publication target when determinable. An explicit target scope replaces remote
+# preference only for callers whose publication command names that repository.
 fm_role_gate_self_publish() {
-  local home=$1 config=$2 proj=$3 root=$4 consent=${5:-} lineage=0
+  local home=$1 config=$2 proj=$3 root=$4 consent=${5:-} target=${6:-} lineage=0
   FM_ROLE_PUB_TARGET=
   # shellcheck disable=SC2034 # Output global, read by the sourcing caller.
   FM_ROLE_PUB_AUTHORITY=
@@ -511,6 +513,13 @@ fm_role_gate_self_publish() {
     return 2
   fi
   FM_ROLE_PUB_TARGET=$(fm_role_publication_target "$proj")
+  if [ -n "$target" ]; then
+    if ! fm_role_scope_valid "$target"; then
+      FM_ROLE_PUB_DENIAL="publication target '$target' is not a valid <host>/<owner>/<repo> scope"
+      return 1
+    fi
+    FM_ROLE_PUB_TARGET=$(fm_role_scope_norm "$target")
+  fi
   if [ "$lineage" -eq 2 ]; then
     # shellcheck disable=SC2034 # Output global, read by the sourcing caller.
     FM_ROLE_PUB_DENIAL="cannot determine whether $proj shares firstmate's history (the code root $root has no readable history, or a shallow clone shares no root commit); fetch full history (git fetch --unshallow) before dispatching publishing work"
