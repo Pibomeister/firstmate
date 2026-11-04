@@ -1,0 +1,9 @@
+$ bash tests/fm-agent-kit-pin.test.sh
+1..5
+ok - the recorded agent-kit bin digests match the vendored files
+ok - a fixture whose recorded digests match its bin files is accepted
+ok - a drifted .cursor/bin/ak digest is refused
+ok - a missing vendored bin file is refused
+ok - duplicate recorded digest lines are refused
+FM_TEST_COMPLETE
+exit=0

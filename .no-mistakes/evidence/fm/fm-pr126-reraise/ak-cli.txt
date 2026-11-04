@@ -1,0 +1,67 @@
+$ .cursor/bin/ak --help
+Usage: ak doctor [--json] | ak update | ak delegation <ticket> --project <path> | ak learn … | ak guard hook <event> … | ak kb … | ak runner serve|call … | ak semantic-lint hook [--host codex]
+exit=
+$ node .cursor/bin/ak-gate.mjs --help
+ak lifecycle: unknown subcommand '--help'; nearest of 8: check, open, record
+ak lifecycle — the gate records each lifecycle phase leaves, and the check super-ship runs first
+From an installed bundle run each command as `node <bundle>/bin/ak-gate.mjs <subcommand> …`; `ak lifecycle`
+exists only in an agent-kit checkout (the `ak` on PATH is the maintenance CLI).
+
+  ak lifecycle open --ticket <file> [--binding <file>] [--dir <dir>] [--project <dir>]
+  ak lifecycle record --gate <gate> [--receipt <file> ...] [--verdict <verdict>] [--class <class> --author-kind <kind> --host <id> [--seat-id <id>]] [--bypass <file> --task <id>] [--run <id>] [--dir <dir>] [--project <dir>]
+  ak lifecycle check [--evidence] [--gates <g,g>] [--run <id>] [--dir <dir>] [--project <dir>] [--json]
+  ak lifecycle bypass grant --task <id> --by <who> --reason <why> --out <file> --project <dir> --worktree <dir> [--hours <n>]
+  ak lifecycle bypass check --grant <file> --task <id> [--phase <phase>] [--run <id>] [--project <dir>]
+  ak lifecycle publish-scan --repo <owner/name> [--visibility <v>] [--title <text>] [--body-file <file>] [--commits <range>] [--markers <file>] [--project <dir>]
+  ak lifecycle unattended check --phase <phase> [--project <dir>]
+  ak lifecycle unattended review-status --pr <n> [--project <dir>]
+
+  Unattended policy (ADR-0014): where the operator opted in, record takes its evidence command after `--`
+  and the tool runs it; ship-preflight reads the merge gate live, and with --pr <n> records final ship success.
+
+  gates: build-checks, verify, review-full, review-delta, review-readiness, ship-preflight
+  check defaults to the gates before ship: build-checks, verify, review-full, review-readiness
+  --verdict (review-full only): changes-requested. Leave it out for an approved full review. A full
+  review that requested changes counts once a review-delta recorded after it covers the head.
+  --project defaults to the working directory, --run to its branch's opened run (else the branch), and --dir to
+  <git common dir>/agent-kit/evidence. Under Firstmate open with --binding and pass the binding's evidence store.
+  bypass phases: super-align, super-bound, super-review:full, super-review:readiness, super-ship. A supervisor runs grant as `node <bundle>/bin/ak-gate.mjs bypass grant`
+  from its own home, never under bun from a project directory; the worker
+exit=
+$ grep version .cursor/catalog.yaml
+schema_version: 1
+  version: 0.1.92
+      source versions and uncertainty.
+$ git diff base..HEAD -- .cursor/hooks.json (Firstmate hooks must be unchanged)
+unchanged
+$ ls .cursor/licenses
+LICENSE
+LICENSES
+NOTICE
+provenance
+
+.cursor/licenses/LICENSES:
+ajv-formats.LICENSE
+ajv.LICENSE
+fast-deep-equal.LICENSE
+fast-uri.LICENSE
+json-schema-traverse.LICENSE
+yaml.LICENSE
+
+.cursor/licenses/provenance:
+licenses
+
+.cursor/licenses/provenance/licenses:
+BayramAnnakov_claude-reflect.LICENSE
+BuilderIO_skills.LICENSE
+EveryInc_compound-engineering-plugin.LICENSE
+Yeachan-Heo_oh-my-claudecode.LICENSE
+Yeachan-Heo_oh-my-codex.LICENSE
+addyosmani_agent-skills.LICENSE
+cursor_plugins.LICENSE
+google_elephant-goldfish-model.LICENSE
+mattpocock_skills.LICENSE
+mizchi_jev-lint.LICENSE
+obra_superpowers.LICENSE
+thedotmack_claude-mem.LICENSE
+thedotmack_claude-mem.NOTICE

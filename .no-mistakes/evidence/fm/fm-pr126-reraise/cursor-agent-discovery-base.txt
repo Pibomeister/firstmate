@@ -1,0 +1,43 @@
+**Project skills** (from `$6` / workspace `.claude/skills` in system context):
+
+afk  
+agent-skill-trigger-index  
+ahoy  
+ask-user-authority  
+away-quiet-supervision  
+bearings  
+bootstrap-diagnostics  
+captain-hold-lifecycle  
+diagnostic-reasoning  
+firstmate-codexapp  
+firstmate-coding-guidelines  
+firstmate-orca  
+firstmate-self-repo  
+fmx-respond  
+harness-adapters  
+operational-home-layout  
+process-event-sources  
+project-management  
+quiet  
+quota-array-dispatch  
+scout-completion  
+secondmate-provisioning  
+session-start-recovery  
+ship-landing  
+stow  
+stuck-crewmate-recovery  
+updatefirstmate  
+validation-supervision  
+
+**Custom subagents** (from `available_subagent_types`):
+
+generalPurpose  
+explore  
+cursor-guide  
+ci-investigator  
+bugbot  
+security-review  
+best-of-n-runner  
+supermemory-context-gatherer  
+
+A skill named **super-review** is **not** available in this system context.
