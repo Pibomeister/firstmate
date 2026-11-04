@@ -804,6 +804,7 @@ Deterministic entry points:
 ```sh
 tests/fm-supervision-host-drain.test.sh
 tests/fm-supervision-host.test.sh
+tests/fm-supervision-host-mirror.test.sh
 tests/fm-supervision-host-fork.test.sh
 tests/fm-supervision-host-park.test.sh
 tests/fm-supervision-host-hook.test.sh
@@ -861,6 +862,7 @@ Deterministic entry points:
 ```sh
 tests/fm-supervision-host-drain.test.sh
 tests/fm-supervision-host.test.sh
+tests/fm-supervision-host-mirror.test.sh
 tests/fm-supervision-host-fork.test.sh
 tests/fm-supervision-host-park.test.sh
 tests/fm-supervision-host-hook.test.sh
@@ -937,6 +939,7 @@ Deterministic entry points:
 ```sh
 tests/fm-supervision-host-drain.test.sh
 tests/fm-supervision-host.test.sh
+tests/fm-supervision-host-mirror.test.sh
 tests/fm-supervision-host-fork.test.sh
 tests/fm-supervision-host-park.test.sh
 tests/fm-supervision-host-hook.test.sh
