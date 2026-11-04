@@ -17,6 +17,10 @@ set -u
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 TMP_ROOT=$(fm_test_tmproot fm-session-lock-ancestry)
+# Nested runner workers lengthen TMPDIR beyond Unix socket path limits.
+# Keep sockets in a separate unique, registered fixture root; all other files
+# retain the worker's private TMPDIR, and normal cleanup reaps both roots.
+SOCKET_ROOT=$(TMPDIR=/tmp fm_test_tmproot fm-codex-sock)
 fm_git_identity fmtest fmtest@example.invalid
 
 LIB="$ROOT/bin/fm-session-lock-lib.sh"
@@ -2148,7 +2152,7 @@ SH
   chmod +x "$dir/tool.sh" "$dir/daemon-body.sh"
   env -u CLAUDE_CODE_SESSION_ID -u CLAUDE_PID -u CODEX_THREAD_ID -u CODEX_SESSION_ID \
     FM_HOME="$dir" FM_LOCK="$ROOT/bin/fm-lock.sh" \
-    FM_TEST_CODEX_BODY="$dir/daemon-body.sh" FM_TEST_CODEX_SOCKET="$TMP_ROOT/q.sock" \
+    FM_TEST_CODEX_BODY="$dir/daemon-body.sh" FM_TEST_CODEX_SOCKET="$SOCKET_ROOT/q.sock" \
     FM_TEST_CODEX_SERVER="$TMP_ROOT/native/server.py" \
     "$NATIVE_CODEX" app-server --listen unix:// --managed-daemon &
   BG_FIXTURE_PIDS+=("$!")
@@ -2272,7 +2276,7 @@ SH
     env -u CLAUDE_CODE_SESSION_ID -u CLAUDE_PID -u CODEX_THREAD_ID -u CODEX_SESSION_ID \
       FM_HOME="$dir" FM_LOCK="$ROOT/bin/fm-lock.sh" FM_SESSION_ENDPOINT_META="$dir/endpoint.meta" \
       FM_TEST_ENDPOINT_PHASE="$endpoint" PATH="$fakebin:$PATH" \
-      FM_TEST_CODEX_BODY="$dir/body.sh" FM_TEST_CODEX_SOCKET="$TMP_ROOT/t$socket_index.sock" \
+      FM_TEST_CODEX_BODY="$dir/body.sh" FM_TEST_CODEX_SOCKET="$SOCKET_ROOT/t$socket_index.sock" \
       FM_TEST_CODEX_SERVER="$TMP_ROOT/native/server.py" \
       "$NATIVE_CODEX" app-server --listen unix:// --managed-daemon &
     daemon_pid=$!
@@ -2310,7 +2314,7 @@ while [ ! -e "$FM_HOME/state/stop-$FM_TEST_PHASE" ]; do sleep 0.05; done
 SH
     env -u CLAUDE_CODE_SESSION_ID -u CLAUDE_PID -u CODEX_THREAD_ID -u CODEX_SESSION_ID \
       FM_HOME="$dir" FM_LOCK="$ROOT/bin/fm-lock.sh" FM_TEST_PHASE=first \
-      FM_TEST_CODEX_BODY="$dir/body.sh" FM_TEST_CODEX_SOCKET="$TMP_ROOT/r.sock" \
+      FM_TEST_CODEX_BODY="$dir/body.sh" FM_TEST_CODEX_SOCKET="$SOCKET_ROOT/r.sock" \
       FM_TEST_CODEX_SERVER="$TMP_ROOT/native/server.py" \
       "$NATIVE_CODEX" app-server --listen unix:// --managed-daemon &
     daemon_pid=$!
@@ -2337,7 +2341,7 @@ SH
     printf 'main\t%s\t200\n' "$old_anchor" > "$dir/state/.lease-t2.lock"
     env -u CLAUDE_CODE_SESSION_ID -u CLAUDE_PID -u CODEX_THREAD_ID -u CODEX_SESSION_ID \
       FM_HOME="$dir" FM_LOCK="$ROOT/bin/fm-lock.sh" FM_TEST_PHASE=second \
-      FM_TEST_CODEX_BODY="$dir/body.sh" FM_TEST_CODEX_SOCKET="$TMP_ROOT/r.sock" \
+      FM_TEST_CODEX_BODY="$dir/body.sh" FM_TEST_CODEX_SOCKET="$SOCKET_ROOT/r.sock" \
       FM_TEST_CODEX_SERVER="$TMP_ROOT/native/server.py" \
       "$NATIVE_CODEX" app-server --listen unix:// --managed-daemon &
     daemon_pid=$!
