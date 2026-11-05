@@ -451,5 +451,5 @@ When updating this file, preserve every safety boundary and keep the always-load
 This repository vendors an [agent-kit](https://github.com/Pibomeister/agent-kit) Cursor host overlay.
 It does not replace the Firstmate supervisor contract above.
 Reviewer isolation on Cursor is `partial` upstream.
-Start review with `/super-review` and a mode of `full`, `readiness`, or `delta`.
+In a Cursor session only, start review with `/super-review` and a mode of `full`, `readiness`, or `delta`; on other harnesses, section 7 owns review.
 Pin, licenses, refresh steps, and capability honesty live in [`.cursor/agent-kit.md`](.cursor/agent-kit.md).

@@ -68,6 +68,6 @@ Do not copy `.cursor/adapters/`; nothing in the vendored discovery trees links i
 The documented `cp -n` of `.cursor/catalog.yaml` will not replace an existing catalog; overwrite `.cursor/catalog.yaml` with the upstream file so the recorded version is not left stale.
 Refresh the two `sha256sum` lines in this file from `.cursor/bin/ak` and `.cursor/bin/ak-gate.mjs`, then run `bin/fm-agent-kit-pin.sh`.
 Merge a newly generated root `AGENTS.md` section rather than replacing Firstmate's supervisor contract.
-Keep that overlay section a short pointer: it does not replace the supervisor contract, reviewer isolation is `partial`, and super-review runs as `/super-review full|readiness|delta`.
+Keep that overlay section a short pointer: it does not replace the supervisor contract, reviewer isolation is `partial`, and super-review runs as `/super-review full|readiness|delta` in Cursor sessions only.
 Do not copy `.cursor-plugin/`, `.cursor/hooks.json`, or `.cursor/environment.json`.
 Check for path collisions with Firstmate's existing `.cursor/` files before copying, and keep Firstmate's copies on a conflict.
