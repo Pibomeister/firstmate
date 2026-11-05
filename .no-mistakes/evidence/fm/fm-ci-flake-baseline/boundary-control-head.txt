@@ -1,0 +1,3 @@
+ok - host: dialog a turn never completed with its report (a park boundary, a stopped turn, no report) reaches the next turn
+head rc=
+21:58  up  2:35, 16 users, load averages: 39.94 46.58 52.71

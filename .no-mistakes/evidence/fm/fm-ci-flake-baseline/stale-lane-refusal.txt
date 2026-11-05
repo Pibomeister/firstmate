@@ -1,0 +1,4 @@
+fm-test-run: lane 'portable-serial-25of24' shard index is outside 1..24 (see --list-lanes)
+exit=2
+fm-test-run: lane 'portable-serial-15of15' asks for 15 portable serial shards but this runner is configured for 24 (see --list-lanes)
+exit=2

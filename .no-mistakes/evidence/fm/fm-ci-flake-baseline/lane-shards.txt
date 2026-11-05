@@ -1,0 +1,16 @@
+$ bin/fm-test-run.sh --list --lane portable-serial-1of15   # old shard count must be refused
+fm-test-run: lane 'portable-serial-1of15' asks for 15 portable serial shards but this runner is configured for 24 (see --list-lanes)
+exit=2
+$ bin/fm-test-run.sh --list --lane portable-serial-25of24
+fm-test-run: lane 'portable-serial-25of24' shard index is outside 1..24 (see --list-lanes)
+exit=2
+
+# union of 24 serial shards vs --lane portable-serial
+shard entries=     306 unique=     306 serial-lane=     306 dup=       0
+UNION == portable-serial (complete, disjoint)
+mirror/host/park shard placement:
+5 tests/fm-supervision-host.test.sh
+9 tests/fm-supervision-host-mirror.test.sh
+16 tests/fm-supervision-host-park.test.sh
+herdr focus e2e in real-herdr-gated family:
+tests/fm-backend-herdr-focus-flash-e2e.test.sh

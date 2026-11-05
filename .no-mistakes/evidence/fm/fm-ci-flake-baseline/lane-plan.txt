@@ -1,0 +1,17 @@
+$ bin/fm-test-run.sh --check-coverage
+FM_TEST_COVERAGE ok total=348 parallel=26 parallel_max_ms=1418942 parallel_imbalance_ms=589 parallel_unhinted=0 serial=306 serial_shards=24 serial_unhinted=0 serial_max_ms=736368 serial_budget_ms=780000 serial_oversized=0 herdr=16
+exit=0
+
+$ bin/fm-test-run.sh --list-lanes | grep -c portable-serial-
+24
+portable-serial-1of24
+portable-serial-24of24
+
+$ for k in 1..24: --list --lane portable-serial-<k>of24 | wc -l
+1:1 2:10 3:11 4:12 5:12 6:13 7:13 8:13 9:12 10:13 11:13 12:12 13:14 14:13 15:14 16:14 17:14 18:15 19:15 20:14 21:15 22:14 23:13 24:16 
+sum=306
+$ --list --lane portable-serial | wc -l
+     306
+
+$ which shard holds the mirror and host suites
+shard 5: tests/fm-supervision-host.test.sh

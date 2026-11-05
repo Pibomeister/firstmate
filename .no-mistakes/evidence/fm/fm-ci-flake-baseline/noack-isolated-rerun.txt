@@ -1,0 +1,9 @@
+--- isolated rerun 1
+ok - host: a turn that reports but leaves its granted rows queued hands the wake to main
+FM_TEST_COMPLETE
+--- isolated rerun 2
+ok - host: a turn that reports but leaves its granted rows queued hands the wake to main
+FM_TEST_COMPLETE
+--- isolated rerun 3
+ok - host: a turn that reports but leaves its granted rows queued hands the wake to main
+FM_TEST_COMPLETE

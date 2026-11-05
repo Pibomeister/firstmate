@@ -1,0 +1,13 @@
+entry ci-20261103-herdr-focus test tests/fm-backend-herdr-focus-flash-e2e.test.sh lane real-herdr-gated expires 2026-11-18
+   tests/fm-backend-herdr-focus-flash-e2e.test.sh MATCH
+   bin/backends/herdr.sh MATCH
+   tests/herdr-test-safety.sh MATCH
+   tests/lib.sh MATCH
+   expires in future: True
+entry ci-20261103-host-term test tests/fm-supervision-host-park.test.sh lane portable-serial expires 2026-11-18
+   tests/fm-supervision-host-park.test.sh MATCH
+   bin/fm-supervision-host.sh MATCH
+   tests/supervision-host-helpers.sh MATCH
+   tests/lib.sh MATCH
+   expires in future: True
+ALL DIGESTS MATCH

@@ -1,0 +1,8 @@
+full inventory roots=       5
+partition 1of6 roots=104
+partition 2of6 roots=104
+partition 3of6 roots=104
+partition 4of6 roots=106
+partition 5of6 roots=105
+partition 6of6 roots=105
+sum=628 unique=628

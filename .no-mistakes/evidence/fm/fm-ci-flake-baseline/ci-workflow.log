@@ -1,0 +1,35 @@
+FM_TEST_BEGIN 2026-11-05T03:34:30Z tests/fm-ci-workflow.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - CI matrices cover every executable serial lane and canonical lint root exactly once
+ok - a newer push to one PR supersedes that PR's in-flight CI
+ok - distinct PRs get distinct concurrency groups
+ok - close main pushes keep only the newest run, apart from every PR group
+ok - only the full-ci label joins and supersedes the PR's group; other labels cancel nothing
+ok - an unlabelled outside PR runs only the quick checks and a failing Full suite naming full-ci
+ok - Repo invariants runs every skip-mode documentation check
+ok - a trusted path-skip PR runs only the quick checks and a passing Full suite
+ok - a skipped lane while mode=full fails Full suite
+ok - a path skip still fails Full suite when a job failed
+ok - path skip does not waive the full-ci gate on an outside PR
+fm-ci-select: mode=full (bin/fm-ci-select.sh is CI config or the classifier)
+fm-ci-select: mode=full (bin/fm-test-run.sh is CI config or the classifier)
+fm-ci-select: mode=full (.github/workflows/ci.yml is CI config or the classifier)
+mode=skip
+ok - the select step forces full for the classifier, map, and CI config before trusting HEAD
+fm-ci-select: mode=full (push to main)
+ok - the select step forces mode=full on push before the classifier runs
+ok - the full-ci label and later pushes run every job, and the verdict follows the lanes
+ok - main pushes, own branches and write-access authors still run every job and pass the verdict
+ok - an unrelated label runs no job on a waiting, labelled or owner PR
+ok - a late-finishing unrelated label run leaves a full-ci pass visible
+ok - an unrelated label after a failed or waiting suite leaves every earlier check as it was
+ok - FM_CI_SKIP_PUSH skips only the push run, and FM_CI_SKIP_MACOS changes nothing while macos-stock-bash is commented out
+ok - the timing aggregate still runs after a failed lane unless the push run is skipped
+ok - every ci.yml job carries a finite timeout
+ok - every ci.yml job belongs to one of the three timeout tiers
+ok - fast tier jobs share one 5 minute tripwire
+ok - normal tier jobs share one 30 minute budget
+ok - Herdr keeps a 20 minute step tripwire under a 75 minute job backstop
+FM_TEST_END 2026-11-05T03:38:11Z tests/fm-ci-workflow.test.sh exit=0 duration_ms=221477 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=221885
+FM_TEST_SUMMARY_FAMILY family=pure-contract-unit count=1 duration_ms=221477 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-ci-workflow.test.sh duration_ms=221477

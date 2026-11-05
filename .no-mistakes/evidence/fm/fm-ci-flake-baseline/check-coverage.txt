@@ -1,0 +1,34 @@
+$ bin/fm-test-run.sh --check-coverage
+FM_TEST_COVERAGE ok total=348 parallel=26 parallel_max_ms=1418942 parallel_imbalance_ms=589 parallel_unhinted=0 serial=306 serial_shards=24 serial_unhinted=0 serial_max_ms=736368 serial_budget_ms=780000 serial_oversized=0 herdr=16
+exit=0
+
+$ bin/fm-test-run.sh --list-lanes
+portable-parallel-1
+portable-parallel-2
+portable-serial
+portable-serial-1of24
+portable-serial-2of24
+portable-serial-3of24
+portable-serial-4of24
+portable-serial-5of24
+portable-serial-6of24
+portable-serial-7of24
+portable-serial-8of24
+portable-serial-9of24
+portable-serial-10of24
+portable-serial-11of24
+portable-serial-12of24
+portable-serial-13of24
+portable-serial-14of24
+portable-serial-15of24
+portable-serial-16of24
+portable-serial-17of24
+portable-serial-18of24
+portable-serial-19of24
+portable-serial-20of24
+portable-serial-21of24
+portable-serial-22of24
+portable-serial-23of24
+portable-serial-24of24
+real-herdr-gated
+exit=0

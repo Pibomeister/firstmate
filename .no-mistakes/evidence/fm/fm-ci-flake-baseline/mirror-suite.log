@@ -1,0 +1,64 @@
+FM_TEST_BEGIN 2026-11-05T03:24:49Z tests/fm-supervision-host-mirror.test.sh family=afk expected_gate_skip=none
+1..5
+ok - host: a primary with no verified dialog mirror keeps every attended close on main, and its away posture still runs
+ok - host: each wake carries the captain's dialog since the last wake, without operational input
+ok - host: the dialog mirror, its feed, and the wake file are owner-only
+not ok - mirror boundary: the wake after the stop was not handled: 1793849493	init	stop-predecessor
+1793849493	init	stop-engine
+1793849493	init	stop-arms
+1793849493	init	release-leases
+1793849493	start	gen=host-76449-1793849492	primary=claude
+1793849536	handled	turn=host-76449-1793849492.1	posture=attended	rc=0	reports=1	error=0 cost=0.25 conversation_cost=0.25 input=5 cache_read=100 cache_write=10 output=20 turns=3	signal: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-supervision-host.pVNAQt/mirror-boundary/state/demo.status
+1793849550	init	stop-predecessor
+1793849550	init	stop-engine
+1793849550	init	stop-arms
+1793849550	init	release-leases
+1793849551	start	gen=host-51824-1793849549	primary=claude
+1793849579	boundary	after 120s
+1793849600	init	stop-predecessor
+1793849600	init	stop-engine
+1793849600	init	stop-arms
+1793849600	init	release-leases
+1793849601	start	gen=host-80861-1793849599	primary=claude
+1793849637	handled	turn=host-80861-1793849599.1	posture=attended	rc=0	reports=1	error=0 cost=0.25 conversation_cost=0.5 input=5 cache_read=100 cache_write=10 output=20 turns=3	signal: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-supervision-host.pVNAQt/mirror-boundary/state/demo.status
+1793849651	init	stop-predecessor
+1793849651	init	stop-engine
+1793849651	init	stop-arms
+1793849651	init	release-leases
+1793849652	start	gen=host-35276-1793849650	primary=claude
+1793849697	init	stop-predecessor
+1793849697	init	stop-engine
+1793849697	init	stop-arms
+1793849697	init	release-leases
+1793849697	start	gen=host-96538-1793849696	primary=claude
+1793849706	pass-through	attended	main-only	check: rearm-resurface
+1793849746	init	stop-predecessor
+1793849746	init	stop-engine
+1793849747	init	stop-arms
+1793849747	init	release-leases
+1793849748	start	gen=host-91516-1793849745	primary=claude
+1793849811	failed	turn=host-91516-1793849745.1	posture=attended	rc=124	reports=1	unacked=none	no-result		signal: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-supervision-host.pVNAQt/mirror-boundary/state/demo.status
+1793849817	to-main	the supervision session could not take this wake: the engine turn hit its 20s bound; this wake is yours
+tests/supervision-host-helpers.sh: line 196: 66905 Terminated: 15          FM_HOME="$home" FM_CREW_STATE_BIN="$home/fakebin/fm-crew-state.sh" PATH="$home/fakebin:$PATH" MIRROR_ROOT="$MIRROR_ROOT" "$FAKE_CLAUDE" -c '
+      printf "%s\n" "$$" > "$FM_HOME/state/.lock"
+      printf "%s\n" "$$" >> "$FM_HOME/claude-pids"
+      while [ ! -e "$FM_HOME/session.stop" ] && [ -d "$FM_HOME" ] \
+        && kill -0 "$FM_TEST_SUITE_PID" 2>/dev/null; do
+        if [ -e "$FM_HOME/park.go" ]; then
+          rm -f "$FM_HOME/park.go"
+          for seed in "$FM_HOME"/mirror-seed.*; do
+            [ -f "$seed" ] || continue
+            FM_ROOT_OVERRIDE="$MIRROR_ROOT" "$MIRROR_ROOT/bin/fm-host-mirror.sh" hook claude < "$seed"
+          done
+          "$0" park > "$FM_HOME/host.out" 2>&1
+          printf "%s\n" "$?" > "$FM_HOME/host.rc"
+        fi
+        sleep 0.1
+      done
+    ' "$HOST" 2>> "$home/claude.err"
+FM_TEST_END 2026-11-05T03:37:30Z tests/fm-supervision-host-mirror.test.sh exit=1 duration_ms=760780 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=1 skipped_gate=0 duration_ms=761362
+FM_TEST_SUMMARY_FAMILY family=afk count=1 duration_ms=760780 failed=1
+FM_TEST_SLOWEST rank=1 script=tests/fm-supervision-host-mirror.test.sh duration_ms=760780
+fm-test-run: wrote timing artifact: /Users/eduardopicazo/.no-mistakes/evidence/01M6MS6JNAEY8SVWEBHMRPK65M/mirror-timing.json
+exit=1
