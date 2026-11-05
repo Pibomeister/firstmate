@@ -13,8 +13,9 @@
 #     read-once contract precedes both
 #   - context-aware next-step guidance for read-only, AFK, X mode, and normal
 #     watcher ownership
-#   - status-tail bounding, default and FM_SESSION_START_STATUS_TAIL override
-#   - the per-line status-tail cap and its truncation marker
+#   - the one-line-per-task work-under-way rendering (id, project, state,
+#     PR URL, age, endpoint) with its full-detail pointer, and no meta or
+#     status body re-print
 #   - startup backlog composition: done rows dropped, every in-flight/held/
 #     blocked row kept whole, the dispatchable queued listing bounded with an
 #     exact disclosed remainder
@@ -1173,7 +1174,7 @@ EOF
   context_line=$(printf '%s\n' "$out" | grep -n '^CONTEXT$' | head -1 | cut -d: -f1)
   fleet_line=$(printf '%s\n' "$out" | grep -n '^FLEET STATE$' | head -1 | cut -d: -f1)
   next_line=$(printf '%s\n' "$out" | grep -n '^NEXT STEP$' | head -1 | cut -d: -f1)
-  inventory_line=$(printf '%s\n' "$out" | grep -n '^--- task-a ---$' | head -1 | cut -d: -f1)
+  inventory_line=$(printf '%s\n' "$out" | grep -n '^task-a project=' | head -1 | cut -d: -f1)
 
   if [ -z "$lock_line" ] || [ -z "$boot_line" ] || [ -z "$wake_line" ] \
     || [ -z "$read_once_line" ] || [ -z "$context_line" ] || [ -z "$fleet_line" ] \
@@ -1274,9 +1275,9 @@ SH
 
 # --- status tail bounding -----------------------------------------------------
 
-test_status_tail_bounding() {
-  local rec root home fakebin out
-  rec=$(new_world status-tail)
+test_work_under_way_one_line_per_task() {
+  local rec root home fakebin out line
+  rec=$(new_world work-one-line)
   IFS='|' read -r root home fakebin <<EOF
 $rec
 EOF
@@ -1284,64 +1285,29 @@ EOF
   make_fake_ps_claude "$fakebin"
   make_fake_tmux "$fakebin" "fm-sess:live"
 
-  printf 'window=fm-sess:live\nkind=ship\n' > "$home/state/task-a.meta"
-  printf 'working: step 1\nworking: step 2\nworking: step 3\nworking: step 4\nworking: step 5\nworking: step 6\nworking: step 7\n' \
+  printf 'window=fm-sess:live\nproject=/srv/projects/agent-kit\nkind=ship\npr=https://github.com/Pibomeister/agent-kit/pull/42\nspawn_gen=s1000000000.1.1\nsecret-meta-body=SHOULD-NOT-PRINT\n' > "$home/state/task-a.meta"
+  printf 'working: earlier step with STATUS-BODY-DETAIL\ndone: finished\n' \
     > "$home/state/task-a.status"
-
-  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
-  assert_contains "$out" "working: step 7" "default status tail missing the most recent line"
-  assert_contains "$out" "working: step 3" "default status tail (5 lines) missing an expected recent line"
-  assert_not_contains "$out" "working: step 1" "default status tail (5 lines) leaked an older line"
-  assert_contains "$out" "$home/state/task-a.status" "digest did not print the full status log path for a deeper read"
-  assert_contains "$out" "a bounded tail of every state/*.status" "read-once contract does not distinguish bounded status tails"
-
-  out=$(FM_SESSION_START_STATUS_TAIL=2 run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
-  assert_contains "$out" "working: step 7" "FM_SESSION_START_STATUS_TAIL=2 tail missing the most recent line"
-  assert_not_contains "$out" "working: step 5" "FM_SESSION_START_STATUS_TAIL=2 did not bound the tail to 2 lines"
-
-  pass "status tail is bounded to the configured line count, with the full log path always printed"
-}
-
-# A crewmate writes its own status lines, so nothing upstream bounds their
-# length: an observed one ran 865 characters. The tail is a wake-EVENT view
-# whose full log path is printed beside it, so a long line is cut, marked, and
-# left recoverable rather than allowed to scale the digest with fleet load.
-test_status_tail_line_cap() {
-  local rec root home fakebin out lede longest capped tail_section
-  rec=$(new_world status-line-cap)
-  IFS='|' read -r root home fakebin <<EOF
-$rec
-EOF
-  make_fake_toolchain "$fakebin"
-  make_fake_ps_claude "$fakebin"
-  make_fake_tmux "$fakebin" "fm-sess:live"
-
-  lede='needs-decision: [key=cap] pick the rendering strategy'
-  printf 'window=fm-sess:live\nkind=ship\n' > "$home/state/task-cap.meta"
-  {
-    printf '%s' "$lede"
-    awk 'BEGIN { while (i++ < 400) printf " padding" }'
-    printf '\n'
-    printf 'working: short line kept whole\n'
-  } > "$home/state/task-cap.status"
+  printf 'window=fm-sess:live\nkind=scout\n' > "$home/state/task-b.meta"
 
   out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
 
-  assert_contains "$out" "$lede" "the cap discarded the lede that carries the state word and decision key"
-  assert_contains "$out" " [truncated]" "an over-long status line was not marked as truncated"
-  assert_contains "$out" "working: short line kept whole" "the cap mangled a status line already under it"
-  assert_contains "$out" "each capped at 220 characters" "the status tail header does not disclose its per-line cap"
-  assert_contains "$out" "$home/state/task-cap.status" "a capped tail dropped the full log path that recovers the rest"
+  assert_contains "$out" "One line per live task: id, project, last recorded state, PR URL, age, endpoint." \
+    "work-under-way header did not describe the one-line shape"
+  assert_contains "$out" "bin/fm-crew-state.sh <id>" \
+    "work-under-way header did not point at the full-detail command"
+  assert_contains "$out" "task-a project=agent-kit state=done pr=https://github.com/Pibomeister/agent-kit/pull/42 age=" \
+    "task-a did not render as one line with project, state, and recorded PR URL"
+  assert_contains "$out" "task-b project=- state=unknown pr=- age=" \
+    "task-b without project, status, or PR did not render honest placeholders"
+  assert_not_contains "$out" "SHOULD-NOT-PRINT" "the digest re-printed a meta body"
+  assert_not_contains "$out" "STATUS-BODY-DETAIL" "the digest re-printed a status body"
+  assert_not_contains "$out" "--- task-a ---" "the digest kept the old per-task block header"
 
-  # Nothing the tail emits may exceed the cap, and the padded line really was
-  # long enough to exercise it.
-  tail_section=$(printf '%s\n' "$out" | awk '/^status tail \(/ { flag = 1; next } flag && /^$/ { flag = 0 } flag')
-  longest=$(printf '%s\n' "$tail_section" | awk '{ if (length($0) > max) max = length($0) } END { print max + 0 }')
-  [ "$longest" -le 220 ] || fail "a status tail line ran $longest characters past the 220-character cap"
-  capped=$(printf '%s\n' "$tail_section" | grep -c ' \[truncated\]$')
-  [ "$capped" -eq 1 ] || fail "expected exactly one truncated tail line, got $capped: $tail_section"
+  line=$(printf '%s\n' "$out" | grep -c '^task-a project=')
+  [ "$line" -eq 1 ] || fail "task-a rendered $line times instead of once: $out"
 
-  pass "status tail lines are capped with a truncation marker while the full log stays reachable"
+  pass "work under way renders one line per live task with the full-detail pointer and no record bodies"
 }
 
 test_orphan_status_logs_are_printed() {
@@ -1361,17 +1327,17 @@ EOF
   out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
 
   assert_contains "$out" "Orphan status logs (state/*.status without matching .meta)" "digest did not label orphan status logs"
-  assert_contains "$out" "--- task-orphan ---" "digest did not print the orphan status id"
-  assert_contains "$out" "working: orphan step 6" "orphan status tail missing the newest line"
-  assert_not_contains "$out" "working: orphan step 1" "orphan status tail was not bounded"
-  assert_contains "$out" "$home/state/task-orphan.status" "orphan status tail did not print the full log path"
+  assert_contains "$out" "task-orphan state=working" "digest did not print the orphan as one line with its last state"
+  assert_not_contains "$out" "working: orphan step 6" "orphan one-liner re-printed a status body"
+  assert_not_contains "$out" "working: orphan step 1" "orphan one-liner re-printed a status body"
+  assert_contains "$out" "Full log: state/<id>.status" "orphan header did not point at the full log"
 
-  matched_count=$(printf '%s\n' "$out" | grep -F -c 'working: surfaced once')
-  orphan_count=$(printf '%s\n' "$out" | grep -F -c 'working: orphan step 6')
-  [ "$matched_count" -eq 1 ] || fail "matched status log was printed $matched_count times: $out"
-  [ "$orphan_count" -eq 1 ] || fail "orphan status log was printed $orphan_count times: $out"
+  matched_count=$(printf '%s\n' "$out" | grep -F -c 'task-a project=')
+  orphan_count=$(printf '%s\n' "$out" | grep -F -c 'task-orphan state=working')
+  [ "$matched_count" -eq 1 ] || fail "matched task was printed $matched_count times: $out"
+  [ "$orphan_count" -eq 1 ] || fail "orphan log was printed $orphan_count times: $out"
 
-  pass "orphan status logs are printed once with bounded tails"
+  pass "orphan status logs render as one line each with the full-log pointer"
 }
 
 # --- session-start secondmate recovery boundary -----------------------------
@@ -1450,7 +1416,7 @@ EOF
     "SECONDMATE_LIVENESS: secondmate $SESSION_START_SECOND_MATE_ID: skipped: existing endpoint has ambiguous agent process (backend=tmux)" \
     "session start did not distinguish an existing Pi-shaped process from a missing window"
   [ ! -s "$log" ] || fail "session start touched an ambiguous existing Pi process: $(cat "$log")"
-  assert_contains "$out" "endpoint: alive (backend=tmux window=firstmate:fm-$SESSION_START_SECOND_MATE_ID)" \
+  assert_contains "$out" "endpoint=alive" \
     "the later fleet read should still see the ambiguous endpoint"
   pass "session start: an existing ambiguous Pi process prevents duplicate recovery"
 }
@@ -1469,7 +1435,7 @@ EOF
     "SECONDMATE_LIVENESS: secondmate $SESSION_START_SECOND_MATE_ID: skipped: endpoint probe unreadable (backend=tmux)" \
     "session start did not distinguish transient unreadability from absence"
   [ ! -s "$log" ] || fail "session start touched a transiently unreadable target: $(cat "$log")"
-  assert_contains "$out" "endpoint: dead (backend=tmux window=firstmate:fm-$SESSION_START_SECOND_MATE_ID)" \
+  assert_contains "$out" "endpoint=dead" \
     "the later cheap presence read should preserve the visible offline symptom"
   pass "session start: transient tmux unreadability never licenses a relaunch"
 }
@@ -1527,8 +1493,8 @@ EOF
   printf 'window=fm-sess:dead-window\nkind=ship\n' > "$home/state/task-dead.meta"
 
   out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
-  assert_contains "$out" "endpoint: alive (backend=tmux window=fm-sess:live-window)" "live tmux endpoint not reported alive"
-  assert_contains "$out" "endpoint: dead (backend=tmux window=fm-sess:dead-window)" "dead tmux endpoint not reported dead"
+  assert_contains "$out" "endpoint=alive" "live tmux endpoint not reported alive"
+  assert_contains "$out" "endpoint=dead" "dead tmux endpoint not reported dead"
 
   pass "tmux endpoint liveness is reported per task: alive for a live window, dead for a gone one"
 }
@@ -1548,11 +1514,10 @@ EOF
   printf 'window=sess:p-odd\nkind=ship\nbackend=herdr\n' > "$home/state/task-odd.meta"
 
   out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
-  assert_contains "$out" "endpoint: alive (backend=herdr window=sess:p-live)" "live herdr endpoint not reported alive"
-  assert_contains "$out" "endpoint: dead (backend=herdr window=sess:p-dead)" "dead herdr endpoint not reported dead"
-  assert_contains "$out" "endpoint: dead (backend=herdr window=sess:p-odd)" \
-    "a probe exiting 4 for a gone surface was not reported dead"
-  assert_not_contains "$out" "endpoint: error (backend=herdr window=sess:p-odd" \
+  assert_contains "$out" "task-live project=- state=unknown pr=- age=" "live herdr task line missing"
+  assert_contains "$out" "endpoint=alive" "live herdr endpoint not reported alive"
+  assert_contains "$out" "endpoint=dead" "dead herdr endpoint not reported dead"
+  assert_not_contains "$out" "task-odd project=- state=unknown pr=- age=- endpoint=error" \
     "a probe exiting 4 was mislabelled as a failed read"
 
   pass "herdr endpoint liveness is reported per task: alive, dead for exit 1, dead for any other probe status"
@@ -1576,13 +1541,14 @@ EOF
   out=$(FM_SESSION_START_ENDPOINT_TIMEOUT=bogus run_session_start "$home" "$root" "$fakebin:$BASE_PATH") || status=$?
 
   expect_code 0 "$status" "one killed endpoint read must not fail the digest"
-  assert_contains "$out" \
-    "endpoint: error (backend=herdr window=sess:p-doom - the endpoint read died or hit its 10s bound; the digest continued past it)" \
-    "a killed endpoint read was not reported as that task's own error line"
-  assert_contains "$out" "endpoint: alive (backend=herdr window=sess:p-live)" \
+  assert_contains "$out" "task-a-doom project=- state=working pr=- age=" \
+    "a killed endpoint read was not reported on that task's own line"
+  assert_contains "$out" "endpoint=error" \
+    "a killed endpoint read was not reported as that task's own error field"
+  assert_contains "$out" "endpoint=alive" \
     "the digest did not continue past the killed read to the next task"
-  assert_contains "$out" "working: doomed task marker" \
-    "the doomed task's status tail was lost along with its endpoint read"
+  assert_not_contains "$out" "working: doomed task marker" \
+    "the digest re-printed a status body beside the one-line rendering"
   assert_contains "$out" "$(printf '\nCONTEXT\n')" \
     "a killed endpoint read cost the digest its context section"
   assert_contains "$out" "NEXT STEP" \
@@ -1615,10 +1581,9 @@ EOF
     run_session_start "$home" "$root" "$fakebin:$BASE_PATH") || status=$?
 
   expect_code 0 "$status" "a hung endpoint read must not fail the digest"
-  assert_contains "$out" \
-    "endpoint: error (backend=herdr window=sess:p-slow - the endpoint read died or hit its 2s bound; the digest continued past it)" \
-    "a hung endpoint read was not bounded into that task's own configured bound"
-  assert_contains "$out" "endpoint: alive (backend=herdr window=sess:p-live)" \
+  assert_contains "$out" "endpoint=error" \
+    "a hung endpoint read was not bounded into that task's own error field"
+  assert_contains "$out" "endpoint=alive" \
     "the digest did not continue past the hung read to the next task"
   assert_contains "$out" "$(printf '\nCONTEXT\n')" \
     "a hung endpoint read cost the digest its context section"
@@ -1650,8 +1615,7 @@ EOF
     run_session_start "$home" "$root" "$fakebin:$BASE_PATH") || status=$?
 
   expect_code 0 "$status" "a padded-zero per-read bound must not fail the digest"
-  assert_contains "$out" \
-    "endpoint: error (backend=herdr window=sess:p-slow - the endpoint read died or hit its 10s bound; the digest continued past it)" \
+  assert_contains "$out" "endpoint=error" \
     "a padded-zero bound did not fall back to the 10s default, so the hung read went unbounded"
   assert_contains "$out" "$(printf '\nCONTEXT\n')" \
     "a padded-zero bound cost the digest its context section"
@@ -2182,8 +2146,8 @@ EOF
   assert_not_contains "$out" "OVERSIZED-BODY-LINE" "tasks-axi compact digest leaked an in-flight task body"
   assert_not_contains "$out" "QUEUED-BODY-LINE" "tasks-axi compact digest leaked a queued task body"
   assert_not_contains "$out" "DONE-ROW-LINE" "tasks-axi compact digest listed a done row at startup"
-  assert_contains "$out" "--- compact-startup ---" "in-flight meta identity disappeared from startup recovery digest"
-  assert_contains "$out" "worktree=$home/projects/firstmate" "in-flight recovery worktree identity disappeared from startup digest"
+  assert_contains "$out" "compact-startup project=firstmate state=unknown pr=- age=" "in-flight task did not render as the one-line startup identity"
+  assert_contains "$out" "bin/fm-crew-state.sh <id>" "startup digest omitted the per-task full-detail pointer"
   assert_contains "$out" "Full task bodies remain available on demand: bin/fm-tasks-axi.sh show <id> --full" \
     "compact digest omitted the full-body lookup pointer"
   assert_contains "$out" "ready_public_followups: 0 delivery-ready obligations" \
@@ -3237,8 +3201,7 @@ test_session_start_preserves_ambiguous_pi_process
 test_session_start_preserves_transiently_unreadable_tmux
 test_session_start_preserves_proven_bare_shell_recovery
 test_session_start_relaunches_herdr_husk_secondmate
-test_status_tail_bounding
-test_status_tail_line_cap
+test_work_under_way_one_line_per_task
 test_orphan_status_logs_are_printed
 test_endpoint_liveness_tmux
 test_endpoint_liveness_herdr
