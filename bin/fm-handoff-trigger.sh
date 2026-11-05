@@ -5,7 +5,8 @@
 # UserPromptSubmit, and a Stop command hook. When the session's context left before
 # auto-compact falls to the configured percentage (default 15), the session
 # receives ONE instruction, as hook additionalContext, to write its full
-# handoff before auto-compact and report that it is ready to restart. It fires
+# handoff before auto-compact, request its successor through the watchdog
+# restart path, and report that it is ready to restart. It fires
 # at most once per context cycle, so a session that keeps working past the
 # threshold is not nagged again, and a session that auto-compacts anyway is told
 # again before its next auto-compact.
@@ -69,7 +70,13 @@
 # handing off, the hook runs `bin/fm-order.sh gate`; when the recorded handoff
 # document does not name every open captain order it blocks that stop (exit 2,
 # the gate's verdict on stderr) so the session writes the orders into its
-# handoff before it reports ready to restart. An ordinary stop is never gated.
+# handoff before it reports ready to restart. A session the trigger fired on
+# is also blocked until it has requested its successor by creating
+# state/.watchdog-restart-request newer than the firing: the watchdog owns
+# launching the successor from that request and verifying it holds the
+# session lock (bin/fm-watchdog.sh, docs/watchdog.md), so a handoff turn can
+# no longer end on ready to restart with nobody launching the next session.
+# An ordinary stop is never gated.
 # A stop that already follows a block (stop_hook_active) is allowed, so the
 # gate blocks at most once per turn and never wedges the session. It cannot
 # stop a human `/quit` or a crash, and it does not run for a non-Claude
@@ -147,11 +154,22 @@ if [ "$EVENT" = Stop ]; then
   [ "$(printf '%s' "$PAYLOAD" | jq -r '.stop_hook_active // false' 2>/dev/null)" != true ] || exit 0
   GATE_RC=0
   GATE_OUT=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-order.sh" gate 2>/dev/null) || GATE_RC=$?
-  [ "$GATE_RC" -eq 3 ] || exit 0
-  printf 'Firstmate restart gate: this session is handing off, but its handoff does not list every open captain order. %s
+  if [ "$GATE_RC" -eq 3 ]; then
+    printf 'Firstmate restart gate: this session is handing off, but its handoff does not list every open captain order. %s
 ' \
-    "$(printf '%s' "$GATE_OUT" | tr '\n' ' ')" >&2
-  exit 2
+      "$(printf '%s' "$GATE_OUT" | tr '\n' ' ')" >&2
+    exit 2
+  fi
+  # Successor gate: only a session the trigger fired on in this cycle owes a
+  # successor request; a handoff recorded for stow or compaction does not.
+  if [ -n "$MARKER" ] && [ -e "$MARKER" ]; then
+    REQ="$STATE/.watchdog-restart-request"
+    if [ ! -e "$REQ" ] || [ "$MARKER" -nt "$REQ" ]; then
+      printf 'Firstmate restart gate: this session is handing off, but it has not requested its successor. Create state/.watchdog-restart-request in this home so the watchdog launches the successor and verifies it holds the session lock, then end the turn. Ending on ready to restart without that request leaves the fleet unsupervised.\n' >&2
+      exit 2
+    fi
+  fi
+  exit 0
 fi
 [ "$PERCENT" -gt 0 ] || exit 0
 [ -n "$MARKER" ] || exit 0
@@ -173,7 +191,7 @@ LEFT=$(fm_compact_left_percent "$TOKENS" "$COMPACT_AT")
 ( set -o noclobber; printf '%s\n' "$(date +%s) tokens=$TOKENS compact_at=$COMPACT_AT" > "$MARKER" ) 2>/dev/null || exit 0
 find "$STATE" -maxdepth 1 -name '.handoff-trigger.*' -type f -mtime +30 -exec rm -f {} + 2>/dev/null
 
-MESSAGE="Firstmate early handoff trigger, from this home's tracked Claude hook: about ${LEFT}% of context is left before auto-compact (${TOKENS} of ${COMPACT_AT} tokens). Write your full session handoff now, before auto-compact: persist every open work record, decision, and piece of durable knowledge this session holds (the stow skill covers this), then report that this session is ready to restart. Do not run /compact. This instruction fires once per context cycle."
+MESSAGE="Firstmate early handoff trigger, from this home's tracked Claude hook: about ${LEFT}% of context is left before auto-compact (${TOKENS} of ${COMPACT_AT} tokens). Write your full session handoff now, before auto-compact: persist every open work record, decision, and piece of durable knowledge this session holds (the stow skill covers this), record the handoff with bin/fm-order.sh handoff --doc <handoff file>, then request your successor by creating state/.watchdog-restart-request in this home and report that this session is ready to restart. The watchdog launches the successor from that request and verifies it holds the session lock; do not end this turn on ready to restart without that request file. Do not run /compact. This instruction fires once per context cycle."
 # Durable captain orders are part of the handoff: name each open order and the
 # command that writes them into the handoff document (bin/fm-order.sh owns the
 # list and the restart gate this hook enforces on Stop).

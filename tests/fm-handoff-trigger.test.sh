@@ -324,10 +324,18 @@ test_names_open_captain_orders_and_gates_the_stop() {
   doc="$PRIMARY/data/handoff-20261031-1200-captain-restart.md"
   printf '# Handoff\n' > "$doc"
   FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" handoff --doc "$doc" >/dev/null || fail "handoff --doc must succeed"
+  # The orders are listed, but no successor has been requested yet: the stop
+  # is still blocked, now by the successor gate (issues 133, 116).
+  err="$TMP_ROOT/stop-successor.err"
+  rc=0
+  run_hook "$PRIMARY" s-orders "$TMP_ROOT/t-90" Stop >/dev/null 2>"$err" || rc=$?
+  [ "$rc" -eq 2 ] || fail "a handoff turn with no successor request must be blocked (rc=$rc)"
+  assert_contains "$(cat "$err")" ".watchdog-restart-request" "the successor block names the request file"
+  : > "$PRIMARY/state/.watchdog-restart-request"
   rc=0
   run_hook "$PRIMARY" s-orders "$TMP_ROOT/t-90" Stop >/dev/null 2>&1 || rc=$?
-  [ "$rc" -eq 0 ] || fail "once the handoff lists every open order the stop must pass (rc=$rc)"
-  rm -rf "$PRIMARY/data/orders" "$doc" "$PRIMARY/state/.order-handoff"
+  [ "$rc" -eq 0 ] || fail "once the handoff lists every open order and the successor is requested the stop must pass (rc=$rc)"
+  rm -rf "$PRIMARY/data/orders" "$doc" "$PRIMARY/state/.order-handoff" "$PRIMARY/state/.watchdog-restart-request"
   pass "a firing names every open captain order, and the stop is gated until the handoff lists them"
 }
 
@@ -546,6 +554,37 @@ test_a_caller_outside_any_harness_reads_the_captains_handoff() {
   pass "a caller outside any harness reads the captain's handoff, and a second harness session does not"
 }
 
+test_handoff_requests_a_successor_and_gates_the_stop_without_one() {
+  local rc err out
+  reset_lab
+  rm -rf "$PRIMARY/data/orders" "$PRIMARY/state/.order-handoff" "$PRIMARY/state/.watchdog-restart-request"
+  printf 'compact-at-tokens=100000\n' > "$PRIMARY/config/handoff-trigger"
+  transcript "$TMP_ROOT/t-succ" 90000
+  # A stale request from an earlier episode must not satisfy this firing.
+  : > "$PRIMARY/state/.watchdog-restart-request"
+  sleep 1
+  out=$(run_hook "$PRIMARY" s-succ "$TMP_ROOT/t-succ")
+  expect_fire "$out" PostToolUse "successor instruction firing"
+  printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | contains("state/.watchdog-restart-request") and contains("verifies it holds the session lock")' >/dev/null \
+    || fail "the instruction must name the successor request and lock verification: $out"
+  err="$TMP_ROOT/succ.err"
+  rc=0
+  run_hook "$PRIMARY" s-succ "$TMP_ROOT/t-succ" Stop >/dev/null 2>"$err" || rc=$?
+  [ "$rc" -eq 2 ] || fail "a stale successor request must still block the stop (rc=$rc)"
+  assert_contains "$(cat "$err")" ".watchdog-restart-request" "the stale-request block names the request file"
+  rc=0
+  run_hook "$PRIMARY" s-succ "$TMP_ROOT/t-succ" Stop '. + {stop_hook_active: true}' >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 0 ] || fail "a stop already continued by this hook must not be blocked again (rc=$rc)"
+  sleep 1
+  : > "$PRIMARY/state/.watchdog-restart-request"
+  rc=0
+  run_hook "$PRIMARY" s-succ "$TMP_ROOT/t-succ" Stop >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 0 ] || fail "a fresh successor request must let the stop pass (rc=$rc)"
+  rm -f "$PRIMARY/state/.watchdog-restart-request"
+  pass "a firing requests its successor through the watchdog path and the stop is gated until it does (133, 116)"
+}
+
+test_handoff_requests_a_successor_and_gates_the_stop_without_one
 test_threshold_default_15
 test_threshold_configurable
 test_fires_once_per_context_cycle

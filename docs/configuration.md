@@ -471,7 +471,8 @@ This feature does not set `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` or any other autocom
 ## Early handoff trigger (config/handoff-trigger)
 
 A Claude primary session receives one instruction to write its full handoff when its context left before auto-compact falls to a set percentage.
-The instruction asks the session to persist its open work records, decisions, and durable knowledge, then report that it is ready to restart, so a session can restart from a handoff instead of compacting.
+The instruction asks the session to persist its open work records, decisions, and durable knowledge, record the handoff, then request its successor by creating `state/.watchdog-restart-request` and report that it is ready to restart, so a session can restart from a handoff instead of compacting.
+The watchdog launches the successor from that request and verifies it holds the session lock; its contract is in [the watchdog doc](watchdog.md).
 It fires at most once per context cycle: a session that auto-compacts anyway is told again before its next auto-compact.
 
 The trigger is on by default at 15% context left, wherever it can resolve the auto-compact point.
@@ -502,6 +503,7 @@ It never writes the handoff, compacts, or restarts the session.
 
 The same hook enforces the captain-order restart gate at each Stop of a session that is handing off: the trigger fired in this context cycle, or the session ran `bin/fm-order.sh handoff --doc` (stow, a restart, or `percent-left=0`).
 It blocks such a stop once per turn while the recorded handoff document omits an open captain order, and it never gates an ordinary stop.
+A session the trigger fired on is also blocked once per turn until `state/.watchdog-restart-request` is newer than the firing, so that handoff turn cannot end on ready to restart with no successor requested.
 The handoff record belongs to the session that wrote it, so another session's stop in the same home is never gated by it.
 A caller outside any harness session, such as a restarting leash or sender, reads the record as the captain's, so its `bin/fm-order.sh gate` check clears when the captain's handoff lists every open order.
 The gate has limits: it runs only for a Claude primary, so a non-Claude primary, or a home with no resolvable auto-compact window that never runs `handoff --doc`, is not gated.
