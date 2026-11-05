@@ -1,0 +1,3 @@
+ok - a Codex ship launch carries TMUX, TMUX_PANE and FM_TASK_INBOX overrides, and no Herdr overrides the pane lacks
+ok - a Codex secondmate launch carries Herdr and inbox overrides, and watcher selection accepts the tool-shell environment they produce
+bash tests/fm-codex-shell-env.test.sh  1.73s user 2.39s system 32% cpu 12.644 total
