@@ -479,7 +479,7 @@ test_active_dispatch_profile_allows_explicit_harness() {
   assert_contains "$out" "spawned $id harness=codex" "spawn did not report explicit codex harness"
   assert_meta_profile "$HOME_DIR/state/$id.meta" codex gpt-5 high
   launch=$(launch_inner "$(cat "$LAUNCH_LOG")")
-  assert_contains "$launch" "codex --model 'gpt-5' -c 'model_reasoning_effort=\"high\"' --dangerously-bypass-approvals-and-sandbox" \
+  assert_contains "$launch" "fm-codex-launch.sh' --model 'gpt-5' -c 'model_reasoning_effort=\"high\"' --dangerously-bypass-approvals-and-sandbox" \
     "explicit harness launch did not thread model, effort, and Codex bypass flag"
   pass "active crew-dispatch profile allows an explicit resolved harness"
 }
@@ -658,7 +658,7 @@ test_codex_threads_model_and_effort() {
   expect_code 0 "$status" "codex spawn with profile flags should succeed"
   assert_meta_profile "$HOME_DIR/state/$id.meta" codex gpt-5 high
   launch=$(launch_inner "$(cat "$LAUNCH_LOG")")
-  assert_contains "$launch" "codex --model 'gpt-5' -c 'model_reasoning_effort=\"high\"' --dangerously-bypass-approvals-and-sandbox" \
+  assert_contains "$launch" "fm-codex-launch.sh' --model 'gpt-5' -c 'model_reasoning_effort=\"high\"' --dangerously-bypass-approvals-and-sandbox" \
     "codex launch did not thread model, reasoning effort config, and Codex bypass flag"
   pass "codex receives --model and model_reasoning_effort profile flags"
 }
@@ -689,7 +689,7 @@ test_codex_threads_model_and_max_effort() {
   expect_code 0 "$status" "codex Luna spawn with max effort should succeed"
   assert_meta_profile "$HOME_DIR/state/$id.meta" codex gpt-5.6-luna max
   launch=$(launch_inner "$(cat "$LAUNCH_LOG")")
-  assert_contains "$launch" "codex --model 'gpt-5.6-luna' -c 'model_reasoning_effort=\"max\"' --dangerously-bypass-approvals-and-sandbox" \
+  assert_contains "$launch" "fm-codex-launch.sh' --model 'gpt-5.6-luna' -c 'model_reasoning_effort=\"max\"' --dangerously-bypass-approvals-and-sandbox" \
     "codex launch did not thread Luna's max reasoning effort config and Codex bypass flag"
   pass "codex Luna receives --model and model_reasoning_effort max profile flags"
 }
@@ -707,7 +707,7 @@ test_codex_threads_astra_max_effort() {
   expect_code 0 "$status" "codex Astra spawn with max effort should succeed: $out"
   assert_meta_profile "$HOME_DIR/state/$id.meta" codex gpt-6-astra max
   launch=$(launch_inner "$(cat "$LAUNCH_LOG")")
-  assert_contains "$launch" "codex --model 'gpt-6-astra' -c 'model_reasoning_effort=\"max\"' --dangerously-bypass-approvals-and-sandbox" \
+  assert_contains "$launch" "fm-codex-launch.sh' --model 'gpt-6-astra' -c 'model_reasoning_effort=\"max\"' --dangerously-bypass-approvals-and-sandbox" \
     "codex launch did not thread Astra's max reasoning effort config"
   pass "codex Astra receives --model and model_reasoning_effort max when the catalog advertises it"
 }
@@ -2875,7 +2875,7 @@ test_non_claude_harness_ignores_claude_permission_mode() {
   status=$?
   expect_code 0 "$status" "codex spawn under claude-permission-mode=auto should succeed"
   launch=$(launch_inner "$(cat "$LAUNCH_LOG")")
-  assert_contains "$launch" "codex " "codex launch did not run codex"
+  assert_contains "$launch" "fm-codex-launch.sh' " "codex launch did not run the Codex launcher"
   assert_not_contains "$launch" "--permission-mode" "the claude permission flag must not leak into a codex launch"
   pass "config/claude-permission-mode changes claude launches only"
 }
@@ -2907,7 +2907,7 @@ test_codex_permission_modes() {
       status=$?
       expect_code 0 "$status" "Codex $kind spawn under $mode should succeed: $out"
       launch=$(cat "$LAUNCH_LOG")
-      flags="codex --model 'gpt-5' -c 'model_reasoning_effort=\"high\"' "
+      flags="fm-codex-launch.sh' --model 'gpt-5' -c 'model_reasoning_effort=\"high\"' "
       if [ "$mode" = restricted ]; then
         flags+='--sandbox workspace-write --ask-for-approval on-request '
         assert_not_contains "$launch" '--dangerously-bypass-approvals-and-sandbox' "restricted must not bypass approvals"
