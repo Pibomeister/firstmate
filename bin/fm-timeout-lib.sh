@@ -121,8 +121,11 @@ fm_timeout_mechanism() {
 fm_run_bash_timeout() {
   local seconds=$1 command_status deadline_status child_pid watchdog_pid command_rc recorded_rc monitor_was_on=0 caller
   shift
-  caller=$(exec sh -c 'echo "$PPID"')
-  command_status=$(mktemp "${TMPDIR:-/tmp}/fm-bash-timeout-command.XXXXXX" 2>/dev/null) || return 124
+  # Its helper tools come from the default PATH (an absolute sh, command -p
+  # otherwise), so a caller with a trimmed PATH still gets a real bound rather
+  # than an immediate 124.
+  caller=$(exec /bin/sh -c 'echo "$PPID"')
+  command_status=$(command -p mktemp "${TMPDIR:-/tmp}/fm-bash-timeout-command.XXXXXX" 2>/dev/null) || return 124
   deadline_status="${command_status}.deadline"
   case $- in *m*) monitor_was_on=1 ;; esac
   set -m
@@ -169,10 +172,10 @@ fm_run_bash_timeout() {
   else
     kill -TERM -- "-$watchdog_pid" 2>/dev/null || kill "$watchdog_pid" 2>/dev/null || true
     wait "$watchdog_pid" 2>/dev/null || true
-    recorded_rc=$(cat "$command_status" 2>/dev/null || true)
+    recorded_rc=$(command -p cat "$command_status" 2>/dev/null || true)
     case "$recorded_rc" in ''|*[!0-9]*) ;; *) command_rc=$recorded_rc ;; esac
   fi
-  rm -f "$command_status" "$deadline_status" 2>/dev/null || true
+  command -p rm -f "$command_status" "$deadline_status" 2>/dev/null || true
   return "$command_rc"
 }
 

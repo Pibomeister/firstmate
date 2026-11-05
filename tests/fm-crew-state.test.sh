@@ -3394,6 +3394,33 @@ test_scout_skips_run_lookup() {
   pass "scout skips the run lookup"
 }
 
+# A backend CLI that hangs on a stale recorded handle (an Orca terminal from
+# before a restart) is bounded by FM_CREW_STATE_PANE_TIMEOUT: the read reports
+# the endpoint unreachable, never a stall and never "target gone".
+test_hung_backend_pane_probe_is_bounded() {
+  reset_fakes
+  local d started elapsed out
+  d=$(new_case hung-orca)
+  make_repo_on_branch "$d/wt" fm/scout-hung
+  make_fakebin "$d" >/dev/null
+  cat > "$d/fakebin/orca" <<'SH'
+#!/usr/bin/env bash
+sleep 30
+exit 1
+SH
+  chmod +x "$d/fakebin/orca"
+  fm_write_meta "$d/state/scout-hung.meta" "backend=orca" "terminal=term_hung" \
+    "worktree=$d/wt" "kind=scout" "harness=claude"
+  started=$(date +%s)
+  out=$(FM_CREW_STATE_PANE_TIMEOUT=1 run_crew_state "$d" scout-hung)
+  elapsed=$(( $(date +%s) - started ))
+  [ "$elapsed" -lt 15 ] || fail "hung backend pane probe stalled crew-state for ${elapsed}s"
+  assert_contains "$out" "state: unknown" "hung pane probe reads unknown"
+  assert_contains "$out" "backend unreachable (orca endpoint probe timed out after 1s)" \
+    "hung pane probe names the timeout"
+  pass "hung backend pane probe is bounded and reads unreachable"
+}
+
 # (j) torn-down worktree and missing meta are graceful (unknown/none, exit 0)
 test_torn_down_worktree() {
   reset_fakes
@@ -6087,6 +6114,7 @@ for cancellation_test in test_captured_cancelled_review_has_no_verdict \
 done
 [ "$cancellation_failures" -eq 0 ] || fail "$cancellation_failures cancellation test groups failed"
 
+test_hung_backend_pane_probe_is_bounded
 test_active_run_is_authoritative
 test_stale_needs_decision_superseded
 test_stale_blocked_superseded

@@ -64,7 +64,9 @@
 #     fm-classify-lib.sh's authoritative status_open_decisions fold and reconciled
 #     against current_state; hints.pending_decision and hints.blocked_event are
 #     booleans derived from that set.
-#     endpoint.exists is the cheap local backend endpoint-presence read.
+#     endpoint.exists is the cheap local backend endpoint-presence read,
+#     bounded by FM_SNAPSHOT_ENDPOINT_TIMEOUT (default 2 seconds); a probe
+#     that hits the bound reports exists null (unknown), never a stall.
 #     endpoint.agent_alive is populated for local secondmates only, where it is
 #     useful return-channel supervision data; remote secondmates use "unknown"
 #     without a probe, and other tasks use "not_checked".
@@ -161,6 +163,7 @@ FM_SNAPSHOT_SECONDMATE_MAX_BYTES=${FM_SNAPSHOT_SECONDMATE_MAX_BYTES:-262144}
 FM_SNAPSHOT_SECONDMATE_CHILDREN=${FM_SNAPSHOT_SECONDMATE_CHILDREN:-20}
 FM_SNAPSHOT_SECONDMATE_QUEUED=${FM_SNAPSHOT_SECONDMATE_QUEUED:-20}
 FM_SNAPSHOT_SECONDMATE_DECISIONS=${FM_SNAPSHOT_SECONDMATE_DECISIONS:-20}
+FM_SNAPSHOT_ENDPOINT_TIMEOUT=${FM_SNAPSHOT_ENDPOINT_TIMEOUT:-2}
 FM_SNAPSHOT_TERMINAL_LINES=${FM_SNAPSHOT_TERMINAL_LINES:-8}
 FM_SNAPSHOT_TERMINAL_BYTES=${FM_SNAPSHOT_TERMINAL_BYTES:-4096}
 FM_SNAPSHOT_TERMINAL_TIMEOUT=${FM_SNAPSHOT_TERMINAL_TIMEOUT:-2}
@@ -193,6 +196,7 @@ validate_positive_bound FM_SNAPSHOT_SECONDMATE_MAX_BYTES "$FM_SNAPSHOT_SECONDMAT
 validate_positive_bound FM_SNAPSHOT_SECONDMATE_CHILDREN "$FM_SNAPSHOT_SECONDMATE_CHILDREN"
 validate_positive_bound FM_SNAPSHOT_SECONDMATE_QUEUED "$FM_SNAPSHOT_SECONDMATE_QUEUED"
 validate_positive_bound FM_SNAPSHOT_SECONDMATE_DECISIONS "$FM_SNAPSHOT_SECONDMATE_DECISIONS"
+validate_positive_bound FM_SNAPSHOT_ENDPOINT_TIMEOUT "$FM_SNAPSHOT_ENDPOINT_TIMEOUT"
 validate_positive_bound FM_SNAPSHOT_TERMINAL_LINES "$FM_SNAPSHOT_TERMINAL_LINES"
 validate_positive_bound FM_SNAPSHOT_TERMINAL_BYTES "$FM_SNAPSHOT_TERMINAL_BYTES"
 validate_positive_bound FM_SNAPSHOT_TERMINAL_TIMEOUT "$FM_SNAPSHOT_TERMINAL_TIMEOUT"
@@ -268,6 +272,8 @@ Each local per-task current-state read is bounded by FM_SNAPSHOT_CREW_STATE_TIME
 (default 10 seconds); a read that hits the bound reports state unknown. Local task
 observations run concurrently, up to FM_SNAPSHOT_LOCAL_READ_CONCURRENCY (default 8).
 Remote secondmate endpoint liveness is not probed by this command.
+Each local per-task endpoint probe is bounded by FM_SNAPSHOT_ENDPOINT_TIMEOUT
+(default 2 seconds); a probe that hits the bound reports endpoint unknown.
 Terminal contradiction evidence uses
 FM_SNAPSHOT_TERMINAL_LINES, FM_SNAPSHOT_TERMINAL_BYTES, and
 FM_SNAPSHOT_TERMINAL_TIMEOUT and never becomes canonical current state.
@@ -629,6 +635,23 @@ snapshot_task_generation_is_current() {  # <captured-meta> <id>
   fi
 }
 
+# The endpoint probe is one bounded read: a backend CLI that hangs on a stale
+# recorded handle (an Orca terminal from before a restart, a dead Herdr server)
+# must report unknown, never stall this task's observation batch - and with it
+# the whole snapshot - until an outer caller's budget kills the snapshot.
+# shellcheck disable=SC2329 # Invoked through fm_run_timed_fn.
+snapshot_endpoint_probe() {  # <backend> <target> <id> <kind>
+  local backend=$1 target=$2 id=$3 kind=$4 exists=false alive=not_checked
+  if fm_backend_target_exists "$backend" "$target" "fm-$id" >/dev/null 2>&1; then
+    exists=true
+  fi
+  if [ "$kind" = secondmate ]; then
+    alive=$(fm_backend_agent_alive "$backend" "$target" 2>/dev/null || printf unknown)
+    [ -n "$alive" ] || alive=unknown
+  fi
+  printf 'endpoint_exists=%s\nagent_alive=%s\n' "$exists" "$alive"
+}
+
 prefetch_task_observations() {  # <meta> <id>
   local meta=$1 id=$2 remote_host current_file endpoint_file current_pid='' current_rc=0
   local status_log status_capture report_path report_capture
@@ -658,13 +681,21 @@ prefetch_task_observations() {  # <meta> <id>
     backend=$(fm_backend_of_meta "$meta")
     target=$(fm_backend_target_of_meta "$meta")
     if [ -n "$target" ]; then
-      if fm_backend_target_exists "$backend" "$target" "fm-$id" >/dev/null 2>&1; then
-        endpoint_exists=true
+      local probe_out='' probe_rc=0 probe_line
+      probe_out=$(fm_run_timed_fn "$FM_SNAPSHOT_ENDPOINT_TIMEOUT" \
+        snapshot_endpoint_probe "$backend" "$target" "$id" "$kind" 2>/dev/null) || probe_rc=$?
+      if fm_timed_out "$probe_rc"; then
+        endpoint_exists=null
+        [ "$kind" != secondmate ] || agent_alive=unknown
       else
-        endpoint_exists=false
-      fi
-      if [ "$kind" = secondmate ]; then
-        agent_alive=$(fm_backend_agent_alive "$backend" "$target" 2>/dev/null || printf unknown)
+        while IFS= read -r probe_line; do
+          case "$probe_line" in
+            endpoint_exists=true|endpoint_exists=false) endpoint_exists=${probe_line#*=} ;;
+            agent_alive=*) agent_alive=${probe_line#*=} ;;
+          esac
+        done <<EOF_PROBE
+$probe_out
+EOF_PROBE
       fi
     fi
   else
