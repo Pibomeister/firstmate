@@ -131,7 +131,7 @@ pass() {
 # FM_TEST_COMPLETE. Adding a test is adding a name to this call; N is not a
 # separately maintained numeral. The names given are the names run.
 # bin/fm-test-tap-verify.sh is the completeness checker the stock macOS Bash
-# job uses against that plan and marker.
+# job uses against that plan and marker when that job is restored.
 fm_test_run() {
   local name kind
   [ "$#" -gt 0 ] || fail "fm_test_run: no tests registered"
