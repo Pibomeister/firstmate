@@ -2022,6 +2022,83 @@ test_away_permission_dialog_pages_the_owner() {
   pass "away permission dialog: the owner is paged once per window, the dialog is recorded, and no key is sent"
 }
 
+# worker_pane <id> <kind> <screen>: a real tmux pane and state/<id>.meta.
+# Sets WP to the pane id.
+worker_pane() {
+  local id=$1 kind=$2 screen=$3 sess
+  printf '%s\n' "$screen" > "$H/worker-$id.txt"
+  cat > "$H/worker-$id.sh" <<SH
+#!/usr/bin/env bash
+cat "$H/worker-$id.txt"
+stty -echo
+exec cat >> "$H/worker-$id.typed"
+SH
+  chmod +x "$H/worker-$id.sh"
+  : > "$H/worker-$id.typed"
+  sess="wk${id}${CASE_N}"
+  "$REAL_TMUX" -f /dev/null -L "$SOCKET" new-session -d -s "$sess" -x 160 -y 40 "$H/worker-$id.sh"
+  WP=$("$REAL_TMUX" -f /dev/null -L "$SOCKET" list-panes -t "=$sess" -F '#{pane_id}' | head -n 1)
+  printf 'kind=%s\nbackend=tmux\nwindow=%s\nendpoint_task_id=%s\n' "$kind" "$WP" "$id" > "$H/state/$id.meta"
+}
+
+page_subjects() {  # <phase>
+  awk -F'\t' -v p="$1" '$5 == "dialog" && $6 == "page" && $7 == p { print $4 }' "$H/state/watchdog/actions.tsv" 2>/dev/null | sort
+}
+
+test_worker_permission_dialog_pages_the_owner() {
+  local dialog=$'Do you want to proceed?\n ❯ 1. Yes\n   2. No, and tell Claude what to do differently\n\nEsc to cancel'
+  local question=$'Which plan should I follow?\n ❯ 1. Plan A (Recommended)\n   2. Plan B\n\nEnter to select · ↑/↓ to navigate · Esc to cancel'
+  local show_pane gone_sess
+  make_home $'Captain session\n> '
+  transcript 100 "Working."
+  worker_pane show ship "$dialog"
+  show_pane=$WP
+  worker_pane plain ship $'work output\n> '
+  worker_pane other scout "$dialog"
+  worker_pane ask ship "$question"
+  worker_pane gone scout "$dialog"
+  gone_sess="wkgone${CASE_N}"
+  "$REAL_TMUX" -f /dev/null -L "$SOCKET" kill-session -t "=$gone_sess"
+  # A second-mate record is not a ship or scout pane, even on a dialog the worker shows.
+  printf 'kind=secondmate\nbackend=tmux\nwindow=%s\nendpoint_task_id=mate\n' "$show_pane" > "$H/state/mate.meta"
+  sleep 0.5
+  printf '%s\n' "$LOCKPID" > "$H/state/.supervise-daemon.pid"
+  printf "command:cat >> '%s'\n" "$H/paged.log" > "$H/config/wedge-alarm"
+
+  run_wd 0 once >/dev/null 2>&1 || fail "a pass with a gone worker endpoint failed"
+  assert_equals 0 "$(ledger | awk -F'\t' '$6 == "page"' | wc -l | tr -d ' ')" "a present owner is not paged for a worker dialog: $(ledger | cut -f4-8)"
+  [ ! -e "$H/paged.log" ] || fail "a present owner was paged for a worker dialog: $(cat "$H/paged.log")"
+
+  : > "$H/state/.afk"
+  run_wd 10 once >/dev/null 2>&1 || fail "the away pass failed"
+  assert_equals $'worker:other\nworker:show' "$(page_subjects pending | sort -u)" "only the ship and scout dialogs page: $(page_subjects pending | tr '\n' ' ')"
+  assert_equals 2 "$(ledger_rows dialog page pending)" "each worker dialog pages once: $(ledger | cut -f4-8)"
+  assert_equals 2 "$(ledger_rows dialog page "done")" "both worker pages were delivered: $(ledger | cut -f4-8)"
+  assert_grep "worker show" "$H/paged.log" "the page names the ship worker"
+  assert_grep "worker other" "$H/paged.log" "the page names the scout worker"
+  assert_no_grep "worker plain" "$H/paged.log" "a worker pane with no dialog is not paged"
+  assert_no_grep "worker gone" "$H/paged.log" "a gone worker endpoint is not paged"
+  assert_no_grep "worker ask" "$H/paged.log" "a question dialog on a worker gets no page"
+  assert_no_grep "worker mate" "$H/paged.log" "a second-mate record is not a worker pane"
+  assert_no_grep "Do you want to proceed" "$H/paged.log" "the worker page carries no dialog text"
+  assert_grep "permission dialog waiting on worker show" "$H/data/watchdog/status.md" "the ship dialog is reported"
+  assert_grep "worker gone endpoint is gone" "$H/data/watchdog/status.md" "the gone endpoint is reported"
+  [ ! -s "$H/worker-show.typed" ] || fail "the watchdog typed into a worker permission dialog: $(cat "$H/worker-show.typed")"
+  [ ! -s "$H/worker-ask.typed" ] || fail "the watchdog answered a worker question dialog: $(cat "$H/worker-ask.typed")"
+  [ ! -s "$H/worker-plain.typed" ] || fail "the watchdog typed into a worker pane with no dialog: $(cat "$H/worker-plain.typed")"
+
+  run_wd 300 once >/dev/null 2>&1
+  assert_equals 2 "$(ledger_rows dialog page pending)" "each worker page waits for its own nudge-secs: $(ledger | cut -f4-8)"
+  run_wd 1000 once >/dev/null 2>&1
+  assert_equals 4 "$(ledger_rows dialog page pending)" "each dialog still showing after nudge-secs pages again: $(ledger | cut -f4-8)"
+  assert_equals $'worker:other\nworker:show' "$(page_subjects pending | sort -u)" "the second window still pages only those two workers"
+
+  printf 'quiet\n' > "$H/state/.afk"
+  run_wd 2000 once >/dev/null 2>&1
+  assert_equals 4 "$(ledger_rows dialog page pending)" "quiet mode does not page a worker dialog: $(ledger | cut -f4-8)"
+  pass "worker permission dialog: ship and scout panes page on their own windows, a plain pane and a question do not, and a gone endpoint is not read"
+}
+
 test_never_merges_deploys_or_messages_owner() {
   # Every act-mode case above ran with gh, gh-axi, notifiers, and mail faked.
   # The away permission-dialog page reaches only a home's configured alert
@@ -2106,6 +2183,7 @@ fm_test_run \
   test_context_burn_file_is_not_a_context_source \
   test_dialog_kind_ignores_conversation_rows \
   test_away_permission_dialog_pages_the_owner \
+  test_worker_permission_dialog_pages_the_owner \
   test_low_context_undeliverable_nudge_leaves_frozen_recovery \
   test_homes_with_one_basename_keep_their_own_state \
   test_dialog_reserved_check_reads_only_dialog_rows \
