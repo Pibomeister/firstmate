@@ -1,0 +1,10 @@
+1..8
+ok - captain record: lock pid, real liveness, terminal, and move time; pickup moves it, a pane never proves it
+ok - agent gone: a dead lock holder with a recorded anchor still restarts
+ok - primary endpoint: another session's heartbeat is never typed into, and a match restores it
+ok - primary identity: an absent lock id never authenticates a heartbeat, and a recorded match restores delivery
+ok - restart: lean handoff, new terminal, verified pickup with lock takeover; a loop stops and escalates
+ok - terminal service loss: no agent process overrides drawn Working; a live tool call stays protected
+ok - status file stays under 40 lines with timestamp, health, actions since last read, gaps, and a staleness line
+ok - a heartbeat with an unknown endpoint keeps its row and reads as a gap, not ok
+FM_TEST_COMPLETE

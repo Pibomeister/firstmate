@@ -1,0 +1,38 @@
+--- before restart (old captain pane %0)
+  owner=session:00000000-0000-4000-8000-0000000000c1
+  lock_pid=91459
+  session=00000000-0000-4000-8000-0000000000c1
+  alive=live
+  backend=tmux
+  target=%0
+  moved_at=1793874478
+  lock_at=1793874478
+  checked_at=1793874481
+  source=watchdog
+--- pickup output: pickup recorded; new pane %1, new lock pid 94732
+  owner=session:00000000-0000-4000-8000-0000000000c2
+  lock_pid=94732
+  session=00000000-0000-4000-8000-0000000000c2
+  alive=live
+  backend=tmux
+  target=%1
+  moved_at=1793874484
+  lock_at=1793874484
+  checked_at=1793874484
+  source=pickup
+  endpoint=none:none session=00000000-0000-4000-8000-0000000000c2 lock_pid=94732 alive=1 instance=match owner=live
+  captain=tmux:%1 moved_at=1793874484
+--- next watchdog pass, old heartbeat still names %0
+  owner=session:00000000-0000-4000-8000-0000000000c2
+  lock_pid=94732
+  session=00000000-0000-4000-8000-0000000000c2
+  alive=live
+  backend=tmux
+  target=%1
+  moved_at=1793874484
+  lock_at=1793874484
+  checked_at=1793874487
+  source=watchdog
+--- status health line
+- fm-lab.nKeRdL: NO-ENDPOINT, owed 0, ctx unknown; captain pid 94732 live on tmux:%1%1, moved 2026-11-05T10:28:04Z
+lab removed

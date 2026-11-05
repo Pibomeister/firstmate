@@ -1,0 +1,73 @@
+pane1=%0
+--- $ FM_HOME=$LAB bin/fm-watchdog.sh once   (S1 live captain in pane %0)
+state/watchdog/captain:
+    owner=session:00000000-0000-4000-8000-0000000000c1
+    lock_pid=96151
+    session=00000000-0000-4000-8000-0000000000c1
+    alive=live
+    backend=tmux
+    target=%0
+    moved_at=1793874880
+    lock_at=1793874880
+    checked_at=1793874882
+    source=watchdog
+status.md health line:
+    - fm-lab.zax8Ys: ok, last turn 50m ago, ctx unknown; captain pid 96151 live on tmux:%0, moved 2026-11-05T10:34:40Z
+--- $ FM_HOME=$LAB bin/fm-watchdog.sh once   (S2 captain process died, pane %0 still shows Working)
+state/watchdog/captain:
+    owner=session:00000000-0000-4000-8000-0000000000c1
+    lock_pid=96151
+    session=00000000-0000-4000-8000-0000000000c1
+    alive=dead
+    backend=tmux
+    target=%0
+    moved_at=1793874880
+    lock_at=1793874880
+    checked_at=1793874883
+    source=watchdog
+status.md health line:
+    - fm-lab.zax8Ys: AGENT-GONE, last turn 50m ago, owed 0, ctx unknown; captain pid 96151 dead on tmux:%0, moved 2026-11-05T10:34:40Z
+pane2=%1
+--- $ FM_HOME=$LAB bin/fm-watchdog.sh once   (S3 same session resumed by new pid in %1; heartbeat still names retired %0)
+state/watchdog/captain:
+    owner=session:00000000-0000-4000-8000-0000000000c1
+    lock_pid=7126
+    session=00000000-0000-4000-8000-0000000000c1
+    alive=live
+    backend=
+    target=
+    moved_at=1793874880
+    lock_at=1793874886
+    checked_at=1793874886
+    source=watchdog
+status.md health line:
+    - fm-lab.zax8Ys: ok, last turn 50m ago, ctx unknown; captain pid 7126 live on an unknown terminal, moved 2026-11-05T10:34:40Z
+--- $ FM_HOME=$LAB bin/fm-watchdog.sh once   (S4 fresh heartbeat names %1)
+state/watchdog/captain:
+    owner=session:00000000-0000-4000-8000-0000000000c1
+    lock_pid=7126
+    session=00000000-0000-4000-8000-0000000000c1
+    alive=live
+    backend=tmux
+    target=%1
+    moved_at=1793874888
+    lock_at=1793874886
+    checked_at=1793874888
+    source=watchdog
+status.md health line:
+    - fm-lab.zax8Ys: ok, last turn 50m ago, ctx unknown; captain pid 7126 live on tmux:%1, moved 2026-11-05T10:34:48Z
+--- $ FM_HOME=$LAB bin/fm-watchdog.sh once   (S5 lock re-anchored under same session, fresh heartbeat on same pane %1 (moved_at before=1793874888))
+state/watchdog/captain:
+    owner=session:00000000-0000-4000-8000-0000000000c1
+    lock_pid=11693
+    session=00000000-0000-4000-8000-0000000000c1
+    alive=live
+    backend=tmux
+    target=%1
+    moved_at=1793874888
+    lock_at=1793874889
+    checked_at=1793874891
+    source=watchdog
+status.md health line:
+    - fm-lab.zax8Ys: ok, last turn 50m ago, ctx unknown; captain pid 11693 live on tmux:%1, moved 2026-11-05T10:34:48Z
+lab removed: yes
