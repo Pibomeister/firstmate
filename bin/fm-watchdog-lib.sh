@@ -68,11 +68,13 @@
 #       busy CPU vetoes; an unknown turn or CPU state also vetoes a restart.
 #   fm_wd_record <ledger> <id> <home> <subject> <symptom> <action> <phase> <detail>
 #       Appends one ledger row; tabs and newlines in fields become spaces.
-#   fm_wd_last_epoch <ledger> <home> <symptom> <action> [phase-regex]
+#   fm_wd_last_epoch <ledger> <home> <symptom> <action> [phase-regex] [subject]
 #       Prints the newest epoch of a matching row whose phase is pending,
 #       dry-run, refused, or held (or the given regex), else nothing.
-#   fm_wd_rate_ok <ledger> <home> <symptom> <action> <secs> <now>
+#       An empty subject matches every subject. Any other subject matches that column only.
+#   fm_wd_rate_ok <ledger> <home> <symptom> <action> <secs> <now> [subject]
 #       Returns 0 when the last attempt is older than secs.
+#       The optional subject filter is the same as fm_wd_last_epoch.
 #   fm_wd_count_since <ledger> <home> <symptom|*> <action|*> <phase-regex> <since>
 #   fm_wd_open_pending <ledger>
 #       Prints `<id>\t<home>\t<symptom>\t<action>\t<epoch>` for every pending
@@ -372,16 +374,16 @@ fm_wd_record() {  # <ledger> <id> <home> <subject> <symptom> <action> <phase> <d
     "$(_fm_wd_field "$8")" >> "$ledger"
 }
 
-fm_wd_last_epoch() {  # <ledger> <home> <symptom> <action> [phase-regex]
+fm_wd_last_epoch() {  # <ledger> <home> <symptom> <action> [phase-regex] [subject]
   [ -f "$1" ] || return 0
-  awk -F'\t' -v h="$2" -v s="$3" -v a="$4" -v p="${5:-^(pending|dry-run|refused|held)$}" '
-    $3 == h && ($5 == s || s == "*") && ($6 == a || a == "*") && $7 ~ p { last = $1 }
+  awk -F'\t' -v h="$2" -v s="$3" -v a="$4" -v p="${5:-^(pending|dry-run|refused|held)$}" -v subj="${6:-}" '
+    $3 == h && ($5 == s || s == "*") && ($6 == a || a == "*") && $7 ~ p && (subj == "" || $4 == subj) { last = $1 }
     END { if (last != "") print last }' "$1"
 }
 
-fm_wd_rate_ok() {  # <ledger> <home> <symptom> <action> <secs> <now>
+fm_wd_rate_ok() {  # <ledger> <home> <symptom> <action> <secs> <now> [subject]
   local last
-  last=$(fm_wd_last_epoch "$1" "$2" "$3" "$4")
+  last=$(fm_wd_last_epoch "$1" "$2" "$3" "$4" "" "${7:-}")
   [ -z "$last" ] || [ $(( $6 - last )) -ge "$5" ]
 }
 

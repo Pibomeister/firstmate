@@ -5,7 +5,7 @@
 #   run [--interval <secs>]       Foreground loop for launchd or systemd; one instance.
 #   once [--dry-run] [--home <path>]
 #                                 One scan and action pass, then rewrite the status file.
-#   scan [--home <path>]          One observation pass; prints each subject; no action.
+#   scan [--home <path>]          One observation pass; prints each subject and its workers' dialog reads; no action.
 #   judge <purpose> <answer-ere>  Bounded cheap-model call; prompt on stdin; prints the answer.
 #   status                        Print the status file.
 #   ack-read                      Record that the status file was read now.
@@ -376,7 +376,8 @@ wd_rate_open() {
 }
 
 wd_rec() {  # <id> <symptom> <action> <phase> <detail>
-  FM_WD_NOW=$(wd_now) fm_wd_record "$LEDGER" "$1" "$O_HOME" "$O_TAG" "$2" "$3" "$4" "$5"
+  # O_REC_SUBJECT selects one worker's ledger rows. Unset, the row stays the home's.
+  FM_WD_NOW=$(wd_now) fm_wd_record "$LEDGER" "$1" "$O_HOME" "${O_REC_SUBJECT:-$O_TAG}" "$2" "$3" "$4" "$5"
 }
 
 # wd_nudge <symptom> <body>: a record-backed doorbell into the subject's own pane.
@@ -811,20 +812,27 @@ Pick the option that keeps work going on another model or account without buying
 
 # A permission dialog on an away session has nobody to answer it, so the owner
 # is paged through the home's own alert channels at most once per nudge-secs.
+# O_REC_SUBJECT, when set, is the worker this page belongs to, and that subject
+# has its own window so one pane does not consume another's or the home's.
 # The page carries no dialog text; the ledger row records which dialog fired,
 # withheld when it looks like a secret. Quiet mode is not paged: the owner is
 # watching the session there.
 wd_page_permission() {
-  local text id summary out rc
+  local text id summary out rc subject who
   [ "$O_AFK" = 1 ] && [ "$(fm_afk_mode "$O_HOME/state")" = away ] || return 0
-  wd_rate_open dialog page "$(cfgi nudge-secs 900)" || return 0
+  subject=${O_REC_SUBJECT:-$O_TAG}
+  fm_wd_rate_ok "$LEDGER" "$O_HOME" dialog page "$(cfgi nudge-secs 900)" "$(wd_now)" "$subject" || return 0
   text=$(fm_wd_dialog_text "$O_PANE")
   if fm_secret_like "$text"; then text='[withheld: the dialog text looks like a secret]'; fi
   text=${text:0:300}
   id=$(wd_id)
   if [ "$(wd_mode)" != act ]; then wd_rec "$id" dialog page dry-run "would page the owner; permission: $text"; return 0; fi
   wd_rec "$id" dialog page pending "permission: $text"
-  summary="Firstmate watchdog: a permission dialog blocks the away session of $O_TAG, and nothing will answer it. Its text is recorded in $LEDGER."
+  who=$O_TAG
+  if [ -n "${O_REC_SUBJECT:-}" ] && [ "$O_REC_SUBJECT" != "$O_TAG" ]; then
+    who="$O_TAG worker ${O_REC_SUBJECT#worker:}"
+  fi
+  summary="Firstmate watchdog: a permission dialog blocks the away session of $who, and nothing will answer it. Its text is recorded in $LEDGER."
   out=$(FM_HOME=$O_HOME FM_STATE_OVERRIDE=$O_HOME/state FM_CONFIG_OVERRIDE=$O_HOME/config \
     fm_run_timed 60 bash "$SCRIPT_DIR/fm-supervise-daemon.sh" page "$summary" "$LEDGER" 2>/dev/null)
   rc=$?
@@ -1021,6 +1029,77 @@ $evidence") || ans=''
   [ "$ans" = LOOP ]
 }
 
+# Ship and scout task records. Prints task-id TAB meta path. Other kinds, including
+# a second mate record in the same directory, are not worker panes.
+wd_worker_metas() {  # <home>
+  local f id kind
+  [ -d "$1/state" ] || return 0
+  for f in "$1"/state/*.meta; do
+    [ -f "$f" ] && [ ! -L "$f" ] || continue
+    id=$(basename "$f" .meta)
+    case "$id" in
+      ''|.*|*[!A-Za-z0-9._-]*) continue ;;
+    esac
+    kind=$(fm_meta_get "$f" kind)
+    case "$kind" in
+      ship|scout) printf '%s\t%s\n' "$id" "$f" ;;
+    esac
+  done
+}
+
+# Read each recorded worker pane with the home dialog detector.
+# mode=page sends a permission dialog through wd_page_permission and no other key.
+# mode=print reports the read and does not act. A gone endpoint is not a dialog.
+wd_visit_worker_dialogs() {
+  local mode=$1 id meta backend target screen dialog
+  local saved_pane saved_backend saved_target saved_dialog
+  saved_pane=$O_PANE
+  saved_backend=$O_BACKEND
+  saved_target=$O_TARGET
+  saved_dialog=$O_DIALOG
+  while IFS=$'\t' read -r id meta; do
+    [ -n "$id" ] || continue
+    backend=$(fm_backend_of_meta "$meta")
+    target=$(fm_backend_target_of_meta "$meta")
+    if [ -z "$backend" ] || [ -z "$target" ]; then
+      [ "$mode" = print ] && printf '  worker %s endpoint=none dialog=none\n' "$id"
+      continue
+    fi
+    # The home pane is already on the home path. Reading it again would page twice.
+    if [ -n "$saved_target" ] && [ "$backend" = "$saved_backend" ] && [ "$target" = "$saved_target" ]; then
+      continue
+    fi
+    if ! fm_backend_target_exists "$backend" "$target" 2>/dev/null; then
+      if [ "$mode" = print ]; then
+        printf '  worker %s endpoint=%s:%s dialog=gone\n' "$id" "$backend" "$target"
+      else
+        wd_gap "worker $id endpoint is gone; its pane is not read"
+      fi
+      continue
+    fi
+    screen=$(wd_view "$backend" "$target") || screen=''
+    dialog=$(fm_wd_pane_dialog "$screen") || dialog=''
+    if [ "$mode" = print ]; then
+      printf '  worker %s endpoint=%s:%s dialog=%s\n' "$id" "$backend" "$target" "${dialog:-none}"
+      continue
+    fi
+    [ "$dialog" = permission ] || continue
+    O_BACKEND=$backend
+    O_TARGET=$target
+    O_PANE=$screen
+    O_DIALOG=$dialog
+    O_REC_SUBJECT="worker:$id"
+    wd_gap "permission dialog waiting on worker $id; the watchdog never answers permission prompts"
+    wd_page_permission
+    unset O_REC_SUBJECT
+  done < <(wd_worker_metas "$O_HOME")
+  O_PANE=$saved_pane
+  O_BACKEND=$saved_backend
+  O_TARGET=$saved_target
+  O_DIALOG=$saved_dialog
+  unset O_REC_SUBJECT
+}
+
 # wd_handle_subject: one symptom per pass, by precedence, then the side checks.
 wd_handle_subject() {
   local symptom='' quiet frozen owed dead=0
@@ -1152,6 +1231,7 @@ wd_once() {  # [home-filter]
     wd_observe "$home" "$parent" "$id"
     WD_SYMPTOM=ok WD_RESTARTED=0
     wd_handle_subject
+    wd_visit_worker_dialogs page
     wd_health_line >> "$health"
   done
   [ -n "$(wd_models)" ] || printf -- '- no model configured; judged symptoms are reported only\n' >> "$WD_GAPS"
@@ -1166,6 +1246,7 @@ cmd_scan() {
     [ -z "$filter" ] || [ "$home" = "$filter" ] || continue
     wd_observe "$home" "$parent" "$id"
     wd_print_observation
+    wd_visit_worker_dialogs print
   done
 }
 
