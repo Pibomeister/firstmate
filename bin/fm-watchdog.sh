@@ -1040,8 +1040,31 @@ wd_handle_decisions() {
 
 # Snapshot once and name a quota-eligible pick. Never relaunches. The
 # supervisor runs fm-control relaunch after a stale wake that names this pick.
+# A secondmate's meta lives in the parent home's state, not in O_HOME.
+# The Claude config dir comes from the task's account pin, never from
+# claude-config-dirs.
+wd_quota_meta() {  # [task-id]
+  local task=${1-}
+  if [ -n "$task" ] && [ -f "$O_HOME/state/$task.meta" ]; then
+    printf '%s\n' "$O_HOME/state/$task.meta"
+    return 0
+  fi
+  if [ "${O_PARENT:-}" != - ] && [ -n "${O_ID:-}" ] && [ "$O_ID" != - ] \
+     && [ -f "$O_PARENT/state/$O_ID.meta" ]; then
+    printf '%s\n' "$O_PARENT/state/$O_ID.meta"
+    return 0
+  fi
+  if [ -n "${O_ID:-}" ] && [ "$O_ID" != - ] && [ -f "$O_HOME/state/$O_ID.meta" ]; then
+    printf '%s\n' "$O_HOME/state/$O_ID.meta"
+    return 0
+  fi
+  return 1
+}
+
 wd_quota_pick() {  # [task-id]
-  local cands cand snapshot pick harness kind claude_dir task=${1-}
+  local cands cand snapshot pick harness kind model wt claude_dir pin declared root
+  local cfg mate meta task=${1-}
+  pin=
   cands=$(cfg reroute-candidates "")
   [ -n "$cands" ] || { printf 'none\n'; return 1; }
   snapshot=$WD/quota-snapshot.txt
@@ -1051,19 +1074,39 @@ wd_quota_pick() {  # [task-id]
   [ -s "$snapshot" ] || { printf 'none\n'; return 1; }
   harness=
   kind=ship
-  if [ -n "$task" ] && [ -f "$O_HOME/state/$task.meta" ]; then
-    harness=$(fm_meta_get "$O_HOME/state/$task.meta" harness 2>/dev/null) || harness=
-    kind=$(fm_meta_get "$O_HOME/state/$task.meta" kind 2>/dev/null) || kind=ship
-  elif [ "${O_ID:-}" != "-" ] && [ -n "${O_ID:-}" ] && [ -f "$O_HOME/state/$O_ID.meta" ]; then
-    harness=$(fm_meta_get "$O_HOME/state/$O_ID.meta" harness 2>/dev/null) || harness=
+  model=
+  wt=
+  claude_dir=
+  if meta=$(wd_quota_meta "$task"); then
+    harness=$(fm_meta_get "$meta" harness 2>/dev/null) || harness=
+    kind=$(fm_meta_get "$meta" kind 2>/dev/null) || kind=ship
+    model=$(fm_meta_get "$meta" model 2>/dev/null) || model=
+    wt=$(fm_meta_get "$meta" worktree 2>/dev/null) || wt=
+    [ -n "$wt" ] || wt=$(fm_meta_get "$meta" home 2>/dev/null) || wt=
+  elif [ "${O_PARENT:-}" != - ] && [ -n "${O_ID:-}" ] && [ "$O_ID" != - ]; then
     kind=secondmate
   fi
-  claude_dir=$(cfg claude-config-dirs "")
-  claude_dir=${claude_dir%%,*}
+  mate=
+  [ "${O_PARENT:-}" = - ] || [ -z "${O_ID:-}" ] || [ "$O_ID" = - ] || mate=$O_ID
+  cfg=$(fm_worker_account_config claude "$OWNER_HOME/config" "$mate")
+  if pin=$(fm_worker_account_resolve claude "$cfg" config/claude-account 2>/dev/null) && [ -n "$pin" ]; then
+    declared=${pin%%$'\t'*}
+    root=$(printf '%s' "$pin" | cut -f2)
+    if [ "$declared" = ordinary ]; then
+      claude_dir=${HOME}/.claude
+    else
+      claude_dir=$root
+    fi
+  elif [ "$harness" = claude ]; then
+    claude_dir=${HOME}/.claude
+  fi
   set -- suggest --snapshot "$snapshot"
   [ -z "$harness" ] || set -- "$@" --from-harness "$harness"
+  [ -z "$model" ] || set -- "$@" --from-model "$model"
   [ -z "$kind" ] || set -- "$@" --kind "$kind"
+  [ -z "$wt" ] || set -- "$@" --worktree "$wt"
   [ -z "$claude_dir" ] || set -- "$@" --claude-config-dir "$claude_dir"
+  [ -z "$pin" ] || set -- "$@" --pinned
   for cand in $(printf '%s' "$cands" | tr ',' ' '); do set -- "$@" --candidate "$cand"; done
   pick=$("$SCRIPT_DIR/fm-quota-reroute.sh" "$@" 2>/dev/null) || pick=none
   [ -n "$pick" ] || pick=none

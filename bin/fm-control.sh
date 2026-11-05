@@ -517,8 +517,9 @@ usage_limit_relaunch_close() {
   printf 'endpoint-gone'
 }
 
-# relaunch_endpoint_path: the live pane cwd, used to refuse a tmux replacement
-# that would start outside the recorded worktree before the old agent stops.
+# relaunch_endpoint_path: the live pane cwd, used to refuse a replacement that
+# would start outside the recorded worktree before the old agent stops. Empty
+# means the endpoint is gone or this backend has no current-path helper.
 relaunch_endpoint_path() {
   fm_backend_source "$BACKEND" || return 1
   case "$BACKEND" in
@@ -1204,9 +1205,18 @@ resolve_relaunch_profile() {
   # The launch owner applies this home's worker account pin too, but only after
   # the old agent has been stopped, so a pin that no longer resolves or is
   # signed out must refuse here, while nothing has changed yet.
-  local account_model=$TARGET_MODEL account_mate=
+  local account_model=$TARGET_MODEL account_mate= effort_err=
   [ "$account_model" != default ] || account_model=
-  "$SCRIPT_DIR/fm-harness.sh" validate-native-effort "$TARGET_HARNESS" "$account_model" "$TARGET_EFFORT" || return 1
+  if ! effort_err=$("$SCRIPT_DIR/fm-harness.sh" validate-native-effort "$TARGET_HARNESS" "$account_model" "$TARGET_EFFORT" 2>&1); then
+    if [ "$EFFORT_SET" != 1 ] && [ "$TARGET_HARNESS" != "$PRIOR_HARNESS" ]; then
+      echo "notice: $TARGET_HARNESS refused effort $TARGET_EFFORT; launching at default" >&2
+      TARGET_EFFORT=default
+      "$SCRIPT_DIR/fm-harness.sh" validate-native-effort "$TARGET_HARNESS" "$account_model" "$TARGET_EFFORT" || return 1
+    else
+      [ -z "$effort_err" ] || printf '%s\n' "$effort_err" >&2
+      return 1
+    fi
+  fi
   [ "$KIND" != secondmate ] || account_mate=$ID
   fm_worker_account_select "$TARGET_HARNESS" "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}" \
     "$account_model" "$TARGET_HARNESS" "" "$account_mate" >/dev/null || return 1
@@ -1401,13 +1411,18 @@ do_relaunch() {
   fi
   fm_backlog_relaunch_admission "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}" "$DATA" "$KIND" "$ID" \
     || die "$FM_BACKLOG_TRANSITION_ERROR; refusing to relaunch, and the running agent was not touched"
+  # Refuse a live pane whose readable cwd is not the recorded worktree, before
+  # the old agent stops. Skip when the path is empty or unreadable: that is a
+  # gone endpoint or a backend with no current-path helper, and absence proof
+  # owns those. Herdr and Rex can still be told to return after stop.
   if [ "$BACKEND" != orca ] && [ "$KIND" != secondmate ]; then
-    local seen wt_real
+    local seen seen_real wt_real
     seen=$(relaunch_endpoint_path || true)
     wt_real=$(cd "$WT" 2>/dev/null && pwd -P) || wt_real=$WT
-    if [ "$BACKEND" != herdr ] && [ "$BACKEND" != rex ]; then
-      if [ -z "$seen" ] || [ "$(cd "$seen" 2>/dev/null && pwd -P)" != "$wt_real" ]; then
-        die "task $ID's endpoint is in '${seen:-unknown}', not its recorded worktree '$WT'; refusing to relaunch an agent outside the copy holding its work"
+    if [ "$BACKEND" != herdr ] && [ "$BACKEND" != rex ] && [ -n "$seen" ]; then
+      seen_real=$(cd "$seen" 2>/dev/null && pwd -P) || seen_real=
+      if [ -n "$seen_real" ] && [ "$seen_real" != "$wt_real" ]; then
+        die "task $ID's endpoint is in '$seen', not its recorded worktree '$WT'; refusing to relaunch an agent outside the copy holding its work"
       fi
     fi
   fi

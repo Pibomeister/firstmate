@@ -3,16 +3,24 @@
 #
 # Usage:
 #   fm-quota-reroute.sh suggest [--snapshot <path>] [--candidate <harness:model>]...
-#                               [--from-harness <name>] [--claude-config-dir <dir>]
-#                               [--kind ship|scout|secondmate]
-#   fm-quota-reroute.sh claude-tooling --config-dir <dir>
+#                               [--from-harness <name>] [--from-model <name>]
+#                               [--claude-config-dir <dir>] [--worktree <dir>]
+#                               [--pinned] [--kind ship|scout|secondmate]
+#   fm-quota-reroute.sh claude-tooling --config-dir <dir> [--worktree <dir>]
 #
 # suggest prints "<harness> <model>" and exits 0 when a candidate is eligible.
 # It prints "none" and exits 1 when the pool is exhausted, the candidate list
-# is empty, or a Claude-pinned mate cannot leave Claude because that config
-# dir has Claude-specific tooling.
-# claude-tooling exits 0 when <dir> has at least one MCP server configured.
-# Empty or absent MCP maps are not a dependency.
+# is empty, the current harness:model (and a pinned account's whole harness)
+# is the only remaining choice, or a Claude worker cannot leave Claude because
+# any Claude-specific signal is present. Unknown (missing, unreadable, or
+# unresolvable config dir or worktree) is a signal: queue until reset.
+# claude-tooling exits 0 and prints the blocking signal when tooling is
+# required. Exit 1 means no signal.
+#
+# Signals: MCP servers in the account config dir; a project .mcp.json in the
+# worktree; .claude/ skills, hooks, agents, or commands in the worktree.
+# Resolve the config dir from the task's account pin, never from
+# claude-config-dirs.
 #
 # The supervisor runs this after a stale wake names a usage-limit, then calls
 # fm-control.sh relaunch --harness with the printed pick. The watchdog may call
@@ -36,17 +44,49 @@ usage() {
   exit 2
 }
 
-# fm_quota_claude_tooling_required <config-dir>
-# True when the Claude config dir lists at least one MCP server. That is the
-# explicit Claude-specific tooling gate for a mid-task move off Claude.
-fm_quota_claude_tooling_required() {  # <config-dir>
-  local dir=${1-} f
-  [ -n "$dir" ] && [ -d "$dir" ] || return 1
+# fm_quota_claude_tooling_signal <config-dir> [worktree]
+# Prints the blocking signal and returns 0 when a Claude-specific signal is
+# present or the inspect cannot be completed. Returns 1 when none are present.
+# An omitted worktree skips worktree signals (claude-tooling of a config dir).
+fm_quota_claude_tooling_signal() {  # <config-dir> [worktree]
+  local dir=${1-} wt=${2-} f name
+  if [ -z "$dir" ]; then
+    printf '%s\n' "unresolvable Claude config dir"
+    return 0
+  fi
+  if [ ! -d "$dir" ] || [ ! -r "$dir" ] || [ ! -x "$dir" ]; then
+    printf '%s\n' "unreadable Claude config dir"
+    return 0
+  fi
   for f in "$dir/.claude.json" "$dir/settings.json" "$dir/.claude/settings.json"; do
-    [ -f "$f" ] && [ ! -L "$f" ] || continue
+    [ -e "$f" ] || continue
+    if [ ! -f "$f" ] || [ ! -r "$f" ]; then
+      printf '%s\n' "unreadable $f"
+      return 0
+    fi
+    if ! jq -e . "$f" >/dev/null 2>&1; then
+      printf '%s\n' "unreadable $f"
+      return 0
+    fi
     if jq -e '(.mcpServers | type == "object" and length > 0)
               or (.enabledMcpjsonServers | type == "array" and length > 0)' \
          "$f" >/dev/null 2>&1; then
+      printf '%s\n' "MCP servers in $f"
+      return 0
+    fi
+  done
+  [ -n "$wt" ] || return 1
+  if [ ! -d "$wt" ] || [ ! -r "$wt" ] || [ ! -x "$wt" ]; then
+    printf '%s\n' "unreadable worktree"
+    return 0
+  fi
+  if [ -e "$wt/.mcp.json" ]; then
+    printf '%s\n' "worktree .mcp.json"
+    return 0
+  fi
+  for name in skills hooks agents commands; do
+    if [ -e "$wt/.claude/$name" ]; then
+      printf '%s\n' "worktree .claude/$name"
       return 0
     fi
   done
@@ -61,11 +101,17 @@ case "$cmd" in
   -h|--help|help) usage ;;
   claude-tooling)
     dir=
+    wt=
     while [ "$#" -gt 0 ]; do
       case "$1" in
         --config-dir)
           [ -n "${2-}" ] || die "--config-dir needs a path"
           dir=$2
+          shift 2
+          ;;
+        --worktree)
+          [ -n "${2-}" ] || die "--worktree needs a path"
+          wt=$2
           shift 2
           ;;
         -h|--help|help) usage ;;
@@ -74,12 +120,19 @@ case "$cmd" in
       esac
     done
     [ -n "$dir" ] || die "claude-tooling needs --config-dir"
-    fm_quota_claude_tooling_required "$dir"
+    if sig=$(fm_quota_claude_tooling_signal "$dir" "$wt"); then
+      printf '%s\n' "$sig"
+      exit 0
+    fi
+    exit 1
     ;;
   suggest)
     SNAPSHOT=
     FROM_HARNESS=
+    FROM_MODEL=
     CLAUDE_DIR=
+    WORKTREE=
+    PINNED=0
     KIND=ship
     CANDIDATES=()
     while [ "$#" -gt 0 ]; do
@@ -99,10 +152,24 @@ case "$cmd" in
           FROM_HARNESS=$2
           shift 2
           ;;
+        --from-model)
+          [ -n "${2-}" ] || die "--from-model needs a name"
+          FROM_MODEL=$2
+          shift 2
+          ;;
         --claude-config-dir)
           [ -n "${2-}" ] || die "--claude-config-dir needs a path"
           CLAUDE_DIR=$2
           shift 2
+          ;;
+        --worktree)
+          [ -n "${2-}" ] || die "--worktree needs a path"
+          WORKTREE=$2
+          shift 2
+          ;;
+        --pinned)
+          PINNED=1
+          shift
           ;;
         --kind)
           [ -n "${2-}" ] || die "--kind needs a value"
@@ -127,14 +194,31 @@ case "$cmd" in
       echo "error: no reroute candidates supplied" >&2
       exit 1
     fi
-    if [ "$FROM_HARNESS" = claude ] && fm_quota_claude_tooling_required "$CLAUDE_DIR"; then
-      printf 'none\n'
-      echo "error: Claude-specific tooling is configured; queue until reset rather than moving off Claude" >&2
-      exit 1
+    if [ "$FROM_HARNESS" = claude ]; then
+      if [ -z "$WORKTREE" ]; then
+        printf 'none\n'
+        echo "error: Claude-specific tooling present (unreadable worktree); queue until reset rather than moving off Claude" >&2
+        exit 1
+      fi
+      if sig=$(fm_quota_claude_tooling_signal "$CLAUDE_DIR" "$WORKTREE"); then
+        printf 'none\n'
+        echo "error: Claude-specific tooling present ($sig); queue until reset rather than moving off Claude" >&2
+        exit 1
+      fi
     fi
     filtered=()
+    from_model=${FROM_MODEL:-default}
+    [ -n "$from_model" ] || from_model=default
     for c in "${CANDIDATES[@]}"; do
       harness=${c%%:*}
+      model=${c#*:}
+      [ "$model" != "$c" ] || model=default
+      if [ -n "$FROM_HARNESS" ] && [ "$harness" = "$FROM_HARNESS" ]; then
+        if [ "$PINNED" = 1 ]; then
+          continue
+        fi
+        [ "$model" != "$from_model" ] || continue
+      fi
       fm_control_harness_supported "$harness" || continue
       fm_control_harness_supports_kind "$harness" "$KIND" || continue
       filtered+=("$c")

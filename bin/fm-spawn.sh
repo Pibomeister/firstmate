@@ -117,11 +117,12 @@
 #   A tmux rebind re-creates the window on the recorded socket and refuses when
 #   this process addresses another tmux server. An endpoint that turns out
 #   to have survived refuses too. The worktree is reused untouched either way; a
-#   rebind is a recovery, never a teardown. Only a crewmate or scout rebinds: a
-#   secondmate whose endpoint is gone is respawned by its own owner
-#   (`--secondmate`, driven by the session-start liveness sweep), and that
-#   refusal exits 4, before anything is created, so a caller can hand the mate
-#   to that owner without parsing the message.
+#   rebind is a recovery, never a teardown. Only a crewmate or scout rebinds
+#   through --relaunch, except fm-control relaunch of a proven-gone secondmate
+#   (quota move). A gone secondmate is otherwise respawned by --secondmate
+#   (session-start liveness sweep), and that refusal exits 4, before anything
+#   is created, so a caller can hand the mate to that owner without parsing
+#   the message.
 #   Every fresh ship/scout launch and replacement explicitly enters the recorded
 #   worktree immediately before trust setup and brief delivery, and a pre-launch
 #   cwd check refuses any endpoint that still reports another copy; a Herdr shell
@@ -2489,6 +2490,10 @@ spawn_recorded_secondmate_backend() {
 if [ "$RELAUNCH" -eq 0 ]; then
   if [ "$KIND" = secondmate ] && { [ -e "$STATE/$ID.meta" ] || [ -L "$STATE/$ID.meta" ]; }; then
     BACKEND=$(fm_backend_of_meta "$STATE/$ID.meta")
+    if [ "$BACKEND_SET" -eq 1 ] && [ "$BACKEND_ARG" != "$BACKEND" ]; then
+      echo "error: --backend $BACKEND_ARG conflicts with the recorded backend $BACKEND for secondmate $ID" >&2
+      exit 1
+    fi
   elif [ "$BACKEND_SET" -eq 1 ]; then
     BACKEND=$BACKEND_ARG
   elif BACKEND=$(spawn_recorded_secondmate_backend); then
@@ -2705,14 +2710,12 @@ FACTS
   esac
   KIND=$(fm_meta_get "$RELAUNCH_META" kind)
   [ -n "$KIND" ] || KIND=ship
-  # A secondmate whose endpoint is gone already has ONE owner for that
-  # recovery: the session-start liveness sweep respawns it with
-  # `fm-spawn.sh <id> --secondmate`, which stands its home's own workspace back
-  # up (bin/fm-bootstrap.sh; the secondmate-provisioning skill). Rebinding one
-  # here as well would be a second path to the same outcome, so this refuses
-  # and names the one that owns it.
-  if [ "$RELAUNCH_REBIND" -eq 1 ] && [ "$KIND" = secondmate ]; then
-    echo "error: secondmate $ID's recorded endpoint is gone; its recovery is owned by the secondmate respawn path, not by relaunch (run bin/fm-spawn.sh $ID --secondmate, or let the session-start liveness sweep do it)" >&2
+  # Gone-secondmate recovery has one owner per path: --secondmate for the
+  # liveness sweep, and fm-control relaunch (which sets FM_CONTROL_RELAUNCH_TX)
+  # for a proven-gone quota or control-plane replace. Direct --relaunch of a
+  # gone secondmate is refused so those two cannot both mint a window.
+  if [ "$RELAUNCH_REBIND" -eq 1 ] && [ "$KIND" = secondmate ] && [ -z "${FM_CONTROL_RELAUNCH_TX:-}" ]; then
+    echo "error: --relaunch of a gone secondmate is refused except through fm-control relaunch on a proven-gone endpoint; recover it with --secondmate" >&2
     exit 4
   fi
   MODE=$(fm_meta_get "$RELAUNCH_META" mode)

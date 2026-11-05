@@ -936,7 +936,7 @@ ok "suggest drops a candidate unverified for the task kind"
 claude_dir="$LAB/claude-mcp"
 mkdir -p "$claude_dir"
 printf '%s\n' '{"mcpServers":{"docs":{"command":"true"}}}' > "$claude_dir/.claude.json"
-if call_reroute claude-tooling --config-dir "$claude_dir"; then
+if call_reroute claude-tooling --config-dir "$claude_dir" >/dev/null; then
   :
 else
   fail "claude-tooling missed a configured MCP server"
@@ -947,20 +947,61 @@ printf '%s\n' '{"mcpServers":{}}' > "$empty_dir/.claude.json"
 if call_reroute claude-tooling --config-dir "$empty_dir"; then
   fail "empty mcpServers was treated as Claude-specific tooling"
 fi
-if call_reroute claude-tooling --config-dir "$LAB/missing-dir"; then
-  fail "a missing config dir was treated as Claude-specific tooling"
-fi
-ok "claude-tooling is an MCP server in the config dir"
+sig=$(call_reroute claude-tooling --config-dir "$LAB/missing-dir") || fail "a missing config dir must be tooling required"
+[ "$sig" = "unreadable Claude config dir" ] || fail "missing dir signal: $sig"
+ok "claude-tooling is an MCP server in the config dir; missing dir queues"
 
+clean_wt="$LAB/clean-wt"
+mkdir -p "$clean_wt"
 if out=$(call_reroute suggest --snapshot "$LAB/captured.json" --from-harness claude \
-  --claude-config-dir "$claude_dir" --kind secondmate \
+  --claude-config-dir "$claude_dir" --worktree "$clean_wt" --kind secondmate \
   --candidate codex:default 2>/dev/null); then
   fail "Claude MCP tooling should block a move off Claude, got '$out'"
 fi
 [ "$out" = "none" ] || fail "tooling gate: expected none, got '$out'"
+err=$(call_reroute suggest --snapshot "$LAB/captured.json" --from-harness claude \
+  --claude-config-dir "$claude_dir" --worktree "$clean_wt" --kind secondmate \
+  --candidate codex:default 2>&1 >/dev/null) || true
+printf '%s\n' "$err" | grep -q 'MCP servers in' \
+  || fail "the block must name the MCP signal: $err"
 out=$(call_reroute suggest --snapshot "$LAB/captured.json" --from-harness claude \
-  --claude-config-dir "$empty_dir" --kind secondmate --candidate codex:default)
-[ "$out" = "codex default" ] || fail "no MCP tooling should allow a Codex pick, got '$out'"
-ok "a Claude-pinned mate moves only when it has no Claude-specific tooling"
+  --claude-config-dir "$empty_dir" --worktree "$clean_wt" --kind secondmate --candidate codex:default)
+[ "$out" = "codex default" ] || fail "no Claude-specific signal should allow a Codex pick, got '$out'"
+
+if out=$(call_reroute suggest --snapshot "$LAB/captured.json" --from-harness claude \
+  --worktree "$clean_wt" --kind secondmate --candidate codex:default 2>/dev/null); then
+  fail "an unresolvable Claude config dir should queue, got '$out'"
+fi
+[ "$out" = "none" ] || fail "unresolvable dir: expected none, got '$out'"
+
+mcp_wt="$LAB/mcp-wt"
+mkdir -p "$mcp_wt"
+printf '%s\n' '{"mcpServers":{}}' > "$mcp_wt/.mcp.json"
+if call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$mcp_wt" >/dev/null; then
+  :
+else
+  fail "worktree .mcp.json was not treated as Claude-specific tooling"
+fi
+sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$mcp_wt")
+[ "$sig" = "worktree .mcp.json" ] || fail "worktree .mcp.json signal: $sig"
+
+skills_wt="$LAB/skills-wt"
+mkdir -p "$skills_wt/.claude/skills"
+sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$skills_wt") \
+  || fail "worktree .claude/skills must be tooling required"
+[ "$sig" = "worktree .claude/skills" ] || fail "skills signal: $sig"
+ok "a Claude worker queues on any Claude-specific signal, including unknown"
+
+if out=$(call_reroute suggest --snapshot "$LAB/captured.json" --from-harness claude \
+  --from-model claude-3-5-sonnet --claude-config-dir "$empty_dir" --worktree "$clean_wt" \
+  --candidate claude:claude-3-5-sonnet 2>/dev/null); then
+  fail "the current harness:model must not be a pick, got '$out'"
+fi
+[ "$out" = "none" ] || fail "exclude current: expected none, got '$out'"
+out=$(call_reroute suggest --snapshot "$LAB/captured.json" --from-harness claude \
+  --from-model default --pinned --claude-config-dir "$empty_dir" --worktree "$clean_wt" \
+  --candidate claude:claude-3-5-sonnet --candidate codex:default)
+[ "$out" = "codex default" ] || fail "a pinned Claude account must skip every Claude candidate, got '$out'"
+ok "suggest excludes the current harness:model and a pinned account's harness"
 
 printf '# all fm-quota-choose tests passed\n'
