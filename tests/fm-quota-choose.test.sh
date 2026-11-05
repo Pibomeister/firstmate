@@ -973,6 +973,25 @@ if out=$(call_reroute suggest --snapshot "$LAB/captured.json" --from-harness cla
   fail "an unresolvable Claude config dir should queue, got '$out'"
 fi
 [ "$out" = "none" ] || fail "unresolvable dir: expected none, got '$out'"
+err=$(call_reroute suggest --snapshot "$LAB/captured.json" --from-harness claude \
+  --claude-config-dir "$empty_dir" --kind secondmate --candidate codex:default 2>&1 >/dev/null) || true
+printf '%s\n' "$err" | grep -q 'unresolvable worktree' \
+  || fail "an omitted worktree must be named unresolvable: $err"
+
+ord="$LAB/ordinary-home"
+mkdir -p "$ord/.claude"
+printf '%s\n' '{"mcpServers":{"docs":{"command":"true"}}}' > "$ord/.claude.json"
+sig=$(HOME="$ord" call_reroute claude-tooling --config-dir "$ord/.claude") \
+  || fail "MCP only in \$HOME/.claude.json must be tooling required"
+[ "$sig" = "MCP servers in $ord/.claude.json" ] || fail "ordinary .claude.json signal: $sig"
+
+proj_dir="$LAB/projects-mcp"
+mkdir -p "$proj_dir"
+printf '%s\n' '{"mcpServers":{},"projects":{"/tmp/app":{"mcpServers":{"docs":{"command":"true"}}}}}' \
+  > "$proj_dir/.claude.json"
+sig=$(call_reroute claude-tooling --config-dir "$proj_dir") \
+  || fail ".projects mcpServers must be tooling required"
+[ "$sig" = "MCP servers in $proj_dir/.claude.json" ] || fail "project MCP signal: $sig"
 
 mcp_wt="$LAB/mcp-wt"
 mkdir -p "$mcp_wt"

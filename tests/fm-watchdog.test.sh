@@ -2525,7 +2525,7 @@ test_manager_units() {
   pass "launchd and systemd units run outside every session with FM_HOME and PATH"
 }
 
-test_usage_limit_names_a_pick_and_does_not_relaunch() {
+test_usage_limit_unknown_harness_queues() {
   local snap
   make_home $'You have hit your weekly limit for Opus.\n\n ❯ 1. Switch to Sonnet\n   2. Wait for the limit to reset\n   3. Buy more credits\n\nEnter to confirm · Esc to cancel' \
     'reroute-candidates=kimi:kimi-k2,codex:gpt-5.4'
@@ -2586,10 +2586,11 @@ SH
   [ ! -s "$H/model.log" ] || fail "usage-limit asked a judge: $(cat "$H/model.log")"
   [ ! -e "$H/control.log" ] || fail "watchdog relaunched: $(cat "$H/control.log")"
   assert_equals 1 "$(ledger_rows quota suggest held)" "the pick is recorded, not launched: $(ledger | cut -f5-8)"
-  assert_grep "Suggested pick: codex gpt-5.4" "$H/data/watchdog/status.md" "the gap names the eligible pick"
-  assert_grep "watchdog does not change the runtime" "$H/data/watchdog/status.md" "the gap says the supervisor relaunches"
+  assert_grep "Unknown harness" "$H/data/watchdog/status.md" "a pane with no task record must name unknown harness"
+  assert_not_contains "$(cat "$H/data/watchdog/status.md")" "Suggested pick: codex" \
+    "unknown harness must not name a pick"
   rm -f "$FAKEBIN/quota-axi" "$FAKEBIN/fm-control.sh"
-  pass "usage-limit: watchdog names the pick and does not relaunch or type"
+  pass "usage-limit: unknown harness queues and names the reason"
 }
 
 test_claude_pinned_secondmate_with_tooling_gets_no_codex_pick() {
@@ -2658,6 +2659,161 @@ SH
     "Codex must not be named while Claude-specific tooling is present"
   rm -f "$FAKEBIN/quota-axi" "$FAKEBIN/fm-control.sh"
   pass "usage-limit: a Claude-pinned secondmate with tooling is queued, not picked for Codex"
+}
+
+wd_quota_snapshot() {  # <file>
+  cat > "$1" <<'JSON'
+{
+  "generatedAt": "2030-01-01T00:00:00Z",
+  "schemaVersion": 5,
+  "providers": [
+    {
+      "provider": "claude",
+      "windows": [],
+      "quotaSemantics": {
+        "status": "known",
+        "effectiveAvailability": [
+          {
+            "scope": "all_models",
+            "status": "known",
+            "effectivePercentRemaining": 40,
+            "runway": { "status": "through_reset" }
+          }
+        ]
+      }
+    },
+    {
+      "provider": "codex",
+      "windows": [],
+      "quotaSemantics": {
+        "status": "known",
+        "effectiveAvailability": [
+          {
+            "scope": "all_models",
+            "status": "known",
+            "effectivePercentRemaining": 40,
+            "runway": { "status": "through_reset" }
+          }
+        ]
+      }
+    }
+  ]
+}
+JSON
+}
+
+test_ordinary_home_claude_json_mcp_blocks_the_move() {
+  local parent mate user snap
+  make_home $'Captain session\n> '
+  parent=$H
+  make_home $'You have hit your weekly limit for Opus.\n\n ❯ 1. Switch to Sonnet\n   2. Wait for the limit to reset\n   3. Buy more credits\n\nEnter to confirm · Esc to cancel'
+  mate=$H
+  user="$parent/user"
+  mkdir -p "$user/.claude"
+  printf '%s\n' '{"mcpServers":{"docs":{"command":"true"}}}' > "$user/.claude.json"
+  printf -- '- ghost-mate - test mate (home: %s)\n' "$mate" > "$parent/data/secondmates.md"
+  {
+    echo "harness=claude"
+    echo "kind=secondmate"
+    echo "home=$mate"
+    echo "worktree=$mate"
+    echo "model=default"
+  } > "$parent/state/ghost-mate.meta"
+  printf 'mode=act\nclaude-config-dirs=%s\nkey-settle-secs=1\nmodels=\nreroute-candidates=codex:gpt-5.4\n' \
+    "$parent/claude" > "$parent/config/watchdog"
+  snap="$parent/quota.json"
+  wd_quota_snapshot "$snap"
+  cat > "$FAKEBIN/quota-axi" <<SH
+#!/usr/bin/env bash
+cat "$snap"
+SH
+  chmod +x "$FAKEBIN/quota-axi"
+  cat > "$FAKEBIN/fm-control.sh" <<SH
+#!/usr/bin/env bash
+printf 'control %s\n' "\$*" >> "$parent/control.log"
+exit 1
+SH
+  chmod +x "$FAKEBIN/fm-control.sh"
+  transcript 100 "Working."
+  H=$parent
+  HOME="$user" run_wd 0 once >/dev/null 2>&1 || fail "ordinary .claude.json pass failed"
+  assert_equals 1 "$(ledger_rows quota suggest held)" "the queue is recorded: $(ledger | cut -f5-8)"
+  assert_not_contains "$(cat "$parent/data/watchdog/status.md")" "Suggested pick: codex" \
+    "MCP only in \$HOME/.claude.json must block a Codex pick"
+  rm -f "$FAKEBIN/quota-axi" "$FAKEBIN/fm-control.sh"
+  pass "usage-limit: MCP only in \$HOME/.claude.json blocks the move"
+}
+
+test_codex_task_keeps_same_harness_candidates_under_a_claude_pin() {
+  local pin snap
+  make_home $'Captain session\n> ' 'reroute-candidates=codex:gpt-5.4,claude:claude-3-5-sonnet'
+  pin="$H/pin-claude"
+  mkdir -p "$pin" "$H/wt"
+  printf '%s\n' '{"mcpServers":{"docs":{"command":"true"}}}' > "$pin/.claude.json"
+  printf '%s\n' "$pin" > "$H/config/claude-account"
+  {
+    echo "harness=codex"
+    echo "kind=ship"
+    echo "worktree=$H/wt"
+    echo "model=default"
+  } > "$H/state/ship1.meta"
+  printf 'paused [at=%s]: hit the quota floor\n' "$((BASE - 9000))" > "$H/state/ship1.status"
+  snap="$H/quota.json"
+  wd_quota_snapshot "$snap"
+  cat > "$FAKEBIN/quota-axi" <<SH
+#!/usr/bin/env bash
+cat "$snap"
+SH
+  chmod +x "$FAKEBIN/quota-axi"
+  transcript 100 "Working."
+  run_wd 0 once >/dev/null 2>&1 || fail "codex quota-floor pass failed"
+  assert_grep "Suggested pick: codex gpt-5.4" "$H/state/watchdog/actions.tsv" \
+    "a Codex task must keep its same-harness candidates despite a Claude pin"
+  assert_no_grep "Suggested pick: claude" "$H/state/watchdog/actions.tsv" \
+    "the Claude pin must not reroute a Codex task onto Claude"
+  rm -f "$FAKEBIN/quota-axi"
+  pass "quota floor: a Codex task under a Claude pin keeps same-harness candidates"
+}
+
+test_usage_limit_claude_without_tooling_names_a_pick() {
+  local parent mate user snap
+  make_home $'Captain session\n> '
+  parent=$H
+  make_home $'You have hit your weekly limit for Opus.\n\n ❯ 1. Switch to Sonnet\n   2. Wait for the limit to reset\n   3. Buy more credits\n\nEnter to confirm · Esc to cancel'
+  mate=$H
+  user="$parent/user"
+  mkdir -p "$user/.claude"
+  printf -- '- ghost-mate - test mate (home: %s)\n' "$mate" > "$parent/data/secondmates.md"
+  {
+    echo "harness=claude"
+    echo "kind=secondmate"
+    echo "home=$mate"
+    echo "worktree=$mate"
+    echo "model=default"
+  } > "$parent/state/ghost-mate.meta"
+  printf 'mode=act\nclaude-config-dirs=%s\nkey-settle-secs=1\nmodels=\nreroute-candidates=codex:gpt-5.4\n' \
+    "$parent/claude" > "$parent/config/watchdog"
+  snap="$parent/quota.json"
+  wd_quota_snapshot "$snap"
+  cat > "$FAKEBIN/quota-axi" <<SH
+#!/usr/bin/env bash
+cat "$snap"
+SH
+  chmod +x "$FAKEBIN/quota-axi"
+  cat > "$FAKEBIN/fm-control.sh" <<SH
+#!/usr/bin/env bash
+printf 'control %s\n' "\$*" >> "$parent/control.log"
+exit 1
+SH
+  chmod +x "$FAKEBIN/fm-control.sh"
+  transcript 100 "Working."
+  H=$parent
+  HOME="$user" run_wd 0 once >/dev/null 2>&1 || fail "clean Claude usage-limit pass failed"
+  [ ! -e "$parent/control.log" ] || fail "watchdog relaunched: $(cat "$parent/control.log")"
+  assert_grep "Suggested pick: codex gpt-5.4" "$parent/data/watchdog/status.md" \
+    "a Claude mate with no tooling must still name the pick"
+  rm -f "$FAKEBIN/quota-axi" "$FAKEBIN/fm-control.sh"
+  pass "usage-limit: a Claude mate with no tooling names the pick and does not relaunch"
 }
 
 if [ "$#" -gt 0 ]; then
@@ -2732,8 +2888,11 @@ fm_test_run \
   test_secret_looking_decision_reaches_no_council \
   test_secret_looking_model_switch_dialog_is_held \
   test_model_switch_judge_is_rate_limited \
-  test_usage_limit_names_a_pick_and_does_not_relaunch \
+  test_usage_limit_unknown_harness_queues \
   test_claude_pinned_secondmate_with_tooling_gets_no_codex_pick \
+  test_ordinary_home_claude_json_mcp_blocks_the_move \
+  test_codex_task_keeps_same_harness_candidates_under_a_claude_pin \
+  test_usage_limit_claude_without_tooling_names_a_pick \
   test_unknown_composer_guards_the_nudge \
   test_orca_turn_probe_keeps_errors_unknown \
   test_no_activity_source_is_not_reported_ok \
