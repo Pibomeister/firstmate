@@ -298,6 +298,7 @@ run_control() {  # <case-dir> <args...>
     FM_REAL_GIT="${FM_REAL_GIT:-}" FM_FAKE_GIT_FAILURE="${FM_FAKE_GIT_FAILURE:-}" \
     FM_REAL_MV="${FM_REAL_MV:-}" FM_FAKE_COMPLETE_JOURNAL_MV_FAIL="${FM_FAKE_COMPLETE_JOURNAL_MV_FAIL:-}" \
     FM_FAKE_META_PUBLISH_MV_FAIL="${FM_FAKE_META_PUBLISH_MV_FAIL:-}" \
+    FM_REAL_MKTEMP="${FM_REAL_MKTEMP:-}" \
     FM_FAKE_TRACE_PREPARE="${FM_FAKE_TRACE_PREPARE:-}" \
     FM_FAKE_TRACE_RELEASE="${FM_FAKE_TRACE_RELEASE:-}" \
     FM_FAKE_META_WRITER_READY="${FM_FAKE_META_WRITER_READY:-}" \
@@ -372,6 +373,19 @@ fi
 exec "$FM_REAL_MV" "$@"
 SH
   chmod +x "$1/fakebin/mv"
+}
+
+make_mktemp_spawn_err_failure_stub() {  # <case-dir>
+  cat > "$1/fakebin/mktemp" <<'SH'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  case "$arg" in
+    *fm-control-spawn*) exit 1 ;;
+  esac
+done
+exec "$FM_REAL_MKTEMP" "$@"
+SH
+  chmod +x "$1/fakebin/mktemp"
 }
 
 make_rm_failure_stub() {  # <case-dir>
@@ -2492,6 +2506,31 @@ test_prepublication_abort_retires_replacement_wiring_and_busy_state() {
   pass "fm-spawn relaunch: prepublication abort removes replacement state"
 }
 
+test_stamp_die_before_spawn_restores_the_prior_record() {
+  local dir out rc real_mktemp prior
+  dir=$(new_case stamp-die rl89)
+  add_ship_task "$dir" rl89 claude
+  chmod 640 "$dir/home/state/rl89.meta"
+  real_mktemp=$(command -v mktemp)
+  make_mktemp_spawn_err_failure_stub "$dir"
+  out=$(FM_REAL_MKTEMP="$real_mktemp" \
+    run_control "$dir" rl89 relaunch --note "die after the stamp"); rc=$?
+  expect_code 1 "$rc" "a die after the stamp and before spawn should fail closed"$'\n'"$out"
+  assert_contains "$out" "could not record spawn output" \
+    "the refusal should name the spawn-output staging failure"
+  [ -z "$(meta_field "$dir" rl89 control_relaunch_tx)" ] \
+    || fail "a die before spawn must not leave the stamped token on the live record"
+  prior="$dir/home/state/rl89.control-relaunch.meta-prior"
+  [ -f "$prior" ] || fail "the checkpoint copy of the prior record should still exist"
+  cmp -s "$prior" "$dir/home/state/rl89.meta" \
+    || fail "prior-record-kept should restore the live record to the checkpoint copy"
+  [ "$(stat -c %a "$dir/home/state/rl89.meta" 2>/dev/null || stat -f %Lp "$dir/home/state/rl89.meta")" = 640 ] \
+    || fail "restoring the prior record should keep its original mode"
+  [ "$(journal_field "$dir" rl89 rollback)" = prior-record-kept ] \
+    || fail "the journal should record the unpublished replacement rollback"
+  pass "fm-control relaunch: a die after the stamp and before spawn restores the prior record"
+}
+
 test_journal_records_the_checkpoint_it_proved() {
   local dir head
   dir=$(new_case journal rl14)
@@ -3872,6 +3911,7 @@ test_post_publication_launch_failure_keeps_the_new_record
 test_stop_transport_failure_reconciles_a_dead_agent
 test_complete_journal_failure_rolls_back_from_durable_phase
 test_prepublication_abort_retires_replacement_wiring_and_busy_state
+test_stamp_die_before_spawn_restores_the_prior_record
 test_journal_records_the_checkpoint_it_proved
 test_secondmate_relaunch_checkpoints_child_work_and_spares_the_charter
 test_secondmate_relaunch_refuses_an_unmarked_home
