@@ -193,7 +193,7 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-public-followup.sh`  | Brief, reconcile, and deliver typed public commitments, surface refusals, then rechain or retire retained loops |
 | `fm-public-followup-emit.sh` | Validate and report one typed terminal work result into its owning home, or stage it when that home is remote |
 | `fm-public-followup-collect.sh` | Read and retire the typed terminal results a remote work home staged for the home that owes the public reply |
-| `fm-order.sh`            | Durable captain orders and holds: send, status, ack, finish, the handoff restart gate, and bounded re-delivery with escalation |
+| `fm-order.sh`            | Durable captain orders and holds: send, status, verify, ack, finish, the handoff restart gate, and bounded re-delivery with escalation |
 | `fm-inbox.sh`            | The captain's out-of-band capture surface: queue a note (optionally idempotent by request id), announce or repair its wake, record a durable primary reply, and emit bounded receipts and primary-readiness JSON |
 | `fm-dispatch-log.sh`     | Append-only captain-goal intake ledger: record each goal as received, dispatched, queued, or blocked, mark late resolutions, and list goals past the 15-minute dispatch SLA |
 | [`fm-claims.sh`](../bin/fm-claims.sh) | Check the claims in a task's status log against git, the forge, no-mistakes, AgentKit, and the terminal, record each verdict in its claim ledger, and reopen a task whose claim is refuted ([contract](claim-ledger.md)) |

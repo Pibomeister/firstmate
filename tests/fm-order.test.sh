@@ -3,7 +3,9 @@
 #
 # Covers idempotency (a sender retry and a resend never make or run a second
 # order, and concurrent acks yield exactly one reader), the two-stage ack
-# (acked on read, then done or parked with an outcome), the captain handle
+# (acked on read, then done or parked with an outcome), a sender retry that
+# repairs a wake the first send could not append, the sender's exit-code ack
+# verification (`verify`), the captain handle
 # resolved at send time and a doorbell that never rings over an unproven
 # composer, the restart gate read from the handoff document, standing holds
 # that override older orders, the leash sweep's re-delivery cap and one-time
@@ -451,6 +453,48 @@ test_one_sweep_runs_at_a_time() {
   pass "(e) one sweep runs at a time, so two runners never exceed the re-delivery cap"
 }
 
+test_sender_retry_repairs_a_lost_wake_and_verify_reports_the_ack() {
+  local home id out rc=0
+  home=$(make_home verify)
+  # Wake outage: the wake queue path is a directory, so the append fails and
+  # the first send saves the order but cannot wake any captain session.
+  mkdir -p "$home/state/.wake-queue"
+  out=$(run_order "$home" send --from nightly "nightly: start the goals" 2>&1) || rc=$?
+  assert_equals 3 "$rc" "a send whose wake cannot be appended exits 3"
+  assert_contains "$out" "wake=FAILED" "the failed send says its wake failed"
+  id=$(only_id "$home" pending)
+  rmdir "$home/state/.wake-queue"
+  rc=0
+  out=$(run_order "$home" verify "$id") || rc=$?
+  assert_equals 3 "$rc" "verify of an order no captain has read exits 3"
+  assert_contains "$out" "unacked $id state=pending" "verify names the unacknowledged order"
+  # The sender's idempotent retry must repair the lost wake, not report
+  # success over an order no session was ever woken for.
+  out=$(run_order "$home" send --from nightly "nightly: start the goals")
+  assert_contains "$out" "replay $id" "a retry after a lost wake re-delivers the same order"
+  assert_contains "$out" "wake=ok" "the retry appended the lost wake"
+  assert_equals 1 "$(count_in "$home" pending)" "the retry created no second order"
+  assert_equals 1 "$(order_wakes "$home")" "the retry appended the lost wake exactly once"
+  out=$(run_order "$home" send --from nightly "nightly: start the goals")
+  assert_contains "$out" "replay $id" "a retry of a delivered order is a plain replay"
+  assert_equals 1 "$(order_wakes "$home")" "a delivered order's retry appends no second wake"
+  rc=0
+  run_order "$home" verify "$id" >/dev/null || rc=$?
+  assert_equals 3 "$rc" "verify still exits 3 while the order is pending"
+  run_order "$home" ack "$id" >/dev/null
+  out=$(run_order "$home" verify "$id")
+  assert_contains "$out" "acked $id state=acked" "verify exits 0 once a captain has read the order"
+  run_order "$home" finish "$id" "done" "goals started" >/dev/null
+  assert_contains "$(run_order "$home" verify "$id")" "acked $id state=done" "verify still exits 0 after completion"
+  rc=0
+  run_order "$home" verify "1700000000-deadbeef" >/dev/null 2>&1 || rc=$?
+  assert_equals 1 "$rc" "verify of an unknown id fails"
+  rc=0
+  run_order "$home" verify "not-an-id" >/dev/null 2>&1 || rc=$?
+  assert_equals 2 "$rc" "verify of a malformed id is invalid use"
+  pass "a sender retry repairs a lost wake and verify reports the ack by exit code"
+}
+
 test_status_flags_resend_due_for_the_sender_recheck() {
   local home
   home=$(make_home recheck)
@@ -516,6 +560,7 @@ test_finish_frees_only_its_own_reservation
 test_sweep_redelivers_twice_then_escalates_once
 test_sender_resend_never_starves_the_sweep
 test_watcher_poll_runs_the_sweep
+test_sender_retry_repairs_a_lost_wake_and_verify_reports_the_ack
 test_status_flags_resend_due_for_the_sender_recheck
 test_legacy_inbox_note_still_works
 test_invalid_use
