@@ -1236,7 +1236,7 @@ resolve_relaunch_profile() {
   # The launch owner applies this home's worker account pin too, but only after
   # the old agent has been stopped, so a pin that no longer resolves or is
   # signed out must refuse here, while nothing has changed yet.
-  local account_model=$TARGET_MODEL account_mate= effort_err=
+  local account_model=$TARGET_MODEL account_mate='' effort_err=''
   [ "$account_model" != default ] || account_model=
   if ! effort_err=$("$SCRIPT_DIR/fm-harness.sh" validate-native-effort "$TARGET_HARNESS" "$account_model" "$TARGET_EFFORT" 2>&1); then
     if [ "$EFFORT_SET" != 1 ] && [ "$TARGET_HARNESS" != "$PRIOR_HARNESS" ]; then
