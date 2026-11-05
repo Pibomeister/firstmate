@@ -18,7 +18,7 @@ The router owns Muse's task-kind boundary.
 | Autonomy | `--yolo` disables approval and sandbox and trusts the workspace. |
 | Trust | Dialog `Do you trust this workspace?`, choice `1 Trust and continue` preselected for Enter; `--yolo` suppresses it, which fresh task paths require. |
 | Marker | None; identity comes from anchored `muse-bin-*` ancestry, which `../../../bin/fm-harness.sh` keeps a retained foreign marker from overriding, while `MUSE_CURRENT_SESSION_LOG` is a path rather than identity and its export to tools is unverified. |
-| Composer | Bordered `❯` (U+276F, changed from `⟩` in 0.1.0), truecolor `38;2;90;160;255`, luminance about 149.9 and narrowly above ghost threshold 128; typed text is `38;2;204;211;219`, about 209.8, with no observed placeholder or ghost. |
+| Composer | Bordered `❯` (U+276F, changed from `⟩` in 0.1.0), truecolor `38;2;90;160;255`, luminance about 149.9 and narrowly above ghost threshold 128; typed text is `38;2;204;211;219`, about 209.8, with no ghost; 1.4.14 draws an unstyled rotating suggestion placeholder in the empty composer, recognised only against its catalogue in `../../../bin/fm-composer-lib.sh`. |
 | Effort | `--reasoning-effort`, default `high`, accepts `none\|minimal\|low\|medium\|high\|xhigh\|max\|ultra`; shared values expose low through xhigh, explicit captain `max` still maps to `ultra` because `ultra` remains the top level above native `max`, and `none` or `minimal` remain unreachable. |
 
 ## Credential preflight
