@@ -1,0 +1,11 @@
+Round 2 lab: 42 orca-backed tasks per home (21 stale terminals whose fake orca CLI hangs 60s, 21 live). Host load 27-36.
+== HEAD alone rc=0 elapsed=145s load="30.78 32.40 37.47"
+{"snapshot_ok":true,"failure":null,"tasks":42,"hung1":{"id":"hung-1","endpoint":null},"live1":{"id":"live-1","state":null}}
+-- doubled load: two HEAD heartbeats at once in two lab homes
+== HEAD concurrent A rc=0 elapsed=104s load="28.07 30.57 36.02"
+{"snapshot_ok":true,"failure":null,"tasks":42,"hung1":{"id":"hung-1","endpoint":null},"live1":{"id":"live-1","state":null}}
+== HEAD concurrent B rc=0 elapsed=98s load="30.36 31.08 36.27"
+{"snapshot_ok":true,"failure":null,"tasks":42,"hung1":{"id":"hung-1","endpoint":null},"live1":{"id":"live-1","state":null}}
+-- BASE reproduces reported bug
+== BASE 57ad3e67 alone rc=0 elapsed=36s
+{"ok":false,"failure":{"reason":"snapshot timed out after 30s"},"tasks":0}

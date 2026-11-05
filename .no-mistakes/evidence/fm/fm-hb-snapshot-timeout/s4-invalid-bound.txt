@@ -1,0 +1,2 @@
+TIMEOUT=0 rc=2 fm-fleet-snapshot: FM_SNAPSHOT_ENDPOINT_TIMEOUT must be a positive integer
+TIMEOUT=abc rc=2 fm-fleet-snapshot: FM_SNAPSHOT_ENDPOINT_TIMEOUT must be a positive integer

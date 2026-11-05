@@ -1,0 +1,9 @@
+Snapshot only, HEAD and previous commit 86db383f run concurrently
+== HEAD rc=0 elapsed=67s load="35.57 32.07 36.03"
+[{"id":"hung-1","state":"unknown","detail":"backend unreachable (orca endpoint probe timed out after 3s)","endpoint":{"target":"term_hung_1","exists":null,"agent_alive":"not_checked","status":"unknown","observed_at":"2026-11-05T04:21:41Z","freshness":"fresh"}},{"id":"live-1","state":"unknown","detail":"harness state unavailable (unknown missing)","endpoint":{"target":"term_live_1","exists":true,"agent_alive":"not_checked","status":"unknown","observed_at":"2026-11-05T04:21:41Z","freshness":"fresh"}}]
+== prev-86db383f rc=0 elapsed=70s load="35.53 32.12 36.02"
+[{"id":"hung-1","state":"unknown","detail":"","endpoint":{"target":"term_hung_1","exists":null,"agent_alive":"not_checked","status":"unknown","observed_at":"2026-11-05T04:21:41Z","freshness":"fresh"}},{"id":"live-1","state":"unknown","detail":"harness state unavailable (unknown missing)","endpoint":{"target":"term_live_1","exists":true,"agent_alive":"not_checked","status":"unknown","observed_at":"2026-11-05T04:21:41Z","freshness":"fresh"}}]
+
+crew-state on one stale-handle task:
+HEAD: elapsed=5s  state: unknown · source: none · backend unreachable (orca endpoint probe timed out after 3s)
+86db383f: elapsed=61s  state: unknown · source: none · backend target gone: term_hung_2

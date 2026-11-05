@@ -1,0 +1,10 @@
+Lab: 42 orca-backed tasks (21 stale terminals whose orca CLI hangs 60s, 21 live). Host load 47-76.
+== BASE 57ad3e67 fm-heartbeat.sh --write: rc=0 elapsed=40s
+{"snapshot":{"ok":false,"schema":null,"generated":null,"failure":{"reason":"snapshot timed out after 30s"}},"tasks":0}
+== FIX 86db383f fm-heartbeat.sh --write, run concurrently with base (doubled load): rc=0 elapsed=125s
+{"snapshot":{"ok":false,"failure":{"reason":"snapshot timed out after 120s"}},"tasks":0}
+== FIX 86db383f fm-heartbeat.sh --write, run alone: rc=0 elapsed=128s
+{"snapshot_ok":true,"failure":null,"tasks":42}
+-- sample hung row:
+{"id":"hung-1","endpoint":null}
+== Snapshot-only timing, 42 tasks: fix-with-21-hung alone 101s; healthy-ish home (2 hung) fix 92s vs base 128s (concurrent, load ~60)

@@ -1,0 +1,4 @@
+1..1
+ok - hung endpoint probe reports unknown without stalling the snapshot
+FM_TEST_COMPLETE
+fix elapsed=7s

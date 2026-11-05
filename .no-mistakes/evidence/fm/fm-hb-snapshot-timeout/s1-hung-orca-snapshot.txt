@@ -1,0 +1,6 @@
+== fix: rc=0 elapsed=14s
+{"id":"hung-1","endpoint":{"target":"term_hung_1","exists":null,"status":"unknown"}}
+{"id":"live-1","endpoint":{"target":"term_live_1","exists":true,"status":"unknown"}}
+== base: rc=0 elapsed=52s
+{"id":"hung-1","endpoint":{"target":"term_hung_1","exists":false,"status":"absent"}}
+{"id":"live-1","endpoint":{"target":"term_live_1","exists":true,"status":"unknown"}}
