@@ -1062,7 +1062,7 @@ wd_quota_meta() {  # [task-id]
 }
 
 wd_quota_pick() {  # [task-id]
-  local cands cand snapshot pick harness kind model wt mate meta task=${1-} judge
+  local cands cand snapshot pick harness kind model wt mate meta task=${1-} judge reason
   rm -f "$WD/.quota-none-reason"
   cands=$(cfg reroute-candidates "")
   [ -n "$cands" ] || { printf 'none\n'; return 1; }
@@ -1104,8 +1104,13 @@ wd_quota_pick() {  # [task-id]
   [ -z "$wt" ] || set -- "$@" --worktree "$wt"
   [ -z "$mate" ] || set -- "$@" --mate "$mate"
   for cand in $(printf '%s' "$cands" | tr ',' ' '); do set -- "$@" --candidate "$cand"; done
-  pick=$("$SCRIPT_DIR/fm-quota-reroute.sh" "$@" 2>/dev/null) || pick=none
+  pick=$("$SCRIPT_DIR/fm-quota-reroute.sh" "$@" 2>"$WD/.quota-none-stderr") || pick=none
   [ -n "$pick" ] || pick=none
+  if [ "$pick" = none ]; then
+    reason=$(awk 'sub(/^error: /, "") { print; exit }' "$WD/.quota-none-stderr" 2>/dev/null || true)
+    [ -z "$reason" ] || printf '%s\n' "$reason" > "$WD/.quota-none-reason"
+  fi
+  rm -f "$WD/.quota-none-stderr"
   printf '%s\n' "$pick"
   [ "$pick" != none ]
 }

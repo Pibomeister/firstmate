@@ -2901,6 +2901,24 @@ test_spawn_relaunch_refuses_a_pane_outside_the_worktree() {
   pass "fm-spawn --relaunch: refuses to start a replacement outside the copy holding its work"
 }
 
+test_herdr_relaunch_refuses_when_cd_does_not_return_to_the_worktree() {
+  local dir out rc
+  herdr_case_or_skip wrongcwd-herdr rl88 || {
+    echo "skip - herdr relaunch needs jq (the herdr adapter parses JSON with it)"
+    return 0
+  }
+  dir=$HERDR_CASE_DIR
+  rm -f "$dir/fake/herdr-stopped"
+  printf '{"result":{"agent":{"agent":"claude","agent_status":"idle","agent_session":{"kind":"path","value":"/tmp/pi-bound-session.jsonl"}}}}\n' \
+    > "$dir/fake/herdr-agent-registration"
+  printf '%s' "$dir/proj" > "$dir/fake/cwd"
+  out=$(run_spawn "$dir" rl88 --relaunch --harness claude); rc=$?
+  expect_code 1 "$rc" "a Herdr pane that does not return to the worktree should refuse"$'\n'"$out"
+  assert_contains "$out" "did not return to its recorded worktree" \
+    "the refusal should name the failed return"
+  pass "fm-spawn --relaunch: a Herdr pane outside the worktree that cannot cd back is refused"
+}
+
 # --- 7. reclaiming a task whose endpoint is gone ----------------------------
 #
 # Before this, `missing` was a terminal state: fm-spawn --relaunch accepted only
@@ -3544,6 +3562,13 @@ test_herdr_reclaim_of_a_secondmate_uses_relaunch() {
   [ ! -s "$dir/fake/herdr-log" ] || ! grep -q "tab create" "$dir/fake/herdr-log" \
     || fail "a refused direct --relaunch must not mint a replacement pane"
 
+  out=$(FM_CONTROL_RELAUNCH_TX=forged run_spawn "$dir" rl76 --relaunch --harness claude); rc=$?
+  expect_code 1 "$rc" "an env token without a matching recorded token must refuse"$'\n'"$out"
+  assert_contains "$out" "--secondmate" \
+    "a forged relaunch token must not skip the gone-secondmate owner"
+  [ ! -s "$dir/fake/herdr-log" ] || ! grep -q "tab create" "$dir/fake/herdr-log" \
+    || fail "a forged relaunch token must not mint a replacement pane"
+
   out=$(run_control "$dir" rl76 relaunch --harness claude); rc=$?
   log=$(cat "$dir/fake/herdr-log")
   expect_code 0 "$rc" "fm-control relaunch rebinds a gone secondmate endpoint"$'\n'"$out"$'\n'"$log"
@@ -3862,6 +3887,7 @@ test_spawn_relaunch_refuses_a_pending_authoritative_close
 test_spawn_relaunch_refuses_contradicting_flags
 test_spawn_relaunch_refuses_an_unrecorded_task
 test_spawn_relaunch_refuses_a_pane_outside_the_worktree
+test_herdr_relaunch_refuses_when_cd_does_not_return_to_the_worktree
 test_tmux_refuses_a_window_missing_from_its_session
 test_tmux_refuses_a_session_that_cannot_be_found
 test_tmux_refuses_when_the_server_is_gone

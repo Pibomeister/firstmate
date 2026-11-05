@@ -2691,12 +2691,17 @@ FACTS
   KIND=$(fm_meta_get "$RELAUNCH_META" kind)
   [ -n "$KIND" ] || KIND=ship
   # Gone-secondmate recovery has one owner per path: --secondmate for the
-  # liveness sweep, and fm-control relaunch (which sets FM_CONTROL_RELAUNCH_TX)
-  # for a proven-gone quota or control-plane replace. Direct --relaunch of a
-  # gone secondmate is refused so those two cannot both mint a window.
-  if [ "$RELAUNCH_REBIND" -eq 1 ] && [ "$KIND" = secondmate ] && [ -z "${FM_CONTROL_RELAUNCH_TX:-}" ]; then
-    echo "error: --relaunch of a gone secondmate is refused except through fm-control relaunch on a proven-gone endpoint; recover it with --secondmate" >&2
-    exit 1
+  # liveness sweep, and fm-control relaunch (which sets FM_CONTROL_RELAUNCH_TX
+  # and stamps the same token on the record) for a proven-gone quota or
+  # control-plane replace. Direct --relaunch of a gone secondmate is refused
+  # so those two cannot both mint a window. The env var alone is not enough.
+  if [ "$RELAUNCH_REBIND" -eq 1 ] && [ "$KIND" = secondmate ]; then
+    recorded_tx=$(fm_meta_get "$RELAUNCH_META" control_relaunch_tx)
+    if [ -z "${FM_CONTROL_RELAUNCH_TX:-}" ] \
+       || [ "$recorded_tx" != "$FM_CONTROL_RELAUNCH_TX" ]; then
+      echo "error: --relaunch of a gone secondmate is refused except through fm-control relaunch on a proven-gone endpoint; recover it with --secondmate" >&2
+      exit 1
+    fi
   fi
   MODE=$(fm_meta_get "$RELAUNCH_META" mode)
   YOLO=$(fm_meta_get "$RELAUNCH_META" yolo)

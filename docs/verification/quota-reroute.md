@@ -15,7 +15,7 @@ Do not run it on a Cloud Agent VM.
 1. `fm-control.sh <id> relaunch --harness codex` closes a Herdr usage-limit pane without sending Enter.
 2. The replacement agent starts on Codex in the same secondmate home, on the recorded Herdr backend.
 3. `config/secondmate-harness` pointing at Claude does not block that move when no Claude-specific signal is present.
-4. Any Claude-specific signal keeps the mate on Claude until reset: MCP servers in the account pin's config dir, a project `.mcp.json`, or `.claude/` skills, hooks, agents, or commands in the worktree. A missing or unreadable config dir also queues. Resolve that dir from `config/claude-account`, not from `claude-config-dirs`.
+4. Any Claude-specific signal keeps the mate on Claude until reset. The `bin/fm-quota-reroute.sh` header owns the list, including a missing or unreadable config dir. Resolve that dir from `config/claude-account`, not from `claude-config-dirs`.
 5. The watchdog names the pick and does not relaunch.
 
 ## Setup
@@ -46,7 +46,7 @@ bin/fm-quota-reroute.sh claude-tooling --config-dir "$HOME/.claude" --worktree <
 echo $?
 ```
 
-Expected: exit 1 when the pin dir has no MCP servers, `$HOME/.claude.json` has none (ordinary account), `.projects[].mcpServers` is empty, and the worktree has no `.mcp.json` or `.claude/{skills,hooks,agents,commands}`.
+Expected: exit 1 when none of the signals in the `bin/fm-quota-reroute.sh` header are present.
 A missing or unreadable `--config-dir` exits 0 and prints `unreadable Claude config dir`.
 Omitting `--config-dir` resolves `config/claude-account` in `FM_HOME` (optional `--mate`); a broken pin is a signal.
 `fm-control.sh <id> relaunch --harness <other>` of a Claude task refuses on that signal, and on any `claude-tooling` exit other than 1, naming the reason. There is no override flag.
