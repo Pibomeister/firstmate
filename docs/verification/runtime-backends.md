@@ -1446,6 +1446,12 @@ The matrix also pins `›`, then `Context 77% left`, then `← for agents · ? f
 `tests/fm-composer-codex-idle-live-e2e.test.sh` now also requires the plain read to reach `empty`.
 On 2026-10-14 it could not reach any of its reads on the verification machine, because codex-cli 0.162.1 parks on its `Hooks need review` modal, which the guard correctly refuses to dismiss; the same failure reproduces on the unmodified library, and the Orca capture above is this entry's live evidence.
 
+On 2026-11-05 on macOS arm64, three idle Muse Code 1.4.14 panes (muse-wonder-1.0, tmux) were captured live with `tmux capture-pane -e -p`.
+Each showed a rotating suggestion (`Ask to monitor a running build or log and get pinged on changes`, `Type @ to search and insert workspace file paths`, `ctrl+b sends the selected task to the background queue`) after the `❯` glyph with only ESC[0m before it, inside the `Voice input (... to start)` rule, solid rule, and `muse-wonder-1.0 · ... · YOLO` footer container.
+Before the fix, `fm_composer_classify_screen` read those panes `pending` on the tmux profile and `unknown` cursorless.
+A scratch 1.4.14 pane proved typed text is drawn in the same unstripped style, so the fix recognises only Muse's own suggestion catalogue inside that container (`FM_COMPOSER_MUSE_SUGGESTIONS_DEFAULT` and `_fm_composer_muse_prompt_row` in `bin/fm-composer-lib.sh`).
+`test_matrix_muse_idle_suggestion_placeholder` in `tests/fm-composer-lib.test.sh` pins the captured idle frame as `empty` on every capability profile, a typed line in the same container as `pending`, and the same suggestion bytes outside the container as `pending`.
+
 ## Steering-inbox doorbell
 
 The steering channel's one behavioral assumption - a real worker agent follows the constant self-describing doorbell line (list the inbox, read and act on its records in numeric order, then `mv` each into `handled/`) - was verified on 2026-08-23 against every installed verified harness, on tmux 3.6a, macOS arm64, on an isolated private socket, driving the REAL `bin/fm-send.sh` end to end (durable record plus doorbell, with one mid-wait re-ring playing the watcher's role).
