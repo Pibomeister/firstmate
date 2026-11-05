@@ -894,8 +894,10 @@ test_backend_restricted_relaunch_off_tmux_and_herdr_refuses_before_stopping() {
         ;;
     esac
     alive_as "$dir" claude
+    # Isolate HOME so a missing real ~/.claude is not a tooling signal.
+    mkdir -p "$dir/user-home/.claude"
     meta_before=$(cat "$dir/home/state/t1.meta")
-    out=$(run_control "$dir" t1 relaunch --harness "$target" --note x); rc=$?
+    out=$(HOME="$dir/user-home" run_control "$dir" t1 relaunch --harness "$target" --note x); rc=$?
     expect_code 1 "$rc" "a $target relaunch on $backend should refuse"$'\n'"$out"
     # zellij and cmux refuse every relaunch earlier, for want of a stop proof.
     [ "$backend" != orca ] || assert_contains "$out" "verified on the tmux and herdr backends only; relaunching onto '$target'" \
