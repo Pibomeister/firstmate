@@ -117,9 +117,10 @@
 #   A tmux rebind re-creates the window on the recorded socket and refuses when
 #   this process addresses another tmux server. An endpoint that turns out
 #   to have survived refuses too. The worktree is reused untouched either way; a
-#   rebind is a recovery, never a teardown. Only a crewmate or scout rebinds: a
-#   secondmate whose endpoint is gone is respawned by its own owner
-#   (`--secondmate`, driven by the session-start liveness sweep).
+#   rebind is a recovery, never a teardown. Only a crewmate or scout rebinds
+#   through --relaunch, except fm-control relaunch of a proven-gone secondmate
+#   (quota move). A gone secondmate is otherwise respawned by --secondmate
+#   (session-start liveness sweep).
 #   Every fresh ship/scout launch and replacement explicitly enters the recorded
 #   worktree immediately before trust setup and brief delivery, and a pre-launch
 #   cwd check refuses any endpoint that still reports another copy; a Herdr shell
@@ -2471,6 +2472,10 @@ spawn_backend_admit() {  # <backend>
 if [ "$RELAUNCH" -eq 0 ]; then
   if [ "$KIND" = secondmate ] && { [ -e "$STATE/$ID.meta" ] || [ -L "$STATE/$ID.meta" ]; }; then
     BACKEND=$(fm_backend_of_meta "$STATE/$ID.meta")
+    if [ "$BACKEND_SET" -eq 1 ] && [ "$BACKEND_ARG" != "$BACKEND" ]; then
+      echo "error: --backend $BACKEND_ARG conflicts with the recorded backend $BACKEND for secondmate $ID" >&2
+      exit 1
+    fi
   elif [ "$BACKEND_SET" -eq 1 ]; then
     BACKEND=$BACKEND_ARG
   else
@@ -2685,9 +2690,14 @@ FACTS
   esac
   KIND=$(fm_meta_get "$RELAUNCH_META" kind)
   [ -n "$KIND" ] || KIND=ship
-  # A gone secondmate endpoint may be rebound by --relaunch (quota move and
-  # control-plane replace) or by --secondmate (liveness sweep). Both read the
-  # recorded backend rather than config/backend.
+  # Gone-secondmate recovery has one owner per path: --secondmate for the
+  # liveness sweep, and fm-control relaunch (which sets FM_CONTROL_RELAUNCH_TX)
+  # for a proven-gone quota or control-plane replace. Direct --relaunch of a
+  # gone secondmate is refused so those two cannot both mint a window.
+  if [ "$RELAUNCH_REBIND" -eq 1 ] && [ "$KIND" = secondmate ] && [ -z "${FM_CONTROL_RELAUNCH_TX:-}" ]; then
+    echo "error: --relaunch of a gone secondmate is refused except through fm-control relaunch on a proven-gone endpoint; recover it with --secondmate" >&2
+    exit 1
+  fi
   MODE=$(fm_meta_get "$RELAUNCH_META" mode)
   YOLO=$(fm_meta_get "$RELAUNCH_META" yolo)
   UPSTREAM_CONSENT=$(fm_meta_get "$RELAUNCH_META" upstream_consent)

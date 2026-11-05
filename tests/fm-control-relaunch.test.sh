@@ -130,6 +130,12 @@ case "${1:-}" in
             : > "$FM_FAKE_CWD_RACE_READY"
             /bin/sleep 1
           fi
+          # A destroyed window has no pane, so there is no cwd to read. An
+          # empty inventory must not keep answering the last known path.
+          if [ ! -s "$D/windows" ]; then
+            echo "can't find pane" >&2
+            exit 1
+          fi
           cat "$D/cwd"; printf '\n'; exit 0 ;;
       esac
     done
@@ -656,6 +662,27 @@ test_interrupt_refuses_a_usage_limit_screen() {
   pass "fm-control interrupt: a usage-limit screen is not sent a lifecycle key"
 }
 
+test_control_relaunch_of_a_gone_tmux_endpoint() {
+  local dir out rc sock ident
+  dir=$(new_case gone-endpoint rl82)
+  add_ship_task "$dir" rl82 claude
+  sock=$(bash -c '. "$1/bin/fm-backend.sh"; fm_backend_source tmux; fm_backend_tmux_addressed_socket' _ "$ROOT")
+  ident=$(bash -c '. "$1/bin/fm-wake-lib.sh"; printf "%s" "$(fm_pid_identity "$2")" | tr "\t\n" "  "' _ "$ROOT" "$$")
+  printf 'tmux_socket=%s\ntmux_server_pid=%s\ntmux_server_identity=%s\ntmux_window_id=%s\n' \
+    "$sock" "$$" "$ident" @9 >> "$dir/home/state/rl82.meta"
+  strand_endpoint "$dir" rl82
+  out=$(FM_FAKE_TMUX_SOCKET="$sock" FM_FAKE_TMUX_SERVER_PID=$$ \
+    run_control "$dir" rl82 relaunch --harness claude --note "reclaim a gone pane"); rc=$?
+  expect_code 0 "$rc" "a gone tmux endpoint must be rebound rather than refused for an empty pane path"$'\n'"$out"
+  assert_not_contains "$out" "not its recorded worktree" \
+    "an unreadable gone-pane path must not trip the pre-stop worktree guard"
+  [ "$(grep -c '^fm-rl82$' "$dir/fake/created-windows" 2>/dev/null)" = 1 ] \
+    || fail "exactly the task's window must be re-created once, got: $(cat "$dir/fake/created-windows" 2>/dev/null)"
+  [ "$(meta_field "$dir" rl82 window)" = "fmses:fm-rl82" ] \
+    || fail "the record must rebind to the new window"
+  pass "fm-control relaunch: a proven-gone tmux endpoint is rebound when its pane path is unreadable"
+}
+
 test_relaunch_refuses_before_exit_when_the_composer_state_is_unproven() {
   local dir out rc
   dir=$(new_case unproven-exit rl44)
@@ -1049,6 +1076,25 @@ test_harness_switch_does_not_carry_the_old_profile_axes() {
   [ "$(meta_field "$dir" rl5 effort)" = xhigh ] \
     || fail "an effort named for the old harness must be kept when --effort is omitted"
   pass "fm-control relaunch: a harness switch resets model and keeps effort unless effort is named too"
+}
+
+test_harness_switch_falls_back_when_the_new_harness_refuses_carried_effort() {
+  local dir out rc
+  dir=$(new_case effort-fallback rl83)
+  add_ship_task "$dir" rl83 claude
+  sed 's/^effort=default$/effort=max/' \
+    "$dir/home/state/rl83.meta" > "$dir/home/state/rl83.meta.tmp"
+  mv "$dir/home/state/rl83.meta.tmp" "$dir/home/state/rl83.meta"
+  printf 'codex' > "$dir/fake/becomes"
+  out=$(run_control "$dir" rl83 relaunch --harness codex --note "switch off Claude max"); rc=$?
+  expect_code 0 "$rc" "a harness switch must not fail when the new harness refuses the carried effort"$'\n'"$out"
+  assert_contains "$out" "notice: codex refused effort max; launching at default" \
+    "the notice should name the old and new effort"
+  [ "$(meta_field "$dir" rl83 effort)" = default ] \
+    || fail "the replacement should land at the new harness default, got $(meta_field "$dir" rl83 effort)"
+  [ "$(meta_field "$dir" rl83 harness)" = codex ] \
+    || fail "the replacement should still land on the named harness"
+  pass "fm-control relaunch: a carried effort the new harness refuses falls back to that harness default"
 }
 
 test_harness_switch_resolves_a_prefixed_recorded_harness() {
@@ -3404,15 +3450,27 @@ test_herdr_reclaim_of_a_secondmate_uses_relaunch() {
   printf '%s\n' "kind=secondmate" "home=$dir/wt" "mode=secondmate" >> "$dir/home/state/rl76.meta"
 
   out=$(run_spawn "$dir" rl76 --relaunch --harness claude); rc=$?
+  expect_code 1 "$rc" "direct --relaunch of a gone secondmate must refuse"$'\n'"$out"
+  assert_contains "$out" "--secondmate" \
+    "direct --relaunch must send a gone secondmate to --secondmate or fm-control"
+  [ ! -s "$dir/fake/herdr-log" ] || ! grep -q "tab create" "$dir/fake/herdr-log" \
+    || fail "a refused direct --relaunch must not mint a replacement pane"
+
+  out=$(run_control "$dir" rl76 relaunch --harness claude); rc=$?
   log=$(cat "$dir/fake/herdr-log")
-  expect_code 0 "$rc" "a gone secondmate endpoint is rebound by --relaunch"$'\n'"$out"$'\n'"$log"
+  expect_code 0 "$rc" "fm-control relaunch rebinds a gone secondmate endpoint"$'\n'"$out"$'\n'"$log"
   assert_contains "$log" "tab create" "a destroyed secondmate pane must be replaced"
-  assert_not_contains "$out" "--secondmate" "quota and control-plane replace use --relaunch, not a secondmate respawn"
+  assert_not_contains "$out" "--secondmate" "quota and control-plane replace use fm-control relaunch, not a secondmate respawn"
   [ "$(meta_field "$dir" rl76 window)" = 'fmlab:%9' ] \
     || fail "the rebound secondmate endpoint should be the new pane, got $(meta_field "$dir" rl76 window)"
   [ "$(meta_field "$dir" rl76 backend)" = herdr ] \
     || fail "the recorded herdr backend must survive the replacement"
-  pass "reclaim: a herdr secondmate whose endpoint is gone is rebound by relaunch"
+
+  out=$(run_spawn "$dir" rl76 --secondmate --backend orca --harness claude); rc=$?
+  expect_code 1 "$rc" "an explicit --backend that disagrees with the record must error"$'\n'"$out"
+  assert_contains "$out" "conflicts with the recorded backend herdr" \
+    "the refusal should name the recorded backend"
+  pass "reclaim: fm-control relaunch rebinds a gone secondmate; direct --relaunch and a conflicting --backend do not"
 }
 
 test_relaunch_reverifies_an_already_in_flight_item_instead_of_rewriting_it() {
@@ -3637,6 +3695,7 @@ test_agy_relaunch_requires_treehouse_capabilities_before_stopping
 test_relaunch_refuses_before_exit_when_the_composer_holds_pending_text
 test_relaunch_closes_a_usage_limit_screen_without_typing_enter
 test_interrupt_refuses_a_usage_limit_screen
+test_control_relaunch_of_a_gone_tmux_endpoint
 test_relaunch_refuses_before_exit_when_the_composer_state_is_unproven
 test_relaunch_from_linked_home_preserves_recorded_worktree
 test_relaunch_preserves_durable_task_metadata
@@ -3650,6 +3709,7 @@ test_refused_relaunch_onto_polytoken_keeps_the_project_hook_layer
 test_refused_polytoken_profile_leaves_the_running_agent
 test_relaunch_from_a_raw_polytoken_launch_keeps_the_project_layers
 test_harness_switch_does_not_carry_the_old_profile_axes
+test_harness_switch_falls_back_when_the_new_harness_refuses_carried_effort
 test_harness_switch_resolves_a_prefixed_recorded_harness
 test_prefixed_recorded_harness_requires_explicit_replacement
 test_same_harness_relaunch_keeps_the_profile_axes

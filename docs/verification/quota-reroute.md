@@ -14,8 +14,8 @@ Do not run it on a Cloud Agent VM.
 
 1. `fm-control.sh <id> relaunch --harness codex` closes a Herdr usage-limit pane without sending Enter.
 2. The replacement agent starts on Codex in the same secondmate home, on the recorded Herdr backend.
-3. `config/secondmate-harness` pointing at Claude does not block that move when the Claude config dir has no MCP servers.
-4. A Claude config dir with at least one MCP server keeps the mate on Claude until reset.
+3. `config/secondmate-harness` pointing at Claude does not block that move when no Claude-specific signal is present.
+4. Any Claude-specific signal keeps the mate on Claude until reset: MCP servers in the account pin's config dir, a project `.mcp.json`, or `.claude/` skills, hooks, agents, or commands in the worktree. A missing or unreadable config dir also queues. Resolve that dir from `config/claude-account`, not from `claude-config-dirs`.
 5. The watchdog names the pick and does not relaunch.
 
 ## Setup
@@ -39,24 +39,25 @@ reroute-candidates=codex:gpt-5.4,claude:sonnet
 
 ## Claude tooling gate
 
-Empty MCP map (should allow the move):
+Empty MCP map and no worktree signals (should allow the move):
 
 ```sh
-bin/fm-quota-reroute.sh claude-tooling --config-dir "$HOME/.claude"
+bin/fm-quota-reroute.sh claude-tooling --config-dir "$HOME/.claude" --worktree <mate-home>
 echo $?
 ```
 
-Expected: exit 1 when `.claude.json` / `settings.json` has no MCP servers.
+Expected: exit 1 when the pin dir has no MCP servers and the worktree has no `.mcp.json` or `.claude/{skills,hooks,agents,commands}`.
+A missing or unreadable `--config-dir` exits 0 and prints `unreadable Claude config dir`.
 
-With an MCP server configured, the same command exits 0, and:
+With an MCP server configured, the same command exits 0 and names `MCP servers in ...`. Then:
 
 ```sh
 bin/fm-quota-reroute.sh suggest --from-harness claude --kind secondmate \
-  --claude-config-dir "$HOME/.claude" \
+  --claude-config-dir "$HOME/.claude" --worktree <mate-home> \
   --candidate codex:gpt-5.4 --snapshot <quota-axi-output>
 ```
 
-Expected: prints `none` and exit 1.
+Expected: prints `none` and exit 1, and stderr names the blocking signal.
 Do not relaunch in that state. Queue until reset.
 
 ## Watchdog names the pick

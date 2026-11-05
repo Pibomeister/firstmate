@@ -2592,6 +2592,74 @@ SH
   pass "usage-limit: watchdog names the pick and does not relaunch or type"
 }
 
+test_claude_pinned_secondmate_with_tooling_gets_no_codex_pick() {
+  local parent mate pin snap
+  make_home $'Captain session\n> '
+  parent=$H
+  make_home $'You have hit your weekly limit for Opus.\n\n ❯ 1. Switch to Sonnet\n   2. Wait for the limit to reset\n   3. Buy more credits\n\nEnter to confirm · Esc to cancel'
+  mate=$H
+  pin="$parent/pin-claude"
+  mkdir -p "$pin"
+  printf '%s\n' '{"mcpServers":{"docs":{"command":"true"}}}' > "$pin/.claude.json"
+  printf '%s\n' "$pin" > "$parent/config/claude-account"
+  printf -- '- ghost-mate - test mate (home: %s)\n' "$mate" > "$parent/data/secondmates.md"
+  {
+    echo "harness=claude"
+    echo "kind=secondmate"
+    echo "home=$mate"
+    echo "worktree=$mate"
+    echo "model=default"
+  } > "$parent/state/ghost-mate.meta"
+  printf 'mode=act\nclaude-config-dirs=%s\nkey-settle-secs=1\nmodels=\nreroute-candidates=codex:gpt-5.4\n' \
+    "$parent/claude" > "$parent/config/watchdog"
+  snap="$parent/quota.json"
+  cat > "$snap" <<'JSON'
+{
+  "generatedAt": "2030-01-01T00:00:00Z",
+  "schemaVersion": 5,
+  "providers": [
+    {
+      "provider": "codex",
+      "windows": [],
+      "quotaSemantics": {
+        "status": "known",
+        "effectiveAvailability": [
+          {
+            "scope": "all_models",
+            "status": "known",
+            "effectivePercentRemaining": 40,
+            "runway": { "status": "through_reset" }
+          }
+        ]
+      }
+    }
+  ]
+}
+JSON
+  cat > "$FAKEBIN/quota-axi" <<SH
+#!/usr/bin/env bash
+cat "$snap"
+SH
+  chmod +x "$FAKEBIN/quota-axi"
+  cat > "$FAKEBIN/fm-control.sh" <<SH
+#!/usr/bin/env bash
+printf 'control %s\n' "\$*" >> "$parent/control.log"
+exit 1
+SH
+  chmod +x "$FAKEBIN/fm-control.sh"
+  transcript 100 "Working."
+  H=$parent
+  run_wd 0 once >/dev/null 2>&1 || fail "secondmate usage-limit pass failed"
+  [ ! -e "$parent/control.log" ] || fail "watchdog relaunched: $(cat "$parent/control.log")"
+  assert_equals 1 "$(ledger_rows quota suggest held)" "the queue is recorded, not launched: $(ledger | cut -f5-8)"
+  assert_grep "No eligible reroute candidate" "$parent/data/watchdog/status.md" \
+    "a Claude-pinned mate with tooling must not name a Codex pick"
+  assert_not_contains "$(cat "$parent/data/watchdog/status.md")" "Suggested pick: codex" \
+    "Codex must not be named while Claude-specific tooling is present"
+  rm -f "$FAKEBIN/quota-axi" "$FAKEBIN/fm-control.sh"
+  pass "usage-limit: a Claude-pinned secondmate with tooling is queued, not picked for Codex"
+}
+
 if [ "$#" -gt 0 ]; then
   fm_test_run "$@"
   exit
@@ -2665,6 +2733,7 @@ fm_test_run \
   test_secret_looking_model_switch_dialog_is_held \
   test_model_switch_judge_is_rate_limited \
   test_usage_limit_names_a_pick_and_does_not_relaunch \
+  test_claude_pinned_secondmate_with_tooling_gets_no_codex_pick \
   test_unknown_composer_guards_the_nudge \
   test_orca_turn_probe_keeps_errors_unknown \
   test_no_activity_source_is_not_reported_ok \
