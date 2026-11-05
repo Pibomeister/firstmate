@@ -44,12 +44,12 @@ concurrency:
 # Path skip: bin/fm-ci-select.sh classifies a pull request's changed paths.
 # mode=skip drops lint and the behavior lanes. Coverage, invariants, the
 # classifier job, and Full suite still run, and Full suite passes. mode=full,
-# including every push to main, keeps those lanes. Skip is empty-map: every
-# changed path maps to no tests. The workflow forces full when the diff
-# includes the classifier, the changed-path map, or .github/, before it
-# trusts the pull request's classifier. Heavy jobs read
-# needs.select.outputs.mode so an intended skip is a skipped check, not a
-# pending one.
+# including every push to main, keeps those lanes. Skip is an explicit
+# allowlist of paths no test or script names; a missing path is full.
+# The workflow forces full when the diff includes the classifier, the
+# changed-path map, or .github/, before it trusts the pull request's
+# classifier. Heavy jobs read needs.select.outputs.mode so an intended
+# skip is a skipped check, not a pending one.
 #
 # Outside pull request gate: the full suite (lint, every test lane, and
 # the timing aggregate) runs on main pushes, PRs from this repository's own
@@ -75,7 +75,7 @@ jobs:
     name: ${{ (github.event.action == 'labeled' && github.event.label.name != 'full-ci') && 'Not run for label - ' || '' }}CI path select
     runs-on: ubuntu-24.04
     if: ${{ !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') && !(github.event.action == 'labeled' && github.event.label.name != 'full-ci') }}
-    # Fast tier: git diff plus the changed-path map.
+    # Fast tier: git diff plus the skip allowlist.
     timeout-minutes: 5
     outputs:
       mode: ${{ steps.select.outputs.mode }}

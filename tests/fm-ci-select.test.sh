@@ -1,17 +1,15 @@
 #!/usr/bin/env bash
-# Behavior tests for bin/fm-ci-select.sh: skip only when every path maps
-# to no tests, otherwise full, including an empty list.
+# Behavior tests for bin/fm-ci-select.sh: skip only for existing
+# allowlisted paths no test or script names, otherwise full.
 set -u
 
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 SELECT="$ROOT/bin/fm-ci-select.sh"
-RUNNER="$ROOT/bin/fm-test-run.sh"
 
 assert_present "$SELECT" "bin/fm-ci-select.sh is missing"
 [ -x "$SELECT" ] || fail "bin/fm-ci-select.sh must be executable"
-assert_present "$RUNNER" "bin/fm-test-run.sh is missing"
 
 # Run the classifier on stdin paths. Sets MODE to the mode= value and RC.
 classify() {
@@ -23,25 +21,24 @@ classify() {
   [ "$MODE_LINE" = "mode=$MODE" ] || fail "classifier stdout must be mode=<value>, got $MODE_LINE"
 }
 
-# Skip and the changed-path map must not drift: empty map is skip, any
-# family, script, or unmapped line is full.
-assert_classify_matches_map() {
-  local path=$1 mapped
-  mapped=$("$RUNNER" --map-changed-path "$path")
-  classify "$path"
-  [ "$RC" = 0 ] || fail "classify $path exit $RC"
-  if [ -z "$mapped" ]; then
-    [ "$MODE" = skip ] || fail "$path maps to no tests but classified $MODE_LINE"
-  else
-    [ "$MODE" = full ] || fail "$path maps to tests ($mapped) but classified $MODE_LINE"
-  fi
+test_allowlisted_path_is_skip() {
+  classify VISION.md
+  [ "$RC" = 0 ] || fail "VISION.md classify exit $RC"
+  [ "$MODE_LINE" = mode=skip ] || fail "VISION.md must be mode=skip, got $MODE_LINE"
+  pass "an allowlisted path skips the full suite"
 }
 
-test_docs_only_is_skip() {
-  classify docs/architecture.md README.md
-  [ "$RC" = 0 ] || fail "docs-only classify exit $RC"
-  [ "$MODE_LINE" = mode=skip ] || fail "docs-only must be mode=skip, got $MODE_LINE"
-  pass "docs-only paths that map to no tests skip the full suite"
+test_readme_is_full() {
+  classify README.md
+  [ "$RC" = 0 ] || fail "README.md classify exit $RC"
+  [ "$MODE_LINE" = mode=full ] || fail "README.md must be mode=full, got $MODE_LINE"
+  pass "README.md requires the full suite"
+}
+
+test_docs_herdr_backend_is_full() {
+  classify docs/herdr-backend.md
+  [ "$MODE_LINE" = mode=full ] || fail "docs/herdr-backend.md must be mode=full, got $MODE_LINE"
+  pass "a doc tests read requires the full suite"
 }
 
 test_bin_change_is_full() {
@@ -58,10 +55,10 @@ test_github_change_is_full() {
   pass "a .github/ path requires the full suite"
 }
 
-test_mixed_docs_and_bin_is_full() {
-  classify docs/architecture.md bin/fm-spawn.sh
-  [ "$MODE_LINE" = mode=full ] || fail "docs plus bin/ must be mode=full, got $MODE_LINE"
-  pass "a mixed docs and bin/ diff requires the full suite"
+test_mixed_allowlist_and_bin_is_full() {
+  classify VISION.md bin/fm-spawn.sh
+  [ "$MODE_LINE" = mode=full ] || fail "allowlist plus bin/ must be mode=full, got $MODE_LINE"
+  pass "a mixed allowlist and bin/ diff requires the full suite"
 }
 
 test_empty_list_is_full() {
@@ -85,31 +82,24 @@ test_agents_md_is_full() {
   pass "AGENTS.md requires the full suite"
 }
 
-test_cursor_overlay_docs_are_skip() {
-  classify .cursor/skills/foo/SKILL.md .cursor/catalog.yaml
-  [ "$MODE_LINE" = mode=skip ] || fail "empty-map overlay paths must be mode=skip, got $MODE_LINE"
-  pass "vendored Cursor overlay paths with no tests skip the full suite"
-}
-
-test_cursor_agent_kit_is_full() {
+test_cursor_overlay_is_full() {
+  classify .cursor/skills/foo/SKILL.md .cursor/catalog.yaml .cursor/rules/ak-super-review.mdc
+  [ "$MODE_LINE" = mode=full ] || fail "a .cursor/ path must be mode=full, got $MODE_LINE"
   classify .cursor/agent-kit.md
   [ "$MODE_LINE" = mode=full ] || fail ".cursor/agent-kit.md must be mode=full, got $MODE_LINE"
-  pass "the agent-kit pin path requires the full suite"
+  pass "every .cursor/ path requires the full suite"
 }
 
-test_unmapped_docs_are_skip() {
-  classify LICENSE .gitignore assets/logo.svg
-  [ "$MODE_LINE" = mode=skip ] || fail "empty-map license and assets must be mode=skip, got $MODE_LINE"
-  pass "license, assets, and gitignore skip the full suite"
-}
-
-test_mapped_docs_are_full() {
+test_license_gitignore_and_mapped_docs_are_full() {
   local path
   for path in \
+    LICENSE \
+    .gitignore \
+    docs/architecture.md \
+    docs/configuration.md \
     docs/fm-test-portable-shards.md \
     docs/fm-test-isolation-proof.md \
     docs/fm-test-isolation-proof.json \
-    docs/configuration.md \
     docs/supervision-protocols/cursor.md \
     CONTRIBUTING.md
   do
@@ -117,31 +107,21 @@ test_mapped_docs_are_full() {
     [ "$RC" = 0 ] || fail "classify $path exit $RC"
     [ "$MODE" = full ] || fail "$path must be mode=full, got $MODE_LINE"
   done
-  pass "docs the changed-path map selects require the full suite"
+  pass "license, gitignore, and docs tests or scripts name require the full suite"
 }
 
-test_skip_matches_empty_changed_map() {
-  local path
-  for path in \
-    README.md \
-    LICENSE \
-    docs/architecture.md \
-    docs/configuration.md \
-    docs/fm-test-portable-shards.md \
-    docs/fm-test-isolation-proof.md \
-    docs/fm-test-isolation-proof.json \
-    docs/supervision-protocols/cursor.md \
-    CONTRIBUTING.md \
-    AGENTS.md \
-    bin/fm-spawn.sh \
-    .github/workflows/ci.yml \
-    .cursor/catalog.yaml \
-    .gitignore \
-    assets/logo.svg
-  do
-    assert_classify_matches_map "$path"
-  done
-  pass "skip and the changed-path map agree on every checked path"
+test_allowlist_paths_are_unreferenced() {
+  local path hits
+  while IFS= read -r path; do
+    [ -n "$path" ] || continue
+    [ -e "$ROOT/$path" ] || fail "skip allowlist path does not exist: $path"
+    classify "$path"
+    [ "$MODE" = skip ] || fail "allowlisted $path must be mode=skip, got $MODE_LINE"
+    hits=$(grep -RIF --exclude='fm-ci-select.test.sh' --exclude='fm-ci-select.sh' \
+      -- "$path" "$ROOT/tests" "$ROOT/bin" || true)
+    [ -z "$hits" ] || fail "skip allowlist path $path is referenced:"$'\n'"$hits"
+  done < <("$SELECT" --list-skip)
+  pass "every skip allowlist path exists, skips, and is unnamed in tests and scripts"
 }
 
 test_usage_error_prints_no_mode() {
@@ -153,23 +133,38 @@ test_usage_error_prints_no_mode() {
   pass "a usage error exits 2 without a mode line"
 }
 
-test_base_ref_classifies_a_docs_commit() {
+test_base_ref_classifies_an_allowlisted_commit() {
   local tmp repo out
   tmp=$(fm_test_tmproot fm-ci-select-base)
   repo=$tmp/repo
   fm_git_init_commit "$repo"
-  mkdir -p "$repo/docs"
-  printf 'note\n' >"$repo/docs/note.md"
-  git -C "$repo" add docs/note.md
-  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm docs
-  out=$(cd "$repo" && "$SELECT" --base HEAD^ 2>/dev/null) || fail "docs --base classify failed"
-  [ "$out" = mode=skip ] || fail "docs commit vs HEAD^ must be mode=skip, got $out"
+  printf 'note\n' >"$repo/VISION.md"
+  git -C "$repo" add VISION.md
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm vision
+  out=$(cd "$repo" && "$SELECT" --base HEAD^ 2>/dev/null) || fail "allowlist --base classify failed"
+  [ "$out" = mode=skip ] || fail "VISION.md commit vs HEAD^ must be mode=skip, got $out"
   printf 'echo\n' >"$repo/bin-placeholder.sh"
   git -C "$repo" add bin-placeholder.sh
-  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm not-docs
-  out=$(cd "$repo" && "$SELECT" --base HEAD^ 2>/dev/null) || fail "non-docs --base classify failed"
-  [ "$out" = mode=full ] || fail "unmapped root file vs HEAD^ must be mode=full, got $out"
-  pass "--base classifies a docs commit as skip and any other commit as full"
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm not-skip
+  out=$(cd "$repo" && "$SELECT" --base HEAD^ 2>/dev/null) || fail "non-allowlist --base classify failed"
+  [ "$out" = mode=full ] || fail "unlisted root file vs HEAD^ must be mode=full, got $out"
+  pass "--base classifies an allowlisted commit as skip and any other commit as full"
+}
+
+test_deleted_bin_helper_is_full() {
+  local tmp repo out
+  tmp=$(fm_test_tmproot fm-ci-select-deleted-bin)
+  repo=$tmp/repo
+  fm_git_init_commit "$repo"
+  mkdir -p "$repo/bin"
+  printf 'echo\n' >"$repo/bin/fm-orphan-helper.sh"
+  git -C "$repo" add bin/fm-orphan-helper.sh
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm add-helper
+  git -C "$repo" rm -q bin/fm-orphan-helper.sh
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm delete-helper
+  out=$(cd "$repo" && "$SELECT" --base HEAD^ 2>/dev/null) || fail "deleted-bin --base classify failed"
+  [ "$out" = mode=full ] || fail "a deleted bin/ helper must be mode=full, got $out"
+  pass "a deleted bin/ helper requires the full suite"
 }
 
 test_rename_from_bin_to_docs_is_full() {
@@ -189,18 +184,19 @@ test_rename_from_bin_to_docs_is_full() {
 }
 
 fm_test_run \
-  test_docs_only_is_skip \
+  test_allowlisted_path_is_skip \
+  test_readme_is_full \
+  test_docs_herdr_backend_is_full \
   test_bin_change_is_full \
   test_github_change_is_full \
-  test_mixed_docs_and_bin_is_full \
+  test_mixed_allowlist_and_bin_is_full \
   test_empty_list_is_full \
   test_test_infra_is_full \
   test_agents_md_is_full \
-  test_cursor_overlay_docs_are_skip \
-  test_cursor_agent_kit_is_full \
-  test_unmapped_docs_are_skip \
-  test_mapped_docs_are_full \
-  test_skip_matches_empty_changed_map \
+  test_cursor_overlay_is_full \
+  test_license_gitignore_and_mapped_docs_are_full \
+  test_allowlist_paths_are_unreferenced \
   test_usage_error_prints_no_mode \
-  test_base_ref_classifies_a_docs_commit \
+  test_base_ref_classifies_an_allowlisted_commit \
+  test_deleted_bin_helper_is_full \
   test_rename_from_bin_to_docs_is_full

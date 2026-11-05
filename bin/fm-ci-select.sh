@@ -2,31 +2,46 @@
 # fm-ci-select.sh - classify changed paths for CI job skip.
 #
 # Prints exactly one stdout line: mode=full or mode=skip.
-# mode=skip only when the path list is non-empty and every path maps to
-# no tests in families_for_changed_path. Any other path, including one
-# that maps to a family, a script, or __unmapped__, or an empty list, is
-# mode=full so a missing diff cannot skip the suite. Usage errors exit 2
-# with no mode line.
+# mode=skip only when the path list is non-empty, every path exists in
+# this checkout, and every path is on the skip allowlist below. Any other
+# path, a deleted or missing path, or an empty list, is mode=full so a
+# missing diff cannot skip the suite. Usage errors exit 2 with no mode
+# line.
 #
-# Skip is derived from that map, not a second glob list. ci.yml also
-# forces mode=full before it trusts this script when the diff includes
-# bin/fm-ci-select.sh, bin/fm-test-run.sh, or .github/.
+# The allowlist is exact paths no test reads and no script sources.
+# tests/fm-ci-select.test.sh greps tests/ and bin/ for each path and
+# fails if one is referenced. It is not derived from
+# families_for_changed_path: that map is a --changed selector, and its
+# empty arms are not a skip oracle.
 #
+# Skip allowlist:
+#   GROK_BOT.md
+#   VISION.md
+#   assets/banner.png
+#   docs/documentation-audiences.md
+#   docs/examples/wedge-alarm
+#   docs/opencode-2-plugin-port-scope.md
+#   docs/pi-supervision-branch-poster.svg
+#   docs/scripts.md
+#
+# ci.yml also forces mode=full before it trusts this script when the
+# diff includes bin/fm-ci-select.sh, bin/fm-test-run.sh, or .github/.
 # A push to main does not call this script. ci.yml forces mode=full there.
 #
 # Usage:
 #   fm-ci-select.sh --files-from -
 #   fm-ci-select.sh --base <git-ref>
+#   fm-ci-select.sh --list-skip
 #   fm-ci-select.sh --help
 #
 # --files-from - reads one relative path per line from stdin.
 # --base <ref> reads git diff --name-only --no-renames <ref>...HEAD from
 # the current directory, which CI has checked out. --no-renames lists
 # both sides of a rename so a bin/ path moved under docs/ still maps.
+# --list-skip prints the allowlist, one path per line, and exits 0.
 set -eu
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-MAPPER="$ROOT/bin/fm-test-run.sh"
 
 usage() {
   awk '
@@ -50,20 +65,35 @@ emit_mode() {
   printf 'mode=%s\n' "$mode"
 }
 
-# Paths whose changed-path map is non-empty require the full suite.
-mapped_paths() {
-  [ -x "$MAPPER" ] || die "changed-path mapper is missing: $MAPPER"
-  "$MAPPER" --map-changed-paths
+skip_allowlist() {
+  cat <<'EOF'
+GROK_BOT.md
+VISION.md
+assets/banner.png
+docs/documentation-audiences.md
+docs/examples/wedge-alarm
+docs/opencode-2-plugin-port-scope.md
+docs/pi-supervision-branch-poster.svg
+docs/scripts.md
+EOF
+}
+
+# True when $1 exists in this checkout and is on the skip allowlist.
+path_is_skip() {
+  local path=${1#./}
+  [ -e "$ROOT/$path" ] || return 1
+  skip_allowlist | grep -Fxq -- "$path"
 }
 
 classify_paths() {
-  local path n=0 first_full='' paths_word mapped
-  local -a paths=()
+  local path n=0 first_full='' paths_word
   while IFS= read -r path; do
     [ -n "$path" ] || continue
     path=${path#./}
-    paths+=("$path")
     n=$((n + 1))
+    if [ -z "$first_full" ] && ! path_is_skip "$path"; then
+      first_full=$path
+    fi
   done
   if [ "$n" -eq 0 ]; then
     log "mode=full (empty path list; refuse to skip)"
@@ -75,29 +105,32 @@ classify_paths() {
   else
     paths_word=paths
   fi
-  mapped=$(printf '%s\n' "${paths[@]}" | mapped_paths)
-  if [ -n "$mapped" ]; then
-    first_full=$(printf '%s\n' "$mapped" | awk 'NF { print; exit }')
+  if [ -n "$first_full" ]; then
     log "mode=full ($first_full requires the full suite; $n $paths_word)"
     emit_mode full
     return 0
   fi
   if [ "$n" -eq 1 ]; then
-    log "mode=skip (1 path maps to no tests)"
+    log "mode=skip (1 path is on the skip allowlist)"
   else
-    log "mode=skip ($n paths map to no tests)"
+    log "mode=skip ($n paths are on the skip allowlist)"
   fi
   emit_mode skip
 }
 
 FILES_FROM=
 BASE_REF=
+LIST_SKIP=0
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --help|-h)
       usage
       exit 0
+      ;;
+    --list-skip)
+      LIST_SKIP=1
+      shift
       ;;
     --files-from)
       [ "$#" -ge 2 ] || die "usage: fm-ci-select.sh --files-from -"
@@ -110,10 +143,17 @@ while [ "$#" -gt 0 ]; do
       shift 2
       ;;
     *)
-      die "usage: fm-ci-select.sh --files-from - | --base <git-ref>"
+      die "usage: fm-ci-select.sh --files-from - | --base <git-ref> | --list-skip"
       ;;
   esac
 done
+
+if [ "$LIST_SKIP" -eq 1 ]; then
+  [ -z "$FILES_FROM" ] && [ -z "$BASE_REF" ] \
+    || die "use --list-skip alone"
+  skip_allowlist
+  exit 0
+fi
 
 if [ -n "$FILES_FROM" ] && [ -n "$BASE_REF" ]; then
   die "use --files-from or --base, not both"
@@ -132,4 +172,4 @@ if [ -n "$BASE_REF" ]; then
   exit 0
 fi
 
-die "usage: fm-ci-select.sh --files-from - | --base <git-ref>"
+die "usage: fm-ci-select.sh --files-from - | --base <git-ref> | --list-skip"
