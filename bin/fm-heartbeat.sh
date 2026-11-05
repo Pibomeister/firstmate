@@ -5,13 +5,16 @@
 #   fm-heartbeat.sh --write  atomically write state/heartbeat.json (best-effort)
 #
 # Each run observes bin/fm-fleet-snapshot.sh --json under FM_HEARTBEAT_SNAPSHOT_TIMEOUT
-# (default 30 seconds, above the snapshot's own inner bounds), enriches that
+# (default 120 seconds: the snapshot's own inner bounds - per-task crew-state
+# reads in concurrency batches, secondmate collection, and per-task endpoint
+# probes - sum past 30 seconds at fleet scale under load, and a 30-second
+# budget made every loaded run publish an empty task list), enriches that
 # snapshot with git, no-mistakes, inbox, terminal, and transcript facts, reads
 # weekly model allowance left once from quota-axi, and never
 # guesses: unread fields carry {unknown:true,reason}. Every primary and per-task
 # read has its own bound (FM_HEARTBEAT_READ_TIMEOUT, default 3 seconds, and
 # FM_HEARTBEAT_NM_TIMEOUT, default 2). FM_HEARTBEAT_QUOTA_TIMEOUT (default 10
-# seconds) bounds that one quota-axi read. FM_HEARTBEAT_DEADLINE (default 90
+# seconds) bounds that one quota-axi read. FM_HEARTBEAT_DEADLINE (default 240
 # seconds) stops starting new task reads. A deadline hit or a TERM, INT, or HUP
 # still publishes what was read, with unknown rows for the rest. A SIGKILL cannot
 # publish; the next run sweeps what it left. All temp files live in one private
@@ -86,11 +89,11 @@ CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 PROJECTS="${FM_PROJECTS_OVERRIDE:-$FM_HOME/projects}"
 LEDGER="$STATE/heartbeat.json"
 
-FM_HEARTBEAT_SNAPSHOT_TIMEOUT=${FM_HEARTBEAT_SNAPSHOT_TIMEOUT:-30}
+FM_HEARTBEAT_SNAPSHOT_TIMEOUT=${FM_HEARTBEAT_SNAPSHOT_TIMEOUT:-120}
 FM_HEARTBEAT_READ_TIMEOUT=${FM_HEARTBEAT_READ_TIMEOUT:-3}
 FM_HEARTBEAT_NM_TIMEOUT=${FM_HEARTBEAT_NM_TIMEOUT:-2}
 FM_HEARTBEAT_QUOTA_TIMEOUT=${FM_HEARTBEAT_QUOTA_TIMEOUT:-10}
-FM_HEARTBEAT_DEADLINE=${FM_HEARTBEAT_DEADLINE:-90}
+FM_HEARTBEAT_DEADLINE=${FM_HEARTBEAT_DEADLINE:-240}
 
 case "${1:-}" in
   --write) ;;
@@ -101,11 +104,11 @@ case "${1:-}" in
   *) sed -n '2,${/^#/!q;p;}' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2 ;;
 esac
 
-case "$FM_HEARTBEAT_SNAPSHOT_TIMEOUT" in ''|*[!0-9]*|0) FM_HEARTBEAT_SNAPSHOT_TIMEOUT=30 ;; esac
+case "$FM_HEARTBEAT_SNAPSHOT_TIMEOUT" in ''|*[!0-9]*|0) FM_HEARTBEAT_SNAPSHOT_TIMEOUT=120 ;; esac
 case "$FM_HEARTBEAT_READ_TIMEOUT" in ''|*[!0-9]*|0) FM_HEARTBEAT_READ_TIMEOUT=3 ;; esac
 case "$FM_HEARTBEAT_NM_TIMEOUT" in ''|*[!0-9]*|0) FM_HEARTBEAT_NM_TIMEOUT=2 ;; esac
 case "$FM_HEARTBEAT_QUOTA_TIMEOUT" in ''|*[!0-9]*|0) FM_HEARTBEAT_QUOTA_TIMEOUT=10 ;; esac
-case "$FM_HEARTBEAT_DEADLINE" in ''|*[!0-9]*|0) FM_HEARTBEAT_DEADLINE=90 ;; esac
+case "$FM_HEARTBEAT_DEADLINE" in ''|*[!0-9]*|0) FM_HEARTBEAT_DEADLINE=240 ;; esac
 
 command -v jq >/dev/null 2>&1 || {
   echo 'fm-heartbeat: jq is required' >&2

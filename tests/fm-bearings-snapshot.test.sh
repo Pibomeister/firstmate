@@ -3358,7 +3358,43 @@ test_a_remote_home_without_any_ledger_is_explicitly_unreadable_without_remote_co
   pass "a missing remote ledger stays explicitly unreadable without remote summary computation"
 }
 
+test_hung_endpoint_probe_reports_unknown_without_stalling_snapshot() {
+  local home fakebin json started elapsed
+  home=$(make_home hung-endpoint)
+  fakebin=$(make_fakebin "$home")
+  cat > "$fakebin/orca" <<'SH'
+#!/usr/bin/env bash
+sleep 30
+exit 1
+SH
+  chmod +x "$fakebin/orca"
+  printf '## In flight\n- [ ] hang-task - Hung endpoint worker (repo: firstmate) (kind: ship)\n\n## Queued\n\n## Done\n' \
+    > "$home/data/backlog.md"
+  mkdir -p "$home/projects/hang-wt"
+  fm_write_meta "$home/state/hang-task.meta" \
+    "backend=orca" "terminal=term_hung" "worktree=$home/projects/hang-wt" \
+    "project=firstmate" "harness=claude" "kind=ship" "mode=no-mistakes"
+  printf 'working: synthetic fixture\n' > "$home/state/hang-task.status"
+  started=$(date +%s)
+  json=$(PATH="$fakebin:$PATH" FM_HOME="$home" \
+    FM_SNAPSHOT_NOW=2026-07-11T18:00:00Z FM_SNAPSHOT_NOW_EPOCH=1783792800 \
+    FM_SNAPSHOT_ENDPOINT_TIMEOUT=1 FM_SNAPSHOT_CREW_STATE_TIMEOUT=2 \
+    "$ROOT/bin/fm-fleet-snapshot.sh" --json) \
+    || fail "snapshot with a hung endpoint probe failed"
+  elapsed=$(( $(date +%s) - started ))
+  [ "$elapsed" -lt 20 ] \
+    || fail "hung endpoint probe stalled the snapshot for ${elapsed}s"
+  printf '%s' "$json" | jq -e '
+    .tasks[] | select(.id == "hang-task")
+    | .endpoint.target == "term_hung"
+      and .endpoint.exists == null
+      and .endpoint.status == "unknown"
+  ' >/dev/null || fail "hung endpoint probe did not report endpoint unknown: $json"
+  pass "hung endpoint probe reports unknown without stalling the snapshot"
+}
+
 fm_test_run \
+  test_hung_endpoint_probe_reports_unknown_without_stalling_snapshot \
   test_task_teardown_during_metadata_capture_does_not_abort_snapshot \
   test_current_state_uses_captured_status_observation \
   test_relaunched_task_does_not_inherit_reused_endpoint_state \
