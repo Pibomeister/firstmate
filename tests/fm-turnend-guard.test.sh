@@ -3040,6 +3040,10 @@ rc=0
 . "$FM_HOME/bin/fm-push-transition-lib.sh" && fm_secondmate_watch_start > "$FM_T_DIR/start.out" 2>&1 || rc=$?
 printf '%s\n' "$rc" > "$FM_T_DIR/start.rc"
 i=0
+while [ ! -e "$FM_T_DIR/start2" ] && [ "$i" -lt 2400 ]; do sleep 0.05; i=$((i + 1)); done
+rc=0
+[ ! -e "$FM_T_DIR/start2" ] || { fm_secondmate_watch_start > "$FM_T_DIR/start2.out" 2>&1 || rc=$?; printf '%s\n' "$rc" > "$FM_T_DIR/start2.rc"; }
+i=0
 while [ "$i" -lt 120 ]; do sleep 1; i=$((i + 1)); done
 SH
   # shellcheck disable=SC2016 # positional params expand in the child shell.
@@ -3156,6 +3160,28 @@ SH
   expect_binding 1 "a binding for a replaced lock owner validated" "${herdr_env[@]}"
   printf '%s\n' "$owner" > "$dir/state/.lock"
   expect_binding 0 "the restored Herdr binding did not validate" "${herdr_env[@]}"
+
+  # A failed binding proof behind a healthy leftover watcher must leave that
+  # watcher running: the start proves the new binding before it stops it.
+  sleep 300 & fake_watcher=$!
+  mkdir -p "$dir/state/.watch.lock"
+  printf '%s\n' "$fake_watcher" > "$dir/state/.watch.lock/pid"
+  printf '%s\n' "$dir" > "$dir/state/.watch.lock/fm-home"
+  printf '%s\n' "$dir/bin/fm-watch.sh" > "$dir/state/.watch.lock/watcher-path"
+  bash -c '. "$1"; fm_pid_identity "$2"' _ "$dir/bin/fm-wake-lib.sh" "$fake_watcher" > "$dir/state/.watch.lock/pid-identity" \
+    || fail "could not record the second leftover watcher's identity"
+  : > "$dir/state/.last-watcher-beat"
+  herdr_info w2:p2 "$shell" "$owner"
+  : > "$dir/start2"
+  i=0
+  while [ ! -s "$dir/start2.rc" ] && [ "$i" -lt 400 ]; do sleep 0.05; i=$((i + 1)); done
+  [ -s "$dir/start2.rc" ] || fail "the production start behind a failing proof never returned"
+  [ "$(cat "$dir/start2.rc")" != 0 ] || fail "the production start succeeded on a binding proof that should fail"
+  kill -0 "$fake_watcher" 2>/dev/null || fail "a failed binding proof stopped this home's leftover watcher"
+  kill "$fake_watcher" 2>/dev/null || true
+  wait "$fake_watcher" 2>/dev/null || true
+  herdr_info w1:p1 "$shell" "$owner"
+  binding "$owner" "$identity" lab:w1:p1 lab herdr
 
   # A session lock left naming a dead pid by a host restart: the start must
   # name the re-anchor remedy instead of a bare ownership refusal.

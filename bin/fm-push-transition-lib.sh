@@ -186,6 +186,11 @@ fm_secondmate_watch_start() {
     fi
     return 1
   fi
+  pid=$(cat "$STATE/.lock")
+  identity=$(fm_pid_identity "$pid") || { echo "secondmate watcher: session lock pid $pid has no live process identity; rerun bin/fm-session-start.sh so fm-lock.sh re-anchors the lock, then rerun bin/fm-watch.sh --secondmate" >&2; return 1; }
+  tmp=$(mktemp "$STATE/.secondmate-watch.XXXXXX") || return 1
+  printf '%s\n' "$pid" "$identity" "$FM_SM_TARGET" "$FM_SM_ROUTE" "$FM_SM_BACKEND" > "$tmp" && mv "$tmp" "$STATE/.secondmate-watch" || return 1
+  fm_secondmate_watch_binding_valid || return 1
   if fm_watcher_healthy "$STATE" "$FM_PUSH_TRANSITION_LIB_DIR/fm-watch.sh" "${FM_GUARD_GRACE:-300}" "$FM_HOME"; then
     # Status above failed, so this healthy watcher is not the secondmate
     # hold: it is a leftover from another ownership mode, such as a Grok-era
@@ -199,11 +204,6 @@ fm_secondmate_watch_start() {
       return 1
     fi
   fi
-  pid=$(cat "$STATE/.lock")
-  identity=$(fm_pid_identity "$pid") || { echo "secondmate watcher: session lock pid $pid has no live process identity; rerun bin/fm-session-start.sh so fm-lock.sh re-anchors the lock, then rerun bin/fm-watch.sh --secondmate" >&2; return 1; }
-  tmp=$(mktemp "$STATE/.secondmate-watch.XXXXXX") || return 1
-  printf '%s\n' "$pid" "$identity" "$FM_SM_TARGET" "$FM_SM_ROUTE" "$FM_SM_BACKEND" > "$tmp" && mv "$tmp" "$STATE/.secondmate-watch" || return 1
-  fm_secondmate_watch_binding_valid || return 1
   case $- in *m*) monitor=1 ;; esac
   set -m
   nohup "$FM_PUSH_TRANSITION_LIB_DIR/fm-watch.sh" --secondmate-hold >"$STATE/.secondmate-watch.log" 2>&1 </dev/null &
