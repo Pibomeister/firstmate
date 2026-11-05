@@ -2985,8 +2985,44 @@ PY
 # A Herdr pane only names the binding candidate. Real processes stand in for the
 # pane shell, its session-lock-owning child and an unrelated stranger; a fake
 # herdr reports process-info about them and a fake tty foreground serves tmux.
+# Only a leftover --grok-hold is takeover-eligible: a managed-hold or other
+# healthy owner keeps its protocol, so the route is not selected, the start
+# leaves that owner running, and the Codex Stop hook still allows the stop.
+test_secondmate_other_owner_keeps_protocol() {
+  local dir out rc owner identity
+  dir=$(make_secondmate_dir "$TMP_ROOT/sm-other-owner")
+  cp -R "$ROOT/bin/." "$dir/bin/"
+  mkdir -p "$dir/parent/state"
+  printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$dir/parent" > "$dir/.fm-secondmate-parent"
+  : > "$dir/state/task1.meta"
+  for mode in --managed-hold --grok-hold; do
+    bash -c 'sleep 60; :' fm-watch.sh "$mode" & owner=$!
+    identity=$(bash -c '. "$1"; fm_pid_identity "$2"' _ "$dir/bin/fm-wake-lib.sh" "$owner") || fail "could not read the $mode watcher's identity"
+    record_watcher_lock "$dir" "$owner" "$identity"
+    touch "$dir/state/.last-watcher-beat"
+    rc=0; FM_HOME="$dir" FM_TASK_INBOX="$dir/parent/state/sm-test-1.inbox" TMUX=fixture,1,0 TMUX_PANE=%27 \
+      "$dir/bin/fm-watch.sh" --secondmate-selected || rc=$?
+    if [ "$mode" = --managed-hold ]; then
+      expect_code 1 "$rc" "a healthy $mode owner selected the secondmate route"
+      rc=0; out=$(FM_HOME="$dir" FM_TASK_INBOX="$dir/parent/state/sm-test-1.inbox" TMUX=fixture,1,0 TMUX_PANE=%27 \
+        "$dir/bin/fm-watch.sh" --secondmate 2>&1) || rc=$?
+      [ "$rc" -ne 0 ] || fail "the secondmate start ran over a healthy $mode owner: $out"
+      kill -0 "$owner" 2>/dev/null || fail "the secondmate start stopped a healthy $mode owner"
+      export FM_TASK_INBOX="$dir/parent/state/sm-test-1.inbox" TMUX=fixture,1,0 TMUX_PANE=%27
+      run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
+      unset FM_TASK_INBOX TMUX TMUX_PANE
+      expect_code 0 "$STATUS" "the Stop hook blocked a secondmate home a healthy $mode owner supervises: $OUT"
+    else
+      expect_code 0 "$rc" "a leftover $mode watcher in a Codex home was not selected for takeover"
+    fi
+    kill "$owner" 2>/dev/null || true
+    wait "$owner" 2>/dev/null || true
+  done
+  pass "secondmate takeover is limited to a leftover --grok-hold; a managed-hold owner keeps its protocol and the stop"
+}
+
 test_secondmate_event_herdr_binding() {
-  local dir shell owner stranger identity real_ps out rc i watcher start elapsed
+  local dir shell owner stranger identity real_ps out rc i watcher start elapsed fake_watcher other_watcher dead_pid status
   local -a herdr_env=(HERDR_SESSION=lab HERDR_PANE_ID=w1:p1) tmux_env=("TMUX=/tmp/fm-fake-tmux-socket,1,0" TMUX_PANE=%27)
   dir=$(make_secondmate_dir "$TMP_ROOT/sm-event-herdr")
   cp -R "$ROOT/bin/." "$dir/bin/"
@@ -3040,6 +3076,10 @@ rc=0
 . "$FM_HOME/bin/fm-push-transition-lib.sh" && fm_secondmate_watch_start > "$FM_T_DIR/start.out" 2>&1 || rc=$?
 printf '%s\n' "$rc" > "$FM_T_DIR/start.rc"
 i=0
+while [ ! -e "$FM_T_DIR/start2" ] && [ "$i" -lt 2400 ]; do sleep 0.05; i=$((i + 1)); done
+rc=0
+[ ! -e "$FM_T_DIR/start2" ] || { fm_secondmate_watch_start > "$FM_T_DIR/start2.out" 2>&1 || rc=$?; printf '%s\n' "$rc" > "$FM_T_DIR/start2.rc"; }
+i=0
 while [ "$i" -lt 120 ]; do sleep 1; i=$((i + 1)); done
 SH
   # shellcheck disable=SC2016 # positional params expand in the child shell.
@@ -3088,15 +3128,36 @@ SH
   expect_code 1 "$rc" "a Herdr session without HERDR_PANE_ID was selected"
   rc=0; env -u TMUX -u TMUX_PANE FM_HOME="$dir" FM_TASK_INBOX="$dir/parent/state/sm-test-1.inbox" HERDR_PANE_ID=w1:p1 \
     "$dir/bin/fm-watch.sh" --secondmate-selected || rc=$?
-  expect_code 1 "$rc" "a Herdr pane without HERDR_SESSION was selected"
+  expect_code 0 "$rc" "a Herdr pane without HERDR_SESSION (the default session) was not selected"
 
   identity=$(sm_call fm_pid_identity "$owner") || fail "could not read the lock owner's identity"
   herdr_info w1:p1 "$shell" "$owner"
   expect_binding 1 "a missing binding file validated" "${herdr_env[@]}"
+  # A healthy leftover --grok-hold watcher (left by a Grok-era launch or a
+  # detached Stop-hook hold) holds this home's lock, and another home has
+  # a watcher of its own: the production start must stop only this home's.
+  bash -c 'sleep 300; :' fm-watch.sh --grok-hold & fake_watcher=$!
+  mkdir -p "$dir/state/.watch.lock" "$dir/other/state/.watch.lock"
+  printf '%s\n' "$fake_watcher" > "$dir/state/.watch.lock/pid"
+  printf '%s\n' "$dir" > "$dir/state/.watch.lock/fm-home"
+  printf '%s\n' "$dir/bin/fm-watch.sh" > "$dir/state/.watch.lock/watcher-path"
+  bash -c '. "$1"; fm_pid_identity "$2"' _ "$dir/bin/fm-wake-lib.sh" "$fake_watcher" > "$dir/state/.watch.lock/pid-identity" \
+    || fail "could not record the leftover watcher's identity"
+  : > "$dir/state/.last-watcher-beat"
+  sleep 300 & other_watcher=$!
+  printf '%s\n' "$other_watcher" > "$dir/other/state/.watch.lock/pid"
+  rc=0; env -u TMUX -u TMUX_PANE FM_HOME="$dir" FM_TASK_INBOX="$dir/parent/state/sm-test-1.inbox" "${herdr_env[@]}" \
+    "$dir/bin/fm-watch.sh" --secondmate-selected || rc=$?
+  expect_code 0 "$rc" "a leftover watcher from another ownership mode deselected this home"
   : > "$dir/start"
   i=0
   while [ ! -s "$dir/start.rc" ] && [ "$i" -lt 400 ]; do sleep 0.05; i=$((i + 1)); done
   [ -s "$dir/start.rc" ] || fail "the production watcher start never returned"
+  [ "$(cat "$dir/start.rc")" = 0 ] || fail "the production start failed behind the leftover watcher: $(cat "$dir/start.out" 2>/dev/null)"
+  wait "$fake_watcher" 2>/dev/null || true
+  kill -0 "$fake_watcher" 2>/dev/null && fail "the production start left this home's leftover watcher running"
+  kill -0 "$other_watcher" 2>/dev/null || fail "the production start stopped another home's watcher"
+  kill "$other_watcher" 2>/dev/null || true
   out=$(cat "$dir/state/.secondmate-watch" 2>/dev/null || true)
   expect_binding 0 "the binding the production start wrote did not validate" "${herdr_env[@]}"
   watcher=$(cat "$dir/state/.watch.lock/pid" 2>/dev/null || true)
@@ -3115,6 +3176,10 @@ SH
   [ "$elapsed" -le 9 ] || fail "a hung Herdr process-info read held the binding proof for ${elapsed}s"
   binding "$owner" "$identity" lab:w1:p1 lab herdr
   expect_binding 0 "a proven Herdr binding did not validate" "${herdr_env[@]}"
+  binding "$owner" "$identity" default:w1:p1 default herdr
+  expect_binding 0 "a default-session Herdr binding did not validate without HERDR_SESSION" HERDR_PANE_ID=w1:p1
+  expect_binding 1 "a default-session binding validated for another pane" HERDR_PANE_ID=w2:p2
+  binding "$owner" "$identity" lab:w1:p1 lab herdr
   expect_binding 1 "a Herdr binding validated without HERDR_PANE_ID" HERDR_SESSION=lab
   herdr_info w2:p2 "$shell" "$owner"
   expect_binding 1 "a binding recorded for another pane validated" HERDR_SESSION=lab HERDR_PANE_ID=w2:p2
@@ -3132,6 +3197,43 @@ SH
   printf '%s\n' "$owner" > "$dir/state/.lock"
   expect_binding 0 "the restored Herdr binding did not validate" "${herdr_env[@]}"
 
+  # A failed binding proof behind a healthy leftover watcher must leave that
+  # watcher running: the start proves the new binding before it stops it.
+  bash -c 'sleep 300; :' fm-watch.sh --grok-hold & fake_watcher=$!
+  mkdir -p "$dir/state/.watch.lock"
+  printf '%s\n' "$fake_watcher" > "$dir/state/.watch.lock/pid"
+  printf '%s\n' "$dir" > "$dir/state/.watch.lock/fm-home"
+  printf '%s\n' "$dir/bin/fm-watch.sh" > "$dir/state/.watch.lock/watcher-path"
+  bash -c '. "$1"; fm_pid_identity "$2"' _ "$dir/bin/fm-wake-lib.sh" "$fake_watcher" > "$dir/state/.watch.lock/pid-identity" \
+    || fail "could not record the second leftover watcher's identity"
+  : > "$dir/state/.last-watcher-beat"
+  herdr_info w2:p2 "$shell" "$owner"
+  : > "$dir/start2"
+  i=0
+  while [ ! -s "$dir/start2.rc" ] && [ "$i" -lt 400 ]; do sleep 0.05; i=$((i + 1)); done
+  [ -s "$dir/start2.rc" ] || fail "the production start behind a failing proof never returned"
+  [ "$(cat "$dir/start2.rc")" != 0 ] || fail "the production start succeeded on a binding proof that should fail"
+  kill -0 "$fake_watcher" 2>/dev/null || fail "a failed binding proof stopped this home's leftover watcher"
+  kill "$fake_watcher" 2>/dev/null || true
+  wait "$fake_watcher" 2>/dev/null || true
+  herdr_info w1:p1 "$shell" "$owner"
+  binding "$owner" "$identity" lab:w1:p1 lab herdr
+
+  # A session lock left naming a dead pid by a host restart: the start must
+  # name the re-anchor remedy instead of a bare ownership refusal.
+  sleep 0.1 & dead_pid=$!
+  wait "$dead_pid" 2>/dev/null || true
+  printf '%s\n' "$dead_pid" > "$dir/state/.lock"
+  status=0
+  # shellcheck disable=SC2016 # $FM_HOME expands in the child shell.
+  out=$(env -u TMUX -u TMUX_PANE FM_HOME="$dir" STATE="$dir/state" CONFIG="$dir/config" \
+    FM_TASK_INBOX="$dir/parent/state/sm-test-1.inbox" PATH="$dir/fakebin:$PATH" FM_T_REAL_PS="$real_ps" \
+    FM_T_HERDR_INFO="$dir/process-info.json" FM_T_HERDR_LOG="$dir/herdr.log" FM_T_HERDR_COMPOSER="$dir/composer" \
+    "${herdr_env[@]}" "$CODEX_BIN" -c '. "$FM_HOME/bin/fm-push-transition-lib.sh" && fm_secondmate_watch_start' 2>&1) || status=$?
+  expect_code 1 "$status" "a start behind a dead session lock succeeded"
+  assert_contains "$out" 'session lock names dead pid' "a dead session lock did not name its remedy"
+  printf '%s\n' "$owner" > "$dir/state/.lock"
+
   out=$(sm_call "${herdr_env[@]}" fm_secondmate_watch_notify 2>&1) || fail "Herdr notification failed: $out"
   [ -n "$(ls "$dir/parent/state/sm-test-1.inbox/"*.msg 2>/dev/null)" ] || fail "Herdr notification wrote no parent inbox record"
   grep -F 'pane send-text w1:p1 ' "$dir/herdr.log" | grep -Fq -- '--session lab' \
@@ -3142,7 +3244,7 @@ SH
   expect_binding 1 "a tmux binding validated inside a Herdr pane" "${herdr_env[@]}"
   kill "$shell" "$owner" "$stranger" 2>/dev/null || true
   wait "$shell" "$stranger" 2>/dev/null || true
-  pass "secondmate Herdr binding is proven from the lock owner and rings its recorded target; legacy tmux bindings still validate"
+  pass "secondmate Herdr binding is proven from the lock owner and rings its recorded target; the default session needs no HERDR_SESSION, a leftover watcher is taken over for this home only, and legacy tmux bindings still validate"
 }
 
 if [ "${FM_TEST_ONLY:-}" = secondmate-endturn ]; then
@@ -3150,6 +3252,7 @@ if [ "${FM_TEST_ONLY:-}" = secondmate-endturn ]; then
   test_secondmate_event_status_requires_notification_owner
   test_secondmate_event_watcher_survives_and_notifies
   test_secondmate_event_scope_and_clock
+  test_secondmate_other_owner_keeps_protocol
   test_secondmate_event_herdr_binding
   exit 0
 fi
@@ -3159,6 +3262,7 @@ test_secondmate_block_bound_ends_a_checkpoint_loop
 test_secondmate_event_status_requires_notification_owner
 test_secondmate_event_watcher_survives_and_notifies
 test_secondmate_event_scope_and_clock
+test_secondmate_other_owner_keeps_protocol
 test_secondmate_event_herdr_binding
 test_predicate_healthy_no_inflight
 test_predicate_unhealthy_no_beacon
