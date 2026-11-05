@@ -1161,6 +1161,30 @@ test_relaunch_off_claude_refuses_an_unreadable_account_pin() {
   pass "fm-control relaunch: an unreadable claude-account pin refuses the move off Claude"
 }
 
+test_relaunch_off_claude_refuses_when_tooling_check_exits_2() {
+  local dir out rc
+  dir=$(new_case tooling-exit2 rl87)
+  add_ship_task "$dir" rl87 claude
+  make_claude_auth_stub "$dir"
+  cat > "$dir/fakebin/fm-quota-reroute.sh" <<'SH'
+#!/usr/bin/env bash
+echo "error: claude-tooling needs --config-dir or FM_HOME" >&2
+exit 2
+SH
+  chmod +x "$dir/fakebin/fm-quota-reroute.sh"
+  printf 'codex' > "$dir/fake/becomes"
+  out=$(FM_QUOTA_REROUTE="$dir/fakebin/fm-quota-reroute.sh" \
+    run_control "$dir" rl87 relaunch --harness codex --note "check crashed"); rc=$?
+  expect_code 1 "$rc" "a claude-tooling exit 2 must refuse the move off Claude"$'\n'"$out"
+  assert_contains "$out" "Claude-specific tooling present" "the refusal should name the tooling gate"
+  assert_contains "$out" "claude-tooling needs --config-dir or FM_HOME" "the refusal should name the check's reason"
+  [ "$(cat "$dir/fake/command")" = claude ] \
+    || fail "a tooling-check crash must leave the old agent running"
+  [ "$(meta_field "$dir" rl87 harness)" = claude ] \
+    || fail "a tooling-check crash must leave the recorded harness"
+  pass "fm-control relaunch: a claude-tooling exit 2 refuses the move off Claude"
+}
+
 test_harness_switch_resolves_a_prefixed_recorded_harness() {
   local dir out rc auth
   dir=$(new_case prefixcontrol rl32)
@@ -3777,6 +3801,7 @@ test_harness_switch_does_not_carry_the_old_profile_axes
 test_harness_switch_falls_back_when_the_new_harness_refuses_carried_effort
 test_relaunch_off_claude_refuses_when_tooling_is_present
 test_relaunch_off_claude_refuses_an_unreadable_account_pin
+test_relaunch_off_claude_refuses_when_tooling_check_exits_2
 test_harness_switch_resolves_a_prefixed_recorded_harness
 test_prefixed_recorded_harness_requires_explicit_replacement
 test_same_harness_relaunch_keeps_the_profile_axes

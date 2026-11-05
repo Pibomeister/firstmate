@@ -1172,20 +1172,20 @@ resolve_relaunch_profile() {
   fm_control_harness_supports_kind "$TARGET_HARNESS" "$KIND" \
     || die "'$TARGET_HARNESS' is not verified to run a $KIND task, so relaunching $ID onto it would stop the running agent for a launch that must be refused; choose an adapter verified for this kind"
   # Moving off Claude is refused when any Claude-specific tooling signal is
-  # present. Same check as bin/fm-quota-reroute.sh; no override flag.
+  # present, and when the check cannot complete (any exit other than 1).
+  # Same check as bin/fm-quota-reroute.sh; no override flag.
   if [ "$PRIOR_HARNESS" = claude ] && [ "$TARGET_HARNESS" != claude ]; then
-    local sig tooling_mate
+    local sig rc=0 reason
+    local -a tooling
     if [ -z "$WT" ]; then
       die "Claude-specific tooling present (unresolvable worktree); refusing to move $ID off Claude"
     fi
-    tooling_mate=
-    [ "$KIND" != secondmate ] || tooling_mate=$ID
-    if [ -n "$tooling_mate" ]; then
-      sig=$("$SCRIPT_DIR/fm-quota-reroute.sh" claude-tooling --mate "$tooling_mate" --worktree "$WT") && \
-        die "Claude-specific tooling present ($sig); refusing to move $ID off Claude"
-    else
-      sig=$("$SCRIPT_DIR/fm-quota-reroute.sh" claude-tooling --worktree "$WT") && \
-        die "Claude-specific tooling present ($sig); refusing to move $ID off Claude"
+    tooling=(claude-tooling --worktree "$WT")
+    [ "$KIND" != secondmate ] || tooling+=(--mate "$ID")
+    sig=$("${FM_QUOTA_REROUTE:-$SCRIPT_DIR/fm-quota-reroute.sh}" "${tooling[@]}" 2>&1) || rc=$?
+    if [ "$rc" -ne 1 ]; then
+      reason=${sig#error: }
+      die "Claude-specific tooling present (${reason:-exit $rc}); refusing to move $ID off Claude"
     fi
   fi
   # A model chosen for the previous harness does not transfer to a different
