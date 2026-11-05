@@ -2030,62 +2030,6 @@ assert len(doc["scripts"])==3
   pass "aggregate-json merges lane timing artifacts"
 }
 
-test_flake_baseline_never_waives_a_failure() {
-  local tmp repo out rc
-  tmp=$(fm_test_tmproot fm-test-flake-baseline)
-  repo="$tmp/repo"
-  mkdir -p "$repo/bin" "$repo/tests"
-  cp "$RUNNER" "$repo/bin/"
-  cp "$ROOT/bin/fm-test-flake-baseline.py" "$repo/bin/"
-  cp "$ROOT/tests/git-config-helpers.sh" "$repo/tests/"
-  printf '#!/bin/bash\necho "not ok - recorded assertion"\nexit 1\n' > "$repo/tests/probe.test.sh"
-  python3 - "$repo" <<'PY'
-import datetime, hashlib, json, pathlib, sys
-root = pathlib.Path(sys.argv[1])
-entry = dict(id="probe", test="tests/probe.test.sh", lane="explicit",
-             signature=r"not ok - recorded assertion", owner="test maintainers",
-             expires=(datetime.date.today() + datetime.timedelta(days=1)).isoformat(),
-             first_seen="https://example.invalid/failed", unchanged_pass="https://example.invalid/passed",
-             sources={"tests/probe.test.sh": hashlib.sha256((root / "tests/probe.test.sh").read_bytes()).hexdigest()})
-(root / "tests/ci-flake-baseline.json").write_text(json.dumps([entry]))
-PY
-  out=$(bash "$repo/bin/fm-test-run.sh" tests/probe.test.sh 2>&1) && rc=0 || rc=$?
-  expect_code 1 "$rc" "a recorded flake must remain a failed run"
-  assert_contains "$out" "classification=recorded id=probe" "unchanged recorded assertion was not identified"
-  assert_contains "$out" "failed=1" "baseline hid the failure count"
-  # Same assertion after a source change is new evidence, not a known flake.
-  printf '\n# source changed\n' >> "$repo/tests/probe.test.sh"
-  out=$(bash "$repo/bin/fm-test-run.sh" tests/probe.test.sh 2>&1) && rc=0 || rc=$?
-  expect_code 1 "$rc" "changed-source failure must stay red"
-  assert_contains "$out" "classification=new" "changed source inherited the baseline"
-  # Update the source digest while adding a second failure: matching one
-  # recorded assertion must not hide another assertion in the same script.
-  printf '#!/bin/bash\necho "not ok - recorded assertion"\necho "not ok - new assertion"\nexit 1\n' > "$repo/tests/probe.test.sh"
-  python3 - "$repo" <<'PY'
-import hashlib, json, pathlib, sys
-root = pathlib.Path(sys.argv[1]); path = root / "tests/ci-flake-baseline.json"
-entries = json.loads(path.read_text())
-entries[0]["sources"]["tests/probe.test.sh"] = hashlib.sha256((root / "tests/probe.test.sh").read_bytes()).hexdigest()
-path.write_text(json.dumps(entries))
-PY
-  out=$(bash "$repo/bin/fm-test-run.sh" tests/probe.test.sh 2>&1) && rc=0 || rc=$?
-  expect_code 1 "$rc" "additional assertion must stay red"
-  assert_contains "$out" "classification=new" "new assertion inherited a recorded failure"
-  printf '#!/bin/bash\necho "not ok - recorded assertion"\nexit 1\n' > "$repo/tests/probe.test.sh"
-  python3 - "$repo" <<'PY'
-import hashlib, json, pathlib, sys
-root = pathlib.Path(sys.argv[1]); path = root / "tests/ci-flake-baseline.json"
-entries = json.loads(path.read_text()); entries[0]["expires"] = "2000-01-01"
-entries[0]["sources"]["tests/probe.test.sh"] = hashlib.sha256((root / "tests/probe.test.sh").read_bytes()).hexdigest()
-path.write_text(json.dumps(entries))
-PY
-  out=$(bash "$repo/bin/fm-test-run.sh" tests/probe.test.sh 2>&1) && rc=0 || rc=$?
-  expect_code 1 "$rc" "expired recorded assertion must stay red"
-  assert_contains "$out" "classification=new" "expired entry was still classified as recorded"
-  pass "baseline distinguishes exact unchanged failures and never waives a red result"
-}
-
-test_flake_baseline_never_waives_a_failure
 test_list_all_exact_suite_coverage
 test_family_selection
 test_single_script_selection

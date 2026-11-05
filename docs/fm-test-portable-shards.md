@@ -64,9 +64,9 @@ More jobs can increase queue delay at the account's shared runner limit.
 ## Recorded CI failures
 
 [`tests/ci-flake-baseline.json`](../tests/ci-flake-baseline.json) is the tracked failure baseline for review rule rp-017.
-[`bin/fm-test-flake-baseline.py`](../bin/fm-test-flake-baseline.py) owns the format and matching rules; the suite runner consults it when a script fails.
-The diagnostic `FM_TEST_FAILURE` marker distinguishes a recorded signature from new evidence while preserving the failed count, nonzero exit, and required check verdict.
-The runner regression covers unchanged signatures, changed sources, additional failures in the same script, and expiry.
+It is a reviewer record, not a runner input: the suite runner does not read it, and a recorded failure stays a failed run and a red check.
+Each entry names the test script, its lane, the failing assertion line, the failed and unchanged-base passing run links, an owner, an expiry date, and the SHA-256 digests of the sources it ran against.
+An entry stays valid only while those sources are unchanged and before its expiry; renew or remove it after investigation.
 An unchanged-source failure followed by a pass establishes intermittency, not a proven root cause or a waiver.
 The focus sampler and host TERM wait still need investigation by the named owner before expiry.
 The historical stock macOS cancellation was a runner-acquisition failure, with no test log; it is not a flaky-test baseline entry.

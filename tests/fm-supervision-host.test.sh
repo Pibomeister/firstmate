@@ -377,13 +377,6 @@ test_attended_close_that_turns_main_only_before_its_turn_passes_to_main() {
   pass "host: an attended close whose task turns main-only before its turn still reaches main unchanged"
 }
 
-
-# Grok and OpenCode have no mirror writer, because they cannot record a
-# session's first captain prompt, and neither Codex nor omp has a proven one,
-# so none of them has a verified dialog mirror: every attended close reaches
-# main as without the host, while the away posture, which needs no mirror,
-# still runs on the engine.
-
 test_away_wake_is_handled_on_the_engine_and_never_reaches_main() {
   local home lock_pid session first second pid watcher
   home=$(make_home away-handled away)

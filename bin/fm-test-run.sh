@@ -94,10 +94,6 @@
 #   FM_TEST_SUMMARY_FAMILY family=<name> count=<n> duration_ms=<n> failed=<n>
 #   FM_TEST_SLOWEST rank=<k> script=<path> duration_ms=<n>
 #   FM_TEST_BUDGET max_wall_ms=<n> duration_ms=<n>   (only with --max-wall-ms)
-#   FM_TEST_FAILURE script=<path> classification=<new|recorded> ... verdict=failed
-# Failed scripts are annotated against tests/ci-flake-baseline.json when Python
-# and the classifier are available; the baseline never changes exit or counts.
-# bin/fm-test-flake-baseline.py owns its format and exact matching rules.
 #
 # Placement refusal:
 #   A task worker is assigned an isolated worktree, and that placement is
@@ -2703,12 +2699,6 @@ record_script_result() {
     FAILED=$((FAILED + 1))
     fail_delta=1
     AGG_RC=1
-    if [ -f "$ROOT/bin/fm-test-flake-baseline.py" ] && command -v python3 >/dev/null 2>&1; then
-      python3 "$ROOT/bin/fm-test-flake-baseline.py" "$ROOT" "$script" "${LANE:-${FAMILY:-explicit}}" "$out" \
-        || log "baseline classification unavailable; $script remains failed"
-    else
-      printf 'FM_TEST_FAILURE script=%s classification=unavailable verdict=failed\n' "$script"
-    fi
   fi
 
   printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \

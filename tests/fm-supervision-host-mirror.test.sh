@@ -16,6 +16,12 @@ set -u
 # shellcheck source=tests/supervision-host-helpers.sh
 . "$(dirname "${BASH_SOURCE[0]}")/supervision-host-helpers.sh"
 
+# Grok and OpenCode have no mirror writer, because they cannot record a
+# session's first captain prompt, and neither Codex nor omp has a proven one,
+# so none of them has a verified dialog mirror: every attended close reaches
+# main as without the host, while the away posture, which needs no mirror,
+# still runs on the engine.
+
 test_primary_without_a_verified_mirror_runs_away_only() {
   local home harness
   for harness in grok opencode omp codex; do
