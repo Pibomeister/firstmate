@@ -1171,9 +1171,11 @@ restart-command=$cmd"
   pass "restart-command: muse with --yolo, --disable-approval, or --approval-mode never is launched unchanged"
 }
 
-test_watchdog_refuses_bare_muse_restart() {
-  local muse cmds cmd saved sess pid
+test_watchdog_adds_yolo_to_bare_muse_restart() {
+  local muse cmds cmd saved sess
   write_restart_bin muse
+  write_restart_bin muse-bin
+  write_restart_bin muse-bin-1.4.13
   cp "$TMP_ROOT/bin/muse" "$FAKEBIN/muse"
   muse=$TMP_ROOT/bin/muse
   cmds=(
@@ -1182,6 +1184,9 @@ test_watchdog_refuses_bare_muse_restart() {
     "PATH=$FAKEBIN:\$PATH muse"
     "$muse --approval-mode on-request"
     "PATH=$FAKEBIN:\$PATH env muse --approval-mode on-request"
+    "$TMP_ROOT/bin/muse-bin"
+    "$TMP_ROOT/bin/muse-bin-1.4.13"
+    "\"$muse\""
   )
   for cmd in "${cmds[@]}"; do
     make_home $'Captain session\n> ' "restart=on
@@ -1189,30 +1194,27 @@ max-nudges=0
 restart-command=$cmd"
     saved=$(cat "$H/config/watchdog")
     sess=wd$CASE_N
-    pid=$LOCKPID
     run_frozen_restart
-    kill -0 "$pid" 2>/dev/null || fail "a bare muse restart stopped the session: $cmd"
-    assert_equals "$saved" "$(cat "$H/config/watchdog")" "a refused restart does not rewrite the command: $cmd"
-    assert_equals 1 "$(ledger_rows frozen restart refused)" "bare muse is refused: $cmd: $(ledger | cut -f5-8)"
-    assert_equals 0 "$(ledger_rows frozen restart pending)" "bare muse starts nothing: $cmd"
-    assert_grep "restart-command launches muse without --yolo, --disable-approval, or --approval-mode never" "$H/state/watchdog/actions.tsv" "the ledger names the missing flag: $cmd"
-    assert_grep "restart-command launches muse without --yolo, --disable-approval, or --approval-mode never" "$H/data/watchdog/status.md" "the status names the missing flag: $cmd"
-    if ls "$H/data/watchdog/handoffs/"*.md >/dev/null 2>&1; then fail "a refused restart wrote a handoff: $cmd"; fi
-    assert_absent "$H/launched-argv.txt" "a refused restart launched muse: $cmd"
-    assert_equals 1 "$(window_count "$sess")" "a refused restart opens no window: $cmd"
+    assert_equals "$saved" "$(cat "$H/config/watchdog")" "the configured command is not rewritten on disk: $cmd"
+    assert_equals 1 "$(ledger_rows frozen restart pending)" "bare muse still restarts: $cmd: $(ledger | cut -f5-8)"
+    assert_equals 0 "$(ledger_rows frozen restart refused)" "bare muse is not refused: $cmd"
+    assert_equals 1 "$(grep -c -- '--yolo added by default' "$H/state/watchdog/actions.tsv")" "one ledger line says --yolo was added: $cmd"
+    wait_pickup || fail "bare muse never proved pickup: $cmd: $(ledger | cut -f5-8)"
+    LOCK_PIDS="$LOCK_PIDS $(cat "$H/state/.lock")"
+    ls "$H/data/watchdog/handoffs/"*.md >/dev/null 2>&1 || fail "bare muse wrote no handoff: $cmd"
+    assert_equals 2 "$(window_count "$sess")" "bare muse opens a window: $cmd"
+    assert_equals "--yolo" "$(sed -n 2p "$H/launched-argv.txt")" "--yolo is the first argument after the muse word: $cmd"
+    case "$cmd" in
+      *on-request) assert_equals "--approval-mode" "$(sed -n 3p "$H/launched-argv.txt")" "the configured arguments follow --yolo: $cmd" ;;
+    esac
   done
 
   make_home $'Captain session\n> \n  7% until auto-compact' "restart=on
 restart-command=$muse"
-  pid=$LOCKPID
   transcript 3000 "Working." "Testing." "Green."
   FM_WD_TEST_COMPOSER=empty run_wd 0 once >/dev/null 2>&1
-  kill -0 "$pid" 2>/dev/null || fail "low context on bare muse stopped the session"
-  assert_equals 0 "$(ledger_rows handoff-request nudge pending)" "bare muse asks for no handoff: $(ledger | cut -f5-8)"
-  assert_equals 0 "$(ledger_rows restart-requested restart pending)" "bare muse does not restart from low context"
-  assert_grep "restart-command launches muse without --yolo, --disable-approval, or --approval-mode never" "$H/data/watchdog/status.md" "low context names the missing flag"
-  assert_absent "$H/launched-argv.txt" "low context launched bare muse"
-  pass "restart-command: bare muse is refused and the session keeps running"
+  assert_equals 1 "$(ledger_rows handoff-request nudge pending)" "low context on bare muse still asks for a full handoff: $(ledger | cut -f5-8)"
+  pass "restart-command: bare muse is launched with --yolo added by default"
 }
 
 test_watchdog_leaves_non_muse_restart_unchanged() {
@@ -2241,7 +2243,7 @@ fm_test_run \
   test_no_action_while_restart_awaits_pickup \
   test_dead_captain_restarts_despite_its_anchor \
   test_watchdog_allows_muse_restart_with_approval_flag \
-  test_watchdog_refuses_bare_muse_restart \
+  test_watchdog_adds_yolo_to_bare_muse_restart \
   test_watchdog_leaves_non_muse_restart_unchanged \
   test_dead_holder_is_not_hidden_by_earlier_symptoms \
   test_low_context_waits_for_full_handoff_then_restarts \
