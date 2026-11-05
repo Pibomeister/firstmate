@@ -1,0 +1,18 @@
+-- send during wake outage
+queued 1793869940-17c133ca
+  kind=order state=pending wake=FAILED nudge=none
+fm-order: order 1793869940-17c133ca is saved but its wake could not be appended
+[exit 3]
+wake-queue lines naming the order: 0
+-- retry 1
+replay 1793869940-17c133ca
+  kind=order state=pending wake=ok nudge=none
+[exit 0]
+wake-queue lines naming the order: 1
+-- retry 2
+replay 1793869940-17c133ca
+  kind=order state=pending (the same order is already open; nothing new was created)
+[exit 0]
+wake-queue lines naming the order: 1
+-- queue contents:
+1793869943	2	check	order:1793869940-17c133ca	check: captain order 1793869940-17c133ca from nightly - restart-window order
