@@ -114,6 +114,7 @@ SH
   LOCK_PIDS="$LOCK_PIDS $LOCKPID"
   printf '%s\n' "$LOCKPID" > "$H/state/.lock"
   printf '%s\n' "$SID" > "$H/state/.lock-session"
+  fm_touch_epoch "$((BASE - 1))" "$H/state/.lock" "$H/state/.lock-session"
   jq -n --arg t "$T" --arg s "$SID" --argjson e "$BASE" \
     '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:"tmux",target:$t,present:true},session:{trusted_id:$s}}}' \
     > "$H/state/heartbeat.json"
@@ -1084,6 +1085,20 @@ kill_holder_with_anchor() {
 
 captain_field() { sed -n "s/^$1=//p" "$H/state/watchdog/captain" 2>/dev/null | tail -n 1; }
 
+# fresh_heartbeat <pane>: the lock's session reports <pane>, generated now.
+fresh_heartbeat() {
+  jq -n --arg t "$1" --arg s "$SID" --argjson e "$(date +%s)" \
+    '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:"tmux",target:$t,present:true},session:{trusted_id:$s}}}' \
+    > "$H/state/heartbeat.json"
+}
+
+# relock_same_session: a new process takes the lock under the same session id.
+relock_same_session() {
+  ( sleep 100000 > /dev/null 2>&1 & printf '%s\n' "$!" > "$H/lockpid" )
+  LOCK_PIDS="$LOCK_PIDS $(cat "$H/lockpid")"
+  cat "$H/lockpid" > "$H/state/.lock"
+}
+
 test_captain_record_follows_the_lock_owner() {
   local moved new_pid new_pane retired_pane bound
   make_home $'Captain session\n✻ Working… (esc to interrupt)' "restart=off
@@ -1152,6 +1167,37 @@ SH
   assert_equals "$(cat "$H/lockpid") 00000000-0000-4000-8000-0000000000bb" "$(captain_field lock_pid) $(captain_field session)" "the record follows the new lock owner"
   assert_not_equals "$moved" "$(captain_field moved_at)" "the handoff is a move"
   assert_not_equals "$retired_pane" "$(captain_field target)" "the retired session's pane is never named as the captain's"
+
+  # A resume keeps the session id in a new pane while the heartbeat still names
+  # the old one: the old pane is never named, and the fresh heartbeat is a move.
+  make_home $'Captain session\n> '
+  transcript 3000 "Working." "Testing." "Green."
+  run_wd 0 once >/dev/null 2>&1
+  retired_pane=$T
+  moved=$(captain_field moved_at)
+  new_pane=$("$REAL_TMUX" -f /dev/null -L "$SOCKET" new-window -d -t "wd$CASE_N" -P -F '#{pane_id}' "$H/agent.sh")
+  [ -n "$new_pane" ] && [ "$new_pane" != "$retired_pane" ] || fail "no new pane for the resume: '$new_pane'"
+  relock_same_session
+  run_wd 120 once >/dev/null 2>&1
+  assert_equals "$(cat "$H/lockpid") live" "$(captain_field lock_pid) $(captain_field alive)" "the resumed session reads live"
+  assert_equals "" "$(captain_field backend)$(captain_field target)" "a heartbeat older than the lock proves no terminal"
+  assert_equals "$moved" "$(captain_field moved_at)" "an unproven terminal is not a move"
+  fresh_heartbeat "$new_pane"
+  run_wd 240 once >/dev/null 2>&1
+  assert_equals "tmux $new_pane" "$(captain_field backend) $(captain_field target)" "a fresh heartbeat proves the new pane"
+  assert_not_equals "$moved" "$(captain_field moved_at)" "the resumed session's new pane is a move"
+
+  # A lock rewrite under the same session proven back on the same pane is no move.
+  make_home $'Captain session\n> '
+  transcript 3000 "Working." "Testing." "Green."
+  run_wd 0 once >/dev/null 2>&1
+  moved=$(captain_field moved_at)
+  relock_same_session
+  run_wd 120 once >/dev/null 2>&1
+  assert_equals "" "$(captain_field target)" "the old heartbeat proves no terminal after the lock rewrite"
+  fresh_heartbeat "$T"
+  run_wd 240 once >/dev/null 2>&1
+  assert_equals "tmux $T $moved" "$(captain_field backend) $(captain_field target) $(captain_field moved_at)" "a re-anchor on the same pane keeps moved_at"
 
   # A pid now running another process is not the recorded owner.
   make_home $'Captain session\n> '

@@ -150,6 +150,7 @@ It is the durable answer to which process and which terminal are that home's liv
 | `alive` | `live`, `dead`, `unconfirmed`, or `none` |
 | `backend`, `target` | The captain's terminal, empty while it is not proven |
 | `moved_at` | Epoch of the last move to a new owner or a new terminal |
+| `lock_at` | Newest mtime of `state/.lock` and `state/.lock-session` when this record was written |
 | `checked_at` | Epoch of this write |
 | `source` | `watchdog` for a pass, `pickup` for a restarted session |
 
@@ -157,10 +158,16 @@ It is the durable answer to which process and which terminal are that home's liv
 `dead` means the lock pid has exited and nothing proves the session live, whatever its old pane still shows.
 `unconfirmed` means the pid runs but does not match its recorded instance and nothing else proves it, so the pid may belong to another process; a restart refuses and sends it no signal.
 `none` means no lock holder is recorded.
-The terminal is the heartbeat's only when the heartbeat names the session that holds the lock, so a retired session's pane is never named; a second mate otherwise uses its parent's record of its endpoint.
-An unchanged owner keeps its last proven terminal while no terminal is recorded.
-A new owner stamps `moved_at` with the newest lock file time, and a changed terminal stamps it with the pass time; a terminal that only becomes known is not a move.
-`pickup` rewrites the record at once with the new lock pid and the terminal the restarted session runs in.
+A heartbeat proves the terminal only when it names the session that holds the lock and its generated time is not older than `lock_at`.
+So a retired pane is never named, even when a resumed session keeps the same session id in a new terminal.
+A second mate whose heartbeat proves nothing uses its parent's record of its endpoint.
+An unchanged owner keeps the recorded terminal while none is proven now, but only while `lock_at` is unchanged.
+After a lock rewrite the old terminal is never carried forward, and the terminal stays empty until a fresh heartbeat proves it.
+A new owner stamps `moved_at` with `lock_at`.
+Under the same owner, a proven terminal that differs from the last proven terminal stamps `moved_at` with the pass time.
+The watchdog keeps that last proven terminal in its private per-home subjects record, so an unproven window neither loses a move nor names the old pane.
+A terminal that only becomes known is not a move, and a lock rewrite proven back on the same terminal, such as a Codex helper re-anchor, is not a move.
+`pickup` rewrites the record at once with the new lock pid, the terminal the restarted session runs in, `lock_at`, and a `moved_at` stamp.
 A supervisor that restarts captains itself treats a `live` record, or a `moved_at` newer than its own evidence, as a captain already in place.
 A pane the record does not name is not the live captain, and an empty terminal means the captain's pane is not proven yet.
 

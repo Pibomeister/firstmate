@@ -279,45 +279,54 @@ wd_read_owner() {
   fi
 }
 
-# wd_publish_captain <state-dir> <source> [move]: rewrites
-# <state-dir>/watchdog/captain from the O_* owner and the trusted endpoint.
-# The owner is the recorded session, or the lock pid when no session is
-# recorded. A new owner or the move argument stamps moved_at, and so does a
-# known terminal that differs from the recorded one. An unchanged owner whose
-# terminal is unknown now keeps the recorded terminal; a terminal that only
-# becomes known is not a move. docs/watchdog.md owns the record's meaning.
+# wd_lock_at <state-dir>: the newest mtime of the session lock files, else 0.
+wd_lock_at() {
+  local f t at=0
+  for f in "$1/.lock" "$1/.lock-session"; do
+    [ -f "$f" ] || continue
+    t=$(wd_mtime "$f")
+    [ "${t:-0}" -le "$at" ] || at=$t
+  done
+  printf '%s\n' "$at"
+}
+
+# wd_publish_captain <state-dir> <source> <backend> <target> <last> [move]:
+# rewrites <state-dir>/watchdog/captain from the O_* owner and the proven
+# terminal <backend>:<target>. <last> is the last proven terminal. The owner is
+# the recorded session, or the lock pid when no session is recorded. A new
+# owner or the move argument stamps moved_at, and so does a proven terminal
+# that differs from the last proven one. An unchanged owner whose terminal is
+# not proven now keeps the recorded terminal only while the lock is unchanged;
+# a terminal that only becomes known is not a move. docs/watchdog.md owns the
+# record's meaning.
 wd_publish_captain() {
-  local st=$1 source=$2 move=${3:-} rec now owner prev='' backend=$O_BACKEND target=$O_TARGET moved='' rb rt t f tmp
+  local st=$1 source=$2 backend=$3 target=$4 last=$5 move=${6:-} rec now owner prev='' moved='' lock_at rb rt tmp
   rec=$st/watchdog/captain
   now=$(wd_now)
+  lock_at=$(wd_lock_at "$st")
   if [ -n "$O_SESSION" ]; then owner=session:$O_SESSION; elif [ -n "$O_LOCK_PID" ]; then owner=pid:$O_LOCK_PID; else owner=none; fi
   if [ -f "$rec" ]; then prev=$(fm_wd_conf_get "$rec" owner ''); fi
-  if [ -z "$move" ] && [ "$owner" = "$prev" ]; then
-    rb=$(fm_wd_conf_get "$rec" backend '') rt=$(fm_wd_conf_get "$rec" target '')
-    if [ -z "$backend" ] || [ -z "$target" ]; then backend=$rb target=$rt; fi
-    if [ -z "$rb" ] || [ -z "$rt" ] || [ "$backend:$target" = "$rb:$rt" ]; then
-      moved=$(fm_wd_conf_get "$rec" moved_at '' | tr -cd '0-9')
-    else
-      moved=$now
-    fi
-  fi
   [ -n "$backend" ] && [ -n "$target" ] || backend='' target=''
+  if [ -z "$move" ] && [ "$owner" = "$prev" ]; then
+    moved=$(fm_wd_conf_get "$rec" moved_at '' | tr -cd '0-9')
+    rb=$(fm_wd_conf_get "$rec" backend '') rt=$(fm_wd_conf_get "$rec" target '')
+    if [ -n "$rb" ] && [ -n "$rt" ] && [ "$(fm_wd_conf_get "$rec" lock_at '')" = "$lock_at" ]; then
+      last=$rb:$rt
+      [ -n "$target" ] || backend=$rb target=$rt
+    fi
+    if [ -n "$target" ] && [ -n "$last" ] && [ "$backend:$target" != "$last" ]; then moved=$now; fi
+  fi
   if [ -z "$moved" ] && [ -z "$move" ]; then
     # The lock files' own time dates a move the watchdog notices a pass late.
-    moved=0
-    for f in "$st/.lock" "$st/.lock-session"; do
-      [ -f "$f" ] || continue
-      t=$(wd_mtime "$f")
-      [ "${t:-0}" -le "$moved" ] || moved=$t
-    done
+    moved=$lock_at
     [ "$moved" -gt 0 ] && [ "$moved" -le "$now" ] || moved=$now
   fi
   moved=${moved:-$now}
   C_BACKEND=$backend C_TARGET=$target C_MOVED=$moved
   mkdir -p "$st/watchdog" 2>/dev/null || return 0
   tmp=$(mktemp "$st/watchdog/.captain.XXXXXX" 2>/dev/null) || return 0
-  if printf 'owner=%s\nlock_pid=%s\nsession=%s\nalive=%s\nbackend=%s\ntarget=%s\nmoved_at=%s\nchecked_at=%s\nsource=%s\n' \
-    "$owner" "$O_LOCK_PID" "$O_SESSION" "$O_OWNER" "$backend" "$target" "$moved" "$now" "$source" > "$tmp"; then
+  if printf 'owner=%s\nlock_pid=%s\nsession=%s\nalive=%s\nbackend=%s\ntarget=%s\nmoved_at=%s\nlock_at=%s\nchecked_at=%s\nsource=%s\n' \
+    "$owner" "$O_LOCK_PID" "$O_SESSION" "$O_OWNER" "$backend" "$target" "$moved" "$lock_at" "$now" "$source" > "$tmp"; then
     mv "$tmp" "$rec" 2>/dev/null || rm -f "$tmp"
   else
     rm -f "$tmp"
@@ -327,7 +336,7 @@ wd_publish_captain() {
 # wd_observe <home> <parent> <id>: fills the O_* globals for one subject and
 # saves the comparable parts to state/watchdog/subjects/<home-basename>-<path-cksum>.
 wd_observe() {
-  local home=$1 parent=$2 id=$3 st now hb prev meta row hb_sid ctx dt
+  local home=$1 parent=$2 id=$3 st now hb prev meta row hb_sid ctx dt hb_at=0 cb='' ct=''
   st=$home/state
   now=$(wd_now)
   O_HOME=$home O_PARENT=$parent O_ID=$id O_TAG=$(wd_tag "$home") O_KEY=$(wd_state_key "$home")
@@ -350,7 +359,7 @@ EOF
     [ "$O_TARGET" != - ] || O_TARGET=''
     [ "$hb_sid" != - ] || hb_sid=''
     [ "$row" -gt 0 ] 2>/dev/null || row=$(wd_mtime "$hb")
-    O_HB_AGE=$((now - row))
+    O_HB_AGE=$((now - row)) hb_at=$row
   fi
   wd_read_owner "$st"
   if [ -n "$O_SESSION" ] && [ "$ctx" != - ] && [ -n "$ctx" ] && [ "$hb_sid" = "$O_SESSION" ] && [ "$O_HB_AGE" != unknown ] && [ "$O_HB_AGE" -lt "$(cfgi watcher-stale-secs 900)" ]; then
@@ -363,15 +372,19 @@ EOF
   if [ -n "$meta" ] && [ -f "$meta" ] && { [ -z "$O_TARGET" ] || [ -z "$O_SESSION" ] || [ "$hb_sid" != "$O_SESSION" ]; }; then
     O_BACKEND=$(fm_backend_of_meta "$meta" 2>/dev/null)
     O_TARGET=$(fm_backend_target_of_meta "$meta" 2>/dev/null)
+    cb=$O_BACKEND ct=$O_TARGET
   elif [ -z "$O_SESSION" ] || [ "$hb_sid" != "$O_SESSION" ]; then
     O_BACKEND='' O_TARGET=''
+  elif [ "$hb_at" -ge "$(wd_lock_at "$st")" ]; then
+    cb=$O_BACKEND ct=$O_TARGET
   fi
   prev=$WD/subjects/$O_KEY
-  local p_sig='' p_since='' p_cpu='' p_at='' p_comp=''
+  local p_sig='' p_since='' p_cpu='' p_at='' p_comp='' p_term=''
   if [ -f "$prev" ]; then
     p_sig=$(fm_wd_conf_get "$prev" sig '') p_since=$(fm_wd_conf_get "$prev" since '')
     p_cpu=$(fm_wd_conf_get "$prev" cpu '') p_at=$(fm_wd_conf_get "$prev" cpu_at '')
     p_comp=$(fm_wd_conf_get "$prev" composer '')
+    p_term=$(fm_wd_conf_get "$prev" term '')
   fi
   O_PREV_COMPOSER=$p_comp O_PREV_SIG=$p_sig
   local cpu=''
@@ -431,9 +444,10 @@ EOF
     m=$(head -n 1 "$st/.supervise-daemon.pid" 2>/dev/null | tr -cd '0-9')
     if [ -n "$m" ] && kill -0 "$m" 2>/dev/null; then O_DAEMON=1; else O_DAEMON=0; fi
   fi
+  wd_publish_captain "$st" watchdog "$cb" "$ct" "$p_term"
+  [ -z "$C_TARGET" ] || p_term=$C_BACKEND:$C_TARGET
   mkdir -p "$WD/subjects"
-  printf 'sig=%s\nsince=%s\ncpu=%s\ncpu_at=%s\ncomposer=%s\n' "$O_SIG" "${p_since:-$now}" "$cpu" "$now" "$O_COMPOSER" > "$prev.tmp" && mv "$prev.tmp" "$prev"
-  wd_publish_captain "$st" watchdog
+  printf 'sig=%s\nsince=%s\ncpu=%s\ncpu_at=%s\ncomposer=%s\nterm=%s\n' "$O_SIG" "${p_since:-$now}" "$cpu" "$now" "$O_COMPOSER" "$p_term" > "$prev.tmp" && mv "$prev.tmp" "$prev"
 }
 
 wd_print_observation() {
@@ -1391,10 +1405,11 @@ cmd_pickup() {
   case "$token" in ''|*[!0-9a-f]*) die "pickup needs the hex token from the restart prompt" 2 ;; esac
   mkdir -p "$st/watchdog/pickups"
   printf 'at=%s\nlock_pid=%s\n' "$(wd_now)" "$(head -n 1 "$st/.lock" 2>/dev/null)" > "$st/watchdog/pickups/$token"
+  local backend target
   wd_read_owner "$st"
-  O_BACKEND=$(discover_supervisor_backend 2>/dev/null) || O_BACKEND=''
-  O_TARGET=$(discover_supervisor_target 2>/dev/null) || O_TARGET=''
-  wd_publish_captain "$st" pickup move
+  backend=$(discover_supervisor_backend 2>/dev/null) || backend=''
+  target=$(discover_supervisor_target 2>/dev/null) || target=''
+  wd_publish_captain "$st" pickup "$backend" "$target" '' move
   echo "pickup recorded"
 }
 
