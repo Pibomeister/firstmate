@@ -20,15 +20,20 @@
 #
 # Signals: MCP servers in the account config dir (including $HOME/.claude.json
 # for an ordinary account, and any non-empty .projects[].mcpServers); account
-# settings.json hooks; a project .mcp.json in the worktree; .claude/ skills,
+# settings.json hooks and hooks/hooks.json; MCP servers and hooks bundled
+# under account plugins/ (.mcp.json, .claude-plugin/plugin.json, and
+# hooks/hooks.json). A project .mcp.json in the worktree; .claude/ skills,
 # hooks, agents, or commands in the worktree. Worktree .claude/settings.json
 # and settings.local.json keys: hooks, enabledMcpjsonServers, mcpServers,
-# enabledPlugins. Account-wide skills, agents, commands, plugins, and
-# enabledPlugins are not a signal. An unreadable file is a signal. A present
-# .projects that is not an object, a .projects entry that is neither an object
-# nor null, or a .mcpServers (top-level or under .projects) that is present
-# and not an object, is unreadable. Worktree .claude/ skills, hooks, agents, or
-# commands are a signal if the path exists, even empty. A caller that passes
+# enabledPlugins. Account-wide skills, agents, commands, and a plugin that
+# only ships those, are not a signal. enabledPlugins is not an account
+# signal. An unreadable file is a signal. An unreadable plugins/ dir is
+# unreadable MCP/hooks config. An unreadable skills/, agents/, or commands/
+# dir is not a signal. A present .projects that is not an object, a
+# .projects entry that is neither an object nor null, or a .mcpServers
+# (top-level or under .projects) that is present and not an object, is
+# unreadable. Worktree .claude/ skills, hooks, agents, or commands are a
+# signal if the path exists, even empty. A caller that passes
 # --claude-config-dir for a pinned account must also pass --pinned. Those two
 # lists live only in the variables below; there is no exemption mechanism.
 # Resolve the config dir from the task's account pin, never from
@@ -153,6 +158,68 @@ fm_quota_claude_settings_keys_signal() {  # <file> <keys>
   return 1
 }
 
+# Prints the blocking signal for MCP or hooks bundled under <config-dir>/plugins.
+# A missing plugins dir is not a signal. An unreadable plugins dir is.
+fm_quota_claude_plugin_bundle_signal() {  # <config-dir>
+  local plugins=$1/plugins f err out sig
+  [ -e "$plugins" ] || return 1
+  if [ ! -d "$plugins" ] || [ ! -r "$plugins" ] || [ ! -x "$plugins" ]; then
+    printf '%s\n' "unreadable $plugins"
+    return 0
+  fi
+  err=$(mktemp) || {
+    printf '%s\n' "unreadable $plugins"
+    return 0
+  }
+  out=$(find "$plugins" \( -name node_modules -o -name .git \) -prune -o \
+    \( -name .mcp.json -o -path '*/hooks/hooks.json' \
+       -o -path '*/.claude-plugin/plugin.json' \) -print 2>"$err") || {
+    rm -f "$err"
+    printf '%s\n' "unreadable $plugins"
+    return 0
+  }
+  if [ -s "$err" ]; then
+    rm -f "$err"
+    printf '%s\n' "unreadable $plugins"
+    return 0
+  fi
+  rm -f "$err"
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    case "$f" in
+      */hooks/hooks.json)
+        if sig=$(fm_quota_claude_settings_keys_signal "$f" hooks); then
+          printf '%s\n' "$sig"
+          return 0
+        fi
+        ;;
+      */.mcp.json|*/.claude-plugin/plugin.json)
+        if [ ! -f "$f" ] || [ ! -r "$f" ]; then
+          printf '%s\n' "unreadable $f"
+          return 0
+        fi
+        if ! jq -e 'type=="object"' "$f" >/dev/null 2>&1 \
+          || fm_quota_claude_mcp_unreadable "$f"; then
+          printf '%s\n' "unreadable $f"
+          return 0
+        fi
+        if fm_quota_claude_mcp_in_file "$f"; then
+          printf '%s\n' "MCP servers in $f"
+          return 0
+        fi
+        if [ "${f##*/}" = plugin.json ] \
+          && sig=$(fm_quota_claude_settings_keys_signal "$f" hooks); then
+          printf '%s\n' "$sig"
+          return 0
+        fi
+        ;;
+    esac
+  done <<EOF
+$out
+EOF
+  return 1
+}
+
 # fm_quota_claude_tooling_signal <config-dir> [worktree]
 # Prints the blocking signal and returns 0 when a Claude-specific signal is
 # present or the inspect cannot be completed. Returns 1 when none are present.
@@ -190,6 +257,14 @@ fm_quota_claude_tooling_signal() {  # <config-dir> [worktree]
   done
   if sig=$(fm_quota_claude_settings_keys_signal "$dir/settings.json" \
              "$FM_QUOTA_CLAUDE_ACCOUNT_SETTING_KEYS"); then
+    printf '%s\n' "$sig"
+    return 0
+  fi
+  if sig=$(fm_quota_claude_settings_keys_signal "$dir/hooks/hooks.json" hooks); then
+    printf '%s\n' "$sig"
+    return 0
+  fi
+  if sig=$(fm_quota_claude_plugin_bundle_signal "$dir"); then
     printf '%s\n' "$sig"
     return 0
   fi

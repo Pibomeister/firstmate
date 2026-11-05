@@ -83,8 +83,7 @@ A relaunch does take one session reference when the endpoint's own runtime recor
    A recorded raw-command basename that differs from its resolved adapter cannot reproduce the command actually running, so relaunch refuses before the checkpoint unless the caller passes an explicit `--harness` to choose the replacement runtime deliberately.
    A harness change resets model unless it is named too, because a model chosen for one adapter does not transfer to another.
    Effort carries over when the new harness accepts it, otherwise the replacement uses that harness default and prints a notice.
-   Moving a Claude task onto another harness is refused when Claude-specific MCP servers or hooks are present, or when the worktree carries project-scope Claude tooling, with no override.
-   Account-wide skills, agents, commands, plugins, and enabledPlugins do not count.
+   Moving a Claude task onto another harness is refused when Claude-specific tooling is present, with no override.
    `bin/fm-quota-reroute.sh` owns that signal list in its header.
    Relaunch never kills a pane it cannot attribute.
    A Claude or Pi replacement must also pass the home's [worker account pin](configuration.md#worker-account-pin-configclaude-account-configpi-account), or a secondmate's own [per-secondmate account pin](configuration.md#per-secondmate-account-pins) when one is set, so a pin that no longer resolves or is signed out refuses before the old agent stops.
