@@ -290,9 +290,10 @@ wd_lock_at() {
   printf '%s\n' "$at"
 }
 
-# wd_publish_captain <state-dir> <source> <backend> <target> <last> [move]:
+# wd_publish_captain <state-dir> <source> <backend> <target> <last> <last-owner> [move]:
 # rewrites <state-dir>/watchdog/captain from the O_* owner and the proven
-# terminal <backend>:<target>. <last> is the last proven terminal. The owner is
+# terminal <backend>:<target>. <last> is the last proven terminal, which counts
+# only when <last-owner> is the current owner. The owner is
 # the recorded session, or the lock pid when no session is recorded. A new
 # owner or the move argument stamps moved_at, and so does a proven terminal
 # that differs from the last proven one. An unchanged owner whose terminal is
@@ -300,12 +301,13 @@ wd_lock_at() {
 # a terminal that only becomes known is not a move. docs/watchdog.md owns the
 # record's meaning.
 wd_publish_captain() {
-  local st=$1 source=$2 backend=$3 target=$4 last=$5 move=${6:-} rec now owner prev='' moved='' lock_at rb rt tmp
+  local st=$1 source=$2 backend=$3 target=$4 last=$5 last_owner=$6 move=${7:-} rec now owner prev='' moved='' lock_at rb rt tmp
   rec=$st/watchdog/captain
   now=$(wd_now)
   lock_at=$(wd_lock_at "$st")
   if [ -n "$O_SESSION" ]; then owner=session:$O_SESSION; elif [ -n "$O_LOCK_PID" ]; then owner=pid:$O_LOCK_PID; else owner=none; fi
   if [ -f "$rec" ]; then prev=$(fm_wd_conf_get "$rec" owner ''); fi
+  [ "$last_owner" = "$owner" ] || last=''
   [ -n "$backend" ] && [ -n "$target" ] || backend='' target=''
   if [ -z "$move" ] && [ "$owner" = "$prev" ]; then
     moved=$(fm_wd_conf_get "$rec" moved_at '' | tr -cd '0-9')
@@ -322,7 +324,7 @@ wd_publish_captain() {
     [ "$moved" -gt 0 ] && [ "$moved" -le "$now" ] || moved=$now
   fi
   moved=${moved:-$now}
-  C_BACKEND=$backend C_TARGET=$target C_MOVED=$moved
+  C_BACKEND=$backend C_TARGET=$target C_MOVED=$moved C_OWNER=$owner
   mkdir -p "$st/watchdog" 2>/dev/null || return 0
   tmp=$(mktemp "$st/watchdog/.captain.XXXXXX" 2>/dev/null) || return 0
   if printf 'owner=%s\nlock_pid=%s\nsession=%s\nalive=%s\nbackend=%s\ntarget=%s\nmoved_at=%s\nlock_at=%s\nchecked_at=%s\nsource=%s\n' \
@@ -379,12 +381,12 @@ EOF
     cb=$O_BACKEND ct=$O_TARGET
   fi
   prev=$WD/subjects/$O_KEY
-  local p_sig='' p_since='' p_cpu='' p_at='' p_comp='' p_term=''
+  local p_sig='' p_since='' p_cpu='' p_at='' p_comp='' p_term='' p_term_owner=''
   if [ -f "$prev" ]; then
     p_sig=$(fm_wd_conf_get "$prev" sig '') p_since=$(fm_wd_conf_get "$prev" since '')
     p_cpu=$(fm_wd_conf_get "$prev" cpu '') p_at=$(fm_wd_conf_get "$prev" cpu_at '')
     p_comp=$(fm_wd_conf_get "$prev" composer '')
-    p_term=$(fm_wd_conf_get "$prev" term '')
+    p_term=$(fm_wd_conf_get "$prev" term '') p_term_owner=$(fm_wd_conf_get "$prev" term_owner '')
   fi
   O_PREV_COMPOSER=$p_comp O_PREV_SIG=$p_sig
   local cpu=''
@@ -444,10 +446,10 @@ EOF
     m=$(head -n 1 "$st/.supervise-daemon.pid" 2>/dev/null | tr -cd '0-9')
     if [ -n "$m" ] && kill -0 "$m" 2>/dev/null; then O_DAEMON=1; else O_DAEMON=0; fi
   fi
-  wd_publish_captain "$st" watchdog "$cb" "$ct" "$p_term"
-  [ -z "$C_TARGET" ] || p_term=$C_BACKEND:$C_TARGET
+  wd_publish_captain "$st" watchdog "$cb" "$ct" "$p_term" "$p_term_owner"
+  [ -z "$C_TARGET" ] || p_term=$C_BACKEND:$C_TARGET p_term_owner=$C_OWNER
   mkdir -p "$WD/subjects"
-  printf 'sig=%s\nsince=%s\ncpu=%s\ncpu_at=%s\ncomposer=%s\nterm=%s\n' "$O_SIG" "${p_since:-$now}" "$cpu" "$now" "$O_COMPOSER" "$p_term" > "$prev.tmp" && mv "$prev.tmp" "$prev"
+  printf 'sig=%s\nsince=%s\ncpu=%s\ncpu_at=%s\ncomposer=%s\nterm=%s\nterm_owner=%s\n' "$O_SIG" "${p_since:-$now}" "$cpu" "$now" "$O_COMPOSER" "$p_term" "$p_term_owner" > "$prev.tmp" && mv "$prev.tmp" "$prev"
 }
 
 wd_print_observation() {
@@ -1409,7 +1411,7 @@ cmd_pickup() {
   wd_read_owner "$st"
   backend=$(discover_supervisor_backend 2>/dev/null) || backend=''
   target=$(discover_supervisor_target 2>/dev/null) || target=''
-  wd_publish_captain "$st" pickup "$backend" "$target" '' move
+  wd_publish_captain "$st" pickup "$backend" "$target" '' '' move
   echo "pickup recorded"
 }
 

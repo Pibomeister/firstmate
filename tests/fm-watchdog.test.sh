@@ -1085,9 +1085,9 @@ kill_holder_with_anchor() {
 
 captain_field() { sed -n "s/^$1=//p" "$H/state/watchdog/captain" 2>/dev/null | tail -n 1; }
 
-# fresh_heartbeat <pane>: the lock's session reports <pane>, generated now.
+# fresh_heartbeat <pane> [session]: the session, else SID, reports <pane>, generated now.
 fresh_heartbeat() {
-  jq -n --arg t "$1" --arg s "$SID" --argjson e "$(date +%s)" \
+  jq -n --arg t "$1" --arg s "${2:-$SID}" --argjson e "$(date +%s)" \
     '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:"tmux",target:$t,present:true},session:{trusted_id:$s}}}' \
     > "$H/state/heartbeat.json"
 }
@@ -1167,6 +1167,13 @@ SH
   assert_equals "$(cat "$H/lockpid") 00000000-0000-4000-8000-0000000000bb" "$(captain_field lock_pid) $(captain_field session)" "the record follows the new lock owner"
   assert_not_equals "$moved" "$(captain_field moved_at)" "the handoff is a move"
   assert_not_equals "$retired_pane" "$(captain_field target)" "the retired session's pane is never named as the captain's"
+  moved=$(captain_field moved_at)
+  new_pane=$("$REAL_TMUX" -f /dev/null -L "$SOCKET" new-window -d -t "wd$CASE_N" -P -F '#{pane_id}' "$H/agent.sh")
+  [ -n "$new_pane" ] && [ "$new_pane" != "$retired_pane" ] || fail "no new pane for the handoff: '$new_pane'"
+  fresh_heartbeat "$new_pane" 00000000-0000-4000-8000-0000000000bb
+  run_wd 240 once >/dev/null 2>&1
+  assert_equals "tmux $new_pane" "$(captain_field backend) $(captain_field target)" "a fresh heartbeat proves the new owner's pane"
+  assert_equals "$moved" "$(captain_field moved_at)" "the new owner's first proven terminal is not a second move"
 
   # A resume keeps the session id in a new pane while the heartbeat still names
   # the old one: the old pane is never named, and the fresh heartbeat is a move.
