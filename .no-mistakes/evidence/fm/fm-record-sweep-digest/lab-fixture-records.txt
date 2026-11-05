@@ -1,0 +1,31 @@
+== task-busy.meta
+window=fmlab:live
+project=firstmate
+kind=ship
+== task-meta-pr.meta
+window=fmlab:live
+project=/srv/projects/agent-kit
+kind=ship
+pr=https://github.com/o/agent-kit/pull/42
+spawn_gen=s1793677019.1.1
+secret-meta-body=SHOULD-NOT-PRINT
+== task-nowin.meta
+kind=scout
+project=x
+== task-ready.meta
+window=fmlab:gone
+project=firstmate
+kind=ship
+spawn_gen=s1793839049.1.1
+== task-busy.status
+working: rebasing after https://github.com/o/r/pull/131 landed
+paused: waiting on upstream https://github.com/o/r/pull/99
+== task-meta-pr.status
+working: started
+working: still going https://github.com/o/r/pull/999
+== task-orphan.status
+blocked: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+== task-ready.status
+working: begin
+done: PR ready https://github.com/o/firstmate/pull/7
+working: rebasing after https://github.com/o/r/pull/131 landed
