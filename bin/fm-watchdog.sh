@@ -5,7 +5,7 @@
 #   run [--interval <secs>]       Foreground loop for launchd or systemd; one instance.
 #   once [--dry-run] [--home <path>]
 #                                 One scan and action pass, then rewrite the status file.
-#   scan [--home <path>]          One observation pass; prints each subject; no action.
+#   scan [--home <path>]          One observation pass; prints each subject and its workers' dialog reads; no action.
 #   judge <purpose> <answer-ere>  Bounded cheap-model call; prompt on stdin; prints the answer.
 #   status                        Print the status file.
 #   ack-read                      Record that the status file was read now.
