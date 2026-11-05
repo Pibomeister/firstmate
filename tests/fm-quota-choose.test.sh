@@ -978,6 +978,25 @@ err=$(call_reroute suggest --snapshot "$LAB/captured.json" --from-harness claude
 printf '%s\n' "$err" | grep -q 'unresolvable worktree' \
   || fail "an omitted worktree must be named unresolvable: $err"
 
+broken_home="$LAB/broken-pin-home"
+mkdir -p "$broken_home/config" "$clean_wt"
+printf 'not-a-path\n' > "$broken_home/config/claude-account"
+if out=$(FM_HOME="$broken_home" call_reroute suggest --snapshot "$LAB/captured.json" \
+  --from-harness claude --worktree "$clean_wt" --kind secondmate \
+  --candidate codex:default 2>/dev/null); then
+  fail "a broken claude-account pin should queue, got '$out'"
+fi
+[ "$out" = "none" ] || fail "broken pin: expected none, got '$out'"
+err=$(FM_HOME="$broken_home" call_reroute suggest --snapshot "$LAB/captured.json" \
+  --from-harness claude --worktree "$clean_wt" --kind secondmate \
+  --candidate codex:default 2>&1 >/dev/null) || true
+printf '%s\n' "$err" | grep -q 'config/claude-account' \
+  || fail "broken pin must name the pin file: $err"
+sig=$(FM_HOME="$broken_home" call_reroute claude-tooling --worktree "$clean_wt") \
+  || fail "claude-tooling must treat a broken pin as a signal"
+printf '%s\n' "$sig" | grep -q 'config/claude-account' \
+  || fail "claude-tooling broken pin signal: $sig"
+
 ord="$LAB/ordinary-home"
 mkdir -p "$ord/.claude"
 printf '%s\n' '{"mcpServers":{"docs":{"command":"true"}}}' > "$ord/.claude.json"

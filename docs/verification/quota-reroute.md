@@ -48,6 +48,7 @@ echo $?
 
 Expected: exit 1 when the pin dir has no MCP servers, `$HOME/.claude.json` has none (ordinary account), `.projects[].mcpServers` is empty, and the worktree has no `.mcp.json` or `.claude/{skills,hooks,agents,commands}`.
 A missing or unreadable `--config-dir` exits 0 and prints `unreadable Claude config dir`.
+Omitting `--config-dir` resolves `config/claude-account` in `FM_HOME` (optional `--mate`); a broken pin is a signal.
 `fm-control.sh <id> relaunch --harness <other>` of a Claude task refuses with the same signal; there is no override flag.
 
 With an MCP server configured, the same command exits 0 and names `MCP servers in ...`. Then:

@@ -607,6 +607,31 @@ test_relaunch_refuses_before_exit_when_the_composer_holds_pending_text() {
   pass "fm-control relaunch: pending composer text refuses before the exit command is typed"
 }
 
+test_relaunch_does_not_kill_an_untrusted_usage_limit_endpoint() {
+  local dir out rc
+  dir=$(new_case untrusted-limit rl85)
+  add_ship_task "$dir" rl85 claude
+  : > "$dir/fake/windows"
+  printf '%s\n' \
+    'You have hit your weekly limit for Opus.' \
+    '' \
+    ' ❯ 1. Switch to Sonnet' \
+    '   2. Wait for the limit to reset' \
+    '   3. Buy more credits' \
+    '' \
+    'Enter to confirm · Esc to cancel' > "$dir/fake/capture"
+  printf 'codex' > "$dir/fake/becomes"
+  out=$(run_control "$dir" rl85 relaunch --harness codex --note "untrusted limit pane"); rc=$?
+  expect_code 1 "$rc" "an untrusted usage-limit endpoint must refuse rather than close"$'\n'"$out"
+  [ "$(cat "$dir/fake/command")" = claude ] \
+    || fail "an untrusted usage-limit endpoint must not be killed: $(cat "$dir/fake/command")"
+  assert_contains "$out" "cannot trust" "the refusal should name the untrusted address"
+  assert_not_contains "$out" "agent was stopped" "an untrusted address must leave the old agent running"
+  [ -z "$(cat "$dir/fake/keys")" ] && [ -z "$(cat "$dir/fake/literal")" ] \
+    || fail "an untrusted usage-limit endpoint must receive no lifecycle input"
+  pass "fm-control relaunch: an untrusted usage-limit endpoint is not killed"
+}
+
 test_relaunch_closes_a_usage_limit_screen_without_typing_enter() {
   local dir out rc sock ident
   dir=$(new_case usage-limit-relaunch rl80)
@@ -1116,6 +1141,24 @@ test_relaunch_off_claude_refuses_when_tooling_is_present() {
   [ "$(meta_field "$dir" rl84 harness)" = claude ] \
     || fail "a tooling refusal must leave the recorded harness"
   pass "fm-control relaunch: moving off Claude refuses when Claude-specific tooling is present"
+}
+
+test_relaunch_off_claude_refuses_an_unreadable_account_pin() {
+  local dir out rc
+  dir=$(new_case pin-unreadable rl86)
+  add_ship_task "$dir" rl86 claude
+  make_claude_auth_stub "$dir"
+  mkdir -p "$dir/home/config"
+  printf 'not-a-path\n' > "$dir/home/config/claude-account"
+  printf 'codex' > "$dir/fake/becomes"
+  out=$(run_control "$dir" rl86 relaunch --harness codex --note "broken pin"); rc=$?
+  expect_code 1 "$rc" "a broken claude-account pin must refuse the move off Claude"$'\n'"$out"
+  assert_contains "$out" "config/claude-account" "the refusal should name the pin"
+  [ "$(cat "$dir/fake/command")" = claude ] \
+    || fail "a broken pin must leave the old agent running"
+  [ "$(meta_field "$dir" rl86 harness)" = claude ] \
+    || fail "a broken pin must leave the recorded harness"
+  pass "fm-control relaunch: an unreadable claude-account pin refuses the move off Claude"
 }
 
 test_harness_switch_resolves_a_prefixed_recorded_harness() {
@@ -3714,6 +3757,7 @@ test_same_harness_relaunch_keeps_identity_and_reuses_the_endpoint
 test_pooled_relaunch_custody_is_agy_only
 test_agy_relaunch_requires_treehouse_capabilities_before_stopping
 test_relaunch_refuses_before_exit_when_the_composer_holds_pending_text
+test_relaunch_does_not_kill_an_untrusted_usage_limit_endpoint
 test_relaunch_closes_a_usage_limit_screen_without_typing_enter
 test_interrupt_refuses_a_usage_limit_screen
 test_control_relaunch_of_a_gone_tmux_endpoint
@@ -3732,6 +3776,7 @@ test_relaunch_from_a_raw_polytoken_launch_keeps_the_project_layers
 test_harness_switch_does_not_carry_the_old_profile_axes
 test_harness_switch_falls_back_when_the_new_harness_refuses_carried_effort
 test_relaunch_off_claude_refuses_when_tooling_is_present
+test_relaunch_off_claude_refuses_an_unreadable_account_pin
 test_harness_switch_resolves_a_prefixed_recorded_harness
 test_prefixed_recorded_harness_requires_explicit_replacement
 test_same_harness_relaunch_keeps_the_profile_axes

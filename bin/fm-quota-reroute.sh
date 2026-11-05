@@ -4,9 +4,10 @@
 # Usage:
 #   fm-quota-reroute.sh suggest [--snapshot <path>] [--candidate <harness:model>]...
 #                               [--from-harness <name>] [--from-model <name>]
-#                               [--claude-config-dir <dir>] [--worktree <dir>]
-#                               [--pinned] [--kind ship|scout|secondmate]
-#   fm-quota-reroute.sh claude-tooling --config-dir <dir> [--worktree <dir>]
+#                               [--claude-config-dir <dir>] [--mate <id>]
+#                               [--worktree <dir>] [--pinned]
+#                               [--kind ship|scout|secondmate]
+#   fm-quota-reroute.sh claude-tooling [--config-dir <dir> | --mate <id>] [--worktree <dir>]
 #
 # suggest prints "<harness> <model>" and exits 0 when a candidate is eligible.
 # It prints "none" and exits 1 when the pool is exhausted, the candidate list
@@ -21,7 +22,8 @@
 # for an ordinary account, and any non-empty .projects[].mcpServers); a project
 # .mcp.json in the worktree; .claude/ skills, hooks, agents, or commands in the
 # worktree. Resolve the config dir from the task's account pin, never from
-# claude-config-dirs.
+# claude-config-dirs. A broken or unreadable pin is a signal. No pin, or
+# ordinary, inspects $HOME/.claude.
 #
 # The supervisor runs this after a stale wake names a usage-limit, then calls
 # fm-control.sh relaunch --harness with the printed pick. The watchdog may call
@@ -34,6 +36,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # shellcheck source=bin/fm-control-lib.sh
 . "$SCRIPT_DIR/fm-control-lib.sh"
+# shellcheck source=bin/fm-worker-account-lib.sh
+. "$SCRIPT_DIR/fm-worker-account-lib.sh"
 
 die() { printf 'error: %s\n' "$1" >&2; exit 2; }
 usage() {
@@ -45,12 +49,40 @@ usage() {
   exit 2
 }
 
-# fm_quota_claude_tooling_signal <config-dir> [worktree]
-# Prints the blocking signal and returns 0 when a Claude-specific signal is
-# present or the inspect cannot be completed. Returns 1 when none are present.
-# An omitted worktree skips worktree signals (claude-tooling of a config dir).
-# Ordinary Claude keeps user-scope mcpServers in $HOME/.claude.json, outside
-# $HOME/.claude. Project-scope servers live under .projects[<path>].mcpServers.
+# fm_quota_claude_config_dir <home-config-dir> [mate]
+# Prints "<dir><TAB><pinned>" on success. pinned is 1 when a pin is present,
+# including ordinary, else 0. Ordinary or absent pin: $HOME/.claude. A pin that
+# names a directory: that directory. Returns 1 and prints the reason when the
+# pin cannot be resolved.
+fm_quota_claude_config_dir() {  # <home-config-dir> [mate]
+  local config=${1-} mate=${2-} cfg pin declared root dir
+  if [ -z "$config" ]; then
+    printf '%s\n' "unresolvable Claude config dir"
+    return 1
+  fi
+  if ! cfg=$(fm_worker_account_config claude "$config" "$mate"); then
+    printf '%s\n' "unreadable claude-account pin"
+    return 1
+  fi
+  if ! pin=$(fm_worker_account_resolve claude "$cfg" config/claude-account 2>&1); then
+    pin=${pin#error: }
+    printf '%s\n' "${pin:-unreadable claude-account pin}"
+    return 1
+  fi
+  if [ -z "$pin" ]; then
+    printf '%s\t0\n' "${HOME}/.claude"
+    return 0
+  fi
+  declared=${pin%%$'\t'*}
+  root=$(printf '%s' "$pin" | cut -f2)
+  if [ "$declared" = ordinary ]; then
+    dir=${HOME}/.claude
+  else
+    dir=$root
+  fi
+  printf '%s\t1\n' "$dir"
+}
+
 fm_quota_claude_mcp_in_file() {  # <file>
   jq -e '(.mcpServers | type == "object" and length > 0)
          or (.enabledMcpjsonServers | type == "array" and length > 0)
@@ -60,6 +92,12 @@ fm_quota_claude_mcp_in_file() {  # <file>
     "$1" >/dev/null 2>&1
 }
 
+# fm_quota_claude_tooling_signal <config-dir> [worktree]
+# Prints the blocking signal and returns 0 when a Claude-specific signal is
+# present or the inspect cannot be completed. Returns 1 when none are present.
+# An omitted worktree skips worktree signals (claude-tooling of a config dir).
+# Ordinary Claude keeps user-scope mcpServers in $HOME/.claude.json, outside
+# $HOME/.claude. Project-scope servers live under .projects[<path>].mcpServers.
 fm_quota_claude_tooling_signal() {  # <config-dir> [worktree]
   local dir=${1-} wt=${2-} f name
   if [ -z "$dir" ]; then
@@ -129,11 +167,17 @@ case "$cmd" in
   claude-tooling)
     dir=
     wt=
+    mate=
     while [ "$#" -gt 0 ]; do
       case "$1" in
         --config-dir)
           [ -n "${2-}" ] || die "--config-dir needs a path"
           dir=$2
+          shift 2
+          ;;
+        --mate)
+          [ "$#" -ge 2 ] || die "--mate needs a value"
+          mate=$2
           shift 2
           ;;
         --worktree)
@@ -146,7 +190,15 @@ case "$cmd" in
         *) die "unexpected argument: $1" ;;
       esac
     done
-    [ -n "$dir" ] || die "claude-tooling needs --config-dir"
+    if [ -z "$dir" ]; then
+      config=${FM_CONFIG_OVERRIDE:-${FM_HOME:+$FM_HOME/config}}
+      [ -n "$config" ] || die "claude-tooling needs --config-dir or FM_HOME"
+      if ! dir=$(fm_quota_claude_config_dir "$config" "$mate"); then
+        printf '%s\n' "$dir"
+        exit 0
+      fi
+      dir=${dir%%$'\t'*}
+    fi
     if sig=$(fm_quota_claude_tooling_signal "$dir" "$wt"); then
       printf '%s\n' "$sig"
       exit 0
@@ -161,6 +213,7 @@ case "$cmd" in
     WORKTREE=
     PINNED=0
     KIND=ship
+    MATE=
     CANDIDATES=()
     while [ "$#" -gt 0 ]; do
       case "$1" in
@@ -187,6 +240,11 @@ case "$cmd" in
         --claude-config-dir)
           [ -n "${2-}" ] || die "--claude-config-dir needs a path"
           CLAUDE_DIR=$2
+          shift 2
+          ;;
+        --mate)
+          [ "$#" -ge 2 ] || die "--mate needs a value"
+          MATE=$2
           shift 2
           ;;
         --worktree)
@@ -226,6 +284,16 @@ case "$cmd" in
         printf 'none\n'
         echo "error: Claude-specific tooling present (unresolvable worktree); queue until reset rather than moving off Claude" >&2
         exit 1
+      fi
+      if [ -z "$CLAUDE_DIR" ]; then
+        config=${FM_CONFIG_OVERRIDE:-${FM_HOME:+$FM_HOME/config}}
+        if ! CLAUDE_DIR=$(fm_quota_claude_config_dir "$config" "$MATE"); then
+          printf 'none\n'
+          echo "error: Claude-specific tooling present ($CLAUDE_DIR); queue until reset rather than moving off Claude" >&2
+          exit 1
+        fi
+        [ "${CLAUDE_DIR#*$'\t'}" = 1 ] && PINNED=1
+        CLAUDE_DIR=${CLAUDE_DIR%%$'\t'*}
       fi
       if sig=$(fm_quota_claude_tooling_signal "$CLAUDE_DIR" "$WORKTREE"); then
         printf 'none\n'
