@@ -1077,6 +1077,7 @@ relaunch_rollback() {
   [ "$RELAUNCH_ACTIVE" = 1 ] || return 0
   [ "$RELAUNCH_PHASE" != complete ] || return 0
   RELAUNCH_ACTIVE=0
+  rm -f "$META.tx"
   case "$RELAUNCH_PHASE" in
     checkpoint|noted)
       # The old agent was never touched. Restore the instructions byte-exact so
@@ -1129,8 +1130,11 @@ relaunch_rollback() {
         journal_write "failed:$RELAUNCH_PHASE" "rollback=none-new-record-kept" || true
         echo "error: $ID was relaunched on $TARGET_HARNESS but no running agent could be confirmed; its work is preserved at $WT" >&2
       else
-        restore_relaunch_prior_record || true
-        journal_write "failed:$RELAUNCH_PHASE" "rollback=prior-record-kept" || true
+        if restore_relaunch_prior_record; then
+          journal_write "failed:$RELAUNCH_PHASE" "rollback=prior-record-kept" || true
+        else
+          journal_write "failed:$RELAUNCH_PHASE" "rollback=prior-record-restore-failed" || true
+        fi
         echo "error: $ID's agent was stopped but the replacement did not launch; no agent is running, and its work plus the recorded progress note are preserved at $WT" >&2
       fi
       ;;

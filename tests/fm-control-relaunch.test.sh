@@ -299,6 +299,7 @@ run_control() {  # <case-dir> <args...>
     FM_REAL_MV="${FM_REAL_MV:-}" FM_FAKE_COMPLETE_JOURNAL_MV_FAIL="${FM_FAKE_COMPLETE_JOURNAL_MV_FAIL:-}" \
     FM_FAKE_META_PUBLISH_MV_FAIL="${FM_FAKE_META_PUBLISH_MV_FAIL:-}" \
     FM_REAL_MKTEMP="${FM_REAL_MKTEMP:-}" \
+    FM_REAL_CP="${FM_REAL_CP:-}" FM_FAKE_CP_RESTORE_FAIL="${FM_FAKE_CP_RESTORE_FAIL:-}" \
     FM_FAKE_TRACE_PREPARE="${FM_FAKE_TRACE_PREPARE:-}" \
     FM_FAKE_TRACE_RELEASE="${FM_FAKE_TRACE_RELEASE:-}" \
     FM_FAKE_META_WRITER_READY="${FM_FAKE_META_WRITER_READY:-}" \
@@ -386,6 +387,19 @@ done
 exec "$FM_REAL_MKTEMP" "$@"
 SH
   chmod +x "$1/fakebin/mktemp"
+}
+
+make_cp_restore_failure_stub() {  # <case-dir>
+  cat > "$1/fakebin/cp" <<'SH'
+#!/usr/bin/env bash
+dest=
+for dest in "$@"; do :; done
+if [ -n "${FM_FAKE_CP_RESTORE_FAIL:-}" ] && [ "$dest" = "$FM_FAKE_CP_RESTORE_FAIL" ]; then
+  exit 1
+fi
+exec "$FM_REAL_CP" "$@"
+SH
+  chmod +x "$1/fakebin/cp"
 }
 
 make_rm_failure_stub() {  # <case-dir>
@@ -2531,6 +2545,47 @@ test_stamp_die_before_spawn_restores_the_prior_record() {
   pass "fm-control relaunch: a die after the stamp and before spawn restores the prior record"
 }
 
+test_stamp_mv_failure_removes_the_staging_file() {
+  local dir out rc real_mv
+  dir=$(new_case stamp-mv rl90)
+  add_ship_task "$dir" rl90 claude
+  real_mv=$(command -v mv)
+  make_mv_failure_stub "$dir"
+  out=$(FM_REAL_MV="$real_mv" FM_FAKE_META_PUBLISH_MV_FAIL="$dir/home/state/rl90.meta.tx" \
+    run_control "$dir" rl90 relaunch --note "stamp mv fails"); rc=$?
+  expect_code 1 "$rc" "a failed stamp mv should fail closed"$'\n'"$out"
+  assert_contains "$out" "could not record relaunch token" \
+    "the refusal should name the stamp mv failure"
+  [ ! -e "$dir/home/state/rl90.meta.tx" ] \
+    || fail "rollback must remove the leftover stamp staging file"
+  [ -z "$(meta_field "$dir" rl90 control_relaunch_tx)" ] \
+    || fail "a failed stamp mv must not leave a stamped token on the live record"
+  [ "$(journal_field "$dir" rl90 rollback)" = prior-record-kept ] \
+    || fail "the journal should record the unpublished replacement rollback"
+  pass "fm-control relaunch: a failed stamp mv does not leave META.tx beside the record"
+}
+
+test_restore_failure_is_journaled_as_restore_failed() {
+  local dir out rc real_mktemp real_cp
+  dir=$(new_case restore-fail rl91)
+  add_ship_task "$dir" rl91 claude
+  real_mktemp=$(command -v mktemp)
+  real_cp=$(command -v cp)
+  make_mktemp_spawn_err_failure_stub "$dir"
+  make_cp_restore_failure_stub "$dir"
+  out=$(FM_REAL_MKTEMP="$real_mktemp" FM_REAL_CP="$real_cp" \
+    FM_FAKE_CP_RESTORE_FAIL="$dir/home/state/rl91.meta" \
+    run_control "$dir" rl91 relaunch --note "restore fails"); rc=$?
+  expect_code 1 "$rc" "a failed prior-record restore should fail closed"$'\n'"$out"
+  assert_contains "$out" "could not restore" \
+    "the refusal should name the restore failure"
+  [ -n "$(meta_field "$dir" rl91 control_relaunch_tx)" ] \
+    || fail "a failed restore must leave the stamped token on the live record"
+  [ "$(journal_field "$dir" rl91 rollback)" = prior-record-restore-failed ] \
+    || fail "the journal must record restore-failed, not prior-record-kept"
+  pass "fm-control relaunch: a failed prior-record restore is journaled as restore-failed"
+}
+
 test_journal_records_the_checkpoint_it_proved() {
   local dir head
   dir=$(new_case journal rl14)
@@ -3912,6 +3967,8 @@ test_stop_transport_failure_reconciles_a_dead_agent
 test_complete_journal_failure_rolls_back_from_durable_phase
 test_prepublication_abort_retires_replacement_wiring_and_busy_state
 test_stamp_die_before_spawn_restores_the_prior_record
+test_stamp_mv_failure_removes_the_staging_file
+test_restore_failure_is_journaled_as_restore_failed
 test_journal_records_the_checkpoint_it_proved
 test_secondmate_relaunch_checkpoints_child_work_and_spares_the_charter
 test_secondmate_relaunch_refuses_an_unmarked_home
