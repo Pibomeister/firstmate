@@ -104,18 +104,21 @@ fm_watch_hold_active() {
 # Local Codex secondmates keep the existing watcher, not a model tool session,
 # alive. The parent binding supplies the existing steering inbox and doorbell.
 fm_secondmate_watch_selected() {
-  local watcher_pid
   # shellcheck source=bin/fm-primary-scope-lib.sh
   . "$FM_PUSH_TRANSITION_LIB_DIR/fm-primary-scope-lib.sh"
   # shellcheck source=bin/fm-supervision-engine-lib.sh
   . "$FM_PUSH_TRANSITION_LIB_DIR/fm-supervision-engine-lib.sh"
   fm_root_is_secondmate_home "$FM_HOME" || return 1
   # The pane environment only names the candidate endpoint, tmux first as in
-  # fm_backend_detect; fm_secondmate_watch_binding_valid owns its proof.
+  # fm_backend_detect; fm_secondmate_watch_binding_valid owns its proof. A
+  # Herdr pane with no HERDR_SESSION lives in the default session, exactly as
+  # fm_backend_herdr_session resolves it; the binding proof reads that
+  # session's process-info before any watcher starts, so a pane that lives
+  # in another session still fails closed there.
   if [ -n "${TMUX_PANE:-}" ] && [ -n "${TMUX:-}" ]; then
     FM_SM_BACKEND=tmux FM_SM_TARGET=$TMUX_PANE FM_SM_ROUTE=${TMUX%%,*}
-  elif [ -n "${HERDR_SESSION:-}" ] && [ -n "${HERDR_PANE_ID:-}" ]; then
-    FM_SM_BACKEND=herdr FM_SM_TARGET=$HERDR_SESSION:$HERDR_PANE_ID FM_SM_ROUTE=$HERDR_SESSION
+  elif [ -n "${HERDR_PANE_ID:-}" ]; then
+    FM_SM_BACKEND=herdr FM_SM_TARGET=${HERDR_SESSION:-default}:$HERDR_PANE_ID FM_SM_ROUTE=${HERDR_SESSION:-default}
   else
     return 1
   fi
@@ -124,10 +127,10 @@ fm_secondmate_watch_selected() {
   FM_SM_INBOX=$(fm_secondmate_home_inbox "$FM_HOME") && [ "${FM_TASK_INBOX:-}" = "$FM_SM_INBOX" ] || return 1
   FM_SM_ID=${FM_SM_INBOX##*/}
   FM_SM_ID=${FM_SM_ID%.inbox}
-  if fm_watcher_healthy "$STATE" "$FM_PUSH_TRANSITION_LIB_DIR/fm-watch.sh" "${FM_GUARD_GRACE:-300}" "$FM_HOME"; then
-    watcher_pid=$(cat "$STATE/.watch.lock/pid")
-    case "$(ps -o args= -p "$watcher_pid" 2>/dev/null)" in *'/fm-watch.sh --secondmate-hold'*) ;; *) return 1 ;; esac
-  fi
+  # Watcher ownership is not selection: a healthy watcher from another
+  # ownership mode (a Grok-era --grok-hold left in a home whose harness has
+  # since changed) leaves this route selected, and fm_secondmate_watch_start
+  # owns taking this home's watcher over.
 }
 
 # The binding file records the session-lock owner pid, its fm_pid_identity,
@@ -174,10 +177,30 @@ fm_secondmate_watch_start() {
   [ "$("$FM_PUSH_TRANSITION_LIB_DIR/fm-harness.sh")" = codex ] || { echo 'secondmate watcher: caller is not Codex' >&2; return 1; }
   # shellcheck source=bin/fm-session-lock-lib.sh
   . "$FM_PUSH_TRANSITION_LIB_DIR/fm-session-lock-lib.sh"
-  fm_session_lock_owned_by_self "$STATE" || { echo 'secondmate watcher: session lock is not owned by this caller' >&2; return 1; }
-  fm_watcher_healthy "$STATE" "$FM_PUSH_TRANSITION_LIB_DIR/fm-watch.sh" "${FM_GUARD_GRACE:-300}" "$FM_HOME" && { echo 'secondmate watcher: an existing watcher owns supervision' >&2; return 1; }
+  if ! fm_session_lock_owned_by_self "$STATE"; then
+    pid=$(cat "$STATE/.lock" 2>/dev/null || true)
+    if [ -n "$pid" ] && ! fm_pid_alive "$pid"; then
+      echo "secondmate watcher: session lock names dead pid $pid; rerun bin/fm-session-start.sh so fm-lock.sh re-anchors the lock, then rerun bin/fm-watch.sh --secondmate" >&2
+    else
+      echo 'secondmate watcher: session lock is not owned by this caller' >&2
+    fi
+    return 1
+  fi
+  if fm_watcher_healthy "$STATE" "$FM_PUSH_TRANSITION_LIB_DIR/fm-watch.sh" "${FM_GUARD_GRACE:-300}" "$FM_HOME"; then
+    # Status above failed, so this healthy watcher is not the secondmate
+    # hold: it is a leftover from another ownership mode, such as a Grok-era
+    # --grok-hold watcher in a home whose harness has since changed.
+    # fm_watcher_healthy identity-matched this pid against this home's own
+    # lock, so stopping its tree can only touch this home's watcher.
+    pid=$FM_WATCHER_HEALTHY_PID
+    identity=$FM_WATCHER_HEALTHY_IDENTITY
+    if ! fm_watcher_stop_tree "$pid" "$identity" 5 || fm_pid_alive "$pid"; then
+      echo "secondmate watcher: this home's existing watcher pid $pid ($(ps -o args= -p "$pid" 2>/dev/null)) did not stop; run bin/fm-watch-arm.sh --stop in this home, then rerun bin/fm-watch.sh --secondmate" >&2
+      return 1
+    fi
+  fi
   pid=$(cat "$STATE/.lock")
-  identity=$(fm_pid_identity "$pid") || return 1
+  identity=$(fm_pid_identity "$pid") || { echo "secondmate watcher: session lock pid $pid has no live process identity; rerun bin/fm-session-start.sh so fm-lock.sh re-anchors the lock, then rerun bin/fm-watch.sh --secondmate" >&2; return 1; }
   tmp=$(mktemp "$STATE/.secondmate-watch.XXXXXX") || return 1
   printf '%s\n' "$pid" "$identity" "$FM_SM_TARGET" "$FM_SM_ROUTE" "$FM_SM_BACKEND" > "$tmp" && mv "$tmp" "$STATE/.secondmate-watch" || return 1
   fm_secondmate_watch_binding_valid || return 1
