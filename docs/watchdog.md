@@ -93,6 +93,7 @@ A restart needs every one of these:
 - at least `restart-secs` since the last restart of that home, for any symptom; a sooner restart holds and is reported as a gap.
 
 A primary restart writes a lean handoff under `data/watchdog/handoffs/`, stops the old session process, and opens a new terminal on the same backend with `restart-command` and a prompt naming the handoff.
+A muse `restart-command` with no approval-off flag is launched with `--yolo` added, as the key table states, and the restart's ledger row says `--yolo added by default`.
 A proven draft goes into the handoff as an unsubmitted note, from the prompt row down to the last long rule below it. A rule with draft text below it stays in the note. A draft in a closed box runs from the box's first prompt row to its last body row, keeping inner rules and quoted rows. A non-empty Orca draft field also goes in, marked as an unsent draft or a harness suggestion. A draft proven present whose boundary is not proven, such as a plain composer or a paste placeholder on a composer that is not unknown, becomes a gap line in the handoff and the status file; Enter is still never pressed on it. An unknown composer, an empty capture, or a failed read with no draft text is no lost draft: the handoff says the composer state was unknown and no draft was seen.
 On tmux the new window joins the old session; when that session closed with the old session process, a new session takes its place.
 The new session proves it took over by running the `pickup <token>` command from that prompt after it holds the session lock.
@@ -146,7 +147,7 @@ An absent file means dry-run on the owner home alone.
 | `homes` | the owner home | Comma-separated homes to watch, each with its registered second mates |
 | `mode` | `dry-run` | `act` takes actions; anything else records them as `dry-run` |
 | `restart` | `off` | `on` allows restarts when `mode=act` |
-| `restart-command` | none | Command that starts a new captain session; the prompt is appended as one argument |
+| `restart-command` | none | Starts a new captain session and appends the prompt as one argument. When the command word, after any leading `NAME=value`, `env`, `exec`, or `command` and again after `&&`, `||`, `;`, or `|`, is `muse`, `muse-bin`, or `muse-bin-*`, or a path ending in one of them, with one layer of surrounding quotes removed, and the command carries none of `--yolo`, `--disable-approval`, `--approval-mode never`, or `--approval-mode=never`, `--yolo` is inserted as the first argument after the first such word. Any other command runs unchanged, even when another word names muse. |
 | `do-not-touch` | none | Comma-separated homes, home names, or terminal targets never typed into or restarted |
 | `models` | `claude:haiku,agy:gemini-3.8-flash-low` | Ordered judge models; empty disables the judge |
 | `council-seats` | the `models` list | Comma-separated blind council seats |

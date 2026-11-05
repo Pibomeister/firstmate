@@ -80,6 +80,9 @@ make_spawn_fakebin() {
 set -u
 case "$*" in
   *"#{pane_current_path}"*) printf '%s\n' "${FM_FAKE_PANE_PATH:-}"; exit 0 ;;
+  # A relaunch must read an agent-free pane before it may send another launch.
+  # Unset, this stays the historical display-message answer.
+  *"#{pane_current_command}"*) printf '%s\n' "${FM_FAKE_PANE_COMMAND:-firstmate}"; exit 0 ;;
 esac
 window_file="$(dirname "$0")/.spawn-window"
 case "${1:-}" in
@@ -164,9 +167,9 @@ EOF
   printf '%s\n' "$case_dir|$home|$proj|$wt|$fakebin|$id"
 }
 
-run_muse_spawn() {  # <home> <proj> <wt> <fakebin> <id> [extra args...]
-  local home=$1 proj=$2 wt=$3 fakebin=$4 id=$5
-  shift 5
+run_muse_spawn_cmd() {  # <home> <proj> <wt> <fakebin> <spawn args...>
+  local home=$1 proj=$2 wt=$3 fakebin=$4
+  shift 4
   FM_ROOT_OVERRIDE='' FM_HOME="$home" \
     FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
     FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
@@ -182,7 +185,19 @@ run_muse_spawn() {  # <home> <proj> <wt> <fakebin> <id> [extra args...]
     XDG_CONFIG_HOME="${FM_TEST_MUSE_CONFIG_HOME-$home/xdgconfig}" \
     XDG_DATA_HOME="${FM_TEST_MUSE_DATA_HOME-$home/xdgdata}" \
     PATH="$fakebin:$PATH" \
-    "$SPAWN" "$id" "$proj" muse "$@" 2>&1
+    "$SPAWN" "$@" 2>&1
+}
+
+run_muse_spawn() {  # <home> <proj> <wt> <fakebin> <id> [extra args...]
+  local home=$1 proj=$2 wt=$3 fakebin=$4 id=$5
+  shift 5
+  run_muse_spawn_cmd "$home" "$proj" "$wt" "$fakebin" "$id" "$proj" muse "$@"
+}
+
+# The product flag is --yolo. An equivalent approval flag is not what this
+# launcher emits, and a launch that lacks --yolo is the dialog this guards.
+assert_muse_yolo() {  # <launch-text> <label>
+  assert_contains "$1" ' --yolo ' "$2 omitted --yolo"
 }
 
 # --- detection --------------------------------------------------------------
@@ -286,6 +301,77 @@ EOF
   assert_contains "$launch" 'encode launch-brief' "muse launch did not deliver the brief positionally"
   assert_grep 'harness=muse' "$home/state/$id.meta" "muse harness was not recorded in meta"
   pass "muse spawn launches with autonomy, privacy control, and a positional brief"
+}
+
+# Scout uses the same launcher as a ship. Delivery flags differ; the muse
+# argv must not. A bare muse here stops on the workspace trust dialog.
+test_scout_launch_carries_yolo() {
+  local rec case_dir home proj wt fakebin id out status launch
+  rec=$(make_spawn_case scout)
+  IFS='|' read -r case_dir home proj wt fakebin id <<EOF
+$rec
+EOF
+  out=$(run_muse_spawn "$home" "$proj" "$wt" "$fakebin" "$id" --scout)
+  status=$?
+  expect_code 0 "$status" "muse scout spawn should succeed: $out"
+  assert_contains "$out" "kind=scout" "muse scout spawn did not record a scout"
+  launch=$(cat "$home/launch.log")
+  assert_muse_yolo "$launch" "muse scout launch"
+  assert_contains "$launch" 'encode launch-brief' "muse scout launch did not deliver the brief positionally"
+  pass "muse scout spawn launches with --yolo"
+}
+
+# No explicit harness: config/crew-harness selects muse and must still emit
+# the template, for both a ship and a scout.
+test_crew_harness_default_carries_yolo() {
+  local kind rec case_dir home proj wt fakebin id out status launch
+  for kind in ship scout; do
+    rec=$(make_spawn_case "crew-$kind")
+    IFS='|' read -r case_dir home proj wt fakebin id <<EOF
+$rec
+EOF
+    printf 'muse\n' > "$home/config/crew-harness"
+    if [ "$kind" = ship ]; then
+      out=$(run_muse_spawn_cmd "$home" "$proj" "$wt" "$fakebin" "$id" "$proj" --mode no-mistakes --yolo off)
+    else
+      out=$(run_muse_spawn_cmd "$home" "$proj" "$wt" "$fakebin" "$id" "$proj" --scout)
+    fi
+    status=$?
+    expect_code 0 "$status" "muse $kind spawn from config/crew-harness should succeed: $out"
+    launch=$(cat "$home/launch.log")
+    assert_muse_yolo "$launch" "muse $kind launch from config/crew-harness"
+    assert_grep 'harness=muse' "$home/state/$id.meta" "config/crew-harness did not select muse for $kind"
+  done
+  pass "config/crew-harness muse launches carry --yolo for ship and scout"
+}
+
+# Relaunch (fm-spawn --relaunch, which fm-control relaunch execs) must reuse
+# the recorded muse harness and keep --yolo. The pane is an idle shell, so
+# the replacement is allowed to launch.
+test_relaunch_carries_yolo() {
+  local kind rec case_dir home proj wt fakebin id out status launch
+  for kind in ship scout; do
+    rec=$(make_spawn_case "relaunch-$kind")
+    IFS='|' read -r case_dir home proj wt fakebin id <<EOF
+$rec
+EOF
+    if [ "$kind" = ship ]; then
+      out=$(run_muse_spawn "$home" "$proj" "$wt" "$fakebin" "$id" --mode no-mistakes --yolo off)
+    else
+      out=$(run_muse_spawn "$home" "$proj" "$wt" "$fakebin" "$id" --scout)
+    fi
+    status=$?
+    expect_code 0 "$status" "muse $kind spawn before relaunch should succeed: $out"
+    : > "$home/launch.log"
+    out=$(FM_FAKE_PANE_COMMAND=zsh run_muse_spawn_cmd "$home" "$proj" "$wt" "$fakebin" "$id" --relaunch)
+    status=$?
+    expect_code 0 "$status" "muse $kind relaunch should succeed: $out"
+    launch=$(cat "$home/launch.log")
+    assert_muse_yolo "$launch" "muse $kind relaunch"
+    assert_contains "$launch" 'encode launch-brief' "muse $kind relaunch did not deliver the brief positionally"
+    assert_grep 'harness=muse' "$home/state/$id.meta" "muse $kind relaunch dropped the recorded harness"
+  done
+  pass "muse ship and scout relaunch keep --yolo"
 }
 
 test_spawn_maps_effort_and_model() {
@@ -417,6 +503,7 @@ test_spawn_refuses_secondmate() {
     FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
     FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
     FM_SPAWN_NO_GUARD=1 TMUX="fake,1,0" META_API_KEY=test-key \
+    FM_FAKE_LAUNCH_LOG="$home/launch.log" \
     PATH="$fakebin:$PATH" \
     "$SPAWN" "$id" muse --secondmate 2>&1)
   status=$?
@@ -424,7 +511,34 @@ test_spawn_refuses_secondmate() {
   assert_contains "$out" "secondmate integration remains unverified" "muse secondmate refusal did not explain the boundary"
   assert_not_contains "$out" "crewmate/scout adapter only" "muse secondmate refusal denied its verified primary support"
   assert_not_contains "$out" "no primary supervision protocol" "muse secondmate refusal denied its verified primary protocol"
+  assert_absent "$home/launch.log" "muse secondmate refusal still launched a pane"
   pass "muse is refused as a secondmate harness"
+}
+
+# Session-start recovery respawns with `fm-spawn <id> --secondmate` and no
+# harness argument. config/crew-harness=muse must refuse before a pane exists.
+test_session_start_secondmate_relaunch_does_not_launch_muse() {
+  local case_dir home fakebin id out status
+  case_dir="$TMP_ROOT/secondmate-config"
+  home="$case_dir/home"
+  fakebin=$(make_spawn_fakebin "$case_dir/fake")
+  id="muse-secondmate-cfg"
+  mkdir -p "$home/data/$id" "$home/projects" "$home/state" "$home/config" "$case_dir/muse"
+  printf 'muse\n' > "$home/config/crew-harness"
+  printf 'charter\n' > "$home/data/$id/brief.md"
+  out=$(cd "$case_dir" && FM_ROOT_OVERRIDE='' FM_HOME="$home" \
+    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
+    FM_SPAWN_NO_GUARD=1 TMUX="fake,1,0" META_API_KEY=test-key \
+    FM_FAKE_LAUNCH_LOG="$home/launch.log" \
+    PATH="$fakebin:$PATH" \
+    "$SPAWN" "$id" --secondmate 2>&1)
+  status=$?
+  [ "$status" -ne 0 ] || fail "a muse secondmate from config/crew-harness was launched"
+  assert_contains "$out" "secondmate integration remains unverified" \
+    "config-selected muse secondmate refusal did not explain the boundary"
+  assert_absent "$home/launch.log" "config-selected muse secondmate still launched a pane"
+  pass "session-start muse secondmate recovery refuses before launch"
 }
 
 test_spawn_writes_busy_binding_and_teardown_removes_it() {
@@ -1083,12 +1197,16 @@ test_detects_versioned_process_ancestor
 test_detection_is_anchored
 test_spawn_clears_inherited_foreign_harness_markers
 test_spawn_launch_shape
+test_scout_launch_carries_yolo
+test_crew_harness_default_carries_yolo
+test_relaunch_carries_yolo
 test_spawn_maps_effort_and_model
 test_spawn_refuses_without_credential
 test_spawn_refuses_caller_only_environment_credential
 test_spawn_accepts_stored_credential
 test_spawn_resolves_relative_xdg_roots
 test_spawn_refuses_secondmate
+test_session_start_secondmate_relaunch_does_not_launch_muse
 test_spawn_writes_busy_binding_and_teardown_removes_it
 test_muse_escape_aliases_clear_the_composer
 test_non_muse_escape_does_not_clear

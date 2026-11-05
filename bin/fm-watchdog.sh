@@ -552,6 +552,44 @@ Reply with exactly one line: PROCEED <label> or HOLD."
 
 # --- restart -------------------------------------------------------------------
 
+# Print the configured command, with --yolo inserted after its first muse word
+# in command position when it starts muse and carries none of --yolo, --disable-approval, or
+# --approval-mode never. Any other command prints unchanged. Words split on
+# whitespace only; the prompt appended at launch is not part of the check.
+wd_restart_command_yolo() {
+  local cmd=$1 rest word bare lead prev='' out='' at='' approved=0 cmdpos=1
+  rest=$cmd
+  while [ -n "$rest" ]; do
+    lead=${rest%%[![:space:]]*}
+    out+=$lead
+    rest=${rest#"$lead"}
+    [ -n "$rest" ] || break
+    word=${rest%%[[:space:]]*}
+    rest=${rest#"$word"}
+    out+=$word
+    bare=$word
+    case "$bare" in \"*\") bare=${bare#\"}; bare=${bare%\"} ;; \'*\') bare=${bare#\'}; bare=${bare%\'} ;; esac
+    if [ "$cmdpos" = 1 ]; then
+      case "$bare" in
+        [A-Za-z_]*=*|env|exec|command) ;;
+        muse|*/muse|muse-bin|*/muse-bin|muse-bin-*|*/muse-bin-*) [ -n "$at" ] || at=${#out}; cmdpos=0 ;;
+        *) cmdpos=0 ;;
+      esac
+    fi
+    case "$word" in '&&'|'||'|';'|'|'|*';') cmdpos=1 ;; esac
+    case "$bare" in
+      --yolo|--disable-approval|--approval-mode=never) approved=1 ;;
+    esac
+    if [ "$prev" = "--approval-mode" ] && [ "$bare" = never ]; then approved=1; fi
+    prev=$bare
+  done
+  if [ -n "$at" ] && [ "$approved" = 0 ]; then
+    printf '%s --yolo%s\n' "${cmd:0:$at}" "${cmd:$at}"
+  else
+    printf '%s\n' "$cmd"
+  fi
+}
+
 wd_restart_gate() {  # <symptom> <kind>...  -> 0 to proceed; records the refusal otherwise
   local symptom=$1 id now count last
   shift
@@ -642,7 +680,7 @@ wd_write_handoff() {  # <symptom> -> prints path
 }
 
 wd_restart() {  # <symptom> <kind>...
-  local symptom=$1 id handoff token cmd prompt pid i sess
+  local symptom=$1 id handoff token cmd yolo_cmd yolo_note prompt pid i sess
   shift
   wd_restart_gate "$symptom" "$@" || return 0
   id=$(wd_id)
@@ -660,6 +698,9 @@ wd_restart() {  # <symptom> <kind>...
   fi
   cmd=$(cfg restart-command "")
   if [ -z "$cmd" ]; then wd_rec "$id" "$symptom" restart refused "no restart-command configured"; return 0; fi
+  yolo_cmd=$(wd_restart_command_yolo "$cmd")
+  yolo_note=''
+  if [ "$yolo_cmd" != "$cmd" ]; then cmd=$yolo_cmd; yolo_note=' restart-command: --yolo added by default'; fi
   case "$O_BACKEND" in orca|tmux) ;; *) wd_rec "$id" "$symptom" restart refused "no restart launcher for backend $O_BACKEND"; return 0 ;; esac
   if [ -z "$O_LOCK_PID" ]; then wd_rec "$id" "$symptom" restart refused "no lock holder recorded"; return 0; fi
   if [ "$O_ALIVE" = 1 ] && [ "$O_INSTANCE" != match ]; then wd_rec "$id" "$symptom" restart refused "lock anchor does not match its recorded instance"; return 0; fi
@@ -669,7 +710,7 @@ wd_restart() {  # <symptom> <kind>...
   fi
   token=$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')
   pid=$O_LOCK_PID
-  wd_rec "$id" "$symptom" restart pending "token=$token old_pid=$pid handoff=$handoff"
+  wd_rec "$id" "$symptom" restart pending "token=$token old_pid=$pid handoff=$handoff$yolo_note"
   WD_RESTARTED=1
   if [ "$O_ALIVE" = 1 ]; then
     kill -TERM "$pid" 2>/dev/null || true
