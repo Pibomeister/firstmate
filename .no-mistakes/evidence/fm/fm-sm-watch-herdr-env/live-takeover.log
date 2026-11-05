@@ -1,0 +1,10 @@
+leftover watcher pid 54071: bash /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-herdr-sm-watch.QVW7SQ/home/bin/fm-watch.sh --grok-hold
+--secondmate-selected (pane env, healthy leftover --grok-hold) rc=0
+--secondmate-selected (pane env without HERDR_SESSION) rc=0
+production start rc=0 output: 
+leftover pid 54071: gone
+new watcher pid 68888: bash /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-herdr-sm-watch.QVW7SQ/home/bin/fm-watch.sh --secondmate-hold
+binding: 53262 Thu Nov  5 04:35:50 2026     /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-herdr-sm-watch.QVW7SQ/codex-harness/codex /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-herdr-sm-watch.QVW7SQ/owner.sh fm-lab-fm-herdr-sm-watc-26672-22119:w1:p1 fm-lab-fm-herdr-sm-watc-26672-22119 herdr 
+--secondmate-status: healthy
+pane shows doorbell: : Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your 'sm-lab-1.inbox' steerin
+ok - herdr 0.8.2: real leftover --grok-hold taken over by --secondmate-hold in a real Herdr pane; doorbell rang

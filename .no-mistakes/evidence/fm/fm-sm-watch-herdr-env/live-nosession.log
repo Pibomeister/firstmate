@@ -1,0 +1,6 @@
+leftover watcher pid 95600: bash /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-herdr-sm-watch.FrVPc7/home/bin/fm-watch.sh --grok-hold
+--secondmate-selected (pane env, healthy leftover --grok-hold) rc=0
+--secondmate-selected (pane env without HERDR_SESSION) rc=0
+production start rc=1 output: 
+leftover pid 95600 still alive: bash /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-herdr-sm-watch.FrVPc7/home/bin/fm-watch.sh --grok-hold
+ok - herdr 0.8.2: pane in a named session without HERDR_SESSION fails the proof and leaves the leftover watcher running
