@@ -287,7 +287,7 @@ test_scope() {
 # one, and once it has fired the Stop hook blocks the handoff turn's stop until
 # the recorded handoff document lists every open order (bin/fm-order.sh gate).
 test_names_open_captain_orders_and_gates_the_stop() {
-  local order_id rc err doc
+  local order_id rc err doc succ
   reset_lab
   rm -rf "$PRIMARY/data/orders" "$PRIMARY"/data/handoff-*.md "$PRIMARY/state/.order-handoff"
   printf 'compact-at-tokens=100000\n' > "$PRIMARY/config/handoff-trigger"
@@ -324,19 +324,21 @@ test_names_open_captain_orders_and_gates_the_stop() {
   doc="$PRIMARY/data/handoff-20261031-1200-captain-restart.md"
   printf '# Handoff\n' > "$doc"
   FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" handoff --doc "$doc" >/dev/null || fail "handoff --doc must succeed"
-  printf 'mode=act\nrestart=on\nrestart-command=claude\n' > "$PRIMARY/config/watchdog"
-  # The orders are listed, but no successor has been requested yet: the stop
+  # The orders are listed, but no successor has been launched yet: the stop
   # is still blocked, now by the successor gate (issues 133, 116).
   err="$TMP_ROOT/stop-successor.err"
   rc=0
   run_hook "$PRIMARY" s-orders "$TMP_ROOT/t-90" Stop >/dev/null 2>"$err" || rc=$?
-  [ "$rc" -eq 2 ] || fail "a handoff turn with no successor request must be blocked (rc=$rc)"
-  assert_contains "$(cat "$err")" ".watchdog-restart-request" "the successor block names the request file"
-  : > "$PRIMARY/state/.watchdog-restart-request"
+  [ "$rc" -eq 2 ] || fail "a handoff turn with no successor launched must be blocked (rc=$rc)"
+  assert_contains "$(cat "$err")" "state/.handoff-successor" "the successor block names the launch record"
+  sleep 60 &
+  succ=$!
+  printf 'pid=%s\nhandoff=%s\n' "$succ" "$doc" > "$PRIMARY/state/.handoff-successor"
   rc=0
   run_hook "$PRIMARY" s-orders "$TMP_ROOT/t-90" Stop >/dev/null 2>&1 || rc=$?
-  [ "$rc" -eq 0 ] || fail "once the handoff lists every open order and the successor is requested the stop must pass (rc=$rc)"
-  rm -rf "$PRIMARY/data/orders" "$doc" "$PRIMARY/state/.order-handoff" "$PRIMARY/state/.watchdog-restart-request" "$PRIMARY/config/watchdog"
+  kill "$succ" 2>/dev/null; wait "$succ" 2>/dev/null
+  [ "$rc" -eq 0 ] || fail "once the handoff lists every open order and a live successor is recorded the stop must pass (rc=$rc)"
+  rm -rf "$PRIMARY/data/orders" "$doc" "$PRIMARY/state/.order-handoff" "$PRIMARY/state/.handoff-successor"
   pass "a firing names every open captain order, and the stop is gated until the handoff lists them"
 }
 
@@ -555,96 +557,86 @@ test_a_caller_outside_any_harness_reads_the_captains_handoff() {
   pass "a caller outside any harness reads the captain's handoff, and a second harness session does not"
 }
 
-test_handoff_requests_a_successor_and_gates_the_stop_without_one() {
-  local rc err out
-  reset_lab
-  rm -rf "$PRIMARY/data/orders" "$PRIMARY/state/.order-handoff" "$PRIMARY/state/.watchdog-restart-request"
-  printf 'compact-at-tokens=100000\n' > "$PRIMARY/config/handoff-trigger"
-  printf 'mode=act\nrestart=on\nrestart-command=claude\n' > "$PRIMARY/config/watchdog"
-  transcript "$TMP_ROOT/t-succ" 90000
-  # A stale request from an earlier episode must not satisfy this firing.
-  : > "$PRIMARY/state/.watchdog-restart-request"
-  sleep 1
-  out=$(run_hook "$PRIMARY" s-succ "$TMP_ROOT/t-succ")
-  expect_fire "$out" PostToolUse "successor instruction firing"
-  printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | contains("state/.watchdog-restart-request") and contains("verifies it holds the session lock")' >/dev/null \
-    || fail "the instruction must name the successor request and lock verification: $out"
-  err="$TMP_ROOT/succ.err"
-  rc=0
-  run_hook "$PRIMARY" s-succ "$TMP_ROOT/t-succ" Stop >/dev/null 2>"$err" || rc=$?
-  [ "$rc" -eq 2 ] || fail "a stale successor request must still block the stop (rc=$rc)"
-  assert_contains "$(cat "$err")" ".watchdog-restart-request" "the stale-request block names the request file"
-  rc=0
-  run_hook "$PRIMARY" s-succ "$TMP_ROOT/t-succ" Stop '. + {stop_hook_active: true}' >/dev/null 2>&1 || rc=$?
-  [ "$rc" -eq 0 ] || fail "a stop already continued by this hook must not be blocked again (rc=$rc)"
-  sleep 1
-  : > "$PRIMARY/state/.watchdog-restart-request"
-  rc=0
-  run_hook "$PRIMARY" s-succ "$TMP_ROOT/t-succ" Stop >/dev/null 2>&1 || rc=$?
-  [ "$rc" -eq 0 ] || fail "a fresh successor request must let the stop pass (rc=$rc)"
-  rm -f "$PRIMARY/state/.watchdog-restart-request" "$PRIMARY/config/watchdog"
-  pass "a firing requests its successor through the watchdog path and the stop is gated until it does (133, 116)"
-}
-
-test_default_home_needs_a_recorded_live_successor() {
-  local rc err out conf succ doc launch
+test_handoff_gates_the_stop_until_a_recorded_successor_is_alive() {
+  local rc err out succ doc launch
   reset_lab
   launch="$PRIMARY/state/.handoff-successor"
-  doc="$TMP_ROOT/handoff-dflt.md"
-  rm -rf "$PRIMARY/data/orders" "$PRIMARY/state/.order-handoff" "$PRIMARY/state/.watchdog-restart-request" \
-    "$launch" "$PRIMARY/config/watchdog"
+  doc="$TMP_ROOT/handoff-succ.md"
+  rm -rf "$PRIMARY/data/orders" "$PRIMARY/state/.order-handoff" "$PRIMARY/state/.watchdog-restart-request" "$launch"
   printf '# Handoff\n' > "$doc"
   printf 'compact-at-tokens=100000\n' > "$PRIMARY/config/handoff-trigger"
-  transcript "$TMP_ROOT/t-dflt" 90000
+  transcript "$TMP_ROOT/t-succ" 90000
   # A launch record from an earlier episode must not satisfy this firing.
   sleep 60 &
   succ=$!
   printf 'pid=%s\nhandoff=%s\n' "$succ" "$doc" > "$launch"
   sleep 1
-  out=$(run_hook "$PRIMARY" s-dflt "$TMP_ROOT/t-dflt")
-  expect_fire "$out" PostToolUse "default-home firing"
-  printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | contains("launch the successor yourself") and contains("state/.handoff-successor") and contains("bin/fm-session-start.sh")' >/dev/null \
-    || fail "the instruction must say to launch and record the successor where the watchdog does not act: $out"
-  err="$TMP_ROOT/dflt.err"
+  out=$(run_hook "$PRIMARY" s-succ "$TMP_ROOT/t-succ")
+  expect_fire "$out" PostToolUse "successor instruction firing"
+  printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | contains("Launch the successor yourself") and contains("state/.handoff-successor") and contains("bin/fm-session-start.sh")' >/dev/null \
+    || fail "the instruction must say to launch and record the successor: $out"
+  err="$TMP_ROOT/succ.err"
   rc=0
-  run_hook "$PRIMARY" s-dflt "$TMP_ROOT/t-dflt" Stop >/dev/null 2>"$err" || rc=$?
+  run_hook "$PRIMARY" s-succ "$TMP_ROOT/t-succ" Stop >/dev/null 2>"$err" || rc=$?
   [ "$rc" -eq 2 ] || fail "a launch record older than the firing must not clear the stop (rc=$rc)"
-  # A default home (no config/watchdog) and two partial ones: the watchdog
-  # ignores the request there, so the request file alone must not clear the stop.
-  for conf in '' 'mode=dry-run\nrestart=on\nrestart-command=claude\n' 'mode=act\nrestart=on\n'; do
-    if [ -n "$conf" ]; then printf '%b' "$conf" > "$PRIMARY/config/watchdog"; else rm -f "$PRIMARY/config/watchdog"; fi
-    sleep 1
-    : > "$PRIMARY/state/.watchdog-restart-request"
-    rc=0
-    run_hook "$PRIMARY" s-dflt "$TMP_ROOT/t-dflt" Stop >/dev/null 2>"$err" || rc=$?
-    [ "$rc" -eq 2 ] || fail "a restart request the watchdog will not act on must not clear the stop (config '$conf', rc=$rc)"
-    assert_contains "$(cat "$err")" "Launch your successor yourself" "the block tells the session to launch its successor"
-    assert_contains "$(cat "$err")" "state/.handoff-successor" "the block names the launch record"
-  done
-  rm -f "$PRIMARY/config/watchdog"
-  # A fresh launch record with a live successor clears the stop.
+  assert_contains "$(cat "$err")" "Launch your successor yourself" "the block tells a primary to launch its successor"
+  rc=0
+  run_hook "$PRIMARY" s-succ "$TMP_ROOT/t-succ" Stop '. + {stop_hook_active: true}' >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 0 ] || fail "a stop already continued by this hook must not be blocked again (rc=$rc)"
+  # A restart request alone launches nobody, so it does not clear the stop.
+  sleep 1
+  : > "$PRIMARY/state/.watchdog-restart-request"
+  printf 'mode=act\nrestart=on\nrestart-command=claude\n' > "$PRIMARY/config/watchdog"
+  rc=0
+  run_hook "$PRIMARY" s-succ "$TMP_ROOT/t-succ" Stop >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 2 ] || fail "a restart request with no recorded successor must not clear the stop (rc=$rc)"
+  rm -f "$PRIMARY/config/watchdog" "$PRIMARY/state/.watchdog-restart-request"
+  # A fresh record naming a live successor clears the stop.
   printf 'pid=%s\nhandoff=%s\n' "$succ" "$doc" > "$launch"
   rc=0
-  run_hook "$PRIMARY" s-dflt "$TMP_ROOT/t-dflt" Stop >/dev/null 2>&1 || rc=$?
+  run_hook "$PRIMARY" s-succ "$TMP_ROOT/t-succ" Stop >/dev/null 2>&1 || rc=$?
   [ "$rc" -eq 0 ] || fail "a recorded live successor must let the stop pass (rc=$rc)"
-  # A fresh record whose handoff document is missing does not.
-  printf 'pid=%s\nhandoff=%s\n' "$succ" "$TMP_ROOT/no-such-handoff.md" > "$launch"
-  rc=0
-  run_hook "$PRIMARY" s-dflt "$TMP_ROOT/t-dflt" Stop >/dev/null 2>&1 || rc=$?
-  [ "$rc" -eq 2 ] || fail "a launch record naming no handoff document must not clear the stop (rc=$rc)"
   # A fresh record whose successor has died keeps the stop blocked.
-  printf 'pid=%s\nhandoff=%s\n' "$succ" "$doc" > "$launch"
   kill "$succ" 2>/dev/null; wait "$succ" 2>/dev/null
+  printf 'pid=%s\nhandoff=%s\n' "$succ" "$doc" > "$launch"
   rc=0
-  run_hook "$PRIMARY" s-dflt "$TMP_ROOT/t-dflt" Stop >/dev/null 2>"$err" || rc=$?
+  run_hook "$PRIMARY" s-succ "$TMP_ROOT/t-succ" Stop >/dev/null 2>&1 || rc=$?
   [ "$rc" -eq 2 ] || fail "a recorded successor that is dead must keep the stop blocked (rc=$rc)"
-  assert_contains "$(cat "$err")" "live successor" "the dead-successor block says no live successor was launched"
-  rm -f "$launch" "$doc" "$PRIMARY/state/.watchdog-restart-request"
-  pass "where the watchdog does not restart, the stop is gated until a recorded successor is alive (133, 116)"
+  rm -f "$launch" "$doc"
+  pass "a firing is gated until a fresh launch record names a live successor; stale, dead, or request-only blocks (133, 116)"
 }
 
-test_handoff_requests_a_successor_and_gates_the_stop_without_one
-test_default_home_needs_a_recorded_live_successor
+test_secondmate_handoff_escalates_to_its_parent() {
+  local rc err out succ launch
+  reset_lab
+  launch="$PRIMARY/state/.handoff-successor"
+  rm -rf "$PRIMARY/data/orders" "$PRIMARY/state/.order-handoff" "$launch"
+  printf 'sm-test\n' > "$PRIMARY/.fm-secondmate-home"
+  printf 'compact-at-tokens=100000\n' > "$PRIMARY/config/handoff-trigger"
+  transcript "$TMP_ROOT/t-sm" 90000
+  out=$(run_hook "$PRIMARY" s-sm "$TMP_ROOT/t-sm")
+  expect_fire "$out" PostToolUse "second-mate firing"
+  printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | contains("never launch your own successor") and contains("parent channel") and (contains("Launch the successor yourself") | not)' >/dev/null \
+    || fail "a second mate's instruction must escalate to its parent and not self-launch: $out"
+  err="$TMP_ROOT/sm.err"
+  rc=0
+  run_hook "$PRIMARY" s-sm "$TMP_ROOT/t-sm" Stop >/dev/null 2>"$err" || rc=$?
+  [ "$rc" -eq 2 ] || fail "a second mate with no recorded successor must be blocked (rc=$rc)"
+  assert_contains "$(cat "$err")" "parent channel" "the second-mate block escalates to the parent channel"
+  case "$(cat "$err")" in *"Launch your successor yourself"*) fail "a second mate must never be told to self-launch" ;; esac
+  sleep 60 &
+  succ=$!
+  printf 'pid=%s\n' "$succ" > "$launch"
+  rc=0
+  run_hook "$PRIMARY" s-sm "$TMP_ROOT/t-sm" Stop >/dev/null 2>&1 || rc=$?
+  kill "$succ" 2>/dev/null; wait "$succ" 2>/dev/null
+  [ "$rc" -eq 0 ] || fail "a parent-recorded live successor must let a second mate's stop pass (rc=$rc)"
+  rm -f "$launch" "$PRIMARY/.fm-secondmate-home"
+  pass "a second mate's handoff escalates to its parent and never self-launches (133, 116)"
+}
+
+test_handoff_gates_the_stop_until_a_recorded_successor_is_alive
+test_secondmate_handoff_escalates_to_its_parent
 test_threshold_default_15
 test_threshold_configurable
 test_fires_once_per_context_cycle
