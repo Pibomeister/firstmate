@@ -63,6 +63,9 @@
 #                       spawn_gen epoch; a secondmate's marker is never read, since
 #                       the watcher does not refresh it for that kind
 #     open_asks         {decisions, inbox_unhandled}
+#   ready_pr_discovery  bin/fm-ready-pr-discovery.sh --json: no-mistakes runs
+#                     parked with a PR ready or at a gate in every registered
+#                     repo, owned or orphan; {unknown:true,reason} when unread.
 #   weekly_allowance  weekly model allowance left, not a trust score. No trust-score
 #                     owner exists. {status:"ok",windows:[{provider,id,
 #                     percent_remaining}]} when quota-axi names a weekly window,
@@ -643,8 +646,30 @@ heartbeat_weekly_allowance() {
   printf '%s\n' "$parsed"
 }
 
+# Read-only ready-PR discovery across every registered repo (bin/fm-ready-pr-discovery.sh).
+# A failure or timeout stays an explicit unknown, never a silent empty list.
+heartbeat_ready_pr_discovery() {
+  local out rc=0
+  out=$(fm_run_timed "${FM_HEARTBEAT_DISCOVERY_TIMEOUT:-15}" \
+    env FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" \
+    FM_PROJECTS_OVERRIDE="$PROJECTS" FM_READY_PR_NOW="$HEARTBEAT_EPOCH" \
+    "$SCRIPT_DIR/fm-ready-pr-discovery.sh" --json </dev/null 2>/dev/null) || rc=$?
+  if [ "$rc" -ne 0 ] || [ -z "$out" ] \
+    || ! printf '%s' "$out" | jq -e '.schema == "fm-ready-pr-discovery.v1"' >/dev/null 2>&1; then
+    heartbeat_note_failure "ready-pr discovery unreadable"
+    jq -nc '{unknown:true,reason:"ready-pr discovery unreadable"}'
+    return 0
+  fi
+  printf '%s\n' "$out" | jq -c '.'
+}
+
 heartbeat_publish() {
-  local snapshot_meta tmp=$HEARTBEAT_WORK/heartbeat.json weekly
+  local snapshot_meta tmp=$HEARTBEAT_WORK/heartbeat.json weekly ready_pr
+  ready_pr=$(heartbeat_ready_pr_discovery) || ready_pr='{"unknown":true,"reason":"ready-pr discovery unreadable"}'
+  case "$ready_pr" in
+    '{'*'}') ;;
+    *) ready_pr='{"unknown":true,"reason":"ready-pr discovery unreadable"}' ;;
+  esac
   weekly=$(heartbeat_weekly_allowance) || weekly='{"unknown":true,"reason":"quota-axi could not be read"}'
   case "$weekly" in
     '{'*'}') ;;
@@ -675,11 +700,12 @@ heartbeat_publish() {
     --argjson snapshot "$snapshot_meta" \
     --argjson primary "$PRIMARY_JSON" \
     --argjson weekly "$weekly" \
+    --argjson ready_pr "$ready_pr" \
     --slurpfile tasks "$HEARTBEAT_WORK/tasks" \
     --rawfile failures "$HEARTBEAT_WORK/failures" \
     '($failures | split("\n") | map(select(. != ""))) as $f
     | {schema:"fm-heartbeat.v1",generated:$generated,generated_epoch:$generated_epoch,fm_home:$fm_home,
-       snapshot:$snapshot,primary:$primary,tasks:$tasks[0],weekly_allowance:$weekly,
+       snapshot:$snapshot,primary:$primary,tasks:$tasks[0],weekly_allowance:$weekly,ready_pr_discovery:$ready_pr,
        failure:(if ($f | length) == 0 then null else {reason:($f[:10] | join("; ")),count:($f | length)} end)}' > "$tmp" \
     && chmod 600 "$tmp" \
     && mv -f "$tmp" "$LEDGER"; then

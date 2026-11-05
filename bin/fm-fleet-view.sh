@@ -96,3 +96,14 @@ printf '%s\n' "$SNAPSHOT" | jq -r '
   "## Secondmates",
   .secondmate_guidance.note
 '
+
+# Read-only ready-PR discovery across every registered repo (one compact line
+# per run). Best-effort: a discovery failure is shown, never hidden, and never
+# fails the fleet view itself.
+printf '\n## Ready PRs awaiting a decision\n'
+if [ -x "$SCRIPT_DIR/fm-ready-pr-discovery.sh" ]; then
+  "$SCRIPT_DIR/fm-ready-pr-discovery.sh" --compact 2>/dev/null \
+    || printf 'ready-pr-unreadable: repo=* reason=discovery failed\n'
+else
+  printf 'ready-pr-unreadable: repo=* reason=discovery unavailable\n'
+fi
