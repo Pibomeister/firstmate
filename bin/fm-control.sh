@@ -1181,6 +1181,26 @@ resolve_relaunch_profile() {
   # transaction, where nothing has changed yet.
   fm_control_harness_supports_kind "$TARGET_HARNESS" "$KIND" \
     || die "'$TARGET_HARNESS' is not verified to run a $KIND task, so relaunching $ID onto it would stop the running agent for a launch that must be refused; choose an adapter verified for this kind"
+  # Moving off Claude is refused when any Claude-specific tooling signal is
+  # present. Same check as bin/fm-quota-reroute.sh; no override flag.
+  if [ "$PRIOR_HARNESS" = claude ] && [ "$TARGET_HARNESS" != claude ]; then
+    local claude_dir pin declared root sig cfg tooling_mate
+    tooling_mate=
+    [ "$KIND" != secondmate ] || tooling_mate=$ID
+    cfg=$(fm_worker_account_config claude "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}" "$tooling_mate")
+    claude_dir=${HOME}/.claude
+    if pin=$(fm_worker_account_resolve claude "$cfg" config/claude-account 2>/dev/null) && [ -n "$pin" ]; then
+      declared=${pin%%$'\t'*}
+      root=$(printf '%s' "$pin" | cut -f2)
+      [ "$declared" = ordinary ] || claude_dir=$root
+    fi
+    if [ -z "$WT" ]; then
+      die "Claude-specific tooling present (unresolvable worktree); refusing to move $ID off Claude"
+    fi
+    if sig=$("$SCRIPT_DIR/fm-quota-reroute.sh" claude-tooling --config-dir "$claude_dir" --worktree "$WT"); then
+      die "Claude-specific tooling present ($sig); refusing to move $ID off Claude"
+    fi
+  fi
   # A model chosen for the previous harness does not transfer to a different
   # one, so an explicit harness change resets model unless the caller names it.
   # Effort is kept unless --effort is named, including across a harness change.

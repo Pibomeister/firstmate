@@ -17,9 +17,10 @@
 # claude-tooling exits 0 and prints the blocking signal when tooling is
 # required. Exit 1 means no signal.
 #
-# Signals: MCP servers in the account config dir; a project .mcp.json in the
-# worktree; .claude/ skills, hooks, agents, or commands in the worktree.
-# Resolve the config dir from the task's account pin, never from
+# Signals: MCP servers in the account config dir (including $HOME/.claude.json
+# for an ordinary account, and any non-empty .projects[].mcpServers); a project
+# .mcp.json in the worktree; .claude/ skills, hooks, agents, or commands in the
+# worktree. Resolve the config dir from the task's account pin, never from
 # claude-config-dirs.
 #
 # The supervisor runs this after a stale wake names a usage-limit, then calls
@@ -48,6 +49,17 @@ usage() {
 # Prints the blocking signal and returns 0 when a Claude-specific signal is
 # present or the inspect cannot be completed. Returns 1 when none are present.
 # An omitted worktree skips worktree signals (claude-tooling of a config dir).
+# Ordinary Claude keeps user-scope mcpServers in $HOME/.claude.json, outside
+# $HOME/.claude. Project-scope servers live under .projects[<path>].mcpServers.
+fm_quota_claude_mcp_in_file() {  # <file>
+  jq -e '(.mcpServers | type == "object" and length > 0)
+         or (.enabledMcpjsonServers | type == "array" and length > 0)
+         or ((.projects // {}) | to_entries
+             | map(.value.mcpServers | select(type == "object" and length > 0))
+             | length > 0)' \
+    "$1" >/dev/null 2>&1
+}
+
 fm_quota_claude_tooling_signal() {  # <config-dir> [worktree]
   local dir=${1-} wt=${2-} f name
   if [ -z "$dir" ]; then
@@ -68,13 +80,28 @@ fm_quota_claude_tooling_signal() {  # <config-dir> [worktree]
       printf '%s\n' "unreadable $f"
       return 0
     fi
-    if jq -e '(.mcpServers | type == "object" and length > 0)
-              or (.enabledMcpjsonServers | type == "array" and length > 0)' \
-         "$f" >/dev/null 2>&1; then
+    if fm_quota_claude_mcp_in_file "$f"; then
       printf '%s\n' "MCP servers in $f"
       return 0
     fi
   done
+  if [ -n "${HOME:-}" ] && { [ "$dir" = "$HOME/.claude" ] || [ "$dir" = "$HOME/.claude/" ]; }; then
+    f=$HOME/.claude.json
+    if [ -e "$f" ]; then
+      if [ ! -f "$f" ] || [ ! -r "$f" ]; then
+        printf '%s\n' "unreadable $f"
+        return 0
+      fi
+      if ! jq -e . "$f" >/dev/null 2>&1; then
+        printf '%s\n' "unreadable $f"
+        return 0
+      fi
+      if fm_quota_claude_mcp_in_file "$f"; then
+        printf '%s\n' "MCP servers in $f"
+        return 0
+      fi
+    fi
+  fi
   [ -n "$wt" ] || return 1
   if [ ! -d "$wt" ] || [ ! -r "$wt" ] || [ ! -x "$wt" ]; then
     printf '%s\n' "unreadable worktree"
@@ -197,7 +224,7 @@ case "$cmd" in
     if [ "$FROM_HARNESS" = claude ]; then
       if [ -z "$WORKTREE" ]; then
         printf 'none\n'
-        echo "error: Claude-specific tooling present (unreadable worktree); queue until reset rather than moving off Claude" >&2
+        echo "error: Claude-specific tooling present (unresolvable worktree); queue until reset rather than moving off Claude" >&2
         exit 1
       fi
       if sig=$(fm_quota_claude_tooling_signal "$CLAUDE_DIR" "$WORKTREE"); then

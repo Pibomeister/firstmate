@@ -287,7 +287,7 @@ run_control() {  # <case-dir> <args...>
   # without it this suite would write the developer's real ~/.claude.json.
   # agy on macOS refuses a HOME with no login keychain, so the throwaway HOME
   # carries a stand-in keychain file.
-  mkdir -p "$dir/user-home/Library/Keychains"
+  mkdir -p "$dir/user-home/Library/Keychains" "$dir/user-home/.claude"
   : > "$dir/user-home/Library/Keychains/login.keychain-db"
   env -u HERDR_ENV -u HERDR_PANE_ID -u HERDR_SESSION -u HERDR_SOCKET_PATH \
     -u HERDR_TAB_ID -u HERDR_WORKSPACE_ID \
@@ -1095,6 +1095,27 @@ test_harness_switch_falls_back_when_the_new_harness_refuses_carried_effort() {
   [ "$(meta_field "$dir" rl83 harness)" = codex ] \
     || fail "the replacement should still land on the named harness"
   pass "fm-control relaunch: a carried effort the new harness refuses falls back to that harness default"
+}
+
+test_relaunch_off_claude_refuses_when_tooling_is_present() {
+  local dir out rc
+  dir=$(new_case tooling-block rl84)
+  add_ship_task "$dir" rl84 claude
+  make_claude_auth_stub "$dir"
+  mkdir -p "$dir/pin" "$dir/home/config"
+  printf '%s\n' '{"mcpServers":{"docs":{"command":"true"}}}' > "$dir/pin/.claude.json"
+  : > "$dir/pin/.credentials.json"
+  printf '%s\n' "$dir/pin" > "$dir/home/config/claude-account"
+  printf 'codex' > "$dir/fake/becomes"
+  out=$(run_control "$dir" rl84 relaunch --harness codex --note "move off Claude"); rc=$?
+  expect_code 1 "$rc" "moving off Claude must refuse when tooling is present"$'\n'"$out"
+  assert_contains "$out" "Claude-specific tooling present" "the refusal should name the tooling gate"
+  assert_contains "$out" "MCP servers in $dir/pin/.claude.json" "the refusal should name the blocking signal"
+  [ "$(cat "$dir/fake/command")" = claude ] \
+    || fail "a tooling refusal must leave the old agent running"
+  [ "$(meta_field "$dir" rl84 harness)" = claude ] \
+    || fail "a tooling refusal must leave the recorded harness"
+  pass "fm-control relaunch: moving off Claude refuses when Claude-specific tooling is present"
 }
 
 test_harness_switch_resolves_a_prefixed_recorded_harness() {
@@ -3710,6 +3731,7 @@ test_refused_polytoken_profile_leaves_the_running_agent
 test_relaunch_from_a_raw_polytoken_launch_keeps_the_project_layers
 test_harness_switch_does_not_carry_the_old_profile_axes
 test_harness_switch_falls_back_when_the_new_harness_refuses_carried_effort
+test_relaunch_off_claude_refuses_when_tooling_is_present
 test_harness_switch_resolves_a_prefixed_recorded_harness
 test_prefixed_recorded_harness_requires_explicit_replacement
 test_same_harness_relaunch_keeps_the_profile_axes

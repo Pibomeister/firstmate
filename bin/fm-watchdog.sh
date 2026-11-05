@@ -1063,8 +1063,9 @@ wd_quota_meta() {  # [task-id]
 
 wd_quota_pick() {  # [task-id]
   local cands cand snapshot pick harness kind model wt claude_dir pin declared root
-  local cfg mate meta task=${1-}
+  local cfg mate meta task=${1-} judge
   pin=
+  rm -f "$WD/.quota-none-reason"
   cands=$(cfg reroute-candidates "")
   [ -n "$cands" ] || { printf 'none\n'; return 1; }
   snapshot=$WD/quota-snapshot.txt
@@ -1077,7 +1078,11 @@ wd_quota_pick() {  # [task-id]
   model=
   wt=
   claude_dir=
-  if meta=$(wd_quota_meta "$task"); then
+  judge=$task
+  if [ -z "$judge" ] && [ -n "${O_ID:-}" ] && [ "$O_ID" != - ]; then
+    judge=$O_ID
+  fi
+  if meta=$(wd_quota_meta "$judge"); then
     harness=$(fm_meta_get "$meta" harness 2>/dev/null) || harness=
     kind=$(fm_meta_get "$meta" kind 2>/dev/null) || kind=ship
     model=$(fm_meta_get "$meta" model 2>/dev/null) || model=
@@ -1086,22 +1091,29 @@ wd_quota_pick() {  # [task-id]
   elif [ "${O_PARENT:-}" != - ] && [ -n "${O_ID:-}" ] && [ "$O_ID" != - ]; then
     kind=secondmate
   fi
-  mate=
-  [ "${O_PARENT:-}" = - ] || [ -z "${O_ID:-}" ] || [ "$O_ID" = - ] || mate=$O_ID
-  cfg=$(fm_worker_account_config claude "$OWNER_HOME/config" "$mate")
-  if pin=$(fm_worker_account_resolve claude "$cfg" config/claude-account 2>/dev/null) && [ -n "$pin" ]; then
-    declared=${pin%%$'\t'*}
-    root=$(printf '%s' "$pin" | cut -f2)
-    if [ "$declared" = ordinary ]; then
-      claude_dir=${HOME}/.claude
+  if [ -z "$harness" ]; then
+    printf '%s\n' "Unknown harness" > "$WD/.quota-none-reason"
+    printf 'none\n'
+    return 1
+  fi
+  if [ "$harness" = claude ]; then
+    mate=
+    [ "$kind" = secondmate ] && [ -n "$judge" ] && [ "$judge" != - ] && mate=$judge
+    cfg=$(fm_worker_account_config claude "$OWNER_HOME/config" "$mate")
+    if pin=$(fm_worker_account_resolve claude "$cfg" config/claude-account 2>/dev/null) && [ -n "$pin" ]; then
+      declared=${pin%%$'\t'*}
+      root=$(printf '%s' "$pin" | cut -f2)
+      if [ "$declared" = ordinary ]; then
+        claude_dir=${HOME}/.claude
+      else
+        claude_dir=$root
+      fi
     else
-      claude_dir=$root
+      claude_dir=${HOME}/.claude
     fi
-  elif [ "$harness" = claude ]; then
-    claude_dir=${HOME}/.claude
   fi
   set -- suggest --snapshot "$snapshot"
-  [ -z "$harness" ] || set -- "$@" --from-harness "$harness"
+  set -- "$@" --from-harness "$harness"
   [ -z "$model" ] || set -- "$@" --from-model "$model"
   [ -z "$kind" ] || set -- "$@" --kind "$kind"
   [ -z "$wt" ] || set -- "$@" --worktree "$wt"
@@ -1114,15 +1126,20 @@ wd_quota_pick() {  # [task-id]
   [ "$pick" != none ]
 }
 
+wd_quota_none_reason() {
+  cat "$WD/.quota-none-reason" 2>/dev/null || printf '%s\n' "No eligible reroute candidate"
+}
+
 wd_quota_name_pick() {  # <id> <subject>
-  local pick
+  local pick reason
   pick=$(wd_quota_pick) || pick=none
   if [ -n "$pick" ] && [ "$pick" != none ]; then
     wd_rec "$1" quota suggest held "quota shows $pick eligible; supervisor relaunches, watchdog does not"
     wd_gap "usage-limit on $2. Suggested pick: $pick. Supervisor relaunches. The watchdog does not change the runtime."
   else
-    wd_rec "$1" quota suggest held "no eligible reroute candidate; queued until reset"
-    wd_gap "usage-limit on $2. No eligible reroute candidate. Queue until reset; never pause in a poll loop."
+    reason=$(wd_quota_none_reason)
+    wd_rec "$1" quota suggest held "$reason; queued until reset"
+    wd_gap "usage-limit on $2. $reason. Queue until reset; never pause in a poll loop."
   fi
 }
 
@@ -1134,7 +1151,7 @@ wd_handle_quota() {
     if [ -n "$pick" ] && [ "$pick" != none ]; then
       wd_nudge "quota:$task" "task $task is parked at a quota floor. Suggested pick: $pick. Supervisor relaunches; the watchdog does not. Never pause or poll for quota."
     else
-      wd_nudge "quota:$task" "task $task is parked at a quota floor. No eligible reroute candidate. Queue until reset; never pause or poll for quota."
+      wd_nudge "quota:$task" "task $task is parked at a quota floor. $(wd_quota_none_reason). Queue until reset; never pause or poll for quota."
     fi
   done
 }
