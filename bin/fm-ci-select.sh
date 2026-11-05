@@ -8,9 +8,13 @@
 # missing diff cannot skip the suite. Usage errors exit 2 with no mode
 # line.
 #
-# The allowlist is exact paths no test reads and no script sources.
-# tests/fm-ci-select.test.sh greps tests/ and bin/ for each path and
-# fails if one is referenced. It is not derived from
+# The allowlist is exact paths. A path may skip only when it is unread
+# (no literal match in tests/ or bin/, and not selected by
+# docs/documentation-audiences.json trackedPatterns or that inventory)
+# or when a skip-mode check covers it. Repo invariants runs
+# bin/fm-doc-audience-check.sh so glob-read Markdown still fails on a
+# broken link, anchor, or owner pointer. tests/fm-ci-select.test.sh
+# enforces that coverage. It is not derived from
 # families_for_changed_path: that map is a --changed selector, and its
 # empty arms are not a skip oracle.
 #
@@ -32,6 +36,7 @@
 #   fm-ci-select.sh --files-from -
 #   fm-ci-select.sh --base <git-ref>
 #   fm-ci-select.sh --list-skip
+#   fm-ci-select.sh --list-skip-checks
 #   fm-ci-select.sh --help
 #
 # --files-from - reads one relative path per line from stdin.
@@ -39,6 +44,8 @@
 # the current directory, which CI has checked out. --no-renames lists
 # both sides of a rename so a bin/ path moved under docs/ still maps.
 # --list-skip prints the allowlist, one path per line, and exits 0.
+# --list-skip-checks prints the commands Repo invariants runs on skip,
+# one per line, and exits 0.
 set -eu
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -75,6 +82,12 @@ docs/examples/wedge-alarm
 docs/opencode-2-plugin-port-scope.md
 docs/pi-supervision-branch-poster.svg
 docs/scripts.md
+EOF
+}
+
+skip_checks() {
+  cat <<'EOF'
+bin/fm-doc-audience-check.sh
 EOF
 }
 
@@ -121,6 +134,7 @@ classify_paths() {
 FILES_FROM=
 BASE_REF=
 LIST_SKIP=0
+LIST_SKIP_CHECKS=0
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -130,6 +144,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     --list-skip)
       LIST_SKIP=1
+      shift
+      ;;
+    --list-skip-checks)
+      LIST_SKIP_CHECKS=1
       shift
       ;;
     --files-from)
@@ -143,15 +161,26 @@ while [ "$#" -gt 0 ]; do
       shift 2
       ;;
     *)
-      die "usage: fm-ci-select.sh --files-from - | --base <git-ref> | --list-skip"
+      die "usage: fm-ci-select.sh --files-from - | --base <git-ref> | --list-skip | --list-skip-checks"
       ;;
   esac
 done
+
+if [ "$LIST_SKIP" -eq 1 ] && [ "$LIST_SKIP_CHECKS" -eq 1 ]; then
+  die "use --list-skip or --list-skip-checks, not both"
+fi
 
 if [ "$LIST_SKIP" -eq 1 ]; then
   [ -z "$FILES_FROM" ] && [ -z "$BASE_REF" ] \
     || die "use --list-skip alone"
   skip_allowlist
+  exit 0
+fi
+
+if [ "$LIST_SKIP_CHECKS" -eq 1 ]; then
+  [ -z "$FILES_FROM" ] && [ -z "$BASE_REF" ] \
+    || die "use --list-skip-checks alone"
+  skip_checks
   exit 0
 fi
 
@@ -172,4 +201,4 @@ if [ -n "$BASE_REF" ]; then
   exit 0
 fi
 
-die "usage: fm-ci-select.sh --files-from - | --base <git-ref> | --list-skip"
+die "usage: fm-ci-select.sh --files-from - | --base <git-ref> | --list-skip | --list-skip-checks"

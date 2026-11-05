@@ -726,6 +726,21 @@ RUBY
 # Path skip: a trusted PR whose classifier printed skip runs the same cheap
 # jobs as an unlabelled outside PR, but Full suite passes. Main still runs
 # every job because the select job forces mode=full on push.
+test_invariants_runs_skip_mode_checks() {
+  local check
+  while IFS= read -r check; do
+    [ -n "$check" ] || continue
+    ruby -ryaml -e '
+doc = YAML.load_file(ARGV[0])
+want = ARGV[1]
+runs = doc.fetch("jobs").fetch("invariants").fetch("steps").map { |s| s["run"].to_s }
+raise "Repo invariants does not run #{want}" unless runs.any? { |run| run.split.include?(want) }
+' "$CI_WORKFLOW" "$check" \
+      || fail "Repo invariants must run skip-mode check $check"
+  done < <("$ROOT/bin/fm-ci-select.sh" --list-skip-checks)
+  pass "Repo invariants runs every skip-mode documentation check"
+}
+
 test_path_skip_runs_only_quick_checks() {
   local actual out
   actual=$(jobs_running_under association=OWNER mode=skip | tr '\n' ' ') \
@@ -834,6 +849,7 @@ test_separate_prs_do_not_cancel_each_other
 test_main_pushes_keep_only_the_newest_run
 test_only_the_full_ci_label_joins_the_pr_group
 test_outside_pr_without_label_runs_only_quick_checks
+test_invariants_runs_skip_mode_checks
 test_path_skip_runs_only_quick_checks
 test_unintended_skip_fails_the_verdict
 test_path_skip_still_fails_when_a_quick_check_failed

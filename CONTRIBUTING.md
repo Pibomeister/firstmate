@@ -52,8 +52,9 @@ The workflow forces `mode=full` before it trusts the classifier when the diff in
 | every changed path is on the skip allowlist | `CI path select`, `Test coverage guard`, `Repo invariants`, `Full suite` (pass) |
 | any other path, including `.cursor/`, `README.md`, `docs/herdr-backend.md`, and a deleted `bin/` helper | every job in `.github/workflows/ci.yml` |
 
-The allowlist is exact paths no test reads and no script sources: `GROK_BOT.md`, `VISION.md`, `assets/banner.png`, `docs/documentation-audiences.md`, `docs/examples/wedge-alarm`, `docs/opencode-2-plugin-port-scope.md`, `docs/pi-supervision-branch-poster.svg`, and `docs/scripts.md`.
-`tests/fm-ci-select.test.sh` greps `tests/` and `bin/` for each allowlisted path and fails if one is referenced.
+The allowlist is exact paths: `GROK_BOT.md`, `VISION.md`, `assets/banner.png`, `docs/documentation-audiences.md`, `docs/examples/wedge-alarm`, `docs/opencode-2-plugin-port-scope.md`, `docs/pi-supervision-branch-poster.svg`, and `docs/scripts.md`.
+`Repo invariants` runs `bin/fm-doc-audience-check.sh` on skip, so a broken link, anchor, or owner pointer in those glob-read docs fails `Full suite`.
+`tests/fm-ci-select.test.sh` fails unless each allowlisted path is unread or covered by that skip-mode check.
 
 A mixed diff that includes any non-allowlisted path is full.
 The outside-PR `full-ci` gate still applies on top of this table: an unlabelled outside pull request runs only the skip-set jobs, and `Full suite` fails naming the label even when the paths would skip.

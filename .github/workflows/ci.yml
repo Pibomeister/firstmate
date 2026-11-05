@@ -45,7 +45,9 @@ concurrency:
 # mode=skip drops lint and the behavior lanes. Coverage, invariants, the
 # classifier job, and Full suite still run, and Full suite passes. mode=full,
 # including every push to main, keeps those lanes. Skip is an explicit
-# allowlist of paths no test or script names; a missing path is full.
+# allowlist. Glob-read allowlisted docs still fail the suite because
+# Repo invariants runs bin/fm-doc-audience-check.sh. A missing path is
+# full.
 # The workflow forces full when the diff includes the classifier, the
 # changed-path map, or .github/, before it trusts the pull request's
 # classifier. Heavy jobs read needs.select.outputs.mode so an intended
@@ -594,6 +596,8 @@ jobs:
           fi
       - name: Agent-kit Cursor bin pin must match
         run: bin/fm-agent-kit-pin.sh
+      - name: Documentation audience inventory and local links
+        run: bin/fm-doc-audience-check.sh
 
   # The Full suite verdict: one check that fails until an outside PR has the
   # full-ci go-ahead and otherwise fails when any lane failed or was cancelled.

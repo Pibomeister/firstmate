@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Behavior tests for bin/fm-ci-select.sh: skip only for existing
-# allowlisted paths no test or script names, otherwise full.
+# allowlisted paths that are unread or covered by a skip-mode check.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -110,18 +110,80 @@ test_license_gitignore_and_mapped_docs_are_full() {
   pass "license, gitignore, and docs tests or scripts name require the full suite"
 }
 
-test_allowlist_paths_are_unreferenced() {
-  local path hits
+# True when tests/ or bin/ name $1, other than the classifier and this suite.
+path_has_literal_read() {
+  local path=$1 hits
+  hits=$(grep -RIF --exclude='fm-ci-select.test.sh' --exclude='fm-ci-select.sh' \
+    --exclude='fm-ci-workflow.test.sh' -- "$path" "$ROOT/tests" "$ROOT/bin" || true)
+  [ -n "$hits" ]
+}
+
+# True when the audience inventory's trackedPatterns select $1.
+path_has_tracked_pattern() {
+  local path=$1
+  git -C "$ROOT" ls-files -- '*.md' '*.mdx' '*.rst' '*.txt' 'docs/examples/*' \
+    | grep -Fxq -- "$path"
+}
+
+# True when docs/documentation-audiences.json names $1 as a string value.
+path_in_audience_inventory() {
+  local path=$1
+  python3 - "$ROOT/docs/documentation-audiences.json" "$path" <<'PY'
+import json, sys
+from pathlib import Path
+
+def walk(value, want):
+    if value == want:
+        return True
+    if isinstance(value, dict):
+        return any(walk(v, want) for v in value.values())
+    if isinstance(value, list):
+        return any(walk(v, want) for v in value)
+    return False
+
+inventory, want = sys.argv[1], sys.argv[2]
+sys.exit(0 if walk(json.loads(Path(inventory).read_text(encoding="utf-8")), want) else 1)
+PY
+}
+
+skip_check_covers_path() {
+  local path=$1
+  grep -Fxq -- 'bin/fm-doc-audience-check.sh' < <("$SELECT" --list-skip-checks) \
+    || return 1
+  path_has_tracked_pattern "$path"
+}
+
+test_allowlist_paths_are_unread_or_skip_covered() {
+  local path
   while IFS= read -r path; do
     [ -n "$path" ] || continue
     [ -e "$ROOT/$path" ] || fail "skip allowlist path does not exist: $path"
     classify "$path"
     [ "$MODE" = skip ] || fail "allowlisted $path must be mode=skip, got $MODE_LINE"
-    hits=$(grep -RIF --exclude='fm-ci-select.test.sh' --exclude='fm-ci-select.sh' \
-      -- "$path" "$ROOT/tests" "$ROOT/bin" || true)
-    [ -z "$hits" ] || fail "skip allowlist path $path is referenced:"$'\n'"$hits"
+    if path_has_literal_read "$path" || path_has_tracked_pattern "$path" \
+      || path_in_audience_inventory "$path"; then
+      skip_check_covers_path "$path" \
+        || fail "allowlisted $path is test- or config-read but skip mode does not cover it"
+    fi
   done < <("$SELECT" --list-skip)
-  pass "every skip allowlist path exists, skips, and is unnamed in tests and scripts"
+  pass "every skip allowlist path is unread or covered by a skip-mode check"
+}
+
+test_skip_mode_audience_check_fails_a_broken_vision_link() {
+  local tmp repo err
+  classify VISION.md
+  [ "$MODE" = skip ] || fail "VISION.md must stay mode=skip, got $MODE_LINE"
+  tmp=$(fm_test_tmproot fm-ci-select-broken-vision)
+  repo=$tmp/repo
+  git clone -q --local "$ROOT" "$repo"
+  printf '\n[broken](docs/no-such-skip-target.md)\n' >>"$repo/VISION.md"
+  err=$tmp/err
+  if "$ROOT/bin/fm-doc-audience-check.sh" --root "$repo" >/dev/null 2>"$err"; then
+    fail "a broken VISION.md link must fail the skip-mode audience check"
+  fi
+  grep -q 'unresolved local link' "$err" \
+    || fail "the skip-mode audience check must name the broken link, got $(cat "$err")"
+  pass "a broken VISION.md link fails the skip-mode audience check"
 }
 
 test_usage_error_prints_no_mode() {
@@ -195,7 +257,8 @@ fm_test_run \
   test_agents_md_is_full \
   test_cursor_overlay_is_full \
   test_license_gitignore_and_mapped_docs_are_full \
-  test_allowlist_paths_are_unreferenced \
+  test_allowlist_paths_are_unread_or_skip_covered \
+  test_skip_mode_audience_check_fails_a_broken_vision_link \
   test_usage_error_prints_no_mode \
   test_base_ref_classifies_an_allowlisted_commit \
   test_deleted_bin_helper_is_full \
