@@ -2469,7 +2469,9 @@ spawn_backend_admit() {  # <backend>
 }
 
 if [ "$RELAUNCH" -eq 0 ]; then
-  if [ "$BACKEND_SET" -eq 1 ]; then
+  if [ "$KIND" = secondmate ] && { [ -e "$STATE/$ID.meta" ] || [ -L "$STATE/$ID.meta" ]; }; then
+    BACKEND=$(fm_backend_of_meta "$STATE/$ID.meta")
+  elif [ "$BACKEND_SET" -eq 1 ]; then
     BACKEND=$BACKEND_ARG
   else
     BACKEND=$(fm_backend_name)
@@ -2683,16 +2685,9 @@ FACTS
   esac
   KIND=$(fm_meta_get "$RELAUNCH_META" kind)
   [ -n "$KIND" ] || KIND=ship
-  # A secondmate whose endpoint is gone already has ONE owner for that
-  # recovery: the session-start liveness sweep respawns it with
-  # `fm-spawn.sh <id> --secondmate`, which stands its home's own workspace back
-  # up (bin/fm-bootstrap.sh; the secondmate-provisioning skill). Rebinding one
-  # here as well would be a second path to the same outcome, so this refuses
-  # and names the one that owns it.
-  if [ "$RELAUNCH_REBIND" -eq 1 ] && [ "$KIND" = secondmate ]; then
-    echo "error: secondmate $ID's recorded endpoint is gone; its recovery is owned by the secondmate respawn path, not by relaunch (run bin/fm-spawn.sh $ID --secondmate, or let the session-start liveness sweep do it)" >&2
-    exit 1
-  fi
+  # A gone secondmate endpoint may be rebound by --relaunch (quota move and
+  # control-plane replace) or by --secondmate (liveness sweep). Both read the
+  # recorded backend rather than config/backend.
   MODE=$(fm_meta_get "$RELAUNCH_META" mode)
   YOLO=$(fm_meta_get "$RELAUNCH_META" yolo)
   UPSTREAM_CONSENT=$(fm_meta_get "$RELAUNCH_META" upstream_consent)

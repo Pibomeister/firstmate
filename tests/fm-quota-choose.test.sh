@@ -912,4 +912,55 @@ if out=$(call_choose --snapshot "$LAB/cursor-pools-auto-unknown.json" --candidat
 fi
 ok "windows never turn an unmeasured cursor row into known capacity"
 
+call_reroute() {
+  PATH="$FAKEBIN:$PATH" "$BIN/fm-quota-reroute.sh" "$@"
+}
+
+out=$(call_reroute suggest --snapshot "$LAB/captured.json" \
+  --candidate kimi:default --candidate claude:claude-3-5-sonnet)
+[ "$out" = "claude claude-3-5-sonnet" ] || fail "reroute skip: expected claude, got '$out'"
+ok "suggest skips an exhausted candidate"
+
+if out=$(call_reroute suggest --snapshot "$LAB/captured.json" --candidate kimi:default 2>/dev/null); then
+  fail "reroute none: expected exit 1, got '$out'"
+fi
+[ "$out" = "none" ] || fail "reroute none: expected 'none', got '$out'"
+ok "suggest prints none when every candidate is exhausted"
+
+if out=$(call_reroute suggest --snapshot "$LAB/captured.json" --kind secondmate --candidate muse:default 2>/dev/null); then
+  fail "secondmate muse should not be eligible, got '$out'"
+fi
+[ "$out" = "none" ] || fail "secondmate muse: expected none, got '$out'"
+ok "suggest drops a candidate unverified for the task kind"
+
+claude_dir="$LAB/claude-mcp"
+mkdir -p "$claude_dir"
+printf '%s\n' '{"mcpServers":{"docs":{"command":"true"}}}' > "$claude_dir/.claude.json"
+if call_reroute claude-tooling --config-dir "$claude_dir"; then
+  :
+else
+  fail "claude-tooling missed a configured MCP server"
+fi
+empty_dir="$LAB/claude-empty"
+mkdir -p "$empty_dir"
+printf '%s\n' '{"mcpServers":{}}' > "$empty_dir/.claude.json"
+if call_reroute claude-tooling --config-dir "$empty_dir"; then
+  fail "empty mcpServers was treated as Claude-specific tooling"
+fi
+if call_reroute claude-tooling --config-dir "$LAB/missing-dir"; then
+  fail "a missing config dir was treated as Claude-specific tooling"
+fi
+ok "claude-tooling is an MCP server in the config dir"
+
+if out=$(call_reroute suggest --snapshot "$LAB/captured.json" --from-harness claude \
+  --claude-config-dir "$claude_dir" --kind secondmate \
+  --candidate codex:default 2>/dev/null); then
+  fail "Claude MCP tooling should block a move off Claude, got '$out'"
+fi
+[ "$out" = "none" ] || fail "tooling gate: expected none, got '$out'"
+out=$(call_reroute suggest --snapshot "$LAB/captured.json" --from-harness claude \
+  --claude-config-dir "$empty_dir" --kind secondmate --candidate codex:default)
+[ "$out" = "codex default" ] || fail "no MCP tooling should allow a Codex pick, got '$out'"
+ok "a Claude-pinned mate moves only when it has no Claude-specific tooling"
+
 printf '# all fm-quota-choose tests passed\n'

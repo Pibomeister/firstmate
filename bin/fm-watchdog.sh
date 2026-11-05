@@ -218,8 +218,7 @@ wd_quota_floors() {  # <state> <now>
   for f in "$st"/*.status; do
     [ -f "$f" ] || continue
     last=$(tail -n 1 "$f" 2>/dev/null)
-    case "$last" in paused*|blocked*) ;; *) continue ;; esac
-    printf '%s' "$last" | tr '[:upper:]' '[:lower:]' | grep -Eq 'quota (floor|exhausted|is exhausted|at 0|limit|wall)|(hit|reached|at) (the |a |its )?quota|rate.?limited|rate limit (hit|reached)|usage limit (hit|reached)|out of (credits|quota)|credits (are )?(exhausted|at 0|empty)' || continue
+    fm_wd_quota_status_line "$last" || continue
     at=$(printf '%s' "$last" | sed -n 's/.*\[at=\([0-9][0-9]*\)\].*/\1/p')
     [ -n "$at" ] || at=$(wd_mtime "$f")
     printf '%s\t%s\t%s\n' "$(basename "$f" .status)" "$((now - at))" "$(printf '%s' "$last" | cut -c1-300)"
@@ -924,6 +923,9 @@ wd_handle_dialog() {
     permission)
       wd_gap "permission dialog waiting; the watchdog never answers permission prompts"
       wd_page_permission ;;
+    usage-limit)
+      wd_quota_name_pick "$(wd_id)" "${O_ID:-$O_TAG}"
+      ;;
     model-switch)
       opts=$(fm_wd_dialog_options "$O_PANE")
       text=$(fm_wd_dialog_text "$O_PANE")
@@ -1036,23 +1038,60 @@ wd_handle_decisions() {
   done < "$WD/.decisions-aged"
 }
 
+# Snapshot once and name a quota-eligible pick. Never relaunches. The
+# supervisor runs fm-control relaunch after a stale wake that names this pick.
+wd_quota_pick() {  # [task-id]
+  local cands cand snapshot pick harness kind claude_dir task=${1-}
+  cands=$(cfg reroute-candidates "")
+  [ -n "$cands" ] || { printf 'none\n'; return 1; }
+  snapshot=$WD/quota-snapshot.txt
+  if command -v quota-axi >/dev/null 2>&1; then
+    fm_run_timed 60 quota-axi > "$snapshot" 2>/dev/null || true
+  fi
+  [ -s "$snapshot" ] || { printf 'none\n'; return 1; }
+  harness=
+  kind=ship
+  if [ -n "$task" ] && [ -f "$O_HOME/state/$task.meta" ]; then
+    harness=$(fm_meta_get "$O_HOME/state/$task.meta" harness 2>/dev/null) || harness=
+    kind=$(fm_meta_get "$O_HOME/state/$task.meta" kind 2>/dev/null) || kind=ship
+  elif [ "${O_ID:-}" != "-" ] && [ -n "${O_ID:-}" ] && [ -f "$O_HOME/state/$O_ID.meta" ]; then
+    harness=$(fm_meta_get "$O_HOME/state/$O_ID.meta" harness 2>/dev/null) || harness=
+    kind=secondmate
+  fi
+  claude_dir=$(cfg claude-config-dirs "")
+  claude_dir=${claude_dir%%,*}
+  set -- suggest --snapshot "$snapshot"
+  [ -z "$harness" ] || set -- "$@" --from-harness "$harness"
+  [ -z "$kind" ] || set -- "$@" --kind "$kind"
+  [ -z "$claude_dir" ] || set -- "$@" --claude-config-dir "$claude_dir"
+  for cand in $(printf '%s' "$cands" | tr ',' ' '); do set -- "$@" --candidate "$cand"; done
+  pick=$("$SCRIPT_DIR/fm-quota-reroute.sh" "$@" 2>/dev/null) || pick=none
+  [ -n "$pick" ] || pick=none
+  printf '%s\n' "$pick"
+  [ "$pick" != none ]
+}
+
+wd_quota_name_pick() {  # <id> <subject>
+  local pick
+  pick=$(wd_quota_pick) || pick=none
+  if [ -n "$pick" ] && [ "$pick" != none ]; then
+    wd_rec "$1" quota suggest held "quota shows $pick eligible; supervisor relaunches, watchdog does not"
+    wd_gap "usage-limit on $2. Suggested pick: $pick. Supervisor relaunches. The watchdog does not change the runtime."
+  else
+    wd_rec "$1" quota suggest held "no eligible reroute candidate; queued until reset"
+    wd_gap "usage-limit on $2. No eligible reroute candidate. Queue until reset; never pause in a poll loop."
+  fi
+}
+
 wd_handle_quota() {
-  local task age line cands cand snapshot pick
+  local task age line pick
   wd_quota_floors "$O_HOME/state" "$(wd_now)" | while IFS=$'\t' read -r task age line; do
     [ "$age" -ge "$(cfgi quota-secs 600)" ] || continue
-    cands=$(cfg reroute-candidates "")
-    pick=''
-    if [ -n "$cands" ] && command -v quota-axi >/dev/null 2>&1; then
-      snapshot=$WD/quota-snapshot.txt
-      fm_run_timed 60 quota-axi > "$snapshot" 2>/dev/null || true
-      set --
-      for cand in $(printf '%s' "$cands" | tr ',' ' '); do set -- "$@" --candidate "$cand"; done
-      pick=$("$SCRIPT_DIR/fm-quota-choose.sh" --snapshot "$snapshot" "$@" 2>/dev/null) || pick=''
-    fi
+    pick=$(wd_quota_pick "$task") || pick=none
     if [ -n "$pick" ] && [ "$pick" != none ]; then
-      wd_nudge "quota:$task" "task $task is parked at a quota floor. Reroute it now; quota shows $pick eligible. Never pause or poll for quota."
+      wd_nudge "quota:$task" "task $task is parked at a quota floor. Suggested pick: $pick. Supervisor relaunches; the watchdog does not. Never pause or poll for quota."
     else
-      wd_nudge "quota:$task" "task $task is parked at a quota floor. Reroute it to another provider or account through quota-array-dispatch; never pause or poll for quota."
+      wd_nudge "quota:$task" "task $task is parked at a quota floor. No eligible reroute candidate. Queue until reset; never pause or poll for quota."
     fi
   done
 }

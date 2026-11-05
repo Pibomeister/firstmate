@@ -134,6 +134,35 @@ test_watcher_auto_recovers_a_secondmate_twice_then_alarms_once() {
   pass "watcher: a local secondmate's unacked record is interrupted and redirected twice, then alarms exactly once"
 }
 
+test_watcher_usage_limit_recover_does_not_interrupt() {
+  local dir rec
+  dir=$(recover_case recover-usage-limit "kind=secondmate" "harness=claude" "spawn_gen=g1")
+  rec=$(inbox_lib "$dir/state" fm_task_inbox_write "$dir/state" t1 "routed ask")
+  age_path "$rec"
+  printf '%s\n' \
+    'You have hit your weekly limit for Opus.' \
+    '' \
+    ' ❯ 1. Switch to Sonnet' \
+    '   2. Wait' \
+    '' \
+    'Enter to confirm · Esc to cancel' > "$dir/limit.capture"
+  RECOVER_CAPTURE="$dir/limit.capture" recover_check "$dir"
+  [ "$(recover_interrupts "$dir")" = 0 ] || fail "a usage-limit session was interrupted:"$'\n'"$(cat "$dir/control.log")"
+  [ "$(recover_rings "$dir")" = 0 ] || fail "a usage-limit session was redirected:"$'\n'"$(cat "$dir/send.log")"
+  grep -qF 'usage-limit' "$dir/state/.wake-queue" \
+    || fail "the wake omitted the usage-limit:"$'\n'"$(cat "$dir/state/.wake-queue" 2>/dev/null)"
+  grep -qF 'fm-quota-reroute.sh' "$dir/state/.wake-queue" \
+    || fail "the wake omitted the quota pick:"$'\n'"$(cat "$dir/state/.wake-queue")"
+  grep -qF 'relaunch --harness' "$dir/state/.wake-queue" \
+    || fail "the wake omitted relaunch:"$'\n'"$(cat "$dir/state/.wake-queue")"
+  grep -qF 'do not interrupt this usage-limit session' "$dir/state/.wake-queue" \
+    || fail "the wake omitted the usage-limit skip:"$'\n'"$(cat "$dir/state/.wake-queue")"
+  ! grep -qE 'fm-control\.sh t1 interrupt' "$dir/state/.wake-queue" \
+    || fail "the wake still recommended interrupt:"$'\n'"$(cat "$dir/state/.wake-queue")"
+  grep -qF "$rec" "$dir/state/.wake-queue" || fail "the wake omitted the durable record"
+  pass "watcher: recover skips interrupt on a usage-limit screen"
+}
+
 test_watcher_recovery_rings_first_only_for_a_proven_answer() {
   local dir rec now
   dir=$(recover_case recover-answered "kind=secondmate" "harness=codex")
@@ -463,6 +492,7 @@ test_secondmate_unread_age_ceiling_reports_once_then_recovers() {
 
 test_watcher_busy_secondmate_is_recovered_before_alarm
 test_watcher_auto_recovers_a_secondmate_twice_then_alarms_once
+test_watcher_usage_limit_recover_does_not_interrupt
 test_watcher_recovers_a_record_behind_an_escalated_one
 test_watcher_recovery_rings_first_only_for_a_proven_answer
 test_watcher_recovery_restarts_the_ladder

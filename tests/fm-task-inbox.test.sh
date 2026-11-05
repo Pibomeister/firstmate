@@ -1297,6 +1297,39 @@ test_watcher_secondmate_unread_inbox_names_immediate_recovery() {
   pass "watcher: an unread secondmate ask names immediate interrupt and redirect"
 }
 
+test_watcher_usage_limit_unread_inbox_does_not_name_interrupt() {
+  local dir state out log pid rec capture
+  dir=$(setup_watch_case secondmate-usage-limit)
+  state="$dir/state"; out="$dir/watch.out"; log="$dir/send.log"; : > "$log"
+  fm_write_meta "$state/t1.meta" "window=sess:fm-t1" "kind=secondmate" "harness=claude"
+  rec=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "independent routed ask")
+  age_path "$rec"
+  capture="$dir/limit.capture"
+  printf '%s\n' \
+    'You have hit your weekly limit for Opus.' \
+    '' \
+    ' ❯ 1. Switch to Sonnet' \
+    '   2. Wait' \
+    '' \
+    'Enter to confirm · Esc to cancel' > "$capture"
+  printf '001.msg\t2\t%s\t\n' "$(date +%s)" > "$state/t1.inbox/.recover-state"
+  watch_bg "$state" "$dir/fakebin" "$out" \
+    FM_SEND_LOG="$log" FM_FAKE_TMUX_CAPTURE="$capture" \
+    FM_TASK_INBOX_RING_MAX=1 FM_TASK_INBOX_SECONDMATE_ESCALATE_SECS=999999999
+  pid=$!
+  wait_watcher_gone "$pid" \
+    || { kill "$pid" 2>/dev/null; fail "the watcher never escalated the usage-limit unread ask"; }
+  ! grep -qF 'fm-control.sh t1 interrupt' "$state/.wake-queue" \
+    || fail "the wake named interrupt on a usage-limit screen:"$'\n'"$(cat "$state/.wake-queue")"
+  grep -qF 'fm-quota-reroute.sh' "$state/.wake-queue" \
+    || fail "the wake omitted the quota pick:"$'\n'"$(cat "$state/.wake-queue")"
+  grep -qF 'relaunch --harness' "$state/.wake-queue" \
+    || fail "the wake omitted relaunch:"$'\n'"$(cat "$state/.wake-queue")"
+  grep -qF "$rec" "$state/.wake-queue" \
+    || fail "the wake omitted the durable inbox record"
+  pass "watcher: a usage-limit unread ask names relaunch, not interrupt"
+}
+
 test_watcher_dead_pane_escalates_once_without_ringing() {
   local dir state out log pid rec
   dir=$(setup_watch_case dead-pane)
@@ -1659,6 +1692,7 @@ test_watcher_holds_retry_while_the_worker_decides
 test_watcher_retry_keeps_a_newer_mark
 test_watcher_escalates_once_after_budget
 test_watcher_secondmate_unread_inbox_names_immediate_recovery
+test_watcher_usage_limit_unread_inbox_does_not_name_interrupt
 test_watcher_dead_pane_escalates_once_without_ringing
 test_watcher_dead_pane_ignores_stale_busy_state
 test_parked_gate_notice_rings_once_per_park

@@ -216,6 +216,8 @@ DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 . "$SCRIPT_DIR/fm-omp-profile-lib.sh"
 # shellcheck source=bin/fm-exclude-tools-lib.sh
 . "$SCRIPT_DIR/fm-exclude-tools-lib.sh"
+# shellcheck source=bin/fm-watchdog-lib.sh
+. "$SCRIPT_DIR/fm-watchdog-lib.sh"
 
 POLL=${FM_CONTROL_POLL:-0.5}
 SETTLE_WAIT=${FM_CONTROL_SETTLE_WAIT:-5}
@@ -487,6 +489,44 @@ require_state_verified_backend() {  # <verb>
 # or choose.
 refuse_blocking_prompt() {  # <dialog-name>
   die "task $ID is blocked on a prompt: $1. Refusing to type Enter into it."
+}
+
+# usage_limit_screen: a proven provider-limit picker, either the pane kind
+# usage-limit or the Grok weekly-limit composer name. A conversation quote of
+# the same words is not this screen.
+usage_limit_screen() {
+  local screen dialog
+  if [ -s "${FM_COMPOSER_DIALOG_SINK:-}" ]; then
+    dialog=$(cat "$FM_COMPOSER_DIALOG_SINK")
+    fm_wd_usage_limit_kind "$dialog" && return 0
+  fi
+  screen=$(fm_backend_visible_capture "$BACKEND" "$T" "$LABEL" 2>/dev/null) || return 1
+  dialog=$(fm_wd_pane_dialog "$screen" 2>/dev/null) || return 1
+  fm_wd_usage_limit_kind "$dialog"
+}
+
+# Close the endpoint without typing Enter. Used only on a proven usage-limit
+# screen during relaunch, so the replacement can rebind.
+usage_limit_relaunch_close() {
+  fm_backend_kill "$BACKEND" "$T" \
+    || die "task $ID is at a usage-limit screen and its endpoint could not be closed without typing Enter"
+  printf 'endpoint-gone'
+}
+
+# relaunch_endpoint_path: the live pane cwd, used to refuse a tmux replacement
+# that would start outside the recorded worktree before the old agent stops.
+relaunch_endpoint_path() {
+  fm_backend_source "$BACKEND" || return 1
+  case "$BACKEND" in
+    tmux) fm_backend_tmux_current_path "$T" ;;
+    herdr) fm_backend_herdr_current_path "$T" ;;
+    zellij) fm_backend_zellij_current_path "$T" "$LABEL" ;;
+    cmux) fm_backend_cmux_current_path "$T" "$LABEL" ;;
+    paseo) fm_backend_paseo_current_path "$T" "$LABEL" ;;
+    rex) fm_backend_rex_current_path "$T" "$LABEL" ;;
+    tern) fm_backend_tern_current_path "$T" "$LABEL" ;;
+    *) return 1 ;;
+  esac
 }
 
 # rendered_matches <ere>: whether any row of the visible viewport matches.
@@ -825,11 +865,28 @@ do_exit() {
           # alive path: interrupt if busy, then the harness's exit command.
           ;;
         *)
+          : > "$FM_COMPOSER_DIALOG_SINK" || true
+          fm_backend_composer_state "$BACKEND" "$T" "$LABEL" >/dev/null 2>&1 || true
+          if usage_limit_screen && [ "$VERB" = relaunch ]; then
+            usage_limit_relaunch_close
+            return 0
+          fi
           die "task $ID's endpoint $T reads '$state', but ${absence#*$'\t'}; exit will not claim an agent stopped at an address it cannot trust, nor send lifecycle input to one"
           ;;
       esac
       ;;
   esac
+  : > "$FM_COMPOSER_DIALOG_SINK" \
+    || die "task $ID's dialog check could not be recorded"
+  composer_state=$(fm_backend_composer_state "$BACKEND" "$T" "$LABEL" 2>/dev/null) \
+    || composer_state=unknown
+  if usage_limit_screen; then
+    if [ "$VERB" = relaunch ]; then
+      usage_limit_relaunch_close
+      return 0
+    fi
+    die "task $ID is at a usage-limit screen; refusing to type Enter into it. Relaunch onto another runtime instead."
+  fi
   # A busy agent is interrupted first before the exit command is submitted.
   case "$(busy_verdict)" in
     busy*)
@@ -852,10 +909,6 @@ do_exit() {
   if [ -n "$hazard" ] && rendered_matches "$hazard"; then
     die "task $ID shows the $HARNESS revert picker, where typed text becomes a search and Enter reverts file changes; refusing to type the $cmd exit command. Close it with $(fm_control_interrupt_key "$HARNESS"), never Enter, then retry '$VERB'"
   fi
-  : > "$FM_COMPOSER_DIALOG_SINK" \
-    || die "task $ID's dialog check could not be recorded"
-  composer_state=$(fm_backend_composer_state "$BACKEND" "$T" "$LABEL" 2>/dev/null) \
-    || composer_state=unknown
   # The classify that filled the sink ran in a subshell, so read the file
   # rather than a function that subshell sourced.
   if [ -s "${FM_COMPOSER_DIALOG_SINK:-}" ]; then
@@ -1123,9 +1176,9 @@ resolve_relaunch_profile() {
   # transaction, where nothing has changed yet.
   fm_control_harness_supports_kind "$TARGET_HARNESS" "$KIND" \
     || die "'$TARGET_HARNESS' is not verified to run a $KIND task, so relaunching $ID onto it would stop the running agent for a launch that must be refused; choose an adapter verified for this kind"
-  # A model or effort chosen for the previous harness does not transfer to a
-  # different one, so an explicit harness change resets both axes unless the
-  # caller names them too.
+  # A model chosen for the previous harness does not transfer to a different
+  # one, so an explicit harness change resets model unless the caller names it.
+  # Effort is kept unless --effort is named, including across a harness change.
   if [ "$MODEL_SET" = 1 ]; then
     TARGET_MODEL=$NEW_MODEL
   elif [ "$HARNESS_SET" = 0 ] && [ -n "$CONFIG_HARNESS" ]; then
@@ -1139,10 +1192,10 @@ resolve_relaunch_profile() {
     TARGET_EFFORT=$NEW_EFFORT
   elif [ "$HARNESS_SET" = 0 ] && [ -n "$CONFIG_HARNESS" ]; then
     TARGET_EFFORT=${CONFIG_EFFORT:-default}
-  elif [ "$TARGET_HARNESS" = "$PRIOR_HARNESS" ]; then
-    TARGET_EFFORT=$PRIOR_EFFORT
   else
-    TARGET_EFFORT=default
+    # An explicit --harness without --effort keeps the running effort. A
+    # harness change must not silently reset it to default.
+    TARGET_EFFORT=$PRIOR_EFFORT
   fi
   # The launch owner applies this home's worker account pin too, but only after
   # the old agent has been stopped, so a pin that no longer resolves or is
@@ -1284,7 +1337,7 @@ record_note() {
 }
 
 do_relaunch() {
-  local exit_result state note_line
+  local exit_result state note_line spawn_err spawn_msg
   local -a spawn_args
 
   require_state_verified_backend relaunch
@@ -1344,6 +1397,16 @@ do_relaunch() {
   fi
   fm_backlog_relaunch_admission "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}" "$DATA" "$KIND" "$ID" \
     || die "$FM_BACKLOG_TRANSITION_ERROR; refusing to relaunch, and the running agent was not touched"
+  if [ "$BACKEND" != orca ] && [ "$KIND" != secondmate ]; then
+    local seen wt_real
+    seen=$(relaunch_endpoint_path || true)
+    wt_real=$(cd "$WT" 2>/dev/null && pwd -P) || wt_real=$WT
+    if [ "$BACKEND" != herdr ] && [ "$BACKEND" != rex ]; then
+      if [ -z "$seen" ] || [ "$(cd "$seen" 2>/dev/null && pwd -P)" != "$wt_real" ]; then
+        die "task $ID's endpoint is in '${seen:-unknown}', not its recorded worktree '$WT'; refusing to relaunch an agent outside the copy holding its work"
+      fi
+    fi
+  fi
   safe_checkpoint
   cp -p "$META" "$META_PRIOR" || die "could not preserve task $ID's durable record before relaunching"
   RELAUNCH_ACTIVE=1
@@ -1363,8 +1426,11 @@ do_relaunch() {
   spawn_args=("$ID" --relaunch --harness "$TARGET_HARNESS")
   [ "$TARGET_MODEL" = default ] || spawn_args+=(--model "$TARGET_MODEL")
   [ "$TARGET_EFFORT" = default ] || spawn_args+=(--effort "$TARGET_EFFORT")
+  spawn_err=$(mktemp "${TMPDIR:-/tmp}/fm-control-spawn.XXXXXX") || die "could not record spawn output for task $ID"
   if FM_CONTROL_RELAUNCH_TX="$RELAUNCH_TX" \
-      "$SCRIPT_DIR/fm-spawn.sh" "${spawn_args[@]}" >/dev/null; then
+      "$SCRIPT_DIR/fm-spawn.sh" "${spawn_args[@]}" >/dev/null 2>"$spawn_err"; then
+    cat "$spawn_err" >&2
+    rm -f "$spawn_err"
     RELAUNCH_META_PUBLISHED=1
     # $T was resolved from the record before the launch. When the recorded
     # endpoint was gone, the launch owner created a fresh one and republished
@@ -1386,7 +1452,9 @@ do_relaunch() {
   else
     [ "$(fm_meta_get "$META" control_relaunch_tx)" != "$RELAUNCH_TX" ] \
       || RELAUNCH_META_PUBLISHED=1
-    die "the replacement agent for $ID could not be launched on $TARGET_HARNESS"
+    spawn_msg=$(tr '\n' ' ' < "$spawn_err")
+    rm -f "$spawn_err"
+    die "the replacement agent for $ID could not be launched on $TARGET_HARNESS${spawn_msg:+: $spawn_msg}"
   fi
 
   state=$(wait_agent_state "$LAUNCH_WAIT" alive) || {
@@ -1415,6 +1483,11 @@ case "$VERB" in
       dead|missing) die "no agent is running at task $ID's recorded endpoint (state: $state); there is nothing to interrupt" ;;
       *) die "task $ID's endpoint reads '$state' rather than a positively classified state; refusing to send a lifecycle key into an unattributed endpoint" ;;
     esac
+    : > "$FM_COMPOSER_DIALOG_SINK" || true
+    fm_backend_composer_state "$BACKEND" "$T" "$LABEL" >/dev/null 2>&1 || true
+    if usage_limit_screen; then
+      die "task $ID is at a usage-limit screen; refusing to send a lifecycle key into it. Relaunch onto another runtime instead."
+    fi
     proof=$(do_interrupt)
     echo "interrupt-delivered $ID harness=$HARNESS backend=$BACKEND verified=$proof"
     ;;
