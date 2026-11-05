@@ -2650,11 +2650,15 @@ SH
   chmod +x "$FAKEBIN/fm-control.sh"
   transcript 100 "Working."
   H=$parent
+  mkdir -p "$parent/state/watchdog"
+  printf 'stale leftover\n' > "$parent/state/watchdog/.quota-none-reason"
   run_wd 0 once >/dev/null 2>&1 || fail "secondmate usage-limit pass failed"
   [ ! -e "$parent/control.log" ] || fail "watchdog relaunched: $(cat "$parent/control.log")"
   assert_equals 1 "$(ledger_rows quota suggest held)" "the queue is recorded, not launched: $(ledger | cut -f5-8)"
-  assert_grep "No eligible reroute candidate" "$parent/data/watchdog/status.md" \
-    "a Claude-pinned mate with tooling must not name a Codex pick"
+  assert_grep "Claude-specific tooling present" "$parent/data/watchdog/status.md" \
+    "a Claude-pinned mate with tooling must name the tooling reason"
+  assert_not_contains "$(cat "$parent/data/watchdog/status.md")" "stale leftover" \
+    "a stale none-reason must be cleared before the next pick"
   assert_not_contains "$(cat "$parent/data/watchdog/status.md")" "Suggested pick: codex" \
     "Codex must not be named while Claude-specific tooling is present"
   rm -f "$FAKEBIN/quota-axi" "$FAKEBIN/fm-control.sh"

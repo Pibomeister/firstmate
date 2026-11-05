@@ -138,6 +138,13 @@ case "${1:-}" in
     else
       printf '%s\n' "$payload" >> "$D/keys"
       printf '%s %s\n' "$(perl -MTime::HiRes=time -e 'printf "%.3f", time')" "$payload" >> "$D/key-times"
+      if [ "$payload" = Escape ] && [ -e "$D/composer-after-interrupt" ]; then
+        if [ -s "$D/composer-after-interrupt" ]; then
+          cat "$D/composer-after-interrupt" > "$D/composer"
+        else
+          rm -f "$D/composer"
+        fi
+      fi
       if [ "$payload" = Escape ] && [ -f "$D/devin" ]; then
         case "$(cat "$D/devin")" in
           running) printf armed > "$D/devin" ;;
@@ -195,7 +202,10 @@ case "${1:-}" in
         exit 0
       fi
     fi
-    if [ -f "$D/devin" ]; then devin_screen "$(cat "$D/devin")"; elif [ -f "$D/pane" ]; then cat "$D/pane"; else printf '╭────╮\n│    │\n╰────╯\n'; fi
+    if [ -f "$D/devin" ]; then devin_screen "$(cat "$D/devin")"
+    elif [ -f "$D/pane" ]; then cat "$D/pane"
+    elif [ -s "$D/composer" ]; then printf '╭────╮\n│ %s  │\n╰────╯\n' "$(cat "$D/composer")"
+    else printf '╭────╮\n│    │\n╰────╯\n'; fi
     exit 0 ;;
   list-windows)
     if [ -f "$D/windows" ]; then cat "$D/windows"; fi
@@ -1455,6 +1465,42 @@ test_busy_agent_is_interrupted_before_the_exit_command() {
   pass "fm-control exit: a busy agent receives interrupt delivery before the exit command"
 }
 
+test_busy_exit_after_interrupt_clears_the_composer() {
+  local dir out rc gen
+  dir=$(new_case busy-cleared)
+  add_task "$dir" t1 claude
+  alive_as "$dir" claude
+  printf 'i' > "$dir/fake/composer"
+  : > "$dir/fake/composer-after-interrupt"
+  gen=$("$ROOT/bin/fm-busy-event.sh" arm "$dir/home/state" t1)
+  printf 'busy_gen=%s\n' "$gen" >> "$dir/home/state/t1.meta"
+  out=$(run_control "$dir" t1 exit); rc=$?
+  expect_code 0 "$rc" "a busy agent whose composer is empty after interrupt should exit"$'\n'"$out"
+  [ "$(keys_sent "$dir")" = "Escape" ] \
+    || fail "the interrupt should still be delivered first, got: $(keys_sent "$dir")"
+  [ "$(literals "$dir")" = "/exit" ] || fail "the exit command should follow a cleared composer"
+  pass "fm-control exit: a busy agent whose composer is empty after interrupt still exits"
+}
+
+test_busy_exit_refuses_text_that_returns_after_interrupt() {
+  local dir out rc gen
+  dir=$(new_case busy-returns)
+  add_task "$dir" t1 claude
+  alive_as "$dir" claude
+  printf 'i' > "$dir/fake/composer-after-interrupt"
+  gen=$("$ROOT/bin/fm-busy-event.sh" arm "$dir/home/state" t1)
+  printf 'busy_gen=%s\n' "$gen" >> "$dir/home/state/t1.meta"
+  out=$(run_control "$dir" t1 exit); rc=$?
+  expect_code 1 "$rc" "text that returns after interrupt must refuse"$'\n'"$out"
+  assert_contains "$out" "composer visibly holds pending text" \
+    "the refusal should name the pending composer text"
+  [ "$(cat "$dir/fake/command")" = claude ] \
+    || fail "pending text after interrupt must leave the old agent running"
+  assert_no_grep "/exit" "$dir/fake/literal" \
+    "the exit command must not be concatenated onto text that returned after interrupt"
+  pass "fm-control exit: text that comes back after the interrupt still refuses"
+}
+
 exit_picker_screen() {
   printf '%s\n' \
     'Background work is running' \
@@ -1824,6 +1870,8 @@ test_stale_orca_terminal_exit_refuses_without_a_postdating_boot
 test_interrupt_refuses_when_no_agent_runs
 test_ambiguous_endpoint_refuses
 test_busy_agent_is_interrupted_before_the_exit_command
+test_busy_exit_after_interrupt_clears_the_composer
+test_busy_exit_refuses_text_that_returns_after_interrupt
 test_idle_agent_is_not_interrupted
 test_exit_drops_meta_busy_gen_with_the_sidecar
 test_exit_refuses_an_open_background_picker

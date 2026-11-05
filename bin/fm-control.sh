@@ -903,6 +903,10 @@ do_exit() {
       esac
       ;;
   esac
+  : > "$FM_COMPOSER_DIALOG_SINK" \
+    || die "task $ID's dialog check could not be recorded"
+  composer_state=$(fm_backend_composer_state "$BACKEND" "$T" "$LABEL" 2>/dev/null) \
+    || composer_state=unknown
   cmd=$(fm_control_exit_command "$HARNESS" "$OPENCODE_MAJOR")
   hazard=$(fm_control_interrupt_hazard_signal "$HARNESS")
   if [ -n "$hazard" ] && rendered_matches "$hazard"; then
@@ -1023,6 +1027,15 @@ TARGET_HARNESS=$HARNESS
 TARGET_MODEL=
 TARGET_EFFORT=
 
+# True when spawn rewrote the live record, not merely when this transaction
+# stamped control_relaunch_tx onto it before calling spawn.
+relaunch_record_changed_beyond_tx() {
+  local now was
+  now=$(grep -v '^control_relaunch_tx=' "$META" 2>/dev/null || true)
+  was=$(grep -v '^control_relaunch_tx=' "$META_PRIOR" 2>/dev/null || true)
+  [ "$now" != "$was" ]
+}
+
 journal_write() {  # <phase> [extra-line]...
   local phase=$1
   shift
@@ -1100,8 +1113,7 @@ relaunch_rollback() {
         journal_write "failed:$RELAUNCH_PHASE" "rollback=none-new-agent-confirmed" || true
         echo "error: $ID's replacement is running on $TARGET_HARNESS, but transaction completion could not be persisted; its published record was retained for reconciliation" >&2
       elif [ "$RELAUNCH_META_PUBLISHED" = 1 ] \
-         || { [ -n "$RELAUNCH_TX" ] \
-              && [ "$(fm_meta_get "$META" control_relaunch_tx)" = "$RELAUNCH_TX" ]; }; then
+         || relaunch_record_changed_beyond_tx; then
         # The launch owner published the new incarnation's record. Leaving it
         # in place is the honest state: the task is now recorded on the new
         # harness with no agent confirmed, which is exactly what recovery
@@ -1453,6 +1465,11 @@ do_relaunch() {
   # per-task harness wiring before arming the new one, so nothing to do here.
   RELAUNCH_TX="${BASHPID:-$$}.$(date -u +%Y%m%dT%H%M%SZ).$RANDOM"
   journal_write launching "${CHECKPOINT_LINES[@]}" "$note_line" "relaunch_tx=$RELAUNCH_TX"
+  {
+    grep -v '^control_relaunch_tx=' "$META" || true
+    printf 'control_relaunch_tx=%s\n' "$RELAUNCH_TX"
+  } > "$META.tx" || die "could not stage relaunch token $RELAUNCH_TX for task $ID"
+  mv "$META.tx" "$META" || die "could not record relaunch token $RELAUNCH_TX on task $ID before spawn"
   spawn_args=("$ID" --relaunch --harness "$TARGET_HARNESS")
   [ "$TARGET_MODEL" = default ] || spawn_args+=(--model "$TARGET_MODEL")
   [ "$TARGET_EFFORT" = default ] || spawn_args+=(--effort "$TARGET_EFFORT")
@@ -1482,8 +1499,11 @@ do_relaunch() {
       die "the replacement agent for $ID was launched, but task $ID's republished record no longer passes endpoint validation (the refusal above names the row), so this transaction cannot say which endpoint to confirm it on; reconcile $META before any further control action"
     fi
   else
-    [ "$(fm_meta_get "$META" control_relaunch_tx)" != "$RELAUNCH_TX" ] \
-      || RELAUNCH_META_PUBLISHED=1
+    if relaunch_record_changed_beyond_tx; then
+      RELAUNCH_META_PUBLISHED=1
+    elif [ -f "$META_PRIOR" ]; then
+      cp -p "$META_PRIOR" "$META" 2>/dev/null || true
+    fi
     spawn_msg=$(tr '\n' ' ' < "$spawn_err")
     rm -f "$spawn_err"
     # The launch owner's typed refusal for a secondmate whose endpoint is gone

@@ -21,9 +21,14 @@
 # Signals: MCP servers in the account config dir (including $HOME/.claude.json
 # for an ordinary account, and any non-empty .projects[].mcpServers); a project
 # .mcp.json in the worktree; .claude/ skills, hooks, agents, or commands in the
-# worktree. Resolve the config dir from the task's account pin, never from
-# claude-config-dirs. A broken or unreadable pin is a signal. No pin, or
-# ordinary, inspects $HOME/.claude.
+# worktree. Account-dir names (non-empty): skills, agents, commands, plugins.
+# Account settings.json keys: hooks, enabledPlugins. Worktree
+# .claude/settings.json and settings.local.json keys: hooks,
+# enabledMcpjsonServers, mcpServers, enabledPlugins. An unreadable file is a
+# signal. Those three lists live only in the variables below; there is no
+# exemption mechanism. Resolve the config dir from the task's account pin,
+# never from claude-config-dirs. A broken or unreadable pin is a signal. No
+# pin, or ordinary, inspects $HOME/.claude.
 #
 # The supervisor runs this after a stale wake names a usage-limit, then calls
 # fm-control.sh relaunch --harness with the printed pick. The watchdog may call
@@ -38,6 +43,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/fm-control-lib.sh"
 # shellcheck source=bin/fm-worker-account-lib.sh
 . "$SCRIPT_DIR/fm-worker-account-lib.sh"
+
+# Single owner of the Claude-tooling name lists in the header above.
+FM_QUOTA_CLAUDE_ACCOUNT_DIRS='skills agents commands plugins'
+FM_QUOTA_CLAUDE_ACCOUNT_SETTING_KEYS='hooks enabledPlugins'
+FM_QUOTA_CLAUDE_WT_SETTING_KEYS='hooks enabledMcpjsonServers mcpServers enabledPlugins'
 
 die() { printf 'error: %s\n' "$1" >&2; exit 2; }
 usage() {
@@ -92,6 +102,53 @@ fm_quota_claude_mcp_in_file() {  # <file>
     "$1" >/dev/null 2>&1
 }
 
+# Prints the blocking signal and returns 0 when <file> is unreadable or any
+# named key is a non-empty object, array, string, or true. Returns 1 when the
+# file is absent or none of the keys are a signal. <keys> is a space list.
+fm_quota_claude_settings_keys_signal() {  # <file> <keys>
+  local f=$1 keys=$2 key
+  [ -e "$f" ] || return 1
+  if [ ! -f "$f" ] || [ ! -r "$f" ]; then
+    printf '%s\n' "unreadable $f"
+    return 0
+  fi
+  if ! jq -e . "$f" >/dev/null 2>&1; then
+    printf '%s\n' "unreadable $f"
+    return 0
+  fi
+  for key in $keys; do
+    if jq -e --arg k "$key" '
+         .[$k] as $v
+         | ($v | type == "object" and length > 0)
+           or ($v | type == "array" and length > 0)
+           or ($v | type == "string" and length > 0)
+           or ($v == true)' \
+         "$f" >/dev/null 2>&1; then
+      printf '%s\n' "$f .$key"
+      return 0
+    fi
+  done
+  return 1
+}
+
+fm_quota_claude_account_dir_signal() {  # <config-dir>
+  local dir=$1 name path
+  for name in $FM_QUOTA_CLAUDE_ACCOUNT_DIRS; do
+    path=$dir/$name
+    [ -e "$path" ] || continue
+    if [ -d "$path" ]; then
+      if [ ! -r "$path" ] || [ ! -x "$path" ]; then
+        printf '%s\n' "unreadable $path"
+        return 0
+      fi
+      [ -z "$(ls -A "$path" 2>/dev/null)" ] && continue
+    fi
+    printf '%s\n' "$path"
+    return 0
+  done
+  return 1
+}
+
 # fm_quota_claude_tooling_signal <config-dir> [worktree]
 # Prints the blocking signal and returns 0 when a Claude-specific signal is
 # present or the inspect cannot be completed. Returns 1 when none are present.
@@ -99,7 +156,7 @@ fm_quota_claude_mcp_in_file() {  # <file>
 # Ordinary Claude keeps user-scope mcpServers in $HOME/.claude.json, outside
 # $HOME/.claude. Project-scope servers live under .projects[<path>].mcpServers.
 fm_quota_claude_tooling_signal() {  # <config-dir> [worktree]
-  local dir=${1-} wt=${2-} f name
+  local dir=${1-} wt=${2-} f name sig
   if [ -z "$dir" ]; then
     printf '%s\n' "unresolvable Claude config dir"
     return 0
@@ -123,6 +180,15 @@ fm_quota_claude_tooling_signal() {  # <config-dir> [worktree]
       return 0
     fi
   done
+  if sig=$(fm_quota_claude_settings_keys_signal "$dir/settings.json" \
+             "$FM_QUOTA_CLAUDE_ACCOUNT_SETTING_KEYS"); then
+    printf '%s\n' "$sig"
+    return 0
+  fi
+  if sig=$(fm_quota_claude_account_dir_signal "$dir"); then
+    printf '%s\n' "$sig"
+    return 0
+  fi
   if [ -n "${HOME:-}" ] && { [ "$dir" = "$HOME/.claude" ] || [ "$dir" = "$HOME/.claude/" ]; }; then
     f=$HOME/.claude.json
     if [ -e "$f" ]; then
@@ -152,6 +218,13 @@ fm_quota_claude_tooling_signal() {  # <config-dir> [worktree]
   for name in skills hooks agents commands; do
     if [ -e "$wt/.claude/$name" ]; then
       printf '%s\n' "worktree .claude/$name"
+      return 0
+    fi
+  done
+  for f in "$wt/.claude/settings.json" "$wt/.claude/settings.local.json"; do
+    if sig=$(fm_quota_claude_settings_keys_signal "$f" \
+               "$FM_QUOTA_CLAUDE_WT_SETTING_KEYS"); then
+      printf '%s\n' "$sig"
       return 0
     fi
   done

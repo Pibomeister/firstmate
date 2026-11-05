@@ -1023,11 +1023,75 @@ fi
 sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$mcp_wt")
 [ "$sig" = "worktree .mcp.json" ] || fail "worktree .mcp.json signal: $sig"
 
-skills_wt="$LAB/skills-wt"
-mkdir -p "$skills_wt/.claude/skills"
-sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$skills_wt") \
-  || fail "worktree .claude/skills must be tooling required"
-[ "$sig" = "worktree .claude/skills" ] || fail "skills signal: $sig"
+for name in skills hooks agents commands; do
+  wt="$LAB/wt-$name"
+  mkdir -p "$wt/.claude/$name"
+  sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$wt") \
+    || fail "worktree .claude/$name must be tooling required"
+  [ "$sig" = "worktree .claude/$name" ] || fail "$name signal: $sig"
+done
+
+enabled_mcp="$LAB/enabled-mcp"
+mkdir -p "$enabled_mcp"
+printf '%s\n' '{"enabledMcpjsonServers":["docs"]}' > "$enabled_mcp/.claude.json"
+sig=$(call_reroute claude-tooling --config-dir "$enabled_mcp") \
+  || fail "enabledMcpjsonServers must be tooling required"
+[ "$sig" = "MCP servers in $enabled_mcp/.claude.json" ] || fail "enabledMcpjsonServers signal: $sig"
+
+acct_settings="$LAB/acct-settings"
+mkdir -p "$acct_settings"
+printf '%s\n' '{"hooks":{"Stop":[{}]}}' > "$acct_settings/settings.json"
+sig=$(call_reroute claude-tooling --config-dir "$acct_settings") \
+  || fail "account settings.json hooks must be tooling required"
+[ "$sig" = "$acct_settings/settings.json .hooks" ] || fail "account hooks signal: $sig"
+
+acct_plugins="$LAB/acct-plugins"
+mkdir -p "$acct_plugins/plugins/some-plugin"
+sig=$(call_reroute claude-tooling --config-dir "$acct_plugins") \
+  || fail "account plugins dir must be tooling required"
+[ "$sig" = "$acct_plugins/plugins" ] || fail "account plugins signal: $sig"
+
+wt_settings="$LAB/wt-settings"
+mkdir -p "$wt_settings/.claude"
+printf '%s\n' '{"mcpServers":{"docs":{"command":"true"}}}' > "$wt_settings/.claude/settings.json"
+sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$wt_settings") \
+  || fail "worktree .claude/settings.json mcpServers must be tooling required"
+[ "$sig" = "$wt_settings/.claude/settings.json .mcpServers" ] \
+  || fail "worktree settings.json signal: $sig"
+
+wt_local="$LAB/wt-local"
+mkdir -p "$wt_local/.claude"
+printf '%s\n' '{"enabledPlugins":{"docs":true}}' > "$wt_local/.claude/settings.local.json"
+sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$wt_local") \
+  || fail "worktree settings.local.json enabledPlugins must be tooling required"
+[ "$sig" = "$wt_local/.claude/settings.local.json .enabledPlugins" ] \
+  || fail "worktree settings.local.json signal: $sig"
+
+bad_json="$LAB/bad-json"
+mkdir -p "$bad_json"
+printf '{not json\n' > "$bad_json/settings.json"
+sig=$(call_reroute claude-tooling --config-dir "$bad_json") \
+  || fail "invalid JSON must be tooling required"
+[ "$sig" = "unreadable $bad_json/settings.json" ] || fail "invalid JSON signal: $sig"
+
+sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$LAB/missing-wt") \
+  || fail "a missing worktree must be tooling required"
+[ "$sig" = "unreadable worktree" ] || fail "missing worktree signal: $sig"
+
+unreadable_wt="$LAB/unreadable-wt"
+mkdir -p "$unreadable_wt"
+chmod 000 "$unreadable_wt" || true
+if [ ! -r "$unreadable_wt" ] || [ ! -x "$unreadable_wt" ]; then
+  sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$unreadable_wt") \
+    || fail "an unreadable worktree must be tooling required"
+  [ "$sig" = "unreadable worktree" ] || fail "unreadable worktree signal: $sig"
+fi
+chmod 700 "$unreadable_wt" 2>/dev/null || true
+
+sig=$(HOME="$ord" call_reroute claude-tooling --config-dir "$ord/.claude/") \
+  || fail "trailing-slash \$HOME/.claude/ must still see \$HOME/.claude.json"
+[ "$sig" = "MCP servers in $ord/.claude.json" ] || fail "trailing-slash signal: $sig"
+
 ok "a Claude worker queues on any Claude-specific signal, including unknown"
 
 if out=$(call_reroute suggest --snapshot "$LAB/captured.json" --from-harness claude \
