@@ -781,7 +781,9 @@ wd_handle_dialog() {
   esac
   case "$O_DIALOG" in
     feedback) wd_key dialog 0 "dismiss the feedback survey" ;;
-    permission) wd_gap "permission dialog waiting; the watchdog never answers permission prompts" ;;
+    permission)
+      wd_gap "permission dialog waiting; the watchdog never answers permission prompts"
+      wd_page_permission ;;
     model-switch)
       opts=$(fm_wd_dialog_options "$O_PANE")
       text=$(fm_wd_dialog_text "$O_PANE")
@@ -804,6 +806,36 @@ Pick the option that keeps work going on another model or account without buying
       fi
       wd_key dialog "$n" "model-switch option $n: $text" ;;
     question) wd_gap "question dialog waiting; its kind is not proven, so no key is sent" ;;
+  esac
+}
+
+# A permission dialog on an away session has nobody to answer it, so the owner
+# is paged through the home's own alert channels at most once per nudge-secs.
+# The page carries no dialog text; the ledger row records which dialog fired,
+# withheld when it looks like a secret. Quiet mode is not paged: the owner is
+# watching the session there.
+wd_page_permission() {
+  local text id summary out rc
+  [ "$O_AFK" = 1 ] && [ "$(fm_afk_mode "$O_HOME/state")" = away ] || return 0
+  wd_rate_open dialog page "$(cfgi nudge-secs 900)" || return 0
+  text=$(fm_wd_dialog_text "$O_PANE")
+  text=${text:0:300}
+  if fm_secret_like "$text"; then text='[withheld: the dialog text looks like a secret]'; fi
+  id=$(wd_id)
+  if [ "$(wd_mode)" != act ]; then wd_rec "$id" dialog page dry-run "would page the owner; permission: $text"; return 0; fi
+  wd_rec "$id" dialog page pending "permission: $text"
+  summary="Firstmate watchdog: a permission dialog blocks the away session of $O_TAG, and nothing will answer it. Its text is recorded in $LEDGER."
+  out=$(FM_HOME=$O_HOME FM_STATE_OVERRIDE=$O_HOME/state FM_CONFIG_OVERRIDE=$O_HOME/config \
+    fm_run_timed 60 bash "$SCRIPT_DIR/fm-supervise-daemon.sh" page "$summary" "$LEDGER" 2>/dev/null)
+  rc=$?
+  case "$rc:$out" in
+    '0:page: sent') wd_rec "$id" dialog page "done" "owner paged" ;;
+    2:*)
+      wd_rec "$id" dialog page refused "alerts are off or no alert channel is configured"
+      wd_gap "permission dialog not paged: alerts are off or no alert channel is configured" ;;
+    *)
+      wd_rec "$id" dialog page failed "no alert channel delivered the page (exit $rc)"
+      wd_gap "permission dialog page failed on every alert channel" ;;
   esac
 }
 
