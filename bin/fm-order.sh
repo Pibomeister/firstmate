@@ -15,6 +15,7 @@
 #   fm-order.sh send [--hold] [--from <sender>] [--] <text>... | -
 #   fm-order.sh resend <id>
 #   fm-order.sh status [<id>]
+#   fm-order.sh verify <id>
 #   fm-order.sh pickup
 #   fm-order.sh ack <id>
 #   fm-order.sh show <id>
@@ -67,7 +68,10 @@
 #
 # IDEMPOTENCY. `send` of a body whose sha256 matches an open (pending or
 # acked) order of the same kind prints `replay <id>` and creates nothing, so a
-# sender retry never makes a second order. `resend <id>` points at the same
+# sender retry never makes a second order. One exception: when no delivery of
+# a still-pending order ever appended its wake (the first send exited 3), the
+# retry re-delivers that same file instead, so a sender retry repairs a lost
+# wake rather than reporting success over an undelivered order. `resend <id>` points at the same
 # file and only nudges again. `ack <id>` moves the file with one rename: of two
 # sessions acking at once, exactly one prints `acked`; every other attempt, and
 # any ack of an id already in acked/, done/, or parked/, prints
@@ -124,7 +128,13 @@
 # since send, deliveries, re-deliveries against the cap, and `resend_due=yes`
 # when it is still pending 15 minutes after its last delivery.
 # A sender re-checks its order about 15 minutes after sending and runs
-# `resend <id>` when it is still pending. `sweep` re-delivers an order still
+# `resend <id>` when it is still pending. `verify <id>` is the sender's
+# machine-readable ack check: it prints the order's state and exits 0 once a
+# captain session has acknowledged it (acked, done, or parked), 3 while it is
+# still pending, 1 for an unknown id, and 2 for a malformed one, so a sender
+# script can verify the ack by exit code instead of parsing `status` text.
+# An acked exit proves receipt only; `status` or `show` tells receipt apart
+# from completion (done or parked with its outcome). `sweep` re-delivers an order still
 # pending 30 minutes after its last delivery or re-delivery
 # (a sender's `resend` does not reset that clock) to the newest handle, at most
 # twice; at the next due point after the last
@@ -139,8 +149,9 @@
 # `sweep: another sweep is running` and exits 0, so two runners never exceed
 # the cap or escalate twice.
 #
-# Exit status: 0 success; 1 failure; 2 invalid use; 3 `gate` blocked, or a
-# send/resend that saved the order but could not append its wake.
+# Exit status: 0 success; 1 failure; 2 invalid use; 3 `gate` blocked, a
+# send/resend that saved the order but could not append its wake, or a
+# `verify` whose order is still pending (not yet acknowledged).
 #
 # Environment:
 #   FM_HOME              operational home whose data/ and state/ are used
@@ -297,6 +308,17 @@ delivery_facts() {  # <id>
       if ($4 == "escalated" || $4 == "escalate-failed") esc = $4
     }
     END { printf "%d %d %d %d %s\n", d, r, last + 0, leash + 0, (esc == "" ? "none" : esc) }
+  ' "$LOG"
+}
+
+# True when some delivery of <id> appended its wake (detail wake=1 in the log).
+# A send whose wake failed exits 3 but still logs its delivery attempt, so a
+# later sender retry can tell "delivered, awaiting ack" from "never woken".
+wake_delivered() {  # <id>
+  [ -f "$LOG" ] || return 1
+  awk -F '\t' -v id="$1" '
+    $3 == id && ($4 == "delivered" || $4 == "resent" || $4 == "redelivered") && $6 ~ /wake=1/ { found = 1 }
+    END { exit !found }
   ' "$LOG"
 }
 
@@ -461,6 +483,13 @@ cmd_send() {
         pending|acked)
           rm -f "$bodyf"
           log_event "$existing" replay "$sha8" "from=$from"
+          if [ "$state" = pending ] && ! wake_delivered "$existing"; then
+            # No delivery of this order ever appended its wake (the first
+            # send exited 3): re-deliver the same file, so the retry repairs
+            # the lost wake instead of reporting success over nothing.
+            deliver "$existing" resent replay
+            return $?
+          fi
           printf 'replay %s\n  kind=%s state=%s (the same %s is already open; nothing new was created)\n' \
             "$existing" "$kind" "$state" "$kind"
           return 0
@@ -725,6 +754,20 @@ $lines
 EOF
 }
 
+# The sender's ack check: exit 0 once a captain session has acknowledged the
+# order (acked, done, or parked), 3 while it is still pending, so a sender
+# script verifies delivery by exit code instead of parsing `status` text.
+cmd_verify() {
+  local id=${1:-} state
+  valid_id "$id" || usage_die "usage: fm-order.sh verify <id>"
+  state=$(order_state "$id") || die "no such order: $id"
+  if [ "$state" = pending ]; then
+    printf 'unacked %s state=pending (no captain session has read it yet; re-check later or resend: bin/fm-order.sh resend %s)\n' "$id" "$id"
+    return 3
+  fi
+  printf 'acked %s state=%s\n' "$id" "$state"
+}
+
 # ---------------------------------------------------------------- restart gate
 
 # Set SESSION_PIDS to the verified-harness pids this process runs under, one
@@ -880,6 +923,7 @@ case "${1:-}" in
   send) shift; cmd_send "$@" ;;
   resend) shift; cmd_resend "$@" ;;
   status) shift; cmd_status "$@" ;;
+  verify) shift; cmd_verify "$@" ;;
   pickup) shift; cmd_pickup ;;
   ack) shift; cmd_ack "$@" ;;
   show) shift; cmd_show "$@" ;;
