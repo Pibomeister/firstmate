@@ -28,8 +28,9 @@
 # With --json it prints one object:
 #   {schema:"fm-ready-pr-discovery.v1",generated_epoch,runs[],unreadable[],warnings[]}
 #   runs[]: {repo,gate_repo,branch,pr,head,run_id,kind,gate,waited_seconds,owned,owner_task}
-# A repo whose gate cannot be read is reported in unreadable[], never skipped
-# silently. Owned means a state/<id>.meta record names the run's branch (or
+# A repo whose gate cannot be read, whose overview run inventory is truncated
+# (count: <shown> of <total>), or that the overall budget cut short is reported
+# in unreadable[], never skipped silently; runs already read are still listed. Owned means a state/<id>.meta record names the run's branch (or
 # its PR URL); anything else is flagged owned=no (an orphan).
 #
 # FM_READY_PR_NOW (epoch seconds) and FM_READY_PR_NM_TIMEOUT (per-call bound,
@@ -71,6 +72,9 @@ trap 'rm -rf "$WORK"' EXIT
 : > "$WORK/warnings"
 
 note_warning() { printf '%s\n' "$1" >> "$WORK/warnings"; }
+note_unreadable() {  # <repo> <reason>
+  jq -nc --arg repo "$1" --arg reason "$2" '{repo:$repo,reason:$reason}' >> "$WORK/unreadable.jsonl"
+}
 
 # Registered project names, one per line, in registry order.
 registry_names() {
@@ -172,8 +176,9 @@ ci_log_state() {  # <clone> <run-id>
 }
 
 # 0 when the optional overall discovery budget (FM_READY_PR_TIMEOUT seconds)
-# is exhausted. Callers bound the whole sweep with this, so a slow fleet
-# degrades to partial results plus a warning instead of no output at all.
+# is exhausted, checked before every repo and every live run. Callers bound the
+# whole sweep with this, so a slow fleet degrades to partial results plus
+# unreadable entries for what was not read instead of no output at all.
 DISCOVERY_START=$(date +%s)
 discovery_expired() {
   case "${FM_READY_PR_TIMEOUT:-}" in ''|*[!0-9]*|0) return 1 ;; esac
@@ -193,8 +198,7 @@ discover_repo() {  # <name>
     direct-PR|local-only) return 0 ;;
   esac
   if [ ! -d "$clone" ]; then
-    jq -nc --arg repo "$name" --arg reason "no local clone at $clone" \
-      '{repo:$repo,reason:$reason}' >> "$WORK/unreadable.jsonl"
+    note_unreadable "$name" "no local clone at $clone"
     return 0
   fi
   overview=$(fm_nm_run_checked "$clone" "$NM_TIMEOUT" axi </dev/null) || rc=$?
@@ -203,8 +207,7 @@ discover_repo() {  # <name>
     return 0
   fi
   if [ "$rc" -ne 0 ] || [ -z "$overview" ]; then
-    jq -nc --arg repo "$name" --arg reason "no-mistakes gate unreadable (axi exit $rc)" \
-      '{repo:$repo,reason:$reason}' >> "$WORK/unreadable.jsonl"
+    note_unreadable "$name" "no-mistakes gate unreadable (axi exit $rc)"
     return 0
   fi
   gate_repo=$(fm_nm_strip_quotes "$(fm_nm_field "$overview" repo)")
@@ -213,12 +216,16 @@ discover_repo() {  # <name>
   case "$shown" in ''|*[!0-9]*) shown='' ;; esac
   case "$total" in ''|*[!0-9]*) total='' ;; esac
   if [ -n "$shown" ] && [ -n "$total" ] && [ "$shown" -lt "$total" ]; then
-    note_warning "repo $name: run inventory truncated ($shown of $total shown); older live runs may be missed"
+    note_unreadable "$name" "run inventory incomplete ($shown of $total runs shown); live runs outside the overview window were not read"
   fi
   rows=$(overview_live_rows "$overview")
   [ -n "$rows" ] || return 0
   while IFS="$(printf '\t')" read -r id branch status head pr; do
     [ -n "$id" ] || continue
+    if discovery_expired; then
+      note_unreadable "$name" "discovery budget ${FM_READY_PR_TIMEOUT}s reached; remaining live runs not read"
+      break
+    fi
     detail=$(fm_nm_run_checked "$clone" "$NM_TIMEOUT" axi status --run "$id" </dev/null) || detail=''
     if [ -z "$detail" ] || [ "$(fm_nm_strip_quotes "$(fm_nm_field "$detail" id)")" != "$id" ]; then
       note_warning "repo $name: run $id unreadable"
@@ -274,8 +281,8 @@ EOF
 while IFS= read -r name; do
   [ -n "$name" ] || continue
   if discovery_expired; then
-    note_warning "discovery budget ${FM_READY_PR_TIMEOUT}s reached before repo $name; remaining repos not read"
-    break
+    note_unreadable "$name" "discovery budget ${FM_READY_PR_TIMEOUT}s reached before this repo was read"
+    continue
   fi
   discover_repo "$name"
 done <<EOF

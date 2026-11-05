@@ -44,6 +44,13 @@ if [ "$#" = 1 ] && [ "$1" = axi ]; then
       printf 'repo: /gate/owned\ncount: 1 of 1 total\nruns[1]{id,branch,status,head,pr}:\n  "%s",fm/owned-task,running,def5678,"https://github.com/example/owned/pull/7"\n' "$run_id" ;;
     gated)
       printf 'repo: /gate/gated\ncount: 1 of 1 total\nruns[1]{id,branch,status,head,pr}:\n  "%s",feat/gated,running,999aaaa,""\n' "$run_id" ;;
+    capped)
+      printf 'repo: /gate/capped\ncount: 1 of 40 total\nruns[1]{id,branch,status,head,pr}:\n  "%s",feat/capped-ready,running,cab1234,"https://github.com/example/capped/pull/9"\n' "$run_id" ;;
+    busy)
+      printf 'repo: /gate/busy\ncount: 3 of 3 total\nruns[3]{id,branch,status,head,pr}:\n'
+      for n in 1 2 3; do
+        printf '  "01M6HTBRJ0AAAAAAAAAAAAAAA%s",feat/busy-%s,running,bb0000%s,"https://github.com/example/busy/pull/%s"\n' "$n" "$n" "$n" "$n"
+      done ;;
     murky)
       printf 'repo: /gate/murky\ncount: 1 of 1 total\nruns[1]{id,branch,status,head,pr}:\n  "%s",feat/murky,running,777bbbb,"https://github.com/example/murky/pull/3"\n' "$run_id" ;;
     *)
@@ -52,8 +59,12 @@ if [ "$#" = 1 ] && [ "$1" = axi ]; then
   exit 0
 fi
 if [ "${1:-}" = axi ] && [ "${2:-}" = status ] && [ "${3:-}" = --run ]; then
+  if [ "$repo" = busy ]; then
+    sleep 3
+    run_id=$4
+  fi
   case "$repo" in
-    casco)
+    casco|capped|busy)
       cat <<EOF
 run:
   id: "$run_id"
@@ -238,6 +249,37 @@ test_no_mutating_call_is_made() {
   pass "no mutating call is made"
 }
 
+test_truncated_overview_is_reported_incomplete() {
+  local home=$TMP_ROOT/capped-home out json
+  mkdir -p "$home/data" "$home/state" "$home/projects/capped"
+  printf '# Projects\n\n- capped [no-mistakes] - Capped overview (added 2026-11-04)\n' > "$home/data/projects.md"
+  out=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    FM_PROJECTS_OVERRIDE="$home/projects" "$DISCOVERY" --compact)
+  assert_contains "$out" "ready-pr: repo=capped branch=feat/capped-ready" "runs inside the overview window are still listed"
+  assert_contains "$out" "ready-pr-unreadable: repo=capped reason=run inventory incomplete (1 of 40 runs shown)" \
+    "a truncated overview is reported as an incomplete repo, not only a warning"
+  json=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    FM_PROJECTS_OVERRIDE="$home/projects" "$DISCOVERY" --json)
+  printf '%s' "$json" | jq -e '.unreadable | map(.repo) | index("capped") != null' >/dev/null \
+    || fail "json lists the truncated repo as unreadable"
+  pass "truncated overview is reported incomplete"
+}
+
+test_budget_stops_inside_a_repo_and_keeps_results() {
+  local home=$TMP_ROOT/busy-home out
+  mkdir -p "$home/data" "$home/state" "$home/projects/busy"
+  printf '# Projects\n\n- busy [no-mistakes] - Many live runs (added 2026-11-04)\n' > "$home/data/projects.md"
+  : > "$FAKE_NM_CALLS"
+  out=$(FM_READY_PR_TIMEOUT=2 FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    FM_PROJECTS_OVERRIDE="$home/projects" "$DISCOVERY" --compact)
+  assert_contains "$out" "ready-pr: repo=busy branch=feat/busy-1" "the run read before the budget ran out is kept"
+  assert_contains "$out" "ready-pr-unreadable: repo=busy reason=discovery budget 2s reached; remaining live runs not read" \
+    "the budget cut inside a repo is reported as incomplete"
+  [ "$(grep -c '^busy|axi status --run' "$FAKE_NM_CALLS")" -eq 1 ] \
+    || fail "discovery kept reading runs after the budget ran out"
+  pass "budget stops inside a repo and keeps results"
+}
+
 fm_test_run \
   test_orphan_ready_run_is_listed \
   test_owned_run_is_marked_owned \
@@ -246,4 +288,6 @@ fm_test_run \
   test_json_shape_for_decision_batch \
   test_non_gate_projects_are_skipped_silently \
   test_unreadable_ci_log_is_not_ready \
-  test_no_mutating_call_is_made
+  test_no_mutating_call_is_made \
+  test_truncated_overview_is_reported_incomplete \
+  test_budget_stops_inside_a_repo_and_keeps_results
