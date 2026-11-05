@@ -2816,6 +2816,48 @@ SH
   pass "usage-limit: a Claude mate with no tooling names the pick and does not relaunch"
 }
 
+test_unreadable_claude_account_pin_gets_no_pick() {
+  local parent mate snap
+  make_home $'Captain session\n> '
+  parent=$H
+  make_home $'You have hit your weekly limit for Opus.\n\n ❯ 1. Switch to Sonnet\n   2. Wait for the limit to reset\n   3. Buy more credits\n\nEnter to confirm · Esc to cancel'
+  mate=$H
+  mkdir -p "$parent/config"
+  printf 'not-a-path\n' > "$parent/config/claude-account"
+  printf -- '- ghost-mate - test mate (home: %s)\n' "$mate" > "$parent/data/secondmates.md"
+  {
+    echo "harness=claude"
+    echo "kind=secondmate"
+    echo "home=$mate"
+    echo "worktree=$mate"
+    echo "model=default"
+  } > "$parent/state/ghost-mate.meta"
+  printf 'mode=act\nclaude-config-dirs=%s\nkey-settle-secs=1\nmodels=\nreroute-candidates=codex:gpt-5.4\n' \
+    "$parent/claude" > "$parent/config/watchdog"
+  snap="$parent/quota.json"
+  wd_quota_snapshot "$snap"
+  cat > "$FAKEBIN/quota-axi" <<SH
+#!/usr/bin/env bash
+cat "$snap"
+SH
+  chmod +x "$FAKEBIN/quota-axi"
+  cat > "$FAKEBIN/fm-control.sh" <<SH
+#!/usr/bin/env bash
+printf 'control %s\n' "\$*" >> "$parent/control.log"
+exit 1
+SH
+  chmod +x "$FAKEBIN/fm-control.sh"
+  transcript 100 "Working."
+  H=$parent
+  run_wd 0 once >/dev/null 2>&1 || fail "broken-pin usage-limit pass failed"
+  [ ! -e "$parent/control.log" ] || fail "watchdog relaunched: $(cat "$parent/control.log")"
+  assert_equals 1 "$(ledger_rows quota suggest held)" "the queue is recorded, not launched: $(ledger | cut -f5-8)"
+  assert_not_contains "$(cat "$parent/data/watchdog/status.md")" "Suggested pick:" \
+    "an unreadable claude-account pin must not name a pick"
+  rm -f "$FAKEBIN/quota-axi" "$FAKEBIN/fm-control.sh"
+  pass "usage-limit: an unreadable claude-account pin gets no pick"
+}
+
 if [ "$#" -gt 0 ]; then
   fm_test_run "$@"
   exit
@@ -2893,6 +2935,7 @@ fm_test_run \
   test_ordinary_home_claude_json_mcp_blocks_the_move \
   test_codex_task_keeps_same_harness_candidates_under_a_claude_pin \
   test_usage_limit_claude_without_tooling_names_a_pick \
+  test_unreadable_claude_account_pin_gets_no_pick \
   test_unknown_composer_guards_the_nudge \
   test_orca_turn_probe_keeps_errors_unknown \
   test_no_activity_source_is_not_reported_ok \

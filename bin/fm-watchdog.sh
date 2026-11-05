@@ -1062,9 +1062,7 @@ wd_quota_meta() {  # [task-id]
 }
 
 wd_quota_pick() {  # [task-id]
-  local cands cand snapshot pick harness kind model wt claude_dir pin declared root
-  local cfg mate meta task=${1-} judge
-  pin=
+  local cands cand snapshot pick harness kind model wt mate meta task=${1-} judge
   rm -f "$WD/.quota-none-reason"
   cands=$(cfg reroute-candidates "")
   [ -n "$cands" ] || { printf 'none\n'; return 1; }
@@ -1077,7 +1075,7 @@ wd_quota_pick() {  # [task-id]
   kind=ship
   model=
   wt=
-  claude_dir=
+  mate=
   judge=$task
   if [ -z "$judge" ] && [ -n "${O_ID:-}" ] && [ "$O_ID" != - ]; then
     judge=$O_ID
@@ -1096,29 +1094,15 @@ wd_quota_pick() {  # [task-id]
     printf 'none\n'
     return 1
   fi
-  if [ "$harness" = claude ]; then
-    mate=
-    [ "$kind" = secondmate ] && [ -n "$judge" ] && [ "$judge" != - ] && mate=$judge
-    cfg=$(fm_worker_account_config claude "$OWNER_HOME/config" "$mate")
-    if pin=$(fm_worker_account_resolve claude "$cfg" config/claude-account 2>/dev/null) && [ -n "$pin" ]; then
-      declared=${pin%%$'\t'*}
-      root=$(printf '%s' "$pin" | cut -f2)
-      if [ "$declared" = ordinary ]; then
-        claude_dir=${HOME}/.claude
-      else
-        claude_dir=$root
-      fi
-    else
-      claude_dir=${HOME}/.claude
-    fi
+  if [ "$harness" = claude ] && [ "$kind" = secondmate ] && [ -n "$judge" ] && [ "$judge" != - ]; then
+    mate=$judge
   fi
   set -- suggest --snapshot "$snapshot"
   set -- "$@" --from-harness "$harness"
   [ -z "$model" ] || set -- "$@" --from-model "$model"
   [ -z "$kind" ] || set -- "$@" --kind "$kind"
   [ -z "$wt" ] || set -- "$@" --worktree "$wt"
-  [ -z "$claude_dir" ] || set -- "$@" --claude-config-dir "$claude_dir"
-  [ -z "$pin" ] || set -- "$@" --pinned
+  [ -z "$mate" ] || set -- "$@" --mate "$mate"
   for cand in $(printf '%s' "$cands" | tr ',' ' '); do set -- "$@" --candidate "$cand"; done
   pick=$("$SCRIPT_DIR/fm-quota-reroute.sh" "$@" 2>/dev/null) || pick=none
   [ -n "$pick" ] || pick=none

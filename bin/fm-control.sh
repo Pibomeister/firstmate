@@ -866,12 +866,6 @@ do_exit() {
           # alive path: interrupt if busy, then the harness's exit command.
           ;;
         *)
-          : > "$FM_COMPOSER_DIALOG_SINK" || true
-          fm_backend_composer_state "$BACKEND" "$T" "$LABEL" >/dev/null 2>&1 || true
-          if usage_limit_screen && [ "$VERB" = relaunch ]; then
-            usage_limit_relaunch_close
-            return 0
-          fi
           die "task $ID's endpoint $T reads '$state', but ${absence#*$'\t'}; exit will not claim an agent stopped at an address it cannot trust, nor send lifecycle input to one"
           ;;
       esac
@@ -1180,21 +1174,18 @@ resolve_relaunch_profile() {
   # Moving off Claude is refused when any Claude-specific tooling signal is
   # present. Same check as bin/fm-quota-reroute.sh; no override flag.
   if [ "$PRIOR_HARNESS" = claude ] && [ "$TARGET_HARNESS" != claude ]; then
-    local claude_dir pin declared root sig cfg tooling_mate
-    tooling_mate=
-    [ "$KIND" != secondmate ] || tooling_mate=$ID
-    cfg=$(fm_worker_account_config claude "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}" "$tooling_mate")
-    claude_dir=${HOME}/.claude
-    if pin=$(fm_worker_account_resolve claude "$cfg" config/claude-account 2>/dev/null) && [ -n "$pin" ]; then
-      declared=${pin%%$'\t'*}
-      root=$(printf '%s' "$pin" | cut -f2)
-      [ "$declared" = ordinary ] || claude_dir=$root
-    fi
+    local sig tooling_mate
     if [ -z "$WT" ]; then
       die "Claude-specific tooling present (unresolvable worktree); refusing to move $ID off Claude"
     fi
-    if sig=$("$SCRIPT_DIR/fm-quota-reroute.sh" claude-tooling --config-dir "$claude_dir" --worktree "$WT"); then
-      die "Claude-specific tooling present ($sig); refusing to move $ID off Claude"
+    tooling_mate=
+    [ "$KIND" != secondmate ] || tooling_mate=$ID
+    if [ -n "$tooling_mate" ]; then
+      sig=$("$SCRIPT_DIR/fm-quota-reroute.sh" claude-tooling --mate "$tooling_mate" --worktree "$WT") && \
+        die "Claude-specific tooling present ($sig); refusing to move $ID off Claude"
+    else
+      sig=$("$SCRIPT_DIR/fm-quota-reroute.sh" claude-tooling --worktree "$WT") && \
+        die "Claude-specific tooling present ($sig); refusing to move $ID off Claude"
     fi
   fi
   # A model chosen for the previous harness does not transfer to a different
