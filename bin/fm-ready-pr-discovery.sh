@@ -10,8 +10,11 @@
 # including runs no firstmate task ever owned (for example a direct session in
 # a project's own checkout). This script enumerates, for every name in
 # data/projects.md that has a local clone under projects/, the live runs in
-# that clone's no-mistakes gate and reports the ones parked at the ci step
-# with a PR ready ("PR ready, monitoring") or parked at an approval gate.
+# that clone's no-mistakes gate, plus the live runs of every other gate repo
+# with the same upstream (another checkout of the project, such as the
+# captain's own working copy, read from the state database read-only), and
+# reports the ones parked at the ci step with a PR ready ("PR ready,
+# monitoring") or parked at an approval gate.
 #
 # It reuses only the read-only no-mistakes axi listing/status/log interfaces
 # (bin/fm-nm-run-lib.sh's bounded checked calls). It never merges, marks a PR
@@ -228,9 +231,81 @@ for row in rows:
 PY
 }
 
+# Live runs of every other gate repo that shares the clone gate's upstream,
+# read from the state database read-only, as TSV rows working_path, id,
+# branch, status, head. no-mistakes keys gates by working path, so a run a
+# direct session starts in another checkout of the same project (for example
+# the captain's own working copy) lives in a separate gate repo. Gate repos
+# at another home's projects/<name> clone are excluded: that home supervises
+# them. Prints nothing when no state database exists; fails when it cannot be
+# read or the clone's gate repo is not recorded in it.
+sibling_live_rows() {  # <clone> <gate-repo-path> <name>
+  local database
+  database=$(fm_nm_state_db "$1")
+  [ -f "$database" ] || return 0
+  fm_nm_bounded "$1" "$NM_TIMEOUT" python3 - "$2" "$3" "$database" 2>/dev/null <<'PY'
+import os
+import re
+import sqlite3
+import sys
+from contextlib import closing
+from pathlib import Path
+
+repo_path, name, database = sys.argv[1:]
+if not os.path.isabs(repo_path):
+    sys.exit(1)
+try:
+    with closing(sqlite3.connect(Path(database).as_uri() + "?mode=ro", uri=True, timeout=30)) as db:
+        db.execute("BEGIN")
+        repo = db.execute("SELECT upstream_url FROM repos WHERE working_path = ?", (repo_path,)).fetchall()
+        if len(repo) != 1:
+            sys.exit(1)
+        rows = db.execute(
+            "SELECT repos.working_path, runs.id, runs.branch, runs.status, runs.head_sha FROM runs "
+            "JOIN repos ON repos.id = runs.repo_id WHERE repos.upstream_url = ? AND repos.working_path != ? "
+            "AND runs.status IN ('pending', 'running') "
+            "ORDER BY repos.working_path, runs.created_at DESC, runs.id DESC",
+            (repo[0][0], repo_path),
+        ).fetchall()
+except (OSError, sqlite3.Error):
+    sys.exit(1)
+for row in rows:
+    if (not all(isinstance(value, str) for value in row) or not os.path.isabs(row[0])
+            or re.search(r"[\t\n]", row[0]) or not re.fullmatch(r"[A-Za-z0-9_-]+", row[1])
+            or re.search(r"[\t\n]", row[2]) or not re.fullmatch(r"[a-fA-F0-9]{7,40}", row[4])):
+        sys.exit(1)
+for row in rows:
+    if not row[0].endswith("/projects/" + name):
+        print("\t".join(row))
+PY
+}
+
+discover_sibling_gates() {  # <name> <clone> <gate-repo>
+  local name=$1 clone=$2 gate_repo=$3 siblings path rows
+  if discovery_expired; then
+    note_unreadable "$name" "discovery budget ${FM_READY_PR_TIMEOUT}s reached; gates of other checkouts not read"
+    return 0
+  fi
+  if ! siblings=$(sibling_live_rows "$clone" "$gate_repo" "$name"); then
+    note_unreadable "$name" "gates of other checkouts unreadable (state database query failed); their live runs were not read"
+    return 0
+  fi
+  [ -n "$siblings" ] || return 0
+  while IFS= read -r path; do
+    [ -n "$path" ] || continue
+    if [ ! -d "$path" ]; then
+      note_unreadable "$name" "live runs recorded for missing checkout $path were not read"
+      continue
+    fi
+    rows=$(printf '%s\n' "$siblings" | awk -F '\t' -v p="$path" '$1 == p { printf "%s\t%s\t%s\t%s\t\n", $2, $3, $4, $5 }')
+    read_runs "$name" "$path" "$path" "$rows"
+  done <<EOF
+$(printf '%s\n' "$siblings" | cut -f1 | awk '!seen[$0]++')
+EOF
+}
+
 discover_repo() {  # <name>
-  local name=$1 clone=$PROJECTS/$1 overview rc=0 rows inventory id branch status head pr
-  local detail kind gate checks run_head run_pr created waited owner gate_repo count_line shown total mode
+  local name=$1 clone=$PROJECTS/$1 overview rc=0 rows inventory gate_repo count_line shown total mode
   # Projects whose registered mode publishes no no-mistakes gate (direct-PR,
   # local-only) have nothing to discover; skip them silently rather than
   # reporting a permanent unreadable line. bin/fm-project-mode.sh owns the
@@ -266,6 +341,15 @@ discover_repo() {  # <name>
       note_unreadable "$name" "run inventory incomplete ($shown of $total runs shown) and the complete inventory is unreadable; live runs outside the overview window were not read"
     fi
   fi
+  read_runs "$name" "$clone" "$gate_repo" "$rows"
+  discover_sibling_gates "$name" "$clone" "$gate_repo"
+}
+
+# Reads each live run row (TSV id, branch, status, head, pr) through the gate
+# at <dir> and records the ones parked with a PR ready or at an approval gate.
+read_runs() {  # <name> <dir> <gate-repo> <rows>
+  local name=$1 clone=$2 gate_repo=$3 rows=$4 id branch status head pr
+  local detail kind gate checks run_head run_pr created waited owner
   [ -n "$rows" ] || return 0
   while IFS="$(printf '\t')" read -r id branch status head pr; do
     [ -n "$id" ] || continue

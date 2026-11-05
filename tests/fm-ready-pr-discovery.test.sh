@@ -62,9 +62,9 @@ if [ "${1:-}" = axi ] && [ "${2:-}" = status ] && [ "${3:-}" = --run ]; then
   if [ "$repo" = busy ]; then
     sleep 2.5
   fi
-  case "$repo" in capped|busy) run_id=$4 ;; esac
+  case "$repo" in capped|busy|Casco) run_id=$4 ;; esac
   case "$repo" in
-    casco|capped|busy)
+    casco|capped|busy|Casco)
       cat <<EOF
 run:
   id: "$run_id"
@@ -160,6 +160,10 @@ cat > "$HOME_DIR/data/projects.md" <<'EOF'
 EOF
 fm_write_meta "$HOME_DIR/state/owned-task.meta" \
   "branch=fm/owned-task" "worktree=$HOME_DIR/projects/owned" "kind=ship"
+
+# An empty no-mistakes home: no state database, so no other checkout's gate.
+export NM_HOME="$TMP_ROOT/empty-nm"
+mkdir -p "$NM_HOME"
 
 run_discovery() {  # [args...]
   FM_HOME="$HOME_DIR" FM_STATE_OVERRIDE="$HOME_DIR/state" \
@@ -268,9 +272,9 @@ test_truncated_overview_lists_runs_outside_the_window() {
   python3 - "$nm/state.sqlite" "$RUN_ID" "$HIDDEN_ID" <<'PY'
 import sqlite3, sys
 db = sqlite3.connect(sys.argv[1])
-db.execute("CREATE TABLE repos (id INTEGER PRIMARY KEY, working_path TEXT)")
+db.execute("CREATE TABLE repos (id INTEGER PRIMARY KEY, working_path TEXT, upstream_url TEXT)")
 db.execute("CREATE TABLE runs (id TEXT, repo_id INTEGER, branch TEXT, status TEXT, head_sha TEXT, created_at INTEGER)")
-db.execute("INSERT INTO repos VALUES (1, '/gate/capped'), (2, '/gate/other')")
+db.execute("INSERT INTO repos VALUES (1, '/gate/capped', 'git@example:capped.git'), (2, '/gate/other', 'git@example:other.git')")
 db.executemany("INSERT INTO runs VALUES (?, ?, ?, ?, ?, ?)", [
     (sys.argv[2], 1, "feat/capped-ready", "running", "cab1234", 3),
     (sys.argv[3], 1, "feat/hidden-ready", "running", "fee1234", 1),
@@ -323,6 +327,57 @@ test_budget_stops_inside_a_repo_and_keeps_results() {
   pass "budget stops inside a repo and keeps results"
 }
 
+test_other_checkout_gate_runs_are_listed() {
+  local home=$TMP_ROOT/sibling-home nm=$TMP_ROOT/sibling-nm captain=$TMP_ROOT/captain/Casco
+  local other_home=$TMP_ROOT/other-home/projects/casco out
+  command -v python3 >/dev/null 2>&1 || { pass "skip: python3 not found"; return; }
+  mkdir -p "$home/data" "$home/state" "$home/projects/casco" "$nm" "$captain" "$other_home"
+  printf '# Projects\n\n- casco [no-mistakes-prod-only] - Casco platform (added 2026-09-29)\n' > "$home/data/projects.md"
+  python3 - "$nm/state.sqlite" "$captain" "$other_home" "$TMP_ROOT/gone/Casco" <<'PY'
+import sqlite3, sys
+db = sqlite3.connect(sys.argv[1])
+db.execute("CREATE TABLE repos (id INTEGER PRIMARY KEY, working_path TEXT, upstream_url TEXT)")
+db.execute("CREATE TABLE runs (id TEXT, repo_id INTEGER, branch TEXT, status TEXT, head_sha TEXT, created_at INTEGER)")
+db.executemany("INSERT INTO repos VALUES (?, ?, ?)", [
+    (1, "/gate/casco", "git@example:casco.git"), (2, sys.argv[2], "git@example:casco.git"),
+    (3, sys.argv[3], "git@example:casco.git"), (4, "/gate/unrelated", "git@example:other.git"),
+])
+db.executemany("INSERT INTO runs VALUES (?, ?, ?, ?, ?, ?)", [
+    ("01M6HTBRJ0AAAAAAAAAAAAAAAK", 2, "feat/captain-ready", "running", "cab4250", 2),
+    ("01M6HTBRJ0AAAAAAAAAAAAAAAD", 2, "feat/captain-done", "completed", "cab4240", 1),
+    ("01M6HTBRJ0AAAAAAAAAAAAAAAM", 3, "feat/other-home", "running", "cab4260", 2),
+    ("01M6HTBRJ0AAAAAAAAAAAAAAAU", 4, "feat/unrelated", "running", "cab4270", 2),
+])
+db.commit()
+PY
+  : > "$FAKE_NM_CALLS"
+  out=$(NM_HOME="$nm" FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    FM_PROJECTS_OVERRIDE="$home/projects" "$DISCOVERY" --compact)
+  assert_contains "$out" "ready-pr: repo=casco branch=feat/orphan-ready" "the clone's own gate is still read"
+  assert_contains "$out" "ready-pr: repo=casco branch=feat/captain-ready" "a live run in the captain's checkout gate is listed"
+  assert_contains "$out" "run=01M6HTBRJ0AAAAAAAAAAAAAAAK" "the captain-checkout run is read by its own id"
+  assert_not_contains "$out" "feat/captain-done" "completed runs in the other checkout are not listed"
+  assert_not_contains "$out" "feat/other-home" "another home's clone gate is left to that home"
+  assert_not_contains "$out" "feat/unrelated" "a gate with another upstream is not attributed to this repo"
+  assert_not_contains "$out" "ready-pr-unreadable" "a readable inventory reports nothing unreadable"
+  grep -q '^Casco|axi status --run 01M6HTBRJ0AAAAAAAAAAAAAAAK' "$FAKE_NM_CALLS" \
+    || fail "the captain-checkout run was not read through its own gate"
+  pass "runs in another checkout's gate are listed"
+}
+
+test_other_checkout_inventory_unreadable_is_reported() {
+  local home=$TMP_ROOT/sibling-bad-home nm=$TMP_ROOT/sibling-bad-nm out
+  mkdir -p "$home/data" "$home/state" "$home/projects/casco" "$nm"
+  printf '# Projects\n\n- casco [no-mistakes-prod-only] - Casco platform (added 2026-09-29)\n' > "$home/data/projects.md"
+  printf 'not a database' > "$nm/state.sqlite"
+  out=$(NM_HOME="$nm" FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    FM_PROJECTS_OVERRIDE="$home/projects" "$DISCOVERY" --compact)
+  assert_contains "$out" "ready-pr: repo=casco branch=feat/orphan-ready" "the clone's own gate is still read"
+  assert_contains "$out" "ready-pr-unreadable: repo=casco reason=gates of other checkouts unreadable" \
+    "an unreadable other-checkout inventory is reported, not skipped"
+  pass "unreadable other-checkout inventory is reported"
+}
+
 fm_test_run \
   test_orphan_ready_run_is_listed \
   test_owned_run_is_marked_owned \
@@ -334,4 +389,6 @@ fm_test_run \
   test_no_mutating_call_is_made \
   test_truncated_overview_lists_runs_outside_the_window \
   test_truncated_overview_without_inventory_is_reported_incomplete \
-  test_budget_stops_inside_a_repo_and_keeps_results
+  test_budget_stops_inside_a_repo_and_keeps_results \
+  test_other_checkout_gate_runs_are_listed \
+  test_other_checkout_inventory_unreadable_is_reported
