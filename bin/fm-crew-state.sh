@@ -335,6 +335,7 @@ fi
 TASK_BACKEND=$(fm_backend_of_meta "$META")
 BACKEND_TARGET=$(fm_backend_target_of_meta "$META")
 EXPECTED_LABEL="fm-$ID"
+# shellcheck disable=SC2329 # Invoked indirectly through fm_run_timed_fn.
 pane_readable() {  # <target>
   case "$TASK_BACKEND" in
     tmux) fm_backend_target_exists tmux "$1" ;;
