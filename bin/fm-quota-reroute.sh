@@ -112,7 +112,7 @@ fm_quota_claude_settings_keys_signal() {  # <file> <keys>
     printf '%s\n' "unreadable $f"
     return 0
   fi
-  if ! jq -e . "$f" >/dev/null 2>&1; then
+  if ! jq -e 'type=="object"' "$f" >/dev/null 2>&1; then
     printf '%s\n' "unreadable $f"
     return 0
   fi
@@ -171,7 +171,7 @@ fm_quota_claude_tooling_signal() {  # <config-dir> [worktree]
       printf '%s\n' "unreadable $f"
       return 0
     fi
-    if ! jq -e . "$f" >/dev/null 2>&1; then
+    if ! jq -e 'type=="object"' "$f" >/dev/null 2>&1; then
       printf '%s\n' "unreadable $f"
       return 0
     fi
@@ -196,7 +196,7 @@ fm_quota_claude_tooling_signal() {  # <config-dir> [worktree]
         printf '%s\n' "unreadable $f"
         return 0
       fi
-      if ! jq -e . "$f" >/dev/null 2>&1; then
+      if ! jq -e 'type=="object"' "$f" >/dev/null 2>&1; then
         printf '%s\n' "unreadable $f"
         return 0
       fi

@@ -1074,6 +1074,21 @@ sig=$(call_reroute claude-tooling --config-dir "$bad_json") \
   || fail "invalid JSON must be tooling required"
 [ "$sig" = "unreadable $bad_json/settings.json" ] || fail "invalid JSON signal: $sig"
 
+non_object="$LAB/non-object"
+mkdir -p "$non_object"
+printf '%s\n' '[]' > "$non_object/settings.json"
+sig=$(call_reroute claude-tooling --config-dir "$non_object") \
+  || fail "a non-object settings.json must be tooling required"
+[ "$sig" = "unreadable $non_object/settings.json" ] || fail "non-object signal: $sig"
+
+wt_non_object="$LAB/wt-non-object"
+mkdir -p "$wt_non_object/.claude"
+printf '%s\n' '[]' > "$wt_non_object/.claude/settings.json"
+sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$wt_non_object") \
+  || fail "a non-object worktree settings.json must be tooling required"
+[ "$sig" = "unreadable $wt_non_object/.claude/settings.json" ] \
+  || fail "worktree non-object signal: $sig"
+
 sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$LAB/missing-wt") \
   || fail "a missing worktree must be tooling required"
 [ "$sig" = "unreadable worktree" ] || fail "missing worktree signal: $sig"
