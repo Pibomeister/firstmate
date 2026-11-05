@@ -21,6 +21,10 @@
 # every scheduled job runs exactly as before. FM_CI_SKIP_MACOS remains in the
 # commented-out macos-stock-bash job and currently changes nothing.
 #
+# They also hold the path skip: bin/fm-ci-select.sh mode=skip drops lint and
+# the behavior lanes, Full suite passes, and a skipped lane while mode=full
+# fails the verdict.
+#
 # The workflow is parsed as YAML and its concurrency and job-level `if`
 # expressions are resolved against simulated pull_request and push contexts,
 # so the assertions describe what GitHub would do, not how the file happens
@@ -173,10 +177,12 @@ end
 # fork variables unset, and needed jobs successful. Short keys: event, action,
 # label (the label an event adds), labels (comma-separated labels on the PR),
 # association, head (head repository), number, run_id, skip_push, skip_macos,
-# needs (success, failure, or cancelled: the needed jobs' results that job
-# conditions and the Full suite verdict read), outcome (how every job that runs
-# concludes, read only by published_checks). A push event clears the PR fields,
-# which GitHub leaves empty there. Each resolver prepends this.
+# mode (select job output: full or skip; default full so trusted runs keep
+# every lane), needs (success, failure, cancelled, or skipped: the needed
+# jobs' results that job conditions and the Full suite verdict read), outcome
+# (how every job that runs concludes, read only by published_checks). A push
+# event clears the PR fields, which GitHub leaves empty there. Each resolver
+# prepends this.
 # shellcheck disable=SC2016  # Ruby text, not shell expansions
 CONTEXT_RUBY='
 def simulated_context(workflow_name, overrides)
@@ -184,7 +190,7 @@ def simulated_context(workflow_name, overrides)
     "event" => "pull_request", "action" => "synchronize", "label" => "",
     "labels" => "", "association" => "NONE", "head" => "contributor/firstmate",
     "number" => "108", "run_id" => "900001", "skip_push" => "", "skip_macos" => "",
-    "needs" => "success", "outcome" => "success",
+    "mode" => "full", "needs" => "success", "outcome" => "success",
   }
   if overrides.any? { |pair| pair == "event=push" }
     o.merge!("action" => "", "association" => "", "head" => "", "number" => "")
@@ -209,6 +215,7 @@ def simulated_context(workflow_name, overrides)
     "vars.FM_CI_SKIP_MACOS" => o["skip_macos"],
     "needs.status" => o["needs"],
     "needs.*.result" => [o["needs"]],
+    "needs.select.outputs.mode" => o["mode"],
     "simulated.outcome" => o["outcome"],
   }
 end
@@ -331,7 +338,7 @@ puts YAML.load_file(ARGV[0]).fetch("jobs").fetch(ARGV[1]).fetch("timeout-minutes
 # Tier membership is the executable inventory of the timeout policy: a new job
 # must join a tier, and a job-level value outside these tiers is exactly the
 # one-off number the policy removed.
-FAST_TIER_JOBS='test-coverage invariants tests-timing-aggregate full-suite'
+FAST_TIER_JOBS='select test-coverage invariants tests-timing-aggregate full-suite'
 NORMAL_TIER_JOBS='lint tests-portable-parallel-1 tests-portable-parallel-2 tests-portable-serial'
 HEAVY_TIER_JOBS='tests-herdr'
 
@@ -416,7 +423,7 @@ test_only_the_full_ci_label_joins_the_pr_group() {
   pass "only the full-ci label joins and supersedes the PR's group; other labels cancel nothing"
 }
 
-QUICK_JOBS='test-coverage invariants full-suite'
+QUICK_JOBS='select test-coverage invariants full-suite'
 
 # DOP-167 direction A: an outside PR without the label runs only the quick
 # checks and the Full suite verdict, which fails naming the label.
@@ -520,7 +527,7 @@ test_unrelated_label_never_masks_an_earlier_failure() {
       case "$expect:$name" in
         all-failed:*) want=failure ;;
         waiting:'Full suite') want=failure ;;
-        waiting:'Test coverage guard'|waiting:'Repo invariants') want=success ;;
+        waiting:'CI path select'|waiting:'Test coverage guard'|waiting:'Repo invariants') want=success ;;
         waiting:*) want=skipped ;;
       esac
       [ "$conclusion" = "$want" ] \
@@ -716,12 +723,60 @@ RUBY
   pass "CI matrices cover every executable serial lane and canonical lint root exactly once"
 }
 
+# Path skip: a trusted PR whose classifier printed skip runs the same cheap
+# jobs as an unlabelled outside PR, but Full suite passes. Main still runs
+# every job because the select job forces mode=full on push.
+test_path_skip_runs_only_quick_checks() {
+  local actual out
+  actual=$(jobs_running_under association=OWNER mode=skip | tr '\n' ' ') \
+    || fail "could not resolve path-skip jobs"
+  [ "$actual" = "$QUICK_JOBS " ] \
+    || fail "a trusted docs-only PR must run only $QUICK_JOBS, ran: $actual"
+  out=$(run_full_suite_verdict association=OWNER mode=skip needs=skipped) \
+    || fail "the Full suite verdict must pass on an intended path skip:"$'\n'"$out"
+  printf '%s\n' "$out" | grep -q 'skipped for this path set' \
+    || fail "the path-skip pass must name the skip, got:"$'\n'"$out"
+  pass "a trusted path-skip PR runs only the quick checks and a passing Full suite"
+}
+
+test_unintended_skip_fails_the_verdict() {
+  local out
+  if out=$(run_full_suite_verdict association=OWNER mode=full needs=skipped); then
+    fail "the Full suite verdict must fail when a required lane was skipped:"$'\n'"$out"
+  fi
+  printf '%s\n' "$out" | grep -q 'skipped while the path set required the full suite' \
+    || fail "the unintended-skip failure must name the missed lane, got:"$'\n'"$out"
+  pass "a skipped lane while mode=full fails Full suite"
+}
+
+test_path_skip_still_fails_when_a_quick_check_failed() {
+  local out
+  if out=$(run_full_suite_verdict association=OWNER mode=skip needs=failure); then
+    fail "the Full suite verdict must fail on a path skip when a job failed:"$'\n'"$out"
+  fi
+  pass "a path skip still fails Full suite when a job failed"
+}
+
+test_outside_pr_path_skip_still_names_full_ci() {
+  local out
+  if out=$(run_full_suite_verdict mode=skip needs=skipped); then
+    fail "an unlabelled outside PR must not pass Full suite just because paths skip:"$'\n'"$out"
+  fi
+  printf '%s\n' "$out" | grep -q 'full-ci' \
+    || fail "the outside-PR failure must still name the full-ci label, got:"$'\n'"$out"
+  pass "path skip does not waive the full-ci gate on an outside PR"
+}
+
 test_ci_matrices_match_executable_partitions
 test_pr_pushes_supersede_within_one_pr
 test_separate_prs_do_not_cancel_each_other
 test_main_pushes_keep_only_the_newest_run
 test_only_the_full_ci_label_joins_the_pr_group
 test_outside_pr_without_label_runs_only_quick_checks
+test_path_skip_runs_only_quick_checks
+test_unintended_skip_fails_the_verdict
+test_path_skip_still_fails_when_a_quick_check_failed
+test_outside_pr_path_skip_still_names_full_ci
 test_full_ci_label_runs_the_whole_suite
 test_trusted_runs_are_unchanged
 test_unrelated_label_starts_no_job

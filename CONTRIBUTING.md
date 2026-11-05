@@ -39,6 +39,41 @@ Adding the label runs the full suite, and every later push to that pull request 
 This keeps the repository's public CI within GitHub's limit on jobs running at once, while no-mistakes already reviews, tests, and lints your change locally.
 Pull requests from this repository's own branches or from authors with write access run the full suite without the label.
 
+### Which CI jobs run
+
+`bin/fm-ci-select.sh` classifies a pull request's changed paths.
+A push to `main` is always the full suite.
+The classifier prints `mode=skip` only when the path list is non-empty and every path matches a skip glob.
+Any other path, or an empty list, is `mode=full`.
+
+Skip globs, as bash `case` patterns where `*` matches `/`:
+
+| Path glob | Jobs that run |
+| `docs/*` | `CI path select`, `Test coverage guard`, `Repo invariants`, `Full suite` (pass) |
+| `assets/*` | same skip set |
+| `README.md` | same skip set |
+| `LICENSE` | same skip set |
+| `CONTRIBUTING.md` | same skip set |
+| `GROK_BOT.md` | same skip set |
+| `VISION.md` | same skip set |
+| `.gitignore` | same skip set |
+| `.cursor/skills/*` | same skip set |
+| `.cursor/agents/*` | same skip set |
+| `.cursor/rules/*` | same skip set |
+| `.cursor/roles/*` | same skip set |
+| `.cursor/references/*` | same skip set |
+| `.cursor/schemas/*` | same skip set |
+| `.cursor/templates/*` | same skip set |
+| `.cursor/licenses/*` | same skip set |
+| `.cursor/catalog.yaml` | same skip set |
+| `.github/**`, `bin/**`, `tests/**`, `AGENTS.md`, and every other path | every job in `.github/workflows/ci.yml` |
+
+A mixed diff that includes any non-skip path is full.
+The outside-PR `full-ci` gate still applies on top of this table: an unlabelled outside pull request runs only the skip-set jobs, and `Full suite` fails naming the label even when the paths would skip.
+`Full suite` passes on an intended path skip.
+A skipped lint or behavior lane while `mode=full` fails `Full suite`.
+The no-mistakes check is a separate workflow and does not follow this table.
+
 See the [no-mistakes quick start](https://kunchenguid.github.io/no-mistakes/start-here/quick-start/) for the full first-run walkthrough.
 
 ## Agent-driven contributions
@@ -58,7 +93,10 @@ Require the actual job contexts: `Full suite`, `Lint 1`, `Lint 2`, `Lint 3`, `Te
 Uncomment the job before putting that check back on the ruleset.
 The last name is the compliance job context, not its workflow title; its existing automation exceptions remain unchanged.
 The timing aggregate is not a substitute for individual jobs because it can succeed while collecting evidence from a failed run.
-The individual lanes skip on an outside pull request until it has the `full-ci` label, and a skipped job satisfies a required check, so `Full suite` must be required too: it fails until the label is on and whenever a lane failed or was cancelled.
+The individual lanes skip on an outside pull request until it has the `full-ci` label, and on a path skip they skip for trusted pull requests too.
+A skipped job satisfies a required check, so `Full suite` must be required too: it fails until the label is on, whenever a lane failed or was cancelled, and whenever a lane was skipped while `bin/fm-ci-select.sh` printed `mode=full`.
+It passes on an intended path skip.
+See [Which CI jobs run](#which-ci-jobs-run).
 
 Apply the approved rule change only after the corresponding workflow is green and landed, confirming exact names and the Actions integration id from real checks first.
 Snapshot the current ruleset, amend that same rule with the authenticated GitHub API or settings UI, and read back both the ruleset and effective branch rules.
@@ -146,6 +184,7 @@ Its header and `--help` own the flags, family labels, lanes, and changed-file ma
 Portable shard balance evidence lives in `docs/fm-test-portable-shards.md`.
 Family selection is the ordinary local path; `--all` is deliberate full regression only.
 CI owns broad regression across required portable parallel shards, the portable serial lane's separate-runner shards, the Herdr lane, lint, invariants, and the coverage guard in [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+Path skip is in [Which CI jobs run](#which-ci-jobs-run).
 The stock macOS Bash job is commented out there as of 2026-11-04.
 Uncomment it to restore that lane.
 Pushing a new head to a pull request cancels that pull request's still-running CI so only the current head is validated, and a newer push to `main` cancels the older `main` run so only the newest merge's run finishes; the workflow owns that contract, the `full-ci` gate described under [The `full-ci` label](#the-full-ci-label), and their rationale.

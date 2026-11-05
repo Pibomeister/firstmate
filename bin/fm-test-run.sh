@@ -308,7 +308,8 @@ family_for_basename() {
     fm-timeout-lib.test.sh|fm-bash-compat.test.sh|\
     fm-tmux-submit-busy.test.sh|fm-trace-context-lib.test.sh|\
     fm-transition-lib.test.sh|\
-    fm-test-run.test.sh|fm-test-isolation-proof.test.sh|fm-test-tap-verify.test.sh)
+    fm-test-run.test.sh|fm-test-isolation-proof.test.sh|fm-test-tap-verify.test.sh|\
+    fm-ci-select.test.sh|fm-ci-workflow.test.sh)
       printf '%s\n' pure-contract-unit
       ;;
     fm-daemon.test.sh|fm-guard-stale-banner.test.sh|fm-pi-watch-extension.test.sh|\
@@ -772,6 +773,7 @@ tests/fm-calm-pi-extension.test.sh 54230
 tests/fm-calm-pi-queue-retention-live-e2e.test.sh 1143
 tests/fm-capacity.test.sh 7419
 tests/fm-check-unregister.test.sh 591
+tests/fm-ci-select.test.sh 5000
 tests/fm-ci-workflow.test.sh 13442
 tests/fm-claims.test.sh 96165
 tests/fm-classify-corr-token.test.sh 28070
@@ -1880,6 +1882,10 @@ families_for_changed_path() {
     bin/fm-bearings-snapshot.sh|bin/fm-fleet-snapshot.sh|bin/fm-fleet-view.sh|bin/fm-contributions.sh|bin/fm-contributions.jq|\
     bin/fm-home-summary-refresh.sh)
       printf '%s\n' snapshot-bearings
+      ;;
+    bin/fm-ci-select.sh)
+      printf '%s\n' "__script__:fm-ci-select.test.sh"
+      printf '%s\n' "__script__:fm-ci-workflow.test.sh"
       ;;
     bin/fm-install-herdr.sh|bin/fm-install-treehouse.sh|bin/fm-herdr-ci-cleanup.sh)
       printf '%s\n' pure-contract-unit
