@@ -753,7 +753,7 @@ See [`wedge-alarm.md`](wedge-alarm.md) for away and quiet alert behavior, channe
 ## Assistant watchdog (config/watchdog)
 
 See [`watchdog.md`](watchdog.md) for the watched homes, symptoms, action ladder, restart proof, hard boundaries, model fallback, status file, and every `config/watchdog` key.
-A `restart-command` whose command word is `muse` or `muse-bin`, a versioned `muse-bin-*`, or a path ending in one of them, and carries none of `--yolo`, `--disable-approval`, `--approval-mode never`, or `--approval-mode=never`, gets `--yolo` inserted after that word by default, and [`watchdog.md`](watchdog.md) owns that rule.
+A muse `restart-command` with no approval-off flag gets `--yolo` added by default; the `restart-command` row in [`watchdog.md`](watchdog.md) owns the exact rule.
 
 ## Trace context propagation (config/trace-context / FM_TRACE_CONTEXT)
 
