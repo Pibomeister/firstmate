@@ -406,7 +406,7 @@ family_for_basename() {
     fm-git-strip-ai-trailers.test.sh|\
     fm-trace-context-spawn.test.sh|fm-spawn-worktree-settle.test.sh|\
     fm-spawn-compact-adviser-disable.test.sh|\
-    fm-spawn-compact-adviser-disable-remote.test.sh|\
+    fm-spawn-compact-adviser-disable-remote.test.sh|fm-codex-shell-env.test.sh|\
     fm-project-capacity.test.sh|\
     fm-teardown-endpoint-safety.test.sh)
       printf '%s\n' backend-dispatch
@@ -784,6 +784,7 @@ tests/fm-cmux-claude-composer-live-e2e.test.sh 84
 tests/fm-codex-catalog-live-e2e.test.sh 55
 tests/fm-codex-continuity-live-e2e.test.sh 82
 tests/fm-codex-hook-layer-live-e2e.test.sh 91
+tests/fm-codex-shell-env.test.sh 71000
 tests/fm-commandcode-harness.test.sh 13984
 tests/fm-commandcode-signals-live-e2e.test.sh 82
 tests/fm-composer-codex-idle-live-e2e.test.sh 55
