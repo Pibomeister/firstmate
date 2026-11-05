@@ -1121,7 +1121,7 @@ SH
   assert_equals "tmux $T" "$(captain_field backend) $(captain_field target)" "the record names the lock owner's terminal"
   moved=$(captain_field moved_at)
   [ -n "$moved" ] || fail "the record has no move time"
-  assert_grep "captain pid $LOCKPID live on tmux:$T" "$H/data/watchdog/status.md" "the status file names the captain, its liveness, and its terminal"
+  assert_grep "captain pid $LOCKPID live on tmux:$T, moved " "$H/data/watchdog/status.md" "the status file names the captain, its liveness, and its terminal"
 
   # The process dies while its pane stays connected with a stale working screen.
   kill_holder_with_anchor
@@ -1150,7 +1150,7 @@ SH
   assert_equals "$new_pid live tmux $new_pane $moved" \
     "$(captain_field lock_pid) $(captain_field alive) $(captain_field backend) $(captain_field target) $(captain_field moved_at)" \
     "the next pass keeps the moved owner and its terminal"
-  assert_grep "captain pid $new_pid live on tmux:$new_pane" "$H/data/watchdog/status.md" "the status file names the new terminal"
+  assert_grep "captain pid $new_pid live on tmux:$new_pane, moved " "$H/data/watchdog/status.md" "the status file names the new terminal"
 
   # A handoff moves the lock to a session whose terminal is not proven yet: the
   # record never names the retired session's pane as the captain's.

@@ -1311,10 +1311,11 @@ wd_handle_subject() {
 # --- status file -------------------------------------------------------------------
 
 wd_health_line() {
-  local s=$WD_SYMPTOM idle='' captain='no lock holder'
+  local s=$WD_SYMPTOM idle='' captain='no lock holder' term='an unknown terminal'
   [ "$O_TR_AGE" = unknown ] || idle=", last turn $((O_TR_AGE / 60))m ago"
   if [ -n "$O_LOCK_PID" ]; then
-    captain="captain pid $O_LOCK_PID $O_OWNER on ${C_TARGET:+$C_BACKEND:$C_TARGET}${C_TARGET:-an unknown terminal}${C_MOVED:+, moved $(fm_wd_iso "$C_MOVED")}"
+    [ -z "$C_TARGET" ] || term=$C_BACKEND:$C_TARGET
+    captain="captain pid $O_LOCK_PID $O_OWNER on $term${C_MOVED:+, moved $(fm_wd_iso "$C_MOVED")}"
   fi
   case "$s" in
     ok) printf -- '- %s: ok%s, ctx %s; %s\n' "$O_TAG" "$idle" "${O_CTX:-unknown}${O_CTX:+%}" "$captain" ;;
