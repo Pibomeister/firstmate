@@ -1,0 +1,2 @@
+ok - matrix: muse's unstripped suggestion reads empty only inside its own container; typed text stays pending
+ok - matrix: muse's ⟩ reads empty everywhere and survives losing the styled-glyph signal

@@ -1,0 +1,38 @@
+== idle-suggestion (cursor_y=10, row: ❯ Type @ to search and insert workspace file paths)
+  tmux live state: HEAD=empty BASE=pending
+  cursorless [styled=1|cursor=0|identity=1|rows=0]: HEAD=empty BASE=unknown
+  cursorless [styled=1|cursor=0|identity=0|rows=0]: HEAD=empty BASE=unknown
+  cursorless [styled=0|cursor=0|identity=0|rows=0]: HEAD=empty BASE=unknown
+== typed-text (cursor_y=10, row: ❯ fix the login bug)
+  tmux live state: HEAD=pending BASE=pending
+  cursorless [styled=1|cursor=0|identity=1|rows=0]: HEAD=pending BASE=unknown
+  cursorless [styled=0|cursor=0|identity=0|rows=0]: HEAD=unknown BASE=unknown
+== typed-suggestion-extension (cursor_y=10, row: ❯ Type @ to search and insert workspace file paths please)
+  tmux live state: HEAD=pending BASE=pending
+  cursorless [styled=1|cursor=0|identity=1|rows=0]: HEAD=pending BASE=unknown
+  cursorless [styled=0|cursor=0|identity=0|rows=0]: HEAD=unknown BASE=unknown
+== cleared-after-ctrl-u (cursor_y=10, row: ❯)
+  tmux live state: HEAD=empty BASE=empty
+  cursorless [styled=1|cursor=0|identity=1|rows=0]: HEAD=empty BASE=unknown
+  cursorless [styled=0|cursor=0|identity=0|rows=0]: HEAD=empty BASE=unknown
+session 1 [HEAD=empty BASE=pending] ❯ Type @ to search and insert workspace file paths
+session 2 [HEAD=empty BASE=pending] ❯ Type @ to search and insert workspace file paths
+session 3 [HEAD=empty BASE=pending] ❯ Type @ to search and insert workspace file paths
+session 4 [HEAD=empty BASE=pending] ❯ Type @ to search and insert workspace file paths
+session 5 [HEAD=empty BASE=pending] ❯ Type @ to search and insert workspace file paths
+session 6 [HEAD=empty BASE=pending] ❯ Type @ to search and insert workspace file paths
+== live ring, BASE library, pane row: ❯ Type @ to search and insert workspace file paths
+composer before ring: pending
+ring rc=1 (0=delivered 1=skipped-pending 2=failed 3=dead)
+   pane row after: ❯ Type @ to search and insert workspace file paths
+   doorbell lines in pane: 0
+== live ring, HEAD library, pane row: ❯ Type @ to search and insert workspace file paths
+composer before ring: empty
+ring rc=0 (0=delivered 1=skipped-pending 2=failed 3=dead)
+   pane row after: ❯ Type @ to search and insert workspace file paths
+❯ : Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your 'livetask.inbox' steering inbox, read and act on each in numeric order, then mv each into
+◆ echo: : Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your 'livetask.inbox' steering inbox, read and act on each in numeric order, then mv
+== live ring into typed composer, HEAD library, pane row: ❯ half-typed captain note
+composer before ring: pending
+ring rc=1 (0=delivered 1=skipped-pending 2=failed 3=dead)
+   pane row after: ❯ half-typed captain note
