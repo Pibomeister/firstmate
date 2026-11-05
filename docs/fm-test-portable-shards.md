@@ -31,7 +31,7 @@ The drain, hook, and park packing weights are the slowest successful Ubuntu samp
 The native-Windows-only `tests/fm-pi-windows-shell-invocation.test.sh` retains its separate 5121 ms measurement from 2026-09-06T21:02Z instead of a portable capability skip.
 Former provisional local hints for polytoken, approval-failover, Kimi live-guard skip, tap-verify, read-repetition, Antigravity primary, worktree-cleanup, order, and watchdog-live now use Ubuntu timing-artifact maxima from the 2026-11-03 refresh.
 `tests/fm-watchdog.test.sh` is 527813 ms from that refresh.
-The wedge-cap suite is 356831 ms for `tests/fm-watch-wedge-cap.test.sh`, 241 ms for the live-guard skip, and 59892 ms for the unconfigured-parity suite.
+The wedge-cap suite is 424173 ms for `tests/fm-watch-wedge-cap.test.sh`, 214 ms for the live-guard skip, and 60531 ms for the unconfigured-parity suite, from the November 4 balance refresh.
 `test_portable_serial_packing_budget_boundary` pins every other fixture script to 0 ms, so packing exactly at the 780000 ms budget is accepted and one millisecond above it is refused even when real serial members have no hint.
 The coverage-guard test owns modeled real-hint headroom under that budget.
 Do not discount a local speedup from CI packing weights.
@@ -67,6 +67,7 @@ More jobs can increase queue delay at the account's shared runner limit.
 It is a reviewer record, not a runner input: the suite runner does not read it, and a recorded failure stays a failed run and a red check.
 Each entry names the test script, its lane, the failing assertion line, the failed and unchanged-base passing run links, an owner, an expiry date, and the SHA-256 digests of the sources it ran against.
 An entry stays valid only while those sources are unchanged and before its expiry; renew or remove it after investigation.
+Both entries' `tests/lib.sh` digests were refreshed after the rebase onto upstream #135, whose only change to that file is one comment line; the other recorded sources are unchanged.
 An unchanged-source failure followed by a pass establishes intermittency, not a proven root cause or a waiver.
 The focus sampler and host TERM wait still need investigation by the named owner before expiry.
 The historical stock macOS cancellation was a runner-acquisition failure, with no test log; it is not a flaky-test baseline entry.
