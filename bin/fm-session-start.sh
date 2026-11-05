@@ -599,11 +599,12 @@ fm_task_state_word() {  # <status-file>
 # status line, or "-". Other status lines never supply it: a working: or
 # paused: line may name someone else's PR.
 fm_task_pr_url() {  # <meta> <status-file>
-  local meta=$1 status=$2 pr line ready=
+  local meta=$1 status=$2 pr line verb ready=
   pr=$(fm_meta_get "$meta" pr)
   if [ -z "$pr" ] && [ -f "$status" ]; then
     while IFS= read -r line || [ -n "$line" ]; do
-      [ "$(status_line_verb "$line")" = done ] && ready=$line
+      status_line_verb "$line" verb
+      [ "$verb" = done ] && ready=$line
     done < "$status"
     [ -z "$ready" ] || pr=$(printf '%s\n' "$ready" | grep -oE 'https://[^[:space:]]+/pull/[0-9]+' | tail -n 1 || true)
   fi
