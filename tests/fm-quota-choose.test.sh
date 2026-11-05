@@ -1103,6 +1103,37 @@ sig=$(HOME="$home_proj" call_reroute claude-tooling --config-dir "$home_proj/.cl
   || fail "HOME .claude.json scalar .projects must be tooling required"
 [ "$sig" = "unreadable $home_proj/.claude.json" ] || fail "HOME scalar projects: $sig"
 
+proj_entry="$LAB/proj-entry"
+mkdir -p "$proj_entry"
+printf '%s\n' '{"projects":{"/p":"x"}}' > "$proj_entry/.claude.json"
+sig=$(call_reroute claude-tooling --config-dir "$proj_entry") \
+  || fail "a non-object .projects entry must be tooling required"
+[ "$sig" = "unreadable $proj_entry/.claude.json" ] || fail "projects entry signal: $sig"
+
+home_proj_entry="$LAB/home-proj-entry"
+mkdir -p "$home_proj_entry/.claude"
+printf '%s\n' '{"projects":{"/p":"x"}}' > "$home_proj_entry/.claude.json"
+sig=$(HOME="$home_proj_entry" call_reroute claude-tooling --config-dir "$home_proj_entry/.claude") \
+  || fail "HOME .claude.json non-object .projects entry must be tooling required"
+[ "$sig" = "unreadable $home_proj_entry/.claude.json" ] \
+  || fail "HOME projects entry signal: $sig"
+
+mcp_scalar="$LAB/mcp-scalar"
+mkdir -p "$mcp_scalar"
+printf '%s\n' '{"mcpServers":"not-an-object"}' > "$mcp_scalar/.claude.json"
+sig=$(call_reroute claude-tooling --config-dir "$mcp_scalar") \
+  || fail "a non-object .mcpServers must be tooling required"
+[ "$sig" = "unreadable $mcp_scalar/.claude.json" ] || fail "scalar mcpServers signal: $sig"
+
+proj_mcp_scalar="$LAB/proj-mcp-scalar"
+mkdir -p "$proj_mcp_scalar"
+printf '%s\n' '{"projects":{"/p":{"mcpServers":"not-an-object"}}}' \
+  > "$proj_mcp_scalar/.claude.json"
+sig=$(call_reroute claude-tooling --config-dir "$proj_mcp_scalar") \
+  || fail "a non-object .projects[].mcpServers must be tooling required"
+[ "$sig" = "unreadable $proj_mcp_scalar/.claude.json" ] \
+  || fail "nested scalar mcpServers signal: $sig"
+
 acct_plugins_false="$LAB/acct-plugins-false"
 mkdir -p "$acct_plugins_false"
 printf '%s\n' '{"enabledPlugins":{"docs":false}}' > "$acct_plugins_false/settings.json"
@@ -1122,9 +1153,9 @@ sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$wt_plug
 empty_acct_dirs="$LAB/empty-acct-dirs"
 mkdir -p "$empty_acct_dirs/skills" "$empty_acct_dirs/agents" \
   "$empty_acct_dirs/commands" "$empty_acct_dirs/plugins"
-if sig=$(call_reroute claude-tooling --config-dir "$empty_acct_dirs"); then
-  fail "empty account dirs must not be a signal, got $sig"
-fi
+rc=0
+sig=$(call_reroute claude-tooling --config-dir "$empty_acct_dirs") || rc=$?
+[ "$rc" -eq 1 ] || fail "empty account dirs: expected exit 1, got $rc ($sig)"
 [ -z "$sig" ] || fail "empty account dirs produced: $sig"
 
 sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$LAB/missing-wt") \
