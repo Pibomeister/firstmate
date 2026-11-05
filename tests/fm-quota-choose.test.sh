@@ -1045,11 +1045,14 @@ sig=$(call_reroute claude-tooling --config-dir "$acct_settings") \
   || fail "account settings.json hooks must be tooling required"
 [ "$sig" = "$acct_settings/settings.json .hooks" ] || fail "account hooks signal: $sig"
 
-acct_plugins="$LAB/acct-plugins"
-mkdir -p "$acct_plugins/plugins/some-plugin"
-sig=$(call_reroute claude-tooling --config-dir "$acct_plugins") \
-  || fail "account plugins dir must be tooling required"
-[ "$sig" = "$acct_plugins/plugins" ] || fail "account plugins signal: $sig"
+for name in skills agents commands plugins; do
+  acct_dir="$LAB/acct-$name"
+  mkdir -p "$acct_dir/$name/some"
+  rc=0
+  sig=$(call_reroute claude-tooling --config-dir "$acct_dir") || rc=$?
+  [ "$rc" -eq 1 ] || fail "account $name must not be a signal, got $rc ($sig)"
+  [ -z "$sig" ] || fail "account $name produced: $sig"
+done
 
 wt_settings="$LAB/wt-settings"
 mkdir -p "$wt_settings/.claude"
@@ -1137,10 +1140,18 @@ sig=$(call_reroute claude-tooling --config-dir "$proj_mcp_scalar") \
 acct_plugins_false="$LAB/acct-plugins-false"
 mkdir -p "$acct_plugins_false"
 printf '%s\n' '{"enabledPlugins":{"docs":false}}' > "$acct_plugins_false/settings.json"
-sig=$(call_reroute claude-tooling --config-dir "$acct_plugins_false") \
-  || fail "account enabledPlugins with all values false must be a signal"
-[ "$sig" = "$acct_plugins_false/settings.json .enabledPlugins" ] \
-  || fail "account all-false plugins signal: $sig"
+rc=0
+sig=$(call_reroute claude-tooling --config-dir "$acct_plugins_false") || rc=$?
+[ "$rc" -eq 1 ] || fail "account enabledPlugins must not be a signal, got $rc ($sig)"
+[ -z "$sig" ] || fail "account enabledPlugins produced: $sig"
+
+acct_plugins_true="$LAB/acct-plugins-true"
+mkdir -p "$acct_plugins_true"
+printf '%s\n' '{"enabledPlugins":{"docs":true}}' > "$acct_plugins_true/settings.json"
+rc=0
+sig=$(call_reroute claude-tooling --config-dir "$acct_plugins_true") || rc=$?
+[ "$rc" -eq 1 ] || fail "account enabledPlugins true must not be a signal, got $rc ($sig)"
+[ -z "$sig" ] || fail "account enabledPlugins true produced: $sig"
 
 wt_plugins_false="$LAB/wt-plugins-false"
 mkdir -p "$wt_plugins_false/.claude"
