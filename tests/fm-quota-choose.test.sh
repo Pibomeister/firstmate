@@ -1169,6 +1169,133 @@ sig=$(call_reroute claude-tooling --config-dir "$empty_acct_dirs") || rc=$?
 [ "$rc" -eq 1 ] || fail "empty account dirs: expected exit 1, got $rc ($sig)"
 [ -z "$sig" ] || fail "empty account dirs produced: $sig"
 
+plugin_skills_only="$LAB/plugin-skills-only"
+mkdir -p "$plugin_skills_only/plugins/demo/.claude-plugin" \
+  "$plugin_skills_only/plugins/demo/skills/s" \
+  "$plugin_skills_only/plugins/demo/agents/a" \
+  "$plugin_skills_only/plugins/demo/commands/c"
+printf '%s\n' '{"name":"demo"}' \
+  > "$plugin_skills_only/plugins/demo/.claude-plugin/plugin.json"
+rc=0
+sig=$(call_reroute claude-tooling --config-dir "$plugin_skills_only") || rc=$?
+[ "$rc" -eq 1 ] || fail "plugin skills/agents/commands must not be a signal, got $rc ($sig)"
+[ -z "$sig" ] || fail "plugin skills/agents/commands produced: $sig"
+
+plugin_mcp="$LAB/plugin-mcp"
+mkdir -p "$plugin_mcp/plugins/demo"
+printf '%s\n' '{"mcpServers":{"docs":{"command":"true"}}}' \
+  > "$plugin_mcp/plugins/demo/.mcp.json"
+sig=$(call_reroute claude-tooling --config-dir "$plugin_mcp") \
+  || fail "plugin .mcp.json must be tooling required"
+[ "$sig" = "MCP servers in $plugin_mcp/plugins/demo/.mcp.json" ] \
+  || fail "plugin .mcp.json signal: $sig"
+
+plugin_manifest_mcp="$LAB/plugin-manifest-mcp"
+mkdir -p "$plugin_manifest_mcp/plugins/demo/.claude-plugin"
+printf '%s\n' '{"name":"demo","mcpServers":{"docs":{"command":"true"}}}' \
+  > "$plugin_manifest_mcp/plugins/demo/.claude-plugin/plugin.json"
+sig=$(call_reroute claude-tooling --config-dir "$plugin_manifest_mcp") \
+  || fail "plugin.json mcpServers must be tooling required"
+[ "$sig" = "MCP servers in $plugin_manifest_mcp/plugins/demo/.claude-plugin/plugin.json" ] \
+  || fail "plugin.json mcpServers signal: $sig"
+
+plugin_hooks="$LAB/plugin-hooks"
+mkdir -p "$plugin_hooks/plugins/demo/hooks"
+printf '%s\n' '{"hooks":{"Stop":[{}]}}' \
+  > "$plugin_hooks/plugins/demo/hooks/hooks.json"
+sig=$(call_reroute claude-tooling --config-dir "$plugin_hooks") \
+  || fail "plugin hooks/hooks.json must be tooling required"
+[ "$sig" = "$plugin_hooks/plugins/demo/hooks/hooks.json .hooks" ] \
+  || fail "plugin hooks/hooks.json signal: $sig"
+
+plugin_manifest_hooks="$LAB/plugin-manifest-hooks"
+mkdir -p "$plugin_manifest_hooks/plugins/demo/.claude-plugin"
+printf '%s\n' '{"name":"demo","hooks":{"Stop":[{}]}}' \
+  > "$plugin_manifest_hooks/plugins/demo/.claude-plugin/plugin.json"
+sig=$(call_reroute claude-tooling --config-dir "$plugin_manifest_hooks") \
+  || fail "plugin.json hooks must be tooling required"
+[ "$sig" = "$plugin_manifest_hooks/plugins/demo/.claude-plugin/plugin.json .hooks" ] \
+  || fail "plugin.json hooks signal: $sig"
+
+plugin_cache_mcp="$LAB/plugin-cache-mcp"
+mkdir -p "$plugin_cache_mcp/plugins/cache/mp/demo/1.0.0"
+printf '%s\n' '{"mcpServers":{"docs":{"command":"true"}}}' \
+  > "$plugin_cache_mcp/plugins/cache/mp/demo/1.0.0/.mcp.json"
+sig=$(call_reroute claude-tooling --config-dir "$plugin_cache_mcp") \
+  || fail "cached plugin .mcp.json must be tooling required"
+[ "$sig" = "MCP servers in $plugin_cache_mcp/plugins/cache/mp/demo/1.0.0/.mcp.json" ] \
+  || fail "cached plugin .mcp.json signal: $sig"
+
+acct_hooks_file="$LAB/acct-hooks-file"
+mkdir -p "$acct_hooks_file/hooks"
+printf '%s\n' '{"hooks":{"Stop":[{}]}}' > "$acct_hooks_file/hooks/hooks.json"
+sig=$(call_reroute claude-tooling --config-dir "$acct_hooks_file") \
+  || fail "account hooks/hooks.json must be tooling required"
+[ "$sig" = "$acct_hooks_file/hooks/hooks.json .hooks" ] \
+  || fail "account hooks/hooks.json signal: $sig"
+
+combined_ignored_and_hooks="$LAB/combined-ignored-and-hooks"
+mkdir -p "$combined_ignored_and_hooks/skills/s" \
+  "$combined_ignored_and_hooks/agents/a" \
+  "$combined_ignored_and_hooks/commands/c" \
+  "$combined_ignored_and_hooks/plugins/demo/skills/s" \
+  "$combined_ignored_and_hooks/plugins/demo/.claude-plugin"
+printf '%s\n' '{"name":"demo"}' \
+  > "$combined_ignored_and_hooks/plugins/demo/.claude-plugin/plugin.json"
+printf '%s\n' '{"hooks":{"Stop":[{}]}}' \
+  > "$combined_ignored_and_hooks/settings.json"
+sig=$(call_reroute claude-tooling --config-dir "$combined_ignored_and_hooks") \
+  || fail "ignored account items must not hide account hooks"
+[ "$sig" = "$combined_ignored_and_hooks/settings.json .hooks" ] \
+  || fail "combined ignored+hooks signal: $sig"
+
+combined_ignored_and_plugin_mcp="$LAB/combined-ignored-and-plugin-mcp"
+mkdir -p "$combined_ignored_and_plugin_mcp/skills/s" \
+  "$combined_ignored_and_plugin_mcp/agents/a" \
+  "$combined_ignored_and_plugin_mcp/commands/c" \
+  "$combined_ignored_and_plugin_mcp/plugins/demo/skills/s"
+printf '%s\n' '{"mcpServers":{"docs":{"command":"true"}}}' \
+  > "$combined_ignored_and_plugin_mcp/plugins/demo/.mcp.json"
+sig=$(call_reroute claude-tooling --config-dir "$combined_ignored_and_plugin_mcp") \
+  || fail "ignored account items must not hide plugin MCP"
+[ "$sig" = "MCP servers in $combined_ignored_and_plugin_mcp/plugins/demo/.mcp.json" ] \
+  || fail "combined ignored+plugin MCP signal: $sig"
+
+unreadable_skills="$LAB/unreadable-skills"
+mkdir -p "$unreadable_skills/skills"
+chmod 000 "$unreadable_skills/skills" || true
+if [ ! -r "$unreadable_skills/skills" ] || [ ! -x "$unreadable_skills/skills" ]; then
+  rc=0
+  sig=$(call_reroute claude-tooling --config-dir "$unreadable_skills") || rc=$?
+  [ "$rc" -eq 1 ] || fail "unreadable account skills must not be a signal, got $rc ($sig)"
+  [ -z "$sig" ] || fail "unreadable account skills produced: $sig"
+fi
+chmod 700 "$unreadable_skills/skills" 2>/dev/null || true
+
+unreadable_plugins="$LAB/unreadable-plugins"
+mkdir -p "$unreadable_plugins/plugins"
+chmod 000 "$unreadable_plugins/plugins" || true
+if [ ! -r "$unreadable_plugins/plugins" ] || [ ! -x "$unreadable_plugins/plugins" ]; then
+  sig=$(call_reroute claude-tooling --config-dir "$unreadable_plugins") \
+    || fail "an unreadable plugins dir must be tooling required"
+  [ "$sig" = "unreadable $unreadable_plugins/plugins" ] \
+    || fail "unreadable plugins dir signal: $sig"
+fi
+chmod 700 "$unreadable_plugins/plugins" 2>/dev/null || true
+
+unreadable_plugin_mcp="$LAB/unreadable-plugin-mcp"
+mkdir -p "$unreadable_plugin_mcp/plugins/demo"
+printf '%s\n' '{"mcpServers":{"docs":{"command":"true"}}}' \
+  > "$unreadable_plugin_mcp/plugins/demo/.mcp.json"
+chmod 000 "$unreadable_plugin_mcp/plugins/demo/.mcp.json" || true
+if [ ! -r "$unreadable_plugin_mcp/plugins/demo/.mcp.json" ]; then
+  sig=$(call_reroute claude-tooling --config-dir "$unreadable_plugin_mcp") \
+    || fail "an unreadable plugin .mcp.json must be tooling required"
+  [ "$sig" = "unreadable $unreadable_plugin_mcp/plugins/demo/.mcp.json" ] \
+    || fail "unreadable plugin .mcp.json signal: $sig"
+fi
+chmod 600 "$unreadable_plugin_mcp/plugins/demo/.mcp.json" 2>/dev/null || true
+
 sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$LAB/missing-wt") \
   || fail "a missing worktree must be tooling required"
 [ "$sig" = "unreadable worktree" ] || fail "missing worktree signal: $sig"
