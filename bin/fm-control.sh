@@ -1036,6 +1036,13 @@ relaunch_record_changed_beyond_tx() {
   [ "$now" != "$was" ]
 }
 
+restore_relaunch_prior_record() {
+  [ -f "$META_PRIOR" ] || return 0
+  cp -p "$META_PRIOR" "$META" && return 0
+  echo "error: could not restore task $ID's prior durable record" >&2
+  return 1
+}
+
 journal_write() {  # <phase> [extra-line]...
   local phase=$1
   shift
@@ -1122,6 +1129,7 @@ relaunch_rollback() {
         journal_write "failed:$RELAUNCH_PHASE" "rollback=none-new-record-kept" || true
         echo "error: $ID was relaunched on $TARGET_HARNESS but no running agent could be confirmed; its work is preserved at $WT" >&2
       else
+        restore_relaunch_prior_record || true
         journal_write "failed:$RELAUNCH_PHASE" "rollback=prior-record-kept" || true
         echo "error: $ID's agent was stopped but the replacement did not launch; no agent is running, and its work plus the recorded progress note are preserved at $WT" >&2
       fi
@@ -1465,6 +1473,7 @@ do_relaunch() {
   # per-task harness wiring before arming the new one, so nothing to do here.
   RELAUNCH_TX="${BASHPID:-$$}.$(date -u +%Y%m%dT%H%M%SZ).$RANDOM"
   journal_write launching "${CHECKPOINT_LINES[@]}" "$note_line" "relaunch_tx=$RELAUNCH_TX"
+  cp -p "$META" "$META.tx" || die "could not stage relaunch token $RELAUNCH_TX for task $ID"
   {
     grep -v '^control_relaunch_tx=' "$META" || true
     printf 'control_relaunch_tx=%s\n' "$RELAUNCH_TX"
@@ -1501,8 +1510,6 @@ do_relaunch() {
   else
     if relaunch_record_changed_beyond_tx; then
       RELAUNCH_META_PUBLISHED=1
-    elif [ -f "$META_PRIOR" ]; then
-      cp -p "$META_PRIOR" "$META" 2>/dev/null || true
     fi
     spawn_msg=$(tr '\n' ' ' < "$spawn_err")
     rm -f "$spawn_err"
