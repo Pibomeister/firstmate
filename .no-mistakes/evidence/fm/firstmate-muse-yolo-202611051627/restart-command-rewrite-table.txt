@@ -1,0 +1,15 @@
+muse                                          => muse --yolo
+/Users/x/.local/bin/muse-bin-1.4.13           => /Users/x/.local/bin/muse-bin-1.4.13 --yolo
+"/opt/bin/muse"                               => "/opt/bin/muse" --yolo
+env muse --approval-mode on-request           => env muse --yolo --approval-mode on-request
+muse --yolo                                   => muse --yolo
+muse --disable-approval                       => muse --disable-approval
+muse --approval-mode never                    => muse --approval-mode never
+muse --approval-mode=never                    => muse --approval-mode=never
+FM_HOME=/Users/x/projects/muse claude         => FM_HOME=/Users/x/projects/muse claude
+cd ~/src/muse && claude                       => cd ~/src/muse && claude
+claude --add-dir ~/work/muse                  => claude --add-dir ~/work/muse
+cd /tmp && muse                               => cd /tmp && muse --yolo
+exec muse                                     => exec muse --yolo
+musescore                                     => musescore
+my-muse                                       => my-muse

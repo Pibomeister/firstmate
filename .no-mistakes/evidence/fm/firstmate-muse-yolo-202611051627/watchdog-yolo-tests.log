@@ -1,0 +1,6 @@
+1..3
+ok - restart-command: muse with --yolo, --disable-approval, or --approval-mode never is launched unchanged
+ok - restart-command: bare muse is launched with --yolo added by default
+ok - restart-command: a non-muse command still restarts unchanged
+FM_TEST_COMPLETE
+exit=0
