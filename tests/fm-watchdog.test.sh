@@ -2002,6 +2002,15 @@ test_away_permission_dialog_pages_the_owner() {
   assert_no_grep "abc123def456" "$H/state/watchdog/actions.tsv" "a secret-looking dialog text stays out of the ledger"
   assert_grep "withheld: the dialog text looks like a secret" "$H/state/watchdog/actions.tsv" "the withheld dialog is still recorded"
 
+  make_home "Do you want to run $(printf 'x%.0s' $(seq 274)) sk-abcdefghijklmnop?"$'\n ❯ 1. Yes\n   2. No\n\nEsc to cancel'
+  transcript 100 "Working."
+  printf '%s\n' "$LOCKPID" > "$H/state/.supervise-daemon.pid"
+  printf "command:cat >> '%s'\n" "$H/paged.log" > "$H/config/wedge-alarm"
+  : > "$H/state/.afk"
+  run_wd 0 once >/dev/null 2>&1
+  assert_no_grep "sk-a" "$H/state/watchdog/actions.tsv" "a secret cut at the record limit stays out of the ledger"
+  assert_grep "withheld: the dialog text looks like a secret" "$H/state/watchdog/actions.tsv" "a secret past the record limit is still withheld"
+
   make_home "$dialog" 'mode=dry-run'
   transcript 100 "Working."
   printf '%s\n' "$LOCKPID" > "$H/state/.supervise-daemon.pid"

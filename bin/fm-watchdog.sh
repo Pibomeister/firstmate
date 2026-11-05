@@ -819,8 +819,8 @@ wd_page_permission() {
   [ "$O_AFK" = 1 ] && [ "$(fm_afk_mode "$O_HOME/state")" = away ] || return 0
   wd_rate_open dialog page "$(cfgi nudge-secs 900)" || return 0
   text=$(fm_wd_dialog_text "$O_PANE")
-  text=${text:0:300}
   if fm_secret_like "$text"; then text='[withheld: the dialog text looks like a secret]'; fi
+  text=${text:0:300}
   id=$(wd_id)
   if [ "$(wd_mode)" != act ]; then wd_rec "$id" dialog page dry-run "would page the owner; permission: $text"; return 0; fi
   wd_rec "$id" dialog page pending "permission: $text"
