@@ -651,7 +651,7 @@ heartbeat_weekly_allowance() {
 heartbeat_ready_pr_discovery() {
   local out rc=0 bound=${FM_HEARTBEAT_DISCOVERY_TIMEOUT:-60}
   case "$bound" in ''|*[!0-9]*|0) bound=60 ;; esac
-  # The inner budget stops discovery starting new repos before the outer bound
+  # The inner budget stops discovery starting new repos or runs before the outer bound
   # fires, so a slow fleet yields partial results instead of no field at all.
   out=$(fm_run_timed "$bound" \
     env FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" \
