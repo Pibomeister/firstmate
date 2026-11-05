@@ -586,52 +586,65 @@ test_handoff_requests_a_successor_and_gates_the_stop_without_one() {
   pass "a firing requests its successor through the watchdog path and the stop is gated until it does (133, 116)"
 }
 
-test_default_home_needs_a_successor_holding_the_lock() {
-  local rc err out conf holder
+test_default_home_needs_a_recorded_live_successor() {
+  local rc err out conf succ doc launch
   reset_lab
+  launch="$PRIMARY/state/.handoff-successor"
+  doc="$TMP_ROOT/handoff-dflt.md"
   rm -rf "$PRIMARY/data/orders" "$PRIMARY/state/.order-handoff" "$PRIMARY/state/.watchdog-restart-request" \
-    "$PRIMARY/state/.lock" "$PRIMARY/state/.lock-session" "$PRIMARY/config/watchdog"
+    "$launch" "$PRIMARY/config/watchdog"
+  printf '# Handoff\n' > "$doc"
   printf 'compact-at-tokens=100000\n' > "$PRIMARY/config/handoff-trigger"
   transcript "$TMP_ROOT/t-dflt" 90000
+  # A launch record from an earlier episode must not satisfy this firing.
+  sleep 60 &
+  succ=$!
+  printf 'pid=%s\nhandoff=%s\n' "$succ" "$doc" > "$launch"
+  sleep 1
   out=$(run_hook "$PRIMARY" s-dflt "$TMP_ROOT/t-dflt")
   expect_fire "$out" PostToolUse "default-home firing"
-  printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | contains("launch the successor yourself")' >/dev/null \
-    || fail "the instruction must say to launch the successor where the watchdog does not act: $out"
+  printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | contains("launch the successor yourself") and contains("state/.handoff-successor") and contains("bin/fm-session-start.sh")' >/dev/null \
+    || fail "the instruction must say to launch and record the successor where the watchdog does not act: $out"
+  err="$TMP_ROOT/dflt.err"
+  rc=0
+  run_hook "$PRIMARY" s-dflt "$TMP_ROOT/t-dflt" Stop >/dev/null 2>"$err" || rc=$?
+  [ "$rc" -eq 2 ] || fail "a launch record older than the firing must not clear the stop (rc=$rc)"
   # A default home (no config/watchdog) and two partial ones: the watchdog
   # ignores the request there, so the request file alone must not clear the stop.
   for conf in '' 'mode=dry-run\nrestart=on\nrestart-command=claude\n' 'mode=act\nrestart=on\n'; do
-    if [ -n "$conf" ]; then printf "$conf" > "$PRIMARY/config/watchdog"; else rm -f "$PRIMARY/config/watchdog"; fi
+    if [ -n "$conf" ]; then printf '%b' "$conf" > "$PRIMARY/config/watchdog"; else rm -f "$PRIMARY/config/watchdog"; fi
     sleep 1
     : > "$PRIMARY/state/.watchdog-restart-request"
-    err="$TMP_ROOT/dflt.err"
     rc=0
     run_hook "$PRIMARY" s-dflt "$TMP_ROOT/t-dflt" Stop >/dev/null 2>"$err" || rc=$?
     [ "$rc" -eq 2 ] || fail "a restart request the watchdog will not act on must not clear the stop (config '$conf', rc=$rc)"
     assert_contains "$(cat "$err")" "Launch your successor yourself" "the block tells the session to launch its successor"
-    assert_contains "$(cat "$err")" "session lock" "the block asks for the successor to hold the session lock"
+    assert_contains "$(cat "$err")" "state/.handoff-successor" "the block names the launch record"
   done
   rm -f "$PRIMARY/config/watchdog"
-  # A live successor holding the session lock clears the stop.
-  (exec -a "$TMP_ROOT/succ-bin/claude" sleep 60) &
-  holder=$!
-  for _ in 1 2 3 4 5 6 7 8 9 10; do
-    case "$(ps -o args= -p "$holder" 2>/dev/null)" in *succ-bin/claude*) break ;; esac
-    sleep 0.2
-  done
-  printf '%s\n' "$holder" > "$PRIMARY/state/.lock"
+  # A fresh launch record with a live successor clears the stop.
+  printf 'pid=%s\nhandoff=%s\n' "$succ" "$doc" > "$launch"
   rc=0
   run_hook "$PRIMARY" s-dflt "$TMP_ROOT/t-dflt" Stop >/dev/null 2>&1 || rc=$?
-  kill "$holder" 2>/dev/null; wait "$holder" 2>/dev/null
-  [ "$rc" -eq 0 ] || fail "a live successor holding the session lock must let the stop pass (rc=$rc)"
+  [ "$rc" -eq 0 ] || fail "a recorded live successor must let the stop pass (rc=$rc)"
+  # A fresh record whose handoff document is missing does not.
+  printf 'pid=%s\nhandoff=%s\n' "$succ" "$TMP_ROOT/no-such-handoff.md" > "$launch"
   rc=0
   run_hook "$PRIMARY" s-dflt "$TMP_ROOT/t-dflt" Stop >/dev/null 2>&1 || rc=$?
-  [ "$rc" -eq 2 ] || fail "a dead lock holder is no successor (rc=$rc)"
-  rm -f "$PRIMARY/state/.lock" "$PRIMARY/state/.watchdog-restart-request"
-  pass "where the watchdog does not restart, the stop is gated until a successor holds the session lock (133, 116)"
+  [ "$rc" -eq 2 ] || fail "a launch record naming no handoff document must not clear the stop (rc=$rc)"
+  # A fresh record whose successor has died keeps the stop blocked.
+  printf 'pid=%s\nhandoff=%s\n' "$succ" "$doc" > "$launch"
+  kill "$succ" 2>/dev/null; wait "$succ" 2>/dev/null
+  rc=0
+  run_hook "$PRIMARY" s-dflt "$TMP_ROOT/t-dflt" Stop >/dev/null 2>"$err" || rc=$?
+  [ "$rc" -eq 2 ] || fail "a recorded successor that is dead must keep the stop blocked (rc=$rc)"
+  assert_contains "$(cat "$err")" "live successor" "the dead-successor block says no live successor was launched"
+  rm -f "$launch" "$doc" "$PRIMARY/state/.watchdog-restart-request"
+  pass "where the watchdog does not restart, the stop is gated until a recorded successor is alive (133, 116)"
 }
 
 test_handoff_requests_a_successor_and_gates_the_stop_without_one
-test_default_home_needs_a_successor_holding_the_lock
+test_default_home_needs_a_recorded_live_successor
 test_threshold_default_15
 test_threshold_configurable
 test_fires_once_per_context_cycle

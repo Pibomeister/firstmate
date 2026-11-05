@@ -76,11 +76,15 @@
 # state/.watchdog-restart-request newer than the firing: the watchdog owns
 # launching the successor from that request and verifying it holds the
 # session lock (bin/fm-watchdog.sh, docs/watchdog.md). Anywhere else the
-# watchdog ignores that request, so the gate clears only when a live successor
-# holds the session lock (bin/fm-session-lock-lib.sh), and the block tells the
-# session to launch it itself or tell the captain it is waiting. A handoff turn
-# therefore cannot end on ready to restart with nobody launching the next
-# session.
+# watchdog ignores that request, so the session launches its successor itself
+# and records the launch in state/.handoff-successor (pid=<successor pid> and
+# handoff=<handoff document path>); the gate clears only when that record is
+# newer than the firing, names an existing handoff document, and its pid is
+# alive. The successor's launch prompt has it confirm the handoff document's
+# hash, wait for this session's harness pid to die, and then run
+# bin/fm-session-start.sh to take the lock, so this session ends its turn and
+# exits after the launch. A handoff turn therefore cannot end on ready to
+# restart with nobody launching the next session.
 # An ordinary stop is never gated.
 # A stop that already follows a block (stop_hook_active) is allowed, so the
 # gate blocks at most once per turn and never wedges the session. It cannot
@@ -168,7 +172,7 @@ if [ "$EVENT" = Stop ]; then
   # Successor gate: only a session the trigger fired on in this cycle owes a
   # successor; a handoff recorded for stow or compaction does not. A restart
   # request counts only where this home's watchdog acts on it (docs/watchdog.md
-  # "Restart"); elsewhere the successor must already hold the session lock.
+  # "Restart"); elsewhere the session records the successor it launched.
   if [ -n "$MARKER" ] && [ -e "$MARKER" ]; then
     # shellcheck source=bin/fm-watchdog-lib.sh
     . "$SCRIPT_DIR/fm-watchdog-lib.sh"
@@ -181,10 +185,13 @@ if [ "$EVENT" = Stop ]; then
         exit 2
       fi
     else
-      # shellcheck source=bin/fm-session-lock-lib.sh
-      . "$SCRIPT_DIR/fm-session-lock-lib.sh"
-      if ! fm_session_lock_foreign_owner_live "$STATE"; then
-        printf 'Firstmate restart gate: this session is handing off, but no successor holds the session lock, and this home'"'"'s watchdog will not launch one (config/watchdog does not set mode=act, restart=on, and a restart-command), so a restart request alone starts nobody. Launch your successor yourself: open a new terminal on this home'"'"'s backend and start a firstmate session there with a prompt naming your handoff document. The successor takes the session lock only after this session exits, so confirm with bin/fm-lock.sh status that it holds the lock; if you cannot confirm that, tell the captain plainly that no successor is running yet and that this session must be quit for it to take over. Do not end on ready to restart as if the handoff were complete.\n' >&2
+      LAUNCH="$STATE/.handoff-successor"
+      SUCC_PID=$(sed -n 's/^pid=//p' "$LAUNCH" 2>/dev/null | tail -1)
+      SUCC_DOC=$(sed -n 's/^handoff=//p' "$LAUNCH" 2>/dev/null | tail -1)
+      case "$SUCC_PID" in '' | *[!0-9]*) SUCC_PID= ;; esac
+      if [ ! -f "$LAUNCH" ] || [ "$MARKER" -nt "$LAUNCH" ] || [ -z "$SUCC_PID" ] ||
+        ! kill -0 "$SUCC_PID" 2>/dev/null || [ -z "$SUCC_DOC" ] || [ ! -f "$SUCC_DOC" ]; then
+        printf 'Firstmate restart gate: this session is handing off, but it has not launched a live successor, and this home'"'"'s watchdog will not launch one (config/watchdog does not set mode=act, restart=on, and a restart-command), so a restart request alone starts nobody. Launch your successor yourself in a new terminal on this home'"'"'s backend. Its launch prompt must tell it to confirm the handoff document'"'"'s sha256, wait until this session'"'"'s harness pid (line 1 of state/.lock) is dead, then run bin/fm-session-start.sh to take the session lock and continue from the handoff. Record the launch in state/.handoff-successor as pid=<successor pid> and handoff=<handoff document path>, then end this turn and exit this session so the successor can take over.\n' >&2
         exit 2
       fi
     fi
@@ -211,7 +218,7 @@ LEFT=$(fm_compact_left_percent "$TOKENS" "$COMPACT_AT")
 ( set -o noclobber; printf '%s\n' "$(date +%s) tokens=$TOKENS compact_at=$COMPACT_AT" > "$MARKER" ) 2>/dev/null || exit 0
 find "$STATE" -maxdepth 1 -name '.handoff-trigger.*' -type f -mtime +30 -exec rm -f {} + 2>/dev/null
 
-MESSAGE="Firstmate early handoff trigger, from this home's tracked Claude hook: about ${LEFT}% of context is left before auto-compact (${TOKENS} of ${COMPACT_AT} tokens). Write your full session handoff now, before auto-compact: persist every open work record, decision, and piece of durable knowledge this session holds (the stow skill covers this), record the handoff with bin/fm-order.sh handoff --doc <handoff file>, then hand off to a successor and report that this session is ready to restart. Where this home's config/watchdog sets mode=act, restart=on, and a restart-command, request the successor by creating state/.watchdog-restart-request in this home: the watchdog launches it and verifies it holds the session lock. Otherwise no watchdog will act on that request, so launch the successor yourself in a new terminal on this home's backend with a prompt naming your handoff document, and confirm it holds the session lock or tell the captain it is waiting for this session to be quit. Do not end this turn on ready to restart until one of those has happened. Do not run /compact. This instruction fires once per context cycle."
+MESSAGE="Firstmate early handoff trigger, from this home's tracked Claude hook: about ${LEFT}% of context is left before auto-compact (${TOKENS} of ${COMPACT_AT} tokens). Write your full session handoff now, before auto-compact: persist every open work record, decision, and piece of durable knowledge this session holds (the stow skill covers this), record the handoff with bin/fm-order.sh handoff --doc <handoff file>, then hand off to a successor and report that this session is ready to restart. Where this home's config/watchdog sets mode=act, restart=on, and a restart-command, request the successor by creating state/.watchdog-restart-request in this home: the watchdog launches it and verifies it holds the session lock. Otherwise no watchdog will act on that request, so launch the successor yourself in a new terminal on this home's backend. Its launch prompt must tell it to confirm the handoff document's sha256, wait until this session's harness pid (line 1 of state/.lock) is dead, then run bin/fm-session-start.sh to take the session lock. Record the launch in state/.handoff-successor as pid=<successor pid> and handoff=<handoff document path>, then end this turn and exit this session. Do not end this turn on ready to restart until one of those has happened. Do not run /compact. This instruction fires once per context cycle."
 # Durable captain orders are part of the handoff: name each open order and the
 # command that writes them into the handoff document (bin/fm-order.sh owns the
 # list and the restart gate this hook enforces on Stop).

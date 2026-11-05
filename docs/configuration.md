@@ -113,7 +113,7 @@ Each effective `FM_HOME` contains private operational directories.
 - Per-task steering-inbox records under `state/<id>.inbox/` (`bin/fm-task-inbox-lib.sh`).
 - Parent-owned secondmate pending-reply records under `state/pending-replies/` (`bin/fm-pending-reply-lib.sh`).
 - Per-task claim ledgers, `state/<id>.claims.jsonl` ([`claim-ledger.md`](claim-ledger.md)).
-- The current captain handle, `state/captain-handle`, that order senders resolve at send time, and this session's handoff record, `state/.order-handoff`, that the restart gate reads (`bin/fm-order.sh`).
+- The current captain handle, `state/captain-handle`, that order senders resolve at send time, and this session's handoff record, `state/.order-handoff`, that the restart gate reads (`bin/fm-order.sh`), plus the successor launch record, `state/.handoff-successor`, that the handoff trigger's successor gate reads (`bin/fm-handoff-trigger.sh`).
 
 `config/` holds local gitignored operating choices, including explicit extension bindings under `config/extensions.d/`.
 
@@ -473,7 +473,8 @@ This feature does not set `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` or any other autocom
 A Claude primary session receives one instruction to write its full handoff when its context left before auto-compact falls to a set percentage.
 The instruction asks the session to persist its open work records, decisions, and durable knowledge, record the handoff, hand off to a successor, and report that it is ready to restart, so a session can restart from a handoff instead of compacting.
 Where this home's `config/watchdog` sets `mode=act`, `restart=on`, and a `restart-command`, the session requests its successor by creating `state/.watchdog-restart-request`, and the watchdog launches the successor and verifies it holds the session lock; its contract is in [the watchdog doc](watchdog.md).
-Anywhere else the watchdog does not act on that request, so the session launches its successor itself in a new terminal and confirms it holds the session lock, or tells the captain the successor is waiting for this session to be quit.
+Anywhere else the watchdog does not act on that request, so the session launches its successor itself in a new terminal and records the launch in `state/.handoff-successor` as `pid=<successor pid>` and `handoff=<handoff document path>`.
+The successor's launch prompt tells it to confirm the handoff document's sha256, wait until the predecessor's harness pid (line 1 of `state/.lock`) is dead, and then run `bin/fm-session-start.sh` to take the session lock; the predecessor ends its turn and exits after the launch.
 It fires at most once per context cycle: a session that auto-compacts anyway is told again before its next auto-compact.
 
 The trigger is on by default at 15% context left, wherever it can resolve the auto-compact point.
@@ -504,7 +505,7 @@ It never writes the handoff, compacts, or restarts the session.
 
 The same hook enforces the captain-order restart gate at each Stop of a session that is handing off: the trigger fired in this context cycle, or the session ran `bin/fm-order.sh handoff --doc` (stow, a restart, or `percent-left=0`).
 It blocks such a stop once per turn while the recorded handoff document omits an open captain order, and it never gates an ordinary stop.
-A session the trigger fired on is also blocked once per turn until a successor is under way: where the watchdog acts on restarts, until `state/.watchdog-restart-request` is newer than the firing; anywhere else, until a live successor holds the session lock, because a request file there starts nobody. That handoff turn cannot end on ready to restart with no successor launched.
+A session the trigger fired on is also blocked once per turn until a successor is under way: where the watchdog acts on restarts, until `state/.watchdog-restart-request` is newer than the firing; anywhere else, until `state/.handoff-successor` is newer than the firing, names an existing handoff document, and records a live successor pid, because a request file there starts nobody. That handoff turn cannot end on ready to restart with no successor launched.
 The handoff record belongs to the session that wrote it, so another session's stop in the same home is never gated by it.
 A caller outside any harness session, such as a restarting leash or sender, reads the record as the captain's, so its `bin/fm-order.sh gate` check clears when the captain's handoff lists every open order.
 The gate has limits: it runs only for a Claude primary, so a non-Claude primary, or a home with no resolvable auto-compact window that never runs `handoff --doc`, is not gated.
