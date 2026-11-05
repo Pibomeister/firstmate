@@ -20,7 +20,10 @@
 #
 # Output (compact, the default): one line per discovered run, plus one line
 # per unreadable repo, so a heartbeat or decision batch can consume it as-is:
-#   ready-pr: repo=<name> branch=<branch> pr=<url|-> head=<sha> waited=<dur> owned=<yes|no> kind=<ci-ready|gate> gate=<step|-> run=<id>
+#   ready-pr: repo=<name> branch=<branch> pr=<url|-> head=<sha> waited=<dur> owned=<yes|no> kind=<ci-ready|gate> gate=<step|-> checks=<green|no-checks|-> run=<id>
+# waited is the run's age since creation (decoded from its ULID id), not the
+# time since it became ready; checks distinguishes a verified PR (green) from
+# one no check ever verified (no-checks, still merge-ready by declaration).
 #   ready-pr-unreadable: repo=<name> reason=<text>
 # With --json it prints one object:
 #   {schema:"fm-ready-pr-discovery.v1",generated_epoch,runs[],unreadable[],warnings[]}
@@ -147,25 +150,48 @@ owner_for() {  # <branch> <pr>
   return 0
 }
 
-# ci log verdict for a run: ready when the most recent recognized marker says
-# the monitor is only waiting for merge/close; not-ready while checks run.
+# ci log verdict for a run, with the same marker rule as nm_ci_checks_state
+# in bin/fm-crew-state.sh (its owner): the most recent recognized marker wins.
+# green = checks passed and only merge is awaited; no-checks = no check ever
+# verified the PR (no_ci or zero reported checks) and only merge is awaited;
+# not-ready = checks are still running or failed; unknown = no readable marker.
 ci_log_state() {  # <clone> <run-id>
   local log marker
   log=$(fm_nm_run_checked "$1" "$NM_TIMEOUT" axi logs --step ci --run "$2" --full 2>/dev/null) || log=''
   [ -n "$log" ] || { printf 'unknown'; return; }
   marker=$(printf '%s\n' "$log" \
-    | grep -E 'still monitoring until merged or closed|no CI checks reported yet|checks failed|issues detected|CI checks running' \
+    | grep -E 'CI checks passed|repository declares no CI \(no_ci: true\)|no CI checks reported - still monitoring|no CI checks reported yet|checks failed|issues detected|CI checks running' \
     | tail -1)
   case "$marker" in
-    *'still monitoring until merged or closed'*) printf 'ready' ;;
+    *'repository declares no CI (no_ci: true)'*) printf 'no-checks' ;;
+    *'checks passed'*) printf 'green' ;;
+    *'no CI checks reported - still monitoring'*) printf 'no-checks' ;;
     *'no CI checks reported yet'*|*'checks failed'*|*'issues detected'*|*'CI checks running'*) printf 'not-ready' ;;
     *) printf 'unknown' ;;
   esac
 }
 
+# 0 when the optional overall discovery budget (FM_READY_PR_TIMEOUT seconds)
+# is exhausted. Callers bound the whole sweep with this, so a slow fleet
+# degrades to partial results plus a warning instead of no output at all.
+DISCOVERY_START=$(date +%s)
+discovery_expired() {
+  case "${FM_READY_PR_TIMEOUT:-}" in ''|*[!0-9]*|0) return 1 ;; esac
+  [ $(( $(date +%s) - DISCOVERY_START )) -ge "$FM_READY_PR_TIMEOUT" ]
+}
+
 discover_repo() {  # <name>
   local name=$1 clone=$PROJECTS/$1 overview rc=0 rows row id branch status head pr
-  local detail kind gate run_head run_pr created waited owner gate_repo count_line shown total
+  local detail kind gate checks run_head run_pr created waited owner gate_repo count_line shown total mode
+  # Projects whose registered mode publishes no no-mistakes gate (direct-PR,
+  # local-only) have nothing to discover; skip them silently rather than
+  # reporting a permanent unreadable line. bin/fm-project-mode.sh owns the
+  # registry reading; its mapped output already folds no-mistakes-prod-only
+  # into no-mistakes.
+  mode=$("$SCRIPT_DIR/fm-project-mode.sh" "$name" 2>/dev/null | awk '{print $1}')
+  case "$mode" in
+    direct-PR|local-only) return 0 ;;
+  esac
   if [ ! -d "$clone" ]; then
     jq -nc --arg repo "$name" --arg reason "no local clone at $clone" \
       '{repo:$repo,reason:$reason}' >> "$WORK/unreadable.jsonl"
@@ -173,8 +199,7 @@ discover_repo() {  # <name>
   fi
   overview=$(fm_nm_run_checked "$clone" "$NM_TIMEOUT" axi </dev/null) || rc=$?
   if [ "$(fm_nm_strip_quotes "$(fm_nm_field "$overview" error)")" = "repo not initialized (run 'no-mistakes init' first)" ]; then
-    jq -nc --arg repo "$name" --arg reason "repo has no no-mistakes gate (not initialized)" \
-      '{repo:$repo,reason:$reason}' >> "$WORK/unreadable.jsonl"
+    # No gate by design (never initialized): nothing to discover, silently.
     return 0
   fi
   if [ "$rc" -ne 0 ] || [ -z "$overview" ]; then
@@ -203,7 +228,7 @@ discover_repo() {  # <name>
     [ -n "$run_head" ] || run_head=$head
     run_pr=$(fm_nm_strip_quotes "$(fm_nm_field "$detail" pr)")
     [ -n "$run_pr" ] || run_pr=$pr
-    kind=''; gate=''
+    kind=''; gate=''; checks=''
     if fm_nm_run_is_parked "$detail"; then
       kind=gate
       gate=$(fm_nm_table_column "$detail" active_steps step | head -1)
@@ -215,8 +240,15 @@ discover_repo() {  # <name>
       # the ci log decides whether checks are done and only merge is awaited.
       if printf '%s\n' "$detail" | grep -Eq '^[[:space:]]*ci,[[:space:]]*"?(running|fixing)"?[[:space:]]*,' \
         || [ "$(fm_nm_strip_quotes "$(fm_nm_field "$detail" status)")" = ci ]; then
-        [ "$(ci_log_state "$clone" "$id")" = not-ready ] && continue
-        kind=ci-ready
+        checks=$(ci_log_state "$clone" "$id")
+        case "$checks" in
+          green|no-checks) kind=ci-ready ;;
+          not-ready) continue ;;
+          *)
+            note_warning "repo $name: run $id ci log unreadable; not reported as ready"
+            continue
+            ;;
+        esac
       fi
     fi
     [ -n "$kind" ] || continue
@@ -226,10 +258,11 @@ discover_repo() {  # <name>
     owner=$(owner_for "$branch" "$run_pr")
     jq -nc --arg repo "$name" --arg gate_repo "$gate_repo" --arg branch "$branch" \
       --arg pr "$run_pr" --arg head "$run_head" --arg run_id "$id" --arg kind "$kind" \
-      --arg gate "$gate" --arg waited "$waited" --arg owner "$owner" '
+      --arg gate "$gate" --arg checks "$checks" --arg waited "$waited" --arg owner "$owner" '
       {repo:$repo,gate_repo:(if $gate_repo == "" then null else $gate_repo end),
        branch:$branch,pr:(if $pr == "" then null else $pr end),head:$head,run_id:$run_id,
        kind:$kind,gate:(if $gate == "" then null else $gate end),
+       checks:(if $checks == "" then null else $checks end),
        waited_seconds:(if $waited == "" then null else ($waited | tonumber) end),
        owned:($owner != ""),owner_task:(if $owner == "" then null else $owner end)}' \
       >> "$WORK/runs.jsonl"
@@ -240,6 +273,10 @@ EOF
 
 while IFS= read -r name; do
   [ -n "$name" ] || continue
+  if discovery_expired; then
+    note_warning "discovery budget ${FM_READY_PR_TIMEOUT}s reached before repo $name; remaining repos not read"
+    break
+  fi
   discover_repo "$name"
 done <<EOF
 $(registry_names)
@@ -257,7 +294,7 @@ else
       elif . >= 86400 then "\(. / 86400 | floor)d\((. % 86400) / 3600 | floor)h"
       elif . >= 3600 then "\(. / 3600 | floor)h\((. % 3600) / 60 | floor)m"
       else "\(. / 60 | floor)m" end;
-    "ready-pr: repo=\(.repo) branch=\(.branch) pr=\(.pr // "-") head=\(.head) waited=\(.waited_seconds | dur) owned=\(if .owned then "yes" else "no" end) kind=\(.kind) gate=\(.gate // "-") run=\(.run_id)"' \
+    "ready-pr: repo=\(.repo) branch=\(.branch) pr=\(.pr // "-") head=\(.head) waited=\(.waited_seconds | dur) owned=\(if .owned then "yes" else "no" end) kind=\(.kind) gate=\(.gate // "-") checks=\(.checks // "-") run=\(.run_id)"' \
     "$WORK/runs.jsonl"
   jq -r '"ready-pr-unreadable: repo=\(.repo) reason=\(.reason)"' "$WORK/unreadable.jsonl"
   while IFS= read -r warning; do

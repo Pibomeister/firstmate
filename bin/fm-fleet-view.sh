@@ -98,11 +98,18 @@ printf '%s\n' "$SNAPSHOT" | jq -r '
 '
 
 # Read-only ready-PR discovery across every registered repo (one compact line
-# per run). Best-effort: a discovery failure is shown, never hidden, and never
-# fails the fleet view itself.
+# per run). Best-effort and overall-bounded: a discovery failure is shown,
+# never hidden, and never fails or hangs the fleet view itself.
+# shellcheck source=bin/fm-timeout-lib.sh
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/fm-timeout-lib.sh"
 printf '\n## Ready PRs awaiting a decision\n'
 if [ -x "$SCRIPT_DIR/fm-ready-pr-discovery.sh" ]; then
-  "$SCRIPT_DIR/fm-ready-pr-discovery.sh" --compact 2>/dev/null \
+  _fm_fleet_view_discovery_bound=${FM_FLEET_VIEW_DISCOVERY_TIMEOUT:-30}
+  case "$_fm_fleet_view_discovery_bound" in ''|*[!0-9]*|0) _fm_fleet_view_discovery_bound=30 ;; esac
+  fm_run_timed "$_fm_fleet_view_discovery_bound" \
+    env FM_READY_PR_TIMEOUT=$((_fm_fleet_view_discovery_bound - 5)) \
+    "$SCRIPT_DIR/fm-ready-pr-discovery.sh" --compact 2>/dev/null \
     || printf 'ready-pr-unreadable: repo=* reason=discovery failed\n'
 else
   printf 'ready-pr-unreadable: repo=* reason=discovery unavailable\n'

@@ -44,6 +44,8 @@ if [ "$#" = 1 ] && [ "$1" = axi ]; then
       printf 'repo: /gate/owned\ncount: 1 of 1 total\nruns[1]{id,branch,status,head,pr}:\n  "%s",fm/owned-task,running,def5678,"https://github.com/example/owned/pull/7"\n' "$run_id" ;;
     gated)
       printf 'repo: /gate/gated\ncount: 1 of 1 total\nruns[1]{id,branch,status,head,pr}:\n  "%s",feat/gated,running,999aaaa,""\n' "$run_id" ;;
+    murky)
+      printf 'repo: /gate/murky\ncount: 1 of 1 total\nruns[1]{id,branch,status,head,pr}:\n  "%s",feat/murky,running,777bbbb,"https://github.com/example/murky/pull/3"\n' "$run_id" ;;
     *)
       printf 'repo: /gate/%s\ncount: 0 of 0 total\nruns[0]{id,branch,status,head,pr}:\n' "$repo" ;;
   esac
@@ -97,11 +99,31 @@ run:
     status: awaiting_approval
 EOF
       ;;
+    murky)
+      cat <<EOF
+run:
+  id: "$run_id"
+  branch: feat/murky
+  status: running
+  head: "777bbbb"
+  pr: "https://github.com/example/murky/pull/3"
+  steps[3]{step,status,findings,duration_ms}:
+    review,completed,0,10
+    pr,completed,0,10
+    ci,running,0,10
+  active_steps[1]{step,active_for,last_activity,agent_pid,round}:
+    ci,9h,now,123,1
+EOF
+      ;;
   esac
   exit 0
 fi
 if [ "${1:-}" = axi ] && [ "${2:-}" = logs ]; then
-  printf 'all CI checks passed - still monitoring until merged or closed\n'
+  if [ "$repo" = murky ]; then
+    printf 'some unrecognized ci output\n'
+  else
+    printf 'all CI checks passed - still monitoring until merged or closed\n'
+  fi
   exit 0
 fi
 printf 'unexpected fake call: %s\n' "$*" >&2
@@ -112,7 +134,8 @@ export PATH="$FAKEBIN:$PATH"
 
 HOME_DIR="$TMP_ROOT/home"
 mkdir -p "$HOME_DIR/data" "$HOME_DIR/state" "$HOME_DIR/projects/casco" \
-  "$HOME_DIR/projects/owned" "$HOME_DIR/projects/gated" "$HOME_DIR/projects/broken"
+  "$HOME_DIR/projects/owned" "$HOME_DIR/projects/gated" "$HOME_DIR/projects/broken" \
+  "$HOME_DIR/projects/directy" "$HOME_DIR/projects/murky"
 cat > "$HOME_DIR/data/projects.md" <<'EOF'
 # Projects
 
@@ -120,6 +143,8 @@ cat > "$HOME_DIR/data/projects.md" <<'EOF'
 - owned [no-mistakes] - Owned project (added 2026-09-29)
 - gated [no-mistakes] - Gated project (added 2026-09-29)
 - broken [no-mistakes] - Broken gate project (added 2026-09-29)
+- directy [direct-PR] - Direct PR project with no gate (added 2026-09-29)
+- murky [no-mistakes] - Project with an unreadable ci log (added 2026-09-29)
 - ghost [no-mistakes] - Registered but never cloned (added 2026-09-29)
 EOF
 fm_write_meta "$HOME_DIR/state/owned-task.meta" \
@@ -134,7 +159,7 @@ run_discovery() {  # [args...]
 test_orphan_ready_run_is_listed() {
   local out
   out=$(run_discovery --compact)
-  assert_contains "$out" "ready-pr: repo=casco branch=feat/orphan-ready pr=https://github.com/example/casco/pull/401 head=abc1234 waited=9h58m owned=no kind=ci-ready gate=- run=$RUN_ID" \
+  assert_contains "$out" "ready-pr: repo=casco branch=feat/orphan-ready pr=https://github.com/example/casco/pull/401 head=abc1234 waited=9h58m owned=no kind=ci-ready gate=- checks=green run=$RUN_ID" \
     "orphan ci-ready run is listed with repo, branch, PR, head, and wait"
   pass "orphan ready run is listed"
 }
@@ -179,6 +204,26 @@ test_json_shape_for_decision_batch() {
   pass "json shape serves the decision batch"
 }
 
+test_non_gate_projects_are_skipped_silently() {
+  local out
+  : > "$FAKE_NM_CALLS"
+  out=$(run_discovery --compact)
+  assert_not_contains "$out" "directy" "direct-PR project is skipped silently"
+  if grep -q '^directy|' "$FAKE_NM_CALLS"; then
+    fail "discovery called the gate of a direct-PR project"
+  fi
+  pass "non-gate projects are skipped silently"
+}
+
+test_unreadable_ci_log_is_not_ready() {
+  local out
+  out=$(run_discovery --compact)
+  assert_not_contains "$out" "repo=murky branch=feat/murky pr=" "run with unreadable ci log is not listed as ready"
+  assert_contains "$out" "ready-pr-warning: repo murky: run $RUN_ID ci log unreadable; not reported as ready" \
+    "unreadable ci log surfaces as a warning"
+  pass "unreadable ci log is warned, not reported ready"
+}
+
 test_no_mutating_call_is_made() {
   : > "$FAKE_NM_CALLS"
   run_discovery --compact >/dev/null
@@ -199,4 +244,6 @@ fm_test_run \
   test_gate_run_is_listed \
   test_unreadable_repo_is_reported \
   test_json_shape_for_decision_batch \
+  test_non_gate_projects_are_skipped_silently \
+  test_unreadable_ci_log_is_not_ready \
   test_no_mutating_call_is_made

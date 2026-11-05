@@ -649,10 +649,14 @@ heartbeat_weekly_allowance() {
 # Read-only ready-PR discovery across every registered repo (bin/fm-ready-pr-discovery.sh).
 # A failure or timeout stays an explicit unknown, never a silent empty list.
 heartbeat_ready_pr_discovery() {
-  local out rc=0
-  out=$(fm_run_timed "${FM_HEARTBEAT_DISCOVERY_TIMEOUT:-15}" \
+  local out rc=0 bound=${FM_HEARTBEAT_DISCOVERY_TIMEOUT:-60}
+  case "$bound" in ''|*[!0-9]*|0) bound=60 ;; esac
+  # The inner budget stops discovery starting new repos before the outer bound
+  # fires, so a slow fleet yields partial results instead of no field at all.
+  out=$(fm_run_timed "$bound" \
     env FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" \
     FM_PROJECTS_OVERRIDE="$PROJECTS" FM_READY_PR_NOW="$HEARTBEAT_EPOCH" \
+    FM_READY_PR_TIMEOUT=$((bound - 5)) \
     "$SCRIPT_DIR/fm-ready-pr-discovery.sh" --json </dev/null 2>/dev/null) || rc=$?
   if [ "$rc" -ne 0 ] || [ -z "$out" ] \
     || ! printf '%s' "$out" | jq -e '.schema == "fm-ready-pr-discovery.v1"' >/dev/null 2>&1; then
