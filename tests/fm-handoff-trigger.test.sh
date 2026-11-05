@@ -324,6 +324,7 @@ test_names_open_captain_orders_and_gates_the_stop() {
   doc="$PRIMARY/data/handoff-20261031-1200-captain-restart.md"
   printf '# Handoff\n' > "$doc"
   FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" handoff --doc "$doc" >/dev/null || fail "handoff --doc must succeed"
+  printf 'mode=act\nrestart=on\nrestart-command=claude\n' > "$PRIMARY/config/watchdog"
   # The orders are listed, but no successor has been requested yet: the stop
   # is still blocked, now by the successor gate (issues 133, 116).
   err="$TMP_ROOT/stop-successor.err"
@@ -335,7 +336,7 @@ test_names_open_captain_orders_and_gates_the_stop() {
   rc=0
   run_hook "$PRIMARY" s-orders "$TMP_ROOT/t-90" Stop >/dev/null 2>&1 || rc=$?
   [ "$rc" -eq 0 ] || fail "once the handoff lists every open order and the successor is requested the stop must pass (rc=$rc)"
-  rm -rf "$PRIMARY/data/orders" "$doc" "$PRIMARY/state/.order-handoff" "$PRIMARY/state/.watchdog-restart-request"
+  rm -rf "$PRIMARY/data/orders" "$doc" "$PRIMARY/state/.order-handoff" "$PRIMARY/state/.watchdog-restart-request" "$PRIMARY/config/watchdog"
   pass "a firing names every open captain order, and the stop is gated until the handoff lists them"
 }
 
@@ -559,6 +560,7 @@ test_handoff_requests_a_successor_and_gates_the_stop_without_one() {
   reset_lab
   rm -rf "$PRIMARY/data/orders" "$PRIMARY/state/.order-handoff" "$PRIMARY/state/.watchdog-restart-request"
   printf 'compact-at-tokens=100000\n' > "$PRIMARY/config/handoff-trigger"
+  printf 'mode=act\nrestart=on\nrestart-command=claude\n' > "$PRIMARY/config/watchdog"
   transcript "$TMP_ROOT/t-succ" 90000
   # A stale request from an earlier episode must not satisfy this firing.
   : > "$PRIMARY/state/.watchdog-restart-request"
@@ -580,11 +582,56 @@ test_handoff_requests_a_successor_and_gates_the_stop_without_one() {
   rc=0
   run_hook "$PRIMARY" s-succ "$TMP_ROOT/t-succ" Stop >/dev/null 2>&1 || rc=$?
   [ "$rc" -eq 0 ] || fail "a fresh successor request must let the stop pass (rc=$rc)"
-  rm -f "$PRIMARY/state/.watchdog-restart-request"
+  rm -f "$PRIMARY/state/.watchdog-restart-request" "$PRIMARY/config/watchdog"
   pass "a firing requests its successor through the watchdog path and the stop is gated until it does (133, 116)"
 }
 
+test_default_home_needs_a_successor_holding_the_lock() {
+  local rc err out conf holder
+  reset_lab
+  rm -rf "$PRIMARY/data/orders" "$PRIMARY/state/.order-handoff" "$PRIMARY/state/.watchdog-restart-request" \
+    "$PRIMARY/state/.lock" "$PRIMARY/state/.lock-session" "$PRIMARY/config/watchdog"
+  printf 'compact-at-tokens=100000\n' > "$PRIMARY/config/handoff-trigger"
+  transcript "$TMP_ROOT/t-dflt" 90000
+  out=$(run_hook "$PRIMARY" s-dflt "$TMP_ROOT/t-dflt")
+  expect_fire "$out" PostToolUse "default-home firing"
+  printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | contains("launch the successor yourself")' >/dev/null \
+    || fail "the instruction must say to launch the successor where the watchdog does not act: $out"
+  # A default home (no config/watchdog) and two partial ones: the watchdog
+  # ignores the request there, so the request file alone must not clear the stop.
+  for conf in '' 'mode=dry-run\nrestart=on\nrestart-command=claude\n' 'mode=act\nrestart=on\n'; do
+    if [ -n "$conf" ]; then printf "$conf" > "$PRIMARY/config/watchdog"; else rm -f "$PRIMARY/config/watchdog"; fi
+    sleep 1
+    : > "$PRIMARY/state/.watchdog-restart-request"
+    err="$TMP_ROOT/dflt.err"
+    rc=0
+    run_hook "$PRIMARY" s-dflt "$TMP_ROOT/t-dflt" Stop >/dev/null 2>"$err" || rc=$?
+    [ "$rc" -eq 2 ] || fail "a restart request the watchdog will not act on must not clear the stop (config '$conf', rc=$rc)"
+    assert_contains "$(cat "$err")" "Launch your successor yourself" "the block tells the session to launch its successor"
+    assert_contains "$(cat "$err")" "session lock" "the block asks for the successor to hold the session lock"
+  done
+  rm -f "$PRIMARY/config/watchdog"
+  # A live successor holding the session lock clears the stop.
+  (exec -a "$TMP_ROOT/succ-bin/claude" sleep 60) &
+  holder=$!
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    case "$(ps -o args= -p "$holder" 2>/dev/null)" in *succ-bin/claude*) break ;; esac
+    sleep 0.2
+  done
+  printf '%s\n' "$holder" > "$PRIMARY/state/.lock"
+  rc=0
+  run_hook "$PRIMARY" s-dflt "$TMP_ROOT/t-dflt" Stop >/dev/null 2>&1 || rc=$?
+  kill "$holder" 2>/dev/null; wait "$holder" 2>/dev/null
+  [ "$rc" -eq 0 ] || fail "a live successor holding the session lock must let the stop pass (rc=$rc)"
+  rc=0
+  run_hook "$PRIMARY" s-dflt "$TMP_ROOT/t-dflt" Stop >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 2 ] || fail "a dead lock holder is no successor (rc=$rc)"
+  rm -f "$PRIMARY/state/.lock" "$PRIMARY/state/.watchdog-restart-request"
+  pass "where the watchdog does not restart, the stop is gated until a successor holds the session lock (133, 116)"
+}
+
 test_handoff_requests_a_successor_and_gates_the_stop_without_one
+test_default_home_needs_a_successor_holding_the_lock
 test_threshold_default_15
 test_threshold_configurable
 test_fires_once_per_context_cycle
