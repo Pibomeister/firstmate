@@ -648,7 +648,9 @@ FM_COMPOSER_BARE_PLACEHOLDERS_DEFAULT=$(printf '%s\t%s\n' '›' 'Ask Codex to do
 # (_fm_composer_muse_prompt_row: Voice-input rule, prompt row, solid
 # rule, status footer last); the same bytes anywhere else, and any other
 # text inside that container, keep their ordinary verdict. Matching is
-# exact and case-insensitive (1.4.14 renders `Ctrl+B` as `ctrl+b`).
+# exact after _fm_composer_muse_normalize on both sides: case-insensitive
+# (1.4.14 renders `Ctrl+B` as `ctrl+b`) and with Muse's rendered Alt
+# spellings `alt(option)+` and `option+` read as `alt+`.
 # A typed line that is exactly a catalogue entry reads `empty` inside
 # the container - the same accepted ambiguity as the per-glyph table
 # above, confined to Muse's container.
@@ -677,17 +679,28 @@ FM_COMPOSER_MUSE_SUGGESTIONS_DEFAULT=$(printf '%s\n' \
   "/usage shows this session's token usage" \
   '/export saves the conversation to a text file')
 
+# _fm_composer_muse_normalize: print <text> lowercased with Muse's
+# rendered Alt key spellings folded to `alt+`.
+_fm_composer_muse_normalize() {  # <text>
+  local text
+  text=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
+  text=${text//"alt(option)+"/alt+}
+  text=${text//"option+"/alt+}
+  printf '%s' "$text"
+}
+
+FM_COMPOSER_MUSE_SUGGESTIONS_NORMALIZED=$(_fm_composer_muse_normalize "$FM_COMPOSER_MUSE_SUGGESTIONS_DEFAULT")
+
 # _fm_composer_muse_suggestion_matches: 0 when <body> is exactly one of
-# Muse's catalogue suggestions (case-insensitive; see above).
+# Muse's catalogue suggestions after normalization (see above).
 _fm_composer_muse_suggestion_matches() {  # <body>
-  local entry body_lc entry_lc
-  body_lc=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
+  local entry body_norm
+  body_norm=$(_fm_composer_muse_normalize "$1")
   while IFS= read -r entry; do
     [ -n "$entry" ] || continue
-    entry_lc=$(printf '%s' "$entry" | tr '[:upper:]' '[:lower:]')
-    [ "$body_lc" = "$entry_lc" ] && return 0
+    [ "$body_norm" = "$entry" ] && return 0
   done <<EOF
-$FM_COMPOSER_MUSE_SUGGESTIONS_DEFAULT
+$FM_COMPOSER_MUSE_SUGGESTIONS_NORMALIZED
 EOF
   return 1
 }

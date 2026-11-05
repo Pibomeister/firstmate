@@ -426,7 +426,9 @@ test_matrix_muse_idle_suggestion_placeholder() {
   # The other live-captured rotating suggestions read the same way.
   for suggestion in \
     'Type @ to search and insert workspace file paths' \
-    'ctrl+b sends the selected task to the background queue'; do
+    'ctrl+b sends the selected task to the background queue' \
+    'press alt(option)+v to dictate instead of typing' \
+    'Press option+V to dictate instead of typing'; do
     typed=${screen/'Ask to monitor a running build or log and get pinged on changes'/"$suggestion"}
     assert_screen "muse idle suggestion '$suggestion' on tmux" empty "$CAPS_TMUX" "$typed" 4
   done
@@ -443,6 +445,9 @@ test_matrix_muse_idle_suggestion_placeholder() {
   out=$(fm_composer_extract_selected_content "$CAPS_STYLED" "$typed")
   [ "$out" = 'fix the login bug' ] \
     || fail "muse typed content must extract as the typed text, got '$out'"
+  # Key-name folding does not make a near-miss read as furniture.
+  typed=${screen/'Ask to monitor a running build or log and get pinged on changes'/'press alt(option)+v to dictate instead of typing now'}
+  assert_screen "muse extended key-bearing suggestion on tmux" pending "$CAPS_TMUX" "$typed" 4
   # An extension of a catalogue suggestion is typed text, not furniture.
   typed=${screen/'get pinged on changes'/'get pinged on changes right now'}
   assert_screen "muse extended suggestion text on tmux" pending "$CAPS_TMUX" "$typed" 4
