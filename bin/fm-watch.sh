@@ -339,6 +339,8 @@ esac
 . "$SCRIPT_DIR/fm-pending-reply-lib.sh"
 # shellcheck source=bin/fm-busy-lib.sh
 . "$SCRIPT_DIR/fm-busy-lib.sh"
+# shellcheck source=bin/fm-watchdog-lib.sh
+. "$SCRIPT_DIR/fm-watchdog-lib.sh"
 # Steering-inbox loss detection: bin/fm-task-inbox-lib.sh owns the record,
 # doorbell, re-ring ladder, and unavailable-endpoint contracts; this watcher
 # supplies their live endpoint and busy checks plus wake emission
@@ -684,11 +686,23 @@ inbox_steer_escalate_unavailable() {  # <window> <task> <record>
 # with its status in INBOX_RECOVER_RING_RC.
 INBOX_RECOVER_INTERRUPT_RC=
 INBOX_RECOVER_RING_RC=
+inbox_steer_usage_limit() {  # <window>
+  local dialog
+  watcher_capture "$(window_backend "$1")" "$1" 40 "$(window_label "$1")" || return 1
+  dialog=$(fm_wd_pane_dialog "$WATCHER_CAPTURE" 2>/dev/null) || dialog=
+  fm_wd_usage_limit_kind "$dialog" && return 0
+  dialog=$(fm_composer_blocking_dialog "$WATCHER_CAPTURE" 2>/dev/null) || dialog=
+  fm_wd_usage_limit_kind "$dialog"
+}
+
 inbox_steer_recover() {  # <window> <task> <record>
   local w=$1 task=$2 rec=$3 meta gen slot rc=0 mode=interrupt ctl_rc=0 ring_rc=0 bound
   meta="$STATE/$task.meta"
   [ "$(window_kind "$w")" = secondmate ] || return 1
   [ -z "$(fm_meta_get "$meta" remote_host 2>/dev/null)" ] || return 1
+  if inbox_steer_usage_limit "$w"; then
+    return 7
+  fi
   gen=$(fm_meta_get "$meta" spawn_gen 2>/dev/null)
   ! fm_task_inbox_recover_spent "$STATE" "$task" "$rec" "$gen" || return 3
   [ "$(fm_path_age "$rec")" -ge "$(fm_task_inbox_recover_after)" ] || return 4
@@ -714,6 +728,10 @@ inbox_steer_recover() {  # <window> <task> <record>
 
 inbox_steer_recovery_action() {  # <window> <task> <recover-rc>
   if [ "$(window_kind "$1")" = secondmate ]; then
+    if [ "$3" = 7 ]; then
+      printf 'do not interrupt this usage-limit session; run bin/fm-quota-reroute.sh suggest, then bin/fm-control.sh %s relaunch --harness with the named pick' "$2"
+      return 0
+    fi
     if [ "$3" = 3 ]; then
       printf 'automatic recovery already interrupted and redirected it %s times without an acknowledgement; ' "$FM_TASK_INBOX_RECOVER_MAX"
     fi
@@ -844,6 +862,7 @@ inbox_steer_check() {  # <window> <task>
           2) reason="stale: $w (steering-inbox recovery bookkeeping unwritable: ${rec%/*}/.ring-state, .busy-state or .recover-state cannot be written while $rec stays unhandled; no recovery slot was spent and no interrupt was sent - inspect the inbox directory)" ;;
           5) reason="stale: $w (steering-inbox recovery interrupt failed: bin/fm-control.sh $task interrupt exited $INBOX_RECOVER_INTERRUPT_RC while $rec stays unhandled, so no doorbell was typed; $(inbox_steer_recovery_action "$w" "$task" "$recover_rc"))" ;;
           6) reason="stale: $w (steering-inbox recovery doorbell failed: the redirect doorbell exited $INBOX_RECOVER_RING_RC, so $rec stays unhandled and was not redirected, and any composer text was left in place; $(inbox_steer_recovery_action "$w" "$task" "$recover_rc"))" ;;
+          7) reason="stale: $w (usage-limit: $rec stays unhandled; $(inbox_steer_recovery_action "$w" "$task" "$recover_rc"))" ;;
         esac
       fi
       if [ -z "$reason" ] && [ "$stuck_busy" -eq 1 ]; then

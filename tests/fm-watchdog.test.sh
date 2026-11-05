@@ -180,11 +180,22 @@ test_dialog_detection() {
   trust=$' Quick safety check: Is this a project you created or one you trust?\n Claude Code\'ll be able to read, edit, and execute files here.\n ❯ No, exit\n   Yes, I trust this folder\n Enter to confirm · Esc to cancel'
   composer=$'❯ fix the bug in the parser\n  ? for shortcuts'
   assert_equals feedback "$(lib fm_wd_pane_dialog "$feedback")" "feedback survey"
-  assert_equals model-switch "$(lib fm_wd_pane_dialog "$model")" "model-switch dialog"
+  assert_equals usage-limit "$(lib fm_wd_pane_dialog "$model")" "usage-limit dialog"
   local limit
-  for limit in "You hit your weekly limit." "You've hit your session limit" "Claude usage limit reached" "You are out of credits" "Switch to another model?"; do
-    assert_equals model-switch "$(lib fm_wd_pane_dialog "$limit"$'\n ❯ 1. Wait\n   2. Stop\n\nEnter to confirm · Esc to cancel')" "limit picker: $limit"
+  for limit in "You hit your weekly limit." "You've hit your session limit" "Claude usage limit reached" "You are out of credits"; do
+    assert_equals usage-limit "$(lib fm_wd_pane_dialog "$limit"$'\n ❯ 1. Wait\n   2. Stop\n\nEnter to confirm · Esc to cancel')" "limit picker: $limit"
   done
+  assert_equals model-switch "$(lib fm_wd_pane_dialog $'Switch to another model?\n ❯ 1. Wait\n   2. Stop\n\nEnter to confirm · Esc to cancel')" "same-account model switch"
+  lib fm_wd_quota_status_line "paused: You have hit your weekly limit" \
+    || fail "status line 'You have hit your weekly limit' should match"
+  lib fm_wd_quota_status_line "paused: waiting on a rate-limit reset" \
+    || fail "status line 'waiting on a rate-limit reset' should match"
+  lib fm_wd_quota_status_line "paused: hit the quota floor" \
+    || fail "status line 'hit the quota floor' should match"
+  lib fm_wd_quota_status_line "paused: Claude usage limit reached" \
+    || fail "status line 'Claude usage limit reached' should match"
+  lib fm_wd_quota_status_line "working: still going" \
+    && fail "a working line should not match a quota floor"
   assert_equals question "$(lib fm_wd_pane_dialog "$question")" "question dialog"
   assert_equals permission "$(lib fm_wd_pane_dialog "$permission")" "permission dialog"
   assert_equals "" "$(lib fm_wd_pane_dialog "$plain")" "a numbered list in prose is no dialog"
@@ -648,7 +659,7 @@ council-seats=claude:haiku,agy:flash'
 judge_calls() { grep -c '^claude -p' "$H/model.log" 2>/dev/null || true; }
 
 test_model_switch_judge_is_rate_limited() {
-  local stuck=$'You have hit your weekly limit for Opus.\n\n ❯ 1. Wait\n   2. Buy more credits\n\nEnter to confirm · Esc to cancel'
+  local stuck=$'Switch to another model?\n\n ❯ 1. Wait\n   2. Buy more credits\n\nEnter to confirm · Esc to cancel'
   local off
 
   make_home "$stuck" 'models=claude:haiku'
@@ -722,7 +733,7 @@ council-seats=claude:haiku,agy:flash'
 
 test_secret_looking_model_switch_dialog_is_held() {
   local sentinel=FAKESENTINEL42
-  make_home "curl run with Bearer $sentinel"$'\n\nYou have hit your weekly limit for Opus.\n\n ❯ 1. Switch to Sonnet\n   2. Buy more credits\n\nEnter to confirm · Esc to cancel' 'models=claude:haiku,agy:flash'
+  make_home "curl run with Bearer $sentinel"$'\n\nSwitch to another model?\n\n ❯ 1. Switch to Sonnet\n   2. Buy more credits\n\nEnter to confirm · Esc to cancel' 'models=claude:haiku,agy:flash'
   fake_models "$H" fail ok:"OPTION 1"
   transcript 100 "Working."
   run_wd 0 once >/dev/null 2>&1 || fail "pass failed on the secret dialog"
@@ -733,7 +744,7 @@ test_secret_looking_model_switch_dialog_is_held() {
   assert_grep "looks like a secret; held" "$H/data/watchdog/status.md" "the hold is a gap"
   if grep -rFq "$sentinel" "$H/state/watchdog" "$H/data/watchdog"; then fail "the withheld text reached watchdog records"; fi
 
-  make_home $'You have hit your weekly limit for Opus.\n\n ❯ 1. Switch to Sonnet\n   2. Buy more credits\n\nEnter to confirm · Esc to cancel' 'models=claude:haiku,agy:flash'
+  make_home $'Switch to another model?\n\n ❯ 1. Switch to Sonnet\n   2. Buy more credits\n\nEnter to confirm · Esc to cancel' 'models=claude:haiku,agy:flash'
   fake_models "$H" fail ok:"OPTION 1"
   transcript 100 "Working."
   run_wd 0 once >/dev/null 2>&1 || fail "pass failed on the ordinary dialog"
@@ -1862,7 +1873,7 @@ restart-command=/bin/true'
 test_blank_stripping_keeps_a_trailing_t() {
   assert_equals "2	Add credit" "$(lib fm_wd_dialog_options $'Pick\n ❯ 1. Wait\n   2. Add credit\n\nEnter to confirm' | tail -n 1)" "an option keeps its last letter"
 
-  make_home $'You have hit your weekly limit for Opus.\n\n ❯ 1. Switch to Sonnet\n   2. Add credit\n\nEnter to confirm · Esc to cancel' 'models=claude:haiku'
+  make_home $'Switch to another model?\n\n ❯ 1. Switch to Sonnet\n   2. Add credit\n\nEnter to confirm · Esc to cancel' 'models=claude:haiku'
   fake_models "$H" ok:"OPTION 2" absent
   transcript 100 "Working."
   run_wd 0 once >/dev/null 2>&1
@@ -2025,11 +2036,11 @@ test_second_mate_restart_ends_the_pass() {
 
 test_dialog_reserved_check_reads_only_dialog_rows() {
   local rule='────────────────────'
-  make_home "Merged PR #41, deleted the branch."$'\n'"$rule"$'\nYou have hit your weekly limit for Opus.\n\n ❯ 1. Switch to Sonnet\n   2. Buy more credits\n\nEnter to confirm · Esc to cancel' 'models=claude:haiku'
+  make_home "Merged PR #41, deleted the branch."$'\n'"$rule"$'\nSwitch to another model?\n\n ❯ 1. Switch to Sonnet\n   2. Buy more credits\n\nEnter to confirm · Esc to cancel' 'models=claude:haiku'
   fake_models "$H" ok:"OPTION 1" absent
   transcript 100 "Working."
   run_wd 0 once >/dev/null 2>&1
-  assert_equals 1 "$(ledger_rows dialog key pending)" "conversation above a ruled limit picker does not hold it: $(ledger | cut -f5-8)"
+  assert_equals 1 "$(ledger_rows dialog key pending)" "conversation above a ruled model-switch picker does not hold it: $(ledger | cut -f5-8)"
 
   make_home "Merged PR #41, deleted the branch."$'\n'"$rule"$'\nWhich plan should I follow?\n ❯ 1. Plan A\n   2. Plan B\n\nEnter to select · Esc to cancel'
   transcript 100 "Working."
@@ -2123,7 +2134,7 @@ test_dialog_kind_ignores_conversation_rows() {
 }
 
 test_reserved_model_switch_dialog_is_held() {
-  make_home $'You have hit your weekly limit; release the sonnet build to production?\n ❯ 1. Yes\n   2. No\n\nEnter to confirm · Esc to cancel' 'models=claude:haiku'
+  make_home $'Switch to another model; release the sonnet build to production?\n ❯ 1. Yes\n   2. No\n\nEnter to confirm · Esc to cancel' 'models=claude:haiku'
   fake_models "$H" ok:"OPTION 1" absent
   transcript 100 "Working."
   run_wd 0 once >/dev/null 2>&1
@@ -2132,11 +2143,11 @@ test_reserved_model_switch_dialog_is_held() {
   [ ! -s "$H/typed.log" ] || fail "something was typed: $(cat "$H/typed.log")"
   assert_grep "owner-reserved category; held" "$H/data/watchdog/status.md" "the hold is a gap"
 
-  make_home $'You have hit your weekly limit for Opus.\n\n ❯ 1. Switch to Sonnet\n   2. Buy more credits\n\nEnter to confirm · Esc to cancel' 'models=claude:haiku'
+  make_home $'Switch to another model?\n\n ❯ 1. Switch to Sonnet\n   2. Buy more credits\n\nEnter to confirm · Esc to cancel' 'models=claude:haiku'
   fake_models "$H" ok:"OPTION 1" absent
   transcript 100 "Working."
   run_wd 0 once >/dev/null 2>&1
-  assert_equals 1 "$(ledger_rows dialog key pending)" "an ordinary limit dialog gets its key: $(ledger | cut -f5-8)"
+  assert_equals 1 "$(ledger_rows dialog key pending)" "an ordinary model-switch dialog gets its key: $(ledger | cut -f5-8)"
   pass "model-switch dialog: reserved text is held before the judge; an ordinary one still gets its key"
 }
 
@@ -2514,6 +2525,73 @@ test_manager_units() {
   pass "launchd and systemd units run outside every session with FM_HOME and PATH"
 }
 
+test_usage_limit_names_a_pick_and_does_not_relaunch() {
+  local snap
+  make_home $'You have hit your weekly limit for Opus.\n\n ❯ 1. Switch to Sonnet\n   2. Wait for the limit to reset\n   3. Buy more credits\n\nEnter to confirm · Esc to cancel' \
+    'reroute-candidates=kimi:kimi-k2,codex:gpt-5.4'
+  snap="$H/quota.json"
+  cat > "$snap" <<'JSON'
+{
+  "generatedAt": "2030-01-01T00:00:00Z",
+  "schemaVersion": 5,
+  "providers": [
+    {
+      "provider": "kimi",
+      "windows": [],
+      "quotaSemantics": {
+        "status": "known",
+        "effectiveAvailability": [
+          {
+            "scope": "all_models",
+            "status": "known",
+            "effectivePercentRemaining": 0,
+            "runway": { "status": "exhausted_now" }
+          }
+        ]
+      }
+    },
+    {
+      "provider": "codex",
+      "windows": [],
+      "quotaSemantics": {
+        "status": "known",
+        "effectiveAvailability": [
+          {
+            "scope": "all_models",
+            "status": "known",
+            "effectivePercentRemaining": 40,
+            "runway": { "status": "through_reset" }
+          }
+        ]
+      }
+    }
+  ]
+}
+JSON
+  cat > "$FAKEBIN/quota-axi" <<SH
+#!/usr/bin/env bash
+cat "$snap"
+SH
+  chmod +x "$FAKEBIN/quota-axi"
+  cat > "$FAKEBIN/fm-control.sh" <<'SH'
+#!/usr/bin/env bash
+printf 'control %s\n' "$*" >> "$H/control.log"
+exit 1
+SH
+  chmod +x "$FAKEBIN/fm-control.sh"
+  transcript 100 "Working."
+  run_wd 0 once >/dev/null 2>&1 || fail "usage-limit pass failed"
+  assert_equals 0 "$(ledger | awk -F'\t' '$6 == "key"' | wc -l | tr -d ' ')" "usage-limit must not press a picker key: $(ledger | cut -f5-8)"
+  [ ! -s "$H/typed.log" ] || fail "usage-limit typed into the pane: $(cat "$H/typed.log")"
+  [ ! -s "$H/model.log" ] || fail "usage-limit asked a judge: $(cat "$H/model.log")"
+  [ ! -e "$H/control.log" ] || fail "watchdog relaunched: $(cat "$H/control.log")"
+  assert_equals 1 "$(ledger_rows quota suggest held)" "the pick is recorded, not launched: $(ledger | cut -f5-8)"
+  assert_grep "Suggested pick: codex gpt-5.4" "$H/data/watchdog/status.md" "the gap names the eligible pick"
+  assert_grep "watchdog does not change the runtime" "$H/data/watchdog/status.md" "the gap says the supervisor relaunches"
+  rm -f "$FAKEBIN/quota-axi" "$FAKEBIN/fm-control.sh"
+  pass "usage-limit: watchdog names the pick and does not relaunch or type"
+}
+
 if [ "$#" -gt 0 ]; then
   fm_test_run "$@"
   exit
@@ -2586,6 +2664,7 @@ fm_test_run \
   test_secret_looking_decision_reaches_no_council \
   test_secret_looking_model_switch_dialog_is_held \
   test_model_switch_judge_is_rate_limited \
+  test_usage_limit_names_a_pick_and_does_not_relaunch \
   test_unknown_composer_guards_the_nudge \
   test_orca_turn_probe_keeps_errors_unknown \
   test_no_activity_source_is_not_reported_ok \

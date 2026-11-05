@@ -136,11 +136,19 @@ case "${1:-}" in
     printf 'fakepane\n'; exit 0 ;;
   capture-pane)
     [ -z "${FM_FAKE_COMPOSER_READ_FAIL:-}" ] || exit 1
-    if [ -s "$D/composer" ]; then
+    if [ -s "$D/capture" ]; then
+      cat "$D/capture"
+    elif [ -s "$D/composer" ]; then
       printf '╭────╮\n│ %s  │\n╰────╯\n' "$(cat "$D/composer")"
     else
       printf '╭────╮\n│    │\n╰────╯\n'
     fi
+    exit 0 ;;
+  kill-window)
+    : > "$D/windows"
+    printf 'zsh' > "$D/command"
+    exit 0 ;;
+  list-panes)
     exit 0 ;;
   list-windows)
     # The three shapes real tmux answers a per-session inventory with. The
@@ -593,6 +601,61 @@ test_relaunch_refuses_before_exit_when_the_composer_holds_pending_text() {
   pass "fm-control relaunch: pending composer text refuses before the exit command is typed"
 }
 
+test_relaunch_closes_a_usage_limit_screen_without_typing_enter() {
+  local dir out rc sock ident
+  dir=$(new_case usage-limit-relaunch rl80)
+  add_ship_task "$dir" rl80 claude
+  # Closing the picker destroys the window. Spawn then rebinds, which needs the
+  # recorded tmux identity so absence is proven rather than refused.
+  sock=$(bash -c '. "$1/bin/fm-backend.sh"; fm_backend_source tmux; fm_backend_tmux_addressed_socket' _ "$ROOT")
+  ident=$(bash -c '. "$1/bin/fm-wake-lib.sh"; printf "%s" "$(fm_pid_identity "$2")" | tr "\t\n" "  "' _ "$ROOT" "$$")
+  printf 'tmux_socket=%s\ntmux_server_pid=%s\ntmux_server_identity=%s\ntmux_window_id=%s\n' \
+    "$sock" "$$" "$ident" @9 >> "$dir/home/state/rl80.meta"
+  printf 'i' > "$dir/fake/composer"
+  printf '%s\n' \
+    'You have hit your weekly limit for Opus.' \
+    '' \
+    ' ❯ 1. Switch to Sonnet' \
+    '   2. Wait for the limit to reset' \
+    '   3. Buy more credits' \
+    '' \
+    'Enter to confirm · Esc to cancel' > "$dir/fake/capture"
+  printf 'codex' > "$dir/fake/becomes"
+  out=$(FM_FAKE_TMUX_SOCKET="$sock" FM_FAKE_TMUX_SERVER_PID=$$ \
+    run_control "$dir" rl80 relaunch --harness codex --note "move off the limited account"); rc=$?
+  expect_code 0 "$rc" "a usage-limit relaunch should close the endpoint and start the replacement"$'\n'"$out"
+  assert_not_contains "$out" "composer visibly holds pending text" \
+    "a usage-limit screen must not be treated as pending composer text"
+  assert_no_grep "/exit" "$dir/fake/literal" \
+    "the exit command must not be typed into a usage-limit picker"
+  assert_contains "$out" "harness=codex from=claude" "the replacement should land on the named harness"
+  [ "$(meta_field "$dir" rl80 harness)" = codex ] \
+    || fail "the published record should follow the replacement harness"
+  [ "$(meta_field "$dir" rl80 effort)" = default ] \
+    || fail "omitted --effort on a default-effort task stays default"
+  pass "fm-control relaunch: a usage-limit screen is closed without typing Enter"
+}
+
+test_interrupt_refuses_a_usage_limit_screen() {
+  local dir out rc
+  dir=$(new_case usage-limit-interrupt rl81)
+  add_ship_task "$dir" rl81 claude
+  printf '%s\n' \
+    'You have hit your weekly limit for Opus.' \
+    '' \
+    ' ❯ 1. Switch to Sonnet' \
+    '   2. Wait' \
+    '' \
+    'Enter to confirm · Esc to cancel' > "$dir/fake/capture"
+  out=$(run_control "$dir" rl81 interrupt); rc=$?
+  expect_code 1 "$rc" "interrupt must refuse a usage-limit screen"$'\n'"$out"
+  assert_contains "$out" "usage-limit screen" "the refusal should name the usage-limit screen"
+  [ -z "$(cat "$dir/fake/keys")" ] || fail "interrupt typed a lifecycle key into a usage-limit screen: $(cat "$dir/fake/keys")"
+  [ "$(cat "$dir/fake/command")" = claude ] \
+    || fail "a refused interrupt must leave the old agent running"
+  pass "fm-control interrupt: a usage-limit screen is not sent a lifecycle key"
+}
+
 test_relaunch_refuses_before_exit_when_the_composer_state_is_unproven() {
   local dir out rc
   dir=$(new_case unproven-exit rl44)
@@ -983,9 +1046,9 @@ test_harness_switch_does_not_carry_the_old_profile_axes() {
   expect_code 0 "$rc" "a harness switch should succeed"$'\n'"$out"
   [ "$(meta_field "$dir" rl5 model)" = default ] \
     || fail "a model chosen for the old harness must not carry to a different one"
-  [ "$(meta_field "$dir" rl5 effort)" = default ] \
-    || fail "an effort chosen for the old harness must not carry to a different one"
-  pass "fm-control relaunch: a harness switch resets model and effort unless they are named too"
+  [ "$(meta_field "$dir" rl5 effort)" = xhigh ] \
+    || fail "an effort named for the old harness must be kept when --effort is omitted"
+  pass "fm-control relaunch: a harness switch resets model and keeps effort unless effort is named too"
 }
 
 test_harness_switch_resolves_a_prefixed_recorded_harness() {
@@ -1721,8 +1784,8 @@ test_explicit_secondmate_harness_ignores_configured_profile_axes() {
   expect_code 0 "$rc" "an explicit secondmate harness should relaunch"$'\n'"$out"
   [ "$(meta_field "$dir" sm4 model)" = default ] \
     || fail "an explicit secondmate harness must not inherit the configured model"
-  [ "$(meta_field "$dir" sm4 effort)" = default ] \
-    || fail "an explicit secondmate harness must not inherit the configured effort"
+  [ "$(meta_field "$dir" sm4 effort)" = high ] \
+    || fail "an explicit secondmate harness without --effort must keep the running effort"
   printf 'claude opus high\nmate sm4: claude opus high\nmate sm4: codex other-model max\n' > "$home/config/secondmate-harness"
   out=$(run_control "$dir" sm4 relaunch --harness codex --model explicit-model --effort xhigh); rc=$?
   expect_code 0 "$rc" "an explicit profile must ignore an unreadable configured pin"$'\n'"$out"
@@ -1753,7 +1816,7 @@ test_explicit_secondmate_harness_ignores_configured_profile_axes() {
     || fail "the explicit model must be published"
   [ "$(meta_field "$dir" sm4 effort)" = xhigh ] \
     || fail "the explicit effort must be published"
-  pass "fm-control relaunch: explicit secondmate harness resets unnamed profile axes"
+  pass "fm-control relaunch: explicit secondmate harness keeps running effort and takes named axes"
 }
 
 test_ship_relaunch_ignores_the_crew_harness_config() {
@@ -2162,22 +2225,21 @@ test_launch_failure_keeps_the_prior_record_and_reports_it() {
   dir=$(new_case rollback rl13)
   add_ship_task "$dir" rl13 claude
   before=$(cat "$dir/home/state/rl13.meta")
-  # The endpoint's shell is not in the recorded worktree, so the launch owner
-  # refuses AFTER the previous agent has already been stopped.
+  # The endpoint's shell is not in the recorded worktree. That refusal is now
+  # pre-stop so the running agent is not killed for a launch that cannot start.
   printf '%s' "$dir/proj" > "$dir/fake/cwd"
   out=$(run_control "$dir" rl13 relaunch --harness codex --note "carry this forward"); rc=$?
   expect_code 1 "$rc" "a failed launch should fail closed"$'\n'"$out"
-  assert_contains "$out" "no agent is running" "the failure should say no agent is running"
-  assert_contains "$out" "$dir/wt" "the failure should say where the work is preserved"
+  assert_contains "$out" "not its recorded worktree" "the refusal should name the worktree mismatch"
+  [ "$(cat "$dir/fake/command")" = claude ] \
+    || fail "a pre-stop cwd refusal must leave the old agent running"
   [ "$(cat "$dir/home/state/rl13.meta")" = "$before" ] \
     || fail "a failed launch must keep the prior durable record"
-  [ "$(journal_field "$dir" rl13 phase)" = "failed:launching" ] \
-    || fail "the journal should record the failed phase, got '$(journal_field "$dir" rl13 phase)'"
-  [ "$(journal_field "$dir" rl13 rollback)" = "prior-record-kept" ] \
-    || fail "the journal should record what the rollback did"
-  assert_grep "carry this forward" "$dir/home/data/rl13/brief.md" \
-    "the progress note must survive so a later recovery still has it"
-  pass "fm-control relaunch: a launch failure after the stop keeps the prior record and reports the real state"
+  assert_absent "$dir/home/state/rl13.control-relaunch" \
+    "a pre-stop cwd refusal must not open a relaunch transaction"
+  assert_no_grep "/exit" "$dir/fake/literal" \
+    "a pre-stop cwd refusal must not type an exit command"
+  pass "fm-control relaunch: a worktree mismatch refuses before the agent is stopped"
 }
 
 test_prepublication_failure_keeps_concurrent_durable_metadata() {
@@ -2196,21 +2258,23 @@ test_prepublication_failure_keeps_concurrent_durable_metadata() {
   [ -e "$dir/cwd-race-ready" ] || {
     kill "$control_pid" 2>/dev/null || true
     wait "$control_pid" 2>/dev/null || true
-    fail "relaunch did not reach its pre-publication endpoint check"
+    fail "relaunch did not reach its pre-stop worktree check"
   }
   link_out=$(env PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_ROOT_OVERRIDE="$ROOT" \
     "$X_LINK" rl30 request-30 --carry-count 2 --carry-ts 1700000000 \
       --carry-platform x --carry-max 280 2>&1); rc=$?
   expect_code 0 "$rc" "concurrent durable metadata publication should succeed"$'\n'"$link_out"
   wait "$control_pid"; rc=$?
-  expect_code 1 "$rc" "the staged pre-publication launch failure should fail closed"
+  expect_code 1 "$rc" "the staged pre-stop worktree mismatch should fail closed"
   [ "$(meta_field "$dir" rl30 x_request)" = request-30 ] \
     || fail "rollback erased the concurrent X request"
   [ "$(meta_field "$dir" rl30 x_followups)" = 2 ] \
     || fail "rollback erased the concurrent follow-up count"
-  [ "$(journal_field "$dir" rl30 rollback)" = prior-record-kept ] \
-    || fail "pre-publication rollback should leave the live record untouched"
-  pass "fm-control relaunch: unpublished rollback keeps concurrent durable metadata"
+  [ "$(meta_field "$dir" rl30 harness)" = claude ] \
+    || fail "a pre-stop refusal must leave the live record on the running harness"
+  [ "$(cat "$dir/fake/command")" = claude ] \
+    || fail "a pre-stop refusal must leave the old agent running"
+  pass "fm-control relaunch: a pre-stop worktree mismatch keeps concurrent durable metadata"
 }
 
 test_post_publication_launch_failure_keeps_the_new_record() {
@@ -3326,14 +3390,18 @@ test_herdr_rebind_failure_from_a_plain_shell_names_the_real_cause() {
   pass "reclaim: a rebind refused from a plain shell reports the real cause, not a fabricated session mismatch"
 }
 
-test_herdr_reclaim_of_a_secondmate_names_its_own_owner() {
-  local dir out rc
+test_herdr_reclaim_of_a_secondmate_uses_relaunch() {
+  local dir out rc log
   herdr_case_or_skip gone-herdr-secondmate rl76 fmlab '%none' || {
     echo "skip - herdr reclaim needs jq (the herdr adapter parses JSON with it)"
     return 0
   }
   dir=$HERDR_CASE_DIR
-  printf '%s\n' "kind=secondmate" "home=$dir/wt" >> "$dir/home/state/rl76.meta"
+  mkdir -p "$dir/wt/bin" "$dir/wt/data" "$dir/wt/state" "$dir/wt/config" "$dir/wt/projects"
+  printf 'rl76\n' > "$dir/wt/.fm-secondmate-home"
+  printf '# agents\n' > "$dir/wt/AGENTS.md"
+  printf '# charter\n' > "$dir/wt/data/charter.md"
+  printf '%s\n' "kind=secondmate" "home=$dir/wt" "mode=secondmate" >> "$dir/home/state/rl76.meta"
 
   out=$(run_spawn "$dir" rl76 --relaunch --harness claude); rc=$?
   expect_code 4 "$rc" "a secondmate reclaim belongs to the secondmate respawn path, with its typed refusal status"
@@ -3600,6 +3668,8 @@ test_same_harness_relaunch_keeps_identity_and_reuses_the_endpoint
 test_pooled_relaunch_custody_is_agy_only
 test_agy_relaunch_requires_treehouse_capabilities_before_stopping
 test_relaunch_refuses_before_exit_when_the_composer_holds_pending_text
+test_relaunch_closes_a_usage_limit_screen_without_typing_enter
+test_interrupt_refuses_a_usage_limit_screen
 test_relaunch_refuses_before_exit_when_the_composer_state_is_unproven
 test_relaunch_from_linked_home_preserves_recorded_worktree
 test_relaunch_preserves_durable_task_metadata

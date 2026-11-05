@@ -34,12 +34,24 @@
 #   fm_wd_strip_ansi
 #       Filter: removes ANSI escape sequences and carriage returns.
 #   fm_wd_pane_dialog <screen>
-#       Prints `feedback`, `permission`, `model-switch`, or `question` when the
-#       last rows of the screen hold that blocking dialog, else nothing (exit 1).
-#       A dialog needs its structure, not its words: the feedback survey needs its
-#       heading and its `0: Dismiss` row among the last rows; every other kind
-#       needs a selected numbered row and a recorded picker footer as the last
-#       non-blank row.
+#       Prints `feedback`, `permission`, `usage-limit`, `model-switch`, or
+#       `question` when the last rows of the screen hold that blocking dialog,
+#       else nothing (exit 1). A dialog needs its structure, not its words: the
+#       feedback survey needs its heading and its `0: Dismiss` row among the last
+#       rows; every other kind needs a selected numbered row and a recorded picker
+#       footer as the last non-blank row. A row that opens by stating a provider
+#       limit is `usage-limit`; a same-account model or account switch stays
+#       `model-switch`.
+#   fm_wd_usage_limit_text <text>
+#       Returns 0 when <text> opens by stating a provider weekly, session, usage,
+#       rate, or credits limit. Conversation that only mentions those words later
+#       in the row is not a match.
+#   fm_wd_quota_status_line <line>
+#       Returns 0 when a paused or blocked status line names a quota floor or
+#       the same provider-limit phrases fm_wd_usage_limit_text accepts.
+#   fm_wd_usage_limit_kind <name>
+#       Returns 0 for the pane kind `usage-limit` and for the Grok composer
+#       name `Grok weekly-limit choice`.
 #   fm_wd_dialog_options <screen>
 #       Prints `<number>\t<text>` for each numbered option of the dialog.
 #   fm_wd_dialog_text <screen>
@@ -88,6 +100,11 @@ FM_WD_REFUSED_TEXT_RE='(^|[^be])merg|[rd]emerg|deploy|releas|publish|(^|[^a-z])f
 FM_WD_RESERVED_RE="$FM_WD_REFUSED_TEXT_RE"'|(^|[^a-z])(spend|spent|money|budget|billing|invoice|payment|sign-?in|log-?in|login|credential|secret|password|api.?key|security|production|pii|delet|destroy|wipe)'
 FM_WD_TIMER_TOOL_RE='^(ScheduleWakeup|CronCreate|CronList|CronDelete|Monitor|TaskOutput|BashOutput|Wait)$'
 FM_WD_TIMER_BASH_RE='(^|[^a-z])(sleep|fm-watch|fm-wake|wake|timer|until)([^a-z]|$)'
+# A row that opens by stating the limit. Used by the pane picker and by paused
+# or blocked status lines. Do not add a fourth detector for these phrases.
+FM_WD_USAGE_LIMIT_RE='^[^a-z]*(you( have|.{1,3}ve)? hit your ([a-z0-9-]+ ){0,2}limit|([a-z0-9-]+ )?(usage|rate)[- ]?limit (hit|reached|reset)|(you( are|.{1,3}re) )?out of credits|waiting on a rate[- ]limit)'
+FM_WD_MODEL_SWITCH_RE='^[^a-z]*(switch (to )?((a|another) )?model|switch to another account)'
+FM_WD_QUOTA_STATUS_RE='quota (floor|exhausted|is exhausted|at 0|limit|wall)|(hit|reached|at) (the |a |its )?quota|rate.?limited|rate limit (hit|reached)|usage limit (hit|reached)|out of (credits|quota)|credits (are )?(exhausted|at 0|empty)'
 
 fm_wd_conf_get() {  # <file> <key> <default>
   local file=$1 key=$2 def=${3-} v
@@ -199,6 +216,26 @@ fm_wd_strip_ansi() {
   LC_ALL=C sed -e $'s/\033\\[[0-9;?<>=]*[ -\\/]*[@-~]//g' -e $'s/\033\\][^\a]*\a//g' -e $'s/\r//g'
 }
 
+fm_wd_usage_limit_text() {  # <text>
+  printf '%s' "$(fm_wd_lower "$1")" | LC_ALL=C grep -Eq "$FM_WD_USAGE_LIMIT_RE"
+}
+
+fm_wd_quota_status_line() {  # <line>
+  local last body
+  last=$(printf '%s' "$1")
+  case "$last" in paused*|blocked*) ;; *) return 1 ;; esac
+  body=$(printf '%s' "$last" | sed 's/^[^:]*:[[:space:]]*//')
+  printf '%s' "$(fm_wd_lower "$body")" | LC_ALL=C grep -Eq "$FM_WD_QUOTA_STATUS_RE" && return 0
+  fm_wd_usage_limit_text "$body"
+}
+
+fm_wd_usage_limit_kind() {  # <name>
+  case "$1" in
+    usage-limit|'Grok weekly-limit choice') return 0 ;;
+  esac
+  return 1
+}
+
 # The last <n> non-blank rows of a screen, ANSI-stripped.
 _fm_wd_tail_rows() {  # <screen> <n>
   printf '%s\n' "$1" | fm_wd_strip_ansi | awk 'NF { rows[++n] = $0 } END { s = n - '"$2"' + 1; if (s < 1) s = 1; for (i = s; i <= n; i++) print rows[i] }'
@@ -223,7 +260,9 @@ fm_wd_pane_dialog() {  # <screen>
   ' || return 1
   if _fm_wd_dialog_rows "$1" all | LC_ALL=C grep -Eiq "do you want to (proceed|make this edit|create|allow|run|overwrite|delete)|allow (this|once|always)|yes, and don.t ask again|background work is running|trust (this|the files)"; then
     printf 'permission\n'
-  elif _fm_wd_dialog_rows "$1" own | LC_ALL=C grep -Eiq '^[^a-z]*(you( have|.{1,3}ve)? hit your ([a-z0-9-]+ ){0,2}limit|([a-z0-9-]+ )?(usage|rate) limit (hit|reached)|(you( are|.{1,3}re) )?out of credits|switch (to )?((a|another) )?model|switch to another account)'; then
+  elif _fm_wd_dialog_rows "$1" own | LC_ALL=C grep -Eiq "$FM_WD_USAGE_LIMIT_RE"; then
+    printf 'usage-limit\n'
+  elif _fm_wd_dialog_rows "$1" own | LC_ALL=C grep -Eiq "$FM_WD_MODEL_SWITCH_RE"; then
     printf 'model-switch\n'
   else
     printf 'question\n'

@@ -936,6 +936,43 @@ test_spawn_refuses_orca_secondmate_before_home_mutation() {
   pass "fm-spawn.sh --backend orca --secondmate: refuses before secondmate-home mutation"
 }
 
+test_existing_secondmate_keeps_recorded_backend_when_config_is_orca() {
+  local home subhome data state config id out status
+  id="orcasmrecorded"
+  home="$TMP_ROOT/secondmate-recorded-home"
+  subhome="$TMP_ROOT/secondmate-recorded-subhome"
+  data="$home/data"
+  state="$home/state"
+  config="$home/config"
+  mkdir -p "$data" "$state" "$config" "$subhome/bin" "$subhome/data" "$subhome/state" "$subhome/projects"
+  printf '%s\n' "$id" > "$subhome/.fm-secondmate-home"
+  printf 'firstmate\n' > "$subhome/AGENTS.md"
+  printf 'orca\n' > "$config/backend"
+  printf 'claude\n' > "$config/crew-harness"
+  {
+    echo "window=sess:fm-$id"
+    echo "kind=secondmate"
+    echo "harness=claude"
+    echo "backend=herdr"
+    echo "home=$subhome"
+    echo "worktree=$subhome"
+  } > "$state/$id.meta"
+  touch "$state/.last-watcher-beat"
+  set +e
+  out=$( FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" FM_STATE_OVERRIDE="$state" FM_DATA_OVERRIDE="$data" FM_CONFIG_OVERRIDE="$config" \
+    FM_PROJECTS_OVERRIDE="$home/projects" FM_SPAWN_NO_GUARD=1 \
+    "$ROOT/bin/fm-spawn.sh" "$id" --secondmate 2>&1 )
+  status=$?
+  set +e
+  case "$out" in
+    *"backend=orca does not support --secondmate"*)
+      fail "an existing herdr mate was re-selected onto config/backend=orca: $out"
+      ;;
+  esac
+  [ "$status" -ne 0 ] || fail "expected a later herdr admission failure, got success: $out"
+  pass "fm-spawn.sh --secondmate: an existing record keeps its recorded backend"
+}
+
 test_spawn_refuses_orca_when_runtime_not_ready() {
   local proj data state config id out status
   id="orcaruntimez6"
@@ -2664,6 +2701,7 @@ test_worktree_create_removes_worktree_when_path_missing
 test_spawn_preserves_orca_metadata_when_pathless_worktree_cleanup_fails
 test_spawn_writes_orca_metadata_and_launches_harness
 test_spawn_refuses_orca_secondmate_before_home_mutation
+test_existing_secondmate_keeps_recorded_backend_when_config_is_orca
 test_spawn_refuses_orca_when_runtime_not_ready
 test_spawn_refuses_orca_nonisolated_worktree
 test_spawn_removes_orca_worktree_when_terminal_create_fails
