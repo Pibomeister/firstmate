@@ -1051,6 +1051,24 @@ SH
   chmod +x "$TMP_ROOT/fake-captain.sh"
 }
 
+# write_restart_bin <name>: a restart-command that records its argv, takes the lock, and proves pickup.
+write_restart_bin() {
+  local name=$1
+  mkdir -p "$TMP_ROOT/bin"
+  cat > "$TMP_ROOT/bin/$name" <<'SH'
+#!/usr/bin/env bash
+{
+  printf '%s\n' "$0"
+  printf '%s\n' "$@"
+} > "$PWD/launched-argv.txt"
+p="$*"
+printf '%s\n' "$$" > "$PWD/state/.lock"
+eval "${p##*run: }" > "$PWD/pickup.out" 2>&1
+exec sleep 100000
+SH
+  chmod +x "$TMP_ROOT/bin/$name"
+}
+
 wait_pickup() {
   local i
   for i in $(seq 1 50); do [ -s "$H/pickup.out" ] && return 0; sleep 0.2; done
@@ -1099,6 +1117,136 @@ restart-command=$TMP_ROOT/fake-captain.sh"
   LOCK_PIDS="$LOCK_PIDS $(cat "$H/state/.lock")"
   assert_equals 2 "$("$REAL_TMUX" -f /dev/null -L "$SOCKET" list-windows -t "=wd$CASE_N" | wc -l | tr -d ' ')" "the new window joins the old session"
   pass "agent gone: a dead lock holder with a recorded anchor still restarts"
+}
+
+# A proven frozen stall. The first sight is not static long enough to restart.
+run_frozen_restart() {
+  transcript 3000 "Working." "Testing." "Green."
+  owe_input 3000
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 1000 once >/dev/null 2>&1
+}
+
+window_count() {  # <session>
+  "$REAL_TMUX" -f /dev/null -L "$SOCKET" list-windows -t "=$1" | wc -l | tr -d ' '
+}
+
+test_watchdog_allows_muse_restart_with_approval_flag() {
+  local muse specs spec cmd needle saved sess
+  write_restart_bin muse
+  cp "$TMP_ROOT/bin/muse" "$FAKEBIN/muse"
+  muse=$TMP_ROOT/bin/muse
+  specs=(
+    "$muse --yolo"$'\037'"--yolo"
+    "env $muse --disable-approval"$'\037'"--disable-approval"
+    "$muse --approval-mode never"$'\037'"--approval-mode"
+    "$muse --approval-mode=never"$'\037'"--approval-mode=never"
+    "PATH=$FAKEBIN:\$PATH muse --yolo"$'\037'"--yolo"
+  )
+  for spec in "${specs[@]}"; do
+    cmd=${spec%%$'\037'*}
+    needle=${spec#*$'\037'}
+    make_home $'Captain session\n> ' "restart=on
+max-nudges=0
+restart-command=$cmd"
+    saved=$(cat "$H/config/watchdog")
+    sess=wd$CASE_N
+    run_frozen_restart
+    assert_equals "$saved" "$(cat "$H/config/watchdog")" "restart-command is not rewritten: $cmd"
+    assert_equals 1 "$(ledger_rows frozen restart pending)" "muse with an approval flag restarts: $cmd: $(ledger | cut -f5-8)"
+    assert_equals 0 "$(ledger_rows frozen restart refused)" "an approved muse command is not refused: $cmd"
+    wait_pickup || fail "approved muse command never proved pickup: $cmd: $(ledger | cut -f5-8)"
+    LOCK_PIDS="$LOCK_PIDS $(cat "$H/state/.lock")"
+    ls "$H/data/watchdog/handoffs/"*.md >/dev/null 2>&1 || fail "approved muse command wrote no handoff: $cmd"
+    assert_equals 2 "$(window_count "$sess")" "approved muse command opens a window: $cmd"
+    assert_grep "$needle" "$H/launched-argv.txt" "the launched argv keeps $needle for: $cmd"
+    case "$cmd" in
+      *"--approval-mode never"*) assert_grep "never" "$H/launched-argv.txt" "approval-mode never stays two words: $cmd" ;;
+    esac
+    case "$cmd" in
+      *--yolo*) ;;
+      *) assert_no_grep "--yolo" "$H/launched-argv.txt" "the watchdog did not add --yolo to: $cmd" ;;
+    esac
+  done
+  pass "restart-command: muse with --yolo, --disable-approval, or --approval-mode never is launched unchanged"
+}
+
+test_watchdog_refuses_bare_muse_restart() {
+  local muse cmds cmd saved sess pid
+  write_restart_bin muse
+  cp "$TMP_ROOT/bin/muse" "$FAKEBIN/muse"
+  muse=$TMP_ROOT/bin/muse
+  cmds=(
+    "$muse"
+    "env $muse"
+    "PATH=$FAKEBIN:\$PATH muse"
+    "$muse --approval-mode on-request"
+    "PATH=$FAKEBIN:\$PATH env muse --approval-mode on-request"
+  )
+  for cmd in "${cmds[@]}"; do
+    make_home $'Captain session\n> ' "restart=on
+max-nudges=0
+restart-command=$cmd"
+    saved=$(cat "$H/config/watchdog")
+    sess=wd$CASE_N
+    pid=$LOCKPID
+    run_frozen_restart
+    kill -0 "$pid" 2>/dev/null || fail "a bare muse restart stopped the session: $cmd"
+    assert_equals "$saved" "$(cat "$H/config/watchdog")" "a refused restart does not rewrite the command: $cmd"
+    assert_equals 1 "$(ledger_rows frozen restart refused)" "bare muse is refused: $cmd: $(ledger | cut -f5-8)"
+    assert_equals 0 "$(ledger_rows frozen restart pending)" "bare muse starts nothing: $cmd"
+    assert_grep "restart-command launches muse without --yolo, --disable-approval, or --approval-mode never" "$H/state/watchdog/actions.tsv" "the ledger names the missing flag: $cmd"
+    assert_grep "restart-command launches muse without --yolo, --disable-approval, or --approval-mode never" "$H/data/watchdog/status.md" "the status names the missing flag: $cmd"
+    if ls "$H/data/watchdog/handoffs/"*.md >/dev/null 2>&1; then fail "a refused restart wrote a handoff: $cmd"; fi
+    assert_absent "$H/launched-argv.txt" "a refused restart launched muse: $cmd"
+    assert_equals 1 "$(window_count "$sess")" "a refused restart opens no window: $cmd"
+  done
+
+  make_home $'Captain session\n> \n  7% until auto-compact' "restart=on
+restart-command=$muse"
+  pid=$LOCKPID
+  transcript 3000 "Working." "Testing." "Green."
+  FM_WD_TEST_COMPOSER=empty run_wd 0 once >/dev/null 2>&1
+  kill -0 "$pid" 2>/dev/null || fail "low context on bare muse stopped the session"
+  assert_equals 0 "$(ledger_rows handoff-request nudge pending)" "bare muse asks for no handoff: $(ledger | cut -f5-8)"
+  assert_equals 0 "$(ledger_rows restart-requested restart pending)" "bare muse does not restart from low context"
+  assert_grep "restart-command launches muse without --yolo, --disable-approval, or --approval-mode never" "$H/data/watchdog/status.md" "low context names the missing flag"
+  assert_absent "$H/launched-argv.txt" "low context launched bare muse"
+  pass "restart-command: bare muse is refused and the session keeps running"
+}
+
+test_watchdog_leaves_non_muse_restart_unchanged() {
+  local cmds cmd saved sess
+  write_restart_bin musescore
+  write_restart_bin my-muse
+  write_fake_captain
+  cmds=(
+    "$TMP_ROOT/bin/musescore"
+    "$TMP_ROOT/bin/my-muse"
+    "$TMP_ROOT/fake-captain.sh"
+  )
+  for cmd in "${cmds[@]}"; do
+    make_home $'Captain session\n> ' "restart=on
+max-nudges=0
+restart-command=$cmd"
+    saved=$(cat "$H/config/watchdog")
+    sess=wd$CASE_N
+    run_frozen_restart
+    assert_equals "$saved" "$(cat "$H/config/watchdog")" "a non-muse restart-command is not rewritten: $cmd"
+    assert_equals 1 "$(ledger_rows frozen restart pending)" "a non-muse command still restarts: $cmd: $(ledger | cut -f5-8)"
+    assert_equals 0 "$(ledger_rows frozen restart refused)" "a non-muse command is not refused: $cmd"
+    wait_pickup || fail "a non-muse command never proved pickup: $cmd: $(ledger | cut -f5-8)"
+    LOCK_PIDS="$LOCK_PIDS $(cat "$H/state/.lock")"
+    ls "$H/data/watchdog/handoffs/"*.md >/dev/null 2>&1 || fail "a non-muse command wrote no handoff: $cmd"
+    assert_equals 2 "$(window_count "$sess")" "a non-muse command opens a window: $cmd"
+    case "$cmd" in
+      *musescore|*my-muse)
+        assert_present "$H/launched-argv.txt" "the non-muse command launched: $cmd"
+        assert_no_grep "--yolo" "$H/launched-argv.txt" "a non-muse command is not given --yolo: $cmd"
+        ;;
+    esac
+  done
+  pass "restart-command: a non-muse command still restarts unchanged"
 }
 
 test_dead_holder_is_not_hidden_by_earlier_symptoms() {
@@ -2092,6 +2240,9 @@ fm_test_run \
   test_restart_verified_pickup_and_loop_stop \
   test_no_action_while_restart_awaits_pickup \
   test_dead_captain_restarts_despite_its_anchor \
+  test_watchdog_allows_muse_restart_with_approval_flag \
+  test_watchdog_refuses_bare_muse_restart \
+  test_watchdog_leaves_non_muse_restart_unchanged \
   test_dead_holder_is_not_hidden_by_earlier_symptoms \
   test_low_context_waits_for_full_handoff_then_restarts \
   test_low_context_timeout_restarts_with_lean_handoff \
