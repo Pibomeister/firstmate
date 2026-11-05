@@ -25,11 +25,16 @@
 # Account settings.json keys: hooks, enabledPlugins. Worktree
 # .claude/settings.json and settings.local.json keys: hooks,
 # enabledMcpjsonServers, mcpServers, enabledPlugins. An unreadable file is a
-# signal. A present .projects that is not an object is unreadable. Those three
-# lists live only in the variables below; there is no exemption mechanism.
-# Resolve the config dir from the task's account pin, never from
-# claude-config-dirs. A broken or unreadable pin is a signal. No pin, or
-# ordinary, inspects $HOME/.claude.
+# signal. A present .projects that is not an object, a .projects entry that is
+# neither an object nor null, or a .mcpServers (top-level or under .projects)
+# that is present and not an object, is unreadable. Worktree .claude/ skills,
+# hooks, agents, or commands are a signal if the path exists, even empty.
+# Account dirs of those names plus plugins are a signal only when non-empty.
+# A caller that passes --claude-config-dir for a pinned account must also pass
+# --pinned. Those three lists live only in the variables below; there is no
+# exemption mechanism. Resolve the config dir from the task's account pin,
+# never from claude-config-dirs. A broken or unreadable pin is a signal. No
+# pin, or ordinary, inspects $HOME/.claude.
 #
 # The supervisor runs this after a stale wake names a usage-limit, then calls
 # fm-control.sh relaunch --harness with the printed pick. The watchdog may call
@@ -99,13 +104,26 @@ fm_quota_claude_mcp_in_file() {  # <file>
          or (.enabledMcpjsonServers | type == "array" and length > 0)
          or ((.projects // {}) | type == "object"
              and (to_entries
-                  | map(.value.mcpServers | select(type == "object" and length > 0))
+                  | map(.value | select(type == "object")
+                        | .mcpServers | select(type == "object" and length > 0))
                   | length > 0))' \
     "$1" >/dev/null 2>&1
 }
 
-fm_quota_claude_projects_unreadable() {  # <file>
-  jq -e '.projects != null and (.projects | type != "object")' "$1" >/dev/null 2>&1
+fm_quota_claude_mcp_unreadable() {  # <file>
+  jq -e '
+    (.mcpServers != null and (.mcpServers | type != "object"))
+    or (.projects != null and (.projects | type != "object"))
+    or ((.projects // {}) | type == "object" and (
+          (to_entries
+           | map(select(.value != null and (.value | type != "object")))
+           | length > 0)
+          or (to_entries
+              | map(.value | select(type == "object") | .mcpServers)
+              | map(select(. != null and type != "object"))
+              | length > 0)
+        ))
+  ' "$1" >/dev/null 2>&1
 }
 
 # Prints the blocking signal and returns 0 when <file> is unreadable or any
@@ -181,7 +199,7 @@ fm_quota_claude_tooling_signal() {  # <config-dir> [worktree]
       printf '%s\n' "unreadable $f"
       return 0
     fi
-    if fm_quota_claude_projects_unreadable "$f"; then
+    if fm_quota_claude_mcp_unreadable "$f"; then
       printf '%s\n' "unreadable $f"
       return 0
     fi
@@ -210,7 +228,7 @@ fm_quota_claude_tooling_signal() {  # <config-dir> [worktree]
         printf '%s\n' "unreadable $f"
         return 0
       fi
-      if fm_quota_claude_projects_unreadable "$f"; then
+      if fm_quota_claude_mcp_unreadable "$f"; then
         printf '%s\n' "unreadable $f"
         return 0
       fi
