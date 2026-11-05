@@ -38,7 +38,7 @@ reroute-candidates=codex:gpt-5.4,claude:sonnet
 ### Claude tooling gate
 
 Empty MCP map, no account hooks, and no worktree signals should allow the move.
-The `bin/fm-quota-reroute.sh` header owns which account and worktree signals count.
+The `bin/fm-quota-reroute.sh` header owns which account and worktree signals count, including marketplace clones and stale cache copies.
 
 ```sh
 bin/fm-quota-reroute.sh claude-tooling --config-dir "$HOME/.claude" --worktree <mate-home>

@@ -1190,6 +1190,33 @@ sig=$(call_reroute claude-tooling --config-dir "$plugin_mcp") \
 [ "$sig" = "MCP servers in $plugin_mcp/plugins/demo/.mcp.json" ] \
   || fail "plugin .mcp.json signal: $sig"
 
+plugin_mcp_flat="$LAB/plugin-mcp-flat"
+mkdir -p "$plugin_mcp_flat/plugins/demo"
+printf '%s\n' '{"docs":{"command":"true"}}' \
+  > "$plugin_mcp_flat/plugins/demo/.mcp.json"
+sig=$(call_reroute claude-tooling --config-dir "$plugin_mcp_flat") \
+  || fail "flat plugin .mcp.json must be tooling required"
+[ "$sig" = "MCP servers in $plugin_mcp_flat/plugins/demo/.mcp.json" ] \
+  || fail "flat plugin .mcp.json signal: $sig"
+
+plugin_mcp_empty="$LAB/plugin-mcp-empty"
+mkdir -p "$plugin_mcp_empty/plugins/demo"
+printf '%s\n' '{}' > "$plugin_mcp_empty/plugins/demo/.mcp.json"
+rc=0
+sig=$(call_reroute claude-tooling --config-dir "$plugin_mcp_empty") || rc=$?
+[ "$rc" -eq 1 ] || fail "empty plugin .mcp.json must not be a signal, got $rc ($sig)"
+[ -z "$sig" ] || fail "empty plugin .mcp.json produced: $sig"
+
+plugin_mcp_link="$LAB/plugin-mcp-link"
+mkdir -p "$plugin_mcp_link/real/demo" "$plugin_mcp_link/plugins"
+printf '%s\n' '{"mcpServers":{"docs":{"command":"true"}}}' \
+  > "$plugin_mcp_link/real/demo/.mcp.json"
+ln -s "$plugin_mcp_link/real/demo" "$plugin_mcp_link/plugins/demo"
+sig=$(call_reroute claude-tooling --config-dir "$plugin_mcp_link") \
+  || fail "symlinked plugin dir must be tooling required"
+[ "$sig" = "MCP servers in $plugin_mcp_link/plugins/demo/.mcp.json" ] \
+  || fail "symlinked plugin dir signal: $sig"
+
 plugin_manifest_mcp="$LAB/plugin-manifest-mcp"
 mkdir -p "$plugin_manifest_mcp/plugins/demo/.claude-plugin"
 printf '%s\n' '{"name":"demo","mcpServers":{"docs":{"command":"true"}}}' \
@@ -1225,6 +1252,24 @@ sig=$(call_reroute claude-tooling --config-dir "$plugin_cache_mcp") \
   || fail "cached plugin .mcp.json must be tooling required"
 [ "$sig" = "MCP servers in $plugin_cache_mcp/plugins/cache/mp/demo/1.0.0/.mcp.json" ] \
   || fail "cached plugin .mcp.json signal: $sig"
+
+plugin_marketplace_mcp="$LAB/plugin-marketplace-mcp"
+mkdir -p "$plugin_marketplace_mcp/plugins/marketplaces/mp/demo"
+printf '%s\n' '{"docs":{"command":"true"}}' \
+  > "$plugin_marketplace_mcp/plugins/marketplaces/mp/demo/.mcp.json"
+sig=$(call_reroute claude-tooling --config-dir "$plugin_marketplace_mcp") \
+  || fail "marketplace plugin .mcp.json must be tooling required"
+[ "$sig" = "MCP servers in $plugin_marketplace_mcp/plugins/marketplaces/mp/demo/.mcp.json" ] \
+  || fail "marketplace plugin .mcp.json signal: $sig"
+
+plugin_manifest_path="$LAB/plugin-manifest-path"
+mkdir -p "$plugin_manifest_path/plugins/demo/.claude-plugin"
+printf '%s\n' '{"name":"demo","mcpServers":"./servers.json"}' \
+  > "$plugin_manifest_path/plugins/demo/.claude-plugin/plugin.json"
+sig=$(call_reroute claude-tooling --config-dir "$plugin_manifest_path") \
+  || fail "plugin.json mcpServers path must be tooling required"
+[ "$sig" = "MCP servers in $plugin_manifest_path/plugins/demo/.claude-plugin/plugin.json" ] \
+  || fail "plugin.json mcpServers path signal: $sig"
 
 acct_hooks_file="$LAB/acct-hooks-file"
 mkdir -p "$acct_hooks_file/hooks"
