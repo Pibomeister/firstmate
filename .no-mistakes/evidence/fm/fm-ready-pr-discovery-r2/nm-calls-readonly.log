@@ -1,0 +1,12 @@
+~/orca/projects/firstmate/projects/casco-platform | axi
+~/Documents/Casco | axi status --run 01M6MWPQSY7CDMG89YXEPEB5NC
+~/Documents/Casco | axi logs --step ci --run 01M6MWPQSY7CDMG89YXEPEB5NC --full
+~/Documents/Casco | axi status --run 01M6MV1D5H4QEDK8XMPP7MY6DW
+~/Documents/Casco | axi logs --step ci --run 01M6MV1D5H4QEDK8XMPP7MY6DW --full
+~/Documents/Casco | axi status --run 01M6MT852GBPQ9VD930G1Y9W0F
+~/Documents/Casco | axi logs --step ci --run 01M6MT852GBPQ9VD930G1Y9W0F --full
+~/Documents/Casco | axi status --run 01M6MRC935TH4X707DS87Q3V0J
+~/Documents/Casco | axi logs --step ci --run 01M6MRC935TH4X707DS87Q3V0J --full
+~/Documents/Casco | axi status --run 01M6MQN8EX5VM69Z6H8BD33CQN
+~/Documents/Casco | axi logs --step ci --run 01M6MQN8EX5VM69Z6H8BD33CQN --full
+~/orca/projects/firstmate/projects/agent-kit | axi

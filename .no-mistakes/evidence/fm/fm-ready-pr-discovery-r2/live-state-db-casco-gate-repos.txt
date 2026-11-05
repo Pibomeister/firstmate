@@ -1,0 +1,9 @@
+gate repo /Users/eduardopicazo/Documents/Casco: 5 live runs
+    01M6MQN8EX5VM69Z6H8BD33CQN feat/360-edit-publication-policy running
+    01M6MRC935TH4X707DS87Q3V0J feat/359-organization-update-activity running
+    01M6MT852GBPQ9VD930G1Y9W0F feat/365-mark-executed-pipeline-status running
+    01M6MV1D5H4QEDK8XMPP7MY6DW feat/362-capability-binding-writes running
+    01M6MWPQSY7CDMG89YXEPEB5NC feat/363-audit-nj-state-release running
+gate repo /Users/eduardopicazo/orca/projects/firstmate/projects/casco-platform: 0 live runs
+gate repo /Users/eduardopicazo/orca/workspaces/firstmate/casco-mate/projects/casco-platform: 1 live runs
+    01M6MRMNW5CSQAKTMNWNS2STKS fix/391-sleepfor-listener running

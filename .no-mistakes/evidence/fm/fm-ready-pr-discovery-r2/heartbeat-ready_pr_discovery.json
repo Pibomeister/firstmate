@@ -1,0 +1,62 @@
+{
+  "schema": "fm-ready-pr-discovery.v1",
+  "runs": [
+    {
+      "repo": "casco-platform",
+      "branch": "feat/363-audit-nj-state-release",
+      "pr": "https://github.com/Casco-Energy-Group/casco-platform/pull/429",
+      "kind": "ci-ready",
+      "checks": "no-checks",
+      "gate": null,
+      "owned": false,
+      "owner_task": null,
+      "waited_seconds": 3328
+    },
+    {
+      "repo": "casco-platform",
+      "branch": "feat/362-capability-binding-writes",
+      "pr": "https://github.com/Casco-Energy-Group/casco-platform/pull/428",
+      "kind": "ci-ready",
+      "checks": "no-checks",
+      "gate": null,
+      "owned": false,
+      "owner_task": null,
+      "waited_seconds": 5076
+    },
+    {
+      "repo": "casco-platform",
+      "branch": "feat/365-mark-executed-pipeline-status",
+      "pr": "https://github.com/Casco-Energy-Group/casco-platform/pull/427",
+      "kind": "ci-ready",
+      "checks": "no-checks",
+      "gate": null,
+      "owned": false,
+      "owner_task": null,
+      "waited_seconds": 5903
+    },
+    {
+      "repo": "casco-platform",
+      "branch": "feat/359-organization-update-activity",
+      "pr": "https://github.com/Casco-Energy-Group/casco-platform/pull/426",
+      "kind": "ci-ready",
+      "checks": "no-checks",
+      "gate": null,
+      "owned": false,
+      "owner_task": null,
+      "waited_seconds": 7865
+    },
+    {
+      "repo": "casco-platform",
+      "branch": "feat/360-edit-publication-policy",
+      "pr": "https://github.com/Casco-Energy-Group/casco-platform/pull/425",
+      "kind": "ci-ready",
+      "checks": "no-checks",
+      "gate": null,
+      "owned": true,
+      "owner_task": "labtask",
+      "waited_seconds": 8620
+    }
+  ],
+  "unreadable": [],
+  "warnings": []
+}

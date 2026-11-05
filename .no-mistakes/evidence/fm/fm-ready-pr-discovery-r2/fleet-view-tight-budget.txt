@@ -1,0 +1,18 @@
+## Ready PRs awaiting a decision
+ready-pr-unreadable: repo=hike-like-a-mom-landing reason=discovery budget 11s reached; gates of other checkouts not read
+ready-pr-unreadable: repo=claude-mem reason=discovery budget 11s reached before this repo was read
+ready-pr-unreadable: repo=harness2 reason=discovery budget 11s reached before this repo was read
+ready-pr-unreadable: repo=ffmpeg-skill reason=discovery budget 11s reached before this repo was read
+ready-pr-unreadable: repo=agent-scripts reason=discovery budget 11s reached before this repo was read
+ready-pr-unreadable: repo=marketingskills reason=discovery budget 11s reached before this repo was read
+ready-pr-unreadable: repo=agent-kit reason=discovery budget 11s reached before this repo was read
+ready-pr-unreadable: repo=altena reason=discovery budget 11s reached before this repo was read
+ready-pr-unreadable: repo=casco-platform reason=discovery budget 11s reached before this repo was read
+ready-pr-unreadable: repo=shipcontent-v2 reason=discovery budget 11s reached before this repo was read
+ready-pr-unreadable: repo=goodword-platform reason=discovery budget 11s reached before this repo was read
+ready-pr-unreadable: repo=fluxkeep reason=discovery budget 11s reached before this repo was read
+ready-pr-unreadable: repo=zenith-health reason=discovery budget 11s reached before this repo was read
+ready-pr-unreadable: repo=buzz-bridge reason=discovery budget 11s reached before this repo was read
+ready-pr-unreadable: repo=firstmate-fork reason=discovery budget 11s reached before this repo was read
+ready-pr-unreadable: repo=portfolio reason=discovery budget 11s reached before this repo was read
+ready-pr-unreadable: repo=PersonaSim reason=discovery budget 11s reached before this repo was read

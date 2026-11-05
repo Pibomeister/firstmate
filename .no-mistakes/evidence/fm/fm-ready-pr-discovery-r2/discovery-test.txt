@@ -1,0 +1,15 @@
+1..13
+ok - orphan ready run is listed
+ok - owned run is marked owned
+ok - approval-gate run is listed
+ok - unreadable repo is reported, not silently skipped
+ok - json shape serves the decision batch
+ok - non-gate projects are skipped silently
+ok - unreadable ci log is warned, not reported ready
+ok - no mutating call is made
+ok - truncated overview lists runs outside the window
+ok - truncated overview without inventory is reported incomplete
+ok - budget stops inside a repo and keeps results
+ok - runs in another checkout's gate are listed
+ok - unreadable other-checkout inventory is reported
+FM_TEST_COMPLETE

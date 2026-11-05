@@ -1,0 +1,39 @@
+bin: ~/.no-mistakes/bin/no-mistakes
+description: "Validate your code changes through the no-mistakes pipeline - automated code review, tests, lint, docs, push, PR, and CI - before they reach the configured push target. Use when the user asks to run no-mistakes, gate or ship or validate their changes, push safely, asks you to do a task and then validate it, or invokes /no-mistakes."
+repo: /Users/eduardopicazo/Documents/Casco
+current_branch: main
+daemon: running
+other_branch_active_run:
+  id: "01M6MWPQSY7CDMG89YXEPEB5NC"
+  branch: feat/363-audit-nj-state-release
+  status: running
+  head: 303e13ca
+  head_sha: 303e13ca363bd7b3d7f4da92ff6165ad38d1300b
+  verification_plan: none
+  pr: "https://github.com/Casco-Energy-Group/casco-platform/pull/429"
+  findings: "1 auto-fix, 1 info"
+  steps[9]{step,status,findings,duration_ms}:
+    intent,skipped,0,57716
+    rebase,completed,0,7381
+    review,completed,1,99324
+    test,completed,1,1237437
+    document,completed,0,78101
+    lint,completed,0,37369
+    push,completed,0,39466
+    pr,completed,0,75983
+    ci,running,0,0
+  active_steps[1]{step,status,active_for,round_active_for,last_activity,agent_pid,round}:
+    ci,running,15m10s,15m10s,"quiet 14m58s ago: log: repository declares no CI (no_ci: true) - treating as all checks passed - still monitoring until merged or closed","",starting
+count: 10 of 506 total
+runs[10]{id,branch,status,head,pr}:
+  "01M6MWPQSY7CDMG89YXEPEB5NC",feat/363-audit-nj-state-release,running,303e13ca,"https://github.com/Casco-Energy-Group/casco-platform/pull/429"
+  "01M6MW276R2JKFYTEX2B2SXZ6V",feat/363-audit-nj-state-release,cancelled,ca41cc2a,""
+  "01M6MV7J7X6XAWSR9AG8P42VVB",feat/363-audit-nj-state-release,cancelled,dbbb9cd6,""
+  "01M6MV1D5H4QEDK8XMPP7MY6DW",feat/362-capability-binding-writes,running,"08bc1735","https://github.com/Casco-Energy-Group/casco-platform/pull/428"
+  "01M6MT852GBPQ9VD930G1Y9W0F",feat/365-mark-executed-pipeline-status,running,79aee82c,"https://github.com/Casco-Energy-Group/casco-platform/pull/427"
+  "01M6MT83N8F0XYA2V8CFC69PQH",feat/362-capability-binding-writes,cancelled,6cc07329,""
+  "01M6MSEE8GNN2N4N80HJXZZ7KZ",feat/362-capability-binding-writes,cancelled,944ce85a,""
+  "01M6MREVPME6ZKMNWGTVWK5G5M",feat/362-capability-binding-writes,cancelled,2cf53f68,""
+  "01M6MRC935TH4X707DS87Q3V0J",feat/359-organization-update-activity,running,925c5fad,"https://github.com/Casco-Energy-Group/casco-platform/pull/426"
+  "01M6MQN8EX5VM69Z6H8BD33CQN",feat/360-edit-publication-policy,running,452b3532,"https://github.com/Casco-Energy-Group/casco-platform/pull/425"
+help[5]: "Run `no-mistakes axi run --intent \"<what the user set out to accomplish>\"` to validate your changes",Another active run is on feat/363-audit-nj-state-release; leave it alone unless you are working on that branch,"Commit post-pipeline follow-up work on top of the existing branch so every pipeline fix commit remains present. Never abort-and-restart, reset, or replace the branch in a way that drops prior gate-fix commits.",The calling agent drives AXI gates but does not replace the configured pipeline agent; run `no-mistakes doctor` if no native agent or ACP runner is available,"How to drive the pipeline: `no-mistakes axi run --help`, or the `/no-mistakes` skill (loaded when you invoke `/no-mistakes`)"
