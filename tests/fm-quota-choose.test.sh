@@ -1089,6 +1089,44 @@ sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$wt_non_
 [ "$sig" = "unreadable $wt_non_object/.claude/settings.json" ] \
   || fail "worktree non-object signal: $sig"
 
+proj_scalar="$LAB/proj-scalar"
+mkdir -p "$proj_scalar"
+printf '%s\n' '{"projects":"not-an-object"}' > "$proj_scalar/.claude.json"
+sig=$(call_reroute claude-tooling --config-dir "$proj_scalar") \
+  || fail "a scalar .projects must be tooling required"
+[ "$sig" = "unreadable $proj_scalar/.claude.json" ] || fail "scalar projects signal: $sig"
+
+home_proj="$LAB/home-proj"
+mkdir -p "$home_proj/.claude"
+printf '%s\n' '{"projects":"not-an-object"}' > "$home_proj/.claude.json"
+sig=$(HOME="$home_proj" call_reroute claude-tooling --config-dir "$home_proj/.claude") \
+  || fail "HOME .claude.json scalar .projects must be tooling required"
+[ "$sig" = "unreadable $home_proj/.claude.json" ] || fail "HOME scalar projects: $sig"
+
+acct_plugins_false="$LAB/acct-plugins-false"
+mkdir -p "$acct_plugins_false"
+printf '%s\n' '{"enabledPlugins":{"docs":false}}' > "$acct_plugins_false/settings.json"
+sig=$(call_reroute claude-tooling --config-dir "$acct_plugins_false") \
+  || fail "account enabledPlugins with all values false must be a signal"
+[ "$sig" = "$acct_plugins_false/settings.json .enabledPlugins" ] \
+  || fail "account all-false plugins signal: $sig"
+
+wt_plugins_false="$LAB/wt-plugins-false"
+mkdir -p "$wt_plugins_false/.claude"
+printf '%s\n' '{"enabledPlugins":{"docs":false}}' > "$wt_plugins_false/.claude/settings.json"
+sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$wt_plugins_false") \
+  || fail "worktree enabledPlugins with all values false must be a signal"
+[ "$sig" = "$wt_plugins_false/.claude/settings.json .enabledPlugins" ] \
+  || fail "worktree all-false plugins signal: $sig"
+
+empty_acct_dirs="$LAB/empty-acct-dirs"
+mkdir -p "$empty_acct_dirs/skills" "$empty_acct_dirs/agents" \
+  "$empty_acct_dirs/commands" "$empty_acct_dirs/plugins"
+if sig=$(call_reroute claude-tooling --config-dir "$empty_acct_dirs"); then
+  fail "empty account dirs must not be a signal, got $sig"
+fi
+[ -z "$sig" ] || fail "empty account dirs produced: $sig"
+
 sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$LAB/missing-wt") \
   || fail "a missing worktree must be tooling required"
 [ "$sig" = "unreadable worktree" ] || fail "missing worktree signal: $sig"
