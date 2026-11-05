@@ -1082,6 +1082,103 @@ kill_holder_with_anchor() {
   while kill -0 "$LOCKPID" 2>/dev/null; do sleep 0.1; done
 }
 
+captain_field() { sed -n "s/^$1=//p" "$H/state/watchdog/captain" 2>/dev/null | tail -n 1; }
+
+test_captain_record_follows_the_lock_owner() {
+  local moved new_pid new_pane retired_pane bound
+  make_home $'Captain session\n✻ Working… (esc to interrupt)' "restart=off
+restart-secs=60
+restart-command=$TMP_ROOT/fake-captain-move.sh"
+  cat > "$TMP_ROOT/fake-captain-move.sh" <<'SH'
+#!/usr/bin/env bash
+p="$*"
+printf '%s\n' "$$" > "$PWD/state/.lock"
+printf '00000000-0000-4000-8000-0000000000aa\n' > "$PWD/state/.lock-session"
+printf '%s\n' "${TMUX_PANE:-}" > "$PWD/new-pane"
+eval "${p##*run: }" > "$PWD/pickup.out" 2>&1
+exec sleep 100000
+SH
+  chmod +x "$TMP_ROOT/fake-captain-move.sh"
+  transcript 3000 "Working." "Testing." "Green."
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals "$LOCKPID" "$(captain_field lock_pid)" "the record names the lock pid"
+  assert_equals live "$(captain_field alive)" "a running lock owner reads live"
+  assert_equals "tmux $T" "$(captain_field backend) $(captain_field target)" "the record names the lock owner's terminal"
+  moved=$(captain_field moved_at)
+  [ -n "$moved" ] || fail "the record has no move time"
+  assert_grep "captain pid $LOCKPID live on tmux:$T" "$H/data/watchdog/status.md" "the status file names the captain, its liveness, and its terminal"
+
+  # The process dies while its pane stays connected with a stale working screen.
+  kill_holder_with_anchor
+  run_wd 120 once >/dev/null 2>&1
+  assert_equals dead "$(captain_field alive)" "a dead lock owner reads dead whatever its pane shows"
+  assert_equals "$moved" "$(captain_field moved_at)" "the same owner has not moved"
+  assert_grep "captain pid $LOCKPID dead" "$H/data/watchdog/status.md" "the dead captain is named in the status file"
+
+  # A restart followed by pickup moves the record to the new terminal at once.
+  sed 's/^restart=off$/restart=on/' "$H/config/watchdog" > "$H/config/watchdog.new" && mv "$H/config/watchdog.new" "$H/config/watchdog"
+  run_wd 240 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows agent-gone restart pending)" "the dead captain restarts: $(ledger | cut -f5-8)"
+  wait_pickup || fail "the new captain never proved pickup: $(ledger | cut -f5-8)"
+  new_pid=$(cat "$H/state/.lock")
+  LOCK_PIDS="$LOCK_PIDS $new_pid"
+  new_pane=$(cat "$H/new-pane")
+  [ -n "$new_pane" ] && [ "$new_pane" != "$T" ] || fail "the restart opened no new pane: '$new_pane'"
+  assert_equals "$new_pid" "$(captain_field lock_pid)" "pickup records the new lock pid"
+  assert_equals "tmux $new_pane" "$(captain_field backend) $(captain_field target)" "pickup records the new terminal"
+  assert_equals pickup "$(captain_field source)" "pickup wrote the record"
+  assert_not_equals "$moved" "$(captain_field moved_at)" "pickup stamps the move"
+  moved=$(captain_field moved_at)
+  # The old session's heartbeat still names the old pane; the record keeps the new one.
+  run_wd 360 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows agent-gone restart "done")" "the pickup was verified: $(ledger | grep restart)"
+  assert_equals "$new_pid live tmux $new_pane $moved" \
+    "$(captain_field lock_pid) $(captain_field alive) $(captain_field backend) $(captain_field target) $(captain_field moved_at)" \
+    "the next pass keeps the moved owner and its terminal"
+  assert_grep "captain pid $new_pid live on tmux:$new_pane" "$H/data/watchdog/status.md" "the status file names the new terminal"
+
+  # A handoff moves the lock to a session whose terminal is not proven yet: the
+  # record never names the retired session's pane as the captain's.
+  make_home $'Captain session\n> '
+  transcript 3000 "Working." "Testing." "Green."
+  run_wd 0 once >/dev/null 2>&1
+  retired_pane=$T
+  moved=$(captain_field moved_at)
+  ( sleep 100000 > /dev/null 2>&1 & printf '%s\n' "$!" > "$H/lockpid" )
+  LOCK_PIDS="$LOCK_PIDS $(cat "$H/lockpid")"
+  cat "$H/lockpid" > "$H/state/.lock"
+  printf '00000000-0000-4000-8000-0000000000bb\n' > "$H/state/.lock-session"
+  run_wd 120 once >/dev/null 2>&1
+  assert_equals "$(cat "$H/lockpid") 00000000-0000-4000-8000-0000000000bb" "$(captain_field lock_pid) $(captain_field session)" "the record follows the new lock owner"
+  assert_not_equals "$moved" "$(captain_field moved_at)" "the handoff is a move"
+  assert_not_equals "$retired_pane" "$(captain_field target)" "the retired session's pane is never named as the captain's"
+
+  # A pid now running another process is not the recorded owner.
+  make_home $'Captain session\n> '
+  transcript 3000 "Working." "Testing." "Green."
+  printf '%s\nanchor_pid=%s\nanchor_start=Sat Nov  1 02:00:00 2026\n' "$SID" "$LOCKPID" > "$H/state/.lock-session"
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals unconfirmed "$(captain_field alive)" "a lock pid running another process instance is not read as live"
+
+  # A Codex owner proven by its session id stays live after its lock pid exits.
+  make_home $'Captain session\n> '
+  transcript 3000 "Working." "Testing." "Green."
+  # macOS hides a platform binary's environment, so the bound process is python.
+  ( env CODEX_THREAD_ID="$SID" CODEX_SESSION_ID="$SID" python3 -c 'import time; time.sleep(100000)' > /dev/null 2>&1 & printf '%s\n' "$!" > "$H/bound" )
+  bound=$(cat "$H/bound")
+  LOCK_PIDS="$LOCK_PIDS $bound"
+  for _ in $(seq 1 20); do python3 "$ROOT/bin/fm-session-process.py" bound "$bound" "$SID" && break; sleep 0.1; done
+  python3 "$ROOT/bin/fm-session-process.py" bound "$bound" "$SID" || fail "the fixture process is not bound to session $SID"
+  kill "$LOCKPID" 2>/dev/null
+  while kill -0 "$LOCKPID" 2>/dev/null; do sleep 0.1; done
+  printf 'restart=on\nrestart-command=%s\n' "$TMP_ROOT/fake-captain-move.sh" >> "$H/config/watchdog"
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals live "$(captain_field alive)" "a live process bound to the recorded session keeps the owner live"
+  assert_equals 0 "$(ledger_rows agent-gone restart pending)" "a live owner is never restarted as gone: $(ledger | cut -f5-8)"
+  assert_no_grep "AGENT-GONE" "$H/data/watchdog/status.md" "a live owner is not reported gone"
+  pass "captain record: lock pid, real liveness, terminal, and move time; pickup moves it, a pane never proves it"
+}
+
 test_no_action_while_restart_awaits_pickup() {
   make_home $'Captain session\n> ' "restart=on
 max-nudges=0
@@ -2320,6 +2417,7 @@ fm_test_run \
   test_primary_without_lock_identity_never_trusts_heartbeat_endpoint \
   test_restart_vetoed_by_running_turn \
   test_restart_verified_pickup_and_loop_stop \
+  test_captain_record_follows_the_lock_owner \
   test_no_action_while_restart_awaits_pickup \
   test_dead_captain_restarts_despite_its_anchor \
   test_watchdog_allows_muse_restart_with_approval_flag \

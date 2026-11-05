@@ -55,8 +55,8 @@ A home whose restart awaits pickup gets no action at all until that restart clos
 
 | Symptom | Proof | Action |
 | --- | --- | --- |
-| Agent gone | Lock holder dead | Restart once the transcript has been quiet for `frozen-secs`. Nothing is typed into the endpoint of a dead holder, and the other checks wait until it is live again. |
 | Blocking dialog | Dialog structure on the visible screen | Feedback survey: press `0`. Model or limit picker: the judge picks an option that keeps work going without spending, signing in, or buying; a picker that names an owner-reserved category or whose text looks like a secret is held as a gap and no model sees it. Words count from the rows below a rule above the options, or from all the last rows when no rule proves the boundary, so a picker under conversation with such a word also holds. A permission phrase counts across those same rows, so an unproven dialog with such a phrase is left alone and reported, and gets no key. Model and limit words count from the ruled rows above the options, or else from the paragraph above the options. An option label never counts. Only a row that opens by stating the limit or the switch proves a limit picker, such as `You have hit your weekly limit`, `Usage limit reached`, or `Switch to another model`. A bare model name, the word credits, or a bare `rate limit`, `usage limit`, `limit reached`, or `limit resets` does not. Any other picker is an unproven question: it gets no key and is reported as a gap. Permission: never answered, reported as a gap. While the home's away record is in away mode, not quiet mode, the owner is also paged through the home's alert channels, because nobody else will answer the dialog. The page carries no dialog text. A recorded ship or scout worker pane of that home gets this same permission page, with its own `nudge-secs` window, and the watchdog sends it no key. The ledger row records which dialog fired, with its text withheld when it looks like a secret. With alerts off or no channel, the page is recorded as refused and reported as a gap. The judge is asked about a picker at most once per `nudge-secs`, including in dry-run, and each answer comes from the pane of that pass. After two keys in an hour that leave the dialog showing, no more keys are pressed, no judge is asked, and the gap is reported. |
+| Agent gone | Lock owner dead: the lock pid has exited and the shared lock contract does not prove the recorded session live | Restart once the transcript has been quiet for `frozen-secs`. Nothing is typed into the endpoint of a dead holder, and the other checks wait until it is live again. |
 | Restart requested | `state/.watchdog-restart-request`, or context left at or below `restart-at-percent`. A heartbeat percent counts only for the current session and under `watcher-stale-secs`. | This applies only while a restart can run. Restart off, an escalated home, `do-not-touch`, no activity source, no `restart-command`, a backend with no launcher, a missing lock holder or mismatched anchor, or a time inside `restart-secs` is a gap, and the symptoms below still act. So is low context when the composer cannot take the nudge. A stable draft is handled as unsent input first, so the nudge can be delivered. Low context first nudges the session to write a full `data/handoff-*.md` and then `state/.watchdog-restart-request`. A handoff newer than the nudge plus the request file allows the restart after `restart-quiet-secs` of quiet. After `handoff-wait-secs` without both, the restart uses the lean handoff and the status file records the gap. A request with no earlier nudge restarts after the quiet time. The wait starts only when the nudge is delivered, and a nudge older than twice `handoff-wait-secs` no longer counts, so a later low asks again. |
 | Timer loop | Three of the last five assistant texts repeat with only timer tools between them. A rapid burst is recovered without waiting input when the transcript has moved within `rapid-loop-secs`; older repeats need input that has waited `owed-input-secs`. An old burst with no waiting input is no loop. | Nudge, then restart, without claiming input is waiting. Near repeats go to the judge first, and only once input has waited `owed-input-secs`, with the recent assistant texts and tool calls. Events that look like a secret or name an owner-reserved category go to no model and leave the near repeat unconfirmed, with a reported gap. Only a `LOOP` answer takes this row. Any other answer, or no answer, leaves the rows below to run. An answer stands for `owed-input-secs`, and after that for as long as those events stay the same. |
 | Frozen | Pane and transcript unchanged for `frozen-secs` while input has waited as long | Nudge, then restart. A running turn holds instead. |
@@ -96,7 +96,7 @@ A primary restart writes a lean handoff under `data/watchdog/handoffs/`, stops t
 A muse `restart-command` with no approval-off flag is launched with `--yolo` added, as the key table states, and the restart's ledger row says `--yolo added by default`.
 A proven draft goes into the handoff as an unsubmitted note, from the prompt row down to the last long rule below it. A rule with draft text below it stays in the note. A draft in a closed box runs from the box's first prompt row to its last body row, keeping inner rules and quoted rows. A non-empty Orca draft field also goes in, marked as an unsent draft or a harness suggestion. A draft proven present whose boundary is not proven, such as a plain composer or a paste placeholder on a composer that is not unknown, becomes a gap line in the handoff and the status file; Enter is still never pressed on it. An unknown composer, an empty capture, or a failed read with no draft text is no lost draft: the handoff says the composer state was unknown and no draft was seen.
 On tmux the new window joins the old session; when that session closed with the old session process, a new session takes its place.
-The new session proves it took over by running the `pickup <token>` command from that prompt after it holds the session lock.
+The new session proves it took over by running the `pickup <token>` command from that prompt after it holds the session lock; pickup also moves the [captain record](#captain-record).
 The next pass marks the restart done only when that pickup record exists, a new live process holds the lock, and the away daemon runs again when the home is away.
 A second mate restart goes through its parent with `bin/fm-control.sh <id> relaunch --note-file <handoff>`, which owns checkpoint and rollback.
 A captain quit on purpose leaves the same dead lock as a crash, so the watchdog restarts it. To stop a home from being restarted, list it in `do-not-touch`.
@@ -134,7 +134,35 @@ With no model available, the watchdog still takes every deterministic action and
 
 `data/watchdog/status.md` is rewritten atomically after every pass and stays under 40 lines.
 It holds the update time, a `STALE IF NOT UPDATED BY` line, the model state and the spend of the last day, one health line per home, the actions since the last read, and the open gaps.
+Each health line ends with that home's captain from the [captain record](#captain-record): its lock pid, its `alive` verdict, its terminal, and its last move time.
 A reader runs `ack-read` after reading, so the next status lists only newer actions.
+
+## Captain record
+
+Each `once` or `scan` pass rewrites `<home>/state/watchdog/captain` for every watched home, atomically, as `key=value` lines.
+It is the durable answer to which process and which terminal are that home's live captain, so an outside supervisor never has to infer it from pane titles, tab state, or screen text.
+
+| Key | Meaning |
+| --- | --- |
+| `owner` | `session:<id>` for the lock's recorded session, else `pid:<pid>`, else `none` |
+| `lock_pid` | The pid on the session lock's first line |
+| `session` | The lock's recorded session id |
+| `alive` | `live`, `dead`, `unconfirmed`, or `none` |
+| `backend`, `target` | The captain's terminal, empty while it is not proven |
+| `moved_at` | Epoch of the last move to a new owner or a new terminal |
+| `checked_at` | Epoch of this write |
+| `source` | `watchdog` for a pass, `pickup` for a restarted session |
+
+`live` means the lock pid runs and matches its recorded instance, or the shared lock contract proves the recorded session live, as for a Codex session whose first-line pid has exited.
+`dead` means the lock pid has exited and nothing proves the session live, whatever its old pane still shows.
+`unconfirmed` means the pid runs but does not match its recorded instance and nothing else proves it, so the pid may belong to another process; a restart refuses and sends it no signal.
+`none` means no lock holder is recorded.
+The terminal is the heartbeat's only when the heartbeat names the session that holds the lock, so a retired session's pane is never named; a second mate otherwise uses its parent's record of its endpoint.
+An unchanged owner keeps its last proven terminal while no terminal is recorded.
+A new owner stamps `moved_at` with the newest lock file time, and a changed terminal stamps it with the pass time; a terminal that only becomes known is not a move.
+`pickup` rewrites the record at once with the new lock pid and the terminal the restarted session runs in.
+A supervisor that restarts captains itself treats a `live` record, or a `moved_at` newer than its own evidence, as a captain already in place.
+A pane the record does not name is not the live captain, and an empty terminal means the captain's pane is not proven yet.
 
 ## Configuration (config/watchdog)
 

@@ -29,6 +29,8 @@
 #   data/watchdog/status.md      the short status file, rewritten atomically after each pass.
 #   data/watchdog/handoffs/, data/watchdog/rulings/  restart handoffs and council rulings.
 # A restarted session writes <its home>/state/watchdog/pickups/<token>.
+#   <watched home>/state/watchdog/captain  key=value record of that home's live
+#                                captain, rewritten each pass and by pickup.
 #
 # Test seams, honoured only with FM_TEST_SEAM=1: FM_WD_NOW fixes the clock and
 # FM_WD_TEST_COMPOSER replaces the composer verdict for a plain test pane.
@@ -64,6 +66,8 @@ CALLS=$WD/model-calls.tsv
 . "$SCRIPT_DIR/fm-backend.sh"
 # shellcheck source=bin/fm-warm-compact-lib.sh
 . "$SCRIPT_DIR/fm-warm-compact-lib.sh"
+# shellcheck source=bin/fm-supervisor-target-lib.sh
+. "$SCRIPT_DIR/fm-supervisor-target-lib.sh"
 
 die() { printf 'fm-watchdog: %s\n' "$1" >&2; exit "${2:-1}"; }
 
@@ -245,6 +249,81 @@ wd_read_composer() {
   fi
 }
 
+# wd_read_owner <state-dir>: fills O_LOCK_PID, O_ALIVE, O_INSTANCE, O_SESSION,
+# and O_OWNER (live, dead, unconfirmed, or none) for the recorded lock owner.
+# A running pid whose recorded instance matches is live. Otherwise the shared
+# lock contract (fm_session_lock_recorded_owner_live) decides, which also
+# proves a Codex owner whose line-1 pid has exited; that proof sets O_ALIVE=1
+# and leaves O_INSTANCE unmatched, so a restart refuses and no signal reaches
+# a pid that is not the owner. A running pid the contract cannot prove is
+# unconfirmed: the pid may now belong to another process.
+wd_read_owner() {
+  local st=$1
+  O_LOCK_PID='' O_ALIVE=0 O_INSTANCE=unknown O_OWNER=none
+  if [ -f "$st/.lock" ]; then
+    O_LOCK_PID=$(head -n 1 "$st/.lock" 2>/dev/null | tr -cd '0-9')
+    if wd_pid_alive "$O_LOCK_PID"; then O_ALIVE=1; fi
+    if fm_session_lock_anchor_instance_matches "$st" 2>/dev/null; then O_INSTANCE=match; else O_INSTANCE=mismatch; fi
+  fi
+  O_SESSION=$(fm_session_lock_recorded_session_id "$st" 2>/dev/null) || O_SESSION=''
+  [ -n "$O_LOCK_PID" ] || return 0
+  if [ "$O_ALIVE" = 1 ] && [ "$O_INSTANCE" = match ]; then
+    O_OWNER=live
+  elif fm_session_lock_recorded_owner_live "$st" >/dev/null 2>&1; then
+    O_OWNER=live
+    [ "$O_ALIVE" = 1 ] || O_ALIVE=1 O_INSTANCE=mismatch
+  elif [ "$O_ALIVE" = 1 ]; then
+    O_OWNER=unconfirmed
+  else
+    O_OWNER=dead
+  fi
+}
+
+# wd_publish_captain <state-dir> <source> [move]: rewrites
+# <state-dir>/watchdog/captain from the O_* owner and the trusted endpoint.
+# The owner is the recorded session, or the lock pid when no session is
+# recorded. A new owner or the move argument stamps moved_at, and so does a
+# known terminal that differs from the recorded one. An unchanged owner whose
+# terminal is unknown now keeps the recorded terminal; a terminal that only
+# becomes known is not a move. docs/watchdog.md owns the record's meaning.
+wd_publish_captain() {
+  local st=$1 source=$2 move=${3:-} rec now owner prev='' backend=$O_BACKEND target=$O_TARGET moved='' rb rt t f tmp
+  rec=$st/watchdog/captain
+  now=$(wd_now)
+  if [ -n "$O_SESSION" ]; then owner=session:$O_SESSION; elif [ -n "$O_LOCK_PID" ]; then owner=pid:$O_LOCK_PID; else owner=none; fi
+  if [ -f "$rec" ]; then prev=$(fm_wd_conf_get "$rec" owner ''); fi
+  if [ -z "$move" ] && [ "$owner" = "$prev" ]; then
+    rb=$(fm_wd_conf_get "$rec" backend '') rt=$(fm_wd_conf_get "$rec" target '')
+    if [ -z "$backend" ] || [ -z "$target" ]; then backend=$rb target=$rt; fi
+    if [ -z "$rb" ] || [ -z "$rt" ] || [ "$backend:$target" = "$rb:$rt" ]; then
+      moved=$(fm_wd_conf_get "$rec" moved_at '' | tr -cd '0-9')
+    else
+      moved=$now
+    fi
+  fi
+  [ -n "$backend" ] && [ -n "$target" ] || backend='' target=''
+  if [ -z "$moved" ] && [ -z "$move" ]; then
+    # The lock files' own time dates a move the watchdog notices a pass late.
+    moved=0
+    for f in "$st/.lock" "$st/.lock-session"; do
+      [ -f "$f" ] || continue
+      t=$(wd_mtime "$f")
+      [ "${t:-0}" -le "$moved" ] || moved=$t
+    done
+    [ "$moved" -gt 0 ] && [ "$moved" -le "$now" ] || moved=$now
+  fi
+  moved=${moved:-$now}
+  C_BACKEND=$backend C_TARGET=$target C_MOVED=$moved
+  mkdir -p "$st/watchdog" 2>/dev/null || return 0
+  tmp=$(mktemp "$st/watchdog/.captain.XXXXXX" 2>/dev/null) || return 0
+  if printf 'owner=%s\nlock_pid=%s\nsession=%s\nalive=%s\nbackend=%s\ntarget=%s\nmoved_at=%s\nchecked_at=%s\nsource=%s\n' \
+    "$owner" "$O_LOCK_PID" "$O_SESSION" "$O_OWNER" "$backend" "$target" "$moved" "$now" "$source" > "$tmp"; then
+    mv "$tmp" "$rec" 2>/dev/null || rm -f "$tmp"
+  else
+    rm -f "$tmp"
+  fi
+}
+
 # wd_observe <home> <parent> <id>: fills the O_* globals for one subject and
 # saves the comparable parts to state/watchdog/subjects/<home-basename>-<path-cksum>.
 wd_observe() {
@@ -254,7 +333,8 @@ wd_observe() {
   O_HOME=$home O_PARENT=$parent O_ID=$id O_TAG=$(wd_tag "$home") O_KEY=$(wd_state_key "$home")
   O_BACKEND='' O_TARGET='' O_SESSION='' O_HB_AGE=unknown O_CTX='' O_CTX_SRC=''
   O_PANE='' O_SIG='' O_PANE_STATIC=0 O_DIALOG='' O_COMPOSER=unknown O_TURN=unknown
-  O_LOCK_PID='' O_ALIVE=0 O_INSTANCE=unknown O_CPU_BUSY=unknown O_TRANSCRIPT='' O_TR_AGE=unknown
+  O_LOCK_PID='' O_ALIVE=0 O_INSTANCE=unknown O_OWNER=none O_CPU_BUSY=unknown O_TRANSCRIPT='' O_TR_AGE=unknown
+  C_BACKEND='' C_TARGET='' C_MOVED=''
   O_LOOP=none O_LOOP_N=0 O_EVENTS='' O_RESTART_REQ=0 O_OWED_N=0 O_OWED_AGE=0
   O_AFK=0 O_DAEMON=unknown O_PREV_COMPOSER='' O_PREV_SIG='' O_COMPOSER_TEXT='' O_COMPOSER_ABOVE='' O_DRAFT=''
   hb=$st/heartbeat.json
@@ -272,12 +352,7 @@ EOF
     [ "$row" -gt 0 ] 2>/dev/null || row=$(wd_mtime "$hb")
     O_HB_AGE=$((now - row))
   fi
-  if [ -f "$st/.lock" ]; then
-    O_LOCK_PID=$(head -n 1 "$st/.lock" 2>/dev/null | tr -cd '0-9')
-    if wd_pid_alive "$O_LOCK_PID"; then O_ALIVE=1; fi
-    if fm_session_lock_anchor_instance_matches "$st" 2>/dev/null; then O_INSTANCE=match; else O_INSTANCE=mismatch; fi
-  fi
-  O_SESSION=$(fm_session_lock_recorded_session_id "$st" 2>/dev/null) || O_SESSION=''
+  wd_read_owner "$st"
   if [ -n "$O_SESSION" ] && [ "$ctx" != - ] && [ -n "$ctx" ] && [ "$hb_sid" = "$O_SESSION" ] && [ "$O_HB_AGE" != unknown ] && [ "$O_HB_AGE" -lt "$(cfgi watcher-stale-secs 900)" ]; then
     O_CTX=${ctx%%.*}; O_CTX_SRC=heartbeat
   fi
@@ -358,11 +433,13 @@ EOF
   fi
   mkdir -p "$WD/subjects"
   printf 'sig=%s\nsince=%s\ncpu=%s\ncpu_at=%s\ncomposer=%s\n' "$O_SIG" "${p_since:-$now}" "$cpu" "$now" "$O_COMPOSER" > "$prev.tmp" && mv "$prev.tmp" "$prev"
+  wd_publish_captain "$st" watchdog
 }
 
 wd_print_observation() {
   printf '%s\n' "subject $O_TAG ($O_HOME)" \
-    "  endpoint=${O_BACKEND:-none}:${O_TARGET:-none} session=${O_SESSION:-none} lock_pid=${O_LOCK_PID:-none} alive=$O_ALIVE instance=$O_INSTANCE" \
+    "  endpoint=${O_BACKEND:-none}:${O_TARGET:-none} session=${O_SESSION:-none} lock_pid=${O_LOCK_PID:-none} alive=$O_ALIVE instance=$O_INSTANCE owner=$O_OWNER" \
+    "  captain=${C_BACKEND:-none}:${C_TARGET:-none} moved_at=${C_MOVED:-none}" \
     "  pane_static=${O_PANE_STATIC}s dialog=${O_DIALOG:-none} composer=$O_COMPOSER turn_running=$O_TURN cpu_busy=$O_CPU_BUSY" \
     "  transcript_age=${O_TR_AGE}s loop=$O_LOOP/$O_LOOP_N restart_requested=$O_RESTART_REQ ctx=${O_CTX:-unknown}${O_CTX_SRC:+ ($O_CTX_SRC)}" \
     "  owed=$O_OWED_N oldest=${O_OWED_AGE}s afk=$O_AFK daemon=$O_DAEMON heartbeat_age=${O_HB_AGE}s"
@@ -1218,11 +1295,14 @@ wd_handle_subject() {
 # --- status file -------------------------------------------------------------------
 
 wd_health_line() {
-  local s=$WD_SYMPTOM idle=''
+  local s=$WD_SYMPTOM idle='' captain='no lock holder'
   [ "$O_TR_AGE" = unknown ] || idle=", last turn $((O_TR_AGE / 60))m ago"
+  if [ -n "$O_LOCK_PID" ]; then
+    captain="captain pid $O_LOCK_PID $O_OWNER on ${C_TARGET:+$C_BACKEND:$C_TARGET}${C_TARGET:-an unknown terminal}${C_MOVED:+, moved $(fm_wd_iso "$C_MOVED")}"
+  fi
   case "$s" in
-    ok) printf -- '- %s: ok%s, ctx %s\n' "$O_TAG" "$idle" "${O_CTX:-unknown}${O_CTX:+%}" ;;
-    *) printf -- '- %s: %s%s, owed %s, ctx %s\n' "$O_TAG" "$(printf '%s' "$s" | tr '[:lower:]' '[:upper:]')" "$idle" "$O_OWED_N" "${O_CTX:-unknown}${O_CTX:+%}" ;;
+    ok) printf -- '- %s: ok%s, ctx %s; %s\n' "$O_TAG" "$idle" "${O_CTX:-unknown}${O_CTX:+%}" "$captain" ;;
+    *) printf -- '- %s: %s%s, owed %s, ctx %s; %s\n' "$O_TAG" "$(printf '%s' "$s" | tr '[:lower:]' '[:upper:]')" "$idle" "$O_OWED_N" "${O_CTX:-unknown}${O_CTX:+%}" "$captain" ;;
   esac
 }
 
@@ -1304,11 +1384,17 @@ cmd_run() {
   done
 }
 
+# The restarted session runs pickup in its own terminal, so the terminal it
+# discovers there is the captain's new one; the record is moved at once.
 cmd_pickup() {
   local token=${1:-} st=${FM_STATE_OVERRIDE:-$FM_HOME/state}
   case "$token" in ''|*[!0-9a-f]*) die "pickup needs the hex token from the restart prompt" 2 ;; esac
   mkdir -p "$st/watchdog/pickups"
   printf 'at=%s\nlock_pid=%s\n' "$(wd_now)" "$(head -n 1 "$st/.lock" 2>/dev/null)" > "$st/watchdog/pickups/$token"
+  wd_read_owner "$st"
+  O_BACKEND=$(discover_supervisor_backend 2>/dev/null) || O_BACKEND=''
+  O_TARGET=$(discover_supervisor_target 2>/dev/null) || O_TARGET=''
+  wd_publish_captain "$st" pickup move
   echo "pickup recorded"
 }
 
