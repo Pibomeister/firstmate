@@ -1273,7 +1273,15 @@ SH
   pass "session start: configured and auto-detected Herdr homes never require tmux"
 }
 
-# --- status tail bounding -----------------------------------------------------
+# --- work under way: one line per task -----------------------------------------
+
+# assert_task_endpoint <digest> <task-id> <expected> <msg>: the endpoint= value on
+# that task's own work-under-way line must equal <expected>.
+assert_task_endpoint() {
+  local out=$1 id=$2 want=$3 msg=$4 got
+  got=$(printf '%s\n' "$out" | awk -v id="$id" '$1 == id && / project=/ { for (i = 2; i <= NF; i++) if ($i ~ /^endpoint=/) { sub(/^endpoint=/, "", $i); print $i } }')
+  [ "$got" = "$want" ] || fail "$msg (task $id: expected endpoint=$want, got '${got}')"$'\n'"--- output ---"$'\n'"$out"
+}
 
 test_work_under_way_one_line_per_task() {
   local rec root home fakebin out line
@@ -1308,6 +1316,37 @@ EOF
   [ "$line" -eq 1 ] || fail "task-a rendered $line times instead of once: $out"
 
   pass "work under way renders one line per live task with the full-detail pointer and no record bodies"
+}
+
+test_work_under_way_pr_url_only_from_ready_line() {
+  local rec root home fakebin out
+  rec=$(new_world work-pr-ready-line)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  make_fake_tmux "$fakebin" "fm-sess:live"
+
+  printf 'window=fm-sess:live\nkind=ship\n' > "$home/state/task-ready.meta"
+  printf 'done: PR https://github.com/o/r/pull/7 checks green\nworking: rebasing after https://github.com/o/r/pull/131 landed\n' \
+    > "$home/state/task-ready.status"
+  printf 'window=fm-sess:live\nkind=ship\n' > "$home/state/task-busy.meta"
+  printf 'working: rebasing after https://github.com/o/r/pull/131 landed\npaused: waiting on upstream https://github.com/o/r/pull/99\n' \
+    > "$home/state/task-busy.status"
+
+  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+
+  assert_contains "$out" "task-ready project=- state=working pr=https://github.com/o/r/pull/7 age=" \
+    "the PR URL was not taken from the task's own ready line"
+  assert_contains "$out" "task-busy project=- state=paused pr=- age=" \
+    "a task with no pr= and no ready line did not render pr=-"
+  assert_not_contains "$out" "pr=https://github.com/o/r/pull/131" \
+    "a working: line's PR URL was reported as the task's own PR"
+  assert_not_contains "$out" "pr=https://github.com/o/r/pull/99" \
+    "a paused: line's PR URL was reported as the task's own PR"
+
+  pass "work under way takes a fallback PR URL only from the task's ready line"
 }
 
 test_orphan_status_logs_are_printed() {
@@ -1416,7 +1455,7 @@ EOF
     "SECONDMATE_LIVENESS: secondmate $SESSION_START_SECOND_MATE_ID: skipped: existing endpoint has ambiguous agent process (backend=tmux)" \
     "session start did not distinguish an existing Pi-shaped process from a missing window"
   [ ! -s "$log" ] || fail "session start touched an ambiguous existing Pi process: $(cat "$log")"
-  assert_contains "$out" "endpoint=alive" \
+  assert_task_endpoint "$out" "$SESSION_START_SECOND_MATE_ID" alive \
     "the later fleet read should still see the ambiguous endpoint"
   pass "session start: an existing ambiguous Pi process prevents duplicate recovery"
 }
@@ -1435,7 +1474,7 @@ EOF
     "SECONDMATE_LIVENESS: secondmate $SESSION_START_SECOND_MATE_ID: skipped: endpoint probe unreadable (backend=tmux)" \
     "session start did not distinguish transient unreadability from absence"
   [ ! -s "$log" ] || fail "session start touched a transiently unreadable target: $(cat "$log")"
-  assert_contains "$out" "endpoint=dead" \
+  assert_task_endpoint "$out" "$SESSION_START_SECOND_MATE_ID" dead \
     "the later cheap presence read should preserve the visible offline symptom"
   pass "session start: transient tmux unreadability never licenses a relaunch"
 }
@@ -1493,8 +1532,8 @@ EOF
   printf 'window=fm-sess:dead-window\nkind=ship\n' > "$home/state/task-dead.meta"
 
   out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
-  assert_contains "$out" "endpoint=alive" "live tmux endpoint not reported alive"
-  assert_contains "$out" "endpoint=dead" "dead tmux endpoint not reported dead"
+  assert_task_endpoint "$out" task-live alive "live tmux endpoint not reported alive"
+  assert_task_endpoint "$out" task-dead dead "dead tmux endpoint not reported dead"
 
   pass "tmux endpoint liveness is reported per task: alive for a live window, dead for a gone one"
 }
@@ -1515,10 +1554,9 @@ EOF
 
   out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
   assert_contains "$out" "task-live project=- state=unknown pr=- age=" "live herdr task line missing"
-  assert_contains "$out" "endpoint=alive" "live herdr endpoint not reported alive"
-  assert_contains "$out" "endpoint=dead" "dead herdr endpoint not reported dead"
-  assert_not_contains "$out" "task-odd project=- state=unknown pr=- age=- endpoint=error" \
-    "a probe exiting 4 was mislabelled as a failed read"
+  assert_task_endpoint "$out" task-live alive "live herdr endpoint not reported alive"
+  assert_task_endpoint "$out" task-dead dead "dead herdr endpoint not reported dead"
+  assert_task_endpoint "$out" task-odd dead "a probe exiting 4 was not reported as a dead endpoint"
 
   pass "herdr endpoint liveness is reported per task: alive, dead for exit 1, dead for any other probe status"
 }
@@ -1543,9 +1581,9 @@ EOF
   expect_code 0 "$status" "one killed endpoint read must not fail the digest"
   assert_contains "$out" "task-a-doom project=- state=working pr=- age=" \
     "a killed endpoint read was not reported on that task's own line"
-  assert_contains "$out" "endpoint=error" \
+  assert_task_endpoint "$out" task-a-doom error \
     "a killed endpoint read was not reported as that task's own error field"
-  assert_contains "$out" "endpoint=alive" \
+  assert_task_endpoint "$out" task-z-live alive \
     "the digest did not continue past the killed read to the next task"
   assert_not_contains "$out" "working: doomed task marker" \
     "the digest re-printed a status body beside the one-line rendering"
@@ -1581,9 +1619,9 @@ EOF
     run_session_start "$home" "$root" "$fakebin:$BASE_PATH") || status=$?
 
   expect_code 0 "$status" "a hung endpoint read must not fail the digest"
-  assert_contains "$out" "endpoint=error" \
+  assert_task_endpoint "$out" task-a-slow error \
     "a hung endpoint read was not bounded into that task's own error field"
-  assert_contains "$out" "endpoint=alive" \
+  assert_task_endpoint "$out" task-z-live alive \
     "the digest did not continue past the hung read to the next task"
   assert_contains "$out" "$(printf '\nCONTEXT\n')" \
     "a hung endpoint read cost the digest its context section"
@@ -1615,7 +1653,7 @@ EOF
     run_session_start "$home" "$root" "$fakebin:$BASE_PATH") || status=$?
 
   expect_code 0 "$status" "a padded-zero per-read bound must not fail the digest"
-  assert_contains "$out" "endpoint=error" \
+  assert_task_endpoint "$out" task-a-slow error \
     "a padded-zero bound did not fall back to the 10s default, so the hung read went unbounded"
   assert_contains "$out" "$(printf '\nCONTEXT\n')" \
     "a padded-zero bound cost the digest its context section"
@@ -3202,6 +3240,7 @@ test_session_start_preserves_transiently_unreadable_tmux
 test_session_start_preserves_proven_bare_shell_recovery
 test_session_start_relaunches_herdr_husk_secondmate
 test_work_under_way_one_line_per_task
+test_work_under_way_pr_url_only_from_ready_line
 test_orphan_status_logs_are_printed
 test_endpoint_liveness_tmux
 test_endpoint_liveness_herdr

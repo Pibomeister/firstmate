@@ -8,7 +8,8 @@
 # data/projects.md, data/secondmates.md, data/captain.md,
 # data/captain-shared.md, data/learnings.md, then run
 # fm-lock.sh, fm-wake-drain.sh, then read data/backlog.md, every state/*.meta,
-# and every state/*.status.
+# and every state/*.status. The digest now prints one line per live task and
+# points at bin/fm-crew-state.sh for full detail.
 # Every one of those reads is UNCONDITIONAL at every session start, so they
 # belong in a script, not in N agent turns.
 #
@@ -391,6 +392,8 @@ PRIMARY_HARNESS=$("$SCRIPT_DIR/fm-harness.sh" 2>/dev/null || printf unknown)
 . "$SCRIPT_DIR/fm-trace-context-lib.sh"
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"
+# shellcheck source=bin/fm-classify-lib.sh
+. "$SCRIPT_DIR/fm-classify-lib.sh"
 # shellcheck source=bin/fm-hold-reason-lib.sh
 . "$SCRIPT_DIR/fm-hold-reason-lib.sh"
 
@@ -409,7 +412,7 @@ TASKS_AXI_CHECK_REASON=$(fm_tasks_axi_check_reason)
 QUEUED_LIMIT=${FM_SESSION_START_QUEUED_LIMIT:-20}
 case "$QUEUED_LIMIT" in ''|*[!0-9]*|0) QUEUED_LIMIT=20 ;; esac
 # One per-task endpoint read may never outlive this bound: a hung backend CLI
-# becomes that task's endpoint: error line instead of the digest's whole
+# becomes that task's endpoint=error field instead of the digest's whole
 # runtime budget.
 ENDPOINT_TIMEOUT=${FM_SESSION_START_ENDPOINT_TIMEOUT:-10}
 case "$ENDPOINT_TIMEOUT" in ''|*[!0-9]*) ENDPOINT_TIMEOUT=10 ;; esac
@@ -592,12 +595,17 @@ fm_task_state_word() {  # <status-file>
 }
 
 # fm_task_pr_url <meta> <status-file>: the recorded PR URL - pr= in the meta
-# when present, otherwise the last PR URL mentioned in the status log, or "-".
+# when present, otherwise the last PR URL on the task's latest done: (ready)
+# status line, or "-". Other status lines never supply it: a working: or
+# paused: line may name someone else's PR.
 fm_task_pr_url() {  # <meta> <status-file>
-  local meta=$1 status=$2 pr
+  local meta=$1 status=$2 pr line ready=
   pr=$(fm_meta_get "$meta" pr)
   if [ -z "$pr" ] && [ -f "$status" ]; then
-    pr=$(grep -oE 'https://[^[:space:]]+/pull/[0-9]+' "$status" 2>/dev/null | tail -n 1 || true)
+    while IFS= read -r line || [ -n "$line" ]; do
+      [ "$(status_line_verb "$line")" = done ] && ready=$line
+    done < "$status"
+    [ -z "$ready" ] || pr=$(printf '%s\n' "$ready" | grep -oE 'https://[^[:space:]]+/pull/[0-9]+' | tail -n 1 || true)
   fi
   [ -n "$pr" ] && printf '%s' "$pr" || printf '-'
 }
