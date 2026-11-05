@@ -74,7 +74,10 @@ These checks run on every pass as well:
 - Decisions open longer than `decision-secs` get one rolled-up nudge per home.
   A window later, the oldest unsettled decision goes to a council of blind seats, at most `council-per-pass` per home per pass and once per decision per `council-secs`.
   A unanimous `PROCEED` writes a ruling file under `data/watchdog/rulings/` and nudges the session to apply it; anything short of unanimity holds.
-- A task whose latest status is a quota pause or block, or a pane showing a usage-limit picker, gets a nudge that names the eligible candidate from `reroute-candidates` when `quota-axi` and `bin/fm-quota-reroute.sh` find one. The supervisor relaunches onto that pick. The watchdog never changes the runtime. Live proof is [`verification/quota-reroute.md`](verification/quota-reroute.md).
+- A task whose latest status is a quota pause or block, or a pane showing a usage-limit picker, gets a nudge that names the eligible candidate from `reroute-candidates` when `quota-axi` and `bin/fm-quota-reroute.sh` find one.
+  The supervisor relaunches onto that pick.
+  The watchdog never changes the runtime.
+  The live runbook is [`verification/quota-reroute.md`](verification/quota-reroute.md).
 
 A nudge is written as a record-backed operational input in the subject's own home and typed into its pane as the record's doorbell.
 It is never a captain inbox note, so a session cannot mistake it for the owner.

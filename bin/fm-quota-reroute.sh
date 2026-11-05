@@ -25,10 +25,11 @@
 # Account settings.json keys: hooks, enabledPlugins. Worktree
 # .claude/settings.json and settings.local.json keys: hooks,
 # enabledMcpjsonServers, mcpServers, enabledPlugins. An unreadable file is a
-# signal. Those three lists live only in the variables below; there is no
-# exemption mechanism. Resolve the config dir from the task's account pin,
-# never from claude-config-dirs. A broken or unreadable pin is a signal. No
-# pin, or ordinary, inspects $HOME/.claude.
+# signal. A present .projects that is not an object is unreadable. Those three
+# lists live only in the variables below; there is no exemption mechanism.
+# Resolve the config dir from the task's account pin, never from
+# claude-config-dirs. A broken or unreadable pin is a signal. No pin, or
+# ordinary, inspects $HOME/.claude.
 #
 # The supervisor runs this after a stale wake names a usage-limit, then calls
 # fm-control.sh relaunch --harness with the printed pick. The watchdog may call
@@ -96,10 +97,15 @@ fm_quota_claude_config_dir() {  # <home-config-dir> [mate]
 fm_quota_claude_mcp_in_file() {  # <file>
   jq -e '(.mcpServers | type == "object" and length > 0)
          or (.enabledMcpjsonServers | type == "array" and length > 0)
-         or ((.projects // {}) | to_entries
-             | map(.value.mcpServers | select(type == "object" and length > 0))
-             | length > 0)' \
+         or ((.projects // {}) | type == "object"
+             and (to_entries
+                  | map(.value.mcpServers | select(type == "object" and length > 0))
+                  | length > 0))' \
     "$1" >/dev/null 2>&1
+}
+
+fm_quota_claude_projects_unreadable() {  # <file>
+  jq -e '.projects != null and (.projects | type != "object")' "$1" >/dev/null 2>&1
 }
 
 # Prints the blocking signal and returns 0 when <file> is unreadable or any
@@ -175,6 +181,10 @@ fm_quota_claude_tooling_signal() {  # <config-dir> [worktree]
       printf '%s\n' "unreadable $f"
       return 0
     fi
+    if fm_quota_claude_projects_unreadable "$f"; then
+      printf '%s\n' "unreadable $f"
+      return 0
+    fi
     if fm_quota_claude_mcp_in_file "$f"; then
       printf '%s\n' "MCP servers in $f"
       return 0
@@ -197,6 +207,10 @@ fm_quota_claude_tooling_signal() {  # <config-dir> [worktree]
         return 0
       fi
       if ! jq -e 'type=="object"' "$f" >/dev/null 2>&1; then
+        printf '%s\n' "unreadable $f"
+        return 0
+      fi
+      if fm_quota_claude_projects_unreadable "$f"; then
         printf '%s\n' "unreadable $f"
         return 0
       fi
