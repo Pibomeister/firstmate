@@ -75,6 +75,7 @@ These checks run on every pass as well:
   A window later, the oldest unsettled decision goes to a council of blind seats, at most `council-per-pass` per home per pass and once per decision per `council-secs`.
   A unanimous `PROCEED` writes a ruling file under `data/watchdog/rulings/` and nudges the session to apply it; anything short of unanimity holds.
 - A task whose latest status is a quota pause or block, or a pane showing a usage-limit picker, gets a nudge that names the eligible candidate from `reroute-candidates` when `quota-axi` and `bin/fm-quota-reroute.sh` find one.
+  Account-wide skills, agents, commands, plugins, and enabledPlugins do not block that pick.
   The supervisor relaunches onto that pick.
   The watchdog never changes the runtime.
   The live runbook is [`verification/quota-reroute.md`](verification/quota-reroute.md).
