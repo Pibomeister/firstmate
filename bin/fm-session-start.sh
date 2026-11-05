@@ -8,7 +8,8 @@
 # data/projects.md, data/secondmates.md, data/captain.md,
 # data/captain-shared.md, data/learnings.md, then run
 # fm-lock.sh, fm-wake-drain.sh, then read data/backlog.md, every state/*.meta,
-# and every state/*.status.
+# and every state/*.status. The digest now prints one line per live task and
+# points at bin/fm-crew-state.sh for full detail.
 # Every one of those reads is UNCONDITIONAL at every session start, so they
 # belong in a script, not in N agent turns.
 #
@@ -58,18 +59,21 @@
 #   5. read-once contract - the do-not-re-read contract covering every source
 #                       represented by the two digests below.
 #   6. fleet digest   - a compact data/backlog.md identity/metadata listing,
-#                       every state/*.meta, a bounded state/*.status tail,
-#                       the away posture (state/.afk-contract and the legacy
-#                       state/.afk daemon flag), and a cheap per-task
-#                       endpoint-liveness read, each bounded and crash-
-#                       isolated so one task's read can never abort the
-#                       digest: read-only, always runs. The per-task reads
-#                       run serially, so with a wedged backend the stage's
-#                       ceiling is tasks x the per-read bound
-#                       (FM_SESSION_START_ENDPOINT_TIMEOUT, default 10s) and
-#                       can itself reach the digest's runtime bound. It ends
-#                       with the dispatch ledger's `overdue` lines, when any
-#                       (bin/fm-dispatch-log.sh).
+#                       one line per live task (id, project, last recorded
+#                       state, recorded PR URL, age, and a bounded per-task
+#                       endpoint-liveness read folded into that same line),
+#                       one line per orphan status log, the away posture
+#                       (state/.afk-contract and the legacy state/.afk daemon
+#                       flag): read-only, always runs. Full per-task detail
+#                       stays on demand (bin/fm-crew-state.sh <id> for the
+#                       reconciled state; the raw state/<id>.meta and
+#                       state/<id>.status files for the records). The
+#                       per-task endpoint reads run serially, so with a
+#                       wedged backend the stage's ceiling is tasks x the
+#                       per-read bound (FM_SESSION_START_ENDPOINT_TIMEOUT,
+#                       default 10s) and can itself reach the digest's
+#                       runtime bound. It ends with the dispatch ledger's
+#                       `overdue` lines, when any (bin/fm-dispatch-log.sh).
 #   7. network checks - the result of the deferred network stage started back at
 #                       step 1, harvested WITHOUT waiting for it.
 #   8. context digest - docs/learnings/overnight-learnings.md, data/projects.md,
@@ -182,11 +186,14 @@
 # compatible tasks-axi is available, or `data/backlog.md` when the file body is
 # truly needed.
 #
-# STATUS TAILS: FM_SESSION_START_STATUS_TAIL bounds how many lines each task's
-# tail prints, and bin/fm-line-cap-lib.sh bounds how long each of those lines
-# may be. Both bounds are safe because the section prints every task's full
-# status log path, and AGENTS.md section 8 treats a status line as a wake EVENT
-# rather than current state - bin/fm-crew-state.sh owns current state.
+# WORK-UNDER-WAY LINES: the fleet digest prints exactly one line per live
+# task - id, project, last recorded state word, recorded PR URL, age, and the
+# endpoint verdict - instead of the full meta body plus a status tail it used
+# to re-print. A status line is a wake EVENT rather than current state
+# (AGENTS.md section 8), so the state word is only the last recorded event;
+# bin/fm-crew-state.sh <id> owns the reconciled current state, and the raw
+# state/<id>.meta and state/<id>.status files hold the full records. The
+# section header prints that pointer once, so no per-task tail is needed.
 #
 # RUNTIME BOUND: the digest is now executed through a native session-open
 # adapter (see bin/fm-sessionstart-run.sh), which blocks either hook-driven
@@ -385,8 +392,8 @@ PRIMARY_HARNESS=$("$SCRIPT_DIR/fm-harness.sh" 2>/dev/null || printf unknown)
 . "$SCRIPT_DIR/fm-trace-context-lib.sh"
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"
-# shellcheck source=bin/fm-line-cap-lib.sh
-. "$SCRIPT_DIR/fm-line-cap-lib.sh"
+# shellcheck source=bin/fm-classify-lib.sh
+. "$SCRIPT_DIR/fm-classify-lib.sh"
 # shellcheck source=bin/fm-hold-reason-lib.sh
 . "$SCRIPT_DIR/fm-hold-reason-lib.sh"
 
@@ -402,12 +409,10 @@ PRIMARY_HARNESS=$("$SCRIPT_DIR/fm-harness.sh" 2>/dev/null || printf unknown)
 if fm_tasks_axi_compatible; then TASKS_AXI_COMPATIBLE=1; else TASKS_AXI_COMPATIBLE=0; fi
 TASKS_AXI_CHECK_REASON=$(fm_tasks_axi_check_reason)
 
-STATUS_TAIL=${FM_SESSION_START_STATUS_TAIL:-5}
-case "$STATUS_TAIL" in ''|*[!0-9]*) STATUS_TAIL=5 ;; esac
 QUEUED_LIMIT=${FM_SESSION_START_QUEUED_LIMIT:-20}
 case "$QUEUED_LIMIT" in ''|*[!0-9]*|0) QUEUED_LIMIT=20 ;; esac
 # One per-task endpoint read may never outlive this bound: a hung backend CLI
-# becomes that task's endpoint: error line instead of the digest's whole
+# becomes that task's endpoint=error field instead of the digest's whole
 # runtime budget.
 ENDPOINT_TIMEOUT=${FM_SESSION_START_ENDPOINT_TIMEOUT:-10}
 case "$ENDPOINT_TIMEOUT" in ''|*[!0-9]*) ENDPOINT_TIMEOUT=10 ;; esac
@@ -578,17 +583,63 @@ print_backlog_compact() {
   fi
 }
 
-print_status_tail() {
-  local status=$1 line
-  printf 'status tail (last %s line(s), each capped at %s characters, wake-EVENT history, not current state; full log: %s):\n' \
-    "$STATUS_TAIL" "$FM_LINE_CAP_DEFAULT" "$status"
-  # A crewmate writes its own status lines, so their length is unbounded: one
-  # observed line ran 865 characters. Cap each one the way the wake digest's
-  # OPEN DECISIONS section does; the lede carries the state word and the key,
-  # and the full log path above reaches the rest.
-  while IFS= read -r line || [ -n "$line" ]; do
-    fm_cap_line "$line"
-  done < <(tail -n "$STATUS_TAIL" "$status")
+# fm_task_state_word <status-file>: the leading state word of the last
+# recorded status event (working, done, paused, ...), or "unknown" when the
+# task has no status file yet. This is the last EVENT word, not reconciled
+# current state - bin/fm-crew-state.sh owns that.
+fm_task_state_word() {  # <status-file>
+  local status=$1 word
+  [ -f "$status" ] || { printf 'unknown'; return 0; }
+  word=$(tail -n 1 "$status" 2>/dev/null | awk 'NR==1 { w=$1; sub(/:$/, "", w); sub(/^\[/, "", w); print w }')
+  case "$word" in ''|*[!a-z-]*) printf 'unknown' ;; *) printf '%s' "$word" ;; esac
+}
+
+# fm_task_pr_url <meta> <status-file>: the recorded PR URL - pr= in the meta
+# when present, otherwise the last PR URL on the task's latest done: (ready)
+# status line, or "-". Other status lines never supply it: a working: or
+# paused: line may name someone else's PR.
+fm_task_pr_url() {  # <meta> <status-file>
+  local meta=$1 status=$2 pr line verb ready=
+  pr=$(fm_meta_get "$meta" pr)
+  if [ -z "$pr" ] && [ -f "$status" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do
+      status_line_verb "$line" verb
+      [ "$verb" = "done" ] && ready=$line
+    done < "$status"
+    [ -z "$ready" ] || pr=$(printf '%s\n' "$ready" | grep -oE 'https://[^[:space:]]+/pull/[0-9]+' | tail -n 1 || true)
+  fi
+  [ -n "$pr" ] && printf '%s' "$pr" || printf '-'
+}
+
+# fm_task_age <meta>: age since spawn (spawn_gen epoch, else the meta file's
+# mtime) as Nd/Nh/Nm, or "-" when neither is readable.
+fm_task_age() {  # <meta>
+  local meta=$1 gen epoch now secs mtime
+  gen=$(fm_meta_get "$meta" spawn_gen)
+  epoch=${gen#s}
+  epoch=${epoch%%.*}
+  case "$epoch" in ''|*[!0-9]*) epoch= ;; esac
+  if [ -z "$epoch" ]; then
+    mtime=$(stat -f %m "$meta" 2>/dev/null || stat -c %Y "$meta" 2>/dev/null || true)
+    case "$mtime" in ''|*[!0-9]*) printf '-'; return 0 ;; esac
+    epoch=$mtime
+  fi
+  now=$(date +%s 2>/dev/null || printf '')
+  case "$now" in ''|*[!0-9]*) printf '-'; return 0 ;; esac
+  secs=$((now - epoch))
+  [ "$secs" -ge 0 ] 2>/dev/null || secs=0
+  if [ "$secs" -ge 86400 ]; then printf '%dd' $((secs / 86400));
+  elif [ "$secs" -ge 3600 ]; then printf '%dh' $((secs / 3600));
+  elif [ "$secs" -ge 60 ]; then printf '%dm' $((secs / 60));
+  else printf '%ds' "$secs"; fi
+}
+
+# fm_task_project_label <meta>: the recorded project's basename, or "-".
+fm_task_project_label() {  # <meta>
+  local meta=$1 project
+  project=$(fm_meta_get "$meta" project)
+  project=${project%/}
+  [ -n "$project" ] && printf '%s' "${project##*/}" || printf '-'
 }
 
 # fm_session_start_endpoint_read <backend> <target> [expected-label]: ONE
@@ -922,11 +973,15 @@ fi
 stage read-once
 section "READ-ONCE CONTRACT"
 cat <<'EOF'
-Everything below is printed in full for this session start: every state/*.meta,
-a compact data/backlog.md listing, a bounded tail of every state/*.status,
-data/projects.md, data/secondmates.md, data/captain.md, data/captain-shared.md,
-and data/learnings.md, plus the tracked docs/learnings/overnight-learnings.md
-under the code root.
+Everything below is printed for this session start: a compact
+data/backlog.md listing, one line per live task (id, project, last recorded
+state, recorded PR URL, age, endpoint verdict) with one line per orphan
+status log, data/projects.md, data/secondmates.md, data/captain.md,
+data/captain-shared.md, and data/learnings.md, plus the tracked
+docs/learnings/overnight-learnings.md under the code root. Full per-task
+records are not re-printed here: bin/fm-crew-state.sh <id> shows the
+reconciled detail, and state/<id>.meta plus state/<id>.status hold the raw
+records.
 Do NOT re-read any of them after reading this digest, and do NOT bulk-read
 data/backlog.md or state/*.status: re-reading everything defeats the entire
 point of this command.
@@ -934,9 +989,9 @@ point of this command.
 Go to a source directly only when:
   - this digest flagged it ABSENT (then rebuild or create it per AGENTS.md),
   - its contents looked unparseable or corrupt,
-  - an individual full status log is needed for older wake-event history, or a
-    status line was capped and its tail matters (each task's full log path is
-    printed with its tail),
+  - an individual task's full detail is needed (bin/fm-crew-state.sh <id> for
+    the reconciled state, or state/<id>.meta and state/<id>.status for the raw
+    records and older wake-event history),
   - a full task body is needed (bin/fm-tasks-axi.sh show <id> --full, or data/backlog.md),
   - the backlog listing disclosed omitted queued items and this turn needs them,
   - the NETWORK CHECKS section reported its checks still IN PROGRESS and this
@@ -958,14 +1013,14 @@ section "FLEET STATE"
 print_backlog_compact "$DATA/backlog.md" "data/backlog.md"
 
 subsection "Work under way (state/*.meta)"
+printf 'One line per live task: id, project, last recorded state, PR URL, age, endpoint.\n'
+printf 'Full detail: bin/fm-crew-state.sh <id> (reconciled state); raw records: state/<id>.meta and state/<id>.status.\n'
 META_FOUND=0
 for meta in "$STATE"/*.meta; do
   [ -f "$meta" ] || continue
   META_FOUND=1
   id=$(basename "$meta" .meta)
-  printf '\n--- %s ---\n' "$id"
-  cat "$meta"
-
+  status="$STATE/$id.status"
   window=$(fm_meta_get "$meta" window)
   target=$(fm_backend_target_of_meta "$meta")
   if [ -n "$window" ]; then
@@ -976,35 +1031,30 @@ for meta in "$STATE"/*.meta; do
     # the bound firing and >=128 is a signal death. Every other nonzero status
     # is the probe's own verdict that the endpoint is gone.
     if [ "$endpoint_rc" -eq 0 ]; then
-      printf 'endpoint: alive (backend=%s window=%s)\n' "$backend" "$window"
+      endpoint='alive'
     elif [ "$endpoint_rc" -eq 124 ] || [ "$endpoint_rc" -ge 128 ]; then
-      printf 'endpoint: error (backend=%s window=%s - the endpoint read died or hit its %ss bound; the digest continued past it)\n' \
-        "$backend" "$window" "$ENDPOINT_TIMEOUT"
+      endpoint='error'
     else
-      printf 'endpoint: dead (backend=%s window=%s)\n' "$backend" "$window"
+      endpoint='dead'
     fi
   else
-    printf 'endpoint: unknown (no window recorded)\n'
+    endpoint='unknown'
   fi
-
-  status="$STATE/$id.status"
-  if [ -f "$status" ]; then
-    print_status_tail "$status"
-  else
-    printf 'status tail: (no status file yet: %s)\n' "$status"
-  fi
+  printf '%s project=%s state=%s pr=%s age=%s endpoint=%s\n' \
+    "$id" "$(fm_task_project_label "$meta")" "$(fm_task_state_word "$status")" \
+    "$(fm_task_pr_url "$meta" "$status")" "$(fm_task_age "$meta")" "$endpoint"
 done
 [ "$META_FOUND" -eq 1 ] || printf '(none)\n'
 
 subsection "Orphan status logs (state/*.status without matching .meta)"
+printf 'One line per orphan log: id and last recorded state. Full log: state/<id>.status.\n'
 ORPHAN_STATUS_FOUND=0
 for status in "$STATE"/*.status; do
   [ -f "$status" ] || continue
   id=$(basename "$status" .status)
   [ -f "$STATE/$id.meta" ] && continue
   ORPHAN_STATUS_FOUND=1
-  printf '\n--- %s ---\n' "$id"
-  print_status_tail "$status"
+  printf '%s state=%s\n' "$id" "$(fm_task_state_word "$status")"
 done
 [ "$ORPHAN_STATUS_FOUND" -eq 1 ] || printf '(none)\n'
 

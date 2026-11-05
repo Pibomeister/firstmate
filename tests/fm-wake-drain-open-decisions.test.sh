@@ -178,10 +178,9 @@ test_status_symlink_is_not_followed() {
   pass "the fleet-wide decision scan does not follow status symlinks"
 }
 
-# The per-item cut now comes from bin/fm-line-cap-lib.sh, shared with the
-# session-start digest's status tails so one truncation marker means the same
-# thing wherever an agent meets it. This pins the drain's own end of that
-# contract: the lede survives, the marker appears, and the item still fits the
+# The per-item cut comes from bin/fm-line-cap-lib.sh, the one owner of the
+# bounded-line shape and its truncation marker. This pins the drain's end of
+# that contract: the lede survives, the marker appears, and the item still fits the
 # section's per-item budget including the newline it is charged for.
 test_over_long_decision_note_is_capped_with_a_marker() {
   local dir state out line longest
