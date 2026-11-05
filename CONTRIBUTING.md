@@ -32,12 +32,37 @@ GitHub Actions and Dependabot are exempt so their automation keeps working, but 
 
 ### The `full-ci` label
 
-CI on a pull request from an author without write access runs only the quick checks at first: `Test coverage guard`, `Repo invariants`, and the no-mistakes body check.
+CI on a pull request from an author without write access runs only the skip-set jobs at first, plus the no-mistakes body check.
+The skip-set job list is in [Which CI jobs run](#which-ci-jobs-run).
 Lint and the behavior suites wait for a maintainer, or the maintainer's fleet, to add the `full-ci` label when the pull request is picked up for review.
 Until then the `Full suite` check fails with a message naming the label; that is expected and needs no action from you.
 Adding the label runs the full suite, and every later push to that pull request runs it again.
 This keeps the repository's public CI within GitHub's limit on jobs running at once, while no-mistakes already reviews, tests, and lints your change locally.
 Pull requests from this repository's own branches or from authors with write access run the full suite without the label.
+
+### Which CI jobs run
+
+`bin/fm-ci-select.sh` classifies a pull request's changed paths.
+A push to `main` is always the full suite.
+The classifier prints `mode=skip` only when the path list is non-empty, every path exists, and every path is on the skip allowlist in that script's header.
+A deleted or missing path, any other path, or an empty list, is `mode=full`.
+`git diff --name-only --no-renames` feeds the classifier, so a rename lists both the old and new paths.
+The workflow forces `mode=full` before it trusts the classifier when the diff includes `bin/fm-ci-select.sh`, `bin/fm-test-run.sh`, or `.github/`.
+
+| Paths | Jobs that run |
+| --- | --- |
+| every changed path is on the skip allowlist | `CI path select`, `Test coverage guard`, `Repo invariants`, `Full suite` (pass) |
+| any other path, including `.cursor/`, `README.md`, `docs/herdr-backend.md`, and a deleted `bin/` helper | every job in `.github/workflows/ci.yml` |
+
+`bin/fm-ci-select.sh --list-skip` prints that header's exact path list.
+`Repo invariants` runs `bin/fm-doc-audience-check.sh` on skip, so a broken link, anchor, or owner pointer in those glob-read docs fails `Full suite`.
+`tests/fm-ci-select.test.sh` fails unless each allowlisted path is unread or covered by that skip-mode check.
+
+A mixed diff that includes any non-allowlisted path is full.
+The outside-PR `full-ci` gate still applies on top of this table: an unlabelled outside pull request runs only the skip-set jobs, and `Full suite` fails naming the label even when the paths would skip.
+`Full suite` passes on an intended path skip.
+A skipped lint or behavior lane while `mode=full` fails `Full suite`.
+The no-mistakes check is a separate workflow and does not follow this table.
 
 See the [no-mistakes quick start](https://kunchenguid.github.io/no-mistakes/start-here/quick-start/) for the full first-run walkthrough.
 
@@ -58,7 +83,10 @@ Require the actual job contexts: `Full suite`, `Lint 1`, `Lint 2`, `Lint 3`, `Te
 Uncomment the job before putting that check back on the ruleset.
 The last name is the compliance job context, not its workflow title; its existing automation exceptions remain unchanged.
 The timing aggregate is not a substitute for individual jobs because it can succeed while collecting evidence from a failed run.
-The individual lanes skip on an outside pull request until it has the `full-ci` label, and a skipped job satisfies a required check, so `Full suite` must be required too: it fails until the label is on and whenever a lane failed or was cancelled.
+The individual lanes skip on an outside pull request until it has the `full-ci` label, and on a path skip they skip for trusted pull requests too.
+A skipped job satisfies a required check, so `Full suite` must be required too: it fails until the label is on, whenever a lane failed or was cancelled, and whenever a lane was skipped while `bin/fm-ci-select.sh` printed `mode=full`.
+It passes on an intended path skip.
+See [Which CI jobs run](#which-ci-jobs-run).
 
 Apply the approved rule change only after the corresponding workflow is green and landed, confirming exact names and the Actions integration id from real checks first.
 Snapshot the current ruleset, amend that same rule with the authenticated GitHub API or settings UI, and read back both the ruleset and effective branch rules.
@@ -146,6 +174,7 @@ Its header and `--help` own the flags, family labels, lanes, and changed-file ma
 Portable shard balance evidence lives in `docs/fm-test-portable-shards.md`.
 Family selection is the ordinary local path; `--all` is deliberate full regression only.
 CI owns broad regression across required portable parallel shards, the portable serial lane's separate-runner shards, the Herdr lane, lint, invariants, and the coverage guard in [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+Path skip is in [Which CI jobs run](#which-ci-jobs-run).
 The stock macOS Bash job is commented out there as of 2026-11-04.
 Uncomment it to restore that lane.
 Pushing a new head to a pull request cancels that pull request's still-running CI so only the current head is validated, and a newer push to `main` cancels the older `main` run so only the newest merge's run finishes; the workflow owns that contract, the `full-ci` gate described under [The `full-ci` label](#the-full-ci-label), and their rationale.

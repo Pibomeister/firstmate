@@ -21,6 +21,10 @@
 # every scheduled job runs exactly as before. FM_CI_SKIP_MACOS remains in the
 # commented-out macos-stock-bash job and currently changes nothing.
 #
+# They also hold the path skip: bin/fm-ci-select.sh mode=skip drops lint and
+# the behavior lanes, Full suite passes, and a skipped lane while mode=full
+# fails the verdict.
+#
 # The workflow is parsed as YAML and its concurrency and job-level `if`
 # expressions are resolved against simulated pull_request and push contexts,
 # so the assertions describe what GitHub would do, not how the file happens
@@ -173,10 +177,12 @@ end
 # fork variables unset, and needed jobs successful. Short keys: event, action,
 # label (the label an event adds), labels (comma-separated labels on the PR),
 # association, head (head repository), number, run_id, skip_push, skip_macos,
-# needs (success, failure, or cancelled: the needed jobs' results that job
-# conditions and the Full suite verdict read), outcome (how every job that runs
-# concludes, read only by published_checks). A push event clears the PR fields,
-# which GitHub leaves empty there. Each resolver prepends this.
+# mode (select job output: full or skip; default full so trusted runs keep
+# every lane), needs (success, failure, cancelled, or skipped: the needed
+# jobs' results that job conditions and the Full suite verdict read), outcome
+# (how every job that runs concludes, read only by published_checks). A push
+# event clears the PR fields, which GitHub leaves empty there. Each resolver
+# prepends this.
 # shellcheck disable=SC2016  # Ruby text, not shell expansions
 CONTEXT_RUBY='
 def simulated_context(workflow_name, overrides)
@@ -184,7 +190,7 @@ def simulated_context(workflow_name, overrides)
     "event" => "pull_request", "action" => "synchronize", "label" => "",
     "labels" => "", "association" => "NONE", "head" => "contributor/firstmate",
     "number" => "108", "run_id" => "900001", "skip_push" => "", "skip_macos" => "",
-    "needs" => "success", "outcome" => "success",
+    "mode" => "full", "needs" => "success", "outcome" => "success",
   }
   if overrides.any? { |pair| pair == "event=push" }
     o.merge!("action" => "", "association" => "", "head" => "", "number" => "")
@@ -209,6 +215,7 @@ def simulated_context(workflow_name, overrides)
     "vars.FM_CI_SKIP_MACOS" => o["skip_macos"],
     "needs.status" => o["needs"],
     "needs.*.result" => [o["needs"]],
+    "needs.select.outputs.mode" => o["mode"],
     "simulated.outcome" => o["outcome"],
   }
 end
@@ -331,7 +338,7 @@ puts YAML.load_file(ARGV[0]).fetch("jobs").fetch(ARGV[1]).fetch("timeout-minutes
 # Tier membership is the executable inventory of the timeout policy: a new job
 # must join a tier, and a job-level value outside these tiers is exactly the
 # one-off number the policy removed.
-FAST_TIER_JOBS='test-coverage invariants tests-timing-aggregate full-suite'
+FAST_TIER_JOBS='select test-coverage invariants tests-timing-aggregate full-suite'
 NORMAL_TIER_JOBS='lint tests-portable-parallel-1 tests-portable-parallel-2 tests-portable-serial'
 HEAVY_TIER_JOBS='tests-herdr'
 
@@ -416,7 +423,7 @@ test_only_the_full_ci_label_joins_the_pr_group() {
   pass "only the full-ci label joins and supersedes the PR's group; other labels cancel nothing"
 }
 
-QUICK_JOBS='test-coverage invariants full-suite'
+QUICK_JOBS='select test-coverage invariants full-suite'
 
 # DOP-167 direction A: an outside PR without the label runs only the quick
 # checks and the Full suite verdict, which fails naming the label.
@@ -520,7 +527,7 @@ test_unrelated_label_never_masks_an_earlier_failure() {
       case "$expect:$name" in
         all-failed:*) want=failure ;;
         waiting:'Full suite') want=failure ;;
-        waiting:'Test coverage guard'|waiting:'Repo invariants') want=success ;;
+        waiting:'CI path select'|waiting:'Test coverage guard'|waiting:'Repo invariants') want=success ;;
         waiting:*) want=skipped ;;
       esac
       [ "$conclusion" = "$want" ] \
@@ -716,12 +723,177 @@ RUBY
   pass "CI matrices cover every executable serial lane and canonical lint root exactly once"
 }
 
+# Path skip: a trusted PR whose classifier printed skip runs the same cheap
+# jobs as an unlabelled outside PR, but Full suite passes. Main still runs
+# every job because the select job forces mode=full on push.
+# Write the invariants skip-docs step's run script, then execute it in a
+# fixture whose skip-check command is a stub so a missing call is a miss.
+write_invariants_skip_docs_script() {
+  local dest=$1
+  # shellcheck disable=SC2016  # Ruby text, not a shell expansion
+  ruby -ryaml -e '
+doc = YAML.load_file(ARGV[0])
+script = doc.fetch("jobs").fetch("invariants").fetch("steps").find { |s| s["id"] == "skip-docs" }.fetch("run")
+File.write(ARGV[1], script)
+' "$CI_WORKFLOW" "$dest"
+}
+
+test_invariants_runs_skip_mode_checks() {
+  local tmp repo script stamp check
+  tmp=$(fm_test_tmproot fm-ci-invariants-skip-docs)
+  repo=$tmp/repo
+  script=$tmp/skip-docs.sh
+  mkdir -p "$repo/bin"
+  write_invariants_skip_docs_script "$script"
+  while IFS= read -r check; do
+    [ -n "$check" ] || continue
+    mkdir -p "$repo/$(dirname "$check")"
+    stamp=$tmp/$(printf '%s' "$check" | tr / _)
+    printf '%s\n' '#!/bin/sh' "echo called >\"$stamp\"" >"$repo/$check"
+    chmod +x "$repo/$check"
+  done < <("$ROOT/bin/fm-ci-select.sh" --list-skip-checks)
+  (cd "$repo" && bash "$script") || fail "the invariants skip-docs step failed in $repo"
+  while IFS= read -r check; do
+    [ -n "$check" ] || continue
+    stamp=$tmp/$(printf '%s' "$check" | tr / _)
+    grep -qx called "$stamp" \
+      || fail "the invariants skip-docs step must invoke $check"
+  done < <("$ROOT/bin/fm-ci-select.sh" --list-skip-checks)
+  pass "Repo invariants runs every skip-mode documentation check"
+}
+
+test_path_skip_runs_only_quick_checks() {
+  local actual out
+  actual=$(jobs_running_under association=OWNER mode=skip | tr '\n' ' ') \
+    || fail "could not resolve path-skip jobs"
+  [ "$actual" = "$QUICK_JOBS " ] \
+    || fail "a trusted docs-only PR must run only $QUICK_JOBS, ran: $actual"
+  out=$(run_full_suite_verdict association=OWNER mode=skip needs=skipped) \
+    || fail "the Full suite verdict must pass on an intended path skip:"$'\n'"$out"
+  printf '%s\n' "$out" | grep -q 'skipped for this path set' \
+    || fail "the path-skip pass must name the skip, got:"$'\n'"$out"
+  pass "a trusted path-skip PR runs only the quick checks and a passing Full suite"
+}
+
+test_unintended_skip_fails_the_verdict() {
+  local out
+  if out=$(run_full_suite_verdict association=OWNER mode=full needs=skipped); then
+    fail "the Full suite verdict must fail when a required lane was skipped:"$'\n'"$out"
+  fi
+  printf '%s\n' "$out" | grep -q 'skipped while the path set required the full suite' \
+    || fail "the unintended-skip failure must name the missed lane, got:"$'\n'"$out"
+  pass "a skipped lane while mode=full fails Full suite"
+}
+
+test_path_skip_still_fails_when_a_quick_check_failed() {
+  local out
+  if out=$(run_full_suite_verdict association=OWNER mode=skip needs=failure); then
+    fail "the Full suite verdict must fail on a path skip when a job failed:"$'\n'"$out"
+  fi
+  pass "a path skip still fails Full suite when a job failed"
+}
+
+test_outside_pr_path_skip_still_names_full_ci() {
+  local out
+  if out=$(run_full_suite_verdict mode=skip needs=skipped); then
+    fail "an unlabelled outside PR must not pass Full suite just because paths skip:"$'\n'"$out"
+  fi
+  printf '%s\n' "$out" | grep -q 'full-ci' \
+    || fail "the outside-PR failure must still name the full-ci label, got:"$'\n'"$out"
+  pass "path skip does not waive the full-ci gate on an outside PR"
+}
+
+# Write the select job's run script with GitHub expressions already
+# substituted, then execute it in a fixture so a stub classifier cannot
+# skip a diff that touches the classifier, the changed-path map, or CI
+# config. Forcing full in the workflow is simpler than checking out the
+# base SHA's classifier: those paths already require the full suite.
+write_select_step_script() {
+  local dest=$1 event=$2 base=$3
+  # shellcheck disable=SC2016  # Ruby text, not a shell expansion
+  ruby -ryaml -e '
+doc = YAML.load_file(ARGV[0])
+script = doc.fetch("jobs").fetch("select").fetch("steps").find { |s| s["id"] == "select" }.fetch("run")
+script = script.gsub("${{ github.event_name }}", ARGV[2])
+script = script.gsub("${{ github.event.pull_request.base.sha }}", ARGV[3])
+File.write(ARGV[1], script)
+' "$CI_WORKFLOW" "$dest" "$event" "$base"
+}
+
+run_select_step() {
+  local repo=$1 script=$2 github_output=$3
+  : >"$github_output"
+  (cd "$repo" && GITHUB_OUTPUT="$github_output" bash "$script") \
+    || fail "the select step failed in $repo"
+}
+
+test_select_step_forces_full_for_classifier_ci_and_map() {
+  local tmp repo base script github_output path
+  tmp=$(fm_test_tmproot fm-ci-select-step)
+  repo=$tmp/repo
+  script=$tmp/select.sh
+  github_output=$tmp/github-output
+  fm_git_init_commit "$repo"
+  mkdir -p "$repo/bin" "$repo/.github/workflows"
+  printf '%s\n' '#!/bin/sh' 'echo mode=skip' >"$repo/bin/fm-ci-select.sh"
+  printf 'runner\n' >"$repo/bin/fm-test-run.sh"
+  printf 'name: x\n' >"$repo/.github/workflows/ci.yml"
+  chmod +x "$repo/bin/fm-ci-select.sh"
+  git -C "$repo" add bin .github
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm seed
+  base=$(git -C "$repo" rev-parse HEAD)
+  write_select_step_script "$script" pull_request "$base"
+
+  for path in bin/fm-ci-select.sh bin/fm-test-run.sh .github/workflows/ci.yml; do
+    git -C "$repo" checkout -q "$base"
+    printf 'changed\n' >>"$repo/$path"
+    git -C "$repo" add "$path"
+    git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm "$path"
+    run_select_step "$repo" "$script" "$github_output"
+    grep -qx 'mode=full' "$github_output" \
+      || fail "the select step must force mode=full for $path, got $(cat "$github_output")"
+  done
+
+  git -C "$repo" checkout -q "$base"
+  printf 'more\n' >>"$repo/README.md"
+  git -C "$repo" add README.md
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm readme
+  run_select_step "$repo" "$script" "$github_output"
+  grep -qx 'mode=skip' "$github_output" \
+    || fail "the select step must trust the classifier for README.md, got $(cat "$github_output")"
+  pass "the select step forces full for the classifier, map, and CI config before trusting HEAD"
+}
+
+test_select_step_forces_full_on_push() {
+  local tmp repo script github_output
+  tmp=$(fm_test_tmproot fm-ci-select-push)
+  repo=$tmp/repo
+  script=$tmp/select.sh
+  github_output=$tmp/github-output
+  fm_git_init_commit "$repo"
+  mkdir -p "$repo/bin"
+  printf '%s\n' '#!/bin/sh' 'echo mode=skip' >"$repo/bin/fm-ci-select.sh"
+  chmod +x "$repo/bin/fm-ci-select.sh"
+  write_select_step_script "$script" push unused
+  run_select_step "$repo" "$script" "$github_output"
+  [ "$(cat "$github_output")" = mode=full ] \
+    || fail "a push must write exactly mode=full, got $(cat "$github_output")"
+  pass "the select step forces mode=full on push before the classifier runs"
+}
+
 test_ci_matrices_match_executable_partitions
 test_pr_pushes_supersede_within_one_pr
 test_separate_prs_do_not_cancel_each_other
 test_main_pushes_keep_only_the_newest_run
 test_only_the_full_ci_label_joins_the_pr_group
 test_outside_pr_without_label_runs_only_quick_checks
+test_invariants_runs_skip_mode_checks
+test_path_skip_runs_only_quick_checks
+test_unintended_skip_fails_the_verdict
+test_path_skip_still_fails_when_a_quick_check_failed
+test_outside_pr_path_skip_still_names_full_ci
+test_select_step_forces_full_for_classifier_ci_and_map
+test_select_step_forces_full_on_push
 test_full_ci_label_runs_the_whole_suite
 test_trusted_runs_are_unchanged
 test_unrelated_label_starts_no_job

@@ -41,6 +41,18 @@ concurrency:
 # at the trigger stays pending and blocks the merge. CONTRIBUTING.md documents
 # the variables.
 #
+# Path skip: bin/fm-ci-select.sh classifies a pull request's changed paths.
+# mode=skip drops lint and the behavior lanes. Coverage, invariants, the
+# classifier job, and Full suite still run, and Full suite passes. mode=full,
+# including every push to main, keeps those lanes. Skip is an explicit
+# allowlist. Glob-read allowlisted docs still fail the suite because
+# Repo invariants runs bin/fm-doc-audience-check.sh. A missing path is
+# full.
+# The workflow forces full when the diff includes the classifier, the
+# changed-path map, or .github/, before it trusts the pull request's
+# classifier. Heavy jobs read needs.select.outputs.mode so an intended
+# skip is a skipped check, not a pending one.
+#
 # Outside pull request gate: the full suite (lint, every test lane, and
 # the timing aggregate) runs on main pushes, PRs from this repository's own
 # branches, PRs whose author has write access (OWNER, MEMBER, COLLABORATOR),
@@ -56,10 +68,53 @@ concurrency:
 # "Not run for label - " name prefix instead. The condition is repeated per job
 # for the same reason as the fork opt-out; CONTRIBUTING.md documents the label.
 jobs:
+  # Classifies the pull request path set. Pushes to main are always full.
+  # The workflow also forces full when the diff includes the classifier,
+  # the changed-path map, or CI config, so a pull request cannot skip those
+  # lanes by editing the classifier. A skipped heavy lane is then an
+  # intended skip only when this output is skip.
+  select:
+    name: ${{ (github.event.action == 'labeled' && github.event.label.name != 'full-ci') && 'Not run for label - ' || '' }}CI path select
+    runs-on: ubuntu-24.04
+    if: ${{ !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') && !(github.event.action == 'labeled' && github.event.label.name != 'full-ci') }}
+    # Fast tier: git diff plus the skip allowlist.
+    timeout-minutes: 5
+    outputs:
+      mode: ${{ steps.select.outputs.mode }}
+    steps:
+      - uses: actions/checkout@v6
+        if: github.event_name == 'pull_request'
+        with:
+          fetch-depth: 0
+      - id: select
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = push ]; then
+            echo "mode=full" >> "$GITHUB_OUTPUT"
+            echo "fm-ci-select: mode=full (push to main)" >&2
+            exit 0
+          fi
+          base="${{ github.event.pull_request.base.sha }}"
+          # Simpler than checking out the base SHA's classifier: those
+          # paths already require the full suite, and this guard does not
+          # need a second tree.
+          while IFS= read -r path; do
+            [ -n "$path" ] || continue
+            case "$path" in
+              bin/fm-ci-select.sh|bin/fm-test-run.sh|.github/*)
+                echo "mode=full" >> "$GITHUB_OUTPUT"
+                echo "fm-ci-select: mode=full ($path is CI config or the classifier)" >&2
+                exit 0
+                ;;
+            esac
+          done < <(git diff --name-only --no-renames "${base}...HEAD")
+          bin/fm-ci-select.sh --base "$base" | tee -a "$GITHUB_OUTPUT"
+
   lint:
     name: ${{ (github.event.action == 'labeled' && github.event.label.name != 'full-ci') && 'Not run for label - ' || '' }}Lint ${{ matrix.partition }}
+    needs: select
     runs-on: ubuntu-24.04
-    if: ${{ !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') && !(github.event.action == 'labeled' && github.event.label.name != 'full-ci') && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'OWNER' || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'COLLABORATOR' || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
+    if: ${{ !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') && !(github.event.action == 'labeled' && github.event.label.name != 'full-ci') && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'OWNER' || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'COLLABORATOR' || contains(github.event.pull_request.labels.*.name, 'full-ci')) && needs.select.outputs.mode == 'full' }}
     # Normal tier (see the timeout policy above).
     timeout-minutes: 30
     strategy:
@@ -121,8 +176,9 @@ jobs:
   # set only. Composition owner: bin/fm-test-run.sh (docs/fm-test-portable-shards.md).
   tests-portable-parallel-1:
     name: ${{ (github.event.action == 'labeled' && github.event.label.name != 'full-ci') && 'Not run for label - ' || '' }}Behavior portable parallel 1
+    needs: select
     runs-on: ubuntu-24.04
-    if: ${{ !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') && !(github.event.action == 'labeled' && github.event.label.name != 'full-ci') && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'OWNER' || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'COLLABORATOR' || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
+    if: ${{ !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') && !(github.event.action == 'labeled' && github.event.label.name != 'full-ci') && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'OWNER' || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'COLLABORATOR' || contains(github.event.pull_request.labels.*.name, 'full-ci')) && needs.select.outputs.mode == 'full' }}
     # Normal tier (see the timeout policy above).
     timeout-minutes: 30
     steps:
@@ -166,8 +222,9 @@ jobs:
 
   tests-portable-parallel-2:
     name: ${{ (github.event.action == 'labeled' && github.event.label.name != 'full-ci') && 'Not run for label - ' || '' }}Behavior portable parallel 2
+    needs: select
     runs-on: ubuntu-24.04
-    if: ${{ !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') && !(github.event.action == 'labeled' && github.event.label.name != 'full-ci') && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'OWNER' || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'COLLABORATOR' || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
+    if: ${{ !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') && !(github.event.action == 'labeled' && github.event.label.name != 'full-ci') && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'OWNER' || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'COLLABORATOR' || contains(github.event.pull_request.labels.*.name, 'full-ci')) && needs.select.outputs.mode == 'full' }}
     # Normal tier (see the timeout policy above).
     timeout-minutes: 30
     steps:
@@ -211,8 +268,9 @@ jobs:
   # whose "ofN" disagrees with it (docs/fm-test-portable-shards.md).
   tests-portable-serial:
     name: ${{ (github.event.action == 'labeled' && github.event.label.name != 'full-ci') && 'Not run for label - ' || '' }}Behavior portable serial ${{ matrix.shard }}
+    needs: select
     runs-on: ubuntu-24.04
-    if: ${{ !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') && !(github.event.action == 'labeled' && github.event.label.name != 'full-ci') && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'OWNER' || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'COLLABORATOR' || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
+    if: ${{ !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') && !(github.event.action == 'labeled' && github.event.label.name != 'full-ci') && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'OWNER' || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'COLLABORATOR' || contains(github.event.pull_request.labels.*.name, 'full-ci')) && needs.select.outputs.mode == 'full' }}
     # Normal tier (see the timeout policy above).
     timeout-minutes: 30
     strategy:
@@ -282,8 +340,9 @@ jobs:
   # the failure evidence and move the job to macOS rather than skip assertions.
   tests-herdr:
     name: ${{ (github.event.action == 'labeled' && github.event.label.name != 'full-ci') && 'Not run for label - ' || '' }}Behavior tests (Herdr)
+    needs: select
     runs-on: ubuntu-24.04
-    if: ${{ !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') && !(github.event.action == 'labeled' && github.event.label.name != 'full-ci') && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'OWNER' || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'COLLABORATOR' || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
+    if: ${{ !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') && !(github.event.action == 'labeled' && github.event.label.name != 'full-ci') && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'OWNER' || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'COLLABORATOR' || contains(github.event.pull_request.labels.*.name, 'full-ci')) && needs.select.outputs.mode == 'full' }}
     # Heavy tier (see the timeout policy above): the last-resort job backstop.
     # The family-run step below owns the hang tripwire, so a wedged suite fails
     # there with the always() cleanup and timing upload still running.
@@ -408,11 +467,12 @@ jobs:
     # Fast tier: aggregation is seconds of work over lane artifacts.
     timeout-minutes: 5
     needs:
+      - select
       - tests-portable-parallel-1
       - tests-portable-parallel-2
       - tests-portable-serial
       - tests-herdr
-    if: ${{ always() && !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') && !(github.event.action == 'labeled' && github.event.label.name != 'full-ci') && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'OWNER' || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'COLLABORATOR' || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
+    if: ${{ always() && !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') && !(github.event.action == 'labeled' && github.event.label.name != 'full-ci') && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'OWNER' || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'COLLABORATOR' || contains(github.event.pull_request.labels.*.name, 'full-ci')) && needs.select.outputs.mode == 'full' }}
     steps:
       - uses: actions/checkout@v6
       - name: Download lane timing artifacts
@@ -447,8 +507,9 @@ jobs:
 #    name: ${{ (github.event.action == 'labeled' && github.event.label.name != 'full-ci') && 'Not run for label - ' || '' }}Stock macOS Bash snapshot compatibility
 #    # This lane needs Apple's Bash 3.2, not arm64 hardware. Keep it off the
 #    # arm64 pool so capacity there cannot prevent the compatibility check.
+#    needs: select
 #    runs-on: macos-15-intel
-#    if: ${{ !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') && vars.FM_CI_SKIP_MACOS != '1' && !(github.event.action == 'labeled' && github.event.label.name != 'full-ci') && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'OWNER' || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'COLLABORATOR' || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
+#    if: ${{ !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') && vars.FM_CI_SKIP_MACOS != '1' && !(github.event.action == 'labeled' && github.event.label.name != 'full-ci') && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'OWNER' || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'COLLABORATOR' || contains(github.event.pull_request.labels.*.name, 'full-ci')) && needs.select.outputs.mode == 'full' }}
 #    # Normal tier (see the timeout policy above).
 #    timeout-minutes: 30
 #    steps:
@@ -535,19 +596,25 @@ jobs:
           fi
       - name: Agent-kit Cursor bin pin must match
         run: bin/fm-agent-kit-pin.sh
+      - id: skip-docs
+        name: Documentation audience inventory and local links
+        run: bin/fm-doc-audience-check.sh
 
   # The Full suite verdict: one check that fails until an outside PR has the
   # full-ci go-ahead and otherwise fails when any lane failed or was cancelled.
-  # It runs even when every lane is skipped, because a skipped job would read
-  # as passing. On an unrelated label event it skips under the prefixed name
-  # like every other job: that run is never cancelled, so a verdict it computed
-  # from its older event could finish after, and mask, a later full-ci pass.
+  # A skipped lane counts as pass only when select printed mode=skip. A skip
+  # while mode=full is a missed lane, not a pass. It runs even when every lane
+  # is skipped, because a skipped job would otherwise read as passing. On an
+  # unrelated label event it skips under the prefixed name like every other
+  # job: that run is never cancelled, so a verdict it computed from its older
+  # event could finish after, and mask, a later full-ci pass.
   full-suite:
     name: ${{ (github.event.action == 'labeled' && github.event.label.name != 'full-ci') && 'Not run for label - ' || '' }}Full suite
     runs-on: ubuntu-24.04
     # Fast tier: the verdict reads its needed jobs' results.
     timeout-minutes: 5
     needs:
+      - select
       - lint
       - test-coverage
       - tests-portable-parallel-1
@@ -560,8 +627,10 @@ jobs:
     steps:
       - name: Require the full-ci go-ahead and passing lanes
         env:
-          FM_CI_FULL: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'OWNER' || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'COLLABORATOR' || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
+          FM_CI_FULL: ${{ github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'OWNER' || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'COLLABORATOR' || contains(github.event.pull_request.labels.*.name, 'full-ci') }}
+          FM_CI_MODE: ${{ needs.select.outputs.mode }}
           FM_CI_LANES_FAILED: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+          FM_CI_LANES_SKIPPED: ${{ contains(needs.*.result, 'skipped') }}
         run: |
           set -eu
           if [ "$FM_CI_FULL" != true ]; then
@@ -570,6 +639,14 @@ jobs:
           fi
           if [ "$FM_CI_LANES_FAILED" = true ]; then
             echo "::error::A full-suite job failed or was cancelled; see the failed jobs in this run."
+            exit 1
+          fi
+          if [ "$FM_CI_MODE" = skip ]; then
+            echo "Full suite skipped for this path set; see CONTRIBUTING.md."
+            exit 0
+          fi
+          if [ "$FM_CI_LANES_SKIPPED" = true ]; then
+            echo "::error::A full-suite job was skipped while the path set required the full suite; see CONTRIBUTING.md."
             exit 1
           fi
           echo "Full suite passed."

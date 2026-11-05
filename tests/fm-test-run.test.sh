@@ -475,6 +475,25 @@ test_changed_cursor_overlay_mapping_is_narrow() {
   pass "vendored .cursor overlay is empty-mapped; other .cursor paths keep the catch-all"
 }
 
+test_changed_ci_select_selects_its_contract_tests() {
+  local tmp repo listed
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-ci-select.XXXXXX")
+  repo="$tmp/repo"
+  init_changed_fixture_repo "$repo"
+
+  printf '#!/usr/bin/env bash\n' >"$repo/tests/fm-ci-select.test.sh"
+  printf '#!/usr/bin/env bash\n' >"$repo/tests/fm-ci-workflow.test.sh"
+  chmod +x "$repo/tests/fm-ci-select.test.sh" "$repo/tests/fm-ci-workflow.test.sh"
+  : >"$repo/bin/fm-ci-select.sh"
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
+  assert_contains "$listed" "tests/fm-ci-select.test.sh" \
+    "a change to the CI path classifier must select its contract test"
+  assert_contains "$listed" "tests/fm-ci-workflow.test.sh" \
+    "a change to the CI path classifier must select the workflow contract test"
+  rm -rf "$tmp"
+  pass "a change to bin/fm-ci-select.sh selects the classifier and workflow contract tests"
+}
+
 # A direct test reference is per-script evidence. Widening it to the referencing
 # test's whole family is what turned a one-line change to a shared helper into
 # every real-Herdr E2E, including scripts with no dependency on it at all.
@@ -2020,6 +2039,7 @@ test_changed_runner_surfaces_select_their_family
 test_shell_line_ending_policy_selects_runner_contract
 test_changed_dependency_selection_and_unmapped_failure
 test_changed_cursor_overlay_mapping_is_narrow
+test_changed_ci_select_selects_its_contract_tests
 test_changed_bin_reference_selects_per_script_not_per_family
 test_changed_uses_bounded_automatic_concurrency
 test_windows_posix_mode_emulation_does_not_fail_parallel_runs
