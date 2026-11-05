@@ -1,0 +1,26 @@
+### S3: second pass within nudge-secs (900s)
+exit=0
+page rows:    1 done    1 pending 
+paged.log lines:        1
+### S4: quiet mode
+exit=0
+page rows:    1 done    1 pending 
+paged.log lines:        1
+### S5: away again, alerts off
+exit=0
+page rows:    1 done    2 pending    1 refused 
+paged.log lines:        1
+- fm-lab.3fpMFw: permission dialog not paged: alerts are off or no alert channel is configured
+### S6: away, alert channel restored, window elapsed -> pages again
+exit=0
+page rows:    2 done    3 pending    1 refused 
+paged.log lines:        2
+--- full ledger (cols 5-7)
+dialog	page	pending
+dialog	page	done
+dialog	page	pending
+dialog	page	refused
+dialog	page	pending
+dialog	page	done
+--- typed into pane? work dir:
+.git

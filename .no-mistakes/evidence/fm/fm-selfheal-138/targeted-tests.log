@@ -1,0 +1,5 @@
+1..3
+ok - away permission dialog: the owner is paged once per window, the dialog is recorded, and no key is sent
+ok - boundary: across every act-mode case, no merge, deploy, owner notification, or captain note
+ok - dialogs need their structure, and each kind is told apart
+FM_TEST_COMPLETE
