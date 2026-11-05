@@ -127,10 +127,13 @@ fm_secondmate_watch_selected() {
   FM_SM_INBOX=$(fm_secondmate_home_inbox "$FM_HOME") && [ "${FM_TASK_INBOX:-}" = "$FM_SM_INBOX" ] || return 1
   FM_SM_ID=${FM_SM_INBOX##*/}
   FM_SM_ID=${FM_SM_ID%.inbox}
-  # Watcher ownership is not selection: a healthy watcher from another
-  # ownership mode (a Grok-era --grok-hold left in a home whose harness has
-  # since changed) leaves this route selected, and fm_secondmate_watch_start
-  # owns taking this home's watcher over.
+  if fm_watcher_healthy "$STATE" "$FM_PUSH_TRANSITION_LIB_DIR/fm-watch.sh" "${FM_GUARD_GRACE:-300}" "$FM_HOME"; then
+    case "$(ps -o args= -p "$FM_WATCHER_HEALTHY_PID" 2>/dev/null)" in *'/fm-watch.sh --secondmate-hold'*) return 0 ;; esac
+    # A doorbell-less --grok-hold in a home that no longer runs Grok is a
+    # leftover fm_secondmate_watch_start takes over; every other healthy
+    # owner keeps its own protocol.
+    fm_grok_holding_watcher "$FM_WATCHER_HEALTHY_PID" && [ "$("$FM_PUSH_TRANSITION_LIB_DIR/fm-harness.sh")" != grok ] || return 1
+  fi
 }
 
 # The binding file records the session-lock owner pid, its fm_pid_identity,
@@ -192,11 +195,11 @@ fm_secondmate_watch_start() {
   printf '%s\n' "$pid" "$identity" "$FM_SM_TARGET" "$FM_SM_ROUTE" "$FM_SM_BACKEND" > "$tmp" && mv "$tmp" "$STATE/.secondmate-watch" || return 1
   fm_secondmate_watch_binding_valid || return 1
   if fm_watcher_healthy "$STATE" "$FM_PUSH_TRANSITION_LIB_DIR/fm-watch.sh" "${FM_GUARD_GRACE:-300}" "$FM_HOME"; then
-    # Status above failed, so this healthy watcher is not the secondmate
-    # hold: it is a leftover from another ownership mode, such as a Grok-era
-    # --grok-hold watcher in a home whose harness has since changed.
+    # Selection admits only the secondmate hold or a leftover --grok-hold;
+    # status above failed, so only the leftover is taken over.
     # fm_watcher_healthy identity-matched this pid against this home's own
     # lock, so stopping its tree can only touch this home's watcher.
+    fm_grok_holding_watcher "$FM_WATCHER_HEALTHY_PID" || { echo 'secondmate watcher: an existing watcher owns supervision' >&2; return 1; }
     pid=$FM_WATCHER_HEALTHY_PID
     identity=$FM_WATCHER_HEALTHY_IDENTITY
     if ! fm_watcher_stop_tree "$pid" "$identity" 5 || fm_pid_alive "$pid"; then

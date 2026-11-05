@@ -2985,6 +2985,42 @@ PY
 # A Herdr pane only names the binding candidate. Real processes stand in for the
 # pane shell, its session-lock-owning child and an unrelated stranger; a fake
 # herdr reports process-info about them and a fake tty foreground serves tmux.
+# Only a leftover --grok-hold is takeover-eligible: a managed-hold or other
+# healthy owner keeps its protocol, so the route is not selected, the start
+# leaves that owner running, and the Codex Stop hook still allows the stop.
+test_secondmate_other_owner_keeps_protocol() {
+  local dir out rc owner identity
+  dir=$(make_secondmate_dir "$TMP_ROOT/sm-other-owner")
+  cp -R "$ROOT/bin/." "$dir/bin/"
+  mkdir -p "$dir/parent/state"
+  printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$dir/parent" > "$dir/.fm-secondmate-parent"
+  : > "$dir/state/task1.meta"
+  for mode in --managed-hold --grok-hold; do
+    bash -c 'sleep 60; :' fm-watch.sh "$mode" & owner=$!
+    identity=$(bash -c '. "$1"; fm_pid_identity "$2"' _ "$dir/bin/fm-wake-lib.sh" "$owner") || fail "could not read the $mode watcher's identity"
+    record_watcher_lock "$dir" "$owner" "$identity"
+    touch "$dir/state/.last-watcher-beat"
+    rc=0; FM_HOME="$dir" FM_TASK_INBOX="$dir/parent/state/sm-test-1.inbox" TMUX=fixture,1,0 TMUX_PANE=%27 \
+      "$dir/bin/fm-watch.sh" --secondmate-selected || rc=$?
+    if [ "$mode" = --managed-hold ]; then
+      expect_code 1 "$rc" "a healthy $mode owner selected the secondmate route"
+      rc=0; out=$(FM_HOME="$dir" FM_TASK_INBOX="$dir/parent/state/sm-test-1.inbox" TMUX=fixture,1,0 TMUX_PANE=%27 \
+        "$dir/bin/fm-watch.sh" --secondmate 2>&1) || rc=$?
+      [ "$rc" -ne 0 ] || fail "the secondmate start ran over a healthy $mode owner: $out"
+      kill -0 "$owner" 2>/dev/null || fail "the secondmate start stopped a healthy $mode owner"
+      export FM_TASK_INBOX="$dir/parent/state/sm-test-1.inbox" TMUX=fixture,1,0 TMUX_PANE=%27
+      run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
+      unset FM_TASK_INBOX TMUX TMUX_PANE
+      expect_code 0 "$STATUS" "the Stop hook blocked a secondmate home a healthy $mode owner supervises: $OUT"
+    else
+      expect_code 0 "$rc" "a leftover $mode watcher in a Codex home was not selected for takeover"
+    fi
+    kill "$owner" 2>/dev/null || true
+    wait "$owner" 2>/dev/null || true
+  done
+  pass "secondmate takeover is limited to a leftover --grok-hold; a managed-hold owner keeps its protocol and the stop"
+}
+
 test_secondmate_event_herdr_binding() {
   local dir shell owner stranger identity real_ps out rc i watcher start elapsed fake_watcher other_watcher dead_pid status
   local -a herdr_env=(HERDR_SESSION=lab HERDR_PANE_ID=w1:p1) tmux_env=("TMUX=/tmp/fm-fake-tmux-socket,1,0" TMUX_PANE=%27)
@@ -3097,10 +3133,10 @@ SH
   identity=$(sm_call fm_pid_identity "$owner") || fail "could not read the lock owner's identity"
   herdr_info w1:p1 "$shell" "$owner"
   expect_binding 1 "a missing binding file validated" "${herdr_env[@]}"
-  # A healthy leftover watcher from another ownership mode (a Grok-era hold
-  # left by an earlier harness) holds this home's lock, and another home has
+  # A healthy leftover --grok-hold watcher (left by a Grok-era launch or a
+  # detached Stop-hook hold) holds this home's lock, and another home has
   # a watcher of its own: the production start must stop only this home's.
-  sleep 300 & fake_watcher=$!
+  bash -c 'sleep 300; :' fm-watch.sh --grok-hold & fake_watcher=$!
   mkdir -p "$dir/state/.watch.lock" "$dir/other/state/.watch.lock"
   printf '%s\n' "$fake_watcher" > "$dir/state/.watch.lock/pid"
   printf '%s\n' "$dir" > "$dir/state/.watch.lock/fm-home"
@@ -3163,7 +3199,7 @@ SH
 
   # A failed binding proof behind a healthy leftover watcher must leave that
   # watcher running: the start proves the new binding before it stops it.
-  sleep 300 & fake_watcher=$!
+  bash -c 'sleep 300; :' fm-watch.sh --grok-hold & fake_watcher=$!
   mkdir -p "$dir/state/.watch.lock"
   printf '%s\n' "$fake_watcher" > "$dir/state/.watch.lock/pid"
   printf '%s\n' "$dir" > "$dir/state/.watch.lock/fm-home"
@@ -3216,6 +3252,7 @@ if [ "${FM_TEST_ONLY:-}" = secondmate-endturn ]; then
   test_secondmate_event_status_requires_notification_owner
   test_secondmate_event_watcher_survives_and_notifies
   test_secondmate_event_scope_and_clock
+  test_secondmate_other_owner_keeps_protocol
   test_secondmate_event_herdr_binding
   exit 0
 fi
@@ -3225,6 +3262,7 @@ test_secondmate_block_bound_ends_a_checkpoint_loop
 test_secondmate_event_status_requires_notification_owner
 test_secondmate_event_watcher_survives_and_notifies
 test_secondmate_event_scope_and_clock
+test_secondmate_other_owner_keeps_protocol
 test_secondmate_event_herdr_binding
 test_predicate_healthy_no_inflight
 test_predicate_unhealthy_no_beacon
