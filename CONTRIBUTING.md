@@ -49,6 +49,7 @@ A deleted or missing path, any other path, or an empty list, is `mode=full`.
 The workflow forces `mode=full` before it trusts the classifier when the diff includes `bin/fm-ci-select.sh`, `bin/fm-test-run.sh`, or `.github/`.
 
 | Paths | Jobs that run |
+| --- | --- |
 | every changed path is on the skip allowlist | `CI path select`, `Test coverage guard`, `Repo invariants`, `Full suite` (pass) |
 | any other path, including `.cursor/`, `README.md`, `docs/herdr-backend.md`, and a deleted `bin/` helper | every job in `.github/workflows/ci.yml` |
 

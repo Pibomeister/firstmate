@@ -726,18 +726,36 @@ RUBY
 # Path skip: a trusted PR whose classifier printed skip runs the same cheap
 # jobs as an unlabelled outside PR, but Full suite passes. Main still runs
 # every job because the select job forces mode=full on push.
+# Write the invariants skip-docs step's run script, then execute it in a
+# fixture whose skip-check command is a stub so a missing call is a miss.
+write_invariants_skip_docs_script() {
+  local dest=$1
+  # shellcheck disable=SC2016  # Ruby text, not a shell expansion
+  ruby -ryaml -e '
+doc = YAML.load_file(ARGV[0])
+script = doc.fetch("jobs").fetch("invariants").fetch("steps").find { |s| s["id"] == "skip-docs" }.fetch("run")
+File.write(ARGV[1], script)
+' "$CI_WORKFLOW" "$dest"
+}
+
 test_invariants_runs_skip_mode_checks() {
-  local check
+  local tmp repo script stamp check
+  tmp=$(fm_test_tmproot fm-ci-invariants-skip-docs)
+  repo=$tmp/repo
+  script=$tmp/skip-docs.sh
+  stamp=$tmp/called
+  mkdir -p "$repo/bin"
+  write_invariants_skip_docs_script "$script"
   while IFS= read -r check; do
     [ -n "$check" ] || continue
-    ruby -ryaml -e '
-doc = YAML.load_file(ARGV[0])
-want = ARGV[1]
-runs = doc.fetch("jobs").fetch("invariants").fetch("steps").map { |s| s["run"].to_s }
-raise "Repo invariants does not run #{want}" unless runs.any? { |run| run.split.include?(want) }
-' "$CI_WORKFLOW" "$check" \
-      || fail "Repo invariants must run skip-mode check $check"
+    mkdir -p "$repo/$(dirname "$check")"
+    printf '%s\n' '#!/bin/sh' "echo called >>\"$stamp\"" >"$repo/$check"
+    chmod +x "$repo/$check"
   done < <("$ROOT/bin/fm-ci-select.sh" --list-skip-checks)
+  : >"$stamp"
+  (cd "$repo" && bash "$script") || fail "the invariants skip-docs step failed in $repo"
+  grep -qx called "$stamp" \
+    || fail "the invariants skip-docs step must invoke the skip-mode check"
   pass "Repo invariants runs every skip-mode documentation check"
 }
 
@@ -843,6 +861,23 @@ test_select_step_forces_full_for_classifier_ci_and_map() {
   pass "the select step forces full for the classifier, map, and CI config before trusting HEAD"
 }
 
+test_select_step_forces_full_on_push() {
+  local tmp repo script github_output
+  tmp=$(fm_test_tmproot fm-ci-select-push)
+  repo=$tmp/repo
+  script=$tmp/select.sh
+  github_output=$tmp/github-output
+  fm_git_init_commit "$repo"
+  mkdir -p "$repo/bin"
+  printf '%s\n' '#!/bin/sh' 'echo mode=skip' >"$repo/bin/fm-ci-select.sh"
+  chmod +x "$repo/bin/fm-ci-select.sh"
+  write_select_step_script "$script" push unused
+  run_select_step "$repo" "$script" "$github_output"
+  [ "$(cat "$github_output")" = mode=full ] \
+    || fail "a push must write exactly mode=full, got $(cat "$github_output")"
+  pass "the select step forces mode=full on push before the classifier runs"
+}
+
 test_ci_matrices_match_executable_partitions
 test_pr_pushes_supersede_within_one_pr
 test_separate_prs_do_not_cancel_each_other
@@ -855,6 +890,7 @@ test_unintended_skip_fails_the_verdict
 test_path_skip_still_fails_when_a_quick_check_failed
 test_outside_pr_path_skip_still_names_full_ci
 test_select_step_forces_full_for_classifier_ci_and_map
+test_select_step_forces_full_on_push
 test_full_ci_label_runs_the_whole_suite
 test_trusted_runs_are_unchanged
 test_unrelated_label_starts_no_job

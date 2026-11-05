@@ -114,7 +114,7 @@ test_license_gitignore_and_mapped_docs_are_full() {
 path_has_literal_read() {
   local path=$1 hits
   hits=$(grep -RIF --exclude='fm-ci-select.test.sh' --exclude='fm-ci-select.sh' \
-    --exclude='fm-ci-workflow.test.sh' -- "$path" "$ROOT/tests" "$ROOT/bin" || true)
+    -- "$path" "$ROOT/tests" "$ROOT/bin" || true)
   [ -n "$hits" ]
 }
 
@@ -160,10 +160,12 @@ test_allowlist_paths_are_unread_or_skip_covered() {
     [ -e "$ROOT/$path" ] || fail "skip allowlist path does not exist: $path"
     classify "$path"
     [ "$MODE" = skip ] || fail "allowlisted $path must be mode=skip, got $MODE_LINE"
-    if path_has_literal_read "$path" || path_has_tracked_pattern "$path" \
-      || path_in_audience_inventory "$path"; then
+    if path_has_literal_read "$path"; then
+      fail "allowlisted $path is named in tests/ or bin/; only glob or inventory reads may use the skip-mode check"
+    fi
+    if path_has_tracked_pattern "$path" || path_in_audience_inventory "$path"; then
       skip_check_covers_path "$path" \
-        || fail "allowlisted $path is test- or config-read but skip mode does not cover it"
+        || fail "allowlisted $path is glob- or inventory-read but skip mode does not cover it"
     fi
   done < <("$SELECT" --list-skip)
   pass "every skip allowlist path is unread or covered by a skip-mode check"

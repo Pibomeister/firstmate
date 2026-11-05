@@ -596,7 +596,8 @@ jobs:
           fi
       - name: Agent-kit Cursor bin pin must match
         run: bin/fm-agent-kit-pin.sh
-      - name: Documentation audience inventory and local links
+      - id: skip-docs
+        name: Documentation audience inventory and local links
         run: bin/fm-doc-audience-check.sh
 
   # The Full suite verdict: one check that fails until an outside PR has the
