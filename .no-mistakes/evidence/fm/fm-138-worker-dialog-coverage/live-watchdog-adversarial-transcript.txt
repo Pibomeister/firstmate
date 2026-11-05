@@ -1,0 +1,30 @@
+### scan
+subject fm-lab.2EugWU (/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.2EugWU)
+  endpoint=tmux:%0 session=00000000-0000-4000-8000-000000000001 lock_pid=34501 alive=1 instance=match
+  pane_static=0s dialog=permission composer=unknown turn_running=1 cpu_busy=0
+  transcript_age=unknowns loop=none/0 restart_requested=0 ctx=unknown
+  owed=0 oldest=0s afk=1 daemon=1 heartbeat_age=87s
+  worker lab-gone-2 endpoint=tmux:%99 dialog=gone
+  worker lab-ship-1 endpoint=tmux:%1 dialog=permission
+
+### away once with home dialog + worker dialog + dup record + secondmate record
+new page rows:
+fm-lab.2EugWU	pending
+fm-lab.2EugWU	done
+worker:lab-ship-1	pending
+worker:lab-ship-1	done
+paged.log:
+Firstmate watchdog: a permission dialog blocks the away session of fm-lab.2EugWU, and nothing will answer it. Its text is recorded in /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.2EugWU/state/watchdog/actions.tsv.
+Firstmate watchdog: a permission dialog blocks the away session of fm-lab.2EugWU worker lab-ship-1, and nothing will answer it. Its text is recorded in /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.2EugWU/state/watchdog/actions.tsv.
+
+### away once after nudge-secs=5 elapsed
+page rows by subject/phase (all time):
+   2 fm-lab.2EugWU	done
+   2 fm-lab.2EugWU	pending
+   3 worker:lab-ship-1	done
+   3 worker:lab-ship-1	pending
+
+### keys sent to home pane:
+(end)
+### worker pane still shows dialog, file not created:
+1

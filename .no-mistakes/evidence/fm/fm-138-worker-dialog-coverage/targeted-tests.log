@@ -1,0 +1,4 @@
+1..2
+ok - worker permission dialog: ship and scout panes page on their own windows, a plain pane and a question do not, and a gone endpoint is not read
+ok - away permission dialog: the owner is paged once per window, the dialog is recorded, and no key is sent
+FM_TEST_COMPLETE
