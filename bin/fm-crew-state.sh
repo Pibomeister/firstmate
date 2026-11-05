@@ -206,6 +206,11 @@ case ${FM_CREW_STATE_STATUS_OVERRIDE:-} in
 esac
 NM_TIMEOUT=${FM_CREW_STATE_NM_TIMEOUT:-10}
 case "$NM_TIMEOUT" in ''|*[!0-9]*) NM_TIMEOUT=10 ;; esac
+# Each backend pane read (the readability probe and the busy-state tail) is
+# bounded: a backend CLI that hangs on a stale recorded handle, such as an Orca
+# terminal from before a restart, reports unknown instead of stalling this read.
+PANE_TIMEOUT=${FM_CREW_STATE_PANE_TIMEOUT:-3}
+case "$PANE_TIMEOUT" in ''|*[!0-9]*|0) PANE_TIMEOUT=3 ;; esac
 # How many of the most recent `no-mistakes runs` rows each ledger read
 # (fm_nm_runs_status_for_worktree in bin/fm-nm-run-lib.sh) scans for the legacy
 # fallback or an unfetched-head continuation (docs/configuration.md owns the
@@ -353,7 +358,8 @@ pane_readable() {  # <target>
 # to misread.
 crew_busy_verdict() {  # <target>
   local tail40
-  tail40=$(fm_backend_capture "$TASK_BACKEND" "$1" 40 "$EXPECTED_LABEL" 2>/dev/null) || tail40=''
+  tail40=$(fm_run_timed_fn "$PANE_TIMEOUT" \
+    fm_backend_capture "$TASK_BACKEND" "$1" 40 "$EXPECTED_LABEL" 2>/dev/null) || tail40=''
   fm_busy_classify "$TASK_BACKEND" "$1" "$HARNESS" "$ID" "$STATE" "$tail40"
 }
 
@@ -1353,7 +1359,12 @@ fi
 # verdict reports unknown rather than trusting a possibly-stale status log as
 # the current state.
 [ -n "$BACKEND_TARGET" ] || emit unknown none "no backend target recorded"
-if ! pane_readable "$BACKEND_TARGET"; then
+PANE_RC=0
+fm_run_timed_fn "$PANE_TIMEOUT" pane_readable "$BACKEND_TARGET" || PANE_RC=$?
+if fm_timed_out "$PANE_RC"; then
+  emit unknown none "backend unreachable ($TASK_BACKEND endpoint probe timed out after ${PANE_TIMEOUT}s)"
+fi
+if [ "$PANE_RC" -ne 0 ]; then
   # A failed probe is not itself evidence the pane is gone: the herdr CLI can
   # error or stall under load, and tmux can fail to be executed at all (a
   # trimmed PATH) or answer non-definitively, while the pane is alive - a busy
