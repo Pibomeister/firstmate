@@ -1,0 +1,38 @@
+[
+  {
+    "id": "ci-20261103-herdr-focus",
+    "test": "tests/fm-backend-herdr-focus-flash-e2e.test.sh",
+    "lane": "real-herdr-gated",
+    "signature": "not ok - Part C reached the fallback on a defective release but observed no wrong-focus sample at all, so the sampler proved nothing",
+    "first_seen": "https://github.com/Pibomeister/firstmate/actions/runs/41730727306/job/126247026766",
+    "unchanged_pass": "https://github.com/Pibomeister/firstmate/actions/runs/41747763452/job/126304955234",
+    "owner": "Firstmate CI maintainers; investigate and renew or remove by expiry",
+    "expires": "2026-11-18",
+    "sources": {
+      "tests/fm-backend-herdr-focus-flash-e2e.test.sh": "b7ec7f93049502093c4ca12ce4ad439a6bf8a07cf1f421ccd90bf21c2b3728ea",
+      "bin/backends/herdr.sh": "f8832276fa719f667ef9de0eb83a751ff625b6dd7ec5d08196cc9baef27298b8",
+      "tests/herdr-test-safety.sh": "8fafa4d54a50100ba2f67032e3384a02016636ae7257edf0b4fe2c9848333fdc",
+      "tests/lib.sh": "33653c4480c98061a7c1813c7eaedd6ae42aa8ed437b5cc582e48152ee9ca26d"
+    },
+    "first_seen_lane": "Behavior tests (Herdr)",
+    "note": "Intermittent negative-control sampler: fallback was reached, but the short focus transient was not sampled. Root cause remains unproven."
+  },
+  {
+    "id": "ci-20261103-host-term",
+    "test": "tests/fm-supervision-host-park.test.sh",
+    "lane": "portable-serial",
+    "signature": "not ok - park-[0-9]+: the host did not stop on TERM",
+    "first_seen": "https://github.com/Pibomeister/firstmate/actions/runs/41711198772/job/126179390266",
+    "unchanged_pass": "https://github.com/Pibomeister/firstmate/actions/runs/41747763452/job/126304955253",
+    "owner": "Firstmate CI maintainers; investigate and renew or remove by expiry",
+    "expires": "2026-11-18",
+    "sources": {
+      "tests/fm-supervision-host-park.test.sh": "c1376040b358ec52767aa1d097c531010c632935c18456c9ddda57d04b65fdd1",
+      "bin/fm-supervision-host.sh": "3585f3093377bf244550dd8f59e4d60605411ca09cf04f073c9ea6bba184ee6c",
+      "tests/supervision-host-helpers.sh": "b4589e6074fb835e9c7a72c3eca71892fcb3ca1a531dced13f1a798f73ca5897",
+      "tests/lib.sh": "33653c4480c98061a7c1813c7eaedd6ae42aa8ed437b5cc582e48152ee9ca26d"
+    },
+    "first_seen_lane": "Behavior portable serial 15",
+    "note": "Intermittent host TERM deadline failure on unchanged sources. Timing or host contention is suspected; no deterministic product defect established."
+  }
+]

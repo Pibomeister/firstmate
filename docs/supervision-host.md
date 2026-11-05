@@ -449,7 +449,8 @@ Each arm owner's own suite covers its host mode against a stub host.
 | Test | What it covers |
 |---|---|
 | `tests/fm-supervision-host-drain.test.sh` | Report surface, dispatch entry, and the drain's `BRANCH OUTCOMES` section against the shared stub-engine fixtures. |
-| `tests/fm-supervision-host.test.sh` | Drives the real host against a stub engine for wakes, closes, the dialog mirror, and return outcomes, in both postures. |
+| `tests/fm-supervision-host.test.sh` | Drives the real host against a stub engine for wakes, closes, and return outcomes, in both postures. |
+| `tests/fm-supervision-host-mirror.test.sh` | Drives the real host against a stub engine for the dialog mirror: away-only fallback without a verified mirror, mirror delivery on attended wakes, owner-only dialog files, re-feeding undelivered dialog, and an unreadable mirror reaching main. |
 | `tests/fm-supervision-host-park.test.sh` | Latch, park boundary, compaction, and lock ownership against the same stub-engine fixtures. |
 | `tests/fm-supervision-host-hook.test.sh` | Claude Stop-hook re-arm, successor take-over, lost hand-back continuations, and guarded retry submission. |
 | `tests/fm-supervision-host-fork.test.sh` | This fork's extra cases on the same fixtures: cleanup ordering, lease-lock startup, Orca stale rows, attended pass-through successors, stalled-arm retirement, and park readiness. |

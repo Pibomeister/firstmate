@@ -24,18 +24,54 @@ A failed script's duration is excluded even when its lane uploaded an artifact.
 In particular, run 36664663190's serial 5 finished in 22m15s with an assertion failure, not a timeout; treating that as a healthy whole-lane sample would hide the failure.
 Collect successful per-script measurements for every member before calculating a split.
 
-The supervision-host suite is four serial members so no one file occupies a whole CI shard: `tests/fm-supervision-host-drain.test.sh` (report, dispatch, BRANCH OUTCOMES; hint 37062 ms), `tests/fm-supervision-host-hook.test.sh` (Claude Stop-hook re-arm and hand-back; hint 276183 ms), `tests/fm-supervision-host.test.sh` (host loop wakes, closes, mirror, return; hint 889727 ms), and `tests/fm-supervision-host-park.test.sh` (latch, park boundary, compaction, lock ownership; hint 351454 ms).
-Those packing weights are the slowest successful Ubuntu samples from runs [41583791860](https://github.com/Pibomeister/firstmate/actions/runs/41583791860), [41572453952](https://github.com/Pibomeister/firstmate/actions/runs/41572453952), [41319546728](https://github.com/Pibomeister/firstmate/actions/runs/41319546728), and [41409020680](https://github.com/Pibomeister/firstmate/actions/runs/41409020680).
+The supervision-host suite is five serial members so no one file occupies a whole CI shard: `tests/fm-supervision-host-drain.test.sh` (report, dispatch, BRANCH OUTCOMES; hint 37062 ms), `tests/fm-supervision-host-hook.test.sh` (Claude Stop-hook re-arm and hand-back; hint 276183 ms), `tests/fm-supervision-host.test.sh` (host loop wakes, closes, return; hint 550000 ms), `tests/fm-supervision-host-mirror.test.sh` (dialog mirror and missing-mirror fallbacks; hint 500000 ms), and `tests/fm-supervision-host-park.test.sh` (latch, park boundary, compaction, lock ownership; hint 351454 ms).
+The host and mirror hints are derived split estimates from the November 4 balance refresh below; before that split, the combined host file carried an 889727 ms hint from the 2026-11-03 refresh.
+The drain, hook, and park packing weights are the slowest successful Ubuntu samples from runs [41583791860](https://github.com/Pibomeister/firstmate/actions/runs/41583791860), [41572453952](https://github.com/Pibomeister/firstmate/actions/runs/41572453952), [41319546728](https://github.com/Pibomeister/firstmate/actions/runs/41319546728), and [41409020680](https://github.com/Pibomeister/firstmate/actions/runs/41409020680).
 `tests/fm-supervision-host-fork.test.sh` carries this fork's cases that upstream's split does not (cleanup ordering, lease-lock startup, Orca stale rows, attended pass-through successors, stalled-arm retirement, park readiness); its hint is the 144424 ms Ubuntu maximum from those same four runs.
 The native-Windows-only `tests/fm-pi-windows-shell-invocation.test.sh` retains its separate 5121 ms measurement from 2026-09-06T21:02Z instead of a portable capability skip.
 Former provisional local hints for polytoken, approval-failover, Kimi live-guard skip, tap-verify, read-repetition, Antigravity primary, worktree-cleanup, order, and watchdog-live now use Ubuntu timing-artifact maxima from the 2026-11-03 refresh.
 `tests/fm-watchdog.test.sh` is 527813 ms from that refresh.
-The wedge-cap suite is 356831 ms for `tests/fm-watch-wedge-cap.test.sh`, 241 ms for the live-guard skip, and 59892 ms for the unconfigured-parity suite.
-`test_portable_serial_packing_budget_boundary` pins every other fixture script to 1 ms, so packing exactly at the 1200000 ms budget is accepted and one millisecond above it is refused even when real serial members have no hint.
+The wedge-cap suite is 424173 ms for `tests/fm-watch-wedge-cap.test.sh`, 214 ms for the live-guard skip, and 60531 ms for the unconfigured-parity suite, from the November 4 balance refresh.
+`test_portable_serial_packing_budget_boundary` pins every other fixture script to 0 ms, so packing exactly at the 780000 ms budget is accepted and one millisecond above it is refused even when real serial members have no hint.
 The coverage-guard test owns modeled real-hint headroom under that budget.
 Do not discount a local speedup from CI packing weights.
 The T3 Code backend suites carry the slowest successful Ubuntu samples from CI runs [39463576576](https://github.com/kunchenguid/firstmate/actions/runs/39463576576), [39814995718](https://github.com/kunchenguid/firstmate/actions/runs/39814995718), and [39883948163](https://github.com/kunchenguid/firstmate/actions/runs/39883948163) - 239245 ms for `tests/fm-backend-t3code.test.sh`, 57613 ms for `tests/fm-t3-mcp.test.sh`, 283 ms for `tests/fm-watch-inbox-meta.test.sh`, and the 51 ms and 52 ms live-guard skips for `tests/fm-backend-t3code-live-e2e.test.sh` and `tests/fm-backend-t3code-pr-tools-live-e2e.test.sh`.
 `tests/fm-backend-t3code.test.sh` and `tests/fm-t3-mcp.test.sh` run in the portable parallel lanes, so those two values sit in `portable_parallel_weight_hints`: every case id the backend suite spawns carries a per-run suffix and its cleanup removes only the `/tmp/fm-<id>` directories that run created, and both suites passed running concurrently with each other and beside another parallel suite (see [`fm-test-isolation-proof.md`](fm-test-isolation-proof.md)).
+
+## November 4 balance refresh
+
+The 2026-11-04 refresh supplements the older hints with successful, non-skipped script maxima from runs [41699536822](https://github.com/Pibomeister/firstmate/actions/runs/41699536822), [41730727306](https://github.com/Pibomeister/firstmate/actions/runs/41730727306), and [41747763452](https://github.com/Pibomeister/firstmate/actions/runs/41747763452).
+Failed script durations never become healthy packing measurements.
+The native-Windows hint and unavailable live-capability measurements keep their previous provenance.
+The last run was completely green at `cd6c5dee432476974ac00edd97b94cc13d8a2388`.
+Its fifteen serial jobs took 16m56s to 19m50s, its parallel jobs took 16m58s and 20m55s, and lint took 16m28s to 23m34s (job start through completion, including setup).
+Herdr took 12m02s and stock macOS Bash took 9m21s.
+These are observed job durations, not queue delay or a percentile estimate.
+
+The serial layout now packs twenty-four separate runners against a thirteen-minute script budget, leaving two minutes below the fifteen-minute healthy-job target for setup and variance.
+The former 29-case host suite took 896663 ms in that green run.
+Its five dialog-mirror cases now live in `tests/fm-supervision-host-mirror.test.sh`; every case and assertion is retained.
+The per-case log timestamps attribute about 414 seconds to those cases and 483 seconds to the remainder, including final cleanup.
+Their initial packing hints are conservatively rounded to 500000 ms and 550000 ms respectively; these are derived split estimates and must be replaced with completed script measurements.
+Both portable parallel checks use three workers from the existing proven-isolated set, while their memberships remain disjoint.
+Six canonical lint partitions retain every full-analysis root and the existing per-root limits.
+No timeout is shortened to manufacture a faster result.
+
+The executable coverage guard and CI matrix regression verify the new partition without dropping tests or lint roots.
+The healthy-job target is not a claim about post-change hosted performance: include completed before/after run links and job durations in delivery evidence before claiming an improvement.
+More jobs can increase queue delay at the account's shared runner limit.
+
+## Recorded CI failures
+
+[`tests/ci-flake-baseline.json`](../tests/ci-flake-baseline.json) is the tracked failure baseline for review rule rp-017.
+It is a reviewer record, not a runner input: the suite runner does not read it, and a recorded failure stays a failed run and a red check.
+Each entry names the test script, its lane, the failing assertion line, the failed and unchanged-base passing run links, an owner, an expiry date, and the SHA-256 digests of the sources it ran against.
+An entry stays valid only while those sources are unchanged and before its expiry; renew or remove it after investigation.
+Both entries' `tests/lib.sh` digests were refreshed after the rebase onto upstream #135, whose only change to that file is one comment line; the other recorded sources are unchanged.
+An unchanged-source failure followed by a pass establishes intermittency, not a proven root cause or a waiver.
+The focus sampler and host TERM wait still need investigation by the named owner before expiry.
+The historical stock macOS cancellation was a runner-acquisition failure, with no test log; it is not a flaky-test baseline entry.
+The workflow already uses Intel macOS runners for that check.
 
 ## Parallel lanes
 
@@ -117,7 +153,7 @@ Portable shards, each portable serial shard, and the Herdr lane upload runner-ge
 
 ## Lint partitions and end-to-end latency
 
-`bin/fm-lint.sh` owns the canonical CI partitions (CI runs three), each attempting full source-aware ShellCheck analysis and running workflow validation, backend-purity, and tmux-socket checks.
+`bin/fm-lint.sh` owns the canonical CI partitions (CI runs six), each attempting full source-aware ShellCheck analysis and running workflow validation, backend-purity, and tmux-socket checks.
 CI requires its per-root bounds, so an unenforceable deadline or address-space limit refuses lint rather than running uncapped; the script header owns the envelope, per-root execution contract, and memory fallback.
 Its `--list-files` interface exposes partition membership; `tests/fm-lint.test.sh` verifies complete/disjoint executed roots, initial analysis flags, and fallback reporting.
 The workflow uploads each partition's quiet telemetry plus its per-root lifecycle sidecar to distinguish analysis cost, memory use, and host contention.
@@ -125,7 +161,7 @@ No fast mode, path skips, or paid runner provisioning is part of this layout.
 
 The longer-term performance objective remains a complete green run under fifteen minutes including start delay, but the three watch-triage members still sum to about 32 minutes of CI test time.
 The immediate packing target is the runner's modeled script budget, not a claim that more shards alone can make an indivisible script faster.
-The layout uses twenty-one long-lived Linux jobs (fifteen serial, two parallel, Herdr, three lint), plus short checks and macOS; insufficient shared account capacity can erase the packing gain.
+The layout uses thirty-three long-lived Linux jobs (twenty-four serial, two parallel, Herdr, six lint), plus short checks and macOS; insufficient shared account capacity can erase the packing gain.
 Compare complete before/after runs, preserve cancelled and partial-run evidence, and measure a representative normal-run sample before claiming a P95 improvement.
 The workflow retains per-PR supersession and keeps only the newest of close main pushes' runs, without changing the compliance workflow's event semantics.
 

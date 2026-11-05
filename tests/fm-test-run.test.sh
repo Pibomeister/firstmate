@@ -1266,7 +1266,7 @@ test_portable_serial_hint_coverage_is_reported_and_bounded() {
   budget=$(printf '%s\n' "$out" | sed -n 's/.*serial_budget_ms=\([0-9][0-9]*\).*/\1/p')
   [ -n "$max" ] && [ -n "$budget" ] \
     || fail "coverage summary must carry serial packing and budget: $out"
-  [ "$budget" -eq 1200000 ] || fail "packing must leave ten minutes of the normal CI tier"
+  [ "$budget" -eq 780000 ] || fail "packing must leave setup headroom below fifteen minutes"
   [ "$max" -gt 0 ] && [ "$max" -le "$budget" ] \
     || fail "largest serial shard packs ${max}ms above the ${budget}ms target"
   seed_serial_packing_fixture "$repo" 1 tests/fm-watch-triage.test.sh 1000 \
@@ -1277,7 +1277,7 @@ test_portable_serial_hint_coverage_is_reported_and_bounded() {
     "unhinted refusal must report the measured share"
   assert_contains "$out" "tests/serial-4.test.sh" "unhinted refusal must name missing measurements"
   assert_not_contains "$out" "FM_TEST_COVERAGE ok" "unhinted refusal must not report success"
-  pass "coverage guard bounds the unmeasured share and serial packing within twenty minutes"
+  pass "coverage guard bounds the unmeasured share and serial packing within thirteen minutes"
 }
 
 # Fixture runner whose serial hints are all zero except the "<path> <ms>"
@@ -1333,19 +1333,19 @@ test_portable_serial_packing_budget_boundary() {
 
   # One shard holds every serial script, so two weighted scripts share it and
   # their sum is exactly the packed shard weight.
-  for second in 600000 600001; do
+  for second in 390000 390001; do
     seed_serial_packing_fixture "$repo" 1 \
-      tests/fm-watch-triage.test.sh 600000 tests/fm-supervision-host.test.sh "$second"
+      tests/fm-watch-triage.test.sh 390000 tests/fm-supervision-host.test.sh "$second"
     out=$(bash "$repo/bin/fm-test-run.sh" --check-coverage 2>&1) && rc=0 || rc=$?
-    if [ "$second" -eq 600000 ]; then
+    if [ "$second" -eq 390000 ]; then
       expect_code 0 "$rc" "packing exactly at the budget must be accepted"
       assert_contains "$out" "FM_TEST_COVERAGE ok" "boundary coverage did not pass"
-      assert_contains "$out" "serial_max_ms=1200000" "fixture did not pack exactly at the budget"
-      assert_contains "$out" "serial_budget_ms=1200000" "fixture changed the packing budget"
+      assert_contains "$out" "serial_max_ms=780000" "fixture did not pack exactly at the budget"
+      assert_contains "$out" "serial_budget_ms=780000" "fixture changed the packing budget"
       assert_contains "$out" "serial_oversized=0" "a multi-script shard was reported as indivisible"
     else
       expect_code 1 "$rc" "packing one millisecond above the budget must be refused"
-      assert_contains "$out" "largest portable serial shard packs 1200001ms above the 1200000ms target" \
+      assert_contains "$out" "largest portable serial shard packs 780001ms above the 780000ms target" \
         "over-budget refusal did not explain the modeled excess"
       assert_not_contains "$out" "FM_TEST_COVERAGE ok" "over-budget packing reported success"
     fi
@@ -1361,18 +1361,18 @@ test_portable_serial_lone_script_over_budget_is_reported() {
 
   # Longest-first packing gives the one over-budget script a shard of its own,
   # which no packing can shrink, so it is named rather than refused.
-  seed_serial_packing_fixture "$repo" 2 tests/fm-watch-triage.test.sh 1200001
+  seed_serial_packing_fixture "$repo" 2 tests/fm-watch-triage.test.sh 780001
   out=$(bash "$repo/bin/fm-test-run.sh" --check-coverage 2>&1) && rc=0 || rc=$?
   expect_code 0 "$rc" "a lone indivisible script over the budget must be accepted"
   assert_contains "$out" "FM_TEST_COVERAGE ok" "lone over-budget script failed coverage"
-  assert_contains "$out" "shard 1 holds only tests/fm-watch-triage.test.sh at 1200001ms" \
+  assert_contains "$out" "shard 1 holds only tests/fm-watch-triage.test.sh at 780001ms" \
     "lone over-budget script was not named"
   assert_contains "$out" "serial_oversized=1" "lone over-budget script was not counted"
   assert_contains "$out" "serial_max_ms=0" "the indivisible shard leaked into the packed maximum"
 
   # The same weight shared with a second script is still a packing failure.
   seed_serial_packing_fixture "$repo" 1 \
-    tests/fm-watch-triage.test.sh 1200001 tests/fm-supervision-host.test.sh 1
+    tests/fm-watch-triage.test.sh 780001 tests/fm-supervision-host.test.sh 1
   out=$(bash "$repo/bin/fm-test-run.sh" --check-coverage 2>&1) && rc=0 || rc=$?
   expect_code 1 "$rc" "an over-budget shard with two scripts must be refused"
   assert_not_contains "$out" "FM_TEST_COVERAGE ok" "over-budget shared shard reported success"
