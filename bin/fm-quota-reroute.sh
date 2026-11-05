@@ -21,8 +21,11 @@
 # Signals: MCP servers in the account config dir (including $HOME/.claude.json
 # for an ordinary account, and any non-empty .projects[].mcpServers); account
 # settings.json hooks and hooks/hooks.json; MCP servers and hooks bundled
-# under account plugins/ (.mcp.json, .claude-plugin/plugin.json, and
-# hooks/hooks.json). A project .mcp.json in the worktree; .claude/ skills,
+# under account plugins/ (.mcp.json, including a flat server map with no
+# mcpServers wrapper, .claude-plugin/plugin.json, and hooks/hooks.json;
+# find follows symlinks). Marketplace clones and stale cache copies under
+# plugins/ still block when they bundle MCP or hooks, even if the plugin
+# was never installed or enabled. A project .mcp.json in the worktree; .claude/ skills,
 # hooks, agents, or commands in the worktree. Worktree .claude/settings.json
 # and settings.local.json keys: hooks, enabledMcpjsonServers, mcpServers,
 # enabledPlugins. Account-wide skills, agents, commands, and a plugin that
@@ -171,7 +174,7 @@ fm_quota_claude_plugin_bundle_signal() {  # <config-dir>
     printf '%s\n' "unreadable $plugins"
     return 0
   }
-  out=$(find "$plugins" \( -name node_modules -o -name .git \) -prune -o \
+  out=$(find -L "$plugins" \( -name node_modules -o -name .git \) -prune -o \
     \( -name .mcp.json -o -path '*/hooks/hooks.json' \
        -o -path '*/.claude-plugin/plugin.json' \) -print 2>"$err") || {
     rm -f "$err"
@@ -193,13 +196,26 @@ fm_quota_claude_plugin_bundle_signal() {  # <config-dir>
           return 0
         fi
         ;;
-      */.mcp.json|*/.claude-plugin/plugin.json)
+      */.mcp.json)
         if [ ! -f "$f" ] || [ ! -r "$f" ]; then
           printf '%s\n' "unreadable $f"
           return 0
         fi
-        if ! jq -e 'type=="object"' "$f" >/dev/null 2>&1 \
-          || fm_quota_claude_mcp_unreadable "$f"; then
+        if ! jq -e 'type=="object"' "$f" >/dev/null 2>&1; then
+          printf '%s\n' "unreadable $f"
+          return 0
+        fi
+        if jq -e 'type=="object" and length>0' "$f" >/dev/null 2>&1; then
+          printf '%s\n' "MCP servers in $f"
+          return 0
+        fi
+        ;;
+      */.claude-plugin/plugin.json)
+        if [ ! -f "$f" ] || [ ! -r "$f" ]; then
+          printf '%s\n' "unreadable $f"
+          return 0
+        fi
+        if ! jq -e 'type=="object"' "$f" >/dev/null 2>&1; then
           printf '%s\n' "unreadable $f"
           return 0
         fi
@@ -207,8 +223,17 @@ fm_quota_claude_plugin_bundle_signal() {  # <config-dir>
           printf '%s\n' "MCP servers in $f"
           return 0
         fi
-        if [ "${f##*/}" = plugin.json ] \
-          && sig=$(fm_quota_claude_settings_keys_signal "$f" hooks); then
+        if jq -e '(.mcpServers | type == "string" and length > 0)
+                 or (.mcpServers | type == "array" and length > 0)' \
+             "$f" >/dev/null 2>&1; then
+          printf '%s\n' "MCP servers in $f"
+          return 0
+        fi
+        if fm_quota_claude_mcp_unreadable "$f"; then
+          printf '%s\n' "unreadable $f"
+          return 0
+        fi
+        if sig=$(fm_quota_claude_settings_keys_signal "$f" hooks); then
           printf '%s\n' "$sig"
           return 0
         fi
