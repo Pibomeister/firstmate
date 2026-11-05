@@ -552,11 +552,11 @@ Reply with exactly one line: PROCEED <label> or HOLD."
 # --- restart -------------------------------------------------------------------
 
 # Print the configured command, with --yolo inserted after its first muse word
-# when it starts muse and carries none of --yolo, --disable-approval, or
+# in command position when it starts muse and carries none of --yolo, --disable-approval, or
 # --approval-mode never. Any other command prints unchanged. Words split on
 # whitespace only; the prompt appended at launch is not part of the check.
 wd_restart_command_yolo() {
-  local cmd=$1 rest word bare lead prev='' out='' at='' approved=0
+  local cmd=$1 rest word bare lead prev='' out='' at='' approved=0 cmdpos=1
   rest=$cmd
   while [ -n "$rest" ]; do
     lead=${rest%%[![:space:]]*}
@@ -568,11 +568,14 @@ wd_restart_command_yolo() {
     out+=$word
     bare=$word
     case "$bare" in \"*\") bare=${bare#\"}; bare=${bare%\"} ;; \'*\') bare=${bare#\'}; bare=${bare%\'} ;; esac
-    if [ -z "$at" ]; then
+    if [ "$cmdpos" = 1 ]; then
       case "$bare" in
-        muse|*/muse|muse-bin|*/muse-bin|muse-bin-*|*/muse-bin-*) at=${#out} ;;
+        [A-Za-z_]*=*|env|exec|command) ;;
+        muse|*/muse|muse-bin|*/muse-bin|muse-bin-*|*/muse-bin-*) [ -n "$at" ] || at=${#out}; cmdpos=0 ;;
+        *) cmdpos=0 ;;
       esac
     fi
+    case "$word" in '&&'|'||'|';'|'|'|*';') cmdpos=1 ;; esac
     case "$bare" in
       --yolo|--disable-approval|--approval-mode=never) approved=1 ;;
     esac

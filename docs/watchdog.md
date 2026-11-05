@@ -143,7 +143,7 @@ An absent file means dry-run on the owner home alone.
 | `homes` | the owner home | Comma-separated homes to watch, each with its registered second mates |
 | `mode` | `dry-run` | `act` takes actions; anything else records them as `dry-run` |
 | `restart` | `off` | `on` allows restarts when `mode=act` |
-| `restart-command` | none | Starts a new captain session and appends the prompt as one argument. When a word is `muse`, `muse-bin`, or `muse-bin-*`, or a path ending in one of them, and the command carries none of `--yolo`, `--disable-approval`, `--approval-mode never`, or `--approval-mode=never`, `--yolo` is inserted as the first argument after the first such word. Any other command runs unchanged. |
+| `restart-command` | none | Starts a new captain session and appends the prompt as one argument. When the command word, after any leading `NAME=value`, `env`, `exec`, or `command` and again after `&&`, `||`, `;`, or `|`, is `muse`, `muse-bin`, or `muse-bin-*`, or a path ending in one of them, with one layer of surrounding quotes removed, and the command carries none of `--yolo`, `--disable-approval`, `--approval-mode never`, or `--approval-mode=never`, `--yolo` is inserted as the first argument after the first such word. Any other command runs unchanged, even when another word names muse. |
 | `do-not-touch` | none | Comma-separated homes, home names, or terminal targets never typed into or restarted |
 | `models` | `claude:haiku,agy:gemini-3.8-flash-low` | Ordered judge models; empty disables the judge |
 | `council-seats` | the `models` list | Comma-separated blind council seats |

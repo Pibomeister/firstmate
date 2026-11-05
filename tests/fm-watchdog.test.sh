@@ -1226,6 +1226,9 @@ test_watchdog_leaves_non_muse_restart_unchanged() {
     "$TMP_ROOT/bin/musescore"
     "$TMP_ROOT/bin/my-muse"
     "$TMP_ROOT/fake-captain.sh"
+    "FM_TEST_DIR=/x/muse $TMP_ROOT/bin/musescore"
+    "$TMP_ROOT/bin/my-muse --add-dir /x/muse"
+    "FM_TEST_DIR=/x/muse $TMP_ROOT/fake-captain.sh"
   )
   for cmd in "${cmds[@]}"; do
     make_home $'Captain session\n> ' "restart=on
@@ -1242,7 +1245,7 @@ restart-command=$cmd"
     ls "$H/data/watchdog/handoffs/"*.md >/dev/null 2>&1 || fail "a non-muse command wrote no handoff: $cmd"
     assert_equals 2 "$(window_count "$sess")" "a non-muse command opens a window: $cmd"
     case "$cmd" in
-      *musescore|*my-muse)
+      *musescore*|*my-muse*)
         assert_present "$H/launched-argv.txt" "the non-muse command launched: $cmd"
         assert_no_grep "--yolo" "$H/launched-argv.txt" "a non-muse command is not given --yolo: $cmd"
         ;;
