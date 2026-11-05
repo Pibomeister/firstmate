@@ -743,19 +743,22 @@ test_invariants_runs_skip_mode_checks() {
   tmp=$(fm_test_tmproot fm-ci-invariants-skip-docs)
   repo=$tmp/repo
   script=$tmp/skip-docs.sh
-  stamp=$tmp/called
   mkdir -p "$repo/bin"
   write_invariants_skip_docs_script "$script"
   while IFS= read -r check; do
     [ -n "$check" ] || continue
     mkdir -p "$repo/$(dirname "$check")"
-    printf '%s\n' '#!/bin/sh' "echo called >>\"$stamp\"" >"$repo/$check"
+    stamp=$tmp/$(printf '%s' "$check" | tr / _)
+    printf '%s\n' '#!/bin/sh' "echo called >\"$stamp\"" >"$repo/$check"
     chmod +x "$repo/$check"
   done < <("$ROOT/bin/fm-ci-select.sh" --list-skip-checks)
-  : >"$stamp"
   (cd "$repo" && bash "$script") || fail "the invariants skip-docs step failed in $repo"
-  grep -qx called "$stamp" \
-    || fail "the invariants skip-docs step must invoke the skip-mode check"
+  while IFS= read -r check; do
+    [ -n "$check" ] || continue
+    stamp=$tmp/$(printf '%s' "$check" | tr / _)
+    grep -qx called "$stamp" \
+      || fail "the invariants skip-docs step must invoke $check"
+  done < <("$ROOT/bin/fm-ci-select.sh" --list-skip-checks)
   pass "Repo invariants runs every skip-mode documentation check"
 }
 

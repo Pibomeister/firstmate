@@ -32,7 +32,8 @@ GitHub Actions and Dependabot are exempt so their automation keeps working, but 
 
 ### The `full-ci` label
 
-CI on a pull request from an author without write access runs only the quick checks at first: `Test coverage guard`, `Repo invariants`, and the no-mistakes body check.
+CI on a pull request from an author without write access runs only the skip-set jobs at first, plus the no-mistakes body check.
+The skip-set job list is in [Which CI jobs run](#which-ci-jobs-run).
 Lint and the behavior suites wait for a maintainer, or the maintainer's fleet, to add the `full-ci` label when the pull request is picked up for review.
 Until then the `Full suite` check fails with a message naming the label; that is expected and needs no action from you.
 Adding the label runs the full suite, and every later push to that pull request runs it again.
@@ -53,7 +54,7 @@ The workflow forces `mode=full` before it trusts the classifier when the diff in
 | every changed path is on the skip allowlist | `CI path select`, `Test coverage guard`, `Repo invariants`, `Full suite` (pass) |
 | any other path, including `.cursor/`, `README.md`, `docs/herdr-backend.md`, and a deleted `bin/` helper | every job in `.github/workflows/ci.yml` |
 
-The allowlist is exact paths: `GROK_BOT.md`, `VISION.md`, `assets/banner.png`, `docs/documentation-audiences.md`, `docs/examples/wedge-alarm`, `docs/opencode-2-plugin-port-scope.md`, `docs/pi-supervision-branch-poster.svg`, and `docs/scripts.md`.
+`bin/fm-ci-select.sh --list-skip` prints that header's exact path list.
 `Repo invariants` runs `bin/fm-doc-audience-check.sh` on skip, so a broken link, anchor, or owner pointer in those glob-read docs fails `Full suite`.
 `tests/fm-ci-select.test.sh` fails unless each allowlisted path is unread or covered by that skip-mode check.
 
