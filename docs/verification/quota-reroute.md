@@ -131,19 +131,75 @@ Record whether the command is nonzero, names `usage-limit screen`, and delivers 
 
 ## Results
 
-Status: NOT YET RUN.
+Status: PARTIAL (2026-11-05 America/Costa_Rica). Tooling gate and suggest proven live. Live Herdr Claude secondmate + relaunch refusal proven. Usage-limit relaunch (checklist 1–2 and naming-the-pick half of 5) not run: Claude was not at a usage limit (live quota-axi: ~76% weekly left). Empirical run on tip 9f3ad77f; post-rebase head c177fee6 carries the same gate (adv15 clean).
 
-Date:
+Date: 2026-11-05 ~09:50 America/Costa_Rica (UTC-6).
 
-Herdr version:
+Herdr version: herdr 0.7.4
 
-Codex CLI version:
+Codex CLI version: codex-cli 0.166.0 (Logged in using ChatGPT)
 
-Claude Code version:
+Claude Code version: 2.1.317 (loggedIn true, claude.ai)
 
-Exact commands:
+quota-axi: 0.1.69 in ~/.local/bin (floor 0.1.51). Round 2 used a LIVE `quota-axi --provider claude,codex --json` snapshot (schemaVersion 5). Round 1 had used a hand-written fixture before quota-axi was installed.
+
+Herdr default session: started headless (`herdr server`) only for the fm-herdr-lab tripwire; no agents attached. Stopped afterward (`herdr session stop default`). Before stop: running=true. After: running=false. Lab sessions were only `fm-lab-*`.
+
+Exact commands (abbreviated; full logs on the box under /tmp/gs010-live/):
+
+```sh
+# Round 1: gate/suggest on clean worktree + throwaway config dirs
+bin/fm-quota-reroute.sh claude-tooling --config-dir "$HOME/.claude" --worktree <clean-wt>
+bin/fm-quota-reroute.sh suggest --from-harness claude --kind secondmate \
+  --claude-config-dir "$HOME/.claude" --worktree <clean-wt> \
+  --candidate codex:gpt-5.4 --snapshot <fixture-then>
+
+# Round 2: lab + seeded secondmate + live snapshot
+herdr server   # tripwire only; stop after
+bin/fm-herdr-lab.sh provision fm-lab-gs010r2-…
+FM_HOME=<lab> bin/fm-home-seed.sh labmate <sm-home> --no-projects
+HERDR_SESSION=<lab> FM_HOME=<lab> bin/fm-spawn.sh labmate <sm-home> \
+  --harness claude --backend herdr --secondmate
+quota-axi --provider claude,codex --json > /tmp/gs010-live/quota-axi-live.json
+bin/fm-quota-reroute.sh claude-tooling --config-dir "$HOME/.claude" --worktree <sm-home>
+bin/fm-quota-reroute.sh suggest … --snapshot /tmp/gs010-live/quota-axi-live.json
+FM_HOME=<lab> bin/fm-control.sh labmate relaunch --harness codex
+FM_HOME=<lab> bin/fm-watchdog.sh once
+bin/fm-herdr-lab.sh teardown <lab-session>
+herdr session stop default
+```
 
 Observed output:
+
+```text
+# Round 1 (clean worktree)
+claude-tooling real ~/.claude + clean wt     -> exit 1 (no signal)
+suggest                                      -> "codex gpt-5.4" exit 0
+claude-tooling MCP / hooks / marketplace flat .mcp.json / worktree .mcp.json / missing dir
+  -> each exits 0 with the named signal; suggest -> none exit 1
+prepare/provision with default stopped       -> tripwire refuse (fixed in round 2)
+
+# Round 2 (seeded secondmate on Herdr lab)
+provision fm-lab-…                           -> 0
+spawn labmate harness=claude backend=herdr   -> pane w1:p2 (theme picker, not usage-limit)
+claude-tooling on seeded sm-home             -> "worktree .claude/skills" exit 0
+suggest with live quota-axi                  -> none exit 1 (names worktree .claude/skills)
+relaunch --harness codex                     -> refuse exit 1; pane/harness unchanged
+watchdog once                                -> 0; no pick named; no relaunch
+default after stop                           -> running=false
+```
+
+Seeded-home product note: `fm-home-seed` plants worktree `.claude/` (skills, settings.json, mods/firstmate-calm with plugin.json and hooks). Under the current unchanged worktree rule, every standard seeded secondmate is Claude-specific, so a quota move off Claude is refused even with Codex headroom. Checklist item 2 cannot pass on a seeded home without a captain decision (exempt seed material, change the seed, or accept that seeded mates stay on Claude until reset).
+
+Checklist (combined):
+
+1. Relaunch closes a usage-limit pane without Enter: BLOCKED (no usage-limit screen; quota not burned to force one).
+2. Replacement starts on Codex on Herdr: BLOCKED (same). Would also be refused by the seeded home's worktree `.claude/` signal.
+3. Claude harness pin with no other signal does not block: PARTIAL (gate+suggest on clean worktree in round 1; live relaunch not exercised without a signal).
+4. Any Claude-specific signal keeps the mate on Claude: PROVEN (gate+suggest round 1; live `fm-control relaunch` refusal on a real Herdr Claude pane in round 2).
+5. Watchdog names the pick and does not relaunch: PARTIAL (live no-op correct without a usage-limit pane; naming the pick needs that pane).
+
+Cleanup: lab teardown 0; lab homes removed; Herdr default stopped; gs007 tmux sessions untouched; no commits from the proof runners.
 
 ## Out of scope for this run
 
