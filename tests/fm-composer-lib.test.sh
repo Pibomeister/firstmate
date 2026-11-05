@@ -397,6 +397,65 @@ test_matrix_muse_truecolor_glyph_survives_signal_loss() {
   pass "matrix: muse's ⟩ reads empty everywhere and survives losing the styled-glyph signal"
 }
 
+test_matrix_muse_idle_suggestion_placeholder() {
+  # Real idle Muse Code 1.4.14 (tmux, muse-wonder-1.0), captured live
+  # with `tmux capture-pane -e -p` from a worker pane that had finished a
+  # turn (fixtures/muse-1.4.14/muse-1.4.14-idle-suggestion.ansi, cropped
+  # to the turn footer and composer container). Muse draws its rotating
+  # suggestion after the `❯` glyph with only ESC[0m before it - no dim or
+  # dark foreground - so ghost stripping keeps every byte and the pane
+  # read `pending`, deferring every doorbell. The suggestion is Muse
+  # furniture only inside Muse's own container: the `Voice input` rule
+  # above the prompt row, the solid rule below it, and the status footer
+  # as the last non-blank row.
+  local fixture screen typed out stripped suggestion
+  fixture="$ROOT/tests/fixtures/muse-1.4.14/muse-1.4.14-idle-suggestion.ansi"
+  screen=$(<"$fixture")
+  # NON-VACUOUSNESS: the fixture's suggestion really survives ghost
+  # stripping, so the empty verdicts below cannot come from the stripper.
+  stripped=$(printf '%s' "$(_fm_composer_screen_row 4 "$screen")" | fm_composer_strip_ghost)
+  fm_composer_normalize_trim_var stripped
+  [ "$stripped" = '❯ Ask to monitor a running build or log and get pinged on changes' ] \
+    || fail "the muse suggestion must survive ghost stripping intact, got '$stripped'"
+  assert_screen "muse idle suggestion on tmux" empty "$CAPS_TMUX" "$screen" 4
+  assert_screen "muse idle suggestion on herdr" empty "$CAPS_STYLED" "$screen"
+  assert_screen "muse idle suggestion on zellij" empty "$CAPS_STYLED_NOID" "$screen"
+  assert_screen "muse idle suggestion on cmux/orca" empty "$CAPS_PLAIN" "$screen"
+  out=$(fm_composer_extract_selected_content "$CAPS_STYLED" "$screen")
+  [ -z "$out" ] || fail "a muse suggestion must extract as no composer content, got '$out'"
+  # The other live-captured rotating suggestions read the same way.
+  for suggestion in \
+    'Type @ to search and insert workspace file paths' \
+    'ctrl+b sends the selected task to the background queue'; do
+    typed=${screen/'Ask to monitor a running build or log and get pinged on changes'/"$suggestion"}
+    assert_screen "muse idle suggestion '$suggestion' on tmux" empty "$CAPS_TMUX" "$typed" 4
+  done
+  # A cursor that is not on the Muse prompt row keeps the strict verdict.
+  out=$(fm_composer_classify_screen "$CAPS_TMUX" "$screen" 1)
+  [ "$out" = unknown ] || fail "muse container with cursor off the prompt row must stay unknown, got '$out'"
+  # The protection this must NOT remove: a real typed line in the same
+  # container, in the same unstripped style, still refuses.
+  typed=${screen/'Ask to monitor a running build or log and get pinged on changes'/'fix the login bug'}
+  assert_screen "muse typed on tmux" pending "$CAPS_TMUX" "$typed" 4
+  assert_screen "muse typed on herdr" pending "$CAPS_STYLED" "$typed"
+  assert_screen "muse typed on zellij" pending "$CAPS_STYLED_NOID" "$typed"
+  assert_screen "muse typed on cmux/orca" unknown "$CAPS_PLAIN" "$typed"
+  out=$(fm_composer_extract_selected_content "$CAPS_STYLED" "$typed")
+  [ "$out" = 'fix the login bug' ] \
+    || fail "muse typed content must extract as the typed text, got '$out'"
+  # An extension of a catalogue suggestion is typed text, not furniture.
+  typed=${screen/'get pinged on changes'/'get pinged on changes right now'}
+  assert_screen "muse extended suggestion text on tmux" pending "$CAPS_TMUX" "$typed" 4
+  # The catalogue is not a global text match: the same bytes on a bare
+  # row outside Muse's container keep the ordinary verdict, and a Muse
+  # frame quoted above a live typed composer does not outrank it.
+  assert_screen "muse suggestion text outside its container" pending "$CAPS_STYLED" \
+    $'transcript\n❯ Ask to monitor a running build or log and get pinged on changes'
+  typed="$screen"$'\n────────────────────────\n❯ fix the login bug\n────────────────────────'
+  assert_screen "quoted muse frame above a live typed composer" pending "$CAPS_STYLED" "$typed" '' probe-absent
+  pass "matrix: muse's unstripped suggestion reads empty only inside its own container; typed text stays pending"
+}
+
 test_matrix_cursor_reverse_video_placeholder_remnant() {
   # Real idle cursor-agent (2026.08.11-e8db854), captured byte-for-byte from a
   # live pane: the `→ ` glyph and the placeholder tail are dim (SGR 2), but the
@@ -1844,6 +1903,7 @@ test_composer_footer_zone_is_shape_independent
 test_composer_footer_zone_refuses_rather_than_allows
 test_matrix_codex_dim_hint_row
 test_matrix_muse_truecolor_glyph_survives_signal_loss
+test_matrix_muse_idle_suggestion_placeholder
 test_matrix_cursor_reverse_video_placeholder_remnant
 test_matrix_cursor_fully_dim_placeholder
 test_matrix_herdr_halfblock_rule_bounds_bare_wrap

@@ -89,6 +89,17 @@
 #                different, self-proving thing: real claude 2.x draws exactly
 #                that (`─` rule, `❯`+NBSP, `─` rule), so the glyph inside the
 #                pair carries the shape and no identity is needed.
+#   muse       - Muse Code 1.4.14: a prompt row (`❯` in 1.4.14, `⟩` in
+#                0.1.0) between a titled top rule carrying `Voice input
+#                (... to start)` and a solid bottom rule, with a
+#                middle-dot status footer (`muse-wonder-1.0 · high ·
+#                <path> · YOLO`) as the screen's last non-blank row. Its
+#                rotating suggestion placeholder is drawn with only
+#                ESC[0m before it - no dim or dark foreground - so ghost
+#                stripping cannot prove it; it is recognised only inside
+#                this container and only against Muse's own suggestion
+#                catalogue below. Any other text in that row is typed
+#                input.
 #
 # THE COMPOSER FOOTER ZONE (task firstmate-doorbell-vals-pending-p1): a
 # harness draws its own furniture BELOW the composer - a user statusLine, a
@@ -627,6 +638,127 @@ FM_COMPOSER_CODEX_FOOTER_RE_DEFAULT='^[[:space:]]*(([^[:space:]·]+[[:space:]]+(
 # Orca). Claude's empty bare row is `❯` plus U+00A0 and needs no entry; its
 # rotating suggestion is not a fixed string and stays `unknown` unstyled.
 FM_COMPOSER_BARE_PLACEHOLDERS_DEFAULT=$(printf '%s\t%s\n' '›' 'Ask Codex to do anything')
+# Muse Code's suggestion catalogue (muse 1.4.14, read from the installed
+# binary and verified live on tmux, muse-wonder-1.0): when its composer is
+# empty, Muse draws one of these rotating suggestions after its prompt
+# glyph with only ESC[0m before it - no dim, faint, or dark-foreground
+# styling for fm_composer_strip_ghost to strip - so an idle pane read
+# `pending` and every doorbell was deferred. The catalogue is consulted
+# ONLY on a prompt row proven to sit inside Muse's own container
+# (_fm_composer_muse_prompt_row: Voice-input rule, prompt row, solid
+# rule, status footer last); the same bytes anywhere else, and any other
+# text inside that container, keep their ordinary verdict. Matching is
+# exact and case-insensitive (1.4.14 renders `Ctrl+B` as `ctrl+b`).
+# A typed line that is exactly a catalogue entry reads `empty` inside
+# the container - the same accepted ambiguity as the per-glyph table
+# above, confined to Muse's container.
+FM_COMPOSER_MUSE_SUGGESTIONS_DEFAULT=$(printf '%s\n' \
+  'Type @ to search and insert workspace file paths' \
+  'Start a message with ! to run a shell command yourself' \
+  'Paste an image with Ctrl+V' \
+  'Press Alt+V to dictate instead of typing' \
+  'Tab queues or steers while a run is active' \
+  'Press ? on an empty composer to see keyboard shortcuts' \
+  'Press Ctrl+O to expand collapsed tool output' \
+  '/side asks a quick question without touching this thread' \
+  '/fork branches the conversation from the latest point' \
+  '/goal pins a session objective with a progress bar' \
+  '/resume reopens a past session (--last for the latest)' \
+  "Ask to 'use a workflow' to fan out parallel agents on big tasks" \
+  "Say 'use a workflow' to fan out agents on big tasks" \
+  'Ask to monitor a running build or log and get pinged on changes' \
+  '/agent opens the subagent command center' \
+  '/tasks shows workflows, subagents and terminals in one place' \
+  '/loop 10m <prompt> schedules a recurring prompt' \
+  'Ctrl+B sends the selected task to the background queue' \
+  '/skills browses ready-made skills for repeatable procedures' \
+  '/plugins marketplace installs new commands and skills' \
+  '/effort adjusts reasoning depth vs speed' \
+  "/usage shows this session's token usage" \
+  '/export saves the conversation to a text file')
+
+# _fm_composer_muse_suggestion_matches: 0 when <body> is exactly one of
+# Muse's catalogue suggestions (case-insensitive; see above).
+_fm_composer_muse_suggestion_matches() {  # <body>
+  local entry body_lc entry_lc
+  body_lc=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
+  while IFS= read -r entry; do
+    [ -n "$entry" ] || continue
+    entry_lc=$(printf '%s' "$entry" | tr '[:upper:]' '[:lower:]')
+    [ "$body_lc" = "$entry_lc" ] && return 0
+  done <<EOF
+$FM_COMPOSER_MUSE_SUGGESTIONS_DEFAULT
+EOF
+  return 1
+}
+
+# _fm_composer_muse_prompt_row: print the row index of Muse's composer
+# prompt row in <plain-screen>, or return 1. The container is proven by
+# four consecutive rows - the `Voice input (... to start)` titled rule,
+# an agent-glyph prompt row, a solid separator rule, and a middle-dot
+# status footer - and the footer must be the screen's last non-blank
+# row, so a Muse frame quoted in a transcript above a live composer
+# (or a modal drawn below the footer) proves nothing.
+_fm_composer_muse_prompt_row() {  # <plain-screen>
+  local plain=$1 row=0 line trimmed candidate=-1 footer_row=-1 last_nonblank=-1
+  local prev1='' prev2='' prev3='' glyph=''
+  while IFS= read -r line; do
+    trimmed=$line
+    fm_composer_normalize_trim_var trimmed
+    if [ -n "$trimmed" ]; then last_nonblank=$row; fi
+    if [ "$row" -ge 3 ]; then
+      case "$prev3" in
+        '──'*'Voice input ('*'to start)'*)
+          case "$trimmed" in
+            *' · '*' · '*)
+              if _fm_composer_pi_separator_row "$prev1" \
+                 && fm_composer_leading_agent_glyph_var glyph "$prev2"; then
+                candidate=$((row - 2))
+                footer_row=$row
+              fi
+              ;;
+          esac
+          ;;
+      esac
+    fi
+    prev3=$prev2; prev2=$prev1; prev1=$trimmed
+    row=$((row + 1))
+  done <<EOF
+$plain
+EOF
+  [ "$candidate" -ge 0 ] || return 1
+  [ "$footer_row" -eq "$last_nonblank" ] || return 1
+  printf '%s' "$candidate"
+}
+
+# _fm_composer_muse_body: print the prompt-row body (glyph stripped,
+# trimmed) of Muse's composer at <prompt-row> in <screen>. The plain
+# row is authoritative here: Muse's suggestion and its typed text are
+# drawn in the same unstripped style, so styling proves neither.
+_fm_composer_muse_body() {  # <screen> <prompt-row>
+  local raw plain glyph=''
+  raw=$(_fm_composer_screen_row "$2" "$1")
+  plain=$(printf '%s\n' "$raw" | fm_composer_strip_ansi)
+  fm_composer_normalize_trim_var plain
+  if fm_composer_leading_agent_glyph_var glyph "$plain"; then
+    plain=${plain#*"$glyph"}
+  fi
+  fm_composer_normalize_trim_var plain
+  printf '%s' "$plain"
+}
+
+# _fm_composer_muse_verdict: the Muse-container verdict. An empty row
+# or a catalogue suggestion is `empty`; any other text is real typed
+# input - `pending` when styling is present to prove it, `unknown` on a
+# plain capture (the usual bare-row degradation, never `empty`).
+_fm_composer_muse_verdict() {  # <screen> <styled> <prompt-row>
+  local body styled=$2
+  body=$(_fm_composer_muse_body "$1" "$3")
+  if [ -z "$body" ] || _fm_composer_muse_suggestion_matches "$body"; then
+    printf 'empty'; return 0
+  fi
+  if [ "$styled" = 1 ]; then printf 'pending'; else printf 'unknown'; fi
+}
 # Pi's footer stats row opens at column 0 with the session cost when every
 # token counter is zero (`$0.000 (sub) 5.4%/272k (auto)` on pi 0.85.1).
 # That leading `$` is a cost cell, not a dead-shell prompt, only when a digit
@@ -2130,7 +2262,7 @@ _fm_composer_select_cursorless() {
 
 fm_composer_extract_selected_content() {  # <caps> <screen>
   local caps=$1 screen=$2 styled=0 kv plain row raw content glyph joined='' footer_re prompt_row=-1
-  local leading_blank=1 placeholder_position=0 prompt_is_shell=0 cwd_start
+  local leading_blank=1 placeholder_position=0 prompt_is_shell=0 cwd_start muse_row='' muse_body=''
   footer_re=${FM_COMPOSER_LEFTBAR_FOOTER_RE:-$FM_COMPOSER_LEFTBAR_FOOTER_RE_DEFAULT}
   while IFS= read -r kv; do
     [ "$kv" = styled=1 ] && styled=1
@@ -2139,6 +2271,17 @@ $caps
 EOF
   plain=$(printf '%s\n' "$screen" | fm_composer_strip_ansi)
   _fm_composer_scan_screen "$plain" '' 1
+  # Muse's container is not selected by the generic cursorless rules
+  # (its top rule is titled, so the separator pair never closes over
+  # it); its content is the prompt-row body, with a catalogue suggestion
+  # extracting as no content at all.
+  if muse_row=$(_fm_composer_muse_prompt_row "$plain"); then
+    muse_body=$(_fm_composer_muse_body "$screen" "$muse_row")
+    if [ -n "$muse_body" ] && ! _fm_composer_muse_suggestion_matches "$muse_body"; then
+      printf '%s' "$muse_body"
+    fi
+    return 0
+  fi
   _fm_composer_select_cursorless "$plain" || return 1
   row=$FM_COMPOSER_SELECTED_FIRST
   cwd_start=-1
@@ -2296,7 +2439,7 @@ fm_composer_dialog_sink_release() {
 
 fm_composer_classify_screen() {  # <caps> <screen> [cursor_row] [identity]
   local caps=$1 screen=$2 cy=${3:-} identity=${4:-}
-  local styled=0 cursor=0 has_identity=0 cortex_proven=0 cortex_ask=0 kv plain
+  local styled=0 cursor=0 has_identity=0 cortex_proven=0 cortex_ask=0 kv plain muse_row=''
   # Note the dialog before any early return so a pending picker is still named.
   fm_composer_note_blocking_dialog "$screen" || true
   while IFS= read -r kv; do
@@ -2335,6 +2478,18 @@ EOF
      && [ "$FM_COMPOSER_SCAN_CORTEX_CANDIDATE" = 1 ]; then
     printf 'need-identity'
     return 0
+  fi
+  # Muse's container (see the shape catalogue): its suggestion has no
+  # styling for the ghost stripper, so this one shape is decided here,
+  # before the generic bare-row and separator-pair rules misread it.
+  # In cursor mode the cursor must sit on the Muse prompt row itself;
+  # a cursor elsewhere (Muse's blank queue row while a turn runs) keeps
+  # the ordinary verdict.
+  if muse_row=$(_fm_composer_muse_prompt_row "$plain"); then
+    if [ -z "$cy" ] || [ "$cy" = "$muse_row" ]; then
+      _fm_composer_muse_verdict "$screen" "$styled" "$muse_row"
+      return 0
+    fi
   fi
   if [ -n "$cy" ]; then
     # Cursor mode (tmux): the shape CONTAINING the cursor is the composer.
