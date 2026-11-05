@@ -28,9 +28,11 @@
 # With --json it prints one object:
 #   {schema:"fm-ready-pr-discovery.v1",generated_epoch,runs[],unreadable[],warnings[]}
 #   runs[]: {repo,gate_repo,branch,pr,head,run_id,kind,gate,waited_seconds,owned,owner_task}
-# A repo whose gate cannot be read, whose overview run inventory is truncated
-# (count: <shown> of <total>), or that the overall budget cut short is reported
-# in unreadable[], never skipped silently; runs already read are still listed. Owned means a state/<id>.meta record names the run's branch (or
+# A truncated overview (count: <shown> of <total>) is completed from the
+# no-mistakes state database read-only. A repo whose gate cannot be read,
+# whose truncated inventory cannot be completed, or that the overall budget
+# cut short is reported in unreadable[], never skipped silently; runs already
+# read are still listed. Owned means a state/<id>.meta record names the run's branch (or
 # its PR URL); anything else is flagged owned=no (an orphan).
 #
 # FM_READY_PR_NOW (epoch seconds) and FM_READY_PR_NM_TIMEOUT (per-call bound,
@@ -176,17 +178,58 @@ ci_log_state() {  # <clone> <run-id>
 }
 
 # 0 when the optional overall discovery budget (FM_READY_PR_TIMEOUT seconds)
-# is exhausted, checked before every repo and every live run. Callers bound the
+# has less than two bounded calls (2 x NM_TIMEOUT) left, checked before every
+# repo (overview plus inventory read) and every live run (status plus ci log),
+# so the sweep ends inside the budget. Callers bound the
 # whole sweep with this, so a slow fleet degrades to partial results plus
 # unreadable entries for what was not read instead of no output at all.
 DISCOVERY_START=$(date +%s)
 discovery_expired() {
   case "${FM_READY_PR_TIMEOUT:-}" in ''|*[!0-9]*|0) return 1 ;; esac
-  [ $(( $(date +%s) - DISCOVERY_START )) -ge "$FM_READY_PR_TIMEOUT" ]
+  [ $(( $(date +%s) - DISCOVERY_START + 2 * NM_TIMEOUT )) -ge "$FM_READY_PR_TIMEOUT" ]
+}
+
+# Every live run of the gate repo named by the overview's `repo:` line, read
+# from the no-mistakes state database read-only (the same inventory
+# fm_nm_select_run in bin/fm-nm-run-lib.sh reads for a capped overview), as
+# TSV rows id, branch, status, head, pr (empty). Fails when the inventory
+# cannot be read.
+state_db_live_rows() {  # <clone> <gate-repo-path>
+  fm_nm_bounded "$1" "$NM_TIMEOUT" python3 - "$2" "$(fm_nm_state_db "$1")" 2>/dev/null <<'PY'
+import os
+import re
+import sqlite3
+import sys
+from contextlib import closing
+from pathlib import Path
+
+repo_path, database = sys.argv[1:]
+if not os.path.isabs(repo_path):
+    sys.exit(1)
+try:
+    with closing(sqlite3.connect(Path(database).as_uri() + "?mode=ro", uri=True, timeout=30)) as db:
+        db.execute("BEGIN")
+        repo = db.execute("SELECT id FROM repos WHERE working_path = ?", (repo_path,)).fetchall()
+        if len(repo) != 1:
+            sys.exit(1)
+        rows = db.execute(
+            "SELECT id, branch, status, head_sha FROM runs WHERE repo_id = ? "
+            "AND status IN ('pending', 'running') ORDER BY created_at DESC, id DESC", (repo[0][0],)
+        ).fetchall()
+except (OSError, sqlite3.Error):
+    sys.exit(1)
+for row in rows:
+    if (not all(isinstance(value, str) for value in row)
+            or not re.fullmatch(r"[A-Za-z0-9_-]+", row[0]) or re.search(r"[\t\n]", row[1])
+            or not re.fullmatch(r"[a-fA-F0-9]{7,40}", row[3])):
+        sys.exit(1)
+for row in rows:
+    print("\t".join(row) + "\t")
+PY
 }
 
 discover_repo() {  # <name>
-  local name=$1 clone=$PROJECTS/$1 overview rc=0 rows row id branch status head pr
+  local name=$1 clone=$PROJECTS/$1 overview rc=0 rows inventory id branch status head pr
   local detail kind gate checks run_head run_pr created waited owner gate_repo count_line shown total mode
   # Projects whose registered mode publishes no no-mistakes gate (direct-PR,
   # local-only) have nothing to discover; skip them silently rather than
@@ -215,10 +258,14 @@ discover_repo() {  # <name>
   shown=$(printf '%s' "$count_line" | awk '{print $1}'); total=$(printf '%s' "$count_line" | awk '{print $3}')
   case "$shown" in ''|*[!0-9]*) shown='' ;; esac
   case "$total" in ''|*[!0-9]*) total='' ;; esac
-  if [ -n "$shown" ] && [ -n "$total" ] && [ "$shown" -lt "$total" ]; then
-    note_unreadable "$name" "run inventory incomplete ($shown of $total runs shown); live runs outside the overview window were not read"
-  fi
   rows=$(overview_live_rows "$overview")
+  if [ -n "$shown" ] && [ -n "$total" ] && [ "$shown" -lt "$total" ]; then
+    if inventory=$(state_db_live_rows "$clone" "$gate_repo"); then
+      rows=$(printf '%s\n%s\n' "$rows" "$inventory" | awk -F '\t' 'NF && !seen[$1]++')
+    else
+      note_unreadable "$name" "run inventory incomplete ($shown of $total runs shown) and the complete inventory is unreadable; live runs outside the overview window were not read"
+    fi
+  fi
   [ -n "$rows" ] || return 0
   while IFS="$(printf '\t')" read -r id branch status head pr; do
     [ -n "$id" ] || continue

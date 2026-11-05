@@ -60,9 +60,9 @@ if [ "$#" = 1 ] && [ "$1" = axi ]; then
 fi
 if [ "${1:-}" = axi ] && [ "${2:-}" = status ] && [ "${3:-}" = --run ]; then
   if [ "$repo" = busy ]; then
-    sleep 3
-    run_id=$4
+    sleep 2.5
   fi
+  case "$repo" in capped|busy) run_id=$4 ;; esac
   case "$repo" in
     casco|capped|busy)
       cat <<EOF
@@ -249,20 +249,63 @@ test_no_mutating_call_is_made() {
   pass "no mutating call is made"
 }
 
-test_truncated_overview_is_reported_incomplete() {
-  local home=$TMP_ROOT/capped-home out json
-  mkdir -p "$home/data" "$home/state" "$home/projects/capped"
-  printf '# Projects\n\n- capped [no-mistakes] - Capped overview (added 2026-11-04)\n' > "$home/data/projects.md"
-  out=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
-    FM_PROJECTS_OVERRIDE="$home/projects" "$DISCOVERY" --compact)
+HIDDEN_ID=01M6HTBRJ0AAAAAAAAAAAAAAAH
+
+capped_home() {  # <home> <nm-home>
+  mkdir -p "$1/data" "$1/state" "$1/projects/capped" "$2"
+  printf '# Projects\n\n- capped [no-mistakes] - Capped overview (added 2026-11-04)\n' > "$1/data/projects.md"
+}
+
+run_capped() {  # <home> <nm-home> <mode>
+  NM_HOME="$2" FM_HOME="$1" FM_STATE_OVERRIDE="$1/state" FM_DATA_OVERRIDE="$1/data" \
+    FM_PROJECTS_OVERRIDE="$1/projects" "$DISCOVERY" "$3"
+}
+
+test_truncated_overview_lists_runs_outside_the_window() {
+  local home=$TMP_ROOT/capped-home nm=$TMP_ROOT/capped-nm out json
+  command -v python3 >/dev/null 2>&1 || { pass "skip: python3 not found"; return; }
+  capped_home "$home" "$nm"
+  python3 - "$nm/state.sqlite" "$RUN_ID" "$HIDDEN_ID" <<'PY'
+import sqlite3, sys
+db = sqlite3.connect(sys.argv[1])
+db.execute("CREATE TABLE repos (id INTEGER PRIMARY KEY, working_path TEXT)")
+db.execute("CREATE TABLE runs (id TEXT, repo_id INTEGER, branch TEXT, status TEXT, head_sha TEXT, created_at INTEGER)")
+db.execute("INSERT INTO repos VALUES (1, '/gate/capped'), (2, '/gate/other')")
+db.executemany("INSERT INTO runs VALUES (?, ?, ?, ?, ?, ?)", [
+    (sys.argv[2], 1, "feat/capped-ready", "running", "cab1234", 3),
+    (sys.argv[3], 1, "feat/hidden-ready", "running", "fee1234", 1),
+    ("01M6HTBRJ0AAAAAAAAAAAAAAAC", 1, "feat/old-done", "completed", "dd01234", 0),
+    ("01M6HTBRJ0AAAAAAAAAAAAAAAO", 2, "feat/other-repo", "running", "aa01234", 2),
+])
+db.commit()
+PY
+  : > "$FAKE_NM_CALLS"
+  out=$(run_capped "$home" "$nm" --compact)
+  assert_contains "$out" "ready-pr: repo=capped branch=feat/capped-ready" "runs inside the overview window are still listed"
+  assert_contains "$out" "ready-pr: repo=capped branch=feat/hidden-ready" "a live run outside the overview window is listed"
+  assert_contains "$out" "run=$HIDDEN_ID" "the hidden run is read by its own id"
+  assert_not_contains "$out" "feat/other-repo" "another repo's live run is not attributed to this repo"
+  assert_not_contains "$out" "feat/old-done" "completed history is not listed"
+  assert_not_contains "$out" "ready-pr-unreadable: repo=capped" "a completed inventory is not reported unreadable"
+  [ "$(grep -c "^capped|axi status --run $RUN_ID" "$FAKE_NM_CALLS")" -eq 1 ] \
+    || fail "a run shown in the overview and the inventory was read twice"
+  json=$(run_capped "$home" "$nm" --json)
+  printf '%s' "$json" | jq -e '[.runs[] | select(.repo == "capped")] | length == 2' >/dev/null \
+    || fail "json lists both capped runs"
+  pass "truncated overview lists runs outside the window"
+}
+
+test_truncated_overview_without_inventory_is_reported_incomplete() {
+  local home=$TMP_ROOT/capped-noinv-home nm=$TMP_ROOT/capped-noinv-nm out json
+  capped_home "$home" "$nm"
+  out=$(run_capped "$home" "$nm" --compact)
   assert_contains "$out" "ready-pr: repo=capped branch=feat/capped-ready" "runs inside the overview window are still listed"
   assert_contains "$out" "ready-pr-unreadable: repo=capped reason=run inventory incomplete (1 of 40 runs shown)" \
-    "a truncated overview is reported as an incomplete repo, not only a warning"
-  json=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
-    FM_PROJECTS_OVERRIDE="$home/projects" "$DISCOVERY" --json)
+    "an uncompletable truncated overview is reported as an incomplete repo"
+  json=$(run_capped "$home" "$nm" --json)
   printf '%s' "$json" | jq -e '.unreadable | map(.repo) | index("capped") != null' >/dev/null \
-    || fail "json lists the truncated repo as unreadable"
-  pass "truncated overview is reported incomplete"
+    || fail "json lists the uncompletable repo as unreadable"
+  pass "truncated overview without inventory is reported incomplete"
 }
 
 test_budget_stops_inside_a_repo_and_keeps_results() {
@@ -270,10 +313,10 @@ test_budget_stops_inside_a_repo_and_keeps_results() {
   mkdir -p "$home/data" "$home/state" "$home/projects/busy"
   printf '# Projects\n\n- busy [no-mistakes] - Many live runs (added 2026-11-04)\n' > "$home/data/projects.md"
   : > "$FAKE_NM_CALLS"
-  out=$(FM_READY_PR_TIMEOUT=2 FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+  out=$(FM_READY_PR_TIMEOUT=8 FM_READY_PR_NM_TIMEOUT=3 FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
     FM_PROJECTS_OVERRIDE="$home/projects" "$DISCOVERY" --compact)
   assert_contains "$out" "ready-pr: repo=busy branch=feat/busy-1" "the run read before the budget ran out is kept"
-  assert_contains "$out" "ready-pr-unreadable: repo=busy reason=discovery budget 2s reached; remaining live runs not read" \
+  assert_contains "$out" "ready-pr-unreadable: repo=busy reason=discovery budget 8s reached; remaining live runs not read" \
     "the budget cut inside a repo is reported as incomplete"
   [ "$(grep -c '^busy|axi status --run' "$FAKE_NM_CALLS")" -eq 1 ] \
     || fail "discovery kept reading runs after the budget ran out"
@@ -289,5 +332,6 @@ fm_test_run \
   test_non_gate_projects_are_skipped_silently \
   test_unreadable_ci_log_is_not_ready \
   test_no_mutating_call_is_made \
-  test_truncated_overview_is_reported_incomplete \
+  test_truncated_overview_lists_runs_outside_the_window \
+  test_truncated_overview_without_inventory_is_reported_incomplete \
   test_budget_stops_inside_a_repo_and_keeps_results
