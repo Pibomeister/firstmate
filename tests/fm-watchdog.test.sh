@@ -1955,8 +1955,77 @@ test_status_file_short_and_staleness_visible() {
   pass "status file stays under 40 lines with timestamp, health, actions since last read, gaps, and a staleness line"
 }
 
+test_away_permission_dialog_pages_the_owner() {
+  local dialog=$'Do you want to proceed?\n ❯ 1. Yes\n   2. No, and tell Claude what to do differently\n\nEsc to cancel'
+  local secret=$'Do you want to run curl -H "Authorization: Bearer abc123def456"?\n ❯ 1. Yes\n   2. No\n\nEsc to cancel'
+  make_home "$dialog"
+  transcript 100 "Working."
+  printf '%s\n' "$LOCKPID" > "$H/state/.supervise-daemon.pid"
+  printf "command:cat >> '%s'\n" "$H/paged.log" > "$H/config/wedge-alarm"
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger | awk -F'\t' '$6 == "page"' | wc -l | tr -d ' ')" "a present owner is not paged: $(ledger | cut -f5-8)"
+  [ ! -e "$H/paged.log" ] || fail "a present owner was paged: $(cat "$H/paged.log")"
+
+  : > "$H/state/.afk"
+  run_wd 10 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows dialog page pending)" "an away permission dialog pages the owner: $(ledger | cut -f5-8)"
+  assert_equals 1 "$(ledger_rows dialog page "done")" "the page was delivered: $(ledger | cut -f5-8)"
+  assert_grep "a permission dialog blocks the away session" "$H/paged.log" "the page names the blocked away session"
+  assert_no_grep "Do you want to proceed" "$H/paged.log" "the page carries no dialog text"
+  assert_contains "$(ledger | awk -F'\t' '$6 == "page" && $7 == "pending" { print $8 }')" "permission: Do you want to proceed?" "the ledger records which dialog fired"
+  assert_grep "permission dialog waiting" "$H/data/watchdog/status.md" "the dialog is still reported"
+  [ ! -s "$H/typed.log" ] || fail "the watchdog typed into a permission dialog: $(cat "$H/typed.log")"
+
+  run_wd 300 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows dialog page pending)" "a second page waits for nudge-secs: $(ledger | cut -f5-8)"
+  run_wd 1000 once >/dev/null 2>&1
+  assert_equals 2 "$(ledger_rows dialog page pending)" "a dialog still showing after nudge-secs pages again: $(ledger | cut -f5-8)"
+
+  printf 'quiet\n' > "$H/state/.afk"
+  run_wd 2000 once >/dev/null 2>&1
+  assert_equals 2 "$(ledger_rows dialog page pending)" "quiet mode, where the owner watches the session, is not paged: $(ledger | cut -f5-8)"
+
+  : > "$H/state/.afk"
+  printf 'off\n' > "$H/config/wedge-alarm"
+  run_wd 3000 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows dialog page refused)" "alerts turned off refuse the page: $(ledger | cut -f5-8)"
+  assert_grep "permission dialog not paged" "$H/data/watchdog/status.md" "the unpaged dialog is a reported gap"
+  assert_equals 2 "$(grep -c 'a permission dialog blocks' "$H/paged.log")" "nothing reached the owner while alerts were off"
+
+  make_home "$secret"
+  transcript 100 "Working."
+  printf '%s\n' "$LOCKPID" > "$H/state/.supervise-daemon.pid"
+  printf "command:cat >> '%s'\n" "$H/paged.log" > "$H/config/wedge-alarm"
+  : > "$H/state/.afk"
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows dialog page "done")" "a secret-looking dialog still pages the owner: $(ledger | cut -f5-8)"
+  assert_no_grep "abc123def456" "$H/state/watchdog/actions.tsv" "a secret-looking dialog text stays out of the ledger"
+  assert_grep "withheld: the dialog text looks like a secret" "$H/state/watchdog/actions.tsv" "the withheld dialog is still recorded"
+
+  make_home "Do you want to run $(printf 'x%.0s' $(seq 274)) sk-abcdefghijklmnop?"$'\n ❯ 1. Yes\n   2. No\n\nEsc to cancel'
+  transcript 100 "Working."
+  printf '%s\n' "$LOCKPID" > "$H/state/.supervise-daemon.pid"
+  printf "command:cat >> '%s'\n" "$H/paged.log" > "$H/config/wedge-alarm"
+  : > "$H/state/.afk"
+  run_wd 0 once >/dev/null 2>&1
+  assert_no_grep "sk-a" "$H/state/watchdog/actions.tsv" "a secret cut at the record limit stays out of the ledger"
+  assert_grep "withheld: the dialog text looks like a secret" "$H/state/watchdog/actions.tsv" "a secret past the record limit is still withheld"
+
+  make_home "$dialog" 'mode=dry-run'
+  transcript 100 "Working."
+  printf '%s\n' "$LOCKPID" > "$H/state/.supervise-daemon.pid"
+  printf "command:cat >> '%s'\n" "$H/paged.log" > "$H/config/wedge-alarm"
+  : > "$H/state/.afk"
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows dialog page dry-run)" "dry-run records the page it would send: $(ledger | cut -f5-8)"
+  [ ! -e "$H/paged.log" ] || fail "dry-run paged the owner: $(cat "$H/paged.log")"
+  pass "away permission dialog: the owner is paged once per window, the dialog is recorded, and no key is sent"
+}
+
 test_never_merges_deploys_or_messages_owner() {
   # Every act-mode case above ran with gh, gh-axi, notifiers, and mail faked.
+  # The away permission-dialog page reaches only a home's configured alert
+  # channel, which test_away_permission_dialog_pages_the_owner sets to a command.
   assert_no_grep "merge" "$CALLS_LOG" "the watchdog invoked a merge"
   assert_no_grep "deploy" "$CALLS_LOG" "the watchdog invoked a deploy"
   assert_no_grep "osascript" "$CALLS_LOG" "the watchdog notified the owner"
@@ -2036,6 +2105,7 @@ fm_test_run \
   test_held_nudge_restart_keeps_the_draft_or_names_the_gap \
   test_context_burn_file_is_not_a_context_source \
   test_dialog_kind_ignores_conversation_rows \
+  test_away_permission_dialog_pages_the_owner \
   test_low_context_undeliverable_nudge_leaves_frozen_recovery \
   test_homes_with_one_basename_keep_their_own_state \
   test_dialog_reserved_check_reads_only_dialog_rows \
