@@ -43,32 +43,19 @@ Pull requests from this repository's own branches or from authors with write acc
 
 `bin/fm-ci-select.sh` classifies a pull request's changed paths.
 A push to `main` is always the full suite.
-The classifier prints `mode=skip` only when the path list is non-empty and every path matches a skip glob.
-Any other path, or an empty list, is `mode=full`.
+The classifier prints `mode=skip` only when the path list is non-empty and every path maps to no tests in the runner's changed-path map.
+Any path that maps to a family, a script, or an unmapped source, or an empty list, is `mode=full`.
+`git diff --name-only --no-renames` feeds that map, so a rename lists both the old and new paths.
+The workflow forces `mode=full` before it trusts the classifier when the diff includes `bin/fm-ci-select.sh`, `bin/fm-test-run.sh`, or `.github/`.
 
-Skip globs, as bash `case` patterns where `*` matches `/`:
+| Paths | Jobs that run |
+| every changed path maps to no tests | `CI path select`, `Test coverage guard`, `Repo invariants`, `Full suite` (pass) |
+| any path maps to a family, a script, or an unmapped source | every job in `.github/workflows/ci.yml` |
 
-| Path glob | Jobs that run |
-| `docs/*` | `CI path select`, `Test coverage guard`, `Repo invariants`, `Full suite` (pass) |
-| `assets/*` | same skip set |
-| `README.md` | same skip set |
-| `LICENSE` | same skip set |
-| `CONTRIBUTING.md` | same skip set |
-| `GROK_BOT.md` | same skip set |
-| `VISION.md` | same skip set |
-| `.gitignore` | same skip set |
-| `.cursor/skills/*` | same skip set |
-| `.cursor/agents/*` | same skip set |
-| `.cursor/rules/*` | same skip set |
-| `.cursor/roles/*` | same skip set |
-| `.cursor/references/*` | same skip set |
-| `.cursor/schemas/*` | same skip set |
-| `.cursor/templates/*` | same skip set |
-| `.cursor/licenses/*` | same skip set |
-| `.cursor/catalog.yaml` | same skip set |
-| `.github/**`, `bin/**`, `tests/**`, `AGENTS.md`, and every other path | every job in `.github/workflows/ci.yml` |
+Examples that skip: `README.md`, `LICENSE`, `assets/*`, `docs/architecture.md`, `.gitignore`, and the empty Cursor overlay arms.
+Examples that require the full suite: `CONTRIBUTING.md`, `docs/configuration.md`, `docs/fm-test-portable-shards.md`, `docs/fm-test-isolation-proof.md`, `docs/fm-test-isolation-proof.json`, `docs/supervision-protocols/*`, `.github/**`, `bin/**`, `tests/**`, and `AGENTS.md`.
 
-A mixed diff that includes any non-skip path is full.
+A mixed diff that includes any mapped path is full.
 The outside-PR `full-ci` gate still applies on top of this table: an unlabelled outside pull request runs only the skip-set jobs, and `Full suite` fails naming the label even when the paths would skip.
 `Full suite` passes on an intended path skip.
 A skipped lint or behavior lane while `mode=full` fails `Full suite`.

@@ -44,8 +44,10 @@ concurrency:
 # Path skip: bin/fm-ci-select.sh classifies a pull request's changed paths.
 # mode=skip drops lint and the behavior lanes. Coverage, invariants, the
 # classifier job, and Full suite still run, and Full suite passes. mode=full,
-# including every push to main, keeps those lanes. The skip globs and the
-# job table live in bin/fm-ci-select.sh and CONTRIBUTING.md. Heavy jobs read
+# including every push to main, keeps those lanes. Skip is empty-map: every
+# changed path maps to no tests. The workflow forces full when the diff
+# includes the classifier, the changed-path map, or .github/, before it
+# trusts the pull request's classifier. Heavy jobs read
 # needs.select.outputs.mode so an intended skip is a skipped check, not a
 # pending one.
 #
@@ -65,12 +67,15 @@ concurrency:
 # for the same reason as the fork opt-out; CONTRIBUTING.md documents the label.
 jobs:
   # Classifies the pull request path set. Pushes to main are always full.
-  # A skipped heavy lane is then an intended skip only when this output is skip.
+  # The workflow also forces full when the diff includes the classifier,
+  # the changed-path map, or CI config, so a pull request cannot skip those
+  # lanes by editing the classifier. A skipped heavy lane is then an
+  # intended skip only when this output is skip.
   select:
     name: ${{ (github.event.action == 'labeled' && github.event.label.name != 'full-ci') && 'Not run for label - ' || '' }}CI path select
     runs-on: ubuntu-24.04
     if: ${{ !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') && !(github.event.action == 'labeled' && github.event.label.name != 'full-ci') }}
-    # Fast tier: git diff plus a glob walk.
+    # Fast tier: git diff plus the changed-path map.
     timeout-minutes: 5
     outputs:
       mode: ${{ steps.select.outputs.mode }}
@@ -87,7 +92,21 @@ jobs:
             echo "fm-ci-select: mode=full (push to main)" >&2
             exit 0
           fi
-          bin/fm-ci-select.sh --base "${{ github.event.pull_request.base.sha }}" | tee -a "$GITHUB_OUTPUT"
+          base="${{ github.event.pull_request.base.sha }}"
+          # Simpler than checking out the base SHA's classifier: those
+          # paths already require the full suite, and this guard does not
+          # need a second tree.
+          while IFS= read -r path; do
+            [ -n "$path" ] || continue
+            case "$path" in
+              bin/fm-ci-select.sh|bin/fm-test-run.sh|.github/*)
+                echo "mode=full" >> "$GITHUB_OUTPUT"
+                echo "fm-ci-select: mode=full ($path is CI config or the classifier)" >&2
+                exit 0
+                ;;
+            esac
+          done < <(git diff --name-only --no-renames "${base}...HEAD")
+          bin/fm-ci-select.sh --base "$base" | tee -a "$GITHUB_OUTPUT"
 
   lint:
     name: ${{ (github.event.action == 'labeled' && github.event.label.name != 'full-ci') && 'Not run for label - ' || '' }}Lint ${{ matrix.partition }}
@@ -486,6 +505,7 @@ jobs:
 #    name: ${{ (github.event.action == 'labeled' && github.event.label.name != 'full-ci') && 'Not run for label - ' || '' }}Stock macOS Bash snapshot compatibility
 #    # This lane needs Apple's Bash 3.2, not arm64 hardware. Keep it off the
 #    # arm64 pool so capacity there cannot prevent the compatibility check.
+#    needs: select
 #    runs-on: macos-15-intel
 #    if: ${{ !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') && vars.FM_CI_SKIP_MACOS != '1' && !(github.event.action == 'labeled' && github.event.label.name != 'full-ci') && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'OWNER' || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'COLLABORATOR' || contains(github.event.pull_request.labels.*.name, 'full-ci')) && needs.select.outputs.mode == 'full' }}
 #    # Normal tier (see the timeout policy above).

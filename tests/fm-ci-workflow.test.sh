@@ -767,6 +767,67 @@ test_outside_pr_path_skip_still_names_full_ci() {
   pass "path skip does not waive the full-ci gate on an outside PR"
 }
 
+# Write the select job's run script with GitHub expressions already
+# substituted, then execute it in a fixture so a stub classifier cannot
+# skip a diff that touches the classifier, the changed-path map, or CI
+# config. Forcing full in the workflow is simpler than checking out the
+# base SHA's classifier: those paths already require the full suite.
+write_select_step_script() {
+  local dest=$1 event=$2 base=$3
+  # shellcheck disable=SC2016  # Ruby text, not a shell expansion
+  ruby -ryaml -e '
+doc = YAML.load_file(ARGV[0])
+script = doc.fetch("jobs").fetch("select").fetch("steps").find { |s| s["id"] == "select" }.fetch("run")
+script = script.gsub("${{ github.event_name }}", ARGV[2])
+script = script.gsub("${{ github.event.pull_request.base.sha }}", ARGV[3])
+File.write(ARGV[1], script)
+' "$CI_WORKFLOW" "$dest" "$event" "$base"
+}
+
+run_select_step() {
+  local repo=$1 script=$2 github_output=$3
+  : >"$github_output"
+  (cd "$repo" && GITHUB_OUTPUT="$github_output" bash "$script") \
+    || fail "the select step failed in $repo"
+}
+
+test_select_step_forces_full_for_classifier_ci_and_map() {
+  local tmp repo base script github_output path
+  tmp=$(fm_test_tmproot fm-ci-select-step)
+  repo=$tmp/repo
+  script=$tmp/select.sh
+  github_output=$tmp/github-output
+  fm_git_init_commit "$repo"
+  mkdir -p "$repo/bin" "$repo/.github/workflows"
+  printf '%s\n' '#!/bin/sh' 'echo mode=skip' >"$repo/bin/fm-ci-select.sh"
+  printf 'runner\n' >"$repo/bin/fm-test-run.sh"
+  printf 'name: x\n' >"$repo/.github/workflows/ci.yml"
+  chmod +x "$repo/bin/fm-ci-select.sh"
+  git -C "$repo" add bin .github
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm seed
+  base=$(git -C "$repo" rev-parse HEAD)
+  write_select_step_script "$script" pull_request "$base"
+
+  for path in bin/fm-ci-select.sh bin/fm-test-run.sh .github/workflows/ci.yml; do
+    git -C "$repo" checkout -q "$base"
+    printf 'changed\n' >>"$repo/$path"
+    git -C "$repo" add "$path"
+    git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm "$path"
+    run_select_step "$repo" "$script" "$github_output"
+    grep -qx 'mode=full' "$github_output" \
+      || fail "the select step must force mode=full for $path, got $(cat "$github_output")"
+  done
+
+  git -C "$repo" checkout -q "$base"
+  printf 'more\n' >>"$repo/README.md"
+  git -C "$repo" add README.md
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm readme
+  run_select_step "$repo" "$script" "$github_output"
+  grep -qx 'mode=skip' "$github_output" \
+    || fail "the select step must trust the classifier for README.md, got $(cat "$github_output")"
+  pass "the select step forces full for the classifier, map, and CI config before trusting HEAD"
+}
+
 test_ci_matrices_match_executable_partitions
 test_pr_pushes_supersede_within_one_pr
 test_separate_prs_do_not_cancel_each_other
@@ -777,6 +838,7 @@ test_path_skip_runs_only_quick_checks
 test_unintended_skip_fails_the_verdict
 test_path_skip_still_fails_when_a_quick_check_failed
 test_outside_pr_path_skip_still_names_full_ci
+test_select_step_forces_full_for_classifier_ci_and_map
 test_full_ci_label_runs_the_whole_suite
 test_trusted_runs_are_unchanged
 test_unrelated_label_starts_no_job

@@ -24,6 +24,8 @@
 #   fm-test-run.sh --concurrent-safe-family-jobs-max <name>
 #   fm-test-run.sh --list-lanes
 #   fm-test-run.sh --check-coverage
+#   fm-test-run.sh --map-changed-path <path>
+#   fm-test-run.sh --map-changed-paths
 #
 # Aggregation (no suite execution):
 #   fm-test-run.sh --aggregate-json <out.json> <lane.json> [more lane.json...]
@@ -46,6 +48,14 @@
 #                   drop scripts whose primary family matches <name> after selection
 #                   (repeatable; portable CI lanes exclude real-herdr-gated so the
 #                   dedicated required Herdr lane owns that coverage)
+#   --map-changed-path <path>
+#                   print families_for_changed_path for one path and exit 0.
+#                   Empty output means the path selects no tests. __unmapped__
+#                   lines print rather than dying, so CI skip can treat them
+#                   as full.
+#   --map-changed-paths
+#                   read relative paths on stdin and print those whose map is
+#                   non-empty, in the same order, then exit 0.
 #   --fail-on-gate-skip <token>
 #                   after each script, fail the run if any output line contains
 #                   "skip: <token>" (e.g. --fail-on-gate-skip 'herdr not found').
@@ -176,6 +186,8 @@ LIST_FAMILIES=0
 LIST_CONCURRENT_SAFE_FAMILIES=0
 LIST_LANES=0
 CHECK_COVERAGE=0
+MAP_CHANGED_PATH=
+MAP_CHANGED_PATHS=0
 AGGREGATE_OUT=
 FAMILY=
 LANE=
@@ -2299,6 +2311,19 @@ while [ "$#" -gt 0 ]; do
       CHECK_COVERAGE=1
       shift
       ;;
+    --map-changed-path)
+      [ "$#" -gt 1 ] || die "--map-changed-path requires a path"
+      MAP_CHANGED_PATH=$2
+      shift 2
+      ;;
+    --map-changed-path=*)
+      MAP_CHANGED_PATH=${1#--map-changed-path=}
+      shift
+      ;;
+    --map-changed-paths)
+      MAP_CHANGED_PATHS=1
+      shift
+      ;;
     --aggregate-json)
       [ "$#" -gt 1 ] || die "--aggregate-json requires an output path"
       AGGREGATE_OUT=$2
@@ -2373,6 +2398,22 @@ if [ "$CHECK_COVERAGE" -eq 1 ]; then
   exit $?
 fi
 
+if [ -n "$MAP_CHANGED_PATH" ]; then
+  families_for_changed_path "${MAP_CHANGED_PATH#./}" || true
+  exit 0
+fi
+
+if [ "$MAP_CHANGED_PATHS" -eq 1 ]; then
+  while IFS= read -r path; do
+    [ -n "$path" ] || continue
+    path=${path#./}
+    if [ -n "$(families_for_changed_path "$path" || true)" ]; then
+      printf '%s\n' "$path"
+    fi
+  done
+  exit 0
+fi
+
 if [ "${MODE:-}" = "aggregate" ]; then
   [ -n "$AGGREGATE_OUT" ] || die "--aggregate-json requires an output path"
   [ "${#SCRIPTS[@]}" -gt 0 ] || die "--aggregate-json requires at least one input timing JSON"
@@ -2402,10 +2443,11 @@ esac
 
 # Refuse before any suite is selected or run. The inspection modes execute
 # nothing: --list-families, --list-concurrent-safe-families, --list-lanes,
-# --check-coverage, --concurrent-safe-family-jobs-max and --aggregate-json have
-# already exited above, and --list/--list-scheduled print their selection and
-# exit below. An unset MODE still falls through to the usage error, so a caller
-# who named no selection mode is told that rather than this.
+# --check-coverage, --map-changed-path, --map-changed-paths,
+# --concurrent-safe-family-jobs-max and --aggregate-json have already exited
+# above, and --list/--list-scheduled print their selection and exit below. An
+# unset MODE still falls through to the usage error, so a caller who named no
+# selection mode is told that rather than this.
 if [ -n "${MODE:-}" ] && [ "$LIST_ONLY" -eq 0 ] && [ "$LIST_SCHEDULED" -eq 0 ]; then
   refuse_primary_checkout_for_task
 fi
