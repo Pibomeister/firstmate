@@ -1067,8 +1067,13 @@ wd_quota_pick() {  # [task-id]
   cands=$(cfg reroute-candidates "")
   [ -n "$cands" ] || { printf 'none\n'; return 1; }
   snapshot=$WD/quota-snapshot.txt
-  if command -v quota-axi >/dev/null 2>&1; then
-    fm_run_timed 60 quota-axi > "$snapshot" 2>/dev/null || true
+  rm -f "$snapshot"
+  if ! command -v quota-axi >/dev/null 2>&1; then
+    printf 'none\n'; return 1
+  fi
+  if ! fm_run_timed 60 quota-axi > "$snapshot" 2>/dev/null; then
+    rm -f "$snapshot"
+    printf 'none\n'; return 1
   fi
   [ -s "$snapshot" ] || { printf 'none\n'; return 1; }
   harness=

@@ -2470,13 +2470,7 @@ spawn_backend_admit() {  # <backend>
 }
 
 if [ "$RELAUNCH" -eq 0 ]; then
-  if [ "$KIND" = secondmate ] && { [ -e "$STATE/$ID.meta" ] || [ -L "$STATE/$ID.meta" ]; }; then
-    BACKEND=$(fm_backend_of_meta "$STATE/$ID.meta")
-    if [ "$BACKEND_SET" -eq 1 ] && [ "$BACKEND_ARG" != "$BACKEND" ]; then
-      echo "error: --backend $BACKEND_ARG conflicts with the recorded backend $BACKEND for secondmate $ID" >&2
-      exit 1
-    fi
-  elif [ "$BACKEND_SET" -eq 1 ]; then
+  if [ "$BACKEND_SET" -eq 1 ]; then
     BACKEND=$BACKEND_ARG
   else
     BACKEND=$(fm_backend_name)
