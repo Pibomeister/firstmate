@@ -176,8 +176,9 @@
 #          instance via portable lock on state/.supervise-daemon.lock. Trapped
 #          SIGTERM/SIGINT shut down once the step in progress returns (bounded
 #          by the probe budget or wedge-alarm timeout), flush escalations, stop
-#          the watcher within WATCHER_STOP_GRACE_SECS, and release the lock. A crashing fm-watch.sh is logged and restarted, never killing
-#          the daemon; a tight crash-restart spin is detected and backed off.
+#          the watcher within WATCHER_STOP_GRACE_SECS, and release the lock.
+#          A crashing fm-watch.sh is logged and restarted, never killing the
+#          daemon; a tight crash-restart spin is detected and backed off.
 #          A live watcher that fm_watcher_stalled (bin/fm-wake-lib.sh) reports
 #          stalled is stopped with everything it started, then restarted.
 set -u
