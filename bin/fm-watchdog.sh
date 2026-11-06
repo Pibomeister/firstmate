@@ -338,7 +338,7 @@ wd_publish_captain() {
 # wd_observe <home> <parent> <id>: fills the O_* globals for one subject and
 # saves the comparable parts to state/watchdog/subjects/<home-basename>-<path-cksum>.
 wd_observe() {
-  local home=$1 parent=$2 id=$3 st now hb prev meta row hb_sid ctx dt hb_at=0 cb='' ct=''
+  local home=$1 parent=$2 id=$3 st now hb prev meta row hb_sid hb_wpid='' hb_wsid='' ctx dt hb_at=0 cb='' ct=''
   st=$home/state
   now=$(wd_now)
   O_HOME=$home O_PARENT=$parent O_ID=$id O_TAG=$(wd_tag "$home") O_KEY=$(wd_state_key "$home")
@@ -353,13 +353,16 @@ wd_observe() {
   if [ -f "$hb" ] && row=$(jq -r 'def known: if type == "object" then "-" else . end;
         [(.primary.terminal.backend // "-" | known), (.primary.terminal.target // "-" | known),
         (.primary.session.trusted_id // "-" | known), (.generated_epoch // 0 | tostring),
-        (.primary.context_left.remaining.percent // "-" | tostring)] | @tsv' "$hb" 2>/dev/null); then
-    IFS=$'\t' read -r O_BACKEND O_TARGET hb_sid row ctx <<EOF
+        (.primary.context_left.remaining.percent // "-" | tostring),
+        (.primary.writer.anchor_pid // "-" | known | tostring), (.primary.writer.session_id // "-" | known)] | @tsv' "$hb" 2>/dev/null); then
+    IFS=$'\t' read -r O_BACKEND O_TARGET hb_sid row ctx hb_wpid hb_wsid <<EOF
 $row
 EOF
     [ "$O_BACKEND" != - ] || O_BACKEND=''
     [ "$O_TARGET" != - ] || O_TARGET=''
     [ "$hb_sid" != - ] || hb_sid=''
+    [ "$hb_wpid" != - ] || hb_wpid=''
+    [ "$hb_wsid" != - ] || hb_wsid=''
     [ "$row" -gt 0 ] 2>/dev/null || row=$(wd_mtime "$hb")
     O_HB_AGE=$((now - row)) hb_at=$row
   fi
@@ -377,7 +380,9 @@ EOF
     cb=$O_BACKEND ct=$O_TARGET
   elif [ -z "$O_SESSION" ] || [ "$hb_sid" != "$O_SESSION" ]; then
     O_BACKEND='' O_TARGET=''
-  elif [ "$hb_at" -ge "$(wd_lock_at "$st")" ]; then
+  elif [ "$hb_at" -ge "$(wd_lock_at "$st")" ] \
+    && { { [ -n "$hb_wpid" ] && [ "$hb_wpid" = "$O_LOCK_PID" ]; } || { [ -n "$hb_wsid" ] && [ "$hb_wsid" = "$O_SESSION" ]; }; }; then
+    # Only a heartbeat written inside the lock owner names the owner's terminal.
     cb=$O_BACKEND ct=$O_TARGET
   fi
   prev=$WD/subjects/$O_KEY

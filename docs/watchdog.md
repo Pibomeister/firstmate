@@ -159,6 +159,8 @@ It is the durable answer to which process and which terminal are that home's liv
 `unconfirmed` means the pid runs but does not match its recorded instance and nothing else proves it, so the pid may belong to another process; a restart refuses and sends it no signal.
 `none` means no lock holder is recorded.
 A heartbeat proves the terminal only when it names the session that holds the lock and its generated time is not older than `lock_at`.
+It must also be written inside the lock owner: its writer's harness anchor pid is the lock pid, or its writer's trusted session id is the recorded session.
+A heartbeat written outside the owner, such as by an away daemon in its own detached terminal, proves no terminal.
 So a retired pane is never named, even when a resumed session keeps the same session id in a new terminal.
 A second mate whose heartbeat names another session, or none, uses its parent's record of its endpoint.
 A heartbeat older than `lock_at` leaves the terminal empty, unproven, for a second mate too.

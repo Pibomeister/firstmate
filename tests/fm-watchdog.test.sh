@@ -115,8 +115,9 @@ SH
   printf '%s\n' "$LOCKPID" > "$H/state/.lock"
   printf '%s\n' "$SID" > "$H/state/.lock-session"
   fm_touch_epoch "$((BASE - 1))" "$H/state/.lock" "$H/state/.lock-session"
-  jq -n --arg t "$T" --arg s "$SID" --argjson e "$BASE" \
-    '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:"tmux",target:$t,present:true},session:{trusted_id:$s}}}' \
+  # Written by the lock owner itself, as when the owner's own watcher runs it.
+  jq -n --arg t "$T" --arg s "$SID" --argjson e "$BASE" --argjson p "$LOCKPID" \
+    '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:"tmux",target:$t,present:true},session:{trusted_id:$s},writer:{anchor_pid:$p,session_id:$s}}}' \
     > "$H/state/heartbeat.json"
   printf 'mode=act\nclaude-config-dirs=%s\nkey-settle-secs=1\nmodels=\n%s\n' "$H/claude" "$extra" > "$H/config/watchdog"
   sleep 0.5
@@ -1085,11 +1086,38 @@ kill_holder_with_anchor() {
 
 captain_field() { sed -n "s/^$1=//p" "$H/state/watchdog/captain" 2>/dev/null | tail -n 1; }
 
-# fresh_heartbeat <pane> [session]: the session, else SID, reports <pane>, generated now.
+# fresh_heartbeat <pane> [session]: the current lock owner, under the session
+# (else SID), reports <pane>, generated now.
 fresh_heartbeat() {
-  jq -n --arg t "$1" --arg s "${2:-$SID}" --argjson e "$(date +%s)" \
-    '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:"tmux",target:$t,present:true},session:{trusted_id:$s}}}' \
+  jq -n --arg t "$1" --arg s "${2:-$SID}" --argjson e "$(date +%s)" --argjson p "$(head -n 1 "$H/state/.lock")" \
+    '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:"tmux",target:$t,present:true},session:{trusted_id:$s},writer:{anchor_pid:$p,session_id:$s}}}' \
     > "$H/state/heartbeat.json"
+}
+
+# detached_heartbeat <pane>: the real bin/fm-heartbeat.sh --write, run in its own
+# detached tmux session with <pane> as its supervisor target, the way an away
+# daemon launched from the captain's pane runs it. No harness is in its ancestry.
+detached_heartbeat() {
+  local dir="$H/detached-writer" done="$H/detached-writer.done" i
+  mkdir -p "$dir/bin"
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$dir/bin/quota-axi"
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$dir/bin/no-mistakes"
+  cat > "$dir/snapshot.sh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' '{"schema":"fm-fleet-snapshot.v1","generated":"2026-11-01T00:00:00Z","tasks":[]}'
+SH
+  chmod +x "$dir/bin/quota-axi" "$dir/bin/no-mistakes" "$dir/snapshot.sh"
+  rm -f "$done"
+  # The writer inherits the lock owner's own session variables, as a daemon
+  # that owner launched does; only its process ancestry is outside the owner.
+  "$REAL_TMUX" -f /dev/null -L "$SOCKET" new-session -d -s "detached$CASE_N-$RANDOM" \
+    "env -u CODEX_THREAD_ID -u CODEX_SESSION_ID \
+      CLAUDE_PID='$(head -n 1 "$H/state/.lock")' CLAUDE_CODE_SESSION_ID='$(head -n 1 "$H/state/.lock-session")' \
+      HOME='$H' PATH='$dir/bin:$PATH' FM_HOME='$H' CLAUDE_CONFIG_DIR='$H/claude' \
+      FM_SUPERVISOR_BACKEND=tmux FM_SUPERVISOR_TARGET='$1' FM_HEARTBEAT_SNAPSHOT_SCRIPT='$dir/snapshot.sh' \
+      '$ROOT/bin/fm-heartbeat.sh' --write; : > '$done'"
+  for i in $(seq 1 300); do [ -e "$done" ] && break; sleep 0.1; done
+  [ -e "$done" ] || fail "the detached heartbeat writer never finished"
 }
 
 # relock_same_session: a new process takes the lock under the same session id.
@@ -1230,6 +1258,56 @@ SH
   assert_equals 0 "$(ledger_rows agent-gone restart pending)" "a live owner is never restarted as gone: $(ledger | cut -f5-8)"
   assert_no_grep "AGENT-GONE" "$H/data/watchdog/status.md" "a live owner is not reported gone"
   pass "captain record: lock pid, real liveness, terminal, and move time; pickup moves it, a pane never proves it"
+}
+
+# lock_mtime: the epoch the fixture's lock was last written.
+lock_mtime() { stat -c %Y "$H/state/.lock" 2>/dev/null || stat -f %m "$H/state/.lock"; }
+
+# An away daemon runs in its own detached terminal with the captain's pane as its
+# supervisor target, and its watcher keeps writing fresh heartbeats that read the
+# session from the lock. After a resume in a new pane, or a handoff, that heartbeat
+# names the lock's session, postdates the lock, and still names the retired pane.
+test_captain_record_ignores_a_heartbeat_written_outside_the_owner() {
+  local moved retired_pane new_pane
+  make_home $'Captain session\n> '
+  transcript 3000 "Working." "Testing." "Green."
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals "tmux $T" "$(captain_field backend) $(captain_field target)" "the owner's own heartbeat proves its pane"
+  retired_pane=$T
+  moved=$(captain_field moved_at)
+  new_pane=$("$REAL_TMUX" -f /dev/null -L "$SOCKET" new-window -d -t "wd$CASE_N" -P -F '#{pane_id}' "$H/agent.sh")
+  [ -n "$new_pane" ] && [ "$new_pane" != "$retired_pane" ] || fail "no new pane for the resume: '$new_pane'"
+  relock_same_session
+  detached_heartbeat "$retired_pane"
+  jq -e --arg t "$retired_pane" --arg s "$SID" --argjson at "$(lock_mtime)" \
+    '.primary.terminal.target == $t and .primary.session.trusted_id == $s and .generated_epoch >= $at
+     and .primary.writer.anchor_pid.unknown == true and .primary.writer.session_id.unknown == true' \
+    "$H/state/heartbeat.json" >/dev/null \
+    || fail "the detached heartbeat meets every proof condition but the writer: $(jq -c '{generated_epoch, primary}' "$H/state/heartbeat.json")"
+  run_wd 120 once >/dev/null 2>&1
+  assert_equals "$(cat "$H/lockpid") live" "$(captain_field lock_pid) $(captain_field alive)" "the resumed session reads live"
+  assert_equals "" "$(captain_field backend)$(captain_field target)" "after a resume, a heartbeat written outside the lock owner proves no terminal"
+  assert_equals "$moved" "$(captain_field moved_at)" "an unproven terminal is not a move"
+  fresh_heartbeat "$new_pane"
+  run_wd 240 once >/dev/null 2>&1
+  assert_equals "tmux $new_pane" "$(captain_field backend) $(captain_field target)" "the owner's own heartbeat proves the new pane"
+
+  make_home $'Captain session\n> '
+  transcript 3000 "Working." "Testing." "Green."
+  run_wd 0 once >/dev/null 2>&1
+  retired_pane=$T
+  ( sleep 100000 > /dev/null 2>&1 & printf '%s\n' "$!" > "$H/lockpid" )
+  LOCK_PIDS="$LOCK_PIDS $(cat "$H/lockpid")"
+  cat "$H/lockpid" > "$H/state/.lock"
+  printf '00000000-0000-4000-8000-0000000000cc\n' > "$H/state/.lock-session"
+  detached_heartbeat "$retired_pane"
+  jq -e --arg t "$retired_pane" '.primary.terminal.target == $t
+     and .primary.session.trusted_id == "00000000-0000-4000-8000-0000000000cc"' "$H/state/heartbeat.json" >/dev/null \
+    || fail "the detached heartbeat does not read the new session from the lock: $(jq -c .primary "$H/state/heartbeat.json")"
+  run_wd 120 once >/dev/null 2>&1
+  assert_equals "00000000-0000-4000-8000-0000000000cc live" "$(captain_field session) $(captain_field alive)" "the record follows the handoff"
+  assert_equals "" "$(captain_field backend)$(captain_field target)" "after a handoff, a heartbeat written outside the lock owner proves no terminal"
+  pass "captain record: a heartbeat written outside the lock owner, as by a detached away daemon, never proves a terminal"
 }
 
 test_no_action_while_restart_awaits_pickup() {
@@ -2471,6 +2549,7 @@ fm_test_run \
   test_restart_vetoed_by_running_turn \
   test_restart_verified_pickup_and_loop_stop \
   test_captain_record_follows_the_lock_owner \
+  test_captain_record_ignores_a_heartbeat_written_outside_the_owner \
   test_no_action_while_restart_awaits_pickup \
   test_dead_captain_restarts_despite_its_anchor \
   test_watchdog_allows_muse_restart_with_approval_flag \
