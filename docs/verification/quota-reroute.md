@@ -189,12 +189,12 @@ watchdog once                                -> 0; no pick named; no relaunch
 default after stop                           -> running=false
 ```
 
-Seeded-home product note: `fm-home-seed` plants worktree `.claude/` (skills, settings.json, mods/firstmate-calm with plugin.json and hooks). Under the current unchanged worktree rule, every standard seeded secondmate is Claude-specific, so a quota move off Claude is refused even with Codex headroom. Checklist item 2 cannot pass on a seeded home without a captain decision (exempt seed material, change the seed, or accept that seeded mates stay on Claude until reset).
+Seeded-home product note: `fm-home-seed` plants worktree `.claude/` (skills symlink, settings.json, mods/firstmate-calm with plugin.json and hooks). Unchanged seed is identified by git blob identity against this tree's `HEAD:.claude`, not by path names, and is not a worktree signal. A user hook, a user edit of a seeded file, and user MCP config still refuse. Round 2 below recorded the pre-exemption live refusal; portable tests now cover the exemption.
 
 Checklist (combined):
 
 1. Relaunch closes a usage-limit pane without Enter: BLOCKED (no usage-limit screen; quota not burned to force one).
-2. Replacement starts on Codex on Herdr: BLOCKED (same). Would also be refused by the seeded home's worktree `.claude/` signal.
+2. Replacement starts on Codex on Herdr: BLOCKED (no usage-limit screen). Unchanged seeded `.claude/` no longer refuses that move; a user hook, seed edit, or MCP config still would.
 3. Claude harness pin with no other signal does not block: PARTIAL (gate+suggest on clean worktree in round 1; live relaunch not exercised without a signal).
 4. Any Claude-specific signal keeps the mate on Claude: PROVEN (gate+suggest round 1; live `fm-control relaunch` refusal on a real Herdr Claude pane in round 2).
 5. Watchdog names the pick and does not relaunch: PARTIAL (live no-op correct without a usage-limit pane; naming the pick needs that pane).

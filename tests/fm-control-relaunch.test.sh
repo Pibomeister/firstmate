@@ -303,6 +303,7 @@ run_control() {  # <case-dir> <args...>
     FM_REAL_MKTEMP="${FM_REAL_MKTEMP:-}" \
     FM_FAKE_MKTEMP_SPAWN_PAUSE_READY="${FM_FAKE_MKTEMP_SPAWN_PAUSE_READY:-}" \
     FM_FAKE_MKTEMP_SPAWN_PAUSE_RELEASE="${FM_FAKE_MKTEMP_SPAWN_PAUSE_RELEASE:-}" \
+    FM_FAKE_MKTEMP_SPAWN_CONTINUE="${FM_FAKE_MKTEMP_SPAWN_CONTINUE:-}" \
     FM_REAL_CP="${FM_REAL_CP:-}" FM_FAKE_CP_RESTORE_FAIL="${FM_FAKE_CP_RESTORE_FAIL:-}" \
     FM_FAKE_RESTORE_PAUSE_READY="${FM_FAKE_RESTORE_PAUSE_READY:-}" \
     FM_FAKE_RESTORE_PAUSE_RELEASE="${FM_FAKE_RESTORE_PAUSE_RELEASE:-}" \
@@ -401,7 +402,8 @@ for arg in "$@"; do
         : > "$FM_FAKE_MKTEMP_SPAWN_PAUSE_READY"
         while [ ! -e "$FM_FAKE_MKTEMP_SPAWN_PAUSE_RELEASE" ]; do /bin/sleep 0.01; done
       fi
-      exit 1 ;;
+      [ -n "${FM_FAKE_MKTEMP_SPAWN_CONTINUE:-}" ] || exit 1
+      ;;
   esac
 done
 exec "$FM_REAL_MKTEMP" "$@"
@@ -1235,6 +1237,77 @@ SH
   [ "$(meta_field "$dir" rl87 harness)" = claude ] \
     || fail "a tooling-check crash must leave the recorded harness"
   pass "fm-control relaunch: a claude-tooling exit 2 refuses the move off Claude"
+}
+
+seeded_secondmate_case() {  # <case-dir-name> <id> -> case dir with a cloned firstmate home
+  local dir id=$2
+  dir=$(new_case "$1" "$id")
+  git clone --local --quiet "$ROOT" "$dir/smhome" \
+    || fail "could not clone a firstmate home for $id"
+  mkdir -p "$dir/smhome/state" "$dir/smhome/data" "$dir/home/config" "$dir/home/data/$id"
+  printf '%s\n' "$id" > "$dir/smhome/.fm-secondmate-home"
+  printf '# secondmate brief\n' > "$dir/home/data/$id/brief.md"
+  make_claude_auth_stub "$dir"
+  {
+    echo "window=fmses:fm-$id"
+    echo "endpoint_task_id=$id"
+    echo "worktree=$dir/smhome"
+    echo "project=$dir/smhome"
+    echo "harness=claude"
+    echo "kind=secondmate"
+    echo "mode=secondmate"
+    echo "yolo=off"
+    echo "model=default"
+    echo "effort=default"
+    echo "home=$dir/smhome"
+  } > "$dir/home/state/$id.meta"
+  printf '%s\n' "fm-$id" > "$dir/fake/windows"
+  printf '%s' "$dir/smhome" > "$dir/fake/cwd"
+  printf 'codex' > "$dir/fake/becomes"
+  printf '%s\n' "$dir"
+}
+
+test_relaunch_off_claude_allows_an_unchanged_seeded_home() {
+  local dir out rc
+  dir=$(seeded_secondmate_case seed-allow rl-seed1)
+  out=$(run_control "$dir" rl-seed1 relaunch --harness codex); rc=$?
+  expect_code 0 "$rc" "an unchanged seeded home must be allowed to leave Claude"$'\n'"$out"
+  [ "$(meta_field "$dir" rl-seed1 harness)" = codex ] \
+    || fail "the replacement should land on the named harness"
+  pass "fm-control relaunch: an unchanged seeded firstmate home can move off Claude"
+}
+
+test_relaunch_off_claude_refuses_seeded_home_user_additions() {
+  local dir out rc settings
+  dir=$(seeded_secondmate_case seed-hook rl-seed2)
+  mkdir -p "$dir/smhome/.claude/hooks"
+  printf '%s\n' '{"hooks":{"Stop":[{}]}}' > "$dir/smhome/.claude/hooks/hooks.json"
+  out=$(run_control "$dir" rl-seed2 relaunch --harness codex); rc=$?
+  expect_code 1 "$rc" "a user hook in a seeded home must refuse the move"$'\n'"$out"
+  assert_contains "$out" "Claude-specific tooling present" "the refusal should name the tooling gate"
+  assert_contains "$out" "worktree .claude/hooks/hooks.json" "the refusal should name the added hook"
+  [ "$(cat "$dir/fake/command")" = claude ] \
+    || fail "a user-hook refusal must leave the old agent running"
+  rm -rf "$dir/smhome/.claude/hooks"
+
+  dir=$(seeded_secondmate_case seed-edit rl-seed3)
+  settings="$dir/smhome/.claude/settings.json"
+  jq 'del(.hooks) | .env.EDITED = "1"' "$settings" > "$dir/settings.edited"
+  mv "$dir/settings.edited" "$settings"
+  out=$(run_control "$dir" rl-seed3 relaunch --harness codex); rc=$?
+  expect_code 1 "$rc" "an edited seeded file must refuse the move"$'\n'"$out"
+  assert_contains "$out" "worktree .claude/settings.json" "the refusal should name the edited seed file"
+  [ "$(cat "$dir/fake/command")" = claude ] \
+    || fail "an edited-seed refusal must leave the old agent running"
+
+  dir=$(seeded_secondmate_case seed-mcp rl-seed4)
+  printf '%s\n' '{"mcpServers":{"docs":{"command":"true"}}}' > "$dir/smhome/.mcp.json"
+  out=$(run_control "$dir" rl-seed4 relaunch --harness codex); rc=$?
+  expect_code 1 "$rc" "user MCP in a seeded home must refuse the move"$'\n'"$out"
+  assert_contains "$out" "worktree .mcp.json" "the refusal should name the MCP file"
+  [ "$(cat "$dir/fake/command")" = claude ] \
+    || fail "an MCP refusal must leave the old agent running"
+  pass "fm-control relaunch: user hooks, seed edits, and MCP in a seeded home still refuse"
 }
 
 test_harness_switch_resolves_a_prefixed_recorded_harness() {
@@ -3893,6 +3966,83 @@ test_herdr_secondmate_relaunch_hands_a_vanished_pane_to_respawn() {
   pass "relaunch: a herdr secondmate whose pane vanished on stop is handed to respawn with its record kept"
 }
 
+test_failed_spawn_keeps_exit_4_when_a_cooperating_writer_updates_meta() {
+  local dir control_pid link_pid rc i=0 ready release journal
+  herdr_case_or_skip vanish-xlink-secondmate x4sp || {
+    echo "skip - herdr secondmate relaunch needs jq (the herdr adapter parses JSON with it)"
+    return 0
+  }
+  dir=$HERDR_CASE_DIR
+  rm -f "$dir/fake/herdr-stopped"
+  : > "$dir/fake/herdr-agent-live"
+  : > "$dir/fake/herdr-exit-closes-pane"
+  mkdir -p "$dir/home/config"
+  printf 'claude\n' > "$dir/home/config/secondmate-harness"
+  printf '%s\n' "kind=secondmate" "home=$dir/wt" >> "$dir/home/state/x4sp.meta"
+  printf 'x4sp\n' > "$dir/wt/.fm-secondmate-home"
+  mkdir -p "$dir/wt/state" "$dir/wt/data"
+  if grep -q '^spawn_gen=' "$dir/home/state/x4sp.meta"; then
+    fail "the gone-secondmate fixture must omit spawn_gen so a missing generation stays a non-publication"
+  fi
+  make_mktemp_spawn_err_failure_stub "$dir"
+  ready="$dir/spawn-mktemp-ready"
+  release="$dir/spawn-mktemp-release"
+  FM_REAL_MKTEMP=$(command -v mktemp) \
+    FM_FAKE_MKTEMP_SPAWN_PAUSE_READY="$ready" \
+    FM_FAKE_MKTEMP_SPAWN_PAUSE_RELEASE="$release" \
+    FM_FAKE_MKTEMP_SPAWN_CONTINUE=1 \
+    run_control "$dir" x4sp relaunch > "$dir/control.out" &
+  # shellcheck disable=SC2031 # pid of this background relaunch
+  control_pid=$!
+  while [ ! -e "$ready" ] && [ "$i" -lt 500 ]; do
+    /bin/sleep 0.01
+    i=$((i + 1))
+  done
+  [ -e "$ready" ] || {
+    kill "$control_pid" 2>/dev/null || true
+    wait "$control_pid" 2>/dev/null || true
+    fail "relaunch did not reach spawn-output staging, so the writer never ran during a failing spawn"
+  }
+  env PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_ROOT_OVERRIDE="$ROOT" \
+    FM_REAL_MKTEMP="$(command -v mktemp)" \
+    "$X_LINK" x4sp request-x4 --carry-count 1 --carry-ts 1700000000 \
+      --carry-platform x --carry-max 280 > "$dir/link.out" 2>&1 &
+  # shellcheck disable=SC2031 # pid of this background X writer
+  link_pid=$!
+  i=0
+  while [ "$(meta_field "$dir" x4sp x_request)" != request-x4 ] && [ "$i" -lt 500 ]; do
+    /bin/sleep 0.01
+    i=$((i + 1))
+  done
+  [ "$(meta_field "$dir" x4sp x_request)" = request-x4 ] || {
+    : > "$release"
+    wait "$link_pid" 2>/dev/null || true
+    wait "$control_pid" 2>/dev/null || true
+    fail "cooperating writer did not publish before spawn"$'\n'"$(cat "$dir/link.out" 2>/dev/null || true)"
+  }
+  : > "$release"
+  wait "$link_pid"; rc=$?
+  expect_code 0 "$rc" "concurrent X metadata publication should succeed"$'\n'"$(cat "$dir/link.out")"
+  wait "$control_pid"; rc=$?
+  expect_code 4 "$rc" "a cooperating metadata update must not turn a gone-pane handoff into a generic failure"$'\n'"$(cat "$dir/control.out")"
+  assert_contains "$(cat "$dir/control.out")" "bin/fm-spawn.sh x4sp --secondmate" \
+    "the refusal must still name the respawn path"
+  assert_not_contains "$(cat "$dir/control.out")" "was relaunched" \
+    "rollback must not claim a spawn publication that did not happen"
+  [ "$(meta_field "$dir" x4sp x_request)" = request-x4 ] \
+    || fail "the gone-pane handoff erased the concurrent X request"
+  [ "$(meta_field "$dir" x4sp x_followups)" = 1 ] \
+    || fail "the gone-pane handoff erased the concurrent follow-up count"
+  [ "$(meta_field "$dir" x4sp harness)" = claude ] \
+    || fail "a failed unpublished spawn must keep the prior harness"
+  [ -z "$(meta_field "$dir" x4sp spawn_gen)" ] \
+    || fail "a failed unpublished spawn must not mint a new spawn_gen"
+  journal="$dir/home/state/x4sp.control-relaunch"
+  assert_grep 'rollback=prior-record-kept-endpoint-gone' "$journal" \
+    "the journal must keep the gone-endpoint handoff, not none-new-record-kept"
+  pass "relaunch: a cooperating metadata update during a failing spawn still hands a gone secondmate to respawn"
+}
+
 test_relaunch_reverifies_an_already_in_flight_item_instead_of_rewriting_it() {
   local dir out rc=0
   command -v tasks-axi >/dev/null 2>&1 || {
@@ -4134,6 +4284,8 @@ test_harness_switch_falls_back_when_the_new_harness_refuses_carried_effort
 test_relaunch_off_claude_refuses_when_tooling_is_present
 test_relaunch_off_claude_refuses_an_unreadable_account_pin
 test_relaunch_off_claude_refuses_when_tooling_check_exits_2
+test_relaunch_off_claude_allows_an_unchanged_seeded_home
+test_relaunch_off_claude_refuses_seeded_home_user_additions
 test_harness_switch_resolves_a_prefixed_recorded_harness
 test_prefixed_recorded_harness_requires_explicit_replacement
 test_same_harness_relaunch_keeps_the_profile_axes
@@ -4215,6 +4367,7 @@ test_herdr_reclaim_refuses_an_agent_that_came_back
 test_herdr_reclaim_keeps_the_task_whole
 test_herdr_reclaim_of_a_secondmate_uses_relaunch
 test_herdr_secondmate_relaunch_hands_a_vanished_pane_to_respawn
+test_failed_spawn_keeps_exit_4_when_a_cooperating_writer_updates_meta
 test_herdr_rebind_failure_from_a_plain_shell_names_the_real_cause
 test_relaunch_reverifies_an_already_in_flight_item_instead_of_rewriting_it
 test_relaunch_moves_a_drifted_item_back_in_flight

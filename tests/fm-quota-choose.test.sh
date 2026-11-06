@@ -1026,17 +1026,16 @@ fi
 [ "$out" = "none" ] || fail "pinned account, no worktree: expected none, got '$out'"
 ok "an unknown worktree or broken pin never names the pinned Claude account"
 
-if out=$(call_reroute suggest --snapshot "$LAB/captured.json" --from-harness claude \
+out=$(call_reroute suggest --snapshot "$LAB/captured.json" --from-harness claude \
   --claude-config-dir "$empty_dir" --worktree "$FM_ROOT" --kind secondmate \
-  --candidate codex:default 2>/dev/null); then
-  fail "a Claude secondmate on a firstmate home must not be moved off Claude, got '$out'"
-fi
-[ "$out" = "none" ] || fail "firstmate home secondmate: expected none, got '$out'"
+  --candidate codex:default) \
+  || fail "a Claude secondmate on an unchanged firstmate home should be able to leave Claude, got '$out'"
+[ "$out" = "codex default" ] || fail "firstmate home secondmate: expected codex, got '$out'"
 out=$(call_reroute suggest --snapshot "$LAB/captured.json" --from-harness claude \
   --claude-config-dir "$empty_dir" --worktree "$FM_ROOT" --kind secondmate \
   --candidate claude:claude-3-5-sonnet --candidate codex:default)
-[ "$out" = "claude claude-3-5-sonnet" ] || fail "a firstmate home secondmate should keep a Claude candidate, got '$out'"
-ok "a Claude secondmate whose home is a firstmate checkout stays on Claude"
+[ "$out" = "claude claude-3-5-sonnet" ] || fail "a firstmate home secondmate should still keep a Claude candidate, got '$out'"
+ok "a Claude secondmate whose home is an unchanged firstmate checkout can leave Claude"
 
 ord="$LAB/ordinary-home"
 mkdir -p "$ord/.claude"
@@ -1427,6 +1426,60 @@ sig=$(HOME="$ord" call_reroute claude-tooling --config-dir "$ord/.claude/") \
 [ "$sig" = "MCP servers in $ord/.claude.json" ] || fail "trailing-slash signal: $sig"
 
 ok "a Claude worker queues on any Claude-specific signal, including unknown"
+
+seed_parent="$LAB/seed-parent"
+seed_home="$LAB/seed-home"
+mkdir -p "$seed_parent/projects" "$seed_parent/data" "$seed_parent/state"
+FM_HOME="$seed_parent" FM_SECONDMATE_CHARTER='firstmate self-development' \
+  FM_SECONDMATE_SCOPE='firstmate repo work' \
+  "$BIN/fm-home-seed.sh" seedmate "$seed_home" --no-projects >/dev/null \
+  || fail "fm-home-seed --no-projects failed"
+[ -L "$seed_home/.claude/skills" ] \
+  || fail "seeded home missing .claude/skills symlink"
+[ "$(readlink "$seed_home/.claude/skills")" = "../.agents/skills" ] \
+  || fail "seeded .claude/skills target: $(readlink "$seed_home/.claude/skills")"
+[ -f "$seed_home/.claude/settings.json" ] \
+  || fail "seeded home missing .claude/settings.json"
+[ -f "$seed_home/.claude/mods/firstmate-calm/.claude-plugin/plugin.json" ] \
+  || fail "seeded home missing firstmate-calm plugin.json"
+[ -f "$seed_home/.claude/mods/firstmate-calm/hooks/hooks.json" ] \
+  || fail "seeded home missing firstmate-calm hooks.json"
+rc=0
+sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$seed_home") || rc=$?
+[ "$rc" -eq 1 ] || fail "unchanged seeded .claude must not be a signal, got $rc ($sig)"
+[ -z "$sig" ] || fail "unchanged seeded .claude produced: $sig"
+out=$(call_reroute suggest --snapshot "$LAB/captured.json" --from-harness claude \
+  --claude-config-dir "$empty_dir" --worktree "$seed_home" --kind secondmate \
+  --candidate codex:default) \
+  || fail "seeded-only home: suggest should name the non-Claude pick, got '$out'"
+[ "$out" = "codex default" ] || fail "seeded-only home: expected codex, got '$out'"
+ok "an unchanged fm-home-seed .claude is not Claude-specific tooling"
+
+mkdir -p "$seed_home/.claude/hooks"
+printf '%s\n' '{"hooks":{"Stop":[{}]}}' > "$seed_home/.claude/hooks/hooks.json"
+sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$seed_home") \
+  || fail "a user hook beside seed material must be tooling required"
+[ "$sig" = "worktree .claude/hooks/hooks.json" ] \
+  || fail "user hook signal: $sig"
+rm -rf "$seed_home/.claude/hooks"
+ok "a user hook in a seeded home is still Claude-specific tooling"
+
+settings_seed=$seed_home/.claude/settings.json
+cp "$settings_seed" "$LAB/settings.json.seed"
+jq 'del(.hooks) | .env.EDITED = "1"' "$LAB/settings.json.seed" > "$settings_seed"
+sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$seed_home") \
+  || fail "an edited seeded settings.json must be tooling required"
+[ "$sig" = "worktree .claude/settings.json" ] \
+  || fail "edited seed file signal: $sig"
+mv "$LAB/settings.json.seed" "$settings_seed"
+ok "a user edit of a seeded .claude file is still Claude-specific tooling"
+
+printf '%s\n' '{"mcpServers":{"docs":{"command":"true"}}}' > "$seed_home/.mcp.json"
+sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$seed_home") \
+  || fail "user MCP in a seeded home must remain tooling required"
+[ "$sig" = "worktree .mcp.json" ] || fail "seeded-home MCP signal: $sig"
+rm -f "$seed_home/.mcp.json"
+ok "user MCP config in a seeded home remains Claude-specific tooling"
 
 if out=$(call_reroute suggest --snapshot "$LAB/captured.json" --from-harness claude \
   --from-model claude-3-5-sonnet --claude-config-dir "$empty_dir" --worktree "$clean_wt" \

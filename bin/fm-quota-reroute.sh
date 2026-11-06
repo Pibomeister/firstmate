@@ -16,11 +16,14 @@
 # any Claude-specific signal is present. Unknown (missing, unreadable, or
 # unresolvable config dir or worktree) is a signal: queue until reset. A signal
 # drops only the non-Claude candidates; a Claude candidate can still be named.
-# A secondmate's worktree is its firstmate home, and every firstmate home
-# tracks .claude/ skills and hooks, so suggest never moves a Claude secondmate
-# off Claude. An explicit fm-control.sh relaunch --harness runs the same
-# check, so it can move that secondmate to another Claude model but not off
-# Claude.
+# A secondmate's worktree is its firstmate home. Unchanged Firstmate seed
+# material under .claude/ (the git blobs at HEAD:.claude in this running
+# tree) is not a worktree signal when that home's HEAD still carries those
+# same blobs. A user or repo edit of a seeded file, an extra path, MCP
+# servers, and added hooks still block. A worktree that is not that clone,
+# whose HEAD lacks the seed blobs, or whose catalog cannot be read, keeps
+# the checks below. An explicit fm-control.sh relaunch --harness runs the
+# same check.
 # claude-tooling exits 0 and prints the blocking signal when tooling is
 # required. Exit 1 means no signal.
 #
@@ -35,7 +38,10 @@
 # hooks, agents, or commands in the worktree. Worktree .claude/settings.json
 # and settings.local.json keys: hooks, enabledMcpjsonServers, mcpServers,
 # enabledPlugins. Firstmate's own busy hooks, which fm-spawn writes into a
-# Claude ship or scout's settings.local.json, are not a signal. Account-wide skills, agents, commands, and a plugin that
+# Claude ship or scout's settings.local.json, are not a signal. Unchanged
+# Firstmate seed files under worktree .claude/ are not a signal when the
+# worktree HEAD still carries this tree's HEAD:.claude blobs; identity is
+# that blob, not a path name. Account-wide skills, agents, commands, and a plugin that
 # only ships those, are not a signal. enabledPlugins is not an account
 # signal. An unreadable file is a signal. An unreadable plugins/ dir is
 # unreadable MCP/hooks config. An unreadable skills/, agents/, or commands/
@@ -43,9 +49,11 @@
 # .projects entry that is neither an object nor null, or a .mcpServers
 # (top-level or under .projects) that is present and not an object, is
 # unreadable. Worktree .claude/ skills, hooks, agents, or commands are a
-# signal if the path exists, even empty. A caller that passes
+# signal if the path exists, even empty, unless they are unchanged seed
+# as above. A caller that passes
 # --claude-config-dir for a pinned account must also pass --pinned. Those two
-# lists live only in the variables below; there is no exemption mechanism.
+# lists live only in the variables below. Seed exemption is blob identity
+# against this tree's HEAD:.claude, not a name list.
 # Resolve the config dir from the task's account pin, never from
 # claude-config-dirs. A broken or unreadable pin is a signal. No pin, or
 # ordinary, inspects $HOME/.claude.
@@ -270,6 +278,124 @@ EOF
   return 1
 }
 
+# Git blob of a worktree file or symlink. A directory or missing path fails.
+# Symlink blobs are the target string, matching git's symlink storage.
+fm_quota_claude_blob_of() {  # <path>
+  if [ -L "$1" ]; then
+    printf '%s' "$(readlink "$1")" | git hash-object --stdin 2>/dev/null
+  elif [ -f "$1" ]; then
+    git hash-object -- "$1" 2>/dev/null
+  else
+    return 1
+  fi
+}
+
+fm_quota_claude_seed_root() {
+  (cd "$SCRIPT_DIR/.." && pwd)
+}
+
+fm_quota_claude_seed_catalog() {  # <root>
+  git -C "$1" rev-parse --verify -q HEAD >/dev/null 2>&1 || return 1
+  git -C "$1" ls-tree -r --name-only HEAD -- .claude 2>/dev/null
+}
+
+fm_quota_claude_catalog_has() {  # <relpath> <catalog>
+  printf '%s\n' "$2" | grep -Fqx "$1"
+}
+
+# True when <wt> HEAD still carries this tree's HEAD:.claude blobs, so the
+# worktree is a firstmate clone of the current seed. Unknown git state is
+# false: callers keep the existence checks.
+fm_quota_claude_worktree_seed_mode() {  # <wt> <root>
+  local wt=$1 root=$2 path expected got catalog
+  catalog=$(fm_quota_claude_seed_catalog "$root") || return 1
+  [ -n "$catalog" ] || return 1
+  git -C "$wt" rev-parse --verify -q HEAD >/dev/null 2>&1 || return 1
+  while IFS= read -r path; do
+    [ -n "$path" ] || continue
+    expected=$(git -C "$root" rev-parse --verify -q "HEAD:$path" 2>/dev/null) || return 1
+    got=$(git -C "$wt" rev-parse --verify -q "HEAD:$path" 2>/dev/null) || return 1
+    [ "$got" = "$expected" ] || return 1
+  done <<EOF
+$catalog
+EOF
+}
+
+fm_quota_claude_seed_dir_implied() {  # <relpath> <catalog>
+  local rel=$1 catalog=$2 p
+  while IFS= read -r p; do
+    [ -n "$p" ] || continue
+    case "$p" in
+      "$rel"|"$rel"/*) return 0 ;;
+    esac
+  done <<EOF
+$catalog
+EOF
+  return 1
+}
+
+# Prints a worktree signal and returns 0 when seed-mode finds an edit or
+# addition. Returns 1 when every .claude path is unchanged seed. settings.local.json
+# is left to the busy-hook key check.
+fm_quota_claude_seed_tree_signal() {  # <wt> <root>
+  local wt=${1%/} root=$2 catalog path f expected actual rel sig
+  catalog=$(fm_quota_claude_seed_catalog "$root") || {
+    printf '%s\n' "unreadable worktree"
+    return 0
+  }
+  while IFS= read -r path; do
+    [ -n "$path" ] || continue
+    f=$wt/$path
+    if [ ! -e "$f" ] && [ ! -L "$f" ]; then
+      continue
+    fi
+    expected=$(git -C "$root" rev-parse --verify -q "HEAD:$path" 2>/dev/null) || {
+      printf '%s\n' "unreadable worktree"
+      return 0
+    }
+    if [ -L "$f" ] || [ -f "$f" ]; then
+      actual=$(fm_quota_claude_blob_of "$f") || {
+        printf '%s\n' "unreadable $f"
+        return 0
+      }
+      [ "$actual" = "$expected" ] && continue
+      if [ "$path" = .claude/settings.json ]; then
+        if sig=$(fm_quota_claude_settings_keys_signal "$f" \
+                   "$FM_QUOTA_CLAUDE_WT_SETTING_KEYS"); then
+          printf '%s\n' "$sig"
+          return 0
+        fi
+      fi
+      printf '%s\n' "worktree $path"
+      return 0
+    fi
+    printf '%s\n' "worktree $path"
+    return 0
+  done <<EOF
+$catalog
+EOF
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    rel=${f#"$wt"/}
+    [ "$rel" = .claude/settings.local.json ] && continue
+    fm_quota_claude_catalog_has "$rel" "$catalog" && continue
+    printf '%s\n' "worktree $rel"
+    return 0
+  done <<EOF
+$(find "$wt/.claude" \( -type f -o -type l \) 2>/dev/null)
+EOF
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    rel=${f#"$wt"/}
+    fm_quota_claude_seed_dir_implied "$rel" "$catalog" && continue
+    printf '%s\n' "worktree $rel"
+    return 0
+  done <<EOF
+$(find "$wt/.claude" -mindepth 1 -type d 2>/dev/null)
+EOF
+  return 1
+}
+
 # fm_quota_claude_tooling_signal <config-dir> [worktree]
 # Prints the blocking signal and returns 0 when a Claude-specific signal is
 # present or the inspect cannot be completed. Returns 1 when none are present.
@@ -277,7 +403,7 @@ EOF
 # Ordinary Claude keeps user-scope mcpServers in $HOME/.claude.json, outside
 # $HOME/.claude. Project-scope servers live under .projects[<path>].mcpServers.
 fm_quota_claude_tooling_signal() {  # <config-dir> [worktree]
-  local dir=${1-} wt=${2-} f name sig
+  local dir=${1-} wt=${2-} f name sig root
   if [ -z "$dir" ]; then
     printf '%s\n' "unresolvable Claude config dir"
     return 0
@@ -347,6 +473,20 @@ fm_quota_claude_tooling_signal() {  # <config-dir> [worktree]
   if [ -e "$wt/.mcp.json" ]; then
     printf '%s\n' "worktree .mcp.json"
     return 0
+  fi
+  wt=${wt%/}
+  root=$(fm_quota_claude_seed_root)
+  if [ -e "$wt/.claude" ] && fm_quota_claude_worktree_seed_mode "$wt" "$root"; then
+    if sig=$(fm_quota_claude_seed_tree_signal "$wt" "$root"); then
+      printf '%s\n' "$sig"
+      return 0
+    fi
+    if sig=$(fm_quota_claude_settings_keys_signal "$wt/.claude/settings.local.json" \
+               "$FM_QUOTA_CLAUDE_WT_SETTING_KEYS" "$SCRIPT_DIR/fm-busy-event.sh"); then
+      printf '%s\n' "$sig"
+      return 0
+    fi
+    return 1
   fi
   for name in skills hooks agents commands; do
     if [ -e "$wt/.claude/$name" ]; then
