@@ -1006,11 +1006,25 @@ out=$(call_reroute suggest --snapshot "$LAB/captured.json" --from-harness claude
   --claude-config-dir "$empty_dir" --kind secondmate \
   --candidate claude:claude-3-5-sonnet --candidate codex:default)
 [ "$out" = "claude claude-3-5-sonnet" ] || fail "an omitted worktree should keep a Claude candidate eligible, got '$out'"
-out=$(FM_HOME="$broken_home" call_reroute suggest --snapshot "$LAB/captured.json" \
+ok "an unknown worktree drops only the moves off Claude"
+
+if out=$(FM_HOME="$broken_home" call_reroute suggest --snapshot "$LAB/captured.json" \
   --from-harness claude --worktree "$clean_wt" --kind secondmate \
-  --candidate claude:claude-3-5-sonnet --candidate codex:default)
-[ "$out" = "claude claude-3-5-sonnet" ] || fail "a broken pin should keep a Claude candidate eligible, got '$out'"
-ok "unknown worktree or pin drops only the moves off Claude"
+  --candidate claude:claude-3-5-sonnet --candidate codex:default 2>/dev/null); then
+  fail "a broken pin must not yield a Claude pick on the pinned account, got '$out'"
+fi
+[ "$out" = "none" ] || fail "broken pin with a Claude candidate: expected none, got '$out'"
+pinned_home="$LAB/pinned-home"
+pinned_user="$LAB/pinned-user"
+mkdir -p "$pinned_home/config" "$pinned_user/.claude"
+printf 'ordinary\n' > "$pinned_home/config/claude-account"
+if out=$(HOME="$pinned_user" FM_HOME="$pinned_home" call_reroute suggest \
+  --snapshot "$LAB/captured.json" --from-harness claude --kind ship \
+  --candidate claude:claude-3-5-sonnet --candidate codex:default 2>/dev/null); then
+  fail "a pinned Claude account with no worktree must not yield a pick, got '$out'"
+fi
+[ "$out" = "none" ] || fail "pinned account, no worktree: expected none, got '$out'"
+ok "an unknown worktree or broken pin never names the pinned Claude account"
 
 if out=$(call_reroute suggest --snapshot "$LAB/captured.json" --from-harness claude \
   --claude-config-dir "$empty_dir" --worktree "$FM_ROOT" --kind secondmate \
