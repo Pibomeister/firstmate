@@ -53,7 +53,8 @@
 # fm-control.sh relaunch --harness with the printed pick. The watchdog may call
 # suggest to name the pick. It must not relaunch.
 # bin/fm-quota-choose.sh owns eligibility against one snapshot.
-# Account pins are enforced at relaunch, not here.
+# suggest excludes a pinned (or unresolvable-pin) account's whole harness;
+# fm-control relaunch enforces the pin again.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
