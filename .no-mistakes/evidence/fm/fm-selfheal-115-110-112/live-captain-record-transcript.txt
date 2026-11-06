@@ -1,0 +1,90 @@
+### S1: real lock owner (this Claude session, pid 29483) writes the heartbeat naming pane %1
+{"generated_epoch":1793941228,"terminal":{"backend":"tmux","target":"%1","present":true},"session":{"trusted_id":"ed506007-2147-4311-99ea-06a1c744f7ae","anchor_pid":29483,"recorded":true},"writer":{"anchor_pid":29483,"session_id":"ed506007-2147-4311-99ea-06a1c744f7ae"}}
+  endpoint=tmux:%1 session=ed506007-2147-4311-99ea-06a1c744f7ae lock_pid=29483 alive=1 instance=match owner=live
+  captain=tmux:%1 moved_at=1793941214
+--- state/watchdog/captain:
+owner=session:ed506007-2147-4311-99ea-06a1c744f7ae
+lock_pid=29483
+session=ed506007-2147-4311-99ea-06a1c744f7ae
+alive=live
+backend=tmux
+target=%1
+moved_at=1793941214
+lock_at=1793941214
+checked_at=1793941235
+source=watchdog
+
+### S2 (adversarial): a detached daemon outside any harness session writes a fresh heartbeat naming retired pane %0
+daemon pane ancestry (pid -> parent):
+39006  9295 sleep
+ 9295     1 tmux
+{"generated_epoch":1793941250,"terminal":{"backend":"tmux","target":"%0","present":true},"session":{"trusted_id":"ed506007-2147-4311-99ea-06a1c744f7ae","anchor_pid":29483,"recorded":true},"writer":{"anchor_pid":{"unknown":true,"reason":"writer runs in no harness session"},"session_id":{"unknown":true,"reason":"writer has no trusted session id"}}}
+lock_at=1793941214 (heartbeat is newer than the lock and names the lock's session)
+  endpoint=tmux:%0 session=ed506007-2147-4311-99ea-06a1c744f7ae lock_pid=29483 alive=1 instance=match owner=live
+  captain=tmux:%1 moved_at=1793941214
+--- state/watchdog/captain:
+owner=session:ed506007-2147-4311-99ea-06a1c744f7ae
+lock_pid=29483
+session=ed506007-2147-4311-99ea-06a1c744f7ae
+alive=live
+backend=tmux
+target=%1
+moved_at=1793941214
+lock_at=1793941214
+checked_at=1793941263
+source=watchdog
+
+### S3 (adversarial, #110 resume): same session re-takes the lock (lock rewritten), then the detached writer writes again naming retired pane %0
+(fm-lock.sh kept the lock files unchanged for the same session; touched them to stand in for a resume rewrite)
+lock_at now=1793941297
+{"generated_epoch":1793941299,"target":"%0","trusted":"ed506007-2147-4311-99ea-06a1c744f7ae","writer":{"anchor_pid":{"unknown":true,"reason":"writer runs in no harness session"},"session_id":{"unknown":true,"reason":"writer has no trusted session id"}}}
+  endpoint=tmux:%0 session=ed506007-2147-4311-99ea-06a1c744f7ae lock_pid=29483 alive=1 instance=match owner=live
+  captain=none:none moved_at=1793941214
+--- state/watchdog/captain:
+owner=session:ed506007-2147-4311-99ea-06a1c744f7ae
+lock_pid=29483
+session=ed506007-2147-4311-99ea-06a1c744f7ae
+alive=live
+backend=
+target=
+moved_at=1793941214
+lock_at=1793941297
+checked_at=1793941306
+source=watchdog
+
+### S4: a restarted session runs 'pickup <token>' in its own new terminal; the record moves at once
+restarted session pane: %4
+pickup output: pickup recorded
+--- state/watchdog/captain:
+owner=session:ed506007-2147-4311-99ea-06a1c744f7ae
+lock_pid=29483
+session=ed506007-2147-4311-99ea-06a1c744f7ae
+alive=live
+backend=tmux
+target=%4
+moved_at=1793941317
+lock_at=1793941297
+checked_at=1793941317
+source=pickup
+
+### S5 (#115): the lock names a dead owner while its old pane still runs; record and status line say dead
+pid 26866 has exited
+old pane %1 still running: %1 dead=0 cmd=sleep
+once --dry-run rc=0
+--- state/watchdog/captain:
+owner=session:dead-session-0001
+lock_pid=26866
+session=dead-session-0001
+alive=dead
+backend=
+target=
+moved_at=1793941322
+lock_at=1793941322
+checked_at=1793941322
+source=watchdog
+--- status file health line(s):
+- fm-lab.Sg1Ixo: AGENT-GONE, owed 0, ctx unknown; captain pid 26866 dead on an unknown terminal, moved 2026-11-06T05:02:02Z
+- fm-lab.Sg1Ixo: lock holder is dead; restart needs 900s of transcript quiet; nothing typed
+- fm-lab.Sg1Ixo: no activity source; frozen, dead-holder, and low-context restarts are unavailable
+- fm-lab.Sg1Ixo: no recorded terminal endpoint; the pane cannot be read or typed into
+- no model configured; judged symptoms are reported only

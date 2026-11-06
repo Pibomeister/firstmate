@@ -1,11 +1,10 @@
-1..5
+1..8
 ok - captain record: lock pid, real liveness, terminal, and move time; pickup moves it, a pane never proves it
-ok - restart: lean handoff, new terminal, verified pickup with lock takeover; a loop stops and escalates
+ok - captain record: a heartbeat written outside the lock owner, as by a detached away daemon, never proves a terminal
 ok - agent gone: a dead lock holder with a recorded anchor still restarts
-ok - agent gone comes before every other symptom, and a dead holder's endpoint gets no typing
-ok - boundary: a home whose restart awaits pickup gets no action until the restart closes
-FM_TEST_COMPLETE
-1..2
-ok - captain record: lock pid, real liveness, terminal, and move time; pickup moves it, a pane never proves it
 ok - restart: lean handoff, new terminal, verified pickup with lock takeover; a loop stops and escalates
+ok - terminal service loss: no agent process overrides drawn Working; a live tool call stays protected
+ok - status file stays under 40 lines with timestamp, health, actions since last read, gaps, and a staleness line
+ok - primary endpoint: another session's heartbeat is never typed into, and a match restores it
+ok - agent gone comes before every other symptom, and a dead holder's endpoint gets no typing
 FM_TEST_COMPLETE
