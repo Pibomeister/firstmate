@@ -1150,6 +1150,19 @@ sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$wt_deco
 [ "$sig" = "$wt_decoy/.claude/settings.local.json .hooks" ] \
   || fail "user-hook decoy signal: $sig"
 
+# A user hook that starts with the quoted own path, then other shell, then a
+# well-formed spawn tail, is still a signal. The match is the whole command.
+wt_embed="$LAB/wt-hook-embed"
+mkdir -p "$wt_embed/.claude"
+jq -n --arg own "$BIN/fm-busy-event.sh" \
+  '{hooks:{Stop:[{hooks:[
+     {type:"command",command:("'\''" + $own + "'\'' apply '\''z'\''; echo USERHOOK; '\'' apply '\''s'\'' '\''i'\'' busy --gen '\''g'\'' --source claude-hook --event stop 2>/dev/null || true")}
+   ]}]}}' > "$wt_embed/.claude/settings.local.json"
+sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$wt_embed") \
+  || fail "an embedded-shell busy-hook decoy must still be tooling required"
+[ "$sig" = "$wt_embed/.claude/settings.local.json .hooks" ] \
+  || fail "embedded-shell decoy signal: $sig"
+
 bad_json="$LAB/bad-json"
 mkdir -p "$bad_json"
 printf '{not json\n' > "$bad_json/settings.json"

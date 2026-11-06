@@ -1078,9 +1078,14 @@ The other four panes showed the `You hit your weekly limit.` choice, read `pendi
 Not verified live as of 2026-11-06.
 The pane-text `usage-limit` verdict in `fm_wd_pane_dialog` has no dated capture against a real Claude or Codex usage-limit picker.
 `tests/fm-usage-limit-pane-live.test.sh` is the opt-in live guard (`FM_USAGE_LIMIT_PANE_LIVE=1`).
-It stays off by default and fails closed when requested until a dated capture exists.
-It never types Enter.
-Portable regressions in `tests/fm-watchdog.test.sh` and `tests/fm-control-relaunch.test.sh` pin the classifier and the no-Enter close.
+It stays off by default.
+When requested, it captures a real Claude pane, classifies it with `fm_wd_pane_dialog`, and never types Enter.
+It passes only on a real usage-limit picker.
+Without that picker, it fails closed.
+Production `fm-control` relaunch refuses a pane-text `usage-limit` verdict: no kill, no Enter.
+A Grok weekly-limit composer still closes without Enter, under the 2026-10-19 evidence above.
+Portable regressions in `tests/fm-watchdog.test.sh` and `tests/fm-control-relaunch.test.sh` pin both paths.
+A Codex pane-text capture is still pending.
 The 2026-10-19 Grok weekly-limit composer evidence above is unchanged and does not cover this pane-picker classifier.
 
 On 2026-10-20 a 120-column Orca capture of an idle Grok 1.0.62 (Grok 4.7, high effort) composer drew its `Shift+Tab:mode  │  Ctrl+x:shortcuts` key-hint row directly under the bottom border, with no blank row between them.

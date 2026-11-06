@@ -2870,10 +2870,10 @@ SH
 }
 
 test_worker_usage_limit_names_a_pick() {
-  local snap dialog
+  local snap dialog calls
   dialog=$'You have hit your weekly limit for Opus.\n\n ❯ 1. Switch to Sonnet\n   2. Wait for the limit to reset\n   3. Buy more credits\n\nEnter to confirm · Esc to cancel'
   make_home $'Captain session\n> ' 'reroute-candidates=codex:gpt-5.4'
-  mkdir -p "$H/wt" "$H/user/.claude"
+  mkdir -p "$H/wt" "$H/wt2" "$H/user/.claude"
   worker_pane limit ship "$dialog"
   {
     echo "harness=claude"
@@ -2881,10 +2881,19 @@ test_worker_usage_limit_names_a_pick() {
     echo "worktree=$H/wt"
     echo "model=default"
   } >> "$H/state/limit.meta"
+  worker_pane limit2 ship "$dialog"
+  {
+    echo "harness=claude"
+    echo "kind=ship"
+    echo "worktree=$H/wt2"
+    echo "model=default"
+  } >> "$H/state/limit2.meta"
   snap="$H/quota.json"
   wd_quota_snapshot "$snap"
+  : > "$H/quota-axi.calls"
   cat > "$FAKEBIN/quota-axi" <<SH
 #!/usr/bin/env bash
+printf 'call\n' >> "$H/quota-axi.calls"
 cat "$snap"
 SH
   chmod +x "$FAKEBIN/quota-axi"
@@ -2899,9 +2908,18 @@ SH
   HOME="$H/user" run_wd 0 once >/dev/null 2>&1 || fail "worker usage-limit pass failed"
   [ ! -e "$H/control.log" ] || fail "watchdog relaunched: $(cat "$H/control.log")"
   [ ! -s "$H/worker-limit.typed" ] || fail "the watchdog typed into a worker usage-limit picker: $(cat "$H/worker-limit.typed")"
-  assert_equals 1 "$(ledger_rows quota suggest held)" "the worker pick is recorded, not launched: $(ledger | cut -f4-8)"
+  [ ! -s "$H/worker-limit2.typed" ] || fail "the watchdog typed into a second worker usage-limit picker: $(cat "$H/worker-limit2.typed")"
+  assert_equals 2 "$(ledger_rows quota suggest held)" "each worker pick is recorded, not launched: $(ledger | cut -f4-8)"
+  calls=$(wc -l < "$H/quota-axi.calls" | tr -d ' ')
+  assert_equals 1 "$calls" "one watchdog pass reuses one quota snapshot for both workers"
   assert_grep "usage-limit on worker limit. Suggested pick: codex gpt-5.4" "$H/data/watchdog/status.md" \
     "a worker usage-limit pane must name the pick for that worker"
+  assert_grep "usage-limit on worker limit2. Suggested pick: codex gpt-5.4" "$H/data/watchdog/status.md" \
+    "a second worker usage-limit pane must name its own pick"
+  HOME="$H/user" run_wd 1 once >/dev/null 2>&1 || fail "rate-limited worker usage-limit pass failed"
+  assert_equals 2 "$(ledger_rows quota suggest held)" "nudge-secs must not add another worker pick: $(ledger | cut -f4-8)"
+  calls=$(wc -l < "$H/quota-axi.calls" | tr -d ' ')
+  assert_equals 1 "$calls" "a rate-limited pass must not call quota-axi again"
   rm -f "$FAKEBIN/quota-axi" "$FAKEBIN/fm-control.sh"
   pass "usage-limit: a worker pane names the pick and does not relaunch"
 }

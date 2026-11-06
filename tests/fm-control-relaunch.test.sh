@@ -691,17 +691,10 @@ test_relaunch_does_not_kill_an_untrusted_usage_limit_endpoint() {
   pass "fm-control relaunch: an untrusted usage-limit endpoint is not killed"
 }
 
-test_relaunch_closes_a_usage_limit_screen_without_typing_enter() {
-  local dir out rc sock ident
+test_relaunch_refuses_an_unverified_pane_text_usage_limit() {
+  local dir out rc
   dir=$(new_case usage-limit-relaunch rl80)
   add_ship_task "$dir" rl80 claude
-  # Closing the picker destroys the window. Spawn then rebinds, which needs the
-  # recorded tmux identity so absence is proven rather than refused.
-  sock=$(bash -c '. "$1/bin/fm-backend.sh"; fm_backend_source tmux; fm_backend_tmux_addressed_socket' _ "$ROOT")
-  ident=$(bash -c '. "$1/bin/fm-wake-lib.sh"; printf "%s" "$(fm_pid_identity "$2")" | tr "\t\n" "  "' _ "$ROOT" "$$")
-  printf 'tmux_socket=%s\ntmux_server_pid=%s\ntmux_server_identity=%s\ntmux_window_id=%s\n' \
-    "$sock" "$$" "$ident" @9 >> "$dir/home/state/rl80.meta"
-  printf 'i' > "$dir/fake/composer"
   printf '%s\n' \
     'You have hit your weekly limit for Opus.' \
     '' \
@@ -711,23 +704,64 @@ test_relaunch_closes_a_usage_limit_screen_without_typing_enter() {
     '' \
     'Enter to confirm · Esc to cancel' > "$dir/fake/capture"
   printf 'codex' > "$dir/fake/becomes"
-  out=$(FM_FAKE_TMUX_SOCKET="$sock" FM_FAKE_TMUX_SERVER_PID=$$ \
-    run_control "$dir" rl80 relaunch --harness codex --note "move off the limited account"); rc=$?
-  expect_code 0 "$rc" "a usage-limit relaunch should close the endpoint and start the replacement"$'\n'"$out"
+  out=$(run_control "$dir" rl80 relaunch --harness codex --note "move off the limited account"); rc=$?
+  expect_code 1 "$rc" "a pane-text usage-limit relaunch must refuse before close"$'\n'"$out"
+  assert_contains "$out" "not live-verified" \
+    "the refusal should name the unverified pane-text classifier"
   assert_not_contains "$out" "composer visibly holds pending text" \
     "a usage-limit screen must not be treated as pending composer text"
   assert_no_grep "/exit" "$dir/fake/literal" \
     "the exit command must not be typed into a usage-limit picker"
   [ ! -s "$dir/fake/picker-keys" ] \
-    || fail "the live usage-limit picker received keys before close: $(cat "$dir/fake/picker-keys")"
+    || fail "the live usage-limit picker received keys: $(cat "$dir/fake/picker-keys")"
+  [ "$(cat "$dir/fake/command")" = claude ] \
+    || fail "an unverified pane-text usage-limit must not be killed: $(cat "$dir/fake/command")"
+  grep -qx 'fm-rl80' "$dir/fake/windows" \
+    || fail "an unverified pane-text usage-limit must keep the window: $(cat "$dir/fake/windows")"
+  [ "$(meta_field "$dir" rl80 harness)" = claude ] \
+    || fail "a refused pane-text usage-limit must keep the prior harness"
+  pass "fm-control relaunch: pane-text usage-limit refuses without kill or Enter"
+}
+
+test_relaunch_closes_a_grok_weekly_limit_composer_without_typing_enter() {
+  local dir out rc sock ident
+  dir=$(new_case grok-limit-relaunch rl96)
+  add_ship_task "$dir" rl96 grok
+  printf 'grok' > "$dir/fake/command"
+  sock=$(bash -c '. "$1/bin/fm-backend.sh"; fm_backend_source tmux; fm_backend_tmux_addressed_socket' _ "$ROOT")
+  ident=$(bash -c '. "$1/bin/fm-wake-lib.sh"; printf "%s" "$(fm_pid_identity "$2")" | tr "\t\n" "  "' _ "$ROOT" "$$")
+  printf 'tmux_socket=%s\ntmux_server_pid=%s\ntmux_server_identity=%s\ntmux_window_id=%s\n' \
+    "$sock" "$$" "$ident" @9 >> "$dir/home/state/rl96.meta"
+  printf '%s\n' \
+    '                                                                                             █' \
+    '' \
+    '  ┃' \
+    '  ┃  You hit your weekly limit.' \
+    '  ┃' \
+    '  ┃' \
+    '  ┃  1 (○) Buy more credits  Purchase credits to keep using Grok Build' \
+    '  ┃  2 (○) Try Again         Resubmit the last prompt once you have usage again' \
+    '  ┃' \
+    '  ┃  ↑/↓ navigate · y copy                                                  Enter:submit' \
+    '  ┃' \
+    '' \
+    '  Tab:next answer  │  Esc:scrollback  │  Shift+x:dismiss' > "$dir/fake/capture"
+  printf 'codex' > "$dir/fake/becomes"
+  out=$(FM_FAKE_TMUX_SOCKET="$sock" FM_FAKE_TMUX_SERVER_PID=$$ \
+    run_control "$dir" rl96 relaunch --harness codex --note "move off the limited grok account"); rc=$?
+  expect_code 0 "$rc" "a Grok weekly-limit relaunch should close the endpoint and start the replacement"$'\n'"$out"
+  assert_not_contains "$out" "composer visibly holds pending text" \
+    "a Grok weekly-limit composer must not be treated as pending composer text"
+  assert_no_grep "/exit" "$dir/fake/literal" \
+    "the exit command must not be typed into a Grok weekly-limit composer"
+  [ ! -s "$dir/fake/picker-keys" ] \
+    || fail "the live Grok weekly-limit composer received keys before close: $(cat "$dir/fake/picker-keys")"
   [ -s "$dir/fake/literal" ] || [ -s "$dir/fake/keys" ] \
-    || fail "replacement launch keys are allowed after the picker closed, but none were recorded"
-  assert_contains "$out" "harness=codex from=claude" "the replacement should land on the named harness"
-  [ "$(meta_field "$dir" rl80 harness)" = codex ] \
+    || fail "replacement launch keys are allowed after the composer closed, but none were recorded"
+  assert_contains "$out" "harness=codex from=grok" "the replacement should land on the named harness"
+  [ "$(meta_field "$dir" rl96 harness)" = codex ] \
     || fail "the published record should follow the replacement harness"
-  [ "$(meta_field "$dir" rl80 effort)" = default ] \
-    || fail "omitted --effort on a default-effort task stays default"
-  pass "fm-control relaunch: a usage-limit screen is closed without typing Enter"
+  pass "fm-control relaunch: a Grok weekly-limit composer is closed without typing Enter"
 }
 
 test_interrupt_refuses_a_usage_limit_screen() {
@@ -2682,6 +2716,7 @@ test_unpublished_spawn_lock_failure_is_not_published() {
   dir=$(new_case lock-fail-unpublished rl93)
   add_ship_task "$dir" rl93 claude
   meta="$dir/home/state/rl93.meta"
+  chmod 640 "$meta"
   gen=$("$ROOT/bin/fm-busy-event.sh" arm "$dir/home/state" rl93)
   printf 'busy_gen=%s\n' "$gen" >> "$meta"
   hook="$dir/wt/.claude/settings.local.json"
@@ -2701,6 +2736,8 @@ test_unpublished_spawn_lock_failure_is_not_published() {
     || fail "lock failure must leave the prior harness"
   [ -z "$(meta_field "$dir" rl93 control_relaunch_tx)" ] \
     || fail "a restored unpublished record must not keep the stamped relaunch token"
+  [ "$(stat -c %a "$meta" 2>/dev/null || stat -f %OLp "$meta")" = 640 ] \
+    || fail "clearing the relaunch token must keep the record mode"
   pass "fm-control relaunch: spawn-published lock failure is not treated as published"
 }
 
@@ -4342,7 +4379,8 @@ test_pooled_relaunch_custody_is_agy_only
 test_agy_relaunch_requires_treehouse_capabilities_before_stopping
 test_relaunch_refuses_before_exit_when_the_composer_holds_pending_text
 test_relaunch_does_not_kill_an_untrusted_usage_limit_endpoint
-test_relaunch_closes_a_usage_limit_screen_without_typing_enter
+test_relaunch_refuses_an_unverified_pane_text_usage_limit
+test_relaunch_closes_a_grok_weekly_limit_composer_without_typing_enter
 test_interrupt_refuses_a_usage_limit_screen
 test_control_relaunch_of_a_gone_tmux_endpoint
 test_relaunch_refuses_before_exit_when_the_composer_state_is_unproven

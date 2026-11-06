@@ -1656,9 +1656,12 @@ families_for_changed_path() {
       printf '%s\n' '__script__:fm-handoff-trigger-live-e2e.test.sh'
       ;;
     bin/fm-watchdog.sh|bin/fm-watchdog-lib.sh)
+      printf '%s\n' watcher-wake-lock
+      printf '%s\n' "__script__:fm-backend-t3code.test.sh"
       printf '%s\n' "__script__:fm-watchdog.test.sh"
       printf '%s\n' "__script__:fm-watchdog-live.test.sh"
       printf '%s\n' "__script__:fm-usage-limit-pane-live.test.sh"
+      printf '%s\n' "__script__:fm-control-relaunch.test.sh"
       ;;
     bin/fm-watch*|bin/fm-classify-lib.sh)
       printf '%s\n' watcher-wake-lock
@@ -1721,10 +1724,6 @@ families_for_changed_path() {
       ;;
     bin/fm-quota-choose.sh)
       printf '%s\n' "__script__:fm-quota-choose.test.sh"
-      ;;
-    bin/fm-quota-reroute.sh)
-      printf '%s\n' "__script__:fm-quota-choose.test.sh"
-      printf '%s\n' "__script__:fm-usage-limit-pane-live.test.sh"
       ;;
     bin/fm-dispatch-resolve.sh)
       printf '%s\n' "__script__:fm-dispatch-resolve.test.sh"

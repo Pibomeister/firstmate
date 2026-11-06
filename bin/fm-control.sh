@@ -101,8 +101,10 @@
 #              The same pre-stop refusal applies to this home's worker tool
 #              exclusions (bin/fm-exclude-tools-lib.sh): a malformed list, or a
 #              replacement runtime that cannot hide the listed tools.
-#              A proven usage-limit screen is closed by destroying the
-#              endpoint without typing Enter, so the replacement can rebind.
+#              A Grok weekly-limit composer (dated live evidence) is closed by
+#              destroying the endpoint without typing Enter, so the replacement
+#              can rebind. A pane-text usage-limit verdict is refused; that
+#              classifier is not live-verified, and the endpoint is not closed.
 #              Moving a Claude task onto another harness is refused when
 #              bin/fm-quota-reroute.sh claude-tooling reports a signal, and
 #              when that check cannot complete; there is no override.
@@ -524,22 +526,43 @@ refuse_blocking_prompt() {  # <dialog-name>
   die "task $ID is blocked on a prompt: $1. Refusing to type Enter into it."
 }
 
+# usage_limit_dialog_name: the raw dialog name. The Grok weekly-limit composer
+# keeps that name. Pane-text usage-limit stays `usage-limit`. Do not use
+# fm_wd_observe_dialog here: it normalizes Grok to usage-limit and loses the
+# provenance the relaunch close path needs.
+usage_limit_dialog_name() {
+  local screen dialog
+  if [ -s "${FM_COMPOSER_DIALOG_SINK:-}" ]; then
+    dialog=$(cat "$FM_COMPOSER_DIALOG_SINK")
+    if fm_wd_usage_limit_kind "$dialog"; then
+      printf '%s' "$dialog"
+      return 0
+    fi
+  fi
+  screen=$(fm_backend_visible_capture "$BACKEND" "$T" "$LABEL" 2>/dev/null) || return 1
+  if declare -F fm_composer_blocking_dialog >/dev/null 2>&1; then
+    dialog=$(fm_composer_blocking_dialog "$screen" 2>/dev/null) || dialog=
+    if fm_wd_usage_limit_kind "$dialog"; then
+      printf '%s' "$dialog"
+      return 0
+    fi
+  fi
+  dialog=$(fm_wd_pane_dialog "$screen" 2>/dev/null) || return 1
+  [ -n "$dialog" ] || return 1
+  printf '%s' "$dialog"
+}
+
 # usage_limit_screen: a proven provider-limit picker, either the pane kind
 # usage-limit or the Grok weekly-limit composer name. A conversation quote of
 # the same words is not this screen.
 usage_limit_screen() {
-  local screen dialog
-  if [ -s "${FM_COMPOSER_DIALOG_SINK:-}" ]; then
-    dialog=$(cat "$FM_COMPOSER_DIALOG_SINK")
-    fm_wd_usage_limit_kind "$dialog" && return 0
-  fi
-  screen=$(fm_backend_visible_capture "$BACKEND" "$T" "$LABEL" 2>/dev/null) || return 1
-  dialog=$(fm_wd_observe_dialog "$screen" 2>/dev/null) || return 1
+  local dialog
+  dialog=$(usage_limit_dialog_name) || return 1
   fm_wd_usage_limit_kind "$dialog"
 }
 
-# Close the endpoint without typing Enter. Used only on a proven usage-limit
-# screen during relaunch, so the replacement can rebind.
+# Close the endpoint without typing Enter. Used only on a Grok weekly-limit
+# composer during relaunch, so the replacement can rebind.
 usage_limit_relaunch_close() {
   fm_backend_kill "$BACKEND" "$T" \
     || die "task $ID is at a usage-limit screen and its endpoint could not be closed without typing Enter"
@@ -908,10 +931,14 @@ do_exit() {
     || die "task $ID's dialog check could not be recorded"
   composer_state=$(fm_backend_composer_state "$BACKEND" "$T" "$LABEL" 2>/dev/null) \
     || composer_state=unknown
-  if usage_limit_screen; then
+  dialog=$(usage_limit_dialog_name) || dialog=
+  if fm_wd_usage_limit_kind "$dialog"; then
     if [ "$VERB" = relaunch ]; then
-      usage_limit_relaunch_close
-      return 0
+      if [ "$dialog" = 'Grok weekly-limit choice' ]; then
+        usage_limit_relaunch_close
+        return 0
+      fi
+      die "task $ID is at a usage-limit screen that is not live-verified; refusing to close the endpoint or type Enter. Keep live proof pending."
     fi
     die "task $ID is at a usage-limit screen; refusing to type Enter into it. Relaunch onto another runtime instead."
   fi
@@ -1090,7 +1117,13 @@ clear_owned_relaunch_tx() {
     relaunch_meta_unlock
     return 0
   fi
-  grep -v '^control_relaunch_tx=' "$META" > "$META.tx" || {
+  cp -p "$META" "$META.tx" || {
+    relaunch_meta_unlock
+    return 1
+  }
+  {
+    grep -v '^control_relaunch_tx=' "$META" || true
+  } > "$META.tx" || {
     relaunch_meta_unlock
     return 1
   }

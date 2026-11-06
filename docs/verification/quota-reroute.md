@@ -8,8 +8,12 @@ Portable tests cover the classifier, the stop path, the tooling gate, and the wa
 They cannot prove a live Herdr pane plus a Codex secondmate relaunch.
 
 The usage-limit pane-text live guard is `tests/fm-usage-limit-pane-live.test.sh` (`FM_USAGE_LIMIT_PANE_LIVE=1`).
-It is opt-in, default off, and fails closed until a dated capture exists in [`runtime-backends.md`](runtime-backends.md).
+It is opt-in and default off.
+When requested, it captures a real Claude pane and classifies it.
 It never types Enter.
+It passes only on a real usage-limit picker, and otherwise fails closed.
+Production `fm-control` relaunch refuses that pane-text verdict until a dated capture exists in [`runtime-backends.md`](runtime-backends.md).
+A Grok weekly-limit composer still closes without Enter.
 The 2026-10-19 Grok weekly-limit composer evidence in that file is unchanged and does not cover the pane-picker classifier.
 The box live Herdr plus Codex relaunch below remains the empirical proof for the tooling gate and suggest path.
 
@@ -123,7 +127,7 @@ Record whether the command is nonzero, names `usage-limit screen`, and delivers 
 
 ### What this run is for
 
-1. `fm-control.sh <id> relaunch --harness codex` closes a Herdr usage-limit pane without sending Enter.
+1. `fm-control.sh <id> relaunch --harness codex` refuses a pane-text usage-limit verdict (no kill, no Enter) until a dated capture exists. A Grok weekly-limit composer still closes without Enter.
 2. The replacement agent starts on Codex in the same secondmate home, on the recorded Herdr backend.
 3. `config/secondmate-harness` pointing at Claude does not block that move when no Claude-specific signal is present.
 4. Any Claude-specific signal keeps the mate on Claude until reset.
@@ -193,8 +197,9 @@ Do not treat that refusal as live proof of current seed behavior.
 
 Checklist:
 
-1. Relaunch closes a usage-limit pane without Enter: BLOCKED.
+1. Relaunch of a pane-text usage-limit screen: BLOCKED.
    No usage-limit screen was available, and quota was not burned to force one.
+   Production now refuses that pane-text close until a dated capture exists.
 2. Replacement starts on Codex on Herdr: BLOCKED.
    No usage-limit screen was available.
    Unchanged seeded `.claude/` no longer refuses that move.

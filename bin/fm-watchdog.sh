@@ -1069,13 +1069,14 @@ wd_quota_pick() {  # [task-id]
   cands=$(cfg reroute-candidates "")
   [ -n "$cands" ] || { printf 'none\n'; return 1; }
   snapshot=$WD/quota-snapshot.txt
-  rm -f "$snapshot"
-  if ! command -v quota-axi >/dev/null 2>&1; then
-    printf 'none\n'; return 1
-  fi
-  if ! fm_run_timed 60 quota-axi > "$snapshot" 2>/dev/null; then
-    rm -f "$snapshot"
-    printf 'none\n'; return 1
+  if [ ! -s "$snapshot" ]; then
+    if ! command -v quota-axi >/dev/null 2>&1; then
+      printf 'none\n'; return 1
+    fi
+    if ! fm_run_timed 60 quota-axi > "$snapshot" 2>/dev/null; then
+      rm -f "$snapshot"
+      printf 'none\n'; return 1
+    fi
   fi
   [ -s "$snapshot" ] || { printf 'none\n'; return 1; }
   harness=
@@ -1337,7 +1338,11 @@ wd_visit_worker_dialogs() {
         O_PANE=$screen
         O_DIALOG=$dialog
         O_REC_SUBJECT="worker:$id"
-        wd_quota_name_pick "$(wd_id)" "worker $id" "$id"
+        if fm_wd_rate_ok "$LEDGER" "$O_HOME" quota suggest "$(cfgi nudge-secs 900)" "$(wd_now)" "worker:$id"; then
+          wd_quota_name_pick "$(wd_id)" "worker $id" "$id"
+        else
+          wd_gap "usage-limit on worker $id; next pick waits for nudge-secs"
+        fi
         unset O_REC_SUBJECT
         ;;
     esac
@@ -1353,7 +1358,7 @@ wd_visit_worker_dialogs() {
 wd_handle_subject() {
   local symptom='' quiet frozen owed dead=0
   if fm_wd_open_pending "$LEDGER" | awk -F'\t' -v h="$O_HOME" '$2 == h && $4 == "restart" { f = 1 } END { exit !f }'; then
-    WD_SYMPTOM=restart-awaiting-pickup
+    WD_SYMPTOM='restart-awaiting-pickup'
     return 0
   fi
   frozen=$(cfgi frozen-secs 900)
@@ -1361,7 +1366,7 @@ wd_handle_subject() {
   quiet=$(cfgi restart-quiet-secs 120)
   if [ -n "$O_LOCK_PID" ] && [ "$O_ALIVE" = 0 ]; then dead=1; fi
   if [ "$dead" = 1 ]; then
-    symptom=agent-gone
+    symptom='agent-gone'
     if [ "$O_TR_AGE" != unknown ] && [ "$O_TR_AGE" -ge "$frozen" ]; then
       O_TURN=0 O_CPU_BUSY=0 wd_restart agent-gone kernel filesystem
     else
@@ -1371,14 +1376,14 @@ wd_handle_subject() {
     symptom=dialog
     wd_handle_dialog
   elif { [ "$O_RESTART_REQ" = 1 ] || { [ -n "$O_CTX" ] && [ "$O_CTX" -le "$(cfgi restart-at-percent 8)" ]; }; } && wd_restart_available && ! wd_handoff_undeliverable; then
-    symptom=restart-requested
+    symptom='restart-requested'
     wd_requested_restart "$quiet"
   elif { [ "$O_LOOP" = rapid ] && [ "$O_TR_AGE" != unknown ] && [ "$O_TR_AGE" -le "$(cfgi rapid-loop-secs 180)" ]; } \
        || { { [ "$O_LOOP" = loop ] || [ "$O_LOOP" = rapid ]; } && [ "$O_OWED_N" -gt 0 ] && [ "$O_OWED_AGE" -ge "$owed" ]; }; then
-    symptom=timer-loop
+    symptom='timer-loop'
     wd_ladder_nudge_then_restart timer-loop "your last $O_LOOP_N replies repeat the same text with no work between them. Stop re-arming, drain the wake queue, and act on what it shows." filesystem records
   elif [ "$O_LOOP" = near ] && [ "$O_OWED_N" -gt 0 ] && [ "$O_OWED_AGE" -ge "$owed" ] && wd_near_loop_confirmed; then
-    symptom=timer-loop
+    symptom='timer-loop'
     wd_ladder_nudge_then_restart timer-loop "your recent replies repeat without new work while input waits. Stop re-arming, drain the wake queue, and act on it." filesystem records
   elif [ "$O_PANE_STATIC" -ge "$frozen" ] && [ "$O_TR_AGE" != unknown ] && [ "$O_TR_AGE" -ge "$frozen" ] \
        && [ "$O_OWED_N" -gt 0 ] && [ "$O_OWED_AGE" -ge "$frozen" ]; then
@@ -1389,16 +1394,16 @@ wd_handle_subject() {
       wd_ladder_nudge_then_restart frozen "nothing changed for $((O_PANE_STATIC / 60)) minutes while $O_OWED_N inputs wait. Drain the wake queue and act on it." rendered filesystem kernel
     fi
   elif wd_unsent_is_stable; then
-    symptom=pasted-input
+    symptom='pasted-input'
     wd_submit_unsent
   elif [ "$O_OWED_N" -gt 0 ] && [ "$O_OWED_AGE" -ge "$owed" ] && [ "$O_TURN" != 1 ]; then
-    symptom=unread-input
+    symptom='unread-input'
     wd_nudge unread-input "$O_OWED_N inputs have waited $((O_OWED_AGE / 60)) minutes. Drain the wake queue and act on it."
   fi
   # A restart this pass stopped the recorded session, so its old endpoint gets nothing more.
   if [ "$WD_RESTARTED" = 1 ]; then WD_SYMPTOM=$symptom; return 0; fi
   if [ "$dead" = 0 ] && [ "$O_AFK" = 1 ] && [ "$O_DAEMON" = 0 ]; then
-    [ -n "$symptom" ] || symptom=daemon-dead
+    [ -n "$symptom" ] || symptom='daemon-dead'
     wd_nudge daemon-dead "away mode is on but the away daemon is not running. Re-arm it with bin/fm-afk-start.sh on this session's own terminal."
   fi
   if [ "$O_HB_AGE" != unknown ] && [ "$O_HB_AGE" -ge "$(cfgi watcher-stale-secs 900)" ]; then
@@ -1476,6 +1481,7 @@ wd_write_status() {  # <health-file> <gaps-file>
 wd_once() {  # [home-filter]
   local filter=${1:-} health
   mkdir -p "$WD" "$OUT"
+  rm -f "$WD/quota-snapshot.txt"
   health=$(mktemp "$WD/.health.XXXXXX") || return 1
   WD_GAPS=$(mktemp "$WD/.gaps.XXXXXX") || return 1
   wd_reconcile_pending

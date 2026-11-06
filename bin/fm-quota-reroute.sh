@@ -37,7 +37,8 @@
 # command forms fm-spawn writes (optional `touch '<turnend>'; ` then
 # quoted fm-busy-event.sh apply quoted-state quoted-id busy|idle --gen
 # quoted --source claude-hook --event <token> 2>/dev/null || true).
-# A command that merely contains that script path still blocks.
+# The match is the whole command. A command that merely contains that script
+# path, or embeds the spawn form beside other shell, still blocks.
 # Unchanged Firstmate seed files listed in bin/fm-claude-seed.manifest are not a
 # signal. Identity is that catalog's git blob, not a path name and not
 # HEAD:.claude of the running home. The catalog hashes
@@ -156,7 +157,7 @@ fm_quota_claude_mcp_unreadable() {  # <file>
 # hooks, which fm-spawn writes and fm-control relaunch retires) are dropped
 # before the check.
 fm_quota_claude_settings_keys_signal() {  # <file> <keys> [own-writer]
-  local f=$1 keys=$2 own=${3-} key
+  local f=$1 keys=$2 own=${3-} key own_re=
   [ -e "$f" ] || return 1
   if [ ! -f "$f" ] || [ ! -r "$f" ]; then
     printf '%s\n' "unreadable $f"
@@ -166,16 +167,14 @@ fm_quota_claude_settings_keys_signal() {  # <file> <keys> [own-writer]
     printf '%s\n' "unreadable $f"
     return 0
   fi
+  own_re=
+  if [ -n "$own" ]; then
+    own_re=$(printf '%s' "$own" | sed -e 's/[][\\.^$*+?(){}|]/\\&/g')
+  fi
   for key in $keys; do
-    if jq -e --arg k "$key" --arg own "$own" '
-         def apply_form:
-           startswith("'\''" + $own + "'\'' apply '\''")
-           and test(" apply '\''[^'\'']+'\'' '\''[^'\'']+'\'' (busy|idle) --gen '\''[^'\'']+'\'' --source claude-hook --event [A-Za-z0-9-]+ 2>/dev/null \\|\\| true$");
+    if jq -e --arg k "$key" --arg own "$own" --arg own_re "$own_re" '
          def spawn_busy_hook:
-           apply_form
-           or (test("^touch '\''[^'\'']+'\''; ")
-               and (index("'\''; ") != null)
-               and (.[index("'\''; ") + 3:] | apply_form));
+           test("^(touch '\''[^'\'']+'\''; )?'\''" + $own_re + "'\'' apply '\''[^'\'']+'\'' '\''[^'\'']+'\'' (busy|idle) --gen '\''[^'\'']+'\'' --source claude-hook --event [A-Za-z0-9-]+ 2>/dev/null \\|\\| true$");
          (if $own != "" and (.hooks | type == "object") then
             .hooks |= (map_values(
                          if type == "array" then
