@@ -1062,7 +1062,7 @@ wd_quota_meta() {  # [task-id]
 }
 
 wd_quota_pick() {  # [task-id]
-  local cands cand snapshot pick harness kind model wt mate meta task=${1-} judge reason
+  local cands cand snapshot pick harness kind model wt mate meta task=${1-} judge reason rec_home
   rm -f "$WD/.quota-none-reason"
   cands=$(cfg reroute-candidates "")
   [ -n "$cands" ] || { printf 'none\n'; return 1; }
@@ -1085,7 +1085,9 @@ wd_quota_pick() {  # [task-id]
   if [ -z "$judge" ] && [ -n "${O_ID:-}" ] && [ "$O_ID" != - ]; then
     judge=$O_ID
   fi
+  rec_home=$O_HOME
   if meta=$(wd_quota_meta "$judge"); then
+    rec_home=${meta%/state/*}
     harness=$(fm_meta_get "$meta" harness 2>/dev/null) || harness=
     kind=$(fm_meta_get "$meta" kind 2>/dev/null) || kind=ship
     model=$(fm_meta_get "$meta" model 2>/dev/null) || model=
@@ -1109,7 +1111,8 @@ wd_quota_pick() {  # [task-id]
   [ -z "$wt" ] || set -- "$@" --worktree "$wt"
   [ -z "$mate" ] || set -- "$@" --mate "$mate"
   for cand in $(printf '%s' "$cands" | tr ',' ' '); do set -- "$@" --candidate "$cand"; done
-  pick=$("$SCRIPT_DIR/fm-quota-reroute.sh" "$@" 2>"$WD/.quota-none-stderr") || pick=none
+  pick=$(FM_HOME=$rec_home FM_CONFIG_OVERRIDE=$rec_home/config \
+    "$SCRIPT_DIR/fm-quota-reroute.sh" "$@" 2>"$WD/.quota-none-stderr") || pick=none
   [ -n "$pick" ] || pick=none
   if [ "$pick" = none ]; then
     reason=$(awk 'sub(/^error: /, "") { print; exit }' "$WD/.quota-none-stderr" 2>/dev/null || true)

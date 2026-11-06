@@ -14,7 +14,13 @@
 # is empty, the current harness:model (and a pinned account's whole harness)
 # is the only remaining choice, or a Claude worker cannot leave Claude because
 # any Claude-specific signal is present. Unknown (missing, unreadable, or
-# unresolvable config dir or worktree) is a signal: queue until reset.
+# unresolvable config dir or worktree) is a signal: queue until reset. A signal
+# drops only the non-Claude candidates; a Claude candidate can still be named.
+# A secondmate's worktree is its firstmate home, and every firstmate home
+# tracks .claude/ skills and hooks, so suggest never moves a Claude secondmate
+# off Claude. An explicit fm-control.sh relaunch --harness runs the same
+# check, so it can move that secondmate to another Claude model but not off
+# Claude.
 # claude-tooling exits 0 and prints the blocking signal when tooling is
 # required. Exit 1 means no signal.
 #
@@ -463,21 +469,19 @@ case "$cmd" in
     TOOLING_SIG=
     if [ "$FROM_HARNESS" = claude ]; then
       if [ -z "$WORKTREE" ]; then
-        printf 'none\n'
-        echo "error: Claude-specific tooling present (unresolvable worktree); queue until reset rather than moving off Claude" >&2
-        exit 1
-      fi
-      if [ -z "$CLAUDE_DIR" ]; then
+        TOOLING_SIG='unresolvable worktree'
+      elif [ -z "$CLAUDE_DIR" ]; then
         config=${FM_CONFIG_OVERRIDE:-${FM_HOME:+$FM_HOME/config}}
         if ! CLAUDE_DIR=$(fm_quota_claude_config_dir "$config" "$MATE"); then
-          printf 'none\n'
-          echo "error: Claude-specific tooling present ($CLAUDE_DIR); queue until reset rather than moving off Claude" >&2
-          exit 1
+          TOOLING_SIG=${CLAUDE_DIR:-unresolvable Claude config dir}
+          CLAUDE_DIR=
+        else
+          [ "${CLAUDE_DIR#*$'\t'}" = 1 ] && PINNED=1
+          CLAUDE_DIR=${CLAUDE_DIR%%$'\t'*}
         fi
-        [ "${CLAUDE_DIR#*$'\t'}" = 1 ] && PINNED=1
-        CLAUDE_DIR=${CLAUDE_DIR%%$'\t'*}
       fi
-      if sig=$(fm_quota_claude_tooling_signal "$CLAUDE_DIR" "$WORKTREE"); then
+      if [ -z "$TOOLING_SIG" ] \
+         && sig=$(fm_quota_claude_tooling_signal "$CLAUDE_DIR" "$WORKTREE"); then
         TOOLING_SIG=$sig
       fi
     fi

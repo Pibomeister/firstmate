@@ -1002,6 +1002,28 @@ sig=$(FM_HOME="$broken_home" call_reroute claude-tooling --worktree "$clean_wt")
 printf '%s\n' "$sig" | grep -q 'config/claude-account' \
   || fail "claude-tooling broken pin signal: $sig"
 
+out=$(call_reroute suggest --snapshot "$LAB/captured.json" --from-harness claude \
+  --claude-config-dir "$empty_dir" --kind secondmate \
+  --candidate claude:claude-3-5-sonnet --candidate codex:default)
+[ "$out" = "claude claude-3-5-sonnet" ] || fail "an omitted worktree should keep a Claude candidate eligible, got '$out'"
+out=$(FM_HOME="$broken_home" call_reroute suggest --snapshot "$LAB/captured.json" \
+  --from-harness claude --worktree "$clean_wt" --kind secondmate \
+  --candidate claude:claude-3-5-sonnet --candidate codex:default)
+[ "$out" = "claude claude-3-5-sonnet" ] || fail "a broken pin should keep a Claude candidate eligible, got '$out'"
+ok "unknown worktree or pin drops only the moves off Claude"
+
+if out=$(call_reroute suggest --snapshot "$LAB/captured.json" --from-harness claude \
+  --claude-config-dir "$empty_dir" --worktree "$FM_ROOT" --kind secondmate \
+  --candidate codex:default 2>/dev/null); then
+  fail "a Claude secondmate on a firstmate home must not be moved off Claude, got '$out'"
+fi
+[ "$out" = "none" ] || fail "firstmate home secondmate: expected none, got '$out'"
+out=$(call_reroute suggest --snapshot "$LAB/captured.json" --from-harness claude \
+  --claude-config-dir "$empty_dir" --worktree "$FM_ROOT" --kind secondmate \
+  --candidate claude:claude-3-5-sonnet --candidate codex:default)
+[ "$out" = "claude claude-3-5-sonnet" ] || fail "a firstmate home secondmate should keep a Claude candidate, got '$out'"
+ok "a Claude secondmate whose home is a firstmate checkout stays on Claude"
+
 ord="$LAB/ordinary-home"
 mkdir -p "$ord/.claude"
 printf '%s\n' '{"mcpServers":{"docs":{"command":"true"}}}' > "$ord/.claude.json"
