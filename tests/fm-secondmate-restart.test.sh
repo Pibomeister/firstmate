@@ -25,6 +25,10 @@
 #   7. A T3 mate, whose thread keeps its conversation so no replacement can be
 #      launched into it, is routed by both passes to the re-read message on its
 #      thread and never asked to persist for a restart that cannot come.
+#   8. A local mate whose endpoint vanished when its agent stopped is respawned
+#      through the secondmate respawn path on the backend its record names, even
+#      when the home default cannot host a secondmate, and that respawn is the
+#      same one the watcher runs.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -38,7 +42,8 @@ fm_git_identity fmtest fmtest@example.com
 TMP_ROOT=$(fm_test_tmproot fm-secondmate-restart)
 mkdir -p "$TMP_ROOT"
 TMP_ROOT=$(cd "$TMP_ROOT" && pwd -P)
-trap 't3_fake_stop; rm -rf -- "$TMP_ROOT"' EXIT
+# A fresh secondmate spawn leaves its state/<id>.git-hooks strip dir read-only.
+trap 't3_fake_stop; chmod -R u+w "$TMP_ROOT" 2>/dev/null; rm -rf -- "$TMP_ROOT"' EXIT
 
 # A session-provider stub that models the two things this pass depends on: the
 # harness exit command stops the agent, a launch brief starts the replacement,
@@ -427,6 +432,186 @@ test_refused_restart_falls_back_without_claiming_a_reload() {
     || fail "a refusal before the stop should leave the running agent exactly as it was"
   assert_no_grep '^/exit$' "$dir/fake/literal" "a pre-stop refusal must not have stopped the agent"
   pass "T5 a refused restart leaves the mate running and reports an unknown outcome"
+}
+
+# A herdr session-provider stub for a local mate whose pane does not survive
+# its agent's stop: the harness exit command closes the pane, so the control
+# plane proves it gone and hands the mate to the secondmate respawn path. The
+# stub models the same answering mate as the tmux one above, and lets the
+# respawn mint a new workspace, tab, and pane that a launch makes live.
+make_herdr_mate_stub() {  # <case-dir>
+  local fb="$1/fakebin"
+  cat > "$fb/herdr" <<'SH'
+#!/usr/bin/env bash
+set -u
+D=$FM_FAKE_DIR
+printf '%s\n' "$*" >> "$D/herdr-log"
+if [ "${1:-}" = status ] && [ "${2:-}" = --json ]; then
+  printf '{"client":{"version":"0.9.0","protocol":22},"server":{"running":true}}\n'
+  exit 0
+fi
+[ "${1:-}" != server ] || exit 0
+case "${1:-} ${2:-}" in
+  'pane read') printf '╭────╮\n│    │\n╰────╯\n'; exit 0 ;;
+  'pane get')
+    if [ "${3:-}" = "$(cat "$D/herdr-pane")" ]; then
+      printf '{"result":{"pane":{"pane_id":"%s","foreground_cwd":"%s"}}}\n' "${3:-}" "$(cat "$D/cwd")"
+    else
+      printf '{"error":{"code":"pane_not_found"}}\n'
+    fi
+    exit 0 ;;
+  'agent get')
+    if [ -f "$D/herdr-agent-live" ]; then
+      printf '{"result":{"agent":{"agent_status":"idle"}}}\n'
+    else
+      printf '{"error":{"code":"agent_not_found"}}\n'
+    fi
+    exit 0 ;;
+  'pane process-info')
+    if [ -f "$D/herdr-agent-live" ]; then
+      printf '{"result":{"type":"pane_process_info","process_info":{"pane_id":"%s","shell_pid":4242,"foreground_processes":[{"pid":4243,"name":"claude","argv":["claude"],"cmdline":"claude"}]}}}\n' "$(cat "$D/herdr-pane")"
+    else
+      printf '{"result":{"type":"pane_process_info","process_info":{"pane_id":"%s","shell_pid":4242,"foreground_processes":[]}}}\n' "$(cat "$D/herdr-pane")"
+    fi
+    exit 0 ;;
+  'pane send-text')
+    payload=${4:-}
+    case "$payload" in
+      ". '"*"'") staged=${payload#". '"}; staged=${staged%"'"}; [ ! -f "$staged" ] || payload=$(cat "$staged") ;;
+    esac
+    printf '%s\n' "$payload" >> "$D/literal"
+    case "$payload" in
+      /exit) : > "$D/herdr-exit-staged" ;;
+      *'encode launch-brief'* | *'Firstmate operational input waiting: read'*)
+        printf '%s\n' "$payload" >> "$D/launched-command"
+        : > "$D/herdr-agent-live" ;;
+      ': Firstmate instruction waiting: list '*)
+        printf 'doorbell\n' >> "$D/rings"
+        if [ -f "$D/answer-inbox" ]; then
+          corr=$(cat "$(cat "$D/answer-inbox")"/*.msg 2>/dev/null | grep -oE 'corr=[0-9a-f]{16}' | head -1)
+          [ -z "$corr" ] || printf 'done [%s]: open records written down\n' "$corr" >> "$(cat "$D/answer-status")"
+        fi
+        ;;
+    esac
+    exit 0 ;;
+  'pane send-keys')
+    if [ "${4:-}" = enter ] && [ -f "$D/herdr-exit-staged" ]; then
+      rm -f "$D/herdr-exit-staged" "$D/herdr-agent-live"
+      printf '%%none' > "$D/herdr-pane"
+    fi
+    exit 0 ;;
+  'workspace list') printf '{"result":{"workspaces":[]}}\n'; exit 0 ;;
+  'workspace create')
+    printf '{"result":{"workspace":{"workspace_id":"wsnew"},"tab":{"tab_id":"seedtab"},"root_pane":{"pane_id":"%%8"}}}\n'
+    exit 0 ;;
+  'tab list') printf '{"result":{"tabs":[]}}\n'; exit 0 ;;
+  'tab create')
+    printf '%s\n' "$*" >> "$D/herdr-created-tabs"
+    printf '{"result":{"tab":{"tab_id":"tabnew"},"root_pane":{"pane_id":"%%9"}}}\n'
+    printf '%s' '%9' > "$D/herdr-pane"
+    exit 0 ;;
+esac
+exit 0
+SH
+  chmod +x "$fb/herdr"
+}
+
+# --- T5b: a pane that vanished on stop falls through to the respawn path ------
+# The 2026-11-05 incident shape: the home's default backend cannot host a
+# second mate at all, the mate's own record names herdr, and stopping its agent
+# takes the pane with it. The restart must still bring the mate back, on its
+# recorded backend, instead of leaving it down.
+test_vanished_endpoint_restart_respawns_on_the_recorded_backend() {
+  local dir out rc
+  command -v jq >/dev/null 2>&1 || {
+    echo "skip - a herdr restart needs jq (the herdr adapter parses JSON with it)"
+    return 0
+  }
+  dir=$(new_case vanished)
+  make_herdr_mate_stub "$dir"
+  add_local_mate "$dir" sm1 claude herdr
+  sed 's/^window=.*$/window=fmlab:%7/' "$dir/home/state/sm1.meta" > "$dir/home/state/sm1.meta.tmp"
+  mv "$dir/home/state/sm1.meta.tmp" "$dir/home/state/sm1.meta"
+  printf '%s\n' "herdr_session=fmlab" "herdr_workspace_id=ws1" "herdr_tab_id=tab1" \
+    "herdr_pane_id=%7" >> "$dir/home/state/sm1.meta"
+  printf '%s' '%7' > "$dir/fake/herdr-pane"
+  : > "$dir/fake/herdr-agent-live"
+  : > "$dir/fake/herdr-log"
+  printf 'orca\n' > "$dir/home/config/backend"
+  arm_answer "$dir" sm1
+
+  # Nothing from the running shell may choose the backend: only the home's
+  # default and the mate's record are in play.
+  mkdir -p "$dir/user-home"
+  out=$(
+    unset FM_BACKEND HERDR_ENV HERDR_PANE_ID HERDR_SESSION HERDR_SOCKET_PATH HERDR_TAB_ID HERDR_WORKSPACE_ID
+    HOME="$dir/user-home" CLAUDE_CONFIG_DIR='' run_restart "$dir" sm1
+  ); rc=$?
+
+  expect_code 0 "$rc" "a mate whose pane vanished on stop must be brought back"$'\n'"$out"
+  assert_contains "$out" "restarted: sm1 (claude) on a new endpoint" \
+    "the report must say the mate restarted, and on a new endpoint"
+  assert_not_contains "$out" "does not support --secondmate" \
+    "the respawn must not fall back to the home default backend"
+  assert_grep 'pane send-keys %7 enter' "$dir/fake/herdr-log" "the old agent was never stopped"
+  assert_present "$dir/fake/herdr-created-tabs" "no replacement endpoint was created"
+  [ "$(grep '^backend=' "$dir/home/state/sm1.meta" | tail -1)" = "backend=herdr" ] \
+    || fail "the respawned mate's record left its recorded backend"
+  [ "$(grep '^herdr_pane_id=' "$dir/home/state/sm1.meta" | tail -1)" = "herdr_pane_id=%9" ] \
+    || fail "the record does not name the pane the respawn created"
+  assert_grep 'relaunched' "$dir/home/state/.secondmate-relaunch-sm1" \
+    "the respawn was not recorded in the mate's relaunch ledger"
+  pass "T5b a pane that vanished on stop falls through to a respawn on the recorded backend"
+}
+
+# --- T5c: the respawn the watcher runs keeps the mate's recorded backend ------
+# The watcher's auto-relaunch and the session-start sweep both run
+# bin/fm-spawn.sh <id> --secondmate for a mate whose endpoint is gone. With no
+# --backend, that respawn must land on the backend the mate's record names, not
+# the home default; an explicit --backend still decides.
+test_secondmate_respawn_keeps_the_recorded_backend() {
+  local dir out rc
+  command -v jq >/dev/null 2>&1 || {
+    echo "skip - a herdr respawn needs jq (the herdr adapter parses JSON with it)"
+    return 0
+  }
+  dir=$(new_case respawn-backend)
+  make_herdr_mate_stub "$dir"
+  add_local_mate "$dir" sm1 claude herdr
+  sed 's/^window=.*$/window=fmlab:%7/' "$dir/home/state/sm1.meta" > "$dir/home/state/sm1.meta.tmp"
+  mv "$dir/home/state/sm1.meta.tmp" "$dir/home/state/sm1.meta"
+  printf '%s\n' "herdr_session=fmlab" "herdr_workspace_id=ws1" "herdr_tab_id=tab1" \
+    "herdr_pane_id=%7" >> "$dir/home/state/sm1.meta"
+  # The pane is already gone, as the watcher finds it.
+  printf '%s' '%none' > "$dir/fake/herdr-pane"
+  : > "$dir/fake/herdr-log"
+  printf 'orca\n' > "$dir/home/config/backend"
+  mkdir -p "$dir/user-home"
+
+  out=$(
+    unset FM_BACKEND HERDR_ENV HERDR_PANE_ID HERDR_SESSION HERDR_SOCKET_PATH HERDR_TAB_ID HERDR_WORKSPACE_ID
+    env PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" \
+      HOME="$dir/user-home" CLAUDE_CONFIG_DIR='' FM_SPAWN_NO_GUARD=1 \
+      "$ROOT/bin/fm-spawn.sh" sm1 --secondmate --backend orca 2>&1
+  ); rc=$?
+  [ "$rc" -ne 0 ] || fail "an explicit --backend orca must still decide, and orca cannot host a secondmate"$'\n'"$out"
+  assert_contains "$out" "backend=orca does not support --secondmate" \
+    "an explicit --backend must win over the recorded one"
+  assert_absent "$dir/fake/herdr-created-tabs" "a refused respawn created an endpoint"
+
+  out=$(
+    unset FM_BACKEND HERDR_ENV HERDR_PANE_ID HERDR_SESSION HERDR_SOCKET_PATH HERDR_TAB_ID HERDR_WORKSPACE_ID
+    env PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" \
+      HOME="$dir/user-home" CLAUDE_CONFIG_DIR='' FM_SPAWN_NO_GUARD=1 \
+      "$ROOT/bin/fm-spawn.sh" sm1 --secondmate 2>&1
+  ); rc=$?
+  expect_code 0 "$rc" "a respawn with no --backend must use the mate's recorded backend"$'\n'"$out"
+  assert_not_contains "$out" "does not support --secondmate" \
+    "the respawn fell back to the home default backend"
+  assert_present "$dir/fake/herdr-created-tabs" "the respawn did not create its endpoint on herdr"
+  [ "$(grep '^backend=' "$dir/home/state/sm1.meta" | tail -1)" = "backend=herdr" ] \
+    || fail "the respawned mate's record left its recorded backend"
+  pass "T5c the secondmate respawn keeps the recorded backend, and an explicit --backend still wins"
 }
 
 # --- T6: a remote mate restarts over the fm-on hop, on the parent's pin -------
@@ -994,6 +1179,8 @@ test_answer_between_resolution_and_timeout_wins
 test_unprovable_runtime_falls_back
 test_unknown_mate_is_accounted_for
 test_refused_restart_falls_back_without_claiming_a_reload
+test_vanished_endpoint_restart_respawns_on_the_recorded_backend
+test_secondmate_respawn_keeps_the_recorded_backend
 test_local_restart_uses_the_home_pin_and_reports_what_ran
 test_native_ultra_restart_keeps_local_and_remote_profiles
 test_remote_mate_restarts_over_the_transport_hop
