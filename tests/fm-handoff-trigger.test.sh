@@ -607,7 +607,7 @@ test_handoff_gates_the_stop_until_a_recorded_successor_is_alive() {
 }
 
 test_secondmate_handoff_escalates_to_its_parent() {
-  local rc err out succ launch
+  local rc out launch
   reset_lab
   launch="$PRIMARY/state/.handoff-successor"
   rm -rf "$PRIMARY/data/orders" "$PRIMARY/state/.order-handoff" "$launch"
@@ -618,21 +618,11 @@ test_secondmate_handoff_escalates_to_its_parent() {
   expect_fire "$out" PostToolUse "second-mate firing"
   printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | contains("never launch your own successor") and contains("parent channel") and (contains("Launch the successor yourself") | not)' >/dev/null \
     || fail "a second mate's instruction must escalate to its parent and not self-launch: $out"
-  err="$TMP_ROOT/sm.err"
-  rc=0
-  run_hook "$PRIMARY" s-sm "$TMP_ROOT/t-sm" Stop >/dev/null 2>"$err" || rc=$?
-  [ "$rc" -eq 2 ] || fail "a second mate with no recorded successor must be blocked (rc=$rc)"
-  assert_contains "$(cat "$err")" "parent channel" "the second-mate block escalates to the parent channel"
-  case "$(cat "$err")" in *"Launch your successor yourself"*) fail "a second mate must never be told to self-launch" ;; esac
-  sleep 60 &
-  succ=$!
-  printf 'pid=%s\n' "$succ" > "$launch"
   rc=0
   run_hook "$PRIMARY" s-sm "$TMP_ROOT/t-sm" Stop >/dev/null 2>&1 || rc=$?
-  kill "$succ" 2>/dev/null; wait "$succ" 2>/dev/null
-  [ "$rc" -eq 0 ] || fail "a parent-recorded live successor must let a second mate's stop pass (rc=$rc)"
+  [ "$rc" -eq 0 ] || fail "a second mate's stop with no launch record must not be gated (rc=$rc)"
   rm -f "$launch" "$PRIMARY/.fm-secondmate-home"
-  pass "a second mate's handoff escalates to its parent and never self-launches (133, 116)"
+  pass "a second mate's handoff escalates to its parent once and its stop is never successor-gated (133, 116)"
 }
 
 test_handoff_gates_the_stop_until_a_recorded_successor_is_alive
