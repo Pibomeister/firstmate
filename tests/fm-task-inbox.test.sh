@@ -1321,13 +1321,13 @@ test_watcher_usage_limit_unread_inbox_does_not_name_interrupt() {
     || { kill "$pid" 2>/dev/null; fail "the watcher never escalated the usage-limit unread ask"; }
   ! grep -qF 'fm-control.sh t1 interrupt' "$state/.wake-queue" \
     || fail "the wake named interrupt on a usage-limit screen:"$'\n'"$(cat "$state/.wake-queue")"
-  grep -qF 'fm-quota-reroute.sh' "$state/.wake-queue" \
-    || fail "the wake omitted the quota pick:"$'\n'"$(cat "$state/.wake-queue")"
-  grep -qF 'relaunch --harness' "$state/.wake-queue" \
-    || fail "the wake omitted relaunch:"$'\n'"$(cat "$state/.wake-queue")"
+  grep -qF 'queue until reset' "$state/.wake-queue" \
+    || fail "the pane-text wake omitted queue until reset:"$'\n'"$(cat "$state/.wake-queue")"
+  ! grep -qF 'relaunch --harness' "$state/.wake-queue" \
+    || fail "a pane-text usage-limit must not send the supervisor to relaunch:"$'\n'"$(cat "$state/.wake-queue")"
   grep -qF "$rec" "$state/.wake-queue" \
     || fail "the wake omitted the durable inbox record"
-  pass "watcher: a usage-limit unread ask names relaunch, not interrupt"
+  pass "watcher: a usage-limit unread ask queues until reset, not interrupt"
 }
 
 test_watcher_dead_pane_escalates_once_without_ringing() {

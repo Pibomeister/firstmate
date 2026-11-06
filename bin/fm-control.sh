@@ -26,8 +26,9 @@
 #              classify that. Cancellation is confirmed only from an adapter-
 #              owned acknowledgement and otherwise reported unconfirmed. Busy
 #              state is never rewritten as proof of the action. A proven
-#              usage-limit screen is refused; relaunch onto another runtime
-#              instead of sending a lifecycle key into that picker. Devin
+#              usage-limit screen is refused. A pane-text usage-limit picker
+#              queues until reset. A Grok weekly-limit composer can be closed
+#              by relaunch. Devin
 #              cancellation invalidates it to unknown because its native hooks
 #              emit no cancellation close; this is not a success claim.
 #              An adapter whose repeated interrupt key does something else on
@@ -39,8 +40,9 @@
 #              busy, then submits the harness's exit command. Postcondition:
 #              the backend's recovery-grade classifier reports the agent gone.
 #              Already-stopped is success (idempotent). A proven usage-limit
-#              screen is refused; relaunch onto another runtime instead of
-#              typing Enter into that picker. An endpoint that reads
+#              screen is refused. A pane-text usage-limit picker queues until
+#              reset. A Grok weekly-limit composer can be closed by relaunch
+#              instead of typing Enter into that picker. An endpoint that reads
 #              `missing` (or, on Rex, `unreadable`, which is how a stopped Rex
 #              server reads without starting it) is put through the control
 #              plane's per-backend absence
@@ -938,9 +940,12 @@ do_exit() {
         usage_limit_relaunch_close
         return 0
       fi
-      die "task $ID is at a usage-limit screen that is not live-verified; refusing to close the endpoint or type Enter. Keep live proof pending."
+      die "task $ID is at a usage-limit screen that is not live-verified; refusing to close the endpoint or type Enter. Queue until reset."
     fi
-    die "task $ID is at a usage-limit screen; refusing to type Enter into it. Relaunch onto another runtime instead."
+    if [ "$dialog" = 'Grok weekly-limit choice' ]; then
+      die "task $ID is at a usage-limit screen; refusing to type Enter into it. Relaunch onto another runtime instead."
+    fi
+    die "task $ID is at a usage-limit screen; refusing to type Enter into it. Queue until reset."
   fi
   # A busy agent is interrupted first before the exit command is submitted.
   case "$(busy_verdict)" in
@@ -1682,8 +1687,12 @@ case "$VERB" in
     esac
     : > "$FM_COMPOSER_DIALOG_SINK" || true
     fm_backend_composer_state "$BACKEND" "$T" "$LABEL" >/dev/null 2>&1 || true
-    if usage_limit_screen; then
-      die "task $ID is at a usage-limit screen; refusing to send a lifecycle key into it. Relaunch onto another runtime instead."
+    dialog=$(usage_limit_dialog_name) || dialog=
+    if fm_wd_usage_limit_kind "$dialog"; then
+      if [ "$dialog" = 'Grok weekly-limit choice' ]; then
+        die "task $ID is at a usage-limit screen; refusing to send a lifecycle key into it. Relaunch onto another runtime instead."
+      fi
+      die "task $ID is at a usage-limit screen; refusing to send a lifecycle key into it. Queue until reset."
     fi
     proof=$(do_interrupt)
     echo "interrupt-delivered $ID harness=$HARNESS backend=$BACKEND verified=$proof"

@@ -308,7 +308,8 @@ family_for_basename() {
     fm-tmux-submit-busy.test.sh|fm-trace-context-lib.test.sh|\
     fm-transition-lib.test.sh|\
     fm-test-run.test.sh|fm-test-isolation-proof.test.sh|fm-test-tap-verify.test.sh|\
-    fm-ci-select.test.sh|fm-ci-workflow.test.sh)
+    fm-ci-select.test.sh|fm-ci-workflow.test.sh|\
+    fm-usage-limit-pane-pending.test.sh)
       printf '%s\n' pure-contract-unit
       ;;
     fm-daemon.test.sh|fm-guard-stale-banner.test.sh|fm-pi-watch-extension.test.sh|\
@@ -1024,6 +1025,7 @@ tests/fm-watch-wedge-cap-live.test.sh 214
 tests/fm-watch-wedge-cap-unconfigured-parity.test.sh 60531
 tests/fm-watch-wedge-cap.test.sh 424173
 tests/fm-usage-limit-pane-live.test.sh 90
+tests/fm-usage-limit-pane-pending.test.sh 4000
 tests/fm-watchdog-live.test.sh 89
 tests/fm-watchdog.test.sh 527813
 tests/fm-watcher-lock.test.sh 73024
@@ -1570,6 +1572,10 @@ families_for_changed_path() {
       printf '%s\n' real-herdr-gated
       printf '%s\n' backend-dispatch
       ;;
+    tests/fm-usage-limit-pane-live.test.sh)
+      printf '%s\n' "__script__:fm-usage-limit-pane-live.test.sh"
+      printf '%s\n' "__script__:fm-usage-limit-pane-pending.test.sh"
+      ;;
     tests/*.test.sh)
       # A single test file change selects only that script via basename family
       # resolution in the caller; emit a marker family of __script__
@@ -1661,6 +1667,7 @@ families_for_changed_path() {
       printf '%s\n' "__script__:fm-watchdog.test.sh"
       printf '%s\n' "__script__:fm-watchdog-live.test.sh"
       printf '%s\n' "__script__:fm-usage-limit-pane-live.test.sh"
+      printf '%s\n' "__script__:fm-usage-limit-pane-pending.test.sh"
       printf '%s\n' "__script__:fm-control-relaunch.test.sh"
       ;;
     bin/fm-watch*|bin/fm-classify-lib.sh)
@@ -1722,7 +1729,7 @@ families_for_changed_path() {
     bin/fm-procevent-quota.sh)
       printf '%s\n' "__script__:fm-procevent-quota.test.sh"
       ;;
-    bin/fm-quota-choose.sh)
+    bin/fm-quota-choose.sh|bin/fm-claude-seed.manifest)
       printf '%s\n' "__script__:fm-quota-choose.test.sh"
       ;;
     bin/fm-dispatch-resolve.sh)
@@ -1790,6 +1797,7 @@ families_for_changed_path() {
       printf '%s\n' __script__:fm-calm-pi-extension.test.sh
       printf '%s\n' __script__:fm-pi-primary-types.test.sh
       printf '%s\n' live-harness-optin
+      printf '%s\n' "__script__:fm-quota-choose.test.sh"
       ;;
     .cursor/agent-kit.md|.cursor/bin/ak|.cursor/bin/ak-gate.mjs|bin/fm-agent-kit-pin.sh)
       printf '%s\n' "__script__:fm-agent-kit-pin.test.sh"
@@ -1813,6 +1821,7 @@ families_for_changed_path() {
       printf '%s\n' __script__:fm-pi-windows-shell-invocation.test.sh
       printf '%s\n' session-bootstrap
       printf '%s\n' live-harness-optin
+      printf '%s\n' "__script__:fm-quota-choose.test.sh"
       ;;
     bin/fm-extension.mjs|bin/fm-extension.sh|docs/examples/process-event-extension/*)
       printf '%s\n' __script__:fm-extension-binding.test.sh
@@ -1917,13 +1926,16 @@ families_for_changed_path() {
     .agents/skills/quota-array-dispatch/SKILL.md)
       printf '%s\n' pure-contract-unit
       printf '%s\n' live-harness-optin
+      printf '%s\n' "__script__:fm-quota-choose.test.sh"
       ;;
     .agents/skills/harness-adapters/SKILL.md|.agents/skills/harness-adapters/references/*)
       printf '%s\n' pure-contract-unit
       printf '%s\n' live-harness-optin
+      printf '%s\n' "__script__:fm-quota-choose.test.sh"
       ;;
-    .agents/skills/*/SKILL.md)
+    .agents/skills/*/SKILL.md|.claude/skills/*/SKILL.md)
       printf '%s\n' pure-contract-unit
+      printf '%s\n' "__script__:fm-quota-choose.test.sh"
       ;;
     .github/workflows/ci.yml|.no-mistakes.yaml)
       printf '%s\n' pure-contract-unit

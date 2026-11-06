@@ -926,7 +926,7 @@ wd_handle_dialog() {
       wd_gap "permission dialog waiting; the watchdog never answers permission prompts"
       wd_page_permission ;;
     usage-limit)
-      wd_quota_name_pick "$(wd_id)" "${O_ID:-$O_TAG}"
+      wd_quota_name_pick_rated "$(wd_id)" "${O_ID:-$O_TAG}"
       ;;
     model-switch)
       opts=$(fm_wd_dialog_options "$O_PANE")
@@ -1069,12 +1069,16 @@ wd_quota_pick() {  # [task-id]
   cands=$(cfg reroute-candidates "")
   [ -n "$cands" ] || { printf 'none\n'; return 1; }
   snapshot=$WD/quota-snapshot.txt
+  if [ -f "$WD/quota-snapshot.failed" ]; then
+    printf 'none\n'; return 1
+  fi
   if [ ! -s "$snapshot" ]; then
     if ! command -v quota-axi >/dev/null 2>&1; then
       printf 'none\n'; return 1
     fi
     if ! fm_run_timed 60 quota-axi > "$snapshot" 2>/dev/null; then
       rm -f "$snapshot"
+      : > "$WD/quota-snapshot.failed"
       printf 'none\n'; return 1
     fi
   fi
@@ -1130,16 +1134,36 @@ wd_quota_none_reason() {
   cat "$WD/.quota-none-reason" 2>/dev/null || printf '%s\n' "No eligible reroute candidate"
 }
 
+wd_quota_relaunch_closes() {
+  local name=
+  [ -n "${O_PANE:-}" ] || return 1
+  name=$(fm_composer_blocking_dialog "$O_PANE" 2>/dev/null) || name=
+  [ "$name" = 'Grok weekly-limit choice' ]
+}
+
 wd_quota_name_pick() {  # <id> <subject> [task-id]
   local pick reason
   pick=$(wd_quota_pick "${3-}") || pick=none
   if [ -n "$pick" ] && [ "$pick" != none ]; then
-    wd_rec "$1" quota suggest held "quota shows $pick eligible; supervisor relaunches, watchdog does not"
-    wd_gap "usage-limit on $2. Suggested pick: $pick. Supervisor relaunches. The watchdog does not change the runtime."
+    if wd_quota_relaunch_closes; then
+      wd_rec "$1" quota suggest held "quota shows $pick eligible; supervisor relaunches, watchdog does not"
+      wd_gap "usage-limit on $2. Suggested pick: $pick. Supervisor relaunches. The watchdog does not change the runtime."
+    else
+      wd_rec "$1" quota suggest held "quota shows $pick eligible; queued until reset"
+      wd_gap "usage-limit on $2. Suggested pick: $pick. Queue until reset. Relaunch closes only a verified Grok weekly-limit composer. The watchdog does not change the runtime."
+    fi
   else
     reason=$(wd_quota_none_reason)
     wd_rec "$1" quota suggest held "$reason; queued until reset"
     wd_gap "usage-limit on $2. $reason. Queue until reset; never pause in a poll loop."
+  fi
+}
+
+wd_quota_name_pick_rated() {  # <id> <subject-label> [task-id]
+  if fm_wd_rate_ok "$LEDGER" "$O_HOME" quota suggest "$(cfgi nudge-secs 900)" "$(wd_now)" "${O_REC_SUBJECT:-$O_TAG}"; then
+    wd_quota_name_pick "$1" "$2" "${3-}"
+  else
+    wd_gap "usage-limit on $2; next pick waits for nudge-secs"
   fi
 }
 
@@ -1338,11 +1362,7 @@ wd_visit_worker_dialogs() {
         O_PANE=$screen
         O_DIALOG=$dialog
         O_REC_SUBJECT="worker:$id"
-        if fm_wd_rate_ok "$LEDGER" "$O_HOME" quota suggest "$(cfgi nudge-secs 900)" "$(wd_now)" "worker:$id"; then
-          wd_quota_name_pick "$(wd_id)" "worker $id" "$id"
-        else
-          wd_gap "usage-limit on worker $id; next pick waits for nudge-secs"
-        fi
+        wd_quota_name_pick_rated "$(wd_id)" "worker $id" "$id"
         unset O_REC_SUBJECT
         ;;
     esac
@@ -1481,7 +1501,7 @@ wd_write_status() {  # <health-file> <gaps-file>
 wd_once() {  # [home-filter]
   local filter=${1:-} health
   mkdir -p "$WD" "$OUT"
-  rm -f "$WD/quota-snapshot.txt"
+  rm -f "$WD/quota-snapshot.txt" "$WD/quota-snapshot.failed"
   health=$(mktemp "$WD/.health.XXXXXX") || return 1
   WD_GAPS=$(mktemp "$WD/.gaps.XXXXXX") || return 1
   wd_reconcile_pending

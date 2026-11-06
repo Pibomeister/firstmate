@@ -708,6 +708,8 @@ test_relaunch_refuses_an_unverified_pane_text_usage_limit() {
   expect_code 1 "$rc" "a pane-text usage-limit relaunch must refuse before close"$'\n'"$out"
   assert_contains "$out" "not live-verified" \
     "the refusal should name the unverified pane-text classifier"
+  assert_contains "$out" "Queue until reset" \
+    "pane-text usage-limit must not send the supervisor to relaunch"
   assert_not_contains "$out" "composer visibly holds pending text" \
     "a usage-limit screen must not be treated as pending composer text"
   assert_no_grep "/exit" "$dir/fake/literal" \
@@ -778,10 +780,46 @@ test_interrupt_refuses_a_usage_limit_screen() {
   out=$(run_control "$dir" rl81 interrupt); rc=$?
   expect_code 1 "$rc" "interrupt must refuse a usage-limit screen"$'\n'"$out"
   assert_contains "$out" "usage-limit screen" "the refusal should name the usage-limit screen"
+  assert_contains "$out" "Queue until reset" \
+    "pane-text interrupt must not send the supervisor to relaunch"
+  assert_not_contains "$out" "Relaunch onto another runtime" \
+    "pane-text interrupt must not recommend a refusing relaunch"
   [ -z "$(cat "$dir/fake/keys")" ] || fail "interrupt typed a lifecycle key into a usage-limit screen: $(cat "$dir/fake/keys")"
   [ "$(cat "$dir/fake/command")" = claude ] \
     || fail "a refused interrupt must leave the old agent running"
   pass "fm-control interrupt: a usage-limit screen is not sent a lifecycle key"
+}
+
+test_interrupt_refuses_a_grok_weekly_limit_and_names_relaunch() {
+  local dir out rc
+  dir=$(new_case grok-limit-interrupt rl97)
+  add_ship_task "$dir" rl97 grok
+  printf 'grok' > "$dir/fake/command"
+  printf '%s\n' \
+    '                                                                                             █' \
+    '' \
+    '  ┃' \
+    '  ┃  You hit your weekly limit.' \
+    '  ┃' \
+    '  ┃' \
+    '  ┃  1 (○) Buy more credits  Purchase credits to keep using Grok Build' \
+    '  ┃  2 (○) Try Again         Resubmit the last prompt once you have usage again' \
+    '  ┃' \
+    '  ┃  ↑/↓ navigate · y copy                                                  Enter:submit' \
+    '  ┃' \
+    '' \
+    '  Tab:next answer  │  Esc:scrollback  │  Shift+x:dismiss' > "$dir/fake/capture"
+  out=$(run_control "$dir" rl97 interrupt); rc=$?
+  expect_code 1 "$rc" "interrupt must refuse a Grok weekly-limit composer"$'\n'"$out"
+  assert_contains "$out" "usage-limit screen" "the refusal should name the usage-limit screen"
+  assert_contains "$out" "Relaunch onto another runtime instead" \
+    "a Grok weekly-limit interrupt still names relaunch"
+  assert_not_contains "$out" "Queue until reset" \
+    "a Grok weekly-limit interrupt must not tell the supervisor to queue"
+  [ -z "$(cat "$dir/fake/keys")" ] || fail "interrupt typed a lifecycle key into a Grok weekly-limit composer: $(cat "$dir/fake/keys")"
+  [ "$(cat "$dir/fake/command")" = grok ] \
+    || fail "a refused interrupt must leave the old agent running"
+  pass "fm-control interrupt: a Grok weekly-limit composer names relaunch, not queue"
 }
 
 test_control_relaunch_of_a_gone_tmux_endpoint() {
@@ -4382,6 +4420,7 @@ test_relaunch_does_not_kill_an_untrusted_usage_limit_endpoint
 test_relaunch_refuses_an_unverified_pane_text_usage_limit
 test_relaunch_closes_a_grok_weekly_limit_composer_without_typing_enter
 test_interrupt_refuses_a_usage_limit_screen
+test_interrupt_refuses_a_grok_weekly_limit_and_names_relaunch
 test_control_relaunch_of_a_gone_tmux_endpoint
 test_relaunch_refuses_before_exit_when_the_composer_state_is_unproven
 test_relaunch_from_linked_home_preserves_recorded_worktree

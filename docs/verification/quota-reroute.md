@@ -7,11 +7,10 @@ It is not evidence.
 Portable tests cover the classifier, the stop path, the tooling gate, and the watchdog naming the pick.
 They cannot prove a live Herdr pane plus a Codex secondmate relaunch.
 
-The usage-limit pane-text live guard is `tests/fm-usage-limit-pane-live.test.sh` (`FM_USAGE_LIMIT_PANE_LIVE=1`).
-It is opt-in and default off.
-When requested, it captures a real Claude pane and classifies it.
-It never types Enter.
-It passes only on a real usage-limit picker, and otherwise fails closed.
+The usage-limit pane-text live guard is `tests/fm-usage-limit-pane-live.test.sh`.
+It is skip/pending by default and never passes on that path.
+Classify only an existing already-limited pane named by `FM_USAGE_LIMIT_PANE` with `FM_USAGE_LIMIT_PANE_LIVE=1`.
+That path is read-only capture and never types Enter.
 Production `fm-control` relaunch refuses that pane-text verdict until a dated capture exists in [`runtime-backends.md`](runtime-backends.md).
 A Grok weekly-limit composer still closes without Enter.
 The 2026-10-19 Grok weekly-limit composer evidence in that file is unchanged and does not cover the pane-picker classifier.
@@ -83,7 +82,7 @@ FM_HOME=<home> bin/fm-watchdog.sh once
 Record whether `data/watchdog/status.md` contains:
 
 ```text
-usage-limit on <mate>. Suggested pick: codex gpt-5.4. Supervisor relaunches. The watchdog does not change the runtime.
+usage-limit on <mate>. Suggested pick: codex gpt-5.4. Queue until reset. Relaunch closes only a verified Grok weekly-limit composer. The watchdog does not change the runtime.
 ```
 
 The ledger row should be `quota suggest held`.
@@ -91,7 +90,7 @@ There should be no `fm-control.sh relaunch` process and no new Codex pane yet.
 
 ### Supervisor relaunch
 
-After the stale wake names the pick:
+After the stale wake names the pick, a pane-text usage-limit relaunch is refused:
 
 ```sh
 FM_HOME=<home> bin/fm-quota-reroute.sh suggest --from-harness claude --kind secondmate \
@@ -100,35 +99,26 @@ FM_HOME=<home> bin/fm-quota-reroute.sh suggest --from-harness claude --kind seco
 FM_HOME=<home> bin/fm-control.sh <mate-id> relaunch --harness codex
 ```
 
-Record whether stdout matches:
-
-```text
-relaunched <mate-id> harness=codex from=claude model=default effort=<prior-effort> backend=herdr endpoint=<herdr-pane> worktree=<mate-home>
-```
-
-`effort=` should be the effort the mate was already running.
-Omitting `--effort` must not reset it to `default`.
-
-`bin/fm-crew-state.sh <mate-id>` should then name harness=codex and backend=herdr.
-The Herdr pane should be a new Codex session, not the old Claude picker.
+Record whether the command is nonzero, names `not live-verified`, says `Queue until reset`, and leaves the pane and harness unchanged.
 The picker should have received no Enter.
-The old pane should be gone.
-Herdr session history should not show a selected "Switch to Sonnet" or "Wait" option as the last action.
+A Grok weekly-limit composer still closes without Enter, under the dated evidence in [`runtime-backends.md`](runtime-backends.md).
 
 ### Interrupt stays refused
 
-Before the relaunch, on the same usage-limit pane:
+On the same usage-limit pane:
 
 ```sh
 FM_HOME=<home> bin/fm-control.sh <mate-id> interrupt
 ```
 
-Record whether the command is nonzero, names `usage-limit screen`, and delivers no Escape.
+Record whether the command is nonzero, names `usage-limit screen`, says `Queue until reset`, and delivers no Escape.
 
 ### What this run is for
 
-1. `fm-control.sh <id> relaunch --harness codex` refuses a pane-text usage-limit verdict (no kill, no Enter) until a dated capture exists. A Grok weekly-limit composer still closes without Enter.
-2. The replacement agent starts on Codex in the same secondmate home, on the recorded Herdr backend.
+1. `fm-control.sh <id> relaunch --harness codex` refuses a pane-text usage-limit verdict (no kill, no Enter) until a dated capture exists.
+   A Grok weekly-limit composer still closes without Enter.
+2. A Grok weekly-limit close still starts the replacement on Codex in the same secondmate home, on the recorded Herdr backend.
+   A pane-text picker stays queued until reset.
 3. `config/secondmate-harness` pointing at Claude does not block that move when no Claude-specific signal is present.
 4. Any Claude-specific signal keeps the mate on Claude until reset.
    The `bin/fm-quota-reroute.sh` header owns the list, including a missing or unreadable config dir.

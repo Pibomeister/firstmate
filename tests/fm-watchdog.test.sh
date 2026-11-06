@@ -2823,6 +2823,13 @@ SH
   [ ! -e "$parent/control.log" ] || fail "watchdog relaunched: $(cat "$parent/control.log")"
   assert_grep "Suggested pick: codex gpt-5.4" "$parent/data/watchdog/status.md" \
     "a Claude mate with no tooling must still name the pick"
+  assert_grep "Queue until reset" "$parent/data/watchdog/status.md" \
+    "a pane-text usage-limit must queue until reset"
+  assert_not_contains "$(cat "$parent/data/watchdog/status.md")" "Supervisor relaunches" \
+    "a pane-text usage-limit must not send the supervisor to relaunch"
+  assert_equals 1 "$(ledger_rows quota suggest held)" "the home pick is recorded once: $(ledger | cut -f4-8)"
+  HOME="$user" run_wd 1 once >/dev/null 2>&1 || fail "rate-limited home usage-limit pass failed"
+  assert_equals 1 "$(ledger_rows quota suggest held)" "nudge-secs must not add another home pick: $(ledger | cut -f4-8)"
   rm -f "$FAKEBIN/quota-axi" "$FAKEBIN/fm-control.sh"
   pass "usage-limit: a Claude mate with no tooling names the pick and does not relaunch"
 }
@@ -2916,6 +2923,10 @@ SH
     "a worker usage-limit pane must name the pick for that worker"
   assert_grep "usage-limit on worker limit2. Suggested pick: codex gpt-5.4" "$H/data/watchdog/status.md" \
     "a second worker usage-limit pane must name its own pick"
+  assert_grep "Queue until reset" "$H/data/watchdog/status.md" \
+    "a worker pane-text usage-limit must queue until reset"
+  assert_not_contains "$(cat "$H/data/watchdog/status.md")" "Supervisor relaunches" \
+    "a worker pane-text usage-limit must not send the supervisor to relaunch"
   HOME="$H/user" run_wd 1 once >/dev/null 2>&1 || fail "rate-limited worker usage-limit pass failed"
   assert_equals 2 "$(ledger_rows quota suggest held)" "nudge-secs must not add another worker pick: $(ledger | cut -f4-8)"
   calls=$(wc -l < "$H/quota-axi.calls" | tr -d ' ')
@@ -2961,8 +2972,57 @@ SH
   [ ! -e "$parent/control.log" ] || fail "watchdog relaunched: $(cat "$parent/control.log")"
   assert_grep "Suggested pick: codex gpt-5.4" "$parent/data/watchdog/status.md" \
     "a Grok weekly-limit composer must still name the pick"
+  assert_grep "Supervisor relaunches" "$parent/data/watchdog/status.md" \
+    "a Grok weekly-limit composer still takes a supervisor relaunch"
   rm -f "$FAKEBIN/quota-axi" "$FAKEBIN/fm-control.sh"
   pass "usage-limit: a Grok weekly-limit secondmate names the pick via the composer detector"
+}
+
+test_quota_axi_failure_is_cached_for_the_pass() {
+  local dialog calls
+  dialog=$'You have hit your weekly limit for Opus.\n\n ❯ 1. Switch to Sonnet\n   2. Wait for the limit to reset\n   3. Buy more credits\n\nEnter to confirm · Esc to cancel'
+  make_home $'Captain session\n> ' 'reroute-candidates=codex:gpt-5.4'
+  mkdir -p "$H/wt" "$H/wt2" "$H/user/.claude"
+  worker_pane limit ship "$dialog"
+  {
+    echo "harness=claude"
+    echo "kind=ship"
+    echo "worktree=$H/wt"
+    echo "model=default"
+  } >> "$H/state/limit.meta"
+  worker_pane limit2 ship "$dialog"
+  {
+    echo "harness=claude"
+    echo "kind=ship"
+    echo "worktree=$H/wt2"
+    echo "model=default"
+  } >> "$H/state/limit2.meta"
+  : > "$H/quota-axi.calls"
+  cat > "$FAKEBIN/quota-axi" <<SH
+#!/usr/bin/env bash
+printf 'call\n' >> "$H/quota-axi.calls"
+exit 1
+SH
+  chmod +x "$FAKEBIN/quota-axi"
+  cat > "$FAKEBIN/fm-control.sh" <<SH
+#!/usr/bin/env bash
+printf 'control %s\n' "\$*" >> "$H/control.log"
+exit 1
+SH
+  chmod +x "$FAKEBIN/fm-control.sh"
+  transcript 100 "Working."
+  sleep 0.5
+  HOME="$H/user" run_wd 0 once >/dev/null 2>&1 || fail "quota-axi failure pass failed"
+  [ ! -e "$H/control.log" ] || fail "watchdog relaunched: $(cat "$H/control.log")"
+  calls=$(wc -l < "$H/quota-axi.calls" | tr -d ' ')
+  assert_equals 1 "$calls" "one watchdog pass must call quota-axi once when it fails"
+  assert_equals 2 "$(ledger_rows quota suggest held)" "each worker still records the failed pick: $(ledger | cut -f4-8)"
+  assert_grep "Queue until reset" "$H/data/watchdog/status.md" \
+    "a failed quota snapshot must queue until reset"
+  assert_not_contains "$(cat "$H/data/watchdog/status.md")" "Suggested pick:" \
+    "a failed quota snapshot must not name a pick"
+  rm -f "$FAKEBIN/quota-axi" "$FAKEBIN/fm-control.sh"
+  pass "usage-limit: a quota-axi failure is cached for the pass"
 }
 
 if [ "$#" -gt 0 ]; then
@@ -3045,6 +3105,7 @@ fm_test_run \
   test_unreadable_claude_account_pin_gets_no_pick \
   test_worker_usage_limit_names_a_pick \
   test_grok_weekly_limit_on_a_secondmate_names_a_pick \
+  test_quota_axi_failure_is_cached_for_the_pass \
   test_unknown_composer_guards_the_nudge \
   test_orca_turn_probe_keeps_errors_unknown \
   test_no_activity_source_is_not_reported_ok \

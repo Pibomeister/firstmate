@@ -151,16 +151,48 @@ test_watcher_usage_limit_recover_does_not_interrupt() {
   [ "$(recover_rings "$dir")" = 0 ] || fail "a usage-limit session was redirected:"$'\n'"$(cat "$dir/send.log")"
   grep -qF 'usage-limit' "$dir/state/.wake-queue" \
     || fail "the wake omitted the usage-limit:"$'\n'"$(cat "$dir/state/.wake-queue" 2>/dev/null)"
-  grep -qF 'fm-quota-reroute.sh' "$dir/state/.wake-queue" \
-    || fail "the wake omitted the quota pick:"$'\n'"$(cat "$dir/state/.wake-queue")"
-  grep -qF 'relaunch --harness' "$dir/state/.wake-queue" \
-    || fail "the wake omitted relaunch:"$'\n'"$(cat "$dir/state/.wake-queue")"
+  grep -qF 'queue until reset' "$dir/state/.wake-queue" \
+    || fail "the pane-text wake omitted queue until reset:"$'\n'"$(cat "$dir/state/.wake-queue")"
+  ! grep -qF 'relaunch --harness' "$dir/state/.wake-queue" \
+    || fail "a pane-text usage-limit must not send the supervisor to relaunch:"$'\n'"$(cat "$dir/state/.wake-queue")"
   grep -qF 'do not interrupt this usage-limit session' "$dir/state/.wake-queue" \
     || fail "the wake omitted the usage-limit skip:"$'\n'"$(cat "$dir/state/.wake-queue")"
   ! grep -qE 'fm-control\.sh t1 interrupt' "$dir/state/.wake-queue" \
     || fail "the wake still recommended interrupt:"$'\n'"$(cat "$dir/state/.wake-queue")"
   grep -qF "$rec" "$dir/state/.wake-queue" || fail "the wake omitted the durable record"
   pass "watcher: recover skips interrupt on a usage-limit screen"
+}
+
+test_watcher_grok_usage_limit_recover_names_relaunch() {
+  local dir rec
+  dir=$(recover_case recover-grok-usage-limit "kind=secondmate" "harness=grok" "spawn_gen=g1")
+  rec=$(inbox_lib "$dir/state" fm_task_inbox_write "$dir/state" t1 "routed ask")
+  age_path "$rec"
+  printf '%s\n' \
+    '                                                                                             █' \
+    '' \
+    '  ┃' \
+    '  ┃  You hit your weekly limit.' \
+    '  ┃' \
+    '  ┃' \
+    '  ┃  1 (○) Buy more credits  Purchase credits to keep using Grok Build' \
+    '  ┃  2 (○) Try Again         Resubmit the last prompt once you have usage again' \
+    '  ┃' \
+    '  ┃  ↑/↓ navigate · y copy                                                  Enter:submit' \
+    '  ┃' \
+    '' \
+    '  Tab:next answer  │  Esc:scrollback  │  Shift+x:dismiss' > "$dir/limit.capture"
+  RECOVER_CAPTURE="$dir/limit.capture" recover_check "$dir"
+  [ "$(recover_interrupts "$dir")" = 0 ] || fail "a Grok weekly-limit session was interrupted:"$'\n'"$(cat "$dir/control.log")"
+  [ "$(recover_rings "$dir")" = 0 ] || fail "a Grok weekly-limit session was redirected:"$'\n'"$(cat "$dir/send.log")"
+  grep -qF 'relaunch --harness' "$dir/state/.wake-queue" \
+    || fail "a Grok weekly-limit wake omitted relaunch:"$'\n'"$(cat "$dir/state/.wake-queue")"
+  ! grep -qF 'queue until reset' "$dir/state/.wake-queue" \
+    || fail "a Grok weekly-limit must not queue until reset:"$'\n'"$(cat "$dir/state/.wake-queue")"
+  grep -qF 'do not interrupt this usage-limit session' "$dir/state/.wake-queue" \
+    || fail "the wake omitted the usage-limit skip:"$'\n'"$(cat "$dir/state/.wake-queue")"
+  grep -qF "$rec" "$dir/state/.wake-queue" || fail "the wake omitted the durable record"
+  pass "watcher: recover names relaunch on a Grok weekly-limit composer"
 }
 
 test_watcher_recovery_rings_first_only_for_a_proven_answer() {
@@ -493,6 +525,7 @@ test_secondmate_unread_age_ceiling_reports_once_then_recovers() {
 test_watcher_busy_secondmate_is_recovered_before_alarm
 test_watcher_auto_recovers_a_secondmate_twice_then_alarms_once
 test_watcher_usage_limit_recover_does_not_interrupt
+test_watcher_grok_usage_limit_recover_names_relaunch
 test_watcher_recovers_a_record_behind_an_escalated_one
 test_watcher_recovery_rings_first_only_for_a_proven_answer
 test_watcher_recovery_restarts_the_ladder

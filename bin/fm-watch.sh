@@ -686,13 +686,22 @@ inbox_steer_escalate_unavailable() {  # <window> <task> <record>
 # with its status in INBOX_RECOVER_RING_RC.
 INBOX_RECOVER_INTERRUPT_RC=
 INBOX_RECOVER_RING_RC=
+INBOX_STEER_USAGE_LIMIT_KIND=
 inbox_steer_usage_limit() {  # <window>
   local dialog
+  INBOX_STEER_USAGE_LIMIT_KIND=
   watcher_capture "$(window_backend "$1")" "$1" 40 "$(window_label "$1")" || return 1
   dialog=$(fm_wd_pane_dialog "$WATCHER_CAPTURE" 2>/dev/null) || dialog=
-  fm_wd_usage_limit_kind "$dialog" && return 0
+  if [ "$dialog" = usage-limit ]; then
+    INBOX_STEER_USAGE_LIMIT_KIND='pane-text'
+    return 0
+  fi
   dialog=$(fm_composer_blocking_dialog "$WATCHER_CAPTURE" 2>/dev/null) || dialog=
-  fm_wd_usage_limit_kind "$dialog"
+  if [ "$dialog" = 'Grok weekly-limit choice' ]; then
+    INBOX_STEER_USAGE_LIMIT_KIND=grok
+    return 0
+  fi
+  return 1
 }
 
 inbox_steer_recover() {  # <window> <task> <record>
@@ -729,7 +738,11 @@ inbox_steer_recover() {  # <window> <task> <record>
 inbox_steer_recovery_action() {  # <window> <task> <recover-rc>
   if [ "$(window_kind "$1")" = secondmate ]; then
     if [ "$3" = 7 ]; then
-      printf 'do not interrupt this usage-limit session; run bin/fm-quota-reroute.sh suggest, then bin/fm-control.sh %s relaunch --harness with the named pick' "$2"
+      if [ "${INBOX_STEER_USAGE_LIMIT_KIND:-}" = grok ]; then
+        printf 'do not interrupt this usage-limit session; run bin/fm-quota-reroute.sh suggest, then bin/fm-control.sh %s relaunch --harness with the named pick' "$2"
+      else
+        printf 'do not interrupt this usage-limit session; queue until reset. Relaunch closes only a verified Grok weekly-limit composer'
+      fi
       return 0
     fi
     if [ "$3" = 3 ]; then
