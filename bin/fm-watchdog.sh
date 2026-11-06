@@ -50,6 +50,8 @@ CALLS=$WD/model-calls.tsv
 
 # shellcheck source=bin/fm-watchdog-lib.sh
 . "$SCRIPT_DIR/fm-watchdog-lib.sh"
+# shellcheck source=bin/fm-composer-lib.sh
+. "$SCRIPT_DIR/fm-composer-lib.sh"
 # shellcheck source=bin/fm-secret-lib.sh
 . "$SCRIPT_DIR/fm-secret-lib.sh"
 # shellcheck source=bin/fm-worker-account-lib.sh
@@ -407,7 +409,7 @@ EOF
   if [ -n "$O_PANE" ]; then
     O_SIG=$(wd_pane_sig "$O_PANE")
     if [ "$O_SIG" = "$p_sig" ] && [ -n "$p_since" ]; then O_PANE_STATIC=$((now - p_since)); else p_since=$now; fi
-    O_DIALOG=$(fm_wd_pane_dialog "$(wd_view "$O_BACKEND" "$O_TARGET")") || O_DIALOG=''
+    O_DIALOG=$(fm_wd_observe_dialog "$(wd_view "$O_BACKEND" "$O_TARGET")") || O_DIALOG=''
     wd_read_composer
     O_TURN=$(wd_turn_running "$O_BACKEND" "$O_TARGET" "$O_PANE")
     ctx=$(fm_wd_footer_percent "$O_PANE")
@@ -1127,9 +1129,9 @@ wd_quota_none_reason() {
   cat "$WD/.quota-none-reason" 2>/dev/null || printf '%s\n' "No eligible reroute candidate"
 }
 
-wd_quota_name_pick() {  # <id> <subject>
+wd_quota_name_pick() {  # <id> <subject> [task-id]
   local pick reason
-  pick=$(wd_quota_pick) || pick=none
+  pick=$(wd_quota_pick "${3-}") || pick=none
   if [ -n "$pick" ] && [ "$pick" != none ]; then
     wd_rec "$1" quota suggest held "quota shows $pick eligible; supervisor relaunches, watchdog does not"
     wd_gap "usage-limit on $2. Suggested pick: $pick. Supervisor relaunches. The watchdog does not change the runtime."
@@ -1313,20 +1315,32 @@ wd_visit_worker_dialogs() {
       continue
     fi
     screen=$(wd_view "$backend" "$target") || screen=''
-    dialog=$(fm_wd_pane_dialog "$screen") || dialog=''
+    dialog=$(fm_wd_observe_dialog "$screen") || dialog=''
     if [ "$mode" = print ]; then
       printf '  worker %s endpoint=%s:%s dialog=%s\n' "$id" "$backend" "$target" "${dialog:-none}"
       continue
     fi
-    [ "$dialog" = permission ] || continue
-    O_BACKEND=$backend
-    O_TARGET=$target
-    O_PANE=$screen
-    O_DIALOG=$dialog
-    O_REC_SUBJECT="worker:$id"
-    wd_gap "permission dialog waiting on worker $id; the watchdog never answers permission prompts"
-    wd_page_permission
-    unset O_REC_SUBJECT
+    case "$dialog" in
+      permission)
+        O_BACKEND=$backend
+        O_TARGET=$target
+        O_PANE=$screen
+        O_DIALOG=$dialog
+        O_REC_SUBJECT="worker:$id"
+        wd_gap "permission dialog waiting on worker $id; the watchdog never answers permission prompts"
+        wd_page_permission
+        unset O_REC_SUBJECT
+        ;;
+      usage-limit)
+        O_BACKEND=$backend
+        O_TARGET=$target
+        O_PANE=$screen
+        O_DIALOG=$dialog
+        O_REC_SUBJECT="worker:$id"
+        wd_quota_name_pick "$(wd_id)" "worker $id" "$id"
+        unset O_REC_SUBJECT
+        ;;
+    esac
   done < <(wd_worker_metas "$O_HOME")
   O_PANE=$saved_pane
   O_BACKEND=$saved_backend

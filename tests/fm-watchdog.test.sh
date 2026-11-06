@@ -201,6 +201,13 @@ test_dialog_detection() {
   assert_equals "" "$(lib fm_wd_pane_dialog "$plain")" "a numbered list in prose is no dialog"
   assert_equals permission "$(lib fm_wd_pane_dialog "$trust")" "unnumbered folder-trust picker is a permission dialog"
   assert_equals "" "$(lib fm_wd_pane_dialog "$composer")" "a composer prompt glyph without a picker footer is no dialog"
+  local grok=$'                                                                                             █\n\n  ┃\n  ┃  You hit your weekly limit.\n  ┃\n  ┃\n  ┃  1 (○) Buy more credits  Purchase credits to keep using Grok Build\n  ┃  2 (○) Try Again         Resubmit the last prompt once you have usage again\n  ┃\n  ┃  ↑/↓ navigate · y copy                                                  Enter:submit\n  ┃\n\n  Tab:next answer  │  Esc:scrollback  │  Shift+x:dismiss'
+  assert_equals "" "$(lib fm_wd_pane_dialog "$grok")" "Grok weekly-limit radio rows are not a pane picker"
+  observe() { bash -c '. "$1/bin/fm-watchdog-lib.sh"; . "$1/bin/fm-composer-lib.sh"; shift; "$@"' _ "$ROOT" "$@"; }
+  assert_equals usage-limit "$(observe fm_wd_observe_dialog "$grok")" \
+    "observe reuses the composer detector and normalizes Grok weekly-limit"
+  assert_equals usage-limit "$(observe fm_wd_observe_dialog "$model")" \
+    "observe still names a Claude usage-limit pane picker"
   assert_contains "$(lib fm_wd_dialog_options "$model")" $'3\tBuy more credits' "dialog options parsed"
   assert_equals 42 "$(lib fm_wd_footer_percent $'work\n  42% until auto-compact')" "auto-compact footer"
   pass "dialogs need their structure, and each kind is told apart"
@@ -2862,6 +2869,84 @@ SH
   pass "usage-limit: an unreadable claude-account pin gets no pick"
 }
 
+test_worker_usage_limit_names_a_pick() {
+  local snap dialog
+  dialog=$'You have hit your weekly limit for Opus.\n\n ❯ 1. Switch to Sonnet\n   2. Wait for the limit to reset\n   3. Buy more credits\n\nEnter to confirm · Esc to cancel'
+  make_home $'Captain session\n> ' 'reroute-candidates=codex:gpt-5.4'
+  mkdir -p "$H/wt" "$H/user/.claude"
+  worker_pane limit ship "$dialog"
+  {
+    echo "harness=claude"
+    echo "kind=ship"
+    echo "worktree=$H/wt"
+    echo "model=default"
+  } >> "$H/state/limit.meta"
+  snap="$H/quota.json"
+  wd_quota_snapshot "$snap"
+  cat > "$FAKEBIN/quota-axi" <<SH
+#!/usr/bin/env bash
+cat "$snap"
+SH
+  chmod +x "$FAKEBIN/quota-axi"
+  cat > "$FAKEBIN/fm-control.sh" <<SH
+#!/usr/bin/env bash
+printf 'control %s\n' "\$*" >> "$H/control.log"
+exit 1
+SH
+  chmod +x "$FAKEBIN/fm-control.sh"
+  transcript 100 "Working."
+  sleep 0.5
+  HOME="$H/user" run_wd 0 once >/dev/null 2>&1 || fail "worker usage-limit pass failed"
+  [ ! -e "$H/control.log" ] || fail "watchdog relaunched: $(cat "$H/control.log")"
+  [ ! -s "$H/worker-limit.typed" ] || fail "the watchdog typed into a worker usage-limit picker: $(cat "$H/worker-limit.typed")"
+  assert_equals 1 "$(ledger_rows quota suggest held)" "the worker pick is recorded, not launched: $(ledger | cut -f4-8)"
+  assert_grep "usage-limit on worker limit. Suggested pick: codex gpt-5.4" "$H/data/watchdog/status.md" \
+    "a worker usage-limit pane must name the pick for that worker"
+  rm -f "$FAKEBIN/quota-axi" "$FAKEBIN/fm-control.sh"
+  pass "usage-limit: a worker pane names the pick and does not relaunch"
+}
+
+test_grok_weekly_limit_on_a_secondmate_names_a_pick() {
+  local parent mate snap grok
+  grok=$'                                                                                             █\n\n  ┃\n  ┃  You hit your weekly limit.\n  ┃\n  ┃\n  ┃  1 (○) Buy more credits  Purchase credits to keep using Grok Build\n  ┃  2 (○) Try Again         Resubmit the last prompt once you have usage again\n  ┃\n  ┃  ↑/↓ navigate · y copy                                                  Enter:submit\n  ┃\n\n  Tab:next answer  │  Esc:scrollback  │  Shift+x:dismiss'
+  make_home $'Captain session\n> '
+  parent=$H
+  make_home "$grok"
+  mate=$H
+  mkdir -p "$parent/user/.claude"
+  printf -- '- ghost-mate - test mate (home: %s)\n' "$mate" > "$parent/data/secondmates.md"
+  {
+    echo "harness=grok"
+    echo "kind=secondmate"
+    echo "home=$mate"
+    echo "worktree=$mate"
+    echo "model=default"
+  } > "$parent/state/ghost-mate.meta"
+  printf 'mode=act\nclaude-config-dirs=%s\nkey-settle-secs=1\nmodels=\nreroute-candidates=codex:gpt-5.4\n' \
+    "$parent/claude" > "$parent/config/watchdog"
+  snap="$parent/quota.json"
+  wd_quota_snapshot "$snap"
+  cat > "$FAKEBIN/quota-axi" <<SH
+#!/usr/bin/env bash
+cat "$snap"
+SH
+  chmod +x "$FAKEBIN/quota-axi"
+  cat > "$FAKEBIN/fm-control.sh" <<SH
+#!/usr/bin/env bash
+printf 'control %s\n' "\$*" >> "$parent/control.log"
+exit 1
+SH
+  chmod +x "$FAKEBIN/fm-control.sh"
+  transcript 100 "Working."
+  H=$parent
+  HOME="$parent/user" run_wd 0 once >/dev/null 2>&1 || fail "Grok weekly-limit pass failed"
+  [ ! -e "$parent/control.log" ] || fail "watchdog relaunched: $(cat "$parent/control.log")"
+  assert_grep "Suggested pick: codex gpt-5.4" "$parent/data/watchdog/status.md" \
+    "a Grok weekly-limit composer must still name the pick"
+  rm -f "$FAKEBIN/quota-axi" "$FAKEBIN/fm-control.sh"
+  pass "usage-limit: a Grok weekly-limit secondmate names the pick via the composer detector"
+}
+
 if [ "$#" -gt 0 ]; then
   fm_test_run "$@"
   exit
@@ -2940,6 +3025,8 @@ fm_test_run \
   test_codex_task_keeps_same_harness_candidates_under_a_claude_pin \
   test_usage_limit_claude_without_tooling_names_a_pick \
   test_unreadable_claude_account_pin_gets_no_pick \
+  test_worker_usage_limit_names_a_pick \
+  test_grok_weekly_limit_on_a_secondmate_names_a_pick \
   test_unknown_composer_guards_the_nudge \
   test_orca_turn_probe_keeps_errors_unknown \
   test_no_activity_source_is_not_reported_ok \

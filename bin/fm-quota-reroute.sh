@@ -16,14 +16,9 @@
 # any Claude-specific signal is present. Unknown (missing, unreadable, or
 # unresolvable config dir or worktree) is a signal: queue until reset. A signal
 # drops only the non-Claude candidates; a Claude candidate can still be named.
-# A secondmate's worktree is its firstmate home. Unchanged Firstmate seed
-# material listed in bin/fm-claude-seed.manifest is not a worktree signal.
-# That file is the Firstmate-owned hash catalog (git blobs of the seed
-# prefixes named below). Check-time reads it; it does not scan HEAD:.claude.
-# A user or repo edit of a seeded file, a path absent from the catalog, MCP
-# servers, and added hooks still block, including a hook committed in the
-# parent home. A missing or unreadable catalog, or a worktree whose
-# .claude/skills symlink blob is not the catalog's, keeps the checks below.
+# A secondmate's worktree is its firstmate home.
+# Seed exemption is owned by the Signals paragraph; this check does not scan
+# HEAD:.claude.
 # An explicit fm-control.sh relaunch --harness runs the same check.
 # claude-tooling exits 0 and prints the blocking signal when tooling is
 # required. Exit 1 means no signal.
@@ -38,9 +33,12 @@
 # was never installed or enabled. A project .mcp.json in the worktree; .claude/ skills,
 # hooks, agents, or commands in the worktree. Worktree .claude/settings.json
 # and settings.local.json keys: hooks, enabledMcpjsonServers, mcpServers,
-# enabledPlugins. Firstmate's own busy hooks, which fm-spawn writes into a
-# Claude ship or scout's settings.local.json, are not a signal. Unchanged
-# Firstmate seed files listed in bin/fm-claude-seed.manifest are not a
+# enabledPlugins. Firstmate's own busy hooks are not a signal: only the exact
+# command forms fm-spawn writes (optional `touch '<turnend>'; ` then
+# quoted fm-busy-event.sh apply quoted-state quoted-id busy|idle --gen
+# quoted --source claude-hook --event <token> 2>/dev/null || true).
+# A command that merely contains that script path still blocks.
+# Unchanged Firstmate seed files listed in bin/fm-claude-seed.manifest are not a
 # signal. Identity is that catalog's git blob, not a path name and not
 # HEAD:.claude of the running home. The catalog hashes
 # .claude/settings.json, .claude/skills, .claude/mods/firstmate-calm/, and
@@ -56,8 +54,7 @@
 # signal if the path exists, even empty, unless they are unchanged seed
 # as above. An unreadable seed traversal is a signal. A caller that passes
 # --claude-config-dir for a pinned account must also pass --pinned. Those two
-# lists live only in the variables below. Seed exemption is blob identity
-# against bin/fm-claude-seed.manifest, not a name list and not parent HEAD.
+# lists live only in the variables below.
 # Resolve the config dir from the task's account pin, never from
 # claude-config-dirs. A broken or unreadable pin is a signal. No pin, or
 # ordinary, inspects $HOME/.claude.
@@ -171,13 +168,21 @@ fm_quota_claude_settings_keys_signal() {  # <file> <keys> [own-writer]
   fi
   for key in $keys; do
     if jq -e --arg k "$key" --arg own "$own" '
+         def apply_form:
+           startswith("'\''" + $own + "'\'' apply '\''")
+           and test(" apply '\''[^'\'']+'\'' '\''[^'\'']+'\'' (busy|idle) --gen '\''[^'\'']+'\'' --source claude-hook --event [A-Za-z0-9-]+ 2>/dev/null \\|\\| true$");
+         def spawn_busy_hook:
+           apply_form
+           or (test("^touch '\''[^'\'']+'\''; ")
+               and (index("'\''; ") != null)
+               and (.[index("'\''; ") + 3:] | apply_form));
          (if $own != "" and (.hooks | type == "object") then
             .hooks |= (map_values(
                          if type == "array" then
                            map(if type == "object" and (.hooks | type == "array") then
                                  .hooks |= map(select((type == "object"
                                    and (.command | type == "string")
-                                   and (.command | contains($own))) | not))
+                                   and (.command | spawn_busy_hook)) | not))
                                else . end)
                            | map(select((type == "object" and (.hooks | type == "array")
                                          and (.hooks | length == 0)) | not))

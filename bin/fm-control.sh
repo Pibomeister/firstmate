@@ -25,7 +25,9 @@
 #              still exists, and the agent is still alive where the backend can
 #              classify that. Cancellation is confirmed only from an adapter-
 #              owned acknowledgement and otherwise reported unconfirmed. Busy
-#              state is never rewritten as proof of the action. Devin
+#              state is never rewritten as proof of the action. A proven
+#              usage-limit screen is refused; relaunch onto another runtime
+#              instead of sending a lifecycle key into that picker. Devin
 #              cancellation invalidates it to unknown because its native hooks
 #              emit no cancellation close; this is not a success claim.
 #              An adapter whose repeated interrupt key does something else on
@@ -36,7 +38,9 @@
 #              every uncommitted change. Interrupts first when the task reads
 #              busy, then submits the harness's exit command. Postcondition:
 #              the backend's recovery-grade classifier reports the agent gone.
-#              Already-stopped is success (idempotent). An endpoint that reads
+#              Already-stopped is success (idempotent). A proven usage-limit
+#              screen is refused; relaunch onto another runtime instead of
+#              typing Enter into that picker. An endpoint that reads
 #              `missing` (or, on Rex, `unreadable`, which is how a stopped Rex
 #              server reads without starting it) is put through the control
 #              plane's per-backend absence
@@ -97,6 +101,11 @@
 #              The same pre-stop refusal applies to this home's worker tool
 #              exclusions (bin/fm-exclude-tools-lib.sh): a malformed list, or a
 #              replacement runtime that cannot hide the listed tools.
+#              A proven usage-limit screen is closed by destroying the
+#              endpoint without typing Enter, so the replacement can rebind.
+#              Moving a Claude task onto another harness is refused when
+#              bin/fm-quota-reroute.sh claude-tooling reports a signal, and
+#              when that check cannot complete; there is no override.
 #              A backlog item that cannot take a replacement worker also
 #              refuses before the old agent stops; a held In-flight item is
 #              admitted and keeps its hold (bin/fm-backlog-transition-lib.sh
@@ -525,7 +534,7 @@ usage_limit_screen() {
     fm_wd_usage_limit_kind "$dialog" && return 0
   fi
   screen=$(fm_backend_visible_capture "$BACKEND" "$T" "$LABEL" 2>/dev/null) || return 1
-  dialog=$(fm_wd_pane_dialog "$screen" 2>/dev/null) || return 1
+  dialog=$(fm_wd_observe_dialog "$screen" 2>/dev/null) || return 1
   fm_wd_usage_limit_kind "$dialog"
 }
 
@@ -1062,11 +1071,34 @@ relaunch_record_changed_beyond_tx() {
 # spawn_gen. A missing generation on both sides is not a publication.
 relaunch_spawn_published() {
   local now was
-  relaunch_meta_lock || return 0
+  if [ "${FM_TEST_SEAM:-}" = 1 ] && [ "${FM_TEST_RELAUNCH_SPAWN_PUBLISHED_LOCK_FAIL:-}" = 1 ]; then
+    return 1
+  fi
+  relaunch_meta_lock || return 1
   now=$(fm_meta_get "$META" spawn_gen)
   was=$(fm_meta_get "$META_PRIOR" spawn_gen)
   relaunch_meta_unlock
   [ -n "$now" ] && [ "$now" != "$was" ]
+}
+
+# Drop only this transaction's control_relaunch_tx. Other metadata stays.
+clear_owned_relaunch_tx() {
+  local token=${RELAUNCH_TX-}
+  [ -n "$token" ] || return 0
+  relaunch_meta_lock || return 1
+  if [ "$(fm_meta_get "$META" control_relaunch_tx)" != "$token" ]; then
+    relaunch_meta_unlock
+    return 0
+  fi
+  grep -v '^control_relaunch_tx=' "$META" > "$META.tx" || {
+    relaunch_meta_unlock
+    return 1
+  }
+  mv "$META.tx" "$META" || {
+    relaunch_meta_unlock
+    return 1
+  }
+  relaunch_meta_unlock
 }
 
 restore_relaunch_prior_record() {
@@ -1245,14 +1277,18 @@ resolve_relaunch_profile() {
   # present, and when the check cannot complete (any exit other than 1).
   # Same check as bin/fm-quota-reroute.sh; no override flag.
   if [ "$PRIOR_HARNESS" = claude ] && [ "$TARGET_HARNESS" != claude ]; then
-    local sig rc=0 reason
+    local sig rc=0 reason helper
     local -a tooling
     if [ -z "$WT" ]; then
       die "Claude-specific tooling present (unresolvable worktree); refusing to move $ID off Claude"
     fi
     tooling=(claude-tooling --worktree "$WT")
     [ "$KIND" != secondmate ] || tooling+=(--mate "$ID")
-    sig=$("${FM_QUOTA_REROUTE:-$SCRIPT_DIR/fm-quota-reroute.sh}" "${tooling[@]}" 2>&1) || rc=$?
+    helper=$SCRIPT_DIR/fm-quota-reroute.sh
+    if [ "${FM_TEST_SEAM:-}" = 1 ] && [ -n "${FM_TEST_QUOTA_REROUTE:-}" ]; then
+      helper=$FM_TEST_QUOTA_REROUTE
+    fi
+    sig=$("$helper" "${tooling[@]}" 2>&1) || rc=$?
     if [ "$rc" -ne 1 ]; then
       reason=${sig#error: }
       die "Claude-specific tooling present (${reason:-exit $rc}); refusing to move $ID off Claude"
@@ -1574,7 +1610,10 @@ do_relaunch() {
     # stopped, and the prior record stands, so hand the mate to its respawn
     # owner with the same status instead of an untyped failure.
     if [ "$spawn_rc" -eq 4 ] && [ "$KIND" = secondmate ] && [ "$RELAUNCH_META_PUBLISHED" = 0 ]; then
-      journal_write "failed:$RELAUNCH_PHASE" "rollback=prior-record-kept-endpoint-gone" || true
+      journal_write "failed:$RELAUNCH_PHASE" "rollback=prior-record-kept-endpoint-gone" "relaunch_tx=$RELAUNCH_TX" || true
+      if ! clear_owned_relaunch_tx; then
+        echo "error: could not clear task $ID's relaunch token after a gone-endpoint handoff" >&2
+      fi
       RELAUNCH_ACTIVE=0
       echo "error: secondmate $ID's agent is stopped and its endpoint is gone, so no replacement can be launched into it; its record is kept for the secondmate respawn path (bin/fm-spawn.sh $ID --secondmate)" >&2
       exit 4

@@ -82,6 +82,9 @@ case "${1:-}" in
       esac
     done
     payload=${1:-}
+    if [ -s "$D/capture" ]; then
+      printf '%s\n' "$payload" >> "$D/picker-keys"
+    fi
     if [ "$literal" = 1 ]; then
       case "$payload" in
         ". '"*"'") staged=${payload#". '"}; staged=${staged%"'"}; [ ! -f "$staged" ] || payload=$(cat "$staged") ;;
@@ -151,6 +154,7 @@ case "${1:-}" in
     fi
     exit 0 ;;
   kill-window)
+    rm -f "$D/capture"
     : > "$D/windows"
     printf 'zsh' > "$D/command"
     exit 0 ;;
@@ -228,6 +232,7 @@ new_case() {
   : > "$dir/fake/literal"
   : > "$dir/fake/literal-raw"
   : > "$dir/fake/keys"
+  : > "$dir/fake/picker-keys"
   printf 'claude' > "$dir/fake/command"
   printf 'claude' > "$dir/fake/becomes"
   printf '%s\n' "fm-$id" > "$dir/fake/windows"
@@ -713,6 +718,10 @@ test_relaunch_closes_a_usage_limit_screen_without_typing_enter() {
     "a usage-limit screen must not be treated as pending composer text"
   assert_no_grep "/exit" "$dir/fake/literal" \
     "the exit command must not be typed into a usage-limit picker"
+  [ ! -s "$dir/fake/picker-keys" ] \
+    || fail "the live usage-limit picker received keys before close: $(cat "$dir/fake/picker-keys")"
+  [ -s "$dir/fake/literal" ] || [ -s "$dir/fake/keys" ] \
+    || fail "replacement launch keys are allowed after the picker closed, but none were recorded"
   assert_contains "$out" "harness=codex from=claude" "the replacement should land on the named harness"
   [ "$(meta_field "$dir" rl80 harness)" = codex ] \
     || fail "the published record should follow the replacement harness"
@@ -1227,7 +1236,7 @@ exit 2
 SH
   chmod +x "$dir/fakebin/fm-quota-reroute.sh"
   printf 'codex' > "$dir/fake/becomes"
-  out=$(FM_QUOTA_REROUTE="$dir/fakebin/fm-quota-reroute.sh" \
+  out=$(FM_TEST_QUOTA_REROUTE="$dir/fakebin/fm-quota-reroute.sh" \
     run_control "$dir" rl87 relaunch --harness codex --note "check crashed"); rc=$?
   expect_code 1 "$rc" "a claude-tooling exit 2 must refuse the move off Claude"$'\n'"$out"
   assert_contains "$out" "Claude-specific tooling present" "the refusal should name the tooling gate"
@@ -1237,6 +1246,33 @@ SH
   [ "$(meta_field "$dir" rl87 harness)" = claude ] \
     || fail "a tooling-check crash must leave the recorded harness"
   pass "fm-control relaunch: a claude-tooling exit 2 refuses the move off Claude"
+}
+
+test_relaunch_off_claude_ignores_fm_quota_reroute_override() {
+  local dir out rc
+  dir=$(new_case tooling-override rl92)
+  add_ship_task "$dir" rl92 claude
+  make_claude_auth_stub "$dir"
+  mkdir -p "$dir/pin" "$dir/home/config"
+  printf '%s\n' '{"mcpServers":{"docs":{"command":"true"}}}' > "$dir/pin/.claude.json"
+  : > "$dir/pin/.credentials.json"
+  printf '%s\n' "$dir/pin" > "$dir/home/config/claude-account"
+  cat > "$dir/fakebin/fm-quota-reroute.sh" <<'SH'
+#!/usr/bin/env bash
+exit 1
+SH
+  chmod +x "$dir/fakebin/fm-quota-reroute.sh"
+  printf 'codex' > "$dir/fake/becomes"
+  out=$(FM_QUOTA_REROUTE="$dir/fakebin/fm-quota-reroute.sh" \
+    run_control "$dir" rl92 relaunch --harness codex --note "override must not skip tooling"); rc=$?
+  expect_code 1 "$rc" "production relaunch must ignore FM_QUOTA_REROUTE"$'\n'"$out"
+  assert_contains "$out" "Claude-specific tooling present" "the shipped helper must still refuse"
+  assert_contains "$out" "MCP servers in $dir/pin/.claude.json" "the shipped helper must name the signal"
+  [ "$(cat "$dir/fake/command")" = claude ] \
+    || fail "an ignored override must leave the old agent running"
+  [ "$(meta_field "$dir" rl92 harness)" = claude ] \
+    || fail "an ignored override must leave the recorded harness"
+  pass "fm-control relaunch: production ignores FM_QUOTA_REROUTE and uses the shipped helper"
 }
 
 seeded_secondmate_case() {  # <case-dir-name> <id> -> case dir with a cloned firstmate home
@@ -2641,6 +2677,33 @@ test_prepublication_abort_with_busy_gen_restores_the_prior_record() {
   pass "fm-control relaunch: a cleared busy_gen does not mask an unpublished spawn"
 }
 
+test_unpublished_spawn_lock_failure_is_not_published() {
+  local dir out rc real_rm meta gen hook
+  dir=$(new_case lock-fail-unpublished rl93)
+  add_ship_task "$dir" rl93 claude
+  meta="$dir/home/state/rl93.meta"
+  gen=$("$ROOT/bin/fm-busy-event.sh" arm "$dir/home/state" rl93)
+  printf 'busy_gen=%s\n' "$gen" >> "$meta"
+  hook="$dir/wt/.claude/settings.local.json"
+  mkdir -p "${hook%/*}"
+  printf '{}\n' > "$hook"
+  real_rm=$(command -v rm)
+  make_rm_failure_stub "$dir"
+  out=$(FM_REAL_RM="$real_rm" FM_FAKE_RM_FAIL_PATH="$hook" \
+    FM_TEST_RELAUNCH_SPAWN_PUBLISHED_LOCK_FAIL=1 \
+    run_control "$dir" rl93 relaunch --note "lock fail must not look published"); rc=$?
+  expect_code 1 "$rc" "an unpublished spawn under lock failure should fail closed"$'\n'"$out"
+  assert_not_contains "$out" "was relaunched on" \
+    "lock failure must not report a published replacement"
+  [ "$(journal_field "$dir" rl93 rollback)" = prior-record-kept ] \
+    || fail "lock failure must restore the prior record, not keep an unconfirmed publication"
+  [ "$(meta_field "$dir" rl93 harness)" = claude ] \
+    || fail "lock failure must leave the prior harness"
+  [ -z "$(meta_field "$dir" rl93 control_relaunch_tx)" ] \
+    || fail "a restored unpublished record must not keep the stamped relaunch token"
+  pass "fm-control relaunch: spawn-published lock failure is not treated as published"
+}
+
 test_stamp_die_before_spawn_restores_the_prior_record() {
   local dir out rc real_mktemp prior
   dir=$(new_case stamp-die rl89)
@@ -3944,7 +4007,7 @@ test_herdr_secondmate_relaunch_hands_a_vanished_pane_to_respawn() {
   : > "$dir/fake/herdr-exit-closes-pane"
   mkdir -p "$dir/home/config"
   printf 'claude\n' > "$dir/home/config/secondmate-harness"
-  printf '%s\n' "kind=secondmate" "home=$dir/wt" >> "$dir/home/state/rl79.meta"
+  printf '%s\n' "kind=secondmate" "home=$dir/wt" "x_request=keep-me" >> "$dir/home/state/rl79.meta"
   printf 'rl79\n' > "$dir/wt/.fm-secondmate-home"
   mkdir -p "$dir/wt/state" "$dir/wt/data"
 
@@ -3963,6 +4026,19 @@ test_herdr_secondmate_relaunch_hands_a_vanished_pane_to_respawn() {
   journal="$dir/home/state/rl79.control-relaunch"
   assert_grep 'rollback=prior-record-kept-endpoint-gone' "$journal" \
     "the relaunch journal must record why the prior record was kept"
+  [ "$(meta_field "$dir" rl79 x_request)" = keep-me ] \
+    || fail "clearing the owned relaunch token must keep unrelated metadata"
+  [ -z "$(meta_field "$dir" rl79 control_relaunch_tx)" ] \
+    || fail "a gone-endpoint handoff must clear the owned relaunch token"
+  token=$(journal_field "$dir" rl79 relaunch_tx)
+  [ -n "$token" ] || fail "the gone-endpoint journal should name the transaction that was cleared"
+  rc=0
+  out=$(FM_CONTROL_RELAUNCH_TX="$token" run_spawn "$dir" rl79 --relaunch --harness claude) || rc=$?
+  expect_code 4 "$rc" "a leftover journal token must not authorize later direct relaunch"$'\n'"$out"
+  assert_contains "$out" "--secondmate" \
+    "a cleared token must still send a gone secondmate to --secondmate"
+  [ ! -s "$dir/fake/herdr-log" ] || ! grep -q "tab create" "$dir/fake/herdr-log" \
+    || fail "a leftover journal token must not mint a replacement pane"
   pass "relaunch: a herdr secondmate whose pane vanished on stop is handed to respawn with its record kept"
 }
 
@@ -4037,6 +4113,8 @@ test_failed_spawn_keeps_exit_4_when_a_cooperating_writer_updates_meta() {
     || fail "a failed unpublished spawn must keep the prior harness"
   [ -z "$(meta_field "$dir" x4sp spawn_gen)" ] \
     || fail "a failed unpublished spawn must not mint a new spawn_gen"
+  [ -z "$(meta_field "$dir" x4sp control_relaunch_tx)" ] \
+    || fail "a gone-endpoint handoff must clear the owned relaunch token after a cooperating write"
   journal="$dir/home/state/x4sp.control-relaunch"
   assert_grep 'rollback=prior-record-kept-endpoint-gone' "$journal" \
     "the journal must keep the gone-endpoint handoff, not none-new-record-kept"
@@ -4284,6 +4362,7 @@ test_harness_switch_falls_back_when_the_new_harness_refuses_carried_effort
 test_relaunch_off_claude_refuses_when_tooling_is_present
 test_relaunch_off_claude_refuses_an_unreadable_account_pin
 test_relaunch_off_claude_refuses_when_tooling_check_exits_2
+test_relaunch_off_claude_ignores_fm_quota_reroute_override
 test_relaunch_off_claude_allows_an_unchanged_seeded_home
 test_relaunch_off_claude_refuses_seeded_home_user_additions
 test_harness_switch_resolves_a_prefixed_recorded_harness
@@ -4332,6 +4411,7 @@ test_stop_transport_failure_reconciles_a_dead_agent
 test_complete_journal_failure_rolls_back_from_durable_phase
 test_prepublication_abort_retires_replacement_wiring_and_busy_state
 test_prepublication_abort_with_busy_gen_restores_the_prior_record
+test_unpublished_spawn_lock_failure_is_not_published
 test_stamp_die_before_spawn_restores_the_prior_record
 test_stamp_mv_failure_removes_the_staging_file
 test_restore_failure_is_journaled_as_restore_failed

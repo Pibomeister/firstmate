@@ -393,7 +393,7 @@ family_for_basename() {
     fm-herdr-submit-confirm-live-e2e.test.sh|\
     fm-backend-rex-composer-live-e2e.test.sh|\
     fm-watch-wedge-cap-live.test.sh|fm-read-repetition-live.test.sh|\
-    fm-watchdog-live.test.sh)
+    fm-watchdog-live.test.sh|fm-usage-limit-pane-live.test.sh)
       printf '%s\n' live-harness-optin
       ;;
     fm-backend-herdr.test.sh|fm-backend-tmux-smoke.test.sh|fm-backend.test.sh|\
@@ -1023,6 +1023,7 @@ tests/fm-watch-triage.test.sh 736368
 tests/fm-watch-wedge-cap-live.test.sh 214
 tests/fm-watch-wedge-cap-unconfigured-parity.test.sh 60531
 tests/fm-watch-wedge-cap.test.sh 424173
+tests/fm-usage-limit-pane-live.test.sh 90
 tests/fm-watchdog-live.test.sh 89
 tests/fm-watchdog.test.sh 527813
 tests/fm-watcher-lock.test.sh 73024
@@ -1654,6 +1655,11 @@ families_for_changed_path() {
       printf '%s\n' '__script__:fm-handoff-trigger.test.sh'
       printf '%s\n' '__script__:fm-handoff-trigger-live-e2e.test.sh'
       ;;
+    bin/fm-watchdog.sh|bin/fm-watchdog-lib.sh)
+      printf '%s\n' "__script__:fm-watchdog.test.sh"
+      printf '%s\n' "__script__:fm-watchdog-live.test.sh"
+      printf '%s\n' "__script__:fm-usage-limit-pane-live.test.sh"
+      ;;
     bin/fm-watch*|bin/fm-classify-lib.sh)
       printf '%s\n' watcher-wake-lock
       printf '%s\n' "__script__:fm-backend-t3code.test.sh"
@@ -1715,6 +1721,10 @@ families_for_changed_path() {
       ;;
     bin/fm-quota-choose.sh)
       printf '%s\n' "__script__:fm-quota-choose.test.sh"
+      ;;
+    bin/fm-quota-reroute.sh)
+      printf '%s\n' "__script__:fm-quota-choose.test.sh"
+      printf '%s\n' "__script__:fm-usage-limit-pane-live.test.sh"
       ;;
     bin/fm-dispatch-resolve.sh)
       printf '%s\n' "__script__:fm-dispatch-resolve.test.sh"

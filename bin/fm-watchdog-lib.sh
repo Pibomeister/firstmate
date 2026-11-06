@@ -52,6 +52,9 @@
 #   fm_wd_usage_limit_kind <name>
 #       Returns 0 for the pane kind `usage-limit` and for the Grok composer
 #       name `Grok weekly-limit choice`.
+#   fm_wd_observe_dialog <screen>
+#       Prints a pane dialog name, or `usage-limit` when the composer detector
+#       names a usage-limit kind. Exit 1 when neither matches.
 #   fm_wd_dialog_options <screen>
 #       Prints `<number>\t<text>` for each numbered option of the dialog.
 #   fm_wd_dialog_text <screen>
@@ -233,6 +236,25 @@ fm_wd_usage_limit_kind() {  # <name>
   case "$1" in
     usage-limit|'Grok weekly-limit choice') return 0 ;;
   esac
+  return 1
+}
+
+# Pane dialog first. If that misses, reuse fm_composer_blocking_dialog and
+# normalize a usage-limit kind to the pane name `usage-limit`. No extra regex.
+fm_wd_observe_dialog() {  # <screen>
+  local dialog
+  dialog=$(fm_wd_pane_dialog "$1") || dialog=''
+  if [ -n "$dialog" ]; then
+    printf '%s\n' "$dialog"
+    return 0
+  fi
+  if declare -F fm_composer_blocking_dialog >/dev/null 2>&1; then
+    dialog=$(fm_composer_blocking_dialog "$1") || return 1
+    if fm_wd_usage_limit_kind "$dialog"; then
+      printf 'usage-limit\n'
+      return 0
+    fi
+  fi
   return 1
 }
 
