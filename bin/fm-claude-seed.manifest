@@ -48,7 +48,7 @@ c21ada915aac34e09457c63e6b3e0312dab08b67	.agents/skills/secondmate-provisioning/
 6b3403b7fcb4b4773bbef6d7da8f8065c63a4f01	.agents/skills/session-start-recovery/SKILL.md
 ba9cf258fce57569ef5e6f3fc33793d7b4c53411	.agents/skills/ship-landing/SKILL.md
 5872050963fad9b9ae985efc5b192ab6b41c9456	.agents/skills/stow/SKILL.md
-61df1b58bf6fea3539ea53109002fd084a62f0c0	.agents/skills/stuck-crewmate-recovery/SKILL.md
+8ed08d75446d2df918233a317212ad425d91973a	.agents/skills/stuck-crewmate-recovery/SKILL.md
 8591d15bcc1d00c8af678d42ed14c66fc100ef48	.agents/skills/updatefirstmate/SKILL.md
 ac9a9ac947aaab2a5b70a6cafec882d54cc6d6e1	.agents/skills/validation-supervision/SKILL.md
 d9d81a63ca13001d0b27704c238b496edd0f21c3	.claude/mods/firstmate-calm/.claude-plugin/plugin.json
