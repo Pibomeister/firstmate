@@ -80,12 +80,11 @@ These checks run on every pass as well:
   A recorded ship or scout worker pane of that home gets the same usage-limit handling, once per home or worker per `nudge-secs`.
   `bin/fm-quota-reroute.sh` owns the Claude-tooling signal list in its header, including marketplace clones and stale cache copies.
   A signal drops only the candidates off Claude, so a Claude candidate can still be named.
-  Unchanged Firstmate seed material listed in `bin/fm-claude-seed.manifest` is not a Claude-tooling signal.
-  User or repo additions and edits still keep a Claude secondmate on Claude.
-  `bin/fm-quota-reroute.sh` owns that distinction.
-  An explicit `fm-control.sh relaunch --harness` runs the same check.
+  Every firstmate home tracks `.claude/` skills and hooks, so a Claude secondmate is never moved off Claude by the quota reroute.
+  An explicit `fm-control.sh relaunch --harness` runs the same check, so it can move that secondmate to another Claude model but not off Claude.
   That relaunch closes a Grok weekly-limit composer and follows a status-line quota floor.
   A pane-text usage-limit picker queues until reset.
+  The supervisor relaunches onto that pick.
   The watchdog never changes the runtime.
   The live runbook is [`verification/quota-reroute.md`](verification/quota-reroute.md).
 

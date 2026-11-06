@@ -1026,16 +1026,17 @@ fi
 [ "$out" = "none" ] || fail "pinned account, no worktree: expected none, got '$out'"
 ok "an unknown worktree or broken pin never names the pinned Claude account"
 
-out=$(call_reroute suggest --snapshot "$LAB/captured.json" --from-harness claude \
+if out=$(call_reroute suggest --snapshot "$LAB/captured.json" --from-harness claude \
   --claude-config-dir "$empty_dir" --worktree "$FM_ROOT" --kind secondmate \
-  --candidate codex:default) \
-  || fail "a Claude secondmate on an unchanged firstmate home should be able to leave Claude, got '$out'"
-[ "$out" = "codex default" ] || fail "firstmate home secondmate: expected codex, got '$out'"
+  --candidate codex:default 2>/dev/null); then
+  fail "a Claude secondmate on a firstmate home must not be moved off Claude, got '$out'"
+fi
+[ "$out" = "none" ] || fail "firstmate home secondmate: expected none, got '$out'"
 out=$(call_reroute suggest --snapshot "$LAB/captured.json" --from-harness claude \
   --claude-config-dir "$empty_dir" --worktree "$FM_ROOT" --kind secondmate \
   --candidate claude:claude-3-5-sonnet --candidate codex:default)
-[ "$out" = "claude claude-3-5-sonnet" ] || fail "a firstmate home secondmate should still keep a Claude candidate, got '$out'"
-ok "a Claude secondmate whose home is an unchanged firstmate checkout can leave Claude"
+[ "$out" = "claude claude-3-5-sonnet" ] || fail "a firstmate home secondmate should keep a Claude candidate, got '$out'"
+ok "a Claude secondmate whose home is a firstmate checkout stays on Claude"
 
 ord="$LAB/ordinary-home"
 mkdir -p "$ord/.claude"
@@ -1453,138 +1454,6 @@ sig=$(HOME="$ord" call_reroute claude-tooling --config-dir "$ord/.claude/") \
 [ "$sig" = "MCP servers in $ord/.claude.json" ] || fail "trailing-slash signal: $sig"
 
 ok "a Claude worker queues on any Claude-specific signal, including unknown"
-
-seed_parent="$LAB/seed-parent"
-seed_home="$LAB/seed-home"
-mkdir -p "$seed_parent/projects" "$seed_parent/data" "$seed_parent/state"
-FM_HOME="$seed_parent" FM_SECONDMATE_CHARTER='firstmate self-development' \
-  FM_SECONDMATE_SCOPE='firstmate repo work' \
-  "$BIN/fm-home-seed.sh" seedmate "$seed_home" --no-projects >/dev/null \
-  || fail "fm-home-seed --no-projects failed"
-[ -L "$seed_home/.claude/skills" ] \
-  || fail "seeded home missing .claude/skills symlink"
-[ "$(readlink "$seed_home/.claude/skills")" = "../.agents/skills" ] \
-  || fail "seeded .claude/skills target: $(readlink "$seed_home/.claude/skills")"
-[ -f "$seed_home/.claude/settings.json" ] \
-  || fail "seeded home missing .claude/settings.json"
-[ -f "$seed_home/.claude/mods/firstmate-calm/.claude-plugin/plugin.json" ] \
-  || fail "seeded home missing firstmate-calm plugin.json"
-[ -f "$seed_home/.claude/mods/firstmate-calm/hooks/hooks.json" ] \
-  || fail "seeded home missing firstmate-calm hooks.json"
-rc=0
-sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$seed_home") || rc=$?
-[ "$rc" -eq 1 ] || fail "unchanged seeded .claude must not be a signal, got $rc ($sig)"
-[ -z "$sig" ] || fail "unchanged seeded .claude produced: $sig"
-out=$(call_reroute suggest --snapshot "$LAB/captured.json" --from-harness claude \
-  --claude-config-dir "$empty_dir" --worktree "$seed_home" --kind secondmate \
-  --candidate codex:default) \
-  || fail "seeded-only home: suggest should name the non-Claude pick, got '$out'"
-[ "$out" = "codex default" ] || fail "seeded-only home: expected codex, got '$out'"
-ok "an unchanged fm-home-seed .claude is not Claude-specific tooling"
-
-mkdir -p "$seed_home/.claude/hooks"
-printf '%s\n' '{"hooks":{"Stop":[{}]}}' > "$seed_home/.claude/hooks/hooks.json"
-sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$seed_home") \
-  || fail "a user hook beside seed material must be tooling required"
-[ "$sig" = "worktree .claude/hooks/hooks.json" ] \
-  || fail "user hook signal: $sig"
-rm -rf "$seed_home/.claude/hooks"
-ok "a user hook in a seeded home is still Claude-specific tooling"
-
-settings_seed=$seed_home/.claude/settings.json
-cp "$settings_seed" "$LAB/settings.json.seed"
-jq 'del(.hooks) | .env.EDITED = "1"' "$LAB/settings.json.seed" > "$settings_seed"
-sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$seed_home") \
-  || fail "an edited seeded settings.json must be tooling required"
-[ "$sig" = "worktree .claude/settings.json" ] \
-  || fail "edited seed file signal: $sig"
-mv "$LAB/settings.json.seed" "$settings_seed"
-ok "a user edit of a seeded .claude file is still Claude-specific tooling"
-
-printf '%s\n' '{"mcpServers":{"docs":{"command":"true"}}}' > "$seed_home/.mcp.json"
-sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$seed_home") \
-  || fail "user MCP in a seeded home must remain tooling required"
-[ "$sig" = "worktree .mcp.json" ] || fail "seeded-home MCP signal: $sig"
-rm -f "$seed_home/.mcp.json"
-ok "user MCP config in a seeded home remains Claude-specific tooling"
-
-manifest="$BIN/fm-claude-seed.manifest"
-[ -f "$manifest" ] || fail "missing Firstmate seed catalog $manifest"
-[ "$(head -1 "$manifest")" = "fm-claude-seed.v1" ] || fail "seed catalog header"
-# Worktree bytes, matching fm_quota_claude_blob_of. git ls-files -s is the
-# index and misses a tracked seed edit that is not yet staged.
-expected=$(
-  set -o pipefail
-  {
-    printf 'fm-claude-seed.v1\n'
-    git -C "$FM_ROOT" ls-files -- .claude/settings.json .claude/skills \
-      .claude/mods/firstmate-calm .agents/skills \
-      | while IFS= read -r path; do
-          f="$FM_ROOT/$path"
-          if [ -L "$f" ]; then
-            blob=$(printf '%s' "$(readlink "$f")" | git hash-object --stdin) || exit 1
-          elif [ -f "$f" ]; then
-            blob=$(git hash-object -- "$f") || exit 1
-          else
-            exit 1
-          fi
-          printf '%s\t%s\n' "$blob" "$path"
-        done \
-      | LC_ALL=C sort -t "$(printf '\t')" -k2,2
-  }
-) || fail "could not hash the Firstmate seed tree"
-[ "$expected" = "$(cat "$manifest")" ] \
-  || fail "seed catalog drifted from firstmate-owned prefixes"
-ok "the Firstmate seed catalog matches the owned prefixes and no other .claude path"
-
-parent="$LAB/committed-parent"
-git clone --local --quiet "$FM_ROOT" "$parent"
-mkdir -p "$parent/.claude/hooks"
-printf '%s\n' '{"hooks":{"Stop":[{}]}}' > "$parent/.claude/hooks/hooks.json"
-git -C "$parent" add .claude/hooks/hooks.json
-git -C "$parent" -c user.email=dev@example.test -c user.name=dev \
-  -c commit.gpgsign=false commit --quiet -m 'user hook'
-cp "$BIN/fm-quota-reroute.sh" "$parent/bin/"
-cp "$manifest" "$parent/bin/"
-sig=$("$parent/bin/fm-quota-reroute.sh" claude-tooling --config-dir "$empty_dir" \
-        --worktree "$parent") \
-  || fail "a hook committed in the parent home must be tooling required"
-[ "$sig" = "worktree .claude/hooks/hooks.json" ] \
-  || fail "committed-parent hook signal: $sig"
-ok "a user hook committed in the parent home is still Claude-specific tooling"
-
-git -C "$parent" checkout --quiet -- .claude/settings.json
-jq 'del(.hooks) | .env.EDITED = "1"' "$parent/.claude/settings.json" \
-  > "$LAB/parent-settings.edited"
-mv "$LAB/parent-settings.edited" "$parent/.claude/settings.json"
-git -C "$parent" add .claude/settings.json
-git -C "$parent" -c user.email=dev@example.test -c user.name=dev \
-  -c commit.gpgsign=false commit --quiet -m 'edit seed settings'
-sig=$("$parent/bin/fm-quota-reroute.sh" claude-tooling --config-dir "$empty_dir" \
-        --worktree "$parent") \
-  || fail "a committed edit of a seeded file must be tooling required"
-[ "$sig" = "worktree .claude/settings.json" ] \
-  || fail "committed-parent seed edit signal: $sig"
-ok "a committed edit of a seeded file is still Claude-specific tooling"
-
-mkdir -p "$seed_home/.agents/skills/user-added"
-printf '%s\n' '# user skill' > "$seed_home/.agents/skills/user-added/SKILL.md"
-sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$seed_home") \
-  || fail "a user skill behind the seeded skills symlink must be tooling required"
-[ "$sig" = "worktree .agents/skills/user-added/SKILL.md" ] \
-  || fail "symlink-target addition signal: $sig"
-rm -rf "$seed_home/.agents/skills/user-added"
-ok "a user-added .agents/skills path is not hidden by the seeded skills symlink"
-
-mv "$seed_home/.agents/skills" "$LAB/agents-skills.real"
-printf 'blocked\n' > "$seed_home/.agents/skills"
-sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$seed_home") \
-  || fail "an unreadable skills symlink target must be tooling required"
-[ "$sig" = "unreadable $seed_home/.agents/skills" ] \
-  || fail "unreadable traversal signal: $sig"
-rm -f "$seed_home/.agents/skills"
-mv "$LAB/agents-skills.real" "$seed_home/.agents/skills"
-ok "an unreadable seed traversal is Claude-specific tooling"
 
 if out=$(call_reroute suggest --snapshot "$LAB/captured.json" --from-harness claude \
   --from-model claude-3-5-sonnet --claude-config-dir "$empty_dir" --worktree "$clean_wt" \
