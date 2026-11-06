@@ -85,7 +85,7 @@ A relaunch does take one session reference when the endpoint's own runtime recor
    Effort carries over when the new harness accepts it, otherwise the replacement uses that harness default and prints a notice.
    Moving a Claude task onto another harness is refused when Claude-specific tooling is present, with no override.
    `bin/fm-quota-reroute.sh` owns that signal list in its header, including marketplace clones and stale cache copies.
-   A secondmate's worktree is its firstmate home. Unchanged Firstmate seed material under `.claude/` is not Claude-specific tooling; user or repo additions and edits still refuse. `bin/fm-quota-reroute.sh` owns that distinction. A Claude secondmate can still move to another Claude model.
+   A secondmate's worktree is its firstmate home, which tracks `.claude/` skills and hooks, so a Claude secondmate cannot be moved off Claude this way; it can still move to another Claude model.
    Relaunch never kills a pane it cannot attribute.
    A Claude or Pi replacement must also pass the home's [worker account pin](configuration.md#worker-account-pin-configclaude-account-configpi-account), or a secondmate's own [per-secondmate account pin](configuration.md#per-secondmate-account-pins) when one is set, so a pin that no longer resolves or is signed out refuses before the old agent stops.
    An omp secondmate replacement likewise passes its [per-secondmate omp profile](configuration.md#per-secondmate-omp-profile) file check before the old agent stops.
