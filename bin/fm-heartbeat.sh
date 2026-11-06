@@ -34,6 +34,10 @@
 #                       stamps the lock with; unknown outside any harness session,
 #                       such as an away daemon in its own detached terminal
 #     last_turn         {observed_at, age_seconds, source}
+#     unread_inbox_age_seconds  age of the oldest pending captain inbox note
+#                       (state/inbox/*.note), or null when none is pending, so
+#                       an external leash can see an unread-note stall without
+#                       reading the pane
 #     composer_state    empty|pending|pending-unproven|unknown
 #     context_left      {used_tokens, remaining}; remaining is {percent, source} from
 #                       the harness's own "N% until auto-compact" pane text, else
@@ -146,6 +150,10 @@ command -v jq >/dev/null 2>&1 || {
 # shellcheck source=bin/fm-context-footer-lib.sh
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/fm-context-footer-lib.sh"
+# The unread captain inbox age rule has one owner, shared with fm-inbox.sh.
+# shellcheck source=bin/fm-captain-inbox-lib.sh
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/fm-captain-inbox-lib.sh"
 
 HEARTBEAT_NOW=${FM_HEARTBEAT_NOW:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}
 HEARTBEAT_EPOCH=$(date -u -j -f '%Y-%m-%dT%H:%M:%SZ' "$HEARTBEAT_NOW" +%s 2>/dev/null \
@@ -257,9 +265,16 @@ heartbeat_context_json() {  # <label> <transcript-or-empty> [backend] [target] [
     }'
 }
 
+heartbeat_captain_inbox_unread_age() {
+  local age
+  age=$(fm_captain_inbox_unread_age_seconds "$STATE/inbox")
+  [ -n "$age" ] || { printf 'null\n'; return 0; }
+  printf '%s\n' "$age"
+}
+
 heartbeat_primary_json() {
   local backend target present composer=unknown session_id anchor_pid rc=0 transcript
-  local turn_json context_json writer_anchor writer_session
+  local turn_json context_json writer_anchor writer_session unread_inbox_age
   backend=$(heartbeat_read "primary backend" discover_supervisor_backend) || backend=
   target=$(heartbeat_read "primary target" discover_supervisor_target) || target=
   present=$(heartbeat_unknown "no supervisor endpoint discovered")
@@ -282,6 +297,7 @@ heartbeat_primary_json() {
   transcript=
   [ -z "$session_id" ] || transcript=$(heartbeat_read "primary transcript" fm_warm_compact_engine_transcript "$session_id") || transcript=
   turn_json=$(heartbeat_turn_json primary "$transcript")
+  unread_inbox_age=$(heartbeat_captain_inbox_unread_age)
   if [ "$present" = true ]; then
     context_json=$(heartbeat_context_json primary "$transcript" "$backend" "$target")
   else
@@ -297,6 +313,7 @@ heartbeat_primary_json() {
     --arg writer_anchor "$writer_anchor" \
     --arg writer_session "$writer_session" \
     --argjson last_turn "$turn_json" \
+    --argjson unread_inbox_age_seconds "$unread_inbox_age" \
     --argjson context_left "$context_json" \
     'def u(r): {unknown:true,reason:r};
     {
@@ -315,6 +332,7 @@ heartbeat_primary_json() {
         session_id:(if $writer_session == "" then u("writer has no trusted session id") else $writer_session end)
       },
       last_turn:$last_turn,
+      unread_inbox_age_seconds:$unread_inbox_age_seconds,
       composer_state:(if $composer == "" then "unknown" else $composer end),
       context_left:$context_left
     }'
