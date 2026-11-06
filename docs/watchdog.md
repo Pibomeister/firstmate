@@ -74,17 +74,9 @@ These checks run on every pass as well:
 - Decisions open longer than `decision-secs` get one rolled-up nudge per home.
   A window later, the oldest unsettled decision goes to a council of blind seats, at most `council-per-pass` per home per pass and once per decision per `council-secs`.
   A unanimous `PROCEED` writes a ruling file under `data/watchdog/rulings/` and nudges the session to apply it; anything short of unanimity holds.
-- A task whose latest status is a quota pause or block, or a pane showing a usage-limit picker, gets a ledger row and a gap that names the eligible candidate from `reroute-candidates` when `quota-axi` and `bin/fm-quota-reroute.sh` find one.
-  A pane-text usage-limit picker queues until reset.
-  A Grok weekly-limit composer, or a status-line quota floor, still takes a supervisor relaunch.
-  A recorded ship or scout worker pane of that home gets the same usage-limit handling, once per home or worker per `nudge-secs`.
-  `bin/fm-quota-reroute.sh` owns the Claude-tooling signal list in its header, including marketplace clones and stale cache copies.
-  A signal drops only the candidates off Claude, so a Claude candidate can still be named.
-  Every firstmate home tracks `.claude/` skills and hooks, so a Claude secondmate is never moved off Claude by the quota reroute.
-  An explicit `fm-control.sh relaunch --harness` runs the same check, so it can move that secondmate to another Claude model but not off Claude.
-  That relaunch closes a Grok weekly-limit composer and follows a status-line quota floor.
-  A pane-text usage-limit picker queues until reset.
-  The supervisor relaunches onto that pick.
+- A task whose latest status is a quota pause or block gets a ledger row and a gap that names the eligible candidate from `reroute-candidates` when `quota-axi` and `bin/fm-quota-reroute.sh` find one.
+  The Signals paragraph in [`bin/fm-quota-reroute.sh`](../bin/fm-quota-reroute.sh) owns Claude-tooling.
+  The verb header in [`bin/fm-control.sh`](../bin/fm-control.sh) owns close policy.
   The watchdog never changes the runtime.
   The live runbook is [`verification/quota-reroute.md`](verification/quota-reroute.md).
 

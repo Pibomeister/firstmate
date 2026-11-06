@@ -851,16 +851,16 @@ test_relaunch_refuses_before_exit_when_the_composer_state_is_unproven() {
   out=$(FM_FAKE_COMPOSER_READ_FAIL=1 \
     run_control "$dir" rl44 relaunch --note "preserve on an unreadable composer"); rc=$?
 
-  expect_code 1 "$rc" "a relaunch must refuse before typing an exit command when the composer state cannot be proven empty"
-  assert_contains "$out" "not proven empty" \
-    "the refusal should name the unproven composer state, not claim pending text"
+  expect_code 1 "$rc" "a relaunch must refuse before typing an exit command when the visible pane cannot be read"
+  assert_contains "$out" "could not read the visible pane" \
+    "a failed pane read must refuse rather than treat the capture as no usage-limit"
   assert_not_contains "$out" "visibly holds pending text" \
     "an unreadable composer is not the same claim as observed pending text"
   [ "$(cat "$dir/fake/command")" = claude ] \
     || fail "an unproven composer refusal must leave the old agent running"
   assert_no_grep "/exit" "$dir/fake/literal" \
-    "the exit command must not be typed when the composer state is not proven empty"
-  pass "fm-control relaunch: an unreadable composer fails safe before the exit command is typed"
+    "the exit command must not be typed when the visible pane cannot be read"
+  pass "fm-control relaunch: an unreadable pane fails closed before the exit command is typed"
 }
 
 test_relaunch_from_linked_home_preserves_recorded_worktree() {

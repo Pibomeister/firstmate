@@ -86,7 +86,11 @@
 #              (re-created inside the recorded Orca worktree), each under the proof
 #              `exit` describes above.
 #              An explicit `default` model or effort clears that
-#              axis for the replacement. With no explicit axis, a secondmate
+#              axis for the replacement. Unnamed effort carries onto the
+#              replacement, including across a harness change; if that harness
+#              refuses it, the replacement launches at default and prints a
+#              notice.
+#              With no explicit axis, a secondmate
 #              re-resolves its durable config/secondmate-harness pin (harness
 #              plus its optional model and effort tokens) exactly as any other
 #              respawn does, while a ship or scout keeps the exact adapter
@@ -541,7 +545,8 @@ usage_limit_dialog_name() {
       return 0
     fi
   fi
-  screen=$(fm_backend_visible_capture "$BACKEND" "$T" "$LABEL" 2>/dev/null) || return 1
+  screen=$(fm_backend_visible_capture "$BACKEND" "$T" "$LABEL" 2>/dev/null) \
+    || die "task $ID's usage-limit check could not read the visible pane; refusing to send lifecycle input"
   if declare -F fm_composer_blocking_dialog >/dev/null 2>&1; then
     dialog=$(fm_composer_blocking_dialog "$screen" 2>/dev/null) || dialog=
     if fm_wd_usage_limit_kind "$dialog"; then
@@ -968,6 +973,20 @@ do_exit() {
     || die "task $ID's dialog check could not be recorded"
   composer_state=$(fm_backend_composer_state "$BACKEND" "$T" "$LABEL" 2>/dev/null) \
     || composer_state=unknown
+  dialog=$(usage_limit_dialog_name) || dialog=
+  if fm_wd_usage_limit_kind "$dialog"; then
+    if [ "$VERB" = relaunch ]; then
+      if [ "$dialog" = 'Grok weekly-limit choice' ]; then
+        usage_limit_relaunch_close
+        return 0
+      fi
+      die "task $ID is at a usage-limit screen that is not live-verified; refusing to close the endpoint or type Enter. Queue until reset."
+    fi
+    if [ "$dialog" = 'Grok weekly-limit choice' ]; then
+      die "task $ID is at a usage-limit screen; refusing to type Enter into it. Relaunch onto another runtime instead."
+    fi
+    die "task $ID is at a usage-limit screen; refusing to type Enter into it. Queue until reset."
+  fi
   cmd=$(fm_control_exit_command "$HARNESS" "$OPENCODE_MAJOR")
   hazard=$(fm_control_interrupt_hazard_signal "$HARNESS")
   if [ -n "$hazard" ] && rendered_matches "$hazard"; then

@@ -145,6 +145,9 @@ case "${1:-}" in
           rm -f "$D/composer"
         fi
       fi
+      if [ "$payload" = Escape ] && [ -f "$D/pane-after-interrupt" ]; then
+        cat "$D/pane-after-interrupt" > "$D/pane"
+      fi
       if [ "$payload" = Escape ] && [ -f "$D/devin" ]; then
         case "$(cat "$D/devin")" in
           running) printf armed > "$D/devin" ;;
@@ -1501,6 +1504,34 @@ test_busy_exit_refuses_text_that_returns_after_interrupt() {
   pass "fm-control exit: text that comes back after the interrupt still refuses"
 }
 
+test_busy_exit_refuses_a_usage_limit_pane_after_interrupt() {
+  local dir out rc gen
+  dir=$(new_case busy-limit-after)
+  add_task "$dir" t1 claude
+  alive_as "$dir" claude
+  printf '%s\n' \
+    'You have hit your weekly limit for Opus.' \
+    '' \
+    ' ❯ 1. Switch to Sonnet' \
+    '   2. Wait for the limit to reset' \
+    '   3. Buy more credits' \
+    '' \
+    'Enter to confirm · Esc to cancel' > "$dir/fake/pane-after-interrupt"
+  gen=$("$ROOT/bin/fm-busy-event.sh" arm "$dir/home/state" t1)
+  printf 'busy_gen=%s\n' "$gen" >> "$dir/home/state/t1.meta"
+  out=$(run_control "$dir" t1 exit); rc=$?
+  expect_code 1 "$rc" "a usage-limit pane after interrupt must refuse"$'\n'"$out"
+  assert_contains "$out" "usage-limit screen" \
+    "the refusal should name the usage-limit screen"
+  [ "$(cat "$dir/fake/command")" = claude ] \
+    || fail "a usage-limit pane after interrupt must leave the old agent running"
+  assert_no_grep "/exit" "$dir/fake/literal" \
+    "the exit command must not be typed into a usage-limit pane that appeared after interrupt"
+  grep -qx Enter "$dir/fake/keys" \
+    && fail "Enter must not be sent into a usage-limit pane after interrupt: $(cat "$dir/fake/keys")"
+  pass "fm-control exit: a usage-limit pane that appears after interrupt still refuses"
+}
+
 exit_picker_screen() {
   printf '%s\n' \
     'Background work is running' \
@@ -1872,6 +1903,7 @@ test_ambiguous_endpoint_refuses
 test_busy_agent_is_interrupted_before_the_exit_command
 test_busy_exit_after_interrupt_clears_the_composer
 test_busy_exit_refuses_text_that_returns_after_interrupt
+test_busy_exit_refuses_a_usage_limit_pane_after_interrupt
 test_idle_agent_is_not_interrupted
 test_exit_drops_meta_busy_gen_with_the_sidecar
 test_exit_refuses_an_open_background_picker
