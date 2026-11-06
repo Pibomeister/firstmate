@@ -1,0 +1,10 @@
+## typed into lab primary pane by fm-watchdog.sh once
+: Firstmate operational input waiting: read '/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.9yO8h2/state/operational-inbox/1793997335-7978385f09b18a06.msg' and handle its contents as Firstmate operational input.
+: Firstmate operational input waiting: read '/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.9yO8h2/state/operational-inbox/1793997342-62e3f707851c7611.msg' and handle its contents as Firstmate operational input.
+
+## quota ledger rows
+1793997335	wd1793997334e54bea	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.9yO8h2	fm-lab.9yO8h2	quota:qc1	nudge	pending	Watchdog (automated, not the captain or the owner): task qc1 is parked at a quota floor. Suggested pick: codex gpt-5.4. Supervisor relaunches; the watchdog does not. Never pause or poll for quota.
+1793997342	wd17939973424986f4	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.9yO8h2	fm-lab.9yO8h2	quota:qc2	nudge	pending	Watchdog (automated, not the captain or the owner): task qc2 is parked at a quota floor. Suggested pick: claude sonnet. Supervisor relaunches; the watchdog does not. Never pause or poll for quota.
+## task meta after (harness unchanged, watchdog never relaunches)
+/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.9yO8h2/state/qc1.meta:harness=codex
+/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.9yO8h2/state/qc2.meta:harness=claude

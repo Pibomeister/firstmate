@@ -1,0 +1,8 @@
+ok - fm-control relaunch: switching harness is one ordinary relaunch, and the old wiring goes with the old agent
+ok - fm-control relaunch: moving off Claude refuses when Claude-specific tooling is present
+ok - fm-control relaunch: an unreadable claude-account pin refuses the move off Claude
+ok - fm-control relaunch: a claude-tooling exit 2 refuses the move off Claude
+ok - fm-control relaunch: production ignores FM_QUOTA_REROUTE and uses the shipped helper
+ok - fm-control relaunch: refuses to relaunch onto an adapter with no verified mechanics
+ok - fm-control relaunch: a secondmate relaunch re-resolves its durable configured harness pin
+ok - relaunch: a cooperating metadata update during a failing spawn still hands a gone secondmate to respawn

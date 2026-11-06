@@ -1,0 +1,17 @@
+## A. Claude ship task, account MCP server in HOME/.claude.json: relaunch --harness codex
+$ bin/fm-control.sh rq1 relaunch --harness codex --note quota reroute
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.9yO8h2
+error: Claude-specific tooling present (MCP servers in /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.9yO8h2/fakehome/.claude.json); refusing to move rq1 off Claude
+[exit 1]
+
+## after A: recorded harness and pane
+harness=claude
+fm-rq1 sleep
+## B. broken claude-account pin: relaunch --harness codex
+$ bin/fm-control.sh rq1 relaunch --harness codex --note quota reroute
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.9yO8h2
+error: Claude-specific tooling present (config/claude-account must name a readable, searchable existing directory (ordinary means ~/.claude with CLAUDE_CONFIG_DIR unset): /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.9yO8h2/config/claude-account -> /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.9yO8h2/no-such-pin); refusing to move rq1 off Claude
+[exit 1]
+
+harness=claude
+fm-rq1 sleep

@@ -1,0 +1,44 @@
+## 1 exhausted Claude worker, clean tooling -> codex pick
+$ bin/fm-quota-reroute.sh suggest --snapshot /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.V0wjfiSDLe/snap.json --from-harness claude --claude-config-dir /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.V0wjfiSDLe/acct --worktree /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.V0wjfiSDLe/wt --kind ship --candidate claude:default --candidate codex:default
+error: unsupported quota-axi schema version: 1
+[exit 2]
+
+## 2 pool exhausted (only claude, which is out) -> none
+$ bin/fm-quota-reroute.sh suggest --snapshot /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.V0wjfiSDLe/snap.json --from-harness claude --claude-config-dir /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.V0wjfiSDLe/acct --worktree /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.V0wjfiSDLe/wt --kind ship --candidate claude:default
+none
+error: no verified candidate remains for kind ship
+[exit 1]
+
+## 3 adversarial: account MCP server -> refuse move off Claude
+$ bin/fm-quota-reroute.sh suggest --snapshot /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.V0wjfiSDLe/snap.json --from-harness claude --claude-config-dir /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.V0wjfiSDLe/acct-mcp --worktree /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.V0wjfiSDLe/wt --kind ship --candidate codex:default
+none
+error: Claude-specific tooling present (MCP servers in /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.V0wjfiSDLe/acct-mcp/.claude.json); queue until reset rather than moving off Claude
+[exit 1]
+
+## 4 adversarial: worktree .claude/settings.json hooks -> refuse
+$ bin/fm-quota-reroute.sh suggest --snapshot /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.V0wjfiSDLe/snap.json --from-harness claude --claude-config-dir /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.V0wjfiSDLe/acct --worktree /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.V0wjfiSDLe/wt-hooks --kind ship --candidate codex:default
+none
+error: Claude-specific tooling present (/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.V0wjfiSDLe/wt-hooks/.claude/settings.json .hooks); queue until reset rather than moving off Claude
+[exit 1]
+
+## 5 adversarial: unresolvable config dir -> refuse (queue)
+$ bin/fm-quota-reroute.sh suggest --snapshot /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.V0wjfiSDLe/snap.json --from-harness claude --claude-config-dir /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.V0wjfiSDLe/nope --worktree /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.V0wjfiSDLe/wt --kind ship --candidate codex:default
+none
+error: Claude-specific tooling present (unreadable Claude config dir); queue until reset rather than moving off Claude
+[exit 1]
+
+## 6 recorded decision: Claude secondmate on a firstmate home stays on Claude
+$ bin/fm-quota-reroute.sh suggest --snapshot /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.V0wjfiSDLe/snap.json --from-harness claude --claude-config-dir /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.V0wjfiSDLe/acct --worktree /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M6S8P06RXC46HBV37TV9TNJY --kind secondmate --candidate codex:default
+none
+error: Claude-specific tooling present (worktree .claude/skills); queue until reset rather than moving off Claude
+[exit 1]
+
+$ bin/fm-quota-reroute.sh claude-tooling --config-dir /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.V0wjfiSDLe/acct --worktree /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M6S8P06RXC46HBV37TV9TNJY
+worktree .claude/skills
+[exit 0]
+
+## 7 no seed manifest present
+$ ls bin/fm-claude-seed.manifest
+ls: bin/fm-claude-seed.manifest: No such file or directory
+[exit 1]
+

@@ -6,8 +6,10 @@ ok - pooled relaunches preserve legacy compatibility and require custody for eit
 ok - AGY relaunch checks Treehouse capabilities before stopping or replacing a worker
 ok - fm-control relaunch: pending composer text refuses before the exit command is typed
 ok - fm-control relaunch: an untrusted usage-limit endpoint is not killed
-ok - fm-control relaunch: a usage-limit screen is closed without typing Enter
+ok - fm-control relaunch: pane-text usage-limit refuses without kill or Enter
+ok - fm-control relaunch: a Grok weekly-limit composer is closed without typing Enter
 ok - fm-control interrupt: a usage-limit screen is not sent a lifecycle key
+ok - fm-control interrupt: a Grok weekly-limit composer names relaunch, not queue
 ok - fm-control relaunch: a proven-gone tmux endpoint is rebound when its pane path is unreadable
 ok - fm-control relaunch: an unreadable composer fails safe before the exit command is typed
 ok - fm-control relaunch: a linked spawning home preserves committed and unfinished work in the recorded copy
@@ -22,3 +24,15 @@ ok - fm-control relaunch: a refused relaunch onto polytoken keeps the project's 
 ok - fm-control relaunch: a refused polytoken profile leaves the running agent untouched
 ok - fm-spawn --relaunch: retiring a raw polytoken launch's wiring keeps the project's own layers
 ok - fm-control relaunch: a harness switch resets model and keeps effort unless effort is named too
+ok - fm-control relaunch: a carried effort the new harness refuses falls back to that harness default
+ok - fm-control relaunch: moving off Claude refuses when Claude-specific tooling is present
+ok - fm-control relaunch: an unreadable claude-account pin refuses the move off Claude
+ok - fm-control relaunch: a claude-tooling exit 2 refuses the move off Claude
+ok - fm-control relaunch: production ignores FM_QUOTA_REROUTE and uses the shipped helper
+ok - fm-control relaunch: a prefixed recorded harness can switch adapters transactionally
+ok - fm-control relaunch: a prefixed command requires an explicit replacement harness
+ok - fm-control relaunch: a same-harness relaunch keeps the profile axes it was running with
+ok - native Ultra relaunch preserves its profile and rejects an unsupported model before stopping
+ok - codex max relaunch rejects a model the catalog does not advertise max for before stopping
+ok - fm-control relaunch: a signed-out worker account pin refuses before the old agent stops
+ok - fm-control relaunch: the replacement follows the home's current worker account pin

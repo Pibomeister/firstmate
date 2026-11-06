@@ -1,0 +1,17 @@
+## 1 exhausted Claude worker, clean tooling -> codex pick
+$ bin/fm-quota-reroute.sh suggest --snapshot $T/snap.json --from-harness claude --claude-config-dir $T/acct --worktree $T/wt --kind ship --candidate claude:default --candidate codex:default
+codex default
+[exit ]
+
+## 2 pool exhausted -> none
+$ bin/fm-quota-reroute.sh suggest --snapshot $T/snap.json --from-harness claude --claude-config-dir $T/acct --worktree $T/wt --kind ship --candidate claude:default
+none
+error: no verified candidate remains for kind ship
+[exit ]
+
+## 3 adversarial: account MCP server -> refuse move off Claude
+$ bin/fm-quota-reroute.sh suggest --snapshot $T/snap.json --from-harness claude --claude-config-dir $T/acct-mcp --worktree $T/wt --kind ship --candidate codex:default
+none
+error: Claude-specific tooling present (MCP servers in $T/acct-mcp/.claude.json); queue until reset rather than moving off Claude
+[exit ]
+

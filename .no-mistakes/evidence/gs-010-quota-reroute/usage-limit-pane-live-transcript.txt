@@ -1,0 +1,7 @@
+$ FM_USAGE_LIMIT_PANE_LIVE=1 FM_USAGE_LIMIT_PANE=%2 FM_USAGE_LIMIT_PANE_SOCKET=fm-lab bash tests/fm-usage-limit-pane-live.test.sh
+ok - named existing pane classified usage-limit with no Enter
+[exit 0]
+keys received by limited pane:        0 bytes
+$ (unpatched form, for contrast) FM_USAGE_LIMIT_PANE=%2 bash tests/fm-usage-limit-pane-live.test.sh with no socket on bash 3.2
+not ok - could not capture the named existing pane
+[exit 1 - default socket has no such pane, expected not ok without an unbound-variable crash]

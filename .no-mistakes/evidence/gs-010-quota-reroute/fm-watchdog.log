@@ -1,4 +1,4 @@
-1..81
+1..85
 ok - dialogs need their structure, and each kind is told apart
 ok - mtime: native and available GNU stat give numeric ages through scan
 ok - a dismissed dialog that only remains in scrollback is not read as showing
@@ -17,4 +17,20 @@ ok - council needs unanimity; a split vote holds
 ok - boundary: judge falls back across models, logs every call, and never spends past the daily cap
 ok - with no model available, deterministic actions still run and the gap is reported
 ok - timer loop fires only with aged owed input, never on idle heartbeats
+ok - near loop: no model, the daily cap, WORK, and a bad answer all leave frozen and input recovery running
+ok - near loop: the judge sees the recent sequence, newest last, and repeats only for new evidence after the interval
+ok - near loop: a LOOP answer alone takes the existing ladder
+ok - near loop: evidence with a secret or reserved word reaches no model or record, and recovery still runs
+ok - rapid loop: a fresh burst is recovered, and an old burst needs aged input
+ok - rapid loop: a fresh burst is nudged without invented input, and its aged tail stays quiet
+ok - primary endpoint: another session's heartbeat is never typed into, and a match restores it
+ok - primary identity: an absent lock id never authenticates a heartbeat, and a recorded match restores delivery
+ok - boundary: a long running turn is not a stall and is never restarted
+ok - restart: lean handoff, new terminal, verified pickup with lock takeover; a loop stops and escalates
+ok - captain record: lock pid, real liveness, terminal, and move time; pickup moves it, a pane never proves it
+ok - captain record: a heartbeat written outside the lock owner, as by a detached away daemon, never proves a terminal
+ok - boundary: a home whose restart awaits pickup gets no action until the restart closes
+ok - agent gone: a dead lock holder with a recorded anchor still restarts
+ok - restart-command: muse with --yolo, --disable-approval, or --approval-mode never is launched unchanged
+ok - restart-command: bare muse is launched with --yolo added by default
 Terminated: 15
