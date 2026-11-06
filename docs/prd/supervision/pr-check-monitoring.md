@@ -1,0 +1,105 @@
+# PRD: PR and check monitoring
+
+## Purpose
+
+This PRD defines how Firstmate watches pull requests, checks, and merge queues without polling by hand.
+It covers named-check watches, ready validation-run discovery, check-state changes, and early conflict detection.
+It changes no merge, release, or deploy gate and never merges on its own authority.
+
+## Scope
+
+- In scope: PRs and validation runs already created by a delivery path.
+- In scope: discovery of ready runs that no task owns.
+- Out of scope: creating PRs, responding to validation gates, and merging.
+- Those actions keep their existing owners and gates.
+- Escalation and quiet hours live in [escalation-quiet-hours.md](escalation-quiet-hours.md).
+
+## Current capability
+
+| Capability | Evidence in this repo | State |
+| --- | --- | --- |
+| A named check is bound to one PR head and one trusted producer | `bin/fm-pr-check-watch.sh arm` binds the current head and an explicit numeric GitHub App ID | Present |
+| The watch polls on a fixed cadence to a deadline | The watch polls every 30 seconds until stable success or a 24-hour deadline | Present |
+| A forge read error ends the watch at once | The `fm-pr-check-watch.sh` header ends the watch with `condition-error` on any forge read error | Present |
+| Ready validation runs are discovered on heartbeat | Firstmate PR #142 discovers ready no-mistakes PRs across every registered repo on heartbeat | Merged |
+| Discovery is read-only | `bin/fm-ready-pr-discovery.sh` never merges, marks ready, responds, or changes a project | Present |
+| Unreadable repos report instead of skipping silently | The discovery output carries one `ready-pr-unreadable` line per unreadable repo | Present |
+| Owned and orphan runs are distinguished | Discovery flags a run `owned=no` when no task record names its branch or PR | Present |
+| Merge refuses a conflicted PR | `bin/fm-pr-merge.sh` refuses when `has_conflicts` is not false or the merge state is `DIRTY` | Present |
+| External PR checks bind to a head and a trusted App | Firstmate PR #47 adds the named external check watch | Merged |
+
+## Gaps
+
+| Gap | Consequence |
+| --- | --- |
+| Conflict detection runs only at merge time | A PR conflicts for hours before anyone learns of it |
+| Discovery reports ready runs but no conflict state | A conflicted ready PR reads the same as a clean ready PR |
+| A changed PR head rebinds a check watch only by a fresh arm | A force-push or rebase can leave a watch bound to an old head |
+| Check watches and discovery run on separate cadences | One incident can surface twice through two paths |
+| A queue position or gate wait has no single reporting owner | Supervisors poll the PR by hand to learn the state |
+
+## Requirements
+
+- PM-1: Each watch binds one PR, one head, one check name, and one trusted producer.
+- PM-2: A head change ends the old binding and reports the change once.
+- PM-3: A terminal check state delivers exactly one result record.
+- PM-4: A forge read error ends the watch with an error record and never reads as success.
+- PM-5: Discovery lists each ready run once per heartbeat with its head and wait time.
+- PM-6: Discovery reports the conflict state of each ready PR from the forge read.
+- PM-7: A conflicted ready PR reports `conflicted` and never `ready`.
+- PM-8: An unreadable conflict state reports `unknown` and never `clean`.
+- PM-9: An orphan run is reported with the same fields as an owned run.
+- PM-10: Monitoring never merges, marks ready, responds to a gate, or pushes.
+- PM-11: One PR state change produces one supervisor wake across the watch and discovery paths.
+- PM-12: Retiring a watch with an unhandled result is refused.
+
+## Ownership
+
+| Signal | Single owner | Permitted action |
+| --- | --- | --- |
+| Named-check watch | `bin/fm-pr-check-watch.sh` | Poll the bound check and deliver one result |
+| Ready-run discovery | `bin/fm-ready-pr-discovery.sh`, consumed by `bin/fm-heartbeat.sh` | List ready and conflicted runs |
+| Merge decision | The existing guarded merge path and its configured authority | Merge or refuse |
+| Gate response | The validation pipeline and the supervisor gate rules | Respond to a gate |
+| Conflict state | The forge read inside discovery | Report `conflicted`, `clean`, or `unknown` |
+
+## Acceptance tests
+
+- AT-PM-1: An armed watch delivers one result when the bound check turns terminal.
+- AT-PM-2: A second suite attempt of the same check resolves to the newest attempt.
+- AT-PM-3: The same check from the same producer in two suites reports ambiguous and delivers no result.
+- AT-PM-4: A head change ends the binding and emits one change record.
+- AT-PM-5: A forge error ends the watch with an error record.
+- AT-PM-6: Discovery lists a parked ready run with its head, wait, and owned flag.
+- AT-PM-7: A conflicted ready PR reports `conflicted`.
+- AT-PM-8: An unreadable repo reports once and the remaining repos still list.
+- AT-PM-9: One state change across both paths produces one wake.
+- AT-PM-10: Existing suites `tests/fm-pr-check-watch.test.sh` and `tests/fm-pr-check-security.test.sh` still pass.
+
+## Failure-injection and recovery drills
+
+- DR-PM-1: Fail the bound check and confirm one failure result and no merge attempt.
+- DR-PM-2: Push a new head during a watch and confirm the old binding ends with one record.
+- DR-PM-3: Make a ready PR conflict with its base and confirm discovery reports `conflicted` before any merge attempt.
+- DR-PM-4: Block the forge read for one repo and confirm the other repos still report.
+- DR-PM-5: Duplicate a check across two suites and confirm the ambiguous path delivers nothing.
+- DR-PM-6: Retire a watch with an unhandled result and confirm the refusal.
+
+## Escalation and quiet hours
+
+This PRD escalates only on a terminal failure, a conflict, or an ambiguous check identity.
+A green check that matches the expectation sends no escalation.
+Quiet hours and dedupe follow [escalation-quiet-hours.md](escalation-quiet-hours.md).
+
+## Token economics
+
+The baseline method counts supervisor wakes and model tokens before and after this work.
+The measurement window is 14 consecutive days before the change and 14 consecutive days after it.
+The counters are PR-related wake records per day, manual PR state reads per day where recorded, and token fields in `state/watchdog/model-calls.tsv`.
+Polling cost counts forge reads per watch per day from the watch records.
+No savings figure is stated until both windows exist.
+
+## Open questions
+
+- OQ-PM-1: Which heartbeat cadence carries conflict state without adding a second poll loop.
+- OQ-PM-2: How a watch rebinds after a routine rebase without supervisor action.
