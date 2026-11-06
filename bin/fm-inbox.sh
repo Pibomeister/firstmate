@@ -63,8 +63,11 @@
 # is a strict total order and two replies recorded in the same second are both
 # readable. One reply per note: a second one is refused.
 # `ready` is the read-only primary-readiness projection (lock, wake-consumer
-# health, away posture, observation time). It never acquires the session lock
-# and never infers liveness from a lock file, a session, or a pane.
+# health, away posture, observation time). Its wake-consumer section also
+# reports `unread_inbox_age_seconds`: the age of the oldest pending captain
+# inbox note, or null when none is pending, so an external leash can see an
+# unread-note stall without reading the pane. It never acquires the session
+# lock and never infers liveness from a lock file, a session, or a pane.
 #
 # Configuration. A region, a model id and an AWS profile name somebody's account
 # and somebody's choices, so this file carries no default for any of them. Each is
@@ -120,6 +123,11 @@ export PATH
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=bin/fm-bash-compat-lib.sh
 . "$SELF_DIR/fm-bash-compat-lib.sh"
+# The unread captain inbox age rule has one owner, shared with fm-heartbeat.sh.
+# Sourced unconditionally: a missing lib must fail visibly, never read as
+# "no pending note".
+# shellcheck source=bin/fm-captain-inbox-lib.sh
+. "$SELF_DIR/fm-captain-inbox-lib.sh"
 FM_ROOT="$(cd "$SELF_DIR/.." && pwd)"
 FM_HOME="${FM_HOME:-$FM_ROOT}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
@@ -883,6 +891,12 @@ cmd_ready() {
     esac
   fi
 
+  # Age of the oldest pending captain inbox note, so an external leash can
+  # see an unread-note stall without reading the pane. The rule itself is
+  # owned by bin/fm-captain-inbox-lib.sh, shared with fm-heartbeat.sh.
+  local unread_inbox_age=""
+  unread_inbox_age=$(fm_captain_inbox_unread_age_seconds "$INBOX")
+
   # The supervision model belongs to the INSPECTED home, not to whoever ran
   # this command. An explicit FM_SUPERVISION_MODEL still wins; otherwise
   # use verified inspection harness evidence or the live owner's ancestry.
@@ -941,15 +955,16 @@ cmd_ready() {
 
   python3 - "$lock_state" "$lock_pid" "$live_harness" \
     "$consumer_state" "$consumer_reason" "$beacon_age" \
-    "$posture" "$can_receive" "$observed" "$FM_HOME" <<'PY'
+    "$posture" "$can_receive" "$observed" "$FM_HOME" "$unread_inbox_age" <<'PY'
 import json, sys
 from pathlib import Path
 (lock_state, lock_pid, live_harness, consumer_state, consumer_reason,
- beacon_age, posture, can_receive, observed, home) = sys.argv[1:11]
+ beacon_age, posture, can_receive, observed, home, unread_inbox_age) = sys.argv[1:12]
 live_val = True if live_harness == "true" else False if live_harness == "false" else None
 recv = True if can_receive == "true" else False if can_receive == "false" else "unknown"
 pid_val = int(lock_pid) if lock_pid.isdigit() else None
 age_val = int(beacon_age) if beacon_age.isdigit() else None
+unread_val = int(unread_inbox_age) if unread_inbox_age.isdigit() else None
 home_label = "/".join(Path(home).parts[-2:]) if home else home
 json.dump({
     "schema": "fm-primary-ready.v1",
@@ -964,6 +979,7 @@ json.dump({
         "state": consumer_state,
         "reason": consumer_reason or None,
         "beacon_age_seconds": age_val,
+        "unread_inbox_age_seconds": unread_val,
     },
     "posture": {"state": posture},
     "can_receive": recv,

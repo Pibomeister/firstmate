@@ -404,6 +404,37 @@ test_failed_status_is_unknown_not_no_run() {
   pass "a failed no-mistakes read is unknown and sets failure"
 }
 
+test_primary_unread_inbox_age_is_published() {
+  local home note
+  home=$(make_home unread-inbox)
+  publish "$home"
+  assert_ledger "$home" '.primary.unread_inbox_age_seconds == null' \
+    "no pending captain inbox note should publish a null unread age"
+  mkdir -p "$home/state/inbox"
+  note="$home/state/inbox/123-abc.note"
+  printf 'id=123-abc\n--\nstalled\n' > "$note"
+  fm_touch_epoch "$(( $(date +%s) - 600 ))" "$note"
+  publish "$home"
+  assert_ledger "$home" '.primary.unread_inbox_age_seconds >= 590' \
+    "the oldest pending captain inbox note should publish its age"
+  # Both published surfaces share one age rule, so they agree on the same inbox.
+  local hb_age ready_age
+  hb_age=$(jq -r '.primary.unread_inbox_age_seconds' "$(ledger "$home")")
+  ready_age=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    FM_CONFIG_OVERRIDE="$home/config" "$ROOT/bin/fm-inbox.sh" ready \
+    | jq -r '.wake_consumer.unread_inbox_age_seconds')
+  [ -n "$hb_age" ] && [ -n "$ready_age" ] && [ "$hb_age" != null ] && [ "$ready_age" != null ] \
+    || fail "both surfaces should report an unread age for the same inbox (heartbeat=$hb_age ready=$ready_age)"
+  [ $(( hb_age - ready_age )) -ge -10 ] && [ $(( hb_age - ready_age )) -le 10 ] \
+    || fail "heartbeat and readiness disagree on the unread age (heartbeat=$hb_age ready=$ready_age)"
+  mkdir -p "$home/state/inbox/handled"
+  mv "$note" "$home/state/inbox/handled/"
+  publish "$home"
+  assert_ledger "$home" '.primary.unread_inbox_age_seconds == null' \
+    "a handled captain inbox note should no longer publish an unread age"
+  pass "the heartbeat publishes the oldest unread captain inbox note age"
+}
+
 test_transcript_fields_with_fractional_timestamps() {
   local home project line
   home=$(make_home transcript)
@@ -834,6 +865,7 @@ test_worktree_off_recorded_branch_is_unknown
 test_settled_run_binds_only_on_worktree_head
 test_daemon_answer_qualifies_executing_run
 test_failed_status_is_unknown_not_no_run
+test_primary_unread_inbox_age_is_published
 test_transcript_fields_with_fractional_timestamps
 test_leftover_transcript_in_a_reused_slot_is_ignored
 test_ambiguous_transcript_when_two_qualify

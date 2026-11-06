@@ -115,6 +115,13 @@
 #              the prior durable record in place and reports the concrete
 #              state; it never leaves a half-transitioned task claiming to be
 #              running.
+#              A secondmate whose endpoint is gone once its agent is stopped
+#              exits 4 with that prior record kept when this call named
+#              neither --harness nor --model, because that replacement belongs
+#              to the secondmate respawn path
+#              (bin/fm-spawn.sh <id> --secondmate), which the caller runs next.
+#              An explicit --harness or --model is a quota or operator replace
+#              and rebinds through --relaunch.
 #
 # Teardown and discard are NOT verbs here and never will be. `exit` stops an
 # agent and preserves everything else; removing a worktree, killing an
@@ -1383,7 +1390,7 @@ record_note() {
 }
 
 do_relaunch() {
-  local exit_result state note_line spawn_err spawn_msg
+  local exit_result state note_line spawn_rc spawn_err spawn_msg
   local -a spawn_args
 
   require_state_verified_backend relaunch
@@ -1484,8 +1491,17 @@ do_relaunch() {
   [ "$TARGET_MODEL" = default ] || spawn_args+=(--model "$TARGET_MODEL")
   [ "$TARGET_EFFORT" = default ] || spawn_args+=(--effort "$TARGET_EFFORT")
   spawn_err=$(mktemp "${TMPDIR:-/tmp}/fm-control-spawn.XXXXXX") || die "could not record spawn output for task $ID"
-  if FM_CONTROL_RELAUNCH_TX="$RELAUNCH_TX" \
-      "$SCRIPT_DIR/fm-spawn.sh" "${spawn_args[@]}" >/dev/null 2>"$spawn_err"; then
+  spawn_rc=0
+  # A same-pin secondmate relaunch (restart, liveness) must not mint a
+  # replacement window through --relaunch. Quota and an operator replace name
+  # --harness or --model, and only those pass the token spawn requires.
+  if [ "$KIND" = secondmate ] && [ "$HARNESS_SET" = 0 ] && [ "$MODEL_SET" = 0 ]; then
+    "$SCRIPT_DIR/fm-spawn.sh" "${spawn_args[@]}" >/dev/null 2>"$spawn_err" || spawn_rc=$?
+  else
+    FM_CONTROL_RELAUNCH_TX="$RELAUNCH_TX" \
+      "$SCRIPT_DIR/fm-spawn.sh" "${spawn_args[@]}" >/dev/null 2>"$spawn_err" || spawn_rc=$?
+  fi
+  if [ "$spawn_rc" -eq 0 ]; then
     cat "$spawn_err" >&2
     rm -f "$spawn_err"
     RELAUNCH_META_PUBLISHED=1
@@ -1512,6 +1528,16 @@ do_relaunch() {
     fi
     spawn_msg=$(tr '\n' ' ' < "$spawn_err")
     rm -f "$spawn_err"
+    # The launch owner's typed refusal for a secondmate whose endpoint is gone
+    # (fm-spawn.sh header: --relaunch). Nothing was created, the agent is
+    # stopped, and the prior record stands, so hand the mate to its respawn
+    # owner with the same status instead of an untyped failure.
+    if [ "$spawn_rc" -eq 4 ] && [ "$KIND" = secondmate ] && [ "$RELAUNCH_META_PUBLISHED" = 0 ]; then
+      journal_write "failed:$RELAUNCH_PHASE" "rollback=prior-record-kept-endpoint-gone" || true
+      RELAUNCH_ACTIVE=0
+      echo "error: secondmate $ID's agent is stopped and its endpoint is gone, so no replacement can be launched into it; its record is kept for the secondmate respawn path (bin/fm-spawn.sh $ID --secondmate)" >&2
+      exit 4
+    fi
     die "the replacement agent for $ID could not be launched on $TARGET_HARNESS${spawn_msg:+: $spawn_msg}"
   fi
 

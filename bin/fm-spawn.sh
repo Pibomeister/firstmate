@@ -119,8 +119,10 @@
 #   to have survived refuses too. The worktree is reused untouched either way; a
 #   rebind is a recovery, never a teardown. Only a crewmate or scout rebinds
 #   through --relaunch, except fm-control relaunch of a proven-gone secondmate
-#   (quota move). A gone secondmate is otherwise respawned by --secondmate
-#   (session-start liveness sweep).
+#   that named --harness or --model (quota move). A gone secondmate is otherwise respawned by --secondmate
+#   (session-start liveness sweep), and that refusal exits 4, before anything
+#   is created, so a caller can hand the mate to that owner without parsing
+#   the message.
 #   Every fresh ship/scout launch and replacement explicitly enters the recorded
 #   worktree immediately before trust setup and brief delivery, and a pre-launch
 #   cwd check refuses any endpoint that still reports another copy; a Herdr shell
@@ -154,7 +156,11 @@
 #   but omitted.
 #   --backend <name> is the explicit runtime session-provider backend for this
 #   exact task only (docs/configuration.md "Runtime backend" owns when that flag
-#   is authorized). Without it, the script resolves FM_BACKEND, then
+#   is authorized). Without it, a --secondmate respawn of a local mate whose
+#   kind=secondmate record is still in this home keeps the backend that record
+#   names (absent backend= is tmux), because the mate's endpoint, workspace, and
+#   recovery all live there and the home default may name a backend that cannot
+#   host a secondmate at all. Otherwise the script resolves FM_BACKEND, then
 #   config/backend, then runtime auto-detection from the runtime firstmate's
 #   environment: $TMUX, HERDR_ENV=1, TERM_PROGRAM=rex with REX_BLOCK, or cmux
 #   runtime signals (via
@@ -2401,7 +2407,8 @@ if [ "$KIND" = secondmate ]; then
   fi
   [ "$remote_spawn_rc" -eq 3 ] || exit "$remote_spawn_rc"
 fi
-# Backend selection (data/fm-backend-design-d7): explicit --backend, else
+# Backend selection (data/fm-backend-design-d7): explicit --backend, else a
+# recorded local secondmate's own backend on respawn, else
 # FM_BACKEND env, else config/backend, else runtime auto-detection, else
 # default tmux (fm_backend_name). fm_backend_validate_spawn refuses unknown or
 # non-spawn-capable backends. The resolved value is
@@ -2469,9 +2476,22 @@ spawn_backend_admit() {  # <backend>
   fi
 }
 
+# A --secondmate respawn of a local mate this home still records keeps that
+# record's backend (header: --backend). Only a regular kind=secondmate record is
+# read here; an unsafe or foreign record is refused by the home resolution below.
+spawn_recorded_secondmate_backend() {
+  local meta="$STATE/$ID.meta"
+  [ "$KIND" = secondmate ] || return 1
+  [ -f "$meta" ] && [ ! -L "$meta" ] || return 1
+  [ "$(fm_meta_get "$meta" kind)" = secondmate ] || return 1
+  fm_backend_of_meta "$meta"
+}
+
 if [ "$RELAUNCH" -eq 0 ]; then
   if [ "$BACKEND_SET" -eq 1 ]; then
     BACKEND=$BACKEND_ARG
+  elif BACKEND=$(spawn_recorded_secondmate_backend); then
+    :
   else
     BACKEND=$(fm_backend_name)
   fi
@@ -2684,19 +2704,6 @@ FACTS
   esac
   KIND=$(fm_meta_get "$RELAUNCH_META" kind)
   [ -n "$KIND" ] || KIND=ship
-  # Gone-secondmate recovery has one owner per path: --secondmate for the
-  # liveness sweep, and fm-control relaunch (which sets FM_CONTROL_RELAUNCH_TX
-  # and stamps the same token on the record) for a proven-gone quota or
-  # control-plane replace. Direct --relaunch of a gone secondmate is refused
-  # so those two cannot both mint a window. The env var alone is not enough.
-  if [ "$RELAUNCH_REBIND" -eq 1 ] && [ "$KIND" = secondmate ]; then
-    recorded_tx=$(fm_meta_get "$RELAUNCH_META" control_relaunch_tx)
-    if [ -z "${FM_CONTROL_RELAUNCH_TX:-}" ] \
-       || [ "$recorded_tx" != "$FM_CONTROL_RELAUNCH_TX" ]; then
-      echo "error: --relaunch of a gone secondmate is refused except through fm-control relaunch on a proven-gone endpoint; recover it with --secondmate" >&2
-      exit 1
-    fi
-  fi
   MODE=$(fm_meta_get "$RELAUNCH_META" mode)
   YOLO=$(fm_meta_get "$RELAUNCH_META" yolo)
   UPSTREAM_CONSENT=$(fm_meta_get "$RELAUNCH_META" upstream_consent)
@@ -2766,6 +2773,20 @@ FACTS
     echo "error: task $ID has no recorded harness; pass --harness to relaunch it" >&2
     exit 1
   }
+  # Gone-secondmate recovery has one owner per path: --secondmate for the
+  # liveness sweep and same-pin restart, and fm-control relaunch that named
+  # --harness or --model (which sets FM_CONTROL_RELAUNCH_TX and stamps the
+  # same token on the record) for a proven-gone quota or control-plane
+  # replace. Direct --relaunch of a gone secondmate is refused so those two
+  # cannot both mint a window. The env var alone is not enough.
+  if [ "$RELAUNCH_REBIND" -eq 1 ] && [ "$KIND" = secondmate ]; then
+    recorded_tx=$(fm_meta_get "$RELAUNCH_META" control_relaunch_tx)
+    if [ -z "${FM_CONTROL_RELAUNCH_TX:-}" ] \
+       || [ "$recorded_tx" != "$FM_CONTROL_RELAUNCH_TX" ]; then
+      echo "error: --relaunch of a gone secondmate is refused except through fm-control relaunch that named --harness or --model on a proven-gone endpoint; recover it with --secondmate" >&2
+      exit 4
+    fi
+  fi
 elif [ "$KIND" = secondmate ]; then
   case "${POS[1]:-}" in
   '' | claude | codex | opencode | pi | pi-signed | grok | kimi | cursor | gemini | muse | rovo | omp | agy | devin | commandcode | droid | polytoken | cortex)

@@ -124,7 +124,9 @@
 #                                   captain-held transfer is never rechecked
 #                                   while an away record exists
 #          FM_ESCALATE_BATCH_SECS   buffer window for batched escalation
-#                                   digests; 0 = flush immediately (default 90)
+#                                   digests; 0 = flush immediately (default 90).
+#                                   A captain inbox note check bypasses the
+#                                   window and flushes immediately.
 #          FM_HEARTBEAT_SCAN_SECS   cadence for the catch-all status scan
 #                                   (default 300)
 #          FM_HOUSEKEEPING_TICK     seconds between housekeeping passes while
@@ -513,6 +515,24 @@ classify_stale() {  # <window> <state> [<span-record> <span-status>]
 
 classify_check() {  # <full reason>  — check scripts print only when firstmate should wake
   printf 'escalate|%s' "$1"
+}
+
+# A captain inbox note (bin/fm-inbox.sh) is time-sensitive: its check wake
+# names the note, and the primary sat idle behind the batched digest in
+# issue #152. Such a wake flushes immediately, bypassing the batch window.
+is_captain_inbox_check() {  # <full reason>
+  case "$1" in
+    "check: captain inbox note "*) return 0 ;;
+  esac
+  return 1
+}
+
+# True when the escalation buffer holds a captain inbox note line, so a
+# flush deferred by a busy pane is retried on the next housekeeping tick
+# rather than waiting out the batch window.
+escalation_buffer_has_captain_inbox() {  # <buffer>
+  [ -s "$1" ] || return 1
+  grep -q '^check: captain inbox note ' "$1" 2>/dev/null
 }
 
 classify_heartbeat() {
@@ -1386,7 +1406,8 @@ _oldest_line_age() {  # <buf> -> seconds since the oldest buffered item first ar
 # --- housekeeping (runs every tick while the watcher is mid-cycle) ----------
 # Four cheap jobs, each guarded so an empty/quiet fleet costs near zero:
 #  1) batch flush: if the escalation buffer's oldest content is older than
-#     ESCALATE_BATCH_SECS (or batching is disabled), inject one digest.
+#     ESCALATE_BATCH_SECS (or batching is disabled, or the buffer holds a
+#     captain inbox note), inject one digest.
 #  1b) max-defer escape: if the buffer is STILL undelivered past MAX_DEFER_SECS,
 #     attempt one normal delivery; if it cannot confirm, raise the wedge alarm.
 #     Never silently defer forever.
@@ -1404,8 +1425,10 @@ housekeeping() {  # <state>
   now=$(_now)
   migrate_watcher_pause_markers "$state"
 
-  # (1) batch flush
-  if [ "${FM_ESCALATE_BATCH_SECS:-$ESCALATE_BATCH_SECS_DEFAULT}" -le 0 ]; then
+  # (1) batch flush. A buffered captain inbox note bypasses the window, so
+  # a flush deferred by a busy pane retries on this tick, not after it.
+  if [ "${FM_ESCALATE_BATCH_SECS:-$ESCALATE_BATCH_SECS_DEFAULT}" -le 0 ] \
+     || escalation_buffer_has_captain_inbox "$state/.subsuper-escalations"; then
     escalate_flush "$state" || true
   else
     due=$(_oldest_line_age "$state/.subsuper-escalations")
@@ -1920,7 +1943,10 @@ handle_wake() {  # <reason> <state>
         # housekeeping re-escalates the same pane as a false wedge later.
         [ "$kind" = "stale" ] && stale_marker_remove "$arg" "$state"
         mark_escalated_seen "$state" "$capture" || classification_failed=1
-        [ "${FM_ESCALATE_BATCH_SECS:-$ESCALATE_BATCH_SECS_DEFAULT}" -le 0 ] && { escalate_flush "$state" || true; }
+        if [ "${FM_ESCALATE_BATCH_SECS:-$ESCALATE_BATCH_SECS_DEFAULT}" -le 0 ] \
+           || is_captain_inbox_check "$reason"; then
+          escalate_flush "$state" || true
+        fi
       else
         classification_failed=1
       fi
