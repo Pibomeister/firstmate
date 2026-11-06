@@ -473,7 +473,8 @@ This feature does not set `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` or any other autocom
 A Claude primary session receives one instruction to write its full handoff when its context left before auto-compact falls to a set percentage.
 The instruction asks the session to persist its open work records, decisions, and durable knowledge, record the handoff, hand off to a successor, and report that it is ready to restart, so a session can restart from a handoff instead of compacting.
 A primary launches its successor itself in a new terminal and records the launch in `state/.handoff-successor` as `pid=<successor pid>` and `handoff=<handoff document path>`; the gate reads only that record, so any other launcher, such as an operator, must write the same record for the stop to clear.
-The successor's launch prompt tells it to confirm the handoff document's sha256, wait until the predecessor's harness pid (line 1 of `state/.lock`) is dead, and then run `bin/fm-session-start.sh` to take the session lock; the predecessor ends its turn and exits after the launch.
+The successor's launch prompt tells it to confirm the handoff document's sha256, wait until the predecessor's harness pid (line 1 of `state/.lock`) is dead, and then run `bin/fm-session-start.sh` to take the session lock.
+The predecessor then ends its turn; it cannot exit itself, so its process is ended by the captain, by a leash or operator `/exit` in its pane, or by the watchdog restart path, and the successor takes the lock only after that pid dies.
 A second mate never launches its own successor: it asks its parent channel for a relaunch.
 It fires at most once per context cycle: a session that auto-compacts anyway is told again before its next auto-compact.
 
