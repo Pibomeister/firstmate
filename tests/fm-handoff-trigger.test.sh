@@ -287,7 +287,7 @@ test_scope() {
 # one, and once it has fired the Stop hook blocks the handoff turn's stop until
 # the recorded handoff document lists every open order (bin/fm-order.sh gate).
 test_names_open_captain_orders_and_gates_the_stop() {
-  local order_id rc err doc
+  local order_id rc err doc succ
   reset_lab
   rm -rf "$PRIMARY/data/orders" "$PRIMARY"/data/handoff-*.md "$PRIMARY/state/.order-handoff"
   printf 'compact-at-tokens=100000\n' > "$PRIMARY/config/handoff-trigger"
@@ -324,10 +324,21 @@ test_names_open_captain_orders_and_gates_the_stop() {
   doc="$PRIMARY/data/handoff-20261031-1200-captain-restart.md"
   printf '# Handoff\n' > "$doc"
   FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" handoff --doc "$doc" >/dev/null || fail "handoff --doc must succeed"
+  # The orders are listed, but no successor has been launched yet: the stop
+  # is still blocked, now by the successor gate (issues 133, 116).
+  err="$TMP_ROOT/stop-successor.err"
+  rc=0
+  run_hook "$PRIMARY" s-orders "$TMP_ROOT/t-90" Stop >/dev/null 2>"$err" || rc=$?
+  [ "$rc" -eq 2 ] || fail "a handoff turn with no successor launched must be blocked (rc=$rc)"
+  assert_contains "$(cat "$err")" "state/.handoff-successor" "the successor block names the launch record"
+  sleep 60 &
+  succ=$!
+  printf 'pid=%s\nhandoff=%s\n' "$succ" "$doc" > "$PRIMARY/state/.handoff-successor"
   rc=0
   run_hook "$PRIMARY" s-orders "$TMP_ROOT/t-90" Stop >/dev/null 2>&1 || rc=$?
-  [ "$rc" -eq 0 ] || fail "once the handoff lists every open order the stop must pass (rc=$rc)"
-  rm -rf "$PRIMARY/data/orders" "$doc" "$PRIMARY/state/.order-handoff"
+  kill "$succ" 2>/dev/null; wait "$succ" 2>/dev/null
+  [ "$rc" -eq 0 ] || fail "once the handoff lists every open order and a live successor is recorded the stop must pass (rc=$rc)"
+  rm -rf "$PRIMARY/data/orders" "$doc" "$PRIMARY/state/.order-handoff" "$PRIMARY/state/.handoff-successor"
   pass "a firing names every open captain order, and the stop is gated until the handoff lists them"
 }
 
@@ -546,6 +557,76 @@ test_a_caller_outside_any_harness_reads_the_captains_handoff() {
   pass "a caller outside any harness reads the captain's handoff, and a second harness session does not"
 }
 
+test_handoff_gates_the_stop_until_a_recorded_successor_is_alive() {
+  local rc err out succ doc launch
+  reset_lab
+  launch="$PRIMARY/state/.handoff-successor"
+  doc="$TMP_ROOT/handoff-succ.md"
+  rm -rf "$PRIMARY/data/orders" "$PRIMARY/state/.order-handoff" "$PRIMARY/state/.watchdog-restart-request" "$launch"
+  printf '# Handoff\n' > "$doc"
+  printf 'compact-at-tokens=100000\n' > "$PRIMARY/config/handoff-trigger"
+  transcript "$TMP_ROOT/t-succ" 90000
+  # A launch record from an earlier episode must not satisfy this firing.
+  sleep 60 &
+  succ=$!
+  printf 'pid=%s\nhandoff=%s\n' "$succ" "$doc" > "$launch"
+  sleep 1
+  out=$(run_hook "$PRIMARY" s-succ "$TMP_ROOT/t-succ")
+  expect_fire "$out" PostToolUse "successor instruction firing"
+  printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | contains("Launch the successor yourself") and contains("state/.handoff-successor") and contains("bin/fm-session-start.sh")' >/dev/null \
+    || fail "the instruction must say to launch and record the successor: $out"
+  err="$TMP_ROOT/succ.err"
+  rc=0
+  run_hook "$PRIMARY" s-succ "$TMP_ROOT/t-succ" Stop >/dev/null 2>"$err" || rc=$?
+  [ "$rc" -eq 2 ] || fail "a launch record older than the firing must not clear the stop (rc=$rc)"
+  assert_contains "$(cat "$err")" "Launch your successor yourself" "the block tells a primary to launch its successor"
+  rc=0
+  run_hook "$PRIMARY" s-succ "$TMP_ROOT/t-succ" Stop '. + {stop_hook_active: true}' >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 0 ] || fail "a stop already continued by this hook must not be blocked again (rc=$rc)"
+  # A restart request alone launches nobody, so it does not clear the stop.
+  sleep 1
+  : > "$PRIMARY/state/.watchdog-restart-request"
+  printf 'mode=act\nrestart=on\nrestart-command=claude\n' > "$PRIMARY/config/watchdog"
+  rc=0
+  run_hook "$PRIMARY" s-succ "$TMP_ROOT/t-succ" Stop >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 2 ] || fail "a restart request with no recorded successor must not clear the stop (rc=$rc)"
+  rm -f "$PRIMARY/config/watchdog" "$PRIMARY/state/.watchdog-restart-request"
+  # A fresh record naming a live successor clears the stop.
+  printf 'pid=%s\nhandoff=%s\n' "$succ" "$doc" > "$launch"
+  rc=0
+  run_hook "$PRIMARY" s-succ "$TMP_ROOT/t-succ" Stop >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 0 ] || fail "a recorded live successor must let the stop pass (rc=$rc)"
+  # A fresh record whose successor has died keeps the stop blocked.
+  kill "$succ" 2>/dev/null; wait "$succ" 2>/dev/null
+  printf 'pid=%s\nhandoff=%s\n' "$succ" "$doc" > "$launch"
+  rc=0
+  run_hook "$PRIMARY" s-succ "$TMP_ROOT/t-succ" Stop >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 2 ] || fail "a recorded successor that is dead must keep the stop blocked (rc=$rc)"
+  rm -f "$launch" "$doc"
+  pass "a firing is gated until a fresh launch record names a live successor; stale, dead, or request-only blocks (133, 116)"
+}
+
+test_secondmate_handoff_escalates_to_its_parent() {
+  local rc out launch
+  reset_lab
+  launch="$PRIMARY/state/.handoff-successor"
+  rm -rf "$PRIMARY/data/orders" "$PRIMARY/state/.order-handoff" "$launch"
+  printf 'sm-test\n' > "$PRIMARY/.fm-secondmate-home"
+  printf 'compact-at-tokens=100000\n' > "$PRIMARY/config/handoff-trigger"
+  transcript "$TMP_ROOT/t-sm" 90000
+  out=$(run_hook "$PRIMARY" s-sm "$TMP_ROOT/t-sm")
+  expect_fire "$out" PostToolUse "second-mate firing"
+  printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | contains("never launch your own successor") and contains("parent channel") and (contains("Launch the successor yourself") | not)' >/dev/null \
+    || fail "a second mate's instruction must escalate to its parent and not self-launch: $out"
+  rc=0
+  run_hook "$PRIMARY" s-sm "$TMP_ROOT/t-sm" Stop >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 0 ] || fail "a second mate's stop with no launch record must not be gated (rc=$rc)"
+  rm -f "$launch" "$PRIMARY/.fm-secondmate-home"
+  pass "a second mate's handoff escalates to its parent once and its stop is never successor-gated (133, 116)"
+}
+
+test_handoff_gates_the_stop_until_a_recorded_successor_is_alive
+test_secondmate_handoff_escalates_to_its_parent
 test_threshold_default_15
 test_threshold_configurable
 test_fires_once_per_context_cycle
