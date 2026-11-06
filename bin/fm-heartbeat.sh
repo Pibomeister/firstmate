@@ -27,8 +27,12 @@
 #   fm_home           resolved operational home
 #   snapshot          {ok, schema, generated, failure} for the fleet snapshot read
 #   primary           supervising firstmate session (not a ship/scout task row)
-#     terminal          {backend, target, present}
-#     session           {trusted_id, anchor_pid, recorded}
+#     terminal          {backend, target, present} from this writer's environment
+#     session           {trusted_id, anchor_pid, recorded} read from the lock
+#     writer            {anchor_pid, session_id}: the harness session this writer
+#                       runs in, by the anchor and trusted-id rules bin/fm-lock.sh
+#                       stamps the lock with; unknown outside any harness session,
+#                       such as an away daemon in its own detached terminal
 #     last_turn         {observed_at, age_seconds, source}
 #     composer_state    empty|pending|pending-unproven|unknown
 #     context_left      {used_tokens, remaining}; remaining is {percent, source} from
@@ -255,7 +259,7 @@ heartbeat_context_json() {  # <label> <transcript-or-empty> [backend] [target] [
 
 heartbeat_primary_json() {
   local backend target present composer=unknown session_id anchor_pid rc=0 transcript
-  local turn_json context_json
+  local turn_json context_json writer_anchor writer_session
   backend=$(heartbeat_read "primary backend" discover_supervisor_backend) || backend=
   target=$(heartbeat_read "primary target" discover_supervisor_target) || target=
   present=$(heartbeat_unknown "no supervisor endpoint discovered")
@@ -272,6 +276,9 @@ heartbeat_primary_json() {
   fi
   session_id=$(heartbeat_read "primary session" fm_session_lock_recorded_session_id "$STATE") || session_id=
   anchor_pid=$(heartbeat_read "primary anchor" sed -n '1p' "$STATE/.lock") || anchor_pid=
+  # The terminal above is this writer's own; these name the session it runs in.
+  writer_anchor=$(heartbeat_read "primary writer anchor" fm_session_lock_anchor_pid) || writer_anchor=
+  writer_session=$(heartbeat_read "primary writer session" fm_session_lock_trusted_session_id) || writer_session=
   transcript=
   [ -z "$session_id" ] || transcript=$(heartbeat_read "primary transcript" fm_warm_compact_engine_transcript "$session_id") || transcript=
   turn_json=$(heartbeat_turn_json primary "$transcript")
@@ -287,6 +294,8 @@ heartbeat_primary_json() {
     --arg composer "$composer" \
     --arg trusted "$session_id" \
     --arg anchor "$anchor_pid" \
+    --arg writer_anchor "$writer_anchor" \
+    --arg writer_session "$writer_session" \
     --argjson last_turn "$turn_json" \
     --argjson context_left "$context_json" \
     'def u(r): {unknown:true,reason:r};
@@ -300,6 +309,10 @@ heartbeat_primary_json() {
         trusted_id:(if $trusted == "" then u("no session recorded") else $trusted end),
         anchor_pid:(if ($anchor | test("^[0-9]+$")) then ($anchor | tonumber) else u("no lock anchor read") end),
         recorded:($trusted != "")
+      },
+      writer:{
+        anchor_pid:(if ($writer_anchor | test("^[0-9]+$")) then ($writer_anchor | tonumber) else u("writer runs in no harness session") end),
+        session_id:(if $writer_session == "" then u("writer has no trusted session id") else $writer_session end)
       },
       last_turn:$last_turn,
       composer_state:(if $composer == "" then "unknown" else $composer end),

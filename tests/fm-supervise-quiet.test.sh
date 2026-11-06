@@ -213,12 +213,15 @@ SH
     done
     [ -f "$FM_STATE_OVERRIDE/.subsuper-last-housekeep" ] || fail 'launcher did not run actual daemon'
     pid=$(cat "$FM_STATE_OVERRIDE/.supervise-daemon.pid")
+    # The TERM trap runs after the step in progress returns, then gives the
+    # watcher its stop grace; wait for the daemon's own shutdown bound.
+    stop_budget=$(bash -c '. "$1"; echo $((DAEMON_PROBE_BUDGET + WEDGE_ALARM_TIMEOUT_SECS_DEFAULT + WATCHER_STOP_GRACE_SECS))' _ "$TMP_ROOT/bin/fm-supervise-daemon.sh")
     kill -TERM "$pid"
-    for _ in $(seq 1 80); do
-      [ ! -e "$FM_STATE_OVERRIDE/.supervise-daemon.pid" ] && break
+    stop_deadline=$(( $(date +%s) + stop_budget ))
+    while [ -e "$FM_STATE_OVERRIDE/.supervise-daemon.pid" ] && [ "$(date +%s)" -lt "$stop_deadline" ]; do
       sleep 0.1
     done
-    [ ! -e "$FM_STATE_OVERRIDE/.supervise-daemon.pid" ] || fail 'actual daemon failed to stop'
+    [ ! -e "$FM_STATE_OVERRIDE/.supervise-daemon.pid" ] || fail "actual daemon failed to stop within its ${stop_budget}s shutdown budget"
     pid=
     grep -qx 'blocked nonce: private full detail' "$FM_STATE_OVERRIDE/.subsuper-escalations" \
       || fail 'real same-posture launcher restart lost detail'

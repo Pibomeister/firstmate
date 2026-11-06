@@ -174,9 +174,11 @@
 #                                   tick goes on to its watcher check
 #          Logs each wake to state/.supervise-daemon.log (size-capped). Single
 #          instance via portable lock on state/.supervise-daemon.lock. Trapped
-#          SIGTERM/SIGINT shut down within ~1s, flush escalations, release the
-#          lock. A crashing fm-watch.sh is logged and restarted, never killing
-#          the daemon; a tight crash-restart spin is detected and backed off.
+#          SIGTERM/SIGINT shut down once the step in progress returns (bounded
+#          by the probe budget or wedge-alarm timeout), flush escalations, stop
+#          the watcher within WATCHER_STOP_GRACE_SECS, and release the lock.
+#          A crashing fm-watch.sh is logged and restarted, never killing the
+#          daemon; a tight crash-restart spin is detected and backed off.
 #          A live watcher that fm_watcher_stalled (bin/fm-wake-lib.sh) reports
 #          stalled is stopped with everything it started, then restarted.
 set -u
@@ -246,6 +248,8 @@ HOUSEKEEPING_TICK_DEFAULT=15
 # alarm. The escape hatch makes a guard false-positive visible instead of silent.
 MAX_DEFER_SECS_DEFAULT=300
 WEDGE_ALARM_TIMEOUT_SECS_DEFAULT=10
+# TERM-to-KILL grace when the daemon stops its watcher and everything it started.
+WATCHER_STOP_GRACE_SECS=5
 WEDGE_ALARM_LAST_EPOCH=0
 WEDGE_ALARM_NOTIFIER_PID=
 # Why the latest delivery attempt did not land; the wedge alarm reports it.
@@ -2195,7 +2199,7 @@ fm_super_main() {
     wedge_alarm_stop_active_notifier
     escalate_flush "$STATE" 2>/dev/null || true
     if [ -n "${WATCHER_PID:-}" ]; then
-      fm_watcher_stop_tree "$WATCHER_PID" "" 5 || true
+      fm_watcher_stop_tree "$WATCHER_PID" "" "$WATCHER_STOP_GRACE_SECS" || true
       wait "$WATCHER_PID" 2>/dev/null || true
     fi
     if [ -n "${CUR_TMP:-}" ]; then
@@ -2301,7 +2305,7 @@ fm_super_main() {
     if [ -n "${WATCHER_PID:-}" ] && kill -0 "$WATCHER_PID" 2>/dev/null \
       && fm_watcher_stalled "$STATE" "$WATCH" "$WATCHER_PID" "$FM_HOME" 0 own; then
       log "watcher pid $WATCHER_PID stalled (beacon ${FM_WATCHER_STALL_AGE}s at or past hard bound $(fm_watcher_stall_bound)s); stopping it and everything it started, then restarting"
-      fm_watcher_stop_tree "$WATCHER_PID" "" 5 || true
+      fm_watcher_stop_tree "$WATCHER_PID" "" "$WATCHER_STOP_GRACE_SECS" || true
       continue
     fi
 

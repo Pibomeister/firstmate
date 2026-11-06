@@ -114,8 +114,10 @@ SH
   LOCK_PIDS="$LOCK_PIDS $LOCKPID"
   printf '%s\n' "$LOCKPID" > "$H/state/.lock"
   printf '%s\n' "$SID" > "$H/state/.lock-session"
-  jq -n --arg t "$T" --arg s "$SID" --argjson e "$BASE" \
-    '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:"tmux",target:$t,present:true},session:{trusted_id:$s}}}' \
+  fm_touch_epoch "$((BASE - 1))" "$H/state/.lock" "$H/state/.lock-session"
+  # Written by the lock owner itself, as when the owner's own watcher runs it.
+  jq -n --arg t "$T" --arg s "$SID" --argjson e "$BASE" --argjson p "$LOCKPID" \
+    '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:"tmux",target:$t,present:true},session:{trusted_id:$s},writer:{anchor_pid:$p,session_id:$s}}}' \
     > "$H/state/heartbeat.json"
   printf 'mode=act\nclaude-config-dirs=%s\nkey-settle-secs=1\nmodels=\n%s\n' "$H/claude" "$extra" > "$H/config/watchdog"
   sleep 0.5
@@ -1080,6 +1082,232 @@ kill_holder_with_anchor() {
   printf '%s\nanchor_pid=%s\nanchor_start=Sat Nov  1 02:00:00 2026\n' "$SID" "$LOCKPID" > "$H/state/.lock-session"
   kill "$LOCKPID" 2>/dev/null
   while kill -0 "$LOCKPID" 2>/dev/null; do sleep 0.1; done
+}
+
+captain_field() { sed -n "s/^$1=//p" "$H/state/watchdog/captain" 2>/dev/null | tail -n 1; }
+
+# fresh_heartbeat <pane> [session]: the current lock owner, under the session
+# (else SID), reports <pane>, generated now.
+fresh_heartbeat() {
+  jq -n --arg t "$1" --arg s "${2:-$SID}" --argjson e "$(date +%s)" --argjson p "$(head -n 1 "$H/state/.lock")" \
+    '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:"tmux",target:$t,present:true},session:{trusted_id:$s},writer:{anchor_pid:$p,session_id:$s}}}' \
+    > "$H/state/heartbeat.json"
+}
+
+# detached_heartbeat <pane>: the real bin/fm-heartbeat.sh --write, run in its own
+# detached tmux session with <pane> as its supervisor target, the way an away
+# daemon launched from the captain's pane runs it. No harness is in its ancestry.
+detached_heartbeat() {
+  local dir="$H/detached-writer" done="$H/detached-writer.done" i
+  mkdir -p "$dir/bin"
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$dir/bin/quota-axi"
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$dir/bin/no-mistakes"
+  cat > "$dir/snapshot.sh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' '{"schema":"fm-fleet-snapshot.v1","generated":"2026-11-01T00:00:00Z","tasks":[]}'
+SH
+  chmod +x "$dir/bin/quota-axi" "$dir/bin/no-mistakes" "$dir/snapshot.sh"
+  rm -f "$done"
+  # The writer inherits the lock owner's own session variables, as a daemon
+  # that owner launched does; only its process ancestry is outside the owner.
+  "$REAL_TMUX" -f /dev/null -L "$SOCKET" new-session -d -s "detached$CASE_N-$RANDOM" \
+    "env -u CODEX_THREAD_ID -u CODEX_SESSION_ID \
+      CLAUDE_PID='$(head -n 1 "$H/state/.lock")' CLAUDE_CODE_SESSION_ID='$(head -n 1 "$H/state/.lock-session")' \
+      HOME='$H' PATH='$dir/bin:$PATH' FM_HOME='$H' CLAUDE_CONFIG_DIR='$H/claude' \
+      FM_SUPERVISOR_BACKEND=tmux FM_SUPERVISOR_TARGET='$1' FM_HEARTBEAT_SNAPSHOT_SCRIPT='$dir/snapshot.sh' \
+      '$ROOT/bin/fm-heartbeat.sh' --write; : > '$done'"
+  for i in $(seq 1 300); do [ -e "$done" ] && break; sleep 0.1; done
+  [ -e "$done" ] || fail "the detached heartbeat writer never finished"
+}
+
+# relock_same_session: a new process takes the lock under the same session id.
+relock_same_session() {
+  ( sleep 100000 > /dev/null 2>&1 & printf '%s\n' "$!" > "$H/lockpid" )
+  LOCK_PIDS="$LOCK_PIDS $(cat "$H/lockpid")"
+  cat "$H/lockpid" > "$H/state/.lock"
+}
+
+test_captain_record_follows_the_lock_owner() {
+  local moved new_pid new_pane retired_pane bound
+  make_home $'Captain session\n✻ Working… (esc to interrupt)' "restart=off
+restart-secs=60
+restart-command=$TMP_ROOT/fake-captain-move.sh"
+  cat > "$TMP_ROOT/fake-captain-move.sh" <<'SH'
+#!/usr/bin/env bash
+p="$*"
+printf '%s\n' "$$" > "$PWD/state/.lock"
+printf '00000000-0000-4000-8000-0000000000aa\n' > "$PWD/state/.lock-session"
+printf '%s\n' "${TMUX_PANE:-}" > "$PWD/new-pane"
+eval "${p##*run: }" > "$PWD/pickup.out" 2>&1
+exec sleep 100000
+SH
+  chmod +x "$TMP_ROOT/fake-captain-move.sh"
+  transcript 3000 "Working." "Testing." "Green."
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals "$LOCKPID" "$(captain_field lock_pid)" "the record names the lock pid"
+  assert_equals live "$(captain_field alive)" "a running lock owner reads live"
+  assert_equals "tmux $T" "$(captain_field backend) $(captain_field target)" "the record names the lock owner's terminal"
+  moved=$(captain_field moved_at)
+  [ -n "$moved" ] || fail "the record has no move time"
+  assert_grep "captain pid $LOCKPID live on tmux:$T, moved " "$H/data/watchdog/status.md" "the status file names the captain, its liveness, and its terminal"
+
+  # The process dies while its pane stays connected with a stale working screen.
+  kill_holder_with_anchor
+  run_wd 120 once >/dev/null 2>&1
+  assert_equals dead "$(captain_field alive)" "a dead lock owner reads dead whatever its pane shows"
+  assert_equals "$moved" "$(captain_field moved_at)" "the same owner has not moved"
+  assert_grep "captain pid $LOCKPID dead" "$H/data/watchdog/status.md" "the dead captain is named in the status file"
+
+  # A restart followed by pickup moves the record to the new terminal at once.
+  sed 's/^restart=off$/restart=on/' "$H/config/watchdog" > "$H/config/watchdog.new" && mv "$H/config/watchdog.new" "$H/config/watchdog"
+  run_wd 240 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows agent-gone restart pending)" "the dead captain restarts: $(ledger | cut -f5-8)"
+  wait_pickup || fail "the new captain never proved pickup: $(ledger | cut -f5-8)"
+  new_pid=$(cat "$H/state/.lock")
+  LOCK_PIDS="$LOCK_PIDS $new_pid"
+  new_pane=$(cat "$H/new-pane")
+  [ -n "$new_pane" ] && [ "$new_pane" != "$T" ] || fail "the restart opened no new pane: '$new_pane'"
+  assert_equals "$new_pid" "$(captain_field lock_pid)" "pickup records the new lock pid"
+  assert_equals "tmux $new_pane" "$(captain_field backend) $(captain_field target)" "pickup records the new terminal"
+  assert_equals pickup "$(captain_field source)" "pickup wrote the record"
+  assert_not_equals "$moved" "$(captain_field moved_at)" "pickup stamps the move"
+  moved=$(captain_field moved_at)
+  # The old session's heartbeat still names the old pane; the record keeps the new one.
+  run_wd 360 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows agent-gone restart "done")" "the pickup was verified: $(ledger | grep restart)"
+  assert_equals "$new_pid live tmux $new_pane $moved" \
+    "$(captain_field lock_pid) $(captain_field alive) $(captain_field backend) $(captain_field target) $(captain_field moved_at)" \
+    "the next pass keeps the moved owner and its terminal"
+  assert_grep "captain pid $new_pid live on tmux:$new_pane, moved " "$H/data/watchdog/status.md" "the status file names the new terminal"
+
+  # A handoff moves the lock to a session whose terminal is not proven yet: the
+  # record never names the retired session's pane as the captain's.
+  make_home $'Captain session\n> '
+  transcript 3000 "Working." "Testing." "Green."
+  run_wd 0 once >/dev/null 2>&1
+  retired_pane=$T
+  moved=$(captain_field moved_at)
+  ( sleep 100000 > /dev/null 2>&1 & printf '%s\n' "$!" > "$H/lockpid" )
+  LOCK_PIDS="$LOCK_PIDS $(cat "$H/lockpid")"
+  cat "$H/lockpid" > "$H/state/.lock"
+  printf '00000000-0000-4000-8000-0000000000bb\n' > "$H/state/.lock-session"
+  run_wd 120 once >/dev/null 2>&1
+  assert_equals "$(cat "$H/lockpid") 00000000-0000-4000-8000-0000000000bb" "$(captain_field lock_pid) $(captain_field session)" "the record follows the new lock owner"
+  assert_not_equals "$moved" "$(captain_field moved_at)" "the handoff is a move"
+  assert_not_equals "$retired_pane" "$(captain_field target)" "the retired session's pane is never named as the captain's"
+  moved=$(captain_field moved_at)
+  new_pane=$("$REAL_TMUX" -f /dev/null -L "$SOCKET" new-window -d -t "wd$CASE_N" -P -F '#{pane_id}' "$H/agent.sh")
+  [ -n "$new_pane" ] && [ "$new_pane" != "$retired_pane" ] || fail "no new pane for the handoff: '$new_pane'"
+  fresh_heartbeat "$new_pane" 00000000-0000-4000-8000-0000000000bb
+  run_wd 240 once >/dev/null 2>&1
+  assert_equals "tmux $new_pane" "$(captain_field backend) $(captain_field target)" "a fresh heartbeat proves the new owner's pane"
+  assert_equals "$moved" "$(captain_field moved_at)" "the new owner's first proven terminal is not a second move"
+
+  # A resume keeps the session id in a new pane while the heartbeat still names
+  # the old one: the old pane is never named, and the fresh heartbeat is a move.
+  make_home $'Captain session\n> '
+  transcript 3000 "Working." "Testing." "Green."
+  run_wd 0 once >/dev/null 2>&1
+  retired_pane=$T
+  moved=$(captain_field moved_at)
+  new_pane=$("$REAL_TMUX" -f /dev/null -L "$SOCKET" new-window -d -t "wd$CASE_N" -P -F '#{pane_id}' "$H/agent.sh")
+  [ -n "$new_pane" ] && [ "$new_pane" != "$retired_pane" ] || fail "no new pane for the resume: '$new_pane'"
+  relock_same_session
+  run_wd 120 once >/dev/null 2>&1
+  assert_equals "$(cat "$H/lockpid") live" "$(captain_field lock_pid) $(captain_field alive)" "the resumed session reads live"
+  assert_equals "" "$(captain_field backend)$(captain_field target)" "a heartbeat older than the lock proves no terminal"
+  assert_equals "$moved" "$(captain_field moved_at)" "an unproven terminal is not a move"
+  fresh_heartbeat "$new_pane"
+  run_wd 240 once >/dev/null 2>&1
+  assert_equals "tmux $new_pane" "$(captain_field backend) $(captain_field target)" "a fresh heartbeat proves the new pane"
+  assert_not_equals "$moved" "$(captain_field moved_at)" "the resumed session's new pane is a move"
+
+  # A lock rewrite under the same session proven back on the same pane is no move.
+  make_home $'Captain session\n> '
+  transcript 3000 "Working." "Testing." "Green."
+  run_wd 0 once >/dev/null 2>&1
+  moved=$(captain_field moved_at)
+  relock_same_session
+  run_wd 120 once >/dev/null 2>&1
+  assert_equals "" "$(captain_field target)" "the old heartbeat proves no terminal after the lock rewrite"
+  fresh_heartbeat "$T"
+  run_wd 240 once >/dev/null 2>&1
+  assert_equals "tmux $T $moved" "$(captain_field backend) $(captain_field target) $(captain_field moved_at)" "a re-anchor on the same pane keeps moved_at"
+
+  # A pid now running another process is not the recorded owner.
+  make_home $'Captain session\n> '
+  transcript 3000 "Working." "Testing." "Green."
+  printf '%s\nanchor_pid=%s\nanchor_start=Sat Nov  1 02:00:00 2026\n' "$SID" "$LOCKPID" > "$H/state/.lock-session"
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals unconfirmed "$(captain_field alive)" "a lock pid running another process instance is not read as live"
+
+  # A Codex owner proven by its session id stays live after its lock pid exits.
+  make_home $'Captain session\n> '
+  transcript 3000 "Working." "Testing." "Green."
+  # macOS hides a platform binary's environment, so the bound process is python.
+  ( env CODEX_THREAD_ID="$SID" CODEX_SESSION_ID="$SID" python3 -c 'import time; time.sleep(100000)' > /dev/null 2>&1 & printf '%s\n' "$!" > "$H/bound" )
+  bound=$(cat "$H/bound")
+  LOCK_PIDS="$LOCK_PIDS $bound"
+  for _ in $(seq 1 20); do python3 "$ROOT/bin/fm-session-process.py" bound "$bound" "$SID" && break; sleep 0.1; done
+  python3 "$ROOT/bin/fm-session-process.py" bound "$bound" "$SID" || fail "the fixture process is not bound to session $SID"
+  kill "$LOCKPID" 2>/dev/null
+  while kill -0 "$LOCKPID" 2>/dev/null; do sleep 0.1; done
+  printf 'restart=on\nrestart-command=%s\n' "$TMP_ROOT/fake-captain-move.sh" >> "$H/config/watchdog"
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals live "$(captain_field alive)" "a live process bound to the recorded session keeps the owner live"
+  assert_equals 0 "$(ledger_rows agent-gone restart pending)" "a live owner is never restarted as gone: $(ledger | cut -f5-8)"
+  assert_no_grep "AGENT-GONE" "$H/data/watchdog/status.md" "a live owner is not reported gone"
+  pass "captain record: lock pid, real liveness, terminal, and move time; pickup moves it, a pane never proves it"
+}
+
+# lock_mtime: the epoch the fixture's lock was last written.
+lock_mtime() { stat -c %Y "$H/state/.lock" 2>/dev/null || stat -f %m "$H/state/.lock"; }
+
+# An away daemon runs in its own detached terminal with the captain's pane as its
+# supervisor target, and its watcher keeps writing fresh heartbeats that read the
+# session from the lock. After a resume in a new pane, or a handoff, that heartbeat
+# names the lock's session, postdates the lock, and still names the retired pane.
+test_captain_record_ignores_a_heartbeat_written_outside_the_owner() {
+  local moved retired_pane new_pane
+  make_home $'Captain session\n> '
+  transcript 3000 "Working." "Testing." "Green."
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals "tmux $T" "$(captain_field backend) $(captain_field target)" "the owner's own heartbeat proves its pane"
+  retired_pane=$T
+  moved=$(captain_field moved_at)
+  new_pane=$("$REAL_TMUX" -f /dev/null -L "$SOCKET" new-window -d -t "wd$CASE_N" -P -F '#{pane_id}' "$H/agent.sh")
+  [ -n "$new_pane" ] && [ "$new_pane" != "$retired_pane" ] || fail "no new pane for the resume: '$new_pane'"
+  relock_same_session
+  detached_heartbeat "$retired_pane"
+  jq -e --arg t "$retired_pane" --arg s "$SID" --argjson at "$(lock_mtime)" \
+    '.primary.terminal.target == $t and .primary.session.trusted_id == $s and .generated_epoch >= $at
+     and .primary.writer.anchor_pid.unknown == true and .primary.writer.session_id.unknown == true' \
+    "$H/state/heartbeat.json" >/dev/null \
+    || fail "the detached heartbeat meets every proof condition but the writer: $(jq -c '{generated_epoch, primary}' "$H/state/heartbeat.json")"
+  run_wd 120 once >/dev/null 2>&1
+  assert_equals "$(cat "$H/lockpid") live" "$(captain_field lock_pid) $(captain_field alive)" "the resumed session reads live"
+  assert_equals "" "$(captain_field backend)$(captain_field target)" "after a resume, a heartbeat written outside the lock owner proves no terminal"
+  assert_equals "$moved" "$(captain_field moved_at)" "an unproven terminal is not a move"
+  fresh_heartbeat "$new_pane"
+  run_wd 240 once >/dev/null 2>&1
+  assert_equals "tmux $new_pane" "$(captain_field backend) $(captain_field target)" "the owner's own heartbeat proves the new pane"
+
+  make_home $'Captain session\n> '
+  transcript 3000 "Working." "Testing." "Green."
+  run_wd 0 once >/dev/null 2>&1
+  retired_pane=$T
+  ( sleep 100000 > /dev/null 2>&1 & printf '%s\n' "$!" > "$H/lockpid" )
+  LOCK_PIDS="$LOCK_PIDS $(cat "$H/lockpid")"
+  cat "$H/lockpid" > "$H/state/.lock"
+  printf '00000000-0000-4000-8000-0000000000cc\n' > "$H/state/.lock-session"
+  detached_heartbeat "$retired_pane"
+  jq -e --arg t "$retired_pane" '.primary.terminal.target == $t
+     and .primary.session.trusted_id == "00000000-0000-4000-8000-0000000000cc"' "$H/state/heartbeat.json" >/dev/null \
+    || fail "the detached heartbeat does not read the new session from the lock: $(jq -c .primary "$H/state/heartbeat.json")"
+  run_wd 120 once >/dev/null 2>&1
+  assert_equals "00000000-0000-4000-8000-0000000000cc live" "$(captain_field session) $(captain_field alive)" "the record follows the handoff"
+  assert_equals "" "$(captain_field backend)$(captain_field target)" "after a handoff, a heartbeat written outside the lock owner proves no terminal"
+  pass "captain record: a heartbeat written outside the lock owner, as by a detached away daemon, never proves a terminal"
 }
 
 test_no_action_while_restart_awaits_pickup() {
@@ -2320,6 +2548,8 @@ fm_test_run \
   test_primary_without_lock_identity_never_trusts_heartbeat_endpoint \
   test_restart_vetoed_by_running_turn \
   test_restart_verified_pickup_and_loop_stop \
+  test_captain_record_follows_the_lock_owner \
+  test_captain_record_ignores_a_heartbeat_written_outside_the_owner \
   test_no_action_while_restart_awaits_pickup \
   test_dead_captain_restarts_despite_its_anchor \
   test_watchdog_allows_muse_restart_with_approval_flag \
