@@ -26,7 +26,7 @@ if [ -n "${FM_USAGE_LIMIT_PANE_SOCKET-}" ]; then
 fi
 
 # Read-only capture. Never send-keys. Never print pane text.
-screen=$(tmux "${sock_args[@]}" capture-pane -p -t "$pane" 2>/dev/null) || {
+screen=$(tmux ${sock_args[@]+"${sock_args[@]}"} capture-pane -p -t "$pane" 2>/dev/null) || {
   printf 'not ok - could not capture the named existing pane\n' >&2
   exit 1
 }
