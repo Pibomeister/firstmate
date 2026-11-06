@@ -460,6 +460,7 @@ case "$cmd" in
       echo "error: no reroute candidates supplied" >&2
       exit 1
     fi
+    TOOLING_SIG=
     if [ "$FROM_HARNESS" = claude ]; then
       if [ -z "$WORKTREE" ]; then
         printf 'none\n'
@@ -477,9 +478,7 @@ case "$cmd" in
         CLAUDE_DIR=${CLAUDE_DIR%%$'\t'*}
       fi
       if sig=$(fm_quota_claude_tooling_signal "$CLAUDE_DIR" "$WORKTREE"); then
-        printf 'none\n'
-        echo "error: Claude-specific tooling present ($sig); queue until reset rather than moving off Claude" >&2
-        exit 1
+        TOOLING_SIG=$sig
       fi
     fi
     filtered=()
@@ -489,6 +488,9 @@ case "$cmd" in
       harness=${c%%:*}
       model=${c#*:}
       [ "$model" != "$c" ] || model=default
+      if [ -n "$TOOLING_SIG" ] && [ "$harness" != claude ]; then
+        continue
+      fi
       if [ -n "$FROM_HARNESS" ] && [ "$harness" = "$FROM_HARNESS" ]; then
         if [ "$PINNED" = 1 ]; then
           continue
@@ -501,7 +503,11 @@ case "$cmd" in
     done
     if [ "${#filtered[@]}" -eq 0 ]; then
       printf 'none\n'
-      echo "error: no verified candidate remains for kind $KIND" >&2
+      if [ -n "$TOOLING_SIG" ]; then
+        echo "error: Claude-specific tooling present ($TOOLING_SIG); queue until reset rather than moving off Claude" >&2
+      else
+        echo "error: no verified candidate remains for kind $KIND" >&2
+      fi
       exit 1
     fi
     choose_args=()

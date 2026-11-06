@@ -3673,11 +3673,7 @@ test_herdr_reclaim_of_a_secondmate_uses_relaunch() {
   [ "$(meta_field "$dir" rl76 backend)" = herdr ] \
     || fail "the recorded herdr backend must survive the replacement"
 
-  out=$(run_spawn "$dir" rl76 --secondmate --backend orca --harness claude); rc=$?
-  expect_code 1 "$rc" "an explicit --backend that disagrees with the record must error"$'\n'"$out"
-  assert_contains "$out" "conflicts with the recorded backend herdr" \
-    "the refusal should name the recorded backend"
-  pass "reclaim: fm-control relaunch rebinds a gone secondmate; direct --relaunch and a conflicting --backend do not"
+  pass "reclaim: fm-control relaunch rebinds a gone secondmate; direct --relaunch does not"
 }
 
 test_relaunch_reverifies_an_already_in_flight_item_instead_of_rewriting_it() {

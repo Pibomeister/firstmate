@@ -967,6 +967,11 @@ printf '%s\n' "$err" | grep -q 'MCP servers in' \
 out=$(call_reroute suggest --snapshot "$LAB/captured.json" --from-harness claude \
   --claude-config-dir "$empty_dir" --worktree "$clean_wt" --kind secondmate --candidate codex:default)
 [ "$out" = "codex default" ] || fail "no Claude-specific signal should allow a Codex pick, got '$out'"
+out=$(call_reroute suggest --snapshot "$LAB/captured.json" --from-harness claude \
+  --claude-config-dir "$claude_dir" --worktree "$clean_wt" --kind secondmate \
+  --candidate claude:claude-3-5-sonnet --candidate codex:default)
+[ "$out" = "claude claude-3-5-sonnet" ] || fail "tooling signal should keep a Claude candidate eligible, got '$out'"
+ok "suggest keeps Claude candidates when tooling blocks only a move off Claude"
 
 if out=$(call_reroute suggest --snapshot "$LAB/captured.json" --from-harness claude \
   --worktree "$clean_wt" --kind secondmate --candidate codex:default 2>/dev/null); then
