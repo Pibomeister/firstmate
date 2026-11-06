@@ -71,10 +71,10 @@ The gap is the missing rule for which one acts.
 - SC-4: A running turn never counts as swallowed, frozen, or looped.
 - SC-5: The first recovery step is one nudge through the record-backed input path.
 - SC-6: A second detection after the nudge escalates to a restart through `bin/fm-control.sh`.
-- SC-7: The derived token percentage owns handoff and restart decisions.
-- SC-8: The pane footer percentage owns display and fast-burn alerts only.
-- SC-9: When the two readings differ by more than the disagreement bound, the lower reading acts and the record names both values.
-- SC-10: A missing reading reports unknown and never triggers a restart by itself.
+- SC-7: The derived token percentage owns the Claude primary handoff decision.
+- SC-8: The pane footer percentage owns the watchdog restart decision for sessions with no derived reading.
+- SC-9: When both readings exist and differ by more than the disagreement bound, the reading of the owning path acts and the record names both values.
+- SC-10: A missing owning reading reports unknown and never triggers a restart by itself.
 - SC-11: A handoff completes only while a live successor is recorded in `state/.handoff-successor`.
 - SC-12: Successor liveness is rechecked once after the predecessor stops.
 - SC-13: A successor that fails the recheck raises one blocked record for the parent supervisor.
@@ -86,7 +86,8 @@ The gap is the missing rule for which one acts.
 | --- | --- | --- |
 | Frozen, loop, unread, and unsent detection | `bin/fm-watchdog.sh` | Nudge, then request restart |
 | Accepted-without-a-turn detection | `bin/fm-watchdog.sh` | Nudge once, then escalate |
-| Handoff decision percentage | `bin/fm-handoff-trigger.sh` for Claude primaries, the watchdog restart path otherwise | Ask for a handoff |
+| Claude primary handoff percentage | `bin/fm-handoff-trigger.sh`, acting on the derived token percentage | Ask for a handoff |
+| Restart percentage for sessions with no derived reading | The watchdog restart path, acting on the pane footer percentage | Ask for a handoff, then request restart |
 | Successor gate | The `state/.handoff-successor` record and its stop gate | Hold the stop until a live successor exists |
 | Restart execution | `bin/fm-control.sh relaunch` for workers and second mates, the watchdog restart path for primaries | Stop the old process and open the successor |
 | Current-state read | `bin/fm-crew-state.sh` | Report state only |
@@ -98,7 +99,7 @@ The gap is the missing rule for which one acts.
 - AT-SC-3: A busy pane with a running turn produces no stall action.
 - AT-SC-4: One nudge follows the first detection and one restart follows the second.
 - AT-SC-5: A derived reading at the threshold fires the handoff while a higher pane reading does not cancel it.
-- AT-SC-6: A disagreement past the bound records both percentages and acts on the lower one.
+- AT-SC-6: A disagreement past the bound records both percentages and acts on the reading of the owning path.
 - AT-SC-7: A stop with no live successor stays blocked and the session keeps running.
 - AT-SC-8: A stop with a live successor completes and the recheck passes.
 - AT-SC-9: A successor that exits before the recheck raises exactly one blocked record.
@@ -110,8 +111,8 @@ The gap is the missing rule for which one acts.
 - DR-SC-2: Freeze a test pane with a running turn and confirm no action fires.
 - DR-SC-3: Drive context to the threshold and confirm the handoff names a live successor before any stop.
 - DR-SC-4: Kill the successor after the stop and confirm the parent receives one blocked record.
-- DR-SC-5: Force the two context readings apart and confirm the lower one acts and both values are recorded.
-- DR-SC-6: Remove both context readings and confirm no restart fires on unknown.
+- DR-SC-5: Force the two context readings apart and confirm the owning-path reading acts and both values are recorded.
+- DR-SC-6: Remove the owning context reading and confirm no restart fires on unknown.
 
 ## Escalation and quiet hours
 
