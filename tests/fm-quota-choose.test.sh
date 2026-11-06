@@ -1511,15 +1511,28 @@ ok "user MCP config in a seeded home remains Claude-specific tooling"
 manifest="$BIN/fm-claude-seed.manifest"
 [ -f "$manifest" ] || fail "missing Firstmate seed catalog $manifest"
 [ "$(head -1 "$manifest")" = "fm-claude-seed.v1" ] || fail "seed catalog header"
+# Worktree bytes, matching fm_quota_claude_blob_of. git ls-files -s is the
+# index and misses a tracked seed edit that is not yet staged.
 expected=$(
+  set -o pipefail
   {
     printf 'fm-claude-seed.v1\n'
-    git -C "$FM_ROOT" ls-files -s -- .claude/settings.json .claude/skills \
+    git -C "$FM_ROOT" ls-files -- .claude/settings.json .claude/skills \
       .claude/mods/firstmate-calm .agents/skills \
-      | awk '{ blob=$2; $1=$2=$3=""; sub(/^ +/, ""); print blob "\t" $0 }' \
+      | while IFS= read -r path; do
+          f="$FM_ROOT/$path"
+          if [ -L "$f" ]; then
+            blob=$(printf '%s' "$(readlink "$f")" | git hash-object --stdin) || exit 1
+          elif [ -f "$f" ]; then
+            blob=$(git hash-object -- "$f") || exit 1
+          else
+            exit 1
+          fi
+          printf '%s\t%s\n' "$blob" "$path"
+        done \
       | LC_ALL=C sort -t "$(printf '\t')" -k2,2
   }
-)
+) || fail "could not hash the Firstmate seed tree"
 [ "$expected" = "$(cat "$manifest")" ] \
   || fail "seed catalog drifted from firstmate-owned prefixes"
 ok "the Firstmate seed catalog matches the owned prefixes and no other .claude path"

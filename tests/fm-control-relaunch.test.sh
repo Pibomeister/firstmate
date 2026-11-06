@@ -1347,6 +1347,33 @@ SH
   pass "fm-control relaunch: production ignores FM_QUOTA_REROUTE and uses the shipped helper"
 }
 
+test_relaunch_off_claude_ignores_fm_test_quota_reroute_without_seam() {
+  local dir out rc
+  dir=$(new_case tooling-override-noseam rl93)
+  add_ship_task "$dir" rl93 claude
+  make_claude_auth_stub "$dir"
+  mkdir -p "$dir/pin" "$dir/home/config"
+  printf '%s\n' '{"mcpServers":{"docs":{"command":"true"}}}' > "$dir/pin/.claude.json"
+  : > "$dir/pin/.credentials.json"
+  printf '%s\n' "$dir/pin" > "$dir/home/config/claude-account"
+  cat > "$dir/fakebin/fm-quota-reroute.sh" <<'SH'
+#!/usr/bin/env bash
+exit 1
+SH
+  chmod +x "$dir/fakebin/fm-quota-reroute.sh"
+  printf 'codex' > "$dir/fake/becomes"
+  out=$(FM_TEST_SEAM=0 FM_TEST_QUOTA_REROUTE="$dir/fakebin/fm-quota-reroute.sh" \
+    run_control "$dir" rl93 relaunch --harness codex --note "seam off must not skip tooling"); rc=$?
+  expect_code 1 "$rc" "production relaunch must ignore FM_TEST_QUOTA_REROUTE without the seam"$'\n'"$out"
+  assert_contains "$out" "Claude-specific tooling present" "the shipped helper must still refuse"
+  assert_contains "$out" "MCP servers in $dir/pin/.claude.json" "the shipped helper must name the signal"
+  [ "$(cat "$dir/fake/command")" = claude ] \
+    || fail "an ignored test helper must leave the old agent running"
+  [ "$(meta_field "$dir" rl93 harness)" = claude ] \
+    || fail "an ignored test helper must leave the recorded harness"
+  pass "fm-control relaunch: without FM_TEST_SEAM, FM_TEST_QUOTA_REROUTE is ignored"
+}
+
 seeded_secondmate_case() {  # <case-dir-name> <id> -> case dir with a cloned firstmate home
   local dir id=$2
   dir=$(new_case "$1" "$id")
@@ -4409,6 +4436,11 @@ SH
   pass "fm-control exit removes the dialog file before it releases the control lock"
 }
 
+if [ "$#" -gt 0 ]; then
+  fm_test_run "$@"
+  exit
+fi
+
 test_relaunch_off_opencode_removes_tracked_wiring
 test_exit_and_relaunch_remove_the_dialog_file
 test_exit_removes_the_dialog_file_before_releasing_the_lock
@@ -4440,6 +4472,7 @@ test_relaunch_off_claude_refuses_when_tooling_is_present
 test_relaunch_off_claude_refuses_an_unreadable_account_pin
 test_relaunch_off_claude_refuses_when_tooling_check_exits_2
 test_relaunch_off_claude_ignores_fm_quota_reroute_override
+test_relaunch_off_claude_ignores_fm_test_quota_reroute_without_seam
 test_relaunch_off_claude_allows_an_unchanged_seeded_home
 test_relaunch_off_claude_refuses_seeded_home_user_additions
 test_harness_switch_resolves_a_prefixed_recorded_harness
