@@ -468,17 +468,19 @@ case "$cmd" in
     fi
     TOOLING_SIG=
     if [ "$FROM_HARNESS" = claude ]; then
-      if [ -z "$WORKTREE" ]; then
-        TOOLING_SIG='unresolvable worktree'
-      elif [ -z "$CLAUDE_DIR" ]; then
+      if [ -z "$CLAUDE_DIR" ]; then
         config=${FM_CONFIG_OVERRIDE:-${FM_HOME:+$FM_HOME/config}}
         if ! CLAUDE_DIR=$(fm_quota_claude_config_dir "$config" "$MATE"); then
           TOOLING_SIG=${CLAUDE_DIR:-unresolvable Claude config dir}
           CLAUDE_DIR=
+          PINNED=1
         else
           [ "${CLAUDE_DIR#*$'\t'}" = 1 ] && PINNED=1
           CLAUDE_DIR=${CLAUDE_DIR%%$'\t'*}
         fi
+      fi
+      if [ -z "$TOOLING_SIG" ] && [ -z "$WORKTREE" ]; then
+        TOOLING_SIG='unresolvable worktree'
       fi
       if [ -z "$TOOLING_SIG" ] \
          && sig=$(fm_quota_claude_tooling_signal "$CLAUDE_DIR" "$WORKTREE"); then
