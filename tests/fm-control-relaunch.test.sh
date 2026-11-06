@@ -2520,6 +2520,30 @@ test_prepublication_abort_retires_replacement_wiring_and_busy_state() {
   pass "fm-spawn relaunch: prepublication abort removes replacement state"
 }
 
+test_prepublication_abort_with_busy_gen_restores_the_prior_record() {
+  local dir out rc real_rm meta gen hook
+  dir=$(new_case prepublishbusy rlbg1)
+  add_ship_task "$dir" rlbg1 claude
+  meta="$dir/home/state/rlbg1.meta"
+  gen=$("$ROOT/bin/fm-busy-event.sh" arm "$dir/home/state" rlbg1)
+  printf 'busy_gen=%s\n' "$gen" >> "$meta"
+  hook="$dir/wt/.claude/settings.local.json"
+  mkdir -p "${hook%/*}"
+  printf '{}\n' > "$hook"
+  real_rm=$(command -v rm)
+  make_rm_failure_stub "$dir"
+  out=$(FM_REAL_RM="$real_rm" FM_FAKE_RM_FAIL_PATH="$hook" \
+    run_control "$dir" rlbg1 relaunch --note "busy before an unpublished spawn"); rc=$?
+  expect_code 1 "$rc" "a spawn refused before publication should fail closed"$'\n'"$out"
+  assert_not_contains "$out" "was relaunched on" \
+    "an unpublished spawn must not be reported as a relaunched record"
+  [ "$(journal_field "$dir" rlbg1 rollback)" = prior-record-kept ] \
+    || fail "a cleared busy_gen must not make an unpublished spawn look published"
+  [ -z "$(meta_field "$dir" rlbg1 control_relaunch_tx)" ] \
+    || fail "the restored record must not keep the stamped relaunch token"
+  pass "fm-control relaunch: a cleared busy_gen does not mask an unpublished spawn"
+}
+
 test_stamp_die_before_spawn_restores_the_prior_record() {
   local dir out rc real_mktemp prior
   dir=$(new_case stamp-die rl89)
@@ -3962,6 +3986,7 @@ test_post_publication_launch_failure_keeps_the_new_record
 test_stop_transport_failure_reconciles_a_dead_agent
 test_complete_journal_failure_rolls_back_from_durable_phase
 test_prepublication_abort_retires_replacement_wiring_and_busy_state
+test_prepublication_abort_with_busy_gen_restores_the_prior_record
 test_stamp_die_before_spawn_restores_the_prior_record
 test_stamp_mv_failure_removes_the_staging_file
 test_restore_failure_is_journaled_as_restore_failed

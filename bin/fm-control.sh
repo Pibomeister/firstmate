@@ -1024,11 +1024,12 @@ TARGET_MODEL=
 TARGET_EFFORT=
 
 # True when spawn rewrote the live record, not merely when this transaction
-# stamped control_relaunch_tx onto it before calling spawn.
+# stamped control_relaunch_tx onto it or stopping the old agent cleared its
+# busy_gen before calling spawn.
 relaunch_record_changed_beyond_tx() {
   local now was
-  now=$(grep -v '^control_relaunch_tx=' "$META" 2>/dev/null || true)
-  was=$(grep -v '^control_relaunch_tx=' "$META_PRIOR" 2>/dev/null || true)
+  now=$(grep -v -e '^control_relaunch_tx=' -e '^busy_gen=' "$META" 2>/dev/null || true)
+  was=$(grep -v -e '^control_relaunch_tx=' -e '^busy_gen=' "$META_PRIOR" 2>/dev/null || true)
   [ "$now" != "$was" ]
 }
 
