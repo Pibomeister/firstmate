@@ -1,0 +1,1 @@
+$ [fix ccb34581] FM_HOME=$LAB HERDR_SESSION=fm-lab-sm153-38191-3261 bin/fm-secondmate-restart.sh sm1   # config/backend=orca; sm1 live on herdr pane w1:p2

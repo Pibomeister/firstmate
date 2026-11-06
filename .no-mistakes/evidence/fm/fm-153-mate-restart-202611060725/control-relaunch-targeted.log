@@ -1,0 +1,4 @@
+ok - reclaim: a herdr secondmate whose endpoint is gone is sent to its own respawn owner
+ok - relaunch: a herdr secondmate whose pane vanished on stop is handed to respawn with its record kept
+bash tests/.tmp-rl.test.sh  1.68s user 3.01s system 11% cpu 39.118 total
+rc=0

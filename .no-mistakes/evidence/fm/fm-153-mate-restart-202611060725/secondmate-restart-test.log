@@ -1,0 +1,14 @@
+ok - T1 persist is a gate, and asks for open records and task status only
+ok - T2 the mate persists before anything is stopped
+ok - T2b an arrived persist answer is resolved before timeout
+ok - T2c a reply between the preliminary scan and timeout decision wins
+ok - T3 a runtime that cannot prove a restart falls back to the re-read message
+ok - T4 every named mate is accounted for, including one this home does not know
+ok - T5 a refused restart leaves the mate running and reports an unknown outcome
+ok - T5b a pane that vanished on stop falls through to a respawn on the recorded backend
+ok - T5c the secondmate respawn keeps the recorded backend, and an explicit --backend still wins
+ok - T8 a local restart re-resolves this home's pin and reports the runtime that came up
+not ok - native remote restart failed: nudged: sm2: it did not confirm within 30s that its open work is written down, so its conversation was not spent
+summary: 0 of 1 restarted, 1 nudged, 0 unreached: expected exit 0, got 3
+bash tests/fm-secondmate-restart.test.sh  28.81s user 54.55s system 17% cpu 7:49.79 total
+rc=1

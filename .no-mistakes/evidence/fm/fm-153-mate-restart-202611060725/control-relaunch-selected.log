@@ -1,0 +1,4 @@
+ok - reclaim: a herdr secondmate whose endpoint is gone is sent to its own respawn owner
+ok - relaunch: a herdr secondmate whose pane vanished on stop is handed to respawn with its record kept
+ok - reclaim: a herdr reclaim rebinds the endpoint and leaves the whole rest of the task alone
+ok - fm-control relaunch: a launch failure after the stop keeps the prior record and reports the real state

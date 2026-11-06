@@ -1,0 +1,24 @@
+
+ ▐▛███▛█   Claude Code v2.1.319
+▝▜██████▀  Opus 5.5 · Claude Ultra
+ ▝▝   ▝▝   /…/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab-sm.lxQyc6/sm1-home
+
+
+❯ : Firstmate operational input waiting: read
+  '/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab-sm.lxQyc6/sm
+  1-home/state/operational-inbox/1793960716-385e98b4e1965cec.msg' and handle
+  its contents as Firstmate operational input.
+
+
+
+
+
+
+
+✳ Lollygagging… (running SessionStart hooks… 5/8 · 8s)
+
+────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────
+
+  ⏵⏵ bypass permissions on (shift+tab to cycle)

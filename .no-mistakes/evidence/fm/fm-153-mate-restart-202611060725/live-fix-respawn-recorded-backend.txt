@@ -1,0 +1,20 @@
+$ [fix ccb34581] FM_HOME=$LAB HERDR_SESSION=fm-lab-sm153-38191-3261 bin/fm-spawn.sh sm1 --secondmate   # config/backend=orca, record backend=herdr, recorded pane %999 gone
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.5rOdsp
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s; down 54s) - full banner already printed this episode.
+warning: secondmate sm1 sync skipped before launch: primary default-branch commit cannot be resolved
+fm-config-inherit: warning: skipped backend for /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab-sm1.CLyIwU/sm1-home/config: destination does not allow inherited item (not gitignored or guard failed)
+spawned sm1 harness=claude kind=secondmate mode=secondmate yolo=off window=fm-lab-sm153-38191-3261:w1:p2 worktree=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab-sm1.CLyIwU/sm1-home
+exit=
+
+--- state/sm1.meta after respawn ---
+window=fm-lab-sm153-38191-3261:w1:p2
+harness=claude
+kind=secondmate
+backend=herdr
+herdr_session=fm-lab-sm153-38191-3261
+herdr_workspace_id=w1
+herdr_tab_id=w1:t2
+herdr_pane_id=w1:p2
+
+--- lab herdr session: pane list ---
+{"id":"cli:pane:list","result":{"panes":[{"agent_status":"unknown","cwd":"/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab-sm1.CLyIwU/sm1-home","focused":true,"foreground_cwd":"/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab-sm1.CLyIwU/sm1-home","pane_id":"w1:p2","revision":0,"scroll":{"max_offset_from_bottom":0,"offset_from_bottom":0,"viewport_rows":39},"tab_id":"w1:t2","terminal_id":"term_65f98ae9bb4d12","workspace_id":"w1"}],"type":"pane_list"}}

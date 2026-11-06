@@ -1,0 +1,4 @@
+not ok - native remote restart failed: nudged: sm2: it did not confirm within 30s that its open work is written down, so its conversation was not spent
+summary: 0 of 1 restarted, 1 nudged, 0 unreached: expected exit 0, got 3
+bash tests/.tmp-one.test.sh  6.51s user 12.55s system 28% cpu 1:07.11 total
+rc=1

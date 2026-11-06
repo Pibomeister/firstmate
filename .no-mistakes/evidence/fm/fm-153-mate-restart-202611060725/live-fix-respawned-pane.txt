@@ -1,0 +1,25 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+✳ Zigzagging… (running SessionStart hooks… 1/7 · 0s)
+                                                                          ◐ medium · /effort
+──────────────────────────────────────────────────────────────────────────────────────────────
+❯
+──────────────────────────────────────────────────────────────────────────────────────────────
+  ⚠ Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker · restart with CL…
+
+  ⏵⏵ bypass permissions on (shift+tab to cycle)

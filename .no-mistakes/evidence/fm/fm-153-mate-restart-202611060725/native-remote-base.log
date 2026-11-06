@@ -1,0 +1,24 @@
+not ok - native remote restart failed: nudged: sm2: it did not confirm within 30s that its open work is written down, so its conversation was not spent
+summary: 0 of 1 restarted, 1 nudged, 0 unreached: expected exit 0, got 3
+rm: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-secondmate-restart.jgcO7v/native-local-5867/home/state/sm1.git-hooks/pre-rebase: Permission denied
+rm: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-secondmate-restart.jgcO7v/native-local-5867/home/state/sm1.git-hooks/pre-applypatch: Permission denied
+rm: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-secondmate-restart.jgcO7v/native-local-5867/home/state/sm1.git-hooks/pre-auto-gc: Permission denied
+rm: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-secondmate-restart.jgcO7v/native-local-5867/home/state/sm1.git-hooks/pre-merge-commit: Permission denied
+rm: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-secondmate-restart.jgcO7v/native-local-5867/home/state/sm1.git-hooks/post-commit: Permission denied
+rm: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-secondmate-restart.jgcO7v/native-local-5867/home/state/sm1.git-hooks/sendemail-validate: Permission denied
+rm: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-secondmate-restart.jgcO7v/native-local-5867/home/state/sm1.git-hooks/applypatch-msg: Permission denied
+rm: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-secondmate-restart.jgcO7v/native-local-5867/home/state/sm1.git-hooks/prepare-commit-msg: Permission denied
+rm: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-secondmate-restart.jgcO7v/native-local-5867/home/state/sm1.git-hooks/post-checkout: Permission denied
+rm: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-secondmate-restart.jgcO7v/native-local-5867/home/state/sm1.git-hooks/post-applypatch: Permission denied
+rm: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-secondmate-restart.jgcO7v/native-local-5867/home/state/sm1.git-hooks/post-rewrite: Permission denied
+rm: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-secondmate-restart.jgcO7v/native-local-5867/home/state/sm1.git-hooks/commit-msg: Permission denied
+rm: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-secondmate-restart.jgcO7v/native-local-5867/home/state/sm1.git-hooks/pre-push: Permission denied
+rm: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-secondmate-restart.jgcO7v/native-local-5867/home/state/sm1.git-hooks/post-merge: Permission denied
+rm: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-secondmate-restart.jgcO7v/native-local-5867/home/state/sm1.git-hooks/pre-commit: Permission denied
+rm: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-secondmate-restart.jgcO7v/native-local-5867/home/state/sm1.git-hooks: Directory not empty
+rm: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-secondmate-restart.jgcO7v/native-local-5867/home/state: Directory not empty
+rm: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-secondmate-restart.jgcO7v/native-local-5867/home: Directory not empty
+rm: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-secondmate-restart.jgcO7v/native-local-5867: Directory not empty
+rm: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-secondmate-restart.jgcO7v: Directory not empty
+bash tests/.one.sh  5.55s user 10.85s system 17% cpu 1:36.20 total
+rc=1
