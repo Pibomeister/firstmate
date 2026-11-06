@@ -85,7 +85,6 @@ A relaunch does take one session reference when the endpoint's own runtime recor
    Effort carries over when the new harness accepts it, otherwise the replacement uses that harness default and prints a notice.
    The verb header in [`bin/fm-control.sh`](../bin/fm-control.sh) owns the Claude-move refusal.
    The Signals paragraph in [`bin/fm-quota-reroute.sh`](../bin/fm-quota-reroute.sh) owns the tooling list.
-   A secondmate's worktree is its firstmate home.
    A Claude secondmate can still move to another Claude model.
    Relaunch never kills a pane it cannot attribute.
    A Claude or Pi replacement must also pass the home's [worker account pin](configuration.md#worker-account-pin-configclaude-account-configpi-account), or a secondmate's own [per-secondmate account pin](configuration.md#per-secondmate-account-pins) when one is set, so a pin that no longer resolves or is signed out refuses before the old agent stops.
