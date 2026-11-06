@@ -404,6 +404,27 @@ test_failed_status_is_unknown_not_no_run() {
   pass "a failed no-mistakes read is unknown and sets failure"
 }
 
+test_primary_unread_inbox_age_is_published() {
+  local home note
+  home=$(make_home unread-inbox)
+  publish "$home"
+  assert_ledger "$home" '.primary.unread_inbox_age_seconds == null' \
+    "no pending captain inbox note should publish a null unread age"
+  mkdir -p "$home/state/inbox"
+  note="$home/state/inbox/123-abc.note"
+  printf 'id=123-abc\n--\nstalled\n' > "$note"
+  fm_touch_epoch "$(( $(date +%s) - 600 ))" "$note"
+  publish "$home"
+  assert_ledger "$home" '.primary.unread_inbox_age_seconds >= 590' \
+    "the oldest pending captain inbox note should publish its age"
+  mkdir -p "$home/state/inbox/handled"
+  mv "$note" "$home/state/inbox/handled/"
+  publish "$home"
+  assert_ledger "$home" '.primary.unread_inbox_age_seconds == null' \
+    "a handled captain inbox note should no longer publish an unread age"
+  pass "the heartbeat publishes the oldest unread captain inbox note age"
+}
+
 test_transcript_fields_with_fractional_timestamps() {
   local home project line
   home=$(make_home transcript)
@@ -834,6 +855,7 @@ test_worktree_off_recorded_branch_is_unknown
 test_settled_run_binds_only_on_worktree_head
 test_daemon_answer_qualifies_executing_run
 test_failed_status_is_unknown_not_no_run
+test_primary_unread_inbox_age_is_published
 test_transcript_fields_with_fractional_timestamps
 test_leftover_transcript_in_a_reused_slot_is_ignored
 test_ambiguous_transcript_when_two_qualify

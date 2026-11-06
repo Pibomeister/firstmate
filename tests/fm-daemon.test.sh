@@ -800,6 +800,50 @@ test_classify_check_and_unknown_escalate() {
 # escalates, and an identity that never flushed still escalates. Ordinary
 # escalation lines are not part of that acknowledgement. A new away session
 # clears the acknowledgements, so the same identity can fire again.
+test_captain_inbox_check_flushes_immediately() {
+  local dir state fakebin sent capture
+  dir=$(make_supercase captain-inbox-immediate)
+  state="$dir/state"
+  fakebin="$dir/fakebin"
+  sent="$dir/sent.log"; : > "$sent"
+  capture="$dir/pane.txt"; printf '\342\235\257 \n' > "$capture"
+  afk_enter "$state"
+
+  # Control: an ordinary check still waits out the batch window.
+  FM_ESCALATE_BATCH_SECS=999 handle_wake "check: /s/c.check.sh: merged: https://x" "$state" \
+    || fail "the ordinary check wake was not handled"
+  [ -s "$state/.subsuper-escalations" ] \
+    || fail "an ordinary check did not stay buffered under the batch window"
+  [ ! -s "$sent" ] || fail "an ordinary check was delivered before its batch window"
+  : > "$state/.subsuper-escalations"; rm -f "$state/.subsuper-escalations.since"
+
+  # A captain inbox note bypasses the same window and is delivered at once.
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_PANE_ALIVE=1 FM_FAKE_TMUX_SENT="$sent" \
+    FM_FAKE_TMUX_CAPTURE="$capture" FM_ESCALATE_BATCH_SECS=999 \
+    FM_SUPERVISOR_BACKEND=tmux FM_SUPERVISOR_TARGET=sess:supervisor \
+    handle_wake "check: captain inbox note 123-abc - hello" "$state" \
+    || fail "the captain inbox wake was not handled"
+  [ ! -s "$state/.subsuper-escalations" ] \
+    || fail "a captain inbox note stayed buffered behind the batch window: $(cat "$state/.subsuper-escalations")"
+  delivered_digest "$sent" | grep -F 'check: captain inbox note 123-abc - hello' >/dev/null \
+    || fail "the captain inbox note was not delivered immediately: $(cat "$sent")"
+
+  # A note buffered by a deferred flush is retried on the next housekeeping
+  # tick, not after the batch window.
+  : > "$sent"
+  escalate_add "$state" "check: captain inbox note 124-def - again" \
+    || fail "the second captain inbox note was not buffered"
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_PANE_ALIVE=1 FM_FAKE_TMUX_SENT="$sent" \
+    FM_FAKE_TMUX_CAPTURE="$capture" FM_ESCALATE_BATCH_SECS=999 \
+    FM_SUPERVISOR_BACKEND=tmux FM_SUPERVISOR_TARGET=sess:supervisor \
+    housekeeping "$state"
+  [ ! -s "$state/.subsuper-escalations" ] \
+    || fail "housekeeping held a captain inbox note for the batch window"
+  delivered_digest "$sent" | grep -F 'check: captain inbox note 124-def - again' >/dev/null \
+    || fail "housekeeping did not flush the buffered captain inbox note: $(cat "$sent")"
+  pass "a captain inbox note flushes immediately, bypassing the escalation batch window"
+}
+
 test_unknown_wake_ack_suppresses_handled_identity() {
   local dir state fakebin sent capture out
   dir=$(make_supercase unknown-wake-ack)
@@ -3728,6 +3772,7 @@ test_daemon_state_root_uses_fm_home
 test_classify_routine_signal_self
 test_classify_terminal_signal_escalates
 test_classify_check_and_unknown_escalate
+test_captain_inbox_check_flushes_immediately
 test_unknown_wake_ack_suppresses_handled_identity
 test_unknown_wake_ack_failure_still_clears_delivered_digest
 test_stale_transient_self_records_marker

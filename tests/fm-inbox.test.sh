@@ -454,6 +454,29 @@ assert_equals "supervision-model-unknown-for-home" \
   "no lock holder means the home's supervision model is unknown"
 assert_equals "None" "$(printf '%s' "$nobeat" | json_get wake_consumer beacon_age_seconds)" \
   "a beacon that does not exist has no age"
+assert_equals "None" "$(printf '%s' "$nobeat" | json_get wake_consumer unread_inbox_age_seconds)" \
+  "no pending captain inbox note has no unread age"
+
+# An unread captain inbox note ages in the readiness beacon, so an external
+# leash can see the stall without reading the pane; handling the note clears it.
+home=$(make_home ready-unread-inbox)
+unread_out=$(run_inbox "$home" note "stalled captain note") || fail "unread-age note should succeed"
+unread_id=$(printf '%s' "$unread_out" | sed -n 's/^queued //p')
+[ -n "$unread_id" ] || fail "unread-age note printed no id: $unread_out"
+python3 - "$home/state/inbox/$unread_id.note" <<'PY'
+import os, sys, time
+old = time.time() - 600
+os.utime(sys.argv[1], (old, old))
+PY
+unread_ready=$(run_inbox "$home" ready) || fail "ready should succeed with a pending note"
+unread_age=$(printf '%s' "$unread_ready" | json_get wake_consumer unread_inbox_age_seconds)
+[ "$unread_age" -ge 590 ] 2>/dev/null \
+  || fail "the oldest pending note should report its age in the beacon, got: $unread_age"
+run_inbox "$home" drain --ack "$unread_id" >/dev/null || fail "drain --ack failed for the unread-age note"
+handled_ready=$(run_inbox "$home" ready) || fail "ready should succeed after the note is handled"
+assert_equals "None" "$(printf '%s' "$handled_ready" | json_get wake_consumer unread_inbox_age_seconds)" \
+  "a handled captain inbox note no longer ages in the beacon"
+pass "readiness beacon reports the oldest unread captain inbox note age"
 
 # The intended caller (HTTP backend, ssh host fm-inbox.sh ready) does not set
 # FM_SUPERVISION_MODEL. A live non-harness lock pid must not invent a model

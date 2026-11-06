@@ -3428,7 +3428,7 @@ FM_PENDING_REPLY_GRACE_SECS=120   # seconds after the request turn completes wit
 FM_SUPERVISOR_BACKEND=             # optional supervisor endpoint backend override; see "Away-mode supervisor backend" for supported backends and detection
 FM_SUPERVISOR_TARGET=              # optional supervisor endpoint target override; tmux uses the exact forms owned by fm_backend_target_exists in bin/fm-backend.sh, herdr uses <session>:<pane-id>, t3code uses the thread id, otherwise auto-detected
 FM_INJECT_SKIP=heartbeat           # |-prefixes force-self-handled bypassing classification; empty disables
-FM_ESCALATE_BATCH_SECS=90          # buffer window for batched escalation digests; 0 = flush immediately
+FM_ESCALATE_BATCH_SECS=90          # buffer window for batched escalation digests; 0 = flush immediately; a captain inbox note check flushes immediately regardless
 FM_MAX_DEFER_SECS=300              # max buffered escalation age before alarm; 0 disables
 FM_WEDGE_ALARM_CHANNEL=            # override config/wedge-alarm with one active-alert directive for the wedge alarm; off|auto|osascript|herdr|rex|command:<cmd>; absent = auto (macOS -> an OS notification)
 FM_WEDGE_ALARM_EXEC=              # notifier seam: route every channel (osascript, herdr, command:) through this command as `<cmd> <channel> <summary>`; "discard" fires nothing; unset in production; the daemon defaults it to "discard" when sourced so no test posts a real notification (docs/wedge-alarm.md)
