@@ -1,0 +1,16 @@
+## A: live successor recorded by the real primary (pid 88321)
+rc=0 stderr: 
+## B: launch record removed
+rc=2 stderr: Firstmate restart gate: this session is handing off, but no live successor launched after the handoff trigger is recorded in state/.handoff-successor, so nobody will cont
+## C: same, stop_hook_active=true (no wedge)
+rc=0 stderr: 
+## D: record names a dead pid
+rc=2 stderr: Firstmate restart gate: this session is handing off, but no live successor launched after the handoff trigger is recorded in state/.handoff-successor, so nobody will cont
+## E: record older than the trigger firing
+rc=2 stderr: Firstmate restart gate: this session is handing off, but no live successor launched after the handoff trigger is recorded in state/.handoff-successor, so nobody will cont
+## F: garbage pid
+rc=2 stderr: Firstmate restart gate: this session is handing off, but no live successor launched after the handoff trigger is recorded in state/.handoff-successor, so nobody will cont
+## G: second-mate home, no record
+rc=0 stderr: 
+## H: different session (ordinary stop) in same home, no record
+rc=0 stderr: 
