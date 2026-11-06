@@ -1,0 +1,14 @@
+## Lab primary seat (FM_HOME=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.zSE9YM), real Claude secondmate labmate on lab tmux
+$ bin/fm-control.sh labmate relaunch --harness codex
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.zSE9YM
+error: Claude-specific tooling present (/Users/eduardopicazo/.claude/settings.json .hooks); refusing to move labmate off Claude
+RELAUNCH_RC=1
+SUGGEST_RC=1
+
+$ bin/fm-quota-reroute.sh suggest --from-harness claude --kind secondmate --mate labmate --worktree <smhome> --candidate codex:gpt-5.4 --snapshot quota-axi-codex-headroom.json
+none
+error: Claude-specific tooling present (/Users/eduardopicazo/.claude/settings.json .hooks); queue until reset rather than moving off Claude
+
+## record unchanged?
+meta unchanged
+pane: 2.1.319 pid=52152 (before: 2.1.319 pid=52152)

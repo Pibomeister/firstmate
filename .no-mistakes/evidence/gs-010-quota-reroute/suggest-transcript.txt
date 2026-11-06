@@ -1,0 +1,62 @@
+## S1 clean Claude worker, codex has headroom -> codex pick
+$ bin/fm-quota-reroute.sh suggest --snapshot /Users/eduardopicazo/.no-mistakes/evidence/01M6RFF78VQXP8VWDTHV2AXSHC/quota-axi-live.json --from-harness claude --from-model sonnet --claude-config-dir /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.BPAvzIgXD0 --worktree /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.Ki6RGDmToq --candidate codex:gpt-5.4 --kind ship
+none
+exit=1
+
+## S2 worktree .claude hooks -> non-Claude dropped, none
+$ bin/fm-quota-reroute.sh suggest --snapshot /Users/eduardopicazo/.no-mistakes/evidence/01M6RFF78VQXP8VWDTHV2AXSHC/quota-axi-live.json --from-harness claude --from-model sonnet --claude-config-dir /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.BPAvzIgXD0 --worktree /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.7XisW2NvPo --candidate codex:gpt-5.4 --kind ship
+none
+error: Claude-specific tooling present (/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.7XisW2NvPo/.claude/settings.json .hooks); queue until reset rather than moving off Claude
+exit=1
+
+## S2b same signal, Claude candidate still named
+$ bin/fm-quota-reroute.sh suggest --snapshot /Users/eduardopicazo/.no-mistakes/evidence/01M6RFF78VQXP8VWDTHV2AXSHC/quota-axi-live.json --from-harness claude --from-model sonnet --claude-config-dir /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.BPAvzIgXD0 --worktree /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.7XisW2NvPo --candidate codex:gpt-5.4 --candidate claude:opus --kind ship
+claude opus
+exit=0
+
+## S3 account MCP server signal
+$ bin/fm-quota-reroute.sh claude-tooling --config-dir /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.oppojXblNp --worktree /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.Ki6RGDmToq
+MCP servers in /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.oppojXblNp/.claude.json
+exit=0
+
+$ bin/fm-quota-reroute.sh suggest --snapshot /Users/eduardopicazo/.no-mistakes/evidence/01M6RFF78VQXP8VWDTHV2AXSHC/quota-axi-live.json --from-harness claude --claude-config-dir /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.oppojXblNp --worktree /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.Ki6RGDmToq --candidate codex:gpt-5.4
+none
+error: Claude-specific tooling present (MCP servers in /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.oppojXblNp/.claude.json); queue until reset rather than moving off Claude
+exit=1
+
+## S4 missing config dir (unknown is a signal)
+$ bin/fm-quota-reroute.sh suggest --snapshot /Users/eduardopicazo/.no-mistakes/evidence/01M6RFF78VQXP8VWDTHV2AXSHC/quota-axi-live.json --from-harness claude --claude-config-dir /nonexistent/dir --worktree /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.Ki6RGDmToq --candidate codex:gpt-5.4
+none
+error: Claude-specific tooling present (unreadable Claude config dir); queue until reset rather than moving off Claude
+exit=1
+
+## S5 no worktree (unknown) -> drop non-Claude only
+$ bin/fm-quota-reroute.sh suggest --snapshot /Users/eduardopicazo/.no-mistakes/evidence/01M6RFF78VQXP8VWDTHV2AXSHC/quota-axi-live.json --from-harness claude --from-model sonnet --claude-config-dir /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.BPAvzIgXD0 --candidate codex:gpt-5.4 --candidate claude:opus
+claude opus
+exit=0
+
+## S6 pinned account -> whole Claude harness excluded
+$ bin/fm-quota-reroute.sh suggest --snapshot /Users/eduardopicazo/.no-mistakes/evidence/01M6RFF78VQXP8VWDTHV2AXSHC/quota-axi-live.json --from-harness claude --from-model sonnet --claude-config-dir /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.BPAvzIgXD0 --worktree /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.Ki6RGDmToq --pinned --candidate claude:opus
+none
+error: no verified candidate remains for kind ship
+exit=1
+
+## S7 secondmate whose worktree is a firstmate home (lab home)
+$ bin/fm-quota-reroute.sh claude-tooling --config-dir /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.BPAvzIgXD0 --worktree /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.zSE9YM
+exit=1
+
+$ bin/fm-quota-reroute.sh suggest --snapshot /Users/eduardopicazo/.no-mistakes/evidence/01M6RFF78VQXP8VWDTHV2AXSHC/quota-axi-live.json --from-harness claude --kind secondmate --claude-config-dir /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.BPAvzIgXD0 --worktree /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.zSE9YM --candidate codex:gpt-5.4
+none
+exit=1
+
+## S8 codex worker -> other harness named
+$ bin/fm-quota-reroute.sh suggest --snapshot /Users/eduardopicazo/.no-mistakes/evidence/01M6RFF78VQXP8VWDTHV2AXSHC/quota-axi-live.json --from-harness codex --from-model gpt-5.4 --candidate codex:gpt-5.4 --candidate claude:sonnet
+claude sonnet
+exit=0
+
+## S9 current harness:model is only choice -> none
+$ bin/fm-quota-reroute.sh suggest --snapshot /Users/eduardopicazo/.no-mistakes/evidence/01M6RFF78VQXP8VWDTHV2AXSHC/quota-axi-live.json --from-harness codex --from-model gpt-5.4 --candidate codex:gpt-5.4
+none
+error: no verified candidate remains for kind ship
+exit=1
+

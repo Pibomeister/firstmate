@@ -1,0 +1,29 @@
+## S1 Codex headroom (live snapshot; codex weekly + effective availability set to 60%/through_reset), clean Claude worker -> codex pick
+$ bin/fm-quota-reroute.sh suggest --snapshot /Users/eduardopicazo/.no-mistakes/evidence/01M6RFF78VQXP8VWDTHV2AXSHC/quota-axi-codex-headroom.json --from-harness claude --from-model sonnet --claude-config-dir /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.BPAvzIgXD0 --worktree /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.Ki6RGDmToq --candidate codex:gpt-5.4 --kind ship
+codex gpt-5.4
+exit=0
+
+## S2 same headroom, worktree .claude/settings.json hooks -> refused
+$ bin/fm-quota-reroute.sh suggest --snapshot /Users/eduardopicazo/.no-mistakes/evidence/01M6RFF78VQXP8VWDTHV2AXSHC/quota-axi-codex-headroom.json --from-harness claude --from-model sonnet --claude-config-dir /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.BPAvzIgXD0 --worktree /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.7XisW2NvPo --candidate codex:gpt-5.4 --kind ship
+none
+error: Claude-specific tooling present (/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.7XisW2NvPo/.claude/settings.json .hooks); queue until reset rather than moving off Claude
+exit=1
+
+## S3 same headroom, account MCP server -> refused
+$ bin/fm-quota-reroute.sh suggest --snapshot /Users/eduardopicazo/.no-mistakes/evidence/01M6RFF78VQXP8VWDTHV2AXSHC/quota-axi-codex-headroom.json --from-harness claude --claude-config-dir /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.oppojXblNp --worktree /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.Ki6RGDmToq --candidate codex:gpt-5.4
+none
+error: Claude-specific tooling present (MCP servers in /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.oppojXblNp/.claude.json); queue until reset rather than moving off Claude
+exit=1
+
+## S7 same headroom, Claude secondmate home = firstmate checkout -> refused off Claude
+$ bin/fm-quota-reroute.sh suggest --snapshot /Users/eduardopicazo/.no-mistakes/evidence/01M6RFF78VQXP8VWDTHV2AXSHC/quota-axi-codex-headroom.json --from-harness claude --kind secondmate --claude-config-dir /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.BPAvzIgXD0 --worktree /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M6RFF78VQXP8VWDTHV2AXSHC --candidate codex:gpt-5.4
+none
+error: Claude-specific tooling present (worktree .claude/skills); queue until reset rather than moving off Claude
+exit=1
+
+## S10 same headroom, broken pin -> refused
+$ bin/fm-quota-reroute.sh suggest --snapshot /Users/eduardopicazo/.no-mistakes/evidence/01M6RFF78VQXP8VWDTHV2AXSHC/quota-axi-codex-headroom.json --from-harness claude --from-model sonnet --worktree /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.Ki6RGDmToq --candidate codex:gpt-5.4 --candidate claude:opus
+none
+error: Claude-specific tooling present (config/claude-account must hold 'ordinary' or one absolute path on a single line with no control characters: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.zSE9YM/config/claude-account); queue until reset rather than moving off Claude
+exit=1
+

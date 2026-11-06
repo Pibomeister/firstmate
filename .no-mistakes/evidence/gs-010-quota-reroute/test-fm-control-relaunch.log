@@ -1,0 +1,17 @@
+ok - fm-spawn --relaunch: tracked opencode wiring is retired as on main
+ok - fm-control removes the dialog file after exit and after relaunch
+ok - fm-control exit removes the dialog file before it releases the control lock
+ok - fm-control relaunch: a same-harness relaunch replaces the agent in the same endpoint and worktree
+ok - pooled relaunches preserve legacy compatibility and require custody for either AGY harness
+ok - AGY relaunch checks Treehouse capabilities before stopping or replacing a worker
+ok - fm-control relaunch: pending composer text refuses before the exit command is typed
+ok - fm-control relaunch: an untrusted usage-limit endpoint is not killed
+ok - fm-control relaunch: a usage-limit screen is closed without typing Enter
+ok - fm-control interrupt: a usage-limit screen is not sent a lifecycle key
+ok - fm-control relaunch: a proven-gone tmux endpoint is rebound when its pane path is unreadable
+ok - fm-control relaunch: an unreadable composer fails safe before the exit command is typed
+ok - fm-control relaunch: a linked spawning home preserves committed and unfinished work in the recorded copy
+ok - fm-control relaunch: durable task metadata survives replacement launch publication
+ok - fm-control relaunch: delivery and concurrent task metadata publication serialize
+ok - fm-control relaunch: disabling tracing clears metadata and pane context
+ok - fm-control relaunch: progress and the Firstmate-worktree worker identity reach the replacement
