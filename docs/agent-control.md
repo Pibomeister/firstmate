@@ -83,9 +83,9 @@ A relaunch does take one session reference when the endpoint's own runtime recor
    A recorded raw-command basename that differs from its resolved adapter cannot reproduce the command actually running, so relaunch refuses before the checkpoint unless the caller passes an explicit `--harness` to choose the replacement runtime deliberately.
    A harness change resets model unless it is named too, because a model chosen for one adapter does not transfer to another.
    Effort carries over when the new harness accepts it, otherwise the replacement uses that harness default and prints a notice.
-   Moving a Claude task onto another harness is refused when Claude-specific tooling is present, with no override.
-   `bin/fm-quota-reroute.sh` owns that signal list in its header, including marketplace clones and stale cache copies.
-   A secondmate's worktree is its firstmate home, which tracks `.claude/` skills and hooks, so a Claude secondmate cannot be moved off Claude this way; it can still move to another Claude model.
+   The verb header in [`bin/fm-control.sh`](../bin/fm-control.sh) owns the Claude-move refusal.
+   The Signals paragraph in [`bin/fm-quota-reroute.sh`](../bin/fm-quota-reroute.sh) owns the tooling list.
+   A Claude secondmate can still move to another Claude model.
    Relaunch never kills a pane it cannot attribute.
    A Claude or Pi replacement must also pass the home's [worker account pin](configuration.md#worker-account-pin-configclaude-account-configpi-account), or a secondmate's own [per-secondmate account pin](configuration.md#per-secondmate-account-pins) when one is set, so a pin that no longer resolves or is signed out refuses before the old agent stops.
    An omp secondmate replacement likewise passes its [per-secondmate omp profile](configuration.md#per-secondmate-omp-profile) file check before the old agent stops.
@@ -99,7 +99,6 @@ A relaunch does take one session reference when the endpoint's own runtime recor
    A ship or scout relaunch requires `--note`, because the replacement inherits the local copy but none of the conversation; the note is appended to the instructions it reads.
    A secondmate relaunch does not require one and never rewrites its standing charter.
 4. **Stop the old agent** through the `exit` verb, with its postcondition.
-   A usage-limit screen gets no Enter: a Grok weekly-limit composer is closed without typing, and a pane-text usage-limit screen refuses with nothing killed until live proof exists, as the [`fm-control.sh` header](../bin/fm-control.sh) owns.
 5. **Launch the replacement** through its single owner, `bin/fm-spawn.sh --relaunch`, which reuses the recorded worktree instead of creating one, adopts the recorded endpoint when it still exists, clears the previous harness's per-task wiring, and arms a fresh busy generation.
    A `no-mistakes` ship relaunch (or one with no recorded mode in a repository with a `no-mistakes` remote) whose recorded branch exists on origin first resyncs that worktree to the published head through `bin/fm-pr-resync.sh`; a branch that diverged from that head is refused and left as-is, and an explicit `direct-PR` or `local-only` relaunch never resyncs, as the [`fm-spawn.sh` header](../bin/fm-spawn.sh) owns.
    When the recorded endpoint is proven gone rather than merely idle or unreachable - which Herdr and Rex can establish, tmux from a record carrying its server identity, and Orca against the recorded worktree - the launch owner creates one fresh endpoint in that same worktree and the republished record rebinds the task to it - see [Reclaiming a task whose endpoint is gone](#reclaiming-a-task-whose-endpoint-is-gone).
