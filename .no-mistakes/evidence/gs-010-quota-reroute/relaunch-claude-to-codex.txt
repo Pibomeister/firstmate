@@ -1,0 +1,28 @@
+# Workaround: spawn-written .claude/settings.local.json moved out of the disposable worker copy; clean pinned account
+$ fm-quota-reroute.sh suggest --from-harness claude --from-model sonnet --worktree <worker copy> --candidate codex:default --snapshot <live quota-axi>
+codex default
+$ fm-control.sh qr1 relaunch --harness codex --note "quota move"
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  down 1s.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+relaunched qr1 harness=codex from=claude model=default effort=default backend=tmux endpoint=firstmate:fm-qr1 worktree=<worker copy>
+record after: worktree=<worker copy> harness=codex model=default effort=default 
+pane after:
+  Folder access
+  /Users/eduardopicazo/.treehouse/demo-d5b602/1/demo
+  Note: You’re in a subdirectory of a Git project. Trusting will apply to the
+  repository root:
+  /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.BeXrBW/proje
+  cts/demo
+  Trust this folder? Codex can read, edit, and run files here, subject to your
+  permission settings. Folder settings can run code automatically, even
+  without a model request. Continue only if you trust these files. Your trust
+  decision will be saved.
+› 1. Trust and continue
+  2. Quit
+  enter continue · esc quit

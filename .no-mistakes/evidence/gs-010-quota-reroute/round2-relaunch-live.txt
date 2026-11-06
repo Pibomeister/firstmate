@@ -1,0 +1,40 @@
+# Round 2 live relaunch of the real spawned Claude scout qr2 (fm-spawn hooks left in place)
+## R1. pin=ordinary (machine's real ~/.claude, which has account hooks): move off Claude refused
+$ /tmp/fmq-ctl.sh bin/fm-control.sh qr2 relaunch --harness codex --note quota move
+fm-gate-refuse: gate agent lifecycle permitted only against lab home <lab>
+error: Claude-specific tooling present (/Users/eduardopicazo/.claude/settings.json .hooks); refusing to move qr2 off Claude
+[exit 1]
+
+recorded harness: harness=claude
+
+## R2. pin=<lab>/claude-acct (clean account dir); worker copy still has fm-spawn's settings.local.json hooks
+present: settings.local.json
+$ /tmp/fmq-ctl.sh bin/fm-control.sh qr2 relaunch --harness codex --note quota move
+fm-gate-refuse: gate agent lifecycle permitted only against lab home <lab>
+fm-gate-refuse: gate agent lifecycle permitted only against lab home <lab>
+relaunched qr2 harness=codex from=claude model=default effort=default backend=tmux endpoint=firstmate:fm-qr2 worktree=<worker copy>
+[exit 0]
+
+record after:
+window=firstmate:fm-qr2
+worktree=<worker copy>
+harness=codex
+model=default
+effort=default
+
+pane after (same tmux window, now Codex):
+  Folder access
+  /Users/eduardopicazo/.treehouse/demo-0273b6/1/demo
+  Note: You’re in a subdirectory of a Git project. Trusting will apply to the
+  repository root:
+  <lab>/proje
+  cts/demo
+  Trust this folder? Codex can read, edit, and run files here, subject to your
+  permission settings. Folder settings can run code automatically, even
+  without a model request. Continue only if you trust these files. Your trust
+  decision will be saved.
+› 1. Trust and continue
+  2. Quit
+  enter continue · esc quit
+
+worker copy .claude after relaunch: 

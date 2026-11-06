@@ -1,0 +1,30 @@
+# Round 2 adversarial: copies of the real fm-spawn-written settings.local.json, modified one way each
+## c1: own hooks + one foreign hook in the same event
+$ bin/fm-quota-reroute.sh suggest --from-harness claude --from-model sonnet --kind scout --claude-config-dir <lab>/claude-acct --worktree <lab>/adv/c1 --candidate codex:default --snapshot <lab>/snap.json
+none
+error: Claude-specific tooling present (<lab>/adv/c1/.claude/settings.local.json .hooks); queue until reset rather than moving off Claude
+[exit 1]
+
+## c2: foreign hook calling another fm-busy-event.sh path
+$ bin/fm-quota-reroute.sh suggest --from-harness claude --from-model sonnet --kind scout --claude-config-dir <lab>/claude-acct --worktree <lab>/adv/c2 --candidate codex:default --snapshot <lab>/snap.json
+none
+error: Claude-specific tooling present (<lab>/adv/c2/.claude/settings.local.json .hooks); queue until reset rather than moving off Claude
+[exit 1]
+
+## c3: own hooks + enabledMcpjsonServers
+$ bin/fm-quota-reroute.sh suggest --from-harness claude --from-model sonnet --kind scout --claude-config-dir <lab>/claude-acct --worktree <lab>/adv/c3 --candidate codex:default --snapshot <lab>/snap.json
+none
+error: Claude-specific tooling present (<lab>/adv/c3/.claude/settings.local.json .enabledMcpjsonServers); queue until reset rather than moving off Claude
+[exit 1]
+
+## c4: own hooks placed in tracked-style settings.json (not local)
+$ bin/fm-quota-reroute.sh suggest --from-harness claude --from-model sonnet --kind scout --claude-config-dir <lab>/claude-acct --worktree <lab>/adv/c4 --candidate codex:default --snapshot <lab>/snap.json
+none
+error: Claude-specific tooling present (<lab>/adv/c4/.claude/settings.json .hooks); queue until reset rather than moving off Claude
+[exit 1]
+
+## c5: unmodified copy (control)
+$ bin/fm-quota-reroute.sh suggest --from-harness claude --from-model sonnet --kind scout --claude-config-dir <lab>/claude-acct --worktree <lab>/adv/c5 --candidate codex:default --snapshot <lab>/snap.json
+codex default
+[exit 0]
+

@@ -1,0 +1,73 @@
+## S1 Claude worker, clean account and worktree: moves off Claude
+$ fm-quota-reroute.sh suggest --from-harness claude --from-model sonnet --worktree /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fmq.xtEzDX/wt-clean --candidate codex:default
+codex default
+[exit 0]
+
+## S2 suggest leaves no side effects (no new files in the fixture home)
+       0
+## S3 worktree hooks signal: off-Claude move refused
+$ fm-quota-reroute.sh suggest --from-harness claude --from-model sonnet --worktree /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fmq.xtEzDX/wt-hooks --candidate codex:default
+none
+error: Claude-specific tooling present (/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fmq.xtEzDX/wt-hooks/.claude/settings.json .hooks); queue until reset rather than moving off Claude
+[exit 1]
+
+## S3b same signal, a Claude candidate remains eligible
+$ fm-quota-reroute.sh suggest --from-harness claude --from-model sonnet --worktree /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fmq.xtEzDX/wt-hooks --candidate claude:opus --candidate codex:default
+claude opus
+[exit 0]
+
+## S4 project .mcp.json signal
+$ fm-quota-reroute.sh suggest --from-harness claude --from-model sonnet --worktree /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fmq.xtEzDX/wt-mcp --candidate codex:default
+none
+error: Claude-specific tooling present (worktree .mcp.json); queue until reset rather than moving off Claude
+[exit 1]
+
+## S5 account MCP in $HOME/.claude.json
+$ fm-quota-reroute.sh suggest --from-harness claude --from-model sonnet --worktree /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fmq.xtEzDX/wt-clean --candidate codex:default
+none
+error: Claude-specific tooling present (MCP servers in /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fmq.xtEzDX/home/.claude.json); queue until reset rather than moving off Claude
+[exit 1]
+
+## S6 no worktree (unknown): only Claude candidates survive
+$ fm-quota-reroute.sh suggest --from-harness claude --from-model sonnet --candidate codex:default
+none
+error: Claude-specific tooling present (unresolvable worktree); queue until reset rather than moving off Claude
+[exit 1]
+
+$ fm-quota-reroute.sh suggest --from-harness claude --from-model sonnet --candidate claude:opus --candidate codex:default
+claude opus
+[exit 0]
+
+## S7 secondmate home = a firstmate checkout (tracks .claude): never off Claude
+$ fm-quota-reroute.sh suggest --kind secondmate --from-harness claude --from-model sonnet --worktree /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M6R301S9D0NRNRES8W6FN35V --candidate codex:default
+none
+error: Claude-specific tooling present (worktree .claude/skills); queue until reset rather than moving off Claude
+[exit 1]
+
+## S8 pinned account: whole Claude harness excluded
+$ fm-quota-reroute.sh suggest --from-harness claude --from-model sonnet --worktree /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fmq.xtEzDX/wt-clean --pinned --candidate claude:opus --candidate codex:default
+codex default
+[exit 0]
+
+## S8b pin from config/claude-account (ordinary), watchdog-style call without --pinned
+$ fm-quota-reroute.sh suggest --from-harness claude --from-model sonnet --worktree /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fmq.xtEzDX/wt-clean --candidate claude:opus --candidate codex:default
+codex default
+[exit 0]
+
+## S8c broken pin
+$ fm-quota-reroute.sh suggest --from-harness claude --from-model sonnet --worktree /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fmq.xtEzDX/wt-clean --candidate claude:opus --candidate codex:default
+none
+error: Claude-specific tooling present (config/claude-account must hold 'ordinary' or one absolute path on a single line with no control characters: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fmq.xtEzDX/fmhome/config/claude-account); queue until reset rather than moving off Claude
+[exit 1]
+
+## S9 non-Claude worker (codex) moves to claude freely; current harness:model excluded
+$ fm-quota-reroute.sh suggest --from-harness codex --from-model default --worktree /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fmq.xtEzDX/wt-hooks --candidate codex:default --candidate claude:default
+claude default
+[exit 0]
+
+## S10 empty candidate list
+$ fm-quota-reroute.sh suggest --from-harness claude --worktree /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fmq.xtEzDX/wt-clean
+none
+error: no reroute candidates supplied
+[exit 1]
+

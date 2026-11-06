@@ -1,0 +1,19 @@
+# Round 2 (head 440b5e11): real Claude Sonnet scout spawned by fm-spawn in a lab home; project tracks no .claude files
+$ git ls-files .claude  -> 0 tracked
+$ ls <worker copy>/.claude -> settings.local.json  (written by fm-spawn; hook commands call bin/fm-busy-event.sh)
+
+## A. tooling check on the spawned worker copy, clean account dir
+$ bin/fm-quota-reroute.sh claude-tooling --config-dir <lab>/claude-acct --worktree <worker copy>
+
+[exit 1]
+
+## B. suggest with a live quota-axi snapshot
+$ bin/fm-quota-reroute.sh suggest --from-harness claude --from-model sonnet --kind scout --claude-config-dir <lab>/claude-acct --worktree <worker copy> --candidate codex:default --snapshot <lab>/snap.json
+codex default
+[exit 0]
+
+## E. same worker copy, the machine's real ~/.claude account (read-only check): account signal still refuses
+$ bin/fm-quota-reroute.sh claude-tooling --config-dir /Users/eduardopicazo/.claude --worktree <worker copy>
+/Users/eduardopicazo/.claude/settings.json .hooks
+[exit 0]
+

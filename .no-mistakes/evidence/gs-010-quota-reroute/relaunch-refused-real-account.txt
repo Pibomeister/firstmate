@@ -1,0 +1,12 @@
+$ FM_HOME=<lab> bin/fm-quota-reroute.sh claude-tooling --worktree <scout worktree>
+~/.claude/settings.json .hooks
+[exit ]
+$ FM_HOME=<lab> bin/fm-control.sh qr1 relaunch --harness codex --note "quota move"
+error: Claude-specific tooling present (~/.claude/settings.json .hooks); refusing to move qr1 off Claude
+[exit ]
+recorded harness after: harness=claude
+pane after:
+     lab.BeXrBW/data/qr1/report.md
+      1 # Report: README.md in demo
+      2
+      3 README.md contains one line: `hi`

@@ -1,0 +1,13 @@
+# Clean disposable Claude account pinned (config/claude-account -> empty dir); project has no .claude of its own
+$ git -C <worker copy> ls-files .claude   (tracked by project)
+(none)
+$ ls <worker copy>/.claude  (written by fm-spawn)
+settings.local.json
+$ fm-quota-reroute.sh claude-tooling --worktree <worker copy>
+<worker copy>/.claude/settings.local.json .hooks
+$ fm-quota-reroute.sh suggest --from-harness claude --from-model sonnet --worktree <worker copy> --candidate codex:default --snapshot <live quota-axi>
+none
+error: Claude-specific tooling present (<worker copy>/.claude/settings.local.json .hooks); queue until reset rather than moving off Claude
+$ fm-control.sh qr1 relaunch --harness codex --note "quota move"
+error: Claude-specific tooling present (<worker copy>/.claude/settings.local.json .hooks); refusing to move qr1 off Claude
+recorded harness after: harness=claude
