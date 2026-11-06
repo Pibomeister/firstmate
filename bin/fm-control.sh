@@ -1049,12 +1049,24 @@ TARGET_EFFORT=
 
 # True when spawn rewrote the live record, not merely when this transaction
 # stamped control_relaunch_tx onto it or stopping the old agent cleared its
-# busy_gen before calling spawn.
+# busy_gen before calling spawn. Cooperating writers (fm-x-link, budget) may
+# change other keys without publishing a new incarnation.
 relaunch_record_changed_beyond_tx() {
   local now was
   now=$(grep -v -e '^control_relaunch_tx=' -e '^busy_gen=' "$META" 2>/dev/null || true)
   was=$(grep -v -e '^control_relaunch_tx=' -e '^busy_gen=' "$META_PRIOR" 2>/dev/null || true)
   [ "$now" != "$was" ]
+}
+
+# True when fm-spawn published a new incarnation. Each publish mints a new
+# spawn_gen. A missing generation on both sides is not a publication.
+relaunch_spawn_published() {
+  local now was
+  relaunch_meta_lock || return 0
+  now=$(fm_meta_get "$META" spawn_gen)
+  was=$(fm_meta_get "$META_PRIOR" spawn_gen)
+  relaunch_meta_unlock
+  [ -n "$now" ] && [ "$now" != "$was" ]
 }
 
 restore_relaunch_prior_record() {
@@ -1150,13 +1162,13 @@ relaunch_rollback() {
       if [ "$RELAUNCH_AGENT_CONFIRMED" = 1 ]; then
         journal_write "failed:$RELAUNCH_PHASE" "rollback=none-new-agent-confirmed" || true
         echo "error: $ID's replacement is running on $TARGET_HARNESS, but transaction completion could not be persisted; its published record was retained for reconciliation" >&2
-      elif [ "$RELAUNCH_META_PUBLISHED" = 1 ] \
-         || relaunch_record_changed_beyond_tx; then
+      elif [ "$RELAUNCH_META_PUBLISHED" = 1 ]; then
         # The launch owner published the new incarnation's record. Leaving it
         # in place is the honest state: the task is now recorded on the new
         # harness with no agent confirmed, which is exactly what recovery
         # reconciles. Rewriting it back to the old harness would be a second,
-        # worse inaccuracy.
+        # worse inaccuracy. Cooperating metadata edits are not a publication;
+        # restore_relaunch_prior_record keeps those by skipping the checkpoint copy.
         journal_write "failed:$RELAUNCH_PHASE" "rollback=none-new-record-kept" || true
         echo "error: $ID was relaunched on $TARGET_HARNESS but no running agent could be confirmed; its work is preserved at $WT" >&2
       else
@@ -1552,7 +1564,7 @@ do_relaunch() {
       die "the replacement agent for $ID was launched, but task $ID's republished record no longer passes endpoint validation (the refusal above names the row), so this transaction cannot say which endpoint to confirm it on; reconcile $META before any further control action"
     fi
   else
-    if relaunch_record_changed_beyond_tx; then
+    if relaunch_spawn_published; then
       RELAUNCH_META_PUBLISHED=1
     fi
     spawn_msg=$(tr '\n' ' ' < "$spawn_err")
