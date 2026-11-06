@@ -34,8 +34,12 @@
 # was never installed or enabled. A project .mcp.json in the worktree; .claude/ skills,
 # hooks, agents, or commands in the worktree. Worktree .claude/settings.json
 # and settings.local.json keys: hooks, enabledMcpjsonServers, mcpServers,
-# enabledPlugins. Firstmate's own busy hooks, which fm-spawn writes into a
-# Claude ship or scout's settings.local.json, are not a signal. Account-wide skills, agents, commands, and a plugin that
+# enabledPlugins. Firstmate's own busy hooks are not a signal: only the exact
+# command forms fm-spawn writes (optional `touch '<turnend>'; ` then
+# quoted fm-busy-event.sh apply quoted-state quoted-id busy|idle --gen
+# quoted --source claude-hook --event <token> 2>/dev/null || true).
+# A command that merely contains that script path still blocks.
+Account-wide skills, agents, commands, and a plugin that
 # only ships those, are not a signal. enabledPlugins is not an account
 # signal. An unreadable file is a signal. An unreadable plugins/ dir is
 # unreadable MCP/hooks config. An unreadable skills/, agents/, or commands/
@@ -159,13 +163,21 @@ fm_quota_claude_settings_keys_signal() {  # <file> <keys> [own-writer]
   fi
   for key in $keys; do
     if jq -e --arg k "$key" --arg own "$own" '
+         def apply_form:
+           startswith("'\''" + $own + "'\'' apply '\''")
+           and test(" apply '\''[^'\'']+'\'' '\''[^'\'']+'\'' (busy|idle) --gen '\''[^'\'']+'\'' --source claude-hook --event [A-Za-z0-9-]+ 2>/dev/null \\|\\| true$");
+         def spawn_busy_hook:
+           apply_form
+           or (test("^touch '\''[^'\'']+'\''; ")
+               and (index("'\''; ") != null)
+               and (.[index("'\''; ") + 3:] | apply_form));
          (if $own != "" and (.hooks | type == "object") then
             .hooks |= (map_values(
                          if type == "array" then
                            map(if type == "object" and (.hooks | type == "array") then
                                  .hooks |= map(select((type == "object"
                                    and (.command | type == "string")
-                                   and (.command | contains($own))) | not))
+                                   and (.command | spawn_busy_hook)) | not))
                                else . end)
                            | map(select((type == "object" and (.hooks | type == "array")
                                          and (.hooks | length == 0)) | not))

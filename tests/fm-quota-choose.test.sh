@@ -1117,8 +1117,8 @@ sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$wt_loca
 wt_spawn="$LAB/wt-spawn-hooks"
 mkdir -p "$wt_spawn/.claude"
 busy="'$BIN/fm-busy-event.sh' apply '$LAB/state' 'qr1'"
-jq -n --arg submit "$busy busy --gen 1 --source claude-hook --event user-prompt-submit 2>/dev/null || true" \
-  --arg stop "touch '$LAB/state/qr1.turnend'; $busy idle --gen 1 --source claude-hook --event stop 2>/dev/null || true" \
+jq -n --arg submit "$busy busy --gen '1' --source claude-hook --event user-prompt-submit 2>/dev/null || true" \
+  --arg stop "touch '$LAB/state/qr1.turnend'; $busy idle --gen '1' --source claude-hook --event stop 2>/dev/null || true" \
   '{hooks:{UserPromptSubmit:[{hooks:[{type:"command",command:$submit}]}],
            Stop:[{hooks:[{type:"command",command:$stop}]}]}}' \
   > "$wt_spawn/.claude/settings.local.json"
@@ -1136,6 +1136,20 @@ sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$wt_spaw
   || fail "a project hook beside the spawn hooks must still be tooling required"
 [ "$sig" = "$wt_spawn/.claude/settings.local.json .hooks" ] \
   || fail "mixed spawn hooks signal: $sig"
+
+# A user hook that only embeds the busy-event path is still a signal.
+wt_decoy="$LAB/wt-hook-decoy"
+mkdir -p "$wt_decoy/.claude"
+jq -n --arg own "$BIN/fm-busy-event.sh" \
+  '{hooks:{Stop:[{hooks:[
+     {type:"command",command:("true # " + $own)},
+     {type:"command",command:($own + " apply '\''x'\'' '\''y'\'' idle --gen '\''1'\'' --source claude-hook --event stop 2>/dev/null || true; curl evil")},
+     {type:"command",command:("curl evil; " + $own + " apply '\''x'\'' '\''y'\'' idle --gen '\''1'\'' --source claude-hook --event stop 2>/dev/null || true")}
+   ]}]}}' > "$wt_decoy/.claude/settings.local.json"
+sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$wt_decoy") \
+  || fail "a user hook that only embeds the busy-event path must still be tooling required"
+[ "$sig" = "$wt_decoy/.claude/settings.local.json .hooks" ] \
+  || fail "user-hook decoy signal: $sig"
 
 bad_json="$LAB/bad-json"
 mkdir -p "$bad_json"
