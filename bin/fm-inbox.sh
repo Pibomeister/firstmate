@@ -124,10 +124,10 @@ SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=bin/fm-bash-compat-lib.sh
 . "$SELF_DIR/fm-bash-compat-lib.sh"
 # The unread captain inbox age rule has one owner, shared with fm-heartbeat.sh.
+# Sourced unconditionally: a missing lib must fail visibly, never read as
+# "no pending note".
 # shellcheck source=bin/fm-captain-inbox-lib.sh
-if [ -r "$SELF_DIR/fm-captain-inbox-lib.sh" ]; then
-  . "$SELF_DIR/fm-captain-inbox-lib.sh"
-fi
+. "$SELF_DIR/fm-captain-inbox-lib.sh"
 FM_ROOT="$(cd "$SELF_DIR/.." && pwd)"
 FM_HOME="${FM_HOME:-$FM_ROOT}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
@@ -895,9 +895,7 @@ cmd_ready() {
   # see an unread-note stall without reading the pane. The rule itself is
   # owned by bin/fm-captain-inbox-lib.sh, shared with fm-heartbeat.sh.
   local unread_inbox_age=""
-  if command -v fm_captain_inbox_unread_age_seconds >/dev/null 2>&1; then
-    unread_inbox_age=$(fm_captain_inbox_unread_age_seconds "$INBOX")
-  fi
+  unread_inbox_age=$(fm_captain_inbox_unread_age_seconds "$INBOX")
 
   # The supervision model belongs to the INSPECTED home, not to whoever ran
   # this command. An explicit FM_SUPERVISION_MODEL still wins; otherwise

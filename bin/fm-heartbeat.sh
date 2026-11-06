@@ -297,8 +297,7 @@ heartbeat_primary_json() {
   transcript=
   [ -z "$session_id" ] || transcript=$(heartbeat_read "primary transcript" fm_warm_compact_engine_transcript "$session_id") || transcript=
   turn_json=$(heartbeat_turn_json primary "$transcript")
-  unread_inbox_age=$(heartbeat_captain_inbox_unread_age) || unread_inbox_age=null
-  case "$unread_inbox_age" in ''|*[!0-9]*) unread_inbox_age=null ;; esac
+  unread_inbox_age=$(heartbeat_captain_inbox_unread_age)
   if [ "$present" = true ]; then
     context_json=$(heartbeat_context_json primary "$transcript" "$backend" "$target")
   else

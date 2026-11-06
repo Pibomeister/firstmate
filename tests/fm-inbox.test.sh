@@ -77,6 +77,7 @@ isolated="$TMP_ROOT/isolated"
 mkdir -p "$isolated/bin"
 cp "$INBOX_BIN" "$isolated/bin/fm-inbox.sh"
 cp "$ROOT/bin/fm-bash-compat-lib.sh" "$isolated/bin/fm-bash-compat-lib.sh"
+cp "$ROOT/bin/fm-captain-inbox-lib.sh" "$isolated/bin/fm-captain-inbox-lib.sh"
 chmod +x "$isolated/bin/fm-inbox.sh"
 home=$(make_home human-wake-fail)
 set +e
