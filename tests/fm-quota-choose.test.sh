@@ -1111,6 +1111,32 @@ sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$wt_loca
 [ "$sig" = "$wt_local/.claude/settings.local.json .enabledPlugins" ] \
   || fail "worktree settings.local.json signal: $sig"
 
+# fm-spawn writes firstmate's own busy hooks into a Claude ship or scout's
+# settings.local.json; they are not project tooling, so a move off Claude
+# stays possible. A project hook beside them is still a signal.
+wt_spawn="$LAB/wt-spawn-hooks"
+mkdir -p "$wt_spawn/.claude"
+busy="'$BIN/fm-busy-event.sh' apply '$LAB/state' 'qr1'"
+jq -n --arg submit "$busy busy --gen 1 --source claude-hook --event user-prompt-submit 2>/dev/null || true" \
+  --arg stop "touch '$LAB/state/qr1.turnend'; $busy idle --gen 1 --source claude-hook --event stop 2>/dev/null || true" \
+  '{hooks:{UserPromptSubmit:[{hooks:[{type:"command",command:$submit}]}],
+           Stop:[{hooks:[{type:"command",command:$stop}]}]}}' \
+  > "$wt_spawn/.claude/settings.local.json"
+if sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$wt_spawn"); then
+  fail "firstmate's own spawn hooks must not block a move off Claude: $sig"
+fi
+out=$(call_reroute suggest --snapshot "$LAB/captured.json" --from-harness claude \
+  --claude-config-dir "$empty_dir" --worktree "$wt_spawn" --candidate codex:default) \
+  || fail "spawn hooks only: suggest should name the non-Claude pick, got '$out'"
+[ "$out" = "codex default" ] || fail "spawn hooks only: expected codex, got '$out'"
+jq '.hooks.Stop[0].hooks += [{type:"command",command:"./lint.sh"}]' \
+  "$wt_spawn/.claude/settings.local.json" > "$LAB/spawn-mixed.json"
+mv "$LAB/spawn-mixed.json" "$wt_spawn/.claude/settings.local.json"
+sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$wt_spawn") \
+  || fail "a project hook beside the spawn hooks must still be tooling required"
+[ "$sig" = "$wt_spawn/.claude/settings.local.json .hooks" ] \
+  || fail "mixed spawn hooks signal: $sig"
+
 bad_json="$LAB/bad-json"
 mkdir -p "$bad_json"
 printf '{not json\n' > "$bad_json/settings.json"

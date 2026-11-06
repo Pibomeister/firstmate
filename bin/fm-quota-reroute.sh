@@ -34,7 +34,8 @@
 # was never installed or enabled. A project .mcp.json in the worktree; .claude/ skills,
 # hooks, agents, or commands in the worktree. Worktree .claude/settings.json
 # and settings.local.json keys: hooks, enabledMcpjsonServers, mcpServers,
-# enabledPlugins. Account-wide skills, agents, commands, and a plugin that
+# enabledPlugins. Firstmate's own busy hooks, which fm-spawn writes into a
+# Claude ship or scout's settings.local.json, are not a signal. Account-wide skills, agents, commands, and a plugin that
 # only ships those, are not a signal. enabledPlugins is not an account
 # signal. An unreadable file is a signal. An unreadable plugins/ dir is
 # unreadable MCP/hooks config. An unreadable skills/, agents/, or commands/
@@ -142,8 +143,11 @@ fm_quota_claude_mcp_unreadable() {  # <file>
 # Prints the blocking signal and returns 0 when <file> is unreadable or any
 # named key is a non-empty object, array, string, or true. Returns 1 when the
 # file is absent or none of the keys are a signal. <keys> is a space list.
-fm_quota_claude_settings_keys_signal() {  # <file> <keys>
-  local f=$1 keys=$2 key
+# With <own-writer>, hook commands that call that path (firstmate's own busy
+# hooks, which fm-spawn writes and fm-control relaunch retires) are dropped
+# before the check.
+fm_quota_claude_settings_keys_signal() {  # <file> <keys> [own-writer]
+  local f=$1 keys=$2 own=${3-} key
   [ -e "$f" ] || return 1
   if [ ! -f "$f" ] || [ ! -r "$f" ]; then
     printf '%s\n' "unreadable $f"
@@ -154,8 +158,22 @@ fm_quota_claude_settings_keys_signal() {  # <file> <keys>
     return 0
   fi
   for key in $keys; do
-    if jq -e --arg k "$key" '
-         .[$k] as $v
+    if jq -e --arg k "$key" --arg own "$own" '
+         (if $own != "" and (.hooks | type == "object") then
+            .hooks |= (map_values(
+                         if type == "array" then
+                           map(if type == "object" and (.hooks | type == "array") then
+                                 .hooks |= map(select((type == "object"
+                                   and (.command | type == "string")
+                                   and (.command | contains($own))) | not))
+                               else . end)
+                           | map(select((type == "object" and (.hooks | type == "array")
+                                         and (.hooks | length == 0)) | not))
+                         else . end)
+                       | with_entries(select((.value | type == "array"
+                                              and length == 0) | not)))
+          else . end)
+         | .[$k] as $v
          | ($v | type == "object" and length > 0)
            or ($v | type == "array" and length > 0)
            or ($v | type == "string" and length > 0)
@@ -336,13 +354,16 @@ fm_quota_claude_tooling_signal() {  # <config-dir> [worktree]
       return 0
     fi
   done
-  for f in "$wt/.claude/settings.json" "$wt/.claude/settings.local.json"; do
-    if sig=$(fm_quota_claude_settings_keys_signal "$f" \
-               "$FM_QUOTA_CLAUDE_WT_SETTING_KEYS"); then
-      printf '%s\n' "$sig"
-      return 0
-    fi
-  done
+  if sig=$(fm_quota_claude_settings_keys_signal "$wt/.claude/settings.json" \
+             "$FM_QUOTA_CLAUDE_WT_SETTING_KEYS"); then
+    printf '%s\n' "$sig"
+    return 0
+  fi
+  if sig=$(fm_quota_claude_settings_keys_signal "$wt/.claude/settings.local.json" \
+             "$FM_QUOTA_CLAUDE_WT_SETTING_KEYS" "$SCRIPT_DIR/fm-busy-event.sh"); then
+    printf '%s\n' "$sig"
+    return 0
+  fi
   return 1
 }
 
