@@ -177,13 +177,7 @@ relaunch --harness codex on that live pane   -> refuse exit 1; pane/harness unch
 watchdog once without a usage-limit pane     -> 0; no pick named; no relaunch
 ```
 
-`fm-home-seed` plants worktree `.claude/` (skills symlink, settings.json, mods/firstmate-calm with plugin.json and hooks).
-Unchanged seed is identified by `bin/fm-claude-seed.manifest` git-blob identity, not by path names and not by parent `HEAD:.claude`.
-A user hook, a user edit of a seeded file, a user skill behind the skills symlink, and user MCP config still refuse.
-A live run on 2026-11-05 also refused on worktree `.claude/skills` under the pre-exemption rule.
-That observation is historical only.
-Portable tests cover the current catalog exemption.
-Do not treat that refusal as live proof of current seed behavior.
+Seeded-home product note: `fm-home-seed` plants worktree `.claude/` (skills, settings.json, mods/firstmate-calm with plugin.json and hooks). Under the worktree rule, every standard seeded secondmate is Claude-specific, so a quota move off Claude is refused even with Codex headroom. The captain accepted that limit with no seed exemption: the `bin/fm-quota-reroute.sh` header owns it, so checklist item 2 cannot pass on a seeded home and needs a home without worktree Claude signals.
 
 Checklist:
 
@@ -192,8 +186,7 @@ Checklist:
    Production now refuses that pane-text close until a dated capture exists.
 2. Replacement starts on Codex on Herdr: BLOCKED.
    No usage-limit screen was available.
-   Unchanged seeded `.claude/` no longer refuses that move.
-   A user hook, seed edit, or MCP config still would.
+   Would also be refused by the seeded home's worktree `.claude/` signal.
 3. Claude harness pin with no other signal does not block: PARTIAL.
    Gate and suggest were proven on a clean worktree.
    Live relaunch was not exercised without a signal.
@@ -203,6 +196,8 @@ Checklist:
 5. Watchdog names the pick and does not relaunch: PARTIAL.
    The live no-op was correct without a usage-limit pane.
    Naming the pick needs that pane.
+
+Cleanup: lab teardown 0; lab homes removed; Herdr default stopped; gs007 tmux sessions untouched; no commits from the proof runners.
 
 ## Out of scope for this run
 

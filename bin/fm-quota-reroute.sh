@@ -16,10 +16,11 @@
 # any Claude-specific signal is present. Unknown (missing, unreadable, or
 # unresolvable config dir or worktree) is a signal: queue until reset. A signal
 # drops only the non-Claude candidates; a Claude candidate can still be named.
-# A secondmate's worktree is its firstmate home.
-# Seed exemption is owned by the Signals paragraph; this check does not scan
-# HEAD:.claude.
-# An explicit fm-control.sh relaunch --harness runs the same check.
+# A secondmate's worktree is its firstmate home, and every firstmate home
+# tracks .claude/ skills and hooks, so suggest never moves a Claude secondmate
+# off Claude. An explicit fm-control.sh relaunch --harness runs the same
+# check, so it can move that secondmate to another Claude model but not off
+# Claude.
 # claude-tooling exits 0 and prints the blocking signal when tooling is
 # required. Exit 1 means no signal.
 #
@@ -39,12 +40,7 @@
 # quoted --source claude-hook --event <token> 2>/dev/null || true).
 # The match is the whole command. A command that merely contains that script
 # path, or embeds the spawn form beside other shell, still blocks.
-# Unchanged Firstmate seed files listed in bin/fm-claude-seed.manifest are not a
-# signal. Identity is that catalog's git blob, not a path name and not
-# HEAD:.claude of the running home. The catalog hashes
-# .claude/settings.json, .claude/skills, .claude/mods/firstmate-calm/, and
-# .agents/skills/ (the skills symlink target). A user file under
-# .agents/skills is still a signal. Account-wide skills, agents, commands, and a plugin that
+# Account-wide skills, agents, commands, and a plugin that
 # only ships those, are not a signal. enabledPlugins is not an account
 # signal. An unreadable file is a signal. An unreadable plugins/ dir is
 # unreadable MCP/hooks config. An unreadable skills/, agents/, or commands/
@@ -52,10 +48,9 @@
 # .projects entry that is neither an object nor null, or a .mcpServers
 # (top-level or under .projects) that is present and not an object, is
 # unreadable. Worktree .claude/ skills, hooks, agents, or commands are a
-# signal if the path exists, even empty, unless they are unchanged seed
-# as above. An unreadable seed traversal is a signal. A caller that passes
+# signal if the path exists, even empty. A caller that passes
 # --claude-config-dir for a pinned account must also pass --pinned. Those two
-# lists live only in the variables below.
+# lists live only in the variables below; there is no exemption mechanism.
 # Resolve the config dir from the task's account pin, never from
 # claude-config-dirs. A broken or unreadable pin is a signal. No pin, or
 # ordinary, inspects $HOME/.claude.
@@ -286,256 +281,6 @@ EOF
   return 1
 }
 
-# Git blob of a worktree file or symlink. A directory or missing path fails.
-# Symlink blobs are the target string, matching git's symlink storage.
-fm_quota_claude_blob_of() {  # <path>
-  if [ -L "$1" ]; then
-    printf '%s' "$(readlink "$1")" | git hash-object --stdin 2>/dev/null
-  elif [ -f "$1" ]; then
-    git hash-object -- "$1" 2>/dev/null
-  else
-    return 1
-  fi
-}
-
-fm_quota_claude_seed_manifest_file() {
-  printf '%s\n' "$SCRIPT_DIR/fm-claude-seed.manifest"
-}
-
-# Prints <blob><TAB><path> lines from the Firstmate-owned catalog.
-# A missing, unreadable, or malformed catalog fails; callers do not exempt.
-fm_quota_claude_load_seed_catalog() {
-  local f header body
-  f=$(fm_quota_claude_seed_manifest_file)
-  [ -f "$f" ] && [ -r "$f" ] || return 1
-  IFS= read -r header < "$f" || return 1
-  [ "$header" = "fm-claude-seed.v1" ] || return 1
-  body=$(tail -n +2 "$f")
-  [ -n "$body" ] || return 1
-  printf '%s\n' "$body"
-}
-
-fm_quota_claude_catalog_paths() {  # <catalog>
-  printf '%s\n' "$1" | cut -f2-
-}
-
-fm_quota_claude_catalog_has() {  # <relpath> <catalog>
-  printf '%s\n' "$2" | cut -f2- | grep -Fqx "$1"
-}
-
-fm_quota_claude_catalog_blob() {  # <relpath> <catalog>
-  local rel=$1 catalog=$2 blob path
-  while IFS=$'\t' read -r blob path; do
-    [ "$path" = "$rel" ] || continue
-    printf '%s\n' "$blob"
-    return 0
-  done <<EOF
-$catalog
-EOF
-  return 1
-}
-
-# True when the worktree carries the catalog's .claude/skills symlink blob,
-# so Firstmate seed inspection applies. Unknown catalog or a different link
-# is false: callers keep the existence checks.
-fm_quota_claude_worktree_seed_mode() {  # <wt>
-  local wt=$1 catalog expected actual
-  catalog=$(fm_quota_claude_load_seed_catalog) || return 1
-  expected=$(fm_quota_claude_catalog_blob .claude/skills "$catalog") || return 1
-  actual=$(fm_quota_claude_blob_of "$wt/.claude/skills") || return 1
-  [ "$actual" = "$expected" ]
-}
-
-fm_quota_claude_seed_dir_implied() {  # <relpath> <paths>
-  local rel=$1 paths=$2 p
-  while IFS= read -r p; do
-    [ -n "$p" ] || continue
-    case "$p" in
-      "$rel"|"$rel"/*) return 0 ;;
-    esac
-  done <<EOF
-$paths
-EOF
-  return 1
-}
-
-# Prints paths of files and symlinks under <dir>, or a signal and returns 0
-# when the walk cannot complete. Returns 1 when <dir> is absent.
-fm_quota_claude_find_leaves() {  # <dir>
-  local dir=$1 err out
-  [ -e "$dir" ] || return 1
-  if [ ! -d "$dir" ] || [ ! -r "$dir" ] || [ ! -x "$dir" ]; then
-    printf '%s\n' "unreadable $dir"
-    return 0
-  fi
-  err=$(mktemp) || {
-    printf '%s\n' "unreadable $dir"
-    return 0
-  }
-  out=$(find "$dir" \( -type f -o -type l \) -print 2>"$err") || {
-    rm -f "$err"
-    printf '%s\n' "unreadable $dir"
-    return 0
-  }
-  if [ -s "$err" ]; then
-    rm -f "$err"
-    printf '%s\n' "unreadable $dir"
-    return 0
-  fi
-  rm -f "$err"
-  printf '%s\n' "$out"
-  return 2
-}
-
-fm_quota_claude_find_dirs() {  # <dir>
-  local dir=$1 err out
-  [ -e "$dir" ] || return 1
-  if [ ! -d "$dir" ] || [ ! -r "$dir" ] || [ ! -x "$dir" ]; then
-    printf '%s\n' "unreadable $dir"
-    return 0
-  fi
-  err=$(mktemp) || {
-    printf '%s\n' "unreadable $dir"
-    return 0
-  }
-  out=$(find "$dir" -mindepth 1 -type d -print 2>"$err") || {
-    rm -f "$err"
-    printf '%s\n' "unreadable $dir"
-    return 0
-  }
-  if [ -s "$err" ]; then
-    rm -f "$err"
-    printf '%s\n' "unreadable $dir"
-    return 0
-  fi
-  rm -f "$err"
-  printf '%s\n' "$out"
-  return 2
-}
-
-# Prints a worktree signal and returns 0 when seed-mode finds an edit,
-# addition, or unreadable walk. Returns 1 when every catalog path that is
-# present matches and nothing extra is present. settings.local.json is left
-# to the busy-hook key check.
-fm_quota_claude_seed_tree_signal() {  # <wt>
-  local wt=${1%/} catalog paths path f expected actual rel sig leaves dirs rc target
-  catalog=$(fm_quota_claude_load_seed_catalog) || {
-    printf '%s\n' "unreadable worktree"
-    return 0
-  }
-  paths=$(fm_quota_claude_catalog_paths "$catalog")
-  while IFS= read -r path; do
-    [ -n "$path" ] || continue
-    f=$wt/$path
-    if [ ! -e "$f" ] && [ ! -L "$f" ]; then
-      continue
-    fi
-    if [ ! -L "$f" ] && [ ! -r "$f" ]; then
-      printf '%s\n' "unreadable $f"
-      return 0
-    fi
-    expected=$(fm_quota_claude_catalog_blob "$path" "$catalog") || {
-      printf '%s\n' "unreadable worktree"
-      return 0
-    }
-    if [ -L "$f" ] || [ -f "$f" ]; then
-      actual=$(fm_quota_claude_blob_of "$f") || {
-        printf '%s\n' "unreadable $f"
-        return 0
-      }
-      [ "$actual" = "$expected" ] && continue
-      if [ "$path" = .claude/settings.json ]; then
-        if sig=$(fm_quota_claude_settings_keys_signal "$f" \
-                   "$FM_QUOTA_CLAUDE_WT_SETTING_KEYS"); then
-          printf '%s\n' "$sig"
-          return 0
-        fi
-      fi
-      printf '%s\n' "worktree $path"
-      return 0
-    fi
-    printf '%s\n' "worktree $path"
-    return 0
-  done <<EOF
-$paths
-EOF
-  rc=0
-  leaves=$(fm_quota_claude_find_leaves "$wt/.claude") || rc=$?
-  if [ "$rc" -eq 0 ]; then
-    printf '%s\n' "$leaves"
-    return 0
-  fi
-  if [ "$rc" -eq 2 ]; then
-    while IFS= read -r f; do
-      [ -n "$f" ] || continue
-      rel=${f#"$wt"/}
-      [ "$rel" = .claude/settings.local.json ] && continue
-      fm_quota_claude_catalog_has "$rel" "$catalog" && continue
-      printf '%s\n' "worktree $rel"
-      return 0
-    done <<EOF
-$leaves
-EOF
-  fi
-  target=$wt/.agents/skills
-  if [ ! -e "$target" ]; then
-    printf '%s\n' "unreadable $target"
-    return 0
-  fi
-  rc=0
-  leaves=$(fm_quota_claude_find_leaves "$target") || rc=$?
-  if [ "$rc" -eq 0 ]; then
-    printf '%s\n' "$leaves"
-    return 0
-  fi
-  if [ "$rc" -eq 2 ]; then
-    while IFS= read -r f; do
-      [ -n "$f" ] || continue
-      rel=${f#"$wt"/}
-      fm_quota_claude_catalog_has "$rel" "$catalog" && continue
-      printf '%s\n' "worktree $rel"
-      return 0
-    done <<EOF
-$leaves
-EOF
-  fi
-  rc=0
-  dirs=$(fm_quota_claude_find_dirs "$wt/.claude") || rc=$?
-  if [ "$rc" -eq 0 ]; then
-    printf '%s\n' "$dirs"
-    return 0
-  fi
-  if [ "$rc" -eq 2 ]; then
-    while IFS= read -r f; do
-      [ -n "$f" ] || continue
-      rel=${f#"$wt"/}
-      fm_quota_claude_seed_dir_implied "$rel" "$paths" && continue
-      printf '%s\n' "worktree $rel"
-      return 0
-    done <<EOF
-$dirs
-EOF
-  fi
-  rc=0
-  dirs=$(fm_quota_claude_find_dirs "$target") || rc=$?
-  if [ "$rc" -eq 0 ]; then
-    printf '%s\n' "$dirs"
-    return 0
-  fi
-  if [ "$rc" -eq 2 ]; then
-    while IFS= read -r f; do
-      [ -n "$f" ] || continue
-      rel=${f#"$wt"/}
-      fm_quota_claude_seed_dir_implied "$rel" "$paths" && continue
-      printf '%s\n' "worktree $rel"
-      return 0
-    done <<EOF
-$dirs
-EOF
-  fi
-  return 1
-}
-
 # fm_quota_claude_tooling_signal <config-dir> [worktree]
 # Prints the blocking signal and returns 0 when a Claude-specific signal is
 # present or the inspect cannot be completed. Returns 1 when none are present.
@@ -613,19 +358,6 @@ fm_quota_claude_tooling_signal() {  # <config-dir> [worktree]
   if [ -e "$wt/.mcp.json" ]; then
     printf '%s\n' "worktree .mcp.json"
     return 0
-  fi
-  wt=${wt%/}
-  if [ -e "$wt/.claude" ] && fm_quota_claude_worktree_seed_mode "$wt"; then
-    if sig=$(fm_quota_claude_seed_tree_signal "$wt"); then
-      printf '%s\n' "$sig"
-      return 0
-    fi
-    if sig=$(fm_quota_claude_settings_keys_signal "$wt/.claude/settings.local.json" \
-               "$FM_QUOTA_CLAUDE_WT_SETTING_KEYS" "$SCRIPT_DIR/fm-busy-event.sh"); then
-      printf '%s\n' "$sig"
-      return 0
-    fi
-    return 1
   fi
   for name in skills hooks agents commands; do
     if [ -e "$wt/.claude/$name" ]; then
