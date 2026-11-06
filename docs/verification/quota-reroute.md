@@ -189,7 +189,7 @@ watchdog once                                -> 0; no pick named; no relaunch
 default after stop                           -> running=false
 ```
 
-Seeded-home product note: `fm-home-seed` plants worktree `.claude/` (skills, settings.json, mods/firstmate-calm with plugin.json and hooks). Under the current unchanged worktree rule, every standard seeded secondmate is Claude-specific, so a quota move off Claude is refused even with Codex headroom. Checklist item 2 cannot pass on a seeded home without a captain decision (exempt seed material, change the seed, or accept that seeded mates stay on Claude until reset).
+Seeded-home product note: `fm-home-seed` plants worktree `.claude/` (skills, settings.json, mods/firstmate-calm with plugin.json and hooks). Under the worktree rule, every standard seeded secondmate is Claude-specific, so a quota move off Claude is refused even with Codex headroom. The captain accepted that limit with no seed exemption: the `bin/fm-quota-reroute.sh` header owns it, so checklist item 2 cannot pass on a seeded home and needs a home without worktree Claude signals.
 
 Checklist (combined):
 
