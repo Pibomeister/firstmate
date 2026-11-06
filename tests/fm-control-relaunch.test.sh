@@ -1303,16 +1303,19 @@ test_relaunch_off_claude_refuses_when_tooling_check_exits_2() {
   make_claude_auth_stub "$dir"
   cat > "$dir/fakebin/fm-quota-reroute.sh" <<'SH'
 #!/usr/bin/env bash
-echo "error: claude-tooling needs --config-dir or FM_HOME" >&2
+printf 'ran\n' > "${0%/*}/ran"
+echo "error: injected tooling check crashed" >&2
 exit 2
 SH
   chmod +x "$dir/fakebin/fm-quota-reroute.sh"
   printf 'codex' > "$dir/fake/becomes"
-  out=$(FM_TEST_QUOTA_REROUTE="$dir/fakebin/fm-quota-reroute.sh" \
+  out=$(FM_TEST_SEAM=1 FM_TEST_QUOTA_REROUTE="$dir/fakebin/fm-quota-reroute.sh" \
     run_control "$dir" rl87 relaunch --harness codex --note "check crashed"); rc=$?
   expect_code 1 "$rc" "a claude-tooling exit 2 must refuse the move off Claude"$'\n'"$out"
+  [ "$(cat "$dir/fakebin/ran" 2>/dev/null)" = ran ] \
+    || fail "the injected tooling helper must have run"$'\n'"$out"
   assert_contains "$out" "Claude-specific tooling present" "the refusal should name the tooling gate"
-  assert_contains "$out" "claude-tooling needs --config-dir or FM_HOME" "the refusal should name the check's reason"
+  assert_contains "$out" "injected tooling check crashed" "the refusal should name the injected helper's reason"
   [ "$(cat "$dir/fake/command")" = claude ] \
     || fail "a tooling-check crash must leave the old agent running"
   [ "$(meta_field "$dir" rl87 harness)" = claude ] \
