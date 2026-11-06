@@ -116,9 +116,12 @@
 #              state; it never leaves a half-transitioned task claiming to be
 #              running.
 #              A secondmate whose endpoint is gone once its agent is stopped
-#              exits 4 with that prior record kept, because its replacement
-#              belongs to the secondmate respawn path
+#              exits 4 with that prior record kept when this call named
+#              neither --harness nor --model, because that replacement belongs
+#              to the secondmate respawn path
 #              (bin/fm-spawn.sh <id> --secondmate), which the caller runs next.
+#              An explicit --harness or --model is a quota or operator replace
+#              and rebinds through --relaunch.
 #
 # Teardown and discard are NOT verbs here and never will be. `exit` stops an
 # agent and preserves everything else; removing a worktree, killing an
@@ -1489,8 +1492,15 @@ do_relaunch() {
   [ "$TARGET_EFFORT" = default ] || spawn_args+=(--effort "$TARGET_EFFORT")
   spawn_err=$(mktemp "${TMPDIR:-/tmp}/fm-control-spawn.XXXXXX") || die "could not record spawn output for task $ID"
   spawn_rc=0
-  FM_CONTROL_RELAUNCH_TX="$RELAUNCH_TX" \
+  # A same-pin secondmate relaunch (restart, liveness) must not mint a
+  # replacement window through --relaunch. Quota and an operator replace name
+  # --harness or --model, and only those pass the token spawn requires.
+  if [ "$KIND" = secondmate ] && [ "$HARNESS_SET" = 0 ] && [ "$MODEL_SET" = 0 ]; then
     "$SCRIPT_DIR/fm-spawn.sh" "${spawn_args[@]}" >/dev/null 2>"$spawn_err" || spawn_rc=$?
+  else
+    FM_CONTROL_RELAUNCH_TX="$RELAUNCH_TX" \
+      "$SCRIPT_DIR/fm-spawn.sh" "${spawn_args[@]}" >/dev/null 2>"$spawn_err" || spawn_rc=$?
+  fi
   if [ "$spawn_rc" -eq 0 ]; then
     cat "$spawn_err" >&2
     rm -f "$spawn_err"

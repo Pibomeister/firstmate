@@ -3681,17 +3681,22 @@ test_herdr_reclaim_of_a_secondmate_uses_relaunch() {
     || fail "a refused direct --relaunch must not mint a replacement pane"
 
   out=$(FM_CONTROL_RELAUNCH_TX=forged run_spawn "$dir" rl76 --relaunch --harness claude); rc=$?
-  expect_code 1 "$rc" "an env token without a matching recorded token must refuse"$'\n'"$out"
+  expect_code 4 "$rc" "an env token without a matching recorded token must refuse"$'\n'"$out"
   assert_contains "$out" "--secondmate" \
     "a forged relaunch token must not skip the gone-secondmate owner"
   [ ! -s "$dir/fake/herdr-log" ] || ! grep -q "tab create" "$dir/fake/herdr-log" \
     || fail "a forged relaunch token must not mint a replacement pane"
 
+  out=$(run_control "$dir" rl76 relaunch); rc=$?
+  expect_code 4 "$rc" "same-pin fm-control relaunch of a gone secondmate stays with --secondmate"$'\n'"$out"
+  assert_contains "$out" "--secondmate" \
+    "same-pin gone-endpoint recovery is the respawn path"
+
   out=$(run_control "$dir" rl76 relaunch --harness claude); rc=$?
   log=$(cat "$dir/fake/herdr-log")
-  expect_code 0 "$rc" "fm-control relaunch rebinds a gone secondmate endpoint"$'\n'"$out"$'\n'"$log"
+  expect_code 0 "$rc" "fm-control relaunch --harness rebinds a gone secondmate endpoint"$'\n'"$out"$'\n'"$log"
   assert_contains "$log" "tab create" "a destroyed secondmate pane must be replaced"
-  assert_not_contains "$out" "--secondmate" "quota and control-plane replace use fm-control relaunch, not a secondmate respawn"
+  assert_not_contains "$out" "--secondmate" "a quota or operator replace uses fm-control relaunch, not a secondmate respawn"
   [ "$(meta_field "$dir" rl76 window)" = 'fmlab:%9' ] \
     || fail "the rebound secondmate endpoint should be the new pane, got $(meta_field "$dir" rl76 window)"
   [ "$(meta_field "$dir" rl76 backend)" = herdr ] \

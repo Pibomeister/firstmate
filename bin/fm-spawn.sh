@@ -119,7 +119,7 @@
 #   to have survived refuses too. The worktree is reused untouched either way; a
 #   rebind is a recovery, never a teardown. Only a crewmate or scout rebinds
 #   through --relaunch, except fm-control relaunch of a proven-gone secondmate
-#   (quota move). A gone secondmate is otherwise respawned by --secondmate
+#   that named --harness or --model (quota move). A gone secondmate is otherwise respawned by --secondmate
 #   (session-start liveness sweep), and that refusal exits 4, before anything
 #   is created, so a caller can hand the mate to that owner without parsing
 #   the message.
@@ -2704,19 +2704,6 @@ FACTS
   esac
   KIND=$(fm_meta_get "$RELAUNCH_META" kind)
   [ -n "$KIND" ] || KIND=ship
-  # Gone-secondmate recovery has one owner per path: --secondmate for the
-  # liveness sweep, and fm-control relaunch (which sets FM_CONTROL_RELAUNCH_TX
-  # and stamps the same token on the record) for a proven-gone quota or
-  # control-plane replace. Direct --relaunch of a gone secondmate is refused
-  # so those two cannot both mint a window. The env var alone is not enough.
-  if [ "$RELAUNCH_REBIND" -eq 1 ] && [ "$KIND" = secondmate ]; then
-    recorded_tx=$(fm_meta_get "$RELAUNCH_META" control_relaunch_tx)
-    if [ -z "${FM_CONTROL_RELAUNCH_TX:-}" ] \
-       || [ "$recorded_tx" != "$FM_CONTROL_RELAUNCH_TX" ]; then
-      echo "error: --relaunch of a gone secondmate is refused except through fm-control relaunch on a proven-gone endpoint; recover it with --secondmate" >&2
-      exit 4
-    fi
-  fi
   MODE=$(fm_meta_get "$RELAUNCH_META" mode)
   YOLO=$(fm_meta_get "$RELAUNCH_META" yolo)
   UPSTREAM_CONSENT=$(fm_meta_get "$RELAUNCH_META" upstream_consent)
@@ -2786,6 +2773,20 @@ FACTS
     echo "error: task $ID has no recorded harness; pass --harness to relaunch it" >&2
     exit 1
   }
+  # Gone-secondmate recovery has one owner per path: --secondmate for the
+  # liveness sweep and same-pin restart, and fm-control relaunch that named
+  # --harness or --model (which sets FM_CONTROL_RELAUNCH_TX and stamps the
+  # same token on the record) for a proven-gone quota or control-plane
+  # replace. Direct --relaunch of a gone secondmate is refused so those two
+  # cannot both mint a window. The env var alone is not enough.
+  if [ "$RELAUNCH_REBIND" -eq 1 ] && [ "$KIND" = secondmate ]; then
+    recorded_tx=$(fm_meta_get "$RELAUNCH_META" control_relaunch_tx)
+    if [ -z "${FM_CONTROL_RELAUNCH_TX:-}" ] \
+       || [ "$recorded_tx" != "$FM_CONTROL_RELAUNCH_TX" ]; then
+      echo "error: --relaunch of a gone secondmate is refused except through fm-control relaunch that named --harness or --model on a proven-gone endpoint; recover it with --secondmate" >&2
+      exit 4
+    fi
+  fi
 elif [ "$KIND" = secondmate ]; then
   case "${POS[1]:-}" in
   '' | claude | codex | opencode | pi | pi-signed | grok | kimi | cursor | gemini | muse | rovo | omp | agy | devin | commandcode | droid | polytoken | cortex)
