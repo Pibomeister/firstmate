@@ -417,6 +417,16 @@ test_primary_unread_inbox_age_is_published() {
   publish "$home"
   assert_ledger "$home" '.primary.unread_inbox_age_seconds >= 590' \
     "the oldest pending captain inbox note should publish its age"
+  # Both published surfaces share one age rule, so they agree on the same inbox.
+  local hb_age ready_age
+  hb_age=$(jq -r '.primary.unread_inbox_age_seconds' "$(ledger "$home")")
+  ready_age=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    FM_CONFIG_OVERRIDE="$home/config" "$ROOT/bin/fm-inbox.sh" ready \
+    | jq -r '.wake_consumer.unread_inbox_age_seconds')
+  [ -n "$hb_age" ] && [ -n "$ready_age" ] && [ "$hb_age" != null ] && [ "$ready_age" != null ] \
+    || fail "both surfaces should report an unread age for the same inbox (heartbeat=$hb_age ready=$ready_age)"
+  [ $(( hb_age - ready_age )) -ge -10 ] && [ $(( hb_age - ready_age )) -le 10 ] \
+    || fail "heartbeat and readiness disagree on the unread age (heartbeat=$hb_age ready=$ready_age)"
   mkdir -p "$home/state/inbox/handled"
   mv "$note" "$home/state/inbox/handled/"
   publish "$home"

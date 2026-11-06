@@ -150,6 +150,10 @@ command -v jq >/dev/null 2>&1 || {
 # shellcheck source=bin/fm-context-footer-lib.sh
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/fm-context-footer-lib.sh"
+# The unread captain inbox age rule has one owner, shared with fm-inbox.sh.
+# shellcheck source=bin/fm-captain-inbox-lib.sh
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/fm-captain-inbox-lib.sh"
 
 HEARTBEAT_NOW=${FM_HEARTBEAT_NOW:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}
 HEARTBEAT_EPOCH=$(date -u -j -f '%Y-%m-%dT%H:%M:%SZ' "$HEARTBEAT_NOW" +%s 2>/dev/null \
@@ -262,15 +266,9 @@ heartbeat_context_json() {  # <label> <transcript-or-empty> [backend] [target] [
 }
 
 heartbeat_captain_inbox_unread_age() {
-  local f m oldest='' age
-  for f in "$STATE"/inbox/*.note; do
-    [ -f "$f" ] || continue
-    m=$(file_mtime "$f") || continue
-    if [ -z "$oldest" ] || [ "$m" -lt "$oldest" ]; then oldest=$m; fi
-  done
-  [ -n "$oldest" ] || { printf 'null\n'; return 0; }
-  age=$(( HEARTBEAT_EPOCH - oldest ))
-  [ "$age" -ge 0 ] || age=0
+  local age
+  age=$(fm_captain_inbox_unread_age_seconds "$STATE/inbox")
+  [ -n "$age" ] || { printf 'null\n'; return 0; }
   printf '%s\n' "$age"
 }
 
@@ -300,7 +298,7 @@ heartbeat_primary_json() {
   [ -z "$session_id" ] || transcript=$(heartbeat_read "primary transcript" fm_warm_compact_engine_transcript "$session_id") || transcript=
   turn_json=$(heartbeat_turn_json primary "$transcript")
   unread_inbox_age=$(heartbeat_captain_inbox_unread_age) || unread_inbox_age=null
-  case "$unread_inbox_age" in null|*[!0-9]*) [ "$unread_inbox_age" = null ] || unread_inbox_age=null ;; esac
+  case "$unread_inbox_age" in ''|*[!0-9]*) unread_inbox_age=null ;; esac
   if [ "$present" = true ]; then
     context_json=$(heartbeat_context_json primary "$transcript" "$backend" "$target")
   else

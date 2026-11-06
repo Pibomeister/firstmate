@@ -795,11 +795,6 @@ test_classify_check_and_unknown_escalate() {
   pass "check + unknown escalate; heartbeat self-handles"
 }
 
-# An unrecognized wake escalates once per identity. Delivery acknowledges that
-# exact line; a later copy does not escalate again. A different identity still
-# escalates, and an identity that never flushed still escalates. Ordinary
-# escalation lines are not part of that acknowledgement. A new away session
-# clears the acknowledgements, so the same identity can fire again.
 test_captain_inbox_check_flushes_immediately() {
   local dir state fakebin sent capture
   dir=$(make_supercase captain-inbox-immediate)
@@ -844,6 +839,11 @@ test_captain_inbox_check_flushes_immediately() {
   pass "a captain inbox note flushes immediately, bypassing the escalation batch window"
 }
 
+# An unrecognized wake escalates once per identity. Delivery acknowledges that
+# exact line; a later copy does not escalate again. A different identity still
+# escalates, and an identity that never flushed still escalates. Ordinary
+# escalation lines are not part of that acknowledgement. A new away session
+# clears the acknowledgements, so the same identity can fire again.
 test_unknown_wake_ack_suppresses_handled_identity() {
   local dir state fakebin sent capture out
   dir=$(make_supercase unknown-wake-ack)

@@ -123,6 +123,11 @@ export PATH
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=bin/fm-bash-compat-lib.sh
 . "$SELF_DIR/fm-bash-compat-lib.sh"
+# The unread captain inbox age rule has one owner, shared with fm-heartbeat.sh.
+# shellcheck source=bin/fm-captain-inbox-lib.sh
+if [ -r "$SELF_DIR/fm-captain-inbox-lib.sh" ]; then
+  . "$SELF_DIR/fm-captain-inbox-lib.sh"
+fi
 FM_ROOT="$(cd "$SELF_DIR/.." && pwd)"
 FM_HOME="${FM_HOME:-$FM_ROOT}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
@@ -887,25 +892,11 @@ cmd_ready() {
   fi
 
   # Age of the oldest pending captain inbox note, so an external leash can
-  # see an unread-note stall without reading the pane. Pending means a note
-  # file still in the inbox root; handled notes no longer count.
-  local unread_inbox_age="" note_file note_mtime oldest_note_mtime="" now_epoch
-  now_epoch=$(date +%s)
-  for note_file in "$INBOX"/*.note; do
-    [ -f "$note_file" ] || continue
-    if command -v fm_path_mtime >/dev/null 2>&1; then
-      note_mtime=$(fm_path_mtime "$note_file") || continue
-    else
-      note_mtime=$(stat -f %m "$note_file" 2>/dev/null || stat -c %Y "$note_file" 2>/dev/null) || continue
-    fi
-    case "$note_mtime" in ''|*[!0-9]*) continue ;; esac
-    if [ -z "$oldest_note_mtime" ] || [ "$note_mtime" -lt "$oldest_note_mtime" ]; then
-      oldest_note_mtime=$note_mtime
-    fi
-  done
-  if [ -n "$oldest_note_mtime" ]; then
-    unread_inbox_age=$((now_epoch - oldest_note_mtime))
-    [ "$unread_inbox_age" -ge 0 ] || unread_inbox_age=0
+  # see an unread-note stall without reading the pane. The rule itself is
+  # owned by bin/fm-captain-inbox-lib.sh, shared with fm-heartbeat.sh.
+  local unread_inbox_age=""
+  if command -v fm_captain_inbox_unread_age_seconds >/dev/null 2>&1; then
+    unread_inbox_age=$(fm_captain_inbox_unread_age_seconds "$INBOX")
   fi
 
   # The supervision model belongs to the INSPECTED home, not to whoever ran
