@@ -76,7 +76,8 @@ These checks run on every pass as well:
   A unanimous `PROCEED` writes a ruling file under `data/watchdog/rulings/` and nudges the session to apply it; anything short of unanimity holds.
 - A task whose latest status is a quota pause or block, or a pane showing a usage-limit picker, gets a ledger row and a gap that names the eligible candidate from `reroute-candidates` when `quota-axi` and `bin/fm-quota-reroute.sh` find one.
   A recorded ship or scout worker pane of that home gets the same usage-limit handling, once per home or worker per `nudge-secs`.
-  The Signals paragraph in [`bin/fm-quota-reroute.sh`](../bin/fm-quota-reroute.sh) owns Claude-tooling, seed exemption, and close policy.
+  The Signals paragraph in [`bin/fm-quota-reroute.sh`](../bin/fm-quota-reroute.sh) owns Claude-tooling and seed exemption.
+  The verb header in [`bin/fm-control.sh`](../bin/fm-control.sh) owns close policy.
   A signal drops only the candidates off Claude, so a Claude candidate can still be named.
   An explicit `fm-control.sh relaunch --harness` runs the same check.
   The watchdog never changes the runtime.
