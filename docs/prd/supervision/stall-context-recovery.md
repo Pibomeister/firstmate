@@ -21,6 +21,9 @@ It changes no merge, release, or deploy gate.
 | The watchdog nudges then restarts a frozen session | The frozen row in `docs/watchdog.md` requires pane and transcript quiet for `frozen-secs`, default 900 | Present |
 | The watchdog detects a timer loop | Three of the last five assistant texts repeating with only timer tools between them counts as a loop | Present |
 | The watchdog detects unread and unsent input | The unread-input and unsent-input rows in `docs/watchdog.md` own both reads | Present |
+| The watchdog pages the owner when a permission dialog blocks an away session | `wd_page_permission` in `bin/fm-watchdog.sh` pages the home's alert channels with no dialog text; Firstmate PR #146 added it for the home pane | Merged |
+| The same permission page covers away worker panes | Firstmate PR #154 reads each recorded ship or scout worker pane for a permission dialog, with its own `nudge-secs` window, per the blocking-dialog row in `docs/watchdog.md` | Merged |
+| The heartbeat publishes unread captain inbox age | `bin/fm-heartbeat.sh` writes `unread_inbox_age_seconds` from `fm_captain_inbox_unread_age_seconds` in `bin/fm-captain-inbox-lib.sh`; Firstmate PR #157 added it | Merged |
 | A low-context nudge asks for a handoff before restart | The restart-requested row in `docs/watchdog.md` requires a `data/handoff-*.md` file and `state/.watchdog-restart-request` | Present |
 | An early handoff trigger fires before auto-compact | `bin/fm-handoff-trigger.sh` fires at a default of 15 percent left for Claude primary sessions | Present |
 | A handoff session stops only with a live successor | Firstmate PR #156 requires a live successor recorded in `state/.handoff-successor` before the session stops | Merged |
