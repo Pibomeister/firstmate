@@ -3668,6 +3668,8 @@ test_herdr_reclaim_of_a_secondmate_uses_relaunch() {
   }
   dir=$HERDR_CASE_DIR
   mkdir -p "$dir/wt/bin" "$dir/wt/data" "$dir/wt/state" "$dir/wt/config" "$dir/wt/projects"
+  mkdir -p "$dir/home/config"
+  printf 'claude\n' > "$dir/home/config/secondmate-harness"
   printf 'rl76\n' > "$dir/wt/.fm-secondmate-home"
   printf '# agents\n' > "$dir/wt/AGENTS.md"
   printf '# charter\n' > "$dir/wt/data/charter.md"
@@ -3721,6 +3723,8 @@ test_herdr_secondmate_relaunch_hands_a_vanished_pane_to_respawn() {
   rm -f "$dir/fake/herdr-stopped"
   : > "$dir/fake/herdr-agent-live"
   : > "$dir/fake/herdr-exit-closes-pane"
+  mkdir -p "$dir/home/config"
+  printf 'claude\n' > "$dir/home/config/secondmate-harness"
   printf '%s\n' "kind=secondmate" "home=$dir/wt" >> "$dir/home/state/rl79.meta"
   printf 'rl79\n' > "$dir/wt/.fm-secondmate-home"
   mkdir -p "$dir/wt/state" "$dir/wt/data"
