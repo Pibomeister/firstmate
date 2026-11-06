@@ -2978,6 +2978,77 @@ SH
   pass "usage-limit: a Grok weekly-limit secondmate names the pick via the composer detector"
 }
 
+test_home_usage_limit_ignores_grok_in_scrollback() {
+  local parent mate user snap grok picker mate_t history view
+  grok=$'                                                                                             █\n\n  ┃\n  ┃  You hit your weekly limit.\n  ┃\n  ┃\n  ┃  1 (○) Buy more credits  Purchase credits to keep using Grok Build\n  ┃  2 (○) Try Again         Resubmit the last prompt once you have usage again\n  ┃\n  ┃  ↑/↓ navigate · y copy                                                  Enter:submit\n  ┃\n\n  Tab:next answer  │  Esc:scrollback  │  Shift+x:dismiss'
+  picker=$'You have hit your weekly limit for Opus.\n\n ❯ 1. Switch to Sonnet\n   2. Wait for the limit to reset\n   3. Buy more credits\n\nEnter to confirm · Esc to cancel'
+  make_home $'Captain session\n> '
+  parent=$H
+  make_home $'Captain session\n> '
+  mate=$H
+  mate_t=$T
+  printf '%s\n' "$grok" > "$mate/grok.txt"
+  printf '%s\n' "$picker" > "$mate/picker.txt"
+  cat > "$mate/agent.sh" <<SH
+#!/usr/bin/env bash
+cat "$mate/grok.txt"
+sleep 0.3
+printf '\n%.0s' {1..45}
+cat "$mate/picker.txt"
+exec sleep 100000
+SH
+  "$REAL_TMUX" -f /dev/null -L "$SOCKET" respawn-pane -k -t "$mate_t" "$mate/agent.sh"
+  sleep 1
+  history=$("$REAL_TMUX" -f /dev/null -L "$SOCKET" capture-pane -p -t "$mate_t" -S -60)
+  view=$("$REAL_TMUX" -f /dev/null -L "$SOCKET" capture-pane -p -t "$mate_t" -S -0)
+  printf '%s\n' "$history" | grep -Fq 'You hit your weekly limit.' \
+    || fail "the fixture lost the Grok frame from history, so this case would be vacuous"
+  printf '%s\n' "$history" | grep -Fq '1 (○) Buy more credits' \
+    || fail "the fixture lost the Grok radio row from history, so this case would be vacuous"
+  printf '%s\n' "$view" | grep -Fq 'Enter to confirm · Esc to cancel' \
+    || fail "the fixture lost the usage-limit picker from the viewport"
+  printf '%s\n' "$view" | grep -Fq 'Tab:next answer' \
+    && fail "the Grok frame is still in the viewport, so this case would not split history from the live picker"
+  user="$parent/user"
+  mkdir -p "$user/.claude"
+  printf -- '- ghost-mate - test mate (home: %s)\n' "$mate" > "$parent/data/secondmates.md"
+  {
+    echo "harness=claude"
+    echo "kind=secondmate"
+    echo "home=$mate"
+    echo "worktree=$mate"
+    echo "model=default"
+  } > "$parent/state/ghost-mate.meta"
+  printf 'mode=act\nclaude-config-dirs=%s\nkey-settle-secs=1\nmodels=\nreroute-candidates=codex:gpt-5.4\n' \
+    "$parent/claude" > "$parent/config/watchdog"
+  snap="$parent/quota.json"
+  wd_quota_snapshot "$snap"
+  cat > "$FAKEBIN/quota-axi" <<SH
+#!/usr/bin/env bash
+cat "$snap"
+SH
+  chmod +x "$FAKEBIN/quota-axi"
+  cat > "$FAKEBIN/fm-control.sh" <<SH
+#!/usr/bin/env bash
+printf 'control %s\n' "\$*" >> "$parent/control.log"
+exit 1
+SH
+  chmod +x "$FAKEBIN/fm-control.sh"
+  H=$mate
+  transcript 100 "Working."
+  H=$parent
+  HOME="$user" run_wd 0 once >/dev/null 2>&1 || fail "home usage-limit with Grok in scrollback failed"
+  [ ! -e "$parent/control.log" ] || fail "watchdog relaunched: $(cat "$parent/control.log")"
+  assert_grep "Suggested pick: codex gpt-5.4" "$parent/data/watchdog/status.md" \
+    "a live pane-text usage-limit must still name the pick"
+  assert_grep "Queue until reset" "$parent/data/watchdog/status.md" \
+    "a live pane-text usage-limit must queue until reset when only scrollback holds Grok"
+  assert_not_contains "$(cat "$parent/data/watchdog/status.md")" "Supervisor relaunches" \
+    "a dismissed Grok frame in scrollback must not send the supervisor to relaunch"
+  rm -f "$FAKEBIN/quota-axi" "$FAKEBIN/fm-control.sh"
+  pass "usage-limit: a home pane queues when Grok remains only in scrollback"
+}
+
 test_quota_axi_failure_is_cached_for_the_pass() {
   local dialog calls
   dialog=$'You have hit your weekly limit for Opus.\n\n ❯ 1. Switch to Sonnet\n   2. Wait for the limit to reset\n   3. Buy more credits\n\nEnter to confirm · Esc to cancel'
@@ -3105,6 +3176,7 @@ fm_test_run \
   test_unreadable_claude_account_pin_gets_no_pick \
   test_worker_usage_limit_names_a_pick \
   test_grok_weekly_limit_on_a_secondmate_names_a_pick \
+  test_home_usage_limit_ignores_grok_in_scrollback \
   test_quota_axi_failure_is_cached_for_the_pass \
   test_unknown_composer_guards_the_nudge \
   test_orca_turn_probe_keeps_errors_unknown \
