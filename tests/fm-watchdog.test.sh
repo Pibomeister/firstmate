@@ -2979,9 +2979,16 @@ SH
 }
 
 test_home_usage_limit_ignores_grok_in_scrollback() {
-  local parent mate user snap grok picker mate_t history view
+  local parent mate user snap grok picker mate_t observe history view
   grok=$'                                                                                             █\n\n  ┃\n  ┃  You hit your weekly limit.\n  ┃\n  ┃\n  ┃  1 (○) Buy more credits  Purchase credits to keep using Grok Build\n  ┃  2 (○) Try Again         Resubmit the last prompt once you have usage again\n  ┃\n  ┃  ↑/↓ navigate · y copy                                                  Enter:submit\n  ┃\n\n  Tab:next answer  │  Esc:scrollback  │  Shift+x:dismiss'
   picker=$'You have hit your weekly limit for Opus.\n\n ❯ 1. Switch to Sonnet\n   2. Wait for the limit to reset\n   3. Buy more credits\n\nEnter to confirm · Esc to cancel'
+  observe() { bash -c '. "$1/bin/fm-watchdog-lib.sh"; . "$1/bin/fm-composer-lib.sh"; shift; "$@"' _ "$ROOT" "$@"; }
+  assert_equals 'Grok weekly-limit choice' "$(observe fm_composer_blocking_dialog "$grok")" \
+    "the Grok fixture must match the composer detector, or a scrollback miss would be vacuous"
+  assert_equals '' "$(observe fm_composer_blocking_dialog "$picker" || true)" \
+    "the viewport picker must not match the Grok composer detector"
+  assert_equals usage-limit "$(lib fm_wd_pane_dialog "$picker")" \
+    "the viewport picker must still be a pane-text usage-limit"
   make_home $'Captain session\n> '
   parent=$H
   make_home $'Captain session\n> '
@@ -2989,26 +2996,38 @@ test_home_usage_limit_ignores_grok_in_scrollback() {
   mate_t=$T
   printf '%s\n' "$grok" > "$mate/grok.txt"
   printf '%s\n' "$picker" > "$mate/picker.txt"
-  cat > "$mate/agent.sh" <<SH
+  cat > "$FAKEBIN/tmux" <<SH
 #!/usr/bin/env bash
-cat "$mate/grok.txt"
-sleep 0.3
-printf '\n%.0s' {1..45}
-cat "$mate/picker.txt"
-exec sleep 100000
+s=
+t=
+prev=
+for a in "\$@"; do
+  if [ "\$prev" = -S ]; then s=\$a; fi
+  if [ "\$prev" = -t ]; then t=\$a; fi
+  prev=\$a
+done
+if [ "\$t" = "$mate_t" ]; then
+  case "\$s" in
+    -60) cat "$mate/grok.txt"; exit 0 ;;
+    -0) cat "$mate/picker.txt"; exit 0 ;;
+  esac
+fi
+exec "$REAL_TMUX" -f /dev/null -L "$SOCKET" "\$@"
 SH
-  "$REAL_TMUX" -f /dev/null -L "$SOCKET" respawn-pane -k -t "$mate_t" "$mate/agent.sh"
-  sleep 1
-  history=$("$REAL_TMUX" -f /dev/null -L "$SOCKET" capture-pane -p -t "$mate_t" -S -60)
-  view=$("$REAL_TMUX" -f /dev/null -L "$SOCKET" capture-pane -p -t "$mate_t" -S -0)
-  printf '%s\n' "$history" | grep -Fq 'You hit your weekly limit.' \
-    || fail "the fixture lost the Grok frame from history, so this case would be vacuous"
-  printf '%s\n' "$history" | grep -Fq '1 (○) Buy more credits' \
-    || fail "the fixture lost the Grok radio row from history, so this case would be vacuous"
-  printf '%s\n' "$view" | grep -Fq 'Enter to confirm · Esc to cancel' \
-    || fail "the fixture lost the usage-limit picker from the viewport"
-  printf '%s\n' "$view" | grep -Fq 'Tab:next answer' \
-    && fail "the Grok frame is still in the viewport, so this case would not split history from the live picker"
+  chmod +x "$FAKEBIN/tmux"
+  restore_tmux() {
+    cat > "$FAKEBIN/tmux" <<REST
+#!/usr/bin/env bash
+exec "$REAL_TMUX" -f /dev/null -L "$SOCKET" "\$@"
+REST
+    chmod +x "$FAKEBIN/tmux"
+  }
+  history=$("$FAKEBIN/tmux" capture-pane -p -t "$mate_t" -S -60)
+  view=$("$FAKEBIN/tmux" capture-pane -p -t "$mate_t" -S -0)
+  assert_equals 'Grok weekly-limit choice' "$(observe fm_composer_blocking_dialog "$history")" \
+    "stubbed scrollback must match the Grok detector"
+  assert_equals '' "$(observe fm_composer_blocking_dialog "$view" || true)" \
+    "stubbed viewport must not match the Grok detector"
   user="$parent/user"
   mkdir -p "$user/.claude"
   printf -- '- ghost-mate - test mate (home: %s)\n' "$mate" > "$parent/data/secondmates.md"
@@ -3037,7 +3056,8 @@ SH
   H=$mate
   transcript 100 "Working."
   H=$parent
-  HOME="$user" run_wd 0 once >/dev/null 2>&1 || fail "home usage-limit with Grok in scrollback failed"
+  HOME="$user" run_wd 0 once >/dev/null 2>&1 || { restore_tmux; fail "home usage-limit with Grok in scrollback failed"; }
+  restore_tmux
   [ ! -e "$parent/control.log" ] || fail "watchdog relaunched: $(cat "$parent/control.log")"
   assert_grep "Suggested pick: codex gpt-5.4" "$parent/data/watchdog/status.md" \
     "a live pane-text usage-limit must still name the pick"
@@ -3047,6 +3067,69 @@ SH
     "a dismissed Grok frame in scrollback must not send the supervisor to relaunch"
   rm -f "$FAKEBIN/quota-axi" "$FAKEBIN/fm-control.sh"
   pass "usage-limit: a home pane queues when Grok remains only in scrollback"
+}
+
+test_orca_usage_limit_does_not_relaunch_from_scrollback() {
+  local parent mate user snap grok grok_json observe
+  grok=$'                                                                                             █\n\n  ┃\n  ┃  You hit your weekly limit.\n  ┃\n  ┃\n  ┃  1 (○) Buy more credits  Purchase credits to keep using Grok Build\n  ┃  2 (○) Try Again         Resubmit the last prompt once you have usage again\n  ┃\n  ┃  ↑/↓ navigate · y copy                                                  Enter:submit\n  ┃\n\n  Tab:next answer  │  Esc:scrollback  │  Shift+x:dismiss'
+  grok_json=$(printf '%s\n' "$grok" | jq -Rs 'split("\n")')
+  observe() { bash -c '. "$1/bin/fm-watchdog-lib.sh"; . "$1/bin/fm-composer-lib.sh"; shift; "$@"' _ "$ROOT" "$@"; }
+  assert_equals 'Grok weekly-limit choice' "$(observe fm_composer_blocking_dialog "$grok")" \
+    "the Orca scrollback fixture must match the Grok detector, or a miss would be vacuous"
+  make_home $'Captain session\n> '
+  parent=$H
+  make_home $'Captain session\n> '
+  mate=$H
+  jq -n --arg s "$SID" --argjson e "$BASE" --argjson p "$LOCKPID" \
+    '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:"orca",target:"term-1",present:true},session:{trusted_id:$s},writer:{anchor_pid:$p,session_id:$s}}}' \
+    > "$mate/state/heartbeat.json"
+  user="$parent/user"
+  mkdir -p "$user/.claude"
+  printf -- '- ghost-mate - test mate (home: %s)\n' "$mate" > "$parent/data/secondmates.md"
+  {
+    echo "harness=claude"
+    echo "kind=secondmate"
+    echo "home=$mate"
+    echo "worktree=$mate"
+    echo "model=default"
+  } > "$parent/state/ghost-mate.meta"
+  printf 'mode=act\nclaude-config-dirs=%s\nkey-settle-secs=1\nmodels=\nreroute-candidates=codex:gpt-5.4\n' \
+    "$parent/claude" > "$parent/config/watchdog"
+  snap="$parent/quota.json"
+  wd_quota_snapshot "$snap"
+  cat > "$FAKEBIN/quota-axi" <<SH
+#!/usr/bin/env bash
+cat "$snap"
+SH
+  chmod +x "$FAKEBIN/quota-axi"
+  cat > "$FAKEBIN/fm-control.sh" <<SH
+#!/usr/bin/env bash
+printf 'control %s\n' "\$*" >> "$parent/control.log"
+exit 1
+SH
+  chmod +x "$FAKEBIN/fm-control.sh"
+  cat > "$FAKEBIN/orca" <<SH
+#!/usr/bin/env bash
+case "\$1 \$2" in
+  "terminal read")
+    case " \$* " in
+      *" --screen "*) exit 1 ;;
+      *) printf '{"ok":true,"result":{"terminal":{"tail":%s}}}\n' '$grok_json' ;;
+    esac ;;
+  "terminal wait") printf '{"ok":true,"result":{}}\n' ;;
+  *) exit 1 ;;
+esac
+SH
+  chmod +x "$FAKEBIN/orca"
+  H=$mate
+  transcript 100 "Working."
+  H=$parent
+  HOME="$user" run_wd 0 once >/dev/null 2>&1 || fail "orca usage-limit with Grok only in scrollback failed"
+  [ ! -e "$parent/control.log" ] || fail "watchdog relaunched: $(cat "$parent/control.log")"
+  assert_not_contains "$(cat "$parent/data/watchdog/status.md")" "Supervisor relaunches" \
+    "an Orca viewport that cannot be read must not relaunch from Grok in scrollback"
+  rm -f "$FAKEBIN/quota-axi" "$FAKEBIN/fm-control.sh" "$FAKEBIN/orca"
+  pass "usage-limit: Orca does not relaunch from Grok remaining only in scrollback"
 }
 
 test_quota_axi_failure_is_cached_for_the_pass() {
@@ -3177,6 +3260,7 @@ fm_test_run \
   test_worker_usage_limit_names_a_pick \
   test_grok_weekly_limit_on_a_secondmate_names_a_pick \
   test_home_usage_limit_ignores_grok_in_scrollback \
+  test_orca_usage_limit_does_not_relaunch_from_scrollback \
   test_quota_axi_failure_is_cached_for_the_pass \
   test_unknown_composer_guards_the_nudge \
   test_orca_turn_probe_keeps_errors_unknown \

@@ -159,12 +159,21 @@ wd_capture() {  # <backend> <target> <lines>
 
 # wd_view: the visible viewport where the backend has a verified viewport-only
 # read, so a dialog already dismissed but still in scrollback never reads as
-# showing; elsewhere the bounded capture.
-wd_view() {  # <backend> <target>
-  if fm_backend_visible_capture_supported "$1" 2>/dev/null; then
-    fm_run_timed_fn "$(cfgi call-timeout-secs 20)" fm_backend_visible_capture "$1" "$2" 2>/dev/null && return 0
+# showing. Orca's recorded Droid frame is that viewport even though it is
+# absent from FM_BACKEND_VISIBLE_CAPTURE. A failed viewport read returns
+# empty rather than classifying from scrollback.
+wd_view() {  # <backend> <target> [expected-label]
+  local b=$1 t=$2 label=${3-}
+  if [ -z "$label" ]; then
+    case "${O_ID:-}" in ''|-) ;; *) label=fm-$O_ID ;; esac
   fi
-  wd_capture "$1" "$2" 60
+  if fm_run_timed_fn "$(cfgi call-timeout-secs 20)" fm_backend_visible_capture "$b" "$t" ${label:+"$label"} 2>/dev/null; then
+    return 0
+  fi
+  if [ "$b" = orca ] || fm_backend_visible_capture_supported "$b" 2>/dev/null; then
+    return 1
+  fi
+  wd_capture "$b" "$t" 60
 }
 
 wd_turn_running() {  # <backend> <target> <screen> -> 1|0|unknown
@@ -1342,7 +1351,7 @@ wd_visit_worker_dialogs() {
       fi
       continue
     fi
-    screen=$(wd_view "$backend" "$target") || screen=''
+    screen=$(wd_view "$backend" "$target" "fm-$id") || screen=''
     dialog=$(fm_wd_observe_dialog "$screen") || dialog=''
     if [ "$mode" = print ]; then
       printf '  worker %s endpoint=%s:%s dialog=%s\n' "$id" "$backend" "$target" "${dialog:-none}"
