@@ -75,8 +75,8 @@ It changes no merge, release, or deploy gate.
 - AT-EQ-2: A nudge that clears a stall produces no escalation.
 - AT-EQ-3: A state change on an open incident produces one delta with both states.
 - AT-EQ-4: A restart of the supervisor mid-incident produces no duplicate escalation.
-- AT-EQ-5: A non-urgent exception at 23:00 on a Tuesday sends no Slack message and appears in the 08:00 digest.
-- AT-EQ-6: A non-urgent exception at 18:00 on a Friday appears in the Monday 08:00 digest.
+- AT-EQ-5: An exception at 23:00 on a Tuesday sends no Slack message and appears in the 08:00 digest.
+- AT-EQ-6: An exception at 18:00 on a Friday appears in the Monday 08:00 digest.
 - AT-EQ-7: A destructive or security-sensitive exception during quiet hours sends no Slack message and appears in the next digest or the return brief.
 - AT-EQ-8: An incident that clears overnight appears once in the digest as cleared.
 - AT-EQ-9: Recovery actions during quiet hours run on their normal cadence with no Slack message.
