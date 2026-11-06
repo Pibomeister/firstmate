@@ -1073,6 +1073,21 @@ On 2026-10-19 on macOS arm64, a read-only `fm_backend_composer_state herdr <pane
 The other four panes showed the `You hit your weekly limit.` choice, read `pending`, and the sink named `Grok weekly-limit choice`, so `fm-control` exit and relaunch refuse to type into that choice.
 `tests/fm-composer-lib.test.sh` and `tests/fm-backend-herdr.test.sh` pin both live captures.
 
+### Usage-limit pane picker (pending 2026-11-06)
+
+Not verified live as of 2026-11-06.
+The pane-text `usage-limit` verdict in `fm_wd_pane_dialog` has no dated capture against a real Claude or Codex usage-limit picker.
+`tests/fm-usage-limit-pane-live.test.sh` is the pending-verification marker.
+It stays skip/pending by default and never passes on that path.
+`FM_LIVE=1` does not classify.
+Classify only when `FM_USAGE_LIMIT_PANE_LIVE=1` and `FM_USAGE_LIMIT_PANE` names an existing already-limited pane.
+That path is read-only capture, never starts a session, never types Enter, and never logs pane text.
+It passes only against that supplied artifact.
+The verb header in [`bin/fm-control.sh`](../../bin/fm-control.sh) owns close policy.
+Portable regressions in `tests/fm-watchdog.test.sh` and `tests/fm-control-relaunch.test.sh` pin both paths.
+A dated Claude or Codex picker capture is still pending.
+The 2026-10-19 Grok weekly-limit composer evidence above is unchanged and does not cover this pane-picker classifier.
+
 On 2026-10-20 a 120-column Orca capture of an idle Grok 1.0.62 (Grok 4.7, high effort) composer drew its `Shift+Tab:mode  │  Ctrl+x:shortcuts` key-hint row directly under the bottom border, with no blank row between them.
 The cursorless staleness probe read that row as a lower live shape, so the visibly empty box read `unknown` and `fm-control` refused to type `/exit`.
 `FM_COMPOSER_GROK_HINT_RE_DEFAULT` and `_fm_composer_select_cursorless` in `bin/fm-composer-lib.sh` own the current hint-row contract; [Grok send and queue footer](#grok-send-and-queue-footer) records the newer accepted cells and refresh procedure.

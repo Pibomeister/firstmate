@@ -912,4 +912,559 @@ if out=$(call_choose --snapshot "$LAB/cursor-pools-auto-unknown.json" --candidat
 fi
 ok "windows never turn an unmeasured cursor row into known capacity"
 
+call_reroute() {
+  PATH="$FAKEBIN:$PATH" "$BIN/fm-quota-reroute.sh" "$@"
+}
+
+out=$(call_reroute suggest --snapshot "$LAB/captured.json" \
+  --candidate kimi:default --candidate claude:claude-3-5-sonnet)
+[ "$out" = "claude claude-3-5-sonnet" ] || fail "reroute skip: expected claude, got '$out'"
+ok "suggest skips an exhausted candidate"
+
+if out=$(call_reroute suggest --snapshot "$LAB/captured.json" --candidate kimi:default 2>/dev/null); then
+  fail "reroute none: expected exit 1, got '$out'"
+fi
+[ "$out" = "none" ] || fail "reroute none: expected 'none', got '$out'"
+ok "suggest prints none when every candidate is exhausted"
+
+if out=$(call_reroute suggest --snapshot "$LAB/captured.json" --kind secondmate --candidate muse:default 2>/dev/null); then
+  fail "secondmate muse should not be eligible, got '$out'"
+fi
+[ "$out" = "none" ] || fail "secondmate muse: expected none, got '$out'"
+ok "suggest drops a candidate unverified for the task kind"
+
+claude_dir="$LAB/claude-mcp"
+mkdir -p "$claude_dir"
+printf '%s\n' '{"mcpServers":{"docs":{"command":"true"}}}' > "$claude_dir/.claude.json"
+if call_reroute claude-tooling --config-dir "$claude_dir" >/dev/null; then
+  :
+else
+  fail "claude-tooling missed a configured MCP server"
+fi
+empty_dir="$LAB/claude-empty"
+mkdir -p "$empty_dir"
+printf '%s\n' '{"mcpServers":{}}' > "$empty_dir/.claude.json"
+if call_reroute claude-tooling --config-dir "$empty_dir"; then
+  fail "empty mcpServers was treated as Claude-specific tooling"
+fi
+sig=$(call_reroute claude-tooling --config-dir "$LAB/missing-dir") || fail "a missing config dir must be tooling required"
+[ "$sig" = "unreadable Claude config dir" ] || fail "missing dir signal: $sig"
+ok "claude-tooling is an MCP server in the config dir; missing dir queues"
+
+clean_wt="$LAB/clean-wt"
+mkdir -p "$clean_wt"
+if out=$(call_reroute suggest --snapshot "$LAB/captured.json" --from-harness claude \
+  --claude-config-dir "$claude_dir" --worktree "$clean_wt" --kind secondmate \
+  --candidate codex:default 2>/dev/null); then
+  fail "Claude MCP tooling should block a move off Claude, got '$out'"
+fi
+[ "$out" = "none" ] || fail "tooling gate: expected none, got '$out'"
+err=$(call_reroute suggest --snapshot "$LAB/captured.json" --from-harness claude \
+  --claude-config-dir "$claude_dir" --worktree "$clean_wt" --kind secondmate \
+  --candidate codex:default 2>&1 >/dev/null) || true
+printf '%s\n' "$err" | grep -q 'MCP servers in' \
+  || fail "the block must name the MCP signal: $err"
+out=$(call_reroute suggest --snapshot "$LAB/captured.json" --from-harness claude \
+  --claude-config-dir "$empty_dir" --worktree "$clean_wt" --kind secondmate --candidate codex:default)
+[ "$out" = "codex default" ] || fail "no Claude-specific signal should allow a Codex pick, got '$out'"
+out=$(call_reroute suggest --snapshot "$LAB/captured.json" --from-harness claude \
+  --claude-config-dir "$claude_dir" --worktree "$clean_wt" --kind secondmate \
+  --candidate claude:claude-3-5-sonnet --candidate codex:default)
+[ "$out" = "claude claude-3-5-sonnet" ] || fail "tooling signal should keep a Claude candidate eligible, got '$out'"
+ok "suggest keeps Claude candidates when tooling blocks only a move off Claude"
+
+if out=$(call_reroute suggest --snapshot "$LAB/captured.json" --from-harness claude \
+  --worktree "$clean_wt" --kind secondmate --candidate codex:default 2>/dev/null); then
+  fail "an unresolvable Claude config dir should queue, got '$out'"
+fi
+[ "$out" = "none" ] || fail "unresolvable dir: expected none, got '$out'"
+err=$(call_reroute suggest --snapshot "$LAB/captured.json" --from-harness claude \
+  --claude-config-dir "$empty_dir" --kind secondmate --candidate codex:default 2>&1 >/dev/null) || true
+printf '%s\n' "$err" | grep -q 'unresolvable worktree' \
+  || fail "an omitted worktree must be named unresolvable: $err"
+
+broken_home="$LAB/broken-pin-home"
+mkdir -p "$broken_home/config" "$clean_wt"
+printf 'not-a-path\n' > "$broken_home/config/claude-account"
+if out=$(FM_HOME="$broken_home" call_reroute suggest --snapshot "$LAB/captured.json" \
+  --from-harness claude --worktree "$clean_wt" --kind secondmate \
+  --candidate codex:default 2>/dev/null); then
+  fail "a broken claude-account pin should queue, got '$out'"
+fi
+[ "$out" = "none" ] || fail "broken pin: expected none, got '$out'"
+err=$(FM_HOME="$broken_home" call_reroute suggest --snapshot "$LAB/captured.json" \
+  --from-harness claude --worktree "$clean_wt" --kind secondmate \
+  --candidate codex:default 2>&1 >/dev/null) || true
+printf '%s\n' "$err" | grep -q 'config/claude-account' \
+  || fail "broken pin must name the pin file: $err"
+sig=$(FM_HOME="$broken_home" call_reroute claude-tooling --worktree "$clean_wt") \
+  || fail "claude-tooling must treat a broken pin as a signal"
+printf '%s\n' "$sig" | grep -q 'config/claude-account' \
+  || fail "claude-tooling broken pin signal: $sig"
+
+out=$(call_reroute suggest --snapshot "$LAB/captured.json" --from-harness claude \
+  --claude-config-dir "$empty_dir" --kind secondmate \
+  --candidate claude:claude-3-5-sonnet --candidate codex:default)
+[ "$out" = "claude claude-3-5-sonnet" ] || fail "an omitted worktree should keep a Claude candidate eligible, got '$out'"
+ok "an unknown worktree drops only the moves off Claude"
+
+if out=$(FM_HOME="$broken_home" call_reroute suggest --snapshot "$LAB/captured.json" \
+  --from-harness claude --worktree "$clean_wt" --kind secondmate \
+  --candidate claude:claude-3-5-sonnet --candidate codex:default 2>/dev/null); then
+  fail "a broken pin must not yield a Claude pick on the pinned account, got '$out'"
+fi
+[ "$out" = "none" ] || fail "broken pin with a Claude candidate: expected none, got '$out'"
+pinned_home="$LAB/pinned-home"
+pinned_user="$LAB/pinned-user"
+mkdir -p "$pinned_home/config" "$pinned_user/.claude"
+printf 'ordinary\n' > "$pinned_home/config/claude-account"
+if out=$(HOME="$pinned_user" FM_HOME="$pinned_home" call_reroute suggest \
+  --snapshot "$LAB/captured.json" --from-harness claude --kind ship \
+  --candidate claude:claude-3-5-sonnet --candidate codex:default 2>/dev/null); then
+  fail "a pinned Claude account with no worktree must not yield a pick, got '$out'"
+fi
+[ "$out" = "none" ] || fail "pinned account, no worktree: expected none, got '$out'"
+ok "an unknown worktree or broken pin never names the pinned Claude account"
+
+if out=$(call_reroute suggest --snapshot "$LAB/captured.json" --from-harness claude \
+  --claude-config-dir "$empty_dir" --worktree "$FM_ROOT" --kind secondmate \
+  --candidate codex:default 2>/dev/null); then
+  fail "a Claude secondmate on a firstmate home must not be moved off Claude, got '$out'"
+fi
+[ "$out" = "none" ] || fail "firstmate home secondmate: expected none, got '$out'"
+out=$(call_reroute suggest --snapshot "$LAB/captured.json" --from-harness claude \
+  --claude-config-dir "$empty_dir" --worktree "$FM_ROOT" --kind secondmate \
+  --candidate claude:claude-3-5-sonnet --candidate codex:default)
+[ "$out" = "claude claude-3-5-sonnet" ] || fail "a firstmate home secondmate should keep a Claude candidate, got '$out'"
+ok "a Claude secondmate whose home is a firstmate checkout stays on Claude"
+
+ord="$LAB/ordinary-home"
+mkdir -p "$ord/.claude"
+printf '%s\n' '{"mcpServers":{"docs":{"command":"true"}}}' > "$ord/.claude.json"
+sig=$(HOME="$ord" call_reroute claude-tooling --config-dir "$ord/.claude") \
+  || fail "MCP only in \$HOME/.claude.json must be tooling required"
+[ "$sig" = "MCP servers in $ord/.claude.json" ] || fail "ordinary .claude.json signal: $sig"
+
+proj_dir="$LAB/projects-mcp"
+mkdir -p "$proj_dir"
+printf '%s\n' '{"mcpServers":{},"projects":{"/tmp/app":{"mcpServers":{"docs":{"command":"true"}}}}}' \
+  > "$proj_dir/.claude.json"
+sig=$(call_reroute claude-tooling --config-dir "$proj_dir") \
+  || fail ".projects mcpServers must be tooling required"
+[ "$sig" = "MCP servers in $proj_dir/.claude.json" ] || fail "project MCP signal: $sig"
+
+mcp_wt="$LAB/mcp-wt"
+mkdir -p "$mcp_wt"
+printf '%s\n' '{"mcpServers":{}}' > "$mcp_wt/.mcp.json"
+if call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$mcp_wt" >/dev/null; then
+  :
+else
+  fail "worktree .mcp.json was not treated as Claude-specific tooling"
+fi
+sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$mcp_wt")
+[ "$sig" = "worktree .mcp.json" ] || fail "worktree .mcp.json signal: $sig"
+
+for name in skills hooks agents commands; do
+  wt="$LAB/wt-$name"
+  mkdir -p "$wt/.claude/$name"
+  sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$wt") \
+    || fail "worktree .claude/$name must be tooling required"
+  [ "$sig" = "worktree .claude/$name" ] || fail "$name signal: $sig"
+done
+
+enabled_mcp="$LAB/enabled-mcp"
+mkdir -p "$enabled_mcp"
+printf '%s\n' '{"enabledMcpjsonServers":["docs"]}' > "$enabled_mcp/.claude.json"
+sig=$(call_reroute claude-tooling --config-dir "$enabled_mcp") \
+  || fail "enabledMcpjsonServers must be tooling required"
+[ "$sig" = "MCP servers in $enabled_mcp/.claude.json" ] || fail "enabledMcpjsonServers signal: $sig"
+
+acct_settings="$LAB/acct-settings"
+mkdir -p "$acct_settings"
+printf '%s\n' '{"hooks":{"Stop":[{}]}}' > "$acct_settings/settings.json"
+sig=$(call_reroute claude-tooling --config-dir "$acct_settings") \
+  || fail "account settings.json hooks must be tooling required"
+[ "$sig" = "$acct_settings/settings.json .hooks" ] || fail "account hooks signal: $sig"
+
+for name in skills agents commands plugins; do
+  acct_dir="$LAB/acct-$name"
+  mkdir -p "$acct_dir/$name/some"
+  rc=0
+  sig=$(call_reroute claude-tooling --config-dir "$acct_dir") || rc=$?
+  [ "$rc" -eq 1 ] || fail "account $name must not be a signal, got $rc ($sig)"
+  [ -z "$sig" ] || fail "account $name produced: $sig"
+done
+
+wt_settings="$LAB/wt-settings"
+mkdir -p "$wt_settings/.claude"
+printf '%s\n' '{"mcpServers":{"docs":{"command":"true"}}}' > "$wt_settings/.claude/settings.json"
+sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$wt_settings") \
+  || fail "worktree .claude/settings.json mcpServers must be tooling required"
+[ "$sig" = "$wt_settings/.claude/settings.json .mcpServers" ] \
+  || fail "worktree settings.json signal: $sig"
+
+wt_local="$LAB/wt-local"
+mkdir -p "$wt_local/.claude"
+printf '%s\n' '{"enabledPlugins":{"docs":true}}' > "$wt_local/.claude/settings.local.json"
+sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$wt_local") \
+  || fail "worktree settings.local.json enabledPlugins must be tooling required"
+[ "$sig" = "$wt_local/.claude/settings.local.json .enabledPlugins" ] \
+  || fail "worktree settings.local.json signal: $sig"
+
+# fm-spawn writes firstmate's own busy hooks into a Claude ship or scout's
+# settings.local.json; they are not project tooling, so a move off Claude
+# stays possible. A project hook beside them is still a signal.
+wt_spawn="$LAB/wt-spawn-hooks"
+mkdir -p "$wt_spawn/.claude"
+busy="'$BIN/fm-busy-event.sh' apply '$LAB/state' 'qr1'"
+jq -n --arg submit "$busy busy --gen '1' --source claude-hook --event user-prompt-submit 2>/dev/null || true" \
+  --arg stop "touch '$LAB/state/qr1.turnend'; $busy idle --gen '1' --source claude-hook --event stop 2>/dev/null || true" \
+  '{hooks:{UserPromptSubmit:[{hooks:[{type:"command",command:$submit}]}],
+           Stop:[{hooks:[{type:"command",command:$stop}]}]}}' \
+  > "$wt_spawn/.claude/settings.local.json"
+if sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$wt_spawn"); then
+  fail "firstmate's own spawn hooks must not block a move off Claude: $sig"
+fi
+out=$(call_reroute suggest --snapshot "$LAB/captured.json" --from-harness claude \
+  --claude-config-dir "$empty_dir" --worktree "$wt_spawn" --candidate codex:default) \
+  || fail "spawn hooks only: suggest should name the non-Claude pick, got '$out'"
+[ "$out" = "codex default" ] || fail "spawn hooks only: expected codex, got '$out'"
+jq '.hooks.Stop[0].hooks += [{type:"command",command:"./lint.sh"}]' \
+  "$wt_spawn/.claude/settings.local.json" > "$LAB/spawn-mixed.json"
+mv "$LAB/spawn-mixed.json" "$wt_spawn/.claude/settings.local.json"
+sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$wt_spawn") \
+  || fail "a project hook beside the spawn hooks must still be tooling required"
+[ "$sig" = "$wt_spawn/.claude/settings.local.json .hooks" ] \
+  || fail "mixed spawn hooks signal: $sig"
+
+# A user hook that only embeds the busy-event path is still a signal.
+wt_decoy="$LAB/wt-hook-decoy"
+mkdir -p "$wt_decoy/.claude"
+jq -n --arg own "$BIN/fm-busy-event.sh" \
+  '{hooks:{Stop:[{hooks:[
+     {type:"command",command:("true # " + $own)},
+     {type:"command",command:($own + " apply '\''x'\'' '\''y'\'' idle --gen '\''1'\'' --source claude-hook --event stop 2>/dev/null || true; curl evil")},
+     {type:"command",command:("curl evil; " + $own + " apply '\''x'\'' '\''y'\'' idle --gen '\''1'\'' --source claude-hook --event stop 2>/dev/null || true")}
+   ]}]}}' > "$wt_decoy/.claude/settings.local.json"
+sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$wt_decoy") \
+  || fail "a user hook that only embeds the busy-event path must still be tooling required"
+[ "$sig" = "$wt_decoy/.claude/settings.local.json .hooks" ] \
+  || fail "user-hook decoy signal: $sig"
+
+# A user hook that starts with the quoted own path, then other shell, then a
+# well-formed spawn tail, is still a signal. The match is the whole command.
+wt_embed="$LAB/wt-hook-embed"
+mkdir -p "$wt_embed/.claude"
+jq -n --arg own "$BIN/fm-busy-event.sh" \
+  '{hooks:{Stop:[{hooks:[
+     {type:"command",command:("'\''" + $own + "'\'' apply '\''z'\''; echo USERHOOK; '\'' apply '\''s'\'' '\''i'\'' busy --gen '\''g'\'' --source claude-hook --event stop 2>/dev/null || true")}
+   ]}]}}' > "$wt_embed/.claude/settings.local.json"
+sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$wt_embed") \
+  || fail "an embedded-shell busy-hook decoy must still be tooling required"
+[ "$sig" = "$wt_embed/.claude/settings.local.json .hooks" ] \
+  || fail "embedded-shell decoy signal: $sig"
+
+bad_json="$LAB/bad-json"
+mkdir -p "$bad_json"
+printf '{not json\n' > "$bad_json/settings.json"
+sig=$(call_reroute claude-tooling --config-dir "$bad_json") \
+  || fail "invalid JSON must be tooling required"
+[ "$sig" = "unreadable $bad_json/settings.json" ] || fail "invalid JSON signal: $sig"
+
+non_object="$LAB/non-object"
+mkdir -p "$non_object"
+printf '%s\n' '[]' > "$non_object/settings.json"
+sig=$(call_reroute claude-tooling --config-dir "$non_object") \
+  || fail "a non-object settings.json must be tooling required"
+[ "$sig" = "unreadable $non_object/settings.json" ] || fail "non-object signal: $sig"
+
+wt_non_object="$LAB/wt-non-object"
+mkdir -p "$wt_non_object/.claude"
+printf '%s\n' '[]' > "$wt_non_object/.claude/settings.json"
+sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$wt_non_object") \
+  || fail "a non-object worktree settings.json must be tooling required"
+[ "$sig" = "unreadable $wt_non_object/.claude/settings.json" ] \
+  || fail "worktree non-object signal: $sig"
+
+proj_scalar="$LAB/proj-scalar"
+mkdir -p "$proj_scalar"
+printf '%s\n' '{"projects":"not-an-object"}' > "$proj_scalar/.claude.json"
+sig=$(call_reroute claude-tooling --config-dir "$proj_scalar") \
+  || fail "a scalar .projects must be tooling required"
+[ "$sig" = "unreadable $proj_scalar/.claude.json" ] || fail "scalar projects signal: $sig"
+
+home_proj="$LAB/home-proj"
+mkdir -p "$home_proj/.claude"
+printf '%s\n' '{"projects":"not-an-object"}' > "$home_proj/.claude.json"
+sig=$(HOME="$home_proj" call_reroute claude-tooling --config-dir "$home_proj/.claude") \
+  || fail "HOME .claude.json scalar .projects must be tooling required"
+[ "$sig" = "unreadable $home_proj/.claude.json" ] || fail "HOME scalar projects: $sig"
+
+proj_entry="$LAB/proj-entry"
+mkdir -p "$proj_entry"
+printf '%s\n' '{"projects":{"/p":"x"}}' > "$proj_entry/.claude.json"
+sig=$(call_reroute claude-tooling --config-dir "$proj_entry") \
+  || fail "a non-object .projects entry must be tooling required"
+[ "$sig" = "unreadable $proj_entry/.claude.json" ] || fail "projects entry signal: $sig"
+
+home_proj_entry="$LAB/home-proj-entry"
+mkdir -p "$home_proj_entry/.claude"
+printf '%s\n' '{"projects":{"/p":"x"}}' > "$home_proj_entry/.claude.json"
+sig=$(HOME="$home_proj_entry" call_reroute claude-tooling --config-dir "$home_proj_entry/.claude") \
+  || fail "HOME .claude.json non-object .projects entry must be tooling required"
+[ "$sig" = "unreadable $home_proj_entry/.claude.json" ] \
+  || fail "HOME projects entry signal: $sig"
+
+mcp_scalar="$LAB/mcp-scalar"
+mkdir -p "$mcp_scalar"
+printf '%s\n' '{"mcpServers":"not-an-object"}' > "$mcp_scalar/.claude.json"
+sig=$(call_reroute claude-tooling --config-dir "$mcp_scalar") \
+  || fail "a non-object .mcpServers must be tooling required"
+[ "$sig" = "unreadable $mcp_scalar/.claude.json" ] || fail "scalar mcpServers signal: $sig"
+
+proj_mcp_scalar="$LAB/proj-mcp-scalar"
+mkdir -p "$proj_mcp_scalar"
+printf '%s\n' '{"projects":{"/p":{"mcpServers":"not-an-object"}}}' \
+  > "$proj_mcp_scalar/.claude.json"
+sig=$(call_reroute claude-tooling --config-dir "$proj_mcp_scalar") \
+  || fail "a non-object .projects[].mcpServers must be tooling required"
+[ "$sig" = "unreadable $proj_mcp_scalar/.claude.json" ] \
+  || fail "nested scalar mcpServers signal: $sig"
+
+acct_plugins_false="$LAB/acct-plugins-false"
+mkdir -p "$acct_plugins_false"
+printf '%s\n' '{"enabledPlugins":{"docs":false}}' > "$acct_plugins_false/settings.json"
+rc=0
+sig=$(call_reroute claude-tooling --config-dir "$acct_plugins_false") || rc=$?
+[ "$rc" -eq 1 ] || fail "account enabledPlugins must not be a signal, got $rc ($sig)"
+[ -z "$sig" ] || fail "account enabledPlugins produced: $sig"
+
+acct_plugins_true="$LAB/acct-plugins-true"
+mkdir -p "$acct_plugins_true"
+printf '%s\n' '{"enabledPlugins":{"docs":true}}' > "$acct_plugins_true/settings.json"
+rc=0
+sig=$(call_reroute claude-tooling --config-dir "$acct_plugins_true") || rc=$?
+[ "$rc" -eq 1 ] || fail "account enabledPlugins true must not be a signal, got $rc ($sig)"
+[ -z "$sig" ] || fail "account enabledPlugins true produced: $sig"
+
+wt_plugins_false="$LAB/wt-plugins-false"
+mkdir -p "$wt_plugins_false/.claude"
+printf '%s\n' '{"enabledPlugins":{"docs":false}}' > "$wt_plugins_false/.claude/settings.json"
+sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$wt_plugins_false") \
+  || fail "worktree enabledPlugins with all values false must be a signal"
+[ "$sig" = "$wt_plugins_false/.claude/settings.json .enabledPlugins" ] \
+  || fail "worktree all-false plugins signal: $sig"
+
+empty_acct_dirs="$LAB/empty-acct-dirs"
+mkdir -p "$empty_acct_dirs/skills" "$empty_acct_dirs/agents" \
+  "$empty_acct_dirs/commands" "$empty_acct_dirs/plugins"
+rc=0
+sig=$(call_reroute claude-tooling --config-dir "$empty_acct_dirs") || rc=$?
+[ "$rc" -eq 1 ] || fail "empty account dirs: expected exit 1, got $rc ($sig)"
+[ -z "$sig" ] || fail "empty account dirs produced: $sig"
+
+plugin_skills_only="$LAB/plugin-skills-only"
+mkdir -p "$plugin_skills_only/plugins/demo/.claude-plugin" \
+  "$plugin_skills_only/plugins/demo/skills/s" \
+  "$plugin_skills_only/plugins/demo/agents/a" \
+  "$plugin_skills_only/plugins/demo/commands/c"
+printf '%s\n' '{"name":"demo"}' \
+  > "$plugin_skills_only/plugins/demo/.claude-plugin/plugin.json"
+rc=0
+sig=$(call_reroute claude-tooling --config-dir "$plugin_skills_only") || rc=$?
+[ "$rc" -eq 1 ] || fail "plugin skills/agents/commands must not be a signal, got $rc ($sig)"
+[ -z "$sig" ] || fail "plugin skills/agents/commands produced: $sig"
+
+plugin_mcp="$LAB/plugin-mcp"
+mkdir -p "$plugin_mcp/plugins/demo"
+printf '%s\n' '{"mcpServers":{"docs":{"command":"true"}}}' \
+  > "$plugin_mcp/plugins/demo/.mcp.json"
+sig=$(call_reroute claude-tooling --config-dir "$plugin_mcp") \
+  || fail "plugin .mcp.json must be tooling required"
+[ "$sig" = "MCP servers in $plugin_mcp/plugins/demo/.mcp.json" ] \
+  || fail "plugin .mcp.json signal: $sig"
+
+plugin_mcp_flat="$LAB/plugin-mcp-flat"
+mkdir -p "$plugin_mcp_flat/plugins/demo"
+printf '%s\n' '{"docs":{"command":"true"}}' \
+  > "$plugin_mcp_flat/plugins/demo/.mcp.json"
+sig=$(call_reroute claude-tooling --config-dir "$plugin_mcp_flat") \
+  || fail "flat plugin .mcp.json must be tooling required"
+[ "$sig" = "MCP servers in $plugin_mcp_flat/plugins/demo/.mcp.json" ] \
+  || fail "flat plugin .mcp.json signal: $sig"
+
+plugin_mcp_empty="$LAB/plugin-mcp-empty"
+mkdir -p "$plugin_mcp_empty/plugins/demo"
+printf '%s\n' '{}' > "$plugin_mcp_empty/plugins/demo/.mcp.json"
+rc=0
+sig=$(call_reroute claude-tooling --config-dir "$plugin_mcp_empty") || rc=$?
+[ "$rc" -eq 1 ] || fail "empty plugin .mcp.json must not be a signal, got $rc ($sig)"
+[ -z "$sig" ] || fail "empty plugin .mcp.json produced: $sig"
+
+plugin_mcp_link="$LAB/plugin-mcp-link"
+mkdir -p "$plugin_mcp_link/real/demo" "$plugin_mcp_link/plugins"
+printf '%s\n' '{"mcpServers":{"docs":{"command":"true"}}}' \
+  > "$plugin_mcp_link/real/demo/.mcp.json"
+ln -s "$plugin_mcp_link/real/demo" "$plugin_mcp_link/plugins/demo"
+sig=$(call_reroute claude-tooling --config-dir "$plugin_mcp_link") \
+  || fail "symlinked plugin dir must be tooling required"
+[ "$sig" = "MCP servers in $plugin_mcp_link/plugins/demo/.mcp.json" ] \
+  || fail "symlinked plugin dir signal: $sig"
+
+plugin_manifest_mcp="$LAB/plugin-manifest-mcp"
+mkdir -p "$plugin_manifest_mcp/plugins/demo/.claude-plugin"
+printf '%s\n' '{"name":"demo","mcpServers":{"docs":{"command":"true"}}}' \
+  > "$plugin_manifest_mcp/plugins/demo/.claude-plugin/plugin.json"
+sig=$(call_reroute claude-tooling --config-dir "$plugin_manifest_mcp") \
+  || fail "plugin.json mcpServers must be tooling required"
+[ "$sig" = "MCP servers in $plugin_manifest_mcp/plugins/demo/.claude-plugin/plugin.json" ] \
+  || fail "plugin.json mcpServers signal: $sig"
+
+plugin_hooks="$LAB/plugin-hooks"
+mkdir -p "$plugin_hooks/plugins/demo/hooks"
+printf '%s\n' '{"hooks":{"Stop":[{}]}}' \
+  > "$plugin_hooks/plugins/demo/hooks/hooks.json"
+sig=$(call_reroute claude-tooling --config-dir "$plugin_hooks") \
+  || fail "plugin hooks/hooks.json must be tooling required"
+[ "$sig" = "$plugin_hooks/plugins/demo/hooks/hooks.json .hooks" ] \
+  || fail "plugin hooks/hooks.json signal: $sig"
+
+plugin_manifest_hooks="$LAB/plugin-manifest-hooks"
+mkdir -p "$plugin_manifest_hooks/plugins/demo/.claude-plugin"
+printf '%s\n' '{"name":"demo","hooks":{"Stop":[{}]}}' \
+  > "$plugin_manifest_hooks/plugins/demo/.claude-plugin/plugin.json"
+sig=$(call_reroute claude-tooling --config-dir "$plugin_manifest_hooks") \
+  || fail "plugin.json hooks must be tooling required"
+[ "$sig" = "$plugin_manifest_hooks/plugins/demo/.claude-plugin/plugin.json .hooks" ] \
+  || fail "plugin.json hooks signal: $sig"
+
+plugin_cache_mcp="$LAB/plugin-cache-mcp"
+mkdir -p "$plugin_cache_mcp/plugins/cache/mp/demo/1.0.0"
+printf '%s\n' '{"mcpServers":{"docs":{"command":"true"}}}' \
+  > "$plugin_cache_mcp/plugins/cache/mp/demo/1.0.0/.mcp.json"
+sig=$(call_reroute claude-tooling --config-dir "$plugin_cache_mcp") \
+  || fail "cached plugin .mcp.json must be tooling required"
+[ "$sig" = "MCP servers in $plugin_cache_mcp/plugins/cache/mp/demo/1.0.0/.mcp.json" ] \
+  || fail "cached plugin .mcp.json signal: $sig"
+
+plugin_marketplace_mcp="$LAB/plugin-marketplace-mcp"
+mkdir -p "$plugin_marketplace_mcp/plugins/marketplaces/mp/demo"
+printf '%s\n' '{"docs":{"command":"true"}}' \
+  > "$plugin_marketplace_mcp/plugins/marketplaces/mp/demo/.mcp.json"
+sig=$(call_reroute claude-tooling --config-dir "$plugin_marketplace_mcp") \
+  || fail "marketplace plugin .mcp.json must be tooling required"
+[ "$sig" = "MCP servers in $plugin_marketplace_mcp/plugins/marketplaces/mp/demo/.mcp.json" ] \
+  || fail "marketplace plugin .mcp.json signal: $sig"
+
+plugin_manifest_path="$LAB/plugin-manifest-path"
+mkdir -p "$plugin_manifest_path/plugins/demo/.claude-plugin"
+printf '%s\n' '{"name":"demo","mcpServers":"./servers.json"}' \
+  > "$plugin_manifest_path/plugins/demo/.claude-plugin/plugin.json"
+sig=$(call_reroute claude-tooling --config-dir "$plugin_manifest_path") \
+  || fail "plugin.json mcpServers path must be tooling required"
+[ "$sig" = "MCP servers in $plugin_manifest_path/plugins/demo/.claude-plugin/plugin.json" ] \
+  || fail "plugin.json mcpServers path signal: $sig"
+
+acct_hooks_file="$LAB/acct-hooks-file"
+mkdir -p "$acct_hooks_file/hooks"
+printf '%s\n' '{"hooks":{"Stop":[{}]}}' > "$acct_hooks_file/hooks/hooks.json"
+sig=$(call_reroute claude-tooling --config-dir "$acct_hooks_file") \
+  || fail "account hooks/hooks.json must be tooling required"
+[ "$sig" = "$acct_hooks_file/hooks/hooks.json .hooks" ] \
+  || fail "account hooks/hooks.json signal: $sig"
+
+combined_ignored_and_hooks="$LAB/combined-ignored-and-hooks"
+mkdir -p "$combined_ignored_and_hooks/skills/s" \
+  "$combined_ignored_and_hooks/agents/a" \
+  "$combined_ignored_and_hooks/commands/c" \
+  "$combined_ignored_and_hooks/plugins/demo/skills/s" \
+  "$combined_ignored_and_hooks/plugins/demo/.claude-plugin"
+printf '%s\n' '{"name":"demo"}' \
+  > "$combined_ignored_and_hooks/plugins/demo/.claude-plugin/plugin.json"
+printf '%s\n' '{"hooks":{"Stop":[{}]}}' \
+  > "$combined_ignored_and_hooks/settings.json"
+sig=$(call_reroute claude-tooling --config-dir "$combined_ignored_and_hooks") \
+  || fail "ignored account items must not hide account hooks"
+[ "$sig" = "$combined_ignored_and_hooks/settings.json .hooks" ] \
+  || fail "combined ignored+hooks signal: $sig"
+
+combined_ignored_and_plugin_mcp="$LAB/combined-ignored-and-plugin-mcp"
+mkdir -p "$combined_ignored_and_plugin_mcp/skills/s" \
+  "$combined_ignored_and_plugin_mcp/agents/a" \
+  "$combined_ignored_and_plugin_mcp/commands/c" \
+  "$combined_ignored_and_plugin_mcp/plugins/demo/skills/s"
+printf '%s\n' '{"mcpServers":{"docs":{"command":"true"}}}' \
+  > "$combined_ignored_and_plugin_mcp/plugins/demo/.mcp.json"
+sig=$(call_reroute claude-tooling --config-dir "$combined_ignored_and_plugin_mcp") \
+  || fail "ignored account items must not hide plugin MCP"
+[ "$sig" = "MCP servers in $combined_ignored_and_plugin_mcp/plugins/demo/.mcp.json" ] \
+  || fail "combined ignored+plugin MCP signal: $sig"
+
+unreadable_skills="$LAB/unreadable-skills"
+mkdir -p "$unreadable_skills/skills"
+chmod 000 "$unreadable_skills/skills" || true
+if [ ! -r "$unreadable_skills/skills" ] || [ ! -x "$unreadable_skills/skills" ]; then
+  rc=0
+  sig=$(call_reroute claude-tooling --config-dir "$unreadable_skills") || rc=$?
+  [ "$rc" -eq 1 ] || fail "unreadable account skills must not be a signal, got $rc ($sig)"
+  [ -z "$sig" ] || fail "unreadable account skills produced: $sig"
+fi
+chmod 700 "$unreadable_skills/skills" 2>/dev/null || true
+
+unreadable_plugins="$LAB/unreadable-plugins"
+mkdir -p "$unreadable_plugins/plugins"
+chmod 000 "$unreadable_plugins/plugins" || true
+if [ ! -r "$unreadable_plugins/plugins" ] || [ ! -x "$unreadable_plugins/plugins" ]; then
+  sig=$(call_reroute claude-tooling --config-dir "$unreadable_plugins") \
+    || fail "an unreadable plugins dir must be tooling required"
+  [ "$sig" = "unreadable $unreadable_plugins/plugins" ] \
+    || fail "unreadable plugins dir signal: $sig"
+fi
+chmod 700 "$unreadable_plugins/plugins" 2>/dev/null || true
+
+unreadable_plugin_mcp="$LAB/unreadable-plugin-mcp"
+mkdir -p "$unreadable_plugin_mcp/plugins/demo"
+printf '%s\n' '{"mcpServers":{"docs":{"command":"true"}}}' \
+  > "$unreadable_plugin_mcp/plugins/demo/.mcp.json"
+chmod 000 "$unreadable_plugin_mcp/plugins/demo/.mcp.json" || true
+if [ ! -r "$unreadable_plugin_mcp/plugins/demo/.mcp.json" ]; then
+  sig=$(call_reroute claude-tooling --config-dir "$unreadable_plugin_mcp") \
+    || fail "an unreadable plugin .mcp.json must be tooling required"
+  [ "$sig" = "unreadable $unreadable_plugin_mcp/plugins/demo/.mcp.json" ] \
+    || fail "unreadable plugin .mcp.json signal: $sig"
+fi
+chmod 600 "$unreadable_plugin_mcp/plugins/demo/.mcp.json" 2>/dev/null || true
+
+sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$LAB/missing-wt") \
+  || fail "a missing worktree must be tooling required"
+[ "$sig" = "unreadable worktree" ] || fail "missing worktree signal: $sig"
+
+unreadable_wt="$LAB/unreadable-wt"
+mkdir -p "$unreadable_wt"
+chmod 000 "$unreadable_wt" || true
+if [ ! -r "$unreadable_wt" ] || [ ! -x "$unreadable_wt" ]; then
+  sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$unreadable_wt") \
+    || fail "an unreadable worktree must be tooling required"
+  [ "$sig" = "unreadable worktree" ] || fail "unreadable worktree signal: $sig"
+fi
+chmod 700 "$unreadable_wt" 2>/dev/null || true
+
+sig=$(HOME="$ord" call_reroute claude-tooling --config-dir "$ord/.claude/") \
+  || fail "trailing-slash \$HOME/.claude/ must still see \$HOME/.claude.json"
+[ "$sig" = "MCP servers in $ord/.claude.json" ] || fail "trailing-slash signal: $sig"
+
+ok "a Claude worker queues on any Claude-specific signal, including unknown"
+
+if out=$(call_reroute suggest --snapshot "$LAB/captured.json" --from-harness claude \
+  --from-model claude-3-5-sonnet --claude-config-dir "$empty_dir" --worktree "$clean_wt" \
+  --candidate claude:claude-3-5-sonnet 2>/dev/null); then
+  fail "the current harness:model must not be a pick, got '$out'"
+fi
+[ "$out" = "none" ] || fail "exclude current: expected none, got '$out'"
+out=$(call_reroute suggest --snapshot "$LAB/captured.json" --from-harness claude \
+  --from-model default --pinned --claude-config-dir "$empty_dir" --worktree "$clean_wt" \
+  --candidate claude:claude-3-5-sonnet --candidate codex:default)
+[ "$out" = "codex default" ] || fail "a pinned Claude account must skip every Claude candidate, got '$out'"
+ok "suggest excludes the current harness:model and a pinned account's harness"
+
 printf '# all fm-quota-choose tests passed\n'

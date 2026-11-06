@@ -180,16 +180,34 @@ test_dialog_detection() {
   trust=$' Quick safety check: Is this a project you created or one you trust?\n Claude Code\'ll be able to read, edit, and execute files here.\n ❯ No, exit\n   Yes, I trust this folder\n Enter to confirm · Esc to cancel'
   composer=$'❯ fix the bug in the parser\n  ? for shortcuts'
   assert_equals feedback "$(lib fm_wd_pane_dialog "$feedback")" "feedback survey"
-  assert_equals model-switch "$(lib fm_wd_pane_dialog "$model")" "model-switch dialog"
+  assert_equals usage-limit "$(lib fm_wd_pane_dialog "$model")" "usage-limit dialog"
   local limit
-  for limit in "You hit your weekly limit." "You've hit your session limit" "Claude usage limit reached" "You are out of credits" "Switch to another model?"; do
-    assert_equals model-switch "$(lib fm_wd_pane_dialog "$limit"$'\n ❯ 1. Wait\n   2. Stop\n\nEnter to confirm · Esc to cancel')" "limit picker: $limit"
+  for limit in "You hit your weekly limit." "You've hit your session limit" "Claude usage limit reached" "You are out of credits"; do
+    assert_equals usage-limit "$(lib fm_wd_pane_dialog "$limit"$'\n ❯ 1. Wait\n   2. Stop\n\nEnter to confirm · Esc to cancel')" "limit picker: $limit"
   done
+  assert_equals model-switch "$(lib fm_wd_pane_dialog $'Switch to another model?\n ❯ 1. Wait\n   2. Stop\n\nEnter to confirm · Esc to cancel')" "same-account model switch"
+  lib fm_wd_quota_status_line "paused: You have hit your weekly limit" \
+    || fail "status line 'You have hit your weekly limit' should match"
+  lib fm_wd_quota_status_line "paused: waiting on a rate-limit reset" \
+    || fail "status line 'waiting on a rate-limit reset' should match"
+  lib fm_wd_quota_status_line "paused: hit the quota floor" \
+    || fail "status line 'hit the quota floor' should match"
+  lib fm_wd_quota_status_line "paused: Claude usage limit reached" \
+    || fail "status line 'Claude usage limit reached' should match"
+  lib fm_wd_quota_status_line "working: still going" \
+    && fail "a working line should not match a quota floor"
   assert_equals question "$(lib fm_wd_pane_dialog "$question")" "question dialog"
   assert_equals permission "$(lib fm_wd_pane_dialog "$permission")" "permission dialog"
   assert_equals "" "$(lib fm_wd_pane_dialog "$plain")" "a numbered list in prose is no dialog"
   assert_equals permission "$(lib fm_wd_pane_dialog "$trust")" "unnumbered folder-trust picker is a permission dialog"
   assert_equals "" "$(lib fm_wd_pane_dialog "$composer")" "a composer prompt glyph without a picker footer is no dialog"
+  local grok=$'                                                                                             █\n\n  ┃\n  ┃  You hit your weekly limit.\n  ┃\n  ┃\n  ┃  1 (○) Buy more credits  Purchase credits to keep using Grok Build\n  ┃  2 (○) Try Again         Resubmit the last prompt once you have usage again\n  ┃\n  ┃  ↑/↓ navigate · y copy                                                  Enter:submit\n  ┃\n\n  Tab:next answer  │  Esc:scrollback  │  Shift+x:dismiss'
+  assert_equals "" "$(lib fm_wd_pane_dialog "$grok")" "Grok weekly-limit radio rows are not a pane picker"
+  observe() { bash -c '. "$1/bin/fm-watchdog-lib.sh"; . "$1/bin/fm-composer-lib.sh"; shift; "$@"' _ "$ROOT" "$@"; }
+  assert_equals usage-limit "$(observe fm_wd_observe_dialog "$grok")" \
+    "observe reuses the composer detector and normalizes Grok weekly-limit"
+  assert_equals usage-limit "$(observe fm_wd_observe_dialog "$model")" \
+    "observe still names a Claude usage-limit pane picker"
   assert_contains "$(lib fm_wd_dialog_options "$model")" $'3\tBuy more credits' "dialog options parsed"
   assert_equals 42 "$(lib fm_wd_footer_percent $'work\n  42% until auto-compact')" "auto-compact footer"
   pass "dialogs need their structure, and each kind is told apart"
@@ -648,7 +666,7 @@ council-seats=claude:haiku,agy:flash'
 judge_calls() { grep -c '^claude -p' "$H/model.log" 2>/dev/null || true; }
 
 test_model_switch_judge_is_rate_limited() {
-  local stuck=$'You have hit your weekly limit for Opus.\n\n ❯ 1. Wait\n   2. Buy more credits\n\nEnter to confirm · Esc to cancel'
+  local stuck=$'Switch to another model?\n\n ❯ 1. Wait\n   2. Buy more credits\n\nEnter to confirm · Esc to cancel'
   local off
 
   make_home "$stuck" 'models=claude:haiku'
@@ -722,7 +740,7 @@ council-seats=claude:haiku,agy:flash'
 
 test_secret_looking_model_switch_dialog_is_held() {
   local sentinel=FAKESENTINEL42
-  make_home "curl run with Bearer $sentinel"$'\n\nYou have hit your weekly limit for Opus.\n\n ❯ 1. Switch to Sonnet\n   2. Buy more credits\n\nEnter to confirm · Esc to cancel' 'models=claude:haiku,agy:flash'
+  make_home "curl run with Bearer $sentinel"$'\n\nSwitch to another model?\n\n ❯ 1. Switch to Sonnet\n   2. Buy more credits\n\nEnter to confirm · Esc to cancel' 'models=claude:haiku,agy:flash'
   fake_models "$H" fail ok:"OPTION 1"
   transcript 100 "Working."
   run_wd 0 once >/dev/null 2>&1 || fail "pass failed on the secret dialog"
@@ -733,7 +751,7 @@ test_secret_looking_model_switch_dialog_is_held() {
   assert_grep "looks like a secret; held" "$H/data/watchdog/status.md" "the hold is a gap"
   if grep -rFq "$sentinel" "$H/state/watchdog" "$H/data/watchdog"; then fail "the withheld text reached watchdog records"; fi
 
-  make_home $'You have hit your weekly limit for Opus.\n\n ❯ 1. Switch to Sonnet\n   2. Buy more credits\n\nEnter to confirm · Esc to cancel' 'models=claude:haiku,agy:flash'
+  make_home $'Switch to another model?\n\n ❯ 1. Switch to Sonnet\n   2. Buy more credits\n\nEnter to confirm · Esc to cancel' 'models=claude:haiku,agy:flash'
   fake_models "$H" fail ok:"OPTION 1"
   transcript 100 "Working."
   run_wd 0 once >/dev/null 2>&1 || fail "pass failed on the ordinary dialog"
@@ -1862,7 +1880,7 @@ restart-command=/bin/true'
 test_blank_stripping_keeps_a_trailing_t() {
   assert_equals "2	Add credit" "$(lib fm_wd_dialog_options $'Pick\n ❯ 1. Wait\n   2. Add credit\n\nEnter to confirm' | tail -n 1)" "an option keeps its last letter"
 
-  make_home $'You have hit your weekly limit for Opus.\n\n ❯ 1. Switch to Sonnet\n   2. Add credit\n\nEnter to confirm · Esc to cancel' 'models=claude:haiku'
+  make_home $'Switch to another model?\n\n ❯ 1. Switch to Sonnet\n   2. Add credit\n\nEnter to confirm · Esc to cancel' 'models=claude:haiku'
   fake_models "$H" ok:"OPTION 2" absent
   transcript 100 "Working."
   run_wd 0 once >/dev/null 2>&1
@@ -2025,11 +2043,11 @@ test_second_mate_restart_ends_the_pass() {
 
 test_dialog_reserved_check_reads_only_dialog_rows() {
   local rule='────────────────────'
-  make_home "Merged PR #41, deleted the branch."$'\n'"$rule"$'\nYou have hit your weekly limit for Opus.\n\n ❯ 1. Switch to Sonnet\n   2. Buy more credits\n\nEnter to confirm · Esc to cancel' 'models=claude:haiku'
+  make_home "Merged PR #41, deleted the branch."$'\n'"$rule"$'\nSwitch to another model?\n\n ❯ 1. Switch to Sonnet\n   2. Buy more credits\n\nEnter to confirm · Esc to cancel' 'models=claude:haiku'
   fake_models "$H" ok:"OPTION 1" absent
   transcript 100 "Working."
   run_wd 0 once >/dev/null 2>&1
-  assert_equals 1 "$(ledger_rows dialog key pending)" "conversation above a ruled limit picker does not hold it: $(ledger | cut -f5-8)"
+  assert_equals 1 "$(ledger_rows dialog key pending)" "conversation above a ruled model-switch picker does not hold it: $(ledger | cut -f5-8)"
 
   make_home "Merged PR #41, deleted the branch."$'\n'"$rule"$'\nWhich plan should I follow?\n ❯ 1. Plan A\n   2. Plan B\n\nEnter to select · Esc to cancel'
   transcript 100 "Working."
@@ -2123,7 +2141,7 @@ test_dialog_kind_ignores_conversation_rows() {
 }
 
 test_reserved_model_switch_dialog_is_held() {
-  make_home $'You have hit your weekly limit; release the sonnet build to production?\n ❯ 1. Yes\n   2. No\n\nEnter to confirm · Esc to cancel' 'models=claude:haiku'
+  make_home $'Switch to another model; release the sonnet build to production?\n ❯ 1. Yes\n   2. No\n\nEnter to confirm · Esc to cancel' 'models=claude:haiku'
   fake_models "$H" ok:"OPTION 1" absent
   transcript 100 "Working."
   run_wd 0 once >/dev/null 2>&1
@@ -2132,11 +2150,11 @@ test_reserved_model_switch_dialog_is_held() {
   [ ! -s "$H/typed.log" ] || fail "something was typed: $(cat "$H/typed.log")"
   assert_grep "owner-reserved category; held" "$H/data/watchdog/status.md" "the hold is a gap"
 
-  make_home $'You have hit your weekly limit for Opus.\n\n ❯ 1. Switch to Sonnet\n   2. Buy more credits\n\nEnter to confirm · Esc to cancel' 'models=claude:haiku'
+  make_home $'Switch to another model?\n\n ❯ 1. Switch to Sonnet\n   2. Buy more credits\n\nEnter to confirm · Esc to cancel' 'models=claude:haiku'
   fake_models "$H" ok:"OPTION 1" absent
   transcript 100 "Working."
   run_wd 0 once >/dev/null 2>&1
-  assert_equals 1 "$(ledger_rows dialog key pending)" "an ordinary limit dialog gets its key: $(ledger | cut -f5-8)"
+  assert_equals 1 "$(ledger_rows dialog key pending)" "an ordinary model-switch dialog gets its key: $(ledger | cut -f5-8)"
   pass "model-switch dialog: reserved text is held before the judge; an ordinary one still gets its key"
 }
 
@@ -2514,6 +2532,570 @@ test_manager_units() {
   pass "launchd and systemd units run outside every session with FM_HOME and PATH"
 }
 
+test_usage_limit_unknown_harness_queues() {
+  local snap
+  make_home $'You have hit your weekly limit for Opus.\n\n ❯ 1. Switch to Sonnet\n   2. Wait for the limit to reset\n   3. Buy more credits\n\nEnter to confirm · Esc to cancel' \
+    'reroute-candidates=kimi:kimi-k2,codex:gpt-5.4'
+  snap="$H/quota.json"
+  cat > "$snap" <<'JSON'
+{
+  "generatedAt": "2030-01-01T00:00:00Z",
+  "schemaVersion": 5,
+  "providers": [
+    {
+      "provider": "kimi",
+      "windows": [],
+      "quotaSemantics": {
+        "status": "known",
+        "effectiveAvailability": [
+          {
+            "scope": "all_models",
+            "status": "known",
+            "effectivePercentRemaining": 0,
+            "runway": { "status": "exhausted_now" }
+          }
+        ]
+      }
+    },
+    {
+      "provider": "codex",
+      "windows": [],
+      "quotaSemantics": {
+        "status": "known",
+        "effectiveAvailability": [
+          {
+            "scope": "all_models",
+            "status": "known",
+            "effectivePercentRemaining": 40,
+            "runway": { "status": "through_reset" }
+          }
+        ]
+      }
+    }
+  ]
+}
+JSON
+  cat > "$FAKEBIN/quota-axi" <<SH
+#!/usr/bin/env bash
+cat "$snap"
+SH
+  chmod +x "$FAKEBIN/quota-axi"
+  cat > "$FAKEBIN/fm-control.sh" <<'SH'
+#!/usr/bin/env bash
+printf 'control %s\n' "$*" >> "$H/control.log"
+exit 1
+SH
+  chmod +x "$FAKEBIN/fm-control.sh"
+  transcript 100 "Working."
+  run_wd 0 once >/dev/null 2>&1 || fail "usage-limit pass failed"
+  assert_equals 0 "$(ledger | awk -F'\t' '$6 == "key"' | wc -l | tr -d ' ')" "usage-limit must not press a picker key: $(ledger | cut -f5-8)"
+  [ ! -s "$H/typed.log" ] || fail "usage-limit typed into the pane: $(cat "$H/typed.log")"
+  [ ! -s "$H/model.log" ] || fail "usage-limit asked a judge: $(cat "$H/model.log")"
+  [ ! -e "$H/control.log" ] || fail "watchdog relaunched: $(cat "$H/control.log")"
+  assert_equals 1 "$(ledger_rows quota suggest held)" "the pick is recorded, not launched: $(ledger | cut -f5-8)"
+  assert_grep "Unknown harness" "$H/data/watchdog/status.md" "a pane with no task record must name unknown harness"
+  assert_not_contains "$(cat "$H/data/watchdog/status.md")" "Suggested pick: codex" \
+    "unknown harness must not name a pick"
+  rm -f "$FAKEBIN/quota-axi" "$FAKEBIN/fm-control.sh"
+  pass "usage-limit: unknown harness queues and names the reason"
+}
+
+test_claude_pinned_secondmate_with_tooling_gets_no_codex_pick() {
+  local parent mate pin snap
+  make_home $'Captain session\n> '
+  parent=$H
+  make_home $'You have hit your weekly limit for Opus.\n\n ❯ 1. Switch to Sonnet\n   2. Wait for the limit to reset\n   3. Buy more credits\n\nEnter to confirm · Esc to cancel'
+  mate=$H
+  pin="$parent/pin-claude"
+  mkdir -p "$pin"
+  printf '%s\n' '{"mcpServers":{"docs":{"command":"true"}}}' > "$pin/.claude.json"
+  printf '%s\n' "$pin" > "$parent/config/claude-account"
+  printf -- '- ghost-mate - test mate (home: %s)\n' "$mate" > "$parent/data/secondmates.md"
+  {
+    echo "harness=claude"
+    echo "kind=secondmate"
+    echo "home=$mate"
+    echo "worktree=$mate"
+    echo "model=default"
+  } > "$parent/state/ghost-mate.meta"
+  printf 'mode=act\nclaude-config-dirs=%s\nkey-settle-secs=1\nmodels=\nreroute-candidates=codex:gpt-5.4\n' \
+    "$parent/claude" > "$parent/config/watchdog"
+  snap="$parent/quota.json"
+  cat > "$snap" <<'JSON'
+{
+  "generatedAt": "2030-01-01T00:00:00Z",
+  "schemaVersion": 5,
+  "providers": [
+    {
+      "provider": "codex",
+      "windows": [],
+      "quotaSemantics": {
+        "status": "known",
+        "effectiveAvailability": [
+          {
+            "scope": "all_models",
+            "status": "known",
+            "effectivePercentRemaining": 40,
+            "runway": { "status": "through_reset" }
+          }
+        ]
+      }
+    }
+  ]
+}
+JSON
+  cat > "$FAKEBIN/quota-axi" <<SH
+#!/usr/bin/env bash
+cat "$snap"
+SH
+  chmod +x "$FAKEBIN/quota-axi"
+  cat > "$FAKEBIN/fm-control.sh" <<SH
+#!/usr/bin/env bash
+printf 'control %s\n' "\$*" >> "$parent/control.log"
+exit 1
+SH
+  chmod +x "$FAKEBIN/fm-control.sh"
+  transcript 100 "Working."
+  H=$parent
+  mkdir -p "$parent/state/watchdog"
+  printf 'stale leftover\n' > "$parent/state/watchdog/.quota-none-reason"
+  run_wd 0 once >/dev/null 2>&1 || fail "secondmate usage-limit pass failed"
+  [ ! -e "$parent/control.log" ] || fail "watchdog relaunched: $(cat "$parent/control.log")"
+  assert_equals 1 "$(ledger_rows quota suggest held)" "the queue is recorded, not launched: $(ledger | cut -f5-8)"
+  assert_grep "Claude-specific tooling present" "$parent/data/watchdog/status.md" \
+    "a Claude-pinned mate with tooling must name the tooling reason"
+  assert_not_contains "$(cat "$parent/data/watchdog/status.md")" "stale leftover" \
+    "a stale none-reason must be cleared before the next pick"
+  assert_not_contains "$(cat "$parent/data/watchdog/status.md")" "Suggested pick: codex" \
+    "Codex must not be named while Claude-specific tooling is present"
+  rm -f "$FAKEBIN/quota-axi" "$FAKEBIN/fm-control.sh"
+  pass "usage-limit: a Claude-pinned secondmate with tooling is queued, not picked for Codex"
+}
+
+wd_quota_snapshot() {  # <file>
+  cat > "$1" <<'JSON'
+{
+  "generatedAt": "2030-01-01T00:00:00Z",
+  "schemaVersion": 5,
+  "providers": [
+    {
+      "provider": "claude",
+      "windows": [],
+      "quotaSemantics": {
+        "status": "known",
+        "effectiveAvailability": [
+          {
+            "scope": "all_models",
+            "status": "known",
+            "effectivePercentRemaining": 40,
+            "runway": { "status": "through_reset" }
+          }
+        ]
+      }
+    },
+    {
+      "provider": "codex",
+      "windows": [],
+      "quotaSemantics": {
+        "status": "known",
+        "effectiveAvailability": [
+          {
+            "scope": "all_models",
+            "status": "known",
+            "effectivePercentRemaining": 40,
+            "runway": { "status": "through_reset" }
+          }
+        ]
+      }
+    }
+  ]
+}
+JSON
+}
+
+test_ordinary_home_claude_json_mcp_blocks_the_move() {
+  local parent mate user snap
+  make_home $'Captain session\n> '
+  parent=$H
+  make_home $'You have hit your weekly limit for Opus.\n\n ❯ 1. Switch to Sonnet\n   2. Wait for the limit to reset\n   3. Buy more credits\n\nEnter to confirm · Esc to cancel'
+  mate=$H
+  user="$parent/user"
+  mkdir -p "$user/.claude"
+  printf '%s\n' '{"mcpServers":{"docs":{"command":"true"}}}' > "$user/.claude.json"
+  printf -- '- ghost-mate - test mate (home: %s)\n' "$mate" > "$parent/data/secondmates.md"
+  {
+    echo "harness=claude"
+    echo "kind=secondmate"
+    echo "home=$mate"
+    echo "worktree=$mate"
+    echo "model=default"
+  } > "$parent/state/ghost-mate.meta"
+  printf 'mode=act\nclaude-config-dirs=%s\nkey-settle-secs=1\nmodels=\nreroute-candidates=codex:gpt-5.4\n' \
+    "$parent/claude" > "$parent/config/watchdog"
+  snap="$parent/quota.json"
+  wd_quota_snapshot "$snap"
+  cat > "$FAKEBIN/quota-axi" <<SH
+#!/usr/bin/env bash
+cat "$snap"
+SH
+  chmod +x "$FAKEBIN/quota-axi"
+  cat > "$FAKEBIN/fm-control.sh" <<SH
+#!/usr/bin/env bash
+printf 'control %s\n' "\$*" >> "$parent/control.log"
+exit 1
+SH
+  chmod +x "$FAKEBIN/fm-control.sh"
+  transcript 100 "Working."
+  H=$parent
+  HOME="$user" run_wd 0 once >/dev/null 2>&1 || fail "ordinary .claude.json pass failed"
+  assert_equals 1 "$(ledger_rows quota suggest held)" "the queue is recorded: $(ledger | cut -f5-8)"
+  assert_not_contains "$(cat "$parent/data/watchdog/status.md")" "Suggested pick: codex" \
+    "MCP only in \$HOME/.claude.json must block a Codex pick"
+  rm -f "$FAKEBIN/quota-axi" "$FAKEBIN/fm-control.sh"
+  pass "usage-limit: MCP only in \$HOME/.claude.json blocks the move"
+}
+
+test_codex_task_keeps_same_harness_candidates_under_a_claude_pin() {
+  local pin snap
+  make_home $'Captain session\n> ' 'reroute-candidates=codex:gpt-5.4,claude:claude-3-5-sonnet'
+  pin="$H/pin-claude"
+  mkdir -p "$pin" "$H/wt"
+  printf '%s\n' '{"mcpServers":{"docs":{"command":"true"}}}' > "$pin/.claude.json"
+  printf '%s\n' "$pin" > "$H/config/claude-account"
+  {
+    echo "harness=codex"
+    echo "kind=ship"
+    echo "worktree=$H/wt"
+    echo "model=default"
+  } > "$H/state/ship1.meta"
+  printf 'paused [at=%s]: hit the quota floor\n' "$((BASE - 9000))" > "$H/state/ship1.status"
+  snap="$H/quota.json"
+  wd_quota_snapshot "$snap"
+  cat > "$FAKEBIN/quota-axi" <<SH
+#!/usr/bin/env bash
+cat "$snap"
+SH
+  chmod +x "$FAKEBIN/quota-axi"
+  transcript 100 "Working."
+  run_wd 0 once >/dev/null 2>&1 || fail "codex quota-floor pass failed"
+  assert_grep "Suggested pick: codex gpt-5.4" "$H/state/watchdog/actions.tsv" \
+    "a Codex task must keep its same-harness candidates despite a Claude pin"
+  assert_no_grep "Suggested pick: claude" "$H/state/watchdog/actions.tsv" \
+    "the Claude pin must not reroute a Codex task onto Claude"
+  rm -f "$FAKEBIN/quota-axi"
+  pass "quota floor: a Codex task under a Claude pin keeps same-harness candidates"
+}
+
+test_usage_limit_claude_without_tooling_names_a_pick() {
+  local parent mate user snap
+  make_home $'Captain session\n> '
+  parent=$H
+  make_home $'You have hit your weekly limit for Opus.\n\n ❯ 1. Switch to Sonnet\n   2. Wait for the limit to reset\n   3. Buy more credits\n\nEnter to confirm · Esc to cancel'
+  mate=$H
+  user="$parent/user"
+  mkdir -p "$user/.claude"
+  printf -- '- ghost-mate - test mate (home: %s)\n' "$mate" > "$parent/data/secondmates.md"
+  {
+    echo "harness=claude"
+    echo "kind=secondmate"
+    echo "home=$mate"
+    echo "worktree=$mate"
+    echo "model=default"
+  } > "$parent/state/ghost-mate.meta"
+  printf 'mode=act\nclaude-config-dirs=%s\nkey-settle-secs=1\nmodels=\nreroute-candidates=codex:gpt-5.4\n' \
+    "$parent/claude" > "$parent/config/watchdog"
+  snap="$parent/quota.json"
+  wd_quota_snapshot "$snap"
+  cat > "$FAKEBIN/quota-axi" <<SH
+#!/usr/bin/env bash
+cat "$snap"
+SH
+  chmod +x "$FAKEBIN/quota-axi"
+  cat > "$FAKEBIN/fm-control.sh" <<SH
+#!/usr/bin/env bash
+printf 'control %s\n' "\$*" >> "$parent/control.log"
+exit 1
+SH
+  chmod +x "$FAKEBIN/fm-control.sh"
+  transcript 100 "Working."
+  H=$parent
+  HOME="$user" run_wd 0 once >/dev/null 2>&1 || fail "clean Claude usage-limit pass failed"
+  [ ! -e "$parent/control.log" ] || fail "watchdog relaunched: $(cat "$parent/control.log")"
+  assert_grep "Suggested pick: codex gpt-5.4" "$parent/data/watchdog/status.md" \
+    "a Claude mate with no tooling must still name the pick"
+  assert_grep "Queue until reset" "$parent/data/watchdog/status.md" \
+    "a pane-text usage-limit must queue until reset"
+  assert_not_contains "$(cat "$parent/data/watchdog/status.md")" "Supervisor relaunches" \
+    "a pane-text usage-limit must not send the supervisor to relaunch"
+  assert_equals 1 "$(ledger_rows quota suggest held)" "the home pick is recorded once: $(ledger | cut -f4-8)"
+  HOME="$user" run_wd 1 once >/dev/null 2>&1 || fail "rate-limited home usage-limit pass failed"
+  assert_equals 1 "$(ledger_rows quota suggest held)" "nudge-secs must not add another home pick: $(ledger | cut -f4-8)"
+  rm -f "$FAKEBIN/quota-axi" "$FAKEBIN/fm-control.sh"
+  pass "usage-limit: a Claude mate with no tooling names the pick and does not relaunch"
+}
+
+test_unreadable_claude_account_pin_gets_no_pick() {
+  local parent mate snap
+  make_home $'Captain session\n> '
+  parent=$H
+  make_home $'You have hit your weekly limit for Opus.\n\n ❯ 1. Switch to Sonnet\n   2. Wait for the limit to reset\n   3. Buy more credits\n\nEnter to confirm · Esc to cancel'
+  mate=$H
+  mkdir -p "$parent/config"
+  printf 'not-a-path\n' > "$parent/config/claude-account"
+  printf -- '- ghost-mate - test mate (home: %s)\n' "$mate" > "$parent/data/secondmates.md"
+  {
+    echo "harness=claude"
+    echo "kind=secondmate"
+    echo "home=$mate"
+    echo "worktree=$mate"
+    echo "model=default"
+  } > "$parent/state/ghost-mate.meta"
+  printf 'mode=act\nclaude-config-dirs=%s\nkey-settle-secs=1\nmodels=\nreroute-candidates=codex:gpt-5.4\n' \
+    "$parent/claude" > "$parent/config/watchdog"
+  snap="$parent/quota.json"
+  wd_quota_snapshot "$snap"
+  cat > "$FAKEBIN/quota-axi" <<SH
+#!/usr/bin/env bash
+cat "$snap"
+SH
+  chmod +x "$FAKEBIN/quota-axi"
+  cat > "$FAKEBIN/fm-control.sh" <<SH
+#!/usr/bin/env bash
+printf 'control %s\n' "\$*" >> "$parent/control.log"
+exit 1
+SH
+  chmod +x "$FAKEBIN/fm-control.sh"
+  transcript 100 "Working."
+  H=$parent
+  run_wd 0 once >/dev/null 2>&1 || fail "broken-pin usage-limit pass failed"
+  [ ! -e "$parent/control.log" ] || fail "watchdog relaunched: $(cat "$parent/control.log")"
+  assert_equals 1 "$(ledger_rows quota suggest held)" "the queue is recorded, not launched: $(ledger | cut -f5-8)"
+  assert_not_contains "$(cat "$parent/data/watchdog/status.md")" "Suggested pick:" \
+    "an unreadable claude-account pin must not name a pick"
+  rm -f "$FAKEBIN/quota-axi" "$FAKEBIN/fm-control.sh"
+  pass "usage-limit: an unreadable claude-account pin gets no pick"
+}
+
+test_worker_usage_limit_names_a_pick() {
+  local snap dialog calls
+  dialog=$'You have hit your weekly limit for Opus.\n\n ❯ 1. Switch to Sonnet\n   2. Wait for the limit to reset\n   3. Buy more credits\n\nEnter to confirm · Esc to cancel'
+  make_home $'Captain session\n> ' 'reroute-candidates=codex:gpt-5.4'
+  mkdir -p "$H/wt" "$H/wt2" "$H/user/.claude"
+  worker_pane limit ship "$dialog"
+  {
+    echo "harness=claude"
+    echo "kind=ship"
+    echo "worktree=$H/wt"
+    echo "model=default"
+  } >> "$H/state/limit.meta"
+  worker_pane limit2 ship "$dialog"
+  {
+    echo "harness=claude"
+    echo "kind=ship"
+    echo "worktree=$H/wt2"
+    echo "model=default"
+  } >> "$H/state/limit2.meta"
+  snap="$H/quota.json"
+  wd_quota_snapshot "$snap"
+  : > "$H/quota-axi.calls"
+  cat > "$FAKEBIN/quota-axi" <<SH
+#!/usr/bin/env bash
+printf 'call\n' >> "$H/quota-axi.calls"
+cat "$snap"
+SH
+  chmod +x "$FAKEBIN/quota-axi"
+  cat > "$FAKEBIN/fm-control.sh" <<SH
+#!/usr/bin/env bash
+printf 'control %s\n' "\$*" >> "$H/control.log"
+exit 1
+SH
+  chmod +x "$FAKEBIN/fm-control.sh"
+  transcript 100 "Working."
+  sleep 0.5
+  HOME="$H/user" run_wd 0 once >/dev/null 2>&1 || fail "worker usage-limit pass failed"
+  [ ! -e "$H/control.log" ] || fail "watchdog relaunched: $(cat "$H/control.log")"
+  [ ! -s "$H/worker-limit.typed" ] || fail "the watchdog typed into a worker usage-limit picker: $(cat "$H/worker-limit.typed")"
+  [ ! -s "$H/worker-limit2.typed" ] || fail "the watchdog typed into a second worker usage-limit picker: $(cat "$H/worker-limit2.typed")"
+  assert_equals 2 "$(ledger_rows quota suggest held)" "each worker pick is recorded, not launched: $(ledger | cut -f4-8)"
+  calls=$(wc -l < "$H/quota-axi.calls" | tr -d ' ')
+  assert_equals 1 "$calls" "one watchdog pass reuses one quota snapshot for both workers"
+  assert_grep "usage-limit on worker limit. Suggested pick: codex gpt-5.4" "$H/data/watchdog/status.md" \
+    "a worker usage-limit pane must name the pick for that worker"
+  assert_grep "usage-limit on worker limit2. Suggested pick: codex gpt-5.4" "$H/data/watchdog/status.md" \
+    "a second worker usage-limit pane must name its own pick"
+  assert_grep "Queue until reset" "$H/data/watchdog/status.md" \
+    "a worker pane-text usage-limit must queue until reset"
+  assert_not_contains "$(cat "$H/data/watchdog/status.md")" "Supervisor relaunches" \
+    "a worker pane-text usage-limit must not send the supervisor to relaunch"
+  HOME="$H/user" run_wd 1 once >/dev/null 2>&1 || fail "rate-limited worker usage-limit pass failed"
+  assert_equals 2 "$(ledger_rows quota suggest held)" "nudge-secs must not add another worker pick: $(ledger | cut -f4-8)"
+  calls=$(wc -l < "$H/quota-axi.calls" | tr -d ' ')
+  assert_equals 1 "$calls" "a rate-limited pass must not call quota-axi again"
+  rm -f "$FAKEBIN/quota-axi" "$FAKEBIN/fm-control.sh"
+  pass "usage-limit: a worker pane names the pick and does not relaunch"
+}
+
+test_grok_weekly_limit_on_a_secondmate_names_a_pick() {
+  local parent mate snap grok
+  grok=$'                                                                                             █\n\n  ┃\n  ┃  You hit your weekly limit.\n  ┃\n  ┃\n  ┃  1 (○) Buy more credits  Purchase credits to keep using Grok Build\n  ┃  2 (○) Try Again         Resubmit the last prompt once you have usage again\n  ┃\n  ┃  ↑/↓ navigate · y copy                                                  Enter:submit\n  ┃\n\n  Tab:next answer  │  Esc:scrollback  │  Shift+x:dismiss'
+  make_home $'Captain session\n> '
+  parent=$H
+  make_home "$grok"
+  mate=$H
+  mkdir -p "$parent/user/.claude"
+  printf -- '- ghost-mate - test mate (home: %s)\n' "$mate" > "$parent/data/secondmates.md"
+  {
+    echo "harness=grok"
+    echo "kind=secondmate"
+    echo "home=$mate"
+    echo "worktree=$mate"
+    echo "model=default"
+  } > "$parent/state/ghost-mate.meta"
+  printf 'mode=act\nclaude-config-dirs=%s\nkey-settle-secs=1\nmodels=\nreroute-candidates=codex:gpt-5.4\n' \
+    "$parent/claude" > "$parent/config/watchdog"
+  snap="$parent/quota.json"
+  wd_quota_snapshot "$snap"
+  cat > "$FAKEBIN/quota-axi" <<SH
+#!/usr/bin/env bash
+cat "$snap"
+SH
+  chmod +x "$FAKEBIN/quota-axi"
+  cat > "$FAKEBIN/fm-control.sh" <<SH
+#!/usr/bin/env bash
+printf 'control %s\n' "\$*" >> "$parent/control.log"
+exit 1
+SH
+  chmod +x "$FAKEBIN/fm-control.sh"
+  transcript 100 "Working."
+  H=$parent
+  HOME="$parent/user" run_wd 0 once >/dev/null 2>&1 || fail "Grok weekly-limit pass failed"
+  [ ! -e "$parent/control.log" ] || fail "watchdog relaunched: $(cat "$parent/control.log")"
+  assert_grep "Suggested pick: codex gpt-5.4" "$parent/data/watchdog/status.md" \
+    "a Grok weekly-limit composer must still name the pick"
+  assert_grep "Supervisor relaunches" "$parent/data/watchdog/status.md" \
+    "a Grok weekly-limit composer still takes a supervisor relaunch"
+  rm -f "$FAKEBIN/quota-axi" "$FAKEBIN/fm-control.sh"
+  pass "usage-limit: a Grok weekly-limit secondmate names the pick via the composer detector"
+}
+
+test_home_usage_limit_ignores_grok_in_scrollback() {
+  local parent mate user snap grok picker mate_t history view
+  grok=$'                                                                                             █\n\n  ┃\n  ┃  You hit your weekly limit.\n  ┃\n  ┃\n  ┃  1 (○) Buy more credits  Purchase credits to keep using Grok Build\n  ┃  2 (○) Try Again         Resubmit the last prompt once you have usage again\n  ┃\n  ┃  ↑/↓ navigate · y copy                                                  Enter:submit\n  ┃\n\n  Tab:next answer  │  Esc:scrollback  │  Shift+x:dismiss'
+  picker=$'You have hit your weekly limit for Opus.\n\n ❯ 1. Switch to Sonnet\n   2. Wait for the limit to reset\n   3. Buy more credits\n\nEnter to confirm · Esc to cancel'
+  make_home $'Captain session\n> '
+  parent=$H
+  make_home $'Captain session\n> '
+  mate=$H
+  mate_t=$T
+  printf '%s\n' "$grok" > "$mate/grok.txt"
+  printf '%s\n' "$picker" > "$mate/picker.txt"
+  cat > "$mate/agent.sh" <<SH
+#!/usr/bin/env bash
+cat "$mate/grok.txt"
+sleep 0.3
+printf '\n%.0s' {1..45}
+cat "$mate/picker.txt"
+exec sleep 100000
+SH
+  "$REAL_TMUX" -f /dev/null -L "$SOCKET" respawn-pane -k -t "$mate_t" "$mate/agent.sh"
+  sleep 1
+  history=$("$REAL_TMUX" -f /dev/null -L "$SOCKET" capture-pane -p -t "$mate_t" -S -60)
+  view=$("$REAL_TMUX" -f /dev/null -L "$SOCKET" capture-pane -p -t "$mate_t" -S -0)
+  printf '%s\n' "$history" | grep -Fq 'You hit your weekly limit.' \
+    || fail "the fixture lost the Grok frame from history, so this case would be vacuous"
+  printf '%s\n' "$history" | grep -Fq '1 (○) Buy more credits' \
+    || fail "the fixture lost the Grok radio row from history, so this case would be vacuous"
+  printf '%s\n' "$view" | grep -Fq 'Enter to confirm · Esc to cancel' \
+    || fail "the fixture lost the usage-limit picker from the viewport"
+  printf '%s\n' "$view" | grep -Fq 'Tab:next answer' \
+    && fail "the Grok frame is still in the viewport, so this case would not split history from the live picker"
+  user="$parent/user"
+  mkdir -p "$user/.claude"
+  printf -- '- ghost-mate - test mate (home: %s)\n' "$mate" > "$parent/data/secondmates.md"
+  {
+    echo "harness=claude"
+    echo "kind=secondmate"
+    echo "home=$mate"
+    echo "worktree=$mate"
+    echo "model=default"
+  } > "$parent/state/ghost-mate.meta"
+  printf 'mode=act\nclaude-config-dirs=%s\nkey-settle-secs=1\nmodels=\nreroute-candidates=codex:gpt-5.4\n' \
+    "$parent/claude" > "$parent/config/watchdog"
+  snap="$parent/quota.json"
+  wd_quota_snapshot "$snap"
+  cat > "$FAKEBIN/quota-axi" <<SH
+#!/usr/bin/env bash
+cat "$snap"
+SH
+  chmod +x "$FAKEBIN/quota-axi"
+  cat > "$FAKEBIN/fm-control.sh" <<SH
+#!/usr/bin/env bash
+printf 'control %s\n' "\$*" >> "$parent/control.log"
+exit 1
+SH
+  chmod +x "$FAKEBIN/fm-control.sh"
+  H=$mate
+  transcript 100 "Working."
+  H=$parent
+  HOME="$user" run_wd 0 once >/dev/null 2>&1 || fail "home usage-limit with Grok in scrollback failed"
+  [ ! -e "$parent/control.log" ] || fail "watchdog relaunched: $(cat "$parent/control.log")"
+  assert_grep "Suggested pick: codex gpt-5.4" "$parent/data/watchdog/status.md" \
+    "a live pane-text usage-limit must still name the pick"
+  assert_grep "Queue until reset" "$parent/data/watchdog/status.md" \
+    "a live pane-text usage-limit must queue until reset when only scrollback holds Grok"
+  assert_not_contains "$(cat "$parent/data/watchdog/status.md")" "Supervisor relaunches" \
+    "a dismissed Grok frame in scrollback must not send the supervisor to relaunch"
+  rm -f "$FAKEBIN/quota-axi" "$FAKEBIN/fm-control.sh"
+  pass "usage-limit: a home pane queues when Grok remains only in scrollback"
+}
+
+test_quota_axi_failure_is_cached_for_the_pass() {
+  local dialog calls
+  dialog=$'You have hit your weekly limit for Opus.\n\n ❯ 1. Switch to Sonnet\n   2. Wait for the limit to reset\n   3. Buy more credits\n\nEnter to confirm · Esc to cancel'
+  make_home $'Captain session\n> ' 'reroute-candidates=codex:gpt-5.4'
+  mkdir -p "$H/wt" "$H/wt2" "$H/user/.claude"
+  worker_pane limit ship "$dialog"
+  {
+    echo "harness=claude"
+    echo "kind=ship"
+    echo "worktree=$H/wt"
+    echo "model=default"
+  } >> "$H/state/limit.meta"
+  worker_pane limit2 ship "$dialog"
+  {
+    echo "harness=claude"
+    echo "kind=ship"
+    echo "worktree=$H/wt2"
+    echo "model=default"
+  } >> "$H/state/limit2.meta"
+  : > "$H/quota-axi.calls"
+  cat > "$FAKEBIN/quota-axi" <<SH
+#!/usr/bin/env bash
+printf 'call\n' >> "$H/quota-axi.calls"
+exit 1
+SH
+  chmod +x "$FAKEBIN/quota-axi"
+  cat > "$FAKEBIN/fm-control.sh" <<SH
+#!/usr/bin/env bash
+printf 'control %s\n' "\$*" >> "$H/control.log"
+exit 1
+SH
+  chmod +x "$FAKEBIN/fm-control.sh"
+  transcript 100 "Working."
+  sleep 0.5
+  HOME="$H/user" run_wd 0 once >/dev/null 2>&1 || fail "quota-axi failure pass failed"
+  [ ! -e "$H/control.log" ] || fail "watchdog relaunched: $(cat "$H/control.log")"
+  calls=$(wc -l < "$H/quota-axi.calls" | tr -d ' ')
+  assert_equals 1 "$calls" "one watchdog pass must call quota-axi once when it fails"
+  assert_equals 2 "$(ledger_rows quota suggest held)" "each worker still records the failed pick: $(ledger | cut -f4-8)"
+  assert_grep "Queue until reset" "$H/data/watchdog/status.md" \
+    "a failed quota snapshot must queue until reset"
+  assert_not_contains "$(cat "$H/data/watchdog/status.md")" "Suggested pick:" \
+    "a failed quota snapshot must not name a pick"
+  rm -f "$FAKEBIN/quota-axi" "$FAKEBIN/fm-control.sh"
+  pass "usage-limit: a quota-axi failure is cached for the pass"
+}
+
 if [ "$#" -gt 0 ]; then
   fm_test_run "$@"
   exit
@@ -2586,6 +3168,16 @@ fm_test_run \
   test_secret_looking_decision_reaches_no_council \
   test_secret_looking_model_switch_dialog_is_held \
   test_model_switch_judge_is_rate_limited \
+  test_usage_limit_unknown_harness_queues \
+  test_claude_pinned_secondmate_with_tooling_gets_no_codex_pick \
+  test_ordinary_home_claude_json_mcp_blocks_the_move \
+  test_codex_task_keeps_same_harness_candidates_under_a_claude_pin \
+  test_usage_limit_claude_without_tooling_names_a_pick \
+  test_unreadable_claude_account_pin_gets_no_pick \
+  test_worker_usage_limit_names_a_pick \
+  test_grok_weekly_limit_on_a_secondmate_names_a_pick \
+  test_home_usage_limit_ignores_grok_in_scrollback \
+  test_quota_axi_failure_is_cached_for_the_pass \
   test_unknown_composer_guards_the_nudge \
   test_orca_turn_probe_keeps_errors_unknown \
   test_no_activity_source_is_not_reported_ok \

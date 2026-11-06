@@ -50,6 +50,8 @@ CALLS=$WD/model-calls.tsv
 
 # shellcheck source=bin/fm-watchdog-lib.sh
 . "$SCRIPT_DIR/fm-watchdog-lib.sh"
+# shellcheck source=bin/fm-composer-lib.sh
+. "$SCRIPT_DIR/fm-composer-lib.sh"
 # shellcheck source=bin/fm-secret-lib.sh
 . "$SCRIPT_DIR/fm-secret-lib.sh"
 # shellcheck source=bin/fm-worker-account-lib.sh
@@ -218,8 +220,7 @@ wd_quota_floors() {  # <state> <now>
   for f in "$st"/*.status; do
     [ -f "$f" ] || continue
     last=$(tail -n 1 "$f" 2>/dev/null)
-    case "$last" in paused*|blocked*) ;; *) continue ;; esac
-    printf '%s' "$last" | tr '[:upper:]' '[:lower:]' | grep -Eq 'quota (floor|exhausted|is exhausted|at 0|limit|wall)|(hit|reached|at) (the |a |its )?quota|rate.?limited|rate limit (hit|reached)|usage limit (hit|reached)|out of (credits|quota)|credits (are )?(exhausted|at 0|empty)' || continue
+    fm_wd_quota_status_line "$last" || continue
     at=$(printf '%s' "$last" | sed -n 's/.*\[at=\([0-9][0-9]*\)\].*/\1/p')
     [ -n "$at" ] || at=$(wd_mtime "$f")
     printf '%s\t%s\t%s\n' "$(basename "$f" .status)" "$((now - at))" "$(printf '%s' "$last" | cut -c1-300)"
@@ -408,7 +409,7 @@ EOF
   if [ -n "$O_PANE" ]; then
     O_SIG=$(wd_pane_sig "$O_PANE")
     if [ "$O_SIG" = "$p_sig" ] && [ -n "$p_since" ]; then O_PANE_STATIC=$((now - p_since)); else p_since=$now; fi
-    O_DIALOG=$(fm_wd_pane_dialog "$(wd_view "$O_BACKEND" "$O_TARGET")") || O_DIALOG=''
+    O_DIALOG=$(fm_wd_observe_dialog "$(wd_view "$O_BACKEND" "$O_TARGET")") || O_DIALOG=''
     wd_read_composer
     O_TURN=$(wd_turn_running "$O_BACKEND" "$O_TARGET" "$O_PANE")
     ctx=$(fm_wd_footer_percent "$O_PANE")
@@ -924,6 +925,9 @@ wd_handle_dialog() {
     permission)
       wd_gap "permission dialog waiting; the watchdog never answers permission prompts"
       wd_page_permission ;;
+    usage-limit)
+      wd_quota_name_pick_rated "$(wd_id)" "${O_ID:-$O_TAG}"
+      ;;
     model-switch)
       opts=$(fm_wd_dialog_options "$O_PANE")
       text=$(fm_wd_dialog_text "$O_PANE")
@@ -1036,23 +1040,145 @@ wd_handle_decisions() {
   done < "$WD/.decisions-aged"
 }
 
+# Snapshot once and name a quota-eligible pick. Never relaunches. The
+# supervisor runs fm-control relaunch after a stale wake that names this pick.
+# A secondmate's meta lives in the parent home's state, not in O_HOME.
+# The Claude config dir comes from the task's account pin, never from
+# claude-config-dirs.
+wd_quota_meta() {  # [task-id]
+  local task=${1-}
+  if [ -n "$task" ] && [ -f "$O_HOME/state/$task.meta" ]; then
+    printf '%s\n' "$O_HOME/state/$task.meta"
+    return 0
+  fi
+  if [ "${O_PARENT:-}" != - ] && [ -n "${O_ID:-}" ] && [ "$O_ID" != - ] \
+     && [ -f "$O_PARENT/state/$O_ID.meta" ]; then
+    printf '%s\n' "$O_PARENT/state/$O_ID.meta"
+    return 0
+  fi
+  if [ -n "${O_ID:-}" ] && [ "$O_ID" != - ] && [ -f "$O_HOME/state/$O_ID.meta" ]; then
+    printf '%s\n' "$O_HOME/state/$O_ID.meta"
+    return 0
+  fi
+  return 1
+}
+
+wd_quota_pick() {  # [task-id]
+  local cands cand snapshot pick harness kind model wt mate meta task=${1-} judge reason rec_home
+  rm -f "$WD/.quota-none-reason"
+  cands=$(cfg reroute-candidates "")
+  [ -n "$cands" ] || { printf 'none\n'; return 1; }
+  snapshot=$WD/quota-snapshot.txt
+  if [ -f "$WD/quota-snapshot.failed" ]; then
+    printf 'none\n'; return 1
+  fi
+  if [ ! -s "$snapshot" ]; then
+    if ! command -v quota-axi >/dev/null 2>&1; then
+      printf 'none\n'; return 1
+    fi
+    if ! fm_run_timed 60 quota-axi > "$snapshot" 2>/dev/null; then
+      rm -f "$snapshot"
+      : > "$WD/quota-snapshot.failed"
+      printf 'none\n'; return 1
+    fi
+  fi
+  [ -s "$snapshot" ] || { printf 'none\n'; return 1; }
+  harness=
+  kind=ship
+  model=
+  wt=
+  mate=
+  judge=$task
+  if [ -z "$judge" ] && [ -n "${O_ID:-}" ] && [ "$O_ID" != - ]; then
+    judge=$O_ID
+  fi
+  rec_home=$O_HOME
+  if meta=$(wd_quota_meta "$judge"); then
+    rec_home=${meta%/state/*}
+    harness=$(fm_meta_get "$meta" harness 2>/dev/null) || harness=
+    kind=$(fm_meta_get "$meta" kind 2>/dev/null) || kind=ship
+    model=$(fm_meta_get "$meta" model 2>/dev/null) || model=
+    wt=$(fm_meta_get "$meta" worktree 2>/dev/null) || wt=
+    [ -n "$wt" ] || wt=$(fm_meta_get "$meta" home 2>/dev/null) || wt=
+  elif [ "${O_PARENT:-}" != - ] && [ -n "${O_ID:-}" ] && [ "$O_ID" != - ]; then
+    kind=secondmate
+  fi
+  if [ -z "$harness" ]; then
+    printf '%s\n' "Unknown harness" > "$WD/.quota-none-reason"
+    printf 'none\n'
+    return 1
+  fi
+  if [ "$harness" = claude ] && [ "$kind" = secondmate ] && [ -n "$judge" ] && [ "$judge" != - ]; then
+    mate=$judge
+  fi
+  set -- suggest --snapshot "$snapshot"
+  set -- "$@" --from-harness "$harness"
+  [ -z "$model" ] || set -- "$@" --from-model "$model"
+  [ -z "$kind" ] || set -- "$@" --kind "$kind"
+  [ -z "$wt" ] || set -- "$@" --worktree "$wt"
+  [ -z "$mate" ] || set -- "$@" --mate "$mate"
+  for cand in $(printf '%s' "$cands" | tr ',' ' '); do set -- "$@" --candidate "$cand"; done
+  pick=$(FM_HOME=$rec_home FM_CONFIG_OVERRIDE=$rec_home/config \
+    "$SCRIPT_DIR/fm-quota-reroute.sh" "$@" 2>"$WD/.quota-none-stderr") || pick=none
+  [ -n "$pick" ] || pick=none
+  if [ "$pick" = none ]; then
+    reason=$(awk 'sub(/^error: /, "") { print; exit }' "$WD/.quota-none-stderr" 2>/dev/null || true)
+    [ -z "$reason" ] || printf '%s\n' "$reason" > "$WD/.quota-none-reason"
+  fi
+  rm -f "$WD/.quota-none-stderr"
+  printf '%s\n' "$pick"
+  [ "$pick" != none ]
+}
+
+wd_quota_none_reason() {
+  cat "$WD/.quota-none-reason" 2>/dev/null || printf '%s\n' "No eligible reroute candidate"
+}
+
+wd_quota_relaunch_closes() {
+  local name screen=
+  # Same viewport as the dialog. Scrollback can still hold a dismissed Grok frame.
+  [ -n "${O_BACKEND:-}" ] && [ -n "${O_TARGET:-}" ] || return 1
+  screen=$(wd_view "$O_BACKEND" "$O_TARGET") || return 1
+  [ -n "$screen" ] || return 1
+  name=$(fm_composer_blocking_dialog "$screen" 2>/dev/null) || name=
+  [ "$name" = 'Grok weekly-limit choice' ]
+}
+
+wd_quota_name_pick() {  # <id> <subject> [task-id]
+  local pick reason
+  pick=$(wd_quota_pick "${3-}") || pick=none
+  if [ -n "$pick" ] && [ "$pick" != none ]; then
+    if wd_quota_relaunch_closes; then
+      wd_rec "$1" quota suggest held "quota shows $pick eligible; supervisor relaunches, watchdog does not"
+      wd_gap "usage-limit on $2. Suggested pick: $pick. Supervisor relaunches. The watchdog does not change the runtime."
+    else
+      wd_rec "$1" quota suggest held "quota shows $pick eligible; queued until reset"
+      wd_gap "usage-limit on $2. Suggested pick: $pick. Queue until reset. Relaunch closes only a verified Grok weekly-limit composer. The watchdog does not change the runtime."
+    fi
+  else
+    reason=$(wd_quota_none_reason)
+    wd_rec "$1" quota suggest held "$reason; queued until reset"
+    wd_gap "usage-limit on $2. $reason. Queue until reset; never pause in a poll loop."
+  fi
+}
+
+wd_quota_name_pick_rated() {  # <id> <subject-label> [task-id]
+  if fm_wd_rate_ok "$LEDGER" "$O_HOME" quota suggest "$(cfgi nudge-secs 900)" "$(wd_now)" "${O_REC_SUBJECT:-$O_TAG}"; then
+    wd_quota_name_pick "$1" "$2" "${3-}"
+  else
+    wd_gap "usage-limit on $2; next pick waits for nudge-secs"
+  fi
+}
+
 wd_handle_quota() {
-  local task age line cands cand snapshot pick
+  local task age line pick
   wd_quota_floors "$O_HOME/state" "$(wd_now)" | while IFS=$'\t' read -r task age line; do
     [ "$age" -ge "$(cfgi quota-secs 600)" ] || continue
-    cands=$(cfg reroute-candidates "")
-    pick=''
-    if [ -n "$cands" ] && command -v quota-axi >/dev/null 2>&1; then
-      snapshot=$WD/quota-snapshot.txt
-      fm_run_timed 60 quota-axi > "$snapshot" 2>/dev/null || true
-      set --
-      for cand in $(printf '%s' "$cands" | tr ',' ' '); do set -- "$@" --candidate "$cand"; done
-      pick=$("$SCRIPT_DIR/fm-quota-choose.sh" --snapshot "$snapshot" "$@" 2>/dev/null) || pick=''
-    fi
+    pick=$(wd_quota_pick "$task") || pick=none
     if [ -n "$pick" ] && [ "$pick" != none ]; then
-      wd_nudge "quota:$task" "task $task is parked at a quota floor. Reroute it now; quota shows $pick eligible. Never pause or poll for quota."
+      wd_nudge "quota:$task" "task $task is parked at a quota floor. Suggested pick: $pick. Supervisor relaunches; the watchdog does not. Never pause or poll for quota."
     else
-      wd_nudge "quota:$task" "task $task is parked at a quota floor. Reroute it to another provider or account through quota-array-dispatch; never pause or poll for quota."
+      wd_nudge "quota:$task" "task $task is parked at a quota floor. $(wd_quota_none_reason). Queue until reset; never pause or poll for quota."
     fi
   done
 }
@@ -1217,20 +1343,32 @@ wd_visit_worker_dialogs() {
       continue
     fi
     screen=$(wd_view "$backend" "$target") || screen=''
-    dialog=$(fm_wd_pane_dialog "$screen") || dialog=''
+    dialog=$(fm_wd_observe_dialog "$screen") || dialog=''
     if [ "$mode" = print ]; then
       printf '  worker %s endpoint=%s:%s dialog=%s\n' "$id" "$backend" "$target" "${dialog:-none}"
       continue
     fi
-    [ "$dialog" = permission ] || continue
-    O_BACKEND=$backend
-    O_TARGET=$target
-    O_PANE=$screen
-    O_DIALOG=$dialog
-    O_REC_SUBJECT="worker:$id"
-    wd_gap "permission dialog waiting on worker $id; the watchdog never answers permission prompts"
-    wd_page_permission
-    unset O_REC_SUBJECT
+    case "$dialog" in
+      permission)
+        O_BACKEND=$backend
+        O_TARGET=$target
+        O_PANE=$screen
+        O_DIALOG=$dialog
+        O_REC_SUBJECT="worker:$id"
+        wd_gap "permission dialog waiting on worker $id; the watchdog never answers permission prompts"
+        wd_page_permission
+        unset O_REC_SUBJECT
+        ;;
+      usage-limit)
+        O_BACKEND=$backend
+        O_TARGET=$target
+        O_PANE=$screen
+        O_DIALOG=$dialog
+        O_REC_SUBJECT="worker:$id"
+        wd_quota_name_pick_rated "$(wd_id)" "worker $id" "$id"
+        unset O_REC_SUBJECT
+        ;;
+    esac
   done < <(wd_worker_metas "$O_HOME")
   O_PANE=$saved_pane
   O_BACKEND=$saved_backend
@@ -1243,7 +1381,7 @@ wd_visit_worker_dialogs() {
 wd_handle_subject() {
   local symptom='' quiet frozen owed dead=0
   if fm_wd_open_pending "$LEDGER" | awk -F'\t' -v h="$O_HOME" '$2 == h && $4 == "restart" { f = 1 } END { exit !f }'; then
-    WD_SYMPTOM=restart-awaiting-pickup
+    WD_SYMPTOM='restart-awaiting-pickup'
     return 0
   fi
   frozen=$(cfgi frozen-secs 900)
@@ -1251,7 +1389,7 @@ wd_handle_subject() {
   quiet=$(cfgi restart-quiet-secs 120)
   if [ -n "$O_LOCK_PID" ] && [ "$O_ALIVE" = 0 ]; then dead=1; fi
   if [ "$dead" = 1 ]; then
-    symptom=agent-gone
+    symptom='agent-gone'
     if [ "$O_TR_AGE" != unknown ] && [ "$O_TR_AGE" -ge "$frozen" ]; then
       O_TURN=0 O_CPU_BUSY=0 wd_restart agent-gone kernel filesystem
     else
@@ -1261,14 +1399,14 @@ wd_handle_subject() {
     symptom=dialog
     wd_handle_dialog
   elif { [ "$O_RESTART_REQ" = 1 ] || { [ -n "$O_CTX" ] && [ "$O_CTX" -le "$(cfgi restart-at-percent 8)" ]; }; } && wd_restart_available && ! wd_handoff_undeliverable; then
-    symptom=restart-requested
+    symptom='restart-requested'
     wd_requested_restart "$quiet"
   elif { [ "$O_LOOP" = rapid ] && [ "$O_TR_AGE" != unknown ] && [ "$O_TR_AGE" -le "$(cfgi rapid-loop-secs 180)" ]; } \
        || { { [ "$O_LOOP" = loop ] || [ "$O_LOOP" = rapid ]; } && [ "$O_OWED_N" -gt 0 ] && [ "$O_OWED_AGE" -ge "$owed" ]; }; then
-    symptom=timer-loop
+    symptom='timer-loop'
     wd_ladder_nudge_then_restart timer-loop "your last $O_LOOP_N replies repeat the same text with no work between them. Stop re-arming, drain the wake queue, and act on what it shows." filesystem records
   elif [ "$O_LOOP" = near ] && [ "$O_OWED_N" -gt 0 ] && [ "$O_OWED_AGE" -ge "$owed" ] && wd_near_loop_confirmed; then
-    symptom=timer-loop
+    symptom='timer-loop'
     wd_ladder_nudge_then_restart timer-loop "your recent replies repeat without new work while input waits. Stop re-arming, drain the wake queue, and act on it." filesystem records
   elif [ "$O_PANE_STATIC" -ge "$frozen" ] && [ "$O_TR_AGE" != unknown ] && [ "$O_TR_AGE" -ge "$frozen" ] \
        && [ "$O_OWED_N" -gt 0 ] && [ "$O_OWED_AGE" -ge "$frozen" ]; then
@@ -1279,16 +1417,16 @@ wd_handle_subject() {
       wd_ladder_nudge_then_restart frozen "nothing changed for $((O_PANE_STATIC / 60)) minutes while $O_OWED_N inputs wait. Drain the wake queue and act on it." rendered filesystem kernel
     fi
   elif wd_unsent_is_stable; then
-    symptom=pasted-input
+    symptom='pasted-input'
     wd_submit_unsent
   elif [ "$O_OWED_N" -gt 0 ] && [ "$O_OWED_AGE" -ge "$owed" ] && [ "$O_TURN" != 1 ]; then
-    symptom=unread-input
+    symptom='unread-input'
     wd_nudge unread-input "$O_OWED_N inputs have waited $((O_OWED_AGE / 60)) minutes. Drain the wake queue and act on it."
   fi
   # A restart this pass stopped the recorded session, so its old endpoint gets nothing more.
   if [ "$WD_RESTARTED" = 1 ]; then WD_SYMPTOM=$symptom; return 0; fi
   if [ "$dead" = 0 ] && [ "$O_AFK" = 1 ] && [ "$O_DAEMON" = 0 ]; then
-    [ -n "$symptom" ] || symptom=daemon-dead
+    [ -n "$symptom" ] || symptom='daemon-dead'
     wd_nudge daemon-dead "away mode is on but the away daemon is not running. Re-arm it with bin/fm-afk-start.sh on this session's own terminal."
   fi
   if [ "$O_HB_AGE" != unknown ] && [ "$O_HB_AGE" -ge "$(cfgi watcher-stale-secs 900)" ]; then
@@ -1366,6 +1504,7 @@ wd_write_status() {  # <health-file> <gaps-file>
 wd_once() {  # [home-filter]
   local filter=${1:-} health
   mkdir -p "$WD" "$OUT"
+  rm -f "$WD/quota-snapshot.txt" "$WD/quota-snapshot.failed"
   health=$(mktemp "$WD/.health.XXXXXX") || return 1
   WD_GAPS=$(mktemp "$WD/.gaps.XXXXXX") || return 1
   wd_reconcile_pending

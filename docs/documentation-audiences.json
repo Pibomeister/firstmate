@@ -87,6 +87,10 @@
       "target": "docs/verification/runtime-backends.md"
     },
     {
+      "source": "docs/watchdog.md",
+      "target": "docs/verification/quota-reroute.md"
+    },
+    {
       "source": "docs/tmux-backend.md",
       "target": "docs/verification/runtime-backends.md"
     },
@@ -618,6 +622,10 @@
     },
     {
       "path": "docs/verification/public-followup.md",
+      "audience": "maintainer-verification"
+    },
+    {
+      "path": "docs/verification/quota-reroute.md",
       "audience": "maintainer-verification"
     },
     {

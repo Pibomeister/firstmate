@@ -25,7 +25,10 @@
 #              still exists, and the agent is still alive where the backend can
 #              classify that. Cancellation is confirmed only from an adapter-
 #              owned acknowledgement and otherwise reported unconfirmed. Busy
-#              state is never rewritten as proof of the action. Devin
+#              state is never rewritten as proof of the action. A proven
+#              usage-limit screen is refused. A pane-text usage-limit picker
+#              queues until reset. A Grok weekly-limit composer can be closed
+#              by relaunch. Devin
 #              cancellation invalidates it to unknown because its native hooks
 #              emit no cancellation close; this is not a success claim.
 #              An adapter whose repeated interrupt key does something else on
@@ -36,7 +39,10 @@
 #              every uncommitted change. Interrupts first when the task reads
 #              busy, then submits the harness's exit command. Postcondition:
 #              the backend's recovery-grade classifier reports the agent gone.
-#              Already-stopped is success (idempotent). An endpoint that reads
+#              Already-stopped is success (idempotent). A proven usage-limit
+#              screen is refused. A pane-text usage-limit picker queues until
+#              reset. A Grok weekly-limit composer can be closed by relaunch
+#              instead of typing Enter into that picker. An endpoint that reads
 #              `missing` (or, on Rex, `unreadable`, which is how a stopped Rex
 #              server reads without starting it) is put through the control
 #              plane's per-backend absence
@@ -97,6 +103,13 @@
 #              The same pre-stop refusal applies to this home's worker tool
 #              exclusions (bin/fm-exclude-tools-lib.sh): a malformed list, or a
 #              replacement runtime that cannot hide the listed tools.
+#              A Grok weekly-limit composer (dated live evidence) is closed by
+#              destroying the endpoint without typing Enter, so the replacement
+#              can rebind. A pane-text usage-limit verdict is refused; that
+#              classifier is not live-verified, and the endpoint is not closed.
+#              Moving a Claude task onto another harness is refused when
+#              bin/fm-quota-reroute.sh claude-tooling reports a signal, and
+#              when that check cannot complete; there is no override.
 #              A backlog item that cannot take a replacement worker also
 #              refuses before the old agent stops; a held In-flight item is
 #              admitted and keeps its hold (bin/fm-backlog-transition-lib.sh
@@ -116,9 +129,12 @@
 #              state; it never leaves a half-transitioned task claiming to be
 #              running.
 #              A secondmate whose endpoint is gone once its agent is stopped
-#              exits 4 with that prior record kept, because its replacement
-#              belongs to the secondmate respawn path
+#              exits 4 with that prior record kept when this call named
+#              neither --harness nor --model, because that replacement belongs
+#              to the secondmate respawn path
 #              (bin/fm-spawn.sh <id> --secondmate), which the caller runs next.
+#              An explicit --harness or --model is a quota or operator replace
+#              and rebinds through --relaunch.
 #
 # Teardown and discard are NOT verbs here and never will be. `exit` stops an
 # agent and preserves everything else; removing a worktree, killing an
@@ -220,6 +236,8 @@ DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 . "$SCRIPT_DIR/fm-omp-profile-lib.sh"
 # shellcheck source=bin/fm-exclude-tools-lib.sh
 . "$SCRIPT_DIR/fm-exclude-tools-lib.sh"
+# shellcheck source=bin/fm-watchdog-lib.sh
+. "$SCRIPT_DIR/fm-watchdog-lib.sh"
 
 POLL=${FM_CONTROL_POLL:-0.5}
 SETTLE_WAIT=${FM_CONTROL_SETTLE_WAIT:-5}
@@ -237,9 +255,26 @@ CONTROL_LOCK=
 CONTROL_LOCK_HELD=0
 RELAUNCH_ACTIVE=0
 RELAUNCH_PHASE=start
+RELAUNCH_META_LOCK=
+RELAUNCH_META_LOCK_HELD=0
+
+relaunch_meta_unlock() {
+  [ "${RELAUNCH_META_LOCK_HELD:-0}" = 1 ] || return 0
+  RELAUNCH_META_LOCK_HELD=0
+  fm_lock_release "$RELAUNCH_META_LOCK" || true
+}
+
+relaunch_meta_lock() {
+  RELAUNCH_META_LOCK=$(fm_meta_lock_path "$META") || return 1
+  fm_lock_acquire_wait "$RELAUNCH_META_LOCK" || return 1
+  RELAUNCH_META_LOCK_HELD=1
+}
 
 control_cleanup() {
   local status=$?
+  # The metadata lock is not re-entrant. Drop a leftover hold before rollback
+  # restore acquires the same lock.
+  relaunch_meta_unlock
   if [ "$RELAUNCH_ACTIVE" = 1 ] \
      && declare -F relaunch_rollback >/dev/null 2>&1; then
     relaunch_rollback || true
@@ -491,6 +526,66 @@ require_state_verified_backend() {  # <verb>
 # or choose.
 refuse_blocking_prompt() {  # <dialog-name>
   die "task $ID is blocked on a prompt: $1. Refusing to type Enter into it."
+}
+
+# usage_limit_dialog_name: the raw dialog name. The Grok weekly-limit composer
+# keeps that name. Pane-text usage-limit stays `usage-limit`. Do not use
+# fm_wd_observe_dialog here: it normalizes Grok to usage-limit and loses the
+# provenance the relaunch close path needs.
+usage_limit_dialog_name() {
+  local screen dialog
+  if [ -s "${FM_COMPOSER_DIALOG_SINK:-}" ]; then
+    dialog=$(cat "$FM_COMPOSER_DIALOG_SINK")
+    if fm_wd_usage_limit_kind "$dialog"; then
+      printf '%s' "$dialog"
+      return 0
+    fi
+  fi
+  screen=$(fm_backend_visible_capture "$BACKEND" "$T" "$LABEL" 2>/dev/null) || return 1
+  if declare -F fm_composer_blocking_dialog >/dev/null 2>&1; then
+    dialog=$(fm_composer_blocking_dialog "$screen" 2>/dev/null) || dialog=
+    if fm_wd_usage_limit_kind "$dialog"; then
+      printf '%s' "$dialog"
+      return 0
+    fi
+  fi
+  dialog=$(fm_wd_pane_dialog "$screen" 2>/dev/null) || return 1
+  [ -n "$dialog" ] || return 1
+  printf '%s' "$dialog"
+}
+
+# usage_limit_screen: a proven provider-limit picker, either the pane kind
+# usage-limit or the Grok weekly-limit composer name. A conversation quote of
+# the same words is not this screen.
+usage_limit_screen() {
+  local dialog
+  dialog=$(usage_limit_dialog_name) || return 1
+  fm_wd_usage_limit_kind "$dialog"
+}
+
+# Close the endpoint without typing Enter. Used only on a Grok weekly-limit
+# composer during relaunch, so the replacement can rebind.
+usage_limit_relaunch_close() {
+  fm_backend_kill "$BACKEND" "$T" \
+    || die "task $ID is at a usage-limit screen and its endpoint could not be closed without typing Enter"
+  printf 'endpoint-gone'
+}
+
+# relaunch_endpoint_path: the live pane cwd, used to refuse a replacement that
+# would start outside the recorded worktree before the old agent stops. Empty
+# means the endpoint is gone or this backend has no current-path helper.
+relaunch_endpoint_path() {
+  fm_backend_source "$BACKEND" || return 1
+  case "$BACKEND" in
+    tmux) fm_backend_tmux_current_path "$T" ;;
+    herdr) fm_backend_herdr_current_path "$T" ;;
+    zellij) fm_backend_zellij_current_path "$T" "$LABEL" ;;
+    cmux) fm_backend_cmux_current_path "$T" "$LABEL" ;;
+    paseo) fm_backend_paseo_current_path "$T" "$LABEL" ;;
+    rex) fm_backend_rex_current_path "$T" "$LABEL" ;;
+    tern) fm_backend_tern_current_path "$T" "$LABEL" ;;
+    *) return 1 ;;
+  esac
 }
 
 # rendered_matches <ere>: whether any row of the visible viewport matches.
@@ -834,6 +929,24 @@ do_exit() {
       esac
       ;;
   esac
+  : > "$FM_COMPOSER_DIALOG_SINK" \
+    || die "task $ID's dialog check could not be recorded"
+  composer_state=$(fm_backend_composer_state "$BACKEND" "$T" "$LABEL" 2>/dev/null) \
+    || composer_state=unknown
+  dialog=$(usage_limit_dialog_name) || dialog=
+  if fm_wd_usage_limit_kind "$dialog"; then
+    if [ "$VERB" = relaunch ]; then
+      if [ "$dialog" = 'Grok weekly-limit choice' ]; then
+        usage_limit_relaunch_close
+        return 0
+      fi
+      die "task $ID is at a usage-limit screen that is not live-verified; refusing to close the endpoint or type Enter. Queue until reset."
+    fi
+    if [ "$dialog" = 'Grok weekly-limit choice' ]; then
+      die "task $ID is at a usage-limit screen; refusing to type Enter into it. Relaunch onto another runtime instead."
+    fi
+    die "task $ID is at a usage-limit screen; refusing to type Enter into it. Queue until reset."
+  fi
   # A busy agent is interrupted first before the exit command is submitted.
   case "$(busy_verdict)" in
     busy*)
@@ -851,15 +964,15 @@ do_exit() {
       esac
       ;;
   esac
+  : > "$FM_COMPOSER_DIALOG_SINK" \
+    || die "task $ID's dialog check could not be recorded"
+  composer_state=$(fm_backend_composer_state "$BACKEND" "$T" "$LABEL" 2>/dev/null) \
+    || composer_state=unknown
   cmd=$(fm_control_exit_command "$HARNESS" "$OPENCODE_MAJOR")
   hazard=$(fm_control_interrupt_hazard_signal "$HARNESS")
   if [ -n "$hazard" ] && rendered_matches "$hazard"; then
     die "task $ID shows the $HARNESS revert picker, where typed text becomes a search and Enter reverts file changes; refusing to type the $cmd exit command. Close it with $(fm_control_interrupt_key "$HARNESS"), never Enter, then retry '$VERB'"
   fi
-  : > "$FM_COMPOSER_DIALOG_SINK" \
-    || die "task $ID's dialog check could not be recorded"
-  composer_state=$(fm_backend_composer_state "$BACKEND" "$T" "$LABEL" 2>/dev/null) \
-    || composer_state=unknown
   # The classify that filled the sink ran in a subshell, so read the file
   # rather than a function that subshell sourced.
   if [ -s "${FM_COMPOSER_DIALOG_SINK:-}" ]; then
@@ -975,6 +1088,73 @@ TARGET_HARNESS=$HARNESS
 TARGET_MODEL=
 TARGET_EFFORT=
 
+# True when spawn rewrote the live record, not merely when this transaction
+# stamped control_relaunch_tx onto it or stopping the old agent cleared its
+# busy_gen before calling spawn. Cooperating writers (fm-x-link, budget) may
+# change other keys without publishing a new incarnation.
+relaunch_record_changed_beyond_tx() {
+  local now was
+  now=$(grep -v -e '^control_relaunch_tx=' -e '^busy_gen=' "$META" 2>/dev/null || true)
+  was=$(grep -v -e '^control_relaunch_tx=' -e '^busy_gen=' "$META_PRIOR" 2>/dev/null || true)
+  [ "$now" != "$was" ]
+}
+
+# True when fm-spawn published a new incarnation. Each publish mints a new
+# spawn_gen. A missing generation on both sides is not a publication.
+relaunch_spawn_published() {
+  local now was
+  if [ "${FM_TEST_SEAM:-}" = 1 ] && [ "${FM_TEST_RELAUNCH_SPAWN_PUBLISHED_LOCK_FAIL:-}" = 1 ]; then
+    return 1
+  fi
+  relaunch_meta_lock || return 1
+  now=$(fm_meta_get "$META" spawn_gen)
+  was=$(fm_meta_get "$META_PRIOR" spawn_gen)
+  relaunch_meta_unlock
+  [ -n "$now" ] && [ "$now" != "$was" ]
+}
+
+# Drop only this transaction's control_relaunch_tx. Other metadata stays.
+clear_owned_relaunch_tx() {
+  local token=${RELAUNCH_TX-}
+  [ -n "$token" ] || return 0
+  relaunch_meta_lock || return 1
+  if [ "$(fm_meta_get "$META" control_relaunch_tx)" != "$token" ]; then
+    relaunch_meta_unlock
+    return 0
+  fi
+  cp -p "$META" "$META.tx" || {
+    relaunch_meta_unlock
+    return 1
+  }
+  {
+    grep -v '^control_relaunch_tx=' "$META" || true
+  } > "$META.tx" || {
+    relaunch_meta_unlock
+    return 1
+  }
+  mv "$META.tx" "$META" || {
+    relaunch_meta_unlock
+    return 1
+  }
+  relaunch_meta_unlock
+}
+
+restore_relaunch_prior_record() {
+  [ -f "$META_PRIOR" ] || return 0
+  relaunch_meta_lock || return 1
+  if relaunch_record_changed_beyond_tx; then
+    relaunch_meta_unlock
+    return 0
+  fi
+  if cp -p "$META_PRIOR" "$META"; then
+    relaunch_meta_unlock
+    return 0
+  fi
+  echo "error: could not restore task $ID's prior durable record" >&2
+  relaunch_meta_unlock
+  return 1
+}
+
 journal_write() {  # <phase> [extra-line]...
   local phase=$1
   shift
@@ -1009,6 +1189,7 @@ relaunch_rollback() {
   [ "$RELAUNCH_ACTIVE" = 1 ] || return 0
   [ "$RELAUNCH_PHASE" != complete ] || return 0
   RELAUNCH_ACTIVE=0
+  rm -f "$META.tx"
   case "$RELAUNCH_PHASE" in
     checkpoint|noted)
       # The old agent was never touched. Restore the instructions byte-exact so
@@ -1051,18 +1232,21 @@ relaunch_rollback() {
       if [ "$RELAUNCH_AGENT_CONFIRMED" = 1 ]; then
         journal_write "failed:$RELAUNCH_PHASE" "rollback=none-new-agent-confirmed" || true
         echo "error: $ID's replacement is running on $TARGET_HARNESS, but transaction completion could not be persisted; its published record was retained for reconciliation" >&2
-      elif [ "$RELAUNCH_META_PUBLISHED" = 1 ] \
-         || { [ -n "$RELAUNCH_TX" ] \
-              && [ "$(fm_meta_get "$META" control_relaunch_tx)" = "$RELAUNCH_TX" ]; }; then
+      elif [ "$RELAUNCH_META_PUBLISHED" = 1 ]; then
         # The launch owner published the new incarnation's record. Leaving it
         # in place is the honest state: the task is now recorded on the new
         # harness with no agent confirmed, which is exactly what recovery
         # reconciles. Rewriting it back to the old harness would be a second,
-        # worse inaccuracy.
+        # worse inaccuracy. Cooperating metadata edits are not a publication;
+        # restore_relaunch_prior_record keeps those by skipping the checkpoint copy.
         journal_write "failed:$RELAUNCH_PHASE" "rollback=none-new-record-kept" || true
         echo "error: $ID was relaunched on $TARGET_HARNESS but no running agent could be confirmed; its work is preserved at $WT" >&2
       else
-        journal_write "failed:$RELAUNCH_PHASE" "rollback=prior-record-kept" || true
+        if restore_relaunch_prior_record; then
+          journal_write "failed:$RELAUNCH_PHASE" "rollback=prior-record-kept" || true
+        else
+          journal_write "failed:$RELAUNCH_PHASE" "rollback=prior-record-restore-failed" || true
+        fi
         echo "error: $ID's agent was stopped but the replacement did not launch; no agent is running, and its work plus the recorded progress note are preserved at $WT" >&2
       fi
       ;;
@@ -1127,9 +1311,30 @@ resolve_relaunch_profile() {
   # transaction, where nothing has changed yet.
   fm_control_harness_supports_kind "$TARGET_HARNESS" "$KIND" \
     || die "'$TARGET_HARNESS' is not verified to run a $KIND task, so relaunching $ID onto it would stop the running agent for a launch that must be refused; choose an adapter verified for this kind"
-  # A model or effort chosen for the previous harness does not transfer to a
-  # different one, so an explicit harness change resets both axes unless the
-  # caller names them too.
+  # Moving off Claude is refused when any Claude-specific tooling signal is
+  # present, and when the check cannot complete (any exit other than 1).
+  # Same check as bin/fm-quota-reroute.sh; no override flag.
+  if [ "$PRIOR_HARNESS" = claude ] && [ "$TARGET_HARNESS" != claude ]; then
+    local sig rc=0 reason helper
+    local -a tooling
+    if [ -z "$WT" ]; then
+      die "Claude-specific tooling present (unresolvable worktree); refusing to move $ID off Claude"
+    fi
+    tooling=(claude-tooling --worktree "$WT")
+    [ "$KIND" != secondmate ] || tooling+=(--mate "$ID")
+    helper=$SCRIPT_DIR/fm-quota-reroute.sh
+    if [ "${FM_TEST_SEAM:-}" = 1 ] && [ -n "${FM_TEST_QUOTA_REROUTE:-}" ]; then
+      helper=$FM_TEST_QUOTA_REROUTE
+    fi
+    sig=$("$helper" "${tooling[@]}" 2>&1) || rc=$?
+    if [ "$rc" -ne 1 ]; then
+      reason=${sig#error: }
+      die "Claude-specific tooling present (${reason:-exit $rc}); refusing to move $ID off Claude"
+    fi
+  fi
+  # A model chosen for the previous harness does not transfer to a different
+  # one, so an explicit harness change resets model unless the caller names it.
+  # Effort is kept unless --effort is named, including across a harness change.
   if [ "$MODEL_SET" = 1 ]; then
     TARGET_MODEL=$NEW_MODEL
   elif [ "$HARNESS_SET" = 0 ] && [ -n "$CONFIG_HARNESS" ]; then
@@ -1143,17 +1348,26 @@ resolve_relaunch_profile() {
     TARGET_EFFORT=$NEW_EFFORT
   elif [ "$HARNESS_SET" = 0 ] && [ -n "$CONFIG_HARNESS" ]; then
     TARGET_EFFORT=${CONFIG_EFFORT:-default}
-  elif [ "$TARGET_HARNESS" = "$PRIOR_HARNESS" ]; then
-    TARGET_EFFORT=$PRIOR_EFFORT
   else
-    TARGET_EFFORT=default
+    # An explicit --harness without --effort keeps the running effort. A
+    # harness change must not silently reset it to default.
+    TARGET_EFFORT=$PRIOR_EFFORT
   fi
   # The launch owner applies this home's worker account pin too, but only after
   # the old agent has been stopped, so a pin that no longer resolves or is
   # signed out must refuse here, while nothing has changed yet.
-  local account_model=$TARGET_MODEL account_mate=
+  local account_model=$TARGET_MODEL account_mate='' effort_err=''
   [ "$account_model" != default ] || account_model=
-  "$SCRIPT_DIR/fm-harness.sh" validate-native-effort "$TARGET_HARNESS" "$account_model" "$TARGET_EFFORT" || return 1
+  if ! effort_err=$("$SCRIPT_DIR/fm-harness.sh" validate-native-effort "$TARGET_HARNESS" "$account_model" "$TARGET_EFFORT" 2>&1); then
+    if [ "$EFFORT_SET" != 1 ] && [ "$TARGET_HARNESS" != "$PRIOR_HARNESS" ]; then
+      echo "notice: $TARGET_HARNESS refused effort $TARGET_EFFORT; launching at default" >&2
+      TARGET_EFFORT=default
+      "$SCRIPT_DIR/fm-harness.sh" validate-native-effort "$TARGET_HARNESS" "$account_model" "$TARGET_EFFORT" || return 1
+    else
+      [ -z "$effort_err" ] || printf '%s\n' "$effort_err" >&2
+      return 1
+    fi
+  fi
   [ "$KIND" != secondmate ] || account_mate=$ID
   fm_worker_account_select "$TARGET_HARNESS" "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}" \
     "$account_model" "$TARGET_HARNESS" "" "$account_mate" >/dev/null || return 1
@@ -1288,7 +1502,7 @@ record_note() {
 }
 
 do_relaunch() {
-  local exit_result state note_line spawn_rc
+  local exit_result state note_line spawn_rc spawn_err spawn_msg
   local -a spawn_args
 
   require_state_verified_backend relaunch
@@ -1348,6 +1562,21 @@ do_relaunch() {
   fi
   fm_backlog_relaunch_admission "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}" "$DATA" "$KIND" "$ID" \
     || die "$FM_BACKLOG_TRANSITION_ERROR; refusing to relaunch, and the running agent was not touched"
+  # Refuse a live pane whose readable cwd is not the recorded worktree, before
+  # the old agent stops. Skip when the path is empty or unreadable: that is a
+  # gone endpoint or a backend with no current-path helper, and absence proof
+  # owns those. Herdr and Rex can still be told to return after stop.
+  if [ "$BACKEND" != orca ] && [ "$KIND" != secondmate ]; then
+    local seen seen_real wt_real
+    seen=$(relaunch_endpoint_path || true)
+    wt_real=$(cd "$WT" 2>/dev/null && pwd -P) || wt_real=$WT
+    if [ "$BACKEND" != herdr ] && [ "$BACKEND" != rex ] && [ -n "$seen" ]; then
+      seen_real=$(cd "$seen" 2>/dev/null && pwd -P) || seen_real=
+      if [ -n "$seen_real" ] && [ "$seen_real" != "$wt_real" ]; then
+        die "task $ID's endpoint is in '$seen', not its recorded worktree '$WT'; refusing to relaunch an agent outside the copy holding its work"
+      fi
+    fi
+  fi
   safe_checkpoint
   cp -p "$META" "$META_PRIOR" || die "could not preserve task $ID's durable record before relaunching"
   RELAUNCH_ACTIVE=1
@@ -1364,13 +1593,32 @@ do_relaunch() {
   # per-task harness wiring before arming the new one, so nothing to do here.
   RELAUNCH_TX="${BASHPID:-$$}.$(date -u +%Y%m%dT%H%M%SZ).$RANDOM"
   journal_write launching "${CHECKPOINT_LINES[@]}" "$note_line" "relaunch_tx=$RELAUNCH_TX"
+  relaunch_meta_lock \
+    || die "could not lock task $ID's durable record before recording relaunch token $RELAUNCH_TX"
+  cp -p "$META" "$META.tx" || die "could not stage relaunch token $RELAUNCH_TX for task $ID"
+  {
+    grep -v '^control_relaunch_tx=' "$META" || true
+    printf 'control_relaunch_tx=%s\n' "$RELAUNCH_TX"
+  } > "$META.tx" || die "could not stage relaunch token $RELAUNCH_TX for task $ID"
+  mv "$META.tx" "$META" || die "could not record relaunch token $RELAUNCH_TX on task $ID before spawn"
+  relaunch_meta_unlock
   spawn_args=("$ID" --relaunch --harness "$TARGET_HARNESS")
   [ "$TARGET_MODEL" = default ] || spawn_args+=(--model "$TARGET_MODEL")
   [ "$TARGET_EFFORT" = default ] || spawn_args+=(--effort "$TARGET_EFFORT")
+  spawn_err=$(mktemp "${TMPDIR:-/tmp}/fm-control-spawn.XXXXXX") || die "could not record spawn output for task $ID"
   spawn_rc=0
-  FM_CONTROL_RELAUNCH_TX="$RELAUNCH_TX" \
-    "$SCRIPT_DIR/fm-spawn.sh" "${spawn_args[@]}" >/dev/null || spawn_rc=$?
+  # A same-pin secondmate relaunch (restart, liveness) must not mint a
+  # replacement window through --relaunch. Quota and an operator replace name
+  # --harness or --model, and only those pass the token spawn requires.
+  if [ "$KIND" = secondmate ] && [ "$HARNESS_SET" = 0 ] && [ "$MODEL_SET" = 0 ]; then
+    "$SCRIPT_DIR/fm-spawn.sh" "${spawn_args[@]}" >/dev/null 2>"$spawn_err" || spawn_rc=$?
+  else
+    FM_CONTROL_RELAUNCH_TX="$RELAUNCH_TX" \
+      "$SCRIPT_DIR/fm-spawn.sh" "${spawn_args[@]}" >/dev/null 2>"$spawn_err" || spawn_rc=$?
+  fi
   if [ "$spawn_rc" -eq 0 ]; then
+    cat "$spawn_err" >&2
+    rm -f "$spawn_err"
     RELAUNCH_META_PUBLISHED=1
     # $T was resolved from the record before the launch. When the recorded
     # endpoint was gone, the launch owner created a fresh one and republished
@@ -1390,19 +1638,25 @@ do_relaunch() {
       die "the replacement agent for $ID was launched, but task $ID's republished record no longer passes endpoint validation (the refusal above names the row), so this transaction cannot say which endpoint to confirm it on; reconcile $META before any further control action"
     fi
   else
-    [ "$(fm_meta_get "$META" control_relaunch_tx)" != "$RELAUNCH_TX" ] \
-      || RELAUNCH_META_PUBLISHED=1
+    if relaunch_spawn_published; then
+      RELAUNCH_META_PUBLISHED=1
+    fi
+    spawn_msg=$(tr '\n' ' ' < "$spawn_err")
+    rm -f "$spawn_err"
     # The launch owner's typed refusal for a secondmate whose endpoint is gone
     # (fm-spawn.sh header: --relaunch). Nothing was created, the agent is
     # stopped, and the prior record stands, so hand the mate to its respawn
     # owner with the same status instead of an untyped failure.
     if [ "$spawn_rc" -eq 4 ] && [ "$KIND" = secondmate ] && [ "$RELAUNCH_META_PUBLISHED" = 0 ]; then
-      journal_write "failed:$RELAUNCH_PHASE" "rollback=prior-record-kept-endpoint-gone" || true
+      journal_write "failed:$RELAUNCH_PHASE" "rollback=prior-record-kept-endpoint-gone" "relaunch_tx=$RELAUNCH_TX" || true
+      if ! clear_owned_relaunch_tx; then
+        echo "error: could not clear task $ID's relaunch token after a gone-endpoint handoff" >&2
+      fi
       RELAUNCH_ACTIVE=0
       echo "error: secondmate $ID's agent is stopped and its endpoint is gone, so no replacement can be launched into it; its record is kept for the secondmate respawn path (bin/fm-spawn.sh $ID --secondmate)" >&2
       exit 4
     fi
-    die "the replacement agent for $ID could not be launched on $TARGET_HARNESS"
+    die "the replacement agent for $ID could not be launched on $TARGET_HARNESS${spawn_msg:+: $spawn_msg}"
   fi
 
   state=$(wait_agent_state "$LAUNCH_WAIT" alive) || {
@@ -1431,6 +1685,15 @@ case "$VERB" in
       dead|missing) die "no agent is running at task $ID's recorded endpoint (state: $state); there is nothing to interrupt" ;;
       *) die "task $ID's endpoint reads '$state' rather than a positively classified state; refusing to send a lifecycle key into an unattributed endpoint" ;;
     esac
+    : > "$FM_COMPOSER_DIALOG_SINK" || true
+    fm_backend_composer_state "$BACKEND" "$T" "$LABEL" >/dev/null 2>&1 || true
+    dialog=$(usage_limit_dialog_name) || dialog=
+    if fm_wd_usage_limit_kind "$dialog"; then
+      if [ "$dialog" = 'Grok weekly-limit choice' ]; then
+        die "task $ID is at a usage-limit screen; refusing to send a lifecycle key into it. Relaunch onto another runtime instead."
+      fi
+      die "task $ID is at a usage-limit screen; refusing to send a lifecycle key into it. Queue until reset."
+    fi
     proof=$(do_interrupt)
     echo "interrupt-delivered $ID harness=$HARNESS backend=$BACKEND verified=$proof"
     ;;

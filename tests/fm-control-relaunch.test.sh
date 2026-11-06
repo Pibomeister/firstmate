@@ -82,6 +82,9 @@ case "${1:-}" in
       esac
     done
     payload=${1:-}
+    if [ -s "$D/capture" ]; then
+      printf '%s\n' "$payload" >> "$D/picker-keys"
+    fi
     if [ "$literal" = 1 ]; then
       case "$payload" in
         ". '"*"'") staged=${payload#". '"}; staged=${staged%"'"}; [ ! -f "$staged" ] || payload=$(cat "$staged") ;;
@@ -130,17 +133,32 @@ case "${1:-}" in
             : > "$FM_FAKE_CWD_RACE_READY"
             /bin/sleep 1
           fi
+          # A destroyed window has no pane, so there is no cwd to read. An
+          # empty inventory must not keep answering the last known path.
+          if [ ! -s "$D/windows" ]; then
+            echo "can't find pane" >&2
+            exit 1
+          fi
           cat "$D/cwd"; printf '\n'; exit 0 ;;
       esac
     done
     printf 'fakepane\n'; exit 0 ;;
   capture-pane)
     [ -z "${FM_FAKE_COMPOSER_READ_FAIL:-}" ] || exit 1
-    if [ -s "$D/composer" ]; then
+    if [ -s "$D/capture" ]; then
+      cat "$D/capture"
+    elif [ -s "$D/composer" ]; then
       printf '╭────╮\n│ %s  │\n╰────╯\n' "$(cat "$D/composer")"
     else
       printf '╭────╮\n│    │\n╰────╯\n'
     fi
+    exit 0 ;;
+  kill-window)
+    rm -f "$D/capture"
+    : > "$D/windows"
+    printf 'zsh' > "$D/command"
+    exit 0 ;;
+  list-panes)
     exit 0 ;;
   list-windows)
     # The three shapes real tmux answers a per-session inventory with. The
@@ -214,6 +232,7 @@ new_case() {
   : > "$dir/fake/literal"
   : > "$dir/fake/literal-raw"
   : > "$dir/fake/keys"
+  : > "$dir/fake/picker-keys"
   printf 'claude' > "$dir/fake/command"
   printf 'claude' > "$dir/fake/becomes"
   printf '%s\n' "fm-$id" > "$dir/fake/windows"
@@ -273,7 +292,7 @@ run_control() {  # <case-dir> <args...>
   # without it this suite would write the developer's real ~/.claude.json.
   # agy on macOS refuses a HOME with no login keychain, so the throwaway HOME
   # carries a stand-in keychain file.
-  mkdir -p "$dir/user-home/Library/Keychains"
+  mkdir -p "$dir/user-home/Library/Keychains" "$dir/user-home/.claude"
   : > "$dir/user-home/Library/Keychains/login.keychain-db"
   env -u HERDR_ENV -u HERDR_PANE_ID -u HERDR_SESSION -u HERDR_SOCKET_PATH \
     -u HERDR_TAB_ID -u HERDR_WORKSPACE_ID \
@@ -284,6 +303,16 @@ run_control() {  # <case-dir> <args...>
     FM_REAL_GIT="${FM_REAL_GIT:-}" FM_FAKE_GIT_FAILURE="${FM_FAKE_GIT_FAILURE:-}" \
     FM_REAL_MV="${FM_REAL_MV:-}" FM_FAKE_COMPLETE_JOURNAL_MV_FAIL="${FM_FAKE_COMPLETE_JOURNAL_MV_FAIL:-}" \
     FM_FAKE_META_PUBLISH_MV_FAIL="${FM_FAKE_META_PUBLISH_MV_FAIL:-}" \
+    FM_FAKE_STAMP_TX_READY="${FM_FAKE_STAMP_TX_READY:-}" \
+    FM_FAKE_STAMP_TX_RELEASE="${FM_FAKE_STAMP_TX_RELEASE:-}" \
+    FM_REAL_MKTEMP="${FM_REAL_MKTEMP:-}" \
+    FM_FAKE_MKTEMP_SPAWN_PAUSE_READY="${FM_FAKE_MKTEMP_SPAWN_PAUSE_READY:-}" \
+    FM_FAKE_MKTEMP_SPAWN_PAUSE_RELEASE="${FM_FAKE_MKTEMP_SPAWN_PAUSE_RELEASE:-}" \
+    FM_FAKE_MKTEMP_SPAWN_CONTINUE="${FM_FAKE_MKTEMP_SPAWN_CONTINUE:-}" \
+    FM_REAL_CP="${FM_REAL_CP:-}" FM_FAKE_CP_RESTORE_FAIL="${FM_FAKE_CP_RESTORE_FAIL:-}" \
+    FM_FAKE_RESTORE_PAUSE_READY="${FM_FAKE_RESTORE_PAUSE_READY:-}" \
+    FM_FAKE_RESTORE_PAUSE_RELEASE="${FM_FAKE_RESTORE_PAUSE_RELEASE:-}" \
+    FM_FAKE_RESTORE_PAUSE="${FM_FAKE_RESTORE_PAUSE:-}" \
     FM_FAKE_TRACE_PREPARE="${FM_FAKE_TRACE_PREPARE:-}" \
     FM_FAKE_TRACE_RELEASE="${FM_FAKE_TRACE_RELEASE:-}" \
     FM_FAKE_META_WRITER_READY="${FM_FAKE_META_WRITER_READY:-}" \
@@ -349,6 +378,14 @@ for path in "$@"; do
   source_path=$target_path
   target_path=$path
 done
+if [ -n "${FM_FAKE_STAMP_TX_READY:-}" ]; then
+  case "$source_path" in
+    *.meta.tx)
+      printf '%s\n' "$source_path" > "$FM_FAKE_STAMP_TX_READY"
+      while [ ! -e "$FM_FAKE_STAMP_TX_RELEASE" ]; do /bin/sleep 0.01; done
+      ;;
+  esac
+fi
 if [ -n "${FM_FAKE_META_WRITER_TARGET:-}" ] \
    && [ "$target_path" = "$FM_FAKE_META_WRITER_TARGET" ] \
    && grep -q '^x_request=' "$source_path" 2>/dev/null; then
@@ -358,6 +395,42 @@ fi
 exec "$FM_REAL_MV" "$@"
 SH
   chmod +x "$1/fakebin/mv"
+}
+
+make_mktemp_spawn_err_failure_stub() {  # <case-dir>
+  cat > "$1/fakebin/mktemp" <<'SH'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  case "$arg" in
+    *fm-control-spawn*)
+      if [ -n "${FM_FAKE_MKTEMP_SPAWN_PAUSE_READY:-}" ]; then
+        : > "$FM_FAKE_MKTEMP_SPAWN_PAUSE_READY"
+        while [ ! -e "$FM_FAKE_MKTEMP_SPAWN_PAUSE_RELEASE" ]; do /bin/sleep 0.01; done
+      fi
+      [ -n "${FM_FAKE_MKTEMP_SPAWN_CONTINUE:-}" ] || exit 1
+      ;;
+  esac
+done
+exec "$FM_REAL_MKTEMP" "$@"
+SH
+  chmod +x "$1/fakebin/mktemp"
+}
+
+make_cp_restore_failure_stub() {  # <case-dir>
+  cat > "$1/fakebin/cp" <<'SH'
+#!/usr/bin/env bash
+dest=
+for dest in "$@"; do :; done
+if [ -n "${FM_FAKE_RESTORE_PAUSE_READY:-}" ] && [ "$dest" = "${FM_FAKE_RESTORE_PAUSE:-}" ]; then
+  : > "$FM_FAKE_RESTORE_PAUSE_READY"
+  while [ ! -e "$FM_FAKE_RESTORE_PAUSE_RELEASE" ]; do /bin/sleep 0.01; done
+fi
+if [ -n "${FM_FAKE_CP_RESTORE_FAIL:-}" ] && [ "$dest" = "$FM_FAKE_CP_RESTORE_FAIL" ]; then
+  exit 1
+fi
+exec "$FM_REAL_CP" "$@"
+SH
+  chmod +x "$1/fakebin/cp"
 }
 
 make_rm_failure_stub() {  # <case-dir>
@@ -591,6 +664,183 @@ test_relaunch_refuses_before_exit_when_the_composer_holds_pending_text() {
   assert_no_grep "/exit" "$dir/fake/literal" \
     "the exit command must not be concatenated onto pending composer text"
   pass "fm-control relaunch: pending composer text refuses before the exit command is typed"
+}
+
+test_relaunch_does_not_kill_an_untrusted_usage_limit_endpoint() {
+  local dir out rc
+  dir=$(new_case untrusted-limit rl85)
+  add_ship_task "$dir" rl85 claude
+  : > "$dir/fake/windows"
+  printf '%s\n' \
+    'You have hit your weekly limit for Opus.' \
+    '' \
+    ' ❯ 1. Switch to Sonnet' \
+    '   2. Wait for the limit to reset' \
+    '   3. Buy more credits' \
+    '' \
+    'Enter to confirm · Esc to cancel' > "$dir/fake/capture"
+  printf 'codex' > "$dir/fake/becomes"
+  out=$(run_control "$dir" rl85 relaunch --harness codex --note "untrusted limit pane"); rc=$?
+  expect_code 1 "$rc" "an untrusted usage-limit endpoint must refuse rather than close"$'\n'"$out"
+  [ "$(cat "$dir/fake/command")" = claude ] \
+    || fail "an untrusted usage-limit endpoint must not be killed: $(cat "$dir/fake/command")"
+  assert_contains "$out" "cannot trust" "the refusal should name the untrusted address"
+  assert_not_contains "$out" "agent was stopped" "an untrusted address must leave the old agent running"
+  [ -z "$(cat "$dir/fake/keys")" ] && [ -z "$(cat "$dir/fake/literal")" ] \
+    || fail "an untrusted usage-limit endpoint must receive no lifecycle input"
+  pass "fm-control relaunch: an untrusted usage-limit endpoint is not killed"
+}
+
+test_relaunch_refuses_an_unverified_pane_text_usage_limit() {
+  local dir out rc
+  dir=$(new_case usage-limit-relaunch rl80)
+  add_ship_task "$dir" rl80 claude
+  printf '%s\n' \
+    'You have hit your weekly limit for Opus.' \
+    '' \
+    ' ❯ 1. Switch to Sonnet' \
+    '   2. Wait for the limit to reset' \
+    '   3. Buy more credits' \
+    '' \
+    'Enter to confirm · Esc to cancel' > "$dir/fake/capture"
+  printf 'codex' > "$dir/fake/becomes"
+  out=$(run_control "$dir" rl80 relaunch --harness codex --note "move off the limited account"); rc=$?
+  expect_code 1 "$rc" "a pane-text usage-limit relaunch must refuse before close"$'\n'"$out"
+  assert_contains "$out" "not live-verified" \
+    "the refusal should name the unverified pane-text classifier"
+  assert_contains "$out" "Queue until reset" \
+    "pane-text usage-limit must not send the supervisor to relaunch"
+  assert_not_contains "$out" "composer visibly holds pending text" \
+    "a usage-limit screen must not be treated as pending composer text"
+  assert_no_grep "/exit" "$dir/fake/literal" \
+    "the exit command must not be typed into a usage-limit picker"
+  [ ! -s "$dir/fake/picker-keys" ] \
+    || fail "the live usage-limit picker received keys: $(cat "$dir/fake/picker-keys")"
+  [ "$(cat "$dir/fake/command")" = claude ] \
+    || fail "an unverified pane-text usage-limit must not be killed: $(cat "$dir/fake/command")"
+  grep -qx 'fm-rl80' "$dir/fake/windows" \
+    || fail "an unverified pane-text usage-limit must keep the window: $(cat "$dir/fake/windows")"
+  [ "$(meta_field "$dir" rl80 harness)" = claude ] \
+    || fail "a refused pane-text usage-limit must keep the prior harness"
+  pass "fm-control relaunch: pane-text usage-limit refuses without kill or Enter"
+}
+
+test_relaunch_closes_a_grok_weekly_limit_composer_without_typing_enter() {
+  local dir out rc sock ident
+  dir=$(new_case grok-limit-relaunch rl96)
+  add_ship_task "$dir" rl96 grok
+  printf 'grok' > "$dir/fake/command"
+  sock=$(bash -c '. "$1/bin/fm-backend.sh"; fm_backend_source tmux; fm_backend_tmux_addressed_socket' _ "$ROOT")
+  ident=$(bash -c '. "$1/bin/fm-wake-lib.sh"; printf "%s" "$(fm_pid_identity "$2")" | tr "\t\n" "  "' _ "$ROOT" "$$")
+  printf 'tmux_socket=%s\ntmux_server_pid=%s\ntmux_server_identity=%s\ntmux_window_id=%s\n' \
+    "$sock" "$$" "$ident" @9 >> "$dir/home/state/rl96.meta"
+  printf '%s\n' \
+    '                                                                                             █' \
+    '' \
+    '  ┃' \
+    '  ┃  You hit your weekly limit.' \
+    '  ┃' \
+    '  ┃' \
+    '  ┃  1 (○) Buy more credits  Purchase credits to keep using Grok Build' \
+    '  ┃  2 (○) Try Again         Resubmit the last prompt once you have usage again' \
+    '  ┃' \
+    '  ┃  ↑/↓ navigate · y copy                                                  Enter:submit' \
+    '  ┃' \
+    '' \
+    '  Tab:next answer  │  Esc:scrollback  │  Shift+x:dismiss' > "$dir/fake/capture"
+  printf 'codex' > "$dir/fake/becomes"
+  out=$(FM_FAKE_TMUX_SOCKET="$sock" FM_FAKE_TMUX_SERVER_PID=$$ \
+    run_control "$dir" rl96 relaunch --harness codex --note "move off the limited grok account"); rc=$?
+  expect_code 0 "$rc" "a Grok weekly-limit relaunch should close the endpoint and start the replacement"$'\n'"$out"
+  assert_not_contains "$out" "composer visibly holds pending text" \
+    "a Grok weekly-limit composer must not be treated as pending composer text"
+  assert_no_grep "/exit" "$dir/fake/literal" \
+    "the exit command must not be typed into a Grok weekly-limit composer"
+  [ ! -s "$dir/fake/picker-keys" ] \
+    || fail "the live Grok weekly-limit composer received keys before close: $(cat "$dir/fake/picker-keys")"
+  [ -s "$dir/fake/literal" ] || [ -s "$dir/fake/keys" ] \
+    || fail "replacement launch keys are allowed after the composer closed, but none were recorded"
+  assert_contains "$out" "harness=codex from=grok" "the replacement should land on the named harness"
+  [ "$(meta_field "$dir" rl96 harness)" = codex ] \
+    || fail "the published record should follow the replacement harness"
+  pass "fm-control relaunch: a Grok weekly-limit composer is closed without typing Enter"
+}
+
+test_interrupt_refuses_a_usage_limit_screen() {
+  local dir out rc
+  dir=$(new_case usage-limit-interrupt rl81)
+  add_ship_task "$dir" rl81 claude
+  printf '%s\n' \
+    'You have hit your weekly limit for Opus.' \
+    '' \
+    ' ❯ 1. Switch to Sonnet' \
+    '   2. Wait' \
+    '' \
+    'Enter to confirm · Esc to cancel' > "$dir/fake/capture"
+  out=$(run_control "$dir" rl81 interrupt); rc=$?
+  expect_code 1 "$rc" "interrupt must refuse a usage-limit screen"$'\n'"$out"
+  assert_contains "$out" "usage-limit screen" "the refusal should name the usage-limit screen"
+  assert_contains "$out" "Queue until reset" \
+    "pane-text interrupt must not send the supervisor to relaunch"
+  assert_not_contains "$out" "Relaunch onto another runtime" \
+    "pane-text interrupt must not recommend a refusing relaunch"
+  [ -z "$(cat "$dir/fake/keys")" ] || fail "interrupt typed a lifecycle key into a usage-limit screen: $(cat "$dir/fake/keys")"
+  [ "$(cat "$dir/fake/command")" = claude ] \
+    || fail "a refused interrupt must leave the old agent running"
+  pass "fm-control interrupt: a usage-limit screen is not sent a lifecycle key"
+}
+
+test_interrupt_refuses_a_grok_weekly_limit_and_names_relaunch() {
+  local dir out rc
+  dir=$(new_case grok-limit-interrupt rl97)
+  add_ship_task "$dir" rl97 grok
+  printf 'grok' > "$dir/fake/command"
+  printf '%s\n' \
+    '                                                                                             █' \
+    '' \
+    '  ┃' \
+    '  ┃  You hit your weekly limit.' \
+    '  ┃' \
+    '  ┃' \
+    '  ┃  1 (○) Buy more credits  Purchase credits to keep using Grok Build' \
+    '  ┃  2 (○) Try Again         Resubmit the last prompt once you have usage again' \
+    '  ┃' \
+    '  ┃  ↑/↓ navigate · y copy                                                  Enter:submit' \
+    '  ┃' \
+    '' \
+    '  Tab:next answer  │  Esc:scrollback  │  Shift+x:dismiss' > "$dir/fake/capture"
+  out=$(run_control "$dir" rl97 interrupt); rc=$?
+  expect_code 1 "$rc" "interrupt must refuse a Grok weekly-limit composer"$'\n'"$out"
+  assert_contains "$out" "usage-limit screen" "the refusal should name the usage-limit screen"
+  assert_contains "$out" "Relaunch onto another runtime instead" \
+    "a Grok weekly-limit interrupt still names relaunch"
+  assert_not_contains "$out" "Queue until reset" \
+    "a Grok weekly-limit interrupt must not tell the supervisor to queue"
+  [ -z "$(cat "$dir/fake/keys")" ] || fail "interrupt typed a lifecycle key into a Grok weekly-limit composer: $(cat "$dir/fake/keys")"
+  [ "$(cat "$dir/fake/command")" = grok ] \
+    || fail "a refused interrupt must leave the old agent running"
+  pass "fm-control interrupt: a Grok weekly-limit composer names relaunch, not queue"
+}
+
+test_control_relaunch_of_a_gone_tmux_endpoint() {
+  local dir out rc sock ident
+  dir=$(new_case gone-endpoint rl82)
+  add_ship_task "$dir" rl82 claude
+  sock=$(bash -c '. "$1/bin/fm-backend.sh"; fm_backend_source tmux; fm_backend_tmux_addressed_socket' _ "$ROOT")
+  ident=$(bash -c '. "$1/bin/fm-wake-lib.sh"; printf "%s" "$(fm_pid_identity "$2")" | tr "\t\n" "  "' _ "$ROOT" "$$")
+  printf 'tmux_socket=%s\ntmux_server_pid=%s\ntmux_server_identity=%s\ntmux_window_id=%s\n' \
+    "$sock" "$$" "$ident" @9 >> "$dir/home/state/rl82.meta"
+  strand_endpoint "$dir" rl82
+  out=$(FM_FAKE_TMUX_SOCKET="$sock" FM_FAKE_TMUX_SERVER_PID=$$ \
+    run_control "$dir" rl82 relaunch --harness claude --note "reclaim a gone pane"); rc=$?
+  expect_code 0 "$rc" "a gone tmux endpoint must be rebound rather than refused for an empty pane path"$'\n'"$out"
+  assert_not_contains "$out" "not its recorded worktree" \
+    "an unreadable gone-pane path must not trip the pre-stop worktree guard"
+  [ "$(grep -c '^fm-rl82$' "$dir/fake/created-windows" 2>/dev/null)" = 1 ] \
+    || fail "exactly the task's window must be re-created once, got: $(cat "$dir/fake/created-windows" 2>/dev/null)"
+  [ "$(meta_field "$dir" rl82 window)" = "fmses:fm-rl82" ] \
+    || fail "the record must rebind to the new window"
+  pass "fm-control relaunch: a proven-gone tmux endpoint is rebound when its pane path is unreadable"
 }
 
 test_relaunch_refuses_before_exit_when_the_composer_state_is_unproven() {
@@ -983,9 +1233,121 @@ test_harness_switch_does_not_carry_the_old_profile_axes() {
   expect_code 0 "$rc" "a harness switch should succeed"$'\n'"$out"
   [ "$(meta_field "$dir" rl5 model)" = default ] \
     || fail "a model chosen for the old harness must not carry to a different one"
-  [ "$(meta_field "$dir" rl5 effort)" = default ] \
-    || fail "an effort chosen for the old harness must not carry to a different one"
-  pass "fm-control relaunch: a harness switch resets model and effort unless they are named too"
+  [ "$(meta_field "$dir" rl5 effort)" = xhigh ] \
+    || fail "an effort named for the old harness must be kept when --effort is omitted"
+  pass "fm-control relaunch: a harness switch resets model and keeps effort unless effort is named too"
+}
+
+test_harness_switch_falls_back_when_the_new_harness_refuses_carried_effort() {
+  local dir out rc
+  dir=$(new_case effort-fallback rl83)
+  add_ship_task "$dir" rl83 claude
+  sed 's/^effort=default$/effort=max/' \
+    "$dir/home/state/rl83.meta" > "$dir/home/state/rl83.meta.tmp"
+  mv "$dir/home/state/rl83.meta.tmp" "$dir/home/state/rl83.meta"
+  printf 'codex' > "$dir/fake/becomes"
+  out=$(run_control "$dir" rl83 relaunch --harness codex --note "switch off Claude max"); rc=$?
+  expect_code 0 "$rc" "a harness switch must not fail when the new harness refuses the carried effort"$'\n'"$out"
+  assert_contains "$out" "notice: codex refused effort max; launching at default" \
+    "the notice should name the old and new effort"
+  [ "$(meta_field "$dir" rl83 effort)" = default ] \
+    || fail "the replacement should land at the new harness default, got $(meta_field "$dir" rl83 effort)"
+  [ "$(meta_field "$dir" rl83 harness)" = codex ] \
+    || fail "the replacement should still land on the named harness"
+  pass "fm-control relaunch: a carried effort the new harness refuses falls back to that harness default"
+}
+
+test_relaunch_off_claude_refuses_when_tooling_is_present() {
+  local dir out rc
+  dir=$(new_case tooling-block rl84)
+  add_ship_task "$dir" rl84 claude
+  make_claude_auth_stub "$dir"
+  mkdir -p "$dir/pin" "$dir/home/config"
+  printf '%s\n' '{"mcpServers":{"docs":{"command":"true"}}}' > "$dir/pin/.claude.json"
+  : > "$dir/pin/.credentials.json"
+  printf '%s\n' "$dir/pin" > "$dir/home/config/claude-account"
+  printf 'codex' > "$dir/fake/becomes"
+  out=$(run_control "$dir" rl84 relaunch --harness codex --note "move off Claude"); rc=$?
+  expect_code 1 "$rc" "moving off Claude must refuse when tooling is present"$'\n'"$out"
+  assert_contains "$out" "Claude-specific tooling present" "the refusal should name the tooling gate"
+  assert_contains "$out" "MCP servers in $dir/pin/.claude.json" "the refusal should name the blocking signal"
+  [ "$(cat "$dir/fake/command")" = claude ] \
+    || fail "a tooling refusal must leave the old agent running"
+  [ "$(meta_field "$dir" rl84 harness)" = claude ] \
+    || fail "a tooling refusal must leave the recorded harness"
+  pass "fm-control relaunch: moving off Claude refuses when Claude-specific tooling is present"
+}
+
+test_relaunch_off_claude_refuses_an_unreadable_account_pin() {
+  local dir out rc
+  dir=$(new_case pin-unreadable rl86)
+  add_ship_task "$dir" rl86 claude
+  make_claude_auth_stub "$dir"
+  mkdir -p "$dir/home/config"
+  printf 'not-a-path\n' > "$dir/home/config/claude-account"
+  printf 'codex' > "$dir/fake/becomes"
+  out=$(run_control "$dir" rl86 relaunch --harness codex --note "broken pin"); rc=$?
+  expect_code 1 "$rc" "a broken claude-account pin must refuse the move off Claude"$'\n'"$out"
+  assert_contains "$out" "config/claude-account" "the refusal should name the pin"
+  [ "$(cat "$dir/fake/command")" = claude ] \
+    || fail "a broken pin must leave the old agent running"
+  [ "$(meta_field "$dir" rl86 harness)" = claude ] \
+    || fail "a broken pin must leave the recorded harness"
+  pass "fm-control relaunch: an unreadable claude-account pin refuses the move off Claude"
+}
+
+test_relaunch_off_claude_refuses_when_tooling_check_exits_2() {
+  local dir out rc
+  dir=$(new_case tooling-exit2 rl87)
+  add_ship_task "$dir" rl87 claude
+  make_claude_auth_stub "$dir"
+  cat > "$dir/fakebin/fm-quota-reroute.sh" <<'SH'
+#!/usr/bin/env bash
+printf 'ran\n' > "${0%/*}/ran"
+echo "error: injected tooling check crashed" >&2
+exit 2
+SH
+  chmod +x "$dir/fakebin/fm-quota-reroute.sh"
+  printf 'codex' > "$dir/fake/becomes"
+  out=$(FM_TEST_SEAM=1 FM_TEST_QUOTA_REROUTE="$dir/fakebin/fm-quota-reroute.sh" \
+    run_control "$dir" rl87 relaunch --harness codex --note "check crashed"); rc=$?
+  expect_code 1 "$rc" "a claude-tooling exit 2 must refuse the move off Claude"$'\n'"$out"
+  [ "$(cat "$dir/fakebin/ran" 2>/dev/null)" = ran ] \
+    || fail "the injected tooling helper must have run"$'\n'"$out"
+  assert_contains "$out" "Claude-specific tooling present" "the refusal should name the tooling gate"
+  assert_contains "$out" "injected tooling check crashed" "the refusal should name the injected helper's reason"
+  [ "$(cat "$dir/fake/command")" = claude ] \
+    || fail "a tooling-check crash must leave the old agent running"
+  [ "$(meta_field "$dir" rl87 harness)" = claude ] \
+    || fail "a tooling-check crash must leave the recorded harness"
+  pass "fm-control relaunch: a claude-tooling exit 2 refuses the move off Claude"
+}
+
+test_relaunch_off_claude_ignores_fm_quota_reroute_override() {
+  local dir out rc
+  dir=$(new_case tooling-override rl92)
+  add_ship_task "$dir" rl92 claude
+  make_claude_auth_stub "$dir"
+  mkdir -p "$dir/pin" "$dir/home/config"
+  printf '%s\n' '{"mcpServers":{"docs":{"command":"true"}}}' > "$dir/pin/.claude.json"
+  : > "$dir/pin/.credentials.json"
+  printf '%s\n' "$dir/pin" > "$dir/home/config/claude-account"
+  cat > "$dir/fakebin/fm-quota-reroute.sh" <<'SH'
+#!/usr/bin/env bash
+exit 1
+SH
+  chmod +x "$dir/fakebin/fm-quota-reroute.sh"
+  printf 'codex' > "$dir/fake/becomes"
+  out=$(FM_QUOTA_REROUTE="$dir/fakebin/fm-quota-reroute.sh" \
+    run_control "$dir" rl92 relaunch --harness codex --note "override must not skip tooling"); rc=$?
+  expect_code 1 "$rc" "production relaunch must ignore FM_QUOTA_REROUTE"$'\n'"$out"
+  assert_contains "$out" "Claude-specific tooling present" "the shipped helper must still refuse"
+  assert_contains "$out" "MCP servers in $dir/pin/.claude.json" "the shipped helper must name the signal"
+  [ "$(cat "$dir/fake/command")" = claude ] \
+    || fail "an ignored override must leave the old agent running"
+  [ "$(meta_field "$dir" rl92 harness)" = claude ] \
+    || fail "an ignored override must leave the recorded harness"
+  pass "fm-control relaunch: production ignores FM_QUOTA_REROUTE and uses the shipped helper"
 }
 
 test_harness_switch_resolves_a_prefixed_recorded_harness() {
@@ -1721,8 +2083,8 @@ test_explicit_secondmate_harness_ignores_configured_profile_axes() {
   expect_code 0 "$rc" "an explicit secondmate harness should relaunch"$'\n'"$out"
   [ "$(meta_field "$dir" sm4 model)" = default ] \
     || fail "an explicit secondmate harness must not inherit the configured model"
-  [ "$(meta_field "$dir" sm4 effort)" = default ] \
-    || fail "an explicit secondmate harness must not inherit the configured effort"
+  [ "$(meta_field "$dir" sm4 effort)" = high ] \
+    || fail "an explicit secondmate harness without --effort must keep the running effort"
   printf 'claude opus high\nmate sm4: claude opus high\nmate sm4: codex other-model max\n' > "$home/config/secondmate-harness"
   out=$(run_control "$dir" sm4 relaunch --harness codex --model explicit-model --effort xhigh); rc=$?
   expect_code 0 "$rc" "an explicit profile must ignore an unreadable configured pin"$'\n'"$out"
@@ -1753,7 +2115,7 @@ test_explicit_secondmate_harness_ignores_configured_profile_axes() {
     || fail "the explicit model must be published"
   [ "$(meta_field "$dir" sm4 effort)" = xhigh ] \
     || fail "the explicit effort must be published"
-  pass "fm-control relaunch: explicit secondmate harness resets unnamed profile axes"
+  pass "fm-control relaunch: explicit secondmate harness keeps running effort and takes named axes"
 }
 
 test_ship_relaunch_ignores_the_crew_harness_config() {
@@ -2162,22 +2524,21 @@ test_launch_failure_keeps_the_prior_record_and_reports_it() {
   dir=$(new_case rollback rl13)
   add_ship_task "$dir" rl13 claude
   before=$(cat "$dir/home/state/rl13.meta")
-  # The endpoint's shell is not in the recorded worktree, so the launch owner
-  # refuses AFTER the previous agent has already been stopped.
+  # The endpoint's shell is not in the recorded worktree. That refusal is now
+  # pre-stop so the running agent is not killed for a launch that cannot start.
   printf '%s' "$dir/proj" > "$dir/fake/cwd"
   out=$(run_control "$dir" rl13 relaunch --harness codex --note "carry this forward"); rc=$?
   expect_code 1 "$rc" "a failed launch should fail closed"$'\n'"$out"
-  assert_contains "$out" "no agent is running" "the failure should say no agent is running"
-  assert_contains "$out" "$dir/wt" "the failure should say where the work is preserved"
+  assert_contains "$out" "not its recorded worktree" "the refusal should name the worktree mismatch"
+  [ "$(cat "$dir/fake/command")" = claude ] \
+    || fail "a pre-stop cwd refusal must leave the old agent running"
   [ "$(cat "$dir/home/state/rl13.meta")" = "$before" ] \
     || fail "a failed launch must keep the prior durable record"
-  [ "$(journal_field "$dir" rl13 phase)" = "failed:launching" ] \
-    || fail "the journal should record the failed phase, got '$(journal_field "$dir" rl13 phase)'"
-  [ "$(journal_field "$dir" rl13 rollback)" = "prior-record-kept" ] \
-    || fail "the journal should record what the rollback did"
-  assert_grep "carry this forward" "$dir/home/data/rl13/brief.md" \
-    "the progress note must survive so a later recovery still has it"
-  pass "fm-control relaunch: a launch failure after the stop keeps the prior record and reports the real state"
+  assert_absent "$dir/home/state/rl13.control-relaunch" \
+    "a pre-stop cwd refusal must not open a relaunch transaction"
+  assert_no_grep "/exit" "$dir/fake/literal" \
+    "a pre-stop cwd refusal must not type an exit command"
+  pass "fm-control relaunch: a worktree mismatch refuses before the agent is stopped"
 }
 
 test_prepublication_failure_keeps_concurrent_durable_metadata() {
@@ -2196,21 +2557,23 @@ test_prepublication_failure_keeps_concurrent_durable_metadata() {
   [ -e "$dir/cwd-race-ready" ] || {
     kill "$control_pid" 2>/dev/null || true
     wait "$control_pid" 2>/dev/null || true
-    fail "relaunch did not reach its pre-publication endpoint check"
+    fail "relaunch did not reach its pre-stop worktree check"
   }
   link_out=$(env PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_ROOT_OVERRIDE="$ROOT" \
     "$X_LINK" rl30 request-30 --carry-count 2 --carry-ts 1700000000 \
       --carry-platform x --carry-max 280 2>&1); rc=$?
   expect_code 0 "$rc" "concurrent durable metadata publication should succeed"$'\n'"$link_out"
   wait "$control_pid"; rc=$?
-  expect_code 1 "$rc" "the staged pre-publication launch failure should fail closed"
+  expect_code 1 "$rc" "the staged pre-stop worktree mismatch should fail closed"
   [ "$(meta_field "$dir" rl30 x_request)" = request-30 ] \
     || fail "rollback erased the concurrent X request"
   [ "$(meta_field "$dir" rl30 x_followups)" = 2 ] \
     || fail "rollback erased the concurrent follow-up count"
-  [ "$(journal_field "$dir" rl30 rollback)" = prior-record-kept ] \
-    || fail "pre-publication rollback should leave the live record untouched"
-  pass "fm-control relaunch: unpublished rollback keeps concurrent durable metadata"
+  [ "$(meta_field "$dir" rl30 harness)" = claude ] \
+    || fail "a pre-stop refusal must leave the live record on the running harness"
+  [ "$(cat "$dir/fake/command")" = claude ] \
+    || fail "a pre-stop refusal must leave the old agent running"
+  pass "fm-control relaunch: a pre-stop worktree mismatch keeps concurrent durable metadata"
 }
 
 test_post_publication_launch_failure_keeps_the_new_record() {
@@ -2292,6 +2655,248 @@ test_prepublication_abort_retires_replacement_wiring_and_busy_state() {
   [ "$(journal_field "$dir" rl28 rollback)" = prior-record-kept ] \
     || fail "the journal should record the unpublished replacement rollback"
   pass "fm-spawn relaunch: prepublication abort removes replacement state"
+}
+
+test_prepublication_abort_with_busy_gen_restores_the_prior_record() {
+  local dir out rc real_rm meta gen hook
+  dir=$(new_case prepublishbusy rlbg1)
+  add_ship_task "$dir" rlbg1 claude
+  meta="$dir/home/state/rlbg1.meta"
+  gen=$("$ROOT/bin/fm-busy-event.sh" arm "$dir/home/state" rlbg1)
+  printf 'busy_gen=%s\n' "$gen" >> "$meta"
+  hook="$dir/wt/.claude/settings.local.json"
+  mkdir -p "${hook%/*}"
+  printf '{}\n' > "$hook"
+  real_rm=$(command -v rm)
+  make_rm_failure_stub "$dir"
+  out=$(FM_REAL_RM="$real_rm" FM_FAKE_RM_FAIL_PATH="$hook" \
+    run_control "$dir" rlbg1 relaunch --note "busy before an unpublished spawn"); rc=$?
+  expect_code 1 "$rc" "a spawn refused before publication should fail closed"$'\n'"$out"
+  assert_not_contains "$out" "was relaunched on" \
+    "an unpublished spawn must not be reported as a relaunched record"
+  [ "$(journal_field "$dir" rlbg1 rollback)" = prior-record-kept ] \
+    || fail "a cleared busy_gen must not make an unpublished spawn look published"
+  [ -z "$(meta_field "$dir" rlbg1 control_relaunch_tx)" ] \
+    || fail "the restored record must not keep the stamped relaunch token"
+  pass "fm-control relaunch: a cleared busy_gen does not mask an unpublished spawn"
+}
+
+test_unpublished_spawn_lock_failure_is_not_published() {
+  local dir out rc real_rm meta gen hook
+  dir=$(new_case lock-fail-unpublished rl93)
+  add_ship_task "$dir" rl93 claude
+  meta="$dir/home/state/rl93.meta"
+  chmod 640 "$meta"
+  gen=$("$ROOT/bin/fm-busy-event.sh" arm "$dir/home/state" rl93)
+  printf 'busy_gen=%s\n' "$gen" >> "$meta"
+  hook="$dir/wt/.claude/settings.local.json"
+  mkdir -p "${hook%/*}"
+  printf '{}\n' > "$hook"
+  real_rm=$(command -v rm)
+  make_rm_failure_stub "$dir"
+  out=$(FM_REAL_RM="$real_rm" FM_FAKE_RM_FAIL_PATH="$hook" \
+    FM_TEST_RELAUNCH_SPAWN_PUBLISHED_LOCK_FAIL=1 \
+    run_control "$dir" rl93 relaunch --note "lock fail must not look published"); rc=$?
+  expect_code 1 "$rc" "an unpublished spawn under lock failure should fail closed"$'\n'"$out"
+  assert_not_contains "$out" "was relaunched on" \
+    "lock failure must not report a published replacement"
+  [ "$(journal_field "$dir" rl93 rollback)" = prior-record-kept ] \
+    || fail "lock failure must restore the prior record, not keep an unconfirmed publication"
+  [ "$(meta_field "$dir" rl93 harness)" = claude ] \
+    || fail "lock failure must leave the prior harness"
+  [ -z "$(meta_field "$dir" rl93 control_relaunch_tx)" ] \
+    || fail "a restored unpublished record must not keep the stamped relaunch token"
+  [ "$(stat -c %a "$meta" 2>/dev/null || stat -f %OLp "$meta")" = 640 ] \
+    || fail "clearing the relaunch token must keep the record mode"
+  pass "fm-control relaunch: spawn-published lock failure is not treated as published"
+}
+
+test_stamp_die_before_spawn_restores_the_prior_record() {
+  local dir out rc real_mktemp prior
+  dir=$(new_case stamp-die rl89)
+  add_ship_task "$dir" rl89 claude
+  chmod 640 "$dir/home/state/rl89.meta"
+  real_mktemp=$(command -v mktemp)
+  make_mktemp_spawn_err_failure_stub "$dir"
+  out=$(FM_REAL_MKTEMP="$real_mktemp" \
+    run_control "$dir" rl89 relaunch --note "die after the stamp"); rc=$?
+  expect_code 1 "$rc" "a die after the stamp and before spawn should fail closed"$'\n'"$out"
+  assert_contains "$out" "could not record spawn output" \
+    "the refusal should name the spawn-output staging failure"
+  [ -z "$(meta_field "$dir" rl89 control_relaunch_tx)" ] \
+    || fail "a die before spawn must not leave the stamped token on the live record"
+  prior="$dir/home/state/rl89.control-relaunch.meta-prior"
+  [ -f "$prior" ] || fail "the checkpoint copy of the prior record should still exist"
+  cmp -s "$prior" "$dir/home/state/rl89.meta" \
+    || fail "prior-record-kept should restore the live record to the checkpoint copy"
+  [ "$(stat -c %a "$dir/home/state/rl89.meta" 2>/dev/null || stat -f %Lp "$dir/home/state/rl89.meta")" = 640 ] \
+    || fail "restoring the prior record should keep its original mode"
+  [ "$(journal_field "$dir" rl89 rollback)" = prior-record-kept ] \
+    || fail "the journal should record the unpublished replacement rollback"
+  pass "fm-control relaunch: a die after the stamp and before spawn restores the prior record"
+}
+
+test_stamp_mv_failure_removes_the_staging_file() {
+  local dir out rc real_mv
+  dir=$(new_case stamp-mv rl90)
+  add_ship_task "$dir" rl90 claude
+  real_mv=$(command -v mv)
+  make_mv_failure_stub "$dir"
+  out=$(FM_REAL_MV="$real_mv" FM_FAKE_META_PUBLISH_MV_FAIL="$dir/home/state/rl90.meta.tx" \
+    run_control "$dir" rl90 relaunch --note "stamp mv fails"); rc=$?
+  expect_code 1 "$rc" "a failed stamp mv should fail closed"$'\n'"$out"
+  assert_contains "$out" "could not record relaunch token" \
+    "the refusal should name the stamp mv failure"
+  [ ! -e "$dir/home/state/rl90.meta.tx" ] \
+    || fail "rollback must remove the leftover stamp staging file"
+  [ -z "$(meta_field "$dir" rl90 control_relaunch_tx)" ] \
+    || fail "a failed stamp mv must not leave a stamped token on the live record"
+  [ "$(journal_field "$dir" rl90 rollback)" = prior-record-kept ] \
+    || fail "the journal should record the unpublished replacement rollback"
+  pass "fm-control relaunch: a failed stamp mv does not leave META.tx beside the record"
+}
+
+test_restore_failure_is_journaled_as_restore_failed() {
+  local dir out rc real_mktemp real_cp
+  dir=$(new_case restore-fail rl91)
+  add_ship_task "$dir" rl91 claude
+  real_mktemp=$(command -v mktemp)
+  real_cp=$(command -v cp)
+  make_mktemp_spawn_err_failure_stub "$dir"
+  make_cp_restore_failure_stub "$dir"
+  out=$(FM_REAL_MKTEMP="$real_mktemp" FM_REAL_CP="$real_cp" \
+    FM_FAKE_CP_RESTORE_FAIL="$dir/home/state/rl91.meta" \
+    run_control "$dir" rl91 relaunch --note "restore fails"); rc=$?
+  expect_code 1 "$rc" "a failed prior-record restore should fail closed"$'\n'"$out"
+  assert_contains "$out" "could not restore" \
+    "the refusal should name the restore failure"
+  [ -n "$(meta_field "$dir" rl91 control_relaunch_tx)" ] \
+    || fail "a failed restore must leave the stamped token on the live record"
+  [ "$(journal_field "$dir" rl91 rollback)" = prior-record-restore-failed ] \
+    || fail "the journal must record restore-failed, not prior-record-kept"
+  pass "fm-control relaunch: a failed prior-record restore is journaled as restore-failed"
+}
+
+test_stamp_serializes_a_cooperating_metadata_writer() {
+  local dir control_pid link_pid rc i=0 ready release waiting
+  dir=$(new_case stamp-race txrace)
+  add_ship_task "$dir" txrace claude
+  make_mv_failure_stub "$dir"
+  ready="$dir/stamp-tx-ready"
+  release="$dir/stamp-tx-release"
+  waiting="$dir/meta-writer-waiting"
+  FM_REAL_MV=$(command -v mv) \
+    FM_FAKE_STAMP_TX_READY="$ready" \
+    FM_FAKE_STAMP_TX_RELEASE="$release" \
+    run_control "$dir" txrace relaunch --note "keep concurrent routing" > "$dir/control.out" &
+  control_pid=$!
+  while [ ! -e "$ready" ] && [ "$i" -lt 500 ]; do
+    /bin/sleep 0.01
+    i=$((i + 1))
+  done
+  [ -e "$ready" ] || {
+    kill "$control_pid" 2>/dev/null || true
+    wait "$control_pid" 2>/dev/null || true
+    fail "relaunch did not reach control_relaunch_tx stamp"
+  }
+  grep -q '\.meta\.tx$' "$ready" \
+    || fail "stamp race must pause on META.tx, not another mv"$'\n'"$(cat "$ready")"
+  [ "$(cat "$dir/fake/command")" = zsh ] \
+    || fail "stamp race must run after the old agent has stopped, not at the pre-stop cwd check"
+  env PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_ROOT_OVERRIDE="$ROOT" \
+    FM_REAL_MV="$(command -v mv)" FM_REAL_MKTEMP="$(command -v mktemp)" \
+    FM_FAKE_LOCK_WAITING="$waiting" \
+    "$X_LINK" txrace request-tx --carry-count 1 --carry-ts 1700000000 \
+      --carry-platform x --carry-max 280 > "$dir/link.out" 2>&1 &
+  link_pid=$!
+  i=0
+  while [ ! -e "$waiting" ] && [ "$i" -lt 500 ]; do
+    /bin/sleep 0.01
+    i=$((i + 1))
+  done
+  [ -e "$waiting" ] && [ -z "$(meta_field "$dir" txrace x_request)" ] || {
+    : > "$release"
+    wait "$link_pid" 2>/dev/null || true
+    wait "$control_pid" 2>/dev/null || true
+    fail "a durable metadata writer was not blocked during token stamp"$'\n'"$(cat "$dir/link.out" 2>/dev/null || true)"$'\n'"$(cat "$dir/home/state/txrace.meta")"
+  }
+  : > "$release"
+  wait "$link_pid"; rc=$?
+  expect_code 0 "$rc" "concurrent X metadata publication should serialize"$'\n'"$(cat "$dir/link.out")"
+  wait "$control_pid"; rc=$?
+  expect_code 0 "$rc" "relaunch should complete after serialized metadata publication"$'\n'"$(cat "$dir/control.out")"
+  assert_not_contains "$(cat "$dir/control.out")" "not its recorded worktree" \
+    "stamp race must not be the pre-stop cwd refusal"
+  [ "$(meta_field "$dir" txrace x_request)" = request-tx ] \
+    || fail "token stamp erased metadata published concurrently through the X interface"
+  [ "$(meta_field "$dir" txrace x_followups)" = 1 ] \
+    || fail "token stamp erased the concurrent follow-up count"
+  [ "$(meta_field "$dir" txrace harness)" = claude ] \
+    || fail "serialized stamp must keep the replacement on the recorded harness"
+  pass "fm-control relaunch: token stamp serializes with a cooperating metadata writer"
+}
+
+test_restore_preserves_a_cooperating_metadata_update() {
+  local dir control_pid link_pid rc i=0 ready release waiting
+  dir=$(new_case restore-race rbrc)
+  add_ship_task "$dir" rbrc claude
+  make_mktemp_spawn_err_failure_stub "$dir"
+  make_cp_restore_failure_stub "$dir"
+  ready="$dir/restore-cp-ready"
+  release="$dir/restore-cp-release"
+  waiting="$dir/meta-writer-waiting"
+  FM_REAL_MKTEMP=$(command -v mktemp) \
+    FM_REAL_CP=$(command -v cp) \
+    FM_FAKE_RESTORE_PAUSE_READY="$ready" \
+    FM_FAKE_RESTORE_PAUSE_RELEASE="$release" \
+    FM_FAKE_RESTORE_PAUSE="$dir/home/state/rbrc.meta" \
+    run_control "$dir" rbrc relaunch --note "preserve concurrent routing on rollback" \
+      > "$dir/control.out" &
+  control_pid=$!
+  while [ ! -e "$ready" ] && [ "$i" -lt 500 ]; do
+    /bin/sleep 0.01
+    i=$((i + 1))
+  done
+  [ -e "$ready" ] || {
+    kill "$control_pid" 2>/dev/null || true
+    wait "$control_pid" 2>/dev/null || true
+    fail "relaunch did not reach prior-record restore"
+  }
+  [ "$(cat "$dir/fake/command")" = zsh ] \
+    || fail "rollback race must run after the old agent has stopped, not at the pre-stop cwd check"
+  env PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_ROOT_OVERRIDE="$ROOT" \
+    FM_REAL_MKTEMP="$(command -v mktemp)" FM_REAL_CP="$(command -v cp)" \
+    FM_FAKE_LOCK_WAITING="$waiting" \
+    "$X_LINK" rbrc request-rb --carry-count 2 --carry-ts 1700000000 \
+      --carry-platform x --carry-max 280 > "$dir/link.out" 2>&1 &
+  link_pid=$!
+  i=0
+  while [ ! -e "$waiting" ] && [ "$(meta_field "$dir" rbrc x_request)" != request-rb ] && [ "$i" -lt 500 ]; do
+    /bin/sleep 0.01
+    i=$((i + 1))
+  done
+  [ -e "$waiting" ] || [ "$(meta_field "$dir" rbrc x_request)" = request-rb ] || {
+    : > "$release"
+    wait "$link_pid" 2>/dev/null || true
+    wait "$control_pid" 2>/dev/null || true
+    fail "cooperating writer neither blocked nor published during restore"$'\n'"$(cat "$dir/link.out" 2>/dev/null || true)"
+  }
+  : > "$release"
+  wait "$link_pid"; rc=$?
+  expect_code 0 "$rc" "concurrent X metadata publication should succeed"$'\n'"$(cat "$dir/link.out")"
+  wait "$control_pid"; rc=$?
+  expect_code 1 "$rc" "a die after the stamp and before spawn should fail closed"$'\n'"$(cat "$dir/control.out")"
+  assert_contains "$(cat "$dir/control.out")" "could not record spawn output" \
+    "rollback race must die after stamp, not at the pre-stop cwd check"
+  assert_not_contains "$(cat "$dir/control.out")" "not its recorded worktree" \
+    "rollback race must not be the pre-stop cwd refusal"
+  [ "$(meta_field "$dir" rbrc x_request)" = request-rb ] \
+    || fail "prior-record restore erased a concurrent X request"
+  [ "$(meta_field "$dir" rbrc x_followups)" = 2 ] \
+    || fail "prior-record restore erased the concurrent follow-up count"
+  [ "$(cat "$dir/fake/command")" = zsh ] \
+    || fail "a launching-phase rollback must leave the old agent stopped"
+  pass "fm-control relaunch: prior-record restore keeps a concurrent metadata update"
 }
 
 test_journal_records_the_checkpoint_it_proved() {
@@ -2701,6 +3306,24 @@ test_spawn_relaunch_refuses_a_pane_outside_the_worktree() {
   assert_contains "$out" "not its recorded worktree" "the refusal should name the wrong location"
   [ ! -s "$dir/fake/keys" ] || fail "a refused tmux relaunch must send nothing to the pane"
   pass "fm-spawn --relaunch: refuses to start a replacement outside the copy holding its work"
+}
+
+test_herdr_relaunch_refuses_when_cd_does_not_return_to_the_worktree() {
+  local dir out rc
+  herdr_case_or_skip wrongcwd-herdr rl88 || {
+    echo "skip - herdr relaunch needs jq (the herdr adapter parses JSON with it)"
+    return 0
+  }
+  dir=$HERDR_CASE_DIR
+  rm -f "$dir/fake/herdr-stopped"
+  printf '{"result":{"agent":{"agent":"claude","agent_status":"idle","agent_session":{"kind":"path","value":"/tmp/pi-bound-session.jsonl"}}}}\n' \
+    > "$dir/fake/herdr-agent-registration"
+  printf '%s' "$dir/proj" > "$dir/fake/cwd"
+  out=$(run_spawn "$dir" rl88 --relaunch --harness claude); rc=$?
+  expect_code 1 "$rc" "a Herdr pane that does not return to the worktree should refuse"$'\n'"$out"
+  assert_contains "$out" "did not return to its recorded worktree" \
+    "the refusal should name the failed return"
+  pass "fm-spawn --relaunch: a Herdr pane outside the worktree that cannot cd back is refused"
 }
 
 # --- 7. reclaiming a task whose endpoint is gone ----------------------------
@@ -3326,31 +3949,62 @@ test_herdr_rebind_failure_from_a_plain_shell_names_the_real_cause() {
   pass "reclaim: a rebind refused from a plain shell reports the real cause, not a fabricated session mismatch"
 }
 
-test_herdr_reclaim_of_a_secondmate_names_its_own_owner() {
-  local dir out rc
+test_herdr_reclaim_of_a_secondmate_uses_relaunch() {
+  local dir out rc log
   herdr_case_or_skip gone-herdr-secondmate rl76 fmlab '%none' || {
     echo "skip - herdr reclaim needs jq (the herdr adapter parses JSON with it)"
     return 0
   }
   dir=$HERDR_CASE_DIR
-  printf '%s\n' "kind=secondmate" "home=$dir/wt" >> "$dir/home/state/rl76.meta"
+  mkdir -p "$dir/wt/bin" "$dir/wt/data" "$dir/wt/state" "$dir/wt/config" "$dir/wt/projects"
+  mkdir -p "$dir/home/config"
+  printf 'claude\n' > "$dir/home/config/secondmate-harness"
+  printf 'rl76\n' > "$dir/wt/.fm-secondmate-home"
+  printf '# agents\n' > "$dir/wt/AGENTS.md"
+  printf '# charter\n' > "$dir/wt/data/charter.md"
+  printf '%s\n' "kind=secondmate" "home=$dir/wt" "mode=secondmate" >> "$dir/home/state/rl76.meta"
 
   out=$(run_spawn "$dir" rl76 --relaunch --harness claude); rc=$?
-  expect_code 4 "$rc" "a secondmate reclaim belongs to the secondmate respawn path, with its typed refusal status"
-  assert_contains "$out" "--secondmate" "the refusal should name the path that owns this recovery"
-  assert_not_contains "$(cat "$dir/fake/herdr-log")" "tab create" \
-    "the refusal must happen before any endpoint is created"
-  pass "reclaim: a herdr secondmate whose endpoint is gone is sent to its own respawn owner"
+  expect_code 4 "$rc" "direct --relaunch of a gone secondmate must refuse"$'\n'"$out"
+  assert_contains "$out" "--secondmate" \
+    "direct --relaunch must send a gone secondmate to --secondmate or fm-control"
+  [ ! -s "$dir/fake/herdr-log" ] || ! grep -q "tab create" "$dir/fake/herdr-log" \
+    || fail "a refused direct --relaunch must not mint a replacement pane"
+
+  out=$(FM_CONTROL_RELAUNCH_TX=forged run_spawn "$dir" rl76 --relaunch --harness claude); rc=$?
+  expect_code 4 "$rc" "an env token without a matching recorded token must refuse"$'\n'"$out"
+  assert_contains "$out" "--secondmate" \
+    "a forged relaunch token must not skip the gone-secondmate owner"
+  [ ! -s "$dir/fake/herdr-log" ] || ! grep -q "tab create" "$dir/fake/herdr-log" \
+    || fail "a forged relaunch token must not mint a replacement pane"
+
+  out=$(run_control "$dir" rl76 relaunch); rc=$?
+  expect_code 4 "$rc" "same-pin fm-control relaunch of a gone secondmate stays with --secondmate"$'\n'"$out"
+  assert_contains "$out" "--secondmate" \
+    "same-pin gone-endpoint recovery is the respawn path"
+
+  out=$(run_control "$dir" rl76 relaunch --harness claude); rc=$?
+  log=$(cat "$dir/fake/herdr-log")
+  expect_code 0 "$rc" "fm-control relaunch --harness rebinds a gone secondmate endpoint"$'\n'"$out"$'\n'"$log"
+  assert_contains "$log" "tab create" "a destroyed secondmate pane must be replaced"
+  assert_not_contains "$out" "--secondmate" "a quota or operator replace uses fm-control relaunch, not a secondmate respawn"
+  [ "$(meta_field "$dir" rl76 window)" = 'fmlab:%9' ] \
+    || fail "the rebound secondmate endpoint should be the new pane, got $(meta_field "$dir" rl76 window)"
+  [ "$(meta_field "$dir" rl76 backend)" = herdr ] \
+    || fail "the recorded herdr backend must survive the replacement"
+
+  pass "reclaim: fm-control relaunch rebinds a gone secondmate; direct --relaunch does not"
 }
 
 # Stopping a herdr secondmate's agent can take its pane with it. The control
 # plane cannot launch a replacement into a pane that no longer exists, and the
-# reclaim belongs to the secondmate respawn path, so relaunch hands the mate
-# over with a typed exit status and its prior record intact rather than a
-# generic failure its restart caller cannot tell apart from a broken launch.
+# reclaim belongs to the secondmate respawn path, so a same-pin relaunch hands
+# the mate over with a typed exit status and its prior record intact rather
+# than a generic failure its restart caller cannot tell apart from a broken
+# launch.
 test_herdr_secondmate_relaunch_hands_a_vanished_pane_to_respawn() {
   local dir out rc=0 journal
-  herdr_case_or_skip vanish-herdr-secondmate rl77 || {
+  herdr_case_or_skip vanish-herdr-secondmate rl79 || {
     echo "skip - herdr secondmate relaunch needs jq (the herdr adapter parses JSON with it)"
     return 0
   }
@@ -3358,26 +4012,120 @@ test_herdr_secondmate_relaunch_hands_a_vanished_pane_to_respawn() {
   rm -f "$dir/fake/herdr-stopped"
   : > "$dir/fake/herdr-agent-live"
   : > "$dir/fake/herdr-exit-closes-pane"
-  printf '%s\n' "kind=secondmate" "home=$dir/wt" >> "$dir/home/state/rl77.meta"
-  printf 'rl77\n' > "$dir/wt/.fm-secondmate-home"
+  mkdir -p "$dir/home/config"
+  printf 'claude\n' > "$dir/home/config/secondmate-harness"
+  printf '%s\n' "kind=secondmate" "home=$dir/wt" "x_request=keep-me" >> "$dir/home/state/rl79.meta"
+  printf 'rl79\n' > "$dir/wt/.fm-secondmate-home"
   mkdir -p "$dir/wt/state" "$dir/wt/data"
 
-  out=$(run_control "$dir" rl77 relaunch --harness claude) || rc=$?
+  out=$(run_control "$dir" rl79 relaunch) || rc=$?
 
   expect_code 4 "$rc" "a vanished secondmate pane must be handed to the respawn path with its typed status"$'\n'"$out"
-  assert_contains "$out" "bin/fm-spawn.sh rl77 --secondmate" \
+  assert_contains "$out" "bin/fm-spawn.sh rl79 --secondmate" \
     "the refusal must name the respawn path that now owns the mate"
   assert_contains "$(cat "$dir/fake/herdr-log")" "pane send-keys %7 enter --session fmlab" \
     "the agent must actually have been stopped before the hand-over"
   assert_not_contains "$(cat "$dir/fake/herdr-log")" "tab create" \
     "relaunch must not mint an endpoint the respawn path owns"
-  [ "$(meta_field "$dir" rl77 kind)" = secondmate ] || fail "the hand-over lost the mate's record"
-  [ "$(meta_field "$dir" rl77 backend)" = herdr ] \
+  [ "$(meta_field "$dir" rl79 kind)" = secondmate ] || fail "the hand-over lost the mate's record"
+  [ "$(meta_field "$dir" rl79 backend)" = herdr ] \
     || fail "the respawn path needs the recorded backend the hand-over must keep"
-  journal="$dir/home/state/rl77.control-relaunch"
+  journal="$dir/home/state/rl79.control-relaunch"
   assert_grep 'rollback=prior-record-kept-endpoint-gone' "$journal" \
     "the relaunch journal must record why the prior record was kept"
+  [ "$(meta_field "$dir" rl79 x_request)" = keep-me ] \
+    || fail "clearing the owned relaunch token must keep unrelated metadata"
+  [ -z "$(meta_field "$dir" rl79 control_relaunch_tx)" ] \
+    || fail "a gone-endpoint handoff must clear the owned relaunch token"
+  token=$(journal_field "$dir" rl79 relaunch_tx)
+  [ -n "$token" ] || fail "the gone-endpoint journal should name the transaction that was cleared"
+  rc=0
+  out=$(FM_CONTROL_RELAUNCH_TX="$token" run_spawn "$dir" rl79 --relaunch --harness claude) || rc=$?
+  expect_code 4 "$rc" "a leftover journal token must not authorize later direct relaunch"$'\n'"$out"
+  assert_contains "$out" "--secondmate" \
+    "a cleared token must still send a gone secondmate to --secondmate"
+  [ ! -s "$dir/fake/herdr-log" ] || ! grep -q "tab create" "$dir/fake/herdr-log" \
+    || fail "a leftover journal token must not mint a replacement pane"
   pass "relaunch: a herdr secondmate whose pane vanished on stop is handed to respawn with its record kept"
+}
+
+test_failed_spawn_keeps_exit_4_when_a_cooperating_writer_updates_meta() {
+  local dir control_pid link_pid rc i=0 ready release journal
+  herdr_case_or_skip vanish-xlink-secondmate x4sp || {
+    echo "skip - herdr secondmate relaunch needs jq (the herdr adapter parses JSON with it)"
+    return 0
+  }
+  dir=$HERDR_CASE_DIR
+  rm -f "$dir/fake/herdr-stopped"
+  : > "$dir/fake/herdr-agent-live"
+  : > "$dir/fake/herdr-exit-closes-pane"
+  mkdir -p "$dir/home/config"
+  printf 'claude\n' > "$dir/home/config/secondmate-harness"
+  printf '%s\n' "kind=secondmate" "home=$dir/wt" >> "$dir/home/state/x4sp.meta"
+  printf 'x4sp\n' > "$dir/wt/.fm-secondmate-home"
+  mkdir -p "$dir/wt/state" "$dir/wt/data"
+  if grep -q '^spawn_gen=' "$dir/home/state/x4sp.meta"; then
+    fail "the gone-secondmate fixture must omit spawn_gen so a missing generation stays a non-publication"
+  fi
+  make_mktemp_spawn_err_failure_stub "$dir"
+  ready="$dir/spawn-mktemp-ready"
+  release="$dir/spawn-mktemp-release"
+  FM_REAL_MKTEMP=$(command -v mktemp) \
+    FM_FAKE_MKTEMP_SPAWN_PAUSE_READY="$ready" \
+    FM_FAKE_MKTEMP_SPAWN_PAUSE_RELEASE="$release" \
+    FM_FAKE_MKTEMP_SPAWN_CONTINUE=1 \
+    run_control "$dir" x4sp relaunch > "$dir/control.out" &
+  # shellcheck disable=SC2031 # pid of this background relaunch
+  control_pid=$!
+  while [ ! -e "$ready" ] && [ "$i" -lt 500 ]; do
+    /bin/sleep 0.01
+    i=$((i + 1))
+  done
+  [ -e "$ready" ] || {
+    kill "$control_pid" 2>/dev/null || true
+    wait "$control_pid" 2>/dev/null || true
+    fail "relaunch did not reach spawn-output staging, so the writer never ran during a failing spawn"
+  }
+  env PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_ROOT_OVERRIDE="$ROOT" \
+    FM_REAL_MKTEMP="$(command -v mktemp)" \
+    "$X_LINK" x4sp request-x4 --carry-count 1 --carry-ts 1700000000 \
+      --carry-platform x --carry-max 280 > "$dir/link.out" 2>&1 &
+  # shellcheck disable=SC2031 # pid of this background X writer
+  link_pid=$!
+  i=0
+  while [ "$(meta_field "$dir" x4sp x_request)" != request-x4 ] && [ "$i" -lt 500 ]; do
+    /bin/sleep 0.01
+    i=$((i + 1))
+  done
+  [ "$(meta_field "$dir" x4sp x_request)" = request-x4 ] || {
+    : > "$release"
+    wait "$link_pid" 2>/dev/null || true
+    wait "$control_pid" 2>/dev/null || true
+    fail "cooperating writer did not publish before spawn"$'\n'"$(cat "$dir/link.out" 2>/dev/null || true)"
+  }
+  : > "$release"
+  wait "$link_pid"; rc=$?
+  expect_code 0 "$rc" "concurrent X metadata publication should succeed"$'\n'"$(cat "$dir/link.out")"
+  wait "$control_pid"; rc=$?
+  expect_code 4 "$rc" "a cooperating metadata update must not turn a gone-pane handoff into a generic failure"$'\n'"$(cat "$dir/control.out")"
+  assert_contains "$(cat "$dir/control.out")" "bin/fm-spawn.sh x4sp --secondmate" \
+    "the refusal must still name the respawn path"
+  assert_not_contains "$(cat "$dir/control.out")" "was relaunched" \
+    "rollback must not claim a spawn publication that did not happen"
+  [ "$(meta_field "$dir" x4sp x_request)" = request-x4 ] \
+    || fail "the gone-pane handoff erased the concurrent X request"
+  [ "$(meta_field "$dir" x4sp x_followups)" = 1 ] \
+    || fail "the gone-pane handoff erased the concurrent follow-up count"
+  [ "$(meta_field "$dir" x4sp harness)" = claude ] \
+    || fail "a failed unpublished spawn must keep the prior harness"
+  [ -z "$(meta_field "$dir" x4sp spawn_gen)" ] \
+    || fail "a failed unpublished spawn must not mint a new spawn_gen"
+  [ -z "$(meta_field "$dir" x4sp control_relaunch_tx)" ] \
+    || fail "a gone-endpoint handoff must clear the owned relaunch token after a cooperating write"
+  journal="$dir/home/state/x4sp.control-relaunch"
+  assert_grep 'rollback=prior-record-kept-endpoint-gone' "$journal" \
+    "the journal must keep the gone-endpoint handoff, not none-new-record-kept"
+  pass "relaunch: a cooperating metadata update during a failing spawn still hands a gone secondmate to respawn"
 }
 
 test_relaunch_reverifies_an_already_in_flight_item_instead_of_rewriting_it() {
@@ -3600,6 +4348,12 @@ test_same_harness_relaunch_keeps_identity_and_reuses_the_endpoint
 test_pooled_relaunch_custody_is_agy_only
 test_agy_relaunch_requires_treehouse_capabilities_before_stopping
 test_relaunch_refuses_before_exit_when_the_composer_holds_pending_text
+test_relaunch_does_not_kill_an_untrusted_usage_limit_endpoint
+test_relaunch_refuses_an_unverified_pane_text_usage_limit
+test_relaunch_closes_a_grok_weekly_limit_composer_without_typing_enter
+test_interrupt_refuses_a_usage_limit_screen
+test_interrupt_refuses_a_grok_weekly_limit_and_names_relaunch
+test_control_relaunch_of_a_gone_tmux_endpoint
 test_relaunch_refuses_before_exit_when_the_composer_state_is_unproven
 test_relaunch_from_linked_home_preserves_recorded_worktree
 test_relaunch_preserves_durable_task_metadata
@@ -3613,6 +4367,11 @@ test_refused_relaunch_onto_polytoken_keeps_the_project_hook_layer
 test_refused_polytoken_profile_leaves_the_running_agent
 test_relaunch_from_a_raw_polytoken_launch_keeps_the_project_layers
 test_harness_switch_does_not_carry_the_old_profile_axes
+test_harness_switch_falls_back_when_the_new_harness_refuses_carried_effort
+test_relaunch_off_claude_refuses_when_tooling_is_present
+test_relaunch_off_claude_refuses_an_unreadable_account_pin
+test_relaunch_off_claude_refuses_when_tooling_check_exits_2
+test_relaunch_off_claude_ignores_fm_quota_reroute_override
 test_harness_switch_resolves_a_prefixed_recorded_harness
 test_prefixed_recorded_harness_requires_explicit_replacement
 test_same_harness_relaunch_keeps_the_profile_axes
@@ -3658,6 +4417,13 @@ test_post_publication_launch_failure_keeps_the_new_record
 test_stop_transport_failure_reconciles_a_dead_agent
 test_complete_journal_failure_rolls_back_from_durable_phase
 test_prepublication_abort_retires_replacement_wiring_and_busy_state
+test_prepublication_abort_with_busy_gen_restores_the_prior_record
+test_unpublished_spawn_lock_failure_is_not_published
+test_stamp_die_before_spawn_restores_the_prior_record
+test_stamp_mv_failure_removes_the_staging_file
+test_restore_failure_is_journaled_as_restore_failed
+test_stamp_serializes_a_cooperating_metadata_writer
+test_restore_preserves_a_cooperating_metadata_update
 test_journal_records_the_checkpoint_it_proved
 test_secondmate_relaunch_checkpoints_child_work_and_spares_the_charter
 test_secondmate_relaunch_refuses_an_unmarked_home
@@ -3673,6 +4439,7 @@ test_spawn_relaunch_refuses_a_pending_authoritative_close
 test_spawn_relaunch_refuses_contradicting_flags
 test_spawn_relaunch_refuses_an_unrecorded_task
 test_spawn_relaunch_refuses_a_pane_outside_the_worktree
+test_herdr_relaunch_refuses_when_cd_does_not_return_to_the_worktree
 test_tmux_refuses_a_window_missing_from_its_session
 test_tmux_refuses_a_session_that_cannot_be_found
 test_tmux_refuses_when_the_server_is_gone
@@ -3685,8 +4452,9 @@ test_herdr_exit_proves_the_post_command_endpoint_state
 test_herdr_rebind_stays_in_the_recorded_session
 test_herdr_reclaim_refuses_an_agent_that_came_back
 test_herdr_reclaim_keeps_the_task_whole
-test_herdr_reclaim_of_a_secondmate_names_its_own_owner
+test_herdr_reclaim_of_a_secondmate_uses_relaunch
 test_herdr_secondmate_relaunch_hands_a_vanished_pane_to_respawn
+test_failed_spawn_keeps_exit_4_when_a_cooperating_writer_updates_meta
 test_herdr_rebind_failure_from_a_plain_shell_names_the_real_cause
 test_relaunch_reverifies_an_already_in_flight_item_instead_of_rewriting_it
 test_relaunch_moves_a_drifted_item_back_in_flight
