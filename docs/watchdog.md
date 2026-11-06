@@ -75,17 +75,10 @@ These checks run on every pass as well:
   A window later, the oldest unsettled decision goes to a council of blind seats, at most `council-per-pass` per home per pass and once per decision per `council-secs`.
   A unanimous `PROCEED` writes a ruling file under `data/watchdog/rulings/` and nudges the session to apply it; anything short of unanimity holds.
 - A task whose latest status is a quota pause or block, or a pane showing a usage-limit picker, gets a ledger row and a gap that names the eligible candidate from `reroute-candidates` when `quota-axi` and `bin/fm-quota-reroute.sh` find one.
-  A pane-text usage-limit picker queues until reset.
-  A Grok weekly-limit composer, or a status-line quota floor, still takes a supervisor relaunch.
   A recorded ship or scout worker pane of that home gets the same usage-limit handling, once per home or worker per `nudge-secs`.
-  `bin/fm-quota-reroute.sh` owns the Claude-tooling signal list in its header, including marketplace clones and stale cache copies.
+  The Signals paragraph in [`bin/fm-quota-reroute.sh`](../bin/fm-quota-reroute.sh) owns Claude-tooling, seed exemption, and close policy.
   A signal drops only the candidates off Claude, so a Claude candidate can still be named.
-  Unchanged Firstmate seed material listed in `bin/fm-claude-seed.manifest` is not a Claude-tooling signal.
-  User or repo additions and edits still keep a Claude secondmate on Claude.
-  `bin/fm-quota-reroute.sh` owns that distinction.
   An explicit `fm-control.sh relaunch --harness` runs the same check.
-  That relaunch closes a Grok weekly-limit composer and follows a status-line quota floor.
-  A pane-text usage-limit picker queues until reset.
   The watchdog never changes the runtime.
   The live runbook is [`verification/quota-reroute.md`](verification/quota-reroute.md).
 
