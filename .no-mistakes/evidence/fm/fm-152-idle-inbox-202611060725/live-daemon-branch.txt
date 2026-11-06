@@ -1,0 +1,17 @@
+[branch] daemon pid 50229 alive: yes
+queued 1793959238-Be4VuK
+  live captain note for #152
+  firstmate will pick this up at its next check.
+[branch] note queued at 1793959237; waiting up to 60s for the pane to receive it
+[branch] elapsed 26s (~35s)
+[branch] pane received:
+1793959271 : Firstmate operational input waiting: read '/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.r0lsdJ/state/operational-inbox/1793959270-dfedd418f8d03ae4.msg' and handle its contents as Firstmate operational input.
+[branch] escalation buffer:
+check: captain inbox note 1793959238-Be4VuK - live captain note for #152
+[branch] pane screen:
+❯ : Firstmate operational input waiting: read '/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.r0lsdJ/state/operational-inbox/1793959270-dfedd418f8d03ae4.msg' and handle its contents a
+s Firstmate operational input.
+❯
+[branch] daemon log tail:
+[branch] delivered record 1793959270-dfedd418f8d03ae4.msg:
+⁣FIRSTMATE_OP: v1 away-supervisor: Supervisor escalate (1 event(s)): check: captain inbox note 1793959238-Be4VuK - live captain note for #152 (pre-read; re-arm not needed — watcher daemon-managed)

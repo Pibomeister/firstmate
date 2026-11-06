@@ -1,0 +1,16 @@
+[base-e92a635c] daemon pid 16913 alive: yes
+queued 1793959292-MHfLwE
+  live captain note for #152
+  firstmate will pick this up at its next check.
+[base-e92a635c] note queued at 1793959292; waiting up to 60s for the pane to receive it
+[base-e92a635c] NOT delivered within 60s
+[base-e92a635c] elapsed 60s (~85s)
+[base-e92a635c] pane received:
+[base-e92a635c] escalation buffer:
+check: captain inbox note 1793959292-MHfLwE - live captain note for #152
+[base-e92a635c] pane screen:
+❯
+[base-e92a635c] daemon log tail:
+[base-e92a635c] delivered record *.msg:
+grep: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.fphuuX/state/operational-inbox/*.msg: No such file or directory
+head: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.fphuuX/state/operational-inbox/*.msg: No such file or directory

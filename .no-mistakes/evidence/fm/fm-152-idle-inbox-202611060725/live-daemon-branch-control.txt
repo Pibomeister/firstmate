@@ -1,0 +1,15 @@
+[branch-control-ordinary-check] daemon pid 52126 alive: yes
+rc=0
+appended ordinary check wake
+[branch-control-ordinary-check] note queued at 1793959433; waiting up to 45s for the pane to receive it
+[branch-control-ordinary-check] NOT delivered within 60s
+[branch-control-ordinary-check] elapsed 45s (~60s)
+[branch-control-ordinary-check] pane received:
+[branch-control-ordinary-check] escalation buffer:
+check: /s/c.check.sh: merged: https://example.invalid/pr/1
+[branch-control-ordinary-check] pane screen:
+❯
+[branch-control-ordinary-check] daemon log tail:
+[branch-control-ordinary-check] delivered record *.msg:
+grep: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.vW3uYN/state/operational-inbox/*.msg: No such file or directory
+head: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.vW3uYN/state/operational-inbox/*.msg: No such file or directory

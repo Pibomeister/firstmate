@@ -1,0 +1,33 @@
+$ fm-inbox.sh ready   # empty inbox
+{
+  "state": "unknown",
+  "reason": "supervision-model-unknown-for-home",
+  "beacon_age_seconds": null,
+  "unread_inbox_age_seconds": null
+}
+$ fm-inbox.sh note "stalled captain note"
+queued 1793958478-2ygkBb
+  stalled captain note
+  firstmate will pick this up at its next check.
+$ wake queue line written by note:
+1793958478	1	check	inbox:1793958478-2ygkBb	check: captain inbox note 1793958478-2ygkBb - stalled captain note
+$ (backdate note mtime by 300s)
+$ fm-inbox.sh ready
+{
+  "state": "unknown",
+  "reason": "supervision-model-unknown-for-home",
+  "beacon_age_seconds": null,
+  "unread_inbox_age_seconds": 300
+}
+$ fm-heartbeat.sh --write
+heartbeat exit 0
+ledger: state/heartbeat.json
+{
+  "unread_inbox_age_seconds": 315
+}
+$ fm-inbox.sh drain --ack 1793958478-2ygkBb
+acked 1793958478-2ygkBb
+$ fm-inbox.sh ready  (after ack)
+null
+$ heartbeat after ack
+null
