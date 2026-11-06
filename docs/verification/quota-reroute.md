@@ -11,9 +11,8 @@ The usage-limit pane-text live guard is `tests/fm-usage-limit-pane-live.test.sh`
 It is skip/pending by default and never passes on that path.
 Classify only an existing already-limited pane named by `FM_USAGE_LIMIT_PANE` with `FM_USAGE_LIMIT_PANE_LIVE=1`.
 That path is read-only capture and never types Enter.
-Production `fm-control` relaunch refuses that pane-text verdict until a dated capture exists in [`runtime-backends.md`](runtime-backends.md).
-A Grok weekly-limit composer still closes without Enter.
-The 2026-10-19 Grok weekly-limit composer evidence in that file is unchanged and does not cover the pane-picker classifier.
+The verb header in [`bin/fm-control.sh`](../../bin/fm-control.sh) owns close policy.
+Dated Grok weekly-limit evidence is in [`runtime-backends.md`](runtime-backends.md) and does not cover the pane-picker classifier.
 The box live Herdr plus Codex relaunch below remains the empirical proof for the tooling gate and suggest path.
 
 Run it on a box with Herdr, a logged-in Codex CLI, and a secondmate already bound to Herdr.
@@ -43,19 +42,19 @@ reroute-candidates=codex:gpt-5.4,claude:sonnet
 ### Claude tooling gate
 
 Empty MCP map, no account hooks, and no worktree signals should allow the move.
-The `bin/fm-quota-reroute.sh` header owns which account and worktree signals count, including marketplace clones and stale cache copies.
+The Signals paragraph in [`bin/fm-quota-reroute.sh`](../../bin/fm-quota-reroute.sh) owns which account and worktree signals count.
 
 ```sh
 bin/fm-quota-reroute.sh claude-tooling --config-dir "$HOME/.claude" --worktree <mate-home>
 echo $?
 ```
 
-Record whether exit status is 1 when none of the signals in the `bin/fm-quota-reroute.sh` header are present.
+Record whether exit status is 1 when none of those signals are present.
 A missing or unreadable `--config-dir` should exit 0 and print `unreadable Claude config dir`.
 Omitting `--config-dir` resolves `config/claude-account` in `FM_HOME` (optional `--mate`).
-A broken pin is a signal.
+Record the printed signal and exit for a broken pin.
 `fm-control.sh <id> relaunch --harness <other>` of a Claude task should refuse on that signal, and on any `claude-tooling` exit other than 1, naming the reason.
-There is no override flag.
+The verb header in [`bin/fm-control.sh`](../../bin/fm-control.sh) owns that refusal.
 
 With an MCP server configured, the same command should exit 0 and name `MCP servers in ...`.
 
@@ -69,7 +68,6 @@ bin/fm-quota-reroute.sh suggest --from-harness claude --kind secondmate \
 
 Record whether stdout is `none`, exit status is 1, and stderr names the blocking signal.
 Do not relaunch in that state.
-Queue until reset.
 
 ### Watchdog names the pick
 
@@ -101,7 +99,7 @@ FM_HOME=<home> bin/fm-control.sh <mate-id> relaunch --harness codex
 
 Record whether the command is nonzero, names `not live-verified`, says `Queue until reset`, and leaves the pane and harness unchanged.
 The picker should have received no Enter.
-A Grok weekly-limit composer still closes without Enter, under the dated evidence in [`runtime-backends.md`](runtime-backends.md).
+The verb header in [`bin/fm-control.sh`](../../bin/fm-control.sh) owns close policy.
 
 ### Interrupt stays refused
 
@@ -115,15 +113,13 @@ Record whether the command is nonzero, names `usage-limit screen`, says `Queue u
 
 ### What this run is for
 
-1. `fm-control.sh <id> relaunch --harness codex` refuses a pane-text usage-limit verdict (no kill, no Enter) until a dated capture exists.
-   A Grok weekly-limit composer still closes without Enter.
-2. A Grok weekly-limit close still starts the replacement on Codex in the same secondmate home, on the recorded Herdr backend.
-   A pane-text picker stays queued until reset.
-3. `config/secondmate-harness` pointing at Claude does not block that move when no Claude-specific signal is present.
-4. Any Claude-specific signal keeps the mate on Claude until reset.
-   The `bin/fm-quota-reroute.sh` header owns the list, including a missing or unreadable config dir.
-   Resolve that dir from `config/claude-account`, not from `claude-config-dirs`.
-5. The watchdog names the pick and does not relaunch.
+1. Observe pane-text relaunch refusal versus Grok weekly-limit close.
+   The verb header in [`bin/fm-control.sh`](../../bin/fm-control.sh) owns close policy.
+2. Observe a Grok weekly-limit close starting Codex in the same secondmate home, on the recorded Herdr backend.
+3. Observe that `config/secondmate-harness` pointing at Claude does not block when Signals reports no tooling.
+4. Observe that a Claude-specific signal keeps the mate on Claude.
+   The Signals paragraph in [`bin/fm-quota-reroute.sh`](../../bin/fm-quota-reroute.sh) owns that list.
+5. Observe that the watchdog names the pick and does not relaunch.
 
 ## Results
 
@@ -178,8 +174,7 @@ watchdog once without a usage-limit pane     -> 0; no pick named; no relaunch
 ```
 
 `fm-home-seed` plants worktree `.claude/` (skills symlink, settings.json, mods/firstmate-calm with plugin.json and hooks).
-Unchanged seed is identified by `bin/fm-claude-seed.manifest` git-blob identity, not by path names and not by parent `HEAD:.claude`.
-A user hook, a user edit of a seeded file, a user skill behind the skills symlink, and user MCP config still refuse.
+The Signals paragraph in [`bin/fm-quota-reroute.sh`](../../bin/fm-quota-reroute.sh) owns seed identity.
 A live run on 2026-11-05 also refused on worktree `.claude/skills` under the pre-exemption rule.
 That observation is historical only.
 Portable tests cover the current catalog exemption.
@@ -189,11 +184,12 @@ Checklist:
 
 1. Relaunch of a pane-text usage-limit screen: BLOCKED.
    No usage-limit screen was available, and quota was not burned to force one.
-   Production now refuses that pane-text close until a dated capture exists.
+   Close policy is the [`bin/fm-control.sh`](../../bin/fm-control.sh) verb header.
+   A dated picker capture is still pending in [`runtime-backends.md`](runtime-backends.md).
 2. Replacement starts on Codex on Herdr: BLOCKED.
    No usage-limit screen was available.
    Unchanged seeded `.claude/` no longer refuses that move.
-   A user hook, seed edit, or MCP config still would.
+   The Signals paragraph in [`bin/fm-quota-reroute.sh`](../../bin/fm-quota-reroute.sh) owns which user edits still refuse.
 3. Claude harness pin with no other signal does not block: PARTIAL.
    Gate and suggest were proven on a clean worktree.
    Live relaunch was not exercised without a signal.

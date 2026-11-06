@@ -83,8 +83,8 @@ A relaunch does take one session reference when the endpoint's own runtime recor
    A recorded raw-command basename that differs from its resolved adapter cannot reproduce the command actually running, so relaunch refuses before the checkpoint unless the caller passes an explicit `--harness` to choose the replacement runtime deliberately.
    A harness change resets model unless it is named too, because a model chosen for one adapter does not transfer to another.
    Effort carries over when the new harness accepts it, otherwise the replacement uses that harness default and prints a notice.
-   Moving a Claude task onto another harness is refused when Claude-specific tooling is present, with no override.
-   The Signals paragraph in [`bin/fm-quota-reroute.sh`](../bin/fm-quota-reroute.sh) owns that list.
+   The verb header in [`bin/fm-control.sh`](../bin/fm-control.sh) owns the Claude-move refusal.
+   The Signals paragraph in [`bin/fm-quota-reroute.sh`](../bin/fm-quota-reroute.sh) owns the tooling list.
    A secondmate's worktree is its firstmate home.
    A Claude secondmate can still move to another Claude model.
    Relaunch never kills a pane it cannot attribute.

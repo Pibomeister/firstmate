@@ -78,8 +78,6 @@ These checks run on every pass as well:
   A recorded ship or scout worker pane of that home gets the same usage-limit handling, once per home or worker per `nudge-secs`.
   The Signals paragraph in [`bin/fm-quota-reroute.sh`](../bin/fm-quota-reroute.sh) owns Claude-tooling and seed exemption.
   The verb header in [`bin/fm-control.sh`](../bin/fm-control.sh) owns close policy.
-  A signal drops only the candidates off Claude, so a Claude candidate can still be named.
-  An explicit `fm-control.sh relaunch --harness` runs the same check.
   The watchdog never changes the runtime.
   The live runbook is [`verification/quota-reroute.md`](verification/quota-reroute.md).
 

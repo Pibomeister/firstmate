@@ -1083,8 +1083,7 @@ It stays skip/pending by default and never passes on that path.
 Classify only when `FM_USAGE_LIMIT_PANE_LIVE=1` and `FM_USAGE_LIMIT_PANE` names an existing already-limited pane.
 That path is read-only capture, never starts a session, never types Enter, and never logs pane text.
 It passes only against that supplied artifact.
-Production `fm-control` relaunch refuses a pane-text `usage-limit` verdict: no kill, no Enter.
-A Grok weekly-limit composer still closes without Enter, under the 2026-10-19 evidence above.
+The verb header in [`bin/fm-control.sh`](../../bin/fm-control.sh) owns close policy.
 Portable regressions in `tests/fm-watchdog.test.sh` and `tests/fm-control-relaunch.test.sh` pin both paths.
 A dated Claude or Codex picker capture is still pending.
 The 2026-10-19 Grok weekly-limit composer evidence above is unchanged and does not cover this pane-picker classifier.
