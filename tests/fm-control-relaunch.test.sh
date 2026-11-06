@@ -3336,11 +3336,48 @@ test_herdr_reclaim_of_a_secondmate_names_its_own_owner() {
   printf '%s\n' "kind=secondmate" "home=$dir/wt" >> "$dir/home/state/rl76.meta"
 
   out=$(run_spawn "$dir" rl76 --relaunch --harness claude); rc=$?
-  expect_code 1 "$rc" "a secondmate reclaim belongs to the secondmate respawn path"
+  expect_code 4 "$rc" "a secondmate reclaim belongs to the secondmate respawn path, with its typed refusal status"
   assert_contains "$out" "--secondmate" "the refusal should name the path that owns this recovery"
   assert_not_contains "$(cat "$dir/fake/herdr-log")" "tab create" \
     "the refusal must happen before any endpoint is created"
   pass "reclaim: a herdr secondmate whose endpoint is gone is sent to its own respawn owner"
+}
+
+# Stopping a herdr secondmate's agent can take its pane with it. The control
+# plane cannot launch a replacement into a pane that no longer exists, and the
+# reclaim belongs to the secondmate respawn path, so relaunch hands the mate
+# over with a typed exit status and its prior record intact rather than a
+# generic failure its restart caller cannot tell apart from a broken launch.
+test_herdr_secondmate_relaunch_hands_a_vanished_pane_to_respawn() {
+  local dir out rc=0 journal
+  herdr_case_or_skip vanish-herdr-secondmate rl77 || {
+    echo "skip - herdr secondmate relaunch needs jq (the herdr adapter parses JSON with it)"
+    return 0
+  }
+  dir=$HERDR_CASE_DIR
+  rm -f "$dir/fake/herdr-stopped"
+  : > "$dir/fake/herdr-agent-live"
+  : > "$dir/fake/herdr-exit-closes-pane"
+  printf '%s\n' "kind=secondmate" "home=$dir/wt" >> "$dir/home/state/rl77.meta"
+  printf 'rl77\n' > "$dir/wt/.fm-secondmate-home"
+  mkdir -p "$dir/wt/state" "$dir/wt/data"
+
+  out=$(run_control "$dir" rl77 relaunch --harness claude) || rc=$?
+
+  expect_code 4 "$rc" "a vanished secondmate pane must be handed to the respawn path with its typed status"$'\n'"$out"
+  assert_contains "$out" "bin/fm-spawn.sh rl77 --secondmate" \
+    "the refusal must name the respawn path that now owns the mate"
+  assert_contains "$(cat "$dir/fake/herdr-log")" "pane send-keys %7 enter --session fmlab" \
+    "the agent must actually have been stopped before the hand-over"
+  assert_not_contains "$(cat "$dir/fake/herdr-log")" "tab create" \
+    "relaunch must not mint an endpoint the respawn path owns"
+  [ "$(meta_field "$dir" rl77 kind)" = secondmate ] || fail "the hand-over lost the mate's record"
+  [ "$(meta_field "$dir" rl77 backend)" = herdr ] \
+    || fail "the respawn path needs the recorded backend the hand-over must keep"
+  journal="$dir/home/state/rl77.control-relaunch"
+  assert_grep 'rollback=prior-record-kept-endpoint-gone' "$journal" \
+    "the relaunch journal must record why the prior record was kept"
+  pass "relaunch: a herdr secondmate whose pane vanished on stop is handed to respawn with its record kept"
 }
 
 test_relaunch_reverifies_an_already_in_flight_item_instead_of_rewriting_it() {
@@ -3649,6 +3686,7 @@ test_herdr_rebind_stays_in_the_recorded_session
 test_herdr_reclaim_refuses_an_agent_that_came_back
 test_herdr_reclaim_keeps_the_task_whole
 test_herdr_reclaim_of_a_secondmate_names_its_own_owner
+test_herdr_secondmate_relaunch_hands_a_vanished_pane_to_respawn
 test_herdr_rebind_failure_from_a_plain_shell_names_the_real_cause
 test_relaunch_reverifies_an_already_in_flight_item_instead_of_rewriting_it
 test_relaunch_moves_a_drifted_item_back_in_flight

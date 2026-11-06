@@ -115,6 +115,10 @@
 #              the prior durable record in place and reports the concrete
 #              state; it never leaves a half-transitioned task claiming to be
 #              running.
+#              A secondmate whose endpoint is gone once its agent is stopped
+#              exits 4 with that prior record kept, because its replacement
+#              belongs to the secondmate respawn path
+#              (bin/fm-spawn.sh <id> --secondmate), which the caller runs next.
 #
 # Teardown and discard are NOT verbs here and never will be. `exit` stops an
 # agent and preserves everything else; removing a worktree, killing an
@@ -1284,7 +1288,7 @@ record_note() {
 }
 
 do_relaunch() {
-  local exit_result state note_line
+  local exit_result state note_line spawn_rc
   local -a spawn_args
 
   require_state_verified_backend relaunch
@@ -1363,8 +1367,10 @@ do_relaunch() {
   spawn_args=("$ID" --relaunch --harness "$TARGET_HARNESS")
   [ "$TARGET_MODEL" = default ] || spawn_args+=(--model "$TARGET_MODEL")
   [ "$TARGET_EFFORT" = default ] || spawn_args+=(--effort "$TARGET_EFFORT")
-  if FM_CONTROL_RELAUNCH_TX="$RELAUNCH_TX" \
-      "$SCRIPT_DIR/fm-spawn.sh" "${spawn_args[@]}" >/dev/null; then
+  spawn_rc=0
+  FM_CONTROL_RELAUNCH_TX="$RELAUNCH_TX" \
+    "$SCRIPT_DIR/fm-spawn.sh" "${spawn_args[@]}" >/dev/null || spawn_rc=$?
+  if [ "$spawn_rc" -eq 0 ]; then
     RELAUNCH_META_PUBLISHED=1
     # $T was resolved from the record before the launch. When the recorded
     # endpoint was gone, the launch owner created a fresh one and republished
@@ -1386,6 +1392,16 @@ do_relaunch() {
   else
     [ "$(fm_meta_get "$META" control_relaunch_tx)" != "$RELAUNCH_TX" ] \
       || RELAUNCH_META_PUBLISHED=1
+    # The launch owner's typed refusal for a secondmate whose endpoint is gone
+    # (fm-spawn.sh header: --relaunch). Nothing was created, the agent is
+    # stopped, and the prior record stands, so hand the mate to its respawn
+    # owner with the same status instead of an untyped failure.
+    if [ "$spawn_rc" -eq 4 ] && [ "$KIND" = secondmate ] && [ "$RELAUNCH_META_PUBLISHED" = 0 ]; then
+      journal_write "failed:$RELAUNCH_PHASE" "rollback=prior-record-kept-endpoint-gone" || true
+      RELAUNCH_ACTIVE=0
+      echo "error: secondmate $ID's agent is stopped and its endpoint is gone, so no replacement can be launched into it; its record is kept for the secondmate respawn path (bin/fm-spawn.sh $ID --secondmate)" >&2
+      exit 4
+    fi
     die "the replacement agent for $ID could not be launched on $TARGET_HARNESS"
   fi
 

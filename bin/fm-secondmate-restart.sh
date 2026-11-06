@@ -54,6 +54,11 @@
 # Nothing here forces, stashes, or discards anything. bin/fm-control.sh owns the
 # restart transaction, its checkpoint, its journal, and its rollback; a refusal
 # before the agent is stopped leaves the mate running exactly as it was.
+# When stopping a local mate's agent also removed its endpoint, that command
+# exits 4 with the mate's record kept, and the replacement falls through to the
+# secondmate respawn path the watcher uses (bin/fm-secondmate-liveness-lib.sh
+# and bin/fm-spawn.sh <id> --secondmate), which keeps the mate's recorded
+# backend; a respawn that completes is reported restarted on a new endpoint.
 #
 # Restart candidacy itself belongs to bin/fm-update.sh, which knows which homes
 # the update pass actually left on the target commit; this command re-checks
@@ -62,6 +67,8 @@
 # Environment knobs:
 #   FM_SECONDMATE_PERSIST_WAIT  seconds to wait for one mate's persist answer (900)
 #   FM_SECONDMATE_PERSIST_POLL  seconds between checks of that answer (5)
+#   FM_SECONDMATE_RESPAWN_LOCK_WAIT  seconds a respawn waits for another
+#                               supervisor's recovery of that mate (600)
 #
 # Exit status: 0 every named mate restarted; 3 at least one was nudged or left
 # unreached and every mate was still accounted for; 1 the input itself is
@@ -72,7 +79,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 
 usage() {
-  sed -n '2,65{s/^# \{0,1\}//;p;}' "$0"
+  sed -n '2,72{s/^# \{0,1\}//;p;}' "$0"
 }
 
 case "${1:-}" in
@@ -94,6 +101,9 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 . "$SCRIPT_DIR/fm-secondmate-nudge-lib.sh"
 # shellcheck source=bin/fm-pending-reply-lib.sh
 . "$SCRIPT_DIR/fm-pending-reply-lib.sh"
+# shellcheck source=bin/fm-secondmate-liveness-lib.sh
+. "$SCRIPT_DIR/fm-secondmate-liveness-lib.sh"
+RESTART_CODE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 PERSIST_WAIT=${FM_SECONDMATE_PERSIST_WAIT:-900}
 PERSIST_POLL=${FM_SECONDMATE_PERSIST_POLL:-5}
@@ -162,6 +172,50 @@ report_unreached() {  # <id> <reason>
   printf 'unreached: %s: %s\n' "$1" "$2"
 }
 
+# Exit 4 from bin/fm-control.sh relaunch means the stop left the mate with no
+# agent and no endpoint, its record kept (that script's header). The
+# replacement then belongs to the secondmate respawn path, so take it through
+# the same liveness library the watcher and the session-start sweep drive: its
+# per-mate lock, per-home relaunch lock, fresh probe, and attempt ledger make a
+# racing watcher relaunch and this pass's parallel restarts converge on one
+# agent. A probe that already reads the mate alive means another supervisor
+# launched the replacement after this pass's stop. Sets RESPAWN_REASON on
+# failure.
+RESPAWN_REASON=""
+respawn_gone_mate() {  # <id>
+  local id=$1 meta="$STATE/$1.meta" lock_wait=${FM_SECONDMATE_RESPAWN_LOCK_WAIT:-600} rc=0
+  RESPAWN_REASON=""
+  case "$lock_wait" in ''|*[!0-9]*|0) lock_wait=600 ;; esac
+  if ! fm_sm_live_require_locks; then
+    RESPAWN_REASON="its recovery lock could not be loaded"
+    return 1
+  fi
+  # The lock library re-reads FM_ROOT; the respawn must run this pass's own code.
+  FM_ROOT=$RESTART_CODE_ROOT
+  if ! fm_lock_acquire_wait_bounded "$STATE/.secondmate-liveness-$id.lock" "$lock_wait"; then
+    RESPAWN_REASON="another supervisor still held its recovery after ${lock_wait}s"
+    return 1
+  fi
+  fm_secondmate_liveness_probe "$meta" "$id" poll
+  case "$FM_SM_LIVE_STATUS" in
+    alive) ;;
+    relaunchable)
+      fm_secondmate_liveness_relaunch "$meta" "$id" || rc=$?
+      if [ "$rc" -ne 0 ]; then
+        RESPAWN_REASON=$(first_reported_line "$FM_SM_LIVE_OUT")
+        [ -n "$RESPAWN_REASON" ] || RESPAWN_REASON=$FM_SM_LIVE_REASON
+        [ -n "$RESPAWN_REASON" ] || RESPAWN_REASON="the respawn failed without a reported reason"
+      fi
+      ;;
+    *)
+      rc=1
+      RESPAWN_REASON="its endpoint then read '$FM_SM_LIVE_STATE'${FM_SM_LIVE_REASON:+: $FM_SM_LIVE_REASON}"
+      ;;
+  esac
+  fm_secondmate_liveness_unlock "$id"
+  return "$rc"
+}
+
 restart_mate() {  # <array-index>
   local i=$1 id restart_out restart_rc restart_reason ran_on
   id=${IDS[$i]}
@@ -174,6 +228,16 @@ restart_mate() {  # <array-index>
     restart_out=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
       "$SCRIPT_DIR/fm-control.sh" "$id" relaunch 2>&1)
     restart_rc=$?
+    if [ "$restart_rc" -eq 4 ]; then
+      if respawn_gone_mate "$id"; then
+        ran_on=$(fm_meta_get "$STATE/$id.meta" harness)
+        printf 'restarted: %s (%s) on a new endpoint; the old one was gone after its agent stopped\n' \
+          "$id" "${ran_on:-${HARNESS[i]}}"
+      else
+        report_unreached "$id" "its agent is stopped and its endpoint was gone, and the respawn did not complete: $RESPAWN_REASON"
+      fi
+      return
+    fi
   fi
   if [ "$restart_rc" -eq 0 ]; then
     ran_on=$(printf '%s\n' "$restart_out" | sed -n 's/^relaunched .* harness=\([^ ]*\).*/\1/p' | tail -1)
