@@ -298,8 +298,15 @@ run_control() {  # <case-dir> <args...>
     FM_REAL_GIT="${FM_REAL_GIT:-}" FM_FAKE_GIT_FAILURE="${FM_FAKE_GIT_FAILURE:-}" \
     FM_REAL_MV="${FM_REAL_MV:-}" FM_FAKE_COMPLETE_JOURNAL_MV_FAIL="${FM_FAKE_COMPLETE_JOURNAL_MV_FAIL:-}" \
     FM_FAKE_META_PUBLISH_MV_FAIL="${FM_FAKE_META_PUBLISH_MV_FAIL:-}" \
+    FM_FAKE_STAMP_TX_READY="${FM_FAKE_STAMP_TX_READY:-}" \
+    FM_FAKE_STAMP_TX_RELEASE="${FM_FAKE_STAMP_TX_RELEASE:-}" \
     FM_REAL_MKTEMP="${FM_REAL_MKTEMP:-}" \
+    FM_FAKE_MKTEMP_SPAWN_PAUSE_READY="${FM_FAKE_MKTEMP_SPAWN_PAUSE_READY:-}" \
+    FM_FAKE_MKTEMP_SPAWN_PAUSE_RELEASE="${FM_FAKE_MKTEMP_SPAWN_PAUSE_RELEASE:-}" \
     FM_REAL_CP="${FM_REAL_CP:-}" FM_FAKE_CP_RESTORE_FAIL="${FM_FAKE_CP_RESTORE_FAIL:-}" \
+    FM_FAKE_RESTORE_PAUSE_READY="${FM_FAKE_RESTORE_PAUSE_READY:-}" \
+    FM_FAKE_RESTORE_PAUSE_RELEASE="${FM_FAKE_RESTORE_PAUSE_RELEASE:-}" \
+    FM_FAKE_RESTORE_PAUSE="${FM_FAKE_RESTORE_PAUSE:-}" \
     FM_FAKE_TRACE_PREPARE="${FM_FAKE_TRACE_PREPARE:-}" \
     FM_FAKE_TRACE_RELEASE="${FM_FAKE_TRACE_RELEASE:-}" \
     FM_FAKE_META_WRITER_READY="${FM_FAKE_META_WRITER_READY:-}" \
@@ -365,6 +372,14 @@ for path in "$@"; do
   source_path=$target_path
   target_path=$path
 done
+if [ -n "${FM_FAKE_STAMP_TX_READY:-}" ]; then
+  case "$source_path" in
+    *.meta.tx)
+      printf '%s\n' "$source_path" > "$FM_FAKE_STAMP_TX_READY"
+      while [ ! -e "$FM_FAKE_STAMP_TX_RELEASE" ]; do /bin/sleep 0.01; done
+      ;;
+  esac
+fi
 if [ -n "${FM_FAKE_META_WRITER_TARGET:-}" ] \
    && [ "$target_path" = "$FM_FAKE_META_WRITER_TARGET" ] \
    && grep -q '^x_request=' "$source_path" 2>/dev/null; then
@@ -381,7 +396,12 @@ make_mktemp_spawn_err_failure_stub() {  # <case-dir>
 #!/usr/bin/env bash
 for arg in "$@"; do
   case "$arg" in
-    *fm-control-spawn*) exit 1 ;;
+    *fm-control-spawn*)
+      if [ -n "${FM_FAKE_MKTEMP_SPAWN_PAUSE_READY:-}" ]; then
+        : > "$FM_FAKE_MKTEMP_SPAWN_PAUSE_READY"
+        while [ ! -e "$FM_FAKE_MKTEMP_SPAWN_PAUSE_RELEASE" ]; do /bin/sleep 0.01; done
+      fi
+      exit 1 ;;
   esac
 done
 exec "$FM_REAL_MKTEMP" "$@"
@@ -394,6 +414,10 @@ make_cp_restore_failure_stub() {  # <case-dir>
 #!/usr/bin/env bash
 dest=
 for dest in "$@"; do :; done
+if [ -n "${FM_FAKE_RESTORE_PAUSE_READY:-}" ] && [ "$dest" = "${FM_FAKE_RESTORE_PAUSE:-}" ]; then
+  : > "$FM_FAKE_RESTORE_PAUSE_READY"
+  while [ ! -e "$FM_FAKE_RESTORE_PAUSE_RELEASE" ]; do /bin/sleep 0.01; done
+fi
 if [ -n "${FM_FAKE_CP_RESTORE_FAIL:-}" ] && [ "$dest" = "$FM_FAKE_CP_RESTORE_FAIL" ]; then
   exit 1
 fi
@@ -2610,6 +2634,128 @@ test_restore_failure_is_journaled_as_restore_failed() {
   pass "fm-control relaunch: a failed prior-record restore is journaled as restore-failed"
 }
 
+test_stamp_serializes_a_cooperating_metadata_writer() {
+  local dir control_pid link_pid rc i=0 ready release waiting
+  dir=$(new_case stamp-race txrace)
+  add_ship_task "$dir" txrace claude
+  make_mv_failure_stub "$dir"
+  ready="$dir/stamp-tx-ready"
+  release="$dir/stamp-tx-release"
+  waiting="$dir/meta-writer-waiting"
+  FM_REAL_MV=$(command -v mv) \
+    FM_FAKE_STAMP_TX_READY="$ready" \
+    FM_FAKE_STAMP_TX_RELEASE="$release" \
+    run_control "$dir" txrace relaunch --note "keep concurrent routing" > "$dir/control.out" &
+  control_pid=$!
+  while [ ! -e "$ready" ] && [ "$i" -lt 500 ]; do
+    /bin/sleep 0.01
+    i=$((i + 1))
+  done
+  [ -e "$ready" ] || {
+    kill "$control_pid" 2>/dev/null || true
+    wait "$control_pid" 2>/dev/null || true
+    fail "relaunch did not reach control_relaunch_tx stamp"
+  }
+  grep -q '\.meta\.tx$' "$ready" \
+    || fail "stamp race must pause on META.tx, not another mv"$'\n'"$(cat "$ready")"
+  [ "$(cat "$dir/fake/command")" = zsh ] \
+    || fail "stamp race must run after the old agent has stopped, not at the pre-stop cwd check"
+  env PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_ROOT_OVERRIDE="$ROOT" \
+    FM_REAL_MV="$(command -v mv)" FM_REAL_MKTEMP="$(command -v mktemp)" \
+    FM_FAKE_LOCK_WAITING="$waiting" \
+    "$X_LINK" txrace request-tx --carry-count 1 --carry-ts 1700000000 \
+      --carry-platform x --carry-max 280 > "$dir/link.out" 2>&1 &
+  link_pid=$!
+  i=0
+  while [ ! -e "$waiting" ] && [ "$i" -lt 500 ]; do
+    /bin/sleep 0.01
+    i=$((i + 1))
+  done
+  [ -e "$waiting" ] && [ -z "$(meta_field "$dir" txrace x_request)" ] || {
+    : > "$release"
+    wait "$link_pid" 2>/dev/null || true
+    wait "$control_pid" 2>/dev/null || true
+    fail "a durable metadata writer was not blocked during token stamp"$'\n'"$(cat "$dir/link.out" 2>/dev/null || true)"$'\n'"$(cat "$dir/home/state/txrace.meta")"
+  }
+  : > "$release"
+  wait "$link_pid"; rc=$?
+  expect_code 0 "$rc" "concurrent X metadata publication should serialize"$'\n'"$(cat "$dir/link.out")"
+  wait "$control_pid"; rc=$?
+  expect_code 0 "$rc" "relaunch should complete after serialized metadata publication"$'\n'"$(cat "$dir/control.out")"
+  assert_not_contains "$(cat "$dir/control.out")" "not its recorded worktree" \
+    "stamp race must not be the pre-stop cwd refusal"
+  [ "$(meta_field "$dir" txrace x_request)" = request-tx ] \
+    || fail "token stamp erased metadata published concurrently through the X interface"
+  [ "$(meta_field "$dir" txrace x_followups)" = 1 ] \
+    || fail "token stamp erased the concurrent follow-up count"
+  [ "$(meta_field "$dir" txrace harness)" = claude ] \
+    || fail "serialized stamp must keep the replacement on the recorded harness"
+  pass "fm-control relaunch: token stamp serializes with a cooperating metadata writer"
+}
+
+test_restore_preserves_a_cooperating_metadata_update() {
+  local dir control_pid link_pid rc i=0 ready release waiting
+  dir=$(new_case restore-race rbrc)
+  add_ship_task "$dir" rbrc claude
+  make_mktemp_spawn_err_failure_stub "$dir"
+  make_cp_restore_failure_stub "$dir"
+  ready="$dir/restore-cp-ready"
+  release="$dir/restore-cp-release"
+  waiting="$dir/meta-writer-waiting"
+  FM_REAL_MKTEMP=$(command -v mktemp) \
+    FM_REAL_CP=$(command -v cp) \
+    FM_FAKE_RESTORE_PAUSE_READY="$ready" \
+    FM_FAKE_RESTORE_PAUSE_RELEASE="$release" \
+    FM_FAKE_RESTORE_PAUSE="$dir/home/state/rbrc.meta" \
+    run_control "$dir" rbrc relaunch --note "preserve concurrent routing on rollback" \
+      > "$dir/control.out" &
+  control_pid=$!
+  while [ ! -e "$ready" ] && [ "$i" -lt 500 ]; do
+    /bin/sleep 0.01
+    i=$((i + 1))
+  done
+  [ -e "$ready" ] || {
+    kill "$control_pid" 2>/dev/null || true
+    wait "$control_pid" 2>/dev/null || true
+    fail "relaunch did not reach prior-record restore"
+  }
+  [ "$(cat "$dir/fake/command")" = zsh ] \
+    || fail "rollback race must run after the old agent has stopped, not at the pre-stop cwd check"
+  env PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_ROOT_OVERRIDE="$ROOT" \
+    FM_REAL_MKTEMP="$(command -v mktemp)" FM_REAL_CP="$(command -v cp)" \
+    FM_FAKE_LOCK_WAITING="$waiting" \
+    "$X_LINK" rbrc request-rb --carry-count 2 --carry-ts 1700000000 \
+      --carry-platform x --carry-max 280 > "$dir/link.out" 2>&1 &
+  link_pid=$!
+  i=0
+  while [ ! -e "$waiting" ] && [ "$(meta_field "$dir" rbrc x_request)" != request-rb ] && [ "$i" -lt 500 ]; do
+    /bin/sleep 0.01
+    i=$((i + 1))
+  done
+  [ -e "$waiting" ] || [ "$(meta_field "$dir" rbrc x_request)" = request-rb ] || {
+    : > "$release"
+    wait "$link_pid" 2>/dev/null || true
+    wait "$control_pid" 2>/dev/null || true
+    fail "cooperating writer neither blocked nor published during restore"$'\n'"$(cat "$dir/link.out" 2>/dev/null || true)"
+  }
+  : > "$release"
+  wait "$link_pid"; rc=$?
+  expect_code 0 "$rc" "concurrent X metadata publication should succeed"$'\n'"$(cat "$dir/link.out")"
+  wait "$control_pid"; rc=$?
+  expect_code 1 "$rc" "a die after the stamp and before spawn should fail closed"$'\n'"$(cat "$dir/control.out")"
+  assert_contains "$(cat "$dir/control.out")" "could not record spawn output" \
+    "rollback race must die after stamp, not at the pre-stop cwd check"
+  assert_not_contains "$(cat "$dir/control.out")" "not its recorded worktree" \
+    "rollback race must not be the pre-stop cwd refusal"
+  [ "$(meta_field "$dir" rbrc x_request)" = request-rb ] \
+    || fail "prior-record restore erased a concurrent X request"
+  [ "$(meta_field "$dir" rbrc x_followups)" = 2 ] \
+    || fail "prior-record restore erased the concurrent follow-up count"
+  [ "$(cat "$dir/fake/command")" = zsh ] \
+    || fail "a launching-phase rollback must leave the old agent stopped"
+  pass "fm-control relaunch: prior-record restore keeps a concurrent metadata update"
+}
+
 test_journal_records_the_checkpoint_it_proved() {
   local dir head
   dir=$(new_case journal rl14)
@@ -4037,6 +4183,8 @@ test_prepublication_abort_with_busy_gen_restores_the_prior_record
 test_stamp_die_before_spawn_restores_the_prior_record
 test_stamp_mv_failure_removes_the_staging_file
 test_restore_failure_is_journaled_as_restore_failed
+test_stamp_serializes_a_cooperating_metadata_writer
+test_restore_preserves_a_cooperating_metadata_update
 test_journal_records_the_checkpoint_it_proved
 test_secondmate_relaunch_checkpoints_child_work_and_spares_the_charter
 test_secondmate_relaunch_refuses_an_unmarked_home

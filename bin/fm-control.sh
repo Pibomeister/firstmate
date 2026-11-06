@@ -242,9 +242,26 @@ CONTROL_LOCK=
 CONTROL_LOCK_HELD=0
 RELAUNCH_ACTIVE=0
 RELAUNCH_PHASE=start
+RELAUNCH_META_LOCK=
+RELAUNCH_META_LOCK_HELD=0
+
+relaunch_meta_unlock() {
+  [ "${RELAUNCH_META_LOCK_HELD:-0}" = 1 ] || return 0
+  RELAUNCH_META_LOCK_HELD=0
+  fm_lock_release "$RELAUNCH_META_LOCK" || true
+}
+
+relaunch_meta_lock() {
+  RELAUNCH_META_LOCK=$(fm_meta_lock_path "$META") || return 1
+  fm_lock_acquire_wait "$RELAUNCH_META_LOCK" || return 1
+  RELAUNCH_META_LOCK_HELD=1
+}
 
 control_cleanup() {
   local status=$?
+  # The metadata lock is not re-entrant. Drop a leftover hold before rollback
+  # restore acquires the same lock.
+  relaunch_meta_unlock
   if [ "$RELAUNCH_ACTIVE" = 1 ] \
      && declare -F relaunch_rollback >/dev/null 2>&1; then
     relaunch_rollback || true
@@ -1042,8 +1059,17 @@ relaunch_record_changed_beyond_tx() {
 
 restore_relaunch_prior_record() {
   [ -f "$META_PRIOR" ] || return 0
-  cp -p "$META_PRIOR" "$META" && return 0
+  relaunch_meta_lock || return 1
+  if relaunch_record_changed_beyond_tx; then
+    relaunch_meta_unlock
+    return 0
+  fi
+  if cp -p "$META_PRIOR" "$META"; then
+    relaunch_meta_unlock
+    return 0
+  fi
   echo "error: could not restore task $ID's prior durable record" >&2
+  relaunch_meta_unlock
   return 1
 }
 
@@ -1481,12 +1507,15 @@ do_relaunch() {
   # per-task harness wiring before arming the new one, so nothing to do here.
   RELAUNCH_TX="${BASHPID:-$$}.$(date -u +%Y%m%dT%H%M%SZ).$RANDOM"
   journal_write launching "${CHECKPOINT_LINES[@]}" "$note_line" "relaunch_tx=$RELAUNCH_TX"
+  relaunch_meta_lock \
+    || die "could not lock task $ID's durable record before recording relaunch token $RELAUNCH_TX"
   cp -p "$META" "$META.tx" || die "could not stage relaunch token $RELAUNCH_TX for task $ID"
   {
     grep -v '^control_relaunch_tx=' "$META" || true
     printf 'control_relaunch_tx=%s\n' "$RELAUNCH_TX"
   } > "$META.tx" || die "could not stage relaunch token $RELAUNCH_TX for task $ID"
   mv "$META.tx" "$META" || die "could not record relaunch token $RELAUNCH_TX on task $ID before spawn"
+  relaunch_meta_unlock
   spawn_args=("$ID" --relaunch --harness "$TARGET_HARNESS")
   [ "$TARGET_MODEL" = default ] || spawn_args+=(--model "$TARGET_MODEL")
   [ "$TARGET_EFFORT" = default ] || spawn_args+=(--effort "$TARGET_EFFORT")
