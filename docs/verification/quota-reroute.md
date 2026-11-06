@@ -189,7 +189,13 @@ watchdog once                                -> 0; no pick named; no relaunch
 default after stop                           -> running=false
 ```
 
-Seeded-home product note: `fm-home-seed` plants worktree `.claude/` (skills symlink, settings.json, mods/firstmate-calm with plugin.json and hooks). Unchanged seed is identified by git blob identity against this tree's `HEAD:.claude`, not by path names, and is not a worktree signal. A user hook, a user edit of a seeded file, and user MCP config still refuse. Round 2 below recorded the pre-exemption live refusal; portable tests now cover the exemption.
+Seeded-home product note: `fm-home-seed` plants worktree `.claude/` (skills symlink, settings.json, mods/firstmate-calm with plugin.json and hooks).
+Unchanged seed is identified by `bin/fm-claude-seed.manifest` git-blob identity, not by path names and not by parent `HEAD:.claude`.
+A user hook, a user edit of a seeded file, a user skill behind the skills symlink, and user MCP config still refuse.
+Round 2 above recorded a historical live refusal on worktree `.claude/skills` under the pre-exemption rule.
+That observation is obsolete.
+Portable tests now cover the exemption.
+Do not treat that round as replacement live proof of current seed behavior.
 
 Checklist (combined):
 
