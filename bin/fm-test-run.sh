@@ -1729,7 +1729,7 @@ families_for_changed_path() {
     bin/fm-procevent-quota.sh)
       printf '%s\n' "__script__:fm-procevent-quota.test.sh"
       ;;
-    bin/fm-quota-choose.sh|bin/fm-claude-seed.manifest)
+    bin/fm-quota-choose.sh)
       printf '%s\n' "__script__:fm-quota-choose.test.sh"
       ;;
     bin/fm-dispatch-resolve.sh)
@@ -1797,7 +1797,6 @@ families_for_changed_path() {
       printf '%s\n' __script__:fm-calm-pi-extension.test.sh
       printf '%s\n' __script__:fm-pi-primary-types.test.sh
       printf '%s\n' live-harness-optin
-      printf '%s\n' "__script__:fm-quota-choose.test.sh"
       ;;
     .cursor/agent-kit.md|.cursor/bin/ak|.cursor/bin/ak-gate.mjs|bin/fm-agent-kit-pin.sh)
       printf '%s\n' "__script__:fm-agent-kit-pin.test.sh"
@@ -1821,7 +1820,6 @@ families_for_changed_path() {
       printf '%s\n' __script__:fm-pi-windows-shell-invocation.test.sh
       printf '%s\n' session-bootstrap
       printf '%s\n' live-harness-optin
-      printf '%s\n' "__script__:fm-quota-choose.test.sh"
       ;;
     bin/fm-extension.mjs|bin/fm-extension.sh|docs/examples/process-event-extension/*)
       printf '%s\n' __script__:fm-extension-binding.test.sh
@@ -1926,16 +1924,13 @@ families_for_changed_path() {
     .agents/skills/quota-array-dispatch/SKILL.md)
       printf '%s\n' pure-contract-unit
       printf '%s\n' live-harness-optin
-      printf '%s\n' "__script__:fm-quota-choose.test.sh"
       ;;
     .agents/skills/harness-adapters/SKILL.md|.agents/skills/harness-adapters/references/*)
       printf '%s\n' pure-contract-unit
       printf '%s\n' live-harness-optin
-      printf '%s\n' "__script__:fm-quota-choose.test.sh"
       ;;
-    .agents/skills/*/SKILL.md|.claude/skills/*/SKILL.md)
+    .agents/skills/*/SKILL.md)
       printf '%s\n' pure-contract-unit
-      printf '%s\n' "__script__:fm-quota-choose.test.sh"
       ;;
     .github/workflows/ci.yml|.no-mistakes.yaml)
       printf '%s\n' pure-contract-unit
