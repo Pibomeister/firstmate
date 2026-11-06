@@ -1135,9 +1135,12 @@ wd_quota_none_reason() {
 }
 
 wd_quota_relaunch_closes() {
-  local name=
-  [ -n "${O_PANE:-}" ] || return 1
-  name=$(fm_composer_blocking_dialog "$O_PANE" 2>/dev/null) || name=
+  local name screen=
+  # Same viewport as the dialog. Scrollback can still hold a dismissed Grok frame.
+  [ -n "${O_BACKEND:-}" ] && [ -n "${O_TARGET:-}" ] || return 1
+  screen=$(wd_view "$O_BACKEND" "$O_TARGET") || return 1
+  [ -n "$screen" ] || return 1
+  name=$(fm_composer_blocking_dialog "$screen" 2>/dev/null) || name=
   [ "$name" = 'Grok weekly-limit choice' ]
 }
 
