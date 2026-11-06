@@ -50,7 +50,7 @@ It changes no merge, release, or deploy gate.
 - EQ-5: A state change on a known incident sends one delta escalation with the old and new states.
 - EQ-6: A cleared incident sends one closure record and no further messages.
 - EQ-7: The dedupe record survives a supervisor restart.
-- EQ-8: Slack escalation stays off during quiet hours unless the exception is destructive, irreversible, or security-sensitive.
+- EQ-8: Slack escalation stays off during quiet hours with no exception. A destructive, irreversible, or security-sensitive exception holds for the next allowed window or the return brief, and quiet hours never pre-authorize it.
 - EQ-9: Quiet hours run from 22:00 to 08:00 every night in `America/Costa_Rica` time.
 - EQ-10: The weekend window runs from Friday 17:00 to Monday 08:00 in `America/Costa_Rica` time and replaces the nightly window inside that span.
 - EQ-11: Held messages collect into one digest at the next window end.
@@ -77,7 +77,7 @@ It changes no merge, release, or deploy gate.
 - AT-EQ-4: A restart of the supervisor mid-incident produces no duplicate escalation.
 - AT-EQ-5: A non-urgent exception at 23:00 on a Tuesday sends no Slack message and appears in the 08:00 digest.
 - AT-EQ-6: A non-urgent exception at 18:00 on a Friday appears in the Monday 08:00 digest.
-- AT-EQ-7: A destructive or security-sensitive exception during quiet hours sends at once.
+- AT-EQ-7: A destructive or security-sensitive exception during quiet hours sends no Slack message and appears in the next digest or the return brief.
 - AT-EQ-8: An incident that clears overnight appears once in the digest as cleared.
 - AT-EQ-9: Recovery actions during quiet hours run on their normal cadence with no Slack message.
 
@@ -87,7 +87,7 @@ It changes no merge, release, or deploy gate.
 - DR-EQ-2: Open an incident before quiet hours and hold it open and confirm one digest entry at window end.
 - DR-EQ-3: Clear an incident during quiet hours and confirm the digest marks it cleared with no separate message.
 - DR-EQ-4: Restart the supervisor during an open incident and confirm the dedupe record prevents a repeat.
-- DR-EQ-5: Raise a security-sensitive exception at night and confirm immediate delivery.
+- DR-EQ-5: Raise a security-sensitive exception at night and confirm no Slack message leaves before the window ends, the item appears in the next digest, and no action on it runs without a captain decision.
 
 ## Token economics
 
