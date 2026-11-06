@@ -19,6 +19,7 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-ready-pr-discovery.sh` | List read-only the no-mistakes runs parked with a PR ready or at a gate in every registered repo, owned or orphan |
 | `fm-context-burn.sh`     | Record each turn's external until-auto-compact percent, from the pane footer or else the transcript formula, and name a long report by path and sha256 |
 | `fm-context-footer-lib.sh` | Parse the external auto-compact footer percent shared by the heartbeat ledger and the context-burn recorder |
+| `fm-captain-inbox-lib.sh` | Compute the unread captain inbox note age shared by the heartbeat ledger and `fm-inbox.sh ready` |
 | `fm-home-summary-refresh.sh` | Atomically publish this home's structured summary ledger                         |
 | `fm-fleet-ledger.sh`     | Append the opt-in fleet activity ledger's records ([contract](fleet-ledger.md))      |
 | `fm-fleet-view.sh`       | Render the fleet snapshot, plus discovered ready PRs, as a human Markdown view       |
