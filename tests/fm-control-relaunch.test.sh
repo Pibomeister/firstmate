@@ -1350,6 +1350,77 @@ SH
   pass "fm-control relaunch: production ignores FM_QUOTA_REROUTE and uses the shipped helper"
 }
 
+seeded_secondmate_case() {  # <case-dir-name> <id> -> case dir with a cloned firstmate home
+  local dir id=$2
+  dir=$(new_case "$1" "$id")
+  git clone --local --quiet "$ROOT" "$dir/smhome" \
+    || fail "could not clone a firstmate home for $id"
+  mkdir -p "$dir/smhome/state" "$dir/smhome/data" "$dir/home/config" "$dir/home/data/$id"
+  printf '%s\n' "$id" > "$dir/smhome/.fm-secondmate-home"
+  printf '# secondmate brief\n' > "$dir/home/data/$id/brief.md"
+  make_claude_auth_stub "$dir"
+  {
+    echo "window=fmses:fm-$id"
+    echo "endpoint_task_id=$id"
+    echo "worktree=$dir/smhome"
+    echo "project=$dir/smhome"
+    echo "harness=claude"
+    echo "kind=secondmate"
+    echo "mode=secondmate"
+    echo "yolo=off"
+    echo "model=default"
+    echo "effort=default"
+    echo "home=$dir/smhome"
+  } > "$dir/home/state/$id.meta"
+  printf '%s\n' "fm-$id" > "$dir/fake/windows"
+  printf '%s' "$dir/smhome" > "$dir/fake/cwd"
+  printf 'codex' > "$dir/fake/becomes"
+  printf '%s\n' "$dir"
+}
+
+test_relaunch_off_claude_allows_an_unchanged_seeded_home() {
+  local dir out rc
+  dir=$(seeded_secondmate_case seed-allow rl-seed1)
+  out=$(run_control "$dir" rl-seed1 relaunch --harness codex); rc=$?
+  expect_code 0 "$rc" "an unchanged seeded home must be allowed to leave Claude"$'\n'"$out"
+  [ "$(meta_field "$dir" rl-seed1 harness)" = codex ] \
+    || fail "the replacement should land on the named harness"
+  pass "fm-control relaunch: an unchanged seeded firstmate home can move off Claude"
+}
+
+test_relaunch_off_claude_refuses_seeded_home_user_additions() {
+  local dir out rc settings
+  dir=$(seeded_secondmate_case seed-hook rl-seed2)
+  mkdir -p "$dir/smhome/.claude/hooks"
+  printf '%s\n' '{"hooks":{"Stop":[{}]}}' > "$dir/smhome/.claude/hooks/hooks.json"
+  out=$(run_control "$dir" rl-seed2 relaunch --harness codex); rc=$?
+  expect_code 1 "$rc" "a user hook in a seeded home must refuse the move"$'\n'"$out"
+  assert_contains "$out" "Claude-specific tooling present" "the refusal should name the tooling gate"
+  assert_contains "$out" "worktree .claude/hooks/hooks.json" "the refusal should name the added hook"
+  [ "$(cat "$dir/fake/command")" = claude ] \
+    || fail "a user-hook refusal must leave the old agent running"
+  rm -rf "$dir/smhome/.claude/hooks"
+
+  dir=$(seeded_secondmate_case seed-edit rl-seed3)
+  settings="$dir/smhome/.claude/settings.json"
+  jq 'del(.hooks) | .env.EDITED = "1"' "$settings" > "$dir/settings.edited"
+  mv "$dir/settings.edited" "$settings"
+  out=$(run_control "$dir" rl-seed3 relaunch --harness codex); rc=$?
+  expect_code 1 "$rc" "an edited seeded file must refuse the move"$'\n'"$out"
+  assert_contains "$out" "worktree .claude/settings.json" "the refusal should name the edited seed file"
+  [ "$(cat "$dir/fake/command")" = claude ] \
+    || fail "an edited-seed refusal must leave the old agent running"
+
+  dir=$(seeded_secondmate_case seed-mcp rl-seed4)
+  printf '%s\n' '{"mcpServers":{"docs":{"command":"true"}}}' > "$dir/smhome/.mcp.json"
+  out=$(run_control "$dir" rl-seed4 relaunch --harness codex); rc=$?
+  expect_code 1 "$rc" "user MCP in a seeded home must refuse the move"$'\n'"$out"
+  assert_contains "$out" "worktree .mcp.json" "the refusal should name the MCP file"
+  [ "$(cat "$dir/fake/command")" = claude ] \
+    || fail "an MCP refusal must leave the old agent running"
+  pass "fm-control relaunch: user hooks, seed edits, and MCP in a seeded home still refuse"
+}
+
 test_harness_switch_resolves_a_prefixed_recorded_harness() {
   local dir out rc auth
   dir=$(new_case prefixcontrol rl32)
@@ -4341,6 +4412,11 @@ SH
   pass "fm-control exit removes the dialog file before it releases the control lock"
 }
 
+if [ "$#" -gt 0 ]; then
+  fm_test_run "$@"
+  exit
+fi
+
 test_relaunch_off_opencode_removes_tracked_wiring
 test_exit_and_relaunch_remove_the_dialog_file
 test_exit_removes_the_dialog_file_before_releasing_the_lock
@@ -4372,6 +4448,8 @@ test_relaunch_off_claude_refuses_when_tooling_is_present
 test_relaunch_off_claude_refuses_an_unreadable_account_pin
 test_relaunch_off_claude_refuses_when_tooling_check_exits_2
 test_relaunch_off_claude_ignores_fm_quota_reroute_override
+test_relaunch_off_claude_allows_an_unchanged_seeded_home
+test_relaunch_off_claude_refuses_seeded_home_user_additions
 test_harness_switch_resolves_a_prefixed_recorded_harness
 test_prefixed_recorded_harness_requires_explicit_replacement
 test_same_harness_relaunch_keeps_the_profile_axes
