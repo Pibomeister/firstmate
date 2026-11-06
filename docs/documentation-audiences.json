@@ -489,6 +489,26 @@
       "audience": "maintainer-architecture"
     },
     {
+      "path": "docs/prd/supervision/escalation-quiet-hours.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "docs/prd/supervision/heartbeat-health.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "docs/prd/supervision/pr-check-monitoring.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "docs/prd/supervision/quota-account-routing.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "docs/prd/supervision/stall-context-recovery.md",
+      "audience": "maintainer-architecture"
+    },
+    {
       "path": "docs/remote-secondmates.md",
       "audience": "operator-current"
     },
