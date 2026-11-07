@@ -532,8 +532,10 @@ SECONDMATE_LIVENESS_WINDOW_SECS=${FM_SECONDMATE_LIVENESS_WINDOW_SECS:-}
 case "$SECONDMATE_LIVENESS_WINDOW_SECS" in ''|*[!0-9]*|0) SECONDMATE_LIVENESS_WINDOW_SECS=3600 ;; esac
 # A crew with a declared pause is idling on a known external wait, so its stale
 # pane is absorbed rather than wedge-escalated.
-# A captain-held or paused crew whose agent has confidently exited uses the same
-# bounded cadence, while a live or ambiguously read agent surfaces on first sight
+# A captain-held crew whose agent has confidently exited uses the same
+# bounded cadence, while a paused crew whose endpoint is confidently dead is
+# NOT a pause at all: it takes the ordinary stale path so the death is seen.
+# A live or ambiguously read agent surfaces on first sight
 # and is then held to that same cadence; a secondmate earns the cadence on its
 # declaration alone, because its endpoint liveness is deliberately never read
 # (pause_state_class owns that split).
@@ -1845,7 +1847,7 @@ wait_record() {  # <kind> <subject> <whom> <action> <age-record>
 # window per STALE_ESCALATE_SECS, never on an ordinary poll.
 WEDGE_BACKLOG_HOLD_KIND='captain hold'
 wedge_wait_evidence() {  # <task> -> one wait_record on stdout
-  local task=$1 last until statusf run verb
+  local task=$1 last until statusf run verb win agent_alive
   [ -n "$task" ] || return 1
   statusf="$STATE/$task.status"
   last=$(status_declared_wait_line "$statusf")
@@ -1856,9 +1858,21 @@ wedge_wait_evidence() {  # <task> -> one wait_record on stdout
   fi
   if status_is_paused "$last" \
     && { ! until=$(status_paused_until "$last") || [ "$(fm_watch_now)" -lt "$until" ]; }; then
-    wait_record 'declared wait' 'awaiting external' \
-      external 'confirm the wait still holds' "$statusf"
-    return 0
+    # A confidently dead endpoint behind a `paused:` line is not a wait: it
+    # supplies no wait evidence, so the ladder falls through to its dead-record
+    # probe instead of deferring the death on the pause cadence (Refs #149).
+    # A captain-held transfer above keeps its evidence even after its agent
+    # exits, and any other captain call below still bounds the ladder.
+    win=$(sed -n 's/^window=//p' "$STATE/$task.meta" 2>/dev/null | tail -1)
+    agent_alive=unknown
+    if [ -n "$win" ]; then
+      agent_alive=$(fm_backend_agent_alive "$(window_backend "$win")" "$win" 2>/dev/null) || agent_alive=unknown
+    fi
+    if [ "$agent_alive" != dead ]; then
+      wait_record 'declared wait' 'awaiting external' \
+        external 'confirm the wait still holds' "$statusf"
+      return 0
+    fi
   fi
   if task_captain_call_open "$task"; then
     wait_record "$WEDGE_BACKLOG_HOLD_KIND" 'awaiting the captain - held in the backlog' \
@@ -2768,17 +2782,23 @@ external_pr_check_pause_notice() {  # <window> <task>
 
 # Reconcile a declared pause or captain-held status with authoritative crew state.
 # After fm-crew-state has fallen back to stopped or unknown, paused classification is
-# recovered only for a confidently dead ordinary crew, or for a secondmate, whose
-# endpoint liveness this function deliberately never reads.
-# Sets PAUSE_CLASS to working|paused|none, and PAUSE_CREW_LINE to the
+# recovered only for a confidently dead captain-held crew, or for a secondmate, whose
+# endpoint liveness this function deliberately never reads. A `paused:` crew whose
+# endpoint is confidently dead is not recovered as a pause: PAUSE_CLASS stays none,
+# so the caller routes it to the ordinary stale path and the death is surfaced
+# instead of being rechecked on the long pause cadence forever (Refs #149).
+# Sets PAUSE_CLASS to working|paused|none, PAUSE_AGENT_ALIVE to the backend
+# liveness verdict it read (unknown when it read none), and PAUSE_CREW_LINE to the
 # fm-crew-state.sh line it read - empty when it answered from the recheck window
 # without a read - so that one read also serves parked_gate_notice below.
 PAUSE_CLASS=none
 PAUSE_CREW_LINE=
+PAUSE_AGENT_ALIVE=unknown
 pause_state_class() {  # <window> <task>
   local win=$1 task=$2 key last recheck_file agent_alive kind
   PAUSE_CLASS=none
   PAUSE_CREW_LINE=
+  PAUSE_AGENT_ALIVE=unknown
   key=$(window_key "$win")
   last=$(status_declared_wait_line "$STATE/$task.status")
   recheck_file="$STATE/.paused-rechecked-$key"
@@ -2795,7 +2815,14 @@ pause_state_class() {  # <window> <task>
   if [ -e "$STATE/.paused-$key" ] && [ "$(age_of "$recheck_file")" -lt "$STALE_ESCALATE_SECS" ]; then
     if [ "$kind" != secondmate ]; then
       agent_alive=$(fm_backend_agent_alive "$(window_backend "$win")" "$win" 2>/dev/null) || agent_alive=unknown
+      PAUSE_AGENT_ALIVE=$agent_alive
       if [ "$agent_alive" != dead ]; then
+        rm -f "$recheck_file"
+        return 0
+      fi
+      # Confidently dead behind a `paused:` line: not a pause. Only a
+      # captain-held transfer keeps the bounded cadence after its agent exits.
+      if ! status_is_captain_held "$last"; then
         rm -f "$recheck_file"
         return 0
       fi
@@ -2811,15 +2838,23 @@ pause_state_class() {  # <window> <task>
   fi
   if [ "$kind" != secondmate ]; then
     agent_alive=$(fm_backend_agent_alive "$(window_backend "$win")" "$win" 2>/dev/null) || agent_alive=unknown
+    PAUSE_AGENT_ALIVE=$agent_alive
     if [ "$agent_alive" != dead ]; then
+      rm -f "$recheck_file"
+      PAUSE_CLASS=none
+      return 0
+    fi
+    # Confidently dead behind a `paused:` line: not a pause, whatever crew
+    # state fell back to. Only a captain-held transfer is recovered below.
+    if ! status_is_captain_held "$last"; then
       rm -f "$recheck_file"
       PAUSE_CLASS=none
       return 0
     fi
   fi
   # Recover paused classification for a declared wait that authoritative crew state
-  # could not name. Reaching here already proves the only two admissible cases: an
-  # ordinary crew whose agent the gate above confirmed dead, so no live decision gate
+  # could not name. Reaching here already proves the only two admissible cases: a
+  # captain-held crew whose agent the gate above confirmed dead, so no live decision gate
   # is being silenced, or a secondmate, whose endpoint liveness is deliberately never
   # read and so cannot supply that confirmation. Without the mate case a mate's
   # status-declared `captain-held` transfer - which has no current-state mapping
@@ -5111,7 +5146,17 @@ EOF
                          printf '%s' "$h" > "$sf"
                          wedge_timer_check "$w" "$ssf" "non-terminal stale (provably working after a declared pause)" "$ewf" "$task" "$h" "$dialog"
                          triage_log "absorbed non-terminal stale (provably working): $w" ;;
-                *)       handle_paused_stale "$w" "$task" "$h" ;;
+                # A confidently dead `paused:` crew (PAUSE_AGENT_ALIVE=dead)
+                # is not held to the pause cadence on this already-seen hash
+                # either: it re-enters the ordinary stale surface, whose own
+                # declaration throttle bounds its repeats. A live or
+                # ambiguously read paused crew keeps the cadence fallback.
+                *)       if [ "$PAUSE_AGENT_ALIVE" = dead ] \
+                           && status_is_paused "$(status_declared_wait_line "$STATE/$task.status")"; then
+                           surface_nonterminal_stale "$w" "$h" "$dialog"
+                         else
+                           handle_paused_stale "$w" "$task" "$h"
+                         fi ;;
               esac
             else
               wedge_timer_check "$w" "$ssf" "non-terminal stale" "$ewf" "$task" "$h" "$dialog"
