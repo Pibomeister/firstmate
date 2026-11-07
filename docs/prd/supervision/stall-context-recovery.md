@@ -95,7 +95,7 @@ The status-line percentage never gates anything.
 ## Startup and handoff churn
 
 - SC-21: Startup tokens are measured per session from transcript usage, with the startup turns flagged in a per-session token ledger.
-- The session-start path writes that ledger.
+- The turn-end recorder writes that ledger: the turn-end guard (`bin/fm-turnend-guard.sh`) calls `bin/fm-context-burn.sh record`, which already classifies the startup turn, and it writes one row at the end of each startup turn from transcript usage.
 - Each row holds the session id, the harness, the first-turn tokens, the post-digest tokens, the handoff document bytes, and the turn type.
 - SC-22: `config/startup-token-budget` sets the startup token budget, kept separate from `config/startup-memory-budget`, and a session over budget reports one gap with the measured value.
 - SC-23: The levers on startup load are the fixed instruction prefix and the session-start digest, and each change reports its measured token delta.
