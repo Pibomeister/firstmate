@@ -3420,7 +3420,7 @@ SH
   transcript 100 "Working."
   H=$parent
   HOME="$user" run_wd 0 once >/dev/null 2>&1 || fail "orca feedback dismiss pass failed"
-  assert_equals 1 "$(ledger_rows dialog key done)" \
+  assert_equals 1 "$(ledger_rows dialog key "done")" \
     "a dismissed Orca feedback survey must record done, not failed: $(ledger | cut -f5-8)"
   assert_equals 0 "$(ledger_rows dialog key failed)" \
     "a dismissed Orca feedback survey must not record failed: $(ledger | cut -f5-8)"
