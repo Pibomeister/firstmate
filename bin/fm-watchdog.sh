@@ -454,7 +454,7 @@ EOF
     O_SIG=$(wd_pane_sig "$O_PANE")
     if [ "$O_SIG" = "$p_sig" ] && [ -n "$p_since" ]; then O_PANE_STATIC=$((now - p_since)); else p_since=$now; fi
     O_DIALOG=$(wd_observe_dialog "$O_BACKEND" "$O_TARGET") || O_DIALOG=''
-    view=$(wd_view "$O_BACKEND" "$O_TARGET") || view=''
+    view=$(wd_view "$O_BACKEND" "$O_TARGET") || view=$O_PANE
     if [ "$parent" = - ] && fm_wd_usage_limit_autowait "$view"; then O_AUTOWAIT=1; fi
     wd_read_composer
     O_TURN=$(wd_turn_running "$O_BACKEND" "$O_TARGET" "$O_PANE")
