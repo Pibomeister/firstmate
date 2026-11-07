@@ -93,11 +93,31 @@ The status-line percentage never gates anything.
 ## Startup and handoff churn
 
 - SC-21: Startup tokens are measured per session from transcript usage, with the startup turns flagged in a per-session token ledger.
-- SC-22: One config owner sets the startup token budget, and a session over budget reports one gap with the measured value.
+- The session-start path writes that ledger.
+- Each row holds the session id, the harness, the first-turn tokens, the post-digest tokens, the handoff document bytes, and the turn type.
+- SC-22: `config/startup-token-budget` sets the startup token budget, kept separate from `config/startup-memory-budget`, and a session over budget reports one gap with the measured value.
 - SC-23: The levers on startup load are the fixed instruction prefix and the session-start digest, and each change reports its measured token delta.
-- SC-24: A handoff document is capped in size at the handoff record point, and an over-cap record refuses until the document fits.
-- SC-25: A cross-session minimum handoff interval stops hourly churn under normal load, and only a dead-session verdict bypasses it.
+- SC-24: A handoff document is capped in size at `bin/fm-order.sh handoff --doc`, and an over-cap record refuses until the document fits.
+- The watchdog restart handoff (`bin/fm-watchdog.sh:745`) carries the same cap.
+- SC-25: A cross-session minimum handoff interval stops hourly churn under normal load.
+- Inside the interval, the low-context trigger defers its handoff and writes one `context-churn` incident to the escalation gate.
+- The restart floor (`restart-at-percent`) and a dead-session verdict bypass the interval.
 - SC-26: Every handoff writes one row to the restart ledger, so churn is countable per home per day.
+
+### Provisional churn values
+
+These values are provisional and tunable by super-bound.
+
+| Value | Provisional setting |
+| --- | --- |
+| Startup token budget | 105,000 tokens per session, counting the first turn plus the post-digest context |
+| Handoff document cap | 16 KiB at `bin/fm-order.sh handoff --doc` |
+| Minimum handoff interval | `restart-secs` 7200, the existing watchdog spacing (`docs/watchdog.md:105`) |
+| Away soak | N = 8 hours away, at most 4 handoffs, one per interval |
+
+Normal load means the load profile recorded with the soak: the number of live workers and the wake rate per hour.
+The soak passes when the handoff count is at most the target, and every session's startup tokens are at most the budget and at most the baseline median.
+The baseline is one soak with the same load profile on the pre-change code.
 
 ## Incident keys
 
@@ -123,7 +143,7 @@ Session start reports each uncovered harness once per home.
 | Frozen, loop, unread, and unsent detection | `bin/fm-watchdog.sh` for Claude subjects, filesystem activity evidence otherwise | Nudge, then request restart |
 | Accepted-without-a-turn detection | The steering inbox re-ring ladder for workers, `bin/fm-watchdog.sh` for supervisor sessions with a proven turn signal | Nudge once, then escalate |
 | Successor launch | The predecessor self-launch in `bin/fm-handoff-trigger.sh` (Firstmate PR #156) for a Claude primary low-context handoff that can still take a turn; the watchdog restart path in `bin/fm-watchdog.sh`, through `restart-command`, for frozen, agent-gone, and restart-requested primaries that cannot launch themselves; `bin/fm-control.sh relaunch` for workers and second mates | Launch one successor and name the launching component in the restart ledger owner field |
-| Predecessor termination | The watchdog restart path for primaries | On the handoff path, end only with a live successor recorded; otherwise end before the watchdog launches the successor |
+| Predecessor termination | The watchdog restart path for primaries when it runs in `act` mode with restart on; otherwise the configured external ender, a leash or operator `/exit`, mirroring `heartbeat-health.md` | On the handoff path, end only with a live successor recorded; otherwise end before the watchdog launches the successor. The two enders are never enabled together for one home, and the acting ender is recorded in the restart ledger owner field. When neither is configured, SC-14 raises one blocked record naming the live predecessor |
 | Post-stop pickup verification | The watchdog reconcile path | Report the `dead` verdict on failure |
 | Claude primary handoff percentage | `bin/fm-handoff-trigger.sh`, acting on the derived token percentage | Ask for a handoff |
 | Restart percentage for sessions with no derived reading | The watchdog restart path, acting on the pane footer percentage | Ask for a handoff, then request restart |
@@ -143,9 +163,10 @@ Session start reports each uncovered harness once per home.
 - AT-SC-8: A stop with a live successor completes and the recheck passes.
 - AT-SC-9: A successor that exits before the recheck raises exactly one blocked record.
 - AT-SC-10: Both low-context paths armed on one Claude primary produce one handoff, not two.
-- AT-SC-11: An N-hour away-mode soak holds handoffs at or under the target and startup tokens at or under the budget, both measured against the recorded baseline.
+- AT-SC-11: An 8-hour away-mode soak holds handoffs at or under 4 and every session's startup tokens at or under 105,000 and at or under the baseline median from one same-profile soak on pre-change code.
 - AT-SC-12: A pending unsent draft defers a restart and loses no draft text.
 - AT-SC-13: Existing suites `tests/fm-handoff-trigger.test.sh` and `tests/fm-crew-state.test.sh` still pass.
+- AT-SC-14: A session that reaches the low-context trigger inside the interval writes one `context-churn` incident and no handoff, and at the restart floor it hands off.
 
 ## Failure-injection and recovery drills
 
@@ -191,5 +212,8 @@ No savings figure is stated until both windows exist.
 | SC-F5 | B gemini-argon | Token baseline measures session transcripts by turn type | Token economics |
 | SC-F6 | B gemini-argon | Restart defers on a pending unsent draft | SC-18, AT-SC-12 |
 | SC-F7 | B gemini-argon | Usage-limit check before any successor spawn | SC-20 |
+| F-SC-1 | FINAL opus-5-5 | Provisional churn values, pass rule, normal-load profile, `config/startup-token-budget`, and token ledger writer and fields added | SC-21, SC-22, SC-24, Provisional churn values, AT-SC-11 |
+| F-SC-2 | FINAL opus-5-5 | Inside the interval the trigger defers and writes one `context-churn` incident; the restart floor and a dead verdict bypass the interval | SC-25, AT-SC-14 |
+| F-SC-3 | FINAL opus-5-5 | External-ender branch added, recorded in the restart ledger owner field; with no ender SC-14 raises one blocked record | Ownership, SC-14 |
 
 Status: FINAL. Every BLOCKING finding from both Stage 2 reviews is closed above.

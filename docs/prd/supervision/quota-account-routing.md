@@ -59,7 +59,12 @@ It changes no merge, release, or deploy gate and authorizes no new spend.
 - QA-15: One per-task move budget bounds moves, and no move returns to a runtime before its reset.
 - QA-16: The provider of a candidate comes from the harness catalog, and an unproven provider reads as unmeasured headroom.
 - QA-17: One snapshot file per incident serves detection, selection, and the relaunch check, and the move record references it.
+- The snapshot is `state/quota-incidents/<incident-key>.json`, written once by the detecting owner at detection.
+- Selection and the relaunch check read it, and a fresh recheck (QA-12) writes a new snapshot rather than editing it.
+- The heartbeat allowance read (`bin/fm-heartbeat.sh:642`) is display-only and never drives a move.
 - QA-18: Dispatch rules and watchdog reroute candidates read one candidate source, and captain-approval rules keep their gate on every path.
+- The candidate source is crew-dispatch resolution (`bin/fm-dispatch-resolve.sh`).
+- `reroute-candidates` is read only on a home with no crew-dispatch configuration, and never moves a task whose rule carries `approval: "captain"`.
 - QA-19: A quota-limited primary raises one exception that names the reset time and the pin decision, and no automated move touches it.
 - QA-20: Every move writes one row to the shared restart ledger and counts against the per-subject budget.
 
@@ -81,7 +86,7 @@ No path guesses headroom from a harness or model name.
 
 | Signal | Single owner | Permitted action |
 | --- | --- | --- |
-| Quota evidence | The `quota-axi` snapshot captured at intake or at detection | Report runway only |
+| Quota evidence | The `quota-axi` snapshot captured at detection | Report runway only |
 | Eligibility selection | `bin/fm-quota-reroute.sh suggest` | Name one candidate or `none` |
 | Move execution | `bin/fm-control.sh relaunch` under supervisor instruction | Stop and relaunch the worker |
 | Watchdog quota observation | `bin/fm-watchdog.sh` | Write a ledger row and name the candidate |
@@ -142,6 +147,7 @@ No savings figure is stated until both windows exist.
 | QA-F3 | B gemini-argon | Earliest reset emitted and worker modal panes nudged once | QA-10, QA-11 |
 | QA-F4 | B gemini-argon | One candidate source for dispatch and watchdog paths | QA-18 |
 | QA-F5 | B gemini-argon | Token baseline measures dispatch and relaunch session turns | Token economics |
+| F-QA-1 | FINAL opus-5-5 | Crew-dispatch resolution named as the candidate source with `reroute-candidates` only as a fallback that never moves a captain-approval task; snapshot at `state/quota-incidents/<key>.json` written at detection; heartbeat allowance display-only | QA-17, QA-18, Ownership |
 
 Status: FINAL. Every BLOCKING finding from both Stage 2 reviews is closed above.
 

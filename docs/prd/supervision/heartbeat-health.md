@@ -63,18 +63,26 @@ Any requirement on that loop is a dependency to confirm with its owner, not a cl
 - HB-6: A dead lock owner reports `dead` even when the last heartbeat still reads fresh.
 - HB-7: An unconfirmed lock owner reports `unconfirmed` and receives no typed signal and no restart.
 - HB-8: A captain record of `none` with open work or an away record maps to `dead`.
+- "`none` with no open work and no away record reports `ok` (idle)."
+- Open work means the `heartbeat_open_work` test (`bin/fm-watch.sh:3873-3888`) without its secondmate-home exclusion.
 - HB-9: An unread heartbeat field reports `unknown` for that field and never upgrades the verdict.
 - HB-10: The named record `.last-heartbeat` never feeds the verdict.
 - HB-11: Watcher polling progress comes from `state/.last-watcher-beat`, with the mid-turn and idle-home exemptions preserved.
 - HB-12: Loss of polling progress for two poll cycles raises one gap record and no duplicate.
-- HB-13: One escalation owner reads `state/.monitor-watchdog-alert` for watcher freshness and no second path pages for the same signal.
-- HB-14: The outer guard restarts under a budget with backoff, and an exhausted budget writes one escalated marker and stops.
-- HB-15: Each layer is checked by exactly one layer above it, and the outer guard status has one named reader.
+- HB-13: The monitor's `watchdog_alert` (`bin/fm-monitor-watchdog.sh:136-158`) is the one sender for watcher freshness, routed through the escalation gate under class `watcher-recovery-failed`, and no second path pages for the same signal.
+- While `state/.monitor-watchdog-alert` exists, the watchdog's heartbeat-age watcher gap is status-only and sends no page.
+- HB-14: The outer guard restarts under a budget with backoff.
+- The budget persists in a state marker, for example `state/.monitor-watchdog-budget`, with `count` and `window_start`, so a service relaunch never resets it.
+- An exhausted budget writes one escalated marker, and while that marker exists the service stays alive and idle and restarts nothing until the marker clears.
+- HB-15: Each layer is checked by exactly one layer above it, in the chain monitor unit, then watcher arm, then heartbeat, then watchdog.
+- `bin/fm-watchdog.sh` runs `fm-monitor-watchdog.sh manager-status` on each pass and folds a missing or disabled unit into `unknown` with the layer named.
+- When the watchdog is absent, session start runs the same check once.
 - HB-16: Exactly one restarter owns a dead primary per home, and every restarter checks the shared restart ledger before acting.
 - HB-17: Self-heal restarts only the failed layer and never restarts a healthy session above it.
 - HB-18: Every health transition is reported to the escalation gate, which writes one row to the shared incident ledger that a later pass can dedupe against.
 - HB-19: A heartbeat that names the lock session and is no older than the lock write updates the captain record even when a watcher or daemon wrote it.
-- HB-20: Second-mate endpoint comparison runs whenever the parent record and a fresh child heartbeat both exist.
+- HB-20: Second-mate endpoint comparison runs only when the child heartbeat names the child's lock session (`hb_sid` equals the lock session) and `hb_at` is at or after `lock_at`, per `bin/fm-watchdog.sh:378-385`.
+- During a mismatch the parent record wins, per `docs/watchdog.md:177`.
 
 ## Incident keys
 
@@ -100,7 +108,7 @@ Rollout per host requires the watchdog in `act` mode with its status reader enab
 | Heartbeat publication and `stale_after_secs` | `bin/fm-heartbeat.sh --write`, started by the watcher poll | Publish `state/heartbeat.json` |
 | Lock liveness verdict | The shared lock contract in `bin/fm-session-lock-lib.sh`, surfaced by `state/watchdog/captain` | Report `live`, `dead`, `unconfirmed`, or `none` |
 | Watcher polling liveness | `bin/fm-supervise-daemon.sh` and the process manager unit from `bin/fm-monitor-watchdog.sh` | Restart the watcher arm only |
-| Watcher freshness escalation | The one reader of `state/.monitor-watchdog-alert` | Report one gap per home |
+| Watcher freshness escalation | The monitor's `watchdog_alert` in `bin/fm-monitor-watchdog.sh`, through the escalation gate under class `watcher-recovery-failed` | Report one gap per home |
 | Health verdict | `bin/fm-watchdog.sh` | Record the verdict and at most one escalation |
 | Dead primary restart | The watchdog agent-gone restart in `bin/fm-watchdog.sh`, which launches the successor through `restart-command`, when `restart` is on; otherwise an external restarter under the `docs/watchdog.md` captain-record contract for a supervisor that restarts captains itself; when neither is configured, one escalation and no restart. The two restarters are never enabled together for one home, and the acting one is named in the restart ledger owner field | Restart once inside budget |
 | External poll loop | The external Orca watchdog owner | Poll and beacon only |
@@ -118,10 +126,13 @@ No second component restarts, types into, or re-arms a layer another row owns.
 - AT-HB-7: A watcher process that stops advancing its poll marker produces one gap after two cycles.
 - AT-HB-8: Recovery of each layer returns the verdict to `ok` without a manual record edit.
 - AT-HB-9: A supervisor turn longer than the stale bound produces no stale verdict and no gap.
-- AT-HB-10: A captain record of `none` with open work produces `dead`.
-- AT-HB-11: Outer guard restarts stop at the budget and write one escalated marker.
+- AT-HB-10: A captain record of `none` with open work produces `dead`, and `none` with no open work and no away record produces `ok` (idle).
+- AT-HB-11: Outer guard restarts stop at the budget and write one escalated marker, and a service relaunch after exhaustion restarts nothing further while the marker exists.
 - AT-HB-12: Two restarter paths armed on one dead primary produce exactly one restart.
 - AT-HB-13: Existing suites `tests/fm-heartbeat.test.sh` and `tests/fm-watchdog.test.sh` still pass.
+- AT-HB-14: A disabled monitor unit yields `unknown` naming the outer guard within one watchdog pass.
+- AT-HB-15: A child heartbeat from a prior session yields no endpoint mismatch.
+- AT-HB-16: A current-session child heartbeat that names a new pane updates the captain record.
 
 ## Failure-injection and recovery drills
 
@@ -167,6 +178,11 @@ No savings figure is stated until both windows exist.
 | HB-F2 | B gemini-argon | Ownership partitioned by exact signal across watchdog, daemon, and monitor | Ownership |
 | HB-F3 | B gemini-argon | Token baseline measures session transcript tokens by turn type | Token economics |
 | HB-F4 | B gemini-argon | Endpoint comparison runs whenever both records exist with fresh child heartbeat | HB-20 |
+| F-HB-1 | FINAL opus-5-5 | Monitor `watchdog_alert` named as the one sender through the gate under class `watcher-recovery-failed`; watchdog gap status-only while the alert exists | HB-13, Ownership |
+| F-HB-2 | FINAL opus-5-5 | Watchdog runs `manager-status` each pass and folds a missing unit into `unknown`; session start does the same when the watchdog is absent | HB-15, AT-HB-14 |
+| F-HB-3 | FINAL opus-5-5 | Restart budget persisted in a state marker; the service stays alive and idle while the marker exists | HB-14, AT-HB-11 |
+| F-HB-4 | FINAL opus-5-5 | `none` with no open work and no away record reports `ok` (idle); open work defined as `heartbeat_open_work` without its secondmate exclusion | HB-8, AT-HB-10 |
+| F-HB-5 | FINAL opus-5-5 | Same-session provenance required for endpoint comparison and parent-record precedence during a mismatch | HB-20, AT-HB-15, AT-HB-16 |
 | HB-F5 | B gemini-argon | Heartbeat naming the lock session updates the captain record | HB-19 |
 
 Status: FINAL. Every BLOCKING finding from both Stage 2 reviews is closed above.
