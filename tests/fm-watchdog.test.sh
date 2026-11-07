@@ -3583,6 +3583,26 @@ test_primary_usage_limit_autowait_pages_once() {
 
 wd_pid_alive_check() { kill -0 "$1" 2>/dev/null; }
 
+test_primary_autowait_side_checks_type_nothing_and_file_no_issue() {
+  make_home $'work output\nUsage limit reached. Continuing automatically at 4:00 AM\n❯ \n  ? for shortcuts' 'issue-repo=example.invalid/owner/repo'
+  transcript 100 "Working."
+  : > "$H/state/.afk"
+  printf '999999\n' > "$H/state/.supervise-daemon.pid"
+  printf 'needs-decision [at=%s] [key=cache-layout]: A or B?\n' "$((BASE - 9000))" > "$H/state/t1.status"
+  printf 'paused [at=%s]: hit the quota floor\n' "$((BASE - 9000))" > "$H/state/q1.status"
+  printf "command:cat >> '%s'\n" "$H/paged.log" > "$H/config/wedge-alarm"
+  local off
+  for off in 0 1000 2000 3000 4000 8000 12000; do
+    run_wd "$off" once >/dev/null 2>&1 || fail "auto-wait pass at +${off}s failed"
+  done
+  assert_equals 7 "$(ledger_rows usage-limit-autowait page pending)" "each window pages the owner: $(ledger | cut -f4-8)"
+  assert_equals 0 "$(ledger | awk -F'\t' '$6 == "nudge"' | wc -l | tr -d ' ')" "a side check nudged an auto-wait primary: $(ledger | cut -f4-8)"
+  assert_equals 0 "$(ledger | awk -F'\t' '$6 == "council"' | wc -l | tr -d ' ')" "a council ran for an auto-wait primary: $(ledger | cut -f4-8)"
+  assert_equals 0 "$(ledger | awk -F'\t' '$6 == "self-heal"' | wc -l | tr -d ' ')" "a long auto-wait filed a self-heal issue: $(ledger | cut -f4-8)"
+  [ ! -s "$H/typed.log" ] || fail "the watchdog typed into an auto-wait pane: $(cat "$H/typed.log")"
+  pass "usage-limit auto-wait: a dead away daemon, an aged decision, and a quota floor type nothing, and hours of pages file no issue"
+}
+
 test_primary_ordinary_idle_is_not_paged() {
   make_home $'Captain session\n❯ \n  ? for shortcuts'
   transcript 100 "Working."
@@ -3690,6 +3710,7 @@ fm_test_run \
   test_blank_tmux_viewport_is_none_not_usage_limit \
   test_quota_axi_failure_is_cached_for_the_pass \
   test_primary_usage_limit_autowait_pages_once \
+  test_primary_autowait_side_checks_type_nothing_and_file_no_issue \
   test_primary_ordinary_idle_is_not_paged \
   test_unknown_composer_guards_the_nudge \
   test_orca_turn_probe_keeps_errors_unknown \
