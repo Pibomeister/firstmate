@@ -58,9 +58,11 @@ It changes no merge, release, or deploy gate and authorizes no new spend.
 - QA-14: Every move writes one record with the from-runtime, the to-runtime, and the snapshot reference.
 - QA-15: One per-task move budget bounds moves, and no move returns to a runtime before its reset.
 - QA-16: The provider of a candidate comes from the harness catalog, and an unproven provider reads as unmeasured headroom.
-- QA-17: One snapshot file per incident serves detection, selection, and the relaunch check, and the move record references it.
-- The snapshot is `state/quota-incidents/<incident-key>.json`, written once by the detecting owner at detection.
-- Selection and the relaunch check read it, and a fresh recheck (QA-12) writes a new snapshot rather than editing it.
+- QA-17: One snapshot file per incident serves detection and selection, and one separate recheck snapshot file serves each fresh recheck.
+- The detection snapshot is `state/quota-incidents/<incident-key>.json`, written once by the detecting owner at detection.
+- Each recheck snapshot is `state/quota-incidents/<incident-key>.<n>.json`, where `<n>` increases per recheck, and no snapshot is edited after it is written.
+- The QA-14 move record references the snapshot that authorized the move, whether that snapshot is the detection snapshot or a recheck snapshot.
+- Selection and the relaunch check read the snapshot named by the move record, and a fresh recheck (QA-12) writes a new recheck snapshot rather than editing any earlier snapshot.
 - The heartbeat allowance read (`bin/fm-heartbeat.sh:642`) is display-only and never drives a move.
 - QA-18: Dispatch rules and watchdog reroute candidates read one candidate source, and captain-approval rules keep their gate on every path.
 - The candidate source is crew-dispatch resolution (`bin/fm-dispatch-resolve.sh`).

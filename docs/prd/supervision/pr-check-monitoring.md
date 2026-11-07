@@ -73,7 +73,8 @@ It changes no merge, release, or deploy gate and never merges on its own authori
 ## Owner absence
 
 Watch owner is `bin/fm-pr-check-watch.sh` and discovery owner is `bin/fm-ready-pr-discovery.sh`.
-When the forge cannot be read, watches back off and discovery marks the affected PR `unknown`.
+A rate-limit response backs off to its reset time (PM-15), and any other read error ends the watch with an error record (PM-4).
+When the forge cannot be read, discovery marks the affected PR `unknown`.
 No path polls the forge by hand outside its budget.
 
 ## Ownership

@@ -70,7 +70,7 @@ Any requirement on that loop is a dependency to confirm with its owner, not a cl
 - HB-11: Watcher polling progress comes from `state/.last-watcher-beat`, with the mid-turn and idle-home exemptions preserved.
 - HB-12: Loss of polling progress for two poll cycles raises one gap record and no duplicate.
 - HB-13: The monitor's `watchdog_alert` (`bin/fm-monitor-watchdog.sh:136-158`) is the one sender for watcher freshness, routed through the escalation gate under class `watcher-recovery-failed`, and no second path pages for the same signal.
-- While `state/.monitor-watchdog-alert` exists, the watchdog's heartbeat-age watcher gap is status-only and sends no page.
+- The watchdog's heartbeat-age watcher gap is always status-only and never pages.
 - HB-14: The outer guard restarts under a budget with backoff.
 - The budget persists in the state marker `state/.monitor-watchdog-budget`, with `count` and `window_start`, so a service relaunch never resets it.
 - An exhausted budget writes one escalated marker, and while that marker exists the service stays alive and idle and restarts nothing until the marker clears.
@@ -80,8 +80,11 @@ Any requirement on that loop is a dependency to confirm with its owner, not a cl
 - HB-16: Exactly one restarter owns a dead primary per home, and every restarter checks the shared restart ledger before acting.
 - HB-17: Self-heal restarts only the failed layer and never restarts a healthy session above it.
 - HB-18: Every health transition is reported to the escalation gate, which writes one row to the shared incident ledger that a later pass can dedupe against.
-- HB-19: A heartbeat that names the lock session and is no older than the lock write updates the captain record even when a watcher or daemon wrote it.
-- HB-20: Second-mate endpoint comparison runs only when the child heartbeat names the child's lock session (`hb_sid` equals the lock session) and `hb_at` is at or after `lock_at`, per `bin/fm-watchdog.sh:378-385`.
+- HB-19: A heartbeat updates the captain record only when its writer runs inside the lock owner.
+- The writer test is the writer anchor pid equals the lock pid, or the writer trusted session id equals the lock session, per `bin/fm-watchdog.sh:384-387` and `docs/watchdog.md:174-176`.
+- A heartbeat written outside the lock owner, such as by a watcher or daemon in its own terminal, updates no terminal in the captain record.
+- Daemon-written heartbeats are supported only when the heartbeat carries the owner's terminal separately from the writer's terminal, and the writer's own terminal is still refused.
+- HB-20: Second-mate endpoint comparison runs only when the child heartbeat names the child's lock session (`hb_sid` equals the lock session), `hb_at` is at or after `lock_at`, and its writer runs inside the lock owner (writer anchor pid equals the lock pid, or writer trusted session id equals the lock session), per `bin/fm-watchdog.sh:378-387`.
 - During a mismatch the parent record wins, per `docs/watchdog.md:177`.
 
 ## Incident keys
@@ -133,6 +136,7 @@ No second component restarts, types into, or re-arms a layer another row owns.
 - AT-HB-14: A disabled monitor unit yields `unknown` naming the outer guard within one watchdog pass.
 - AT-HB-15: A child heartbeat from a prior session yields no endpoint mismatch.
 - AT-HB-16: A current-session child heartbeat that names a new pane updates the captain record.
+- AT-HB-17: A daemon-written heartbeat that names the lock session does not change the captain record's terminal.
 
 ## Failure-injection and recovery drills
 
@@ -178,8 +182,8 @@ No savings figure is stated until both windows exist.
 | HB-F2 | B gemini-argon | Ownership partitioned by exact signal across watchdog, daemon, and monitor | Ownership |
 | HB-F3 | B gemini-argon | Token baseline measures session transcript tokens by turn type | Token economics |
 | HB-F4 | B gemini-argon | Endpoint comparison runs whenever both records exist with fresh child heartbeat (superseded by F-HB-5) | HB-20 |
-| HB-F5 | B gemini-argon | Heartbeat naming the lock session updates the captain record | HB-19 |
-| F-HB-1 | FINAL opus-5-5 | Monitor `watchdog_alert` named as the one sender through the gate under class `watcher-recovery-failed`; watchdog gap status-only while the alert exists | HB-13, Ownership |
+| HB-F5 | B gemini-argon | Heartbeat naming the lock session updates the captain record only when its writer runs inside the lock owner, and a writer outside the owner updates no terminal | HB-19, HB-20 |
+| F-HB-1 | FINAL opus-5-5 | Monitor `watchdog_alert` named as the one sender through the gate under class `watcher-recovery-failed`; watchdog gap always status-only and never pages | HB-13, Ownership |
 | F-HB-2 | FINAL opus-5-5 | Watchdog runs `manager-status` each pass and folds a missing unit into `unknown`; session start does the same when the watchdog is absent | HB-15, AT-HB-14 |
 | F-HB-3 | FINAL opus-5-5 | Restart budget persisted in a state marker; the service stays alive and idle while the marker exists | HB-14, AT-HB-11 |
 | F-HB-4 | FINAL opus-5-5 | `none` with no open work and no away record reports `ok` (idle); open work defined as `heartbeat_open_work` without its secondmate exclusion | HB-8, AT-HB-10 |

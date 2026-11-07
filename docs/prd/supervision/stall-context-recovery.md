@@ -102,8 +102,9 @@ The status-line percentage never gates anything.
 - SC-24: A handoff document is capped in size at `bin/fm-order.sh handoff --doc`, and an over-cap record refuses until the document fits.
 - The watchdog restart handoff (`bin/fm-watchdog.sh:745`) carries the same cap.
 - SC-25: A cross-session minimum handoff interval stops hourly churn under normal load.
+- The interval is set by `handoff-interval-secs` with a default of 7200, and that key is separate from `restart-secs`.
 - Inside the interval, the low-context trigger defers its handoff and writes one `context-churn` incident to the escalation gate.
-- The restart floor (`restart-at-percent`) and a dead-session verdict bypass the interval, and each counts against the SC-19 restart budget instead.
+- The restart floor (`restart-at-percent`) and a dead-session verdict bypass only the handoff interval, never the restart spacing, and each counts against the SC-19 restart budget instead.
 - SC-26: Every handoff and every forced restart writes one row to the restart ledger, so churn is countable per home per day.
 - Each row carries a `kind` field of `handoff` or `restart`, and only `restart` rows count against the per-subject restart budget.
 - A planned handoff inside the SC-25 rule writes `handoff`, and a forced restart or relaunch under SC-19 writes `restart`.
@@ -116,7 +117,7 @@ These values are provisional and tunable by super-bound.
 | --- | --- |
 | Startup token budget | 105,000 tokens per session, counting the first turn plus the post-digest context |
 | Handoff document cap | 16 KiB at `bin/fm-order.sh handoff --doc` |
-| Minimum handoff interval | `restart-secs` 7200, the existing watchdog spacing (`docs/watchdog.md:105`) |
+| Minimum handoff interval | `handoff-interval-secs` 7200, its own key with that default |
 | Away soak | N = 8 hours away, at most 4 handoffs, one per interval |
 
 Normal load means the load profile recorded with the soak: the number of live workers and the wake rate per hour.
