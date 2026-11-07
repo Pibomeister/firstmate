@@ -100,6 +100,33 @@ test_wedge_threshold_defers_to_a_declared_wait_under_a_working_verdict() {
   pass "a declared wait is not wedge-escalated by a working verdict, while an elapsed declaration and an undeclared lane both keep the unchanged ladder"
 }
 
+# A declared pause does not defer the wedge ladder when its endpoint is
+# confidently dead: the wait evidence is the live worker's own account of its
+# silence, and a dead endpoint has no live worker left to wait. The ladder then
+# reaches its existing dead-record probe, which reports the death once instead
+# of rechecking an external wait that will never clear on its own (Refs #149).
+# The captain-held sibling keeps its deferral even after its agent exits, and
+# is pinned in test_wedge_threshold_recheck_names_the_captain_for_a_held_lane.
+test_wedge_threshold_dead_paused_reaches_the_dead_record() {
+  local dir state fakebin out capture window
+  local working='state: working · source: run-step · ci running'
+  dir=$(wedge_threshold_fixture dead-declared-wait \
+    'paused: waiting on the upstream release cut' 0 500)
+  state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
+  window="test:fm-wedge"
+  FM_TEST_PANE_COMMAND=zsh wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$working" exit \
+    || fail "a dead paused lane was deferred instead of reaching the dead record: $(cat "$out")"
+  grep -F 'agent dead' "$out" >/dev/null \
+    || fail "the dead paused lane did not report through the dead record: $(cat "$out")"
+  grep -F 'awaiting external' "$out" >/dev/null \
+    && fail "a dead paused lane was deferred as an external wait"
+  grep -F 'possible wedge' "$out" >/dev/null \
+    && fail "a dead paused lane was mislabeled a possible wedge"
+  [ "$(wedge_stale_wakes "$state" "$window")" -eq 1 ] \
+    || fail "the dead paused lane queued $(wedge_stale_wakes "$state" "$window") wakes instead of one"
+  pass "a confidently dead paused lane reaches the wedge ladder's dead record instead of deferring as a wait"
+}
+
 # `fm-send --resolve-key default` answers a keyless decision by appending a
 # stated default-key resolved line after whatever the worker wrote last. When
 # that is a keyless pause the worker is still waiting, so the answer must not
@@ -974,6 +1001,7 @@ fi
 
 fm_test_run \
   test_wedge_threshold_defers_to_a_declared_wait_under_a_working_verdict \
+  test_wedge_threshold_dead_paused_reaches_the_dead_record \
   test_wedge_threshold_keeps_a_wait_past_a_default_key_answer \
   test_wedge_threshold_recheck_names_the_captain_for_a_held_lane \
   test_wedge_threshold_defers_to_a_backlog_captain_hold \
