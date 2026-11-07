@@ -1414,7 +1414,7 @@ wd_visit_worker_dialogs() {
 
 # wd_handle_subject: one symptom per pass, by precedence, then the side checks.
 wd_handle_subject() {
-  local symptom='' quiet frozen owed dead=0
+  local symptom='' quiet frozen owed dead=0 reachable=1
   if fm_wd_open_pending "$LEDGER" | awk -F'\t' -v h="$O_HOME" '$2 == h && $4 == "restart" { f = 1 } END { exit !f }'; then
     WD_SYMPTOM='restart-awaiting-pickup'
     return 0
@@ -1463,19 +1463,20 @@ wd_handle_subject() {
   fi
   # A restart this pass stopped the recorded session, so its old endpoint gets nothing more.
   if [ "$WD_RESTARTED" = 1 ]; then WD_SYMPTOM=$symptom; return 0; fi
-  if [ "$dead" = 0 ] && [ "$O_AFK" = 1 ] && [ "$O_DAEMON" = 0 ]; then
+  if [ "$dead" = 1 ] || [ "$symptom" = usage-limit-autowait ]; then reachable=0; fi
+  if [ "$reachable" = 1 ] && [ "$O_AFK" = 1 ] && [ "$O_DAEMON" = 0 ]; then
     [ -n "$symptom" ] || symptom='daemon-dead'
     wd_nudge daemon-dead "away mode is on but the away daemon is not running. Re-arm it with bin/fm-afk-start.sh on this session's own terminal."
   fi
   if [ "$O_HB_AGE" != unknown ] && [ "$O_HB_AGE" -ge "$(cfgi watcher-stale-secs 900)" ]; then
     wd_gap "watcher heartbeat is $((O_HB_AGE / 60))m old"
   fi
-  if [ "$dead" = 0 ]; then
+  if [ "$reachable" = 1 ]; then
     [ "$O_TURN" = 1 ] || wd_handle_decisions
     wd_handle_quota
   fi
   # Recurrence: three real or would-be actions on one symptom in a day files an issue.
-  if [ -n "$symptom" ] && [ "$(fm_wd_count_since "$LEDGER" "$O_HOME" "$symptom" '*' '^(pending|dry-run)$' "$(( $(wd_now) - 86400 ))")" -ge 3 ]; then
+  if [ -n "$symptom" ] && [ "$symptom" != usage-limit-autowait ] && [ "$(fm_wd_count_since "$LEDGER" "$O_HOME" "$symptom" '*' '^(pending|dry-run)$' "$(( $(wd_now) - 86400 ))")" -ge 3 ]; then
     wd_self_heal "$symptom" "Watchdog: $symptom recurs on $O_TAG" "$symptom handled 3 or more times in 24h"
   fi
   WD_SYMPTOM=${symptom:-ok}

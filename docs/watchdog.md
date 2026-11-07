@@ -93,6 +93,8 @@ These checks run on every pass as well:
   The owner is paged through the home's alert channels at most once per `nudge-secs`, and the page carries no pane text.
   The page and the status gap name the manual successor path: run `bin/fm-quota-reroute.sh suggest`, then launch a successor on the named pick.
   The watchdog never kills, relaunches, or types into that primary.
+  On that pass it also skips the away-daemon, decision, council, and quota-floor checks, because each of them would type into the same pane.
+  The auto-wait is a provider quota condition, so its pages never count toward a self-heal issue.
   An ordinary idle primary is not paged.
 
 A nudge is written as a record-backed operational input in the subject's own home and typed into its pane as the record's doorbell.
