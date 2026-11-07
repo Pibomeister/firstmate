@@ -14,6 +14,7 @@
 #                 "CREW_DISPATCH: invalid config/crew-dispatch.json - <reason>",
 #                 "CREW_DISPATCH: unusable profile <location> codex/<model>/max - <reason>",
 #                 "FLEET_SYNC: <repo>: skipped|recovered|STUCK: <detail>",
+#                 "HOME_DRIFT: home code is <n> commit(s) behind origin/<default>; <fast-forwarded|not fast-forwarded: <reason>>",
 #                 "HOME_SUMMARY: <ledger never published|not republished since
 #                 <stamp>>; <n> failed attempt(s) ... last: <recorded failure>",
 #                 "BACKLOG_RECONCILE: <id>: <what this home could not reconcile>",
@@ -128,9 +129,12 @@
 #                 step. Unrecognized values fall back here on purpose: a typo
 #                 must never silently skip a safety sweep.
 #            skip - every LOCAL step, and none of the network ones. Skips
-#                 `gh auth status`, secondmate_liveness_sweep, secondmate_sync,
-#                 secondmate_handoff_resume, and fleet_sync.
-#            only - ONLY those network steps and nothing else. No tool detection,
+#                 `gh auth status`, home_code_drift, secondmate_liveness_sweep,
+#                 secondmate_sync, secondmate_handoff_resume, and fleet_sync.
+#            only - ONLY those network steps and nothing else, including the
+#                 home code drift fast-forward (fm-ff-lib.sh, origin mode) that
+#                 runs before secondmate_sync so live secondmates converge to
+#                 the new primary commit in the same pass. No tool detection,
 #                 no version floors, no tangle check, no backlog
 #                 reconciliation, no x_mode_setup: those already ran on the
 #                 local pass.
@@ -384,6 +388,62 @@ fleet_sync() {
 
   fleet_sync_relay_filtered_output "$tmp"
   rm -f "$tmp"
+}
+
+home_code_drift() {
+  # Self-heal for the running home's own code root (issue #93): a home keeps
+  # executing the bin/ it started with after self-heal fixes merge, so fixed
+  # failures repeat. This runs only on the deferred network path (the caller
+  # gates it on network_phase, non-detect-only, and the lock-owner sweep
+  # authorization), so its fetch never blocks session start. It reuses
+  # fm-ff-lib.sh's guarded fast-forward exactly as fm-update.sh does: never
+  # force, merge, stash, or discard. A secondmate home follows its primary
+  # through secondmate_sync below, not origin, so it is skipped here. Live
+  # secondmates are handled by that same secondmate_sync pass, which runs
+  # after this and converges them to the new primary commit with its usual
+  # instruction-change nudges.
+  if [ -e "$FM_HOME/.fm-secondmate-home" ] || [ -L "$FM_HOME/.fm-secondmate-home" ]; then
+    return 0
+  fi
+  git -C "$FM_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
+  local default base behind tmp line reason after
+  default=$(default_branch "$FM_ROOT") || return 0
+  if ! git -C "$FM_ROOT" remote get-url origin >/dev/null 2>&1; then
+    return 0
+  fi
+  if ! fetch_once "$FM_ROOT"; then
+    echo "HOME_DRIFT: home code drift check could not fetch origin/$default (fetch failed); drift is unknown and nothing was changed - check network or run /updatefirstmate"
+    return 0
+  fi
+  base="origin/$default"
+  git -C "$FM_ROOT" rev-parse --verify --quiet "$base^{commit}" >/dev/null 2>&1 || {
+    echo "HOME_DRIFT: home code drift check fetched origin but $base does not exist; nothing was changed - run /updatefirstmate to diagnose"
+    return 0
+  }
+  behind=$(git -C "$FM_ROOT" rev-list --count "HEAD..$base" 2>/dev/null) || return 0
+  case "$behind" in ''|*[!0-9]*|0) return 0 ;; esac
+  tmp=$(mktemp "${TMPDIR:-/tmp}/fm-home-drift.XXXXXX" 2>/dev/null) || {
+    echo "HOME_DRIFT: home code is $behind commit(s) behind $base; not fast-forwarded: could not record the guarded update result - run /updatefirstmate"
+    return 0
+  }
+  ff_target "$FM_ROOT" "home" origin no no >"$tmp" 2>&1
+  line=$(cat "$tmp" 2>/dev/null || true)
+  rm -f "$tmp"
+  if [ "$FF_STATUS" = "updated" ]; then
+    after=$(git -C "$FM_ROOT" rev-parse --short HEAD 2>/dev/null || printf 'unknown')
+    if [ -x "$SCRIPT_DIR/fm-procevent-when.sh" ]; then
+      FM_HOME="$FM_HOME" FM_ROOT_OVERRIDE="$FM_ROOT" "$SCRIPT_DIR/fm-procevent-when.sh" rebind-all >/dev/null 2>&1 || true
+    fi
+    if [ -n "$FF_INSTR" ]; then
+      echo "HOME_DRIFT: home code was $behind commit(s) behind $base; fast-forwarded to $after (instructions changed: $FF_INSTR) - re-read AGENTS.md before acting on the old instructions"
+    else
+      echo "HOME_DRIFT: home code was $behind commit(s) behind $base; fast-forwarded to $after"
+    fi
+    return 0
+  fi
+  reason=${line#home: skipped: }
+  [ "$reason" != "$line" ] || reason=${line:-guarded fast-forward was skipped}
+  echo "HOME_DRIFT: home code is $behind commit(s) behind $base; not fast-forwarded: $reason - resolve that condition, then run /updatefirstmate"
 }
 
 secondmate_sync() {
@@ -1715,6 +1775,11 @@ if [ "${FM_BOOTSTRAP_DETECT_ONLY:-0}" != 1 ]; then
     fi
   fi
   if network_phase; then
+    if network_sweep_authorized 'home code drift'; then
+      __fm_timing_stamp=$(fm_timing_now_ms)
+      home_code_drift
+      fm_timing_record phase home-drift "$__fm_timing_stamp"
+    fi
     if network_sweep_authorized 'dead-secondmate relaunch'; then
       __fm_timing_stamp=$(fm_timing_now_ms)
       secondmate_liveness_sweep
