@@ -56,11 +56,13 @@
 #       Prints a pane dialog name, or `usage-limit` when the composer detector
 #       names a usage-limit kind. Exit 1 when neither matches.
 #   fm_wd_usage_limit_autowait <screen>
-#       Returns 0 when the last rows of the screen hold Claude's usage-limit
-#       auto-wait footer (`Continuing automatically at <reset>`), the state
-#       in which a session takes no turn until the reset. The phrase counts
-#       only in the last rows, so a quote of it in older conversation above
-#       the composer zone is not a match.
+#       Returns 0 when the composer zone holds Claude's usage-limit auto-wait
+#       footer (`Continuing automatically at <reset>`), the state in which a
+#       session takes no turn until the reset. Only the last 10 non-blank rows
+#       count, and they need a composer prompt row. The phrase alone matches on
+#       a row below the last prompt row. Above it, the phrase matches only on a
+#       row that opens by stating the usage limit (fm_wd_usage_limit_text), so
+#       conversation output that quotes the phrase is not a match.
 #   fm_wd_dialog_options <screen>
 #       Prints `<number>\t<text>` for each numbered option of the dialog.
 #   fm_wd_dialog_text <screen>
@@ -230,8 +232,21 @@ fm_wd_usage_limit_text() {  # <text>
 }
 
 fm_wd_usage_limit_autowait() {  # <screen>
+  local tag row
   [ -n "${1-}" ] || return 1
-  _fm_wd_tail_rows "$1" 10 | LC_ALL=C grep -Eiq 'continuing automatically( at|:)[[:space:]]*[^[:space:]]'
+  while IFS=$'\t' read -r tag row; do
+    [ "$tag" = below ] && return 0
+    fm_wd_usage_limit_text "$row" && return 0
+  done < <(_fm_wd_tail_rows "$1" 10 | awk -v glyph="$FM_WD_PROMPT_RE" '
+    { row[NR] = $0; if ($0 ~ glyph) g = NR }
+    END {
+      if (!g) exit
+      for (i = 1; i <= NR; i++) {
+        if (tolower(row[i]) !~ /continuing automatically( at|:)[ \t]*[^ \t]/) continue
+        print (i > g ? "below" : "above") "\t" row[i]
+      }
+    }')
+  return 1
 }
 
 fm_wd_quota_status_line() {  # <line>
