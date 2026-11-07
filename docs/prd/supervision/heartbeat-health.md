@@ -90,7 +90,7 @@ Any requirement on that loop is a dependency to confirm with its owner, not a cl
 The health verdict owner is `bin/fm-watchdog.sh`, which is opt-in per home.
 When it does not run on a home, session start reports each uncovered signal once.
 The verdict for that home reads `unknown` with the reason `watchdog absent`.
-That absence escalates once per home through the shared incident ledger.
+The escalation gate escalates that absence once per home, reading the shared incident ledger.
 Rollout per host requires the watchdog in `act` mode with its status reader enabled.
 
 ## Ownership

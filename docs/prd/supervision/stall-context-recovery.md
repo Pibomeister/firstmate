@@ -52,11 +52,12 @@ Delivery success requires a started turn.
 ## Context readings
 
 Four readings exist today and they measure different points.
+The table gives each reading its target role.
 
 | Reading | Source | Role |
 | --- | --- | --- |
 | Pane footer percentage | The harness pane text, parsed by one shared parser | Input to the heartbeat record |
-| Watchdog footer copy | A second parser inside the watchdog | Removed in favor of the shared parser |
+| Watchdog footer copy | A second parser inside the watchdog | To be removed in favor of the shared parser |
 | Derived token percentage | Transcript usage against the compact point in `bin/fm-handoff-trigger.sh` | Handoff decision where a transcript and window exist |
 | Full-window status percentage | The harness status line | Display only, never a decision |
 
@@ -64,7 +65,6 @@ The heartbeat publishes both the footer percentage and the derived percentage si
 Where a transcript and an auto-compact window exist, both the handoff trigger and the watchdog restart gate on the derived percentage.
 Where no derived percentage exists, the watchdog restart gates on the footer percentage.
 The status-line percentage never gates anything.
-One parser owns the footer text for every reader.
 
 ## Requirements
 
@@ -75,6 +75,7 @@ One parser owns the footer text for every reader.
 - SC-5: The first recovery step is one nudge through the record-backed input path.
 - SC-6: A second detection after the nudge escalates to a restart through `bin/fm-control.sh`.
 - SC-7: Where a transcript and window exist, the derived percentage gates both the handoff trigger and the watchdog restart, so one session has one low-context trigger.
+- SC-7a: One shared parser owns the pane footer text for every reader, and the watchdog footer copy is removed.
 - SC-8: Where no derived reading exists, the pane footer percentage owns the watchdog restart decision.
 - SC-9: When both readings exist and differ by more than the disagreement bound, the derived percentage acts and the record names both values.
 - SC-10: A missing owning reading reports unknown and never triggers a restart by itself, and a non-destructive nudge stays allowed on filesystem activity evidence.
@@ -179,7 +180,7 @@ No savings figure is stated until both windows exist.
 | --- | --- | --- | --- |
 | A-SC-1 | A opus-5-5 | Startup ledger, budget, handoff cap, churn limit, and N-hour soak added | SC-21 to SC-26, AT-SC-11 |
 | A-SC-2 | A opus-5-5 | One launcher, one ender, bounded successor wait | SC-12 to SC-14 |
-| A-SC-3 | A opus-5-5 | Four readings listed, one parser, derived percentage gates both paths | Context readings, SC-7 |
+| A-SC-3 | A opus-5-5 | Four readings listed, one parser, derived percentage gates both paths | Context readings, SC-7, SC-7a |
 | A-SC-4 | A opus-5-5 | Swallow ownership split by subject with `unknown` until a turn signal is proven | Ownership, Owner absence |
 | A-SC-5 | A opus-5-5 | Pickup verification delegated to the watchdog reconcile path and the heartbeat verdict | SC-15, SC-16 |
 | A-SC-6 | A opus-5-5 | Token baseline rebuilt on transcript usage by turn type | Token economics |
