@@ -282,6 +282,32 @@ test_dead_paused_escalates_but_captain_held_is_bounded_and_live_gate_surfaces() 
   grep -F "awaiting external" "$state/.wake-queue" >/dev/null \
     && fail "captain-held dead-agent pane borrowed the pause verb's external-wait wording"
 
+  # A future declared clearing time does not silence a dead endpoint either:
+  # the `until` horizon belongs to a worker that is gone, so the death takes
+  # the ordinary stale surface now rather than waiting out that horizon.
+  dir=$(make_case exited-declared-pause-until); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"; statusf="$state/held.status"
+  window="test:fm-held"
+  printf 'idle bare shell after agent exit\n' > "$capture_file"
+  printf 'window=%s\nkind=ship\nharness=grok\nbackend=tmux\n' "$window" > "$state/held.meta"
+  printf 'paused: waiting on the release cut until %s\n' "$(iso_utc_at "$(( $(date +%s) + 7200 ))")" > "$statusf"
+  sig=$(seen_sig "$statusf"); printf '%s' "$sig" > "$state/.seen-held_status"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  pane_hash=$(hash_text "idle bare shell after agent exit")
+  printf '%s' "$pane_hash" > "$state/.hash-$key"
+  printf '1\n' > "$state/.count-$key"
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_FAKE_TMUX_CURRENT_COMMAND=zsh FM_FAKE_CREW_STATE='state: stopped · source: pane · bare shell' \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_PAUSE_RESURFACE_SECS=240 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  wait_for_exit "$pid" 100 || fail "dead paused-until watcher was silenced by the future declared time"
+  grep -Fx "stale: $window" "$out" >/dev/null || fail "dead paused-until watcher did not print the bare stale wake"
+  grep -F "awaiting external" "$out" >/dev/null && fail "dead paused-until watcher hid behind the declared horizon"
+  wakes=$(awk -F '\t' -v w="$window" '$3 == "stale" && $4 == w { n++ } END { print n + 0 }' "$state/.wake-queue" 2>/dev/null || echo 0)
+  [ "$wakes" -eq 1 ] || fail "dead paused-until produced $wakes stale wakes instead of one escalation"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the dead paused-until escalation"
+
   dir=$(make_case alive-decision-gate); state="$dir/state"; fakebin="$dir/fakebin"
   out="$dir/watch.out"; capture_file="$dir/pane.txt"; statusf="$state/gate.status"
   window="test:fm-gate"

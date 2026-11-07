@@ -3254,7 +3254,7 @@ surface_nonterminal_stale() {  # <window> <hash> [dialog-name] [queued-reason]
     declared=0
     bounded=0
     STALE_WAIT_DECLARATION=$(stale_wait_declaration "$task")
-    if until=$(status_paused_until "$last"); then
+    if until=$(status_paused_until "$last") && [ "$PAUSE_AGENT_ALIVE" != dead ]; then
       now=$(fm_watch_now)
       if [ "$now" -lt "$until" ]; then
         throttled=0
@@ -3263,6 +3263,11 @@ surface_nonterminal_stale() {  # <window> <hash> [dialog-name] [queued-reason]
         stale_wait_throttled "$key" "$STALE_WAIT_DECLARATION" && throttled=0
       fi
     else
+      # A confidently dead endpoint (PAUSE_AGENT_ALIVE=dead, set by the
+      # pause_state_class read that routed this crew here) gets no future-
+      # `until` silence: the declared time belongs to a worker that is gone,
+      # so the death takes the ordinary declaration throttle instead of
+      # waiting out a horizon nobody will clear (Refs #149).
       stale_wait_throttled "$key" "$STALE_WAIT_DECLARATION" && throttled=0
     fi
   elif status_is_captain_held "$last"; then
