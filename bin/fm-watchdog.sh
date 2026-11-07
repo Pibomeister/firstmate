@@ -562,10 +562,11 @@ wd_key() {
     *) fm_run_timed_fn 10 fm_backend_send_key "$O_BACKEND" "$O_TARGET" "$key" >/dev/null 2>&1 ;;
   esac || { wd_rec "$id" "$symptom" key failed "key delivery failed"; return 1; }
   sleep "$(cfgi key-settle-secs 2)"
-  case "$symptom" in
-    dialog) after=$(wd_view "$O_BACKEND" "$O_TARGET") ;;
-    *) after=$(wd_capture "$O_BACKEND" "$O_TARGET" 60) ;;
-  esac
+  if [ "$symptom" = dialog ] && wd_visible_capture_expected "$O_BACKEND" "$O_TARGET"; then
+    after=$(wd_view "$O_BACKEND" "$O_TARGET")
+  else
+    after=$(wd_capture "$O_BACKEND" "$O_TARGET" 60)
+  fi
   case "$symptom" in
     dialog) if [ -n "$after" ] && ! fm_wd_pane_dialog "$after" >/dev/null; then wd_rec "$id" "$symptom" key "done" "dialog left the pane"; O_DIALOG='' O_PANE=$after; wd_read_composer; else wd_rec "$id" "$symptom" key failed "dialog still showing"; return 1; fi ;;
     *) if [ -n "$after" ] && [ "$(wd_pane_sig "$after")" != "$O_SIG" ]; then wd_rec "$id" "$symptom" key "done" "pane changed"; else wd_rec "$id" "$symptom" key failed "pane unchanged"; return 1; fi ;;
@@ -1431,6 +1432,9 @@ wd_handle_subject() {
   owed=$(cfgi owed-input-secs 900)
   quiet=$(cfgi restart-quiet-secs 120)
   if [ -n "$O_LOCK_PID" ] && [ "$O_ALIVE" = 0 ]; then dead=1; fi
+  if [ "$O_DIALOG" = unknown ]; then
+    wd_gap "the visible pane could not be read; dialog unknown"
+  fi
   if [ "$dead" = 1 ]; then
     symptom='agent-gone'
     if [ "$O_TR_AGE" != unknown ] && [ "$O_TR_AGE" -ge "$frozen" ]; then
@@ -1438,7 +1442,7 @@ wd_handle_subject() {
     else
       wd_gap "lock holder is dead; restart needs ${frozen}s of transcript quiet; nothing typed"
     fi
-  elif [ -n "$O_DIALOG" ]; then
+  elif [ -n "$O_DIALOG" ] && [ "$O_DIALOG" != unknown ]; then
     symptom=dialog
     wd_handle_dialog
   elif { [ "$O_RESTART_REQ" = 1 ] || { [ -n "$O_CTX" ] && [ "$O_CTX" -le "$(cfgi restart-at-percent 8)" ]; }; } && wd_restart_available && ! wd_handoff_undeliverable; then

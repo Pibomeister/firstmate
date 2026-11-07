@@ -284,12 +284,17 @@ EOF
 }
 
 # Git blob of a worktree file or symlink. A directory or missing path fails.
-# Symlink blobs are the target string, matching git's symlink storage.
+# Symlink blobs are the exact target bytes, matching git's symlink storage.
+# readlink -n plus a sentinel keeps a target-trailing newline; command
+# substitution would strip it and authenticate a modified seed link.
+# --no-filters keeps the caller's gitattributes and eol from changing the hash.
 fm_quota_claude_blob_of() {  # <path>
+  local raw
   if [ -L "$1" ]; then
-    printf '%s' "$(readlink "$1")" | git hash-object --stdin 2>/dev/null
+    raw=$(readlink -n "$1" && printf x) || return 1
+    printf '%s' "${raw%x}" | git hash-object --no-filters --stdin 2>/dev/null
   elif [ -f "$1" ]; then
-    git hash-object -- "$1" 2>/dev/null
+    git hash-object --no-filters -- "$1" 2>/dev/null
   else
     return 1
   fi
@@ -401,10 +406,11 @@ fm_quota_claude_collect_print0() {  # <dir> <find-args...>
   return 2
 }
 
-# Prints paths of files and symlinks under <dir>, or a signal and returns 0
+# Prints paths of non-directory entries under <dir>, or a signal and returns 0
 # when the walk cannot complete. Returns 1 when <dir> is absent.
 # A symlink root is not the authentic seed directory; find -P would hide
 # files behind it, so callers treat that root as a signal instead of walking.
+# FIFO, socket, and device entries are not seed files; they must be reported.
 fm_quota_claude_find_leaves() {  # <dir>
   local dir=$1 rc=0 out
   [ -e "$dir" ] || return 1
@@ -416,7 +422,7 @@ fm_quota_claude_find_leaves() {  # <dir>
     printf '%s\n' "unreadable $dir"
     return 0
   fi
-  out=$(fm_quota_claude_collect_print0 "$dir" "$dir" \( -type f -o -type l \) -print0) || rc=$?
+  out=$(fm_quota_claude_collect_print0 "$dir" "$dir" \( ! -type d \) -print0) || rc=$?
   if [ "$rc" -eq 0 ]; then
     printf '%s\n' "$out"
     return 0
