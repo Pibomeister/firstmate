@@ -114,6 +114,10 @@ case "${1:-}" in
           [ -z "${FM_FAKE_TRACE_EXPORTED:-}" ] || : > "$FM_FAKE_TRACE_EXPORTED"
           ;;
       esac
+      if { [ "$payload" = Escape ] || [ "$payload" = C-c ]; } \
+         && [ -f "$D/capture-after-interrupt" ]; then
+        cat "$D/capture-after-interrupt" > "$D/capture"
+      fi
     fi
     exit 0 ;;
   display-message)
@@ -766,6 +770,78 @@ test_relaunch_closes_a_grok_weekly_limit_composer_without_typing_enter() {
   pass "fm-control relaunch: a Grok weekly-limit composer is closed without typing Enter"
 }
 
+test_busy_relaunch_closes_a_grok_weekly_limit_after_interrupt() {
+  local dir out rc sock ident
+  dir=$(new_case grok-limit-busy-relaunch rl97)
+  add_ship_task "$dir" rl97 grok
+  printf 'grok' > "$dir/fake/command"
+  sock=$(bash -c '. "$1/bin/fm-backend.sh"; fm_backend_source tmux; fm_backend_tmux_addressed_socket' _ "$ROOT")
+  ident=$(bash -c '. "$1/bin/fm-wake-lib.sh"; printf "%s" "$(fm_pid_identity "$2")" | tr "\t\n" "  "' _ "$ROOT" "$$")
+  printf 'tmux_socket=%s\ntmux_server_pid=%s\ntmux_server_identity=%s\ntmux_window_id=%s\n' \
+    "$sock" "$$" "$ident" @9 >> "$dir/home/state/rl97.meta"
+  printf '%s\n' 'thinking hard' 'Ctrl+c:cancel' > "$dir/fake/capture"
+  printf '%s\n' \
+    '                                                                                             █' \
+    '' \
+    '  ┃' \
+    '  ┃  You hit your weekly limit.' \
+    '  ┃' \
+    '  ┃' \
+    '  ┃  1 (○) Buy more credits  Purchase credits to keep using Grok Build' \
+    '  ┃  2 (○) Try Again         Resubmit the last prompt once you have usage again' \
+    '  ┃' \
+    '  ┃  ↑/↓ navigate · y copy                                                  Enter:submit' \
+    '  ┃' \
+    '' \
+    '  Tab:next answer  │  Esc:scrollback  │  Shift+x:dismiss' > "$dir/fake/capture-after-interrupt"
+  printf 'codex' > "$dir/fake/becomes"
+  out=$(FM_FAKE_TMUX_SOCKET="$sock" FM_FAKE_TMUX_SERVER_PID=$$ \
+    run_control "$dir" rl97 relaunch --harness codex --note "move off the limited grok account"); rc=$?
+  expect_code 0 "$rc" "a Grok weekly-limit that appears after interrupt should close and start the replacement"$'\n'"$out"
+  grep -qx C-c "$dir/fake/keys" \
+    || fail "a busy grok pane must receive its interrupt before close: $(cat "$dir/fake/keys")"
+  assert_no_grep "/exit" "$dir/fake/literal" \
+    "the exit command must not be typed into a Grok weekly-limit composer that appeared after interrupt"
+  grep -qx Enter "$dir/fake/picker-keys" 2>/dev/null \
+    && fail "the live Grok weekly-limit composer received Enter: $(cat "$dir/fake/picker-keys")"
+  assert_contains "$out" "harness=codex from=grok" "the replacement should land on the named harness"
+  [ "$(meta_field "$dir" rl97 harness)" = codex ] \
+    || fail "the published record should follow the replacement harness"
+  pass "fm-control relaunch: a Grok weekly-limit after busy interrupt is closed without typing Enter"
+}
+
+test_busy_relaunch_refuses_pane_text_usage_limit_after_interrupt() {
+  local dir out rc gen
+  dir=$(new_case usage-limit-busy-relaunch rl98)
+  add_ship_task "$dir" rl98 claude
+  printf '%s\n' \
+    'You have hit your weekly limit for Opus.' \
+    '' \
+    ' ❯ 1. Switch to Sonnet' \
+    '   2. Wait for the limit to reset' \
+    '   3. Buy more credits' \
+    '' \
+    'Enter to confirm · Esc to cancel' > "$dir/fake/capture-after-interrupt"
+  printf 'codex' > "$dir/fake/becomes"
+  gen=$("$ROOT/bin/fm-busy-event.sh" arm "$dir/home/state" rl98)
+  printf 'busy_gen=%s\n' "$gen" >> "$dir/home/state/rl98.meta"
+  out=$(run_control "$dir" rl98 relaunch --harness codex --note "move off the limited account"); rc=$?
+  expect_code 1 "$rc" "a pane-text usage-limit after interrupt must refuse before close"$'\n'"$out"
+  assert_contains "$out" "not live-verified" \
+    "the refusal should name the unverified pane-text classifier"
+  assert_contains "$out" "Queue until reset" \
+    "pane-text usage-limit after interrupt must not send the supervisor to relaunch"
+  assert_no_grep "/exit" "$dir/fake/literal" \
+    "the exit command must not be typed into a usage-limit picker that appeared after interrupt"
+  [ "$(cat "$dir/fake/command")" = claude ] \
+    || fail "an unverified pane-text usage-limit after interrupt must not be killed: $(cat "$dir/fake/command")"
+  grep -qx 'fm-rl98' "$dir/fake/windows" \
+    || fail "an unverified pane-text usage-limit after interrupt must keep the window: $(cat "$dir/fake/windows")"
+  [ "$(meta_field "$dir" rl98 harness)" = claude ] \
+    || fail "a refused pane-text usage-limit after interrupt must keep the prior harness"
+  pass "fm-control relaunch: pane-text usage-limit after busy interrupt refuses without kill or Enter"
+}
+
 test_interrupt_refuses_a_usage_limit_screen() {
   local dir out rc
   dir=$(new_case usage-limit-interrupt rl81)
@@ -851,16 +927,38 @@ test_relaunch_refuses_before_exit_when_the_composer_state_is_unproven() {
   out=$(FM_FAKE_COMPOSER_READ_FAIL=1 \
     run_control "$dir" rl44 relaunch --note "preserve on an unreadable composer"); rc=$?
 
-  expect_code 1 "$rc" "a relaunch must refuse before typing an exit command when the composer state cannot be proven empty"
-  assert_contains "$out" "not proven empty" \
-    "the refusal should name the unproven composer state, not claim pending text"
+  expect_code 1 "$rc" "a relaunch must refuse before typing an exit command when the visible pane cannot be read"
+  assert_contains "$out" "could not read the visible pane" \
+    "a failed pane read must refuse rather than treat the capture as no usage-limit"
   assert_not_contains "$out" "visibly holds pending text" \
     "an unreadable composer is not the same claim as observed pending text"
   [ "$(cat "$dir/fake/command")" = claude ] \
     || fail "an unproven composer refusal must leave the old agent running"
   assert_no_grep "/exit" "$dir/fake/literal" \
-    "the exit command must not be typed when the composer state is not proven empty"
-  pass "fm-control relaunch: an unreadable composer fails safe before the exit command is typed"
+    "the exit command must not be typed when the visible pane cannot be read"
+  [ ! -s "$dir/fake/keys" ] || fail "no lifecycle key may be sent when the pane cannot be read: $(cat "$dir/fake/keys")"
+  pass "fm-control relaunch: an unreadable pane fails closed before the exit command is typed"
+}
+
+test_relaunch_refuses_before_exit_when_the_composer_is_not_proven_empty() {
+  local dir out rc
+  dir=$(new_case unknown-composer-exit rl44b)
+  add_ship_task "$dir" rl44b claude
+  printf '%s\n' 'a status line without a composer box' > "$dir/fake/capture"
+
+  out=$(run_control "$dir" rl44b relaunch --note "preserve on an unknown composer"); rc=$?
+
+  expect_code 1 "$rc" "a relaunch must refuse before typing an exit command when the composer is not proven empty"
+  assert_contains "$out" "not proven empty" \
+    "a readable pane whose composer is unknown must refuse rather than type the exit command"
+  assert_not_contains "$out" "could not read the visible pane" \
+    "a working capture is not the same claim as a failed pane read"
+  [ "$(cat "$dir/fake/command")" = claude ] \
+    || fail "an unknown-composer refusal must leave the old agent running"
+  assert_no_grep "/exit" "$dir/fake/literal" \
+    "the exit command must not be typed when the composer is not proven empty"
+  [ ! -s "$dir/fake/keys" ] || fail "no lifecycle key may be sent when the composer is not proven empty: $(cat "$dir/fake/keys")"
+  pass "fm-control relaunch: an unknown composer with a working capture refuses before the exit command is typed"
 }
 
 test_relaunch_from_linked_home_preserves_recorded_worktree() {
@@ -1348,6 +1446,109 @@ SH
   [ "$(meta_field "$dir" rl92 harness)" = claude ] \
     || fail "an ignored override must leave the recorded harness"
   pass "fm-control relaunch: production ignores FM_QUOTA_REROUTE and uses the shipped helper"
+}
+
+seeded_secondmate_case() {  # <case-dir-name> <id> -> case dir with a cloned firstmate home
+  local dir id=$2
+  dir=$(new_case "$1" "$id")
+  git clone --local --quiet "$ROOT" "$dir/smhome" \
+    || fail "could not clone a firstmate home for $id"
+  mkdir -p "$dir/smhome/state" "$dir/smhome/data" "$dir/home/config" "$dir/home/data/$id"
+  printf '%s\n' "$id" > "$dir/smhome/.fm-secondmate-home"
+  printf '# secondmate brief\n' > "$dir/home/data/$id/brief.md"
+  make_claude_auth_stub "$dir"
+  {
+    echo "window=fmses:fm-$id"
+    echo "endpoint_task_id=$id"
+    echo "worktree=$dir/smhome"
+    echo "project=$dir/smhome"
+    echo "harness=claude"
+    echo "kind=secondmate"
+    echo "mode=secondmate"
+    echo "yolo=off"
+    echo "model=default"
+    echo "effort=default"
+    echo "home=$dir/smhome"
+  } > "$dir/home/state/$id.meta"
+  printf '%s\n' "fm-$id" > "$dir/fake/windows"
+  printf '%s' "$dir/smhome" > "$dir/fake/cwd"
+  printf 'codex' > "$dir/fake/becomes"
+  printf '%s\n' "$dir"
+}
+
+test_relaunch_off_claude_allows_an_unchanged_seeded_home() {
+  local dir out rc
+  dir=$(seeded_secondmate_case seed-allow rl-seed1)
+  out=$(run_control "$dir" rl-seed1 relaunch --harness codex); rc=$?
+  expect_code 0 "$rc" "an unchanged seeded home must be allowed to leave Claude"$'\n'"$out"
+  [ "$(meta_field "$dir" rl-seed1 harness)" = codex ] \
+    || fail "the replacement should land on the named harness"
+  pass "fm-control relaunch: an unchanged seeded firstmate home can move off Claude"
+}
+
+test_relaunch_off_claude_refuses_seeded_home_user_additions() {
+  local dir out rc settings
+  dir=$(seeded_secondmate_case seed-hook rl-seed2)
+  mkdir -p "$dir/smhome/.claude/hooks"
+  printf '%s\n' '{"hooks":{"Stop":[{}]}}' > "$dir/smhome/.claude/hooks/hooks.json"
+  out=$(run_control "$dir" rl-seed2 relaunch --harness codex); rc=$?
+  expect_code 1 "$rc" "a user hook in a seeded home must refuse the move"$'\n'"$out"
+  assert_contains "$out" "Claude-specific tooling present" "the refusal should name the tooling gate"
+  assert_contains "$out" "worktree .claude/hooks/hooks.json" "the refusal should name the added hook"
+  [ "$(cat "$dir/fake/command")" = claude ] \
+    || fail "a user-hook refusal must leave the old agent running"
+  rm -rf "$dir/smhome/.claude/hooks"
+
+  dir=$(seeded_secondmate_case seed-edit rl-seed3)
+  settings="$dir/smhome/.claude/settings.json"
+  jq 'del(.hooks) | .env.EDITED = "1"' "$settings" > "$dir/settings.edited"
+  mv "$dir/settings.edited" "$settings"
+  out=$(run_control "$dir" rl-seed3 relaunch --harness codex); rc=$?
+  expect_code 1 "$rc" "an edited seeded file must refuse the move"$'\n'"$out"
+  assert_contains "$out" "worktree .claude/settings.json" "the refusal should name the edited seed file"
+  [ "$(cat "$dir/fake/command")" = claude ] \
+    || fail "an edited-seed refusal must leave the old agent running"
+
+  dir=$(seeded_secondmate_case seed-mcp rl-seed4)
+  printf '%s\n' '{"mcpServers":{"docs":{"command":"true"}}}' > "$dir/smhome/.mcp.json"
+  out=$(run_control "$dir" rl-seed4 relaunch --harness codex); rc=$?
+  expect_code 1 "$rc" "user MCP in a seeded home must refuse the move"$'\n'"$out"
+  assert_contains "$out" "worktree .mcp.json" "the refusal should name the MCP file"
+  [ "$(cat "$dir/fake/command")" = claude ] \
+    || fail "an MCP refusal must leave the old agent running"
+  pass "fm-control relaunch: user hooks, seed edits, and MCP in a seeded home still refuse"
+}
+
+test_relaunch_off_claude_refuses_seeded_home_committed_file_and_symlinked_root() {
+  local dir out rc claude_real claude_evil
+  dir=$(seeded_secondmate_case seed-committed rl-seed5)
+  mkdir -p "$dir/smhome/.claude/hooks"
+  printf '%s\n' '{"hooks":{"Stop":[{}]}}' > "$dir/smhome/.claude/hooks/hooks.json"
+  git -C "$dir/smhome" add .claude/hooks/hooks.json
+  git -C "$dir/smhome" -c user.email=dev@example.test -c user.name=dev \
+    -c commit.gpgsign=false commit --quiet -m 'user hook'
+  out=$(run_control "$dir" rl-seed5 relaunch --harness codex); rc=$?
+  expect_code 1 "$rc" "a hook committed in a seeded home must refuse the move"$'\n'"$out"
+  assert_contains "$out" "Claude-specific tooling present" "the refusal should name the tooling gate"
+  assert_contains "$out" "worktree .claude/hooks/hooks.json" "the refusal should name the committed hook"
+  [ "$(cat "$dir/fake/command")" = claude ] \
+    || fail "a committed-hook refusal must leave the old agent running"
+
+  dir=$(seeded_secondmate_case seed-symlink rl-seed6)
+  claude_real="$dir/claude.real"
+  claude_evil="$dir/claude.evil"
+  mv "$dir/smhome/.claude" "$claude_real"
+  mkdir -p "$claude_evil"
+  cp -a "$claude_real/." "$claude_evil/"
+  mkdir -p "$claude_evil/hooks"
+  printf '%s\n' '{"hooks":{"Stop":[{}]}}' > "$claude_evil/hooks/hooks.json"
+  ln -s "$claude_evil" "$dir/smhome/.claude"
+  out=$(run_control "$dir" rl-seed6 relaunch --harness codex); rc=$?
+  expect_code 1 "$rc" "a symlinked .claude root in a seeded home must refuse the move"$'\n'"$out"
+  assert_contains "$out" "worktree .claude" "the refusal should name the symlinked root"
+  [ "$(cat "$dir/fake/command")" = claude ] \
+    || fail "a symlinked-root refusal must leave the old agent running"
+  pass "fm-control relaunch: a committed seed file and a symlinked .claude root still refuse"
 }
 
 test_harness_switch_resolves_a_prefixed_recorded_harness() {
@@ -4341,6 +4542,11 @@ SH
   pass "fm-control exit removes the dialog file before it releases the control lock"
 }
 
+if [ "$#" -gt 0 ]; then
+  fm_test_run "$@"
+  exit
+fi
+
 test_relaunch_off_opencode_removes_tracked_wiring
 test_exit_and_relaunch_remove_the_dialog_file
 test_exit_removes_the_dialog_file_before_releasing_the_lock
@@ -4351,10 +4557,13 @@ test_relaunch_refuses_before_exit_when_the_composer_holds_pending_text
 test_relaunch_does_not_kill_an_untrusted_usage_limit_endpoint
 test_relaunch_refuses_an_unverified_pane_text_usage_limit
 test_relaunch_closes_a_grok_weekly_limit_composer_without_typing_enter
+test_busy_relaunch_closes_a_grok_weekly_limit_after_interrupt
+test_busy_relaunch_refuses_pane_text_usage_limit_after_interrupt
 test_interrupt_refuses_a_usage_limit_screen
 test_interrupt_refuses_a_grok_weekly_limit_and_names_relaunch
 test_control_relaunch_of_a_gone_tmux_endpoint
 test_relaunch_refuses_before_exit_when_the_composer_state_is_unproven
+test_relaunch_refuses_before_exit_when_the_composer_is_not_proven_empty
 test_relaunch_from_linked_home_preserves_recorded_worktree
 test_relaunch_preserves_durable_task_metadata
 test_relaunch_serializes_concurrent_durable_metadata_publication
@@ -4372,6 +4581,9 @@ test_relaunch_off_claude_refuses_when_tooling_is_present
 test_relaunch_off_claude_refuses_an_unreadable_account_pin
 test_relaunch_off_claude_refuses_when_tooling_check_exits_2
 test_relaunch_off_claude_ignores_fm_quota_reroute_override
+test_relaunch_off_claude_allows_an_unchanged_seeded_home
+test_relaunch_off_claude_refuses_seeded_home_user_additions
+test_relaunch_off_claude_refuses_seeded_home_committed_file_and_symlinked_root
 test_harness_switch_resolves_a_prefixed_recorded_harness
 test_prefixed_recorded_harness_requires_explicit_replacement
 test_same_harness_relaunch_keeps_the_profile_axes

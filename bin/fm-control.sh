@@ -26,9 +26,11 @@
 #              classify that. Cancellation is confirmed only from an adapter-
 #              owned acknowledgement and otherwise reported unconfirmed. Busy
 #              state is never rewritten as proof of the action. A proven
-#              usage-limit screen is refused. A pane-text usage-limit picker
-#              queues until reset. A Grok weekly-limit composer can be closed
-#              by relaunch. Devin
+#              usage-limit screen is refused. A failed viewport read on a
+#              backend that has one is refused before any key; a backend
+#              with no viewport keeps the no-dialog path. A pane-text
+#              usage-limit picker queues until reset. A Grok weekly-limit
+#              composer can be closed by relaunch. Devin
 #              cancellation invalidates it to unknown because its native hooks
 #              emit no cancellation close; this is not a success claim.
 #              An adapter whose repeated interrupt key does something else on
@@ -40,7 +42,9 @@
 #              busy, then submits the harness's exit command. Postcondition:
 #              the backend's recovery-grade classifier reports the agent gone.
 #              Already-stopped is success (idempotent). A proven usage-limit
-#              screen is refused. A pane-text usage-limit picker queues until
+#              screen is refused. A failed viewport read on a backend that has
+#              one is refused before any key; a backend with no viewport keeps
+#              the no-dialog path. A pane-text usage-limit picker queues until
 #              reset. A Grok weekly-limit composer can be closed by relaunch
 #              instead of typing Enter into that picker. An endpoint that reads
 #              `missing` (or, on Rex, `unreadable`, which is how a stopped Rex
@@ -86,7 +90,11 @@
 #              (re-created inside the recorded Orca worktree), each under the proof
 #              `exit` describes above.
 #              An explicit `default` model or effort clears that
-#              axis for the replacement. With no explicit axis, a secondmate
+#              axis for the replacement. Unnamed effort carries onto the
+#              replacement, including across a harness change; if that harness
+#              refuses it, the replacement launches at default and prints a
+#              notice.
+#              With no explicit axis, a secondmate
 #              re-resolves its durable config/secondmate-harness pin (harness
 #              plus its optional model and effort tokens) exactly as any other
 #              respawn does, while a ship or scout keeps the exact adapter
@@ -541,7 +549,19 @@ usage_limit_dialog_name() {
       return 0
     fi
   fi
-  screen=$(fm_backend_visible_capture "$BACKEND" "$T" "$LABEL" 2>/dev/null) || return 1
+  screen=$(fm_backend_visible_capture "$BACKEND" "$T" "$LABEL" 2>/dev/null) \
+    || {
+         if fm_backend_visible_capture_supported "$BACKEND"; then
+           return 2
+         fi
+         if [ "$BACKEND" = orca ]; then
+           fm_backend_source orca >/dev/null 2>&1 || return 1
+           if fm_backend_orca_recorded_droid "$T" "$LABEL" 2>/dev/null; then
+             return 2
+           fi
+         fi
+         return 1
+       }
   if declare -F fm_composer_blocking_dialog >/dev/null 2>&1; then
     dialog=$(fm_composer_blocking_dialog "$screen" 2>/dev/null) || dialog=
     if fm_wd_usage_limit_kind "$dialog"; then
@@ -554,13 +574,24 @@ usage_limit_dialog_name() {
   printf '%s' "$dialog"
 }
 
+# Load the usage-limit dialog name in this shell. Capture failure must not run
+# inside command substitution, or die would exit only that subshell and the
+# caller could still send lifecycle input.
+load_usage_limit_dialog() {
+  local rc=0
+  USAGE_LIMIT_DIALOG=$(usage_limit_dialog_name) || rc=$?
+  if [ "$rc" -eq 2 ]; then
+    die "task $ID's usage-limit check could not read the visible pane; refusing to send lifecycle input"
+  fi
+  [ "$rc" -eq 0 ] || USAGE_LIMIT_DIALOG=
+}
+
 # usage_limit_screen: a proven provider-limit picker, either the pane kind
 # usage-limit or the Grok weekly-limit composer name. A conversation quote of
 # the same words is not this screen.
 usage_limit_screen() {
-  local dialog
-  dialog=$(usage_limit_dialog_name) || return 1
-  fm_wd_usage_limit_kind "$dialog"
+  load_usage_limit_dialog
+  fm_wd_usage_limit_kind "$USAGE_LIMIT_DIALOG"
 }
 
 # Close the endpoint without typing Enter. Used only on a Grok weekly-limit
@@ -933,7 +964,8 @@ do_exit() {
     || die "task $ID's dialog check could not be recorded"
   composer_state=$(fm_backend_composer_state "$BACKEND" "$T" "$LABEL" 2>/dev/null) \
     || composer_state=unknown
-  dialog=$(usage_limit_dialog_name) || dialog=
+  load_usage_limit_dialog
+  dialog=$USAGE_LIMIT_DIALOG
   if fm_wd_usage_limit_kind "$dialog"; then
     if [ "$VERB" = relaunch ]; then
       if [ "$dialog" = 'Grok weekly-limit choice' ]; then
@@ -968,6 +1000,21 @@ do_exit() {
     || die "task $ID's dialog check could not be recorded"
   composer_state=$(fm_backend_composer_state "$BACKEND" "$T" "$LABEL" 2>/dev/null) \
     || composer_state=unknown
+  load_usage_limit_dialog
+  dialog=$USAGE_LIMIT_DIALOG
+  if fm_wd_usage_limit_kind "$dialog"; then
+    if [ "$VERB" = relaunch ]; then
+      if [ "$dialog" = 'Grok weekly-limit choice' ]; then
+        usage_limit_relaunch_close
+        return 0
+      fi
+      die "task $ID is at a usage-limit screen that is not live-verified; refusing to close the endpoint or type Enter. Queue until reset."
+    fi
+    if [ "$dialog" = 'Grok weekly-limit choice' ]; then
+      die "task $ID is at a usage-limit screen; refusing to type Enter into it. Relaunch onto another runtime instead."
+    fi
+    die "task $ID is at a usage-limit screen; refusing to type Enter into it. Queue until reset."
+  fi
   cmd=$(fm_control_exit_command "$HARNESS" "$OPENCODE_MAJOR")
   hazard=$(fm_control_interrupt_hazard_signal "$HARNESS")
   if [ -n "$hazard" ] && rendered_matches "$hazard"; then
@@ -1687,7 +1734,8 @@ case "$VERB" in
     esac
     : > "$FM_COMPOSER_DIALOG_SINK" || true
     fm_backend_composer_state "$BACKEND" "$T" "$LABEL" >/dev/null 2>&1 || true
-    dialog=$(usage_limit_dialog_name) || dialog=
+    load_usage_limit_dialog
+    dialog=$USAGE_LIMIT_DIALOG
     if fm_wd_usage_limit_kind "$dialog"; then
       if [ "$dialog" = 'Grok weekly-limit choice' ]; then
         die "task $ID is at a usage-limit screen; refusing to send a lifecycle key into it. Relaunch onto another runtime instead."

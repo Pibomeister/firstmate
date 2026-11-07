@@ -120,6 +120,7 @@ init_changed_fixture_repo() {
     fm-backend-cmux.test.sh \
     fm-backend-zellij.test.sh \
     fm-control-herdr-smoke.test.sh \
+    fm-control-relaunch.test.sh \
     fm-backend-orca.test.sh; do
     printf '#!/usr/bin/env bash\n# tests/lib.sh\n' >"$repo/tests/$script"
     chmod +x "$repo/tests/$script"
@@ -132,6 +133,7 @@ init_changed_fixture_repo() {
   : >"$repo/bin/fm-procevent-quota.sh"
   : >"$repo/bin/fm-quota-axi-lib.sh"
   : >"$repo/bin/fm-quota-choose.sh"
+  : >"$repo/bin/fm-claude-seed.manifest"
   : >"$repo/bin/unmapped-source.sh"
   # A shared top-level test fixture read by two suites in different families,
   # beside a tests/ file nothing reads at all.
@@ -384,6 +386,15 @@ test_changed_dependency_selection_and_unmapped_failure() {
     "quota chooser source selects its focused test"
   git -C "$repo" add bin/fm-procevent-quota.sh bin/fm-quota-choose.sh
   git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm quota-source-change
+
+  printf '\n' >>"$repo/bin/fm-claude-seed.manifest"
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
+  assert_contains "$listed" "tests/fm-quota-choose.test.sh" \
+    "seed catalog selects chooser coverage"
+  assert_contains "$listed" "tests/fm-control-relaunch.test.sh" \
+    "seed catalog selects relaunch coverage"
+  git -C "$repo" add bin/fm-claude-seed.manifest
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm seed-catalog-change
 
   printf '\n' >>"$repo/bin/fm-quota-axi-lib.sh"
   listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
