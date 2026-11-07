@@ -239,6 +239,18 @@ test_dialog_detection() {
     "observe reuses the composer detector and normalizes Grok weekly-limit"
   assert_equals usage-limit "$(observe fm_wd_observe_dialog "$model")" \
     "observe still names a Claude usage-limit pane picker"
+  lib fm_wd_usage_limit_autowait $'work output\nUsage limit reached. Continuing automatically at 4:00 AM\n❯ \n  ? for shortcuts' \
+    || fail "the usage-limit auto-wait footer in the last rows should match"
+  lib fm_wd_usage_limit_autowait $'work output\n❯ \n  ? for shortcuts' \
+    && fail "an ordinary idle composer should not match the auto-wait"
+  lib fm_wd_usage_limit_autowait "$(printf 'Continuing automatically at 4:00 AM\n'; seq 1 12 | sed 's/.*/line/')" \
+    && fail "an auto-wait quote above the last rows should not match"
+  lib fm_wd_usage_limit_autowait $'work output\nThe footer reads `Continuing automatically at <reset>` here.\n❯ \n  ? for shortcuts' \
+    && fail "an auto-wait quote in conversation just above the composer should not match"
+  lib fm_wd_usage_limit_autowait $'work output\nContinuing automatically at 4:00 AM\n❯ \n  ? for shortcuts' \
+    && fail "the bare auto-wait phrase above the composer should not match"
+  lib fm_wd_usage_limit_autowait $'work output\n❯ \n  Continuing automatically at 4:00 AM' \
+    || fail "the auto-wait phrase in the footer below the prompt should match"
   assert_contains "$(lib fm_wd_dialog_options "$model")" $'3\tBuy more credits' "dialog options parsed"
   assert_equals 42 "$(lib fm_wd_footer_percent $'work\n  42% until auto-compact')" "auto-compact footer"
   pass "dialogs need their structure, and each kind is told apart"
@@ -3552,6 +3564,80 @@ SH
   pass "usage-limit: a quota-axi failure is cached for the pass"
 }
 
+test_primary_usage_limit_autowait_pages_once() {
+  make_home $'work output\nUsage limit reached. Continuing automatically at 4:00 AM\n❯ \n  ? for shortcuts'
+  transcript 100 "Working."
+  printf '%s\n' "$LOCKPID" > "$H/state/.supervise-daemon.pid"
+  printf "command:cat >> '%s'\n" "$H/paged.log" > "$H/config/wedge-alarm"
+  run_wd 0 once >/dev/null 2>&1 || fail "primary auto-wait pass failed"
+  assert_grep 'usage_limit_autowait=1' "$H/state/watchdog/captain" \
+    "the captain record must name the auto-wait: $(cat "$H/state/watchdog/captain" 2>/dev/null)"
+  assert_equals 1 "$(ledger_rows usage-limit-autowait page pending)" "the auto-wait page is recorded once: $(ledger | cut -f4-8)"
+  assert_equals 1 "$(ledger_rows usage-limit-autowait page "done")" "the auto-wait page was delivered: $(ledger | cut -f4-8)"
+  assert_grep 'usage-limit auto-wait' "$H/paged.log" "the page names the auto-wait"
+  assert_grep 'bin/fm-quota-reroute.sh suggest' "$H/paged.log" "the page names the reroute command"
+  assert_grep 'bin/fm-quota-reroute.sh suggest' "$H/data/watchdog/status.md" "the status gap names the reroute command"
+  assert_grep 'does not kill or relaunch the primary' "$H/data/watchdog/status.md" "the status gap keeps the primary in place"
+  [ ! -s "$H/typed.log" ] || fail "the watchdog typed into an auto-wait pane: $(cat "$H/typed.log")"
+  assert_equals 0 "$(ledger | awk -F'\t' '$6 == "restart"' | wc -l | tr -d ' ')" "the watchdog relaunched the primary: $(ledger | cut -f4-8)"
+  wd_pid_alive_check "$LOCKPID" || fail "the primary lock holder was killed"
+  run_wd 300 once >/dev/null 2>&1 || fail "rate-limited auto-wait pass failed"
+  assert_equals 1 "$(ledger_rows usage-limit-autowait page pending)" "a second page waits for nudge-secs: $(ledger | cut -f4-8)"
+  assert_equals 1 "$(grep -c 'usage-limit auto-wait' "$H/paged.log")" "the owner was paged only once inside the window"
+  pass "usage-limit auto-wait: a primary is recorded, paged once, and never typed into, killed, or relaunched"
+}
+
+wd_pid_alive_check() { kill -0 "$1" 2>/dev/null; }
+
+test_primary_autowait_side_checks_type_nothing_and_file_no_issue() {
+  make_home $'work output\nUsage limit reached. Continuing automatically at 4:00 AM\n❯ \n  ? for shortcuts' 'issue-repo=example.invalid/owner/repo'
+  transcript 100 "Working."
+  : > "$H/state/.afk"
+  printf '999999\n' > "$H/state/.supervise-daemon.pid"
+  printf 'needs-decision [at=%s] [key=cache-layout]: A or B?\n' "$((BASE - 9000))" > "$H/state/t1.status"
+  printf 'paused [at=%s]: hit the quota floor\n' "$((BASE - 9000))" > "$H/state/q1.status"
+  printf "command:cat >> '%s'\n" "$H/paged.log" > "$H/config/wedge-alarm"
+  local off
+  for off in 0 1000 2000 3000 4000 8000 12000; do
+    run_wd "$off" once >/dev/null 2>&1 || fail "auto-wait pass at +${off}s failed"
+  done
+  assert_equals 7 "$(ledger_rows usage-limit-autowait page pending)" "each window pages the owner: $(ledger | cut -f4-8)"
+  assert_equals 0 "$(ledger | awk -F'\t' '$6 == "nudge"' | wc -l | tr -d ' ')" "a side check nudged an auto-wait primary: $(ledger | cut -f4-8)"
+  assert_equals 0 "$(ledger | awk -F'\t' '$6 == "council"' | wc -l | tr -d ' ')" "a council ran for an auto-wait primary: $(ledger | cut -f4-8)"
+  assert_equals 0 "$(ledger | awk -F'\t' '$6 == "self-heal"' | wc -l | tr -d ' ')" "a long auto-wait filed a self-heal issue: $(ledger | cut -f4-8)"
+  [ ! -s "$H/typed.log" ] || fail "the watchdog typed into an auto-wait pane: $(cat "$H/typed.log")"
+  pass "usage-limit auto-wait: a dead away daemon, an aged decision, and a quota floor type nothing, and hours of pages file no issue"
+}
+
+test_primary_quoted_autowait_is_not_paged() {
+  make_home $'Reading docs/watchdog.md\nIt pages on `Continuing automatically at <reset>` in the footer.\n❯ \n  ? for shortcuts'
+  transcript 100 "Working."
+  printf '%s\n' "$LOCKPID" > "$H/state/.supervise-daemon.pid"
+  printf "command:cat >> '%s'\n" "$H/paged.log" > "$H/config/wedge-alarm"
+  run_wd 0 once >/dev/null 2>&1 || fail "quoted auto-wait primary pass failed"
+  assert_grep 'usage_limit_autowait=0' "$H/state/watchdog/captain" \
+    "a quoted auto-wait phrase must not be detected: $(cat "$H/state/watchdog/captain" 2>/dev/null)"
+  assert_equals 0 "$(ledger | awk -F'\t' '$6 == "page"' | wc -l | tr -d ' ')" "a quoted auto-wait phrase paged: $(ledger | cut -f4-8)"
+  [ ! -e "$H/paged.log" ] || fail "a quoted auto-wait phrase paged the owner: $(cat "$H/paged.log")"
+  pass "usage-limit auto-wait: a phrase quoted in conversation above the composer is not paged"
+}
+
+test_primary_ordinary_idle_is_not_paged() {
+  make_home $'Captain session\n❯ \n  ? for shortcuts'
+  transcript 100 "Working."
+  printf '%s\n' "$LOCKPID" > "$H/state/.supervise-daemon.pid"
+  printf "command:cat >> '%s'\n" "$H/paged.log" > "$H/config/wedge-alarm"
+  run_wd 0 once >/dev/null 2>&1 || fail "ordinary idle primary pass failed"
+  run_wd 300 once >/dev/null 2>&1 || fail "second ordinary idle primary pass failed"
+  assert_grep 'usage_limit_autowait=0' "$H/state/watchdog/captain" \
+    "the captain record must clear the auto-wait: $(cat "$H/state/watchdog/captain" 2>/dev/null)"
+  assert_equals 0 "$(ledger | awk -F'\t' '$6 == "page"' | wc -l | tr -d ' ')" "an ordinary idle primary was paged: $(ledger | cut -f4-8)"
+  [ ! -e "$H/paged.log" ] || fail "an ordinary idle primary paged the owner: $(cat "$H/paged.log")"
+  assert_not_contains "$(cat "$H/data/watchdog/status.md")" "usage-limit auto-wait" \
+    "an ordinary idle primary was reported on an auto-wait"
+  pass "usage-limit auto-wait: an ordinary idle primary is not paged"
+}
+
 if [ "$#" -gt 0 ]; then
   fm_test_run "$@"
   exit
@@ -3642,6 +3728,10 @@ fm_test_run \
   test_tmux_capture_failure_is_unknown_not_usage_limit \
   test_blank_tmux_viewport_is_none_not_usage_limit \
   test_quota_axi_failure_is_cached_for_the_pass \
+  test_primary_usage_limit_autowait_pages_once \
+  test_primary_autowait_side_checks_type_nothing_and_file_no_issue \
+  test_primary_quoted_autowait_is_not_paged \
+  test_primary_ordinary_idle_is_not_paged \
   test_unknown_composer_guards_the_nudge \
   test_orca_turn_probe_keeps_errors_unknown \
   test_no_activity_source_is_not_reported_ok \

@@ -10,6 +10,8 @@ They cannot prove a live Herdr pane plus a Codex secondmate relaunch.
 The usage-limit pane-text live guard is `tests/fm-usage-limit-pane-live.test.sh`.
 It is skip/pending by default and never passes on that path.
 Classify only an existing already-limited pane named by `FM_USAGE_LIMIT_PANE` with `FM_USAGE_LIMIT_PANE_LIVE=1`.
+That guard also classifies a primary pane's `Continuing automatically at <reset>` footer as `usage-limit-autowait`.
+No dated live capture of that footer exists yet, so the watchdog page for it stays a portable-test guarantee until a named pane proves it live.
 That path is read-only capture and never types Enter.
 Production `fm-control` relaunch refuses that pane-text verdict until a dated capture exists in [`runtime-backends.md`](runtime-backends.md).
 A Grok weekly-limit composer still closes without Enter.
