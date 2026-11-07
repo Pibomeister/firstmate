@@ -67,7 +67,7 @@ This PRD owns three shared records that the four signal PRDs reference and never
 | --- | --- | --- |
 | Incident ledger | One append-only row per incident transition, keyed by subject, signal, and state | The escalation gate is its only writer, and dedupe reads it before any send |
 | Wake ledger | One append-only row per wake at acknowledgement time | Wake counts read it, never the drained queue |
-| Restart ledger | One append-only row per restart, handoff, or quota move, keyed by subject, with an owner field naming the component that acted | Every restarter checks the per-subject budget before acting and refuses over budget with one escalation |
+| Restart ledger | One append-only row per restart, handoff, or quota move, keyed by subject, with an owner field naming the component that acted or launched the successor | Every restarter checks the per-subject budget before acting and refuses over budget with one escalation |
 
 ## Shared requirements
 

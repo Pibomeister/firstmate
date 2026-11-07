@@ -102,7 +102,7 @@ Rollout per host requires the watchdog in `act` mode with its status reader enab
 | Watcher polling liveness | `bin/fm-supervise-daemon.sh` and the process manager unit from `bin/fm-monitor-watchdog.sh` | Restart the watcher arm only |
 | Watcher freshness escalation | The one reader of `state/.monitor-watchdog-alert` | Report one gap per home |
 | Health verdict | `bin/fm-watchdog.sh` | Record the verdict and at most one escalation |
-| Dead primary restart | The watchdog agent-gone restart in `bin/fm-watchdog.sh` when `restart` is on; otherwise an external restarter under the `docs/watchdog.md` captain-record contract for a supervisor that restarts captains itself; when neither is configured, one escalation and no restart. The two restarters are never enabled together for one home, and the acting one is named in the restart ledger owner field | Restart once inside budget |
+| Dead primary restart | The watchdog agent-gone restart in `bin/fm-watchdog.sh`, which launches the successor through `restart-command`, when `restart` is on; otherwise an external restarter under the `docs/watchdog.md` captain-record contract for a supervisor that restarts captains itself; when neither is configured, one escalation and no restart. The two restarters are never enabled together for one home, and the acting one is named in the restart ledger owner field | Restart once inside budget |
 | External poll loop | The external Orca watchdog owner | Poll and beacon only |
 
 No second component restarts, types into, or re-arms a layer another row owns.

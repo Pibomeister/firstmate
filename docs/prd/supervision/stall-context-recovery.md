@@ -79,8 +79,8 @@ One parser owns the footer text for every reader.
 - SC-9: When both readings exist and differ by more than the disagreement bound, the derived percentage acts and the record names both values.
 - SC-10: A missing owning reading reports unknown and never triggers a restart by itself, and a non-destructive nudge stays allowed on filesystem activity evidence.
 - SC-11: A handoff completes only while a live successor is recorded in `state/.handoff-successor`.
-- SC-12: One launcher owns successor launch per subject, and the restart path reads `.handoff-successor` before it launches anything.
-- SC-13: One ender owns predecessor termination, and it ends the predecessor only when a live successor is recorded.
+- SC-12: One launcher owns successor launch per restart path: the predecessor self-launch for a Claude low-context handoff, the watchdog restart path for primaries that cannot launch themselves, and `bin/fm-control.sh relaunch` for workers and second mates; the watchdog restart path reads `.handoff-successor` and launches nothing when it names a live successor.
+- SC-13: One ender owns predecessor termination; on the handoff path it ends the predecessor only when a live successor is recorded, and on the frozen, agent-gone, and restart-requested paths it ends the predecessor before it launches the successor.
 - SC-14: A successor wait is bounded, and an expired wait raises one blocked record with no second launch.
 - SC-15: Post-stop successor pickup verification belongs to the watchdog reconcile path, and its failure verdict rides the heartbeat `dead` verdict after the pickup bound.
 - SC-16: A failed primary successor pages through the shared escalation gate, because a primary has no parent supervisor.
@@ -121,13 +121,13 @@ Session start reports each uncovered harness once per home.
 | --- | --- | --- |
 | Frozen, loop, unread, and unsent detection | `bin/fm-watchdog.sh` for Claude subjects, filesystem activity evidence otherwise | Nudge, then request restart |
 | Accepted-without-a-turn detection | The steering inbox re-ring ladder for workers, `bin/fm-watchdog.sh` for supervisor sessions with a proven turn signal | Nudge once, then escalate |
-| Successor launch | The predecessor self-launch in `bin/fm-handoff-trigger.sh` (Firstmate PR #156) for primaries, `bin/fm-control.sh relaunch` for workers and second mates | Launch one successor |
-| Predecessor termination | The watchdog restart path | End only with a live successor recorded |
+| Successor launch | The predecessor self-launch in `bin/fm-handoff-trigger.sh` (Firstmate PR #156) for a Claude primary low-context handoff that can still take a turn; the watchdog restart path in `bin/fm-watchdog.sh`, through `restart-command`, for frozen, agent-gone, and restart-requested primaries that cannot launch themselves; `bin/fm-control.sh relaunch` for workers and second mates | Launch one successor and name the launching component in the restart ledger owner field |
+| Predecessor termination | The watchdog restart path for primaries | On the handoff path, end only with a live successor recorded; otherwise end before the watchdog launches the successor |
 | Post-stop pickup verification | The watchdog reconcile path | Report the `dead` verdict on failure |
 | Claude primary handoff percentage | `bin/fm-handoff-trigger.sh`, acting on the derived token percentage | Ask for a handoff |
 | Restart percentage for sessions with no derived reading | The watchdog restart path, acting on the pane footer percentage | Ask for a handoff, then request restart |
 | Successor gate | The `state/.handoff-successor` record and its stop gate | Hold the stop until a live successor exists |
-| Restart execution | `bin/fm-control.sh relaunch` for workers and second mates; for primaries, the watchdog restart path ends the predecessor only | Stop the old process, and open the successor only for workers and second mates |
+| Restart execution | `bin/fm-control.sh relaunch` for workers and second mates; the watchdog restart path for primaries | Stop the old process, and open the successor only where the Successor launch row names this component |
 | Current-state read | `bin/fm-crew-state.sh` | Report state only |
 
 ## Acceptance tests
