@@ -69,7 +69,7 @@ The escalation gate wraps `wedge_alarm_notify`, reached externally through `fm-s
 | --- | --- | --- |
 | Incident ledger | One append-only row per incident transition, keyed by home, subject, signal, and state, at `state/incident-ledger.tsv` | The escalation gate is its only writer, and dedupe reads it before any send |
 | Wake ledger | One append-only row per wake at acknowledgement time, at `state/wake-ledger.tsv` | `bin/fm-wake-drain.sh` writes it at acknowledgement, and wake counts read it, never the drained queue |
-| Restart ledger | One append-only row per restart, handoff, or quota move, keyed by subject, with an owner field naming the component that acted or launched the successor, at `state/restart-ledger.tsv` | Every restarter checks the per-subject budget before acting and refuses over budget with one escalation. Each restarter writes it under a lock. The budget default is 2 per day, at least 7200 s apart |
+| Restart ledger | One append-only row per restart, handoff, or quota move, keyed by subject, with a `kind` field of `handoff` or `restart` and an owner field naming the component that acted or launched the successor, at `state/restart-ledger.tsv` | Every forced restart or relaunch checks the per-subject restart budget before acting and refuses over budget with one escalation. Only `restart` rows count against that budget; planned handoffs inside the SC-25 interval rule are bounded by that rule instead. Each writer appends under a lock. The budget default is 2 per day, at least 7200 s apart |
 
 ## Shared requirements
 
@@ -90,7 +90,7 @@ The escalation gate wraps `wedge_alarm_notify`, reached externally through `fm-s
 | Watchdog permission page `wd_page_permission` | `bin/fm-watchdog.sh:963`, `:980` | Via `page` | Per-channel label | Through `page` |
 | Monitor `watchdog_alert` | `bin/fm-monitor-watchdog.sh:136-158`, `:148` | Via `page` | Per-channel label | Through `page` |
 | Watcher away-decision pager | `bin/fm-watch.sh:2990`, `:3087` | Via `page` | Per-channel label | Through `page` |
-| Usage warner | `bin/fm-usage-warner.sh:236` | `osascript` desktop notice | `other` | Exempt as a local desktop notice that never reaches Slack, or routed through the gate |
+| Usage warner | `bin/fm-usage-warner.sh:236` | `osascript` desktop notice | `other` | Through the gate |
 | Relay follow-ups | `fmx-respond`, external | Relay | External dependency | Listed as a dependency, not capability |
 | External Orca poll loop | External to this repo | External beacons | External dependency | Listed as a dependency, not capability |
 - EQ-21: Direct page callers route through the one gate, so no caller bypasses dedupe or quiet hours.

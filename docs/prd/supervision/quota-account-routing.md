@@ -66,7 +66,7 @@ It changes no merge, release, or deploy gate and authorizes no new spend.
 - The candidate source is crew-dispatch resolution (`bin/fm-dispatch-resolve.sh`).
 - `reroute-candidates` is read only on a home with no crew-dispatch configuration, and never moves a task whose rule carries `approval: "captain"`.
 - QA-19: A quota-limited primary raises one exception that names the reset time and the pin decision, and no automated move touches it.
-- QA-20: Every move writes one row to the shared restart ledger and counts against the per-subject budget.
+- QA-20: Every move writes one `restart` row to the shared restart ledger and counts against the per-subject restart budget.
 
 ## Incident keys
 

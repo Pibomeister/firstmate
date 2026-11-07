@@ -87,7 +87,9 @@ The status-line percentage never gates anything.
 - SC-16: A failed primary successor pages through the shared escalation gate, because a primary has no parent supervisor.
 - SC-17: Recovery never discards uncommitted work and never removes a worktree.
 - SC-18: A restart defers while the composer holds a pending unsent draft on a live session.
-- SC-19: Every restart and successor launch checks the shared restart ledger and its per-subject budget first.
+- SC-19: Every forced restart or relaunch checks the shared restart ledger and its per-subject restart budget first.
+- A forced restart or relaunch is a watchdog or recovery restart of a dead or wedged session, or a handoff at the restart floor (`restart-at-percent`).
+- A planned context handoff that respects the SC-25 interval is bounded by SC-25 and AT-SC-11, not by the restart budget.
 - SC-20: A handoff or successor launch first checks for a usage-limit refusal on the target account and never spawns onto a refused account.
 
 ## Startup and handoff churn
@@ -101,8 +103,10 @@ The status-line percentage never gates anything.
 - The watchdog restart handoff (`bin/fm-watchdog.sh:745`) carries the same cap.
 - SC-25: A cross-session minimum handoff interval stops hourly churn under normal load.
 - Inside the interval, the low-context trigger defers its handoff and writes one `context-churn` incident to the escalation gate.
-- The restart floor (`restart-at-percent`) and a dead-session verdict bypass the interval.
-- SC-26: Every handoff writes one row to the restart ledger, so churn is countable per home per day.
+- The restart floor (`restart-at-percent`) and a dead-session verdict bypass the interval, and each counts against the SC-19 restart budget instead.
+- SC-26: Every handoff and every forced restart writes one row to the restart ledger, so churn is countable per home per day.
+- Each row carries a `kind` field of `handoff` or `restart`, and only `restart` rows count against the per-subject restart budget.
+- A planned handoff inside the SC-25 rule writes `handoff`, and a forced restart or relaunch under SC-19 writes `restart`.
 
 ### Provisional churn values
 
@@ -163,7 +167,7 @@ Session start reports each uncovered harness once per home.
 - AT-SC-8: A stop with a live successor completes and the recheck passes.
 - AT-SC-9: A successor that exits before the recheck raises exactly one blocked record.
 - AT-SC-10: Both low-context paths armed on one Claude primary produce one handoff, not two.
-- AT-SC-11: An 8-hour away-mode soak holds handoffs at or under 4 and every session's startup tokens at or under 105,000 and at or under the baseline median from one same-profile soak on pre-change code.
+- AT-SC-11: An 8-hour away-mode soak holds handoffs at or under 4, one per interval, with every planned handoff written as a `handoff` row that the restart budget does not refuse, and holds every session's startup tokens at or under 105,000 and at or under the baseline median from one same-profile soak on pre-change code.
 - AT-SC-12: A pending unsent draft defers a restart and loses no draft text.
 - AT-SC-13: Existing suites `tests/fm-handoff-trigger.test.sh` and `tests/fm-crew-state.test.sh` still pass.
 - AT-SC-14: A session that reaches the low-context trigger inside the interval writes one `context-churn` incident and no handoff, and at the restart floor it hands off.
