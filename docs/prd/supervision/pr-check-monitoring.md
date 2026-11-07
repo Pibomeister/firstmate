@@ -52,7 +52,7 @@ It changes no merge, release, or deploy gate and never merges on its own authori
 - PM-10: An orphan run is reported with the same fields as an owned run.
 - PM-11: Monitoring never merges, marks ready, responds to a gate, or pushes.
 - PM-12: One PR state change produces one supervisor wake across the watch and discovery paths.
-- PM-13: The incident key is (home, forge, repository, PR, head, signal, state), and both paths report transitions to the escalation gate, which alone writes them to the shared incident ledger.
+- PM-13: The incident key is the key fields the Incident keys table lists for the signal, led by home, plus the signal and the state, and both paths report transitions to the escalation gate, which alone writes them to the shared incident ledger.
 - PM-14: Retiring a watch with an unhandled result is refused.
 - PM-15: A rate-limit response is transient, backs off to the reset time, and never ends a watch.
 - PM-16: One per-forge read budget bounds all watches and discovery reads together.
@@ -63,9 +63,9 @@ It changes no merge, release, or deploy gate and never merges on its own authori
 
 | Signal | Key fields | Exception states | Routine states |
 | --- | --- | --- | --- |
-| Check watch | forge, repo, PR, head, check | terminal failure, ambiguous identity | success as expected |
-| Conflict state | forge, repo, PR, head, base head | `conflicted` | `clean`, `computing` |
-| Ready run | repo, PR, head | conflicted, orphan past bound | ready, owned |
+| Check watch | home, forge, repo, PR, head, check | terminal failure, ambiguous identity | success as expected |
+| Conflict state | home, forge, repo, PR, head, base head | `conflicted` | `clean`, `computing` |
+| Ready run | home, repo, PR, head | conflicted, orphan past bound | ready, owned |
 
 ## Owner absence
 

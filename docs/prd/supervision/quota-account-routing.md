@@ -67,8 +67,8 @@ It changes no merge, release, or deploy gate and authorizes no new spend.
 
 | Signal | Key fields | Exception states | Routine states |
 | --- | --- | --- | --- |
-| Quota floor | task, runtime | all candidates at floor | candidate named |
-| Move | task, from-runtime, to-runtime | recheck failed, budget exhausted | move completed |
+| Quota floor | home, task, runtime | all candidates at floor | candidate named |
+| Move | home, task, from-runtime, to-runtime | recheck failed, budget exhausted | move completed |
 | Primary at floor | home | at floor past one pass | reset reached |
 
 ## Owner absence
