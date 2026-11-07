@@ -103,8 +103,8 @@ The status-line percentage never gates anything.
 
 | Signal | Key fields | Exception states | Routine states |
 | --- | --- | --- | --- |
-| Stall detection | task or home, symptom | second detection, restart failed | first nudge |
-| Input swallowed | task, input record | bound expired twice | turn started in bound |
+| Stall detection | home, task if any, symptom | second detection, restart failed | first nudge |
+| Input swallowed | home, task, input record | bound expired twice | turn started in bound |
 | Successor lifecycle | home, successor | pickup failed, wait expired | pickup proven |
 | Startup budget | home, session | over budget | inside budget |
 
