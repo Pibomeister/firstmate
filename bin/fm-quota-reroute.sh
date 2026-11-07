@@ -44,7 +44,8 @@
 # HEAD:.claude of the running home. The catalog hashes
 # .claude/settings.json, .claude/skills, .claude/mods/firstmate-calm/, and
 # .agents/skills/ (the skills symlink target). A user file under
-# .agents/skills is still a signal. Account-wide skills, agents, commands, and a plugin that
+# .agents/skills is still a signal. A worktree .claude or .agents/skills
+# directory that is a symlink is not unchanged seed. Account-wide skills, agents, commands, and a plugin that
 # only ships those, are not a signal. enabledPlugins is not an account
 # signal. An unreadable file is a signal. An unreadable plugins/ dir is
 # unreadable MCP/hooks config. An unreadable skills/, agents/, or commands/
@@ -361,9 +362,15 @@ EOF
 
 # Prints paths of files and symlinks under <dir>, or a signal and returns 0
 # when the walk cannot complete. Returns 1 when <dir> is absent.
+# A symlink root is not the authentic seed directory; find -P would hide
+# files behind it, so callers treat that root as a signal instead of walking.
 fm_quota_claude_find_leaves() {  # <dir>
   local dir=$1 err out
   [ -e "$dir" ] || return 1
+  if [ -L "$dir" ]; then
+    printf '%s\n' "unreadable $dir"
+    return 0
+  fi
   if [ ! -d "$dir" ] || [ ! -r "$dir" ] || [ ! -x "$dir" ]; then
     printf '%s\n' "unreadable $dir"
     return 0
@@ -390,6 +397,10 @@ fm_quota_claude_find_leaves() {  # <dir>
 fm_quota_claude_find_dirs() {  # <dir>
   local dir=$1 err out
   [ -e "$dir" ] || return 1
+  if [ -L "$dir" ]; then
+    printf '%s\n' "unreadable $dir"
+    return 0
+  fi
   if [ ! -d "$dir" ] || [ ! -r "$dir" ] || [ ! -x "$dir" ]; then
     printf '%s\n' "unreadable $dir"
     return 0
@@ -459,6 +470,10 @@ fm_quota_claude_seed_tree_signal() {  # <wt>
   done <<EOF
 $paths
 EOF
+  if [ -L "$wt/.claude" ]; then
+    printf '%s\n' "worktree .claude"
+    return 0
+  fi
   rc=0
   leaves=$(fm_quota_claude_find_leaves "$wt/.claude") || rc=$?
   if [ "$rc" -eq 0 ]; then
@@ -480,6 +495,10 @@ EOF
   target=$wt/.agents/skills
   if [ ! -e "$target" ]; then
     printf '%s\n' "unreadable $target"
+    return 0
+  fi
+  if [ -L "$target" ]; then
+    printf '%s\n' "worktree .agents/skills"
     return 0
   fi
   rc=0
