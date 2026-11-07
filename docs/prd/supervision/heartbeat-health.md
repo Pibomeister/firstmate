@@ -63,7 +63,7 @@ Any requirement on that loop is a dependency to confirm with its owner, not a cl
 - HB-6: A dead lock owner reports `dead` even when the last heartbeat still reads fresh.
 - HB-7: An unconfirmed lock owner reports `unconfirmed` and receives no typed signal and no restart.
 - HB-8: A captain record of `none` with open work or an away record maps to `dead`.
-- "`none` with no open work and no away record reports `ok` (idle)."
+- `none` with no open work and no away record reports `ok` (idle).
 - Open work means the `heartbeat_open_work` test (`bin/fm-watch.sh:3873-3888`) without its secondmate-home exclusion.
 - HB-9: An unread heartbeat field reports `unknown` for that field and never upgrades the verdict.
 - HB-10: The named record `.last-heartbeat` never feeds the verdict.
@@ -185,4 +185,4 @@ No savings figure is stated until both windows exist.
 | F-HB-5 | FINAL opus-5-5 | Same-session provenance required for endpoint comparison and parent-record precedence during a mismatch | HB-20, AT-HB-15, AT-HB-16 |
 | HB-F5 | B gemini-argon | Heartbeat naming the lock session updates the captain record | HB-19 |
 
-Status: FINAL. Every BLOCKING finding from both Stage 2 reviews is closed above.
+Status: FINAL. Every BLOCKING finding from both Stage 2 reviews and the FINAL opus-5-5 review is closed above.

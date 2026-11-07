@@ -142,7 +142,7 @@ No savings figure is stated until both windows exist.
 | PM-F5 | B gemini-argon | Conflict cache keyed by head and base head | PM-6, PM-9 |
 | F-PM-1 | FINAL opus-5-5 | Separate conflict-cache refresher named with its own bound and a cap of K PRs per pass; discovery only reads the cache and stays local-only | PM-6, Ownership, AT-PM-11 |
 
-Status: FINAL. Every BLOCKING finding from both Stage 2 reviews is closed above.
+Status: FINAL. Every BLOCKING finding from both Stage 2 reviews and the FINAL opus-5-5 review is closed above.
 
 ## Open questions
 

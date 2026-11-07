@@ -88,7 +88,7 @@ The status-line percentage never gates anything.
 - SC-17: Recovery never discards uncommitted work and never removes a worktree.
 - SC-18: A restart defers while the composer holds a pending unsent draft on a live session.
 - SC-19: Every forced restart or relaunch checks the shared restart ledger and its per-subject restart budget first.
-- A forced restart or relaunch is a watchdog or recovery restart of a dead or wedged session, or a handoff at the restart floor (`restart-at-percent`).
+- A forced restart or relaunch is a watchdog or recovery restart of a dead or wedged session, a handoff at the restart floor (`restart-at-percent`), or a quota move (QA-20).
 - A planned context handoff that respects the SC-25 interval is bounded by SC-25 and AT-SC-11, not by the restart budget.
 - SC-20: A handoff or successor launch first checks for a usage-limit refusal on the target account and never spawns onto a refused account.
 
@@ -220,4 +220,4 @@ No savings figure is stated until both windows exist.
 | F-SC-2 | FINAL opus-5-5 | Inside the interval the trigger defers and writes one `context-churn` incident; the restart floor and a dead verdict bypass the interval | SC-25, AT-SC-14 |
 | F-SC-3 | FINAL opus-5-5 | External-ender branch added, recorded in the restart ledger owner field; with no ender SC-14 raises one blocked record | Ownership, SC-14 |
 
-Status: FINAL. Every BLOCKING finding from both Stage 2 reviews is closed above.
+Status: FINAL. Every BLOCKING finding from both Stage 2 reviews and the FINAL opus-5-5 review is closed above.

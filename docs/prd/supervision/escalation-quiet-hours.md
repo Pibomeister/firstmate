@@ -159,7 +159,7 @@ No savings figure is stated until both windows exist.
 | F-EQ-2 | FINAL opus-5-5 | Gate wraps `wedge_alarm_notify` / `fm-supervise-daemon.sh page`; ledgers placed under `state/` with named writers; budget default 2 per day, at least 7200 s apart | Shared ledgers, EQ-16 |
 | F-EQ-3 | FINAL opus-5-5 | Monitor unit loop named as the window-end flush runner under the lock; session start and the return brief read the held digest record | EQ-19, AT-EQ-10 |
 
-Status: FINAL. Every BLOCKING finding from both Stage 2 reviews is closed above.
+Status: FINAL. Every BLOCKING finding from both Stage 2 reviews and the FINAL opus-5-5 review is closed above.
 
 ## Open questions
 

@@ -66,7 +66,7 @@ It changes no merge, release, or deploy gate and authorizes no new spend.
 - The candidate source is crew-dispatch resolution (`bin/fm-dispatch-resolve.sh`).
 - `reroute-candidates` is read only on a home with no crew-dispatch configuration, and never moves a task whose rule carries `approval: "captain"`.
 - QA-19: A quota-limited primary raises one exception that names the reset time and the pin decision, and no automated move touches it.
-- QA-20: Every move writes one `restart` row to the shared restart ledger and counts against the per-subject restart budget.
+- QA-20: Every move is a relaunch under SC-19, checks the per-subject restart budget first, and writes one `restart` row to the shared restart ledger that counts against that budget.
 
 ## Incident keys
 
@@ -149,7 +149,7 @@ No savings figure is stated until both windows exist.
 | QA-F5 | B gemini-argon | Token baseline measures dispatch and relaunch session turns | Token economics |
 | F-QA-1 | FINAL opus-5-5 | Crew-dispatch resolution named as the candidate source with `reroute-candidates` only as a fallback that never moves a captain-approval task; snapshot at `state/quota-incidents/<key>.json` written at detection; heartbeat allowance display-only | QA-17, QA-18, Ownership |
 
-Status: FINAL. Every BLOCKING finding from both Stage 2 reviews is closed above.
+Status: FINAL. Every BLOCKING finding from both Stage 2 reviews and the FINAL opus-5-5 review is closed above.
 
 ## Open questions
 
