@@ -1,0 +1,22 @@
+== [after/until] status: paused: waiting on the release cut until 2026-11-07T13:01Z
+== backend liveness: dead
+== crew state: state: unknown · source: none · worktree gone (torn down?)
+--- watcher round 1
+(watcher exited rc=0)
+stdout: signal: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.XPHRpI/state/held.status
+drain:
+   1794049282	2	signal	held.status	signal: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.XPHRpI/state/held.status
+   wake annotation: latest wake-EVENT observed at drain, not current state: held.status: paused: waiting on the release cut until 2026-11-07T13:01Z
+--- watcher round 2
+(watcher exited rc=0)
+stdout: stale: fmlab:fm-held
+drain:
+   1794049303	3	stale	fmlab:fm-held	stale: fmlab:fm-held
+--- watcher round 3
+(watcher still running after 20s - no wake)
+stdout: 
+drain:
+--- pane:
+$ echo agent exited
+agent exited
+$

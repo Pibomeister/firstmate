@@ -1,0 +1,34 @@
+== [after] status: paused: waiting on the validation run to finish
+--- round 1 (agent liveness: alive)
+(watcher exited rc=0)
+stdout: signal: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.b9V02R/state/held.status
+   drained: 1794050082	2	signal	held.status	signal: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.b9V02R/state/held.status
+   drained: wake annotation: latest wake-EVENT observed at drain, not current state: held.status: paused: waiting on the validation run to finish
+--- round 2 (agent liveness: alive)
+(watcher exited rc=0)
+stdout: stale: fmlab:fm-held
+   drained: 1794050099	3	stale	fmlab:fm-held	stale: fmlab:fm-held
+--- agent exits to a bare shell
+--- round 3 (agent liveness: dead)
+(watcher exited rc=0)
+stdout: stale: fmlab:fm-held
+   drained: 1794050112	4	stale	fmlab:fm-held	stale: fmlab:fm-held
+--- round 4 (agent liveness: dead)
+(watcher still running after 45s - no wake)
+stdout: 
+--- triage log:
+[2026-11-07T05:15:25-0600] absorbed non-terminal stale (declared wait or open captain call already re-surfaced this window): fmlab:fm-held
+[2026-11-07T05:15:28-0600] absorbed non-terminal stale (declared wait or open captain call already re-surfaced this window): fmlab:fm-held
+[2026-11-07T05:15:31-0600] absorbed non-terminal stale (declared wait or open captain call already re-surfaced this window): fmlab:fm-held
+[2026-11-07T05:15:33-0600] absorbed non-terminal stale (declared wait or open captain call already re-surfaced this window): fmlab:fm-held
+[2026-11-07T05:15:36-0600] absorbed non-terminal stale (declared wait or open captain call already re-surfaced this window): fmlab:fm-held
+[2026-11-07T05:15:39-0600] absorbed non-terminal stale (declared wait or open captain call already re-surfaced this window): fmlab:fm-held
+[2026-11-07T05:15:42-0600] absorbed non-terminal stale (declared wait or open captain call already re-surfaced this window): fmlab:fm-held
+[2026-11-07T05:15:45-0600] absorbed non-terminal stale (declared wait or open captain call already re-surfaced this window): fmlab:fm-held
+[2026-11-07T05:15:47-0600] absorbed non-terminal stale (declared wait or open captain call already re-surfaced this window): fmlab:fm-held
+[2026-11-07T05:15:50-0600] absorbed non-terminal stale (declared wait or open captain call already re-surfaced this window): fmlab:fm-held
+[2026-11-07T05:15:54-0600] absorbed non-terminal stale (declared wait or open captain call already re-surfaced this window): fmlab:fm-held
+[2026-11-07T05:15:56-0600] absorbed non-terminal stale (declared wait or open captain call already re-surfaced this window): fmlab:fm-held
+[2026-11-07T05:15:59-0600] absorbed non-terminal stale (declared wait or open captain call already re-surfaced this window): fmlab:fm-held
+[2026-11-07T05:16:02-0600] absorbed non-terminal stale (declared wait or open captain call already re-surfaced this window): fmlab:fm-held
+[2026-11-07T05:16:04-0600] absorbed non-terminal stale (declared wait or open captain call already re-surfaced this window): fmlab:fm-held

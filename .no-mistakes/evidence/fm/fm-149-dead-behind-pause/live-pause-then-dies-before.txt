@@ -1,0 +1,17 @@
+== [before] status: paused: waiting on the validation run to finish
+--- round 1 (agent liveness: alive)
+(watcher exited rc=0)
+stdout: signal: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.jhXsd6/state/held.status
+   drained: 1794049892	2	signal	held.status	signal: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.jhXsd6/state/held.status
+   drained: wake annotation: latest wake-EVENT observed at drain, not current state: held.status: paused: waiting on the validation run to finish
+--- round 2 (agent liveness: alive)
+(watcher exited rc=0)
+stdout: stale: fmlab:fm-held
+   drained: 1794049905	3	stale	fmlab:fm-held	stale: fmlab:fm-held
+--- agent exits to a bare shell
+--- round 3 (agent liveness: dead)
+(watcher still running after 20s - no wake)
+stdout: 
+--- round 4 (agent liveness: dead)
+(watcher still running after 20s - no wake)
+stdout: 
