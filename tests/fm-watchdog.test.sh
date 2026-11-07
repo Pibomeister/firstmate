@@ -2978,6 +2978,8 @@ SH
   pass "usage-limit: a Grok weekly-limit secondmate names the pick via the composer detector"
 }
 
+# Guard, not proof. tmux already uses a true viewport on main, so this case
+# still passes there. The Orca scrollback false-positive is the proof case.
 test_home_usage_limit_ignores_grok_in_scrollback() {
   local parent mate user snap grok picker mate_t observe history view
   grok=$'                                                                                             █\n\n  ┃\n  ┃  You hit your weekly limit.\n  ┃\n  ┃\n  ┃  1 (○) Buy more credits  Purchase credits to keep using Grok Build\n  ┃  2 (○) Try Again         Resubmit the last prompt once you have usage again\n  ┃\n  ┃  ↑/↓ navigate · y copy                                                  Enter:submit\n  ┃\n\n  Tab:next answer  │  Esc:scrollback  │  Shift+x:dismiss'
@@ -3066,7 +3068,7 @@ SH
   assert_not_contains "$(cat "$parent/data/watchdog/status.md")" "Supervisor relaunches" \
     "a dismissed Grok frame in scrollback must not send the supervisor to relaunch"
   rm -f "$FAKEBIN/quota-axi" "$FAKEBIN/fm-control.sh"
-  pass "usage-limit: a home pane queues when Grok remains only in scrollback"
+  pass "usage-limit guard: a tmux home pane queues when Grok remains only in scrollback"
 }
 
 test_orca_usage_limit_does_not_relaunch_from_scrollback() {

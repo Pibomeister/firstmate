@@ -193,6 +193,7 @@ case "${1:-}" in
     done
     printf 'fakepane\n'; exit 0 ;;
   capture-pane)
+    [ -z "${FM_FAKE_COMPOSER_READ_FAIL:-}" ] || exit 1
     if [ -f "$D/after-enter" ] && [ -f "$D/keys" ] && grep -qx Enter "$D/keys"; then
       # after-enter-late holds how many captures after Enter still show the
       # ordinary pane, for a screen that renders after the submit has read it.
@@ -1427,6 +1428,36 @@ test_closed_orca_terminal_exit_refuses_without_the_worktree_scan() {
   pass "fm-control exit: a closed Orca terminal refuses when the worktree scan cannot be read"
 }
 
+test_interrupt_sends_no_keys_when_the_visible_pane_cannot_be_read() {
+  local dir out rc
+  dir=$(new_case capture-fail-interrupt)
+  add_task "$dir" t1 claude
+  alive_as "$dir" claude
+  out=$(FM_FAKE_COMPOSER_READ_FAIL=1 run_control "$dir" t1 interrupt); rc=$?
+  expect_code 1 "$rc" "interrupt must refuse when the visible pane cannot be read"$'\n'"$out"
+  assert_contains "$out" "could not read the visible pane" \
+    "a failed pane read must refuse rather than send a lifecycle key"
+  [ -z "$(keys_sent "$dir")" ] || fail "no lifecycle key may be sent when the pane cannot be read: $(keys_sent "$dir")"
+  [ -z "$(literals "$dir")" ] || fail "no text may be typed when the pane cannot be read: $(literals "$dir")"
+  pass "fm-control interrupt: an unreadable pane sends no keys"
+}
+
+test_busy_exit_sends_no_keys_when_the_visible_pane_cannot_be_read() {
+  local dir out rc gen
+  dir=$(new_case capture-fail-busy-exit)
+  add_task "$dir" t1 claude
+  alive_as "$dir" claude
+  gen=$("$ROOT/bin/fm-busy-event.sh" arm "$dir/home/state" t1)
+  printf 'busy_gen=%s\n' "$gen" >> "$dir/home/state/t1.meta"
+  out=$(FM_FAKE_COMPOSER_READ_FAIL=1 run_control "$dir" t1 exit); rc=$?
+  expect_code 1 "$rc" "busy exit must refuse when the visible pane cannot be read"$'\n'"$out"
+  assert_contains "$out" "could not read the visible pane" \
+    "a failed pane read must refuse rather than interrupt first"
+  [ -z "$(keys_sent "$dir")" ] || fail "no interrupt key may be sent when the pane cannot be read: $(keys_sent "$dir")"
+  [ -z "$(literals "$dir")" ] || fail "no exit command may be typed when the pane cannot be read: $(literals "$dir")"
+  pass "fm-control exit: an unreadable pane sends no keys even when the agent is busy"
+}
+
 test_interrupt_refuses_when_no_agent_runs() {
   local dir out rc
   dir=$(new_case nointerrupt)
@@ -1903,6 +1934,8 @@ test_connected_orca_droid_shell_exit_refuses_wrong_generation_and_live_scan
 test_stale_orca_terminal_exit_reports_endpoint_gone_after_reboot
 test_stale_orca_terminal_exit_refuses_a_surviving_agent_after_reboot
 test_stale_orca_terminal_exit_refuses_without_a_postdating_boot
+test_interrupt_sends_no_keys_when_the_visible_pane_cannot_be_read
+test_busy_exit_sends_no_keys_when_the_visible_pane_cannot_be_read
 test_interrupt_refuses_when_no_agent_runs
 test_ambiguous_endpoint_refuses
 test_busy_agent_is_interrupted_before_the_exit_command

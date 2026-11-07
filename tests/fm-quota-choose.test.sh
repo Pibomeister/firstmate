@@ -1601,6 +1601,38 @@ sig=$("$unknown/bin/fm-quota-reroute.sh" claude-tooling --config-dir "$empty_dir
 [ -n "$sig" ] || fail "malformed catalog produced an empty signal"
 ok "unknown seed provenance stays Claude-specific tooling"
 
+skills_real="$LAB/skills.real"
+skills_evil="$LAB/skills.evil"
+mv "$seed_home/.agents/skills" "$skills_real"
+mkdir -p "$skills_evil"
+cp -a "$skills_real/." "$skills_evil/"
+mkdir -p "$skills_evil/user-added"
+printf '%s\n' '# user skill' > "$skills_evil/user-added/SKILL.md"
+ln -s "$skills_evil" "$seed_home/.agents/skills"
+sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$seed_home") \
+  || fail "a symlinked .agents/skills root with an extra user file must be tooling required"
+[ "$sig" = "worktree .agents/skills" ] \
+  || fail "symlinked skills root signal: $sig"
+rm -f "$seed_home/.agents/skills"
+mv "$skills_real" "$seed_home/.agents/skills"
+ok "a symlinked .agents/skills root with extra user files is Claude-specific tooling"
+
+claude_real="$LAB/claude.real"
+claude_evil="$LAB/claude.evil"
+mv "$seed_home/.claude" "$claude_real"
+mkdir -p "$claude_evil"
+cp -a "$claude_real/." "$claude_evil/"
+mkdir -p "$claude_evil/hooks"
+printf '%s\n' '{"hooks":{"Stop":[{}]}}' > "$claude_evil/hooks/hooks.json"
+ln -s "$claude_evil" "$seed_home/.claude"
+sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$seed_home") \
+  || fail "a symlinked .claude root with an extra user hook must be tooling required"
+[ "$sig" = "worktree .claude" ] \
+  || fail "symlinked .claude root signal: $sig"
+rm -f "$seed_home/.claude"
+mv "$claude_real" "$seed_home/.claude"
+ok "a symlinked .claude root with extra user files is Claude-specific tooling"
+
 if out=$(call_reroute suggest --snapshot "$LAB/captured.json" --from-harness claude \
   --from-model claude-3-5-sonnet --claude-config-dir "$empty_dir" --worktree "$clean_wt" \
   --candidate claude:claude-3-5-sonnet 2>/dev/null); then

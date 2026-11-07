@@ -860,6 +860,7 @@ test_relaunch_refuses_before_exit_when_the_composer_state_is_unproven() {
     || fail "an unproven composer refusal must leave the old agent running"
   assert_no_grep "/exit" "$dir/fake/literal" \
     "the exit command must not be typed when the visible pane cannot be read"
+  [ ! -s "$dir/fake/keys" ] || fail "no lifecycle key may be sent when the pane cannot be read: $(cat "$dir/fake/keys")"
   pass "fm-control relaunch: an unreadable pane fails closed before the exit command is typed"
 }
 
