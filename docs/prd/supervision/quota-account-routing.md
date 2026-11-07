@@ -58,11 +58,12 @@ It changes no merge, release, or deploy gate and authorizes no new spend.
 - QA-14: Every move writes one record with the from-runtime, the to-runtime, and the snapshot reference.
 - QA-15: One per-task move budget bounds moves, and no move returns to a runtime before its reset.
 - QA-16: The provider of a candidate comes from the harness catalog, and an unproven provider reads as unmeasured headroom.
-- QA-17: One snapshot file per incident serves detection and selection, and one separate recheck snapshot file serves each fresh recheck.
+- QA-17: One snapshot file per incident serves detection, and one separate recheck snapshot file serves each fresh recheck.
 - The detection snapshot is `state/quota-incidents/<incident-key>.json`, written once by the detecting owner at detection.
 - Each recheck snapshot is `state/quota-incidents/<incident-key>.<n>.json`, where `<n>` increases per recheck, and no snapshot is edited after it is written.
-- The QA-14 move record references the snapshot that authorized the move, whether that snapshot is the detection snapshot or a recheck snapshot.
-- Selection and the relaunch check read the snapshot named by the move record, and a fresh recheck (QA-12) writes a new recheck snapshot rather than editing any earlier snapshot.
+- Selection reads the newest snapshot for the incident: the highest-numbered recheck snapshot, or the detection snapshot when no recheck exists.
+- The relaunch check reads the snapshot that selection used, and a fresh recheck (QA-12) writes a new recheck snapshot rather than editing any earlier snapshot, so a reselection reads that new snapshot.
+- The QA-14 move record, written when the move happens, references the snapshot that the final selection used.
 - The heartbeat allowance read (`bin/fm-heartbeat.sh:642`) is display-only and never drives a move.
 - QA-18: Dispatch rules and watchdog reroute candidates read one candidate source, and captain-approval rules keep their gate on every path.
 - The candidate source is crew-dispatch resolution (`bin/fm-dispatch-resolve.sh`).
@@ -88,7 +89,7 @@ No path guesses headroom from a harness or model name.
 
 | Signal | Single owner | Permitted action |
 | --- | --- | --- |
-| Quota evidence | The `quota-axi` snapshot captured at detection | Report runway only |
+| Quota evidence | The newest `quota-axi` incident snapshot (detection or highest-numbered recheck) | Report runway only |
 | Eligibility selection | `bin/fm-quota-reroute.sh suggest` | Name one candidate or `none` |
 | Move execution | `bin/fm-control.sh relaunch` under supervisor instruction | Stop and relaunch the worker |
 | Watchdog quota observation | `bin/fm-watchdog.sh` | Write a ledger row and name the candidate |

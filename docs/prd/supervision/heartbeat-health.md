@@ -81,10 +81,10 @@ Any requirement on that loop is a dependency to confirm with its owner, not a cl
 - HB-17: Self-heal restarts only the failed layer and never restarts a healthy session above it.
 - HB-18: Every health transition is reported to the escalation gate, which writes one row to the shared incident ledger that a later pass can dedupe against.
 - HB-19: A heartbeat updates the captain record only when its writer runs inside the lock owner.
-- The writer test is the writer anchor pid equals the lock pid, or the writer trusted session id equals the lock session, per `bin/fm-watchdog.sh:384-387` and `docs/watchdog.md:174-176`.
+- The writer test is the writer anchor pid equals the lock pid, or the writer trusted session id equals the lock session, per `bin/fm-watchdog.sh:426-430` and `docs/watchdog.md:174-176`.
 - A heartbeat written outside the lock owner, such as by a watcher or daemon in its own terminal, updates no terminal in the captain record.
 - Daemon-written heartbeats are supported only when the heartbeat carries the owner's terminal separately from the writer's terminal, and the writer's own terminal is still refused.
-- HB-20: Second-mate endpoint comparison runs only when the child heartbeat names the child's lock session (`hb_sid` equals the lock session), `hb_at` is at or after `lock_at`, and its writer runs inside the lock owner (writer anchor pid equals the lock pid, or writer trusted session id equals the lock session), per `bin/fm-watchdog.sh:378-387`.
+- HB-20: Second-mate endpoint comparison runs only when the child heartbeat names the child's lock session (`hb_sid` equals the lock session), `hb_at` is at or after `lock_at`, and its writer runs inside the lock owner (writer anchor pid equals the lock pid, or writer trusted session id equals the lock session), per `bin/fm-watchdog.sh:421-430`.
 - During a mismatch the parent record wins, per `docs/watchdog.md:177`.
 
 ## Incident keys
