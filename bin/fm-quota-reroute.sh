@@ -55,8 +55,9 @@
 # unreadable. Worktree .claude/ skills, hooks, agents, or commands are a
 # signal if the path exists, even empty, unless they are unchanged seed
 # as above. An unreadable seed traversal is a signal. A dangling or
-# unreadable worktree .claude is a signal. A find path that contains a
-# newline is an unreadable walk. A caller that passes
+# unreadable worktree .claude, settings.local.json, or project .mcp.json
+# is a signal. A find path that contains a newline is an unreadable walk.
+# A caller that passes
 # --claude-config-dir for a pinned account must also pass --pinned. Those two
 # lists live only in the variables below.
 # Resolve the config dir from the task's account pin, never from
@@ -155,13 +156,15 @@ fm_quota_claude_mcp_unreadable() {  # <file>
 
 # Prints the blocking signal and returns 0 when <file> is unreadable or any
 # named key is a non-empty object, array, string, or true. Returns 1 when the
-# file is absent or none of the keys are a signal. <keys> is a space list.
+# path is absent (no file and no dangling symlink) or none of the keys are a
+# signal. A present-but-unreadable file or dangling symlink is a signal.
+# <keys> is a space list.
 # With <own-writer>, hook commands that call that path (firstmate's own busy
 # hooks, which fm-spawn writes and fm-control relaunch retires) are dropped
 # before the check.
 fm_quota_claude_settings_keys_signal() {  # <file> <keys> [own-writer]
   local f=$1 keys=$2 own=${3-} key own_re=
-  [ -e "$f" ] || return 1
+  [ -L "$f" ] || [ -e "$f" ] || return 1
   if [ ! -f "$f" ] || [ ! -r "$f" ]; then
     printf '%s\n' "unreadable $f"
     return 0
@@ -502,7 +505,7 @@ EOF
     while IFS= read -r f; do
       [ -n "$f" ] || continue
       rel=${f#"$wt"/}
-      [ "$rel" = .claude/settings.local.json ] && continue
+      [ "$rel" = .claude/settings.local.json ] && [ -f "$f" ] && [ -r "$f" ] && continue
       fm_quota_claude_catalog_has "$rel" "$catalog" && continue
       printf '%s\n' "worktree $rel"
       return 0
@@ -647,7 +650,7 @@ fm_quota_claude_tooling_signal() {  # <config-dir> [worktree]
     printf '%s\n' "unreadable worktree"
     return 0
   fi
-  if [ -e "$wt/.mcp.json" ]; then
+  if [ -e "$wt/.mcp.json" ] || [ -L "$wt/.mcp.json" ]; then
     printf '%s\n' "worktree .mcp.json"
     return 0
   fi

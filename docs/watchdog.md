@@ -45,8 +45,9 @@ Each pass reads only existing records and the recorded pane:
 - the context left, from the heartbeat, else the pane's auto-compact footer.
 
 Pane signatures ignore digits and spinner glyphs, so a ticking clock does not hide a frozen pane.
-Dialogs are read from the visible screen only where the backend gives a viewport capture (tmux, herdr, zellij, rex, and tern), so a dismissed dialog left in scrollback is not read as showing.
-Other backends fall back to the last 60 captured rows.
+Dialogs are read from the visible screen only where the backend gives a viewport capture (tmux, herdr, zellij, rex, tern, and a recorded Orca Droid task), so a dismissed dialog left in scrollback is not read as showing.
+A viewport that cannot be read is unknown: no dialog key and no quota pick.
+Other backends, including Orca without a recorded Droid frame, fall back to the last 60 captured rows.
 
 ## Symptoms and the action ladder
 

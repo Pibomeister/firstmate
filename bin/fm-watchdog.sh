@@ -157,32 +157,39 @@ wd_capture() {  # <backend> <target> <lines>
   fm_run_timed_fn "$(cfgi call-timeout-secs 20)" fm_backend_capture "$1" "$2" "$3" 2>/dev/null
 }
 
-# wd_view: the visible viewport where the backend has a verified viewport-only
-# read, so a dialog already dismissed but still in scrollback never reads as
-# showing. Orca's recorded Droid frame is that viewport even though it is
-# absent from FM_BACKEND_VISIBLE_CAPTURE. A failed viewport read returns
-# empty rather than classifying from scrollback. Permission still uses
-# scrollback via wd_observe_dialog; usage-limit treats a missing viewport
-# as usage-limit (queue), not none.
+# Match fm-control.sh usage_limit_dialog_name: a viewport read is expected
+# only on backends in FM_BACKEND_VISIBLE_CAPTURE, or Orca with a recorded
+# Droid frame. Callers that need history keep using wd_capture.
+wd_visible_capture_expected() {  # <backend> <target> [expected-label]
+  fm_backend_visible_capture_supported "$1" 2>/dev/null && return 0
+  [ "$1" = orca ] || return 1
+  fm_backend_source orca >/dev/null 2>&1 || return 1
+  fm_backend_orca_recorded_droid "$2" "${3:-}" 2>/dev/null
+}
+
+# wd_view: the visible viewport where a viewport read is expected.
+# A successful blank screen stays success (exit 0). A failed expected
+# read stays failure. Unsupported backends never attempt a viewport
+# primitive; they do not fall back to scrollback here, so a dismissed
+# Grok frame in history cannot look like a live close.
 wd_view() {  # <backend> <target> [expected-label]
   local b=$1 t=$2 label=${3-}
   if [ -z "$label" ]; then
     case "${O_ID:-}" in ''|-) ;; *) label=fm-$O_ID ;; esac
   fi
-  if fm_run_timed_fn "$(cfgi call-timeout-secs 20)" fm_backend_visible_capture "$b" "$t" ${label:+"$label"} 2>/dev/null; then
-    return 0
-  fi
-  if [ "$b" = orca ] || fm_backend_visible_capture_supported "$b" 2>/dev/null; then
-    return 1
-  fi
-  wd_capture "$b" "$t" 60
+  wd_visible_capture_expected "$b" "$t" "$label" || return 1
+  fm_run_timed_fn "$(cfgi call-timeout-secs 20)" fm_backend_visible_capture "$b" "$t" ${label:+"$label"} 2>/dev/null
 }
 
-# Permission from scrollback (main). Usage-limit and Grok from the viewport.
-# When that viewport cannot be read on Orca or another viewport backend,
-# report usage-limit so callers queue rather than treating empty as none.
+# Permission from scrollback (main). Remaining dialogs use the viewport
+# when a viewport read is expected: a failed read is unknown (no dialog
+# action, no quota pick), and a successful blank screen is none.
+# Backends without a viewport keep classifying from scrollback.
 wd_observe_dialog() {  # <backend> <target> [expected-label]
   local b=$1 t=$2 label=${3-} scroll view dialog
+  if [ -z "$label" ]; then
+    case "${O_ID:-}" in ''|-) ;; *) label=fm-$O_ID ;; esac
+  fi
   scroll=$(wd_capture "$b" "$t" 60) || scroll=
   dialog=$(fm_wd_observe_dialog "$scroll") || dialog=
   case "$dialog" in
@@ -191,14 +198,13 @@ wd_observe_dialog() {  # <backend> <target> [expected-label]
       return 0
       ;;
   esac
-  view=$(wd_view "$b" "$t" ${label:+"$label"}) || view=
-  if [ -n "$view" ]; then
+  if wd_visible_capture_expected "$b" "$t" "$label"; then
+    view=$(wd_view "$b" "$t" "$label") || {
+      printf '%s\n' unknown
+      return 0
+    }
     fm_wd_observe_dialog "$view"
     return
-  fi
-  if [ "$b" = orca ] || fm_backend_visible_capture_supported "$b" 2>/dev/null; then
-    printf '%s\n' usage-limit
-    return 0
   fi
   [ -n "$dialog" ] || return 1
   printf '%s\n' "$dialog"
