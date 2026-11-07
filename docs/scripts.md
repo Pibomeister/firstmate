@@ -165,6 +165,7 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-watchdog-lib.sh`     | Pure watchdog detectors for dialogs, timer loops, stall proof, guarded text, and the action ledger |
 | `fm-compact-point-lib.sh` | Compute a Claude session's percent left before auto-compact, shared by the handoff trigger and the context-burn recorder |
 | `fm-handoff-trigger.sh` | Claude hook that tells a primary session once per context cycle to write its handoff when context left before auto-compact reaches the threshold, and enforces the captain-order and successor restart gates when that session stops |
+| `fm-handoff-launch.sh` | Launch a handing-off Claude primary's successor in a new terminal on the home's backend and record its live pid for the successor restart gate |
 | `fm-pr-lib.sh`           | Own canonical task and PR validation, the branch-to-PR lookup shared by teardown and the PR health monitor, plus private atomic PR-poll publication, merge-notification identity, and retirement |
 | `fm-pr-resync.sh`        | Move a task copy to a published pull-request head, archiving stale local history without force-pushing |
 | `fm-pr-poll.sh`          | Provide the byte-static watcher program for validated pull-request, merge-request, and Gerrit-change poll sidecars |

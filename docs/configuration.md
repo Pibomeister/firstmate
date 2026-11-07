@@ -472,7 +472,9 @@ This feature does not set `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` or any other autocom
 
 A Claude primary session receives one instruction to write its full handoff when its context left before auto-compact falls to a set percentage.
 The instruction asks the session to persist its open work records, decisions, and durable knowledge, record the handoff, hand off to a successor, and report that it is ready to restart, so a session can restart from a handoff instead of compacting.
-A primary launches its successor itself in a new terminal and records the launch in `state/.handoff-successor` as `pid=<successor pid>` and `handoff=<handoff document path>`; the gate reads only that record, so any other launcher, such as an operator, must write the same record for the stop to clear.
+A primary launches its successor with `bin/fm-handoff-launch.sh <handoff file>`, which starts the successor in a new terminal on the home's recorded backend, verifies that the new successor harness pid is live, and records it in `state/.handoff-successor` as `pid=<successor pid>` and `handoff=<handoff document path>`; the gate reads only that record, so any other launcher, such as an operator, must write the same record for the stop to clear.
+The launcher refuses rather than guess when the backend or harness cannot be determined, and it never kills or interrupts the current session.
+The launcher verifies only the live successor pid; the successor confirms the handoff sha256 at pickup and stops on a mismatch.
 The successor's launch prompt tells it to confirm the handoff document's sha256, wait until the predecessor's harness pid (line 1 of `state/.lock`) is dead, and then run `bin/fm-session-start.sh` to take the session lock.
 The predecessor then ends its turn; it cannot exit itself, so its process is ended by the captain, by a leash or operator `/exit` in its pane, or by the watchdog restart path, and the successor takes the lock only after that pid dies.
 A second mate never launches its own successor: it appends one relaunch request to its parent channel and stops.
@@ -513,7 +515,7 @@ The gate has limits: it runs only for a Claude primary, so a non-Claude primary,
 Open orders there stay durable and appear in the next session's digest.
 A new context (startup, resume, clear, or compact) clears the recorded handoff, so the gate never reads a document written before that context opened.
 `bin/fm-order.sh` owns the captain-order gate.
-`bin/fm-handoff-trigger.sh` owns the measurement, the once-per-cycle record, and the successor gate, with coverage in [`tests/fm-handoff-trigger.test.sh`](../tests/fm-handoff-trigger.test.sh); [runtime-backends verification](verification/runtime-backends.md#claude-early-handoff-trigger) records the Claude Code evidence.
+`bin/fm-handoff-trigger.sh` owns the measurement, the once-per-cycle record, and the successor gate, with coverage in [`tests/fm-handoff-trigger.test.sh`](../tests/fm-handoff-trigger.test.sh); `bin/fm-handoff-launch.sh` owns the successor launch, with coverage in [`tests/fm-handoff-launch.test.sh`](../tests/fm-handoff-launch.test.sh); [runtime-backends verification](verification/runtime-backends.md#claude-early-handoff-trigger) records the Claude Code evidence.
 
 ## Backlog backend (.tasks.toml / config/backlog-backend)
 
