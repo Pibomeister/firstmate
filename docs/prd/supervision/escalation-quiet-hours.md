@@ -39,7 +39,7 @@ It changes no merge, release, or deploy gate.
 - An exception is a state that needs a human decision, a failed recovery, or a hard boundary.
 - A routine recovery is a nudge, restart, move, or watch result that clears without a human.
 - A delta is a change of state since the last reported state of the same incident.
-- An incident key names one signal on one subject and stays stable across passes.
+- An incident key names one signal on one subject in one home, plus its state, and stays stable across passes.
 
 ## Requirements
 
@@ -65,7 +65,7 @@ This PRD owns three shared records that the four signal PRDs reference and never
 
 | Ledger | Record | Rule |
 | --- | --- | --- |
-| Incident ledger | One append-only row per incident transition, keyed by subject, signal, and state | The escalation gate is its only writer, and dedupe reads it before any send |
+| Incident ledger | One append-only row per incident transition, keyed by home, subject, signal, and state | The escalation gate is its only writer, and dedupe reads it before any send |
 | Wake ledger | One append-only row per wake at acknowledgement time | Wake counts read it, never the drained queue |
 | Restart ledger | One append-only row per restart, handoff, or quota move, keyed by subject, with an owner field naming the component that acted or launched the successor | Every restarter checks the per-subject budget before acting and refuses over budget with one escalation |
 
@@ -134,7 +134,7 @@ No savings figure is stated until both windows exist.
 | A-EQ-5 | A opus-5-5 | Baseline counts pages, queue records, and session tokens | Token economics |
 | EQ-F1 | B gemini-argon | Named channel syntax and one gate for every page caller | EQ-21, EQ-26 |
 | EQ-F2 | B gemini-argon | Window-end flush under lock even with the daemon down | EQ-19 |
-| EQ-F3 | B gemini-argon | Durable dedupe keyed by home, subject, symptom, and state | Shared ledgers |
+| EQ-F3 | B gemini-argon | Durable dedupe keyed by home, subject, signal, and state | Shared ledgers |
 | EQ-F4 | B gemini-argon | Inject-wedged and watcher-recovery-failed added to the exception classes | EQ-22 |
 | EQ-F5 | B gemini-argon | Baseline method added with page and wake counters | Token economics |
 
