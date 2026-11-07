@@ -573,13 +573,13 @@ test_handoff_gates_the_stop_until_a_recorded_successor_is_alive() {
   sleep 1
   out=$(run_hook "$PRIMARY" s-succ "$TMP_ROOT/t-succ")
   expect_fire "$out" PostToolUse "successor instruction firing"
-  printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | contains("Launch the successor yourself") and contains("state/.handoff-successor") and contains("bin/fm-session-start.sh")' >/dev/null \
-    || fail "the instruction must say to launch and record the successor: $out"
+  printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | contains("bin/fm-handoff-launch.sh") and contains("state/.handoff-successor") and contains("bin/fm-session-start.sh")' >/dev/null \
+    || fail "the instruction must say to launch the successor with the owned launcher and record it: $out"
   err="$TMP_ROOT/succ.err"
   rc=0
   run_hook "$PRIMARY" s-succ "$TMP_ROOT/t-succ" Stop >/dev/null 2>"$err" || rc=$?
   [ "$rc" -eq 2 ] || fail "a launch record older than the firing must not clear the stop (rc=$rc)"
-  assert_contains "$(cat "$err")" "Launch your successor yourself" "the block tells a primary to launch its successor"
+  assert_contains "$(cat "$err")" "bin/fm-handoff-launch.sh" "the block tells a primary to launch its successor with the owned launcher"
   rc=0
   run_hook "$PRIMARY" s-succ "$TMP_ROOT/t-succ" Stop '. + {stop_hook_active: true}' >/dev/null 2>&1 || rc=$?
   [ "$rc" -eq 0 ] || fail "a stop already continued by this hook must not be blocked again (rc=$rc)"
@@ -616,7 +616,7 @@ test_secondmate_handoff_escalates_to_its_parent() {
   transcript "$TMP_ROOT/t-sm" 90000
   out=$(run_hook "$PRIMARY" s-sm "$TMP_ROOT/t-sm")
   expect_fire "$out" PostToolUse "second-mate firing"
-  printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | contains("never launch your own successor") and contains("parent channel") and (contains("Launch the successor yourself") | not)' >/dev/null \
+  printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | contains("never launch your own successor") and contains("parent channel") and (contains("bin/fm-handoff-launch.sh") | not)' >/dev/null \
     || fail "a second mate's instruction must escalate to its parent and not self-launch: $out"
   rc=0
   run_hook "$PRIMARY" s-sm "$TMP_ROOT/t-sm" Stop >/dev/null 2>&1 || rc=$?
