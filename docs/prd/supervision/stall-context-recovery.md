@@ -51,17 +51,20 @@ Delivery success requires a started turn.
 
 ## Context readings
 
-Two readings exist today and they measure different points.
+Four readings exist today and they measure different points.
 
-| Reading | Source | Measures |
+| Reading | Source | Role |
 | --- | --- | --- |
-| Pane footer percentage | The harness pane text `N% until auto-compact`, parsed by `bin/fm-context-footer-lib.sh` | Context left before auto-compact as the harness renders it |
-| Derived token percentage | Transcript usage against the compact point, derived in `bin/fm-handoff-trigger.sh` | Context left before the derived auto-compact point |
+| Pane footer percentage | The harness pane text, parsed by one shared parser | Input to the heartbeat record |
+| Watchdog footer copy | A second parser inside the watchdog | Removed in favor of the shared parser |
+| Derived token percentage | Transcript usage against the compact point in `bin/fm-handoff-trigger.sh` | Handoff decision where a transcript and window exist |
+| Full-window status percentage | The harness status line | Display only, never a decision |
 
-The heartbeat publishes the pane reading in `context_left`.
-The handoff trigger acts on the derived reading.
-Neither reading is wrong by itself.
-The gap is the missing rule for which one acts.
+The heartbeat publishes both the footer percentage and the derived percentage side by side.
+Where a transcript and an auto-compact window exist, both the handoff trigger and the watchdog restart gate on the derived percentage.
+Where no derived percentage exists, the watchdog restart gates on the footer percentage.
+The status-line percentage never gates anything.
+One parser owns the footer text for every reader.
 
 ## Requirements
 
@@ -71,21 +74,56 @@ The gap is the missing rule for which one acts.
 - SC-4: A running turn never counts as swallowed, frozen, or looped.
 - SC-5: The first recovery step is one nudge through the record-backed input path.
 - SC-6: A second detection after the nudge escalates to a restart through `bin/fm-control.sh`.
-- SC-7: The derived token percentage owns the Claude primary handoff decision.
-- SC-8: The pane footer percentage owns the watchdog restart decision for sessions with no derived reading.
-- SC-9: When both readings exist and differ by more than the disagreement bound, the reading of the owning path acts and the record names both values.
-- SC-10: A missing owning reading reports unknown and never triggers a restart by itself.
+- SC-7: Where a transcript and window exist, the derived percentage gates both the handoff trigger and the watchdog restart, so one session has one low-context trigger.
+- SC-8: Where no derived reading exists, the pane footer percentage owns the watchdog restart decision.
+- SC-9: When both readings exist and differ by more than the disagreement bound, the derived percentage acts and the record names both values.
+- SC-10: A missing owning reading reports unknown and never triggers a restart by itself, and a non-destructive nudge stays allowed on filesystem activity evidence.
 - SC-11: A handoff completes only while a live successor is recorded in `state/.handoff-successor`.
-- SC-12: Successor liveness is rechecked once after the predecessor stops.
-- SC-13: A successor that fails the recheck raises one blocked record for the parent supervisor.
-- SC-14: Recovery never discards uncommitted work and never removes a worktree.
+- SC-12: One launcher owns successor launch per subject, and the restart path reads `.handoff-successor` before it launches anything.
+- SC-13: One ender owns predecessor termination, and it ends the predecessor only when a live successor is recorded.
+- SC-14: A successor wait is bounded, and an expired wait raises one blocked record with no second launch.
+- SC-15: Post-stop successor pickup verification belongs to the watchdog reconcile path, and its failure verdict rides the heartbeat `dead` verdict after the pickup bound.
+- SC-16: A failed primary successor pages through the shared escalation gate, because a primary has no parent supervisor.
+- SC-17: Recovery never discards uncommitted work and never removes a worktree.
+- SC-18: A restart defers while the composer holds a pending unsent draft on a live session.
+- SC-19: Every restart and successor launch checks the shared restart ledger and its per-subject budget first.
+- SC-20: A handoff or successor launch first checks for a usage-limit refusal on the target account and never spawns onto a refused account.
+
+## Startup and handoff churn
+
+- SC-21: Startup tokens are measured per session from transcript usage, with the startup turns flagged in a per-session token ledger.
+- SC-22: One config owner sets the startup token budget, and a session over budget reports one gap with the measured value.
+- SC-23: The levers on startup load are the fixed instruction prefix and the session-start digest, and each change reports its measured token delta.
+- SC-24: A handoff document is capped in size at the handoff record point, and an over-cap record refuses until the document fits.
+- SC-25: A cross-session minimum handoff interval stops hourly churn under normal load, and only a dead-session verdict bypasses it.
+- SC-26: Every handoff writes one row to the restart ledger, so churn is countable per home per day.
+
+## Incident keys
+
+| Signal | Key fields | Exception states | Routine states |
+| --- | --- | --- | --- |
+| Stall detection | task or home, symptom | second detection, restart failed | first nudge |
+| Input swallowed | task, input record | bound expired twice | turn started in bound |
+| Successor lifecycle | home, successor | pickup failed, wait expired | pickup proven |
+| Startup budget | home, session | over budget | inside budget |
+
+## Owner absence
+
+Stall detection owner is `bin/fm-watchdog.sh`, which reads Claude transcripts only today.
+A subject with no readable transcript reports `no-activity-source` and keeps detection at `unknown`.
+Detection never acts on `unknown`.
+A filesystem activity fallback from wake, status, and context-burn record ages may prove activity for non-Claude subjects.
+Session start reports each uncovered harness once per home.
 
 ## Ownership
 
 | Signal | Single owner | Permitted action |
 | --- | --- | --- |
-| Frozen, loop, unread, and unsent detection | `bin/fm-watchdog.sh` | Nudge, then request restart |
-| Accepted-without-a-turn detection | `bin/fm-watchdog.sh` | Nudge once, then escalate |
+| Frozen, loop, unread, and unsent detection | `bin/fm-watchdog.sh` for Claude subjects, filesystem activity evidence otherwise | Nudge, then request restart |
+| Accepted-without-a-turn detection | The steering inbox re-ring ladder for workers, `bin/fm-watchdog.sh` for supervisor sessions with a proven turn signal | Nudge once, then escalate |
+| Successor launch | The one launcher named per subject in the restart ledger | Launch one successor |
+| Predecessor termination | The watchdog restart path | End only with a live successor recorded |
+| Post-stop pickup verification | The watchdog reconcile path | Report the `dead` verdict on failure |
 | Claude primary handoff percentage | `bin/fm-handoff-trigger.sh`, acting on the derived token percentage | Ask for a handoff |
 | Restart percentage for sessions with no derived reading | The watchdog restart path, acting on the pane footer percentage | Ask for a handoff, then request restart |
 | Successor gate | The `state/.handoff-successor` record and its stop gate | Hold the stop until a live successor exists |
@@ -103,15 +141,20 @@ The gap is the missing rule for which one acts.
 - AT-SC-7: A stop with no live successor stays blocked and the session keeps running.
 - AT-SC-8: A stop with a live successor completes and the recheck passes.
 - AT-SC-9: A successor that exits before the recheck raises exactly one blocked record.
-- AT-SC-10: Existing suites `tests/fm-handoff-trigger.test.sh` and `tests/fm-crew-state.test.sh` still pass.
+- AT-SC-10: Both low-context paths armed on one Claude primary produce one handoff, not two.
+- AT-SC-11: An N-hour away-mode soak holds handoffs at or under the target and startup tokens at or under the budget, both measured against the recorded baseline.
+- AT-SC-12: A pending unsent draft defers a restart and loses no draft text.
+- AT-SC-13: Existing suites `tests/fm-handoff-trigger.test.sh` and `tests/fm-crew-state.test.sh` still pass.
 
 ## Failure-injection and recovery drills
+
+Every drill runs in a fixture home with a private terminal socket or a named non-default lab, never on a live home.
 
 - DR-SC-1: Submit input to a test session and suppress the turn start and confirm detection at the bound.
 - DR-SC-2: Freeze a test pane with a running turn and confirm no action fires.
 - DR-SC-3: Drive context to the threshold and confirm the handoff names a live successor before any stop.
-- DR-SC-4: Kill the successor after the stop and confirm the parent receives one blocked record.
-- DR-SC-5: Force the two context readings apart and confirm the owning-path reading acts and both values are recorded.
+- DR-SC-4: Kill the successor after the stop and confirm one blocked record through the shared gate.
+- DR-SC-5: Force the two context readings apart and confirm the derived reading acts and both values are recorded.
 - DR-SC-6: Remove the owning context reading and confirm no restart fires on unknown.
 
 ## Escalation and quiet hours
@@ -122,14 +165,30 @@ Quiet hours and dedupe follow [escalation-quiet-hours.md](escalation-quiet-hours
 
 ## Token economics
 
-The baseline method counts supervisor wakes and model tokens before and after this work.
-The measurement window is 14 consecutive days before the change and 14 consecutive days after it.
-The counters are stall-related wake records per day, restart counts in `state/watchdog/actions.tsv`, and token fields in `state/watchdog/model-calls.tsv`.
-A avoided-restart count is reported only from those records, never from an estimate.
+Baseline method: count supervisor session tokens from transcript usage by turn type, with startup turns flagged separately.
+Handoff counts and sizes come from the handoff records and the restart ledger.
+Wake counts come from the durable wake ledger, never from the drained queue.
+Counts normalize per active task-hour.
+The window is 14 consecutive days before the change and 14 consecutive days after it, on the same homes.
+Token history rebuilds from transcripts, and wake-based windows start only after the wake ledger exists.
 No savings figure is stated until both windows exist.
 
-## Open questions
+## Resolution of Stage 2 findings
 
-- OQ-SC-1: What swallow bound fits each harness without flagging slow first turns.
-- OQ-SC-2: What disagreement bound separates reading noise from a real conflict.
-- OQ-SC-3: Which harnesses expose a turn-started signal strong enough for SC-3.
+| Finding | Reviewer | Resolution | Section changed |
+| --- | --- | --- | --- |
+| A-SC-1 | A opus-5-5 | Startup ledger, budget, handoff cap, churn limit, and N-hour soak added | SC-21 to SC-26, AT-SC-11 |
+| A-SC-2 | A opus-5-5 | One launcher, one ender, bounded successor wait | SC-12 to SC-14 |
+| A-SC-3 | A opus-5-5 | Four readings listed, one parser, derived percentage gates both paths | Context readings, SC-7 |
+| A-SC-4 | A opus-5-5 | Swallow ownership split by subject with `unknown` until a turn signal is proven | Ownership, Owner absence |
+| A-SC-5 | A opus-5-5 | Pickup verification delegated to the watchdog reconcile path and the heartbeat verdict | SC-15, SC-16 |
+| A-SC-6 | A opus-5-5 | Token baseline rebuilt on transcript usage by turn type | Token economics |
+| SC-F1 | B gemini-argon | Startup measurement, budget, handoff cap, cooldown, and AFK acceptance test added | SC-21 to SC-26, AT-SC-11 |
+| SC-F2 | B gemini-argon | Pickup verification owned by the watchdog path with a primary page through the shared gate | SC-15, SC-16 |
+| SC-F3 | B gemini-argon | Both context numbers published and the derived percentage gates both triggers | Context readings, SC-7 |
+| SC-F4 | B gemini-argon | Filesystem activity fallback and non-destructive nudge on unknown transcript | SC-10, Owner absence |
+| SC-F5 | B gemini-argon | Token baseline measures session transcripts by turn type | Token economics |
+| SC-F6 | B gemini-argon | Restart defers on a pending unsent draft | SC-18, AT-SC-12 |
+| SC-F7 | B gemini-argon | Usage-limit check before any successor spawn | SC-20 |
+
+Status: FINAL. Every BLOCKING finding from both Stage 2 reviews is closed above.
