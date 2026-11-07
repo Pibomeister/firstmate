@@ -72,7 +72,7 @@ Any requirement on that loop is a dependency to confirm with its owner, not a cl
 - HB-15: Each layer is checked by exactly one layer above it, and the outer guard status has one named reader.
 - HB-16: Exactly one restarter owns a dead primary per home, and every restarter checks the shared restart ledger before acting.
 - HB-17: Self-heal restarts only the failed layer and never restarts a healthy session above it.
-- HB-18: Every health transition writes one row to the shared incident ledger that a later pass can dedupe against.
+- HB-18: Every health transition is reported to the escalation gate, which writes one row to the shared incident ledger that a later pass can dedupe against.
 - HB-19: A heartbeat that names the lock session and is no older than the lock write updates the captain record even when a watcher or daemon wrote it.
 - HB-20: Second-mate endpoint comparison runs whenever the parent record and a fresh child heartbeat both exist.
 
@@ -102,7 +102,7 @@ Rollout per host requires the watchdog in `act` mode with its status reader enab
 | Watcher polling liveness | `bin/fm-supervise-daemon.sh` and the process manager unit from `bin/fm-monitor-watchdog.sh` | Restart the watcher arm only |
 | Watcher freshness escalation | The one reader of `state/.monitor-watchdog-alert` | Report one gap per home |
 | Health verdict | `bin/fm-watchdog.sh` | Record the verdict and at most one escalation |
-| Dead primary restart | The one restarter named per home in the shared restart ledger | Restart once inside budget |
+| Dead primary restart | The watchdog agent-gone restart in `bin/fm-watchdog.sh` when `restart` is on; otherwise an external restarter under the `docs/watchdog.md` captain-record contract for a supervisor that restarts captains itself; when neither is configured, one escalation and no restart. The two restarters are never enabled together for one home, and the acting one is named in the restart ledger owner field | Restart once inside budget |
 | External poll loop | The external Orca watchdog owner | Poll and beacon only |
 
 No second component restarts, types into, or re-arms a layer another row owns.

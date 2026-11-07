@@ -52,7 +52,7 @@ It changes no merge, release, or deploy gate and never merges on its own authori
 - PM-10: An orphan run is reported with the same fields as an owned run.
 - PM-11: Monitoring never merges, marks ready, responds to a gate, or pushes.
 - PM-12: One PR state change produces one supervisor wake across the watch and discovery paths.
-- PM-13: The incident key is (forge, repository, PR, head, state), and both paths write transitions to the shared incident ledger.
+- PM-13: The incident key is (forge, repository, PR, head, state), and both paths report transitions to the escalation gate, which alone writes them to the shared incident ledger.
 - PM-14: Retiring a watch with an unhandled result is refused.
 - PM-15: A rate-limit response is transient, backs off to the reset time, and never ends a watch.
 - PM-16: One per-forge read budget bounds all watches and discovery reads together.

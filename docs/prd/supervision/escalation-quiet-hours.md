@@ -67,11 +67,11 @@ This PRD owns three shared records that the four signal PRDs reference and never
 | --- | --- | --- |
 | Incident ledger | One append-only row per incident transition, keyed by subject, signal, and state | The escalation gate is its only writer, and dedupe reads it before any send |
 | Wake ledger | One append-only row per wake at acknowledgement time | Wake counts read it, never the drained queue |
-| Restart ledger | One append-only row per restart, handoff, or quota move, keyed by subject | Every restarter checks the per-subject budget before acting and refuses over budget with one escalation |
+| Restart ledger | One append-only row per restart, handoff, or quota move, keyed by subject, with an owner field naming the component that acted | Every restarter checks the per-subject budget before acting and refuses over budget with one escalation |
 
 ## Shared requirements
 
-- EQ-16: Every signal PRD writes its transitions to the incident ledger and reads it before escalating.
+- EQ-16: Every signal owner reports its transitions to the escalation gate, which alone appends them to the incident ledger, and the gate reads that ledger before escalating.
 - EQ-17: The escalation gate owns dedupe, quiet-hours holding, and the digest in every mode, attended or away.
 - EQ-18: A failed send writes its durable record first, then retries under a bound, and never drops silently.
 - EQ-19: The digest flush runs at window end even when the away daemon is not running, under an atomic lock, and resolved incidents clear on flush.
@@ -87,11 +87,11 @@ This PRD owns three shared records that the four signal PRDs reference and never
 
 | Signal | Single owner | Permitted action |
 | --- | --- | --- |
-| Incident dedupe | The wake and status dedupe primitives in `bin/fm-wake-lib.sh` | Collapse repeats of one incident key |
+| Incident dedupe | The escalation gate, sole writer of the incident ledger | Collapse repeats of one incident key |
 | Escalation decision | The signal owner named in each PRD | Escalate an exception only |
-| Slack delivery | The configured alert channel path in `docs/wedge-alarm.md` | Send or hold one message |
-| Quiet-hours clock | This PRD | Define the window for every consumer |
-| Digest | The away and quiet supervision path | Send one digest at window end |
+| Slack delivery | External dependency: no Slack sender exists in this repo (EQ-26), and the escalation gate hands each released message to it | Send or hold one message |
+| Quiet-hours clock | The one quiet-hours function behind the one config key, in `America/Costa_Rica` (EQ-23) | Define the window for every consumer |
+| Digest | The escalation gate, in every mode, attended or away (EQ-17, EQ-19) | Send one digest at window end |
 
 ## Acceptance tests
 

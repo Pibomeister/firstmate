@@ -121,13 +121,13 @@ Session start reports each uncovered harness once per home.
 | --- | --- | --- |
 | Frozen, loop, unread, and unsent detection | `bin/fm-watchdog.sh` for Claude subjects, filesystem activity evidence otherwise | Nudge, then request restart |
 | Accepted-without-a-turn detection | The steering inbox re-ring ladder for workers, `bin/fm-watchdog.sh` for supervisor sessions with a proven turn signal | Nudge once, then escalate |
-| Successor launch | The one launcher named per subject in the restart ledger | Launch one successor |
+| Successor launch | The predecessor self-launch in `bin/fm-handoff-trigger.sh` (Firstmate PR #156) for primaries, `bin/fm-control.sh relaunch` for workers and second mates | Launch one successor |
 | Predecessor termination | The watchdog restart path | End only with a live successor recorded |
 | Post-stop pickup verification | The watchdog reconcile path | Report the `dead` verdict on failure |
 | Claude primary handoff percentage | `bin/fm-handoff-trigger.sh`, acting on the derived token percentage | Ask for a handoff |
 | Restart percentage for sessions with no derived reading | The watchdog restart path, acting on the pane footer percentage | Ask for a handoff, then request restart |
 | Successor gate | The `state/.handoff-successor` record and its stop gate | Hold the stop until a live successor exists |
-| Restart execution | `bin/fm-control.sh relaunch` for workers and second mates, the watchdog restart path for primaries | Stop the old process and open the successor |
+| Restart execution | `bin/fm-control.sh relaunch` for workers and second mates; for primaries, the watchdog restart path ends the predecessor only | Stop the old process, and open the successor only for workers and second mates |
 | Current-state read | `bin/fm-crew-state.sh` | Report state only |
 
 ## Acceptance tests
