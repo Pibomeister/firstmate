@@ -5,8 +5,9 @@
 # UserPromptSubmit, and a Stop command hook. When the session's context left before
 # auto-compact falls to the configured percentage (default 15), the session
 # receives ONE instruction, as hook additionalContext, to write its full
-# handoff before auto-compact, hand off to a live successor it records (a
-# second mate asks its parent to relaunch it instead), and report that it is ready to restart. It fires
+# handoff before auto-compact, hand off to a live successor it launches
+# with bin/fm-handoff-launch.sh (a second mate asks its parent to relaunch
+# it instead), and report that it is ready to restart. It fires
 # at most once per context cycle, so a session that keeps working past the
 # threshold is not nagged again, and a session that auto-compacts anyway is told
 # again before its next auto-compact.
@@ -72,10 +73,11 @@
 # the gate's verdict on stderr) so the session writes the orders into its
 # handoff before it reports ready to restart. A session the trigger fired on
 # is also blocked until a successor is under way: state/.handoff-successor,
-# written by whoever launched the successor (the session itself or another
-# launcher such as an operator), must be newer than the firing and carry
-# pid=<successor pid> for a process alive now, with handoff=<handoff
-# document path> beside it. A primary launches its own successor, whose
+# written by bin/fm-handoff-launch.sh (or by another launcher, such as an
+# operator, writing the same record), must be newer than the firing and
+# carry pid=<successor pid> for a process alive now, with handoff=<handoff
+# document path> beside it. A primary launches its own successor with
+# bin/fm-handoff-launch.sh, whose
 # launch prompt has it confirm the handoff document's hash, wait for this
 # session's harness pid to die, and then run bin/fm-session-start.sh to take
 # the lock. This session then ends its turn; it cannot exit itself, so its
@@ -178,7 +180,7 @@ if [ "$EVENT" = Stop ]; then
     case "$SUCC_PID" in '' | *[!0-9]*) SUCC_PID= ;; esac
     if [ ! -f "$LAUNCH" ] || [ "$MARKER" -nt "$LAUNCH" ] || [ -z "$SUCC_PID" ] ||
       ! kill -0 "$SUCC_PID" 2>/dev/null; then
-      printf 'Firstmate restart gate: this session is handing off, but no live successor launched after the handoff trigger is recorded in state/.handoff-successor, so nobody will continue from the handoff. Launch your successor yourself in a new terminal on this home'"'"'s backend. Its launch prompt must tell it to confirm the handoff document'"'"'s sha256, wait until this session'"'"'s harness pid (line 1 of state/.lock) is dead, then run bin/fm-session-start.sh to take the session lock and continue from the handoff. Record the launch in state/.handoff-successor as pid=<successor pid> and handoff=<handoff document path>, then end this turn. The predecessor process is then ended by the captain, by a leash or operator /exit in its pane, or by the watchdog restart path; this session cannot exit itself, and the successor waits for its pid to die before session start.\n' >&2
+      printf 'Firstmate restart gate: this session is handing off, but no live successor launched after the handoff trigger is recorded in state/.handoff-successor, so nobody will continue from the handoff. Launch the successor with bin/fm-handoff-launch.sh <handoff document path>: it starts the successor on this home'"'"'s backend, verifies that the new successor harness pid is live, and records it in state/.handoff-successor as pid=<successor pid> and handoff=<handoff document path>. That record clears this gate; then end this turn. Its launch prompt has the successor confirm the handoff document'"'"'s sha256 at pickup and stop on a mismatch, wait until this session'"'"'s harness pid (line 1 of state/.lock) is dead, then run bin/fm-session-start.sh to take the session lock and continue from the handoff. The predecessor process is then ended by the captain, by a leash or operator /exit in its pane, or by the watchdog restart path; this session cannot exit itself, and the successor waits for its pid to die before session start.\n' >&2
       exit 2
     fi
   fi
@@ -208,7 +210,7 @@ MESSAGE="Firstmate early handoff trigger, from this home's tracked Claude hook: 
 if fm_root_is_secondmate_home "$FM_ROOT"; then
   MESSAGE="$MESSAGE This is a second mate, so never launch your own successor: append to your parent channel that your handoff is written, name the handoff document, and ask the parent to relaunch you, once, then end this turn."
 else
-  MESSAGE="$MESSAGE Launch the successor yourself in a new terminal on this home's backend. Its launch prompt must tell it to confirm the handoff document's sha256, wait until this session's harness pid (line 1 of state/.lock) is dead, then run bin/fm-session-start.sh to take the session lock. Record the launch in state/.handoff-successor as pid=<successor pid> and handoff=<handoff document path>, then end this turn; this turn cannot end until that record names a live successor. The predecessor process is then ended by the captain, by a leash or operator /exit in its pane, or by the watchdog restart path; this session cannot exit itself, and the successor waits for its pid to die before session start."
+  MESSAGE="$MESSAGE Launch your successor with bin/fm-handoff-launch.sh <handoff file>: it starts the successor in a new terminal on this home's backend, verifies that the new successor harness pid is live, and records it in state/.handoff-successor as pid=<successor pid> and handoff=<handoff document path>. Its launch prompt has the successor confirm the handoff document's sha256 at pickup and stop on a mismatch, wait until this session's harness pid (line 1 of state/.lock) is dead, then run bin/fm-session-start.sh to take the session lock. Then end this turn; this turn cannot end until that record names a live successor. The predecessor process is then ended by the captain, by a leash or operator /exit in its pane, or by the watchdog restart path; this session cannot exit itself, and the successor waits for its pid to die before session start."
 fi
 MESSAGE="$MESSAGE Do not run /compact. This instruction fires once per context cycle."
 # Durable captain orders are part of the handoff: name each open order and the
