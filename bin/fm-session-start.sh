@@ -38,11 +38,11 @@
 #                      (bin/fm-role.sh report), purely local, no network.
 #   2. bootstrap      - home-local stale Herdr projection cleanup runs only
 #                       when this session actually holds the lock. Detect-only
-#                       diagnostics always run. Bootstrap's six MUTATING sweeps
-#                       (same-home backlog reconciliation,
+#                       diagnostics always run. Bootstrap's seven MUTATING sweeps
+#                       (same-home backlog reconciliation, home code drift,
 #                       secondmate convergence, secondmate liveness, pending remote
 #                       handoff retry, X-mode artifact writes, fleet sync) also run only when
-#                       locked; the four network sweeps run in the deferred
+#                       locked; the five network sweeps run in the deferred
 #                       stage rather than this synchronous bootstrap section.
 #   3. wake-drain     - presents durable wakes and advances recovery handling
 #                       state, so it only runs when locked. The local bounded
@@ -96,7 +96,9 @@
 # entire FM_SESSION_START_TIMEOUT and truncate the digest, so a slow network
 # could cost the work queue itself.
 # So no step between here and the last line below makes an external-network
-# call. The five that did - `gh auth status`, secondmate liveness, secondmate
+# call. The ones that did - `gh auth status`, the home code drift fetch and
+# guarded fast-forward (bin/fm-bootstrap.sh home_code_drift, reusing
+# bin/fm-ff-lib.sh origin mode), secondmate liveness, secondmate
 # convergence, pending remote handoff delivery, and the fleet-sync fetch - are
 # started as one detached bounded worker right after the lock (step 1) and
 # harvested at step 7 without ever blocking on it. The bounded inactive-outcome
@@ -149,7 +151,7 @@
 # and all of which are safe to compute without verified lock ownership.
 # It deliberately skips the network-only GitHub-auth probe because a read-only
 # session has no dispatch, spawn, steer, or merge action for that verdict to gate.
-# Only projection cleanup, the six bootstrap mutating sweeps, and wake-queue
+# Only projection cleanup, the seven bootstrap mutating sweeps, and wake-queue
 # presentation are skipped.
 # The context and fleet-state digests
 # below are always read-only, so they run unconditionally in both modes.
@@ -813,6 +815,12 @@ if [ "$READ_ONLY" -eq 0 ]; then
   # read-only GitHub-auth probe is owed. A read-only session starts nothing at
   # all: it holds no mutation authority for the sweeps, and it must not spawn,
   # steer, or merge anyway, so it has no action left for an auth verdict to gate.
+  # Home code drift (issue #93) therefore self-heals only for this lock-owning
+  # mutable session: the deferred worker's bootstrap network pass fast-forwards
+  # FM_ROOT when it is behind origin's default branch, clean, and
+  # fast-forwardable, and otherwise prints one HOME_DRIFT digest line naming
+  # how many commits behind and why it did not fast-forward. Its fetch stays
+  # on that deferred path, so a network failure never blocks this digest.
   NETWORK_STAGE_LOCKED=1
   [ "$REEMIT" -eq 0 ] || NETWORK_STAGE_LOCKED=0
   "$SCRIPT_DIR/fm-startup-network.sh" start \
