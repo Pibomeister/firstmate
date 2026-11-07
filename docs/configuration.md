@@ -503,6 +503,8 @@ Pin `compact-at-tokens` to cover such a home.
 Claude also caps the configured window to the model's window, which the hook cannot see, so a home on a smaller-window model must pin `compact-at-tokens`.
 A window set only in managed settings or a `--settings` launch flag also needs that pin.
 
+On each tool call and prompt, the trigger publishes the point it resolved to `state/compact-point`, even with `percent-left=0`, so readers outside the session use the same window; the hook header owns the record.
+
 The trigger runs only in a genuine primary home, including a marked secondmate home, and stays inert in worker worktrees and under other harnesses that load Claude's settings.
 It never writes the handoff, compacts, or restarts the session.
 
@@ -516,6 +518,18 @@ Open orders there stay durable and appear in the next session's digest.
 A new context (startup, resume, clear, or compact) clears the recorded handoff, so the gate never reads a document written before that context opened.
 `bin/fm-order.sh` owns the captain-order gate.
 `bin/fm-handoff-trigger.sh` owns the measurement, the once-per-cycle record, and the successor gate, with coverage in [`tests/fm-handoff-trigger.test.sh`](../tests/fm-handoff-trigger.test.sh); `bin/fm-handoff-launch.sh` owns the successor launch, with coverage in [`tests/fm-handoff-launch.test.sh`](../tests/fm-handoff-launch.test.sh); [runtime-backends verification](verification/runtime-backends.md#claude-early-handoff-trigger) records the Claude Code evidence.
+
+## Context reading (config/context-reading)
+
+A reader outside a Claude session, such as the watchdog, reads its context through `bin/fm-context-reading-lib.sh`, whose header owns the readings, their window, and which reading owns a decision.
+
+The file is optional, local to each home, and read on every reading.
+It may hold this line:
+
+- `disagreement-points=<n>` flags a disagreement when both readings exist and differ by more than `n` points.
+  Unset, the flag reads `-` and nothing is flagged.
+
+Blank lines and lines that start with `#` are ignored, and an unusable value counts as unset.
 
 ## Backlog backend (.tasks.toml / config/backlog-backend)
 

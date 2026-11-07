@@ -252,7 +252,6 @@ test_dialog_detection() {
   lib fm_wd_usage_limit_autowait $'work output\n❯ \n  Continuing automatically at 4:00 AM' \
     || fail "the auto-wait phrase in the footer below the prompt should match"
   assert_contains "$(lib fm_wd_dialog_options "$model")" $'3\tBuy more credits' "dialog options parsed"
-  assert_equals 42 "$(lib fm_wd_footer_percent $'work\n  42% until auto-compact')" "auto-compact footer"
   pass "dialogs need their structure, and each kind is told apart"
 }
 
