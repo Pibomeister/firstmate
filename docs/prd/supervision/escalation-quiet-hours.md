@@ -63,11 +63,13 @@ It changes no merge, release, or deploy gate.
 
 This PRD owns three shared records that the four signal PRDs reference and never restate.
 
+The escalation gate wraps `wedge_alarm_notify`, reached externally through `fm-supervise-daemon.sh page` (`bin/fm-supervise-daemon.sh:1305`, `:2353-2359`).
+
 | Ledger | Record | Rule |
 | --- | --- | --- |
-| Incident ledger | One append-only row per incident transition, keyed by home, subject, signal, and state | The escalation gate is its only writer, and dedupe reads it before any send |
-| Wake ledger | One append-only row per wake at acknowledgement time | Wake counts read it, never the drained queue |
-| Restart ledger | One append-only row per restart, handoff, or quota move, keyed by subject, with an owner field naming the component that acted or launched the successor | Every restarter checks the per-subject budget before acting and refuses over budget with one escalation |
+| Incident ledger | One append-only row per incident transition, keyed by home, subject, signal, and state, at `state/incident-ledger.tsv` | The escalation gate is its only writer, and dedupe reads it before any send |
+| Wake ledger | One append-only row per wake at acknowledgement time, at `state/wake-ledger.tsv` | `bin/fm-wake-drain.sh` writes it at acknowledgement, and wake counts read it, never the drained queue |
+| Restart ledger | One append-only row per restart, handoff, or quota move, keyed by subject, with a `kind` field of `handoff` or `restart` and an owner field naming the component that acted or launched the successor, at `state/restart-ledger.tsv` | Every forced restart or relaunch checks the per-subject restart budget before acting and refuses over budget with one escalation. Only `restart` rows count against that budget; planned handoffs inside the SC-25 interval rule are bounded by that rule instead. Each writer appends under a lock. The budget default is 2 per day, at least 7200 s apart |
 
 ## Shared requirements
 
@@ -75,7 +77,22 @@ This PRD owns three shared records that the four signal PRDs reference and never
 - EQ-17: The escalation gate owns dedupe, quiet-hours holding, and the digest in every mode, attended or away.
 - EQ-18: A failed send writes its durable record first, then retries under a bound, and never drops silently.
 - EQ-19: The digest flush runs at window end even when the away daemon is not running, under an atomic lock, and resolved incidents clear on flush.
+- The monitor unit loop runs that flush, kept alive by launchd or systemd without the away daemon.
+- Session start and the return brief read the held digest record and show any unsent entries.
 - EQ-20: Every outbound sender is inventoried with a channel label, and external senders list as dependencies rather than capability.
+- A `command:` channel carries its label as `command[slack]:<cmd>`.
+- An unlabeled `command:` channel counts as `other`, which quiet hours do not hold.
+
+| Sender | Location | Channel | Label | Gate path |
+| --- | --- | --- | --- | --- |
+| `wedge_alarm_notify` | `bin/fm-supervise-daemon.sh:1305` | Configured alert channels | Per-channel label | The gate itself |
+| External `page` entry | `bin/fm-supervise-daemon.sh:2353-2359` | Configured alert channels | Per-channel label | Through `wedge_alarm_notify` |
+| Watchdog permission page `wd_page_permission` | `bin/fm-watchdog.sh:963`, `:980` | Via `page` | Per-channel label | Through `page` |
+| Monitor `watchdog_alert` | `bin/fm-monitor-watchdog.sh:136-158`, `:148` | Via `page` | Per-channel label | Through `page` |
+| Watcher away-decision pager | `bin/fm-watch.sh:2990`, `:3087` | Via `page` | Per-channel label | Through `page` |
+| Usage warner | `bin/fm-usage-warner.sh:236` | `osascript` desktop notice | `other` | Through the gate |
+| Relay follow-ups | `fmx-respond`, external | Relay | External dependency | Listed as a dependency, not capability |
+| External Orca poll loop | External to this repo | External beacons | External dependency | Listed as a dependency, not capability |
 - EQ-21: Direct page callers route through the one gate, so no caller bypasses dedupe or quiet hours.
 - EQ-22: The exception classes include inject-wedged and watcher-recovery-failed alongside permission-dialog, unconfirmed-restart, restart-loop, quota-all-at-floor, conflicted-pr, and blocked-decision.
 - EQ-23: The quiet-hours clock is one function behind one config key with an explicit `America/Costa_Rica` time zone.
@@ -104,6 +121,7 @@ This PRD owns three shared records that the four signal PRDs reference and never
 - AT-EQ-7: A destructive or security-sensitive exception during quiet hours sends no Slack message and appears in the next digest or the return brief.
 - AT-EQ-8: An incident that clears overnight appears once in the digest as cleared.
 - AT-EQ-9: Recovery actions during quiet hours run on their normal cadence with no Slack message.
+- AT-EQ-10: With the away daemon stopped, a message held at 23:00 appears in exactly one digest at 08:00.
 
 ## Failure-injection and recovery drills
 
@@ -137,8 +155,11 @@ No savings figure is stated until both windows exist.
 | EQ-F3 | B gemini-argon | Durable dedupe keyed by home, subject, signal, and state | Shared ledgers |
 | EQ-F4 | B gemini-argon | Inject-wedged and watcher-recovery-failed added to the exception classes | EQ-22 |
 | EQ-F5 | B gemini-argon | Baseline method added with page and wake counters | Token economics |
+| F-EQ-1 | FINAL opus-5-5 | Sender inventory with channel labels added and `command[slack]:<cmd>` defined; an unlabeled command counts as `other` | EQ-20, sender inventory |
+| F-EQ-2 | FINAL opus-5-5 | Gate wraps `wedge_alarm_notify` / `fm-supervise-daemon.sh page`; ledgers placed under `state/` with named writers; budget default 2 per day, at least 7200 s apart | Shared ledgers, EQ-16 |
+| F-EQ-3 | FINAL opus-5-5 | Monitor unit loop named as the window-end flush runner under the lock; session start and the return brief read the held digest record | EQ-19, AT-EQ-10 |
 
-Status: FINAL. Every BLOCKING finding from both Stage 2 reviews is closed above.
+Status: FINAL. Every BLOCKING finding from both Stage 2 reviews and the FINAL opus-5-5 review is closed above.
 
 ## Open questions
 
