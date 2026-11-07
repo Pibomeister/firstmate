@@ -42,7 +42,6 @@ It changes no merge, release, or deploy gate and authorizes no new spend.
 
 ## Requirements
 
-- QA-1: One quota snapshot per incident feeds detection, selection, and the relaunch check.
 - QA-2: Selection names at most one replacement and records the snapshot it used.
 - QA-3: A candidate with exhausted applicable runway is never selected.
 - QA-4: A mid-task move requires proven positive headroom, and a candidate with unknown status is never selected for a move.
@@ -98,7 +97,7 @@ Only the control plane moves a worker, and only under supervisor instruction.
 - AT-QA-2: An exhausted pool names `none` and the task queues with reset evidence.
 - AT-QA-3: A Claude worker with a tooling signal keeps only Claude candidates.
 - AT-QA-4: A Claude secondmate is never named a non-Claude candidate.
-- AT-QA-5: A stale snapshot at relaunch time aborts the move and leaves the worker running.
+- AT-QA-5: A snapshot past the maximum age at relaunch time triggers one fresh read, and a failed fresh recheck aborts the move and leaves the worker running.
 - AT-QA-6: A completed move records both runtimes and the snapshot reference.
 - AT-QA-7: Uncommitted work in the task worktree survives the move unchanged.
 - AT-QA-8: Existing suites `tests/fm-quota-choose.test.sh` and `tests/fm-procevent-quota.test.sh` still pass.
