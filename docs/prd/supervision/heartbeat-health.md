@@ -72,7 +72,7 @@ Any requirement on that loop is a dependency to confirm with its owner, not a cl
 - HB-13: The monitor's `watchdog_alert` (`bin/fm-monitor-watchdog.sh:136-158`) is the one sender for watcher freshness, routed through the escalation gate under class `watcher-recovery-failed`, and no second path pages for the same signal.
 - While `state/.monitor-watchdog-alert` exists, the watchdog's heartbeat-age watcher gap is status-only and sends no page.
 - HB-14: The outer guard restarts under a budget with backoff.
-- The budget persists in a state marker, for example `state/.monitor-watchdog-budget`, with `count` and `window_start`, so a service relaunch never resets it.
+- The budget persists in the state marker `state/.monitor-watchdog-budget`, with `count` and `window_start`, so a service relaunch never resets it.
 - An exhausted budget writes one escalated marker, and while that marker exists the service stays alive and idle and restarts nothing until the marker clears.
 - HB-15: Each layer is checked by exactly one layer above it, in the chain monitor unit, then watcher arm, then heartbeat, then watchdog.
 - `bin/fm-watchdog.sh` runs `fm-monitor-watchdog.sh manager-status` on each pass and folds a missing or disabled unit into `unknown` with the layer named.
@@ -177,12 +177,12 @@ No savings figure is stated until both windows exist.
 | HB-F1 | B gemini-argon | `stale_after_secs` published from the active interval and polling progress grounded in `.last-watcher-beat` | HB-3, HB-11 |
 | HB-F2 | B gemini-argon | Ownership partitioned by exact signal across watchdog, daemon, and monitor | Ownership |
 | HB-F3 | B gemini-argon | Token baseline measures session transcript tokens by turn type | Token economics |
-| HB-F4 | B gemini-argon | Endpoint comparison runs whenever both records exist with fresh child heartbeat | HB-20 |
+| HB-F4 | B gemini-argon | Endpoint comparison runs whenever both records exist with fresh child heartbeat (superseded by F-HB-5) | HB-20 |
+| HB-F5 | B gemini-argon | Heartbeat naming the lock session updates the captain record | HB-19 |
 | F-HB-1 | FINAL opus-5-5 | Monitor `watchdog_alert` named as the one sender through the gate under class `watcher-recovery-failed`; watchdog gap status-only while the alert exists | HB-13, Ownership |
 | F-HB-2 | FINAL opus-5-5 | Watchdog runs `manager-status` each pass and folds a missing unit into `unknown`; session start does the same when the watchdog is absent | HB-15, AT-HB-14 |
 | F-HB-3 | FINAL opus-5-5 | Restart budget persisted in a state marker; the service stays alive and idle while the marker exists | HB-14, AT-HB-11 |
 | F-HB-4 | FINAL opus-5-5 | `none` with no open work and no away record reports `ok` (idle); open work defined as `heartbeat_open_work` without its secondmate exclusion | HB-8, AT-HB-10 |
 | F-HB-5 | FINAL opus-5-5 | Same-session provenance required for endpoint comparison and parent-record precedence during a mismatch | HB-20, AT-HB-15, AT-HB-16 |
-| HB-F5 | B gemini-argon | Heartbeat naming the lock session updates the captain record | HB-19 |
 
 Status: FINAL. Every BLOCKING finding from both Stage 2 reviews and the FINAL opus-5-5 review is closed above.

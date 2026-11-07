@@ -46,7 +46,7 @@ It changes no merge, release, or deploy gate and never merges on its own authori
 - PM-4: A forge read error ends the watch with an error record and never reads as success.
 - PM-5: Discovery lists each ready run once per heartbeat with its head and wait time, and surfaces only deltas.
 - PM-6: Conflict state comes from the PR read the check watch already makes, and unwatched ready PRs read through a throttled cache keyed by repository, PR, head, and base head.
-- A separate conflict-cache refresher, a mode of `bin/fm-pr-check-watch.sh` that the watcher runs on its own cadence, refreshes that cache with its own time bound and a cap of K PRs per pass, oldest invalidation first, within the PM-16 per-forge budget.
+- A separate conflict-cache refresher, a mode of `bin/fm-pr-check-watch.sh` that the watcher runs on its own cadence, refreshes that cache with its own time bound and a cap of K PRs per pass, oldest invalidation first, within the PM-16 per-forge budget. K is provisionally 10 PRs per refresher pass, tunable at super-bound like the churn values.
 - Discovery only reads the cache and stays local-only (`bin/fm-ready-pr-discovery.sh:19-22`).
 - Discovery never makes a forge read.
 - PM-7: A conflicted ready PR never reports `ready`, and its conflict is reported only under the Conflict state signal, so the Ready run signal carries no `conflicted` state and points at that Conflict state incident.
@@ -99,7 +99,7 @@ No path polls the forge by hand outside its budget.
 - AT-PM-8: An unreadable repo reports once and the remaining repos still list.
 - AT-PM-9: One state change across both paths produces one wake.
 - AT-PM-10: Existing suites `tests/fm-pr-check-watch.test.sh` and `tests/fm-pr-check-security.test.sh` still pass.
-- AT-PM-11: With K+5 invalidated PRs, one discovery pass finishes inside its bound, and the K oldest entries refresh on the next refresher pass.
+- AT-PM-11: With 15 (K+5) invalidated PRs, one discovery pass finishes inside its bound, and the K oldest entries refresh on the next refresher pass.
 
 ## Failure-injection and recovery drills
 
@@ -140,7 +140,7 @@ No savings figure is stated until both windows exist.
 | PM-F3 | B gemini-argon | One dedupe owner with durable shared state | PM-13, Ownership |
 | PM-F4 | B gemini-argon | Token baseline measures check wakes and session tokens | Token economics |
 | PM-F5 | B gemini-argon | Conflict cache keyed by head and base head | PM-6, PM-9 |
-| F-PM-1 | FINAL opus-5-5 | Separate conflict-cache refresher named with its own bound and a cap of K PRs per pass; discovery only reads the cache and stays local-only | PM-6, Ownership, AT-PM-11 |
+| F-PM-1 | FINAL opus-5-5 | Separate conflict-cache refresher named with its own bound and a cap of K (provisionally 10) PRs per pass; discovery only reads the cache and stays local-only | PM-6, Ownership, AT-PM-11 |
 
 Status: FINAL. Every BLOCKING finding from both Stage 2 reviews and the FINAL opus-5-5 review is closed above.
 
