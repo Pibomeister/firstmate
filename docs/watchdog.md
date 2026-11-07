@@ -74,8 +74,9 @@ These checks run on every pass as well:
 - Decisions open longer than `decision-secs` get one rolled-up nudge per home.
   A window later, the oldest unsettled decision goes to a council of blind seats, at most `council-per-pass` per home per pass and once per decision per `council-secs`.
   A unanimous `PROCEED` writes a ruling file under `data/watchdog/rulings/` and nudges the session to apply it; anything short of unanimity holds.
-- A task whose latest status is a quota pause or block gets a ledger row and a gap that names the eligible candidate from `reroute-candidates` when `quota-axi` and `bin/fm-quota-reroute.sh` find one.
+- A task whose latest status is a quota pause or block, or a pane showing a usage-limit picker, gets a ledger row and a gap that names the eligible candidate from `reroute-candidates` when `quota-axi` and `bin/fm-quota-reroute.sh` find one.
   The Signals paragraph in [`bin/fm-quota-reroute.sh`](../bin/fm-quota-reroute.sh) owns Claude-tooling.
+  [`bin/fm-watchdog.sh`](../bin/fm-watchdog.sh) owns that picker observation.
   The verb header in [`bin/fm-control.sh`](../bin/fm-control.sh) owns close policy.
   The watchdog never changes the runtime.
   The live runbook is [`verification/quota-reroute.md`](verification/quota-reroute.md).

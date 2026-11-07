@@ -161,7 +161,9 @@ wd_capture() {  # <backend> <target> <lines>
 # read, so a dialog already dismissed but still in scrollback never reads as
 # showing. Orca's recorded Droid frame is that viewport even though it is
 # absent from FM_BACKEND_VISIBLE_CAPTURE. A failed viewport read returns
-# empty rather than classifying from scrollback.
+# empty rather than classifying from scrollback. Permission still uses
+# scrollback via wd_observe_dialog; usage-limit treats a missing viewport
+# as usage-limit (queue), not none.
 wd_view() {  # <backend> <target> [expected-label]
   local b=$1 t=$2 label=${3-}
   if [ -z "$label" ]; then
@@ -174,6 +176,32 @@ wd_view() {  # <backend> <target> [expected-label]
     return 1
   fi
   wd_capture "$b" "$t" 60
+}
+
+# Permission from scrollback (main). Usage-limit and Grok from the viewport.
+# When that viewport cannot be read on Orca or another viewport backend,
+# report usage-limit so callers queue rather than treating empty as none.
+wd_observe_dialog() {  # <backend> <target> [expected-label]
+  local b=$1 t=$2 label=${3-} scroll view dialog
+  scroll=$(wd_capture "$b" "$t" 60) || scroll=
+  dialog=$(fm_wd_observe_dialog "$scroll") || dialog=
+  case "$dialog" in
+    permission)
+      printf '%s\n' permission
+      return 0
+      ;;
+  esac
+  view=$(wd_view "$b" "$t" ${label:+"$label"}) || view=
+  if [ -n "$view" ]; then
+    fm_wd_observe_dialog "$view"
+    return
+  fi
+  if [ "$b" = orca ] || fm_backend_visible_capture_supported "$b" 2>/dev/null; then
+    printf '%s\n' usage-limit
+    return 0
+  fi
+  [ -n "$dialog" ] || return 1
+  printf '%s\n' "$dialog"
 }
 
 wd_turn_running() {  # <backend> <target> <screen> -> 1|0|unknown
@@ -418,7 +446,7 @@ EOF
   if [ -n "$O_PANE" ]; then
     O_SIG=$(wd_pane_sig "$O_PANE")
     if [ "$O_SIG" = "$p_sig" ] && [ -n "$p_since" ]; then O_PANE_STATIC=$((now - p_since)); else p_since=$now; fi
-    O_DIALOG=$(fm_wd_observe_dialog "$(wd_view "$O_BACKEND" "$O_TARGET")") || O_DIALOG=''
+    O_DIALOG=$(wd_observe_dialog "$O_BACKEND" "$O_TARGET") || O_DIALOG=''
     wd_read_composer
     O_TURN=$(wd_turn_running "$O_BACKEND" "$O_TARGET" "$O_PANE")
     ctx=$(fm_wd_footer_percent "$O_PANE")
@@ -1351,8 +1379,8 @@ wd_visit_worker_dialogs() {
       fi
       continue
     fi
-    screen=$(wd_view "$backend" "$target" "fm-$id") || screen=''
-    dialog=$(fm_wd_observe_dialog "$screen") || dialog=''
+    screen=$(wd_capture "$backend" "$target" 60) || screen=''
+    dialog=$(wd_observe_dialog "$backend" "$target" "fm-$id") || dialog=''
     if [ "$mode" = print ]; then
       printf '  worker %s endpoint=%s:%s dialog=%s\n' "$id" "$backend" "$target" "${dialog:-none}"
       continue

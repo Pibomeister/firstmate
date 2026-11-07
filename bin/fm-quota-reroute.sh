@@ -54,7 +54,9 @@
 # (top-level or under .projects) that is present and not an object, is
 # unreadable. Worktree .claude/ skills, hooks, agents, or commands are a
 # signal if the path exists, even empty, unless they are unchanged seed
-# as above. An unreadable seed traversal is a signal. A caller that passes
+# as above. An unreadable seed traversal is a signal. A dangling or
+# unreadable worktree .claude is a signal. A find path that contains a
+# newline is an unreadable walk. A caller that passes
 # --claude-config-dir for a pinned account must also pass --pinned. Those two
 # lists live only in the variables below.
 # Resolve the config dir from the task's account pin, never from
@@ -206,29 +208,20 @@ fm_quota_claude_settings_keys_signal() {  # <file> <keys> [own-writer]
 # Prints the blocking signal for MCP or hooks bundled under <config-dir>/plugins.
 # A missing plugins dir is not a signal. An unreadable plugins dir is.
 fm_quota_claude_plugin_bundle_signal() {  # <config-dir>
-  local plugins=$1/plugins f err out sig
+  local plugins=$1/plugins f out sig rc=0
   [ -e "$plugins" ] || return 1
   if [ ! -d "$plugins" ] || [ ! -r "$plugins" ] || [ ! -x "$plugins" ]; then
     printf '%s\n' "unreadable $plugins"
     return 0
   fi
-  err=$(mktemp) || {
-    printf '%s\n' "unreadable $plugins"
-    return 0
-  }
-  out=$(find -L "$plugins" \( -name node_modules -o -name .git \) -prune -o \
+  out=$(fm_quota_claude_collect_print0 "$plugins" -L "$plugins" \
+    \( -name node_modules -o -name .git \) -prune -o \
     \( -name .mcp.json -o -path '*/hooks/hooks.json' \
-       -o -path '*/.claude-plugin/plugin.json' \) -print 2>"$err") || {
-    rm -f "$err"
-    printf '%s\n' "unreadable $plugins"
-    return 0
-  }
-  if [ -s "$err" ]; then
-    rm -f "$err"
-    printf '%s\n' "unreadable $plugins"
+       -o -path '*/.claude-plugin/plugin.json' \) -print0) || rc=$?
+  if [ "$rc" -eq 0 ]; then
+    printf '%s\n' "$out"
     return 0
   fi
-  rm -f "$err"
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     case "$f" in
@@ -360,12 +353,57 @@ EOF
   return 1
 }
 
+# Join find -print0 paths onto stdout. Return 2 on a complete walk, or 0
+# with an unreadable signal when find fails or a path contains a newline.
+fm_quota_claude_collect_print0() {  # <dir> <find-args...>
+  local dir=$1 err raw f collected='' newline=0
+  shift
+  err=$(mktemp) || {
+    printf '%s\n' "unreadable $dir"
+    return 0
+  }
+  raw=$(mktemp) || {
+    rm -f "$err"
+    printf '%s\n' "unreadable $dir"
+    return 0
+  }
+  if ! find "$@" >"$raw" 2>"$err"; then
+    rm -f "$err" "$raw"
+    printf '%s\n' "unreadable $dir"
+    return 0
+  fi
+  if [ -s "$err" ]; then
+    rm -f "$err" "$raw"
+    printf '%s\n' "unreadable $dir"
+    return 0
+  fi
+  rm -f "$err"
+  while IFS= read -r -d '' f || [ -n "$f" ]; do
+    case "$f" in
+      *$'\n'*) newline=1; break ;;
+    esac
+    if [ -n "$collected" ]; then
+      collected="$collected"$'\n'"$f"
+    else
+      collected=$f
+    fi
+    f=
+  done <"$raw"
+  rm -f "$raw"
+  if [ "$newline" = 1 ]; then
+    printf '%s\n' "unreadable $dir"
+    return 0
+  fi
+  printf '%s\n' "$collected"
+  return 2
+}
+
 # Prints paths of files and symlinks under <dir>, or a signal and returns 0
 # when the walk cannot complete. Returns 1 when <dir> is absent.
 # A symlink root is not the authentic seed directory; find -P would hide
 # files behind it, so callers treat that root as a signal instead of walking.
 fm_quota_claude_find_leaves() {  # <dir>
-  local dir=$1 err out
+  local dir=$1 rc=0 out
   [ -e "$dir" ] || return 1
   if [ -L "$dir" ]; then
     printf '%s\n' "unreadable $dir"
@@ -375,27 +413,17 @@ fm_quota_claude_find_leaves() {  # <dir>
     printf '%s\n' "unreadable $dir"
     return 0
   fi
-  err=$(mktemp) || {
-    printf '%s\n' "unreadable $dir"
-    return 0
-  }
-  out=$(find "$dir" \( -type f -o -type l \) -print 2>"$err") || {
-    rm -f "$err"
-    printf '%s\n' "unreadable $dir"
-    return 0
-  }
-  if [ -s "$err" ]; then
-    rm -f "$err"
-    printf '%s\n' "unreadable $dir"
+  out=$(fm_quota_claude_collect_print0 "$dir" "$dir" \( -type f -o -type l \) -print0) || rc=$?
+  if [ "$rc" -eq 0 ]; then
+    printf '%s\n' "$out"
     return 0
   fi
-  rm -f "$err"
   printf '%s\n' "$out"
   return 2
 }
 
 fm_quota_claude_find_dirs() {  # <dir>
-  local dir=$1 err out
+  local dir=$1 rc=0 out
   [ -e "$dir" ] || return 1
   if [ -L "$dir" ]; then
     printf '%s\n' "unreadable $dir"
@@ -405,21 +433,11 @@ fm_quota_claude_find_dirs() {  # <dir>
     printf '%s\n' "unreadable $dir"
     return 0
   fi
-  err=$(mktemp) || {
-    printf '%s\n' "unreadable $dir"
-    return 0
-  }
-  out=$(find "$dir" -mindepth 1 -type d -print 2>"$err") || {
-    rm -f "$err"
-    printf '%s\n' "unreadable $dir"
-    return 0
-  }
-  if [ -s "$err" ]; then
-    rm -f "$err"
-    printf '%s\n' "unreadable $dir"
+  out=$(fm_quota_claude_collect_print0 "$dir" "$dir" -mindepth 1 -type d -print0) || rc=$?
+  if [ "$rc" -eq 0 ]; then
+    printf '%s\n' "$out"
     return 0
   fi
-  rm -f "$err"
   printf '%s\n' "$out"
   return 2
 }
@@ -634,6 +652,16 @@ fm_quota_claude_tooling_signal() {  # <config-dir> [worktree]
     return 0
   fi
   wt=${wt%/}
+  if [ -L "$wt/.claude" ]; then
+    printf '%s\n' "worktree .claude"
+    return 0
+  fi
+  if [ -e "$wt/.claude" ] && {
+       [ ! -d "$wt/.claude" ] || [ ! -r "$wt/.claude" ] || [ ! -x "$wt/.claude" ]
+     }; then
+    printf '%s\n' "unreadable $wt/.claude"
+    return 0
+  fi
   if [ -e "$wt/.claude" ] && fm_quota_claude_worktree_seed_mode "$wt"; then
     if sig=$(fm_quota_claude_seed_tree_signal "$wt"); then
       printf '%s\n' "$sig"

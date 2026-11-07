@@ -26,10 +26,11 @@
 #              classify that. Cancellation is confirmed only from an adapter-
 #              owned acknowledgement and otherwise reported unconfirmed. Busy
 #              state is never rewritten as proof of the action. A proven
-#              usage-limit screen is refused. A pane that cannot be read is
-#              refused before any key. A pane-text usage-limit picker
-#              queues until reset. A Grok weekly-limit composer can be closed
-#              by relaunch. Devin
+#              usage-limit screen is refused. A failed viewport read on a
+#              backend that has one is refused before any key; a backend
+#              with no viewport keeps the no-dialog path. A pane-text
+#              usage-limit picker queues until reset. A Grok weekly-limit
+#              composer can be closed by relaunch. Devin
 #              cancellation invalidates it to unknown because its native hooks
 #              emit no cancellation close; this is not a success claim.
 #              An adapter whose repeated interrupt key does something else on
@@ -41,8 +42,9 @@
 #              busy, then submits the harness's exit command. Postcondition:
 #              the backend's recovery-grade classifier reports the agent gone.
 #              Already-stopped is success (idempotent). A proven usage-limit
-#              screen is refused. A pane that cannot be read is refused before
-#              any key. A pane-text usage-limit picker queues until
+#              screen is refused. A failed viewport read on a backend that has
+#              one is refused before any key; a backend with no viewport keeps
+#              the no-dialog path. A pane-text usage-limit picker queues until
 #              reset. A Grok weekly-limit composer can be closed by relaunch
 #              instead of typing Enter into that picker. An endpoint that reads
 #              `missing` (or, on Rex, `unreadable`, which is how a stopped Rex
@@ -548,7 +550,18 @@ usage_limit_dialog_name() {
     fi
   fi
   screen=$(fm_backend_visible_capture "$BACKEND" "$T" "$LABEL" 2>/dev/null) \
-    || return 2
+    || {
+         if fm_backend_visible_capture_supported "$BACKEND"; then
+           return 2
+         fi
+         if [ "$BACKEND" = orca ]; then
+           fm_backend_source orca >/dev/null 2>&1 || return 1
+           if fm_backend_orca_recorded_droid "$T" "$LABEL" 2>/dev/null; then
+             return 2
+           fi
+         fi
+         return 1
+       }
   if declare -F fm_composer_blocking_dialog >/dev/null 2>&1; then
     dialog=$(fm_composer_blocking_dialog "$screen" 2>/dev/null) || dialog=
     if fm_wd_usage_limit_kind "$dialog"; then
