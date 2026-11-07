@@ -1525,9 +1525,10 @@ expected=$(
       | while IFS= read -r path; do
           f="$FM_ROOT/$path"
           if [ -L "$f" ]; then
-            blob=$(printf '%s' "$(readlink "$f")" | git hash-object --stdin) || exit 1
+            raw=$(readlink -n "$f" && printf x) || exit 1
+            blob=$(printf '%s' "${raw%x}" | git hash-object --no-filters --stdin) || exit 1
           elif [ -f "$f" ]; then
-            blob=$(git hash-object -- "$f") || exit 1
+            blob=$(git hash-object --no-filters -- "$f") || exit 1
           else
             exit 1
           fi
@@ -1704,6 +1705,49 @@ sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$seed_ho
   || fail "newline name under seeded .agents/skills signal: $sig"
 rm -f "$nl_skill"
 ok "a newline name inside the seeded .agents/skills walk is Claude-specific tooling"
+
+nl_skills="$seed_home/.agents/skills"$'\n'
+mkdir -p "$nl_skills"
+cp -a "$seed_home/.agents/skills/." "$nl_skills/"
+mkdir -p "$nl_skills/user-added"
+printf '%s\n' '# user skill' > "$nl_skills/user-added/SKILL.md"
+rm -f "$seed_home/.claude/skills"
+ln -s '../.agents/skills'$'\n' "$seed_home/.claude/skills"
+sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$seed_home") \
+  || fail "a seed symlink whose target has a trailing newline must be tooling required"
+[ "$sig" = "worktree .claude/skills" ] \
+  || fail "trailing-newline seed symlink signal: $sig"
+rm -f "$seed_home/.claude/skills"
+ln -s '../.agents/skills' "$seed_home/.claude/skills"
+rm -rf "$nl_skills"
+ok "a modified seed symlink with a trailing-newline target is Claude-specific tooling"
+
+mkfifo "$seed_home/.claude/extra.fifo"
+sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$seed_home") \
+  || fail "a FIFO under seeded .claude must be tooling required"
+[ "$sig" = "worktree .claude/extra.fifo" ] \
+  || fail "FIFO under seeded .claude signal: $sig"
+rm -f "$seed_home/.claude/extra.fifo"
+ok "a FIFO under seeded .claude is Claude-specific tooling"
+
+skill_seed=$seed_home/.agents/skills/afk/SKILL.md
+cp "$skill_seed" "$LAB/afk.SKILL.md.lf"
+python3 -c 'import pathlib,sys; p=pathlib.Path(sys.argv[1]); b=p.read_bytes(); p.write_bytes(b.replace(b"\n", b"\r\n"))' \
+  "$skill_seed"
+attr_repo="$LAB/attr-repo"
+mkdir -p "$attr_repo"
+git -C "$attr_repo" init -q
+git -C "$attr_repo" config core.autocrlf false
+printf '* text eol=lf\n' > "$attr_repo/.gitattributes"
+sig=$(
+  cd "$attr_repo" || exit 1
+  PATH="$FAKEBIN:$PATH" "$BIN/fm-quota-reroute.sh" claude-tooling \
+    --config-dir "$empty_dir" --worktree "$seed_home"
+) || fail "a CRLF rewrite of a seeded file must be tooling required under caller filters"
+[ "$sig" = "worktree .agents/skills/afk/SKILL.md" ] \
+  || fail "CRLF seed file under caller eol filter signal: $sig"
+mv "$LAB/afk.SKILL.md.lf" "$skill_seed"
+ok "a caller gitattributes eol filter cannot authenticate a rewritten seed file"
 
 if out=$(call_reroute suggest --snapshot "$LAB/captured.json" --from-harness claude \
   --from-model claude-3-5-sonnet --claude-config-dir "$empty_dir" --worktree "$clean_wt" \

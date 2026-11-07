@@ -3365,6 +3365,89 @@ SH
   pass "Orca feedback and model-switch dialogs are still read from scrollback"
 }
 
+test_orca_feedback_dismiss_records_done() {
+  local parent mate user feedback feedback_json idle idle_json
+  feedback=$'some work\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss'
+  feedback_json=$(printf '%s\n' "$feedback" | jq -Rs 'split("\n")')
+  idle=$'Captain session\n> '
+  idle_json=$(printf '%s\n' "$idle" | jq -Rs 'split("\n")')
+  assert_equals feedback "$(lib fm_wd_pane_dialog "$feedback")" \
+    "the Orca feedback fixture must match the detector, or a miss would be vacuous"
+  make_home $'Captain session\n> '
+  parent=$H
+  make_home $'Captain session\n> '
+  mate=$H
+  jq -n --arg s "$SID" --argjson e "$BASE" --argjson p "$LOCKPID" \
+    '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:"orca",target:"term-1",present:true},session:{trusted_id:$s},writer:{anchor_pid:$p,session_id:$s}}}' \
+    > "$mate/state/heartbeat.json"
+  user="$parent/user"
+  mkdir -p "$user/.claude"
+  printf -- '- ghost-mate - test mate (home: %s)\n' "$mate" > "$parent/data/secondmates.md"
+  {
+    echo "harness=claude"
+    echo "kind=secondmate"
+    echo "home=$mate"
+    echo "worktree=$mate"
+    echo "model=default"
+  } > "$parent/state/ghost-mate.meta"
+  printf 'mode=act\nclaude-config-dirs=%s\nkey-settle-secs=1\nmodels=\n' \
+    "$parent/claude" > "$parent/config/watchdog"
+  cat > "$FAKEBIN/orca" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$parent/orca.log"
+case "\$1 \$2" in
+  "terminal send")
+    : > "$parent/orca.dismissed"
+    printf '{"ok":true}\n'
+    ;;
+  "terminal read")
+    case " \$* " in
+      *" --screen "*) exit 1 ;;
+      *)
+        if [ -e "$parent/orca.dismissed" ]; then
+          printf '{"ok":true,"result":{"terminal":{"tail":%s}}}\n' '$idle_json'
+        else
+          printf '{"ok":true,"result":{"terminal":{"tail":%s}}}\n' '$feedback_json'
+        fi
+        ;;
+    esac ;;
+  "terminal wait") printf '{"ok":true,"result":{}}\n' ;;
+  *) exit 1 ;;
+esac
+SH
+  chmod +x "$FAKEBIN/orca"
+  H=$mate
+  transcript 100 "Working."
+  H=$parent
+  HOME="$user" run_wd 0 once >/dev/null 2>&1 || fail "orca feedback dismiss pass failed"
+  assert_equals 1 "$(ledger_rows dialog key done)" \
+    "a dismissed Orca feedback survey must record done, not failed: $(ledger | cut -f5-8)"
+  assert_equals 0 "$(ledger_rows dialog key failed)" \
+    "a dismissed Orca feedback survey must not record failed: $(ledger | cut -f5-8)"
+  [ -e "$parent/orca.dismissed" ] || fail "the watchdog must send the dismiss key"
+  rm -f "$FAKEBIN/orca"
+  pass "Orca feedback dismiss: a cleared survey records done"
+}
+
+test_unknown_viewport_does_not_preempt_a_restart_request() {
+  make_home $'Captain session\n> ' "restart=on
+restart-command=$TMP_ROOT/fake-captain.sh"
+  write_fake_captain
+  transcript 3000 "Working." "Testing." "Green."
+  run_wd 0 once >/dev/null 2>&1 || fail "cpu-prime pass failed"
+  : > "$H/state/.watchdog-restart-request"
+  fm_touch_epoch "$((BASE + 5))" "$H/state/.watchdog-restart-request"
+  wrap_tmux_visible fail
+  run_wd 10 once >/dev/null 2>&1 || { restore_fake_tmux; fail "capture-fail restart pass failed"; }
+  restore_fake_tmux
+  assert_equals 1 "$(ledger_rows restart-requested restart pending)" \
+    "unknown from a failed viewport must not pre-empt a restart request: $(ledger | cut -f5-8)"
+  assert_grep "dialog unknown" "$H/data/watchdog/status.md" \
+    "a failed viewport read must be a reported gap"
+  LOCK_PIDS="$LOCK_PIDS $(cat "$H/state/.lock")"
+  pass "unknown viewport: a restart request still restarts, and the failed read is a gap"
+}
+
 test_tmux_capture_failure_is_unknown_not_usage_limit() {
   local out snap
   make_home $'Captain session\n> ' 'reroute-candidates=codex:gpt-5.4'
@@ -3554,6 +3637,8 @@ fm_test_run \
   test_orca_permission_prompt_is_flagged_without_viewport \
   test_idle_non_droid_orca_is_not_usage_limit \
   test_orca_feedback_and_model_switch_come_from_scrollback \
+  test_orca_feedback_dismiss_records_done \
+  test_unknown_viewport_does_not_preempt_a_restart_request \
   test_tmux_capture_failure_is_unknown_not_usage_limit \
   test_blank_tmux_viewport_is_none_not_usage_limit \
   test_quota_axi_failure_is_cached_for_the_pass \
