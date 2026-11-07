@@ -120,6 +120,23 @@ test_successor_never_appears_records_nothing() {
   pass "a successor that never appears fails loudly and leaves the record unwritten"
 }
 
+test_stale_record_naming_the_current_session_still_launches() {
+  local out rc
+  reset_lab
+  printf 'pid=%s\nhandoff=%s\n' "$PRED_PID" "$LAB/data/handoff.md" > "$LAB/state/.handoff-successor"
+  rc=0
+  out=$(run_launcher) || rc=$?
+  [ "$rc" -eq 0 ] || fail "a stale record must not block a fresh launch (rc=$rc): $out"
+  assert_contains "$out" "successor launched" "a stale record still launches a successor"
+  SUCC_PID=$(sed -n 's/^pid=//p' "$LAB/state/.handoff-successor")
+  [ "$SUCC_PID" != "$PRED_PID" ] || fail "the record must not name the current session as its own successor"
+  kill -0 "$SUCC_PID" 2>/dev/null || fail "the recorded successor pid $SUCC_PID must be alive"
+  kill "$SUCC_PID" 2>/dev/null; SUCC_PID=''
+  kill "$PRED_PID" 2>/dev/null; wait "$PRED_PID" 2>/dev/null
+  pass "a stale record naming the current session never stands in for a new successor"
+}
+
 test_success_path_records_a_live_successor
+test_stale_record_naming_the_current_session_still_launches
 test_unknown_backend_refuses_rather_than_guess
 test_successor_never_appears_records_nothing

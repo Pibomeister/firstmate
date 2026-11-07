@@ -27,7 +27,13 @@
 #   4. waits for the new harness pid to appear (a live process whose
 #      command line carries the handoff path and was not there before the
 #      launch), then writes state/.handoff-successor as pid=<pid> and
-#      handoff=<path> so the Stop gate passes.
+#      handoff=<path> so the Stop gate passes. It verifies only that live
+#      successor pid; the predecessor must still wait for the successor's
+#      own hash confirmation reply before ending the handoff.
+#
+# On tmux the successor opens in the primary's own tmux session when the
+# launcher runs inside one, otherwise in firstmate-<home basename>, as
+# bin/fm-watchdog.sh's restart launch names it.
 #
 # It never kills, interrupts, or signals the current session beyond a
 # kill -0 liveness read; the predecessor is ended by the captain, a
@@ -137,18 +143,7 @@ esac
 [ "${#SHA256}" -eq 64 ] || die "could not hash the handoff document: $HANDOFF"
 SHA8=${SHA256:0:8}
 
-# An already-recorded live successor for this same handoff satisfies the
-# launch; launching a second one would strand a session.
 LAUNCH_RECORD="$STATE/.handoff-successor"
-if [ -f "$LAUNCH_RECORD" ]; then
-  OLD_PID=$(sed -n 's/^pid=//p' "$LAUNCH_RECORD" 2>/dev/null | tail -1)
-  OLD_DOC=$(sed -n 's/^handoff=//p' "$LAUNCH_RECORD" 2>/dev/null | tail -1)
-  case "$OLD_PID" in *[!0-9]* | '') OLD_PID='' ;; esac
-  if [ -n "$OLD_PID" ] && [ "$OLD_DOC" = "$HANDOFF" ] && kill -0 "$OLD_PID" 2>/dev/null; then
-    printf 'successor already recorded: pid=%s backend=%s handoff=%s sha8=%s\n' "$OLD_PID" "$BACKEND" "$HANDOFF" "$SHA8"
-    exit 0
-  fi
-fi
 
 PROMPT="Firstmate handoff successor for home $FM_HOME. The handoff document is $HANDOFF with sha256 $SHA256 (sha8 $SHA8). Confirm that hash before acting (sha256sum or shasum -a 256 on the document) and stop if it does not match. Wait until predecessor harness pid $PRED_PID is dead, then run FM_HOME=$FM_HOME $FM_ROOT/bin/fm-session-start.sh to take the session lock and continue from the handoff document."
 SUCCESSOR_CMD="claude $PERM_FLAG $(printf '%q' "$PROMPT")"
@@ -157,6 +152,7 @@ SUCCESSOR_CMD="claude $PERM_FLAG $(printf '%q' "$PROMPT")"
 # and its ancestors do), so only a pid appearing after the launch counts.
 pids_carrying_handoff() {
   ps -eo pid=,args= 2>/dev/null | while IFS= read -r line || [ -n "$line" ]; do
+    line=${line#"${line%%[![:space:]]*}"}
     pid=${line%% *}
     case "$pid" in *[!0-9]* | '') continue ;; esac
     case "$line" in *"$HANDOFF"*) printf '%s\n' "$pid" ;; esac
@@ -171,11 +167,14 @@ case "$BACKEND" in
       || die "orca failed to create the successor terminal; no successor was launched"
     ;;
   tmux)
-    if tmux has-session -t "=firstmate" >/dev/null 2>&1; then
-      tmux new-window -d -t "=firstmate:" -c "$FM_HOME" -n firstmate "$SUCCESSOR_CMD" >/dev/null 2>&1 \
+    SESS=''
+    [ -z "${TMUX:-}" ] || SESS=$(tmux display-message -p '#{session_name}' 2>/dev/null) || SESS=''
+    SESS=${SESS:-firstmate-$(basename "$FM_HOME")}
+    if tmux has-session -t "=$SESS" >/dev/null 2>&1; then
+      tmux new-window -d -t "=$SESS:" -c "$FM_HOME" -n firstmate "$SUCCESSOR_CMD" >/dev/null 2>&1 \
         || die "tmux failed to open the successor window; no successor was launched"
     else
-      tmux new-session -d -s firstmate -c "$FM_HOME" -n firstmate "$SUCCESSOR_CMD" >/dev/null 2>&1 \
+      tmux new-session -d -s "$SESS" -c "$FM_HOME" -n firstmate "$SUCCESSOR_CMD" >/dev/null 2>&1 \
         || die "tmux failed to create the successor session; no successor was launched"
     fi
     ;;
