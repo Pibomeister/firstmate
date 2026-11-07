@@ -3267,7 +3267,15 @@ surface_nonterminal_stale() {  # <window> <hash> [dialog-name] [queued-reason]
       # pause_state_class read that routed this crew here) gets no future-
       # `until` silence: the declared time belongs to a worker that is gone,
       # so the death takes the ordinary declaration throttle instead of
-      # waiting out a horizon nobody will clear (Refs #149).
+      # waiting out a horizon nobody will clear (Refs #149). The death also
+      # gets its OWN throttle identity: the earlier live alarm for this same
+      # declaration already recorded `declared:<sig>`, and reusing that
+      # identity would let the live alarm's fresh marker absorb the first
+      # dead sighting for the rest of the cadence - a confirmed-gone agent
+      # is news, never a repeat of the live wait.
+      if [ "$PAUSE_AGENT_ALIVE" = dead ]; then
+        STALE_WAIT_DECLARATION="$STALE_WAIT_DECLARATION:dead"
+      fi
       stale_wait_throttled "$key" "$STALE_WAIT_DECLARATION" && throttled=0
     fi
   elif status_is_captain_held "$last"; then

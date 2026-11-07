@@ -308,6 +308,42 @@ test_dead_paused_escalates_but_captain_held_is_bounded_and_live_gate_surfaces() 
   [ "$wakes" -eq 1 ] || fail "dead paused-until produced $wakes stale wakes instead of one escalation"
   ack_stopped_cycle "$state" || fail "could not acknowledge the dead paused-until escalation"
 
+  # The common real sequence: the pause surfaces while the agent is LIVE,
+  # which records the live declaration's throttle, and only then does the
+  # agent die, on a new pane hash inside that cadence. The death is news, not
+  # a repeat of the live wait, so it must alarm at once rather than stay
+  # hidden behind the live alarm's throttle for the rest of the cadence.
+  dir=$(make_case live-pause-then-dies); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"; statusf="$state/held.status"
+  window="test:fm-held"
+  printf 'window=%s\nkind=ship\nharness=grok\nbackend=tmux\n' "$window" > "$state/held.meta"
+  printf 'paused: waiting on the validation run to finish\n' > "$statusf"
+  sig=$(seen_sig "$statusf"); printf '%s' "$sig" > "$state/.seen-held_status"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  printf 'parked, elapsed 1s' > "$capture_file"
+  printf '%s' "$(hash_text 'parked, elapsed 1s')" > "$state/.hash-$key"
+  printf '1\n' > "$state/.count-$key"
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_FAKE_TMUX_CURRENT_COMMAND=grok FM_FAKE_CREW_STATE='state: paused · source: status-log · waiting on the validation run' \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_PAUSE_RESURFACE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  wait_for_exit "$pid" 100 || fail "live paused first sight did not surface before the death"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the live paused first sight"
+  printf 'bare shell after agent exit' > "$capture_file"
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_FAKE_TMUX_CURRENT_COMMAND=zsh FM_FAKE_CREW_STATE='state: stopped · source: pane · bare shell' \
+    FM_WATCH_HANDLING_SUCCESSOR=1 \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_PAUSE_RESURFACE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" >> "$out" &
+  pid=$!
+  wait_for_exit "$pid" 100 || fail "a death inside the live pause cadence was absorbed by the live alarm's throttle"
+  grep -Fx "stale: $window" "$out" >/dev/null || fail "the death inside the live cadence did not print the bare stale wake"
+  wakes=$(awk -F '\t' -v w="$window" '$3 == "stale" && $4 == w { n++ } END { print n + 0 }' "$state/.wake-queue" 2>/dev/null || echo 0)
+  [ "$wakes" -eq 1 ] || fail "the death inside the live cadence produced $wakes wakes instead of one"
+  grep -F "awaiting external" "$state/.wake-queue" >/dev/null \
+    && fail "the death inside the live cadence was queued as a paused recheck"
+
   dir=$(make_case alive-decision-gate); state="$dir/state"; fakebin="$dir/fakebin"
   out="$dir/watch.out"; capture_file="$dir/pane.txt"; statusf="$state/gate.status"
   window="test:fm-gate"
