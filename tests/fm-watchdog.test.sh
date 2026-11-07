@@ -3112,6 +3112,7 @@ SH
   chmod +x "$FAKEBIN/fm-control.sh"
   cat > "$FAKEBIN/orca" <<SH
 #!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$parent/orca.log"
 case "\$1 \$2" in
   "terminal read")
     case " \$* " in
@@ -3128,10 +3129,65 @@ SH
   H=$parent
   HOME="$user" run_wd 0 once >/dev/null 2>&1 || fail "orca usage-limit with Grok only in scrollback failed"
   [ ! -e "$parent/control.log" ] || fail "watchdog relaunched: $(cat "$parent/control.log")"
+  grep -F 'terminal read' "$parent/orca.log" | grep -vq -- '--screen' \
+    || fail "the Orca home pane scrollback was not read: $(cat "$parent/orca.log" 2>/dev/null)"
+  assert_grep "Queue until reset" "$parent/data/watchdog/status.md" \
+    "an unreadable Orca viewport must queue usage-limit, not classify none"
   assert_not_contains "$(cat "$parent/data/watchdog/status.md")" "Supervisor relaunches" \
     "an Orca viewport that cannot be read must not relaunch from Grok in scrollback"
   rm -f "$FAKEBIN/quota-axi" "$FAKEBIN/fm-control.sh" "$FAKEBIN/orca"
   pass "usage-limit: Orca does not relaunch from Grok remaining only in scrollback"
+}
+
+test_orca_permission_prompt_is_flagged_without_viewport() {
+  local parent mate user perm perm_json
+  perm=$'Do you want to proceed?\n ❯ 1. Yes\n   2. No, and tell Claude what to do differently\n\nEsc to cancel'
+  perm_json=$(printf '%s\n' "$perm" | jq -Rs 'split("\n")')
+  assert_equals permission "$(lib fm_wd_pane_dialog "$perm")" \
+    "the Orca permission fixture must match the detector, or a miss would be vacuous"
+  make_home $'Captain session\n> '
+  parent=$H
+  make_home $'Captain session\n> '
+  mate=$H
+  jq -n --arg s "$SID" --argjson e "$BASE" --argjson p "$LOCKPID" \
+    '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:"orca",target:"term-1",present:true},session:{trusted_id:$s},writer:{anchor_pid:$p,session_id:$s}}}' \
+    > "$mate/state/heartbeat.json"
+  user="$parent/user"
+  mkdir -p "$user/.claude"
+  printf -- '- ghost-mate - test mate (home: %s)\n' "$mate" > "$parent/data/secondmates.md"
+  {
+    echo "harness=claude"
+    echo "kind=secondmate"
+    echo "home=$mate"
+    echo "worktree=$mate"
+    echo "model=default"
+  } > "$parent/state/ghost-mate.meta"
+  printf 'mode=act\nclaude-config-dirs=%s\nkey-settle-secs=1\nmodels=\n' \
+    "$parent/claude" > "$parent/config/watchdog"
+  cat > "$FAKEBIN/orca" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$parent/orca.log"
+case "\$1 \$2" in
+  "terminal read")
+    case " \$* " in
+      *" --screen "*) exit 1 ;;
+      *) printf '{"ok":true,"result":{"terminal":{"tail":%s}}}\n' '$perm_json' ;;
+    esac ;;
+  "terminal wait") printf '{"ok":true,"result":{}}\n' ;;
+  *) exit 1 ;;
+esac
+SH
+  chmod +x "$FAKEBIN/orca"
+  H=$mate
+  transcript 100 "Working."
+  H=$parent
+  HOME="$user" run_wd 0 once >/dev/null 2>&1 || fail "orca permission with no viewport failed"
+  grep -F 'terminal read' "$parent/orca.log" | grep -vq -- '--screen' \
+    || fail "the Orca home pane scrollback was not read: $(cat "$parent/orca.log" 2>/dev/null)"
+  assert_grep "permission dialog waiting" "$parent/data/watchdog/status.md" \
+    "a permission prompt in Orca scrollback must still be flagged when the viewport cannot be read"
+  rm -f "$FAKEBIN/orca"
+  pass "permission: Orca scrollback still flags a prompt when the viewport cannot be read"
 }
 
 test_quota_axi_failure_is_cached_for_the_pass() {
@@ -3263,6 +3319,7 @@ fm_test_run \
   test_grok_weekly_limit_on_a_secondmate_names_a_pick \
   test_home_usage_limit_ignores_grok_in_scrollback \
   test_orca_usage_limit_does_not_relaunch_from_scrollback \
+  test_orca_permission_prompt_is_flagged_without_viewport \
   test_quota_axi_failure_is_cached_for_the_pass \
   test_unknown_composer_guards_the_nudge \
   test_orca_turn_probe_keeps_errors_unknown \

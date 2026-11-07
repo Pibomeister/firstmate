@@ -1110,6 +1110,9 @@ sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$wt_loca
 [ "$sig" = "$wt_local/.claude/settings.local.json .enabledPlugins" ] \
   || fail "worktree settings.local.json signal: $sig"
 
+# Guard: firstmate's own spawn hooks already pass on main. They stay a
+# labeled guard so a later seed-walk change cannot silently start treating
+# them as project tooling.
 # fm-spawn writes firstmate's own busy hooks into a Claude ship or scout's
 # settings.local.json; they are not project tooling, so a move off Claude
 # stays possible. A project hook beside them is still a signal.
@@ -1574,7 +1577,7 @@ sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$seed_ho
 [ "$sig" = "worktree .agents/skills/user-added/SKILL.md" ] \
   || fail "symlink-target addition signal: $sig"
 rm -rf "$seed_home/.agents/skills/user-added"
-ok "a user-added .agents/skills path is not hidden by the seeded skills symlink"
+ok "guard: a user-added .agents/skills path is not hidden by the seeded skills symlink"
 
 mv "$seed_home/.agents/skills" "$LAB/agents-skills.real"
 printf 'blocked\n' > "$seed_home/.agents/skills"
@@ -1584,7 +1587,7 @@ sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$seed_ho
   || fail "unreadable traversal signal: $sig"
 rm -f "$seed_home/.agents/skills"
 mv "$LAB/agents-skills.real" "$seed_home/.agents/skills"
-ok "an unreadable seed traversal is Claude-specific tooling"
+ok "guard: an unreadable seed traversal is Claude-specific tooling"
 
 unknown="$LAB/unknown-catalog"
 git clone --local --quiet "$FM_ROOT" "$unknown"
@@ -1615,7 +1618,7 @@ sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$seed_ho
   || fail "symlinked skills root signal: $sig"
 rm -f "$seed_home/.agents/skills"
 mv "$skills_real" "$seed_home/.agents/skills"
-ok "a symlinked .agents/skills root with extra user files is Claude-specific tooling"
+ok "guard: a symlinked .agents/skills root with extra user files is Claude-specific tooling"
 
 claude_real="$LAB/claude.real"
 claude_evil="$LAB/claude.evil"
@@ -1631,7 +1634,33 @@ sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$seed_ho
   || fail "symlinked .claude root signal: $sig"
 rm -f "$seed_home/.claude"
 mv "$claude_real" "$seed_home/.claude"
-ok "a symlinked .claude root with extra user files is Claude-specific tooling"
+ok "guard: a symlinked .claude root with extra user files is Claude-specific tooling"
+
+wt_dangle="$LAB/wt-dangle-claude"
+mkdir -p "$wt_dangle"
+ln -s "$LAB/no-such-claude" "$wt_dangle/.claude"
+sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$wt_dangle") \
+  || fail "a dangling worktree .claude must be tooling required"
+[ "$sig" = "worktree .claude" ] || fail "dangling .claude signal: $sig"
+ok "a dangling worktree .claude is Claude-specific tooling"
+
+wt_unreadable="$LAB/wt-unreadable-claude"
+mkdir -p "$wt_unreadable/.claude"
+chmod 000 "$wt_unreadable/.claude"
+sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$wt_unreadable") \
+  || fail "an unreadable worktree .claude must be tooling required"
+[ "$sig" = "unreadable $wt_unreadable/.claude" ] || fail "unreadable .claude signal: $sig"
+chmod 755 "$wt_unreadable/.claude"
+ok "an unreadable worktree .claude is Claude-specific tooling"
+
+acct_nl="$LAB/acct-nl"
+mkdir -p "$acct_nl/plugins/$(printf 'demo\nfoo')"
+printf '%s\n' '{"mcpServers":{"x":{"command":"true"}}}' \
+  > "$acct_nl/plugins/$(printf 'demo\nfoo')/.mcp.json"
+sig=$(call_reroute claude-tooling --config-dir "$acct_nl") \
+  || fail "a plugin path containing a newline must be tooling required"
+[ "$sig" = "unreadable $acct_nl/plugins" ] || fail "newline plugin path signal: $sig"
+ok "a plugin path containing a newline is Claude-specific tooling"
 
 if out=$(call_reroute suggest --snapshot "$LAB/captured.json" --from-harness claude \
   --from-model claude-3-5-sonnet --claude-config-dir "$empty_dir" --worktree "$clean_wt" \

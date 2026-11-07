@@ -114,6 +114,10 @@ case "${1:-}" in
           [ -z "${FM_FAKE_TRACE_EXPORTED:-}" ] || : > "$FM_FAKE_TRACE_EXPORTED"
           ;;
       esac
+      if { [ "$payload" = Escape ] || [ "$payload" = C-c ]; } \
+         && [ -f "$D/capture-after-interrupt" ]; then
+        cat "$D/capture-after-interrupt" > "$D/capture"
+      fi
     fi
     exit 0 ;;
   display-message)
@@ -764,6 +768,78 @@ test_relaunch_closes_a_grok_weekly_limit_composer_without_typing_enter() {
   [ "$(meta_field "$dir" rl96 harness)" = codex ] \
     || fail "the published record should follow the replacement harness"
   pass "fm-control relaunch: a Grok weekly-limit composer is closed without typing Enter"
+}
+
+test_busy_relaunch_closes_a_grok_weekly_limit_after_interrupt() {
+  local dir out rc sock ident
+  dir=$(new_case grok-limit-busy-relaunch rl97)
+  add_ship_task "$dir" rl97 grok
+  printf 'grok' > "$dir/fake/command"
+  sock=$(bash -c '. "$1/bin/fm-backend.sh"; fm_backend_source tmux; fm_backend_tmux_addressed_socket' _ "$ROOT")
+  ident=$(bash -c '. "$1/bin/fm-wake-lib.sh"; printf "%s" "$(fm_pid_identity "$2")" | tr "\t\n" "  "' _ "$ROOT" "$$")
+  printf 'tmux_socket=%s\ntmux_server_pid=%s\ntmux_server_identity=%s\ntmux_window_id=%s\n' \
+    "$sock" "$$" "$ident" @9 >> "$dir/home/state/rl97.meta"
+  printf '%s\n' 'thinking hard' 'Ctrl+c:cancel' > "$dir/fake/capture"
+  printf '%s\n' \
+    '                                                                                             █' \
+    '' \
+    '  ┃' \
+    '  ┃  You hit your weekly limit.' \
+    '  ┃' \
+    '  ┃' \
+    '  ┃  1 (○) Buy more credits  Purchase credits to keep using Grok Build' \
+    '  ┃  2 (○) Try Again         Resubmit the last prompt once you have usage again' \
+    '  ┃' \
+    '  ┃  ↑/↓ navigate · y copy                                                  Enter:submit' \
+    '  ┃' \
+    '' \
+    '  Tab:next answer  │  Esc:scrollback  │  Shift+x:dismiss' > "$dir/fake/capture-after-interrupt"
+  printf 'codex' > "$dir/fake/becomes"
+  out=$(FM_FAKE_TMUX_SOCKET="$sock" FM_FAKE_TMUX_SERVER_PID=$$ \
+    run_control "$dir" rl97 relaunch --harness codex --note "move off the limited grok account"); rc=$?
+  expect_code 0 "$rc" "a Grok weekly-limit that appears after interrupt should close and start the replacement"$'\n'"$out"
+  grep -qx C-c "$dir/fake/keys" \
+    || fail "a busy grok pane must receive its interrupt before close: $(cat "$dir/fake/keys")"
+  assert_no_grep "/exit" "$dir/fake/literal" \
+    "the exit command must not be typed into a Grok weekly-limit composer that appeared after interrupt"
+  grep -qx Enter "$dir/fake/picker-keys" 2>/dev/null \
+    && fail "the live Grok weekly-limit composer received Enter: $(cat "$dir/fake/picker-keys")"
+  assert_contains "$out" "harness=codex from=grok" "the replacement should land on the named harness"
+  [ "$(meta_field "$dir" rl97 harness)" = codex ] \
+    || fail "the published record should follow the replacement harness"
+  pass "fm-control relaunch: a Grok weekly-limit after busy interrupt is closed without typing Enter"
+}
+
+test_busy_relaunch_refuses_pane_text_usage_limit_after_interrupt() {
+  local dir out rc gen
+  dir=$(new_case usage-limit-busy-relaunch rl98)
+  add_ship_task "$dir" rl98 claude
+  printf '%s\n' \
+    'You have hit your weekly limit for Opus.' \
+    '' \
+    ' ❯ 1. Switch to Sonnet' \
+    '   2. Wait for the limit to reset' \
+    '   3. Buy more credits' \
+    '' \
+    'Enter to confirm · Esc to cancel' > "$dir/fake/capture-after-interrupt"
+  printf 'codex' > "$dir/fake/becomes"
+  gen=$("$ROOT/bin/fm-busy-event.sh" arm "$dir/home/state" rl98)
+  printf 'busy_gen=%s\n' "$gen" >> "$dir/home/state/rl98.meta"
+  out=$(run_control "$dir" rl98 relaunch --harness codex --note "move off the limited account"); rc=$?
+  expect_code 1 "$rc" "a pane-text usage-limit after interrupt must refuse before close"$'\n'"$out"
+  assert_contains "$out" "not live-verified" \
+    "the refusal should name the unverified pane-text classifier"
+  assert_contains "$out" "Queue until reset" \
+    "pane-text usage-limit after interrupt must not send the supervisor to relaunch"
+  assert_no_grep "/exit" "$dir/fake/literal" \
+    "the exit command must not be typed into a usage-limit picker that appeared after interrupt"
+  [ "$(cat "$dir/fake/command")" = claude ] \
+    || fail "an unverified pane-text usage-limit after interrupt must not be killed: $(cat "$dir/fake/command")"
+  grep -qx 'fm-rl98' "$dir/fake/windows" \
+    || fail "an unverified pane-text usage-limit after interrupt must keep the window: $(cat "$dir/fake/windows")"
+  [ "$(meta_field "$dir" rl98 harness)" = claude ] \
+    || fail "a refused pane-text usage-limit after interrupt must keep the prior harness"
+  pass "fm-control relaunch: pane-text usage-limit after busy interrupt refuses without kill or Enter"
 }
 
 test_interrupt_refuses_a_usage_limit_screen() {
@@ -4428,6 +4504,8 @@ test_relaunch_refuses_before_exit_when_the_composer_holds_pending_text
 test_relaunch_does_not_kill_an_untrusted_usage_limit_endpoint
 test_relaunch_refuses_an_unverified_pane_text_usage_limit
 test_relaunch_closes_a_grok_weekly_limit_composer_without_typing_enter
+test_busy_relaunch_closes_a_grok_weekly_limit_after_interrupt
+test_busy_relaunch_refuses_pane_text_usage_limit_after_interrupt
 test_interrupt_refuses_a_usage_limit_screen
 test_interrupt_refuses_a_grok_weekly_limit_and_names_relaunch
 test_control_relaunch_of_a_gone_tmux_endpoint

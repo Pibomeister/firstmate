@@ -656,10 +656,10 @@ test_orca_refuses_an_escape_harness_interrupt() {
   pkill -P "$agent" 2>/dev/null || true
   kill "$agent" 2>/dev/null || true
   expect_code 1 "$rc" "an Escape harness on orca should refuse"
-  assert_contains "$out" "could not read the visible pane" \
-    "claude-on-orca has no viewport, so interrupt must refuse before sending a key"
-  [ -z "$(keys_sent "$dir")" ] || fail "no lifecycle key may be sent when the pane cannot be read: $(keys_sent "$dir")"
-  pass "fm-control interrupt: a backend that cannot read the pane refuses instead of sending a key"
+  assert_contains "$out" "cannot deliver" \
+    "claude-on-orca has no viewport, so interrupt proceeds as on 187a6ddf and refuses the Escape key"
+  [ -z "$(keys_sent "$dir")" ] || fail "no lifecycle key may be sent when the backend cannot deliver it: $(keys_sent "$dir")"
+  pass "fm-control interrupt: a backend that cannot deliver Escape refuses instead of sending a key"
 }
 
 test_orca_droid_relaunch_refuses_a_non_droid_replacement_before_stopping() {
