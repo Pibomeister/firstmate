@@ -1,0 +1,11 @@
+completed off the startup path in 13s: GitHub authentication, dead-secondmate relaunch, secondmate convergence, home code drift, pending handoff delivery, project clone refresh with its drift reporting, and inactive terminal-outcome reconciliation.
+(silent - no problems found)
+TIMINGS - where the deferred network checks spent their time (ms):
+  phase       gh-auth                                    start=+2000    elapsed=2000
+  phase       home-drift                                 start=+5000    elapsed=2000
+  phase       secondmate-liveness                        start=+7000    elapsed=0
+  phase       fleet-sync                                 start=+5000    elapsed=2000
+  phase       secondmate-sync                            start=+7000    elapsed=3000
+  phase       handoff-delivery                           start=+10000   elapsed=0
+  stage       network-checks probe_sweeps                start=+0       elapsed=12000
+  slowest: stage network-checks probe_sweeps 12000ms, phase secondmate-sync 3000ms, phase fleet-sync 2000ms

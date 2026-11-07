@@ -1,0 +1,12 @@
+completed off the startup path in 6s: GitHub authentication, dead-secondmate relaunch, secondmate convergence, home code drift, pending handoff delivery, project clone refresh with its drift reporting, and inactive terminal-outcome reconciliation.
+HOME_DRIFT: home code was 1 commit(s) behind origin/main; fast-forwarded to 7783d078; live second mates and long-lived processes such as the watcher still run the old code until restarted, so follow the /updatefirstmate restart flow (bin/fm-secondmate-restart.sh <fm-id>... for live second mates)
+These ran AFTER the sections above were composed, so re-read any record a line here names.
+TIMINGS - where the deferred network checks spent their time (ms):
+  phase       gh-auth                                    start=+3000    elapsed=1000
+  phase       fleet-sync                                 start=+4000    elapsed=1000
+  phase       home-drift                                 start=+4000    elapsed=1000
+  phase       secondmate-liveness                        start=+6000    elapsed=0
+  phase       secondmate-sync                            start=+6000    elapsed=0
+  phase       handoff-delivery                           start=+6000    elapsed=0
+  stage       network-checks probe_sweeps                start=+1000    elapsed=5000
+  slowest: stage network-checks probe_sweeps 5000ms, phase fleet-sync 1000ms, phase home-drift 1000ms

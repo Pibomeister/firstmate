@@ -1,0 +1,13 @@
+completed off the startup path in 9s: GitHub authentication, dead-secondmate relaunch, secondmate convergence, home code drift, pending handoff delivery, project clone refresh with its drift reporting, and inactive terminal-outcome reconciliation.
+HOME_DRIFT: home code is 1 commit(s) behind origin/main; not fast-forwarded: on feature, expected main - resolve that condition, then run /updatefirstmate
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-drift-e2e.3Hp3VI/code/bin/fm-bootstrap.sh: child setpgid (5471 to 5471): Operation not permitted
+These ran AFTER the sections above were composed, so re-read any record a line here names.
+TIMINGS - where the deferred network checks spent their time (ms):
+  phase       gh-auth                                    start=+3000    elapsed=1000
+  phase       home-drift                                 start=+4000    elapsed=3000
+  phase       secondmate-liveness                        start=+8000    elapsed=0
+  phase       fleet-sync                                 start=+4000    elapsed=4000
+  phase       secondmate-sync                            start=+8000    elapsed=1000
+  phase       handoff-delivery                           start=+9000    elapsed=0
+  stage       network-checks probe_sweeps                start=+1000    elapsed=8000
+  slowest: stage network-checks probe_sweeps 8000ms, phase fleet-sync 4000ms, phase home-drift 3000ms
