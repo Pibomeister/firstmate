@@ -157,14 +157,57 @@ wd_capture() {  # <backend> <target> <lines>
   fm_run_timed_fn "$(cfgi call-timeout-secs 20)" fm_backend_capture "$1" "$2" "$3" 2>/dev/null
 }
 
-# wd_view: the visible viewport where the backend has a verified viewport-only
-# read, so a dialog already dismissed but still in scrollback never reads as
-# showing; elsewhere the bounded capture.
-wd_view() {  # <backend> <target>
-  if fm_backend_visible_capture_supported "$1" 2>/dev/null; then
-    fm_run_timed_fn "$(cfgi call-timeout-secs 20)" fm_backend_visible_capture "$1" "$2" 2>/dev/null && return 0
+# Match fm-control.sh usage_limit_dialog_name: a viewport read is expected
+# only on backends in FM_BACKEND_VISIBLE_CAPTURE, or Orca with a recorded
+# Droid frame. Callers that need history keep using wd_capture.
+wd_visible_capture_expected() {  # <backend> <target> [expected-label]
+  fm_backend_visible_capture_supported "$1" 2>/dev/null && return 0
+  [ "$1" = orca ] || return 1
+  fm_backend_source orca >/dev/null 2>&1 || return 1
+  fm_backend_orca_recorded_droid "$2" "${3:-}" 2>/dev/null
+}
+
+# wd_view: the visible viewport where a viewport read is expected.
+# A successful blank screen stays success (exit 0). A failed expected
+# read stays failure. Unsupported backends never attempt a viewport
+# primitive; they do not fall back to scrollback here, so a dismissed
+# Grok frame in history cannot look like a live close.
+wd_view() {  # <backend> <target> [expected-label]
+  local b=$1 t=$2 label=${3-}
+  if [ -z "$label" ]; then
+    case "${O_ID:-}" in ''|-) ;; *) label=fm-$O_ID ;; esac
   fi
-  wd_capture "$1" "$2" 60
+  wd_visible_capture_expected "$b" "$t" "$label" || return 1
+  fm_run_timed_fn "$(cfgi call-timeout-secs 20)" fm_backend_visible_capture "$b" "$t" ${label:+"$label"} 2>/dev/null
+}
+
+# Permission from scrollback (main). Remaining dialogs use the viewport
+# when a viewport read is expected: a failed read is unknown (no dialog
+# action, no quota pick), and a successful blank screen is none.
+# Backends without a viewport keep classifying from scrollback.
+wd_observe_dialog() {  # <backend> <target> [expected-label]
+  local b=$1 t=$2 label=${3-} scroll view dialog
+  if [ -z "$label" ]; then
+    case "${O_ID:-}" in ''|-) ;; *) label=fm-$O_ID ;; esac
+  fi
+  scroll=$(wd_capture "$b" "$t" 60) || scroll=
+  dialog=$(fm_wd_observe_dialog "$scroll") || dialog=
+  case "$dialog" in
+    permission)
+      printf '%s\n' permission
+      return 0
+      ;;
+  esac
+  if wd_visible_capture_expected "$b" "$t" "$label"; then
+    view=$(wd_view "$b" "$t" "$label") || {
+      printf '%s\n' unknown
+      return 0
+    }
+    fm_wd_observe_dialog "$view"
+    return
+  fi
+  [ -n "$dialog" ] || return 1
+  printf '%s\n' "$dialog"
 }
 
 wd_turn_running() {  # <backend> <target> <screen> -> 1|0|unknown
@@ -409,7 +452,7 @@ EOF
   if [ -n "$O_PANE" ]; then
     O_SIG=$(wd_pane_sig "$O_PANE")
     if [ "$O_SIG" = "$p_sig" ] && [ -n "$p_since" ]; then O_PANE_STATIC=$((now - p_since)); else p_since=$now; fi
-    O_DIALOG=$(fm_wd_observe_dialog "$(wd_view "$O_BACKEND" "$O_TARGET")") || O_DIALOG=''
+    O_DIALOG=$(wd_observe_dialog "$O_BACKEND" "$O_TARGET") || O_DIALOG=''
     wd_read_composer
     O_TURN=$(wd_turn_running "$O_BACKEND" "$O_TARGET" "$O_PANE")
     ctx=$(fm_wd_footer_percent "$O_PANE")
@@ -519,10 +562,11 @@ wd_key() {
     *) fm_run_timed_fn 10 fm_backend_send_key "$O_BACKEND" "$O_TARGET" "$key" >/dev/null 2>&1 ;;
   esac || { wd_rec "$id" "$symptom" key failed "key delivery failed"; return 1; }
   sleep "$(cfgi key-settle-secs 2)"
-  case "$symptom" in
-    dialog) after=$(wd_view "$O_BACKEND" "$O_TARGET") ;;
-    *) after=$(wd_capture "$O_BACKEND" "$O_TARGET" 60) ;;
-  esac
+  if [ "$symptom" = dialog ] && wd_visible_capture_expected "$O_BACKEND" "$O_TARGET"; then
+    after=$(wd_view "$O_BACKEND" "$O_TARGET")
+  else
+    after=$(wd_capture "$O_BACKEND" "$O_TARGET" 60)
+  fi
   case "$symptom" in
     dialog) if [ -n "$after" ] && ! fm_wd_pane_dialog "$after" >/dev/null; then wd_rec "$id" "$symptom" key "done" "dialog left the pane"; O_DIALOG='' O_PANE=$after; wd_read_composer; else wd_rec "$id" "$symptom" key failed "dialog still showing"; return 1; fi ;;
     *) if [ -n "$after" ] && [ "$(wd_pane_sig "$after")" != "$O_SIG" ]; then wd_rec "$id" "$symptom" key "done" "pane changed"; else wd_rec "$id" "$symptom" key failed "pane unchanged"; return 1; fi ;;
@@ -1342,8 +1386,8 @@ wd_visit_worker_dialogs() {
       fi
       continue
     fi
-    screen=$(wd_view "$backend" "$target") || screen=''
-    dialog=$(fm_wd_observe_dialog "$screen") || dialog=''
+    screen=$(wd_capture "$backend" "$target" 60) || screen=''
+    dialog=$(wd_observe_dialog "$backend" "$target" "fm-$id") || dialog=''
     if [ "$mode" = print ]; then
       printf '  worker %s endpoint=%s:%s dialog=%s\n' "$id" "$backend" "$target" "${dialog:-none}"
       continue
@@ -1388,6 +1432,9 @@ wd_handle_subject() {
   owed=$(cfgi owed-input-secs 900)
   quiet=$(cfgi restart-quiet-secs 120)
   if [ -n "$O_LOCK_PID" ] && [ "$O_ALIVE" = 0 ]; then dead=1; fi
+  if [ "$O_DIALOG" = unknown ]; then
+    wd_gap "the visible pane could not be read; dialog unknown"
+  fi
   if [ "$dead" = 1 ]; then
     symptom='agent-gone'
     if [ "$O_TR_AGE" != unknown ] && [ "$O_TR_AGE" -ge "$frozen" ]; then
@@ -1395,7 +1442,7 @@ wd_handle_subject() {
     else
       wd_gap "lock holder is dead; restart needs ${frozen}s of transcript quiet; nothing typed"
     fi
-  elif [ -n "$O_DIALOG" ]; then
+  elif [ -n "$O_DIALOG" ] && [ "$O_DIALOG" != unknown ]; then
     symptom=dialog
     wd_handle_dialog
   elif { [ "$O_RESTART_REQ" = 1 ] || { [ -n "$O_CTX" ] && [ "$O_CTX" -le "$(cfgi restart-at-percent 8)" ]; }; } && wd_restart_available && ! wd_handoff_undeliverable; then

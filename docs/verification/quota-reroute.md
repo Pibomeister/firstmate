@@ -177,7 +177,7 @@ relaunch --harness codex on that live pane   -> refuse exit 1; pane/harness unch
 watchdog once without a usage-limit pane     -> 0; no pick named; no relaunch
 ```
 
-Seeded-home product note: `fm-home-seed` plants worktree `.claude/` (skills, settings.json, mods/firstmate-calm with plugin.json and hooks). Under the worktree rule, every standard seeded secondmate is Claude-specific, so a quota move off Claude is refused even with Codex headroom. The captain accepted that limit with no seed exemption: the `bin/fm-quota-reroute.sh` header owns it, so checklist item 2 cannot pass on a seeded home and needs a home without worktree Claude signals.
+Unchanged Firstmate seed is owned by the Signals paragraph in [`bin/fm-quota-reroute.sh`](../../bin/fm-quota-reroute.sh).
 
 Checklist:
 
@@ -186,7 +186,7 @@ Checklist:
    Production now refuses that pane-text close until a dated capture exists.
 2. Replacement starts on Codex on Herdr: BLOCKED.
    No usage-limit screen was available.
-   Would also be refused by the seeded home's worktree `.claude/` signal.
+   Unchanged seeded `.claude/` no longer refuses that move.
 3. Claude harness pin with no other signal does not block: PARTIAL.
    Gate and suggest were proven on a clean worktree.
    Live relaunch was not exercised without a signal.

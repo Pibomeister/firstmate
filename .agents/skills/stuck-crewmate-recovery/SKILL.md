@@ -78,7 +78,6 @@ Escalate in order:
 
 1. Peek the pane, and check the task's steering inbox (`state/<id>.inbox/`) for unhandled `*.msg` records - a stale wake naming an unread firstmate instruction means the worker never acknowledged a durable steer, and the record itself shows exactly what was intended.
    A worker whose current state is a declared `paused:` wait has only said what it is waiting for, so verify the condition it names - its own background job's terminal record or process, for example - and when that condition has already cleared, steer the worker to read the result and resume instead of reporting the wait as healthy.
-   A usage-limit screen is not an interrupt.
    The verb header in [`bin/fm-control.sh`](../../../bin/fm-control.sh) owns the close policy.
    The watchdog only names the pick.
    This step runs here.

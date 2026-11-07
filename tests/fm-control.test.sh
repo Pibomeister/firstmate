@@ -145,6 +145,9 @@ case "${1:-}" in
           rm -f "$D/composer"
         fi
       fi
+      if [ "$payload" = Escape ] && [ -f "$D/pane-after-interrupt" ]; then
+        cat "$D/pane-after-interrupt" > "$D/pane"
+      fi
       if [ "$payload" = Escape ] && [ -f "$D/devin" ]; then
         case "$(cat "$D/devin")" in
           running) printf armed > "$D/devin" ;;
@@ -190,6 +193,7 @@ case "${1:-}" in
     done
     printf 'fakepane\n'; exit 0 ;;
   capture-pane)
+    [ -z "${FM_FAKE_COMPOSER_READ_FAIL:-}" ] || exit 1
     if [ -f "$D/after-enter" ] && [ -f "$D/keys" ] && grep -qx Enter "$D/keys"; then
       # after-enter-late holds how many captures after Enter still show the
       # ordinary pane, for a screen that renders after the submit has read it.
@@ -652,8 +656,36 @@ test_orca_refuses_an_escape_harness_interrupt() {
   pkill -P "$agent" 2>/dev/null || true
   kill "$agent" 2>/dev/null || true
   expect_code 1 "$rc" "an Escape harness on orca should refuse"
-  assert_contains "$out" "cannot deliver" "refusal should name the undeliverable key"
-  pass "fm-control interrupt: a backend that cannot deliver the harness's key refuses instead of sending another"
+  assert_contains "$out" "cannot deliver" \
+    "claude-on-orca has no viewport, so interrupt proceeds as on 187a6ddf and refuses the Escape key"
+  [ -z "$(keys_sent "$dir")" ] || fail "no lifecycle key may be sent when the backend cannot deliver it: $(keys_sent "$dir")"
+  pass "fm-control interrupt: a backend that cannot deliver Escape refuses instead of sending a key"
+}
+
+test_orca_droid_interrupt_refuses_when_the_visible_pane_cannot_be_read() {
+  local dir out rc wt fifo shell_pid
+  dir=$(new_case orca-droid-capture-fail)
+  add_orca_droid_task "$dir" >/dev/null
+  wt=$(cd "$dir/wt-t1" && pwd -P)
+  printf '{"ok":true,"result":{"terminal":{"handle":"term-1","ptyId":"pty-1","connected":true,"writable":true,"exitCause":null,"executionHostId":"local","worktreePath":"%s"}}}\n' \
+    "$wt" > "$dir/fake/orca-show"
+  fifo="$dir/fake/hold"
+  mkfifo "$fifo"
+  bash -c 'exec 3<>"$0"; read -r _ <&3' "$fifo" >/dev/null 2>&1 &
+  shell_pid=$!
+  printf '{"ok":true,"result":{"worktrees":[{"sessions":[{"sessionId":"pty-1","pid":%s}]}]}}\n' \
+    "$shell_pid" > "$dir/fake/orca-memory"
+  rm -f "$dir/fake/screen.json"
+  out=$(run_control "$dir" t1 interrupt); rc=$?
+  kill "$shell_pid" 2>/dev/null || true
+  wait "$shell_pid" 2>/dev/null || true
+  expect_code 1 "$rc" "Orca Droid interrupt must refuse when the visible pane cannot be read"$'\n'"$out"
+  [ -z "$(keys_sent "$dir")" ] || fail "no lifecycle key may be sent when the Droid pane cannot be read: $(keys_sent "$dir")"
+  [ -z "$(literals "$dir")" ] || fail "no text may be typed when the Droid pane cannot be read: $(literals "$dir")"
+  if grep -q -- '--text' "$dir/fake/orca.log" 2>/dev/null; then
+    fail "a failed Droid viewport must not send into the terminal: $(cat "$dir/fake/orca.log")"
+  fi
+  pass "fm-control interrupt: Orca Droid capture failure refuses without sending keys"
 }
 
 test_orca_droid_relaunch_refuses_a_non_droid_replacement_before_stopping() {
@@ -1424,6 +1456,36 @@ test_closed_orca_terminal_exit_refuses_without_the_worktree_scan() {
   pass "fm-control exit: a closed Orca terminal refuses when the worktree scan cannot be read"
 }
 
+test_interrupt_sends_no_keys_when_the_visible_pane_cannot_be_read() {
+  local dir out rc
+  dir=$(new_case capture-fail-interrupt)
+  add_task "$dir" t1 claude
+  alive_as "$dir" claude
+  out=$(FM_FAKE_COMPOSER_READ_FAIL=1 run_control "$dir" t1 interrupt); rc=$?
+  expect_code 1 "$rc" "interrupt must refuse when the visible pane cannot be read"$'\n'"$out"
+  assert_contains "$out" "could not read the visible pane" \
+    "a failed pane read must refuse rather than send a lifecycle key"
+  [ -z "$(keys_sent "$dir")" ] || fail "no lifecycle key may be sent when the pane cannot be read: $(keys_sent "$dir")"
+  [ -z "$(literals "$dir")" ] || fail "no text may be typed when the pane cannot be read: $(literals "$dir")"
+  pass "fm-control interrupt: an unreadable pane sends no keys"
+}
+
+test_busy_exit_sends_no_keys_when_the_visible_pane_cannot_be_read() {
+  local dir out rc gen
+  dir=$(new_case capture-fail-busy-exit)
+  add_task "$dir" t1 claude
+  alive_as "$dir" claude
+  gen=$("$ROOT/bin/fm-busy-event.sh" arm "$dir/home/state" t1)
+  printf 'busy_gen=%s\n' "$gen" >> "$dir/home/state/t1.meta"
+  out=$(FM_FAKE_COMPOSER_READ_FAIL=1 run_control "$dir" t1 exit); rc=$?
+  expect_code 1 "$rc" "busy exit must refuse when the visible pane cannot be read"$'\n'"$out"
+  assert_contains "$out" "could not read the visible pane" \
+    "a failed pane read must refuse rather than interrupt first"
+  [ -z "$(keys_sent "$dir")" ] || fail "no interrupt key may be sent when the pane cannot be read: $(keys_sent "$dir")"
+  [ -z "$(literals "$dir")" ] || fail "no exit command may be typed when the pane cannot be read: $(literals "$dir")"
+  pass "fm-control exit: an unreadable pane sends no keys even when the agent is busy"
+}
+
 test_interrupt_refuses_when_no_agent_runs() {
   local dir out rc
   dir=$(new_case nointerrupt)
@@ -1499,6 +1561,34 @@ test_busy_exit_refuses_text_that_returns_after_interrupt() {
   assert_no_grep "/exit" "$dir/fake/literal" \
     "the exit command must not be concatenated onto text that returned after interrupt"
   pass "fm-control exit: text that comes back after the interrupt still refuses"
+}
+
+test_busy_exit_refuses_a_usage_limit_pane_after_interrupt() {
+  local dir out rc gen
+  dir=$(new_case busy-limit-after)
+  add_task "$dir" t1 claude
+  alive_as "$dir" claude
+  printf '%s\n' \
+    'You have hit your weekly limit for Opus.' \
+    '' \
+    ' ❯ 1. Switch to Sonnet' \
+    '   2. Wait for the limit to reset' \
+    '   3. Buy more credits' \
+    '' \
+    'Enter to confirm · Esc to cancel' > "$dir/fake/pane-after-interrupt"
+  gen=$("$ROOT/bin/fm-busy-event.sh" arm "$dir/home/state" t1)
+  printf 'busy_gen=%s\n' "$gen" >> "$dir/home/state/t1.meta"
+  out=$(run_control "$dir" t1 exit); rc=$?
+  expect_code 1 "$rc" "a usage-limit pane after interrupt must refuse"$'\n'"$out"
+  assert_contains "$out" "usage-limit screen" \
+    "the refusal should name the usage-limit screen"
+  [ "$(cat "$dir/fake/command")" = claude ] \
+    || fail "a usage-limit pane after interrupt must leave the old agent running"
+  assert_no_grep "/exit" "$dir/fake/literal" \
+    "the exit command must not be typed into a usage-limit pane that appeared after interrupt"
+  grep -qx Enter "$dir/fake/keys" \
+    && fail "Enter must not be sent into a usage-limit pane after interrupt: $(cat "$dir/fake/keys")"
+  pass "fm-control exit: a usage-limit pane that appears after interrupt still refuses"
 }
 
 exit_picker_screen() {
@@ -1823,6 +1913,11 @@ EOF
   pass "fm-control-lib: only a runtime's own recorded session has a relaunch resume form"
 }
 
+if [ "$#" -gt 0 ]; then
+  fm_test_run "$@"
+  exit
+fi
+
 test_exit_types_each_harness_verified_command
 test_opencode_exit_matches_recorded_major
 test_opencode2_exit_retries_ctrl_c_once
@@ -1840,6 +1935,7 @@ test_prefixed_recorded_harness_reaches_each_control_verb
 test_backend_key_capability_matrix
 test_harness_kind_capability
 test_orca_refuses_an_escape_harness_interrupt
+test_orca_droid_interrupt_refuses_when_the_visible_pane_cannot_be_read
 test_orca_droid_relaunch_refuses_a_non_droid_replacement_before_stopping
 test_orca_droid_second_exit_is_idempotent
 test_orca_droid_exit_then_relaunch_is_admitted
@@ -1867,11 +1963,14 @@ test_connected_orca_droid_shell_exit_refuses_wrong_generation_and_live_scan
 test_stale_orca_terminal_exit_reports_endpoint_gone_after_reboot
 test_stale_orca_terminal_exit_refuses_a_surviving_agent_after_reboot
 test_stale_orca_terminal_exit_refuses_without_a_postdating_boot
+test_interrupt_sends_no_keys_when_the_visible_pane_cannot_be_read
+test_busy_exit_sends_no_keys_when_the_visible_pane_cannot_be_read
 test_interrupt_refuses_when_no_agent_runs
 test_ambiguous_endpoint_refuses
 test_busy_agent_is_interrupted_before_the_exit_command
 test_busy_exit_after_interrupt_clears_the_composer
 test_busy_exit_refuses_text_that_returns_after_interrupt
+test_busy_exit_refuses_a_usage_limit_pane_after_interrupt
 test_idle_agent_is_not_interrupted
 test_exit_drops_meta_busy_gen_with_the_sidecar
 test_exit_refuses_an_open_background_picker
