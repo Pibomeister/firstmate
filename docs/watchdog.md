@@ -88,6 +88,13 @@ These checks run on every pass as well:
   The watchdog never changes the runtime.
   The live runbook is [`verification/quota-reroute.md`](verification/quota-reroute.md).
 
+- A primary pane whose last rows hold Claude's usage-limit auto-wait footer (`Continuing automatically at <reset>`) is a stall with no in-pane remedy, because that session takes no turn until the reset.
+  The captain record for that home carries `usage_limit_autowait=1` for that pass.
+  The owner is paged through the home's alert channels at most once per `nudge-secs`, and the page carries no pane text.
+  The page and the status gap name the manual successor path: run `bin/fm-quota-reroute.sh suggest`, then launch a successor on the named pick.
+  The watchdog never kills, relaunches, or types into that primary.
+  An ordinary idle primary is not paged.
+
 A nudge is written as a record-backed operational input in the subject's own home and typed into its pane as the record's doorbell.
 It is never a captain inbox note, so a session cannot mistake it for the owner.
 The text says it comes from the automated watchdog.
@@ -124,7 +131,7 @@ The watchdog never merges, never deploys, never spends beyond existing caps, nev
 - A nudge whose text names a merge, deploy, or release word is not sent and appears as a held gap.
 - A nudge goes out only onto a composer read as empty. An unknown composer, an Orca draft, or a failed draft read holds the nudge as a gap. A held nudge counts toward `max-nudges`, so a frozen session still reaches the restart proof with nothing typed. A stable clean draft gets Enter once before that ladder.
 - Model calls stop once the metered spend of the last day reaches `daily-max-usd`; each Claude call also carries `--max-budget-usd` from `judge-call-max-usd`.
-- The only outward actions are a rate-limited self-heal issue through `bin/fm-self-heal-issue.sh`, on the repository named in `issue-repo` and under that script's own publication gate, and the away permission page.
+- The only outward actions are a rate-limited self-heal issue through `bin/fm-self-heal-issue.sh`, on the repository named in `issue-repo` and under that script's own publication gate, the away permission page, and the primary usage-limit auto-wait page.
 - The away permission page goes only to the home's own [alert channels](wedge-alarm.md#channels), at most once per `nudge-secs` for the home pane and once per `nudge-secs` for each recorded ship or scout worker pane, and carries no dialog text.
 - A restart stops one session process and opens a new terminal; it never removes a worktree, branch, file, or task.
 - `tests/fm-watchdog.test.sh` proves each boundary with its own case.
@@ -160,6 +167,7 @@ It is the durable answer to which process and which terminal are that home's liv
 | `lock_pid` | The pid on the session lock's first line |
 | `session` | The lock's recorded session id |
 | `alive` | `live`, `dead`, `unconfirmed`, or `none` |
+| `usage_limit_autowait` | `1` when this pass read the primary pane's usage-limit auto-wait footer (`Continuing automatically at <reset>`), else `0` |
 | `backend`, `target` | The captain's terminal, empty while it is not proven |
 | `moved_at` | Epoch of the last move to a new owner or a new terminal |
 | `lock_at` | Newest mtime of `state/.lock` and `state/.lock-session` when this record was written |
@@ -223,7 +231,7 @@ An absent file means dry-run on the owner home alone.
 | `max-nudges` | `2` | Nudges for one symptom in two hours before a restart |
 | `max-restarts` | `2` | Restarts in a day before the loop stops and escalates |
 | `cpu-busy-pct` | `15` | CPU rate of the lock holder that counts as busy |
-| `nudge-secs` | `900` | Minimum time between nudges for one symptom, between judge calls about a model-switch picker, and between away permission pages for one home pane or one worker pane |
+| `nudge-secs` | `900` | Minimum time between nudges for one symptom, between judge calls about a model-switch picker, between away permission pages for one home pane or one worker pane, and between primary usage-limit auto-wait pages |
 | `key-secs` | `120` | Minimum time between dialog keys |
 | `enter-secs` | `300` | Minimum time between recorded decisions on unsent input; a real Enter goes at most once in two hours |
 | `council-secs` | `21600` | Minimum time between councils on one decision |
