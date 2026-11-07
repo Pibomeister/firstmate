@@ -1,0 +1,10 @@
+== live record present
+stop rc=0
+== record removed
+Firstmate restart gate: this session is handing off, but no live successor launched after the handoff trigger is recorded in state/.handoff-successor, so nobody will continue from the handoff. Launch the successor with bin/fm-handoff-launch.sh <handoff documen
+stop rc=2
+== record names dead pid
+Firstmate restart gate: this session is handing off, but no live successor launched after the handoff trigger is recorde
+stop rc=2
+== restored
+stop rc=0

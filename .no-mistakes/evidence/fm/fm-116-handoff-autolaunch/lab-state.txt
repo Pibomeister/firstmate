@@ -1,0 +1,5 @@
+-rw-------@  1 eduardopicazo  staff    98 Nov  7 02:41 .handoff-successor
+-rw-r--r--@  1 eduardopicazo  staff    43 Nov  7 02:41 .handoff-trigger.0a80053c-ee14-4e7a-b5eb-3a70ae246e30.0
+pid=96250
+handoff=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.FJ5707/data/handoff.md
+10758

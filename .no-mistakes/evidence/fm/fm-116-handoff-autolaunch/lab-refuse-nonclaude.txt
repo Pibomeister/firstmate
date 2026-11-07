@@ -1,0 +1,2 @@
+error: the current primary runs harness 'unknown', not claude; the handoff successor launcher serves a claude primary only
+rc=1

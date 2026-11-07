@@ -1,0 +1,50 @@
+⏺ Captain, the handoff launcher exited with status 0 and started the successor. Here is the output:
+
+  exit=0
+  successor launched: pid=28238 backend=tmux handoff=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.FJ5707/data/handoff.md sha8=c354c609
+
+✻ Brewed for 9s · done 2:36 AM
+
+❯ Lab test step 3. Run the bash command: date. Then follow any firstmate hook instruction you receive, using $FM_HOME/data/handoff.md as the handoff document (it is already written; do not edit it,
+  do not write orders).
+
+  Ran 1 shell command
+
+⏺ Captain, date returned Sat Nov  7 02:38:16 CST 2026.
+
+  No firstmate hook instruction came back after the command, so I took no further action. I did not edit $FM_HOME/data/handoff.md and wrote no orders. If a hook instruction was expected after date, it
+  did not fire in this session.
+
+✻ Baked for 14s · done 2:38 AM
+
+❯ Lab test step 4. Run the bash command: date. Then follow any firstmate hook instruction you receive, using $FM_HOME/data/handoff.md as the handoff document (it is already written; do not edit it,
+  do not write orders).
+
+  Ran 2 shell commands
+
+⏺ The step-2 successor has exited and left no record, so I am launching a new one as the hook instructs. I am skipping the fm-order.sh handoff step because you said not to write orders.
+
+  Ran 1 shell command
+
+⏺ Captain, this session is ready to restart. date returned Sat Nov  7 02:41:20 CST 2026, and the firstmate early-handoff hook then fired.
+
+  What I did:
+  - Handoff document: I used the existing $FM_HOME/data/handoff.md and did not change it. Its sha8 is c354c609, the same as in step 2.
+  - Order: I did not run bin/fm-order.sh handoff --doc, because you said not to write orders. The hook asked for that step, so this run did not fully follow it.
+  - Successor: bin/fm-handoff-launch.sh exited 0 and started a successor with pid 96250 on tmux. state/.handoff-successor holds pid=96250 and the handoff path, and I confirmed that pid is live.
+
+  Possible bug from step 2: that launch also reported success (pid 28238). By this step, that process had exited and state/.handoff-successor did not exist. So the step-2 successor ended without
+  leaving a record. That could be expected if the record is only written at hook time. It could also mean the launcher does not keep its record or its successor alive. Check the step-2 successor's
+  tmux pane to see why it exited.
+
+  Next: the new successor waits for this session's process to end, then takes the session lock. This session cannot exit itself. You, a leash, an /exit in this pane, or the watchdog must end it.
+
+✻ Worked for 50s · done 2:41 AM
+  #2 Lab test step 2. Run exactly this bash command and nothing else, then quote its output: bin/fm-handoff-launch.sh $FM_HOME/data/handoff.md > /tmp/fm116-launch.out 2>&1; echo exit=$?; cat /…   [-]
+  │┃││
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+  ⏵⏵ bypass permissions on (shift+tab to cycle)

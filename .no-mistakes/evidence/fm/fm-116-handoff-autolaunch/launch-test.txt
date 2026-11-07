@@ -1,0 +1,5 @@
+ok - a written handoff launches a live successor and records its pid for the Stop gate
+ok - a stale record naming the current session never stands in for a new successor
+ok - an unknown recorded backend refuses rather than guessing another backend
+ok - a successor that never appears fails loudly and leaves the record unwritten
+rc=0
