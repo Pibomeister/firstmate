@@ -328,8 +328,8 @@ wd_publish_captain() {
   C_BACKEND=$backend C_TARGET=$target C_MOVED=$moved C_OWNER=$owner
   mkdir -p "$st/watchdog" 2>/dev/null || return 0
   tmp=$(mktemp "$st/watchdog/.captain.XXXXXX" 2>/dev/null) || return 0
-  if printf 'owner=%s\nlock_pid=%s\nsession=%s\nalive=%s\nbackend=%s\ntarget=%s\nmoved_at=%s\nlock_at=%s\nchecked_at=%s\nsource=%s\n' \
-    "$owner" "$O_LOCK_PID" "$O_SESSION" "$O_OWNER" "$backend" "$target" "$moved" "$lock_at" "$now" "$source" > "$tmp"; then
+  if printf 'owner=%s\nlock_pid=%s\nsession=%s\nalive=%s\nusage_limit_autowait=%s\nbackend=%s\ntarget=%s\nmoved_at=%s\nlock_at=%s\nchecked_at=%s\nsource=%s\n' \
+    "$owner" "$O_LOCK_PID" "$O_SESSION" "$O_OWNER" "${O_AUTOWAIT:-0}" "$backend" "$target" "$moved" "$lock_at" "$now" "$source" > "$tmp"; then
     mv "$tmp" "$rec" 2>/dev/null || rm -f "$tmp"
   else
     rm -f "$tmp"
@@ -344,7 +344,7 @@ wd_observe() {
   now=$(wd_now)
   O_HOME=$home O_PARENT=$parent O_ID=$id O_TAG=$(wd_tag "$home") O_KEY=$(wd_state_key "$home")
   O_BACKEND='' O_TARGET='' O_SESSION='' O_HB_AGE=unknown O_CTX='' O_CTX_SRC=''
-  O_PANE='' O_SIG='' O_PANE_STATIC=0 O_DIALOG='' O_COMPOSER=unknown O_TURN=unknown
+  O_PANE='' O_SIG='' O_PANE_STATIC=0 O_DIALOG='' O_AUTOWAIT=0 O_COMPOSER=unknown O_TURN=unknown
   O_LOCK_PID='' O_ALIVE=0 O_INSTANCE=unknown O_OWNER=none O_CPU_BUSY=unknown O_TRANSCRIPT='' O_TR_AGE=unknown
   C_BACKEND='' C_TARGET='' C_MOVED=''
   O_LOOP=none O_LOOP_N=0 O_EVENTS='' O_RESTART_REQ=0 O_OWED_N=0 O_OWED_AGE=0
@@ -407,9 +407,12 @@ EOF
     O_PANE=$(wd_capture "$O_BACKEND" "$O_TARGET" 60) || O_PANE=''
   fi
   if [ -n "$O_PANE" ]; then
+    local view
     O_SIG=$(wd_pane_sig "$O_PANE")
     if [ "$O_SIG" = "$p_sig" ] && [ -n "$p_since" ]; then O_PANE_STATIC=$((now - p_since)); else p_since=$now; fi
-    O_DIALOG=$(fm_wd_observe_dialog "$(wd_view "$O_BACKEND" "$O_TARGET")") || O_DIALOG=''
+    view=$(wd_view "$O_BACKEND" "$O_TARGET")
+    O_DIALOG=$(fm_wd_observe_dialog "$view") || O_DIALOG=''
+    if [ "$parent" = - ] && fm_wd_usage_limit_autowait "$view"; then O_AUTOWAIT=1; fi
     wd_read_composer
     O_TURN=$(wd_turn_running "$O_BACKEND" "$O_TARGET" "$O_PANE")
     ctx=$(fm_wd_footer_percent "$O_PANE")
@@ -462,7 +465,7 @@ wd_print_observation() {
   printf '%s\n' "subject $O_TAG ($O_HOME)" \
     "  endpoint=${O_BACKEND:-none}:${O_TARGET:-none} session=${O_SESSION:-none} lock_pid=${O_LOCK_PID:-none} alive=$O_ALIVE instance=$O_INSTANCE owner=$O_OWNER" \
     "  captain=${C_BACKEND:-none}:${C_TARGET:-none} moved_at=${C_MOVED:-none}" \
-    "  pane_static=${O_PANE_STATIC}s dialog=${O_DIALOG:-none} composer=$O_COMPOSER turn_running=$O_TURN cpu_busy=$O_CPU_BUSY" \
+    "  pane_static=${O_PANE_STATIC}s dialog=${O_DIALOG:-none} usage_limit_autowait=$O_AUTOWAIT composer=$O_COMPOSER turn_running=$O_TURN cpu_busy=$O_CPU_BUSY" \
     "  transcript_age=${O_TR_AGE}s loop=$O_LOOP/$O_LOOP_N restart_requested=$O_RESTART_REQ ctx=${O_CTX:-unknown}${O_CTX_SRC:+ ($O_CTX_SRC)}" \
     "  owed=$O_OWED_N oldest=${O_OWED_AGE}s afk=$O_AFK daemon=$O_DAEMON heartbeat_age=${O_HB_AGE}s"
 }
@@ -990,6 +993,38 @@ wd_page_permission() {
   esac
 }
 
+# A primary on Claude's usage-limit auto-wait takes no turn until the reset,
+# so no nudge, key, or in-pane action can move it and the watchdog never kills
+# or relaunches a primary. The owner is paged through the same alert channels
+# as the away permission page, at most once per nudge-secs, with no pane text.
+# The page and the gap name the worker reroute path for a manual successor:
+# bin/fm-quota-reroute.sh suggest names the pick.
+wd_page_captain_autowait() {
+  local id summary out rc
+  fm_wd_rate_ok "$LEDGER" "$O_HOME" usage-limit-autowait page "$(cfgi nudge-secs 900)" "$(wd_now)" "$O_TAG" || return 0
+  id=$(wd_id)
+  if [ "$(wd_mode)" != act ]; then wd_rec "$id" usage-limit-autowait page dry-run "would page the owner; the captain session is on a usage-limit auto-wait"; return 0; fi
+  wd_rec "$id" usage-limit-autowait page pending "the captain session is on a usage-limit auto-wait; run bin/fm-quota-reroute.sh suggest for a successor pick"
+  summary="Firstmate watchdog: the captain session of $O_TAG is on a Claude usage-limit auto-wait (Continuing automatically at reset) and takes no turns until the reset. It has not been killed or relaunched. Run bin/fm-quota-reroute.sh suggest, then launch a successor on the named pick manually. Its captain record is $O_HOME/state/watchdog/captain and the ledger is $LEDGER."
+  out=$(FM_HOME=$O_HOME FM_STATE_OVERRIDE=$O_HOME/state FM_CONFIG_OVERRIDE=$O_HOME/config \
+    fm_run_timed 60 bash "$SCRIPT_DIR/fm-supervise-daemon.sh" page "$summary" "$LEDGER" 2>/dev/null)
+  rc=$?
+  case "$rc:$out" in
+    '0:page: sent') wd_rec "$id" usage-limit-autowait page "done" "owner paged" ;;
+    2:*)
+      wd_rec "$id" usage-limit-autowait page refused "alerts are off or no alert channel is configured"
+      wd_gap "usage-limit auto-wait on $O_TAG not paged: alerts are off or no alert channel is configured" ;;
+    *)
+      wd_rec "$id" usage-limit-autowait page failed "no alert channel delivered the page (exit $rc)"
+      wd_gap "usage-limit auto-wait page failed on every alert channel for $O_TAG" ;;
+  esac
+}
+
+wd_handle_captain_autowait() {
+  wd_gap "usage-limit auto-wait on $O_TAG; the primary takes no turns until the reset. The watchdog does not kill or relaunch the primary. Run bin/fm-quota-reroute.sh suggest, then launch a successor on the named pick manually."
+  wd_page_captain_autowait
+}
+
 # Aged open decisions get one rolled-up nudge per window; once that nudge has
 # had a full window, the oldest decision without a recent council gets one.
 wd_handle_decisions() {
@@ -1379,7 +1414,7 @@ wd_visit_worker_dialogs() {
 
 # wd_handle_subject: one symptom per pass, by precedence, then the side checks.
 wd_handle_subject() {
-  local symptom='' quiet frozen owed dead=0
+  local symptom='' quiet frozen owed dead=0 reachable=1
   if fm_wd_open_pending "$LEDGER" | awk -F'\t' -v h="$O_HOME" '$2 == h && $4 == "restart" { f = 1 } END { exit !f }'; then
     WD_SYMPTOM='restart-awaiting-pickup'
     return 0
@@ -1395,6 +1430,9 @@ wd_handle_subject() {
     else
       wd_gap "lock holder is dead; restart needs ${frozen}s of transcript quiet; nothing typed"
     fi
+  elif [ "$O_PARENT" = - ] && [ "$O_AUTOWAIT" = 1 ]; then
+    symptom='usage-limit-autowait'
+    wd_handle_captain_autowait
   elif [ -n "$O_DIALOG" ]; then
     symptom=dialog
     wd_handle_dialog
@@ -1425,19 +1463,20 @@ wd_handle_subject() {
   fi
   # A restart this pass stopped the recorded session, so its old endpoint gets nothing more.
   if [ "$WD_RESTARTED" = 1 ]; then WD_SYMPTOM=$symptom; return 0; fi
-  if [ "$dead" = 0 ] && [ "$O_AFK" = 1 ] && [ "$O_DAEMON" = 0 ]; then
+  if [ "$dead" = 1 ] || [ "$symptom" = usage-limit-autowait ]; then reachable=0; fi
+  if [ "$reachable" = 1 ] && [ "$O_AFK" = 1 ] && [ "$O_DAEMON" = 0 ]; then
     [ -n "$symptom" ] || symptom='daemon-dead'
     wd_nudge daemon-dead "away mode is on but the away daemon is not running. Re-arm it with bin/fm-afk-start.sh on this session's own terminal."
   fi
   if [ "$O_HB_AGE" != unknown ] && [ "$O_HB_AGE" -ge "$(cfgi watcher-stale-secs 900)" ]; then
     wd_gap "watcher heartbeat is $((O_HB_AGE / 60))m old"
   fi
-  if [ "$dead" = 0 ]; then
+  if [ "$reachable" = 1 ]; then
     [ "$O_TURN" = 1 ] || wd_handle_decisions
     wd_handle_quota
   fi
   # Recurrence: three real or would-be actions on one symptom in a day files an issue.
-  if [ -n "$symptom" ] && [ "$(fm_wd_count_since "$LEDGER" "$O_HOME" "$symptom" '*' '^(pending|dry-run)$' "$(( $(wd_now) - 86400 ))")" -ge 3 ]; then
+  if [ -n "$symptom" ] && [ "$symptom" != usage-limit-autowait ] && [ "$(fm_wd_count_since "$LEDGER" "$O_HOME" "$symptom" '*' '^(pending|dry-run)$' "$(( $(wd_now) - 86400 ))")" -ge 3 ]; then
     wd_self_heal "$symptom" "Watchdog: $symptom recurs on $O_TAG" "$symptom handled 3 or more times in 24h"
   fi
   WD_SYMPTOM=${symptom:-ok}
