@@ -14,7 +14,7 @@
 #                 "CREW_DISPATCH: invalid config/crew-dispatch.json - <reason>",
 #                 "CREW_DISPATCH: unusable profile <location> codex/<model>/max - <reason>",
 #                 "FLEET_SYNC: <repo>: skipped|recovered|STUCK: <detail>",
-#                 "HOME_DRIFT: home code is <n> commit(s) behind origin/<default>; <fast-forwarded|not fast-forwarded: <reason>>",
+#                 "HOME_DRIFT: home code is <n> commit(s) behind origin/<default>; <fast-forwarded (live second mates and the watcher still need the /updatefirstmate restart flow)|not fast-forwarded: <reason>>",
 #                 "HOME_SUMMARY: <ledger never published|not republished since
 #                 <stamp>>; <n> failed attempt(s) ... last: <recorded failure>",
 #                 "BACKLOG_RECONCILE: <id>: <what this home could not reconcile>",
@@ -435,9 +435,9 @@ home_code_drift() {
       FM_HOME="$FM_HOME" FM_ROOT_OVERRIDE="$FM_ROOT" "$SCRIPT_DIR/fm-procevent-when.sh" rebind-all >/dev/null 2>&1 || true
     fi
     if [ -n "$FF_INSTR" ]; then
-      echo "HOME_DRIFT: home code was $behind commit(s) behind $base; fast-forwarded to $after (instructions changed: $FF_INSTR) - re-read AGENTS.md before acting on the old instructions"
+      echo "HOME_DRIFT: home code was $behind commit(s) behind $base; fast-forwarded to $after (instructions changed: $FF_INSTR) - re-read AGENTS.md before acting on the old instructions; live second mates and long-lived processes such as the watcher still run the old code until restarted, so follow the /updatefirstmate restart flow (bin/fm-secondmate-restart.sh <fm-id>... for live second mates)"
     else
-      echo "HOME_DRIFT: home code was $behind commit(s) behind $base; fast-forwarded to $after"
+      echo "HOME_DRIFT: home code was $behind commit(s) behind $base; fast-forwarded to $after; live second mates and long-lived processes such as the watcher still run the old code until restarted, so follow the /updatefirstmate restart flow (bin/fm-secondmate-restart.sh <fm-id>... for live second mates)"
     fi
     return 0
   fi
