@@ -505,6 +505,46 @@
       "audience": "maintainer-architecture"
     },
     {
+      "path": "docs/prd/supervision/reviews/escalation-quiet-hours-gemini-argon.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "docs/prd/supervision/reviews/escalation-quiet-hours-opus-5-5.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "docs/prd/supervision/reviews/heartbeat-health-gemini-argon.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "docs/prd/supervision/reviews/heartbeat-health-opus-5-5.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "docs/prd/supervision/reviews/pr-check-monitoring-gemini-argon.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "docs/prd/supervision/reviews/pr-check-monitoring-opus-5-5.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "docs/prd/supervision/reviews/quota-account-routing-gemini-argon.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "docs/prd/supervision/reviews/quota-account-routing-opus-5-5.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "docs/prd/supervision/reviews/stall-context-recovery-gemini-argon.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "docs/prd/supervision/reviews/stall-context-recovery-opus-5-5.md",
+      "audience": "maintainer-architecture"
+    },
+    {
       "path": "docs/prd/supervision/stall-context-recovery.md",
       "audience": "maintainer-architecture"
     },

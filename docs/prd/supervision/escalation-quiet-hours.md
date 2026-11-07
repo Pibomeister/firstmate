@@ -59,6 +59,30 @@ It changes no merge, release, or deploy gate.
 - EQ-14: Quiet hours never delay a local durable record, a wake, or a recovery action.
 - EQ-15: Quiet hours apply to the Slack channel only unless a later decision names another channel.
 
+## Shared ledgers
+
+This PRD owns three shared records that the four signal PRDs reference and never restate.
+
+| Ledger | Record | Rule |
+| --- | --- | --- |
+| Incident ledger | One append-only row per incident transition, keyed by subject, signal, and state | The escalation gate is its only writer, and dedupe reads it before any send |
+| Wake ledger | One append-only row per wake at acknowledgement time | Wake counts read it, never the drained queue |
+| Restart ledger | One append-only row per restart, handoff, or quota move, keyed by subject | Every restarter checks the per-subject budget before acting and refuses over budget with one escalation |
+
+## Shared requirements
+
+- EQ-16: Every signal PRD writes its transitions to the incident ledger and reads it before escalating.
+- EQ-17: The escalation gate owns dedupe, quiet-hours holding, and the digest in every mode, attended or away.
+- EQ-18: A failed send writes its durable record first, then retries under a bound, and never drops silently.
+- EQ-19: The digest flush runs at window end even when the away daemon is not running, under an atomic lock, and resolved incidents clear on flush.
+- EQ-20: Every outbound sender is inventoried with a channel label, and external senders list as dependencies rather than capability.
+- EQ-21: Direct page callers route through the one gate, so no caller bypasses dedupe or quiet hours.
+- EQ-22: The exception classes include inject-wedged and watcher-recovery-failed alongside permission-dialog, unconfirmed-restart, restart-loop, quota-all-at-floor, conflicted-pr, and blocked-decision.
+- EQ-23: The quiet-hours clock is one function behind one config key with an explicit `America/Costa_Rica` time zone.
+- EQ-24: Boundary behavior at 22:00, 08:00, and Friday 17:00 holds on a host in any time zone.
+- EQ-25: The longest quiet-hours hold is the weekend span, and the digest time states it.
+- EQ-26: No Slack sender exists in this repo today, so Slack delivery lists as an external dependency until a channel lands.
+
 ## Ownership
 
 | Signal | Single owner | Permitted action |
@@ -91,13 +115,31 @@ It changes no merge, release, or deploy gate.
 
 ## Token economics
 
-The baseline method counts supervisor wakes and model tokens before and after this work.
-The measurement window is 14 consecutive days before the change and 14 consecutive days after it.
-The counters are escalations sent per day, held messages per digest, and wake records drained per day.
-Message volume counts from channel and wake records, never from an estimate.
+Baseline method: count outbound pages from the watchdog action rows and the monitor page log.
+Count supervisor wake tokens from session transcript usage by turn type.
+Count held messages per digest from the quiet-hours queue records.
+Counts normalize per active task-hour.
+The window is 14 consecutive days before the change and 14 consecutive days after it, on the same homes.
+Wake-based before-windows start only after the wake ledger exists.
 No savings figure is stated until both windows exist.
+
+## Resolution of Stage 2 findings
+
+| Finding | Reviewer | Resolution | Section changed |
+| --- | --- | --- | --- |
+| A-EQ-1 | A opus-5-5 | Sender inventory with channel labels and external senders as dependencies | EQ-20, EQ-26 |
+| A-EQ-2 | A opus-5-5 | One quiet-hours function behind one config key with explicit zone | EQ-23, EQ-24 |
+| A-EQ-3 | A opus-5-5 | One durable incident ledger behind one escalation gate | Shared ledgers, EQ-16 |
+| A-EQ-4 | A opus-5-5 | Gate owns the digest in every mode with durable record and bounded retry | EQ-17 to EQ-19 |
+| A-EQ-5 | A opus-5-5 | Baseline counts pages, queue records, and session tokens | Token economics |
+| EQ-F1 | B gemini-argon | Named channel syntax and one gate for every page caller | EQ-21, EQ-26 |
+| EQ-F2 | B gemini-argon | Window-end flush under lock even with the daemon down | EQ-19 |
+| EQ-F3 | B gemini-argon | Durable dedupe keyed by home, subject, symptom, and state | Shared ledgers |
+| EQ-F4 | B gemini-argon | Inject-wedged and watcher-recovery-failed added to the exception classes | EQ-22 |
+| EQ-F5 | B gemini-argon | Baseline method added with page and wake counters | Token economics |
+
+Status: FINAL. Every BLOCKING finding from both Stage 2 reviews is closed above.
 
 ## Open questions
 
 - OQ-EQ-1: Which channel list beyond Slack inherits the quiet-hours window.
-- OQ-EQ-2: Whether the digest rides the existing away digest or stands alone.

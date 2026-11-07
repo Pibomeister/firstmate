@@ -26,7 +26,7 @@ It changes no merge, release, or deploy gate and authorizes no new spend.
 | Claude-specific tooling blocks a move off Claude | The signal list in the `bin/fm-quota-reroute.sh` header covers MCP servers, hooks, skills, and plugin bundles | Present |
 | A Claude secondmate never moves off Claude | Every firstmate home tracks `.claude/` material, so the reroute keeps a Claude secondmate on Claude | Present |
 | The watchdog names a candidate and never changes the runtime | The quota rows in `docs/watchdog.md` write a ledger row and a gap that names the eligible candidate | Present |
-| The supervisor performs the move | `bin/fm-control.sh relaunch --harness` runs the same eligibility check and performs the relaunch | Present |
+| The supervisor performs the move | `bin/fm-control.sh relaunch --harness` performs the relaunch and runs the kind and Claude-tooling checks, and runs no quota check today | Present with gap |
 | Dispatch reroutes at quota floors instead of stalling | Firstmate PR #94 reroutes work at quota floors | Merged |
 | Allowance left is read once per heartbeat | `bin/fm-heartbeat.sh` reads weekly model allowance once under `FM_HEARTBEAT_QUOTA_TIMEOUT` | Present |
 
@@ -45,15 +45,38 @@ It changes no merge, release, or deploy gate and authorizes no new spend.
 - QA-1: One quota snapshot per incident feeds detection, selection, and the relaunch check.
 - QA-2: Selection names at most one replacement and records the snapshot it used.
 - QA-3: A candidate with exhausted applicable runway is never selected.
-- QA-4: A candidate with unmeasured headroom stays eligible and the record marks the headroom unmeasured.
+- QA-4: A mid-task move requires proven positive headroom, and a candidate with unknown status is never selected for a move.
+- QA-4b: Unknown-headroom eligibility applies only at new-task intake, never to a move of running work.
 - QA-5: A Claude-tooling signal blocks only the candidates off Claude and never the Claude candidates.
 - QA-6: A secondmate move keeps its home, its backlog, and its recorded backend contract.
 - QA-7: The move preserves the task worktree and all uncommitted work.
-- QA-8: A pane-text usage-limit picker and a status-line floor follow one stated path per harness.
-- QA-9: When no candidate is eligible, the task queues until reset with the reset evidence recorded.
-- QA-10: The relaunch rechecks eligibility against the same snapshot before it stops the old worker.
-- QA-11: A failed recheck aborts the move and leaves the old worker running.
-- QA-12: Every move writes one record with the from-runtime, the to-runtime, and the snapshot reference.
+- QA-8: A status-line floor uses graceful stop plus relaunch, and an interactive usage-limit modal uses only a live-verified fresh-endpoint rebind or queues until reset.
+- QA-9: No key is ever typed into an unverified usage-limit modal.
+- QA-10: When no candidate is eligible, selection emits the earliest reset time and the task queues until that time.
+- QA-11: A worker pane at a usage-limit modal produces one supervisor nudge or one bounded pause record naming the reset time.
+- QA-12: The relaunch reads quota fresh past a maximum snapshot age, reselects once on a changed answer, then queues.
+- QA-13: A failed fresh recheck aborts the move and leaves the old worker running.
+- QA-14: Every move writes one record with the from-runtime, the to-runtime, and the snapshot reference.
+- QA-15: One per-task move budget bounds moves, and no move returns to a runtime before its reset.
+- QA-16: The provider of a candidate comes from the harness catalog, and an unproven provider reads as unmeasured headroom.
+- QA-17: One snapshot file per incident serves detection, selection, and the relaunch check, and the move record references it.
+- QA-18: Dispatch rules and watchdog reroute candidates read one candidate source, and captain-approval rules keep their gate on every path.
+- QA-19: A quota-limited primary raises one exception that names the reset time and the pin decision, and no automated move touches it.
+- QA-20: Every move writes one row to the shared restart ledger and counts against the per-subject budget.
+
+## Incident keys
+
+| Signal | Key fields | Exception states | Routine states |
+| --- | --- | --- | --- |
+| Quota floor | task, runtime | all candidates at floor | candidate named |
+| Move | task, from-runtime, to-runtime | recheck failed, budget exhausted | move completed |
+| Primary at floor | home | at floor past one pass | reset reached |
+
+## Owner absence
+
+Selection owner is `bin/fm-quota-reroute.sh` and move execution owner is `bin/fm-control.sh relaunch`.
+When quota evidence cannot be read, selection names `none` with the reason recorded.
+No path guesses headroom from a harness or model name.
 
 ## Ownership
 
@@ -82,6 +105,8 @@ Only the control plane moves a worker, and only under supervisor instruction.
 
 ## Failure-injection and recovery drills
 
+Every drill runs in a fixture home with a private terminal socket or a named non-default lab, never on a live home.
+
 - DR-QA-1: Exhaust the current runtime in a fixture snapshot and confirm the move lands on the named candidate.
 - DR-QA-2: Exhaust every candidate and confirm the task queues and no relaunch fires.
 - DR-QA-3: Add a Claude-tooling signal mid-incident and confirm the move off Claude is refused.
@@ -96,13 +121,32 @@ Quiet hours and dedupe follow [escalation-quiet-hours.md](escalation-quiet-hours
 
 ## Token economics
 
-The baseline method counts supervisor wakes and model tokens before and after this work.
-The measurement window is 14 consecutive days before the change and 14 consecutive days after it.
-The counters are quota-related wake records per day, move records per week, and token fields in `state/watchdog/model-calls.tsv`.
-Queue time is measured from the status records, not estimated.
+Baseline method: count supervisor session tokens from transcript usage on dispatch and quota-relaunch turns.
+Move cost counts the startup tokens of the new worker from the per-session token ledger.
+Move counts and queue time come from move records and status records, never from an estimate.
+Counts normalize per active task-hour.
+The window is 14 consecutive days before the change and 14 consecutive days after it, on the same homes.
 No savings figure is stated until both windows exist.
+
+## Resolution of Stage 2 findings
+
+| Finding | Reviewer | Resolution | Section changed |
+| --- | --- | --- | --- |
+| A-QA-1 | A opus-5-5 | Per-task move budget with no return before reset | QA-15 |
+| A-QA-2 | A opus-5-5 | Capability corrected and fresh recheck with one reselect then queue | QA-12, QA-13 |
+| A-QA-3 | A opus-5-5 | Provider from the harness catalog, never inferred from a name | QA-16 |
+| A-QA-4 | A opus-5-5 | One snapshot file per incident referenced by every step | QA-17 |
+| A-QA-5 | A opus-5-5 | Quota-limited primary exception with reset time and pin decision | QA-19 |
+| A-QA-8 | A opus-5-5 | Token baseline counts move cost from the session token ledger | Token economics |
+| QA-F1 | B gemini-argon | Mid-task moves require proven positive headroom | QA-4, QA-4b |
+| QA-F2 | B gemini-argon | Modal path split with no key into an unverified modal | QA-8, QA-9 |
+| QA-F3 | B gemini-argon | Earliest reset emitted and worker modal panes nudged once | QA-10, QA-11 |
+| QA-F4 | B gemini-argon | One candidate source for dispatch and watchdog paths | QA-18 |
+| QA-F5 | B gemini-argon | Token baseline measures dispatch and relaunch session turns | Token economics |
+
+Status: FINAL. Every BLOCKING finding from both Stage 2 reviews is closed above.
 
 ## Open questions
 
-- OQ-QA-1: How multi-provider harnesses prove the provider of a candidate before its quota row is read.
+- OQ-QA-1: Which maximum snapshot age fits each provider reset cadence.
 - OQ-QA-2: Which snapshot age is too old to authorize a relaunch recheck.
