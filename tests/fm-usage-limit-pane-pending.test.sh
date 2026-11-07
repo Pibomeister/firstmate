@@ -104,6 +104,31 @@ test_named_pane_classifies_usage_limit_without_enter() {
   pass "usage-limit live marker: named existing pane classifies usage-limit with no Enter"
 }
 
+test_named_autowait_pane_classifies_without_enter() {
+  local out rc=0 capture
+  capture="$TMP/autowait.capture"
+  printf '%s\n' \
+    'work output' \
+    'Usage limit reached. Continuing automatically at 4:00 AM' \
+    'SECRET_PANE_TOKEN_DO_NOT_LOG' \
+    '' \
+    '❯ ' \
+    '  ? for shortcuts' > "$capture"
+  : > "$TMP/tmux.args"
+  : > "$TMP/tmux.send-keys"
+  install_fake_tmux "$capture"
+  out=$(PATH="$TMP/fakebin:$PATH" run_guard \
+    FM_USAGE_LIMIT_PANE_LIVE=1 FM_USAGE_LIMIT_PANE=sess:p0 2>&1) || rc=$?
+  expect_code 0 "$rc" "named auto-wait pane must classify"$'\n'"$out"
+  printf '%s\n' "$out" | grep -q 'named existing pane classified usage-limit-autowait with no Enter' \
+    || fail "named auto-wait pane must pass only on auto-wait classify, got:"$'\n'"$out"
+  [ ! -s "$TMP/tmux.send-keys" ] \
+    || fail "named-pane auto-wait classify typed keys: $(cat "$TMP/tmux.send-keys")"
+  printf '%s\n' "$out" | grep -Fq 'SECRET_PANE_TOKEN_DO_NOT_LOG' \
+    && fail "named-pane auto-wait classify leaked pane text:"$'\n'"$out"
+  pass "usage-limit live marker: named existing pane classifies usage-limit-autowait with no Enter"
+}
+
 test_named_non_limit_pane_never_passes() {
   local out rc=0 capture
   capture="$TMP/plain.capture"
@@ -134,4 +159,5 @@ fm_test_run \
   test_fm_live_one_without_a_pane_is_pending \
   test_opt_in_without_a_pane_is_pending \
   test_named_pane_classifies_usage_limit_without_enter \
+  test_named_autowait_pane_classifies_without_enter \
   test_named_non_limit_pane_never_passes

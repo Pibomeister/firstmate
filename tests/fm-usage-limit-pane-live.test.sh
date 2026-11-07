@@ -34,10 +34,18 @@ screen=$(tmux ${sock_args[@]+"${sock_args[@]}"} capture-pane -p -t "$pane" 2>/de
 # shellcheck source=bin/fm-watchdog-lib.sh
 . "$ROOT/bin/fm-watchdog-lib.sh"
 kind=$(fm_wd_pane_dialog "$screen") || kind=
+if [ -z "$kind" ] && fm_wd_usage_limit_autowait "$screen"; then
+  kind=usage-limit-autowait
+fi
 unset screen
 
 if [ "$kind" = usage-limit ]; then
   pass "named existing pane classified usage-limit with no Enter"
+  exit 0
+fi
+
+if [ "$kind" = usage-limit-autowait ]; then
+  pass "named existing pane classified usage-limit-autowait with no Enter"
   exit 0
 fi
 

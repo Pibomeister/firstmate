@@ -55,6 +55,12 @@
 #   fm_wd_observe_dialog <screen>
 #       Prints a pane dialog name, or `usage-limit` when the composer detector
 #       names a usage-limit kind. Exit 1 when neither matches.
+#   fm_wd_usage_limit_autowait <screen>
+#       Returns 0 when the last rows of the screen hold Claude's usage-limit
+#       auto-wait footer (`Continuing automatically at <reset>`), the state
+#       in which a session takes no turn until the reset. The phrase counts
+#       only in the last rows, so a quote of it in older conversation above
+#       the composer zone is not a match.
 #   fm_wd_dialog_options <screen>
 #       Prints `<number>\t<text>` for each numbered option of the dialog.
 #   fm_wd_dialog_text <screen>
@@ -221,6 +227,11 @@ fm_wd_strip_ansi() {
 
 fm_wd_usage_limit_text() {  # <text>
   printf '%s' "$(fm_wd_lower "$1")" | LC_ALL=C grep -Eq "$FM_WD_USAGE_LIMIT_RE"
+}
+
+fm_wd_usage_limit_autowait() {  # <screen>
+  [ -n "${1-}" ] || return 1
+  _fm_wd_tail_rows "$1" 10 | LC_ALL=C grep -Eiq 'continuing automatically( at|:)[[:space:]]*[^[:space:]]'
 }
 
 fm_wd_quota_status_line() {  # <line>
