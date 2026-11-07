@@ -1,0 +1,6 @@
+### live marker against a real tmux pane (footer below prompt)
+work output
+❯
+  Continuing automatically at 4:00 AM
+ok - named existing pane classified usage-limit-autowait with no Enter
+exit=0

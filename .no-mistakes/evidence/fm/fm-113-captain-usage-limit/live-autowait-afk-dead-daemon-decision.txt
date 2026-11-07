@@ -1,0 +1,44 @@
+### scenario: autowait-afk-dead-daemon-decision
+### pane as captured by tmux:
+work output
+Usage limit reached. Continuing automatically at 4:00 AM
+❯
+  ? for shortcuts
+### bin/fm-watchdog.sh once (FM_HOME=lab, no FM_TEST_SEAM)
+exit=0
+### second pass (rate window)
+exit=0
+### state/watchdog/captain:
+owner=session:00000000-0000-4000-8000-0000000000aa
+lock_pid=34297
+session=00000000-0000-4000-8000-0000000000aa
+alive=live
+usage_limit_autowait=1
+backend=tmux
+target=%0
+moved_at=1794071515
+lock_at=1794071515
+checked_at=1794071518
+source=watchdog
+### ledger (symptom action phase detail):
+usage-limit-autowait	page	pending	the captain session is on a usage-limit auto-wait; run bin/fm-quota-reroute.sh suggest for a successor pick
+usage-limit-autowait	page	done	owner paged
+### paged.log:
+Firstmate watchdog: the captain session of fm-lab.oVDo3O is on a Claude usage-limit auto-wait (Continuing automatically at reset) and takes no turns until the reset. It has not been killed or relaunched. Run bin/fm-quota-reroute.sh suggest, then launch a successor on the named pick manually. Its captain record is /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.oVDo3O/state/watchdog/captain and the ledger is /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.oVDo3O/state/watchdog/actions.tsv.
+### data/watchdog/status.md:
+# Firstmate watchdog - Eduardos-MacBook-Pro-2
+updated 2026-11-07T17:11:58Z, scan every 120s, mode act, restart off
+STALE IF NOT UPDATED BY 2026-11-07T17:22:58Z (watchdog may be down)
+models: none; spent 24h $0 of $1.00
+
+## Homes
+- fm-lab.oVDo3O: USAGE-LIMIT-AUTOWAIT, last turn 0m ago, owed 0, ctx unknown; captain pid 34297 live on tmux:%0, moved 2026-11-07T17:11:55Z
+
+## Actions since last read (2026-11-07T16:11:58Z)
+- 17:11 fm-lab.oVDo3O page usage-limit-autowait done
+
+## Open gaps
+- fm-lab.oVDo3O: usage-limit auto-wait on fm-lab.oVDo3O; the primary takes no turns until the reset. The watchdog does not kill or relaunch the primary. Run bin/fm-quota-reroute.sh suggest, then launch a successor on the named pick manually.
+- no model configured; judged symptoms are reported only
+### typed into pane (bytes):        0
+### lock holder alive: yes
