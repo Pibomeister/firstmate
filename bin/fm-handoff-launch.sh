@@ -28,8 +28,8 @@
 #      command line carries the handoff path and was not there before the
 #      launch), then writes state/.handoff-successor as pid=<pid> and
 #      handoff=<path> so the Stop gate passes. It verifies only that live
-#      successor pid; the predecessor must still wait for the successor's
-#      own hash confirmation reply before ending the handoff.
+#      successor pid; the successor confirms the handoff sha256 at pickup
+#      and stops on a mismatch.
 #
 # On tmux the successor opens in the primary's own tmux session when the
 # launcher runs inside one, otherwise in firstmate-<home basename>, as
