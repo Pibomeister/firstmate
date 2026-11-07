@@ -1,0 +1,4 @@
+$ FM_USAGE_LIMIT_PANE_LIVE=1 FM_USAGE_LIMIT_PANE=p FM_USAGE_LIMIT_PANE_SOCKET=<lab socket> bash tests/fm-usage-limit-pane-live.test.sh
+ok - named existing pane classified usage-limit-autowait with no Enter
+exit=0
+keys typed into pane:        0

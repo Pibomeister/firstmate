@@ -1,0 +1,6 @@
+1..4
+ok - dialogs need their structure, and each kind is told apart
+ok - usage-limit auto-wait: a primary is recorded, paged once, and never typed into, killed, or relaunched
+ok - usage-limit auto-wait: a dead away daemon, an aged decision, and a quota floor type nothing, and hours of pages file no issue
+ok - usage-limit auto-wait: an ordinary idle primary is not paged
+FM_TEST_COMPLETE

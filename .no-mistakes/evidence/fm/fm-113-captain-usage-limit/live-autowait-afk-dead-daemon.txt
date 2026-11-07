@@ -1,0 +1,56 @@
+=== mode=afk-dead pane=%0 (lab tmux server, real pane capture, no FM_TEST_SEAM)
+--- pane as captured by the lab tmux server:
+● Supervising the fleet.
+
+  ⎿  5-hour limit reached ∙ resets 4am
+     Usage limit reached. Continuing automatically at 4:00 AM
+
+❯
+  ? for shortcuts
+--- fm-watchdog.sh scan:
+subject fm-lab.RHHmmv (/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.RHHmmv)
+  endpoint=tmux:%0 session=11111111-2222-4333-8444-555555555555 lock_pid=26887 alive=1 instance=match owner=live
+  captain=tmux:%0 moved_at=1794044781
+  pane_static=0s dialog=none usage_limit_autowait=1 composer=unknown turn_running=0 cpu_busy=unknown
+  transcript_age=1s loop=none/0 restart_requested=0 ctx=unknown
+  owed=0 oldest=0s afk=1 daemon=0 heartbeat_age=1s
+--- fm-watchdog.sh once (pass 1) exit:
+0
+--- fm-watchdog.sh once (pass 2, immediately) exit:
+0
+--- state/watchdog/captain:
+owner=session:11111111-2222-4333-8444-555555555555
+lock_pid=26887
+session=11111111-2222-4333-8444-555555555555
+alive=live
+usage_limit_autowait=1
+backend=tmux
+target=%0
+moved_at=1794044781
+lock_at=1794044781
+checked_at=1794044790
+source=watchdog
+--- ledger (symptom action phase detail):
+usage-limit-autowait	page	pending	the captain session is on a usage-limit auto-wait; run bin/fm-quota-reroute.sh suggest for a successor pick
+usage-limit-autowait	page	done	owner paged
+--- paged.log (owner alert channel):
+Firstmate watchdog: the captain session of fm-lab.RHHmmv is on a Claude usage-limit auto-wait (Continuing automatically at reset) and takes no turns until the reset. It has not been killed or relaunched. Run bin/fm-quota-reroute.sh suggest, then launch a successor on the named pick manually. Its captain record is /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.RHHmmv/state/watchdog/captain and the ledger is $LAB/state/watchdog/actions.tsv.
+--- data/watchdog/status.md:
+# Firstmate watchdog - Eduardos-MacBook-Pro-2
+updated 2026-11-07T09:46:30Z, scan every 120s, mode act, restart off
+STALE IF NOT UPDATED BY 2026-11-07T09:57:30Z (watchdog may be down)
+models: none; spent 24h $0 of $1.00
+
+## Homes
+- fm-lab.RHHmmv: USAGE-LIMIT-AUTOWAIT, last turn 0m ago, owed 0, ctx unknown; captain pid 26887 live on tmux:%0, moved 2026-11-07T09:46:21Z
+
+## Actions since last read (2026-11-07T08:46:30Z)
+- 09:46 fm-lab.RHHmmv page usage-limit-autowait done
+
+## Open gaps
+- fm-lab.RHHmmv: usage-limit auto-wait on fm-lab.RHHmmv; the primary takes no turns until the reset. The watchdog does not kill or relaunch the primary. Run bin/fm-quota-reroute.sh suggest, then launch a successor on the named pick manually.
+- no model configured; judged symptoms are reported only
+--- typed.log bytes (keys typed into the primary pane): 0
+--- lock holder pid alive: yes
+--- pane still present: 1
+--- lab removed: yes

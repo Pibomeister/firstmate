@@ -1,0 +1,9 @@
+1..7
+ok - usage-limit live marker: default is skip/pending, never pass
+ok - usage-limit live marker: FM_LIVE=0 prints skip: live: disabled by FM_LIVE=0
+ok - usage-limit live marker: FM_LIVE=1 without a pane is pending
+ok - usage-limit live marker: opt-in without FM_USAGE_LIMIT_PANE is pending
+ok - usage-limit live marker: named existing pane classifies usage-limit with no Enter
+ok - usage-limit live marker: named existing pane classifies usage-limit-autowait with no Enter
+ok - usage-limit live marker: a named non-limit pane never passes
+FM_TEST_COMPLETE
