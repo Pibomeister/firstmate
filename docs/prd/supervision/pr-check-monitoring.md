@@ -46,13 +46,13 @@ It changes no merge, release, or deploy gate and never merges on its own authori
 - PM-4: A forge read error ends the watch with an error record and never reads as success.
 - PM-5: Discovery lists each ready run once per heartbeat with its head and wait time, and surfaces only deltas.
 - PM-6: Conflict state comes from the PR read the check watch already makes, and unwatched ready PRs read through a throttled cache keyed by repository, PR, head, and base head.
-- PM-7: A conflicted ready PR reports `conflicted` and never `ready`.
+- PM-7: A conflicted ready PR never reports `ready`, and its conflict is reported only under the Conflict state signal, so the Ready run signal carries no `conflicted` state and points at that Conflict state incident.
 - PM-8: A computing mergeable state takes one bounded settle re-read, and only a read failure reports `unknown`.
 - PM-9: A base-branch advance invalidates the cached conflict state for every PR against that base.
 - PM-10: An orphan run is reported with the same fields as an owned run.
 - PM-11: Monitoring never merges, marks ready, responds to a gate, or pushes.
 - PM-12: One PR state change produces one supervisor wake across the watch and discovery paths.
-- PM-13: The incident key is the key fields the Incident keys table lists for the signal, led by home, plus the signal and the state, and both paths report transitions to the escalation gate, which alone writes them to the shared incident ledger.
+- PM-13: The incident key is the key fields the Incident keys table lists for the signal, led by home, plus the signal and the state, a conflict from either path is keyed only as Conflict state, and both paths report transitions to the escalation gate, which alone writes them to the shared incident ledger.
 - PM-14: Retiring a watch with an unhandled result is refused.
 - PM-15: A rate-limit response is transient, backs off to the reset time, and never ends a watch.
 - PM-16: One per-forge read budget bounds all watches and discovery reads together.
@@ -65,7 +65,7 @@ It changes no merge, release, or deploy gate and never merges on its own authori
 | --- | --- | --- | --- |
 | Check watch | home, forge, repo, PR, head, check | terminal failure, ambiguous identity | success as expected |
 | Conflict state | home, forge, repo, PR, head, base head | `conflicted` | `clean`, `computing` |
-| Ready run | home, repo, PR, head | conflicted, orphan past bound | ready, owned |
+| Ready run | home, repo, PR, head | orphan past bound | ready, owned |
 
 ## Owner absence
 
@@ -78,7 +78,7 @@ No path polls the forge by hand outside its budget.
 | Signal | Single owner | Permitted action |
 | --- | --- | --- |
 | Named-check watch | `bin/fm-pr-check-watch.sh` | Poll the bound check and deliver one result |
-| Ready-run discovery | `bin/fm-ready-pr-discovery.sh`, consumed by `bin/fm-heartbeat.sh` | List ready and conflicted runs |
+| Ready-run discovery | `bin/fm-ready-pr-discovery.sh`, consumed by `bin/fm-heartbeat.sh` | List ready runs and point a conflicted one at its Conflict state incident |
 | Merge decision | The existing guarded merge path and its configured authority | Merge or refuse |
 | Gate response | The validation pipeline and the supervisor gate rules | Respond to a gate |
 | Conflict state | The PR read inside `bin/fm-pr-check-watch.sh`, with the throttled cache for unwatched PRs | Report `conflicted`, `clean`, `computing`, or `unknown` |
@@ -92,7 +92,7 @@ No path polls the forge by hand outside its budget.
 - AT-PM-4: A head change ends the binding and emits one change record.
 - AT-PM-5: A forge error ends the watch with an error record.
 - AT-PM-6: Discovery lists a parked ready run with its head, wait, and owned flag.
-- AT-PM-7: A conflicted ready PR reports `conflicted`.
+- AT-PM-7: A conflicted ready PR reports `conflicted` under the Conflict state key, and its Ready run never reports `ready`.
 - AT-PM-8: An unreadable repo reports once and the remaining repos still list.
 - AT-PM-9: One state change across both paths produces one wake.
 - AT-PM-10: Existing suites `tests/fm-pr-check-watch.test.sh` and `tests/fm-pr-check-security.test.sh` still pass.
@@ -103,7 +103,7 @@ Every drill runs in a sandbox repository or a fixture forge, never on a live pro
 
 - DR-PM-1: Fail the bound check and confirm one failure result and no merge attempt.
 - DR-PM-2: Push a new head during a watch and confirm the old binding ends with one record.
-- DR-PM-3: Make a ready PR conflict with its base and confirm discovery reports `conflicted` before any merge attempt.
+- DR-PM-3: Make a ready PR conflict with its base and confirm the Conflict state incident reports `conflicted` before any merge attempt.
 - DR-PM-4: Block the forge read for one repo and confirm the other repos still report.
 - DR-PM-5: Duplicate a check across two suites and confirm the ambiguous path delivers nothing.
 - DR-PM-6: Retire a watch with an unhandled result and confirm the refusal.
