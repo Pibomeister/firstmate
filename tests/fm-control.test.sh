@@ -662,6 +662,32 @@ test_orca_refuses_an_escape_harness_interrupt() {
   pass "fm-control interrupt: a backend that cannot deliver Escape refuses instead of sending a key"
 }
 
+test_orca_droid_interrupt_refuses_when_the_visible_pane_cannot_be_read() {
+  local dir out rc wt fifo shell_pid
+  dir=$(new_case orca-droid-capture-fail)
+  add_orca_droid_task "$dir" >/dev/null
+  wt=$(cd "$dir/wt-t1" && pwd -P)
+  printf '{"ok":true,"result":{"terminal":{"handle":"term-1","ptyId":"pty-1","connected":true,"writable":true,"exitCause":null,"executionHostId":"local","worktreePath":"%s"}}}\n' \
+    "$wt" > "$dir/fake/orca-show"
+  fifo="$dir/fake/hold"
+  mkfifo "$fifo"
+  bash -c 'exec 3<>"$0"; read -r _ <&3' "$fifo" >/dev/null 2>&1 &
+  shell_pid=$!
+  printf '{"ok":true,"result":{"worktrees":[{"sessions":[{"sessionId":"pty-1","pid":%s}]}]}}\n' \
+    "$shell_pid" > "$dir/fake/orca-memory"
+  rm -f "$dir/fake/screen.json"
+  out=$(run_control "$dir" t1 interrupt); rc=$?
+  kill "$shell_pid" 2>/dev/null || true
+  wait "$shell_pid" 2>/dev/null || true
+  expect_code 1 "$rc" "Orca Droid interrupt must refuse when the visible pane cannot be read"$'\n'"$out"
+  [ -z "$(keys_sent "$dir")" ] || fail "no lifecycle key may be sent when the Droid pane cannot be read: $(keys_sent "$dir")"
+  [ -z "$(literals "$dir")" ] || fail "no text may be typed when the Droid pane cannot be read: $(literals "$dir")"
+  if grep -q -- '--text' "$dir/fake/orca.log" 2>/dev/null; then
+    fail "a failed Droid viewport must not send into the terminal: $(cat "$dir/fake/orca.log")"
+  fi
+  pass "fm-control interrupt: Orca Droid capture failure refuses without sending keys"
+}
+
 test_orca_droid_relaunch_refuses_a_non_droid_replacement_before_stopping() {
   local dir out rc before
   dir=$(new_case orca-droid-switch)
@@ -1909,6 +1935,7 @@ test_prefixed_recorded_harness_reaches_each_control_verb
 test_backend_key_capability_matrix
 test_harness_kind_capability
 test_orca_refuses_an_escape_harness_interrupt
+test_orca_droid_interrupt_refuses_when_the_visible_pane_cannot_be_read
 test_orca_droid_relaunch_refuses_a_non_droid_replacement_before_stopping
 test_orca_droid_second_exit_is_idempotent
 test_orca_droid_exit_then_relaunch_is_admitted

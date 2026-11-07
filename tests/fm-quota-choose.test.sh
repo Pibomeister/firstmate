@@ -1644,6 +1644,31 @@ sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$wt_dang
 [ "$sig" = "worktree .claude" ] || fail "dangling .claude signal: $sig"
 ok "a dangling worktree .claude is Claude-specific tooling"
 
+wt_dangle_local="$LAB/wt-dangle-settings-local"
+mkdir -p "$wt_dangle_local/.claude"
+ln -s "$LAB/no-such-settings" "$wt_dangle_local/.claude/settings.local.json"
+sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$wt_dangle_local") \
+  || fail "a dangling settings.local.json must be tooling required"
+[ "$sig" = "unreadable $wt_dangle_local/.claude/settings.local.json" ] \
+  || fail "dangling settings.local.json signal: $sig"
+ok "a dangling settings.local.json is Claude-specific tooling"
+
+ln -s "$LAB/no-such-settings" "$seed_home/.claude/settings.local.json"
+sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$seed_home") \
+  || fail "a dangling settings.local.json in a seeded home must be tooling required"
+[ "$sig" = "worktree .claude/settings.local.json" ] \
+  || fail "seeded dangling settings.local.json signal: $sig"
+rm -f "$seed_home/.claude/settings.local.json"
+ok "a dangling settings.local.json in a seeded home is Claude-specific tooling"
+
+wt_dangle_mcp="$LAB/wt-dangle-mcp"
+mkdir -p "$wt_dangle_mcp"
+ln -s "$LAB/no-such-mcp" "$wt_dangle_mcp/.mcp.json"
+sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$wt_dangle_mcp") \
+  || fail "a dangling project .mcp.json must be tooling required"
+[ "$sig" = "worktree .mcp.json" ] || fail "dangling .mcp.json signal: $sig"
+ok "a dangling project .mcp.json is Claude-specific tooling"
+
 wt_unreadable="$LAB/wt-unreadable-claude"
 mkdir -p "$wt_unreadable/.claude"
 chmod 000 "$wt_unreadable/.claude"
@@ -1661,6 +1686,24 @@ sig=$(call_reroute claude-tooling --config-dir "$acct_nl") \
   || fail "a plugin path containing a newline must be tooling required"
 [ "$sig" = "unreadable $acct_nl/plugins" ] || fail "newline plugin path signal: $sig"
 ok "a plugin path containing a newline is Claude-specific tooling"
+
+nl_claude="$seed_home/.claude/$(printf 'extra\nfile')"
+touch "$nl_claude"
+sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$seed_home") \
+  || fail "a newline name under seeded .claude must be tooling required"
+[ "$sig" = "unreadable $seed_home/.claude" ] \
+  || fail "newline name under seeded .claude signal: $sig"
+rm -f "$nl_claude"
+ok "a newline name inside the seeded .claude walk is Claude-specific tooling"
+
+nl_skill="$seed_home/.agents/skills/$(printf 'extra\nskill.md')"
+touch "$nl_skill"
+sig=$(call_reroute claude-tooling --config-dir "$empty_dir" --worktree "$seed_home") \
+  || fail "a newline name under seeded .agents/skills must be tooling required"
+[ "$sig" = "unreadable $seed_home/.agents/skills" ] \
+  || fail "newline name under seeded .agents/skills signal: $sig"
+rm -f "$nl_skill"
+ok "a newline name inside the seeded .agents/skills walk is Claude-specific tooling"
 
 if out=$(call_reroute suggest --snapshot "$LAB/captured.json" --from-harness claude \
   --from-model claude-3-5-sonnet --claude-config-dir "$empty_dir" --worktree "$clean_wt" \

@@ -940,6 +940,27 @@ test_relaunch_refuses_before_exit_when_the_composer_state_is_unproven() {
   pass "fm-control relaunch: an unreadable pane fails closed before the exit command is typed"
 }
 
+test_relaunch_refuses_before_exit_when_the_composer_is_not_proven_empty() {
+  local dir out rc
+  dir=$(new_case unknown-composer-exit rl44b)
+  add_ship_task "$dir" rl44b claude
+  printf '%s\n' 'a status line without a composer box' > "$dir/fake/capture"
+
+  out=$(run_control "$dir" rl44b relaunch --note "preserve on an unknown composer"); rc=$?
+
+  expect_code 1 "$rc" "a relaunch must refuse before typing an exit command when the composer is not proven empty"
+  assert_contains "$out" "not proven empty" \
+    "a readable pane whose composer is unknown must refuse rather than type the exit command"
+  assert_not_contains "$out" "could not read the visible pane" \
+    "a working capture is not the same claim as a failed pane read"
+  [ "$(cat "$dir/fake/command")" = claude ] \
+    || fail "an unknown-composer refusal must leave the old agent running"
+  assert_no_grep "/exit" "$dir/fake/literal" \
+    "the exit command must not be typed when the composer is not proven empty"
+  [ ! -s "$dir/fake/keys" ] || fail "no lifecycle key may be sent when the composer is not proven empty: $(cat "$dir/fake/keys")"
+  pass "fm-control relaunch: an unknown composer with a working capture refuses before the exit command is typed"
+}
+
 test_relaunch_from_linked_home_preserves_recorded_worktree() {
   local dir out rc head fetch_head
   dir=$(new_case linked-home rl42)
@@ -1496,6 +1517,38 @@ test_relaunch_off_claude_refuses_seeded_home_user_additions() {
   [ "$(cat "$dir/fake/command")" = claude ] \
     || fail "an MCP refusal must leave the old agent running"
   pass "fm-control relaunch: user hooks, seed edits, and MCP in a seeded home still refuse"
+}
+
+test_relaunch_off_claude_refuses_seeded_home_committed_file_and_symlinked_root() {
+  local dir out rc claude_real claude_evil
+  dir=$(seeded_secondmate_case seed-committed rl-seed5)
+  mkdir -p "$dir/smhome/.claude/hooks"
+  printf '%s\n' '{"hooks":{"Stop":[{}]}}' > "$dir/smhome/.claude/hooks/hooks.json"
+  git -C "$dir/smhome" add .claude/hooks/hooks.json
+  git -C "$dir/smhome" -c user.email=dev@example.test -c user.name=dev \
+    -c commit.gpgsign=false commit --quiet -m 'user hook'
+  out=$(run_control "$dir" rl-seed5 relaunch --harness codex); rc=$?
+  expect_code 1 "$rc" "a hook committed in a seeded home must refuse the move"$'\n'"$out"
+  assert_contains "$out" "Claude-specific tooling present" "the refusal should name the tooling gate"
+  assert_contains "$out" "worktree .claude/hooks/hooks.json" "the refusal should name the committed hook"
+  [ "$(cat "$dir/fake/command")" = claude ] \
+    || fail "a committed-hook refusal must leave the old agent running"
+
+  dir=$(seeded_secondmate_case seed-symlink rl-seed6)
+  claude_real="$dir/claude.real"
+  claude_evil="$dir/claude.evil"
+  mv "$dir/smhome/.claude" "$claude_real"
+  mkdir -p "$claude_evil"
+  cp -a "$claude_real/." "$claude_evil/"
+  mkdir -p "$claude_evil/hooks"
+  printf '%s\n' '{"hooks":{"Stop":[{}]}}' > "$claude_evil/hooks/hooks.json"
+  ln -s "$claude_evil" "$dir/smhome/.claude"
+  out=$(run_control "$dir" rl-seed6 relaunch --harness codex); rc=$?
+  expect_code 1 "$rc" "a symlinked .claude root in a seeded home must refuse the move"$'\n'"$out"
+  assert_contains "$out" "worktree .claude" "the refusal should name the symlinked root"
+  [ "$(cat "$dir/fake/command")" = claude ] \
+    || fail "a symlinked-root refusal must leave the old agent running"
+  pass "fm-control relaunch: a committed seed file and a symlinked .claude root still refuse"
 }
 
 test_harness_switch_resolves_a_prefixed_recorded_harness() {
@@ -4510,6 +4563,7 @@ test_interrupt_refuses_a_usage_limit_screen
 test_interrupt_refuses_a_grok_weekly_limit_and_names_relaunch
 test_control_relaunch_of_a_gone_tmux_endpoint
 test_relaunch_refuses_before_exit_when_the_composer_state_is_unproven
+test_relaunch_refuses_before_exit_when_the_composer_is_not_proven_empty
 test_relaunch_from_linked_home_preserves_recorded_worktree
 test_relaunch_preserves_durable_task_metadata
 test_relaunch_serializes_concurrent_durable_metadata_publication
@@ -4529,6 +4583,7 @@ test_relaunch_off_claude_refuses_when_tooling_check_exits_2
 test_relaunch_off_claude_ignores_fm_quota_reroute_override
 test_relaunch_off_claude_allows_an_unchanged_seeded_home
 test_relaunch_off_claude_refuses_seeded_home_user_additions
+test_relaunch_off_claude_refuses_seeded_home_committed_file_and_symlinked_root
 test_harness_switch_resolves_a_prefixed_recorded_harness
 test_prefixed_recorded_harness_requires_explicit_replacement
 test_same_harness_relaunch_keeps_the_profile_axes

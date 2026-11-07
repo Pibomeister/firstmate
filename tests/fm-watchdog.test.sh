@@ -39,6 +39,37 @@ done
 PATH="$FAKEBIN:$PATH"
 export PATH
 
+restore_fake_tmux() {
+  cat > "$FAKEBIN/tmux" <<REST
+#!/usr/bin/env bash
+exec "$REAL_TMUX" -f /dev/null -L "$SOCKET" "\$@"
+REST
+  chmod +x "$FAKEBIN/tmux"
+}
+
+# wrap_tmux_visible fail|blank: intercept capture-pane -S -0 (the viewport
+# read). fail exits 1. blank succeeds with an empty viewport.
+wrap_tmux_visible() {
+  local mode=$1
+  cat > "$FAKEBIN/tmux" <<SH
+#!/usr/bin/env bash
+s=
+prev=
+for a in "\$@"; do
+  if [ "\$prev" = -S ]; then s=\$a; fi
+  prev=\$a
+done
+if [ "\$s" = -0 ]; then
+  case "$mode" in
+    fail) exit 1 ;;
+    blank) exit 0 ;;
+  esac
+fi
+exec "$REAL_TMUX" -f /dev/null -L "$SOCKET" "\$@"
+SH
+  chmod +x "$FAKEBIN/tmux"
+}
+
 LOCK_PIDS=''
 cleanup_watchdog_tests() {
   local p
@@ -3017,13 +3048,6 @@ fi
 exec "$REAL_TMUX" -f /dev/null -L "$SOCKET" "\$@"
 SH
   chmod +x "$FAKEBIN/tmux"
-  restore_tmux() {
-    cat > "$FAKEBIN/tmux" <<REST
-#!/usr/bin/env bash
-exec "$REAL_TMUX" -f /dev/null -L "$SOCKET" "\$@"
-REST
-    chmod +x "$FAKEBIN/tmux"
-  }
   history=$("$FAKEBIN/tmux" capture-pane -p -t "$mate_t" -S -60)
   view=$("$FAKEBIN/tmux" capture-pane -p -t "$mate_t" -S -0)
   assert_equals 'Grok weekly-limit choice' "$(observe fm_composer_blocking_dialog "$history")" \
@@ -3058,8 +3082,8 @@ SH
   H=$mate
   transcript 100 "Working."
   H=$parent
-  HOME="$user" run_wd 0 once >/dev/null 2>&1 || { restore_tmux; fail "home usage-limit with Grok in scrollback failed"; }
-  restore_tmux
+  HOME="$user" run_wd 0 once >/dev/null 2>&1 || { restore_fake_tmux; fail "home usage-limit with Grok in scrollback failed"; }
+  restore_fake_tmux
   [ ! -e "$parent/control.log" ] || fail "watchdog relaunched: $(cat "$parent/control.log")"
   assert_grep "Suggested pick: codex gpt-5.4" "$parent/data/watchdog/status.md" \
     "a live pane-text usage-limit must still name the pick"
@@ -3131,10 +3155,13 @@ SH
   [ ! -e "$parent/control.log" ] || fail "watchdog relaunched: $(cat "$parent/control.log")"
   grep -F 'terminal read' "$parent/orca.log" | grep -vq -- '--screen' \
     || fail "the Orca home pane scrollback was not read: $(cat "$parent/orca.log" 2>/dev/null)"
+  if grep -q -- '--screen' "$parent/orca.log"; then
+    fail "non-Droid Orca must not attempt viewport capture: $(cat "$parent/orca.log")"
+  fi
   assert_grep "Queue until reset" "$parent/data/watchdog/status.md" \
-    "an unreadable Orca viewport must queue usage-limit, not classify none"
+    "Grok remaining only in non-Droid Orca scrollback still queues until reset"
   assert_not_contains "$(cat "$parent/data/watchdog/status.md")" "Supervisor relaunches" \
-    "an Orca viewport that cannot be read must not relaunch from Grok in scrollback"
+    "Grok remaining only in scrollback must not send the supervisor to relaunch"
   rm -f "$FAKEBIN/quota-axi" "$FAKEBIN/fm-control.sh" "$FAKEBIN/orca"
   pass "usage-limit: Orca does not relaunch from Grok remaining only in scrollback"
 }
@@ -3184,10 +3211,215 @@ SH
   HOME="$user" run_wd 0 once >/dev/null 2>&1 || fail "orca permission with no viewport failed"
   grep -F 'terminal read' "$parent/orca.log" | grep -vq -- '--screen' \
     || fail "the Orca home pane scrollback was not read: $(cat "$parent/orca.log" 2>/dev/null)"
+  if grep -q -- '--screen' "$parent/orca.log"; then
+    fail "non-Droid Orca must not attempt viewport capture: $(cat "$parent/orca.log")"
+  fi
   assert_grep "permission dialog waiting" "$parent/data/watchdog/status.md" \
-    "a permission prompt in Orca scrollback must still be flagged when the viewport cannot be read"
+    "a permission prompt in Orca scrollback must still be flagged"
   rm -f "$FAKEBIN/orca"
   pass "permission: Orca scrollback still flags a prompt when the viewport cannot be read"
+}
+
+test_idle_non_droid_orca_is_not_usage_limit() {
+  local parent mate user idle idle_json out
+  idle=$'Captain session\n> '
+  idle_json=$(printf '%s\n' "$idle" | jq -Rs 'split("\n")')
+  make_home $'Captain session\n> ' 'reroute-candidates=codex:gpt-5.4'
+  parent=$H
+  make_home $'Captain session\n> '
+  mate=$H
+  jq -n --arg s "$SID" --argjson e "$BASE" --argjson p "$LOCKPID" \
+    '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:"orca",target:"term-1",present:true},session:{trusted_id:$s},writer:{anchor_pid:$p,session_id:$s}}}' \
+    > "$mate/state/heartbeat.json"
+  user="$parent/user"
+  mkdir -p "$user/.claude"
+  printf -- '- ghost-mate - test mate (home: %s)\n' "$mate" > "$parent/data/secondmates.md"
+  {
+    echo "harness=claude"
+    echo "kind=secondmate"
+    echo "home=$mate"
+    echo "worktree=$mate"
+    echo "model=default"
+  } > "$parent/state/ghost-mate.meta"
+  printf 'mode=act\nclaude-config-dirs=%s\nkey-settle-secs=1\nmodels=\nreroute-candidates=codex:gpt-5.4\n' \
+    "$parent/claude" > "$parent/config/watchdog"
+  cat > "$FAKEBIN/orca" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$parent/orca.log"
+case "\$1 \$2" in
+  "terminal read")
+    case " \$* " in
+      *" --screen "*) exit 1 ;;
+      *) printf '{"ok":true,"result":{"terminal":{"tail":%s}}}\n' '$idle_json' ;;
+    esac ;;
+  "terminal wait") printf '{"ok":true,"result":{}}\n' ;;
+  *) exit 1 ;;
+esac
+SH
+  chmod +x "$FAKEBIN/orca"
+  cat > "$FAKEBIN/quota-axi" <<'SH'
+#!/usr/bin/env bash
+printf 'quota-axi should not run on an idle non-Droid Orca pane\n' >&2
+exit 1
+SH
+  chmod +x "$FAKEBIN/quota-axi"
+  H=$mate
+  transcript 100 "Working."
+  H=$parent
+  out=$(HOME="$user" run_wd 0 scan 2>/dev/null) || fail "idle non-Droid Orca scan failed"
+  printf '%s\n' "$out" | grep -F "($mate)" -A5 | grep -q 'dialog=none' \
+    || fail "idle non-Droid Orca must read dialog=none, got: $out"
+  printf '%s\n' "$out" | grep -q 'dialog=usage-limit' \
+    && fail "idle non-Droid Orca must not read as usage-limit: $out"
+  if grep -q -- '--screen' "$parent/orca.log" 2>/dev/null; then
+    fail "non-Droid Orca must not attempt viewport capture: $(cat "$parent/orca.log")"
+  fi
+  HOME="$user" run_wd 0 once >/dev/null 2>&1 || fail "idle non-Droid Orca pass failed"
+  if [ -f "$parent/data/watchdog/status.md" ]; then
+    assert_not_contains "$(cat "$parent/data/watchdog/status.md")" "Queue until reset" \
+      "an idle non-Droid Orca pane must not queue as usage-limit"
+  fi
+  rm -f "$FAKEBIN/orca" "$FAKEBIN/quota-axi"
+  pass "idle non-Droid Orca: dialog=none, no viewport capture, no quota pick"
+}
+
+test_orca_feedback_and_model_switch_come_from_scrollback() {
+  local parent mate user feedback feedback_json model model_json out
+  feedback=$'some work\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss'
+  feedback_json=$(printf '%s\n' "$feedback" | jq -Rs 'split("\n")')
+  assert_equals feedback "$(lib fm_wd_pane_dialog "$feedback")" \
+    "the Orca feedback fixture must match the detector, or a miss would be vacuous"
+  make_home $'Captain session\n> '
+  parent=$H
+  make_home $'Captain session\n> '
+  mate=$H
+  jq -n --arg s "$SID" --argjson e "$BASE" --argjson p "$LOCKPID" \
+    '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:"orca",target:"term-1",present:true},session:{trusted_id:$s},writer:{anchor_pid:$p,session_id:$s}}}' \
+    > "$mate/state/heartbeat.json"
+  user="$parent/user"
+  mkdir -p "$user/.claude"
+  printf -- '- ghost-mate - test mate (home: %s)\n' "$mate" > "$parent/data/secondmates.md"
+  {
+    echo "harness=claude"
+    echo "kind=secondmate"
+    echo "home=$mate"
+    echo "worktree=$mate"
+    echo "model=default"
+  } > "$parent/state/ghost-mate.meta"
+  printf 'mode=act\nclaude-config-dirs=%s\nkey-settle-secs=1\nmodels=\n' \
+    "$parent/claude" > "$parent/config/watchdog"
+  cat > "$FAKEBIN/orca" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$parent/orca.log"
+case "\$1 \$2" in
+  "terminal read")
+    case " \$* " in
+      *" --screen "*) exit 1 ;;
+      *) printf '{"ok":true,"result":{"terminal":{"tail":%s}}}\n' '$feedback_json' ;;
+    esac ;;
+  "terminal wait") printf '{"ok":true,"result":{}}\n' ;;
+  *) exit 1 ;;
+esac
+SH
+  chmod +x "$FAKEBIN/orca"
+  H=$mate
+  transcript 100 "Working."
+  H=$parent
+  out=$(HOME="$user" run_wd 0 scan 2>/dev/null) || fail "orca feedback scan failed"
+  printf '%s\n' "$out" | grep -F "($mate)" -A5 | grep -q 'dialog=feedback' \
+    || fail "Orca feedback in scrollback must read dialog=feedback, got: $out"
+  printf '%s\n' "$out" | grep -q 'dialog=usage-limit' \
+    && fail "Orca feedback must not be reported as usage-limit: $out"
+  if grep -q -- '--screen' "$parent/orca.log" 2>/dev/null; then
+    fail "non-Droid Orca must not attempt viewport capture: $(cat "$parent/orca.log")"
+  fi
+  rm -f "$FAKEBIN/orca" "$parent/orca.log"
+
+  model=$'Switch to another model?\n ❯ 1. Wait\n   2. Stop\n\nEnter to confirm · Esc to cancel'
+  model_json=$(printf '%s\n' "$model" | jq -Rs 'split("\n")')
+  assert_equals model-switch "$(lib fm_wd_pane_dialog "$model")" \
+    "the Orca model-switch fixture must match the detector, or a miss would be vacuous"
+  cat > "$FAKEBIN/orca" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$parent/orca.log"
+case "\$1 \$2" in
+  "terminal read")
+    case " \$* " in
+      *" --screen "*) exit 1 ;;
+      *) printf '{"ok":true,"result":{"terminal":{"tail":%s}}}\n' '$model_json' ;;
+    esac ;;
+  "terminal wait") printf '{"ok":true,"result":{}}\n' ;;
+  *) exit 1 ;;
+esac
+SH
+  chmod +x "$FAKEBIN/orca"
+  out=$(HOME="$user" run_wd 0 scan 2>/dev/null) || fail "orca model-switch scan failed"
+  printf '%s\n' "$out" | grep -F "($mate)" -A5 | grep -q 'dialog=model-switch' \
+    || fail "Orca model-switch in scrollback must read dialog=model-switch, got: $out"
+  printf '%s\n' "$out" | grep -q 'dialog=usage-limit' \
+    && fail "Orca model-switch must not be reported as usage-limit: $out"
+  if grep -q -- '--screen' "$parent/orca.log" 2>/dev/null; then
+    fail "non-Droid Orca must not attempt viewport capture: $(cat "$parent/orca.log")"
+  fi
+  rm -f "$FAKEBIN/orca"
+  pass "Orca feedback and model-switch dialogs are still read from scrollback"
+}
+
+test_tmux_capture_failure_is_unknown_not_usage_limit() {
+  local out snap
+  make_home $'Captain session\n> ' 'reroute-candidates=codex:gpt-5.4'
+  mkdir -p "$H/wt" "$H/user/.claude"
+  worker_pane capfail ship $'Captain session\n> '
+  {
+    echo "harness=claude"
+    echo "kind=ship"
+    echo "worktree=$H/wt"
+    echo "model=default"
+  } >> "$H/state/capfail.meta"
+  snap="$H/quota.json"
+  wd_quota_snapshot "$snap"
+  : > "$H/quota-axi.calls"
+  cat > "$FAKEBIN/quota-axi" <<SH
+#!/usr/bin/env bash
+printf 'call\n' >> "$H/quota-axi.calls"
+cat "$snap"
+SH
+  chmod +x "$FAKEBIN/quota-axi"
+  wrap_tmux_visible fail
+  transcript 100 "Working."
+  out=$(HOME="$H/user" run_wd 0 scan 2>/dev/null) || { restore_fake_tmux; fail "tmux capture-fail scan failed"; }
+  printf '%s\n' "$out" | grep -q 'dialog=unknown' \
+    || { restore_fake_tmux; fail "a failed tmux viewport must read dialog=unknown, got: $out"; }
+  printf '%s\n' "$out" | grep -F "worker capfail" | grep -q 'dialog=unknown' \
+    || { restore_fake_tmux; fail "a failed tmux worker viewport must read dialog=unknown, got: $out"; }
+  printf '%s\n' "$out" | grep -q 'dialog=usage-limit' \
+    && { restore_fake_tmux; fail "a failed tmux viewport must not read as usage-limit: $out"; }
+  HOME="$H/user" run_wd 0 once >/dev/null 2>&1 || { restore_fake_tmux; fail "tmux capture-fail pass failed"; }
+  restore_fake_tmux
+  [ ! -s "$H/quota-axi.calls" ] || fail "a failed tmux viewport must not pick quota: $(cat "$H/quota-axi.calls")"
+  if [ -f "$H/data/watchdog/status.md" ]; then
+    assert_not_contains "$(cat "$H/data/watchdog/status.md")" "Queue until reset" \
+      "a failed tmux viewport must not queue as usage-limit"
+  fi
+  rm -f "$FAKEBIN/quota-axi"
+  pass "tmux capture failure: unknown, no quota pick, on home and worker"
+}
+
+test_blank_tmux_viewport_is_none_not_usage_limit() {
+  local out
+  make_home $'Captain session\n> ' 'reroute-candidates=codex:gpt-5.4'
+  mkdir -p "$H/user/.claude"
+  wrap_tmux_visible blank
+  transcript 100 "Working."
+  out=$(HOME="$H/user" run_wd 0 scan 2>/dev/null) || { restore_fake_tmux; fail "blank tmux viewport scan failed"; }
+  printf '%s\n' "$out" | grep -q 'dialog=none' \
+    || { restore_fake_tmux; fail "a blank but successful tmux viewport must read dialog=none, got: $out"; }
+  printf '%s\n' "$out" | grep -q 'dialog=usage-limit' \
+    && { restore_fake_tmux; fail "a blank tmux viewport must not read as usage-limit: $out"; }
+  printf '%s\n' "$out" | grep -q 'dialog=unknown' \
+    && { restore_fake_tmux; fail "a successful blank tmux viewport must not read as unknown: $out"; }
+  restore_fake_tmux
+  pass "blank-but-read tmux viewport: dialog=none"
 }
 
 test_quota_axi_failure_is_cached_for_the_pass() {
@@ -3320,6 +3552,10 @@ fm_test_run \
   test_home_usage_limit_ignores_grok_in_scrollback \
   test_orca_usage_limit_does_not_relaunch_from_scrollback \
   test_orca_permission_prompt_is_flagged_without_viewport \
+  test_idle_non_droid_orca_is_not_usage_limit \
+  test_orca_feedback_and_model_switch_come_from_scrollback \
+  test_tmux_capture_failure_is_unknown_not_usage_limit \
+  test_blank_tmux_viewport_is_none_not_usage_limit \
   test_quota_axi_failure_is_cached_for_the_pass \
   test_unknown_composer_guards_the_nudge \
   test_orca_turn_probe_keeps_errors_unknown \
