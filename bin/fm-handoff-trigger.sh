@@ -43,6 +43,15 @@
 # compact-at-tokens.
 # docs/verification/runtime-backends.md records the evidence.
 #
+# PUBLISHED POINT. On each PostToolUse or UserPromptSubmit run with a session
+# id and a transcript, whatever percent-left says, the hook writes the point it
+# resolved to state/compact-point as one line,
+#   session=<id> compact_at=<tokens> at=<epoch>
+# with an atomic rename, so a reader outside the session (the watchdog, through
+# bin/fm-context-reading-lib.sh) uses the same window. A run that resolves no
+# point removes a record that names its session. The record never changes this
+# hook's own decision.
+#
 # CONFIG (config/handoff-trigger, optional; docs/configuration.md "Early
 # handoff trigger" owns the schema). Absent means on at the defaults.
 #   percent-left=<n>        fire at or below n% context left (default 15,
@@ -136,6 +145,26 @@ if [ -f "$CONFIG/handoff-trigger" ]; then
   done < "$CONFIG/handoff-trigger"
 fi
 
+# publish_compact_point: write the point this run resolved, named for its
+# session, to state/compact-point with an atomic rename, for readers outside the
+# session (bin/fm-context-reading-lib.sh). A run that resolves no point
+# withdraws its own session's record, so an outside reader never keeps a window
+# this session no longer has.
+publish_compact_point() {
+  local record=$STATE/compact-point tmp
+  [ -n "$SESSION_ID" ] || return 0
+  case "$SESSION_ID" in *[!A-Za-z0-9_-]*) return 0 ;; esac
+  if [ -z "$COMPACT_AT" ]; then
+    [ "$(sed -n '1s/^session=\([^ ]*\) .*/\1/p' "$record" 2>/dev/null)" != "$SESSION_ID" ] || rm -f "$record"
+    return 0
+  fi
+  tmp=$(mktemp "$record.XXXXXX" 2>/dev/null) || return 0
+  if printf 'session=%s compact_at=%s at=%s\n' "$SESSION_ID" "$COMPACT_AT" "$(date +%s)" > "$tmp" && mv -f "$tmp" "$record"; then
+    return 0
+  fi
+  rm -f "$tmp"
+}
+
 SESSION_ID=$(printf '%s' "$PAYLOAD" | jq -r '.session_id // empty | strings' 2>/dev/null)
 TRANSCRIPT=$(printf '%s' "$PAYLOAD" | jq -r '.transcript_path // empty | strings' 2>/dev/null)
 EVENT=$(printf '%s' "$PAYLOAD" | jq -r '.hook_event_name // empty | strings' 2>/dev/null)
@@ -184,18 +213,22 @@ if [ "$EVENT" = Stop ]; then
   fi
   exit 0
 fi
+# shellcheck source=bin/fm-compact-point-lib.sh
+. "$SCRIPT_DIR/fm-compact-point-lib.sh"
+COMPACT_AT=
+[ -z "$SESSION_ID" ] || [ -z "$TRANSCRIPT" ] ||
+  COMPACT_AT=$(fm_compact_at_tokens "$TRANSCRIPT" "$CONFIG/handoff-trigger") || COMPACT_AT=
+publish_compact_point
+
 [ "$PERCENT" -gt 0 ] || exit 0
 [ -n "$MARKER" ] || exit 0
 [ -e "$MARKER" ] && exit 0
+[ -n "$COMPACT_AT" ] || exit 0
 
 # shellcheck source=bin/fm-warm-compact-lib.sh
 . "$SCRIPT_DIR/fm-warm-compact-lib.sh"
 TOKENS=$(fm_warm_compact_context_tokens "$TRANSCRIPT") || exit 0
 case "$TOKENS" in '' | *[!0-9]*) exit 0 ;; esac
-
-# shellcheck source=bin/fm-compact-point-lib.sh
-. "$SCRIPT_DIR/fm-compact-point-lib.sh"
-COMPACT_AT=$(fm_compact_at_tokens "$TRANSCRIPT" "$CONFIG/handoff-trigger") || exit 0
 
 LEFT=$(fm_compact_left_percent "$TOKENS" "$COMPACT_AT")
 [ "$LEFT" -le "$PERCENT" ] || exit 0

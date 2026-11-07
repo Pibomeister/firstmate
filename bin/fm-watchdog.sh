@@ -68,6 +68,10 @@ CALLS=$WD/model-calls.tsv
 . "$SCRIPT_DIR/fm-backend.sh"
 # shellcheck source=bin/fm-warm-compact-lib.sh
 . "$SCRIPT_DIR/fm-warm-compact-lib.sh"
+# shellcheck source=bin/fm-context-footer-lib.sh
+. "$SCRIPT_DIR/fm-context-footer-lib.sh"
+# shellcheck source=bin/fm-context-reading-lib.sh
+. "$SCRIPT_DIR/fm-context-reading-lib.sh"
 # shellcheck source=bin/fm-supervisor-target-lib.sh
 . "$SCRIPT_DIR/fm-supervisor-target-lib.sh"
 
@@ -383,10 +387,11 @@ wd_publish_captain() {
 # saves the comparable parts to state/watchdog/subjects/<home-basename>-<path-cksum>.
 wd_observe() {
   local home=$1 parent=$2 id=$3 st now hb prev meta row hb_sid hb_wpid='' hb_wsid='' ctx dt hb_at=0 cb='' ct=''
+  local footer_text='' footer_src='' reading
   st=$home/state
   now=$(wd_now)
   O_HOME=$home O_PARENT=$parent O_ID=$id O_TAG=$(wd_tag "$home") O_KEY=$(wd_state_key "$home")
-  O_BACKEND='' O_TARGET='' O_SESSION='' O_HB_AGE=unknown O_CTX='' O_CTX_SRC=''
+  O_BACKEND='' O_TARGET='' O_SESSION='' O_HB_AGE=unknown O_CTX='' O_CTX_SRC='' O_CTX_READING=''
   O_PANE='' O_SIG='' O_PANE_STATIC=0 O_DIALOG='' O_AUTOWAIT=0 O_COMPOSER=unknown O_TURN=unknown
   O_LOCK_PID='' O_ALIVE=0 O_INSTANCE=unknown O_OWNER=none O_CPU_BUSY=unknown O_TRANSCRIPT='' O_TR_AGE=unknown
   C_BACKEND='' C_TARGET='' C_MOVED=''
@@ -412,7 +417,8 @@ EOF
   fi
   wd_read_owner "$st"
   if [ -n "$O_SESSION" ] && [ "$ctx" != - ] && [ -n "$ctx" ] && [ "$hb_sid" = "$O_SESSION" ] && [ "$O_HB_AGE" != unknown ] && [ "$O_HB_AGE" -lt "$(cfgi watcher-stale-secs 900)" ]; then
-    O_CTX=${ctx%%.*}; O_CTX_SRC=heartbeat
+    # The heartbeat's percent is the same footer, read by the same parser.
+    footer_text="${ctx%%.*}% until auto-compact" footer_src=heartbeat
   fi
   # A second mate whose own heartbeat names another session, or none, uses the
   # parent's recorded endpoint for it.
@@ -458,8 +464,7 @@ EOF
     if [ "$parent" = - ] && fm_wd_usage_limit_autowait "$view"; then O_AUTOWAIT=1; fi
     wd_read_composer
     O_TURN=$(wd_turn_running "$O_BACKEND" "$O_TARGET" "$O_PANE")
-    ctx=$(fm_wd_footer_percent "$O_PANE")
-    if [ -z "$O_CTX" ] && [ -n "$ctx" ]; then O_CTX=$ctx; O_CTX_SRC=pane; fi
+    [ -n "$footer_text" ] || { footer_text=$(_fm_wd_tail_rows "$O_PANE" 10); footer_src=pane; }
   fi
   if O_TRANSCRIPT=$(wd_transcript "$home" "$O_SESSION"); then
     O_TR_AGE=$((now - $(wd_mtime "$O_TRANSCRIPT")))
@@ -470,6 +475,15 @@ EOF
   else
     O_TRANSCRIPT=''
   fi
+  # One shared context reading (bin/fm-context-reading-lib.sh): the derived
+  # percentage owns the restart decision when it exists, else the footer; the
+  # full-window status percentage is never read.
+  reading=$(fm_context_reading "$home" "$O_SESSION" "$O_TRANSCRIPT" <(printf '%s\n' "$footer_text"))
+  O_CTX_READING=$reading
+  case "$reading" in
+    *' owner=derived '*) O_CTX=$(printf '%s\n' "$reading" | sed -n 's/.* derived=\([0-9]*\) .*/\1/p'); O_CTX_SRC=derived ;;
+    *' owner=footer '*) O_CTX=$(printf '%s\n' "$reading" | sed -n 's/^footer=\([0-9]*\) .*/\1/p'); O_CTX_SRC=$footer_src ;;
+  esac
   if [ -f "$st/.watchdog-restart-request" ]; then
     local req_at last_r
     req_at=$(wd_mtime "$st/.watchdog-restart-request")
@@ -509,7 +523,7 @@ wd_print_observation() {
     "  endpoint=${O_BACKEND:-none}:${O_TARGET:-none} session=${O_SESSION:-none} lock_pid=${O_LOCK_PID:-none} alive=$O_ALIVE instance=$O_INSTANCE owner=$O_OWNER" \
     "  captain=${C_BACKEND:-none}:${C_TARGET:-none} moved_at=${C_MOVED:-none}" \
     "  pane_static=${O_PANE_STATIC}s dialog=${O_DIALOG:-none} usage_limit_autowait=$O_AUTOWAIT composer=$O_COMPOSER turn_running=$O_TURN cpu_busy=$O_CPU_BUSY" \
-    "  transcript_age=${O_TR_AGE}s loop=$O_LOOP/$O_LOOP_N restart_requested=$O_RESTART_REQ ctx=${O_CTX:-unknown}${O_CTX_SRC:+ ($O_CTX_SRC)}" \
+    "  transcript_age=${O_TR_AGE}s loop=$O_LOOP/$O_LOOP_N restart_requested=$O_RESTART_REQ ctx=${O_CTX:-unknown}${O_CTX_SRC:+ ($O_CTX_SRC)}${O_CTX_READING:+ [$O_CTX_READING]}" \
     "  owed=$O_OWED_N oldest=${O_OWED_AGE}s afk=$O_AFK daemon=$O_DAEMON heartbeat_age=${O_HB_AGE}s"
 }
 
@@ -1328,8 +1342,8 @@ wd_requested_restart() {  # <quiet-secs>
   nudged=$(wd_handoff_nudge_epoch)
   if [ -z "$nudged" ] && [ "$O_RESTART_REQ" != 1 ]; then
     if wd_unsent_is_stable; then wd_submit_unsent; return 0; fi
-    wd_nudge handoff-request "context is low. Write a full handoff to data/handoff-<name>.md in your home, then create state/.watchdog-restart-request there. The watchdog then restarts this session, and the new session picks up from that handoff."
-    [ -n "$(wd_handoff_nudge_epoch)" ] || wd_gap "low context; the handoff nudge was not delivered; no restart yet"
+    wd_nudge handoff-request "context is low (${O_CTX_READING:-reading unknown}). Write a full handoff to data/handoff-<name>.md in your home, then create state/.watchdog-restart-request there. The watchdog then restarts this session, and the new session picks up from that handoff."
+    [ -n "$(wd_handoff_nudge_epoch)" ] || wd_gap "low context (${O_CTX_READING:-reading unknown}); the handoff nudge was not delivered; no restart yet"
     return 0
   fi
   if [ -n "$nudged" ]; then
