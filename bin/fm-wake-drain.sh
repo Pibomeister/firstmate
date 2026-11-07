@@ -35,6 +35,8 @@ SCRIPT_DIR="$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; CD
 . "$SCRIPT_DIR/fm-supervision-engine-lib.sh"
 # shellcheck source=bin/fm-afk-contract.sh
 . "$SCRIPT_DIR/fm-afk-contract.sh"
+# shellcheck source=bin/fm-wake-ledger-lib.sh
+. "$SCRIPT_DIR/fm-wake-ledger-lib.sh"
 
 DRAIN_TMP=
 DRAIN_VIEW_TMP=
@@ -47,6 +49,7 @@ RECOVERY_ACK_MOVED=false
 ACK_THROUGH=
 ACK_GENERATION=
 ACK_REMOVED=0
+ACK_REMOVED_ROWS=
 PRESENTED_MAX=0
 ACK_FINGERPRINTS=
 ACK_NOTICE_FINGERPRINTS=
@@ -110,8 +113,10 @@ reclaim_stale_branch_grant_locked() {
 # A repair that cannot be written (state/ full, unwritable, unreadable) is
 # reported and never fatal: the usable rows are still presentable and
 # acknowledgeable, and failing the whole drain would strand them too.
+# A retirement appends one `retired` wake-ledger row naming the retired rows
+# that still carried a sequence number (bin/fm-wake-ledger-lib.sh).
 retire_unconsumable_rows_locked() {
-  local retired unusable queued kept
+  local retired unusable queued kept removed
   [ -f "$FM_WAKE_QUEUE" ] || return 0
   if DRAIN_TMP=$(mktemp "$STATE/.wake-queue.retire.XXXXXX") \
     && chmod 0600 "$DRAIN_TMP" \
@@ -128,8 +133,11 @@ retire_unconsumable_rows_locked() {
       DRAIN_TMP=
       return 0
     fi
+    removed=$(_fm_wake_ledger_removed_rows "$FM_WAKE_QUEUE" "$DRAIN_TMP") \
+      || { removed=; fm_wake_ledger_report_unwritten "$STATE" retired; }
     if _fm_atomic_replace "$DRAIN_TMP" "$FM_WAKE_QUEUE"; then
       DRAIN_TMP=
+      fm_wake_ledger_record_removal_locked "$STATE" retired "$ACK_GENERATION" "$ACK_THROUGH" "$removed" || :
       printf 'wake drain: retired %s unusable queue row(s) that carried no sequence to present or acknowledge:\n%s\n' \
         "$retired" "$unusable" >&2
       return 0
@@ -182,15 +190,24 @@ claim_main_rows_locked() {
   DRAIN_TMP=
 }
 
-consume_actor_rows_locked() { # <rows-file> <cutoff>
-  local rows=$1 cutoff=$2
+# consume_actor_rows_locked <rows-file> <cutoff> [<removed-queue-rows>]: drop
+# the claimed sequences at or below <cutoff> and append one `consumed`
+# wake-ledger row naming those of them whose queue row the same
+# acknowledgement removed (<removed-queue-rows>).
+consume_actor_rows_locked() {
+  local rows=$1 cutoff=$2 key_rows=${3:-} consumed
   if [ ! -e "$rows" ] && [ ! -L "$rows" ]; then
     return 0
   fi
   DRAIN_TMP=$(mktemp "$STATE/.wake-rows.consume.XXXXXX") || return 1
   awk -v cutoff="$cutoff" '$1 ~ /^[0-9]+$/ && $1 > cutoff { print $1 }' "$rows" > "$DRAIN_TMP" || return 1
+  consumed=$(awk -v cutoff="$cutoff" '$1 ~ /^[0-9]+$/ && $1 <= cutoff { print $1 }' "$rows" \
+    | LC_ALL=C sort -n -u | awk 'NR > 1 { printf "," } { printf "%s", $1 }') || return 1
   write_rows_file_locked "$rows" "$DRAIN_TMP" || return 1
   DRAIN_TMP=
+  [ -z "$consumed" ] \
+    || fm_wake_ledger_record_removal_locked "$STATE" consumed "$ACK_GENERATION" "$cutoff" "$key_rows" "$consumed" \
+    || :
 }
 
 # A branch-actor drain or ack requires a snapshot to already exist and name at
@@ -828,8 +845,9 @@ trap 'exit 143' TERM
 
 if [ -n "$ACK_THROUGH" ]; then
   fm_wake_queue_lock_acquire || exit 1
+  fm_wake_ledger_pin_epoch || :
 elif fm_lock_acquire_wait_bounded "$FM_WAKE_QUEUE_LOCK" "$PRESENTATION_LOCK_TIMEOUT"; then
-  :
+  fm_wake_ledger_pin_epoch || :
 else
   lock_rc=$?
   if [ "$lock_rc" -eq 124 ]; then
@@ -890,6 +908,7 @@ if [ -n "$ACK_THROUGH" ]; then
     exit 1
   fi
   fm_wake_queue_lock_acquire || exit 1
+  fm_wake_ledger_pin_epoch || :
   DRAIN_LOCK_HELD=true
   DRAIN_TMP=$(mktemp "$STATE/.wake-queue.ack.XXXXXX") || exit 1
   chmod 0600 "$DRAIN_TMP" || exit 1
@@ -943,18 +962,21 @@ if [ -n "$ACK_THROUGH" ]; then
       RECOVERY_ACK_MOVED=true
     fi
   fi
+  ACK_REMOVED_ROWS=$(_fm_wake_ledger_removed_rows "$FM_WAKE_QUEUE" "$DRAIN_TMP") \
+    || { ACK_REMOVED_ROWS=; fm_wake_ledger_report_unwritten "$STATE" ack; }
   if ! _fm_atomic_replace "$DRAIN_TMP" "$FM_WAKE_QUEUE"; then
     echo "wake drain: acknowledged wakes could not be consumed safely" >&2
     exit 1
   fi
   DRAIN_TMP=
+  fm_wake_ledger_record_removal_locked "$STATE" ack "$ACK_GENERATION" "$ACK_THROUGH" "$ACK_REMOVED_ROWS" || :
   if [ -n "$HANDOFF_ACK" ] && [ "$(cat "$STATE/.supervision-handoff-pending" 2>/dev/null)" = "$HANDOFF_ACK" ]; then
     rm -f "$STATE/.supervision-handoff-pending" || exit 1
   fi
   if [ "$ACTOR" = branch ]; then
-    consume_actor_rows_locked "$ELIGIBLE_ROWS_FILE" "$ACK_THROUGH" || exit 1
+    consume_actor_rows_locked "$ELIGIBLE_ROWS_FILE" "$ACK_THROUGH" "$ACK_REMOVED_ROWS" || exit 1
   else
-    consume_actor_rows_locked "$MAIN_ROWS_FILE" "$ACK_THROUGH" || exit 1
+    consume_actor_rows_locked "$MAIN_ROWS_FILE" "$ACK_THROUGH" "$ACK_REMOVED_ROWS" || exit 1
   fi
   fm_lock_release "$FM_WAKE_QUEUE_LOCK"
   DRAIN_LOCK_HELD=false

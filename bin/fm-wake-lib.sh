@@ -2878,13 +2878,25 @@ fm_wake_restore_queue() {
   fi
 }
 
+# Load the wake ledger (bin/fm-wake-ledger-lib.sh) only when a removal needs
+# it, like the classifier above. An installation that ships the wake library
+# without the ledger library keeps its queue behavior and records no row.
+_fm_wake_require_ledger() {
+  command -v fm_wake_ledger_record_removal_locked >/dev/null 2>&1 && return 0
+  [ -f "$FM_WAKE_LIB_DIR/fm-wake-ledger-lib.sh" ] || return 1
+  # shellcheck source=bin/fm-wake-ledger-lib.sh
+  . "$FM_WAKE_LIB_DIR/fm-wake-ledger-lib.sh"
+}
+
 # fm_wake_queue_prune_task <state> <task-id> [target]
 # Prune pending durable wakes for <task-id> and its recorded <target> from
 # the wake queue. Removes stale wakes for <target>, signal wakes for the task's
-# status or turn-ended files, and task-specific check wakes.
+# status or turn-ended files, and task-specific check wakes. A prune that
+# removes a row appends one `pruned` row to <state>'s wake ledger while it
+# still holds the queue lock.
 fm_wake_queue_prune_task() {  # <state> <task-id> [target]
   local state=$1 task=$2 target=${3:-}
-  local queue="$state/.wake-queue" lock="$state/.wake-queue.lock" tmp
+  local queue="$state/.wake-queue" lock="$state/.wake-queue.lock" tmp removed=
   [ -f "$queue" ] || return 0
   [ -s "$queue" ] || return 0
   fm_wake_queue_lock_acquire "$lock" || return 1
@@ -2898,11 +2910,16 @@ fm_wake_queue_prune_task() {  # <state> <task-id> [target]
     }
     { print }
   ' "$queue" > "$tmp" || { rm -f "$tmp"; fm_lock_release "$lock"; return 1; }
+  if _fm_wake_require_ledger; then
+    removed=$(_fm_wake_ledger_removed_rows "$queue" "$tmp") \
+      || { removed=; fm_wake_ledger_report_unwritten "$state" pruned; }
+  fi
   if ! _fm_atomic_replace "$tmp" "$queue"; then
     rm -f "$tmp"
     fm_lock_release "$lock"
     return 1
   fi
+  [ -z "$removed" ] || fm_wake_ledger_record_removal_locked "$state" pruned - - "$removed" || :
   fm_lock_release "$lock"
 }
 

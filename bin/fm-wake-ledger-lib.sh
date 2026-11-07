@@ -1,0 +1,149 @@
+#!/usr/bin/env bash
+# fm-wake-ledger-lib.sh - the append-only wake ledger: one durable row for every
+# removal from the wake queue, so wakes can still be counted after a drain has
+# deleted their queue rows. bin/fm-wake-ledger.sh reads and counts it.
+#
+# The ledger is <state>/wake-ledger.tsv, one tab-separated row per removal:
+#   epoch  event  generation  through  seqs  keys
+# epoch is fm_now (bin/fm-clock-lib.sh). event is `ack` (the drain's
+# --ack-through acknowledgement), `retired` (unusable rows the drain retires),
+# `consumed` (acknowledged rows leaving an actor's claim file) or `pruned`
+# (fm_wake_queue_prune_task). generation is the --recovery-generation value and
+# through the --ack-through value, `-` when the removal had none. seqs is the
+# comma-separated ascending list of the queue sequence numbers the removal took
+# out, and keys is a compact JSON array of those rows' key column in the same
+# order, `""` for a row too short to carry one. A `consumed` row lists only the
+# claimed sequences whose queue row the same acknowledgement removed, so a
+# claim whose row an earlier removal already listed is not counted twice.
+# A removal that takes out no sequence number writes no row.
+# All rows one drain run writes under one lock hold share one epoch
+# (fm_wake_ledger_pin_epoch), so an acknowledgement and its consumed rows land
+# in the same window.
+#
+# Every writer here runs while its caller holds the wake-queue lock
+# (fm_wake_queue_lock_acquire in bin/fm-wake-lib.sh) and takes no lock of its own.
+# A ledger row that cannot be computed or written is reported on stderr and
+# never undoes or blocks the queue change it describes: the ledger is a count
+# record, not queue authority.
+
+FM_WAKE_LEDGER_LIB_DIR="$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; CDPATH='' cd -- "${d:-/}" && pwd)"
+# shellcheck source=bin/fm-clock-lib.sh
+. "$FM_WAKE_LEDGER_LIB_DIR/fm-clock-lib.sh"
+
+# The epoch pinned for the current lock hold; never taken from the environment.
+_FM_WAKE_LEDGER_EPOCH=
+
+# fm_wake_ledger_pin_epoch: read fm_now once, so every row written until the
+# next pin carries the same epoch. Call it right after taking the queue lock.
+fm_wake_ledger_pin_epoch() {
+  _FM_WAKE_LEDGER_EPOCH=$(fm_now) || { _FM_WAKE_LEDGER_EPOCH=; return 1; }
+}
+
+# fm_wake_ledger_path <state-dir>: the wake ledger of that state directory.
+fm_wake_ledger_path() {
+  printf '%s/wake-ledger.tsv\n' "$1"
+}
+
+# fm_wake_ledger_append_locked <state-dir> <event> <generation> <through> <seqs> <keys-json>
+# Append one ledger row; write nothing when <seqs> is empty. An empty
+# generation or through is recorded as `-`. Exit 2 on a malformed field.
+fm_wake_ledger_append_locked() {
+  local state=$1 event=$2 generation=${3:--} through=${4:--} seqs=$5 keys=$6 epoch
+  [ -n "$seqs" ] || return 0
+  case "$event" in
+    ack|retired|pruned|consumed) ;;
+    *) printf 'fm-wake-ledger: invalid event: %s\n' "$event" >&2; return 2 ;;
+  esac
+  case "$generation" in
+    -) ;;
+    *[!A-Za-z0-9._-]*) printf 'fm-wake-ledger: invalid generation: %s\n' "$generation" >&2; return 2 ;;
+  esac
+  case "$through" in
+    -) ;;
+    *[!0-9]*) printf 'fm-wake-ledger: invalid through: %s\n' "$through" >&2; return 2 ;;
+  esac
+  case "$seqs" in
+    *[!0-9,]*|,*|*,|*,,*) printf 'fm-wake-ledger: invalid sequence list: %s\n' "$seqs" >&2; return 2 ;;
+  esac
+  case "$keys" in
+    \[*\]) ;;
+    *) printf 'fm-wake-ledger: keys are not a JSON array\n' >&2; return 2 ;;
+  esac
+  case "$keys" in
+    *$'\t'*|*$'\n'*|*$'\r'*) printf 'fm-wake-ledger: keys carry a row separator\n' >&2; return 2 ;;
+  esac
+  case "$_FM_WAKE_LEDGER_EPOCH" in
+    ''|*[!0-9]*) epoch=$(fm_now) || return 1 ;;
+    *) epoch=$_FM_WAKE_LEDGER_EPOCH ;;
+  esac
+  printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$epoch" "$event" "$generation" "$through" "$seqs" "$keys" \
+    >> "$(fm_wake_ledger_path "$state")"
+}
+
+# _fm_wake_ledger_removed_rows <before> <after>: print the queue rows of
+# <before> that <after> no longer holds, counting duplicate lines separately.
+_fm_wake_ledger_removed_rows() {
+  LC_ALL=C awk -v after="$2" '
+    BEGIN { while ((getline line < after) > 0) kept[line]++; close(after) }
+    kept[$0] > 0 { kept[$0]--; next }
+    { print }
+  ' "$1"
+}
+
+# _fm_wake_ledger_fields [<seqs-csv>]: read queue rows on stdin and print one
+# line `<seqs>\t<keys-json>` for the rows carrying a numeric sequence, in
+# ascending sequence order, or nothing when there is none. With <seqs-csv>,
+# list only those of its sequences that a row read carries.
+_fm_wake_ledger_fields() {
+  _FM_WAKE_LEDGER_WANT=${1:-} LC_ALL=C awk -F '\t' '
+    function quote(s,   out, c, i, n) {
+      out = ""
+      n = length(s)
+      for (i = 1; i <= n; i++) {
+        c = substr(s, i, 1)
+        if (c == "\\") out = out "\\\\"
+        else if (c == "\"") out = out "\\\""
+        else if (c in ctl) out = out ctl[c]
+        else out = out c
+      }
+      return "\"" out "\""
+    }
+    BEGIN { for (i = 1; i < 32; i++) ctl[sprintf("%c", i)] = sprintf("\\u%04x", i) }
+    NF >= 2 && $2 ~ /^[0-9]+$/ && !($2 in key) { key[$2] = quote(NF >= 4 ? $4 : "") }
+    END {
+      want = ENVIRON["_FM_WAKE_LEDGER_WANT"]
+      if (want != "") {
+        n = split(want, seq, ",")
+        for (i = 1; i <= n; i++) if (seq[i] ~ /^[0-9]+$/) if (seq[i] in key) print seq[i] "\t" key[seq[i]]
+      } else {
+        for (s in key) print s "\t" key[s]
+      }
+    }
+  ' | LC_ALL=C sort -t "$(printf '\t')" -k1,1n -u | LC_ALL=C awk -F '\t' '
+    { seqs = seqs (NR > 1 ? "," : "") $1; keys = keys (NR > 1 ? "," : "") $2 }
+    END { if (NR > 0) print seqs "\t[" keys "]" }
+  '
+}
+
+# fm_wake_ledger_record_removal_locked <state-dir> <event> <generation> <through> <removed-rows> [<seqs-csv>]
+# Append the row for one removal from the removed queue rows it took out
+# (newline-separated, as _fm_wake_ledger_removed_rows prints them); with
+# <seqs-csv>, the row lists those of its sequences that <removed-rows> carries.
+# Report a failed write on stderr and return non-zero.
+fm_wake_ledger_record_removal_locked() {
+  local state=$1 event=$2 generation=$3 through=$4 removed=$5 want=${6:-} fields status=0
+  fields=$(printf '%s' "$removed" | _fm_wake_ledger_fields "$want") || status=$?
+  if [ "$status" -eq 0 ] && [ -n "$fields" ]; then
+    fm_wake_ledger_append_locked "$state" "$event" "$generation" "$through" \
+      "${fields%%$'\t'*}" "${fields#*$'\t'}" || status=$?
+  fi
+  [ "$status" -eq 0 ] || fm_wake_ledger_report_unwritten "$state" "$event"
+  return "$status"
+}
+
+# fm_wake_ledger_report_unwritten <state-dir> <event>: the one stderr report
+# for a removal whose ledger row could not be computed or written.
+fm_wake_ledger_report_unwritten() {
+  printf 'fm-wake-ledger: the %s row could not be written to %s; the queue change it describes stands\n' \
+    "$2" "$(fm_wake_ledger_path "$1")" >&2
+}
