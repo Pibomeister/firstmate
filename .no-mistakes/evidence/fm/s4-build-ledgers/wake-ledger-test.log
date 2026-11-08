@@ -1,0 +1,21 @@
+ok - fm_now reads FM_NOW only under FM_TEST_SEAM=1 and only when it is an integer
+ok - an acknowledgement of three wakes appends one ack row with their sequences and keys
+ok - an acknowledgement that removes nothing writes no ledger row
+ok - count derives the acknowledged wake count from the ledger alone
+ok - consuming the acknowledged claim rows appends one consumed row
+ok - a retired row counts while a minted sequence with no queue row is not counted
+ok - a task prune appends one pruned row and an empty prune writes none
+ok - a wake queued at a window end counts once, in the window of its removal
+ok - rows prints exactly the window rows, unchanged
+ok - a branch claim pruned before its acknowledgement counts once
+ok - a prune without the ledger library fails and leaves the queue unchanged
+ok - an acknowledgement that cannot write its ledger row fails, keeps its wakes, and succeeds on retry
+ok - a retirement that cannot write its ledger row keeps the row, reports it, and retires it once the ledger is writable
+ok - a prune that cannot write its ledger row fails, keeps its wakes, and succeeds on retry
+ok - the ack row carries the removal time, not the lock-acquire time
+ok - a removal whose row extraction fails stops, reports it, and keeps its wakes
+ok - a consumed extraction that fails stops and keeps the claim rows
+ok - a retry after an interrupted removal writes no second row, so the wake counts once
+ok - a direct append reads the clock on every call, never an earlier removal epoch
+ok - the ledger command resolves its home, reads an absent ledger as empty, and refuses bad arguments
+bash tests/fm-wake-ledger.test.sh  8.10s user 18.94s system 28% cpu 1:33.52 total

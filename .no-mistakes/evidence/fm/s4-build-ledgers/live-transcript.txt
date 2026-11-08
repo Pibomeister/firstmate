@@ -1,0 +1,58 @@
+## Lab home (real clock, no test seam)
+$ bash -c . bin/fm-wake-lib.sh; fm_wake_append signal k-alpha a; fm_wake_append signal k-beta b; fm_wake_append check k-gamma c
+[exit 0]
+--- live queue before drain
+1794120521	1	signal	k-alpha	a
+1794120523	2	signal	k-beta	b
+1794120524	3	check	k-gamma	c
+--- present + acknowledge
+[presentation exit 0]
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 3 --recovery-generation 3201.1794120522.l01JAW
+--- ledger after ack
+1794120528	ack	3201.1794120522.l01JAW	3	1,2,3	["k-alpha","k-beta","k-gamma"]
+1794120528	consumed	3201.1794120522.l01JAW	3	1,2,3	["k-alpha","k-beta","k-gamma"]
+--- re-acknowledge same boundary (removes nothing; row count must stay)
+ledger rows:        2
+$ bash -c . bin/fm-wake-lib.sh; fm_wake_append signal "task-x" d; fm_wake_append signal k-eps e
+[exit 0]
+--- live queue
+1794120531	4	signal	task-x	d
+1794120532	5	signal	k-eps	e
+--- prune task-x
+$ bash -c . bin/fm-wake-lib.sh; fm_wake_queue_prune_task "$FM_HOME/state" task-x
+[exit 0]
+--- ledger after prune
+1794120528	ack	3201.1794120522.l01JAW	3	1,2,3	["k-alpha","k-beta","k-gamma"]
+1794120528	consumed	3201.1794120522.l01JAW	3	1,2,3	["k-alpha","k-beta","k-gamma"]
+1794120532	pruned	-	-	4	["task-x"]
+--- count W1=[T0,T1) W2=[T1,T2) (k-eps still queued at T2)
+$ bash bin/fm-wake-ledger.sh count --since 1794120519 --until 1794120531
+reference=0 highest=3 span=3 unlisted=0 late=0 count=3
+[exit 0]
+$ bash bin/fm-wake-ledger.sh count --since 1794120531 --until 1794120534
+reference=3 highest=4 span=1 unlisted=0 late=0 count=1
+[exit 0]
+--- now ack the still-queued wake in window W3
+[presentation exit 0]
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 5 --recovery-generation 52437.1794120532.ftXNDV
+1794120528	ack	3201.1794120522.l01JAW	3	1,2,3	["k-alpha","k-beta","k-gamma"]
+1794120528	consumed	3201.1794120522.l01JAW	3	1,2,3	["k-alpha","k-beta","k-gamma"]
+1794120532	pruned	-	-	4	["task-x"]
+1794120543	ack	52437.1794120532.ftXNDV	5	5	["k-eps"]
+1794120543	consumed	52437.1794120532.ftXNDV	5	5	["k-eps"]
+$ bash bin/fm-wake-ledger.sh count --since 1794120534 --until 1794120545
+reference=4 highest=5 span=1 unlisted=0 late=0 count=1
+[exit 0]
+$ bash bin/fm-wake-ledger.sh count --since 1794120519 --until 1794120545
+reference=0 highest=5 span=5 unlisted=0 late=0 count=5
+[exit 0]
+$ bash bin/fm-wake-ledger.sh rows --since 1794120531 --until 1794120545
+1794120532	pruned	-	-	4	["task-x"]
+1794120543	ack	52437.1794120532.ftXNDV	5	5	["k-eps"]
+1794120543	consumed	52437.1794120532.ftXNDV	5	5	["k-eps"]
+[exit 0]
+--- adversarial: ledger unwritable -> ack must fail and keep the wake
+$ bash -c . bin/fm-wake-lib.sh; fm_wake_append signal k-zeta z
+[exit 0]
+queue still holds k-zeta: 1
+1794120549	consumed	6561.1794120545.9Sw4Ep	6	6	["k-zeta"]
