@@ -225,6 +225,26 @@ test_branch_claim_pruned_before_ack_counts_once() {
   pass "a branch claim pruned before its acknowledgement counts once"
 }
 
+test_prune_without_ledger_library_fails_and_keeps_queue() {
+  local dir state bin err
+  dir=$(make_case prune-no-ledger-lib)
+  state="$dir/state"
+  bin="$dir/bin"
+  cp -R "$ROOT/bin" "$bin"
+  rm -f "$bin/fm-wake-ledger-lib.sh"
+  append_wake "$state" signal task-a.status "signal: $state/task-a.status" || fail "append status failed"
+  cp "$state/.wake-queue" "$dir/queue.before"
+  err="$dir/prune.err"
+  if FM_STATE_OVERRIDE="$state" FM_TEST_SEAM=1 FM_NOW="$T0" \
+    bash -c '. "$0/fm-wake-lib.sh"; fm_wake_queue_prune_task "$1" "$2" ""' "$bin" "$state" task-a 2> "$err"; then
+    fail "a prune without the ledger library reported success"
+  fi
+  [ -s "$err" ] || fail "a prune without the ledger library printed no error"
+  cmp -s "$state/.wake-queue" "$dir/queue.before" || fail "a prune without the ledger library removed queue rows"
+  [ ! -e "$state/wake-ledger.tsv" ] || fail "a prune without the ledger library wrote a ledger"
+  pass "a prune without the ledger library fails and leaves the queue unchanged"
+}
+
 test_ledger_command_contract() {
   local dir state out rc
   dir="$TMP_ROOT/command"
@@ -254,4 +274,5 @@ test_consumed_row_names_the_claim_rows_taken_out
 test_retired_row_counts_and_unwritten_sequence_does_not
 test_pruned_rows_and_window_edges
 test_branch_claim_pruned_before_ack_counts_once
+test_prune_without_ledger_library_fails_and_keeps_queue
 test_ledger_command_contract
