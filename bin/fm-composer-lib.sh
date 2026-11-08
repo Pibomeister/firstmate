@@ -2812,7 +2812,9 @@ EOF
 # Firstmate's task-scoped status row. The timer footer carries its
 # integration indicator after an ASCII pipe in the older shape and as a
 # trailing `IDE <glyph>` with no pipe in the current shape; both are
-# accepted, and a footer without Droid's timer still refuses. A shell prompt or any other row below the box is
+# accepted, and a footer without Droid's timer still refuses. The no-pipe
+# `IDE` check is not end-anchored: mawk is byte-oriented, and a UTF-8 glyph
+# after `IDE ` would fail `[^[:space:]]$`. A shell prompt or any other row below the box is
 # unknown, even when an old Droid frame remains visible above it.
 fm_composer_droid_state() {  # <styled viewport> <tmux|orca>
   local plain region
@@ -2829,7 +2831,7 @@ fm_composer_droid_state() {  # <styled viewport> <tmux|orca>
       next
     }
     active && closed && NF {
-      if (!footer && $0 ~ /^\[⏱ [^]]+\]/ && ($0 ~ /[|][[:space:]]*[^[:space:]]/ || $0 ~ /IDE[[:space:]][[:space:]]*[^[:space:]][[:space:]]*$/)) { footer=1; next }
+      if (!footer && $0 ~ /^\[⏱ [^]]+\]/ && ($0 ~ /[|][[:space:]]*[^[:space:]]/ || $0 ~ /IDE[[:space:]]+[^[:space:]]/)) { footer=1; next }
       if (footer && !status && $0 ~ /^firstmate[[:space:]]*$/) { status=1; next }
       valid=0
     }
