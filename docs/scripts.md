@@ -146,6 +146,7 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-wake-ledger-lib.sh`  | Append-only wake ledger: one row for every wake-queue removal, naming the sequence numbers it took out |
 | `fm-wake-ledger.sh`      | Count or list wake-ledger rows over a time window, so wakes still count after a drain removed their queue rows |
 | `fm-clock-lib.sh`        | Shared fixed-clock seam (`fm_now`) for supervision ledgers and tests |
+| `fm-soak-record.sh`      | Record a baseline or post-change soak run: harness inventory, load samples, and the window's transcripts, handoffs, watchdog and wake-ledger rows, without writing inside the soak home |
 | `fm-path-lib.sh`         | Fork-free `dirname`/`basename` equivalents with no source-time side effects             |
 | `fm-classify-lib.sh`     | Shared wake classification, durable keyed-decision folds and scans, unread status selection, home-owned status-append ranges, and bounded latest-event snapshots |
 | `fm-send.sh`             | Steer a task via a durable inbox record plus doorbell, or send a supported key or typed harness invocation through the recorded backend |
