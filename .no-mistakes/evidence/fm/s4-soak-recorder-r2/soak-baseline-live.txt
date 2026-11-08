@@ -1,0 +1,100 @@
+== soak home revision: ee4a9c008655c4e9f24e9cbdcfe97ec46f7a4e43
+== readable-harnesses
+claude
+exit=0
+== inventory claude opencode
+claude readable
+opencode unreadable
+exit=3
+== start refused on unreadable harness
+claude readable
+opencode unreadable
+fm-soak-record: refusing to start: a declared harness is unreadable
+exit=3 soak.json_exists=no
+== start refused inside home
+fm-soak-record: --out is inside the soak home: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.SUlkkC/data/soak
+exit=2
+== start baseline (started_at pinned to S=1794110455 via the clock seam)
+claude readable
+exit=0
+{"label":"baseline","home":"/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.SUlkkC","revision":"ee4a9c008655c4e9f24e9cbdcfe97ec46f7a4e43","started_at":1794110455,"harnesses":["claude"],"session_ids":[]}
+== sample 1
+exit=0
+== load.tsv
+1794113456	2	2	2	sess-live-1
+1794113457	2	2	2	sess-live-1
+1794113459	2	2	2	sess-live-1
+1794113460	2	2	2	sess-live-1
+1794113462	2	2	2	sess-ghost
+== handoff-events.tsv
+1794109955	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.SUlkkC/projects/order-doc.md
+1794110755	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.SUlkkC/data/handoff-main.md
+1794111455	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.SUlkkC/data/handoff-main.md
+1794111755	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.SUlkkC/data/handoff-main.md
+== finish
+exit=0
+{
+  "label": "baseline",
+  "home": "/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.SUlkkC",
+  "revision": "ee4a9c008655c4e9f24e9cbdcfe97ec46f7a4e43",
+  "started_at": 1794110455,
+  "harnesses": [
+    "claude"
+  ],
+  "session_ids": [
+    {
+      "id": "sess-ghost",
+      "transcript": "missing-transcript"
+    },
+    {
+      "id": "sess-live-1",
+      "transcript": "transcripts/sess-live-1.jsonl"
+    },
+    {
+      "id": "sess-other",
+      "transcript": "transcripts/sess-other.jsonl"
+    }
+  ],
+  "finished_at": 1794113464,
+  "handoff_count": 4,
+  "violations": [
+    {
+      "kind": "undeclared-harness",
+      "task": "task-b",
+      "harness": "opencode"
+    }
+  ]
+}
+== kept files
+./handoff-events.tsv
+./handoffs/handoff-main.md
+./handoffs/order-order-doc.md
+./load.tsv
+./soak.json
+./transcripts/sess-live-1.jsonl
+./transcripts/sess-other.jsonl
+./wake-ledger.tsv
+./watchdog/actions.tsv
+./watchdog/handoffs/main-lean.md
+== kept watchdog rows
+n1 handoff-request nudge pending
+r1 restart-requested restart pending
+r1 restart-requested restart done
+n2 handoff-request nudge pending
+r2 restart-requested restart pending
+r2 restart-requested restart done
+n3 handoff-request nudge pending
+r3 restart-requested restart pending
+r3 restart-requested restart done
+n4 handoff-request nudge pending
+r4 restart-requested restart pending
+r4 restart-requested restart done
+== kept wake-ledger rows
+1794113325	ack	35409.1794113315.pWftgY	2	1,2	["soak-a","soak-b"]
+1794113325	consumed	35409.1794113315.pWftgY	2	1,2	["soak-a","soak-b"]
+== sample after finish
+fm-soak-record: the soak run in /private/tmp/fm-soak-x.kDXYoE/out is already finished
+exit=1 load_rows=5
+== second finish
+fm-soak-record: the soak run in /private/tmp/fm-soak-x.kDXYoE/out is already finished
+exit=1

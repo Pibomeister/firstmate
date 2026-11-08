@@ -1,0 +1,12 @@
+1..10
+ok - a low-context restart on the watchdog's lean handoff counts
+ok - the same handoff document rewritten across restarts counts once per restart
+ok - a full handoff written after the nudge timed out but before the restart counts once
+ok - sample records each handoff-document modification event
+ok - sample after finish is refused
+ok - readable-harnesses names claude and inventory exits 3 on an unreadable harness
+ok - start records label, home, revision, started_at and harnesses, and refuses an unreadable harness
+ok - sample appends epoch, live workers, acknowledged wakes, status lines and the session id
+ok - finish keeps the window's transcripts, handoffs, watchdog and wake-ledger rows and counts handoffs once
+ok - post-change finish names each declared harness without an activity source
+FM_TEST_COMPLETE

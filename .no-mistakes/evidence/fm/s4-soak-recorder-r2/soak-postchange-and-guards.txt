@@ -1,0 +1,13 @@
+$ sample on the finished baseline run
+fm-soak-record: the soak run in /private<OUT> is already finished
+exit=1  load.tsv rows=2
+$ finish on the finished baseline run
+fm-soak-record: the soak run in /private<OUT> is already finished
+exit=1
+$ post-change start/sample/finish (no bin/fm-activity-sources.sh on this revision)
+claude readable
+start exit=0
+sample exit=0
+finish exit=0
+{"label":"post-change","violations":[{"kind":"activity-sources-unavailable","harness":"claude"}],"handoff_count":0}
+soak home unchanged across start/sample/finish: yes

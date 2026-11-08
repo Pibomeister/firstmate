@@ -1,0 +1,8 @@
+$ sample (after handoff doc 1)
+exit=0
+$ sample (after rewrite)
+exit=0
+$ load.tsv
+1794113022	0	2	1	lab-session-0001
+1794113030	0	2	1	lab-session-0001
+$ handoff-events.tsv

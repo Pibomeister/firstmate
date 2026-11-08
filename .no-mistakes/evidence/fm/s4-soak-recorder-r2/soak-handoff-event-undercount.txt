@@ -1,0 +1,14 @@
+# Scenario: two full handoffs to the same data/handoff-main.md, each in real order
+# (nudge -> document -> sample -> request -> restart pending -> done). Rule expects handoff_count=2.
+claude readable
+sample 1 exit=0  handoff-events rows=0
+sample 2 exit=0  handoff-events rows=0
+finish exit=0
+handoff_count=2  (expected 2)
+# Scenario: an order handoff document written twice with no watchdog restart, sampled after each write. Rule expects 2 events.
+claude readable
+sample 1 handoff-events rows=0
+sample 2 handoff-events rows=0
+handoff_count=1  (expected 2 by modification event)
+# Root cause: awk NR==FNR with an empty seen-file treats stdin lines as seen
+printed rows: 0
