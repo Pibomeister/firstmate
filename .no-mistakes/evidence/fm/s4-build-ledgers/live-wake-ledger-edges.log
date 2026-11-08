@@ -1,0 +1,16 @@
+== window A [1000,2000): wakes 1,2 acked at t=1000
+ack-through 2 at t=1000 exit=0
+== sequence 3 minted but never written (counter bumped, no queue row)
+== wake 4 queued before window A end, acked only at t=2500 (window B)
+4	check	inbox
+count A (before wake 4 is acked):
+reference=0 highest=2 span=2 unlisted=0 late=0 count=2
+ack-through 4 at t=2500 exit=0
+1000	ack	75759.1794115467.CBN87W	2	1,2
+1000	consumed	75759.1794115467.CBN87W	2	1,2
+2500	ack	81664.1794115469.jgG8UP	4	4
+2500	consumed	81664.1794115469.jgG8UP	4	4
+count A (after):  reference=0 highest=2 span=2 unlisted=0 late=0 count=2
+count B [2000,3000): reference=2 highest=4 span=2 unlisted=1 late=0 count=1
+count A+B [1000,3000): reference=0 highest=4 span=4 unlisted=1 late=0 count=3
+lab removed

@@ -1,0 +1,47 @@
+
+$ enqueue 3 wakes (two duplicate signals for task-a, one check) and 1 signal for task-b
+1	signal	/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.xn5E4s/state/task-a.status
+2	signal	/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.xn5E4s/state/task-a.status
+3	check	inbox
+4	signal	/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.xn5E4s/state/task-b.status
+
+$ drain (presentation)
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 4 --recovery-generation 12225.1794115451.ExlmlJ
+
+$ prune task-b before ack (fm_wake_queue_prune_task)
+exit=0
+
+$ ack-through 4
+exit=0
+
+$ queue after ack (should be empty)
+       0
+
+$ repeat ack (removes nothing) -> ledger row count unchanged
+exit=0
+ledger rows before=       3 after=       3
+
+$ cat state/wake-ledger.tsv
+1794115453	pruned	-	-	4	["/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.xn5E4s/state/task-b.status"]
+1794115453	ack	12225.1794115451.ExlmlJ	4	1,2,3	["/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.xn5E4s/state/task-a.status","/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.xn5E4s/state/task-a.status","inbox"]
+1794115453	consumed	12225.1794115451.ExlmlJ	4	1,2,3	["/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.xn5E4s/state/task-a.status","/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.xn5E4s/state/task-a.status","inbox"]
+
+$ bin/fm-wake-ledger.sh count --since 1794115451 --until 1794115455
+reference=0 highest=4 span=4 unlisted=0 late=0 count=4
+
+$ bin/fm-wake-ledger.sh rows --since 1794115451 --until 1794115455
+1794115453	pruned	-	-	4	["/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.xn5E4s/state/task-b.status"]
+1794115453	ack	12225.1794115451.ExlmlJ	4	1,2,3	["/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.xn5E4s/state/task-a.status","/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.xn5E4s/state/task-a.status","inbox"]
+1794115453	consumed	12225.1794115451.ExlmlJ	4	1,2,3	["/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.xn5E4s/state/task-a.status","/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.xn5E4s/state/task-a.status","inbox"]
+
+$ adversarial: window entirely before activity
+reference=0 highest=0 span=0 unlisted=0 late=0 count=0
+
+$ adversarial: bad args
+fm-wake-ledger: --since 5 is after --until 2
+exit=1
+fm-wake-ledger: --since must be a decimal whole number: x
+exit=1
+exit=2
+
+lab removed: yes
