@@ -1,0 +1,40 @@
+== host TZ=Asia/Tokyo, zone default America/Costa_Rica, FM_HOME=lab ==
+CR 2026-11-10 21:59:59 (Tue) -> quiet=0 next=1794369600 rc=0  [Tue 2026-11-10 22:00:00 CST]
+CR 2026-11-10 22:00:00 (Tue) -> quiet=1 ends=1794405600 window=nightly rc=0  [Wed 2026-11-11 08:00:00 CST]
+CR 2026-11-11 07:59:59 (Wed) -> quiet=1 ends=1794405600 window=nightly rc=0  [Wed 2026-11-11 08:00:00 CST]
+CR 2026-11-11 08:00:00 (Wed) -> quiet=0 next=1794456000 rc=0  [Wed 2026-11-11 22:00:00 CST]
+CR 2026-11-13 16:59:59 (Fri) -> quiet=0 next=1794610800 rc=0  [Fri 2026-11-13 17:00:00 CST]
+CR 2026-11-13 17:00:00 (Fri) -> quiet=1 ends=1794837600 window=weekend rc=0  [Mon 2026-11-16 08:00:00 CST]
+CR 2026-11-13 23:00:00 (Fri) -> quiet=1 ends=1794837600 window=weekend rc=0  [Mon 2026-11-16 08:00:00 CST]
+CR 2026-11-14 03:00:00 (Sat) -> quiet=1 ends=1794837600 window=weekend rc=0  [Mon 2026-11-16 08:00:00 CST]
+CR 2026-11-15 12:00:00 (Sun) -> quiet=1 ends=1794837600 window=weekend rc=0  [Mon 2026-11-16 08:00:00 CST]
+CR 2026-11-16 07:59:59 (Mon) -> quiet=1 ends=1794837600 window=weekend rc=0  [Mon 2026-11-16 08:00:00 CST]
+CR 2026-11-16 08:00:00 (Mon) -> quiet=0 next=1794888000 rc=0  [Mon 2026-11-16 22:00:00 CST]
+CR 2026-11-16 12:00:00 (Mon) -> quiet=0 next=1794888000 rc=0  [Mon 2026-11-16 22:00:00 CST]
+CR 2026-11-12 23:30:00 (Thu) -> quiet=1 ends=1794578400 window=nightly rc=0  [Fri 2026-11-13 08:00:00 CST]
+== no-epoch uses fm_now seam (FM_TEST_SEAM=1 FM_NOW=Sat 03:00 CR) ==
+quiet=1 ends=1794837600 window=weekend
+rc=0
+== no epoch, real clock ==
+quiet=1 ends=1794232800 window=weekend
+rc=0
+== config zone=Asia/Tokyo: Tokyo 22:00 is nightly quiet ==
+quiet=1 ends=1794351600 window=nightly
+rc=0
+== adversarial ==
+fm-quiet-hours: unknown quiet-hours-zone: Mars/Olympus
+unknown zone rc=3
+fm-quiet-hours: unknown quiet-hours-zone: ../../../etc/passwd
+traversal zone rc=3
+fm-quiet-hours: unknown quiet-hours-zone: /etc/hosts
+absolute zone rc=3
+quiet=1 ends=1794405600 window=nightly
+empty value -> default rc=0
+fm-quiet-hours: epoch is not a decimal whole number: -5
+negative rc=1
+fm-quiet-hours: epoch is not a decimal whole number: 1.5
+decimal rc=1
+fm-quiet-hours: at takes at most one epoch
+two args rc=1
+unknown subcmd rc=2
+FM_NOW without seam (real clock): quiet=1 ends=1794232800 window=weekend
