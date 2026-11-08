@@ -598,7 +598,7 @@ test_host_outside_the_lock_owner_stands_down() {
 }
 
 test_tagged_lock_holder_reaches_the_engine_whole() {
-  local home first
+  local home first host_pid
   home=$(make_home tagged-holder away)
   echo hold-lease > "$home/stub-mode"
   # A Windows/Git Bash home: uname reports MINGW and ps -W lists the session
@@ -616,18 +616,25 @@ SH
   # (fm_harness_ancestry_pids). A Cursor/agent parent in this process table
   # would stand the host down. Reparent the host to init so the case exercises
   # the tagged-holder path without changing that ownership preference.
-  perl -e '
+  # The setsid child reparents to init, so a fail before .supervision-host is
+  # written would leak it unless this pid is recorded for suite cleanup.
+  host_pid=$(perl -e '
     defined(my $pid = fork) or exit 1;
-    exit 0 if $pid;
+    if ($pid) { print $pid; exit 0; }
     require POSIX;
     POSIX::setsid() >= 0 or exit 1;
+    open STDOUT, ">", "/dev/null" or exit 1;
     exec @ARGV;
   ' env -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID \
     FM_HOME="$home" FM_CREW_STATE_BIN="$home/fakebin/fm-crew-state.sh" PATH="$home/fakebin:$PATH" \
     CLAUDE_PID=7204 CLAUDE_CODE_SESSION_ID=tagged-session \
     bash -c '"$0" park > "$FM_HOME/host.out" 2>&1; printf "%s\n" "$?" > "$FM_HOME/host.rc"' "$HOST" \
-    2>> "$home/claude.err" \
+    2>> "$home/claude.err") \
     || fail "tagged: could not start an ancestry-isolated host"
+  case "$host_pid" in
+    ''|*[!0-9]*) fail "tagged: isolated host pid was not reported" ;;
+  esac
+  printf '%s\n' "$host_pid" > "$home/tagged-host.pid"
   wait_until 150 watcher_live "$home" || fail "tagged: the host never started a watcher cycle: $(cat "$home/host.out")"
   append_status "$home" 'step one'
   wait_until 250 handled_at_least "$home" 1 || fail "tagged: the wake was not handled: $(cat "$home/host.out"; cat "$home/state/.supervision-host.log")"

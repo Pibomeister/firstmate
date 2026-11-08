@@ -226,6 +226,16 @@ stop_home_processes() {  # <home>
   while IFS= read -r pid; do
     kill -TERM "$pid" 2>/dev/null || true
   done < <(cat "$home/orphan-pid" 2>/dev/null)
+  if [ -s "$home/tagged-host.pid" ]; then
+    pid=$(cat "$home/tagged-host.pid")
+    case "$pid" in
+      ''|*[!0-9]*) ;;
+      *)
+        kill -TERM "$pid" 2>/dev/null || true
+        wait_for_exit "$pid" 50 >/dev/null 2>&1 || true
+        ;;
+    esac
+  fi
 }
 stop_registered_homes() {
   local home
