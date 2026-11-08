@@ -8,7 +8,7 @@
 # session id); finish keeps transcripts, handoff documents, watchdog rows and
 # wake-ledger rows of the window, counts handoffs by the one rule (handoff
 # document modification events plus watchdog restart ids with no such event
-# between their pending and done rows), and lists harness violations. Every verb leaves the soak
+# in their restart episode), and lists harness violations. Every verb leaves the soak
 # home byte-for-byte and mtime-for-mtime unchanged.
 set -u
 
@@ -278,9 +278,10 @@ finish_fixture() {
   # Watchdog rows: epoch id home subject symptom action phase detail.
   other="$TMP_ROOT/other-home"
   {
-    printf '%s\tw1\t%s\tprimary\tfrozen\trestart\tpending\ttoken=1\n' $((T0 + 700)) "$HOME_DIR"
-    printf '%s\tw1\t%s\tprimary\tfrozen\trestart\tdone\tpickup verified\n' $((T0 + 710)) "$HOME_DIR"
-    printf '%s\tw2\t%s\tprimary\trestart-requested\trestart\tdone\tpickup verified\n' $((T0 + 720)) "$HOME_DIR"
+    printf '%s\tn1\t%s\tprimary\thandoff-request\tnudge\tpending\tcontext is low\n' $((T0 + 250)) "$HOME_DIR"
+    printf '%s\tw1\t%s\tprimary\trestart-requested\trestart\tpending\ttoken=1\n' $((T0 + 700)) "$HOME_DIR"
+    printf '%s\tw1\t%s\tprimary\trestart-requested\trestart\tdone\tpickup verified\n' $((T0 + 710)) "$HOME_DIR"
+    printf '%s\tw2\t%s\tprimary\tfrozen\trestart\tdone\tpickup verified\n' $((T0 + 720)) "$HOME_DIR"
     printf '%s\tw3\t%s\tprimary\tagent-gone\trestart\tfailed\tno pickup\n' $((T0 + 730)) "$HOME_DIR"
     printf '%s\tw4\t%s\tprimary\tfrozen\trestart\tdone\tother home\n' $((T0 + 740)) "$other"
     printf '%s\tw5\t%s\tprimary\tfrozen\trestart\tdone\tbefore\n' $((T0 - 10)) "$HOME_DIR"
@@ -314,14 +315,14 @@ test_finish_keeps_the_window_and_counts_handoffs() {
   [ ! -e "$OUT_DIR/transcripts/sess-old.jsonl" ] || fail "a transcript from before the window was kept"
   assert_equals $'handoff-a.md\nhandoff-b.md' "$(names "$OUT_DIR/handoffs")" \
     "the window's handoff documents are kept once each"
-  assert_equals $'w1\nw1\nw2\nw3\nw6' "$(cut -f2 "$OUT_DIR/watchdog/actions.tsv")" \
+  assert_equals $'n1\nw1\nw1\nw2\nw3\nw6' "$(cut -f2 "$OUT_DIR/watchdog/actions.tsv")" \
     "watchdog rows of this home inside the window are kept"
   assert_equals primary-1.md "$(names "$OUT_DIR/watchdog/handoffs")" "the window's watchdog handoff files are kept"
   assert_equals $'2\n3' "$(cut -f5 "$OUT_DIR/wake-ledger.tsv")" "the window's wake-ledger rows are kept"
-  # handoff-a and handoff-b, plus the restarts w1 and w2, neither with a
-  # handoff document modified between its pending and done rows; the failed
-  # restart w3 and the watchdog's own handoff file do not count.
-  assert_equals 4 "$(jq -r .handoff_count <<<"$json")" "handoff count"
+  # handoff-a and handoff-b, plus the frozen restart w2; the requested restart
+  # w1 had both documents written in its episode (from the nudge n1), and the
+  # failed restart w3 and the watchdog's own handoff file do not count.
+  assert_equals 3 "$(jq -r .handoff_count <<<"$json")" "handoff count"
   assert_equals '[{"kind":"undeclared-harness","task":"feat-c","harness":"codex"}]' "$(jq -c .violations <<<"$json")" \
     "a live task on an undeclared harness is a violation and a non-live one is not"
   pass "finish keeps the window's transcripts, handoffs, watchdog and wake-ledger rows and counts handoffs once"
@@ -338,7 +339,7 @@ test_finish_post_change_names_missing_activity_sources() {
     > /dev/null || fail "finish failed"
   assert_home_unchanged "$HOME_DIR" "$before" "post-change finish"
   json=$(jq -c . "$OUT_DIR/soak.json") || fail "soak.json is not JSON after finish"
-  assert_equals 5 "$(jq -r .handoff_count <<<"$json")" "an order document outside data/ counts as its own handoff"
+  assert_equals 4 "$(jq -r .handoff_count <<<"$json")" "an order document outside data/ counts as its own handoff"
   [ -f "$OUT_DIR/handoffs/order-post-order-doc.md" ] || fail "the order record's document was not kept"
   if [ -e "$ROOT/bin/fm-activity-sources.sh" ]; then
     assert_contains "$(jq -c .violations <<<"$json")" '"kind":"no-activity-source"' "post-change activity-source check"
@@ -381,30 +382,53 @@ test_finish_counts_a_lean_handoff_restart() {
 }
 
 test_finish_counts_each_rewrite_of_one_handoff_document() {
-  local home out wd tr json before
+  local home out wd tr json before i at
   home=$(make_home rewrite)
   out="$TMP_ROOT/rewrite-out"; wd="$TMP_ROOT/rewrite-watchdog"; tr="$TMP_ROOT/rewrite-transcripts"
   mkdir -p "$wd/handoffs" "$tr"
   soak "$T0" start --home "$home" --out "$out" --label baseline --harness claude > /dev/null || fail "start failed"
-  # Three restarts, each with the session's full handoff rewritten into the
-  # same document between its pending and done rows.
+  # Three low-context episodes in the watchdog's order: the handoff nudge, the
+  # session's full handoff rewritten into the same document, the restart
+  # request, then the restart's pending and done rows.
   : > "$wd/actions.tsv"
-  local i at
   for i in 1 2 3; do
     at=$((T0 + i * 200))
-    printf '%s\tr%s\t%s\tprimary\trestart-requested\trestart\tpending\ttoken=%s\n' "$at" "$i" "$home" "$i" >> "$wd/actions.tsv"
-    rewrite_handoff "$home" $((at + 5)) "handoff $i"
-    printf '%s\tr%s\t%s\tprimary\trestart-requested\trestart\tdone\tpickup verified\n' $((at + 10)) "$i" "$home" >> "$wd/actions.tsv"
+    printf '%s\tn%s\t%s\tprimary\thandoff-request\tnudge\tpending\tcontext is low\n' "$at" "$i" "$home" >> "$wd/actions.tsv"
+    rewrite_handoff "$home" $((at + 20)) "handoff $i"
+    printf '%s\tr%s\t%s\tprimary\trestart-requested\trestart\tpending\ttoken=%s\n' $((at + 40)) "$i" "$home" "$i" >> "$wd/actions.tsv"
+    printf '%s\tr%s\t%s\tprimary\trestart-requested\trestart\tdone\tpickup verified\n' $((at + 60)) "$i" "$home" >> "$wd/actions.tsv"
     before=$(snapshot "$home")
-    soak $((at + 50)) sample --home "$home" --out "$out" > /dev/null || fail "sample $i failed"
+    soak $((at + 80)) sample --home "$home" --out "$out" > /dev/null || fail "sample $i failed"
     assert_home_unchanged "$home" "$before" "sample $i"
   done
   soak $((T0 + 1000)) finish --home "$home" --out "$out" --watchdog-dir "$wd" --transcript-dir "$tr" \
     > /dev/null || fail "finish failed"
   json=$(jq -c . "$out/soak.json") || fail "soak.json is not JSON after finish"
-  assert_equals 3 "$(jq -r .handoff_count <<<"$json")" "each rewrite of one handoff document counts once per restart"
+  assert_equals 3 "$(jq -r .handoff_count <<<"$json")" "each full handoff counts once, and once per rewrite"
   assert_equals handoff-main.md "$(names "$out/handoffs")" "the rewritten document is kept once"
   pass "the same handoff document rewritten across restarts counts once per restart"
+}
+
+test_finish_counts_a_late_full_handoff_once() {
+  local home out wd tr json
+  home=$(make_home late-full)
+  out="$TMP_ROOT/late-full-out"; wd="$TMP_ROOT/late-full-watchdog"; tr="$TMP_ROOT/late-full-transcripts"
+  mkdir -p "$wd/handoffs" "$tr"
+  soak "$T0" start --home "$home" --out "$out" --label baseline --harness claude > /dev/null || fail "start failed"
+  # The nudge times out, then the session writes its full handoff before the
+  # restart's pending row.
+  {
+    printf '%s\tn1\t%s\tprimary\thandoff-request\tnudge\tpending\tcontext is low\n' $((T0 + 100)) "$home"
+    printf '%s\tn1\t%s\tprimary\thandoff-request\tnudge\ttimed-out\tno full handoff\n' $((T0 + 700)) "$home"
+    printf '%s\tr1\t%s\tprimary\trestart-requested\trestart\tpending\ttoken=1\n' $((T0 + 710)) "$home"
+    printf '%s\tr1\t%s\tprimary\trestart-requested\trestart\tdone\tpickup verified\n' $((T0 + 720)) "$home"
+  } > "$wd/actions.tsv"
+  rewrite_handoff "$home" $((T0 + 705)) "late handoff"
+  soak $((T0 + 1000)) finish --home "$home" --out "$out" --watchdog-dir "$wd" --transcript-dir "$tr" \
+    > /dev/null || fail "finish failed"
+  json=$(jq -c . "$out/soak.json") || fail "soak.json is not JSON after finish"
+  assert_equals 1 "$(jq -r .handoff_count <<<"$json")" "a late full handoff before the restart counts once"
+  pass "a full handoff written after the nudge timed out but before the restart counts once"
 }
 
 test_sample_after_finish_is_refused() {
@@ -426,6 +450,7 @@ make_fakebin
 fm_test_run \
   test_finish_counts_a_lean_handoff_restart \
   test_finish_counts_each_rewrite_of_one_handoff_document \
+  test_finish_counts_a_late_full_handoff_once \
   test_sample_after_finish_is_refused \
   test_readable_harnesses_and_inventory \
   test_start_records_the_run_and_refuses_unreadable \

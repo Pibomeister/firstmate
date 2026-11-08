@@ -55,8 +55,10 @@
 #                   each document's modification at finish), plus each distinct
 #                   watchdog id with a kept `restart` row in phase `done`,
 #                   except one for which a handoff-document modification event
-#                   falls between that id's first `restart` `pending` row (or
-#                   its `done` row when none is kept) and its `done` row. The
+#                   falls in that restart's episode: from the latest kept
+#                   `handoff-request` `nudge` `pending` row before its first
+#                   `restart` row, else the previous restart's `done` row, else
+#                   started_at (whichever is latest), to its `done` row. The
 #                   watchdog's own handoff files are not counted.
 #   violations      {kind: undeclared-harness, task, harness} for each live
 #                   task meta whose harness is outside the declared set and,
@@ -368,20 +370,23 @@ cmd_finish() {
     mkdir -p "$OUT/watchdog/handoffs"
     keep "$doc" "$OUT/watchdog/handoffs/$(basename -- "$doc")"
   done
-  restarts=$(printf '%s\n' "$events" | awk -F '\t' '
+  restarts=$(printf '%s\n' "$events" | awk -F '\t' -v s="$STARTED" '
     NR == FNR { if ($1 != "") ev[NR] = $1 + 0; next }
-    $6 == "restart" && $7 == "pending" && !($2 in pending) { pending[$2] = $1 + 0 }
-    $6 == "restart" && $7 == "done" && !($2 in done) { done[$2] = $1 + 0; order[++k] = $2 }
-    END {
-      for (i = 1; i <= k; i++) {
-        id = order[i]
-        from = (id in pending) ? pending[id] : done[id]
-        dropped = 0
-        for (e in ev) if (ev[e] >= from && ev[e] <= done[id]) dropped = 1
-        if (!dropped) n++
-      }
-      print n + 0
-    }' - "$OUT/watchdog/actions.tsv")
+    $5 == "handoff-request" && $6 == "nudge" && $7 == "pending" { nudge = $1 + 0; next }
+    $6 != "restart" || ($7 != "pending" && $7 != "done") || ($2 in done) { next }
+    !($2 in from) {
+      from[$2] = s + 0
+      if (prev > from[$2]) from[$2] = prev
+      if (nudge > from[$2]) from[$2] = nudge
+    }
+    $7 == "done" {
+      done[$2] = $1 + 0
+      prev = $1 + 0
+      dropped = 0
+      for (e in ev) if (ev[e] >= from[$2] && ev[e] <= done[$2]) dropped = 1
+      if (!dropped) n++
+    }
+    END { print n + 0 }' - "$OUT/watchdog/actions.tsv")
 
   # Wake-ledger rows of the window.
   wake_ledger rows "$STARTED" $((NOW + 1)) > "$OUT/wake-ledger.tsv"
