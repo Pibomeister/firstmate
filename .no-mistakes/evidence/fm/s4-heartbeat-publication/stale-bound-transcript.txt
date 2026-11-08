@@ -1,0 +1,21 @@
+## A: grace=30 cycle=60
+rc=0
+{"stale_after_secs":90,"schema":"fm-heartbeat.v1","ctx":{"used_tokens":{"unknown":true,"reason":"transcript had no token usage"},"remaining":{"unknown":true,"reason":"harness showed no context text in its pane"},"derived":{"unknown":true,"reason":"no readable transcript"}}}
+## B: grace=0 cycle=45
+{"stale_after_secs":45}
+## C: last usable line wins (10 then bogus 07 then x)
+{"stale_after_secs":55}
+## D: grace set, no cycle
+{"stale_after_secs":null}
+## E: cycle=0
+{"stale_after_secs":null}
+## E: cycle=abc
+{"stale_after_secs":null}
+## E: cycle=060
+{"stale_after_secs":null}
+## E: cycle=-5
+{"stale_after_secs":null}
+## F: cycle set, grace file absent
+{"stale_after_secs":null}
+## F2: grace unusable only
+{"stale_after_secs":null}

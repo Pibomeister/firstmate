@@ -1,0 +1,27 @@
+## pane %0:   12% until auto-compact
+## A. pin=200000; hook publishes record; 70000 used
+compact-point: session=sess-lab-primary compact_at=200000 at=1794116145
+{
+  "stale_after_secs": 90,
+  "context_left": {
+    "used_tokens": 70000,
+    "remaining": {
+      "percent": 12,
+      "source": "terminal"
+    },
+    "derived": {
+      "percent": 65,
+      "source": "transcript"
+    }
+  },
+  "failure": null
+}
+## B. record names this session with compact_at=100000, pin=200000 -> record wins (30)
+{"percent":30,"source":"transcript"}
+## C. record names a different session compact_at=100000 -> pin 200000 used (65)
+{"percent":65,"source":"transcript"}
+## D. malformed record (compact_at=0100000) for this session -> pin (65)
+{"percent":65,"source":"transcript"}
+## E. hook run with no resolvable point (pin removed, no settings) withdraws own record
+state/compact-point: No such file or directory
+{"used_tokens":70000,"remaining":{"percent":12,"source":"terminal"},"derived":{"unknown":true,"reason":"no context window for this session"}}

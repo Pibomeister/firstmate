@@ -1,0 +1,7 @@
+## watchdog unit for lab home: manager: uncovered (unit not installed)
+## fm-session-start.sh in lab home
+rc=0
+LOCK
+lock acquired: harness pid 49020
+- Lock: held by this session; this session owns normal supervision unless away mode says otherwise.
+state/monitor-status after start: status=uncovered at=1794116299
