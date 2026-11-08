@@ -745,6 +745,8 @@ firstmate'
   out=$(fm_composer_droid_state "$screen
 shell prompt" orca)
   [ "$out" = unknown ] || fail "a shell prompt below the current Droid frame must stay unknown, got '$out'"
+  out=$(fm_composer_droid_state "${screen/IDE ◌/IDE ◌ leftover}" orca)
+  [ "$out" = unknown ] || fail "text after a trailing IDE glyph must refuse, got '$out'"
   pass "the current Droid footer without an ASCII pipe reads empty or pending, never a shell"
 }
 
