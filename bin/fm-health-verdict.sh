@@ -76,9 +76,14 @@ FM_HOME=$(cd "$home" && pwd)
 STATE=$FM_HOME/state
 export FM_HOME
 unset FM_STATE_OVERRIDE
+state_existed=0
+[ -d "$STATE" ] && state_existed=1
 
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"
+# Loading the wake library creates the state directory; a read must leave the
+# home unchanged, so remove it again when this run created it.
+[ "$state_existed" = 1 ] || rmdir "$STATE" 2>/dev/null || true
 # shellcheck source=bin/fm-watchdog-lib.sh
 . "$SCRIPT_DIR/fm-watchdog-lib.sh"
 # shellcheck source=bin/fm-classify-lib.sh
@@ -136,12 +141,18 @@ fi
 [ "$monitor" = enabled ] || add_unknown "monitor-$monitor"
 
 # A supervisor turn is under way when supervision reads healthy without a
-# fresh beacon: only the between-turn watcher's own beat makes it fresh.
+# fresh beacon: only the between-turn watcher's own beat makes it fresh. Under
+# the auto-arm model, an explicit mid-turn proof (a rewake claimed after the
+# last beacon) also marks a turn, even while that beacon is inside grace.
 grace=${FM_GUARD_GRACE:-300}
 in_turn=0
 fm_watcher_supervision_verdict "$STATE" "$SCRIPT_DIR/fm-watch.sh" "$grace" "$FM_HOME" "$FM_ROOT"
-if [ "$FM_WATCHER_VERDICT_OK" = true ] && { [ "$watcher_age" = unknown ] || [ "$watcher_age" -ge "$grace" ]; }; then
-  in_turn=1
+if [ "$FM_WATCHER_VERDICT_OK" = true ]; then
+  if [ "$watcher_age" = unknown ] || [ "$watcher_age" -ge "$grace" ]; then
+    in_turn=1
+  elif [ "$(fm_supervision_model)" = autoarm ] && fm_autoarm_midturn_healthy "$STATE" "$grace"; then
+    in_turn=1
+  fi
 fi
 
 open=0 away=0

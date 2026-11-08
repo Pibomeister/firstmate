@@ -374,6 +374,34 @@ test_legacy_last_heartbeat_never_feeds_the_verdict() {
   pass "the legacy last-heartbeat record never feeds the verdict"
 }
 
+test_proven_turn_with_a_young_watcher_beat_is_unknown_mid_turn() {
+  local home="$TMP_ROOT/mid-turn-young" out
+  new_home "$home" live
+  mid_turn "$home"
+  # The turn began 50s ago, after a watcher beat 100s old and still inside grace.
+  beat "$home" 100
+  fm_touch_epoch "$((NOW - 50))" "$home/state/.claude-autoarm-epoch"
+  heartbeat "$home" "$((NOW - 100))" 60
+  out=$(MODEL=autoarm GRACE=300 verdict "$home")
+  assert_equals "unknown mid-turn" "$(field "$out" verdict) $(field "$out" reason)" \
+    "a proven turn whose watcher beat is younger than grace"
+  # A watcher that beat after the turn proof is between turns: the same heartbeat is stale.
+  beat "$home" 10
+  out=$(MODEL=autoarm GRACE=300 verdict "$home")
+  assert_equals "stale heartbeat-stale" "$(field "$out" verdict) $(field "$out" reason)" \
+    "a watcher beat newer than the turn proof is between turns"
+  pass "a proven supervisor turn reads mid-turn even before the watcher beat passes grace"
+}
+
+test_a_read_without_write_creates_no_state_directory() {
+  local home="$TMP_ROOT/no-state" out
+  mkdir -p "$home/config"
+  out=$(verdict "$home")
+  assert_equals unknown "$(field "$out" verdict)" "a home with no records reads unknown"
+  assert_equals "" "$(cd "$home" && find . -mindepth 1 ! -path ./config)" "the read leaves the home unchanged"
+  pass "a read without --write leaves a home with no state directory unchanged"
+}
+
 fm_test_run \
   test_fresh_heartbeat_live_lock_fresh_watcher_is_ok \
   test_a_failed_write_exits_1_and_says_so \
@@ -395,4 +423,6 @@ fm_test_run \
   test_stale_with_a_missing_monitor_is_stale_naming_both \
   test_watcher_beat_older_than_its_bound_is_stale_naming_the_watcher \
   test_watcher_bound_reads_like_the_watchdog \
-  test_legacy_last_heartbeat_never_feeds_the_verdict
+  test_legacy_last_heartbeat_never_feeds_the_verdict \
+  test_proven_turn_with_a_young_watcher_beat_is_unknown_mid_turn \
+  test_a_read_without_write_creates_no_state_directory
