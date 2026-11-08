@@ -1,0 +1,13 @@
+## independent check: last request tokens=64720, window=150000 -> 100-floor(64720*100/150000)=57
+## A. record names live session (compact_at=150000), pin=150000
+ctx=57 (derived) [footer=unknown derived=57 owner=derived disagreement=0]
+## B. record names live session compact_at=80000, pin stays 150000 -> record wins
+ctx=20 (derived) [footer=unknown derived=20 owner=derived disagreement=0]
+## C. record names a different session (compact_at=80000) -> falls back to pin 150000
+ctx=57 (derived) [footer=unknown derived=57 owner=derived disagreement=0]
+## D. foreign record and no pin -> no window, derived unknown, owner none
+ctx=unknown [footer=unknown derived=unknown owner=none disagreement=0]
+## E. malformed record (compact_at=0) and no pin -> owner none
+ctx=unknown [footer=unknown derived=unknown owner=none disagreement=0]
+## F. restored
+ctx=57 (derived) [footer=unknown derived=57 owner=derived disagreement=0]

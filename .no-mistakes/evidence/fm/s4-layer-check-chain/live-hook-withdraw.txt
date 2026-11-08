@@ -1,0 +1,4 @@
+before: session=89c5a778-04df-4f14-9b2b-2b4596b1ad5c compact_at=150000 at=1794110232
+pin removed; user/project settings autoCompactWindow: 250000 / unset
+after prompt: session=89c5a778-04df-4f14-9b2b-2b4596b1ad5c compact_at=217000 at=1794110344
+watchdog after hook republished 217000 window: ctx=71 (derived) [footer=unknown derived=71 owner=derived disagreement=0]

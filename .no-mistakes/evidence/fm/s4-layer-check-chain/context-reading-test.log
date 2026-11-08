@@ -1,0 +1,9 @@
+1..6
+ok - the shared footer parser reads the auto-compact footer
+ok - the window comes from the record for the session, else the compact-at pin, else nothing
+ok - the derived percentage is the integer share of the window left
+ok - the reading names the footer, the derived value, the owner, and the disagreement
+ok - the handoff trigger publishes the compact point it resolved, named for its session
+ok - the watchdog restart gate follows the owning reading and records both values
+FM_TEST_COMPLETE
+exit=0

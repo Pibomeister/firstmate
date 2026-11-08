@@ -1,0 +1,8 @@
+## G. heartbeat footer 90 for live session, derived 57, disagreement-points=5 -> derived owns, flag 1
+ctx=57 (derived) [footer=90 derived=57 owner=derived disagreement=1]
+## H. heartbeat footer 59, derived 57 (gap 2 <= 5) -> flag 0
+ctx=57 (derived) [footer=59 derived=57 owner=derived disagreement=0]
+## I. no window (pin removed, record withdrawn) -> footer owns
+ctx=42 (heartbeat) [footer=42 derived=unknown owner=footer disagreement=0]
+## J. disagreement-points unset -> flag -
+ctx=42 (heartbeat) [footer=42 derived=unknown owner=footer disagreement=-]

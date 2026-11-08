@@ -1,0 +1,7 @@
+# lab state after real Claude SessionStart hook (bin/fm-session-start.sh)
+monitor-status: status=uncovered at=1794110207
+lock-session: 89c5a778-04df-4f14-9b2b-2b4596b1ad5c
+anchor_pid=13893
+anchor_start=1794110174.866572
+watchdog manager-status: manager: uncovered (unit not installed)
+monitor unit manager-status: manager: uncovered (unit not installed)
