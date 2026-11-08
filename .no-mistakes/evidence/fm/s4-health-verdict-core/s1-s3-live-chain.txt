@@ -1,0 +1,37 @@
+## S1: read on an empty home (no state dir) leaves the home unchanged
+.fm-lab-home
+config
+data
+projects
+verdict=unknown reason=heartbeat-missing,lock-unknown,monitor-missing heartbeat_age=unknown lock=unknown watcher_age=unknown monitor=missing at=1794130026
+exit=0
+state dir present after read? no
+
+## S2: real heartbeat --write and watchdog once pass, then verdict
+heartbeat exit=0
+{"generated_epoch":1794130027,"stale_after_secs":null}
+watchdog exit=0
+--- captain record:
+owner=none
+lock_pid=
+session=
+alive=none
+usage_limit_autowait=0
+backend=
+target=
+moved_at=1794130039
+lock_at=0
+checked_at=1794130039
+source=watchdog
+--- monitor-status:
+status=uncovered at=1794130038
+verdict=unknown reason=stale-bound-unknown,monitor-uncovered heartbeat_age=12 lock=none watcher_age=unknown monitor=uncovered at=1794130039
+exit=0
+read without --write: no file added or touched
+
+## S3: --write records the same line atomically
+verdict=unknown reason=stale-bound-unknown,monitor-uncovered heartbeat_age=13 lock=none watcher_age=unknown monitor=uncovered at=1794130040
+exit=0
+--- state/health-verdict:
+verdict=unknown reason=stale-bound-unknown,monitor-uncovered heartbeat_age=13 lock=none watcher_age=unknown monitor=uncovered at=1794130040
+leftover temp files: 0

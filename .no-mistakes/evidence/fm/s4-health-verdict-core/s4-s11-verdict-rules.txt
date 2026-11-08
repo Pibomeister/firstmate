@@ -1,0 +1,44 @@
+## S4: idle home, watcher-style heartbeat (cycle 60s), no lock, monitor enabled -> ok idle
+  heartbeat stale_after_secs=60
+  [watchdog once exit=0; captain alive=none]
+verdict=ok reason=idle heartbeat_age=9 lock=none watcher_age=unknown monitor=enabled at=1794130093
+
+## S4b: same home, monitor record as the real watchdog wrote it (uncovered) -> never ok
+verdict=unknown reason=monitor-uncovered heartbeat_age=10 lock=none watcher_age=unknown monitor=uncovered at=1794130094
+
+## S5: open work (real dispatch-log received goal) with no lock -> dead none-open-work
+  dispatch-log exit=0
+verdict=dead reason=none-open-work heartbeat_age=11 lock=none watcher_age=unknown monitor=enabled at=1794130095
+  after blocking the goal:
+verdict=ok reason=idle heartbeat_age=12 lock=none watcher_age=unknown monitor=enabled at=1794130096
+
+## S6: lock held by a pid that has exited -> watchdog records dead -> verdict dead lock-dead
+  [watchdog once exit=0; captain alive=dead]
+verdict=dead reason=lock-dead heartbeat_age=14 lock=dead watcher_age=unknown monitor=uncovered at=1794130098
+
+## S7: lock pid alive but its instance unproven -> unconfirmed instance-mismatch
+  [watchdog once exit=0; captain alive=live]
+verdict=unknown reason=monitor-uncovered heartbeat_age=16 lock=live watcher_age=unknown monitor=uncovered at=1794130100
+/tmp/fmlab-run2.sh: line 25: 50392 Terminated: 15          sleep 300
+
+## S8: heartbeat older than stale_after_secs (cycle 1s, grace 0), no turn -> stale heartbeat-stale
+  [watchdog once exit=0; captain alive=none]
+verdict=stale reason=heartbeat-stale,monitor-uncovered heartbeat_age=14 lock=none watcher_age=unknown monitor=uncovered at=1794130115
+
+## S9: away record with no lock -> dead none-away
+verdict=dead reason=none-away heartbeat_age=16 lock=none watcher_age=unknown monitor=uncovered at=1794130117
+
+## S10: usage errors
+fm-health-verdict.sh: unknown argument: --bogus
+  exit=2
+fm-health-verdict.sh: not a directory: /nonexistent/x
+  exit=2
+fm-health-verdict.sh: no home: pass --home or set FM_HOME
+  exit=2
+
+## S11: --write to an unwritable state dir -> exit 1, line still printed
+verdict=stale reason=heartbeat-stale,monitor-uncovered heartbeat_age=17 lock=none watcher_age=unknown monitor=uncovered at=1794130118
+fm-health-verdict.sh: cannot write /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.ujRcEf/state/health-verdict
+  exit=1
+## S7b: watchdog-recorded alive=unconfirmed maps to verdict unconfirmed
+verdict=unconfirmed reason=instance-mismatch heartbeat_age=27 lock=mismatch watcher_age=unknown monitor=uncovered at=1794130128

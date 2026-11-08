@@ -1,0 +1,7 @@
+captain record alive=live
+## S12: proven auto-arm turn (rewake after the last beat), watcher beat 100s old = inside 300s grace, heartbeat over age
+verdict=unknown reason=mid-turn heartbeat_age=7 lock=live watcher_age=104 monitor=enabled at=1794130729
+## S12b (adversarial): the watcher beat after the turn proof -> between turns -> the same heartbeat reads stale
+verdict=stale reason=heartbeat-stale heartbeat_age=7 lock=live watcher_age=10 monitor=enabled at=1794130729
+## S12c (adversarial): dead lock outranks a mid-turn reading
+verdict=dead reason=lock-dead heartbeat_age=7 lock=dead watcher_age=100 monitor=enabled at=1794130729
