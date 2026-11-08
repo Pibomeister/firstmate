@@ -1,0 +1,9 @@
+## S1: real watchdog monitor-read against lab home (real launchctl, no unit installed)
+exit=0
+--- state/monitor-status:
+status=uncovered at=1794114423
+--- monitor manager-status direct:
+(eval):7: permission denied: bin/fm-monitor-watchdog.sh
+--- watchdog manager-status:
+manager: uncovered (unit not installed)
+-rw-------@ 1 eduardopicazo  staff   31 Nov  7 23:07 monitor-status

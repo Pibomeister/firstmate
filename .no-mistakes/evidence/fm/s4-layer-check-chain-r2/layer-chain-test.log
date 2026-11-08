@@ -1,0 +1,11 @@
+1..8
+ok - each watchdog pass records every watched home's monitor unit status
+ok - an installed monitor unit that does not run reads disabled
+ok - a monitor read with no manager line records unreadable over the old record
+ok - monitor-read exits 0 on a written record and 1 when it cannot write one
+ok - a session start with no watchdog unit runs the monitor read once
+ok - a session start whose watchdog unit does not run records the monitor read
+ok - a session start with an enabled watchdog leaves the monitor read to the watchdog
+ok - a lock-refused session start writes no monitor record
+FM_TEST_COMPLETE
+exit 0

@@ -1,0 +1,27 @@
+## S5: real watchdog once (dry-run) against lab home, real tmux pane
+--- actions.tsv:
+cat: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.tK7gOe/state/watchdog/actions.tsv: No such file or directory
+--- data/watchdog/status.md:
+# Firstmate watchdog - Eduardos-MacBook-Pro-2
+updated 2026-11-08T05:09:12Z, scan every 120s, mode dry-run, restart on
+STALE IF NOT UPDATED BY 2026-11-08T05:20:12Z (watchdog may be down)
+models: none; spent 24h $0 of $1.00
+
+## Homes
+- fm-lab.tK7gOe: ok, last turn 50m ago, ctx 7%; captain pid 9068 live on tmux:%0, moved 2026-11-08T05:09:04Z
+
+## Actions since last read (2026-11-08T04:09:12Z)
+
+## Open gaps
+- fm-lab.tK7gOe: low context, but composer is unknown, so the handoff nudge cannot be delivered
+- no model configured; judged symptoms are reported only
+--- state/monitor-status:
+status=uncovered at=1794114552
+## S5b: same pass, composer seam=empty
+--- actions.tsv:
+1794114560	wd179411456066b79a	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.tK7gOe	fm-lab.tK7gOe	handoff-request	nudge	dry-run	Watchdog (automated, not the captain or the owner): context is low (footer=30 derived=7 owner=derived disagreement=-). Write a full handoff to data/handoff-<name>.md in your home, then create state/.watchdog-restart-request there. The watchdog then restarts this session, and the new session picks up from that handoff.
+--- pane after dry-run (nothing typed):
+Captain session
+>
+  30% until auto-compact
+

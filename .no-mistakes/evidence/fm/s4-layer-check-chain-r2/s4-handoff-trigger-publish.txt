@@ -1,0 +1,11 @@
+## S4: real handoff trigger hook (PostToolUse payload, 93000 tokens used, compact-at-tokens=100000 pin)
+--- hook stdout (in-session decision, unchanged):
+"Firstmate early handoff trigger, from this home's tracked Claude hook: about 7% of context is left before auto-compact (93000 of 100000 tokens). Write your full session handoff now, before auto-compact: persist every open work record, decision, and piece of durable knowledge this session holds (the stow skill covers this), record the handoff with bin/fm-order.sh handoff --doc <handoff file>, then hand off to a successor and report that this session is ready to restart. Launch your successor with bin/fm-handoff-launch.sh <handoff file>: it starts the successor in a new terminal on this home's backend, verifies that the new successor harness pid is live, and records it in state/.handoff-successor as pid=<successor pid> and handoff=<handoff document path>. Its launch prompt has the successor confirm the handoff document's sha256 at pickup and stop on a mismatch, wait until this session's harness pid (line 1 of state/.lock) is dead, then run bin/fm-session-start.sh to take the session lock. Then end this turn; this turn cannot end until that record names a live successor. The predecessor process is then ended by the captain, by a leash or operator /exit in its pane, or by the watchdog restart path; this session cannot exit itself, and the successor waits for its pid to die before session start. Do not run /compact. This instruction fires once per context cycle."
+--- state/compact-point:
+session=11111111-2222-4333-8444-555555555555 compact_at=100000 at=1794114526
+--- temp files left:
+none
+## S4b adversarial: pin removed, no window resolvable -> the session's record is withdrawn
+ls: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.tK7gOe/state/compact-point: No such file or directory
+re-published:
+session=11111111-2222-4333-8444-555555555555 compact_at=100000 at=1794114526

@@ -1,0 +1,13 @@
+## S6 adversarial: pane footer says 7%, derived is 50 (50000/100000) -> derived owns, no handoff
+ctx=50 (derived) [footer=7 derived=50 owner=derived disagreement=-]
+handoff rows: 0
+## S7: compact-point names another session (window 900000); pin 100000 is used -> derived 7
+ctx=7 (derived) [footer=50 derived=7 owner=derived disagreement=-]
+handoff rows: 1
+## S8 adversarial: no pin, record for another session, no footer in pane -> owner none, no restart
+ctx=unknown [footer=unknown derived=unknown owner=none disagreement=-]
+handoff rows: 0
+## S9: disagreement-points=10 with footer 30 / derived 7 -> flag 1, acts on derived
+ctx=7 (derived) [footer=30 derived=7 owner=derived disagreement=1]
+handoff rows: 1
+Watchdog (automated, not the captain or the owner): context is low (footer=30 derived=7 owner=derived disagreement=1). W
