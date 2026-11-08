@@ -534,7 +534,9 @@ Blank lines and lines that start with `#` are ignored, and an unusable value cou
 ## Heartbeat stale grace (config/heartbeat)
 
 `bin/fm-heartbeat.sh` publishes a stale bound, `stale_after_secs`, in `state/heartbeat.json`, and its header owns that record and the bound's formula.
-The grace set here is one term of that bound.
+The bound is the watcher cycle period, plus the grace set here, plus one whole-run cap of the publisher.
+The record also carries `published_epoch`, stamped at the successful publication, and heartbeat age is measured from it.
+A dead publisher therefore reads stale `stale_after_secs` after its last publication.
 
 The file is optional, local to each home, and read on every publication.
 It may hold this line:

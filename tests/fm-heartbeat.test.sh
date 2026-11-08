@@ -858,6 +858,44 @@ SH
   pass "the watcher keeps polling with one detached heartbeat in flight, which still publishes"
 }
 
+# The whole-run cap under the default read bounds (bin/fm-heartbeat.sh header):
+# max(DEADLINE 240, SNAPSHOT 120) + discovery 60 + quota 10 + 17 * (3 + 1) + 3.
+DEFAULT_RUN_CAP=381
+
+# AC-14 (HB-3 replacement a): the bound covers one whole run, and the age runs
+# from the publication stamp. A busy run that hits every cap must publish a
+# bound that the worst healthy age (one watcher cycle plus that run) stays
+# within, and generated must stay the observation time.
+test_worst_age_of_a_busy_healthy_home_stays_within_the_bound() {
+  local home script started elapsed cycle=1 bound published generated
+  home=$(make_home worst-age)
+  script=$(canned_snapshot "$home")
+  jq --arg wt "$home/projects/ship" '.tasks = [range(0; 8) as $i
+    | {id:"task-\($i)",branch:"fm/hb-task",harness:"claude",backend:"tmux",paths:{worktree:{path:$wt}}}]' \
+    "$home/canned-snapshot.json" > "$home/many.json"
+  mv "$home/many.json" "$home/canned-snapshot.json"
+  printf 'stale-grace-secs=0\n' > "$home/config/heartbeat"
+  started=$(date +%s)
+  publish "$home" FM_HEARTBEAT_CYCLE_SECS=$cycle FM_HEARTBEAT_SNAPSHOT_SCRIPT="$script" \
+    FAKE_NM_MODE=hang FAKE_QUOTA_DELAY=30 FM_HEARTBEAT_DEADLINE=3 FM_HEARTBEAT_SNAPSHOT_TIMEOUT=2 \
+    FM_HEARTBEAT_READ_TIMEOUT=1 FM_HEARTBEAT_NM_TIMEOUT=1 FM_HEARTBEAT_QUOTA_TIMEOUT=1 \
+    FM_HEARTBEAT_DISCOVERY_TIMEOUT=6
+  # cycle 1 + grace 0 + max(3, 2) + discovery 6 + quota 1 + 17 * (1 + 1) + 3
+  assert_ledger "$home" '.stale_after_secs == 48' "the bound does not add one whole-run cap"
+  assert_ledger "$home" '(.failure.reason | test("deadline"))' "the busy run never reached its deadline"
+  published=$(jq -r '.published_epoch' "$(ledger "$home")")
+  generated=$(jq -r '.generated_epoch' "$(ledger "$home")")
+  bound=$(jq -r '.stale_after_secs' "$(ledger "$home")")
+  case "$published" in ''|*[!0-9]*) fail "no publication stamp: $(cat "$(ledger "$home")")" ;; esac
+  [ "$generated" -le $((started + 1)) ] || fail "generated $generated is not the observation time (start $started)"
+  [ "$published" -ge "$generated" ] || fail "published $published is before generated $generated"
+  elapsed=$((published - started))
+  [ "$elapsed" -ge 3 ] || fail "the busy run took only ${elapsed}s, so it never ran near its caps"
+  [ $((cycle + elapsed + 1)) -le "$bound" ] \
+    || fail "worst healthy age $((cycle + elapsed + 1))s exceeds the published bound ${bound}s"
+  pass "AC-14: a busy healthy home near the caps stays within its bound, measured from the publication stamp"
+}
+
 # AC-14: the stale bound is the cycle period the watcher passes plus the
 # config/heartbeat grace; the wake heartbeat cadence never enters it.
 test_stale_bound_is_the_watcher_cycle_plus_the_grace() {
@@ -865,10 +903,10 @@ test_stale_bound_is_the_watcher_cycle_plus_the_grace() {
   home=$(make_home stale-bound)
   printf 'stale-grace-secs=30\n' > "$home/config/heartbeat"
   publish "$home" FM_HEARTBEAT_CYCLE_SECS=15 FM_HEARTBEAT=600
-  assert_ledger "$home" '.stale_after_secs == 45' "the stale bound is not the cycle period plus the grace"
+  assert_ledger "$home" ".stale_after_secs == $((45 + DEFAULT_RUN_CAP))" "the stale bound is not the cycle period plus the grace plus the run cap"
   printf 'stale-grace-secs=0\n' > "$home/config/heartbeat"
   publish "$home" FM_HEARTBEAT_CYCLE_SECS=15
-  assert_ledger "$home" '.stale_after_secs == 15' "a zero grace did not give the bare cycle period"
+  assert_ledger "$home" ".stale_after_secs == $((15 + DEFAULT_RUN_CAP))" "a zero grace did not give the cycle period plus the run cap"
   printf 'stale-grace-secs=30\n' > "$home/config/heartbeat"
   publish "$home" FM_HEARTBEAT=600
   assert_ledger "$home" '.stale_after_secs == null' "a run with no watcher cycle period published a bound"
@@ -886,8 +924,8 @@ test_stale_bound_is_the_watcher_cycle_plus_the_grace() {
   done
   printf 'stale-grace-secs=30\nstale-grace-secs=abc\n' > "$home/config/heartbeat"
   publish "$home" FM_HEARTBEAT_CYCLE_SECS=15
-  assert_ledger "$home" '.stale_after_secs == 45' "an unusable later line hid the usable grace"
-  pass "AC-14: the stale bound is the watcher cycle period plus the grace, and null while either is missing"
+  assert_ledger "$home" ".stale_after_secs == $((45 + DEFAULT_RUN_CAP))" "an unusable later line hid the usable grace"
+  pass "AC-14: the stale bound is the watcher cycle period plus the grace plus the run cap, and null while either is missing"
 }
 
 test_watcher_publishes_its_cycle_period_not_the_wake_cadence() {
@@ -904,8 +942,8 @@ test_watcher_publishes_its_cycle_period_not_the_wake_cadence() {
   WATCH_PID=
   [ "$rc" -eq 0 ] || fail "watcher poll exited $rc: $(cat "$TMP_ROOT/watch-cycle.err")"
   wait_for_file "$(ledger "$home")" 60 || fail "the watcher's heartbeat never published"
-  assert_ledger "$home" '.stale_after_secs == 32' \
-    "the watcher's heartbeat bound is not its cycle period plus the grace"
+  assert_ledger "$home" ".stale_after_secs == $((32 + DEFAULT_RUN_CAP))" \
+    "the watcher's heartbeat bound is not its cycle period plus the grace plus the run cap"
   pass "AC-14: the watcher's heartbeat bound uses its cycle period, never the wake heartbeat cadence"
 }
 
@@ -1027,6 +1065,7 @@ test_stale_work_dir_is_swept
 test_watcher_poll_does_not_wait_for_heartbeat
 test_watcher_runs_one_heartbeat_at_a_time
 test_stale_bound_is_the_watcher_cycle_plus_the_grace
+test_worst_age_of_a_busy_healthy_home_stays_within_the_bound
 test_watcher_publishes_its_cycle_period_not_the_wake_cadence
 test_derived_context_sits_beside_the_footer
 test_derived_context_is_unknown_without_token_usage
@@ -1060,4 +1099,4 @@ test_weekly_allowance_reports_model_allowance_left() {
 
 test_weekly_allowance_reports_model_allowance_left
 
-printf 'ok - %s tests passed\n' 35
+printf 'ok - %s tests passed\n' 36

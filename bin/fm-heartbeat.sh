@@ -24,11 +24,29 @@
 #   schema            stable id fm-heartbeat.v1
 #   generated         UTC observation time for this execution
 #   generated_epoch   Unix seconds for generated
+#   published_epoch   Unix seconds stamped at the successful publication; the
+#                     health verdict measures heartbeat age from this stamp
 #   fm_home           resolved operational home
 #   stale_after_secs  the stale bound: the watcher cycle period it passed as
 #                     FM_HEARTBEAT_CYCLE_SECS, never the wake heartbeat cadence,
 #                     plus the stale-grace-secs key of config/heartbeat
-#                     (docs/configuration.md); null while either is missing
+#                     (docs/configuration.md), plus one whole-run cap; null while
+#                     the cycle period or the grace is missing. The whole-run
+#                     cap is max(FM_HEARTBEAT_DEADLINE, FM_HEARTBEAT_SNAPSHOT_TIMEOUT)
+#                     + FM_HEARTBEAT_DISCOVERY_TIMEOUT (default 60)
+#                     + FM_HEARTBEAT_QUOTA_TIMEOUT + an overrun of
+#                     17 * (max(READ, NM timeout) + 1) + 3 seconds: the 17
+#                     bounded reads of the primary or of the one task row in
+#                     flight when the deadline passes, each with the 1 s kill
+#                     slack of bin/fm-timeout-lib.sh, plus that slack on the
+#                     snapshot, discovery and quota bounds. The watcher starts
+#                     the next run within one cycle of a publication, so a
+#                     healthy home's age stays within cycle + run cap. A dead
+#                     publisher stamps nothing more and reads past the bound
+#                     stale_after_secs after its last publication: that is the
+#                     detection delay, plus the verdict reader's own cadence.
+#                     With the defaults (DEADLINE 240, READ 3) the cap is 381 s,
+#                     so a 15 s cycle and a 60 s grace give a 456 s delay.
 #   snapshot          {ok, schema, generated, failure} for the fleet snapshot read
 #   primary           supervising firstmate session (not a ship/scout task row)
 #     terminal          {backend, target, present} from this writer's environment
@@ -730,12 +748,20 @@ heartbeat_ready_pr_discovery() {
 
 heartbeat_publish() {
   local snapshot_meta tmp=$HEARTBEAT_WORK/heartbeat.json weekly ready_pr
-  local cycle=${FM_HEARTBEAT_CYCLE_SECS:-} grace stale_after=null
-  # HB-3 stale bound: the cycle period the watcher passed plus the FQ-5 grace.
-  # With no usable cycle period or grace the bound is null.
+  local cycle=${FM_HEARTBEAT_CYCLE_SECS:-} grace stale_after=null run_cap lead read discovery published
+  # HB-3 stale bound: the cycle period the watcher passed plus the FQ-5 grace
+  # plus one whole-run cap (see the header). With no usable cycle period or
+  # grace the bound is null.
   grace=$(_fm_context_config_value "$CONFIG/heartbeat" stale-grace-secs zero-ok) || grace=
   case "$cycle" in '' | 0* | *[!0-9]*) cycle= ;; esac
-  [ -z "$cycle" ] || [ -z "$grace" ] || stale_after=$((cycle + grace))
+  lead=$FM_HEARTBEAT_DEADLINE
+  [ "$FM_HEARTBEAT_SNAPSHOT_TIMEOUT" -le "$lead" ] || lead=$FM_HEARTBEAT_SNAPSHOT_TIMEOUT
+  read=$FM_HEARTBEAT_READ_TIMEOUT
+  [ "$FM_HEARTBEAT_NM_TIMEOUT" -le "$read" ] || read=$FM_HEARTBEAT_NM_TIMEOUT
+  discovery=${FM_HEARTBEAT_DISCOVERY_TIMEOUT:-60}
+  case "$discovery" in ''|*[!0-9]*|0) discovery=60 ;; esac
+  run_cap=$((lead + discovery + FM_HEARTBEAT_QUOTA_TIMEOUT + 17 * (read + 1) + 3))
+  [ -z "$cycle" ] || [ -z "$grace" ] || stale_after=$((cycle + grace + run_cap))
   ready_pr=$(heartbeat_ready_pr_discovery) || ready_pr='{"unknown":true,"reason":"ready-pr discovery unreadable"}'
   case "$ready_pr" in
     '{'*'}') ;;
@@ -764,11 +790,15 @@ heartbeat_publish() {
       '{ok:false,schema:null,generated:null,failure:{reason:$reason}}')
     printf '[]\n' > "$HEARTBEAT_WORK/tasks"
   fi
+  # The publication stamp: the health verdict measures age from here, while
+  # generated stays the observation time.
+  published=$(date +%s)
   if jq -n \
     --arg generated "$HEARTBEAT_NOW" \
     --argjson generated_epoch "$HEARTBEAT_EPOCH" \
     --arg fm_home "$FM_HOME" \
     --argjson stale_after "$stale_after" \
+    --argjson published_epoch "$published" \
     --argjson snapshot "$snapshot_meta" \
     --argjson primary "$PRIMARY_JSON" \
     --argjson weekly "$weekly" \
@@ -776,8 +806,8 @@ heartbeat_publish() {
     --slurpfile tasks "$HEARTBEAT_WORK/tasks" \
     --rawfile failures "$HEARTBEAT_WORK/failures" \
     '($failures | split("\n") | map(select(. != ""))) as $f
-    | {schema:"fm-heartbeat.v1",generated:$generated,generated_epoch:$generated_epoch,fm_home:$fm_home,
-       stale_after_secs:$stale_after,
+    | {schema:"fm-heartbeat.v1",generated:$generated,generated_epoch:$generated_epoch,
+       published_epoch:$published_epoch,fm_home:$fm_home,stale_after_secs:$stale_after,
        snapshot:$snapshot,primary:$primary,tasks:$tasks[0],weekly_allowance:$weekly,ready_pr_discovery:$ready_pr,
        failure:(if ($f | length) == 0 then null else {reason:($f[:10] | join("; ")),count:($f | length)} end)}' > "$tmp" \
     && chmod 600 "$tmp" \
