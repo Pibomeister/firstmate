@@ -1,0 +1,10 @@
+1..8
+ok - the host zone (Asia/Tokyo) reads a different wall time from America/Costa_Rica
+ok - Tuesday 23:00 reports the nightly window ending Wednesday 08:00
+ok - the nightly boundaries at 21:59:59, 22:00, 07:59:59 and 08:00 under a foreign host zone
+ok - the weekend boundaries at Friday 16:59:59 and 17:00 and Monday 08:00, replacing the nightly windows
+ok - the longest hold is the weekend span
+ok - the zone is the quiet-hours-zone key of config/escalation, default America/Costa_Rica
+ok - a call with no epoch reads the shared fixed-clock seam
+ok - the at verb and its refusals
+FM_TEST_COMPLETE
