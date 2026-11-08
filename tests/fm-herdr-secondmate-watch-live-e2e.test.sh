@@ -36,7 +36,17 @@ fm_live_gate default-on FM_HERDR_SECONDMATE_WATCH_LIVE_E2E herdr jq
 
 HERDR_VERSION=$(herdr --version 2>/dev/null | head -n 1)
 TMP_ROOT=$(mktemp -d "$(cd "${TMPDIR:-/tmp}" && pwd -P)/fm-herdr-sm-watch.XXXXXX")
+# Herdr session sockets live under XDG. A long TMP_ROOT prefix makes the lab
+# socket path exceed the 108-byte AF_UNIX limit, and every RPC then fails with
+# ENOENT. Keep this tree short; TMP_ROOT still holds the Firstmate fixture.
+HERDR_XDG=$(mktemp -d "$(cd "${TMPDIR:-/tmp}" && pwd -P)/hx.XXXXXX")
+export XDG_CONFIG_HOME="$HERDR_XDG/c"
+export XDG_CACHE_HOME="$HERDR_XDG/k"
+export XDG_DATA_HOME="$HERDR_XDG/d"
+export XDG_RUNTIME_DIR="$HERDR_XDG/r"
+mkdir -p "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_DATA_HOME" "$XDG_RUNTIME_DIR"
 LAB_SESSION=$("$LAB_HELPER" name fm-herdr-sm-watch) || fail "could not name a lab session"
+DEFAULT_HERDR_PID=
 cleanup() {
   local status=$?
   local f
@@ -44,13 +54,36 @@ cleanup() {
     [ -s "$f" ] && kill "$(cat "$f")" 2>/dev/null
   done
   "$LAB_HELPER" teardown "$LAB_SESSION" >/dev/null 2>&1 || status=1
-  rm -rf "$TMP_ROOT"
+  if [ -n "$DEFAULT_HERDR_PID" ]; then
+    kill -TERM "$DEFAULT_HERDR_PID" 2>/dev/null || true
+    wait "$DEFAULT_HERDR_PID" 2>/dev/null || true
+  fi
+  rm -rf "$TMP_ROOT" "$HERDR_XDG"
   exit "$status"
 }
 trap cleanup EXIT
 
+# Lab provision's fleet-state tripwire still requires exactly one running
+# default session. Start that default in this test's XDG when absent. Never
+# `herdr server stop`, and never kill a default this test did not start.
+if ! herdr session list --json 2>/dev/null | jq -e \
+  '[.sessions[]? | select(.default == true and .name == "default" and .running == true)] | length == 1' \
+  >/dev/null; then
+  herdr server >"$HERDR_XDG/default-server.log" 2>&1 &
+  DEFAULT_HERDR_PID=$!
+  i=0
+  until herdr session list --json 2>/dev/null | jq -e \
+    '[.sessions[]? | select(.default == true and .name == "default" and .running == true)] | length == 1' \
+    >/dev/null || [ "$i" -ge 150 ]; do
+    sleep 0.2
+    i=$((i + 1))
+  done
+  [ "$i" -lt 150 ] || fail "test-owned default Herdr session did not become ready"
+fi
+
 "$LAB_HELPER" provision "$LAB_SESSION" >/dev/null 2>&1 || fail "lab provision failed"
-"$LAB_HELPER" run "$LAB_SESSION" workspace create >/dev/null 2>&1 || fail "lab workspace create failed"
+"$LAB_HELPER" run "$LAB_SESSION" workspace create >/dev/null 2>"$HERDR_XDG/workspace-create.err" \
+  || fail "lab workspace create failed: $(tr '\n' ' ' < "$HERDR_XDG/workspace-create.err")"
 PANE=$("$LAB_HELPER" run "$LAB_SESSION" pane list 2>/dev/null | jq -r '(.result.panes // .result)[0].pane_id // empty')
 [ -n "$PANE" ] || fail "lab pane id unreadable"
 
