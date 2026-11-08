@@ -1,0 +1,12 @@
+=== THIS CHANGE (da942373) ===
+root=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M6Y74ZZQGKFDF0AABM6FAY63 tokens=91500
+handoff-request rows:
+handoff-request	nudge	dry-run	Watchdog (automated, not the captain or the owner): context is low (footer=30 derived=8 owner=derived disagreement=-). Write a full handoff to data/handoff-<name>.md in your home, then create state/.watchdog-restart-request there. The watchdog then restarts this session, and the new session picks up from that handoff.
+
+=== PRIOR COMMIT (02f63cc9) ===
+root=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.CKqarMfe8v tokens=91500
+handoff-request rows:
+
+=== THIS CHANGE, 91000 (9 left, above restart-at-percent 8) ===
+root=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M6Y74ZZQGKFDF0AABM6FAY63 tokens=91000
+handoff-request rows:

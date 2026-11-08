@@ -1,0 +1,6 @@
+w=100000 used=50000 derived=50 compact_left=50
+w=100000 used=91500 derived=8 compact_left=8
+w=100000 used=100000 derived=0 compact_left=0
+w=100000 used=120000 derived=0 compact_left=0
+w=200000 used=170001 derived=14 compact_left=14
+cases=60 mismatches=0
