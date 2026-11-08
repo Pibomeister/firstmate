@@ -8,4 +8,3 @@ ok - a session start whose watchdog unit does not run records the monitor read
 ok - a session start with an enabled watchdog leaves the monitor read to the watchdog
 ok - a lock-refused session start writes no monitor record
 FM_TEST_COMPLETE
-exit 0

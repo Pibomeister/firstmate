@@ -1,0 +1,46 @@
+lab create rc=0
+## S1 monitor-read on a lab home (real launchd)
+$ bin/fm-monitor-watchdog.sh manager-status
+manager: uncovered (unit not installed)
+rc=1
+$ bin/fm-watchdog.sh monitor-read
+rc=0
+$ cat state/monitor-status
+status=uncovered at=1794163866
+## S2 second read rewrites the record, no temp files left
+rc=0
+status=uncovered at=1794163868
+leftover temps: 0
+## S3 adversarial: unwritable state dir
+rc=1
+status=uncovered at=1794163868
+## S4 adversarial: home with no state dir
+rc=0
+state
+## S5 full locked session start, watchdog unit not enabled
+$ bin/fm-watchdog.sh manager-status
+manager: uncovered (unit not installed)
+rc=1
+session-start rc=0
+SESSION START - /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.GcdlQh
+LOCK
+lock acquired: harness pid 79218
+$ cat state/monitor-status
+status=uncovered at=1794163875
+## S6 context re-emit writes nothing
+                     After it, a full locked start that is not a re-emit
+  8. context digest - docs/learnings/overnight-learnings.md, data/projects.md,
+  9. closing reminder - prints the context-specific watcher next step; this
+LAB=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.GcdlQh
+## S6 context re-emit writes nothing
+reemit rc=0
+ls: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.GcdlQh/state/monitor-status: No such file or directory
+## S8 watchdog once --dry-run pass records the owner home's monitor status
+once rc=0
+status=uncovered at=1794163921
+## S7 lock-refused start: launch from a lab tmux pane (no harness ancestor)
+LOCK
+●  READ-ONLY SESSION - FLEET LOCK OWNERSHIP WAS NOT VERIFIED
+●  diagnostics and the rest of this read-only-safe digest still ran below.
+●  Operate read-only until this resolves - do not spawn, steer, merge, or
+ls: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.GcdlQh/state/monitor-status: No such file or directory
