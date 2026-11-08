@@ -145,11 +145,17 @@ case "${1:-}" in
   *) sed -n '2,${/^#/!q;p;}' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2 ;;
 esac
 
-case "$FM_HEARTBEAT_SNAPSHOT_TIMEOUT" in ''|*[!0-9]*|0) FM_HEARTBEAT_SNAPSHOT_TIMEOUT=120 ;; esac
-case "$FM_HEARTBEAT_READ_TIMEOUT" in ''|*[!0-9]*|0) FM_HEARTBEAT_READ_TIMEOUT=3 ;; esac
-case "$FM_HEARTBEAT_NM_TIMEOUT" in ''|*[!0-9]*|0) FM_HEARTBEAT_NM_TIMEOUT=2 ;; esac
-case "$FM_HEARTBEAT_QUOTA_TIMEOUT" in ''|*[!0-9]*|0) FM_HEARTBEAT_QUOTA_TIMEOUT=10 ;; esac
-case "$FM_HEARTBEAT_DEADLINE" in ''|*[!0-9]*|0) FM_HEARTBEAT_DEADLINE=240 ;; esac
+# A digit-only value reads as decimal even with leading zeros (08 is 8, never
+# octal), so the run-cap arithmetic below cannot misread or reject it.
+heartbeat_seconds() {  # <value> <default>
+  case "$1" in ''|*[!0-9]*) printf '%s\n' "$2"; return ;; esac
+  case "$((10#$1))" in 0) printf '%s\n' "$2" ;; *) printf '%s\n' "$((10#$1))" ;; esac
+}
+FM_HEARTBEAT_SNAPSHOT_TIMEOUT=$(heartbeat_seconds "$FM_HEARTBEAT_SNAPSHOT_TIMEOUT" 120)
+FM_HEARTBEAT_READ_TIMEOUT=$(heartbeat_seconds "$FM_HEARTBEAT_READ_TIMEOUT" 3)
+FM_HEARTBEAT_NM_TIMEOUT=$(heartbeat_seconds "$FM_HEARTBEAT_NM_TIMEOUT" 2)
+FM_HEARTBEAT_QUOTA_TIMEOUT=$(heartbeat_seconds "$FM_HEARTBEAT_QUOTA_TIMEOUT" 10)
+FM_HEARTBEAT_DEADLINE=$(heartbeat_seconds "$FM_HEARTBEAT_DEADLINE" 240)
 
 command -v jq >/dev/null 2>&1 || {
   echo 'fm-heartbeat: jq is required' >&2
@@ -733,8 +739,8 @@ heartbeat_weekly_allowance() {
 # Read-only ready-PR discovery across every registered repo (bin/fm-ready-pr-discovery.sh).
 # A failure or timeout stays an explicit unknown, never a silent empty list.
 heartbeat_ready_pr_discovery() {
-  local out rc=0 bound=${FM_HEARTBEAT_DISCOVERY_TIMEOUT:-60}
-  case "$bound" in ''|*[!0-9]*|0) bound=60 ;; esac
+  local out rc=0 bound
+  bound=$(heartbeat_seconds "${FM_HEARTBEAT_DISCOVERY_TIMEOUT:-}" 60)
   # The inner budget stops discovery starting new repos or runs before the outer bound
   # fires, so a slow fleet yields partial results instead of no field at all.
   out=$(fm_run_timed "$bound" \
@@ -763,8 +769,7 @@ heartbeat_publish() {
   [ "$FM_HEARTBEAT_SNAPSHOT_TIMEOUT" -le "$lead" ] || lead=$FM_HEARTBEAT_SNAPSHOT_TIMEOUT
   read=$FM_HEARTBEAT_READ_TIMEOUT
   [ "$FM_HEARTBEAT_NM_TIMEOUT" -le "$read" ] || read=$FM_HEARTBEAT_NM_TIMEOUT
-  discovery=${FM_HEARTBEAT_DISCOVERY_TIMEOUT:-60}
-  case "$discovery" in ''|*[!0-9]*|0) discovery=60 ;; esac
+  discovery=$(heartbeat_seconds "${FM_HEARTBEAT_DISCOVERY_TIMEOUT:-}" 60)
   run_cap=$((lead + discovery + FM_HEARTBEAT_QUOTA_TIMEOUT + 17 * (read + 1) + 5 * (5 + 1) + 3))
   [ -z "$cycle" ] || [ -z "$grace" ] || stale_after=$((cycle + grace + run_cap))
   ready_pr=$(heartbeat_ready_pr_discovery) || ready_pr='{"unknown":true,"reason":"ready-pr discovery unreadable"}'

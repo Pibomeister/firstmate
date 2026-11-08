@@ -904,6 +904,23 @@ test_worst_age_of_a_busy_healthy_home_stays_within_the_bound() {
 
 # AC-14: the stale bound is the cycle period the watcher passes plus the
 # config/heartbeat grace; the wake heartbeat cadence never enters it.
+test_zero_padded_timeouts_read_as_decimal_in_the_run_cap() {
+  local home
+  home=$(make_home padded-timeouts)
+  printf 'stale-grace-secs=30\n' > "$home/config/heartbeat"
+  publish "$home" FM_HEARTBEAT_CYCLE_SECS=15 FM_HEARTBEAT_DEADLINE=0240 FM_HEARTBEAT_SNAPSHOT_TIMEOUT=0120 \
+    FM_HEARTBEAT_READ_TIMEOUT=03 FM_HEARTBEAT_NM_TIMEOUT=02 FM_HEARTBEAT_QUOTA_TIMEOUT=010 FM_HEARTBEAT_DISCOVERY_TIMEOUT=060
+  assert_ledger "$home" ".stale_after_secs == $((45 + DEFAULT_RUN_CAP))" "zero-padded defaults did not read as decimal"
+  publish "$home" FM_HEARTBEAT_CYCLE_SECS=15 FM_HEARTBEAT_READ_TIMEOUT=09 FM_HEARTBEAT_QUOTA_TIMEOUT=08
+  assert_ledger "$home" ".stale_after_secs == $((45 + DEFAULT_RUN_CAP + 17 * (9 - 3) + 8 - 10))" "08 and 09 timeouts did not read as decimal"
+  publish "$home" FM_HEARTBEAT_CYCLE_SECS=15 FM_HEARTBEAT_QUOTA_TIMEOUT=00 FM_HEARTBEAT_DISCOVERY_TIMEOUT=00
+  assert_ledger "$home" ".stale_after_secs == $((45 + DEFAULT_RUN_CAP))" "all-zero timeouts did not fall back to the defaults"
+  rm -f "$home/config/heartbeat"
+  publish "$home" FM_HEARTBEAT_CYCLE_SECS=15 FM_HEARTBEAT_QUOTA_TIMEOUT=08
+  assert_ledger "$home" '.stale_after_secs == null' "a padded timeout with no grace published a bound"
+  pass "AC-14: zero-padded timeouts read as decimal in the run cap, and all-zero ones fall back to the defaults"
+}
+
 test_stale_bound_is_the_watcher_cycle_plus_the_grace() {
   local home bad
   home=$(make_home stale-bound)
@@ -1070,6 +1087,7 @@ test_term_during_task_read_still_publishes
 test_stale_work_dir_is_swept
 test_watcher_poll_does_not_wait_for_heartbeat
 test_watcher_runs_one_heartbeat_at_a_time
+test_zero_padded_timeouts_read_as_decimal_in_the_run_cap
 test_stale_bound_is_the_watcher_cycle_plus_the_grace
 test_worst_age_of_a_busy_healthy_home_stays_within_the_bound
 test_watcher_publishes_its_cycle_period_not_the_wake_cadence
@@ -1105,4 +1123,4 @@ test_weekly_allowance_reports_model_allowance_left() {
 
 test_weekly_allowance_reports_model_allowance_left
 
-printf 'ok - %s tests passed\n' 36
+printf 'ok - %s tests passed\n' 37
