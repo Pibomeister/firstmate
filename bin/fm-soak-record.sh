@@ -232,9 +232,21 @@ snapshot_state() {
   mkdir "$STATE_SNAPSHOT/state" \
     || die 1 "cannot create a private copy of the home state"
   if [ -d "$HOME_DIR/state" ]; then
-    cp -RP "$HOME_DIR/state/." "$STATE_SNAPSHOT/state/" \
+    cp -RP "$HOME_DIR/state/." "$STATE_SNAPSHOT/state/" 2>/dev/null \
+      || state_copy_complete \
       || die 1 "cannot copy the home state: $HOME_DIR/state"
   fi
+}
+
+# state_copy_complete: true when every entry of <home>/state that still exists
+# is in the private copy, so an entry the live home removed while cp ran is
+# not a copy failure.
+state_copy_complete() {
+  local p
+  while IFS= read -r p; do
+    { [ -e "$HOME_DIR/state/$p" ] || [ -L "$HOME_DIR/state/$p" ]; } || continue
+    [ -e "$STATE_SNAPSHOT/state/$p" ] || [ -L "$STATE_SNAPSHOT/state/$p" ] || return 1
+  done < <(cd "$HOME_DIR/state" && find . -mindepth 1 -print)
 }
 
 # crew_state <id>: the soak home's current-state line for one task, classified
