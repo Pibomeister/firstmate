@@ -351,6 +351,76 @@ EOF
   pass "the ack row carries the removal time, not the lock-acquire time"
 }
 
+# A removal interrupted after its ledger row was written but before its queue
+# change (here the drain is killed at the queue replace) leaves the row in the
+# ledger and the wake still queued. The retry in a later window must write no
+# second row for that wake, so the wake counts once in the union window and
+# once in the sum of the two windows.
+test_retry_after_interrupted_removal_counts_once() {
+  local dir state ledger shim real_mv err out first second
+  dir=$(make_case interrupted-removal)
+  state="$dir/state"
+  ledger="$state/wake-ledger.tsv"
+  shim="$dir/shim"
+  err="$dir/step.err"
+  real_mv=$(command -v mv) || fail "no mv on PATH"
+  mkdir -p "$shim"
+  cat > "$shim/mv" <<EOF
+#!/bin/sh
+case "\$*" in
+  *.wake-queue.ack.*) kill -KILL "\$PPID"; exit 137 ;;
+esac
+exec "$real_mv" "\$@"
+EOF
+  chmod 0755 "$shim/mv"
+  append_wake "$state" signal one.status "signal: one" || fail "append one failed"
+  present_at "$state" "$T0"
+  PATH="$shim:$PATH" drain_at "$state" "$T0" --ack-through "$PRESENTED_THROUGH" \
+    --recovery-generation "$PRESENTED_GENERATION" > /dev/null 2>&1 \
+    && fail "the interrupted acknowledgement reported success"
+  awk -F '\t' -v t="$T0" '$1 == t && $2 == "ack" && $5 == "1" { n++ } END { exit n != 1 }' "$ledger" \
+    || fail "the interruption did not leave the ack row in the ledger: $(cat "$ledger" 2>/dev/null)"
+  awk -F '\t' '$2 == "1" { found = 1 } END { exit !found }' "$state/.wake-queue" \
+    || fail "the interruption did not leave the wake queued, so the case proves nothing"
+
+  present_at "$state" $((T0 + 100))
+  drain_at "$state" $((T0 + 100)) --ack-through "$PRESENTED_THROUGH" \
+    --recovery-generation "$PRESENTED_GENERATION" > /dev/null 2> "$err" \
+    || fail "the retried acknowledgement failed: $(cat "$err")"
+  awk -F '\t' '$2 == "1" { found = 1 } END { exit found }' "$state/.wake-queue" \
+    || fail "the retried acknowledgement left the wake queued"
+  awk -F '\t' -v t=$((T0 + 100)) '$1 == t { bad = 1 } END { exit bad }' "$ledger" \
+    || fail "the retry wrote a second row for an already-listed wake: $(cat "$ledger")"
+  first=$(ledger_count "$state" "$T0" $((T0 + 100))) || fail "first-window count failed"
+  second=$(ledger_count "$state" $((T0 + 100)) $((T0 + 200))) || fail "second-window count failed"
+  [ $(( ${first##*count=} + ${second##*count=} )) = 1 ] \
+    || fail "the per-window counts sum to more than one wake: $first / $second"
+  out=$(ledger_count "$state" "$T0" $((T0 + 200))) || fail "union-window count failed"
+  [ "${out##*count=}" = 1 ] || fail "the union window does not count one wake: $out"
+  pass "a retry after an interrupted removal writes no second row, so the wake counts once"
+}
+
+# The public append interface reads fm_now on every call: an epoch a removal
+# used earlier in the same shell is never reused for a later direct append.
+test_direct_append_reads_the_clock_each_call() {
+  local dir state ledger out
+  dir=$(make_case direct-append-clock)
+  state="$dir/state"
+  ledger="$state/wake-ledger.tsv"
+  out=$(FM_TEST_SEAM=1 bash -c '
+    . "$1/bin/fm-wake-ledger-lib.sh"
+    export FM_NOW=100
+    fm_wake_ledger_commit_removal_locked "$2" ack - - "$(printf "1\t7\tsignal\tk7\tp")" "" true || exit 1
+    FM_NOW=200
+    fm_wake_ledger_append_locked "$2" pruned - - 8 "[\"k8\"]" || exit 1
+  ' _ "$ROOT" "$state" 2>&1) || fail "the direct append case failed: $out"
+  awk -F '\t' '$2 == "ack" && $5 == "7" && $1 == "100" { n++ } END { exit n != 1 }' "$ledger" \
+    || fail "the removal row does not carry the first clock value: $(cat "$ledger")"
+  awk -F '\t' '$2 == "pruned" && $5 == "8" { print $1 }' "$ledger" | grep -qx 200 \
+    || fail "a later direct append reused an earlier removal epoch: $(cat "$ledger")"
+  pass "a direct append reads the clock on every call, never an earlier removal epoch"
+}
+
 test_ledger_command_contract() {
   local dir state out rc
   dir="$TMP_ROOT/command"
@@ -383,4 +453,6 @@ test_branch_claim_pruned_before_ack_counts_once
 test_prune_without_ledger_library_fails_and_keeps_queue
 test_unwritable_ledger_keeps_removed_wakes
 test_ack_row_epoch_is_the_removal_time
+test_retry_after_interrupted_removal_counts_once
+test_direct_append_reads_the_clock_each_call
 test_ledger_command_contract
