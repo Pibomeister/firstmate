@@ -1,0 +1,69 @@
+## S0: lab home, no records yet
+verdict=unknown reason=heartbeat-missing,lock-unknown,monitor-missing heartbeat_age=unknown lock=unknown watcher_age=unknown monitor=missing at=1794126341
+## S1: watchdog one pass (dry-run) writes captain + monitor records
+watchdog exit=0
+captain:
+owner=pid:22064
+lock_pid=22064
+session=
+alive=live
+usage_limit_autowait=0
+backend=
+target=
+moved_at=1794126332
+lock_at=1794126332
+checked_at=1794126342
+source=watchdog
+monitor-status:
+status=uncovered at=1794126342
+## S2: heartbeat publish
+heartbeat exit=0
+{"generated_epoch":1794126342,"stale_after_secs":null}
+## S3: verdict after real records
+verdict=unknown reason=stale-bound-unknown,monitor-uncovered heartbeat_age=8 lock=live watcher_age=unknown monitor=uncovered at=1794126350
+exit=0
+persisted:
+verdict=unknown reason=stale-bound-unknown,monitor-uncovered heartbeat_age=8 lock=live watcher_age=unknown monitor=uncovered at=1794126350
+## S4: heartbeat published with the watcher's cycle period (FM_HEARTBEAT_CYCLE_SECS=15), fresh watcher beat
+heartbeat exit=0
+{"generated_epoch":1794126394,"stale_after_secs":null}
+verdict=unknown reason=stale-bound-unknown heartbeat_age=6 lock=live watcher_age=0 monitor=enabled at=1794126400
+## S5: real watchdog monitor read on a home with no monitor unit -> unknown never ok
+status=uncovered at=1794126402
+verdict=unknown reason=stale-bound-unknown,monitor-uncovered heartbeat_age=8 lock=live watcher_age=2 monitor=uncovered at=1794126402
+## S6: heartbeat aged past its bound (generated 10 min ago), no supervisor turn -> stale
+verdict=unknown reason=stale-bound-unknown heartbeat_age=608 lock=live watcher_age=2 monitor=enabled at=1794126402
+## S7: open work + watcher beat 20 min old -> watcher-stale
+verdict=stale reason=watcher-stale,stale-bound-unknown heartbeat_age=9 lock=live watcher_age=1200 monitor=enabled at=1794126412
+## S8: lock owner killed, real watchdog pass re-records the lock verdict -> dead outranks a fresh heartbeat
+watchdog exit=0
+alive=dead
+verdict=dead reason=lock-dead heartbeat_age=7 lock=dead watcher_age=9 monitor=enabled at=1794126421
+## S9: lock file removed (no session) and no open work -> idle ok; with an away record -> dead
+alive=none
+verdict=unknown reason=stale-bound-unknown heartbeat_age=7 lock=none watcher_age=18 monitor=enabled at=1794126430
+verdict=dead reason=none-away heartbeat_age=8 lock=none watcher_age=19 monitor=enabled at=1794126431
+## S10: corrupt heartbeat.json -> unknown, and usage errors
+verdict=unknown reason=heartbeat-field-unread,stale-bound-unknown heartbeat_age=unknown lock=none watcher_age=19 monitor=enabled at=1794126431
+fm-health-verdict.sh: not a directory: /nonexistent-dir
+exit=2
+fm-health-verdict.sh: unknown argument: --bogus
+exit=2
+## S11: --write into an unwritable state dir -> exit 1
+fm-health-verdict.sh: cannot write /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.6wbxQy/state/health-verdict
+exit=1
+alive=live
+## S12: bound published (cycle 15 + grace 60), fresh beat, live lock, monitor enabled -> ok fresh
+{"generated_epoch":1794126452,"stale_after_secs":75}
+verdict=ok reason=fresh heartbeat_age=9 lock=live watcher_age=1 monitor=enabled at=1794126461
+verdict=ok reason=fresh heartbeat_age=9 lock=live watcher_age=1 monitor=enabled at=1794126461
+## S13: same heartbeat aged 10 min past its 75s bound -> stale heartbeat-stale
+verdict=stale reason=heartbeat-stale heartbeat_age=614 lock=live watcher_age=6 monitor=enabled at=1794126466
+## S14: no session lock, no open work, fresh heartbeat -> ok idle
+/tmp/fmlab-hv-run3.sh: line 17: 79866 Terminated: 15          sleep 100000 > /dev/null 2>&1
+alive=none
+verdict=ok reason=idle heartbeat_age=10 lock=none watcher_age=0 monitor=enabled at=1794126478
+## S15: no session lock with open work -> dead none-open-work
+verdict=dead reason=none-open-work heartbeat_age=10 lock=none watcher_age=0 monitor=enabled at=1794126478
+## S16: legacy .last-heartbeat alone never feeds the verdict
+verdict=unknown reason=heartbeat-missing heartbeat_age=unknown lock=none watcher_age=1 monitor=enabled at=1794126479
