@@ -108,8 +108,10 @@ _fm_wake_ledger_removed_rows() {
 # numeric sequence, in ascending sequence order, or nothing when there is none.
 # With <seqs-csv>, list only those of its sequences that a row read carries.
 # Leave out every sequence that a row of <ledger> already lists with an epoch
-# other than <epoch> or with the event <event>.
-_fm_wake_ledger_fields() {
+# other than <epoch> or with the event <event>. Return non-zero when any stage
+# of the extraction fails, so no removal runs on a row that was not computed.
+_fm_wake_ledger_fields() (
+  set -o pipefail
   _FM_WAKE_LEDGER_PRIOR=$1 _FM_WAKE_LEDGER_AT=$2 _FM_WAKE_LEDGER_EVENT=$3 _FM_WAKE_LEDGER_WANT=${4:-} \
     LC_ALL=C awk -F '\t' '
     function quote(s,   out, c, i, n) {
@@ -151,7 +153,7 @@ _fm_wake_ledger_fields() {
     { seqs = seqs (NR > 1 ? "," : "") $1; keys = keys (NR > 1 ? "," : "") $2 }
     END { if (NR > 0) print seqs "\t[" keys "]" }
   '
-}
+)
 
 # fm_wake_ledger_record_removal_locked <state-dir> <event> <generation> <through> <removed-rows> [<seqs-csv>]
 # Append the row, stamped with fm_now, for one removal from the removed queue

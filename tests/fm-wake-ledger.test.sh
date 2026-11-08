@@ -351,6 +351,39 @@ EOF
   pass "the ack row carries the removal time, not the lock-acquire time"
 }
 
+# A removal whose ledger row cannot be computed must not happen: when a stage
+# of the row extraction fails (here its sort exits non-zero), the
+# acknowledgement fails, reports on stderr, and leaves its wakes queued.
+test_failed_row_extraction_keeps_removed_wakes() {
+  local dir state shim real_sort err rc
+  dir=$(make_case failed-extraction)
+  state="$dir/state"
+  shim="$dir/shim"
+  err="$dir/step.err"
+  real_sort=$(command -v sort) || fail "no sort on PATH"
+  mkdir -p "$shim"
+  cat > "$shim/sort" <<EOF
+#!/bin/sh
+case "\$*" in
+  *-k1,1n\ -u*) echo hit >> "$dir/sort.hits"; exit 1 ;;
+esac
+exec "$real_sort" "\$@"
+EOF
+  chmod 0755 "$shim/sort"
+  append_wake "$state" signal one.status "signal: one" || fail "append one failed"
+  present_at "$state" "$T0"
+  cp "$state/.wake-queue" "$dir/queue.before"
+  PATH="$shim:$PATH" drain_at "$state" "$T0" --ack-through "$PRESENTED_THROUGH" \
+    --recovery-generation "$PRESENTED_GENERATION" > /dev/null 2> "$err"; rc=$?
+  [ -s "$dir/sort.hits" ] || fail "the acknowledgement never ran the failing sort, so the case proves nothing"
+  [ "$rc" -ne 0 ] || fail "an acknowledgement whose row extraction failed reported success"
+  [ -s "$err" ] || fail "an acknowledgement whose row extraction failed printed no error"
+  cmp -s "$state/.wake-queue" "$dir/queue.before" \
+    || fail "an acknowledgement whose row extraction failed removed queue rows"
+  [ ! -s "$state/wake-ledger.tsv" ] || fail "a failed extraction wrote a ledger row: $(cat "$state/wake-ledger.tsv")"
+  pass "a removal whose row extraction fails stops, reports it, and keeps its wakes"
+}
+
 # A removal interrupted after its ledger row was written but before its queue
 # change (here the drain is killed at the queue replace) leaves the row in the
 # ledger and the wake still queued. The retry in a later window must write no
@@ -453,6 +486,7 @@ test_branch_claim_pruned_before_ack_counts_once
 test_prune_without_ledger_library_fails_and_keeps_queue
 test_unwritable_ledger_keeps_removed_wakes
 test_ack_row_epoch_is_the_removal_time
+test_failed_row_extraction_keeps_removed_wakes
 test_retry_after_interrupted_removal_counts_once
 test_direct_append_reads_the_clock_each_call
 test_ledger_command_contract
