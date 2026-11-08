@@ -1,0 +1,11 @@
+## adversarial: SIGKILL lab watcher pid 37668 (read from the lab's own lock; no cleanup trap runs); ticker must exit on its own
+children of lab watcher: 39548 48371 
+39548 bash bin/fm-watch.sh
+48371 sleep 5
+watcher alive? no
+child 39548 48371  alive after 20s? no
+published_epoch at kill=1794181124 after 20s=1794181130 (at most one in-flight publication may complete)
+after another 12s=1794181130
+now=1794181162; age=32s, stale_after_secs=476
+39548 gone
+48371 gone

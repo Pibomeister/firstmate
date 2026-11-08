@@ -1,0 +1,8 @@
+## graceful stop: Ctrl-C to the lab watcher pane (pid 5028); children: 6780 
+ 6780 bash bin/fm-watch.sh
+watcher: gone
+6780  gone
+published_epoch 3s after stop=1794181186, 15s later=1794181195
+pane tail:
+^CWATCH_EXIT=1
+20s later published_epoch=1794181195 (unchanged => only the in-flight run completed)

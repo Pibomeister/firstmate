@@ -1,0 +1,27 @@
+## (plain clone of target commit at lab/root, so the hook's primary-root guard passes as in a real primary home)
+## S: handoff hook (PostToolUse) publishes state/compact-point naming its session
+{
+  "hookSpecificOutput": {
+    "hookEventName": "PostToolUse",
+    "additionalContext": "Firstmate early handoff trigger, from this home's tracked Claude hook: about 8% of context is left before auto-compact (91500 of 100000 tokens). Write your full session handoff now, before auto-compact: persist every open work record, decision, and piece of durable knowledge this session holds (the stow skill covers this), record the handoff with bin/fm-order.sh handoff --doc <handoff file>, then hand off to a successor and report that this session is ready to restart. Launch your successor with bin/fm-handoff-launch.sh <handoff file>: it starts the successor in a new terminal on this home's backend, verifies that the new successor harness pid is live, and records it in state/.handoff-successor as pid=<successor pid> and handoff=<handoff document path>. Its launch prompt has the successor confirm the handoff document's sha256 at pickup and stop on a mismatch, wait until this session's harness pid (line 1 of state/.lock) is dead, then run bin/fm-session-start.sh to take the session lock. Then end this turn; this turn cannot end until that record names a live successor. The predecessor process is then ended by the captain, by a leash or operator /exit in its pane, or by the watchdog restart path; this session cannot exit itself, and the successor waits for its pid to die before session start. Do not run /compact. This instruction fires once per context cycle."
+  }
+}
+hook exit=0
+record: session=sess-lab1 compact_at=100000 at=1794181302
+## S: heartbeat reads primary derived from the session's published window
+{"percent":8,"source":"transcript"}
+## adversarial: hook run for the same session that resolves no point (no transcript) withdraws its record
+hook exit=0
+compact-point: No such file or directory
+## adversarial: a different session's no-point run must NOT remove sess-lab1's record
+record still: session=sess-lab1 compact_at=100000
+## adversarial: session id with unsafe chars is never written
+{
+  "hookSpecificOutput": {
+    "hookEventName": "PostToolUse",
+    "additionalContext": "Firstmate early handoff trigger, from this home's tracked Claude hook: about 8% of context is left before auto-compact (91500 of 100000 tokens). Write your full session handoff now, before auto-compact: persist every open work record, decision, and piece of durable knowledge this session holds (the stow skill covers this), record the handoff with bin/fm-order.sh handoff --doc <handoff file>, then hand off to a successor and report that this session is ready to restart. Launch your successor with bin/fm-handoff-launch.sh <handoff file>: it starts the successor in a new terminal on this home's backend, verifies that the new successor harness pid is live, and records it in state/.handoff-successor as pid=<successor pid> and handoff=<handoff document path>. Its launch prompt has the successor confirm the handoff document's sha256 at pickup and stop on a mismatch, wait until this session's harness pid (line 1 of state/.lock) is dead, then run bin/fm-session-start.sh to take the session lock. Then end this turn; this turn cannot end until that record names a live successor. The predecessor process is then ended by the captain, by a leash or operator /exit in its pane, or by the watchdog restart path; this session cannot exit itself, and the successor waits for its pid to die before session start. Do not run /compact. This instruction fires once per context cycle."
+  }
+}
+record still: session=sess-lab1 compact_at=100000
+## adversarial: state-dir override that differs from FM_HOME/state -> derived unknown
+{"unknown":true,"reason":"state or config directory override in use"}

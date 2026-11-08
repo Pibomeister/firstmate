@@ -1,0 +1,46 @@
+## S1: no config/heartbeat, cycle=15 -> stale_after_secs null
+exit=0 elapsed=6s
+{
+  "schema": "fm-heartbeat.v1",
+  "generated_epoch": 1794181034,
+  "published_epoch": 1794181040,
+  "stale_after_secs": null,
+  "failure": null,
+  "snapshot": true,
+  "ctx": {
+    "used_tokens": {
+      "unknown": true,
+      "reason": "transcript had no token usage"
+    },
+    "remaining": {
+      "unknown": true,
+      "reason": "harness showed no context text in its pane"
+    },
+    "derived": {
+      "unknown": true,
+      "reason": "no readable transcript"
+    }
+  }
+}
+## S2: stale-grace-secs=60, cycle=15, defaults -> 15+60+411=486
+exit=0
+{
+  "generated_epoch": 1794181040,
+  "published_epoch": 1794181044,
+  "stale_after_secs": 486,
+  "pub_ge_gen": true
+}
+## S3: grace set, no cycle period -> null
+exit=0
+null
+## S4: zero-padded timeouts READ=08 NM=09 DEADLINE=0240 -> decimal (cap = 240+60+10+17*(9+1)+30+3 = 513; +15+60 = 588)
+exit=
+{
+  "stale_after_secs": 588,
+  "failure": null
+}
+## S5: grace=0 (valid) and unusable grace=abc
+426
+null
+## leftover work dirs:
+heartbeat.json

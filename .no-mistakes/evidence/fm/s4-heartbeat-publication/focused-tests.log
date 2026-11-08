@@ -1,0 +1,85 @@
+FM_TEST_BEGIN 2026-11-08T23:36:52Z tests/fm-context-reading.test.sh family=pure-contract-unit expected_gate_skip=none
+1..6
+ok - the shared footer parser reads the auto-compact footer
+ok - the window comes from the record for the session, else the compact-at pin, else nothing
+ok - the derived percentage is the integer share of the window left
+ok - the reading names the footer, the derived value, the owner, and the disagreement
+ok - the handoff trigger publishes the compact point it resolved, named for its session
+ok - the watchdog restart gate follows the owning reading and records both values
+FM_TEST_COMPLETE
+FM_TEST_END 2026-11-08T23:36:58Z tests/fm-context-reading.test.sh exit=0 duration_ms=6230 gate_skip=false
+FM_TEST_BEGIN 2026-11-08T23:36:58Z tests/fm-captain-record.test.sh family=standalone expected_gate_skip=none
+FM_TEST_BEGIN 2026-11-08T23:36:58Z tests/fm-layer-chain.test.sh family=standalone expected_gate_skip=none
+1..7
+ok - a lock-session heartbeat no older than the lock write updates the captain record
+ok - a lock-session heartbeat older than the lock write does not update the recorded terminal
+ok - a daemon-written lock-session heartbeat updates the record and leaves the terminal unchanged
+ok - a lock-session heartbeat from a known non-owner writer leaves the terminal unchanged
+ok - a current-session child heartbeat naming a new pane updates the captain record
+ok - a child heartbeat from a prior session yields no endpoint mismatch
+ok - during a mismatch the parent record wins
+FM_TEST_COMPLETE
+FM_TEST_END 2026-11-08T23:37:05Z tests/fm-captain-record.test.sh exit=0 duration_ms=7062 gate_skip=false
+1..8
+ok - each watchdog pass records every watched home's monitor unit status
+ok - an installed monitor unit that does not run reads disabled
+ok - a monitor read with no manager line records unreadable over the old record
+ok - monitor-read exits 0 on a written record and 1 when it cannot write one
+ok - a session start with no watchdog unit runs the monitor read once
+ok - a session start whose watchdog unit does not run records the monitor read
+ok - a session start with an enabled watchdog leaves the monitor read to the watchdog
+ok - a lock-refused session start writes no monitor record
+FM_TEST_COMPLETE
+FM_TEST_END 2026-11-08T23:37:16Z tests/fm-layer-chain.test.sh exit=0 duration_ms=17320 gate_skip=false
+FM_TEST_BEGIN 2026-11-08T23:37:16Z tests/fm-heartbeat.test.sh family=unclassified expected_gate_skip=none
+ok - --write publishes every field atomically with a null failure on a clean run
+ok - no_mistakes_run reads the real status shape and refuses a sibling branch's run
+ok - fm_nm_select_run chooses the run, and an unusable choice reads as unknown
+ok - a hung run head check is bounded, unknown, and sets failure
+ok - a worktree off its recorded branch or with an unread branch reads as unknown
+ok - a terminal or parked run binds only through the worktree head
+ok - only an answered daemon-down suppresses an active run's live claim
+ok - a failed no-mistakes read is unknown and sets failure
+ok - the heartbeat publishes the oldest unread captain inbox note age
+ok - real fractional transcripts give last turn and used tokens, with remaining unknown
+ok - a transcript older than the spawn, or with no spawn epoch, fills no field
+ok - two Claude transcripts since spawn blank only transcript-derived fields
+ok - a remote task is unknown even when its worktree path exists locally
+ok - remaining context comes from the harness's own pane text, else unknown
+ok - an ungated repo is unknown with no failure
+ok - last output comes from terminal evidence, never .meta, .status, or .turn-ended
+ok - a terminal marker older than the spawn, or with no spawn epoch, is not output
+ok - a secondmate's marker is ignored and its transcript still qualifies
+ok - a missing primary endpoint gets no pane context read
+ok - last_push reads local gate and origin refs and names the source
+ok - a failed snapshot read sets failure without guessing task rows
+ok - unreadable task and primary fields stay explicitly unknown
+ok - a slow snapshot read is bounded and recorded as failure
+ok - each hung primary read has its own bound and sets failure
+ok - a run past its deadline publishes unread tasks as unknown
+ok - TERM during the snapshot read publishes unknown markers and leaks no temp files
+ok - TERM during a task read publishes the whole task list with unknown markers
+ok - the next run removes what a SIGKILLed run left
+ok - a watcher poll does not wait for a slow heartbeat
+ok - the watcher keeps polling with one detached heartbeat in flight, which still publishes
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M6YR4ZBRVTXHN4PQHD2J1YJ6/bin/fm-nm-run-lib.sh: line 44: 80536 Killed: 9               "$have_timeout" -k 1 "$timeout_secs" "$@" 0<&0
+ok - AC-14: a bounded read whose child or grandchild ignores TERM is killed one second after its bound
+ok - AC-14: the watcher launches a publication every cycle whatever its loop work, and stops with the watcher
+ok - AC-14: zero-padded timeouts read as decimal in the run cap, and all-zero ones fall back to the defaults
+ok - AC-14: the stale bound is the watcher cycle period plus the grace plus the run cap, and null while either is missing
+ok - AC-14: a busy healthy home near the caps stays within its bound, measured from the publication stamp
+ok - AC-14: the watcher's heartbeat bound uses its cycle period, never the wake heartbeat cadence
+ok - AC-14: context_left carries the footer and the derived percentage side by side
+ok - AC-14: the derived reading is unknown, with its reason, when there is no token usage to read
+ok - AC-14: the derived reading is unknown, with its reason, under a state or config directory override
+ok - heartbeat publishes weekly model allowance left and leaves a miss unknown
+ok - 39 tests passed
+FM_TEST_END 2026-11-08T23:41:51Z tests/fm-heartbeat.test.sh exit=0 duration_ms=275288 gate_skip=false
+FM_TEST_SUMMARY total=4 failed=0 skipped_gate=0 duration_ms=299422
+FM_TEST_SUMMARY_FAMILY family=pure-contract-unit count=1 duration_ms=6230 failed=0
+FM_TEST_SUMMARY_FAMILY family=standalone count=2 duration_ms=24382 failed=0
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=275288 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-heartbeat.test.sh duration_ms=275288
+FM_TEST_SLOWEST rank=2 script=tests/fm-layer-chain.test.sh duration_ms=17320
+FM_TEST_SLOWEST rank=3 script=tests/fm-captain-record.test.sh duration_ms=7062
+FM_TEST_SLOWEST rank=4 script=tests/fm-context-reading.test.sh duration_ms=6230

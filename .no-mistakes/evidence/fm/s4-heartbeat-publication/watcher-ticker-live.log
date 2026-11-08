@@ -1,0 +1,14 @@
+## watcher started in lab tmux with FM_POLL=5; sampling published_epoch every 3s for ~33s
+1794181076 pub= stale_after= ticker/heartbeat procs=11
+1794181079 pub=1794181079 stale_after=476 ticker/heartbeat procs=14
+1794181083 pub=1794181082 stale_after=476 ticker/heartbeat procs=4
+1794181086 pub=1794181082 stale_after=476 ticker/heartbeat procs=14
+1794181089 pub=1794181088 stale_after=476 ticker/heartbeat procs=13
+1794181092 pub=1794181088 stale_after=476 ticker/heartbeat procs=19
+1794181095 pub=1794181088 stale_after=476 ticker/heartbeat procs=17
+1794181099 pub=1794181096 stale_after=476 ticker/heartbeat procs=8
+1794181102 pub=1794181096 stale_after=476 ticker/heartbeat procs=14
+1794181105 pub=1794181105 stale_after=476 ticker/heartbeat procs=10
+1794181108 pub=1794181105 stale_after=476 ticker/heartbeat procs=12
+37668
+

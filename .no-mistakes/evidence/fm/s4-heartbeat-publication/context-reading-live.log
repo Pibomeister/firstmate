@@ -1,0 +1,30 @@
+## S: handoff hook publishes state/compact-point for its session
+hook exit=0
+cat: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.kIzyxK/state/compact-point: No such file or directory
+record: 
+## S: heartbeat publishes primary derived reading from that window (91500/100000 used -> floor 8% left, same as trigger)
+{
+  "used_tokens": 91500,
+  "remaining": {
+    "unknown": true,
+    "reason": "harness showed no context text in its pane"
+  },
+  "derived": {
+    "percent": 8,
+    "source": "transcript"
+  }
+}
+## S: hook run with no transcript resolves no point -> withdraws its own record
+hook exit=0
+ls: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.kIzyxK/state/compact-point: No such file or directory
+## adversarial: a record naming another session is not used for this session; pin removed -> unknown
+{
+  "unknown": true,
+  "reason": "no context window for this session"
+}
+## adversarial: state-dir override in use -> derived always unknown
+{
+  "percent": 8,
+  "source": "transcript"
+}
+NOTE: the last block above set FM_STATE_OVERRIDE equal to FM_HOME/state (no divergence), a setup error; see handoff-compact-point-live.log for the corrected override scenario. The hook block above was inert because the gate copy is a linked worktree; handoff-compact-point-live.log reruns it from a plain clone.
