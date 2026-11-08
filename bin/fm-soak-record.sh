@@ -9,8 +9,10 @@
 #   fm-soak-record.sh finish --home <dir> --out <dir> --watchdog-dir <dir> --transcript-dir <dir>
 #
 # The recorder never writes inside the soak home <home>; it writes only under
-# --out, and refuses an --out that resolves inside <home> and a symlink at any
-# path it writes under --out. Every time is fm_now (bin/fm-clock-lib.sh).
+# --out, and refuses an --out that resolves inside <home> or contains it, and a
+# symlink at any path it writes under --out. sample and finish refuse a --home
+# other than the home soak.json records. Every time is fm_now
+# (bin/fm-clock-lib.sh).
 #
 # readable-harnesses prints one harness per line whose transcripts the
 # startup-token measurement reads: `claude`.
@@ -29,7 +31,8 @@
 # count` over the hour. status_lines_last_hour counts the lines of
 # <home>/state/*.status whose first `[at=<epoch>]` falls in the hour.
 # session_id is fm_session_lock_recorded_session_id
-# (bin/fm-session-lock-lib.sh) of <home>/state, or `-`. sample also appends to
+# (bin/fm-session-lock-lib.sh) of <home>/state when it is a plain name (letters,
+# digits, `.`, `_` and `-`, not starting with `.`), else `-`. sample also appends to
 # <out>/handoff-events.tsv one `<mtime>\t<path>` row for each handoff document
 # (each <home>/data/handoff-*.md and the document named by the doc= line of
 # <home>/state/.order-handoff) whose current modification it has not recorded
@@ -37,8 +40,9 @@
 # refuses a run that is not started or is already finished.
 # finish sets finished_at; the window is [started_at, finished_at]. It writes:
 #   session_ids     the union of the sampled session ids and the ids of the
-#                   <transcript-dir>/<id>.jsonl files modified in the window,
-#                   ascending, each {id, transcript}: the kept copy's path
+#                   <transcript-dir>/<id>.jsonl files modified in the window
+#                   that are plain names (as for sample; any other id is
+#                   skipped), ascending, each {id, transcript}: the kept copy's path
 #                   under <out>, or `missing-transcript` when the id has none.
 #   transcripts/    a copy of each of those transcripts.
 #   handoffs/       each <home>/data/handoff-*.md modified in the window, and
@@ -54,11 +58,13 @@
 #                   (the distinct `<mtime> <path>` pairs sample recorded, plus
 #                   each document's modification at finish), plus each distinct
 #                   watchdog id with a kept `restart` row in phase `done`,
-#                   except one for which a handoff-document modification event
+#                   except a `restart-requested` restart (the symptom column)
+#                   for which a handoff-document modification event
 #                   falls in that restart's episode: from the latest kept
 #                   `handoff-request` `nudge` `pending` row before its first
 #                   `restart` row, else the previous restart's `done` row, else
-#                   started_at (whichever is latest), to its `done` row. The
+#                   started_at (whichever is latest), to its `done` row. A
+#                   restart with any other symptom always counts one. The
 #                   watchdog's own handoff files are not counted.
 #   violations      {kind: undeclared-harness, task, harness} for each live
 #                   task meta whose harness is outside the declared set and,
@@ -71,8 +77,8 @@
 #                   declared harness when that script is absent.
 # finish refuses a run that is not started or is already finished.
 #
-# Exit status: 0 on success, 3 on an unreadable harness, 2 on a usage error or
-# a refused --out, and 1 on any other failure. -h or --help prints this usage.
+# Exit status: 0 on success, 3 on an unreadable harness, 2 on a usage error, a
+# refused --out or a --home that is not the run's, and 1 on any other failure. -h or --help prints this usage.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -166,9 +172,22 @@ prepare_out() {
     OUT="$parent/$(basename -- "$OUT")"
   fi
   case "$OUT/" in "$HOME_DIR"/*) die 2 "--out is inside the soak home: $OUT" ;; esac
+  case "$HOME_DIR/" in "$OUT"/*) die 2 "--out contains the soak home: $OUT" ;; esac
   for p in soak.json load.tsv handoff-events.tsv wake-ledger.tsv transcripts handoffs watchdog watchdog/actions.tsv watchdog/handoffs; do
     [ ! -L "$OUT/$p" ] || die 2 "refusing to write through a symlink: $OUT/$p"
   done
+}
+
+# require_run_home: refuse a --home other than the one the started run in
+# --out records, before anything is written.
+require_run_home() {
+  [ "$(jq -r .home "$OUT/soak.json")" = "$HOME_DIR" ] \
+    || die 2 "--home is not the home this soak run started on: $HOME_DIR"
+}
+
+# safe_session_id <id>: a session id that is safe as one path component.
+safe_session_id() {
+  case "$1" in ''|.*|*[!A-Za-z0-9._-]*) return 1 ;; esac
 }
 
 # keep <source> <destination>: copy one input under --out, never through a
@@ -275,6 +294,7 @@ cmd_sample() {
   parse '--home --out' "$@"
   [ -f "$OUT/soak.json" ] || die 1 "no soak run is started in $OUT"
   [ "$(jq -r '.finished_at // empty' "$OUT/soak.json")" = '' ] || die 1 "the soak run in $OUT is already finished"
+  require_run_home
   now=$(fm_now)
   since=$((now - 3600))
   live=$(live_tasks | awk 'END { print NR }')
@@ -287,7 +307,7 @@ cmd_sample() {
     }
     END { print n + 0 }')
   session=$(fm_session_lock_recorded_session_id "$HOME_DIR/state") || session=-
-  case "$session" in *$'\t'*|'') session=- ;; esac
+  safe_session_id "$session" || session=-
   printf '%s\t%s\t%s\t%s\t%s\n' "$now" "$live" "$acks" "$lines" "$session" >> "$OUT/load.tsv"
   touch "$OUT/handoff-events.tsv"
   events=$(handoff_events | awk -F '\t' 'FILENAME == ARGV[1] { seen[$0]; next } !($0 in seen) { seen[$0]; print }' \
@@ -309,6 +329,7 @@ cmd_finish() {
   [ -d "$TRANSCRIPT_DIR" ] || die 2 "the transcript directory does not exist: $TRANSCRIPT_DIR"
   [ -f "$OUT/soak.json" ] || die 1 "no soak run is started in $OUT"
   [ "$(jq -r '.finished_at // empty' "$OUT/soak.json")" = '' ] || die 1 "the soak run in $OUT is already finished"
+  require_run_home
   STARTED=$(jq -r .started_at "$OUT/soak.json")
   LABEL=$(jq -r .label "$OUT/soak.json")
   HARNESSES=()
@@ -325,7 +346,7 @@ cmd_finish() {
     } | LC_ALL=C sort -u)
   ids='[]'
   while IFS= read -r id; do
-    [ -n "$id" ] || continue
+    safe_session_id "$id" || continue
     if [ -f "$TRANSCRIPT_DIR/$id.jsonl" ]; then
       mkdir -p "$OUT/transcripts"
       keep "$TRANSCRIPT_DIR/$id.jsonl" "$OUT/transcripts/$id.jsonl"
@@ -383,7 +404,8 @@ cmd_finish() {
       done[$2] = $1 + 0
       prev = $1 + 0
       dropped = 0
-      for (e in ev) if (ev[e] >= from[$2] && ev[e] <= done[$2]) dropped = 1
+      if ($5 == "restart-requested")
+        for (e in ev) if (ev[e] >= from[$2] && ev[e] <= done[$2]) dropped = 1
       if (!dropped) n++
     }
     END { print n + 0 }' - "$OUT/watchdog/actions.tsv")
