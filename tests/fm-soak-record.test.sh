@@ -596,8 +596,59 @@ test_watchdog_dir_inside_out_is_refused() {
   pass "a --watchdog-dir that is --out or inside it is refused before any write"
 }
 
+# cp_shim <dir> <mode>: a cp first on PATH that, only for the copy of a home's
+# state directory, either removes the state entry .vanishing.tmp and then
+# copies and exits 1 (mode vanish), or copies nothing and exits 1 (mode fail).
+cp_shim() {
+  mkdir -p "$1"
+  cat > "$1/cp" <<SH
+#!/usr/bin/env bash
+for a in "\$@"; do
+  case "\$a" in
+    */state/.)
+      case "$2" in
+        vanish) rm -f "\${a%/.}/.vanishing.tmp"; /bin/cp "\$@"; exit 1 ;;
+        fail) exit 1 ;;
+      esac ;;
+  esac
+done
+exec /bin/cp "\$@"
+SH
+  chmod +x "$1/cp"
+}
+
+# A live home creates and removes short-lived state files; one that vanishes
+# while the private copy runs is not a copy failure, but an entry that still
+# exists and is missing from the copy is.
+test_sample_tolerates_a_state_entry_that_vanishes_during_the_copy() {
+  local home out rc shim="$TMP_ROOT/cpshim-vanish"
+  home=$(make_home vanish)
+  out="$TMP_ROOT/vanish-out"
+  cp_shim "$shim" vanish
+  soak "$T0" start --home "$home" --out "$out" --label baseline --harness claude > /dev/null || fail "start failed"
+  printf 'tmp\n' > "$home/state/.vanishing.tmp"
+  PATH="$shim:$PATH" soak $((T0 + 100)) sample --home "$home" --out "$out" > /dev/null 2>&1; rc=$?
+  assert_equals 0 "$rc" "sample exits 0 when a state entry vanishes during the copy"
+  assert_equals 1 "$(wc -l < "$out/load.tsv" | tr -d ' ')" "sample appended its load row"
+  pass "a state entry that vanishes during the private copy does not stop sample"
+}
+
+test_sample_refuses_a_failed_copy_of_existing_state() {
+  local home out rc shim="$TMP_ROOT/cpshim-fail"
+  home=$(make_home cpfail)
+  out="$TMP_ROOT/cpfail-out"
+  cp_shim "$shim" fail
+  soak "$T0" start --home "$home" --out "$out" --label baseline --harness claude > /dev/null || fail "start failed"
+  PATH="$shim:$PATH" soak $((T0 + 100)) sample --home "$home" --out "$out" > /dev/null 2>&1; rc=$?
+  assert_equals 1 "$rc" "sample exits 1 when the copy misses a state entry that still exists"
+  [ ! -e "$out/load.tsv" ] || fail "a failed copy still appended a load row"
+  pass "a copy that misses existing home state stops sample"
+}
+
 make_fakebin
 fm_test_run \
+  test_sample_tolerates_a_state_entry_that_vanishes_during_the_copy \
+  test_sample_refuses_a_failed_copy_of_existing_state \
   test_stale_muse_cache_leaves_the_home_unchanged \
   test_watchdog_dir_inside_out_is_refused \
   test_finish_counts_a_document_then_a_frozen_restart \
