@@ -1,0 +1,12 @@
+## published record from a real Claude -p session (FM_HOME=lab, pin compact-at-tokens=150000)
+session=cb229401-e2fd-4f98-b3f0-7cbc43dae21c compact_at=150000 at=1794109989
+## used tokens from the real transcript
+61154
+## reading, matching session, no footer
+footer=unknown derived=60 owner=derived disagreement=-
+## reading, matching session, footer pane 30%
+footer=30 derived=60 owner=derived disagreement=-
+## adversarial: another session id with no pin -> record ignored
+footer=30 derived=unknown owner=footer disagreement=-
+## disagreement-points=5, matching session
+footer=30 derived=60 owner=derived disagreement=1

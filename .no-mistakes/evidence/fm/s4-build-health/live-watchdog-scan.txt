@@ -1,0 +1,16 @@
+### 1. live primary, record published by its own hook:
+session=325271d5-fe89-463c-8f10-20aa49266d56 compact_at=150000 at=1794110106
+  endpoint=none:none session=325271d5-fe89-463c-8f10-20aa49266d56 lock_pid=26608 alive=1 instance=match owner=live
+  transcript_age=224s loop=none/0 restart_requested=0 ctx=57 (derived) [footer=unknown derived=57 owner=derived disagreement=-]
+### 2. adversarial: record names a different session, no pin -> no derived reading
+  endpoint=none:none session=325271d5-fe89-463c-8f10-20aa49266d56 lock_pid=26608 alive=1 instance=match owner=live
+  transcript_age=224s loop=none/0 restart_requested=0 ctx=unknown [footer=unknown derived=unknown owner=none disagreement=-]
+### 3. adversarial: malformed record (compact_at=0), no pin
+  endpoint=none:none session=325271d5-fe89-463c-8f10-20aa49266d56 lock_pid=26608 alive=1 instance=match owner=live
+  transcript_age=225s loop=none/0 restart_requested=0 ctx=unknown [footer=unknown derived=unknown owner=none disagreement=-]
+### 4. pin fallback with foreign record (pin 150000)
+  endpoint=none:none session=325271d5-fe89-463c-8f10-20aa49266d56 lock_pid=26608 alive=1 instance=match owner=live
+  transcript_age=225s loop=none/0 restart_requested=0 ctx=57 (derived) [footer=unknown derived=57 owner=derived disagreement=-]
+### 5. low window for this session (compact_at=64000) -> low derived reading
+  endpoint=none:none session=325271d5-fe89-463c-8f10-20aa49266d56 lock_pid=26608 alive=1 instance=match owner=live
+  transcript_age=226s loop=none/0 restart_requested=0 ctx=0 (derived) [footer=unknown derived=0 owner=derived disagreement=-]
