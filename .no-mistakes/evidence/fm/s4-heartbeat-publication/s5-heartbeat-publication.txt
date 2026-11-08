@@ -1,0 +1,15 @@
+## S5a: cycle=30 grace=60, record for this session compact_at=217000, pane footer 7%
+exit=0
+{"stale_after_secs":90,"ctx":{"used_tokens":102258,"remaining":{"percent":7,"source":"terminal"},"derived":{"percent":53,"source":"transcript"}},"failure":null}
+## S5b: no grace configured -> stale_after_secs null
+exit=0
+{"stale_after_secs":null,"ctx":{"used_tokens":102258,"remaining":{"percent":7,"source":"terminal"},"derived":{"percent":53,"source":"transcript"}},"failure":null}
+## S5c: grace set but no cycle period -> null
+exit=0
+{"stale_after_secs":null,"ctx":{"used_tokens":102258,"remaining":{"percent":7,"source":"terminal"},"derived":{"percent":53,"source":"transcript"}},"failure":null}
+## S5d: grace 0 -> bound equals cycle
+exit=0
+{"stale_after_secs":30,"ctx":{"used_tokens":102258,"remaining":{"percent":7,"source":"terminal"},"derived":{"percent":53,"source":"transcript"}},"failure":null}
+## S5d2: bad grace 060 -> null
+exit=0
+{"stale_after_secs":null,"ctx":{"used_tokens":102258,"remaining":{"percent":7,"source":"terminal"},"derived":{"percent":53,"source":"transcript"}},"failure":null}

@@ -1,0 +1,17 @@
+## actions.tsv
+## monitor-status (written each pass)
+status=uncovered at=1794121824
+## status.md
+# Firstmate watchdog - Eduardos-MacBook-Pro-2
+updated 2026-11-08T07:10:32Z, scan every 120s, mode dry-run, restart on
+STALE IF NOT UPDATED BY 2026-11-08T07:21:32Z (watchdog may be down)
+models: none; spent 24h $0 of $1.00
+
+## Homes
+- fm-lab.aShGtA: ok, last turn 1m ago, ctx 8%; captain pid 11975 live on tmux:%0, moved 2026-11-08T07:10:10Z
+
+## Actions since last read (2026-11-08T06:10:32Z)
+
+## Open gaps
+- fm-lab.aShGtA: low context, but composer is unknown, so the handoff nudge cannot be delivered
+- no model configured; judged symptoms are reported only

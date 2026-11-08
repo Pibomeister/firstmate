@@ -1,0 +1,6 @@
+## S2d: record names another session, no pin -> derived unknown, footer owns (30)
+  transcript_age=112s loop=none/0 restart_requested=0 ctx=30 (pane) [footer=30 derived=unknown owner=footer disagreement=-]
+## S2e: pane footer 7%, record for this session compact_at=217000 -> derived 53 owns; no handoff nudge
+  transcript_age=118s loop=none/0 restart_requested=0 ctx=53 (derived) [footer=7 derived=53 owner=derived disagreement=1]
+handoff-request rows: 0
+- fm-lab.aShGtA: ok, last turn 2m ago, ctx 53%; captain pid 11975 live on tmux:%0, moved 2026-11-08T07:10:10Z

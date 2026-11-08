@@ -1,0 +1,20 @@
+## S1a: settings autoCompactWindow=250000, real transcript (102258 tokens used): silent, publishes compact_at=217000
+trigger exit=
+record: session=ed9665ad-396d-4ca4-894b-e99ad093e340 compact_at=217000 at=1794121777
+## S1e: another session's record is overwritten by this session's run
+trigger exit=
+record: session=ed9665ad-396d-4ca4-894b-e99ad093e340 compact_at=217000 at=1794121778
+## S1b: settings removed, no pin -> nothing resolves, own record withdrawn
+trigger exit=
+record: ABSENT
+## S1f: nothing resolves for session X, record of another session kept
+trigger exit=
+record: session=other compact_at=900000 at=1
+## S1c: pin compact-at-tokens=110000 -> trigger fires (7% left <= 15) and record names pin
+"Firstmate early handoff trigger, from this home's tracked Claude hook: about 7% of context is left before auto-compact (102258 of 110000 tokens). Write your ful"
+trigger exit=
+record: session=ed9665ad-396d-4ca4-894b-e99ad093e340 compact_at=110000 at=1794121779
+## S1d: session id with path chars -> no record written
+"Firstmate early handoff trigger, from this home's tracked Claude hook: about 7% of context is left before auto-compact (102258 of 110000 tokens). Write your ful"
+trigger exit=
+record: ABSENT

@@ -1,0 +1,8 @@
+## S3a: monitor-read records FM_HOME's monitor unit
+exit=0
+status=uncovered at=1794121883
+## monitor unit status direct:
+manager: uncovered (unit not installed)
+## S3b: home without state dir refused
+exit=0
+state

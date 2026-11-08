@@ -1,0 +1,4 @@
+## state/monitor-status after a full locked session start (watchdog unit not enabled):
+status=uncovered at=1794121932
+## watchdog manager-status for lab home:
+manager: uncovered (unit not installed)

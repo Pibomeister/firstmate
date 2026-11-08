@@ -1,0 +1,6 @@
+## S5e: state directory override in use -> derived unknown with reason (watcher-style env)
+exit=0
+{"stale_after_secs":90,"ctx":{"used_tokens":102258,"remaining":{"percent":7,"source":"terminal"},"derived":{"unknown":true,"reason":"state or config directory override in use"}}}
+## S5f: overrides equal to FM_HOME paths (how fm-watch.sh calls it) -> derived still published
+exit=0
+{"stale_after_secs":90,"ctx":{"used_tokens":102258,"remaining":{"percent":7,"source":"terminal"},"derived":{"percent":53,"source":"transcript"}}}
