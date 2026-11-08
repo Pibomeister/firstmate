@@ -26,9 +26,11 @@
 #   epoch  live_workers  wake_acks_last_hour  status_lines_last_hour  session_id
 # The last hour is [epoch-3600, epoch). live_workers counts the task ids with a
 # <home>/state/<id>.meta whose bin/fm-crew-state.sh line, read with
-# FM_HOME=<home> FM_CREW_STATE_NO_FORGE=1, is `state: working` or `state:
-# parked`. wake_acks_last_hour is the count value of `bin/fm-wake-ledger.sh
-# count` over the hour. status_lines_last_hour counts the lines of
+# FM_HOME=<home> FM_CREW_STATE_NO_FORGE=1 and FM_STATE_OVERRIDE set to a
+# private temporary copy of <home>/state made once per sample or finish and
+# removed on exit, is `state: working` or `state: parked`.
+# wake_acks_last_hour is the count value of `bin/fm-wake-ledger.sh count` over
+# the hour. status_lines_last_hour counts the lines of
 # <home>/state/*.status whose first `[at=<epoch>]` falls in the hour.
 # session_id is fm_session_lock_recorded_session_id
 # (bin/fm-session-lock-lib.sh) of <home>/state when it is a plain name (letters,
@@ -75,7 +77,8 @@
 #                   non-zero exit is none), or
 #                   {kind: activity-sources-unavailable, harness} for each
 #                   declared harness when that script is absent.
-# finish refuses a run that is not started or is already finished.
+# finish refuses a run that is not started or is already finished, and refuses
+# with exit 2, before any write, a --watchdog-dir that is --out or inside it.
 #
 # Exit status: 0 on success, 3 on an unreadable harness, 2 on a usage error, a
 # refused --out or a --home that is not the run's, and 1 on any other failure. -h or --help prints this usage.
@@ -215,9 +218,29 @@ run_inventory() {
   return "$status"
 }
 
-# crew_state <id>: the soak home's current-state line for one task.
+STATE_SNAPSHOT=''
+
+# snapshot_state: copy <home>/state once into a private temporary directory,
+# removed on exit. Classifying a task can rewrite files under its state
+# directory (a stale Muse session cache is deleted and rewritten), so
+# crew_state reads this copy and the home is never written.
+snapshot_state() {
+  [ -z "$STATE_SNAPSHOT" ] || return 0
+  STATE_SNAPSHOT=$(mktemp -d "${TMPDIR:-/tmp}/fm-soak-state.XXXXXX") \
+    || die 1 "cannot create a private copy of the home state"
+  trap 'rm -rf "$STATE_SNAPSHOT"' EXIT
+  mkdir "$STATE_SNAPSHOT/state" \
+    || die 1 "cannot create a private copy of the home state"
+  if [ -d "$HOME_DIR/state" ]; then
+    cp -RP "$HOME_DIR/state/." "$STATE_SNAPSHOT/state/" \
+      || die 1 "cannot copy the home state: $HOME_DIR/state"
+  fi
+}
+
+# crew_state <id>: the soak home's current-state line for one task, classified
+# against the private copy of the home state that snapshot_state made.
 crew_state() {
-  env -u FM_STATE_OVERRIDE FM_HOME="$HOME_DIR" FM_CREW_STATE_NO_FORGE=1 \
+  FM_STATE_OVERRIDE="$STATE_SNAPSHOT/state" FM_HOME="$HOME_DIR" FM_CREW_STATE_NO_FORGE=1 \
     "$SCRIPT_DIR/fm-crew-state.sh" "$1" 2>/dev/null || :
 }
 
@@ -295,6 +318,7 @@ cmd_sample() {
   [ -f "$OUT/soak.json" ] || die 1 "no soak run is started in $OUT"
   [ "$(jq -r '.finished_at // empty' "$OUT/soak.json")" = '' ] || die 1 "the soak run in $OUT is already finished"
   require_run_home
+  snapshot_state
   now=$(fm_now)
   since=$((now - 3600))
   live=$(live_tasks | awk 'END { print NR }')
@@ -326,10 +350,13 @@ cmd_finish() {
   local doc canon id t sessions ids seen='' events restarts docs total violations h named
   parse '--home --out --watchdog-dir --transcript-dir' "$@"
   [ -d "$WATCHDOG_DIR" ] || die 2 "the watchdog directory does not exist: $WATCHDOG_DIR"
+  WATCHDOG_DIR=$(canon_dir "$WATCHDOG_DIR") || die 2 "the watchdog directory does not exist: $WATCHDOG_DIR"
+  case "$WATCHDOG_DIR/" in "$OUT"/*) die 2 "--watchdog-dir is --out or inside it: $WATCHDOG_DIR" ;; esac
   [ -d "$TRANSCRIPT_DIR" ] || die 2 "the transcript directory does not exist: $TRANSCRIPT_DIR"
   [ -f "$OUT/soak.json" ] || die 1 "no soak run is started in $OUT"
   [ "$(jq -r '.finished_at // empty' "$OUT/soak.json")" = '' ] || die 1 "the soak run in $OUT is already finished"
   require_run_home
+  snapshot_state
   STARTED=$(jq -r .started_at "$OUT/soak.json")
   LABEL=$(jq -r .label "$OUT/soak.json")
   HARNESSES=()
