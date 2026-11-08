@@ -57,7 +57,8 @@ assert_home_unchanged() {  # <home> <before> <label>
 
 # The fake no-mistakes answers `axi status` with the run file named after the
 # branch checked out in its working directory, so each task copy gets its own
-# run; tmux reports a quiet pane.
+# run; tmux reports a quiet pane, and lists the windows named in
+# FM_FAKE_TMUX_WINDOWS, so a task window only exists where a test names it.
 make_fakebin() {
   local fb="$TMP_ROOT/fakebin"
   mkdir -p "$fb"
@@ -81,6 +82,7 @@ SH
 case "${1:-}" in
   display-message) printf '%%1\n' ;;
   capture-pane) printf 'all quiet\n> \n' ;;
+  list-windows) [ -z "${FM_FAKE_TMUX_WINDOWS:-}" ] || printf '%s\n' "$FM_FAKE_TMUX_WINDOWS" ;;
 esac
 exit 0
 SH
@@ -551,8 +553,53 @@ test_unsafe_session_ids_never_become_paths() {
   pass "a session id that is not a plain name never becomes a path component"
 }
 
+# A Muse task with a live window and no running validation, whose session
+# cache is stale: classifying it deletes and rewrites the cache, so the
+# recorder must classify against a scratch copy of the home state, never
+# against the home.
+test_stale_muse_cache_leaves_the_home_unchanged() {
+  local home out wd tr before root
+  home=$(make_home musecache)
+  out="$TMP_ROOT/musecache-out"; wd="$TMP_ROOT/musecache-watchdog"; tr="$TMP_ROOT/musecache-transcripts"
+  root="$TMP_ROOT/musecache-sessions"
+  mkdir -p "$wd" "$tr" "$root"
+  task_copy musecache-m fm/feat-m
+  fm_write_meta "$home/state/feat-m.meta" "window=fm:fm-feat-m" "worktree=$TASK_DIR" "kind=ship" "backend=tmux" "harness=muse"
+  printf 'sessions_root=%s\nworkspace_root=%s\nbinding_id=current\n' "$root" "$TASK_DIR" > "$home/state/feat-m.muse-session"
+  printf 'binding_id=retired\nsession_log=%s/old/session.jsonl\n' "$root" > "$home/state/feat-m.muse-session-current"
+  FM_FAKE_TMUX_WINDOWS=fm-feat-m soak "$T0" start --home "$home" --out "$out" --label baseline --harness claude > /dev/null || fail "start failed"
+  before=$(snapshot "$home")
+  FM_FAKE_TMUX_WINDOWS=fm-feat-m soak $((T0 + 100)) sample --home "$home" --out "$out" > /dev/null || fail "sample failed"
+  assert_home_unchanged "$home" "$before" "sample with a stale Muse session cache"
+  FM_FAKE_TMUX_WINDOWS=fm-feat-m soak $((T0 + 1000)) finish --home "$home" --out "$out" --watchdog-dir "$wd" --transcript-dir "$tr" > /dev/null || fail "finish failed"
+  assert_home_unchanged "$home" "$before" "finish with a stale Muse session cache"
+  pass "a stale Muse session cache in the home is never deleted or rewritten"
+}
+
+# A --watchdog-dir that is --out or lies inside it would make finish read the
+# watchdog rows it is about to write; it is refused before any write.
+test_watchdog_dir_inside_out_is_refused() {
+  local home out tr rc rows
+  home=$(make_home wdalias)
+  out="$TMP_ROOT/wdalias-out"; tr="$TMP_ROOT/wdalias-transcripts"
+  mkdir -p "$tr"
+  soak "$T0" start --home "$home" --out "$out" --label baseline --harness claude > /dev/null || fail "start failed"
+  mkdir -p "$out/watchdog"
+  printf '%s\trestart\t%s\tw1\tdone\n' $((T0 + 10)) "$home" > "$out/watchdog/actions.tsv"
+  rows=$(cat "$out/watchdog/actions.tsv")
+  soak $((T0 + 1000)) finish --home "$home" --out "$out" --watchdog-dir "$out/watchdog" --transcript-dir "$tr" > /dev/null 2>&1; rc=$?
+  assert_equals 2 "$rc" "finish refuses a --watchdog-dir inside --out"
+  assert_equals "$rows" "$(cat "$out/watchdog/actions.tsv")" "a refused finish left the staged watchdog rows intact"
+  assert_equals '' "$(jq -r '.finished_at // empty' "$out/soak.json")" "a refused finish did not finish the run"
+  soak $((T0 + 1000)) finish --home "$home" --out "$out" --watchdog-dir "$out" --transcript-dir "$tr" > /dev/null 2>&1; rc=$?
+  assert_equals 2 "$rc" "finish refuses a --watchdog-dir equal to --out"
+  pass "a --watchdog-dir that is --out or inside it is refused before any write"
+}
+
 make_fakebin
 fm_test_run \
+  test_stale_muse_cache_leaves_the_home_unchanged \
+  test_watchdog_dir_inside_out_is_refused \
   test_finish_counts_a_document_then_a_frozen_restart \
   test_out_that_contains_the_home_is_refused \
   test_sample_and_finish_refuse_another_home \
