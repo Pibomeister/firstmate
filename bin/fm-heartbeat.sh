@@ -35,18 +35,21 @@
 #                     cap is max(FM_HEARTBEAT_DEADLINE, FM_HEARTBEAT_SNAPSHOT_TIMEOUT)
 #                     + FM_HEARTBEAT_DISCOVERY_TIMEOUT (default 60)
 #                     + FM_HEARTBEAT_QUOTA_TIMEOUT + an overrun of
-#                     17 * (max(READ, NM timeout) + 1) + 3 seconds: the 17
-#                     bounded reads of the primary or of the one task row in
-#                     flight when the deadline passes, each with the 1 s kill
-#                     slack of bin/fm-timeout-lib.sh, plus that slack on the
-#                     snapshot, discovery and quota bounds. The watcher starts
+#                     17 * (max(READ, NM timeout) + 1) + 4 * (5 + 1) + 3
+#                     seconds: the 17 bounded reads of the primary or of the
+#                     one task row in flight when the deadline passes, each
+#                     with the 1 s kill slack of bin/fm-timeout-lib.sh; the 5 s
+#                     bound of the opt-in no-mistakes home resolver
+#                     (bin/fm-nm-run-lib.sh) before each of that row's up to 4
+#                     no-mistakes host reads, with its slack; and that slack on
+#                     the snapshot, discovery and quota bounds. The watcher starts
 #                     the next run within one cycle of a publication, so a
 #                     healthy home's age stays within cycle + run cap. A dead
 #                     publisher stamps nothing more and reads past the bound
 #                     stale_after_secs after its last publication: that is the
 #                     detection delay, plus the verdict reader's own cadence.
-#                     With the defaults (DEADLINE 240, READ 3) the cap is 381 s,
-#                     so a 15 s cycle and a 60 s grace give a 456 s delay.
+#                     With the defaults (DEADLINE 240, READ 3) the cap is 405 s,
+#                     so a 15 s cycle and a 60 s grace give a 480 s delay.
 #   snapshot          {ok, schema, generated, failure} for the fleet snapshot read
 #   primary           supervising firstmate session (not a ship/scout task row)
 #     terminal          {backend, target, present} from this writer's environment
@@ -760,7 +763,7 @@ heartbeat_publish() {
   [ "$FM_HEARTBEAT_NM_TIMEOUT" -le "$read" ] || read=$FM_HEARTBEAT_NM_TIMEOUT
   discovery=${FM_HEARTBEAT_DISCOVERY_TIMEOUT:-60}
   case "$discovery" in ''|*[!0-9]*|0) discovery=60 ;; esac
-  run_cap=$((lead + discovery + FM_HEARTBEAT_QUOTA_TIMEOUT + 17 * (read + 1) + 3))
+  run_cap=$((lead + discovery + FM_HEARTBEAT_QUOTA_TIMEOUT + 17 * (read + 1) + 4 * (5 + 1) + 3))
   [ -z "$cycle" ] || [ -z "$grace" ] || stale_after=$((cycle + grace + run_cap))
   ready_pr=$(heartbeat_ready_pr_discovery) || ready_pr='{"unknown":true,"reason":"ready-pr discovery unreadable"}'
   case "$ready_pr" in

@@ -859,8 +859,9 @@ SH
 }
 
 # The whole-run cap under the default read bounds (bin/fm-heartbeat.sh header):
-# max(DEADLINE 240, SNAPSHOT 120) + discovery 60 + quota 10 + 17 * (3 + 1) + 3.
-DEFAULT_RUN_CAP=381
+# max(DEADLINE 240, SNAPSHOT 120) + discovery 60 + quota 10 + 17 * (3 + 1)
+# + 4 * (5 + 1) + 3.
+DEFAULT_RUN_CAP=405
 
 # AC-14 (HB-3 replacement a): the bound covers one whole run, and the age runs
 # from the publication stamp. A busy run that hits every cap must publish a
@@ -875,13 +876,18 @@ test_worst_age_of_a_busy_healthy_home_stays_within_the_bound() {
     "$home/canned-snapshot.json" > "$home/many.json"
   mv "$home/many.json" "$home/canned-snapshot.json"
   printf 'stale-grace-secs=0\n' > "$home/config/heartbeat"
+  # An opt-in no-mistakes home resolver that hangs costs its own 5 s bound
+  # before every no-mistakes host read of the row in flight.
+  printf '#!/usr/bin/env bash\nsleep 30\n' > "$home/hang-resolver.sh"
+  chmod +x "$home/hang-resolver.sh"
+  printf '%s\n' "$home/hang-resolver.sh" > "$home/config/nm-home-resolver"
   started=$(date +%s)
   publish "$home" FM_HEARTBEAT_CYCLE_SECS=$cycle FM_HEARTBEAT_SNAPSHOT_SCRIPT="$script" \
     FAKE_NM_MODE=hang FAKE_QUOTA_DELAY=30 FM_HEARTBEAT_DEADLINE=3 FM_HEARTBEAT_SNAPSHOT_TIMEOUT=2 \
     FM_HEARTBEAT_READ_TIMEOUT=1 FM_HEARTBEAT_NM_TIMEOUT=1 FM_HEARTBEAT_QUOTA_TIMEOUT=1 \
     FM_HEARTBEAT_DISCOVERY_TIMEOUT=6
-  # cycle 1 + grace 0 + max(3, 2) + discovery 6 + quota 1 + 17 * (1 + 1) + 3
-  assert_ledger "$home" '.stale_after_secs == 48' "the bound does not add one whole-run cap"
+  # cycle 1 + grace 0 + max(3, 2) + discovery 6 + quota 1 + 17 * (1 + 1) + 4 * (5 + 1) + 3
+  assert_ledger "$home" '.stale_after_secs == 72' "the bound does not add one whole-run cap"
   assert_ledger "$home" '(.failure.reason | test("deadline"))' "the busy run never reached its deadline"
   published=$(jq -r '.published_epoch' "$(ledger "$home")")
   generated=$(jq -r '.generated_epoch' "$(ledger "$home")")
