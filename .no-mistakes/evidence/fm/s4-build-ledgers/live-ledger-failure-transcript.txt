@@ -1,0 +1,14 @@
+== ack with blocked ledger
+ack_rc=1
+fm-wake-ledger: the ack row could not be written to /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.FhBcLN/state/wake-ledger.tsv; the removal it describes did not happen
+wake drain: acknowledged wakes could not be consumed safely
+== queue after failed ack
+1794117859	1	signal	a.status	signal: a
+1794117859	2	signal	b.status	signal: b
+== retry
+retry_rc=0
+== queue
+== ledger
+1794117863	ack	57756.1794117859.onoKYE	2	1,2	["a.status","b.status"]
+1794117863	consumed	57756.1794117859.onoKYE	2	1,2	["a.status","b.status"]
+reference=0 highest=2 span=2 unlisted=0 late=0 count=2

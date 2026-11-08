@@ -1,0 +1,88 @@
++(eval):3> export FM_HOME=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.WcEeMe
++(eval):4> unset FM_STATE_OVERRIDE FM_ROOT_OVERRIDE
++(eval):6> T_START=+(eval):6> date +%s
++(eval):6> T_START=1794117843 
++(eval):7> q signal alpha.status 'signal: alpha'
++q:0> FM_HOME=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.WcEeMe bash -c '. "$0/bin/fm-wake-lib.sh"; fm_wake_append "$1" "$2" "$3"' /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M6WVSVX767C4STR893B59F17 signal alpha.status 'signal: alpha'
++(eval):8> q signal alpha.status 'signal: alpha again (dup key)'
++q:0> FM_HOME=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.WcEeMe bash -c '. "$0/bin/fm-wake-lib.sh"; fm_wake_append "$1" "$2" "$3"' /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M6WVSVX767C4STR893B59F17 signal alpha.status 'signal: alpha again (dup key)'
++(eval):9> q check gamma.check 'check: gamma'
++q:0> FM_HOME=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.WcEeMe bash -c '. "$0/bin/fm-wake-lib.sh"; fm_wake_append "$1" "$2" "$3"' /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M6WVSVX767C4STR893B59F17 check gamma.check 'check: gamma'
++(eval):10> cat /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.WcEeMe/state/.wake-queue
+1794117843	1	signal	alpha.status	signal: alpha
+1794117843	2	signal	alpha.status	signal: alpha again (dup key)
+1794117843	3	check	gamma.check	check: gamma
++(eval):11> bash bin/fm-wake-drain.sh
++(eval):11> echo 'drain_rc=0'
+drain_rc=0
++(eval):12> ACK=+(eval):12> grep WAKE_ACK_REQUIRED /tmp/drain.err
++grep:1> local _cc_a
++grep:2> _cc_a=WAKE_ACK_REQUIRED
++grep:3> case WAKE_ACK_REQUIRED (-*-filter* | -*-pager* | -*-view* | -*-format-open* | -*-config* | ---* | -@* | -*-save-config* | -[Zz]* | -[!-]*[Zz]* | --null | --null-data)
++grep:2> _cc_a=/tmp/drain.err
++grep:3> case /tmp/drain.err (-*-filter* | -*-pager* | -*-view* | -*-format-open* | -*-config* | ---* | -@* | -*-save-config* | -[Zz]* | -[!-]*[Zz]* | --null | --null-data)
++grep:5> local _cc_bin=/Users/eduardopicazo/.local/share/claude/versions/2.1.319
++grep:6> [[ -x /Users/eduardopicazo/.local/share/claude/versions/2.1.319 ]]
++grep:7> [[ ! -x /Users/eduardopicazo/.local/share/claude/versions/2.1.319 ]]
++grep:8> [[ -n 5.9 ]]
++grep:9> ARGV0=ugrep ugrep -G --ignore-files --hidden -I '--exclude-dir=.git' '--exclude-dir=.svn' '--exclude-dir=.hg' '--exclude-dir=.bzr' '--exclude-dir=.jj' '--exclude-dir=.sl' WAKE_ACK_REQUIRED /tmp/drain.err
++(eval):12> ACK='WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 3 --recovery-generation 2180.1794117843.0UkTVz' 
++(eval):12> echo 'WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 3 --recovery-generation 2180.1794117843.0UkTVz'
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 3 --recovery-generation 2180.1794117843.0UkTVz
++(eval):13> TH=+(eval):13> echo 'WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 3 --recovery-generation 2180.1794117843.0UkTVz'
++(eval):13> TH=+(eval):13> sed -n 's/.*--ack-through \([0-9]*\) .*/\1/p'
++(eval):13> TH=3 
++(eval):13> GEN=+(eval):13> echo 'WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 3 --recovery-generation 2180.1794117843.0UkTVz'
++(eval):13> GEN=+(eval):13> sed -n 's/.*--recovery-generation \([^ ]*\)$/\1/p'
++(eval):13> GEN=2180.1794117843.0UkTVz 
++(eval):14> bash bin/fm-wake-drain.sh --ack-through 3 --recovery-generation 2180.1794117843.0UkTVz
++(eval):14> echo 'ack_rc=0'
+ack_rc=0
++(eval):15> cat /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.WcEeMe/state/wake-ledger.tsv
+1794117845	ack	2180.1794117843.0UkTVz	3	1,2,3	["alpha.status","alpha.status","gamma.check"]
+1794117845	consumed	2180.1794117843.0UkTVz	3	1,2,3	["alpha.status","alpha.status","gamma.check"]
++(eval):16> bash bin/fm-wake-drain.sh --ack-through 3 --recovery-generation 2180.1794117843.0UkTVz
++(eval):16> echo 'reack_rc=0'
+reack_rc=0
++(eval):17> wc -l
+       2
++(eval):18> sleep 2
++(eval):19> T_MID=+(eval):19> date +%s
++(eval):19> T_MID=1794117847 
++(eval):20> q signal task-x.status 'signal: task x'
++q:0> FM_HOME=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.WcEeMe bash -c '. "$0/bin/fm-wake-lib.sh"; fm_wake_append "$1" "$2" "$3"' /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M6WVSVX767C4STR893B59F17 signal task-x.status 'signal: task x'
++(eval):21> q signal task-y.status 'signal: task y'
++q:0> FM_HOME=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.WcEeMe bash -c '. "$0/bin/fm-wake-lib.sh"; fm_wake_append "$1" "$2" "$3"' /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M6WVSVX767C4STR893B59F17 signal task-y.status 'signal: task y'
++(eval):22> FM_HOME=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.WcEeMe bash -c '. "$0/bin/fm-wake-lib.sh"; fm_wake_queue_prune_task "$1/state" task-x' /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M6WVSVX767C4STR893B59F17 /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.WcEeMe
++(eval):22> echo 'prune_rc=0'
+prune_rc=0
++(eval):23> cat /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.WcEeMe/state/.wake-queue
+1794117847	5	signal	task-y.status	signal: task y
++(eval):24> cat /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.WcEeMe/state/wake-ledger.tsv
+1794117845	ack	2180.1794117843.0UkTVz	3	1,2,3	["alpha.status","alpha.status","gamma.check"]
+1794117845	consumed	2180.1794117843.0UkTVz	3	1,2,3	["alpha.status","alpha.status","gamma.check"]
+1794117848	pruned	-	-	4	["task-x.status"]
++(eval):25> T_END=+(eval):25> date +%s
++(eval):25> T_END=1794117849 
++(eval):26> bash bin/fm-wake-ledger.sh count --since 1794117843 --until 1794117847
+reference=0 highest=3 span=3 unlisted=0 late=0 count=3
++(eval):27> bash bin/fm-wake-ledger.sh count --since 1794117847 --until 1794117849
+reference=3 highest=4 span=1 unlisted=0 late=0 count=1
++(eval):28> bash bin/fm-wake-ledger.sh count --since 1794117843 --until 1794117849
+reference=0 highest=4 span=4 unlisted=0 late=0 count=4
++(eval):29> bash bin/fm-wake-ledger.sh rows --since 1794117843 --until 1794117849
+1794117845	ack	2180.1794117843.0UkTVz	3	1,2,3	["alpha.status","alpha.status","gamma.check"]
+1794117845	consumed	2180.1794117843.0UkTVz	3	1,2,3	["alpha.status","alpha.status","gamma.check"]
+1794117848	pruned	-	-	4	["task-x.status"]
++(eval):30> bash bin/fm-wake-ledger.sh count --since 5 --until 2
+fm-wake-ledger: --since 5 is after --until 2
++(eval):30> echo 'badwin_rc=1'
+badwin_rc=1
++(eval):31> bash bin/fm-wake-ledger.sh count --since x --until 2
+fm-wake-ledger: --since must be a decimal whole number: x
++(eval):31> echo 'badnum_rc=1'
+badnum_rc=1
++(eval):32> bash bin/fm-wake-ledger.sh bogus
++(eval):32> echo 'badcmd_rc=2'
+badcmd_rc=2
++(eval):33> set +x
