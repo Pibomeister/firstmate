@@ -1,0 +1,11 @@
+  [watchdog] alive=live
+== S12 auto-arm turn proven 50s ago, watcher beat 100s old (inside 300s grace), heartbeat 100s old (bound 75) -> unknown mid-turn
+  [auto-arm model]
+  > verdict=unknown reason=mid-turn heartbeat_age=100 lock=live watcher_age=100 monitor=enabled at=1794134522
+  [persistent model, same records: no auto-arm proof applies]
+  > verdict=stale reason=heartbeat-stale heartbeat_age=100 lock=live watcher_age=101 monitor=enabled at=1794134522
+== S13 watcher beats after the turn proof -> between turns, the same old heartbeat is stale
+  > verdict=stale reason=heartbeat-stale heartbeat_age=101 lock=live watcher_age=0 monitor=enabled at=1794134523
+== S14 a dead lock outranks mid-turn
+  [watchdog] alive=dead
+  > verdict=dead reason=lock-dead heartbeat_age=102 lock=dead watcher_age=101 monitor=enabled at=1794134524
