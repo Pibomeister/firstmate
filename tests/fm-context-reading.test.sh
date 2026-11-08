@@ -77,7 +77,13 @@ test_derived_percent_is_left_of_the_window() {
   usage_transcript "$H/t.jsonl" 93000
   assert_equals 7 "$(lib fm_context_derived_percent "$H/t.jsonl" 100000)" "93000 of 100000 leaves 7"
   usage_transcript "$H/t.jsonl" 1
-  assert_equals 67 "$(lib fm_context_derived_percent "$H/t.jsonl" 3)" "100 - used*100/window, integer"
+  assert_equals 66 "$(lib fm_context_derived_percent "$H/t.jsonl" 3)" "(window - used)*100/window, floored"
+  usage_transcript "$H/t.jsonl" 91500
+  assert_equals 8 "$(lib fm_context_derived_percent "$H/t.jsonl" 100000)" "91500 of 100000 floors to 8, as the compact-point trigger reads it"
+  usage_transcript "$H/t.jsonl" 50000
+  assert_equals 50 "$(lib fm_context_derived_percent "$H/t.jsonl" 100000)" "a clean multiple reads exactly"
+  usage_transcript "$H/t.jsonl" 100000
+  assert_equals 0 "$(lib fm_context_derived_percent "$H/t.jsonl" 100000)" "a full window reads 0"
   usage_transcript "$H/t.jsonl" 120000
   assert_equals 0 "$(lib fm_context_derived_percent "$H/t.jsonl" 100000)" "past the window never reads below 0"
   assert_equals "" "$(lib fm_context_derived_percent "$H/t.jsonl" '')" "no window gives no reading"

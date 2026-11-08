@@ -6,7 +6,8 @@
 # TWO READINGS.
 #   footer   the harness's own "N% until auto-compact" pane text, parsed by
 #            fm_context_footer_percent_from_text (the one footer parser)
-#   derived  100 - used*100/window, floored at 0, where used is the last
+#   derived  (window - used)*100/window, floored and clamped at 0, the same
+#            rounding as bin/fm-compact-point-lib.sh, where used is the last
 #            request's context tokens (fm_warm_compact_context_tokens) and
 #            window is the session's auto-compact point
 # The full-window status percentage is never a reading here.
@@ -73,7 +74,7 @@ fm_context_derived_percent() {  # <transcript> <window-tokens>
   [ -n "$transcript" ] || return 1
   used=$(fm_warm_compact_context_tokens "$transcript") || return 1
   case "$used" in '' | *[!0-9]*) return 1 ;; esac
-  left=$((100 - used * 100 / window))
+  left=$(((window - used) * 100 / window))
   [ "$left" -ge 0 ] || left=0
   printf '%s\n' "$left"
 }
