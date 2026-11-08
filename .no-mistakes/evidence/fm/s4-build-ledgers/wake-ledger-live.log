@@ -1,0 +1,46 @@
+### queue four wakes through the real producer
+1794109808	1	signal
+1794109808	2	signal
+1794109808	3	check
+1794109808	4	signal
+### task prune removes the taskx row
+prune_rc=0
+### drain presents, then acknowledge exactly that boundary
+ack command: bin/fm-wake-drain.sh --ack-through 3 --recovery-generation 90179.1794109808.8GRuYU
+ack_rc=0
+### repeat acknowledgement (removes nothing)
+reack_rc=0
+queue rows after ack: 0
+### wake ledger file
+1794109808	pruned	-	-	4	["$TMPDIR//fm-lab.lJzGta/state/taskx.status"]
+1794109810	ack	90179.1794109808.8GRuYU	3	1,2,3	["alpha.status","beta.status","gamma.check.sh"]
+1794109810	consumed	90179.1794109808.8GRuYU	3	1,2,3	["alpha.status","beta.status","gamma.check.sh"]
+### a wake still queued (unacked) at window-1 end
+window1 [T_START,MID):
+reference=0 highest=4 span=4 unlisted=0 late=0 count=4
+1794109808	pruned	-	-	4	["$TMPDIR//fm-lab.lJzGta/state/taskx.status"]
+1794109810	ack	90179.1794109808.8GRuYU	3	1,2,3	["alpha.status","beta.status","gamma.check.sh"]
+1794109810	consumed	90179.1794109808.8GRuYU	3	1,2,3	["alpha.status","beta.status","gamma.check.sh"]
+ack2_rc=0
+window2 [MID,END):
+reference=4 highest=5 span=1 unlisted=0 late=0 count=1
+whole [T_START,END):
+reference=0 highest=5 span=5 unlisted=0 late=0 count=5
+### final ledger
+1794109808	pruned	-	-	4	["$TMPDIR//fm-lab.lJzGta/state/taskx.status"]
+1794109810	ack	90179.1794109808.8GRuYU	3	1,2,3	["alpha.status","beta.status","gamma.check.sh"]
+1794109810	consumed	90179.1794109808.8GRuYU	3	1,2,3	["alpha.status","beta.status","gamma.check.sh"]
+1794109814	ack	1850.1794109812.hNMD5Q	5	5	["delta.status"]
+1794109814	consumed	1850.1794109812.hNMD5Q	5	5	["delta.status"]
+### adversarial arguments
+fm-wake-ledger: --since 5 is after --until 1
+since_after_until_rc=1
+fm-wake-ledger: --since must be a decimal whole number: x
+nonnumeric_rc=1
+fm-wake-ledger: --until is required
+missing_until_rc=1
+unknown_sub_rc=2
+### missing ledger library: prune must fail, queue untouched
+prune_without_lib_rc=1
+queue unchanged: yes
+ledger unchanged: yes
