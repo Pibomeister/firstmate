@@ -395,10 +395,22 @@ test_proven_turn_with_a_young_watcher_beat_is_unknown_mid_turn() {
 
 test_a_read_without_write_creates_no_state_directory() {
   local home="$TMP_ROOT/no-state" out
-  mkdir -p "$home/config"
-  out=$(verdict "$home")
+  local spy="$TMP_ROOT/no-state-spy" calls="$TMP_ROOT/no-state-calls.log" tool
+  mkdir -p "$home/config" "$spy"
+  : > "$calls"
+  # Every directory create or remove the read makes is logged, then performed.
+  for tool in mkdir rmdir; do
+    cat > "$spy/$tool" <<SH
+#!/usr/bin/env bash
+printf '%s %s\\n' "$tool" "\$*" >> "$calls"
+exec /bin/$tool "\$@"
+SH
+    chmod +x "$spy/$tool"
+  done
+  out=$(PATH="$spy:$PATH" verdict "$home")
   assert_equals unknown "$(field "$out" verdict)" "a home with no records reads unknown"
   assert_equals "" "$(cd "$home" && find . -mindepth 1 ! -path ./config)" "the read leaves the home unchanged"
+  assert_equals "" "$(grep -F "$home/state" "$calls")" "the read never creates or removes the state directory"
   pass "a read without --write leaves a home with no state directory unchanged"
 }
 

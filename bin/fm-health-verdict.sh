@@ -73,17 +73,18 @@ done
 [ -n "$home" ] || { echo "fm-health-verdict.sh: no home: pass --home or set FM_HOME" >&2; exit 2; }
 [ -d "$home" ] || { echo "fm-health-verdict.sh: not a directory: $home" >&2; exit 2; }
 FM_HOME=$(cd "$home" && pwd)
-STATE=$FM_HOME/state
 export FM_HOME
-unset FM_STATE_OVERRIDE
-state_existed=0
-[ -d "$STATE" ] && state_existed=1
+unset FM_STATE_OVERRIDE FM_WAKE_QUEUE FM_WAKE_QUEUE_LOCK
+# Loading the wake library creates its state directory. A read must never
+# create or remove anything in the home, so load it against the home itself,
+# which already exists, and only then name the real state directory.
+STATE=$FM_HOME
 
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"
-# Loading the wake library creates the state directory; a read must leave the
-# home unchanged, so remove it again when this run created it.
-[ "$state_existed" = 1 ] || rmdir "$STATE" 2>/dev/null || true
+STATE=$FM_HOME/state
+FM_WAKE_QUEUE=$STATE/.wake-queue
+FM_WAKE_QUEUE_LOCK=$STATE/.wake-queue.lock
 # shellcheck source=bin/fm-watchdog-lib.sh
 . "$SCRIPT_DIR/fm-watchdog-lib.sh"
 # shellcheck source=bin/fm-classify-lib.sh
