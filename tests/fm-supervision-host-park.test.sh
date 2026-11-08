@@ -612,10 +612,22 @@ printf '%s\n' '  4201508       0       0       7204  ?              0 22:24:48 C
 SH
   chmod +x "$home/fakebin/uname" "$home/fakebin/ps"
   printf 'win:7204\n' > "$home/state/.lock"
-  env -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID \
+  # POSIX harness ancestry is preferred over the Windows tagged holder
+  # (fm_harness_ancestry_pids). A Cursor/agent parent in this process table
+  # would stand the host down. Reparent the host to init so the case exercises
+  # the tagged-holder path without changing that ownership preference.
+  perl -e '
+    defined(my $pid = fork) or exit 1;
+    exit 0 if $pid;
+    require POSIX;
+    POSIX::setsid() >= 0 or exit 1;
+    exec @ARGV;
+  ' env -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID \
     FM_HOME="$home" FM_CREW_STATE_BIN="$home/fakebin/fm-crew-state.sh" PATH="$home/fakebin:$PATH" \
     CLAUDE_PID=7204 CLAUDE_CODE_SESSION_ID=tagged-session \
-    bash -c '"$0" park > "$FM_HOME/host.out" 2>&1; printf "%s\n" "$?" > "$FM_HOME/host.rc"' "$HOST" 2>> "$home/claude.err" &
+    bash -c '"$0" park > "$FM_HOME/host.out" 2>&1; printf "%s\n" "$?" > "$FM_HOME/host.rc"' "$HOST" \
+    2>> "$home/claude.err" \
+    || fail "tagged: could not start an ancestry-isolated host"
   wait_until 150 watcher_live "$home" || fail "tagged: the host never started a watcher cycle: $(cat "$home/host.out")"
   append_status "$home" 'step one'
   wait_until 250 handled_at_least "$home" 1 || fail "tagged: the wake was not handled: $(cat "$home/host.out"; cat "$home/state/.supervision-host.log")"
