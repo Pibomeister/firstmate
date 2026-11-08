@@ -204,10 +204,14 @@ session_start() {  # <home> [env...]
     "$ROOT/bin/fm-session-start.sh" > "$home/digest.out" 2>&1 || true
 }
 
-monitor_calls() {  # <home>: manager calls naming this home's monitor unit
+monitor_calls() {  # <home>: monitor reads of this home's monitor unit
+  # One read opens with one query: `launchctl print` on macOS, or
+  # `systemctl --user is-enabled` on Linux, which an enabled unit follows with
+  # is-active. Count the opening query only, so both platforms count one per read.
   local name
   name=$(FM_HOME="$1" bash "$MON" manager-name)
-  grep -c -F -- "$name" "$CALLS" 2>/dev/null || true
+  grep -F -- "$name" "$CALLS" 2>/dev/null \
+    | grep -c -E '^(launchctl print|systemctl --user is-enabled) ' || true
 }
 
 test_session_start_reads_once_without_watchdog() {
