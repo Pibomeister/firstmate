@@ -1,0 +1,46 @@
+## gate-side appends
+t1
+t2
+t3
+t4
+fm-incident-ledger: invalid action: bogus
+bogus-action rc=2
+fm-incident-ledger: home, subject, signal, state, class and episode must be non-empty
+empty-home rc=2
+## ledger file (cat -vet)
+t1^I1794113920^Imain^Iship-42^Istale^Iwaiting-too-long^Iroutine^Iep1^I-^I-^Irecord$
+t2^I1794113920^Imain^Iship-42^Istale^Iwaiting-too-long^Iexc-loop^Iep1^Ilooped 3x^I-^Iescalate$
+t3^I1794113920^Imain^Iship-42^Istale^Irecovered^Iroutine^Iep1^I-^I-^Iclosure$
+t4^I1794113920^Ima in^Isub ject^Isig^Ist^Iroutine^Iep2^I-^I-^Irecord$
+## latest any state
+t3	1794113920	main	ship-42	stale	recovered	routine	ep1	-	-	closure
+## latest exact key waiting-too-long
+t2	1794113920	main	ship-42	stale	waiting-too-long	exc-loop	ep1	looped 3x	-	escalate
+## latest unknown signal (expect empty)
+rc=0
+## lookup with raw tab/newline values
+t4	1794113920	ma in	sub ject	sig	st	routine	ep2	-	-	record
+## key + episode rows
+main|ship-42|stale|recovered
+t1	1794113920	main	ship-42	stale	waiting-too-long	routine	ep1	-	-	record
+t2	1794113920	main	ship-42	stale	waiting-too-long	exc-loop	ep1	looped 3x	-	escalate
+t3	1794113920	main	ship-42	stale	recovered	routine	ep1	-	-	closure
+## rows --since 0 count
+       4
+## rows --since future count
+       0
+## refusals
+fm-incident-ledger: --since is not a decimal whole number: abc
+rc=1
+fm-incident-ledger: missing --signal
+rc=1
+fm-incident-ledger: repeated flag: --home
+rc=1
+fm-incident-ledger: unknown flag for rows: --state
+rc=1
+unknown subcommand rc=2
+## append-only: first 4 rows unchanged after more appends
+prefix unchanged
+## 40 concurrent writers
+rows=      44 dup-ids=0 max-id=44
+lock left behind: 4
