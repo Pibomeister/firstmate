@@ -1,0 +1,7 @@
+ledger holds only signal=01; query signal=1 must print nothing
+-- pre-fix lib (43651fe1^) --
+t1	100	h	s	01	open	routine	e1	-	-	escalate
+-- HEAD lib --
+(end HEAD: empty = correct)
+-- HEAD lib, query 01 --
+t1	100	h	s	01	open	routine	e1	-	-	escalate

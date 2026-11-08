@@ -1,0 +1,12 @@
+1..10
+ok - home, subject, signal, state and episode compare as text, so 01 is not 1
+ok - append writes one row per transition with id, epoch and every column
+ok - appends never rewrite an earlier row, and a repeated key gets a new row
+ok - append refuses an unknown action or an empty key field and writes nothing
+ok - field values are made tab- and newline-free, and lookups match them
+ok - latest, latest-of-key and episode rows read from the ledger alone
+ok - every reader skips a row without eleven columns, a t<N> id and a decimal epoch
+ok - twenty concurrent appenders under the ledger lock lose no row and get unique ids
+ok - the ledger lock excludes a second holder until it is released
+ok - the latest and rows verbs and their refusals
+FM_TEST_COMPLETE

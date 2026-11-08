@@ -1,0 +1,107 @@
+== S4: 20 concurrent writers x 10 appends under the ledger lock ==
+total rows:      205 (expect 205)
+h3 rows:      200 (expect 200)
+unique ids:      205 (expect 205)
+max id: 205
+malformed rows:        0
+== S5: append-only: first 5 rows unchanged after concurrent appends ==
+before=ee9b04698da4a607670c79f03589ecd22c677218 after=ee9b04698da4a607670c79f03589ecd22c677218 same=yes
+lock file left released: .incident-ledger.lock.owner.0elhsy
+.incident-ledger.lock.owner.10PBd2
+.incident-ledger.lock.owner.2Dinqg
+.incident-ledger.lock.owner.2NV0n2
+.incident-ledger.lock.owner.2ZwL1i
+.incident-ledger.lock.owner.3iq5w9
+.incident-ledger.lock.owner.43Sc7N
+.incident-ledger.lock.owner.4655ab
+.incident-ledger.lock.owner.50XLJg
+.incident-ledger.lock.owner.5VbjnV
+.incident-ledger.lock.owner.5ZeX23
+.incident-ledger.lock.owner.5ZoePY
+.incident-ledger.lock.owner.6GaKtn
+.incident-ledger.lock.owner.6SlISF
+.incident-ledger.lock.owner.7FdCBl
+.incident-ledger.lock.owner.7nCUBe
+.incident-ledger.lock.owner.93PelD
+.incident-ledger.lock.owner.982hwI
+.incident-ledger.lock.owner.ADioS3
+.incident-ledger.lock.owner.AGATnT
+.incident-ledger.lock.owner.BeKRa1
+.incident-ledger.lock.owner.BqwmVC
+.incident-ledger.lock.owner.Bx8XtS
+.incident-ledger.lock.owner.C9LBoF
+.incident-ledger.lock.owner.CBxf3f
+.incident-ledger.lock.owner.Du82Ga
+.incident-ledger.lock.owner.E3bqwP
+.incident-ledger.lock.owner.HgC4k7
+.incident-ledger.lock.owner.HiGrco
+.incident-ledger.lock.owner.I2WUPE
+.incident-ledger.lock.owner.KbW7WO
+.incident-ledger.lock.owner.KtPBC6
+.incident-ledger.lock.owner.LWlvXG
+.incident-ledger.lock.owner.LXBsHq
+.incident-ledger.lock.owner.NH8WYa
+.incident-ledger.lock.owner.O4B7YY
+.incident-ledger.lock.owner.P3R1Hw
+.incident-ledger.lock.owner.P4zAFB
+.incident-ledger.lock.owner.PR9Oco
+.incident-ledger.lock.owner.Q8HRlx
+.incident-ledger.lock.owner.T6I2GQ
+.incident-ledger.lock.owner.V1SoqL
+.incident-ledger.lock.owner.VQ3ODr
+.incident-ledger.lock.owner.Vqfan6
+.incident-ledger.lock.owner.W63otj
+.incident-ledger.lock.owner.Wbn3vb
+.incident-ledger.lock.owner.Wgcdnl
+.incident-ledger.lock.owner.Xzkt3D
+.incident-ledger.lock.owner.YpBZFp
+.incident-ledger.lock.owner.ZE6rAu
+.incident-ledger.lock.owner.ZLuf0G
+.incident-ledger.lock.owner.ZQQL4D
+.incident-ledger.lock.owner.ZYTYYC
+.incident-ledger.lock.owner.Zgx5KA
+.incident-ledger.lock.owner.ZuKqsO
+.incident-ledger.lock.owner.a7aBhS
+.incident-ledger.lock.owner.amAp20
+.incident-ledger.lock.owner.aqaClE
+.incident-ledger.lock.owner.d9DEbQ
+.incident-ledger.lock.owner.e44Oc3
+.incident-ledger.lock.owner.fbrOq4
+.incident-ledger.lock.owner.g3Pu0O
+.incident-ledger.lock.owner.hRcJni
+.incident-ledger.lock.owner.htlZJp
+.incident-ledger.lock.owner.iJuQw1
+.incident-ledger.lock.owner.jEjyqZ
+.incident-ledger.lock.owner.jVLm19
+.incident-ledger.lock.owner.jq84qI
+.incident-ledger.lock.owner.kNGep6
+.incident-ledger.lock.owner.khAVtP
+.incident-ledger.lock.owner.l2S0FZ
+.incident-ledger.lock.owner.mKN8z8
+.incident-ledger.lock.owner.mMqrlR
+.incident-ledger.lock.owner.mQkvXD
+.incident-ledger.lock.owner.mSFBQE
+.incident-ledger.lock.owner.mUJeCd
+.incident-ledger.lock.owner.nH7ic5
+.incident-ledger.lock.owner.o01B21
+.incident-ledger.lock.owner.o2QrFm
+.incident-ledger.lock.owner.oJzVog
+.incident-ledger.lock.owner.oqyy1z
+.incident-ledger.lock.owner.pLlF3j
+.incident-ledger.lock.owner.pfkNRk
+.incident-ledger.lock.owner.rBkvxF
+.incident-ledger.lock.owner.rVqsAS
+.incident-ledger.lock.owner.s03fX8
+.incident-ledger.lock.owner.sTZ73x
+.incident-ledger.lock.owner.tUMTUW
+.incident-ledger.lock.owner.urMAMN
+.incident-ledger.lock.owner.wByN1d
+.incident-ledger.lock.owner.wSMG7f
+.incident-ledger.lock.owner.x2Nfty
+.incident-ledger.lock.owner.xqRxvm
+.incident-ledger.lock.owner.xtZyCe
+.incident-ledger.lock.owner.yZMk4P
+.incident-ledger.lock.owner.zofQgw
+incident-ledger.tsv
+latest for w7 via CLI:
+t188	1794128053	h3	w7	sig	open	routine	e7	-	-	record
