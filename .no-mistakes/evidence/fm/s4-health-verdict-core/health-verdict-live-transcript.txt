@@ -1,49 +1,61 @@
-== S1 live lock, no stale-grace config, real monitor read (uncovered in a lab)
-  [watchdog] alive=live monitor-read=status=uncovered
-  [heartbeat] {"generated_epoch":1794134474,"stale_after_secs":null}
-  $ fm-health-verdict.sh --home LAB 
-  > verdict=unknown reason=stale-bound-unknown,monitor-uncovered heartbeat_age=5 lock=live watcher_age=0 monitor=uncovered at=1794134479
-== S2 stale-grace-secs=60 configured, monitor enabled -> expect ok fresh
-  [heartbeat] {"generated_epoch":1794134479,"stale_after_secs":75}
-  [watchdog] alive=live monitor-read=status=uncovered
-  $ fm-health-verdict.sh --home LAB 
-  > verdict=ok reason=fresh heartbeat_age=3 lock=live watcher_age=0 monitor=enabled at=1794134482
-== S3 --write records the same line
-  $ fm-health-verdict.sh --home LAB --write
-  > verdict=ok reason=fresh heartbeat_age=3 lock=live watcher_age=0 monitor=enabled at=1794134482
-  [state/health-verdict] verdict=ok reason=fresh heartbeat_age=3 lock=live watcher_age=0 monitor=enabled at=1794134482
-  [temp files left] 0
-== S4 read-only: a read without --write changes nothing in the home
-  [tree hash before] d2c81a53938017ff  [after] d2c81a53938017ff
-  > verdict=unknown reason=heartbeat-missing,lock-unknown,monitor-missing heartbeat_age=unknown lock=unknown watcher_age=unknown monitor=missing at=1794134482
-  [home with no state dir, after read] ./config 
-== S5 heartbeat older than its bound (generated 200s ago, bound 75) -> stale
-  $ fm-health-verdict.sh --home LAB 
-  > verdict=stale reason=heartbeat-stale heartbeat_age=201 lock=live watcher_age=1 monitor=enabled at=1794134483
-  [heartbeat] {"generated_epoch":1794134483,"stale_after_secs":75}
-== S6 open work (real dispatch-log received goal) with a watcher beat 1000s old (bound 900) -> stale watcher-stale
-  [dispatch-log] 2026-11-08T10:41:25Z	1794134485	received	lab-hv-202611080000	summary=lab health verdict goal
-  $ fm-health-verdict.sh --home LAB 
-  > verdict=stale reason=watcher-stale heartbeat_age=2 lock=live watcher_age=1000 monitor=enabled at=1794134485
-== S7 lock owner dies; real watchdog pass records dead -> dead lock-dead even with fresh heartbeat
-  [watchdog] alive=dead monitor-read=status=uncovered
-  [heartbeat] {"generated_epoch":1794134487,"stale_after_secs":75}
-  $ fm-health-verdict.sh --home LAB 
-  > verdict=dead reason=lock-dead heartbeat_age=3 lock=dead watcher_age=0 monitor=enabled at=1794134490
-== S8 no lock: watchdog records none; open goal -> dead none-open-work
-  [watchdog] alive=none monitor-read=status=uncovered
-  [heartbeat] {"generated_epoch":1794134491,"stale_after_secs":75}
-  $ fm-health-verdict.sh --home LAB 
-  > verdict=dead reason=none-open-work heartbeat_age=3 lock=none watcher_age=0 monitor=enabled at=1794134494
-== S9 no lock, goal dispatched (resolved), away record -> dead none-away; then no away -> ok idle
-  [dispatch-log] 2026-11-08T10:41:34Z	1794134494	dispatched	lab-hv-202611080000	task=lab-task
-  $ fm-health-verdict.sh --home LAB 
-  > verdict=dead reason=none-away heartbeat_age=3 lock=none watcher_age=0 monitor=enabled at=1794134494
-  $ fm-health-verdict.sh --home LAB 
-  > verdict=ok reason=idle heartbeat_age=3 lock=none watcher_age=0 monitor=enabled at=1794134494
-== S10 mismatched lock instance (captain record alive=unconfirmed) -> unconfirmed
-  $ fm-health-verdict.sh --home LAB 
-  > verdict=unconfirmed reason=instance-mismatch heartbeat_age=3 lock=mismatch watcher_age=0 monitor=enabled at=1794134494
-== S11 usage errors
-  [unknown arg exit] 2
-  [no home exit] 2
+== S1: fresh lab home, no records, read without --write ==
+verdict=unknown reason=heartbeat-missing,lock-unknown,monitor-missing heartbeat_age=unknown lock=unknown watcher_age=unknown monitor=missing at=1794166534
+HOME UNCHANGED: yes
+== S2: home with no state directory, read without --write (adversarial) ==
+verdict=unknown reason=heartbeat-missing,lock-unknown,monitor-missing heartbeat_age=unknown lock=unknown watcher_age=unknown monitor=missing at=1794166534
+HOME UNCHANGED: yes (state dir exists? no)
+== S3: real heartbeat publication carries stale_after_secs = cycle + grace ==
+fm-heartbeat.sh --write exit 0
+{"schema":"fm-heartbeat.v1","generated_epoch":1794166534,"stale_after_secs":75}
+== S4: healthy home: live lock, fresh heartbeat, fresh watcher, monitor enabled; --write records it ==
+fm-watchdog.sh monitor-read exit 0
+monitor-status as written by the watchdog: status=uncovered at=1794166538
+verdict=ok reason=fresh heartbeat_age=4 lock=live watcher_age=0 monitor=enabled at=1794166538
+state/health-verdict: verdict=ok reason=fresh heartbeat_age=4 lock=live watcher_age=0 monitor=enabled at=1794166538
+== S5: monitor unit not enabled never reads ok ==
+verdict=unknown reason=monitor-disabled heartbeat_age=4 lock=live watcher_age=0 monitor=disabled at=1794166538
+verdict=unknown reason=monitor-unreadable heartbeat_age=4 lock=live watcher_age=0 monitor=unreadable at=1794166538
+== S6: dead lock outranks a fresh heartbeat ==
+verdict=dead reason=lock-dead heartbeat_age=4 lock=dead watcher_age=0 monitor=enabled at=1794166538
+== S7: instance mismatch reads unconfirmed ==
+verdict=unconfirmed reason=instance-mismatch heartbeat_age=4 lock=mismatch watcher_age=0 monitor=enabled at=1794166538
+== S8: no captain: idle -> ok idle; open goal -> dead none-open-work; away -> dead none-away ==
+verdict=ok reason=idle heartbeat_age=4 lock=none watcher_age=0 monitor=enabled at=1794166538
+verdict=dead reason=none-open-work heartbeat_age=4 lock=none watcher_age=0 monitor=enabled at=1794166538
+verdict=ok reason=idle heartbeat_age=4 lock=none watcher_age=0 monitor=enabled at=1794166538
+verdict=dead reason=none-away heartbeat_age=4 lock=none watcher_age=0 monitor=enabled at=1794166538
+== S9: declared waits are not open work; expired pause is open again ==
+verdict=dead reason=none-open-work heartbeat_age=4 lock=none watcher_age=0 monitor=enabled at=1794166538
+verdict=ok reason=idle heartbeat_age=4 lock=none watcher_age=0 monitor=enabled at=1794166538
+verdict=ok reason=idle heartbeat_age=4 lock=none watcher_age=0 monitor=enabled at=1794166538
+== S10: heartbeat older than its bound outside a turn reads stale ==
+verdict=stale reason=heartbeat-stale heartbeat_age=504 lock=live watcher_age=0 monitor=enabled at=1794166538
+== S11: proven auto-arm turn with a young watcher beat reads mid-turn, never stale ==
+verdict=unknown reason=mid-turn heartbeat_age=504 lock=live watcher_age=54 monitor=enabled at=1794166538
+-- same, proof removed:
+verdict=stale reason=heartbeat-stale heartbeat_age=505 lock=live watcher_age=55 monitor=enabled at=1794166539
+-- dead lock still outranks a turn:
+verdict=dead reason=lock-dead heartbeat_age=505 lock=dead watcher_age=55 monitor=enabled at=1794166539
+== S12: open work and an old watcher beat reads watcher-stale; bound from config/watchdog ==
+verdict=stale reason=watcher-stale heartbeat_age=5 lock=live watcher_age=1005 monitor=enabled at=1794166539
+verdict=ok reason=fresh heartbeat_age=5 lock=live watcher_age=1005 monitor=enabled at=1794166539
+== S13: a failed --write exits 1 ==
+verdict=ok reason=fresh heartbeat_age=5 lock=live watcher_age=1005 monitor=enabled at=1794166539
+fm-health-verdict.sh: cannot write /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.EVZaYD/state/health-verdict
+(exit 1)
+== S14: usage errors ==
+fm-health-verdict.sh: no home: pass --home or set FM_HOME
+(exit 2)
+fm-health-verdict.sh: not a directory: /nonexistent/x
+(exit 2)
+fm-health-verdict.sh: unknown argument: --bogus
+(exit 2)
+== S9 (re-driven with the real pause grammar) ==
+-- in-flight task, no wait:
+verdict=dead reason=none-open-work heartbeat_age=18 lock=none watcher_age=0 monitor=enabled at=1794166552
+-- pause in the future:
+verdict=ok reason=idle heartbeat_age=18 lock=none watcher_age=0 monitor=enabled at=1794166552
+-- pause past its until time:
+verdict=dead reason=none-open-work heartbeat_age=18 lock=none watcher_age=0 monitor=enabled at=1794166552
+-- captain-held:
+verdict=ok reason=idle heartbeat_age=18 lock=none watcher_age=0 monitor=enabled at=1794166552

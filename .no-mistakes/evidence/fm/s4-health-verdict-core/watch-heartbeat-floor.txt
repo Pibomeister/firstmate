@@ -1,3 +1,4 @@
-1..1
 ok - primary open goals and tasks arm and surface the heartbeat; closed, secondmate, held and paused homes retain cadence
-FM_TEST_COMPLETE
+exit 0
+ok - a heartbeat with no captain-relevant change is absorbed and backs off the cadence
+exit 0
