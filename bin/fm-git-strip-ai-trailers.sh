@@ -284,7 +284,7 @@ write_env_file() {
 }
 
 install_hooks() {
-  local hooks_dir=$1 wt=$2 strip=${3:-1} guard_src=${4:-} name strip_line guard_file guard_cmd
+  local hooks_dir=$1 wt=$2 strip=${3:-1} guard_src=${4:-} name strip_line guard_file guard_cmd git_err
   [ -n "$hooks_dir" ] && [ -n "$wt" ] || usage
   if [ -n "$guard_src" ] && { [ ! -f "$guard_src" ] || [ ! -r "$guard_src" ]; }; then
     echo "error: push guard file is not a readable regular file: $guard_src" >&2
@@ -294,10 +294,26 @@ install_hooks() {
     echo "error: worktree is not a directory: $wt" >&2
     return 1
   }
-  git -C "$wt" rev-parse --is-inside-work-tree >/dev/null || {
-    echo "error: not a git worktree: $wt" >&2
-    return 1
-  }
+  # Git 2.43 expands every pathname core.hooksPath while loading config, so
+  # `git -C ... rev-parse --is-inside-work-tree` dies on an unresolvable ~user
+  # path or a valueless key even in a real worktree. Overlays do not stop that
+  # load. Treat those two config faults as a worktree when .git is present;
+  # any other probe failure is still not a worktree. Commit refusal stays with
+  # git itself (2.43) or the hook wrapper (lazy-expanding git).
+  git_err=$(mktemp "${TMPDIR:-/tmp}/fm-git-strip-probe.XXXXXX") || return 1
+  if ! git -C "$wt" rev-parse --is-inside-work-tree >/dev/null 2>"$git_err"; then
+    if { [ -d "$wt/.git" ] || [ -f "$wt/.git" ]; } \
+      && grep -Eq "failed to expand user dir|missing value for 'core.hookspath'" "$git_err"; then
+      rm -f "$git_err"
+    else
+      echo "error: not a git worktree: $wt" >&2
+      cat "$git_err" >&2
+      rm -f "$git_err"
+      return 1
+    fi
+  else
+    rm -f "$git_err"
+  fi
   chmod u+w "$hooks_dir" 2>/dev/null
   rm -rf "$hooks_dir"
   mkdir -p "$hooks_dir" || return 1
