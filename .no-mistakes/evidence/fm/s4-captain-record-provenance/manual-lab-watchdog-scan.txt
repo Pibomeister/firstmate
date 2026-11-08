@@ -1,0 +1,18 @@
+# live tmux pane %0 on lab socket shows a real-looking footer '30% until auto-compact'; transcript used=120000
+## A. no window anywhere -> footer owns (pane)
+subject fm-lab.BSVov7 (/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.BSVov7)
+  endpoint=tmux:%0 session=00000000-0000-4000-8000-0000000000c1 lock_pid=40048 alive=1 instance=match owner=live
+  captain=tmux:%0 moved_at=1794115088
+  transcript_age=0s loop=none/0 restart_requested=0 ctx=30 (pane) [footer=30 derived=unknown owner=footer disagreement=0]
+## B. published compact point for this session (160000) -> derived owns, disagreement flagged (30 vs 25, bound 3)
+subject fm-lab.BSVov7 (/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.BSVov7)
+  endpoint=tmux:%0 session=00000000-0000-4000-8000-0000000000c1 lock_pid=40048 alive=1 instance=match owner=live
+  captain=tmux:%0 moved_at=1794115088
+  transcript_age=2s loop=none/0 restart_requested=0 ctx=25 (derived) [footer=30 derived=25 owner=derived disagreement=1]
+## C. record names another session, pin 400000 -> derived from pin
+subject fm-lab.BSVov7 (/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.BSVov7)
+  endpoint=tmux:%0 session=00000000-0000-4000-8000-0000000000c1 lock_pid=40048 alive=1 instance=match owner=live
+  captain=tmux:%0 moved_at=1794115088
+  transcript_age=2s loop=none/0 restart_requested=0 ctx=70 (derived) [footer=30 derived=70 owner=derived disagreement=1]
+## monitor-status written by the scan pass:
+status=uncovered at=1794115114

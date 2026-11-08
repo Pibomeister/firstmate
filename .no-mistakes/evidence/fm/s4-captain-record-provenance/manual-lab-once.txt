@@ -1,0 +1,4 @@
+## once --dry-run rewrites monitor-status
+before: status=uncovered at=1794115114
+once exit=0
+after:  status=uncovered at=1794115211
