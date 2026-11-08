@@ -1,0 +1,8 @@
+## G. watchdog unit for this lab home: manager: uncovered (unit not installed)
+## G. full locked session start -> runs the monitor read once
+session-start rc=0
+LOCK
+lock acquired: harness pid 2473
+- Lock: held by this session; this session owns normal supervision unless away mode says otherwise.
+$ cat state/monitor-status
+status=uncovered at=1794117206

@@ -1,0 +1,18 @@
+## primary = disposable plain clone at a4476532; FM_HOME=lab; pin compact-at-tokens=100000; transcript last request = 93000 tokens
+## 1. real hook run publishes the resolved point (and still fires its own in-session handoff at 7% left)
+"Firstmate early handoff trigger, from this home's tracked Claude hook: about 7% of context is left before auto-compact (93000 of 100000 tokens). Write your full"
+$ cat state/compact-point
+session=11111111-2222-4333-8444-555555555555 compact_at=100000 at=1794117131
+temp files left: 0
+## 2. adversarial: unsafe session id '../x' -> record unchanged
+session=11111111-2222-4333-8444-555555555555 compact_at=100000 at=1794117131
+## 3. adversarial: other session resolving no point must NOT withdraw this session's record
+session=11111111-2222-4333-8444-555555555555 compact_at=100000 at=1794117131
+## 4. same session resolving no point withdraws its own record
+ls: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.Is5A4V/state/compact-point: No such file or directory
+re-published:
+session=11111111-2222-4333-8444-555555555555 compact_at=100000 at=1794117132
+## 5. guard: same hook from the linked gate worktree (not a primary root) writes nothing
+ls: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.Is5A4V/state/compact-point: No such file or directory
+restored:
+session=11111111-2222-4333-8444-555555555555 compact_at=100000 at=1794117132

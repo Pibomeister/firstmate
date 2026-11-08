@@ -1,0 +1,27 @@
+1..97
+ok - dialogs need their structure, and each kind is told apart
+ok - mtime: native and available GNU stat give numeric ages through scan
+ok - a dismissed dialog that only remains in scrollback is not read as showing
+ok - dialog keys stop after two failures in an hour, so a misread screen is never typed into repeatedly
+ok - loop verdicts: loop, rapid, near, and work-between
+ok - stall proof needs two signals and no veto; merge and deploy text is refused
+ok - frozen pane: proven by records, nudged once with a record-backed doorbell, then rate-limited
+ok - boundary: never types into a pane on the do-not-touch list
+ok - draft rows: from the prompt row to the rule, and no footer word cuts them
+ok - boundary: never accepts a merge autosuggestion, while ordinary unsent text is submitted
+ok - boundary: a draft whose whole text cannot be read never gets Enter
+ok - boundary: a quoted row inside a taller draft never earns Enter or a partial note
+ok - terminal service loss: no agent process overrides drawn Working; a live tool call stays protected
+ok - boundary: owner-reserved holds stay held; an ordinary decision is settled by a unanimous blind council
+ok - council needs unanimity; a split vote holds
+ok - boundary: judge falls back across models, logs every call, and never spends past the daily cap
+ok - with no model available, deterministic actions still run and the gap is reported
+ok - timer loop fires only with aged owed input, never on idle heartbeats
+ok - near loop: no model, the daily cap, WORK, and a bad answer all leave frozen and input recovery running
+ok - near loop: the judge sees the recent sequence, newest last, and repeats only for new evidence after the interval
+ok - near loop: a LOOP answer alone takes the existing ladder
+ok - near loop: evidence with a secret or reserved word reaches no model or record, and recovery still runs
+create window failed: fork failed: Device not configured
+can't find window: wd81
+not ok - an old burst with aged input is nudged (expected '1', got '0')
+rc=1

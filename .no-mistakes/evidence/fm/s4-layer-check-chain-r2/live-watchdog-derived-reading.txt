@@ -1,0 +1,7 @@
+## A. scan: pane footer 30%, transcript 93000 tokens, compact-point for this session at 100000 -> derived 7 owns
+session=11111111-2222-4333-8444-555555555555 compact_at=100000 at=1794117132
+  endpoint=tmux:%0 session=11111111-2222-4333-8444-555555555555 lock_pid=14005 alive=1 instance=match owner=live
+  transcript_age=3000s loop=none/0 restart_requested=0 ctx=7 (derived) [footer=30 derived=7 owner=derived disagreement=-]
+## B. once (dry-run): monitor-status rewritten and low-context handoff nudge row names both readings
+rc=0
+status=uncovered at=1794117154
