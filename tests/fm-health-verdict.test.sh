@@ -129,13 +129,14 @@ test_a_failed_write_exits_1_and_says_so() {
 # reads stale once stale_after_secs has passed after the last publication, and
 # not before; that is the stated detection delay.
 test_dead_publisher_reads_stale_after_its_bound() {
-  local home="$TMP_ROOT/dead-publisher" out
+  local home="$TMP_ROOT/dead-publisher" out now
   new_home "$home" live
-  # NOW was taken at the start of this file, so allow ten seconds of drift.
-  heartbeat "$home" "$((NOW - 50))" 60
+  # A fresh clock here, so time the earlier tests used cannot move the case.
+  now=$(date +%s)
+  heartbeat "$home" "$((now - 50))" 60
   out=$(verdict "$home")
   assert_equals ok "$(field "$out" verdict)" "a heartbeat inside its bound"
-  heartbeat "$home" "$((NOW - 70))" 60
+  heartbeat "$home" "$((now - 70))" 60
   out=$(verdict "$home")
   assert_equals "stale heartbeat-stale" "$(field "$out" verdict) $(field "$out" reason)" "a heartbeat past its bound"
   pass "a dead publisher reads stale once its bound has passed after the last publication, and not before"
