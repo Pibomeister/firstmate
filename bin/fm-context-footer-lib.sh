@@ -2,7 +2,8 @@
 # Single owner of the external auto-compact footer parse.
 #
 # The measurement is the harness pane text "N% until auto-compact".
-# bin/fm-heartbeat.sh and bin/fm-context-burn.sh both use this function.
+# bin/fm-heartbeat.sh, bin/fm-context-burn.sh and bin/fm-context-reading-lib.sh
+# use this function.
 # A model self-estimate is never a footer. Sourced, never executed.
 # The three shapes match the pane text heartbeat already accepted:
 #   "... 12% until auto-compact"
