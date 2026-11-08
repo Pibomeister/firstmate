@@ -1,0 +1,5 @@
+## foreign record + pin 100000
+  transcript_age=41s loop=none/1 restart_requested=0 ctx=33 (derived) [footer=unknown derived=33 owner=derived disagreement=0]
+## foreign record, no pin
+  transcript_age=42s loop=none/1 restart_requested=0 ctx=unknown [footer=unknown derived=unknown owner=none disagreement=0]
+handoff rows:        0
