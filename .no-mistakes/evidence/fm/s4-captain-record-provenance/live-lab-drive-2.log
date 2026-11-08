@@ -1,0 +1,24 @@
+### Scenario 5: one watchdog pass (once --dry-run) writes the home's monitor-status
+once exit=0
+state/monitor-status: status=uncovered at=1794164730
+
+### Scenario 6: a real full session start in a home with no enabled watchdog unit records the monitor read once
+watchdog manager-status: manager: uncovered (unit not installed)
+session-start exit=0
+
+================================================================================
+SESSION START - <lab>
+================================================================================
+
+LOCK
+--------------------------------------------------------------------------------
+lock acquired: harness pid 62313
+
+HOME ROLE
+--------------------------------------------------------------------------------
+fm-role: user (default)
+
+BOOTSTRAP
+--------------------------------------------------------------------------------
+BOOTSTRAP_INFO: lavish-axi >=...
+state/monitor-status after start: status=uncovered at=1794164749
