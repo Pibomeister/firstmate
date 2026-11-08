@@ -108,9 +108,10 @@ _fm_incident_select() {
     _FM_INC_SIGNAL=$(_fm_incident_field "$5") _FM_INC_EXTRA=$(_fm_incident_field "${6:-}") \
     LC_ALL=C awk -F '\t' '
       BEGIN {
-        mode = ENVIRON["_FM_INC_MODE"]; home = ENVIRON["_FM_INC_HOME"]
-        subject = ENVIRON["_FM_INC_SUBJECT"]; signal = ENVIRON["_FM_INC_SIGNAL"]
-        extra = ENVIRON["_FM_INC_EXTRA"]
+        # Each value is made a string so every match compares text: 01 is not 1.
+        mode = ENVIRON["_FM_INC_MODE"] ""; home = ENVIRON["_FM_INC_HOME"] ""
+        subject = ENVIRON["_FM_INC_SUBJECT"] ""; signal = ENVIRON["_FM_INC_SIGNAL"] ""
+        extra = ENVIRON["_FM_INC_EXTRA"] ""
       }
       NF != 11 || $1 !~ /^t[0-9]+$/ || $2 !~ /^[0-9]+$/ { next }
       mode == "rows" { if ($2 + 0 >= extra + 0) print; next }

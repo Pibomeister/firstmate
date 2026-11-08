@@ -235,7 +235,25 @@ test_command_contract() {
   pass "the latest and rows verbs and their refusals"
 }
 
+test_keys_compare_as_text() {
+  local s out
+  s=$(new_state text-keys)
+  append "$s" "$T0" /h1 01 7 02 routine 03 '' '' escalate > /dev/null
+  out=$(lib "$T0" fm_incident_ledger_latest "$s" /h1 1 7)
+  assert_equals "" "$out" "subject 1 does not read subject 01"
+  out=$(lib "$T0" fm_incident_ledger_latest "$s" /h1 01 7.0)
+  assert_equals "" "$out" "signal 7.0 does not read signal 7"
+  out=$(lib "$T0" fm_incident_ledger_latest_key "$s" /h1 01 7 2)
+  assert_equals "" "$out" "state 2 does not read state 02"
+  out=$(lib "$T0" fm_incident_ledger_episode_rows "$s" /h1 01 7 3)
+  assert_equals "" "$out" "episode 3 does not read episode 03"
+  out=$(lib "$T0" fm_incident_ledger_latest_key "$s" /h1 01 7 02 | cut -f1)
+  assert_equals t1 "$out" "the exact text key still reads its row"
+  pass "home, subject, signal, state and episode compare as text, so 01 is not 1"
+}
+
 fm_test_run \
+  test_keys_compare_as_text \
   test_append_writes_one_row_per_transition \
   test_append_never_rewrites_a_row \
   test_append_refuses_malformed_input \
