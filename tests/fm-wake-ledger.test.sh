@@ -384,6 +384,37 @@ EOF
   pass "a removal whose row extraction fails stops, reports it, and keeps its wakes"
 }
 
+# The consumed-row extraction follows the same rule: when its sort fails, the
+# acknowledgement fails and leaves the claim file as it was.
+test_failed_consumed_extraction_keeps_claim_rows() {
+  local dir state shim real_sort err rc
+  dir=$(make_case failed-consumed-extraction)
+  state="$dir/state"
+  shim="$dir/shim"
+  err="$dir/step.err"
+  real_sort=$(command -v sort) || fail "no sort on PATH"
+  mkdir -p "$shim"
+  cat > "$shim/sort" <<EOF
+#!/bin/sh
+[ "\$*" = "-n -u" ] && { echo hit >> "$dir/sort.hits"; exit 1; }
+exec "$real_sort" "\$@"
+EOF
+  chmod 0755 "$shim/sort"
+  append_wake "$state" signal one.status "signal: one" || fail "append one failed"
+  present_at "$state" "$T0"
+  [ -s "$state/.main-eligible-rows" ] || fail "the presentation left no claim rows to consume"
+  cp "$state/.main-eligible-rows" "$dir/claim.before"
+  PATH="$shim:$PATH" drain_at "$state" "$T0" --ack-through "$PRESENTED_THROUGH" \
+    --recovery-generation "$PRESENTED_GENERATION" > /dev/null 2> "$err"; rc=$?
+  [ -s "$dir/sort.hits" ] || fail "the acknowledgement never ran the failing sort, so the case proves nothing"
+  [ "$rc" -ne 0 ] || fail "an acknowledgement whose consumed extraction failed reported success"
+  cmp -s "$state/.main-eligible-rows" "$dir/claim.before" \
+    || fail "an acknowledgement whose consumed extraction failed changed the claim rows"
+  ! awk -F '\t' '$2 == "consumed"' "$state/wake-ledger.tsv" 2>/dev/null | grep -q . \
+    || fail "a failed consumed extraction wrote a consumed row: $(cat "$state/wake-ledger.tsv")"
+  pass "a consumed extraction that fails stops and keeps the claim rows"
+}
+
 # A removal interrupted after its ledger row was written but before its queue
 # change (here the drain is killed at the queue replace) leaves the row in the
 # ledger and the wake still queued. The retry in a later window must write no
@@ -487,6 +518,7 @@ test_prune_without_ledger_library_fails_and_keeps_queue
 test_unwritable_ledger_keeps_removed_wakes
 test_ack_row_epoch_is_the_removal_time
 test_failed_row_extraction_keeps_removed_wakes
+test_failed_consumed_extraction_keeps_claim_rows
 test_retry_after_interrupted_removal_counts_once
 test_direct_append_reads_the_clock_each_call
 test_ledger_command_contract

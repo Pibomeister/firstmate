@@ -206,8 +206,9 @@ consume_actor_rows_locked() {
   fi
   DRAIN_TMP=$(mktemp "$STATE/.wake-rows.consume.XXXXXX") || return 1
   awk -v cutoff="$cutoff" '$1 ~ /^[0-9]+$/ && $1 > cutoff { print $1 }' "$rows" > "$DRAIN_TMP" || return 1
-  consumed=$(awk -v cutoff="$cutoff" '$1 ~ /^[0-9]+$/ && $1 <= cutoff { print $1 }' "$rows" \
-    | LC_ALL=C sort -n -u | awk 'NR > 1 { printf "," } { printf "%s", $1 }') || return 1
+  consumed=$(set -o pipefail
+    awk -v cutoff="$cutoff" '$1 ~ /^[0-9]+$/ && $1 <= cutoff { print $1 }' "$rows" \
+      | LC_ALL=C sort -n -u | awk 'NR > 1 { printf "," } { printf "%s", $1 }') || return 1
   if [ -z "$consumed" ]; then
     write_rows_file_locked "$rows" "$DRAIN_TMP" || return 1
   else
