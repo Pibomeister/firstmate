@@ -13,7 +13,9 @@
 # <home> defaults to FM_HOME. reason is a comma-separated list of tokens.
 #
 # Inputs, and nothing else:
-#   - generated_epoch and stale_after_secs of state/heartbeat.json;
+#   - published_epoch and stale_after_secs of state/heartbeat.json; the age
+#     runs from the publication stamp, never from generated_epoch (the
+#     observation time), and a record with no published_epoch is unread;
 #   - the lock verdict (alive=) in state/watchdog/captain: live, dead,
 #     unconfirmed (reported as lock=mismatch) or none;
 #   - the age of state/.last-watcher-beat, bounded by watcher-stale-secs in
@@ -102,7 +104,7 @@ hb_age=unknown bound=''
 if [ ! -e "$STATE/heartbeat.json" ]; then
   add_unknown heartbeat-missing
 else
-  fields=$(jq -r '[(.generated_epoch | if type == "number" and . >= 0 then floor | tostring else "-" end),
+  fields=$(jq -r '[(.published_epoch | if type == "number" and . >= 0 then floor | tostring else "-" end),
     (.stale_after_secs | if type == "number" and . >= 0 then floor | tostring else "-" end)] | join(" ")' \
     "$STATE/heartbeat.json" 2>/dev/null) || fields='- -'
   gen=${fields%% *} bound=${fields##* }

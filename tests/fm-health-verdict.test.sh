@@ -56,9 +56,13 @@ new_home() {
   beat "$home" 0
 }
 
-heartbeat() {  # <home> <generated-epoch-json> <stale-after-json>
-  jq -n --argjson e "$2" --argjson b "$3" '{schema:"fm-heartbeat.v1", generated_epoch:$e, stale_after_secs:$b}' \
-    > "$1/state/heartbeat.json"
+# The age runs from published_epoch. generated_epoch, the observation time, is
+# set far older on purpose, so a verdict that read it would see every heartbeat
+# as stale.
+heartbeat() {  # <home> <published-epoch-json> <stale-after-json>
+  jq -n --argjson e "$2" --argjson b "$3" \
+    '{schema:"fm-heartbeat.v1", generated_epoch:(if ($e | type) == "number" then $e - 100000 else $e end),
+      published_epoch:$e, stale_after_secs:$b}' > "$1/state/heartbeat.json"
 }
 
 beat() {  # <home> <age-secs>
@@ -119,6 +123,22 @@ test_a_failed_write_exits_1_and_says_so() {
   assert_contains "$out" "cannot write" "a failed write names the record on stderr"
   assert_equals "" "$(find "$home/state" -name 'health-verdict*')" "no record or temporary file is left"
   pass "a --write that cannot record the line exits 1 with a message"
+}
+
+# HB-3 replacement (a): a dead publisher stamps nothing more, so the verdict
+# reads stale once stale_after_secs has passed after the last publication, and
+# not before; that is the stated detection delay.
+test_dead_publisher_reads_stale_after_its_bound() {
+  local home="$TMP_ROOT/dead-publisher" out
+  new_home "$home" live
+  # NOW was taken at the start of this file, so allow ten seconds of drift.
+  heartbeat "$home" "$((NOW - 50))" 60
+  out=$(verdict "$home")
+  assert_equals ok "$(field "$out" verdict)" "a heartbeat inside its bound"
+  heartbeat "$home" "$((NOW - 70))" 60
+  out=$(verdict "$home")
+  assert_equals "stale heartbeat-stale" "$(field "$out" verdict) $(field "$out" reason)" "a heartbeat past its bound"
+  pass "a dead publisher reads stale once its bound has passed after the last publication, and not before"
 }
 
 test_heartbeat_older_than_its_bound_is_stale() {
@@ -294,10 +314,16 @@ test_missing_heartbeat_is_unknown_not_dead() {
 test_unread_heartbeat_fields_are_unknown() {
   local home="$TMP_ROOT/unread" out
   new_home "$home" live
-  jq -n '{generated_epoch:"soon", stale_after_secs:60}' > "$home/state/heartbeat.json"
+  jq -n --argjson now "$NOW" '{generated_epoch:$now, published_epoch:"soon", stale_after_secs:60}' > "$home/state/heartbeat.json"
   out=$(verdict "$home")
   assert_equals "unknown heartbeat-field-unread unknown" "$(field "$out" verdict) $(field "$out" reason) $(field "$out" heartbeat_age)" \
-    "an unread generated_epoch"
+    "an unread published_epoch"
+  # A record from a publisher with no publication stamp is unread, never aged
+  # from its observation time.
+  jq -n --argjson now "$NOW" '{generated_epoch:$now, stale_after_secs:60}' > "$home/state/heartbeat.json"
+  out=$(verdict "$home")
+  assert_equals "unknown heartbeat-field-unread unknown" "$(field "$out" verdict) $(field "$out" reason) $(field "$out" heartbeat_age)" \
+    "a record with no published_epoch"
   heartbeat "$home" "$NOW" null
   out=$(verdict "$home")
   assert_equals "unknown stale-bound-unknown" "$(field "$out" verdict) $(field "$out" reason)" "a null stale bound"
@@ -418,6 +444,7 @@ fm_test_run \
   test_fresh_heartbeat_live_lock_fresh_watcher_is_ok \
   test_a_failed_write_exits_1_and_says_so \
   test_heartbeat_older_than_its_bound_is_stale \
+  test_dead_publisher_reads_stale_after_its_bound \
   test_dead_lock_is_dead_with_a_fresh_heartbeat_and_types_nothing \
   test_dead_lock_is_dead_inside_a_turn_and_without_a_heartbeat \
   test_mismatched_instance_is_unconfirmed_with_no_signal \
