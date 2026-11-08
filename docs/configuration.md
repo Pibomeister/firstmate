@@ -531,6 +531,21 @@ It may hold this line:
 
 Blank lines and lines that start with `#` are ignored, and an unusable value counts as unset.
 
+## Heartbeat stale grace (config/heartbeat)
+
+`bin/fm-heartbeat.sh` publishes a stale bound, `stale_after_secs`, in `state/heartbeat.json`, and its header owns that record and the bound's formula.
+The grace set here is one term of that bound.
+
+The file is optional, local to each home, and read on every publication.
+It may hold this line:
+
+- `stale-grace-secs=<n>` sets the grace in seconds, and `0` is a valid grace.
+  Unset, `stale_after_secs` is null and no stale bound is published.
+
+The last usable line counts.
+
+Blank lines and lines that start with `#` are ignored, and an unusable value counts as unset.
+
 ## Backlog backend (.tasks.toml / config/backlog-backend)
 
 The tracked `.tasks.toml` pins the default `tasks-axi` markdown backend to `data/backlog.md`, with `done_keep = 10` and an archive at `data/done-archive.md`.
@@ -3313,6 +3328,7 @@ FM_HEARTBEAT_READ_TIMEOUT=3        # seconds bounding each primary and per-task 
 FM_HEARTBEAT_NM_TIMEOUT=2          # seconds bounding each no-mistakes query inside bin/fm-heartbeat.sh; invalid or zero values use 2
 FM_HEARTBEAT_QUOTA_TIMEOUT=10      # seconds bounding the one quota-axi read inside bin/fm-heartbeat.sh; invalid or zero values use 10
 FM_HEARTBEAT_DEADLINE=240           # seconds after which bin/fm-heartbeat.sh starts no new task reads and publishes unknown rows for the rest; invalid or zero values use 240
+FM_HEARTBEAT_CYCLE_SECS=            # set by bin/fm-watch.sh for each heartbeat publication; see bin/fm-heartbeat.sh
 FM_INACTIVE_RECONCILE_SECS=900  # 60..1800-second watcher cadence and inactivity threshold; locked session start also requests an immediate scan in the deferred worker
 FM_INACTIVE_RECONCILE_BUDGET_SECS=10  # 1..30-second scan deadline; wedged-scan kill backstop follows one second later
 FM_CHECK_INTERVAL=300   # seconds between slow checks (authenticated merge polls, custom checks, or Relay dispatch)

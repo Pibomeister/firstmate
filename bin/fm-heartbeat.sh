@@ -25,6 +25,10 @@
 #   generated         UTC observation time for this execution
 #   generated_epoch   Unix seconds for generated
 #   fm_home           resolved operational home
+#   stale_after_secs  the stale bound: the watcher cycle period it passed as
+#                     FM_HEARTBEAT_CYCLE_SECS, never the wake heartbeat cadence,
+#                     plus the stale-grace-secs key of config/heartbeat
+#                     (docs/configuration.md); null while either is missing
 #   snapshot          {ok, schema, generated, failure} for the fleet snapshot read
 #   primary           supervising firstmate session (not a ship/scout task row)
 #     terminal          {backend, target, present} from this writer's environment
@@ -39,8 +43,10 @@
 #                       an external leash can see an unread-note stall without
 #                       reading the pane
 #     composer_state    empty|pending|pending-unproven|unknown
-#     context_left      {used_tokens, remaining}; remaining is {percent, source} from
-#                       the harness's own "N% until auto-compact" pane text, else
+#     context_left      {used_tokens, remaining, derived}; remaining is {percent, source}
+#                       from the harness's own "N% until auto-compact" pane text, else
+#                       unknown; derived is {percent, source} from the shared context
+#                       reading (bin/fm-context-reading-lib.sh) of the transcript, else
 #                       unknown; no window size is ever assumed
 #   tasks[]           one row per snapshot task id, sorted by id
 #     id
@@ -150,6 +156,9 @@ command -v jq >/dev/null 2>&1 || {
 # shellcheck source=bin/fm-context-footer-lib.sh
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/fm-context-footer-lib.sh"
+# shellcheck source=bin/fm-context-reading-lib.sh
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/fm-context-reading-lib.sh"
 # The unread captain inbox age rule has one owner, shared with fm-inbox.sh.
 # shellcheck source=bin/fm-captain-inbox-lib.sh
 # shellcheck disable=SC1091
@@ -251,17 +260,28 @@ heartbeat_pane_context_percent() {  # <backend> <target> [expected-label]
 }
 
 heartbeat_context_json() {  # <label> <transcript-or-empty> [backend] [target] [expected-label]
-  local tokens='' percent=''
+  local tokens='' percent='' reading derived='' why='no readable transcript'
   [ -z "$2" ] || tokens=$(heartbeat_read "$1 context" fm_warm_compact_context_tokens "$2") || tokens=
   if [ -n "${3:-}" ] && [ -n "${4:-}" ]; then
     percent=$(heartbeat_read "$1 pane context" heartbeat_pane_context_percent "$3" "$4" "${5:-}") || percent=
   fi
-  jq -n --arg used "$tokens" --arg percent "$percent" '
+  # The derived reading comes from the shared context reading, which finds the
+  # session's window by its id; a Claude transcript file is named for its session.
+  if [ -n "$2" ]; then
+    why='transcript had no token usage'
+    if [ -n "$tokens" ]; then
+      why='no context window for this session'
+      reading=$(heartbeat_read "$1 derived context" fm_context_reading "$FM_HOME" "$(basename "$2" .jsonl)" "$2" '') || reading=
+      derived=$(printf '%s\n' "$reading" | sed -n 's/^footer=[^ ]* derived=\([0-9][0-9]*\) .*/\1/p')
+    fi
+  fi
+  jq -n --arg used "$tokens" --arg percent "$percent" --arg derived "$derived" --arg why "$why" '
     def u(r): {unknown:true,reason:r};
     {
       used_tokens:(if ($used | test("^[0-9]+$")) then ($used | tonumber) else u("transcript had no token usage") end),
       remaining:(if $percent == "" then u("harness showed no context text in its pane")
-        else {percent:($percent | tonumber),source:"terminal"} end)
+        else {percent:($percent | tonumber),source:"terminal"} end),
+      derived:(if ($derived | test("^[0-9]+$")) then {percent:($derived | tonumber),source:"transcript"} else u($why) end)
     }'
 }
 
@@ -703,6 +723,12 @@ heartbeat_ready_pr_discovery() {
 
 heartbeat_publish() {
   local snapshot_meta tmp=$HEARTBEAT_WORK/heartbeat.json weekly ready_pr
+  local cycle=${FM_HEARTBEAT_CYCLE_SECS:-} grace stale_after=null
+  # HB-3 stale bound: the cycle period the watcher passed plus the FQ-5 grace.
+  # With no usable cycle period or grace the bound is null.
+  grace=$(_fm_context_config_value "$CONFIG/heartbeat" stale-grace-secs zero-ok) || grace=
+  case "$cycle" in '' | 0* | *[!0-9]*) cycle= ;; esac
+  [ -z "$cycle" ] || [ -z "$grace" ] || stale_after=$((cycle + grace))
   ready_pr=$(heartbeat_ready_pr_discovery) || ready_pr='{"unknown":true,"reason":"ready-pr discovery unreadable"}'
   case "$ready_pr" in
     '{'*'}') ;;
@@ -735,6 +761,7 @@ heartbeat_publish() {
     --arg generated "$HEARTBEAT_NOW" \
     --argjson generated_epoch "$HEARTBEAT_EPOCH" \
     --arg fm_home "$FM_HOME" \
+    --argjson stale_after "$stale_after" \
     --argjson snapshot "$snapshot_meta" \
     --argjson primary "$PRIMARY_JSON" \
     --argjson weekly "$weekly" \
@@ -743,6 +770,7 @@ heartbeat_publish() {
     --rawfile failures "$HEARTBEAT_WORK/failures" \
     '($failures | split("\n") | map(select(. != ""))) as $f
     | {schema:"fm-heartbeat.v1",generated:$generated,generated_epoch:$generated_epoch,fm_home:$fm_home,
+       stale_after_secs:$stale_after,
        snapshot:$snapshot,primary:$primary,tasks:$tasks[0],weekly_allowance:$weekly,ready_pr_discovery:$ready_pr,
        failure:(if ($f | length) == 0 then null else {reason:($f[:10] | join("; ")),count:($f | length)} end)}' > "$tmp" \
     && chmod 600 "$tmp" \

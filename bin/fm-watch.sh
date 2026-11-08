@@ -4311,7 +4311,10 @@ fleet_heartbeat_publish_detached() {
     wait "$FLEET_HEARTBEAT_PID" 2>/dev/null || true
     FLEET_HEARTBEAT_PID=
   fi
+  # The heartbeat's stale bound starts from this watcher's cycle period, never
+  # the wake heartbeat cadence (bin/fm-heartbeat.sh stale_after_secs).
   FM_HOME=$FM_HOME FM_ROOT_OVERRIDE=$FM_ROOT FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$CONFIG \
+    FM_HEARTBEAT_CYCLE_SECS=$POLL \
     "${FM_HEARTBEAT_BIN:-$SCRIPT_DIR/fm-heartbeat.sh}" --write </dev/null >/dev/null 2>&1 &
   FLEET_HEARTBEAT_PID=$!
 }

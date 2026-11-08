@@ -24,6 +24,7 @@ trap cleanup EXIT
 
 unset FM_HEARTBEAT_BIN TMUX TMUX_PANE HERDR_ENV HERDR_PANE_ID HERDR_SESSION REX_SESSION REX_BLOCK TERM_PROGRAM \
   FM_SUPERVISOR_TARGET FM_SUPERVISOR_BACKEND FM_BACKEND
+unset FM_HEARTBEAT_CYCLE_SECS
 export PATH="$FAKEBIN:$PATH"
 export CLAUDE_CONFIG_DIR="$TMP_ROOT/claude"
 
@@ -857,6 +858,111 @@ SH
   pass "the watcher keeps polling with one detached heartbeat in flight, which still publishes"
 }
 
+# AC-14: the stale bound is the cycle period the watcher passes plus the
+# config/heartbeat grace; the wake heartbeat cadence never enters it.
+test_stale_bound_is_the_watcher_cycle_plus_the_grace() {
+  local home bad
+  home=$(make_home stale-bound)
+  printf 'stale-grace-secs=30\n' > "$home/config/heartbeat"
+  publish "$home" FM_HEARTBEAT_CYCLE_SECS=15 FM_HEARTBEAT=600
+  assert_ledger "$home" '.stale_after_secs == 45' "the stale bound is not the cycle period plus the grace"
+  printf 'stale-grace-secs=0\n' > "$home/config/heartbeat"
+  publish "$home" FM_HEARTBEAT_CYCLE_SECS=15
+  assert_ledger "$home" '.stale_after_secs == 15' "a zero grace did not give the bare cycle period"
+  printf 'stale-grace-secs=30\n' > "$home/config/heartbeat"
+  publish "$home" FM_HEARTBEAT=600
+  assert_ledger "$home" '.stale_after_secs == null' "a run with no watcher cycle period published a bound"
+  for bad in abc 0 015; do
+    publish "$home" "FM_HEARTBEAT_CYCLE_SECS=$bad"
+    assert_ledger "$home" '.stale_after_secs == null' "an unusable cycle period $bad published a bound"
+  done
+  rm -f "$home/config/heartbeat"
+  publish "$home" FM_HEARTBEAT_CYCLE_SECS=15
+  assert_ledger "$home" '.stale_after_secs == null' "a home with no grace published a bound"
+  for bad in '# stale-grace-secs=30' 'stale-grace-secs=' 'stale-grace-secs=abc' 'stale-grace-secs=030' 'stale-grace-secs=-5'; do
+    printf '%s\n' "$bad" > "$home/config/heartbeat"
+    publish "$home" FM_HEARTBEAT_CYCLE_SECS=15
+    assert_ledger "$home" '.stale_after_secs == null' "the unusable grace line '$bad' published a bound"
+  done
+  printf 'stale-grace-secs=30\nstale-grace-secs=abc\n' > "$home/config/heartbeat"
+  publish "$home" FM_HEARTBEAT_CYCLE_SECS=15
+  assert_ledger "$home" '.stale_after_secs == 45' "an unusable later line hid the usable grace"
+  pass "AC-14: the stale bound is the watcher cycle period plus the grace, and null while either is missing"
+}
+
+test_watcher_publishes_its_cycle_period_not_the_wake_cadence() {
+  local home script rc
+  home=$(make_home watch-cycle)
+  script=$(canned_snapshot "$home")
+  printf 'stale-grace-secs=30\n' > "$home/config/heartbeat"
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
+    FM_POLL=2 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=600 \
+    FM_HEARTBEAT_SNAPSHOT_SCRIPT="$script" FM_WATCH_ONCE=1 \
+    "$WATCH" > "$TMP_ROOT/watch-cycle.out" 2> "$TMP_ROOT/watch-cycle.err" &
+  WATCH_PID=$!
+  wait "$WATCH_PID"; rc=$?
+  WATCH_PID=
+  [ "$rc" -eq 0 ] || fail "watcher poll exited $rc: $(cat "$TMP_ROOT/watch-cycle.err")"
+  wait_for_file "$(ledger "$home")" 60 || fail "the watcher's heartbeat never published"
+  assert_ledger "$home" '.stale_after_secs == 32' \
+    "the watcher's heartbeat bound is not its cycle period plus the grace"
+  pass "AC-14: the watcher's heartbeat bound uses its cycle period, never the wake heartbeat cadence"
+}
+
+# AC-14: context_left carries the footer and the derived token percentage side
+# by side; derived is the shared reading (bin/fm-context-reading-lib.sh).
+test_derived_context_sits_beside_the_footer() {
+  local home project line
+  home=$(make_home derived)
+  line='{"type":"assistant","timestamp":"2026-10-30T11:59:00.123Z","message":{"usage":{"input_tokens":90000}}}'
+  printf 'sess-derived\n' > "$home/state/.lock-session"
+  project="$CLAUDE_CONFIG_DIR/projects/derived-primary"
+  mkdir -p "$project"
+  printf '%s\n' "$line" > "$project/sess-derived.jsonl"
+  printf '%s\n' "$line" > "$(task_transcript "$home")"
+  # The window record names the primary session only; the task takes the pin.
+  printf 'session=sess-derived compact_at=200000 at=1\n' > "$home/state/compact-point"
+  printf 'compact-at-tokens=100000\n' > "$home/config/handoff-trigger"
+  publish "$home" FM_HEARTBEAT_NOW=2026-10-30T12:00:00Z FAKE_PANE_TEXT='  12% until auto-compact' \
+    FM_SUPERVISOR_BACKEND=tmux FM_SUPERVISOR_TARGET=%1
+  assert_ledger "$home" '
+    .primary.context_left.remaining == {percent:12,source:"terminal"}
+    and .primary.context_left.derived == {percent:55,source:"transcript"}
+    and .primary.context_left.used_tokens == 90000
+    and .tasks[0].session.id == "sess-task"
+    and .tasks[0].context_left.derived == {percent:10,source:"transcript"}
+  ' "the derived reading does not sit beside the footer"
+  rm -f "$home/config/handoff-trigger"
+  publish "$home" FM_HEARTBEAT_NOW=2026-10-30T12:00:00Z FAKE_PANE_TEXT='  12% until auto-compact' \
+    FM_SUPERVISOR_BACKEND=tmux FM_SUPERVISOR_TARGET=%1
+  assert_ledger "$home" '
+    .primary.context_left.derived == {percent:55,source:"transcript"}
+    and .tasks[0].context_left.derived == {unknown:true,reason:"no context window for this session"}
+    and .tasks[0].context_left.used_tokens == 90000
+  ' "a session with no window was given a derived reading"
+  rm -f "$home/state/compact-point"
+  publish "$home" FM_HEARTBEAT_NOW=2026-10-30T12:00:00Z
+  assert_ledger "$home" '
+    .primary.context_left.derived == {unknown:true,reason:"no context window for this session"}
+    and .primary.context_left.remaining.unknown == true
+  ' "with no window and no footer the readings were not both unknown"
+  pass "AC-14: context_left carries the footer and the derived percentage side by side"
+}
+
+test_derived_context_is_unknown_without_token_usage() {
+  local home
+  home=$(make_home derived-none)
+  printf 'compact-at-tokens=100000\n' > "$home/config/handoff-trigger"
+  publish "$home"
+  assert_ledger "$home" '.tasks[0].context_left.derived == {unknown:true,reason:"no readable transcript"}' \
+    "a task with no transcript was given a derived reading"
+  printf '{"type":"assistant","timestamp":"2026-10-30T11:59:00Z","message":{}}\n' > "$(task_transcript "$home")"
+  publish "$home" FM_HEARTBEAT_NOW=2026-10-30T12:00:00Z
+  assert_ledger "$home" '.tasks[0].context_left.derived == {unknown:true,reason:"transcript had no token usage"}' \
+    "a transcript with no token usage was given a derived reading"
+  pass "AC-14: the derived reading is unknown, with its reason, when there is no token usage to read"
+}
+
 test_ledger_schema_and_clean_run
 test_no_mistakes_run_is_parsed_from_real_status
 test_selection_owner_decides_the_run
@@ -887,6 +993,10 @@ test_term_during_task_read_still_publishes
 test_stale_work_dir_is_swept
 test_watcher_poll_does_not_wait_for_heartbeat
 test_watcher_runs_one_heartbeat_at_a_time
+test_stale_bound_is_the_watcher_cycle_plus_the_grace
+test_watcher_publishes_its_cycle_period_not_the_wake_cadence
+test_derived_context_sits_beside_the_footer
+test_derived_context_is_unknown_without_token_usage
 
 test_weekly_allowance_reports_model_allowance_left() {
   local home quota
@@ -916,4 +1026,4 @@ test_weekly_allowance_reports_model_allowance_left() {
 
 test_weekly_allowance_reports_model_allowance_left
 
-printf 'ok - %s tests passed\n' 30
+printf 'ok - %s tests passed\n' 34
