@@ -1,0 +1,49 @@
+== readable-harnesses
+claude
+exit=0
+== inventory claude codex
+claude readable
+codex unreadable
+exit=3
+== start refuses unreadable harness
+codex unreadable
+fm-soak-record: refusing to start: a declared harness is unreadable
+exit=3 soak.json exists? no
+== start --out inside home refused
+fm-soak-record: --out is inside the soak home: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.h7IXP6/data/out
+exit=2
+== start --out containing home refused
+fm-soak-record: --out contains the soak home: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T
+exit=2
+== start baseline
+claude readable
+exit=0
+{"label":"baseline","home":"/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.h7IXP6","revision":"5c3722d4a1f9fa00a95a99a55cc0af6120eda542","started_at":1794126713,"harnesses":["claude"],"session_ids":[]}
+home HEAD: 5c3722d4a1f9fa00a95a99a55cc0af6120eda542
+== sample
+exit=0
+1794126713	0	3	1	sess-123
+== sample with another home refused
+fm-soak-record: --home is not the home this soak run started on: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-soak-live.GoWAJs/other.UXyj
+exit=2
+HOME UNCHANGED after start+sample
+== concurrent churn: real background writer creating/renaming/deleting temp files in home state during 40 samples
+samples ok=40 failed=0 rows=      41
+== finish refuses watchdog dir inside out
+fm-soak-record: --watchdog-dir is --out or inside it: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-soak-live.GoWAJs/out/wdin
+exit=2 finished_at=null
+== finish
+exit=0
+{"label":"baseline","revision":"5c3722d4a1f9fa00a95a99a55cc0af6120eda542","harnesses":["claude"],"session_ids":[{"id":"sess-123","transcript":"transcripts/sess-123.jsonl"},{"id":"sess-456","transcript":"transcripts/sess-456.jsonl"}],"handoff_count":1,"violations":[],"finished_at":true}
+./handoff-events.tsv
+./load.tsv
+./soak.json
+./transcripts/sess-123.jsonl
+./transcripts/sess-456.jsonl
+./wake-ledger.tsv
+./watchdog/actions.tsv
+./watchdog/handoffs/h1.md
+HOME UNCHANGED after finish
+== sample after finish refused
+fm-soak-record: the soak run in /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-soak-live.GoWAJs/out is already finished
+exit=1
