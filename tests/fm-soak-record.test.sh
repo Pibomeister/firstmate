@@ -431,6 +431,28 @@ test_finish_counts_a_late_full_handoff_once() {
   pass "a full handoff written after the nudge timed out but before the restart counts once"
 }
 
+test_sample_records_each_handoff_document_event() {
+  local home out wd tr json
+  home=$(make_home events)
+  out="$TMP_ROOT/events-out"; wd="$TMP_ROOT/events-watchdog"; tr="$TMP_ROOT/events-transcripts"
+  mkdir -p "$wd/handoffs" "$tr"
+  : > "$wd/actions.tsv"
+  soak "$T0" start --home "$home" --out "$out" --label baseline --harness claude > /dev/null || fail "start failed"
+  # The same document rewritten twice, each rewrite sampled, with no restart.
+  rewrite_handoff "$home" $((T0 + 100)) "first"
+  soak $((T0 + 150)) sample --home "$home" --out "$out" > /dev/null || fail "sample 1 failed"
+  assert_equals 1 "$(wc -l < "$out/handoff-events.tsv" | tr -d ' ')" "the first sample records the document event"
+  rewrite_handoff "$home" $((T0 + 300)) "second"
+  soak $((T0 + 350)) sample --home "$home" --out "$out" > /dev/null || fail "sample 2 failed"
+  soak $((T0 + 400)) sample --home "$home" --out "$out" > /dev/null || fail "sample 3 failed"
+  assert_equals 2 "$(wc -l < "$out/handoff-events.tsv" | tr -d ' ')" "each new event is recorded once"
+  soak $((T0 + 1000)) finish --home "$home" --out "$out" --watchdog-dir "$wd" --transcript-dir "$tr" \
+    > /dev/null || fail "finish failed"
+  json=$(jq -c . "$out/soak.json") || fail "soak.json is not JSON after finish"
+  assert_equals 2 "$(jq -r .handoff_count <<<"$json")" "two sampled rewrites with no restart count 2"
+  pass "sample records each handoff-document modification event"
+}
+
 test_sample_after_finish_is_refused() {
   local home out wd tr rc
   home=$(make_home late)
@@ -451,6 +473,7 @@ fm_test_run \
   test_finish_counts_a_lean_handoff_restart \
   test_finish_counts_each_rewrite_of_one_handoff_document \
   test_finish_counts_a_late_full_handoff_once \
+  test_sample_records_each_handoff_document_event \
   test_sample_after_finish_is_refused \
   test_readable_harnesses_and_inventory \
   test_start_records_the_run_and_refuses_unreadable \

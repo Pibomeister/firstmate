@@ -290,7 +290,7 @@ cmd_sample() {
   case "$session" in *$'\t'*|'') session=- ;; esac
   printf '%s\t%s\t%s\t%s\t%s\n' "$now" "$live" "$acks" "$lines" "$session" >> "$OUT/load.tsv"
   touch "$OUT/handoff-events.tsv"
-  events=$(handoff_events | awk -F '\t' 'NR == FNR { seen[$0]; next } !($0 in seen) { seen[$0]; print }' \
+  events=$(handoff_events | awk -F '\t' 'FILENAME == ARGV[1] { seen[$0]; next } !($0 in seen) { seen[$0]; print }' \
     "$OUT/handoff-events.tsv" -)
   [ -z "$events" ] || printf '%s\n' "$events" >> "$OUT/handoff-events.tsv"
 }
