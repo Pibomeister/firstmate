@@ -1,0 +1,6 @@
+# Scenario C: header example - 15 s cycle, 60 s grace, default bounds -> header states 486 s detection delay
+{
+  "generated_epoch": 1794169385,
+  "published_epoch": 1794169388,
+  "stale_after_secs": 486
+}

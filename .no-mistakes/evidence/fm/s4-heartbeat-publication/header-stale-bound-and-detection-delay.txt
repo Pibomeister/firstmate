@@ -1,0 +1,33 @@
+#   schema            stable id fm-heartbeat.v1
+#   generated         UTC observation time for this execution
+#   generated_epoch   Unix seconds for generated
+#   published_epoch   Unix seconds stamped at the successful publication; the
+#                     health verdict measures heartbeat age from this stamp
+#   fm_home           resolved operational home
+#   stale_after_secs  the stale bound: the watcher cycle period it passed as
+#                     FM_HEARTBEAT_CYCLE_SECS, never the wake heartbeat cadence,
+#                     plus the stale-grace-secs key of config/heartbeat
+#                     (docs/configuration.md), plus one whole-run cap; null while
+#                     the cycle period or the grace is missing. The whole-run
+#                     cap is max(FM_HEARTBEAT_DEADLINE, FM_HEARTBEAT_SNAPSHOT_TIMEOUT)
+#                     + FM_HEARTBEAT_DISCOVERY_TIMEOUT (default 60)
+#                     + FM_HEARTBEAT_QUOTA_TIMEOUT + an overrun of
+#                     17 * (max(READ, NM timeout) + 1) + 5 * (5 + 1) + 3
+#                     seconds: the 17 bounded reads of the primary or of the
+#                     one task row in flight when the deadline passes, each
+#                     with the 1 s kill slack of bin/fm-timeout-lib.sh; the 5 s
+#                     bound of the opt-in no-mistakes home resolver
+#                     (bin/fm-nm-run-lib.sh), with its slack, for each of that
+#                     row's up to 5 resolver calls (the 4 no-mistakes host
+#                     reads and the state database lookup of an incomplete
+#                     run table); and that slack on the snapshot, discovery
+#                     and quota bounds. The watcher starts
+#                     the next run within one cycle of a publication, so a
+#                     healthy home's age stays within cycle + run cap. A dead
+#                     publisher stamps nothing more and reads past the bound
+#                     stale_after_secs after its last publication: that is the
+#                     detection delay, plus the verdict reader's own cadence.
+#                     With the defaults (DEADLINE 240, READ 3) the cap is 411 s,
+#                     so a 15 s cycle and a 60 s grace give a 486 s delay.
+#   snapshot          {ok, schema, generated, failure} for the fleet snapshot read
+#   primary           supervising firstmate session (not a ship/scout task row)

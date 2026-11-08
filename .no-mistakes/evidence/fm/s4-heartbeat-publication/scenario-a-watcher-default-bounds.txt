@@ -1,0 +1,12 @@
+# Scenario A: one real watcher poll (FM_POLL=15) in a disposable lab home, stale-grace-secs=30, default heartbeat bounds
+{
+  "schema": "fm-heartbeat.v1",
+  "generated": "2026-11-08T20:20:05Z",
+  "generated_epoch": 1794169205,
+  "published_epoch": 1794169208,
+  "stale_after_secs": 456,
+  "failure": null,
+  "snapshot_ok": true
+}
+expected stale_after_secs = 15 + 30 + 411 = 456
+age_at_read=2s
