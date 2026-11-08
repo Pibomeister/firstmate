@@ -598,7 +598,9 @@ test_watchdog_dir_inside_out_is_refused() {
 
 # cp_shim <dir> <mode>: a cp first on PATH that, only for the copy of a home's
 # state directory, either removes the state entry .vanishing.tmp and then
-# copies and exits 1 (mode vanish), or copies nothing and exits 1 (mode fail).
+# copies and exits 1 (mode vanish), copies and then renames .vanishing.tmp to
+# the new name .renamed-in and exits 1 (mode rename), or copies nothing and
+# exits 1 (mode fail).
 cp_shim() {
   mkdir -p "$1"
   cat > "$1/cp" <<SH
@@ -608,6 +610,7 @@ for a in "\$@"; do
     */state/.)
       case "$2" in
         vanish) rm -f "\${a%/.}/.vanishing.tmp"; /bin/cp "\$@"; exit 1 ;;
+        rename) /bin/cp "\$@"; mv "\${a%/.}/.vanishing.tmp" "\${a%/.}/.renamed-in"; exit 1 ;;
         fail) exit 1 ;;
       esac ;;
   esac
@@ -633,6 +636,19 @@ test_sample_tolerates_a_state_entry_that_vanishes_during_the_copy() {
   pass "a state entry that vanishes during the private copy does not stop sample"
 }
 
+test_sample_tolerates_a_state_entry_renamed_in_during_the_copy() {
+  local home out rc shim="$TMP_ROOT/cpshim-rename"
+  home=$(make_home renamein)
+  out="$TMP_ROOT/renamein-out"
+  cp_shim "$shim" rename
+  soak "$T0" start --home "$home" --out "$out" --label baseline --harness claude > /dev/null || fail "start failed"
+  printf 'tmp\n' > "$home/state/.vanishing.tmp"
+  PATH="$shim:$PATH" soak $((T0 + 100)) sample --home "$home" --out "$out" > /dev/null 2>&1; rc=$?
+  assert_equals 0 "$rc" "sample exits 0 when a state entry is renamed to a new name during the copy"
+  assert_equals 1 "$(wc -l < "$out/load.tsv" | tr -d ' ')" "sample appended its load row"
+  pass "a state entry renamed into place during the private copy does not stop sample"
+}
+
 test_sample_refuses_a_failed_copy_of_existing_state() {
   local home out rc shim="$TMP_ROOT/cpshim-fail"
   home=$(make_home cpfail)
@@ -648,6 +664,7 @@ test_sample_refuses_a_failed_copy_of_existing_state() {
 make_fakebin
 fm_test_run \
   test_sample_tolerates_a_state_entry_that_vanishes_during_the_copy \
+  test_sample_tolerates_a_state_entry_renamed_in_during_the_copy \
   test_sample_refuses_a_failed_copy_of_existing_state \
   test_stale_muse_cache_leaves_the_home_unchanged \
   test_watchdog_dir_inside_out_is_refused \
