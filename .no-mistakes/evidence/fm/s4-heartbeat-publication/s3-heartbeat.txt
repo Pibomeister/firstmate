@@ -1,0 +1,30 @@
+### S3: heartbeat --write publishes derived context (91500 of 217000 => 57% left) and stale_after_secs = cycle 60 + grace 30
+exit=0
+{
+  "stale_after_secs": 90,
+  "primary_context": {
+    "used_tokens": 91500,
+    "remaining": {
+      "unknown": true,
+      "reason": "harness showed no context text in its pane"
+    },
+    "derived": {
+      "percent": 57,
+      "source": "transcript"
+    }
+  },
+  "failure": null
+}
+
+### S3b: no cycle period passed => stale_after_secs null
+null
+
+### S3c: record names another session and no pin => derived unknown with reason
+{"unknown":true,"reason":"no context window for this session"}
+
+### S3d: pin fallback config/handoff-trigger compact-at-tokens=100000 => 8% left
+{"percent":8,"source":"transcript"}
+
+### S3e: adversarial - state directory override (as fm-watch.sh passes) => derived unknown, never a number from FM_HOME records
+exit=0
+{"used_tokens":91500,"remaining":{"unknown":true,"reason":"harness showed no context text in its pane"},"derived":{"unknown":true,"reason":"state or config directory override in use"}}

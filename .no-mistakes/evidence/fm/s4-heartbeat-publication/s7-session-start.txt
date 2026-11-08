@@ -1,0 +1,9 @@
+### S7: full locked session start with no enabled watchdog unit writes state/monitor-status
+watchdog manager-status: manager: uncovered (unit not installed)
+session-start exit=0
+
+================================================================================
+SESSION START - /tmp/fmtest.8p0iRH/lab
+================================================================================
+
+state/monitor-status: status=uncovered at=1794165975

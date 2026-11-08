@@ -1,0 +1,236 @@
+
+================================================================================
+SESSION START - /tmp/fmtest.8p0iRH/lab
+================================================================================
+
+LOCK
+--------------------------------------------------------------------------------
+lock acquired: harness pid 56311
+
+HOME ROLE
+--------------------------------------------------------------------------------
+fm-role: user (default)
+
+BOOTSTRAP
+--------------------------------------------------------------------------------
+BOOTSTRAP_INFO: lavish-axi >=0.1.80 enables confirmed board replies; this older compatible version retains the legacy reply path, but upgrade to prevent handing back a board before its reply is accepted
+
+WAKE QUEUE
+--------------------------------------------------------------------------------
+(no queued wakes)
+================================================================================
+SUPERVISION OPERATING INSTRUCTIONS - primary harness: claude
+================================================================================
+Current state:
+- Lock: held by this session; this session owns normal supervision unless away mode says otherwise.
+- Away/quiet mode: inactive.
+- X mode: inactive; use the default watcher cadence.
+- Supervision host: on; it takes away-posture wakes and, where the dialog mirror is verified, eligible attended wakes itself, and hands the rest to you (protocol at the end of this block).
+- Ordinary wake: the Stop-owned auto-arm (bin/fm-claude-stop-autoarm.sh) already owns watcher continuity; drain and handle the wake, and do not arm another cycle yourself.
+- Captain-facing turn replies stay short and do not use tables.
+- A long report goes in a file under data/, and the reply is one line from bin/fm-context-burn.sh report with that path and its sha256.
+- A large read, including a triage table or a handoff, goes through a worker or a bounded head or search, not a full read into this session.
+- The auto-compact percentage is the external footer, never a self-estimate.
+- bin/fm-context-burn.sh records that percentage each turn, from the footer when shown and otherwise from the transcript with the handoff trigger formula, and alerts when a fresh session drops more than about 30 points in 15 minutes.
+
+Mode: Claude Stop-hook-owned supervision.
+
+In a secondmate home, apply the routed-work and return-channel rules in `data/charter.md` before the next supervision wait.
+
+When this session owns supervision and away mode is not active:
+1. Drain first with `bin/fm-wake-drain.sh`.
+   After handling all emitted wakes and reconciling open decisions and unread status lines, run the exact `--ack-through` command printed as `WAKE_ACK_REQUIRED`; until then the work remains durable for idempotent re-handling after interruption.
+2. Routine watcher arm and re-arm are owned by the Stop `asyncRewake` hook (`bin/fm-claude-stop-autoarm.sh`), never by you.
+   Every turn end while supervision is needed launches or attaches one home-scoped watcher cycle with no model command and no model tokens.
+   An actionable close wakes you through the hook's exit-2 rewake, delivered as a `Stop hook feedback` message.
+3. On a `Stop hook feedback` wake (`signal:`, `stale:`, `check:`, or `heartbeat`), run `bin/fm-wake-drain.sh` first and handle the wake.
+   Do not run `bin/fm-watch-arm.sh` after an ordinary wake; the next turn end re-arms automatically when supervision is still needed.
+   Do not invent a wake from an attach-status line alone; drain and act only on real wake records, the drain's `OPEN DECISIONS` and `UNREAD STATUS` entries, or a real watcher reason line.
+4. On the one `Stop hook feedback` automatic-mechanism failure notice (`firstmate watcher auto-arm FAILED ...`), drain, inspect the automatic mechanism failure, and do not turn the notice into a repeating manual-arm loop.
+5. If the Stop hook does not claim the home or reports an exhausted failure, inspect its registration and watcher startup path before ending blind.
+   Keep the Stop-owned automatic mechanism as the only Claude arm owner.
+6. Treat `watcher: started ...` and `watcher: attached ...` inside automatic arm output as proof that one live cycle exists.
+   On attach, the arm follows verified identity-matched successors instead of exiting when the first cycle ends.
+7. The durable wake queue preserves actionable events between a rewake and the next Stop-launched arm, while the bounded turn-end guard prevents a blind Stop when recovery did not start.
+   No PreToolUse hook denies fleet commands based on watcher status.
+   [`watcher-continuity.md`](../watcher-continuity.md) owns the exact session-lock recovery boundary.
+8. The turn-end guard (`bin/fm-turnend-guard.sh --claude`) remains the final backstop.
+   It requires the PID-strict live-watcher and fresh-beacon predicate at the Stop boundary, except for the foreign-live-owner safe exit owned by [`turnend-guard.md`](../turnend-guard.md#guard-predicates); that document also owns the distinct model-aware mid-turn pull-guard rules.
+   Otherwise, it allows the stop when a watcher is healthy or an open auto-arm generation claim owns recovery, while fresh failure epochs advance the bounded one-time attended fail-open progression described there.
+9. Waiting on the hook-owned cycle is silent: do not send idle progress while the watcher is parked.
+
+The watcher itself remains `bin/fm-watch.sh`, and `bin/fm-watch-arm.sh` remains the verified arm wrapper that the Stop hook foregrounds on a home that opted out of the [supervision host](../supervision-host.md) (`config/supervision-host-off`).
+Re-arm attaches to an existing healthy cycle when one is already present and follows its verified successor chain.
+See [`watcher-continuity.md`](../watcher-continuity.md) for the arm-layer successor and clean-close failure contract and the Claude ownership model.
+
+Supervision host: on for this home (`config/supervision-host-off` turns it off; [`supervision-host.md`](../supervision-host.md) owns the design).
+The Stop hook runs the supervision host in the arm's place, and everything above still holds with these additions:
+1. Attended (no away record, including a quiet-mode record; see [Postures](../supervision-host.md#postures)): a headless supervision session takes the wakes the supervision branch may take and never wakes you for a routine outcome, so fewer wakes reach you; check wakes, decision wakes, and whatever it cannot take still reach you exactly as above.
+   `supervision-host: branch-outcome: ...` means it handled a wake and recorded captain outcomes for you: run `bin/fm-wake-drain.sh`, process each entry of its `BRANCH OUTCOMES` section as firstmate from the task's current state, because each entry says how long ago it was recorded (tell the captain, land or merge what is ready, answer or escalate a decision, or act on a blocker; your reply covers only entries still open, as if a settled one, such as a PR since merged, had never been listed), then run the `mark-processed` acknowledgement it prints; every drain presents them again until you do.
+   `supervision-host: the supervision session could not take this wake ...` means the wake is yours: handle it as above.
+   A failing turn may include a `supervision-host:` health note about repeated engine errors: tell the captain when it matters and handle the handed-back wake as usual; during cooldown later attended closes reach you unchanged.
+   Routine outcomes never wake you; your next drain lists only visible routine outcomes under `BRANCH OUTCOMES, ROUTINE` for awareness, with nothing to acknowledge. Silent rows do not appear there, but remain available through `bin/fm-branch-outcome.sh list`.
+2. Away (an away record exists and no daemon runs): the host hands each wake to a headless away session that runs the supervision branch's contract under the record, and you are parked.
+   Only a wake the host hands back reaches you, as `Stop hook feedback` carrying the close plus one `supervision-host: <why>` line.
+   That wake is automatic supervision, not the captain's return: drain and handle it under the away posture, and never run the return from it.
+   After the return, a `supervision-host:` line naming the captain's return during a turn means that turn has visible outcomes missing from the return brief, whether the wake was handled or handed back: relay every following `supervision-host: outcome ...` line to the captain (the rows also remain in `bin/fm-branch-outcome.sh list`), then drain and handle any queued wake before acknowledging.
+   Each such visible outcome is also a queued `check: supervision-host outcome <n> ... was recorded after the captain returned` wake, which the drain presents until acknowledged: relay each outcome once, whichever arrives first, and acknowledge its `BRANCH OUTCOMES` entry too when it has one. Silent outcomes remain in the store but do not generate a handoff line or check wake.
+3. `supervision-host: cycle boundary ...` means the host ended its park at its bound: run `bin/fm-wake-drain.sh`, handle whatever it presents, run its printed acknowledgement (an empty queue prints `--ack-through 0`), and end the turn; the next park starts at that turn end.
+4. A guarded command that exits 6 naming the branch actor's lease means the supervision session is handling that task right now: leave the lease alone and retry after it releases, which it does when its turn ends.
+5. Captain outcomes the away session records stay in the outcome store until the return drain presents them; the return brief (`bin/fm-afk-return.sh`) counts them and points you to the `BRANCH OUTCOMES` section for processing and acknowledgement ([Captain outcomes](../supervision-host.md#captain-outcomes)).
+6. `/afk` writes only the record here (`bin/fm-afk-launch.sh start-native` refuses the away daemon on this home); for `/quiet`, follow the [quiet skill](../../.agents/skills/quiet/SKILL.md).
+
+
+================================================================================
+READ-ONCE CONTRACT
+================================================================================
+Everything below is printed for this session start: a compact
+data/backlog.md listing, one line per live task (id, project, last recorded
+state, recorded PR URL, age, endpoint verdict) with one line per orphan
+status log, data/projects.md, data/secondmates.md, data/captain.md,
+data/captain-shared.md, and data/learnings.md, plus the tracked
+docs/learnings/overnight-learnings.md under the code root. Full per-task
+records are not re-printed here: bin/fm-crew-state.sh <id> shows the
+reconciled detail, and state/<id>.meta plus state/<id>.status hold the raw
+records.
+Do NOT re-read any of them after reading this digest, and do NOT bulk-read
+data/backlog.md or state/*.status: re-reading everything defeats the entire
+point of this command.
+
+Go to a source directly only when:
+  - this digest flagged it ABSENT (then rebuild or create it per AGENTS.md),
+  - its contents looked unparseable or corrupt,
+  - an individual task's full detail is needed (bin/fm-crew-state.sh <id> for
+    the reconciled state, or state/<id>.meta and state/<id>.status for the raw
+    records and older wake-event history),
+  - a full task body is needed (bin/fm-tasks-axi.sh show <id> --full, or data/backlog.md),
+  - the backlog listing disclosed omitted queued items and this turn needs them,
+  - the NETWORK CHECKS section reported its checks still IN PROGRESS and this
+    turn needs their verdict (bin/fm-startup-network.sh report),
+  - or a STARTUP TRUNCATED banner named the stage that would have printed it, in
+    which case that stage's sources were never emitted and must be reconciled,
+  - or a context re-emit opened with a read cue because the
+    harness cut the digest short,
+  - or CONTEXT omitted docs/learnings/overnight-learnings.md because the digest
+    tail was truncated, in which case read that file under the code root
+    (docs/learnings/overnight-learnings.md relative to the firstmate checkout).
+
+================================================================================
+FLEET STATE
+================================================================================
+
+data/backlog.md
+--------------------------------------------------------------------------------
+ABSENT
+
+Work under way (state/*.meta)
+--------------------------------------------------------------------------------
+One line per live task: id, project, last recorded state, PR URL, age, endpoint.
+Full detail: bin/fm-crew-state.sh <id> (reconciled state); raw records: state/<id>.meta and state/<id>.status.
+(none)
+
+Orphan status logs (state/*.status without matching .meta)
+--------------------------------------------------------------------------------
+One line per orphan log: id and last recorded state. Full log: state/<id>.status.
+(none)
+
+AFK
+--------------------------------------------------------------------------------
+absent
+
+================================================================================
+NETWORK CHECKS
+================================================================================
+completed off the startup path in 3s: GitHub authentication, dead-secondmate relaunch, secondmate convergence, home code drift, pending handoff delivery, project clone refresh with its drift reporting, and inactive terminal-outcome reconciliation.
+(silent - no problems found)
+
+================================================================================
+CONTEXT
+================================================================================
+
+docs/learnings/overnight-learnings.md (tracked fleet learnings; read at session start and each AFK preflight)
+--------------------------------------------------------------------------------
+# Fleet learnings (append-only, dated)
+
+Format per entry: Lesson | Failure | Check/rule | Issue (when one exists).
+Never edit or delete old entries; add a new dated entry to supersede one.
+Keep every entry general: no person, company, project, customer, host, account, or terminal names, and no credential details.
+
+## 2026-10-31 (from an overnight AFK scorecard)
+
+### 1. Preflight readiness was guessed
+- Failure: an AFK preflight reported ready without testing. Hard dependencies surfaced hours later: missing repo config and credentials, undeployed prerequisites, an outdated tool, and a score bar that current output could not reach.
+- Rule: before the captain logs off, dry-run every goal's hard dependencies and record PASS/FAIL with evidence: tokens and credentials exist (never print values), installs and versions, deploys landed, repo config (required approvals and owners), sign-ins, and whether the score bar is reachable on current output. No PASS means not ready; batch every FAIL to the captain before AFK starts.
+- Issue: https://github.com/Pibomeister/firstmate/issues/77
+
+### 2. Self-servable work was parked for the captain
+- Failure: a project missed its whole bar because a tool upgrade, a local runner setup, and work possible through an installed CLI were all parked as needing the captain, and supervision accepted those parks.
+- Rule (park challenge): before parking, try with the tools and authority you have and record what you tried. Installed CLIs, tool upgrades and installs on dev machines, local credentials, sockets and daemons a tool can create or start, and opening PRs, reruns and reroutes through the project's configured delivery path are NOT sign-ins. True SSO/2FA sign-ins, credentials no tool can supply, new spend, releases, merges outside existing rules, and anything destructive, irreversible, or security-sensitive go to the captain; the captain escalation list in AGENTS.md still applies in full. Supervisors challenge every park ("could this be self-served?"). Blocked for more than 1 h means a self-serve path, a reroute, or an escalation to the captain.
+- Issues: https://github.com/Pibomeister/firstmate/issues/78 and https://github.com/Pibomeister/firstmate/issues/63
+
+### 3. Captain context churn
+- Failure: captains restarted repeatedly overnight and auto-compacted, and one captain's self-estimate of remaining context was about five times too high.
+- Rule: hand off at 15% context left or more, measured externally (footer or auto-compact percentage, read by the watcher or leash), never by self-estimate. The new session confirms a full handoff before the old one stops; never /compact.
+- Issues: https://github.com/Pibomeister/firstmate/issues/65 and https://github.com/Pibomeister/firstmate/issues/70
+
+### 4. Late starts on one overloaded host
+- Failure: work piled onto one machine until load was far above its ceiling, orphaned browser processes accumulated, and free disk ran low, while other capacity sat underused.
+- Rule: distribute lanes across available machines and cloud at kickoff; set per-host caps on load, free disk and terminals; reap orphan processes each pass; disk under the floor pauses new launches.
+- Issues: https://github.com/Pibomeister/firstmate/issues/79 , https://github.com/Pibomeister/firstmate/issues/67 and https://github.com/Pibomeister/firstmate/issues/68
+
+### 5. Watchdog restart loop
+- Failure: a network watchdog looped through 20+ restarts; an earlier version could not see a dead data plane behind a live daemon.
+- Rule: test every watchdog against the failure modes it claims to catch before enabling it; use exponential backoff; cap restarts per window, then page instead of restarting.
+- Issue: https://github.com/Pibomeister/firstmate/issues/80
+
+### 6. Supervision gaps (heartbeat, stop verification, receipts)
+- Failure: a required supervisor seat sat empty for hours, a worker kept pushing after a stop order while its captain reported it stopped, and a change merged without receipts or a tag before a release.
+- Rules: required supervisor seats write heartbeats and the watcher alerts or relaunches when they go stale; verify a stop with gh (branch and PR heads unchanged) and process checks (pid gone) before reporting it done; no merge or publish without receipts for the exact head SHA; no release publish without a matching tag. Never push to upstream remotes from a fork run.
+- Issues: https://github.com/Pibomeister/firstmate/issues/81 , https://github.com/Pibomeister/firstmate/issues/82 , https://github.com/Pibomeister/firstmate/issues/72 and https://github.com/Pibomeister/firstmate/issues/74
+
+### 7. Gate-lock serialization and unpushed commits
+- Failure: one global gate lock serialized every lane, committed work sat unpushed for over an hour, and reviews then hit stale heads.
+- Rule: use gate locks per lane or a bounded pool; enter committed work into its configured delivery path promptly; alert when it waits there for more than 30 min.
+
+### 8. Verdict script reported a pass on a rejection
+- Failure: a review script's summary reported a pass while the final verdict was a rejection.
+- Rule: parse verdicts strictly from one structured final field (exact enum); missing or ambiguous means reject; tests include a transcript that mentions a pass early and ends in rejection.
+
+### 9. Input jams and a fix that never landed
+- Failure: a captain's wake-ups sat unsent in its composer, and the push of the fix was rejected, so the fix stayed local.
+- Rule: every doorbell or prompt send verifies submission (turn started) and retries; escalate a failed push of a fix to the captain within 1 h and reroute only through the project's configured delivery path; a change of account or remote needs the captain. Never leave the fix local without that escalation.
+- Issue: https://github.com/Pibomeister/firstmate/issues/64
+
+### 10. Prompts lost during restarts
+- Failure: a nightly order landed during a captain restart and was never delivered, so its goals started hours late.
+- Rule: queue inbound prompts durably; the new session drains and acks the queue on pickup; senders verify the ack and redeliver after any restart.
+- Issue: https://github.com/Pibomeister/firstmate/issues/83
+
+data/projects.md
+--------------------------------------------------------------------------------
+ABSENT
+
+data/secondmates.md
+--------------------------------------------------------------------------------
+ABSENT
+
+data/captain.md
+--------------------------------------------------------------------------------
+ABSENT
+
+data/captain-shared.md (shared, main-authoritative, read-only in secondmate homes)
+--------------------------------------------------------------------------------
+ABSENT
+
+data/learnings.md
+--------------------------------------------------------------------------------
+ABSENT
+
+================================================================================
+NEXT STEP
+================================================================================
+Follow the supervision operating instructions block above for harness 'claude'.
+This script never starts supervision itself.
+
+The digest above is complete for this session start. The READ-ONCE CONTRACT
+section near the top of it governs what may still be read from disk.

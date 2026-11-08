@@ -21,4 +21,17 @@ ok - last_push reads local gate and origin refs and names the source
 ok - a failed snapshot read sets failure without guessing task rows
 ok - unreadable task and primary fields stay explicitly unknown
 ok - a slow snapshot read is bounded and recorded as failure
-not ok - hung primary reads took 19s
+ok - each hung primary read has its own bound and sets failure
+ok - a run past its deadline publishes unread tasks as unknown
+ok - TERM during the snapshot read publishes unknown markers and leaks no temp files
+ok - TERM during a task read publishes the whole task list with unknown markers
+ok - the next run removes what a SIGKILLed run left
+ok - a watcher poll does not wait for a slow heartbeat
+ok - the watcher keeps polling with one detached heartbeat in flight, which still publishes
+ok - AC-14: the stale bound is the watcher cycle period plus the grace, and null while either is missing
+ok - AC-14: the watcher's heartbeat bound uses its cycle period, never the wake heartbeat cadence
+ok - AC-14: context_left carries the footer and the derived percentage side by side
+ok - AC-14: the derived reading is unknown, with its reason, when there is no token usage to read
+ok - AC-14: the derived reading is unknown, with its reason, under a state or config directory override
+ok - heartbeat publishes weekly model allowance left and leaves a miss unknown
+ok - 35 tests passed

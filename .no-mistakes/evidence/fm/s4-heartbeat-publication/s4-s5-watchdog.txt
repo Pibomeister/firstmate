@@ -1,0 +1,13 @@
+### S4: watchdog monitor-read records this home's monitor unit status
+exit=0
+state/monitor-status: status=uncovered at=1794165943
+
+### S5: watchdog scan carries the shared context reading for the primary
+-rw-r--r--@ 1 eduardopicazo  wheel  12 Nov  8 13:25 /tmp/fmtest.8p0iRH/lab/state/.lock-session
+subject lab (/private/tmp/fmtest.8p0iRH/lab)
+  endpoint=none:none session=sess-live-1 lock_pid=none alive=0 instance=unknown owner=none
+  captain=none:none moved_at=1794165920
+  pane_static=0s dialog=none usage_limit_autowait=0 composer=unknown turn_running=unknown cpu_busy=unknown
+  transcript_age=45s loop=none/0 restart_requested=0 ctx=57 (derived) [footer=unknown derived=57 owner=derived disagreement=-]
+  owed=0 oldest=0s afk=0 daemon=unknown heartbeat_age=14s
+exit=0

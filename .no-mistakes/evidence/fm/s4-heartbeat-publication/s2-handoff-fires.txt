@@ -1,0 +1,4 @@
+### S2: low context still fires the one handoff instruction (196000 of 217000 => 9% left)
+Firstmate early handoff trigger, from this home's tracked Claude hook: about 9% of context is left before auto-compact (196000 of 217000 tokens). Write your full session handoff now, before auto-compa
+record now: session=sess-low compact_at=217000 at=1794165906
+second run (same cycle) output bytes:        0

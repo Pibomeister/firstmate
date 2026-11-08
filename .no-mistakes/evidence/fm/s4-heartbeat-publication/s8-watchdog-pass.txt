@@ -1,0 +1,3 @@
+### S8: one watchdog pass (once --dry-run) rewrites state/monitor-status for each subject
+exit=0
+state/monitor-status: status=uncovered at=1794165990

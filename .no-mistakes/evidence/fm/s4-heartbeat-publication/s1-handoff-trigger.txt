@@ -1,0 +1,14 @@
+### S1: handoff trigger (primary clone) publishes state/compact-point on PostToolUse
+$ CLAUDE_CODE_AUTO_COMPACT_WINDOW=250000 FM_HOME=$LAB clone/bin/fm-handoff-trigger.sh <<< PostToolUse payload
+hook exit=0 (stdout above; empty = no handoff instruction since ~58% left)
+state/compact-point: session=sess-live-1 compact_at=217000 at=1794165898
+
+### S1b: a run that resolves no point withdraws its own record
+exit=0
+ls: /tmp/fmtest.8p0iRH/lab/state/compact-point: No such file or directory
+
+### S1c: another session's run with no point leaves this session's record alone
+state/compact-point: session=sess-live-1 compact_at=217000 at=1794165898
+
+### S1d: adversarial session id with a slash is not published
+state/compact-point unchanged: yes -> session=sess-live-1 compact_at=217000 at=1794165898

@@ -1,0 +1,8 @@
+### S6: footer in a real lab tmux pane + derived reading; disagreement-points=5 flags the 45-point gap; derived owns
+heartbeat exit=0
+{"terminal":{"backend":"tmux","target":"%0","present":true},"context_left":{"used_tokens":91500,"remaining":{"percent":12,"source":"terminal"},"derived":{"percent":57,"source":"transcript"}}}
+  endpoint=tmux:%0 session=sess-live-1 lock_pid=none alive=0 instance=unknown owner=none
+  transcript_age=65s loop=none/0 restart_requested=0 ctx=57 (derived) [footer=12 derived=57 owner=derived disagreement=1]
+
+### S6b: no window (record for another session, no pin) => footer owns the reading
+  transcript_age=65s loop=none/0 restart_requested=0 ctx=12 (heartbeat) [footer=12 derived=unknown owner=footer disagreement=0]
