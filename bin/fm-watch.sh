@@ -4168,6 +4168,13 @@ watcher_cleanup() {
   # Quietly: a stop usually lands inside the waited event wait, and bash would
   # report the group it kills here as a "Terminated" job line on stderr.
   fm_active_check_stop 2>/dev/null || cleanup_status=1
+  # The heartbeat ticker stops with this watcher (fleet_heartbeat_publish_detached).
+  # A subshell can run this cleanup with the ticker's pid inherited, so only the
+  # watcher's own shell stops it; the ticker also exits on its own once the
+  # watcher is gone.
+  if [ -n "${FLEET_HEARTBEAT_TICKER_PID:-}" ] && [ "${BASH_SUBSHELL:-0}" -eq 0 ]; then
+    kill -TERM "$FLEET_HEARTBEAT_TICKER_PID" 2>/dev/null || true
+  fi
   fm_check_output_cleanup
   fm_capture_output_cleanup
   fm_wait_tmp_cleanup
@@ -4301,22 +4308,54 @@ lane_capacity_publish_detached() {
 
 # Self-watching heartbeat ledger: publish state/heartbeat.json detached and
 # single-flight so no read can hold a poll. bin/fm-heartbeat.sh's header owns the
-# document and its bounds.
+# document and its bounds. An independent single-flight ticker launches one
+# detached publication every POLL seconds,
+# apart from this loop's own work, so POLL is the true launch interval that the
+# heartbeat's stale bound counts (stale_after_secs, HB-3). The first launch is
+# immediate; the ticker stops when this watcher exits or no longer holds the
+# singleton lock, and a publication already under way still completes.
 FLEET_HEARTBEAT_PID=
-fleet_heartbeat_publish_detached() {
-  if [ -n "$FLEET_HEARTBEAT_PID" ]; then
-    if kill -0 "$FLEET_HEARTBEAT_PID" 2>/dev/null; then
-      return 0
-    fi
-    wait "$FLEET_HEARTBEAT_PID" 2>/dev/null || true
-    FLEET_HEARTBEAT_PID=
-  fi
+FLEET_HEARTBEAT_TICKER_PID=
+fleet_heartbeat_launch() {
   # The heartbeat's stale bound starts from this watcher's cycle period, never
   # the wake heartbeat cadence (bin/fm-heartbeat.sh stale_after_secs).
   FM_HOME=$FM_HOME FM_ROOT_OVERRIDE=$FM_ROOT FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$CONFIG \
     FM_HEARTBEAT_CYCLE_SECS=$POLL \
     "${FM_HEARTBEAT_BIN:-$SCRIPT_DIR/fm-heartbeat.sh}" --write </dev/null >/dev/null 2>&1 &
   FLEET_HEARTBEAT_PID=$!
+}
+
+fleet_heartbeat_ticker() {  # runs in its own subshell; $1 is the publication in flight
+  local nap
+  FLEET_HEARTBEAT_PID=$1
+  trap - EXIT
+  trap 'exit 0' HUP INT TERM
+  while :; do
+    sleep "$POLL" &
+    nap=$!
+    wait "$nap" 2>/dev/null || true
+    kill -0 "$WATCHER_PID" 2>/dev/null || exit 0
+    [ "$(cat "$WATCH_LOCK/pid" 2>/dev/null || true)" = "$WATCHER_PID" ] || exit 0
+    if [ -n "$FLEET_HEARTBEAT_PID" ] && kill -0 "$FLEET_HEARTBEAT_PID" 2>/dev/null; then
+      continue
+    fi
+    [ -z "$FLEET_HEARTBEAT_PID" ] || wait "$FLEET_HEARTBEAT_PID" 2>/dev/null || true
+    fleet_heartbeat_launch
+  done
+}
+
+fleet_heartbeat_publish_detached() {
+  if [ -n "$FLEET_HEARTBEAT_TICKER_PID" ] && kill -0 "$FLEET_HEARTBEAT_TICKER_PID" 2>/dev/null; then
+    return 0
+  fi
+  [ -z "$FLEET_HEARTBEAT_TICKER_PID" ] || wait "$FLEET_HEARTBEAT_TICKER_PID" 2>/dev/null || true
+  FLEET_HEARTBEAT_TICKER_PID=
+  if [ -z "$FLEET_HEARTBEAT_PID" ] || ! kill -0 "$FLEET_HEARTBEAT_PID" 2>/dev/null; then
+    [ -z "$FLEET_HEARTBEAT_PID" ] || wait "$FLEET_HEARTBEAT_PID" 2>/dev/null || true
+    fleet_heartbeat_launch
+  fi
+  ( fleet_heartbeat_ticker "$FLEET_HEARTBEAT_PID" ) </dev/null >/dev/null 2>&1 &
+  FLEET_HEARTBEAT_TICKER_PID=$!
 }
 
 # Durable captain orders (bin/fm-order.sh owns the contract): re-deliver or

@@ -40,13 +40,15 @@
 #                     one task row in flight when the deadline passes, each
 #                     with the 1 s kill slack of bin/fm-timeout-lib.sh; the 5 s
 #                     bound of the opt-in no-mistakes home resolver
-#                     (bin/fm-nm-run-lib.sh), with its slack, for each of that
+#                     (bin/fm-nm-run-lib.sh fm_nm_bounded, a hard limit that
+#                     kills a TERM-ignoring read), with its slack, for each of that
 #                     row's up to 5 resolver calls (the 4 no-mistakes host
 #                     reads and the state database lookup of an incomplete
 #                     run table); and that slack on the snapshot, discovery
-#                     and quota bounds. The watcher starts
-#                     the next run within one cycle of a publication, so a
-#                     healthy home's age stays within cycle + run cap. A dead
+#                     and quota bounds. The watcher's independent ticker
+#                     launches a run every cycle, whatever the watcher loop is
+#                     doing, and a run cannot outlast the cap, so a healthy
+#                     home's age stays within cycle + run cap. A dead
 #                     publisher stamps nothing more and reads past the bound
 #                     stale_after_secs after its last publication: that is the
 #                     detection delay, plus the verdict reader's own cadence.
@@ -117,8 +119,9 @@
 # FM_HEARTBEAT_SNAPSHOT_SCRIPT may name a replacement snapshot producer; tests
 # use it to simulate slow reads without touching the real fleet snapshot.
 #
-# bin/fm-watch.sh runs --write detached and single-flight, so no read here can
-# hold a watcher poll.
+# bin/fm-watch.sh runs --write detached and single-flight from an independent
+# ticker every watcher cycle, so no read here can hold a watcher poll and no
+# watcher loop work can delay a launch.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

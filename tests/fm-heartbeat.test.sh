@@ -904,6 +904,101 @@ test_worst_age_of_a_busy_healthy_home_stays_within_the_bound() {
 
 # AC-14: the stale bound is the cycle period the watcher passes plus the
 # config/heartbeat grace; the wake heartbeat cadence never enters it.
+# AC-14: the whole-run cap counts each bounded read as its timeout plus one
+# second, so a read whose child ignores TERM must still end there.
+test_a_term_ignoring_bounded_read_is_still_killed() {
+  local marker started elapsed out rc=0
+  marker="$TMP_ROOT/term-ignoring-child"
+  started=$(date +%s)
+  (
+    # shellcheck source=bin/fm-nm-run-lib.sh
+    # shellcheck disable=SC1091
+    . "$ROOT/bin/fm-nm-run-lib.sh"
+    # shellcheck disable=SC2016 # the child shell expands its own variables.
+    fm_nm_bounded "$TMP_ROOT" 1 bash -c 'trap "" TERM; echo $$ > "$1"; sleep 9; sleep 9' _ "$marker"
+  ) || rc=$?
+  elapsed=$(( $(date +%s) - started ))
+  [ "$rc" -ne 0 ] || fail "a TERM-ignoring bounded read reported success"
+  [ "$elapsed" -le 3 ] || fail "a TERM-ignoring bounded read ran ${elapsed}s past its 1s bound plus the one-second kill"
+  [ -s "$marker" ] || fail "the TERM-ignoring child never started"
+  ! kill -0 "$(cat "$marker")" 2>/dev/null || fail "the TERM-ignoring child outlived its bound"
+  # A wrapper that exits on TERM while its TERM-ignoring child keeps the output
+  # pipe open: timeout sees the wrapper exit and sends no KILL, so the read
+  # itself must reap the leftover group, or the capture below never returns.
+  rm -f "$marker"
+  started=$(date +%s)
+  out=$(
+    # shellcheck source=bin/fm-nm-run-lib.sh
+    # shellcheck disable=SC1091
+    . "$ROOT/bin/fm-nm-run-lib.sh"
+    # shellcheck disable=SC2016 # the child shell expands its own variables.
+    fm_nm_bounded "$TMP_ROOT" 1 bash -c '( trap "" TERM; echo $BASHPID > "$1"; sleep 9; sleep 9 ) & wait' _ "$marker"
+  ) || true
+  elapsed=$(( $(date +%s) - started ))
+  [ "$elapsed" -le 3 ] || fail "a TERM-ignoring grandchild held a bounded read open for ${elapsed}s"
+  [ -s "$marker" ] || fail "the TERM-ignoring grandchild never started"
+  ! kill -0 "$(cat "$marker")" 2>/dev/null || fail "the TERM-ignoring grandchild outlived its bound"
+  out=$(printf 'piped\n' | (
+    # shellcheck source=bin/fm-nm-run-lib.sh
+    # shellcheck disable=SC1091
+    . "$ROOT/bin/fm-nm-run-lib.sh"
+    fm_nm_bounded "$TMP_ROOT" 5 cat
+  ))
+  [ "$out" = piped ] || fail "a bounded read lost its standard input: '$out'"
+  pass "AC-14: a bounded read whose child or grandchild ignores TERM is killed one second after its bound"
+}
+
+# AC-14: the watcher launches publications from an independent single-flight
+# ticker, so slow loop work (here a check that runs about six seconds each
+# cycle) never stretches the launch interval past the cycle period.
+test_watcher_publishes_every_cycle_whatever_its_loop_work() {
+  local home stub runs count settled fakebin
+  home=$(make_home watch-ticker)
+  # A live task with no status line, so no status wake ends this watcher early.
+  rm -f "$home/state/hb-task.status"
+  runs="$TMP_ROOT/watch-ticker.runs"
+  : > "$runs"
+  stub="$TMP_ROOT/watch-ticker-heartbeat.sh"
+  cat > "$stub" <<SH
+#!/usr/bin/env bash
+date +%s >> "$runs"
+SH
+  chmod +x "$stub"
+  # Slow loop work: every poll reads the live task's pane, and this fake tmux
+  # takes 4s per read, so one loop cycle lasts several POLL periods.
+  fakebin="$TMP_ROOT/watch-ticker-bin"
+  mkdir -p "$fakebin"
+  cat > "$fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+case "${1:-}" in
+  list-windows) printf 'hb\n'; exit 0 ;;
+  capture-pane) sleep 4; printf 'working\n'; exit 0 ;;
+  display-message) printf 'claude\n'; exit 0 ;;
+esac
+exit 1
+SH
+  chmod +x "$fakebin/tmux"
+  fm_test_track_watcher_state "$home/state"
+  PATH="$fakebin:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
+    FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    FM_HEARTBEAT_BIN="$stub" \
+    "$WATCH" > "$TMP_ROOT/watch-ticker.out" 2> "$TMP_ROOT/watch-ticker.err" &
+  WATCH_PID=$!
+  wait_for_file "$home/state/.last-watcher-beat" 30 || fail "watcher never polled"
+  sleep 9
+  count=$(wc -l < "$runs" | tr -d ' ')
+  kill -0 "$WATCH_PID" 2>/dev/null || fail "the watcher exited before the launch count: $(cat "$TMP_ROOT/watch-ticker.out")"
+  [ "$count" -ge 5 ] || fail "slow loop work stretched the launch interval: $count launches in 9s at a 1s cycle"
+  kill -TERM "$WATCH_PID" 2>/dev/null
+  wait "$WATCH_PID" 2>/dev/null
+  WATCH_PID=
+  sleep 2
+  settled=$(wc -l < "$runs" | tr -d ' ')
+  sleep 3
+  [ "$(wc -l < "$runs" | tr -d ' ')" = "$settled" ] || fail "publications kept launching after the watcher stopped"
+  pass "AC-14: the watcher launches a publication every cycle whatever its loop work, and stops with the watcher"
+}
+
 test_zero_padded_timeouts_read_as_decimal_in_the_run_cap() {
   local home
   home=$(make_home padded-timeouts)
@@ -1087,6 +1182,8 @@ test_term_during_task_read_still_publishes
 test_stale_work_dir_is_swept
 test_watcher_poll_does_not_wait_for_heartbeat
 test_watcher_runs_one_heartbeat_at_a_time
+test_a_term_ignoring_bounded_read_is_still_killed
+test_watcher_publishes_every_cycle_whatever_its_loop_work
 test_zero_padded_timeouts_read_as_decimal_in_the_run_cap
 test_stale_bound_is_the_watcher_cycle_plus_the_grace
 test_worst_age_of_a_busy_healthy_home_stays_within_the_bound
@@ -1123,4 +1220,4 @@ test_weekly_allowance_reports_model_allowance_left() {
 
 test_weekly_allowance_reports_model_allowance_left
 
-printf 'ok - %s tests passed\n' 37
+printf 'ok - %s tests passed\n' 39
